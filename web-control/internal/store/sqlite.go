@@ -55,6 +55,9 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("apply migration: %w", err)
 		}
 	}
+	if err := applyMigrationUpgrades(ctx, tx); err != nil {
+		return err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit migrations: %w", err)
@@ -87,9 +90,27 @@ var migrationStatements = []string{
 		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 		plan_id TEXT NOT NULL REFERENCES plans(id),
 		status TEXT NOT NULL,
+		provider_order_id TEXT NOT NULL DEFAULT '',
 		current_period_start TEXT,
 		current_period_end TEXT,
 		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+	)`,
+	`CREATE TABLE IF NOT EXISTS sessions (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		refresh_token_hash TEXT NOT NULL UNIQUE,
+		expires_at TEXT NOT NULL,
+		revoked_at TEXT,
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+	)`,
+	`CREATE TABLE IF NOT EXISTS payment_orders (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		plan_id TEXT NOT NULL REFERENCES plans(id),
+		provider_order_id TEXT NOT NULL UNIQUE,
+		status TEXT NOT NULL,
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+		updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 	)`,
 	`CREATE TABLE IF NOT EXISTS machines (
 		id TEXT PRIMARY KEY,
@@ -168,4 +189,28 @@ var migrationStatements = []string{
 		PRIMARY KEY (user_id, month)
 	)`,
 	`INSERT OR IGNORE INTO schema_migrations(version) VALUES (1)`,
+}
+
+func applyMigrationUpgrades(ctx context.Context, tx *sql.Tx) error {
+	hasProviderOrderID, err := columnExists(ctx, tx, "subscriptions", "provider_order_id")
+	if err != nil {
+		return fmt.Errorf("inspect subscriptions schema: %w", err)
+	}
+	if !hasProviderOrderID {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE subscriptions ADD COLUMN provider_order_id TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add subscriptions.provider_order_id: %w", err)
+		}
+	}
+	return nil
+}
+
+func columnExists(ctx context.Context, tx *sql.Tx, table string, column string) (bool, error) {
+	if table != "subscriptions" {
+		return false, fmt.Errorf("unsupported migration table %q", table)
+	}
+	var count int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM pragma_table_info('subscriptions') WHERE name = ?`, column).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }

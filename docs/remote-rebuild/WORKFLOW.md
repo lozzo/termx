@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `1` Web Control Plane skeleton, ready to commit.
-- Last updated: 2026-05-03T03:05:58+08:00.
+- Active todo: `2` Web auth/account/plan foundation, ready to commit.
+- Last updated: 2026-05-03T04:44:00+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -19,7 +19,11 @@ Status file for unattended remote rebuild work. Update this file before starting
 | --- | --- | --- | --- | --- |
 | 0 | docs/workflow | Harden AGENTS and reset `WORKFLOW.md` for the web/control-plane + hub + daemon-agent buildout | completed | `41671b21` |
 | 1 | web-control | Create Web Control Plane skeleton with Go backend, SQLite migration/test helper, health API, and Vite React shell | completed | `e3f8541b` |
-| 2 | web-control/auth | Implement web auth/account/plan/subscription foundations with provider interfaces and mock payment | pending |  |
+| 2 | web-control/auth | Implement web auth/account/plan/subscription foundations with provider interfaces and mock payment | completed |  |
+| 2-A | web-control/auth-review | Fix Slice 2 review findings around SQLite upgrade migration, deterministic auth, atomic refresh, subscription expiry, mock default, provider ownership, and workflow staleness | completed |  |
+| 2-A-A | web-control/auth-self-review | Harden provider order identity and missing token issuer error paths found during local self-review | completed |  |
+| 2-A-B | web-control/auth-follow-up-review | Fix Slice 2 follow-up review findings around Me nil issuer, pending payment sync, and payment/subscription transaction atomicity | completed |  |
+| 2-B | external | Defer real payment/email/OAuth/billing/tax/risk integrations behind provider interfaces | deferred_external |  |
 | 3 | web-control/machines | Implement machine, app device, app certificate, revocation, bootstrap, and claim control model | pending |  |
 | 4 | public_p2p | Implement registered public P2P rendezvous with authenticated channel, offer/answer/candidate forwarding, TTL, rate limits, and STUN-only policy | pending |  |
 | 5 | hub | Create Hub skeleton and agent registry with register, heartbeat, poll, answer, and expiry behavior | pending |  |
@@ -85,7 +89,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 2 Web Auth, Account, Plan, Subscription
 
-- 状态：pending
+- 状态：completed
 - 父条目：none
 - 来源：Web Control Plane 需要用户注册、登录、session/token、plans、subscriptions 和 mock payment provider。
 - 目标：实现 users、sessions/tokens、plans、subscriptions、PaymentProvider interface、MockPaymentProvider，并覆盖订阅激活/过期/失败状态流转。
@@ -93,20 +97,121 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 非目标：不接真实支付、发票、税务、短信、OAuth、外部风控。
 - 外部依赖：真实支付、真实订阅/发票/税务、真实邮件/OAuth 以后需要人类配置。
 - mock 策略：用 `PaymentProvider` interface 和 `MockPaymentProvider`/local fake；如需要邮件/OAuth，先建 interface + in-memory/local provider。
-- 先写的失败测试：待创建注册、登录、token refresh、default plan、未登录拒绝、mock payment 成功/失败/过期测试。
-- 预期失败结果：待记录。
-- 实现摘要：待完成。
-- 重构摘要：待完成。
-- 运行命令：待记录。
-- 测试结果：待记录。
-- subagent review：待发起。
-- review 发现：待记录。
-- review 后修复：待记录。
-- 新增派生条目：预计创建 deferred external payment/email/OAuth 条目。
+- 先写的失败测试：planned `web-control/internal/account/account_test.go` for register/login/refresh/default plan/unauthenticated rejection, `web-control/internal/account/mock_payment_test.go` for `PaymentProvider` and mock activation/failure/expiry flows, plus HTTP API tests for auth endpoints.
+- 预期失败结果：focused tests should fail before implementation because `internal/account`, provider interfaces, token/session store, password hashing, and auth API handlers do not exist yet.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/account ./internal/httpapi` failed as expected because `internal/account` had no non-test Go files and HTTP auth handlers/account wiring were absent.
+- 实现摘要：added `internal/account` with user registration/login/refresh/me service, HMAC access token issuer, refresh token persistence/rotation, default registered-free plan policy, `PaymentProvider` interface, and `MockPaymentProvider` with success/failure/expiry simulation; extended SQLite migrations for sessions and payment orders; added auth HTTP endpoints for register/login/refresh/me; wired runnable backend auth service creation from `TERMX_WEB_CONTROL_TOKEN_SECRET`.
+- 重构摘要：kept real external payment/email/OAuth out of the slice. Payment behavior is isolated behind `PaymentProvider`; mock payment is a local provider for tests/dev and is not hard-coded into core policy. Self-review hardening added access-token expiry verification, old refresh-token rejection after rotation, and startup auth wiring requiring an explicit token secret.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/account ./internal/httpapi`; `cd web-control && GOWORK=off go test ./...`; `go test ./web-control/...`; `cd web-control/frontend && npm test`; `cd web-control/frontend && npm run typecheck`; `cd web-control/frontend && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`。
+- 测试结果：expected failure recorded first. After implementation, focused account/httpapi tests passed; `GOWORK=off go test ./...` passed; workspace `go test ./web-control/...` passed; frontend test/typecheck/build passed; workflow check and `git diff --check` passed. After self-review hardening, `GOWORK=off go test ./...`, `go test ./web-control/...`, workflow check, and `git diff --check` passed again. After subagent review, `2-A` regression tests failed as expected on schema upgrade/provider override gaps, then focused `GOWORK=off go test ./internal/store ./internal/account ./internal/httpapi ./cmd/web-control` passed after fixes. Broader validation after `2-A`, `2-A-A`, and `2-A-B`: focused tests passed, `GOWORK=off go test ./...` passed, `go test ./web-control/...` passed, frontend `npm test`/`npm run typecheck`/`npm run build` passed, workflow check passed, and `git diff --check` passed.
+- subagent review：`Tesla` (`019dea1d-6b04-7e91-8967-bc312c8102c8`) reviewed Slice 2, reviewed follow-up fixes, and gave final no-blocker disposition.
+- review 发现：high existing SQLite DBs from Slice 1 are not upgraded when adding `subscriptions.provider_order_id`; high access token verification used wall clock instead of injected service clock; high refresh-token rotation was not atomic; medium subscription entitlement ignored `current_period_end`; medium mock payment provider was the default service behavior; medium payment sync trusted provider status without checking order ownership; medium workflow next action and expected deferred child items were stale.
+- review 后修复：`2-A` added regression tests and implemented idempotent SQLite upgrade migration, injected-clock access verification, transactional refresh-token rotation, subscription period-end entitlement fallback, explicit payment provider requirement, provider order ownership validation, and workflow/deferred external tracking. `2-A-A` and `2-A-B` fixed the follow-up provider/token/payment transaction findings.
+- 新增派生条目：`2-A` review hardening fixes; `2-A-A` local self-review provider/token boundary fix; `2-A-B` follow-up review fixes; `2-B` deferred external provider integrations.
 - deferred human items：真实支付、发票/税务、邮件、OAuth provider、生产密钥。
-- 剩余风险：mock 必须隔离在 provider/interface 后，不能写死进核心业务。
-- 下一步：Slice 1 完成后开始。
+- 剩余风险：auth/token implementation is a first local skeleton; real production token rotation, password policy hardening, email verification, OAuth, billing provider, invoice/tax, and fraud/risk systems remain deferred external integrations.
+- 下一步：commit Slice 2, record commit hash, then start Slice 3 machine/app certificate/control model.
 - commit：待提交。
+
+### 2-A Slice 2 Review Hardening
+
+- 状态：completed
+- 父条目：2
+- 来源：Slice 2 subagent review by `Tesla`.
+- 目标：fix the blocking review findings with regression tests before code changes.
+- 范围：`web-control/internal/account`, `web-control/internal/store`, `web-control/cmd/web-control`, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not add real payment, email, OAuth, invoice, tax, fraud/risk, or external provider integrations.
+- 外部依赖：none for this fix slice.
+- mock 策略：mock payment remains test/dev only and must be explicitly injected; production-like construction must not silently default to mock.
+- 先写的失败测试：planned tests for upgrading Slice 1 schema, deterministic token expiry using injected clock, old refresh token single-use/atomic rotation, expired paid subscription falling back to free policy, explicit payment provider requirement, and mismatched provider order rejection.
+- 预期失败结果：focused tests should fail against the reviewed implementation.
+- 实现摘要：added idempotent migration upgrade inspection for `subscriptions.provider_order_id`; changed access-token verification to use the service clock; rotated refresh tokens inside a transaction with conditional revocation; made paid order creation/sync require an explicitly injected provider; validated provider order user/plan ownership; made active paid subscriptions fall back to free policy after `current_period_end`; added `MockPaymentProvider.OverrideOrder` only for test/dev mutation.
+- 重构摘要：split current-plan lookup into db/tx query paths so auth issuance does not query through the pooled DB while holding a SQLite transaction; kept mock payment isolated behind `PaymentProvider`.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/store ./internal/account ./internal/httpapi ./cmd/web-control`; `cd web-control && GOWORK=off go test ./...`; `go test ./web-control/...`; `cd web-control/frontend && npm test`; `cd web-control/frontend && npm run typecheck`; `cd web-control/frontend && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`。
+- 测试结果：red path confirmed before fixes: migration upgrade failed because old Slice 1 `subscriptions` lacked `provider_order_id`, and account tests failed while provider override/token-clock fixes were not implemented. After fixes, focused store/account/httpapi/main tests passed. Broader module/workspace/backend/frontend/workflow/diff checks all passed, and passed again after `2-A-A`.
+- subagent review：covered by parent Slice 2 review; follow-up review requested from `Tesla` after `2-A` fixes.
+- review 发现：follow-up review found medium risks: `Me` nil-panics when `TokenIssuer` is missing; pending/unknown provider statuses create subscription history; payment order status update and subscription insert are not atomic. It also noted the concurrent refresh test is low-value for true pooled-connection races because the SQLite opener currently uses one connection. A registration partial-state finding was already fixed in `2-A-A` before the review result was received.
+- review 后修复：implemented the fixes listed above; broader validation passed; follow-up review request was updated to include `2-A-A`; remaining follow-up findings were fixed in `2-A-B` and final review found no blockers.
+- 新增派生条目：`2-A-A` local self-review hardening for provider order identity and missing token issuer errors; `2-A-B` follow-up review fixes.
+- deferred human items：none.
+- 剩余风险：future production auth/payment hardening remains outside this fix slice and is tracked by `2-B`.
+- 下一步：included in Slice 2 commit.
+- commit：will be included in Slice 2 commit.
+
+### 2-A-A Provider And Token Boundary Self-Review Fix
+
+- 状态：completed
+- 父条目：2-A
+- 来源：local self-review while waiting for Slice 2 follow-up subagent review.
+- 目标：ensure provider order identity is validated, local order IDs are not controlled by provider IDs, and missing token issuer paths return errors without partial writes or panics.
+- 范围：`web-control/internal/account`, account tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement real payment provider, email/OAuth, invoice/tax, fraud/risk, or public paid API endpoints.
+- 外部依赖：none.
+- mock 策略：continue using explicitly injected `MockPaymentProvider`; use provider mutation helpers only in tests.
+- 先写的失败测试：tests for rejecting provider ID mismatch, keeping local order ID separate from provider order ID, failing register/refresh cleanly without a token issuer, and ensuring failed register without token issuer rolls back the user row.
+- 预期失败结果：focused account tests should fail before implementation because current payment sync does not compare provider order ID, refresh can dereference a nil token issuer, and register can leave a partial user after token issuance failure.
+- 实现摘要：added explicit missing-token-issuer errors on refresh; split local payment order IDs from provider order IDs; validated provider order ID in addition to user and plan before syncing subscription state; made registration insert/plan seed/session issuance transactional so token failures roll back.
+- 重构摘要：updated mock payment tests to mutate provider state by `ProviderOrderID` while service sync still uses local `PaymentOrder.ID`, preserving provider/local boundary; reused transaction-aware auth issuance for registration.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/account -run TestRegisterFailsCleanlyWithoutTokenIssuer`; `cd web-control && GOWORK=off go test ./internal/account`。
+- 测试结果：red path confirmed first: refresh without token issuer panicked, separated order IDs required test contract updates, and register without token issuer left a partial user row. After fixes, focused account tests passed. Full Slice 2 focused/module/workspace/frontend/workflow/diff checks passed after the transactional register fix.
+- subagent review：included in the updated Slice 2 follow-up review request to `Tesla`.
+- review 发现：pending.
+- review 后修复：implemented local self-review fixes; broader validation passed and follow-up subagent review accepted the fixes.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：real provider webhook signature and idempotency remain deferred external/business hardening.
+- 下一步：included in Slice 2 commit.
+- commit：will be included in Slice 2 commit.
+
+### 2-A-B Follow-Up Review Fixes
+
+- 状态：completed
+- 父条目：2-A
+- 来源：Slice 2 follow-up review by `Tesla`.
+- 目标：fix remaining real behavior risks: `Me` must fail cleanly without token issuer, pending/unknown payment sync must not create subscription history, and payment status update plus subscription creation must be atomic.
+- 范围：`web-control/internal/account`, account tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement real payment webhooks, provider idempotency keys, invoice/tax, OAuth/email, or public subscription HTTP endpoints.
+- 外部依赖：none.
+- mock 策略：continue using explicit `PaymentProvider`; mock provider remains test/dev only.
+- 先写的失败测试：planned tests for `Me` without token issuer returning an error, pending payment sync not creating subscriptions, unknown provider status not creating subscriptions, and failed subscription insert rolling back local payment status.
+- 预期失败结果：focused account tests should fail before implementation because `Me` lacks token guard, pending sync currently inserts a past_due subscription, and payment sync is not transactional.
+- 实现摘要：added `Me` token-issuer guard; made pending payment sync update only local payment order status and return free policy without creating subscription history; rejected unknown provider statuses; wrapped paid/failed/expired payment status update plus subscription insert in one transaction.
+- 重构摘要：kept provider status interpretation in service layer; retained `PaymentProvider` boundary and no HTTP subscription endpoint in this slice.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/account -run 'TestMeFailsCleanlyWithoutTokenIssuer|TestSyncPaymentPendingDoesNotCreateSubscription|TestSyncPaymentRejectsUnknownProviderStatus|TestSyncPaymentRollsBackOrderStatusWhenSubscriptionInsertFails'`; `cd web-control && GOWORK=off go test ./internal/store ./internal/account ./internal/httpapi ./cmd/web-control`; `cd web-control && GOWORK=off go test ./...`; `go test ./web-control/...`; `cd web-control/frontend && npm test`; `cd web-control/frontend && npm run typecheck`; `cd web-control/frontend && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`。
+- 测试结果：red path confirmed first: `Me` nil issuer panicked, pending payment created `past_due` subscription, unknown provider status was accepted, and subscription insert failure left payment order status as `paid`. After fixes, focused follow-up review regression tests passed. Full focused/module/workspace/frontend/workflow/diff checks passed.
+- subagent review：follow-up review produced these findings; final disposition pending after fixes.
+- review 发现：medium `Me` nil issuer panic; medium pending/unknown payment sync creates subscription history; medium payment update/subscription insert not atomic; low concurrent refresh test does not prove pooled-connection race due current one-connection SQLite opener.
+- review 后修复：implemented all medium follow-up findings; broader validation passed; final review disposition from `Tesla` reported no remaining blocker findings.
+- 新增派生条目：none.
+- deferred human items：real provider webhook signature/idempotency remains deferred external.
+- 剩余风险：real billing semantics and production-grade idempotent provider sync remain for future provider integration.
+- 下一步：included in Slice 2 commit.
+- commit：will be included in Slice 2 commit.
+
+### 2-B Deferred Real External Providers
+
+- 状态：deferred_external
+- 父条目：2
+- 来源：Slice 2 introduces provider interfaces and local mock payment flows but real payment/email/OAuth/billing integrations require external accounts and human configuration.
+- 目标：record human-dependent integrations so they do not block the unattended buildout.
+- 范围：future `web-control` provider implementations and deployment configuration.
+- 非目标：do not call real payment processors, email/SMS providers, OAuth providers, invoice/tax systems, or fraud/risk APIs in Slice 2.
+- 外部依赖：real payment account, subscription/billing provider, invoice/tax setup, email provider, OAuth app credentials, third-party risk/analytics credentials, production secrets.
+- mock 策略：current Slice 2 uses `PaymentProvider` plus explicitly injected `MockPaymentProvider` for tests/dev. Future real providers replace that interface.
+- 先写的失败测试：not applicable for deferred external item.
+- 预期失败结果：not applicable.
+- 实现摘要：deferred.
+- 重构摘要：deferred.
+- 运行命令：not run.
+- 测试结果：not run.
+- subagent review：Tesla required this deferred item.
+- review 发现：mock provider must not be treated as production default.
+- review 后修复：recorded as deferred_external and `2-A` will require explicit provider injection.
+- 新增派生条目：none.
+- deferred human items：provide real provider accounts, API keys, webhook signing secrets, OAuth client config, invoice/tax setup, production secret management.
+- 剩余风险：until real providers exist, subscription/payment behavior is suitable only for local/dev/test.
+- 下一步：resume when human-provided production provider details are available.
+- commit：will be included in Slice 2 commit.
 
 ### 3 Machine, App Certificate, And Control Model
 
@@ -955,5 +1060,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Finish Slice 1 by rerunning review-fix checks, committing only `web-control/`, `go.work`, and the Slice 1 `WORKFLOW.md` updates, then recording the commit hash above.
-2. Start Slice 2: write failing auth/account/plan tests first, introduce provider interfaces for payment/email/OAuth-style external dependencies, and implement only local/mock providers behind those interfaces.
+1. Finish Slice 2 review fixes in `2-A`, rerun focused and broader checks, commit only Slice 2 files, then record the commit hash above.
+2. Start Slice 3: write failing machine/app certificate/control model tests before implementing machine ownership, app device/certificate metadata, revocation, bootstrap, and claim APIs.

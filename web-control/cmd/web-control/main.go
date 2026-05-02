@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log"
 	"net/http"
 	"os"
 
+	"github.com/lozzow/termx/web-control/internal/account"
 	"github.com/lozzow/termx/web-control/internal/httpapi"
 	"github.com/lozzow/termx/web-control/internal/store"
 )
@@ -29,7 +31,11 @@ func main() {
 	}
 
 	log.Printf("termx web-control listening on http://%s", addr)
-	if err := http.ListenAndServe(addr, httpapi.NewRouter(httpapi.Config{})); err != nil {
+	accounts, err := newAccountServiceFromEnv(ctx, db)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := http.ListenAndServe(addr, httpapi.NewRouter(httpapi.Config{Accounts: accounts})); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -48,4 +54,16 @@ func openStoreFromEnv(ctx context.Context) (*sql.DB, error) {
 		return nil, err
 	}
 	return db, nil
+}
+
+func newAccountServiceFromEnv(ctx context.Context, db *sql.DB) (*account.Service, error) {
+	_ = ctx
+	secret := os.Getenv("TERMX_WEB_CONTROL_TOKEN_SECRET")
+	if secret == "" {
+		return nil, errors.New("TERMX_WEB_CONTROL_TOKEN_SECRET is required")
+	}
+	return account.NewService(account.Config{
+		DB:     db,
+		Tokens: account.NewHMACTokenIssuer([]byte(secret)),
+	}), nil
 }

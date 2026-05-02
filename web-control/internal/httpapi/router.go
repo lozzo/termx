@@ -2,7 +2,11 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
+
+	"github.com/lozzow/termx/web-control/internal/account"
 )
 
 const defaultServiceName = "termx-web-control"
@@ -10,6 +14,7 @@ const defaultServiceName = "termx-web-control"
 type Config struct {
 	ServiceName string
 	Version     string
+	Accounts    *account.Service
 }
 
 type HealthResponse struct {
@@ -38,11 +43,116 @@ func NewRouter(cfg Config) http.Handler {
 			Transport: "signaling-control-only",
 		})
 	})
+	mux.HandleFunc("POST /api/v1/auth/register", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Accounts == nil {
+			writeError(w, http.StatusServiceUnavailable, "account_service_unavailable", "account service is not configured")
+			return
+		}
+		var req struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+			return
+		}
+		result, err := cfg.Accounts.Register(r.Context(), account.RegisterInput{Email: req.Email, Password: req.Password})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "register_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, result)
+	})
+	mux.HandleFunc("POST /api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Accounts == nil {
+			writeError(w, http.StatusServiceUnavailable, "account_service_unavailable", "account service is not configured")
+			return
+		}
+		var req struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+			return
+		}
+		result, err := cfg.Accounts.Login(r.Context(), account.LoginInput{Email: req.Email, Password: req.Password})
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "login_failed", "invalid email or password")
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
+	mux.HandleFunc("POST /api/v1/auth/refresh", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Accounts == nil {
+			writeError(w, http.StatusServiceUnavailable, "account_service_unavailable", "account service is not configured")
+			return
+		}
+		var req struct {
+			RefreshToken string `json:"refresh_token"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+			return
+		}
+		result, err := cfg.Accounts.Refresh(r.Context(), req.RefreshToken)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "refresh_failed", "invalid refresh token")
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
+	mux.HandleFunc("GET /api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Accounts == nil {
+			writeError(w, http.StatusServiceUnavailable, "account_service_unavailable", "account service is not configured")
+			return
+		}
+		token, err := bearerToken(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "missing_token", "bearer token is required")
+			return
+		}
+		result, err := cfg.Accounts.Me(r.Context(), token)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "invalid_token", "bearer token is invalid")
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
 	return mux
+}
+
+func decodeJSON(r *http.Request, out any) error {
+	if r.Body == nil {
+		return errors.New("missing body")
+	}
+	defer r.Body.Close()
+	return json.NewDecoder(r.Body).Decode(out)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, code string, message string) {
+	writeJSON(w, status, map[string]any{
+		"error": map[string]string{
+			"code":    code,
+			"message": message,
+		},
+	})
+}
+
+func bearerToken(r *http.Request) (string, error) {
+	header := strings.TrimSpace(r.Header.Get("Authorization"))
+	if header == "" {
+		return "", errors.New("missing authorization")
+	}
+	token, ok := strings.CutPrefix(header, "Bearer ")
+	if !ok || strings.TrimSpace(token) == "" {
+		return "", errors.New("invalid authorization")
+	}
+	return strings.TrimSpace(token), nil
 }

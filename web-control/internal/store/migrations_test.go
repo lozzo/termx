@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 
 	"github.com/lozzow/termx/web-control/internal/store"
@@ -30,6 +31,8 @@ func TestOpenAndMigrateSQLiteCreatesCoreTables(t *testing.T) {
 		"users",
 		"plans",
 		"subscriptions",
+		"sessions",
+		"payment_orders",
 		"machines",
 		"app_devices",
 		"app_certificates",
@@ -41,6 +44,30 @@ func TestOpenAndMigrateSQLiteCreatesCoreTables(t *testing.T) {
 	} {
 		assertTableExists(t, db, table)
 	}
+}
+
+func TestMigrateUpgradesSlice1SubscriptionSchema(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := store.OpenSQLite(ctx, "file:termx-web-control-upgrade-test?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	for _, stmt := range slice1Schema {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("create slice 1 schema: %v", err)
+		}
+	}
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("migrate slice 1 schema: %v", err)
+	}
+
+	assertColumnExists(t, db, "subscriptions", "provider_order_id")
+	assertTableExists(t, db, "sessions")
+	assertTableExists(t, db, "payment_orders")
 }
 
 func TestMigrateEnablesForeignKeys(t *testing.T) {
@@ -85,4 +112,55 @@ func assertTableExists(t *testing.T, db *sql.DB, table string) {
 	if name != table {
 		t.Fatalf("table name = %q, want %q", name, table)
 	}
+}
+
+func assertColumnExists(t *testing.T, db *sql.DB, table string, column string) {
+	t.Helper()
+
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		t.Fatalf("table_info %s: %v", table, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name string
+		var typ string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			t.Fatalf("scan table_info: %v", err)
+		}
+		if strings.EqualFold(name, column) {
+			return
+		}
+	}
+	t.Fatalf("column %s.%s not found", table, column)
+}
+
+var slice1Schema = []string{
+	`CREATE TABLE users (
+		id TEXT PRIMARY KEY,
+		email TEXT NOT NULL UNIQUE,
+		password_hash TEXT NOT NULL,
+		role TEXT NOT NULL DEFAULT 'user',
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+	)`,
+	`CREATE TABLE plans (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		monthly_relay_bytes INTEGER NOT NULL DEFAULT 0,
+		relay_session_limit INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+	)`,
+	`CREATE TABLE subscriptions (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		plan_id TEXT NOT NULL REFERENCES plans(id),
+		status TEXT NOT NULL,
+		current_period_start TEXT,
+		current_period_end TEXT,
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+	)`,
 }
