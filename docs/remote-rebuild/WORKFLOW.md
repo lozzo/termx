@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `2` Web auth/account/plan foundation, ready to commit.
-- Last updated: 2026-05-03T04:44:00+08:00.
+- Active todo: `2` Web auth/account/plan foundation committed; next todo `3`.
+- Last updated: 2026-05-03T04:50:00+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -19,10 +19,10 @@ Status file for unattended remote rebuild work. Update this file before starting
 | --- | --- | --- | --- | --- |
 | 0 | docs/workflow | Harden AGENTS and reset `WORKFLOW.md` for the web/control-plane + hub + daemon-agent buildout | completed | `41671b21` |
 | 1 | web-control | Create Web Control Plane skeleton with Go backend, SQLite migration/test helper, health API, and Vite React shell | completed | `e3f8541b` |
-| 2 | web-control/auth | Implement web auth/account/plan/subscription foundations with provider interfaces and mock payment | completed |  |
-| 2-A | web-control/auth-review | Fix Slice 2 review findings around SQLite upgrade migration, deterministic auth, atomic refresh, subscription expiry, mock default, provider ownership, and workflow staleness | completed |  |
-| 2-A-A | web-control/auth-self-review | Harden provider order identity and missing token issuer error paths found during local self-review | completed |  |
-| 2-A-B | web-control/auth-follow-up-review | Fix Slice 2 follow-up review findings around Me nil issuer, pending payment sync, and payment/subscription transaction atomicity | completed |  |
+| 2 | web-control/auth | Implement web auth/account/plan/subscription foundations with provider interfaces and mock payment | completed | `f04a92c1` |
+| 2-A | web-control/auth-review | Fix Slice 2 review findings around SQLite upgrade migration, deterministic auth, atomic refresh, subscription expiry, mock default, provider ownership, and workflow staleness | completed | `f04a92c1` |
+| 2-A-A | web-control/auth-self-review | Harden provider order identity and missing token issuer error paths found during local self-review | completed | `f04a92c1` |
+| 2-A-B | web-control/auth-follow-up-review | Fix Slice 2 follow-up review findings around Me nil issuer, pending payment sync, and payment/subscription transaction atomicity | completed | `f04a92c1` |
 | 2-B | external | Defer real payment/email/OAuth/billing/tax/risk integrations behind provider interfaces | deferred_external |  |
 | 3 | web-control/machines | Implement machine, app device, app certificate, revocation, bootstrap, and claim control model | pending |  |
 | 4 | public_p2p | Implement registered public P2P rendezvous with authenticated channel, offer/answer/candidate forwarding, TTL, rate limits, and STUN-only policy | pending |  |
@@ -111,7 +111,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：真实支付、发票/税务、邮件、OAuth provider、生产密钥。
 - 剩余风险：auth/token implementation is a first local skeleton; real production token rotation, password policy hardening, email verification, OAuth, billing provider, invoice/tax, and fraud/risk systems remain deferred external integrations.
 - 下一步：commit Slice 2, record commit hash, then start Slice 3 machine/app certificate/control model.
-- commit：待提交。
+- commit：`f04a92c1`
 
 ### 2-A Slice 2 Review Hardening
 
@@ -136,7 +136,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：future production auth/payment hardening remains outside this fix slice and is tracked by `2-B`.
 - 下一步：included in Slice 2 commit.
-- commit：will be included in Slice 2 commit.
+- commit：`f04a92c1`
 
 ### 2-A-A Provider And Token Boundary Self-Review Fix
 
@@ -161,7 +161,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：real provider webhook signature and idempotency remain deferred external/business hardening.
 - 下一步：included in Slice 2 commit.
-- commit：will be included in Slice 2 commit.
+- commit：`f04a92c1`
 
 ### 2-A-B Follow-Up Review Fixes
 
@@ -186,7 +186,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：real provider webhook signature/idempotency remains deferred external.
 - 剩余风险：real billing semantics and production-grade idempotent provider sync remain for future provider integration.
 - 下一步：included in Slice 2 commit.
-- commit：will be included in Slice 2 commit.
+- commit：`f04a92c1`
 
 ### 2-B Deferred Real External Providers
 
@@ -1060,5 +1060,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Finish Slice 2 review fixes in `2-A`, rerun focused and broader checks, commit only Slice 2 files, then record the commit hash above.
+1. Commit the Slice 2 workflow hash update.
 2. Start Slice 3: write failing machine/app certificate/control model tests before implementing machine ownership, app device/certificate metadata, revocation, bootstrap, and claim APIs.
