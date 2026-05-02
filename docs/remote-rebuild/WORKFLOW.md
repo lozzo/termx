@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: choose next slice after P3-E-C-B-K terminal resize ownership completion
-- Last updated: 2026-05-02T02:00:00+08:00
+- Active todo: P3-E-C-B-L fix embedded local xterm one-line viewport regression
+- Last updated: 2026-05-02T10:12:00+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -41,6 +41,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-I | remote-ui | Refactor embedded local web mobile terminal interaction shell with terminal-first navigation, terminal switcher sheet, pair sheet, virtual keybar, and keyboard-aware xterm handle | completed | `be748f93` |
 | P3-E-C-B-J | cli/local | Complete `termx remote` commands for implemented local-only remote management: enable/local-only, disable, info/show, pair, and open | completed | `dd5e1502` |
 | P3-E-C-B-K | remote-ui/core | Add terminal resize ownership and size-lock handling so local/mobile remote views can fit locally without stealing daemon PTY size | completed | `23539e7d` |
+| P3-E-C-B-L | remote-ui | Fix embedded local xterm viewport sizing so the terminal does not stay at a single visible row after mobile/local layout settles | in_progress |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -296,6 +297,19 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Broader tests after implementation and review fix: `cd remote-ui && npm test` passed 105 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed and regenerated embedded assets; `cd termx-core && go test ./...` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
 - Code review: `Maxwell` confirmed no workspace/tab/pane remote public model drift, no anonymous/free/local TURN credential issuance, no app access to machine private key material, and no WebRTC transport details leaking into UI/business components. Its high finding on unscoped request-path resize bypass was fixed with owner-attachment enforcement and regression coverage.
 - Result: completed. Commit: `23539e7d`.
+
+### P3-E-C-B-L xterm viewport height regression
+
+- Active slice: fix user-reported embedded local xterm behavior where the terminal only shows one visible line even though the local WebRTC/protocol path is connected.
+- Tests written before implementation: `remote-ui/src/Terminal.test.tsx` regressions proving the terminal root/container expose full-height/min-height layout classes and xterm performs a delayed post-open fit after the initial layout reports one row.
+- Expected failing tests: `cd remote-ui && npm test -- --run src/Terminal.test.tsx` should fail before implementation because `Terminal.tsx` does not force full-height/min-height containment and only performs immediate fit calls, so an early one-row measurement can persist until a resize observer fires.
+- Planned scope: keep the fix inside shared `Terminal.tsx` and its tests; do not change terminal protocol, resize ownership policy, WebRTC transport boundaries, machine private key handling, TURN credentials, or public model names. Existing uncommitted `remote-ui/src/LocalRemoteApp.tsx` mobile header/navigation changes are treated as external work and will not be overwritten by this todo.
+- Actual failing tests before implementation: `cd remote-ui && npm test -- --run src/Terminal.test.tsx` failed as expected because the terminal root class lacked `h-full`/`min-h-0` and the simulated early one-row xterm measurement persisted at `rows = 1`.
+- Implementation notes: `Terminal.tsx` now makes the terminal root/container full-height, min-height-zero, and overflow-hidden with Tailwind utilities; xterm fit is scheduled again after mount/open via a double `requestAnimationFrame`, and visual viewport delayed fit timers are cleaned up on unmount. Resize sending remains gated by `resizeControl.canResize`, so follower local/mobile views can fit visually without resizing the daemon PTY.
+- Generated assets: embedded localweb static assets were regenerated from a temporary clean worktree containing only the `Terminal.tsx`/`Terminal.test.tsx` changes, so the existing uncommitted `remote-ui/src/LocalRemoteApp.tsx` mobile header/navigation change was not included in this todo's bundle. The JS asset changed from `index-CU4ZmuiR.js` to `index-KYAdvw6r.js`; CSS stayed on `index-CHUlPGQj.css`.
+- Focused tests after implementation: `cd remote-ui && npm test -- --run src/Terminal.test.tsx` passed 12 tests; `cd remote-ui && npm test -- --run src/Terminal.test.tsx src/LocalRemoteApp.test.tsx` passed 18 tests; clean-worktree `cd remote-ui && npm test -- --run src/Terminal.test.tsx` passed.
+- Broader tests after implementation: clean-worktree `cd remote-ui && npm test` passed 106 tests; clean-worktree `cd remote-ui && npm run typecheck` passed; clean-worktree `cd remote-ui && npm run build:localweb` passed with only the existing Vite large chunk warning; clean-worktree `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; clean-worktree `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
+- Code review: `Peirce` found no issue with the core xterm delayed-fit fix, resize ownership gating, transport boundaries, TURN credential handling, machine private key handling, or workspace/tab/pane public-model drift. It found a medium scope issue that the existing uncommitted `LocalRemoteApp.tsx` mobile header/nav changes would pollute this todo's embedded bundle; fixed by regenerating assets from a temporary clean worktree that only contains the xterm fix. It also found this workflow entry stale; fixed by this update.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 

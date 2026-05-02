@@ -53,6 +53,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const lastSentResizeRef = useRef<{ cols: number; rows: number } | null>(null)
   const isOpenRef = useRef(false)
   const canSendResizeRef = useRef(false)
+  const fitFrameRef = useRef<number | null>(null)
+  const fitDelayRef = useRef<number | null>(null)
   const modifierStateRef = useRef<TerminalModifierState | undefined>(undefined)
   const onModifierStateChangeRef = useRef<((state: TerminalModifierState) => void) | undefined>(undefined)
   const onCursorMoveRef = useRef<(() => void) | undefined>(undefined)
@@ -79,6 +81,23 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     session.sendResize(dimensions.cols, dimensions.rows)
   }, [session.sendResize])
 
+  const scheduleFit = useCallback(() => {
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+      fitAndMaybeSendResize()
+      return
+    }
+    if (fitFrameRef.current !== null) {
+      window.cancelAnimationFrame(fitFrameRef.current)
+      fitFrameRef.current = null
+    }
+    fitFrameRef.current = window.requestAnimationFrame(() => {
+      fitFrameRef.current = window.requestAnimationFrame(() => {
+        fitFrameRef.current = null
+        fitAndMaybeSendResize()
+      })
+    })
+  }, [fitAndMaybeSendResize])
+
   useImperativeHandle(ref, () => ({
     sendInput: session.sendInput,
     sendResize: session.sendResize,
@@ -90,7 +109,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       xtermRef.current?.blur()
       containerRef.current?.querySelector('textarea')?.blur()
     },
-    fit: fitAndMaybeSendResize,
+    fit: () => {
+      fitAndMaybeSendResize()
+      scheduleFit()
+    },
     pasteText: (text: string) => {
       const isMultiline = text.includes('\n') || text.includes('\r')
       session.sendInput(isMultiline ? `\x1b[200~${text}\x1b[201~` : text)
@@ -117,7 +139,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
     },
     getBufferType: () => xtermRef.current?.buffer.active.type ?? 'normal',
-  }), [fitAndMaybeSendResize, session.reattach, session.sendInput, session.sendResize])
+  }), [fitAndMaybeSendResize, scheduleFit, session.reattach, session.sendInput, session.sendResize])
 
   useEffect(() => {
     modifierStateRef.current = modifierState
@@ -200,11 +222,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }) ?? { dispose() {} }
 
     fitAndMaybeSendResize()
+    scheduleFit()
 
     let resizeObserver: ResizeObserver | null = null
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => {
-        fitAndMaybeSendResize()
+        scheduleFit()
       })
       resizeObserver.observe(container)
     }
@@ -228,7 +251,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
 
       // Small delay to let browser finish animating keyboard
-      setTimeout(fitAndMaybeSendResize, 100)
+      if (fitDelayRef.current !== null) window.clearTimeout(fitDelayRef.current)
+      fitDelayRef.current = window.setTimeout(() => {
+        fitDelayRef.current = null
+        scheduleFit()
+      }, 100)
     }
 
     if (window.visualViewport) {
@@ -241,6 +268,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         window.visualViewport.removeEventListener('resize', handleVisualViewportResize)
         window.visualViewport.removeEventListener('scroll', handleVisualViewportResize)
       }
+      if (fitFrameRef.current !== null) {
+        window.cancelAnimationFrame(fitFrameRef.current)
+        fitFrameRef.current = null
+      }
+      if (fitDelayRef.current !== null) {
+        window.clearTimeout(fitDelayRef.current)
+        fitDelayRef.current = null
+      }
       resizeObserver?.disconnect()
       dataDisposable.dispose()
       cursorDisposable.dispose()
@@ -252,15 +287,16 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       lastSentResizeRef.current = null
       isOpenRef.current = false
     }
-  }, [fitAndMaybeSendResize, session.sendInput])
+  }, [fitAndMaybeSendResize, scheduleFit, session.sendInput])
 
   useEffect(() => {
     isOpenRef.current = isOpen
     if (!isOpen) return
     fitAndMaybeSendResize()
+    scheduleFit()
     xtermRef.current?.focus()
     onReady?.()
-  }, [fitAndMaybeSendResize, isOpen, onReady])
+  }, [fitAndMaybeSendResize, isOpen, onReady, scheduleFit])
 
   useEffect(() => {
     const term = xtermRef.current
@@ -281,7 +317,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
   return (
     <section
-      className={`relative flex flex-col ${className || ''}`}
+      className={`relative flex h-full min-h-0 w-full flex-col overflow-hidden ${className || ''}`}
       data-machine-id={machineId}
       data-terminal-id={terminalId}
       data-phase={session.snapshot.phase}
@@ -290,7 +326,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       <div
         ref={containerRef}
         aria-label="Terminal output"
-        className="absolute inset-0 p-2 md:p-3 xterm-wrapper outline-none"
+        className="absolute inset-0 min-h-0 overflow-hidden p-2 md:p-3 xterm-wrapper outline-none"
         style={{ overscrollBehavior: 'none', touchAction: 'pan-y pan-x' }}
         role="application"
         tabIndex={0}

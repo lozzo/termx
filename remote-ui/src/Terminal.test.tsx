@@ -107,12 +107,15 @@ const xtermMocks = vi.hoisted(() => {
   class FakeFitAddon {
     static instances: FakeFitAddon[] = []
     static nextDimensions: { cols: number; rows: number } | undefined = { cols: 101, rows: 31 }
+    static nextDimensionsSequence: Array<{ cols: number; rows: number } | undefined> | undefined
 
     fitCalls = 0
     dimensions: { cols: number; rows: number } | undefined
+    private readonly dimensionsSequence: Array<{ cols: number; rows: number } | undefined> | undefined
 
     constructor() {
       this.dimensions = FakeFitAddon.nextDimensions
+      this.dimensionsSequence = FakeFitAddon.nextDimensionsSequence?.slice()
       FakeFitAddon.instances.push(this)
     }
 
@@ -121,6 +124,9 @@ const xtermMocks = vi.hoisted(() => {
     }
 
     proposeDimensions(): { cols: number; rows: number } | undefined {
+      if (this.dimensionsSequence && this.dimensionsSequence.length > 0) {
+        return this.dimensionsSequence.shift()
+      }
       return this.dimensions
     }
   }
@@ -148,18 +154,25 @@ class TestResizeObserver {
 
 describe('Terminal', () => {
   const originalResizeObserver = globalThis.ResizeObserver
+  const originalRequestAnimationFrame = window.requestAnimationFrame
+  const originalCancelAnimationFrame = window.cancelAnimationFrame
 
   beforeEach(() => {
     xtermMocks.FakeXTerm.instances.length = 0
     xtermMocks.FakeFitAddon.instances.length = 0
     xtermMocks.FakeFitAddon.nextDimensions = { cols: 101, rows: 31 }
+    xtermMocks.FakeFitAddon.nextDimensionsSequence = undefined
     TestResizeObserver.instances.length = 0
     globalThis.ResizeObserver = TestResizeObserver as unknown as typeof ResizeObserver
+    window.requestAnimationFrame = ((callback: FrameRequestCallback) => window.setTimeout(() => callback(performance.now()), 0)) as typeof window.requestAnimationFrame
+    window.cancelAnimationFrame = ((handle: number) => window.clearTimeout(handle)) as typeof window.cancelAnimationFrame
   })
 
   afterEach(() => {
     cleanup()
     globalThis.ResizeObserver = originalResizeObserver
+    window.requestAnimationFrame = originalRequestAnimationFrame
+    window.cancelAnimationFrame = originalCancelAnimationFrame
   })
 
   it('uses terminalId as the public component identity and renders an xterm surface', async () => {
@@ -174,9 +187,13 @@ describe('Terminal', () => {
     )
 
     expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-1')
+    expect(screen.getByTestId('termx-terminal').className).toContain('h-full')
+    expect(screen.getByTestId('termx-terminal').className).toContain('min-h-0')
     await waitFor(() => expect(transport.openedLabels).toEqual(['terminal:terminal-1']))
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
-    expect(screen.getByLabelText('Terminal output').querySelector('.xterm-screen')).not.toBeNull()
+    const terminalOutput = screen.getByLabelText('Terminal output')
+    expect(terminalOutput.className).toContain('overflow-hidden')
+    expect(terminalOutput.querySelector('.xterm-screen')).not.toBeNull()
   })
 
   it('writes streaming terminal output chunks into xterm before a snapshot arrives', async () => {
@@ -344,6 +361,27 @@ describe('Terminal', () => {
 
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances[0]?.cols).toBe(120))
     expect(xtermMocks.FakeXTerm.instances[0]?.rows).toBe(40)
+    expect(transport.sentResize('terminal-1')).toBeUndefined()
+  })
+
+  it('re-fits after xterm opens so an early one-row measurement does not persist', async () => {
+    const transport = createMockTerminalTransport()
+    xtermMocks.FakeFitAddon.nextDimensionsSequence = [
+      { cols: 80, rows: 1 },
+      { cols: 80, rows: 1 },
+      { cols: 101, rows: 31 },
+    ]
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        transport={transport}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances[0]?.rows).toBe(31))
+    expect(xtermMocks.FakeFitAddon.instances[0]?.fitCalls).toBeGreaterThanOrEqual(3)
     expect(transport.sentResize('terminal-1')).toBeUndefined()
   })
 
