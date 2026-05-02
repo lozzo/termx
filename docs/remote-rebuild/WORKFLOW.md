@@ -17,7 +17,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 | ID | Phase | Todo | Status | Commit |
 | --- | --- | --- | --- | --- |
-| 0 | docs/workflow | Harden AGENTS and reset `WORKFLOW.md` for the web/control-plane + hub + daemon-agent buildout | completed |  |
+| 0 | docs/workflow | Harden AGENTS and reset `WORKFLOW.md` for the web/control-plane + hub + daemon-agent buildout | completed | `41671b21` |
 | 1 | web-control | Create Web Control Plane skeleton with Go backend, SQLite migration/test helper, health API, and Vite React shell | pending |  |
 | 2 | web-control/auth | Implement web auth/account/plan/subscription foundations with provider interfaces and mock payment | pending |  |
 | 3 | web-control/machines | Implement machine, app device, app certificate, revocation, bootstrap, and claim control model | pending |  |
@@ -55,7 +55,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：暂无。
 - 剩余风险：现有工作树已有用户改动，后续 commit 必须只提交本任务相关文件，避免带入无关 dirty 文件。
 - 下一步：complete Slice 0 after final workflow check, then continue Slice 1 web-control skeleton.
-- commit：待提交，提交后用 follow-up workflow commit 记录 hash。
+- commit：`41671b21`
 
 ### 1 Web Control Plane Skeleton
 
