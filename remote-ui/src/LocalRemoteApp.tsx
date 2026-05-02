@@ -32,6 +32,7 @@ export interface LocalRemoteAppProps {
 
 type MobileSheet = 'terminals' | 'pair' | null
 type PanelMode = 'terminal' | 'files'
+type AppPage = 'terminal-list' | 'terminal'
 
 export function LocalRemoteApp({ api, createTransport, className, pair }: LocalRemoteAppProps) {
   const [machine, setMachine] = useState<Machine | null>(null)
@@ -42,6 +43,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
   const [connectedTransport, setConnectedTransport] = useState<(PeerTransport & TerminalTransport) | null>(null)
   const [transportRetryToken, setTransportRetryToken] = useState(0)
 
+  const [page, setPage] = useState<AppPage>('terminal-list')
   const [panelMode, setPanelMode] = useState<PanelMode>('terminal')
   const [mobileSheet, setMobileSheet] = useState<MobileSheet>(null)
   const [modifierState, setModifierState] = useState<TerminalModifierState>({ ctrl: 'off', alt: 'off' })
@@ -56,7 +58,6 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
         if (cancelled) return
         setMachine(status.machine)
         setTerminals(terminalList)
-        setActiveTerminalId((current) => current ?? terminalList[0]?.terminalId ?? null)
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err))
       }
@@ -68,7 +69,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
   }, [api])
 
   useEffect(() => {
-    if (!machine || !activeTerminalId) {
+    if (!machine || !activeTerminalId || page !== 'terminal') {
       setConnectedTransport(null)
       return
     }
@@ -99,7 +100,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
       cancelled = true
       void transport.disconnect()
     }
-  }, [activeTerminalId, createTransport, machine, transportRetryToken])
+  }, [activeTerminalId, createTransport, machine, page, transportRetryToken])
 
   const openTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (machine && intent.machineId !== machine.machineId) {
@@ -107,6 +108,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
       return
     }
     setActiveTerminalId(intent.terminalId)
+    setPage('terminal')
     setPanelMode('terminal')
     setMobileSheet(null)
   }, [machine])
@@ -117,6 +119,13 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
     setTransportRetryToken((current) => current + 1)
     setMobileSheet(null)
     setPanelMode('terminal')
+  }, [])
+
+  const showTerminalListPage = useCallback(() => {
+    setPage('terminal-list')
+    setPanelMode('terminal')
+    setMobileSheet(null)
+    terminalRef.current?.adjustInputPosition(0)
   }, [])
 
   const openFiles = useCallback(() => {
@@ -140,6 +149,65 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
 
   const activeTerminal = terminals.find((terminal) => terminal.terminalId === activeTerminalId)
   const activeTerminalTitle = activeTerminal?.title || activeTerminal?.command || activeTerminalId || 'Terminal'
+
+  const renderTerminalListPage = () => {
+    if (!machine) return null
+
+    return (
+      <main className="relative flex min-h-0 flex-1 flex-col bg-zinc-50" data-testid="termx-terminal-list-page">
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <Monitor className="h-4 w-4 shrink-0 text-zinc-500" />
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-semibold text-zinc-900">{machine.name || machine.machineId}</h1>
+              <p className="truncate text-[11px] text-zinc-500">{machine.machineId}</p>
+            </div>
+          </div>
+          {pair ? (
+            <button
+              type="button"
+              aria-label="Pair device"
+              className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
+              onClick={() => setMobileSheet('pair')}
+            >
+              <KeyRound className="h-5 w-5" />
+            </button>
+          ) : null}
+        </header>
+        {error ? (
+          <div className="m-3 shrink-0 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 shadow-sm" role="alert">
+            {error}
+          </div>
+        ) : null}
+        {pairStatus ? (
+          <div className="mx-3 mt-3 shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 shadow-sm" role="status">
+            {pairStatus}
+          </div>
+        ) : null}
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Terminals</h2>
+          <TerminalList
+            machineId={machine.machineId}
+            terminals={terminals}
+            onOpenTerminal={openTerminal}
+            activeTerminalId={activeTerminalId ?? undefined}
+          />
+        </div>
+
+        {mobileSheet === 'pair' && pair ? (
+          <MobileSheetPanel title="Pair device" testId="termx-pair-sheet" onClose={() => setMobileSheet(null)}>
+            <LocalPairPanel
+              api={pair.api}
+              storage={pair.storage}
+              crypto={pair.crypto}
+              appName={pair.appName}
+              onPaired={handlePaired}
+            />
+          </MobileSheetPanel>
+        ) : null}
+      </main>
+    )
+  }
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.visualViewport) {
@@ -197,10 +265,22 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
 
   return (
     <div className={`flex h-[100dvh] w-full flex-col overflow-hidden bg-zinc-50 font-sans text-zinc-900 md:flex-row ${className || ''}`} data-machine-id={machine.machineId}>
+      {page === 'terminal' ? (
       <aside className="hidden w-72 shrink-0 flex-col border-r border-zinc-200 bg-zinc-100 md:flex">
         <div className="flex h-12 shrink-0 items-center border-b border-zinc-200 px-4">
           <Monitor className="mr-2 h-4 w-4 text-zinc-500" />
           <h1 className="text-sm font-semibold text-zinc-800 truncate">{machine.machineId}</h1>
+        </div>
+        <div className="shrink-0 border-b border-zinc-200 bg-zinc-50 p-3">
+          <button
+            type="button"
+            aria-label="Show terminal list"
+            className="flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm active:bg-zinc-100"
+            onClick={showTerminalListPage}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Terminal list
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto p-3">
           <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Terminals</h2>
@@ -225,7 +305,9 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
           </div>
         ) : null}
       </aside>
+      ) : null}
 
+      {page === 'terminal-list' ? renderTerminalListPage() : (
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-zinc-200 bg-white px-2 md:hidden">
           <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -233,7 +315,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
               type="button"
               aria-label="Back to terminal list"
               className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
-              onClick={() => setMobileSheet('terminals')}
+              onClick={showTerminalListPage}
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
@@ -366,6 +448,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
           </MobileSheetPanel>
         ) : null}
       </main>
+      )}
     </div>
   )
 }

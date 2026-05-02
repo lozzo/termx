@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-E-C-B-N reclaim mobile terminal height with tgent-style header actions
-- Last updated: 2026-05-02T15:17:00+08:00
+- Active todo: P3-E-C-B-O add local embedded terminal list page before terminal page
+- Last updated: 2026-05-02T16:00:00+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -44,6 +44,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-L | remote-ui | Fix embedded local xterm viewport sizing so the terminal does not stay at a single visible row after mobile/local layout settles | completed | `134c35f7` |
 | P3-E-C-B-M | localweb | Re-embed current `remote-ui` local web frontend assets into the `termx` binary static bundle | completed | `fc5e92aa` |
 | P3-E-C-B-N | remote-ui | Rework mobile local web terminal chrome so terminal height is maximized, terminal list has a clear back button, and files/pair actions move into compact header actions | completed | `0be902f9` |
+| P3-E-C-B-O | remote-ui | Add a true local embedded terminal list page so local web opens to terminals first and only enters the terminal page after selecting an item | in_progress |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -340,6 +341,22 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Code review: `Halley` found no issues. It confirmed the mobile header exposes `Back to terminal list`, terminal title, and compact icon actions; terminal panel remains `flex-1`; Files is an overlay; keybar visibility restores in terminal mode; embedded assets match `remote-ui/dist`; and there is no workspace/tab/pane/session public model drift, TURN credential change, machine private key exposure, or UI transport-boundary leakage.
 - Result: completed. Commit: `0be902f9`.
 
+### P3-E-C-B-O local terminal list page
+
+- Active slice: add the missing local embedded terminal list page. Local web should open directly to the terminal list page, not auto-enter the first terminal; selecting a terminal list item should connect and navigate to the terminal page. Mobile app machine list remains deferred per user direction.
+- Tests written before implementation: planned `remote-ui/src/LocalRemoteApp.test.tsx` regressions proving initial local web render shows a terminal list page, does not connect/open a terminal until a terminal item is clicked, then enters the terminal page and Back to terminal list returns to the list page.
+- Expected failing tests: `cd remote-ui && npm test -- --run src/LocalRemoteApp.test.tsx` should fail before implementation because `LocalRemoteApp` currently auto-selects `terminalList[0]`, connects immediately, and renders the terminal page on first load.
+- Planned scope: keep changes in `LocalRemoteApp.tsx` and focused tests, then rebuild embedded localweb assets. Do not add mobile app machine pages yet, and do not change protocol, pairing primitives, TURN behavior, app/machine key handling, resize ownership, or transport interfaces.
+- Actual failing tests before implementation: `cd remote-ui && npm test -- --run src/LocalRemoteApp.test.tsx` failed as expected because `termx-terminal-list-page` was missing, the mocked terminal was already mounted, and `createTransport` had been called before any terminal-list item click. After the list-first implementation, two old setup-error tests still failed because they expected immediate connection errors on first render; those tests were corrected to click `Open zsh` first, matching the new delayed-connect product behavior.
+- Implementation notes: `LocalRemoteApp` now has explicit page state for `terminal-list` vs `terminal`, no longer auto-selects `terminalList[0]`, renders a true list page with machine header and `TerminalList`, enters the terminal page only from `openTerminal`, and returns via `Back to terminal list`. Desktop terminal sidebar is only rendered on the terminal page, list-page Pair opens the same pair sheet, and the transport lifecycle is gated by `page === "terminal"` so returning to the list disconnects the active local transport instead of keeping a hidden terminal connection alive.
+- Focused tests after implementation: `cd remote-ui && npm test -- --run src/LocalRemoteApp.test.tsx` passed 6 tests; `cd remote-ui && npm run typecheck` passed.
+- Review regression tests: after self-review, added coverage that returning from the terminal page to the list disconnects the active transport, and that completing Pair from the list page after a previous terminal visit keeps the app on the list page without auto-reconnecting to the hidden old terminal. The pair/list regression failed before the fix because pair success used stale `activeTerminalId` to return to the terminal page.
+- Review fixes: transport creation is now gated by `page === "terminal"`; pair success no longer changes pages; the desktop terminal sidebar now includes an explicit `Show terminal list` control because the mobile `Back to terminal list` button is hidden at desktop widths. Tests now prove both the mobile header back control exists and the desktop list control returns to the true terminal list page.
+- Code review: `Harvey` found a medium issue where desktop terminal pages had no visible way back to the true terminal list page; the existing test clicked a `md:hidden` mobile button that jsdom still exposed. Fixed with the desktop `Show terminal list` sidebar action and updated tests. The review found no workspace/tab/pane/session public model drift, TURN credential exposure, machine private key exposure, or transport-boundary leak.
+- Final focused tests after review fix: `cd remote-ui && npm test -- --run src/LocalRemoteApp.test.tsx` passed 6 tests; `cd remote-ui && npm run typecheck` passed.
+- Final broader tests after review fix: `cd remote-ui && npm test` passed 106 tests; `cd remote-ui && npm run build:localweb` passed with only the existing Vite large chunk warning and regenerated `termx-core/internal/remote/localweb/static/assets/index-DjSTbu7Y.js`; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestStartRemoteLocalWebServesEmbeddedPageAndStatus|TestRemoteLocal'` passed; `git diff --check` passed. `remote-ui/dist` and `termx-core/internal/remote/localweb/static` were verified byte-identical for `index.html`, `index-BwdcQlsw.css`, and `index-DjSTbu7Y.js`.
+- Result: completed. Commit: pending.
+
 ### P3-F anonymous rendezvous HTTP adapter/service
 
 - Active slice: HTTP adapter/service for the existing anonymous rendezvous store.
@@ -546,6 +563,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Peirce` (`019de66e-8d86-7192-a315-dcbae118f4ec`): P3-E-C-B-L code review for xterm viewport delayed fit, resize ownership gating, generated localweb assets, and scope drift. Findings: core xterm fix was sound; medium scope issue that unrelated `LocalRemoteApp.tsx` changes would pollute generated assets. Result: regenerated assets from a clean worktree containing only the xterm fix.
 - `Pasteur` (`019de772-b556-7f81-9507-c8fa318ec7a7`): P3-E-C-B-M code review for current frontend re-embed, mobile header/navigation adjustment, accessibility labels, generated assets, and remote rebuild boundaries. Findings: no issues; generated static assets match `remote-ui/dist`, command names are covered, and no transport/security/model drift was found.
 - `Halley` (`019de798-a39e-72d2-881f-3af1b5cbda73`): P3-E-C-B-N code review for mobile terminal chrome height reclaim, terminal-list back button, files overlay behavior, keybar visibility, generated assets, and remote rebuild boundaries. Findings: no issues; confirmed terminal panel remains `flex-1`, files is an overlay, embedded assets match `remote-ui/dist`, and no transport/security/model drift was found.
+- `Harvey` (`019de7ab-0a73-7233-82af-8f6a183d792b`): P3-E-C-B-O code review for the new local embedded terminal list page, delayed terminal connection, list/terminal navigation, generated assets, and remote rebuild boundaries. Finding: desktop terminal pages lacked a visible path back to the true terminal list because the only back button was mobile-only. Result: fixed with a desktop sidebar `Show terminal list` action and regression coverage.
 
 ## Code Review Log
 
@@ -571,6 +589,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P3-E-C-B-H review complete after staged asset fix. Embedded local web terminal rendering now uses xterm.js behind `TerminalTransport`, TailwindCSS is wired as the frontend styling system, generated localweb assets are tracked, and real Chrome CDP smoke proved pair -> WebRTC -> xterm input/output -> file list on the rebuilt daemon. No workspace/tab/pane public model, TURN relay credentials, machine private key exposure, or UI/browser transport boundary leak was introduced. Residual risk: richer tgent mobile-native terminal interactions such as custom selection/keyboard composition/search remain future UI polish.
 - P3-E-C-B-I review complete after Gibbs fixes. The embedded local web shell is now terminal-first on mobile, keeps terminal/file/pair interactions behind existing interfaces, persists the xterm instance across modifier/callback state changes, and makes `FileManager` layout self-contained. No workspace/tab/pane public model, TURN relay credentials, machine private key exposure, or UI/business transport boundary leak was introduced. Residual risk: advanced mobile-native terminal gestures such as selection handles, predictive keyboard accessory behavior, search, and alternate-screen-specific controls remain future UI polish before app migration.
 - P3-E-C-B-K review complete after Maxwell fix. Remote attach now carries resize ownership metadata, embedded/mobile local web defaults to follower local-fit behavior, raw and request-path resize require owner control, observers and size-locked terminals cannot resize, and generated localweb assets match the shared UI source. No workspace/tab/pane public model, TURN relay credentials, machine private key exposure, or UI/browser transport boundary leak was introduced. Residual risk: explicit owner-acquire/release UI is still future work; current local/mobile path conservatively defaults to follower.
+- P3-E-C-B-O review complete after Harvey fix. Embedded local web now opens to a true terminal list page, does not create a local transport until a terminal item is selected, disconnects when returning to the list, supports both mobile and desktop return-to-list controls, and keeps Pair on the current page. No workspace/tab/pane/session public model, TURN relay credentials, machine private key exposure, or UI/browser transport boundary leak was introduced. Residual risk: a real-browser click smoke would still be useful for responsive Tailwind visibility, but unit tests now cover both named return controls and generated assets are synchronized.
 
 ## Deferred Human Decisions And Placeholders
 
@@ -589,8 +608,9 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Keeping TermX UI close enough to tgent for future synchronization conflicts with replacing tgent's web-like interaction state. The boundary is explicit: copy structure/components/adapters where possible, but normalize messages and lifecycle through TermX reducers/queues.
 - P3-E browser adapter currently translates shared `GET /files/list` and `GET /files/stat` requests to the existing Go/tgent-style `POST` data-channel file API. Browser smoke in P3-E-C-B must validate that this adapter behavior works against the embedded daemon.
 - P3-E-C-B-K keeps local/mobile views from stealing daemon PTY size, but explicit resize owner acquisition/release UI remains a future product slice. Until that exists, embedded local web requests follower resize policy by default.
+- P3-E-C-B-O covers local embedded web list-first navigation with unit tests and embedded asset tests, but not a live browser viewport smoke for desktop/mobile Tailwind media visibility.
 
 ## Next Exact Action
 
-1. Choose the next UI slice: explicit resize owner acquisition/release controls or advanced mobile-native terminal gestures before migrating shared components into the mobile app.
-2. Keep request-path resize owner enforcement in mind for any future CLI/API resize command surfaces.
+1. Commit P3-E-C-B-O and then update this workflow entry with the commit hash.
+2. Choose the next UI slice: explicit resize owner acquisition/release controls or advanced mobile-native terminal gestures before migrating shared components into the mobile app.

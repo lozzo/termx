@@ -54,10 +54,13 @@ describe('LocalRemoteApp', () => {
 
     render(<LocalRemoteApp api={api} createTransport={createTransport} />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
+    expect(screen.queryByTestId('termx-terminal')).toBeNull()
+    expect(createTransport).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
 
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
+    expect(screen.queryByTestId('termx-terminal-list-page')).toBeNull()
     expect(screen.getByTestId('termx-terminal-list').getAttribute('data-machine-id')).toBe('machine-local')
     expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-1')
     expect(screen.queryByTestId('termx-file-manager')).toBeNull()
@@ -84,13 +87,19 @@ describe('LocalRemoteApp', () => {
         '/files/list': { path: '/', parent: '', total: 0, entries: [] },
       }, machineId, terminalId)),
     )
+    const pairApi = createMockLocalAgentApi()
+    pairApi.pair = vi.fn(async () => ({
+      machineId: 'machine-local',
+      appCertificate: '{"payload":{"machine_id":"machine-local","app_public_key":"AQIDBA=="},"signature":"machine-sig"}',
+      expiresAt: '2026-05-01T07:00:00Z',
+    }))
 
     render(
       <LocalRemoteApp
         api={api}
         createTransport={createTransport}
         pair={{
-          api: createMockLocalAgentApi(),
+          api: pairApi,
           storage: createLocalAppIdentityStore(new MemoryStorage()),
           crypto: createMockAppCrypto(),
           appName: 'TermX Local Web',
@@ -98,14 +107,22 @@ describe('LocalRemoteApp', () => {
       />,
     )
 
-    await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
     expect(screen.queryByText('Config')).toBeNull()
+    expect(screen.getByText('Local Mac')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy()
+    expect(screen.queryByTestId('termx-mobile-keybar')).toBeNull()
+    expect(createTransport).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
     expect(screen.getByTestId('termx-mobile-keybar')).toBeTruthy()
 
     await userEvent.click(screen.getByRole('button', { name: 'Ctrl' }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal').getAttribute('data-modifier-state')).toBe('once:off'))
 
     expect(screen.getByRole('button', { name: /back to terminal list/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /show terminal list/i })).toBeTruthy()
     expect(screen.getByTestId('termx-terminal-title').textContent).toContain('zsh')
     expect(screen.queryByRole('navigation', { name: /mobile terminal navigation/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /^console$/i })).toBeNull()
@@ -121,13 +138,22 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.queryByTestId('termx-file-overlay')).toBeNull())
     expect(screen.getByTestId('termx-mobile-keybar').className.split(/\s+/)).not.toContain('hidden')
 
-    await userEvent.click(screen.getByRole('button', { name: /back to terminal list/i }))
-    expect(screen.getByTestId('termx-terminal-switcher-sheet')).toBeTruthy()
-    expect(screen.getByTestId('termx-terminal-switcher-sheet').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
+    await userEvent.click(screen.getByRole('button', { name: /show terminal list/i }))
+    expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy()
+    expect(screen.getByTestId('termx-terminal-list-page').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
+    await waitFor(() => expect(transports[0]?.disconnectCalls).toBe(1))
 
     await userEvent.click(screen.getByRole('button', { name: /pair device/i }))
     expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy()
     expect(screen.getByTestId('termx-pair-sheet').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
+
+    await userEvent.type(screen.getByLabelText('Pair ID'), 'pair-1')
+    await userEvent.type(screen.getByLabelText('Pair secret'), 'secret-1')
+    await userEvent.click(screen.getByRole('button', { name: 'Pair' }))
+    await waitFor(() => expect(screen.getByText('Paired with machine-local')).toBeTruthy())
+    expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy()
+    expect(screen.queryByTestId('termx-terminal')).toBeNull()
+    expect(createTransport).toHaveBeenCalledTimes(1)
   })
 
   it('keeps the app shell driven by LocalAgentApi and transport interfaces only', () => {
@@ -153,7 +179,11 @@ describe('LocalRemoteApp', () => {
 
     render(<LocalRemoteApp api={createMockLocalAgentApi()} createTransport={createTransport} />)
 
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
+    expect(createTransport).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('local app certificate is required'))
+    expect(createTransport).toHaveBeenCalledTimes(1)
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane/i)
   })
 
@@ -177,6 +207,8 @@ describe('LocalRemoteApp', () => {
       />,
     )
 
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByRole('button', { name: /pair device/i })).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /pair device/i }))
     await waitFor(() => expect(screen.getByTestId('termx-local-pair-panel')).toBeTruthy())
@@ -215,6 +247,9 @@ describe('LocalRemoteApp', () => {
       />,
     )
 
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
+    expect(createTransport).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('local app certificate is required'))
     await waitFor(() => expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy())
     expect(screen.getByTestId('termx-local-pair-panel')).toBeTruthy()
@@ -239,12 +274,19 @@ function createMockLocalRemoteTransport(
   responders: Parameters<typeof createMockFilePeerTransport>[0],
   machineId: string,
   terminalId: string,
-): ReturnType<typeof createMockFilePeerTransport> & TerminalTransport & { connectCalls: Array<{ machineId: string; terminalId?: string; mode: string }> } {
+): ReturnType<typeof createMockFilePeerTransport> & TerminalTransport & {
+  connectCalls: Array<{ machineId: string; terminalId?: string; mode: string }>
+  disconnectCalls: number
+} {
   const transport = createMockFilePeerTransport(responders, {}, { machineId, terminalId })
   return Object.assign(transport, {
     connectCalls: [] as Array<{ machineId: string; terminalId?: string; mode: string }>,
+    disconnectCalls: 0,
     async connect(input: { machineId: string; terminalId?: string; mode: string }) {
       this.connectCalls.push(input)
+    },
+    async disconnect() {
+      this.disconnectCalls += 1
     },
     async openTerminal() {
       return {
