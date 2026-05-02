@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `3` Machine, app certificate, and control model ready to commit.
-- Last updated: 2026-05-03T06:35:00+08:00.
+- Active todo: `3` Machine, app certificate, and control model committed; next todo `4`.
+- Last updated: 2026-05-03T06:42:00+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -24,11 +24,11 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 2-A-A | web-control/auth-self-review | Harden provider order identity and missing token issuer error paths found during local self-review | completed | `f04a92c1` |
 | 2-A-B | web-control/auth-follow-up-review | Fix Slice 2 follow-up review findings around Me nil issuer, pending payment sync, and payment/subscription transaction atomicity | completed | `f04a92c1` |
 | 2-B | external | Defer real payment/email/OAuth/billing/tax/risk integrations behind provider interfaces | deferred_external |  |
-| 3 | web-control/machines | Implement machine, app device, app certificate, revocation, bootstrap, and claim control model | completed |  |
-| 3-A | web-control/machines-self-review | Reject uploaded private-key fields and prevent bootstrap mutation of claimed machines | completed |  |
-| 3-B | web-control/machines-review | Fix Slice 3 review findings for strict certificate metadata, certificate signature verification, claim proof, and conditional bootstrap writes | completed |  |
-| 3-B-A | web-control/machines-deferred | Preserve signed certificate bytes for future cross-service verification before hub/agent certificate envelope use | deferred |  |
-| 3-B-B | web-control/machines-deferred | Add claim token TTL/rotation policy with daemon pairing UX | deferred |  |
+| 3 | web-control/machines | Implement machine, app device, app certificate, revocation, bootstrap, and claim control model | completed | `732689ba` |
+| 3-A | web-control/machines-self-review | Reject uploaded private-key fields and prevent bootstrap mutation of claimed machines | completed | `732689ba` |
+| 3-B | web-control/machines-review | Fix Slice 3 review findings for strict certificate metadata, certificate signature verification, claim proof, and conditional bootstrap writes | completed | `732689ba` |
+| 3-B-A | web-control/machines-deferred | Preserve signed certificate bytes for future cross-service verification before hub/agent certificate envelope use | deferred | `732689ba` |
+| 3-B-B | web-control/machines-deferred | Add claim token TTL/rotation policy with daemon pairing UX | deferred | `732689ba` |
 | 4 | public_p2p | Implement registered public P2P rendezvous with authenticated channel, offer/answer/candidate forwarding, TTL, rate limits, and STUN-only policy | pending |  |
 | 5 | hub | Create Hub skeleton and agent registry with register, heartbeat, poll, answer, and expiry behavior | pending |  |
 | 6 | managed-signaling | Implement managed signaling without TURN relay as HTTP control/signaling only, runtime still WebRTC DataChannel | pending |  |
@@ -241,7 +241,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：生产 claim/pairing UX 可后置，但接口和测试先稳定；claim token TTL/rotation and cross-service certificate envelope canonicalization are deferred non-blocking follow-ups before hub/agent production use.
 - 剩余风险：agent-side certificate verification is still Slice 9; future hub/agent consumers should verify exact signed certificate bytes or use a canonical envelope before relying on stored payload across services.
 - 下一步：commit Slice 3, record commit hash, then start Slice 4 public_p2p rendezvous.
-- commit：待提交。
+- commit：`732689ba`
 
 ### 3-A Machine Bootstrap Private-Key And Ownership Hardening
 
@@ -266,7 +266,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：production machine signature challenge remains future Slice 9/agent integration.
 - 剩余风险：without real daemon signature proof, bootstrap identity remains local/dev control-plane skeleton only.
 - 下一步：included in Slice 3 commit.
-- commit：will be included in Slice 3 commit.
+- commit：`732689ba`
 
 ### 3-B Slice 3 Review Fixes
 
@@ -291,7 +291,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：production claim UX remains deferred to daemon/app integration, but current claim token must be real enough for control-plane ownership tests.
 - 剩余风险：agent-side certificate verification is still Slice 9; this slice verifies metadata before storage. Exact signed bytes/canonical envelope and claim token TTL/rotation are deferred in `3-B-A` and `3-B-B`.
 - 下一步：included in Slice 3 commit.
-- commit：will be included in Slice 3 commit.
+- commit：`732689ba`
 
 ### 3-B-A Signed Certificate Envelope Follow-Up
 
@@ -316,7 +316,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：do not use stored re-marshaled payload as a cross-service signed envelope until this is resolved.
 - 下一步：resolve before hub/agent consumes app certificate envelopes.
-- commit：will be included in Slice 3 workflow.
+- commit：`732689ba`
 
 ### 3-B-B Claim Token TTL And Rotation Follow-Up
 
@@ -341,7 +341,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：long-lived claim tokens are acceptable only for this skeleton until production pairing work lands.
 - 下一步：resolve with daemon pairing/claim UX.
-- commit：will be included in Slice 3 workflow.
+- commit：`732689ba`
 
 ### 4 Registered Public P2P Rendezvous
 
@@ -1165,5 +1165,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Write and run failing Slice 3 machine/app certificate/control model tests.
-2. Implement minimal `web-control` machine service/API, rerun focused and broader checks, request subagent review, fix findings, commit Slice 3, and record the commit hash.
+1. Commit the Slice 3 workflow hash update.
+2. Start Slice 4: write failing registered `public_p2p` rendezvous tests for auth, TTL, payload limit, rate limit, STUN-only ICE config, no TURN for free users, and unauthenticated reject.
