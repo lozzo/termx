@@ -43,7 +43,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-K | remote-ui/core | Add terminal resize ownership and size-lock handling so local/mobile remote views can fit locally without stealing daemon PTY size | completed | `23539e7d` |
 | P3-E-C-B-L | remote-ui | Fix embedded local xterm viewport sizing so the terminal does not stay at a single visible row after mobile/local layout settles | completed | `134c35f7` |
 | P3-E-C-B-M | localweb | Re-embed current `remote-ui` local web frontend assets into the `termx` binary static bundle | completed | `fc5e92aa` |
-| P3-E-C-B-N | remote-ui | Rework mobile local web terminal chrome so terminal height is maximized, terminal list has a clear back button, and files/pair actions move into compact header actions | in_progress |  |
+| P3-E-C-B-N | remote-ui | Rework mobile local web terminal chrome so terminal height is maximized, terminal list has a clear back button, and files/pair actions move into compact header actions | completed | `0be902f9` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -338,6 +338,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Focused tests after implementation: `cd remote-ui && npm test -- --run src/LocalRemoteApp.test.tsx` passed 6 tests; `cd remote-ui && npm run typecheck` passed.
 - Broader tests after implementation: `cd remote-ui && npm test` passed 106 tests; `cd remote-ui && npm run build:localweb` passed with only the existing Vite large chunk warning; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestStartRemoteLocalWebServesEmbeddedPageAndStatus|TestRemoteLocal'` passed; `git diff --check` passed.
 - Code review: `Halley` found no issues. It confirmed the mobile header exposes `Back to terminal list`, terminal title, and compact icon actions; terminal panel remains `flex-1`; Files is an overlay; keybar visibility restores in terminal mode; embedded assets match `remote-ui/dist`; and there is no workspace/tab/pane/session public model drift, TURN credential change, machine private key exposure, or UI transport-boundary leakage.
+- Result: completed. Commit: `0be902f9`.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
