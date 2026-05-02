@@ -59,7 +59,7 @@ describe('LocalRemoteApp real file manager flow', () => {
     await waitFor(() => expect(screen.getByText('log.txt')).toBeTruthy())
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').hasAttribute('hidden')).toBe(true))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').style.visibility).toBe('hidden'))
 
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
@@ -67,7 +67,7 @@ describe('LocalRemoteApp real file manager flow', () => {
     await waitFor(() => expect(screen.getByText('log.txt')).toBeTruthy())
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').hasAttribute('hidden')).toBe(true))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').style.visibility).toBe('hidden'))
 
     await userEvent.click(screen.getByRole('button', { name: /open worker/i }))
     await userEvent.click(screen.getByRole('button', { name: /open files/i }))
@@ -200,6 +200,18 @@ function createMockLocalAgentApi(): LocalAgentApi {
     },
     async createRTCAnswer() {
       throw new Error('createRTCAnswer is not used by LocalRemoteApp files tests')
+    },
+    async createInventoryRTCAnswer() {
+      throw new Error('createInventoryRTCAnswer is not used by LocalRemoteApp files tests')
+    },
+    async createTerminal() {
+      throw new Error('createTerminal is not used by LocalRemoteApp files tests')
+    },
+    async updateTerminal() {
+      throw new Error('updateTerminal is not used by LocalRemoteApp files tests')
+    },
+    async deleteTerminal() {
+      throw new Error('deleteTerminal is not used by LocalRemoteApp files tests')
     },
   }
 }

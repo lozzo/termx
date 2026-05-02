@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { forwardRef, useImperativeHandle } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -185,9 +185,16 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
     expect(screen.queryByText('Config')).toBeNull()
     expect(screen.getByText('Local Mac')).toBeTruthy()
-    expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy()
+    expect(screen.getByTestId('termx-verification-gate')).toBeTruthy()
     expect(screen.queryByTestId('termx-mobile-keybar')).toBeNull()
     expect(createTransport).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: /verify device/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy())
+    await userEvent.type(screen.getByLabelText('Pair ID'), 'pair-1')
+    await userEvent.type(screen.getByLabelText('Pair secret'), 'secret-1')
+    await userEvent.click(within(screen.getByTestId('termx-pair-sheet')).getByRole('button', { name: /^pair device$/i }))
+    await waitFor(() => expect(screen.getByText('Paired with machine-local')).toBeTruthy())
 
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
@@ -220,16 +227,6 @@ describe('LocalRemoteApp', () => {
     expect(screen.getByTestId('termx-terminal-list-page').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
     await waitFor(() => expect(transports[0]?.disconnectCalls).toBe(1))
 
-    await userEvent.click(screen.getAllByRole('button', { name: /pair device/i })[0]!)
-    expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy()
-    expect(screen.getByTestId('termx-pair-sheet').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
-
-    await userEvent.type(screen.getByLabelText('Pair ID'), 'pair-1')
-    await userEvent.type(screen.getByLabelText('Pair secret'), 'secret-1')
-    await userEvent.click(within(screen.getByTestId('termx-pair-sheet')).getByRole('button', { name: /^pair device$/i }))
-    await waitFor(() => expect(screen.getByText('Paired with machine-local')).toBeTruthy())
-    expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy()
-    expect(screen.queryByTestId('termx-terminal')).toBeNull()
     expect(createTransport).toHaveBeenCalledTimes(2)
   })
 
@@ -278,6 +275,7 @@ describe('LocalRemoteApp', () => {
     render(<LocalRemoteApp api={api} createTransport={vi.fn()} inventoryEvents={inventoryEvents} />)
 
     await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
+    await waitFor(() => expect(handler).toBeTruthy())
     expect(screen.queryByText('worker')).toBeNull()
 
     terminals = [
@@ -305,6 +303,129 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.getByText('worker')).toBeTruthy())
     expect(screen.getByText('/srv/worker')).toBeTruthy()
     expect(screen.getByText('prod')).toBeTruthy()
+  })
+
+  it('opens a terminal management sheet from a long-press style terminal-list gesture and can edit metadata', async () => {
+    const api = createMockLocalAgentApi()
+    const updateTerminal = vi.fn(async (input) => ({
+      machineId: 'machine-local',
+      terminalId: input.terminalId,
+      title: input.name ?? 'renamed shell',
+      state: 'running' as const,
+      command: '/bin/zsh',
+      cols: 120,
+      rows: 36,
+      cwd: input.cwd ?? '/srv/app-next',
+      sizeLockMode: (input.sizeLockMode ?? 'off') as 'off' | 'warn' | 'lock',
+      environment: input.environment ?? 'staging',
+    }))
+    api.updateTerminal = updateTerminal
+    const listTerminals = vi.fn(async () => [{
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      title: 'zsh',
+      state: 'running' as const,
+      command: '/bin/zsh',
+      cols: 120,
+      rows: 36,
+      cwd: '/Users/lozzow/project',
+      sizeLocked: true,
+      sizeLockMode: 'lock' as const,
+      environment: 'dev',
+    }])
+    api.listTerminals = listTerminals
+
+    render(<LocalRemoteApp api={api} createTransport={vi.fn()} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    fireEvent.contextMenu(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-actions-sheet')).toBeTruthy())
+
+    await userEvent.click(within(screen.getByTestId('termx-terminal-actions-sheet')).getByRole('button', { name: /edit terminal/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-editor-sheet')).toBeTruthy())
+    const editor = screen.getByTestId('termx-terminal-editor-sheet')
+    const nameInput = within(editor).getByLabelText('Name')
+    await userEvent.clear(nameInput)
+    await userEvent.type(nameInput, 'renamed shell')
+    const cwdInput = within(editor).getByLabelText('Working directory')
+    await userEvent.clear(cwdInput)
+    await userEvent.type(cwdInput, '/srv/app-next')
+    const environmentInput = within(editor).getByLabelText('Environment')
+    await userEvent.clear(environmentInput)
+    await userEvent.type(environmentInput, 'staging')
+    await userEvent.click(within(editor).getByRole('button', { name: /save changes/i }))
+
+    await waitFor(() => expect(updateTerminal).toHaveBeenCalledWith({
+      terminalId: 'terminal-1',
+      name: 'renamed shell',
+      cwd: '/srv/app-next',
+      environment: 'staging',
+      sizeLockMode: 'lock',
+    }))
+  })
+
+  it('creates and deletes terminals from the list page management controls', async () => {
+    const api = createMockLocalAgentApi()
+    const createTerminal = vi.fn(async () => ({
+      machineId: 'machine-local',
+      terminalId: 'terminal-3',
+      title: 'ops shell',
+      state: 'running' as const,
+      command: '/bin/zsh -l',
+      cols: 120,
+      rows: 36,
+      cwd: '/srv/app',
+      sizeLockMode: 'off' as const,
+      environment: 'prod',
+    }))
+    api.createTerminal = createTerminal
+    const deleteTerminal = vi.fn(async () => {})
+    api.deleteTerminal = deleteTerminal
+
+    render(<LocalRemoteApp api={api} createTransport={vi.fn()} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /create terminal/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /create terminal/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-editor-sheet')).toBeTruthy())
+
+    const editor = screen.getByTestId('termx-terminal-editor-sheet')
+    await userEvent.clear(within(editor).getByLabelText('Name'))
+    await userEvent.type(within(editor).getByLabelText('Name'), 'ops shell')
+    await userEvent.clear(within(editor).getByLabelText('Command'))
+    await userEvent.type(within(editor).getByLabelText('Command'), '/bin/zsh -l')
+    await userEvent.clear(within(editor).getByLabelText('Working directory'))
+    await userEvent.type(within(editor).getByLabelText('Working directory'), '/srv/app')
+    await userEvent.clear(within(editor).getByLabelText('Environment'))
+    await userEvent.type(within(editor).getByLabelText('Environment'), 'prod')
+    await userEvent.click(within(editor).getByRole('button', { name: /create terminal/i }))
+
+    await waitFor(() => expect(createTerminal).toHaveBeenCalledWith({
+      name: 'ops shell',
+      command: ['/bin/zsh', '-l'],
+      cwd: '/srv/app',
+      environment: 'prod',
+      sizeLockMode: 'off',
+    }))
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-actions-sheet')).toBeTruthy())
+    await userEvent.click(within(screen.getByTestId('termx-terminal-actions-sheet')).getByRole('button', { name: /delete terminal/i }))
+    await waitFor(() => expect(deleteTerminal).toHaveBeenCalledWith('terminal-1'))
+  })
+
+  it('refreshes terminals from the list header action', async () => {
+    const api = createMockLocalAgentApi()
+    const getStatus = vi.fn(api.getStatus)
+    const listTerminals = vi.fn(api.listTerminals)
+    api.getStatus = getStatus
+    api.listTerminals = listTerminals
+
+    render(<LocalRemoteApp api={api} createTransport={vi.fn()} />)
+
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
+    const initialListCalls = listTerminals.mock.calls.length
+    await userEvent.click(screen.getByRole('button', { name: /refresh terminals/i }))
+    await waitFor(() => expect(listTerminals.mock.calls.length).toBeGreaterThan(initialListCalls))
   })
 
   it('keeps the app shell driven by LocalAgentApi and transport interfaces only', () => {
@@ -359,9 +480,8 @@ describe('LocalRemoteApp', () => {
     )
 
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
-    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
-    await waitFor(() => expect(screen.getByRole('button', { name: /pair device/i })).toBeTruthy())
-    await userEvent.click(screen.getAllByRole('button', { name: /pair device/i })[0]!)
+    expect(screen.getByTestId('termx-verification-gate')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /verify device/i }))
     await waitFor(() => expect(screen.getByTestId('termx-local-pair-panel')).toBeTruthy())
     expect(screen.getByLabelText('Pair ID')).toBeTruthy()
     expect(screen.getByLabelText('Pair secret')).toBeTruthy()
@@ -401,7 +521,6 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
     expect(createTransport).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('local app certificate is required'))
     await waitFor(() => expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy())
     expect(screen.getByTestId('termx-local-pair-panel')).toBeTruthy()
 
@@ -410,8 +529,9 @@ describe('LocalRemoteApp', () => {
     await userEvent.click(within(screen.getByTestId('termx-pair-sheet')).getByRole('button', { name: /^pair device$/i }))
 
     await waitFor(() => expect(screen.getByText('Paired with machine-local')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
-    expect(createTransport).toHaveBeenCalledTimes(2)
+    expect(createTransport).toHaveBeenCalledTimes(1)
     expect(storage.loadCertificate()).toContain('machine-local')
   })
 })
@@ -506,6 +626,15 @@ function createMockLocalAgentApi(): LocalAgentApi {
     },
     async createInventoryRTCAnswer() {
       throw new Error('createInventoryRTCAnswer is not used by LocalRemoteApp tests')
+    },
+    async createTerminal() {
+      throw new Error('createTerminal is not used by LocalRemoteApp tests')
+    },
+    async updateTerminal() {
+      throw new Error('updateTerminal is not used by LocalRemoteApp tests')
+    },
+    async deleteTerminal() {
+      throw new Error('deleteTerminal is not used by LocalRemoteApp tests')
     },
   }
 }

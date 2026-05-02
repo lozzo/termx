@@ -118,5 +118,14 @@ function createMockApi(pair: LocalAgentApi['pair']): LocalAgentApi {
     async createInventoryRTCAnswer() {
       throw new Error('not used')
     },
+    async createTerminal() {
+      throw new Error('not used')
+    },
+    async updateTerminal() {
+      throw new Error('not used')
+    },
+    async deleteTerminal() {
+      throw new Error('not used')
+    },
   }
 }

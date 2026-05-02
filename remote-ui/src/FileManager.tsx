@@ -28,17 +28,17 @@ export function FileManager({
       data-terminal-id={terminalId}
       data-testid="termx-file-manager"
     >
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-200 bg-zinc-50/50 px-3 md:px-4">
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm font-medium text-zinc-600">
-           <HardDrive className="h-4 w-4 shrink-0 text-zinc-400" />
-           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-300" />
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-zinc-200/60 bg-zinc-50/80 px-4 backdrop-blur-md">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-[15px] font-medium text-zinc-600 no-scrollbar">
+           <HardDrive className="h-5 w-5 shrink-0 text-zinc-400" />
+           <ChevronRight className="h-4 w-4 shrink-0 text-zinc-300" />
            {pathSegments.length === 0 ? (
-             <span className="text-zinc-900 shrink-0">/</span>
+             <span className="text-zinc-900 shrink-0 font-semibold">/</span>
            ) : (
              <>
                <button
                  onClick={() => void manager.navigate('/')}
-                 className="shrink-0 hover:text-zinc-900 focus:outline-none focus:underline"
+                 className="shrink-0 rounded-md px-2 py-1 text-zinc-500 transition-colors active:bg-zinc-200"
                >
                  root
                </button>
@@ -46,14 +46,14 @@ export function FileManager({
                  const isLast = index === pathSegments.length - 1
                  const path = '/' + pathSegments.slice(0, index + 1).join('/')
                  return (
-                   <div key={path} className="flex items-center gap-1 shrink-0">
-                     <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-300" />
+                   <div key={path} className="flex items-center shrink-0">
+                     <ChevronRight className="h-4 w-4 shrink-0 text-zinc-300" />
                      {isLast ? (
-                       <span className="text-zinc-900">{segment}</span>
+                       <span className="px-2 py-1 font-semibold text-zinc-900">{segment}</span>
                      ) : (
                        <button
                          onClick={() => void manager.navigate(path)}
-                         className="hover:text-zinc-900 focus:outline-none focus:underline"
+                         className="rounded-md px-2 py-1 text-zinc-500 transition-colors active:bg-zinc-200"
                        >
                          {segment}
                        </button>
@@ -65,37 +65,37 @@ export function FileManager({
            )}
         </div>
         <button
-          className="flex h-8 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 hover:text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400 active:bg-zinc-100 disabled:opacity-50"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 transition-colors active:scale-95 active:bg-zinc-200 disabled:opacity-50"
           type="button"
           onClick={() => { void manager.refresh() }}
           disabled={manager.loading}
           aria-label="Refresh files"
         >
-          <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${manager.loading ? 'animate-spin' : ''}`} />
-          Refresh
+          <RefreshCw className={`h-5 w-5 ${manager.loading ? 'animate-spin' : ''}`} />
         </button>
       </header>
 
-      <div className="absolute top-12 bottom-0 left-0 right-0 overflow-y-auto p-2 md:p-3">
+      <div className="absolute top-14 bottom-0 left-0 right-0 overflow-y-auto bg-white p-2">
         {manager.error ? (
-          <div className="mb-3 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 shadow-sm" role="alert">
-            <AlertCircle className="h-5 w-5 shrink-0 text-red-500" />
+          <div className="m-2 flex items-start gap-3 rounded-xl border border-red-200/60 bg-red-50 p-4 text-[14px] text-red-800 shadow-sm" role="alert">
+            <AlertCircle className="h-6 w-6 shrink-0 text-red-500" />
             <div>
-               <h3 className="font-semibold text-red-900">Directory Error</h3>
+               <h3 className="font-bold text-red-900">Directory Error</h3>
                <p className="mt-1">{manager.error.message}</p>
             </div>
           </div>
         ) : null}
 
         {manager.loading && manager.entries.length === 0 ? (
-          <div className="flex h-32 items-center justify-center text-sm text-zinc-500">
-            <RefreshCw className="mr-2 h-4 w-4 animate-spin text-zinc-400" />
-            Loading directory contents...
+          <div className="flex h-40 flex-col items-center justify-center gap-3 text-[14px] font-medium text-zinc-500">
+            <RefreshCw className="h-6 w-6 animate-spin text-zinc-400" />
+            Loading directory...
           </div>
         ) : (
-          <ul aria-label="Files" className="flex flex-col gap-0.5">
+          <ul aria-label="Files" className="flex flex-col gap-1 pb-safe">
             {manager.entries.length === 0 && !manager.loading && !manager.error ? (
-              <li className="flex h-20 items-center justify-center text-sm text-zinc-500 italic">
+              <li className="flex h-32 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-zinc-200 bg-zinc-50/50 text-[14px] font-medium text-zinc-500">
+                <Folder className="h-8 w-8 text-zinc-300" />
                 Directory is empty
               </li>
             ) : null}
@@ -107,10 +107,10 @@ export function FileManager({
               return (
                 <li key={entryPath}>
                   <button
-                    className={`group flex min-h-10 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-400 ${
+                    className={`group relative flex min-h-[3.5rem] w-full items-center gap-4 rounded-xl px-4 py-2 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 active:bg-zinc-100 ${
                       isDirectory
-                        ? 'hover:bg-zinc-100/80 cursor-pointer text-zinc-900'
-                        : 'hover:bg-zinc-50 cursor-default text-zinc-700'
+                        ? 'cursor-pointer'
+                        : 'cursor-default'
                     }`}
                     type="button"
                     aria-label={`${isDirectory ? 'Open' : 'Select'} ${entry.name}`}
@@ -118,16 +118,22 @@ export function FileManager({
                       if (isDirectory) void manager.navigate(entryPath)
                     }}
                   >
-                    <Icon className={`h-4 w-4 shrink-0 ${isDirectory ? 'fill-blue-100 text-blue-500 group-hover:text-blue-600' : 'text-zinc-400'}`} />
-                    <span className={`min-w-0 flex-1 truncate ${isDirectory ? 'font-medium' : ''}`}>
-                      {entry.name}
-                    </span>
-                    <span className="shrink-0 text-[11px] font-medium text-zinc-400 uppercase tracking-wider w-16 text-right hidden sm:block">
-                      {entry.type === 'symlink-dir' ? 'symlink' : entry.type}
-                    </span>
-                    <span className="shrink-0 text-xs tabular-nums text-zinc-500 w-16 text-right">
-                      {formatBytes(entry.size)}
-                    </span>
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors ${isDirectory ? 'bg-blue-50 group-active:bg-blue-100' : 'bg-zinc-50'}`}>
+                      <Icon className={`h-5 w-5 ${isDirectory ? 'fill-blue-100 text-blue-500' : 'text-zinc-400'}`} />
+                    </div>
+                    <div className="flex min-w-0 flex-1 flex-col justify-center">
+                      <span className={`truncate text-[15px] ${isDirectory ? 'font-semibold text-zinc-900' : 'font-medium text-zinc-700'}`}>
+                        {entry.name}
+                      </span>
+                      {!isDirectory && entry.size > 0 ? (
+                        <span className="truncate text-[12px] font-medium text-zinc-500">
+                          {formatBytes(entry.size)}
+                        </span>
+                      ) : null}
+                    </div>
+                    {isDirectory ? (
+                      <ChevronRight className="h-5 w-5 shrink-0 text-zinc-300 group-active:text-zinc-400" />
+                    ) : null}
                   </button>
                 </li>
               )

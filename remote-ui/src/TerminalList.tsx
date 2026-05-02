@@ -1,6 +1,6 @@
 import type { Terminal } from './model'
 import type { ReactNode } from 'react'
-import { Activity, CircleDot, Lock, Terminal as TerminalIcon, Unlock } from 'lucide-react'
+import { Activity, CircleDot, Lock, Terminal as TerminalIcon, Unlock, ChevronRight } from 'lucide-react'
 
 export interface OpenTerminalIntent {
   machineId: string
@@ -11,6 +11,7 @@ export interface TerminalListProps {
   machineId: string
   terminals: Terminal[]
   onOpenTerminal: (intent: OpenTerminalIntent) => void
+  onManageTerminal?: ((intent: OpenTerminalIntent) => void) | undefined
   activeTerminalId?: string | undefined
   className?: string
 }
@@ -19,6 +20,7 @@ export function TerminalList({
   machineId,
   terminals,
   onOpenTerminal,
+  onManageTerminal,
   activeTerminalId,
   className,
 }: TerminalListProps) {
@@ -29,55 +31,76 @@ export function TerminalList({
       data-testid="termx-terminal-list"
     >
       {terminals.length === 0 ? (
-        <div className="flex h-16 items-center justify-center rounded-md border border-dashed border-zinc-300 text-sm text-zinc-500">
-          No terminals
+        <div className="flex h-32 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-zinc-200 bg-zinc-50/50 text-sm text-zinc-500">
+          <TerminalIcon className="h-8 w-8 text-zinc-300" />
+          <p>No active terminals</p>
         </div>
       ) : (
-        <ul aria-label="Terminals" className="flex flex-col gap-1.5">
+        <ul aria-label="Terminals" className="flex flex-col gap-3">
           {terminals.map((terminal) => {
             const isActive = activeTerminalId === terminal.terminalId
             return (
               <li key={terminal.terminalId} data-terminal-id={terminal.terminalId}>
                 <button
-                  className={`group flex min-h-16 w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-400 ${
+                  className={`group relative flex w-full items-center gap-4 rounded-2xl p-4 text-left transition-all duration-200 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                     isActive
-                      ? 'bg-zinc-900 text-white shadow-sm'
-                      : 'bg-white text-zinc-700 hover:bg-zinc-50 border border-zinc-200 shadow-sm'
+                      ? 'bg-zinc-900 text-white shadow-lg shadow-zinc-900/10'
+                      : 'bg-white text-zinc-700 shadow-sm border border-zinc-200/60 hover:border-zinc-300 hover:bg-zinc-50'
                   }`}
                   type="button"
                   aria-label={`Open ${terminal.title}`}
                   aria-current={isActive ? 'true' : 'false'}
                   onClick={() => onOpenTerminal({ machineId, terminalId: terminal.terminalId })}
+                  onContextMenu={(event) => {
+                    if (!onManageTerminal) return
+                    event.preventDefault()
+                    onManageTerminal({ machineId, terminalId: terminal.terminalId })
+                  }}
+                  onPointerDown={(event) => {
+                    if (!onManageTerminal || event.pointerType === 'mouse') return
+                    const target = event.currentTarget
+                    const timer = window.setTimeout(() => {
+                      onManageTerminal({ machineId, terminalId: terminal.terminalId })
+                    }, 450)
+                    const clear = () => {
+                      window.clearTimeout(timer)
+                      target.removeEventListener('pointerup', clear)
+                      target.removeEventListener('pointerleave', clear)
+                      target.removeEventListener('pointercancel', clear)
+                    }
+                    target.addEventListener('pointerup', clear, { once: true })
+                    target.addEventListener('pointerleave', clear, { once: true })
+                    target.addEventListener('pointercancel', clear, { once: true })
+                  }}
                 >
-                  <TerminalIcon className={`mt-0.5 h-4 w-4 shrink-0 ${isActive ? 'text-zinc-300' : 'text-zinc-400 group-hover:text-zinc-600'}`} />
-                  <div className="flex min-w-0 flex-1 flex-col justify-center">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className={`truncate text-sm font-medium leading-none ${isActive ? 'text-zinc-100' : 'text-zinc-900'}`}>
-                        {terminal.title}
+                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl transition-colors ${isActive ? 'bg-zinc-800' : 'bg-zinc-100 group-hover:bg-zinc-200'}`}>
+                    <TerminalIcon className={`h-6 w-6 ${isActive ? 'text-zinc-200' : 'text-zinc-500'}`} />
+                  </div>
+
+                  <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                      <span className={`truncate text-[15px] font-semibold tracking-tight leading-none ${isActive ? 'text-zinc-100' : 'text-zinc-900'}`}>
+                        {terminal.title || terminal.command || 'Terminal'}
                       </span>
                       {terminal.environment ? (
-                        <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none ${isActive ? 'border-zinc-700 text-zinc-300' : 'border-zinc-200 text-zinc-500'}`}>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase leading-none ${isActive ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-500'}`}>
                           {terminal.environment}
                         </span>
                       ) : null}
                     </div>
-                    {terminal.command ? (
-                      <span className={`mt-1.5 truncate text-[11px] leading-none ${isActive ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                        {terminal.command}
+                    {terminal.command || terminal.cwd ? (
+                      <span className={`truncate text-xs font-medium leading-none ${isActive ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                        {terminal.cwd ? terminal.cwd : terminal.command}
                       </span>
                     ) : null}
-                    {terminal.cwd ? (
-                      <span className={`mt-1.5 truncate text-[11px] leading-none ${isActive ? 'text-zinc-500' : 'text-zinc-500'}`}>
-                        {terminal.cwd}
-                      </span>
-                    ) : null}
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
                       <MetadataPill active={isActive}>
-                        <CircleDot className={`h-2 w-2 ${terminal.state === 'running' ? 'fill-emerald-500 text-emerald-500' : 'text-zinc-400'}`} />
+                        <CircleDot className={`h-2.5 w-2.5 ${terminal.state === 'running' ? 'fill-emerald-500 text-emerald-500' : 'text-zinc-400'}`} />
                         {formatTerminalState(terminal.state)}
                       </MetadataPill>
                       {terminal.cols && terminal.rows ? (
-                        <MetadataPill active={isActive}>{terminal.cols}x{terminal.rows}</MetadataPill>
+                        <MetadataPill active={isActive}>{terminal.cols} × {terminal.rows}</MetadataPill>
                       ) : null}
                       <MetadataPill active={isActive}>
                         {terminal.sizeLocked || terminal.sizeLockMode === 'lock' ? (
@@ -85,16 +108,11 @@ export function TerminalList({
                         ) : (
                           <Unlock className="h-3 w-3" />
                         )}
-                        {terminal.sizeLocked || terminal.sizeLockMode === 'lock' ? 'Locked' : 'Resizable'}
                       </MetadataPill>
-                      {terminal.lastActiveAt ? (
-                        <MetadataPill active={isActive}>
-                          <Activity className="h-3 w-3" />
-                          Created {formatLifecycleTime(terminal.lastActiveAt)}
-                        </MetadataPill>
-                      ) : null}
                     </div>
                   </div>
+
+                  <ChevronRight className={`h-5 w-5 shrink-0 transition-transform group-active:translate-x-1 ${isActive ? 'text-zinc-500' : 'text-zinc-300 group-hover:text-zinc-400'}`} />
                 </button>
               </li>
             )
@@ -113,7 +131,7 @@ function MetadataPill({
   children: ReactNode
 }) {
   return (
-    <span className={`inline-flex min-h-5 items-center gap-1 rounded border px-1.5 text-[10px] font-medium leading-none ${active ? 'border-zinc-700 bg-zinc-800 text-zinc-300' : 'border-zinc-200 bg-zinc-50 text-zinc-500'}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px] font-semibold leading-none transition-colors ${active ? 'bg-zinc-800/80 text-zinc-300' : 'bg-zinc-100 text-zinc-500'}`}>
       {children}
     </span>
   )

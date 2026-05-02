@@ -44,11 +44,12 @@ export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
 }
 
 function createBrowserPairOptions(api: Pick<LocalAgentApi, 'pair'>) {
-  if (!globalThis.localStorage) return undefined
+  const storage = browserStorage()
+  if (!storage) return undefined
   try {
     return {
       api,
-      storage: createLocalAppIdentityStore(globalThis.localStorage),
+      storage: createLocalAppIdentityStore(storage),
       crypto: createBrowserLocalAppCrypto(),
       appName: 'TermX Local Web',
     }
@@ -58,14 +59,13 @@ function createBrowserPairOptions(api: Pick<LocalAgentApi, 'pair'>) {
 }
 
 function createBrowserInventoryEvents(api: Partial<Pick<LocalAgentApi, 'createInventoryRTCAnswer'>>): TerminalInventoryEvents | undefined {
-  if (!globalThis.localStorage || typeof globalThis.localStorage.getItem !== 'function' || typeof globalThis.localStorage.setItem !== 'function') {
-    return undefined
-  }
+  const storage = browserStorage()
+  if (!storage) return undefined
   try {
     const crypto = createBrowserLocalAppCrypto()
     return {
       subscribe(machineId, handler) {
-        const store = createLocalAppIdentityStore(globalThis.localStorage)
+        const store = createLocalAppIdentityStore(storage)
         const appCertificate = store.loadCertificate()
         if (!appCertificate || !api.createInventoryRTCAnswer) {
           return { close() {} }
@@ -91,10 +91,11 @@ function createBrowserInventoryEvents(api: Partial<Pick<LocalAgentApi, 'createIn
 function createBrowserLocalTransportFactory(): LocalRemoteTransportFactory {
   const api = createLocalAgentApi()
   return ({ machineId, terminalId }) => {
-    if (!globalThis.localStorage) {
+    const storage = browserStorage()
+    if (!storage) {
       throw new Error('local app storage is required before opening a terminal')
     }
-    const store = createLocalAppIdentityStore(globalThis.localStorage)
+    const store = createLocalAppIdentityStore(storage)
     const appCertificate = store.loadCertificate()
     if (!appCertificate) {
       throw new Error('local app certificate is required before opening a terminal')
@@ -111,6 +112,14 @@ function createBrowserLocalTransportFactory(): LocalRemoteTransportFactory {
       signOffer: (input) => signer.signOffer(input),
     })
   }
+}
+
+function browserStorage(): Pick<Storage, 'getItem' | 'setItem'> | undefined {
+  const storage = globalThis.localStorage
+  if (!storage || typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') {
+    return undefined
+  }
+  return storage
 }
 
 if (typeof document !== 'undefined' && document.getElementById('root')) {

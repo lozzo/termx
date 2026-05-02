@@ -102,6 +102,15 @@ describe('local app identity', () => {
       async createInventoryRTCAnswer() {
         throw new Error('not used')
       },
+      async createTerminal() {
+        throw new Error('not used')
+      },
+      async updateTerminal() {
+        throw new Error('not used')
+      },
+      async deleteTerminal() {
+        throw new Error('not used')
+      },
     }
 
     const result = await pairLocalApp({

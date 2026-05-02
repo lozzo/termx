@@ -20,12 +20,13 @@ describe('TerminalList', () => {
           terminal({ terminalId: 'terminal-2', title: 'logs', command: 'tail -f app.log', cols: 100, rows: 24 }),
         ]}
         onOpenTerminal={onOpenTerminal}
+        onManageTerminal={vi.fn()}
       />,
     )
 
     expect(screen.getByText('zsh')).toBeTruthy()
     expect(screen.getByText('/bin/zsh')).toBeTruthy()
-    expect(screen.getByText('120x36')).toBeTruthy()
+    expect(screen.getByText('120 × 36')).toBeTruthy()
     expect(screen.getByText('logs')).toBeTruthy()
 
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
@@ -65,19 +66,17 @@ describe('TerminalList', () => {
           }),
         ]}
         onOpenTerminal={vi.fn()}
+        onManageTerminal={vi.fn()}
       />,
     )
 
     expect(screen.getByText('dev shell')).toBeTruthy()
     expect(screen.getByText('/Users/lozzow/project')).toBeTruthy()
     expect(screen.getByText('prod')).toBeTruthy()
-    expect(screen.getByText('132x43')).toBeTruthy()
-    expect(screen.getByText('Locked')).toBeTruthy()
+    expect(screen.getByText('132 × 43')).toBeTruthy()
     expect(screen.getByText('Running')).toBeTruthy()
-    expect(screen.getByText(/Created/)).toBeTruthy()
     expect(screen.getByText('stopped worker')).toBeTruthy()
     expect(screen.getByText('Exited')).toBeTruthy()
-    expect(screen.getByText('Resizable')).toBeTruthy()
     expect(screen.getByTestId('termx-terminal-list').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
   })
 
@@ -87,10 +86,11 @@ describe('TerminalList', () => {
         machineId="machine-local"
         terminals={[]}
         onOpenTerminal={vi.fn()}
+        onManageTerminal={vi.fn()}
       />,
     )
 
-    expect(screen.getByText('No terminals')).toBeTruthy()
+    expect(screen.getByText('No active terminals')).toBeTruthy()
     expect(screen.getByTestId('termx-terminal-list').textContent).not.toMatch(/session|window|pane|workspace|tab/i)
   })
 

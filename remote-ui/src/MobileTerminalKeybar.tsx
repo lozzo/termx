@@ -49,10 +49,11 @@ export function MobileTerminalKeybar({
 
   return (
     <div
-      className={`shrink-0 border-t border-zinc-800 bg-zinc-950 px-1.5 py-1 text-zinc-100 md:hidden ${className || ''}`}
+      className={`shrink-0 border-t border-zinc-800/80 bg-zinc-950/95 backdrop-blur-lg px-2 py-2 text-zinc-100 md:hidden shadow-[0_-4px_20px_rgba(0,0,0,0.3)] z-20 ${className || ''}`}
       data-testid="termx-mobile-keybar"
+      style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}
     >
-      <div className="grid grid-cols-9 gap-1">
+      <div className="grid grid-cols-9 gap-1.5">
         {keyButton('Esc', '\x1b', send)}
         {keyButton('/', '/', send)}
         {keyButton('|', '|', send)}
@@ -64,7 +65,7 @@ export function MobileTerminalKeybar({
         <button
           type="button"
           aria-label={keyboardLocked ? 'Unlock system keyboard' : 'Lock system keyboard'}
-          className={`min-h-8 rounded px-1 text-center font-mono text-[11px] select-none touch-manipulation ${keyboardLocked ? 'bg-red-600 text-white' : 'bg-zinc-800 text-zinc-200 active:bg-zinc-700'}`}
+          className={`flex h-10 flex-col items-center justify-center rounded-lg text-center font-mono text-[13px] font-medium transition-transform active:scale-95 select-none touch-manipulation ${keyboardLocked ? 'bg-red-500 text-white shadow-sm shadow-red-500/20' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 active:bg-zinc-600'}`}
           onPointerDown={(e) => {
             e.preventDefault()
             e.currentTarget.dataset.pointerHandled = '1'
@@ -81,7 +82,7 @@ export function MobileTerminalKeybar({
           ⌨
         </button>
       </div>
-      <div className="mt-1 grid grid-cols-9 gap-1">
+      <div className="mt-1.5 grid grid-cols-9 gap-1.5">
         {keyButton('⇥', '\t', send, 'Tab key')}
         {modifierButton('Ctrl', activeModifierState.ctrl, () => setModifierState({
           ...activeModifierState,
@@ -108,7 +109,7 @@ function keyButton(label: string, data: string, send: (data: string) => void, ar
       key={`${label}:${data}`}
       type="button"
       aria-label={ariaLabel}
-      className="min-h-8 rounded bg-zinc-800 px-1 text-center font-mono text-[11px] text-zinc-100 active:bg-zinc-700 select-none touch-manipulation"
+      className="flex h-10 flex-col items-center justify-center rounded-lg bg-zinc-800 text-center font-mono text-[12px] font-medium text-zinc-300 shadow-sm transition-transform hover:bg-zinc-700 active:scale-95 active:bg-zinc-600 select-none touch-manipulation"
       onPointerDown={(e) => {
         e.preventDefault()
         e.currentTarget.dataset.pointerHandled = '1'
@@ -129,17 +130,17 @@ function keyButton(label: string, data: string, send: (data: string) => void, ar
 
 function modifierButton(label: string, state: ModifierState, onClick: () => void) {
   const activeClass = state === 'locked'
-    ? 'bg-amber-600 text-white'
+    ? 'bg-amber-500 text-white shadow-sm shadow-amber-500/20'
     : state === 'once'
-      ? 'bg-blue-600 text-white'
-      : 'bg-zinc-800 text-zinc-100 active:bg-zinc-700'
+      ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/20'
+      : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 active:bg-zinc-600'
 
   return (
     <button
       key={label}
       type="button"
       aria-pressed={state !== 'off'}
-      className={`relative min-h-8 rounded px-1 text-center font-mono text-[11px] select-none touch-manipulation ${activeClass}`}
+      className={`relative flex h-10 flex-col items-center justify-center rounded-lg text-center font-mono text-[12px] font-medium shadow-sm transition-transform active:scale-95 select-none touch-manipulation ${activeClass}`}
       onPointerDown={(e) => {
         e.preventDefault()
         e.currentTarget.dataset.pointerHandled = '1'
@@ -154,7 +155,7 @@ function modifierButton(label: string, state: ModifierState, onClick: () => void
       }}
     >
       {label}
-      {state === 'locked' ? <span className="absolute bottom-0.5 left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-full bg-white" /> : null}
+      {state === 'locked' ? <span className="absolute bottom-1 left-1/2 h-1 w-4 -translate-x-1/2 rounded-full bg-white/80" /> : null}
     </button>
   )
 }

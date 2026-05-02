@@ -326,7 +326,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       <div
         ref={containerRef}
         aria-label="Terminal output"
-        className="absolute inset-0 min-h-0 overflow-hidden p-2 md:p-3 xterm-wrapper outline-none"
+        className="absolute inset-0 min-h-0 overflow-hidden px-1 py-1 md:p-3 xterm-wrapper outline-none"
         style={{ overscrollBehavior: 'none', touchAction: 'pan-y pan-x' }}
         role="application"
         tabIndex={0}

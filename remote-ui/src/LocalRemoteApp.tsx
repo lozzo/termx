@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ChevronLeft, Folder, KeyRound, Monitor, X } from 'lucide-react'
+import { ChevronLeft, Folder, KeyRound, Monitor, Plus, RefreshCw, SquarePen, Trash2, X } from 'lucide-react'
 import { FileManager } from './FileManager'
 import { LocalPairPanel } from './LocalPairPanel'
 import type { LocalAppCrypto, LocalAppIdentityStore } from './localAppIdentity'
@@ -8,7 +8,7 @@ import type { TerminalModifierState } from './mobileTerminalInput'
 import { Terminal, type TerminalHandle } from './Terminal'
 import { TerminalList } from './TerminalList'
 import type { Machine, Terminal as RemoteTerminal } from './model'
-import type { LocalAgentApi, PeerTransport, TerminalInventoryEvents } from './transport'
+import type { LocalAgentApi, LocalCreateTerminalInput, LocalUpdateTerminalInput, PeerTransport, TerminalInventoryEvents } from './transport'
 import type { TerminalTransport } from './terminalClient'
 
 export interface LocalRemoteTransportInput {
@@ -19,7 +19,7 @@ export interface LocalRemoteTransportInput {
 export type LocalRemoteTransportFactory = (input: LocalRemoteTransportInput) => PeerTransport & TerminalTransport
 
 export interface LocalRemoteAppProps {
-  api: Pick<LocalAgentApi, 'getStatus' | 'listTerminals'>
+  api: Pick<LocalAgentApi, 'getStatus' | 'listTerminals'> & Partial<Pick<LocalAgentApi, 'createTerminal' | 'updateTerminal' | 'deleteTerminal'>>
   createTransport: LocalRemoteTransportFactory
   className?: string | undefined
   inventoryEvents?: TerminalInventoryEvents | undefined
@@ -31,7 +31,7 @@ export interface LocalRemoteAppProps {
   } | undefined
 }
 
-type MobileSheet = 'terminals' | 'pair' | null
+type MobileSheet = 'terminals' | 'pair' | 'manage-terminal' | 'edit-terminal' | 'create-terminal' | null
 type AppPage = 'terminal-list' | 'terminal'
 
 export function LocalRemoteApp({ api, createTransport, className, inventoryEvents, pair }: LocalRemoteAppProps) {
@@ -40,6 +40,8 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pairStatus, setPairStatus] = useState<string | null>(null)
+  const [refreshingTerminals, setRefreshingTerminals] = useState(false)
+  const [verifiedDevice, setVerifiedDevice] = useState(() => pair ? Boolean(pair.storage.loadCertificate()) : true)
   const [connectedTransport, setConnectedTransport] = useState<(PeerTransport & TerminalTransport) | null>(null)
   const [fileTransport, setFileTransport] = useState<(PeerTransport & TerminalTransport) | null>(null)
   const [fileTerminalId, setFileTerminalId] = useState<string | null>(null)
@@ -50,11 +52,47 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
   const [page, setPage] = useState<AppPage>('terminal-list')
   const [filesOpen, setFilesOpen] = useState(false)
   const [mobileSheet, setMobileSheet] = useState<MobileSheet>(null)
+  const [managedTerminalId, setManagedTerminalId] = useState<string | null>(null)
+  const [terminalForm, setTerminalForm] = useState<{
+    name: string
+    command: string
+    cwd: string
+    environment: string
+    sizeLockMode: 'off' | 'warn' | 'lock'
+  }>({
+    name: '',
+    command: '/bin/zsh -l',
+    cwd: '',
+    environment: '',
+    sizeLockMode: 'off',
+  })
   const [modifierState, setModifierState] = useState<TerminalModifierState>({ ctrl: 'off', alt: 'off' })
   const terminalRef = useRef<TerminalHandle | null>(null)
   const fileTransportConnectSeqRef = useRef(0)
+  const listPullStartRef = useRef<number | null>(null)
+  const listPullDistanceRef = useRef(0)
+  const listContainerRef = useRef<HTMLDivElement | null>(null)
+  const [listPullDistance, setListPullDistance] = useState(0)
   const activeTerminal = terminals.find((terminal) => terminal.terminalId === activeTerminalId)
+  const managedTerminal = terminals.find((terminal) => terminal.terminalId === managedTerminalId)
   const activeTerminalTitle = activeTerminal?.title || activeTerminal?.command || activeTerminalId || 'Terminal'
+  const requireVerification = Boolean(pair && !verifiedDevice)
+  const canManageTerminals = Boolean(api.createTerminal && api.updateTerminal && api.deleteTerminal)
+
+  const refreshTerminals = useCallback(async () => {
+    setRefreshingTerminals(true)
+    try {
+      const status = await api.getStatus()
+      const terminalList = await api.listTerminals()
+      setMachine(status.machine)
+      setTerminals(terminalList)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRefreshingTerminals(false)
+    }
+  }, [api])
 
   useEffect(() => {
     let cancelled = false
@@ -78,16 +116,12 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
   useEffect(() => {
     if (!inventoryEvents || !machine) return
     const subscription = inventoryEvents.subscribe(machine.machineId, () => {
-      void api.listTerminals().then((terminalList) => {
-        setTerminals(terminalList)
-      }).catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
+      void refreshTerminals()
     })
     return () => {
       subscription.close()
     }
-  }, [api, inventoryEvents, machine, transportRetryToken])
+  }, [inventoryEvents, machine, refreshTerminals, transportRetryToken])
 
   useEffect(() => {
     if (!machine || !activeTerminalId || page !== 'terminal') {
@@ -124,6 +158,10 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
   }, [activeTerminalId, createTransport, machine, page, transportRetryToken])
 
   const openTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
+    if (requireVerification) {
+      setMobileSheet('pair')
+      return
+    }
     if (machine && intent.machineId !== machine.machineId) {
       setError(`terminal machine mismatch: ${intent.machineId} != ${machine.machineId}`)
       return
@@ -131,14 +169,22 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
     setActiveTerminalId(intent.terminalId)
     setPage('terminal')
     setMobileSheet(null)
-  }, [machine])
+  }, [machine, requireVerification])
 
   const handlePaired = useCallback((machineId: string) => {
     setError(null)
+    setVerifiedDevice(true)
     setPairStatus(`Paired with ${machineId}`)
     setTransportRetryToken((current) => current + 1)
     setMobileSheet(null)
   }, [])
+
+  useEffect(() => {
+    if (!pair) return
+    if (pair.storage.loadCertificate()) {
+      setVerifiedDevice(true)
+    }
+  }, [pair, transportRetryToken])
 
   const showTerminalListPage = useCallback(() => {
     setPage('terminal-list')
@@ -147,6 +193,10 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
   }, [])
 
   const openFiles = useCallback(() => {
+    if (requireVerification) {
+      setMobileSheet('pair')
+      return
+    }
     const fileTerminal = activeTerminal ?? terminals[0]
     if (!machine || !fileTerminal) {
       setError('No terminal is available for local file access')
@@ -190,7 +240,100 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
     }
     setFilesOpen(true)
     setMobileSheet(null)
-  }, [activeTerminal, createTransport, fileTerminalId, fileTransport, machine, pair, terminals])
+  }, [activeTerminal, createTransport, fileTerminalId, fileTransport, machine, pair, requireVerification, terminals])
+
+  const openManageTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
+    if (requireVerification) {
+      setMobileSheet('pair')
+      return
+    }
+    if (!canManageTerminals) return
+    if (machine && intent.machineId !== machine.machineId) {
+      setError(`terminal machine mismatch: ${intent.machineId} != ${machine.machineId}`)
+      return
+    }
+    setManagedTerminalId(intent.terminalId)
+    setMobileSheet('manage-terminal')
+  }, [canManageTerminals, machine, requireVerification])
+
+  const openCreateTerminal = useCallback(() => {
+    if (requireVerification) {
+      setMobileSheet('pair')
+      return
+    }
+    if (!canManageTerminals) return
+    setManagedTerminalId(null)
+    setTerminalForm({
+      name: '',
+      command: '/bin/zsh -l',
+      cwd: '',
+      environment: '',
+      sizeLockMode: 'off',
+    })
+    setMobileSheet('create-terminal')
+  }, [canManageTerminals, requireVerification])
+
+  const openEditTerminal = useCallback(() => {
+    if (!managedTerminal) return
+    setTerminalForm({
+      name: managedTerminal.title,
+      command: managedTerminal.command ?? '/bin/zsh -l',
+      cwd: managedTerminal.cwd ?? '',
+      environment: managedTerminal.environment ?? '',
+      sizeLockMode: managedTerminal.sizeLockMode ?? 'off',
+    })
+    setMobileSheet('edit-terminal')
+  }, [managedTerminal])
+
+  const submitCreateTerminal = useCallback(async () => {
+    if (!api.createTerminal) return
+    const input: LocalCreateTerminalInput = {
+      name: terminalForm.name.trim() || undefined,
+      command: terminalForm.command.trim().split(/\s+/).filter(Boolean),
+      cwd: terminalForm.cwd.trim() || undefined,
+      environment: terminalForm.environment.trim() || undefined,
+      sizeLockMode: terminalForm.sizeLockMode,
+    }
+    const created = await api.createTerminal(input)
+    await refreshTerminals()
+    setPairStatus(`Created ${created.title}`)
+    setMobileSheet(null)
+  }, [api, refreshTerminals, terminalForm])
+
+  const submitUpdateTerminal = useCallback(async () => {
+    if (!api.updateTerminal || !managedTerminalId) return
+    const input: LocalUpdateTerminalInput = {
+      terminalId: managedTerminalId,
+      name: terminalForm.name.trim() || undefined,
+      cwd: terminalForm.cwd.trim() || undefined,
+      environment: terminalForm.environment.trim() || undefined,
+      sizeLockMode: terminalForm.sizeLockMode,
+    }
+    const updated = await api.updateTerminal(input)
+    await refreshTerminals()
+    setPairStatus(`Updated ${updated.title}`)
+    setMobileSheet(null)
+  }, [api, managedTerminalId, refreshTerminals, terminalForm])
+
+  const deleteManagedTerminal = useCallback(async () => {
+    if (!api.deleteTerminal || !managedTerminalId) return
+    const deletedTerminalId = managedTerminalId
+    const deletedTitle = managedTerminal?.title ?? managedTerminalId
+    await api.deleteTerminal(deletedTerminalId)
+    if (activeTerminalId === deletedTerminalId) {
+      setActiveTerminalId(null)
+      setPage('terminal-list')
+    }
+    if (fileTerminalId === deletedTerminalId) {
+      setFilesOpen(false)
+      setFileTerminalId(null)
+      setFileTransport(null)
+      setFileTransportReady(false)
+    }
+    await refreshTerminals()
+    setPairStatus(`Deleted ${deletedTitle}`)
+    setMobileSheet(null)
+  }, [activeTerminalId, api, fileTerminalId, managedTerminal, managedTerminalId, refreshTerminals])
 
   const openTerminalPanel = useCallback(() => {
     setFilesOpen(false)
@@ -218,24 +361,32 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            aria-label="Open files"
-            className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
-            onClick={openFiles}
-          >
-            <Folder className="h-5 w-5" />
-          </button>
-          {pair ? (
             <button
               type="button"
-              aria-label="Pair device"
+              aria-label="Refresh terminals"
               className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
-              onClick={() => setMobileSheet('pair')}
+              onClick={() => { void refreshTerminals() }}
             >
-              <KeyRound className="h-5 w-5" />
+              <RefreshCw className={`h-5 w-5 ${refreshingTerminals ? 'animate-spin' : ''}`} />
             </button>
-          ) : null}
+            <button
+              type="button"
+              aria-label="Open files"
+              className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
+              onClick={openFiles}
+            >
+              <Folder className="h-5 w-5" />
+            </button>
+            {canManageTerminals ? (
+              <button
+                type="button"
+                aria-label="Create terminal"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
+                onClick={openCreateTerminal}
+              >
+                <Plus className="h-5 w-5" />
+              </button>
+            ) : null}
           </div>
         </header>
         {error ? (
@@ -248,15 +399,175 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
             {pairStatus}
           </div>
         ) : null}
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {requireVerification ? (
+          <section className="mx-3 mt-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm ring-1 ring-zinc-200/60" data-testid="termx-verification-gate">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-100 text-zinc-600">
+                <KeyRound className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-[17px] font-bold tracking-tight text-zinc-900">Verify This Device</h2>
+                <p className="text-[13px] font-medium text-zinc-500">Pair first before opening or managing local terminals.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 text-[15px] font-semibold text-white shadow-md transition-all active:scale-[0.98] active:bg-zinc-800"
+              onClick={() => setMobileSheet('pair')}
+            >
+              <KeyRound className="h-4 w-4" />
+              Verify device
+            </button>
+          </section>
+        ) : null}
+        <div
+          ref={listContainerRef}
+          className="min-h-0 flex-1 overflow-y-auto p-3"
+          data-testid="termx-terminal-list-scroll"
+          onTouchStart={(event) => {
+            if ((listContainerRef.current?.scrollTop ?? 0) > 0) return
+            listPullStartRef.current = event.touches[0]?.clientY ?? null
+          }}
+          onTouchMove={(event) => {
+            if (listPullStartRef.current === null) return
+            const currentY = event.touches[0]?.clientY ?? listPullStartRef.current
+            const nextDistance = Math.max(0, Math.min(96, currentY - listPullStartRef.current))
+            listPullDistanceRef.current = nextDistance
+            setListPullDistance(nextDistance)
+          }}
+          onTouchEnd={() => {
+            const shouldRefresh = listPullDistanceRef.current >= 64
+            listPullStartRef.current = null
+            listPullDistanceRef.current = 0
+            setListPullDistance(0)
+            if (shouldRefresh) {
+              void refreshTerminals()
+            }
+          }}
+        >
+          <div
+            className="flex items-center justify-center overflow-hidden text-xs font-medium text-zinc-500 transition-all"
+            style={{ height: `${Math.min(listPullDistance, 48)}px` }}
+          >
+            {refreshingTerminals ? 'Refreshing terminals...' : listPullDistance >= 64 ? 'Release to refresh terminals' : 'Pull down to refresh'}
+          </div>
           <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Terminals</h2>
           <TerminalList
             machineId={machine.machineId}
             terminals={terminals}
             onOpenTerminal={openTerminal}
+            onManageTerminal={openManageTerminal}
             activeTerminalId={activeTerminalId ?? undefined}
           />
         </div>
+
+        {mobileSheet === 'manage-terminal' && managedTerminal ? (
+          <MobileSheetPanel title={managedTerminal.title || 'Terminal'} testId="termx-terminal-actions-sheet" onClose={() => setMobileSheet(null)}>
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                className="flex min-h-12 w-full items-center justify-between rounded-xl border border-zinc-200 bg-white px-4 text-left text-[15px] font-medium text-zinc-900 shadow-sm"
+                onClick={openEditTerminal}
+              >
+                <span>Edit terminal</span>
+                <SquarePen className="h-4 w-4 text-zinc-500" />
+              </button>
+              <button
+                type="button"
+                className="flex min-h-12 w-full items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 text-left text-[15px] font-medium text-red-700 shadow-sm"
+                onClick={() => { void deleteManagedTerminal() }}
+              >
+                <span>Delete terminal</span>
+                <Trash2 className="h-4 w-4 text-red-500" />
+              </button>
+            </div>
+          </MobileSheetPanel>
+        ) : null}
+
+        {(mobileSheet === 'create-terminal' || mobileSheet === 'edit-terminal') ? (
+          <MobileSheetPanel
+            title={mobileSheet === 'create-terminal' ? 'New terminal' : 'Edit terminal'}
+            testId="termx-terminal-editor-sheet"
+            onClose={() => setMobileSheet(null)}
+          >
+            <div className="flex flex-col gap-4">
+              <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
+                Name
+                <input
+                  className="min-h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  value={terminalForm.name}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value
+                    setTerminalForm((current) => ({ ...current, name: value }))
+                  }}
+                />
+              </label>
+              {mobileSheet === 'create-terminal' ? (
+                <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
+                  Command
+                  <input
+                    className="min-h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                    value={terminalForm.command}
+                    onChange={(event) => {
+                      const value = event.currentTarget.value
+                      setTerminalForm((current) => ({ ...current, command: value }))
+                    }}
+                  />
+                </label>
+              ) : null}
+              <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
+                Working directory
+                <input
+                  className="min-h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  value={terminalForm.cwd}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value
+                    setTerminalForm((current) => ({ ...current, cwd: value }))
+                  }}
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
+                Environment
+                <input
+                  className="min-h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  value={terminalForm.environment}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value
+                    setTerminalForm((current) => ({ ...current, environment: value }))
+                  }}
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
+                Size lock
+                <select
+                  className="min-h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 text-[15px] text-zinc-900 outline-none"
+                  value={terminalForm.sizeLockMode}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value as 'off' | 'warn' | 'lock'
+                    setTerminalForm((current) => ({ ...current, sizeLockMode: value }))
+                  }}
+                >
+                  <option value="off">Resizable</option>
+                  <option value="warn">Warn only</option>
+                  <option value="lock">Locked</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                className="mt-2 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 text-[15px] font-semibold text-white shadow-md transition-all active:scale-[0.98] active:bg-zinc-800"
+                onClick={() => {
+                  if (mobileSheet === 'create-terminal') {
+                    void submitCreateTerminal()
+                    return
+                  }
+                  void submitUpdateTerminal()
+                }}
+              >
+                {mobileSheet === 'create-terminal' ? 'Create terminal' : 'Save changes'}
+              </button>
+            </div>
+          </MobileSheetPanel>
+        ) : null}
 
         {mobileSheet === 'pair' && pair ? (
           <MobileSheetPanel title="Pair device" testId="termx-pair-sheet" onClose={() => setMobileSheet(null)}>
@@ -356,22 +667,10 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
             machineId={machine.machineId}
             terminals={terminals}
             onOpenTerminal={openTerminal}
+            onManageTerminal={openManageTerminal}
             activeTerminalId={activeTerminalId ?? undefined}
           />
         </div>
-        {pair ? (
-          <div className="shrink-0 border-t border-zinc-200 bg-zinc-50 p-3">
-            <button
-              type="button"
-              aria-label="Open pairing"
-              className="flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm active:bg-zinc-100"
-              onClick={() => setMobileSheet('pair')}
-            >
-              <KeyRound className="h-4 w-4" />
-              Pair
-            </button>
-          </div>
-        ) : null}
       </aside>
       ) : null}
 
@@ -407,16 +706,6 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
             >
               <Folder className="h-5 w-5" />
             </button>
-            {pair ? (
-              <button
-                type="button"
-                aria-label="Pair device"
-                className="flex h-10 w-10 items-center justify-center rounded-full text-zinc-400 transition-colors active:scale-95 active:bg-zinc-800"
-                onClick={() => setMobileSheet('pair')}
-              >
-                <KeyRound className="h-5 w-5" />
-              </button>
-            ) : null}
           </div>
         </header>
 
