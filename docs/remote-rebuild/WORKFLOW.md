@@ -4,53 +4,337 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Current State
 
-- Current phase: P3 embedded local web first
-- Active todo: P4-A recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters
-- Last updated: 2026-05-02T20:52:33+08:00
-- Worktree goal before final response: clean after each completed todo commit
+- Current phase: Remote Web / Hub / Agent Buildout.
+- Active todo: `0` documentation, AGENTS hardening, and workflow reset for the new web/control-plane + hub + daemon-agent mainline.
+- Last updated: 2026-05-03T02:38:46+08:00.
+- Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
+- Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
+- Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
+- Allowed statuses include `pending`, `in_progress`, `blocked`, `blocked_external`, `review`, `completed`, `resolved`, `deferred`, and `deferred_external`.
+- Required workflow check: `bash docs/remote-rebuild/check_workflow_rules.sh`.
 
 ## Ordered Todos
 
 | ID | Phase | Todo | Status | Commit |
 | --- | --- | --- | --- | --- |
-| R0 | workflow | Create and seed `docs/remote-rebuild/WORKFLOW.md` with full todo plan | completed | `8734d00` |
-| R1 | planning | Revise remote rebuild plan so the early path builds `termx` embedded local web, shared remote UI components, and local WebRTC-over-TCP before migrating the same UI to mobile app | completed | `6a657be` |
-| R2 | planning | Record that remote UI page code, architecture, and component boundaries should stay as synchronized with `../tgent` as practical while TermX message handling should emulate native app behavior where tgent interactions feel too web-like | completed | `0ce0023` |
-| P2-A | identity | Implement Ed25519 machine key generation, load, persistence permissions, and fingerprint helpers in `termx-core/internal/remote/identity` | completed | `5aef5b8` |
-| P2-B | cert | Implement canonical app certificate payload, sign/verify helpers, and nonce/timestamp replay helper in `termx-core/internal/remote/cert` | completed | `62d1f70` |
-| P2-C | pairing | Implement local pair session creation, TTL, single-use semantics, and app certificate issuance in `termx-core/internal/remote/pairing` | completed | `12067cb` |
-| P2-D | CLI | Keep `termx remote status` working and add a conservative `termx pair` CLI skeleton only after core primitives exist | completed | `4b24258` |
-| P3-A | rendezvous | Implement anonymous rendezvous interfaces/contracts with payload limit, TTL, channel secret verification, and no TURN credentials | completed | `4012a1b` |
-| P3-B | localweb | Implement embedded local web foundation served from `termx` binary with local status, terminal list, and pair API contracts | completed | `6d9048f` |
-| P3-C | rtc | Implement local WebRTC signaling and ICE TCP mux/over-TCP support for browser-to-daemon local connections | completed | `52d964b` |
-| P3-D-A | remote-ui | Create shared `remote-ui/` TypeScript package with machine/terminal contracts, transport interfaces, connection message reducer, and event queue | completed | `fe9025d` |
-| P3-D-B | remote-ui | Adapt `Terminal.tsx` from `../tgent` into shared remote UI using `terminal_id` instead of pane/session concepts | completed | `e87d37a` |
-| P3-D-C | remote-ui | Adapt terminal list from `../tgent` `SessionList.tsx` into `TerminalList.tsx` with machine -> terminal semantics only | completed | `c423ba3` |
-| P3-D-D | remote-ui | Adapt `FileManager.tsx` and file hooks from `../tgent` behind TermX file transport interfaces | completed | `138aba3` |
-| P3-E-A | local/e2e | Add local embedded web browser API/WebRTC adapter shell around shared TerminalList, Terminal, and FileManager components | completed | `83ad016` |
-| P3-E-B | local/e2e | Implement browser terminal adapter compatible with current Go binary terminal protocol over `terminal:{terminal_id}` | completed | `4ef0557` |
-| P3-E-C-A | local/e2e | Build and embed the shared local web shell into `termx` static assets | completed | `f68bf9d` |
-| P3-E-C-B-A | local/e2e | Implement browser-local app identity, certificate storage, and offer signing primitives | completed | `7185c8d` |
-| P3-E-C-B-B | local/e2e | Add local pair UI/harness and executable embedded web smoke fallback before mobile migration | completed | `be45093` |
-| P3-E-C-B-C | local/e2e | Run in-app Browser Use click smoke against embedded local web when the required browser Node REPL `js` tool is available | deferred |  |
-| P3-E-C-B-D | local/e2e | Fix browser local WebRTC API/file DataChannel send-before-open race found during manual embedded web test | completed | `a1edab3` |
-| P3-E-C-B-E | local/e2e | Fix embedded local file manager hang where `Loading files` remains visible instead of files or an error | completed | `80bbeb1` |
-| P3-E-C-B-F | local/e2e | Require the local WebRTC `api` DataChannel to open during connect so FileManager does not mount on a half-ready transport | completed | `9a51792` |
-| P3-E-C-B-G | local/e2e | Fix real-browser local WebRTC `api` DataChannel timeout by waiting for local ICE candidates before signing/sending the offer | completed | `9531237` |
-| P3-E-C-B-H | local/e2e | Replace the readonly terminal placeholder with a tgent-aligned xterm.js terminal surface that writes output, forwards input, and sends resize through TermX terminal interfaces | completed | `db9c7065` |
-| P3-E-C-B-I | remote-ui | Refactor embedded local web mobile terminal interaction shell with terminal-first navigation, terminal switcher sheet, pair sheet, virtual keybar, and keyboard-aware xterm handle | completed | `be748f93` |
-| P3-E-C-B-J | cli/local | Complete `termx remote` commands for implemented local-only remote management: enable/local-only, disable, info/show, pair, and open | completed | `dd5e1502` |
-| P3-E-C-B-K | remote-ui/core | Add terminal resize ownership and size-lock handling so local/mobile remote views can fit locally without stealing daemon PTY size | completed | `23539e7d` |
-| P3-E-C-B-L | remote-ui | Fix embedded local xterm viewport sizing so the terminal does not stay at a single visible row after mobile/local layout settles | completed | `134c35f7` |
-| P3-E-C-B-M | localweb | Re-embed current `remote-ui` local web frontend assets into the `termx` binary static bundle | completed | `fc5e92aa` |
-| P3-E-C-B-N | remote-ui | Rework mobile local web terminal chrome so terminal height is maximized, terminal list has a clear back button, and files/pair actions move into compact header actions | completed | `0be902f9` |
-| P3-E-C-B-O | remote-ui | Add a true local embedded terminal list page so local web opens to terminals first and only enters the terminal page after selecting an item | completed | `b7f07517` |
-| P3-E-C-B-P | remote-ui | Enrich terminal list metadata and move Files to a machine-level overlay whose open/close state is independent from terminal/list navigation | completed | `b0de33ee` |
-| P3-E-C-B-Q | remote-ui/core | Push terminal inventory changes over WebRTC and consume them through a shared machine-level event subscription interface so web/app auto-refresh terminal lists | completed | `936e6cd9` |
-| P3-E-C-B-R | remote-ui/core | Add terminal list long-press management, create/update/delete actions, pull-to-refresh fallback, and verification-first local list UX | completed | `fb2fae90` |
-| P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
-| P3-DX-A | cli/localweb | Add a root fast-start build/run entry so local embedded web frontend assets and the `termx` CLI can be rebuilt/launched without manual multi-step commands | completed | `e5416e0a` |
-| P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
+| 0 | docs/workflow | Harden AGENTS and reset `WORKFLOW.md` for the web/control-plane + hub + daemon-agent buildout | completed |  |
+| 1 | web-control | Create Web Control Plane skeleton with Go backend, SQLite migration/test helper, health API, and Vite React shell | pending |  |
+| 2 | web-control/auth | Implement web auth/account/plan/subscription foundations with provider interfaces and mock payment | pending |  |
+| 3 | web-control/machines | Implement machine, app device, app certificate, revocation, bootstrap, and claim control model | pending |  |
+| 4 | public_p2p | Implement registered public P2P rendezvous with authenticated channel, offer/answer/candidate forwarding, TTL, rate limits, and STUN-only policy | pending |  |
+| 5 | hub | Create Hub skeleton and agent registry with register, heartbeat, poll, answer, and expiry behavior | pending |  |
+| 6 | managed-signaling | Implement managed signaling without TURN relay as HTTP control/signaling only, runtime still WebRTC DataChannel | pending |  |
+| 7 | paid-relay | Implement paid TURN/STUN relay MVP with temporary TURN credentials, relay lease, and no free TURN | pending |  |
+| 8 | quota | Implement relay quota, active relay session limit, heartbeat, TTL cleanup, and throttling | pending |  |
+| 9 | daemon-agent | Integrate `termx daemon` cloud bootstrap, hub heartbeat/poll/answer, and WebRTC offer handling | pending |  |
+| 10 | remote-ui | Connect `remote-ui` to real Web Control / public_p2p / managed API adapters while keeping `RtcSession` runtime boundary | pending |  |
+| 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | pending |  |
+
+## Buildout Todo Details
+
+### 0 Documentation, AGENTS, And Workflow Reset
+
+- 状态：completed
+- 父条目：none
+- 来源：用户要求施工前先检查 git status、读取指定文档、更新根 AGENTS、创建或更新 `docs/remote-rebuild/WORKFLOW.md`，并把后续 web/hub/agent 工作流文件化。
+- 目标：固化当前无人值守、TDD、小切片、subagent review、mock 外部依赖、三类 connection path、relay 非第四 transport、外部服务器安全规则，并让 `WORKFLOW.md` 成为新主线事实 todo。
+- 范围：`AGENTS.md`、`termx-core/AGENTS.md`、`remote-ui/AGENTS.md`、新建服务目录的 `AGENTS.md`、`docs/remote-rebuild/WORKFLOW.md`、`docs/remote-rebuild/check_workflow_rules.sh`。
+- 非目标：不实现 web/hub/agent 业务代码；不修改旧 P2/P3 历史记录语义；不使用外部服务器。
+- 外部依赖：无。
+- mock 策略：不适用。
+- 先写的失败测试：新增 `docs/remote-rebuild/check_workflow_rules.sh`，检查 AGENTS 和 WORKFLOW 是否包含新 buildout 主线、stable todo、deferred external、subagent review 和三类 path 规则。
+- 预期失败结果：`bash docs/remote-rebuild/check_workflow_rules.sh` 在旧 workflow 上失败，报缺少 `Remote Web / Hub / Agent Buildout`。
+- 实现摘要：已新增 `docs/remote-rebuild/check_workflow_rules.sh`；已将 `WORKFLOW.md` 顶部切到 Remote Web / Hub / Agent Buildout 主线，保留旧 P2/P3 记录为历史区；已创建 `web-control/AGENTS.md` 和 `termx-hub/AGENTS.md`，明确服务边界、TDD/review/workflow、外部依赖 mock、三类 connection path 和 relay policy 规则。
+- 重构摘要：旧移动 P4-A 不再是 active todo；新的 stable todo 使用 `0` 到 `11`，并为每个主切片写入完整条目字段。
+- 运行命令：`git status --short`; `bash docs/remote-rebuild/check_workflow_rules.sh`。
+- 测试结果：预期失败已确认：旧 `WORKFLOW.md` 缺少新主线。修复后 `bash docs/remote-rebuild/check_workflow_rules.sh` passed。
+- subagent review：已发起 `Descartes` (`019dea02-35d8-71c0-8d5a-760ca9d24d2f`) 对 Slice 0 AGENTS/WORKFLOW/check script 做独立 review。
+- review 发现：`Descartes` reported: high stale bottom `Next Exact Action` still pointed to P4-A mobile migration; medium workflow check was only string-presence and did not catch stale next action or required fields; low workflow text still said the check needed a rerun in the reviewed snapshot.
+- review 后修复：strengthened `check_workflow_rules.sh` with forbidden stale-text checks and required-field validation for todos `0..11`; confirmed it fails on the old mobile-migration next action before cleanup; replaced the bottom next-action section with current buildout next steps; updated this review/result text.
+- 新增派生条目：暂无。
+- deferred human items：暂无。
+- 剩余风险：现有工作树已有用户改动，后续 commit 必须只提交本任务相关文件，避免带入无关 dirty 文件。
+- 下一步：complete Slice 0 after final workflow check, then continue Slice 1 web-control skeleton.
+- commit：待提交，提交后用 follow-up workflow commit 记录 hash。
+
+### 1 Web Control Plane Skeleton
+
+- 状态：pending
+- 父条目：none
+- 来源：整体目标架构要求 Web Control Plane 使用 Go 后端 + Vite React 前端 + SQLite 测试/开发数据库。
+- 目标：创建 `web-control/`，提供 Go HTTP backend skeleton、SQLite migration/test helper、health API、Vite React shell、Tailwind 构建接入。
+- 范围：`web-control/`、`go.work` 或 workspace 配置中必要的模块接入、`docs/remote-rebuild/WORKFLOW.md`。
+- 非目标：不实现 auth、subscription、machine、hub、rendezvous、relay 业务。
+- 外部依赖：无真实外部系统。
+- mock 策略：数据库使用 SQLite 临时文件或内存测试库；外部 provider 暂不接入。
+- 先写的失败测试：计划创建 `web-control/internal/httpapi/health_test.go` 覆盖 `GET /api/health`，`web-control/internal/store/migrations_test.go` 覆盖 SQLite open/migrate/idempotency，`web-control/frontend/src/App.test.tsx` 覆盖 Vite React shell health/status rendering，另用 `npm run build` 做 frontend build smoke。
+- 预期失败结果：新测试在实现前应因 `httpapi`/`store`/frontend app skeleton 缺失而 fail/build fail。
+- 实现摘要：待完成。
+- 重构摘要：待完成。
+- 运行命令：待记录。
+- 测试结果：待记录。
+- subagent review：待发起。
+- review 发现：待记录。
+- review 后修复：待记录。
+- 新增派生条目：暂无。
+- deferred human items：暂无。
+- 剩余风险：需要避免把 web-control 放入 `termx-core`，并避免引入非 Tailwind 全局 CSS 系统。
+- 下一步：Slice 0 完成并提交后开始。
+- commit：待提交。
+
+### 2 Web Auth, Account, Plan, Subscription
+
+- 状态：pending
+- 父条目：none
+- 来源：Web Control Plane 需要用户注册、登录、session/token、plans、subscriptions 和 mock payment provider。
+- 目标：实现 users、sessions/tokens、plans、subscriptions、PaymentProvider interface、MockPaymentProvider，并覆盖订阅激活/过期/失败状态流转。
+- 范围：`web-control/` backend/API/db/tests，必要前端 shell 可只消费基础 `me`/plan 状态。
+- 非目标：不接真实支付、发票、税务、短信、OAuth、外部风控。
+- 外部依赖：真实支付、真实订阅/发票/税务、真实邮件/OAuth 以后需要人类配置。
+- mock 策略：用 `PaymentProvider` interface 和 `MockPaymentProvider`/local fake；如需要邮件/OAuth，先建 interface + in-memory/local provider。
+- 先写的失败测试：待创建注册、登录、token refresh、default plan、未登录拒绝、mock payment 成功/失败/过期测试。
+- 预期失败结果：待记录。
+- 实现摘要：待完成。
+- 重构摘要：待完成。
+- 运行命令：待记录。
+- 测试结果：待记录。
+- subagent review：待发起。
+- review 发现：待记录。
+- review 后修复：待记录。
+- 新增派生条目：预计创建 deferred external payment/email/OAuth 条目。
+- deferred human items：真实支付、发票/税务、邮件、OAuth provider、生产密钥。
+- 剩余风险：mock 必须隔离在 provider/interface 后，不能写死进核心业务。
+- 下一步：Slice 1 完成后开始。
+- commit：待提交。
+
+### 3 Machine, App Certificate, And Control Model
+
+- 状态：pending
+- 父条目：none
+- 来源：machine/app certificate/control model 是 web-control 与 daemon agent 的 ownership 和安全边界。
+- 目标：实现 machines、app_devices、app_certificates、revocation、agent bootstrap API、machine claim API，确保 private key 不上传。
+- 范围：`web-control/` backend/db/API/tests；必要时只调整 `termx-core`/`termx-cli` 的公共合同，不塞入 web 业务。
+- 非目标：不实现完整 hub signaling、TURN relay、terminal runtime HTTP proxy。
+- 外部依赖：无真实外部系统；机器真实 claim UX 可以先本地/mock。
+- mock 策略：claim challenge 用 local fake clock/key 测试；不 mock ownership 校验本身。
+- 先写的失败测试：待创建 owner 校验、revoked cert 拒绝、machine private key 不上传、app cert metadata 不含 private key 测试。
+- 预期失败结果：待记录。
+- 实现摘要：待完成。
+- 重构摘要：待完成。
+- 运行命令：待记录。
+- 测试结果：待记录。
+- subagent review：待发起。
+- review 发现：待记录。
+- review 后修复：待记录。
+- 新增派生条目：暂无。
+- deferred human items：生产 claim/pairing UX 可后置，但接口和测试先稳定。
+- 剩余风险：必须防止 app/machine private key 泄漏到 web/hub payload 或测试日志。
+- 下一步：Slice 2 完成后开始。
+- commit：待提交。
+
+### 4 Registered Public P2P Rendezvous
+
+- 状态：pending
+- 父条目：none
+- 来源：注册免费用户允许 TermX rendezvous/signaling + STUN 做 `public_p2p`，免费用户不得拿 TURN。
+- 目标：实现 authenticated public P2P channel create、offer/answer/candidate forwarding、TTL、payload limit、rate limit、STUN-only response、unauthenticated reject。
+- 范围：可先在 `web-control/` 或独立 `termx-rendezvous/` 落地，需与 `remote-ui` public_p2p adapter 合同一致。
+- 非目标：不承载 terminal/file/api/events 数据面；不发 TURN；不实现 paid relay。
+- 外部依赖：公网 DNS/TLS/真实 STUN 部署 deferred。
+- mock 策略：本地 fake clock、in-memory/SQLite channel store、local STUN config。
+- 先写的失败测试：待创建 TTL、payload limit、rate limit、no TURN、unauthenticated reject、free public_p2p 不含 TURN 测试。
+- 预期失败结果：待记录。
+- 实现摘要：待完成。
+- 重构摘要：待完成。
+- 运行命令：待记录。
+- 测试结果：待记录。
+- subagent review：待发起。
+- review 发现：待记录。
+- review 后修复：待记录。
+- 新增派生条目：预计创建 deferred external DNS/TLS/public STUN deploy。
+- deferred human items：生产域名、TLS 证书、公网部署账号、abuse/captcha provider。
+- 剩余风险：旧 anonymous 命名必须隔离或迁移，不能恢复匿名云端免费 rendezvous 产品结论。
+- 下一步：Slice 3 完成后开始。
+- commit：待提交。
+
+### 5 Hub Skeleton And Agent Registry
+
+- 状态：pending
+- 父条目：none
+- 来源：Hub/Signaling/Relay 服务需要 agent registry、heartbeat、poll-answer 基础。
+- 目标：创建 `termx-hub/`，实现 hub service skeleton、agent register/heartbeat/poll/answer、in-memory registry、expiry cleanup。
+- 范围：`termx-hub/` Go module/service/tests、必要协议包；可参考 `../tgent` hub registry 思路但不照搬对象模型。
+- 非目标：不做 TURN、quota、terminal/file HTTP runtime proxy。
+- 外部依赖：无。
+- mock 策略：Control Plane client 用 fake interface；registry 第一版可 in-memory，TTL 行为必须真实。
+- 先写的失败测试：待创建 agent online/offline、heartbeat expiry、poll timeout、answer correlation 测试。
+- 预期失败结果：待记录。
+- 实现摘要：待完成。
+- 重构摘要：待完成。
+- 运行命令：待记录。
+- 测试结果：待记录。
+- subagent review：待发起。
+- review 发现：待记录。
+- review 后修复：待记录。
+- 新增派生条目：暂无。
+- deferred human items：生产 hub identity/registration secret 后置。
+- 剩余风险：Hub 只能做 signaling/control/ICE/TURN，不得成为 HTTP runtime proxy。
+- 下一步：Slice 4 后开始。
+- commit：待提交。
+
+### 6 Managed Signaling Without TURN
+
+- 状态：pending
+- 父条目：none
+- 来源：先实现 managed connect ticket + hub signaling，但 runtime 仍只使用 WebRTC DataChannel。
+- 目标：web creates managed connect ticket，app/browser submits offer to hub，hub forwards to agent，agent answers；expired/wrong-machine tickets rejected。
+- 范围：`web-control/` ticket API, `termx-hub/` session signaling, `termx-core`/`termx-cli` daemon agent client where needed.
+- 非目标：不发 TURN credential，不实现 relay lease，不承载 terminal/file/api/events HTTP runtime。
+- 外部依赖：无真实外部系统。
+- mock 策略：Control Plane ticket verifier interface + signed/local test keys；agent fake for hub tests。
+- 先写的失败测试：待创建 expired ticket rejected、wrong machine rejected、free managed direct no relay、HTTP not runtime proxy 测试。
+- 预期失败结果：待记录。
+- 实现摘要：待完成。
+- 重构摘要：待完成。
+- 运行命令：待记录。
+- 测试结果：待记录。
+- subagent review：待发起。
+- review 发现：待记录。
+- review 后修复：待记录。
+- 新增派生条目：暂无。
+- deferred human items：生产 ticket signing key rotation 后置。
+- 剩余风险：HTTP long-poll 只能是建链前职责。
+- 下一步：Slice 5 后开始。
+- commit：待提交。
+
+### 7 TURN/STUN Paid Relay MVP
+
+- 状态：pending
+- 父条目：none
+- 来源：付费用户允许 managed relay，注册免费用户不允许 TermX TURN relay。
+- 目标：实现 Pion TURN/STUN、temporary TURN credentials、relay session lease、paid user gets TURN、free user does not。
+- 范围：`termx-hub/` TURN/STUN service and policy enforcement, `web-control/` relay lease API, tests.
+- 非目标：不把 relay 变成客户端 path；不实现真实支付；不做多 region reconciliation。
+- 外部依赖：生产公网 IP、DNS、TLS、TURN ports/firewall、cloud account deferred。
+- mock 策略：local TURN secret, fake payment/subscription provider, in-memory/local relay traffic hooks.
+- 先写的失败测试：待创建 credential expiry、policy deny、relay not client path、free/public_p2p no TURN 测试。
+- 预期失败结果：待记录。
+- 实现摘要：待完成。
+- 重构摘要：待完成。
+- 运行命令：待记录。
+- 测试结果：待记录。
+- subagent review：待发起。
+- review 发现：待记录。
+- review 后修复：待记录。
+- 新增派生条目：预计 external server testing deferred/runbook 条目。
+- deferred human items：公网 TURN DNS/TLS/端口/云账号/备案或安全审批。
+- 剩余风险：TURN 流量统计必须能绑定 relay session，不能只粗略绑定 agent。
+- 下一步：Slice 6 后开始。
+- commit：待提交。
+
+### 8 Quota, Active Session Limit, And Throttling
+
+- 状态：pending
+- 父条目：none
+- 来源：relay 是付费能力，需按 quota、session limit、throttle 策略执行。
+- 目标：实现 monthly relay usage、relay session heartbeat、TTL cleanup、active session limit、over-quota terminal-friendly throttle。
+- 范围：`web-control/` SQLite models/transactions/API/tests, `termx-hub/` heartbeat/usage client and local limiter.
+- 非目标：不接真实计费，不做全球强同步 per-packet 计量。
+- 外部依赖：真实 billing/subscription reconciliation deferred。
+- mock 策略：fake clock, SQLite transaction tests, mock payment provider plan states, local limiter fake traffic.
+- 先写的失败测试：待创建 quota exceeded throttled、session limit rejects extra lease、cleanup expires stale sessions、usage delta persisted 测试。
+- 预期失败结果：待记录。
+- 实现摘要：待完成。
+- 重构摘要：待完成。
+- 运行命令：待记录。
+- 测试结果：待记录。
+- subagent review：待发起。
+- review 发现：待记录。
+- review 后修复：待记录。
+- 新增派生条目：暂无。
+- deferred human items：真实账单对账、发票、税务、支付回调。
+- 剩余风险：SQLite transaction、TTL cleanup、quota/session limit 必须是真行为，不是只在内存 mock 成立。
+- 下一步：Slice 7 后开始。
+- commit：待提交。
+
+### 9 TermX Daemon Cloud Integration
+
+- 状态：pending
+- 父条目：none
+- 来源：`termx daemon` 内置 agent 需要 cloud bootstrap、hub register/heartbeat/poll/answer，并用既有 runtime 回答 WebRTC offer。
+- 目标：实现 daemon cloud bootstrap、agent policy、hub register/heartbeat、signaling poll/answer、ticket/cert/signature verification、DataChannel labels `terminal:{terminal_id}`/`api`/`events`/`file:{transfer_id}`。
+- 范围：`termx-core/` shell-neutral remote runtime, `termx-cli/` daemon command integration, tests.
+- 非目标：不发布独立 agent 二进制；不把 web-control 支付/订阅业务塞进 core；不引入 browser WebRTC types。
+- 外部依赖：真实 cloud account/token distribution deferred.
+- mock 策略：fake web-control/hub servers in tests, local signing keys, fake clock.
+- 先写的失败测试：待创建 agent verifies ticket/cert/signature、rejects wrong terminal、no browser WebRTC type leaks into core 测试。
+- 预期失败结果：待记录。
+- 实现摘要：待完成。
+- 重构摘要：待完成。
+- 运行命令：待记录。
+- 测试结果：待记录。
+- subagent review：待发起。
+- review 发现：待记录。
+- review 后修复：待记录。
+- 新增派生条目：暂无。
+- deferred human items：production bootstrap token issuance/operator setup.
+- 剩余风险：machine private key 必须只保存在本机。
+- 下一步：Slice 8 后开始。
+- commit：待提交。
+
+### 10 remote-ui Real API Adapters
+
+- 状态：pending
+- 父条目：none
+- 来源：remote-ui 后续只接真实 web/hub API adapter，运行时仍只通过 `RtcSession`。
+- 目标：实现 Web Control API client、public_p2p signaling adapter、managed signaling adapter、capabilities UI/state，保留 path 仅 `local/public_p2p/managed`。
+- 范围：`remote-ui/` TypeScript adapters/hooks/tests, generated localweb assets only when needed.
+- 非目标：不恢复 `RemoteTransport` / `TerminalTransport` / `paid_relay` / `anonymous_p2p` / `managed_p2p` 等旧抽象。
+- 外部依赖：真实 web/hub production endpoints deferred.
+- mock 策略：mock API client/fake provider for adapter tests until real services run locally.
+- 先写的失败测试：待创建 paths only local/public_p2p/managed、relayInUse info only、terminal/api/file/events use RtcSession only 测试。
+- 预期失败结果：待记录。
+- 实现摘要：待完成。
+- 重构摘要：待完成。
+- 运行命令：待记录。
+- 测试结果：待记录。
+- subagent review：待发起。
+- review 发现：待记录。
+- review 后修复：待记录。
+- 新增派生条目：暂无。
+- deferred human items：真实 cloud endpoints、OAuth/payment policy feeds。
+- 剩余风险：browser `RTCPeerConnection` / `RTCDataChannel` types must stay inside browser adapter and direct tests only.
+- 下一步：Slice 9 后开始。
+- commit：待提交。
+
+### 11 Devstack And External Server Tests
+
+- 状态：pending
+- 父条目：none
+- 来源：最终需要 local devstack 和可选公网 STUN/TURN/signaling smoke。
+- 目标：提供 reproducible local devstack; optional safe test on `root@114.66.58.243` only when a slice needs public network behavior and after recording reason/start/stop/cleanup commands.
+- 范围：`docs/remote-rebuild/RUNBOOK.md` or devstack scripts, `web-control/`, `termx-hub/`, `termx-cli/` integration tests.
+- 非目标：不修改 SSH config、iptables、防火墙、systemd 常驻服务；不清空系统目录。
+- 外部依赖：公网服务器、DNS/TLS/certificates may be required later.
+- mock 策略：local devstack first; external server only for network smoke that cannot be represented locally.
+- 先写的失败测试：待创建 devstack smoke checks and runbook validation.
+- 预期失败结果：待记录。
+- 实现摘要：待完成。
+- 重构摘要：待完成。
+- 运行命令：待记录。
+- 测试结果：待记录。
+- subagent review：待发起。
+- review 发现：待记录。
+- review 后修复：待记录。
+- 新增派生条目：暂无。
+- deferred human items：production DNS/TLS/cloud account/security approval.
+- 剩余风险：external server state must be recorded and cleaned; temporary services go under `/tmp/termx-devstack` or `/opt/termx-devstack`.
+- 下一步：After slices 1-10 provide runnable services.
+- commit：待提交。
+
+## Historical P2/P3 Records
+
+The entries below predate the current Remote Web / Hub / Agent Buildout. They are retained for traceability but are no longer the active todo tree.
 
 ## TDD Log
 
@@ -670,5 +954,5 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Start P4-A by migrating the stabilized local embedded machine/terminal/files shell into the mobile app host while keeping adapter boundaries interface-based.
-2. Keep the machine-level Files UX while replacing the current hidden terminal-scoped file transport with a true machine-scoped file channel if core transport support becomes available.
+1. Finish Slice 0 by rerunning `bash docs/remote-rebuild/check_workflow_rules.sh`, committing only the AGENTS/WORKFLOW/check-script changes that belong to this slice, and recording the commit hash above.
+2. Continue Slice 1: create `web-control/` as an independent Go + Vite React + Tailwind project, write failing health/migration/frontend smoke tests first, then implement the minimal skeleton.
