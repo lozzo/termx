@@ -44,7 +44,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-L | remote-ui | Fix embedded local xterm viewport sizing so the terminal does not stay at a single visible row after mobile/local layout settles | completed | `134c35f7` |
 | P3-E-C-B-M | localweb | Re-embed current `remote-ui` local web frontend assets into the `termx` binary static bundle | completed | `fc5e92aa` |
 | P3-E-C-B-N | remote-ui | Rework mobile local web terminal chrome so terminal height is maximized, terminal list has a clear back button, and files/pair actions move into compact header actions | completed | `0be902f9` |
-| P3-E-C-B-O | remote-ui | Add a true local embedded terminal list page so local web opens to terminals first and only enters the terminal page after selecting an item | in_progress |  |
+| P3-E-C-B-O | remote-ui | Add a true local embedded terminal list page so local web opens to terminals first and only enters the terminal page after selecting an item | completed | `b7f07517` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -355,7 +355,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Code review: `Harvey` found a medium issue where desktop terminal pages had no visible way back to the true terminal list page; the existing test clicked a `md:hidden` mobile button that jsdom still exposed. Fixed with the desktop `Show terminal list` sidebar action and updated tests. The review found no workspace/tab/pane/session public model drift, TURN credential exposure, machine private key exposure, or transport-boundary leak.
 - Final focused tests after review fix: `cd remote-ui && npm test -- --run src/LocalRemoteApp.test.tsx` passed 6 tests; `cd remote-ui && npm run typecheck` passed.
 - Final broader tests after review fix: `cd remote-ui && npm test` passed 106 tests; `cd remote-ui && npm run build:localweb` passed with only the existing Vite large chunk warning and regenerated `termx-core/internal/remote/localweb/static/assets/index-DjSTbu7Y.js`; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestStartRemoteLocalWebServesEmbeddedPageAndStatus|TestRemoteLocal'` passed; `git diff --check` passed. `remote-ui/dist` and `termx-core/internal/remote/localweb/static` were verified byte-identical for `index.html`, `index-BwdcQlsw.css`, and `index-DjSTbu7Y.js`.
-- Result: completed. Commit: pending.
+- Result: completed. Commit: `b7f07517`.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
