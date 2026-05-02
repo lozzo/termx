@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Folder, KeyRound, ListTree, Monitor, TerminalSquare, X } from 'lucide-react'
+import { ChevronLeft, Folder, KeyRound, Monitor, X } from 'lucide-react'
 import { FileManager } from './FileManager'
 import { LocalPairPanel } from './LocalPairPanel'
 import type { LocalAppCrypto, LocalAppIdentityStore } from './localAppIdentity'
@@ -138,6 +138,9 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
     terminalRef.current?.adjustInputPosition(0)
   }, [])
 
+  const activeTerminal = terminals.find((terminal) => terminal.terminalId === activeTerminalId)
+  const activeTerminalTitle = activeTerminal?.title || activeTerminal?.command || activeTerminalId || 'Terminal'
+
   useEffect(() => {
     if (typeof window === 'undefined' || !window.visualViewport) {
       terminalRef.current?.adjustInputPosition(0)
@@ -224,41 +227,36 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
       </aside>
 
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-2 md:hidden">
-          <div className="flex items-center">
+        <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-zinc-200 bg-white px-2 md:hidden">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <button
+              type="button"
+              aria-label="Back to terminal list"
+              className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
+              onClick={() => setMobileSheet('terminals')}
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
             <button
               type="button"
               aria-label="Switch terminal"
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-zinc-800 active:bg-zinc-100"
+              className="flex min-w-0 flex-1 flex-col items-start rounded-md px-1 py-1 text-left active:bg-zinc-100"
               onClick={() => setMobileSheet('terminals')}
             >
-              <ListTree className="h-5 w-5 text-zinc-500" />
-              <span className="max-w-[80px] truncate text-sm font-semibold">{machine.machineId}</span>
+              <span className="max-w-full truncate text-[11px] font-medium text-zinc-500">{machine.machineId}</span>
+              <span className="max-w-full truncate font-mono text-sm font-semibold leading-tight text-zinc-900" data-testid="termx-terminal-title">{activeTerminalTitle}</span>
             </button>
           </div>
 
-          <div className="flex items-center gap-1 rounded-lg bg-zinc-100 p-1">
-            <button
-              type="button"
-              aria-label="Open terminal"
-              onClick={openTerminalPanel}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${panelMode === 'terminal' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`}
-            >
-              <TerminalSquare className="h-3.5 w-3.5" />
-              Console
-            </button>
+          <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
               aria-label="Open files"
               onClick={openFiles}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${panelMode === 'files' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`}
+              className={`flex h-9 w-9 items-center justify-center rounded-md active:bg-zinc-100 ${panelMode === 'files' ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-600'}`}
             >
-              <Folder className="h-3.5 w-3.5" />
-              Files
+              <Folder className="h-5 w-5" />
             </button>
-          </div>
-
-          <div className="flex items-center justify-end min-w-[36px]">
             {pair ? (
               <button
                 type="button"
@@ -284,7 +282,10 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
         ) : null}
 
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-white md:bg-zinc-50">
-          <div className={`relative min-h-0 bg-[#0c0c0c] md:m-3 md:rounded-lg md:border md:border-zinc-800 md:shadow-xl md:overflow-hidden ${panelMode === 'terminal' ? 'flex-1' : 'h-0 md:flex-1'}`}>
+          <div
+            className="relative min-h-0 flex-1 bg-[#0c0c0c] md:m-3 md:rounded-lg md:border md:border-zinc-800 md:shadow-xl md:overflow-hidden"
+            data-testid="termx-terminal-panel"
+          >
             {activeTerminalId && connectedTransport ? (
               <Terminal
                 ref={terminalRef}
@@ -303,21 +304,34 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
             )}
           </div>
 
-          <div className={`absolute inset-0 z-20 flex flex-col bg-white md:relative md:z-auto md:h-[40%] md:min-h-[250px] md:border-t md:border-zinc-200 ${panelMode === 'files' ? 'flex' : 'hidden md:flex'}`}>
-            {activeTerminalId && connectedTransport ? (
-              <FileManager
-                machineId={machine.machineId}
-                terminalId={activeTerminalId}
-                transport={connectedTransport}
-                initialPath="/"
-                className="flex h-full min-h-0 flex-col relative"
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-                Connect to a terminal to view files
+          {panelMode === 'files' ? (
+            <div className="absolute inset-0 z-20 flex flex-col bg-white shadow-2xl md:inset-y-auto md:relative md:z-auto md:h-[40%] md:min-h-[250px] md:border-t md:border-zinc-200" data-testid="termx-file-overlay">
+              <div className="flex h-11 shrink-0 items-center justify-between border-b border-zinc-200 bg-zinc-50 px-3 md:hidden">
+                <span className="text-sm font-semibold text-zinc-900">Files</span>
+                <button
+                  type="button"
+                  aria-label="Close files"
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 active:bg-zinc-200"
+                  onClick={openTerminalPanel}
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-            )}
-          </div>
+              {activeTerminalId && connectedTransport ? (
+                <FileManager
+                  machineId={machine.machineId}
+                  terminalId={activeTerminalId}
+                  transport={connectedTransport}
+                  initialPath="/"
+                  className="flex h-full min-h-0 flex-col relative"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+                  Connect to a terminal to view files
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
 
         <MobileTerminalKeybar

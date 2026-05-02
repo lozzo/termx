@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-E-C-B-M re-embed current local web frontend assets
-- Last updated: 2026-05-02T14:47:00+08:00
+- Active todo: P3-E-C-B-N reclaim mobile terminal height with tgent-style header actions
+- Last updated: 2026-05-02T15:17:00+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -43,6 +43,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-K | remote-ui/core | Add terminal resize ownership and size-lock handling so local/mobile remote views can fit locally without stealing daemon PTY size | completed | `23539e7d` |
 | P3-E-C-B-L | remote-ui | Fix embedded local xterm viewport sizing so the terminal does not stay at a single visible row after mobile/local layout settles | completed | `134c35f7` |
 | P3-E-C-B-M | localweb | Re-embed current `remote-ui` local web frontend assets into the `termx` binary static bundle | completed | `fc5e92aa` |
+| P3-E-C-B-N | remote-ui | Rework mobile local web terminal chrome so terminal height is maximized, terminal list has a clear back button, and files/pair actions move into compact header actions | in_progress |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -326,6 +327,18 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Code review: `Pasteur` found no issues. It confirmed no workspace/tab/pane/session public model drift, no TURN credential or machine private key exposure, no WebRTC/fetch/native transport leakage into `LocalRemoteApp`, embedded assets match `remote-ui/dist` by SHA-256, and current accessible command names are covered.
 - Result: completed. Commit: `fc5e92aa`.
 
+### P3-E-C-B-N mobile terminal chrome height reclaim
+
+- Active slice: respond to user feedback that the mobile web terminal still wastes vertical space on Console/Files/Terms-style controls and lacks an obvious way to return from the terminal page to the terminal list. Use `../tgent/tgent-app/src/pages/TerminalPage.tsx` as the interaction reference: a compact header with a back/list button and small action icons, with secondary tools in overlays/menus instead of persistent bottom navigation.
+- Tests written before implementation: planned `remote-ui/src/LocalRemoteApp.test.tsx` regressions proving there is no bottom navigation, the terminal header exposes a clear terminal-list back button, file manager opens through a compact header action, and files overlay does not replace or compress the mounted terminal surface.
+- Expected failing tests: `cd remote-ui && npm test -- --run src/LocalRemoteApp.test.tsx` should fail before implementation because current mobile shell still uses a visible Console/Files segmented header control rather than compact icon actions and a tgent-style terminal-list back button.
+- Planned scope: change `LocalRemoteApp.tsx` mobile chrome and tests only, then rebuild embedded localweb assets. Do not change protocol, pairing primitives, resize ownership, TURN behavior, app/machine key handling, or transport interfaces. Preserve public machine -> terminal model and avoid workspace/tab/pane public concepts.
+- Actual failing tests before implementation: `cd remote-ui && npm test -- --run src/LocalRemoteApp.test.tsx` failed as expected because there was no accessible `Back to terminal list` button and the existing mobile header still exposed the older segmented `Open terminal` / `Open files` control.
+- Implementation notes: mobile local web now uses a tgent-style compact header with a back-to-terminal-list button, machine/terminal title, and small Files/Pair actions. Files opens as an absolute overlay with its own close button; the terminal panel remains `flex-1` and mounted underneath, and the mobile keybar is hidden only while the files overlay is active.
+- Focused tests after implementation: `cd remote-ui && npm test -- --run src/LocalRemoteApp.test.tsx` passed 6 tests; `cd remote-ui && npm run typecheck` passed.
+- Broader tests after implementation: `cd remote-ui && npm test` passed 106 tests; `cd remote-ui && npm run build:localweb` passed with only the existing Vite large chunk warning; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestStartRemoteLocalWebServesEmbeddedPageAndStatus|TestRemoteLocal'` passed; `git diff --check` passed.
+- Code review: `Halley` found no issues. It confirmed the mobile header exposes `Back to terminal list`, terminal title, and compact icon actions; terminal panel remains `flex-1`; Files is an overlay; keybar visibility restores in terminal mode; embedded assets match `remote-ui/dist`; and there is no workspace/tab/pane/session public model drift, TURN credential change, machine private key exposure, or UI transport-boundary leakage.
+
 ### P3-F anonymous rendezvous HTTP adapter/service
 
 - Active slice: HTTP adapter/service for the existing anonymous rendezvous store.
@@ -531,6 +544,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Maxwell` (`019de4a3-d2f7-77d0-9ce6-c84cf4578b52`): P3-E-C-B-K code review for terminal resize ownership, size lock handling, mobile/local follower fit behavior, transport boundaries, and remote rebuild scope drift. Findings: high unscoped request-path `resize` bypassed owner attachment when no matching attachment existed. Result: fixed by requiring request-path resize owner attachment, including scoped no-attachment regression and existing request-path test updates.
 - `Peirce` (`019de66e-8d86-7192-a315-dcbae118f4ec`): P3-E-C-B-L code review for xterm viewport delayed fit, resize ownership gating, generated localweb assets, and scope drift. Findings: core xterm fix was sound; medium scope issue that unrelated `LocalRemoteApp.tsx` changes would pollute generated assets. Result: regenerated assets from a clean worktree containing only the xterm fix.
 - `Pasteur` (`019de772-b556-7f81-9507-c8fa318ec7a7`): P3-E-C-B-M code review for current frontend re-embed, mobile header/navigation adjustment, accessibility labels, generated assets, and remote rebuild boundaries. Findings: no issues; generated static assets match `remote-ui/dist`, command names are covered, and no transport/security/model drift was found.
+- `Halley` (`019de798-a39e-72d2-881f-3af1b5cbda73`): P3-E-C-B-N code review for mobile terminal chrome height reclaim, terminal-list back button, files overlay behavior, keybar visibility, generated assets, and remote rebuild boundaries. Findings: no issues; confirmed terminal panel remains `flex-1`, files is an overlay, embedded assets match `remote-ui/dist`, and no transport/security/model drift was found.
 
 ## Code Review Log
 

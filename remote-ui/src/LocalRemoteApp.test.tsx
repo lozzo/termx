@@ -60,6 +60,9 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
     expect(screen.getByTestId('termx-terminal-list').getAttribute('data-machine-id')).toBe('machine-local')
     expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-1')
+    expect(screen.queryByTestId('termx-file-manager')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-file-manager')).toBeTruthy())
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-terminal-id')).toBe('terminal-1')
     expect(createTransport).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'machine-local',
@@ -102,11 +105,23 @@ describe('LocalRemoteApp', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Ctrl' }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal').getAttribute('data-modifier-state')).toBe('once:off'))
 
+    expect(screen.getByRole('button', { name: /back to terminal list/i })).toBeTruthy()
+    expect(screen.getByTestId('termx-terminal-title').textContent).toContain('zsh')
+    expect(screen.queryByRole('navigation', { name: /mobile terminal navigation/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^console$/i })).toBeNull()
+
     await userEvent.click(screen.getByRole('button', { name: /open files/i }))
     await waitFor(() => expect(screen.getByTestId('termx-file-manager')).toBeTruthy())
     expect(screen.getByTestId('termx-terminal')).toBeTruthy()
+    expect(screen.getByTestId('termx-terminal-panel').className).toContain('flex-1')
+    expect(screen.getByTestId('termx-file-overlay').className).toContain('absolute')
+    expect(screen.getByTestId('termx-mobile-keybar').className.split(/\s+/)).toContain('hidden')
 
-    await userEvent.click(screen.getByRole('button', { name: /switch terminal/i }))
+    await userEvent.click(screen.getByRole('button', { name: /close files/i }))
+    await waitFor(() => expect(screen.queryByTestId('termx-file-overlay')).toBeNull())
+    expect(screen.getByTestId('termx-mobile-keybar').className.split(/\s+/)).not.toContain('hidden')
+
+    await userEvent.click(screen.getByRole('button', { name: /back to terminal list/i }))
     expect(screen.getByTestId('termx-terminal-switcher-sheet')).toBeTruthy()
     expect(screen.getByTestId('termx-terminal-switcher-sheet').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
 
