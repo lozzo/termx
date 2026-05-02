@@ -46,7 +46,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-N | remote-ui | Rework mobile local web terminal chrome so terminal height is maximized, terminal list has a clear back button, and files/pair actions move into compact header actions | completed | `0be902f9` |
 | P3-E-C-B-O | remote-ui | Add a true local embedded terminal list page so local web opens to terminals first and only enters the terminal page after selecting an item | completed | `b7f07517` |
 | P3-E-C-B-P | remote-ui | Enrich terminal list metadata and move Files to a machine-level overlay whose open/close state is independent from terminal/list navigation | completed | `b0de33ee` |
-| P3-E-C-B-Q | remote-ui/core | Push terminal inventory changes over WebRTC and consume them through a shared machine-level event subscription interface so web/app auto-refresh terminal lists | completed | `pending` |
+| P3-E-C-B-Q | remote-ui/core | Push terminal inventory changes over WebRTC and consume them through a shared machine-level event subscription interface so web/app auto-refresh terminal lists | completed | `936e6cd9` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P3-DX-A | cli/localweb | Add a root fast-start build/run entry so local embedded web frontend assets and the `termx` CLI can be rebuilt/launched without manual multi-step commands | in_progress |  |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
@@ -389,7 +389,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Deferred implementation detail: local embedded web now auto-refreshes terminal inventory from machine-level WebRTC push, but mobile/native still needs its own adapter implementation to consume the same shared `TerminalInventoryEvents` interface in P4-A. The current local path intentionally uses a dedicated machine-level events RTC session rather than overloading an active terminal session.
 - Worktree note: the shared workspace currently also contains user-driven local UI and fast-start changes outside this todo (`README.md`, `Makefile`, several `remote-ui` presentation files, and regenerated embedded assets). This slice was kept scoped to the machine-level inventory push path and intentionally did not revert or overwrite those unrelated in-flight edits.
 - Code review: `Nietzsche` found a high issue where machine-events-only sessions still accepted empty `types` and could subscribe to non-inventory events, plus a medium test gap where metadata-change refresh was not proven through the real `events` channel. Fixed by requiring explicit allowed terminal inventory event types in machine-events-only scope, adding an end-to-end machine inventory metadata event test over local WebRTC, and retaining the shared interface boundary. No workspace/tab/pane drift, TURN credential exposure, machine private key exposure, or browser/native boundary leak was found.
-- Result: completed. Commit: `pending`.
+- Result: completed. Commit: `936e6cd9`.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
