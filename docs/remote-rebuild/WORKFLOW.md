@@ -41,7 +41,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-I | remote-ui | Refactor embedded local web mobile terminal interaction shell with terminal-first navigation, terminal switcher sheet, pair sheet, virtual keybar, and keyboard-aware xterm handle | completed | `be748f93` |
 | P3-E-C-B-J | cli/local | Complete `termx remote` commands for implemented local-only remote management: enable/local-only, disable, info/show, pair, and open | completed | `dd5e1502` |
 | P3-E-C-B-K | remote-ui/core | Add terminal resize ownership and size-lock handling so local/mobile remote views can fit locally without stealing daemon PTY size | completed | `23539e7d` |
-| P3-E-C-B-L | remote-ui | Fix embedded local xterm viewport sizing so the terminal does not stay at a single visible row after mobile/local layout settles | in_progress |  |
+| P3-E-C-B-L | remote-ui | Fix embedded local xterm viewport sizing so the terminal does not stay at a single visible row after mobile/local layout settles | completed | `134c35f7` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -310,6 +310,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Focused tests after implementation: `cd remote-ui && npm test -- --run src/Terminal.test.tsx` passed 12 tests; `cd remote-ui && npm test -- --run src/Terminal.test.tsx src/LocalRemoteApp.test.tsx` passed 18 tests; clean-worktree `cd remote-ui && npm test -- --run src/Terminal.test.tsx` passed.
 - Broader tests after implementation: clean-worktree `cd remote-ui && npm test` passed 106 tests; clean-worktree `cd remote-ui && npm run typecheck` passed; clean-worktree `cd remote-ui && npm run build:localweb` passed with only the existing Vite large chunk warning; clean-worktree `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; clean-worktree `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
 - Code review: `Peirce` found no issue with the core xterm delayed-fit fix, resize ownership gating, transport boundaries, TURN credential handling, machine private key handling, or workspace/tab/pane public-model drift. It found a medium scope issue that the existing uncommitted `LocalRemoteApp.tsx` mobile header/nav changes would pollute this todo's embedded bundle; fixed by regenerating assets from a temporary clean worktree that only contains the xterm fix. It also found this workflow entry stale; fixed by this update.
+- Result: completed. Commit: `134c35f7`.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
