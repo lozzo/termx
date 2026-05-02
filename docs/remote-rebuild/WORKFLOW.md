@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `8` Quota, active session limit, and throttling.
-- Last updated: 2026-05-03T06:56:24+08:00.
+- Active todo: `9` TermX daemon cloud integration.
+- Last updated: 2026-05-03T07:14:39+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -64,7 +64,12 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 7-C | paid-relay-review | Validate ICE URL schemes and enforce user-visible relay session/quota policy | completed | `e9b013e7` |
 | 7-D | paid-relay-follow-up-review | Reject exhausted monthly quota and bind TURN credentials to relay lease IDs | completed | `e9b013e7` |
 | 7-E | paid-relay-final-review | Reject managed relay TURN credentials when relay lease ID is blank | completed | `e9b013e7` |
-| 8 | quota | Implement relay quota, active relay session limit, heartbeat, TTL cleanup, and throttling | pending |  |
+| 8 | quota | Implement relay quota, active relay session limit, heartbeat, TTL cleanup, and throttling | completed |  |
+| 8-A | quota-policy | Replace Slice 7 exhausted-quota denial with terminal-friendly throttled relay policy | completed |  |
+| 8-B | quota-review | Make relay usage heartbeat idempotent under retry/duplicate delivery | completed |  |
+| 8-C | quota-review | Enforce relay heartbeat hub authority and online status in service boundary | completed |  |
+| 8-D | workflow-review | Refresh Slice 8 workflow review state and bottom next action | completed |  |
+| 8-C-A | quota-follow-up-review | Require authenticated hub principal instead of caller/body hub identity for heartbeat accounting | completed |  |
 | 9 | daemon-agent | Integrate `termx daemon` cloud bootstrap, hub heartbeat/poll/answer, and WebRTC offer handling | pending |  |
 | 10 | remote-ui | Connect `remote-ui` to real Web Control / public_p2p / managed API adapters while keeping `RtcSession` runtime boundary | pending |  |
 | 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | pending |  |
@@ -1285,27 +1290,156 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 8 Quota, Active Session Limit, And Throttling
 
-- 状态：pending
+- 状态：completed
 - 父条目：none
 - 来源：relay 是付费能力，需按 quota、session limit、throttle 策略执行。
 - 目标：实现 monthly relay usage、relay session heartbeat、TTL cleanup、active session limit、over-quota terminal-friendly throttle。
-- 范围：`web-control/` SQLite models/transactions/API/tests, `termx-hub/` heartbeat/usage client and local limiter.
+- 范围：`web-control/internal/relay` SQLite heartbeat/usage/session policy and tests; workflow updates. Hub-side heartbeat client/local limiter may be added in a derived Slice 8 item after Web Control behavior is stable.
 - 非目标：不接真实计费，不做全球强同步 per-packet 计量。
 - 外部依赖：真实 billing/subscription reconciliation deferred。
-- mock 策略：fake clock, SQLite transaction tests, mock payment provider plan states, local limiter fake traffic.
-- 先写的失败测试：待创建 quota exceeded throttled、session limit rejects extra lease、cleanup expires stale sessions、usage delta persisted 测试。
-- 预期失败结果：待记录。
-- 实现摘要：待完成。
-- 重构摘要：待完成。
-- 运行命令：待记录。
-- 测试结果：待记录。
-- subagent review：待发起。
-- review 发现：待记录。
-- review 后修复：待记录。
-- 新增派生条目：暂无。
+- mock 策略：fake clock, SQLite transaction tests, mock payment provider plan states; no real billing or production relay traffic source.
+- 先写的失败测试：create Web Control relay heartbeat tests proving usage deltas persist into `relay_sessions` and `relay_usage_monthly`, over-quota heartbeats keep the session usable but set throttled `rate_limit_bps`, stale/expired sessions are cleaned in SQLite, and expired cleanup frees session-limit capacity.
+- 预期失败结果：focused relay tests should fail before implementation because heartbeat, cleanup, throttled policy state, and status constants do not exist yet.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/relay` failed as expected with undefined `RelayThrottled`, `RecordHeartbeat`, `HeartbeatInput`, `SessionActive`, `CleanupExpired`, `CleanupInput`, and `SessionExpired`.
+- 实现摘要：added throttled lease policy for exhausted monthly usage; added SQLite-backed relay usage heartbeat with session byte counters, monthly usage upsert, active status transition, and persisted `rate_limit_bps`; added cleanup for expired/stale leased and active relay sessions.
+- 重构摘要：kept quota/session/throttle state in `web-control/internal/relay` provider boundary and SQLite transactions; production packet-level rate enforcement remains outside Web Control and will be propagated to Hub in a later item.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/relay`; `cd web-control && GOWORK=off go test ./internal/store`; `cd web-control && GOWORK=off go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md web-control/internal/relay web-control/internal/store web-control/internal/account`.
+- 测试结果：focused relay tests pass after implementation and after review fixes; added negative tests for wrong hub heartbeat, expired session heartbeat, negative/counter-regressing usage totals, offline hub heartbeat, duplicate cumulative heartbeat retry, and fresh active cleanup preservation. Store migration tests pass. Broader web-control tests, workflow guard, and scoped diff check pass.
+- subagent review：requested from `Ohm` after focused/broader tests passed.
+- review 发现：`Ohm` found Medium duplicate/retried delta heartbeats can overcount usage and throttle early (`8-B`); Medium heartbeat authorization boundary is caller-assumed and does not re-check authenticated/online hub status (`8-C`); Low workflow bottom next action and command list are stale/incomplete (`8-D`).
+- review 后修复：implemented throttled lease, SQLite heartbeat, cleanup, duplicate retry/idempotent cumulative totals, offline hub checks, and explicit authenticated hub principal in `8-C-A`.
+- 新增派生条目：`8-A`, `8-B`, `8-C`, `8-D`, `8-C-A`.
 - deferred human items：真实账单对账、发票、税务、支付回调。
 - 剩余风险：SQLite transaction、TTL cleanup、quota/session limit 必须是真行为，不是只在内存 mock 成立。
-- 下一步：record Slice 7 workflow hash commit, then start Slice 8 TDD.
+- 下一步：commit Slice 8, record commit hash, then start Slice 9 daemon cloud integration.
+- commit：待提交。
+
+### 8-A Throttled Relay Policy Instead Of Quota Denial
+
+- 状态：completed
+- 父条目：8
+- 来源：Slice 8 target and product docs require over-quota paid users to keep terminal/file/api/events reachable over managed relay with throttled policy, while Slice 7 deliberately denied exhausted quota with `ErrRelayQuotaExceeded`.
+- 目标：replace exhausted-quota lease denial with managed relay lease issuance that marks `relay_throttled` and persists low `rate_limit_bps`, without exposing `relay` as a fourth client path.
+- 范围：`web-control/internal/relay` policy types/service/tests and `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement real packet shaping or production TURN server enforcement in this derived item; Hub local limiter/client propagation may follow after Web Control policy is real.
+- 外部依赖：真实 billing/subscription reconciliation deferred.
+- mock 策略：fake clock, SQLite monthly usage rows, plan throttle field in test DB; no external billing or traffic provider.
+- 先写的失败测试：add focused test where paid user with exhausted monthly usage still receives a `managed` relay lease with `RelayThrottled=true`, `RelayThrottleBps>0`, and persisted `rate_limit_bps`.
+- 预期失败结果：focused test should fail because Slice 7 returns `ErrRelayQuotaExceeded` instead of a throttled lease and `RelayLease` has no `RelayThrottled` field.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/relay` failed as expected with `RelayThrottled` undefined; broader Slice 8 tests also failed because heartbeat/cleanup APIs are not implemented.
+- 实现摘要：`CreateLease` now issues managed leases with `RelayThrottled=true`, zero remaining bytes, and persisted low `rate_limit_bps` when monthly quota is exhausted instead of denying terminal-friendly relay access.
+- 重构摘要：added plan-level `relay_throttle_bps` migration/default and kept `relay` out of the client path taxonomy.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/relay`; `cd web-control && GOWORK=off go test ./...`.
+- 测试结果：focused throttled lease policy test passes; broader web-control tests pass.
+- subagent review：requested from `Ohm` as part of Slice 8 review.
+- review 发现：covered by Slice 8 review; no separate finding beyond parent/derived entries.
+- review 后修复：included in completed Slice 8 implementation.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：actual relay byte-level throttling remains Hub/TURN enforcement work; this item only makes Web Control policy authoritative.
+- 下一步：included in Slice 8 completion.
+- commit：待提交。
+
+### 8-B Idempotent Relay Usage Heartbeats
+
+- 状态：completed
+- 父条目：8
+- 来源：Slice 8 subagent review by `Ohm`; duplicate/retried delta heartbeats can double count usage and throttle paid users early.
+- 目标：make relay usage heartbeats idempotent under retry by using cumulative byte totals or another monotonic contract persisted with the session in the same transaction.
+- 范围：`web-control/internal/relay`, store migration if needed, focused tests, workflow.
+- 非目标：do not implement global multi-region reconciliation or packet-level TURN accounting.
+- 外部依赖：none.
+- mock 策略：SQLite migrated test DB and fake clock; no external traffic provider.
+- 先写的失败测试：add focused test proving retrying the same cumulative heartbeat does not increase monthly usage twice, while a later higher cumulative heartbeat only records the delta.
+- 预期失败结果：focused test should fail because current API only accepts deltas and has no idempotency/cumulative fields.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/relay` failed as expected with unknown `BytesRXTotal` / `BytesTXTotal` fields in `HeartbeatInput`.
+- 实现摘要：changed heartbeat input from deltas to cumulative RX/TX totals; service now computes and persists only positive increments over stored session counters, so duplicate retries update heartbeat time without double counting monthly usage.
+- 重构摘要：kept idempotency inside the same SQLite transaction that updates session counters and monthly aggregate.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/relay`; `cd web-control && GOWORK=off go test ./...`.
+- 测试结果：focused relay tests pass; duplicate cumulative heartbeat does not overcount, later higher cumulative totals add only the new delta, and regressing counters are rejected.
+- subagent review：follow-up review requested after fixes.
+- review 发现：Medium duplicate/retried heartbeat overcounts usage.
+- review 后修复：implemented cumulative heartbeat totals and retry-idempotent monthly aggregation.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：multi-hub duplicate prevention still depends on lease being scoped to one hub/session.
+- 下一步：included in Slice 8 completion.
+- commit：待提交。
+
+### 8-C Relay Heartbeat Hub Authority Boundary
+
+- 状态：completed
+- 父条目：8
+- 来源：Slice 8 subagent review by `Ohm`; `RecordHeartbeat` currently trusts caller-provided `hub_id` and does not re-check hub online status.
+- 目标：make the service contract require the authenticated hub identity and reject heartbeats from offline or mismatched hubs before usage is counted.
+- 范围：`web-control/internal/relay`, focused tests, workflow.
+- 非目标：do not add full HTTP auth middleware in this derived item; HTTP endpoint integration remains future work.
+- 外部依赖：production hub identity/signing secret deferred under existing hub identity items.
+- mock 策略：SQLite hub rows model authenticated/online state; future HTTP layer must pass authenticated hub ID into this service.
+- 先写的失败测试：add focused test proving an offline hub owning the lease cannot record heartbeat usage and monthly usage is not inserted.
+- 预期失败结果：focused test should fail because current `RecordHeartbeat` does not call `requireHubOnline`.
+- 实际失败结果：same focused run fails before runtime because the heartbeat contract does not yet expose cumulative byte totals; offline hub behavior remains to be checked after API implementation.
+- 实现摘要：`RecordHeartbeat` now calls `requireHubOnline` inside the heartbeat transaction after loading the session; offline hub heartbeats fail before usage aggregation.
+- 重构摘要：kept authority and policy behavior inside the relay service transaction boundary.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/relay`; `cd web-control && GOWORK=off go test ./...`.
+- 测试结果：focused relay tests pass; offline hub heartbeat returns `ErrHubUnavailable` and leaves monthly usage empty.
+- subagent review：follow-up review requested after fixes.
+- review 发现：Medium heartbeat authorization boundary too weak. Follow-up review confirms offline-hub mutation is fixed, but service input still accepts a generic caller-supplied `HubID`; fix in `8-C-A`.
+- review 后修复：implemented hub-online check before usage mutation; `8-C-A` will make authenticated hub principal explicit.
+- 新增派生条目：`8-C-A`.
+- deferred human items：production hub identity/signature configuration.
+- 剩余风险：HTTP middleware must still bind authenticated hub principal to `HeartbeatInput.AuthenticatedHubID`.
+- 下一步：included in Slice 8 completion.
+- commit：待提交。
+
+### 8-C-A Authenticated Hub Principal For Relay Heartbeat
+
+- 状态：completed
+- 父条目：8-C
+- 来源：Slice 8 follow-up review by `Ohm`; offline hub mutation is fixed, but `HeartbeatInput.HubID` still looks like caller/body data instead of authenticated hub principal.
+- 目标：make relay heartbeat accounting require an explicit authenticated hub principal from the future HTTP auth boundary, so service callers cannot accidentally trust request JSON `hub_id`.
+- 范围：`web-control/internal/relay` types/service/tests and workflow.
+- 非目标：do not implement HTTP middleware or production hub signing in this item.
+- 外部依赖：production hub identity/signing secret deferred.
+- mock 策略：tests pass `AuthenticatedHubID` directly as the already-verified principal.
+- 先写的失败测试：compile-time contract change: tests and service should no longer use generic `HubID` for heartbeat authority.
+- 预期失败结果：not run separately; this is a narrowly-scoped API hardening from follow-up review.
+- 实现摘要：renamed heartbeat authority input to `AuthenticatedHubID`; `RecordHeartbeat` trims and requires that principal, then uses it for session lookup and hub-online validation.
+- 重构摘要：kept `CreateLeaseInput.HubID` unchanged because lease creation still selects a hub; heartbeat accounting now has a distinct authenticated principal field.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/relay`; `rg -n "HeartbeatInput\\{|AuthenticatedHubID|BytesRXDelta|BytesTXDelta|\\.HubID" web-control/internal/relay -S`; `cd web-control && GOWORK=off go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md web-control/internal/relay web-control/internal/store web-control/internal/account`.
+- 测试结果：focused relay tests pass; no old delta fields remain; heartbeat callsites use `AuthenticatedHubID` while lease creation still uses `HubID`; broader web-control tests, workflow guard, and scoped diff check pass.
+- subagent review：covered by follow-up review; will run final self-check after implementation.
+- review 发现：Medium service contract still allowed caller/body hub identity ambiguity.
+- review 后修复：service contract now distinguishes authenticated hub principal from request/body hub fields.
+- 新增派生条目：none.
+- deferred human items：production hub identity/signing secret.
+- 剩余风险：future HTTP layer must bind verified hub auth to `AuthenticatedHubID`; this item only prevents the service type from encouraging body trust.
+- 下一步：included in Slice 8 completion.
+- commit：待提交。
+
+### 8-D Workflow Review State Refresh
+
+- 状态：completed
+- 父条目：8
+- 来源：Slice 8 subagent review by `Ohm`; workflow bottom next action and command list did not include workflow guard/diff checks and still pointed at Slice 7/Slice 8 start.
+- 目标：keep `WORKFLOW.md` as source of truth after review and fixes.
+- 范围：`docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：no runtime code.
+- 外部依赖：none.
+- mock 策略：not applicable.
+- 先写的失败测试：workflow guard already checks active buildout shape; manual review found stale bottom action.
+- 预期失败结果：not applicable beyond review finding.
+- 实现摘要：bottom `Next Exact Action` now points to Slice 8 review fixes and this entry records workflow guard/diff checks.
+- 重构摘要：none.
+- 运行命令：`bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md web-control/internal/relay web-control/internal/store web-control/internal/account`.
+- 测试结果：workflow guard and scoped diff check pass after final Slice 8 completion update.
+- subagent review：`Ohm` review finding.
+- review 发现：Low stale workflow bottom next action and incomplete command list.
+- review 后修复：updated bottom next action and Slice 8 command list/review state.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：none after workflow guard and manual bottom-action check.
+- 下一步：included in Slice 8 completion.
 - commit：待提交。
 
 ### 9 TermX Daemon Cloud Integration
@@ -2005,5 +2139,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Commit this Slice 7 workflow-hash update.
-2. Start Slice 8 quota/heartbeat/throttling with TDD, using real SQLite session/usage state.
+1. Commit Slice 8 quota/heartbeat/throttling implementation.
+2. Record the Slice 8 commit hash in `WORKFLOW.md`, then start Slice 9 daemon cloud integration with TDD.

@@ -69,6 +69,7 @@ func TestMigrateUpgradesSlice1SubscriptionSchema(t *testing.T) {
 	assertColumnExists(t, db, "subscriptions", "provider_order_id")
 	assertTableExists(t, db, "sessions")
 	assertTableExists(t, db, "payment_orders")
+	assertColumnExists(t, db, "plans", "relay_throttle_bps")
 }
 
 func TestMigrateUpgradesMachineClaimTokenSchema(t *testing.T) {

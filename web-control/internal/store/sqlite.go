@@ -83,6 +83,7 @@ var migrationStatements = []string{
 		name TEXT NOT NULL,
 		monthly_relay_bytes INTEGER NOT NULL DEFAULT 0,
 		relay_session_limit INTEGER NOT NULL DEFAULT 0,
+		relay_throttle_bps INTEGER NOT NULL DEFAULT 0,
 		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 	)`,
 	`CREATE TABLE IF NOT EXISTS subscriptions (
@@ -220,12 +221,21 @@ func applyMigrationUpgrades(ctx context.Context, tx *sql.Tx) error {
 			return fmt.Errorf("add machines.claim_token_hash: %w", err)
 		}
 	}
+	hasPlanRelayThrottleBps, err := columnExists(ctx, tx, "plans", "relay_throttle_bps")
+	if err != nil {
+		return fmt.Errorf("inspect plans schema: %w", err)
+	}
+	if !hasPlanRelayThrottleBps {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE plans ADD COLUMN relay_throttle_bps INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add plans.relay_throttle_bps: %w", err)
+		}
+	}
 	return nil
 }
 
 func columnExists(ctx context.Context, tx *sql.Tx, table string, column string) (bool, error) {
 	switch table {
-	case "subscriptions", "machines":
+	case "subscriptions", "machines", "plans":
 	default:
 		return false, fmt.Errorf("unsupported migration table %q", table)
 	}

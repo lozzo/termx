@@ -377,9 +377,9 @@ func (s *Service) ensureSeedPlans(ctx context.Context) error {
 func (s *Service) ensureSeedPlansWithQuerier(ctx context.Context, q queryer) error {
 	for _, plan := range planCatalog {
 		if _, err := q.ExecContext(ctx, `
-			INSERT OR IGNORE INTO plans(id, name, monthly_relay_bytes, relay_session_limit)
-			VALUES (?, ?, ?, ?)
-		`, plan.ID, plan.Name, plan.MonthlyRelayBytes, plan.RelaySessionLimit); err != nil {
+			INSERT OR IGNORE INTO plans(id, name, monthly_relay_bytes, relay_session_limit, relay_throttle_bps)
+			VALUES (?, ?, ?, ?, ?)
+		`, plan.ID, plan.Name, plan.MonthlyRelayBytes, plan.RelaySessionLimit, plan.RelayThrottleBps); err != nil {
 			return err
 		}
 	}
@@ -461,6 +461,7 @@ var planCatalog = map[string]Plan{
 		AllowRelay:         true,
 		MonthlyRelayBytes:  5 * 1024 * 1024 * 1024,
 		RelaySessionLimit:  2,
+		RelayThrottleBps:   256 * 1024,
 		RelayTransferFiles: true,
 	},
 }
