@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `6` Managed signaling without TURN.
-- Last updated: 2026-05-03T05:35:55+08:00.
+- Last updated: 2026-05-03T05:38:06+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -35,19 +35,19 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 4-C | public_p2p-review | Fix Slice 4 subagent review findings for structured payload validation, secret placement, STUN fail-closed behavior, cleanup scheduling, and workflow freshness | completed | `61ed506a` |
 | 4-C-A | public_p2p-follow-up-review | Fix follow-up review findings for strict field types, ICE relay token parsing, documented envelope compatibility, HTTP body limits, and workflow consistency | completed | `61ed506a` |
 | 4-C-B | public_p2p-final-review | Fix final review findings for private-key-shaped certificate payload fields, relay candidates embedded in SDP, and workflow next action freshness | completed | `61ed506a` |
-| 5 | hub | Create Hub skeleton and agent registry with register, heartbeat, poll, answer, and expiry behavior | completed |  |
-| 5-A | hub-self-review | Harden registry answer assignment and runtime-payload rejection found during local self-review | completed |  |
-| 5-B | hub-review-auth | Fix Slice 5 review finding: enforce agent authority, reject agent rebinds, and validate connect tickets before offer queueing | completed |  |
-| 5-C | hub-review-ttl | Fix Slice 5 review finding: cleanup expired signaling state without dropping valid queued offers for still-online agents | completed |  |
-| 5-D | hub-review-delivery | Fix Slice 5 review finding: make delivery retry and duplicate-answer semantics explicit and tested | completed |  |
-| 5-E | hub-review-clone | Fix Slice 5 review finding: clone returned terminal slices so callers cannot mutate registry-owned state | completed |  |
-| 5-F | hub-review-workflow | Fix Slice 5 review finding: keep workflow review state current and create stable deferred production hub identity todo | completed |  |
-| 5-G | external | Defer production hub identity, control-plane registration secret, and signing/rotation setup | deferred_external |  |
-| 5-H | hub-self-review | Move authority verifier calls outside registry mutex while preserving agent rebind safety | completed |  |
-| 5-I | hub-follow-up-review | Reject expired-agent heartbeats instead of resurrecting registrations without verifier | completed |  |
-| 5-J | hub-follow-up-review | Enforce signaling TTL on Poll, SubmitAnswer, and GetAnswer, not only cleanup | completed |  |
-| 5-K | hub-follow-up-review | Require basic SDP-shaped signaling payloads in addition to runtime marker rejection | completed |  |
-| 5-L | hub-follow-up-review | Refresh workflow state and bottom next action after Slice 5 follow-up review | completed |  |
+| 5 | hub | Create Hub skeleton and agent registry with register, heartbeat, poll, answer, and expiry behavior | completed | `aa81dda7` |
+| 5-A | hub-self-review | Harden registry answer assignment and runtime-payload rejection found during local self-review | completed | `aa81dda7` |
+| 5-B | hub-review-auth | Fix Slice 5 review finding: enforce agent authority, reject agent rebinds, and validate connect tickets before offer queueing | completed | `aa81dda7` |
+| 5-C | hub-review-ttl | Fix Slice 5 review finding: cleanup expired signaling state without dropping valid queued offers for still-online agents | completed | `aa81dda7` |
+| 5-D | hub-review-delivery | Fix Slice 5 review finding: make delivery retry and duplicate-answer semantics explicit and tested | completed | `aa81dda7` |
+| 5-E | hub-review-clone | Fix Slice 5 review finding: clone returned terminal slices so callers cannot mutate registry-owned state | completed | `aa81dda7` |
+| 5-F | hub-review-workflow | Fix Slice 5 review finding: keep workflow review state current and create stable deferred production hub identity todo | completed | `aa81dda7` |
+| 5-G | external | Defer production hub identity, control-plane registration secret, and signing/rotation setup | deferred_external | `aa81dda7` |
+| 5-H | hub-self-review | Move authority verifier calls outside registry mutex while preserving agent rebind safety | completed | `aa81dda7` |
+| 5-I | hub-follow-up-review | Reject expired-agent heartbeats instead of resurrecting registrations without verifier | completed | `aa81dda7` |
+| 5-J | hub-follow-up-review | Enforce signaling TTL on Poll, SubmitAnswer, and GetAnswer, not only cleanup | completed | `aa81dda7` |
+| 5-K | hub-follow-up-review | Require basic SDP-shaped signaling payloads in addition to runtime marker rejection | completed | `aa81dda7` |
+| 5-L | hub-follow-up-review | Refresh workflow state and bottom next action after Slice 5 follow-up review | completed | `aa81dda7` |
 | 6 | managed-signaling | Implement managed signaling without TURN relay as HTTP control/signaling only, runtime still WebRTC DataChannel | pending |  |
 | 7 | paid-relay | Implement paid TURN/STUN relay MVP with temporary TURN credentials, relay lease, and no free TURN | pending |  |
 | 8 | quota | Implement relay quota, active relay session limit, heartbeat, TTL cleanup, and throttling | pending |  |
@@ -539,7 +539,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：生产 hub identity/registration secret 后置 in `5-G`.
 - 剩余风险：current hub registry is an in-memory skeleton; production verifier, hub identity/secret rotation, durable delivery/ack, cleanup scheduler cadence, full SDP/ICE policy, HTTP API wiring, and cross-service ticket/certificate verification remain future slices. Hub still must stay signaling/control only and must not become terminal/file/api/events HTTP runtime proxy.
 - 下一步：commit Slice 5, record hash, then start Slice 6 managed signaling without TURN.
-- commit：待提交。
+- commit：`aa81dda7`
 
 ### 5-H Hub Registry Verifier Lock-Boundary Hardening
 
@@ -565,7 +565,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：must preserve rebind rejection after verifier returns.
 - 下一步：rerun broader validation and include in final follow-up review.
-- commit：待提交。
+- commit：`aa81dda7`
 
 ### 5-I Hub Registry Heartbeat Expiry Verification
 
@@ -591,7 +591,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：fresh registration still depends on verifier implementation, deferred production secret in `5-G`.
 - 下一步：included in Slice 5 follow-up review fixes.
-- commit：待提交。
+- commit：`aa81dda7`
 
 ### 5-J Hub Registry Signaling TTL Runtime Enforcement
 
@@ -617,7 +617,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：cleanup cadence remains future hub service responsibility.
 - 下一步：included in Slice 5 follow-up review fixes.
-- commit：待提交。
+- commit：`aa81dda7`
 
 ### 5-K Hub Registry SDP Shape Validation
 
@@ -643,7 +643,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：full SDP parsing remains future integration work.
 - 下一步：included in Slice 5 follow-up review fixes.
-- commit：待提交。
+- commit：`aa81dda7`
 
 ### 5-L Hub Workflow Follow-Up Review Freshness
 
@@ -669,7 +669,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：must keep current before commit.
 - 下一步：final follow-up review confirmation, then complete Slice 5 and commit.
-- commit：待提交。
+- commit：`aa81dda7`
 
 ### 5-A Hub Registry Self-Review Hardening
 
@@ -695,7 +695,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：multi-agent routing remains a local in-memory skeleton until hub ticket verification and persistent state land.
 - 下一步：included in Slice 5 commit after review-finding children finish.
-- commit：待提交。
+- commit：`aa81dda7`
 
 ### 5-B Hub Registry Authority And Ticket Verification
 
@@ -721,7 +721,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：real production hub identity/control-plane secret/signing key in `5-G`.
 - 剩余风险：until Slice 6, ticket verifier is local interface/fake and not wired to real Control Plane.
 - 下一步：included in Slice 5 commit after remaining review-finding children finish.
-- commit：待提交。
+- commit：`aa81dda7`
 
 ### 5-C Hub Registry TTL Cleanup Hardening
 
@@ -747,7 +747,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：in-memory TTL is a skeleton; durable hub state remains future work.
 - 下一步：included in Slice 5 commit after remaining review-finding children finish.
-- commit：待提交。
+- commit：`aa81dda7`
 
 ### 5-D Hub Registry Delivery And Answer Semantics
 
@@ -773,7 +773,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：full cross-process delivery durability remains future persistent hub work.
 - 下一步：included in Slice 5 commit after remaining review-finding children finish.
-- commit：待提交。
+- commit：`aa81dda7`
 
 ### 5-E Hub Registry Clone Returned State
 
@@ -799,7 +799,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：none expected after clone.
 - 下一步：included in Slice 5 commit after workflow consistency and follow-up review.
-- commit：待提交。
+- commit：`aa81dda7`
 
 ### 5-F Hub Workflow Review State Freshness
 
@@ -825,7 +825,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none beyond `5-G`.
 - 剩余风险：must keep current after every remaining 5-x fix.
 - 下一步：included in Slice 5 follow-up review and commit.
-- commit：待提交。
+- commit：`aa81dda7`
 
 ### 5-G Production Hub Identity And Registration Secret
 
@@ -851,7 +851,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：production hub identity/registration secret/signing rotation/DNS/TLS/cloud deployment credentials.
 - 剩余风险：until production integration, authority checks use local verifier implementations in tests and development.
 - 下一步：real integration in deployment/security hardening slice after local buildout.
-- commit：待提交。
+- commit：`aa81dda7`
 
 ### 6 Managed Signaling Without TURN
 
