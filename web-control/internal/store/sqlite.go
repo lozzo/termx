@@ -116,6 +116,7 @@ var migrationStatements = []string{
 		id TEXT PRIMARY KEY,
 		owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
 		machine_public_key TEXT NOT NULL,
+		claim_token_hash TEXT NOT NULL DEFAULT '',
 		display_name TEXT NOT NULL,
 		hostname TEXT NOT NULL DEFAULT '',
 		platform TEXT NOT NULL DEFAULT '',
@@ -201,15 +202,27 @@ func applyMigrationUpgrades(ctx context.Context, tx *sql.Tx) error {
 			return fmt.Errorf("add subscriptions.provider_order_id: %w", err)
 		}
 	}
+	hasMachineClaimTokenHash, err := columnExists(ctx, tx, "machines", "claim_token_hash")
+	if err != nil {
+		return fmt.Errorf("inspect machines schema: %w", err)
+	}
+	if !hasMachineClaimTokenHash {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE machines ADD COLUMN claim_token_hash TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add machines.claim_token_hash: %w", err)
+		}
+	}
 	return nil
 }
 
 func columnExists(ctx context.Context, tx *sql.Tx, table string, column string) (bool, error) {
-	if table != "subscriptions" {
+	switch table {
+	case "subscriptions", "machines":
+	default:
 		return false, fmt.Errorf("unsupported migration table %q", table)
 	}
 	var count int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM pragma_table_info('subscriptions') WHERE name = ?`, column).Scan(&count); err != nil {
+	query := fmt.Sprintf("SELECT COUNT(1) FROM pragma_table_info('%s') WHERE name = ?", table)
+	if err := tx.QueryRowContext(ctx, query, column).Scan(&count); err != nil {
 		return false, err
 	}
 	return count > 0, nil

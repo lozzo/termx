@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `2` Web auth/account/plan foundation committed; next todo `3`.
-- Last updated: 2026-05-03T04:50:00+08:00.
+- Active todo: `3` Machine, app certificate, and control model ready to commit.
+- Last updated: 2026-05-03T06:35:00+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -24,7 +24,11 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 2-A-A | web-control/auth-self-review | Harden provider order identity and missing token issuer error paths found during local self-review | completed | `f04a92c1` |
 | 2-A-B | web-control/auth-follow-up-review | Fix Slice 2 follow-up review findings around Me nil issuer, pending payment sync, and payment/subscription transaction atomicity | completed | `f04a92c1` |
 | 2-B | external | Defer real payment/email/OAuth/billing/tax/risk integrations behind provider interfaces | deferred_external |  |
-| 3 | web-control/machines | Implement machine, app device, app certificate, revocation, bootstrap, and claim control model | pending |  |
+| 3 | web-control/machines | Implement machine, app device, app certificate, revocation, bootstrap, and claim control model | completed |  |
+| 3-A | web-control/machines-self-review | Reject uploaded private-key fields and prevent bootstrap mutation of claimed machines | completed |  |
+| 3-B | web-control/machines-review | Fix Slice 3 review findings for strict certificate metadata, certificate signature verification, claim proof, and conditional bootstrap writes | completed |  |
+| 3-B-A | web-control/machines-deferred | Preserve signed certificate bytes for future cross-service verification before hub/agent certificate envelope use | deferred |  |
+| 3-B-B | web-control/machines-deferred | Add claim token TTL/rotation policy with daemon pairing UX | deferred |  |
 | 4 | public_p2p | Implement registered public P2P rendezvous with authenticated channel, offer/answer/candidate forwarding, TTL, rate limits, and STUN-only policy | pending |  |
 | 5 | hub | Create Hub skeleton and agent registry with register, heartbeat, poll, answer, and expiry behavior | pending |  |
 | 6 | managed-signaling | Implement managed signaling without TURN relay as HTTP control/signaling only, runtime still WebRTC DataChannel | pending |  |
@@ -215,7 +219,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 3 Machine, App Certificate, And Control Model
 
-- 状态：pending
+- 状态：completed
 - 父条目：none
 - 来源：machine/app certificate/control model 是 web-control 与 daemon agent 的 ownership 和安全边界。
 - 目标：实现 machines、app_devices、app_certificates、revocation、agent bootstrap API、machine claim API，确保 private key 不上传。
@@ -223,20 +227,121 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 非目标：不实现完整 hub signaling、TURN relay、terminal runtime HTTP proxy。
 - 外部依赖：无真实外部系统；机器真实 claim UX 可以先本地/mock。
 - mock 策略：claim challenge 用 local fake clock/key 测试；不 mock ownership 校验本身。
-- 先写的失败测试：待创建 owner 校验、revoked cert 拒绝、machine private key 不上传、app cert metadata 不含 private key 测试。
-- 预期失败结果：待记录。
-- 实现摘要：待完成。
-- 重构摘要：待完成。
-- 运行命令：待记录。
-- 测试结果：待记录。
-- subagent review：待发起。
-- review 发现：待记录。
-- review 后修复：待记录。
-- 新增派生条目：暂无。
-- deferred human items：生产 claim/pairing UX 可后置，但接口和测试先稳定。
-- 剩余风险：必须防止 app/machine private key 泄漏到 web/hub payload 或测试日志。
-- 下一步：Slice 2 完成后开始。
+- 先写的失败测试：planned `web-control/internal/machines/machines_test.go` for machine bootstrap without private key storage, claim ownership, cross-user owner rejection, app certificate metadata without private key, certificate revocation, and revoked/expired cert validation rejection; planned `web-control/internal/httpapi/machines_test.go` for authenticated machine/certificate API behavior.
+- 预期失败结果：focused tests should fail before implementation because `internal/machines`, machine service methods, auth-protected machine HTTP handlers, and certificate validation APIs do not exist yet.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/machines ./internal/httpapi` failed as expected: `internal/machines` had no non-test Go files and HTTP tests could not build without machine service/router APIs.
+- 实现摘要：added `internal/machines` service with bootstrap, claim, owner-scoped list/detail, app certificate metadata registration/list/revoke/validate, private-key stripping for certificate payload metadata, and startup/router wiring for machine endpoints. `3-A` then hardened private-key upload rejection and claimed-machine bootstrap mutation rejection.
+- 重构摘要：kept machine/app certificate business in `web-control`; reused the account service for authenticated HTTP user lookup; no terminal/file/api/events runtime proxy or WebRTC implementation types were introduced.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/machines ./internal/httpapi`; `cd web-control && GOWORK=off go test ./...`; `go test ./web-control/...`; `cd web-control/frontend && npm test`; `cd web-control/frontend && npm run typecheck`; `cd web-control/frontend && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`。
+- 测试结果：red path confirmed before implementation with missing `internal/machines` implementation and router wiring. After implementation and FK-real test adjustments, focused machine/httpapi tests passed. Broader web-control module tests, workspace tests, frontend test/typecheck/build, workflow guard, and diff check all passed before review. `3-A` red tests failed as expected, then focused machine/httpapi tests passed after hardening. Full broader checks passed again after `3-A`.
+- subagent review：requested from `Arendt` (`019dea39-7057-7580-a691-a180ec4e5621`) after broader checks passed; review request updated to include `3-A`; final disposition after `3-B` reported no blocker findings.
+- review 发现：`Arendt` found high risk that `certificate_payload` could still store private-key-shaped metadata such as JWK `d` or PEM values; high risk that app certificate validation checked only revocation/expiry and not machine-signature authenticity or payload binding; medium risk that machine claim used only `machine_id`; medium risk that bootstrap upsert was not write-condition protected against claimed-machine mutation races.
+- review 后修复：`3-B` implemented strict certificate metadata, Ed25519 signature/binding verification before storage, claim token proof, and conditional bootstrap writes. Final review found no blockers.
+- 新增派生条目：`3-A` bootstrap private-key and claimed-machine hardening; `3-B` review fixes for certificate metadata/authenticity, claim proof, and conditional bootstrap writes; deferred `3-B-A` signed-bytes canonical envelope follow-up; deferred `3-B-B` claim token TTL/rotation follow-up.
+- deferred human items：生产 claim/pairing UX 可后置，但接口和测试先稳定；claim token TTL/rotation and cross-service certificate envelope canonicalization are deferred non-blocking follow-ups before hub/agent production use.
+- 剩余风险：agent-side certificate verification is still Slice 9; future hub/agent consumers should verify exact signed certificate bytes or use a canonical envelope before relying on stored payload across services.
+- 下一步：commit Slice 3, record commit hash, then start Slice 4 public_p2p rendezvous.
 - commit：待提交。
+
+### 3-A Machine Bootstrap Private-Key And Ownership Hardening
+
+- 状态：completed
+- 父条目：3
+- 来源：local self-review during Slice 3 review wait found bootstrap accepted private-key fields and could mutate already claimed machines by caller-supplied ID.
+- 目标：reject machine/app private-key fields at service and HTTP boundaries and ensure unauthenticated bootstrap cannot update an owned machine.
+- 范围：`web-control/internal/machines`, `web-control/internal/httpapi`, tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement real machine signature challenge or production claim UX in this child slice.
+- 外部依赖：none.
+- mock 策略：no external systems; tests use SQLite and account service users.
+- 先写的失败测试：planned tests for service/bootstrap rejecting `MachinePrivateKey`, HTTP bootstrap rejecting `machine_private_key`, app certificate registration rejecting `AppPrivateKey`, HTTP certificate registration rejecting `app_private_key`, and claimed-machine bootstrap update rejection.
+- 预期失败结果：focused machine/httpapi tests should fail before implementation because current code strips private fields and allows bootstrap update by ID.
+- 实现摘要：`Bootstrap` now rejects `MachinePrivateKey`; bootstrap by supplied machine ID now refuses to update an already claimed machine; app certificate registration rejects `AppPrivateKey`; HTTP APIs surface those rejections instead of stripping secrets silently.
+- 重构摘要：wrapped bootstrap upsert in a transaction so claimed-machine inspection and insert/update happen together.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/machines ./internal/httpapi`。
+- 测试结果：red tests confirmed first: service accepted uploaded machine/app private keys, HTTP bootstrap accepted `machine_private_key`, and bootstrap could mutate an owned machine by ID. After hardening, focused machine/httpapi tests passed. Full Slice 3 focused/module/workspace/frontend/workflow/diff checks passed after the hardening.
+- subagent review：will be included in Slice 3 review/follow-up.
+- review 发现：pending.
+- review 后修复：local self-review fix implemented; final subagent review accepted this child fix with no blockers.
+- 新增派生条目：none.
+- deferred human items：production machine signature challenge remains future Slice 9/agent integration.
+- 剩余风险：without real daemon signature proof, bootstrap identity remains local/dev control-plane skeleton only.
+- 下一步：included in Slice 3 commit.
+- commit：will be included in Slice 3 commit.
+
+### 3-B Slice 3 Review Fixes
+
+- 状态：completed
+- 父条目：3
+- 来源：Slice 3 subagent review by `Arendt`.
+- 目标：replace permissive certificate payload storage with strict public metadata, verify app certificate signatures/bindings, require a claim proof beyond machine_id, and enforce claimed-machine bootstrap protection in the write itself.
+- 范围：`web-control/internal/machines`, `web-control/internal/httpapi`, tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement production daemon claim UX, real local pairing UI, or hub/agent runtime certificate verification in this slice.
+- 外部依赖：none.
+- mock 策略：tests generate local Ed25519 keys in-process; no external providers.
+- 先写的失败测试：planned tests for rejecting private-key-shaped certificate metadata values (`d`, PEM/private-key material), rejecting invalid certificate signature or mismatched payload binding, requiring a claim token, and preventing claimed-machine bootstrap mutation by SQL write condition.
+- 预期失败结果：focused machine/httpapi tests should fail before implementation because current code strips only key names, does not verify signatures/bindings, accepts claim by machine_id, and relies on pre-upsert check for claimed-machine updates.
+- 实现摘要：bootstrap now issues a claim token and stores only its hash; claim requires the token and clears it on success; machine migration adds `claim_token_hash` with upgrade coverage; app certificate registration rejects private-key-shaped metadata and verifies Ed25519 signatures against the machine public key with payload binding for `machine_id`, `app_public_key`, and `expires_at`; bootstrap upsert now uses a write-side `WHERE machines.owner_user_id IS NULL` guard.
+- 重构摘要：replaced permissive certificate payload stripping with strict validation before storage; kept claim proof local/control-plane only until daemon production UX arrives.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/machines ./internal/httpapi ./internal/store`; `cd web-control && GOWORK=off go test ./...`; `go test ./web-control/...`; `cd web-control/frontend && npm test`; `cd web-control/frontend && npm run typecheck`; `cd web-control/frontend && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`。
+- 测试结果：red tests confirmed first: bootstrap returned no claim token, claim by machine_id succeeded without proof, private-key-shaped certificate metadata was accepted, and signature/binding checks were absent. After fixes, focused machine/httpapi/store tests passed. Full web-control module tests, workspace tests, frontend checks, workflow guard, and diff check passed; focused store migration regression also passed after adding old-machine-schema upgrade coverage.
+- subagent review：`Arendt` found the issues above; final disposition pending after fixes.
+- review 发现：see parent `3`.
+- review 后修复：implemented all `Arendt` findings; broader validation passed; final review disposition reported no blocker findings.
+- 新增派生条目：`3-B-A`; `3-B-B`.
+- deferred human items：production claim UX remains deferred to daemon/app integration, but current claim token must be real enough for control-plane ownership tests.
+- 剩余风险：agent-side certificate verification is still Slice 9; this slice verifies metadata before storage. Exact signed bytes/canonical envelope and claim token TTL/rotation are deferred in `3-B-A` and `3-B-B`.
+- 下一步：included in Slice 3 commit.
+- commit：will be included in Slice 3 commit.
+
+### 3-B-A Signed Certificate Envelope Follow-Up
+
+- 状态：deferred
+- 父条目：3-B
+- 来源：Slice 3 final review residual risk: stored `certificate_payload` is re-marshaled after verification, so future hub/agent consumers should not assume it is the exact signed byte sequence.
+- 目标：before hub/agent certificate envelope use, preserve exact signed bytes or define a canonical envelope and tests proving cross-service verification uses the same bytes.
+- 范围：future web-control/hub/agent certificate envelope code.
+- 非目标：not required for current Slice 3 storage/metadata behavior.
+- 外部依赖：none.
+- mock 策略：use local Ed25519 fixtures.
+- 先写的失败测试：deferred.
+- 预期失败结果：deferred.
+- 实现摘要：deferred.
+- 重构摘要：deferred.
+- 运行命令：not run.
+- 测试结果：not run.
+- subagent review：Arendt identified this as residual risk, not a blocker.
+- review 发现：future cross-service consumers must verify exact signed bytes or canonical form.
+- review 后修复：deferred non-blocking follow-up.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：do not use stored re-marshaled payload as a cross-service signed envelope until this is resolved.
+- 下一步：resolve before hub/agent consumes app certificate envelopes.
+- commit：will be included in Slice 3 workflow.
+
+### 3-B-B Claim Token TTL And Rotation Follow-Up
+
+- 状态：deferred
+- 父条目：3-B
+- 来源：Slice 3 final review residual risk: claim token is random and hashed, but has no TTL/rotation policy yet.
+- 目标：add claim token TTL/rotation and daemon/local pairing UX before production cloud claim.
+- 范围：future machine claim/pairing service, daemon bootstrap, web-control schema/tests.
+- 非目标：not required for current local control-plane skeleton because claim token proof already prevents machine_id-only claim.
+- 外部依赖：production pairing UX may involve daemon/app integration but no third-party provider.
+- mock 策略：use fake clock and local daemon/app test harness.
+- 先写的失败测试：deferred.
+- 预期失败结果：deferred.
+- 实现摘要：deferred.
+- 重构摘要：deferred.
+- 运行命令：not run.
+- 测试结果：not run.
+- subagent review：Arendt identified this as residual risk, not a blocker.
+- review 发现：claim tokens need TTL/rotation before production use.
+- review 后修复：deferred non-blocking follow-up.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：long-lived claim tokens are acceptable only for this skeleton until production pairing work lands.
+- 下一步：resolve with daemon pairing/claim UX.
+- commit：will be included in Slice 3 workflow.
 
 ### 4 Registered Public P2P Rendezvous
 
@@ -1060,5 +1165,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Commit the Slice 2 workflow hash update.
-2. Start Slice 3: write failing machine/app certificate/control model tests before implementing machine ownership, app device/certificate metadata, revocation, bootstrap, and claim APIs.
+1. Write and run failing Slice 3 machine/app certificate/control model tests.
+2. Implement minimal `web-control` machine service/API, rerun focused and broader checks, request subagent review, fix findings, commit Slice 3, and record the commit hash.

@@ -70,6 +70,28 @@ func TestMigrateUpgradesSlice1SubscriptionSchema(t *testing.T) {
 	assertTableExists(t, db, "payment_orders")
 }
 
+func TestMigrateUpgradesMachineClaimTokenSchema(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db, err := store.OpenSQLite(ctx, "file:termx-web-control-machine-upgrade-test?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	for _, stmt := range slice2MachineSchema {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("create slice 2 machine schema: %v", err)
+		}
+	}
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("migrate slice 2 machine schema: %v", err)
+	}
+
+	assertColumnExists(t, db, "machines", "claim_token_hash")
+}
+
 func TestMigrateEnablesForeignKeys(t *testing.T) {
 	t.Parallel()
 
@@ -161,6 +183,26 @@ var slice1Schema = []string{
 		status TEXT NOT NULL,
 		current_period_start TEXT,
 		current_period_end TEXT,
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+	)`,
+}
+
+var slice2MachineSchema = []string{
+	`CREATE TABLE users (
+		id TEXT PRIMARY KEY,
+		email TEXT NOT NULL UNIQUE,
+		password_hash TEXT NOT NULL,
+		role TEXT NOT NULL DEFAULT 'user',
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+	)`,
+	`CREATE TABLE machines (
+		id TEXT PRIMARY KEY,
+		owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+		machine_public_key TEXT NOT NULL,
+		display_name TEXT NOT NULL,
+		hostname TEXT NOT NULL DEFAULT '',
+		platform TEXT NOT NULL DEFAULT '',
+		last_seen_at TEXT,
 		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 	)`,
 }

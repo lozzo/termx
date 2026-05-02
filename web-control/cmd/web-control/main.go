@@ -10,6 +10,7 @@ import (
 
 	"github.com/lozzow/termx/web-control/internal/account"
 	"github.com/lozzow/termx/web-control/internal/httpapi"
+	"github.com/lozzow/termx/web-control/internal/machines"
 	"github.com/lozzow/termx/web-control/internal/store"
 )
 
@@ -35,7 +36,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := http.ListenAndServe(addr, httpapi.NewRouter(httpapi.Config{Accounts: accounts})); err != nil {
+	machineService := machines.NewService(machines.Config{DB: db})
+	if err := http.ListenAndServe(addr, httpapi.NewRouter(httpapi.Config{Accounts: accounts, Machines: machineService})); err != nil {
 		log.Fatal(err)
 	}
 }

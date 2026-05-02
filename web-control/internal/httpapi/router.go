@@ -5,8 +5,10 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/lozzow/termx/web-control/internal/account"
+	"github.com/lozzow/termx/web-control/internal/machines"
 )
 
 const defaultServiceName = "termx-web-control"
@@ -15,6 +17,7 @@ type Config struct {
 	ServiceName string
 	Version     string
 	Accounts    *account.Service
+	Machines    *machines.Service
 }
 
 type HealthResponse struct {
@@ -119,7 +122,185 @@ func NewRouter(cfg Config) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, result)
 	})
+	mux.HandleFunc("POST /api/v1/agent/bootstrap", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Machines == nil {
+			writeError(w, http.StatusServiceUnavailable, "machine_service_unavailable", "machine service is not configured")
+			return
+		}
+		var req struct {
+			MachineID         string `json:"machine_id"`
+			MachinePublicKey  string `json:"machine_public_key"`
+			MachinePrivateKey string `json:"machine_private_key"`
+			DisplayName       string `json:"display_name"`
+			Hostname          string `json:"hostname"`
+			Platform          string `json:"platform"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+			return
+		}
+		result, err := cfg.Machines.Bootstrap(r.Context(), machines.BootstrapInput{
+			MachineID:         req.MachineID,
+			MachinePublicKey:  req.MachinePublicKey,
+			MachinePrivateKey: req.MachinePrivateKey,
+			DisplayName:       req.DisplayName,
+			Hostname:          req.Hostname,
+			Platform:          req.Platform,
+		})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "bootstrap_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, result)
+	})
+	mux.HandleFunc("POST /api/v1/machines/claim", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := authenticatedUser(w, r, cfg.Accounts)
+		if !ok {
+			return
+		}
+		if cfg.Machines == nil {
+			writeError(w, http.StatusServiceUnavailable, "machine_service_unavailable", "machine service is not configured")
+			return
+		}
+		var req struct {
+			MachineID  string `json:"machine_id"`
+			ClaimToken string `json:"claim_token"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+			return
+		}
+		machine, err := cfg.Machines.Claim(r.Context(), machines.ClaimInput{UserID: user.User.ID, MachineID: req.MachineID, ClaimToken: req.ClaimToken})
+		if err != nil {
+			writeError(w, http.StatusForbidden, "claim_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, machine)
+	})
+	mux.HandleFunc("GET /api/v1/machines", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := authenticatedUser(w, r, cfg.Accounts)
+		if !ok {
+			return
+		}
+		if cfg.Machines == nil {
+			writeError(w, http.StatusServiceUnavailable, "machine_service_unavailable", "machine service is not configured")
+			return
+		}
+		list, err := cfg.Machines.ListMachines(r.Context(), user.User.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "list_machines_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"machines": list})
+	})
+	mux.HandleFunc("GET /api/v1/machines/{machine_id}", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := authenticatedUser(w, r, cfg.Accounts)
+		if !ok {
+			return
+		}
+		if cfg.Machines == nil {
+			writeError(w, http.StatusServiceUnavailable, "machine_service_unavailable", "machine service is not configured")
+			return
+		}
+		machine, err := cfg.Machines.GetMachine(r.Context(), user.User.ID, r.PathValue("machine_id"))
+		if err != nil {
+			writeError(w, http.StatusNotFound, "machine_not_found", "machine not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, machine)
+	})
+	mux.HandleFunc("POST /api/v1/machines/{machine_id}/app-certificates", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := authenticatedUser(w, r, cfg.Accounts)
+		if !ok {
+			return
+		}
+		if cfg.Machines == nil {
+			writeError(w, http.StatusServiceUnavailable, "machine_service_unavailable", "machine service is not configured")
+			return
+		}
+		var req struct {
+			AppPublicKey         string `json:"app_public_key"`
+			AppPrivateKey        string `json:"app_private_key"`
+			AppDisplayName       string `json:"app_display_name"`
+			CertificatePayload   string `json:"certificate_payload"`
+			CertificateSignature string `json:"certificate_signature"`
+			ExpiresAt            string `json:"expires_at"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+			return
+		}
+		expiresAt, err := time.Parse(time.RFC3339Nano, req.ExpiresAt)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_expiry", "expires_at must be RFC3339")
+			return
+		}
+		cert, err := cfg.Machines.RegisterAppCertificate(r.Context(), machines.RegisterAppCertificateInput{
+			UserID:               user.User.ID,
+			MachineID:            r.PathValue("machine_id"),
+			AppPublicKey:         req.AppPublicKey,
+			AppPrivateKey:        req.AppPrivateKey,
+			AppDisplayName:       req.AppDisplayName,
+			CertificatePayload:   req.CertificatePayload,
+			CertificateSignature: req.CertificateSignature,
+			ExpiresAt:            expiresAt,
+		})
+		if err != nil {
+			writeError(w, http.StatusForbidden, "register_certificate_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, cert)
+	})
+	mux.HandleFunc("GET /api/v1/machines/{machine_id}/app-certificates", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := authenticatedUser(w, r, cfg.Accounts)
+		if !ok {
+			return
+		}
+		if cfg.Machines == nil {
+			writeError(w, http.StatusServiceUnavailable, "machine_service_unavailable", "machine service is not configured")
+			return
+		}
+		certs, err := cfg.Machines.ListAppCertificates(r.Context(), user.User.ID, r.PathValue("machine_id"))
+		if err != nil {
+			writeError(w, http.StatusNotFound, "machine_not_found", "machine not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"app_certificates": certs})
+	})
+	mux.HandleFunc("DELETE /api/v1/machines/{machine_id}/app-certificates/{cert_id}", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := authenticatedUser(w, r, cfg.Accounts)
+		if !ok {
+			return
+		}
+		if cfg.Machines == nil {
+			writeError(w, http.StatusServiceUnavailable, "machine_service_unavailable", "machine service is not configured")
+			return
+		}
+		if err := cfg.Machines.RevokeAppCertificate(r.Context(), user.User.ID, r.PathValue("machine_id"), r.PathValue("cert_id")); err != nil {
+			writeError(w, http.StatusNotFound, "certificate_not_found", "certificate not found")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	return mux
+}
+
+func authenticatedUser(w http.ResponseWriter, r *http.Request, accounts *account.Service) (account.AuthResult, bool) {
+	if accounts == nil {
+		writeError(w, http.StatusServiceUnavailable, "account_service_unavailable", "account service is not configured")
+		return account.AuthResult{}, false
+	}
+	token, err := bearerToken(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "missing_token", "bearer token is required")
+		return account.AuthResult{}, false
+	}
+	result, err := accounts.Me(r.Context(), token)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid_token", "bearer token is invalid")
+		return account.AuthResult{}, false
+	}
+	return result, true
 }
 
 func decodeJSON(r *http.Request, out any) error {
