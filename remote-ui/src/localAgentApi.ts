@@ -1,5 +1,5 @@
 import { normalizeMachine, normalizeTerminal, type Machine, type Terminal } from './model'
-import type { LocalAgentApi, LocalInventoryRTCAnswer, LocalInventoryRTCOffer, LocalPairInput, LocalPairResult, LocalRTCAnswer, LocalRTCOffer, LocalStatus } from './transport'
+import type { LocalAgentApi, LocalCreateTerminalInput, LocalInventoryRTCAnswer, LocalInventoryRTCOffer, LocalPairInput, LocalPairResult, LocalRTCAnswer, LocalRTCOffer, LocalStatus, LocalUpdateTerminalInput } from './transport'
 
 export interface LocalAgentApiOptions {
   baseUrl?: string | undefined
@@ -122,6 +122,73 @@ export function createLocalAgentApi(options: LocalAgentApiOptions = {}): LocalAg
         }),
       })
       return normalizeInventoryRTCAnswer(raw)
+    },
+    async createTerminal(input: LocalCreateTerminalInput): Promise<Terminal> {
+      const raw = await requestJSON<Record<string, unknown>>('/api/local/terminals', {
+        method: 'POST',
+        body: JSON.stringify(cleanRequestBody({
+          name: input.name,
+          command: input.command,
+          cols: input.cols,
+          rows: input.rows,
+          cwd: input.cwd,
+          environment: input.environment,
+          size_lock_mode: input.sizeLockMode,
+        })),
+      })
+      const machineId = knownMachineId ?? knownStatus?.machine.machineId
+      if (!machineId) {
+        throw new Error('machineId is required before creating local terminals')
+      }
+      return normalizeTerminal({
+        ...raw,
+        machine_id: optionalString(raw, 'machine_id') ?? machineId,
+        title: optionalString(raw, 'title') ?? optionalString(raw, 'name'),
+        command: commandToString(raw.command),
+        last_active_at: optionalString(raw, 'last_active_at'),
+        size_locked: optionalBoolean(raw, 'size_locked'),
+        size_lock_mode: optionalString(raw, 'size_lock_mode'),
+        cwd: optionalString(raw, 'cwd'),
+        environment: optionalString(raw, 'environment'),
+      })
+    },
+    async updateTerminal(input: LocalUpdateTerminalInput): Promise<Terminal> {
+      const raw = await requestJSON<Record<string, unknown>>(`/api/local/terminals/${encodeURIComponent(input.terminalId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(cleanRequestBody({
+          name: input.name,
+          cwd: input.cwd,
+          environment: input.environment,
+          size_lock_mode: input.sizeLockMode,
+        })),
+      })
+      const machineId = knownMachineId ?? knownStatus?.machine.machineId
+      if (!machineId) {
+        throw new Error('machineId is required before updating local terminals')
+      }
+      return normalizeTerminal({
+        ...raw,
+        machine_id: optionalString(raw, 'machine_id') ?? machineId,
+        title: optionalString(raw, 'title') ?? optionalString(raw, 'name'),
+        command: commandToString(raw.command),
+        last_active_at: optionalString(raw, 'last_active_at'),
+        size_locked: optionalBoolean(raw, 'size_locked'),
+        size_lock_mode: optionalString(raw, 'size_lock_mode'),
+        cwd: optionalString(raw, 'cwd'),
+        environment: optionalString(raw, 'environment'),
+      })
+    },
+    async deleteTerminal(terminalId: string): Promise<void> {
+      const response = await fetchImpl(joinURL(baseUrl, `/api/local/terminals/${encodeURIComponent(terminalId)}`), {
+        method: 'DELETE',
+        headers: {
+          accept: 'application/json',
+        },
+      })
+      if (!response.ok && response.status !== 204) {
+        const body = await readJSON(response)
+        throw new Error(localErrorMessage(body, response.status))
+      }
     },
   }
 }
@@ -284,6 +351,15 @@ function optionalBoolean(record: Record<string, unknown>, key: string): boolean 
   if (value === undefined || value === null) return undefined
   if (typeof value !== 'boolean') throw new Error(`${key} must be a boolean`)
   return value
+}
+
+function cleanRequestBody<T extends Record<string, unknown>>(record: T): T {
+  for (const key of Object.keys(record)) {
+    if (record[key] === undefined) {
+      delete record[key]
+    }
+  }
+  return record
 }
 
 function getNestedString(value: unknown, key: string): string | undefined {

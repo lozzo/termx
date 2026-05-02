@@ -210,6 +210,103 @@ describe('createLocalAgentApi', () => {
     const api = createLocalAgentApi({ baseUrl: 'http://127.0.0.1:18888', fetch, machineId: 'machine-local' })
     await expect(api.listTerminals()).rejects.toThrow(/machine-b.*machine-local/)
   })
+
+  it('creates, updates, and deletes local terminals through machine-level local endpoints', async () => {
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = []
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init })
+      const path = new URL(String(input)).pathname
+      if (path === '/api/local/terminals' && init?.method === 'POST') {
+        return jsonResponse({
+          terminal_id: 'terminal-3',
+          machine_id: 'machine-local',
+          name: 'ops shell',
+          command: ['/bin/zsh', '-l'],
+          cols: 100,
+          rows: 30,
+          state: 'running',
+          cwd: '/srv/app',
+          environment: 'prod',
+          size_locked: true,
+          size_lock_mode: 'lock',
+        })
+      }
+      if (path === '/api/local/terminals/terminal-3' && init?.method === 'PATCH') {
+        return jsonResponse({
+          terminal_id: 'terminal-3',
+          machine_id: 'machine-local',
+          name: 'ops shell renamed',
+          command: ['/bin/zsh', '-l'],
+          cols: 100,
+          rows: 30,
+          state: 'running',
+          cwd: '/srv/app-next',
+          environment: 'staging',
+          size_locked: false,
+          size_lock_mode: 'off',
+        })
+      }
+      if (path === '/api/local/terminals/terminal-3' && init?.method === 'DELETE') {
+        return new Response(null, { status: 204 })
+      }
+      return jsonResponse({ error: { message: 'not found' } }, 404)
+    })
+
+    const api = createLocalAgentApi({ baseUrl: 'http://127.0.0.1:18888', fetch, machineId: 'machine-local' })
+    await expect(api.createTerminal({
+      name: 'ops shell',
+      command: ['/bin/zsh', '-l'],
+      cols: 100,
+      rows: 30,
+      cwd: '/srv/app',
+      environment: 'prod',
+      sizeLockMode: 'lock',
+    })).resolves.toEqual(expect.objectContaining({
+      terminalId: 'terminal-3',
+      title: 'ops shell',
+      cwd: '/srv/app',
+      environment: 'prod',
+      sizeLocked: true,
+      sizeLockMode: 'lock',
+    }))
+
+    await expect(api.updateTerminal({
+      terminalId: 'terminal-3',
+      name: 'ops shell renamed',
+      cwd: '/srv/app-next',
+      environment: 'staging',
+      sizeLockMode: 'off',
+    })).resolves.toEqual(expect.objectContaining({
+      terminalId: 'terminal-3',
+      title: 'ops shell renamed',
+      cwd: '/srv/app-next',
+      environment: 'staging',
+      sizeLockMode: 'off',
+    }))
+
+    await expect(api.deleteTerminal('terminal-3')).resolves.toBeUndefined()
+
+    expect(calls.map((call) => [new URL(call.url).pathname, call.init?.method ?? 'GET'])).toEqual([
+      ['/api/local/terminals', 'POST'],
+      ['/api/local/terminals/terminal-3', 'PATCH'],
+      ['/api/local/terminals/terminal-3', 'DELETE'],
+    ])
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      name: 'ops shell',
+      command: ['/bin/zsh', '-l'],
+      cols: 100,
+      rows: 30,
+      cwd: '/srv/app',
+      environment: 'prod',
+      size_lock_mode: 'lock',
+    })
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({
+      name: 'ops shell renamed',
+      cwd: '/srv/app-next',
+      environment: 'staging',
+      size_lock_mode: 'off',
+    })
+  })
 })
 
 function responseFor(url: string, routes: Record<string, unknown>): Response {

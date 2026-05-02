@@ -32,6 +32,31 @@ func (s terminalSourceStub) ListTerminals(context.Context) ([]Terminal, error) {
 	return append([]Terminal(nil), s.terminals...), nil
 }
 
+type terminalManagerStub struct {
+	createReq CreateTerminalRequest
+	updateID  string
+	updateReq UpdateTerminalRequest
+	deleteID  string
+	created   Terminal
+	updated   Terminal
+}
+
+func (s *terminalManagerStub) CreateLocalTerminal(_ context.Context, req CreateTerminalRequest) (Terminal, error) {
+	s.createReq = req
+	return s.created, nil
+}
+
+func (s *terminalManagerStub) UpdateLocalTerminal(_ context.Context, terminalID string, req UpdateTerminalRequest) (Terminal, error) {
+	s.updateID = terminalID
+	s.updateReq = req
+	return s.updated, nil
+}
+
+func (s *terminalManagerStub) DeleteLocalTerminal(_ context.Context, terminalID string) error {
+	s.deleteID = terminalID
+	return nil
+}
+
 type pairClaimerStub struct {
 	got pairing.ClaimRequest
 	out pairing.ClaimResponse
@@ -381,5 +406,82 @@ func TestHandlerLocalRTCOfferAnswersWithLocalContract(t *testing.T) {
 		if strings.Contains(raw, forbidden) {
 			t.Fatalf("local RTC response must not expose %s concepts: %s", forbidden, raw)
 		}
+	}
+}
+
+func TestHandlerLocalTerminalManagementUsesMachineTerminalEndpointsOnly(t *testing.T) {
+	manager := &terminalManagerStub{
+		created: Terminal{
+			TerminalID:   "term_3",
+			Name:         "ops shell",
+			Command:      []string{"zsh"},
+			Cols:         100,
+			Rows:         30,
+			State:        "running",
+			CWD:          "/srv/app",
+			Environment:  "prod",
+			SizeLocked:   true,
+			SizeLockMode: "lock",
+		},
+		updated: Terminal{
+			TerminalID:   "term_3",
+			Name:         "ops shell renamed",
+			Command:      []string{"zsh"},
+			Cols:         100,
+			Rows:         30,
+			State:        "running",
+			CWD:          "/srv/app-next",
+			Environment:  "staging",
+			SizeLocked:   false,
+			SizeLockMode: "off",
+		},
+	}
+	handler := NewHandler(Config{TerminalsManager: manager})
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/local/terminals", bytes.NewReader([]byte(`{
+		"name":"ops shell",
+		"command":["/bin/zsh","-l"],
+		"cols":100,
+		"rows":30,
+		"cwd":"/srv/app",
+		"environment":"prod",
+		"size_lock_mode":"lock"
+	}`)))
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("expected create 200, got %d body=%q", createRec.Code, createRec.Body.String())
+	}
+	if manager.createReq.Name != "ops shell" || manager.createReq.SizeLockMode != "lock" {
+		t.Fatalf("unexpected create request %#v", manager.createReq)
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPatch, "/api/local/terminals/term_3", bytes.NewReader([]byte(`{
+		"name":"ops shell renamed",
+		"cwd":"/srv/app-next",
+		"environment":"staging",
+		"size_lock_mode":"off"
+	}`)))
+	updateRec := httptest.NewRecorder()
+	handler.ServeHTTP(updateRec, updateReq)
+	if updateRec.Code != http.StatusOK {
+		t.Fatalf("expected update 200, got %d body=%q", updateRec.Code, updateRec.Body.String())
+	}
+	if manager.updateID != "term_3" || manager.updateReq.Environment != "staging" {
+		t.Fatalf("unexpected update request id=%q req=%#v", manager.updateID, manager.updateReq)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/local/terminals/term_3", nil)
+	deleteRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("expected delete 204, got %d body=%q", deleteRec.Code, deleteRec.Body.String())
+	}
+	if manager.deleteID != "term_3" {
+		t.Fatalf("unexpected delete id %q", manager.deleteID)
+	}
+	if strings.Contains(strings.ToLower(createRec.Body.String()+updateRec.Body.String()), "workspace") ||
+		strings.Contains(strings.ToLower(createRec.Body.String()+updateRec.Body.String()), "pane") {
+		t.Fatalf("local terminal management responses must not expose workspace/pane concepts")
 	}
 }

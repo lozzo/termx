@@ -66,11 +66,12 @@ func (s *Server) LocalWebHandler(opts LocalWebOptions) http.Handler {
 		rtcSessionCtx: rtcSessionCtx,
 	}
 	return localweb.NewHandler(localweb.Config{
-		Assets:    assets,
-		Status:    adapter,
-		Terminals: adapter,
-		Pairing:   adapter,
-		RTC:       adapter,
+		Assets:          assets,
+		Status:          adapter,
+		Terminals:       adapter,
+		TerminalsManager: adapter,
+		Pairing:         adapter,
+		RTC:             adapter,
 	})
 }
 
@@ -150,6 +151,67 @@ func (a localWebServerAdapter) ListTerminals(ctx context.Context) ([]localweb.Te
 		})
 	}
 	return out, nil
+}
+
+func (a localWebServerAdapter) CreateLocalTerminal(ctx context.Context, req localweb.CreateTerminalRequest) (localweb.Terminal, error) {
+	if a.server == nil {
+		return localweb.Terminal{}, nil
+	}
+	size := Size{}
+	if req.Cols > 0 {
+		size.Cols = uint16(req.Cols)
+	}
+	if req.Rows > 0 {
+		size.Rows = uint16(req.Rows)
+	}
+	tags := localTerminalTags(req.CWD, req.Environment, req.SizeLockMode)
+	created, err := a.server.Create(ctx, CreateOptions{
+		Command: req.Command,
+		Name:    strings.TrimSpace(req.Name),
+		Tags:    tags,
+		Size:    size,
+		Dir:     strings.TrimSpace(req.CWD),
+	})
+	if err != nil {
+		return localweb.Terminal{}, err
+	}
+	return a.localTerminalFromInfo(created), nil
+}
+
+func (a localWebServerAdapter) UpdateLocalTerminal(ctx context.Context, terminalID string, req localweb.UpdateTerminalRequest) (localweb.Terminal, error) {
+	if a.server == nil {
+		return localweb.Terminal{}, nil
+	}
+	info, err := a.server.Get(ctx, terminalID)
+	if err != nil {
+		return localweb.Terminal{}, err
+	}
+	tags := copyTags(info.Tags)
+	mergeLocalTerminalTags(tags, req.CWD, req.Environment, req.SizeLockMode)
+	if err := a.server.SetMetadata(ctx, terminalID, strings.TrimSpace(req.Name), tags); err != nil {
+		return localweb.Terminal{}, err
+	}
+	updated, err := a.server.Get(ctx, terminalID)
+	if err != nil {
+		return localweb.Terminal{}, err
+	}
+	return a.localTerminalFromInfo(updated), nil
+}
+
+func (a localWebServerAdapter) DeleteLocalTerminal(ctx context.Context, terminalID string) error {
+	if a.server == nil {
+		return nil
+	}
+	term, err := a.server.getTerminal(terminalID)
+	if err != nil {
+		return err
+	}
+	term.MarkRemoved()
+	if err := term.Close(); err != nil {
+		return err
+	}
+	a.server.removeTerminal(terminalID, "removed")
+	return nil
 }
 
 func (a localWebServerAdapter) ClaimPairSession(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
@@ -358,4 +420,45 @@ func hasCapability(capabilities []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func (a localWebServerAdapter) localTerminalFromInfo(info *TerminalInfo) localweb.Terminal {
+	if info == nil {
+		return localweb.Terminal{}
+	}
+	sizeLockMode := terminalmeta.SizeLockMode(info.Tags)
+	return localweb.Terminal{
+		TerminalID:   info.ID,
+		Name:         info.Name,
+		Command:      append([]string(nil), info.Command...),
+		Cols:         int(info.Size.Cols),
+		Rows:         int(info.Size.Rows),
+		State:        string(info.State),
+		LastActiveAt: info.CreatedAt,
+		SizeLocked:   sizeLockMode == terminalmeta.SizeLockLock,
+		SizeLockMode: sizeLockMode,
+		CWD:          info.Tags["termx.cwd"],
+		Environment:  info.Tags["termx.environment"],
+	}
+}
+
+func localTerminalTags(cwd string, environment string, sizeLockMode string) map[string]string {
+	tags := map[string]string{}
+	mergeLocalTerminalTags(tags, cwd, environment, sizeLockMode)
+	return tags
+}
+
+func mergeLocalTerminalTags(tags map[string]string, cwd string, environment string, sizeLockMode string) {
+	if strings.TrimSpace(cwd) != "" {
+		tags["termx.cwd"] = strings.TrimSpace(cwd)
+	}
+	if strings.TrimSpace(environment) != "" {
+		tags["termx.environment"] = strings.TrimSpace(environment)
+	}
+	switch strings.TrimSpace(sizeLockMode) {
+	case terminalmeta.SizeLockOff:
+		delete(tags, terminalmeta.SizeLockTag)
+	case terminalmeta.SizeLockWarn, terminalmeta.SizeLockLock:
+		tags[terminalmeta.SizeLockTag] = strings.TrimSpace(sizeLockMode)
+	}
 }

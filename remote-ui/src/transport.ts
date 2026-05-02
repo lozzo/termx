@@ -125,6 +125,9 @@ export interface LocalAgentApi {
   pair(input: LocalPairInput): Promise<LocalPairResult>
   createRTCAnswer(input: LocalRTCOffer): Promise<LocalRTCAnswer>
   createInventoryRTCAnswer(input: LocalInventoryRTCOffer): Promise<LocalInventoryRTCAnswer>
+  createTerminal(input: LocalCreateTerminalInput): Promise<Terminal>
+  updateTerminal(input: LocalUpdateTerminalInput): Promise<Terminal>
+  deleteTerminal(terminalId: string): Promise<void>
 }
 
 export interface LocalInventoryRTCOffer {
@@ -143,4 +146,22 @@ export interface LocalInventoryRTCAnswer {
     type: 'answer'
     sdp: string
   }
+}
+
+export interface LocalCreateTerminalInput {
+  name?: string | undefined
+  command: string[]
+  cols?: number | undefined
+  rows?: number | undefined
+  cwd?: string | undefined
+  environment?: string | undefined
+  sizeLockMode?: 'off' | 'warn' | 'lock' | undefined
+}
+
+export interface LocalUpdateTerminalInput {
+  terminalId: string
+  name?: string | undefined
+  cwd?: string | undefined
+  environment?: string | undefined
+  sizeLockMode?: 'off' | 'warn' | 'lock' | undefined
 }

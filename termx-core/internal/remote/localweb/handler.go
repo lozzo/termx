@@ -103,6 +103,12 @@ type TerminalSource interface {
 	ListTerminals(ctx context.Context) ([]Terminal, error)
 }
 
+type TerminalManager interface {
+	CreateLocalTerminal(ctx context.Context, req CreateTerminalRequest) (Terminal, error)
+	UpdateLocalTerminal(ctx context.Context, terminalID string, req UpdateTerminalRequest) (Terminal, error)
+	DeleteLocalTerminal(ctx context.Context, terminalID string) error
+}
+
 type PairClaimer interface {
 	ClaimPairSession(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error)
 }
@@ -115,6 +121,7 @@ type Config struct {
 	Assets    fs.FS
 	Status    StatusSource
 	Terminals TerminalSource
+	TerminalsManager TerminalManager
 	Pairing   PairClaimer
 	RTC       RTCOfferAnswerer
 }
@@ -123,6 +130,7 @@ type Handler struct {
 	assets    fs.FS
 	status    StatusSource
 	terminals TerminalSource
+	terminalsManager TerminalManager
 	pairing   PairClaimer
 	rtc       RTCOfferAnswerer
 }
@@ -132,6 +140,7 @@ func NewHandler(cfg Config) http.Handler {
 		assets:    cfg.Assets,
 		status:    cfg.Status,
 		terminals: cfg.Terminals,
+		terminalsManager: cfg.TerminalsManager,
 		pairing:   cfg.Pairing,
 		rtc:       cfg.RTC,
 	}
@@ -147,6 +156,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handlePair(w, r)
 	case r.URL.Path == "/api/local/rtc/offer":
 		h.handleRTCOffer(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/local/terminals/"):
+		h.handleTerminalMutation(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/"):
 		writeError(w, http.StatusNotFound, "not_found", "not found")
 	default:
@@ -172,20 +183,89 @@ func (h *Handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleTerminals(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		if h.terminals == nil {
+			writeError(w, http.StatusServiceUnavailable, "local_terminals_unavailable", "local terminal inventory unavailable")
+			return
+		}
+		terminals, err := h.terminals.ListTerminals(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "local_terminals_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"terminals": terminals})
+	case http.MethodPost:
+		if h.terminalsManager == nil {
+			writeError(w, http.StatusServiceUnavailable, "local_terminal_management_unavailable", "local terminal management unavailable")
+			return
+		}
+		var req CreateTerminalRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", "invalid request")
+			return
+		}
+		terminal, err := h.terminalsManager.CreateLocalTerminal(r.Context(), req)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "local_terminal_create_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, terminal)
+	default:
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+	}
+}
+
+type CreateTerminalRequest struct {
+	Name         string   `json:"name,omitempty"`
+	Command      []string `json:"command"`
+	Cols         int      `json:"cols,omitempty"`
+	Rows         int      `json:"rows,omitempty"`
+	CWD          string   `json:"cwd,omitempty"`
+	Environment  string   `json:"environment,omitempty"`
+	SizeLockMode string   `json:"size_lock_mode,omitempty"`
+}
+
+type UpdateTerminalRequest struct {
+	Name         string `json:"name,omitempty"`
+	CWD          string `json:"cwd,omitempty"`
+	Environment  string `json:"environment,omitempty"`
+	SizeLockMode string `json:"size_lock_mode,omitempty"`
+}
+
+func (h *Handler) handleTerminalMutation(w http.ResponseWriter, r *http.Request) {
+	if h.terminalsManager == nil {
+		writeError(w, http.StatusServiceUnavailable, "local_terminal_management_unavailable", "local terminal management unavailable")
 		return
 	}
-	if h.terminals == nil {
-		writeError(w, http.StatusServiceUnavailable, "local_terminals_unavailable", "local terminal inventory unavailable")
+	terminalID := strings.TrimPrefix(r.URL.Path, "/api/local/terminals/")
+	terminalID = strings.TrimSpace(terminalID)
+	if terminalID == "" || strings.Contains(terminalID, "/") {
+		writeError(w, http.StatusBadRequest, "invalid_request", "terminal_id is required")
 		return
 	}
-	terminals, err := h.terminals.ListTerminals(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "local_terminals_failed", err.Error())
-		return
+	switch r.Method {
+	case http.MethodPatch:
+		var req UpdateTerminalRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", "invalid request")
+			return
+		}
+		terminal, err := h.terminalsManager.UpdateLocalTerminal(r.Context(), terminalID, req)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "local_terminal_update_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, terminal)
+	case http.MethodDelete:
+		if err := h.terminalsManager.DeleteLocalTerminal(r.Context(), terminalID); err != nil {
+			writeError(w, http.StatusBadRequest, "local_terminal_delete_failed", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"terminals": terminals})
 }
 
 func (h *Handler) handlePair(w http.ResponseWriter, r *http.Request) {
