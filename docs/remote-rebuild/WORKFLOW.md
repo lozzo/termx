@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `8` Quota, active session limit, and throttling.
-- Last updated: 2026-05-03T06:53:19+08:00.
+- Last updated: 2026-05-03T06:56:24+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -58,12 +58,12 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 6-G | managed-signaling-self-review | Prevent Slice 6 hub managed signaling from surfacing relay capability before TURN policy exists | completed | `2b35d6a1` |
 | 6-H | managed-signaling-follow-up-review | Preflight managed offers so malformed/offline submissions do not consume tickets | completed | `2b35d6a1` |
 | 6-I | managed-signaling-follow-up-review | Remove exported registry verifier bypass and prove managed signaling still uses registry verifier boundary | completed | `2b35d6a1` |
-| 7 | paid-relay | Implement paid TURN/STUN relay MVP with temporary TURN credentials, relay lease, and no free TURN | completed |  |
-| 7-A | external | Defer production TURN public IP, DNS, TLS, firewall/ports, cloud account, and deployment approval | deferred_external |  |
-| 7-B | paid-relay-self-review | Harden lease expiry/subscription expiry/path validation before issuing TURN credentials | completed |  |
-| 7-C | paid-relay-review | Validate ICE URL schemes and enforce user-visible relay session/quota policy | completed |  |
-| 7-D | paid-relay-follow-up-review | Reject exhausted monthly quota and bind TURN credentials to relay lease IDs | completed |  |
-| 7-E | paid-relay-final-review | Reject managed relay TURN credentials when relay lease ID is blank | completed |  |
+| 7 | paid-relay | Implement paid TURN/STUN relay MVP with temporary TURN credentials, relay lease, and no free TURN | completed | `e9b013e7` |
+| 7-A | external | Defer production TURN public IP, DNS, TLS, firewall/ports, cloud account, and deployment approval | deferred_external | `e9b013e7` |
+| 7-B | paid-relay-self-review | Harden lease expiry/subscription expiry/path validation before issuing TURN credentials | completed | `e9b013e7` |
+| 7-C | paid-relay-review | Validate ICE URL schemes and enforce user-visible relay session/quota policy | completed | `e9b013e7` |
+| 7-D | paid-relay-follow-up-review | Reject exhausted monthly quota and bind TURN credentials to relay lease IDs | completed | `e9b013e7` |
+| 7-E | paid-relay-final-review | Reject managed relay TURN credentials when relay lease ID is blank | completed | `e9b013e7` |
 | 8 | quota | Implement relay quota, active relay session limit, heartbeat, TTL cleanup, and throttling | pending |  |
 | 9 | daemon-agent | Integrate `termx daemon` cloud bootstrap, hub heartbeat/poll/answer, and WebRTC offer handling | pending |  |
 | 10 | remote-ui | Connect `remote-ui` to real Web Control / public_p2p / managed API adapters while keeping `RtcSession` runtime boundary | pending |  |
@@ -1150,8 +1150,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 新增派生条目：`7-A`, `7-B`, `7-C`, `7-D`, `7-E`.
 - deferred human items：公网 TURN DNS/TLS/端口/云账号/备案或安全审批。
 - 剩余风险：production TURN listener/deployment smoke remains deferred in `7-A`; heartbeat ingestion, stale session cleanup, concurrent multi-process lease race hardening, throttle transitions, and full Web Control lease to Hub ICE integration remain for later slices.
-- 下一步：commit Slice 7, record commit hash, then start Slice 8 quota/heartbeat/throttling.
-- commit：待提交。
+- 下一步：Slice 7 commit hash recorded; start Slice 8 quota/heartbeat/throttling.
+- commit：`e9b013e7`
 
 ### 7-B Relay Lease And ICE Policy Edge Hardening
 
@@ -1177,7 +1177,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：heartbeat ingestion, stale-session cleanup, and throttle transitions remain Slice 8; active lease session counting and current-month usage subtraction are now covered in `7-C`.
 - 下一步：included in Slice 7 review/final validation.
-- commit：待提交。
+- commit：`e9b013e7`
 
 ### 7-C ICE URL And Relay Policy Review Fixes
 
@@ -1203,7 +1203,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：heartbeat ingestion and over-quota throttling remain Slice 8.
 - 下一步：included in Slice 7 follow-up review.
-- commit：待提交。
+- commit：`e9b013e7`
 
 ### 7-D Quota Exhaustion And Lease-Scoped TURN Credentials
 
@@ -1229,7 +1229,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：traffic accounting ingestion remains Slice 8.
 - 下一步：included in final Slice 7 follow-up review.
-- commit：待提交。
+- commit：`e9b013e7`
 
 ### 7-E Blank Relay Lease ID Rejection
 
@@ -1255,7 +1255,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：traffic accounting ingestion remains Slice 8.
 - 下一步：included in Slice 7 commit.
-- commit：待提交。
+- commit：`e9b013e7`
 
 ### 7-A Production TURN Deployment Deferred
 
@@ -1281,7 +1281,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：public TURN IP/host, DNS, ports/firewall, TLS/certs if needed, cloud account, deployment approval, secret rotation.
 - 剩余风险：local tests prove credentials/policy, not public NAT traversal quality.
 - 下一步：resume when production deployment inputs are available; does not block Slice 7 local implementation.
-- commit：待提交。
+- commit：`e9b013e7`
 
 ### 8 Quota, Active Session Limit, And Throttling
 
@@ -1305,7 +1305,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 新增派生条目：暂无。
 - deferred human items：真实账单对账、发票、税务、支付回调。
 - 剩余风险：SQLite transaction、TTL cleanup、quota/session limit 必须是真行为，不是只在内存 mock 成立。
-- 下一步：Slice 7 后开始。
+- 下一步：record Slice 7 workflow hash commit, then start Slice 8 TDD.
 - commit：待提交。
 
 ### 9 TermX Daemon Cloud Integration
@@ -2005,5 +2005,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Commit Slice 7 paid relay MVP, then record its commit hash in `WORKFLOW.md`.
+1. Commit this Slice 7 workflow-hash update.
 2. Start Slice 8 quota/heartbeat/throttling with TDD, using real SQLite session/usage state.
