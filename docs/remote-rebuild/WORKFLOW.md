@@ -18,7 +18,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | ID | Phase | Todo | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 0 | docs/workflow | Harden AGENTS and reset `WORKFLOW.md` for the web/control-plane + hub + daemon-agent buildout | completed | `41671b21` |
-| 1 | web-control | Create Web Control Plane skeleton with Go backend, SQLite migration/test helper, health API, and Vite React shell | completed |  |
+| 1 | web-control | Create Web Control Plane skeleton with Go backend, SQLite migration/test helper, health API, and Vite React shell | completed | `e3f8541b` |
 | 2 | web-control/auth | Implement web auth/account/plan/subscription foundations with provider interfaces and mock payment | pending |  |
 | 3 | web-control/machines | Implement machine, app device, app certificate, revocation, bootstrap, and claim control model | pending |  |
 | 4 | public_p2p | Implement registered public P2P rendezvous with authenticated channel, offer/answer/candidate forwarding, TTL, rate limits, and STUN-only policy | pending |  |
@@ -81,7 +81,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：暂无。
 - 剩余风险：需要避免把 web-control 放入 `termx-core`，并避免引入非 Tailwind 全局 CSS 系统。
 - 下一步：rerun review-fix checks, commit Slice 1, record commit hash, then start Slice 2 auth/account/plan with provider-interface mocks.
-- commit：待提交。
+- commit：`e3f8541b`
 
 ### 2 Web Auth, Account, Plan, Subscription
 
