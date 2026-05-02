@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `4` Registered public_p2p rendezvous.
-- Last updated: 2026-05-03T09:25:00+08:00.
+- Active todo: `5` Hub skeleton and agent registry.
+- Last updated: 2026-05-03T09:32:00+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -29,12 +29,12 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 3-B | web-control/machines-review | Fix Slice 3 review findings for strict certificate metadata, certificate signature verification, claim proof, and conditional bootstrap writes | completed | `732689ba` |
 | 3-B-A | web-control/machines-deferred | Preserve signed certificate bytes for future cross-service verification before hub/agent certificate envelope use | deferred | `732689ba` |
 | 3-B-B | web-control/machines-deferred | Add claim token TTL/rotation policy with daemon pairing UX | deferred | `732689ba` |
-| 4 | public_p2p | Implement registered public P2P rendezvous with authenticated channel, offer/answer/candidate forwarding, TTL, rate limits, and STUN-only policy | completed |  |
-| 4-A | external | Defer production DNS/TLS/public STUN/rendezvous deployment and abuse provider setup | deferred_external |  |
-| 4-B | public_p2p-self-review | Harden public_p2p rendezvous for strict STUN URL whitelist, real ICE candidate payloads, TTL cap, and expired-channel cleanup | completed |  |
-| 4-C | public_p2p-review | Fix Slice 4 subagent review findings for structured payload validation, secret placement, STUN fail-closed behavior, cleanup scheduling, and workflow freshness | completed |  |
-| 4-C-A | public_p2p-follow-up-review | Fix follow-up review findings for strict field types, ICE relay token parsing, documented envelope compatibility, HTTP body limits, and workflow consistency | completed |  |
-| 4-C-B | public_p2p-final-review | Fix final review findings for private-key-shaped certificate payload fields, relay candidates embedded in SDP, and workflow next action freshness | completed |  |
+| 4 | public_p2p | Implement registered public P2P rendezvous with authenticated channel, offer/answer/candidate forwarding, TTL, rate limits, and STUN-only policy | completed | `61ed506a` |
+| 4-A | external | Defer production DNS/TLS/public STUN/rendezvous deployment and abuse provider setup | deferred_external | `61ed506a` |
+| 4-B | public_p2p-self-review | Harden public_p2p rendezvous for strict STUN URL whitelist, real ICE candidate payloads, TTL cap, and expired-channel cleanup | completed | `61ed506a` |
+| 4-C | public_p2p-review | Fix Slice 4 subagent review findings for structured payload validation, secret placement, STUN fail-closed behavior, cleanup scheduling, and workflow freshness | completed | `61ed506a` |
+| 4-C-A | public_p2p-follow-up-review | Fix follow-up review findings for strict field types, ICE relay token parsing, documented envelope compatibility, HTTP body limits, and workflow consistency | completed | `61ed506a` |
+| 4-C-B | public_p2p-final-review | Fix final review findings for private-key-shaped certificate payload fields, relay candidates embedded in SDP, and workflow next action freshness | completed | `61ed506a` |
 | 5 | hub | Create Hub skeleton and agent registry with register, heartbeat, poll, answer, and expiry behavior | pending |  |
 | 6 | managed-signaling | Implement managed signaling without TURN relay as HTTP control/signaling only, runtime still WebRTC DataChannel | pending |  |
 | 7 | paid-relay | Implement paid TURN/STUN relay MVP with temporary TURN credentials, relay lease, and no free TURN | pending |  |
@@ -372,7 +372,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：生产域名、TLS 证书、公网部署账号、abuse/captcha provider。
 - 剩余风险：旧 anonymous 命名必须隔离或迁移，不能恢复匿名云端免费 rendezvous 产品结论。
 - 下一步：complete Slice 4 after final validation and commit.
-- commit：待提交。
+- commit：`61ed506a`
 
 ### 4-A Deferred Public Rendezvous Deployment Dependencies
 
@@ -397,7 +397,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：provide production DNS/TLS/cloud host, STUN/rendezvous public endpoints, abuse/rate-limit provider details.
 - 剩余风险：local tests prove policy and API behavior, not公网 reachability.
 - 下一步：resume when production deployment inputs are available.
-- commit：will be included in Slice 4 workflow.
+- commit：`61ed506a`
 
 ### 4-B Slice 4 Self-Review Hardening
 
@@ -423,7 +423,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：cleanup requires future production scheduler/hub cadence; this slice only provides callable cleanup behavior.
 - 下一步：rerun broader Slice 4 validation and include `4-B` in subagent review follow-up scope.
-- commit：待提交。
+- commit：`61ed506a`
 
 ### 4-C Slice 4 Subagent Review Fixes
 
@@ -449,7 +449,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：production abuse/rate-limit provider and public deployment remain deferred in `4-A`.
 - 下一步：complete `4-C-A` regressions and implementation, rerun validation, then request final follow-up review.
-- commit：待提交。
+- commit：`61ed506a`
 
 ### 4-C-A Slice 4 Follow-Up Review Fixes
 
@@ -475,7 +475,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：future agent/hub slices must verify certificate/signature contents; this slice only forwards bounded signaling auth envelopes.
 - 下一步：complete `4-C-B`, rerun validation, and request no further review unless new findings appear.
-- commit：待提交。
+- commit：`61ed506a`
 
 ### 4-C-B Slice 4 Final Review Fixes
 
@@ -501,7 +501,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：real app certificate signature/canonical verification remains deferred to hub/agent certificate-verification slices.
 - 下一步：complete parent Slice 4 and commit.
-- commit：待提交。
+- commit：`61ed506a`
 
 ### 5 Hub Skeleton And Agent Registry
 
@@ -1300,5 +1300,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Commit completed Slice 4 files only, excluding pre-existing unrelated dirty docs and `go.work.sum`.
-2. Record the Slice 4 commit hash in `WORKFLOW.md`, then start Slice 5 hub skeleton TDD.
+1. Start Slice 5: write failing hub skeleton and agent registry tests for register, heartbeat, expiry, poll timeout, and answer correlation.
+2. Keep HTTP limited to signaling/control and ensure hub does not become terminal/file/api/events runtime transport.
