@@ -59,7 +59,7 @@ describe('LocalRemoteApp real file manager flow', () => {
     await waitFor(() => expect(screen.getByText('log.txt')).toBeTruthy())
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').style.visibility).toBe('hidden'))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').className).toMatch(/invisible/))
 
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
@@ -67,7 +67,7 @@ describe('LocalRemoteApp real file manager flow', () => {
     await waitFor(() => expect(screen.getByText('log.txt')).toBeTruthy())
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').style.visibility).toBe('hidden'))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').className).toMatch(/invisible/))
 
     await userEvent.click(screen.getByRole('button', { name: /open worker/i }))
     await userEvent.click(screen.getByRole('button', { name: /open files/i }))

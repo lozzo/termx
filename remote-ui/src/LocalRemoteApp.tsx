@@ -692,7 +692,7 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
               className="flex min-w-0 flex-1 flex-col items-start justify-center rounded-xl px-2 py-1 text-left transition-colors active:bg-zinc-800"
               onClick={() => setMobileSheet('terminals')}
             >
-              <span className="max-w-full truncate text-[11px] font-bold uppercase tracking-wider text-zinc-500">{machine.machineId}</span>
+              <span className="max-w-full truncate text-[11px] font-bold uppercase tracking-wider text-zinc-500">{machine.name}</span>
               <span className="max-w-full truncate text-[15px] font-semibold leading-tight text-zinc-100" data-testid="termx-terminal-title">{activeTerminalTitle}</span>
             </button>
           </div>
@@ -778,42 +778,39 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
       </main>
       )}
 
-      {fileTerminalId && fileTransport ? (
-        <div
-          className={`absolute inset-0 z-30 flex flex-col bg-zinc-50 shadow-[0_-20px_40px_rgba(0,0,0,0.15)] transition-transform duration-300 md:m-6 md:rounded-2xl md:border md:border-zinc-200/60 ${filesOpen ? 'translate-y-0' : 'translate-y-full'}`}
-          data-testid="termx-machine-files-overlay"
-          style={{ visibility: filesOpen ? 'visible' : 'hidden' }}
-        >
-          <div className="flex h-16 shrink-0 items-center justify-between border-b border-zinc-200/50 bg-white/80 px-4 backdrop-blur-xl md:h-14">
-            <div className="flex items-center gap-2">
-              <Folder className="h-5 w-5 text-zinc-500" />
-              <span className="text-[17px] font-bold tracking-tight text-zinc-900">Files</span>
-            </div>
-            <button
-              type="button"
-              aria-label="Close files"
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 transition-colors active:scale-95 active:bg-zinc-200"
-              onClick={openTerminalPanel}
-            >
-              <X className="h-5 w-5" />
-            </button>
+      <div
+        className={`absolute inset-0 z-30 flex flex-col bg-zinc-50 shadow-[0_-20px_40px_rgba(0,0,0,0.15)] transition-all duration-300 md:m-6 md:rounded-2xl md:border md:border-zinc-200/60 ${filesOpen ? 'translate-y-0 visible' : 'translate-y-full invisible'}`}
+        data-testid="termx-machine-files-overlay"
+      >
+        <div className="flex h-16 shrink-0 items-center justify-between border-b border-zinc-200/50 bg-white/80 px-4 backdrop-blur-xl md:h-14">
+          <div className="flex items-center gap-2">
+            <Folder className="h-5 w-5 text-zinc-500" />
+            <span className="text-[17px] font-bold tracking-tight text-zinc-900">Files</span>
           </div>
-          {fileTransportReady ? (
-            <FileManager
-              key={fileTerminalId}
-              machineId={machine.machineId}
-              terminalId={fileTerminalId}
-              transport={fileTransport}
-              initialPath={fileInitialPath}
-              className="flex h-full min-h-0 flex-col relative"
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-              Local file access is not ready
-            </div>
-          )}
+          <button
+            type="button"
+            aria-label="Close files"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 transition-colors active:scale-95 active:bg-zinc-200"
+            onClick={openTerminalPanel}
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
-      ) : null}
+        {fileTerminalId && fileTransport && fileTransportReady ? (
+          <FileManager
+            key={fileTerminalId}
+            machineId={machine.machineId}
+            terminalId={fileTerminalId}
+            transport={fileTransport}
+            initialPath={fileInitialPath}
+            className="flex h-full min-h-0 flex-col relative"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+            {fileTerminalId && fileTransport ? 'Connecting...' : 'Local file access is not ready'}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

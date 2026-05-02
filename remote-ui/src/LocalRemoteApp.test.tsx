@@ -92,7 +92,7 @@ describe('LocalRemoteApp', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Open tmp' }))
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp')
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').style.visibility).toBe('hidden'))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').className).toMatch(/invisible/))
     expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy()
 
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
@@ -116,7 +116,7 @@ describe('LocalRemoteApp', () => {
       mode: 'local',
     }]))
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').style.visibility).toBe('hidden'))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').className).toMatch(/invisible/))
     expect(screen.getByTestId('termx-terminal')).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane|session/i)
   })
@@ -139,14 +139,14 @@ describe('LocalRemoteApp', () => {
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp')
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').style.visibility).toBe('hidden'))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').className).toMatch(/invisible/))
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /open files/i }))
     await waitFor(() => expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp'))
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').style.visibility).toBe('hidden'))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').className).toMatch(/invisible/))
     await userEvent.click(screen.getByRole('button', { name: /open worker/i }))
     await userEvent.click(screen.getByRole('button', { name: /open files/i }))
     await waitFor(() => expect(screen.getByTestId('termx-file-manager').getAttribute('data-terminal-id')).toBe('terminal-2'))
@@ -218,7 +218,7 @@ describe('LocalRemoteApp', () => {
     expect(screen.getByTestId('termx-mobile-keybar').className.split(/\s+/)).not.toContain('hidden')
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').style.visibility).toBe('hidden'))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').className).toMatch(/invisible/))
     expect(screen.getByTestId('termx-terminal')).toBeTruthy()
     expect(screen.getByTestId('termx-mobile-keybar').className.split(/\s+/)).not.toContain('hidden')
 
