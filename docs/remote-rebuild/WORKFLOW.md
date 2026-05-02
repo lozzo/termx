@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `9` TermX daemon cloud integration.
-- Last updated: 2026-05-03T07:14:39+08:00.
+- Last updated: 2026-05-03T07:18:00+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -64,12 +64,12 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 7-C | paid-relay-review | Validate ICE URL schemes and enforce user-visible relay session/quota policy | completed | `e9b013e7` |
 | 7-D | paid-relay-follow-up-review | Reject exhausted monthly quota and bind TURN credentials to relay lease IDs | completed | `e9b013e7` |
 | 7-E | paid-relay-final-review | Reject managed relay TURN credentials when relay lease ID is blank | completed | `e9b013e7` |
-| 8 | quota | Implement relay quota, active relay session limit, heartbeat, TTL cleanup, and throttling | completed |  |
-| 8-A | quota-policy | Replace Slice 7 exhausted-quota denial with terminal-friendly throttled relay policy | completed |  |
-| 8-B | quota-review | Make relay usage heartbeat idempotent under retry/duplicate delivery | completed |  |
-| 8-C | quota-review | Enforce relay heartbeat hub authority and online status in service boundary | completed |  |
-| 8-D | workflow-review | Refresh Slice 8 workflow review state and bottom next action | completed |  |
-| 8-C-A | quota-follow-up-review | Require authenticated hub principal instead of caller/body hub identity for heartbeat accounting | completed |  |
+| 8 | quota | Implement relay quota, active relay session limit, heartbeat, TTL cleanup, and throttling | completed | `f5333362` |
+| 8-A | quota-policy | Replace Slice 7 exhausted-quota denial with terminal-friendly throttled relay policy | completed | `f5333362` |
+| 8-B | quota-review | Make relay usage heartbeat idempotent under retry/duplicate delivery | completed | `f5333362` |
+| 8-C | quota-review | Enforce relay heartbeat hub authority and online status in service boundary | completed | `f5333362` |
+| 8-D | workflow-review | Refresh Slice 8 workflow review state and bottom next action | completed | `f5333362` |
+| 8-C-A | quota-follow-up-review | Require authenticated hub principal instead of caller/body hub identity for heartbeat accounting | completed | `f5333362` |
 | 9 | daemon-agent | Integrate `termx daemon` cloud bootstrap, hub heartbeat/poll/answer, and WebRTC offer handling | pending |  |
 | 10 | remote-ui | Connect `remote-ui` to real Web Control / public_p2p / managed API adapters while keeping `RtcSession` runtime boundary | pending |  |
 | 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | pending |  |
@@ -1312,7 +1312,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：真实账单对账、发票、税务、支付回调。
 - 剩余风险：SQLite transaction、TTL cleanup、quota/session limit 必须是真行为，不是只在内存 mock 成立。
 - 下一步：commit Slice 8, record commit hash, then start Slice 9 daemon cloud integration.
-- commit：待提交。
+- commit：`f5333362`
 
 ### 8-A Throttled Relay Policy Instead Of Quota Denial
 
@@ -1338,7 +1338,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：actual relay byte-level throttling remains Hub/TURN enforcement work; this item only makes Web Control policy authoritative.
 - 下一步：included in Slice 8 completion.
-- commit：待提交。
+- commit：`f5333362`
 
 ### 8-B Idempotent Relay Usage Heartbeats
 
@@ -1364,7 +1364,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：multi-hub duplicate prevention still depends on lease being scoped to one hub/session.
 - 下一步：included in Slice 8 completion.
-- commit：待提交。
+- commit：`f5333362`
 
 ### 8-C Relay Heartbeat Hub Authority Boundary
 
@@ -1390,7 +1390,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：production hub identity/signature configuration.
 - 剩余风险：HTTP middleware must still bind authenticated hub principal to `HeartbeatInput.AuthenticatedHubID`.
 - 下一步：included in Slice 8 completion.
-- commit：待提交。
+- commit：`f5333362`
 
 ### 8-C-A Authenticated Hub Principal For Relay Heartbeat
 
@@ -1415,7 +1415,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：production hub identity/signing secret.
 - 剩余风险：future HTTP layer must bind verified hub auth to `AuthenticatedHubID`; this item only prevents the service type from encouraging body trust.
 - 下一步：included in Slice 8 completion.
-- commit：待提交。
+- commit：`f5333362`
 
 ### 8-D Workflow Review State Refresh
 
@@ -1440,7 +1440,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：none after workflow guard and manual bottom-action check.
 - 下一步：included in Slice 8 completion.
-- commit：待提交。
+- commit：`f5333362`
 
 ### 9 TermX Daemon Cloud Integration
 
@@ -2139,5 +2139,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Commit Slice 8 quota/heartbeat/throttling implementation.
-2. Record the Slice 8 commit hash in `WORKFLOW.md`, then start Slice 9 daemon cloud integration with TDD.
+1. Commit this Slice 8 workflow-hash update.
+2. Start Slice 9 daemon cloud integration with TDD.
