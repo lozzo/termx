@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `7` TURN/STUN paid relay MVP.
-- Last updated: 2026-05-03T06:25:29+08:00.
+- Active todo: `8` Quota, active session limit, and throttling.
+- Last updated: 2026-05-03T06:53:19+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -58,7 +58,12 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 6-G | managed-signaling-self-review | Prevent Slice 6 hub managed signaling from surfacing relay capability before TURN policy exists | completed | `2b35d6a1` |
 | 6-H | managed-signaling-follow-up-review | Preflight managed offers so malformed/offline submissions do not consume tickets | completed | `2b35d6a1` |
 | 6-I | managed-signaling-follow-up-review | Remove exported registry verifier bypass and prove managed signaling still uses registry verifier boundary | completed | `2b35d6a1` |
-| 7 | paid-relay | Implement paid TURN/STUN relay MVP with temporary TURN credentials, relay lease, and no free TURN | pending |  |
+| 7 | paid-relay | Implement paid TURN/STUN relay MVP with temporary TURN credentials, relay lease, and no free TURN | completed |  |
+| 7-A | external | Defer production TURN public IP, DNS, TLS, firewall/ports, cloud account, and deployment approval | deferred_external |  |
+| 7-B | paid-relay-self-review | Harden lease expiry/subscription expiry/path validation before issuing TURN credentials | completed |  |
+| 7-C | paid-relay-review | Validate ICE URL schemes and enforce user-visible relay session/quota policy | completed |  |
+| 7-D | paid-relay-follow-up-review | Reject exhausted monthly quota and bind TURN credentials to relay lease IDs | completed |  |
+| 7-E | paid-relay-final-review | Reject managed relay TURN credentials when relay lease ID is blank | completed |  |
 | 8 | quota | Implement relay quota, active relay session limit, heartbeat, TTL cleanup, and throttling | pending |  |
 | 9 | daemon-agent | Integrate `termx daemon` cloud bootstrap, hub heartbeat/poll/answer, and WebRTC offer handling | pending |  |
 | 10 | remote-ui | Connect `remote-ui` to real Web Control / public_p2p / managed API adapters while keeping `RtcSession` runtime boundary | pending |  |
@@ -1124,7 +1129,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 7 TURN/STUN Paid Relay MVP
 
-- 状态：pending
+- 状态：completed
 - 父条目：none
 - 来源：付费用户允许 managed relay，注册免费用户不允许 TermX TURN relay。
 - 目标：实现 Pion TURN/STUN、temporary TURN credentials、relay session lease、paid user gets TURN、free user does not。
@@ -1132,19 +1137,150 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 非目标：不把 relay 变成客户端 path；不实现真实支付；不做多 region reconciliation。
 - 外部依赖：生产公网 IP、DNS、TLS、TURN ports/firewall、cloud account deferred。
 - mock 策略：local TURN secret, fake payment/subscription provider, in-memory/local relay traffic hooks.
-- 先写的失败测试：待创建 credential expiry、policy deny、relay not client path、free/public_p2p no TURN 测试。
-- 预期失败结果：待记录。
-- 实现摘要：待完成。
-- 重构摘要：待完成。
-- 运行命令：待记录。
-- 测试结果：待记录。
-- subagent review：待发起。
-- review 发现：待记录。
-- review 后修复：待记录。
-- 新增派生条目：预计 external server testing deferred/runbook 条目。
+- 先写的失败测试：create Web Control relay lease policy tests for free denial, paid lease creation, credential expiry, and no `relay` path; create Hub ICE/TURN policy tests for temporary HMAC credentials, free/public_p2p no TURN, and relay not a client path.
+- 预期失败结果：focused tests should fail before implementation because `web-control/internal/relay` and `termx-hub/internal/ice` do not exist yet.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/relay` failed as expected with `no non-test Go files`; `cd termx-hub && GOWORK=off go test ./internal/ice` failed as expected with `no non-test Go files`.
+- 实现摘要：added `web-control/internal/relay` SQLite-backed relay lease service with owner/hub/policy checks, managed path only, TTL cap, subscription-period cap, and leased session persistence; added `termx-hub/internal/ice` service that returns STUN-only config unless a managed relay lease allows TURN, rejects expired/invalid-path leases, and issues short-lived HMAC TURN credentials.
+- 重构摘要：kept real TURN listener/public deployment out of business logic; production TURN host/secret can be configured later behind the ICE service and deferred external deployment item.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/relay`; `cd termx-hub && GOWORK=off go test ./internal/ice`; `cd web-control && GOWORK=off go test ./...`; `cd termx-hub && GOWORK=off go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md web-control/internal/relay termx-hub/internal/ice`.
+- 测试结果：expected focused failures recorded before implementation. After implementation, focused relay and ICE tests pass. Relay tests caught a stale-subscription ordering issue and ICE tests clarified credential TTL must be bounded by lease expiry. `7-B` tests caught lease/subscription-period and invalid-path gaps. `7-C` tests caught ICE scheme validation, session-limit, and monthly-usage gaps. Broader web-control and termx-hub tests, workflow guard, and scoped diff check pass.
+- subagent review：requested after broader validation.
+- review 发现：High free/public_p2p can receive TURN URLs through misconfigured STUN URLs (`7-C`); High expired relay leases produce TURN entries, already addressed by `7-B`; Medium relay session limit returned but not enforced (`7-C`); Medium relay bytes remaining ignores existing monthly usage (`7-C`); Low workflow bottom next action stale. Follow-up review: High exhausted monthly quota still gets relay lease (`7-D`); Medium TURN credentials are not lease/session-scoped (`7-D`); Low workflow bottom next action stale, fixed before `7-D`. Final follow-up: Medium blank relay lease ID can still mint TURN credentials (`7-E`).
+- review 后修复：implemented `7-C` URL scheme validation, expired lease rejection, active session-limit enforcement, and monthly usage subtraction; implemented `7-D` exhausted-quota denial and lease-scoped TURN credentials; implemented `7-E` blank lease ID rejection.
+- 新增派生条目：`7-A`, `7-B`, `7-C`, `7-D`, `7-E`.
 - deferred human items：公网 TURN DNS/TLS/端口/云账号/备案或安全审批。
-- 剩余风险：TURN 流量统计必须能绑定 relay session，不能只粗略绑定 agent。
-- 下一步：Slice 6 后开始。
+- 剩余风险：production TURN listener/deployment smoke remains deferred in `7-A`; heartbeat ingestion, stale session cleanup, concurrent multi-process lease race hardening, throttle transitions, and full Web Control lease to Hub ICE integration remain for later slices.
+- 下一步：commit Slice 7, record commit hash, then start Slice 8 quota/heartbeat/throttling.
+- commit：待提交。
+
+### 7-B Relay Lease And ICE Policy Edge Hardening
+
+- 状态：completed
+- 父条目：7
+- 来源：local self-review while Slice 7 subagent review is running; current tests should explicitly prove TURN credentials do not outlive subscription/lease policy and invalid `relay` paths are rejected.
+- 目标：cap relay leases by subscription period, reject expired relay leases before issuing TURN, and prevent hub ICE config from accepting `relay` as a path.
+- 范围：`web-control/internal/relay`, `termx-hub/internal/ice`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement full quota/session-limit cleanup; that remains Slice 8.
+- 外部依赖：none.
+- mock 策略：SQLite test DB, fake clock, local HMAC TURN credentials only.
+- 先写的失败测试：add tests for lease expiry capped to subscription period, expired managed lease rejected for TURN, and invalid `relay` path rejected rather than reflected.
+- 预期失败结果：focused tests should fail because leases are currently capped only by `MaxLeaseTTL` and ICE defaults/echoes paths too permissively.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/relay -run TestRelayLeaseDoesNotOutliveSubscriptionPeriod` failed because the lease expired at `MaxLeaseTTL` instead of subscription end; `cd termx-hub && GOWORK=off go test ./internal/ice -run TestExpiredAndInvalidPathLeasesDoNotReceiveTurn` failed because `ErrLeaseExpired` and `ErrInvalidPath` were undefined.
+- 实现摘要：relay leases are now capped by active subscription period, and ICE config rejects expired leases plus invalid/relay path values before issuing credentials.
+- 重构摘要：kept active quota/session-limit enforcement deferred to Slice 8 while making Slice 7 credential expiry and path validation concrete.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/relay -run TestRelayLeaseDoesNotOutliveSubscriptionPeriod`; `cd termx-hub && GOWORK=off go test ./internal/ice -run TestExpiredAndInvalidPathLeasesDoNotReceiveTurn`; `cd web-control && GOWORK=off go test ./...`; `cd termx-hub && GOWORK=off go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md web-control/internal/relay termx-hub/internal/ice`.
+- 测试结果：expected focused failures recorded before implementation; focused and broader tests pass after implementation.
+- subagent review：will include in Slice 7 follow-up review/fixes.
+- review 发现：local self-review item.
+- review 后修复：local self-review fix implemented before subagent review completion.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：heartbeat ingestion, stale-session cleanup, and throttle transitions remain Slice 8; active lease session counting and current-month usage subtraction are now covered in `7-C`.
+- 下一步：included in Slice 7 review/final validation.
+- commit：待提交。
+
+### 7-C ICE URL And Relay Policy Review Fixes
+
+- 状态：completed
+- 父条目：7
+- 来源：Slice 7 subagent review by `Ohm`; parent findings High/Medium.
+- 目标：fail closed on misconfigured ICE URL schemes, enforce active relay session limit before leasing, and return quota remaining after existing monthly usage.
+- 范围：`termx-hub/internal/ice`, `web-control/internal/relay`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement relay heartbeat ingestion or full throttling; those remain Slice 8.
+- 外部依赖：none.
+- mock 策略：local config validation, SQLite relay_sessions and relay_usage_monthly rows in tests.
+- 先写的失败测试：add tests for `turn:` values in STUN config rejected, `stun:` values in TURN config rejected, active lease session limit denial, and monthly usage reducing `relay_bytes_remaining`.
+- 预期失败结果：focused tests should fail because URL scheme validation, active session counting, and usage subtraction are not implemented yet.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/ice -run TestICEConfigRejectsMisconfiguredURLSchemes` failed as expected with undefined `ice.ErrInvalidICEURL`; `cd web-control && GOWORK=off go test ./internal/relay -run TestRelayLeaseEnforcesActiveSessionLimitAndMonthlyUsage` failed as expected with undefined `relay.ErrRelaySessionLimit`.
+- 实现摘要：ICE config now validates STUN URLs only use `stun:`/`stuns:` and TURN URLs only use `turn:`/`turns:`; relay lease creation now counts active leased/active sessions before insert and subtracts current-month usage from user-visible remaining bytes.
+- 重构摘要：kept relay heartbeat/throttle details deferred to Slice 8, but made Slice 7 user-visible lease policy real.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/ice -run TestICEConfigRejectsMisconfiguredURLSchemes`; `cd web-control && GOWORK=off go test ./internal/relay -run TestRelayLeaseEnforcesActiveSessionLimitAndMonthlyUsage`; `cd web-control && GOWORK=off go test ./...`; `cd termx-hub && GOWORK=off go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md web-control/internal/relay termx-hub/internal/ice`.
+- 测试结果：expected focused failures recorded before implementation; focused and broader tests pass after implementation.
+- subagent review：`Ohm` found these issues; follow-up review required after fix.
+- review 发现：High STUN list can contain TURN URLs; Medium relay session limit and monthly usage not enforced in user-visible lease policy.
+- review 后修复：implemented review fixes; follow-up review requested.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：heartbeat ingestion and over-quota throttling remain Slice 8.
+- 下一步：included in Slice 7 follow-up review.
+- commit：待提交。
+
+### 7-D Quota Exhaustion And Lease-Scoped TURN Credentials
+
+- 状态：completed
+- 父条目：7
+- 来源：Slice 7 follow-up review by `Ohm`; parent findings High/Medium.
+- 目标：deny relay leases when monthly usage exhausts quota, and bind temporary TURN credentials to the relay lease ID so future accounting can map usage back to a lease/session.
+- 范围：`web-control/internal/relay`, `termx-hub/internal/ice`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement packet-level accounting or heartbeat ingestion; those remain Slice 8.
+- 外部依赖：none.
+- mock 策略：SQLite `relay_usage_monthly` rows and local HMAC credential verification.
+- 先写的失败测试：add exhausted monthly quota denial and TURN username/credential verification requiring lease ID.
+- 预期失败结果：focused tests should fail because exhausted usage currently creates a zero-remaining lease and TURN username currently uses only expiry.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/relay -run TestRelayLeaseRejectsExhaustedMonthlyQuota` failed as expected with undefined `relay.ErrRelayQuotaExceeded`; `cd termx-hub && GOWORK=off go test ./internal/ice -run TestManagedPaidLeaseGetsTemporaryTurnCredentials` failed as expected because `VerifyCredential` did not accept/verify a lease ID and usernames were not lease-scoped.
+- 实现摘要：relay service now rejects exhausted monthly quota with `ErrRelayQuotaExceeded`; ICE credentials now use `lease_id:expiry_unix` usernames and `VerifyCredential` requires the expected lease ID.
+- 重构摘要：kept credential verification local/config-driven and ready for future TURN auth handler/accounting to map username back to relay session ID.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/relay -run TestRelayLeaseRejectsExhaustedMonthlyQuota`; `cd termx-hub && GOWORK=off go test ./internal/ice -run TestManagedPaidLeaseGetsTemporaryTurnCredentials`; `cd web-control && GOWORK=off go test ./...`; `cd termx-hub && GOWORK=off go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md web-control/internal/relay termx-hub/internal/ice`.
+- 测试结果：expected focused failures recorded before implementation; focused and broader tests pass after implementation.
+- subagent review：`Ohm` found these issues; final follow-up review required after fix.
+- review 发现：High exhausted monthly quota still gets a lease; Medium TURN credentials are not lease/session-scoped.
+- review 后修复：implemented review fixes; final follow-up review requested.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：traffic accounting ingestion remains Slice 8.
+- 下一步：included in final Slice 7 follow-up review.
+- commit：待提交。
+
+### 7-E Blank Relay Lease ID Rejection
+
+- 状态：completed
+- 父条目：7
+- 来源：Slice 7 final follow-up review by `Ohm`; parent finding Medium.
+- 目标：reject managed relay TURN credentials when `Lease.ID` is blank so credentials always map to a real relay lease/session.
+- 范围：`termx-hub/internal/ice`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement traffic accounting ingestion.
+- 外部依赖：none.
+- mock 策略：local HMAC credential service only.
+- 先写的失败测试：add a negative ICE test where managed `AllowRelay=true` has blank lease ID and must fail closed.
+- 预期失败结果：focused test should fail because `ConfigForLease` currently produces `:expiry` usernames.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/ice -run TestTurnCredentialDoesNotOutliveLeaseAndRequiresSecret` failed as expected with undefined `ice.ErrLeaseRequired`.
+- 实现摘要：ICE config now returns `ErrLeaseRequired` before issuing TURN credentials for managed relay leases with blank IDs.
+- 重构摘要：kept lease-scoped credential format intact and made the malformed lease input fail closed.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/ice -run TestTurnCredentialDoesNotOutliveLeaseAndRequiresSecret`; `cd web-control && GOWORK=off go test ./...`; `cd termx-hub && GOWORK=off go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md web-control/internal/relay termx-hub/internal/ice`.
+- 测试结果：expected focused failure recorded before implementation; focused and broader tests pass after implementation.
+- subagent review：`Ohm` final follow-up finding.
+- review 发现：Medium blank relay lease ID can still mint TURN credentials.
+- review 后修复：implemented review fix; no further blocker in final local validation.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：traffic accounting ingestion remains Slice 8.
+- 下一步：included in Slice 7 commit.
+- commit：待提交。
+
+### 7-A Production TURN Deployment Deferred
+
+- 状态：deferred_external
+- 父条目：7
+- 来源：Slice 7 requires TURN/STUN behavior, but production TURN needs public IP, DNS, TLS/cert policy where applicable, firewall/ports, cloud account/deployment approval, and possible备案/security review.
+- 目标：record production TURN deployment dependencies and keep Slice 7 moving with local/configured TURN credential and policy behavior.
+- 范围：documentation only for this slice unless local devstack/runbook is added later.
+- 非目标：do not SSH to external server, change firewall/systemd/iptables, buy certificates, configure DNS, or create cloud accounts in this slice.
+- 外部依赖：human/operator must provide public TURN host/IP, DNS record, open UDP/TCP ports, TLS/cert policy if required, cloud/deployment credentials, operations approval, and production shared secret rotation policy.
+- mock 策略：implement local/config-driven STUN/TURN URLs and HMAC temporary credentials behind interfaces; use unit tests to cover policy/credential behavior without binding real public ports.
+- 先写的失败测试：not applicable for deferred external item.
+- 预期失败结果：not applicable.
+- 实际失败结果：not applicable.
+- 实现摘要：deferred external item recorded; no production server changes made.
+- 重构摘要：none.
+- 运行命令：not run.
+- 测试结果：not run.
+- subagent review：will include in Slice 7 review scope.
+- review 发现：待复审.
+- review 后修复：待复审.
+- 新增派生条目：none.
+- deferred human items：public TURN IP/host, DNS, ports/firewall, TLS/certs if needed, cloud account, deployment approval, secret rotation.
+- 剩余风险：local tests prove credentials/policy, not public NAT traversal quality.
+- 下一步：resume when production deployment inputs are available; does not block Slice 7 local implementation.
 - commit：待提交。
 
 ### 8 Quota, Active Session Limit, And Throttling
@@ -1869,5 +2005,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Commit Slice 6 managed signaling without TURN, then record its commit hash in `WORKFLOW.md`.
-2. Start Slice 7 paid TURN/STUN relay MVP with TDD, keeping relay as capability/policy/quota and not a fourth client path.
+1. Commit Slice 7 paid relay MVP, then record its commit hash in `WORKFLOW.md`.
+2. Start Slice 8 quota/heartbeat/throttling with TDD, using real SQLite session/usage state.
