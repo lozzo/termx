@@ -45,7 +45,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-M | localweb | Re-embed current `remote-ui` local web frontend assets into the `termx` binary static bundle | completed | `fc5e92aa` |
 | P3-E-C-B-N | remote-ui | Rework mobile local web terminal chrome so terminal height is maximized, terminal list has a clear back button, and files/pair actions move into compact header actions | completed | `0be902f9` |
 | P3-E-C-B-O | remote-ui | Add a true local embedded terminal list page so local web opens to terminals first and only enters the terminal page after selecting an item | completed | `b7f07517` |
-| P3-E-C-B-P | remote-ui | Enrich terminal list metadata and move Files to a machine-level overlay whose open/close state is independent from terminal/list navigation | completed | `pending` |
+| P3-E-C-B-P | remote-ui | Enrich terminal list metadata and move Files to a machine-level overlay whose open/close state is independent from terminal/list navigation | completed | `b0de33ee` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -372,7 +372,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Final broader tests after review fixes: `cd remote-ui && npm test` passed 109 tests; `cd remote-ui && npm run build:localweb` passed with only the existing Vite large chunk warning and regenerated `termx-core/internal/remote/localweb/static/assets/index-CN9mAXzL.js` plus `index-CmvYIe2j.css`; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestStartRemoteLocalWebServesEmbeddedPageAndStatus|TestRemoteLocal'` passed; `git diff --check` passed.
 - Deferred implementation detail: the UI now behaves as machine-level Files, but the current local file API still binds over a terminal-scoped WebRTC transport. This slice reuses a hidden terminal-scoped file context internally and preserves file-manager state across navigation without exposing terminal-scoped semantics in the UI. A future core slice can replace that hidden transport with a true machine-scoped file channel when available.
 - Subagent launched: `Noether` (`019de7d3-ed2e-7303-a06f-100ba2dc937f`) for P3-E-C-B-P code review focused on docs alignment, forbidden remote public concepts, transport boundaries, no TURN/private-key leakage, and test coverage. Result: one medium correctness issue on misleading activity wording and one low test-gap issue on mock-only Files persistence; both fixed. No workspace/tab/pane public model drift, TURN credential exposure, machine private key exposure, or transport-boundary leakage found.
-- Result: completed. Commit: `pending`.
+- Result: completed. Commit: `b0de33ee`.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
@@ -630,5 +630,5 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P3-E-C-B-P and then update this workflow entry with the commit hash.
-2. Start P4-A by migrating the stabilized local embedded machine/terminal/files shell into the mobile app host while keeping adapter boundaries interface-based.
+1. Start P4-A by migrating the stabilized local embedded machine/terminal/files shell into the mobile app host while keeping adapter boundaries interface-based.
+2. Keep the machine-level Files UX while replacing the current hidden terminal-scoped file transport with a true machine-scoped file channel if core transport support becomes available.
