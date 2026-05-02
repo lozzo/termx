@@ -3,11 +3,13 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/lozzow/termx/web-control/internal/account"
+	"github.com/lozzow/termx/web-control/internal/connect"
 	"github.com/lozzow/termx/web-control/internal/machines"
 	"github.com/lozzow/termx/web-control/internal/rendezvous"
 )
@@ -19,6 +21,7 @@ type Config struct {
 	Version               string
 	Accounts              *account.Service
 	Machines              *machines.Service
+	Connect               *connect.Service
 	Rendezvous            *rendezvous.Service
 	MaxPublicP2PBodyBytes int64
 }
@@ -287,6 +290,40 @@ func NewRouter(cfg Config) http.Handler {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("POST /api/v1/managed/connect-tickets", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := authenticatedUser(w, r, cfg.Accounts)
+		if !ok {
+			return
+		}
+		if cfg.Connect == nil {
+			writeError(w, http.StatusServiceUnavailable, "connect_service_unavailable", "connect service is not configured")
+			return
+		}
+		var req struct {
+			MachineID  string `json:"machine_id"`
+			TerminalID string `json:"terminal_id"`
+			TTLSeconds int64  `json:"ttl_seconds"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+			return
+		}
+		if req.TTLSeconds > int64(math.MaxInt64/int64(time.Second)) {
+			writeError(w, http.StatusBadRequest, "invalid_ttl", "ttl_seconds is too large")
+			return
+		}
+		ticket, err := cfg.Connect.CreateManagedTicket(r.Context(), connect.CreateManagedTicketInput{
+			UserID:     user.User.ID,
+			MachineID:  req.MachineID,
+			TerminalID: req.TerminalID,
+			TTL:        time.Duration(req.TTLSeconds) * time.Second,
+		})
+		if err != nil {
+			writeError(w, http.StatusForbidden, "create_managed_ticket_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, ticket)
 	})
 	mux.HandleFunc("POST /api/v1/public-p2p/channels", func(w http.ResponseWriter, r *http.Request) {
 		user, ok := authenticatedUser(w, r, cfg.Accounts)

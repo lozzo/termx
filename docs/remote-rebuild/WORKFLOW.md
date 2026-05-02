@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `6` Managed signaling without TURN.
-- Last updated: 2026-05-03T05:38:06+08:00.
+- Active todo: `7` TURN/STUN paid relay MVP.
+- Last updated: 2026-05-03T06:24:33+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -48,7 +48,16 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 5-J | hub-follow-up-review | Enforce signaling TTL on Poll, SubmitAnswer, and GetAnswer, not only cleanup | completed | `aa81dda7` |
 | 5-K | hub-follow-up-review | Require basic SDP-shaped signaling payloads in addition to runtime marker rejection | completed | `aa81dda7` |
 | 5-L | hub-follow-up-review | Refresh workflow state and bottom next action after Slice 5 follow-up review | completed | `aa81dda7` |
-| 6 | managed-signaling | Implement managed signaling without TURN relay as HTTP control/signaling only, runtime still WebRTC DataChannel | pending |  |
+| 6 | managed-signaling | Implement managed signaling without TURN relay as HTTP control/signaling only, runtime still WebRTC DataChannel | completed |  |
+| 6-A | managed-signaling-self-review | Mark managed connect tickets used atomically so tickets cannot create multiple hub offers | completed |  |
+| 6-B | managed-signaling-review | Authorize answer retrieval by ticket/session and machine, not offer ID alone | completed |  |
+| 6-C | managed-signaling-review | Cap managed ticket TTL and guard HTTP ttl_seconds overflow/long-lived free tickets | completed |  |
+| 6-D | managed-signaling-review | Make ownership check and ticket insert transactional/owner-conditioned | completed |  |
+| 6-E | managed-signaling-review | Strengthen hub managed tests for terminal correlation through verifier and registry | completed |  |
+| 6-F | managed-signaling-deferred | Record managed connect ticket cleanup/session binding residual risk | deferred |  |
+| 6-G | managed-signaling-self-review | Prevent Slice 6 hub managed signaling from surfacing relay capability before TURN policy exists | completed |  |
+| 6-H | managed-signaling-follow-up-review | Preflight managed offers so malformed/offline submissions do not consume tickets | completed |  |
+| 6-I | managed-signaling-follow-up-review | Remove exported registry verifier bypass and prove managed signaling still uses registry verifier boundary | completed |  |
 | 7 | paid-relay | Implement paid TURN/STUN relay MVP with temporary TURN credentials, relay lease, and no free TURN | pending |  |
 | 8 | quota | Implement relay quota, active relay session limit, heartbeat, TTL cleanup, and throttling | pending |  |
 | 9 | daemon-agent | Integrate `termx daemon` cloud bootstrap, hub heartbeat/poll/answer, and WebRTC offer handling | pending |  |
@@ -855,7 +864,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 6 Managed Signaling Without TURN
 
-- 状态：pending
+- 状态：completed
 - 父条目：none
 - 来源：先实现 managed connect ticket + hub signaling，但 runtime 仍只使用 WebRTC DataChannel。
 - 目标：web creates managed connect ticket，app/browser submits offer to hub，hub forwards to agent，agent answers；expired/wrong-machine tickets rejected。
@@ -863,19 +872,254 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 非目标：不发 TURN credential，不实现 relay lease，不承载 terminal/file/api/events HTTP runtime。
 - 外部依赖：无真实外部系统。
 - mock 策略：Control Plane ticket verifier interface + signed/local test keys；agent fake for hub tests。
-- 先写的失败测试：待创建 expired ticket rejected、wrong machine rejected、free managed direct no relay、HTTP not runtime proxy 测试。
-- 预期失败结果：待记录。
-- 实现摘要：待完成。
-- 重构摘要：待完成。
-- 运行命令：待记录。
-- 测试结果：待记录。
-- subagent review：待发起。
-- review 发现：待记录。
-- review 后修复：待记录。
-- 新增派生条目：暂无。
+- 先写的失败测试：creating web-control managed connect ticket tests for owner-only ticket creation, expired ticket rejection, wrong machine rejection, free managed direct no relay, and no terminal/file/api/events runtime payload in ticket metadata.
+- 预期失败结果：focused tests should fail before implementation because `web-control/internal/connect` managed ticket service does not exist yet.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/connect` failed as expected with `no non-test Go files`; `cd web-control && GOWORK=off go test ./internal/httpapi -run TestManagedConnectTicketHTTPFlow` failed as expected with unknown `httpapi.Config.Connect`; `cd termx-hub && GOWORK=off go test ./internal/managed` failed as expected with `no non-test Go files`.
+- 实现摘要：added `web-control/internal/connect` managed ticket service backed by SQLite `connect_tickets`, owner checks, TTL verification, managed path only, and free managed direct no-relay fields; added `POST /api/v1/managed/connect-tickets`; added `termx-hub/internal/managed` service that verifies managed tickets, submits offers to registry, lets agents poll offers and submit answers, and keeps relay disabled unless future policy says otherwise.
+- 重构摘要：kept Slice 6 implementation as HTTP/control and hub signaling only. No terminal/file/api/events HTTP runtime proxy, no TURN credentials, and no fourth relay path were introduced.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/connect`; `cd web-control && GOWORK=off go test ./internal/httpapi -run TestManagedConnectTicketHTTPFlow`; `cd termx-hub && GOWORK=off go test ./internal/managed`; `cd web-control && GOWORK=off go test ./internal/connect ./internal/httpapi`; `cd termx-hub && GOWORK=off go test ./internal/managed ./internal/registry`; after review fixes, `cd web-control && GOWORK=off go test ./internal/connect ./internal/httpapi ./internal/store`; `cd termx-hub && GOWORK=off go test ./internal/managed ./internal/registry`; after `6-H`/`6-I`, `cd web-control && GOWORK=off go test ./...`; `cd termx-hub && GOWORK=off go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md web-control/internal/connect web-control/internal/httpapi/router.go web-control/internal/httpapi/managed_connect_test.go termx-hub/internal/managed termx-hub/internal/registry/registry.go`.
+- 测试结果：red path confirmed before implementation; focused managed ticket, HTTP route, hub managed signaling, registry-related hub tests, workflow guard, and scoped diff check pass after `6-A` through `6-I` fixes. `cd termx-hub && GOWORK=off go test ./...` caught a preflight ordering regression where wrong-machine tickets returned `ErrAgentNotFound`; fixed by running non-consuming ticket verification before registry online-agent preflight.
+- subagent review：`Ohm` (`019deaaa-4f8f-7562-8d7c-f00e7f0db154`) reviewed Slice 6 after focused validation and twice after follow-up fixes.
+- review 发现：Initial review: High reusable managed tickets until expiry (`6-A`); High answer retrieval keyed only by offer id without ticket/session/machine authorization (`6-B`); High caller-controlled uncapped ticket TTL (`6-C`); Medium ownership check and ticket insert not atomic (`6-D`); Medium hub managed tests overfit fake verifier and miss terminal correlation (`6-E`); Low expired ticket cleanup not implemented or recorded as deferred (`6-F`). Follow-up review: Medium valid tickets consumed before offer usability is known (`6-H`); Medium exported registry verifier bypass (`6-I`); Low workflow freshness. Final review: no blockers; Low residual race between preflight, consume, and queue; Low workflow freshness, fixed before commit.
+- review 后修复：implemented `6-A` atomic single-use tickets, `6-B` ticket/machine proof for answer reads, `6-C` TTL cap and HTTP overflow guard, `6-D` owner-conditioned transactional ticket insert, `6-E` terminal correlation verifier coverage, and `6-F` documented cleanup/session-binding residual risk. Local self-review then created `6-G` to keep Slice 6 hub managed signaling no-relay even if a future verifier returns relay policy. Follow-up review created and fixed `6-H` for ticket-consumption ordering and `6-I` for the registry verifier-bypass API. Final workflow freshness findings were corrected before commit.
+- 新增派生条目：`6-A`, `6-B`, `6-C`, `6-D`, `6-E`, `6-F`, `6-G`, `6-H`, `6-I`.
 - deferred human items：生产 ticket signing key rotation 后置。
-- 剩余风险：HTTP long-poll 只能是建链前职责。
-- 下一步：Slice 5 后开始。
+- 剩余风险：HTTP long-poll 只能是建链前职责. There remains a small race where agent/verifier state can change between managed preflight, ticket consume, and final queueing; durable managed session lifecycle and retry semantics are deferred to Slice 8/session-limit work.
+- 下一步：commit Slice 6, record commit hash, then start Slice 7 paid TURN/STUN relay MVP.
+- commit：待提交。
+
+### 6-A Managed Ticket Single-Use Verification
+
+- 状态：completed
+- 父条目：6
+- 来源：local self-review while Slice 6 subagent review is running; `docs/remote-rebuild/hub-web-implementation-plan.md` requires `connect_tickets` to be short TTL and single-use or session-bound.
+- 目标：Verify managed tickets atomically marks `used_at` so one ticket cannot create multiple independent hub offers.
+- 范围：`web-control/internal/connect`, `termx-hub/internal/managed`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement durable relay sessions, TURN credentials, or terminal/file/api/events runtime transport.
+- 外部依赖：none.
+- mock 策略：SQLite test DB and fake hub ticket verifier only.
+- 先写的失败测试：creating ticket second-use rejection tests in web-control and hub managed signaling.
+- 预期失败结果：focused tests should fail before implementation because `VerifyManagedTicket` currently reads tickets without setting `used_at`.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/connect` failed as expected before implementation with undefined `connect.ErrTicketUsed`; after first implementation, `cd termx-hub && GOWORK=off go test ./internal/managed` failed because managed service consumed the ticket and then registry `SubmitOffer` verified/consumed it a second time.
+- 实现摘要：web-control now returns `ErrTicketUsed` and atomically marks `connect_tickets.used_at` inside `VerifyManagedTicket`; hub managed service consumes tickets once and queues offers through registry without double-consuming the same ticket.
+- 重构摘要：initially added `Registry.SubmitVerifiedOffer`, then removed that exported bypass in `6-I`; final registry queueing goes through `Registry.SubmitOffer` and its verifier boundary.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/connect`; `cd termx-hub && GOWORK=off go test ./internal/managed ./internal/registry`.
+- 测试结果：focused tests pass after implementation.
+- subagent review：`Ohm` independently found this as a High issue.
+- review 发现：managed tickets are reusable until expiry because `used_at` is never checked or atomically set.
+- review 后修复：implemented atomic single-use ticket verification.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：future Slice 8 may bind tickets to durable session IDs; current slice uses one-shot signaling tickets.
+- 下一步：included in Slice 6 follow-up review fixes.
+- commit：待提交。
+
+### 6-B Managed Answer Retrieval Authorization
+
+- 状态：completed
+- 父条目：6
+- 来源：Slice 6 subagent review by `Ohm`; parent finding High.
+- 目标：require ticket/session and machine proof when retrieving managed answers; offer ID alone must not be enough.
+- 范围：`termx-hub/internal/managed`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement durable session table or WebRTC runtime transport.
+- 外部依赖：none.
+- mock 策略：fake ticket verifier and registry only.
+- 先写的失败测试：creating wrong ticket/wrong machine answer read rejection and correct ticket answer read success tests.
+- 预期失败结果：focused managed tests should fail because `GetAnswerInput` currently contains only `OfferID`.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/managed` failed as expected before implementation with unknown `TicketID` and `MachineID` fields in `managed.GetAnswerInput`.
+- 实现摘要：managed service now records offer-to-ticket bindings and requires `OfferID`, `TicketID`, and `MachineID` for answer retrieval; wrong or missing ticket/machine proof fails closed.
+- 重构摘要：kept answer authorization in managed signaling state without introducing runtime HTTP transport.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/managed`.
+- 测试结果：focused managed tests pass after implementation.
+- subagent review：`Ohm` found this issue; follow-up review required before Slice 6 completion.
+- review 发现：answer retrieval is keyed only by `offer_id`.
+- review 后修复：implemented ticket/machine proof for answer retrieval.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：future durable managed sessions should bind this more strongly.
+- 下一步：included in Slice 6 follow-up review fixes.
+- commit：待提交。
+
+### 6-C Managed Ticket TTL Cap
+
+- 状态：completed
+- 父条目：6
+- 来源：Slice 6 subagent review by `Ohm`; parent finding High.
+- 目标：cap managed ticket TTL and prevent HTTP `ttl_seconds` overflow or long-lived free managed tickets.
+- 范围：`web-control/internal/connect`, `web-control/internal/httpapi`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not add paid relay lease TTL or TURN credentials.
+- 外部依赖：none.
+- mock 策略：SQLite test DB and HTTP test router only.
+- 先写的失败测试：creating excessive TTL cap and HTTP overflow rejection tests.
+- 预期失败结果：focused tests should fail because service currently accepts arbitrary positive TTL.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/connect ./internal/httpapi -run 'TestManagedTicketTTLCapped|TestManagedConnectTicketHTTPFlow'` failed as expected before implementation with undefined `connect.MaxTicketTTL` and HTTP overflow request returning 201.
+- 实现摘要：added `connect.MaxTicketTTL`, capped service-created TTLs, and rejected HTTP `ttl_seconds` values that overflow `time.Duration`.
+- 重构摘要：kept free managed direct tickets short-lived and no-relay.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/connect ./internal/httpapi -run 'TestManagedTicketTTLCapped|TestManagedConnectTicketHTTPFlow'`.
+- 测试结果：focused TTL cap and HTTP overflow tests pass after implementation.
+- subagent review：`Ohm` found this issue; follow-up review required before Slice 6 completion.
+- review 发现：managed ticket TTL is caller-controlled and uncapped.
+- review 后修复：implemented TTL cap and overflow guard.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：future policy may tune max TTL by plan/region.
+- 下一步：included in Slice 6 follow-up review fixes.
+- commit：待提交。
+
+### 6-D Managed Ticket Ownership Transaction
+
+- 状态：completed
+- 父条目：6
+- 来源：Slice 6 subagent review by `Ohm`; parent finding Medium.
+- 目标：make ownership check and ticket insert atomic or owner-conditioned so stale ownership cannot mint tickets.
+- 范围：`web-control/internal/connect`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement full ownership revocation UX.
+- 外部依赖：none.
+- mock 策略：SQLite transaction tests.
+- 先写的失败测试：creating owner-conditioned insert regression.
+- 预期失败结果：focused tests should fail before implementation because current create checks owner then inserts outside transaction.
+- 实际失败结果：local process note: the implementation was started before the dedicated 6-D regression was written; corrected by adding `TestManagedTicketCreateUsesOwnerConditionedInsert` before validation, which would fail if the insert were not owner-conditioned.
+- 实现摘要：`CreateManagedTicket` now inserts tickets inside a transaction using an owner-conditioned `INSERT ... SELECT ... WHERE EXISTS` so a stale ownership check cannot mint a ticket.
+- 重构摘要：removed the separate pre-insert ownership check from ticket creation and kept ownership enforcement in SQLite.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/connect`.
+- 测试结果：focused connect tests pass after owner-conditioned insert implementation.
+- subagent review：`Ohm` found this issue; follow-up review required before Slice 6 completion.
+- review 发现：ownership check and insert are not atomic.
+- review 后修复：implemented transactional owner-conditioned ticket creation.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：concurrent ownership transfer policies are future product work.
+- 下一步：included in Slice 6 follow-up review fixes.
+- commit：待提交。
+
+### 6-E Hub Managed Terminal Correlation Tests
+
+- 状态：completed
+- 父条目：6
+- 来源：Slice 6 subagent review by `Ohm`; parent finding Medium.
+- 目标：strengthen hub managed tests so ticket verifier and registry terminal correlation cannot silently drift.
+- 范围：`termx-hub/internal/managed`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：no new runtime transport or terminal protocol behavior.
+- 外部依赖：none.
+- mock 策略：strict fake verifier that checks machine and terminal IDs.
+- 先写的失败测试：creating terminal mismatch verifier regression.
+- 预期失败结果：test shape should fail until verifier inputs include terminal ID.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/managed` failed as expected before implementation with undefined `managed.ErrWrongTerminal` and missing `VerifyTicketInput.TerminalID`.
+- 实现摘要：added `TerminalID` to managed ticket verification input, added `ErrWrongTerminal`, and strengthened hub managed tests so terminal mismatch fails before registry offer creation.
+- 重构摘要：kept terminal correlation in signaling ticket verification; no terminal runtime transport behavior was added.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/managed`.
+- 测试结果：focused managed tests pass after implementation.
+- subagent review：`Ohm` found this issue; follow-up review required before Slice 6 completion.
+- review 发现：current fake verifier ignores terminal ID.
+- review 后修复：implemented terminal correlation verifier coverage.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：terminal ownership and existence checks move to daemon/agent slices.
+- 下一步：included in Slice 6 follow-up review fixes.
+- commit：待提交。
+
+### 6-F Managed Ticket Cleanup Deferred
+
+- 状态：deferred
+- 父条目：6
+- 来源：Slice 6 subagent review by `Ohm`; parent finding Low.
+- 目标：record expired managed ticket cleanup/session binding as a deferred residual risk if not implemented in Slice 6.
+- 范围：`docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：no code behavior change unless cleanup is implemented now.
+- 外部依赖：none.
+- mock 策略：none.
+- 先写的失败测试：workflow guard and local stale-risk check.
+- 预期失败结果：not applicable.
+- 实际失败结果：Ohm found cleanup was neither implemented nor recorded.
+- 实现摘要：deferred cleanup/session-binding item recorded. Current code rejects expired tickets on verify and atomically marks tickets used, but does not yet run a cleanup scheduler or bind tickets to a durable managed session record.
+- 重构摘要：none.
+- 运行命令：not run; documentation-only deferred item.
+- 测试结果：not run.
+- subagent review：`Ohm` found this issue.
+- review 发现：expired tickets remain in SQLite and cleanup/session binding residual risk was not documented.
+- review 后修复：documented cleanup/session-binding residual risk instead of claiming it was complete.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：expired/used ticket rows remain in SQLite until a future cleanup job; durable session binding and managed session lifecycle belong to Slice 8/session-limit work.
+- 下一步：rerun broader Slice 6 validation and request follow-up review.
+- commit：待提交。
+
+### 6-G Managed Signaling No-Relay Guard
+
+- 状态：completed
+- 父条目：6
+- 来源：local self-review after `Ohm` findings; Slice 6 is managed signaling without TURN, so hub responses must not surface relay capability even if a future ticket verifier returns relay-allowed policy.
+- 目标：ensure managed signaling offers remain `managed` path with `AllowRelay=false` and `RelayInUse=false` until Slice 7 implements paid TURN relay policy.
+- 范围：`termx-hub/internal/managed`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement TURN credentials, relay leases, quotas, or paid relay session accounting.
+- 外部依赖：none.
+- mock 策略：strict fake ticket verifier returning a relay-allowed ticket to prove Slice 6 ignores it.
+- 先写的失败测试：add a hub managed signaling regression where the verifier returns `AllowRelay=true` and the submitted offer must still expose no relay capability.
+- 预期失败结果：focused managed tests should fail before implementation because `SubmitOffer` currently copies `ticket.AllowRelay` into the response.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/managed -run TestManagedSignalingDoesNotSurfaceRelayBeforeTurnPolicy` failed as expected because `SubmitOffer` returned `AllowRelay:true`.
+- 实现摘要：hub managed `SubmitOffer` now forces `AllowRelay=false` for Slice 6 responses even if a verifier returns a future relay-allowed ticket.
+- 重构摘要：kept relay policy dormant until Slice 7; no TURN credentials, relay lease, or fourth transport path were added.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/managed -run TestManagedSignalingDoesNotSurfaceRelayBeforeTurnPolicy`.
+- 测试结果：expected failure recorded before implementation; focused test passed after implementation.
+- subagent review：included in Slice 6 follow-up and final review by `Ohm`.
+- review 发现：no blocker after no-relay guard; final review confirmed no relay path taxonomy drift or TURN credential leakage in Slice 6.
+- review 后修复：no additional code change required after final review.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：paid relay policy will be introduced in Slice 7 and must deliberately re-open this behavior behind quota/session-limit checks.
+- 下一步：included in Slice 6 follow-up review fixes.
+- commit：待提交。
+
+### 6-H Managed Offer Preflight Before Ticket Consumption
+
+- 状态：completed
+- 父条目：6
+- 来源：Slice 6 follow-up review by `Ohm`; parent finding Medium that `VerifyManagedTicket` consumes a single-use ticket before registry rejects malformed SDP/runtime payloads or no-online-agent state.
+- 目标：preflight managed offer inputs and agent availability before consuming a ticket, so malformed/offline submissions can retry with the same still-valid ticket.
+- 范围：`termx-hub/internal/managed`, `termx-hub/internal/registry`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not make consumed tickets reusable after a successfully queued offer; do not implement durable managed sessions.
+- 外部依赖：none.
+- mock 策略：fake verifier remains strict and tracks consumption to prove registry rejections do not burn tickets.
+- 先写的失败测试：add managed tests proving a runtime-payload rejection and an offline-agent rejection leave the same ticket usable for a subsequent valid offer.
+- 预期失败结果：focused managed tests should fail because `SubmitOffer` currently verifies/consumes the ticket before registry validation/online-agent checks.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/managed -run 'TestManagedSignalingRejectsRuntimePayload|TestManagedSignalingDoesNotConsumeTicketWhenNoAgentOnline'` failed as expected because retrying with the same ticket returned `managed ticket already used`.
+- 实现摘要：added `Registry.PreflightOffer` and call it before managed ticket consumption so invalid SDP/runtime payloads or no-online-agent state fail before `VerifyManagedTicket` marks a ticket used.
+- 重构摘要：preflight reuses registry validation and online-agent checks; successful submissions still consume tickets once.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/managed -run 'TestManagedSignalingRejectsRuntimePayload|TestManagedSignalingDoesNotConsumeTicketWhenNoAgentOnline'`.
+- 测试结果：expected failure recorded before implementation; focused retry tests pass after preflight implementation.
+- subagent review：`Ohm` follow-up finding; final follow-up review required after fix.
+- review 发现：valid tickets are consumed before the offer is known to be usable.
+- review 后修复：implemented preflight before consumption.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：durable session lifecycle remains future Slice 8 work.
+- 下一步：included in final Slice 6 follow-up review.
+- commit：待提交。
+
+### 6-I Registry Verified-Offer Boundary
+
+- 状态：completed
+- 父条目：6
+- 来源：Slice 6 follow-up review by `Ohm`; parent finding Medium that exported `Registry.SubmitVerifiedOffer` is a verifier bypass footgun.
+- 目标：remove the exported verifier bypass and keep managed signaling on the registry verifier boundary while avoiding double ticket consumption.
+- 范围：`termx-hub/internal/registry`, `termx-hub/internal/managed`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not weaken registry ticket authorization; do not expose a fourth transport/path.
+- 外部依赖：none.
+- mock 策略：managed service uses a non-consuming registry verifier adapter while managed ticket consumption remains in `TicketVerifier`.
+- 先写的失败测试：add/adjust managed tests so registry still calls its verifier for queued offers without consuming the ticket twice; verify no external `SubmitVerifiedOffer` API remains.
+- 预期失败结果：focused managed test should fail because `SubmitOffer` currently uses exported `SubmitVerifiedOffer`, skipping registry `VerifyOfferTicket`.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/managed -run TestManagedSignalingUsesRegistryVerifierWithoutDoubleConsuming` failed as expected with empty registry offer verifier checks.
+- 实现摘要：removed exported `Registry.SubmitVerifiedOffer`; managed service now performs a non-consuming ticket check, preflights registry payload/online-agent state, consumes the managed ticket once, then queues via `Registry.SubmitOffer` so registry still invokes its verifier boundary.
+- 重构摘要：split non-consuming `VerifyOfferTicket` from consuming `VerifyManagedTicket` in the hub fake/provider contract; removed the registry bypass API and retained the single private `submitVerifiedOffer` helper inside registry.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/managed -run TestManagedSignalingUsesRegistryVerifierWithoutDoubleConsuming`; `cd termx-hub && GOWORK=off go test ./internal/managed ./internal/registry`.
+- 测试结果：expected failure recorded before implementation; focused verifier-boundary test and managed/registry tests pass after implementation.
+- subagent review：`Ohm` follow-up finding; final follow-up review required after fix.
+- review 发现：`SubmitVerifiedOffer` is an exported verifier bypass on the registry boundary.
+- review 后修复：removed exported verifier bypass and preserved registry verifier checks without double-consuming tickets.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：registry verifier semantics must stay non-consuming; managed service remains the consumer of single-use connect tickets.
+- 下一步：included in final Slice 6 follow-up review.
 - commit：待提交。
 
 ### 7 TURN/STUN Paid Relay MVP
@@ -1625,5 +1869,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Finish Slice 5 follow-up validation and review closure, then commit only `docs/remote-rebuild/WORKFLOW.md`, `go.work`, and `termx-hub` files.
-2. Start Slice 6 managed signaling without TURN, keeping HTTP limited to signaling/control and runtime data on WebRTC DataChannel.
+1. Commit Slice 6 managed signaling without TURN, then record its commit hash in `WORKFLOW.md`.
+2. Start Slice 7 paid TURN/STUN relay MVP with TDD, keeping relay as capability/policy/quota and not a fourth client path.

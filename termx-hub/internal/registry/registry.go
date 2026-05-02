@@ -201,10 +201,12 @@ func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error
 	terminalID := strings.TrimSpace(in.TerminalID)
 	ticketID := strings.TrimSpace(in.TicketID)
 	sdp := strings.TrimSpace(in.SDP)
-	if machineID == "" || terminalID == "" || ticketID == "" || sdp == "" {
-		return Offer{}, errors.New("machine id, terminal id, ticket id, and sdp are required")
-	}
-	if err := r.validateSignalingPayload(sdp); err != nil {
+	if err := r.PreflightOffer(ctx, OfferInput{
+		MachineID:  machineID,
+		TerminalID: terminalID,
+		TicketID:   ticketID,
+		SDP:        sdp,
+	}); err != nil {
 		return Offer{}, err
 	}
 	if r.verifier == nil {
@@ -217,6 +219,31 @@ func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error
 	}); err != nil {
 		return Offer{}, err
 	}
+	return r.submitVerifiedOffer(ctx, machineID, terminalID, ticketID, sdp)
+}
+
+func (r *Registry) PreflightOffer(ctx context.Context, in OfferInput) error {
+	_ = ctx
+	machineID := strings.TrimSpace(in.MachineID)
+	terminalID := strings.TrimSpace(in.TerminalID)
+	ticketID := strings.TrimSpace(in.TicketID)
+	sdp := strings.TrimSpace(in.SDP)
+	if machineID == "" || terminalID == "" || ticketID == "" || sdp == "" {
+		return errors.New("machine id, terminal id, ticket id, and sdp are required")
+	}
+	if err := r.validateSignalingPayload(sdp); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.machineOnlineLocked(machineID) {
+		return ErrAgentNotFound
+	}
+	return nil
+}
+
+func (r *Registry) submitVerifiedOffer(ctx context.Context, machineID string, terminalID string, ticketID string, sdp string) (Offer, error) {
+	_ = ctx
 	offer := Offer{
 		ID:         randomID("offer"),
 		MachineID:  machineID,
