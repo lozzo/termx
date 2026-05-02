@@ -12,6 +12,7 @@ import {
   encodeResizePayload,
   encodeTermxFrame,
   rowsToText,
+  snapshotToReplay,
   type TermxFrame,
 } from './termxProtocol'
 import type { BinaryChannel, ConnectionInfo } from './transport'
@@ -317,9 +318,11 @@ function normalizeSnapshot(value: unknown): TerminalSnapshotPayload {
   }
   const record = value as Record<string, unknown>
   const size = record.size as Record<string, unknown> | undefined
+  const replay = snapshotToReplay(record)
   return {
     text: rowsToText(record),
     cols: typeof size?.cols === 'number' ? size.cols : 0,
     rows: typeof size?.rows === 'number' ? size.rows : 0,
+    ...(replay ? { replay } : {}),
   }
 }

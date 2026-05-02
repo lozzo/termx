@@ -73,6 +73,7 @@ export {
   encodeResizePayload,
   encodeTermxFrame,
   rowsToText,
+  snapshotToReplay,
 } from './termxProtocol'
 export type { TermxFrame, TermxFrameType } from './termxProtocol'
 export { TerminalClient } from './terminalClient'

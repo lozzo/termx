@@ -180,7 +180,7 @@ describe('createLocalTerminalProtocolTransport', () => {
     expect(new TextDecoder().decode((events[1] as { data: Uint8Array }).data)).toBe('early-output')
   })
 
-  it('requests a snapshot and emits text fallback through the terminal transport interface', async () => {
+  it('requests a snapshot and emits replayable snapshot content through the terminal transport interface', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
     const transport = createLocalTerminalProtocolTransport({
       channel,
@@ -225,6 +225,8 @@ describe('createLocalTerminalProtocolTransport', () => {
       type: 'snapshot',
       snapshot: { text: 'ok\nhi', cols: 80, rows: 24 },
     })
+    expect((events[1] as { snapshot: { replay?: string } }).snapshot.replay).toContain('\x1b[H\x1b[2J\x1b[H')
+    expect((events[1] as { snapshot: { replay?: string } }).snapshot.replay).toContain('\x1b[1;1H')
   })
 
   it('rejects machine or terminal mismatch before writing protocol frames', async () => {

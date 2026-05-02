@@ -214,6 +214,29 @@ describe('Terminal', () => {
     await waitFor(() => expect(screen.getByLabelText('Terminal output').textContent).toContain('streamed output'))
   })
 
+  it('replays structured snapshot output into xterm instead of flattening it to plain text', async () => {
+    const transport = createMockTerminalTransport()
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        transport={transport}
+      />,
+    )
+
+    await waitFor(() => expect(transport.openedLabels).toEqual(['terminal:terminal-1']))
+    transport.emitTerminalSnapshot('terminal-1', {
+      text: 'ok\nhi',
+      cols: 80,
+      rows: 24,
+      replay: '\x1b[H\x1b[2J\x1b[1;1H\x1b[0;31mold\x1b[0m\x1b[2;1Hcurrent\x1b[2;8H\x1b[?25h',
+    })
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances[0]?.writes).toContain('\x1b[H\x1b[2J\x1b[1;1H\x1b[0;31mold\x1b[0m\x1b[2;1Hcurrent\x1b[2;8H\x1b[?25h'))
+    expect(xtermMocks.FakeXTerm.instances[0]?.writes).not.toContain('ok\nhi')
+  })
+
   it('forwards xterm input through the terminal transport interface', async () => {
     const transport = createMockTerminalTransport()
 

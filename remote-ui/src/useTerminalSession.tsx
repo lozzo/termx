@@ -50,7 +50,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     },
     onSnapshot: (nextSnapshot) => {
       setTerminalSnapshot(nextSnapshot)
-      setTerminalText(nextSnapshot.text)
+      setTerminalText(nextSnapshot.replay ?? nextSnapshot.text)
     },
     onTerminalInfo: setTerminalInfo,
     onResizeControl: setResizeControl,

@@ -6,6 +6,7 @@ export interface TerminalSnapshotPayload {
   text: string
   cols: number
   rows: number
+  replay?: string
 }
 
 export type TerminalInfoPayload = Record<string, unknown>

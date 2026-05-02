@@ -30,6 +30,7 @@ describe('TerminalClient', () => {
       text: 'prompt',
       cols: 120,
       rows: 36,
+      replay: '\x1b[Hprompt',
     })
     transport.emitTerminalInfo('terminal-1', {
       terminal_id: 'terminal-1',
@@ -40,7 +41,7 @@ describe('TerminalClient', () => {
     })
 
     expect(callbacks.onOutput).toHaveBeenCalledWith(new TextEncoder().encode('hello'))
-    expect(callbacks.onSnapshot).toHaveBeenCalledWith({ text: 'prompt', cols: 120, rows: 36 })
+    expect(callbacks.onSnapshot).toHaveBeenCalledWith({ text: 'prompt', cols: 120, rows: 36, replay: '\x1b[Hprompt' })
     expect(callbacks.onTerminalInfo).toHaveBeenCalledWith(
       expect.objectContaining({ terminalId: 'terminal-1', machineId: 'machine-local' }),
     )
