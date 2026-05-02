@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+.box {
+  width: 100px; height: 100px; background: red;
+  transition: all 1s;
+}
+.hidden {
+  transform: translateY(100px);
+  visibility: hidden;
+}
+.visible {
+  transform: translateY(0);
+  visibility: visible;
+}
+</style>
+</head>
+<body>
+<div id="b" class="box hidden">Box</div>
+<script>
+setTimeout(() => { document.getElementById('b').className = 'box visible'; }, 1000);
+setTimeout(() => { document.getElementById('b').className = 'box hidden'; }, 3000);
+</script>
+</body>
+</html>
