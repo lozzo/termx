@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-DX-A add a root fast-start build/run entry for embedded local web and `termx`
-- Last updated: 2026-05-02T18:02:03+08:00
+- Active todo: P4-A recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters
+- Last updated: 2026-05-02T20:52:33+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -47,8 +47,9 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-O | remote-ui | Add a true local embedded terminal list page so local web opens to terminals first and only enters the terminal page after selecting an item | completed | `b7f07517` |
 | P3-E-C-B-P | remote-ui | Enrich terminal list metadata and move Files to a machine-level overlay whose open/close state is independent from terminal/list navigation | completed | `b0de33ee` |
 | P3-E-C-B-Q | remote-ui/core | Push terminal inventory changes over WebRTC and consume them through a shared machine-level event subscription interface so web/app auto-refresh terminal lists | completed | `936e6cd9` |
+| P3-E-C-B-R | remote-ui/core | Add terminal list long-press management, create/update/delete actions, pull-to-refresh fallback, and verification-first local list UX | completed | `fb2fae90` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
-| P3-DX-A | cli/localweb | Add a root fast-start build/run entry so local embedded web frontend assets and the `termx` CLI can be rebuilt/launched without manual multi-step commands | in_progress |  |
+| P3-DX-A | cli/localweb | Add a root fast-start build/run entry so local embedded web frontend assets and the `termx` CLI can be rebuilt/launched without manual multi-step commands | completed | `e5416e0a` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
 ## TDD Log
@@ -390,6 +391,28 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Worktree note: the shared workspace currently also contains user-driven local UI and fast-start changes outside this todo (`README.md`, `Makefile`, several `remote-ui` presentation files, and regenerated embedded assets). This slice was kept scoped to the machine-level inventory push path and intentionally did not revert or overwrite those unrelated in-flight edits.
 - Code review: `Nietzsche` found a high issue where machine-events-only sessions still accepted empty `types` and could subscribe to non-inventory events, plus a medium test gap where metadata-change refresh was not proven through the real `events` channel. Fixed by requiring explicit allowed terminal inventory event types in machine-events-only scope, adding an end-to-end machine inventory metadata event test over local WebRTC, and retaining the shared interface boundary. No workspace/tab/pane drift, TURN credential exposure, machine private key exposure, or browser/native boundary leak was found.
 - Result: completed. Commit: `936e6cd9`.
+
+### P3-E-C-B-R terminal list management and verification-first UX
+
+- Active slice: add terminal list management behavior for local embedded web: long-press a terminal to open actions, create/update/delete local terminals, explicit pull-to-refresh / manual refresh fallback in case events are missed, and move pairing/verification ahead of management UI instead of keeping Pair only as a small top-right action.
+- Tests written before implementation: planned `termx-core/internal/remote/localweb/handler_test.go`, `remote-ui/src/localAgentApi.test.ts`, `remote-ui/src/LocalRemoteApp.test.tsx`, and any focused component tests needed for long-press menus / local management sheets.
+- Expected failing tests: current local embedded web only supports `getStatus`, `listTerminals`, `pair`, and RTC answer calls; there is no local terminal create/update/delete endpoint in `localweb`, no matching `LocalAgentApi` methods, no long-press action menu in `TerminalList`, no pull-to-refresh/manual refresh path, and the list page still exposes Pair as a small header icon instead of making verification a primary first-run path.
+- Planned scope: keep all management behind machine->terminal public semantics, reuse existing server `Create`, `SetMetadata`, `SetTags`, `Kill`/`remove` behavior where appropriate, and keep browser/native specifics behind interfaces. Do not reintroduce workspace/tab/pane concepts or leak TURN / machine private key material.
+- Implementation notes: the local web HTTP surface now exposes machine-level terminal create, update, and delete endpoints under `/api/local/terminals`, mapped onto the existing server create/metadata/tag/remove flows in `termx-core`. `remote-ui` now consumes those endpoints through `LocalAgentApi`, opens terminal management from long-press or context menu, gates open/files/manage flows behind explicit verification when local pairing is configured, adds manual refresh plus pull-to-refresh fallback, and rebuilds the embedded local web assets with the updated mobile-first shell.
+- Focused tests after implementation: `go test ./termx-core/internal/remote/localweb` passed; `cd remote-ui && npm test -- src/localAgentApi.test.ts src/TerminalList.test.tsx src/LocalRemoteApp.test.tsx src/LocalPairPanel.test.tsx src/LocalRemoteApp.files.test.tsx src/localAppIdentity.test.ts` passed 29 tests.
+- Broader validation and regression fix: `cd remote-ui && npm test` initially failed in `src/localWebEntry.test.tsx` because `localWebEntry` would construct browser pair helpers for a partial storage object and `LocalRemoteApp` would eagerly read `pair.storage.loadCertificate()` on first render. Fixed by gating browser pair, inventory-events, and transport helper creation on storage objects that actually implement `getItem` and `setItem`. After the fix, `cd remote-ui && npm test` passed 117 tests; `go test ./termx-core/... ./termx-cli/...` passed; `cd remote-ui && npm run build:localweb` passed and resynced embedded assets.
+- Commit split note: the todo landed in two feature commits because the machine-level localweb API and the shared remote-ui UX changed at different layers. Core/localweb terminal management contract: `cd853ddd`. Shared local embedded web verification-first management UX and embedded asset refresh: `fb2fae90`.
+- Result: completed. Primary commit recorded in the todo table: `fb2fae90`.
+
+### P3-DX-A root local embedded web fast-start workflow
+
+- Active slice: add root-level developer entrypoints so local embedded web assets and the `termx` CLI can be rebuilt, launched, and iterated from the monorepo root without manually stitching together frontend and Go commands.
+- Tests written before implementation: planned `remote-ui/src/viteConfig.test.ts` plus broader remote-ui and Go regression coverage around the local daemon workflow.
+- Expected failing tests: there was no root `Makefile`, `remote-ui` did not expose a Vite dev script, and the dev server did not proxy `/api/*` to the local daemon origin.
+- Implementation notes: added a root `Makefile` with `localweb-build`, `termx-build`, `remote-dev`, `remote-daemon`, `remote-open`, `remote-status`, and focused test targets; documented the workflow and override variables in `README.md`; added `npm run dev` to `remote-ui`; and configured Vite to proxy `/api/*` to `TERMX_LOCAL_WEB_ORIGIN` with a focused test for the default target.
+- Focused tests after implementation: `cd remote-ui && npm test -- src/viteConfig.test.ts` passed.
+- Broader tests after implementation: `cd remote-ui && npm test` passed 117 tests; `go test ./termx-core/... ./termx-cli/...` passed.
+- Result: completed. Commit: `e5416e0a`.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
