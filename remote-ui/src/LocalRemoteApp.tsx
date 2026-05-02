@@ -224,20 +224,41 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
       </aside>
 
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-4 md:hidden">
-          <div className="flex items-center gap-2 min-w-0">
-            <Monitor className="h-4 w-4 shrink-0 text-zinc-500" />
-            <span className="truncate text-sm font-medium text-zinc-800">{machine.machineId}</span>
-          </div>
-          <div className="flex items-center gap-1">
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-2 md:hidden">
+          <div className="flex items-center">
             <button
               type="button"
               aria-label="Switch terminal"
-              className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-zinc-800 active:bg-zinc-100"
               onClick={() => setMobileSheet('terminals')}
             >
-              <ListTree className="h-5 w-5" />
+              <ListTree className="h-5 w-5 text-zinc-500" />
+              <span className="max-w-[80px] truncate text-sm font-semibold">{machine.machineId}</span>
             </button>
+          </div>
+
+          <div className="flex items-center gap-1 rounded-lg bg-zinc-100 p-1">
+            <button
+              type="button"
+              aria-label="Open terminal"
+              onClick={openTerminalPanel}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${panelMode === 'terminal' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`}
+            >
+              <TerminalSquare className="h-3.5 w-3.5" />
+              Console
+            </button>
+            <button
+              type="button"
+              aria-label="Open files"
+              onClick={openFiles}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${panelMode === 'files' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`}
+            >
+              <Folder className="h-3.5 w-3.5" />
+              Files
+            </button>
+          </div>
+
+          <div className="flex items-center justify-end min-w-[36px]">
             {pair ? (
               <button
                 type="button"
@@ -307,36 +328,6 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
           onModifierStateChange={setModifierState}
           className={panelMode === 'terminal' ? '' : 'hidden'}
         />
-
-        <nav className="flex h-14 shrink-0 border-t border-zinc-200 bg-zinc-100 md:hidden">
-          <button
-            type="button"
-            aria-label="Open terminal"
-            onClick={openTerminalPanel}
-            className={`flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors ${panelMode === 'terminal' ? 'text-zinc-900' : 'text-zinc-500'}`}
-          >
-            <TerminalSquare className={`h-5 w-5 ${panelMode === 'terminal' ? 'fill-zinc-200' : ''}`} />
-            Console
-          </button>
-          <button
-            type="button"
-            aria-label="Open files"
-            onClick={openFiles}
-            className={`flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors ${panelMode === 'files' ? 'text-zinc-900' : 'text-zinc-500'}`}
-          >
-            <Folder className={`h-5 w-5 ${panelMode === 'files' ? 'fill-zinc-200' : ''}`} />
-            Files
-          </button>
-          <button
-            type="button"
-            aria-label="Open terminal list"
-            onClick={() => setMobileSheet('terminals')}
-            className="flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium text-zinc-500 transition-colors"
-          >
-            <ListTree className="h-5 w-5" />
-            Terms
-          </button>
-        </nav>
 
         {mobileSheet === 'terminals' ? (
           <MobileSheetPanel title="Terminals" testId="termx-terminal-switcher-sheet" onClose={() => setMobileSheet(null)}>

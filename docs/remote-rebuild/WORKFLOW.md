@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-E-C-B-L fix embedded local xterm one-line viewport regression
-- Last updated: 2026-05-02T10:12:00+08:00
+- Active todo: P3-E-C-B-M re-embed current local web frontend assets
+- Last updated: 2026-05-02T14:47:00+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -42,6 +42,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-J | cli/local | Complete `termx remote` commands for implemented local-only remote management: enable/local-only, disable, info/show, pair, and open | completed | `dd5e1502` |
 | P3-E-C-B-K | remote-ui/core | Add terminal resize ownership and size-lock handling so local/mobile remote views can fit locally without stealing daemon PTY size | completed | `23539e7d` |
 | P3-E-C-B-L | remote-ui | Fix embedded local xterm viewport sizing so the terminal does not stay at a single visible row after mobile/local layout settles | completed | `134c35f7` |
+| P3-E-C-B-M | localweb | Re-embed current `remote-ui` local web frontend assets into the `termx` binary static bundle | completed | pending commit |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -312,6 +313,19 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Code review: `Peirce` found no issue with the core xterm delayed-fit fix, resize ownership gating, transport boundaries, TURN credential handling, machine private key handling, or workspace/tab/pane public-model drift. It found a medium scope issue that the existing uncommitted `LocalRemoteApp.tsx` mobile header/nav changes would pollute this todo's embedded bundle; fixed by regenerating assets from a temporary clean worktree that only contains the xterm fix. It also found this workflow entry stale; fixed by this update.
 - Result: completed. Commit: `134c35f7`.
 
+### P3-E-C-B-M re-embed current local web frontend assets
+
+- Active slice: rebuild and sync the embedded local web static bundle from the current `remote-ui` source after user requested a fresh frontend embed.
+- Tests written before implementation: none; this is a rebuild/sync todo rather than a code behavior change. The current worktree already contains an uncommitted `remote-ui/src/LocalRemoteApp.tsx` mobile header/navigation adjustment, so the generated bundle is expected to include it.
+- Planned verification: run `cd remote-ui && npm run build:localweb`, then run focused localweb/CLI tests that prove embedded assets still serve. Run `git diff --check` before commit.
+- Scope: do not alter remote protocol, pairing, resize ownership, TURN relay behavior, machine private key handling, or transport interfaces. This todo should only sync current frontend source into `termx-core/internal/remote/localweb/static` and record the result.
+- Implementation notes: rebuilt current `remote-ui` local web assets and synced them into `termx-core/internal/remote/localweb/static`. The current mobile header/navigation change moves the mobile terminal/files controls from the bottom nav into the top header segmented control. After focused testing exposed the missing command-style accessible name, `aria-label="Open terminal"` and `aria-label="Open files"` were restored on the segmented buttons.
+- Actual failing test before accessibility fix: `cd remote-ui && npm test -- --run src/LocalRemoteApp.test.tsx` failed because the updated `Files` segmented button no longer had the expected accessible name `/open files/i`.
+- Focused tests after fix: `cd remote-ui && npm test -- --run src/LocalRemoteApp.test.tsx` passed 6 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed with only the existing Vite large chunk warning.
+- Broader tests after embed: `cd remote-ui && npm test` passed 106 tests; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestStartRemoteLocalWebServesEmbeddedPageAndStatus|TestRemoteLocal'` passed; `git diff --check` passed.
+- Code review: `Pasteur` found no issues. It confirmed no workspace/tab/pane/session public model drift, no TURN credential or machine private key exposure, no WebRTC/fetch/native transport leakage into `LocalRemoteApp`, embedded assets match `remote-ui/dist` by SHA-256, and current accessible command names are covered.
+- Result: completed. Commit: pending.
+
 ### P3-F anonymous rendezvous HTTP adapter/service
 
 - Active slice: HTTP adapter/service for the existing anonymous rendezvous store.
@@ -515,6 +529,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Hilbert` (`019de26c-732d-74a3-93d0-54b7b6bbdcb7`): P3-E-C-B-D code review for local WebRTC DataChannel open gating, regenerated embedded localweb static assets, boundary drift, no TURN credentials, no machine private key exposure, and test coverage. Findings: no issues. Residual risk: no automated in-app browser click smoke was available in this Codex session.
 - `Gibbs` (`019de442-39a1-71e3-8d21-51662e5be368`): P3-E-C-B-I code review for the mobile terminal interaction shell, terminal-first layout, modifier/keybar flow, xterm keyboard offset, Tailwind-only styling boundary, generated localweb assets, and remote rebuild scope drift. Findings: xterm could be recreated by callback prop changes, and shared `FileManager` depended on caller-provided `relative` positioning. Result: fixed with callback refs in `Terminal`, a self-contained `FileManager` root, and regression tests.
 - `Maxwell` (`019de4a3-d2f7-77d0-9ce6-c84cf4578b52`): P3-E-C-B-K code review for terminal resize ownership, size lock handling, mobile/local follower fit behavior, transport boundaries, and remote rebuild scope drift. Findings: high unscoped request-path `resize` bypassed owner attachment when no matching attachment existed. Result: fixed by requiring request-path resize owner attachment, including scoped no-attachment regression and existing request-path test updates.
+- `Peirce` (`019de66e-8d86-7192-a315-dcbae118f4ec`): P3-E-C-B-L code review for xterm viewport delayed fit, resize ownership gating, generated localweb assets, and scope drift. Findings: core xterm fix was sound; medium scope issue that unrelated `LocalRemoteApp.tsx` changes would pollute generated assets. Result: regenerated assets from a clean worktree containing only the xterm fix.
+- `Pasteur` (`019de772-b556-7f81-9507-c8fa318ec7a7`): P3-E-C-B-M code review for current frontend re-embed, mobile header/navigation adjustment, accessibility labels, generated assets, and remote rebuild boundaries. Findings: no issues; generated static assets match `remote-ui/dist`, command names are covered, and no transport/security/model drift was found.
 
 ## Code Review Log
 
