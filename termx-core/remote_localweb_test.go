@@ -472,6 +472,221 @@ func TestE2ERemoteLocalWebHandlerAnswersAuthenticatedRTCOffer(t *testing.T) {
 	}
 }
 
+func TestE2ERemoteLocalWebHandlerAnswersMachineInventoryEventsOffer(t *testing.T) {
+	srv := NewServer(WithRemoteConfig(RemoteConfig{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "local-rtc-events-machine",
+	}))
+	defer srv.Shutdown(context.Background())
+
+	status, err := srv.RemoteLocalEnable(context.Background(), RemoteLocalOptions{
+		LocalWebAddr: "127.0.0.1:0",
+		ICETCPAddr:   "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatalf("RemoteLocalEnable returned error: %v", err)
+	}
+	session, appCert, appPrivate := claimLocalRTCAppCertificateHTTP(t, srv, status.LocalPairURL, []string{"terminal", "file_manager"})
+
+	offerPC, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("NewPeerConnection returned error: %v", err)
+	}
+	defer offerPC.Close()
+	eventsDC, err := offerPC.CreateDataChannel("events", nil)
+	if err != nil {
+		t.Fatalf("CreateDataChannel(events) returned error: %v", err)
+	}
+	eventsOpen := make(chan struct{})
+	eventsDC.OnOpen(func() {
+		select {
+		case <-eventsOpen:
+		default:
+			close(eventsOpen)
+		}
+	})
+
+	offer, err := offerPC.CreateOffer(nil)
+	if err != nil {
+		t.Fatalf("CreateOffer returned error: %v", err)
+	}
+	if err := offerPC.SetLocalDescription(offer); err != nil {
+		t.Fatalf("SetLocalDescription returned error: %v", err)
+	}
+	waitPeerICE(t, offerPC, 5*time.Second)
+
+	body := signedLocalRTCOfferBody(t, appCert, appPrivate, "rtc-events", session.MachineID, "", offerPC.LocalDescription().SDP, "nonce-events", time.Now().UTC())
+	var rtcResp map[string]any
+	localWebHTTPDecode(t, status.HTTPURL+"/api/local/rtc/offer", body, &rtcResp)
+	if got := rtcResp["data_channels"].([]any); len(got) != 1 || got[0] != "events" {
+		t.Fatalf("expected events-only data channels, got %#v", rtcResp["data_channels"])
+	}
+	answer := rtcResp["answer"].(map[string]any)
+	if err := offerPC.SetRemoteDescription(webrtc.SessionDescription{
+		Type: webrtc.SDPTypeAnswer,
+		SDP:  answer["sdp"].(string),
+	}); err != nil {
+		t.Fatalf("SetRemoteDescription returned error: %v", err)
+	}
+	select {
+	case <-eventsOpen:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for machine events data channel to open")
+	}
+
+	clientTransport := bridge.NewDataChannelTransport(eventsDC)
+	defer clientTransport.Close()
+	client := protocol.NewClient(clientTransport)
+	defer client.Close()
+	clientCtx, cancelClient := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelClient()
+	if err := client.Hello(clientCtx, protocol.Hello{Version: protocol.Version, Client: "local-rtc-events-test"}); err != nil {
+		t.Fatalf("Hello over machine events channel returned error: %v", err)
+	}
+	clientEvents, err := client.Events(clientCtx, protocol.EventsParams{Types: []protocol.EventType{
+		protocol.EventTerminalCreated,
+		protocol.EventTerminalRemoved,
+		protocol.EventTerminalMetadataChanged,
+	}})
+	if err != nil {
+		t.Fatalf("Events subscribe over machine events channel returned error: %v", err)
+	}
+	serverEventsCtx, cancelServerEvents := context.WithCancel(context.Background())
+	defer cancelServerEvents()
+	serverEvents := srv.Events(serverEventsCtx, WithTypeFilter(EventTerminalCreated))
+	created, err := srv.Create(context.Background(), CreateOptions{
+		Command: []string{"sh", "-c", "sleep 5"},
+		Name:    "events-created-terminal",
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("Create returned error: %v", err)
+	}
+	select {
+	case evt := <-serverEvents:
+		if evt.Type != EventTerminalCreated || evt.TerminalID != created.ID {
+			t.Fatalf("unexpected server event bus event: %#v", evt)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for server event bus create event")
+	}
+
+	select {
+	case evt := <-clientEvents:
+		if evt.Type != protocol.EventTerminalCreated || evt.TerminalID != created.ID {
+			t.Fatalf("unexpected machine inventory event: %#v", evt)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for machine inventory create event")
+	}
+}
+
+func TestE2ERemoteLocalWebHandlerPushesMetadataChangeOverMachineInventoryEvents(t *testing.T) {
+	srv := NewServer(WithRemoteConfig(RemoteConfig{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "local-rtc-events-metadata-machine",
+	}))
+	defer srv.Shutdown(context.Background())
+
+	status, err := srv.RemoteLocalEnable(context.Background(), RemoteLocalOptions{
+		LocalWebAddr: "127.0.0.1:0",
+		ICETCPAddr:   "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatalf("RemoteLocalEnable returned error: %v", err)
+	}
+	session, appCert, appPrivate := claimLocalRTCAppCertificateHTTP(t, srv, status.LocalPairURL, []string{"terminal", "file_manager"})
+
+	offerPC, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("NewPeerConnection returned error: %v", err)
+	}
+	defer offerPC.Close()
+	eventsDC, err := offerPC.CreateDataChannel("events", nil)
+	if err != nil {
+		t.Fatalf("CreateDataChannel(events) returned error: %v", err)
+	}
+	eventsOpen := make(chan struct{})
+	eventsDC.OnOpen(func() {
+		select {
+		case <-eventsOpen:
+		default:
+			close(eventsOpen)
+		}
+	})
+
+	offer, err := offerPC.CreateOffer(nil)
+	if err != nil {
+		t.Fatalf("CreateOffer returned error: %v", err)
+	}
+	if err := offerPC.SetLocalDescription(offer); err != nil {
+		t.Fatalf("SetLocalDescription returned error: %v", err)
+	}
+	waitPeerICE(t, offerPC, 5*time.Second)
+
+	body := signedLocalRTCOfferBody(t, appCert, appPrivate, "rtc-events-metadata", session.MachineID, "", offerPC.LocalDescription().SDP, "nonce-events-metadata", time.Now().UTC())
+	var rtcResp map[string]any
+	localWebHTTPDecode(t, status.HTTPURL+"/api/local/rtc/offer", body, &rtcResp)
+	answer := rtcResp["answer"].(map[string]any)
+	if err := offerPC.SetRemoteDescription(webrtc.SessionDescription{
+		Type: webrtc.SDPTypeAnswer,
+		SDP:  answer["sdp"].(string),
+	}); err != nil {
+		t.Fatalf("SetRemoteDescription returned error: %v", err)
+	}
+	select {
+	case <-eventsOpen:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for machine events data channel to open")
+	}
+
+	clientTransport := bridge.NewDataChannelTransport(eventsDC)
+	defer clientTransport.Close()
+	client := protocol.NewClient(clientTransport)
+	defer client.Close()
+	clientCtx, cancelClient := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelClient()
+	if err := client.Hello(clientCtx, protocol.Hello{Version: protocol.Version, Client: "local-rtc-events-metadata-test"}); err != nil {
+		t.Fatalf("Hello over machine events channel returned error: %v", err)
+	}
+	clientEvents, err := client.Events(clientCtx, protocol.EventsParams{Types: []protocol.EventType{
+		protocol.EventTerminalMetadataChanged,
+	}})
+	if err != nil {
+		t.Fatalf("Events subscribe over machine events channel returned error: %v", err)
+	}
+	term, err := srv.Create(context.Background(), CreateOptions{
+		Command: []string{"sh", "-c", "sleep 5"},
+		Name:    "events-metadata-terminal",
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if err := srv.SetTags(context.Background(), term.ID, map[string]string{"termx.environment": "prod"}); err != nil {
+		t.Fatalf("SetTags returned error: %v", err)
+	}
+
+	for {
+		select {
+		case evt := <-clientEvents:
+			if evt.Type == protocol.EventTerminalMetadataChanged && evt.TerminalID == term.ID {
+				return
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("timed out waiting for machine inventory metadata event")
+		}
+	}
+}
+
 func TestE2ERemoteLocalWebHandlerRejectsInvalidRTCOfferAuth(t *testing.T) {
 	dataDir := t.TempDir()
 	srv := NewServer(WithRemoteConfig(RemoteConfig{

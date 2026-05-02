@@ -38,6 +38,7 @@ type ChannelPolicy struct {
 	TerminalID       string
 	AllowTerminal    bool
 	AllowFileManager bool
+	AllowEvents      bool
 }
 
 func AnswerOfferWithOptions(
@@ -139,6 +140,24 @@ func AnswerOfferWithOptions(
 				return
 			}
 			fileManager.HandleFileChannel(dc, strings.TrimPrefix(label, "file:"))
+		case label == "events":
+			if !opts.ChannelPolicy.allowEvents() {
+				dc.OnOpen(func() {
+					_ = dc.Close()
+				})
+				return
+			}
+			dc.OnOpen(func() {
+				if sink == nil {
+					_ = dc.Close()
+					return
+				}
+				transport := bridge.NewDataChannelTransport(dc)
+				go func() {
+					defer transport.Close()
+					_ = sink.ServeRemoteTransport(sessionCtx, transport, "webrtc:"+dc.Label())
+				}()
+			})
 		default:
 			dc.OnOpen(func() {
 				_ = dc.Close()
@@ -202,8 +221,15 @@ func (p ChannelPolicy) allowFileManager() bool {
 	return p.AllowFileManager
 }
 
+func (p ChannelPolicy) allowEvents() bool {
+	if !p.active() {
+		return true
+	}
+	return p.AllowEvents
+}
+
 func (p ChannelPolicy) active() bool {
-	return strings.TrimSpace(p.TerminalID) != "" || p.AllowTerminal || p.AllowFileManager
+	return strings.TrimSpace(p.TerminalID) != "" || p.AllowTerminal || p.AllowFileManager || p.AllowEvents
 }
 
 type apiRequest struct {

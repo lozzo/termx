@@ -20,6 +20,7 @@ const (
 	EventSessionCreated
 	EventSessionUpdated
 	EventSessionDeleted
+	EventTerminalMetadataChanged
 )
 
 type TerminalCreatedData struct {
@@ -158,6 +159,9 @@ func (b *EventBus) removeSubscriber(sub *eventSubscriber) {
 }
 
 func (b *EventBus) Publish(evt Event) {
+	if b == nil {
+		return
+	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 

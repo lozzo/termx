@@ -8,7 +8,7 @@ import type { TerminalModifierState } from './mobileTerminalInput'
 import { Terminal, type TerminalHandle } from './Terminal'
 import { TerminalList } from './TerminalList'
 import type { Machine, Terminal as RemoteTerminal } from './model'
-import type { LocalAgentApi, PeerTransport } from './transport'
+import type { LocalAgentApi, PeerTransport, TerminalInventoryEvents } from './transport'
 import type { TerminalTransport } from './terminalClient'
 
 export interface LocalRemoteTransportInput {
@@ -22,6 +22,7 @@ export interface LocalRemoteAppProps {
   api: Pick<LocalAgentApi, 'getStatus' | 'listTerminals'>
   createTransport: LocalRemoteTransportFactory
   className?: string | undefined
+  inventoryEvents?: TerminalInventoryEvents | undefined
   pair?: {
     api: Pick<LocalAgentApi, 'pair'>
     storage: LocalAppIdentityStore
@@ -33,7 +34,7 @@ export interface LocalRemoteAppProps {
 type MobileSheet = 'terminals' | 'pair' | null
 type AppPage = 'terminal-list' | 'terminal'
 
-export function LocalRemoteApp({ api, createTransport, className, pair }: LocalRemoteAppProps) {
+export function LocalRemoteApp({ api, createTransport, className, inventoryEvents, pair }: LocalRemoteAppProps) {
   const [machine, setMachine] = useState<Machine | null>(null)
   const [terminals, setTerminals] = useState<RemoteTerminal[]>([])
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null)
@@ -73,6 +74,20 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
       cancelled = true
     }
   }, [api])
+
+  useEffect(() => {
+    if (!inventoryEvents || !machine) return
+    const subscription = inventoryEvents.subscribe(machine.machineId, () => {
+      void api.listTerminals().then((terminalList) => {
+        setTerminals(terminalList)
+      }).catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+    })
+    return () => {
+      subscription.close()
+    }
+  }, [api, inventoryEvents, machine, transportRetryToken])
 
   useEffect(() => {
     if (!machine || !activeTerminalId || page !== 'terminal') {
@@ -361,25 +376,25 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
       ) : null}
 
       {page === 'terminal-list' ? renderTerminalListPage() : (
-      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-zinc-200 bg-white px-2 md:hidden">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
+      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-black">
+        <header className="relative z-10 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/80 px-2 backdrop-blur-xl md:hidden">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
             <button
               type="button"
               aria-label="Back to terminal list"
-              className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-zinc-400 transition-colors active:bg-zinc-800"
               onClick={showTerminalListPage}
             >
-              <ChevronLeft className="h-5 w-5" />
+              <ChevronLeft className="h-6 w-6" />
             </button>
             <button
               type="button"
               aria-label="Switch terminal"
-              className="flex min-w-0 flex-1 flex-col items-start rounded-md px-1 py-1 text-left active:bg-zinc-100"
+              className="flex min-w-0 flex-1 flex-col items-start justify-center rounded-xl px-2 py-1 text-left transition-colors active:bg-zinc-800"
               onClick={() => setMobileSheet('terminals')}
             >
-              <span className="max-w-full truncate text-[11px] font-medium text-zinc-500">{machine.machineId}</span>
-              <span className="max-w-full truncate font-mono text-sm font-semibold leading-tight text-zinc-900" data-testid="termx-terminal-title">{activeTerminalTitle}</span>
+              <span className="max-w-full truncate text-[11px] font-bold uppercase tracking-wider text-zinc-500">{machine.machineId}</span>
+              <span className="max-w-full truncate text-[15px] font-semibold leading-tight text-zinc-100" data-testid="termx-terminal-title">{activeTerminalTitle}</span>
             </button>
           </div>
 
@@ -388,7 +403,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
               type="button"
               aria-label="Open files"
               onClick={openFiles}
-              className={`flex h-9 w-9 items-center justify-center rounded-md active:bg-zinc-100 ${filesOpen ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-600'}`}
+              className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors active:scale-95 ${filesOpen ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 active:bg-zinc-800'}`}
             >
               <Folder className="h-5 w-5" />
             </button>
@@ -396,7 +411,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
               <button
                 type="button"
                 aria-label="Pair device"
-                className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-zinc-400 transition-colors active:scale-95 active:bg-zinc-800"
                 onClick={() => setMobileSheet('pair')}
               >
                 <KeyRound className="h-5 w-5" />
@@ -406,19 +421,19 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
         </header>
 
         {error ? (
-          <div className="m-3 shrink-0 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 shadow-sm" role="alert">
+          <div className="m-3 shrink-0 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-[14px] font-medium text-red-200 shadow-sm" role="alert">
             {error}
           </div>
         ) : null}
         {pairStatus ? (
-          <div className="mx-3 mt-3 shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 shadow-sm" role="status">
+          <div className="mx-3 mt-3 shrink-0 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-[14px] font-medium text-emerald-200 shadow-sm" role="status">
             {pairStatus}
           </div>
         ) : null}
 
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-white md:bg-zinc-50">
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-black md:bg-zinc-950">
           <div
-            className="relative min-h-0 flex-1 bg-[#0c0c0c] md:m-3 md:rounded-lg md:border md:border-zinc-800 md:shadow-xl md:overflow-hidden"
+            className="relative min-h-0 flex-1 bg-black md:m-3 md:rounded-2xl md:border md:border-zinc-800 md:shadow-2xl md:overflow-hidden"
             data-testid="termx-terminal-panel"
           >
             {activeTerminalId && connectedTransport ? (
@@ -476,16 +491,19 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
 
       {fileTerminalId && fileTransport ? (
         <div
-          className={`absolute inset-0 z-30 flex flex-col bg-white shadow-2xl md:m-6 md:rounded-lg md:border md:border-zinc-200 ${filesOpen ? '' : 'hidden'}`}
+          className={`absolute inset-0 z-30 flex flex-col bg-zinc-50 shadow-[0_-20px_40px_rgba(0,0,0,0.15)] transition-transform duration-300 md:m-6 md:rounded-2xl md:border md:border-zinc-200/60 ${filesOpen ? 'translate-y-0' : 'translate-y-full'}`}
           data-testid="termx-machine-files-overlay"
-          hidden={!filesOpen}
+          style={{ visibility: filesOpen ? 'visible' : 'hidden' }}
         >
-          <div className="flex h-11 shrink-0 items-center justify-between border-b border-zinc-200 bg-zinc-50 px-3">
-            <span className="text-sm font-semibold text-zinc-900">Files</span>
+          <div className="flex h-16 shrink-0 items-center justify-between border-b border-zinc-200/50 bg-white/80 px-4 backdrop-blur-xl md:h-14">
+            <div className="flex items-center gap-2">
+              <Folder className="h-5 w-5 text-zinc-500" />
+              <span className="text-[17px] font-bold tracking-tight text-zinc-900">Files</span>
+            </div>
             <button
               type="button"
               aria-label="Close files"
-              className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 active:bg-zinc-200"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 transition-colors active:scale-95 active:bg-zinc-200"
               onClick={openTerminalPanel}
             >
               <X className="h-5 w-5" />
@@ -523,20 +541,25 @@ function MobileSheetPanel({
   title: string
 }) {
   return (
-    <div className="absolute inset-0 z-40 flex items-end bg-black/30 md:items-center md:justify-center" data-testid={testId}>
-      <section className="max-h-[78vh] w-full overflow-hidden rounded-t-lg bg-zinc-50 shadow-2xl md:max-w-md md:rounded-lg">
-        <header className="flex h-12 items-center justify-between border-b border-zinc-200 px-4">
-          <h2 className="text-sm font-semibold text-zinc-900">{title}</h2>
+    <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm transition-opacity md:items-center md:justify-center" data-testid={testId} onClick={onClose}>
+      <section
+        className="relative max-h-[85vh] w-full overflow-hidden rounded-t-[2rem] bg-zinc-50/95 backdrop-blur-xl shadow-[0_-8px_30px_rgba(0,0,0,0.12)] md:max-w-md md:rounded-2xl"
+        onClick={(e) => e.stopPropagation()}
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="absolute left-1/2 top-3 h-1.5 w-12 -translate-x-1/2 rounded-full bg-zinc-300/80" />
+        <header className="flex h-16 items-center justify-between border-b border-zinc-200/50 px-5 pt-3">
+          <h2 className="text-[17px] font-bold tracking-tight text-zinc-900">{title}</h2>
           <button
             type="button"
             aria-label={`Close ${title}`}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 active:bg-zinc-200"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-200/50 text-zinc-500 transition-colors active:scale-95 active:bg-zinc-300"
             onClick={onClose}
           >
             <X className="h-5 w-5" />
           </button>
         </header>
-        <div className="max-h-[calc(78vh-3rem)] overflow-y-auto p-3">
+        <div className="max-h-[calc(85vh-4rem)] overflow-y-auto p-4">
           {children}
         </div>
       </section>

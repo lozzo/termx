@@ -152,6 +152,40 @@ describe('createLocalAgentApi', () => {
     expect(JSON.stringify(body)).not.toMatch(/turn|credential|machine_private_key|privateKey/i)
   })
 
+  it('submits machine-level inventory RTC offers without terminal scoping', async () => {
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = []
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init })
+      return jsonResponse({
+        answer: { session_id: 'rtc-inventory-1', sdp: 'answer-sdp', ice_candidates: [] },
+        data_channels: ['events'],
+      })
+    })
+
+    const api = createLocalAgentApi({ baseUrl: 'http://127.0.0.1:18888', fetch })
+    await expect(api.createInventoryRTCAnswer({
+      sessionId: 'rtc-inventory-1',
+      machineId: 'machine-local',
+      sdp: 'offer-sdp',
+      appCertificate: '{"payload":{}}',
+      appSignature: 'signature',
+      nonce: 'nonce-1',
+      timestamp: '1770000000',
+    })).resolves.toEqual({
+      sessionId: 'rtc-inventory-1',
+      answer: { type: 'answer', sdp: 'answer-sdp' },
+    })
+
+    const body = JSON.parse(String(calls[0]?.init?.body))
+    expect(body.offer).toMatchObject({
+      session_id: 'rtc-inventory-1',
+      machine_id: 'machine-local',
+      terminal_id: '',
+      sdp: 'offer-sdp',
+    })
+    expect(JSON.stringify(body)).not.toMatch(/turn|credential|machine_private_key|privateKey/i)
+  })
+
   it('rejects local API payloads carrying workspace or pane-shaped public data', async () => {
     const fetch = vi.fn(async () => jsonResponse({
       terminals: [{

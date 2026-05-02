@@ -31,7 +31,7 @@ describe('LocalPairPanel', () => {
 
     await userEvent.type(screen.getByLabelText('Pair ID'), 'pair-1')
     await userEvent.type(screen.getByLabelText('Pair secret'), 'secret-1')
-    await userEvent.click(screen.getByRole('button', { name: 'Pair' }))
+    await userEvent.click(screen.getByRole('button', { name: /^pair device$/i }))
 
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Paired with machine-local'))
     expect(pair).toHaveBeenCalledWith(expect.objectContaining({
@@ -113,6 +113,9 @@ function createMockApi(pair: LocalAgentApi['pair']): LocalAgentApi {
     },
     pair,
     async createRTCAnswer() {
+      throw new Error('not used')
+    },
+    async createInventoryRTCAnswer() {
       throw new Error('not used')
     },
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createLocalWebRtcPeerTransport } from './localWebRtcTransport'
+import { createLocalWebRtcInventoryEvents, createLocalWebRtcPeerTransport } from './localWebRtcTransport'
 import { TERMX_FRAME_TYPES, decodeTermxFrame, encodeTermxFrame } from './termxProtocol'
 
 describe('createLocalWebRtcPeerTransport', () => {
@@ -774,6 +774,41 @@ describe('createLocalWebRtcPeerTransport', () => {
     })))
     const reopened = await second
     expect(reopened.label).toBe('terminal:terminal-1')
+  })
+
+  it('subscribes to machine inventory events over a dedicated events data channel', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const inventoryEvents = createLocalWebRtcInventoryEvents({
+      machineId: 'machine-local',
+      peerConnectionFactory: factory,
+      createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
+      sessionIdGenerator: () => 'rtc-inventory-1',
+      appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+      signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+    })
+    const events: unknown[] = []
+
+    const subscription = inventoryEvents.subscribe('machine-local', (event) => events.push(event))
+
+    await flushMicrotasks()
+    expect(factory.labelsAtCreateOffer()).toEqual(['events'])
+    const eventsChannel = factory.channel('events')
+    eventsChannel.emitMessage(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+    await Promise.resolve()
+    const subscribeRequest = JSON.parse(new TextDecoder().decode((await waitForBinarySentFrame(eventsChannel, 1)).payload))
+    expect(subscribeRequest.method).toBe('events')
+    expect(subscribeRequest.params.types).toEqual([1, 2, 3, 4, 10])
+    eventsChannel.emitMessage(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: subscribeRequest.id,
+      result: '{}',
+    })))
+    eventsChannel.emitMessage(encodeTermxFrame(0, TERMX_FRAME_TYPES.event, encodeJSON({
+      type: 1,
+      terminal_id: 'terminal-2',
+    })))
+
+    expect(events).toContainEqual({ type: 'inventory_changed' })
+    subscription.close()
   })
 })
 

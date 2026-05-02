@@ -99,6 +99,9 @@ describe('local app identity', () => {
       async createRTCAnswer() {
         throw new Error('not used')
       },
+      async createInventoryRTCAnswer() {
+        throw new Error('not used')
+      },
     }
 
     const result = await pairLocalApp({

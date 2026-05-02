@@ -136,6 +136,7 @@ const (
 	EventSessionCreated
 	EventSessionUpdated
 	EventSessionDeleted
+	EventTerminalMetadataChanged
 )
 
 type TerminalCreatedData struct {

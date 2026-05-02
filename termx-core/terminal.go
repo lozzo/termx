@@ -727,7 +727,6 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 
 func (t *Terminal) SetTags(tags map[string]string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.tags == nil {
 		t.tags = make(map[string]string)
 	}
@@ -739,16 +738,27 @@ func (t *Terminal) SetTags(tags map[string]string) {
 		t.tags[k] = v
 	}
 	t.invalidateProtocolInfoCacheLocked()
+	t.mu.Unlock()
+	t.events.Publish(Event{
+		Type:       EventTerminalMetadataChanged,
+		TerminalID: t.id,
+		Timestamp:  time.Now().UTC(),
+	})
 }
 
 func (t *Terminal) SetMetadata(name string, tags map[string]string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if trimmed := strings.TrimSpace(name); trimmed != "" {
 		t.name = trimmed
 	}
 	t.tags = copyTags(tags)
 	t.invalidateProtocolInfoCacheLocked()
+	t.mu.Unlock()
+	t.events.Publish(Event{
+		Type:       EventTerminalMetadataChanged,
+		TerminalID: t.id,
+		Timestamp:  time.Now().UTC(),
+	})
 }
 
 func (t *Terminal) AddAttachment(id, remote string, mode AttachMode) {

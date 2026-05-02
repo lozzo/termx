@@ -1,14 +1,20 @@
 import type { TerminalResizePolicy, TerminalTransport, TerminalTransportEvent } from './terminalClient'
 import { createLocalTerminalProtocolTransport } from './localTerminalProtocolTransport'
+import { TERMX_FRAME_TYPES, TERMX_PROTOCOL_VERSION, decodeTermxFrame, encodeTermxFrame } from './termxProtocol'
 import type {
   BinaryChannel,
   ConnectTarget,
   ConnectionInfo,
   ConnectionMode,
   JsonRpcChannel,
+  LocalInventoryRTCAnswer,
+  LocalInventoryRTCOffer,
   LocalRTCAnswer,
   LocalRTCOffer,
   PeerTransport,
+  TerminalInventoryEvent,
+  TerminalInventoryEvents,
+  TerminalInventorySubscription,
 } from './transport'
 
 export interface LocalOfferSignature {
@@ -29,6 +35,17 @@ export interface LocalWebRtcPeerTransportOptions {
   iceGatheringTimeoutMs?: number | undefined
   dataChannelOpenTimeoutMs?: number | undefined
   terminalResizePolicy?: TerminalResizePolicy | undefined
+}
+
+export interface LocalWebRtcInventoryEventsOptions {
+  machineId: string
+  appCertificate: string
+  peerConnectionFactory?: (() => RTCPeerConnectionLike) | undefined
+  createAnswer(input: LocalInventoryRTCOffer): Promise<LocalInventoryRTCAnswer>
+  signOffer(input: { sessionId: string; machineId: string; terminalId: string; sdp: string }): Promise<LocalOfferSignature>
+  sessionIdGenerator?: (() => string) | undefined
+  iceGatheringTimeoutMs?: number | undefined
+  dataChannelOpenTimeoutMs?: number | undefined
 }
 
 export interface RTCPeerConnectionLike {
@@ -53,6 +70,10 @@ export interface RTCDataChannelLike extends EventTarget {
 
 export function createLocalWebRtcPeerTransport(options: LocalWebRtcPeerTransportOptions): PeerTransport & TerminalTransport {
   return new LocalWebRtcPeerTransport(options)
+}
+
+export function createLocalWebRtcInventoryEvents(options: LocalWebRtcInventoryEventsOptions): TerminalInventoryEvents {
+  return new LocalWebRtcInventoryEventsConnection(options)
 }
 
 class LocalWebRtcPeerTransport implements PeerTransport, TerminalTransport {
@@ -232,6 +253,210 @@ class LocalWebRtcPeerTransport implements PeerTransport, TerminalTransport {
     }
   }
 
+}
+
+class LocalWebRtcInventoryEventsConnection implements TerminalInventoryEvents {
+  private pc: RTCPeerConnectionLike | null = null
+  private connectionId = ''
+  private eventsChannel: RTCDataChannelLike | null = null
+  private readonly subscribers = new Set<(event: TerminalInventoryEvent) => void>()
+  private readonly pending = new Map<number, {
+    resolve: (value: unknown) => void
+    reject: (err: Error) => void
+  }>()
+  private nextRequestID = 1
+  private helloDone: Promise<void> | null = null
+  private subscribeDone: Promise<void> | null = null
+  private connectPromise: Promise<void> | null = null
+  private disconnecting = false
+
+  constructor(private readonly options: LocalWebRtcInventoryEventsOptions) {}
+
+  subscribe(machineId: string, handler: (event: TerminalInventoryEvent) => void): TerminalInventorySubscription {
+    if (machineId !== this.options.machineId) {
+      throw new Error(`local inventory events machine mismatch: ${machineId} != ${this.options.machineId}`)
+    }
+    this.subscribers.add(handler)
+    if (this.subscribers.size === 1) {
+      void this.ensureConnected().catch(() => {})
+    }
+    return {
+      close: () => {
+        this.subscribers.delete(handler)
+        if (this.subscribers.size === 0) {
+          void this.disconnect()
+        }
+      },
+    }
+  }
+
+  private ensureConnected(): Promise<void> {
+    if (this.connectPromise) return this.connectPromise
+    this.connectPromise = this.connectInternal().catch(async (err) => {
+      await this.disconnectInternal()
+      throw err
+    })
+    return this.connectPromise
+  }
+
+  private async connectInternal(): Promise<void> {
+    const pc = (this.options.peerConnectionFactory ?? (() => new RTCPeerConnection()))()
+    const sessionId = this.options.sessionIdGenerator?.() ?? crypto.randomUUID()
+    this.pc = pc
+    this.connectionId = sessionId
+    const eventsChannel = pc.createDataChannel('events', { ordered: true })
+    eventsChannel.binaryType = 'arraybuffer'
+    this.eventsChannel = eventsChannel
+    eventsChannel.addEventListener('message', (event) => this.handleMessage((event as MessageEvent).data))
+    eventsChannel.addEventListener('close', () => {
+      void this.disconnect()
+    })
+    eventsChannel.addEventListener('error', () => {
+      void this.disconnect()
+    })
+
+    const offer = await pc.createOffer()
+    await pc.setLocalDescription(offer)
+    await waitForICEGatheringComplete(pc, this.options.iceGatheringTimeoutMs)
+    const sdp = pc.localDescription?.sdp ?? offer.sdp
+    if (!sdp) throw new Error('local WebRTC offer SDP is required')
+    const signed = await this.options.signOffer({
+      sessionId,
+      machineId: this.options.machineId,
+      terminalId: '',
+      sdp,
+    })
+    const answer = await this.options.createAnswer({
+      sessionId,
+      machineId: this.options.machineId,
+      sdp,
+      appCertificate: this.options.appCertificate,
+      appSignature: signed.signature,
+      nonce: signed.nonce,
+      timestamp: signed.timestamp,
+    })
+    await pc.setRemoteDescription(answer.answer)
+    await waitChannelOpenWithTimeout(eventsChannel, this.options.dataChannelOpenTimeoutMs)
+    await this.hello()
+    await this.subscribeInventoryEvents()
+  }
+
+  private async disconnect(): Promise<void> {
+    await this.disconnectInternal()
+  }
+
+  private async disconnectInternal(): Promise<void> {
+    if (this.disconnecting) return
+    this.disconnecting = true
+    this.rejectPending(new Error('inventory events channel closed'))
+    const eventsChannel = this.eventsChannel
+    this.eventsChannel = null
+    eventsChannel?.close()
+    await this.pc?.close()
+    this.pc = null
+    this.connectPromise = null
+    this.helloDone = null
+    this.subscribeDone = null
+    this.disconnecting = false
+  }
+
+  private hello(): Promise<void> {
+    if (!this.helloDone) {
+      this.helloDone = new Promise<void>((resolve, reject) => {
+        this.pending.set(0, {
+          resolve: () => resolve(),
+          reject,
+        })
+        this.sendFrame(0, TERMX_FRAME_TYPES.hello, {
+          version: TERMX_PROTOCOL_VERSION,
+          client: 'termx-local-web-events',
+          capabilities: ['events'],
+        })
+      })
+    }
+    return this.helloDone
+  }
+
+  private subscribeInventoryEvents(): Promise<void> {
+    if (!this.subscribeDone) {
+      this.subscribeDone = this.request('events', {
+        types: [1, 2, 3, 4, 10],
+      }).then(() => {})
+    }
+    return this.subscribeDone
+  }
+
+  private request(method: string, params: unknown): Promise<unknown> {
+    const id = this.nextRequestID++
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject })
+      this.sendFrame(0, TERMX_FRAME_TYPES.request, {
+        id,
+        method,
+        params,
+      })
+    })
+  }
+
+  private sendFrame(channel: number, type: number, payload: unknown): void {
+    if (!this.eventsChannel) throw new Error('inventory events channel is not connected')
+    const bytes = payload instanceof Uint8Array
+      ? payload
+      : new TextEncoder().encode(JSON.stringify(payload))
+    this.eventsChannel.send(encodeTermxFrame(channel, type, bytes))
+  }
+
+  private handleMessage(data: unknown): void {
+    try {
+      const bytes = messageBytes(data)
+      if (bytes instanceof Uint8Array) {
+        this.handleMessageBytes(bytes)
+        return
+      }
+      void bytes.then((resolved) => this.handleMessageBytes(resolved))
+    } catch {
+      void this.disconnect()
+    }
+  }
+
+  private handleMessageBytes(data: Uint8Array): void {
+    const frame = decodeTermxFrame(data)
+    if (frame.channel !== 0) return
+    switch (frame.type) {
+      case TERMX_FRAME_TYPES.hello:
+        this.pending.get(0)?.resolve(undefined)
+        this.pending.delete(0)
+        return
+      case TERMX_FRAME_TYPES.response: {
+        const response = JSON.parse(new TextDecoder().decode(frame.payload)) as { id: number; result?: unknown }
+        const pending = this.pending.get(response.id)
+        if (!pending) return
+        this.pending.delete(response.id)
+        pending.resolve(response.result)
+        return
+      }
+      case TERMX_FRAME_TYPES.error: {
+        const response = JSON.parse(new TextDecoder().decode(frame.payload)) as { id: number; error?: { message?: string } }
+        const pending = this.pending.get(response.id)
+        if (!pending) return
+        this.pending.delete(response.id)
+        pending.reject(new Error(response.error?.message ?? 'termx protocol error'))
+        return
+      }
+      case TERMX_FRAME_TYPES.event:
+        for (const handler of this.subscribers) {
+          handler({ type: 'inventory_changed' })
+        }
+        return
+    }
+  }
+
+  private rejectPending(err: Error): void {
+    for (const [id, pending] of Array.from(this.pending.entries())) {
+      this.pending.delete(id)
+      pending.reject(err)
+    }
+  }
 }
 
 class LocalApiChannel implements JsonRpcChannel {

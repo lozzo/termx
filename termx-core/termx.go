@@ -707,7 +707,8 @@ type sessionAttachment struct {
 }
 
 type transportScope struct {
-	TerminalID string
+	TerminalID       string
+	MachineEventsOnly bool
 }
 
 func (s *Server) handleTransport(ctx context.Context, t transport.Transport, remote string) error {
@@ -872,6 +873,31 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 
 func (s transportScope) authorizeRequest(req protocol.Request) error {
 	terminalID := strings.TrimSpace(s.TerminalID)
+	if s.MachineEventsOnly {
+		if req.Method != "events" {
+			return fmt.Errorf("%w: method %q is not authorized for machine inventory events", ErrPermissionDenied, req.Method)
+		}
+		var params protocol.EventsParams
+		if len(req.Params) > 0 {
+			if err := json.Unmarshal(req.Params, &params); err != nil {
+				return err
+			}
+		}
+		if strings.TrimSpace(params.TerminalID) != "" || strings.TrimSpace(params.SessionID) != "" {
+			return fmt.Errorf("%w: machine inventory events must not set terminal_id or session_id", ErrPermissionDenied)
+		}
+		if len(params.Types) == 0 {
+			return fmt.Errorf("%w: machine inventory events require an explicit terminal inventory type filter", ErrPermissionDenied)
+		}
+		for _, typ := range params.Types {
+			switch EventType(typ) {
+			case EventTerminalCreated, EventTerminalStateChanged, EventTerminalResized, EventTerminalRemoved, EventTerminalMetadataChanged:
+			default:
+				return fmt.Errorf("%w: event type %d is not authorized for machine inventory events", ErrPermissionDenied, typ)
+			}
+		}
+		return nil
+	}
 	if terminalID == "" {
 		return nil
 	}

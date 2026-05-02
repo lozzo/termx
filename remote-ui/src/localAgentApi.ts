@@ -1,5 +1,5 @@
 import { normalizeMachine, normalizeTerminal, type Machine, type Terminal } from './model'
-import type { LocalAgentApi, LocalPairInput, LocalPairResult, LocalRTCAnswer, LocalRTCOffer, LocalStatus } from './transport'
+import type { LocalAgentApi, LocalInventoryRTCAnswer, LocalInventoryRTCOffer, LocalPairInput, LocalPairResult, LocalRTCAnswer, LocalRTCOffer, LocalStatus } from './transport'
 
 export interface LocalAgentApiOptions {
   baseUrl?: string | undefined
@@ -97,6 +97,32 @@ export function createLocalAgentApi(options: LocalAgentApiOptions = {}): LocalAg
       })
       return normalizeRTCAnswer(raw)
     },
+    async createInventoryRTCAnswer(input: LocalInventoryRTCOffer): Promise<LocalInventoryRTCAnswer> {
+      const raw = await requestJSON<Record<string, unknown>>('/api/local/rtc/offer', {
+        method: 'POST',
+        body: JSON.stringify({
+          app_certificate: parseCertificate(input.appCertificate),
+          offer: {
+            session_id: input.sessionId,
+            machine_id: input.machineId,
+            terminal_id: '',
+            sdp: input.sdp,
+            ice_candidates: [],
+          },
+          signature: {
+            algorithm: 'ed25519',
+            nonce: input.nonce,
+            timestamp: Number.parseInt(input.timestamp, 10),
+            value: input.appSignature,
+          },
+          client: {
+            type: 'browser',
+            transport: 'local',
+          },
+        }),
+      })
+      return normalizeInventoryRTCAnswer(raw)
+    },
   }
 }
 
@@ -168,6 +194,21 @@ function normalizeRTCAnswer(raw: Record<string, unknown>): LocalRTCAnswer {
     out.iceTCP = { enabled: raw.ice_tcp_enabled }
   }
   return out
+}
+
+function normalizeInventoryRTCAnswer(raw: Record<string, unknown>): LocalInventoryRTCAnswer {
+  const answer = raw.answer
+  if (typeof answer !== 'object' || answer === null || Array.isArray(answer)) {
+    throw new Error('answer must be an object')
+  }
+  const record = answer as Record<string, unknown>
+  return {
+    sessionId: requiredString(record, 'session_id'),
+    answer: {
+      type: 'answer',
+      sdp: requiredString(record, 'sdp'),
+    },
+  }
 }
 
 async function readJSON(response: Response): Promise<unknown> {

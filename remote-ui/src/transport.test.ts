@@ -5,6 +5,7 @@ import type {
   LocalAgentApi,
   PeerTransport,
   RemoteTransport,
+  TerminalInventoryEvents,
 } from './transport'
 
 describe('transport interfaces', () => {
@@ -21,5 +22,8 @@ describe('transport interfaces', () => {
 
     expectTypeOf<PeerTransport>().toHaveProperty('openTerminal')
     expectTypeOf<LocalAgentApi>().toHaveProperty('createRTCAnswer')
+    expectTypeOf<TerminalInventoryEvents>().toMatchTypeOf<{
+      subscribe(machineId: string, handler: (event: { type: 'inventory_changed' }) => void): { close(): void }
+    }>()
   })
 })

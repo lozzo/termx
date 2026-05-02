@@ -174,6 +174,55 @@ func (s *Server) remoteLocalRTCAnswer(
 	iceTCPEnabled bool,
 	sessionCtx context.Context,
 ) (localweb.RTCOfferResponse, error) {
+	terminalID := strings.TrimSpace(req.Offer.TerminalID)
+	if terminalID == "" {
+		if !hasCapability(req.AppCertificate.Payload.Capabilities, "terminal") {
+			return localweb.RTCOfferResponse{}, pairingErr("app certificate lacks machine inventory capability")
+		}
+		return s.remoteLocalRTCAnswerWithScope(
+			ctx, req, iceTCPMux, iceTCPEnabled, sessionCtx,
+			"", false, false, true,
+			[]string{"events"},
+		)
+	}
+	if !hasCapability(req.AppCertificate.Payload.Capabilities, "terminal") || !hasCapability(req.AppCertificate.Payload.Capabilities, "file_manager") {
+		return localweb.RTCOfferResponse{}, pairingErr("app certificate lacks remote RTC capabilities")
+	}
+	return s.remoteLocalRTCAnswerWithScope(
+		ctx, req, iceTCPMux, iceTCPEnabled, sessionCtx,
+		terminalID, true, true, false,
+		[]string{"api", "terminal:{terminal_id}", "file:{transfer_id}"},
+	)
+}
+
+type localRTCTransportSink struct {
+	server           *Server
+	terminalID       string
+	machineEventsOnly bool
+}
+
+func (s localRTCTransportSink) ServeRemoteTransport(ctx context.Context, t transport.Transport, remote string) error {
+	if s.server == nil {
+		return nil
+	}
+	return s.server.handleTransportScoped(ctx, t, remote, transportScope{
+		TerminalID:        s.terminalID,
+		MachineEventsOnly: s.machineEventsOnly,
+	})
+}
+
+func (s *Server) remoteLocalRTCAnswerWithScope(
+	ctx context.Context,
+	req localweb.RTCOfferRequest,
+	iceTCPMux *LocalICETCPMux,
+	iceTCPEnabled bool,
+	sessionCtx context.Context,
+	terminalID string,
+	allowTerminal bool,
+	allowFileManager bool,
+	allowEvents bool,
+	dataChannels []string,
+) (localweb.RTCOfferResponse, error) {
 	if s == nil {
 		return localweb.RTCOfferResponse{}, nil
 	}
@@ -200,11 +249,10 @@ func (s *Server) remoteLocalRTCAnswer(
 	if strings.TrimSpace(req.Offer.MachineID) != strings.TrimSpace(req.AppCertificate.Payload.MachineID) {
 		return localweb.RTCOfferResponse{}, pairingErr("offer machine_id does not match app certificate")
 	}
-	if _, err := s.Get(ctx, strings.TrimSpace(req.Offer.TerminalID)); err != nil {
-		return localweb.RTCOfferResponse{}, err
-	}
-	if !hasCapability(req.AppCertificate.Payload.Capabilities, "terminal") || !hasCapability(req.AppCertificate.Payload.Capabilities, "file_manager") {
-		return localweb.RTCOfferResponse{}, pairingErr("app certificate lacks remote RTC capabilities")
+	if terminalID != "" {
+		if _, err := s.Get(ctx, terminalID); err != nil {
+			return localweb.RTCOfferResponse{}, err
+		}
 	}
 	appPublicKey, err := base64.StdEncoding.DecodeString(req.AppCertificate.Payload.AppPublicKey)
 	if err != nil {
@@ -215,6 +263,10 @@ func (s *Server) remoteLocalRTCAnswer(
 		s.remoteRTCReplay = cert.NewReplayWindow(5 * time.Minute)
 	}
 	replay := s.remoteRTCReplay
+	if s.remoteRTCFiles == nil {
+		s.remoteRTCFiles = fileapi.NewManager()
+	}
+	files := s.remoteRTCFiles
 	s.remoteRTCMu.Unlock()
 	if err := remotertc.VerifyOfferSignature(remotertc.OfferSignature{
 		Algorithm: req.Signature.Algorithm,
@@ -228,25 +280,19 @@ func (s *Server) remoteLocalRTCAnswer(
 	}, ed25519.PublicKey(appPublicKey), replay, time.Now().UTC()); err != nil {
 		return localweb.RTCOfferResponse{}, err
 	}
-	s.remoteRTCMu.Lock()
-	if s.remoteRTCFiles == nil {
-		s.remoteRTCFiles = fileapi.NewManager()
-	}
-	files := s.remoteRTCFiles
-	s.remoteRTCMu.Unlock()
-	terminalID := strings.TrimSpace(req.Offer.TerminalID)
 	answer, err := remotertc.AnswerOfferWithOptions(ctx, hubv1.SignalingOffer{
 		SessionID:     strings.TrimSpace(req.Offer.SessionID),
 		DeviceID:      strings.TrimSpace(req.Offer.MachineID),
 		TerminalID:    terminalID,
 		SDP:           req.Offer.SDP,
 		ICECandidates: append([]string(nil), req.Offer.ICECandidates...),
-	}, nil, localRTCTransportSink{server: s, terminalID: terminalID}, files, remotertc.AnswerOptions{
+	}, nil, localRTCTransportSink{server: s, terminalID: terminalID, machineEventsOnly: allowEvents}, files, remotertc.AnswerOptions{
 		SettingEngine: iceTCPMux,
 		ChannelPolicy: remotertc.ChannelPolicy{
 			TerminalID:       terminalID,
-			AllowTerminal:    true,
-			AllowFileManager: true,
+			AllowTerminal:    allowTerminal,
+			AllowFileManager: allowFileManager,
+			AllowEvents:      allowEvents,
 		},
 		SessionContext: sessionCtx,
 	})
@@ -260,20 +306,8 @@ func (s *Server) remoteLocalRTCAnswer(
 			ICECandidates: append([]string(nil), answer.ICECandidates...),
 		},
 		ICETCPEnabled: iceTCPEnabled,
-		DataChannels:  []string{"api", "terminal:{terminal_id}", "file:{transfer_id}"},
+		DataChannels:  dataChannels,
 	}, nil
-}
-
-type localRTCTransportSink struct {
-	server     *Server
-	terminalID string
-}
-
-func (s localRTCTransportSink) ServeRemoteTransport(ctx context.Context, t transport.Transport, remote string) error {
-	if s.server == nil {
-		return nil
-	}
-	return s.server.handleTransportScoped(ctx, t, remote, transportScope{TerminalID: s.terminalID})
 }
 
 func (s *Server) remotePairClaim(req pairing.ClaimRequest) (pairing.ClaimResponse, error) {

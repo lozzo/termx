@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P4-A recreate the mobile app shell around shared remote UI components
-- Last updated: 2026-05-02T16:44:11+08:00
+- Active todo: P3-DX-A add a root fast-start build/run entry for embedded local web and `termx`
+- Last updated: 2026-05-02T18:02:03+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -46,7 +46,9 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-N | remote-ui | Rework mobile local web terminal chrome so terminal height is maximized, terminal list has a clear back button, and files/pair actions move into compact header actions | completed | `0be902f9` |
 | P3-E-C-B-O | remote-ui | Add a true local embedded terminal list page so local web opens to terminals first and only enters the terminal page after selecting an item | completed | `b7f07517` |
 | P3-E-C-B-P | remote-ui | Enrich terminal list metadata and move Files to a machine-level overlay whose open/close state is independent from terminal/list navigation | completed | `b0de33ee` |
+| P3-E-C-B-Q | remote-ui/core | Push terminal inventory changes over WebRTC and consume them through a shared machine-level event subscription interface so web/app auto-refresh terminal lists | completed | `pending` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
+| P3-DX-A | cli/localweb | Add a root fast-start build/run entry so local embedded web frontend assets and the `termx` CLI can be rebuilt/launched without manual multi-step commands | in_progress |  |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
 ## TDD Log
@@ -373,6 +375,21 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Deferred implementation detail: the UI now behaves as machine-level Files, but the current local file API still binds over a terminal-scoped WebRTC transport. This slice reuses a hidden terminal-scoped file context internally and preserves file-manager state across navigation without exposing terminal-scoped semantics in the UI. A future core slice can replace that hidden transport with a true machine-scoped file channel when available.
 - Subagent launched: `Noether` (`019de7d3-ed2e-7303-a06f-100ba2dc937f`) for P3-E-C-B-P code review focused on docs alignment, forbidden remote public concepts, transport boundaries, no TURN/private-key leakage, and test coverage. Result: one medium correctness issue on misleading activity wording and one low test-gap issue on mock-only Files persistence; both fixed. No workspace/tab/pane public model drift, TURN credential exposure, machine private key exposure, or transport-boundary leakage found.
 - Result: completed. Commit: `b0de33ee`.
+
+### P3-E-C-B-Q terminal inventory push over WebRTC
+
+- Active slice: push terminal inventory changes from `termx` to web/app over WebRTC so terminal create/remove/resize/state/metadata changes refresh the terminal list automatically without polling. The UI-facing consumption path must be abstracted behind a shared interface rather than hard-wiring browser details into `remote-ui`.
+- Tests written before implementation: planned `termx-core/remote_localweb_test.go`, `termx-core/server_contract_test.go`, `remote-ui/src/transport.test.ts`, `remote-ui/src/LocalRemoteApp.test.tsx`, and focused browser adapter tests for a machine-level inventory watcher.
+- Expected failing tests: current local RTC path only accepts `api`, `terminal:{terminal_id}`, and `file:{transfer_id}` labels; `termx-core` does not publish a metadata-change event for `SetTags`/`SetMetadata`; `remote-ui` has no machine-level inventory subscription interface; and `LocalRemoteApp` only refreshes terminals on initial load.
+- Planned scope: reuse the existing `termx-core` protocol/event bus rather than inventing a web-only event system. Add a machine-level WebRTC events path, keep app/browser transport details inside adapters, and make `remote-ui` consume only a shared inventory event subscription interface. Do not reintroduce workspace/tab/pane public concepts, do not issue TURN credentials on local/anonymous paths, and do not expose machine private key material.
+- Actual failing tests before implementation: `cd termx-core && go test ./termx-core -run TestSetMetadataAndTagsPublishTerminalStateChangedEvent -count=1` failed because `SetTags`/`SetMetadata` emitted no event at all; `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts src/LocalRemoteApp.test.tsx` failed because there was no machine-level inventory event interface/adapter path; follow-up focused runs also exposed existing UI-test drift from user-edited local web chrome, which was corrected so the red tests only represented the new inventory-push gap.
+- Implementation notes: added a new protocol/core event type `EventTerminalMetadataChanged` and now publish it from `termx-core/terminal.go` when tags/metadata change. Reused the existing protocol `events` request/event-bus path instead of inventing a new web-only channel. Local RTC now accepts a dedicated `events` DataChannel alongside `api`, `terminal:{terminal_id}`, and `file:{transfer_id}`; machine-level inventory sessions are events-only, allow empty `terminal_id`, and are constrained by `transportScope{MachineEventsOnly:true}` so they can subscribe only to terminal inventory event types and cannot issue create/kill/get/snapshot or session-scoped requests. `remote-ui` now exposes a shared `TerminalInventoryEvents` interface, `localAgentApi` adds a machine-level inventory RTC answer path, `localWebRtcTransport` implements a browser inventory-events connection over the `events` DataChannel, `localWebEntry` wires a lazy browser inventory-events adapter, and `LocalRemoteApp` refreshes `listTerminals()` automatically when inventory events arrive, including after pairing retries via the existing `transportRetryToken`.
+- Focused tests after implementation: `cd termx-core && go test ./termx-core -run 'TestSetMetadataAndTagsPublishTerminalStateChangedEvent|TestE2ERemoteLocalWebHandlerAnswersMachineInventoryEventsOffer' -count=1` passed; `cd remote-ui && npm test -- --run src/localAgentApi.test.ts src/localWebRtcTransport.test.ts src/transport.test.ts src/LocalRemoteApp.test.tsx src/LocalPairPanel.test.tsx src/localAppIdentity.test.ts src/localWebEntry.test.tsx` passed 48 tests; `cd remote-ui && npm run typecheck` passed.
+- Broader tests after implementation: `cd remote-ui && npm test` passed 112 tests; `git diff --check` passed.
+- Deferred implementation detail: local embedded web now auto-refreshes terminal inventory from machine-level WebRTC push, but mobile/native still needs its own adapter implementation to consume the same shared `TerminalInventoryEvents` interface in P4-A. The current local path intentionally uses a dedicated machine-level events RTC session rather than overloading an active terminal session.
+- Worktree note: the shared workspace currently also contains user-driven local UI and fast-start changes outside this todo (`README.md`, `Makefile`, several `remote-ui` presentation files, and regenerated embedded assets). This slice was kept scoped to the machine-level inventory push path and intentionally did not revert or overwrite those unrelated in-flight edits.
+- Code review: `Nietzsche` found a high issue where machine-events-only sessions still accepted empty `types` and could subscribe to non-inventory events, plus a medium test gap where metadata-change refresh was not proven through the real `events` channel. Fixed by requiring explicit allowed terminal inventory event types in machine-events-only scope, adding an end-to-end machine inventory metadata event test over local WebRTC, and retaining the shared interface boundary. No workspace/tab/pane drift, TURN credential exposure, machine private key exposure, or browser/native boundary leak was found.
+- Result: completed. Commit: `pending`.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 

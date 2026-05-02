@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { forwardRef, useImperativeHandle } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -6,6 +6,7 @@ import { LocalRemoteApp, type LocalRemoteTransportFactory } from './LocalRemoteA
 import { createLocalAppIdentityStore, type LocalAppCrypto } from './localAppIdentity'
 import type { TerminalModifierState } from './mobileTerminalInput'
 import type { LocalAgentApi } from './transport'
+import type { TerminalInventoryEvents } from './transport'
 import { createMockFilePeerTransport } from './test/mockFileTransport'
 import type { TerminalHandle } from './Terminal'
 import type { TerminalTransport, TerminalTransportEvent } from './terminalClient'
@@ -77,8 +78,8 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
     expect(screen.queryByTestId('termx-terminal')).toBeNull()
     expect(createTransport).not.toHaveBeenCalled()
-    expect(screen.getByText('120x36')).toBeTruthy()
-    expect(screen.getByText('Locked')).toBeTruthy()
+    expect(screen.getByText('120 × 36')).toBeTruthy()
+    expect(screen.getByTestId('termx-terminal-list').textContent).toMatch(/120 × 36/)
     expect(screen.getByText('/Users/lozzow/project')).toBeTruthy()
     expect(screen.getByText('dev')).toBeTruthy()
 
@@ -91,7 +92,7 @@ describe('LocalRemoteApp', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Open tmp' }))
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp')
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').hasAttribute('hidden')).toBe(true))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').style.visibility).toBe('hidden'))
     expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy()
 
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
@@ -115,7 +116,7 @@ describe('LocalRemoteApp', () => {
       mode: 'local',
     }]))
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').hasAttribute('hidden')).toBe(true))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').style.visibility).toBe('hidden'))
     expect(screen.getByTestId('termx-terminal')).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane|session/i)
   })
@@ -138,14 +139,14 @@ describe('LocalRemoteApp', () => {
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp')
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').hasAttribute('hidden')).toBe(true))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').style.visibility).toBe('hidden'))
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /open files/i }))
     await waitFor(() => expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp'))
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').hasAttribute('hidden')).toBe(true))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').style.visibility).toBe('hidden'))
     await userEvent.click(screen.getByRole('button', { name: /open worker/i }))
     await userEvent.click(screen.getByRole('button', { name: /open files/i }))
     await waitFor(() => expect(screen.getByTestId('termx-file-manager').getAttribute('data-terminal-id')).toBe('terminal-2'))
@@ -210,7 +211,7 @@ describe('LocalRemoteApp', () => {
     expect(screen.getByTestId('termx-mobile-keybar').className.split(/\s+/)).not.toContain('hidden')
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').hasAttribute('hidden')).toBe(true))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').style.visibility).toBe('hidden'))
     expect(screen.getByTestId('termx-terminal')).toBeTruthy()
     expect(screen.getByTestId('termx-mobile-keybar').className.split(/\s+/)).not.toContain('hidden')
 
@@ -219,17 +220,91 @@ describe('LocalRemoteApp', () => {
     expect(screen.getByTestId('termx-terminal-list-page').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
     await waitFor(() => expect(transports[0]?.disconnectCalls).toBe(1))
 
-    await userEvent.click(screen.getByRole('button', { name: /pair device/i }))
+    await userEvent.click(screen.getAllByRole('button', { name: /pair device/i })[0]!)
     expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy()
     expect(screen.getByTestId('termx-pair-sheet').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
 
     await userEvent.type(screen.getByLabelText('Pair ID'), 'pair-1')
     await userEvent.type(screen.getByLabelText('Pair secret'), 'secret-1')
-    await userEvent.click(screen.getByRole('button', { name: 'Pair' }))
+    await userEvent.click(within(screen.getByTestId('termx-pair-sheet')).getByRole('button', { name: /^pair device$/i }))
     await waitFor(() => expect(screen.getByText('Paired with machine-local')).toBeTruthy())
     expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy()
     expect(screen.queryByTestId('termx-terminal')).toBeNull()
     expect(createTransport).toHaveBeenCalledTimes(2)
+  })
+
+  it('refreshes the terminal list when a machine-level inventory event arrives', async () => {
+    let terminals: Array<{
+      machineId: string
+      terminalId: string
+      title: string
+      state: 'running'
+      command: string
+      cols: number
+      rows: number
+      cwd: string
+      sizeLocked: boolean
+      sizeLockMode: 'lock' | 'off'
+      environment: string
+    }> = [{
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      title: 'zsh',
+      state: 'running' as const,
+      command: '/bin/zsh',
+      cols: 120,
+      rows: 36,
+      cwd: '/Users/lozzow/project',
+      sizeLocked: true,
+      sizeLockMode: 'lock' as const,
+      environment: 'dev',
+    }]
+    const api = createMockLocalAgentApi()
+    api.listTerminals = vi.fn(async () => terminals)
+
+    let handler: ((event: { type: 'inventory_changed' }) => void) | null = null
+    const inventoryEvents: TerminalInventoryEvents = {
+      subscribe(machineId, next) {
+        expect(machineId).toBe('machine-local')
+        handler = next
+        return {
+          close() {
+            handler = null
+          },
+        }
+      },
+    }
+
+    render(<LocalRemoteApp api={api} createTransport={vi.fn()} inventoryEvents={inventoryEvents} />)
+
+    await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
+    expect(screen.queryByText('worker')).toBeNull()
+
+    terminals = [
+      ...terminals,
+      {
+        machineId: 'machine-local',
+        terminalId: 'terminal-2',
+        title: 'worker',
+        state: 'running',
+        command: '/usr/bin/env bash',
+        cols: 90,
+        rows: 28,
+        cwd: '/srv/worker',
+        sizeLocked: false,
+        sizeLockMode: 'off',
+        environment: 'prod',
+      },
+    ]
+    const fireInventoryChanged = () => {
+      if (!handler) throw new Error('inventory event handler was not installed')
+      handler({ type: 'inventory_changed' })
+    }
+    fireInventoryChanged()
+
+    await waitFor(() => expect(screen.getByText('worker')).toBeTruthy())
+    expect(screen.getByText('/srv/worker')).toBeTruthy()
+    expect(screen.getByText('prod')).toBeTruthy()
   })
 
   it('keeps the app shell driven by LocalAgentApi and transport interfaces only', () => {
@@ -286,7 +361,7 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByRole('button', { name: /pair device/i })).toBeTruthy())
-    await userEvent.click(screen.getByRole('button', { name: /pair device/i }))
+    await userEvent.click(screen.getAllByRole('button', { name: /pair device/i })[0]!)
     await waitFor(() => expect(screen.getByTestId('termx-local-pair-panel')).toBeTruthy())
     expect(screen.getByLabelText('Pair ID')).toBeTruthy()
     expect(screen.getByLabelText('Pair secret')).toBeTruthy()
@@ -332,7 +407,7 @@ describe('LocalRemoteApp', () => {
 
     await userEvent.type(screen.getByLabelText('Pair ID'), 'pair-1')
     await userEvent.type(screen.getByLabelText('Pair secret'), 'secret-1')
-    await userEvent.click(screen.getByRole('button', { name: 'Pair' }))
+    await userEvent.click(within(screen.getByTestId('termx-pair-sheet')).getByRole('button', { name: /^pair device$/i }))
 
     await waitFor(() => expect(screen.getByText('Paired with machine-local')).toBeTruthy())
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
@@ -428,6 +503,9 @@ function createMockLocalAgentApi(): LocalAgentApi {
     },
     async createRTCAnswer() {
       throw new Error('createRTCAnswer is not used by LocalRemoteApp tests')
+    },
+    async createInventoryRTCAnswer() {
+      throw new Error('createInventoryRTCAnswer is not used by LocalRemoteApp tests')
     },
   }
 }

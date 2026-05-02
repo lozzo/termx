@@ -397,6 +397,76 @@ func TestHandleTransportEventsSubscriptionDeliversSessionEvents(t *testing.T) {
 	}
 }
 
+func TestSetMetadataAndTagsPublishTerminalStateChangedEvent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewServer()
+	term, err := srv.Create(ctx, CreateOptions{
+		Command: []string{"sh", "-c", "sleep 5"},
+		Name:    "metadata-events",
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	eventsCtx, cancelEvents := context.WithCancel(ctx)
+	defer cancelEvents()
+	events := srv.Events(eventsCtx, WithTerminalFilter(term.ID), WithTypeFilter(EventTerminalMetadataChanged))
+
+	if err := srv.SetTags(ctx, term.ID, map[string]string{"termx.environment": "prod"}); err != nil {
+		t.Fatalf("SetTags returned error: %v", err)
+	}
+	select {
+	case evt := <-events:
+		if evt.Type != EventTerminalMetadataChanged || evt.TerminalID != term.ID {
+			t.Fatalf("unexpected tag-change event: %#v", evt)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for SetTags event")
+	}
+
+	if err := srv.SetMetadata(ctx, term.ID, "metadata-renamed", map[string]string{"termx.cwd": "/srv/app"}); err != nil {
+		t.Fatalf("SetMetadata returned error: %v", err)
+	}
+	select {
+	case evt := <-events:
+		if evt.Type != EventTerminalMetadataChanged || evt.TerminalID != term.ID {
+			t.Fatalf("unexpected metadata-change event: %#v", evt)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for SetMetadata event")
+	}
+}
+
+func TestMachineEventsOnlyTransportRejectsUnfilteredEventsSubscription(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewServer()
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.handleTransportScoped(ctx, serverTransport, "memory", transportScope{MachineEventsOnly: true})
+	}()
+
+	client := protocol.NewClient(clientTransport)
+	defer client.Close()
+	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+	if _, err := client.Events(ctx, protocol.EventsParams{}); err == nil {
+		t.Fatal("expected unfiltered machine events subscription to be rejected")
+	}
+}
+
 func TestHandleTransportEventsSubscriptionReplacesPreviousFilter(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

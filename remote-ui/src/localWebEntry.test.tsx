@@ -131,7 +131,7 @@ describe('local web entry shell', () => {
     })
 
     await waitFor(() => expect(screen.getByTestId('termx-local-web-shell')).toBeTruthy())
-    await waitFor(() => expect(screen.getByText('No terminals')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('No active terminals')).toBeTruthy())
   })
 
   it('keeps the local shell mounted when pair crypto is unavailable', async () => {
@@ -162,7 +162,7 @@ describe('local web entry shell', () => {
     })
 
     await waitFor(() => expect(screen.getByTestId('termx-local-web-shell')).toBeTruthy())
-    await waitFor(() => expect(screen.getByText('No terminals')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('No active terminals')).toBeTruthy())
     expect(screen.queryByTestId('termx-local-pair-panel')).toBeNull()
   })
 })

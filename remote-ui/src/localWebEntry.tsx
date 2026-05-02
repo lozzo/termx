@@ -3,15 +3,16 @@ import { createRoot, type Root } from 'react-dom/client'
 import { LocalRemoteApp, type LocalRemoteTransportFactory } from './LocalRemoteApp'
 import { createBrowserLocalAppCrypto, createLocalAppIdentityStore, createLocalOfferSigner } from './localAppIdentity'
 import { createLocalAgentApi } from './localAgentApi'
-import { createLocalWebRtcPeerTransport } from './localWebRtcTransport'
-import type { LocalAgentApi } from './transport'
+import { createLocalWebRtcInventoryEvents, createLocalWebRtcPeerTransport } from './localWebRtcTransport'
+import type { LocalAgentApi, TerminalInventoryEvents } from './transport'
 import './localWebEntry.css'
 
 export interface LocalWebAppOptions {
   root?: HTMLElement | null | undefined
-  api?: Pick<LocalAgentApi, 'getStatus' | 'listTerminals'> | undefined
+  api?: Pick<LocalAgentApi, 'getStatus' | 'listTerminals'> & Partial<Pick<LocalAgentApi, 'createInventoryRTCAnswer'>> | undefined
   pairApi?: Pick<LocalAgentApi, 'pair'> | undefined
   createTransport?: LocalRemoteTransportFactory | undefined
+  inventoryEvents?: TerminalInventoryEvents | undefined
 }
 
 export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
@@ -21,6 +22,7 @@ export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
   }
   const api = options.api ?? createLocalAgentApi()
   const createTransport = options.createTransport ?? createBrowserLocalTransportFactory()
+  const inventoryEvents = options.inventoryEvents ?? createBrowserInventoryEvents(api)
   const pair = createBrowserPairOptions(options.pairApi ?? createLocalAgentApi())
   const root = createRoot(rootElement)
   root.render(
@@ -32,6 +34,7 @@ export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
         <LocalRemoteApp
           api={api}
           createTransport={createTransport}
+          inventoryEvents={inventoryEvents}
           {...(pair ? { pair } : {})}
         />
       </section>
@@ -48,6 +51,37 @@ function createBrowserPairOptions(api: Pick<LocalAgentApi, 'pair'>) {
       storage: createLocalAppIdentityStore(globalThis.localStorage),
       crypto: createBrowserLocalAppCrypto(),
       appName: 'TermX Local Web',
+    }
+  } catch {
+    return undefined
+  }
+}
+
+function createBrowserInventoryEvents(api: Partial<Pick<LocalAgentApi, 'createInventoryRTCAnswer'>>): TerminalInventoryEvents | undefined {
+  if (!globalThis.localStorage || typeof globalThis.localStorage.getItem !== 'function' || typeof globalThis.localStorage.setItem !== 'function') {
+    return undefined
+  }
+  try {
+    const crypto = createBrowserLocalAppCrypto()
+    return {
+      subscribe(machineId, handler) {
+        const store = createLocalAppIdentityStore(globalThis.localStorage)
+        const appCertificate = store.loadCertificate()
+        if (!appCertificate || !api.createInventoryRTCAnswer) {
+          return { close() {} }
+        }
+        const signer = createLocalOfferSigner({
+          storage: store,
+          crypto,
+        })
+        const connection = createLocalWebRtcInventoryEvents({
+          machineId,
+          appCertificate,
+          createAnswer: (offer) => api.createInventoryRTCAnswer!(offer),
+          signOffer: (input) => signer.signOffer(input),
+        })
+        return connection.subscribe(machineId, handler)
+      },
     }
   } catch {
     return undefined

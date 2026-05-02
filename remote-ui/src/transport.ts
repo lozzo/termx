@@ -88,6 +88,18 @@ export interface LocalRTCAnswer {
   }
 }
 
+export interface TerminalInventorySubscription {
+  close(): void
+}
+
+export interface TerminalInventoryEvent {
+  type: 'inventory_changed'
+}
+
+export interface TerminalInventoryEvents {
+  subscribe(machineId: string, handler: (event: TerminalInventoryEvent) => void): TerminalInventorySubscription
+}
+
 export interface RemoteTransport {
   connect(target: ConnectTarget, options?: ConnectOptions): Promise<ConnectResult>
   disconnect(): Promise<void>
@@ -112,4 +124,23 @@ export interface LocalAgentApi {
   listTerminals(): Promise<Terminal[]>
   pair(input: LocalPairInput): Promise<LocalPairResult>
   createRTCAnswer(input: LocalRTCOffer): Promise<LocalRTCAnswer>
+  createInventoryRTCAnswer(input: LocalInventoryRTCOffer): Promise<LocalInventoryRTCAnswer>
+}
+
+export interface LocalInventoryRTCOffer {
+  sessionId: string
+  machineId: string
+  sdp: string
+  appCertificate: string
+  appSignature: string
+  nonce: string
+  timestamp: string
+}
+
+export interface LocalInventoryRTCAnswer {
+  sessionId: string
+  answer: {
+    type: 'answer'
+    sdp: string
+  }
 }
