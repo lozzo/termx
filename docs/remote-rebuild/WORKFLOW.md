@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: ready for Slice `14` QR payload/store.
-- Last updated: 2026-05-03T16:29:24+08:00.
+- Last updated: 2026-05-03T16:30:45+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts should progress `local` / LAN first, then `public_p2p`, then `managed` with relay if needed. During development, TermX rendezvous and managed relay are open to registered/dev users so the whole flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -126,7 +126,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 11-C-C | devstack-public-daemon-token-refresh | Refresh the public-host daemon temporary access token after post-commit expiry | completed | `e9c4f229` |
 | 12 | product-alignment | Align docs and AGENTS with APP-first product shape, dev-free rendezvous/relay, multi-agent workflow, e2e strategy, and image prompt | completed |  |
 | 12-B | tgent-comparison | Compare `../tgent` web/hub/app product logic with current TermX and write migration strategy plus new driving prompt | completed |  |
-| 13 | remote-ui-app-shell | Build APP-first machine list shell using tgent-app structure as reference while preserving TermX `machine -> terminal` and `RtcSession` boundaries | completed |  |
+| 13 | remote-ui-app-shell | Build APP-first machine list shell using tgent-app structure as reference while preserving TermX `machine -> terminal` and `RtcSession` boundaries | completed | `0014e9a7` |
 | 14 | remote-ui-qr-store | Define `termx://` QR payload and local MachineStore, rejecting any machine private key material | pending |  |
 | 15 | remote-ui-connection-orchestrator | Implement local/LAN -> public_p2p -> managed connection orchestration that returns only `RtcSession` to runtime consumers | pending |  |
 | 16 | web-control-hub-closed-loop | Implement tgent-style Hub discover, heartbeat, policy/kick response, and force-offline in Web Control | pending |  |
@@ -2966,8 +2966,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 新增派生条目：none yet.
 - deferred human items：none.
 - 剩余风险：connection orchestration, QR schema/store, native adapter, and e2e remain future slices.
-- 下一步：commit Slice `13`, record hash, then start Slice `14` QR payload/store.
-- commit：
+- 下一步：start Slice `14` QR payload/store.
+- commit：`0014e9a7`
 
 ## Historical P2/P3 Records
 
@@ -3591,6 +3591,6 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Commit Slice `13` remote-ui APP machine list shell with only related files staged.
-2. Record the Slice `13` commit hash in this workflow.
-3. Start Slice `14` QR payload/store next, keeping machine private keys out of APP records.
+1. Start Slice `14` QR payload/store next, keeping machine private keys out of APP records.
+2. Write failing QR payload/store tests before implementation.
+3. Preserve the APP-first shell and `local / public_p2p / managed` path taxonomy.
