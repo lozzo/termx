@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	hubv1 "github.com/lozzow/termx/termx-core/remote/hubv1"
 	"github.com/lozzow/termx/termx-hub/internal/controlclient"
@@ -24,6 +26,7 @@ var newControlVerifier registryVerifierFactory = func(baseURL string, sharedSecr
 type controlVerifier interface {
 	registry.AuthorityVerifier
 	managed.TicketVerifier
+	httpapi.AgentPolicyProvider
 }
 
 type registryVerifierFactory func(baseURL string, sharedSecret string) controlVerifier
@@ -36,6 +39,15 @@ func main() {
 	handler, err := newHubHandlerFromEnv()
 	if err != nil {
 		log.Fatal(err)
+	}
+	if cleaner, ok := handler.(interface {
+		StartCleanup(context.Context, <-chan time.Time)
+	}); ok {
+		cleanupCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		go cleaner.StartCleanup(cleanupCtx, ticker.C)
 	}
 	log.Printf("termx hub listening on http://%s", addr)
 	if err := http.ListenAndServe(addr, handler); err != nil {
@@ -53,10 +65,11 @@ func newHubHandlerFromEnv() (http.Handler, error) {
 	reg := registry.New(registry.Config{Verifier: verifier})
 	svc := managed.NewService(managed.Config{Registry: reg, Tickets: verifier})
 	return httpapi.NewHandler(httpapi.Config{
-		Managed:    svc,
-		Registry:   reg,
-		ICEServers: stunServersFromEnv(os.Getenv("TERMX_HUB_STUN_SERVERS")),
-		DebugToken: strings.TrimSpace(os.Getenv("TERMX_HUB_DEBUG_TOKEN")),
+		Managed:     svc,
+		Registry:    reg,
+		AgentPolicy: verifier,
+		ICEServers:  stunServersFromEnv(os.Getenv("TERMX_HUB_STUN_SERVERS")),
+		DebugToken:  strings.TrimSpace(os.Getenv("TERMX_HUB_DEBUG_TOKEN")),
 	}), nil
 }
 

@@ -164,8 +164,9 @@ func TestAgentHTTPRejectsUnsignedRegistration(t *testing.T) {
 	}
 	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
 	router := httpapi.NewHandler(httpapi.Config{
-		Managed:  managed.NewService(managed.Config{Registry: reg, Tickets: verifier, Clock: clock}),
-		Registry: reg,
+		Managed:     managed.NewService(managed.Config{Registry: reg, Tickets: verifier, Clock: clock}),
+		Registry:    reg,
+		AgentPolicy: verifier,
 	})
 
 	resp := postJSON(t, router, "/api/v1/agents/register", map[string]any{
@@ -177,6 +178,135 @@ func TestAgentHTTPRejectsUnsignedRegistration(t *testing.T) {
 	}
 	if _, ok := reg.GetAgent("agent_1"); ok {
 		t.Fatal("unsigned registration created an agent")
+	}
+}
+
+func TestAgentHTTPAppliesForceOfflinePolicy(t *testing.T) {
+	t.Parallel()
+
+	clock := fixedClock(time.Date(2026, 5, 3, 17, 44, 0, 0, time.UTC))
+	verifier := &fakeTicketVerifier{
+		now: clock.Now(),
+		tickets: map[string]managed.Ticket{
+			"ticket_allowed": {
+				ID:         "ticket_allowed",
+				MachineID:  "device_1",
+				TerminalID: "term_1",
+				Path:       managed.PathManaged,
+				ExpiresAt:  clock.Now().Add(time.Minute),
+			},
+		},
+		forceOffline: map[string]string{
+			"device_1/agent_force": "owner requested",
+		},
+	}
+	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	router := httpapi.NewHandler(httpapi.Config{
+		Managed:     managed.NewService(managed.Config{Registry: reg, Tickets: verifier, Clock: clock}),
+		Registry:    reg,
+		AgentPolicy: verifier,
+	})
+
+	register := postJSON(t, router, "/api/v1/agents/register", map[string]any{
+		"device_id": "device_1",
+		"agent_id":  "agent_force",
+	})
+	if register.Code != http.StatusOK {
+		t.Fatalf("register status = %d body=%s", register.Code, register.Body.String())
+	}
+	var registered struct {
+		AgentSessionID string `json:"agent_session_id"`
+	}
+	decodeJSON(t, register, &registered)
+
+	heartbeat := postJSON(t, router, "/api/v1/agents/heartbeat", map[string]any{
+		"agent_session_id": registered.AgentSessionID,
+		"device_id":        "device_1",
+	})
+	if heartbeat.Code != http.StatusForbidden {
+		t.Fatalf("forced heartbeat status = %d body=%s", heartbeat.Code, heartbeat.Body.String())
+	}
+	poll := postJSON(t, router, "/api/v1/agents/signaling/poll", map[string]any{
+		"agent_session_id": registered.AgentSessionID,
+		"device_id":        "device_1",
+		"timeout_seconds":  1,
+	})
+	if poll.Code != http.StatusForbidden {
+		t.Fatalf("forced poll status = %d body=%s", poll.Code, poll.Body.String())
+	}
+}
+
+func TestAgentHTTPSessionsAreTTLBounded(t *testing.T) {
+	t.Parallel()
+
+	clock := &mutableHTTPClock{value: time.Date(2026, 5, 3, 18, 20, 0, 0, time.UTC)}
+	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]managed.Ticket{
+		"ticket_allowed": {
+			ID:         "ticket_allowed",
+			MachineID:  "device_1",
+			TerminalID: "term_1",
+			Path:       managed.PathManaged,
+			ExpiresAt:  clock.Now().Add(time.Minute),
+		},
+	}}
+	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	router := httpapi.NewHandler(httpapi.Config{
+		Managed:          managed.NewService(managed.Config{Registry: reg, Tickets: verifier, Clock: clock}),
+		Registry:         reg,
+		DebugToken:       "debug-secret",
+		Clock:            clock,
+		AgentSessionTTL:  time.Second,
+		MaxAgentSessions: 1,
+	})
+
+	first := postJSON(t, router, "/api/v1/agents/register", map[string]any{
+		"device_id": "device_1",
+		"agent_id":  "agent_1",
+	})
+	if first.Code != http.StatusOK {
+		t.Fatalf("first register status = %d body=%s", first.Code, first.Body.String())
+	}
+	var firstRegistered struct {
+		AgentSessionID string `json:"agent_session_id"`
+	}
+	decodeJSON(t, first, &firstRegistered)
+	second := postJSON(t, router, "/api/v1/agents/register", map[string]any{
+		"device_id": "device_2",
+		"agent_id":  "agent_2",
+	})
+	if second.Code != http.StatusOK {
+		t.Fatalf("second register status = %d body=%s", second.Code, second.Body.String())
+	}
+	if heartbeat := postJSON(t, router, "/api/v1/agents/heartbeat", map[string]any{
+		"agent_session_id": firstRegistered.AgentSessionID,
+		"device_id":        "device_1",
+	}); heartbeat.Code != http.StatusUnauthorized {
+		t.Fatalf("evicted heartbeat status = %d body=%s", heartbeat.Code, heartbeat.Body.String())
+	}
+
+	var secondRegistered struct {
+		AgentSessionID string `json:"agent_session_id"`
+	}
+	decodeJSON(t, second, &secondRegistered)
+	clock.value = clock.value.Add(2 * time.Second)
+	diag := getJSON(t, router, "/api/debug/agents", "debug-secret")
+	if diag.Code != http.StatusOK {
+		t.Fatalf("diagnostics status = %d body=%s", diag.Code, diag.Body.String())
+	}
+	var got struct {
+		Agents []struct {
+			AgentSessionID string `json:"agent_session_id"`
+		} `json:"agents"`
+	}
+	decodeJSON(t, diag, &got)
+	if len(got.Agents) != 0 {
+		t.Fatalf("expired agent sessions remained: %+v", got.Agents)
+	}
+	if heartbeat := postJSON(t, router, "/api/v1/agents/heartbeat", map[string]any{
+		"agent_session_id": secondRegistered.AgentSessionID,
+		"device_id":        "device_2",
+	}); heartbeat.Code != http.StatusUnauthorized {
+		t.Fatalf("expired heartbeat status = %d body=%s", heartbeat.Code, heartbeat.Body.String())
 	}
 }
 

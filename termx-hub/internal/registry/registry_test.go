@@ -75,6 +75,115 @@ func TestHeartbeatRejectsExpiredAgentBeforeCleanup(t *testing.T) {
 	}
 }
 
+func TestForceOfflineRejectsHeartbeatPollAndOffers(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clock := &mutableClock{value: time.Date(2026, 5, 3, 17, 33, 0, 0, time.UTC)}
+	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute, Verifier: allowAuthorityVerifier{}})
+	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	store.ForceOffline(registry.ForceOfflineInput{
+		MachineID: "mach_1",
+		AgentID:   "agent_1",
+		Reason:    "owner requested",
+		TTL:       time.Minute,
+	})
+
+	if err := store.Heartbeat(ctx, registry.HeartbeatInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+	}); !errors.Is(err, registry.ErrAgentForcedOffline) {
+		t.Fatalf("forced heartbeat err = %v", err)
+	}
+	if _, err := store.Poll(ctx, registry.PollInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		Timeout:   time.Millisecond,
+	}); !errors.Is(err, registry.ErrAgentForcedOffline) {
+		t.Fatalf("forced poll err = %v", err)
+	}
+	if _, err := store.SubmitOffer(ctx, registry.OfferInput{
+		MachineID:  "mach_1",
+		TerminalID: "term_1",
+		TicketID:   "ticket_1",
+		SDP:        minimalSDP("offer"),
+	}); !errors.Is(err, registry.ErrAgentForcedOffline) {
+		t.Fatalf("forced offer err = %v", err)
+	}
+	if _, ok := store.GetAgent("agent_1"); ok {
+		t.Fatal("forced-offline agent remained visible")
+	}
+}
+
+func TestForceOfflinePolicyExpiresWithoutDurableState(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clock := &mutableClock{value: time.Date(2026, 5, 3, 17, 36, 0, 0, time.UTC)}
+	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute, Verifier: allowAuthorityVerifier{}})
+	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	store.ForceOffline(registry.ForceOfflineInput{
+		MachineID: "mach_1",
+		AgentID:   "agent_1",
+		Reason:    "temporary kick",
+		TTL:       time.Second,
+	})
+	clock.value = clock.value.Add(2 * time.Second)
+	removed := store.CleanupExpired(ctx)
+	if removed == 0 {
+		t.Fatal("cleanup did not remove expired force-offline policy")
+	}
+	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register after force-offline expiry: %v", err)
+	}
+}
+
+func TestForceOfflineDoesNotBlockOtherAgentsForSameMachine(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clock := &mutableClock{value: time.Date(2026, 5, 3, 18, 3, 0, 0, time.UTC)}
+	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute, Verifier: allowAuthorityVerifier{}})
+	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_forced"}); err != nil {
+		t.Fatalf("register forced agent: %v", err)
+	}
+	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_active"}); err != nil {
+		t.Fatalf("register active agent: %v", err)
+	}
+	store.ForceOffline(registry.ForceOfflineInput{
+		MachineID: "mach_1",
+		AgentID:   "agent_forced",
+		Reason:    "owner requested",
+		TTL:       time.Minute,
+	})
+
+	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
+		MachineID:  "mach_1",
+		TerminalID: "term_1",
+		TicketID:   "ticket_1",
+		SDP:        minimalSDP("offer"),
+	})
+	if err != nil {
+		t.Fatalf("submit offer for active agent: %v", err)
+	}
+	polled, err := store.Poll(ctx, registry.PollInput{
+		AgentID:   "agent_active",
+		MachineID: "mach_1",
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("active agent poll after forced peer: %v", err)
+	}
+	if polled.ID != offer.ID {
+		t.Fatalf("polled offer = %+v, want %s", polled, offer.ID)
+	}
+}
+
 func TestPollTimeoutOfferDeliveryAndAnswerCorrelation(t *testing.T) {
 	t.Parallel()
 

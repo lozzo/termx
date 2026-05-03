@@ -438,6 +438,7 @@ type fakeTicketVerifier struct {
 	now                   time.Time
 	consumeCalls          []string
 	requireAgentSignature bool
+	forceOffline          map[string]string
 }
 
 func (f *fakeTicketVerifier) CheckManagedTicket(_ context.Context, in managed.VerifyTicketInput) (managed.Ticket, error) {
@@ -506,10 +507,31 @@ func (f *fakeTicketVerifier) VerifyOfferTicket(_ context.Context, in registry.Of
 	return nil
 }
 
+func (f *fakeTicketVerifier) GetAgentPolicy(_ context.Context, in registry.AgentPolicyRequest) (registry.AgentPolicy, error) {
+	reason := f.forceOffline[in.MachineID+"/"+in.AgentID]
+	if reason == "" {
+		return registry.AgentPolicy{MachineID: in.MachineID, AgentID: in.AgentID}, nil
+	}
+	return registry.AgentPolicy{
+		MachineID:    in.MachineID,
+		AgentID:      in.AgentID,
+		ForceOffline: true,
+		Reason:       reason,
+	}, nil
+}
+
 type fixedClock time.Time
 
 func (c fixedClock) Now() time.Time {
 	return time.Time(c)
+}
+
+type mutableHTTPClock struct {
+	value time.Time
+}
+
+func (c *mutableHTTPClock) Now() time.Time {
+	return c.value
 }
 
 func minimalSDP(sessionID string) string {

@@ -92,6 +92,54 @@ func (v *ManagedTicketVerifier) VerifyAgentRegistration(ctx context.Context, in 
 	return nil
 }
 
+func (v *ManagedTicketVerifier) GetAgentPolicy(ctx context.Context, in registry.AgentPolicyRequest) (registry.AgentPolicy, error) {
+	if v == nil || v.baseURL == "" || v.sharedSecret == "" {
+		return registry.AgentPolicy{}, errors.New("control agent policy client is not configured")
+	}
+	payload, err := json.Marshal(map[string]string{
+		"machine_id": strings.TrimSpace(in.MachineID),
+		"agent_id":   strings.TrimSpace(in.AgentID),
+	})
+	if err != nil {
+		return registry.AgentPolicy{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, v.baseURL+"/api/v1/hub/agents/policy", bytes.NewReader(payload))
+	if err != nil {
+		return registry.AgentPolicy{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-TermX-Hub-Secret", v.sharedSecret)
+	resp, err := v.client.Do(req)
+	if err != nil {
+		return registry.AgentPolicy{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+		return registry.AgentPolicy{}, fmt.Errorf("control agent policy rejected request: http %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var decoded struct {
+		Policy struct {
+			MachineID    string `json:"machine_id"`
+			AgentID      string `json:"agent_id"`
+			ForceOffline bool   `json:"force_offline"`
+			Reason       string `json:"reason"`
+		} `json:"policy"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		return registry.AgentPolicy{}, err
+	}
+	if decoded.Policy.MachineID != strings.TrimSpace(in.MachineID) || decoded.Policy.AgentID != strings.TrimSpace(in.AgentID) {
+		return registry.AgentPolicy{}, fmt.Errorf("control agent policy identity mismatch")
+	}
+	return registry.AgentPolicy{
+		MachineID:    decoded.Policy.MachineID,
+		AgentID:      decoded.Policy.AgentID,
+		ForceOffline: decoded.Policy.ForceOffline,
+		Reason:       decoded.Policy.Reason,
+	}, nil
+}
+
 func (v *ManagedTicketVerifier) requestTicket(ctx context.Context, path string, ticketID string, machineID string, terminalID string) (managed.Ticket, error) {
 	if v == nil || v.baseURL == "" || v.sharedSecret == "" {
 		return managed.Ticket{}, errors.New("control ticket verifier is not configured")

@@ -10,6 +10,7 @@ import (
 
 	"github.com/lozzow/termx/web-control/internal/account"
 	"github.com/lozzow/termx/web-control/internal/connect"
+	"github.com/lozzow/termx/web-control/internal/hubregistry"
 	"github.com/lozzow/termx/web-control/internal/machines"
 	"github.com/lozzow/termx/web-control/internal/rendezvous"
 )
@@ -23,6 +24,7 @@ type Config struct {
 	Machines              *machines.Service
 	Connect               *connect.Service
 	Rendezvous            *rendezvous.Service
+	HubRegistry           *hubregistry.Service
 	HubSharedSecret       string
 	MaxPublicP2PBodyBytes int64
 }
@@ -437,6 +439,58 @@ func NewRouter(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/v1/hub/agents/verify-registration", func(w http.ResponseWriter, r *http.Request) {
 		handleHubAgentRegistration(w, r, cfg)
 	})
+	mux.HandleFunc("GET /api/v1/hubs", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := authenticatedUser(w, r, cfg.Accounts); !ok {
+			return
+		}
+		if cfg.HubRegistry == nil {
+			writeError(w, http.StatusServiceUnavailable, "hub_registry_unavailable", "hub registry service is not configured")
+			return
+		}
+		hubs, err := cfg.HubRegistry.DiscoverHubs(r.Context(), hubregistry.DiscoverHubsInput{})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "discover_hubs_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"hubs": hubs})
+	})
+	mux.HandleFunc("POST /api/v1/hub/report", func(w http.ResponseWriter, r *http.Request) {
+		handleHubReport(w, r, cfg)
+	})
+	mux.HandleFunc("POST /api/v1/hub/agents/policy", func(w http.ResponseWriter, r *http.Request) {
+		handleHubAgentPolicy(w, r, cfg)
+	})
+	mux.HandleFunc("POST /api/v1/machines/{machine_id}/agents/{agent_id}/force-offline", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := authenticatedUser(w, r, cfg.Accounts)
+		if !ok {
+			return
+		}
+		if cfg.HubRegistry == nil {
+			writeError(w, http.StatusServiceUnavailable, "hub_registry_unavailable", "hub registry service is not configured")
+			return
+		}
+		var req struct {
+			Reason string `json:"reason"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+			return
+		}
+		if err := cfg.HubRegistry.ForceOfflineAgent(r.Context(), hubregistry.ForceOfflineInput{
+			UserID:    user.User.ID,
+			MachineID: r.PathValue("machine_id"),
+			AgentID:   r.PathValue("agent_id"),
+			Reason:    req.Reason,
+		}); err != nil {
+			status := http.StatusForbidden
+			if errors.Is(err, hubregistry.ErrMachineNotOwned) {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, "force_offline_failed", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /api/v1/public-p2p/channels", func(w http.ResponseWriter, r *http.Request) {
 		user, ok := authenticatedUser(w, r, cfg.Accounts)
 		if !ok {
@@ -555,13 +609,73 @@ func handleRendezvousMessage(w http.ResponseWriter, r *http.Request, service *re
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func handleHubManagedTicket(w http.ResponseWriter, r *http.Request, cfg Config, consume bool) {
-	if strings.TrimSpace(cfg.HubSharedSecret) == "" {
-		writeError(w, http.StatusServiceUnavailable, "hub_auth_unavailable", "hub shared secret is not configured")
+func handleHubReport(w http.ResponseWriter, r *http.Request, cfg Config) {
+	if !authenticatedHub(w, r, cfg) {
 		return
 	}
-	if r.Header.Get("X-TermX-Hub-Secret") != cfg.HubSharedSecret {
-		writeError(w, http.StatusUnauthorized, "invalid_hub_secret", "hub authentication failed")
+	if cfg.HubRegistry == nil {
+		writeError(w, http.StatusServiceUnavailable, "hub_registry_unavailable", "hub registry service is not configured")
+		return
+	}
+	var req struct {
+		HubID      string          `json:"hub_id"`
+		Region     string          `json:"region"`
+		HTTPURL    string          `json:"http_url"`
+		Status     string          `json:"status"`
+		Capacity   int             `json:"capacity"`
+		HealthJSON json.RawMessage `json:"health_json"`
+		TTLSeconds int64           `json:"ttl_seconds"`
+		Agents     []struct {
+			MachineID     string `json:"machine_id"`
+			AgentID       string `json:"agent_id"`
+			Status        string `json:"status"`
+			TerminalCount int    `json:"terminal_count"`
+		} `json:"agents"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, cfg.MaxPublicP2PBodyBytes)
+	if err := decodeJSON(r, &req); err != nil {
+		if requestBodyTooLarge(err) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body is too large")
+			return
+		}
+		writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+		return
+	}
+	if req.TTLSeconds > int64(math.MaxInt64/int64(time.Second)) {
+		writeError(w, http.StatusBadRequest, "invalid_ttl", "ttl_seconds is too large")
+		return
+	}
+	agents := make([]hubregistry.AgentReport, 0, len(req.Agents))
+	for _, agent := range req.Agents {
+		agents = append(agents, hubregistry.AgentReport{
+			MachineID:     agent.MachineID,
+			AgentID:       agent.AgentID,
+			Status:        agent.Status,
+			TerminalCount: agent.TerminalCount,
+		})
+	}
+	result, err := cfg.HubRegistry.ReportHub(r.Context(), hubregistry.ReportHubInput{
+		HubID:    req.HubID,
+		Region:   req.Region,
+		HTTPURL:  req.HTTPURL,
+		Status:   req.Status,
+		Capacity: req.Capacity,
+		Health:   string(req.HealthJSON),
+		TTL:      time.Duration(req.TTLSeconds) * time.Second,
+		Agents:   agents,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "hub_report_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"hub":            result.Hub,
+		"agent_policies": result.AgentPolicies,
+	})
+}
+
+func handleHubManagedTicket(w http.ResponseWriter, r *http.Request, cfg Config, consume bool) {
+	if !authenticatedHub(w, r, cfg) {
 		return
 	}
 	if cfg.Connect == nil {
@@ -599,12 +713,7 @@ func handleHubManagedTicket(w http.ResponseWriter, r *http.Request, cfg Config, 
 }
 
 func handleHubAgentRegistration(w http.ResponseWriter, r *http.Request, cfg Config) {
-	if strings.TrimSpace(cfg.HubSharedSecret) == "" {
-		writeError(w, http.StatusServiceUnavailable, "hub_auth_unavailable", "hub shared secret is not configured")
-		return
-	}
-	if r.Header.Get("X-TermX-Hub-Secret") != cfg.HubSharedSecret {
-		writeError(w, http.StatusUnauthorized, "invalid_hub_secret", "hub authentication failed")
+	if !authenticatedHub(w, r, cfg) {
 		return
 	}
 	if cfg.Machines == nil {
@@ -640,6 +749,45 @@ func handleHubAgentRegistration(w http.ResponseWriter, r *http.Request, cfg Conf
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func handleHubAgentPolicy(w http.ResponseWriter, r *http.Request, cfg Config) {
+	if !authenticatedHub(w, r, cfg) {
+		return
+	}
+	if cfg.HubRegistry == nil {
+		writeError(w, http.StatusServiceUnavailable, "hub_registry_unavailable", "hub registry service is not configured")
+		return
+	}
+	var req struct {
+		MachineID string `json:"machine_id"`
+		AgentID   string `json:"agent_id"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+		return
+	}
+	policy, err := cfg.HubRegistry.GetAgentPolicy(r.Context(), hubregistry.AgentPolicyInput{
+		MachineID: req.MachineID,
+		AgentID:   req.AgentID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "agent_policy_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"policy": policy})
+}
+
+func authenticatedHub(w http.ResponseWriter, r *http.Request, cfg Config) bool {
+	if strings.TrimSpace(cfg.HubSharedSecret) == "" {
+		writeError(w, http.StatusServiceUnavailable, "hub_auth_unavailable", "hub shared secret is not configured")
+		return false
+	}
+	if r.Header.Get("X-TermX-Hub-Secret") != cfg.HubSharedSecret {
+		writeError(w, http.StatusUnauthorized, "invalid_hub_secret", "hub authentication failed")
+		return false
+	}
+	return true
 }
 
 func envelopePayload(messageType string, nested json.RawMessage, appCertificate json.RawMessage, appPublicKey string, signature json.RawMessage) json.RawMessage {

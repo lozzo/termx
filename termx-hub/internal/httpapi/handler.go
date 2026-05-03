@@ -18,16 +18,80 @@ import (
 )
 
 type Config struct {
-	Managed       *managed.Service
-	Registry      *registry.Registry
-	ICEServers    []hubv1.RTCIceServerConfig
-	DebugToken    string
-	AnswerTimeout time.Duration
-	PollInterval  time.Duration
-	MaxBodyBytes  int64
+	Managed          *managed.Service
+	Registry         *registry.Registry
+	AgentPolicy      AgentPolicyProvider
+	ICEServers       []hubv1.RTCIceServerConfig
+	DebugToken       string
+	Clock            Clock
+	AnswerTimeout    time.Duration
+	PollInterval     time.Duration
+	MaxBodyBytes     int64
+	AgentSessionTTL  time.Duration
+	MaxAgentSessions int
+}
+
+type Clock interface {
+	Now() time.Time
+}
+
+type systemClock struct{}
+
+func (systemClock) Now() time.Time {
+	return time.Now().UTC()
+}
+
+type AgentPolicyProvider interface {
+	GetAgentPolicy(context.Context, registry.AgentPolicyRequest) (registry.AgentPolicy, error)
+}
+
+type Handler struct {
+	router          http.Handler
+	registry        *registry.Registry
+	agents          *agentSessions
+	clock           Clock
+	agentSessionTTL time.Duration
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.router.ServeHTTP(w, r)
+}
+
+func (h *Handler) StartCleanup(ctx context.Context, ticks <-chan time.Time) {
+	if h == nil {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case tick, ok := <-ticks:
+			if !ok {
+				return
+			}
+			if h.registry != nil {
+				h.registry.CleanupExpired(ctx)
+			}
+			if h.agents != nil {
+				h.agents.cleanupExpired(tick.UTC())
+			}
+		}
+	}
 }
 
 func NewHandler(cfg Config) http.Handler {
+	clock := cfg.Clock
+	if clock == nil {
+		clock = systemClock{}
+	}
+	agentSessionTTL := cfg.AgentSessionTTL
+	if agentSessionTTL <= 0 {
+		agentSessionTTL = 10 * time.Minute
+	}
+	maxAgentSessions := cfg.MaxAgentSessions
+	if maxAgentSessions <= 0 {
+		maxAgentSessions = 4096
+	}
 	maxBodyBytes := cfg.MaxBodyBytes
 	if maxBodyBytes <= 0 {
 		maxBodyBytes = 64 * 1024
@@ -49,7 +113,7 @@ func NewHandler(cfg Config) http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"agents": agents.snapshot(),
+			"agents": agents.snapshot(clock.Now().UTC()),
 		})
 	})
 	mux.HandleFunc("POST /api/v1/agents/register", func(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +157,7 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusForbidden, "agent_register_failed", err.Error())
 			return
 		}
-		sessionID := agents.put(agentSession{AgentID: agentID, DeviceID: deviceID})
+		sessionID := agents.put(agentSession{AgentID: agentID, DeviceID: deviceID}, clock.Now().UTC(), agentSessionTTL, maxAgentSessions)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"version":                    "remote.hub.v1",
 			"hub_id":                     "termx-devstack-hub",
@@ -118,9 +182,12 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusServiceUnavailable, "registry_unavailable", "agent registry is not configured")
 			return
 		}
-		session, ok := agents.get(req.AgentSessionID, req.DeviceID)
+		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
+			return
+		}
+		if checkAgentPolicy(w, r, cfg, session) {
 			return
 		}
 		if err := cfg.Registry.Heartbeat(r.Context(), registry.HeartbeatInput{
@@ -145,9 +212,12 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusServiceUnavailable, "managed_service_unavailable", "managed service is not configured")
 			return
 		}
-		session, ok := agents.get(req.AgentSessionID, req.DeviceID)
+		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
+			return
+		}
+		if checkAgentPolicy(w, r, cfg, session) {
 			return
 		}
 		timeout := time.Duration(req.TimeoutSeconds) * time.Second
@@ -205,9 +275,12 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusServiceUnavailable, "managed_service_unavailable", "managed service is not configured")
 			return
 		}
-		session, ok := agents.get(req.AgentSessionID, req.DeviceID)
+		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
+			return
+		}
+		if checkAgentPolicy(w, r, cfg, session) {
 			return
 		}
 		if strings.TrimSpace(req.Answer.Error) != "" {
@@ -333,12 +406,20 @@ func NewHandler(cfg Config) http.Handler {
 		}
 		writeSessionAnswer(w, r.PathValue("session_id"), answer.MachineID, "", answer)
 	})
-	return mux
+	return &Handler{
+		router:          mux,
+		registry:        cfg.Registry,
+		agents:          agents,
+		clock:           clock,
+		agentSessionTTL: agentSessionTTL,
+	}
 }
 
 type agentSession struct {
-	AgentID  string
-	DeviceID string
+	AgentID    string
+	DeviceID   string
+	LastSeenAt time.Time
+	ExpiresAt  time.Time
 }
 
 type agentSessionStats struct {
@@ -364,24 +445,38 @@ func newAgentSessions() *agentSessions {
 	}
 }
 
-func (s *agentSessions) put(session agentSession) string {
+func (s *agentSessions) put(session agentSession, now time.Time, ttl time.Duration, maxSessions int) string {
 	id := randomID("agent_session")
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupExpiredLocked(now)
+	for maxSessions > 0 && len(s.sessions) >= maxSessions {
+		s.evictOldestLocked()
+	}
+	session.LastSeenAt = now
+	session.ExpiresAt = now.Add(ttl)
 	s.sessions[id] = session
 	if _, ok := s.stats[id]; !ok {
 		s.stats[id] = agentSessionStats{}
 	}
-	s.mu.Unlock()
 	return id
 }
 
-func (s *agentSessions) get(id string, deviceID string) (agentSession, bool) {
+func (s *agentSessions) get(id string, deviceID string, now time.Time, ttl time.Duration) (agentSession, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	session, ok := s.sessions[strings.TrimSpace(id)]
-	if !ok || session.DeviceID != strings.TrimSpace(deviceID) {
+	key := strings.TrimSpace(id)
+	s.cleanupExpiredLocked(now)
+	session, ok := s.sessions[key]
+	if !ok || session.DeviceID != strings.TrimSpace(deviceID) || !now.Before(session.ExpiresAt) {
+		if ok {
+			s.deleteLocked(key)
+		}
 		return agentSession{}, false
 	}
+	session.LastSeenAt = now
+	session.ExpiresAt = now.Add(ttl)
+	s.sessions[key] = session
 	return session, true
 }
 
@@ -430,9 +525,37 @@ func agentOfferKey(agentSessionID string, publicSessionID string) string {
 	return strings.TrimSpace(agentSessionID) + "\x00" + strings.TrimSpace(publicSessionID)
 }
 
-func (s *agentSessions) snapshot() []map[string]any {
+func checkAgentPolicy(w http.ResponseWriter, r *http.Request, cfg Config, session agentSession) bool {
+	if cfg.AgentPolicy == nil {
+		return false
+	}
+	policy, err := cfg.AgentPolicy.GetAgentPolicy(r.Context(), registry.AgentPolicyRequest{
+		MachineID: session.DeviceID,
+		AgentID:   session.AgentID,
+	})
+	if err != nil {
+		writeError(w, http.StatusForbidden, "agent_policy_check_failed", err.Error())
+		return true
+	}
+	if !policy.ForceOffline {
+		return false
+	}
+	if cfg.Registry != nil {
+		cfg.Registry.ForceOffline(registry.ForceOfflineInput{
+			MachineID: session.DeviceID,
+			AgentID:   session.AgentID,
+			Reason:    policy.Reason,
+			TTL:       time.Minute,
+		})
+	}
+	writeError(w, http.StatusForbidden, "agent_forced_offline", registry.ErrAgentForcedOffline.Error())
+	return true
+}
+
+func (s *agentSessions) snapshot(now time.Time) []map[string]any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.cleanupExpiredLocked(now)
 	out := make([]map[string]any, 0, len(s.sessions))
 	for sessionID, session := range s.sessions {
 		stats := s.stats[sessionID]
@@ -445,9 +568,50 @@ func (s *agentSessions) snapshot() []map[string]any {
 			"last_offer_session_id":  stats.LastOfferSessionID,
 			"last_answer_session_id": stats.LastAnswerSessionID,
 			"last_error":             stats.LastError,
+			"expires_at":             session.ExpiresAt,
 		})
 	}
 	return out
+}
+
+func (s *agentSessions) cleanupExpired(now time.Time) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	before := len(s.sessions)
+	s.cleanupExpiredLocked(now)
+	return before - len(s.sessions)
+}
+
+func (s *agentSessions) cleanupExpiredLocked(now time.Time) {
+	for id, session := range s.sessions {
+		if !now.Before(session.ExpiresAt) {
+			s.deleteLocked(id)
+		}
+	}
+}
+
+func (s *agentSessions) evictOldestLocked() {
+	var oldestID string
+	var oldest time.Time
+	for id, session := range s.sessions {
+		if oldestID == "" || session.LastSeenAt.Before(oldest) {
+			oldestID = id
+			oldest = session.LastSeenAt
+		}
+	}
+	if oldestID != "" {
+		s.deleteLocked(oldestID)
+	}
+}
+
+func (s *agentSessions) deleteLocked(id string) {
+	delete(s.sessions, id)
+	delete(s.stats, id)
+	for key := range s.offers {
+		if strings.HasPrefix(key, id+"\x00") {
+			delete(s.offers, key)
+		}
+	}
 }
 
 type offerSignatureRequest struct {

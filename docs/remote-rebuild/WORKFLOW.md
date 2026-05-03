@@ -5,8 +5,8 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `15` connection orchestrator.
-- Last updated: 2026-05-03T17:16:13+08:00.
+- Active todo: `16` Web Control / Hub closed loop.
+- Last updated: 2026-05-03T18:38:21+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -132,7 +132,9 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 13-A | workflow-unattended-continuation | Harden AGENTS so future slices continue unattended across boundaries | completed | `4f7bf2d1` |
 | 14 | remote-ui-qr-store | Define `termx://` QR payload and local MachineStore, rejecting machine private key material | completed | `9c078273` |
 | 15 | remote-ui-connection-orchestrator | Implement local/LAN -> public_p2p -> managed orchestration returning only `RtcSession` | completed | `c038442b` |
-| 16 | web-control-hub-closed-loop | Implement Hub discover, heartbeat, policy/kick response, force-offline in Web Control | pending |  |
+| 16 | web-control-hub-closed-loop | Implement Hub discover, heartbeat, policy/kick response, force-offline in Web Control | in_progress |  |
+| 16-A | hub-force-offline-agent-scope | Keep force-offline scoped to one agent without blocking other online agents for the same machine | resolved |  |
+| 16-B | hub-agent-session-bounds | Add TTL cleanup/max bounds to Hub HTTP agent session maps used by policy checks | resolved |  |
 | 17 | daemon-login-hub-select | Implement token/password/device-code daemon login and Hub discovery/selection | pending |  |
 | 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | pending |  |
 | 19 | native-app-rtc-seam | Add native APP `RtcSession` seam without WebRTC type leakage | pending |  |
@@ -251,6 +253,57 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - 下一步：Slice `16`.
 - commit：`c038442b`
 
+### 16 Web Control / Hub Closed Loop
+
+- 状态：review
+- 父条目：none
+- 来源：daemon must register through Web Control, receive Hub list/policy, Hub reports registry/capacity/health, and Web Control can force agents offline without turning into terminal UI.
+- 目标：add Web Control durable hub/agent registry state and Hub policy/kick/force-offline integration while keeping Hub stateless and bounded TTL-only.
+- 范围：`web-control/internal` service/store/httpapi tests and implementation, `termx-hub/internal` registry/httpapi/controlclient tests and implementation, workflow docs.
+- 非目标：terminal/file runtime, Web Control terminal UI, daemon login/device-code implementation, production DNS/TLS/systemd/TURN deployment.
+- 外部依赖：none; production hub identity/signing/rotation remains existing deferred external.
+- mock 策略：use shared-secret hub HTTP auth and fake in-process control clients; no production cloud/provider dependency.
+- 先写的失败测试：`web-control/internal/hubregistry/service_test.go` covers durable hub report/discover, agent report policy, force-offline ownership, and TTL cleanup; `termx-hub/internal/registry/registry_test.go` covers force-offline rejecting heartbeat/poll/offer and expiring in bounded memory; HTTP red tests now cover Web Control hub report/discover/force-offline/policy endpoints and Hub heartbeat/poll policy rejection.
+- 预期失败结果：`cd web-control && GOWORK=off go test ./internal/hubregistry` failed because package had no implementation; `cd termx-hub && GOWORK=off go test ./internal/registry` failed because `ForceOffline` API/error types did not exist. Service/registry implementation was then added and both focused packages passed. `cd web-control && GOWORK=off go test ./internal/httpapi -run TestHubReportDiscoverAndForceOfflineHTTP` failed because `httpapi.Config` lacked `HubRegistry` and the test helper lacked `getJSON`. `cd termx-hub && GOWORK=off go test ./internal/httpapi -run TestAgentHTTPAppliesForceOfflinePolicy` first failed because `termx-hub/go.mod` did not declare the existing local `termx-core` dependency required by `hubv1`; fix is needed before the HTTP policy red test can compile.
+- 实现摘要：added Web Control durable `hubregistry` service/schema plus `/api/v1/hubs`, `/api/v1/hub/report`, `/api/v1/hub/agents/policy`, and owner force-offline HTTP endpoints; added Hub stateless force-offline TTL map in `registry`; added Hub controlclient policy lookup and handler-side heartbeat/poll/answer force-offline rejection.
+- 重构摘要：factored shared Hub auth helper in Web Control HTTP handlers; kept force-offline in Hub registry as agent-scoped TTL state after `16-A`; removed unused handler session-delete helper.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/hubregistry`; `cd termx-hub && GOWORK=off go test ./internal/registry`; `cd web-control && GOWORK=off go test ./internal/httpapi -run TestHubReportDiscoverAndForceOfflineHTTP`; `cd termx-hub && GOWORK=off go test ./internal/httpapi -run TestAgentHTTPAppliesForceOfflinePolicy`; `cd termx-hub && GOWORK=off go test ./internal/controlclient -run TestManagedTicketVerifierFetchesAgentPolicyThroughWebControl`; `cd web-control && GOWORK=off go test ./...`; `cd termx-hub && GOWORK=off go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`.
+- 测试结果：focused tests, full `web-control` tests, full `termx-hub` tests, workflow guard, and diff whitespace check pass after `16-A`/`16-B` and review fixes.
+- subagent review：attempted parallel explorers but `spawn_agent` returned thread limit before implementation; completed review still required after slice, retry after closing completed agents or record forced self-review if unavailable.
+- review 发现：`Newton` reported machine-wide force-offline offer blocking, missing Hub production cleanup/bounds for force-offline and agent session maps, forced agents being durably re-marked online by reports, uncapped hub report TTL, unbound controlclient policy response identity, and missing hub report body/agent-count backpressure.
+- review 后修复：resolved `16-A` and `16-B`; added Web Control hub TTL cap, agent batch cap, body limit, and forced durable offline status preservation; added Hub HTTP agent session TTL/max bounds and cleanup loop wiring; added controlclient policy identity check.
+- 新增派生条目：`16-A` resolved agent-scope force-offline bug found during local diff review.
+- deferred human items：production hub identity/signing/rotation remains existing deferred external.
+- 剩余风险：daemon login/hub selection and e2e remain later slices.
+- 下一步：run broader Web Control/Hub validations, perform review, fix findings, commit, and hash backfill.
+- commit：
+
+### 16-A Hub Force Offline Agent Scope
+
+- 状态：resolved
+- 父条目：16
+- 来源：local diff review found registry offer preflight blocked the entire machine when any one agent had an active force-offline policy.
+- 是否阻塞父条目：yes.
+- 目标：force-offline remains agent-scoped; a different online agent for the same machine can still receive managed offers while the forced agent is rejected.
+- 先写的失败测试：`termx-hub/internal/registry/registry_test.go` added `TestForceOfflineDoesNotBlockOtherAgentsForSameMachine`.
+- 预期失败结果：`cd termx-hub && GOWORK=off go test ./internal/registry -run TestForceOfflineDoesNotBlockOtherAgentsForSameMachine` failed with `agent forced offline` on app offer submission.
+- 实现摘要：removed machine-wide force-offline offer rejection; offer preflight now accepts another non-forced online agent and returns `ErrAgentForcedOffline` only when no usable agent remains and the machine has active force-offline state.
+- 测试结果：focused force-offline registry tests pass.
+- 解决方式：agent-scoped policy preserved; no relay/path taxonomy changes.
+
+### 16-B Hub Agent Session Bounds
+
+- 状态：resolved
+- 父条目：16
+- 来源：forced self-review while waiting for subagent review found `httpapi.agentSessions` maps used by Slice 16 policy checks had no TTL cleanup or max bound.
+- 是否阻塞父条目：yes.
+- 目标：bound Hub HTTP agent session maps without adding durable state or terminal runtime.
+- 先写的失败测试：`TestAgentHTTPSessionsAreTTLBounded` covers max-session eviction and TTL expiry through diagnostics/heartbeat; `TestHubHandlerCleanupLoopRemovesExpiredRegistryState` checks handler cleanup loop exposure/stop; controlclient mismatch and Web Control TTL/status/cap tests cover review findings.
+- 预期失败结果：review showed existing maps had no TTL/max and production handler had no cleanup path.
+- 实现摘要：`httpapi.Handler` now exposes `StartCleanup`, agent sessions carry last-seen/expires-at and enforce TTL/max eviction, and `main` starts cleanup ticker for registry/session TTL state.
+- 测试结果：focused Hub HTTP/controlclient/cmd and Web Control hubregistry/httpapi tests pass.
+- 解决方式：Hub remains stateless with bounded TTL memory; no DB added to Hub.
+
 ## Deferred External / Human Items
 
 - Real payment/subscription/invoice/tax/fraud integrations remain `deferred_external` behind provider interfaces.
@@ -260,6 +313,6 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ## Next Exact Action
 
-1. Rerun post-review full validation for Slice `15`.
-2. Commit Slice `15` and backfill its hash.
-3. Start Slice `16`: write failing tests for Web Control/Hub closed-loop discover, heartbeat, policy/kick, and force-offline.
+1. Continue Slice `16`: rerun full `web-control` and `termx-hub` validations, workflow guard, and diff check.
+2. Commit related files only.
+3. Backfill Slice `16` hash in workflow.

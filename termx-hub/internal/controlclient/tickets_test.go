@@ -126,6 +126,85 @@ func TestManagedTicketVerifierVerifiesAgentRegistrationThroughWebControl(t *test
 	}
 }
 
+func TestManagedTicketVerifierFetchesAgentPolicyThroughWebControl(t *testing.T) {
+	t.Parallel()
+
+	var got struct {
+		MachineID string `json:"machine_id"`
+		AgentID   string `json:"agent_id"`
+	}
+	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/hub/agents/policy" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if r.Header.Get("X-TermX-Hub-Secret") != "hub-secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"policy": map[string]any{
+				"machine_id":     got.MachineID,
+				"agent_id":       got.AgentID,
+				"force_offline":  true,
+				"reason":         "owner requested",
+				"allow_relay":    false,
+				"relay_in_use":   false,
+				"transport_path": "managed",
+			},
+		})
+	}))
+	defer control.Close()
+
+	verifier := controlclient.NewManagedTicketVerifier(controlclient.ManagedTicketVerifierConfig{
+		BaseURL:      control.URL,
+		SharedSecret: "hub-secret",
+		Client:       control.Client(),
+	})
+	policy, err := verifier.GetAgentPolicy(context.Background(), registry.AgentPolicyRequest{
+		MachineID: "mach-1",
+		AgentID:   "agent-1",
+	})
+	if err != nil {
+		t.Fatalf("get agent policy: %v", err)
+	}
+	if got.MachineID != "mach-1" || got.AgentID != "agent-1" {
+		t.Fatalf("policy request = %+v", got)
+	}
+	if !policy.ForceOffline || policy.Reason != "owner requested" || policy.MachineID != "mach-1" || policy.AgentID != "agent-1" {
+		t.Fatalf("policy = %+v", policy)
+	}
+}
+
+func TestManagedTicketVerifierRejectsMismatchedAgentPolicy(t *testing.T) {
+	t.Parallel()
+
+	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"policy": map[string]any{
+				"machine_id":    "other-machine",
+				"agent_id":      "agent-1",
+				"force_offline": true,
+			},
+		})
+	}))
+	defer control.Close()
+
+	verifier := controlclient.NewManagedTicketVerifier(controlclient.ManagedTicketVerifierConfig{
+		BaseURL:      control.URL,
+		SharedSecret: "hub-secret",
+		Client:       control.Client(),
+	})
+	if _, err := verifier.GetAgentPolicy(context.Background(), registry.AgentPolicyRequest{
+		MachineID: "mach-1",
+		AgentID:   "agent-1",
+	}); err == nil {
+		t.Fatal("mismatched agent policy was accepted")
+	}
+}
+
 func TestManagedTicketVerifierRejectsUnsignedAgentRegistration(t *testing.T) {
 	t.Parallel()
 

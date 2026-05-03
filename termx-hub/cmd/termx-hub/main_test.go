@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -38,6 +39,11 @@ func TestNewHubHandlerFromEnvBuildsRunnableControlBackedHandler(t *testing.T) {
 	if handler == nil {
 		t.Fatal("handler is nil")
 	}
+	if _, ok := handler.(interface {
+		StartCleanup(context.Context, <-chan time.Time)
+	}); !ok {
+		t.Fatal("handler does not expose cleanup loop for bounded hub memory")
+	}
 	req, err := http.NewRequest(http.MethodGet, "/api/health", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
@@ -46,6 +52,42 @@ func TestNewHubHandlerFromEnvBuildsRunnableControlBackedHandler(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("health status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHubHandlerCleanupLoopRemovesExpiredRegistryState(t *testing.T) {
+	t.Setenv("TERMX_HUB_CONTROL_URL", "http://127.0.0.1:12306")
+	t.Setenv("TERMX_HUB_CONTROL_SECRET", "hub-secret")
+
+	oldVerifier := newControlVerifier
+	newControlVerifier = func(baseURL string, sharedSecret string) controlVerifier {
+		return commandVerifierForTest{}
+	}
+	t.Cleanup(func() { newControlVerifier = oldVerifier })
+	handler, err := newHubHandlerFromEnv()
+	if err != nil {
+		t.Fatalf("new hub handler: %v", err)
+	}
+	cleaner, ok := handler.(interface {
+		StartCleanup(context.Context, <-chan time.Time)
+	})
+	if !ok {
+		t.Fatal("handler does not expose cleanup")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	ticks := make(chan time.Time, 1)
+	done := make(chan struct{})
+	go func() {
+		cleaner.StartCleanup(ctx, ticks)
+		close(done)
+	}()
+	ticks <- time.Date(2026, 5, 3, 18, 25, 0, 0, time.UTC)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup loop did not stop after context cancellation")
 	}
 }
 
@@ -111,6 +153,9 @@ type commandVerifierForTest struct {
 }
 
 func (v commandVerifierForTest) VerifyAgentRegistration(_ context.Context, in registry.AgentRegistration) error {
+	if v.publicKey == nil {
+		return nil
+	}
 	rawSignature, err := base64.StdEncoding.DecodeString(in.SignatureValue)
 	if err != nil {
 		return err
@@ -137,4 +182,11 @@ func (commandVerifierForTest) CheckManagedTicket(context.Context, managed.Verify
 
 func (commandVerifierForTest) ConsumeManagedTicket(context.Context, managed.VerifyTicketInput) (managed.Ticket, error) {
 	return managed.Ticket{}, nil
+}
+
+func (commandVerifierForTest) GetAgentPolicy(_ context.Context, in registry.AgentPolicyRequest) (registry.AgentPolicy, error) {
+	if strings.TrimSpace(in.MachineID) == "" || strings.TrimSpace(in.AgentID) == "" {
+		return registry.AgentPolicy{}, errors.New("machine and agent are required")
+	}
+	return registry.AgentPolicy{MachineID: in.MachineID, AgentID: in.AgentID}, nil
 }

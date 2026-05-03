@@ -23,6 +23,7 @@ var (
 	ErrUnauthorizedTicket  = errors.New("unauthorized ticket")
 	ErrVerifierRequired    = errors.New("authority verifier is required")
 	ErrAnswerAlreadyExists = errors.New("answer already exists")
+	ErrAgentForcedOffline  = errors.New("agent forced offline")
 )
 
 type Config struct {
@@ -45,6 +46,14 @@ type Registry struct {
 	answers      map[string]Answer
 	queues       map[string][]Offer
 	waiters      map[string][]chan struct{}
+	forced       map[string]forceOfflineState
+}
+
+type forceOfflineState struct {
+	MachineID string
+	AgentID   string
+	Reason    string
+	ExpiresAt time.Time
 }
 
 func New(cfg Config) *Registry {
@@ -75,6 +84,7 @@ func New(cfg Config) *Registry {
 		answers:      make(map[string]Answer),
 		queues:       make(map[string][]Offer),
 		waiters:      make(map[string][]chan struct{}),
+		forced:       make(map[string]forceOfflineState),
 	}
 }
 
@@ -85,6 +95,9 @@ func (r *Registry) Register(ctx context.Context, in RegisterInput) (Agent, error
 		return Agent{}, errors.New("machine id and agent id are required")
 	}
 	now := r.clock.Now().UTC()
+	if r.forceOfflineActive(machineID, agentID, now) {
+		return Agent{}, ErrAgentForcedOffline
+	}
 	agent := Agent{
 		ID:         agentID,
 		MachineID:  machineID,
@@ -128,6 +141,10 @@ func (r *Registry) Heartbeat(ctx context.Context, in HeartbeatInput) error {
 	_ = ctx
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.forceOfflineActiveLocked(strings.TrimSpace(in.MachineID), strings.TrimSpace(in.AgentID), r.clock.Now().UTC()) {
+		delete(r.agents, strings.TrimSpace(in.AgentID))
+		return ErrAgentForcedOffline
+	}
 	agent, ok := r.agents[strings.TrimSpace(in.AgentID)]
 	if !ok || r.expired(agent) {
 		return ErrAgentNotFound
@@ -147,7 +164,7 @@ func (r *Registry) GetAgent(agentID string) (Agent, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	agent, ok := r.agents[strings.TrimSpace(agentID)]
-	if !ok || r.expired(agent) {
+	if !ok || r.expired(agent) || r.forceOfflineActiveLocked(agent.MachineID, agent.ID, r.clock.Now().UTC()) {
 		return Agent{}, false
 	}
 	return cloneAgent(agent), true
@@ -159,8 +176,14 @@ func (r *Registry) CleanupExpired(ctx context.Context) int {
 	defer r.mu.Unlock()
 	removed := 0
 	for id, agent := range r.agents {
-		if r.expired(agent) {
+		if r.expired(agent) || r.forceOfflineActiveLocked(agent.MachineID, agent.ID, r.clock.Now().UTC()) {
 			delete(r.agents, id)
+			removed++
+		}
+	}
+	for key, forced := range r.forced {
+		if !r.clock.Now().UTC().Before(forced.ExpiresAt) {
+			delete(r.forced, key)
 			removed++
 		}
 	}
@@ -198,6 +221,30 @@ func (r *Registry) CleanupExpired(ctx context.Context) int {
 		}
 	}
 	return removed
+}
+
+func (r *Registry) ForceOffline(in ForceOfflineInput) {
+	machineID := strings.TrimSpace(in.MachineID)
+	agentID := strings.TrimSpace(in.AgentID)
+	if machineID == "" || agentID == "" {
+		return
+	}
+	ttl := in.TTL
+	if ttl <= 0 {
+		ttl = r.agentTTL
+	}
+	now := r.clock.Now().UTC()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.forced[forceOfflineKey(machineID, agentID)] = forceOfflineState{
+		MachineID: machineID,
+		AgentID:   agentID,
+		Reason:    strings.TrimSpace(in.Reason),
+		ExpiresAt: now.Add(ttl),
+	}
+	delete(r.agents, agentID)
+	r.dropQueuedOffersLocked(machineID)
+	r.notifyLocked(machineID)
 }
 
 func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error) {
@@ -253,6 +300,9 @@ func (r *Registry) PreflightOffer(ctx context.Context, in OfferInput) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.machineOnlineLocked(machineID) {
+		if r.machineHasActiveForceOfflineLocked(machineID, r.clock.Now().UTC()) {
+			return ErrAgentForcedOffline
+		}
 		return ErrAgentNotFound
 	}
 	return nil
@@ -276,6 +326,9 @@ func (r *Registry) submitVerifiedOffer(ctx context.Context, in OfferInput) (Offe
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.machineOnlineLocked(offer.MachineID) {
+		if r.machineHasActiveForceOfflineLocked(offer.MachineID, r.clock.Now().UTC()) {
+			return Offer{}, ErrAgentForcedOffline
+		}
 		return Offer{}, ErrAgentNotFound
 	}
 	r.offers[offer.ID] = offer
@@ -299,6 +352,11 @@ func (r *Registry) Poll(ctx context.Context, in PollInput) (Offer, error) {
 	for {
 		r.mu.Lock()
 		agent, ok := r.agents[agentID]
+		if r.forceOfflineActiveLocked(machineID, agentID, r.clock.Now().UTC()) {
+			delete(r.agents, agentID)
+			r.mu.Unlock()
+			return Offer{}, ErrAgentForcedOffline
+		}
 		if !ok || r.expired(agent) {
 			r.mu.Unlock()
 			return Offer{}, ErrAgentNotFound
@@ -343,6 +401,10 @@ func (r *Registry) SubmitAnswer(ctx context.Context, in AnswerInput) (Answer, er
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	agent, ok := r.agents[strings.TrimSpace(in.AgentID)]
+	if r.forceOfflineActiveLocked(strings.TrimSpace(in.MachineID), strings.TrimSpace(in.AgentID), r.clock.Now().UTC()) {
+		delete(r.agents, strings.TrimSpace(in.AgentID))
+		return Answer{}, ErrAgentForcedOffline
+	}
 	if !ok || r.expired(agent) {
 		return Answer{}, ErrAgentNotFound
 	}
@@ -408,12 +470,43 @@ func (r *Registry) signalingExpired(createdAt time.Time) bool {
 }
 
 func (r *Registry) machineOnlineLocked(machineID string) bool {
+	now := r.clock.Now().UTC()
 	for _, agent := range r.agents {
-		if agent.MachineID == machineID && !r.expired(agent) {
+		if agent.MachineID == machineID && !r.expired(agent) && !r.forceOfflineActiveLocked(agent.MachineID, agent.ID, now) {
 			return true
 		}
 	}
 	return false
+}
+
+func (r *Registry) machineHasActiveForceOfflineLocked(machineID string, now time.Time) bool {
+	for _, forced := range r.forced {
+		if forced.MachineID == machineID && now.Before(forced.ExpiresAt) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Registry) forceOfflineActive(machineID string, agentID string, now time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.forceOfflineActiveLocked(machineID, agentID, now)
+}
+
+func (r *Registry) forceOfflineActiveLocked(machineID string, agentID string, now time.Time) bool {
+	forced, ok := r.forced[forceOfflineKey(machineID, agentID)]
+	return ok && now.Before(forced.ExpiresAt)
+}
+
+func (r *Registry) dropQueuedOffersLocked(machineID string) {
+	delete(r.queues, machineID)
+	for id, offer := range r.offers {
+		if offer.MachineID == machineID {
+			delete(r.offers, id)
+			delete(r.answers, id)
+		}
+	}
 }
 
 func (r *Registry) validateSignalingPayload(payload string) error {
@@ -520,4 +613,8 @@ func randomID(prefix string) string {
 		panic(err)
 	}
 	return prefix + "_" + base64.RawURLEncoding.EncodeToString(b[:])
+}
+
+func forceOfflineKey(machineID string, agentID string) string {
+	return strings.TrimSpace(machineID) + "\x00" + strings.TrimSpace(agentID)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/lozzow/termx/web-control/internal/account"
 	"github.com/lozzow/termx/web-control/internal/connect"
 	"github.com/lozzow/termx/web-control/internal/httpapi"
+	"github.com/lozzow/termx/web-control/internal/hubregistry"
 	"github.com/lozzow/termx/web-control/internal/machines"
 	"github.com/lozzow/termx/web-control/internal/rendezvous"
 	"github.com/lozzow/termx/web-control/internal/store"
@@ -88,11 +89,13 @@ func newRouterFromServices(ctx context.Context, db *sql.DB) (http.Handler, error
 	machineService := machines.NewService(machines.Config{DB: db})
 	connectService := connect.NewService(connect.Config{DB: db})
 	rendezvousService := rendezvous.NewService(rendezvous.Config{DB: db, STUNServers: commaListEnv("TERMX_WEB_CONTROL_STUN_SERVERS")})
+	hubRegistryService := hubregistry.NewService(hubregistry.Config{DB: db})
 	api := httpapi.NewRouter(httpapi.Config{
 		Accounts:        accounts,
 		Machines:        machineService,
 		Connect:         connectService,
 		Rendezvous:      rendezvousService,
+		HubRegistry:     hubRegistryService,
 		HubSharedSecret: os.Getenv("TERMX_WEB_CONTROL_HUB_SECRET"),
 	})
 	return withFrontendStaticFromEnv(os.Getenv("TERMX_WEB_CONTROL_STATIC_DIR"))(api), nil

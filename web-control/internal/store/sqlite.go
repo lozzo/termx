@@ -164,8 +164,30 @@ var migrationStatements = []string{
 		http_url TEXT NOT NULL,
 		status TEXT NOT NULL,
 		capacity INTEGER NOT NULL DEFAULT 0,
+		health_json TEXT NOT NULL DEFAULT '{}',
 		last_heartbeat_at TEXT,
+		expires_at TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
 		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+	)`,
+	`CREATE TABLE IF NOT EXISTS hub_agents (
+		machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+		agent_id TEXT NOT NULL,
+		hub_id TEXT NOT NULL REFERENCES hubs(id) ON DELETE CASCADE,
+		status TEXT NOT NULL,
+		terminal_count INTEGER NOT NULL DEFAULT 0,
+		last_seen_at TEXT NOT NULL,
+		expires_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		PRIMARY KEY (machine_id, agent_id)
+	)`,
+	`CREATE TABLE IF NOT EXISTS hub_agent_policies (
+		machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+		agent_id TEXT NOT NULL,
+		force_offline INTEGER NOT NULL DEFAULT 0,
+		reason TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL,
+		PRIMARY KEY (machine_id, agent_id)
 	)`,
 	`CREATE TABLE IF NOT EXISTS connect_tickets (
 		id TEXT PRIMARY KEY,
@@ -268,12 +290,15 @@ func applyMigrationUpgrades(ctx context.Context, tx *sql.Tx) error {
 			return fmt.Errorf("add plans.relay_throttle_bps: %w", err)
 		}
 	}
+	if err := ensureHubRegistrySchema(ctx, tx); err != nil {
+		return err
+	}
 	return nil
 }
 
 func columnExists(ctx context.Context, tx *sql.Tx, table string, column string) (bool, error) {
 	switch table {
-	case "subscriptions", "machines", "plans":
+	case "subscriptions", "machines", "plans", "hubs":
 	default:
 		return false, fmt.Errorf("unsupported migration table %q", table)
 	}
@@ -283,4 +308,49 @@ func columnExists(ctx context.Context, tx *sql.Tx, table string, column string) 
 		return false, err
 	}
 	return count > 0, nil
+}
+
+func ensureHubRegistrySchema(ctx context.Context, tx *sql.Tx) error {
+	for _, column := range []struct {
+		name string
+		stmt string
+	}{
+		{name: "health_json", stmt: `ALTER TABLE hubs ADD COLUMN health_json TEXT NOT NULL DEFAULT '{}'`},
+		{name: "expires_at", stmt: `ALTER TABLE hubs ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''`},
+		{name: "updated_at", stmt: `ALTER TABLE hubs ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`},
+	} {
+		exists, err := columnExists(ctx, tx, "hubs", column.name)
+		if err != nil {
+			return fmt.Errorf("inspect hubs.%s: %w", column.name, err)
+		}
+		if !exists {
+			if _, err := tx.ExecContext(ctx, column.stmt); err != nil {
+				return fmt.Errorf("add hubs.%s: %w", column.name, err)
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS hub_agents (
+		machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+		agent_id TEXT NOT NULL,
+		hub_id TEXT NOT NULL REFERENCES hubs(id) ON DELETE CASCADE,
+		status TEXT NOT NULL,
+		terminal_count INTEGER NOT NULL DEFAULT 0,
+		last_seen_at TEXT NOT NULL,
+		expires_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		PRIMARY KEY (machine_id, agent_id)
+	)`); err != nil {
+		return fmt.Errorf("create hub_agents: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS hub_agent_policies (
+		machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+		agent_id TEXT NOT NULL,
+		force_offline INTEGER NOT NULL DEFAULT 0,
+		reason TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL,
+		PRIMARY KEY (machine_id, agent_id)
+	)`); err != nil {
+		return fmt.Errorf("create hub_agent_policies: %w", err)
+	}
+	return nil
 }

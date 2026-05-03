@@ -103,6 +103,25 @@ type HeartbeatInput struct {
 	MachineID string
 }
 
+type ForceOfflineInput struct {
+	MachineID string
+	AgentID   string
+	Reason    string
+	TTL       time.Duration
+}
+
+type AgentPolicyRequest struct {
+	MachineID string
+	AgentID   string
+}
+
+type AgentPolicy struct {
+	MachineID    string
+	AgentID      string
+	ForceOffline bool
+	Reason       string
+}
+
 type PollInput struct {
 	AgentID   string
 	MachineID string

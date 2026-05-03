@@ -28,9 +28,9 @@ func TestAuthEndpointsRegisterLoginRefreshAndMe(t *testing.T) {
 	}
 
 	svc := account.NewService(account.Config{
-		DB:     db,
-		Clock:  fixedClock(time.Date(2026, 5, 3, 3, 13, 0, 0, time.UTC)),
-		Tokens: account.NewHMACTokenIssuer([]byte("slice-2-http-secret")),
+		DB:       db,
+		Clock:    fixedClock(time.Date(2026, 5, 3, 3, 13, 0, 0, time.UTC)),
+		Tokens:   account.NewHMACTokenIssuer([]byte("slice-2-http-secret")),
 		Payments: account.NewMockPaymentProvider(),
 	})
 	router := httpapi.NewRouter(httpapi.Config{Accounts: svc})
@@ -94,6 +94,18 @@ func postJSON(t *testing.T, handler http.Handler, path string, body any, bearer 
 	}
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+func getJSON(t *testing.T, handler http.Handler, path string, bearer string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
