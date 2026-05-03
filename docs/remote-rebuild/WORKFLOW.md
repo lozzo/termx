@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `11` devstack and external server tests.
-- Last updated: 2026-05-03T13:32:00+08:00.
+- Last updated: 2026-05-03T14:11:22+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -118,6 +118,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 11-A-G | devstack-external-smoke-review | Add explicit request body limit for daemon device registration | completed | `87edb896` |
 | 11-A-H | devstack-external-smoke-network | Record STUN-only public DataChannel failure as external ICE/TURN/public-port limitation | deferred_external | `87edb896` |
 | 11-A-I | devstack-external-smoke-follow-up | Record low-risk follow-up review items for canonical golden tests and hub endpoint body caps | deferred | `87edb896` |
+| 11-B | web-control-ui-devstack | Serve a usable Web Control UI from the public devstack for login, inventory, managed-ticket, and diagnostics inspection | completed |  |
+| 11-B-A | web-control-ui-devstack | Refresh expired temporary daemon access token after Web Control UI redeploy | completed |  |
 
 ## Buildout Todo Details
 
@@ -2163,7 +2165,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 10-B Managed Hub Session HTTP Adapter
 
-- 状态：review
+- 状态：completed
 - 父条目：10
 - 来源：Slice 10 next adapter after Web Control API; docs define managed app/browser Hub signaling as `POST /api/v1/sessions` with connect ticket + offer + app certificate/signature returning a WebRTC answer.
 - 目标：add a browser-agnostic `remote-ui` managed Hub session API adapter and a minimal `termx-hub` app-facing HTTP contract seed for `POST /api/v1/sessions`. The adapter must submit offer signaling, parse answer/capability/policy info, and keep terminal/file/api/events runtime on `RtcSession`.
@@ -2422,7 +2424,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 11 Devstack And External Server Tests
 
-- 状态：in_progress
+- 状态：review
 - 父条目：none
 - 来源：最终需要 local devstack 和可选公网 STUN/TURN/signaling smoke。
 - 目标：提供 reproducible local devstack; optional safe test on `root@114.66.58.243` only when a slice needs public network behavior and after recording reason/start/stop/cleanup commands.
@@ -2489,8 +2491,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 运行命令：none.
 - 测试结果：not run.
 - subagent review：include in `11-A` review.
-- review 发现：pending.
-- review 后修复：pending.
+- review 发现：`Ohm` found low issue: missing hashed Vite assets under `/assets/...` returned the SPA `index.html` with 200 instead of 404, making stale browser cache failures confusing. Low issue: bottom `Next Exact Action` was stale after implementation/redeploy.
+- review 后修复：added a regression test for missing `/assets/old-hash.js`, confirmed it failed with 200 HTML, then changed the static handler to return 404 for missing `/assets/` paths while preserving SPA fallback for non-asset routes. Bottom next-action text updated.
 - 新增派生条目：none.
 - deferred human items：DNS/TLS, persistent deployment account, firewall/port approval, production TURN/relay deployment.
 - 剩余风险：external smoke will use plain HTTP and temporary files; do not treat it as production deployment.
@@ -2721,6 +2723,58 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 剩余风险：without relay/public ICE path, local browser/CLI cannot reliably attach to a daemon behind NAT even though WebRTC DataChannel remains the correct runtime transport.
 - 下一步：report this boundary to the user; temporary public services and `al` daemon are left running for inspection, with stop/cleanup commands in `RUNBOOK.md`.
 - commit：`87edb896`
+
+### 11-B Web Control UI Devstack Inspection
+
+- 状态：in_progress
+- 父条目：11
+- 来源：用户在外部 devstack 部署后问“没有界面吗”；验证发现 `http://114.66.58.243:12306/` and Hub root both returned 404 even though `web-control/frontend` exists.
+- 目标：serve the Vite React Web Control UI from the Web Control process and make it useful for devstack inspection: health, login/register, current user/plan, machines, terminals, managed ticket creation, and a clear STUN-only runtime boundary. The page must remain a control/signaling UI, not a terminal/file/api/events HTTP runtime proxy.
+- 范围：`web-control/cmd/web-control`, `web-control/frontend`, focused tests, `docs/remote-rebuild/WORKFLOW.md`, `docs/remote-rebuild/RUNBOOK.md`, temporary redeploy under `/tmp/termx-devstack`.
+- 非目标：do not implement browser terminal attach over HTTP/WebSocket; do not create relay as a fourth client path; do not issue TURN credentials to free/public_p2p; do not add production DNS/TLS/systemd/firewall changes.
+- 外部依赖：temporary SSH access to `root@114.66.58.243` for redeploy; no external payment/API/DNS/TLS credentials.
+- mock 策略：use existing devstack SQLite, generated local secrets, and current smoke account; no real payment/email/OAuth/cloud integration.
+- 先写的失败测试：add backend test that `GET /` serves built `index.html` and `GET /assets/...` serves static assets when `TERMX_WEB_CONTROL_STATIC_DIR` is configured; add frontend tests that login calls real auth API, persists token, lists devices/terminals, and creates a managed ticket without rendering relay as a client path.
+- 预期失败结果：backend test should fail because the current web-control router has no static handler and root returns 404; frontend tests should fail because current `App` is static text and does not call APIs.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./cmd/web-control -run TestNewRouterFromServicesServesConfiguredFrontendStaticFiles` failed as expected with `root status = 404 body=404 page not found`; `cd web-control/frontend && npm test -- --run src/App.test.tsx` failed after storage-test setup correction because the current static `App` has no `Email` field, no terminal inventory, no managed-ticket action, and no health-backed service display.
+- 实现摘要：added `TERMX_WEB_CONTROL_STATIC_DIR` support in `cmd/web-control` so API routes remain under `/api/` while `/` and frontend asset paths serve the Vite build. Replaced the static React shell with a compact control-plane console that fetches `/api/health`, supports login and registration through the existing auth endpoints, stores the access token defensively, lists `/api/devices` and `/api/terminals`, creates `/api/v1/managed/connect-tickets`, and displays relay only as policy/capability fields. Deployed the frontend build under `/tmp/termx-devstack/web-control-frontend` and restarted the temporary public web-control process with `TERMX_WEB_CONTROL_STATIC_DIR`.
+- 重构摘要：kept the UI as Web Control inspection only; no browser terminal runtime, file API runtime, WebSocket transport, or relay client path was added. API helpers are local to the frontend shell and do not import browser WebRTC types.
+- 运行命令：`cd web-control && GOWORK=off go test ./cmd/web-control -run TestNewRouterFromServicesServesConfiguredFrontendStaticFiles`; `cd web-control/frontend && npm test -- --run src/App.test.tsx`; `cd web-control/frontend && npm run typecheck`; `cd web-control/frontend && npm run build`; `cd web-control && GOWORK=off go test ./...`; `cd web-control/frontend && npm test && npm run typecheck && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh && git diff --check`; `curl -fsS http://114.66.58.243:12306/`; `curl -fsS http://114.66.58.243:12306/api/health`; authenticated `curl` for `/api/devices`, `/api/terminals`, and `/api/v1/managed/connect-tickets`.
+- 测试结果：focused backend static-serving test and frontend API-backed UI tests passed after implementation. Broader `GOWORK=off go test ./...`, frontend `npm test`, `npm run typecheck`, `npm run build`, workflow check, and `git diff --check` passed. External deployment verification returned `GET /` 200 with the Vite shell, missing `/assets/old-hash.js` 404 after review fix, health OK, machine `device-0fbc2e86970eb988`, terminal `1`, and managed ticket `ct_15lu3l6hdEsWTN1GdPAgBw` with `path=managed`, `allow_relay=false`, `relay_in_use=false`.
+- subagent review：requested from existing subagent `Ohm` (`019deaaa-4f8f-7562-8d7c-f00e7f0db154`) after local/external validation.
+- review 发现：pending.
+- review 后修复：pending.
+- 新增派生条目：`11-B-A`.
+- deferred human items：production hosting/TLS/CDN/auth UX hardening remains deferred; this is a temporary devstack UI.
+- 剩余风险：the UI can prove control-plane and signaling readiness, but public terminal DataChannel still needs paid TURN/relay or a user-provided public/FRP path as recorded in `11-A-H`.
+- 下一步：commit Slice `11-B` and report UI verification instructions to the user.
+- commit：pending
+
+### 11-B-A Refresh Expired Temporary Daemon Token
+
+- 状态：completed
+- 父条目：11-B
+- 来源：after Web Control UI redeploy, `GET /` and static assets returned 200, but the saved local smoke access token returned 401 and `ssh al termx remote status --json` showed daemon remote degraded with `invalid_token`.
+- 目标：refresh the temporary smoke account access token, update the `al` daemon environment, and restore current machine/terminal inventory so the Web Control UI can be verified against live devstack state.
+- 范围：temporary external devstack state under `/tmp/termx-devstack`, `docs/remote-rebuild/WORKFLOW.md`, `docs/remote-rebuild/RUNBOOK.md`.
+- 非目标：do not change production token lifetime/refresh policy in this slice; do not modify SSH config/firewall/systemd; do not issue TURN credentials.
+- 外部依赖：temporary SSH access to `root@114.66.58.243` and `al`.
+- mock 策略：reuse the current generated devstack smoke account/password stored only under `/tmp/termx-devstack`; no external auth provider.
+- 先写的失败测试：operational check: `curl /api/devices` with `/tmp/termx-devstack-build/access-token` returned 401, and `ssh al ... remote status --json` showed `remote.state=degraded`.
+- 预期失败结果：the stale token should fail until refreshed and the temporary daemon is restarted with the new token.
+- 实际失败结果：401 invalid token confirmed; daemon degraded confirmed.
+- 实现摘要：logged in again with the generated devstack smoke account, wrote the refreshed access token to `/tmp/termx-devstack-build/access-token`, restarted only the temporary `al` daemon with the new token, and recreated terminal `1` as `remote-ui-smoke`.
+- 重构摘要：not applicable.
+- 运行命令：`curl -fsS http://114.66.58.243:12306/api/devices -H "Authorization: Bearer $TOKEN"`; `ssh al '/tmp/termx-devstack/bin/termx --socket /tmp/termx-devstack/termx.sock --log-file /tmp/termx-devstack/logs/termx-cli.log remote status --json'`.
+- 测试结果：after refresh, `ssh al ... remote status --json` reports `remote.state=online` and `terminal_count=1`; authenticated `/api/devices` and `/api/terminals` return the current machine and terminal.
+- subagent review：include in `11-B` review.
+- review 发现：pending.
+- review 后修复：pending.
+- 新增派生条目：none.
+- deferred human items：production refresh-token handling and long-lived daemon credential management remain future hardening, not this devstack UI slice.
+- 剩余风险：temporary devstack tokens expire; production daemon bootstrap needs a real renewal flow later.
+- 下一步：included in parent `11-B` review.
+- commit：pending
 
 ## Historical P2/P3 Records
 
@@ -3344,6 +3398,6 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Request Slice `11-A` subagent review with the required remote-build checklist.
-2. Update `docs/remote-rebuild/RUNBOOK.md` with exact external deployment/start/stop/cleanup commands for `root@114.66.58.243` and `ssh al`.
-3. Build linux/amd64 temporary binaries, copy them under `/tmp/termx-devstack`, start web-control/hub/daemon, run pairing plus `termx-remote-e2e`, record results, then fix review/deploy findings.
+1. Commit only Slice `11-B` files and record the commit hash in `WORKFLOW.md`.
+2. Report the Web Control UI URL, how to log in/register, and what is currently verifiable from the page.
+3. Keep `11-A-H` as the remaining external-network limitation for actual terminal DataChannel attach until paid TURN/relay or a user-provided public/FRP path is available.

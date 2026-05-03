@@ -42,6 +42,7 @@ TERMX_WEB_CONTROL_ADDR=0.0.0.0:12306 \
 TERMX_WEB_CONTROL_SQLITE_DSN='file:/tmp/termx-devstack/data/web-control.sqlite?_pragma=busy_timeout(5000)' \
 TERMX_WEB_CONTROL_TOKEN_SECRET="$TERMX_WEB_CONTROL_TOKEN_SECRET" \
 TERMX_WEB_CONTROL_HUB_SECRET="$TERMX_WEB_CONTROL_HUB_SECRET" \
+TERMX_WEB_CONTROL_STATIC_DIR=/tmp/termx-devstack/web-control-frontend \
 nohup /tmp/termx-devstack/bin/web-control > /tmp/termx-devstack/logs/web-control.log 2>&1 &
 echo $! > /tmp/termx-devstack/web-control.pid
 
@@ -136,9 +137,14 @@ Execution log:
 - 2026-05-03T13:28:00+08:00: created terminal `1` on `al` with command `bash -lc 'while true; do sleep 60; done'`. Web Control inventory shows machine `device-0fbc2e86970eb988` and terminal `1`; Hub diagnostics show the signed agent online.
 - 2026-05-03T13:29:00+08:00: local `127.0.0.1:18890` was already occupied by a previous SSH tunnel process (`ssh` pid `9764`), so this smoke used temporary tunnel `127.0.0.1:18891 -> al:127.0.0.1:18888`. The `18891` tunnel was stopped after the smoke.
 - 2026-05-03T13:31:00+08:00: final post-review smoke command reached the same true boundary: local pair succeeded, Control inventory succeeded, managed ticket/session succeeded, Hub diagnostics showed `answer_count=1` and no `last_error`, but the local WebRTC offerer timed out waiting for `terminal:1` DataChannel open. This confirms control/signaling/daemon verification are working and public STUN-only ICE is the remaining runtime network limitation.
+- 2026-05-03T13:58:00+08:00: Slice `11-B` added a Web Control inspection UI and static serving. Future temporary web-control starts must include `TERMX_WEB_CONTROL_STATIC_DIR=/tmp/termx-devstack/web-control-frontend`. The UI is for login, health, machine/terminal inventory, and managed-ticket inspection only; it does not carry terminal/file/api/events runtime over HTTP.
+- 2026-05-03T13:59:00+08:00: copied the rebuilt `web-control` binary as `/tmp/termx-devstack/bin/web-control.new`, stopped only the old web-control pid, replaced `/tmp/termx-devstack/bin/web-control`, and restarted web-control pid `3338937` with `TERMX_WEB_CONTROL_STATIC_DIR`. Hub and `al` daemon were not stopped for this web UI redeploy.
+- 2026-05-03T14:02:00+08:00: the previous smoke access token had expired after the web-control restart. Refreshed the temporary smoke account token, wrote it to `/tmp/termx-devstack-build/access-token`, restarted only the temporary `al` daemon with the refreshed `TERMX_REMOTE_ACCESS_TOKEN`, and recreated terminal `1` with `termx new --name remote-ui-smoke -- bash -lc 'while true; do sleep 60; done'`.
+- 2026-05-03T14:05:00+08:00: Web UI/API verification passed: `GET http://114.66.58.243:12306/` returned the Vite shell, `/api/health` returned OK, `/api/devices` returned machine `device-0fbc2e86970eb988`, `/api/terminals` returned terminal `1`, and `/api/v1/managed/connect-tickets` created ticket `ct_15lu3l6hdEsWTN1GdPAgBw` with `path=managed` and relay denied for the registered-free plan.
+- 2026-05-03T14:11:00+08:00: after Slice `11-B` review, rebuilt and redeployed web-control again so missing `/assets/...` files return 404 instead of the SPA shell. Final verification: `GET /` returned 200, `/assets/old-hash.js` returned 404, authenticated device/terminal inventory returned the live `al` daemon, and `ssh al termx remote status --json` returned `remote.state=online` with `terminal_count=1`.
 
 Current temporary state:
 
-- Public host services are intentionally left running for inspection under `/tmp/termx-devstack`: web-control pid `3330462`, hub pid `3330463`.
-- Agent host daemon is intentionally left running for inspection under `/tmp/termx-devstack`: daemon pid `2207230`, socket `/tmp/termx-devstack/termx.sock`, terminal `1` running.
+- Public host services are intentionally left running for inspection under `/tmp/termx-devstack`: web-control pid `3342426`, hub pid `3330463`.
+- Agent host daemon is intentionally left running for inspection under `/tmp/termx-devstack`: current daemon pid is in `/tmp/termx-devstack/termx-daemon.pid`, socket `/tmp/termx-devstack/termx.sock`, terminal `1` running.
 - Local tunnel used by this run (`18891`) was stopped. Local port `18890` remains occupied by a pre-existing SSH tunnel process (`ssh` pid `9764`); it was not killed because it predates this final smoke context.

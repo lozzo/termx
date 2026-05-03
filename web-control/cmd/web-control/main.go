@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -87,13 +88,50 @@ func newRouterFromServices(ctx context.Context, db *sql.DB) (http.Handler, error
 	machineService := machines.NewService(machines.Config{DB: db})
 	connectService := connect.NewService(connect.Config{DB: db})
 	rendezvousService := rendezvous.NewService(rendezvous.Config{DB: db, STUNServers: commaListEnv("TERMX_WEB_CONTROL_STUN_SERVERS")})
-	return httpapi.NewRouter(httpapi.Config{
+	api := httpapi.NewRouter(httpapi.Config{
 		Accounts:        accounts,
 		Machines:        machineService,
 		Connect:         connectService,
 		Rendezvous:      rendezvousService,
 		HubSharedSecret: os.Getenv("TERMX_WEB_CONTROL_HUB_SECRET"),
-	}), nil
+	})
+	return withFrontendStaticFromEnv(os.Getenv("TERMX_WEB_CONTROL_STATIC_DIR"))(api), nil
+}
+
+func withFrontendStaticFromEnv(staticDir string) func(http.Handler) http.Handler {
+	staticDir = strings.TrimSpace(staticDir)
+	if staticDir == "" {
+		return func(api http.Handler) http.Handler {
+			return api
+		}
+	}
+	return func(api http.Handler) http.Handler {
+		return newFrontendStaticHandler(api, staticDir)
+	}
+}
+
+func newFrontendStaticHandler(api http.Handler, staticDir string) http.Handler {
+	fileServer := http.FileServer(http.Dir(staticDir))
+	indexPath := filepath.Join(staticDir, "index.html")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			api.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == "/" {
+			http.ServeFile(w, r, indexPath)
+			return
+		}
+		if _, err := os.Stat(filepath.Join(staticDir, filepath.Clean(r.URL.Path))); err == nil {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, indexPath)
+	})
 }
 
 func commaListEnv(name string) []string {

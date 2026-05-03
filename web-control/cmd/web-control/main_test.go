@@ -8,6 +8,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -123,6 +126,61 @@ func TestNewRouterFromServicesWiresManagedConnect(t *testing.T) {
 	}
 }
 
+func TestNewRouterFromServicesServesConfiguredFrontendStaticFiles(t *testing.T) {
+	t.Setenv("TERMX_WEB_CONTROL_SQLITE_DSN", "file:termx-web-control-static-test?mode=memory&cache=shared")
+	t.Setenv("TERMX_WEB_CONTROL_TOKEN_SECRET", "router-secret")
+	t.Setenv("TERMX_WEB_CONTROL_HUB_SECRET", "hub-secret")
+	staticDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(staticDir, "assets"), 0o755); err != nil {
+		t.Fatalf("create assets dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(staticDir, "index.html"), []byte(`<!doctype html><div id="root"></div><script type="module" src="/assets/app.js"></script>`), 0o644); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(staticDir, "assets", "app.js"), []byte(`console.log("termx control")`), 0o644); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+	t.Setenv("TERMX_WEB_CONTROL_STATIC_DIR", staticDir)
+
+	db, err := openStoreFromEnv(context.Background())
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	router, err := newRouterFromServices(context.Background(), db)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	root := getMain(t, router, "/")
+	if root.Code != http.StatusOK {
+		t.Fatalf("root status = %d body=%s", root.Code, root.Body.String())
+	}
+	if contentType := root.Header().Get("Content-Type"); !strings.Contains(contentType, "text/html") {
+		t.Fatalf("root content-type = %q", contentType)
+	}
+	if !strings.Contains(root.Body.String(), `id="root"`) {
+		t.Fatalf("root body does not contain frontend shell: %s", root.Body.String())
+	}
+
+	asset := getMain(t, router, "/assets/app.js")
+	if asset.Code != http.StatusOK {
+		t.Fatalf("asset status = %d body=%s", asset.Code, asset.Body.String())
+	}
+	if !strings.Contains(asset.Body.String(), "termx control") {
+		t.Fatalf("asset body = %s", asset.Body.String())
+	}
+	missingAsset := getMain(t, router, "/assets/old-hash.js")
+	if missingAsset.Code != http.StatusNotFound {
+		t.Fatalf("missing asset status = %d body=%s", missingAsset.Code, missingAsset.Body.String())
+	}
+
+	health := getMain(t, router, "/api/health")
+	if health.Code != http.StatusOK {
+		t.Fatalf("health status = %d body=%s", health.Code, health.Body.String())
+	}
+}
+
 type fakeRendezvousCleaner struct {
 	calls int
 	err   error
@@ -156,6 +214,14 @@ func postMainJSON(t *testing.T, handler http.Handler, path string, body any, bea
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+func getMain(t *testing.T, handler http.Handler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	return rec
