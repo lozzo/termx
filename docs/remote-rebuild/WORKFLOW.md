@@ -107,17 +107,17 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 10-B-H | remote-ui-managed-hub-session-api-follow-up-review | Add remote-ui managed Hub pending answer polling method | completed | `a1a7421f` |
 | 10-B-I | remote-ui-managed-hub-session-api-follow-up-review | Scope managed public session-id lookup to ticket and machine to avoid collision overwrite | completed | `a1a7421f` |
 | 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | in_progress |  |
-| 11-A | devstack-external-smoke | Make the current web-control + hub + daemon stack runnable enough for external managed signaling smoke | completed |  |
-| 11-A-A | devstack-external-smoke | Defer production DNS/TLS/systemd/firewall/TURN deployment for external smoke | deferred_external |  |
-| 11-A-B | devstack-external-smoke | Resolve local pairing tunnel port collision with existing local TermX web | completed |  |
-| 11-A-C | devstack-external-smoke | Treat not-yet-answered managed offers as pending instead of fatal wrong-machine errors | completed |  |
-| 11-A-C-A | devstack-external-smoke | Add debug-token protected Hub agent poll/answer diagnostics for external smoke | completed |  |
-| 11-A-D | devstack-external-smoke | Preserve signed SDP bytes through Hub so daemon offer signature verification succeeds | completed |  |
-| 11-A-E | devstack-external-smoke-review | Require machine-signed agent registration proof before Hub accepts daemon sessions | completed |  |
-| 11-A-F | devstack-external-smoke-review | Randomize public devstack secrets and remove fixed reusable live credentials from runbook | completed |  |
-| 11-A-G | devstack-external-smoke-review | Add explicit request body limit for daemon device registration | completed |  |
-| 11-A-H | devstack-external-smoke-network | Record STUN-only public DataChannel failure as external ICE/TURN/public-port limitation | deferred_external |  |
-| 11-A-I | devstack-external-smoke-follow-up | Record low-risk follow-up review items for canonical golden tests and hub endpoint body caps | deferred |  |
+| 11-A | devstack-external-smoke | Make the current web-control + hub + daemon stack runnable enough for external managed signaling smoke | completed | `87edb896` |
+| 11-A-A | devstack-external-smoke | Defer production DNS/TLS/systemd/firewall/TURN deployment for external smoke | deferred_external | `87edb896` |
+| 11-A-B | devstack-external-smoke | Resolve local pairing tunnel port collision with existing local TermX web | completed | `87edb896` |
+| 11-A-C | devstack-external-smoke | Treat not-yet-answered managed offers as pending instead of fatal wrong-machine errors | completed | `87edb896` |
+| 11-A-C-A | devstack-external-smoke | Add debug-token protected Hub agent poll/answer diagnostics for external smoke | completed | `87edb896` |
+| 11-A-D | devstack-external-smoke | Preserve signed SDP bytes through Hub so daemon offer signature verification succeeds | completed | `87edb896` |
+| 11-A-E | devstack-external-smoke-review | Require machine-signed agent registration proof before Hub accepts daemon sessions | completed | `87edb896` |
+| 11-A-F | devstack-external-smoke-review | Randomize public devstack secrets and remove fixed reusable live credentials from runbook | completed | `87edb896` |
+| 11-A-G | devstack-external-smoke-review | Add explicit request body limit for daemon device registration | completed | `87edb896` |
+| 11-A-H | devstack-external-smoke-network | Record STUN-only public DataChannel failure as external ICE/TURN/public-port limitation | deferred_external | `87edb896` |
+| 11-A-I | devstack-external-smoke-follow-up | Record low-risk follow-up review items for canonical golden tests and hub endpoint body caps | deferred | `87edb896` |
 
 ## Buildout Todo Details
 
@@ -2447,7 +2447,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 11-A External Managed Smoke Runnable Stack
 
-- 状态：in_progress
+- 状态：completed
 - 父条目：11
 - 来源：用户要求在 `ssh root@114.66.58.243` 部署 web + hub，在 `ssh al` 部署 `termx daemon` 并开启 remote，然后从本地 web 连接测试。
 - 目标：make the currently implemented web-control, termx-hub, and daemon remote runtime runnable enough for an external managed signaling smoke without adding HTTP/WebSocket terminal/file/api/events runtime transport.
@@ -2469,7 +2469,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none beyond `11-A-A`.
 - 剩余风险：this is a devstack bridge over incomplete production control/hub integration; it must stay isolated from core runtime transport.
 - 下一步：commit Slice `11-A`; keep temporary public services available for inspection and report STUN-only DataChannel limitation.
-- commit：待提交。
+- commit：`87edb896`
 
 ### 11-A-A External Smoke Production Deployment Deferral
 
@@ -2495,7 +2495,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：DNS/TLS, persistent deployment account, firewall/port approval, production TURN/relay deployment.
 - 剩余风险：external smoke will use plain HTTP and temporary files; do not treat it as production deployment.
 - 下一步：resume only when production deployment inputs exist.
-- commit：待提交。
+- commit：`87edb896`
 
 ### 11-A-B Local Pairing Tunnel Port Collision
 
@@ -2520,7 +2520,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：local developer machines may have arbitrary ports occupied; runbook should prefer collision-safe explicit local ports.
 - 下一步：done; continue parent smoke.
-- commit：待提交。
+- commit：`87edb896`
 
 ### 11-A-C Pending Managed Answer Error Semantics
 
@@ -2545,7 +2545,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：must keep wrong machine/ticket negative paths intact.
 - 下一步：completed; continue parent smoke diagnostics and review fixes.
-- commit：待提交。
+- commit：`87edb896`
 
 ### 11-A-C-A Hub Agent Diagnostics For External Smoke
 
@@ -2570,7 +2570,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：diagnostics must remain gated and temporary; do not expose runtime payloads or app certificates.
 - 下一步：completed; remove or harden before production exposure.
-- commit：待提交。
+- commit：`87edb896`
 
 ### 11-A-D Preserve Signed SDP Bytes Through Hub
 
@@ -2595,7 +2595,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：candidate canonicalization is already covered separately; this slice is specific to Hub SDP mutation.
 - 下一步：completed; final remaining runtime issue is `11-A-H`.
-- commit：待提交。
+- commit：`87edb896`
 
 ### 11-A-E Machine-Signed Agent Registration
 
@@ -2620,7 +2620,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：Web Control nonce cleanup currently runs opportunistically during verification; production scheduler/retention tuning can be added later.
 - 下一步：completed; redeploy temporary services.
-- commit：待提交。
+- commit：`87edb896`
 
 ### 11-A-I Follow-Up Review Low-Risk Hardening
 
@@ -2645,7 +2645,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：future protocol changes must update both canonical implementations until a clean shared protocol package is introduced.
 - 下一步：promote if future changes touch agent registration signature protocol or hub authenticated endpoint hardening.
-- commit：待提交。
+- commit：`87edb896`
 
 ### 11-A-F Randomize Public Devstack Secrets
 
@@ -2670,7 +2670,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：production secret manager and rotation policy.
 - 剩余风险：temporary HTTP services remain plain-text devstack services, not production.
 - 下一步：completed; redeploy temporary services with generated secrets.
-- commit：待提交。
+- commit：`87edb896`
 
 ### 11-A-G Daemon Device Registration Body Limit
 
@@ -2695,7 +2695,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：limit size may need production tuning.
 - 下一步：completed.
-- commit：待提交。
+- commit：`87edb896`
 
 ### 11-A-H STUN-Only Public DataChannel Limitation
 
@@ -2720,7 +2720,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：choose paid managed relay/TURN deployment or provide self-hosted public port/FRP path for the daemon host.
 - 剩余风险：without relay/public ICE path, local browser/CLI cannot reliably attach to a daemon behind NAT even though WebRTC DataChannel remains the correct runtime transport.
 - 下一步：report this boundary to the user; temporary public services and `al` daemon are left running for inspection, with stop/cleanup commands in `RUNBOOK.md`.
-- commit：待提交。
+- commit：`87edb896`
 
 ## Historical P2/P3 Records
 
