@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `9` TermX daemon cloud integration.
-- Last updated: 2026-05-03T08:02:52+08:00.
+- Last updated: 2026-05-03T08:06:13+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -71,14 +71,14 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 8-D | workflow-review | Refresh Slice 8 workflow review state and bottom next action | completed | `f5333362` |
 | 8-C-A | quota-follow-up-review | Require authenticated hub principal instead of caller/body hub identity for heartbeat accounting | completed | `f5333362` |
 | 9 | daemon-agent | Integrate `termx daemon` cloud bootstrap, hub heartbeat/poll/answer, and WebRTC offer handling | in_progress |  |
-| 9-A | daemon-agent-auth | Verify managed hub offers against machine/app certificate, app signature, and terminal inventory before answering | completed |  |
-| 9-A-A | daemon-agent-auth-review | Scope managed runtime channel policy to app certificate capabilities | completed |  |
-| 9-A-B | daemon-agent-auth-deferred | Add production connect-ticket and certificate revocation verifier seam for managed daemon answers | deferred |  |
-| 9-A-C | daemon-agent-auth-follow-up-review | Bind standalone ICE candidates into managed offer signature verification | completed |  |
-| 9-A-C-A | daemon-agent-auth-validation | Restore missing `termx-core` module checksum needed for full `GOWORK=off go test ./...` validation | completed |  |
-| 9-A-D | daemon-agent-auth-final-review | Record final review residual risks for candidate canonicalization and workflow freshness | completed |  |
-| 9-A-D-A | daemon-agent-auth-final-review | Harden candidate canonicalization against newline/list-boundary collisions | completed |  |
-| 9-A-D-B | daemon-agent-auth-final-review | Align Go and TypeScript JSON candidate canonicalization escaping | completed |  |
+| 9-A | daemon-agent-auth | Verify managed hub offers against machine/app certificate, app signature, and terminal inventory before answering | completed | `9cc258c3` |
+| 9-A-A | daemon-agent-auth-review | Scope managed runtime channel policy to app certificate capabilities | completed | `9cc258c3` |
+| 9-A-B | daemon-agent-auth-deferred | Add production connect-ticket and certificate revocation verifier seam for managed daemon answers | deferred | `9cc258c3` |
+| 9-A-C | daemon-agent-auth-follow-up-review | Bind standalone ICE candidates into managed offer signature verification | completed | `9cc258c3` |
+| 9-A-C-A | daemon-agent-auth-validation | Restore missing `termx-core` module checksum needed for full `GOWORK=off go test ./...` validation | completed | `9cc258c3` |
+| 9-A-D | daemon-agent-auth-final-review | Record final review residual risks for candidate canonicalization and workflow freshness | completed | `9cc258c3` |
+| 9-A-D-A | daemon-agent-auth-final-review | Harden candidate canonicalization against newline/list-boundary collisions | completed | `9cc258c3` |
+| 9-A-D-B | daemon-agent-auth-final-review | Align Go and TypeScript JSON candidate canonicalization escaping | completed | `9cc258c3` |
 | 10 | remote-ui | Connect `remote-ui` to real Web Control / public_p2p / managed API adapters while keeping `RtcSession` runtime boundary | pending |  |
 | 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | pending |  |
 
@@ -1474,7 +1474,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：production bootstrap token issuance/operator setup.
 - 剩余风险：machine private key 必须只保存在本机。
 - 下一步：record Slice 9-A commit hash, then continue the next daemon cloud integration child.
-- commit：待提交。
+- commit：`9cc258c3`.
 
 ### 9-A Managed Offer Certificate And Terminal Authorization
 
@@ -1500,7 +1500,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：production ticket validation/revocation feed from Web Control.
 - 剩余风险：full ticket verification and revocation sync remain for later Slice 9/10 integration.
 - 下一步：record Slice 9-A commit hash, then continue the next daemon cloud integration child.
-- commit：待提交。
+- commit：`9cc258c3`.
 
 ### 9-A-A Managed Offer Capability-Scoped Channel Policy
 
@@ -1526,7 +1526,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：full signed ticket validation and certificate revocation sync remain deferred outside this child.
 - 下一步：included in Slice 9-A commit.
-- commit：待提交。
+- commit：`9cc258c3`.
 
 ### 9-A-B Managed Offer Ticket And Revocation Verifier Seam
 
@@ -1551,7 +1551,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：production signing keys/revocation feed/cloud account setup.
 - 剩余风险：until this is implemented, managed daemon answers rely on machine-signed app certificate, app offer signature, replay window, terminal inventory, and capability policy, but not full cloud ticket/revocation truth.
 - 下一步：pick up in a later Slice 9/10 integration child.
-- commit：待提交。
+- commit：`9cc258c3`.
 
 ### 9-A-C Managed Offer Candidate Signature Binding
 
@@ -1577,7 +1577,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：candidate order remains significant by design.
 - 下一步：included in Slice 9-A commit.
-- commit：待提交。
+- commit：`9cc258c3`.
 
 ### 9-A-C-A Termx-Core Go Sum Validation Checksum
 
@@ -1603,7 +1603,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：none if diff is limited to the missing checksum line.
 - 下一步：included in Slice 9-A commit.
-- commit：待提交。
+- commit：`9cc258c3`.
 
 ### 9-A-D Final Review Residuals
 
@@ -1629,7 +1629,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：none after `9-A-D-A` if canonical JSON array validation passes.
 - 下一步：included in Slice 9-A commit.
-- commit：待提交。
+- commit：`9cc258c3`.
 
 ### 9-A-D-A Candidate Canonicalization Collision Hardening
 
@@ -1655,7 +1655,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：candidate order remains significant by design; if future signaling sorts/deduplicates candidates, signers and verifiers must do the same before signing.
 - 下一步：included in Slice 9-A commit.
-- commit：待提交。
+- commit：`9cc258c3`.
 
 ### 9-A-D-B Candidate JSON Escaping Parity
 
@@ -1681,7 +1681,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：candidate order remains significant by design; if future candidate signaling normalizes order, both signer and verifier must share that normalization.
 - 下一步：record Slice 9-A commit hash, then continue the next daemon cloud integration child.
-- commit：待提交。
+- commit：`9cc258c3`.
 
 ### 10 remote-ui Real API Adapters
 
@@ -2355,5 +2355,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Commit Slice 9-A staged files.
-2. Record the Slice 9-A commit hash in `WORKFLOW.md`.
+1. Start the next Slice 9 daemon cloud integration child with TDD.
+2. Keep `9-A-B` deferred ticket/revocation verifier seam in scope for a later integration child.
