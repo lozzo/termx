@@ -44,6 +44,25 @@ export type {
   ConnectionFlowSnapshot,
   ConnectionFlowStage,
 } from './appMachine'
+export { parsePairingPayload } from './pairingPayload'
+export type {
+  PairingPayload,
+  PairingPayloadAddresses,
+  PairingPayloadBootstrap,
+  PairingPayloadEndpoints,
+  PairingPayloadMachine,
+  PairingPayloadPairing,
+} from './pairingPayload'
+export { createMachineStore } from './machineStore'
+export type {
+  MachineStore,
+  MachineStoreOptions,
+  StoredAppBootstrap,
+  StoredMachineAddresses,
+  StoredMachineEndpoints,
+  StoredMachinePairing,
+  StoredMachineRecord,
+} from './machineStore'
 export { LocalPairPanel } from './LocalPairPanel'
 export type { LocalPairPanelProps } from './LocalPairPanel'
 export { createLocalAgentApi } from './localAgentApi'

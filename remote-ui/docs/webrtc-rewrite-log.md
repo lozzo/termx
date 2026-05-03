@@ -2,6 +2,72 @@
 
 This log is the handoff record for the WebRTC rewrite. It must be updated after every slice.
 
+## Slice 14: QR Pairing Payload And Machine Store
+
+### Goal
+
+Define the APP-first scan/add payload boundary and a local machine store so the APP can persist machine/service information before Slice 15 connection orchestration.
+
+### Failing Tests First
+
+Failing tests first.
+
+- Added `src/pairingPayload.test.ts` for `termx://pair?payload=...`, raw JSON, v1 compatibility, machine private-key rejection, app private-key rejection, generic/JWK private-key rejection, UTF-8 QR decoding, and `relay` path rejection.
+- Added `src/machineStore.test.ts` for persisting local/LAN/public/control/hub/pairing/bootstrap metadata, preserving runtime status on rescan, rejecting private keys before persistence and on contaminated storage reads, and storing only app key refs.
+- Initial command: `npm test -- --run src/pairingPayload.test.ts src/machineStore.test.ts`
+- Result: failed because `pairingPayload` and `machineStore` modules did not exist.
+
+### Implementation
+
+- Added `src/pairingPayload.ts` with normalized v2 payload types, UTF-8 `termx://pair` base64url parsing, v1 JSON compatibility, three-path validation, and recursive private-key rejection.
+- Added `src/machineStore.ts` with a `termx.app.machines.v1` local storage boundary, normalized machine records, scan/rescan merge behavior, and private-key rejection before persistence and before returning stored records.
+- Exported parser/store APIs from `src/index.ts`.
+
+### Renames
+
+- No runtime or terminal objects were renamed in this slice.
+
+### Deleted Old Abstractions
+
+- None.
+- The payload/store boundary only accepts `local`, `public_p2p`, and `managed`; relay remains absent from client path taxonomy.
+
+### Commands
+
+- `npm test -- --run src/pairingPayload.test.ts src/machineStore.test.ts` failed first, then passed; after review fixes it passed with 2 files, 9 tests.
+- `npm run typecheck` passed after removing a Node `Buffer` fallback from browser-facing parser code.
+- `npm test` passed: 40 files, 191 tests.
+- `npm run build` passed with the existing Vite chunk-size warning.
+- `bash docs/remote-rebuild/check_workflow_rules.sh` passed from the repo root.
+- `git diff --check` passed from the repo root.
+
+### Review
+
+- `Popper` (`019ded0f-bc8d-7871-b18a-3225bb003e9a`) reviewed Slice 14 after broader validation.
+
+### Review Findings
+
+- High: parser did not reject generic private-key fields or JWK private material.
+- Medium: MachineStore reads did not reject contaminated persisted records before normalizing them.
+- Medium: app-private-key MachineStore test threw in the parser, so it did not prove the store boundary.
+- Low: workflow/log next-step text and Slice 13-A summary were stale.
+
+### Review Fixes
+
+- Parser now rejects generic `privateKey` / `private_key` and JWK-style private material.
+- MachineStore rejects contaminated persisted records on read.
+- App-private-key test now exercises `saveMachine` directly.
+- Workflow/log stale text was refreshed.
+
+### Remaining Risk
+
+- Native secure storage is still a future slice; this store persists only app key references, not private keys.
+- Camera scan UI and connection orchestration are later slices.
+
+### Next Step
+
+Commit Slice 14, record the hash in `WORKFLOW.md`, then start Slice 15 connection orchestration.
+
 ## Slice 13: APP-First Machine List Shell
 
 ### Goal

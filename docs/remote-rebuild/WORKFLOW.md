@@ -6,7 +6,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `14` QR payload/store.
-- Last updated: 2026-05-03T16:48:11+08:00.
+- Last updated: 2026-05-03T17:04:56+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -146,7 +146,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - Slice `11`: devstack and public-host managed smoke are partly complete; top-level `11` remains `in_progress` because broader APP/devstack e2e is pending in Slice `20`.
 - Slice `12`: APP-first product alignment and `tgent-comparison` strategy are completed in docs. Existing uncommitted planning docs may still be in the worktree and should not be reverted.
 - Slice `13`: APP-first remote-ui shell completed in `0014e9a7`; workflow hash recorded in `60c34fc1`. It adds `MachineList`, `RemoteAppShell`, and `appMachine` types; first screen is machine list, click enters connection flow, relay is info only.
-- Slice `13-A`: root `AGENTS.md` now requires unattended continuation across slice boundaries. It has not yet been committed separately; include it with the workflow compression / Slice 14 workflow commit if appropriate.
+- Slice `13-A`: root `AGENTS.md` now requires unattended continuation across slice boundaries; committed in `4f7bf2d1` and hash-recorded in `8f8784d0`.
 - Historical P2/P3 details before the remote buildout have been intentionally removed from this hot workflow file. Use git history or old commits for archaeology.
 
 ## Active Slice Details
@@ -211,19 +211,19 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - 非目标：camera UI, native secure storage implementation, connection orchestrator, machine private key upload/export, relay as path.
 - 外部依赖：none; real native secure storage remains future native APP slice.
 - mock 策略：use in-memory key-value storage and fake app key-store reference; do not mock parser validation or private-key rejection.
-- 先写的失败测试：planned tests for parsing `termx://pair?...` and JSON payloads, saving local/LAN/public/control/hub/pairing metadata, rejecting machine private-key-shaped fields at any depth, storing only app key refs, and accepting v1 payloads while normalizing to current store shape.
-- 预期失败结果：focused remote-ui tests should fail before implementation because parser/store modules do not exist.
-- 实现摘要：pending.
-- 重构摘要：pending.
-- 运行命令：pending.
-- 测试结果：pending.
-- subagent review：pending.
-- review 发现：pending.
-- review 后修复：pending.
+- 先写的失败测试：`remote-ui/src/pairingPayload.test.ts` and `remote-ui/src/machineStore.test.ts` cover parsing `termx://pair?...` and JSON payloads, saving local/LAN/public/control/hub/pairing metadata, rejecting machine/app/generic/JWK private-key-shaped fields, rejecting contaminated local storage reads, storing only app key refs, rejecting `relay` as a path, and accepting v1 payloads while normalizing to current store shape.
+- 预期失败结果：`cd remote-ui && npm test -- --run src/pairingPayload.test.ts src/machineStore.test.ts` failed because `./pairingPayload` / `./machineStore` modules did not exist.
+- 实现摘要：added `remote-ui/src/pairingPayload.ts` and `remote-ui/src/machineStore.ts`, exported parser/store from `src/index.ts`, and logged Slice 14 in `remote-ui/docs/webrtc-rewrite-log.md`.
+- 重构摘要：removed Node `Buffer` fallback from browser-facing parser after typecheck; added UTF-8 QR decoding; hardened parser/store to fail closed on generic private-key and JWK private material; kept APP/store code platform-neutral and storage-based.
+- 运行命令：`cd remote-ui && npm test -- --run src/pairingPayload.test.ts src/machineStore.test.ts`; `cd remote-ui && npm run typecheck`; `cd remote-ui && npm test`; `cd remote-ui && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`.
+- 测试结果：focused tests passed 2 files / 9 tests after review fixes; full remote-ui tests passed 40 files / 192 tests; typecheck passed; build passed with existing Vite chunk-size warning; workflow guard and diff whitespace check passed.
+- subagent review：`Popper` (`019ded0f-bc8d-7871-b18a-3225bb003e9a`) reviewed Slice 14 implementation.
+- review 发现：parser accepted generic private-key/JWK fields; MachineStore read path did not reject contaminated persisted private keys; app-private-key store test threw in parser rather than MachineStore; workflow/log contained stale Slice 13-A and next-step text.
+- review 后修复：parser/store now reject generic private-key and JWK private material; MachineStore rejects contaminated storage on read; app-private-key test exercises `saveMachine`; workflow/log stale text refreshed.
 - 新增派生条目：none yet.
 - deferred human items：real native secure storage integration remains future native APP slice.
-- 剩余风险：connection orchestration and e2e remain future slices.
-- 下一步：write failing focused tests for QR payload and MachineStore.
+- 剩余风险：native secure storage, camera scan UI, connection orchestration, and e2e remain future slices.
+- 下一步：finish post-review validation, commit Slice `14`, hash backfill, then start Slice `15`.
 - commit：
 
 ## Deferred External / Human Items
@@ -235,6 +235,6 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ## Next Exact Action
 
-1. Continue Slice `14`: write failing QR payload and MachineStore tests in `remote-ui/src`.
-2. Implement parser/store with machine private-key rejection and app-key-reference-only storage.
-3. Run `remote-ui` validation, workflow guard, subagent review, fixes, commit, and hash backfill.
+1. Finish post-review validation for Slice `14`.
+2. Commit Slice `14` and backfill its hash.
+3. Start Slice `15`: write failing tests for `local -> public_p2p -> managed` connection orchestration returning only `RtcSession`.

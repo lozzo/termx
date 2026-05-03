@@ -1,0 +1,227 @@
+import { describe, expect, it } from 'vitest'
+import { parsePairingPayload } from './pairingPayload'
+import { createMachineStore } from './machineStore'
+
+describe('machine store', () => {
+  it('saves QR pairing metadata needed for local, public_p2p, managed, control, hub, and pairing flows', () => {
+    const storage = new MemoryStorage()
+    const store = createMachineStore({ storage, now: () => new Date('2026-05-03T16:00:00Z') })
+    const payload = parsePairingPayload(JSON.stringify({
+      type: 'termx_pair_v2',
+      schema_version: 2,
+      machine: {
+        id: 'machine-1',
+        name: 'Dev MacBook',
+        hostname: 'dev-mac.local',
+        public_key_fingerprint: 'sha256:machine-public',
+      },
+      addresses: {
+        local: ['http://127.0.0.1:7788'],
+        lan: ['http://192.168.1.40:7788'],
+        public: ['https://machine-1.public.termx.test'],
+      },
+      endpoints: {
+        web_control: 'https://control.termx.test',
+        hub: 'https://hub.termx.test',
+        local_pairing: 'http://192.168.1.40:7788/pair',
+      },
+      pairing: {
+        session_id: 'pair-1',
+        secret: 'pair-secret-1',
+        expires_at: '2026-05-03T20:00:00Z',
+      },
+      bootstrap: {
+        app_certificate: '{"payload":{"machine_id":"machine-1"}}',
+        app_public_key: 'app-public-1',
+        app_device_id: 'app-device-1',
+        app_key_ref: 'native-keychain://termx/app-device-1',
+      },
+      preferred_path: 'local',
+    }))
+
+    const saved = store.saveFromPairingPayload(payload)
+
+    expect(saved).toEqual({
+      machineId: 'machine-1',
+      name: 'Dev MacBook',
+      hostname: 'dev-mac.local',
+      state: 'unknown',
+      terminalCount: 0,
+      source: 'local',
+      preferredPath: 'local',
+      machinePublicKeyFingerprint: 'sha256:machine-public',
+      addresses: {
+        local: ['http://127.0.0.1:7788'],
+        lan: ['http://192.168.1.40:7788'],
+        public: ['https://machine-1.public.termx.test'],
+      },
+      endpoints: {
+        webControl: 'https://control.termx.test',
+        hub: 'https://hub.termx.test',
+        localPairing: 'http://192.168.1.40:7788/pair',
+      },
+      pairing: {
+        sessionId: 'pair-1',
+        secret: 'pair-secret-1',
+        expiresAt: '2026-05-03T20:00:00Z',
+      },
+      appBootstrap: {
+        appCertificate: '{"payload":{"machine_id":"machine-1"}}',
+        appPublicKey: 'app-public-1',
+        appDeviceId: 'app-device-1',
+        appKeyRef: 'native-keychain://termx/app-device-1',
+      },
+      schemaVersion: 2,
+      addedAt: '2026-05-03T16:00:00.000Z',
+      updatedAt: '2026-05-03T16:00:00.000Z',
+    })
+    expect(store.listMachines()).toEqual([saved])
+    expect(store.getMachine('machine-1')).toEqual(saved)
+    expect(JSON.parse(storage.getItem('termx.app.machines.v1') ?? '[]')).toHaveLength(1)
+  })
+
+  it('merges rescanned metadata without dropping runtime status fields', () => {
+    const storage = new MemoryStorage()
+    const store = createMachineStore({ storage, now: () => new Date('2026-05-03T16:00:00Z') })
+
+    store.saveMachine({
+      machineId: 'machine-1',
+      name: 'Old Name',
+      state: 'online',
+      terminalCount: 3,
+      lastSeenAt: '2026-05-03T15:55:00Z',
+      lastConnectionPath: 'managed',
+      source: 'cloud',
+      addresses: { local: [], lan: [], public: [] },
+      endpoints: {},
+      schemaVersion: 2,
+      addedAt: '2026-05-03T15:00:00.000Z',
+      updatedAt: '2026-05-03T15:00:00.000Z',
+    })
+
+    const saved = store.saveFromPairingPayload(parsePairingPayload(JSON.stringify({
+      type: 'termx_pair_v2',
+      schema_version: 2,
+      machine: { id: 'machine-1', name: 'New Name' },
+      addresses: { lan: ['http://192.168.1.41:7788'] },
+      endpoints: { hub: 'https://hub.termx.test' },
+      pairing: { session_id: 'pair-2', secret: 'pair-secret-2' },
+    })))
+
+    expect(saved).toMatchObject({
+      machineId: 'machine-1',
+      name: 'New Name',
+      state: 'online',
+      terminalCount: 3,
+      lastSeenAt: '2026-05-03T15:55:00Z',
+      lastConnectionPath: 'managed',
+      source: 'cloud',
+      addresses: { local: [], lan: ['http://192.168.1.41:7788'], public: [] },
+      endpoints: { hub: 'https://hub.termx.test' },
+      pairing: { sessionId: 'pair-2', secret: 'pair-secret-2' },
+      addedAt: '2026-05-03T15:00:00.000Z',
+      updatedAt: '2026-05-03T16:00:00.000Z',
+    })
+  })
+
+  it('rejects machine private keys before persistence', () => {
+    const storage = new MemoryStorage()
+    const store = createMachineStore({ storage })
+
+    expect(() => store.saveMachine({
+      machineId: 'machine-1',
+      name: 'Dev MacBook',
+      state: 'unknown',
+      terminalCount: 0,
+      source: 'manual',
+      addresses: { local: [], lan: [], public: [] },
+      endpoints: {},
+      schemaVersion: 2,
+      addedAt: '2026-05-03T16:00:00.000Z',
+      updatedAt: '2026-05-03T16:00:00.000Z',
+      machinePrivateKey: 'not-allowed',
+    } as never)).toThrow(/machine private key/i)
+    expect(storage.getItem('termx.app.machines.v1')).toBeNull()
+  })
+
+  it('stores only app key references, never app private keys', () => {
+    const storage = new MemoryStorage()
+    const store = createMachineStore({ storage })
+
+    expect(() => store.saveMachine({
+      machineId: 'machine-1',
+      name: 'Dev MacBook',
+      state: 'unknown',
+      terminalCount: 0,
+      source: 'manual',
+      addresses: { local: [], lan: [], public: [] },
+      endpoints: {},
+      appBootstrap: {
+        appKeyRef: 'native-keychain://termx/app-device-1',
+        appPrivateKey: 'not-allowed',
+      },
+      schemaVersion: 2,
+      addedAt: '2026-05-03T16:00:00.000Z',
+      updatedAt: '2026-05-03T16:00:00.000Z',
+    } as never)).toThrow(/app private key/i)
+
+    const saved = store.saveFromPairingPayload(parsePairingPayload(JSON.stringify({
+      type: 'termx_pair_v2',
+      schema_version: 2,
+      machine: { id: 'machine-1', name: 'Dev MacBook' },
+      pairing: { session_id: 'pair-1', secret: 'pair-secret-1' },
+      bootstrap: {
+        app_key_ref: 'native-keychain://termx/app-device-1',
+      },
+    })))
+
+    expect(saved.appBootstrap).toEqual({
+      appKeyRef: 'native-keychain://termx/app-device-1',
+    })
+    expect(JSON.stringify(storage.dump())).not.toMatch(/app_private_key|appPrivateKey|BEGIN PRIVATE KEY/i)
+  })
+
+  it('rejects contaminated persisted records before returning machines', () => {
+    const storage = new MemoryStorage()
+    storage.setItem('termx.app.machines.v1', JSON.stringify([{
+      machineId: 'machine-1',
+      name: 'Dev MacBook',
+      state: 'unknown',
+      terminalCount: 0,
+      source: 'manual',
+      addresses: { local: [], lan: [], public: [] },
+      endpoints: {},
+      schemaVersion: 2,
+      addedAt: '2026-05-03T16:00:00.000Z',
+      updatedAt: '2026-05-03T16:00:00.000Z',
+      appBootstrap: {
+        appKeyRef: 'native-keychain://termx/app-device-1',
+        private_key: 'not-allowed',
+      },
+    }]))
+    const store = createMachineStore({ storage })
+
+    expect(() => store.listMachines()).toThrow(/private key/i)
+    expect(storage.getItem('termx.app.machines.v1')).toMatch(/private_key/)
+  })
+})
+
+class MemoryStorage implements Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {
+  private readonly values = new Map<string, string>()
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null
+  }
+
+  removeItem(key: string): void {
+    this.values.delete(key)
+  }
+
+  setItem(key: string, value: string): void {
+    this.values.set(key, value)
+  }
+
+  dump(): Record<string, string> {
+    return Object.fromEntries(this.values)
+  }
+}
