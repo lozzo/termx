@@ -148,6 +148,37 @@ func TestNewHubHandlerFromEnvPassesSTUNServersToAgentRegister(t *testing.T) {
 	}
 }
 
+func TestNewHubHandlerFromEnvWiresManagedTurnWithoutRegistrationRelayPolicy(t *testing.T) {
+	t.Setenv("TERMX_HUB_CONTROL_URL", "http://127.0.0.1:12306")
+	t.Setenv("TERMX_HUB_CONTROL_SECRET", "hub-secret")
+	t.Setenv("TERMX_HUB_STUN_SERVERS", "stun:stun.example.com:3478")
+	t.Setenv("TERMX_HUB_TURN_SERVERS", "turn:turn.example.com:3478?transport=udp")
+	t.Setenv("TERMX_HUB_TURN_SHARED_SECRET", "turn-secret")
+
+	oldVerifier := newControlVerifier
+	newControlVerifier = func(baseURL string, sharedSecret string) controlVerifier {
+		return commandVerifierForTest{}
+	}
+	t.Cleanup(func() { newControlVerifier = oldVerifier })
+	handler, err := newHubHandlerFromEnv()
+	if err != nil {
+		t.Fatalf("new hub handler: %v", err)
+	}
+	register := httptest.NewRecorder()
+	handler.ServeHTTP(register, httptest.NewRequest(http.MethodPost, "/api/v1/agents/register", strings.NewReader(`{"device_id":"machine_1","agent_id":"agent_1"}`)))
+	if register.Code != http.StatusOK {
+		t.Fatalf("agent register status = %d body=%s", register.Code, register.Body.String())
+	}
+	var resp hubv1.HubRegisterResponse
+	if err := json.NewDecoder(register.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode register response: %v", err)
+	}
+	if resp.RelayPolicy.AllowRelay || len(resp.RTCConfig.IceServers) != 1 ||
+		strings.HasPrefix(resp.RTCConfig.IceServers[0].URLs[0], "turn:") {
+		t.Fatalf("registration exposed managed relay policy: %+v", resp)
+	}
+}
+
 type commandVerifierForTest struct {
 	publicKey ed25519.PublicKey
 }

@@ -113,7 +113,7 @@ func TestHubManagedTicketCheckAndConsumeHTTP(t *testing.T) {
 	decodeJSON(t, check, &checked)
 	if checked.Ticket.ID != ticket.ID || checked.Ticket.Path != "managed" ||
 		checked.Ticket.MachineID != "device-hub-ticket" || checked.Ticket.TerminalID != "term-hub-ticket" ||
-		checked.Ticket.AllowRelay {
+		!checked.Ticket.AllowRelay {
 		t.Fatalf("checked ticket = %+v", checked)
 	}
 	consume := postHubJSON(t, router, "/api/v1/hub/managed-tickets/consume", map[string]any{

@@ -25,13 +25,15 @@ const (
 )
 
 type Config struct {
-	DB    *sql.DB
-	Clock Clock
+	DB                 *sql.DB
+	Clock              Clock
+	ManagedRelayPolicy ManagedRelayPolicyProvider
 }
 
 type Service struct {
-	db    *sql.DB
-	clock Clock
+	db                 *sql.DB
+	clock              Clock
+	managedRelayPolicy ManagedRelayPolicyProvider
 }
 
 func NewService(cfg Config) *Service {
@@ -39,7 +41,11 @@ func NewService(cfg Config) *Service {
 	if clock == nil {
 		clock = realClock{}
 	}
-	return &Service{db: cfg.DB, clock: clock}
+	policy := cfg.ManagedRelayPolicy
+	if policy == nil {
+		policy = DevFreeManagedRelayPolicy{}
+	}
+	return &Service{db: cfg.DB, clock: clock, managedRelayPolicy: policy}
 }
 
 func (s *Service) CreateManagedTicket(ctx context.Context, in CreateManagedTicketInput) (ManagedTicket, error) {
@@ -68,6 +74,17 @@ func (s *Service) CreateManagedTicket(ctx context.Context, in CreateManagedTicke
 		Path:       PathManaged,
 		ExpiresAt:  now.Add(ttl),
 	}
+	policy, err := s.managedRelayPolicy.ManagedRelayPolicy(ctx, ManagedRelayPolicyInput{
+		UserID:     userID,
+		MachineID:  machineID,
+		TerminalID: terminalID,
+	})
+	if err != nil {
+		return ManagedTicket{}, err
+	}
+	ticket.AllowRelay = policy.AllowRelay
+	ticket.RelayBytesRemaining = policy.RelayBytesRemaining
+	ticket.RelayThrottled = policy.RelayThrottled
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ManagedTicket{}, err
@@ -83,7 +100,7 @@ func (s *Service) CreateManagedTicket(ctx context.Context, in CreateManagedTicke
 		WHERE EXISTS (
 			SELECT 1 FROM machines WHERE id = ? AND owner_user_id = ?
 		)
-	`, ticket.ID, ticket.UserID, ticket.MachineID, ticket.TerminalID, ticket.Path, 0, formatTime(ticket.ExpiresAt), formatTime(now), ticket.MachineID, ticket.UserID)
+	`, ticket.ID, ticket.UserID, ticket.MachineID, ticket.TerminalID, ticket.Path, boolInt(ticket.AllowRelay), formatTime(ticket.ExpiresAt), formatTime(now), ticket.MachineID, ticket.UserID)
 	if err != nil {
 		return ManagedTicket{}, fmt.Errorf("create managed ticket: %w", err)
 	}
@@ -215,4 +232,20 @@ func randomID(prefix string) string {
 		panic(err)
 	}
 	return prefix + "_" + base64.RawURLEncoding.EncodeToString(b[:])
+}
+
+type DevFreeManagedRelayPolicy struct{}
+
+func (DevFreeManagedRelayPolicy) ManagedRelayPolicy(_ context.Context, in ManagedRelayPolicyInput) (ManagedRelayPolicy, error) {
+	if strings.TrimSpace(in.UserID) == "" || strings.TrimSpace(in.MachineID) == "" || strings.TrimSpace(in.TerminalID) == "" {
+		return ManagedRelayPolicy{}, errors.New("user id, machine id, and terminal id are required")
+	}
+	return ManagedRelayPolicy{AllowRelay: true}, nil
+}
+
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }

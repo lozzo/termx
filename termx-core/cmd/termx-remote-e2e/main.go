@@ -179,7 +179,7 @@ func run(cfg smokeConfig) error {
 	if err != nil {
 		return err
 	}
-	if ticket.Path != "managed" || ticket.AllowRelay {
+	if ticket.Path != "managed" {
 		return fmt.Errorf("unexpected ticket policy path=%q allow_relay=%v", ticket.Path, ticket.AllowRelay)
 	}
 
@@ -444,6 +444,7 @@ func openLabeledChannel(cfg openChannelConfig, label string) (*webrtc.PeerConnec
 			SDP           string   `json:"sdp"`
 			ICECandidates []string `json:"ice_candidates"`
 		} `json:"answer"`
+		ICEServers []hubICEServer `json:"ice_servers"`
 	}
 	if _, body, err := postJSONStatus(http.DefaultClient, strings.TrimRight(cfg.HubURL, "/")+"/api/v1/sessions", requestBody, &sessionResp, ""); err != nil {
 		offerPC.Close()
@@ -459,6 +460,10 @@ func openLabeledChannel(cfg openChannelConfig, label string) (*webrtc.PeerConnec
 		offerPC.Close()
 		return nil, nil, "", fmt.Errorf("hub returned empty answer SDP")
 	}
+	if err := applyRemoteICEServers(offerPC, sessionResp.ICEServers); err != nil {
+		offerPC.Close()
+		return nil, nil, "", err
+	}
 	if err := offerPC.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: sessionResp.Answer.SDP}); err != nil {
 		offerPC.Close()
 		return nil, nil, "", err
@@ -470,6 +475,34 @@ func openLabeledChannel(cfg openChannelConfig, label string) (*webrtc.PeerConnec
 		return nil, nil, "", fmt.Errorf("timed out waiting for %s data channel open", label)
 	}
 	return offerPC, dc, sessionResp.Answer.SDP, nil
+}
+
+type hubICEServer struct {
+	URLs       []string `json:"urls"`
+	Username   string   `json:"username"`
+	Credential string   `json:"credential"`
+}
+
+func applyRemoteICEServers(pc *webrtc.PeerConnection, servers []hubICEServer) error {
+	if len(servers) == 0 {
+		return nil
+	}
+	config := pc.GetConfiguration()
+	config.ICEServers = make([]webrtc.ICEServer, 0, len(servers))
+	for _, server := range servers {
+		if len(server.URLs) == 0 {
+			continue
+		}
+		config.ICEServers = append(config.ICEServers, webrtc.ICEServer{
+			URLs:       append([]string(nil), server.URLs...),
+			Username:   server.Username,
+			Credential: server.Credential,
+		})
+	}
+	if len(config.ICEServers) == 0 {
+		return nil
+	}
+	return pc.SetConfiguration(config)
 }
 
 func pollManagedAnswer(hubURL string, ticket managedTicketResponse, sessionID string, out any) error {

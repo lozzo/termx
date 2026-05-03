@@ -109,7 +109,7 @@ func TestTurnCredentialDoesNotOutliveLeaseAndRequiresSecret(t *testing.T) {
 	}
 }
 
-func TestFreeAndPublicP2PDoNotReceiveTurnCredentials(t *testing.T) {
+func TestManagedWithoutRelayAndPublicP2PDoNotReceiveTurnCredentials(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()

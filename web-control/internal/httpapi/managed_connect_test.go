@@ -90,11 +90,11 @@ func TestManagedConnectTicketHTTPFlow(t *testing.T) {
 	if ticket.ID == "" || ticket.Path != "managed" || ticket.MachineID != boot.Machine.ID || ticket.TerminalID != "term_1" {
 		t.Fatalf("ticket = %+v", ticket)
 	}
-	if ticket.AllowRelay || ticket.RelayInUse {
-		t.Fatalf("free managed ticket enabled relay: %+v", ticket)
+	if !ticket.AllowRelay || ticket.RelayInUse {
+		t.Fatalf("dev managed ticket relay capability = %+v", ticket)
 	}
 	lower := strings.ToLower(create.Body.String())
-	for _, forbidden := range []string{"turn:", "relay_path", "terminal_data", "file_data", "api_data", "events_data", "websocket", "http_runtime"} {
+	for _, forbidden := range []string{"turn:", `"path":"relay"`, "relay_path", "terminal_data", "file_data", "api_data", "events_data", "websocket", "http_runtime"} {
 		if strings.Contains(lower, forbidden) {
 			t.Fatalf("managed ticket leaked forbidden field %q: %s", forbidden, create.Body.String())
 		}

@@ -540,6 +540,15 @@ func pendingAnswerKey(offer hubv1.SignalingOffer) string {
 	for _, candidate := range offer.ICECandidates {
 		appendKeyPart(candidate)
 	}
+	appendKeyPart(fmt.Sprintf("%t", offer.AllowRelay))
+	appendKeyPart(fmt.Sprintf("%t", offer.AllowRelayTransfer))
+	for _, server := range offer.RTCConfig.IceServers {
+		for _, url := range server.URLs {
+			appendKeyPart(url)
+		}
+		appendKeyPart(server.Username)
+		appendKeyPart(server.Credential)
+	}
 	appendKeyPart(string(offer.AppCertificate))
 	appendKeyPart(offer.Signature.Algorithm)
 	appendKeyPart(offer.Signature.Nonce)
@@ -562,7 +571,11 @@ func (m *Manager) answerManagedOffer(ctx context.Context, offer hubv1.SignalingO
 		answerer = defaultManagedOfferAnswerer{}
 	}
 	policy := managedOfferChannelPolicy(offer, certificate.Payload.Capabilities, terminalManagement)
-	answer, err := answerer.AnswerOffer(ctx, offer, iceServers, m.host, m.files, remotertc.AnswerOptions{
+	offerICEServers := append([]hubv1.RTCIceServerConfig(nil), iceServers...)
+	if len(offer.RTCConfig.IceServers) > 0 {
+		offerICEServers = append([]hubv1.RTCIceServerConfig(nil), offer.RTCConfig.IceServers...)
+	}
+	answer, err := answerer.AnswerOffer(ctx, offer, offerICEServers, m.host, m.files, remotertc.AnswerOptions{
 		ChannelPolicy:      policy,
 		TerminalManagement: terminalManagement,
 	})

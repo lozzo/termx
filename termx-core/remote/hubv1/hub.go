@@ -38,20 +38,22 @@ type RTCIceServerConfig struct {
 	Credential string   `json:"credential,omitempty"`
 }
 
+type RTCConfig struct {
+	IceServers []RTCIceServerConfig `json:"ice_servers"`
+}
+
 type RelayPolicy struct {
 	AllowRelay         bool `json:"allow_relay"`
 	AllowRelayTransfer bool `json:"allow_relay_transfer"`
 }
 
 type HubRegisterResponse struct {
-	Version                  string `json:"version"`
-	HubID                    string `json:"hub_id"`
-	AgentSessionID           string `json:"agent_session_id"`
-	HeartbeatIntervalSeconds int    `json:"heartbeat_interval_seconds"`
-	RTCConfig                struct {
-		IceServers []RTCIceServerConfig `json:"ice_servers"`
-	} `json:"rtc_config"`
-	RelayPolicy RelayPolicy `json:"relay_policy"`
+	Version                  string      `json:"version"`
+	HubID                    string      `json:"hub_id"`
+	AgentSessionID           string      `json:"agent_session_id"`
+	HeartbeatIntervalSeconds int         `json:"heartbeat_interval_seconds"`
+	RTCConfig                RTCConfig   `json:"rtc_config"`
+	RelayPolicy              RelayPolicy `json:"relay_policy"`
 }
 
 type HubHeartbeatRequest struct {
@@ -73,6 +75,7 @@ type SignalingOffer struct {
 	TerminalID         string          `json:"terminal_id"`
 	SDP                string          `json:"sdp"`
 	ICECandidates      []string        `json:"ice_candidates"`
+	RTCConfig          RTCConfig       `json:"rtc_config,omitempty"`
 	AllowRelay         bool            `json:"allow_relay"`
 	AllowRelayTransfer bool            `json:"allow_relay_transfer"`
 	AppCertificate     json.RawMessage `json:"app_certificate,omitempty"`

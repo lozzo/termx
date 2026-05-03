@@ -361,6 +361,27 @@ func TestManagerAllowsManagedTerminalManagementOnlyWithCapabilityAndRouter(t *te
 	}
 }
 
+func TestManagerUsesOfferScopedManagedRTCConfig(t *testing.T) {
+	manager, answerer, offer := newManagedOfferFixture(t)
+	registrationICE := []hubv1.RTCIceServerConfig{{URLs: []string{"stun:registration.example:3478"}}}
+	offer.RTCConfig.IceServers = []hubv1.RTCIceServerConfig{
+		{URLs: []string{"stun:managed.example:3478"}},
+		{URLs: []string{"turn:managed.example:3478?transport=udp"}, Username: "lease:1770000000", Credential: "turn-credential"},
+	}
+	offer.AllowRelay = true
+
+	answer := manager.answerManagedOffer(context.Background(), offer, registrationICE)
+	if answer.Error != "" {
+		t.Fatalf("valid managed relay offer returned error: %#v", answer)
+	}
+	if len(answerer.gotICE) != 2 || answerer.gotICE[1].Username != "lease:1770000000" {
+		t.Fatalf("answerer ICE servers = %+v", answerer.gotICE)
+	}
+	if answerer.gotOffer.RTCConfig.IceServers[1].Credential != "turn-credential" {
+		t.Fatalf("offer rtc config was not preserved: %+v", answerer.gotOffer.RTCConfig.IceServers)
+	}
+}
+
 func TestHubSignalingLoopResetsSessionWhenAnswerSubmitUnauthorized(t *testing.T) {
 	manager, _, offer := newManagedOfferFixture(t)
 	var answerRequests atomic.Int32
@@ -609,19 +630,21 @@ func (s managementProviderStub) RouteTerminalManagementRequest(_ context.Context
 type managedAnswererStub struct {
 	calls      int
 	gotOffer   hubv1.SignalingOffer
+	gotICE     []hubv1.RTCIceServerConfig
 	gotOptions remotertc.AnswerOptions
 }
 
 func (s *managedAnswererStub) AnswerOffer(
 	_ context.Context,
 	offer hubv1.SignalingOffer,
-	_ []hubv1.RTCIceServerConfig,
+	iceServers []hubv1.RTCIceServerConfig,
 	_ bridge.TransportSink,
 	_ *fileapi.Manager,
 	opts remotertc.AnswerOptions,
 ) (hubv1.SignalingAnswer, error) {
 	s.calls++
 	s.gotOffer = offer
+	s.gotICE = append([]hubv1.RTCIceServerConfig(nil), iceServers...)
 	s.gotOptions = opts
 	return hubv1.SignalingAnswer{
 		SessionID: offer.SessionID,

@@ -10,6 +10,11 @@ import (
 
 const PathManaged = "managed"
 
+const (
+	defaultOfferTTL  = 5 * time.Minute
+	defaultMaxOffers = 4096
+)
+
 type TicketVerifier interface {
 	CheckManagedTicket(context.Context, VerifyTicketInput) (Ticket, error)
 	ConsumeManagedTicket(context.Context, VerifyTicketInput) (Ticket, error)
@@ -33,6 +38,11 @@ type Ticket struct {
 	Path       string
 	AllowRelay bool
 	ExpiresAt  time.Time
+}
+
+type OfferPolicy struct {
+	Ticket    Ticket
+	CreatedAt time.Time
 }
 
 type VerifyTicketInput struct {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lozzow/termx/termx-hub/internal/registry"
 )
@@ -17,17 +18,21 @@ var (
 )
 
 type Config struct {
-	Registry *registry.Registry
-	Tickets  TicketVerifier
-	Clock    Clock
+	Registry  *registry.Registry
+	Tickets   TicketVerifier
+	Clock     Clock
+	OfferTTL  time.Duration
+	MaxOffers int
 }
 
 type Service struct {
 	registry      *registry.Registry
 	tickets       TicketVerifier
 	clock         Clock
+	offerTTL      time.Duration
+	maxOffers     int
 	mu            sync.Mutex
-	offers        map[string]Ticket
+	offers        map[string]OfferPolicy
 	sessionOffers map[string]string
 	ticketOffers  map[string]string
 }
@@ -37,11 +42,21 @@ func NewService(cfg Config) *Service {
 	if clock == nil {
 		clock = realClock{}
 	}
+	offerTTL := cfg.OfferTTL
+	if offerTTL <= 0 {
+		offerTTL = defaultOfferTTL
+	}
+	maxOffers := cfg.MaxOffers
+	if maxOffers <= 0 {
+		maxOffers = defaultMaxOffers
+	}
 	return &Service{
 		registry:      cfg.Registry,
 		tickets:       cfg.Tickets,
 		clock:         clock,
-		offers:        make(map[string]Ticket),
+		offerTTL:      offerTTL,
+		maxOffers:     maxOffers,
+		offers:        make(map[string]OfferPolicy),
 		sessionOffers: make(map[string]string),
 		ticketOffers:  make(map[string]string),
 	}
@@ -90,6 +105,8 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 	}
 	ticketKey := ticketOfferKey(ticket.MachineID, ticket.ID)
 	s.mu.Lock()
+	s.cleanupExpiredLocked(s.clock.Now().UTC())
+	s.evictToLimitLocked(s.maxOffers - 1)
 	if s.ticketOffers[ticketKey] != "" {
 		s.mu.Unlock()
 		return Offer{}, ErrTicketUsed
@@ -113,7 +130,7 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 		return Offer{}, err
 	}
 	s.mu.Lock()
-	s.offers[offer.ID] = ticket
+	s.offers[offer.ID] = OfferPolicy{Ticket: ticket, CreatedAt: s.clock.Now().UTC()}
 	s.ticketOffers[ticketKey] = offer.ID
 	if strings.TrimSpace(offer.SessionID) != "" {
 		s.sessionOffers[sessionOfferKey(ticket.MachineID, ticket.ID, offer.SessionID)] = offer.ID
@@ -130,7 +147,7 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 		AppCertificate: cloneBytes(offer.AppCertificate),
 		Signature:      managedSignature(offer.Signature),
 		Path:           PathManaged,
-		AllowRelay:     false,
+		AllowRelay:     ticket.AllowRelay,
 		RelayInUse:     offer.RelayInUse,
 	}, nil
 }
@@ -149,15 +166,15 @@ func (s *Service) ConsumeOfferTicket(ctx context.Context, in GetAnswerInput) (Ti
 	if mapped := s.sessionOffers[sessionOfferKey(machineID, ticketID, offerID)]; mapped != "" {
 		offerID = mapped
 	}
-	ticket, ok := s.offers[offerID]
+	policy, ok := s.offerPolicyLocked(offerID)
 	s.mu.Unlock()
-	if !ok || ticket.ID != ticketID || ticket.MachineID != machineID {
+	if !ok || policy.Ticket.ID != ticketID || policy.Ticket.MachineID != machineID {
 		return Ticket{}, ErrWrongMachine
 	}
 	return s.tickets.ConsumeManagedTicket(ctx, VerifyTicketInput{
-		TicketID:   ticket.ID,
-		MachineID:  ticket.MachineID,
-		TerminalID: ticket.TerminalID,
+		TicketID:   policy.Ticket.ID,
+		MachineID:  policy.Ticket.MachineID,
+		TerminalID: policy.Ticket.TerminalID,
 	})
 }
 
@@ -173,7 +190,7 @@ func (s *Service) PollAgentOffer(ctx context.Context, in PollAgentOfferInput) (O
 	if err != nil {
 		return Offer{}, err
 	}
-	return Offer{
+	result := Offer{
 		ID:             offer.ID,
 		SessionID:      offer.SessionID,
 		MachineID:      offer.MachineID,
@@ -185,7 +202,13 @@ func (s *Service) PollAgentOffer(ctx context.Context, in PollAgentOfferInput) (O
 		Signature:      managedSignature(offer.Signature),
 		Path:           PathManaged,
 		RelayInUse:     offer.RelayInUse,
-	}, nil
+	}
+	s.mu.Lock()
+	if policy, ok := s.offerPolicyLocked(offer.ID); ok {
+		result.AllowRelay = policy.Ticket.AllowRelay
+	}
+	s.mu.Unlock()
+	return result, nil
 }
 
 func (s *Service) SubmitAnswer(ctx context.Context, in SubmitAnswerInput) error {
@@ -251,9 +274,9 @@ func (s *Service) GetAnswer(ctx context.Context, in GetAnswerInput) (Answer, err
 	if mapped := s.sessionOffers[sessionOfferKey(machineID, ticketID, offerID)]; mapped != "" {
 		offerID = mapped
 	}
-	ticket, ok := s.offers[offerID]
+	policy, ok := s.offerPolicyLocked(offerID)
 	s.mu.Unlock()
-	if !ok || ticket.ID != ticketID || ticket.MachineID != machineID {
+	if !ok || policy.Ticket.ID != ticketID || policy.Ticket.MachineID != machineID {
 		return Answer{}, ErrWrongMachine
 	}
 	answer, err := s.registry.GetAnswer(ctx, offerID)
@@ -269,6 +292,97 @@ func (s *Service) GetAnswer(ctx context.Context, in GetAnswerInput) (Answer, err
 		MachineID: answer.MachineID,
 		SDP:       answer.SDP,
 	}, nil
+}
+
+func (s *Service) OfferPolicy(offerID string) (OfferPolicy, bool) {
+	if s == nil {
+		return OfferPolicy{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.offerPolicyLocked(offerID)
+}
+
+func (s *Service) OfferPolicyForAnswer(in GetAnswerInput) (OfferPolicy, bool) {
+	if s == nil {
+		return OfferPolicy{}, false
+	}
+	ticketID := strings.TrimSpace(in.TicketID)
+	machineID := strings.TrimSpace(in.MachineID)
+	offerID := strings.TrimSpace(in.OfferID)
+	if ticketID == "" || machineID == "" || offerID == "" {
+		return OfferPolicy{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if mapped := s.sessionOffers[sessionOfferKey(machineID, ticketID, offerID)]; mapped != "" {
+		offerID = mapped
+	}
+	policy, ok := s.offerPolicyLocked(offerID)
+	if !ok || policy.Ticket.ID != ticketID || policy.Ticket.MachineID != machineID {
+		return OfferPolicy{}, false
+	}
+	return policy, true
+}
+
+func (s *Service) CleanupExpired(ctx context.Context) int {
+	_ = ctx
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	before := s.policyEntryCountLocked()
+	s.cleanupExpiredLocked(s.clock.Now().UTC())
+	return before - s.policyEntryCountLocked()
+}
+
+func (s *Service) offerPolicyLocked(offerID string) (OfferPolicy, bool) {
+	s.cleanupExpiredLocked(s.clock.Now().UTC())
+	policy, ok := s.offers[strings.TrimSpace(offerID)]
+	if !ok {
+		return OfferPolicy{}, false
+	}
+	return policy, true
+}
+
+func (s *Service) cleanupExpiredLocked(now time.Time) {
+	for offerID, policy := range s.offers {
+		if !now.Before(policy.CreatedAt.Add(s.offerTTL)) || (!policy.Ticket.ExpiresAt.IsZero() && !now.Before(policy.Ticket.ExpiresAt)) {
+			s.deleteOfferLocked(offerID, policy.Ticket)
+		}
+	}
+}
+
+func (s *Service) evictToLimitLocked(limit int) {
+	for limit >= 0 && len(s.offers) > limit {
+		var oldestID string
+		var oldest OfferPolicy
+		for id, policy := range s.offers {
+			if oldestID == "" || policy.CreatedAt.Before(oldest.CreatedAt) {
+				oldestID = id
+				oldest = policy
+			}
+		}
+		if oldestID == "" {
+			return
+		}
+		s.deleteOfferLocked(oldestID, oldest.Ticket)
+	}
+}
+
+func (s *Service) deleteOfferLocked(offerID string, ticket Ticket) {
+	delete(s.offers, offerID)
+	delete(s.ticketOffers, ticketOfferKey(ticket.MachineID, ticket.ID))
+	for key, mapped := range s.sessionOffers {
+		if mapped == offerID {
+			delete(s.sessionOffers, key)
+		}
+	}
+}
+
+func (s *Service) policyEntryCountLocked() int {
+	return len(s.offers) + len(s.sessionOffers) + len(s.ticketOffers)
 }
 
 func sessionOfferKey(machineID, ticketID, sessionID string) string {

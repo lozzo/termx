@@ -257,7 +257,7 @@ func TestManagedAnswerLookupScopesPublicSessionIDByTicket(t *testing.T) {
 	}
 }
 
-func TestManagedSignalingDoesNotSurfaceRelayBeforeTurnPolicy(t *testing.T) {
+func TestManagedSignalingSurfacesManagedRelayCapability(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -286,8 +286,86 @@ func TestManagedSignalingDoesNotSurfaceRelayBeforeTurnPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("submit offer: %v", err)
 	}
-	if offer.AllowRelay || offer.RelayInUse {
-		t.Fatalf("slice 6 offer surfaced relay before TURN policy: %+v", offer)
+	if offer.Path != managed.PathManaged || !offer.AllowRelay || offer.RelayInUse {
+		t.Fatalf("offer relay capability = %+v", offer)
+	}
+	polled, err := svc.PollAgentOffer(ctx, managed.PollAgentOfferInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("poll offer: %v", err)
+	}
+	if polled.Path != managed.PathManaged || !polled.AllowRelay || polled.RelayInUse {
+		t.Fatalf("polled relay capability = %+v", polled)
+	}
+}
+
+func TestManagedOfferPolicyCacheIsTTLBounded(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clock := &mutableClock{value: time.Date(2026, 5, 3, 18, 58, 0, 0, time.UTC)}
+	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]managed.Ticket{
+		"ticket_a": {
+			ID:         "ticket_a",
+			MachineID:  "mach_1",
+			TerminalID: "term_1",
+			Path:       managed.PathManaged,
+			AllowRelay: true,
+			ExpiresAt:  clock.Now().Add(time.Minute),
+		},
+		"ticket_b": {
+			ID:         "ticket_b",
+			MachineID:  "mach_1",
+			TerminalID: "term_1",
+			Path:       managed.PathManaged,
+			AllowRelay: true,
+			ExpiresAt:  clock.Now().Add(time.Minute),
+		},
+	}}
+	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	svc := managed.NewService(managed.Config{
+		Registry:  reg,
+		Tickets:   verifier,
+		Clock:     clock,
+		OfferTTL:  time.Second,
+		MaxOffers: 1,
+	})
+	first, err := svc.SubmitOffer(ctx, managed.SubmitOfferInput{
+		SessionID:  "rtc_a",
+		TicketID:   "ticket_a",
+		MachineID:  "mach_1",
+		TerminalID: "term_1",
+		SDP:        minimalSDP("offer-a"),
+	})
+	if err != nil {
+		t.Fatalf("submit first: %v", err)
+	}
+	if _, err := svc.SubmitOffer(ctx, managed.SubmitOfferInput{
+		SessionID:  "rtc_b",
+		TicketID:   "ticket_b",
+		MachineID:  "mach_1",
+		TerminalID: "term_1",
+		SDP:        minimalSDP("offer-b"),
+	}); err != nil {
+		t.Fatalf("submit second: %v", err)
+	}
+	if _, err := svc.GetAnswer(ctx, managed.GetAnswerInput{
+		OfferID:   first.ID,
+		TicketID:  "ticket_a",
+		MachineID: "mach_1",
+	}); !errors.Is(err, managed.ErrWrongMachine) {
+		t.Fatalf("evicted offer answer err = %v", err)
+	}
+	clock.value = clock.value.Add(2 * time.Second)
+	removed := svc.CleanupExpired(ctx)
+	if removed == 0 {
+		t.Fatal("expected expired managed offer policy cache entries to be cleaned")
 	}
 }
 
@@ -557,6 +635,14 @@ type fixedClock time.Time
 
 func (c fixedClock) Now() time.Time {
 	return time.Time(c)
+}
+
+type mutableClock struct {
+	value time.Time
+}
+
+func (c *mutableClock) Now() time.Time {
+	return c.value
 }
 
 func minimalSDP(sessionID string) string {

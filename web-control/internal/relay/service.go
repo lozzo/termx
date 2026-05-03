@@ -26,13 +26,22 @@ const (
 )
 
 type Config struct {
-	DB    *sql.DB
-	Clock Clock
+	DB            *sql.DB
+	Clock         Clock
+	DevFreePolicy *PolicyOverride
 }
 
 type Service struct {
-	db    *sql.DB
-	clock Clock
+	db            *sql.DB
+	clock         Clock
+	devFreePolicy *PolicyOverride
+}
+
+type PolicyOverride struct {
+	AllowRelay   bool
+	MonthlyBytes int64
+	SessionLimit int
+	ThrottleBps  int64
 }
 
 func NewService(cfg Config) *Service {
@@ -40,7 +49,17 @@ func NewService(cfg Config) *Service {
 	if clock == nil {
 		clock = realClock{}
 	}
-	return &Service{db: cfg.DB, clock: clock}
+	policy := cfg.DevFreePolicy
+	if policy == nil {
+		defaultPolicy := PolicyOverride{
+			AllowRelay:   true,
+			MonthlyBytes: devFreeMonthlyRelayBytes,
+			SessionLimit: devFreeRelaySessionLimit,
+			ThrottleBps:  defaultThrottleBps,
+		}
+		policy = &defaultPolicy
+	}
+	return &Service{db: cfg.DB, clock: clock, devFreePolicy: policy}
 }
 
 func (s *Service) CreateLease(ctx context.Context, in CreateLeaseInput) (RelayLease, error) {
@@ -75,7 +94,7 @@ func (s *Service) CreateLease(ctx context.Context, in CreateLeaseInput) (RelayLe
 	if err := requireHubOnline(ctx, tx, hubID); err != nil {
 		return RelayLease{}, err
 	}
-	policy, err := loadRelayPolicy(ctx, tx, userID, s.clock.Now())
+	policy, err := s.loadRelayPolicy(ctx, tx, userID, s.clock.Now())
 	if err != nil {
 		return RelayLease{}, err
 	}
@@ -166,7 +185,7 @@ func (s *Service) RecordHeartbeat(ctx context.Context, in HeartbeatInput) (Heart
 	if err := requireHubOnline(ctx, tx, authenticatedHubID); err != nil {
 		return HeartbeatResult{}, err
 	}
-	policy, err := loadRelayPolicy(ctx, tx, session.UserID, now)
+	policy, err := s.loadRelayPolicy(ctx, tx, session.UserID, now)
 	if err != nil {
 		return HeartbeatResult{}, err
 	}
@@ -280,6 +299,11 @@ type relayPolicy struct {
 
 const defaultThrottleBps = 256 * 1024
 
+const (
+	devFreeMonthlyRelayBytes = 512 * 1024 * 1024
+	devFreeRelaySessionLimit = 1
+)
+
 func countActiveSessions(ctx context.Context, tx *sql.Tx, userID string, now time.Time) (int, error) {
 	var count int
 	err := tx.QueryRowContext(ctx, `
@@ -387,7 +411,7 @@ func requireHubOnline(ctx context.Context, tx *sql.Tx, hubID string) error {
 	return nil
 }
 
-func loadRelayPolicy(ctx context.Context, tx *sql.Tx, userID string, now time.Time) (relayPolicy, error) {
+func (s *Service) loadRelayPolicy(ctx context.Context, tx *sql.Tx, userID string, now time.Time) (relayPolicy, error) {
 	var monthlyBytes int64
 	var sessionLimit int
 	var throttleBps int64
@@ -403,7 +427,7 @@ func loadRelayPolicy(ctx context.Context, tx *sql.Tx, userID string, now time.Ti
 		LIMIT 1
 	`, userID, formatTime(now)).Scan(&monthlyBytes, &sessionLimit, &throttleBps, &end)
 	if errors.Is(err, sql.ErrNoRows) {
-		return relayPolicy{}, nil
+		return s.devFreeRelayPolicy(), nil
 	}
 	if err != nil {
 		return relayPolicy{}, err
@@ -414,7 +438,7 @@ func loadRelayPolicy(ctx context.Context, tx *sql.Tx, userID string, now time.Ti
 			return relayPolicy{}, err
 		}
 		if !now.Before(parsed) {
-			return relayPolicy{}, nil
+			return s.devFreeRelayPolicy(), nil
 		}
 	}
 	policy := relayPolicy{
@@ -422,6 +446,9 @@ func loadRelayPolicy(ctx context.Context, tx *sql.Tx, userID string, now time.Ti
 		monthlyBytes: monthlyBytes,
 		sessionLimit: sessionLimit,
 		throttleBps:  throttleBps,
+	}
+	if !policy.allowRelay {
+		return s.devFreeRelayPolicy(), nil
 	}
 	if end.Valid {
 		parsed, err := time.Parse(time.RFC3339Nano, end.String)
@@ -431,6 +458,30 @@ func loadRelayPolicy(ctx context.Context, tx *sql.Tx, userID string, now time.Ti
 		policy.periodEnd = &parsed
 	}
 	return policy, nil
+}
+
+func (s *Service) devFreeRelayPolicy() relayPolicy {
+	if s == nil || s.devFreePolicy == nil || !s.devFreePolicy.AllowRelay {
+		return relayPolicy{}
+	}
+	monthlyBytes := s.devFreePolicy.MonthlyBytes
+	if monthlyBytes <= 0 {
+		monthlyBytes = devFreeMonthlyRelayBytes
+	}
+	sessionLimit := s.devFreePolicy.SessionLimit
+	if sessionLimit <= 0 {
+		sessionLimit = devFreeRelaySessionLimit
+	}
+	throttleBps := s.devFreePolicy.ThrottleBps
+	if throttleBps <= 0 {
+		throttleBps = defaultThrottleBps
+	}
+	return relayPolicy{
+		allowRelay:   true,
+		monthlyBytes: monthlyBytes,
+		sessionLimit: sessionLimit,
+		throttleBps:  throttleBps,
+	}
 }
 
 func nullableRateLimit(value int64) any {

@@ -6,7 +6,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `18` stateless Hub policy / dev-free managed relay.
-- Last updated: 2026-05-03T18:33:57+08:00.
+- Last updated: 2026-05-03T19:37:00+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -138,7 +138,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 17 | daemon-login-hub-select | Implement token/password/device-code daemon login and Hub discovery/selection | completed | `755641be` |
 | 17-A | daemon-hub-selection-policy | Add production Hub selection policy using region/health/capacity/expiry/weights | pending |  |
 | 17-B | external | Defer production OAuth/email/SMS and secure OS keychain/secret storage for CLI/device login | deferred_external |  |
-| 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | pending |  |
+| 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | completed | pending hash |
 | 19 | native-app-rtc-seam | Add native APP `RtcSession` seam without WebRTC type leakage | pending |  |
 | 20 | app-devstack-e2e | Validate APP shell / Web Control / stateless Hub / daemon closed loop | pending |  |
 
@@ -336,6 +336,32 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - 测试结果：focused Hub HTTP/controlclient/cmd and Web Control hubregistry/httpapi tests pass.
 - 解决方式：Hub remains stateless with bounded TTL memory; no DB added to Hub.
 
+### 18 Stateless Hub Policy Relay
+
+- 状态：completed
+- 父条目：none
+- 来源：development policy requires registered/dev users to receive managed relay capability so the managed path can be proven before billing/entitlement gates return.
+- 目标：sync Web Control policy to Hub and expose dev-free managed relay capability/ICE info without adding a `relay` client path or leaking TURN credentials into `public_p2p`.
+- 范围：inspect then likely `web-control/internal/connect` managed ticket/relay policy, `termx-hub/internal/httpapi` policy/capability cache, bounded memory/cleanup tests, workflow docs.
+- 非目标：production billing/entitlement, real TURN cloud deployment, terminal/file runtime changes, Web Control terminal UI.
+- 外部依赖：production TURN public IP/DNS/TLS/firewall/cloud account remains deferred external; use existing local/mock TURN credential seams.
+- mock 策略：real SQLite for Web Control policy; Hub keeps bounded TTL memory only; tests must assert path remains `managed`.
+- 只读探索：Web Control `connect.CreateManagedTicket` still inserts `allow_relay = 0`; HTTP managed-ticket and hub-ticket tests assert old no-relay free-plan behavior. Hub `managed.Service.SubmitOffer` and agent poll hardcode relay capability false; `ice.Service` already safely emits TURN only for `PathManaged && AllowRelay` and keeps `public_p2p` STUN-only. Daemon currently answers with registration-level ICE servers only, so session-specific managed TURN must be carried as neutral signaling `rtc_config`, not browser/native WebRTC types.
+- 先写的失败测试：revise Web Control managed ticket tests to expect dev-free managed relay capability but no TURN/runtime data; revise Hub managed/httpapi tests to expect `AllowRelay` from verified managed tickets, managed-only TURN ICE info in app session and agent poll responses, no `path:"relay"`; add managed service TTL/max cleanup coverage; add core manager coverage for session-specific managed ICE config.
+- 预期失败结果：focused tests failed as expected: Web Control managed tickets/checks returned `allow_relay:false`; Web Control relay lease denied registered-free users; Hub compile failed because `managed.Config` lacks `OfferTTL`/`MaxOffers`, `managed.Service` lacks `CleanupExpired`, and `httpapi.Config` lacks `ICE`; core manager answered with registration-level ICE instead of offer-level managed RTC config.
+- 实现摘要：Web Control managed ticket policy now uses a provider-backed dev-free managed relay capability and still writes `path = managed`; relay lease policy falls back to configurable dev-free managed quota/session limits when no active paid policy exists. Hub managed signaling now carries verified ticket relay capability through offer/poll/session responses, generates managed-only ICE config via existing `ice.Service`, wires local TURN env into Hub session ICE generation, and adds TTL/max cleanup for managed offer policy maps. Core daemon now prefers offer-scoped managed RTC config over registration-level ICE servers, and the e2e smoke tool accepts managed relay capability.
+- 重构摘要：added neutral `hubv1.RTCConfig` to signaling offer/registration types; kept TURN credentials under managed `rtc_config` / `ice_servers`; kept `public_p2p` STUN-only guards unchanged; made dev-free relay fallback configurable for future entitlement gating; no Hub DB added.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/connect ./internal/httpapi ./internal/relay -run 'TestManagedTicketOwnerPolicyAndDevFreeRelayCapability|TestManagedConnectTicketHTTPFlow|TestHubManagedTicketCheckAndConsumeHTTP|TestRelayLeasePolicyAllowsDevFreeAndPaidManagedLease|TestPublicP2PRendezvousHTTPFlow'`; `cd termx-hub && GOWORK=off go test ./internal/managed ./internal/httpapi ./internal/ice -run 'TestManagedSignalingSurfacesManagedRelayCapability|TestManagedOfferPolicyCacheIsTTLBounded|TestManagedSessionHTTPContract|TestAgentHTTPRegisterHeartbeatPollAndAnswer|TestManagedWithoutRelayAndPublicP2PDoNotReceiveTurnCredentials'`; `cd termx-core && GOWORK=off go test ./internal/remote/runtime -run TestManagerUsesOfferScopedManagedRTCConfig`.
+- 测试结果：focused red tests failed as expected, then passed after implementation; broader `web-control`, `termx-hub`, and `termx-core` package tests passed after updating expired-subscription relay lease expectations to dev-free fallback. Final validation passed: `web-control`, `termx-hub`, `termx-core` full package tests; workflow guard; diff whitespace check.
+- subagent review：`Russell` reviewed Slice 18 diff.
+- review 发现：managed TURN path bypassed relay quota/session enforcement; real Hub binary initially lacked ICE/TURN service wiring; session answer paths could consume a ticket before ICE response assembly; `termx-remote-e2e` still rejected `allow_relay:true`.
+- review 后修复：made relay dev-free fallback configurable and covered gate/custom quota tests; wired Hub TURN env into `ice.Service` while keeping registration STUN-only; preflighted ICE response before consuming managed tickets; updated smoke tool to accept managed relay and apply Hub-returned ICE servers.
+- 新增派生条目：none yet.
+- deferred human items：production TURN/DNS/TLS/firewall/cloud account and billing/entitlement providers remain deferred external.
+- 剩余风险：production TURN public DNS/TLS/firewall/cloud deployment still deferred; production entitlement/billing provider remains deferred; managed relay sessions are now capability/ICE enabled for dev but full end-to-end accounting heartbeat through Hub/Web Control should be exercised in Slice 20.
+- 下一步：commit and hash backfill, then continue Slice `19`.
+- commit：pending hash
+
 ## Deferred External / Human Items
 
 - Real payment/subscription/invoice/tax/fraud integrations remain `deferred_external` behind provider interfaces.
@@ -345,6 +371,6 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ## Next Exact Action
 
-1. Start Slice `17`: write/update todo for daemon login and Hub discovery/selection.
-2. Inspect existing `termx-cli`, `termx-core`, Web Control auth/device-code, and daemon cloud bootstrap boundaries.
-3. Write failing focused tests for token/password/device-code login, daemon registration visibility, token refresh/rotation, and machine private key non-upload.
+1. Continue Slice `18`: write focused red tests for Web Control dev-free managed tickets, Hub managed relay/ICE responses, bounded managed offer maps, and core session-specific ICE use.
+2. Run focused tests and record expected failures.
+3. Implement the minimal real policy sync without adding Hub DB or changing terminal/file/api/events runtime.

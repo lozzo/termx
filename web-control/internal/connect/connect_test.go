@@ -13,7 +13,7 @@ import (
 	"github.com/lozzow/termx/web-control/internal/store"
 )
 
-func TestManagedTicketOwnerPolicyAndNoRelayForFreePlan(t *testing.T) {
+func TestManagedTicketOwnerPolicyAndDevFreeRelayCapability(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -34,11 +34,11 @@ func TestManagedTicketOwnerPolicyAndNoRelayForFreePlan(t *testing.T) {
 	if ticket.Path != connect.PathManaged {
 		t.Fatalf("path = %q", ticket.Path)
 	}
-	if ticket.AllowRelay || ticket.RelayInUse {
-		t.Fatalf("free managed ticket enabled relay: %+v", ticket)
+	if !ticket.AllowRelay || ticket.RelayInUse {
+		t.Fatalf("dev managed ticket relay capability = %+v", ticket)
 	}
-	if ticket.RelayBytesRemaining != 0 || ticket.RelayThrottled {
-		t.Fatalf("free ticket exposed relay quota/throttle state: %+v", ticket)
+	if ticket.RelayThrottled {
+		t.Fatalf("dev managed ticket unexpectedly throttled: %+v", ticket)
 	}
 	if !ticket.ExpiresAt.Equal(clock.value.Add(time.Minute)) {
 		t.Fatalf("expires_at = %v", ticket.ExpiresAt)
@@ -48,7 +48,7 @@ func TestManagedTicketOwnerPolicyAndNoRelayForFreePlan(t *testing.T) {
 		t.Fatalf("marshal ticket: %v", err)
 	}
 	lower := strings.ToLower(string(payload))
-	for _, forbidden := range []string{"turn:", "relay_path", "terminal_data", "file_data", "api_data", "events_data", "http_runtime", "websocket"} {
+	for _, forbidden := range []string{"turn:", `"path":"relay"`, "relay_path", "terminal_data", "file_data", "api_data", "events_data", "http_runtime", "websocket"} {
 		if strings.Contains(lower, forbidden) {
 			t.Fatalf("ticket leaked forbidden runtime/relay field %q: %s", forbidden, payload)
 		}

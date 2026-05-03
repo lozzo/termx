@@ -1,6 +1,9 @@
 package connect
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 const PathManaged = "managed"
 
@@ -38,4 +41,20 @@ type VerifyManagedTicketInput struct {
 	TicketID   string
 	MachineID  string
 	TerminalID string
+}
+
+type ManagedRelayPolicyInput struct {
+	UserID     string
+	MachineID  string
+	TerminalID string
+}
+
+type ManagedRelayPolicy struct {
+	AllowRelay          bool
+	RelayBytesRemaining int64
+	RelayThrottled      bool
+}
+
+type ManagedRelayPolicyProvider interface {
+	ManagedRelayPolicy(context.Context, ManagedRelayPolicyInput) (ManagedRelayPolicy, error)
 }

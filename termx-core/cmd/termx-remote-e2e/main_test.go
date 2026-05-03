@@ -11,6 +11,7 @@ import (
 
 	remotecert "github.com/lozzow/termx/termx-core/internal/remote/cert"
 	remotertc "github.com/lozzow/termx/termx-core/internal/remote/rtc"
+	"github.com/pion/webrtc/v4"
 )
 
 func TestBuildManagedSessionRequestSignsTicketBoundOffer(t *testing.T) {
@@ -74,5 +75,24 @@ func TestBuildManagedSessionRequestSignsTicketBoundOffer(t *testing.T) {
 		Candidates: []string{"candidate:1 1 udp 1 192.0.2.1 1 typ host"},
 	}, appPublic, nil, now); err != nil {
 		t.Fatalf("request signature did not verify: %v", err)
+	}
+}
+
+func TestApplyRemoteICEServersAcceptsManagedTurnConfig(t *testing.T) {
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("new peer connection: %v", err)
+	}
+	defer pc.Close()
+
+	if err := applyRemoteICEServers(pc, []hubICEServer{
+		{URLs: []string{"stun:hub.termx.test:3478"}},
+		{URLs: []string{"turn:hub.termx.test:3478?transport=udp"}, Username: "lease:1770000000", Credential: "credential"},
+	}); err != nil {
+		t.Fatalf("apply ice servers: %v", err)
+	}
+	got := pc.GetConfiguration().ICEServers
+	if len(got) != 2 || got[1].Username != "lease:1770000000" || got[1].Credential != "credential" {
+		t.Fatalf("peer connection ICE servers = %+v", got)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	hubv1 "github.com/lozzow/termx/termx-core/remote/hubv1"
 	"github.com/lozzow/termx/termx-hub/internal/controlclient"
 	"github.com/lozzow/termx/termx-hub/internal/httpapi"
+	"github.com/lozzow/termx/termx-hub/internal/ice"
 	"github.com/lozzow/termx/termx-hub/internal/managed"
 	"github.com/lozzow/termx/termx-hub/internal/registry"
 )
@@ -68,6 +69,7 @@ func newHubHandlerFromEnv() (http.Handler, error) {
 		Managed:     svc,
 		Registry:    reg,
 		AgentPolicy: verifier,
+		ICE:         iceServiceFromEnv(),
 		ICEServers:  stunServersFromEnv(os.Getenv("TERMX_HUB_STUN_SERVERS")),
 		DebugToken:  strings.TrimSpace(os.Getenv("TERMX_HUB_DEBUG_TOKEN")),
 	}), nil
@@ -83,4 +85,36 @@ func stunServersFromEnv(raw string) []hubv1.RTCIceServerConfig {
 		servers = append(servers, hubv1.RTCIceServerConfig{URLs: []string{url}})
 	}
 	return servers
+}
+
+func iceServiceFromEnv() *ice.Service {
+	stunURLs := urlsFromEnv(os.Getenv("TERMX_HUB_STUN_SERVERS"), "stun:", "stuns:")
+	turnURLs := urlsFromEnv(os.Getenv("TERMX_HUB_TURN_SERVERS"), "turn:", "turns:")
+	secret := strings.TrimSpace(os.Getenv("TERMX_HUB_TURN_SHARED_SECRET"))
+	if len(turnURLs) == 0 || secret == "" {
+		return nil
+	}
+	return ice.NewService(ice.Config{
+		SharedSecret: secret,
+		STUNURLs:     stunURLs,
+		TURNURLs:     turnURLs,
+	})
+}
+
+func urlsFromEnv(raw string, prefixes ...string) []string {
+	var urls []string
+	for _, part := range strings.Split(raw, ",") {
+		url := strings.TrimSpace(part)
+		if url == "" {
+			continue
+		}
+		lower := strings.ToLower(url)
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(lower, prefix) {
+				urls = append(urls, url)
+				break
+			}
+		}
+	}
+	return urls
 }

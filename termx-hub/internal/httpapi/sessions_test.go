@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-hub/internal/httpapi"
+	"github.com/lozzow/termx/termx-hub/internal/ice"
 	"github.com/lozzow/termx/termx-hub/internal/managed"
 	"github.com/lozzow/termx/termx-hub/internal/registry"
 )
@@ -26,6 +27,7 @@ func TestManagedSessionHTTPContract(t *testing.T) {
 			MachineID:  "mach_1",
 			TerminalID: "term_1",
 			Path:       managed.PathManaged,
+			AllowRelay: true,
 			ExpiresAt:  clock.Now().Add(time.Minute),
 		},
 	}}
@@ -34,7 +36,15 @@ func TestManagedSessionHTTPContract(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 	svc := managed.NewService(managed.Config{Registry: reg, Tickets: verifier, Clock: clock})
-	router := httpapi.NewHandler(httpapi.Config{Managed: svc})
+	router := httpapi.NewHandler(httpapi.Config{
+		Managed: svc,
+		ICE: ice.NewService(ice.Config{
+			Clock:        clock,
+			SharedSecret: "turn-secret",
+			STUNURLs:     []string{"stun:hub.termx.test:3478"},
+			TURNURLs:     []string{"turn:hub.termx.test:3478?transport=udp"},
+		}),
+	})
 
 	requestBody := map[string]any{
 		"connect_ticket": "ticket_allowed",
@@ -110,10 +120,26 @@ func TestManagedSessionHTTPContract(t *testing.T) {
 		Answer    struct {
 			SDP string `json:"sdp"`
 		} `json:"answer"`
+		ICEServers []struct {
+			URLs       []string `json:"urls"`
+			Username   string   `json:"username"`
+			Credential string   `json:"credential"`
+		} `json:"ice_servers"`
+		RelayPolicy struct {
+			AllowRelay         bool `json:"allow_relay"`
+			AllowRelayTransfer bool `json:"allow_relay_transfer"`
+		} `json:"relay_policy"`
 	}
 	decodeJSON(t, answer, &got)
 	if got.SessionID != "rtc_managed_1" || got.Path != "managed" || got.MachineID != "mach_1" || got.Answer.SDP != minimalSDP("answer") {
 		t.Fatalf("answer response = %+v", got)
+	}
+	if !got.RelayPolicy.AllowRelay || got.RelayPolicy.AllowRelayTransfer {
+		t.Fatalf("relay policy = %+v", got.RelayPolicy)
+	}
+	if len(got.ICEServers) != 2 || !strings.HasPrefix(got.ICEServers[1].URLs[0], "turn:") ||
+		got.ICEServers[1].Username == "" || got.ICEServers[1].Credential == "" {
+		t.Fatalf("managed ICE servers = %+v", got.ICEServers)
 	}
 	if strings.Contains(strings.ToLower(answer.Body.String()), `"path":"relay"`) {
 		t.Fatalf("relay surfaced as client path: %s", answer.Body.String())

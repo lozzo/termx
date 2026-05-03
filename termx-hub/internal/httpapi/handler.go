@@ -13,6 +13,7 @@ import (
 	"time"
 
 	hubv1 "github.com/lozzow/termx/termx-core/remote/hubv1"
+	"github.com/lozzow/termx/termx-hub/internal/ice"
 	"github.com/lozzow/termx/termx-hub/internal/managed"
 	"github.com/lozzow/termx/termx-hub/internal/registry"
 )
@@ -21,6 +22,7 @@ type Config struct {
 	Managed          *managed.Service
 	Registry         *registry.Registry
 	AgentPolicy      AgentPolicyProvider
+	ICE              *ice.Service
 	ICEServers       []hubv1.RTCIceServerConfig
 	DebugToken       string
 	Clock            Clock
@@ -48,6 +50,7 @@ type AgentPolicyProvider interface {
 type Handler struct {
 	router          http.Handler
 	registry        *registry.Registry
+	managed         *managed.Service
 	agents          *agentSessions
 	clock           Clock
 	agentSessionTTL time.Duration
@@ -71,6 +74,9 @@ func (h *Handler) StartCleanup(ctx context.Context, ticks <-chan time.Time) {
 			}
 			if h.registry != nil {
 				h.registry.CleanupExpired(ctx)
+			}
+			if h.managed != nil {
+				h.managed.CleanupExpired(ctx)
 			}
 			if h.agents != nil {
 				h.agents.cleanupExpired(tick.UTC())
@@ -245,6 +251,12 @@ func NewHandler(cfg Config) http.Handler {
 		publicID := publicSessionID(offer)
 		agents.rememberPoll(req.AgentSessionID, publicID)
 		agents.rememberOffer(req.AgentSessionID, publicID, offer.ID)
+		rtcConfig, err := rtcConfigForOffer(r.Context(), cfg, offer)
+		if err != nil {
+			agents.rememberPollError(req.AgentSessionID, err.Error())
+			writeError(w, http.StatusInternalServerError, "managed_ice_config_failed", err.Error())
+			return
+		}
 		writeJSON(w, http.StatusOK, hubv1.SignalingPollResponse{
 			Offer: &hubv1.SignalingOffer{
 				SessionID:          publicID,
@@ -253,7 +265,8 @@ func NewHandler(cfg Config) http.Handler {
 				TerminalID:         offer.TerminalID,
 				SDP:                offer.SDP,
 				ICECandidates:      append([]string(nil), offer.ICECandidates...),
-				AllowRelay:         false,
+				RTCConfig:          rtcConfig,
+				AllowRelay:         offer.AllowRelay,
 				AllowRelayTransfer: false,
 				AppCertificate:     append([]byte(nil), offer.AppCertificate...),
 				Signature: hubv1.OfferSignature{
@@ -353,15 +366,20 @@ func NewHandler(cfg Config) http.Handler {
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 				writeJSON(w, http.StatusAccepted, map[string]any{
-					"session_id":  publicSessionID(offer),
-					"path":        managed.PathManaged,
-					"machine_id":  offer.MachineID,
-					"terminal_id": offer.TerminalID,
-					"pending":     true,
+					"session_id":   publicSessionID(offer),
+					"path":         managed.PathManaged,
+					"machine_id":   offer.MachineID,
+					"terminal_id":  offer.TerminalID,
+					"pending":      true,
+					"relay_policy": relayPolicyResponse(offer.AllowRelay),
 				})
 				return
 			}
 			writeError(w, statusForAnswerError(err), "get_managed_answer_failed", err.Error())
+			return
+		}
+		if _, err := iceServersForTicket(r.Context(), cfg, offer.TicketID, offer.AllowRelay); err != nil {
+			writeError(w, http.StatusInternalServerError, "managed_ice_config_failed", err.Error())
 			return
 		}
 		if _, err := cfg.Managed.ConsumeOfferTicket(r.Context(), managed.GetAnswerInput{
@@ -372,7 +390,7 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusForbidden, "consume_managed_ticket_failed", err.Error())
 			return
 		}
-		writeSessionAnswer(w, publicSessionID(offer), offer.MachineID, offer.TerminalID, answer)
+		writeSessionAnswer(w, r.Context(), cfg, publicSessionID(offer), offer.MachineID, offer.TerminalID, offer.AllowRelay, offer.TicketID, answer)
 	})
 	mux.HandleFunc("POST /api/v1/sessions/{session_id}/answer", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -396,6 +414,16 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusForbidden, "get_managed_answer_failed", err.Error())
 			return
 		}
+		policy, ok := cfg.Managed.OfferPolicyForAnswer(managed.GetAnswerInput{
+			OfferID:   r.PathValue("session_id"),
+			TicketID:  req.ConnectTicket,
+			MachineID: req.MachineID,
+		})
+		allowRelay := ok && policy.Ticket.AllowRelay
+		if _, err := iceServersForTicket(r.Context(), cfg, req.ConnectTicket, allowRelay); err != nil {
+			writeError(w, http.StatusInternalServerError, "managed_ice_config_failed", err.Error())
+			return
+		}
 		if _, err := cfg.Managed.ConsumeOfferTicket(r.Context(), managed.GetAnswerInput{
 			OfferID:   r.PathValue("session_id"),
 			TicketID:  req.ConnectTicket,
@@ -404,11 +432,12 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusForbidden, "consume_managed_ticket_failed", err.Error())
 			return
 		}
-		writeSessionAnswer(w, r.PathValue("session_id"), answer.MachineID, "", answer)
+		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), answer.MachineID, "", allowRelay, req.ConnectTicket, answer)
 	})
 	return &Handler{
 		router:          mux,
 		registry:        cfg.Registry,
+		managed:         cfg.Managed,
 		agents:          agents,
 		clock:           clock,
 		agentSessionTTL: agentSessionTTL,
@@ -682,7 +711,12 @@ func publicSessionID(offer managed.Offer) string {
 	return offer.ID
 }
 
-func writeSessionAnswer(w http.ResponseWriter, sessionID string, machineID string, terminalID string, answer managed.Answer) {
+func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, sessionID string, machineID string, terminalID string, allowRelay bool, ticketID string, answer managed.Answer) {
+	iceServers, err := iceServersForTicket(ctx, cfg, ticketID, allowRelay)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "managed_ice_config_failed", err.Error())
+		return
+	}
 	response := map[string]any{
 		"session_id": sessionID,
 		"path":       managed.PathManaged,
@@ -691,16 +725,59 @@ func writeSessionAnswer(w http.ResponseWriter, sessionID string, machineID strin
 			"sdp":            answer.SDP,
 			"ice_candidates": []string{},
 		},
-		"relay_policy": map[string]any{
-			"allow_relay":          false,
-			"allow_relay_transfer": false,
-		},
+		"ice_servers":  iceServers,
+		"relay_policy": relayPolicyResponse(allowRelay),
 		"relay_in_use": answer.RelayInUse,
 	}
 	if strings.TrimSpace(terminalID) != "" {
 		response["terminal_id"] = strings.TrimSpace(terminalID)
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+func rtcConfigForOffer(ctx context.Context, cfg Config, offer managed.Offer) (hubv1.RTCConfig, error) {
+	servers, err := iceServersForTicket(ctx, cfg, offer.TicketID, offer.AllowRelay)
+	if err != nil {
+		return hubv1.RTCConfig{}, err
+	}
+	return hubv1.RTCConfig{IceServers: servers}, nil
+}
+
+func iceServersForTicket(ctx context.Context, cfg Config, ticketID string, allowRelay bool) ([]hubv1.RTCIceServerConfig, error) {
+	if cfg.ICE == nil {
+		return cloneICEServers(cfg.ICEServers), nil
+	}
+	rtc, err := cfg.ICE.ConfigForLease(ctx, ice.Lease{
+		ID:         ticketID,
+		Path:       ice.PathManaged,
+		AllowRelay: allowRelay,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return hubIceServers(rtc.ICEServers), nil
+}
+
+func hubIceServers(in []ice.ICEServer) []hubv1.RTCIceServerConfig {
+	out := make([]hubv1.RTCIceServerConfig, 0, len(in))
+	for _, server := range in {
+		if len(server.URLs) == 0 {
+			continue
+		}
+		out = append(out, hubv1.RTCIceServerConfig{
+			URLs:       append([]string(nil), server.URLs...),
+			Username:   server.Username,
+			Credential: server.Credential,
+		})
+	}
+	return out
+}
+
+func relayPolicyResponse(allowRelay bool) map[string]any {
+	return map[string]any{
+		"allow_relay":          allowRelay,
+		"allow_relay_transfer": false,
+	}
 }
 
 func cloneICEServers(in []hubv1.RTCIceServerConfig) []hubv1.RTCIceServerConfig {

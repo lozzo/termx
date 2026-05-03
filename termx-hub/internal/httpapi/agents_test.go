@@ -3,10 +3,12 @@ package httpapi_test
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/lozzow/termx/termx-hub/internal/httpapi"
+	"github.com/lozzow/termx/termx-hub/internal/ice"
 	"github.com/lozzow/termx/termx-hub/internal/managed"
 	"github.com/lozzow/termx/termx-hub/internal/registry"
 )
@@ -21,12 +23,22 @@ func TestAgentHTTPRegisterHeartbeatPollAndAnswer(t *testing.T) {
 			MachineID:  "device_1",
 			TerminalID: "term_1",
 			Path:       managed.PathManaged,
+			AllowRelay: true,
 			ExpiresAt:  clock.Now().Add(time.Minute),
 		},
 	}}
 	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
 	svc := managed.NewService(managed.Config{Registry: reg, Tickets: verifier, Clock: clock})
-	router := httpapi.NewHandler(httpapi.Config{Managed: svc, Registry: reg})
+	router := httpapi.NewHandler(httpapi.Config{
+		Managed:  svc,
+		Registry: reg,
+		ICE: ice.NewService(ice.Config{
+			Clock:        clock,
+			SharedSecret: "turn-secret",
+			STUNURLs:     []string{"stun:hub.termx.test:3478"},
+			TURNURLs:     []string{"turn:hub.termx.test:3478?transport=udp"},
+		}),
+	})
 
 	register := postJSON(t, router, "/api/v1/agents/register", map[string]any{
 		"version":         "remote.hub.v1",
@@ -100,17 +112,33 @@ func TestAgentHTTPRegisterHeartbeatPollAndAnswer(t *testing.T) {
 	}
 	var polled struct {
 		Offer struct {
-			SessionID  string `json:"session_id"`
-			TicketID   string `json:"ticket_id"`
-			DeviceID   string `json:"device_id"`
-			TerminalID string `json:"terminal_id"`
-			SDP        string `json:"sdp"`
+			SessionID          string `json:"session_id"`
+			TicketID           string `json:"ticket_id"`
+			DeviceID           string `json:"device_id"`
+			TerminalID         string `json:"terminal_id"`
+			SDP                string `json:"sdp"`
+			AllowRelay         bool   `json:"allow_relay"`
+			AllowRelayTransfer bool   `json:"allow_relay_transfer"`
+			RTCConfig          struct {
+				IceServers []struct {
+					URLs       []string `json:"urls"`
+					Username   string   `json:"username"`
+					Credential string   `json:"credential"`
+				} `json:"ice_servers"`
+			} `json:"rtc_config"`
 		} `json:"offer"`
 	}
 	decodeJSON(t, poll, &polled)
 	if polled.Offer.SessionID != "rtc_agent_http_1" || polled.Offer.TicketID != "ticket_allowed" ||
 		polled.Offer.DeviceID != "device_1" || polled.Offer.TerminalID != "term_1" {
 		t.Fatalf("poll response = %+v", polled)
+	}
+	if !polled.Offer.AllowRelay || polled.Offer.AllowRelayTransfer {
+		t.Fatalf("poll relay policy = %+v", polled.Offer)
+	}
+	if len(polled.Offer.RTCConfig.IceServers) != 2 || !strings.HasPrefix(polled.Offer.RTCConfig.IceServers[1].URLs[0], "turn:") ||
+		polled.Offer.RTCConfig.IceServers[1].Username == "" || polled.Offer.RTCConfig.IceServers[1].Credential == "" {
+		t.Fatalf("poll managed ICE servers = %+v", polled.Offer.RTCConfig.IceServers)
 	}
 
 	answer := postJSON(t, router, "/api/v1/agents/signaling/answer", map[string]any{

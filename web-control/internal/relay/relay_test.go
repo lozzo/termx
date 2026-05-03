@@ -14,7 +14,7 @@ import (
 	"github.com/lozzow/termx/web-control/internal/store"
 )
 
-func TestRelayLeasePolicyDeniesFreeAndIssuesPaidManagedLease(t *testing.T) {
+func TestRelayLeasePolicyAllowsDevFreeAndPaidManagedLease(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -26,13 +26,20 @@ func TestRelayLeasePolicyDeniesFreeAndIssuesPaidManagedLease(t *testing.T) {
 	seedRelayUserMachine(t, ctx, db, "usr_paid", "mach_paid")
 	seedRelaySubscription(t, ctx, db, "usr_paid", account.PlanPro, account.SubscriptionActive, clock.Now().Add(-time.Hour), clock.Now().Add(time.Hour))
 
-	if _, err := svc.CreateLease(ctx, relay.CreateLeaseInput{
+	devLease, err := svc.CreateLease(ctx, relay.CreateLeaseInput{
 		UserID:    "usr_free",
 		MachineID: "mach_free",
 		HubID:     "hub_1",
 		TTL:       time.Minute,
-	}); !errors.Is(err, relay.ErrRelayNotAllowed) {
-		t.Fatalf("free relay lease err = %v", err)
+	})
+	if err != nil {
+		t.Fatalf("dev-free relay lease: %v", err)
+	}
+	if devLease.Path != relay.PathManaged || !devLease.AllowRelay || devLease.RelayInUse {
+		t.Fatalf("dev-free lease path/relay state = %+v", devLease)
+	}
+	if devLease.RelayBytesRemaining <= 0 || devLease.RelaySessionLimit <= 0 {
+		t.Fatalf("dev-free relay policy = %+v", devLease)
 	}
 
 	lease, err := svc.CreateLease(ctx, relay.CreateLeaseInput{
@@ -69,7 +76,64 @@ func TestRelayLeasePolicyDeniesFreeAndIssuesPaidManagedLease(t *testing.T) {
 	}
 }
 
-func TestRelayLeaseRejectsWrongOwnerExpiredSubscriptionAndCapsTTL(t *testing.T) {
+func TestRelayLeasePolicyGateCanDisableDevFreeFallback(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db := openRelayTestDB(t, "file:termx-relay-dev-free-gate?mode=memory&cache=shared")
+	clock := fixedClock(time.Date(2026, 5, 3, 19, 18, 0, 0, time.UTC))
+	svc := relay.NewService(relay.Config{
+		DB:            db,
+		Clock:         clock,
+		DevFreePolicy: &relay.PolicyOverride{AllowRelay: false},
+	})
+	seedRelayHub(t, ctx, db, "hub_1")
+	seedRelayUserMachine(t, ctx, db, "usr_free", "mach_free")
+
+	if _, err := svc.CreateLease(ctx, relay.CreateLeaseInput{
+		UserID:    "usr_free",
+		MachineID: "mach_free",
+		HubID:     "hub_1",
+		TTL:       time.Minute,
+	}); !errors.Is(err, relay.ErrRelayNotAllowed) {
+		t.Fatalf("disabled dev-free relay lease err = %v", err)
+	}
+}
+
+func TestRelayLeasePolicyGateCustomizesDevFreeQuota(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db := openRelayTestDB(t, "file:termx-relay-dev-free-custom?mode=memory&cache=shared")
+	clock := fixedClock(time.Date(2026, 5, 3, 19, 19, 0, 0, time.UTC))
+	svc := relay.NewService(relay.Config{
+		DB:    db,
+		Clock: clock,
+		DevFreePolicy: &relay.PolicyOverride{
+			AllowRelay:   true,
+			MonthlyBytes: 2048,
+			SessionLimit: 1,
+			ThrottleBps:  123,
+		},
+	})
+	seedRelayHub(t, ctx, db, "hub_1")
+	seedRelayUserMachine(t, ctx, db, "usr_free", "mach_free")
+
+	lease, err := svc.CreateLease(ctx, relay.CreateLeaseInput{
+		UserID:    "usr_free",
+		MachineID: "mach_free",
+		HubID:     "hub_1",
+		TTL:       time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("custom dev-free lease: %v", err)
+	}
+	if lease.RelayBytesRemaining != 2048 || lease.RelaySessionLimit != 1 {
+		t.Fatalf("custom dev-free relay policy = %+v", lease)
+	}
+}
+
+func TestRelayLeaseRejectsWrongOwnerFallsBackFromExpiredSubscriptionAndCapsTTL(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -89,13 +153,17 @@ func TestRelayLeaseRejectsWrongOwnerExpiredSubscriptionAndCapsTTL(t *testing.T) 
 	}); !errors.Is(err, relay.ErrMachineNotOwned) {
 		t.Fatalf("wrong owner lease err = %v", err)
 	}
-	if _, err := svc.CreateLease(ctx, relay.CreateLeaseInput{
+	devFallback, err := svc.CreateLease(ctx, relay.CreateLeaseInput{
 		UserID:    "usr_owner",
 		MachineID: "mach_1",
 		HubID:     "hub_1",
 		TTL:       time.Minute,
-	}); !errors.Is(err, relay.ErrRelayNotAllowed) {
-		t.Fatalf("expired subscription lease err = %v", err)
+	})
+	if err != nil {
+		t.Fatalf("expired subscription should fall back to dev-free managed relay: %v", err)
+	}
+	if devFallback.Path != relay.PathManaged || !devFallback.AllowRelay || devFallback.RelaySessionLimit != 1 {
+		t.Fatalf("expired subscription fallback policy = %+v", devFallback)
 	}
 
 	seedRelaySubscription(t, ctx, db, "usr_owner", account.PlanPro, account.SubscriptionActive, clock.Now().Add(-time.Hour), clock.Now().Add(time.Hour))
