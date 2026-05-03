@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `9` TermX daemon cloud integration.
-- Last updated: 2026-05-03T08:27:20+08:00.
+- Last updated: 2026-05-03T08:28:50+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -79,10 +79,10 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 9-A-D | daemon-agent-auth-final-review | Record final review residual risks for candidate canonicalization and workflow freshness | completed | `9cc258c3` |
 | 9-A-D-A | daemon-agent-auth-final-review | Harden candidate canonicalization against newline/list-boundary collisions | completed | `9cc258c3` |
 | 9-A-D-B | daemon-agent-auth-final-review | Align Go and TypeScript JSON candidate canonicalization escaping | completed | `9cc258c3` |
-| 9-B | daemon-agent-signaling | Handle hub answer submission failures without silently dropping managed offers | completed |  |
-| 9-B-A | daemon-agent-signaling-review | Retry the original generated managed answer after transient hub submit failures | completed |  |
-| 9-B-A-A | daemon-agent-signaling-self-review | Treat 204 No Content as successful hub answer submission | completed |  |
-| 9-B-A-B | daemon-agent-signaling-follow-up-review | Preserve raw offer bytes in pending answer cache key without trimming | completed |  |
+| 9-B | daemon-agent-signaling | Handle hub answer submission failures without silently dropping managed offers | completed | `02a38d36` |
+| 9-B-A | daemon-agent-signaling-review | Retry the original generated managed answer after transient hub submit failures | completed | `02a38d36` |
+| 9-B-A-A | daemon-agent-signaling-self-review | Treat 204 No Content as successful hub answer submission | completed | `02a38d36` |
+| 9-B-A-B | daemon-agent-signaling-follow-up-review | Preserve raw offer bytes in pending answer cache key without trimming | completed | `02a38d36` |
 | 10 | remote-ui | Connect `remote-ui` to real Web Control / public_p2p / managed API adapters while keeping `RtcSession` runtime boundary | pending |  |
 | 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | pending |  |
 
@@ -1711,7 +1711,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：pending answers are loop-local memory only; daemon restart/loop reset does not persist an already generated answer. This is accepted for the current non-goal and should be revisited with hub retry/expiry or persistence strategy later.
 - 下一步：commit Slice 9-B and record commit hash; then continue the next Slice 9 daemon cloud integration child.
-- commit：待提交
+- commit：`02a38d36`
 
 ### 9-B-A Managed Answer Retry After Transient Submit Failure
 
@@ -1737,7 +1737,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：pending answers are loop-local memory only and not durable across daemon restart.
 - 下一步：included in Slice 9-B commit.
-- commit：待提交
+- commit：`02a38d36`
 
 ### 9-B-A-A Hub Answer No Content Success
 
@@ -1763,7 +1763,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：none known for 204 answer-submit handling; poll 204 no-offer remains covered by existing wrapper behavior.
 - 下一步：included in Slice 9-B commit.
-- commit：待提交
+- commit：`02a38d36`
 
 ### 9-B-A-B Pending Answer Cache Raw Envelope Key
 
@@ -1789,7 +1789,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：pending answer cache is intentionally loop-local and not durable.
 - 下一步：included in Slice 9-B commit.
-- commit：待提交
+- commit：`02a38d36`
 
 ### 10 remote-ui Real API Adapters
 
