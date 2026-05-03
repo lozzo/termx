@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `10` remote-ui real API adapters.
-- Last updated: 2026-05-03T10:48:36+08:00.
+- Last updated: 2026-05-03T10:50:36+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -96,16 +96,16 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 10-A-D | remote-ui-web-control-api-self-review | Fail closed when Web Control API access token is empty | completed | `f199366a` |
 | 10-A-E | remote-ui-web-control-api-review | Align public_p2p offer payload with Web Control rendezvous validator | completed | `f199366a` |
 | 10-A-F | remote-ui-web-control-api-follow-up-review | Normalize real local offer signatures for Web Control rendezvous envelopes | completed | `f199366a` |
-| 10-B | remote-ui-managed-hub-session-api | Add remote-ui managed Hub session HTTP adapter and termx-hub app-facing session contract seed | completed |  |
-| 10-B-A | remote-ui-managed-hub-session-api-risk | Record managed connector offerer/answerer shape mismatch and keep this slice to signaling adapter contract only | completed |  |
-| 10-B-B | remote-ui-managed-hub-session-api-self-review | Align termx-hub app-facing session handler with one-shot answer response expected by remote-ui adapter | completed |  |
-| 10-B-C | remote-ui-managed-hub-session-api-self-review | Preserve app certificate, offer signature, and ICE candidates through Hub app-to-agent signaling | completed |  |
-| 10-B-D | remote-ui-managed-hub-session-api-review | Preserve app-provided managed offer session_id through Hub and agent signaling | completed |  |
-| 10-B-E | remote-ui-managed-hub-session-api-review | Make one-shot managed session timeout recoverable without burning the connect ticket blindly | completed |  |
-| 10-B-F | remote-ui-managed-hub-session-api-review | Add body-size limit to termx-hub app-facing managed session HTTP endpoints | completed |  |
-| 10-B-G | remote-ui-managed-hub-session-api-follow-up-review | Make managed session pending recovery usable by remote-ui and Hub answer lookup | completed |  |
-| 10-B-H | remote-ui-managed-hub-session-api-follow-up-review | Add remote-ui managed Hub pending answer polling method | completed |  |
-| 10-B-I | remote-ui-managed-hub-session-api-follow-up-review | Scope managed public session-id lookup to ticket and machine to avoid collision overwrite | completed |  |
+| 10-B | remote-ui-managed-hub-session-api | Add remote-ui managed Hub session HTTP adapter and termx-hub app-facing session contract seed | completed | `a1a7421f` |
+| 10-B-A | remote-ui-managed-hub-session-api-risk | Record managed connector offerer/answerer shape mismatch and keep this slice to signaling adapter contract only | completed | `a1a7421f` |
+| 10-B-B | remote-ui-managed-hub-session-api-self-review | Align termx-hub app-facing session handler with one-shot answer response expected by remote-ui adapter | completed | `a1a7421f` |
+| 10-B-C | remote-ui-managed-hub-session-api-self-review | Preserve app certificate, offer signature, and ICE candidates through Hub app-to-agent signaling | completed | `a1a7421f` |
+| 10-B-D | remote-ui-managed-hub-session-api-review | Preserve app-provided managed offer session_id through Hub and agent signaling | completed | `a1a7421f` |
+| 10-B-E | remote-ui-managed-hub-session-api-review | Make one-shot managed session timeout recoverable without burning the connect ticket blindly | completed | `a1a7421f` |
+| 10-B-F | remote-ui-managed-hub-session-api-review | Add body-size limit to termx-hub app-facing managed session HTTP endpoints | completed | `a1a7421f` |
+| 10-B-G | remote-ui-managed-hub-session-api-follow-up-review | Make managed session pending recovery usable by remote-ui and Hub answer lookup | completed | `a1a7421f` |
+| 10-B-H | remote-ui-managed-hub-session-api-follow-up-review | Add remote-ui managed Hub pending answer polling method | completed | `a1a7421f` |
+| 10-B-I | remote-ui-managed-hub-session-api-follow-up-review | Scope managed public session-id lookup to ticket and machine to avoid collision overwrite | completed | `a1a7421f` |
 | 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | pending |  |
 
 ## Buildout Todo Details
@@ -2174,7 +2174,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：production Hub URL, Web Control signed ticket/key rotation, real relay lease/quota provider, DNS/TLS/TURN deployment.
 - 剩余风险：session reverse mappings remain in memory without explicit cleanup in this slice; there is no TS-to-Go contract test; the raw adapter is still not wired into `ManagedRtcConnector`; production Hub URL/ticket signing/relay provider/TURN deployment remain deferred.
 - 下一步：commit Slice `10-B`, record commit hash, then continue next Slice 10 child.
-- commit：待提交。
+- commit：`a1a7421f`
 
 ### 10-B-A Managed Connector Shape Risk Record
 
@@ -2199,7 +2199,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：until a later connector slice resolves the shape, `10-B` only provides the raw Hub session API adapter and does not wire it into `ManagedRtcConnector`.
 - 下一步：included in `10-B` commit.
-- commit：待提交。
+- commit：`a1a7421f`
 
 ### 10-B-C Managed Hub Signaling Auth Envelope Preservation
 
@@ -2225,7 +2225,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：Hub still does not verify the certificate/signature by design; daemon verification remains required.
 - 下一步：included in `10-B` commit.
-- commit：待提交。
+- commit：`a1a7421f`
 
 ### 10-B-D Managed Hub Session ID Preservation
 
@@ -2251,7 +2251,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：none specific beyond parent follow-up review.
 - 下一步：included in `10-B` commit.
-- commit：待提交。
+- commit：`a1a7421f`
 
 ### 10-B-E Managed Session Timeout Recovery
 
@@ -2277,7 +2277,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：body-size limit handled by `10-B-F`.
 - 下一步：included in `10-B` commit.
-- commit：待提交。
+- commit：`a1a7421f`
 
 ### 10-B-F Managed Hub Session Body Size Limit
 
@@ -2303,7 +2303,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：production limit tuning remains configurable; no known blocker for this slice.
 - 下一步：included in `10-B` commit.
-- commit：待提交。
+- commit：`a1a7421f`
 
 ### 10-B-G Managed Session Pending Recovery Contract
 
@@ -2329,7 +2329,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：covered by parent residual risks.
 - 下一步：included in `10-B` commit.
-- commit：待提交。
+- commit：`a1a7421f`
 
 ### 10-B-H Managed Hub Pending Answer Polling Adapter
 
@@ -2355,7 +2355,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：covered by parent residual risks.
 - 下一步：included in `10-B` commit.
-- commit：待提交。
+- commit：`a1a7421f`
 
 ### 10-B-I Managed Hub Session Lookup Scope
 
@@ -2381,7 +2381,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：session-offer reverse mappings are still in-memory and not explicitly cleaned in this slice; registry signaling TTL cleanup remains the authoritative short-lived answer lifecycle.
 - 下一步：included in `10-B` commit.
-- commit：待提交。
+- commit：`a1a7421f`
 
 ### 10-B-B Managed Hub One-Shot Session Contract
 
@@ -2407,7 +2407,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：long-poll timeout/backoff tuning remains service configuration; production async stream/WebSocket/gRPC is future work but not runtime transport.
 - 下一步：included in `10-B` commit.
-- commit：待提交。
+- commit：`a1a7421f`
 
 ### 11 Devstack And External Server Tests
 
@@ -3056,6 +3056,6 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Commit Slice `10-B` with scoped staged files only.
-2. Record the Slice `10-B` commit hash in `WORKFLOW.md`.
-3. Start the next Slice 10 child with TDD.
+1. Start the next Slice 10 child with TDD.
+2. Keep `10-B-A` connector shape risk in scope when wiring managed sessions into a connector.
+3. Do not start Slice 11 external server tests until a slice records a concrete public-network need.
