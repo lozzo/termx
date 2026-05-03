@@ -17,6 +17,12 @@ describe('legacy transport cleanup', () => {
     expect(indexSource).not.toMatch(/browserRtcSession|BrowserRtc/)
   })
 
+  it('exports Web Control API adapters without browser adapter leakage', () => {
+    expect(indexSource).toMatch(/createWebControlApi/)
+    expect(indexSource).toMatch(/WebControlApi/)
+    expect(indexSource).not.toMatch(/createBrowserRtcSession|BrowserRtcSession/)
+  })
+
   it('keeps file manager target validation named as session validation', () => {
     expect(useFileManagerSource).not.toMatch(/assertTransportTarget|file transport/)
     expect(useFileManagerSource).toMatch(/assertSessionTarget/)

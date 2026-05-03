@@ -881,3 +881,64 @@ No new behavior was introduced in Slice 11 before tests. The failing tests for f
 ### Next Step
 
 Future work can add native Android/iOS adapters implementing the same `RtcSession` / `RtcSessionAnswerer` interfaces and add a cross-runtime WebRTC integration test harness.
+
+## Remote Build Slice 10-A: Web Control HTTP Adapter For Public P2P And Managed Tickets
+
+### Goal
+
+Add a browser-agnostic Web Control API adapter for authenticated public_p2p rendezvous and managed connect-ticket control-plane calls while keeping runtime terminal/file/api/events on `RtcSession`.
+
+### Failing Tests First
+
+Planned failing tests:
+
+- `src/webControlApi.test.ts` should fail before implementation because `createWebControlApi` does not exist.
+- Tests will cover public_p2p channel create, STUN-only response normalization, offer/candidate post bodies, rendezvous events auth headers, managed connect-ticket creation, non-2xx error handling, and source-boundary checks for no browser WebRTC/runtime transport or legacy path taxonomy.
+- Initial command: `npm test -- --run src/webControlApi.test.ts`.
+- Result: failed first because `./webControlApi.ts?raw` could not be resolved.
+
+### Implementation
+
+- Added `createWebControlApi` / `WebControlApi`.
+- The adapter implements the existing `PublicP2pRendezvousAdapter` contract for Web Control `POST /api/v1/public-p2p/channels`, offer post, candidate post, and events polling.
+- The adapter adds managed connect-ticket creation against `POST /api/v1/managed/connect-tickets`.
+- Public P2P responses are normalized to `channelId`, `channelSecret`, and `publicStunServers`; any TURN URL in the public_p2p response fails closed.
+- Managed ticket responses must use `path: managed`; relay appears only as `allowRelay`, `relayInUse`, `relayBytesRemaining`, and `relayThrottled`.
+- HTTP error envelopes are surfaced as control-plane errors.
+- Exported `createWebControlApi` and Web Control adapter types from the package barrel while keeping browser RTC adapter symbols out.
+- Fixed the public_p2p rendezvous create input to include `terminalId` / `terminal_id`, matching the real Web Control `CreateChannel` requirement.
+- Made public_p2p terminal ID required in the connector and Web Control adapter contracts, with local fail-closed validation before any HTTP request.
+- Added local fail-closed validation for empty Web Control access tokens.
+- Aligned public_p2p offer payloads with Web Control rendezvous validation: offers now carry `session_id`, `sdp`, and `ice_candidates` only; STUN servers remain channel metadata and are not embedded in the offer body.
+
+### Deleted Old Abstractions
+
+No old abstraction deletion is planned for this slice. The adapter must not introduce `RemoteTransport`, `TerminalTransport`, `paid_relay`, `anonymous_p2p`, `managed_p2p`, or relay-as-path concepts.
+
+### Commands
+
+- `npm test -- --run src/webControlApi.test.ts` failed first because the adapter module was missing.
+- `npm test -- --run src/webControlApi.test.ts` passed after implementation.
+- `npm run typecheck` passed after exact optional type fixes.
+- `npm test -- --run src/legacyTransportCleanup.test.ts` failed first after adding the barrel export assertion because `createWebControlApi` was not exported.
+- `npm test -- --run src/legacyTransportCleanup.test.ts src/webControlApi.test.ts` passed after exporting the adapter.
+- `npm test -- --run src/publicP2pRtcConnector.test.ts src/webControlApi.test.ts` failed first after requiring `terminalId` in channel creation; connector and adapter omitted it before the fix.
+- `npm test -- --run src/publicP2pRtcConnector.test.ts src/webControlApi.test.ts` failed first after adding missing-terminal validation tests; connector connected without terminalId and adapter attempted a channel-create request before the fail-closed fix.
+- `npm test -- --run src/webControlApi.test.ts` failed first after adding empty-token validation because the adapter attempted a managed connect-ticket request with an empty bearer token before the fix.
+- `go test ./internal/rendezvous -run TestMessageForwardingTTLSecretPayloadAndRateLimit` in `web-control` failed first because `session_id` was not an allowed safe description field.
+- `npm test -- --run src/publicP2pRtcConnector.test.ts src/webControlApi.test.ts` failed first because `PublicP2pRtcConnector` still embedded `ice_servers` in the offer body.
+- `npm test -- --run src/publicP2pRtcConnector.test.ts src/webControlApi.test.ts` failed first after adding a real local signer-shaped signature fixture because the connector forwarded `{ signature, nonce, timestamp }` instead of Web Control's `{ algorithm, nonce, timestamp, value }` envelope.
+
+### Review Fixes
+
+- Web Control offer payload compatibility: public_p2p offers now send only safe signaling metadata `{ session_id, sdp, ice_candidates }`; STUN servers remain channel metadata and never enter the offer body.
+- Web Control signature envelope compatibility: `PublicP2pRtcConnector` normalizes the real `createLocalOfferSigner` output `{ signature, nonce, timestamp }` to `{ algorithm: 'ed25519', nonce, timestamp: Number(timestamp), value: signature }` before posting the offer.
+- Focused validation after the signature fix: `npm test -- --run src/publicP2pRtcConnector.test.ts src/webControlApi.test.ts` passed, and `npm run typecheck` passed.
+
+### Review
+
+Follow-up subagent review found no blocker/high/medium findings after the offer payload and signature envelope fixes. It called out one remaining test blind spot: the TypeScript adapter still uses fake fetch tests, while Go Web Control tests cover the critical rendezvous validator contract; there is no direct TypeScript-to-Go httptest adapter contract test yet.
+
+### Remaining Risk
+
+Production Web Control URL, OAuth/device-code login, token refresh UX, and hosted account provisioning remain deferred external and are mocked by fake fetch in tests. Hub managed signaling poll/answer adapter remains for a later Slice 10 child.

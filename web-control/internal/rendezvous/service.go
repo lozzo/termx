@@ -348,6 +348,7 @@ func validateDescriptionObject(object map[string]any) error {
 	if err := requireAllowedKeys(object, map[string]struct{}{
 		"sdp":            {},
 		"type":           {},
+		"session_id":     {},
 		"ice_candidates": {},
 	}); err != nil {
 		return err
@@ -363,6 +364,12 @@ func validateDescriptionObject(object map[string]any) error {
 		typed, ok := value.(string)
 		if !ok || forbiddenSignalingText(typed) {
 			return errors.New("rendezvous description type must be a safe string")
+		}
+	}
+	if value, ok := object["session_id"]; ok {
+		typed, ok := value.(string)
+		if !ok || strings.TrimSpace(typed) == "" || forbiddenSignalingText(typed) {
+			return errors.New("rendezvous description session_id must be a safe string")
 		}
 	}
 	if value, ok := object["ice_candidates"]; ok {

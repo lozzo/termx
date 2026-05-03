@@ -15,7 +15,7 @@ describe('PublicP2pRtcConnector', () => {
         appPublicKey: 'app-public-1',
         appCertificate: { payload: { app_public_key: 'app-public-1' } },
       },
-      signOffer: async () => ({ algorithm: 'ed25519', nonce: 'nonce-1', timestamp: 1770000000, value: 'sig-offer' }),
+      signOffer: async () => ({ signature: 'sig-offer', nonce: 'nonce-1', timestamp: '1770000000' }),
     })
 
     const connected = await connector.connect({
@@ -33,6 +33,7 @@ describe('PublicP2pRtcConnector', () => {
     }])
     expect(rendezvous.createdChannels).toEqual([{
       machineId: 'machine-public',
+      terminalId: 'terminal-1',
       machinePublicKeyFingerprint: 'sha256:machine',
       ttlSeconds: 600,
     }])
@@ -42,7 +43,7 @@ describe('PublicP2pRtcConnector', () => {
       from: 'app-device-1',
       appPublicKey: 'app-public-1',
       appCertificate: { payload: { app_public_key: 'app-public-1' } },
-      offer: { session_id: 'rtc-public-1', sdp: 'offer-sdp', ice_servers: ['stun:one.example:3478'] },
+      offer: { session_id: 'rtc-public-1', sdp: 'offer-sdp', ice_candidates: [] },
       signature: { algorithm: 'ed25519', nonce: 'nonce-1', timestamp: 1770000000, value: 'sig-offer' },
     }])
     expect(rendezvous.eventPolls).toEqual([{ channelId: 'rv_1', channelSecret: 'secret-1' }])
@@ -78,12 +79,36 @@ describe('PublicP2pRtcConnector', () => {
 
     await expect(connector.connect({
       machineId: 'machine-public',
+      terminalId: 'terminal-1',
       machinePublicKeyFingerprint: 'sha256:machine',
     })).rejects.toThrow(/session.*mismatch/i)
 
     expect(session.acceptedAnswers).toEqual([])
     expect(session.disconnectCalls).toBe(1)
     expect(JSON.stringify(rendezvous.postedOffers)).not.toMatch(/relay/i)
+  })
+
+  it('requires a terminal id before creating a public_p2p rendezvous channel', async () => {
+    const session = new MockNegotiatedSession()
+    const rendezvous = new MockPublicP2pRendezvous()
+    const connector = createPublicP2pRtcConnector({
+      rendezvous,
+      createSession: () => session,
+      appIdentity: {
+        from: 'app-device-1',
+        appPublicKey: 'app-public-1',
+        appCertificate: {},
+      },
+      signOffer: async () => ({ algorithm: 'ed25519', nonce: 'nonce-1', timestamp: 1770000000, value: 'sig-offer' }),
+    })
+
+    await expect(connector.connect({
+      machineId: 'machine-public',
+      machinePublicKeyFingerprint: 'sha256:machine',
+    } as never)).rejects.toThrow(/terminal.*required/i)
+
+    expect(rendezvous.createdChannels).toEqual([])
+    expect(session.createdOffers).toEqual([])
   })
 
   it('polls until it finds a verified matching answer and ignores stale or untrusted answers', async () => {
@@ -129,6 +154,7 @@ describe('PublicP2pRtcConnector', () => {
 
     await connector.connect({
       machineId: 'machine-public',
+      terminalId: 'terminal-1',
       machinePublicKeyFingerprint: 'sha256:machine',
     })
 
@@ -176,6 +202,7 @@ describe('PublicP2pRtcConnector', () => {
 
     await expect(connector.connect({
       machineId: 'machine-public',
+      terminalId: 'terminal-1',
       machinePublicKeyFingerprint: 'sha256:machine',
     }, { signal: controller.signal })).rejects.toThrow(/aborted/i)
 

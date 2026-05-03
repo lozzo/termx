@@ -127,7 +127,7 @@ func TestMessageForwardingTTLSecretPayloadAndRateLimit(t *testing.T) {
 		Clock:                 clock,
 		STUNServers:           []string{"stun:stun.termx.test:3478"},
 		MaxPayloadBytes:       128,
-		MaxMessagesPerChannel: 2,
+		MaxMessagesPerChannel: 3,
 	})
 	channel, err := svc.CreateChannel(ctx, rendezvous.CreateChannelInput{
 		UserID:     ownerID,
@@ -206,6 +206,22 @@ func TestMessageForwardingTTLSecretPayloadAndRateLimit(t *testing.T) {
 	if err := svc.Send(ctx, rendezvous.SendMessageInput{
 		ChannelID: channel.ID,
 		Secret:    channel.Secret,
+		Type:      rendezvous.MessageOffer,
+		Payload:   mustJSON(t, map[string]any{"session_id": "rtc-public-1", "sdp": "offer-sdp", "ice_candidates": []any{}}),
+	}); err != nil {
+		t.Fatalf("send offer with session_id: %v", err)
+	}
+	if err := svc.Send(ctx, rendezvous.SendMessageInput{
+		ChannelID: channel.ID,
+		Secret:    channel.Secret,
+		Type:      rendezvous.MessageOffer,
+		Payload:   mustJSON(t, map[string]any{"session_id": "rtc-public-2", "sdp": "offer-sdp", "ice_servers": []any{"stun:stun.termx.test:3478"}}),
+	}); err == nil {
+		t.Fatal("offer payload with ice_servers was accepted")
+	}
+	if err := svc.Send(ctx, rendezvous.SendMessageInput{
+		ChannelID: channel.ID,
+		Secret:    channel.Secret,
 		Type:      rendezvous.MessageAnswer,
 		Payload:   mustJSON(t, map[string]any{"sdp": "answer-sdp"}),
 	}); err != nil {
@@ -223,7 +239,7 @@ func TestMessageForwardingTTLSecretPayloadAndRateLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list messages: %v", err)
 	}
-	if len(messages) != 2 || messages[0].Type != rendezvous.MessageOffer || messages[1].Type != rendezvous.MessageAnswer {
+	if len(messages) != 3 || messages[0].Type != rendezvous.MessageOffer || messages[1].Type != rendezvous.MessageOffer || messages[2].Type != rendezvous.MessageAnswer {
 		t.Fatalf("messages = %+v", messages)
 	}
 	if containsTURN(t, messages) {

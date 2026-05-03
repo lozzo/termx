@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `9` TermX daemon cloud integration.
-- Last updated: 2026-05-03T08:57:38+08:00.
+- Active todo: `10` remote-ui real API adapters.
+- Last updated: 2026-05-03T09:47:28+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -88,7 +88,14 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 9-C-B | daemon-agent-config-self-review | Prove daemon passes loaded RemoteConfig into the server option boundary | completed | `28e4e8db` |
 | 9-C-C | daemon-agent-config-review | Honor file `remote.enabled: false` without auto-enabling staged endpoints | completed | `28e4e8db` |
 | 9-C-D | daemon-agent-config-final-review | Fail closed on invalid explicit remote enabled values | completed | `28e4e8db` |
-| 10 | remote-ui | Connect `remote-ui` to real Web Control / public_p2p / managed API adapters while keeping `RtcSession` runtime boundary | pending |  |
+| 10 | remote-ui | Connect `remote-ui` to real Web Control / public_p2p / managed API adapters while keeping `RtcSession` runtime boundary | in_progress |  |
+| 10-A | remote-ui-web-control-api | Add Web Control HTTP adapter for authenticated public_p2p rendezvous and managed connect tickets | completed | pending |
+| 10-A-A | remote-ui-web-control-api-self-review | Export Web Control adapter from the package barrel without browser type leakage | completed | pending |
+| 10-A-B | remote-ui-web-control-api-self-review | Include terminal_id when creating public_p2p rendezvous channels | completed | pending |
+| 10-A-C | remote-ui-web-control-api-self-review | Require terminal_id for public_p2p channel creation to match Web Control API | completed | pending |
+| 10-A-D | remote-ui-web-control-api-self-review | Fail closed when Web Control API access token is empty | completed | pending |
+| 10-A-E | remote-ui-web-control-api-review | Align public_p2p offer payload with Web Control rendezvous validator | completed | pending |
+| 10-A-F | remote-ui-web-control-api-follow-up-review | Normalize real local offer signatures for Web Control rendezvous envelopes | completed | pending |
 | 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | pending |  |
 
 ## Buildout Todo Details
@@ -1928,7 +1935,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 10 remote-ui Real API Adapters
 
-- 状态：pending
+- 状态：in_progress
 - 父条目：none
 - 来源：remote-ui 后续只接真实 web/hub API adapter，运行时仍只通过 `RtcSession`。
 - 目标：实现 Web Control API client、public_p2p signaling adapter、managed signaling adapter、capabilities UI/state，保留 path 仅 `local/public_p2p/managed`。
@@ -1936,20 +1943,202 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 非目标：不恢复 `RemoteTransport` / `TerminalTransport` / `paid_relay` / `anonymous_p2p` / `managed_p2p` 等旧抽象。
 - 外部依赖：真实 web/hub production endpoints deferred.
 - mock 策略：mock API client/fake provider for adapter tests until real services run locally.
-- 先写的失败测试：待创建 paths only local/public_p2p/managed、relayInUse info only、terminal/api/file/events use RtcSession only 测试。
-- 预期失败结果：待记录。
-- 实现摘要：待完成。
-- 重构摘要：待完成。
-- 运行命令：待记录。
-- 测试结果：待记录。
-- subagent review：待发起。
-- review 发现：待记录。
-- review 后修复：待记录。
-- 新增派生条目：暂无。
+- 先写的失败测试：Slice `10-A` starts with Web Control HTTP adapter tests for public_p2p rendezvous and managed connect-ticket behavior without terminal/file/api/events runtime transport.
+- 预期失败结果：focused remote-ui tests should fail before implementation because no Web Control HTTP adapter exists.
+- 实现摘要：added `createWebControlApi` / `WebControlApi` implementing the existing public_p2p rendezvous adapter plus managed connect-ticket creation. The adapter normalizes Web Control endpoint paths, bearer auth, Rendezvous auth, JSON error envelopes, STUN-only public_p2p responses, and managed ticket relay info as policy fields.
+- 重构摘要：kept the adapter independent from browser WebRTC/session implementations; no terminal/file/api/events runtime calls are introduced. Added exact optional type-safe request construction.
+- 运行命令：`cd remote-ui && npm test -- --run src/webControlApi.test.ts`; `cd remote-ui && npm run typecheck`.
+- 测试结果：focused adapter test failed before implementation because the module was missing; after implementation, `src/webControlApi.test.ts` passes and `npm run typecheck` passes.
+- subagent review：Slice `10-A` review by `Ohm` covers the current child.
+- review 发现：see Slice `10-A`.
+- review 后修复：none required beyond Slice `10-A-E` and `10-A-F`.
+- 新增派生条目：`10-A`.
 - deferred human items：真实 cloud endpoints、OAuth/payment policy feeds。
 - 剩余风险：browser `RTCPeerConnection` / `RTCDataChannel` types must stay inside browser adapter and direct tests only.
-- 下一步：Slice 9 后开始。
+- 下一步：complete Slice `10-A`.
 - commit：待提交。
+
+### 10-A Web Control HTTP Adapter For Public P2P And Managed Tickets
+
+- 状态：completed
+- 父条目：10
+- 来源：Slice 10 requires `remote-ui` to connect to real Web Control / public_p2p / managed API adapters while preserving `RtcSession` as the only runtime boundary.
+- 目标：add a browser-agnostic Web Control HTTP adapter that implements the existing `PublicP2pRendezvousAdapter` contract and creates managed connect tickets. It must authenticate with bearer tokens, use the implemented web-control endpoint shapes, keep public_p2p STUN-only, and surface managed relay only as ticket/policy info.
+- 范围：`remote-ui/src` API adapter/tests, `remote-ui/docs/webrtc-rewrite-log.md`, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement Hub managed signaling poll/answer HTTP adapter in this slice; do not open `RtcSession`; do not touch terminal/file/api/events runtime consumers; do not add OAuth/payment/provider UI.
+- 外部依赖：real production Web Control endpoint and OAuth/token provisioning remain deferred external.
+- mock 策略：use a fake `fetch` implementation in tests to exercise HTTP method/path/header/body/status behavior; no real network.
+- 先写的失败测试：add `webControlApi.test.ts` covering public_p2p channel create, offer post, events auth header parsing, candidate post, managed ticket creation, non-2xx error handling, no TURN in public_p2p response, and source-boundary checks that the adapter has no browser WebRTC/runtime transport types or legacy path taxonomy.
+- 预期失败结果：focused test should fail before implementation because `createWebControlApi` / adapter module does not exist.
+- 实际失败结果：`cd remote-ui && npm test -- --run src/webControlApi.test.ts` failed as expected before implementation because `./webControlApi.ts?raw` could not be resolved.
+- 实现摘要：added `createWebControlApi` / `WebControlApi` implementing Web Control public_p2p rendezvous and managed connect-ticket control-plane calls. It normalizes endpoint paths, bearer auth, Rendezvous auth, JSON error envelopes, STUN-only public_p2p responses, managed `path: managed`, relay info fields, required terminal-scoped public_p2p channel creation, and non-empty access tokens.
+- 重构摘要：kept Web Control adapter browser-agnostic and out of runtime transport consumers. Exported the adapter through the package barrel without exporting browser RTC adapter symbols. Updated public_p2p connector contract to require terminalId because current Web Control rendezvous channels are terminal-scoped.
+- 运行命令：`cd remote-ui && npm test -- --run src/webControlApi.test.ts`; `cd remote-ui && npm test -- --run src/legacyTransportCleanup.test.ts src/webControlApi.test.ts`; `cd remote-ui && npm test -- --run src/publicP2pRtcConnector.test.ts src/webControlApi.test.ts`; `cd remote-ui && npm test -- --run src/webControlApi.test.ts src/publicP2pRtcConnector.test.ts src/managedRtcConnector.test.ts src/transport.test.ts src/terminalRuntimeBoundary.test.ts src/legacyTransportCleanup.test.ts`; `cd web-control && go test ./internal/rendezvous -run TestMessageForwardingTTLSecretPayloadAndRateLimit`; `cd web-control && go test ./internal/rendezvous ./internal/httpapi`; `cd remote-ui && npm test`; `cd remote-ui && npm run typecheck`; `cd remote-ui && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md remote-ui/docs/webrtc-rewrite-log.md remote-ui/src/webControlApi.ts remote-ui/src/webControlApi.test.ts remote-ui/src/index.ts remote-ui/src/legacyTransportCleanup.test.ts remote-ui/src/publicP2pRtcConnector.ts remote-ui/src/publicP2pRtcConnector.test.ts web-control/internal/rendezvous/service.go web-control/internal/rendezvous/rendezvous_test.go`.
+- 测试结果：adapter module, barrel export, public_p2p terminal_id, public_p2p missing terminalId, empty access-token, public_p2p offer-payload contract, and local-signer signature-envelope tests all failed before implementation and pass after fixes. Web Control rendezvous/httpapi tests pass. Full `npm test` passes: 35 files, 171 tests. `npm run typecheck`, `npm run build`, workflow guard, and scoped diff check pass. Vitest emitted the existing `--localstorage-file` warning; Vite emitted the existing >500 kB chunk warning. Source scan found no production WebRTC/WebSocket/runtime transport or legacy relay taxonomy in the adapter; hits are limited to negative tests/source assertions and mock runtime session methods.
+- subagent review：requested from `Ohm`; final follow-up review found no blocker/high/medium findings.
+- review 发现：`Ohm` found High: public_p2p offer body was incompatible with the real Web Control rendezvous validator because it posted session metadata and STUN servers in a shape the server rejected. Follow-up review found Medium: the connector tests used the Web Control signature envelope directly, while the real local signer returns `{ signature, nonce, timestamp }`; forwarding that raw shape would be rejected by Web Control.
+- review 后修复：`10-A-E` fixed the offer payload and server validator contract. `10-A-F` fixed local signer envelope normalization. Final follow-up review accepted the fixes.
+- 新增派生条目：`10-A-A`, `10-A-B`, `10-A-C`, `10-A-D`, `10-A-E`, `10-A-F`.
+- deferred human items：production Web Control URL, OAuth/device-code login, token refresh UX, and hosted account provisioning.
+- 剩余风险：remote-ui adapter tests still use fake fetch; Web Control unit tests cover the critical rendezvous payload validator contract, but no TypeScript-to-Go httptest end-to-end adapter contract exists yet. Hub managed signaling poll/answer HTTP adapter remains for a later Slice 10 child.
+- 下一步：commit Slice `10-A`, then continue with next Slice 10 child.
+- commit：待提交
+
+### 10-A-E Public P2P Offer Payload Contract
+
+- 状态：completed
+- 父条目：10-A
+- 来源：Slice `10-A` subagent review by `Ohm`.
+- 目标：make `remote-ui` public_p2p offer payload accepted by current Web Control rendezvous validation while preserving answer session correlation. The offer description sent to Web Control must contain only safe signaling fields (`session_id`, `sdp`, `type`, `ice_candidates`) and must not include `ice_servers`; Web Control must explicitly allow `session_id` as safe metadata.
+- 范围：`remote-ui/src/publicP2pRtcConnector.ts`, `remote-ui/src/publicP2pRtcConnector.test.ts`, `remote-ui/src/webControlApi.test.ts`, `web-control/internal/rendezvous/service.go`, `web-control/internal/rendezvous/rendezvous_test.go`, workflow/log.
+- 非目标：do not add TURN to public_p2p; do not move STUN servers into offer payload; do not change terminal/file/api/events runtime.
+- 外部依赖：none.
+- mock 策略：front-end fake adapter checks exact body shape; Web Control unit tests cover real payload validation rules.
+- 先写的失败测试：add Web Control tests proving `session_id` in description is accepted and `ice_servers` is rejected, and front-end tests proving the connector no longer posts `ice_servers`.
+- 预期失败结果：focused tests should fail before implementation because Web Control rejects `session_id`, and `PublicP2pRtcConnector` currently includes `ice_servers` in the offer payload.
+- 实际失败结果：`cd web-control && go test ./internal/rendezvous -run TestMessageForwardingTTLSecretPayloadAndRateLimit` failed as expected because `session_id` was rejected as non-signaling. `cd remote-ui && npm test -- --run src/publicP2pRtcConnector.test.ts src/webControlApi.test.ts` failed as expected because the connector still posted `ice_servers`.
+- 实现摘要：Web Control rendezvous description validation now allows safe string `session_id` while still rejecting unknown fields such as `ice_servers`; `PublicP2pRtcConnector` now posts `{ session_id, sdp, ice_candidates: [] }` instead of embedding STUN server metadata in the offer body.
+- 重构摘要：kept STUN servers in channel metadata / session ICE config only; answer correlation remains based on `session_id` in signaling messages.
+- 运行命令：`cd web-control && go test ./internal/rendezvous -run TestMessageForwardingTTLSecretPayloadAndRateLimit`; `cd remote-ui && npm test -- --run src/publicP2pRtcConnector.test.ts src/webControlApi.test.ts`; `cd web-control && go test ./internal/rendezvous ./internal/httpapi`; `cd remote-ui && npm test`; `cd remote-ui && npm run typecheck`; `cd remote-ui && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md remote-ui/docs/webrtc-rewrite-log.md remote-ui/src/webControlApi.ts remote-ui/src/webControlApi.test.ts remote-ui/src/index.ts remote-ui/src/legacyTransportCleanup.test.ts remote-ui/src/publicP2pRtcConnector.ts remote-ui/src/publicP2pRtcConnector.test.ts web-control/internal/rendezvous/service.go web-control/internal/rendezvous/rendezvous_test.go`.
+- 测试结果：red contract tests confirmed before implementation; focused frontend test passes after fix. The first Go validation failed because the test still expected the old rate-limit count after adding a new legal session_id offer; after adjusting the test to allow exactly three legal messages and reject the fourth, focused Go validation passes. Broader Web Control rendezvous/httpapi tests pass. Full remote-ui `npm test` passes: 35 files, 171 tests. `npm run typecheck`, `npm run build`, workflow guard, and scoped diff check pass. Existing Vitest localstorage-file and Vite chunk-size warnings remain.
+- subagent review：follow-up review from `Ohm` covered this item.
+- review 发现：High real Web Control `/offer` endpoint rejects current client payload due disallowed `session_id` and `ice_servers` fields.
+- review 后修复：implemented in `10-A-E`; follow-up review found `10-A-F`, which is also fixed.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：none specific to this child beyond parent no-httptest adapter contract gap.
+- 下一步：included in Slice `10-A` commit.
+- commit：待提交
+
+### 10-A-F Public P2P Offer Signature Envelope Normalization
+
+- 状态：completed
+- 父条目：10-A
+- 来源：Slice `10-A-E` follow-up review by `Ohm`.
+- 目标：make `PublicP2pRtcConnector` compatible with the real `createLocalOfferSigner` return shape `{ signature, nonce, timestamp }` by normalizing it to Web Control's accepted `{ algorithm, nonce, timestamp, value }` signature envelope before posting the public_p2p offer.
+- 范围：`remote-ui/src/publicP2pRtcConnector.ts`, `remote-ui/src/publicP2pRtcConnector.test.ts`, workflow/log.
+- 非目标：do not change canonical signing bytes; do not change Web Control validator in this child unless new validation gap appears.
+- 外部依赖：none.
+- mock 策略：focused connector test uses the real local signer output shape without cryptographic signing.
+- 先写的失败测试：change/add public_p2p connector test where `signOffer` returns `{ signature: 'sig-offer', nonce: 'nonce-1', timestamp: '1770000000' }` and posted offer must contain Web Control envelope `{ algorithm: 'ed25519', nonce, timestamp: 1770000000, value: 'sig-offer' }`.
+- 预期失败结果：focused test should fail before implementation because the connector forwards the raw signer return and Web Control would reject missing `algorithm`/`value`.
+- 实际失败结果：`cd remote-ui && npm test -- --run src/publicP2pRtcConnector.test.ts src/webControlApi.test.ts` failed as expected: the connector forwarded raw `{ signature, nonce, timestamp }` instead of Web Control `{ algorithm, nonce, timestamp, value }`.
+- 实现摘要：`PublicP2pRtcConnector` now normalizes `signOffer` results before posting to Web Control. Real local signer output `{ signature, nonce, timestamp }` becomes `{ algorithm: 'ed25519', nonce, timestamp: Number(timestamp), value: signature }`; already-normalized envelopes are preserved and validated.
+- 重构摘要：kept normalization at the public_p2p Web Control signaling boundary only; no canonical signing bytes, runtime transport, or Web Control validator behavior changed.
+- 运行命令：`cd remote-ui && npm test -- --run src/publicP2pRtcConnector.test.ts src/webControlApi.test.ts`; `cd remote-ui && npm run typecheck`; `cd web-control && go test ./internal/rendezvous ./internal/httpapi`; `cd remote-ui && npm test`; `cd remote-ui && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; scoped `git diff --check`.
+- 测试结果：focused public_p2p/Web Control adapter tests pass after normalization: 2 files, 14 tests. Broader Web Control rendezvous/httpapi tests pass. Full remote-ui test suite passes: 35 files, 171 tests. `npm run typecheck`, `npm run build`, workflow guard, and scoped diff check pass. Existing localstorage-file and Vite chunk-size warnings remain.
+- subagent review：follow-up review requested from `Ohm`; no blocker/high/medium findings.
+- review 发现：Medium real signer return shape incompatible with Web Control signature envelope.
+- review 后修复：implemented signature envelope normalization; final follow-up review accepted the fix.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：none specific to this child beyond parent no-httptest adapter contract gap.
+- 下一步：included in Slice `10-A` commit.
+- commit：待提交
+
+### 10-A-A Web Control Adapter Package Export
+
+- 状态：completed
+- 父条目：10-A
+- 来源：local self-review after implementing `webControlApi.ts`.
+- 目标：make the real Web Control API adapter consumable from the package barrel while preserving the no-browser-adapter export boundary.
+- 范围：`remote-ui/src/index.ts`, `remote-ui/src/legacyTransportCleanup.test.ts`, workflow/log.
+- 非目标：do not export browser `BrowserRtcSession` types; do not export runtime WebRTC implementation details.
+- 外部依赖：none.
+- mock 策略：source-level package barrel test.
+- 先写的失败测试：extend `legacyTransportCleanup.test.ts` to assert `createWebControlApi` is exported and no browser adapter symbols leak.
+- 预期失败结果：focused cleanup test should fail before implementation because the package barrel does not export `createWebControlApi`.
+- 实际失败结果：`cd remote-ui && npm test -- --run src/legacyTransportCleanup.test.ts` failed as expected because `createWebControlApi` was not exported from `src/index.ts`.
+- 实现摘要：exported `createWebControlApi` and Web Control adapter input/result/fetch types from the package barrel.
+- 重构摘要：kept browser RTC adapter symbols out of the barrel; export is limited to control-plane API adapter types.
+- 运行命令：`cd remote-ui && npm test -- --run src/legacyTransportCleanup.test.ts`; `cd remote-ui && npm test -- --run src/legacyTransportCleanup.test.ts src/webControlApi.test.ts`; `cd remote-ui && npm run typecheck`.
+- 测试结果：red export test confirmed before implementation; cleanup + adapter focused tests pass after export, and `npm run typecheck` passes.
+- subagent review：included in Slice `10-A` review by `Ohm`; no blocker/high/medium finding for this child.
+- review 发现：local self-review finding; final subagent follow-up found no remaining blocker/high/medium issues.
+- review 后修复：implemented before Slice `10-A` final validation.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：none specific to this child beyond parent no-httptest adapter contract gap.
+- 下一步：included in Slice `10-A` commit.
+- commit：待提交
+
+### 10-A-D Web Control API Access Token Required
+
+- 状态：completed
+- 父条目：10-A
+- 来源：local self-review before subagent review; Web Control public_p2p channel create and managed ticket endpoints are authenticated and an empty token should fail locally instead of emitting `Authorization: Bearer `.
+- 目标：make `createWebControlApi` reject empty access tokens before any HTTP request.
+- 范围：`remote-ui/src/webControlApi.ts`, `remote-ui/src/webControlApi.test.ts`, workflow/log.
+- 非目标：do not implement token refresh, OAuth, device-code login, or production account provisioning.
+- 外部依赖：production token issuance remains deferred external.
+- mock 策略：fake fetch with zero responses to prove no request is sent.
+- 先写的失败测试：add test that empty `accessToken` causes local error and no fetch call.
+- 预期失败结果：focused adapter test should fail before implementation because empty token currently constructs the adapter and emits an authenticated request.
+- 实际失败结果：`cd remote-ui && npm test -- --run src/webControlApi.test.ts` failed as expected before implementation because empty token attempted a managed connect-ticket request instead of failing locally.
+- 实现摘要：`createWebControlApi` now trims and rejects empty access tokens in the constructor before any request can be made.
+- 重构摘要：kept token acquisition outside this slice; adapter still accepts a caller-provided token only.
+- 运行命令：`cd remote-ui && npm test -- --run src/webControlApi.test.ts`; `cd remote-ui && npm test -- --run src/webControlApi.test.ts src/publicP2pRtcConnector.test.ts src/legacyTransportCleanup.test.ts`; `cd remote-ui && npm run typecheck`.
+- 测试结果：red empty-token test confirmed before implementation; focused adapter/connector/barrel tests pass after fix, and `npm run typecheck` passes.
+- subagent review：included in Slice `10-A` review by `Ohm`; no blocker/high/medium finding for this child.
+- review 发现：local self-review finding; final subagent follow-up found no remaining blocker/high/medium issues.
+- review 后修复：implemented before Slice `10-A` final validation.
+- 新增派生条目：none.
+- deferred human items：OAuth/device-code login and production token issuance.
+- 剩余风险：production token issuance/OAuth/device-code UX remains deferred external at parent level.
+- 下一步：included in Slice `10-A` commit.
+- commit：待提交
+
+### 10-A-C Public P2P Terminal ID Required
+
+- 状态：completed
+- 父条目：10-A
+- 来源：local self-review after `10-A-B`; Web Control `CreateChannel` currently rejects empty `terminal_id`, so keeping it optional in the adapter allows a client-side call that is guaranteed to fail server-side.
+- 目标：fail closed in `remote-ui` when public_p2p rendezvous is requested without `terminalId`, and make the TypeScript adapter contracts require terminal-scoped channel creation.
+- 范围：`remote-ui/src/publicP2pRtcConnector.ts`, `remote-ui/src/publicP2pRtcConnector.test.ts`, `remote-ui/src/webControlApi.ts`, `remote-ui/src/webControlApi.test.ts`, workflow/log.
+- 非目标：do not add machine-level public_p2p rendezvous until Web Control explicitly supports it; do not change local path or managed ticket optional terminal behavior.
+- 外部依赖：none.
+- mock 策略：focused fake tests for missing terminal ID and request body shape.
+- 先写的失败测试：add public_p2p connector and Web Control adapter tests that missing `terminalId` rejects locally before posting a channel create request.
+- 预期失败结果：focused tests should fail before implementation because both connector and adapter currently allow missing terminalId and the adapter posts a body without `terminal_id`.
+- 实际失败结果：`cd remote-ui && npm test -- --run src/publicP2pRtcConnector.test.ts src/webControlApi.test.ts` failed as expected before implementation: connector connected without a terminalId, and Web Control adapter attempted a network request without local validation.
+- 实现摘要：made `PublicP2pConnectInput.terminalId` and `PublicP2pRendezvousAdapter.createChannel().terminalId` required, added local terminalId validation in connector and Web Control adapter, and kept managed ticket terminalId optional.
+- 重构摘要：trimmed terminal IDs before request/session creation and kept runtime channel behavior unchanged.
+- 运行命令：`cd remote-ui && npm test -- --run src/publicP2pRtcConnector.test.ts src/webControlApi.test.ts`; `cd remote-ui && npm run typecheck`.
+- 测试结果：red missing-terminal tests confirmed before implementation; focused connector/adapter tests pass after fix, and `npm run typecheck` passes.
+- subagent review：included in Slice `10-A` review by `Ohm`; no blocker/high/medium finding for this child.
+- review 发现：local self-review finding; final subagent follow-up found no remaining blocker/high/medium issues.
+- review 后修复：implemented before Slice `10-A` final validation.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：none specific to this child beyond parent no-httptest adapter contract gap.
+- 下一步：included in Slice `10-A` commit.
+- commit：待提交
+
+### 10-A-B Public P2P Rendezvous Terminal ID
+
+- 状态：completed
+- 父条目：10-A
+- 来源：local self-review after checking `web-control/internal/rendezvous/service.go`; Web Control `CreateChannel` requires `terminal_id`, but current `PublicP2pRendezvousAdapter.createChannel` does not include it.
+- 目标：ensure public_p2p connector and Web Control adapter send `terminal_id` when creating a rendezvous channel so the real Web Control API accepts terminal-scoped channels.
+- 范围：`remote-ui/src/publicP2pRtcConnector.ts`, `remote-ui/src/publicP2pRtcConnector.test.ts`, `remote-ui/src/webControlApi.ts`, `remote-ui/src/webControlApi.test.ts`, workflow/log.
+- 非目标：do not add machine-level public_p2p channels; do not change terminal/file/api/events runtime behavior.
+- 外部依赖：none.
+- mock 策略：focused adapter/connector fake tests.
+- 先写的失败测试：update public_p2p connector and Web Control adapter tests to require `terminalId`/`terminal_id` in channel creation.
+- 预期失败结果：focused tests should fail before implementation because connector omits `terminalId` and adapter request body omits `terminal_id`.
+- 实际失败结果：`cd remote-ui && npm test -- --run src/publicP2pRtcConnector.test.ts src/webControlApi.test.ts` failed as expected before implementation because connector and Web Control request bodies omitted `terminalId` / `terminal_id`.
+- 实现摘要：extended `PublicP2pRendezvousAdapter.createChannel` to accept terminalId; `PublicP2pRtcConnector` passes terminalId from connect input; `WebControlApi` serializes it as `terminal_id`.
+- 重构摘要：kept terminal_id scoped to pre-runtime rendezvous channel creation and did not add machine-level public_p2p channels or runtime transport calls.
+- 运行命令：`cd remote-ui && npm test -- --run src/publicP2pRtcConnector.test.ts src/webControlApi.test.ts`; `cd remote-ui && npm run typecheck`.
+- 测试结果：red tests confirmed before implementation; focused connector/adapter tests pass after fix, and `npm run typecheck` passes.
+- subagent review：included in Slice `10-A` review by `Ohm`; no blocker/high/medium finding for this child.
+- review 发现：local self-review finding; final subagent follow-up found no remaining blocker/high/medium issues.
+- review 后修复：implemented before Slice `10-A` final validation.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：none specific to this child beyond parent no-httptest adapter contract gap.
+- 下一步：included in Slice `10-A` commit.
+- commit：待提交
 
 ### 11 Devstack And External Server Tests
 

@@ -85,6 +85,15 @@ export {
 } from './terminalInventory'
 export type { TerminalInventoryInput, TerminalInventorySnapshot } from './terminalInventory'
 export * from './transport'
+export { createWebControlApi } from './webControlApi'
+export type {
+  CreateManagedConnectTicketInput,
+  ManagedConnectTicket,
+  PublicP2pCandidateInput,
+  WebControlApi,
+  WebControlApiOptions,
+  WebControlFetch,
+} from './webControlApi'
 export { useFileManager } from './useFileManager'
 export type { FileManagerVisibleError, UseFileManagerOptions, UseFileManagerResult } from './useFileManager'
 export * from './useTerminalSession'

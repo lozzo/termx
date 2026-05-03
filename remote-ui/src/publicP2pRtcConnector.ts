@@ -9,6 +9,7 @@ import type {
 } from './transport'
 
 export interface PublicP2pConnectInput extends RtcConnectionTarget {
+  terminalId: string
   machinePublicKeyFingerprint: string
   ttlSeconds?: number | undefined
 }
@@ -29,6 +30,7 @@ export interface PublicP2pRendezvousMessage {
 export interface PublicP2pRendezvousAdapter {
   createChannel(input: {
     machineId: string
+    terminalId: string
     machinePublicKeyFingerprint: string
     ttlSeconds: number
   }, options?: RtcConnectOptions): Promise<PublicP2pRendezvousChannel>
@@ -92,27 +94,29 @@ class PublicP2pRtcConnector implements RtcConnector<PublicP2pConnectInput> {
     let session: (RtcSession & RtcSessionNegotiator) | null = null
     try {
       throwIfAborted(options.signal)
+      const terminalId = requiredTerminalId(input.terminalId)
       channel = await this.options.rendezvous.createChannel({
         machineId: input.machineId,
+        terminalId,
         machinePublicKeyFingerprint: input.machinePublicKeyFingerprint,
         ttlSeconds: input.ttlSeconds ?? 600,
       }, options)
       throwIfAborted(options.signal)
       session = this.options.createSession({
         machineId: input.machineId,
-        ...(input.terminalId ? { terminalId: input.terminalId } : {}),
+        terminalId,
       })
       const offer = await session.createOffer({
         machineId: input.machineId,
+        terminalId,
         path: 'public_p2p',
         iceServers: channel.publicStunServers.map((url) => ({ urls: [url] })),
-        ...(input.terminalId ? { terminalId: input.terminalId } : {}),
       }, options)
       throwIfAborted(options.signal)
       const signature = await this.options.signOffer({
         sessionId: offer.sessionId,
         machineId: input.machineId,
-        terminalId: input.terminalId,
+        terminalId,
         sdp: offer.description.sdp,
         candidates: [],
         channelId: channel.channelId,
@@ -127,9 +131,9 @@ class PublicP2pRtcConnector implements RtcConnector<PublicP2pConnectInput> {
         offer: {
           session_id: offer.sessionId,
           sdp: offer.description.sdp,
-          ice_servers: channel.publicStunServers,
+          ice_candidates: [],
         },
-        signature,
+        signature: webControlSignatureEnvelope(signature),
       }, options)
       throwIfAborted(options.signal)
       const answer = await this.pollForAnswer({
@@ -239,7 +243,65 @@ function stringField(value: Record<string, unknown>, key: string): string {
   return field
 }
 
+function webControlSignatureEnvelope(value: unknown): {
+  algorithm: string
+  nonce: string
+  timestamp: number
+  value: string
+} {
+  const signature = record(value)
+  const nonce = signatureStringField(signature, 'nonce')
+  const signatureValue = optionalSignatureStringField(signature, 'value')
+    ?? optionalSignatureStringField(signature, 'signature')
+  if (!signatureValue) {
+    throw new Error('public P2P offer signature value is required')
+  }
+  return {
+    algorithm: optionalSignatureStringField(signature, 'algorithm') ?? 'ed25519',
+    nonce,
+    timestamp: signatureTimestamp(signature.timestamp),
+    value: signatureValue,
+  }
+}
+
+function signatureStringField(value: Record<string, unknown>, key: string): string {
+  const field = optionalSignatureStringField(value, key)
+  if (!field) {
+    throw new Error(`public P2P offer signature ${key} is required`)
+  }
+  return field
+}
+
+function optionalSignatureStringField(value: Record<string, unknown>, key: string): string | undefined {
+  const field = value[key]
+  if (field === undefined) return undefined
+  if (typeof field !== 'string' || field.trim() === '') {
+    throw new Error(`public P2P offer signature ${key} must be a non-empty string`)
+  }
+  return field
+}
+
+function signatureTimestamp(value: unknown): number {
+  const timestamp = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number(value)
+      : Number.NaN
+  if (!Number.isInteger(timestamp) || !Number.isFinite(timestamp)) {
+    throw new Error('public P2P offer signature timestamp must be an integer')
+  }
+  return timestamp
+}
+
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (!signal?.aborted) return
   throw signal.reason instanceof Error ? signal.reason : new Error('public P2P connection aborted')
+}
+
+function requiredTerminalId(value: unknown): string {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  if (trimmed === '') {
+    throw new Error('public_p2p terminalId is required')
+  }
+  return trimmed
 }
