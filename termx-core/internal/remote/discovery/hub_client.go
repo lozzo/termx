@@ -39,6 +39,9 @@ func PollHubOffer(ctx context.Context, baseURL string, payload hubv1.SignalingPo
 
 func SubmitHubAnswer(ctx context.Context, baseURL string, payload hubv1.SubmitSignalingAnswerRequest) error {
 	if err := doJSON(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/api/v1/agents/signaling/answer", payload, nil, nil); err != nil {
+		if IsHTTPStatus(err, http.StatusNoContent) {
+			return nil
+		}
 		return fmt.Errorf("submit hub answer: %w", err)
 	}
 	return nil

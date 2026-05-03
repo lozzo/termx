@@ -398,6 +398,7 @@ func (m *Manager) ensureHubSignalingLoop(ctx context.Context) {
 }
 
 func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID string, iceServers []hubv1.RTCIceServerConfig) {
+	pendingAnswers := make(map[string]hubv1.SignalingAnswer)
 	for {
 		select {
 		case <-ctx.Done():
@@ -429,15 +430,53 @@ func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID
 			continue
 		}
 
-		answer := m.answerManagedOffer(ctx, *resp.Offer, iceServers)
+		offerKey := pendingAnswerKey(*resp.Offer)
+		answer, hasPendingAnswer := pendingAnswers[offerKey]
+		if !hasPendingAnswer {
+			answer = m.answerManagedOffer(ctx, *resp.Offer, iceServers)
+			pendingAnswers[offerKey] = answer
+		}
 		submitCtx, submitCancel := context.WithTimeout(ctx, 10*time.Second)
-		_ = discovery.SubmitHubAnswer(submitCtx, m.cfg.HubURL, hubv1.SubmitSignalingAnswerRequest{
+		err = discovery.SubmitHubAnswer(submitCtx, m.cfg.HubURL, hubv1.SubmitSignalingAnswerRequest{
 			AgentSessionID: agentSessionID,
 			DeviceID:       deviceID,
 			Answer:         answer,
 		})
 		submitCancel()
+		if err != nil {
+			if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
+				m.resetHubSession()
+				m.TriggerSync()
+				return
+			}
+			m.setStatus(StateDegraded, err.Error())
+			continue
+		}
+		delete(pendingAnswers, offerKey)
 	}
+}
+
+func pendingAnswerKey(offer hubv1.SignalingOffer) string {
+	var b strings.Builder
+	appendKeyPart := func(value string) {
+		fmt.Fprintf(&b, "%d:", len(value))
+		b.WriteString(value)
+		b.WriteByte('|')
+	}
+	appendKeyPart(offer.SessionID)
+	appendKeyPart(offer.TicketID)
+	appendKeyPart(offer.DeviceID)
+	appendKeyPart(offer.TerminalID)
+	appendKeyPart(offer.SDP)
+	for _, candidate := range offer.ICECandidates {
+		appendKeyPart(candidate)
+	}
+	appendKeyPart(string(offer.AppCertificate))
+	appendKeyPart(offer.Signature.Algorithm)
+	appendKeyPart(offer.Signature.Nonce)
+	appendKeyPart(fmt.Sprintf("%d", offer.Signature.Timestamp))
+	appendKeyPart(offer.Signature.Value)
+	return b.String()
 }
 
 func (m *Manager) answerManagedOffer(ctx context.Context, offer hubv1.SignalingOffer, iceServers []hubv1.RTCIceServerConfig) hubv1.SignalingAnswer {

@@ -361,6 +361,230 @@ func TestManagerAllowsManagedTerminalManagementOnlyWithCapabilityAndRouter(t *te
 	}
 }
 
+func TestHubSignalingLoopResetsSessionWhenAnswerSubmitUnauthorized(t *testing.T) {
+	manager, _, offer := newManagedOfferFixture(t)
+	var answerRequests atomic.Int32
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/agents/signaling/poll":
+			if answerRequests.Load() == 0 {
+				_ = json.NewEncoder(w).Encode(hubv1.SignalingPollResponse{Offer: &offer})
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case "/api/v1/agents/signaling/answer":
+			answerRequests.Add(1)
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"unknown agent session"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer hub.Close()
+
+	manager.cfg.HubURL = hub.URL
+	manager.hubSessionID = "agent-session-1"
+	manager.signalingStarted = true
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		manager.hubSignalingLoop(ctx, offer.DeviceID, "agent-session-1", nil)
+	}()
+
+	waitForCondition(t, time.Second, func() bool {
+		manager.mu.RLock()
+		sessionID := manager.hubSessionID
+		started := manager.signalingStarted
+		manager.mu.RUnlock()
+		return answerRequests.Load() == 1 && sessionID == "" && !started
+	})
+	select {
+	case <-manager.syncCh:
+	case <-time.After(time.Second):
+		t.Fatal("expected unauthorized answer submit to trigger sync")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("expected signaling loop to stop after unauthorized answer submit")
+	}
+}
+
+func TestHubSignalingLoopMarksDegradedWhenAnswerSubmitFails(t *testing.T) {
+	manager, _, offer := newManagedOfferFixture(t)
+	var answerRequests atomic.Int32
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/agents/signaling/poll":
+			if answerRequests.Load() == 0 {
+				_ = json.NewEncoder(w).Encode(hubv1.SignalingPollResponse{Offer: &offer})
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case "/api/v1/agents/signaling/answer":
+			answerRequests.Add(1)
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"error":"temporary submit failure"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer hub.Close()
+
+	manager.cfg.HubURL = hub.URL
+	manager.hubSessionID = "agent-session-1"
+	manager.setStatus(StateOnline, "before submit")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go manager.hubSignalingLoop(ctx, offer.DeviceID, "agent-session-1", nil)
+
+	waitForCondition(t, time.Second, func() bool {
+		status := manager.Status()
+		return answerRequests.Load() == 1 &&
+			status.State == StateDegraded &&
+			strings.Contains(status.Detail, "submit hub answer")
+	})
+}
+
+func TestHubSignalingLoopRetriesOriginalAnswerAfterTransientSubmitFailure(t *testing.T) {
+	manager, answerer, offer := newManagedOfferFixture(t)
+	var answerRequests atomic.Int32
+	submitted := make(chan hubv1.SignalingAnswer, 2)
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/agents/signaling/poll":
+			_ = json.NewEncoder(w).Encode(hubv1.SignalingPollResponse{Offer: &offer})
+		case "/api/v1/agents/signaling/answer":
+			var req hubv1.SubmitSignalingAnswerRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode answer submit: %v", err)
+			}
+			submitted <- req.Answer
+			if answerRequests.Add(1) == 1 {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"error":"temporary submit failure"}`))
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer hub.Close()
+
+	manager.cfg.HubURL = hub.URL
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go manager.hubSignalingLoop(ctx, offer.DeviceID, "agent-session-1", nil)
+
+	var first hubv1.SignalingAnswer
+	select {
+	case first = <-submitted:
+	case <-time.After(time.Second):
+		t.Fatal("expected first answer submit")
+	}
+	var second hubv1.SignalingAnswer
+	select {
+	case second = <-submitted:
+	case <-time.After(time.Second):
+		t.Fatal("expected retry answer submit")
+	}
+	cancel()
+
+	if first.Error != "" || first.SDP != "v=0\r\ns=answer\r\n" {
+		t.Fatalf("expected original first answer, got %#v", first)
+	}
+	if !reflect.DeepEqual(second, first) {
+		t.Fatalf("expected retry to submit original answer %#v, got %#v", first, second)
+	}
+	if answerer.calls != 1 {
+		t.Fatalf("expected retry not to re-answer replayed offer, answerer calls=%d", answerer.calls)
+	}
+}
+
+func TestHubSignalingLoopDoesNotRetryCachedAnswerForChangedOfferPayload(t *testing.T) {
+	manager, answerer, offer := newManagedOfferFixture(t)
+	changedOffer := offer
+	changedOffer.SDP = "v=0\r\ns=changed-offer\r\n"
+	testHubSignalingLoopDoesNotRetryCachedAnswerForChangedOffer(t, manager, answerer, offer, changedOffer)
+}
+
+func TestHubSignalingLoopDoesNotRetryCachedAnswerWhenRawOfferWhitespaceChanges(t *testing.T) {
+	manager, answerer, offer := newManagedOfferFixture(t)
+	changedOffer := offer
+	changedOffer.SDP = offer.SDP + " "
+	testHubSignalingLoopDoesNotRetryCachedAnswerForChangedOffer(t, manager, answerer, offer, changedOffer)
+}
+
+func testHubSignalingLoopDoesNotRetryCachedAnswerForChangedOffer(t *testing.T, manager *Manager, answerer *managedAnswererStub, offer hubv1.SignalingOffer, changedOffer hubv1.SignalingOffer) {
+	t.Helper()
+	var pollRequests atomic.Int32
+	var answerRequests atomic.Int32
+	submitted := make(chan hubv1.SignalingAnswer, 2)
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/agents/signaling/poll":
+			if pollRequests.Add(1) == 1 {
+				_ = json.NewEncoder(w).Encode(hubv1.SignalingPollResponse{Offer: &offer})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(hubv1.SignalingPollResponse{Offer: &changedOffer})
+		case "/api/v1/agents/signaling/answer":
+			var req hubv1.SubmitSignalingAnswerRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode answer submit: %v", err)
+			}
+			submitted <- req.Answer
+			if answerRequests.Add(1) == 1 {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"error":"temporary submit failure"}`))
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer hub.Close()
+
+	manager.cfg.HubURL = hub.URL
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go manager.hubSignalingLoop(ctx, offer.DeviceID, "agent-session-1", nil)
+
+	var first hubv1.SignalingAnswer
+	select {
+	case first = <-submitted:
+	case <-time.After(time.Second):
+		t.Fatal("expected first answer submit")
+	}
+	var second hubv1.SignalingAnswer
+	select {
+	case second = <-submitted:
+	case <-time.After(time.Second):
+		t.Fatal("expected second answer submit")
+	}
+	cancel()
+
+	if first.Error != "" || first.SDP != "v=0\r\ns=answer\r\n" {
+		t.Fatalf("expected original first answer, got %#v", first)
+	}
+	if second.Error == "" || !strings.Contains(second.Error, "signature") {
+		t.Fatalf("expected changed repeated offer to be re-authorized and rejected, got %#v", second)
+	}
+	if answerer.calls != 1 {
+		t.Fatalf("expected changed invalid offer not to reach answerer again, calls=%d", answerer.calls)
+	}
+}
+
 func TestManagedOfferEnvelopeDoesNotExposeBrowserWebRTCTypes(t *testing.T) {
 	typ := reflect.TypeOf(hubv1.SignalingOffer{})
 	for i := 0; i < typ.NumField(); i++ {
@@ -478,4 +702,19 @@ func newManagedOfferFixtureWithCapabilities(t *testing.T, capabilities []string,
 	manager.identity = identity.DeviceIdentity{DeviceID: "device-managed-test", DisplayName: "managed-test-device"}
 	manager.answerer = answerer
 	return manager, answerer, offer
+}
+
+func waitForCondition(t *testing.T, timeout time.Duration, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if condition() {
+		return
+	}
+	t.Fatalf("condition not met within %s", timeout)
 }

@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `9` TermX daemon cloud integration.
-- Last updated: 2026-05-03T08:06:13+08:00.
+- Last updated: 2026-05-03T08:27:20+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -79,6 +79,10 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 9-A-D | daemon-agent-auth-final-review | Record final review residual risks for candidate canonicalization and workflow freshness | completed | `9cc258c3` |
 | 9-A-D-A | daemon-agent-auth-final-review | Harden candidate canonicalization against newline/list-boundary collisions | completed | `9cc258c3` |
 | 9-A-D-B | daemon-agent-auth-final-review | Align Go and TypeScript JSON candidate canonicalization escaping | completed | `9cc258c3` |
+| 9-B | daemon-agent-signaling | Handle hub answer submission failures without silently dropping managed offers | completed |  |
+| 9-B-A | daemon-agent-signaling-review | Retry the original generated managed answer after transient hub submit failures | completed |  |
+| 9-B-A-A | daemon-agent-signaling-self-review | Treat 204 No Content as successful hub answer submission | completed |  |
+| 9-B-A-B | daemon-agent-signaling-follow-up-review | Preserve raw offer bytes in pending answer cache key without trimming | completed |  |
 | 10 | remote-ui | Connect `remote-ui` to real Web Control / public_p2p / managed API adapters while keeping `RtcSession` runtime boundary | pending |  |
 | 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | pending |  |
 
@@ -1473,7 +1477,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 新增派生条目：`9-A-A`, `9-A-B`, `9-A-C`, `9-A-D`, `9-A-D-A`, `9-A-D-B`.
 - deferred human items：production bootstrap token issuance/operator setup.
 - 剩余风险：machine private key 必须只保存在本机。
-- 下一步：record Slice 9-A commit hash, then continue the next daemon cloud integration child.
+- 下一步：complete `9-B` answer submission failure handling under TDD, review, validation, and commit.
 - commit：`9cc258c3`.
 
 ### 9-A Managed Offer Certificate And Terminal Authorization
@@ -1682,6 +1686,110 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 剩余风险：candidate order remains significant by design; if future candidate signaling normalizes order, both signer and verifier must share that normalization.
 - 下一步：record Slice 9-A commit hash, then continue the next daemon cloud integration child.
 - commit：`9cc258c3`.
+
+### 9-B Hub Answer Submission Failure Handling
+
+- 状态：completed
+- 父条目：9
+- 来源：while preparing the next daemon cloud integration child, `runtime.Manager.hubSignalingLoop` was found to ignore `discovery.SubmitHubAnswer` errors after answering a managed offer.
+- 目标：make answer submission failures observable and recoverable: `401 Unauthorized` from the hub answer endpoint must reset the hub session and trigger a fresh sync/register, while non-authorized submission failures must put the daemon runtime into degraded status instead of silently dropping the managed offer.
+- 范围：`termx-core/internal/remote/runtime`, focused tests, workflow.
+- 非目标：do not implement production ticket/revocation verifier seam in this child; do not change WebRTC DataChannel runtime labels; do not use HTTP/WebSocket for terminal/file/api/events payloads; do not touch Web Control payment/subscription logic.
+- 外部依赖：none.
+- mock 策略：use `httptest` hub endpoints, local signed managed offer fixtures, fake answerer, and fake inventory; no external cloud server.
+- 先写的失败测试：add runtime tests proving an unauthorized answer submission resets `hubSessionID` and triggers sync, and a non-authorized answer submission sets `StateDegraded` with a submit-answer error detail.
+- 预期失败结果：focused runtime tests should fail before implementation because answer submission errors are currently ignored.
+- 实际失败结果：`cd termx-core && GOWORK=off go test ./internal/remote/runtime -run 'TestHubSignalingLoop(ResetsSessionWhenAnswerSubmitUnauthorized|MarksDegradedWhenAnswerSubmitFails)'` failed as expected: unauthorized submit did not reset `hubSessionID` or trigger sync, and 502 submit failure did not mark runtime degraded.
+- 实现摘要：`hubSignalingLoop` now checks `SubmitHubAnswer` errors. `401 Unauthorized` resets the hub session, stops the stale signaling loop, and triggers a sync so the daemon can re-register. Other submit failures set runtime status to degraded with the submit-answer error while preserving the signaling loop for later polls.
+- 重构摘要：kept behavior inside the existing hub poll/answer signaling boundary; no terminal/file/api/events HTTP runtime path or client-visible transport taxonomy change.
+- 运行命令：`cd termx-core && GOWORK=off go test ./internal/remote/runtime -run 'TestHubSignalingLoop(ResetsSessionWhenAnswerSubmitUnauthorized|MarksDegradedWhenAnswerSubmitFails)'`; `cd termx-core && GOWORK=off go test ./internal/remote/runtime -run 'TestHubSignalingLoop(ResetsSessionWhenAnswerSubmitUnauthorized|MarksDegradedWhenAnswerSubmitFails|RetriesOriginalAnswerAfterTransientSubmitFailure|DoesNotRetryCachedAnswerForChangedOfferPayload|DoesNotRetryCachedAnswerWhenRawOfferWhitespaceChanges)'`; `cd termx-core && GOWORK=off go test ./internal/remote/discovery -run TestSubmitHubAnswerAcceptsNoContentSuccess`; `cd termx-core && GOWORK=off go test ./internal/remote/runtime ./internal/remote/discovery ./remote/hubv1`; `cd termx-core && GOWORK=off go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md termx-core/internal/remote/runtime termx-core/internal/remote/discovery`.
+- 测试结果：focused tests failed as expected before implementation, then passed after the fix. Review regression tests for original-answer retry, changed-offer cache safety, raw whitespace cache-key safety, and 204 answer-submit success pass. Relevant broader runtime/discovery/hubv1 tests pass; full `termx-core` tests pass; workflow guard and scoped diff check pass.
+- subagent review：requested from `Ohm` for Slice `9-B`.
+- review 发现：`Ohm` found High: non-401 answer submit failures still lose the managed offer. The loop generates an answer, a transient submit failure only marks degraded, and if the hub later returns the same offer again, the replay window rejects the original signed offer so the daemon can submit a nonce/replay error instead of the original SDP answer. Existing tests returned 204 after the failed submit and did not cover this real retry shape.
+- review 后修复：split into `9-B-A` to add a failing retry regression and preserve/retry the original generated answer across transient submit failures; `9-B-A-A` fixed 204 answer-submit success; `9-B-A-B` fixed raw-envelope cache-key collisions. Final follow-up review by `Ohm` found no blocker/high/medium issues.
+- 新增派生条目：`9-B-A`.
+- deferred human items：none.
+- 剩余风险：pending answers are loop-local memory only; daemon restart/loop reset does not persist an already generated answer. This is accepted for the current non-goal and should be revisited with hub retry/expiry or persistence strategy later.
+- 下一步：commit Slice 9-B and record commit hash; then continue the next Slice 9 daemon cloud integration child.
+- commit：待提交
+
+### 9-B-A Managed Answer Retry After Transient Submit Failure
+
+- 状态：completed
+- 父条目：9-B
+- 来源：Slice `9-B` review by `Ohm`.
+- 目标：when a managed answer was generated but `SubmitHubAnswer` fails transiently, the daemon must retry the same original answer for the same offer/session rather than re-authorizing the replayed offer and returning a nonce/replay error.
+- 范围：`termx-core/internal/remote/runtime`, focused tests, workflow.
+- 非目标：do not implement durable on-disk answer persistence; do not change hub registry semantics; do not alter DataChannel runtime labels or introduce HTTP runtime payload transport.
+- 外部依赖：none.
+- mock 策略：use `httptest` hub that returns the same offer after a 502 submit failure, and fake answerer that counts generated answers.
+- 先写的失败测试：add regression where the first answer submit returns 502, the next poll returns the same offer, and the second submit body must contain the original SDP answer without calling answerer a second time or returning replay/nonce error.
+- 预期失败结果：focused runtime test should fail before implementation because current code re-runs `answerManagedOffer`, consumes the replay window, and submits a replay error on the second attempt.
+- 实际失败结果：first run hit a compile-only assertion issue because `SignalingAnswer` contains a slice; after switching the assertion to `reflect.DeepEqual`, `cd termx-core && GOWORK=off go test ./internal/remote/runtime -run TestHubSignalingLoopRetriesOriginalAnswerAfterTransientSubmitFailure` failed as expected: the retry submitted `Error:"nonce has already been used"` instead of the original SDP answer.
+- 实现摘要：`hubSignalingLoop` now keeps an in-loop pending answer cache keyed by the full offer envelope. If submit fails transiently and the same offer is returned again, the daemon retries the original generated answer without re-running certificate/signature/replay authorization. Successful submit deletes the pending answer. Unauthorized submit still resets the hub session and exits the loop.
+- 重构摘要：the pending-answer key uses length-delimited offer fields including session, ticket, machine, terminal, SDP, standalone ICE candidates, app certificate bytes, and signature metadata, so a changed offer payload does not reuse a cached answer.
+- 运行命令：`cd termx-core && GOWORK=off go test ./internal/remote/runtime -run 'TestHubSignalingLoop(ResetsSessionWhenAnswerSubmitUnauthorized|MarksDegradedWhenAnswerSubmitFails|RetriesOriginalAnswerAfterTransientSubmitFailure|DoesNotRetryCachedAnswerForChangedOfferPayload)'`.
+- 测试结果：retry regression failed as expected before implementation with `Error:"nonce has already been used"` on retry. The changed-offer cache-safety regression then failed before the full key fix by reusing the old answer for a changed SDP. After implementation, all focused runtime signaling-loop tests pass.
+- subagent review：covered by parent `9-B` review; final follow-up review by `Ohm` found no blocker/high/medium issues.
+- review 发现：transient submit failure can still drop the real managed answer.
+- review 后修复：implemented pending answer retry and full-envelope cache key. Follow-up review found the first key implementation trimmed fields and could still reuse cached answers for raw payload changes; `9-B-A-B` removes trimming and adds regression coverage.
+- 新增派生条目：`9-B-A-A`, `9-B-A-B`.
+- deferred human items：none.
+- 剩余风险：pending answers are loop-local memory only and not durable across daemon restart.
+- 下一步：included in Slice 9-B commit.
+- commit：待提交
+
+### 9-B-A-A Hub Answer No Content Success
+
+- 状态：completed
+- 父条目：9-B-A
+- 来源：local self-review while implementing `9-B-A`; `discovery.SubmitHubAnswer` currently wraps `doJSON`, and shared `doJSON` represents HTTP 204 as `HTTPStatusError`, so an answer endpoint using normal `204 No Content` success would be treated as a submit failure.
+- 目标：make hub answer submission accept HTTP `204 No Content` as success while preserving `PollHubOffer`'s 204 no-offer behavior.
+- 范围：`termx-core/internal/remote/discovery`, focused tests, workflow.
+- 非目标：do not change all discovery endpoints blindly; do not make poll 204 look like an answer; do not change hub signaling payload shape.
+- 外部依赖：none.
+- mock 策略：use `httptest` hub answer endpoint returning 204.
+- 先写的失败测试：add discovery test proving `SubmitHubAnswer` returns nil on 204.
+- 预期失败结果：focused discovery test should fail before implementation because 204 is currently wrapped as an HTTP status error.
+- 实际失败结果：`cd termx-core && GOWORK=off go test ./internal/remote/discovery -run TestSubmitHubAnswerAcceptsNoContentSuccess` failed as expected because `SubmitHubAnswer` returned `submit hub answer: request failed: 204`.
+- 实现摘要：`SubmitHubAnswer` now treats `HTTP 204 No Content` as success while `PollHubOffer` still treats 204 as the no-offer long-poll result.
+- 重构摘要：kept the 204 special case in the answer client wrapper instead of changing shared `doJSON` semantics for all discovery endpoints.
+- 运行命令：`cd termx-core && GOWORK=off go test ./internal/remote/discovery -run TestSubmitHubAnswerAcceptsNoContentSuccess`.
+- 测试结果：focused discovery test fails before implementation and passes after the answer-client 204 handling.
+- subagent review：included in `9-B-A` follow-up review; final review accepted 204 answer success handling.
+- review 发现：local self-review finding before subagent follow-up.
+- review 后修复：implemented 204 answer-submit success handling.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：none known for 204 answer-submit handling; poll 204 no-offer remains covered by existing wrapper behavior.
+- 下一步：included in Slice 9-B commit.
+- commit：待提交
+
+### 9-B-A-B Pending Answer Cache Raw Envelope Key
+
+- 状态：completed
+- 父条目：9-B-A
+- 来源：Slice `9-B-A` follow-up review by `Ohm`.
+- 目标：pending answer cache keys must preserve raw offer field bytes/strings; a repeated offer that only changes leading/trailing whitespace in signed payload fields must not reuse a cached answer and bypass authorization.
+- 范围：`termx-core/internal/remote/runtime`, focused tests, workflow.
+- 非目标：do not change offer signature canonicalization; do not persist pending answers to disk; do not change hub protocol fields.
+- 外部依赖：none.
+- mock 策略：use `httptest` hub returning a first valid offer whose answer submit fails, then a second offer with the same session/ticket/machine/terminal but trailing whitespace mutation in SDP.
+- 先写的失败测试：add regression where changed SDP differs only by trailing whitespace and must not reuse the cached answer.
+- 预期失败结果：focused runtime test should fail before implementation because `pendingAnswerKey` currently trims every key part.
+- 实际失败结果：`cd termx-core && GOWORK=off go test ./internal/remote/runtime -run TestHubSignalingLoopDoesNotRetryCachedAnswerWhenRawOfferWhitespaceChanges` failed as expected: the second offer with trailing SDP whitespace reused the cached original SDP answer.
+- 实现摘要：`pendingAnswerKey` now length-delimits raw offer field strings without trimming, preserving leading/trailing whitespace changes in SDP, candidates, app certificate bytes, and signature metadata.
+- 重构摘要：extracted the changed-offer signaling-loop regression into a helper and added a raw-whitespace mutation variant.
+- 运行命令：`cd termx-core && GOWORK=off go test ./internal/remote/runtime -run 'TestHubSignalingLoop(ResetsSessionWhenAnswerSubmitUnauthorized|MarksDegradedWhenAnswerSubmitFails|RetriesOriginalAnswerAfterTransientSubmitFailure|DoesNotRetryCachedAnswerForChangedOfferPayload|DoesNotRetryCachedAnswerWhenRawOfferWhitespaceChanges)'`; `cd termx-core && GOWORK=off go test ./internal/remote/discovery -run TestSubmitHubAnswerAcceptsNoContentSuccess`.
+- 测试结果：raw-whitespace regression failed before implementation and passes after removing trim from the cache key. The full Slice 9-B focused runtime/discovery tests pass.
+- subagent review：final follow-up review by `Ohm` found no blocker/high/medium issues.
+- review 发现：`Ohm` found Medium: key parts are `TrimSpace`d, so raw whitespace changes in SDP/candidates/cert/signature can collide with the previous cached answer.
+- review 后修复：removed trimming from pending answer key and added trailing-whitespace regression.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：pending answer cache is intentionally loop-local and not durable.
+- 下一步：included in Slice 9-B commit.
+- commit：待提交
 
 ### 10 remote-ui Real API Adapters
 
