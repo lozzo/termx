@@ -120,9 +120,9 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 11-A-I | devstack-external-smoke-follow-up | Record low-risk follow-up review items for canonical golden tests and hub endpoint body caps | deferred | `87edb896` |
 | 11-B | web-control-ui-devstack | Serve a usable Web Control UI from the public devstack for login, inventory, managed-ticket, and diagnostics inspection | completed | `eef8a74a` |
 | 11-B-A | web-control-ui-devstack | Refresh expired temporary daemon access token after Web Control UI redeploy | completed | `eef8a74a` |
-| 11-C | devstack-public-daemon | Start a temporary `termx daemon` on the public devstack host and smoke managed WebRTC through Hub | completed |  |
+| 11-C | devstack-public-daemon | Start a temporary `termx daemon` on the public devstack host and smoke managed WebRTC through Hub | completed | `79bfe4ce` |
 | 11-C-A | devstack-public-daemon-api-follow-up | Record non-blocking `/api/terminals?machine_id=...` filter mismatch found during public-host smoke | deferred |  |
-| 11-C-B | devstack-public-daemon-review-fix | Make Web Control tolerate duplicate terminal IDs in daemon registration snapshots | completed |  |
+| 11-C-B | devstack-public-daemon-review-fix | Make Web Control tolerate duplicate terminal IDs in daemon registration snapshots | completed | `79bfe4ce` |
 
 ## Buildout Todo Details
 
@@ -2803,7 +2803,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：production daemon hosting, TLS/DNS/systemd hardening, paid TURN/relay deployment, and long-lived daemon credential refresh remain deferred outside this temporary smoke.
 - 剩余风险：the smoke proves the current public-host network position works for this local client and temporary daemon, but production still needs TLS/DNS/process supervision/credential renewal and possibly TURN/relay for non-public daemon hosts. The Web Control UI can inspect inventory and managed tickets, but a browser terminal page wired to managed `remote-ui` remains a future integration slice.
 - 下一步：commit Slice `11-C` after final validation, then report public-host daemon state and verification steps to the user.
-- commit：pending
+- commit：`79bfe4ce`
 
 ### 11-C-A Terminals Query Filter Follow-Up
 
@@ -2829,7 +2829,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：Web Control UI inspection can show terminals from multiple machines in one account; users must match machine ID until this is refined.
 - 下一步：future API/UI refinement slice.
-- commit：pending
+- commit：`79bfe4ce`
 
 ### 11-C-B Duplicate Terminal Registration Snapshot Fix
 
@@ -2855,7 +2855,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：terminal lifecycle semantics still need a future product decision for whether exited terminals should be pruned or surfaced; this fix only prevents registration failure from duplicate IDs.
 - 下一步：included in parent Slice `11-C` commit.
-- commit：pending
+- commit：`79bfe4ce`
 
 ## Historical P2/P3 Records
 
