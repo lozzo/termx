@@ -2,6 +2,74 @@
 
 This log is the handoff record for the WebRTC rewrite. It must be updated after every slice.
 
+## Slice 15: Connection Orchestrator
+
+### Goal
+
+Add the APP-facing connection state machine that tries local/LAN first, then `public_p2p`, then `managed`, while returning only the platform-neutral `RtcSession` to terminal/file/api/events consumers.
+
+### Failing Tests First
+
+Failing tests first.
+
+- Added `src/connectionOrchestrator.test.ts` for local success short-circuiting later paths, public P2P fallback after local failure, managed fallback after public P2P failure, public P2P relay rejection, abort stop behavior, post-connect validation disconnect, relay represented only as managed connection info, all-path failure snapshots, and source-boundary checks against browser/WebSocket/runtime calls.
+- Initial command: `npm test -- --run src/connectionOrchestrator.test.ts`
+- Result: failed because `connectionOrchestrator` did not exist.
+
+### Implementation
+
+- Added `src/connectionOrchestrator.ts` with an ordered orchestrator over existing `RtcConnector` interfaces.
+- The orchestrator emits compact APP-facing snapshots: `trying_local`, `trying_public_p2p`, `trying_managed`, `connected`, and `failed`.
+- The result includes `path`, `session`, and `relayInUse`; the session is still the only runtime object.
+- The orchestrator rejects relay usage from non-managed paths, stops on abort, and disconnects sessions created before post-connect validation failures.
+- Exported the orchestrator API from `src/index.ts`.
+
+### Renames
+
+- No existing connector/runtime objects were renamed.
+
+### Deleted Old Abstractions
+
+- None.
+- The orchestrator only uses `local`, `public_p2p`, and `managed`; relay remains connection info and never a path.
+
+### Commands
+
+- `npm test -- --run src/connectionOrchestrator.test.ts` failed first, then passed; after review fixes it passed with 1 file, 8 tests.
+- `npm run typecheck` initially failed on incomplete test mock `ConnectionInfo`; after test mock fixes it passed.
+- `npm test` passed: 41 files, 197 tests.
+- `npm run build` passed with the existing Vite chunk-size warning.
+- `bash docs/remote-rebuild/check_workflow_rules.sh` passed from the repo root.
+- `git diff --check` passed from the repo root.
+
+### Review
+
+- `Schrodinger` (`019ded1b-bc05-77a2-895e-f94f1257758a`) reviewed Slice 15 after broader validation.
+
+### Review Findings
+
+- High: relay usage from `public_p2p` could be accepted and published as a valid public P2P result.
+- High: abort after `connect()` could be swallowed as a normal path failure, allowing fallback to later paths.
+- Medium: sessions created before `getConnectionInfo()` failure, path mismatch, or post-connect abort could be left open.
+- Low: workflow next-step text was stale.
+
+### Review Fixes
+
+- Added regression tests for non-managed relay rejection, abort stop behavior, and session disconnect after post-connect validation failure.
+- Non-managed relay usage now fails that path and disconnects the created session.
+- Abort errors are rethrown and stop fallback.
+- Post-connect validation failures disconnect the created session before fallback.
+- Workflow/log next-step text was refreshed.
+
+### Remaining Risk
+
+- Native adapter and full APP/devstack e2e remain later slices.
+- The orchestrator currently records path failures but does not yet expose detailed retry/backoff policy.
+
+### Next Step
+
+Run post-review full validation, commit Slice 15, record hash, then continue to Slice 16.
+
 ## Slice 14: QR Pairing Payload And Machine Store
 
 ### Goal

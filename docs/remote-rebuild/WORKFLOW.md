@@ -5,8 +5,8 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `14` QR payload/store.
-- Last updated: 2026-05-03T17:04:56+08:00.
+- Active todo: `15` connection orchestrator.
+- Last updated: 2026-05-03T17:16:13+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -131,7 +131,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 13 | remote-ui-app-shell | Build APP-first machine list shell | completed | `0014e9a7` |
 | 13-A | workflow-unattended-continuation | Harden AGENTS so future slices continue unattended across boundaries | completed | `4f7bf2d1` |
 | 14 | remote-ui-qr-store | Define `termx://` QR payload and local MachineStore, rejecting machine private key material | completed | `9c078273` |
-| 15 | remote-ui-connection-orchestrator | Implement local/LAN -> public_p2p -> managed orchestration returning only `RtcSession` | pending |  |
+| 15 | remote-ui-connection-orchestrator | Implement local/LAN -> public_p2p -> managed orchestration returning only `RtcSession` | in_progress |  |
 | 16 | web-control-hub-closed-loop | Implement Hub discover, heartbeat, policy/kick response, force-offline in Web Control | pending |  |
 | 17 | daemon-login-hub-select | Implement token/password/device-code daemon login and Hub discovery/selection | pending |  |
 | 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | pending |  |
@@ -226,6 +226,31 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - 下一步：Slice `15`.
 - commit：`9c078273`
 
+### 15 Remote UI Connection Orchestrator
+
+- 状态：in_progress
+- 父条目：none
+- 来源：APP machine click must enter a connection state machine that tries local/LAN, then `public_p2p`, then `managed`, while terminal/file/api/events receive only `RtcSession`.
+- 目标：add a platform-neutral orchestrator that invokes existing connectors in order, emits APP-facing stage snapshots, stops after the first success, carries relay only as managed connection info/capability, and returns `RtcSession`.
+- 范围：`remote-ui/src` orchestrator/types/tests, exports, `remote-ui/docs/webrtc-rewrite-log.md`, `WORKFLOW.md`.
+- 非目标：camera scan UI, native WebRTC adapter, actual network connectors beyond existing interfaces, Web Control terminal UI, e2e devstack.
+- 外部依赖：none.
+- mock 策略：use fake `RtcConnector` implementations and fake `RtcSession` objects behind the public connector/session interfaces; no HTTP/WebSocket/runtime mocks in business layer.
+- 先写的失败测试：`remote-ui/src/connectionOrchestrator.test.ts` covers local success skipping later paths, local failure then public success, public failure then managed success, public_p2p relay rejection, abort stop behavior, post-connect validation disconnect, managed relay as info not path, all-path failure snapshots, and returned session being the only runtime object.
+- 预期失败结果：`cd remote-ui && npm test -- --run src/connectionOrchestrator.test.ts` failed because `./connectionOrchestrator` module did not exist.
+- 实现摘要：added `remote-ui/src/connectionOrchestrator.ts` and exported it from `src/index.ts`; orchestrator tries local, then `public_p2p`, then `managed`, and returns only `RtcSession`.
+- 重构摘要：normalized missing relay info to `false` on success snapshots/results; rejected relay usage outside `managed`; abort now stops orchestration instead of becoming a path failure; sessions created before failed post-connect validation are disconnected; fixed test mock type completeness after typecheck.
+- 运行命令：`cd remote-ui && npm test -- --run src/connectionOrchestrator.test.ts`; `cd remote-ui && npm run typecheck`; `cd remote-ui && npm test`; `cd remote-ui && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`.
+- 测试结果：focused test failed first because module did not exist, then passed 1 file / 8 tests after review fixes; full remote-ui tests passed 41 files / 200 tests; typecheck passed; build passed with existing Vite chunk-size warning; workflow guard and diff whitespace check passed.
+- subagent review：`Schrodinger` (`019ded1b-bc05-77a2-895e-f94f1257758a`) reviewed Slice 15 implementation.
+- review 发现：orchestrator accepted relay usage from non-managed paths; abort after connect could be swallowed as normal path failure; post-connect validation failure could leave created sessions open; workflow next-step text was stale.
+- review 后修复：non-managed relay usage is rejected and disconnected; abort errors are rethrown and stop fallback; failed post-connect validation disconnects created sessions; workflow/log next-step text refreshed.
+- 新增派生条目：none yet.
+- deferred human items：none.
+- 剩余风险：native adapter, retry/backoff UX policy, and e2e remain future slices.
+- 下一步：rerun full validation, commit Slice `15`, hash backfill, then start Slice `16`.
+- commit：
+
 ## Deferred External / Human Items
 
 - Real payment/subscription/invoice/tax/fraud integrations remain `deferred_external` behind provider interfaces.
@@ -235,6 +260,6 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ## Next Exact Action
 
-1. Start Slice `15`: write failing tests for `local -> public_p2p -> managed` connection orchestration returning only `RtcSession`.
-2. Implement the minimum orchestrator around existing connector interfaces without introducing relay as a path.
-3. Run focused/full validation, subagent review, fixes, commit, and hash backfill.
+1. Rerun post-review full validation for Slice `15`.
+2. Commit Slice `15` and backfill its hash.
+3. Start Slice `16`: write failing tests for Web Control/Hub closed-loop discover, heartbeat, policy/kick, and force-offline.

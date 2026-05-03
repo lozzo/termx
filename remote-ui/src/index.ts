@@ -63,6 +63,16 @@ export type {
   StoredMachinePairing,
   StoredMachineRecord,
 } from './machineStore'
+export { createConnectionOrchestrator } from './connectionOrchestrator'
+export type {
+  ConnectionAttemptError,
+  ConnectionAttemptSnapshot,
+  ConnectionAttemptStage,
+  ConnectionOrchestrator,
+  ConnectionOrchestratorInput,
+  ConnectionOrchestratorOptions,
+  ConnectionOrchestratorResult,
+} from './connectionOrchestrator'
 export { LocalPairPanel } from './LocalPairPanel'
 export type { LocalPairPanelProps } from './LocalPairPanel'
 export { createLocalAgentApi } from './localAgentApi'
