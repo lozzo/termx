@@ -5,8 +5,8 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: select next pending remote rebuild todo.
-- Last updated: 2026-05-03T20:24:34+08:00.
+- Active todo: workflow top-level reconciliation after Slice 17-A.
+- Last updated: 2026-05-03T20:25:49+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -81,7 +81,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 8-C | quota-review | Enforce relay heartbeat hub authority and online status | completed | `f5333362` |
 | 8-D | workflow-review | Refresh Slice 8 workflow review state | completed | `f5333362` |
 | 8-C-A | quota-follow-up | Require authenticated hub principal for heartbeat accounting | completed | `f5333362` |
-| 9 | daemon-agent | Integrate `termx daemon` cloud bootstrap, hub heartbeat/poll/answer, WebRTC offers | in_progress |  |
+| 9 | daemon-agent | Integrate `termx daemon` cloud bootstrap, hub heartbeat/poll/answer, WebRTC offers | completed | `07eb0bbb` |
 | 9-A | daemon-agent-auth | Verify managed offers against machine/app cert, app signature, terminal inventory | completed | `9cc258c3` |
 | 9-A-A | daemon-agent-auth-review | Scope managed runtime channel policy to app certificate capabilities | completed | `9cc258c3` |
 | 9-A-B | daemon-agent-auth-deferred | Add production ticket/cert revocation verifier seam | deferred | `9cc258c3` |
@@ -99,7 +99,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 9-C-B | daemon-agent-config-self | Prove daemon passes RemoteConfig into server option boundary | completed | `28e4e8db` |
 | 9-C-C | daemon-agent-config-review | Honor file `remote.enabled: false` | completed | `28e4e8db` |
 | 9-C-D | daemon-agent-config-final | Fail closed on invalid explicit remote enabled values | completed | `28e4e8db` |
-| 10 | remote-ui | Connect remote-ui to real Web Control/public_p2p/managed API adapters | in_progress |  |
+| 10 | remote-ui | Connect remote-ui to real Web Control/public_p2p/managed API adapters | completed | `41d7869c` |
 | 10-A | remote-ui-web-control-api | Add Web Control adapter for public_p2p rendezvous and managed connect tickets | completed | `f199366a` |
 | 10-A-A | remote-ui-web-control-api-self | Export adapter without browser type leakage | completed | `f199366a` |
 | 10-A-B | remote-ui-web-control-api-self | Include terminal_id creating public_p2p channels | completed | `f199366a` |
@@ -117,7 +117,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 10-B-G | remote-ui-managed-hub-api-follow-up | Make pending recovery usable by remote-ui and Hub answer lookup | completed | `a1a7421f` |
 | 10-B-H | remote-ui-managed-hub-api-follow-up | Add pending answer polling method | completed | `a1a7421f` |
 | 10-B-I | remote-ui-managed-hub-api-follow-up | Scope public session-id lookup to ticket and machine | completed | `a1a7421f` |
-| 11 | devstack | Build local devstack and optional external smoke runbook | in_progress |  |
+| 11 | devstack | Build local devstack and optional external smoke runbook | completed | `41d7869c` |
 | 11-A | devstack-external-smoke | Make web-control + hub + daemon runnable for external managed signaling smoke | completed | `87edb896` |
 | 11-A-A | devstack-external-smoke | Defer production DNS/TLS/systemd/firewall/TURN deployment | deferred_external | `87edb896` |
 | 11-A-H | devstack-network | Record STUN-only public DataChannel failure as external ICE/TURN/public-port limitation | deferred_external | `87edb896` |
@@ -145,9 +145,9 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 ## Compressed Completed Slice Summary
 
 - Slices `0`-`8`: Web Control skeleton/auth/machine/certificate/public_p2p/managed signaling/TURN relay/quota foundations are implemented and reviewed. Durable state stays in Web Control; public_p2p remains STUN/rendezvous-only; relay is capability/policy under managed, not a path.
-- Slice `9`: Daemon agent cloud bootstrap/offer verification/config slices are partly complete; top-level `9` remains `in_progress` because production login/refresh/hub-select hardening is still pending in later Slice `17`.
-- Slice `10`: remote-ui Web Control/public_p2p/managed API adapters are partly complete; top-level `10` remains `in_progress` because APP shell/store/orchestrator integration is still underway.
-- Slice `11`: devstack and public-host managed smoke are partly complete; top-level `11` remains `in_progress` because broader APP/devstack e2e is pending in Slice `20`.
+- Slice `9`: Daemon cloud bootstrap, offer verification, config loading, login, Hub discovery, and production-shaped Hub selection are completed through Slice `17-A`; production OAuth/email/SMS/OS keychain remain deferred external.
+- Slice `10`: remote-ui Web Control/public_p2p/managed adapters, APP shell/store/orchestrator, native bridge seam, and APP e2e harness are completed through Slice `20`; production native packaging/secure storage remains deferred external.
+- Slice `11`: devstack, public daemon smoke, Web Control UI inspection, and APP/devstack e2e coverage are completed through Slice `20`; production DNS/TLS/TURN/systemd/cloud deployment remains deferred external.
 - Slice `12`: APP-first product alignment and `tgent-comparison` strategy are completed in docs. Existing uncommitted planning docs may still be in the worktree and should not be reverted.
 - Slice `13`: APP-first remote-ui shell completed in `0014e9a7`; workflow hash recorded in `60c34fc1`. It adds `MachineList`, `RemoteAppShell`, and `appMachine` types; first screen is machine list, click enters connection flow, relay is info only.
 - Slice `13-A`: root `AGENTS.md` now requires unattended continuation across slice boundaries; committed in `4f7bf2d1` and hash-recorded in `8f8784d0`.
@@ -447,4 +447,4 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ## Next Exact Action
 
-1. Select the next pending remote rebuild todo from the ordered table, update this workflow, then run that slice TDD-first.
+1. Commit this workflow reconciliation, then report completed Slice `17-A` and note that remaining items are deferred/deferred_external unless the user adds the next product slice.
