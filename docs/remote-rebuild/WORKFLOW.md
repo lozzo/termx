@@ -118,8 +118,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 11-A-G | devstack-external-smoke-review | Add explicit request body limit for daemon device registration | completed | `87edb896` |
 | 11-A-H | devstack-external-smoke-network | Record STUN-only public DataChannel failure as external ICE/TURN/public-port limitation | deferred_external | `87edb896` |
 | 11-A-I | devstack-external-smoke-follow-up | Record low-risk follow-up review items for canonical golden tests and hub endpoint body caps | deferred | `87edb896` |
-| 11-B | web-control-ui-devstack | Serve a usable Web Control UI from the public devstack for login, inventory, managed-ticket, and diagnostics inspection | completed |  |
-| 11-B-A | web-control-ui-devstack | Refresh expired temporary daemon access token after Web Control UI redeploy | completed |  |
+| 11-B | web-control-ui-devstack | Serve a usable Web Control UI from the public devstack for login, inventory, managed-ticket, and diagnostics inspection | completed | `eef8a74a` |
+| 11-B-A | web-control-ui-devstack | Refresh expired temporary daemon access token after Web Control UI redeploy | completed | `eef8a74a` |
 
 ## Buildout Todo Details
 
@@ -2748,7 +2748,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：production hosting/TLS/CDN/auth UX hardening remains deferred; this is a temporary devstack UI.
 - 剩余风险：the UI can prove control-plane and signaling readiness, but public terminal DataChannel still needs paid TURN/relay or a user-provided public/FRP path as recorded in `11-A-H`.
 - 下一步：commit Slice `11-B` and report UI verification instructions to the user.
-- commit：pending
+- commit：`eef8a74a`
 
 ### 11-B-A Refresh Expired Temporary Daemon Token
 
@@ -2774,7 +2774,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：production refresh-token handling and long-lived daemon credential management remain future hardening, not this devstack UI slice.
 - 剩余风险：temporary devstack tokens expire; production daemon bootstrap needs a real renewal flow later.
 - 下一步：included in parent `11-B` review.
-- commit：pending
+- commit：`eef8a74a`
 
 ## Historical P2/P3 Records
 
@@ -3398,6 +3398,6 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Commit only Slice `11-B` files and record the commit hash in `WORKFLOW.md`.
-2. Report the Web Control UI URL, how to log in/register, and what is currently verifiable from the page.
-3. Keep `11-A-H` as the remaining external-network limitation for actual terminal DataChannel attach until paid TURN/relay or a user-provided public/FRP path is available.
+1. Report the Web Control UI URL, how to log in/register, and what is currently verifiable from the page.
+2. Keep `11-A-H` as the remaining external-network limitation for actual terminal DataChannel attach until paid TURN/relay or a user-provided public/FRP path is available.
+3. Continue future remote buildout from Slice `11` or promote the paid TURN/relay deployment path if full public terminal DataChannel attach is required.
