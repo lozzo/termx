@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `10` remote-ui real API adapters.
-- Last updated: 2026-05-03T09:47:28+08:00.
+- Last updated: 2026-05-03T09:49:20+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -89,13 +89,13 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 9-C-C | daemon-agent-config-review | Honor file `remote.enabled: false` without auto-enabling staged endpoints | completed | `28e4e8db` |
 | 9-C-D | daemon-agent-config-final-review | Fail closed on invalid explicit remote enabled values | completed | `28e4e8db` |
 | 10 | remote-ui | Connect `remote-ui` to real Web Control / public_p2p / managed API adapters while keeping `RtcSession` runtime boundary | in_progress |  |
-| 10-A | remote-ui-web-control-api | Add Web Control HTTP adapter for authenticated public_p2p rendezvous and managed connect tickets | completed | pending |
-| 10-A-A | remote-ui-web-control-api-self-review | Export Web Control adapter from the package barrel without browser type leakage | completed | pending |
-| 10-A-B | remote-ui-web-control-api-self-review | Include terminal_id when creating public_p2p rendezvous channels | completed | pending |
-| 10-A-C | remote-ui-web-control-api-self-review | Require terminal_id for public_p2p channel creation to match Web Control API | completed | pending |
-| 10-A-D | remote-ui-web-control-api-self-review | Fail closed when Web Control API access token is empty | completed | pending |
-| 10-A-E | remote-ui-web-control-api-review | Align public_p2p offer payload with Web Control rendezvous validator | completed | pending |
-| 10-A-F | remote-ui-web-control-api-follow-up-review | Normalize real local offer signatures for Web Control rendezvous envelopes | completed | pending |
+| 10-A | remote-ui-web-control-api | Add Web Control HTTP adapter for authenticated public_p2p rendezvous and managed connect tickets | completed | `f199366a` |
+| 10-A-A | remote-ui-web-control-api-self-review | Export Web Control adapter from the package barrel without browser type leakage | completed | `f199366a` |
+| 10-A-B | remote-ui-web-control-api-self-review | Include terminal_id when creating public_p2p rendezvous channels | completed | `f199366a` |
+| 10-A-C | remote-ui-web-control-api-self-review | Require terminal_id for public_p2p channel creation to match Web Control API | completed | `f199366a` |
+| 10-A-D | remote-ui-web-control-api-self-review | Fail closed when Web Control API access token is empty | completed | `f199366a` |
+| 10-A-E | remote-ui-web-control-api-review | Align public_p2p offer payload with Web Control rendezvous validator | completed | `f199366a` |
+| 10-A-F | remote-ui-web-control-api-follow-up-review | Normalize real local offer signatures for Web Control rendezvous envelopes | completed | `f199366a` |
 | 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | pending |  |
 
 ## Buildout Todo Details
@@ -1955,8 +1955,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 新增派生条目：`10-A`.
 - deferred human items：真实 cloud endpoints、OAuth/payment policy feeds。
 - 剩余风险：browser `RTCPeerConnection` / `RTCDataChannel` types must stay inside browser adapter and direct tests only.
-- 下一步：complete Slice `10-A`.
-- commit：待提交。
+- 下一步：continue with the next Slice 10 child for managed hub signaling adapter.
+- commit：`f199366a`
 
 ### 10-A Web Control HTTP Adapter For Public P2P And Managed Tickets
 
@@ -1981,8 +1981,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 新增派生条目：`10-A-A`, `10-A-B`, `10-A-C`, `10-A-D`, `10-A-E`, `10-A-F`.
 - deferred human items：production Web Control URL, OAuth/device-code login, token refresh UX, and hosted account provisioning.
 - 剩余风险：remote-ui adapter tests still use fake fetch; Web Control unit tests cover the critical rendezvous payload validator contract, but no TypeScript-to-Go httptest end-to-end adapter contract exists yet. Hub managed signaling poll/answer HTTP adapter remains for a later Slice 10 child.
-- 下一步：commit Slice `10-A`, then continue with next Slice 10 child.
-- commit：待提交
+- 下一步：continue with the next Slice 10 child for managed hub signaling adapter.
+- commit：`f199366a`
 
 ### 10-A-E Public P2P Offer Payload Contract
 
@@ -2008,7 +2008,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：none specific to this child beyond parent no-httptest adapter contract gap.
 - 下一步：included in Slice `10-A` commit.
-- commit：待提交
+- commit：`f199366a`
 
 ### 10-A-F Public P2P Offer Signature Envelope Normalization
 
@@ -2034,7 +2034,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：none specific to this child beyond parent no-httptest adapter contract gap.
 - 下一步：included in Slice `10-A` commit.
-- commit：待提交
+- commit：`f199366a`
 
 ### 10-A-A Web Control Adapter Package Export
 
@@ -2060,7 +2060,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：none specific to this child beyond parent no-httptest adapter contract gap.
 - 下一步：included in Slice `10-A` commit.
-- commit：待提交
+- commit：`f199366a`
 
 ### 10-A-D Web Control API Access Token Required
 
@@ -2086,7 +2086,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：OAuth/device-code login and production token issuance.
 - 剩余风险：production token issuance/OAuth/device-code UX remains deferred external at parent level.
 - 下一步：included in Slice `10-A` commit.
-- commit：待提交
+- commit：`f199366a`
 
 ### 10-A-C Public P2P Terminal ID Required
 
@@ -2112,7 +2112,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：none specific to this child beyond parent no-httptest adapter contract gap.
 - 下一步：included in Slice `10-A` commit.
-- commit：待提交
+- commit：`f199366a`
 
 ### 10-A-B Public P2P Rendezvous Terminal ID
 
@@ -2138,7 +2138,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：none specific to this child beyond parent no-httptest adapter contract gap.
 - 下一步：included in Slice `10-A` commit.
-- commit：待提交
+- commit：`f199366a`
 
 ### 11 Devstack And External Server Tests
 
