@@ -88,6 +88,35 @@ describe('PublicP2pRtcConnector', () => {
     expect(JSON.stringify(rendezvous.postedOffers)).not.toMatch(/relay/i)
   })
 
+  it('rejects non-STUN public rendezvous ICE servers before creating a public_p2p offer', async () => {
+    const session = new MockNegotiatedSession()
+    const createSession = vi.fn(() => session)
+    const rendezvous = new MockPublicP2pRendezvous({
+      publicStunServers: ['stun:one.example:3478', 'turn:turn.example:3478?transport=udp'],
+    })
+    const connector = createPublicP2pRtcConnector({
+      rendezvous,
+      createSession,
+      appIdentity: {
+        from: 'app-device-1',
+        appPublicKey: 'app-public-1',
+        appCertificate: {},
+      },
+      signOffer: async () => ({ algorithm: 'ed25519', nonce: 'nonce-1', timestamp: 1770000000, value: 'sig-offer' }),
+    })
+
+    await expect(connector.connect({
+      machineId: 'machine-public',
+      terminalId: 'terminal-1',
+      machinePublicKeyFingerprint: 'sha256:machine',
+    })).rejects.toThrow(/public_p2p.*stun/i)
+
+    expect(session.createdOffers).toEqual([])
+    expect(createSession).not.toHaveBeenCalled()
+    expect(rendezvous.postedOffers).toEqual([])
+    expect(rendezvous.closedChannels).toEqual([{ channelId: 'rv_1', channelSecret: 'secret-1' }])
+  })
+
   it('requires a terminal id before creating a public_p2p rendezvous channel', async () => {
     const session = new MockNegotiatedSession()
     const rendezvous = new MockPublicP2pRendezvous()
@@ -227,8 +256,13 @@ class MockPublicP2pRendezvous {
   readonly closedChannels: unknown[] = []
   private readonly messages: PublicP2pRendezvousMessage[]
   private readonly pollBatches: PublicP2pRendezvousMessage[][]
+  private readonly publicStunServers: string[]
 
-  constructor(options: { messages?: PublicP2pRendezvousMessage[]; pollBatches?: PublicP2pRendezvousMessage[][] } = {}) {
+  constructor(options: {
+    messages?: PublicP2pRendezvousMessage[]
+    pollBatches?: PublicP2pRendezvousMessage[][]
+    publicStunServers?: string[]
+  } = {}) {
     this.messages = options.messages ?? [{
       type: 'answer',
       from: 'machine-public',
@@ -240,6 +274,7 @@ class MockPublicP2pRendezvous {
       },
     }]
     this.pollBatches = options.pollBatches ?? []
+    this.publicStunServers = options.publicStunServers ?? ['stun:one.example:3478']
   }
 
   async createChannel(input: unknown) {
@@ -247,7 +282,7 @@ class MockPublicP2pRendezvous {
     return {
       channelId: 'rv_1',
       channelSecret: 'secret-1',
-      publicStunServers: ['stun:one.example:3478'],
+      publicStunServers: this.publicStunServers,
     }
   }
 

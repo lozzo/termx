@@ -2,6 +2,80 @@
 
 This log is the handoff record for the WebRTC rewrite. It must be updated after every slice.
 
+## Slice 19: APP Bridge RtcSession Seam
+
+### Goal
+
+Add a minimal APP bridge seam so mobile implementations can provide WebRTC-backed runtime behavior while the shared APP shell, store, connectors, orchestrator, terminal, file, API, and events layers continue to depend only on the platform-neutral `RtcSession` interfaces.
+
+### Failing Tests First
+
+Failing tests first.
+
+- Added `src/bridgeRtcSession.test.ts` for connector interoperability, managed answerer behavior, relay/path fail-closed behavior, runtime channel delegation, capability updater behavior, package export shape, and source-boundary checks against browser/native platform type leakage.
+- Added `src/publicP2pRtcConnector.test.ts` coverage proving public rendezvous rejects `turn:` URLs before creating a `public_p2p` offer.
+- Initial command: `npm test -- --run src/nativeRtcSession.test.ts`
+- Result: failed because the initial native seam did not exist.
+- Review-driven red command: `npm test -- --run src/bridgeRtcSession.test.ts src/publicP2pRtcConnector.test.ts`
+- Result: failed because `publicP2pRtcConnector` forwarded a `turn:` URL into `createOffer()`.
+
+### Implementation
+
+- Added `src/bridgeRtcSession.ts` with `BridgeRtcSessionAdapter`, `BridgeRtcConnectedSession`, and `createBridgeRtcSession()`.
+- The adapter implements `RtcSession & RtcSessionNegotiator & RtcSessionAnswerer & RtcSessionCapabilityUpdater` and delegates offer/answer/channel/event behavior to a neutral bridge interface.
+- The adapter validates that paths remain exactly `local`, `public_p2p`, or `managed`.
+- Relay is accepted only as managed connection info/capability; non-managed relay reports fail closed.
+- Managed relay file-transfer policy is represented through `ConnectionCapabilities`, not a transport family.
+- The bridge seam is intentionally not exported from the package barrel; platform composition code can import the module directly, while common business modules stay on `RtcSession` / `RtcConnector`.
+- Hardened `publicP2pRtcConnector` so public rendezvous ICE servers must be `stun:` or `stuns:`; TURN remains managed-only.
+
+### Renames
+
+- No existing runtime objects were renamed.
+
+### Deleted Old Abstractions
+
+- None.
+- No `relay`, `paid_relay`, `managed_p2p`, `anonymous_p2p`, WebSocket runtime, browser WebRTC type, or platform-specific native WebRTC type was added to shared business layers.
+
+### Commands
+
+- `npm test -- --run src/nativeRtcSession.test.ts` failed first because the module did not exist.
+- `npm test -- --run src/bridgeRtcSession.test.ts src/publicP2pRtcConnector.test.ts` failed on public_p2p TURN leakage, then passed with 2 files, 12 tests.
+- `npm run typecheck` passed after fixing the test JSON-RPC mock generic signature.
+- `npm test` passed with 42 files, 206 tests.
+- `npm run build` passed with the existing Vite chunk-size warning.
+- `bash docs/remote-rebuild/check_workflow_rules.sh` passed from the repo root.
+- `git diff --check` passed from the repo root.
+
+### Review
+
+- Initial explorer spawn hit thread limit; after closing historical agents, `Meitner` (`019ded95-26d5-7373-8d72-eca7824cffcf`) completed a read-only native seam boundary review.
+- Final self-review/retry review is still pending after broader validation.
+
+### Review Findings
+
+- Public API naming/export should not introduce `NativeRtc*` into common business layers.
+- `publicP2pRtcConnector` accepted `turn:` URLs from rendezvous and forwarded them into the public P2P offer.
+- Bridge-backed sessions need explicit capability updater behavior so server-negotiated policy is not silently dropped.
+
+### Review Fixes
+
+- Reworked the initial native-specific adapter into neutral `bridgeRtcSession`.
+- Kept bridge adapter exports out of `src/index.ts` and added raw-source guards for common business modules.
+- Made the bridge session implement `RtcSessionCapabilityUpdater`.
+- Added public P2P STUN-only validation before offer creation.
+- Tightened the regression so invalid public P2P ICE is rejected before creating a runtime session.
+
+### Remaining Risk
+
+- The real iOS/Android WebRTC implementation, secure storage, native packaging, and app-store signing remain deferred external work.
+- Full APP/devstack e2e remains Slice 20.
+
+### Next Step
+
+Run typecheck, full remote-ui validation, workflow guard, final review, fixes, commit, and hash backfill.
+
 ## Slice 15: Connection Orchestrator
 
 ### Goal

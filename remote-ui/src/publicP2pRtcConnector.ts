@@ -102,6 +102,7 @@ class PublicP2pRtcConnector implements RtcConnector<PublicP2pConnectInput> {
         ttlSeconds: input.ttlSeconds ?? 600,
       }, options)
       throwIfAborted(options.signal)
+      const iceServers = publicP2pIceServers(channel.publicStunServers)
       session = this.options.createSession({
         machineId: input.machineId,
         terminalId,
@@ -110,7 +111,7 @@ class PublicP2pRtcConnector implements RtcConnector<PublicP2pConnectInput> {
         machineId: input.machineId,
         terminalId,
         path: 'public_p2p',
-        iceServers: channel.publicStunServers.map((url) => ({ urls: [url] })),
+        iceServers,
       }, options)
       throwIfAborted(options.signal)
       const signature = await this.options.signOffer({
@@ -208,6 +209,27 @@ function answersFromMessages(messages: PublicP2pRendezvousMessage[]): Array<{
   return messages
     .filter((candidate) => candidate.type === 'answer')
     .map((message) => answerFromMessage(message))
+}
+
+function publicP2pIceServers(urls: string[]): Array<{ urls: string[] }> {
+  if (!Array.isArray(urls) || urls.length === 0) {
+    throw new Error('public_p2p rendezvous must return at least one STUN server')
+  }
+  return urls.map((url) => {
+    if (typeof url !== 'string' || url.trim() === '') {
+      throw new Error('public_p2p rendezvous STUN server must be a non-empty string')
+    }
+    const normalized = url.trim()
+    if (!isPublicP2pStunURL(normalized)) {
+      throw new Error(`public_p2p rendezvous may only return STUN servers, got ${normalized}`)
+    }
+    return { urls: [normalized] }
+  })
+}
+
+function isPublicP2pStunURL(url: string): boolean {
+  const lower = url.toLowerCase()
+  return lower.startsWith('stun:') || lower.startsWith('stuns:')
 }
 
 function answerFromMessage(message: PublicP2pRendezvousMessage): {

@@ -5,8 +5,8 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `18` stateless Hub policy / dev-free managed relay.
-- Last updated: 2026-05-03T19:41:00+08:00.
+- Active todo: `19` native APP RtcSession seam.
+- Last updated: 2026-05-03T20:12:00+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -139,7 +139,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 17-A | daemon-hub-selection-policy | Add production Hub selection policy using region/health/capacity/expiry/weights | pending |  |
 | 17-B | external | Defer production OAuth/email/SMS and secure OS keychain/secret storage for CLI/device login | deferred_external |  |
 | 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | completed | `54aac488` |
-| 19 | native-app-rtc-seam | Add native APP `RtcSession` seam without WebRTC type leakage | pending |  |
+| 19 | native-app-rtc-seam | Add native APP `RtcSession` seam without WebRTC type leakage | completed |  |
 | 20 | app-devstack-e2e | Validate APP shell / Web Control / stateless Hub / daemon closed loop | pending |  |
 
 ## Compressed Completed Slice Summary
@@ -362,6 +362,31 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - 下一步：commit and hash backfill, then continue Slice `19`.
 - commit：`54aac488`
 
+### 19 Native APP RtcSession Seam
+
+- 状态：completed
+- 父条目：none
+- 来源：APP-first remote-ui needs a native bridge seam so mobile/native WebRTC can implement `RtcSession` without leaking platform/browser/native types into public machine/orchestrator business layers.
+- 目标：add a minimal APP bridge contract around `RtcSession`/connection targets, with tests proving browser `RTCPeerConnection`/`RTCDataChannel` and native WebRTC types stay out of common remote-ui business modules.
+- 范围：`remote-ui/src/bridgeRtcSession.ts`, bridge/public P2P tests, `remote-ui/docs/webrtc-rewrite-log.md`, `WORKFLOW.md`.
+- 非目标：actual iOS/Android WebRTC implementation, camera QR UI, app store signing, Web Control terminal UI, devstack e2e.
+- 外部依赖：real native secure storage, app store signing, native WebRTC runtime packaging remain deferred external.
+- mock 策略：use fake bridge/provider interfaces returning existing `RtcSession`; no browser/native WebRTC mocks in common business layer.
+- 先写的失败测试：added focused `remote-ui/src/bridgeRtcSession.test.ts` coverage for bridge offer/answerer behavior, relay/path fail-closed behavior, connector interoperability, runtime channel delegation, capability updater behavior, source-boundary leakage, and barrel export shape. Added `publicP2pRtcConnector.test.ts` red test rejecting `turn:` from public rendezvous before offer creation.
+- 预期失败结果：first `cd remote-ui && npm test -- --run src/nativeRtcSession.test.ts` failed because module did not exist; after subagent findings, revised to `bridgeRtcSession` and `public_p2p` STUN-only focused test failed because `publicP2pRtcConnector` forwarded `turn:` URLs into `createOffer`.
+- 实现摘要：added `remote-ui/src/bridgeRtcSession.ts` with neutral `BridgeRtcSessionAdapter` implementing `RtcSession & RtcSessionNegotiator & RtcSessionAnswerer & RtcSessionCapabilityUpdater`; kept it out of `src/index.ts` barrel exports; hardened `publicP2pRtcConnector` so public rendezvous ICE servers must be `stun:`/`stuns:`.
+- 重构摘要：renamed initial native-specific seam to neutral bridge seam after review; common business modules and public barrel do not import/export bridge/native/browser runtime details; relay validation remains managed-only capability/info.
+- 运行命令：`cd remote-ui && npm test -- --run src/nativeRtcSession.test.ts` failed first; `cd remote-ui && npm test -- --run src/bridgeRtcSession.test.ts src/publicP2pRtcConnector.test.ts` failed on public_p2p TURN leakage, then passed 2 files / 12 tests; `cd remote-ui && npm run typecheck`; `cd remote-ui && npm test`; `cd remote-ui && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`.
+- 测试结果：focused bridge/public P2P tests passed; typecheck passed; full remote-ui tests passed 42 files / 206 tests; build passed with existing Vite chunk-size warning; workflow guard and diff whitespace check passed.
+- subagent review：initial explorer spawn failed with agent thread limit; closed completed historical agents and started explorer `Meitner` (`019ded95-26d5-7373-8d72-eca7824cffcf`) for read-only native seam boundary review.
+- review 发现：native-specific public API naming/export can leak into common business layer; `publicP2pRtcConnector` accepted `turn:` URLs in `public_p2p` rendezvous; capability updater must be explicit for server-negotiated policy.
+- review 后修复：reworked seam to neutral `BridgeRtcSessionAdapter`, removed public barrel export, added business-source guards, made bridge session implement `RtcSessionCapabilityUpdater`, rejected non-STUN public P2P ICE servers before offer creation, and tightened the test so invalid public P2P ICE is rejected before creating a runtime session.
+- 新增派生条目：none yet.
+- deferred human items：native platform packaging/signing and production secure storage remain deferred external.
+- 剩余风险：actual native WebRTC packaging/secure storage remains deferred; app/devstack e2e remains Slice 20.
+- 下一步：hash backfill, then start Slice `20`.
+- commit：
+
 ## Deferred External / Human Items
 
 - Real payment/subscription/invoice/tax/fraud integrations remain `deferred_external` behind provider interfaces.
@@ -371,6 +396,5 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ## Next Exact Action
 
-1. Continue Slice `18`: write focused red tests for Web Control dev-free managed tickets, Hub managed relay/ICE responses, bounded managed offer maps, and core session-specific ICE use.
-2. Run focused tests and record expected failures.
-3. Implement the minimal real policy sync without adding Hub DB or changing terminal/file/api/events runtime.
+1. Commit Slice `19` files only and record the hash back into `WORKFLOW.md`.
+2. Start Slice `20` APP/devstack e2e by updating todo/runbook before using any external public server.
