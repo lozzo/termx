@@ -80,6 +80,28 @@ func TestRunRendezvousCleanupLoopKeepsRunningAfterError(t *testing.T) {
 	}
 }
 
+func TestRunCleanupLoopInvokesMultipleCleaners(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	first := &fakeRendezvousCleaner{}
+	second := &fakeRendezvousCleaner{}
+	ticks := make(chan time.Time, 1)
+	done := make(chan struct{})
+
+	go func() {
+		runCleanupLoop(ctx, ticks, first, second)
+		close(done)
+	}()
+	ticks <- time.Date(2026, 5, 3, 19, 40, 0, 0, time.UTC)
+	eventually(t, func() bool { return first.calls == 1 && second.calls == 1 })
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup loop did not stop after context cancellation")
+	}
+}
+
 func TestNewRouterFromServicesWiresManagedConnect(t *testing.T) {
 	t.Setenv("TERMX_WEB_CONTROL_SQLITE_DSN", "file:termx-web-control-router-test?mode=memory&cache=shared")
 	t.Setenv("TERMX_WEB_CONTROL_TOKEN_SECRET", "router-secret")

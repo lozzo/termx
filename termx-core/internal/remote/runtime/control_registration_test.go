@@ -21,13 +21,17 @@ func TestManagerControlRegistrationSendsMachinePublicKey(t *testing.T) {
 	}
 	var got map[string]any
 	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/devices/register" {
+		switch r.URL.Path {
+		case "/api/devices/register":
+			if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+				t.Fatalf("decode control registration: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"device": map[string]any{"id": got["deviceId"]}})
+		case "/api/v1/hubs":
+			_ = json.NewEncoder(w).Encode(map[string]any{"hubs": []any{}})
+		default:
 			t.Fatalf("unexpected control path %s", r.URL.Path)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
-			t.Fatalf("decode control registration: %v", err)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"device": map[string]any{"id": got["deviceId"]}})
 	}))
 	defer control.Close()
 

@@ -271,6 +271,11 @@ func (m *Manager) reconcile(ctx context.Context) (State, string, error) {
 		if err := m.syncControlRegistration(ctx); err != nil {
 			return StateDegraded, "", err
 		}
+		if m.cfg.HubURL == "" {
+			if err := m.discoverHub(ctx); err != nil {
+				return StateDegraded, "", err
+			}
+		}
 	}
 	if m.cfg.HubURL != "" {
 		if err := m.syncHubPresence(ctx); err != nil {
@@ -286,6 +291,32 @@ func (m *Manager) reconcile(ctx context.Context) (State, string, error) {
 		return StateConfigured, "device registered in control; waiting for hub configuration", nil
 	}
 	return StateConfigured, "remote identity ready; waiting for control or hub configuration", nil
+}
+
+func (m *Manager) discoverHub(ctx context.Context) error {
+	if m.cfg.ControlURL == "" || m.cfg.AccessToken == "" {
+		return nil
+	}
+	m.mu.RLock()
+	hubURL := m.cfg.HubURL
+	m.mu.RUnlock()
+	if strings.TrimSpace(hubURL) != "" {
+		return nil
+	}
+	hubs, err := discovery.DiscoverHubs(ctx, m.cfg.ControlURL, m.cfg.AccessToken)
+	if err != nil {
+		return err
+	}
+	for _, hub := range hubs {
+		if strings.TrimSpace(hub.HTTPURL) == "" || strings.TrimSpace(hub.Status) != "online" {
+			continue
+		}
+		m.mu.Lock()
+		m.cfg.HubURL = strings.TrimSpace(hub.HTTPURL)
+		m.mu.Unlock()
+		return nil
+	}
+	return nil
 }
 
 func (m *Manager) syncControlRegistration(ctx context.Context) error {

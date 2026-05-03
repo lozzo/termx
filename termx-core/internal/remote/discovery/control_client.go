@@ -46,6 +46,39 @@ func RegisterDevice(ctx context.Context, baseURL, token string, payload DeviceRe
 	return nil
 }
 
+type Hub struct {
+	ID        string `json:"id"`
+	Region    string `json:"region"`
+	HTTPURL   string `json:"http_url"`
+	Status    string `json:"status"`
+	Capacity  int    `json:"capacity"`
+	Health    string `json:"health,omitempty"`
+	ExpiresAt string `json:"expires_at,omitempty"`
+}
+
+func DiscoverHubs(ctx context.Context, baseURL, token string) ([]Hub, error) {
+	if strings.TrimSpace(baseURL) == "" {
+		return nil, errors.New("control URL is required")
+	}
+	if strings.TrimSpace(token) == "" {
+		return nil, errors.New("access token is required")
+	}
+	var out struct {
+		Hubs []Hub `json:"hubs"`
+	}
+	if err := doJSON(
+		ctx,
+		http.MethodGet,
+		strings.TrimRight(baseURL, "/")+"/api/v1/hubs",
+		nil,
+		&out,
+		map[string]string{"Authorization": "Bearer " + token},
+	); err != nil {
+		return nil, fmt.Errorf("discover hubs: %w", err)
+	}
+	return out.Hubs, nil
+}
+
 type HTTPStatusError struct {
 	StatusCode int
 	Body       string
@@ -64,16 +97,22 @@ func IsHTTPStatus(err error, status int) bool {
 }
 
 func doJSON(ctx context.Context, method, url string, input any, out any, headers map[string]string) error {
-	body, err := json.Marshal(input)
-	if err != nil {
-		return fmt.Errorf("encode json request: %w", err)
+	var body io.Reader
+	if input != nil {
+		payload, err := json.Marshal(input)
+		if err != nil {
+			return fmt.Errorf("encode json request: %w", err)
+		}
+		body = bytes.NewReader(payload)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return fmt.Errorf("build json request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	if input != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}

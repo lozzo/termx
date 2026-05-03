@@ -104,6 +104,24 @@ var migrationStatements = []string{
 		revoked_at TEXT,
 		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 	)`,
+	`CREATE TABLE IF NOT EXISTS device_auth_codes (
+		id TEXT PRIMARY KEY,
+		device_code_hash TEXT NOT NULL UNIQUE,
+		user_code_hash TEXT NOT NULL UNIQUE,
+		status TEXT NOT NULL,
+		client_name TEXT NOT NULL DEFAULT '',
+		verification_uri TEXT NOT NULL DEFAULT '',
+		approved_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+		attempt_count INTEGER NOT NULL DEFAULT 0,
+		locked_at TEXT,
+		poll_interval_seconds INTEGER NOT NULL DEFAULT 5,
+		expires_at TEXT NOT NULL,
+		consumed_at TEXT,
+		decided_at TEXT,
+		reason TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	)`,
 	`CREATE TABLE IF NOT EXISTS payment_orders (
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -293,6 +311,9 @@ func applyMigrationUpgrades(ctx context.Context, tx *sql.Tx) error {
 	if err := ensureHubRegistrySchema(ctx, tx); err != nil {
 		return err
 	}
+	if err := ensureDeviceAuthSchema(ctx, tx); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -351,6 +372,36 @@ func ensureHubRegistrySchema(ctx context.Context, tx *sql.Tx) error {
 		PRIMARY KEY (machine_id, agent_id)
 	)`); err != nil {
 		return fmt.Errorf("create hub_agent_policies: %w", err)
+	}
+	return nil
+}
+
+func ensureDeviceAuthSchema(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS device_auth_codes (
+		id TEXT PRIMARY KEY,
+		device_code_hash TEXT NOT NULL UNIQUE,
+		user_code_hash TEXT NOT NULL UNIQUE,
+		status TEXT NOT NULL,
+		client_name TEXT NOT NULL DEFAULT '',
+		verification_uri TEXT NOT NULL DEFAULT '',
+		approved_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+		attempt_count INTEGER NOT NULL DEFAULT 0,
+		locked_at TEXT,
+		poll_interval_seconds INTEGER NOT NULL DEFAULT 5,
+		expires_at TEXT NOT NULL,
+		consumed_at TEXT,
+		decided_at TEXT,
+		reason TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	)`); err != nil {
+		return fmt.Errorf("create device_auth_codes: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE device_auth_codes ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0`); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("add device_auth_codes.attempt_count: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE device_auth_codes ADD COLUMN locked_at TEXT`); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("add device_auth_codes.locked_at: %w", err)
 	}
 	return nil
 }

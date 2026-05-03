@@ -1,0 +1,208 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/lozzow/termx/termx-core"
+)
+
+func TestRemoteLoginTokenPersistsBootstrapOutsideConfigFile(t *testing.T) {
+	oldClient := remoteLoginHTTPClient
+	oldStore := remoteAuthStorePath
+	t.Cleanup(func() {
+		remoteLoginHTTPClient = oldClient
+		remoteAuthStorePath = oldStore
+	})
+	remoteAuthStorePath = func(configPath string) (string, error) {
+		return filepath.Join(t.TempDir(), "remote-auth.json"), nil
+	}
+	var validatedToken string
+	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{
+		meFunc: func(ctx context.Context, controlURL string, token string) (remoteLoginUser, error) {
+			validatedToken = token
+			return remoteLoginUser{Email: "cli-token@example.com"}, nil
+		},
+		hubsFunc: func(ctx context.Context, controlURL string, token string) ([]remoteLoginHub, error) {
+			return []remoteLoginHub{{ID: "hub_1", HTTPURL: "https://hub-1.termx.test"}}, nil
+		},
+	}
+
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	cmd := newRootCmd()
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte("access-secret\n"), 0o600); err != nil {
+		t.Fatalf("write token file: %v", err)
+	}
+	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "token", "--control-url", "https://control.example.test", "--token-file", tokenPath})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if validatedToken != "access-secret" {
+		t.Fatalf("expected token to be validated through control, got %q", validatedToken)
+	}
+	if data, err := os.ReadFile(configPath); err == nil && strings.Contains(string(data), "access-secret") {
+		t.Fatal("raw access token was written to termx config")
+	}
+	cfg, err := remoteConfigFromFileAndEnv(configPath)
+	if err != nil {
+		t.Fatalf("remoteConfigFromFileAndEnv returned error: %v", err)
+	}
+	if !cfg.Enabled || cfg.ControlURL != "https://control.example.test" || cfg.AccessToken != "access-secret" ||
+		cfg.HubURL != "https://hub-1.termx.test" {
+		t.Fatalf("unexpected loaded remote config after login: %#v", cfg)
+	}
+}
+
+func TestRemoteLoginPasswordAndDeviceCodePersistTokens(t *testing.T) {
+	oldClient := remoteLoginHTTPClient
+	oldStore := remoteAuthStorePath
+	t.Cleanup(func() {
+		remoteLoginHTTPClient = oldClient
+		remoteAuthStorePath = oldStore
+	})
+	authStore := filepath.Join(t.TempDir(), "remote-auth.json")
+	remoteAuthStorePath = func(configPath string) (string, error) { return authStore, nil }
+	var loginEmail string
+	var pollCalls int
+	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{
+		loginFunc: func(ctx context.Context, controlURL string, email string, password string) (remoteLoginAuthResult, error) {
+			loginEmail = email
+			if password != "valid password" {
+				t.Fatalf("unexpected password %q", password)
+			}
+			return remoteLoginAuthResult{AccessToken: "password-access", RefreshToken: "password-refresh", User: remoteLoginUser{Email: email}}, nil
+		},
+		createDeviceCodeFunc: func(ctx context.Context, controlURL string, clientName string) (remoteDeviceCodeResult, error) {
+			return remoteDeviceCodeResult{
+				DeviceCode:              "device-code-1",
+				UserCode:                "USER-CODE",
+				VerificationURIComplete: "https://control.example.test/device?user_code=USER-CODE",
+				ExpiresAt:               time.Now().Add(time.Minute),
+				Interval:                time.Nanosecond,
+			}, nil
+		},
+		pollDeviceCodeFunc: func(ctx context.Context, controlURL string, deviceCode string) (remoteLoginAuthResult, bool, error) {
+			pollCalls++
+			if pollCalls == 1 {
+				return remoteLoginAuthResult{}, false, nil
+			}
+			return remoteLoginAuthResult{AccessToken: "device-access", RefreshToken: "device-refresh", User: remoteLoginUser{Email: "device@example.com"}}, true, nil
+		},
+	}
+
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	cmd := newRootCmd()
+	t.Setenv("TERMX_TEST_PASSWORD", "valid password")
+	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "password", "--control-url", "https://control.example.test", "--email", "cli@example.com", "--password-env", "TERMX_TEST_PASSWORD"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("password login returned error: %v", err)
+	}
+	if loginEmail != "cli@example.com" {
+		t.Fatalf("unexpected login email %q", loginEmail)
+	}
+	cfg, err := remoteConfigFromFileAndEnv(configPath)
+	if err != nil {
+		t.Fatalf("load password login config: %v", err)
+	}
+	if cfg.AccessToken != "password-access" {
+		t.Fatalf("expected password access token in auth store, got %#v", cfg)
+	}
+
+	cmd = newRootCmd()
+	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "device-code", "--control-url", "https://control.example.test", "--timeout", "100ms"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("device-code login returned error: %v", err)
+	}
+	cfg, err = remoteConfigFromFileAndEnv(configPath)
+	if err != nil {
+		t.Fatalf("load device-code config: %v", err)
+	}
+	if cfg.AccessToken != "device-access" {
+		t.Fatalf("expected device-code access token in auth store, got %#v", cfg)
+	}
+	var stored struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	if data, err := os.ReadFile(authStore); err != nil {
+		t.Fatalf("read auth store: %v", err)
+	} else if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatalf("decode auth store: %v", err)
+	}
+	if stored.RefreshToken != "device-refresh" {
+		t.Fatalf("expected refresh token to rotate in auth store, got %q", stored.RefreshToken)
+	}
+}
+
+func TestRemoteLoginDoesNotPersistMachinePrivateKey(t *testing.T) {
+	record := remoteAuthRecord{
+		ControlURL:        "https://control.example.test",
+		AccessToken:       "access-secret",
+		RefreshToken:      "refresh-secret",
+		MachinePrivateKey: "must-not-persist",
+	}
+	path := filepath.Join(t.TempDir(), "remote-auth.json")
+	if err := saveRemoteAuthRecord(path, record); err == nil {
+		t.Fatal("expected private-key-shaped auth record to be rejected")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("private key rejection still created auth store: %v", err)
+	}
+}
+
+type remoteLoginHTTPClientFunc struct {
+	meFunc               func(context.Context, string, string) (remoteLoginUser, error)
+	hubsFunc             func(context.Context, string, string) ([]remoteLoginHub, error)
+	loginFunc            func(context.Context, string, string, string) (remoteLoginAuthResult, error)
+	createDeviceCodeFunc func(context.Context, string, string) (remoteDeviceCodeResult, error)
+	pollDeviceCodeFunc   func(context.Context, string, string) (remoteLoginAuthResult, bool, error)
+}
+
+func (f remoteLoginHTTPClientFunc) Me(ctx context.Context, controlURL string, token string) (remoteLoginUser, error) {
+	if f.meFunc == nil {
+		return remoteLoginUser{}, nil
+	}
+	return f.meFunc(ctx, controlURL, token)
+}
+
+func (f remoteLoginHTTPClientFunc) Login(ctx context.Context, controlURL string, email string, password string) (remoteLoginAuthResult, error) {
+	if f.loginFunc == nil {
+		return remoteLoginAuthResult{}, nil
+	}
+	return f.loginFunc(ctx, controlURL, email, password)
+}
+
+func (f remoteLoginHTTPClientFunc) CreateDeviceCode(ctx context.Context, controlURL string, clientName string) (remoteDeviceCodeResult, error) {
+	if f.createDeviceCodeFunc == nil {
+		return remoteDeviceCodeResult{}, nil
+	}
+	return f.createDeviceCodeFunc(ctx, controlURL, clientName)
+}
+
+func (f remoteLoginHTTPClientFunc) PollDeviceCode(ctx context.Context, controlURL string, deviceCode string) (remoteLoginAuthResult, bool, error) {
+	if f.pollDeviceCodeFunc == nil {
+		return remoteLoginAuthResult{}, false, nil
+	}
+	return f.pollDeviceCodeFunc(ctx, controlURL, deviceCode)
+}
+
+func (f remoteLoginHTTPClientFunc) DiscoverHubs(ctx context.Context, controlURL string, token string) ([]remoteLoginHub, error) {
+	if f.hubsFunc == nil {
+		return nil, nil
+	}
+	return f.hubsFunc(ctx, controlURL, token)
+}
+
+var _ = termx.RemoteConfig{}

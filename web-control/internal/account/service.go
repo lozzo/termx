@@ -146,6 +146,33 @@ func (s *Service) Me(ctx context.Context, accessToken string) (AuthResult, error
 	return AuthResult{User: user, Plan: plan, Subscription: sub}, nil
 }
 
+func (s *Service) IssueForUserID(ctx context.Context, userID string) (AuthResult, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return AuthResult{}, errors.New("user id is required")
+	}
+	user, err := s.loadUserByID(ctx, userID)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	return s.issueAuth(ctx, user)
+}
+
+func (s *Service) IssueForUserIDInTx(ctx context.Context, tx *sql.Tx, userID string) (AuthResult, error) {
+	if tx == nil {
+		return AuthResult{}, errors.New("transaction is required")
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return AuthResult{}, errors.New("user id is required")
+	}
+	user, err := s.loadUserByIDTx(ctx, tx, userID)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	return s.issueAuthInTx(ctx, tx, user)
+}
+
 func (s *Service) CreateSubscriptionOrder(ctx context.Context, userID string, planID string) (PaymentOrder, error) {
 	if _, ok := planCatalog[planID]; !ok || planID == PlanRegisteredFree {
 		return PaymentOrder{}, errors.New("unsupported paid plan")

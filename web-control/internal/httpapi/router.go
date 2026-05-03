@@ -10,6 +10,7 @@ import (
 
 	"github.com/lozzow/termx/web-control/internal/account"
 	"github.com/lozzow/termx/web-control/internal/connect"
+	"github.com/lozzow/termx/web-control/internal/deviceauth"
 	"github.com/lozzow/termx/web-control/internal/hubregistry"
 	"github.com/lozzow/termx/web-control/internal/machines"
 	"github.com/lozzow/termx/web-control/internal/rendezvous"
@@ -21,6 +22,7 @@ type Config struct {
 	ServiceName           string
 	Version               string
 	Accounts              *account.Service
+	DeviceAuth            *deviceauth.Service
 	Machines              *machines.Service
 	Connect               *connect.Service
 	Rendezvous            *rendezvous.Service
@@ -133,6 +135,75 @@ func NewRouter(cfg Config) http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, result)
+	})
+	mux.HandleFunc("POST /api/v1/auth/device-code", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.DeviceAuth == nil {
+			writeError(w, http.StatusServiceUnavailable, "device_auth_unavailable", "device auth service is not configured")
+			return
+		}
+		var req struct {
+			ClientName      string `json:"client_name"`
+			VerificationURI string `json:"verification_uri"`
+			ExpiresIn       int    `json:"expires_in"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+			return
+		}
+		result, err := cfg.DeviceAuth.Create(r.Context(), deviceauth.CreateInput{
+			ClientName:      req.ClientName,
+			VerificationURI: req.VerificationURI,
+			ExpiresIn:       time.Duration(req.ExpiresIn) * time.Second,
+		})
+		if err != nil {
+			if deviceauth.IsRateLimited(err) {
+				writeError(w, http.StatusTooManyRequests, "slow_down", "too many active device codes")
+				return
+			}
+			writeError(w, http.StatusBadRequest, "device_code_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, result)
+	})
+	mux.HandleFunc("POST /api/v1/auth/device-code/token", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.DeviceAuth == nil {
+			writeError(w, http.StatusServiceUnavailable, "device_auth_unavailable", "device auth service is not configured")
+			return
+		}
+		var req struct {
+			DeviceCode string `json:"device_code"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+			return
+		}
+		result, err := cfg.DeviceAuth.Poll(r.Context(), deviceauth.PollInput{DeviceCode: req.DeviceCode})
+		if err != nil {
+			switch {
+			case deviceauth.IsAccessDenied(err):
+				writeError(w, http.StatusForbidden, "access_denied", "device code was rejected")
+			case deviceauth.IsRateLimited(err):
+				writeError(w, http.StatusTooManyRequests, "slow_down", "too many active device codes")
+			case deviceauth.IsExpired(err):
+				writeError(w, http.StatusUnauthorized, "expired_token", "device code expired")
+			case deviceauth.IsAlreadyConsumed(err):
+				writeError(w, http.StatusUnauthorized, "invalid_grant", "device code already consumed")
+			default:
+				writeError(w, http.StatusUnauthorized, "authorization_pending", err.Error())
+			}
+			return
+		}
+		if result.Status == deviceauth.StatusPending {
+			writeError(w, http.StatusUnauthorized, "authorization_pending", "authorization pending")
+			return
+		}
+		writeJSON(w, http.StatusOK, result.Auth)
+	})
+	mux.HandleFunc("POST /api/v1/auth/device-code/{user_code}/confirm", func(w http.ResponseWriter, r *http.Request) {
+		handleDeviceAuthDecision(w, r, cfg, true)
+	})
+	mux.HandleFunc("POST /api/v1/auth/device-code/{user_code}/reject", func(w http.ResponseWriter, r *http.Request) {
+		handleDeviceAuthDecision(w, r, cfg, false)
 	})
 	mux.HandleFunc("POST /api/v1/agent/bootstrap", func(w http.ResponseWriter, r *http.Request) {
 		if cfg.Machines == nil {
@@ -672,6 +743,50 @@ func handleHubReport(w http.ResponseWriter, r *http.Request, cfg Config) {
 		"hub":            result.Hub,
 		"agent_policies": result.AgentPolicies,
 	})
+}
+
+func handleDeviceAuthDecision(w http.ResponseWriter, r *http.Request, cfg Config, approve bool) {
+	user, ok := authenticatedUser(w, r, cfg.Accounts)
+	if !ok {
+		return
+	}
+	if cfg.DeviceAuth == nil {
+		writeError(w, http.StatusServiceUnavailable, "device_auth_unavailable", "device auth service is not configured")
+		return
+	}
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+		return
+	}
+	input := deviceauth.DecisionInput{
+		UserID:   user.User.ID,
+		UserCode: r.PathValue("user_code"),
+		Reason:   req.Reason,
+	}
+	var err error
+	if approve {
+		err = cfg.DeviceAuth.Approve(r.Context(), input)
+	} else {
+		err = cfg.DeviceAuth.Reject(r.Context(), input)
+	}
+	if err != nil {
+		status := http.StatusBadRequest
+		if deviceauth.IsAccessDenied(err) {
+			status = http.StatusForbidden
+		}
+		if deviceauth.IsAttemptLocked(err) || deviceauth.IsRateLimited(err) {
+			status = http.StatusTooManyRequests
+		}
+		if deviceauth.IsExpired(err) || deviceauth.IsAlreadyConsumed(err) {
+			status = http.StatusUnauthorized
+		}
+		writeError(w, status, "device_auth_decision_failed", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func handleHubManagedTicket(w http.ResponseWriter, r *http.Request, cfg Config, consume bool) {

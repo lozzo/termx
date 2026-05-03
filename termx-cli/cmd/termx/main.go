@@ -155,7 +155,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(killCommand(&socket, &logFile))
 	cmd.AddCommand(attachCommand(&socket, &logFile, &configPath))
 	cmd.AddCommand(pairCommand(&socket, &logFile))
-	cmd.AddCommand(remoteCommand(&socket, &logFile))
+	cmd.AddCommand(remoteCommand(&socket, &logFile, &configPath))
 	cmd.AddCommand(webCommand(&socket, &logFile))
 	return cmd
 }
@@ -359,11 +359,12 @@ func attachCommand(socket *string, logFile *string, configPath *string) *cobra.C
 	}
 }
 
-func remoteCommand(socket *string, logFile *string) *cobra.Command {
+func remoteCommand(socket *string, logFile *string, configPath *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "remote",
 		Short: "Manage TermX remote access",
 	}
+	cmd.AddCommand(remoteLoginCommand(configPath))
 	cmd.AddCommand(remoteStatusCommand(socket, logFile))
 	cmd.AddCommand(remoteInfoCommand(socket, logFile))
 	cmd.AddCommand(remoteEnableCommand(socket, logFile))
@@ -848,6 +849,19 @@ func loadRemoteConfigFromFile(path string) (termx.RemoteConfig, bool, error) {
 		HubURL:     strings.TrimSpace(values["hubURL"]),
 		DataDir:    strings.TrimSpace(values["dataDir"]),
 		DeviceName: strings.TrimSpace(values["deviceName"]),
+	}
+	if authStore := strings.TrimSpace(values["authStore"]); authStore != "" {
+		record, err := loadRemoteAuthRecord(authStore)
+		if err != nil {
+			return termx.RemoteConfig{}, false, fmt.Errorf("load remote auth store: %w", err)
+		}
+		if cfg.ControlURL == "" {
+			cfg.ControlURL = record.ControlURL
+		}
+		if cfg.HubURL == "" {
+			cfg.HubURL = record.HubURL
+		}
+		cfg.AccessToken = record.AccessToken
 	}
 	if tokenEnv := strings.TrimSpace(values["accessTokenEnv"]); tokenEnv != "" {
 		cfg.AccessToken = strings.TrimSpace(os.Getenv(tokenEnv))

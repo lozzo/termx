@@ -13,6 +13,7 @@ import (
 
 	"github.com/lozzow/termx/web-control/internal/account"
 	"github.com/lozzow/termx/web-control/internal/connect"
+	"github.com/lozzow/termx/web-control/internal/deviceauth"
 	"github.com/lozzow/termx/web-control/internal/httpapi"
 	"github.com/lozzow/termx/web-control/internal/hubregistry"
 	"github.com/lozzow/termx/web-control/internal/machines"
@@ -43,11 +44,15 @@ func main() {
 		log.Fatal(err)
 	}
 	rendezvousService := rendezvous.NewService(rendezvous.Config{DB: db, STUNServers: commaListEnv("TERMX_WEB_CONTROL_STUN_SERVERS")})
+	deviceAuthCleaner := deviceauth.NewService(deviceauth.Config{DB: db})
 	cleanupCtx, stopCleanup := context.WithCancel(ctx)
 	defer stopCleanup()
 	cleanupTicker := time.NewTicker(5 * time.Minute)
 	defer cleanupTicker.Stop()
-	go runRendezvousCleanupLoop(cleanupCtx, rendezvousService, cleanupTicker.C)
+	go runCleanupLoop(cleanupCtx, cleanupTicker.C, rendezvousService, cleanupFunc(func(ctx context.Context) (int64, error) {
+		result, err := deviceAuthCleaner.CleanupExpired(ctx, deviceauth.CleanupInput{})
+		return result.Expired + result.Deleted, err
+	}))
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatal(err)
 	}
@@ -88,10 +93,12 @@ func newRouterFromServices(ctx context.Context, db *sql.DB) (http.Handler, error
 	}
 	machineService := machines.NewService(machines.Config{DB: db})
 	connectService := connect.NewService(connect.Config{DB: db})
+	deviceAuthService := deviceauth.NewService(deviceauth.Config{DB: db, Accounts: accounts})
 	rendezvousService := rendezvous.NewService(rendezvous.Config{DB: db, STUNServers: commaListEnv("TERMX_WEB_CONTROL_STUN_SERVERS")})
 	hubRegistryService := hubregistry.NewService(hubregistry.Config{DB: db})
 	api := httpapi.NewRouter(httpapi.Config{
 		Accounts:        accounts,
+		DeviceAuth:      deviceAuthService,
 		Machines:        machineService,
 		Connect:         connectService,
 		Rendezvous:      rendezvousService,
@@ -152,8 +159,24 @@ type rendezvousCleaner interface {
 	CleanupExpired(context.Context) (int64, error)
 }
 
+type cleanupFunc func(context.Context) (int64, error)
+
+func (f cleanupFunc) CleanupExpired(ctx context.Context) (int64, error) {
+	return f(ctx)
+}
+
 func runRendezvousCleanupLoop(ctx context.Context, cleaner rendezvousCleaner, ticks <-chan time.Time) {
-	if cleaner == nil {
+	runCleanupLoop(ctx, ticks, cleaner)
+}
+
+func runCleanupLoop(ctx context.Context, ticks <-chan time.Time, cleaners ...rendezvousCleaner) {
+	filtered := cleaners[:0]
+	for _, cleaner := range cleaners {
+		if cleaner != nil {
+			filtered = append(filtered, cleaner)
+		}
+	}
+	if len(filtered) == 0 {
 		return
 	}
 	for {
@@ -161,8 +184,10 @@ func runRendezvousCleanupLoop(ctx context.Context, cleaner rendezvousCleaner, ti
 		case <-ctx.Done():
 			return
 		case <-ticks:
-			if _, err := cleaner.CleanupExpired(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				log.Printf("cleanup expired rendezvous channels: %v", err)
+			for _, cleaner := range filtered {
+				if _, err := cleaner.CleanupExpired(ctx); err != nil && !errors.Is(err, context.Canceled) {
+					log.Printf("cleanup expired records: %v", err)
+				}
 			}
 		}
 	}

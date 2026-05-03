@@ -5,8 +5,8 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `17` daemon login / Hub discovery.
-- Last updated: 2026-05-03T18:42:19+08:00.
+- Active todo: `18` stateless Hub policy / dev-free managed relay.
+- Last updated: 2026-05-03T18:35:00+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -135,7 +135,9 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 16 | web-control-hub-closed-loop | Implement Hub discover, heartbeat, policy/kick response, force-offline in Web Control | completed | `163c3ee2` |
 | 16-A | hub-force-offline-agent-scope | Keep force-offline scoped to one agent without blocking other online agents for the same machine | resolved | `163c3ee2` |
 | 16-B | hub-agent-session-bounds | Add TTL cleanup/max bounds to Hub HTTP agent session maps used by policy checks | resolved | `163c3ee2` |
-| 17 | daemon-login-hub-select | Implement token/password/device-code daemon login and Hub discovery/selection | pending |  |
+| 17 | daemon-login-hub-select | Implement token/password/device-code daemon login and Hub discovery/selection | completed | pending-commit |
+| 17-A | daemon-hub-selection-policy | Add production Hub selection policy using region/health/capacity/expiry/weights | pending |  |
+| 17-B | external | Defer production OAuth/email/SMS and secure OS keychain/secret storage for CLI/device login | deferred_external |  |
 | 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | pending |  |
 | 19 | native-app-rtc-seam | Add native APP `RtcSession` seam without WebRTC type leakage | pending |  |
 | 20 | app-devstack-e2e | Validate APP shell / Web Control / stateless Hub / daemon closed loop | pending |  |
@@ -277,6 +279,36 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - 剩余风险：daemon login/hub selection and e2e remain later slices.
 - 下一步：run broader Web Control/Hub validations, perform review, fix findings, commit, and hash backfill.
 - commit：`163c3ee2`
+
+### 17 Daemon Login And Hub Discovery
+
+- 状态：completed
+- 父条目：none
+- 来源：`termx daemon` must login/register to Web Control, receive Hub list, and avoid uploading machine private keys.
+- 目标：add minimal token/password/device-code login and Hub discovery/selection seams for daemon/CLI without putting Web Control business logic into CLI/core.
+- 范围：inspect then likely `web-control/internal` auth/device-code endpoints, `termx-core/internal/remote` cloud config/runtime, `termx-cli/cmd/termx` login command wiring, workflow docs.
+- 非目标：terminal/file runtime, production OAuth/email/SMS, real device store encryption, subscription/entitlement.
+- 外部依赖：real OAuth/email/SMS remains deferred external; use local provider/stub where needed.
+- mock 策略：HTTP test servers and provider interfaces; tests must assert machine private key is rejected/not uploaded.
+- 只读探索：CLI 目前只有 `remote` local/status/pair/open 命令和只读 remote config parser；Web Control 已有 login/refresh/me、daemon register、`/api/v1/hubs`，但缺 device-code flow，core manager 还不会在 control 注册后自动 discover/select Hub。
+- 先写的失败测试：
+  - `termx-core/internal/remote/discovery`：`DiscoverHubs` must call `GET /api/v1/hubs` with bearer token and return online Hub HTTP URLs.
+  - `termx-core/internal/remote/runtime`：manager with `ControlURL` + token but no `HubURL` must register in Web Control, discover hubs, select one, then register to Hub.
+  - `web-control/internal/deviceauth` and `web-control/internal/httpapi`：device code create/pending/approve/poll/expire/reject, one-time token exchange, authenticated confirm/reject, and hashed code storage.
+  - `termx-cli/cmd/termx`：`remote login` token/password/device-code must validate or exchange credentials through Web Control, persist daemon bootstrap without writing raw tokens into `termx.yaml`, and let daemon config load the stored token.
+- 预期失败结果：focused tests failed as expected: `DiscoverHubs` undefined; manager stayed `configured` after control registration without Hub discovery; `web-control/internal/deviceauth` has no implementation; CLI login tests need new command/auth-store seams.
+- 实现摘要：added Web Control device-code service/routes with hashed code storage, one-time exchange, TTL/retention cleanup, active-code cap, bad-attempt lockout, authenticated confirm/reject; added core `DiscoverHubs` and manager selection after control registration; added CLI `remote login token/password/device-code`, auth-store bootstrap, and daemon config loading from auth store.
+- 重构摘要：added `account.IssueForUserIDInTx` so device-code consumption and token/session issuance share one SQLite transaction; added CLI secret-source flags (`--token-env`, `--token-file`, `--password-env`, `--password-file`) and kept raw tokens out of `termx.yaml`.
+- 运行命令：`cd termx-core && GOWORK=off go test ./internal/remote/discovery ./internal/remote/runtime -run 'TestDiscoverHubsUsesBearerTokenAndReturnsHubList|TestManagerDiscoversAndSelectsHubAfterControlRegistration'`; `cd web-control && GOWORK=off go test ./internal/deviceauth ./internal/httpapi -run 'TestDeviceCodeApprovePollRejectExpireAndHashStorage|TestDeviceAuthHTTPFlow'`; `cd termx-cli && GOWORK=off go test ./cmd/termx -run 'TestRemoteLogin'`; `cd termx-core && GOWORK=off go test ./...`; `cd web-control && GOWORK=off go test ./...`; `cd termx-cli && GOWORK=off go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`.
+- 测试结果：focused red tests failed first as expected; implementation focused tests passed; final broader validations passed after review fixes.
+- subagent review：`Tesla` (`019ded5a-ed71-7731-b780-1406a1196ef9`) reviewed Slice 17.
+- review 发现：unbounded unauthenticated device-code creates; 32-bit user-code and no attempt throttle; device-code consumed before token/session issuance; CLI token/password flags leak via argv; Hub selection is first-online only; CLI go.mod tidy/replace churn needs documentation.
+- review 后修复：added active code cap, higher-entropy user codes, bad-attempt lockout, retention cleanup wired to Web Control cleanup loop, atomic consume+token issuance, env/file secret inputs for CLI; documented remaining Hub selection and secure keychain limits as deferred/follow-up.
+- 新增派生条目：`17-A` pending for production Hub selection policy; `17-B` deferred_external for OS keychain/secret storage and production OAuth/email/SMS.
+- deferred human items：real OAuth provider, email/SMS, secure OS keychain integration remain deferred external.
+- 剩余风险：Hub selection is still simple first-online; production OAuth/email/SMS/OS keychain remain deferred; CLI `--token`/`--password` remain dev-compatible but env/file inputs are preferred.
+- 下一步：commit, hash backfill, then continue Slice `18`.
+- commit：
 
 ### 16-A Hub Force Offline Agent Scope
 
