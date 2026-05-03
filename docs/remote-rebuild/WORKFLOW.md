@@ -131,7 +131,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 13 | remote-ui-app-shell | Build APP-first machine list shell | completed | `0014e9a7` |
 | 13-A | workflow-unattended-continuation | Harden AGENTS so future slices continue unattended across boundaries | completed | `4f7bf2d1` |
 | 14 | remote-ui-qr-store | Define `termx://` QR payload and local MachineStore, rejecting machine private key material | completed | `9c078273` |
-| 15 | remote-ui-connection-orchestrator | Implement local/LAN -> public_p2p -> managed orchestration returning only `RtcSession` | in_progress |  |
+| 15 | remote-ui-connection-orchestrator | Implement local/LAN -> public_p2p -> managed orchestration returning only `RtcSession` | completed | `c038442b` |
 | 16 | web-control-hub-closed-loop | Implement Hub discover, heartbeat, policy/kick response, force-offline in Web Control | pending |  |
 | 17 | daemon-login-hub-select | Implement token/password/device-code daemon login and Hub discovery/selection | pending |  |
 | 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | pending |  |
@@ -228,7 +228,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ### 15 Remote UI Connection Orchestrator
 
-- 状态：in_progress
+- 状态：completed
 - 父条目：none
 - 来源：APP machine click must enter a connection state machine that tries local/LAN, then `public_p2p`, then `managed`, while terminal/file/api/events receive only `RtcSession`.
 - 目标：add a platform-neutral orchestrator that invokes existing connectors in order, emits APP-facing stage snapshots, stops after the first success, carries relay only as managed connection info/capability, and returns `RtcSession`.
@@ -248,8 +248,8 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - 新增派生条目：none yet.
 - deferred human items：none.
 - 剩余风险：native adapter, retry/backoff UX policy, and e2e remain future slices.
-- 下一步：rerun full validation, commit Slice `15`, hash backfill, then start Slice `16`.
-- commit：
+- 下一步：Slice `16`.
+- commit：`c038442b`
 
 ## Deferred External / Human Items
 
