@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `9` TermX daemon cloud integration.
-- Last updated: 2026-05-03T08:56:04+08:00.
+- Last updated: 2026-05-03T08:57:38+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -83,11 +83,11 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 9-B-A | daemon-agent-signaling-review | Retry the original generated managed answer after transient hub submit failures | completed | `02a38d36` |
 | 9-B-A-A | daemon-agent-signaling-self-review | Treat 204 No Content as successful hub answer submission | completed | `02a38d36` |
 | 9-B-A-B | daemon-agent-signaling-follow-up-review | Preserve raw offer bytes in pending answer cache key without trimming | completed | `02a38d36` |
-| 9-C | daemon-agent-config | Load daemon cloud remote bootstrap settings from local config without storing secrets | completed |  |
-| 9-C-A | daemon-agent-config-self-review | Fail closed on malformed remote config and allow env disable override | completed |  |
-| 9-C-B | daemon-agent-config-self-review | Prove daemon passes loaded RemoteConfig into the server option boundary | completed |  |
-| 9-C-C | daemon-agent-config-review | Honor file `remote.enabled: false` without auto-enabling staged endpoints | completed |  |
-| 9-C-D | daemon-agent-config-final-review | Fail closed on invalid explicit remote enabled values | completed |  |
+| 9-C | daemon-agent-config | Load daemon cloud remote bootstrap settings from local config without storing secrets | completed | `28e4e8db` |
+| 9-C-A | daemon-agent-config-self-review | Fail closed on malformed remote config and allow env disable override | completed | `28e4e8db` |
+| 9-C-B | daemon-agent-config-self-review | Prove daemon passes loaded RemoteConfig into the server option boundary | completed | `28e4e8db` |
+| 9-C-C | daemon-agent-config-review | Honor file `remote.enabled: false` without auto-enabling staged endpoints | completed | `28e4e8db` |
+| 9-C-D | daemon-agent-config-final-review | Fail closed on invalid explicit remote enabled values | completed | `28e4e8db` |
 | 10 | remote-ui | Connect `remote-ui` to real Web Control / public_p2p / managed API adapters while keeping `RtcSession` runtime boundary | pending |  |
 | 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | pending |  |
 
@@ -1819,8 +1819,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 新增派生条目：`9-C-A`, `9-C-B`, `9-C-C`, `9-C-D`.
 - deferred human items：real production login/token provider, OAuth/device-code flow, account provisioning, and cloud token rotation.
 - 剩余风险：current parser is intentionally narrow rather than a full YAML parser; invalid `TERMX_REMOTE_ENABLE` silently disables remote instead of warning, which is fail-closed but may need UX polish later.
-- 下一步：commit Slice 9-C, backfill commit hash, then continue Slice 10.
-- commit：待提交
+- 下一步：continue Slice 10.
+- commit：`28e4e8db`
 
 ### 9-C-A Remote Config Fail-Closed Parsing And Disable Override
 
@@ -1846,7 +1846,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：covered by parent Slice `9-C` final review.
 - 下一步：included in Slice `9-C` commit.
-- commit：待提交
+- commit：`28e4e8db`
 
 ### 9-C-B Remote Config Server Option Boundary Coverage
 
@@ -1872,7 +1872,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：covered by parent Slice `9-C` final review.
 - 下一步：included in Slice `9-C` commit.
-- commit：待提交
+- commit：`28e4e8db`
 
 ### 9-C-C File Remote Enabled False Override
 
@@ -1898,7 +1898,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：covered by parent Slice `9-C` final review.
 - 下一步：included in Slice `9-C` commit.
-- commit：待提交
+- commit：`28e4e8db`
 
 ### 9-C-D Invalid Remote Enabled Bool Fails Closed
 
@@ -1924,7 +1924,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：invalid `TERMX_REMOTE_ENABLE` silently disables remote instead of warning; acceptable fail-closed behavior for this slice.
 - 下一步：included in Slice `9-C` commit.
-- commit：待提交
+- commit：`28e4e8db`
 
 ### 10 remote-ui Real API Adapters
 
