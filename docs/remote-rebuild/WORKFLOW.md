@@ -6,7 +6,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `18` stateless Hub policy / dev-free managed relay.
-- Last updated: 2026-05-03T18:35:00+08:00.
+- Last updated: 2026-05-03T18:33:57+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -135,7 +135,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 16 | web-control-hub-closed-loop | Implement Hub discover, heartbeat, policy/kick response, force-offline in Web Control | completed | `163c3ee2` |
 | 16-A | hub-force-offline-agent-scope | Keep force-offline scoped to one agent without blocking other online agents for the same machine | resolved | `163c3ee2` |
 | 16-B | hub-agent-session-bounds | Add TTL cleanup/max bounds to Hub HTTP agent session maps used by policy checks | resolved | `163c3ee2` |
-| 17 | daemon-login-hub-select | Implement token/password/device-code daemon login and Hub discovery/selection | completed | pending-commit |
+| 17 | daemon-login-hub-select | Implement token/password/device-code daemon login and Hub discovery/selection | completed | `755641be` |
 | 17-A | daemon-hub-selection-policy | Add production Hub selection policy using region/health/capacity/expiry/weights | pending |  |
 | 17-B | external | Defer production OAuth/email/SMS and secure OS keychain/secret storage for CLI/device login | deferred_external |  |
 | 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | pending |  |
@@ -308,7 +308,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - deferred human items：real OAuth provider, email/SMS, secure OS keychain integration remain deferred external.
 - 剩余风险：Hub selection is still simple first-online; production OAuth/email/SMS/OS keychain remain deferred; CLI `--token`/`--password` remain dev-compatible but env/file inputs are preferred.
 - 下一步：commit, hash backfill, then continue Slice `18`.
-- commit：
+- commit：`755641be`
 
 ### 16-A Hub Force Offline Agent Scope
 
