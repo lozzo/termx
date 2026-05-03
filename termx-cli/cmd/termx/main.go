@@ -88,7 +88,18 @@ var (
 			return exec.Command("xdg-open", rawURL).Start()
 		}
 	}
+	newServer = func(opts ...termx.ServerOption) termxServer {
+		return termx.NewServer(opts...)
+	}
+	remoteConfigLoader = remoteConfigFromFileAndEnv
+	withRemoteConfig   = termx.WithRemoteConfig
 )
+
+type termxServer interface {
+	ListenAndServe(context.Context) error
+	Shutdown(context.Context) error
+	RemoteLocalEnable(context.Context, termx.RemoteLocalOptions) (termx.RemoteLocalStatus, error)
+}
 
 func nestedTUIBlocked() bool {
 	return os.Getenv("TERMX") == "1" && os.Getenv("TERMX_ALLOW_NESTED") != "1"
@@ -138,7 +149,7 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&socket, "socket", "", "socket path")
 	cmd.PersistentFlags().StringVar(&logFile, "log-file", "", "log file path (default: $TERMX_LOG_FILE or XDG state dir)")
 	cmd.PersistentFlags().StringVar(&configPath, "config", "", "termx config path (default: XDG config dir termx.yaml)")
-	cmd.AddCommand(daemonCommand(&socket))
+	cmd.AddCommand(daemonCommand(&socket, &configPath))
 	cmd.AddCommand(newCommand(&socket, &logFile))
 	cmd.AddCommand(lsCommand(&socket, &logFile))
 	cmd.AddCommand(killCommand(&socket, &logFile))
@@ -170,8 +181,8 @@ func tuiSharedConfig(workspace, sessionID, attachID, socket, logPath, workspaceS
 	return fileCfg, nil
 }
 
-func daemonCommand(socket *string) *cobra.Command {
-	return &cobra.Command{
+func daemonCommand(socket *string, configPath *string) *cobra.Command {
+	cmd := &cobra.Command{
 		Use: "daemon",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logFile, _ := cmd.Flags().GetString("log-file")
@@ -183,8 +194,11 @@ func daemonCommand(socket *string) *cobra.Command {
 			logger.Info("starting daemon", "socket", resolveSocket(*socket), "log_file", logPath)
 			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
-			remoteCfg := remoteConfigFromEnv()
-			opts := []termx.ServerOption{termx.WithLogger(logger), termx.WithRemoteConfig(remoteCfg)}
+			remoteCfg, err := remoteConfigLoader(*configPath)
+			if err != nil {
+				return err
+			}
+			opts := []termx.ServerOption{termx.WithLogger(logger), withRemoteConfig(remoteCfg)}
 			if *socket != "" {
 				opts = append(opts, termx.WithSocketPath(*socket))
 			}
@@ -197,7 +211,7 @@ func daemonCommand(socket *string) *cobra.Command {
 					"device_name", remoteCfg.DeviceName,
 				)
 			}
-			srv := termx.NewServer(opts...)
+			srv := newServer(opts...)
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
@@ -222,6 +236,7 @@ func daemonCommand(socket *string) *cobra.Command {
 			return err
 		},
 	}
+	return cmd
 }
 
 func newCommand(socket *string, logFile *string) *cobra.Command {
@@ -757,18 +772,140 @@ func currentSize() protocol.Size {
 }
 
 func remoteConfigFromEnv() termx.RemoteConfig {
+	enabled, enabledSet, _ := envBoolValue("TERMX_REMOTE_ENABLE")
 	cfg := termx.RemoteConfig{
-		Enabled:     envBool("TERMX_REMOTE_ENABLE"),
+		Enabled:     enabled,
 		ControlURL:  strings.TrimSpace(os.Getenv("TERMX_REMOTE_CONTROL_URL")),
 		HubURL:      strings.TrimSpace(os.Getenv("TERMX_REMOTE_HUB_URL")),
 		AccessToken: strings.TrimSpace(os.Getenv("TERMX_REMOTE_ACCESS_TOKEN")),
 		DataDir:     strings.TrimSpace(os.Getenv("TERMX_REMOTE_DATA_DIR")),
 		DeviceName:  strings.TrimSpace(os.Getenv("TERMX_REMOTE_DEVICE_NAME")),
 	}
-	if !cfg.Enabled && (cfg.ControlURL != "" || cfg.HubURL != "" || cfg.AccessToken != "" || cfg.DataDir != "" || cfg.DeviceName != "") {
+	if !enabledSet && !cfg.Enabled && (cfg.ControlURL != "" || cfg.HubURL != "" || cfg.AccessToken != "" || cfg.DataDir != "" || cfg.DeviceName != "") {
 		cfg.Enabled = true
 	}
 	return cfg
+}
+
+func remoteConfigFromFileAndEnv(path string) (termx.RemoteConfig, error) {
+	cfg, fileEnabledSet, err := loadRemoteConfigFromFile(path)
+	if err != nil {
+		return termx.RemoteConfig{}, err
+	}
+	envCfg := remoteConfigFromEnv()
+	envEnabled, envEnabledSet, _ := envBoolValue("TERMX_REMOTE_ENABLE")
+	if envEnabledSet {
+		cfg.Enabled = envEnabled
+	}
+	if envCfg.ControlURL != "" {
+		cfg.ControlURL = envCfg.ControlURL
+	}
+	if envCfg.HubURL != "" {
+		cfg.HubURL = envCfg.HubURL
+	}
+	if envCfg.AccessToken != "" {
+		cfg.AccessToken = envCfg.AccessToken
+	}
+	if envCfg.DataDir != "" {
+		cfg.DataDir = envCfg.DataDir
+	}
+	if envCfg.DeviceName != "" {
+		cfg.DeviceName = envCfg.DeviceName
+	}
+	if !envEnabledSet && !fileEnabledSet && !cfg.Enabled && (cfg.ControlURL != "" || cfg.HubURL != "" || cfg.AccessToken != "" || cfg.DataDir != "" || cfg.DeviceName != "") {
+		cfg.Enabled = true
+	}
+	return cfg, nil
+}
+
+func remoteConfigFromFile(path string) (termx.RemoteConfig, error) {
+	cfg, _, err := loadRemoteConfigFromFile(path)
+	return cfg, err
+}
+
+func loadRemoteConfigFromFile(path string) (termx.RemoteConfig, bool, error) {
+	if strings.TrimSpace(path) == "" {
+		path = shared.DefaultConfigPath()
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return termx.RemoteConfig{}, false, nil
+		}
+		return termx.RemoteConfig{}, false, err
+	}
+	values, err := parseRemoteConfigSection(string(data))
+	if err != nil {
+		return termx.RemoteConfig{}, false, fmt.Errorf("remote config %q: %w", path, err)
+	}
+	enabled, enabledSet, validEnabled := configBoolValue(values["enabled"])
+	if enabledSet && !validEnabled {
+		return termx.RemoteConfig{}, false, fmt.Errorf("remote enabled has invalid boolean value %q", values["enabled"])
+	}
+	cfg := termx.RemoteConfig{
+		Enabled:    enabled,
+		ControlURL: strings.TrimSpace(values["controlURL"]),
+		HubURL:     strings.TrimSpace(values["hubURL"]),
+		DataDir:    strings.TrimSpace(values["dataDir"]),
+		DeviceName: strings.TrimSpace(values["deviceName"]),
+	}
+	if tokenEnv := strings.TrimSpace(values["accessTokenEnv"]); tokenEnv != "" {
+		cfg.AccessToken = strings.TrimSpace(os.Getenv(tokenEnv))
+	}
+	if !enabledSet && !cfg.Enabled && (cfg.ControlURL != "" || cfg.HubURL != "" || cfg.AccessToken != "" || cfg.DataDir != "" || cfg.DeviceName != "") {
+		cfg.Enabled = true
+	}
+	return cfg, enabledSet, nil
+}
+
+func parseRemoteConfigSection(content string) (map[string]string, error) {
+	values := make(map[string]string)
+	var section string
+	for lineNo, raw := range strings.Split(content, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasSuffix(line, ":") && !strings.HasPrefix(line, "-") {
+			section = strings.TrimSuffix(line, ":")
+			continue
+		}
+		if section != "remote" || strings.HasPrefix(line, "-") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("line %d: invalid remote mapping", lineNo+1)
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		value = strings.Trim(value, `"'`)
+		if key == "accessToken" {
+			continue
+		}
+		values[key] = value
+	}
+	return values, nil
+}
+
+func parseConfigBool(value string) bool {
+	parsed, _, _ := configBoolValue(value)
+	return parsed
+}
+
+func configBoolValue(value string) (bool, bool, bool) {
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return false, false, true
+	}
+	switch strings.ToLower(raw) {
+	case "1", "t", "true", "yes", "y", "on":
+		return true, true, true
+	case "0", "f", "false", "no", "n", "off":
+		return false, true, true
+	default:
+		return false, true, false
+	}
 }
 
 func remoteLocalWebAddrFromEnv() string {
@@ -792,10 +929,21 @@ func remoteLocalICETCPAddrFromEnv() string {
 }
 
 func envBool(key string) bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	value, _, _ := envBoolValue(key)
+	return value
+}
+
+func envBoolValue(key string) (bool, bool, bool) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return false, false, true
+	}
+	switch strings.ToLower(raw) {
 	case "1", "true", "yes", "on":
-		return true
+		return true, true, true
+	case "0", "false", "no", "off":
+		return false, true, true
 	default:
-		return false
+		return false, true, false
 	}
 }

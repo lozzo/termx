@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `9` TermX daemon cloud integration.
-- Last updated: 2026-05-03T08:28:50+08:00.
+- Last updated: 2026-05-03T08:56:04+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -83,6 +83,11 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 9-B-A | daemon-agent-signaling-review | Retry the original generated managed answer after transient hub submit failures | completed | `02a38d36` |
 | 9-B-A-A | daemon-agent-signaling-self-review | Treat 204 No Content as successful hub answer submission | completed | `02a38d36` |
 | 9-B-A-B | daemon-agent-signaling-follow-up-review | Preserve raw offer bytes in pending answer cache key without trimming | completed | `02a38d36` |
+| 9-C | daemon-agent-config | Load daemon cloud remote bootstrap settings from local config without storing secrets | completed |  |
+| 9-C-A | daemon-agent-config-self-review | Fail closed on malformed remote config and allow env disable override | completed |  |
+| 9-C-B | daemon-agent-config-self-review | Prove daemon passes loaded RemoteConfig into the server option boundary | completed |  |
+| 9-C-C | daemon-agent-config-review | Honor file `remote.enabled: false` without auto-enabling staged endpoints | completed |  |
+| 9-C-D | daemon-agent-config-final-review | Fail closed on invalid explicit remote enabled values | completed |  |
 | 10 | remote-ui | Connect `remote-ui` to real Web Control / public_p2p / managed API adapters while keeping `RtcSession` runtime boundary | pending |  |
 | 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | pending |  |
 
@@ -1790,6 +1795,136 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 剩余风险：pending answer cache is intentionally loop-local and not durable.
 - 下一步：included in Slice 9-B commit.
 - commit：`02a38d36`
+
+### 9-C Daemon Cloud Remote Config File Bootstrap
+
+- 状态：completed
+- 父条目：9
+- 来源：Slice 9 still relies on `TERMX_REMOTE_*` environment variables to configure daemon cloud runtime; `termx daemon` has no tested local config-file path for control/hub bootstrap settings.
+- 目标：let `termx daemon --config <termx.yaml>` load a `remote:` section for non-secret cloud bootstrap settings (`enabled`, `controlURL`, `hubURL`, `dataDir`, `deviceName`) and resolve `accessToken` only from an environment variable reference such as `accessTokenEnv`, so secrets are not stored in config or printed.
+- 范围：`termx-cli/cmd/termx` config loading/tests, workflow. Use existing `termx-core.RemoteConfig`; do not add Web Control business logic.
+- 非目标：do not implement real cloud login, OAuth, payment, subscription, token issuance, refresh, or production account provisioning; do not make `remote enable` managed path contact cloud; do not store raw access tokens in `termx.yaml`.
+- 外部依赖：production control-plane account/token issuance remains deferred external.
+- mock 策略：local config file fixture and environment variables in tests; no real control-plane/hub network calls.
+- 先写的失败测试：add CLI tests proving daemon config loads the `remote:` section, resolves token from `accessTokenEnv`, environment variables override file values, and raw `accessToken:` in config is rejected or ignored rather than becoming `RemoteConfig.AccessToken`.
+- 预期失败结果：focused CLI tests should fail before implementation because `remoteConfigFromEnv` ignores `termx.yaml` entirely and `daemonCommand` does not pass `--config` to remote config loading.
+- 实际失败结果：`cd termx-cli && GOWORK=off go test ./cmd/termx -run 'TestRemoteConfigFrom(FileLoadsCloudBootstrapWithoutRawToken|EnvOverridesFile)'` was blocked before compile by existing module metadata (`go: updates to go.mod needed`). Running the same focused tests in workspace mode failed as expected because `remoteConfigFromFileAndEnv` does not exist.
+- 实现摘要：added `remoteConfigFromFileAndEnv` and a narrow `remote:` config parser for `enabled`, `controlURL`, `hubURL`, `accessTokenEnv`, `dataDir`, and `deviceName`. Raw `accessToken` in `termx.yaml` is ignored; token material is resolved only from the referenced environment variable or `TERMX_REMOTE_ACCESS_TOKEN`. `termx daemon` now uses the root `--config` path for remote bootstrap config.
+- 重构摘要：introduced a narrow `remoteConfigLoader` seam and `termxServer`/`newServer` seam so CLI tests can prove daemon config path wiring without starting the real server. The parser stays in CLI and does not add remote product fields to the TUI shared config model.
+- 运行命令：`cd termx-cli && GOWORK=off go test ./cmd/termx -run 'TestRemoteConfigFrom(FileLoadsCloudBootstrapWithoutRawToken|EnvOverridesFile)'`; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteConfigFrom(FileLoadsCloudBootstrapWithoutRawToken|EnvOverridesFile)'`; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteConfigFrom(FileLoadsCloudBootstrapWithoutRawToken|EnvOverridesFile)|TestDaemonCommandUsesRootConfigForRemoteBootstrap'`; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteConfigFrom(FileLoadsCloudBootstrapWithoutRawToken|EnvOverridesFile|FileRejectsMalformedRemoteSection|FileHonorsExplicitDisabledWithRemoteFields|FileRejectsInvalidEnabledValue)|TestRemoteConfig(EnvCanDisableFileEnabledRemote|InvalidEnvEnableDoesNotAutoEnable)|TestDaemonCommandUsesRootConfigForRemoteBootstrap'`; `cd termx-cli && go test ./cmd/termx`; `cd termx-cli && go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md termx-cli/cmd/termx/main.go termx-cli/cmd/termx/main_test.go`.
+- 测试结果：focused CLI red test confirmed in workspace mode; `GOWORK=off` was blocked by existing module metadata before compile. After implementation and review fixes, full 9-C focused regression set passes; `go test ./cmd/termx` and `go test ./...` pass in workspace mode; workflow guard and scoped diff check pass.
+- subagent review：requested from `Ohm`; follow-up review after `9-C-B` returned one medium finding; final follow-up after `9-C-C` returned one medium finding.
+- review 发现：local self-review found two issues before subagent result: malformed remote config lines are silently ignored, and `TERMX_REMOTE_ENABLE=false` cannot explicitly disable a file-enabled remote config. Follow-up local self-review found the daemon command test proved the config path was loaded but did not directly prove the parsed `RemoteConfig` crossed the server option boundary. `Ohm` found Medium: file `remote.enabled: false` is still auto-enabled when any remote bootstrap field exists, so users cannot safely stage endpoints while keeping remote disabled. Final `Ohm` follow-up found Medium: invalid explicit bool values such as `enabled: flase` or `TERMX_REMOTE_ENABLE=flase` are treated as unset and can still auto-enable staged endpoints. Final review after `9-C-D` found no blocker/high/medium issues.
+- review 后修复：split into `9-C-A` for fail-closed parser and env disable override; split into `9-C-B` for explicit server-option boundary coverage; split into `9-C-C` for file-level explicit disabled behavior; split into `9-C-D` for invalid bool fail-closed behavior. Final review accepted the fixes.
+- 新增派生条目：`9-C-A`, `9-C-B`, `9-C-C`, `9-C-D`.
+- deferred human items：real production login/token provider, OAuth/device-code flow, account provisioning, and cloud token rotation.
+- 剩余风险：current parser is intentionally narrow rather than a full YAML parser; invalid `TERMX_REMOTE_ENABLE` silently disables remote instead of warning, which is fail-closed but may need UX polish later.
+- 下一步：commit Slice 9-C, backfill commit hash, then continue Slice 10.
+- commit：待提交
+
+### 9-C-A Remote Config Fail-Closed Parsing And Disable Override
+
+- 状态：completed
+- 父条目：9-C
+- 来源：local self-review during Slice `9-C`.
+- 目标：make malformed `remote:` config lines return an error instead of silently disabling cloud bootstrap, and let `TERMX_REMOTE_ENABLE=false` explicitly override `remote.enabled: true` from file.
+- 范围：`termx-cli/cmd/termx`, focused tests, workflow.
+- 非目标：do not add a full YAML dependency; do not parse nested secret payloads; do not implement production cloud token issuance.
+- 外部依赖：none.
+- mock 策略：local malformed config fixture and environment override tests.
+- 先写的失败测试：add tests for malformed `remote:` mapping returning an error and `TERMX_REMOTE_ENABLE=false` disabling a file-enabled config.
+- 预期失败结果：focused CLI tests should fail before implementation because parser skips malformed lines and env override only applies when enable env parses true.
+- 实际失败结果：`cd termx-cli && go test ./cmd/termx -run 'TestRemoteConfig(EnvCanDisableFileEnabledRemote|FromFileRejectsMalformedRemoteSection)'` failed as expected: env false did not disable file enabled remote config, and malformed remote config returned nil error.
+- 实现摘要：remote enable env parsing is now tri-state, so `TERMX_REMOTE_ENABLE=false` explicitly disables file-enabled remote config and suppresses auto-enable. Remote config parsing now returns an error for malformed mappings inside the `remote:` section.
+- 重构摘要：kept the bool helper behavior for existing local web/ICE envs while adding an internal `envBoolValue` helper for explicit true/false detection.
+- 运行命令：`cd termx-cli && go test ./cmd/termx -run 'TestRemoteConfigFrom(FileLoadsCloudBootstrapWithoutRawToken|EnvOverridesFile|FileRejectsMalformedRemoteSection)|TestRemoteConfigEnvCanDisableFileEnabledRemote|TestDaemonCommandUsesRootConfigForRemoteBootstrap'`.
+- 测试结果：fail-closed parser and env-disable tests failed before implementation and pass after the fix.
+- subagent review：include in Slice `9-C` review.
+- review 发现：local self-review finding.
+- review 后修复：implemented fail-closed parser behavior and explicit env disable override.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：covered by parent Slice `9-C` final review.
+- 下一步：included in Slice `9-C` commit.
+- commit：待提交
+
+### 9-C-B Remote Config Server Option Boundary Coverage
+
+- 状态：completed
+- 父条目：9-C
+- 来源：local self-review during Slice `9-C` after reviewing current daemon command coverage.
+- 目标：prove `termx daemon --config <path>` does not merely call the config loader, but passes the loaded `termx.RemoteConfig` into the server option boundary used to start the daemon.
+- 范围：`termx-cli/cmd/termx`, focused tests, workflow.
+- 非目标：do not inspect or depend on unexported `termx-core` server internals; do not start the real daemon server in this test.
+- 外部依赖：none.
+- mock 策略：test-only seam around `termx.WithRemoteConfig` records the config while still returning a real `termx.ServerOption`.
+- 先写的失败测试：extend daemon config bootstrap test to capture the `RemoteConfig` passed to the server option boundary and assert control URL, hub URL, data dir, and device name match the loader result.
+- 预期失败结果：focused CLI test should fail before implementation because the current code calls `termx.WithRemoteConfig` directly and tests cannot observe the option-boundary config.
+- 实际失败结果：`cd termx-cli && go test ./cmd/termx -run TestDaemonCommandUsesRootConfigForRemoteBootstrap` failed as expected before implementation with `undefined: withRemoteConfig`.
+- 实现摘要：added a narrow `withRemoteConfig` package seam that defaults to `termx.WithRemoteConfig`; daemon startup now builds the server option through that seam so tests can observe the exact `RemoteConfig` crossing the boundary without inspecting unexported server internals.
+- 重构摘要：kept the seam limited to CLI testability; production still uses the real `termx.WithRemoteConfig` option.
+- 运行命令：`cd termx-cli && go test ./cmd/termx -run TestDaemonCommandUsesRootConfigForRemoteBootstrap`; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteConfigFrom(FileLoadsCloudBootstrapWithoutRawToken|EnvOverridesFile|FileRejectsMalformedRemoteSection)|TestRemoteConfigEnvCanDisableFileEnabledRemote|TestDaemonCommandUsesRootConfigForRemoteBootstrap'`.
+- 测试结果：red compile failure confirmed before the seam; focused daemon option-boundary and remote-config tests pass after implementation.
+- subagent review：include in Slice `9-C` review.
+- review 发现：local self-review finding.
+- review 后修复：added option-boundary coverage and seam.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：covered by parent Slice `9-C` final review.
+- 下一步：included in Slice `9-C` commit.
+- commit：待提交
+
+### 9-C-C File Remote Enabled False Override
+
+- 状态：completed
+- 父条目：9-C
+- 来源：Slice `9-C` subagent review by `Ohm`.
+- 目标：honor `remote.enabled: false` in `termx.yaml` as an explicit disable even when control/hub/data/device fields are present, while retaining auto-enable only when `enabled` is omitted.
+- 范围：`termx-cli/cmd/termx`, focused tests, workflow.
+- 非目标：do not add a full YAML parser; do not change env override precedence; do not implement production token issuance.
+- 外部依赖：none.
+- mock 策略：local config fixture with staged cloud endpoints and explicit `enabled: false`.
+- 先写的失败测试：add `TestRemoteConfigFromFileHonorsExplicitDisabledWithRemoteFields` expecting `cfg.Enabled == false` for `remote.enabled: false` plus `controlURL`/`hubURL`.
+- 预期失败结果：focused CLI test should fail before implementation because `remoteConfigFromFile` parses enabled as plain bool and auto-enables when fields exist.
+- 实际失败结果：`cd termx-cli && go test ./cmd/termx -run TestRemoteConfigFromFileHonorsExplicitDisabledWithRemoteFields` failed as expected before implementation: `expected file enabled false to keep staged remote config disabled`.
+- 实现摘要：file `remote.enabled` parsing now uses tri-state bool detection; file+env merge preserves the file explicit-enabled bit, so auto-enable from staged remote fields only runs when neither file nor env set `enabled`.
+- 重构摘要：added `loadRemoteConfigFromFile` to return both `termx.RemoteConfig` and whether file `enabled` was explicit, while preserving the existing `remoteConfigFromFile` helper shape for tests/callers. Kept existing `parseConfigBool` behavior by delegating to `configBoolValue`.
+- 运行命令：`cd termx-cli && go test ./cmd/termx -run TestRemoteConfigFromFileHonorsExplicitDisabledWithRemoteFields`; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteConfigFrom(FileLoadsCloudBootstrapWithoutRawToken|EnvOverridesFile|FileRejectsMalformedRemoteSection|FileHonorsExplicitDisabledWithRemoteFields)|TestRemoteConfigEnvCanDisableFileEnabledRemote|TestDaemonCommandUsesRootConfigForRemoteBootstrap'`; `cd termx-cli && go test ./cmd/termx`; `cd termx-cli && go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md termx-cli/cmd/termx/main.go termx-cli/cmd/termx/main_test.go`.
+- 测试结果：red behavior confirmed before implementation. First fix was insufficient because the file+env merge layer still auto-enabled after file loading; implementation now carries file explicit-enabled state into the merge layer. Focused remote-config tests, `go test ./cmd/termx`, `go test ./...`, workflow guard, and scoped diff check pass.
+- subagent review：requested from `Ohm` as Slice `9-C` follow-up; final re-review pending after fix.
+- review 发现：Medium accidental enable risk when file explicitly sets `remote.enabled: false`.
+- review 后修复：implemented file-level tri-state enabled parsing.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：covered by parent Slice `9-C` final review.
+- 下一步：included in Slice `9-C` commit.
+- commit：待提交
+
+### 9-C-D Invalid Remote Enabled Bool Fails Closed
+
+- 状态：completed
+- 父条目：9-C
+- 来源：Slice `9-C` final follow-up review by `Ohm`.
+- 目标：avoid accidental cloud bootstrap when users typo an explicit enable/disable flag. Invalid file `remote.enabled` values must return a config error; invalid `TERMX_REMOTE_ENABLE` must suppress auto-enable and keep remote disabled rather than acting as unset.
+- 范围：`termx-cli/cmd/termx`, focused tests, workflow.
+- 非目标：do not add a full YAML parser; do not change valid bool semantics; do not implement production control-plane auth.
+- 外部依赖：none.
+- mock 策略：local config fixture and environment-variable tests with staged control/hub fields plus invalid explicit bools.
+- 先写的失败测试：add one test for file `enabled: flase` returning a remote config error and one test for `TERMX_REMOTE_ENABLE=flase` with staged URLs staying disabled.
+- 预期失败结果：focused CLI tests should fail before implementation because invalid bools currently behave like absent values and can auto-enable staged remote fields.
+- 实际失败结果：`cd termx-cli && go test ./cmd/termx -run 'TestRemoteConfig(InvalidEnvEnableDoesNotAutoEnable|FromFileRejectsInvalidEnabledValue)'` failed as expected before implementation: invalid env enable auto-enabled staged fields and invalid file enabled returned nil error.
+- 实现摘要：bool parsing now returns value/set/valid. Invalid file `remote.enabled` returns a remote config error; invalid `TERMX_REMOTE_ENABLE` is treated as explicitly set false for merge purposes, suppressing auto-enable and keeping remote disabled.
+- 重构摘要：kept `envBool` and `parseConfigBool` callers source-compatible by discarding the set/valid metadata where old simple bool behavior is sufficient.
+- 运行命令：`cd termx-cli && go test ./cmd/termx -run 'TestRemoteConfig(InvalidEnvEnableDoesNotAutoEnable|FromFileRejectsInvalidEnabledValue)'`; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteConfigFrom(FileLoadsCloudBootstrapWithoutRawToken|EnvOverridesFile|FileRejectsMalformedRemoteSection|FileHonorsExplicitDisabledWithRemoteFields|FileRejectsInvalidEnabledValue)|TestRemoteConfig(EnvCanDisableFileEnabledRemote|InvalidEnvEnableDoesNotAutoEnable)|TestDaemonCommandUsesRootConfigForRemoteBootstrap'`; `cd termx-cli && go test ./cmd/termx`; `cd termx-cli && go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md termx-cli/cmd/termx/main.go termx-cli/cmd/termx/main_test.go`.
+- 测试结果：red behavior confirmed before implementation; focused invalid-bool tests, full 9-C focused regression set, `go test ./cmd/termx`, `go test ./...`, workflow guard, and scoped diff check pass after implementation. Transport/path boundary scan found no `RTCPeerConnection`, `RTCDataChannel`, legacy relay path, `RemoteTransport`, `TerminalTransport`, or `WebSocket` terms in touched CLI files.
+- subagent review：final Slice `9-C` re-review by `Ohm` found no blocker/high/medium issues after this fix.
+- review 发现：Medium accidental enable risk when explicit bool values are invalid.
+- review 后修复：implemented invalid bool fail-closed behavior.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：invalid `TERMX_REMOTE_ENABLE` silently disables remote instead of warning; acceptable fail-closed behavior for this slice.
+- 下一步：included in Slice `9-C` commit.
+- commit：待提交
 
 ### 10 remote-ui Real API Adapters
 

@@ -270,6 +270,246 @@ func TestRemoteConfigFromEnvAutoEnablesWhenRemoteFieldsExist(t *testing.T) {
 	}
 }
 
+func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	content := `remote:
+  enabled: true
+  controlURL: https://control-file.example.test
+  hubURL: https://hub-file.example.test
+  accessTokenEnv: TERMX_TEST_REMOTE_TOKEN
+  accessToken: should-not-be-used
+  dataDir: /tmp/termx-remote-file
+  deviceName: file-device
+`
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	t.Setenv("TERMX_TEST_REMOTE_TOKEN", "file-secret")
+
+	cfg, err := remoteConfigFromFileAndEnv(configPath)
+	if err != nil {
+		t.Fatalf("remoteConfigFromFileAndEnv returned error: %v", err)
+	}
+	if !cfg.Enabled {
+		t.Fatal("expected remote config to be enabled from file")
+	}
+	if cfg.ControlURL != "https://control-file.example.test" {
+		t.Fatalf("unexpected control url: %q", cfg.ControlURL)
+	}
+	if cfg.HubURL != "https://hub-file.example.test" {
+		t.Fatalf("unexpected hub url: %q", cfg.HubURL)
+	}
+	if cfg.AccessToken != "file-secret" {
+		t.Fatalf("expected token from env reference, got %q", cfg.AccessToken)
+	}
+	if strings.Contains(cfg.AccessToken, "should-not-be-used") {
+		t.Fatal("raw accessToken from config must not be used")
+	}
+	if cfg.DataDir != "/tmp/termx-remote-file" {
+		t.Fatalf("unexpected data dir: %q", cfg.DataDir)
+	}
+	if cfg.DeviceName != "file-device" {
+		t.Fatalf("unexpected device name: %q", cfg.DeviceName)
+	}
+}
+
+func TestRemoteConfigEnvOverridesFile(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	content := `remote:
+  enabled: true
+  controlURL: https://control-file.example.test
+  hubURL: https://hub-file.example.test
+  accessTokenEnv: TERMX_TEST_REMOTE_TOKEN_FILE
+  dataDir: /tmp/termx-remote-file
+  deviceName: file-device
+`
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	t.Setenv("TERMX_TEST_REMOTE_TOKEN_FILE", "file-secret")
+	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control-env.example.test")
+	t.Setenv("TERMX_REMOTE_HUB_URL", "https://hub-env.example.test")
+	t.Setenv("TERMX_REMOTE_ACCESS_TOKEN", "env-secret")
+	t.Setenv("TERMX_REMOTE_DATA_DIR", "/tmp/termx-remote-env")
+	t.Setenv("TERMX_REMOTE_DEVICE_NAME", "env-device")
+
+	cfg, err := remoteConfigFromFileAndEnv(configPath)
+	if err != nil {
+		t.Fatalf("remoteConfigFromFileAndEnv returned error: %v", err)
+	}
+	if cfg.ControlURL != "https://control-env.example.test" {
+		t.Fatalf("expected env control url override, got %q", cfg.ControlURL)
+	}
+	if cfg.HubURL != "https://hub-env.example.test" {
+		t.Fatalf("expected env hub url override, got %q", cfg.HubURL)
+	}
+	if cfg.AccessToken != "env-secret" {
+		t.Fatalf("expected env token override, got %q", cfg.AccessToken)
+	}
+	if cfg.DataDir != "/tmp/termx-remote-env" {
+		t.Fatalf("expected env data dir override, got %q", cfg.DataDir)
+	}
+	if cfg.DeviceName != "env-device" {
+		t.Fatalf("expected env device name override, got %q", cfg.DeviceName)
+	}
+}
+
+func TestRemoteConfigEnvCanDisableFileEnabledRemote(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	content := `remote:
+  enabled: true
+  controlURL: https://control-file.example.test
+  hubURL: https://hub-file.example.test
+`
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	t.Setenv("TERMX_REMOTE_ENABLE", "false")
+
+	cfg, err := remoteConfigFromFileAndEnv(configPath)
+	if err != nil {
+		t.Fatalf("remoteConfigFromFileAndEnv returned error: %v", err)
+	}
+	if cfg.Enabled {
+		t.Fatal("expected env false to disable file-enabled remote config")
+	}
+}
+
+func TestRemoteConfigInvalidEnvEnableDoesNotAutoEnable(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	content := `remote:
+  controlURL: https://control-file.example.test
+  hubURL: https://hub-file.example.test
+`
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	t.Setenv("TERMX_REMOTE_ENABLE", "flase")
+
+	cfg, err := remoteConfigFromFileAndEnv(configPath)
+	if err != nil {
+		t.Fatalf("remoteConfigFromFileAndEnv returned error: %v", err)
+	}
+	if cfg.Enabled {
+		t.Fatal("expected invalid env enable value to fail closed instead of auto-enabling")
+	}
+}
+
+func TestRemoteConfigFromFileHonorsExplicitDisabledWithRemoteFields(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	content := `remote:
+  enabled: false
+  controlURL: https://control-file.example.test
+  hubURL: https://hub-file.example.test
+  dataDir: /tmp/termx-remote-file
+  deviceName: staged-device
+`
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	cfg, err := remoteConfigFromFileAndEnv(configPath)
+	if err != nil {
+		t.Fatalf("remoteConfigFromFileAndEnv returned error: %v", err)
+	}
+	if cfg.Enabled {
+		t.Fatal("expected file enabled false to keep staged remote config disabled")
+	}
+	if cfg.ControlURL != "https://control-file.example.test" {
+		t.Fatalf("expected staged control url to remain available, got %q", cfg.ControlURL)
+	}
+}
+
+func TestRemoteConfigFromFileRejectsInvalidEnabledValue(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	content := `remote:
+  enabled: flase
+  controlURL: https://control-file.example.test
+`
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	_, err := remoteConfigFromFileAndEnv(configPath)
+	if err == nil || !strings.Contains(err.Error(), "enabled") {
+		t.Fatalf("expected invalid enabled value error, got %v", err)
+	}
+}
+
+func TestRemoteConfigFromFileRejectsMalformedRemoteSection(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	content := `remote:
+  enabled true
+  controlURL: https://control-file.example.test
+`
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	_, err := remoteConfigFromFileAndEnv(configPath)
+	if err == nil || !strings.Contains(err.Error(), "remote config") {
+		t.Fatalf("expected malformed remote config error, got %v", err)
+	}
+}
+
+func TestDaemonCommandUsesRootConfigForRemoteBootstrap(t *testing.T) {
+	oldLoader := remoteConfigLoader
+	oldNewServer := newServer
+	oldWithRemoteConfig := withRemoteConfig
+	t.Cleanup(func() {
+		remoteConfigLoader = oldLoader
+		newServer = oldNewServer
+		withRemoteConfig = oldWithRemoteConfig
+	})
+
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	var gotConfigPath string
+	var gotRemoteConfig termx.RemoteConfig
+	remoteConfigLoader = func(path string) (termx.RemoteConfig, error) {
+		gotConfigPath = path
+		return termx.RemoteConfig{
+			Enabled:     true,
+			ControlURL:  "https://control-config.example.test",
+			HubURL:      "https://hub-config.example.test",
+			AccessToken: "loader-secret",
+			DataDir:     t.TempDir(),
+			DeviceName:  "config-device",
+		}, nil
+	}
+	withRemoteConfig = func(cfg termx.RemoteConfig) termx.ServerOption {
+		gotRemoteConfig = cfg
+		return termx.WithRemoteConfig(termx.RemoteConfig{})
+	}
+	fake := &fakeTermxServer{}
+	newServer = func(opts ...termx.ServerOption) termxServer {
+		fake.newServerCalls++
+		return fake
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--config", configPath, "daemon", "--log-file", filepath.Join(t.TempDir(), "termx.log")})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if gotConfigPath != configPath {
+		t.Fatalf("expected daemon to load root config path %q, got %q", configPath, gotConfigPath)
+	}
+	if !gotRemoteConfig.Enabled ||
+		gotRemoteConfig.ControlURL != "https://control-config.example.test" ||
+		gotRemoteConfig.HubURL != "https://hub-config.example.test" ||
+		gotRemoteConfig.AccessToken != "loader-secret" ||
+		gotRemoteConfig.DataDir == "" ||
+		gotRemoteConfig.DeviceName != "config-device" {
+		t.Fatalf("daemon did not pass loaded remote config to server option: %#v", gotRemoteConfig)
+	}
+	if fake.newServerCalls != 1 || fake.listenCalls != 1 || fake.shutdownCalls != 1 {
+		t.Fatalf("unexpected fake server calls: new=%d listen=%d shutdown=%d", fake.newServerCalls, fake.listenCalls, fake.shutdownCalls)
+	}
+}
+
 func TestRemoteLocalWebAddrFromEnv(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_LOCAL_WEB_ENABLE", "")
 	t.Setenv("TERMX_REMOTE_LOCAL_WEB_ADDR", "")
@@ -869,4 +1109,24 @@ func TestPairCmdEmitsJSONPairSession(t *testing.T) {
 	if decoded.MachineID != "mach_test" || decoded.PairSessionID != "pair_test" {
 		t.Fatalf("unexpected pair output: %#v", decoded)
 	}
+}
+
+type fakeTermxServer struct {
+	newServerCalls int
+	listenCalls    int
+	shutdownCalls  int
+}
+
+func (s *fakeTermxServer) ListenAndServe(context.Context) error {
+	s.listenCalls++
+	return nil
+}
+
+func (s *fakeTermxServer) Shutdown(context.Context) error {
+	s.shutdownCalls++
+	return nil
+}
+
+func (s *fakeTermxServer) RemoteLocalEnable(context.Context, termx.RemoteLocalOptions) (termx.RemoteLocalStatus, error) {
+	return termx.RemoteLocalStatus{}, nil
 }
