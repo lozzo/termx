@@ -5,8 +5,8 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `19` native APP RtcSession seam.
-- Last updated: 2026-05-03T20:14:00+08:00.
+- Active todo: `20` APP/devstack e2e.
+- Last updated: 2026-05-03T20:59:00+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -140,7 +140,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 17-B | external | Defer production OAuth/email/SMS and secure OS keychain/secret storage for CLI/device login | deferred_external |  |
 | 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | completed | `54aac488` |
 | 19 | native-app-rtc-seam | Add native APP `RtcSession` seam without WebRTC type leakage | completed | `119a42e9` |
-| 20 | app-devstack-e2e | Validate APP shell / Web Control / stateless Hub / daemon closed loop | pending |  |
+| 20 | app-devstack-e2e | Validate APP shell / Web Control / stateless Hub / daemon closed loop | completed |  |
 
 ## Compressed Completed Slice Summary
 
@@ -387,6 +387,31 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - 下一步：hash backfill, then start Slice `20`.
 - commit：`119a42e9`
 
+### 20 APP / Remote UI Devstack E2E
+
+- 状态：completed
+- 父条目：none
+- 来源：APP-first product conclusion requires an end-to-end proof that scanned/stored machine records drive `local -> public_p2p -> managed` connection flow and that terminal/file/api/events receive only `RtcSession`.
+- 目标：add a repeatable APP shell e2e harness first, then optionally run the public devstack after runbook/workflow records are updated.
+- 范围：first local/focused `remote-ui/src` tests and runbook/workflow docs; optional later public devstack commands may touch no repo files unless fixes are found.
+- 非目标：new Web Control terminal UI, HTTP/WebSocket runtime fallback, production DNS/TLS/systemd/TURN deployment, native app packaging/signing.
+- 外部依赖：public server `root@114.66.58.243` may be used only after this section/runbook explains why, temp paths, start/stop/cleanup, and residual state; production cloud/TURN/DNS/app-store items stay deferred external.
+- mock 策略：local APP e2e uses real `RemoteAppShell`, `MachineStore`, and `ConnectionOrchestrator` with fake `RtcConnector`/`RtcSession` implementations at provider boundaries; not a tautological hook-only test.
+- 先写的失败测试：added `remote-ui/src/appConnectionE2E.test.tsx` to load a scanned/stored machine record, render the APP machine list, click the machine, exercise local fail -> public_p2p fail -> managed success through `ConnectionOrchestrator`, and prove terminal/file/api/events consumers receive the returned `RtcSession`.
+- 预期失败结果：first focused run failed while constructing the test payload because `parsePairingPayload` correctly requires a QR/JSON string, not an object; fixed the test to use a real JSON QR payload string before accepting the harness result.
+- 实现摘要：added local APP e2e harness test only; no product code change was required for the local APP/store/orchestrator seam.
+- 重构摘要：kept fake objects behind `RtcConnector`/`RtcSession` provider interfaces; no HTTP/WebSocket runtime fallback; no relay path taxonomy.
+- 运行命令：`cd remote-ui && npm test -- --run src/appConnectionE2E.test.tsx` failed first on invalid test payload shape, then passed 1 file / 1 test; `cd remote-ui && npm test`; `cd remote-ui && npm run typecheck`; `cd remote-ui && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`; scoped public checks over `ssh root@114.66.58.243`; local `/tmp/termx-devstack-build/termx-remote-e2e` with public daemon pair tunnel.
+- 测试结果：focused local APP e2e passed; full remote-ui tests passed 43 files / 207 tests; typecheck passed after using store lookup for metadata; build passed with existing Vite chunk-size warning; workflow guard and diff whitespace check passed. Public devstack smoke passed after refreshing only the temporary public-daemon token and recreating terminal `1`.
+- subagent review：`Hume` (`019deda5-08d3-7623-9cf1-5e9dd854c5f0`) reviewed Slice 20 local harness.
+- review 发现：runtime consumer coverage was too tautological because it directly called fake `RtcSession`; stored QR metadata was not clearly driving connector inputs; public devstack smoke is still needed unless Slice 20 is downgraded to local-harness-only.
+- review 后修复：local harness now renders a runtime consumer using real `useTerminalSession` and `useFileManager`, subscribes to events via `RtcSession`, uses stored local/public/control/hub/pairing/bootstrap metadata to build connector inputs, keeps fake implementations only at `RtcConnector`/`RtcSession` boundaries, and ran scoped public devstack smoke for Web Control/Hub/daemon closed-loop coverage.
+- 新增派生条目：none yet.
+- deferred human items：production DNS/TLS/TURN/app-store signing remain deferred external.
+- 剩余风险：public devstack tokens can expire again; production DNS/TLS/TURN/systemd/app-store signing remain deferred external.
+- 下一步：hash backfill, then continue next pending remote rebuild todo.
+- commit：
+
 ## Deferred External / Human Items
 
 - Real payment/subscription/invoice/tax/fraud integrations remain `deferred_external` behind provider interfaces.
@@ -396,5 +421,5 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ## Next Exact Action
 
-1. Commit Slice `19` files only and record the hash back into `WORKFLOW.md`.
-2. Start Slice `20` APP/devstack e2e by updating todo/runbook before using any external public server.
+1. Continue Slice `20`: run final validation (`remote-ui` focused/full/typecheck/build, workflow guard, diff check).
+2. Commit Slice `20` files only and record hash back into `WORKFLOW.md`.

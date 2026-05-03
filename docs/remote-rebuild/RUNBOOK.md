@@ -1,5 +1,65 @@
 # TermX Remote Rebuild Runbook
 
+## Slice 20 APP / Remote UI E2E Plan
+
+Purpose: validate the APP-first remote-ui flow before touching the public server. The first pass is local and repeatable: a stored machine record appears in the APP shell, selecting it drives the orchestrator through `local -> public_p2p -> managed`, and terminal/file/api/events consumers receive the same connected `RtcSession`.
+
+Local-only scope:
+
+- Add focused tests under `remote-ui/src`.
+- Use real `MachineStore`, `RemoteAppShell`, and `ConnectionOrchestrator`.
+- Use fake `RtcConnector` and fake `RtcSession` only at the provider boundary.
+- Do not use HTTP/WebSocket as terminal/file/api/events runtime.
+- Do not introduce `relay` as a fourth path; managed relay remains `relayInUse` / capability info.
+
+Optional public devstack scope:
+
+- Use `root@114.66.58.243` only after the local e2e harness passes and only if the slice needs a live daemon/Web Control/Hub smoke.
+- Use existing temporary layout under `/tmp/termx-devstack`; do not modify SSH config, firewall, iptables, DNS, TLS, systemd, or system directories.
+- Refresh expiring devstack tokens or restart only scoped temp services when needed; record every command and residual state in this runbook.
+- Keep public daemon local pair API bound to `127.0.0.1` and use an SSH tunnel only for pairing.
+
+Planned local validation commands:
+
+```sh
+cd remote-ui
+npm test -- --run src/appConnectionE2E.test.tsx
+npm test
+npm run typecheck
+npm run build
+```
+
+Execution log:
+
+- 2026-05-03T20:18:00+08:00: Slice `20` started. Public devstack is not being used yet; first step is a local APP e2e harness so the product flow is testable without external dependencies.
+- 2026-05-03T20:23:00+08:00: added local `remote-ui/src/appConnectionE2E.test.tsx`. First run failed because the test incorrectly passed an object to `parsePairingPayload`; corrected it to a real JSON QR payload string. Focused local e2e then passed. No public server access used.
+- 2026-05-03T20:52:00+08:00: review found the first local harness called fake runtime methods directly and did not prove stored QR metadata drove connector inputs. Updated the test to render real `useTerminalSession` and `useFileManager` consumers over the connected `RtcSession`, subscribe to events through `RtcSession`, and build connector inputs from stored local/public/control/hub/pairing/bootstrap metadata. Full remote-ui validation passed locally. Public devstack smoke is still needed for Web Control/Hub/daemon closed-loop coverage.
+
+Planned scoped public devstack checks for this slice:
+
+```sh
+# health and current process state only
+ssh root@114.66.58.243 'set -eu
+  test -d /tmp/termx-devstack
+  test -f /tmp/termx-devstack/web-control.pid
+  test -f /tmp/termx-devstack/termx-hub.pid
+  curl -fsS http://127.0.0.1:12306/api/health
+  curl -fsS http://127.0.0.1:8447/api/health
+  if [ -f /tmp/termx-devstack/public-daemon/termx-daemon.pid ]; then
+    ps -p "$(cat /tmp/termx-devstack/public-daemon/termx-daemon.pid)" -o pid=,comm=
+  fi
+'
+```
+
+If the public daemon token is expired, refresh only the temporary smoke account token and restart only `/tmp/termx-devstack/public-daemon` using the existing Slice `11-C` layout. Do not restart Web Control/Hub unless a health check fails. Do not clean `/tmp/termx-devstack`.
+
+- 2026-05-03T20:53:00+08:00: scoped public health checks passed: Web Control and Hub returned `status=ok`; public daemon pid `3355324` was still running but `remote.state=degraded` because the 15-minute access token expired.
+- 2026-05-03T20:54:00+08:00: refreshed only the temporary smoke account token via `POST /api/v1/auth/refresh`, wrote the new token to `/tmp/termx-devstack/public-daemon/access-token`, and restarted only the public daemon. New public daemon pid `3425079`; Web Control and Hub were not restarted and `/tmp/termx-devstack` was not cleaned.
+- 2026-05-03T20:55:00+08:00: public daemon reported `remote.state=online` but `terminal_count=0` after restart, so created scoped terminal `1` named `public-host-slice20`. Hub debug with `X-TermX-Debug-Token` showed current public-host agent session `agent_session_QQ0Ds_p_IKlkARwmo8Y_Hw`.
+- 2026-05-03T20:55:00+08:00: first managed smoke attempt failed before runtime because the local `18992` SSH tunnel exited with the shell; pairing endpoint returned connection refused. Reopened a stable tunnel with `ssh -fN -o ExitOnForwardFailure=yes -L 127.0.0.1:18993:127.0.0.1:18988 root@114.66.58.243`.
+- 2026-05-03T20:55:00+08:00: generated a fresh pair session `pair_3oFA2m9K3bSDSbN6PPkXYg` from the public daemon and ran local `/tmp/termx-devstack-build/termx-remote-e2e` with explicit machine `device-8bce73b2996907df` and terminal `1`. Output: `remote managed smoke passed`.
+- 2026-05-03T20:56:00+08:00: stopped the local `18993` SSH tunnel. Final state: public daemon `remote.state=online`, terminal `1` `public-host-slice20` running, Hub debug current public-host agent `agent_session_QQ0Ds_p_IKlkARwmo8Y_Hw` has `answer_count=1`, `last_answer_session_id=ct_W3F0lXItE-uYetwJMYO4hw-terminal-1`, `last_error=""`.
+
 ## Slice 11-A External Managed Smoke
 
 Purpose: temporary public smoke for the current web-control + hub + daemon remote path.
