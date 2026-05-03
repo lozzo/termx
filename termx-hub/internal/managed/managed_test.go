@@ -180,6 +180,83 @@ func TestManagedAnswerRequiresTicketAndMachine(t *testing.T) {
 	}
 }
 
+func TestManagedAnswerLookupScopesPublicSessionIDByTicket(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clock := fixedClock(time.Date(2026, 5, 3, 10, 43, 0, 0, time.UTC))
+	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]managed.Ticket{
+		"ticket_a": {
+			ID:         "ticket_a",
+			MachineID:  "mach_1",
+			TerminalID: "term_1",
+			Path:       managed.PathManaged,
+			ExpiresAt:  clock.Now().Add(time.Minute),
+		},
+		"ticket_b": {
+			ID:         "ticket_b",
+			MachineID:  "mach_1",
+			TerminalID: "term_1",
+			Path:       managed.PathManaged,
+			ExpiresAt:  clock.Now().Add(time.Minute),
+		},
+	}}
+	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	svc := managed.NewService(managed.Config{Registry: reg, Tickets: verifier, Clock: clock})
+	offerA, err := svc.SubmitOffer(ctx, managed.SubmitOfferInput{
+		SessionID:  "rtc_same",
+		TicketID:   "ticket_a",
+		MachineID:  "mach_1",
+		TerminalID: "term_1",
+		SDP:        minimalSDP("offer-a"),
+	})
+	if err != nil {
+		t.Fatalf("submit offer a: %v", err)
+	}
+	if _, err := svc.SubmitOffer(ctx, managed.SubmitOfferInput{
+		SessionID:  "rtc_same",
+		TicketID:   "ticket_b",
+		MachineID:  "mach_1",
+		TerminalID: "term_1",
+		SDP:        minimalSDP("offer-b"),
+	}); err != nil {
+		t.Fatalf("submit offer b: %v", err)
+	}
+	polled, err := svc.PollAgentOffer(ctx, managed.PollAgentOfferInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("poll offer a: %v", err)
+	}
+	if polled.ID != offerA.ID {
+		t.Fatalf("polled first offer = %s, want %s", polled.ID, offerA.ID)
+	}
+	if err := svc.SubmitAnswer(ctx, managed.SubmitAnswerInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		OfferID:   offerA.ID,
+		SDP:       minimalSDP("answer-a"),
+	}); err != nil {
+		t.Fatalf("submit answer a: %v", err)
+	}
+	answer, err := svc.GetAnswer(ctx, managed.GetAnswerInput{
+		OfferID:   "rtc_same",
+		TicketID:  "ticket_a",
+		MachineID: "mach_1",
+	})
+	if err != nil {
+		t.Fatalf("get answer by scoped public session id: %v", err)
+	}
+	if answer.OfferID != offerA.ID || answer.SDP != minimalSDP("answer-a") {
+		t.Fatalf("answer = %+v, want offer %s", answer, offerA.ID)
+	}
+}
+
 func TestManagedSignalingDoesNotSurfaceRelayBeforeTurnPolicy(t *testing.T) {
 	t.Parallel()
 

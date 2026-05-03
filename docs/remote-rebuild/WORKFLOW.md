@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `10` remote-ui real API adapters.
-- Last updated: 2026-05-03T09:49:20+08:00.
+- Last updated: 2026-05-03T10:48:36+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -96,6 +96,16 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 10-A-D | remote-ui-web-control-api-self-review | Fail closed when Web Control API access token is empty | completed | `f199366a` |
 | 10-A-E | remote-ui-web-control-api-review | Align public_p2p offer payload with Web Control rendezvous validator | completed | `f199366a` |
 | 10-A-F | remote-ui-web-control-api-follow-up-review | Normalize real local offer signatures for Web Control rendezvous envelopes | completed | `f199366a` |
+| 10-B | remote-ui-managed-hub-session-api | Add remote-ui managed Hub session HTTP adapter and termx-hub app-facing session contract seed | completed |  |
+| 10-B-A | remote-ui-managed-hub-session-api-risk | Record managed connector offerer/answerer shape mismatch and keep this slice to signaling adapter contract only | completed |  |
+| 10-B-B | remote-ui-managed-hub-session-api-self-review | Align termx-hub app-facing session handler with one-shot answer response expected by remote-ui adapter | completed |  |
+| 10-B-C | remote-ui-managed-hub-session-api-self-review | Preserve app certificate, offer signature, and ICE candidates through Hub app-to-agent signaling | completed |  |
+| 10-B-D | remote-ui-managed-hub-session-api-review | Preserve app-provided managed offer session_id through Hub and agent signaling | completed |  |
+| 10-B-E | remote-ui-managed-hub-session-api-review | Make one-shot managed session timeout recoverable without burning the connect ticket blindly | completed |  |
+| 10-B-F | remote-ui-managed-hub-session-api-review | Add body-size limit to termx-hub app-facing managed session HTTP endpoints | completed |  |
+| 10-B-G | remote-ui-managed-hub-session-api-follow-up-review | Make managed session pending recovery usable by remote-ui and Hub answer lookup | completed |  |
+| 10-B-H | remote-ui-managed-hub-session-api-follow-up-review | Add remote-ui managed Hub pending answer polling method | completed |  |
+| 10-B-I | remote-ui-managed-hub-session-api-follow-up-review | Scope managed public session-id lookup to ticket and machine to avoid collision overwrite | completed |  |
 | 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | pending |  |
 
 ## Buildout Todo Details
@@ -1468,7 +1478,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 9 TermX Daemon Cloud Integration
 
-- 状态：in_progress
+- 状态：completed
 - 父条目：none
 - 来源：`termx daemon` 内置 agent 需要 cloud bootstrap、hub register/heartbeat/poll/answer，并用既有 runtime 回答 WebRTC offer。
 - 目标：实现 daemon cloud bootstrap、agent policy、hub register/heartbeat、signaling poll/answer、ticket/cert/signature verification、DataChannel labels `terminal:{terminal_id}`/`api`/`events`/`file:{transfer_id}`。
@@ -1935,7 +1945,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 10 remote-ui Real API Adapters
 
-- 状态：in_progress
+- 状态：review
 - 父条目：none
 - 来源：remote-ui 后续只接真实 web/hub API adapter，运行时仍只通过 `RtcSession`。
 - 目标：实现 Web Control API client、public_p2p signaling adapter、managed signaling adapter、capabilities UI/state，保留 path 仅 `local/public_p2p/managed`。
@@ -2139,6 +2149,265 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 剩余风险：none specific to this child beyond parent no-httptest adapter contract gap.
 - 下一步：included in Slice `10-A` commit.
 - commit：`f199366a`
+
+### 10-B Managed Hub Session HTTP Adapter
+
+- 状态：in_progress
+- 父条目：10
+- 来源：Slice 10 next adapter after Web Control API; docs define managed app/browser Hub signaling as `POST /api/v1/sessions` with connect ticket + offer + app certificate/signature returning a WebRTC answer.
+- 目标：add a browser-agnostic `remote-ui` managed Hub session API adapter and a minimal `termx-hub` app-facing HTTP contract seed for `POST /api/v1/sessions`. The adapter must submit offer signaling, parse answer/capability/policy info, and keep terminal/file/api/events runtime on `RtcSession`.
+- 范围：`remote-ui/src` managed Hub API adapter/tests/barrel exports; `termx-hub/internal/httpapi` or equivalent handler/tests; `docs/remote-rebuild/WORKFLOW.md`; `remote-ui/docs/webrtc-rewrite-log.md`.
+- 非目标：do not refactor `ManagedRtcConnector` offerer/answerer shape in this slice; do not implement full Web Control ticket signing, production OAuth, real TURN relay accounting, agent HTTP poll/answer endpoints, terminal/file/api/events HTTP runtime proxy, or external server tests.
+- 外部依赖：production Hub URL, Web Control signed ticket format, production relay lease/quota feeds, DNS/TLS/TURN port deployment are deferred.
+- mock 策略：use fake fetch in TypeScript adapter tests and local fake managed service for Go HTTP contract tests. Ticket/policy authority remains behind existing `managed.TicketVerifier`; no production credentials or external services.
+- 先写的失败测试：add `remote-ui/src/managedHubApi.test.ts` covering `POST /api/v1/sessions` request/response shape, bearer or ticket auth where applicable, `path: managed`, relay fields as policy/info only, no runtime transport APIs, no legacy path taxonomy, and error envelopes. Add `termx-hub/internal/httpapi` test for `POST /api/v1/sessions` forwarding connect ticket/machine/terminal/offer SDP to `managed.Service`, returning answer, and rejecting runtime payload/relay path misuse.
+- 预期失败结果：remote-ui focused test should fail because `createManagedHubApi` does not exist; termx-hub focused test should fail because no app-facing HTTP handler package exists.
+- 实际失败结果：`cd remote-ui && npm test -- --run src/managedHubApi.test.ts` failed as expected because `./managedHubApi` could not be resolved. `cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTP` failed as expected because `termx-hub/internal/httpapi` has no non-test Go files / no handler implementation. After the first implementation, `cd remote-ui && npm test -- --run src/legacyTransportCleanup.test.ts` failed as expected because the package barrel did not export `createManagedHubApi`.
+- 实现摘要：added `createManagedHubApi` / `ManagedHubApi` for app/browser managed Hub session signaling. It submits `connect_ticket`, machine/terminal IDs, app certificate, offer `{session_id,sdp,ice_candidates}`, and signature to `POST /api/v1/sessions`; parses managed answer, ICE servers, relay policy, and relay info; rejects non-`managed` paths and missing connect ticket/terminal ID locally. Added `termx-hub/internal/httpapi.NewHandler` with `POST /api/v1/sessions` and `POST /api/v1/sessions/{session_id}/answer` as app-facing contract seed backed by `managed.Service`.
+- 重构摘要：kept the raw Hub session adapter separate from `ManagedRtcConnector` due the offerer/answerer shape risk recorded in `10-B-A`; no terminal/file/api/events runtime APIs or WebSocket transport were introduced. Barrel exports expose only API adapter types, not browser WebRTC types.
+- 运行命令：`cd remote-ui && npm test -- --run src/managedHubApi.test.ts`; `cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTP`; `cd remote-ui && npm test -- --run src/legacyTransportCleanup.test.ts`; `cd remote-ui && npm test -- --run src/managedHubApi.test.ts src/legacyTransportCleanup.test.ts`; `cd remote-ui && npm run typecheck`; `cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTP`; `cd termx-hub && go test ./...`; `cd remote-ui && npm test`; `cd remote-ui && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; scoped `git diff --check`; `cd termx-hub && go test ./internal/managed -run TestManagedAnswerLookupScopesPublicSessionIDByTicket`; `cd termx-hub && go test ./internal/httpapi -run 'TestManagedSessionHTTP(TimeoutReturnsRecoverableSession|Contract)'`.
+- 测试结果：red tests confirmed before implementation; focused managed Hub API/barrel tests pass after implementation: 2 files, 10 tests. Focused and full termx-hub tests pass. Full remote-ui test suite passes: 36 files, 176 tests. `npm run typecheck`, `npm run build`, workflow guard, and scoped diff check pass. After `10-B-C`, full termx-hub tests, focused remote-ui tests, typecheck, workflow guard, full remote-ui tests/build, and scoped diff check pass again. After `10-B-D`/`10-B-E`/`10-B-F`, full termx-hub tests, focused remote-ui tests, typecheck, workflow guard, full remote-ui tests/build, and scoped diff check pass. After `10-B-G`, full termx-hub tests, focused remote-ui tests, typecheck, workflow guard, full remote-ui tests/build, and scoped diff check pass; remote-ui full suite is now 36 files, 177 tests. After `10-B-H`/`10-B-I`, `cd termx-hub && go test ./...`, `cd remote-ui && npm run typecheck`, `cd remote-ui && npm test`, `cd remote-ui && npm run build`, workflow guard, and scoped diff check all pass. Existing Vitest localstorage-file and Vite chunk-size warnings remain.
+- subagent review：`Ohm` reviewed Slice `10-B`, follow-up fixes, and final `10-B-H`/`10-B-I` closeout.
+- review 发现：`Ohm` found Medium: app `offer.session_id` is not preserved through Hub/agent signaling, so remote-ui fake contract and Go handler contract disagree. `Ohm` found Medium: one-shot `POST /api/v1/sessions` consumes the ticket before waiting for answer, so timeout or obviously bad envelope can burn the ticket without returning a resumable session id. Low: app-facing JSON body has no size limit. Follow-up review found Medium: the new `202 pending` response is still not recoverable because `/answer` uses internal offer ID while response returns public session_id, and remote-ui treats 202 as a full answer response. Final follow-up found Medium: remote-ui adapter has no pending answer polling method, and managed public session-id lookup is globally keyed and can be overwritten by another active offer with the same public session id. Final closeout review found no blocker/high/medium remaining.
+- review 后修复：`10-B-D`, `10-B-E`, `10-B-F`, `10-B-G`, `10-B-H`, and `10-B-I` implemented.
+- 新增派生条目：`10-B-A`, `10-B-B`, `10-B-C`, `10-B-D`, `10-B-E`, `10-B-F`, `10-B-G`, `10-B-H`, `10-B-I`.
+- deferred human items：production Hub URL, Web Control signed ticket/key rotation, real relay lease/quota provider, DNS/TLS/TURN deployment.
+- 剩余风险：session reverse mappings remain in memory without explicit cleanup in this slice; there is no TS-to-Go contract test; the raw adapter is still not wired into `ManagedRtcConnector`; production Hub URL/ticket signing/relay provider/TURN deployment remain deferred.
+- 下一步：commit Slice `10-B`, record commit hash, then continue next Slice 10 child.
+- commit：待提交。
+
+### 10-B-A Managed Connector Shape Risk Record
+
+- 状态：completed
+- 父条目：10-B
+- 来源：local pre-slice inspection found `ManagedRtcConnector` currently models browser/client as answerer (`pollOffer` then `acceptOffer`), while the managed Hub API docs model app/browser as offerer (`POST /api/v1/sessions` with offer, receive answer).
+- 目标：record the contract mismatch so this slice does not accidentally hide it by wrapping HTTP as runtime transport or by doing a broad connector refactor without TDD.
+- 范围：workflow/log only unless tests reveal a direct adapter contract issue.
+- 非目标：do not rewrite `ManagedRtcConnector` in this child; do not implement a browser offerer connector here.
+- 外部依赖：none.
+- mock 策略：not applicable.
+- 先写的失败测试：not applicable for risk record; parent `10-B` tests cover the concrete adapter and Hub HTTP seed.
+- 预期失败结果：not applicable.
+- 实现摘要：risk recorded. Future child should explicitly decide whether to add an offerer-side managed connector or rename/split current answerer connector.
+- 重构摘要：none.
+- 运行命令：not run.
+- 测试结果：not run.
+- subagent review：include in `10-B` review; request sent to `Ohm`.
+- review 发现：no blocker/high/medium; remaining connector shape risk is correctly recorded and not hidden by runtime transport wrappers.
+- review 后修复：not needed.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：until a later connector slice resolves the shape, `10-B` only provides the raw Hub session API adapter and does not wire it into `ManagedRtcConnector`.
+- 下一步：included in `10-B` commit.
+- commit：待提交。
+
+### 10-B-C Managed Hub Signaling Auth Envelope Preservation
+
+- 状态：completed
+- 父条目：10-B
+- 来源：local self-review while Slice `10-B` subagent review is running; current Go Hub handler decodes `app_certificate`, offer `signature`, and standalone `ice_candidates` but drops them before `managed.Service.SubmitOffer`, so agent poll would lack the data needed for daemon certificate/signature verification and candidate binding.
+- 目标：preserve app certificate, signature envelope, and standalone ICE candidates through `termx-hub` app-facing session submission into managed/registry offers and agent poll results without adding runtime HTTP transport.
+- 范围：`termx-hub/internal/registry`, `termx-hub/internal/managed`, `termx-hub/internal/httpapi`, related tests, workflow/log.
+- 非目标：do not implement full cryptographic verification in Hub; daemon still verifies certificate/signature. Do not add terminal/file/api/events HTTP proxy.
+- 外部依赖：none.
+- mock 策略：use JSON RawMessage fixtures and real in-memory registry/service; no external services.
+- 先写的失败测试：revise `termx-hub/internal/httpapi/sessions_test.go` and/or managed tests so after app `POST /api/v1/sessions`, fake agent `PollAgentOffer` returns `AppCertificate`, `Signature`, and `ICECandidates`; expect failure before implementation because those fields are currently absent.
+- 预期失败结果：focused Go tests should fail before implementation due missing offer auth envelope fields on polled offer.
+- 实际失败结果：`cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTPContract` failed to build as expected because `managed.Offer` has no `AppCertificate`, `Signature`, or `ICECandidates` fields.
+- 实现摘要：extended `termx-hub/internal/registry` and `termx-hub/internal/managed` short-lived offer models to carry `AppCertificate`, `OfferSignature`, and standalone `ICECandidates`; HTTP session handler now forwards those fields from app request into managed signaling. Agent poll returns the full signaling auth envelope for daemon-side verification.
+- 重构摘要：kept cryptographic verification outside Hub and left it to daemon/agent runtime; added clone helpers so registry-owned signaling envelope slices/raw JSON are not exposed by reference.
+- 运行命令：`cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTPContract`.
+- 测试结果：red build failure confirmed first because `managed.Offer` lacked `AppCertificate`, `Signature`, and `ICECandidates`; focused HTTP contract test passes after preserving the envelope.
+- subagent review：included in `10-B` review/follow-up.
+- review 发现：local self-review finding.
+- review 后修复：implemented local self-review fix; final review accepted.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：Hub still does not verify the certificate/signature by design; daemon verification remains required.
+- 下一步：included in `10-B` commit.
+- commit：待提交。
+
+### 10-B-D Managed Hub Session ID Preservation
+
+- 状态：completed
+- 父条目：10-B
+- 来源：Slice `10-B` subagent review by `Ohm`.
+- 目标：preserve app/browser-provided `offer.session_id` through Hub managed signaling and response so remote-ui, Hub, agent, and daemon agree on the same WebRTC signaling session ID.
+- 范围：`termx-hub/internal/registry`, `termx-hub/internal/managed`, `termx-hub/internal/httpapi`, tests, workflow/log.
+- 非目标：do not change random internal offer IDs if still needed for queue bookkeeping; do not alter offer signature canonical bytes.
+- 外部依赖：none.
+- mock 策略：use in-memory registry/managed service and fake agent poll; no external service.
+- 先写的失败测试：revise `termx-hub/internal/httpapi/sessions_test.go` to assert fake agent poll sees `SessionID == \"rtc_managed_1\"` and one-shot response returns `session_id == \"rtc_managed_1\"`, not the Hub-generated offer ID.
+- 预期失败结果：focused Go test should fail because current handler ignores `req.Offer.SessionID` and returns `offer.ID`.
+- 实际失败结果：`cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTPContract` failed to build as expected because `managed.Offer` has no `SessionID` field.
+- 实现摘要：added `SessionID` to short-lived registry/managed offers and submit inputs, forwarded `offer.session_id` from the Hub HTTP request, and returned the app-provided session ID in the one-shot response while keeping the internal random offer ID for queue/answer lookup.
+- 重构摘要：kept internal offer ID and public signaling session ID distinct so queue bookkeeping does not depend on app-controlled IDs.
+- 运行命令：`cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTPContract`.
+- 测试结果：red build failure confirmed first because `managed.Offer` lacked `SessionID`; focused HTTP contract test passes after preserving app session ID.
+- subagent review：required follow-up with `Ohm`.
+- review 发现：Medium app `offer.session_id` not preserved; tests currently hard-code Hub-generated offer ID.
+- review 后修复：implemented session ID preservation; final review accepted.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：none specific beyond parent follow-up review.
+- 下一步：included in `10-B` commit.
+- commit：待提交。
+
+### 10-B-E Managed Session Timeout Recovery
+
+- 状态：completed
+- 父条目：10-B
+- 来源：Slice `10-B` subagent review by `Ohm`.
+- 目标：avoid unrecoverable ticket burn when one-shot session answer waits time out or request envelope is obviously incomplete; provide a recoverable session/offer id or fail before ticket consumption.
+- 范围：`termx-hub/internal/httpapi`, `termx-hub/internal/managed` if needed, tests, workflow/log.
+- 非目标：do not implement production WebSocket/gRPC streams; do not add runtime HTTP proxy.
+- 外部依赖：none.
+- mock 策略：in-memory registry/managed service and fake ticket verifier with consumption tracking.
+- 先写的失败测试：revise `termx-hub/internal/httpapi/sessions_test.go` to assert missing `app_certificate` / `signature` fails before `VerifyManagedTicket` consumes the ticket, and one-shot answer timeout returns `202 Accepted` with recoverable `session_id` instead of burning the ticket with a bare 504.
+- 预期失败结果：focused Go tests should fail because current handler consumes ticket before waiting and returns 504 without session metadata; missing envelope currently reaches managed service and consumes the ticket before agent/daemon can reject it.
+- 实际失败结果：`cd termx-hub && go test ./internal/httpapi -run 'TestManagedSessionHTTP(RejectsMissingEnvelope|TimeoutReturnsRecoverableSession)'` failed as expected: missing envelope timed out with 504 after ticket consumption path, and answer timeout returned 504 without session metadata.
+- 实现摘要：Hub HTTP handler now validates app-facing managed session envelopes before ticket consumption: `offer.session_id`, `app_certificate`, and signature fields are required. If the one-shot answer wait times out, it returns `202 Accepted` with `{session_id,path:managed,machine_id,terminal_id,pending:true}` instead of a bare 504 so clients have a resumable session id.
+- 重构摘要：kept daemon-side cryptographic verification boundary; this preflight only rejects missing shape, not invalid signatures. No terminal/file/api/events runtime proxy was added.
+- 运行命令：`cd termx-hub && go test ./internal/httpapi -run 'TestManagedSessionHTTP(RejectsMissingEnvelope|TimeoutReturnsRecoverableSession)'`; `cd termx-hub && go test ./internal/httpapi -run 'TestManagedSessionHTTP(RejectsMissingEnvelope|TimeoutReturnsRecoverableSession|Contract)'`.
+- 测试结果：red recovery tests confirmed first: missing envelope timed out through the ticket-consumption path, and answer timeout returned 504 without session metadata. Focused tests pass after preflight validation and recoverable 202 timeout response.
+- subagent review：required follow-up with `Ohm`.
+- review 发现：Medium one-shot handler consumes ticket then returns 504 without resumable session id on timeout or agent-side rejection.
+- review 后修复：implemented pre-consumption envelope validation and recoverable timeout response; final review accepted.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：body-size limit handled by `10-B-F`.
+- 下一步：included in `10-B` commit.
+- commit：待提交。
+
+### 10-B-F Managed Hub Session Body Size Limit
+
+- 状态：completed
+- 父条目：10-B
+- 来源：Slice `10-B` subagent review by `Ohm`; app-facing managed session JSON currently decodes request bodies without `MaxBytesReader`.
+- 目标：cap JSON request bodies for managed app-facing session endpoints so large SDP/certificate/candidate payloads cannot consume unbounded memory.
+- 范围：`termx-hub/internal/httpapi/handler.go`, `termx-hub/internal/httpapi/sessions_test.go`, workflow/log.
+- 非目标：do not tune production limits globally; do not implement streaming/chunking.
+- 外部依赖：none.
+- mock 策略：local handler tests with oversized JSON.
+- 先写的失败测试：add oversized request test expecting `413 Request Entity Too Large` before JSON decode.
+- 预期失败结果：focused Go test should fail because handler currently decodes unbounded body and returns non-413 behavior.
+- 实际失败结果：`cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTPRejectsOversizedBody` failed to build as expected because `httpapi.Config` had no `MaxBodyBytes` field.
+- 实现摘要：added configurable `MaxBodyBytes` to `termx-hub/internal/httpapi.Config`, defaulting to 64 KiB, and wrapped app-facing session request bodies with `http.MaxBytesReader`. Oversized bodies return `413 request_too_large` before service work.
+- 重构摘要：decode now happens before service nil checks so body size limits protect the endpoint even when downstream services are unavailable.
+- 运行命令：`cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTPRejectsOversizedBody`; `cd termx-hub && go test ./internal/httpapi -run 'TestManagedSessionHTTP(RejectsOversizedBody|Contract|RejectsMissingEnvelope|TimeoutReturnsRecoverableSession|RejectsRuntimePayload)'`.
+- 测试结果：red build failure confirmed first because `httpapi.Config` lacked `MaxBodyBytes`; first fix returned 503 before reading the body, then focused tests passed after decoding with `MaxBytesReader` before service checks.
+- subagent review：include in final `10-B` follow-up.
+- review 发现：Low JSON body has no size limit.
+- review 后修复：implemented body-size limit and decode ordering fix; final review accepted.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：production limit tuning remains configurable; no known blocker for this slice.
+- 下一步：included in `10-B` commit.
+- commit：待提交。
+
+### 10-B-G Managed Session Pending Recovery Contract
+
+- 状态：completed
+- 父条目：10-B
+- 来源：Slice `10-B` follow-up review by `Ohm`; `202 pending` returns public/app session_id, but Hub `/answer` lookup still uses internal offer ID and remote-ui adapter treats 202 as a full answer response.
+- 目标：make pending recovery real: remote-ui must parse `202 pending` as a recoverable pending result, and termx-hub must allow answer lookup by the returned public session id.
+- 范围：`remote-ui/src/managedHubApi.ts`, `remote-ui/src/managedHubApi.test.ts`, `termx-hub/internal/managed`, `termx-hub/internal/httpapi`, tests, workflow/log.
+- 非目标：do not implement runtime transport, WebSocket streaming, or full connector wiring.
+- 外部依赖：none.
+- mock 策略：fake fetch for remote-ui pending response; in-memory managed service/registry for Go pending + answer lookup.
+- 先写的失败测试：add remote-ui test expecting `createSession` to return `{pending:true, sessionId}` for 202 without answer; add Go test where POST times out with public `session_id`, fake agent later answers, and `/api/v1/sessions/{public_session_id}/answer` returns the answer.
+- 预期失败结果：remote-ui test should fail because 202 is parsed as full answer; Go test should fail because `/answer` cannot look up by public session id.
+- 实际失败结果：`cd remote-ui && npm test -- --run src/managedHubApi.test.ts` failed as expected because 202 pending was parsed as a full answer and errored on missing `answer`. `cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTPTimeoutReturnsRecoverableSession` failed as expected because `/answer` used the public session id as internal offer id and returned a ticket/machine mismatch.
+- 实现摘要：remote-ui `ManagedHubApi.createSession` now returns a `ManagedHubPendingSession` union result for `202 pending` without requiring an answer body. `managed.Service` now maps public session IDs to internal offer IDs, so `/api/v1/sessions/{public_session_id}/answer` can recover answers after a one-shot timeout. `/answer` responses echo the requested public session ID.
+- 重构摘要：kept public session ID and internal offer ID separate; internal offer ID still drives queue/answer lookup, while public session ID is the recoverable client contract.
+- 运行命令：`cd remote-ui && npm test -- --run src/managedHubApi.test.ts`; `cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTPTimeoutReturnsRecoverableSession`.
+- 测试结果：red tests confirmed first: remote-ui parsed 202 as a full answer and errored; Go `/answer` lookup with public session id failed, then returned internal offer ID. Focused remote-ui and Go recovery tests pass after implementation.
+- subagent review：required follow-up with `Ohm`.
+- review 发现：Medium pending recovery not usable.
+- review 后修复：implemented usable pending result and public-session-id answer lookup; final review accepted after `10-B-H`/`10-B-I`.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：covered by parent residual risks.
+- 下一步：included in `10-B` commit.
+- commit：待提交。
+
+### 10-B-H Managed Hub Pending Answer Polling Adapter
+
+- 状态：completed
+- 父条目：10-B
+- 来源：Slice `10-B` final follow-up review by `Ohm`; remote-ui can parse `202 pending`, but `ManagedHubApi` has no method to call Hub `/api/v1/sessions/{session_id}/answer`, so callers cannot recover through the official adapter.
+- 目标：add remote-ui managed Hub pending answer polling method that accepts public session id, connect ticket, and machine id, then returns a complete managed answer result using the same parser and relay/path constraints.
+- 范围：`remote-ui/src/managedHubApi.ts`, `remote-ui/src/managedHubApi.test.ts`, exports if needed, workflow/log.
+- 非目标：do not wire into `ManagedRtcConnector` yet; do not add runtime transport.
+- 外部依赖：none.
+- mock 策略：fake fetch adapter tests.
+- 先写的失败测试：add test calling `api.pollSessionAnswer({sessionId, connectTicket, machineId})` after pending and expecting POST `/api/v1/sessions/{session_id}/answer` to parse managed answer.
+- 预期失败结果：focused remote-ui test should fail because the method does not exist.
+- 实际失败结果：`cd remote-ui && npm test -- --run src/managedHubApi.test.ts` failed as expected because `api.pollSessionAnswer` is not a function.
+- 实现摘要：added `ManagedHubApi.pollSessionAnswer`, posting `{connect_ticket,machine_id}` to `/api/v1/sessions/{session_id}/answer` and parsing the same managed answer contract as one-shot session creation.
+- 重构摘要：factored managed answer parsing into a shared helper and kept pending response parsing limited to `createSession`; no runtime transport methods or browser WebRTC types were introduced.
+- 运行命令：`cd remote-ui && npm test -- --run src/managedHubApi.test.ts`; `cd remote-ui && npm test -- --run src/managedHubApi.test.ts src/legacyTransportCleanup.test.ts`.
+- 测试结果：red path confirmed: focused remote-ui test failed with `TypeError: api.pollSessionAnswer is not a function`. After implementation, focused managed Hub API and legacy cleanup tests pass: 2 files, 11 tests.
+- subagent review：final follow-up with `Ohm` completed.
+- review 发现：Medium remote-ui pending result cannot be recovered through adapter.
+- review 后修复：implemented adapter polling method.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：covered by parent residual risks.
+- 下一步：included in `10-B` commit.
+- commit：待提交。
+
+### 10-B-I Managed Hub Session Lookup Scope
+
+- 状态：completed
+- 父条目：10-B
+- 来源：Slice `10-B` final follow-up review by `Ohm`; `managed.Service.sessionOffers` is keyed only by public session id, so a later active offer can overwrite an earlier pending offer with the same app-provided session id.
+- 目标：scope public session-id lookup by ticket and machine or reject duplicate active public session ids so pending answer recovery cannot be broken by collisions.
+- 范围：`termx-hub/internal/managed`, tests, workflow/log.
+- 非目标：do not implement durable cleanup; map lifecycle remains future residual risk unless needed for correctness.
+- 外部依赖：none.
+- mock 策略：in-memory managed service tests with two tickets using same public session id.
+- 先写的失败测试：after `10-B-H`, add Go test where two active offers share public session id but different tickets/machines; each answer lookup must resolve to the correct internal offer or duplicate must be rejected before overwrite.
+- 预期失败结果：pending.
+- 实际失败结果：`cd termx-hub && go test ./internal/managed -run TestManagedAnswerLookupScopesPublicSessionIDByTicket` failed as expected with `managed ticket machine mismatch` after a second active offer overwrote the global public session-id mapping.
+- 实现摘要：changed managed public session-id reverse lookup from a global `session_id -> offer_id` map to a scoped `{machine_id,ticket_id,session_id} -> offer_id` key. Direct internal offer-id lookup still works for service-internal callers.
+- 重构摘要：kept public session ID separate from internal offer ID and kept ticket/machine authorization on every answer lookup; no durable cleanup was introduced in this child.
+- 运行命令：`cd termx-hub && go test ./internal/managed -run TestManagedAnswerLookupScopesPublicSessionIDByTicket`; `cd termx-hub && go test ./internal/httpapi -run 'TestManagedSessionHTTP(TimeoutReturnsRecoverableSession|Contract)'`; `cd remote-ui && npm test -- --run src/managedHubApi.test.ts src/legacyTransportCleanup.test.ts`.
+- 测试结果：red path confirmed: lookup by `rtc_same` and `ticket_a` resolved through the overwritten `ticket_b` mapping and failed authorization. After scoped lookup, focused managed test passes, related HTTP recovery/contract tests pass, and remote-ui focused tests remain green.
+- subagent review：final follow-up with `Ohm` completed.
+- review 发现：Medium public session-id lookup can be overwritten globally.
+- review 后修复：scoped lookup by ticket and machine.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：session-offer reverse mappings are still in-memory and not explicitly cleaned in this slice; registry signaling TTL cleanup remains the authoritative short-lived answer lifecycle.
+- 下一步：included in `10-B` commit.
+- commit：待提交。
+
+### 10-B-B Managed Hub One-Shot Session Contract
+
+- 状态：completed
+- 父条目：10-B
+- 来源：local self-review after focused/broader tests passed; remote-ui `ManagedHubApi` implements the documented `POST /api/v1/sessions` one-shot answer response, but the first `termx-hub` HTTP seed returned `202 Accepted` then required a separate `/answer` poll endpoint.
+- 目标：make the Go app-facing Hub handler contract match the TypeScript adapter and product docs: `POST /api/v1/sessions` submits the offer, waits for the managed answer through the service, and returns `200` with `{session_id,path:managed,machine_id,terminal_id,answer,...}`. Keep HTTP as signaling/control only.
+- 范围：`termx-hub/internal/httpapi/handler.go`, `termx-hub/internal/httpapi/sessions_test.go`, workflow/log.
+- 非目标：do not implement WebSocket/gRPC streams, terminal/file/api/events HTTP runtime, production ticket signing, or full relay accounting.
+- 外部依赖：none for local contract.
+- mock 策略：use local fake ticket verifier and real in-memory registry/service; tests can run the request concurrently with fake agent poll/answer.
+- 先写的失败测试：revise `TestManagedSessionHTTPContract` so `POST /api/v1/sessions` blocks until the fake agent polls and submits an answer, then returns `200` answer in the same response; no separate `/answer` request.
+- 预期失败结果：focused Go test should fail against the current handler because it returns `202` without an answer.
+- 实际失败结果：`cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTPContract` failed as expected because the handler returned `202 Accepted` with only session metadata instead of blocking for and returning the answer.
+- 实现摘要：`termx-hub/internal/httpapi` now keeps `POST /api/v1/sessions` open until `managed.Service.GetAnswer` returns the agent answer or the request times out, then returns the documented managed answer envelope. The compatibility `/api/v1/sessions/{session_id}/answer` helper remains for explicit polling tests but the app-facing one-shot path is now real.
+- 重构摘要：added bounded answer wait helpers with configurable timeout/poll interval; no terminal/file/api/events runtime proxy behavior added.
+- 运行命令：`cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTPContract`; `cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTP`.
+- 测试结果：red one-shot contract test confirmed first; focused termx-hub HTTP contract tests pass after implementation.
+- subagent review：included in `10-B` review/follow-up.
+- review 发现：no blocker/high/medium remaining.
+- review 后修复：not needed after final closeout.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：long-poll timeout/backoff tuning remains service configuration; production async stream/WebSocket/gRPC is future work but not runtime transport.
+- 下一步：included in `10-B` commit.
+- commit：待提交。
 
 ### 11 Devstack And External Server Tests
 
@@ -2787,5 +3056,6 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Start the next Slice 9 daemon cloud integration child with TDD.
-2. Keep `9-A-B` deferred ticket/revocation verifier seam in scope for a later integration child.
+1. Commit Slice `10-B` with scoped staged files only.
+2. Record the Slice `10-B` commit hash in `WORKFLOW.md`.
+3. Start the next Slice 10 child with TDD.

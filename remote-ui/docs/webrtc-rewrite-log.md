@@ -942,3 +942,39 @@ Follow-up subagent review found no blocker/high/medium findings after the offer 
 ### Remaining Risk
 
 Production Web Control URL, OAuth/device-code login, token refresh UX, and hosted account provisioning remain deferred external and are mocked by fake fetch in tests. Hub managed signaling poll/answer adapter remains for a later Slice 10 child.
+
+## Remote Build Slice 10-B: Managed Hub Session API Adapter
+
+### Goal
+
+Add a browser-agnostic managed Hub session API adapter for app/browser managed signaling while preserving `RtcSession` as the only runtime boundary.
+
+### Failing Tests First
+
+- `npm test -- --run src/managedHubApi.test.ts` failed first because `./managedHubApi` did not exist.
+- `go test ./internal/httpapi -run TestManagedSessionHTTP` in `termx-hub` failed first because `termx-hub/internal/httpapi` had no handler implementation.
+- After the first implementation, `npm test -- --run src/legacyTransportCleanup.test.ts` failed first because the package barrel did not export `createManagedHubApi`.
+
+### Implementation
+
+- Added `createManagedHubApi` / `ManagedHubApi`.
+- The adapter submits managed signaling to `POST /api/v1/sessions` with `connect_ticket`, machine/terminal IDs, app certificate, offer, and signature.
+- The adapter parses a managed answer plus ICE servers and relay policy/info fields while failing closed if the Hub returns a non-`managed` path.
+- Added a minimal `termx-hub/internal/httpapi` app-facing handler seed for `POST /api/v1/sessions` and `POST /api/v1/sessions/{session_id}/answer`, backed by the existing `managed.Service`.
+- After self-review, aligned the Go handler with the TypeScript adapter and product docs: `POST /api/v1/sessions` now waits for the managed answer and returns the answer envelope in the same response. The explicit `/answer` endpoint remains a compatibility/test helper.
+- After a second self-review, preserved `app_certificate`, offer `signature`, and standalone `ice_candidates` through the Hub managed/registry offer model so agent polling receives the envelope needed for daemon-side verification.
+- After review, preserved the app-provided `offer.session_id` as the public managed signaling session ID while keeping Hub-generated offer IDs for internal queue bookkeeping.
+- The Hub HTTP handler now rejects missing app certificate/signature/session ID before consuming the connect ticket, and returns `202 Accepted` with a recoverable `session_id` when one-shot answer waiting times out.
+- The Hub app-facing session endpoints now enforce a configurable JSON body limit with `http.MaxBytesReader` before downstream service work.
+- `ManagedHubApi.createSession` now returns a pending union result for `202 Accepted`, and Hub answer lookup can recover by public `session_id` after the agent submits an answer.
+- `ManagedHubApi.pollSessionAnswer` now exposes the pending recovery request against `/api/v1/sessions/{session_id}/answer`, using the same managed answer parser and path/relay constraints as one-shot creation.
+- Hub managed public session-id recovery is scoped by machine and connect ticket, so two active offers with the same app-provided session ID cannot overwrite each other's answer lookup.
+- Exported the managed Hub API adapter from the package barrel without exporting browser WebRTC adapter symbols.
+
+### Boundary Note
+
+This slice deliberately does not wire the raw Hub session API into `ManagedRtcConnector`. Existing `ManagedRtcConnector` models the client as an answerer (`pollOffer` then `acceptOffer`), while the Hub API docs model app/browser as offerer (`POST /api/v1/sessions` with offer, receive answer). The mismatch is tracked in `WORKFLOW.md` as `10-B-A`.
+
+### Remaining Risk
+
+Production Hub URL, signed ticket format, relay lease/quota provider, DNS/TLS/TURN deployment, one-shot timeout tuning, managed connector offerer wiring, and explicit in-memory session reverse-map cleanup remain deferred or future work.

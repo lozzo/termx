@@ -20,6 +20,8 @@ describe('legacy transport cleanup', () => {
   it('exports Web Control API adapters without browser adapter leakage', () => {
     expect(indexSource).toMatch(/createWebControlApi/)
     expect(indexSource).toMatch(/WebControlApi/)
+    expect(indexSource).toMatch(/createManagedHubApi/)
+    expect(indexSource).toMatch(/ManagedHubApi/)
     expect(indexSource).not.toMatch(/createBrowserRtcSession|BrowserRtcSession/)
   })
 

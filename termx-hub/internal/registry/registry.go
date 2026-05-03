@@ -202,10 +202,14 @@ func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error
 	ticketID := strings.TrimSpace(in.TicketID)
 	sdp := strings.TrimSpace(in.SDP)
 	if err := r.PreflightOffer(ctx, OfferInput{
-		MachineID:  machineID,
-		TerminalID: terminalID,
-		TicketID:   ticketID,
-		SDP:        sdp,
+		MachineID:      machineID,
+		TerminalID:     terminalID,
+		TicketID:       ticketID,
+		SDP:            sdp,
+		SessionID:      strings.TrimSpace(in.SessionID),
+		ICECandidates:  cloneStrings(in.ICECandidates),
+		AppCertificate: cloneRawMessage(in.AppCertificate),
+		Signature:      in.Signature,
 	}); err != nil {
 		return Offer{}, err
 	}
@@ -219,7 +223,16 @@ func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error
 	}); err != nil {
 		return Offer{}, err
 	}
-	return r.submitVerifiedOffer(ctx, machineID, terminalID, ticketID, sdp)
+	return r.submitVerifiedOffer(ctx, OfferInput{
+		MachineID:      machineID,
+		TerminalID:     terminalID,
+		TicketID:       ticketID,
+		SDP:            sdp,
+		SessionID:      strings.TrimSpace(in.SessionID),
+		ICECandidates:  cloneStrings(in.ICECandidates),
+		AppCertificate: cloneRawMessage(in.AppCertificate),
+		Signature:      in.Signature,
+	})
 }
 
 func (r *Registry) PreflightOffer(ctx context.Context, in OfferInput) error {
@@ -242,26 +255,30 @@ func (r *Registry) PreflightOffer(ctx context.Context, in OfferInput) error {
 	return nil
 }
 
-func (r *Registry) submitVerifiedOffer(ctx context.Context, machineID string, terminalID string, ticketID string, sdp string) (Offer, error) {
+func (r *Registry) submitVerifiedOffer(ctx context.Context, in OfferInput) (Offer, error) {
 	_ = ctx
 	offer := Offer{
-		ID:         randomID("offer"),
-		MachineID:  machineID,
-		TerminalID: terminalID,
-		TicketID:   ticketID,
-		SDP:        sdp,
-		Path:       PathManaged,
-		CreatedAt:  r.clock.Now().UTC(),
+		ID:             randomID("offer"),
+		SessionID:      strings.TrimSpace(in.SessionID),
+		MachineID:      strings.TrimSpace(in.MachineID),
+		TerminalID:     strings.TrimSpace(in.TerminalID),
+		TicketID:       strings.TrimSpace(in.TicketID),
+		SDP:            strings.TrimSpace(in.SDP),
+		ICECandidates:  cloneStrings(in.ICECandidates),
+		AppCertificate: cloneRawMessage(in.AppCertificate),
+		Signature:      in.Signature,
+		Path:           PathManaged,
+		CreatedAt:      r.clock.Now().UTC(),
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if !r.machineOnlineLocked(machineID) {
+	if !r.machineOnlineLocked(offer.MachineID) {
 		return Offer{}, ErrAgentNotFound
 	}
 	r.offers[offer.ID] = offer
-	r.queues[machineID] = append(r.queues[machineID], offer)
-	r.notifyLocked(machineID)
-	return offer, nil
+	r.queues[offer.MachineID] = append(r.queues[offer.MachineID], offer)
+	r.notifyLocked(offer.MachineID)
+	return cloneOffer(offer), nil
 }
 
 func (r *Registry) Poll(ctx context.Context, in PollInput) (Offer, error) {
@@ -299,7 +316,7 @@ func (r *Registry) Poll(ctx context.Context, in PollInput) (Offer, error) {
 				r.offers[offer.ID] = offer
 				r.queues[machineID] = queue
 				r.mu.Unlock()
-				return offer, nil
+				return cloneOffer(offer), nil
 			}
 			delete(r.queues, machineID)
 		}
@@ -469,6 +486,30 @@ func cloneTerminals(in []Terminal) []Terminal {
 func cloneAgent(agent Agent) Agent {
 	agent.Terminals = cloneTerminals(agent.Terminals)
 	return agent
+}
+
+func cloneOffer(offer Offer) Offer {
+	offer.ICECandidates = cloneStrings(offer.ICECandidates)
+	offer.AppCertificate = cloneRawMessage(offer.AppCertificate)
+	return offer
+}
+
+func cloneStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, len(in))
+	copy(out, in)
+	return out
+}
+
+func cloneRawMessage(in []byte) []byte {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]byte, len(in))
+	copy(out, in)
+	return out
 }
 
 func randomID(prefix string) string {

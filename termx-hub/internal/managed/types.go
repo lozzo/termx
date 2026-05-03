@@ -2,6 +2,7 @@ package managed
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/lozzow/termx/termx-hub/internal/registry"
@@ -40,14 +41,18 @@ type VerifyTicketInput struct {
 }
 
 type Offer struct {
-	ID         string
-	MachineID  string
-	TerminalID string
-	TicketID   string
-	SDP        string
-	Path       string
-	AllowRelay bool
-	RelayInUse bool
+	ID             string
+	SessionID      string
+	MachineID      string
+	TerminalID     string
+	TicketID       string
+	SDP            string
+	ICECandidates  []string
+	AppCertificate json.RawMessage
+	Signature      OfferSignature
+	Path           string
+	AllowRelay     bool
+	RelayInUse     bool
 }
 
 type Answer struct {
@@ -59,10 +64,14 @@ type Answer struct {
 }
 
 type SubmitOfferInput struct {
-	TicketID   string
-	MachineID  string
-	TerminalID string
-	SDP        string
+	SessionID      string
+	TicketID       string
+	MachineID      string
+	TerminalID     string
+	SDP            string
+	ICECandidates  []string
+	AppCertificate json.RawMessage
+	Signature      OfferSignature
 }
 
 type PollAgentOfferInput struct {
@@ -82,4 +91,11 @@ type GetAnswerInput struct {
 	OfferID   string
 	TicketID  string
 	MachineID string
+}
+
+type OfferSignature struct {
+	Algorithm string
+	Nonce     string
+	Timestamp int64
+	Value     string
 }

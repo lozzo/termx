@@ -23,11 +23,12 @@ type Config struct {
 }
 
 type Service struct {
-	registry *registry.Registry
-	tickets  TicketVerifier
-	clock    Clock
-	mu       sync.Mutex
-	offers   map[string]Ticket
+	registry       *registry.Registry
+	tickets        TicketVerifier
+	clock          Clock
+	mu             sync.Mutex
+	offers         map[string]Ticket
+	sessionOffers  map[string]string
 }
 
 func NewService(cfg Config) *Service {
@@ -35,7 +36,13 @@ func NewService(cfg Config) *Service {
 	if clock == nil {
 		clock = realClock{}
 	}
-	return &Service{registry: cfg.Registry, tickets: cfg.Tickets, clock: clock, offers: make(map[string]Ticket)}
+	return &Service{
+		registry:      cfg.Registry,
+		tickets:       cfg.Tickets,
+		clock:         clock,
+		offers:        make(map[string]Ticket),
+		sessionOffers: make(map[string]string),
+	}
 }
 
 func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, error) {
@@ -43,10 +50,14 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 		return Offer{}, errors.New("managed service is not configured")
 	}
 	preflight := registry.OfferInput{
-		MachineID:  strings.TrimSpace(in.MachineID),
-		TerminalID: strings.TrimSpace(in.TerminalID),
-		TicketID:   strings.TrimSpace(in.TicketID),
-		SDP:        in.SDP,
+		MachineID:      strings.TrimSpace(in.MachineID),
+		TerminalID:     strings.TrimSpace(in.TerminalID),
+		TicketID:       strings.TrimSpace(in.TicketID),
+		SDP:            in.SDP,
+		SessionID:      strings.TrimSpace(in.SessionID),
+		ICECandidates:  cloneStrings(in.ICECandidates),
+		AppCertificate: cloneBytes(in.AppCertificate),
+		Signature:      registrySignature(in.Signature),
 	}
 	if err := s.tickets.VerifyOfferTicket(ctx, registry.OfferTicket{
 		MachineID:  preflight.MachineID,
@@ -76,26 +87,37 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 		return Offer{}, ErrTicketExpired
 	}
 	offer, err := s.registry.SubmitOffer(ctx, registry.OfferInput{
-		MachineID:  ticket.MachineID,
-		TerminalID: ticket.TerminalID,
-		TicketID:   ticket.ID,
-		SDP:        in.SDP,
+		MachineID:      ticket.MachineID,
+		TerminalID:     ticket.TerminalID,
+		TicketID:       ticket.ID,
+		SDP:            in.SDP,
+		SessionID:      strings.TrimSpace(in.SessionID),
+		ICECandidates:  cloneStrings(in.ICECandidates),
+		AppCertificate: cloneBytes(in.AppCertificate),
+		Signature:      registrySignature(in.Signature),
 	})
 	if err != nil {
 		return Offer{}, err
 	}
 	s.mu.Lock()
 	s.offers[offer.ID] = ticket
+	if strings.TrimSpace(offer.SessionID) != "" {
+		s.sessionOffers[sessionOfferKey(ticket.MachineID, ticket.ID, offer.SessionID)] = offer.ID
+	}
 	s.mu.Unlock()
 	return Offer{
-		ID:         offer.ID,
-		MachineID:  offer.MachineID,
-		TerminalID: offer.TerminalID,
-		TicketID:   offer.TicketID,
-		SDP:        offer.SDP,
-		Path:       PathManaged,
-		AllowRelay: false,
-		RelayInUse: offer.RelayInUse,
+		ID:             offer.ID,
+		SessionID:      offer.SessionID,
+		MachineID:      offer.MachineID,
+		TerminalID:     offer.TerminalID,
+		TicketID:       offer.TicketID,
+		SDP:            offer.SDP,
+		ICECandidates:  cloneStrings(offer.ICECandidates),
+		AppCertificate: cloneBytes(offer.AppCertificate),
+		Signature:      managedSignature(offer.Signature),
+		Path:           PathManaged,
+		AllowRelay:     false,
+		RelayInUse:     offer.RelayInUse,
 	}, nil
 }
 
@@ -112,13 +134,17 @@ func (s *Service) PollAgentOffer(ctx context.Context, in PollAgentOfferInput) (O
 		return Offer{}, err
 	}
 	return Offer{
-		ID:         offer.ID,
-		MachineID:  offer.MachineID,
-		TerminalID: offer.TerminalID,
-		TicketID:   offer.TicketID,
-		SDP:        offer.SDP,
-		Path:       PathManaged,
-		RelayInUse: offer.RelayInUse,
+		ID:             offer.ID,
+		SessionID:      offer.SessionID,
+		MachineID:      offer.MachineID,
+		TerminalID:     offer.TerminalID,
+		TicketID:       offer.TicketID,
+		SDP:            offer.SDP,
+		ICECandidates:  cloneStrings(offer.ICECandidates),
+		AppCertificate: cloneBytes(offer.AppCertificate),
+		Signature:      managedSignature(offer.Signature),
+		Path:           PathManaged,
+		RelayInUse:     offer.RelayInUse,
 	}, nil
 }
 
@@ -135,6 +161,42 @@ func (s *Service) SubmitAnswer(ctx context.Context, in SubmitAnswerInput) error 
 	return err
 }
 
+func registrySignature(in OfferSignature) registry.OfferSignature {
+	return registry.OfferSignature{
+		Algorithm: strings.TrimSpace(in.Algorithm),
+		Nonce:     strings.TrimSpace(in.Nonce),
+		Timestamp: in.Timestamp,
+		Value:     strings.TrimSpace(in.Value),
+	}
+}
+
+func managedSignature(in registry.OfferSignature) OfferSignature {
+	return OfferSignature{
+		Algorithm: in.Algorithm,
+		Nonce:     in.Nonce,
+		Timestamp: in.Timestamp,
+		Value:     in.Value,
+	}
+}
+
+func cloneStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, len(in))
+	copy(out, in)
+	return out
+}
+
+func cloneBytes(in []byte) []byte {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]byte, len(in))
+	copy(out, in)
+	return out
+}
+
 func (s *Service) GetAnswer(ctx context.Context, in GetAnswerInput) (Answer, error) {
 	if s == nil || s.registry == nil {
 		return Answer{}, errors.New("managed service is not configured")
@@ -145,12 +207,16 @@ func (s *Service) GetAnswer(ctx context.Context, in GetAnswerInput) (Answer, err
 		return Answer{}, ErrWrongMachine
 	}
 	s.mu.Lock()
-	ticket, ok := s.offers[strings.TrimSpace(in.OfferID)]
+	offerID := strings.TrimSpace(in.OfferID)
+	if mapped := s.sessionOffers[sessionOfferKey(machineID, ticketID, offerID)]; mapped != "" {
+		offerID = mapped
+	}
+	ticket, ok := s.offers[offerID]
 	s.mu.Unlock()
 	if !ok || ticket.ID != ticketID || ticket.MachineID != machineID {
 		return Answer{}, ErrWrongMachine
 	}
-	answer, err := s.registry.GetAnswer(ctx, in.OfferID)
+	answer, err := s.registry.GetAnswer(ctx, offerID)
 	if err != nil {
 		return Answer{}, err
 	}
@@ -163,4 +229,8 @@ func (s *Service) GetAnswer(ctx context.Context, in GetAnswerInput) (Answer, err
 		MachineID: answer.MachineID,
 		SDP:       answer.SDP,
 	}, nil
+}
+
+func sessionOfferKey(machineID, ticketID, sessionID string) string {
+	return strings.TrimSpace(machineID) + "\x00" + strings.TrimSpace(ticketID) + "\x00" + strings.TrimSpace(sessionID)
 }

@@ -85,6 +85,17 @@ export {
 } from './terminalInventory'
 export type { TerminalInventoryInput, TerminalInventorySnapshot } from './terminalInventory'
 export * from './transport'
+export { createManagedHubApi } from './managedHubApi'
+export type {
+  CreateManagedHubSessionInput,
+  ManagedHubApi,
+  ManagedHubApiOptions,
+  ManagedHubCreateSessionResult,
+  ManagedHubFetch,
+  ManagedHubPendingSession,
+  ManagedHubSession,
+  PollManagedHubSessionAnswerInput,
+} from './managedHubApi'
 export { createWebControlApi } from './webControlApi'
 export type {
   CreateManagedConnectTicketInput,

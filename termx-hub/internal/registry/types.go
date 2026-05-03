@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 )
@@ -55,10 +56,14 @@ type Agent struct {
 
 type Offer struct {
 	ID              string
+	SessionID       string
 	MachineID       string
 	TerminalID      string
 	TicketID        string
 	SDP             string
+	ICECandidates   []string
+	AppCertificate  json.RawMessage
+	Signature       OfferSignature
 	Path            string
 	RelayInUse      bool
 	AssignedAgentID string
@@ -97,10 +102,14 @@ type PollInput struct {
 }
 
 type OfferInput struct {
-	MachineID  string
-	TerminalID string
-	TicketID   string
-	SDP        string
+	SessionID      string
+	MachineID      string
+	TerminalID     string
+	TicketID       string
+	SDP            string
+	ICECandidates  []string
+	AppCertificate json.RawMessage
+	Signature      OfferSignature
 }
 
 type AnswerInput struct {
@@ -125,6 +134,13 @@ func containsRuntimePayload(payload string) bool {
 		}
 	}
 	return false
+}
+
+type OfferSignature struct {
+	Algorithm string
+	Nonce     string
+	Timestamp int64
+	Value     string
 }
 
 func isBasicSDP(payload string) bool {
