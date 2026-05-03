@@ -2,6 +2,9 @@ package runtime
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core/internal/remote/bridge"
+	"github.com/lozzow/termx/termx-core/internal/remote/cert"
 	remoteconfig "github.com/lozzow/termx/termx-core/internal/remote/config"
 	"github.com/lozzow/termx/termx-core/internal/remote/discovery"
 	"github.com/lozzow/termx/termx-core/internal/remote/fileapi"
@@ -70,6 +74,32 @@ type Manager struct {
 	hubRTCServers    []hubv1.RTCIceServerConfig
 	signalingStarted bool
 	signalingCancel  context.CancelFunc
+	answerer         managedOfferAnswerer
+	replay           *cert.ReplayWindow
+}
+
+type managedOfferAnswerer interface {
+	AnswerOffer(
+		ctx context.Context,
+		offer hubv1.SignalingOffer,
+		iceServers []hubv1.RTCIceServerConfig,
+		sink bridge.TransportSink,
+		fileManager *fileapi.Manager,
+		opts remotertc.AnswerOptions,
+	) (hubv1.SignalingAnswer, error)
+}
+
+type defaultManagedOfferAnswerer struct{}
+
+func (defaultManagedOfferAnswerer) AnswerOffer(
+	ctx context.Context,
+	offer hubv1.SignalingOffer,
+	iceServers []hubv1.RTCIceServerConfig,
+	sink bridge.TransportSink,
+	fileManager *fileapi.Manager,
+	opts remotertc.AnswerOptions,
+) (hubv1.SignalingAnswer, error) {
+	return remotertc.AnswerOfferWithOptions(ctx, offer, iceServers, sink, fileManager, opts)
 }
 
 func NewManager(cfg remoteconfig.Config, provider InventoryProvider, host bridge.TransportSink) *Manager {
@@ -79,6 +109,8 @@ func NewManager(cfg remoteconfig.Config, provider InventoryProvider, host bridge
 		provider: provider,
 		host:     host,
 		files:    fileapi.NewManager(),
+		answerer: defaultManagedOfferAnswerer{},
+		replay:   cert.NewReplayWindow(5 * time.Minute),
 		syncCh:   make(chan struct{}, 1),
 		status: Status{
 			State:     StateDisabled,
@@ -397,22 +429,7 @@ func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID
 			continue
 		}
 
-		terminalManagement := m.terminalManagementRouter()
-		answer, err := remotertc.AnswerOfferWithOptions(ctx, *resp.Offer, iceServers, m.host, m.files, remotertc.AnswerOptions{
-			ChannelPolicy: remotertc.ChannelPolicy{
-				TerminalID:              strings.TrimSpace(resp.Offer.TerminalID),
-				AllowTerminal:           true,
-				AllowFileManager:        true,
-				AllowTerminalManagement: terminalManagement != nil,
-			},
-			TerminalManagement: terminalManagement,
-		})
-		if err != nil {
-			answer = hubv1.SignalingAnswer{
-				SessionID: resp.Offer.SessionID,
-				Error:     err.Error(),
-			}
-		}
+		answer := m.answerManagedOffer(ctx, *resp.Offer, iceServers)
 		submitCtx, submitCancel := context.WithTimeout(ctx, 10*time.Second)
 		_ = discovery.SubmitHubAnswer(submitCtx, m.cfg.HubURL, hubv1.SubmitSignalingAnswerRequest{
 			AgentSessionID: agentSessionID,
@@ -421,6 +438,150 @@ func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID
 		})
 		submitCancel()
 	}
+}
+
+func (m *Manager) answerManagedOffer(ctx context.Context, offer hubv1.SignalingOffer, iceServers []hubv1.RTCIceServerConfig) hubv1.SignalingAnswer {
+	certificate, err := m.authorizeManagedOffer(ctx, offer)
+	if err != nil {
+		return hubv1.SignalingAnswer{
+			SessionID: offer.SessionID,
+			Error:     err.Error(),
+		}
+	}
+	terminalManagement := m.terminalManagementRouter()
+	answerer := m.answerer
+	if answerer == nil {
+		answerer = defaultManagedOfferAnswerer{}
+	}
+	policy := managedOfferChannelPolicy(offer, certificate.Payload.Capabilities, terminalManagement)
+	answer, err := answerer.AnswerOffer(ctx, offer, iceServers, m.host, m.files, remotertc.AnswerOptions{
+		ChannelPolicy:      policy,
+		TerminalManagement: terminalManagement,
+	})
+	if err != nil {
+		return hubv1.SignalingAnswer{
+			SessionID: offer.SessionID,
+			Error:     err.Error(),
+		}
+	}
+	return answer
+}
+
+func (m *Manager) authorizeManagedOffer(ctx context.Context, offer hubv1.SignalingOffer) (cert.AppCertificateEnvelope, error) {
+	if m == nil {
+		return cert.AppCertificateEnvelope{}, fmt.Errorf("remote manager is nil")
+	}
+	terminalID := strings.TrimSpace(offer.TerminalID)
+	if terminalID == "" {
+		return cert.AppCertificateEnvelope{}, fmt.Errorf("terminal_id is required")
+	}
+	if !m.hasTerminal(ctx, terminalID) {
+		return cert.AppCertificateEnvelope{}, fmt.Errorf("terminal %q is not available for remote access", terminalID)
+	}
+	certificate, appPublicKey, err := m.verifyOfferCertificate(offer)
+	if err != nil {
+		return cert.AppCertificateEnvelope{}, err
+	}
+	if strings.TrimSpace(certificate.Payload.MachineID) != strings.TrimSpace(offer.DeviceID) {
+		return cert.AppCertificateEnvelope{}, fmt.Errorf("offer machine_id does not match app certificate")
+	}
+	if !hasAppCapability(certificate.Payload.Capabilities, "terminal") {
+		return cert.AppCertificateEnvelope{}, fmt.Errorf("app certificate terminal capability is required")
+	}
+	replay := m.offerReplayWindow()
+	if err := remotertc.VerifyOfferSignature(remotertc.OfferSignature{
+		Algorithm: offer.Signature.Algorithm,
+		Nonce:     offer.Signature.Nonce,
+		Timestamp: offer.Signature.Timestamp,
+		Value:     offer.Signature.Value,
+	}, remotertc.OfferSignatureFields{
+		TicketID:   offer.TicketID,
+		MachineID:  offer.DeviceID,
+		TerminalID: offer.TerminalID,
+		SDP:        offer.SDP,
+		Candidates: offer.ICECandidates,
+	}, appPublicKey, replay, time.Now().UTC()); err != nil {
+		return cert.AppCertificateEnvelope{}, err
+	}
+	return certificate, nil
+}
+
+func (m *Manager) verifyOfferCertificate(offer hubv1.SignalingOffer) (cert.AppCertificateEnvelope, ed25519.PublicKey, error) {
+	if len(offer.AppCertificate) == 0 {
+		return cert.AppCertificateEnvelope{}, nil, fmt.Errorf("app certificate is required")
+	}
+	var envelope cert.AppCertificateEnvelope
+	if err := json.Unmarshal(offer.AppCertificate, &envelope); err != nil {
+		return cert.AppCertificateEnvelope{}, nil, fmt.Errorf("decode app certificate: %w", err)
+	}
+	machineKey, err := identity.LoadOrCreateMachineKey(m.cfg.DataDir)
+	if err != nil {
+		return cert.AppCertificateEnvelope{}, nil, err
+	}
+	if err := cert.VerifyAppCertificate(envelope, machineKey.PublicKey, time.Now().UTC()); err != nil {
+		return cert.AppCertificateEnvelope{}, nil, err
+	}
+	machineID := strings.TrimSpace(m.identity.DeviceID)
+	if machineID == "" {
+		ident, err := identity.LoadOrCreate(m.cfg.DataDir, m.cfg.DeviceName)
+		if err != nil {
+			return cert.AppCertificateEnvelope{}, nil, err
+		}
+		machineID = strings.TrimSpace(ident.DeviceID)
+	}
+	if strings.TrimSpace(envelope.Payload.MachineID) != machineID {
+		return cert.AppCertificateEnvelope{}, nil, fmt.Errorf("app certificate machine_id does not match local machine")
+	}
+	appPublicKey, err := base64.StdEncoding.DecodeString(envelope.Payload.AppPublicKey)
+	if err != nil {
+		return cert.AppCertificateEnvelope{}, nil, fmt.Errorf("decode app public key: %w", err)
+	}
+	return envelope, ed25519.PublicKey(appPublicKey), nil
+}
+
+func (m *Manager) hasTerminal(ctx context.Context, terminalID string) bool {
+	if m == nil || m.provider == nil {
+		return false
+	}
+	for _, terminal := range m.provider.ListRemoteTerminals(ctx) {
+		if strings.TrimSpace(terminal.ID) == terminalID {
+			return true
+		}
+	}
+	return false
+}
+
+func managedOfferChannelPolicy(offer hubv1.SignalingOffer, capabilities []string, terminalManagement remotertc.TerminalManagementRouter) remotertc.ChannelPolicy {
+	allowTerminal := hasAppCapability(capabilities, "terminal")
+	return remotertc.ChannelPolicy{
+		TerminalID:              strings.TrimSpace(offer.TerminalID),
+		AllowTerminal:           allowTerminal,
+		AllowFileManager:        hasAppCapability(capabilities, "file_manager"),
+		AllowTerminalManagement: hasAppCapability(capabilities, "terminal_management") && terminalManagement != nil,
+		AllowEvents:             allowTerminal,
+	}
+}
+
+func (m *Manager) offerReplayWindow() *cert.ReplayWindow {
+	if m == nil {
+		return cert.NewReplayWindow(5 * time.Minute)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.replay == nil {
+		m.replay = cert.NewReplayWindow(5 * time.Minute)
+	}
+	return m.replay
+}
+
+func hasAppCapability(capabilities []string, capability string) bool {
+	capability = strings.TrimSpace(capability)
+	for _, candidate := range capabilities {
+		if strings.TrimSpace(candidate) == capability {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) terminalManagementRouter() remotertc.TerminalManagementRouter {

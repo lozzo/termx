@@ -133,6 +133,7 @@ describe('createLocalAgentApi', () => {
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       sdp: 'offer-sdp',
+      iceCandidates: ['candidate:host-a'],
       appCertificate: '{"payload":{}}',
       appSignature: 'signature',
       nonce: 'nonce-1',
@@ -158,6 +159,7 @@ describe('createLocalAgentApi', () => {
       machine_id: 'machine-local',
       terminal_id: 'terminal-1',
       sdp: 'offer-sdp',
+      ice_candidates: ['candidate:host-a'],
     })
     expect(body.signature).toEqual({
       algorithm: 'ed25519',

@@ -53,6 +53,7 @@ describe('local app identity', () => {
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       sdp: 'v=0\r\ns=termx\r\n',
+      candidates: ['candidate:host-a', ' candidate:host-b '],
       nonce: 'nonce-1',
       timestamp: 1777631400,
     })
@@ -61,8 +62,10 @@ describe('local app identity', () => {
     expect(message).toContain('machine_id:machine-local')
     expect(message).toContain('terminal_id:terminal-1')
     expect(message).toContain('sha256(sdp):dd33fcfb47f1bcefb7e8f57c03aa4778c5f7e2490f14259f9b892c05d0aa0158')
+    expect(message).toContain('sha256(candidates):a00196786082bed059a8712b03f5355783521d39a724846935ae8deaa9a6cd96')
     expect(message).toContain('nonce:nonce-1')
     expect(message).toContain('timestamp:1777631400')
+    expect(message).not.toContain('candidate:host-a')
     expect(message).not.toContain('v=0')
 
     const signature = await signer.signOffer({
@@ -70,6 +73,7 @@ describe('local app identity', () => {
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       sdp: 'v=0\r\ns=termx\r\n',
+      candidates: ['candidate:host-a', ' candidate:host-b '],
     })
 
     expect(signature).toEqual({
@@ -79,6 +83,42 @@ describe('local app identity', () => {
     })
     expect(crypto.signedMessages).toEqual([message])
     expect(crypto.loadedPrivateKeys).toEqual(['appweb_123'])
+  })
+
+  it('preserves candidate list boundaries in the signed offer message', async () => {
+    const common = {
+      sessionId: 'rtc-1',
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      sdp: 'v=0\r\ns=termx\r\n',
+      nonce: 'nonce-1',
+      timestamp: 1777631400,
+    }
+
+    const oneCandidate = await canonicalLocalOfferMessage({
+      ...common,
+      candidates: ['candidate:a\ncandidate:b'],
+    })
+    const twoCandidates = await canonicalLocalOfferMessage({
+      ...common,
+      candidates: ['candidate:a', 'candidate:b'],
+    })
+
+    expect(oneCandidate).not.toBe(twoCandidates)
+  })
+
+  it('canonicalizes candidate JSON escaping the same way as the Go verifier', async () => {
+    const message = await canonicalLocalOfferMessage({
+      sessionId: 'rtc-1',
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      sdp: 'v=0\r\ns=termx\r\n',
+      candidates: ['candidate:<host>&'],
+      nonce: 'nonce-1',
+      timestamp: 1777631400,
+    })
+
+    expect(message).toContain('sha256(candidates):8cd5bdbbbe5fc4e653636ccd241028b014e95153072e56d6ffa6aff2bef9ef0e')
   })
 
   it('claims and stores an app certificate without storing machine private keys or TURN credentials', async () => {
@@ -216,13 +256,23 @@ function createMockCrypto() {
     },
     async sha256(data: Uint8Array) {
       const text = new TextDecoder().decode(data)
-      if (text !== 'v=0\r\ns=termx\r\n') throw new Error(`unexpected hash input ${text}`)
-      return Uint8Array.from([
-        0xdd, 0x33, 0xfc, 0xfb, 0x47, 0xf1, 0xbc, 0xef,
-        0xb7, 0xe8, 0xf5, 0x7c, 0x03, 0xaa, 0x47, 0x78,
-        0xc5, 0xf7, 0xe2, 0x49, 0x0f, 0x14, 0x25, 0x9f,
-        0x9b, 0x89, 0x2c, 0x05, 0xd0, 0xaa, 0x01, 0x58,
-      ])
+      if (text === 'v=0\r\ns=termx\r\n') {
+        return Uint8Array.from([
+          0xdd, 0x33, 0xfc, 0xfb, 0x47, 0xf1, 0xbc, 0xef,
+          0xb7, 0xe8, 0xf5, 0x7c, 0x03, 0xaa, 0x47, 0x78,
+          0xc5, 0xf7, 0xe2, 0x49, 0x0f, 0x14, 0x25, 0x9f,
+          0x9b, 0x89, 0x2c, 0x05, 0xd0, 0xaa, 0x01, 0x58,
+        ])
+      }
+      if (text === '["candidate:host-a","candidate:host-b"]') {
+        return Uint8Array.from([
+          0xa0, 0x01, 0x96, 0x78, 0x60, 0x82, 0xbe, 0xd0,
+          0x59, 0xa8, 0x71, 0x2b, 0x03, 0xf5, 0x35, 0x57,
+          0x83, 0x52, 0x1d, 0x39, 0xa7, 0x24, 0x84, 0x69,
+          0x35, 0xae, 0x8d, 0xea, 0xa9, 0xa6, 0xcd, 0x96,
+        ])
+      }
+      throw new Error(`unexpected hash input ${text}`)
     },
   }
 }

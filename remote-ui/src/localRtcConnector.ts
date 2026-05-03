@@ -2,6 +2,7 @@ import type { LocalOfferSignature } from './localAppIdentity'
 import type {
   LocalAgentApi,
   LocalRTCAnswer,
+  RtcOfferSigningInput,
   RtcConnector,
   RtcConnectionTarget,
   RtcConnectOptions,
@@ -15,7 +16,7 @@ export interface LocalRtcConnectorOptions<TSession extends RtcSession & RtcSessi
   api: Pick<LocalAgentApi, 'createRTCAnswer'>
   getAppCertificate(): string | null | undefined
   createSession(input: RtcConnectionTarget): TSession
-  signOffer(input: { sessionId: string; machineId: string; terminalId: string; sdp: string }): Promise<LocalOfferSignature>
+  signOffer(input: RtcOfferSigningInput): Promise<LocalOfferSignature>
 }
 
 export function createLocalRtcConnector(
@@ -49,6 +50,7 @@ class LocalRtcConnector implements RtcConnector<{ machineId: string; terminalId?
         machineId: input.machineId,
         terminalId,
         sdp,
+        candidates: [],
       })
       throwIfAborted(options.signal)
       const answer = await this.options.api.createRTCAnswer({
@@ -56,6 +58,7 @@ class LocalRtcConnector implements RtcConnector<{ machineId: string; terminalId?
         machineId: input.machineId,
         terminalId,
         sdp,
+        iceCandidates: [],
         appCertificate,
         appSignature: signed.signature,
         nonce: signed.nonce,

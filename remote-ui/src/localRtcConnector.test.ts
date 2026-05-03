@@ -32,12 +32,14 @@ describe('LocalRtcConnector', () => {
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       sdp: 'offer-sdp',
+      candidates: [],
     })
     expect(createRTCAnswer).toHaveBeenCalledWith({
       sessionId: 'rtc-local-1',
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       sdp: 'offer-sdp',
+      iceCandidates: [],
       appCertificate: 'app-cert',
       appSignature: 'signature',
       nonce: 'nonce-1',
@@ -133,12 +135,14 @@ describe('LocalRtcConnector', () => {
       machineId: 'machine-local',
       terminalId: '',
       sdp: 'offer-sdp',
+      candidates: [],
     })
     expect(createRTCAnswer).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 'rtc-local-1',
       machineId: 'machine-local',
       terminalId: '',
       sdp: 'offer-sdp',
+      iceCandidates: [],
     }), {})
   })
 

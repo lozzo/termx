@@ -2,14 +2,25 @@ package runtime
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/lozzow/termx/termx-core/internal/remote/bridge"
+	"github.com/lozzow/termx/termx-core/internal/remote/cert"
 	remoteconfig "github.com/lozzow/termx/termx-core/internal/remote/config"
+	"github.com/lozzow/termx/termx-core/internal/remote/fileapi"
+	"github.com/lozzow/termx/termx-core/internal/remote/identity"
 	remotertc "github.com/lozzow/termx/termx-core/internal/remote/rtc"
+	hubv1 "github.com/lozzow/termx/termx-core/remote/hubv1"
 )
 
 type inventoryProviderStub struct {
@@ -208,6 +219,158 @@ func TestManagerProvidesTerminalManagementRouterForManagedRTC(t *testing.T) {
 	}
 }
 
+func TestManagerRejectsManagedOfferWithoutCertificateBeforeAnswering(t *testing.T) {
+	manager, answerer, offer := newManagedOfferFixture(t)
+	offer.AppCertificate = nil
+
+	answer := manager.answerManagedOffer(context.Background(), offer, nil)
+
+	if answer.Error == "" || !strings.Contains(answer.Error, "app certificate") {
+		t.Fatalf("expected app certificate rejection, got %#v", answer)
+	}
+	if answerer.calls != 0 {
+		t.Fatalf("answerer called %d times for unauthorized offer", answerer.calls)
+	}
+}
+
+func TestManagerRejectsManagedOfferForUnknownTerminalBeforeAnswering(t *testing.T) {
+	manager, answerer, offer := newManagedOfferFixture(t)
+	offer.TerminalID = "term-missing"
+
+	answer := manager.answerManagedOffer(context.Background(), offer, nil)
+
+	if answer.Error == "" || !strings.Contains(answer.Error, "terminal") {
+		t.Fatalf("expected terminal rejection, got %#v", answer)
+	}
+	if answerer.calls != 0 {
+		t.Fatalf("answerer called %d times for unauthorized offer", answerer.calls)
+	}
+}
+
+func TestManagerVerifiesManagedOfferSignatureAndRejectsReplay(t *testing.T) {
+	manager, answerer, offer := newManagedOfferFixture(t)
+
+	answer := manager.answerManagedOffer(context.Background(), offer, []hubv1.RTCIceServerConfig{
+		{URLs: []string{"stun:stun.example.test:3478"}},
+	})
+
+	if answer.Error != "" {
+		t.Fatalf("valid signed offer returned error: %#v", answer)
+	}
+	if answer.SDP != "v=0\r\ns=answer\r\n" || answer.SessionID != offer.SessionID {
+		t.Fatalf("unexpected valid answer: %#v", answer)
+	}
+	if answerer.calls != 1 {
+		t.Fatalf("answerer calls = %d, want 1", answerer.calls)
+	}
+	if answerer.gotOffer.TerminalID != "term-1" || answerer.gotOffer.AppCertificate == nil {
+		t.Fatalf("answerer got unauthorized offer envelope: %#v", answerer.gotOffer)
+	}
+	if !answerer.gotOptions.ChannelPolicy.AllowTerminal || !answerer.gotOptions.ChannelPolicy.AllowFileManager {
+		t.Fatalf("answerer policy = %#v", answerer.gotOptions.ChannelPolicy)
+	}
+
+	replayed := manager.answerManagedOffer(context.Background(), offer, nil)
+	if replayed.Error == "" || !strings.Contains(replayed.Error, "nonce") {
+		t.Fatalf("expected replay rejection, got %#v", replayed)
+	}
+	if answerer.calls != 1 {
+		t.Fatalf("replayed offer reached answerer, calls=%d", answerer.calls)
+	}
+}
+
+func TestManagerRejectsTamperedManagedOfferSignatureBeforeAnswering(t *testing.T) {
+	manager, answerer, offer := newManagedOfferFixture(t)
+	offer.SDP = "v=0\r\ns=tampered-offer\r\n"
+
+	answer := manager.answerManagedOffer(context.Background(), offer, nil)
+
+	if answer.Error == "" || !strings.Contains(answer.Error, "signature") {
+		t.Fatalf("expected signature rejection, got %#v", answer)
+	}
+	if answerer.calls != 0 {
+		t.Fatalf("tampered offer reached answerer, calls=%d", answerer.calls)
+	}
+}
+
+func TestManagerRejectsTamperedManagedOfferCandidatesBeforeAnswering(t *testing.T) {
+	manager, answerer, offer := newManagedOfferFixture(t)
+	offer.ICECandidates = append(offer.ICECandidates, "candidate:tampered")
+
+	answer := manager.answerManagedOffer(context.Background(), offer, nil)
+
+	if answer.Error == "" || !strings.Contains(answer.Error, "signature") {
+		t.Fatalf("expected signature rejection, got %#v", answer)
+	}
+	if answerer.calls != 0 {
+		t.Fatalf("tampered candidate offer reached answerer, calls=%d", answerer.calls)
+	}
+}
+
+func TestManagerRejectsManagedOfferWithoutTerminalCapabilityBeforeAnswering(t *testing.T) {
+	manager, answerer, offer := newManagedOfferFixtureWithCapabilities(t, []string{"file_manager"}, nil)
+
+	answer := manager.answerManagedOffer(context.Background(), offer, nil)
+
+	if answer.Error == "" || !strings.Contains(answer.Error, "terminal capability") {
+		t.Fatalf("expected terminal capability rejection, got %#v", answer)
+	}
+	if answerer.calls != 0 {
+		t.Fatalf("answerer called %d times for unauthorized offer", answerer.calls)
+	}
+}
+
+func TestManagerScopesManagedOfferPolicyToCertificateCapabilities(t *testing.T) {
+	manager, answerer, offer := newManagedOfferFixtureWithCapabilities(t, []string{"terminal"}, nil)
+
+	answer := manager.answerManagedOffer(context.Background(), offer, nil)
+
+	if answer.Error != "" {
+		t.Fatalf("valid terminal-only offer returned error: %#v", answer)
+	}
+	policy := answerer.gotOptions.ChannelPolicy
+	if !policy.AllowTerminal || !policy.AllowEvents {
+		t.Fatalf("terminal capability should allow terminal/events, got %#v", policy)
+	}
+	if policy.AllowFileManager || policy.AllowTerminalManagement {
+		t.Fatalf("terminal-only certificate overgranted channel policy: %#v", policy)
+	}
+}
+
+func TestManagerAllowsManagedTerminalManagementOnlyWithCapabilityAndRouter(t *testing.T) {
+	provider := managementProviderStub{inventoryProviderStub: inventoryProviderStub{
+		items: []TerminalInventoryItem{{ID: "term-1", Name: "shell", State: "running"}},
+	}}
+	manager, answerer, offer := newManagedOfferFixtureWithCapabilities(t, []string{"terminal"}, provider)
+
+	answer := manager.answerManagedOffer(context.Background(), offer, nil)
+	if answer.Error != "" {
+		t.Fatalf("valid terminal-only offer returned error: %#v", answer)
+	}
+	if answerer.gotOptions.ChannelPolicy.AllowTerminalManagement {
+		t.Fatalf("terminal-only certificate overgranted terminal management: %#v", answerer.gotOptions.ChannelPolicy)
+	}
+
+	manager, answerer, offer = newManagedOfferFixtureWithCapabilities(t, []string{"terminal", "terminal_management"}, provider)
+	answer = manager.answerManagedOffer(context.Background(), offer, nil)
+	if answer.Error != "" {
+		t.Fatalf("valid terminal-management offer returned error: %#v", answer)
+	}
+	if !answerer.gotOptions.ChannelPolicy.AllowTerminalManagement {
+		t.Fatalf("terminal_management capability with router should allow management: %#v", answerer.gotOptions.ChannelPolicy)
+	}
+}
+
+func TestManagedOfferEnvelopeDoesNotExposeBrowserWebRTCTypes(t *testing.T) {
+	typ := reflect.TypeOf(hubv1.SignalingOffer{})
+	for i := 0; i < typ.NumField(); i++ {
+		fieldType := typ.Field(i).Type.String()
+		if strings.Contains(fieldType, "RTCPeerConnection") || strings.Contains(fieldType, "RTCDataChannel") {
+			t.Fatalf("hubv1.SignalingOffer field %s leaks browser WebRTC type %s", typ.Field(i).Name, fieldType)
+		}
+	}
+}
+
 type managementProviderStub struct {
 	inventoryProviderStub
 }
@@ -217,4 +380,102 @@ func (s managementProviderStub) RouteTerminalManagementRequest(_ context.Context
 		return http.StatusNotFound, nil, "unknown terminal management route"
 	}
 	return http.StatusOK, []byte(`{"terminal_id":"managed-terminal-1"}`), ""
+}
+
+type managedAnswererStub struct {
+	calls      int
+	gotOffer   hubv1.SignalingOffer
+	gotOptions remotertc.AnswerOptions
+}
+
+func (s *managedAnswererStub) AnswerOffer(
+	_ context.Context,
+	offer hubv1.SignalingOffer,
+	_ []hubv1.RTCIceServerConfig,
+	_ bridge.TransportSink,
+	_ *fileapi.Manager,
+	opts remotertc.AnswerOptions,
+) (hubv1.SignalingAnswer, error) {
+	s.calls++
+	s.gotOffer = offer
+	s.gotOptions = opts
+	return hubv1.SignalingAnswer{
+		SessionID: offer.SessionID,
+		SDP:       "v=0\r\ns=answer\r\n",
+	}, nil
+}
+
+func newManagedOfferFixture(t *testing.T) (*Manager, *managedAnswererStub, hubv1.SignalingOffer) {
+	t.Helper()
+	return newManagedOfferFixtureWithCapabilities(t, []string{"terminal", "file_manager"}, nil)
+}
+
+func newManagedOfferFixtureWithCapabilities(t *testing.T, capabilities []string, provider InventoryProvider) (*Manager, *managedAnswererStub, hubv1.SignalingOffer) {
+	t.Helper()
+	dataDir := t.TempDir()
+	machineKey, err := identity.LoadOrCreateMachineKey(dataDir)
+	if err != nil {
+		t.Fatalf("LoadOrCreateMachineKey returned error: %v", err)
+	}
+	appPublic, appPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	now := time.Now().UTC().Round(0)
+	envelope, err := cert.SignAppCertificate(cert.AppCertificatePayload{
+		Version:      1,
+		CertID:       "cert-managed-test",
+		MachineID:    "device-managed-test",
+		AppDeviceID:  "app-device-managed-test",
+		AppPublicKey: base64.StdEncoding.EncodeToString(appPublic),
+		AppName:      "Managed Test App",
+		Capabilities: append([]string(nil), capabilities...),
+		IssuedAt:     now.Add(-time.Minute),
+		ExpiresAt:    now.Add(time.Hour),
+	}, machineKey)
+	if err != nil {
+		t.Fatalf("SignAppCertificate returned error: %v", err)
+	}
+	certificateJSON, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("marshal certificate: %v", err)
+	}
+	offer := hubv1.SignalingOffer{
+		SessionID:      "rtc-managed-test",
+		TicketID:       "ticket-managed-test",
+		DeviceID:       "device-managed-test",
+		TerminalID:     "term-1",
+		SDP:            "v=0\r\ns=offer\r\n",
+		ICECandidates:  []string{"candidate:host-test"},
+		AppCertificate: certificateJSON,
+	}
+	signatureFields := remotertc.OfferSignatureFields{
+		TicketID:   offer.TicketID,
+		MachineID:  offer.DeviceID,
+		TerminalID: offer.TerminalID,
+		SDP:        offer.SDP,
+		Candidates: offer.ICECandidates,
+		Nonce:      "nonce-managed-test",
+		Timestamp:  now,
+	}
+	offer.Signature = hubv1.OfferSignature{
+		Algorithm: "ed25519",
+		Nonce:     signatureFields.Nonce,
+		Timestamp: signatureFields.Timestamp.Unix(),
+		Value:     base64.StdEncoding.EncodeToString(ed25519.Sign(appPrivate, remotertc.CanonicalOfferSignatureMessage(signatureFields))),
+	}
+	answerer := &managedAnswererStub{}
+	if provider == nil {
+		provider = inventoryProviderStub{
+			items: []TerminalInventoryItem{{ID: "term-1", Name: "shell", State: "running"}},
+		}
+	}
+	manager := NewManager(remoteconfig.Config{
+		Enabled:    true,
+		DataDir:    dataDir,
+		DeviceName: "managed-test-device",
+	}, provider, nil)
+	manager.identity = identity.DeviceIdentity{DeviceID: "device-managed-test", DisplayName: "managed-test-device"}
+	manager.answerer = answerer
+	return manager, answerer, offer
 }

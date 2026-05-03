@@ -367,6 +367,7 @@ func (s *Server) remoteLocalRTCAnswerWithScope(
 		MachineID:  req.Offer.MachineID,
 		TerminalID: req.Offer.TerminalID,
 		SDP:        req.Offer.SDP,
+		Candidates: req.Offer.ICECandidates,
 	}, ed25519.PublicKey(appPublicKey), replay, time.Now().UTC()); err != nil {
 		return localweb.RTCOfferResponse{}, err
 	}

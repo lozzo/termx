@@ -4,6 +4,7 @@ import type {
   ConnectionCapabilities,
   ConnectionInfo,
   ConnectionPath,
+  RtcOfferSigningInput,
   RtcSessionCapabilityUpdater,
   LocalInventoryRTCAnswer,
   LocalInventoryRTCOffer,
@@ -37,7 +38,7 @@ export interface BrowserRtcInventoryEventsOptions {
   appCertificate: string
   peerConnectionFactory?: (() => RTCPeerConnectionLike) | undefined
   createAnswer(input: LocalInventoryRTCOffer): Promise<LocalInventoryRTCAnswer>
-  signOffer(input: { sessionId: string; machineId: string; terminalId: string; sdp: string }): Promise<LocalOfferSignature>
+  signOffer(input: RtcOfferSigningInput): Promise<LocalOfferSignature>
   sessionIdGenerator?: (() => string) | undefined
   iceGatheringTimeoutMs?: number | undefined
   dataChannelOpenTimeoutMs?: number | undefined
@@ -443,6 +444,7 @@ class BrowserRtcInventoryEventsConnection implements TerminalInventoryEvents {
       machineId: this.options.machineId,
       terminalId: '',
       sdp,
+      candidates: [],
     })
     const answer = await this.options.createAnswer({
       sessionId,

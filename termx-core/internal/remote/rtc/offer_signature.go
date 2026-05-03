@@ -1,10 +1,12 @@
 package rtc
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -24,6 +26,7 @@ type OfferSignatureFields struct {
 	MachineID  string
 	TerminalID string
 	SDP        string
+	Candidates []string
 	Nonce      string
 	Timestamp  time.Time
 }
@@ -31,16 +34,32 @@ type OfferSignatureFields struct {
 func CanonicalOfferSignatureMessage(fields OfferSignatureFields) []byte {
 	timestamp := fields.Timestamp.UTC().Unix()
 	sdpHash := sha256.Sum256([]byte(fields.SDP))
+	candidateHash := sha256.Sum256([]byte(canonicalOfferCandidates(fields.Candidates)))
 	message := strings.Join([]string{
 		"termx-webrtc-offer-v1:",
 		"ticket_id:" + strings.TrimSpace(fields.TicketID),
 		"machine_id:" + strings.TrimSpace(fields.MachineID),
 		"terminal_id:" + strings.TrimSpace(fields.TerminalID),
 		"sha256(sdp):" + hex.EncodeToString(sdpHash[:]),
+		"sha256(candidates):" + hex.EncodeToString(candidateHash[:]),
 		"nonce:" + strings.TrimSpace(fields.Nonce),
 		fmt.Sprintf("timestamp:%d", timestamp),
 	}, "\n")
 	return []byte(message)
+}
+
+func canonicalOfferCandidates(candidates []string) string {
+	normalized := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		normalized = append(normalized, strings.TrimSpace(candidate))
+	}
+	var payload bytes.Buffer
+	encoder := json.NewEncoder(&payload)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(normalized); err != nil {
+		return "[]"
+	}
+	return strings.TrimSuffix(payload.String(), "\n")
 }
 
 func VerifyOfferSignature(

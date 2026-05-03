@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `9` TermX daemon cloud integration.
-- Last updated: 2026-05-03T07:18:00+08:00.
+- Last updated: 2026-05-03T08:02:52+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -70,7 +70,15 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 8-C | quota-review | Enforce relay heartbeat hub authority and online status in service boundary | completed | `f5333362` |
 | 8-D | workflow-review | Refresh Slice 8 workflow review state and bottom next action | completed | `f5333362` |
 | 8-C-A | quota-follow-up-review | Require authenticated hub principal instead of caller/body hub identity for heartbeat accounting | completed | `f5333362` |
-| 9 | daemon-agent | Integrate `termx daemon` cloud bootstrap, hub heartbeat/poll/answer, and WebRTC offer handling | pending |  |
+| 9 | daemon-agent | Integrate `termx daemon` cloud bootstrap, hub heartbeat/poll/answer, and WebRTC offer handling | in_progress |  |
+| 9-A | daemon-agent-auth | Verify managed hub offers against machine/app certificate, app signature, and terminal inventory before answering | completed |  |
+| 9-A-A | daemon-agent-auth-review | Scope managed runtime channel policy to app certificate capabilities | completed |  |
+| 9-A-B | daemon-agent-auth-deferred | Add production connect-ticket and certificate revocation verifier seam for managed daemon answers | deferred |  |
+| 9-A-C | daemon-agent-auth-follow-up-review | Bind standalone ICE candidates into managed offer signature verification | completed |  |
+| 9-A-C-A | daemon-agent-auth-validation | Restore missing `termx-core` module checksum needed for full `GOWORK=off go test ./...` validation | completed |  |
+| 9-A-D | daemon-agent-auth-final-review | Record final review residual risks for candidate canonicalization and workflow freshness | completed |  |
+| 9-A-D-A | daemon-agent-auth-final-review | Harden candidate canonicalization against newline/list-boundary collisions | completed |  |
+| 9-A-D-B | daemon-agent-auth-final-review | Align Go and TypeScript JSON candidate canonicalization escaping | completed |  |
 | 10 | remote-ui | Connect `remote-ui` to real Web Control / public_p2p / managed API adapters while keeping `RtcSession` runtime boundary | pending |  |
 | 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | pending |  |
 
@@ -1444,7 +1452,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 9 TermX Daemon Cloud Integration
 
-- 状态：pending
+- 状态：in_progress
 - 父条目：none
 - 来源：`termx daemon` 内置 agent 需要 cloud bootstrap、hub register/heartbeat/poll/answer，并用既有 runtime 回答 WebRTC offer。
 - 目标：实现 daemon cloud bootstrap、agent policy、hub register/heartbeat、signaling poll/answer、ticket/cert/signature verification、DataChannel labels `terminal:{terminal_id}`/`api`/`events`/`file:{transfer_id}`。
@@ -1452,19 +1460,227 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 非目标：不发布独立 agent 二进制；不把 web-control 支付/订阅业务塞进 core；不引入 browser WebRTC types。
 - 外部依赖：真实 cloud account/token distribution deferred.
 - mock 策略：fake web-control/hub servers in tests, local signing keys, fake clock.
-- 先写的失败测试：待创建 agent verifies ticket/cert/signature、rejects wrong terminal、no browser WebRTC type leaks into core 测试。
-- 预期失败结果：待记录。
-- 实现摘要：待完成。
-- 重构摘要：待完成。
-- 运行命令：待记录。
-- 测试结果：待记录。
-- subagent review：待发起。
-- review 发现：待记录。
-- review 后修复：待记录。
-- 新增派生条目：暂无。
+- 先写的失败测试：create Slice 9-A tests proving managed hub offers missing or failing app certificate/signature verification are answered with errors before RTC answer, wrong terminal IDs are rejected, and the public cloud-agent API does not expose browser `RTCPeerConnection` / `RTCDataChannel` types.
+- 预期失败结果：focused runtime/hubv1 tests should fail before implementation because `hubv1.SignalingOffer` lacks app certificate/signature fields and manager signaling currently answers offers without certificate/signature verification.
+- 实际失败结果：`cd termx-core && GOWORK=off go test ./internal/remote/runtime` failed as expected because `hubv1.SignalingOffer` has no `AppCertificate` / `Signature`, `hubv1.OfferSignature` does not exist, and `Manager` has no `answerManagedOffer` / injectable `answerer`.
+- 实现摘要：extended `hubv1.SignalingOffer` with app certificate raw envelope and offer signature metadata; added runtime managed-offer answerer seam; manager now verifies local machine-signed app certificate, offer machine/certificate match, app public-key signature including ticket/machine/terminal/SDP, replay nonce, and terminal inventory before invoking RTC answerer.
+- 重构摘要：kept Pion/browser-specific WebRTC types inside `internal/remote/rtc`; runtime authorization uses shell-neutral `hubv1`, `cert`, and `rtc` signature structs only. Full connect-ticket validation and cert revocation sync remain deferred.
+- 运行命令：`cd termx-core && GOWORK=off go test ./internal/remote/runtime`; `cd termx-core && GOWORK=off go test ./internal/remote/runtime ./internal/remote/rtc ./internal/remote/localweb`; `cd remote-ui && npm test -- --run src/localAppIdentity.test.ts src/localRtcConnector.test.ts src/localAgentApi.test.ts`; `cd remote-ui && npm run typecheck`; `cd remote-ui && npm run build:localweb`; `cd termx-core && GOWORK=off go test ./...`; `cd remote-ui && npm test`; `bash docs/remote-rebuild/check_workflow_rules.sh`; scoped `git diff --check`; taxonomy/browser-type `rg` scan.
+- 测试结果：focused runtime/rtc/localweb tests pass; remote-ui focused signing/API/connector tests pass; remote-ui typecheck passes; localweb build sync passes with only the existing Vite chunk-size warning; full `termx-core` tests pass; remote-ui full tests pass; workflow guard/scoped diff check pass; taxonomy scan shows browser WebRTC types only in browser adapter/tests and relay text only in policy/test contexts.
+- subagent review：requested after focused and broader tests passed.
+- review 发现：`Ohm` found High app certificate capabilities are only validated as non-empty while `runtime.Manager` grants terminal/file/events/terminal-management policy unconditionally; Medium ticket/revocation verification has no provider seam yet but is already deferred for later Web Control/hub integration; Low bottom `Next Exact Action` was stale.
+- review 后修复：created and completed `9-A-A` for capability-scoped channel policy and workflow freshness. Created `9-A-B` as a deferred production verifier seam for signed connect-ticket and revocation state. Follow-up review created and completed `9-A-C` for ICE candidate signature binding plus `9-A-C-A` checksum validation repair. Final review created `9-A-D`; `9-A-D-A` hardened candidate canonicalization instead of leaving the low collision risk deferred. Narrow final review created and completed `9-A-D-B` for Go/TypeScript JSON escaping parity.
+- 新增派生条目：`9-A-A`, `9-A-B`, `9-A-C`, `9-A-D`, `9-A-D-A`, `9-A-D-B`.
 - deferred human items：production bootstrap token issuance/operator setup.
 - 剩余风险：machine private key 必须只保存在本机。
-- 下一步：Slice 8 后开始。
+- 下一步：record Slice 9-A commit hash, then continue the next daemon cloud integration child.
+- commit：待提交。
+
+### 9-A Managed Offer Certificate And Terminal Authorization
+
+- 状态：completed
+- 父条目：9
+- 来源：Slice 9 requires daemon to verify ticket/cert/signature and reject wrong terminal before answering WebRTC offers; current `runtime.Manager` already polls hub and calls RTC answerer, but the `hubv1.SignalingOffer` envelope lacks app certificate/signature fields and the manager does not authorize offers before answering.
+- 目标：add shell-neutral managed-offer verification inside `termx-core` runtime: app certificate must be signed by the local machine key, app offer signature must match the certificate app public key and offer fields, replay nonces are rejected, and terminal IDs must exist in current inventory.
+- 范围：`termx-core/remote/hubv1`, `termx-core/internal/remote/runtime`, focused tests, workflow.
+- 非目标：do not add browser `RTCPeerConnection` / `RTCDataChannel` public types; do not implement full Web Control ticket JWT/PASETO verification or production cert revocation sync in this sub-slice; do not change terminal/file/api/events runtime away from WebRTC DataChannel.
+- 外部依赖：production control-plane certificate revocation and signed connect-ticket validation deferred to later web/hub integration.
+- mock 策略：use local machine key, local signed app certificate, fake hub client/HTTP server, fake inventory, and invalid-signature fixtures; no external cloud service.
+- 先写的失败测试：add tests for missing app certificate/signature rejection, tampered signature rejection, wrong terminal rejection, valid signed offer reaching answerer/submission, and no browser WebRTC type leakage in hubv1/runtime public offer verifier API.
+- 预期失败结果：focused tests should fail because `SignalingOffer` does not include certificate/signature metadata and manager currently calls `AnswerOfferWithOptions` directly.
+- 实际失败结果：`cd termx-core && GOWORK=off go test ./internal/remote/runtime` failed as expected with missing `AppCertificate`, `Signature`, `OfferSignature`, `answerManagedOffer`, and `answerer`.
+- 实现摘要：extended managed signaling offer envelope and runtime authorization as described in parent Slice 9.
+- 重构摘要：introduced an internal `managedOfferAnswerer` seam so tests can prove unauthorized offers do not reach RTC answering; production still uses `rtc.AnswerOfferWithOptions`.
+- 运行命令：same final validation matrix recorded in parent `9`, including full `termx-core` and full `remote-ui` tests.
+- 测试结果：focused and broader tests pass; unauthorized offers stop before answerer, tampered SDP/candidates are rejected, valid signed offer reaches answerer once, replay is rejected, capability policy is scoped to cert capabilities, workflow guard/scoped diff check pass, and taxonomy/browser-type scan is limited to expected browser adapter/test/policy contexts.
+- subagent review：`Ohm` reviewed Slice 9-A after validation.
+- review 发现：High app certificate capabilities are verified only as non-empty, then manager grants full managed runtime access; Medium ticket/revocation verification provider seam is absent but deferred by non-goal; Low workflow bottom next action stale.
+- review 后修复：`9-A-A` added failing capability-scope tests, then derived `ChannelPolicy` from verified certificate capabilities. `9-A-B` records production signed-ticket/revocation verification as deferred outside this sub-slice. Follow-up review found standalone ICE candidates were not signed; `9-A-C` binds candidates into the canonical signature and `9-A-C-A` restored the missing module checksum needed for full validation. Final review created `9-A-D`; `9-A-D-A` and `9-A-D-B` fixed candidate canonicalization list-boundary and JSON escaping parity.
+- 新增派生条目：`9-A-A`, `9-A-B`, `9-A-C`, `9-A-D`, `9-A-D-A`, `9-A-D-B`.
+- deferred human items：production ticket validation/revocation feed from Web Control.
+- 剩余风险：full ticket verification and revocation sync remain for later Slice 9/10 integration.
+- 下一步：record Slice 9-A commit hash, then continue the next daemon cloud integration child.
+- commit：待提交。
+
+### 9-A-A Managed Offer Capability-Scoped Channel Policy
+
+- 状态：completed
+- 父条目：9-A
+- 来源：Slice 9-A subagent review by `Ohm`; app certificate capabilities were verified only as non-empty while the manager granted terminal, file manager, events, and terminal-management access unconditionally.
+- 目标：derive managed WebRTC `ChannelPolicy` from the verified app certificate capabilities: `terminal` is required for terminal-bound managed offers and allows terminal/events; `file_manager` controls file/API file access; `terminal_management` controls management API only when a local management router exists.
+- 范围：`termx-core/internal/remote/runtime`, focused tests, workflow.
+- 非目标：do not add new public capabilities; do not implement Web Control ticket/revocation sync in this child; do not change DataChannel labels or introduce HTTP/WebSocket runtime transport.
+- 外部依赖：none for capability scoping. Production ticket/revocation sync remains deferred to later Slice 9/10 integration.
+- mock 策略：use locally signed app certificates with varied capability sets and the existing fake answerer to inspect channel policy before RTC answering.
+- 先写的失败测试：add tests proving terminal-only certificates do not get file manager or terminal-management policy, terminal-management is enabled only when the certificate includes it and a router exists, and certificates missing `terminal` are rejected before the answerer.
+- 预期失败结果：focused runtime tests should fail before implementation because `answerManagedOffer` currently grants all policy booleans unconditionally.
+- 实际失败结果：`cd termx-core && GOWORK=off go test ./internal/remote/runtime` failed as expected: missing `terminal` capability still reached answerer, terminal-only cert still got `AllowFileManager=true`, and terminal-only cert with a router still got `AllowTerminalManagement=true`.
+- 实现摘要：`authorizeManagedOffer` now returns the verified app certificate envelope, requires the `terminal` capability for terminal-bound managed offers, and `answerManagedOffer` builds `ChannelPolicy` from the verified capability set.
+- 重构摘要：added small runtime helpers for capability lookup, replay-window access, and managed channel policy construction; no public capability names or runtime channel labels changed.
+- 运行命令：`cd termx-core && GOWORK=off go test ./internal/remote/runtime`.
+- 测试结果：focused runtime tests pass after implementation and after adding a tampered-signature negative-path regression.
+- subagent review：follow-up and final review by `Ohm`.
+- review 发现：follow-up confirmed capability overgrant fixed. Final review found only Low candidate canonicalization residual risk and Low workflow freshness for this item.
+- review 后修复：workflow freshness fixed in `9-A-D`; candidate canonicalization residual recorded as future hardening.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：full signed ticket validation and certificate revocation sync remain deferred outside this child.
+- 下一步：included in Slice 9-A commit.
+- commit：待提交。
+
+### 9-A-B Managed Offer Ticket And Revocation Verifier Seam
+
+- 状态：deferred
+- 父条目：9-A
+- 来源：Slice 9-A subagent review by `Ohm`; current authorization signs `TicketID` into the app offer but has no production verifier seam for Web Control/hub ticket expiry, ownership, use state, or app certificate revocation feed.
+- 目标：later add a replaceable verifier/provider boundary for signed managed connect tickets and certificate revocation state before the daemon-managed answer path is production-safe.
+- 范围：future `termx-core` runtime verifier interface plus web/hub-issued ticket and revocation state integration.
+- 非目标：not part of `9-A`; do not block certificate/signature/terminal/capability enforcement already implemented in this sub-slice.
+- 外部依赖：production Web Control ticket signing key distribution, revocation feed, and cloud account setup.
+- mock 策略：future slice should use fake verifier/provider in tests and real interface boundaries for production providers.
+- 先写的失败测试：deferred; future tests should reject expired/wrong-machine/used tickets and revoked app certificates before RTC answerer.
+- 预期失败结果：deferred.
+- 实现摘要：deferred.
+- 重构摘要：deferred.
+- 运行命令：deferred.
+- 测试结果：deferred.
+- subagent review：`Ohm` identified this as Medium residual risk; explicitly deferred because `9-A` non-goal excludes full Web Control ticket/JWT/PASETO and revocation sync.
+- review 发现：ticket/revocation verification has no provider seam yet.
+- review 后修复：recorded stable deferred child item.
+- 新增派生条目：none.
+- deferred human items：production signing keys/revocation feed/cloud account setup.
+- 剩余风险：until this is implemented, managed daemon answers rely on machine-signed app certificate, app offer signature, replay window, terminal inventory, and capability policy, but not full cloud ticket/revocation truth.
+- 下一步：pick up in a later Slice 9/10 integration child.
+- commit：待提交。
+
+### 9-A-C Managed Offer Candidate Signature Binding
+
+- 状态：completed
+- 父条目：9-A
+- 来源：Slice 9-A follow-up review by `Ohm`; app offer signature covered ticket/machine/terminal/SDP but not standalone `ICECandidates`, which are later handed to RTC answerer.
+- 目标：bind standalone managed offer ICE candidates into the app signature canonical message so a signaling hop cannot alter/add candidates without invalidating the offer signature.
+- 范围：`termx-core/internal/remote/rtc` signature canonicalization, `termx-core/internal/remote/runtime` verifier callsites/tests, `termx-core/remote_localweb.go`, `remote-ui` local offer signer/connectors/tests, generated localweb assets if the frontend build changes, workflow.
+- 非目标：do not change candidate transport into HTTP runtime proxy; do not add TURN/free relay behavior; do not redesign hub signaling envelopes beyond adding signed field coverage.
+- 外部依赖：none.
+- mock 策略：use local signed offer fixture and mutate candidates after signing to prove verification rejects tampering.
+- 先写的失败测试：add managed runtime test mutating `offer.ICECandidates` after signing and expecting signature rejection before answerer.
+- 预期失败结果：focused runtime tests should fail before implementation because current signature fields ignore `ICECandidates`.
+- 实际失败结果：`cd termx-core && GOWORK=off go test ./internal/remote/runtime` failed as expected at compile time because `rtc.OfferSignatureFields` has no `Candidates` field yet.
+- 实现摘要：Go canonical signature fields now include a hash of trimmed standalone ICE candidates, runtime/localweb verifier callsites pass candidate lists, and remote-ui signer/connectors/API requests include candidate lists so browser/local web signing stays compatible with the Go verifier.
+- 重构摘要：shared the remote-ui signing input through `RtcOfferSigningInput`; local/public connectors explicitly pass empty candidate lists until standalone trickle candidates are supported.
+- 运行命令：`cd termx-core && GOWORK=off go test ./internal/remote/runtime ./internal/remote/rtc ./internal/remote/localweb`; `cd remote-ui && npm test -- --run src/localAppIdentity.test.ts src/localRtcConnector.test.ts src/localAgentApi.test.ts`; `cd remote-ui && npm run typecheck`; `cd remote-ui && npm run build:localweb`; `cd termx-core && GOWORK=off go test ./internal/remote/... ./remote/...`; `cd remote-ui && npm test`; `cd termx-core && GOWORK=off go test ./...`.
+- 测试结果：focused Go runtime/rtc/localweb tests pass; focused remote-ui signing/API/connector tests pass; remote-ui typecheck passes; localweb build sync succeeds with only the existing Vite chunk-size warning; broader remote Go tests pass; remote-ui full tests pass; full `termx-core` module tests pass after `9-A-C-A`.
+- subagent review：final follow-up review required after full validation.
+- review 发现：Medium standalone ICE candidates not bound to app signature.
+- review 后修复：implemented candidate signature binding and shared remote-ui signing contract; `9-A-C-A` fixed checksum blocker encountered during full validation; `9-A-D-A`/`9-A-D-B` hardened candidate canonicalization.
+- 新增派生条目：`9-A-C-A`.
+- deferred human items：none.
+- 剩余风险：candidate order remains significant by design.
+- 下一步：included in Slice 9-A commit.
+- commit：待提交。
+
+### 9-A-C-A Termx-Core Go Sum Validation Checksum
+
+- 状态：completed
+- 父条目：9-A-C
+- 来源：while validating `9-A-C`, `cd termx-core && GOWORK=off go test ./...` failed before tests in packages importing `vterm` because `termx-core/go.sum` had only `golang.org/x/text v0.22.0/go.mod` and not the module checksum.
+- 目标：restore the minimal missing `golang.org/x/text v0.22.0` checksum so full `termx-core` module validation can run under `GOWORK=off`.
+- 范围：`termx-core/go.sum` only.
+- 非目标：do not tidy or upgrade dependencies; do not modify already-dirty root `go.work.sum`.
+- 外部依赖：module checksum download from public Go proxy/module cache.
+- mock 策略：not applicable.
+- 先写的失败测试：`cd termx-core && GOWORK=off go test ./...`.
+- 预期失败结果：baseline checksum failure before this fix.
+- 实际失败结果：`vterm/vterm.go:18:2: missing go.sum entry for module providing package golang.org/x/text/unicode/norm`.
+- 实现摘要：added the missing `golang.org/x/text v0.22.0` module checksum to `termx-core/go.sum`.
+- 重构摘要：none.
+- 运行命令：`cd termx-core && GOWORK=off go mod download golang.org/x/text`; `cd termx-core && GOWORK=off go test ./...`.
+- 测试结果：checksum diff is limited to one `termx-core/go.sum` line; full `termx-core` module tests pass after the checksum is present.
+- subagent review：final follow-up review by `Ohm`.
+- review 发现：no checksum blocker; reminder to avoid staging out-of-scope dirty root `go.work.sum`.
+- review 后修复：scope confirmed; only `termx-core/go.sum` checksum line belongs to this slice.
+- 新增派生条目：`9-A-D-B`.
+- deferred human items：none.
+- 剩余风险：none if diff is limited to the missing checksum line.
+- 下一步：included in Slice 9-A commit.
+- commit：待提交。
+
+### 9-A-D Final Review Residuals
+
+- 状态：completed
+- 父条目：9-A
+- 来源：final Slice 9-A follow-up review by `Ohm`.
+- 目标：record final low findings and keep workflow source of truth current before commit.
+- 范围：`docs/remote-rebuild/WORKFLOW.md` only.
+- 非目标：do not change candidate canonicalization again in this micro-fix; no runtime behavior change.
+- 外部依赖：none.
+- mock 策略：not applicable.
+- 先写的失败测试：workflow review found stale `9-A-A` follow-up fields; candidate canonicalization residual is not a blocker for this slice.
+- 预期失败结果：not applicable.
+- 实际失败结果：not applicable.
+- 实现摘要：recorded final review results; refreshed `9-A-A` review fields; documented candidate canonicalization future hardening.
+- 重构摘要：none.
+- 运行命令：`bash docs/remote-rebuild/check_workflow_rules.sh`; final validation below.
+- 测试结果：workflow guard passes.
+- subagent review：`Ohm` final review found no blocker/high/medium risks.
+- review 发现：Low candidate canonicalization uses trimmed newline join without length prefix/escaping; future CR/LF-containing candidates could collide. Low stale `9-A-A` follow-up workflow fields.
+- review 后修复：workflow freshness fixed; candidate canonicalization hardening split into `9-A-D-A`.
+- 新增派生条目：`9-A-D-A`.
+- deferred human items：none.
+- 剩余风险：none after `9-A-D-A` if canonical JSON array validation passes.
+- 下一步：included in Slice 9-A commit.
+- commit：待提交。
+
+### 9-A-D-A Candidate Canonicalization Collision Hardening
+
+- 状态：completed
+- 父条目：9-A-D
+- 来源：final Slice 9-A review by `Ohm`; current candidate canonicalization trims candidates and joins with `\n`, so a future candidate string containing CR/LF could collide with multiple candidate entries.
+- 目标：make candidate canonicalization stable across Go and remote-ui while preserving list boundaries, so `["a\nb"]` and `["a","b"]` cannot hash to the same candidate payload.
+- 范围：`termx-core/internal/remote/rtc`, `remote-ui/src/localAppIdentity.ts`, focused tests, regenerated localweb assets, workflow.
+- 非目标：do not change signaling transport, candidate validation policy, or relay/TURN behavior.
+- 外部依赖：none.
+- mock 策略：use deterministic canonical-message tests comparing boundary-collision candidate lists.
+- 先写的失败测试：add Go and remote-ui canonicalization tests proving candidate list boundaries affect the signed message even when joined text would otherwise collide.
+- 预期失败结果：tests should fail under the current newline-join canonicalization.
+- 实际失败结果：`cd termx-core && GOWORK=off go test ./internal/remote/rtc` and `cd remote-ui && npm test -- --run src/localAppIdentity.test.ts` failed as expected because newline-join canonicalization collapsed `["candidate:a\ncandidate:b"]` and `["candidate:a","candidate:b"]`.
+- 实现摘要：changed Go and remote-ui candidate canonicalization from trimmed newline-join to a JSON string-array payload before hashing, preserving candidate list boundaries while keeping signer/verifier parity.
+- 重构摘要：kept candidate order significant by design and changed only signature canonicalization; no signaling transport/path changes.
+- 运行命令：`cd termx-core && GOWORK=off go test ./internal/remote/rtc`; `cd remote-ui && npm test -- --run src/localAppIdentity.test.ts`; `cd termx-core && GOWORK=off go test ./internal/remote/runtime ./internal/remote/rtc ./internal/remote/localweb`; `cd remote-ui && npm test -- --run src/localAppIdentity.test.ts src/localRtcConnector.test.ts src/localAgentApi.test.ts`; `cd remote-ui && npm run typecheck`; `cd remote-ui && npm run build:localweb`; `cd termx-core && GOWORK=off go test ./...`; `cd remote-ui && npm test`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md termx-core/remote/hubv1 termx-core/internal/remote/runtime termx-core/internal/remote/rtc termx-core/remote_localweb.go termx-core/internal/remote/localweb/static termx-core/go.sum remote-ui/src`.
+- 测试结果：initial collision tests failed as expected, then pass after JSON-array canonicalization. Final full `termx-core` tests, remote-ui full tests, remote-ui typecheck, workflow guard, and scoped diff check all pass. `npm run build:localweb` passes with only existing Vite chunk-size warning.
+- subagent review：narrow final confirmation by `Ohm`.
+- review 发现：Low newline-join canonicalization collision risk.
+- review 后修复：list-boundary collision fixed; escaping parity split into `9-A-D-B`.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：candidate order remains significant by design; if future signaling sorts/deduplicates candidates, signers and verifiers must do the same before signing.
+- 下一步：included in Slice 9-A commit.
+- commit：待提交。
+
+### 9-A-D-B Candidate JSON Escaping Parity
+
+- 状态：completed
+- 父条目：9-A-D-A
+- 来源：narrow final review by `Ohm`; Go `json.Marshal` HTML-escapes `<`, `>`, `&`, while TypeScript `JSON.stringify` does not, so candidate JSON payload bytes can diverge.
+- 目标：make Go and remote-ui candidate JSON canonicalization byte-identical for candidates containing `<`, `>`, and `&`.
+- 范围：`termx-core/internal/remote/rtc` canonicalization/tests, `remote-ui/src/localAppIdentity.ts` tests, workflow, regenerated localweb assets if source hash changes.
+- 非目标：no signaling/path/relay behavior change.
+- 外部依赖：none.
+- mock 策略：cross-contract hash tests using candidates with `<>&`.
+- 先写的失败测试：add Go and remote-ui canonical message tests expecting the same `sha256(candidates)` for `["candidate:<host>&"]`.
+- 预期失败结果：Go test should fail before implementation because `json.Marshal` escapes HTML characters and produces a different hash than `JSON.stringify`.
+- 实际失败结果：remote-ui test already passed with `JSON.stringify`; `cd termx-core && GOWORK=off go test ./internal/remote/rtc` failed as expected because Go produced escaped JSON hash `3b5b...` instead of the remote-ui contract hash `8cd5...`.
+- 实现摘要：Go candidate JSON canonicalization now uses `json.Encoder` with `SetEscapeHTML(false)` and strips the encoder newline, matching `JSON.stringify` bytes for `<`, `>`, and `&` candidates.
+- 重构摘要：kept JSON array list-boundary canonicalization and did not change candidate order semantics.
+- 运行命令：`cd termx-core && GOWORK=off go test ./internal/remote/rtc`; `cd remote-ui && npm test -- --run src/localAppIdentity.test.ts`.
+- 测试结果：escaping parity tests pass after Go canonicalization uses non-HTML-escaped JSON.
+- subagent review：narrow final confirmation by `Ohm` after fix found no blocker/high/medium.
+- review 发现：Medium Go/TS JSON escaping parity risk.
+- review 后修复：implemented non-HTML-escaped Go JSON canonicalization and cross-contract tests; final confirmation accepted the fix.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：candidate order remains significant by design; if future candidate signaling normalizes order, both signer and verifier must share that normalization.
+- 下一步：record Slice 9-A commit hash, then continue the next daemon cloud integration child.
 - commit：待提交。
 
 ### 10 remote-ui Real API Adapters
@@ -2139,5 +2355,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Commit this Slice 8 workflow-hash update.
-2. Start Slice 9 daemon cloud integration with TDD.
+1. Commit Slice 9-A staged files.
+2. Record the Slice 9-A commit hash in `WORKFLOW.md`.

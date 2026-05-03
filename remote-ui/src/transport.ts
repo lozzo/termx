@@ -14,6 +14,14 @@ export interface RtcSessionDescription {
   sdp: string
 }
 
+export interface RtcOfferSigningInput {
+  sessionId: string
+  machineId: string
+  terminalId: string
+  sdp: string
+  candidates?: string[] | undefined
+}
+
 export interface RtcSessionNegotiationTarget extends RtcConnectionTarget {
   path: ConnectionPath
   iceServers?: Array<{
@@ -140,6 +148,7 @@ export interface LocalRTCOffer {
   machineId: string
   terminalId?: string | undefined
   sdp: string
+  iceCandidates?: string[] | undefined
   appCertificate: string
   appSignature: string
   nonce: string

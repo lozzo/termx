@@ -82,7 +82,7 @@ export function createLocalAgentApi(options: LocalAgentApiOptions = {}): LocalAg
             machine_id: input.machineId,
             terminal_id: input.terminalId,
             sdp: input.sdp,
-            ice_candidates: [],
+            ice_candidates: input.iceCandidates ?? [],
           },
           signature: {
             algorithm: 'ed25519',

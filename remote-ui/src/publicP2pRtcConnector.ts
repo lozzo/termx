@@ -2,6 +2,7 @@ import type {
   RtcConnectionTarget,
   RtcConnector,
   RtcConnectOptions,
+  RtcOfferSigningInput,
   RtcSession,
   RtcSessionDescription,
   RtcSessionNegotiator,
@@ -59,10 +60,11 @@ export interface PublicP2pRtcConnectorOptions<TSession extends RtcSession & RtcS
     appCertificate: unknown
   }
   signOffer(input: {
-    sessionId: string
-    machineId: string
-    terminalId?: string | undefined
-    sdp: string
+    sessionId: RtcOfferSigningInput['sessionId']
+    machineId: RtcOfferSigningInput['machineId']
+    terminalId?: RtcOfferSigningInput['terminalId'] | undefined
+    sdp: RtcOfferSigningInput['sdp']
+    candidates?: RtcOfferSigningInput['candidates']
     channelId: string
   }, options?: RtcConnectOptions): Promise<unknown>
   verifyAnswer?(input: {
@@ -112,6 +114,7 @@ class PublicP2pRtcConnector implements RtcConnector<PublicP2pConnectInput> {
         machineId: input.machineId,
         terminalId: input.terminalId,
         sdp: offer.description.sdp,
+        candidates: [],
         channelId: channel.channelId,
       }, options)
       throwIfAborted(options.signal)

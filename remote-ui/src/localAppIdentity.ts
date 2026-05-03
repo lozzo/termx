@@ -1,4 +1,4 @@
-import type { LocalAgentApi, LocalPairResult } from './transport'
+import type { LocalAgentApi, LocalPairResult, RtcOfferSigningInput } from './transport'
 
 const storageKeys = {
   appDeviceId: 'termx.local.appDeviceId',
@@ -38,12 +38,7 @@ export interface EnsureLocalAppIdentityOptions {
   appName: string
 }
 
-export interface LocalOfferSigningInput {
-  sessionId: string
-  machineId: string
-  terminalId: string
-  sdp: string
-}
+export type LocalOfferSigningInput = RtcOfferSigningInput
 
 export interface LocalOfferSignature {
   signature: string
@@ -130,12 +125,14 @@ export async function ensureLocalAppIdentity(options: EnsureLocalAppIdentityOpti
 
 export async function canonicalLocalOfferMessage(input: CanonicalLocalOfferInput): Promise<string> {
   const digest = await browserSHA256(new TextEncoder().encode(input.sdp))
+  const candidateDigest = await browserSHA256(new TextEncoder().encode(canonicalCandidates(input.candidates)))
   return [
     'termx-webrtc-offer-v1:',
     'ticket_id:',
     `machine_id:${input.machineId.trim()}`,
     `terminal_id:${input.terminalId.trim()}`,
     `sha256(sdp):${hex(digest)}`,
+    `sha256(candidates):${hex(candidateDigest)}`,
     `nonce:${input.nonce.trim()}`,
     `timestamp:${Math.trunc(input.timestamp)}`,
   ].join('\n')
@@ -226,15 +223,21 @@ async function randomNonce(crypto: LocalAppCrypto): Promise<string> {
 
 async function canonicalLocalOfferMessageWithHash(input: CanonicalLocalOfferInput, crypto: Pick<LocalAppCrypto, 'sha256'>): Promise<string> {
   const digest = await crypto.sha256(new TextEncoder().encode(input.sdp))
+  const candidateDigest = await crypto.sha256(new TextEncoder().encode(canonicalCandidates(input.candidates)))
   return [
     'termx-webrtc-offer-v1:',
     'ticket_id:',
     `machine_id:${input.machineId.trim()}`,
     `terminal_id:${input.terminalId.trim()}`,
     `sha256(sdp):${hex(digest)}`,
+    `sha256(candidates):${hex(candidateDigest)}`,
     `nonce:${input.nonce.trim()}`,
     `timestamp:${Math.trunc(input.timestamp)}`,
   ].join('\n')
+}
+
+function canonicalCandidates(candidates: readonly string[] | undefined): string {
+  return JSON.stringify((candidates ?? []).map((candidate) => candidate.trim()))
 }
 
 async function browserSHA256(data: Uint8Array): Promise<Uint8Array> {

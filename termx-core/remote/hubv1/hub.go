@@ -1,5 +1,7 @@
 package hubv1
 
+import "encoding/json"
+
 type HubTerminalInventoryItem struct {
 	ID      string   `json:"id"`
 	Name    string   `json:"name"`
@@ -56,14 +58,23 @@ type HubHeartbeatResponse struct {
 }
 
 type SignalingOffer struct {
-	SessionID          string   `json:"session_id"`
-	TicketID           string   `json:"ticket_id"`
-	DeviceID           string   `json:"device_id"`
-	TerminalID         string   `json:"terminal_id"`
-	SDP                string   `json:"sdp"`
-	ICECandidates      []string `json:"ice_candidates"`
-	AllowRelay         bool     `json:"allow_relay"`
-	AllowRelayTransfer bool     `json:"allow_relay_transfer"`
+	SessionID          string          `json:"session_id"`
+	TicketID           string          `json:"ticket_id"`
+	DeviceID           string          `json:"device_id"`
+	TerminalID         string          `json:"terminal_id"`
+	SDP                string          `json:"sdp"`
+	ICECandidates      []string        `json:"ice_candidates"`
+	AllowRelay         bool            `json:"allow_relay"`
+	AllowRelayTransfer bool            `json:"allow_relay_transfer"`
+	AppCertificate     json.RawMessage `json:"app_certificate,omitempty"`
+	Signature          OfferSignature  `json:"signature,omitempty"`
+}
+
+type OfferSignature struct {
+	Algorithm string `json:"algorithm"`
+	Nonce     string `json:"nonce"`
+	Timestamp int64  `json:"timestamp"`
+	Value     string `json:"value"`
 }
 
 type SignalingAnswer struct {
