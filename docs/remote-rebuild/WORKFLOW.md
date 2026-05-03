@@ -5,8 +5,8 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `16` Web Control / Hub closed loop.
-- Last updated: 2026-05-03T18:38:21+08:00.
+- Active todo: `17` daemon login / Hub discovery.
+- Last updated: 2026-05-03T18:42:19+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -132,9 +132,9 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 13-A | workflow-unattended-continuation | Harden AGENTS so future slices continue unattended across boundaries | completed | `4f7bf2d1` |
 | 14 | remote-ui-qr-store | Define `termx://` QR payload and local MachineStore, rejecting machine private key material | completed | `9c078273` |
 | 15 | remote-ui-connection-orchestrator | Implement local/LAN -> public_p2p -> managed orchestration returning only `RtcSession` | completed | `c038442b` |
-| 16 | web-control-hub-closed-loop | Implement Hub discover, heartbeat, policy/kick response, force-offline in Web Control | in_progress |  |
-| 16-A | hub-force-offline-agent-scope | Keep force-offline scoped to one agent without blocking other online agents for the same machine | resolved |  |
-| 16-B | hub-agent-session-bounds | Add TTL cleanup/max bounds to Hub HTTP agent session maps used by policy checks | resolved |  |
+| 16 | web-control-hub-closed-loop | Implement Hub discover, heartbeat, policy/kick response, force-offline in Web Control | completed | `163c3ee2` |
+| 16-A | hub-force-offline-agent-scope | Keep force-offline scoped to one agent without blocking other online agents for the same machine | resolved | `163c3ee2` |
+| 16-B | hub-agent-session-bounds | Add TTL cleanup/max bounds to Hub HTTP agent session maps used by policy checks | resolved | `163c3ee2` |
 | 17 | daemon-login-hub-select | Implement token/password/device-code daemon login and Hub discovery/selection | pending |  |
 | 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | pending |  |
 | 19 | native-app-rtc-seam | Add native APP `RtcSession` seam without WebRTC type leakage | pending |  |
@@ -255,7 +255,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ### 16 Web Control / Hub Closed Loop
 
-- 状态：review
+- 状态：completed
 - 父条目：none
 - 来源：daemon must register through Web Control, receive Hub list/policy, Hub reports registry/capacity/health, and Web Control can force agents offline without turning into terminal UI.
 - 目标：add Web Control durable hub/agent registry state and Hub policy/kick/force-offline integration while keeping Hub stateless and bounded TTL-only.
@@ -276,7 +276,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - deferred human items：production hub identity/signing/rotation remains existing deferred external.
 - 剩余风险：daemon login/hub selection and e2e remain later slices.
 - 下一步：run broader Web Control/Hub validations, perform review, fix findings, commit, and hash backfill.
-- commit：
+- commit：`163c3ee2`
 
 ### 16-A Hub Force Offline Agent Scope
 
@@ -313,6 +313,6 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ## Next Exact Action
 
-1. Continue Slice `16`: rerun full `web-control` and `termx-hub` validations, workflow guard, and diff check.
-2. Commit related files only.
-3. Backfill Slice `16` hash in workflow.
+1. Start Slice `17`: write/update todo for daemon login and Hub discovery/selection.
+2. Inspect existing `termx-cli`, `termx-core`, Web Control auth/device-code, and daemon cloud bootstrap boundaries.
+3. Write failing focused tests for token/password/device-code login, daemon registration visibility, token refresh/rotation, and machine private key non-upload.
