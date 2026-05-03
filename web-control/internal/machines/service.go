@@ -202,11 +202,20 @@ func (s *Service) RegisterRemoteDevice(ctx context.Context, in RegisterRemoteDev
 	if _, err := tx.ExecContext(ctx, `DELETE FROM machine_terminals WHERE machine_id = ?`, machineID); err != nil {
 		return Machine{}, err
 	}
+	terminals := make(map[string]RemoteTerminalInput, len(in.Terminals))
+	terminalOrder := make([]string, 0, len(in.Terminals))
 	for _, terminal := range in.Terminals {
-		terminalID := strings.TrimSpace(terminal.ID)
-		if terminalID == "" {
+		terminal.ID = strings.TrimSpace(terminal.ID)
+		if terminal.ID == "" {
 			continue
 		}
+		if _, ok := terminals[terminal.ID]; !ok {
+			terminalOrder = append(terminalOrder, terminal.ID)
+		}
+		terminals[terminal.ID] = terminal
+	}
+	for _, terminalID := range terminalOrder {
+		terminal := terminals[terminalID]
 		commandJSON, err := json.Marshal(trimStrings(terminal.Command))
 		if err != nil {
 			return Machine{}, err
@@ -214,6 +223,13 @@ func (s *Service) RegisterRemoteDevice(ctx context.Context, in RegisterRemoteDev
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO machine_terminals(id, machine_id, name, command_json, cols, rows, state, last_seen_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(machine_id, id) DO UPDATE SET
+				name = excluded.name,
+				command_json = excluded.command_json,
+				cols = excluded.cols,
+				rows = excluded.rows,
+				state = excluded.state,
+				last_seen_at = excluded.last_seen_at
 		`, terminalID, machineID, strings.TrimSpace(terminal.Name), string(commandJSON), terminal.Cols, terminal.Rows, strings.TrimSpace(terminal.State), formatTime(now)); err != nil {
 			return Machine{}, fmt.Errorf("register remote terminal: %w", err)
 		}

@@ -107,6 +107,54 @@ func TestRegisterRemoteDeviceClaimsOwnedMachineAndStoresInventory(t *testing.T) 
 	}
 }
 
+func TestRegisterRemoteDeviceToleratesDuplicateTerminalIDsInSnapshot(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db := openTestDB(t, ctx, "termx-machines-register-duplicate-terminals-test")
+	ownerID := registerUser(t, ctx, db, "owner-register-duplicate-terminals@example.com")
+	clock := &mutableClock{value: time.Date(2026, 5, 3, 14, 52, 0, 0, time.UTC)}
+	svc := machines.NewService(machines.Config{DB: db, Clock: clock})
+
+	machine, err := svc.RegisterRemoteDevice(ctx, machines.RegisterRemoteDeviceInput{
+		UserID:           ownerID,
+		MachineID:        "device-duplicate-terminals",
+		MachinePublicKey: "machine-public-key",
+		DisplayName:      "Duplicate Terminal Agent",
+		Terminals: []machines.RemoteTerminalInput{{
+			ID:      "term-1",
+			Name:    "Old Shell",
+			Command: []string{"bash", "-lc", "old"},
+			Cols:    80,
+			Rows:    24,
+			State:   "exited",
+		}, {
+			ID:      "term-1",
+			Name:    "Latest Shell",
+			Command: []string{"bash", "-lc", "latest"},
+			Cols:    120,
+			Rows:    40,
+			State:   "running",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("register device with duplicate terminal ids: %v", err)
+	}
+
+	terminals, err := svc.ListRemoteTerminals(ctx, ownerID, machine.ID)
+	if err != nil {
+		t.Fatalf("list terminals: %v", err)
+	}
+	if len(terminals) != 1 {
+		t.Fatalf("terminals len = %d, want 1: %+v", len(terminals), terminals)
+	}
+	terminal := terminals[0]
+	if terminal.ID != "term-1" || terminal.Name != "Latest Shell" || terminal.State != "running" ||
+		terminal.Cols != 120 || terminal.Rows != 40 || strings.Join(terminal.Command, " ") != "bash -lc latest" {
+		t.Fatalf("terminal was not replaced by latest snapshot entry: %+v", terminal)
+	}
+}
+
 type testAgentRegistrationFields struct {
 	MachineID string
 	AgentID   string

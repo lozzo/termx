@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `11` devstack and external server tests.
-- Last updated: 2026-05-03T14:11:22+08:00.
+- Last updated: 2026-05-03T15:12:00+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -120,6 +120,9 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 11-A-I | devstack-external-smoke-follow-up | Record low-risk follow-up review items for canonical golden tests and hub endpoint body caps | deferred | `87edb896` |
 | 11-B | web-control-ui-devstack | Serve a usable Web Control UI from the public devstack for login, inventory, managed-ticket, and diagnostics inspection | completed | `eef8a74a` |
 | 11-B-A | web-control-ui-devstack | Refresh expired temporary daemon access token after Web Control UI redeploy | completed | `eef8a74a` |
+| 11-C | devstack-public-daemon | Start a temporary `termx daemon` on the public devstack host and smoke managed WebRTC through Hub | completed |  |
+| 11-C-A | devstack-public-daemon-api-follow-up | Record non-blocking `/api/terminals?machine_id=...` filter mismatch found during public-host smoke | deferred |  |
+| 11-C-B | devstack-public-daemon-review-fix | Make Web Control tolerate duplicate terminal IDs in daemon registration snapshots | completed |  |
 
 ## Buildout Todo Details
 
@@ -150,7 +153,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 1 Web Control Plane Skeleton
 
-- 状态：completed
+- 状态：in_progress
 - 父条目：none
 - 来源：整体目标架构要求 Web Control Plane 使用 Go 后端 + Vite React 前端 + SQLite 测试/开发数据库。
 - 目标：创建 `web-control/`，提供 Go HTTP backend skeleton、SQLite migration/test helper、health API、Vite React shell、Tailwind 构建接入。
@@ -176,7 +179,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 2 Web Auth, Account, Plan, Subscription
 
-- 状态：completed
+- 状态：review
 - 父条目：none
 - 来源：Web Control Plane 需要用户注册、登录、session/token、plans、subscriptions 和 mock payment provider。
 - 目标：实现 users、sessions/tokens、plans、subscriptions、PaymentProvider interface、MockPaymentProvider，并覆盖订阅激活/过期/失败状态流转。
@@ -2424,7 +2427,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 11 Devstack And External Server Tests
 
-- 状态：review
+- 状态：in_progress
 - 父条目：none
 - 来源：最终需要 local devstack 和可选公网 STUN/TURN/signaling smoke。
 - 目标：提供 reproducible local devstack; optional safe test on `root@114.66.58.243` only when a slice needs public network behavior and after recording reason/start/stop/cleanup commands.
@@ -2726,7 +2729,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 11-B Web Control UI Devstack Inspection
 
-- 状态：in_progress
+- 状态：completed
 - 父条目：11
 - 来源：用户在外部 devstack 部署后问“没有界面吗”；验证发现 `http://114.66.58.243:12306/` and Hub root both returned 404 even though `web-control/frontend` exists.
 - 目标：serve the Vite React Web Control UI from the Web Control process and make it useful for devstack inspection: health, login/register, current user/plan, machines, terminals, managed ticket creation, and a clear STUN-only runtime boundary. The page must remain a control/signaling UI, not a terminal/file/api/events HTTP runtime proxy.
@@ -2742,12 +2745,12 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 运行命令：`cd web-control && GOWORK=off go test ./cmd/web-control -run TestNewRouterFromServicesServesConfiguredFrontendStaticFiles`; `cd web-control/frontend && npm test -- --run src/App.test.tsx`; `cd web-control/frontend && npm run typecheck`; `cd web-control/frontend && npm run build`; `cd web-control && GOWORK=off go test ./...`; `cd web-control/frontend && npm test && npm run typecheck && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh && git diff --check`; `curl -fsS http://114.66.58.243:12306/`; `curl -fsS http://114.66.58.243:12306/api/health`; authenticated `curl` for `/api/devices`, `/api/terminals`, and `/api/v1/managed/connect-tickets`.
 - 测试结果：focused backend static-serving test and frontend API-backed UI tests passed after implementation. Broader `GOWORK=off go test ./...`, frontend `npm test`, `npm run typecheck`, `npm run build`, workflow check, and `git diff --check` passed. External deployment verification returned `GET /` 200 with the Vite shell, missing `/assets/old-hash.js` 404 after review fix, health OK, machine `device-0fbc2e86970eb988`, terminal `1`, and managed ticket `ct_15lu3l6hdEsWTN1GdPAgBw` with `path=managed`, `allow_relay=false`, `relay_in_use=false`.
 - subagent review：requested from existing subagent `Ohm` (`019deaaa-4f8f-7562-8d7c-f00e7f0db154`) after local/external validation.
-- review 发现：pending.
-- review 后修复：pending.
+- review 发现：`Ohm` found two low issues: missing hashed Vite assets under `/assets/...` returned the SPA `index.html` with 200 instead of 404, making stale browser cache failures confusing; the bottom `Next Exact Action` was stale after the UI implementation/redeploy.
+- review 后修复：added a backend regression test for missing `/assets/...` paths and changed the static handler to return 404 for missing hashed assets while preserving SPA fallback for app routes; refreshed the bottom `Next Exact Action` for Slice `11-B`; rebuilt and redeployed the public web-control binary/static bundle.
 - 新增派生条目：`11-B-A`.
 - deferred human items：production hosting/TLS/CDN/auth UX hardening remains deferred; this is a temporary devstack UI.
 - 剩余风险：the UI can prove control-plane and signaling readiness, but public terminal DataChannel still needs paid TURN/relay or a user-provided public/FRP path as recorded in `11-A-H`.
-- 下一步：commit Slice `11-B` and report UI verification instructions to the user.
+- 下一步：continue with Slice `11-C` public-host daemon smoke requested by the user.
 - commit：`eef8a74a`
 
 ### 11-B-A Refresh Expired Temporary Daemon Token
@@ -2768,13 +2771,91 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 运行命令：`curl -fsS http://114.66.58.243:12306/api/devices -H "Authorization: Bearer $TOKEN"`; `ssh al '/tmp/termx-devstack/bin/termx --socket /tmp/termx-devstack/termx.sock --log-file /tmp/termx-devstack/logs/termx-cli.log remote status --json'`.
 - 测试结果：after refresh, `ssh al ... remote status --json` reports `remote.state=online` and `terminal_count=1`; authenticated `/api/devices` and `/api/terminals` return the current machine and terminal.
 - subagent review：include in `11-B` review.
-- review 发现：pending.
-- review 后修复：pending.
+- review 发现：covered by parent `11-B` review; no additional finding specific to the token refresh child item.
+- review 后修复：none required beyond parent `11-B` static-asset and workflow fixes.
 - 新增派生条目：none.
 - deferred human items：production refresh-token handling and long-lived daemon credential management remain future hardening, not this devstack UI slice.
 - 剩余风险：temporary devstack tokens expire; production daemon bootstrap needs a real renewal flow later.
 - 下一步：included in parent `11-B` review.
 - commit：`eef8a74a`
+
+### 11-C Public Host Daemon Managed DataChannel Smoke
+
+- 状态：completed
+- 父条目：11
+- 来源：用户确认 `114.66.58.243` 的防火墙放行，并要求直接在该公网服务器上启动一个 `termx daemon`，以排除 `al` 作为 agent 主机时的 STUN-only NAT 打洞限制。
+- 目标：在 `root@114.66.58.243` 的临时 devstack 下启动独立 `termx daemon`，注册到同机 Web Control 和 Hub，创建测试 terminal，然后从本地通过 Web Control + Hub 发起 `managed` WebRTC DataChannel smoke，确认 terminal runtime 是否能打开。HTTP 仍只用于 control/signaling/pairing，terminal runtime 必须走 WebRTC DataChannel。
+- 范围：`docs/remote-rebuild/WORKFLOW.md`、`docs/remote-rebuild/RUNBOOK.md`、本机 `/tmp/termx-devstack-build` smoke binary、远端 `/tmp/termx-devstack/public-daemon` 临时目录和 pid/log/config 文件。
+- 非目标：不修改 SSH 配置、防火墙、iptables、systemd、DNS、TLS；不暴露 daemon local web 到公网；不接 TURN；不把 terminal/file/api/events 走 HTTP/WebSocket；不新增 relay 作为第四种客户端 path。
+- 外部依赖：需要临时 SSH 到 `root@114.66.58.243`；不需要真实支付、邮件、OAuth、DNS、TLS、云账号或人工审批。
+- mock 策略：沿用 devstack SQLite、生成的本地 secret、smoke account 和 mock subscription/payment 状态；真实外部 provider 仍 deferred。
+- 先写的失败测试：operational red check: before starting the public-host daemon, authenticated Control inventory should not contain the new `public-host-agent` machine, and a managed smoke targeting that machine cannot run because no such daemon/terminal exists.
+- 预期失败结果：Control inventory initially has no public-host daemon machine; e2e cannot target it until the daemon is started, paired/claimed, registered, and a terminal is created.
+- 实际失败结果：confirmed. Initial authenticated inventory had `device_count=0` for the current smoke account and `public_host_agent_count=0`; the first login helper also failed because it assumed `smoke-auth.json` had a top-level `email`, while the actual file stores it under `user.email`.
+- 实现摘要：copied the linux/amd64 `termx` binary to `/tmp/termx-devstack/bin/termx` on `root@114.66.58.243`; created `/tmp/termx-devstack/public-daemon/termx.yaml`; started daemon pid `3349076` with local pair API bound only to `127.0.0.1:18988`; daemon registered as `device-8bce73b2996907df` / `public-host-agent`; created terminal `1` named `public-host-smoke`; opened a temporary local pairing tunnel on `127.0.0.1:18991`; ran the local managed e2e smoke through public Web Control `http://114.66.58.243:12306` and Hub `http://114.66.58.243:8447`.
+- 重构摘要：no repository code changes in this slice; this was an operational devstack verification and documentation update. Pairing used HTTP over an SSH tunnel only for local app-certificate claim; terminal runtime remained WebRTC DataChannel through the managed path.
+- 运行命令：`scp /tmp/termx-devstack-build/termx root@114.66.58.243:/tmp/termx-devstack/bin/termx`; `ssh root@114.66.58.243 '... nohup /tmp/termx-devstack/bin/termx --config /tmp/termx-devstack/public-daemon/termx.yaml daemon --socket /tmp/termx-devstack/public-daemon/termx.sock ...'`; `ssh root@114.66.58.243 '/tmp/termx-devstack/bin/termx --socket /tmp/termx-devstack/public-daemon/termx.sock ... new --name public-host-smoke -- bash -lc "while true; do sleep 60; done"'`; `ssh -f -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18991:127.0.0.1:18988 root@114.66.58.243`; `ssh root@114.66.58.243 '/tmp/termx-devstack/bin/termx --socket /tmp/termx-devstack/public-daemon/termx.sock ... remote pair --ttl 5m --json'`; `/tmp/termx-devstack-build/termx-remote-e2e --control-url http://114.66.58.243:12306 --hub-url http://114.66.58.243:8447 --email <current-smoke-email> --password <generated-smoke-password> --pair-url http://127.0.0.1:18991/api/local/pair --pair-session-id <public-daemon-pair-session> --pair-secret <public-daemon-pair-secret> --machine-id device-8bce73b2996907df --terminal-id 1 --stun-url stun:stun.l.google.com:19302`; `kill 48326`.
+- 测试结果：passed. `termx remote status --json` on the public daemon reports `remote.state=online`, `device_id=device-8bce73b2996907df`, and `terminal_count=1`; Web Control inventory returns `public-host-agent`; Hub debug returns `answer_count=1`, `last_answer_session_id=ct_H90AGukqyBxzDk7pDNKsuQ-terminal-1`, and `last_error=""` for the public daemon; local e2e printed `2026/05/03 14:38:27 remote managed smoke passed`.
+- subagent review：existing subagent `Ohm` (`019deaaa-4f8f-7562-8d7c-f00e7f0db154`) reviewed Slice `11-C` after the smoke passed and the runbook/workflow were updated.
+- review 发现：medium: `RUNBOOK.md` stop command killed only the daemon pid, so the long-running smoke terminal process could remain orphaned if daemon shutdown did not reap child PTYs. Low: `11-C-A` terminal query mismatch is a real UI/API footgun and must not be forgotten before promoting the UI beyond inspection.
+- review 后修复：updated `RUNBOOK.md` stop commands to kill terminal IDs through `/tmp/termx-devstack/public-daemon/termx.sock` before killing the daemon pid. Verified the scoped cleanup path by creating terminal `2` named `cleanup-command-check` and killing it with `termx kill 2`; terminal `1` remains running intentionally for user inspection. Kept `11-C-A` deferred with explicit risk.
+- 新增派生条目：`11-C-A`, `11-C-B`.
+- deferred human items：production daemon hosting, TLS/DNS/systemd hardening, paid TURN/relay deployment, and long-lived daemon credential refresh remain deferred outside this temporary smoke.
+- 剩余风险：the smoke proves the current public-host network position works for this local client and temporary daemon, but production still needs TLS/DNS/process supervision/credential renewal and possibly TURN/relay for non-public daemon hosts. The Web Control UI can inspect inventory and managed tickets, but a browser terminal page wired to managed `remote-ui` remains a future integration slice.
+- 下一步：commit Slice `11-C` after final validation, then report public-host daemon state and verification steps to the user.
+- commit：pending
+
+### 11-C-A Terminals Query Filter Follow-Up
+
+- 状态：deferred
+- 父条目：11-C
+- 来源：during Slice `11-C` verification, `GET /api/terminals?machine_id=device-8bce73b2996907df` returned all terminals for the account, including the old `al` daemon terminal.
+- 目标：later decide whether `/api/terminals` should support an optional `machine_id` filter or whether callers should use a machine-scoped endpoint instead; then add focused API/UI tests before changing behavior.
+- 范围：future `web-control/internal/httpapi` tests/handler and, if needed, `web-control/frontend` inventory filtering.
+- 非目标：do not block the public-host managed DataChannel smoke; do not change signaling/runtime behavior in this operational slice.
+- 外部依赖：none.
+- mock 策略：none.
+- 先写的失败测试：not written in Slice `11-C`; this is deferred because the smoke targeted the machine explicitly through the connect ticket and e2e CLI.
+- 预期失败结果：future test should prove `GET /api/terminals?machine_id=<id>` either filters to that machine or the API rejects unsupported query parameters instead of silently returning all terminals.
+- 实际失败结果：observed via authenticated `curl`; not blocking because e2e used explicit `--machine-id device-8bce73b2996907df`.
+- 实现摘要：none.
+- 重构摘要：none.
+- 运行命令：`curl -fsS 'http://114.66.58.243:12306/api/terminals?machine_id=device-8bce73b2996907df' -H 'Authorization: Bearer <token>'`.
+- 测试结果：returned both `device-8bce73b2996907df` terminal `public-host-smoke` and `device-0fbc2e86970eb988` terminal `remote-ui-smoke`.
+- subagent review：include in Slice `11-C` review.
+- review 发现：`Ohm` noted this is a real UI/API footgun even though it is acceptable as deferred for the ops slice.
+- review 后修复：kept as a stable deferred follow-up with explicit risk and future test expectation.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：Web Control UI inspection can show terminals from multiple machines in one account; users must match machine ID until this is refined.
+- 下一步：future API/UI refinement slice.
+- commit：pending
+
+### 11-C-B Duplicate Terminal Registration Snapshot Fix
+
+- 状态：completed
+- 父条目：11-C
+- 来源：after the Slice `11-C` cleanup review fix, creating and killing terminal `2` to verify cleanup caused the public daemon to report `remote.state=degraded`; Web Control returned `UNIQUE constraint failed: machine_terminals.machine_id, machine_terminals.id`.
+- 目标：make Web Control daemon registration tolerate duplicate terminal IDs or repeated terminal snapshots by replacing/upserting terminal rows instead of failing the whole machine registration.
+- 范围：`web-control/internal/machines` tests/service, possible focused HTTP test, `docs/remote-rebuild/WORKFLOW.md`, `docs/remote-rebuild/RUNBOOK.md`, temporary redeploy of `web-control` on `root@114.66.58.243`.
+- 非目标：do not change WebRTC runtime, Hub signaling, terminal protocol, payment/mock providers, SSH/firewall/systemd/TLS/DNS, or issue TURN credentials.
+- 外部依赖：temporary SSH to `root@114.66.58.243` only for redeploy/verification; no real external provider.
+- mock 策略：SQLite test DB and existing devstack smoke account; no new external mocks.
+- 先写的失败测试：add a focused machines service test where `RegisterRemoteDevice` receives two terminal entries with the same ID and should keep one latest/valid row instead of returning a unique-constraint error.
+- 预期失败结果：focused `web-control/internal/machines` test should fail before implementation with a SQLite unique constraint.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/machines -run TestRegisterRemoteDeviceToleratesDuplicateTerminalIDsInSnapshot -count=1` failed with `register remote terminal: constraint failed: UNIQUE constraint failed: machine_terminals.machine_id, machine_terminals.id (1555)`.
+- 实现摘要：added a regression test for duplicate terminal IDs in one registration snapshot; updated `RegisterRemoteDevice` to trim/deduplicate terminal IDs within the snapshot using latest-entry-wins semantics, then insert with SQLite `ON CONFLICT(machine_id, id) DO UPDATE` so repeated terminal rows cannot fail the whole registration transaction.
+- 重构摘要：kept ownership, private-key rejection, and whole-inventory replacement semantics unchanged. This fix only hardens terminal row writes against duplicate IDs in the daemon snapshot.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/machines -run TestRegisterRemoteDeviceToleratesDuplicateTerminalIDsInSnapshot -count=1`; `cd web-control && GOWORK=off go test ./internal/machines -run 'TestRegisterRemoteDevice(ToleratesDuplicateTerminalIDsInSnapshot|ClaimsOwnedMachineAndStoresInventory)' -count=1`; `cd web-control && GOWORK=off go test ./internal/httpapi -run TestDaemonDeviceRegistration -count=1`; `cd web-control && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOWORK=off go build -o /tmp/termx-devstack-build/web-control ./cmd/web-control`; `scp /tmp/termx-devstack-build/web-control root@114.66.58.243:/tmp/termx-devstack/bin/web-control`; `ssh root@114.66.58.243 '... restart web-control ...'`; `ssh root@114.66.58.243 '/tmp/termx-devstack/bin/termx --socket /tmp/termx-devstack/public-daemon/termx.sock ... remote status --json'`.
+- 测试结果：focused duplicate-terminal test failed before implementation as expected; after implementation, focused machines tests and daemon-registration HTTP tests passed. Broader `cd web-control && GOWORK=off go test ./...`, `go test ./web-control/...`, frontend `npm test`, `npm run typecheck`, `npm run build`, workflow check, and `git diff --check` passed. First redeploy attempt failed because a darwin binary was copied to the Linux host; after rebuilding with `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`, public Web Control health passed with pid `3352733`, public daemon recovered to `remote.state=online`, `terminal_count=1`, and Web Control terminals returned public terminal `1` `public-host-smoke` as `running`. Post-fix managed e2e passed again with `2026/05/03 14:50:10 remote managed smoke passed`.
+- subagent review：covered by Slice `11-C` review finding; follow-up code review by `Ohm` after the duplicate-terminal fix, Linux redeploy, broader tests, and post-fix e2e.
+- review 发现：`Ohm` found no blocker/high/medium in the duplicate-terminal fix. Low: `WORKFLOW.md` had a temporary accidental Slice `0` status regression. Low: linux/amd64 redeploy lesson was recorded in execution log/workflow but should also be promoted into reusable runbook planned steps.
+- review 后修复：restored Slice `0` status to `completed`; added the explicit `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOWORK=off go build ...` plus `scp` command to `RUNBOOK.md` planned deploy steps; kept terminal cleanup commands and duplicate-terminal upsert/dedup implementation.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：terminal lifecycle semantics still need a future product decision for whether exited terminals should be pruned or surfaced; this fix only prevents registration failure from duplicate IDs.
+- 下一步：included in parent Slice `11-C` commit.
+- commit：pending
 
 ## Historical P2/P3 Records
 
@@ -3398,6 +3479,6 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Report the Web Control UI URL, how to log in/register, and what is currently verifiable from the page.
-2. Keep `11-A-H` as the remaining external-network limitation for actual terminal DataChannel attach until paid TURN/relay or a user-provided public/FRP path is available.
-3. Continue future remote buildout from Slice `11` or promote the paid TURN/relay deployment path if full public terminal DataChannel attach is required.
+1. Run final workflow/diff validation.
+2. Commit the docs plus duplicate-terminal registration fix.
+3. Update the Slice `11-C` commit hash in `WORKFLOW.md`, then report the public-host daemon state/e2e result to the user.
