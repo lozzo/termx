@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `11` devstack and external server tests.
-- Last updated: 2026-05-03T15:12:00+08:00.
+- Last updated: 2026-05-03T15:22:00+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -123,6 +123,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 11-C | devstack-public-daemon | Start a temporary `termx daemon` on the public devstack host and smoke managed WebRTC through Hub | completed | `79bfe4ce` |
 | 11-C-A | devstack-public-daemon-api-follow-up | Record non-blocking `/api/terminals?machine_id=...` filter mismatch found during public-host smoke | deferred |  |
 | 11-C-B | devstack-public-daemon-review-fix | Make Web Control tolerate duplicate terminal IDs in daemon registration snapshots | completed | `79bfe4ce` |
+| 11-C-C | devstack-public-daemon-token-refresh | Refresh the public-host daemon temporary access token after post-commit expiry | completed |  |
 
 ## Buildout Todo Details
 
@@ -2857,6 +2858,32 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 下一步：included in parent Slice `11-C` commit.
 - commit：`79bfe4ce`
 
+### 11-C-C Public Daemon Temporary Token Refresh
+
+- 状态：completed
+- 父条目：11-C
+- 来源：after committing Slice `11-C`, final public-host status check showed the daemon had degraded with `invalid_token`; current skeleton access tokens expire after 15 minutes and the daemon has no refresh-token flow yet.
+- 目标：refresh the current devstack smoke account access token, restart only the public-host temporary daemon under `/tmp/termx-devstack/public-daemon`, recreate a running test terminal, and verify Web Control + Hub + daemon are online for immediate user inspection.
+- 范围：`docs/remote-rebuild/WORKFLOW.md`, `docs/remote-rebuild/RUNBOOK.md`, temporary public-host daemon process under `/tmp/termx-devstack/public-daemon`; no product code unless a new bug appears.
+- 非目标：do not implement production daemon credential renewal in this slice; do not change WebRTC runtime; do not modify SSH config/firewall/iptables/systemd/TLS/DNS; do not issue TURN credentials.
+- 外部依赖：temporary SSH to `root@114.66.58.243`; no real external provider.
+- mock 策略：use existing devstack smoke account, SQLite, and local generated secrets; production long-lived daemon auth remains deferred.
+- 先写的失败测试：operational check: `termx remote status --json` on the public daemon returned `remote.state=degraded` with `invalid_token`.
+- 预期失败结果：the old access token should be rejected after expiry until the daemon is restarted with a freshly issued token.
+- 实际失败结果：confirmed: public daemon reported `register device in control: request failed: 401 invalid_token`.
+- 实现摘要：logged in with the current devstack smoke account, wrote a fresh access token to `/tmp/termx-devstack-build/access-token-public-daemon`, stopped only the old public daemon pid `3349076`, restarted the daemon with the same `/tmp/termx-devstack/public-daemon/termx.yaml` and new token as pid `3355324`, and recreated terminal `1` named `public-host-smoke`.
+- 重构摘要：no code change; operational refresh only.
+- 运行命令：`curl`/Python login to `POST /api/v1/auth/login`; `ssh root@114.66.58.243 'kill $(cat /tmp/termx-devstack/public-daemon/termx-daemon.pid) ... nohup /tmp/termx-devstack/bin/termx --config /tmp/termx-devstack/public-daemon/termx.yaml daemon ...'`; `ssh root@114.66.58.243 '/tmp/termx-devstack/bin/termx --socket /tmp/termx-devstack/public-daemon/termx.sock ... new --name public-host-smoke -- bash -lc "while true; do sleep 60; done"'`; `curl /api/devices`; `curl /api/terminals`; Hub debug agents.
+- 测试结果：public daemon reports `remote.state=online`, pid `3355324`, `terminal_count=1`; Web Control inventory returns `device-8bce73b2996907df` and terminal `1` as `running`; Hub debug has a current public agent session with no `last_error`; local port `18991` has no leftover tunnel.
+- subagent review：self-review; no product code changed after the reviewed Slice `11-C-B` commit hash update.
+- review 发现：the temporary daemon will degrade again after the skeleton 15-minute access token expires; this is already a deferred production credential-renewal risk, not a runtime/signaling failure.
+- review 后修复：recorded the limitation and refreshed the temporary token for immediate user inspection.
+- 新增派生条目：none.
+- deferred human items：production daemon credential refresh/rotation remains a future product slice.
+- 剩余风险：because access tokens are currently 15-minute credentials, this temporary daemon can degrade again until a real daemon renewal flow is implemented.
+- 下一步：commit the `11-C-C` workflow/runbook record, then report verification steps to the user.
+- commit：pending
+
 ## Historical P2/P3 Records
 
 The entries below predate the current Remote Web / Hub / Agent Buildout. They are retained for traceability but are no longer the active todo tree.
@@ -3479,6 +3506,6 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Run final workflow/diff validation.
-2. Commit the docs plus duplicate-terminal registration fix.
-3. Update the Slice `11-C` commit hash in `WORKFLOW.md`, then report the public-host daemon state/e2e result to the user.
+1. Commit the `11-C-C` workflow/runbook record.
+2. Report the public-host daemon state, Web Control URL, machine/terminal IDs, and managed e2e result to the user.
+3. Keep `11-C-C` token-expiry risk visible as the next real product hardening item.
