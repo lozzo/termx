@@ -6,7 +6,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `18` stateless Hub policy / dev-free managed relay.
-- Last updated: 2026-05-03T19:37:00+08:00.
+- Last updated: 2026-05-03T19:41:00+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -138,7 +138,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 17 | daemon-login-hub-select | Implement token/password/device-code daemon login and Hub discovery/selection | completed | `755641be` |
 | 17-A | daemon-hub-selection-policy | Add production Hub selection policy using region/health/capacity/expiry/weights | pending |  |
 | 17-B | external | Defer production OAuth/email/SMS and secure OS keychain/secret storage for CLI/device login | deferred_external |  |
-| 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | completed | pending hash |
+| 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | completed | `54aac488` |
 | 19 | native-app-rtc-seam | Add native APP `RtcSession` seam without WebRTC type leakage | pending |  |
 | 20 | app-devstack-e2e | Validate APP shell / Web Control / stateless Hub / daemon closed loop | pending |  |
 
@@ -360,7 +360,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - deferred human items：production TURN/DNS/TLS/firewall/cloud account and billing/entitlement providers remain deferred external.
 - 剩余风险：production TURN public DNS/TLS/firewall/cloud deployment still deferred; production entitlement/billing provider remains deferred; managed relay sessions are now capability/ICE enabled for dev but full end-to-end accounting heartbeat through Hub/Web Control should be exercised in Slice 20.
 - 下一步：commit and hash backfill, then continue Slice `19`.
-- commit：pending hash
+- commit：`54aac488`
 
 ## Deferred External / Human Items
 
