@@ -238,6 +238,7 @@ func TestRemoteConfigFromEnv(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_ACCESS_TOKEN", "secret")
 	t.Setenv("TERMX_REMOTE_DATA_DIR", "/tmp/termx-remote")
 	t.Setenv("TERMX_REMOTE_DEVICE_NAME", "device-a")
+	t.Setenv("TERMX_REMOTE_REGION", "sin")
 
 	cfg := remoteConfigFromEnv()
 	if !cfg.Enabled {
@@ -257,6 +258,9 @@ func TestRemoteConfigFromEnv(t *testing.T) {
 	}
 	if cfg.DeviceName != "device-a" {
 		t.Fatalf("unexpected device name: %q", cfg.DeviceName)
+	}
+	if cfg.Region != "sin" {
+		t.Fatalf("unexpected region: %q", cfg.Region)
 	}
 }
 
@@ -280,6 +284,7 @@ func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
   accessToken: should-not-be-used
   dataDir: /tmp/termx-remote-file
   deviceName: file-device
+  region: fra
 `
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile returned error: %v", err)
@@ -311,6 +316,9 @@ func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
 	if cfg.DeviceName != "file-device" {
 		t.Fatalf("unexpected device name: %q", cfg.DeviceName)
 	}
+	if cfg.Region != "fra" {
+		t.Fatalf("unexpected region: %q", cfg.Region)
+	}
 }
 
 func TestRemoteConfigEnvOverridesFile(t *testing.T) {
@@ -332,6 +340,7 @@ func TestRemoteConfigEnvOverridesFile(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_ACCESS_TOKEN", "env-secret")
 	t.Setenv("TERMX_REMOTE_DATA_DIR", "/tmp/termx-remote-env")
 	t.Setenv("TERMX_REMOTE_DEVICE_NAME", "env-device")
+	t.Setenv("TERMX_REMOTE_REGION", "sin")
 
 	cfg, err := remoteConfigFromFileAndEnv(configPath)
 	if err != nil {
@@ -351,6 +360,40 @@ func TestRemoteConfigEnvOverridesFile(t *testing.T) {
 	}
 	if cfg.DeviceName != "env-device" {
 		t.Fatalf("expected env device name override, got %q", cfg.DeviceName)
+	}
+	if cfg.Region != "sin" {
+		t.Fatalf("expected env region override, got %q", cfg.Region)
+	}
+}
+
+func TestRemoteConfigIgnoresLegacyAuthStoreHubURL(t *testing.T) {
+	configDir := t.TempDir()
+	authStore := filepath.Join(configDir, "remote-auth.json")
+	if err := saveRemoteAuthRecord(authStore, remoteAuthRecord{
+		ControlURL:  "https://control-auth.example.test",
+		HubURL:      "https://legacy-hub-auth.example.test",
+		AccessToken: "auth-secret",
+	}); err != nil {
+		t.Fatalf("save auth record: %v", err)
+	}
+	configPath := filepath.Join(configDir, "termx.yaml")
+	content := `remote:
+  enabled: true
+  authStore: ` + authStore + `
+`
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	cfg, err := remoteConfigFromFileAndEnv(configPath)
+	if err != nil {
+		t.Fatalf("remoteConfigFromFileAndEnv returned error: %v", err)
+	}
+	if cfg.ControlURL != "https://control-auth.example.test" || cfg.AccessToken != "auth-secret" {
+		t.Fatalf("unexpected auth-store bootstrap: %#v", cfg)
+	}
+	if cfg.HubURL != "" {
+		t.Fatalf("legacy auth-store hub url bypassed discovery policy: %q", cfg.HubURL)
 	}
 }
 

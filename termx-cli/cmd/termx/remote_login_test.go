@@ -29,9 +29,6 @@ func TestRemoteLoginTokenPersistsBootstrapOutsideConfigFile(t *testing.T) {
 			validatedToken = token
 			return remoteLoginUser{Email: "cli-token@example.com"}, nil
 		},
-		hubsFunc: func(ctx context.Context, controlURL string, token string) ([]remoteLoginHub, error) {
-			return []remoteLoginHub{{ID: "hub_1", HTTPURL: "https://hub-1.termx.test"}}, nil
-		},
 	}
 
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
@@ -57,7 +54,7 @@ func TestRemoteLoginTokenPersistsBootstrapOutsideConfigFile(t *testing.T) {
 		t.Fatalf("remoteConfigFromFileAndEnv returned error: %v", err)
 	}
 	if !cfg.Enabled || cfg.ControlURL != "https://control.example.test" || cfg.AccessToken != "access-secret" ||
-		cfg.HubURL != "https://hub-1.termx.test" {
+		cfg.HubURL != "" {
 		t.Fatalf("unexpected loaded remote config after login: %#v", cfg)
 	}
 }
@@ -164,7 +161,6 @@ func TestRemoteLoginDoesNotPersistMachinePrivateKey(t *testing.T) {
 
 type remoteLoginHTTPClientFunc struct {
 	meFunc               func(context.Context, string, string) (remoteLoginUser, error)
-	hubsFunc             func(context.Context, string, string) ([]remoteLoginHub, error)
 	loginFunc            func(context.Context, string, string, string) (remoteLoginAuthResult, error)
 	createDeviceCodeFunc func(context.Context, string, string) (remoteDeviceCodeResult, error)
 	pollDeviceCodeFunc   func(context.Context, string, string) (remoteLoginAuthResult, bool, error)
@@ -196,13 +192,6 @@ func (f remoteLoginHTTPClientFunc) PollDeviceCode(ctx context.Context, controlUR
 		return remoteLoginAuthResult{}, false, nil
 	}
 	return f.pollDeviceCodeFunc(ctx, controlURL, deviceCode)
-}
-
-func (f remoteLoginHTTPClientFunc) DiscoverHubs(ctx context.Context, controlURL string, token string) ([]remoteLoginHub, error) {
-	if f.hubsFunc == nil {
-		return nil, nil
-	}
-	return f.hubsFunc(ctx, controlURL, token)
 }
 
 var _ = termx.RemoteConfig{}

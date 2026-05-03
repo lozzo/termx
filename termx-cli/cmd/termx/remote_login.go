@@ -21,7 +21,6 @@ type remoteLoginClient interface {
 	Login(context.Context, string, string, string) (remoteLoginAuthResult, error)
 	CreateDeviceCode(context.Context, string, string) (remoteDeviceCodeResult, error)
 	PollDeviceCode(context.Context, string, string) (remoteLoginAuthResult, bool, error)
-	DiscoverHubs(context.Context, string, string) ([]remoteLoginHub, error)
 }
 
 type remoteLoginUser struct {
@@ -32,11 +31,6 @@ type remoteLoginAuthResult struct {
 	User         remoteLoginUser `json:"user"`
 	AccessToken  string          `json:"access_token"`
 	RefreshToken string          `json:"refresh_token"`
-}
-
-type remoteLoginHub struct {
-	ID      string `json:"id"`
-	HTTPURL string `json:"http_url"`
 }
 
 type remoteDeviceCodeResult struct {
@@ -197,15 +191,6 @@ func remoteLoginDeviceCodeCommand(configPath *string) *cobra.Command {
 }
 
 func persistRemoteLogin(cmd *cobra.Command, configPath string, record remoteAuthRecord) error {
-	hubs, err := remoteLoginHTTPClient.DiscoverHubs(cmd.Context(), record.ControlURL, record.AccessToken)
-	if err == nil {
-		for _, hub := range hubs {
-			if strings.TrimSpace(hub.HTTPURL) != "" {
-				record.HubURL = strings.TrimSpace(hub.HTTPURL)
-				break
-			}
-		}
-	}
 	path, err := remoteAuthStorePath(configPath)
 	if err != nil {
 		return err
@@ -305,16 +290,6 @@ func (controlPlaneLoginClient) PollDeviceCode(ctx context.Context, controlURL st
 		return remoteLoginAuthResult{}, false, nil
 	}
 	return remoteLoginAuthResult{}, false, err
-}
-
-func (controlPlaneLoginClient) DiscoverHubs(ctx context.Context, controlURL string, token string) ([]remoteLoginHub, error) {
-	var out struct {
-		Hubs []remoteLoginHub `json:"hubs"`
-	}
-	if err := controlJSON(ctx, http.MethodGet, strings.TrimRight(controlURL, "/")+"/api/v1/hubs", nil, &out, token); err != nil {
-		return nil, err
-	}
-	return out.Hubs, nil
 }
 
 var errAuthorizationPending = errors.New("authorization pending")

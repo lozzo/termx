@@ -26,6 +26,7 @@ func TestHubReportDiscoverForceOfflineAndCleanup(t *testing.T) {
 		HTTPURL:  "https://hub-1.termx.test",
 		Status:   hubregistry.HubOnline,
 		Capacity: 42,
+		Weight:   7,
 		Health:   `{"cpu":0.20,"ok":true}`,
 		TTL:      time.Minute,
 		Agents: []hubregistry.AgentReport{{
@@ -46,7 +47,8 @@ func TestHubReportDiscoverForceOfflineAndCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("discover hubs: %v", err)
 	}
-	if len(hubs) != 1 || hubs[0].ID != "hub_1" || hubs[0].HTTPURL != "https://hub-1.termx.test" || hubs[0].Capacity != 42 {
+	if len(hubs) != 1 || hubs[0].ID != "hub_1" || hubs[0].HTTPURL != "https://hub-1.termx.test" ||
+		hubs[0].Capacity != 42 || hubs[0].Weight != 7 {
 		t.Fatalf("discovered hubs = %+v", hubs)
 	}
 

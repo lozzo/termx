@@ -25,6 +25,7 @@ func TestDiscoverHubsUsesBearerTokenAndReturnsHubList(t *testing.T) {
 				"http_url":   "https://hub-1.termx.test",
 				"status":     "online",
 				"capacity":   42,
+				"weight":     7,
 				"health":     `{"ok":true}`,
 				"expires_at": "2026-05-03T18:00:00Z",
 			}},
@@ -46,7 +47,7 @@ func TestDiscoverHubsUsesBearerTokenAndReturnsHubList(t *testing.T) {
 		t.Fatalf("expected one hub, got %+v", hubs)
 	}
 	if hubs[0].ID != "hub_1" || hubs[0].Region != "iad" || hubs[0].HTTPURL != "https://hub-1.termx.test" ||
-		hubs[0].Status != "online" || hubs[0].Capacity != 42 {
+		hubs[0].Status != "online" || hubs[0].Capacity != 42 || hubs[0].Weight != 7 {
 		t.Fatalf("unexpected hub payload: %+v", hubs[0])
 	}
 }

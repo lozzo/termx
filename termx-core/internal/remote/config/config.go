@@ -14,6 +14,7 @@ type Config struct {
 	AccessToken string
 	DataDir     string
 	DeviceName  string
+	Region      string
 }
 
 func Normalize(cfg Config) Config {
@@ -22,6 +23,7 @@ func Normalize(cfg Config) Config {
 	cfg.AccessToken = strings.TrimSpace(cfg.AccessToken)
 	cfg.DataDir = strings.TrimSpace(cfg.DataDir)
 	cfg.DeviceName = strings.TrimSpace(cfg.DeviceName)
+	cfg.Region = strings.TrimSpace(cfg.Region)
 
 	if cfg.DataDir == "" {
 		cfg.DataDir = DefaultDataDir()

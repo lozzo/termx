@@ -694,6 +694,7 @@ func handleHubReport(w http.ResponseWriter, r *http.Request, cfg Config) {
 		HTTPURL    string          `json:"http_url"`
 		Status     string          `json:"status"`
 		Capacity   int             `json:"capacity"`
+		Weight     int             `json:"weight"`
 		HealthJSON json.RawMessage `json:"health_json"`
 		TTLSeconds int64           `json:"ttl_seconds"`
 		Agents     []struct {
@@ -731,6 +732,7 @@ func handleHubReport(w http.ResponseWriter, r *http.Request, cfg Config) {
 		HTTPURL:  req.HTTPURL,
 		Status:   req.Status,
 		Capacity: req.Capacity,
+		Weight:   req.Weight,
 		Health:   string(req.HealthJSON),
 		TTL:      time.Duration(req.TTLSeconds) * time.Second,
 		Agents:   agents,

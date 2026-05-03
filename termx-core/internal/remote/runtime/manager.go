@@ -76,6 +76,7 @@ type Manager struct {
 	hubRTCServers    []hubv1.RTCIceServerConfig
 	signalingStarted bool
 	signalingCancel  context.CancelFunc
+	explicitHubURL   bool
 	answerer         managedOfferAnswerer
 	replay           *cert.ReplayWindow
 }
@@ -107,13 +108,14 @@ func (defaultManagedOfferAnswerer) AnswerOffer(
 func NewManager(cfg remoteconfig.Config, provider InventoryProvider, host bridge.TransportSink) *Manager {
 	cfg = remoteconfig.Normalize(cfg)
 	return &Manager{
-		cfg:      cfg,
-		provider: provider,
-		host:     host,
-		files:    fileapi.NewManager(),
-		answerer: defaultManagedOfferAnswerer{},
-		replay:   cert.NewReplayWindow(5 * time.Minute),
-		syncCh:   make(chan struct{}, 1),
+		cfg:            cfg,
+		provider:       provider,
+		host:           host,
+		files:          fileapi.NewManager(),
+		explicitHubURL: strings.TrimSpace(cfg.HubURL) != "",
+		answerer:       defaultManagedOfferAnswerer{},
+		replay:         cert.NewReplayWindow(5 * time.Minute),
+		syncCh:         make(chan struct{}, 1),
 		status: Status{
 			State:     StateDisabled,
 			Detail:    "remote runtime disabled",
@@ -271,10 +273,8 @@ func (m *Manager) reconcile(ctx context.Context) (State, string, error) {
 		if err := m.syncControlRegistration(ctx); err != nil {
 			return StateDegraded, "", err
 		}
-		if m.cfg.HubURL == "" {
-			if err := m.discoverHub(ctx); err != nil {
-				return StateDegraded, "", err
-			}
+		if err := m.discoverHub(ctx); err != nil {
+			return StateDegraded, "", err
 		}
 	}
 	if m.cfg.HubURL != "" {
@@ -299,24 +299,165 @@ func (m *Manager) discoverHub(ctx context.Context) error {
 	}
 	m.mu.RLock()
 	hubURL := m.cfg.HubURL
+	preferredRegion := m.cfg.Region
+	explicitHubURL := m.explicitHubURL
 	m.mu.RUnlock()
-	if strings.TrimSpace(hubURL) != "" {
+	if strings.TrimSpace(hubURL) != "" && explicitHubURL {
 		return nil
 	}
 	hubs, err := discovery.DiscoverHubs(ctx, m.cfg.ControlURL, m.cfg.AccessToken)
 	if err != nil {
 		return err
 	}
-	for _, hub := range hubs {
-		if strings.TrimSpace(hub.HTTPURL) == "" || strings.TrimSpace(hub.Status) != "online" {
-			continue
-		}
+	if hub, ok := selectDiscoveredHub(hubs, hubSelectionOptions{
+		PreferredRegion: preferredRegion,
+		Now:             time.Now().UTC(),
+	}); ok {
+		selectedURL := strings.TrimSpace(hub.HTTPURL)
 		m.mu.Lock()
-		m.cfg.HubURL = strings.TrimSpace(hub.HTTPURL)
+		if strings.TrimSpace(m.cfg.HubURL) != selectedURL {
+			m.stopHubSignalingLoopLocked()
+		}
+		m.cfg.HubURL = selectedURL
 		m.mu.Unlock()
-		return nil
 	}
 	return nil
+}
+
+func (m *Manager) stopHubSignalingLoopLocked() {
+	if m.signalingCancel != nil {
+		m.signalingCancel()
+		m.signalingCancel = nil
+	}
+	m.signalingStarted = false
+	m.hubSessionID = ""
+	m.hubRTCServers = nil
+}
+
+type hubSelectionOptions struct {
+	PreferredRegion string
+	Now             time.Time
+}
+
+func selectDiscoveredHub(hubs []discovery.Hub, opts hubSelectionOptions) (discovery.Hub, bool) {
+	now := opts.Now.UTC()
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	preferredRegion := strings.TrimSpace(opts.PreferredRegion)
+	var selected discovery.Hub
+	selectedSet := false
+	for _, hub := range hubs {
+		if !hubUsable(hub, now) {
+			continue
+		}
+		if !selectedSet || compareHubRank(hub, selected, preferredRegion, now) > 0 {
+			selected = hub
+			selectedSet = true
+		}
+	}
+	return selected, selectedSet
+}
+
+func hubUsable(hub discovery.Hub, now time.Time) bool {
+	if strings.TrimSpace(hub.HTTPURL) == "" || strings.TrimSpace(hub.Status) != "online" {
+		return false
+	}
+	if hub.Capacity <= 0 {
+		return false
+	}
+	if expiresAt, ok := parseHubExpiry(hub.ExpiresAt); ok && !expiresAt.After(now) {
+		return false
+	}
+	return hubHealthOK(hub.Health)
+}
+
+func compareHubRank(a discovery.Hub, b discovery.Hub, preferredRegion string, now time.Time) int {
+	if preferredRegion != "" {
+		aRegion := strings.TrimSpace(a.Region) == preferredRegion
+		bRegion := strings.TrimSpace(b.Region) == preferredRegion
+		if aRegion != bRegion {
+			if aRegion {
+				return 1
+			}
+			return -1
+		}
+	}
+	if a.Weight != b.Weight {
+		if a.Weight > b.Weight {
+			return 1
+		}
+		return -1
+	}
+	if a.Capacity != b.Capacity {
+		if a.Capacity > b.Capacity {
+			return 1
+		}
+		return -1
+	}
+	aExpiry, aHasExpiry := parseHubExpiry(a.ExpiresAt)
+	bExpiry, bHasExpiry := parseHubExpiry(b.ExpiresAt)
+	if aHasExpiry != bHasExpiry {
+		if aHasExpiry {
+			return 1
+		}
+		return -1
+	}
+	if aHasExpiry && !aExpiry.Equal(bExpiry) {
+		if aExpiry.After(bExpiry) && aExpiry.After(now) {
+			return 1
+		}
+		return -1
+	}
+	aID := strings.TrimSpace(a.ID)
+	bID := strings.TrimSpace(b.ID)
+	if aID < bID {
+		return 1
+	}
+	if aID > bID {
+		return -1
+	}
+	return 0
+}
+
+func parseHubExpiry(raw string) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		parsed, err := time.Parse(layout, raw)
+		if err == nil {
+			return parsed.UTC(), true
+		}
+	}
+	return time.Time{}, true
+}
+
+func hubHealthOK(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "{}" {
+		return true
+	}
+	var health map[string]any
+	if err := json.Unmarshal([]byte(raw), &health); err != nil {
+		return false
+	}
+	if ok, exists := health["ok"].(bool); exists {
+		return ok
+	}
+	if healthy, exists := health["healthy"].(bool); exists {
+		return healthy
+	}
+	if status, exists := health["status"].(string); exists {
+		switch strings.ToLower(strings.TrimSpace(status)) {
+		case "", "ok", "online", "healthy":
+			return true
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (m *Manager) syncControlRegistration(ctx context.Context) error {

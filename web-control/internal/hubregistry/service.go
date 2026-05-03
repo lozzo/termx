@@ -72,18 +72,19 @@ func (s *Service) ReportHub(ctx context.Context, in ReportHubInput) (ReportHubRe
 		}
 	}()
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO hubs(id, region, http_url, status, capacity, health_json, last_heartbeat_at, expires_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO hubs(id, region, http_url, status, capacity, weight, health_json, last_heartbeat_at, expires_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			region = excluded.region,
 			http_url = excluded.http_url,
 			status = excluded.status,
 			capacity = excluded.capacity,
+			weight = excluded.weight,
 			health_json = excluded.health_json,
 			last_heartbeat_at = excluded.last_heartbeat_at,
 			expires_at = excluded.expires_at,
 			updated_at = excluded.updated_at
-	`, hubID, region, httpURL, status, in.Capacity, strings.TrimSpace(in.Health), formatTime(now), formatTime(expiresAt), formatTime(now), formatTime(now)); err != nil {
+	`, hubID, region, httpURL, status, in.Capacity, in.Weight, strings.TrimSpace(in.Health), formatTime(now), formatTime(expiresAt), formatTime(now), formatTime(now)); err != nil {
 		return ReportHubResult{}, fmt.Errorf("upsert hub report: %w", err)
 	}
 	policies := make([]AgentPolicy, 0, len(in.Agents))
@@ -127,6 +128,7 @@ func (s *Service) ReportHub(ctx context.Context, in ReportHubInput) (ReportHubRe
 			HTTPURL:         httpURL,
 			Status:          status,
 			Capacity:        in.Capacity,
+			Weight:          in.Weight,
 			Health:          strings.TrimSpace(in.Health),
 			LastHeartbeatAt: now,
 			ExpiresAt:       expiresAt,
@@ -144,7 +146,7 @@ func (s *Service) DiscoverHubs(ctx context.Context, in DiscoverHubsInput) ([]Hub
 		now = s.clock.Now().UTC()
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, region, http_url, status, capacity, health_json, last_heartbeat_at, expires_at
+		SELECT id, region, http_url, status, capacity, weight, health_json, last_heartbeat_at, expires_at
 		FROM hubs
 		WHERE status = ? AND expires_at > ?
 		ORDER BY region, id
@@ -259,7 +261,7 @@ type hubScanner interface {
 func scanHub(row hubScanner) (Hub, error) {
 	var hub Hub
 	var lastHeartbeat, expiresAt string
-	if err := row.Scan(&hub.ID, &hub.Region, &hub.HTTPURL, &hub.Status, &hub.Capacity, &hub.Health, &lastHeartbeat, &expiresAt); err != nil {
+	if err := row.Scan(&hub.ID, &hub.Region, &hub.HTTPURL, &hub.Status, &hub.Capacity, &hub.Weight, &hub.Health, &lastHeartbeat, &expiresAt); err != nil {
 		return Hub{}, err
 	}
 	var err error

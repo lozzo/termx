@@ -52,6 +52,7 @@ type Hub struct {
 	HTTPURL   string `json:"http_url"`
 	Status    string `json:"status"`
 	Capacity  int    `json:"capacity"`
+	Weight    int    `json:"weight"`
 	Health    string `json:"health,omitempty"`
 	ExpiresAt string `json:"expires_at,omitempty"`
 }

@@ -25,6 +25,7 @@ type Hub struct {
 	HTTPURL         string    `json:"http_url"`
 	Status          string    `json:"status"`
 	Capacity        int       `json:"capacity"`
+	Weight          int       `json:"weight"`
 	Health          string    `json:"health"`
 	LastHeartbeatAt time.Time `json:"last_heartbeat_at"`
 	ExpiresAt       time.Time `json:"expires_at"`
@@ -50,6 +51,7 @@ type ReportHubInput struct {
 	HTTPURL  string
 	Status   string
 	Capacity int
+	Weight   int
 	Health   string
 	TTL      time.Duration
 	Agents   []AgentReport

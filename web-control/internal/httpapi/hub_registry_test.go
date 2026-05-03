@@ -69,6 +69,7 @@ func TestHubReportDiscoverAndForceOfflineHTTP(t *testing.T) {
 		"http_url":    "https://hub-1.termx.test",
 		"status":      "online",
 		"capacity":    42,
+		"weight":      7,
 		"health_json": map[string]any{"ok": true},
 		"ttl_seconds": 60,
 		"agents": []map[string]any{{
@@ -102,11 +103,13 @@ func TestHubReportDiscoverAndForceOfflineHTTP(t *testing.T) {
 			ID       string `json:"id"`
 			HTTPURL  string `json:"http_url"`
 			Capacity int    `json:"capacity"`
+			Weight   int    `json:"weight"`
 		} `json:"hubs"`
 	}
 	decodeJSON(t, discover, &discovered)
 	if len(discovered.Hubs) != 1 || discovered.Hubs[0].ID != "hub_1" ||
-		discovered.Hubs[0].HTTPURL != "https://hub-1.termx.test" || discovered.Hubs[0].Capacity != 42 {
+		discovered.Hubs[0].HTTPURL != "https://hub-1.termx.test" ||
+		discovered.Hubs[0].Capacity != 42 || discovered.Hubs[0].Weight != 7 {
 		t.Fatalf("discovered hubs = %+v", discovered.Hubs)
 	}
 

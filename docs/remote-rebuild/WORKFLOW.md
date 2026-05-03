@@ -5,8 +5,8 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `20` APP/devstack e2e.
-- Last updated: 2026-05-03T21:01:00+08:00.
+- Active todo: `17-A` daemon Hub selection policy.
+- Last updated: 2026-05-03T20:23:06+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -136,7 +136,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 16-A | hub-force-offline-agent-scope | Keep force-offline scoped to one agent without blocking other online agents for the same machine | resolved | `163c3ee2` |
 | 16-B | hub-agent-session-bounds | Add TTL cleanup/max bounds to Hub HTTP agent session maps used by policy checks | resolved | `163c3ee2` |
 | 17 | daemon-login-hub-select | Implement token/password/device-code daemon login and Hub discovery/selection | completed | `755641be` |
-| 17-A | daemon-hub-selection-policy | Add production Hub selection policy using region/health/capacity/expiry/weights | pending |  |
+| 17-A | daemon-hub-selection-policy | Add production Hub selection policy using region/health/capacity/expiry/weights | in_progress |  |
 | 17-B | external | Defer production OAuth/email/SMS and secure OS keychain/secret storage for CLI/device login | deferred_external |  |
 | 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | completed | `54aac488` |
 | 19 | native-app-rtc-seam | Add native APP `RtcSession` seam without WebRTC type leakage | completed | `119a42e9` |
@@ -412,6 +412,32 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - 下一步：hash backfill, then continue next pending remote rebuild todo.
 - commit：`41d7869c`
 
+### 17-A Daemon Hub Selection Policy
+
+- 状态：in_progress
+- 父条目：17
+- 来源：Slice 17 review found daemon Hub selection still chooses the first online Hub and does not apply expiry/health/capacity/region/weight policy.
+- 目标：make daemon Hub selection production-shaped: filter expired/offline/unhealthy/zero-capacity hubs, prefer requested/daemon region when available, and rank by health/capacity/weight without introducing terminal runtime HTTP.
+- 范围：`termx-core/internal/remote/discovery` / runtime selection code and tests; `web-control/internal/hubregistry` / `httpapi` / SQLite migration for durable `weight`; `termx-cli` remote config/bootstrap region handling; `WORKFLOW.md`.
+- 非目标：real geo DNS, cloud load balancer, persistent Hub state in `termx-hub`, terminal/file/api/events runtime changes, full Hub telemetry reporter.
+- 外部依赖：real region mapping / cloud capacity telemetry remains deferred external; use provider fields already returned by Web Control where present.
+- mock 策略：service/client tests use static hub records through discovery/registry interfaces; no fake terminal runtime. Hub weight ingestion is covered at Web Control registry/API boundary and remains provider-shaped for future Hub telemetry.
+- 只读探索：core daemon currently selects the first hub whose `http_url` is non-empty and `status == online`; `DiscoverHubs` parses region/capacity/health/expires_at but not weight. Web Control hub registry stores/returns region/capacity/health/expires_at, but has no `weight` column/API field. No existing daemon preferred-region config field was found in env/file config.
+- 先写的失败测试：added Web Control hub registry/httpapi/discovery-client assertions for `weight`; added core runtime selection tests covering expired/offline/unhealthy/zero-capacity filtering, preferred-region ranking, and weight/capacity fallback. Next add CLI region/bootstrap tests so login does not freeze the first discovered HubURL.
+- 预期失败结果：focused tests failed as expected: missing `weight` fields/column/API response; missing `selectDiscoveredHub` and selector options.
+- 实现摘要：Web Control hub registry now persists and returns `weight` through SQLite migration, service model, report HTTP request, and `/api/v1/hubs` discovery response. Core discovery parses `weight`; daemon selection now filters missing URL/offline/expired/unhealthy/zero-capacity hubs and ranks preferred region first, then weight, capacity, later expiry, stable ID. CLI remote config now reads optional `region` from env/file, login no longer freezes the first discovered HubURL into config, and legacy auth-store `hub_url` no longer bypasses runtime discovery.
+- 重构摘要：selection logic is kept in core runtime helper functions with deterministic tests; health parsing remains JSON-only and fail-closed for malformed health; explicit `remote.hubURL` remains a manual override, while discovery-selected Hub URLs are re-evaluated on later reconcile and stop the old signaling loop when switching. Hub remains stateless with no DB or durable source of truth.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/store ./internal/hubregistry ./internal/httpapi -run 'TestOpenAndMigrateSQLiteCreatesCoreTables|TestMigrateUpgradesMachineClaimTokenSchema|TestHubReportDiscoverForceOfflineAndCleanup|TestHubReportDiscoverAndForceOfflineHTTP'`; `cd termx-core && GOWORK=off go test ./internal/remote/discovery ./internal/remote/runtime -run 'TestDiscoverHubsUsesBearerTokenAndReturnsHubList|TestManagerReevaluatesDiscoveredHubOnReconcile|TestManagerDiscoversHubUsingRegionAndWeightPolicy|TestSelectDiscoveredHub|TestManagerDiscoversAndSelectsHubAfterControlRegistration'`; `cd termx-cli && GOWORK=off go test ./cmd/termx -run 'TestRemoteConfigFromEnv|TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken|TestRemoteConfigEnvOverridesFile|TestRemoteConfigIgnoresLegacyAuthStoreHubURL|TestRemoteLoginTokenPersistsBootstrapOutsideConfigFile'`; `cd termx-core && GOWORK=off go test ./...`; `cd web-control && GOWORK=off go test ./...`; `cd termx-cli && GOWORK=off go test ./...`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`.
+- 测试结果：focused tests failed first as expected on missing `weight` field/column/API and missing selector helper. Review regression tests then failed as expected for pinned discovered Hub and legacy auth-store `hub_url`; after fixes all focused tests passed. Broader `termx-core`, `web-control`, and `termx-cli` package tests passed; workflow guard and diff check passed.
+- subagent review：`Euler` (`019dedc1-e2e3-7071-bc80-5171eeea7a7d`) reviewed Slice 17-A.
+- review 发现：discovery-selected Hub was pinned forever and not re-evaluated after expiry/health/capacity changes; legacy auth-store `hub_url` bypassed the new selection policy; workflow next action was stale.
+- review 后修复：added failing tests for post-selection rediscovery and legacy auth-store bypass; reworked manager to distinguish explicit HubURL override from discovery-selected HubURL, reselect discovered Hubs on reconcile, stop old signaling loop on switch, and ignore legacy auth-store `hub_url`; refreshed workflow next action.
+- 新增派生条目：none yet.
+- deferred human items：production geo/region source and cloud capacity telemetry remain deferred external.
+- 剩余风险：real production region mapping and dynamic Hub capacity/weight telemetry source remain deferred external.
+- 下一步：commit Slice `17-A`, hash backfill, then continue next pending remote rebuild todo.
+- commit：
+
 ## Deferred External / Human Items
 
 - Real payment/subscription/invoice/tax/fraud integrations remain `deferred_external` behind provider interfaces.
@@ -421,5 +447,5 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ## Next Exact Action
 
-1. Continue Slice `20`: run final validation (`remote-ui` focused/full/typecheck/build, workflow guard, diff check).
-2. Commit Slice `20` files only and record hash back into `WORKFLOW.md`.
+1. Commit Slice `17-A` files only and record the hash in this workflow.
+2. Continue the next pending remote rebuild todo after hash backfill.

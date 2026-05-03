@@ -182,6 +182,7 @@ var migrationStatements = []string{
 		http_url TEXT NOT NULL,
 		status TEXT NOT NULL,
 		capacity INTEGER NOT NULL DEFAULT 0,
+		weight INTEGER NOT NULL DEFAULT 0,
 		health_json TEXT NOT NULL DEFAULT '{}',
 		last_heartbeat_at TEXT,
 		expires_at TEXT NOT NULL DEFAULT '',
@@ -338,6 +339,7 @@ func ensureHubRegistrySchema(ctx context.Context, tx *sql.Tx) error {
 	}{
 		{name: "health_json", stmt: `ALTER TABLE hubs ADD COLUMN health_json TEXT NOT NULL DEFAULT '{}'`},
 		{name: "expires_at", stmt: `ALTER TABLE hubs ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''`},
+		{name: "weight", stmt: `ALTER TABLE hubs ADD COLUMN weight INTEGER NOT NULL DEFAULT 0`},
 		{name: "updated_at", stmt: `ALTER TABLE hubs ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`},
 	} {
 		exists, err := columnExists(ctx, tx, "hubs", column.name)

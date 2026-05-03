@@ -94,6 +94,7 @@ func NewServer(opts ...ServerOption) *Server {
 		AccessToken: cfg.remoteConfig.AccessToken,
 		DataDir:     cfg.remoteConfig.DataDir,
 		DeviceName:  cfg.remoteConfig.DeviceName,
+		Region:      cfg.remoteConfig.Region,
 	}), remoteInventoryProvider{server: srv}, remoteInventoryProvider{server: srv})
 	_ = srv.remoteManager.Start(context.Background())
 	return srv

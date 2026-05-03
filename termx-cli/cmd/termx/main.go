@@ -781,8 +781,9 @@ func remoteConfigFromEnv() termx.RemoteConfig {
 		AccessToken: strings.TrimSpace(os.Getenv("TERMX_REMOTE_ACCESS_TOKEN")),
 		DataDir:     strings.TrimSpace(os.Getenv("TERMX_REMOTE_DATA_DIR")),
 		DeviceName:  strings.TrimSpace(os.Getenv("TERMX_REMOTE_DEVICE_NAME")),
+		Region:      strings.TrimSpace(os.Getenv("TERMX_REMOTE_REGION")),
 	}
-	if !enabledSet && !cfg.Enabled && (cfg.ControlURL != "" || cfg.HubURL != "" || cfg.AccessToken != "" || cfg.DataDir != "" || cfg.DeviceName != "") {
+	if !enabledSet && !cfg.Enabled && (cfg.ControlURL != "" || cfg.HubURL != "" || cfg.AccessToken != "" || cfg.DataDir != "" || cfg.DeviceName != "" || cfg.Region != "") {
 		cfg.Enabled = true
 	}
 	return cfg
@@ -813,7 +814,10 @@ func remoteConfigFromFileAndEnv(path string) (termx.RemoteConfig, error) {
 	if envCfg.DeviceName != "" {
 		cfg.DeviceName = envCfg.DeviceName
 	}
-	if !envEnabledSet && !fileEnabledSet && !cfg.Enabled && (cfg.ControlURL != "" || cfg.HubURL != "" || cfg.AccessToken != "" || cfg.DataDir != "" || cfg.DeviceName != "") {
+	if envCfg.Region != "" {
+		cfg.Region = envCfg.Region
+	}
+	if !envEnabledSet && !fileEnabledSet && !cfg.Enabled && (cfg.ControlURL != "" || cfg.HubURL != "" || cfg.AccessToken != "" || cfg.DataDir != "" || cfg.DeviceName != "" || cfg.Region != "") {
 		cfg.Enabled = true
 	}
 	return cfg, nil
@@ -849,6 +853,7 @@ func loadRemoteConfigFromFile(path string) (termx.RemoteConfig, bool, error) {
 		HubURL:     strings.TrimSpace(values["hubURL"]),
 		DataDir:    strings.TrimSpace(values["dataDir"]),
 		DeviceName: strings.TrimSpace(values["deviceName"]),
+		Region:     strings.TrimSpace(values["region"]),
 	}
 	if authStore := strings.TrimSpace(values["authStore"]); authStore != "" {
 		record, err := loadRemoteAuthRecord(authStore)
@@ -858,15 +863,12 @@ func loadRemoteConfigFromFile(path string) (termx.RemoteConfig, bool, error) {
 		if cfg.ControlURL == "" {
 			cfg.ControlURL = record.ControlURL
 		}
-		if cfg.HubURL == "" {
-			cfg.HubURL = record.HubURL
-		}
 		cfg.AccessToken = record.AccessToken
 	}
 	if tokenEnv := strings.TrimSpace(values["accessTokenEnv"]); tokenEnv != "" {
 		cfg.AccessToken = strings.TrimSpace(os.Getenv(tokenEnv))
 	}
-	if !enabledSet && !cfg.Enabled && (cfg.ControlURL != "" || cfg.HubURL != "" || cfg.AccessToken != "" || cfg.DataDir != "" || cfg.DeviceName != "") {
+	if !enabledSet && !cfg.Enabled && (cfg.ControlURL != "" || cfg.HubURL != "" || cfg.AccessToken != "" || cfg.DataDir != "" || cfg.DeviceName != "" || cfg.Region != "") {
 		cfg.Enabled = true
 	}
 	return cfg, enabledSet, nil

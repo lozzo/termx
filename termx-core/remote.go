@@ -32,6 +32,7 @@ type RemoteConfig struct {
 	AccessToken string
 	DataDir     string
 	DeviceName  string
+	Region      string
 }
 
 type RemoteStatus struct {
@@ -165,6 +166,7 @@ func newRemoteManager(cfg RemoteConfig, provider remoteruntime.InventoryProvider
 		AccessToken: cfg.AccessToken,
 		DataDir:     cfg.DataDir,
 		DeviceName:  cfg.DeviceName,
+		Region:      cfg.Region,
 	}, provider, host)
 }
 

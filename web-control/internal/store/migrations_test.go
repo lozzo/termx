@@ -48,6 +48,7 @@ func TestOpenAndMigrateSQLiteCreatesCoreTables(t *testing.T) {
 	} {
 		assertTableExists(t, db, table)
 	}
+	assertColumnExists(t, db, "hubs", "weight")
 }
 
 func TestMigrateUpgradesSlice1SubscriptionSchema(t *testing.T) {
@@ -98,6 +99,7 @@ func TestMigrateUpgradesMachineClaimTokenSchema(t *testing.T) {
 	assertTableExists(t, db, "machine_terminals")
 	assertColumnExists(t, db, "hubs", "health_json")
 	assertColumnExists(t, db, "hubs", "expires_at")
+	assertColumnExists(t, db, "hubs", "weight")
 	assertTableExists(t, db, "hub_agents")
 	assertTableExists(t, db, "hub_agent_policies")
 }
