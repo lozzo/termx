@@ -5,8 +5,8 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `17-A` daemon Hub selection policy.
-- Last updated: 2026-05-03T20:23:06+08:00.
+- Active todo: select next pending remote rebuild todo.
+- Last updated: 2026-05-03T20:24:34+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -136,7 +136,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 16-A | hub-force-offline-agent-scope | Keep force-offline scoped to one agent without blocking other online agents for the same machine | resolved | `163c3ee2` |
 | 16-B | hub-agent-session-bounds | Add TTL cleanup/max bounds to Hub HTTP agent session maps used by policy checks | resolved | `163c3ee2` |
 | 17 | daemon-login-hub-select | Implement token/password/device-code daemon login and Hub discovery/selection | completed | `755641be` |
-| 17-A | daemon-hub-selection-policy | Add production Hub selection policy using region/health/capacity/expiry/weights | in_progress |  |
+| 17-A | daemon-hub-selection-policy | Add production Hub selection policy using region/health/capacity/expiry/weights | completed | `07eb0bbb` |
 | 17-B | external | Defer production OAuth/email/SMS and secure OS keychain/secret storage for CLI/device login | deferred_external |  |
 | 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | completed | `54aac488` |
 | 19 | native-app-rtc-seam | Add native APP `RtcSession` seam without WebRTC type leakage | completed | `119a42e9` |
@@ -414,7 +414,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ### 17-A Daemon Hub Selection Policy
 
-- 状态：in_progress
+- 状态：completed
 - 父条目：17
 - 来源：Slice 17 review found daemon Hub selection still chooses the first online Hub and does not apply expiry/health/capacity/region/weight policy.
 - 目标：make daemon Hub selection production-shaped: filter expired/offline/unhealthy/zero-capacity hubs, prefer requested/daemon region when available, and rank by health/capacity/weight without introducing terminal runtime HTTP.
@@ -435,8 +435,8 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - 新增派生条目：none yet.
 - deferred human items：production geo/region source and cloud capacity telemetry remain deferred external.
 - 剩余风险：real production region mapping and dynamic Hub capacity/weight telemetry source remain deferred external.
-- 下一步：commit Slice `17-A`, hash backfill, then continue next pending remote rebuild todo.
-- commit：
+- 下一步：continue next pending remote rebuild todo.
+- commit：`07eb0bbb`
 
 ## Deferred External / Human Items
 
@@ -447,5 +447,4 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ## Next Exact Action
 
-1. Commit Slice `17-A` files only and record the hash in this workflow.
-2. Continue the next pending remote rebuild todo after hash backfill.
+1. Select the next pending remote rebuild todo from the ordered table, update this workflow, then run that slice TDD-first.
