@@ -6,7 +6,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `20` APP/devstack e2e.
-- Last updated: 2026-05-03T20:59:00+08:00.
+- Last updated: 2026-05-03T21:01:00+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -140,7 +140,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 17-B | external | Defer production OAuth/email/SMS and secure OS keychain/secret storage for CLI/device login | deferred_external |  |
 | 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | completed | `54aac488` |
 | 19 | native-app-rtc-seam | Add native APP `RtcSession` seam without WebRTC type leakage | completed | `119a42e9` |
-| 20 | app-devstack-e2e | Validate APP shell / Web Control / stateless Hub / daemon closed loop | completed |  |
+| 20 | app-devstack-e2e | Validate APP shell / Web Control / stateless Hub / daemon closed loop | completed | `41d7869c` |
 
 ## Compressed Completed Slice Summary
 
@@ -410,7 +410,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - deferred human items：production DNS/TLS/TURN/app-store signing remain deferred external.
 - 剩余风险：public devstack tokens can expire again; production DNS/TLS/TURN/systemd/app-store signing remain deferred external.
 - 下一步：hash backfill, then continue next pending remote rebuild todo.
-- commit：
+- commit：`41d7869c`
 
 ## Deferred External / Human Items
 
