@@ -21,14 +21,15 @@ type DeviceRegistrationTerminal struct {
 }
 
 type DeviceRegistrationRequest struct {
-	DeviceID    string                       `json:"deviceId"`
-	DisplayName string                       `json:"displayName"`
-	Hostname    string                       `json:"hostname"`
-	Platform    string                       `json:"platform"`
-	State       string                       `json:"state,omitempty"`
-	HubID       string                       `json:"hubId,omitempty"`
-	Labels      []string                     `json:"labels,omitempty"`
-	Terminals   []DeviceRegistrationTerminal `json:"terminals,omitempty"`
+	DeviceID         string                       `json:"deviceId"`
+	MachinePublicKey string                       `json:"machinePublicKey,omitempty"`
+	DisplayName      string                       `json:"displayName"`
+	Hostname         string                       `json:"hostname"`
+	Platform         string                       `json:"platform"`
+	State            string                       `json:"state,omitempty"`
+	HubID            string                       `json:"hubId,omitempty"`
+	Labels           []string                     `json:"labels,omitempty"`
+	Terminals        []DeviceRegistrationTerminal `json:"terminals,omitempty"`
 }
 
 func RegisterDevice(ctx context.Context, baseURL, token string, payload DeviceRegistrationRequest) error {

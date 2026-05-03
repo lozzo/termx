@@ -128,6 +128,44 @@ func TestManagedTicketIsSingleUse(t *testing.T) {
 	}
 }
 
+func TestManagedTicketCheckDoesNotConsumeBeforeHubOfferPreflight(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db := openTestDB(t, "file:termx-connect-ticket-check?mode=memory&cache=shared")
+	clock := &mutableClock{value: time.Date(2026, 5, 3, 11, 52, 0, 0, time.UTC)}
+	svc := connect.NewService(connect.Config{DB: db, Clock: clock})
+	seedUserAndMachine(t, ctx, db, "usr_owner", "mach_1")
+
+	ticket, err := svc.CreateManagedTicket(ctx, connect.CreateManagedTicketInput{
+		UserID:     "usr_owner",
+		MachineID:  "mach_1",
+		TerminalID: "term_1",
+		TTL:        time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+	checked, err := svc.CheckManagedTicket(ctx, connect.VerifyManagedTicketInput{
+		TicketID:   ticket.ID,
+		MachineID:  "mach_1",
+		TerminalID: "term_1",
+	})
+	if err != nil {
+		t.Fatalf("check ticket: %v", err)
+	}
+	if checked.ID != ticket.ID || checked.TerminalID != "term_1" || checked.Path != connect.PathManaged {
+		t.Fatalf("checked ticket = %+v", checked)
+	}
+	if _, err := svc.VerifyManagedTicket(ctx, connect.VerifyManagedTicketInput{
+		TicketID:   ticket.ID,
+		MachineID:  "mach_1",
+		TerminalID: "term_1",
+	}); err != nil {
+		t.Fatalf("verify after check consumed ticket: %v", err)
+	}
+}
+
 func TestManagedTicketTTLCapped(t *testing.T) {
 	t.Parallel()
 

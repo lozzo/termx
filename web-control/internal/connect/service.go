@@ -16,6 +16,7 @@ var (
 	ErrTicketExpired   = errors.New("managed ticket expired")
 	ErrTicketUsed      = errors.New("managed ticket already used")
 	ErrWrongMachine    = errors.New("managed ticket machine mismatch")
+	ErrWrongTerminal   = errors.New("managed ticket terminal mismatch")
 )
 
 const (
@@ -101,6 +102,14 @@ func (s *Service) CreateManagedTicket(ctx context.Context, in CreateManagedTicke
 }
 
 func (s *Service) VerifyManagedTicket(ctx context.Context, in VerifyManagedTicketInput) (ManagedTicket, error) {
+	return s.loadManagedTicket(ctx, in, true)
+}
+
+func (s *Service) CheckManagedTicket(ctx context.Context, in VerifyManagedTicketInput) (ManagedTicket, error) {
+	return s.loadManagedTicket(ctx, in, false)
+}
+
+func (s *Service) loadManagedTicket(ctx context.Context, in VerifyManagedTicketInput, consume bool) (ManagedTicket, error) {
 	if s == nil || s.db == nil {
 		return ManagedTicket{}, errors.New("connect service is not configured")
 	}
@@ -140,6 +149,10 @@ func (s *Service) VerifyManagedTicket(ctx context.Context, in VerifyManagedTicke
 	if ticket.MachineID != machineID {
 		return ManagedTicket{}, ErrWrongMachine
 	}
+	terminalID := strings.TrimSpace(in.TerminalID)
+	if terminalID != "" && ticket.TerminalID != terminalID {
+		return ManagedTicket{}, ErrWrongTerminal
+	}
 	parsed, err := time.Parse(time.RFC3339Nano, expiresAt)
 	if err != nil {
 		return ManagedTicket{}, err
@@ -147,6 +160,13 @@ func (s *Service) VerifyManagedTicket(ctx context.Context, in VerifyManagedTicke
 	ticket.ExpiresAt = parsed
 	if !s.clock.Now().UTC().Before(ticket.ExpiresAt) {
 		return ManagedTicket{}, ErrTicketExpired
+	}
+	if !consume {
+		if err := tx.Commit(); err != nil {
+			return ManagedTicket{}, err
+		}
+		tx = nil
+		return ticket, nil
 	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE connect_tickets

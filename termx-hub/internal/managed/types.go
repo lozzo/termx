@@ -11,7 +11,8 @@ import (
 const PathManaged = "managed"
 
 type TicketVerifier interface {
-	VerifyManagedTicket(context.Context, VerifyTicketInput) (Ticket, error)
+	CheckManagedTicket(context.Context, VerifyTicketInput) (Ticket, error)
+	ConsumeManagedTicket(context.Context, VerifyTicketInput) (Ticket, error)
 	VerifyOfferTicket(context.Context, registry.OfferTicket) error
 }
 

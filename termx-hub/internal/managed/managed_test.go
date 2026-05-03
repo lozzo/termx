@@ -291,7 +291,7 @@ func TestManagedSignalingDoesNotSurfaceRelayBeforeTurnPolicy(t *testing.T) {
 	}
 }
 
-func TestManagedSignalingUsesRegistryVerifierWithoutDoubleConsuming(t *testing.T) {
+func TestManagedSignalingChecksWithoutConsumingUntilAnswer(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -318,16 +318,40 @@ func TestManagedSignalingUsesRegistryVerifierWithoutDoubleConsuming(t *testing.T
 	}); err != nil {
 		t.Fatalf("submit offer: %v", err)
 	}
+	if got := verifier.consumeCalls; len(got) != 0 {
+		t.Fatalf("submit offer consumed ticket before answer: %v", got)
+	}
+	if got := verifier.offerChecks; len(got) != 3 || got[0] != "mach_1/term_1/ticket_allowed" ||
+		got[1] != "mach_1/term_1/ticket_allowed" || got[2] != "mach_1/term_1/ticket_allowed" {
+		t.Fatalf("registry offer verifier checks = %v", got)
+	}
+	offer, err := svc.PollAgentOffer(ctx, managed.PollAgentOfferInput{AgentID: "agent_1", MachineID: "mach_1", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("poll offer: %v", err)
+	}
+	if err := svc.SubmitAnswer(ctx, managed.SubmitAnswerInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		OfferID:   offer.ID,
+		SDP:       minimalSDP("answer"),
+	}); err != nil {
+		t.Fatalf("submit answer: %v", err)
+	}
+	if _, err := svc.ConsumeOfferTicket(ctx, managed.GetAnswerInput{
+		OfferID:   offer.ID,
+		TicketID:  "ticket_allowed",
+		MachineID: "mach_1",
+	}); err != nil {
+		t.Fatalf("consume after answer: %v", err)
+	}
 	if got := verifier.consumeCalls; len(got) != 1 || got[0] != "mach_1/term_1/ticket_allowed" {
 		t.Fatalf("consume calls = %v", got)
 	}
-	if got := verifier.offerChecks; len(got) != 2 || got[0] != "mach_1/term_1/ticket_allowed" || got[1] != "mach_1/term_1/ticket_allowed" {
-		t.Fatalf("registry offer verifier checks = %v", got)
-	}
 	wantEvents := []string{
 		"check:mach_1/term_1/ticket_allowed",
-		"consume:mach_1/term_1/ticket_allowed",
 		"check:mach_1/term_1/ticket_allowed",
+		"check:mach_1/term_1/ticket_allowed",
+		"consume:mach_1/term_1/ticket_allowed",
 	}
 	if got := verifier.events; len(got) != len(wantEvents) {
 		t.Fatalf("verifier events = %v, want %v", got, wantEvents)
@@ -461,7 +485,31 @@ type fakeTicketVerifier struct {
 	events           []string
 }
 
-func (f *fakeTicketVerifier) VerifyManagedTicket(_ context.Context, in managed.VerifyTicketInput) (managed.Ticket, error) {
+func (f *fakeTicketVerifier) CheckManagedTicket(_ context.Context, in managed.VerifyTicketInput) (managed.Ticket, error) {
+	key := in.MachineID + "/" + in.TerminalID + "/" + in.TicketID
+	f.offerChecks = append(f.offerChecks, key)
+	f.events = append(f.events, "check:"+key)
+	ticket, ok := f.tickets[in.TicketID]
+	if !ok {
+		return managed.Ticket{}, managed.ErrTicketExpired
+	}
+	if ticket.MachineID != in.MachineID {
+		return managed.Ticket{}, managed.ErrWrongMachine
+	}
+	terminalID := ticket.TerminalID
+	if f.terminalOverride != "" {
+		terminalID = f.terminalOverride
+	}
+	if in.TerminalID != "" && terminalID != in.TerminalID {
+		return managed.Ticket{}, managed.ErrWrongTerminal
+	}
+	if !ticket.ExpiresAt.After(f.now) {
+		return managed.Ticket{}, managed.ErrTicketExpired
+	}
+	return ticket, nil
+}
+
+func (f *fakeTicketVerifier) ConsumeManagedTicket(_ context.Context, in managed.VerifyTicketInput) (managed.Ticket, error) {
 	key := in.MachineID + "/" + in.TerminalID + "/" + in.TicketID
 	f.consumeCalls = append(f.consumeCalls, key)
 	f.events = append(f.events, "consume:"+key)
@@ -497,27 +545,12 @@ func (f *fakeTicketVerifier) VerifyAgentRegistration(context.Context, registry.A
 }
 
 func (f *fakeTicketVerifier) VerifyOfferTicket(ctx context.Context, in registry.OfferTicket) error {
-	key := in.MachineID + "/" + in.TerminalID + "/" + in.TicketID
-	f.offerChecks = append(f.offerChecks, key)
-	f.events = append(f.events, "check:"+key)
-	ticket, ok := f.tickets[in.TicketID]
-	if !ok {
-		return managed.ErrTicketExpired
-	}
-	if ticket.MachineID != in.MachineID {
-		return managed.ErrWrongMachine
-	}
-	terminalID := ticket.TerminalID
-	if f.terminalOverride != "" {
-		terminalID = f.terminalOverride
-	}
-	if in.TerminalID != "" && terminalID != in.TerminalID {
-		return managed.ErrWrongTerminal
-	}
-	if !ticket.ExpiresAt.After(f.now) {
-		return managed.ErrTicketExpired
-	}
-	return nil
+	_, err := f.CheckManagedTicket(ctx, managed.VerifyTicketInput{
+		TicketID:   in.TicketID,
+		MachineID:  in.MachineID,
+		TerminalID: in.TerminalID,
+	})
+	return err
 }
 
 type fixedClock time.Time

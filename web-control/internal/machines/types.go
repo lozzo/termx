@@ -22,6 +22,17 @@ type Machine struct {
 	LastSeenAt       *time.Time `json:"last_seen_at,omitempty"`
 }
 
+type RemoteTerminal struct {
+	ID         string    `json:"id"`
+	MachineID  string    `json:"machine_id"`
+	Name       string    `json:"name"`
+	Command    []string  `json:"command,omitempty"`
+	Cols       int       `json:"cols,omitempty"`
+	Rows       int       `json:"rows,omitempty"`
+	State      string    `json:"state,omitempty"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+}
+
 type BootstrapInput struct {
 	MachineID         string
 	MachinePublicKey  string
@@ -29,6 +40,39 @@ type BootstrapInput struct {
 	Hostname          string
 	Platform          string
 	MachinePrivateKey string
+}
+
+type RemoteTerminalInput struct {
+	ID      string
+	Name    string
+	Command []string
+	Cols    int
+	Rows    int
+	State   string
+}
+
+type RegisterRemoteDeviceInput struct {
+	UserID            string
+	MachineID         string
+	MachinePublicKey  string
+	MachinePrivateKey string
+	DisplayName       string
+	Hostname          string
+	Platform          string
+	Terminals         []RemoteTerminalInput
+}
+
+type AgentRegistrationSignature struct {
+	Algorithm string
+	Nonce     string
+	Timestamp int64
+	Value     string
+}
+
+type VerifyAgentRegistrationInput struct {
+	MachineID string
+	AgentID   string
+	Signature AgentRegistrationSignature
 }
 
 type BootstrapResult struct {

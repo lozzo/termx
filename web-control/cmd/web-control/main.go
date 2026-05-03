@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/web-control/internal/account"
+	"github.com/lozzow/termx/web-control/internal/connect"
 	"github.com/lozzow/termx/web-control/internal/httpapi"
 	"github.com/lozzow/termx/web-control/internal/machines"
 	"github.com/lozzow/termx/web-control/internal/rendezvous"
@@ -35,18 +36,17 @@ func main() {
 	}
 
 	log.Printf("termx web-control listening on http://%s", addr)
-	accounts, err := newAccountServiceFromEnv(ctx, db)
+	router, err := newRouterFromServices(ctx, db)
 	if err != nil {
 		log.Fatal(err)
 	}
-	machineService := machines.NewService(machines.Config{DB: db})
 	rendezvousService := rendezvous.NewService(rendezvous.Config{DB: db, STUNServers: commaListEnv("TERMX_WEB_CONTROL_STUN_SERVERS")})
 	cleanupCtx, stopCleanup := context.WithCancel(ctx)
 	defer stopCleanup()
 	cleanupTicker := time.NewTicker(5 * time.Minute)
 	defer cleanupTicker.Stop()
 	go runRendezvousCleanupLoop(cleanupCtx, rendezvousService, cleanupTicker.C)
-	if err := http.ListenAndServe(addr, httpapi.NewRouter(httpapi.Config{Accounts: accounts, Machines: machineService, Rendezvous: rendezvousService})); err != nil {
+	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -76,6 +76,23 @@ func newAccountServiceFromEnv(ctx context.Context, db *sql.DB) (*account.Service
 	return account.NewService(account.Config{
 		DB:     db,
 		Tokens: account.NewHMACTokenIssuer([]byte(secret)),
+	}), nil
+}
+
+func newRouterFromServices(ctx context.Context, db *sql.DB) (http.Handler, error) {
+	accounts, err := newAccountServiceFromEnv(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	machineService := machines.NewService(machines.Config{DB: db})
+	connectService := connect.NewService(connect.Config{DB: db})
+	rendezvousService := rendezvous.NewService(rendezvous.Config{DB: db, STUNServers: commaListEnv("TERMX_WEB_CONTROL_STUN_SERVERS")})
+	return httpapi.NewRouter(httpapi.Config{
+		Accounts:        accounts,
+		Machines:        machineService,
+		Connect:         connectService,
+		Rendezvous:      rendezvousService,
+		HubSharedSecret: os.Getenv("TERMX_WEB_CONTROL_HUB_SECRET"),
 	}), nil
 }
 

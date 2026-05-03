@@ -34,6 +34,7 @@ func TestOpenAndMigrateSQLiteCreatesCoreTables(t *testing.T) {
 		"sessions",
 		"payment_orders",
 		"machines",
+		"machine_terminals",
 		"app_devices",
 		"app_certificates",
 		"hubs",
@@ -92,6 +93,7 @@ func TestMigrateUpgradesMachineClaimTokenSchema(t *testing.T) {
 	}
 
 	assertColumnExists(t, db, "machines", "claim_token_hash")
+	assertTableExists(t, db, "machine_terminals")
 }
 
 func TestMigrateEnablesForeignKeys(t *testing.T) {

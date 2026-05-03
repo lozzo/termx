@@ -3,54 +3,91 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/cookiejar"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/lozzow/termx/termx-core"
 	"github.com/lozzow/termx/termx-core/internal/remote/bridge"
+	remotecert "github.com/lozzow/termx/termx-core/internal/remote/cert"
+	remotertc "github.com/lozzow/termx/termx-core/internal/remote/rtc"
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/pion/webrtc/v4"
 )
 
-type tokenResponse struct {
-	RawToken string `json:"rawToken"`
+type authResponse struct {
+	AccessToken string `json:"access_token"`
+}
+
+type deviceRecord struct {
+	ID string `json:"id"`
 }
 
 type devicesResponse struct {
-	Devices []struct {
-		ID string `json:"id"`
-	} `json:"devices"`
+	Devices []deviceRecord `json:"devices"`
+}
+
+type terminalRecord struct {
+	ID        string `json:"id"`
+	MachineID string `json:"machine_id"`
+	State     string `json:"state"`
 }
 
 type terminalsResponse struct {
-	Terminals []struct {
-		ID string `json:"id"`
-	} `json:"terminals"`
+	Terminals []terminalRecord `json:"terminals"`
 }
 
-type ticketResponse struct {
-	Ticket struct {
-		TicketID      string `json:"ticketId"`
-		DeviceID      string `json:"deviceId"`
-		TerminalID    string `json:"terminalId"`
-		HubBaseURL    string `json:"hubBaseUrl"`
-		SignalingPath string `json:"signalingPath"`
-		RTCConfigPath string `json:"rtcConfigPath"`
-		AllowRelay    bool   `json:"allowRelay"`
-	} `json:"ticket"`
+type managedTicketResponse struct {
+	ID         string    `json:"id"`
+	MachineID  string    `json:"machine_id"`
+	TerminalID string    `json:"terminal_id"`
+	Path       string    `json:"path"`
+	AllowRelay bool      `json:"allow_relay"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
-type apiResponse struct {
-	ID     string          `json:"id"`
-	Status int             `json:"status"`
-	Body   json.RawMessage `json:"body"`
+type pairHTTPResponse struct {
+	MachineID        string                            `json:"machine_id"`
+	AppCertificate   remotecert.AppCertificateEnvelope `json:"app_certificate"`
+	MachinePublicKey string                            `json:"machine_public_key"`
+	ExpiresAt        time.Time                         `json:"expires_at"`
+}
+
+type managedSessionRequestInput struct {
+	TicketID       string
+	MachineID      string
+	TerminalID     string
+	SessionID      string
+	SDP            string
+	ICECandidates  []string
+	AppCertificate json.RawMessage
+	AppPrivateKey  ed25519.PrivateKey
+	Nonce          string
+	Now            time.Time
+}
+
+type managedSessionRequest struct {
+	ConnectTicket  string                   `json:"connect_ticket"`
+	MachineID      string                   `json:"machine_id"`
+	TerminalID     string                   `json:"terminal_id"`
+	AppCertificate json.RawMessage          `json:"app_certificate"`
+	Offer          managedSessionOffer      `json:"offer"`
+	Signature      remotertc.OfferSignature `json:"signature"`
+}
+
+type managedSessionOffer struct {
+	SessionID     string   `json:"session_id"`
+	SDP           string   `json:"sdp"`
+	ICECandidates []string `json:"ice_candidates"`
 }
 
 func main() {
@@ -58,144 +95,261 @@ func main() {
 	var hubURL string
 	var email string
 	var password string
+	var pairURL string
+	var pairSessionID string
+	var pairSecret string
+	var machineID string
+	var terminalID string
+	var stunURL string
 
 	flag.StringVar(&controlURL, "control-url", "http://127.0.0.1:12306", "control plane base URL")
 	flag.StringVar(&hubURL, "hub-url", "http://127.0.0.1:8447", "hub base URL")
-	flag.StringVar(&email, "email", "demo@example.com", "control login email")
-	flag.StringVar(&password, "password", "demo1234", "control login password")
+	flag.StringVar(&email, "email", "demo@example.com", "control login/register email")
+	flag.StringVar(&password, "password", "demo1234", "control login/register password")
+	flag.StringVar(&pairURL, "pair-url", "", "daemon local pair URL, usually forwarded to http://127.0.0.1:18888/api/local/pair")
+	flag.StringVar(&pairSessionID, "pair-session-id", "", "pair session id from `termx remote pair --json`")
+	flag.StringVar(&pairSecret, "pair-secret", "", "pair secret from `termx remote pair --json`")
+	flag.StringVar(&machineID, "machine-id", "", "optional target machine id; defaults to first registered terminal machine")
+	flag.StringVar(&terminalID, "terminal-id", "", "optional target terminal id; defaults to first registered terminal")
+	flag.StringVar(&stunURL, "stun-url", "", "optional STUN URL for the local offerer, for example stun:stun.l.google.com:19302")
 	flag.Parse()
 
-	if err := run(controlURL, hubURL, email, password); err != nil {
+	if err := run(smokeConfig{
+		ControlURL:    controlURL,
+		HubURL:        hubURL,
+		Email:         email,
+		Password:      password,
+		PairURL:       pairURL,
+		PairSessionID: pairSessionID,
+		PairSecret:    pairSecret,
+		MachineID:     machineID,
+		TerminalID:    terminalID,
+		STUNURL:       stunURL,
+	}); err != nil {
 		log.Fatal(err)
 	}
-	log.Println("remote stack smoke passed")
+	log.Println("remote managed smoke passed")
 }
 
-func run(controlURL, hubURL, email, password string) error {
+type smokeConfig struct {
+	ControlURL    string
+	HubURL        string
+	Email         string
+	Password      string
+	PairURL       string
+	PairSessionID string
+	PairSecret    string
+	MachineID     string
+	TerminalID    string
+	STUNURL       string
+}
+
+func run(cfg smokeConfig) error {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return err
 	}
 	httpClient := &http.Client{Jar: jar, Timeout: 20 * time.Second}
 
-	if err := postJSON(httpClient, controlURL+"/api/auth/login", map[string]string{
+	auth, err := registerOrLogin(httpClient, cfg.ControlURL, cfg.Email, cfg.Password)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(auth.AccessToken) == "" {
+		return fmt.Errorf("control returned empty access token")
+	}
+
+	machineID, terminalID, err := waitForControlInventory(httpClient, cfg.ControlURL, auth.AccessToken, cfg.MachineID, cfg.TerminalID)
+	if err != nil {
+		return err
+	}
+	appCert, appPrivate, err := claimPairCertificate(httpClient, cfg.PairURL, cfg.PairSessionID, cfg.PairSecret)
+	if err != nil {
+		return err
+	}
+	if appCert.Payload.MachineID != machineID {
+		return fmt.Errorf("pair certificate machine mismatch: %s != %s", appCert.Payload.MachineID, machineID)
+	}
+	certJSON, err := json.Marshal(appCert)
+	if err != nil {
+		return err
+	}
+
+	ticket, err := createManagedTicket(httpClient, cfg.ControlURL, auth.AccessToken, machineID, terminalID)
+	if err != nil {
+		return err
+	}
+	if ticket.Path != "managed" || ticket.AllowRelay {
+		return fmt.Errorf("unexpected ticket policy path=%q allow_relay=%v", ticket.Path, ticket.AllowRelay)
+	}
+
+	return smokeTerminalAttach(openChannelConfig{
+		HubURL:         cfg.HubURL,
+		Ticket:         ticket,
+		AppCertificate: certJSON,
+		AppPrivateKey:  appPrivate,
+		STUNURL:        cfg.STUNURL,
+	})
+}
+
+func registerOrLogin(client *http.Client, controlURL, email, password string) (authResponse, error) {
+	var auth authResponse
+	status, body, err := postJSONStatus(client, controlURL+"/api/v1/auth/register", map[string]string{
 		"email":    email,
 		"password": password,
-	}, nil); err != nil {
-		return fmt.Errorf("login control: %w", err)
+	}, &auth, "")
+	if err == nil && status == http.StatusCreated {
+		return auth, nil
 	}
-
-	var tokenResp tokenResponse
-	if err := postJSON(httpClient, controlURL+"/api/tokens", map[string]string{
-		"name": "remote-e2e",
-	}, &tokenResp); err != nil {
-		return fmt.Errorf("create token: %w", err)
-	}
-	if tokenResp.RawToken == "" {
-		return fmt.Errorf("control returned empty raw token")
-	}
-
-	srv := termx.NewServer(termx.WithRemoteConfig(termx.RemoteConfig{
-		Enabled:     true,
-		ControlURL:  controlURL,
-		HubURL:      hubURL,
-		AccessToken: tokenResp.RawToken,
-		DataDir:     mustMkdirTemp(),
-		DeviceName:  "remote-e2e-device",
-	}))
-
-	ctx := context.Background()
-	created, err := srv.Create(ctx, termx.CreateOptions{
-		Command: []string{"bash", "--noprofile", "--norc"},
-		Name:    "remote-e2e-terminal",
-		Size:    termx.Size{Cols: 80, Rows: 24},
-	})
+	auth = authResponse{}
+	status, body, err = postJSONStatus(client, controlURL+"/api/v1/auth/login", map[string]string{
+		"email":    email,
+		"password": password,
+	}, &auth, "")
 	if err != nil {
-		return fmt.Errorf("create terminal: %w", err)
+		return authResponse{}, fmt.Errorf("register/login control failed: status=%d body=%s err=%w", status, body, err)
 	}
-
-	status := srv.RemoteStatus()
-	if status.DeviceID == "" {
-		return fmt.Errorf("remote runtime did not expose device id")
-	}
-
-	if err := waitForControlInventory(httpClient, controlURL, status.DeviceID, created.ID); err != nil {
-		return err
-	}
-	if err := waitForHubInventory(hubURL, status.DeviceID); err != nil {
-		return err
-	}
-
-	var ticketResp ticketResponse
-	if err := postJSON(httpClient, controlURL+"/api/connect-ticket", map[string]string{
-		"deviceId":   status.DeviceID,
-		"terminalId": created.ID,
-	}, &ticketResp); err != nil {
-		return fmt.Errorf("request connect ticket: %w", err)
-	}
-
-	if err := smokeTerminalAttach(ticketResp); err != nil {
-		return err
-	}
-	if err := smokeFileAPI(ticketResp); err != nil {
-		return err
-	}
-	return nil
+	return auth, nil
 }
 
-func mustMkdirTemp() string {
-	dir, err := os.MkdirTemp("", "termx-remote-e2e-*")
-	if err != nil {
-		panic(err)
-	}
-	return dir
-}
-
-func waitForControlInventory(client *http.Client, controlURL, deviceID, terminalID string) error {
-	deadline := time.Now().Add(15 * time.Second)
+func waitForControlInventory(client *http.Client, controlURL, accessToken, wantedMachineID, wantedTerminalID string) (string, string, error) {
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		var devices devicesResponse
 		var terminals terminalsResponse
-		if err := getJSON(client, controlURL+"/api/devices", &devices); err == nil {
-			if err := getJSON(client, controlURL+"/api/terminals", &terminals); err == nil {
-				if containsDevice(devices, deviceID) && containsTerminal(terminals, terminalID) {
-					return nil
-				}
+		devicesErr := getJSONAuth(client, controlURL+"/api/devices", &devices, accessToken)
+		terminalsErr := getJSONAuth(client, controlURL+"/api/terminals", &terminals, accessToken)
+		if devicesErr == nil && terminalsErr == nil {
+			if machineID, terminalID, ok := selectTarget(devices, terminals, wantedMachineID, wantedTerminalID); ok {
+				return machineID, terminalID, nil
 			}
 		}
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 	}
-	return fmt.Errorf("timed out waiting for control inventory")
+	return "", "", fmt.Errorf("timed out waiting for control inventory machine=%q terminal=%q", wantedMachineID, wantedTerminalID)
 }
 
-func waitForHubInventory(hubURL, deviceID string) error {
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		resp, err := http.Get(hubURL + "/api/v1/agents")
-		if err == nil {
-			var payload struct {
-				Agents []struct {
-					DeviceID string `json:"device_id"`
-				} `json:"agents"`
-			}
-			if err := json.NewDecoder(resp.Body).Decode(&payload); err == nil {
-				_ = resp.Body.Close()
-				for _, agent := range payload.Agents {
-					if agent.DeviceID == deviceID {
-						return nil
-					}
-				}
-			} else {
-				_ = resp.Body.Close()
-			}
+func selectTarget(devices devicesResponse, terminals terminalsResponse, wantedMachineID, wantedTerminalID string) (string, string, bool) {
+	deviceIDs := make(map[string]struct{}, len(devices.Devices))
+	for _, device := range devices.Devices {
+		if strings.TrimSpace(device.ID) != "" {
+			deviceIDs[device.ID] = struct{}{}
 		}
-		time.Sleep(250 * time.Millisecond)
 	}
-	return fmt.Errorf("timed out waiting for hub inventory")
+	for _, terminal := range terminals.Terminals {
+		if wantedTerminalID != "" && terminal.ID != wantedTerminalID {
+			continue
+		}
+		if wantedMachineID != "" && terminal.MachineID != wantedMachineID {
+			continue
+		}
+		if _, ok := deviceIDs[terminal.MachineID]; !ok {
+			continue
+		}
+		if terminal.ID != "" && terminal.MachineID != "" {
+			return terminal.MachineID, terminal.ID, true
+		}
+	}
+	return "", "", false
 }
 
-func smokeTerminalAttach(ticket ticketResponse) error {
-	offerPC, dc, answerSDP, err := openLabeledChannel(ticket, "terminal:"+ticket.Ticket.TerminalID)
+func claimPairCertificate(client *http.Client, pairURL, pairSessionID, pairSecret string) (remotecert.AppCertificateEnvelope, ed25519.PrivateKey, error) {
+	if strings.TrimSpace(pairURL) == "" || strings.TrimSpace(pairSessionID) == "" || strings.TrimSpace(pairSecret) == "" {
+		return remotecert.AppCertificateEnvelope{}, nil, fmt.Errorf("pair-url, pair-session-id, and pair-secret are required")
+	}
+	appPublic, appPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return remotecert.AppCertificateEnvelope{}, nil, err
+	}
+	var pair pairHTTPResponse
+	_, body, err := postJSONStatus(client, pairURL, map[string]any{
+		"pair_session_id":        pairSessionID,
+		"pair_secret":            pairSecret,
+		"app_device_id":          randomToken("app_"),
+		"app_name":               "termx-remote-e2e",
+		"app_public_key":         base64.StdEncoding.EncodeToString(appPublic),
+		"requested_capabilities": []string{"terminal", "file_manager", "terminal_management"},
+	}, &pair, "")
+	if err != nil {
+		return remotecert.AppCertificateEnvelope{}, nil, fmt.Errorf("claim pair certificate failed: body=%s err=%w", body, err)
+	}
+	if pair.AppCertificate.Payload.MachineID == "" {
+		return remotecert.AppCertificateEnvelope{}, nil, fmt.Errorf("pair response missing app certificate")
+	}
+	return pair.AppCertificate, appPrivate, nil
+}
+
+func createManagedTicket(client *http.Client, controlURL, accessToken, machineID, terminalID string) (managedTicketResponse, error) {
+	var ticket managedTicketResponse
+	_, body, err := postJSONStatus(client, controlURL+"/api/v1/managed/connect-tickets", map[string]any{
+		"machine_id":  machineID,
+		"terminal_id": terminalID,
+		"ttl_seconds": 120,
+	}, &ticket, accessToken)
+	if err != nil {
+		return managedTicketResponse{}, fmt.Errorf("create managed ticket failed: body=%s err=%w", body, err)
+	}
+	if ticket.ID == "" {
+		return managedTicketResponse{}, fmt.Errorf("control returned empty managed ticket id")
+	}
+	return ticket, nil
+}
+
+func buildManagedSessionRequest(input managedSessionRequestInput) (managedSessionRequest, error) {
+	if len(input.AppPrivateKey) != ed25519.PrivateKeySize {
+		return managedSessionRequest{}, fmt.Errorf("app private key has size %d, want %d", len(input.AppPrivateKey), ed25519.PrivateKeySize)
+	}
+	if len(input.AppCertificate) == 0 {
+		return managedSessionRequest{}, fmt.Errorf("app certificate is required")
+	}
+	now := input.Now
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	nonce := strings.TrimSpace(input.Nonce)
+	if nonce == "" {
+		nonce = randomToken("nonce_")
+	}
+	fields := remotertc.OfferSignatureFields{
+		TicketID:   input.TicketID,
+		MachineID:  input.MachineID,
+		TerminalID: input.TerminalID,
+		SDP:        input.SDP,
+		Candidates: input.ICECandidates,
+		Nonce:      nonce,
+		Timestamp:  now,
+	}
+	signature := ed25519.Sign(input.AppPrivateKey, remotertc.CanonicalOfferSignatureMessage(fields))
+	return managedSessionRequest{
+		ConnectTicket:  input.TicketID,
+		MachineID:      input.MachineID,
+		TerminalID:     input.TerminalID,
+		AppCertificate: append(json.RawMessage(nil), input.AppCertificate...),
+		Offer: managedSessionOffer{
+			SessionID:     input.SessionID,
+			SDP:           input.SDP,
+			ICECandidates: append([]string(nil), input.ICECandidates...),
+		},
+		Signature: remotertc.OfferSignature{
+			Algorithm: "ed25519",
+			Nonce:     nonce,
+			Timestamp: now.UTC().Unix(),
+			Value:     base64.StdEncoding.EncodeToString(signature),
+		},
+	}, nil
+}
+
+type openChannelConfig struct {
+	HubURL         string
+	Ticket         managedTicketResponse
+	AppCertificate json.RawMessage
+	AppPrivateKey  ed25519.PrivateKey
+	STUNURL        string
+}
+
+func smokeTerminalAttach(cfg openChannelConfig) error {
+	label := "terminal:" + cfg.Ticket.TerminalID
+	offerPC, dc, answerSDP, err := openLabeledChannel(cfg, label)
 	if err != nil {
 		return fmt.Errorf("open terminal channel: %w", err)
 	}
@@ -214,10 +368,10 @@ func smokeTerminalAttach(ticket ticketResponse) error {
 	if answerSDP == "" {
 		return fmt.Errorf("empty answer sdp")
 	}
-	if _, err := client.Snapshot(ctx, ticket.Ticket.TerminalID, 0, 0); err != nil {
+	if _, err := client.Snapshot(ctx, cfg.Ticket.TerminalID, 0, 0); err != nil {
 		return fmt.Errorf("snapshot over terminal channel: %w", err)
 	}
-	attach, err := client.Attach(ctx, ticket.Ticket.TerminalID, string(termx.ModeCollaborator))
+	attach, err := client.Attach(ctx, cfg.Ticket.TerminalID, string(termx.ModeCollaborator))
 	if err != nil {
 		return fmt.Errorf("attach terminal: %w", err)
 	}
@@ -226,101 +380,15 @@ func smokeTerminalAttach(ticket ticketResponse) error {
 	if err := client.Input(ctx, attach.Channel, []byte("echo remote-stack-smoke\n")); err != nil {
 		return fmt.Errorf("send input: %w", err)
 	}
-	if err := waitForStreamContains(stream, "remote-stack-smoke", 8*time.Second); err != nil {
-		return err
-	}
-	return nil
+	return waitForStreamContains(stream, "remote-stack-smoke", 10*time.Second)
 }
 
-func smokeFileAPI(ticket ticketResponse) error {
-	offerPC, apiDC, _, err := openLabeledChannel(ticket, "api")
-	if err != nil {
-		return fmt.Errorf("open api channel: %w", err)
+func openLabeledChannel(cfg openChannelConfig, label string) (*webrtc.PeerConnection, *webrtc.DataChannel, string, error) {
+	webrtcCfg := webrtc.Configuration{}
+	if strings.TrimSpace(cfg.STUNURL) != "" {
+		webrtcCfg.ICEServers = []webrtc.ICEServer{{URLs: []string{strings.TrimSpace(cfg.STUNURL)}}}
 	}
-	defer offerPC.Close()
-	defer apiDC.Close()
-
-	tempDir, err := os.MkdirTemp("", "termx-fileapi-*")
-	if err != nil {
-		return err
-	}
-	sourcePath := tempDir + "/source.txt"
-	uploadPath := tempDir + "/upload.txt"
-	if err := os.WriteFile(sourcePath, []byte("file api smoke\n"), 0o644); err != nil {
-		return err
-	}
-
-	listResp, err := sendAPIRequest(apiDC, apiRequest{ID: "list", Method: "POST", Path: "/files/list", Body: map[string]any{"path": tempDir}})
-	if err != nil || listResp.Status != 200 {
-		return fmt.Errorf("list api failed: %v status=%d", err, listResp.Status)
-	}
-
-	previewResp, err := sendAPIRequest(apiDC, apiRequest{ID: "preview", Method: "POST", Path: "/files/preview", Body: map[string]any{"path": sourcePath}})
-	if err != nil || previewResp.Status != 200 {
-		return fmt.Errorf("preview api failed: %v status=%d", err, previewResp.Status)
-	}
-
-	downloadInit, err := sendAPIRequest(apiDC, apiRequest{ID: "download-init", Method: "POST", Path: "/files/download/init", Body: map[string]any{"path": sourcePath}})
-	if err != nil || downloadInit.Status != 200 {
-		return fmt.Errorf("download init failed: %v status=%d", err, downloadInit.Status)
-	}
-	var dl struct {
-		TransferID string `json:"transfer_id"`
-	}
-	if err := json.Unmarshal(downloadInit.Body, &dl); err != nil || dl.TransferID == "" {
-		return fmt.Errorf("decode download init: %w", err)
-	}
-
-	downloadPC, fileDownloadDC, _, err := openLabeledChannel(ticket, "file:"+dl.TransferID)
-	if err != nil {
-		return err
-	}
-	downloaded, err := readFileDownload(fileDownloadDC)
-	downloadPC.Close()
-	if err != nil {
-		return err
-	}
-	if string(downloaded) != "file api smoke\n" {
-		return fmt.Errorf("unexpected downloaded content: %q", string(downloaded))
-	}
-
-	uploadInit, err := sendAPIRequest(apiDC, apiRequest{ID: "upload-init", Method: "POST", Path: "/files/upload/init", Body: map[string]any{"path": uploadPath, "size": 17}})
-	if err != nil || uploadInit.Status != 200 {
-		return fmt.Errorf("upload init failed: %v status=%d", err, uploadInit.Status)
-	}
-	var ul struct {
-		TransferID string `json:"transfer_id"`
-	}
-	if err := json.Unmarshal(uploadInit.Body, &ul); err != nil || ul.TransferID == "" {
-		return fmt.Errorf("decode upload init: %w", err)
-	}
-
-	uploadPC, fileUploadDC, _, err := openLabeledChannel(ticket, "file:"+ul.TransferID)
-	if err != nil {
-		return err
-	}
-	if err := sendFileUpload(fileUploadDC, []byte("upload smoke ok\n")); err != nil {
-		uploadPC.Close()
-		return err
-	}
-	uploadPC.Close()
-
-	uploadComplete, err := sendAPIRequest(apiDC, apiRequest{ID: "upload-complete", Method: "POST", Path: "/files/upload/complete", Body: map[string]any{"transfer_id": ul.TransferID}})
-	if err != nil || uploadComplete.Status != 200 {
-		return fmt.Errorf("upload complete failed: %v status=%d", err, uploadComplete.Status)
-	}
-	uploaded, err := os.ReadFile(uploadPath)
-	if err != nil {
-		return err
-	}
-	if string(uploaded) != "upload smoke ok\n" {
-		return fmt.Errorf("unexpected uploaded content: %q", string(uploaded))
-	}
-	return nil
-}
-
-func openLabeledChannel(ticket ticketResponse, label string) (*webrtc.PeerConnection, *webrtc.DataChannel, string, error) {
-	offerPC, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	offerPC, err := webrtc.NewPeerConnection(webrtcCfg)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -329,7 +397,6 @@ func openLabeledChannel(ticket ticketResponse, label string) (*webrtc.PeerConnec
 		offerPC.Close()
 		return nil, nil, "", err
 	}
-
 	openCh := make(chan struct{})
 	dc.OnOpen(func() {
 		select {
@@ -348,47 +415,76 @@ func openLabeledChannel(ticket ticketResponse, label string) (*webrtc.PeerConnec
 		offerPC.Close()
 		return nil, nil, "", err
 	}
-	waitGathering(offerPC, 5*time.Second)
+	waitGathering(offerPC, 8*time.Second)
+	localDescription := offerPC.LocalDescription()
+	if localDescription == nil || localDescription.SDP == "" {
+		offerPC.Close()
+		return nil, nil, "", fmt.Errorf("local offer SDP is empty")
+	}
 
-	reqBody, _ := json.Marshal(map[string]any{
-		"session_id":           ticket.Ticket.TicketID + "-" + strings.ReplaceAll(label, ":", "-"),
-		"ticket_id":            ticket.Ticket.TicketID,
-		"device_id":            ticket.Ticket.DeviceID,
-		"terminal_id":          ticket.Ticket.TerminalID,
-		"sdp":                  offerPC.LocalDescription().SDP,
-		"ice_candidates":       []string{},
-		"allow_relay":          ticket.Ticket.AllowRelay,
-		"allow_relay_transfer": false,
+	sessionID := cfg.Ticket.ID + "-" + strings.ReplaceAll(label, ":", "-")
+	requestBody, err := buildManagedSessionRequest(managedSessionRequestInput{
+		TicketID:       cfg.Ticket.ID,
+		MachineID:      cfg.Ticket.MachineID,
+		TerminalID:     cfg.Ticket.TerminalID,
+		SessionID:      sessionID,
+		SDP:            localDescription.SDP,
+		ICECandidates:  []string{},
+		AppCertificate: cfg.AppCertificate,
+		AppPrivateKey:  cfg.AppPrivateKey,
 	})
-	resp, err := http.Post(ticket.Ticket.HubBaseURL+ticket.Ticket.SignalingPath, "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		offerPC.Close()
 		return nil, nil, "", err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
+	var sessionResp struct {
+		SessionID string `json:"session_id"`
+		Pending   bool   `json:"pending"`
+		Answer    struct {
+			SDP           string   `json:"sdp"`
+			ICECandidates []string `json:"ice_candidates"`
+		} `json:"answer"`
+	}
+	if _, body, err := postJSONStatus(http.DefaultClient, strings.TrimRight(cfg.HubURL, "/")+"/api/v1/sessions", requestBody, &sessionResp, ""); err != nil {
 		offerPC.Close()
-		return nil, nil, "", fmt.Errorf("hub offer failed with %d", resp.StatusCode)
+		return nil, nil, "", fmt.Errorf("submit managed offer failed: body=%s err=%w", body, err)
 	}
-	var answer struct {
-		SDP           string   `json:"sdp"`
-		ICECandidates []string `json:"ice_candidates"`
+	if sessionResp.Pending {
+		if err := pollManagedAnswer(strings.TrimRight(cfg.HubURL, "/"), cfg.Ticket, sessionID, &sessionResp); err != nil {
+			offerPC.Close()
+			return nil, nil, "", err
+		}
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&answer); err != nil {
+	if sessionResp.Answer.SDP == "" {
 		offerPC.Close()
-		return nil, nil, "", err
+		return nil, nil, "", fmt.Errorf("hub returned empty answer SDP")
 	}
-	if err := offerPC.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: answer.SDP}); err != nil {
+	if err := offerPC.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: sessionResp.Answer.SDP}); err != nil {
 		offerPC.Close()
 		return nil, nil, "", err
 	}
 	select {
 	case <-openCh:
-	case <-time.After(10 * time.Second):
+	case <-time.After(15 * time.Second):
 		offerPC.Close()
 		return nil, nil, "", fmt.Errorf("timed out waiting for %s data channel open", label)
 	}
-	return offerPC, dc, answer.SDP, nil
+	return offerPC, dc, sessionResp.Answer.SDP, nil
+}
+
+func pollManagedAnswer(hubURL string, ticket managedTicketResponse, sessionID string, out any) error {
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		_, _, err := postJSONStatus(http.DefaultClient, hubURL+"/api/v1/sessions/"+sessionID+"/answer", map[string]string{
+			"connect_ticket": ticket.ID,
+			"machine_id":     ticket.MachineID,
+		}, out, "")
+		if err == nil {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("timed out polling managed answer")
 }
 
 func waitGathering(pc *webrtc.PeerConnection, timeout time.Duration) {
@@ -411,155 +507,86 @@ func waitGathering(pc *webrtc.PeerConnection, timeout time.Duration) {
 	}
 }
 
-type apiRequest struct {
-	ID     string      `json:"id"`
-	Method string      `json:"method"`
-	Path   string      `json:"path"`
-	Body   interface{} `json:"body"`
-}
-
-func sendAPIRequest(dc *webrtc.DataChannel, payload apiRequest) (apiResponse, error) {
-	data, _ := json.Marshal(payload)
-	resultCh := make(chan apiResponse, 1)
-	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-		if resp, ok := decodeChunkedAPIResponse(msg.Data); ok {
-			resultCh <- resp
-		}
-	})
-	if err := dc.Send(data); err != nil {
-		return apiResponse{}, err
+func postJSONStatus(client *http.Client, url string, body any, out any, bearer string) (int, string, error) {
+	if client == nil {
+		client = http.DefaultClient
 	}
-	select {
-	case resp := <-resultCh:
-		return resp, nil
-	case <-time.After(10 * time.Second):
-		return apiResponse{}, fmt.Errorf("timed out waiting for api response")
-	}
-}
-
-func decodeChunkedAPIResponse(data []byte) (apiResponse, bool) {
-	if len(data) < 4 || data[0] != 0xc0 {
-		return apiResponse{}, false
-	}
-	idLen := int(data[2])
-	if len(data) < 3+idLen {
-		return apiResponse{}, false
-	}
-	var out apiResponse
-	if err := json.Unmarshal(data[3+idLen:], &out); err != nil {
-		return apiResponse{}, false
-	}
-	return out, true
-}
-
-func readFileDownload(dc *webrtc.DataChannel) ([]byte, error) {
-	done := make(chan []byte, 1)
-	var chunks [][]byte
-	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-		if len(msg.Data) == 0 {
-			return
-		}
-		switch msg.Data[0] {
-		case 0x01:
-			chunks = append(chunks, append([]byte(nil), msg.Data[5:]...))
-		case 0x02:
-			var merged []byte
-			for _, chunk := range chunks {
-				merged = append(merged, chunk...)
-			}
-			done <- merged
-		}
-	})
-	select {
-	case data := <-done:
-		return data, nil
-	case <-time.After(10 * time.Second):
-		return nil, fmt.Errorf("timed out waiting for file download")
-	}
-}
-
-func sendFileUpload(dc *webrtc.DataChannel, payload []byte) error {
-	ackCh := make(chan struct{}, 1)
-	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-		if len(msg.Data) > 0 && msg.Data[0] == 0x02 {
-			select {
-			case ackCh <- struct{}{}:
-			default:
-			}
-		}
-	})
-	frame := make([]byte, 5+len(payload))
-	frame[0] = 0x01
-	copy(frame[5:], payload)
-	if err := dc.Send(frame); err != nil {
-		return err
-	}
-	complete := make([]byte, 5)
-	complete[0] = 0x02
-	if err := dc.Send(complete); err != nil {
-		return err
-	}
-	select {
-	case <-ackCh:
-		return nil
-	case <-time.After(10 * time.Second):
-		return fmt.Errorf("timed out waiting for upload ack")
-	}
-}
-
-func postJSON(client *http.Client, url string, body any, out any) error {
 	data, _ := json.Marshal(body)
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(data))
 	if err != nil {
-		return err
+		return 0, "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if strings.TrimSpace(bearer) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearer))
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	rawBody, readErr := io.ReadAll(resp.Body)
+	bodyText := string(rawBody)
+	if readErr != nil {
+		return resp.StatusCode, bodyText, readErr
+	}
+	if resp.StatusCode >= 400 {
+		return resp.StatusCode, bodyText, fmt.Errorf("http %d", resp.StatusCode)
+	}
+	if out != nil && len(rawBody) > 0 {
+		if err := json.Unmarshal(rawBody, out); err != nil {
+			return resp.StatusCode, bodyText, err
+		}
+	}
+	return resp.StatusCode, bodyText, nil
+}
+
+func getJSONAuth(client *http.Client, url string, out any, bearer string) error {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(bearer) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearer))
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("http %d", resp.StatusCode)
-	}
-	if out != nil {
-		return json.NewDecoder(resp.Body).Decode(out)
-	}
-	return nil
-}
-
-func getJSON(client *http.Client, url string, out any) error {
-	resp, err := client.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("http %d", resp.StatusCode)
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("http %d: %s", resp.StatusCode, string(raw))
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-func containsDevice(resp devicesResponse, deviceID string) bool {
-	for _, device := range resp.Devices {
-		if device.ID == deviceID {
-			return true
-		}
+func randomToken(prefix string) string {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return prefix + fmt.Sprintf("%d", time.Now().UnixNano())
 	}
-	return false
+	return prefix + base64.RawURLEncoding.EncodeToString(buf[:])
 }
 
-func containsTerminal(resp terminalsResponse, terminalID string) bool {
-	for _, terminal := range resp.Terminals {
-		if terminal.ID == terminalID {
-			return true
-		}
+func minimalSDP(sessionID string) string {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		sessionID = "offer"
 	}
-	return false
-}
-
-type testingTAdapter struct {
-	fatalf func(format string, args ...any)
+	return strings.Join([]string{
+		"v=0",
+		"o=- 0 0 IN IP4 127.0.0.1",
+		"s=" + sessionID,
+		"t=0 0",
+		"m=application 9 UDP/DTLS/SCTP webrtc-datachannel",
+		"a=mid:data",
+		"a=sctp-port:5000",
+		"",
+	}, "\r\n")
 }
 
 func waitForStreamContains(stream <-chan protocol.StreamFrame, needle string, timeout time.Duration) error {

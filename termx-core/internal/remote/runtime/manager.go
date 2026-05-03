@@ -3,7 +3,9 @@ package runtime
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -292,17 +294,22 @@ func (m *Manager) syncControlRegistration(ctx context.Context) error {
 	}
 
 	hostname, _ := os.Hostname()
+	machineKey, err := identity.LoadOrCreateMachineKey(m.cfg.DataDir)
+	if err != nil {
+		return err
+	}
 	var terminals []TerminalInventoryItem
 	if m.provider != nil {
 		terminals = m.provider.ListRemoteTerminals(ctx)
 	}
 	payload := discovery.DeviceRegistrationRequest{
-		DeviceID:    m.identity.DeviceID,
-		DisplayName: firstNonEmpty(m.identity.DisplayName, m.cfg.DeviceName),
-		Hostname:    hostname,
-		Platform:    fmt.Sprintf("%s/%s", goruntime.GOOS, goruntime.GOARCH),
-		State:       string(StateConfigured),
-		Terminals:   make([]discovery.DeviceRegistrationTerminal, 0, len(terminals)),
+		DeviceID:         m.identity.DeviceID,
+		MachinePublicKey: identity.PublicKeyString(machineKey.PublicKey),
+		DisplayName:      firstNonEmpty(m.identity.DisplayName, m.cfg.DeviceName),
+		Hostname:         hostname,
+		Platform:         fmt.Sprintf("%s/%s", goruntime.GOOS, goruntime.GOARCH),
+		State:            string(StateConfigured),
+		Terminals:        make([]discovery.DeviceRegistrationTerminal, 0, len(terminals)),
 	}
 	for _, terminal := range terminals {
 		payload.Terminals = append(payload.Terminals, discovery.DeviceRegistrationTerminal{
@@ -326,14 +333,37 @@ func (m *Manager) syncHubPresence(ctx context.Context) error {
 
 	terminals := m.remoteHubTerminals(ctx)
 	if hubSessionID == "" {
+		machineKey, err := identity.LoadOrCreateMachineKey(m.cfg.DataDir)
+		if err != nil {
+			return err
+		}
+		agentID := randomAgentID()
+		nonce := randomAgentID()
+		now := time.Now().UTC()
+		signature := machineKey.Sign(hubv1.CanonicalAgentRegistrationSignatureMessage(hubv1.AgentRegistrationSignatureFields{
+			MachineID: m.identity.DeviceID,
+			AgentID:   agentID,
+			Nonce:     nonce,
+			Timestamp: now,
+		}))
+		if len(signature) != ed25519.SignatureSize {
+			return fmt.Errorf("machine key cannot sign hub registration")
+		}
 		resp, err := discovery.RegisterHub(ctx, m.cfg.HubURL, hubv1.HubRegisterRequest{
 			Version:        "remote.hub.v1",
 			DeviceID:       m.identity.DeviceID,
+			AgentID:        agentID,
 			DisplayName:    firstNonEmpty(m.identity.DisplayName, m.cfg.DeviceName),
 			Hostname:       hostname,
 			Platform:       fmt.Sprintf("%s/%s", goruntime.GOOS, goruntime.GOARCH),
 			RuntimeVersion: "termx-dev",
 			Terminals:      terminals,
+			Signature: hubv1.AgentRegistrationSignature{
+				Algorithm: "ed25519",
+				Nonce:     nonce,
+				Timestamp: now.Unix(),
+				Value:     base64.StdEncoding.EncodeToString(signature),
+			},
 		})
 		if err != nil {
 			return err
@@ -359,6 +389,14 @@ func (m *Manager) syncHubPresence(ctx context.Context) error {
 		return m.syncHubPresence(ctx)
 	}
 	return err
+}
+
+func randomAgentID() string {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return fmt.Sprintf("agent-%d", time.Now().UnixNano())
+	}
+	return "agent-" + hex.EncodeToString(raw[:])
 }
 
 func (m *Manager) remoteHubTerminals(ctx context.Context) []hubv1.HubTerminalInventoryItem {

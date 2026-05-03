@@ -28,8 +28,12 @@ type AuthorityVerifier interface {
 }
 
 type AgentRegistration struct {
-	MachineID string
-	AgentID   string
+	MachineID          string
+	AgentID            string
+	SignatureAlgorithm string
+	SignatureNonce     string
+	SignatureTimestamp int64
+	SignatureValue     string
 }
 
 type OfferTicket struct {
@@ -85,9 +89,13 @@ type Answer struct {
 }
 
 type RegisterInput struct {
-	MachineID string
-	AgentID   string
-	Terminals []Terminal
+	MachineID          string
+	AgentID            string
+	SignatureAlgorithm string
+	SignatureNonce     string
+	SignatureTimestamp int64
+	SignatureValue     string
+	Terminals          []Terminal
 }
 
 type HeartbeatInput struct {

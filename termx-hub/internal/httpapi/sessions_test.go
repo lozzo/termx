@@ -120,6 +120,97 @@ func TestManagedSessionHTTPContract(t *testing.T) {
 	}
 }
 
+func TestManagedSessionHTTPWaitsForDelayedAgentAnswer(t *testing.T) {
+	t.Parallel()
+
+	clock := fixedClock(time.Date(2026, 5, 3, 10, 22, 0, 0, time.UTC))
+	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]managed.Ticket{
+		"ticket_allowed": {
+			ID:         "ticket_allowed",
+			MachineID:  "mach_1",
+			TerminalID: "term_1",
+			Path:       managed.PathManaged,
+			ExpiresAt:  clock.Now().Add(time.Minute),
+		},
+	}}
+	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	svc := managed.NewService(managed.Config{Registry: reg, Tickets: verifier, Clock: clock})
+	router := httpapi.NewHandler(httpapi.Config{
+		Managed:       svc,
+		Registry:      reg,
+		AnswerTimeout: 500 * time.Millisecond,
+		PollInterval:  time.Millisecond,
+	})
+	register := postJSON(t, router, "/api/v1/agents/register", map[string]any{
+		"version":   "remote.hub.v1",
+		"device_id": "mach_1",
+		"terminals": []map[string]any{{
+			"id":    "term_1",
+			"state": "running",
+		}},
+	})
+	if register.Code != http.StatusOK {
+		t.Fatalf("agent register status = %d body=%s", register.Code, register.Body.String())
+	}
+	var registered struct {
+		AgentSessionID string `json:"agent_session_id"`
+	}
+	decodeJSON(t, register, &registered)
+
+	responseCh := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		responseCh <- postJSON(t, router, "/api/v1/sessions", validManagedSessionRequest())
+	}()
+
+	poll := postJSON(t, router, "/api/v1/agents/signaling/poll", map[string]any{
+		"agent_session_id": registered.AgentSessionID,
+		"device_id":        "mach_1",
+		"timeout_seconds":  1,
+	})
+	if poll.Code != http.StatusOK {
+		t.Fatalf("agent poll status = %d body=%s", poll.Code, poll.Body.String())
+	}
+	var pollResp struct {
+		Offer struct {
+			SessionID string `json:"session_id"`
+		} `json:"offer"`
+	}
+	decodeJSON(t, poll, &pollResp)
+	if pollResp.Offer.SessionID != "rtc_managed_1" {
+		t.Fatalf("poll session id = %q", pollResp.Offer.SessionID)
+	}
+	answer := postJSON(t, router, "/api/v1/agents/signaling/answer", map[string]any{
+		"agent_session_id": registered.AgentSessionID,
+		"device_id":        "mach_1",
+		"answer": map[string]any{
+			"session_id": pollResp.Offer.SessionID,
+			"sdp":        minimalSDP("delayed-answer"),
+		},
+	})
+	if answer.Code != http.StatusNoContent {
+		t.Fatalf("agent answer status = %d body=%s", answer.Code, answer.Body.String())
+	}
+
+	var response *httptest.ResponseRecorder
+	select {
+	case response = <-responseCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("session request did not return")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("session response status = %d body=%s", response.Code, response.Body.String())
+	}
+	var got struct {
+		Answer struct {
+			SDP string `json:"sdp"`
+		} `json:"answer"`
+	}
+	decodeJSON(t, response, &got)
+	if got.Answer.SDP != minimalSDP("delayed-answer") {
+		t.Fatalf("answer response = %+v", got)
+	}
+}
+
 func TestManagedSessionHTTPRejectsRuntimePayload(t *testing.T) {
 	t.Parallel()
 
@@ -228,7 +319,7 @@ func TestManagedSessionHTTPTimeoutReturnsRecoverableSession(t *testing.T) {
 	router := httpapi.NewHandler(httpapi.Config{
 		Managed:       svc,
 		AnswerTimeout: time.Millisecond,
-		PollInterval:   time.Millisecond,
+		PollInterval:  time.Millisecond,
 	})
 	resp := postJSON(t, router, "/api/v1/sessions", validManagedSessionRequest())
 	if resp.Code != http.StatusAccepted {
@@ -301,6 +392,15 @@ func TestManagedSessionHTTPRejectsOversizedBody(t *testing.T) {
 	}
 }
 
+func validManagedSessionRequestWithIDs(machineID, terminalID, sessionID string) map[string]any {
+	req := validManagedSessionRequest()
+	req["machine_id"] = machineID
+	req["terminal_id"] = terminalID
+	offer := req["offer"].(map[string]any)
+	offer["session_id"] = sessionID
+	return req
+}
+
 func postJSON(t *testing.T, handler http.Handler, path string, body map[string]any) *httptest.ResponseRecorder {
 	t.Helper()
 	data, err := json.Marshal(body)
@@ -314,6 +414,17 @@ func postJSON(t *testing.T, handler http.Handler, path string, body map[string]a
 	return resp
 }
 
+func getJSON(t *testing.T, handler http.Handler, path string, debugToken string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	if debugToken != "" {
+		req.Header.Set("X-TermX-Debug-Token", debugToken)
+	}
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	return resp
+}
+
 func decodeJSON(t *testing.T, resp *httptest.ResponseRecorder, out any) {
 	t.Helper()
 	if err := json.Unmarshal(resp.Body.Bytes(), out); err != nil {
@@ -322,13 +433,31 @@ func decodeJSON(t *testing.T, resp *httptest.ResponseRecorder, out any) {
 }
 
 type fakeTicketVerifier struct {
-	tickets map[string]managed.Ticket
-	used    map[string]bool
-	now     time.Time
-	consumeCalls []string
+	tickets               map[string]managed.Ticket
+	used                  map[string]bool
+	now                   time.Time
+	consumeCalls          []string
+	requireAgentSignature bool
 }
 
-func (f *fakeTicketVerifier) VerifyManagedTicket(_ context.Context, in managed.VerifyTicketInput) (managed.Ticket, error) {
+func (f *fakeTicketVerifier) CheckManagedTicket(_ context.Context, in managed.VerifyTicketInput) (managed.Ticket, error) {
+	ticket, ok := f.tickets[in.TicketID]
+	if !ok {
+		return managed.Ticket{}, managed.ErrTicketExpired
+	}
+	if ticket.MachineID != in.MachineID {
+		return managed.Ticket{}, managed.ErrWrongMachine
+	}
+	if in.TerminalID != "" && ticket.TerminalID != in.TerminalID {
+		return managed.Ticket{}, managed.ErrWrongTerminal
+	}
+	if !ticket.ExpiresAt.After(f.now) {
+		return managed.Ticket{}, managed.ErrTicketExpired
+	}
+	return ticket, nil
+}
+
+func (f *fakeTicketVerifier) ConsumeManagedTicket(_ context.Context, in managed.VerifyTicketInput) (managed.Ticket, error) {
 	f.consumeCalls = append(f.consumeCalls, in.MachineID+"/"+in.TerminalID+"/"+in.TicketID)
 	ticket, ok := f.tickets[in.TicketID]
 	if !ok {
@@ -353,7 +482,10 @@ func (f *fakeTicketVerifier) VerifyManagedTicket(_ context.Context, in managed.V
 	return ticket, nil
 }
 
-func (f *fakeTicketVerifier) VerifyAgentRegistration(context.Context, registry.AgentRegistration) error {
+func (f *fakeTicketVerifier) VerifyAgentRegistration(_ context.Context, in registry.AgentRegistration) error {
+	if f.requireAgentSignature && (in.SignatureAlgorithm == "" || in.SignatureNonce == "" || in.SignatureTimestamp == 0 || in.SignatureValue == "") {
+		return registry.ErrUnauthorizedAgent
+	}
 	return nil
 }
 

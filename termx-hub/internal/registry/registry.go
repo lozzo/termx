@@ -105,8 +105,12 @@ func (r *Registry) Register(ctx context.Context, in RegisterInput) (Agent, error
 	}
 	r.mu.Unlock()
 	if err := r.verifier.VerifyAgentRegistration(ctx, AgentRegistration{
-		MachineID: agent.MachineID,
-		AgentID:   agent.ID,
+		MachineID:          agent.MachineID,
+		AgentID:            agent.ID,
+		SignatureAlgorithm: strings.TrimSpace(in.SignatureAlgorithm),
+		SignatureNonce:     strings.TrimSpace(in.SignatureNonce),
+		SignatureTimestamp: in.SignatureTimestamp,
+		SignatureValue:     strings.TrimSpace(in.SignatureValue),
 	}); err != nil {
 		return Agent{}, err
 	}
@@ -200,12 +204,11 @@ func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error
 	machineID := strings.TrimSpace(in.MachineID)
 	terminalID := strings.TrimSpace(in.TerminalID)
 	ticketID := strings.TrimSpace(in.TicketID)
-	sdp := strings.TrimSpace(in.SDP)
 	if err := r.PreflightOffer(ctx, OfferInput{
 		MachineID:      machineID,
 		TerminalID:     terminalID,
 		TicketID:       ticketID,
-		SDP:            sdp,
+		SDP:            in.SDP,
 		SessionID:      strings.TrimSpace(in.SessionID),
 		ICECandidates:  cloneStrings(in.ICECandidates),
 		AppCertificate: cloneRawMessage(in.AppCertificate),
@@ -227,7 +230,7 @@ func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error
 		MachineID:      machineID,
 		TerminalID:     terminalID,
 		TicketID:       ticketID,
-		SDP:            sdp,
+		SDP:            in.SDP,
 		SessionID:      strings.TrimSpace(in.SessionID),
 		ICECandidates:  cloneStrings(in.ICECandidates),
 		AppCertificate: cloneRawMessage(in.AppCertificate),
@@ -263,7 +266,7 @@ func (r *Registry) submitVerifiedOffer(ctx context.Context, in OfferInput) (Offe
 		MachineID:      strings.TrimSpace(in.MachineID),
 		TerminalID:     strings.TrimSpace(in.TerminalID),
 		TicketID:       strings.TrimSpace(in.TicketID),
-		SDP:            strings.TrimSpace(in.SDP),
+		SDP:            in.SDP,
 		ICECandidates:  cloneStrings(in.ICECandidates),
 		AppCertificate: cloneRawMessage(in.AppCertificate),
 		Signature:      in.Signature,
@@ -359,11 +362,10 @@ func (r *Registry) SubmitAnswer(ctx context.Context, in AnswerInput) (Answer, er
 	if offer.AssignedAgentID == "" || offer.AssignedAgentID != agent.ID {
 		return Answer{}, ErrOfferNotAssigned
 	}
-	answerSDP := strings.TrimSpace(in.SDP)
-	if answerSDP == "" {
+	if strings.TrimSpace(in.SDP) == "" {
 		return Answer{}, errors.New("answer sdp is required")
 	}
-	if err := r.validateSignalingPayload(answerSDP); err != nil {
+	if err := r.validateSignalingPayload(strings.TrimSpace(in.SDP)); err != nil {
 		return Answer{}, err
 	}
 	if _, exists := r.answers[offer.ID]; exists {
@@ -374,7 +376,7 @@ func (r *Registry) SubmitAnswer(ctx context.Context, in AnswerInput) (Answer, er
 		OfferID:   offer.ID,
 		AgentID:   agent.ID,
 		MachineID: agent.MachineID,
-		SDP:       answerSDP,
+		SDP:       in.SDP,
 		CreatedAt: r.clock.Now().UTC(),
 	}
 	r.answers[answer.OfferID] = answer

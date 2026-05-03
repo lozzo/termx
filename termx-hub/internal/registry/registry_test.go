@@ -403,6 +403,86 @@ func TestOfferRequiresTicketVerifier(t *testing.T) {
 	}
 }
 
+func TestSubmitOfferPreservesSignedSDPBytes(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := registry.New(registry.Config{
+		Clock:    fixedClock(time.Date(2026, 5, 3, 10, 8, 30, 0, time.UTC)),
+		AgentTTL: time.Minute,
+		Verifier: allowAuthorityVerifier{},
+	})
+	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	signedSDP := minimalSDP("offer") + "\r\n"
+	if _, err := store.SubmitOffer(ctx, registry.OfferInput{
+		MachineID:  "mach_1",
+		TerminalID: "term_1",
+		TicketID:   "ticket_1",
+		SDP:        signedSDP,
+	}); err != nil {
+		t.Fatalf("submit offer: %v", err)
+	}
+	offer, err := store.Poll(ctx, registry.PollInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		Timeout:   time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("poll offer: %v", err)
+	}
+	if offer.SDP != signedSDP {
+		t.Fatalf("polled SDP was mutated: got %q want %q", offer.SDP, signedSDP)
+	}
+}
+
+func TestSubmitAnswerPreservesSDPBytes(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := registry.New(registry.Config{
+		Clock:    fixedClock(time.Date(2026, 5, 3, 10, 8, 45, 0, time.UTC)),
+		AgentTTL: time.Minute,
+		Verifier: allowAuthorityVerifier{},
+	})
+	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
+		MachineID:  "mach_1",
+		TerminalID: "term_1",
+		TicketID:   "ticket_1",
+		SDP:        minimalSDP("offer") + "\r\n",
+	})
+	if err != nil {
+		t.Fatalf("submit offer: %v", err)
+	}
+	if _, err := store.Poll(ctx, registry.PollInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		Timeout:   time.Millisecond,
+	}); err != nil {
+		t.Fatalf("poll offer: %v", err)
+	}
+	answerSDP := minimalSDP("answer") + "\r\n"
+	if _, err := store.SubmitAnswer(ctx, registry.AnswerInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		OfferID:   offer.ID,
+		SDP:       answerSDP,
+	}); err != nil {
+		t.Fatalf("submit answer: %v", err)
+	}
+	answer, err := store.GetAnswer(ctx, offer.ID)
+	if err != nil {
+		t.Fatalf("get answer: %v", err)
+	}
+	if answer.SDP != answerSDP {
+		t.Fatalf("answer SDP was mutated: got %q want %q", answer.SDP, answerSDP)
+	}
+}
+
 func TestCleanupKeepsQueuedOfferWhenAnotherAgentOnline(t *testing.T) {
 	t.Parallel()
 

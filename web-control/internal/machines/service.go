@@ -7,12 +7,15 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 )
+
+var ErrMachineNotOwned = errors.New("machine not found")
 
 type Config struct {
 	DB    *sql.DB
@@ -152,6 +155,77 @@ func (s *Service) Claim(ctx context.Context, in ClaimInput) (Machine, error) {
 	return machine, nil
 }
 
+func (s *Service) RegisterRemoteDevice(ctx context.Context, in RegisterRemoteDeviceInput) (Machine, error) {
+	if s == nil || s.db == nil {
+		return Machine{}, errors.New("machine service is not configured")
+	}
+	userID := strings.TrimSpace(in.UserID)
+	machineID := strings.TrimSpace(in.MachineID)
+	publicKey := strings.TrimSpace(in.MachinePublicKey)
+	if userID == "" || machineID == "" || publicKey == "" {
+		return Machine{}, errors.New("user id, machine id, and machine public key are required")
+	}
+	if strings.TrimSpace(in.MachinePrivateKey) != "" {
+		return Machine{}, errors.New("machine private key must not be uploaded")
+	}
+	now := s.clock.Now().UTC()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Machine{}, err
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO machines(id, owner_user_id, machine_public_key, claim_token_hash, display_name, hostname, platform, last_seen_at)
+		VALUES (?, ?, ?, '', ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			owner_user_id = excluded.owner_user_id,
+			machine_public_key = excluded.machine_public_key,
+			display_name = excluded.display_name,
+			hostname = excluded.hostname,
+			platform = excluded.platform,
+			last_seen_at = excluded.last_seen_at
+		WHERE machines.owner_user_id IS NULL OR machines.owner_user_id = excluded.owner_user_id
+	`, machineID, userID, publicKey, nonEmpty(in.DisplayName, "Unnamed machine"), strings.TrimSpace(in.Hostname), strings.TrimSpace(in.Platform), formatTime(now)); err != nil {
+		return Machine{}, fmt.Errorf("register remote device: %w", err)
+	}
+	machine, err := loadMachineTx(ctx, tx, machineID)
+	if err != nil {
+		return Machine{}, err
+	}
+	if machine.OwnerUserID != userID {
+		return Machine{}, ErrMachineNotOwned
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM machine_terminals WHERE machine_id = ?`, machineID); err != nil {
+		return Machine{}, err
+	}
+	for _, terminal := range in.Terminals {
+		terminalID := strings.TrimSpace(terminal.ID)
+		if terminalID == "" {
+			continue
+		}
+		commandJSON, err := json.Marshal(trimStrings(terminal.Command))
+		if err != nil {
+			return Machine{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO machine_terminals(id, machine_id, name, command_json, cols, rows, state, last_seen_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, terminalID, machineID, strings.TrimSpace(terminal.Name), string(commandJSON), terminal.Cols, terminal.Rows, strings.TrimSpace(terminal.State), formatTime(now)); err != nil {
+			return Machine{}, fmt.Errorf("register remote terminal: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return Machine{}, err
+	}
+	tx = nil
+	machine.LastSeenAt = &now
+	return machine, nil
+}
+
 func (s *Service) ListMachines(ctx context.Context, userID string) ([]Machine, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
@@ -181,12 +255,145 @@ func (s *Service) ListMachines(ctx context.Context, userID string) ([]Machine, e
 	return result, nil
 }
 
+func (s *Service) ListRemoteTerminals(ctx context.Context, userID string, machineID string) ([]RemoteTerminal, error) {
+	if _, err := s.loadOwnedMachine(ctx, userID, machineID); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, machine_id, name, command_json, cols, rows, state, last_seen_at
+		FROM machine_terminals
+		WHERE machine_id = ?
+		ORDER BY id
+	`, strings.TrimSpace(machineID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []RemoteTerminal
+	for rows.Next() {
+		terminal, err := scanRemoteTerminal(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, terminal)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *Service) VerifyAgentRegistration(ctx context.Context, in VerifyAgentRegistrationInput) error {
+	if s == nil || s.db == nil {
+		return errors.New("machine service is not configured")
+	}
+	machineID := strings.TrimSpace(in.MachineID)
+	agentID := strings.TrimSpace(in.AgentID)
+	nonce := strings.TrimSpace(in.Signature.Nonce)
+	if machineID == "" || agentID == "" {
+		return errors.New("machine id and agent id are required")
+	}
+	if strings.ToLower(strings.TrimSpace(in.Signature.Algorithm)) != "ed25519" {
+		return errors.New("unsupported agent registration signature algorithm")
+	}
+	if nonce == "" || in.Signature.Timestamp == 0 || strings.TrimSpace(in.Signature.Value) == "" {
+		return errors.New("agent registration signature is required")
+	}
+	now := s.clock.Now().UTC()
+	signedAt := time.Unix(in.Signature.Timestamp, 0).UTC()
+	if signedAt.Before(now.Add(-5*time.Minute)) || signedAt.After(now.Add(5*time.Minute)) {
+		return errors.New("agent registration signature timestamp is outside allowed skew")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	machine, err := loadMachineTx(ctx, tx, machineID)
+	if err != nil {
+		return err
+	}
+	publicKey, err := decodeMachinePublicKey(machine.MachinePublicKey)
+	if err != nil {
+		return err
+	}
+	signatureBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(in.Signature.Value))
+	if err != nil || len(signatureBytes) != ed25519.SignatureSize {
+		return errors.New("agent registration signature is invalid")
+	}
+	message := canonicalAgentRegistrationSignatureMessage(agentRegistrationSignatureFields{
+		MachineID: machineID,
+		AgentID:   agentID,
+		Nonce:     nonce,
+		Timestamp: signedAt,
+	})
+	if !ed25519.Verify(publicKey, message, signatureBytes) {
+		return errors.New("agent registration signature verification failed")
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM agent_registration_nonces WHERE created_at < ?`, formatTime(now.Add(-10*time.Minute))); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO agent_registration_nonces(machine_id, nonce, created_at)
+		VALUES (?, ?, ?)
+	`, machineID, nonce, formatTime(now))
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return errors.New("agent registration signature replayed")
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	tx = nil
+	return nil
+}
+
 func (s *Service) GetMachine(ctx context.Context, userID string, machineID string) (Machine, error) {
 	machine, err := s.loadOwnedMachine(ctx, userID, machineID)
 	if err != nil {
 		return Machine{}, err
 	}
 	return machine, nil
+}
+
+func decodeMachinePublicKey(value string) (ed25519.PublicKey, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(value))
+	if err != nil || len(raw) != ed25519.PublicKeySize {
+		raw, err = base64.StdEncoding.DecodeString(strings.TrimSpace(value))
+	}
+	if err != nil || len(raw) != ed25519.PublicKeySize {
+		return nil, errors.New("machine public key is invalid")
+	}
+	return ed25519.PublicKey(raw), nil
+}
+
+type agentRegistrationSignatureFields struct {
+	MachineID string
+	AgentID   string
+	Nonce     string
+	Timestamp time.Time
+}
+
+func canonicalAgentRegistrationSignatureMessage(fields agentRegistrationSignatureFields) []byte {
+	machineHash := sha256.Sum256([]byte(strings.TrimSpace(fields.MachineID)))
+	agentHash := sha256.Sum256([]byte(strings.TrimSpace(fields.AgentID)))
+	return []byte(strings.Join([]string{
+		"termx-agent-registration-v1:",
+		"sha256(machine_id):" + hex.EncodeToString(machineHash[:]),
+		"sha256(agent_id):" + hex.EncodeToString(agentHash[:]),
+		"nonce:" + strings.TrimSpace(fields.Nonce),
+		fmt.Sprintf("timestamp:%d", fields.Timestamp.UTC().Unix()),
+	}, "\n"))
 }
 
 func (s *Service) RegisterAppCertificate(ctx context.Context, in RegisterAppCertificateInput) (AppCertificate, error) {
@@ -406,6 +613,26 @@ func scanAppCertificate(row singleRow) (AppCertificate, error) {
 	return cert, nil
 }
 
+func scanRemoteTerminal(row singleRow) (RemoteTerminal, error) {
+	var terminal RemoteTerminal
+	var commandJSON string
+	var lastSeenAt string
+	if err := row.Scan(&terminal.ID, &terminal.MachineID, &terminal.Name, &commandJSON, &terminal.Cols, &terminal.Rows, &terminal.State, &lastSeenAt); err != nil {
+		return RemoteTerminal{}, err
+	}
+	if strings.TrimSpace(commandJSON) != "" {
+		if err := json.Unmarshal([]byte(commandJSON), &terminal.Command); err != nil {
+			return RemoteTerminal{}, err
+		}
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, lastSeenAt)
+	if err != nil {
+		return RemoteTerminal{}, err
+	}
+	terminal.LastSeenAt = parsed
+	return terminal, nil
+}
+
 func validateCertificatePayload(machinePublicKey string, machineID string, appPublicKey string, expiresAt time.Time, payload string, signature string) (string, error) {
 	payload = strings.TrimSpace(payload)
 	if payload == "" {
@@ -499,6 +726,17 @@ func nonEmpty(value string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func trimStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func formatTime(value time.Time) string {

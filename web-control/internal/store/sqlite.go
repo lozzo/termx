@@ -124,6 +124,23 @@ var migrationStatements = []string{
 		last_seen_at TEXT,
 		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 	)`,
+	`CREATE TABLE IF NOT EXISTS machine_terminals (
+		id TEXT NOT NULL,
+		machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+		name TEXT NOT NULL DEFAULT '',
+		command_json TEXT NOT NULL DEFAULT '[]',
+		cols INTEGER NOT NULL DEFAULT 0,
+		rows INTEGER NOT NULL DEFAULT 0,
+		state TEXT NOT NULL DEFAULT '',
+		last_seen_at TEXT NOT NULL,
+		PRIMARY KEY (machine_id, id)
+	)`,
+	`CREATE TABLE IF NOT EXISTS agent_registration_nonces (
+		machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+		nonce TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		PRIMARY KEY (machine_id, nonce)
+	)`,
 	`CREATE TABLE IF NOT EXISTS app_devices (
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -220,6 +237,27 @@ func applyMigrationUpgrades(ctx context.Context, tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `ALTER TABLE machines ADD COLUMN claim_token_hash TEXT NOT NULL DEFAULT ''`); err != nil {
 			return fmt.Errorf("add machines.claim_token_hash: %w", err)
 		}
+	}
+	if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS machine_terminals (
+		id TEXT NOT NULL,
+		machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+		name TEXT NOT NULL DEFAULT '',
+		command_json TEXT NOT NULL DEFAULT '[]',
+		cols INTEGER NOT NULL DEFAULT 0,
+		rows INTEGER NOT NULL DEFAULT 0,
+		state TEXT NOT NULL DEFAULT '',
+		last_seen_at TEXT NOT NULL,
+		PRIMARY KEY (machine_id, id)
+	)`); err != nil {
+		return fmt.Errorf("create machine_terminals: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS agent_registration_nonces (
+		machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+		nonce TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		PRIMARY KEY (machine_id, nonce)
+	)`); err != nil {
+		return fmt.Errorf("create agent_registration_nonces: %w", err)
 	}
 	hasPlanRelayThrottleBps, err := columnExists(ctx, tx, "plans", "relay_throttle_bps")
 	if err != nil {

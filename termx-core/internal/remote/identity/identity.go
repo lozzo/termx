@@ -128,6 +128,10 @@ func MachinePublicKeyFingerprint(publicKey ed25519.PublicKey) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
+func PublicKeyString(publicKey ed25519.PublicKey) string {
+	return base64.RawURLEncoding.EncodeToString(publicKey)
+}
+
 func (k MachineKey) Sign(message []byte) []byte {
 	if len(k.privateKey) != ed25519.PrivateKeySize {
 		return nil

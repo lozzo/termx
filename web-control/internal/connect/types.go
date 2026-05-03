@@ -35,6 +35,7 @@ type CreateManagedTicketInput struct {
 }
 
 type VerifyManagedTicketInput struct {
-	TicketID  string
-	MachineID string
+	TicketID   string
+	MachineID  string
+	TerminalID string
 }

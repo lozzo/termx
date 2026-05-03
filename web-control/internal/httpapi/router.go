@@ -23,6 +23,7 @@ type Config struct {
 	Machines              *machines.Service
 	Connect               *connect.Service
 	Rendezvous            *rendezvous.Service
+	HubSharedSecret       string
 	MaxPublicP2PBodyBytes int64
 }
 
@@ -161,6 +162,108 @@ func NewRouter(cfg Config) http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusCreated, result)
+	})
+	mux.HandleFunc("POST /api/devices/register", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := authenticatedUser(w, r, cfg.Accounts)
+		if !ok {
+			return
+		}
+		if cfg.Machines == nil {
+			writeError(w, http.StatusServiceUnavailable, "machine_service_unavailable", "machine service is not configured")
+			return
+		}
+		var req struct {
+			DeviceID          string `json:"deviceId"`
+			MachinePublicKey  string `json:"machinePublicKey"`
+			MachinePrivateKey string `json:"machinePrivateKey"`
+			DisplayName       string `json:"displayName"`
+			Hostname          string `json:"hostname"`
+			Platform          string `json:"platform"`
+			Terminals         []struct {
+				ID      string   `json:"id"`
+				Name    string   `json:"name"`
+				Command []string `json:"command"`
+				Cols    int      `json:"cols"`
+				Rows    int      `json:"rows"`
+				State   string   `json:"state"`
+			} `json:"terminals"`
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, cfg.MaxPublicP2PBodyBytes)
+		if err := decodeJSON(r, &req); err != nil {
+			if requestBodyTooLarge(err) {
+				writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body is too large")
+				return
+			}
+			writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+			return
+		}
+		terminals := make([]machines.RemoteTerminalInput, 0, len(req.Terminals))
+		for _, terminal := range req.Terminals {
+			terminals = append(terminals, machines.RemoteTerminalInput{
+				ID:      terminal.ID,
+				Name:    terminal.Name,
+				Command: terminal.Command,
+				Cols:    terminal.Cols,
+				Rows:    terminal.Rows,
+				State:   terminal.State,
+			})
+		}
+		machine, err := cfg.Machines.RegisterRemoteDevice(r.Context(), machines.RegisterRemoteDeviceInput{
+			UserID:            user.User.ID,
+			MachineID:         req.DeviceID,
+			MachinePublicKey:  req.MachinePublicKey,
+			MachinePrivateKey: req.MachinePrivateKey,
+			DisplayName:       req.DisplayName,
+			Hostname:          req.Hostname,
+			Platform:          req.Platform,
+			Terminals:         terminals,
+		})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "register_device_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"device": machine})
+	})
+	mux.HandleFunc("GET /api/devices", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := authenticatedUser(w, r, cfg.Accounts)
+		if !ok {
+			return
+		}
+		if cfg.Machines == nil {
+			writeError(w, http.StatusServiceUnavailable, "machine_service_unavailable", "machine service is not configured")
+			return
+		}
+		list, err := cfg.Machines.ListMachines(r.Context(), user.User.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "list_devices_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"devices": list})
+	})
+	mux.HandleFunc("GET /api/terminals", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := authenticatedUser(w, r, cfg.Accounts)
+		if !ok {
+			return
+		}
+		if cfg.Machines == nil {
+			writeError(w, http.StatusServiceUnavailable, "machine_service_unavailable", "machine service is not configured")
+			return
+		}
+		machinesList, err := cfg.Machines.ListMachines(r.Context(), user.User.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "list_machines_failed", err.Error())
+			return
+		}
+		var terminals []machines.RemoteTerminal
+		for _, machine := range machinesList {
+			items, err := cfg.Machines.ListRemoteTerminals(r.Context(), user.User.ID, machine.ID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "list_terminals_failed", err.Error())
+				return
+			}
+			terminals = append(terminals, items...)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"terminals": terminals})
 	})
 	mux.HandleFunc("POST /api/v1/machines/claim", func(w http.ResponseWriter, r *http.Request) {
 		user, ok := authenticatedUser(w, r, cfg.Accounts)
@@ -325,6 +428,15 @@ func NewRouter(cfg Config) http.Handler {
 		}
 		writeJSON(w, http.StatusCreated, ticket)
 	})
+	mux.HandleFunc("POST /api/v1/hub/managed-tickets/check", func(w http.ResponseWriter, r *http.Request) {
+		handleHubManagedTicket(w, r, cfg, false)
+	})
+	mux.HandleFunc("POST /api/v1/hub/managed-tickets/consume", func(w http.ResponseWriter, r *http.Request) {
+		handleHubManagedTicket(w, r, cfg, true)
+	})
+	mux.HandleFunc("POST /api/v1/hub/agents/verify-registration", func(w http.ResponseWriter, r *http.Request) {
+		handleHubAgentRegistration(w, r, cfg)
+	})
 	mux.HandleFunc("POST /api/v1/public-p2p/channels", func(w http.ResponseWriter, r *http.Request) {
 		user, ok := authenticatedUser(w, r, cfg.Accounts)
 		if !ok {
@@ -441,6 +553,93 @@ func handleRendezvousMessage(w http.ResponseWriter, r *http.Request, service *re
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+func handleHubManagedTicket(w http.ResponseWriter, r *http.Request, cfg Config, consume bool) {
+	if strings.TrimSpace(cfg.HubSharedSecret) == "" {
+		writeError(w, http.StatusServiceUnavailable, "hub_auth_unavailable", "hub shared secret is not configured")
+		return
+	}
+	if r.Header.Get("X-TermX-Hub-Secret") != cfg.HubSharedSecret {
+		writeError(w, http.StatusUnauthorized, "invalid_hub_secret", "hub authentication failed")
+		return
+	}
+	if cfg.Connect == nil {
+		writeError(w, http.StatusServiceUnavailable, "connect_service_unavailable", "connect service is not configured")
+		return
+	}
+	var req struct {
+		TicketID   string `json:"ticket_id"`
+		MachineID  string `json:"machine_id"`
+		TerminalID string `json:"terminal_id"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+		return
+	}
+	input := connect.VerifyManagedTicketInput{
+		TicketID:   req.TicketID,
+		MachineID:  req.MachineID,
+		TerminalID: req.TerminalID,
+	}
+	var (
+		ticket connect.ManagedTicket
+		err    error
+	)
+	if consume {
+		ticket, err = cfg.Connect.VerifyManagedTicket(r.Context(), input)
+	} else {
+		ticket, err = cfg.Connect.CheckManagedTicket(r.Context(), input)
+	}
+	if err != nil {
+		writeError(w, http.StatusForbidden, "managed_ticket_rejected", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ticket": ticket})
+}
+
+func handleHubAgentRegistration(w http.ResponseWriter, r *http.Request, cfg Config) {
+	if strings.TrimSpace(cfg.HubSharedSecret) == "" {
+		writeError(w, http.StatusServiceUnavailable, "hub_auth_unavailable", "hub shared secret is not configured")
+		return
+	}
+	if r.Header.Get("X-TermX-Hub-Secret") != cfg.HubSharedSecret {
+		writeError(w, http.StatusUnauthorized, "invalid_hub_secret", "hub authentication failed")
+		return
+	}
+	if cfg.Machines == nil {
+		writeError(w, http.StatusServiceUnavailable, "machine_service_unavailable", "machine service is not configured")
+		return
+	}
+	var req struct {
+		MachineID string `json:"machine_id"`
+		AgentID   string `json:"agent_id"`
+		Signature struct {
+			Algorithm string `json:"algorithm"`
+			Nonce     string `json:"nonce"`
+			Timestamp int64  `json:"timestamp"`
+			Value     string `json:"value"`
+		} `json:"signature"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+		return
+	}
+	err := cfg.Machines.VerifyAgentRegistration(r.Context(), machines.VerifyAgentRegistrationInput{
+		MachineID: req.MachineID,
+		AgentID:   req.AgentID,
+		Signature: machines.AgentRegistrationSignature{
+			Algorithm: req.Signature.Algorithm,
+			Nonce:     req.Signature.Nonce,
+			Timestamp: req.Signature.Timestamp,
+			Value:     req.Signature.Value,
+		},
+	})
+	if err != nil {
+		writeError(w, http.StatusForbidden, "agent_registration_rejected", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func envelopePayload(messageType string, nested json.RawMessage, appCertificate json.RawMessage, appPublicKey string, signature json.RawMessage) json.RawMessage {

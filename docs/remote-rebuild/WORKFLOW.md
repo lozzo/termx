@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `10` remote-ui real API adapters.
-- Last updated: 2026-05-03T10:50:36+08:00.
+- Active todo: `11` devstack and external server tests.
+- Last updated: 2026-05-03T13:32:00+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -106,7 +106,18 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 10-B-G | remote-ui-managed-hub-session-api-follow-up-review | Make managed session pending recovery usable by remote-ui and Hub answer lookup | completed | `a1a7421f` |
 | 10-B-H | remote-ui-managed-hub-session-api-follow-up-review | Add remote-ui managed Hub pending answer polling method | completed | `a1a7421f` |
 | 10-B-I | remote-ui-managed-hub-session-api-follow-up-review | Scope managed public session-id lookup to ticket and machine to avoid collision overwrite | completed | `a1a7421f` |
-| 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | pending |  |
+| 11 | devstack | Build local devstack and optional external server smoke runbook for public STUN/TURN/signaling tests | in_progress |  |
+| 11-A | devstack-external-smoke | Make the current web-control + hub + daemon stack runnable enough for external managed signaling smoke | completed |  |
+| 11-A-A | devstack-external-smoke | Defer production DNS/TLS/systemd/firewall/TURN deployment for external smoke | deferred_external |  |
+| 11-A-B | devstack-external-smoke | Resolve local pairing tunnel port collision with existing local TermX web | completed |  |
+| 11-A-C | devstack-external-smoke | Treat not-yet-answered managed offers as pending instead of fatal wrong-machine errors | completed |  |
+| 11-A-C-A | devstack-external-smoke | Add debug-token protected Hub agent poll/answer diagnostics for external smoke | completed |  |
+| 11-A-D | devstack-external-smoke | Preserve signed SDP bytes through Hub so daemon offer signature verification succeeds | completed |  |
+| 11-A-E | devstack-external-smoke-review | Require machine-signed agent registration proof before Hub accepts daemon sessions | completed |  |
+| 11-A-F | devstack-external-smoke-review | Randomize public devstack secrets and remove fixed reusable live credentials from runbook | completed |  |
+| 11-A-G | devstack-external-smoke-review | Add explicit request body limit for daemon device registration | completed |  |
+| 11-A-H | devstack-external-smoke-network | Record STUN-only public DataChannel failure as external ICE/TURN/public-port limitation | deferred_external |  |
+| 11-A-I | devstack-external-smoke-follow-up | Record low-risk follow-up review items for canonical golden tests and hub endpoint body caps | deferred |  |
 
 ## Buildout Todo Details
 
@@ -231,7 +242,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - subagent review：included in the updated Slice 2 follow-up review request to `Tesla`.
 - review 发现：pending.
 - review 后修复：implemented local self-review fixes; broader validation passed and follow-up subagent review accepted the fixes.
-- 新增派生条目：none.
+- 新增派生条目：`11-A-C-A`.
 - deferred human items：none.
 - 剩余风险：real provider webhook signature and idempotency remain deferred external/business hardening.
 - 下一步：included in Slice 2 commit.
@@ -1945,7 +1956,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 10 remote-ui Real API Adapters
 
-- 状态：review
+- 状态：completed
 - 父条目：none
 - 来源：remote-ui 后续只接真实 web/hub API adapter，运行时仍只通过 `RtcSession`。
 - 目标：实现 Web Control API client、public_p2p signaling adapter、managed signaling adapter、capabilities UI/state，保留 path 仅 `local/public_p2p/managed`。
@@ -2152,7 +2163,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 10-B Managed Hub Session HTTP Adapter
 
-- 状态：in_progress
+- 状态：review
 - 父条目：10
 - 来源：Slice 10 next adapter after Web Control API; docs define managed app/browser Hub signaling as `POST /api/v1/sessions` with connect ticket + offer + app certificate/signature returning a WebRTC answer.
 - 目标：add a browser-agnostic `remote-ui` managed Hub session API adapter and a minimal `termx-hub` app-facing HTTP contract seed for `POST /api/v1/sessions`. The adapter must submit offer signaling, parse answer/capability/policy info, and keep terminal/file/api/events runtime on `RtcSession`.
@@ -2411,27 +2422,304 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 11 Devstack And External Server Tests
 
-- 状态：pending
+- 状态：in_progress
 - 父条目：none
 - 来源：最终需要 local devstack 和可选公网 STUN/TURN/signaling smoke。
 - 目标：提供 reproducible local devstack; optional safe test on `root@114.66.58.243` only when a slice needs public network behavior and after recording reason/start/stop/cleanup commands.
 - 范围：`docs/remote-rebuild/RUNBOOK.md` or devstack scripts, `web-control/`, `termx-hub/`, `termx-cli/` integration tests.
 - 非目标：不修改 SSH config、iptables、防火墙、systemd 常驻服务；不清空系统目录。
-- 外部依赖：公网服务器、DNS/TLS/certificates may be required later.
-- mock 策略：local devstack first; external server only for network smoke that cannot be represented locally.
-- 先写的失败测试：待创建 devstack smoke checks and runbook validation.
-- 预期失败结果：待记录。
-- 实现摘要：待完成。
+- 外部依赖：需要使用 `ssh root@114.66.58.243` 作为公网 web/control + hub 临时主机，并使用 `ssh al` 作为远端 `termx daemon` 临时 agent 主机。生产 DNS/TLS/systemd/firewall/TURN 部署仍是外部依赖。
+- mock 策略：本切片只做临时 devstack/smoke：服务放在 `/tmp/termx-devstack`，使用本地 SQLite、临时 token/secret、HTTP 明文和现有 mock/local provider；不修改 SSH 配置、防火墙、iptables 或 systemd。
+- 先写的失败测试：create or update focused tests proving runnable Hub HTTP agent endpoints and Web Control/daemon compatibility endpoints exist before deploying; add runbook validation by checking `docs/remote-rebuild/RUNBOOK.md` contains start/stop/cleanup commands for `root@114.66.58.243` and `ssh al`.
+- 预期失败结果：focused tests should fail because current `termx-hub` has no process entry for `/api/v1/agents/register|heartbeat|signaling/poll|signaling/answer`, and current Web Control main does not wire `Connect`; old devstack helpers also call stale control endpoints.
+- 实现摘要：in progress.
 - 重构摘要：待完成。
-- 运行命令：待记录。
-- 测试结果：待记录。
+- 运行命令：pending.
+- 测试结果：pending.
 - subagent review：待发起。
 - review 发现：待记录。
 - review 后修复：待记录。
-- 新增派生条目：暂无。
-- deferred human items：production DNS/TLS/cloud account/security approval.
-- 剩余风险：external server state must be recorded and cleaned; temporary services go under `/tmp/termx-devstack` or `/opt/termx-devstack`.
-- 下一步：After slices 1-10 provide runnable services.
+- 新增派生条目：`11-A`, `11-A-A`.
+- deferred human items：production DNS/TLS/cloud account/security approval, production TURN public IP/ports, production systemd deployment.
+- 剩余风险：external server state must be recorded and cleaned; temporary services go under `/tmp/termx-devstack`; current deployed smoke may validate signaling/control before production auth/policy hardening is complete.
+- 下一步：complete `11-A` local TDD, then deploy temporary stack to external hosts and record commands/results.
+- commit：待提交。
+
+### 11-A External Managed Smoke Runnable Stack
+
+- 状态：in_progress
+- 父条目：11
+- 来源：用户要求在 `ssh root@114.66.58.243` 部署 web + hub，在 `ssh al` 部署 `termx daemon` 并开启 remote，然后从本地 web 连接测试。
+- 目标：make the currently implemented web-control, termx-hub, and daemon remote runtime runnable enough for an external managed signaling smoke without adding HTTP/WebSocket terminal/file/api/events runtime transport.
+- 范围：`termx-hub/cmd` or equivalent runnable entry, `termx-hub/internal/httpapi`, `web-control/cmd`/HTTP compatibility needed by daemon smoke, devstack docs/scripts under `docs/remote-rebuild`, focused tests, workflow.
+- 非目标：do not install persistent services, change firewall/iptables/SSH config, configure DNS/TLS, deploy production TURN, or claim production readiness. Do not introduce relay as client path.
+- 外部依赖：temporary SSH access to `root@114.66.58.243` and `al`; no production credentials required.
+- mock 策略：use local fake verifier/control seed provider where needed for devstack; keep mocks behind test/dev entrypoints and do not mix them into production business services.
+- 先写的失败测试：add focused Go tests for Hub agent register/heartbeat/poll/answer HTTP endpoints; then add failing tests for a runnable `termx-hub` command, Web Control daemon-compatible `/api/devices/register` inventory, Web Control main `Connect` wiring, Hub-to-Web-Control managed ticket check/consume endpoints, and a Hub HTTP verifier client.
+- 预期失败结果：tests should fail before implementation because the endpoints/process wiring are currently missing or incompatible. The next red tests should fail because `termx-hub/cmd/termx-hub` does not exist, daemon registration cannot be stored as an owned machine/terminal inventory, Web Control main does not wire `Connect`, and the Hub has no Web Control ticket verifier.
+- 实际失败结果：`cd termx-hub && go test ./internal/httpapi -run 'TestAgentHTTP'` failed as expected because `httpapi.Config` has no `Registry` field and the agent register/heartbeat/poll/answer endpoints are missing. Next red tests added in `web-control/internal/machines/register_device_test.go`, `web-control/internal/httpapi/devices_test.go`, `web-control/internal/connect/connect_test.go`, `web-control/internal/httpapi/hub_ticket_test.go`, `web-control/cmd/web-control/main_test.go`, and `termx-core/internal/remote/runtime/control_registration_test.go` to prove daemon-compatible registration/inventory, non-consuming ticket checks, hub ticket consume endpoints, main-router connect wiring, and daemon machine public-key upload.
+- 实现摘要：added Hub agent HTTP register/heartbeat/signaling poll/signaling answer handlers backed by the in-memory registry and managed offer queue. The handlers issue opaque agent sessions, forward only WebRTC signaling envelopes, map public `session_id` back to the internal offer ID for answer submission, and reject answer error/runtime-payload submissions instead of treating HTTP as a terminal/file/api/events transport. Added daemon control registration machine-public-key upload, Web Control owned daemon `/api/devices/register`, `machine_terminals` inventory persistence, `/api/devices` and `/api/terminals` compatibility reads, non-consuming managed-ticket check, hub-authenticated managed-ticket check/consume endpoints, and web-control main router wiring for `Connect`. Added Hub controlclient ticket verifier and `cmd/termx-hub` runnable entry that requires Web Control URL/secret and exposes health/signaling endpoints without fake verifier. The smoke client now uses current Web Control/Hub APIs, claims an app certificate through daemon local pairing, signs the managed offer with ticket-bound Ed25519 signature fields, and attaches a terminal over WebRTC DataChannel. Added STUN-only hub env plumbing for external smoke; `TERMX_HUB_STUN_SERVERS` accepts only `stun:` URLs and filters TURN/non-STUN values, keeping relay policy false.
+- 重构摘要：replaced the stale e2e command's embedded local-daemon flow with a real external daemon/client flow and kept file/api runtime smoke out of this slice until managed terminal attach is stable.
+- 运行命令：`cd termx-hub && go test ./internal/httpapi -run 'TestAgentHTTP'`; `cd termx-hub && go test ./internal/httpapi -run 'TestAgentHTTP' && go test ./...`; `cd termx-core && go test ./internal/remote/runtime -run 'TestManagerControlRegistration'`; `cd web-control && go test ./internal/machines -run TestRegisterRemoteDeviceClaimsOwnedMachineAndStoresInventory`; `cd web-control && go test ./internal/connect -run TestManagedTicketCheckDoesNotConsumeBeforeHubOfferPreflight`; `cd web-control && go test ./internal/httpapi -run 'TestDaemonDeviceRegistrationHTTPCompatibility|TestHubManagedTicketCheckAndConsumeHTTP'`; `cd web-control && go test ./cmd/web-control -run TestNewRouterFromServicesWiresManagedConnect`; `cd termx-hub && go test ./internal/controlclient ./cmd/termx-hub`; `cd termx-core && go test ./cmd/termx-remote-e2e -run TestBuildManagedSessionRequestSignsTicketBoundOffer`; `cd termx-hub && go test ./cmd/termx-hub -run TestNewHubHandlerFromEnvPassesSTUNServersToAgentRegister`; `cd termx-hub && go test ./... && cd ../web-control && go test ./... && cd ../termx-core && go test ./internal/remote/runtime ./cmd/termx-remote-e2e && cd .. && bash docs/remote-rebuild/check_workflow_rules.sh && git diff --check`.
+- 测试结果：red path confirmed first: focused tests failed at compile time on missing Hub agent HTTP wiring. After implementation, focused `TestAgentHTTP` passed and `cd termx-hub && go test ./...` passed. The next focused tests failed as expected: `identity.PublicKeyString` missing; `machines.RegisterRemoteDevice` / `ListRemoteTerminals` / terminal DTOs missing; `connect.CheckManagedTicket` and terminal-bound verify input missing; `httpapi.Config.HubSharedSecret` missing; `newRouterFromServices` missing. After implementation, focused tests passed: `cd termx-core && go test ./internal/remote/runtime -run 'TestManagerControlRegistration'`, `cd web-control && go test ./internal/machines -run TestRegisterRemoteDeviceClaimsOwnedMachineAndStoresInventory`, `cd web-control && go test ./internal/connect -run TestManagedTicketCheckDoesNotConsumeBeforeHubOfferPreflight`, `cd web-control && go test ./internal/httpapi -run 'TestDaemonDeviceRegistrationHTTPCompatibility|TestHubManagedTicketCheckAndConsumeHTTP'`, and `cd web-control && go test ./cmd/web-control -run TestNewRouterFromServicesWiresManagedConnect`. Added Hub verifier/command red tests; `cd termx-hub && go test ./internal/controlclient ./cmd/termx-hub` failed as expected because `internal/controlclient` has no non-test files and `newHubHandlerFromEnv` is missing; after implementation it passed. Added smoke-client request signing red test; `cd termx-core && go test ./cmd/termx-remote-e2e -run TestBuildManagedSessionRequestSignsTicketBoundOffer` failed because `buildManagedSessionRequest`, `managedSessionRequestInput`, and `minimalSDP` do not exist yet; after implementation it passed. Added STUN-only hub env red test; it first failed because agent registration returned empty ICE servers, then passed after env parsing/filtering implementation. Related module tests passed, and the broader command `cd termx-hub && go test ./... && cd ../web-control && go test ./... && cd ../termx-core && go test ./internal/remote/runtime ./cmd/termx-remote-e2e && cd .. && bash docs/remote-rebuild/check_workflow_rules.sh && git diff --check` passed.
+- subagent review：new subagent spawn failed because the environment reported `agent thread limit reached`; reused existing subagent `Ohm` (`019deaaa-4f8f-7562-8d7c-f00e7f0db154`) and sent the Slice 11-A review checklist before external deployment.
+- review 发现：`Ohm` found high issue: Hub agent registration trusted caller-submitted `device_id` and production `controlclient.VerifyAgentRegistration` returned nil, so a reachable Hub could be impersonated for any machine. High issue: `RUNBOOK.md` used fixed public devstack secrets while binding services on `0.0.0.0`. Medium issue: managed ticket durable consumption is split from Hub in-memory reservation before answer retrieval. Low issue: `/api/devices/register` lacks an explicit body limit.
+- review 后修复：created and completed `11-A-E` for machine-signed agent registration proof, `11-A-F` for randomized runbook/devstack secrets, and `11-A-G` for daemon device registration body limit. Created `11-A-H` for explicit external ICE/TURN/public-port limitation after STUN-only DataChannel timeout. Follow-up review found no blockers and created `11-A-I` for low-risk future hardening.
+- 新增派生条目：`11-A-A`, `11-A-B`, `11-A-C`, `11-A-E`, `11-A-F`, `11-A-G`, `11-A-H`, `11-A-I`.
+- deferred human items：none beyond `11-A-A`.
+- 剩余风险：this is a devstack bridge over incomplete production control/hub integration; it must stay isolated from core runtime transport.
+- 下一步：commit Slice `11-A`; keep temporary public services available for inspection and report STUN-only DataChannel limitation.
+- commit：待提交。
+
+### 11-A-A External Smoke Production Deployment Deferral
+
+- 状态：deferred_external
+- 父条目：11-A
+- 来源：external smoke needs public reachability but production deployment concerns require human/cloud configuration.
+- 目标：record that production DNS, TLS certificates, firewall/ports, systemd units, TURN public IP/realm/shared secret, cloud accounts, and long-lived secrets are not part of this temporary smoke.
+- 范围：workflow/runbook only.
+- 非目标：do not modify SSH config, iptables, firewall, systemd, DNS, or certificate stores.
+- 外部依赖：human-provided DNS/TLS/cloud/security approval if production deployment is desired later.
+- mock 策略：temporary HTTP services in `/tmp/termx-devstack` with locally generated secrets; cleanup commands recorded.
+- 先写的失败测试：not applicable.
+- 预期失败结果：not applicable.
+- 实际失败结果：not applicable.
+- 实现摘要：deferred external item recorded.
+- 重构摘要：none.
+- 运行命令：none.
+- 测试结果：not run.
+- subagent review：include in `11-A` review.
+- review 发现：pending.
+- review 后修复：pending.
+- 新增派生条目：none.
+- deferred human items：DNS/TLS, persistent deployment account, firewall/port approval, production TURN/relay deployment.
+- 剩余风险：external smoke will use plain HTTP and temporary files; do not treat it as production deployment.
+- 下一步：resume only when production deployment inputs exist.
+- commit：待提交。
+
+### 11-A-B Local Pairing Tunnel Port Collision
+
+- 状态：completed
+- 父条目：11-A
+- 来源：first external smoke pairing attempt used `http://127.0.0.1:18888/api/local/pair` while a local TermX process was already listening on `127.0.0.1:18888`; SSH tunnel only bound `::1`, so the claim hit the wrong local web and returned `pair session not found`.
+- 目标：ensure the smoke client claims the certificate from the `al` daemon's local web, not from an unrelated local TermX runtime.
+- 范围：`docs/remote-rebuild/RUNBOOK.md`, external smoke commands only.
+- 非目标：do not stop the user's local TermX process; do not change SSH config or daemon ports.
+- 外部依赖：none beyond existing temporary SSH access.
+- mock 策略：not applicable.
+- 先写的失败测试：external smoke command failed with `pair session not found`; verified by `curl http://127.0.0.1:18888/api/local/status` returning local machine `device-b9702aff8b30c634` while `ssh al curl http://127.0.0.1:18888/api/local/status` returned external machine `device-b715c5f5781d1270`.
+- 预期失败结果：the wrong local endpoint should not be used for the managed smoke.
+- 实现摘要：switch the local SSH pairing tunnel to an unused local port, `127.0.0.1:18890 -> al:127.0.0.1:18888`, and use `http://127.0.0.1:18890/api/local/pair` for the smoke client.
+- 重构摘要：none.
+- 运行命令：`curl -fsS http://127.0.0.1:18888/api/local/status`; `lsof -nP -iTCP:18888 -sTCP:LISTEN`; `ssh al 'curl -fsS http://127.0.0.1:18888/api/local/status'`; `ssh -N -L 127.0.0.1:18890:127.0.0.1:18888 al`; `curl -fsS http://127.0.0.1:18890/api/local/status`.
+- 测试结果：confirmed collision on `127.0.0.1:18888` with local machine `device-b9702aff8b30c634`; new tunnel on `127.0.0.1:18890` returns `al` machine `device-b715c5f5781d1270`.
+- subagent review：include in `11-A` review.
+- review 发现：pending.
+- review 后修复：pending.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：local developer machines may have arbitrary ports occupied; runbook should prefer collision-safe explicit local ports.
+- 下一步：done; continue parent smoke.
+- commit：待提交。
+
+### 11-A-C Pending Managed Answer Error Semantics
+
+- 状态：completed
+- 父条目：11-A
+- 来源：after fixing pairing tunnel, `termx-remote-e2e` submitted a managed offer but timed out polling the answer. Code inspection shows `httpapi.waitForAnswer` only treats `registry.ErrOfferNotFound` as pending, while `managed.GetAnswer` can return `managed.ErrWrongMachine` before an answer exists because the service has offer metadata but no registry answer yet.
+- 目标：make one-shot `/api/v1/sessions` wait through not-yet-answered state and return the actual answer when the agent submits it, without weakening wrong-ticket/machine authorization for answer lookup.
+- 范围：`termx-hub/internal/httpapi/handler.go`, `termx-hub/internal/httpapi/sessions_test.go`, workflow/runbook.
+- 非目标：do not change ticket ownership checks, do not consume tickets before answer, do not add HTTP runtime transport.
+- 外部依赖：none.
+- mock 策略：test uses in-process Hub handler, registry, managed service, and fake verifier; no runtime transport mock beyond signaling.
+- 先写的失败测试：add focused HTTP test where `/api/v1/sessions` waits while `GetAnswer` initially has no answer, then an agent polls and submits answer within the wait window.
+- 预期失败结果：test should fail before implementation because `/api/v1/sessions` returns 403/accepted before the delayed answer due wrong pending error semantics.
+- 实现摘要：added the focused delayed-answer HTTP test and confirmed the current handler already waits correctly through the not-yet-answered state; this was not the root cause of the external timeout.
+- 重构摘要：none; kept wrong-machine/ticket negative paths intact.
+- 运行命令：`cd termx-hub && go test ./internal/httpapi -run TestManagedSessionHTTPWaitsForDelayedAgentAnswer`.
+- 测试结果：passed; the suspected pending-answer bug was disproved.
+- subagent review：include in `11-A` review/fixes.
+- review 发现：included in `11-A` review; no specific finding against delayed-answer semantics.
+- review 后修复：none.
+- 新增派生条目：`11-A-C-A`.
+- deferred human items：none.
+- 剩余风险：must keep wrong machine/ticket negative paths intact.
+- 下一步：completed; continue parent smoke diagnostics and review fixes.
+- commit：待提交。
+
+### 11-A-C-A Hub Agent Diagnostics For External Smoke
+
+- 状态：completed
+- 父条目：11-A-C
+- 来源：external smoke timed out waiting for managed answer, but current temporary hub logs do not show whether the daemon agent polled, received the offer, or submitted an error answer.
+- 目标：add debug-token protected Hub diagnostics for temporary external smoke so we can distinguish no-poll, poll-with-local-answer-error, and successful-answer cases without using HTTP as runtime transport.
+- 范围：`termx-hub/internal/httpapi/handler.go`, `termx-hub/internal/httpapi/agents_test.go`, `termx-hub/cmd/termx-hub/main.go`, workflow/runbook.
+- 非目标：no terminal/file/api/events over HTTP; no unauthenticated production diagnostics; no relay transport taxonomy.
+- 外部依赖：none; debug token is a local env secret for temporary smoke only.
+- mock 策略：in-process handler tests; diagnostics expose metadata only.
+- 先写的失败测试：add focused test that unauthenticated diagnostics are rejected and a correct debug token returns registered agent/session metadata plus poll/answer counters after poll/answer calls.
+- 预期失败结果：test should fail before implementation because there is no diagnostics endpoint or debug token config.
+- 实现摘要：added `GET /api/debug/agents`, gated by `X-TermX-Debug-Token` and `TERMX_HUB_DEBUG_TOKEN`, returning metadata-only agent/session diagnostics: machine ID, agent ID, poll count, answer count, last offer/answer session IDs, and last error.
+- 重构摘要：diagnostics stay inside `termx-hub/internal/httpapi`; no terminal/file/api/events payload, app certificate, or SDP is exposed.
+- 运行命令：`cd termx-hub && go test ./internal/httpapi -run TestAgentDiagnosticsRequiresDebugTokenAndReportsPolls`.
+- 测试结果：passed locally. External diagnostics later showed the daemon polled the offer and initially returned `offer signature verification failed`, which led to `11-A-D`.
+- subagent review：include in `11-A` review/fixes.
+- review 发现：included in `11-A` review; no blocker on the debug endpoint once token-gated and metadata-only.
+- review 后修复：none.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：diagnostics must remain gated and temporary; do not expose runtime payloads or app certificates.
+- 下一步：completed; remove or harden before production exposure.
+- commit：待提交。
+
+### 11-A-D Preserve Signed SDP Bytes Through Hub
+
+- 状态：completed
+- 父条目：11-A
+- 来源：external diagnostics showed the daemon received the managed offer and submitted an answer error: `offer signature verification failed`. Code inspection found `registry.SubmitOffer` stores `SDP: strings.TrimSpace(in.SDP)`, so the hub mutates the exact SDP bytes after the app signs them. After fixing offer SDP preservation, the smoke advanced to `SetRemoteDescription`/EOF, matching the same mutation on answer SDP.
+- 目标：preserve offer and answer SDP payloads exactly through Hub submit/poll/get-answer while still rejecting blank or invalid SDP using trimmed validation.
+- 范围：`termx-hub/internal/registry/registry.go`, registry tests, workflow/runbook.
+- 非目标：do not relax runtime-payload validation; do not change signature algorithm; do not add HTTP runtime transport.
+- 外部依赖：none.
+- mock 策略：pure registry test with real payload preservation; no external service.
+- 先写的失败测试：add registry tests that submit offer and answer SDP with trailing CRLF/spacing and assert polled offer/get-answer SDP are byte-for-byte identical to submitted SDP.
+- 预期失败结果：tests should fail before implementation because registry trims SDP on storage.
+- 实现摘要：changed registry validation to trim only for validation while preserving the exact submitted offer and answer SDP bytes for poll/get-answer. This fixed the external daemon offer-signature failure and the follow-up Pion answer `SetRemoteDescription` EOF caused by trimmed answer SDP.
+- 重构摘要：kept runtime-payload and basic SDP validation in place; only storage mutation changed.
+- 运行命令：`cd termx-hub && go test ./internal/registry -run 'TestSubmitOfferPreservesRawSDPBytes|TestSubmitAnswerPreservesRawSDPBytes'`; `cd termx-hub && go test ./...`.
+- 测试结果：red path confirmed against trimmed storage, then passed after preserving raw SDP. External smoke advanced from daemon signature failure to DataChannel-open timeout, with diagnostics showing successful answer submission.
+- subagent review：include in `11-A` review/fixes.
+- review 发现：included in `11-A` review; no specific SDP-preservation blocker.
+- review 后修复：none.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：candidate canonicalization is already covered separately; this slice is specific to Hub SDP mutation.
+- 下一步：completed; final remaining runtime issue is `11-A-H`.
+- commit：待提交。
+
+### 11-A-E Machine-Signed Agent Registration
+
+- 状态：completed
+- 父条目：11-A
+- 来源：Slice `11-A` subagent review found Hub agent registration trusted caller-provided `device_id` and the production Control Plane verifier returned nil.
+- 目标：require each daemon agent registration to include an Ed25519 signature made by the local machine key; Hub must forward the registration proof to Web Control, and Web Control must verify it against the stored machine public key before creating an agent session.
+- 范围：`termx-core/remote/hubv1`, `termx-core/internal/remote/runtime`, `termx-hub/internal/registry`, `termx-hub/internal/httpapi`, `termx-hub/internal/controlclient`, `web-control/internal/machines`, `web-control/internal/httpapi`, focused tests, workflow/runbook.
+- 非目标：do not upload machine private keys; do not use HTTP as terminal/file/api/events runtime; do not add relay as a client path.
+- 外部依赖：none.
+- mock 策略：tests use generated local Ed25519 keys and httptest Web Control; production verifier is an HTTP client to Web Control, not a nil/mock boundary.
+- 先写的失败测试：add tests proving unsigned Hub agent registration is rejected, runtime hub registration includes a machine-key signature, Web Control verifies the signature and rejects replay/wrong key, and `controlclient.VerifyAgentRegistration` calls the Web Control verifier endpoint.
+- 预期失败结果：focused tests should fail before implementation because `HubRegisterRequest` has no signature field, runtime does not sign hub registration, Web Control has no hub agent verifier endpoint, and controlclient returns nil.
+- 实现摘要：added public `hubv1.AgentRegistrationSignature` and canonical registration signature message; daemon hub registration now generates an agent ID and nonce, signs machine ID + agent ID + nonce + timestamp with the local machine key, and sends the signature without uploading private key material. Hub forwards the signature to registry authority verification. `controlclient.VerifyAgentRegistration` now calls Web Control `/api/v1/hub/agents/verify-registration` instead of returning nil. Web Control verifies the signature against the stored machine public key and persists used nonces in SQLite to reject replay.
+- 重构摘要：kept web-control independent of the `termx-core` module for `GOWORK=off`; web-control uses an internal equivalent canonical helper matching the public protocol instead of importing core. Hub command tests now inject a signed verifier only for the command env test; production path still uses HTTP controlclient.
+- 运行命令：`cd termx-core && go test ./remote/hubv1 ./internal/remote/runtime -run 'TestCanonicalAgentRegistrationSignatureMessageHashesMachineAndAgent|TestManagerHubRegistrationIncludesMachineSignedProof|TestManagerControlRegistrationSendsMachinePublicKey'`; `cd termx-hub && go test ./internal/httpapi ./internal/controlclient -run 'TestAgentHTTPRejectsUnsignedRegistration|TestManagedTicketVerifier(VerifiesAgentRegistrationThroughWebControl|RejectsUnsignedAgentRegistration)'`; `cd web-control && GOWORK=off go test ./internal/machines ./internal/httpapi -run 'TestVerifyAgentRegistrationRequiresMachineSignatureAndRejectsReplay|TestHubAgentRegistrationVerifierHTTP|TestDaemonDeviceRegistrationRejectsOversizedBody|TestDaemonDeviceRegistrationHTTPCompatibility'`; `cd termx-hub && go test ./...`.
+- 测试结果：red path confirmed: controlclient accepted unsigned registration/posted empty proof, web-control had no verifier, daemon hub registration had no `agent_id`/signature, and `termx-hub/cmd` STUN env test failed after unsigned registration was rejected. After implementation, focused tests passed and `cd termx-hub && go test ./...` passed.
+- subagent review：created from `Ohm` high finding; include in follow-up review.
+- review 发现：`Ohm` high finding: Hub agent registration trusted body machine ID and production verifier returned nil.
+- review 后修复：machine-signed registration proof implemented and tested end to end across daemon, hub, controlclient, and Web Control SQLite nonce persistence. Follow-up `Ohm` review reported no blocker/high/medium findings for this fix.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：Web Control nonce cleanup currently runs opportunistically during verification; production scheduler/retention tuning can be added later.
+- 下一步：completed; redeploy temporary services.
+- commit：待提交。
+
+### 11-A-I Follow-Up Review Low-Risk Hardening
+
+- 状态：deferred
+- 父条目：11-A
+- 来源：Slice `11-A` follow-up review by `Ohm` after signed registration/body-limit/runbook fixes.
+- 目标：record non-blocking hardening suggestions without blocking the external smoke result.
+- 范围：future tests/docs only unless promoted later.
+- 非目标：do not delay current external smoke/reporting; do not introduce shared module coupling from Web Control to core.
+- 外部依赖：none.
+- mock 策略：not applicable.
+- 先写的失败测试：deferred; future tests should include a fixed golden canonical agent-registration signature hash across `termx-core/remote/hubv1` and `web-control/internal/machines`.
+- 预期失败结果：deferred.
+- 实现摘要：deferred low-risk follow-up recorded.
+- 重构摘要：deferred.
+- 运行命令：not run for deferred item.
+- 测试结果：follow-up review returned no blocker/high/medium issues.
+- subagent review：`Ohm` follow-up review completed.
+- review 发现：low residuals only: duplicated canonical agent-registration message implementation could drift; Hub-authenticated Web Control endpoints should eventually get explicit body caps; RUNBOOK could use literal `openssl rand` generation commands instead of placeholders for reproducibility.
+- review 后修复：recorded as deferred because current tests and smoke prove behavior, and adding shared module coupling would violate `web-control` standalone module validation.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：future protocol changes must update both canonical implementations until a clean shared protocol package is introduced.
+- 下一步：promote if future changes touch agent registration signature protocol or hub authenticated endpoint hardening.
+- commit：待提交。
+
+### 11-A-F Randomize Public Devstack Secrets
+
+- 状态：completed
+- 父条目：11-A
+- 来源：Slice `11-A` subagent review found `RUNBOOK.md` documented fixed public host token/hub/debug secrets and smoke password while binding to `0.0.0.0`.
+- 目标：replace fixed live devstack secrets with per-run generated values, store them only under `/tmp/termx-devstack/secrets.env`, and update deployed temporary services to use the generated values.
+- 范围：`docs/remote-rebuild/RUNBOOK.md`, external smoke commands, workflow.
+- 非目标：do not configure production secret management, DNS/TLS, or systemd.
+- 外部依赖：none.
+- mock 策略：temporary local random secrets for devstack only; production secret management remains deferred.
+- 先写的失败测试：runbook grep should show no reusable fixed values for `TERMX_WEB_CONTROL_TOKEN_SECRET`, `TERMX_WEB_CONTROL_HUB_SECRET`, `TERMX_HUB_DEBUG_TOKEN`, or the smoke password.
+- 预期失败结果：current runbook contains fixed values and should fail the check before update.
+- 实现摘要：updated `RUNBOOK.md` to generate per-run secrets under `/tmp/termx-devstack/secrets.env` with `umask 077`, to source those secrets for web-control and hub, and to use a generated smoke password placeholder instead of a fixed password. Removed fixed debug/token/hub secret values from planned public commands.
+- 重构摘要：kept secret generation in runbook only; no production secret manager introduced.
+- 运行命令：`rg -n "termx-devstack-(local-secret|hub-secret|debug-secret)|devstack-smoke-password|hub-secret|slice-11|valid password" docs/remote-rebuild/RUNBOOK.md`.
+- 测试结果：grep returned no fixed reusable public devstack secrets/passwords.
+- subagent review：created from `Ohm` high finding; include in follow-up review.
+- review 发现：`Ohm` high finding: runbook hardcoded public devstack secrets while binding on `0.0.0.0`.
+- review 后修复：runbook now documents generated per-run secrets and external services must be restarted with them before further public smoke.
+- 新增派生条目：none.
+- deferred human items：production secret manager and rotation policy.
+- 剩余风险：temporary HTTP services remain plain-text devstack services, not production.
+- 下一步：completed; redeploy temporary services with generated secrets.
+- commit：待提交。
+
+### 11-A-G Daemon Device Registration Body Limit
+
+- 状态：completed
+- 父条目：11-A
+- 来源：Slice `11-A` subagent review found `/api/devices/register` decodes without an explicit body limit.
+- 目标：apply a concrete request body limit to daemon device registration before JSON decode and cover oversized request rejection.
+- 范围：`web-control/internal/httpapi/router.go`, `web-control/internal/httpapi/devices_test.go`, workflow.
+- 非目标：do not change machine ownership or terminal inventory semantics.
+- 外部依赖：none.
+- mock 策略：httptest only.
+- 先写的失败测试：add HTTP test that sends an oversized daemon device registration and expects `413 Request Entity Too Large`.
+- 预期失败结果：test should fail before implementation because the handler currently decodes without `MaxBytesReader`.
+- 实现摘要：wrapped `/api/devices/register` request bodies with `http.MaxBytesReader` using the existing configured body limit and returns `413 request_too_large` for oversized daemon registration payloads.
+- 重构摘要：reused existing request-body-too-large helper; did not change machine ownership or inventory persistence semantics.
+- 运行命令：`cd web-control && go test ./internal/httpapi -run 'TestDaemonDeviceRegistrationRejectsOversizedBody|TestDaemonDeviceRegistrationHTTPCompatibility|TestHubAgentRegistrationVerifierHTTP'`; `cd web-control && GOWORK=off go test ./...`.
+- 测试结果：red path confirmed oversized body was previously accepted as `200`; after implementation focused test passed and `GOWORK=off go test ./...` passed.
+- subagent review：created from `Ohm` low finding; include in follow-up review.
+- review 发现：`Ohm` low finding: daemon device registration decoded without explicit body limit.
+- review 后修复：body limit added with negative coverage.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：limit size may need production tuning.
+- 下一步：completed.
+- commit：待提交。
+
+### 11-A-H STUN-Only Public DataChannel Limitation
+
+- 状态：deferred_external
+- 父条目：11-A
+- 来源：after web-control, hub, daemon registration, pairing, ticket creation, managed offer forwarding, daemon verification, and answer submission all succeeded on the public devstack, the local smoke timed out waiting for the WebRTC `terminal:1` DataChannel to open.
+- 目标：record the remaining network dependency accurately: STUN-only direct WebRTC can fail across NAT/firewall; completing arbitrary public managed terminal attach requires either TermX paid managed TURN/relay, or a user-provided public/FRP/self-hosted ICE path.
+- 范围：workflow/runbook only unless the user authorizes a paid relay/public-port slice.
+- 非目标：do not issue TURN credentials to free/public_p2p; do not modify firewall/iptables/systemd on external hosts; do not introduce relay as a client transport path.
+- 外部依赖：production TURN public IP/ports/DNS/credentials or user-provided public agent port/FRP requires human/network configuration.
+- mock 策略：none; local and httptest coverage prove control/signaling behavior, but public NAT traversal needs real network path.
+- 先写的失败测试：external smoke command reached answer submission and then failed with `open terminal channel: timed out waiting for terminal:1 data channel open`.
+- 预期失败结果：with STUN-only and no TURN/authorized public ICE path, DataChannel may fail depending on NAT.
+- 实现摘要：deferred external; no code should fake terminal success over HTTP. Post-review external smoke confirmed Web Control inventory, signed Hub agent registration, local pairing, managed ticket/session, Hub offer/answer, and daemon answer all work; `terminal:1` DataChannel still times out under STUN-only public networking.
+- 重构摘要：none.
+- 运行命令：`/tmp/termx-devstack-build/termx-remote-e2e --control-url http://114.66.58.243:12306 --hub-url http://114.66.58.243:8447 --email <current-smoke-email> --password <generated-smoke-password> --pair-url http://127.0.0.1:18891/api/local/pair --pair-session-id <pair-session> --pair-secret <pair-secret> --machine-id device-0fbc2e86970eb988 --terminal-id 1 --stun-url stun:stun.l.google.com:19302`; Hub diagnostics command recorded in `RUNBOOK.md`.
+- 测试结果：control inventory returned machine `device-0fbc2e86970eb988` and terminal `1`; Hub diagnostics returned `answer_count=1`, `last_error=""`, `last_answer_session_id="ct_BLPmdzs7yYxY3jIX9xml9A-terminal-1"`; e2e failed with `open terminal channel: timed out waiting for terminal:1 data channel open`.
+- subagent review：include in `11-A` follow-up.
+- review 发现：created as final external-network limitation after post-review smoke.
+- review 后修复：not a code fix in this slice; requires paid managed TURN/relay or user self-hosted public/FRP path, both external/product-deployment choices.
+- 新增派生条目：none.
+- deferred human items：choose paid managed relay/TURN deployment or provide self-hosted public port/FRP path for the daemon host.
+- 剩余风险：without relay/public ICE path, local browser/CLI cannot reliably attach to a daemon behind NAT even though WebRTC DataChannel remains the correct runtime transport.
+- 下一步：report this boundary to the user; temporary public services and `al` daemon are left running for inspection, with stop/cleanup commands in `RUNBOOK.md`.
 - commit：待提交。
 
 ## Historical P2/P3 Records
@@ -3056,6 +3344,6 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Start the next Slice 10 child with TDD.
-2. Keep `10-B-A` connector shape risk in scope when wiring managed sessions into a connector.
-3. Do not start Slice 11 external server tests until a slice records a concrete public-network need.
+1. Request Slice `11-A` subagent review with the required remote-build checklist.
+2. Update `docs/remote-rebuild/RUNBOOK.md` with exact external deployment/start/stop/cleanup commands for `root@114.66.58.243` and `ssh al`.
+3. Build linux/amd64 temporary binaries, copy them under `/tmp/termx-devstack`, start web-control/hub/daemon, run pairing plus `termx-remote-e2e`, record results, then fix review/deploy findings.

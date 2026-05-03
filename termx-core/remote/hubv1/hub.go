@@ -14,6 +14,7 @@ type HubTerminalInventoryItem struct {
 type HubRegisterRequest struct {
 	Version        string                     `json:"version"`
 	DeviceID       string                     `json:"device_id"`
+	AgentID        string                     `json:"agent_id"`
 	DisplayName    string                     `json:"display_name"`
 	Hostname       string                     `json:"hostname"`
 	Platform       string                     `json:"platform"`
@@ -21,6 +22,14 @@ type HubRegisterRequest struct {
 	Labels         []string                   `json:"labels"`
 	RuntimeVersion string                     `json:"runtime_version"`
 	Terminals      []HubTerminalInventoryItem `json:"terminals"`
+	Signature      AgentRegistrationSignature `json:"signature,omitempty"`
+}
+
+type AgentRegistrationSignature struct {
+	Algorithm string `json:"algorithm"`
+	Nonce     string `json:"nonce"`
+	Timestamp int64  `json:"timestamp"`
+	Value     string `json:"value"`
 }
 
 type RTCIceServerConfig struct {

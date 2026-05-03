@@ -23,12 +23,13 @@ type Config struct {
 }
 
 type Service struct {
-	registry       *registry.Registry
-	tickets        TicketVerifier
-	clock          Clock
-	mu             sync.Mutex
-	offers         map[string]Ticket
-	sessionOffers  map[string]string
+	registry      *registry.Registry
+	tickets       TicketVerifier
+	clock         Clock
+	mu            sync.Mutex
+	offers        map[string]Ticket
+	sessionOffers map[string]string
+	ticketOffers  map[string]string
 }
 
 func NewService(cfg Config) *Service {
@@ -42,6 +43,7 @@ func NewService(cfg Config) *Service {
 		clock:         clock,
 		offers:        make(map[string]Ticket),
 		sessionOffers: make(map[string]string),
+		ticketOffers:  make(map[string]string),
 	}
 }
 
@@ -69,7 +71,7 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 	if err := s.registry.PreflightOffer(ctx, preflight); err != nil {
 		return Offer{}, err
 	}
-	ticket, err := s.tickets.VerifyManagedTicket(ctx, VerifyTicketInput{
+	ticket, err := s.tickets.CheckManagedTicket(ctx, VerifyTicketInput{
 		TicketID:   preflight.TicketID,
 		MachineID:  preflight.MachineID,
 		TerminalID: preflight.TerminalID,
@@ -86,6 +88,14 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 	if !ticket.ExpiresAt.IsZero() && !s.clock.Now().UTC().Before(ticket.ExpiresAt) {
 		return Offer{}, ErrTicketExpired
 	}
+	ticketKey := ticketOfferKey(ticket.MachineID, ticket.ID)
+	s.mu.Lock()
+	if s.ticketOffers[ticketKey] != "" {
+		s.mu.Unlock()
+		return Offer{}, ErrTicketUsed
+	}
+	s.ticketOffers[ticketKey] = "__pending__"
+	s.mu.Unlock()
 	offer, err := s.registry.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:      ticket.MachineID,
 		TerminalID:     ticket.TerminalID,
@@ -97,10 +107,14 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 		Signature:      registrySignature(in.Signature),
 	})
 	if err != nil {
+		s.mu.Lock()
+		delete(s.ticketOffers, ticketKey)
+		s.mu.Unlock()
 		return Offer{}, err
 	}
 	s.mu.Lock()
 	s.offers[offer.ID] = ticket
+	s.ticketOffers[ticketKey] = offer.ID
 	if strings.TrimSpace(offer.SessionID) != "" {
 		s.sessionOffers[sessionOfferKey(ticket.MachineID, ticket.ID, offer.SessionID)] = offer.ID
 	}
@@ -119,6 +133,32 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 		AllowRelay:     false,
 		RelayInUse:     offer.RelayInUse,
 	}, nil
+}
+
+func (s *Service) ConsumeOfferTicket(ctx context.Context, in GetAnswerInput) (Ticket, error) {
+	if s == nil || s.tickets == nil {
+		return Ticket{}, errors.New("managed service is not configured")
+	}
+	ticketID := strings.TrimSpace(in.TicketID)
+	machineID := strings.TrimSpace(in.MachineID)
+	offerID := strings.TrimSpace(in.OfferID)
+	if ticketID == "" || machineID == "" || offerID == "" {
+		return Ticket{}, ErrWrongMachine
+	}
+	s.mu.Lock()
+	if mapped := s.sessionOffers[sessionOfferKey(machineID, ticketID, offerID)]; mapped != "" {
+		offerID = mapped
+	}
+	ticket, ok := s.offers[offerID]
+	s.mu.Unlock()
+	if !ok || ticket.ID != ticketID || ticket.MachineID != machineID {
+		return Ticket{}, ErrWrongMachine
+	}
+	return s.tickets.ConsumeManagedTicket(ctx, VerifyTicketInput{
+		TicketID:   ticket.ID,
+		MachineID:  ticket.MachineID,
+		TerminalID: ticket.TerminalID,
+	})
 }
 
 func (s *Service) PollAgentOffer(ctx context.Context, in PollAgentOfferInput) (Offer, error) {
@@ -233,4 +273,8 @@ func (s *Service) GetAnswer(ctx context.Context, in GetAnswerInput) (Answer, err
 
 func sessionOfferKey(machineID, ticketID, sessionID string) string {
 	return strings.TrimSpace(machineID) + "\x00" + strings.TrimSpace(ticketID) + "\x00" + strings.TrimSpace(sessionID)
+}
+
+func ticketOfferKey(machineID, ticketID string) string {
+	return strings.TrimSpace(machineID) + "\x00" + strings.TrimSpace(ticketID)
 }

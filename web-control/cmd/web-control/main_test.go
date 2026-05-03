@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -73,6 +77,52 @@ func TestRunRendezvousCleanupLoopKeepsRunningAfterError(t *testing.T) {
 	}
 }
 
+func TestNewRouterFromServicesWiresManagedConnect(t *testing.T) {
+	t.Setenv("TERMX_WEB_CONTROL_SQLITE_DSN", "file:termx-web-control-router-test?mode=memory&cache=shared")
+	t.Setenv("TERMX_WEB_CONTROL_TOKEN_SECRET", "router-secret")
+	t.Setenv("TERMX_WEB_CONTROL_HUB_SECRET", "hub-secret")
+
+	db, err := openStoreFromEnv(context.Background())
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	router, err := newRouterFromServices(context.Background(), db)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	register := postMainJSON(t, router, "/api/v1/auth/register", map[string]string{
+		"email":    "router@example.com",
+		"password": "valid password",
+	}, "")
+	if register.Code != http.StatusCreated {
+		t.Fatalf("register status = %d body=%s", register.Code, register.Body.String())
+	}
+	var auth struct {
+		AccessToken string `json:"access_token"`
+	}
+	decodeMainJSON(t, register, &auth)
+	device := postMainJSON(t, router, "/api/devices/register", map[string]any{
+		"deviceId":         "device-router-1",
+		"machinePublicKey": "machine-public-key",
+		"terminals": []map[string]any{{
+			"id":    "term-router-1",
+			"state": "running",
+		}},
+	}, auth.AccessToken)
+	if device.Code != http.StatusOK {
+		t.Fatalf("device register status = %d body=%s", device.Code, device.Body.String())
+	}
+	ticket := postMainJSON(t, router, "/api/v1/managed/connect-tickets", map[string]any{
+		"machine_id":  "device-router-1",
+		"terminal_id": "term-router-1",
+	}, auth.AccessToken)
+	if ticket.Code != http.StatusCreated {
+		t.Fatalf("managed ticket status = %d body=%s", ticket.Code, ticket.Body.String())
+	}
+}
+
 type fakeRendezvousCleaner struct {
 	calls int
 	err   error
@@ -93,4 +143,27 @@ func eventually(t *testing.T, fn func() bool) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("condition not met")
+}
+
+func postMainJSON(t *testing.T, handler http.Handler, path string, body any, bearer string) *httptest.ResponseRecorder {
+	t.Helper()
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+func decodeMainJSON(t *testing.T, rec *httptest.ResponseRecorder, out any) {
+	t.Helper()
+	if err := json.Unmarshal(rec.Body.Bytes(), out); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, rec.Body.String())
+	}
 }
