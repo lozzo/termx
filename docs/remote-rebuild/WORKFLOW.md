@@ -123,7 +123,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 11-C | devstack-public-daemon | Start a temporary `termx daemon` on the public devstack host and smoke managed WebRTC through Hub | completed | `79bfe4ce` |
 | 11-C-A | devstack-public-daemon-api-follow-up | Record non-blocking `/api/terminals?machine_id=...` filter mismatch found during public-host smoke | deferred |  |
 | 11-C-B | devstack-public-daemon-review-fix | Make Web Control tolerate duplicate terminal IDs in daemon registration snapshots | completed | `79bfe4ce` |
-| 11-C-C | devstack-public-daemon-token-refresh | Refresh the public-host daemon temporary access token after post-commit expiry | completed |  |
+| 11-C-C | devstack-public-daemon-token-refresh | Refresh the public-host daemon temporary access token after post-commit expiry | completed | `e9c4f229` |
 
 ## Buildout Todo Details
 
@@ -2882,7 +2882,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：production daemon credential refresh/rotation remains a future product slice.
 - 剩余风险：because access tokens are currently 15-minute credentials, this temporary daemon can degrade again until a real daemon renewal flow is implemented.
 - 下一步：commit the `11-C-C` workflow/runbook record, then report verification steps to the user.
-- commit：pending
+- commit：`e9c4f229`
 
 ## Historical P2/P3 Records
 
