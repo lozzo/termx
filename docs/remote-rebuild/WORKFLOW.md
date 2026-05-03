@@ -129,7 +129,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 12 | product-alignment | Align docs/AGENTS with APP-first product shape and dev-free relay strategy | completed |  |
 | 12-B | tgent-comparison | Compare `../tgent` web/hub/app and write migration strategy plus prompt | completed |  |
 | 13 | remote-ui-app-shell | Build APP-first machine list shell | completed | `0014e9a7` |
-| 13-A | workflow-unattended-continuation | Harden AGENTS so future slices continue unattended across boundaries | review |  |
+| 13-A | workflow-unattended-continuation | Harden AGENTS so future slices continue unattended across boundaries | completed | `4f7bf2d1` |
 | 14 | remote-ui-qr-store | Define `termx://` QR payload and local MachineStore, rejecting machine private key material | in_progress |  |
 | 15 | remote-ui-connection-orchestrator | Implement local/LAN -> public_p2p -> managed orchestration returning only `RtcSession` | pending |  |
 | 16 | web-control-hub-closed-loop | Implement Hub discover, heartbeat, policy/kick response, force-offline in Web Control | pending |  |
@@ -153,7 +153,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ### 13 Remote UI APP Machine List Shell
 
-- 状态：review
+- 状态：completed
 - 父条目：none
 - 来源：APP-first product direction requires `remote-ui` to open to a compact machine list, not terminal/Web Control.
 - 目标：add APP-first shell and machine list; clicking machine enters connection flow before terminal.
@@ -199,7 +199,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - deferred human items：none.
 - 剩余风险：future agents must still stop for high-risk irreversible operations or unmockable external dependencies.
 - 下一步：continue Slice `14`.
-- commit：
+- commit：`4f7bf2d1`
 
 ### 14 Remote UI QR Pairing Payload And Machine Store
 
