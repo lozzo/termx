@@ -6,7 +6,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `19` native APP RtcSession seam.
-- Last updated: 2026-05-03T20:12:00+08:00.
+- Last updated: 2026-05-03T20:14:00+08:00.
 - Workflow size policy: keep this file under 900 lines. Completed slice details older than the current/previous slice belong in compressed summaries, not full per-step logs.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked remote rebuild planning docs. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts progress `local` / LAN first, then `public_p2p`, then `managed`. During development, rendezvous and managed relay are open to registered/dev users so the full flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
@@ -139,7 +139,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 17-A | daemon-hub-selection-policy | Add production Hub selection policy using region/health/capacity/expiry/weights | pending |  |
 | 17-B | external | Defer production OAuth/email/SMS and secure OS keychain/secret storage for CLI/device login | deferred_external |  |
 | 18 | stateless-hub-policy-relay | Add Hub policy sync, bounded memory, dev-free managed relay integration | completed | `54aac488` |
-| 19 | native-app-rtc-seam | Add native APP `RtcSession` seam without WebRTC type leakage | completed |  |
+| 19 | native-app-rtc-seam | Add native APP `RtcSession` seam without WebRTC type leakage | completed | `119a42e9` |
 | 20 | app-devstack-e2e | Validate APP shell / Web Control / stateless Hub / daemon closed loop | pending |  |
 
 ## Compressed Completed Slice Summary
@@ -385,7 +385,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - deferred human items：native platform packaging/signing and production secure storage remain deferred external.
 - 剩余风险：actual native WebRTC packaging/secure storage remains deferred; app/devstack e2e remains Slice 20.
 - 下一步：hash backfill, then start Slice `20`.
-- commit：
+- commit：`119a42e9`
 
 ## Deferred External / Human Items
 
