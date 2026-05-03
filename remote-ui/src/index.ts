@@ -33,6 +33,17 @@ export { FileManager } from './FileManager'
 export type { FileManagerProps } from './FileManager'
 export { LocalRemoteApp } from './LocalRemoteApp'
 export type { LocalRemoteAppProps, LocalRemoteSessionConnector, LocalRemoteSessionInput } from './LocalRemoteApp'
+export { MachineList } from './MachineList'
+export type { MachineListProps } from './MachineList'
+export { RemoteAppShell } from './RemoteAppShell'
+export type { RemoteAppShellProps } from './RemoteAppShell'
+export type {
+  AppMachineRecord,
+  AppMachineSource,
+  AppMachineState,
+  ConnectionFlowSnapshot,
+  ConnectionFlowStage,
+} from './appMachine'
 export { LocalPairPanel } from './LocalPairPanel'
 export type { LocalPairPanelProps } from './LocalPairPanel'
 export { createLocalAgentApi } from './localAgentApi'

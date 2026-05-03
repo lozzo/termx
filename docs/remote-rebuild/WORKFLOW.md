@@ -5,10 +5,10 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `11` devstack and external server tests.
-- Last updated: 2026-05-03T15:22:00+08:00.
+- Active todo: ready for Slice `14` QR payload/store.
+- Last updated: 2026-05-03T16:29:24+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
-- Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
+- Current product conclusion: APP/remote-ui is the user operation entry and opens to a simple machine list. Web Control is only account/control-plane/status/admin, not a terminal operation surface. Connection attempts should progress `local` / LAN first, then `public_p2p`, then `managed` with relay if needed. During development, TermX rendezvous and managed relay are open to registered/dev users so the whole flow can be proven before billing, plan, quota, and entitlement gates are reintroduced.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
 - Allowed statuses include `pending`, `in_progress`, `blocked`, `blocked_external`, `review`, `completed`, `resolved`, `deferred`, and `deferred_external`.
 - Required workflow check: `bash docs/remote-rebuild/check_workflow_rules.sh`.
@@ -124,6 +124,16 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 11-C-A | devstack-public-daemon-api-follow-up | Record non-blocking `/api/terminals?machine_id=...` filter mismatch found during public-host smoke | deferred |  |
 | 11-C-B | devstack-public-daemon-review-fix | Make Web Control tolerate duplicate terminal IDs in daemon registration snapshots | completed | `79bfe4ce` |
 | 11-C-C | devstack-public-daemon-token-refresh | Refresh the public-host daemon temporary access token after post-commit expiry | completed | `e9c4f229` |
+| 12 | product-alignment | Align docs and AGENTS with APP-first product shape, dev-free rendezvous/relay, multi-agent workflow, e2e strategy, and image prompt | completed |  |
+| 12-B | tgent-comparison | Compare `../tgent` web/hub/app product logic with current TermX and write migration strategy plus new driving prompt | completed |  |
+| 13 | remote-ui-app-shell | Build APP-first machine list shell using tgent-app structure as reference while preserving TermX `machine -> terminal` and `RtcSession` boundaries | completed |  |
+| 14 | remote-ui-qr-store | Define `termx://` QR payload and local MachineStore, rejecting any machine private key material | pending |  |
+| 15 | remote-ui-connection-orchestrator | Implement local/LAN -> public_p2p -> managed connection orchestration that returns only `RtcSession` to runtime consumers | pending |  |
+| 16 | web-control-hub-closed-loop | Implement tgent-style Hub discover, heartbeat, policy/kick response, and force-offline in Web Control | pending |  |
+| 17 | daemon-login-hub-select | Implement token/password/device-code daemon login, Web Control registration, and Hub discovery/selection | pending |  |
+| 18 | stateless-hub-policy-relay | Keep Hub stateless while adding heartbeat policy sync, bounded memory, and dev-free managed relay integration | pending |  |
+| 19 | native-app-rtc-seam | Add native APP `RtcSession` seam without leaking browser/native WebRTC types into public layers | pending |  |
+| 20 | app-devstack-e2e | Validate APP shell / Web Control / stateless Hub / daemon closed loop locally and optionally on `114.66.58.243` | pending |  |
 
 ## Buildout Todo Details
 
@@ -154,7 +164,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 1 Web Control Plane Skeleton
 
-- 状态：in_progress
+- 状态：completed
 - 父条目：none
 - 来源：整体目标架构要求 Web Control Plane 使用 Go 后端 + Vite React 前端 + SQLite 测试/开发数据库。
 - 目标：创建 `web-control/`，提供 Go HTTP backend skeleton、SQLite migration/test helper、health API、Vite React shell、Tailwind 构建接入。
@@ -2884,6 +2894,81 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 下一步：commit the `11-C-C` workflow/runbook record, then report verification steps to the user.
 - commit：`e9c4f229`
 
+### 12 APP-First Product Alignment, Prompt, And UI Brief
+
+- 状态：completed
+- 父条目：none
+- 来源：用户明确修正产品形态：`remote-ui` 后续演进为手机 APP，第一屏是机器列表；扫码录入机器/服务信息；连接策略为 local/LAN -> public_p2p -> managed relay；开发阶段 rendezvous/relay 先免费开放跑通；Web Control 不接入 Remote UI terminal 操作，只查看已注册 agent/client/terminal 状态并可强制下线。
+- 目标：把新产品结论固化到 `AGENTS.md`、`remote-ui/AGENTS.md`、局部服务 AGENTS、`WORKFLOW.md` 和后续执行 prompt；新增给 UI 图生成使用的简洁 prompt；让后续无人值守 agent 能按 APP-first 主线继续 TDD、多 subagent 并行、e2e、公网部署验证。
+- 范围：`AGENTS.md`、`remote-ui/AGENTS.md`、`web-control/AGENTS.md`、`termx-hub/AGENTS.md`、`docs/remote-rebuild/WORKFLOW.md`、`docs/remote-rebuild/current-status.md`、`docs/remote-rebuild/mobile-app-pages.md`、`docs/remote-rebuild/codex-unattended-prompt.md`、`docs/remote-rebuild/codex-app-first-unattended-prompt.md`、`docs/remote-rebuild/app-ui-image-prompt.md`、`docs/remote-rebuild/app-first-gap-plan.md`。
+- 非目标：本切片不实现 APP、不改 Web Control/Hub/daemon 业务代码、不接真实支付、不把 Web Control 做成 Remote UI terminal 页面、不提交既有无关脏改。
+- 外部依赖：无真实外部系统；公网服务器只作为后续 e2e 计划，不在本切片使用。
+- mock 策略：开发阶段策略文档明确 rendezvous/relay 先按 dev-free policy 跑通；真实计费、订阅、quota、entitlement 后续作为 provider/policy gate 重开。
+- 先写的失败测试：文档切片用 `rg`/workflow check 作为约束测试：检查旧 prompt/workflow 仍包含“paid relay/free no TURN”作为当前主线，且 AGENTS 缺少 APP-first、机器列表首屏、Web Control 非操作面、开发期 relay 免费跑通、多 subagent 并行计划。
+- 预期失败结果：修改前 `rg` 发现 `docs/remote-rebuild/codex-unattended-prompt.md` 和 `mobile-app-pages.md` 仍把付费 relay/免费不发 TURN 写成当前主线；根 AGENTS 缺少 APP-first 产品形态和开发期免费 relay 规则。
+- 实现摘要：已更新根/remote-ui/web-control/termx-hub AGENTS，明确 APP-first、机器列表首屏、Web Control 非 terminal 操作面、开发期 managed relay 可免费跑通、多 subagent 并行、e2e 要求；已新增 `codex-app-first-unattended-prompt.md`、`app-ui-image-prompt.md`、`app-first-gap-plan.md`；旧 `codex-unattended-prompt.md` 标记为 superseded；`mobile-app-pages.md` 升到第三版 APP-first 信息架构；`current-status.md` 的下一步改为 APP shell/connection orchestrator/dev-free relay。
+- 重构摘要：本切片只收敛文档与 agent 指令，不改变业务代码；旧 paid/free 策略被降级为后续 policy/entitlement gate，当前开发期主线先跑通 rendezvous/managed relay。
+- 运行命令：`bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- AGENTS.md remote-ui/AGENTS.md web-control/AGENTS.md termx-hub/AGENTS.md docs/remote-rebuild/WORKFLOW.md docs/remote-rebuild/current-status.md docs/remote-rebuild/mobile-app-pages.md docs/remote-rebuild/codex-unattended-prompt.md docs/remote-rebuild/codex-app-first-unattended-prompt.md docs/remote-rebuild/app-ui-image-prompt.md docs/remote-rebuild/app-first-gap-plan.md`; `rg` search for stale paid-relay and historical mobile-next-action markers across AGENTS and remote rebuild docs.
+- 测试结果：workflow rules check initially caught this entry recording a forbidden historical marker literally in the command text; after removing that self-reference, workflow rules check passed. diff whitespace check passed; stale product wording search found only the check script's own forbidden-text assertions and no stale product-policy hits in AGENTS/current docs.
+- subagent review：尝试发起两个只读 subagent 检查 remote-ui 缺口和 AGENTS/WORKFLOW 约束，但当前工具返回 `agent thread limit reached`；本切片执行等价强制自审，并在后续 prompt 中要求恢复时多 subagent 并行拆分。
+- review 发现：forced self-review found the old unattended prompt could still be copied by mistake, and local service AGENTS still encoded the older paid/free relay policy; it also found `mobile-app-pages.md` still described subscription gating as the current relay path.
+- review 后修复：marked `codex-unattended-prompt.md` as superseded, added the new APP-first prompt, updated web-control/hub AGENTS to dev-free managed relay wording, and revised `mobile-app-pages.md` to third-version APP-first language.
+- 新增派生条目：planned `12-A` docs strategy check hardening if workflow check needs new APP-first assertions; planned future implementation slices `13` through `19` are listed in `app-first-gap-plan.md` and `codex-app-first-unattended-prompt.md`。
+- deferred human items：真实支付/订阅/商店签名/DNS/TLS/生产 TURN 公网部署仍然后置；开发期先用 dev-free policy 和临时 devstack 验证。
+- 剩余风险：现有代码仍实现了早期 paid/free policy 模型，后续 Slice `16` 需要用 TDD 把开发期 managed relay 免费跑通的 policy gate 接入，同时确保 `public_p2p` 不混入 TURN。
+- 下一步：user reviews `docs/remote-rebuild/codex-app-first-unattended-prompt.md` and `docs/remote-rebuild/app-ui-image-prompt.md`; after approval, start Slice `13` remote-ui APP shell with machine-list-first TDD.
+- commit：
+
+### 12-B tgent Comparison And Migration Strategy Prompt
+
+- 状态：completed
+- 父条目：12
+- 来源：用户希望以 `../tgent` 为参照迁移或模仿产品逻辑，避免后续 agent 不知道如何做；同时明确 TermX Hub 必须无状态或仅保存有限内存信息，Hub 不做数据库，重启不影响整体架构。
+- 目标：只读对比 `../tgent` 的 web、hub/agent/signaling/relay/registry、app/remote UI 与当前 TermX 已完成部分；产出可采用/不可采用清单、目标形态、后续实施切片和新的驱动 prompt。
+- 范围：文档和 prompt；读取 `../tgent/tgent-web`、`../tgent/tgent-go`、`../tgent/tgent-app`；写入 `docs/remote-rebuild/tgent-comparison-and-migration.md`、`docs/remote-rebuild/codex-tgent-guided-app-first-prompt.md`、`docs/remote-rebuild/WORKFLOW.md`，必要时更新 `AGENTS.md` 的 Hub 无状态规则。
+- 非目标：不实现代码；不照搬 tmux session/window/pane；不把 tgent 的 HTTP/WebSocket terminal runtime 带入 TermX；不让 Hub 引入数据库。
+- 外部依赖：无。
+- mock 策略：不适用；这是只读研究和文档切片。
+- 先写的失败测试：尝试启动 3 个只读 subagent 分别研究 tgent web、hub/agent、app/UI。
+- 预期失败结果：如果 subagent 可用，应并行返回对比结果；若工具限制，应记录失败并做等价主线程研究。
+- 实现摘要：先因已有 subagent 占用遇到 `agent thread limit reached`，随后关闭旧 completed agents 并成功并行启动 3 个只读 subagent。`Lagrange` 对比 tgent-web 与 TermX Web Control；`Kuhn` 对比 tgent-go Hub/Agent 与 TermX Hub/daemon；`Darwin` 对比 tgent-app 与 remote-ui。已新增 `docs/remote-rebuild/tgent-comparison-and-migration.md`，总结可采用/禁止采用、Hub 无状态契约、目标 API、当前缺口和 Slice `13`-`20`。已新增 `docs/remote-rebuild/codex-tgent-guided-app-first-prompt.md`，用于下一轮无人值守施工。
+- 重构摘要：将 tgent 参考从笼统“可参考”拆成明确 adoption policy：采用机器列表/扫码/store/connection store、Hub discover/heartbeat/kick/policy、无数据库 Hub/TTL 内存；禁止 tmux 模型、HTTP/WebSocket runtime、machine private key 下载/上传、relay path taxonomy。已更新根/remote-ui/web-control/termx-hub AGENTS 和 workflow check，将 Hub 无状态列为硬约束。
+- 运行命令：`git status --short`; `ls ../tgent`; `find ../tgent -maxdepth 2 -type f -name AGENTS.md -o -name package.json -o -name go.mod`; `find ../tgent/tgent-web -maxdepth 3 -type f | sed 's#^../tgent/tgent-web/##' | head -120`; `find ../tgent/tgent-go -maxdepth 4 -type f | sed 's#^../tgent/tgent-go/##' | head -160`; `find ../tgent/tgent-app -maxdepth 4 -type f | sed 's#^../tgent/tgent-app/##' | head -180`; `sed`/`rg` reads across tgent-web/tgent-go/tgent-app and current TermX; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- AGENTS.md remote-ui/AGENTS.md web-control/AGENTS.md termx-hub/AGENTS.md docs/remote-rebuild/WORKFLOW.md docs/remote-rebuild/check_workflow_rules.sh docs/remote-rebuild/tgent-comparison-and-migration.md docs/remote-rebuild/codex-tgent-guided-app-first-prompt.md`。
+- 测试结果：只读研究切片没有业务测试。文档/workflow validation passed: `bash docs/remote-rebuild/check_workflow_rules.sh`; whitespace validation passed via `git diff --check` for touched docs/AGENTS files.
+- subagent review：并行只读 subagents completed. `Lagrange` found tgent-web should inform Web Control auth/admin/hub heartbeat/discover/policy but not terminal UI/private-key flows. `Kuhn` confirmed tgent-go Hub is stateless/no DB and TermX should adopt heartbeat/kick/rate-limit/traffic metering while keeping HTTP as build-time signaling only. `Darwin` found tgent-app Home/Scan/local store/ConnectionStore/native bridge are useful, while tmux API/private-key download/`p2p|relay` taxonomy must not migrate.
+- review 发现：no code findings because this was a documentation/planning slice. Planning findings: previous prompt lacked precise tgent adoption rules; Hub stateless/no DB was not prominent enough in AGENTS; follow-up slice IDs stopped at 19 and did not capture native APP seam/devstack e2e after tgent comparison.
+- review 后修复：added the comparison doc, added the new tgent-guided prompt, strengthened root and service AGENTS for tgent adoption and Hub statelessness, extended `check_workflow_rules.sh`, and added Slice `13`-`20` rows to the ordered todo.
+- 新增派生条目：top-level follow-up slices `13`, `14`, `15`, `16`, `17`, `18`, `19`, `20` are now pending.
+- deferred human items：真实支付/订阅/发票/税务、真实邮件/OAuth、DNS/TLS、生产 TURN 公网部署、云账号、手机商店签名仍然 deferred external；开发期继续用 mock/provider/devstack，不阻塞主线。
+- 剩余风险：当前代码仍未实现 APP shell/QR/store/orchestrator、Web Control Hub heartbeat discover、daemon device-code login、bounded relay memory enforcement/native APP bridge；下一轮必须按 TDD 切片实现，而不是继续停留在文档层。
+- 下一步：use `docs/remote-rebuild/codex-tgent-guided-app-first-prompt.md` to start Slice `13` with remote-ui APP machine list shell tests first, and spawn read-only explorers when thread capacity permits.
+- commit：
+
+### 13 Remote UI APP Machine List Shell
+
+- 状态：in_progress
+- 父条目：none
+- 来源：当前产品结论要求正式用户入口为 APP-first `remote-ui` 演进方向，默认第一屏是普通、高密度机器列表；用户通过添加/扫描录入机器，点击机器后先进入连接状态机而不是直接打开 terminal。
+- 目标：在 `remote-ui` 中新增 APP-first shell 和机器列表组件，展示机器名、状态、terminal 数量、last seen、添加/扫描入口，并确保点击机器进入连接流程起点；保持 `machine -> terminal` 模型、`RtcSession` runtime 边界和 `local / public_p2p / managed` 三类 path。
+- 范围：`remote-ui/src` 新增/导出 APP shell 与 machine list；必要时更新 `remote-ui/docs/webrtc-rewrite-log.md` 和 `docs/remote-rebuild/WORKFLOW.md`。
+- 非目标：不实现 QR payload/store（Slice 14）；不实现 local -> public_p2p -> managed 编排器（Slice 15）；不改 Web Control terminal UI；不引入真实 native bridge；不把 relay 作为第四种 path。
+- 外部依赖：无真实外部系统；本切片使用 props/test fixtures 表示 machine records。
+- mock 策略：UI tests 使用静态 machine records 和 spy callbacks；不 mock `RtcSession` runtime，不调用浏览器 WebRTC 类型。
+- 先写的失败测试：planned `MachineList` and `RemoteAppShell` tests for default machine-list first screen, empty add/scan or login state, row machine/status/terminal count/last seen rendering, no workspace/tab/pane/tmux language, and clicking a machine entering connection flow instead of opening a terminal.
+- 预期失败结果：focused `remote-ui` tests should fail before implementation because `MachineList` and `RemoteAppShell` do not exist.
+- 实现摘要：added `appMachine` APP-shell model types, `MachineList` dense first-screen list with add/scan/sign-in affordances, and `RemoteAppShell` that defaults to the machine list and enters an observable connection-flow state before any terminal surface opens.
+- 重构摘要：kept existing `LocalRemoteApp` as the local embedded-web harness and introduced an independent APP shell so local-only connector assumptions do not become global product behavior. Exported the new shell/list/types from `remote-ui/src/index.ts`.
+- 运行命令：`cd remote-ui && npm test -- --run src/MachineList.test.tsx src/RemoteAppShell.test.tsx`; `cd remote-ui && npm test`; `cd remote-ui && npm run typecheck`; `cd remote-ui && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- remote-ui/src remote-ui/docs/webrtc-rewrite-log.md docs/remote-rebuild/WORKFLOW.md`; source scan for `RTCPeerConnection`, `RTCDataChannel`, old path taxonomy, and forbidden tmux/workspace/pane language in new Slice 13 files.
+- 测试结果：expected red path confirmed: focused tests failed before implementation because imports `./MachineList` and `./RemoteAppShell` could not resolve. After implementation, focused tests passed: 2 files, 6 tests. Full `remote-ui` test suite passed before and after review fixes: 38 files, 183 tests. Typecheck passed before and after review fixes. Build passed before and after review fixes with the existing Vite >500 kB chunk warning. Workflow guard and scoped diff check passed. Source scan found only test assertions and `window.setTimeout`, with no browser WebRTC type leakage or forbidden taxonomy in implementation.
+- subagent review：two read-only explorers completed before implementation. `Kant` confirmed current `remote-ui` has correct `RtcSession` and path boundary but no APP-first multi-machine shell; `Anscombe` identified tgent-app patterns worth adopting: compact machine list, scan/add entry, local store seam, and connection snapshot UI while avoiding tmux/private-key/relay taxonomy. Slice-level code review requested from `Hypatia` after validation.
+- review 发现：local self-review found `RemoteAppShell` left short delayed connection-result timers uncleared on back/unmount, even though attempt sequencing prevented visible stale navigation. `Hypatia` review found one medium issue: `MachineList.test.tsx` public props/path taxonomy test was tautological because it asserted a local object literal and helper default path; two low issues: bottom `Next Exact Action` and `webrtc-rewrite-log.md` next step were stale after validation.
+- review 后修复：added pending-result timer cleanup on new selection, back navigation, and component unmount; replaced the tautological MachineList props/path test with real raw-source boundary coverage against `appMachine.ts` and `MachineList.tsx`; refreshed bottom `Next Exact Action` and `webrtc-rewrite-log.md` review/next-step text. Focused tests and typecheck passed after the local timer fix; full validation will be rerun after the Hypatia fixes.
+- 新增派生条目：none yet.
+- deferred human items：none.
+- 剩余风险：connection orchestration, QR schema/store, native adapter, and e2e remain future slices.
+- 下一步：commit Slice `13`, record hash, then start Slice `14` QR payload/store.
+- commit：
+
 ## Historical P2/P3 Records
 
 The entries below predate the current Remote Web / Hub / Agent Buildout. They are retained for traceability but are no longer the active todo tree.
@@ -3506,6 +3591,6 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Commit the `11-C-C` workflow/runbook record.
-2. Report the public-host daemon state, Web Control URL, machine/terminal IDs, and managed e2e result to the user.
-3. Keep `11-C-C` token-expiry risk visible as the next real product hardening item.
+1. Commit Slice `13` remote-ui APP machine list shell with only related files staged.
+2. Record the Slice `13` commit hash in this workflow.
+3. Start Slice `14` QR payload/store next, keeping machine private keys out of APP records.

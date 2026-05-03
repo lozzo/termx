@@ -2,6 +2,78 @@
 
 This log is the handoff record for the WebRTC rewrite. It must be updated after every slice.
 
+## Slice 13: APP-First Machine List Shell
+
+### Goal
+
+Add an APP-first shell for the next product direction: the default user-facing screen is a compact machine list with add/scan entry points, and selecting a machine enters a connection flow before any terminal UI opens.
+
+### Failing Tests First
+
+Failing tests first.
+
+- Added `src/MachineList.test.tsx` for machine rows, empty state, add/scan/sign-in actions, forbidden tmux/workspace/pane wording, and client path taxonomy.
+- Added `src/RemoteAppShell.test.tsx` for default first screen, click-to-connection-flow behavior, and managed relay as info rather than a path.
+- Initial command: `npm test -- --run src/MachineList.test.tsx src/RemoteAppShell.test.tsx`
+- Result: failed because `MachineList` and `RemoteAppShell` did not exist.
+
+### Implementation
+
+- Added `src/appMachine.ts` with APP machine records and connection-flow snapshot types.
+- Added `src/MachineList.tsx` with a dense machine list, add/scan actions, anonymous sign-in affordance, status badges, terminal count, last-seen metadata, and relay-as-info display.
+- Added `src/RemoteAppShell.tsx` with machine-list-first default rendering and an observable `trying_local` connection-flow screen before connection results update.
+- Exported the new shell, list, and APP machine types from `src/index.ts`.
+
+### Renames
+
+- No existing runtime or terminal objects were renamed.
+- `LocalRemoteApp` remains the local embedded-web harness; `RemoteAppShell` is the APP-first shell boundary.
+
+### Deleted Old Abstractions
+
+- None in this slice.
+- The new APP shell does not introduce `relay`, `anonymous_p2p`, `managed_p2p`, `paid_relay`, workspace, tab, window, pane, tmux, or browser WebRTC terms.
+
+### Commands
+
+- `npm test -- --run src/MachineList.test.tsx src/RemoteAppShell.test.tsx` failed first with missing modules, then passed after implementation.
+- `npm test` passed before and after review fixes: 38 files, 183 tests.
+- `npm run typecheck` passed before and after review fixes.
+- `npm run build` passed before and after review fixes with the existing Vite chunk-size warning.
+- `bash docs/remote-rebuild/check_workflow_rules.sh` passed from the repo root.
+- `git diff --check -- remote-ui/src remote-ui/docs/webrtc-rewrite-log.md docs/remote-rebuild/WORKFLOW.md` passed.
+- Source scan found no browser WebRTC type leakage or old path taxonomy in the Slice 13 implementation files.
+
+### Review
+
+- Read-only explorers completed before implementation:
+  - `Kant` confirmed current `remote-ui` has correct `RtcSession` and path boundaries but no APP-first multi-machine shell.
+  - `Anscombe` identified usable tgent-app patterns: compact machine list, scan/add entry, local store seam, connection snapshot UI, and native bridge hiding, while avoiding tmux/private-key/relay taxonomy.
+- Slice-level implementation review completed after full validation.
+
+### Review Findings
+
+- Local self-review found the short delayed connection result timer could survive back navigation or unmount, even though attempt sequencing prevented stale results from becoming visible.
+- `Hypatia` review found that the `MachineList` public props/path taxonomy test was mostly tautological because it asserted a local object literal and the test helper's default path, not the real exported boundary.
+- `Hypatia` review also found stale workflow/log next-step text after full validation.
+
+### Review Fixes
+
+- Added pending timer cleanup on new machine selection, back navigation, and component unmount.
+- Reran focused tests and typecheck after the cleanup fix.
+- Replaced the tautological MachineList props/path test with raw-source checks against the actual Slice 13 model and list implementation.
+- Refreshed workflow and rewrite-log next-step text.
+
+### Remaining Risk
+
+- QR payload/store is Slice 14.
+- `local -> public_p2p -> managed` orchestration is Slice 15.
+- Native APP adapter and end-to-end APP/devstack coverage remain later slices.
+
+### Next Step
+
+Commit Slice 13, then start Slice 14 QR payload/store.
+
 ## Slice 1: Documentation Initialization And AGENTS Hardening
 
 ### Goal
