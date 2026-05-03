@@ -130,7 +130,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 | 12-B | tgent-comparison | Compare `../tgent` web/hub/app and write migration strategy plus prompt | completed |  |
 | 13 | remote-ui-app-shell | Build APP-first machine list shell | completed | `0014e9a7` |
 | 13-A | workflow-unattended-continuation | Harden AGENTS so future slices continue unattended across boundaries | completed | `4f7bf2d1` |
-| 14 | remote-ui-qr-store | Define `termx://` QR payload and local MachineStore, rejecting machine private key material | in_progress |  |
+| 14 | remote-ui-qr-store | Define `termx://` QR payload and local MachineStore, rejecting machine private key material | completed | `9c078273` |
 | 15 | remote-ui-connection-orchestrator | Implement local/LAN -> public_p2p -> managed orchestration returning only `RtcSession` | pending |  |
 | 16 | web-control-hub-closed-loop | Implement Hub discover, heartbeat, policy/kick response, force-offline in Web Control | pending |  |
 | 17 | daemon-login-hub-select | Implement token/password/device-code daemon login and Hub discovery/selection | pending |  |
@@ -203,7 +203,7 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ### 14 Remote UI QR Pairing Payload And Machine Store
 
-- 状态：in_progress
+- 状态：completed
 - 父条目：none
 - 来源：APP-first flow needs scan/add to store machine/service info from `termx` CLI QR.
 - 目标：define `termx://` QR payload schema and local `MachineStore`; parse/save local/LAN/public/control/hub/pairing metadata; reject machine private key; keep app private key only as key-store reference; support schema version compatibility.
@@ -223,8 +223,8 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 - 新增派生条目：none yet.
 - deferred human items：real native secure storage integration remains future native APP slice.
 - 剩余风险：native secure storage, camera scan UI, connection orchestration, and e2e remain future slices.
-- 下一步：finish post-review validation, commit Slice `14`, hash backfill, then start Slice `15`.
-- commit：
+- 下一步：Slice `15`.
+- commit：`9c078273`
 
 ## Deferred External / Human Items
 
@@ -235,6 +235,6 @@ Compressed status file for unattended remote rebuild work. Keep this file short 
 
 ## Next Exact Action
 
-1. Finish post-review validation for Slice `14`.
-2. Commit Slice `14` and backfill its hash.
-3. Start Slice `15`: write failing tests for `local -> public_p2p -> managed` connection orchestration returning only `RtcSession`.
+1. Start Slice `15`: write failing tests for `local -> public_p2p -> managed` connection orchestration returning only `RtcSession`.
+2. Implement the minimum orchestrator around existing connector interfaces without introducing relay as a path.
+3. Run focused/full validation, subagent review, fixes, commit, and hash backfill.
