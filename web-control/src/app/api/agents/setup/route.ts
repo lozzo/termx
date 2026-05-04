@@ -53,10 +53,7 @@ export async function POST(request: NextRequest) {
     name,
     hostname,
     os_info,
-    version,
     labels,
-    encrypted_private_key,
-    key_nonce,
   } = body;
 
   if (!agent_id || !public_key) {
@@ -99,8 +96,6 @@ export async function POST(request: NextRequest) {
         hostname: hostname || existing.hostname,
         osInfo: os_info || existing.osInfo,
         labels: labels || existing.labels,
-        encryptedPrivateKey: encrypted_private_key || existing.encryptedPrivateKey,
-        keyNonce: key_nonce || existing.keyNonce,
       })
       .where(eq(agents.id, agent_id));
   } else {
@@ -125,8 +120,6 @@ export async function POST(request: NextRequest) {
       hostname: hostname || "",
       osInfo: os_info || "",
       labels: labels || "",
-      encryptedPrivateKey: encrypted_private_key || null,
-      keyNonce: key_nonce || null,
     });
   }
 

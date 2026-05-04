@@ -36,8 +36,3 @@ export function getGithubClientSecret(): string {
 export function isGithubOAuthConfigured(): boolean {
   return Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
 }
-
-/** @deprecated 已合并到 JWT_SECRET，保留兼容 */
-export function getHubJwtSecret(): Uint8Array {
-  return getJwtSecret();
-}

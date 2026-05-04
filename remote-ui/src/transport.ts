@@ -16,6 +16,7 @@ export interface RtcSessionDescription {
 
 export interface RtcOfferSigningInput {
   sessionId: string
+  ticketId?: string | undefined
   machineId: string
   terminalId: string
   sdp: string
@@ -129,6 +130,7 @@ export interface LocalStatus {
 }
 
 export interface LocalPairInput {
+  machineId?: string | undefined
   pairSessionId: string
   pairSecret: string
   appDeviceId: string

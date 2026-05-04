@@ -105,11 +105,12 @@ func TestE2ERemotePairStartUsesLatestLocalPairURL(t *testing.T) {
 
 var _ = protocol.Version
 
-func TestRemoteTriggerSyncRegistersCreatedTerminal(t *testing.T) {
+func TestRemoteTriggerSyncRegistersMachineWithoutTerminalInventory(t *testing.T) {
 	type registerPayload struct {
+		DeviceID  string `json:"deviceId"`
 		Terminals []struct {
 			ID string `json:"id"`
-		} `json:"terminals"`
+		} `json:"terminals,omitempty"`
 	}
 
 	requests := make(chan registerPayload, 8)
@@ -144,7 +145,7 @@ func TestRemoteTriggerSyncRegistersCreatedTerminal(t *testing.T) {
 		DeviceName:  "sync-test",
 	}))
 
-	created, err := srv.Create(context.Background(), CreateOptions{
+	_, err := srv.Create(context.Background(), CreateOptions{
 		Command: []string{"bash", "--noprofile", "--norc"},
 		Name:    "sync-test-terminal",
 		Size:    Size{Cols: 80, Rows: 24},
@@ -160,13 +161,15 @@ func TestRemoteTriggerSyncRegistersCreatedTerminal(t *testing.T) {
 	for {
 		select {
 		case req := <-requests:
-			for _, terminal := range req.Terminals {
-				if terminal.ID == created.ID {
-					return
-				}
+			if req.DeviceID == "" {
+				t.Fatalf("remote sync registration omitted device id: %+v", req)
 			}
+			if len(req.Terminals) != 0 {
+				t.Fatalf("remote sync leaked terminal inventory to control: %+v", req.Terminals)
+			}
+			return
 		case <-deadline:
-			t.Fatalf("timed out waiting for remote sync containing terminal %q", created.ID)
+			t.Fatal("timed out waiting for remote sync registration")
 		}
 	}
 }

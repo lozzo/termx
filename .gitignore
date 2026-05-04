@@ -7,3 +7,5 @@ cover.out
 /termx
 /termx-core/termx
 .worktrees/
+*.tsbuildinfo
+.build/

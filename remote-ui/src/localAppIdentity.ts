@@ -7,6 +7,12 @@ const storageKeys = {
   appCertificate: 'termx.local.appCertificate',
 } as const
 
+type LocalAppIdentityStorageKeys = Record<keyof typeof storageKeys, string>
+
+export interface LocalAppIdentityStoreOptions {
+  scope?: string | undefined
+}
+
 export interface LocalAppIdentity {
   appDeviceId: string
   appName: string
@@ -67,16 +73,21 @@ export interface PairLocalAppOptions {
   storage: LocalAppIdentityStore
   crypto: LocalAppCrypto
   appName: string
+  machineId?: string | undefined
   pairSessionId: string
   pairSecret: string
 }
 
-export function createLocalAppIdentityStore(storage: Pick<Storage, 'getItem' | 'setItem'>): LocalAppIdentityStore {
+export function createLocalAppIdentityStore(
+  storage: Pick<Storage, 'getItem' | 'setItem'>,
+  options: LocalAppIdentityStoreOptions = {},
+): LocalAppIdentityStore {
+  const key = storageKeyForScope(options.scope)
   return {
     loadIdentity() {
-      const appDeviceId = storage.getItem(storageKeys.appDeviceId)
-      const appName = storage.getItem(storageKeys.appName)
-      const appPublicKey = storage.getItem(storageKeys.appPublicKey)
+      const appDeviceId = storage.getItem(key.appDeviceId)
+      const appName = storage.getItem(key.appName)
+      const appPublicKey = storage.getItem(key.appPublicKey)
       if (!appDeviceId || !appName || !appPublicKey) return null
       return {
         appDeviceId,
@@ -85,16 +96,28 @@ export function createLocalAppIdentityStore(storage: Pick<Storage, 'getItem' | '
       }
     },
     saveIdentity(input) {
-      storage.setItem(storageKeys.appDeviceId, input.appDeviceId)
-      storage.setItem(storageKeys.appName, input.appName)
-      storage.setItem(storageKeys.appPublicKey, input.appPublicKey)
+      storage.setItem(key.appDeviceId, input.appDeviceId)
+      storage.setItem(key.appName, input.appName)
+      storage.setItem(key.appPublicKey, input.appPublicKey)
     },
     loadCertificate() {
-      return storage.getItem(storageKeys.appCertificate)
+      return storage.getItem(key.appCertificate)
     },
     saveCertificate(value) {
-      storage.setItem(storageKeys.appCertificate, value)
+      storage.setItem(key.appCertificate, value)
     },
+  }
+}
+
+function storageKeyForScope(scope: string | undefined): LocalAppIdentityStorageKeys {
+  const normalized = scope?.trim()
+  if (!normalized) return storageKeys
+  const prefix = `termx.local.${encodeURIComponent(normalized).replace(/\./g, '%2E')}.`
+  return {
+    appDeviceId: `${prefix}appDeviceId`,
+    appName: `${prefix}appName`,
+    appPublicKey: `${prefix}appPublicKey`,
+    appCertificate: `${prefix}appCertificate`,
   }
 }
 
@@ -128,7 +151,7 @@ export async function canonicalLocalOfferMessage(input: CanonicalLocalOfferInput
   const candidateDigest = await browserSHA256(new TextEncoder().encode(canonicalCandidates(input.candidates)))
   return [
     'termx-webrtc-offer-v1:',
-    'ticket_id:',
+    `ticket_id:${input.ticketId?.trim() ?? ''}`,
     `machine_id:${input.machineId.trim()}`,
     `terminal_id:${input.terminalId.trim()}`,
     `sha256(sdp):${hex(digest)}`,
@@ -172,6 +195,7 @@ export async function pairLocalApp(options: PairLocalAppOptions): Promise<LocalP
     appName: options.appName,
   })
   const result = await options.api.pair({
+    ...(options.machineId ? { machineId: options.machineId } : {}),
     pairSessionId: options.pairSessionId,
     pairSecret: options.pairSecret,
     appDeviceId: identity.appDeviceId,
@@ -226,7 +250,7 @@ async function canonicalLocalOfferMessageWithHash(input: CanonicalLocalOfferInpu
   const candidateDigest = await crypto.sha256(new TextEncoder().encode(canonicalCandidates(input.candidates)))
   return [
     'termx-webrtc-offer-v1:',
-    'ticket_id:',
+    `ticket_id:${input.ticketId?.trim() ?? ''}`,
     `machine_id:${input.machineId.trim()}`,
     `terminal_id:${input.terminalId.trim()}`,
     `sha256(sdp):${hex(digest)}`,

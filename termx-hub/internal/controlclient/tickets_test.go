@@ -6,76 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/lozzow/termx/termx-hub/internal/cloud"
 	"github.com/lozzow/termx/termx-hub/internal/controlclient"
 	"github.com/lozzow/termx/termx-hub/internal/registry"
 )
 
-func TestConnectionTicketVerifierChecksAndConsumesThroughWebControl(t *testing.T) {
-	t.Parallel()
-
-	var seen []string
-	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = append(seen, r.URL.Path)
-		if r.Header.Get("X-TermX-Hub-Secret") != "hub-secret" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		var req struct {
-			TicketID   string `json:"ticket_id"`
-			MachineID  string `json:"machine_id"`
-			TerminalID string `json:"terminal_id"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-		if req.TicketID != "ticket-1" || req.MachineID != "mach-1" || req.TerminalID != "term-1" {
-			t.Fatalf("ticket request = %+v", req)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"ticket": map[string]any{
-				"id":          req.TicketID,
-				"machine_id":  req.MachineID,
-				"terminal_id": req.TerminalID,
-				"path":        "cloud",
-				"allow_relay": false,
-				"expires_at":  "2026-05-03T13:00:00Z",
-			},
-		})
-	}))
-	defer control.Close()
-
-	verifier := controlclient.NewConnectionTicketVerifier(controlclient.ConnectionTicketVerifierConfig{
-		BaseURL:      control.URL,
-		SharedSecret: "hub-secret",
-		Client:       control.Client(),
-	})
-	if err := verifier.VerifyOfferTicket(context.Background(), registry.OfferTicket{
-		TicketID:   "ticket-1",
-		MachineID:  "mach-1",
-		TerminalID: "term-1",
-	}); err != nil {
-		t.Fatalf("check ticket: %v", err)
-	}
-	ticket, err := verifier.ConsumeConnectionTicket(context.Background(), cloud.VerifyTicketInput{
-		TicketID:   "ticket-1",
-		MachineID:  "mach-1",
-		TerminalID: "term-1",
-	})
-	if err != nil {
-		t.Fatalf("consume ticket: %v", err)
-	}
-	if ticket.ID != "ticket-1" || ticket.Path != cloud.PathCloud || !ticket.ExpiresAt.Equal(time.Date(2026, 5, 3, 13, 0, 0, 0, time.UTC)) {
-		t.Fatalf("ticket = %+v", ticket)
-	}
-	if len(seen) != 2 || seen[0] != "/api/v1/hub/connection-tickets/check" || seen[1] != "/api/v1/hub/connection-tickets/consume" {
-		t.Fatalf("paths = %v", seen)
-	}
-}
-
-func TestConnectionTicketVerifierVerifiesAgentRegistrationThroughWebControl(t *testing.T) {
+func TestAgentControlClientVerifiesAgentRegistrationThroughWebControl(t *testing.T) {
 	t.Parallel()
 
 	var got struct {
@@ -103,12 +40,12 @@ func TestConnectionTicketVerifierVerifiesAgentRegistrationThroughWebControl(t *t
 	}))
 	defer control.Close()
 
-	verifier := controlclient.NewConnectionTicketVerifier(controlclient.ConnectionTicketVerifierConfig{
+	client := controlclient.NewAgentControlClient(controlclient.AgentControlClientConfig{
 		BaseURL:      control.URL,
 		SharedSecret: "hub-secret",
 		Client:       control.Client(),
 	})
-	err := verifier.VerifyAgentRegistration(context.Background(), registry.AgentRegistration{
+	err := client.VerifyAgentRegistration(context.Background(), registry.AgentRegistration{
 		MachineID:          "mach-1",
 		AgentID:            "agent-1",
 		SignatureAlgorithm: "ed25519",
@@ -126,7 +63,7 @@ func TestConnectionTicketVerifierVerifiesAgentRegistrationThroughWebControl(t *t
 	}
 }
 
-func TestConnectionTicketVerifierFetchesAgentPolicyThroughWebControl(t *testing.T) {
+func TestAgentControlClientFetchesAgentPolicyThroughWebControl(t *testing.T) {
 	t.Parallel()
 
 	var got struct {
@@ -158,12 +95,12 @@ func TestConnectionTicketVerifierFetchesAgentPolicyThroughWebControl(t *testing.
 	}))
 	defer control.Close()
 
-	verifier := controlclient.NewConnectionTicketVerifier(controlclient.ConnectionTicketVerifierConfig{
+	client := controlclient.NewAgentControlClient(controlclient.AgentControlClientConfig{
 		BaseURL:      control.URL,
 		SharedSecret: "hub-secret",
 		Client:       control.Client(),
 	})
-	policy, err := verifier.GetAgentPolicy(context.Background(), registry.AgentPolicyRequest{
+	policy, err := client.GetAgentPolicy(context.Background(), registry.AgentPolicyRequest{
 		MachineID: "mach-1",
 		AgentID:   "agent-1",
 	})
@@ -178,7 +115,73 @@ func TestConnectionTicketVerifierFetchesAgentPolicyThroughWebControl(t *testing.
 	}
 }
 
-func TestConnectionTicketVerifierRejectsMismatchedAgentPolicy(t *testing.T) {
+func TestAgentControlClientVerifiesMachineScopedConnectionTicketThroughWebControl(t *testing.T) {
+	t.Parallel()
+
+	var paths []string
+	var got []struct {
+		TicketID   string `json:"ticket_id"`
+		MachineID  string `json:"machine_id"`
+		TerminalID string `json:"terminal_id"`
+	}
+	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.Header.Get("X-TermX-Hub-Secret") != "hub-secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var body struct {
+			TicketID   string `json:"ticket_id"`
+			MachineID  string `json:"machine_id"`
+			TerminalID string `json:"terminal_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		got = append(got, body)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ticket": map[string]any{
+				"id":          body.TicketID,
+				"machine_id":  body.MachineID,
+				"terminal_id": body.TerminalID,
+				"path":        "cloud",
+				"allow_relay": false,
+				"expires_at":  "2026-05-04T12:30:00Z",
+			},
+		})
+	}))
+	defer control.Close()
+
+	client := controlclient.NewAgentControlClient(controlclient.AgentControlClientConfig{
+		BaseURL:      control.URL,
+		SharedSecret: "hub-secret",
+		Client:       control.Client(),
+	})
+	if err := client.VerifyOfferTicket(context.Background(), registry.OfferTicket{
+		MachineID: "mach-1",
+		TicketID:  "ticket-1",
+	}); err != nil {
+		t.Fatalf("verify offer ticket: %v", err)
+	}
+	ticket, err := client.ConsumeConnectionTicket(context.Background(), cloud.ConnectionTicketInput{
+		MachineID: "mach-1",
+		TicketID:  "ticket-1",
+	})
+	if err != nil {
+		t.Fatalf("consume connection ticket: %v", err)
+	}
+	if ticket.ID != "ticket-1" || ticket.MachineID != "mach-1" || ticket.TerminalID != "" || ticket.Path != cloud.PathCloud {
+		t.Fatalf("ticket = %+v", ticket)
+	}
+	if len(paths) != 2 || paths[0] != "/api/v1/hub/connection-tickets/check" || paths[1] != "/api/v1/hub/connection-tickets/consume" {
+		t.Fatalf("paths = %#v", paths)
+	}
+	if len(got) != 2 || got[0].TerminalID != "" || got[1].TerminalID != "" {
+		t.Fatalf("requests = %#v", got)
+	}
+}
+
+func TestAgentControlClientRejectsMismatchedAgentPolicy(t *testing.T) {
 	t.Parallel()
 
 	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -192,12 +195,12 @@ func TestConnectionTicketVerifierRejectsMismatchedAgentPolicy(t *testing.T) {
 	}))
 	defer control.Close()
 
-	verifier := controlclient.NewConnectionTicketVerifier(controlclient.ConnectionTicketVerifierConfig{
+	client := controlclient.NewAgentControlClient(controlclient.AgentControlClientConfig{
 		BaseURL:      control.URL,
 		SharedSecret: "hub-secret",
 		Client:       control.Client(),
 	})
-	if _, err := verifier.GetAgentPolicy(context.Background(), registry.AgentPolicyRequest{
+	if _, err := client.GetAgentPolicy(context.Background(), registry.AgentPolicyRequest{
 		MachineID: "mach-1",
 		AgentID:   "agent-1",
 	}); err == nil {
@@ -205,49 +208,17 @@ func TestConnectionTicketVerifierRejectsMismatchedAgentPolicy(t *testing.T) {
 	}
 }
 
-func TestConnectionTicketVerifierRejectsUnsignedAgentRegistration(t *testing.T) {
+func TestAgentControlClientRejectsUnsignedAgentRegistration(t *testing.T) {
 	t.Parallel()
 
-	verifier := controlclient.NewConnectionTicketVerifier(controlclient.ConnectionTicketVerifierConfig{
+	client := controlclient.NewAgentControlClient(controlclient.AgentControlClientConfig{
 		BaseURL:      "http://127.0.0.1:1",
 		SharedSecret: "hub-secret",
 	})
-	if err := verifier.VerifyAgentRegistration(context.Background(), registry.AgentRegistration{
+	if err := client.VerifyAgentRegistration(context.Background(), registry.AgentRegistration{
 		MachineID: "mach-1",
 		AgentID:   "agent-1",
 	}); err == nil {
 		t.Fatal("unsigned agent registration was accepted")
-	}
-}
-
-func TestConnectionTicketVerifierFailsClosedWithoutTURNOrRuntimePayload(t *testing.T) {
-	t.Parallel()
-
-	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"ticket": map[string]any{
-				"id":          "ticket-1",
-				"machine_id":  "mach-1",
-				"terminal_id": "term-1",
-				"path":        "relay",
-				"allow_relay": true,
-				"expires_at":  "2026-05-03T13:00:00Z",
-			},
-		})
-	}))
-	defer control.Close()
-
-	verifier := controlclient.NewConnectionTicketVerifier(controlclient.ConnectionTicketVerifierConfig{
-		BaseURL:      control.URL,
-		SharedSecret: "hub-secret",
-		Client:       control.Client(),
-	})
-	_, err := verifier.ConsumeConnectionTicket(context.Background(), cloud.VerifyTicketInput{
-		TicketID:   "ticket-1",
-		MachineID:  "mach-1",
-		TerminalID: "term-1",
-	})
-	if err == nil {
-		t.Fatal("relay path ticket was accepted as cloud")
 	}
 }

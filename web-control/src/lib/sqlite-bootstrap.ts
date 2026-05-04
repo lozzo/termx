@@ -87,8 +87,6 @@ CREATE TABLE IF NOT EXISTS agents (
   online INTEGER NOT NULL DEFAULT 0,
   hub_id TEXT REFERENCES hubs(id),
   public_key TEXT,
-  encrypted_private_key TEXT,
-  key_nonce TEXT,
   paired INTEGER NOT NULL DEFAULT 0,
   pending_kick INTEGER NOT NULL DEFAULT 0,
   allow_relay_transfer INTEGER NOT NULL DEFAULT 0,
@@ -103,72 +101,6 @@ CREATE INDEX IF NOT EXISTS agents_user_id_idx ON agents(user_id);
 CREATE INDEX IF NOT EXISTS agents_hub_id_idx ON agents(hub_id);
 CREATE INDEX IF NOT EXISTS agents_token_id_idx ON agents(token_id);
 CREATE INDEX IF NOT EXISTS agents_hub_online_idx ON agents(hub_id, online);
-
-CREATE TABLE IF NOT EXISTS managed_connect_tickets (
-  id TEXT PRIMARY KEY NOT NULL,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  machine_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-  terminal_id TEXT NOT NULL,
-  path TEXT NOT NULL DEFAULT 'managed',
-  allow_relay INTEGER NOT NULL DEFAULT 0,
-  relay_in_use INTEGER NOT NULL DEFAULT 0,
-  relay_bytes_remaining INTEGER,
-  relay_throttled INTEGER NOT NULL DEFAULT 0,
-  expires_at INTEGER NOT NULL,
-  consumed_at INTEGER,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
-);
-
-CREATE TABLE IF NOT EXISTS connection_tickets (
-  id TEXT PRIMARY KEY NOT NULL,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  machine_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-  terminal_id TEXT NOT NULL,
-  path TEXT NOT NULL DEFAULT 'cloud',
-  allow_relay INTEGER NOT NULL DEFAULT 0,
-  relay_in_use INTEGER NOT NULL DEFAULT 0,
-  relay_bytes_remaining INTEGER,
-  relay_throttled INTEGER NOT NULL DEFAULT 0,
-  expires_at INTEGER NOT NULL,
-  consumed_at INTEGER,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
-);
-
-INSERT OR IGNORE INTO connection_tickets (
-  id,
-  user_id,
-  machine_id,
-  terminal_id,
-  path,
-  allow_relay,
-  relay_in_use,
-  relay_bytes_remaining,
-  relay_throttled,
-  expires_at,
-  consumed_at,
-  created_at
-)
-SELECT
-  id,
-  user_id,
-  machine_id,
-  terminal_id,
-  CASE WHEN path = 'managed' THEN 'cloud' ELSE path END,
-  allow_relay,
-  relay_in_use,
-  relay_bytes_remaining,
-  relay_throttled,
-  expires_at,
-  consumed_at,
-  created_at
-FROM managed_connect_tickets
-WHERE EXISTS (
-  SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'managed_connect_tickets'
-);
-
-CREATE INDEX IF NOT EXISTS connection_tickets_user_id_idx ON connection_tickets(user_id);
-CREATE INDEX IF NOT EXISTS connection_tickets_machine_id_idx ON connection_tickets(machine_id);
-CREATE INDEX IF NOT EXISTS connection_tickets_expires_at_idx ON connection_tickets(expires_at);
 
 CREATE TABLE IF NOT EXISTS plans (
   id TEXT PRIMARY KEY NOT NULL,

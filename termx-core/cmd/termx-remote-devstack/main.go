@@ -21,18 +21,6 @@ type tokenResponse struct {
 	RawToken string `json:"rawToken"`
 }
 
-type devicesResponse struct {
-	Devices []struct {
-		ID string `json:"id"`
-	} `json:"devices"`
-}
-
-type terminalsResponse struct {
-	Terminals []struct {
-		ID string `json:"id"`
-	} `json:"terminals"`
-}
-
 func main() {
 	var controlURL string
 	var hubURL string
@@ -94,9 +82,6 @@ func run(controlURL, hubURL, email, password, terminalName, dataDir string) erro
 	}
 
 	status := srv.RemoteStatus()
-	if err := waitForControlInventory(httpClient, controlURL, status.DeviceID, created.ID); err != nil {
-		return err
-	}
 	if err := waitForHubInventory(hubURL, status.DeviceID); err != nil {
 		return err
 	}
@@ -120,23 +105,6 @@ func mustDataDir(dataDir string) string {
 		panic(err)
 	}
 	return dir
-}
-
-func waitForControlInventory(client *http.Client, controlURL, deviceID, terminalID string) error {
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		var devices devicesResponse
-		var terminals terminalsResponse
-		if err := getJSON(client, controlURL+"/api/devices", &devices); err == nil {
-			if err := getJSON(client, controlURL+"/api/terminals", &terminals); err == nil {
-				if containsDevice(devices, deviceID) && containsTerminal(terminals, terminalID) {
-					return nil
-				}
-			}
-		}
-		time.Sleep(250 * time.Millisecond)
-	}
-	return os.ErrDeadlineExceeded
 }
 
 func waitForHubInventory(hubURL, deviceID string) error {
@@ -201,22 +169,4 @@ func getJSON(client *http.Client, url string, out any) error {
 		return fmt.Errorf("http %d", resp.StatusCode)
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
-}
-
-func containsDevice(resp devicesResponse, id string) bool {
-	for _, device := range resp.Devices {
-		if device.ID == id {
-			return true
-		}
-	}
-	return false
-}
-
-func containsTerminal(resp terminalsResponse, id string) bool {
-	for _, terminal := range resp.Terminals {
-		if terminal.ID == id {
-			return true
-		}
-	}
-	return false
 }

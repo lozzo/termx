@@ -32,6 +32,29 @@ describe('local app identity', () => {
     expect(JSON.stringify(storage.dump())).not.toMatch(/privateKey|private_key|machine_private_key|machinePrivateKey|turn|credential/i)
   })
 
+  it('can scope app identity and certificate per account machine pair', async () => {
+    const storage = new MemoryStorage()
+    const crypto = createMockCrypto()
+    const scopedStore = createLocalAppIdentityStore(storage, { scope: 'user:user-1:machine:machine-1' })
+
+    const identity = await ensureLocalAppIdentity({
+      storage: scopedStore,
+      crypto,
+      appName: 'TermX Remote App',
+    })
+    scopedStore.saveCertificate('{"payload":{"machine_id":"machine-1"}}')
+
+    expect(identity.appDeviceId).toMatch(/^appweb_/)
+    expect(storage.dump()).toMatchObject({
+      'termx.local.user%3Auser-1%3Amachine%3Amachine-1.appDeviceId': identity.appDeviceId,
+      'termx.local.user%3Auser-1%3Amachine%3Amachine-1.appName': 'TermX Remote App',
+      'termx.local.user%3Auser-1%3Amachine%3Amachine-1.appPublicKey': 'AQIDBA==',
+      'termx.local.user%3Auser-1%3Amachine%3Amachine-1.appCertificate': '{"payload":{"machine_id":"machine-1"}}',
+    })
+    expect(createLocalAppIdentityStore(storage).loadCertificate()).toBeNull()
+    expect(JSON.stringify(storage.dump())).not.toMatch(/privateKey|private_key|machine_private_key|machinePrivateKey|turn|credential/i)
+  })
+
   it('canonicalizes local offers the same way as the Go verifier and signs with the app key', async () => {
     const storage = new MemoryStorage({
       'termx.local.appDeviceId': 'appweb_123',
@@ -50,6 +73,7 @@ describe('local app identity', () => {
 
     const message = await canonicalLocalOfferMessage({
       sessionId: 'rtc-1',
+      ticketId: 'ticket-1',
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       sdp: 'v=0\r\ns=termx\r\n',
@@ -58,7 +82,7 @@ describe('local app identity', () => {
       timestamp: 1777631400,
     })
     expect(message).toContain('termx-webrtc-offer-v1:')
-    expect(message).toContain('ticket_id:')
+    expect(message).toContain('ticket_id:ticket-1')
     expect(message).toContain('machine_id:machine-local')
     expect(message).toContain('terminal_id:terminal-1')
     expect(message).toContain('sha256(sdp):dd33fcfb47f1bcefb7e8f57c03aa4778c5f7e2490f14259f9b892c05d0aa0158')
@@ -70,6 +94,7 @@ describe('local app identity', () => {
 
     const signature = await signer.signOffer({
       sessionId: 'rtc-1',
+      ticketId: 'ticket-1',
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       sdp: 'v=0\r\ns=termx\r\n',
@@ -158,12 +183,14 @@ describe('local app identity', () => {
       storage: createLocalAppIdentityStore(storage),
       crypto,
       appName: 'TermX Local Web',
+      machineId: 'machine-local',
       pairSessionId: 'pair-1',
       pairSecret: 'secret-1',
     })
 
     expect(result.machineId).toBe('machine-local')
     expect(api.pair).toHaveBeenCalledWith(expect.objectContaining({
+      machineId: 'machine-local',
       pairSessionId: 'pair-1',
       pairSecret: 'secret-1',
       appDeviceId: expect.stringMatching(/^appweb_/),

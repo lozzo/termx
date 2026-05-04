@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createManagedHubApi,
   type ManagedHubFetch,
@@ -6,6 +6,10 @@ import {
 import source from './managedHubApi.ts?raw'
 
 describe('ManagedHubApi', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('submits a managed WebRTC offer to the Hub session endpoint and returns the answer', async () => {
     const fetch = new RecordingFetch([
       jsonResponse(200, {
@@ -175,7 +179,53 @@ describe('ManagedHubApi', () => {
     })
   })
 
-  it('requires a connect ticket and terminal id before making a Hub request', async () => {
+  it('accepts cloud path and empty terminal id for machine-scoped runtime API sessions', async () => {
+    const fetch = new RecordingFetch([
+      jsonResponse(200, {
+        session_id: 'rtc-managed-list-1',
+        path: 'cloud',
+        machine_id: 'machine-1',
+        answer: {
+          sdp: 'machine-answer-sdp',
+          ice_candidates: [],
+        },
+        relay_policy: {
+          allow_relay: false,
+          allow_relay_transfer: false,
+        },
+        relay_in_use: false,
+      }),
+    ])
+    const api = createManagedHubApi({
+      baseUrl: 'https://hub.termx.test',
+      fetch: fetch.fetch,
+    })
+
+    await expect(api.createSession({
+      ...validSessionInput(),
+      terminalId: '',
+      offer: {
+        sessionId: 'rtc-managed-list-1',
+        sdp: 'offer-sdp',
+        iceCandidates: [],
+      },
+    })).resolves.toMatchObject({
+      sessionId: 'rtc-managed-list-1',
+      path: 'managed',
+      machineId: 'machine-1',
+      answer: {
+        type: 'answer',
+        sdp: 'machine-answer-sdp',
+      },
+    })
+    expect(fetch.requests[0]?.body).toMatchObject({
+      connect_ticket: 'ticket-1',
+      machine_id: 'machine-1',
+      terminal_id: '',
+    })
+  })
+
+  it('requires a connect ticket before making a Hub request', async () => {
     const fetch = new RecordingFetch([])
     const api = createManagedHubApi({
       baseUrl: 'https://hub.termx.test',
@@ -186,10 +236,6 @@ describe('ManagedHubApi', () => {
       ...validSessionInput(),
       connectTicket: ' ',
     })).rejects.toThrow(/connect ticket.*required/i)
-    await expect(api.createSession({
-      ...validSessionInput(),
-      terminalId: ' ',
-    })).rejects.toThrow(/terminal.*required/i)
     expect(fetch.requests).toEqual([])
   })
 
@@ -208,6 +254,114 @@ describe('ManagedHubApi', () => {
     })
 
     await expect(api.createSession(validSessionInput())).rejects.toThrow(/managed_ticket_rejected.*expired/i)
+  })
+
+  it('claims a pairing code through the Hub while leaving secret validation to the agent', async () => {
+    const fetch = new RecordingFetch([
+      jsonResponse(200, {
+        claim_id: 'claim-1',
+        machine_id: 'machine-1',
+        machine_name: 'RedmiBook',
+        machine_public_key: 'machine-public',
+        app_certificate: {
+          payload: {
+            machine_id: 'machine-1',
+            app_public_key: 'AQIDBA==',
+          },
+          signature: 'machine-sig',
+        },
+        expires_at: '2027-05-04T10:30:00Z',
+      }),
+    ])
+    const api = createManagedHubApi({
+      baseUrl: 'https://hub.termx.test',
+      fetch: fetch.fetch,
+    })
+
+    await expect(api.pair({
+      machineId: 'machine-1',
+      pairSessionId: 'pair-session-1',
+      pairSecret: 'pair-secret-1',
+      appDeviceId: 'appweb-1',
+      appName: 'TermX Remote App',
+      appPublicKey: 'AQIDBA==',
+      requestedCapabilities: ['terminal', 'file_manager', 'terminal_management'],
+    })).resolves.toEqual({
+      claimId: 'claim-1',
+      machineId: 'machine-1',
+      machineName: 'RedmiBook',
+      machinePublicKey: 'machine-public',
+      appCertificate: '{"payload":{"machine_id":"machine-1","app_public_key":"AQIDBA=="},"signature":"machine-sig"}',
+      expiresAt: '2027-05-04T10:30:00Z',
+    })
+    expect(fetch.requests).toEqual([{
+      method: 'POST',
+      url: 'https://hub.termx.test/api/v1/pairing/claims',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: {
+        machine_id: 'machine-1',
+        pair_session_id: 'pair-session-1',
+        pair_secret: 'pair-secret-1',
+        app_device_id: 'appweb-1',
+        app_name: 'TermX Remote App',
+        app_public_key: 'AQIDBA==',
+        requested_capabilities: ['terminal', 'file_manager', 'terminal_management'],
+      },
+    }])
+  })
+
+  it('surfaces pending pairing claims as an actionable agent-not-ready error', async () => {
+    const fetch = new RecordingFetch([
+      jsonResponse(202, {
+        claim_id: 'claim-1',
+        machine_id: 'machine-1',
+        pending: true,
+      }),
+    ])
+    const api = createManagedHubApi({
+      baseUrl: 'https://hub.termx.test',
+      fetch: fetch.fetch,
+    })
+
+    await expect(api.pair({
+      machineId: 'machine-1',
+      pairSessionId: 'pair-session-1',
+      pairSecret: 'pair-secret-1',
+      appDeviceId: 'appweb-1',
+      appName: 'TermX Remote App',
+      appPublicKey: 'AQIDBA==',
+      requestedCapabilities: ['terminal'],
+    })).rejects.toThrow(/pairing is pending.*agent is online/i)
+  })
+
+  it('uses the browser fetch binding when no custom fetch is injected', async () => {
+    const calls: Array<{ thisValue: unknown; input: string }> = []
+    const boundFetch = function (this: unknown, input: RequestInfo | URL) {
+      calls.push({ thisValue: this, input: String(input) })
+      if (this !== globalThis) {
+        throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation")
+      }
+      return Promise.resolve(jsonResponse(202, {
+        session_id: 'rtc-managed-1',
+        path: 'managed',
+        machine_id: 'machine-1',
+        terminal_id: 'terminal-1',
+        pending: true,
+      }))
+    }
+    vi.stubGlobal('fetch', boundFetch)
+    const api = createManagedHubApi({ baseUrl: 'https://hub.termx.test' })
+
+    await expect(api.createSession(validSessionInput())).resolves.toMatchObject({
+      sessionId: 'rtc-managed-1',
+      pending: true,
+    })
+    expect(calls).toEqual([{
+      thisValue: globalThis,
+      input: 'https://hub.termx.test/api/v1/sessions',
+    }])
   })
 
   it('keeps managed Hub API as signaling/control, not runtime transport', () => {

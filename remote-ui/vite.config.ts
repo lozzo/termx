@@ -26,8 +26,8 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        index: new URL('./index.html', import.meta.url).pathname,
-        webControl: new URL('./web-control.html', import.meta.url).pathname,
+        app: new URL('./index.html', import.meta.url).pathname,
+        localweb: new URL('./localweb.html', import.meta.url).pathname,
       },
     },
   },

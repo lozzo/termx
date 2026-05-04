@@ -19,6 +19,7 @@ import (
 	remoteconfig "github.com/lozzow/termx/termx-core/internal/remote/config"
 	"github.com/lozzow/termx/termx-core/internal/remote/fileapi"
 	"github.com/lozzow/termx/termx-core/internal/remote/identity"
+	"github.com/lozzow/termx/termx-core/internal/remote/pairing"
 	remotertc "github.com/lozzow/termx/termx-core/internal/remote/rtc"
 	hubv1 "github.com/lozzow/termx/termx-core/remote/hubv1"
 )
@@ -219,6 +220,193 @@ func TestManagerProvidesTerminalManagementRouterForCloudRTC(t *testing.T) {
 	}
 }
 
+func TestHubPairingLoopClaimsThroughLocalPairingManager(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	now := time.Date(2026, 5, 4, 10, 30, 0, 0, time.UTC)
+	machineKey, err := identity.LoadOrCreateMachineKey(t.TempDir())
+	if err != nil {
+		t.Fatalf("LoadOrCreateMachineKey returned error: %v", err)
+	}
+	pairManager := pairing.NewManager(pairing.Config{
+		MachineID:   "device-pair",
+		MachineName: "Pair Device",
+		MachineKey:  machineKey,
+		Now: func() time.Time {
+			return now
+		},
+	})
+	session, err := pairManager.CreateSession(5 * time.Minute)
+	if err != nil {
+		t.Fatalf("CreateSession returned error: %v", err)
+	}
+	appPublic, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+
+	claimReady := make(chan struct{})
+	resultReady := make(chan hubv1.PairingResult, 1)
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/agents/pairing/poll":
+			writeTestJSON(w, map[string]any{
+				"claim": map[string]any{
+					"claim_id":               "claim-1",
+					"machine_id":             "device-pair",
+					"pair_session_id":        session.PairSessionID,
+					"pair_secret":            session.PairSecret,
+					"app_device_id":          "appweb-pair",
+					"app_name":               "TermX Remote App",
+					"app_public_key":         base64.StdEncoding.EncodeToString(appPublic),
+					"requested_capabilities": []string{"terminal", "terminal_management"},
+				},
+			})
+			closeOnce(claimReady)
+		case "/api/v1/agents/pairing/result":
+			var req hubv1.SubmitPairingResultRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode pairing result: %v", err)
+			}
+			resultReady <- req.Result
+			w.WriteHeader(http.StatusNoContent)
+			cancel()
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer hub.Close()
+
+	manager := NewManager(remoteconfig.Config{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "Pair Device",
+		HubURL:     hub.URL,
+	}, inventoryProviderStub{}, nil)
+	manager.SetPairClaimer(pairClaimerFunc(func(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
+		_ = ctx
+		return pairManager.ClaimSession(req)
+	}))
+
+	go manager.hubPairingLoop(ctx, "device-pair", "agent-session-1")
+
+	select {
+	case <-claimReady:
+	case <-time.After(time.Second):
+		t.Fatal("manager did not poll pairing claim")
+	}
+	var result hubv1.PairingResult
+	select {
+	case result = <-resultReady:
+	case <-time.After(time.Second):
+		t.Fatal("manager did not submit pairing result")
+	}
+	if result.ClaimID != "claim-1" || result.MachineID != "device-pair" || result.Error != "" {
+		t.Fatalf("pairing result = %+v", result)
+	}
+	var envelope cert.AppCertificateEnvelope
+	if err := json.Unmarshal(result.AppCertificate, &envelope); err != nil {
+		t.Fatalf("decode app certificate: %v", err)
+	}
+	if envelope.Payload.MachineID != "device-pair" || envelope.Payload.AppDeviceID != "appweb-pair" {
+		t.Fatalf("certificate payload = %+v", envelope.Payload)
+	}
+	if err := cert.VerifyAppCertificate(envelope, machineKey.PublicKey, now.Add(time.Minute)); err != nil {
+		t.Fatalf("certificate does not verify: %v", err)
+	}
+}
+
+func TestHubPairingLoopRetriesPendingResultAfterSubmitFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	claim := hubv1.PairingClaim{
+		ClaimID:               "claim-retry",
+		MachineID:             "device-pair",
+		PairSessionID:         "pair-session-1",
+		PairSecret:            "pair-secret-1",
+		AppDeviceID:           "appweb-pair",
+		AppName:               "TermX Remote App",
+		AppPublicKey:          base64.StdEncoding.EncodeToString([]byte("app-public")),
+		RequestedCapabilities: []string{"terminal"},
+	}
+	var pollCount atomic.Int32
+	var submitCount atomic.Int32
+	resultReady := make(chan hubv1.PairingResult, 1)
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/agents/pairing/poll":
+			if pollCount.Add(1) == 1 {
+				writeTestJSON(w, map[string]any{"claim": claim})
+				return
+			}
+			t.Fatalf("manager polled a new pairing claim before retrying pending result")
+		case "/api/v1/agents/pairing/result":
+			var req hubv1.SubmitPairingResultRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode pairing result: %v", err)
+			}
+			if submitCount.Add(1) == 1 {
+				http.Error(w, "temporary submit failure", http.StatusInternalServerError)
+				return
+			}
+			resultReady <- req.Result
+			w.WriteHeader(http.StatusNoContent)
+			cancel()
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer hub.Close()
+
+	manager := NewManager(remoteconfig.Config{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "Pair Device",
+		HubURL:     hub.URL,
+	}, inventoryProviderStub{}, nil)
+	claimCalls := atomic.Int32{}
+	manager.SetPairClaimer(pairClaimerFunc(func(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
+		_ = ctx
+		claimCalls.Add(1)
+		if req.PairSessionID != claim.PairSessionID || req.PairSecret != claim.PairSecret {
+			t.Fatalf("claim request = %+v", req)
+		}
+		return pairing.ClaimResponse{
+			MachineID:        claim.MachineID,
+			MachineName:      "Pair Device",
+			MachinePublicKey: "machine-public",
+			AppCertificate: cert.AppCertificateEnvelope{
+				Payload: cert.AppCertificatePayload{
+					MachineID:    claim.MachineID,
+					AppDeviceID:  claim.AppDeviceID,
+					Capabilities: []string{"terminal"},
+					ExpiresAt:    time.Date(2027, 5, 4, 10, 30, 0, 0, time.UTC),
+				},
+			},
+		}, nil
+	}))
+
+	go manager.hubPairingLoop(ctx, "device-pair", "agent-session-1")
+
+	var result hubv1.PairingResult
+	select {
+	case result = <-resultReady:
+	case <-time.After(4 * time.Second):
+		t.Fatal("manager did not retry pending pairing result")
+	}
+	if submitCount.Load() != 2 {
+		t.Fatalf("submit count = %d, want 2", submitCount.Load())
+	}
+	if claimCalls.Load() != 1 {
+		t.Fatalf("claim calls = %d, want 1", claimCalls.Load())
+	}
+	if result.ClaimID != "claim-retry" || result.MachineID != "device-pair" || result.Error != "" || len(result.AppCertificate) == 0 {
+		t.Fatalf("pairing result = %+v", result)
+	}
+}
+
 func TestManagerRejectsCloudOfferWithoutCertificateBeforeAnswering(t *testing.T) {
 	manager, answerer, offer := newCloudOfferFixture(t)
 	offer.AppCertificate = nil
@@ -320,6 +508,42 @@ func TestManagerRejectsCloudOfferWithoutTerminalCapabilityBeforeAnswering(t *tes
 	}
 }
 
+func TestManagerAllowsMachineScopedCloudOfferForTerminalList(t *testing.T) {
+	provider := managementProviderStub{inventoryProviderStub: inventoryProviderStub{
+		items: []TerminalInventoryItem{{ID: "term-1", Name: "shell", State: "running"}},
+	}}
+	manager, answerer, offer := newCloudOfferFixtureWithCapabilitiesAndTerminal(t, []string{"terminal", "file_manager", "terminal_management"}, provider, "")
+
+	answer := manager.answerCloudOffer(context.Background(), offer, nil)
+
+	if answer.Error != "" {
+		t.Fatalf("valid machine-scoped cloud offer returned error: %#v", answer)
+	}
+	policy := answerer.gotOptions.ChannelPolicy
+	if policy.TerminalID != "" {
+		t.Fatalf("machine-scoped offer should not pin a terminal: %#v", policy)
+	}
+	if !policy.AllowTerminal || !policy.AllowEvents || !policy.AllowFileManager || !policy.AllowAPI {
+		t.Fatalf("machine-scoped offer should allow machine-level terminal/events/files: %#v", policy)
+	}
+	if !policy.AllowTerminalManagement {
+		t.Fatalf("machine-scoped terminal list offer should allow terminal management API: %#v", policy)
+	}
+}
+
+func TestManagerAllowsMachineScopedCloudOfferWithTerminalCapabilityOnly(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixtureWithCapabilitiesAndTerminal(t, []string{"terminal"}, managementProviderStub{}, "")
+
+	answer := manager.answerCloudOffer(context.Background(), offer, nil)
+
+	if answer.Error != "" {
+		t.Fatalf("machine-scoped terminal capability should allow runtime connection, got %#v", answer)
+	}
+	if !answerer.gotOptions.ChannelPolicy.AllowTerminal || !answerer.gotOptions.ChannelPolicy.AllowAPI || answerer.gotOptions.ChannelPolicy.AllowTerminalManagement {
+		t.Fatalf("terminal-only machine-scoped policy = %#v", answerer.gotOptions.ChannelPolicy)
+	}
+}
+
 func TestManagerScopesCloudOfferPolicyToCertificateCapabilities(t *testing.T) {
 	manager, answerer, offer := newCloudOfferFixtureWithCapabilities(t, []string{"terminal"}, nil)
 
@@ -332,7 +556,7 @@ func TestManagerScopesCloudOfferPolicyToCertificateCapabilities(t *testing.T) {
 	if !policy.AllowTerminal || !policy.AllowEvents {
 		t.Fatalf("terminal capability should allow terminal/events, got %#v", policy)
 	}
-	if policy.AllowFileManager || policy.AllowTerminalManagement {
+	if !policy.AllowAPI || policy.AllowFileManager || policy.AllowTerminalManagement {
 		t.Fatalf("terminal-only certificate overgranted channel policy: %#v", policy)
 	}
 }
@@ -358,6 +582,9 @@ func TestManagerAllowsCloudTerminalManagementOnlyWithCapabilityAndRouter(t *test
 	}
 	if !answerer.gotOptions.ChannelPolicy.AllowTerminalManagement {
 		t.Fatalf("terminal_management capability with router should allow management: %#v", answerer.gotOptions.ChannelPolicy)
+	}
+	if answerer.gotOptions.Events == nil {
+		t.Fatal("cloud runtime should provide machine event router when provider supports it")
 	}
 }
 
@@ -627,6 +854,13 @@ func (s managementProviderStub) RouteTerminalManagementRequest(_ context.Context
 	return http.StatusOK, []byte(`{"terminal_id":"cloud-terminal-1"}`), ""
 }
 
+func (s managementProviderStub) SubscribeRemoteEvents(ctx context.Context, _ remotertc.EventFilters) (<-chan []byte, func(), error) {
+	ch := make(chan []byte, 1)
+	ch <- []byte(`{"type":"event"}`)
+	close(ch)
+	return ch, func() { _ = ctx }, nil
+}
+
 type cloudAnswererStub struct {
 	calls      int
 	gotOffer   hubv1.SignalingOffer
@@ -658,6 +892,11 @@ func newCloudOfferFixture(t *testing.T) (*Manager, *cloudAnswererStub, hubv1.Sig
 }
 
 func newCloudOfferFixtureWithCapabilities(t *testing.T, capabilities []string, provider InventoryProvider) (*Manager, *cloudAnswererStub, hubv1.SignalingOffer) {
+	t.Helper()
+	return newCloudOfferFixtureWithCapabilitiesAndTerminal(t, capabilities, provider, "term-1")
+}
+
+func newCloudOfferFixtureWithCapabilitiesAndTerminal(t *testing.T, capabilities []string, provider InventoryProvider, terminalID string) (*Manager, *cloudAnswererStub, hubv1.SignalingOffer) {
 	t.Helper()
 	dataDir := t.TempDir()
 	machineKey, err := identity.LoadOrCreateMachineKey(dataDir)
@@ -691,7 +930,7 @@ func newCloudOfferFixtureWithCapabilities(t *testing.T, capabilities []string, p
 		SessionID:      "rtc-cloud-test",
 		TicketID:       "ticket-cloud-test",
 		DeviceID:       "device-cloud-test",
-		TerminalID:     "term-1",
+		TerminalID:     terminalID,
 		SDP:            "v=0\r\ns=offer\r\n",
 		ICECandidates:  []string{"candidate:host-test"},
 		AppCertificate: certificateJSON,
@@ -740,4 +979,23 @@ func waitForCondition(t *testing.T, timeout time.Duration, condition func() bool
 		return
 	}
 	t.Fatalf("condition not met within %s", timeout)
+}
+
+type pairClaimerFunc func(context.Context, pairing.ClaimRequest) (pairing.ClaimResponse, error)
+
+func (f pairClaimerFunc) ClaimPairSession(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
+	return f(ctx, req)
+}
+
+func writeTestJSON(w http.ResponseWriter, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func closeOnce(ch chan struct{}) {
+	select {
+	case <-ch:
+	default:
+		close(ch)
+	}
 }

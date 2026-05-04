@@ -96,6 +96,7 @@ func NewServer(opts ...ServerOption) *Server {
 		DeviceName:  cfg.remoteConfig.DeviceName,
 		Region:      cfg.remoteConfig.Region,
 	}), remoteInventoryProvider{server: srv}, remoteInventoryProvider{server: srv})
+	srv.remoteManager.SetPairClaimer(localWebServerAdapter{server: srv})
 	_ = srv.remoteManager.Start(context.Background())
 	return srv
 }
@@ -708,7 +709,7 @@ type sessionAttachment struct {
 }
 
 type transportScope struct {
-	TerminalID       string
+	TerminalID        string
 	MachineEventsOnly bool
 }
 

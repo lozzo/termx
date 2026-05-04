@@ -111,3 +111,40 @@ type SubmitSignalingAnswerRequest struct {
 	DeviceID       string          `json:"device_id"`
 	Answer         SignalingAnswer `json:"answer"`
 }
+
+type PairingClaim struct {
+	ClaimID               string   `json:"claim_id"`
+	MachineID             string   `json:"machine_id"`
+	PairSessionID         string   `json:"pair_session_id"`
+	PairSecret            string   `json:"pair_secret"`
+	AppDeviceID           string   `json:"app_device_id"`
+	AppName               string   `json:"app_name"`
+	AppPublicKey          string   `json:"app_public_key"`
+	RequestedCapabilities []string `json:"requested_capabilities"`
+}
+
+type PairingPollRequest struct {
+	AgentSessionID string `json:"agent_session_id"`
+	DeviceID       string `json:"device_id"`
+	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
+}
+
+type PairingPollResponse struct {
+	Claim *PairingClaim `json:"claim,omitempty"`
+}
+
+type PairingResult struct {
+	ClaimID          string          `json:"claim_id"`
+	MachineID        string          `json:"machine_id"`
+	MachineName      string          `json:"machine_name,omitempty"`
+	MachinePublicKey string          `json:"machine_public_key,omitempty"`
+	AppCertificate   json.RawMessage `json:"app_certificate,omitempty"`
+	ExpiresAt        string          `json:"expires_at,omitempty"`
+	Error            string          `json:"error,omitempty"`
+}
+
+type SubmitPairingResultRequest struct {
+	AgentSessionID string        `json:"agent_session_id"`
+	DeviceID       string        `json:"device_id"`
+	Result         PairingResult `json:"result"`
+}

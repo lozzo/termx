@@ -46,3 +46,25 @@ func SubmitHubAnswer(ctx context.Context, baseURL string, payload hubv1.SubmitSi
 	}
 	return nil
 }
+
+func PollHubPairingClaim(ctx context.Context, baseURL string, payload hubv1.PairingPollRequest) (hubv1.PairingPollResponse, bool, error) {
+	var out hubv1.PairingPollResponse
+	err := doJSON(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/api/v1/agents/pairing/poll", payload, &out, nil)
+	if err != nil {
+		if IsHTTPStatus(err, http.StatusNoContent) {
+			return hubv1.PairingPollResponse{}, false, nil
+		}
+		return hubv1.PairingPollResponse{}, false, fmt.Errorf("poll hub pairing claim: %w", err)
+	}
+	return out, out.Claim != nil, nil
+}
+
+func SubmitHubPairingResult(ctx context.Context, baseURL string, payload hubv1.SubmitPairingResultRequest) error {
+	if err := doJSON(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/api/v1/agents/pairing/result", payload, nil, nil); err != nil {
+		if IsHTTPStatus(err, http.StatusNoContent) {
+			return nil
+		}
+		return fmt.Errorf("submit hub pairing result: %w", err)
+	}
+	return nil
+}

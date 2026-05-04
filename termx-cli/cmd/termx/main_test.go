@@ -635,8 +635,8 @@ func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected embedded page status 200, got %d: %s", resp.StatusCode, string(body))
 	}
-	if !strings.Contains(string(body), "TermX Remote") {
-		t.Fatalf("expected embedded TermX Remote page, got %s", string(body))
+	if !strings.Contains(string(body), "TermX Local Remote") {
+		t.Fatalf("expected embedded TermX Local Remote page, got %s", string(body))
 	}
 	assetPath := embeddedModuleAssetPath(t, string(body))
 	resp, err = client.Get(baseURL + assetPath)

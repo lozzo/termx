@@ -113,9 +113,9 @@ describe('useFileManager', () => {
     expect(result.current.entries[0]?.name).toBe('fresh.txt')
   })
 
-  it('rejects transports that do not report the requested terminal before issuing file requests', async () => {
+  it('allows machine-scoped file sessions that do not report a terminal id', async () => {
     const session = createMockFileSession({
-      '/files/list': { path: '/', parent: '', total: 0, entries: [] },
+      '/files/list': { path: '/', parent: '', total: 1, entries: [{ name: 'machine.log', type: 'file', size: 12 }] },
     })
 
     const { result } = renderHook(() => useFileManager({
@@ -126,9 +126,9 @@ describe('useFileManager', () => {
     }))
 
     await waitFor(() => expect(result.current.loading).toBe(false))
-    expect(result.current.error?.message).toMatch(/terminal.*missing.*terminal-1/i)
-    expect(session.openApiCount).toBe(0)
-    expect(session.requests).toEqual([])
+    expect(result.current.error).toBeNull()
+    expect(result.current.entries[0]?.name).toBe('machine.log')
+    expect(session.openApiCount).toBeGreaterThan(0)
   })
 
   it('rejects transports connected to another terminal before issuing file requests', async () => {

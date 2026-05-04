@@ -58,9 +58,8 @@ func TestManagerControlRegistrationSendsMachinePublicKey(t *testing.T) {
 	if got["machinePublicKey"] != identity.PublicKeyString(machineKey.PublicKey) {
 		t.Fatalf("machinePublicKey = %q, want %q", got["machinePublicKey"], identity.PublicKeyString(machineKey.PublicKey))
 	}
-	terminals, _ := got["terminals"].([]any)
-	if len(terminals) != 1 {
-		t.Fatalf("expected terminal inventory in registration body, got %#v", got)
+	if _, ok := got["terminals"]; ok {
+		t.Fatalf("control registration leaked terminal inventory: %#v", got)
 	}
 	if _, ok := got["machinePrivateKey"]; ok {
 		t.Fatalf("control registration leaked machinePrivateKey: %#v", got)

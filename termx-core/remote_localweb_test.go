@@ -114,7 +114,7 @@ func TestE2ERemoteLocalWebHandlerStatusTerminalsAndPair(t *testing.T) {
 	}
 }
 
-func TestLocalRTCAnswerSeparatesTerminalManagementCapabilityFromFileManager(t *testing.T) {
+func TestLocalRTCAnswerSeparatesMachineRuntimeCapabilityFromFileManager(t *testing.T) {
 	srv := NewServer(WithRemoteConfig(RemoteConfig{
 		Enabled:    true,
 		DataDir:    t.TempDir(),
@@ -151,6 +151,19 @@ func TestLocalRTCAnswerSeparatesTerminalManagementCapabilityFromFileManager(t *t
 		t.Fatalf("expected api-only data channels for management-only session, got %#v", rtcResp["data_channels"])
 	}
 
+	terminalOnlySession, terminalOnlyCert, terminalOnlyPrivate := claimLocalRTCAppCertificateHTTP(t, srv, status.LocalPairURL, []string{"terminal"})
+	terminalOnlySDP := newLocalOfferSDP(t, "api")
+	terminalOnlyOffer := signedLocalRTCOfferBody(t, terminalOnlyCert, terminalOnlyPrivate, "rtc-terminal-only-machine", terminalOnlySession.MachineID, "", terminalOnlySDP, "nonce-terminal-only-machine", time.Now().UTC())
+	resp, err = http.Post(status.HTTPURL+"/api/local/rtc/offer", "application/json", bytes.NewReader(terminalOnlyOffer))
+	if err != nil {
+		t.Fatalf("POST terminal-only local rtc offer: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected terminal-only certificate to create machine runtime api session, got %d: %s", resp.StatusCode, body)
+	}
+
 	fileOnlySession, fileOnlyCert, fileOnlyPrivate := claimLocalRTCAppCertificateHTTP(t, srv, status.LocalPairURL, []string{"file_manager"})
 	fileOnlySDP := newLocalOfferSDP(t, "api")
 	fileOnlyOffer := signedLocalRTCOfferBody(t, fileOnlyCert, fileOnlyPrivate, "rtc-file-only", fileOnlySession.MachineID, "", fileOnlySDP, "nonce-file-only", time.Now().UTC())
@@ -160,7 +173,54 @@ func TestLocalRTCAnswerSeparatesTerminalManagementCapabilityFromFileManager(t *t
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
-		t.Fatal("file_manager-only certificate must not authorize machine terminal management api session")
+		t.Fatal("file_manager-only certificate must not authorize machine runtime session")
+	}
+}
+
+func TestLocalRTCManagementRouterListsTerminalsForRuntimeAPI(t *testing.T) {
+	srv := NewServer(WithRemoteConfig(RemoteConfig{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "runtime-list-machine",
+	}))
+	defer srv.Shutdown(context.Background())
+
+	term, err := srv.Create(context.Background(), CreateOptions{
+		Command: []string{"sh", "-c", "sleep 5"},
+		Name:    "runtime shell",
+		Size:    Size{Cols: 100, Rows: 30},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	status, body, errMsg := localRTCManagementRouter{adapter: localWebServerAdapter{server: srv}}.RouteTerminalManagementRequest(
+		context.Background(),
+		remotertc.TerminalManagementRequest{
+			Method: "list",
+			Path:   "list",
+			Body:   json.RawMessage(`{}`),
+		},
+	)
+	if errMsg != "" {
+		t.Fatalf("expected list request to succeed, got %q", errMsg)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", status)
+	}
+	var payload map[string][]map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal list response: %v", err)
+	}
+	terminals := payload["terminals"]
+	if len(terminals) != 1 {
+		t.Fatalf("expected one terminal, got %#v", payload)
+	}
+	if terminals[0]["terminal_id"] != term.ID {
+		t.Fatalf("expected terminal_id %q, got %#v", term.ID, terminals[0])
 	}
 }
 
@@ -645,23 +705,11 @@ func TestE2ERemoteLocalWebHandlerAnswersMachineInventoryEventsOffer(t *testing.T
 		t.Fatal("timed out waiting for machine events data channel to open")
 	}
 
-	clientTransport := bridge.NewDataChannelTransport(eventsDC)
-	defer clientTransport.Close()
-	client := protocol.NewClient(clientTransport)
-	defer client.Close()
-	clientCtx, cancelClient := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancelClient()
-	if err := client.Hello(clientCtx, protocol.Hello{Version: protocol.Version, Client: "local-rtc-events-test"}); err != nil {
-		t.Fatalf("Hello over machine events channel returned error: %v", err)
-	}
-	clientEvents, err := client.Events(clientCtx, protocol.EventsParams{Types: []protocol.EventType{
+	clientEvents := subscribeJSONEvents(t, eventsDC, protocol.EventsParams{Types: []protocol.EventType{
 		protocol.EventTerminalCreated,
 		protocol.EventTerminalRemoved,
 		protocol.EventTerminalMetadataChanged,
 	}})
-	if err != nil {
-		t.Fatalf("Events subscribe over machine events channel returned error: %v", err)
-	}
 	serverEventsCtx, cancelServerEvents := context.WithCancel(context.Background())
 	defer cancelServerEvents()
 	serverEvents := srv.Events(serverEventsCtx, WithTypeFilter(EventTerminalCreated))
@@ -755,21 +803,9 @@ func TestE2ERemoteLocalWebHandlerPushesMetadataChangeOverMachineInventoryEvents(
 		t.Fatal("timed out waiting for machine events data channel to open")
 	}
 
-	clientTransport := bridge.NewDataChannelTransport(eventsDC)
-	defer clientTransport.Close()
-	client := protocol.NewClient(clientTransport)
-	defer client.Close()
-	clientCtx, cancelClient := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancelClient()
-	if err := client.Hello(clientCtx, protocol.Hello{Version: protocol.Version, Client: "local-rtc-events-metadata-test"}); err != nil {
-		t.Fatalf("Hello over machine events channel returned error: %v", err)
-	}
-	clientEvents, err := client.Events(clientCtx, protocol.EventsParams{Types: []protocol.EventType{
+	clientEvents := subscribeJSONEvents(t, eventsDC, protocol.EventsParams{Types: []protocol.EventType{
 		protocol.EventTerminalMetadataChanged,
 	}})
-	if err != nil {
-		t.Fatalf("Events subscribe over machine events channel returned error: %v", err)
-	}
 	term, err := srv.Create(context.Background(), CreateOptions{
 		Command: []string{"sh", "-c", "sleep 5"},
 		Name:    "events-metadata-terminal",
@@ -840,7 +876,7 @@ func TestE2ERemoteLocalWebHandlerRejectsInvalidRTCOfferAuth(t *testing.T) {
 		session, appCert, appPrivate := claimLocalRTCAppCertificate(t, srv, handler, []string{"terminal"})
 		sdp := newLocalOfferSDP(t, "api")
 		body := signedLocalRTCOfferBody(t, appCert, appPrivate, "rtc-terminal-only", session.MachineID, term.ID, sdp, "nonce-terminal-only", time.Now().UTC())
-		localWebExpectStatus(t, handler, http.MethodPost, "/api/local/rtc/offer", body, http.StatusBadRequest)
+		localWebExpectStatus(t, handler, http.MethodPost, "/api/local/rtc/offer", body, http.StatusOK)
 	})
 
 	t.Run("wrong_local_machine_id", func(t *testing.T) {
@@ -905,6 +941,39 @@ func claimLocalRTCAppCertificate(t *testing.T, srv *Server, handler http.Handler
 	}
 	localWebDecode(t, handler, http.MethodPost, "/api/local/pair", pairBody, &pair)
 	return session, pair.AppCertificate, appPrivate
+}
+
+func subscribeJSONEvents(t *testing.T, dc *webrtc.DataChannel, params protocol.EventsParams) <-chan protocol.Event {
+	t.Helper()
+	out := make(chan protocol.Event, 8)
+	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+		var evt protocol.Event
+		if err := json.Unmarshal(msg.Data, &evt); err != nil {
+			return
+		}
+		select {
+		case out <- evt:
+		default:
+		}
+	})
+	payload, err := json.Marshal(struct {
+		Type       string               `json:"type"`
+		TerminalID string               `json:"terminal_id,omitempty"`
+		SessionID  string               `json:"session_id,omitempty"`
+		Types      []protocol.EventType `json:"types,omitempty"`
+	}{
+		Type:       "subscribe",
+		TerminalID: params.TerminalID,
+		SessionID:  params.SessionID,
+		Types:      params.Types,
+	})
+	if err != nil {
+		t.Fatalf("marshal event subscribe request: %v", err)
+	}
+	if err := dc.SendText(string(payload)); err != nil {
+		t.Fatalf("send event subscribe request: %v", err)
+	}
+	return out
 }
 
 func claimLocalRTCAppCertificateHTTP(t *testing.T, srv *Server, localPairURL string, capabilities []string) (protocol.PairStartResult, remotecert.AppCertificateEnvelope, ed25519.PrivateKey) {

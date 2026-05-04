@@ -5,10 +5,11 @@ export interface LocalAgentApiOptions {
   baseUrl?: string | undefined
   fetch?: typeof globalThis.fetch | undefined
   machineId?: string | undefined
+  pairUrl?: string | undefined
 }
 
 export function createLocalAgentApi(options: LocalAgentApiOptions = {}): LocalAgentApi {
-  const fetchImpl = options.fetch ?? globalThis.fetch
+  const fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
   if (!fetchImpl) {
     throw new Error('fetch is required for local agent api')
   }
@@ -49,9 +50,10 @@ export function createLocalAgentApi(options: LocalAgentApiOptions = {}): LocalAg
       return normalizeLocalTerminals(raw, machineId)
     },
     async pair(input: LocalPairInput): Promise<LocalPairResult> {
-      const raw = await requestJSON<Record<string, unknown>>('/api/local/pair', {
+      const raw = await requestJSON<Record<string, unknown>>(options.pairUrl ?? '/api/local/pair', {
         method: 'POST',
         body: JSON.stringify({
+          ...(input.machineId ? { machine_id: input.machineId } : {}),
           pair_session_id: input.pairSessionId,
           pair_secret: input.pairSecret,
           app_device_id: input.appDeviceId,
@@ -338,6 +340,7 @@ function normalizeBaseUrl(value: string): string {
 }
 
 function joinURL(baseUrl: string, path: string): string {
+  if (/^https?:\/\//i.test(path)) return path
   if (!baseUrl) return path
   return `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`
 }

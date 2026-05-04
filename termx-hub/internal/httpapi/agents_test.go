@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,32 @@ import (
 	"github.com/lozzow/termx/termx-hub/internal/ice"
 	"github.com/lozzow/termx/termx-hub/internal/registry"
 )
+
+func TestHubHTTPHandlesBrowserCORSPreflight(t *testing.T) {
+	t.Parallel()
+
+	router := httpapi.NewHandler(httpapi.Config{})
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/pairing/claims", nil)
+	req.Header.Set("Origin", "http://127.0.0.1:5173")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Headers", "content-type")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("preflight status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://127.0.0.1:5173" {
+		t.Fatalf("allow origin = %q", got)
+	}
+	if got := strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers")); !strings.Contains(got, "content-type") {
+		t.Fatalf("allow headers = %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, "POST") || !strings.Contains(got, "OPTIONS") {
+		t.Fatalf("allow methods = %q", got)
+	}
+}
 
 func TestAgentHTTPRegisterHeartbeatPollAndAnswer(t *testing.T) {
 	t.Parallel()
@@ -170,6 +197,117 @@ func TestAgentHTTPRegisterHeartbeatPollAndAnswer(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("app session did not complete after agent answer")
+	}
+}
+
+func TestAgentHTTPPairingClaimRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	clock := fixedClock(time.Date(2026, 5, 4, 9, 15, 0, 0, time.UTC))
+	verifier := &fakeTicketVerifier{now: clock.Now()}
+	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	router := httpapi.NewHandler(httpapi.Config{
+		Registry:      reg,
+		AnswerTimeout: 500 * time.Millisecond,
+		PollInterval:  time.Millisecond,
+		Clock:         clock,
+	})
+
+	register := postJSON(t, router, "/api/v1/agents/register", map[string]any{
+		"version":   "remote.hub.v1",
+		"device_id": "device_1",
+		"agent_id":  "agent_pair",
+	})
+	if register.Code != http.StatusOK {
+		t.Fatalf("register status = %d body=%s", register.Code, register.Body.String())
+	}
+	var registered struct {
+		AgentSessionID string `json:"agent_session_id"`
+	}
+	decodeJSON(t, register, &registered)
+
+	claimResponse := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		claimResponse <- postJSON(t, router, "/api/v1/pairing/claims", map[string]any{
+			"machine_id":             "device_1",
+			"pair_session_id":        "pair_session_1",
+			"pair_secret":            "pair_secret_from_qr",
+			"app_device_id":          "appweb_1",
+			"app_name":               "TermX Remote App",
+			"app_public_key":         "AQIDBA==",
+			"requested_capabilities": []string{"terminal", "file_manager", "terminal_management"},
+		})
+	}()
+
+	poll := postJSON(t, router, "/api/v1/agents/pairing/poll", map[string]any{
+		"agent_session_id": registered.AgentSessionID,
+		"device_id":        "device_1",
+		"timeout_seconds":  1,
+	})
+	if poll.Code != http.StatusOK {
+		t.Fatalf("pairing poll status = %d body=%s", poll.Code, poll.Body.String())
+	}
+	var polled struct {
+		Claim struct {
+			ClaimID               string   `json:"claim_id"`
+			MachineID             string   `json:"machine_id"`
+			PairSessionID         string   `json:"pair_session_id"`
+			PairSecret            string   `json:"pair_secret"`
+			AppDeviceID           string   `json:"app_device_id"`
+			AppName               string   `json:"app_name"`
+			AppPublicKey          string   `json:"app_public_key"`
+			RequestedCapabilities []string `json:"requested_capabilities"`
+		} `json:"claim"`
+	}
+	decodeJSON(t, poll, &polled)
+	if polled.Claim.MachineID != "device_1" || polled.Claim.PairSessionID != "pair_session_1" ||
+		polled.Claim.PairSecret != "pair_secret_from_qr" || polled.Claim.ClaimID == "" {
+		t.Fatalf("pairing poll response = %+v", polled)
+	}
+
+	result := postJSON(t, router, "/api/v1/agents/pairing/result", map[string]any{
+		"agent_session_id": registered.AgentSessionID,
+		"device_id":        "device_1",
+		"result": map[string]any{
+			"claim_id":           polled.Claim.ClaimID,
+			"machine_id":         "device_1",
+			"machine_name":       "RedmiBook",
+			"machine_public_key": "machine-public",
+			"app_certificate": map[string]any{
+				"payload": map[string]any{
+					"machine_id": "device_1",
+				},
+				"signature": "machine-signature",
+			},
+			"expires_at": "2027-05-04T09:15:00Z",
+		},
+	})
+	if result.Code != http.StatusNoContent {
+		t.Fatalf("pairing result status = %d body=%s", result.Code, result.Body.String())
+	}
+
+	var response *httptest.ResponseRecorder
+	select {
+	case response = <-claimResponse:
+	case <-time.After(2 * time.Second):
+		t.Fatal("app pairing claim did not return")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("claim response status = %d body=%s", response.Code, response.Body.String())
+	}
+	var got struct {
+		ClaimID          string          `json:"claim_id"`
+		MachineID        string          `json:"machine_id"`
+		MachineName      string          `json:"machine_name"`
+		MachinePublicKey string          `json:"machine_public_key"`
+		AppCertificate   json.RawMessage `json:"app_certificate"`
+		ExpiresAt        string          `json:"expires_at"`
+	}
+	decodeJSON(t, response, &got)
+	if got.ClaimID != polled.Claim.ClaimID || got.MachineID != "device_1" || got.MachineName != "RedmiBook" ||
+		got.MachinePublicKey != "machine-public" || got.ExpiresAt != "2027-05-04T09:15:00Z" ||
+		!strings.Contains(string(got.AppCertificate), "machine-signature") {
+		t.Fatalf("claim response = %+v cert=%s", got, string(got.AppCertificate))
 	}
 }
 

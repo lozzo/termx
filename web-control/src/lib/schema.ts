@@ -162,8 +162,6 @@ export const agents = sqliteTable(
     online: bool("online").notNull().default(false),
     hubId: fkId("hub_id").references(() => hubs.id),
     publicKey: text("public_key"),
-    encryptedPrivateKey: text("encrypted_private_key"),
-    keyNonce: text("key_nonce"),
     paired: bool("paired").notNull().default(false),
     pendingKick: bool("pending_kick").notNull().default(false),
     allowRelayTransfer: bool("allow_relay_transfer").notNull().default(false),
@@ -186,38 +184,6 @@ export const agentsRelations = relations(agents, ({ one }) => ({
   hub: one(hubs, { fields: [agents.hubId], references: [hubs.id] }),
   token: one(accessTokens, { fields: [agents.tokenId], references: [accessTokens.id] }),
 }));
-
-// ========== TermX 连接票据 ==========
-export const connectionTickets = sqliteTable(
-  "connection_tickets",
-  {
-    id: id(),
-    userId: fkId("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    machineId: text("machine_id").notNull(),
-    terminalId: text("terminal_id").notNull(),
-    path: text("path").notNull().default("cloud"),
-    allowRelay: bool("allow_relay").notNull().default(false),
-    relayInUse: bool("relay_in_use").notNull().default(false),
-    relayBytesRemaining: integer("relay_bytes_remaining"),
-    relayThrottled: bool("relay_throttled").notNull().default(false),
-    expiresAt: tsNotNull("expires_at"),
-    consumedAt: ts("consumed_at"),
-    createdAt: tsDefault("created_at"),
-  },
-  (table) => [
-    index("connection_tickets_user_id_idx").on(table.userId),
-    index("connection_tickets_machine_id_idx").on(table.machineId),
-    index("connection_tickets_expires_at_idx").on(table.expiresAt),
-  ]
-);
-
-export const connectionTicketsRelations = relations(connectionTickets, ({ one }) => ({
-  user: one(users, { fields: [connectionTickets.userId], references: [users.id] }),
-  agent: one(agents, { fields: [connectionTickets.machineId], references: [agents.id] }),
-}));
-
-// Compatibility alias for older route imports.
-export const managedConnectTickets = connectionTickets;
 
 // ========== 套餐计划 ==========
 export const plans = sqliteTable("plans", {

@@ -91,6 +91,31 @@ type Answer struct {
 	CreatedAt time.Time
 }
 
+type PairingClaim struct {
+	ID                    string
+	MachineID             string
+	PairSessionID         string
+	PairSecret            string
+	AppDeviceID           string
+	AppName               string
+	AppPublicKey          string
+	RequestedCapabilities []string
+	AssignedAgentID       string
+	DeliveredAt           time.Time
+	CreatedAt             time.Time
+}
+
+type PairingResult struct {
+	ClaimID          string
+	MachineID        string
+	MachineName      string
+	MachinePublicKey string
+	AppCertificate   json.RawMessage
+	ExpiresAt        string
+	Error            string
+	CreatedAt        time.Time
+}
+
 type RegisterInput struct {
 	MachineID          string
 	AgentID            string
@@ -147,6 +172,33 @@ type AnswerInput struct {
 	MachineID string
 	OfferID   string
 	SDP       string
+}
+
+type PairingClaimInput struct {
+	MachineID             string
+	PairSessionID         string
+	PairSecret            string
+	AppDeviceID           string
+	AppName               string
+	AppPublicKey          string
+	RequestedCapabilities []string
+}
+
+type PairingPollInput struct {
+	AgentID   string
+	MachineID string
+	Timeout   time.Duration
+}
+
+type PairingResultInput struct {
+	AgentID          string
+	MachineID        string
+	ClaimID          string
+	MachineName      string
+	MachinePublicKey string
+	AppCertificate   json.RawMessage
+	ExpiresAt        string
+	Error            string
 }
 
 func containsRuntimePayload(payload string) bool {

@@ -107,9 +107,9 @@
 ## Remote Web / Hub Integration
 
 - 后续接入真实 Web Control Plane / Hub API 时，`remote-ui` 仍只能通过 `RtcSession`、connector、signaling adapter、capability/policy 接口消费连接能力。
-- Web Control 只提供账号、机器/agent/client 状态、Hub 列表、ticket、rendezvous、device-code 登录确认、强制下线等控制面 API；`remote-ui` 不应要求 Web Control 承载 terminal/file 操作页。
+- Web Control 只提供账号、机器/agent/client 状态、Hub 列表、device-code 登录确认、订阅/付费/限额、强制下线等控制面 API；`remote-ui` 不应要求 Web Control 承载 terminal/file 操作页、连接 ticket、rendezvous 或 terminal runtime API。
 - 不要恢复 `RemoteTransport` / `PeerTransport` / `TerminalTransport` / `anonymous_p2p` / `managed_p2p` / `paid_relay` 等旧抽象或旧 path taxonomy。
-- 真实 API adapter 可以使用 HTTP 调用 web/hub 的 signaling、discovery、pairing、rendezvous、policy API，但 terminal/file/api/events 运行时必须继续走 WebRTC DataChannel。
+- 真实 API adapter 可以使用 HTTP 调用 Hub / local agent 的 signaling、discovery、pairing、rendezvous、policy API，但 terminal/file/api/events 运行时必须继续走 WebRTC DataChannel。
 - 付费、订阅、支付、邮件、OAuth、外部 API 等业务在前端只能消费 mock 或真实 provider 返回的 policy/capability 结果；开发期先按 dev-free policy 跑通 rendezvous/relay，不要在连接 path 中编码套餐或 relay 类型。
 - relay 只能显示为 capability / policy / connection info，例如 `relayInUse`、`relayBytesRemaining`、`relayThrottled`，不能变成第四种 transport。
 - 如果前端切片依赖尚未实现的外部服务，使用 mock API client 或 fake provider 先完成 UI/state/adapter 行为，并在 `docs/remote-rebuild/WORKFLOW.md` 记录 deferred external item。

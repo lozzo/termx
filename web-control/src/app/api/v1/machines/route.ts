@@ -6,7 +6,6 @@ import { getAppUrl } from "@/lib/config";
 import { agents } from "@/lib/schema";
 import {
   asError,
-  decodeAgentMetadata,
   requireAccessToken,
 } from "@/lib/termx-control";
 
@@ -35,33 +34,23 @@ export async function GET(request: Request) {
   const controlUrl = getAppUrl() ?? requestOrigin(request);
   return NextResponse.json({
     control_url: controlUrl,
-    machines: rows.map((agent) => {
-      const metadata = decodeAgentMetadata(agent.labels);
-      const terminalIds = (metadata.termx?.terminals ?? [])
-        .map((terminal) => terminal.id.trim())
-        .filter(Boolean);
-      return {
-        id: agent.id,
-        name: agent.name,
-        hostname: agent.hostname,
-        os_info: agent.osInfo,
-        online: agent.online,
-        paired: agent.paired,
-        source: "cloud",
-        public_key: agent.publicKey,
-        machine_public_key_fingerprint: machinePublicKeyFingerprint(agent.publicKey),
-        preferred_path: "public_p2p",
-        control_url: controlUrl,
-        hub_id: agent.hubId,
-        hub_http_url: agent.hub?.httpUrl ?? null,
-        hub_status: agent.hub?.status ?? null,
-        terminal_count: terminalIds.length,
-        terminal_ids: terminalIds,
-        terminals: metadata.termx?.terminals ?? [],
-        last_seen: agent.lastSeen?.toISOString() ?? null,
-        created_at: agent.createdAt.toISOString(),
-      };
-    }),
+    machines: rows.map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      hostname: agent.hostname,
+      os_info: agent.osInfo,
+      online: agent.online,
+      paired: agent.paired,
+      source: "cloud",
+      public_key: agent.publicKey,
+      machine_public_key_fingerprint: machinePublicKeyFingerprint(agent.publicKey),
+      control_url: controlUrl,
+      hub_id: agent.hubId,
+      hub_http_url: agent.hub?.httpUrl ?? null,
+      hub_status: agent.hub?.status ?? null,
+      last_seen: agent.lastSeen?.toISOString() ?? null,
+      created_at: agent.createdAt.toISOString(),
+    })),
   });
 }
 

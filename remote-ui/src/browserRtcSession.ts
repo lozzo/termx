@@ -1,4 +1,4 @@
-import { TERMX_FRAME_TYPES, TERMX_PROTOCOL_VERSION, decodeTermxFrame, encodeTermxFrame } from './termxProtocol'
+import { TERMX_FRAME_TYPES, decodeTermxFrame } from './termxProtocol'
 import type { LocalOfferSignature } from './localAppIdentity'
 import type {
   ConnectionCapabilities,
@@ -31,6 +31,7 @@ export interface BrowserRtcSessionOptions {
   sessionIdGenerator?: (() => string) | undefined
   iceGatheringTimeoutMs?: number | undefined
   dataChannelOpenTimeoutMs?: number | undefined
+  heartbeatIntervalMs?: number | undefined
 }
 
 export interface BrowserRtcInventoryEventsOptions {
@@ -44,19 +45,26 @@ export interface BrowserRtcInventoryEventsOptions {
   dataChannelOpenTimeoutMs?: number | undefined
 }
 
-export type BrowserRtcConnectedSession = RtcSession & RtcSessionNegotiator & RtcSessionAnswerer & RtcSessionCapabilityUpdater
+export interface BrowserRtcSessionLifecycle {
+  onDisconnect(handler: () => void): RtcSubscription
+  isAlive(): boolean
+  handleAppResume(): Promise<boolean>
+}
+
+export type BrowserRtcConnectedSession = RtcSession & RtcSessionNegotiator & RtcSessionAnswerer & RtcSessionCapabilityUpdater & BrowserRtcSessionLifecycle
 
 export interface RTCPeerConnectionLike {
   localDescription: RTCSessionDescriptionInit | null
   readonly iceGatheringState?: RTCIceGatheringState
+  readonly connectionState?: RTCPeerConnectionState
   createDataChannel(label: string, options?: RTCDataChannelInit): RTCDataChannelLike
   createOffer(): Promise<RTCSessionDescriptionInit>
   createAnswer(): Promise<RTCSessionDescriptionInit>
   setLocalDescription(description: RTCSessionDescriptionInit): Promise<void>
   setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void>
   close(): void | Promise<void>
-  addEventListener?(type: 'icegatheringstatechange' | 'datachannel', listener: EventListener): void
-  removeEventListener?(type: 'icegatheringstatechange' | 'datachannel', listener: EventListener): void
+  addEventListener?(type: 'icegatheringstatechange' | 'datachannel' | 'connectionstatechange', listener: EventListener): void
+  removeEventListener?(type: 'icegatheringstatechange' | 'datachannel' | 'connectionstatechange', listener: EventListener): void
 }
 
 export interface RTCDataChannelLike extends EventTarget {
@@ -65,6 +73,19 @@ export interface RTCDataChannelLike extends EventTarget {
   binaryType?: BinaryType
   send(data: string | ArrayBuffer | Blob | ArrayBufferView): void
   close(): void
+}
+
+declare global {
+  interface Navigator {
+    connection?: NetworkInformationLike
+  }
+}
+
+interface NetworkInformationLike {
+  type?: string | undefined
+  effectiveType?: string | undefined
+  addEventListener?(type: 'change', listener: EventListener): void
+  removeEventListener?(type: 'change', listener: EventListener): void
 }
 
 export function createBrowserRtcSession(options: BrowserRtcSessionOptions): BrowserRtcConnectedSession {
@@ -83,11 +104,22 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   private dataChannelRole: 'offerer' | 'answerer' | null = null
   private relayInUse = false
   private apiChannel: RTCDataChannelLike | null = null
+  private apiJsonChannel: RtcJsonRpcChannel | null = null
   private eventsChannel: RTCDataChannelLike | null = null
   private eventsListener: EventListener | null = null
+  private eventsSubscribed = false
   private readonly eventHandlers = new Set<(event: RtcEvent) => void>()
+  private readonly disconnectHandlers = new Set<() => void>()
   private terminalChannels = new Map<string, RTCDataChannelLike>()
   private fileChannels = new Map<string, RTCDataChannelLike>()
+  private connected = false
+  private connectedAt = 0
+  private disconnecting = false
+  private disconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private heartbeatTimer: ReturnType<typeof setTimeout> | null = null
+  private heartbeatFailCount = 0
+  private lastRttMs = 0
+  private networkChangeCleanup: (() => void) | null = null
   private readonly incomingWaiters = new Map<string, Array<{
     resolve: (channel: RTCDataChannelLike) => void
     reject: (err: Error) => void
@@ -110,6 +142,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     )
     const sessionId = this.options.sessionIdGenerator?.() ?? crypto.randomUUID()
     this.pc = pc
+    this.setupConnectionStateHandlers(pc)
     this.connectionId = sessionId
     this.path = input.path
     this.terminalId = input.terminalId ?? this.options.terminalId
@@ -134,6 +167,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     if (!this.pc) throw new Error('browser WebRTC session has no pending offer')
     await this.pc.setRemoteDescription(answer)
     await waitChannelOpenWithTimeout(await this.ensureAPIChannel(), this.options.dataChannelOpenTimeoutMs)
+    this.markReadyForTraffic()
   }
 
   async acceptOffer(input: RtcSessionAnswerTarget): Promise<{ sessionId: string; description: RtcSessionDescription }> {
@@ -142,6 +176,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
       peerConnectionConfiguration(input.iceServers),
     )
     this.pc = pc
+    this.setupConnectionStateHandlers(pc)
     this.connectionId = input.sessionId
     this.path = input.path
     this.terminalId = input.terminalId ?? this.options.terminalId
@@ -166,20 +201,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   }
 
   async disconnect(): Promise<void> {
-    for (const channel of this.terminalChannels.values()) channel.close()
-    for (const channel of this.fileChannels.values()) channel.close()
-    this.apiChannel?.close()
-    this.eventsChannel?.close()
-    await this.pc?.close()
-    this.pc = null
-    this.dataChannelRole = null
-    this.apiChannel = null
-    this.eventsChannel = null
-    this.eventsListener = null
-    this.eventHandlers.clear()
-    this.terminalChannels.clear()
-    this.fileChannels.clear()
-    this.rejectIncomingWaiters(new Error('browser WebRTC session disconnected'))
+    await this.closeInternal(new Error('browser WebRTC session disconnected'), false)
   }
 
   async openTerminal(terminalId: string): Promise<RtcBinaryChannel> {
@@ -188,7 +210,10 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   }
 
   async openApi(): Promise<RtcJsonRpcChannel> {
-    return new LocalApiChannel(await this.ensureAPIChannel())
+    if (!this.apiJsonChannel) {
+      this.apiJsonChannel = new LocalApiChannel(await this.ensureAPIChannel())
+    }
+    return this.apiJsonChannel
   }
 
   async openFileTransfer(transferId: string): Promise<RtcBinaryChannel> {
@@ -205,7 +230,9 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
 
   subscribeEvents(handler: (event: RtcEvent) => void): RtcSubscription {
     this.eventHandlers.add(handler)
-    void this.ensureEventsChannel()
+    void this.ensureEventsChannel().then((channel) => {
+      this.sendEventsSubscribe(channel)
+    })
     return {
       close: () => {
         this.eventHandlers.delete(handler)
@@ -215,6 +242,32 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
 
   async getCapabilities(): Promise<ConnectionCapabilities> {
     return this.capabilities
+  }
+
+  onDisconnect(handler: () => void): RtcSubscription {
+    this.disconnectHandlers.add(handler)
+    return {
+      close: () => this.disconnectHandlers.delete(handler),
+    }
+  }
+
+  isAlive(): boolean {
+    if (!this.pc) return false
+    if (this.apiChannel?.readyState !== 'open') return false
+    const state = this.pc.connectionState
+    return state === undefined || state === 'new' || state === 'connecting' || state === 'connected'
+  }
+
+  async handleAppResume(): Promise<boolean> {
+    if (!this.pc) return false
+    try {
+      await this.pingRuntime()
+      this.markConnected()
+      return true
+    } catch {
+      await this.failConnection(new Error('browser WebRTC session did not respond after app resume'))
+      return false
+    }
   }
 
   updateConnectionCapabilities(capabilities: ConnectionCapabilities): void {
@@ -248,10 +301,13 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   }
 
   private async ensureAPIChannel(): Promise<RTCDataChannelLike> {
-    if (this.apiChannel) return this.apiChannel
+    if (this.apiChannel && this.apiChannel.readyState !== 'closed') return this.apiChannel
+    this.apiChannel = null
+    this.apiJsonChannel = null
     this.apiChannel = this.dataChannelRole === 'answerer'
       ? await this.waitForIncomingChannel('api')
       : this.openRTCChannel('api')
+    this.attachAPIChannelLifecycle(this.apiChannel)
     return this.apiChannel
   }
 
@@ -282,13 +338,37 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     channel.addEventListener('message', this.eventsListener)
   }
 
+  private sendEventsSubscribe(channel: RTCDataChannelLike): void {
+    if (this.eventsSubscribed) return
+    const send = () => {
+      if (this.eventsSubscribed) return
+      try {
+        channel.send(JSON.stringify({
+          type: 'subscribe',
+          types: [1, 2, 3, 4, 10],
+        }))
+        this.eventsSubscribed = true
+      } catch {
+        this.eventsSubscribed = false
+      }
+    }
+    if (channel.readyState === 'open') {
+      send()
+      return
+    }
+    channel.addEventListener('open', send, { once: true })
+  }
+
   private registerIncomingChannel(channel: RTCDataChannelLike): void {
     if (channel.label === 'api') {
       this.apiChannel = channel
+      this.apiJsonChannel = null
+      this.attachAPIChannelLifecycle(channel)
     } else if (channel.label === 'events') {
       channel.binaryType = 'arraybuffer'
       this.eventsChannel = channel
       this.attachEventsChannelListener(channel)
+      if (this.eventHandlers.size > 0) this.sendEventsSubscribe(channel)
     } else if (channel.label.startsWith('terminal:')) {
       this.registerTerminalChannel(channel.label.slice('terminal:'.length), channel)
     } else if (channel.label.startsWith('file:')) {
@@ -335,6 +415,198 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     this.incomingWaiters.clear()
   }
 
+  private setupConnectionStateHandlers(pc: RTCPeerConnectionLike): void {
+    pc.addEventListener?.('connectionstatechange', () => {
+      const state = pc.connectionState
+      if (state === 'connected') {
+        this.markConnected()
+        return
+      }
+      if (state === 'disconnected') {
+        this.stopHeartbeat()
+        const sinceConnected = this.connectedAt > 0 ? Date.now() - this.connectedAt : 0
+        this.startDisconnectGrace(sinceConnected < 15000 ? 12000 : 5000)
+        void this.probeConnection(true)
+        return
+      }
+      if (state === 'failed' || state === 'closed') {
+        void this.failConnection(new Error(`browser WebRTC peer connection ${state}`))
+      }
+    })
+  }
+
+  private attachAPIChannelLifecycle(channel: RTCDataChannelLike): void {
+    channel.addEventListener('close', () => {
+      if (this.apiChannel === channel) {
+        this.apiChannel = null
+        this.apiJsonChannel = null
+      }
+      if (!this.disconnecting) {
+        void this.failConnection(new Error('browser WebRTC api channel closed'))
+      }
+    })
+    channel.addEventListener('error', () => {
+      if (!this.disconnecting) {
+        void this.failConnection(new Error('browser WebRTC api channel failed'))
+      }
+    })
+  }
+
+  private markConnected(): void {
+    if (this.disconnecting) return
+    this.connected = true
+    this.connectedAt = Date.now()
+    this.clearDisconnectGrace()
+    this.startHeartbeat()
+  }
+
+  private markReadyForTraffic(): void {
+    if (this.disconnecting) return
+    this.connected = true
+    this.connectedAt = Date.now()
+    this.clearDisconnectGrace()
+    const state = this.pc?.connectionState
+    if (state === undefined || state === 'connected') {
+      this.startHeartbeat()
+    }
+  }
+
+  private startDisconnectGrace(delayMs: number): void {
+    if (this.disconnectTimer) return
+    this.disconnectTimer = setTimeout(() => {
+      this.disconnectTimer = null
+      if (!this.connected) return
+      if (this.pc?.connectionState === 'connected') return
+      void this.failConnection(new Error('browser WebRTC disconnected grace period expired'))
+    }, delayMs)
+  }
+
+  private clearDisconnectGrace(): void {
+    if (!this.disconnectTimer) return
+    clearTimeout(this.disconnectTimer)
+    this.disconnectTimer = null
+  }
+
+  private async probeConnection(aggressiveFirst: boolean): Promise<void> {
+    try {
+      await this.pingRuntime()
+      this.clearDisconnectGrace()
+      this.startHeartbeat()
+    } catch {
+      if (aggressiveFirst && this.pc?.connectionState !== 'connected') {
+        await this.failConnection(new Error('browser WebRTC probe failed'))
+      }
+    }
+  }
+
+  private startHeartbeat(): void {
+    this.stopHeartbeat()
+    this.heartbeatFailCount = 0
+    this.scheduleHeartbeat(this.options.heartbeatIntervalMs ?? 5000)
+    this.listenNetworkChange()
+  }
+
+  private scheduleHeartbeat(delayMs: number): void {
+    this.heartbeatTimer = setTimeout(() => {
+      this.heartbeatTimer = null
+      if (!this.connected || this.disconnecting) return
+      if (!this.apiChannel || this.apiChannel.readyState !== 'open') {
+        void this.failConnection(new Error('browser WebRTC api channel is not open'))
+        return
+      }
+      const start = Date.now()
+      this.pingRuntime().then(() => {
+        this.lastRttMs = Date.now() - start
+        this.heartbeatFailCount = 0
+        this.scheduleHeartbeat(this.options.heartbeatIntervalMs ?? 5000)
+      }, () => {
+        this.heartbeatFailCount += 1
+        if (this.heartbeatFailCount >= 4) {
+          void this.failConnection(new Error('browser WebRTC heartbeat failed'))
+          return
+        }
+        this.scheduleHeartbeat(this.heartbeatFailCount * 1000)
+      })
+    }, delayMs)
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearTimeout(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+    this.networkChangeCleanup?.()
+    this.networkChangeCleanup = null
+  }
+
+  private listenNetworkChange(): void {
+    this.networkChangeCleanup?.()
+    this.networkChangeCleanup = null
+    const connection = globalThis.navigator?.connection
+    if (!connection?.addEventListener || !connection.removeEventListener) return
+    let lastType = connection.effectiveType ?? connection.type ?? ''
+    const onChange = () => {
+      const nextType = connection.effectiveType ?? connection.type ?? ''
+      if (nextType === lastType) return
+      lastType = nextType
+      if (this.heartbeatTimer) {
+        clearTimeout(this.heartbeatTimer)
+        this.heartbeatTimer = null
+      }
+      this.heartbeatFailCount = 0
+      this.scheduleHeartbeat(200)
+    }
+    connection.addEventListener('change', onChange)
+    this.networkChangeCleanup = () => connection.removeEventListener?.('change', onChange)
+  }
+
+  private async pingRuntime(): Promise<void> {
+    const timeoutMs = this.lastRttMs ? Math.min(Math.max(this.lastRttMs * 3, 500), 3000) : 1500
+    const channel = await this.openApi()
+    await withTimeout(
+      channel.request('ping', {}),
+      timeoutMs,
+      () => new Error('browser WebRTC heartbeat timeout'),
+    )
+  }
+
+  private async failConnection(err: Error): Promise<void> {
+    await this.closeInternal(err, true)
+  }
+
+  private async closeInternal(err: Error, notify: boolean): Promise<void> {
+    if (this.disconnecting) return
+    this.disconnecting = true
+    const terminalChannels = Array.from(this.terminalChannels.values())
+    const fileChannels = Array.from(this.fileChannels.values())
+    const apiChannel = this.apiChannel
+    const eventsChannel = this.eventsChannel
+    const pc = this.pc
+    this.connected = false
+    this.clearDisconnectGrace()
+    this.stopHeartbeat()
+    this.pc = null
+    this.dataChannelRole = null
+    this.apiChannel = null
+    this.apiJsonChannel = null
+    this.eventsChannel = null
+    this.eventsListener = null
+    this.eventsSubscribed = false
+    this.terminalChannels.clear()
+    this.fileChannels.clear()
+    for (const channel of terminalChannels) channel.close()
+    for (const channel of fileChannels) channel.close()
+    apiChannel?.close()
+    eventsChannel?.close()
+    await pc?.close()
+    this.eventHandlers.clear()
+    this.rejectIncomingWaiters(err)
+    this.disconnecting = false
+    if (notify) {
+      for (const handler of Array.from(this.disconnectHandlers)) handler()
+    }
+  }
+
   private assertTarget(machineId: string, terminalId?: string): void {
     if (machineId !== this.options.machineId) {
       throw new Error(`local WebRTC machine mismatch: ${machineId} != ${this.options.machineId}`)
@@ -360,7 +632,7 @@ function peerConnectionConfiguration(iceServers: RtcSessionNegotiationTarget['ic
 function capabilitiesForAnsweredOffer(input: RtcSessionAnswerTarget): ConnectionCapabilities {
   const relayInUse = input.relayInUse === true
   return {
-    terminalAllowed: input.terminalId !== undefined,
+    terminalAllowed: true,
     apiAllowed: true,
     eventsAllowed: true,
     fileTransferAllowed: relayInUse
@@ -379,12 +651,6 @@ class BrowserRtcInventoryEventsConnection implements TerminalInventoryEvents {
   private connectionId = ''
   private eventsChannel: RTCDataChannelLike | null = null
   private readonly subscribers = new Set<(event: TerminalInventoryEvent) => void>()
-  private readonly pending = new Map<number, {
-    resolve: (value: unknown) => void
-    reject: (err: Error) => void
-  }>()
-  private nextRequestID = 1
-  private helloDone: Promise<void> | null = null
   private subscribeDone: Promise<void> | null = null
   private connectPromise: Promise<void> | null = null
   private disconnecting = false
@@ -457,7 +723,6 @@ class BrowserRtcInventoryEventsConnection implements TerminalInventoryEvents {
     })
     await pc.setRemoteDescription(answer.answer)
     await waitChannelOpenWithTimeout(eventsChannel, this.options.dataChannelOpenTimeoutMs)
-    await this.hello()
     await this.subscribeInventoryEvents()
   }
 
@@ -468,62 +733,26 @@ class BrowserRtcInventoryEventsConnection implements TerminalInventoryEvents {
   private async disconnectInternal(): Promise<void> {
     if (this.disconnecting) return
     this.disconnecting = true
-    this.rejectPending(new Error('inventory events channel closed'))
     const eventsChannel = this.eventsChannel
     this.eventsChannel = null
     eventsChannel?.close()
     await this.pc?.close()
     this.pc = null
     this.connectPromise = null
-    this.helloDone = null
     this.subscribeDone = null
     this.disconnecting = false
   }
 
-  private hello(): Promise<void> {
-    if (!this.helloDone) {
-      this.helloDone = new Promise<void>((resolve, reject) => {
-        this.pending.set(0, {
-          resolve: () => resolve(),
-          reject,
-        })
-        this.sendFrame(0, TERMX_FRAME_TYPES.hello, {
-          version: TERMX_PROTOCOL_VERSION,
-          client: 'termx-local-web-events',
-          capabilities: ['events'],
-        })
-      })
-    }
-    return this.helloDone
-  }
-
   private subscribeInventoryEvents(): Promise<void> {
     if (!this.subscribeDone) {
-      this.subscribeDone = this.request('events', {
-        types: [1, 2, 3, 4, 10],
-      }).then(() => {})
+      this.subscribeDone = Promise.resolve().then(() => {
+        this.eventsChannel?.send(JSON.stringify({
+          type: 'subscribe',
+          types: [1, 2, 3, 4, 10],
+        }))
+      })
     }
     return this.subscribeDone
-  }
-
-  private request(method: string, params: unknown): Promise<unknown> {
-    const id = this.nextRequestID++
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
-      this.sendFrame(0, TERMX_FRAME_TYPES.request, {
-        id,
-        method,
-        params,
-      })
-    })
-  }
-
-  private sendFrame(channel: number, type: number, payload: unknown): void {
-    if (!this.eventsChannel) throw new Error('inventory events channel is not connected')
-    const bytes = payload instanceof Uint8Array
-      ? payload
-      : new TextEncoder().encode(JSON.stringify(payload))
-    this.eventsChannel.send(encodeTermxFrame(channel, type, bytes))
   }
 
   private handleMessage(data: unknown): void {
@@ -540,43 +769,23 @@ class BrowserRtcInventoryEventsConnection implements TerminalInventoryEvents {
   }
 
   private handleMessageBytes(data: Uint8Array): void {
-    const frame = decodeTermxFrame(data)
-    if (frame.channel !== 0) return
-    switch (frame.type) {
-      case TERMX_FRAME_TYPES.hello:
-        this.pending.get(0)?.resolve(undefined)
-        this.pending.delete(0)
-        return
-      case TERMX_FRAME_TYPES.response: {
-        const response = JSON.parse(new TextDecoder().decode(frame.payload)) as { id: number; result?: unknown }
-        const pending = this.pending.get(response.id)
-        if (!pending) return
-        this.pending.delete(response.id)
-        pending.resolve(response.result)
-        return
-      }
-      case TERMX_FRAME_TYPES.error: {
-        const response = JSON.parse(new TextDecoder().decode(frame.payload)) as { id: number; error?: { message?: string } }
-        const pending = this.pending.get(response.id)
-        if (!pending) return
-        this.pending.delete(response.id)
-        pending.reject(new Error(response.error?.message ?? 'termx protocol error'))
-        return
-      }
-      case TERMX_FRAME_TYPES.event:
+    try {
+      const event = JSON.parse(new TextDecoder().decode(data)) as { type?: unknown }
+      if (event.type) {
         for (const handler of this.subscribers) {
           handler({ type: 'inventory_changed' })
         }
         return
+      }
+    } catch {
+      const frame = decodeTermxFrame(data)
+      if (frame.channel !== 0 || frame.type !== TERMX_FRAME_TYPES.event) return
+      for (const handler of this.subscribers) {
+        handler({ type: 'inventory_changed' })
+      }
     }
   }
 
-  private rejectPending(err: Error): void {
-    for (const [id, pending] of Array.from(this.pending.entries())) {
-      this.pending.delete(id)
-      pending.reject(err)
-    }
-  }
 }
 
 class LocalApiChannel implements RtcJsonRpcChannel {

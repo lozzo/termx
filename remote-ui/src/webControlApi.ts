@@ -1,8 +1,3 @@
-import type {
-  PublicP2pRendezvousAdapter,
-  PublicP2pRendezvousChannel,
-  PublicP2pRendezvousMessage,
-} from './publicP2pRtcConnector'
 import type { RtcConnectOptions } from './transport'
 
 export type WebControlFetch = (input: string, init?: RequestInit) => Promise<Response>
@@ -13,12 +8,11 @@ export interface WebControlApiOptions {
   fetch?: WebControlFetch | undefined
 }
 
-export interface WebControlApi extends PublicP2pRendezvousAdapter {
+export interface WebControlApi {
   login(input: WebControlLoginInput, options?: RtcConnectOptions): Promise<WebControlAuthResult>
   me(options?: RtcConnectOptions): Promise<WebControlUser>
   listMachines(options?: RtcConnectOptions): Promise<WebControlMachine[]>
-  createManagedConnectTicket(input: CreateManagedConnectTicketInput, options?: RtcConnectOptions): Promise<ManagedConnectTicket>
-  postCandidate(input: PublicP2pCandidateInput, options?: RtcConnectOptions): Promise<void>
+  createConnectTicket(input: WebControlConnectTicketInput, options?: RtcConnectOptions): Promise<WebControlConnectTicket>
 }
 
 export interface WebControlLoginInput {
@@ -50,39 +44,30 @@ export interface WebControlMachine {
   source: 'cloud'
   publicKey?: string | undefined
   machinePublicKeyFingerprint?: string | undefined
-  preferredPath: 'public_p2p'
   controlUrl?: string | undefined
   hubId?: string | undefined
   hubHttpUrl?: string | undefined
   hubStatus?: string | undefined
-  terminalCount: number
-  terminalIds: string[]
   lastSeen?: string | undefined
   createdAt?: string | undefined
 }
 
-export interface CreateManagedConnectTicketInput {
+export interface WebControlConnectTicketInput {
   machineId: string
   terminalId?: string | undefined
   ttlSeconds?: number | undefined
 }
 
-export interface ManagedConnectTicket {
-  id: string
-  path: 'managed'
+export interface WebControlConnectTicket {
+  connectTicket: string
   machineId: string
   terminalId?: string | undefined
+  path: 'cloud'
   allowRelay: boolean
   relayInUse: boolean
-  relayBytesRemaining?: number | undefined
-  relayThrottled?: boolean | undefined
-}
-
-export interface PublicP2pCandidateInput {
-  channelId: string
-  channelSecret: string
-  appPublicKey: string
-  candidate: unknown
+  relayThrottled: boolean
+  hubHttpUrl?: string | undefined
+  expiresAt: string
 }
 
 export function createWebControlApi(options: WebControlApiOptions): WebControlApi {
@@ -103,7 +88,7 @@ class WebControlHttpApi implements WebControlApi {
       }
       this.accessToken = accessToken
     }
-    this.fetchImpl = options.fetch ?? fetch
+    this.fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
   }
 
   async login(input: WebControlLoginInput, options: RtcConnectOptions = {}): Promise<WebControlAuthResult> {
@@ -144,113 +129,17 @@ class WebControlHttpApi implements WebControlApi {
     return machines.map((machine) => machineRecord(machine))
   }
 
-  async createChannel(input: {
-    machineId: string
-    terminalId: string
-    machinePublicKeyFingerprint: string
-    ttlSeconds: number
-  }, options: RtcConnectOptions = {}): Promise<PublicP2pRendezvousChannel> {
-    const terminalId = requiredTerminalId(input.terminalId)
-    const response = await this.requestJSON('POST', '/api/v1/public-p2p/channels', {
+  async createConnectTicket(input: WebControlConnectTicketInput, options: RtcConnectOptions = {}): Promise<WebControlConnectTicket> {
+    const machineId = requiredTrimmed(input.machineId, 'machine_id')
+    const response = await this.requestJSON('POST', `/api/v1/machines/${encodeURIComponent(machineId)}/connect-tickets`, {
       auth: 'bearer',
       signal: options.signal,
       body: {
-        machine_id: input.machineId,
-        terminal_id: terminalId,
-        machine_public_key_fingerprint: input.machinePublicKeyFingerprint,
-        ttl_seconds: input.ttlSeconds,
-      },
-    })
-    const channelId = stringField(response, 'channel_id', 'id')
-    const channelSecret = stringField(response, 'channel_secret', 'secret')
-    const publicStunServers = stringArrayField(response, 'public_stun_servers')
-    if (publicStunServers.some((url) => /^turns?:/i.test(url.trim()))) {
-      throw new Error('TURN credentials are not allowed in public_p2p rendezvous response')
-    }
-    return {
-      channelId,
-      channelSecret,
-      publicStunServers,
-    }
-  }
-
-  async postOffer(input: {
-    channelId: string
-    channelSecret: string
-    from: string
-    appPublicKey: string
-    appCertificate: unknown
-    offer: unknown
-    signature: unknown
-  }, options: RtcConnectOptions = {}): Promise<void> {
-    await this.requestJSON('POST', `/api/v1/public-p2p/channels/${encodeURIComponent(input.channelId)}/offer`, {
-      signal: options.signal,
-      body: {
-        channel_secret: input.channelSecret,
-        app_certificate: input.appCertificate,
-        offer: input.offer,
-        signature: input.signature,
-      },
-    })
-  }
-
-  async pollEvents(input: {
-    channelId: string
-    channelSecret: string
-  }, options: RtcConnectOptions = {}): Promise<PublicP2pRendezvousMessage[]> {
-    const response = await this.requestJSON('GET', `/api/v1/public-p2p/channels/${encodeURIComponent(input.channelId)}/events`, {
-      rendezvousAuth: input,
-      signal: options.signal,
-    })
-    const messages = response.messages
-    if (!Array.isArray(messages)) {
-      throw new Error('Web Control rendezvous events response messages is required')
-    }
-    return messages.map((message) => rendezvousMessage(message))
-  }
-
-  async postCandidate(input: PublicP2pCandidateInput, options: RtcConnectOptions = {}): Promise<void> {
-    await this.requestJSON('POST', `/api/v1/public-p2p/channels/${encodeURIComponent(input.channelId)}/candidate`, {
-      signal: options.signal,
-      body: {
-        channel_secret: input.channelSecret,
-        app_public_key: input.appPublicKey,
-        candidate: input.candidate,
-      },
-    })
-  }
-
-  async createManagedConnectTicket(
-    input: CreateManagedConnectTicketInput,
-    options: RtcConnectOptions = {},
-  ): Promise<ManagedConnectTicket> {
-    const response = await this.requestJSON('POST', '/api/v1/managed/connect-tickets', {
-      auth: 'bearer',
-      signal: options.signal,
-      body: {
-        machine_id: input.machineId,
-        ...(input.terminalId ? { terminal_id: input.terminalId } : {}),
+        terminal_id: input.terminalId?.trim() ?? '',
         ...(input.ttlSeconds !== undefined ? { ttl_seconds: input.ttlSeconds } : {}),
       },
     })
-    const path = stringField(response, 'path')
-    if (path !== 'managed') {
-      throw new Error(`managed connect ticket path must be managed, got ${path}`)
-    }
-    return {
-      id: stringField(response, 'id'),
-      path: 'managed',
-      machineId: stringField(response, 'machine_id'),
-      ...(optionalStringField(response, 'terminal_id') ? { terminalId: optionalStringField(response, 'terminal_id') } : {}),
-      allowRelay: booleanField(response, 'allow_relay'),
-      relayInUse: booleanField(response, 'relay_in_use'),
-      ...(optionalNumberField(response, 'relay_bytes_remaining') !== undefined
-        ? { relayBytesRemaining: optionalNumberField(response, 'relay_bytes_remaining') }
-        : {}),
-      ...(optionalBooleanField(response, 'relay_throttled') !== undefined
-        ? { relayThrottled: optionalBooleanField(response, 'relay_throttled') }
-        : {}),
-    }
+    return connectTicketRecord(response)
   }
 
   private async requestJSON(
@@ -258,7 +147,6 @@ class WebControlHttpApi implements WebControlApi {
     path: string,
     options: {
       auth?: 'bearer' | undefined
-      rendezvousAuth?: { channelId: string; channelSecret: string } | undefined
       signal?: AbortSignal | undefined
       body?: unknown
     } = {},
@@ -269,9 +157,6 @@ class WebControlHttpApi implements WebControlApi {
         throw new Error('Web Control access token is required')
       }
       headers.authorization = `Bearer ${this.accessToken}`
-    }
-    if (options.rendezvousAuth) {
-      headers.authorization = `Rendezvous ${options.rendezvousAuth.channelId}:${options.rendezvousAuth.channelSecret}`
     }
     const init: RequestInit = {
       method,
@@ -332,10 +217,6 @@ function machineRecord(value: unknown): WebControlMachine {
   if (source !== 'cloud') {
     throw new Error(`Web Control machine source must be cloud, got ${source}`)
   }
-  const preferredPath = optionalStringField(response, 'preferred_path') ?? 'public_p2p'
-  if (preferredPath !== 'public_p2p') {
-    throw new Error(`Web Control machine preferred_path must be public_p2p, got ${preferredPath}`)
-  }
   return {
     id: stringField(response, 'id'),
     name: stringField(response, 'name'),
@@ -348,15 +229,30 @@ function machineRecord(value: unknown): WebControlMachine {
     ...(optionalStringField(response, 'machine_public_key_fingerprint')
       ? { machinePublicKeyFingerprint: optionalStringField(response, 'machine_public_key_fingerprint') }
       : {}),
-    preferredPath: 'public_p2p',
     ...(optionalStringField(response, 'control_url') ? { controlUrl: optionalStringField(response, 'control_url') } : {}),
     ...(optionalStringField(response, 'hub_id') ? { hubId: optionalStringField(response, 'hub_id') } : {}),
     ...(optionalStringField(response, 'hub_http_url') ? { hubHttpUrl: optionalStringField(response, 'hub_http_url') } : {}),
     ...(optionalStringField(response, 'hub_status') ? { hubStatus: optionalStringField(response, 'hub_status') } : {}),
-    terminalCount: optionalNumberField(response, 'terminal_count') ?? stringArrayField(response, 'terminal_ids').length,
-    terminalIds: stringArrayField(response, 'terminal_ids'),
     ...(optionalStringField(response, 'last_seen') ? { lastSeen: optionalStringField(response, 'last_seen') } : {}),
     ...(optionalStringField(response, 'created_at') ? { createdAt: optionalStringField(response, 'created_at') } : {}),
+  }
+}
+
+function connectTicketRecord(response: Record<string, unknown>): WebControlConnectTicket {
+  const path = stringField(response, 'path')
+  if (path !== 'cloud') {
+    throw new Error(`Web Control connect ticket path must be cloud, got ${path}`)
+  }
+  return {
+    connectTicket: stringField(response, 'connect_ticket', 'id'),
+    machineId: stringField(response, 'machine_id'),
+    ...(optionalTrimmedStringField(response, 'terminal_id') ? { terminalId: optionalTrimmedStringField(response, 'terminal_id') } : {}),
+    path: 'cloud',
+    allowRelay: optionalBooleanField(response, 'allow_relay') ?? false,
+    relayInUse: optionalBooleanField(response, 'relay_in_use') ?? false,
+    relayThrottled: optionalBooleanField(response, 'relay_throttled') ?? false,
+    ...(optionalStringField(response, 'hub_http_url') ? { hubHttpUrl: optionalStringField(response, 'hub_http_url') } : {}),
+    expiresAt: stringField(response, 'expires_at'),
   }
 }
 
@@ -384,23 +280,6 @@ function normalizeBaseUrl(raw: string): string {
   return trimmed.endsWith('/') ? trimmed : `${trimmed}/`
 }
 
-function requiredTerminalId(value: unknown): string {
-  const trimmed = typeof value === 'string' ? value.trim() : ''
-  if (trimmed === '') {
-    throw new Error('public_p2p terminal_id is required')
-  }
-  return trimmed
-}
-
-function rendezvousMessage(value: unknown): PublicP2pRendezvousMessage {
-  const data = record(value, 'Web Control rendezvous message')
-  return {
-    type: stringField(data, 'type'),
-    ...(optionalStringField(data, 'from') ? { from: optionalStringField(data, 'from') } : {}),
-    ...(data.payload !== undefined ? { payload: data.payload } : {}),
-  }
-}
-
 function record(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error(`${label} must be an object`)
@@ -416,11 +295,26 @@ function stringField(value: Record<string, unknown>, key: string, alias?: string
   return field
 }
 
+function requiredTrimmed(value: unknown, label: string): string {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  if (!trimmed) throw new Error(`Web Control ${label} is required`)
+  return trimmed
+}
+
 function optionalStringField(value: Record<string, unknown>, key: string): string | undefined {
   const field = value[key]
   if (field === undefined || field === null) return undefined
   if (typeof field !== 'string' || field.trim() === '') {
     throw new Error(`Web Control response ${key} must be a string`)
+  }
+  return field
+}
+
+function optionalBooleanField(value: Record<string, unknown>, key: string): boolean | undefined {
+  const field = value[key]
+  if (field === undefined || field === null) return undefined
+  if (typeof field !== 'boolean') {
+    throw new Error(`Web Control ${key} must be a boolean`)
   }
   return field
 }
@@ -435,36 +329,10 @@ function optionalTrimmedStringField(value: Record<string, unknown>, key: string)
   return trimmed === '' ? undefined : trimmed
 }
 
-function stringArrayField(value: Record<string, unknown>, key: string): string[] {
-  const field = value[key]
-  if (!Array.isArray(field) || field.some((item) => typeof item !== 'string' || item.trim() === '')) {
-    throw new Error(`Web Control response ${key} must be a string array`)
-  }
-  return field
-}
-
 function booleanField(value: Record<string, unknown>, key: string): boolean {
   const field = value[key]
   if (typeof field !== 'boolean') {
     throw new Error(`Web Control response ${key} must be a boolean`)
-  }
-  return field
-}
-
-function optionalBooleanField(value: Record<string, unknown>, key: string): boolean | undefined {
-  const field = value[key]
-  if (field === undefined || field === null) return undefined
-  if (typeof field !== 'boolean') {
-    throw new Error(`Web Control response ${key} must be a boolean`)
-  }
-  return field
-}
-
-function optionalNumberField(value: Record<string, unknown>, key: string): number | undefined {
-  const field = value[key]
-  if (field === undefined || field === null) return undefined
-  if (typeof field !== 'number' || !Number.isFinite(field)) {
-    throw new Error(`Web Control response ${key} must be a number`)
   }
   return field
 }

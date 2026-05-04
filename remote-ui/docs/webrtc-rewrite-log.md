@@ -1164,6 +1164,8 @@ Future work can add native Android/iOS adapters implementing the same `RtcSessio
 
 ## Remote Build Slice 10-A: Web Control HTTP Adapter For Public P2P And Managed Tickets
 
+> Deprecated by the Web Control boundary cleanup on 2026-05-04: Web Control no longer owns public_p2p rendezvous, managed connect-ticket creation, or terminal/runtime signaling. The historical notes below describe removed behavior and must not be used as current architecture.
+
 ### Goal
 
 Add a browser-agnostic Web Control API adapter for authenticated public_p2p rendezvous and managed connect-ticket control-plane calls while keeping runtime terminal/file/api/events on `RtcSession`.
@@ -1181,7 +1183,7 @@ Planned failing tests:
 
 - Added `createWebControlApi` / `WebControlApi`.
 - The adapter implements the existing `PublicP2pRendezvousAdapter` contract for Web Control `POST /api/v1/public-p2p/channels`, offer post, candidate post, and events polling.
-- The adapter adds managed connect-ticket creation against `POST /api/v1/managed/connect-tickets`.
+- The adapter added Web Control-owned managed ticket creation; that endpoint has since been removed from the current architecture.
 - Public P2P responses are normalized to `channelId`, `channelSecret`, and `publicStunServers`; any TURN URL in the public_p2p response fails closed.
 - Managed ticket responses must use `path: managed`; relay appears only as `allowRelay`, `relayInUse`, `relayBytesRemaining`, and `relayThrottled`.
 - HTTP error envelopes are surfaced as control-plane errors.
@@ -1258,3 +1260,45 @@ This slice deliberately does not wire the raw Hub session API into `ManagedRtcCo
 ### Remaining Risk
 
 Production Hub URL, signed ticket format, relay lease/quota provider, DNS/TLS/TURN deployment, one-shot timeout tuning, managed connector offerer wiring, and explicit in-memory session reverse-map cleanup remain deferred or future work.
+
+## Remote Build Slice 10-C: Hub-Mediated App Pairing Claim
+
+### Goal
+
+Move product pairing off direct local-web pairing and off Web Control secret validation. The APP first matches the QR machine ID against the signed-in Web Control machine list, then uses that machine's Hub URL to submit a short-lived pairing claim. The Hub only relays the claim/result; the termx agent validates the pair session/secret locally and signs the app certificate.
+
+### Failing Tests First
+
+- `npx vitest run src/WebControlRemoteApp.test.tsx -t "claims a TermX"` failed first because `pairLocalApp` did not pass `machine_id` into the new Hub pairing claim path.
+- `go test ./internal/remote/runtime -run TestHubPairingLoopRetriesPendingResultAfterSubmitFailure` was added after self-review to cover a failed first result submission; without the fix the agent could consume a pair session and never retry the already-signed result.
+
+### Implementation
+
+- `WebControlRemoteApp` now uses the cloud machine's `hub_http_url` for `Pair Device` and sends `machine_id`, pair session/secret, app identity, and requested capabilities to `ManagedHubApi.pair()`.
+- `ManagedHubApi.pair()` calls `POST /api/v1/pairing/claims` and returns the agent-signed app certificate; Web Control is only used for login, account machine list, and Hub discovery.
+- Hub added app-facing `POST /api/v1/pairing/claims` plus agent-facing `POST /api/v1/agents/pairing/poll` and `/result`, backed by bounded TTL registry state.
+- `termx-core` remote runtime now starts a Hub pairing poll loop, relays each claim into the local pairing manager, and submits either the signed certificate or the local validation error back to Hub.
+- Core/CLI pairing setup no longer requires `LocalPairURL`, so hub-mediated QR sessions can exist without local-web pairing being the product path.
+- Local-web embedded assets remain as the debug/local UI entry and were rebuilt/synced after the APP-first split.
+
+### Review Fixes
+
+- Added `machineId` to the pair input boundary so the Hub claim has an explicit machine identity while local debug pairing can ignore it.
+- Fixed `pairing.Manager.ClaimSession()` to return the session-captured machine ID instead of reading the mutable manager config during response assembly.
+- Added pending-result retry before polling new pairing claims so a transient Hub `/result` failure does not lose the locally consumed pair session.
+- `ManagedHubApi.pair()` now surfaces Hub `202 pending` pairing claims as an agent-not-ready error instead of misreporting the missing certificate as an `app_certificate` schema failure.
+
+### Commands
+
+- `npx vitest run src/WebControlRemoteApp.test.tsx src/managedHubApi.test.ts src/localAppIdentity.test.ts src/localAgentApi.test.ts --reporter verbose` passed.
+- `npm run typecheck` passed.
+- `npm test` passed: 44 files, 212 tests.
+- `npm run build` passed.
+- `npm run build:localweb` passed and synced `remote-ui/dist` into `termx-core/internal/remote/localweb/static`.
+- `go test ./internal/registry ./internal/httpapi` in `termx-hub` passed.
+- `go test ./internal/remote/localweb ./internal/remote/runtime ./internal/remote/pairing ./internal/remote/discovery ./remote/hubv1` in `termx-core` passed.
+- `go test ./cmd/termx` in `termx-cli` passed.
+
+### Remaining Risk
+
+Production ownership authorization for `POST /api/v1/pairing/claims` still depends on Web Control issuing/authorizing the Hub-facing request or claim ticket. This slice keeps Hub stateless and machine-online scoped, but does not add durable Web Control ownership proof into the Hub claim API.

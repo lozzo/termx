@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createLocalAgentApi } from './localAgentApi'
 
 describe('createLocalAgentApi', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('normalizes local status and terminal inventory into machine/terminal models', async () => {
     const fetch = vi.fn(async (input: RequestInfo | URL) => responseFor(String(input), {
       '/api/local/status': {
@@ -106,6 +110,69 @@ describe('createLocalAgentApi', () => {
       requested_capabilities: ['terminal', 'file_manager'],
     })
     expect(JSON.stringify(calls)).not.toMatch(/machine_private_key|privateKey|turn|credential/i)
+  })
+
+  it('claims pairing through an absolute QR pairing endpoint', async () => {
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = []
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init })
+      return jsonResponse({
+        machine_id: 'machine-local',
+        app_certificate: {
+          payload: { machine_id: 'machine-local', app_public_key: 'app-public-key' },
+          signature: 'base64-signature',
+        },
+        expires_at: '2027-05-01T04:00:00Z',
+      })
+    })
+
+    const api = createLocalAgentApi({
+      baseUrl: 'http://127.0.0.1:5173',
+      fetch,
+      pairUrl: 'http://127.0.0.1:18888/api/local/pair',
+    })
+
+    await expect(api.pair({
+      pairSessionId: 'pair_1',
+      pairSecret: 'pair-secret',
+      appDeviceId: 'appdev_1',
+      appName: 'TermX Remote App',
+      appPublicKey: 'app-public-key',
+      requestedCapabilities: ['terminal'],
+    })).resolves.toMatchObject({
+      machineId: 'machine-local',
+      expiresAt: '2027-05-01T04:00:00Z',
+    })
+
+    expect(calls[0]?.url).toBe('http://127.0.0.1:18888/api/local/pair')
+  })
+
+  it('uses the browser fetch binding when no custom fetch is injected', async () => {
+    const calls: Array<{ thisValue: unknown; input: string }> = []
+    const boundFetch = function (this: unknown, input: RequestInfo | URL) {
+      calls.push({ thisValue: this, input: String(input) })
+      if (this !== globalThis) {
+        throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation")
+      }
+      return Promise.resolve(jsonResponse({
+        machine_id: 'machine-local',
+        machine_name: 'Local Mac',
+        remote_enabled: true,
+        local_rtc: {
+          http_url: 'http://127.0.0.1:18888',
+        },
+      }))
+    }
+    vi.stubGlobal('fetch', boundFetch)
+    const api = createLocalAgentApi({ baseUrl: 'http://127.0.0.1:18888' })
+
+    await expect(api.getStatus()).resolves.toMatchObject({
+      machine: { machineId: 'machine-local' },
+    })
+    expect(calls).toEqual([{
+      thisValue: globalThis,
+      input: 'http://127.0.0.1:18888/api/local/status',
+    }])
   })
 
   it('submits local RTC offers without TURN credentials or private keys', async () => {

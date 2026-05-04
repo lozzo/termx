@@ -12,12 +12,13 @@ export interface ManagedHubApiOptions {
 export interface ManagedHubApi {
   createSession(input: CreateManagedHubSessionInput, options?: RtcConnectOptions): Promise<ManagedHubCreateSessionResult>
   pollSessionAnswer(input: PollManagedHubSessionAnswerInput, options?: RtcConnectOptions): Promise<ManagedHubSession>
+  pair(input: ManagedHubPairInput, options?: RtcConnectOptions): Promise<ManagedHubPairResult>
 }
 
 export interface CreateManagedHubSessionInput {
   connectTicket: string
   machineId: string
-  terminalId: string
+  terminalId?: string | undefined
   appCertificate: unknown
   offer: {
     sessionId: string
@@ -55,6 +56,25 @@ export interface PollManagedHubSessionAnswerInput {
   machineId: string
 }
 
+export interface ManagedHubPairInput {
+  machineId: string
+  pairSessionId: string
+  pairSecret: string
+  appDeviceId: string
+  appName: string
+  appPublicKey: string
+  requestedCapabilities: string[]
+}
+
+export interface ManagedHubPairResult {
+  claimId: string
+  machineId: string
+  machineName?: string | undefined
+  machinePublicKey?: string | undefined
+  appCertificate: string
+  expiresAt: string
+}
+
 export function createManagedHubApi(options: ManagedHubApiOptions): ManagedHubApi {
   return new ManagedHubHttpApi(options)
 }
@@ -73,13 +93,13 @@ class ManagedHubHttpApi implements ManagedHubApi {
       }
       this.accessToken = token
     }
-    this.fetchImpl = options.fetch ?? fetch
+    this.fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
   }
 
   async createSession(input: CreateManagedHubSessionInput, options: RtcConnectOptions = {}): Promise<ManagedHubCreateSessionResult> {
     const connectTicket = requiredString(input.connectTicket, 'connect ticket')
     const machineId = requiredString(input.machineId, 'machine_id')
-    const terminalId = requiredString(input.terminalId, 'terminal_id')
+    const terminalId = optionalTrimmedString(input.terminalId)
     const sessionId = requiredString(input.offer.sessionId, 'offer session_id')
     const sdp = requiredString(input.offer.sdp, 'offer sdp')
     const response = await this.requestJSON('POST', '/api/v1/sessions', {
@@ -122,6 +142,34 @@ class ManagedHubHttpApi implements ManagedHubApi {
       },
     })
     return managedSessionFromResponse(response)
+  }
+
+  async pair(input: ManagedHubPairInput, options: RtcConnectOptions = {}): Promise<ManagedHubPairResult> {
+    const machineId = requiredString(input.machineId, 'machine_id')
+    const response = await this.requestJSON('POST', '/api/v1/pairing/claims', {
+      signal: options.signal,
+      body: {
+        machine_id: machineId,
+        pair_session_id: requiredString(input.pairSessionId, 'pair_session_id'),
+        pair_secret: requiredString(input.pairSecret, 'pair_secret'),
+        app_device_id: requiredString(input.appDeviceId, 'app_device_id'),
+        app_name: requiredString(input.appName, 'app_name'),
+        app_public_key: requiredString(input.appPublicKey, 'app_public_key'),
+        requested_capabilities: input.requestedCapabilities,
+      },
+    })
+    if (optionalBooleanField(response, 'pending') === true) {
+      throw new Error('Managed Hub pairing is pending; make sure the TermX agent is online, connected to this Hub, and then try Pair Device again')
+    }
+    const appCertificate = record(response.app_certificate, 'Managed Hub pairing app_certificate')
+    return {
+      claimId: stringField(response, 'claim_id'),
+      machineId: stringField(response, 'machine_id'),
+      ...(optionalStringField(response, 'machine_name') ? { machineName: optionalStringField(response, 'machine_name') } : {}),
+      ...(optionalStringField(response, 'machine_public_key') ? { machinePublicKey: optionalStringField(response, 'machine_public_key') } : {}),
+      appCertificate: JSON.stringify(appCertificate),
+      expiresAt: stringField(response, 'expires_at'),
+    }
   }
 
   private async requestJSON(
@@ -184,8 +232,8 @@ function managedSessionFromResponse(response: Record<string, unknown>): ManagedH
 
 function assertManagedPath(response: Record<string, unknown>): void {
   const path = stringField(response, 'path')
-  if (path !== 'managed') {
-    throw new Error(`managed Hub session path must be managed, got ${path}`)
+  if (path !== 'managed' && path !== 'cloud') {
+    throw new Error(`managed Hub session path must be managed or cloud, got ${path}`)
   }
 }
 
@@ -219,6 +267,14 @@ function requiredString(value: unknown, label: string): string {
     throw new Error(`Managed Hub ${label} is required`)
   }
   return trimmed
+}
+
+function optionalTrimmedString(value: unknown): string {
+  if (value === undefined || value === null) return ''
+  if (typeof value !== 'string') {
+    throw new Error('Managed Hub terminal_id must be a string')
+  }
+  return value.trim()
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {

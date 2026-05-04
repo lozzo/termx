@@ -8,8 +8,9 @@ const distDir = resolve(remoteUiDir, 'dist')
 const staticDir = resolve(remoteUiDir, '../termx-core/internal/remote/localweb/static')
 
 export function syncLocalWebAssets({ distDir, staticDir }) {
-  if (!existsSync(resolve(distDir, 'index.html'))) {
-    throw new Error('remote-ui dist/index.html is missing; run vite build first')
+  const localWebHtml = resolve(distDir, 'localweb.html')
+  if (!existsSync(localWebHtml)) {
+    throw new Error('remote-ui dist/localweb.html is missing; run vite build first')
   }
 
   const assetDir = resolve(distDir, 'assets')
@@ -23,6 +24,7 @@ export function syncLocalWebAssets({ distDir, staticDir }) {
   rmSync(staticDir, { force: true, recursive: true })
   mkdirSync(staticDir, { recursive: true })
   cpSync(distDir, staticDir, { recursive: true })
+  cpSync(localWebHtml, resolve(staticDir, 'index.html'))
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

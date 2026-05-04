@@ -80,7 +80,7 @@ func (s *rtcAnswererStub) AnswerLocalRTCOffer(_ context.Context, req RTCOfferReq
 func TestHandlerServesEmbeddedAssetsWithSPAFallback(t *testing.T) {
 	handler := NewHandler(Config{
 		Assets: NewStaticAssets(map[string]string{
-			"index.html":             "<!doctype html><title>TermX Remote</title><div id=\"root\"></div>",
+			"index.html":             "<!doctype html><title>TermX Local Remote</title><div id=\"root\"></div>",
 			"assets/app.js":          "console.log('termx')",
 			"assets/app.css":         "body{margin:0}",
 			"assets/not-index.html":  "<p>asset</p>",
@@ -93,8 +93,8 @@ func TestHandlerServesEmbeddedAssetsWithSPAFallback(t *testing.T) {
 		contentType string
 		want        string
 	}{
-		{path: "/", contentType: "text/html", want: "TermX Remote"},
-		{path: "/machines/local", contentType: "text/html", want: "TermX Remote"},
+		{path: "/", contentType: "text/html", want: "TermX Local Remote"},
+		{path: "/machines/local", contentType: "text/html", want: "TermX Local Remote"},
 		{path: "/assets/app.js", contentType: "text/javascript", want: "console.log"},
 		{path: "/assets/app.css", contentType: "text/css", want: "body"},
 		{path: "/assets/nested/file.txt", contentType: "text/plain", want: "asset text"},
@@ -126,7 +126,7 @@ func TestHandlerServesDefaultEmbeddedAssets(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%q", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "TermX Remote") {
+	if !strings.Contains(rec.Body.String(), "TermX Local Remote") {
 		t.Fatalf("expected default embedded page, got %q", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "id=\"root\"") {

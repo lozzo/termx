@@ -19,9 +19,9 @@ import (
 	"github.com/lozzow/termx/termx-core/clientapi"
 	"github.com/lozzow/termx/termx-core/protocol"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
-	qrcode "github.com/skip2/go-qrcode"
 	tuiv2app "github.com/lozzow/termx/tuiv2/app"
 	"github.com/lozzow/termx/tuiv2/shared" //nolint:typecheck
+	qrcode "github.com/skip2/go-qrcode"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -385,12 +385,10 @@ func pairCommand(socket *string, logFile *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "pair",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if strings.TrimSpace(localURL) == "" {
-				return fmt.Errorf("local pair URL is required")
-			}
 			if ttl <= 0 {
 				ttl = 5 * time.Minute
 			}
+			localURL = strings.TrimSpace(localURL)
 			result, err := pairStartClient(context.Background(), *socket, *logFile, protocol.PairStartParams{
 				LocalPairURL: localURL,
 				TTLSeconds:   int(ttl.Seconds()),
@@ -408,7 +406,7 @@ func pairCommand(socket *string, logFile *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
-	cmd.Flags().StringVar(&localURL, "local-url", "http://127.0.0.1:18888/api/local/pair", "local pair URL")
+	cmd.Flags().StringVar(&localURL, "local-url", "", "local pair URL; optional when pairing through hub")
 	cmd.Flags().DurationVar(&ttl, "ttl", 5*time.Minute, "pair session TTL")
 	return cmd
 }
@@ -595,9 +593,10 @@ func remotePairCommand(socket *string, logFile *string) *cobra.Command {
 					return err
 				}
 				if localStatus == nil || !localStatus.Enabled || strings.TrimSpace(localStatus.LocalPairURL) == "" {
-					return fmt.Errorf("local remote is not enabled; run `termx remote enable --local` first or pass --local-url")
+					localURL = ""
+				} else {
+					localURL = localStatus.LocalPairURL
 				}
-				localURL = localStatus.LocalPairURL
 			}
 			result, err := pairStartClient(context.Background(), *socket, *logFile, protocol.PairStartParams{
 				LocalPairURL: localURL,
@@ -653,9 +652,6 @@ func remoteQRCodeCommand(socket *string, logFile *string) *cobra.Command {
 				if localStatus != nil {
 					localURL = strings.TrimSpace(localStatus.LocalPairURL)
 				}
-			}
-			if localURL == "" {
-				return fmt.Errorf("local pair URL is required")
 			}
 			remoteStatus, err := remoteStatusClient(context.Background(), *socket, *logFile)
 			if err != nil {
@@ -903,9 +899,9 @@ func buildRemotePairPayload(result *protocol.PairStartResult, status *protocol.R
 		"type":           "termx_pair_v2",
 		"schema_version": 2,
 		"machine": map[string]any{
-			"id":                         result.MachineID,
-			"name":                       firstNonEmpty(result.MachineName, result.MachineID),
-			"public_key_fingerprint":     result.MachinePublicKeyFingerprint,
+			"id":                     result.MachineID,
+			"name":                   firstNonEmpty(result.MachineName, result.MachineID),
+			"public_key_fingerprint": result.MachinePublicKeyFingerprint,
 		},
 		"addresses": map[string]any{
 			"local":  []string{},

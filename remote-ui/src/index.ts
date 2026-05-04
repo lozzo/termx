@@ -39,6 +39,8 @@ export { RemoteAppShell } from './RemoteAppShell'
 export type { RemoteAppShellProps } from './RemoteAppShell'
 export { WebControlRemoteApp } from './WebControlRemoteApp'
 export type { WebControlRemoteAppProps } from './WebControlRemoteApp'
+export { mountRemoteApp } from './remoteAppMount'
+export type { RemoteAppEntryOptions } from './remoteAppMount'
 export type {
   AppMachineRecord,
   AppMachineSource,
@@ -128,6 +130,7 @@ export {
 export type { TerminalInventoryInput, TerminalInventorySnapshot } from './terminalInventory'
 export * from './transport'
 export { createManagedHubApi } from './managedHubApi'
+export { createManagedHubRtcConnector } from './managedHubRtcConnector'
 export type {
   CreateManagedHubSessionInput,
   ManagedHubApi,
@@ -138,13 +141,16 @@ export type {
   ManagedHubSession,
   PollManagedHubSessionAnswerInput,
 } from './managedHubApi'
+export type {
+  ManagedHubRtcConnectInput,
+  ManagedHubRtcConnectorOptions,
+} from './managedHubRtcConnector'
 export { createWebControlApi } from './webControlApi'
 export type {
-  CreateManagedConnectTicketInput,
-  ManagedConnectTicket,
-  PublicP2pCandidateInput,
   WebControlApi,
   WebControlApiOptions,
+  WebControlConnectTicket,
+  WebControlConnectTicketInput,
   WebControlFetch,
   WebControlAuthResult,
   WebControlLoginInput,

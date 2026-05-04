@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createBrowserRtcInventoryEvents, createBrowserRtcSession } from './browserRtcSession'
-import { TERMX_FRAME_TYPES, decodeTermxFrame, encodeTermxFrame } from './termxProtocol'
+import { TERMX_FRAME_TYPES, encodeTermxFrame } from './termxProtocol'
 
 describe('BrowserRtcSession', () => {
   it('creates raw terminal and api DataChannels during browser WebRTC negotiation', async () => {
@@ -151,6 +151,101 @@ describe('BrowserRtcSession', () => {
     })
   })
 
+  it('keeps one machine-scoped browser session alive for api, multiple terminals, and files', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const session = createBrowserRtcSession({
+      machineId: 'machine-local',
+      path: 'managed',
+      peerConnectionFactory: factory,
+      sessionIdGenerator: () => 'rtc-machine-1',
+      heartbeatIntervalMs: 60000,
+    })
+
+    await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+    await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
+    const terminalOne = await session.openTerminal('terminal-1')
+    const terminalTwo = await session.openTerminal('terminal-2')
+    const file = await session.openFileTransfer('transfer-1')
+    const api = await session.openApi()
+
+    expect(factory.labelsAtCreateOffer()).toEqual(['api'])
+    expect(factory.createdLabels()).toEqual(['api', 'terminal:terminal-1', 'terminal:terminal-2', 'file:transfer-1'])
+    expect(terminalOne.label).toBe('terminal:terminal-1')
+    expect(terminalTwo.label).toBe('terminal:terminal-2')
+    expect(file.label).toBe('file:transfer-1')
+    await expect(session.getConnectionInfo()).resolves.toEqual({
+      path: 'managed',
+      connectionId: 'rtc-machine-1',
+      machineId: 'machine-local',
+      relayInUse: false,
+    })
+
+    const apiChannel = factory.channel('api')
+    const request = api.request('list', {})
+    apiChannel.emitMessage(apiResponseChunk('req_1', {
+      id: 'req_1',
+      status: 200,
+      body: { terminals: [] },
+    }))
+    await expect(request).resolves.toEqual({ terminals: [] })
+  })
+
+  it('runs runtime ping when peer connection state reaches connected', async () => {
+    vi.useFakeTimers()
+    try {
+      const factory = createMockPeerConnectionFactory()
+      const session = createBrowserRtcSession({
+        machineId: 'machine-local',
+        path: 'managed',
+        peerConnectionFactory: factory,
+        sessionIdGenerator: () => 'rtc-machine-1',
+        heartbeatIntervalMs: 20,
+      })
+      await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+      await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
+      factory.lastConnection()?.setConnectionState('connected')
+      vi.advanceTimersByTime(20)
+      await flushMicrotasks()
+
+      const apiChannel = factory.channel('api')
+      const heartbeatRequest = JSON.parse(apiChannel.sentText().at(-1) ?? '{}')
+      expect(heartbeatRequest).toMatchObject({
+        id: 'req_1',
+        method: 'ping',
+        path: 'ping',
+        body: {},
+      })
+      apiChannel.emitMessage(apiResponseChunk('req_1', {
+        id: 'req_1',
+        status: 200,
+        body: { ok: true },
+      }))
+      await flushMicrotasks()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('notifies disconnect handlers when the api channel closes unexpectedly', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const session = createBrowserRtcSession({
+      machineId: 'machine-local',
+      path: 'managed',
+      peerConnectionFactory: factory,
+      sessionIdGenerator: () => 'rtc-machine-1',
+    })
+    const onDisconnect = vi.fn()
+    session.onDisconnect(onDisconnect)
+
+    await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+    await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
+    factory.channel('api').close()
+    await flushMicrotasks()
+
+    expect(onDisconnect).toHaveBeenCalledTimes(1)
+    expect(session.isAlive()).toBe(false)
+  })
+
   it('answers managed hub offers with TURN config while expressing relay as connection capability only', async () => {
     const factory = createMockPeerConnectionFactory({
       initialIceGatheringState: 'gathering',
@@ -253,6 +348,11 @@ describe('BrowserRtcSession', () => {
 
     const subscription = session.subscribeEvents((event) => events.push(event))
     const eventsChannel = factory.channel('events')
+    await flushMicrotasks()
+    expect(JSON.parse(eventsChannel.sentText()[0] ?? '{}')).toEqual({
+      type: 'subscribe',
+      types: [1, 2, 3, 4, 10],
+    })
     eventsChannel.emitMessage(encodeJSON({
       type: 'terminal_changed',
       payload: { terminal_id: 'terminal-1' },
@@ -288,6 +388,11 @@ describe('BrowserRtcSession', () => {
     await flushMicrotasks()
     expect(factory.createdLabels()).toEqual([])
     const eventsChannel = factory.lastConnection()?.emitIncomingDataChannel('events')
+    await flushMicrotasks()
+    expect(JSON.parse(eventsChannel?.sentText()[0] ?? '{}')).toEqual({
+      type: 'subscribe',
+      types: [1, 2, 3, 4, 10],
+    })
     eventsChannel?.emitMessage(encodeJSON({ type: 'inventory_changed' }))
 
     expect(events).toEqual([{ type: 'inventory_changed' }])
@@ -483,19 +588,15 @@ describe('BrowserRtcSession', () => {
     await flushMicrotasks()
     expect(factory.labelsAtCreateOffer()).toEqual(['events'])
     const eventsChannel = factory.channel('events')
-    eventsChannel.emitMessage(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
-    await Promise.resolve()
-    const subscribeRequest = JSON.parse(new TextDecoder().decode((await waitForBinarySentFrame(eventsChannel, 1)).payload))
-    expect(subscribeRequest.method).toBe('events')
-    expect(subscribeRequest.params.types).toEqual([1, 2, 3, 4, 10])
-    eventsChannel.emitMessage(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
-      id: subscribeRequest.id,
-      result: '{}',
-    })))
-    eventsChannel.emitMessage(encodeTermxFrame(0, TERMX_FRAME_TYPES.event, encodeJSON({
+    const subscribeRequest = JSON.parse(eventsChannel.sentText()[0] ?? '{}')
+    expect(subscribeRequest).toEqual({
+      type: 'subscribe',
+      types: [1, 2, 3, 4, 10],
+    })
+    eventsChannel.emitMessage(encodeJSON({
       type: 1,
       terminal_id: 'terminal-2',
-    })))
+    }))
 
     expect(events).toContainEqual({ type: 'inventory_changed' })
     subscription.close()
@@ -525,20 +626,6 @@ function apiResponseChunk(id: string, payload: unknown, options: { last?: boolea
 
 async function flushMicrotasks(): Promise<void> {
   for (let i = 0; i < 10; i++) await Promise.resolve()
-}
-
-async function waitForBinarySentFrame(channel: MockRTCDataChannel, index: number) {
-  const started = Date.now()
-  for (;;) {
-    const data = channel.sent[index]
-    if (data !== undefined && typeof data !== 'string') {
-      return decodeTermxFrame(data instanceof Uint8Array ? data : new Uint8Array(data as ArrayBuffer))
-    }
-    if (Date.now() - started > 1000) {
-      throw new Error(`missing binary sent frame ${index}`)
-    }
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  }
 }
 
 function createMockPeerConnectionFactory(options: {
@@ -582,6 +669,7 @@ class MockRTCPeerConnection extends EventTarget {
   localDescription: RTCSessionDescriptionInit | null = null
   remoteDescription: RTCSessionDescriptionInit | null = null
   iceGatheringState: RTCIceGatheringState
+  connectionState: RTCPeerConnectionState = 'new'
   closed = false
   private readonly channels: Map<string, MockRTCDataChannel>
   private readonly createOfferLabels: string[][]
@@ -632,6 +720,8 @@ class MockRTCPeerConnection extends EventTarget {
 
   async close(): Promise<void> {
     this.closed = true
+    this.connectionState = 'closed'
+    this.dispatchEvent(new Event('connectionstatechange'))
   }
 
   completeIceGathering(): void {
@@ -652,6 +742,11 @@ class MockRTCPeerConnection extends EventTarget {
     event.channel = channel
     this.dispatchEvent(event)
     return channel
+  }
+
+  setConnectionState(state: RTCPeerConnectionState): void {
+    this.connectionState = state
+    this.dispatchEvent(new Event('connectionstatechange'))
   }
 }
 

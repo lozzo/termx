@@ -11,19 +11,20 @@ import (
 )
 
 var (
-	ErrPollTimeout         = errors.New("poll timeout")
-	ErrUnauthorizedAgent   = errors.New("unauthorized agent")
-	ErrAgentNotFound       = errors.New("agent not found")
-	ErrOfferNotFound       = errors.New("offer not found")
-	ErrOfferNotAssigned    = errors.New("offer not assigned")
-	ErrRuntimePayload      = errors.New("runtime payload is not allowed in signaling")
-	ErrPayloadTooLarge     = errors.New("signaling payload too large")
-	ErrInvalidSDP          = errors.New("invalid sdp")
-	ErrAgentRebound        = errors.New("agent already belongs to another machine")
-	ErrUnauthorizedTicket  = errors.New("unauthorized ticket")
-	ErrVerifierRequired    = errors.New("authority verifier is required")
-	ErrAnswerAlreadyExists = errors.New("answer already exists")
-	ErrAgentForcedOffline  = errors.New("agent forced offline")
+	ErrPollTimeout          = errors.New("poll timeout")
+	ErrUnauthorizedAgent    = errors.New("unauthorized agent")
+	ErrAgentNotFound        = errors.New("agent not found")
+	ErrOfferNotFound        = errors.New("offer not found")
+	ErrPairingClaimNotFound = errors.New("pairing claim not found")
+	ErrOfferNotAssigned     = errors.New("offer not assigned")
+	ErrRuntimePayload       = errors.New("runtime payload is not allowed in signaling")
+	ErrPayloadTooLarge      = errors.New("signaling payload too large")
+	ErrInvalidSDP           = errors.New("invalid sdp")
+	ErrAgentRebound         = errors.New("agent already belongs to another machine")
+	ErrUnauthorizedTicket   = errors.New("unauthorized ticket")
+	ErrVerifierRequired     = errors.New("authority verifier is required")
+	ErrAnswerAlreadyExists  = errors.New("answer already exists")
+	ErrAgentForcedOffline   = errors.New("agent forced offline")
 )
 
 type Config struct {
@@ -35,18 +36,22 @@ type Config struct {
 }
 
 type Registry struct {
-	mu           sync.Mutex
-	clock        Clock
-	agentTTL     time.Duration
-	signalingTTL time.Duration
-	maxSDPBytes  int
-	verifier     AuthorityVerifier
-	agents       map[string]Agent
-	offers       map[string]Offer
-	answers      map[string]Answer
-	queues       map[string][]Offer
-	waiters      map[string][]chan struct{}
-	forced       map[string]forceOfflineState
+	mu             sync.Mutex
+	clock          Clock
+	agentTTL       time.Duration
+	signalingTTL   time.Duration
+	maxSDPBytes    int
+	verifier       AuthorityVerifier
+	agents         map[string]Agent
+	offers         map[string]Offer
+	answers        map[string]Answer
+	queues         map[string][]Offer
+	waiters        map[string][]chan struct{}
+	pairingClaims  map[string]PairingClaim
+	pairingResults map[string]PairingResult
+	pairingQueues  map[string][]PairingClaim
+	pairingWaiters map[string][]chan struct{}
+	forced         map[string]forceOfflineState
 }
 
 type forceOfflineState struct {
@@ -74,17 +79,21 @@ func New(cfg Config) *Registry {
 		maxSDPBytes = 256 * 1024
 	}
 	return &Registry{
-		clock:        clock,
-		agentTTL:     ttl,
-		signalingTTL: signalingTTL,
-		maxSDPBytes:  maxSDPBytes,
-		verifier:     cfg.Verifier,
-		agents:       make(map[string]Agent),
-		offers:       make(map[string]Offer),
-		answers:      make(map[string]Answer),
-		queues:       make(map[string][]Offer),
-		waiters:      make(map[string][]chan struct{}),
-		forced:       make(map[string]forceOfflineState),
+		clock:          clock,
+		agentTTL:       ttl,
+		signalingTTL:   signalingTTL,
+		maxSDPBytes:    maxSDPBytes,
+		verifier:       cfg.Verifier,
+		agents:         make(map[string]Agent),
+		offers:         make(map[string]Offer),
+		answers:        make(map[string]Answer),
+		queues:         make(map[string][]Offer),
+		waiters:        make(map[string][]chan struct{}),
+		pairingClaims:  make(map[string]PairingClaim),
+		pairingResults: make(map[string]PairingResult),
+		pairingQueues:  make(map[string][]PairingClaim),
+		pairingWaiters: make(map[string][]chan struct{}),
+		forced:         make(map[string]forceOfflineState),
 	}
 }
 
@@ -234,6 +243,16 @@ func (r *Registry) CleanupExpired(ctx context.Context) int {
 			removed++
 		}
 	}
+	for id, claim := range r.pairingClaims {
+		if r.signalingExpired(claim.CreatedAt) {
+			delete(r.pairingClaims, id)
+			if _, ok := r.pairingResults[id]; ok {
+				delete(r.pairingResults, id)
+			}
+			removed++
+		}
+	}
+	r.prunePairingQueuesLocked()
 	return removed
 }
 
@@ -302,11 +321,10 @@ func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error
 func (r *Registry) PreflightOffer(ctx context.Context, in OfferInput) error {
 	_ = ctx
 	machineID := strings.TrimSpace(in.MachineID)
-	terminalID := strings.TrimSpace(in.TerminalID)
 	ticketID := strings.TrimSpace(in.TicketID)
 	sdp := strings.TrimSpace(in.SDP)
-	if machineID == "" || terminalID == "" || ticketID == "" || sdp == "" {
-		return errors.New("machine id, terminal id, ticket id, and sdp are required")
+	if machineID == "" || ticketID == "" || sdp == "" {
+		return errors.New("machine id, ticket id, and sdp are required")
 	}
 	if err := r.validateSignalingPayload(sdp); err != nil {
 		return err
@@ -459,6 +477,157 @@ func (r *Registry) SubmitAnswer(ctx context.Context, in AnswerInput) (Answer, er
 	return answer, nil
 }
 
+func (r *Registry) SubmitPairingClaim(ctx context.Context, in PairingClaimInput) (PairingClaim, error) {
+	_ = ctx
+	machineID := strings.TrimSpace(in.MachineID)
+	claim := PairingClaim{
+		ID:                    randomID("pair_claim"),
+		MachineID:             machineID,
+		PairSessionID:         strings.TrimSpace(in.PairSessionID),
+		PairSecret:            strings.TrimSpace(in.PairSecret),
+		AppDeviceID:           strings.TrimSpace(in.AppDeviceID),
+		AppName:               strings.TrimSpace(in.AppName),
+		AppPublicKey:          strings.TrimSpace(in.AppPublicKey),
+		RequestedCapabilities: cloneStrings(in.RequestedCapabilities),
+		CreatedAt:             r.clock.Now().UTC(),
+	}
+	if claim.MachineID == "" || claim.PairSessionID == "" || claim.PairSecret == "" ||
+		claim.AppDeviceID == "" || claim.AppName == "" || claim.AppPublicKey == "" {
+		return PairingClaim{}, errors.New("machine id, pair session, pair secret, app device, app name, and app public key are required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.machineOnlineLocked(machineID) {
+		if r.machineHasActiveForceOfflineLocked(machineID, r.clock.Now().UTC()) {
+			return PairingClaim{}, ErrAgentForcedOffline
+		}
+		return PairingClaim{}, ErrAgentNotFound
+	}
+	r.pairingClaims[claim.ID] = claim
+	r.pairingQueues[machineID] = append(r.pairingQueues[machineID], claim)
+	r.notifyPairingLocked(machineID)
+	return clonePairingClaim(claim), nil
+}
+
+func (r *Registry) PollPairingClaim(ctx context.Context, in PairingPollInput) (PairingClaim, error) {
+	agentID := strings.TrimSpace(in.AgentID)
+	machineID := strings.TrimSpace(in.MachineID)
+	if agentID == "" || machineID == "" {
+		return PairingClaim{}, ErrUnauthorizedAgent
+	}
+	timeout := in.Timeout
+	if timeout <= 0 {
+		timeout = time.Second
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		r.mu.Lock()
+		agent, ok := r.agents[agentID]
+		if r.forceOfflineActiveLocked(machineID, agentID, r.clock.Now().UTC()) {
+			delete(r.agents, agentID)
+			r.mu.Unlock()
+			return PairingClaim{}, ErrAgentForcedOffline
+		}
+		if !ok || r.expired(agent) {
+			r.mu.Unlock()
+			return PairingClaim{}, ErrAgentNotFound
+		}
+		if agent.MachineID != machineID {
+			r.mu.Unlock()
+			return PairingClaim{}, ErrUnauthorizedAgent
+		}
+		if queue := r.pairingQueues[machineID]; len(queue) > 0 {
+			for len(queue) > 0 {
+				claim := queue[0]
+				queue = queue[1:]
+				stored, ok := r.pairingClaims[claim.ID]
+				if !ok || r.signalingExpired(stored.CreatedAt) {
+					delete(r.pairingClaims, claim.ID)
+					delete(r.pairingResults, claim.ID)
+					continue
+				}
+				stored.AssignedAgentID = agent.ID
+				stored.DeliveredAt = r.clock.Now().UTC()
+				r.pairingClaims[stored.ID] = stored
+				r.pairingQueues[machineID] = queue
+				r.mu.Unlock()
+				return clonePairingClaim(stored), nil
+			}
+			delete(r.pairingQueues, machineID)
+		}
+		waiter := make(chan struct{}, 1)
+		r.pairingWaiters[machineID] = append(r.pairingWaiters[machineID], waiter)
+		r.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			r.removePairingWaiter(machineID, waiter)
+			return PairingClaim{}, ctx.Err()
+		case <-timer.C:
+			r.removePairingWaiter(machineID, waiter)
+			return PairingClaim{}, ErrPollTimeout
+		case <-waiter:
+		}
+	}
+}
+
+func (r *Registry) SubmitPairingResult(ctx context.Context, in PairingResultInput) (PairingResult, error) {
+	_ = ctx
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	agent, ok := r.agents[strings.TrimSpace(in.AgentID)]
+	machineID := strings.TrimSpace(in.MachineID)
+	agentID := strings.TrimSpace(in.AgentID)
+	if r.forceOfflineActiveLocked(machineID, agentID, r.clock.Now().UTC()) {
+		delete(r.agents, agentID)
+		return PairingResult{}, ErrAgentForcedOffline
+	}
+	if !ok || r.expired(agent) {
+		return PairingResult{}, ErrAgentNotFound
+	}
+	if agent.MachineID != machineID {
+		return PairingResult{}, ErrUnauthorizedAgent
+	}
+	claim, ok := r.pairingClaims[strings.TrimSpace(in.ClaimID)]
+	if !ok || r.signalingExpired(claim.CreatedAt) {
+		return PairingResult{}, ErrPairingClaimNotFound
+	}
+	if claim.MachineID != agent.MachineID || claim.AssignedAgentID != agent.ID {
+		return PairingResult{}, ErrUnauthorizedAgent
+	}
+	result := PairingResult{
+		ClaimID:          claim.ID,
+		MachineID:        agent.MachineID,
+		MachineName:      strings.TrimSpace(in.MachineName),
+		MachinePublicKey: strings.TrimSpace(in.MachinePublicKey),
+		AppCertificate:   cloneRawMessage(in.AppCertificate),
+		ExpiresAt:        strings.TrimSpace(in.ExpiresAt),
+		Error:            strings.TrimSpace(in.Error),
+		CreatedAt:        r.clock.Now().UTC(),
+	}
+	if result.Error == "" && len(result.AppCertificate) == 0 {
+		return PairingResult{}, errors.New("pairing result app certificate or error is required")
+	}
+	r.pairingResults[result.ClaimID] = result
+	return clonePairingResult(result), nil
+}
+
+func (r *Registry) GetPairingResult(ctx context.Context, claimID string) (PairingResult, error) {
+	_ = ctx
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	claimID = strings.TrimSpace(claimID)
+	result, ok := r.pairingResults[claimID]
+	if !ok {
+		if claim, ok := r.pairingClaims[claimID]; ok && r.signalingExpired(claim.CreatedAt) {
+			delete(r.pairingClaims, claimID)
+			delete(r.pairingResults, claimID)
+		}
+		return PairingResult{}, ErrPairingClaimNotFound
+	}
+	return clonePairingResult(result), nil
+}
+
 func (r *Registry) GetAnswer(ctx context.Context, offerID string) (Answer, error) {
 	_ = ctx
 	r.mu.Lock()
@@ -515,10 +684,17 @@ func (r *Registry) forceOfflineActiveLocked(machineID string, agentID string, no
 
 func (r *Registry) dropQueuedOffersLocked(machineID string) {
 	delete(r.queues, machineID)
+	delete(r.pairingQueues, machineID)
 	for id, offer := range r.offers {
 		if offer.MachineID == machineID {
 			delete(r.offers, id)
 			delete(r.answers, id)
+		}
+	}
+	for id, claim := range r.pairingClaims {
+		if claim.MachineID == machineID {
+			delete(r.pairingClaims, id)
+			delete(r.pairingResults, id)
 		}
 	}
 }
@@ -563,9 +739,38 @@ func (r *Registry) pruneQueuesLocked() {
 	}
 }
 
+func (r *Registry) prunePairingQueuesLocked() {
+	for machineID, queue := range r.pairingQueues {
+		kept := queue[:0]
+		for _, queued := range queue {
+			claim, ok := r.pairingClaims[queued.ID]
+			if !ok || claim.AssignedAgentID != "" || r.signalingExpired(claim.CreatedAt) {
+				continue
+			}
+			kept = append(kept, claim)
+		}
+		if len(kept) == 0 {
+			delete(r.pairingQueues, machineID)
+			continue
+		}
+		r.pairingQueues[machineID] = kept
+	}
+}
+
 func (r *Registry) notifyLocked(machineID string) {
 	waiters := r.waiters[machineID]
 	delete(r.waiters, machineID)
+	for _, waiter := range waiters {
+		select {
+		case waiter <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (r *Registry) notifyPairingLocked(machineID string) {
+	waiters := r.pairingWaiters[machineID]
+	delete(r.pairingWaiters, machineID)
 	for _, waiter := range waiters {
 		select {
 		case waiter <- struct{}{}:
@@ -586,6 +791,18 @@ func (r *Registry) removeWaiter(machineID string, target chan struct{}) {
 	}
 }
 
+func (r *Registry) removePairingWaiter(machineID string, target chan struct{}) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	waiters := r.pairingWaiters[machineID]
+	for i, waiter := range waiters {
+		if waiter == target {
+			r.pairingWaiters[machineID] = append(waiters[:i], waiters[i+1:]...)
+			return
+		}
+	}
+}
+
 func cloneTerminals(in []Terminal) []Terminal {
 	out := make([]Terminal, len(in))
 	copy(out, in)
@@ -601,6 +818,16 @@ func cloneOffer(offer Offer) Offer {
 	offer.ICECandidates = cloneStrings(offer.ICECandidates)
 	offer.AppCertificate = cloneRawMessage(offer.AppCertificate)
 	return offer
+}
+
+func clonePairingClaim(claim PairingClaim) PairingClaim {
+	claim.RequestedCapabilities = cloneStrings(claim.RequestedCapabilities)
+	return claim
+}
+
+func clonePairingResult(result PairingResult) PairingResult {
+	result.AppCertificate = cloneRawMessage(result.AppCertificate)
+	return result
 }
 
 func cloneStrings(in []string) []string {

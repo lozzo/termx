@@ -90,9 +90,6 @@ func (s *Server) RemotePairStart(opts PairStartOptions) (protocol.PairStartResul
 			machineName = ident.DisplayName
 		}
 	}
-	if strings.TrimSpace(opts.LocalPairURL) == "" {
-		return protocol.PairStartResult{}, fmt.Errorf("local_pair_url is required")
-	}
 	pairCfg := pairing.Config{
 		MachineID:    machineID,
 		MachineName:  machineName,

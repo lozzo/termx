@@ -230,7 +230,7 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 	m.mu.Unlock()
 
 	return ClaimResponse{
-		MachineID:        strings.TrimSpace(m.cfg.MachineID),
+		MachineID:        strings.TrimSpace(cfg.MachineID),
 		MachineName:      strings.TrimSpace(cfg.MachineName),
 		MachinePublicKey: base64.StdEncoding.EncodeToString(cfg.MachineKey.PublicKey),
 		AppCertificate:   envelope,
@@ -253,9 +253,6 @@ func validateConfig(cfg Config) error {
 	}
 	if len(cfg.MachineKey.PublicKey) == 0 {
 		return errors.New("machine key is required")
-	}
-	if strings.TrimSpace(cfg.LocalPairURL) == "" {
-		return errors.New("local_pair_url is required")
 	}
 	return nil
 }

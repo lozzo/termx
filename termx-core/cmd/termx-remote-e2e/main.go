@@ -28,24 +28,6 @@ type authResponse struct {
 	AccessToken string `json:"access_token"`
 }
 
-type deviceRecord struct {
-	ID string `json:"id"`
-}
-
-type devicesResponse struct {
-	Devices []deviceRecord `json:"devices"`
-}
-
-type terminalRecord struct {
-	ID        string `json:"id"`
-	MachineID string `json:"machine_id"`
-	State     string `json:"state"`
-}
-
-type terminalsResponse struct {
-	Terminals []terminalRecord `json:"terminals"`
-}
-
 type connectionTicketResponse struct {
 	ID         string    `json:"id"`
 	MachineID  string    `json:"machine_id"`
@@ -100,6 +82,7 @@ func main() {
 	var pairSecret string
 	var machineID string
 	var terminalID string
+	var connectTicket string
 	var stunURL string
 
 	flag.StringVar(&controlURL, "control-url", "http://127.0.0.1:12306", "control plane base URL")
@@ -109,8 +92,9 @@ func main() {
 	flag.StringVar(&pairURL, "pair-url", "", "daemon local pair URL, usually forwarded to http://127.0.0.1:18888/api/local/pair")
 	flag.StringVar(&pairSessionID, "pair-session-id", "", "pair session id from `termx remote pair --json`")
 	flag.StringVar(&pairSecret, "pair-secret", "", "pair secret from `termx remote pair --json`")
-	flag.StringVar(&machineID, "machine-id", "", "optional target machine id; defaults to first registered terminal machine")
-	flag.StringVar(&terminalID, "terminal-id", "", "optional target terminal id; defaults to first registered terminal")
+	flag.StringVar(&machineID, "machine-id", "", "optional target machine id; defaults to the pairing certificate machine")
+	flag.StringVar(&terminalID, "terminal-id", "", "target terminal id")
+	flag.StringVar(&connectTicket, "connect-ticket", "", "Hub-issued short-lived connect ticket")
 	flag.StringVar(&stunURL, "stun-url", "", "optional STUN URL for the local offerer, for example stun:stun.l.google.com:19302")
 	flag.Parse()
 
@@ -124,6 +108,7 @@ func main() {
 		PairSecret:    pairSecret,
 		MachineID:     machineID,
 		TerminalID:    terminalID,
+		ConnectTicket: connectTicket,
 		STUNURL:       stunURL,
 	}); err != nil {
 		log.Fatal(err)
@@ -141,6 +126,7 @@ type smokeConfig struct {
 	PairSecret    string
 	MachineID     string
 	TerminalID    string
+	ConnectTicket string
 	STUNURL       string
 }
 
@@ -159,13 +145,21 @@ func run(cfg smokeConfig) error {
 		return fmt.Errorf("control returned empty access token")
 	}
 
-	machineID, terminalID, err := waitForControlInventory(httpClient, cfg.ControlURL, auth.AccessToken, cfg.MachineID, cfg.TerminalID)
-	if err != nil {
-		return err
-	}
 	appCert, appPrivate, err := claimPairCertificate(httpClient, cfg.PairURL, cfg.PairSessionID, cfg.PairSecret)
 	if err != nil {
 		return err
+	}
+	machineID := strings.TrimSpace(cfg.MachineID)
+	if machineID == "" {
+		machineID = strings.TrimSpace(appCert.Payload.MachineID)
+	}
+	terminalID := strings.TrimSpace(cfg.TerminalID)
+	if terminalID == "" {
+		return fmt.Errorf("terminal-id is required")
+	}
+	connectTicket := strings.TrimSpace(cfg.ConnectTicket)
+	if connectTicket == "" {
+		return fmt.Errorf("connect-ticket is required")
 	}
 	if appCert.Payload.MachineID != machineID {
 		return fmt.Errorf("pair certificate machine mismatch: %s != %s", appCert.Payload.MachineID, machineID)
@@ -175,17 +169,14 @@ func run(cfg smokeConfig) error {
 		return err
 	}
 
-	ticket, err := createConnectionTicket(httpClient, cfg.ControlURL, auth.AccessToken, machineID, terminalID)
-	if err != nil {
-		return err
-	}
-	if ticket.Path != "cloud" {
-		return fmt.Errorf("unexpected ticket policy path=%q allow_relay=%v", ticket.Path, ticket.AllowRelay)
-	}
-
 	return smokeTerminalAttach(openChannelConfig{
-		HubURL:         cfg.HubURL,
-		Ticket:         ticket,
+		HubURL: cfg.HubURL,
+		Ticket: connectionTicketResponse{
+			ID:         connectTicket,
+			MachineID:  machineID,
+			TerminalID: terminalID,
+			Path:       "cloud",
+		},
 		AppCertificate: certJSON,
 		AppPrivateKey:  appPrivate,
 		STUNURL:        cfg.STUNURL,
@@ -212,47 +203,6 @@ func registerOrLogin(client *http.Client, controlURL, email, password string) (a
 	return auth, nil
 }
 
-func waitForControlInventory(client *http.Client, controlURL, accessToken, wantedMachineID, wantedTerminalID string) (string, string, error) {
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		var devices devicesResponse
-		var terminals terminalsResponse
-		devicesErr := getJSONAuth(client, controlURL+"/api/devices", &devices, accessToken)
-		terminalsErr := getJSONAuth(client, controlURL+"/api/terminals", &terminals, accessToken)
-		if devicesErr == nil && terminalsErr == nil {
-			if machineID, terminalID, ok := selectTarget(devices, terminals, wantedMachineID, wantedTerminalID); ok {
-				return machineID, terminalID, nil
-			}
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	return "", "", fmt.Errorf("timed out waiting for control inventory machine=%q terminal=%q", wantedMachineID, wantedTerminalID)
-}
-
-func selectTarget(devices devicesResponse, terminals terminalsResponse, wantedMachineID, wantedTerminalID string) (string, string, bool) {
-	deviceIDs := make(map[string]struct{}, len(devices.Devices))
-	for _, device := range devices.Devices {
-		if strings.TrimSpace(device.ID) != "" {
-			deviceIDs[device.ID] = struct{}{}
-		}
-	}
-	for _, terminal := range terminals.Terminals {
-		if wantedTerminalID != "" && terminal.ID != wantedTerminalID {
-			continue
-		}
-		if wantedMachineID != "" && terminal.MachineID != wantedMachineID {
-			continue
-		}
-		if _, ok := deviceIDs[terminal.MachineID]; !ok {
-			continue
-		}
-		if terminal.ID != "" && terminal.MachineID != "" {
-			return terminal.MachineID, terminal.ID, true
-		}
-	}
-	return "", "", false
-}
-
 func claimPairCertificate(client *http.Client, pairURL, pairSessionID, pairSecret string) (remotecert.AppCertificateEnvelope, ed25519.PrivateKey, error) {
 	if strings.TrimSpace(pairURL) == "" || strings.TrimSpace(pairSessionID) == "" || strings.TrimSpace(pairSecret) == "" {
 		return remotecert.AppCertificateEnvelope{}, nil, fmt.Errorf("pair-url, pair-session-id, and pair-secret are required")
@@ -277,22 +227,6 @@ func claimPairCertificate(client *http.Client, pairURL, pairSessionID, pairSecre
 		return remotecert.AppCertificateEnvelope{}, nil, fmt.Errorf("pair response missing app certificate")
 	}
 	return pair.AppCertificate, appPrivate, nil
-}
-
-func createConnectionTicket(client *http.Client, controlURL, accessToken, machineID, terminalID string) (connectionTicketResponse, error) {
-	var ticket connectionTicketResponse
-	_, body, err := postJSONStatus(client, controlURL+"/api/v1/connections/tickets", map[string]any{
-		"machine_id":  machineID,
-		"terminal_id": terminalID,
-		"ttl_seconds": 120,
-	}, &ticket, accessToken)
-	if err != nil {
-		return connectionTicketResponse{}, fmt.Errorf("create connection ticket failed: body=%s err=%w", body, err)
-	}
-	if ticket.ID == "" {
-		return connectionTicketResponse{}, fmt.Errorf("control returned empty connection ticket id")
-	}
-	return ticket, nil
 }
 
 func buildCloudSessionRequest(input cloudSessionRequestInput) (cloudSessionRequest, error) {
@@ -572,29 +506,6 @@ func postJSONStatus(client *http.Client, url string, body any, out any, bearer s
 		}
 	}
 	return resp.StatusCode, bodyText, nil
-}
-
-func getJSONAuth(client *http.Client, url string, out any, bearer string) error {
-	if client == nil {
-		client = http.DefaultClient
-	}
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(bearer) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearer))
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		raw, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("http %d: %s", resp.StatusCode, string(raw))
-	}
-	return json.NewDecoder(resp.Body).Decode(out)
 }
 
 func randomToken(prefix string) string {

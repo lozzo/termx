@@ -35,6 +35,7 @@ type Config struct {
 	AgentSessionTTL  time.Duration
 	MaxAgentSessions int
 	KickTTL          time.Duration
+	AllowedOrigins   []string
 }
 
 type Clock interface {
@@ -383,6 +384,90 @@ func NewHandler(cfg Config) http.Handler {
 		agents.rememberAnswer(req.AgentSessionID, req.Answer.SessionID, "")
 		w.WriteHeader(http.StatusNoContent)
 	})
+	mux.HandleFunc("POST /api/v1/agents/pairing/poll", func(w http.ResponseWriter, r *http.Request) {
+		var req hubv1.PairingPollRequest
+		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
+			writeDecodeError(w, err)
+			return
+		}
+		if cfg.Registry == nil {
+			writeError(w, http.StatusServiceUnavailable, "registry_unavailable", "agent registry is not configured")
+			return
+		}
+		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
+			return
+		}
+		if checkAgentPolicy(w, r, cfg, session) {
+			return
+		}
+		timeout := time.Duration(req.TimeoutSeconds) * time.Second
+		if timeout <= 0 {
+			timeout = 15 * time.Second
+		}
+		if timeout > 20*time.Second {
+			timeout = 20 * time.Second
+		}
+		claim, err := cfg.Registry.PollPairingClaim(r.Context(), registry.PairingPollInput{
+			AgentID:   session.AgentID,
+			MachineID: session.DeviceID,
+			Timeout:   timeout,
+		})
+		if err != nil {
+			if errors.Is(err, registry.ErrPollTimeout) {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			writeError(w, http.StatusForbidden, "poll_pairing_claim_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, hubv1.PairingPollResponse{
+			Claim: &hubv1.PairingClaim{
+				ClaimID:               claim.ID,
+				MachineID:             claim.MachineID,
+				PairSessionID:         claim.PairSessionID,
+				PairSecret:            claim.PairSecret,
+				AppDeviceID:           claim.AppDeviceID,
+				AppName:               claim.AppName,
+				AppPublicKey:          claim.AppPublicKey,
+				RequestedCapabilities: append([]string(nil), claim.RequestedCapabilities...),
+			},
+		})
+	})
+	mux.HandleFunc("POST /api/v1/agents/pairing/result", func(w http.ResponseWriter, r *http.Request) {
+		var req hubv1.SubmitPairingResultRequest
+		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
+			writeDecodeError(w, err)
+			return
+		}
+		if cfg.Registry == nil {
+			writeError(w, http.StatusServiceUnavailable, "registry_unavailable", "agent registry is not configured")
+			return
+		}
+		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
+			return
+		}
+		if checkAgentPolicy(w, r, cfg, session) {
+			return
+		}
+		if _, err := cfg.Registry.SubmitPairingResult(r.Context(), registry.PairingResultInput{
+			AgentID:          session.AgentID,
+			MachineID:        session.DeviceID,
+			ClaimID:          req.Result.ClaimID,
+			MachineName:      req.Result.MachineName,
+			MachinePublicKey: req.Result.MachinePublicKey,
+			AppCertificate:   req.Result.AppCertificate,
+			ExpiresAt:        req.Result.ExpiresAt,
+			Error:            req.Result.Error,
+		}); err != nil {
+			writeError(w, http.StatusForbidden, "submit_pairing_result_failed", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /api/v1/sessions", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			ConnectTicket  string          `json:"connect_ticket"`
@@ -499,8 +584,65 @@ func NewHandler(cfg Config) http.Handler {
 		}
 		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), answer.MachineID, "", allowRelay, req.ConnectTicket, answer)
 	})
+	mux.HandleFunc("POST /api/v1/pairing/claims", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			MachineID             string   `json:"machine_id"`
+			PairSessionID         string   `json:"pair_session_id"`
+			PairSecret            string   `json:"pair_secret"`
+			AppDeviceID           string   `json:"app_device_id"`
+			AppName               string   `json:"app_name"`
+			AppPublicKey          string   `json:"app_public_key"`
+			RequestedCapabilities []string `json:"requested_capabilities"`
+		}
+		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
+			writeDecodeError(w, err)
+			return
+		}
+		if cfg.Registry == nil {
+			writeError(w, http.StatusServiceUnavailable, "registry_unavailable", "agent registry is not configured")
+			return
+		}
+		claim, err := cfg.Registry.SubmitPairingClaim(r.Context(), registry.PairingClaimInput{
+			MachineID:             req.MachineID,
+			PairSessionID:         req.PairSessionID,
+			PairSecret:            req.PairSecret,
+			AppDeviceID:           req.AppDeviceID,
+			AppName:               req.AppName,
+			AppPublicKey:          req.AppPublicKey,
+			RequestedCapabilities: req.RequestedCapabilities,
+		})
+		if err != nil {
+			writeError(w, http.StatusForbidden, "submit_pairing_claim_failed", err.Error())
+			return
+		}
+		result, err := waitForPairingResult(r.Context(), cfg, claim.ID)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				writeJSON(w, http.StatusAccepted, map[string]any{
+					"claim_id":   claim.ID,
+					"machine_id": claim.MachineID,
+					"pending":    true,
+				})
+				return
+			}
+			writeError(w, statusForAnswerError(err), "get_pairing_result_failed", err.Error())
+			return
+		}
+		if strings.TrimSpace(result.Error) != "" {
+			writeError(w, http.StatusForbidden, "pairing_rejected", result.Error)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"claim_id":           result.ClaimID,
+			"machine_id":         result.MachineID,
+			"machine_name":       result.MachineName,
+			"machine_public_key": result.MachinePublicKey,
+			"app_certificate":    json.RawMessage(result.AppCertificate),
+			"expires_at":         result.ExpiresAt,
+		})
+	})
 	return &Handler{
-		router:          mux,
+		router:          corsMiddleware(mux, cfg.AllowedOrigins),
 		registry:        cfg.Registry,
 		cloud:           cfg.Cloud,
 		agents:          agents,
@@ -776,6 +918,35 @@ func waitForAnswer(ctx context.Context, cfg Config, offerID string, ticketID str
 	}
 }
 
+func waitForPairingResult(ctx context.Context, cfg Config, claimID string) (registry.PairingResult, error) {
+	timeout := cfg.AnswerTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	interval := cfg.PollInterval
+	if interval <= 0 {
+		interval = 25 * time.Millisecond
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		result, err := cfg.Registry.GetPairingResult(ctx, claimID)
+		if err == nil {
+			return result, nil
+		}
+		if !errors.Is(err, registry.ErrPairingClaimNotFound) {
+			return registry.PairingResult{}, err
+		}
+		select {
+		case <-ctx.Done():
+			return registry.PairingResult{}, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
 func statusForAnswerError(err error) int {
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return http.StatusGatewayTimeout
@@ -911,6 +1082,44 @@ func writeError(w http.ResponseWriter, status int, code string, message string) 
 			"code":    strings.TrimSpace(code),
 			"message": strings.TrimSpace(message),
 		},
+	})
+}
+
+func corsMiddleware(next http.Handler, allowedOrigins []string) http.Handler {
+	allowed := make(map[string]struct{}, len(allowedOrigins))
+	for _, origin := range allowedOrigins {
+		origin = strings.TrimSpace(origin)
+		if origin != "" {
+			allowed[origin] = struct{}{}
+		}
+	}
+	allowOrigin := func(origin string) string {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			return "*"
+		}
+		if len(allowed) == 0 {
+			return origin
+		}
+		if _, ok := allowed[origin]; ok {
+			return origin
+		}
+		return ""
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := allowOrigin(r.Header.Get("Origin"))
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		}
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-TermX-Debug-Token, X-TermX-Hub-Secret, X-Hub-Secret")
+		w.Header().Set("Access-Control-Max-Age", "600")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

@@ -98,10 +98,7 @@ function assertSessionTarget(info: ConnectionInfo, machineId: string, terminalId
   if (info.machineId !== machineId) {
     throw new Error(`file session machine mismatch: connected to ${info.machineId}, expected ${machineId}`)
   }
-  if (info.terminalId === undefined) {
-    throw new Error(`file session terminal missing: expected ${terminalId}`)
-  }
-  if (info.terminalId !== terminalId) {
+  if (info.terminalId !== undefined && info.terminalId !== terminalId) {
     throw new Error(`file session terminal mismatch: connected to ${info.terminalId}, expected ${terminalId}`)
   }
 }

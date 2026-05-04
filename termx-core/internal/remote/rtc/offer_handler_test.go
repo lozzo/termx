@@ -14,6 +14,46 @@ import (
 
 func TestRuntimeAPIChannelRouterHandlesTerminalManagement(t *testing.T) {
 	manager := &terminalAPIRouterStub{}
+	pingStatus, pingBody, pingErr := routeRuntimeAPIRequest(nil, nil, apiRequest{
+		ID:     "req_ping",
+		Method: "ping",
+		Path:   "ping",
+		Body:   json.RawMessage(`{}`),
+	})
+	if pingErr != "" {
+		t.Fatalf("expected ping request to succeed, got %q", pingErr)
+	}
+	if pingStatus != http.StatusOK {
+		t.Fatalf("expected ping status 200, got %d", pingStatus)
+	}
+	var pingPayload map[string]any
+	if err := json.Unmarshal(pingBody, &pingPayload); err != nil {
+		t.Fatalf("unmarshal ping body: %v", err)
+	}
+	if pingPayload["ok"] != true {
+		t.Fatalf("expected ping ok payload, got %#v", pingPayload)
+	}
+
+	listStatus, listBody, listErr := routeRuntimeAPIRequest(fileapi.NewManager(), manager, apiRequest{
+		ID:     "req_list",
+		Method: "list",
+		Path:   "list",
+		Body:   json.RawMessage(`{}`),
+	})
+	if listErr != "" {
+		t.Fatalf("expected terminal list request to succeed, got %q", listErr)
+	}
+	if listStatus != http.StatusOK {
+		t.Fatalf("expected terminal list status 200, got %d", listStatus)
+	}
+	var listPayload map[string]any
+	if err := json.Unmarshal(listBody, &listPayload); err != nil {
+		t.Fatalf("unmarshal list body: %v", err)
+	}
+	if terminals, ok := listPayload["terminals"].([]any); !ok || len(terminals) != 1 {
+		t.Fatalf("expected terminal list payload, got %#v", listPayload)
+	}
+
 	status, body, errMsg := routeRuntimeAPIRequest(fileapi.NewManager(), manager, apiRequest{
 		ID:     "req_1",
 		Method: "create",
@@ -103,6 +143,65 @@ func TestAnswerOfferChannelPolicyRejectsWrongTerminalChannel(t *testing.T) {
 	case <-closed:
 	case <-time.After(10 * time.Second):
 		t.Fatal("timed out waiting for unauthorized terminal data channel to close")
+	}
+}
+
+func TestAnswerOfferMachineScopedPolicyAllowsAnyTerminalChannel(t *testing.T) {
+	sessionCtx, cancelSession := context.WithCancel(context.Background())
+	defer cancelSession()
+	offerPC, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("NewPeerConnection returned error: %v", err)
+	}
+	defer offerPC.Close()
+
+	dc, err := offerPC.CreateDataChannel("terminal:term-2", nil)
+	if err != nil {
+		t.Fatalf("CreateDataChannel returned error: %v", err)
+	}
+	open := make(chan struct{})
+	dc.OnOpen(func() {
+		select {
+		case <-open:
+		default:
+			close(open)
+		}
+	})
+
+	offer, err := offerPC.CreateOffer(nil)
+	if err != nil {
+		t.Fatalf("CreateOffer returned error: %v", err)
+	}
+	if err := offerPC.SetLocalDescription(offer); err != nil {
+		t.Fatalf("SetLocalDescription returned error: %v", err)
+	}
+	waitTestPeerICE(t, offerPC, 5*time.Second)
+
+	answer, err := AnswerOfferWithOptions(context.Background(), hubv1.SignalingOffer{
+		SessionID: "machine-scoped-channel-policy-session",
+		DeviceID:  "machine-1",
+		SDP:       offerPC.LocalDescription().SDP,
+	}, nil, nil, fileapi.NewManager(), AnswerOptions{
+		ChannelPolicy: ChannelPolicy{
+			AllowTerminal: true,
+			AllowAPI:      true,
+		},
+		SessionContext: sessionCtx,
+	})
+	if err != nil {
+		t.Fatalf("AnswerOfferWithOptions returned error: %v", err)
+	}
+	if err := offerPC.SetRemoteDescription(webrtc.SessionDescription{
+		Type: webrtc.SDPTypeAnswer,
+		SDP:  answer.SDP,
+	}); err != nil {
+		t.Fatalf("SetRemoteDescription returned error: %v", err)
+	}
+
+	select {
+	case <-open:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for machine-scoped terminal data channel to open")
 	}
 }
 
@@ -323,6 +422,8 @@ type terminalAPIRouterStub struct {
 
 func (s *terminalAPIRouterStub) RouteTerminalManagementRequest(_ context.Context, req TerminalManagementRequest) (int32, []byte, string) {
 	switch req.Method {
+	case "list":
+		return http.StatusOK, []byte(`{"terminals":[{"terminal_id":"terminal-1","machine_id":"machine-1","name":"zsh","state":"running"}]}`), ""
 	case "create":
 		var body struct {
 			Name string `json:"name"`

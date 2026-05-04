@@ -1,6 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
-import { getAppUrl, getJwtSecret, getHubJwtSecret } from "./config";
+import { getAppUrl, getJwtSecret } from "./config";
 import { db } from "./db";
 import { refreshTokens, users } from "./schema";
 import { eq, and, gt } from "drizzle-orm";
@@ -8,7 +8,6 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
 const ACCESS_TOKEN_EXPIRY = "1h";
-const HUB_TOKEN_EXPIRY = "1h";
 const REFRESH_TOKEN_COOKIE = "termx_refresh_token";
 const ACCESS_TOKEN_COOKIE = "termx_access_token";
 
@@ -296,22 +295,4 @@ export async function getServerUser(): Promise<{
     githubId: user.githubId,
     hasLocalPassword: Boolean(user.passwordHash),
   };
-}
-
-/** 签发 Hub 兼容的用户 JWT（用于 App 客户端连接 Hub），嵌入公钥 */
-export async function signHubUserToken(
-  userId: string,
-  username: string,
-  role: string,
-  publicKey?: string
-): Promise<string> {
-  const claims: Record<string, unknown> = { user_id: userId, username, role };
-  if (publicKey) {
-    claims.public_key = publicKey;
-  }
-  return new SignJWT(claims)
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime(HUB_TOKEN_EXPIRY)
-    .sign(getHubJwtSecret());
 }

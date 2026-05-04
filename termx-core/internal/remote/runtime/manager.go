@@ -21,6 +21,7 @@ import (
 	"github.com/lozzow/termx/termx-core/internal/remote/discovery"
 	"github.com/lozzow/termx/termx-core/internal/remote/fileapi"
 	"github.com/lozzow/termx/termx-core/internal/remote/identity"
+	"github.com/lozzow/termx/termx-core/internal/remote/pairing"
 	remotertc "github.com/lozzow/termx/termx-core/internal/remote/rtc"
 	hubv1 "github.com/lozzow/termx/termx-core/remote/hubv1"
 )
@@ -78,7 +79,12 @@ type Manager struct {
 	signalingCancel  context.CancelFunc
 	explicitHubURL   bool
 	answerer         cloudOfferAnswerer
+	pairing          PairClaimer
 	replay           *cert.ReplayWindow
+}
+
+type PairClaimer interface {
+	ClaimPairSession(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error)
 }
 
 type cloudOfferAnswerer interface {
@@ -123,6 +129,15 @@ func NewManager(cfg remoteconfig.Config, provider InventoryProvider, host bridge
 			UpdatedAt: time.Now().UTC(),
 		},
 	}
+}
+
+func (m *Manager) SetPairClaimer(pairing PairClaimer) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.pairing = pairing
+	m.mu.Unlock()
 }
 
 func (m *Manager) Start(ctx context.Context) error {
@@ -470,10 +485,6 @@ func (m *Manager) syncControlRegistration(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var terminals []TerminalInventoryItem
-	if m.provider != nil {
-		terminals = m.provider.ListRemoteTerminals(ctx)
-	}
 	payload := discovery.DeviceRegistrationRequest{
 		DeviceID:         m.identity.DeviceID,
 		MachinePublicKey: identity.PublicKeyString(machineKey.PublicKey),
@@ -481,17 +492,6 @@ func (m *Manager) syncControlRegistration(ctx context.Context) error {
 		Hostname:         hostname,
 		Platform:         fmt.Sprintf("%s/%s", goruntime.GOOS, goruntime.GOARCH),
 		State:            string(StateConfigured),
-		Terminals:        make([]discovery.DeviceRegistrationTerminal, 0, len(terminals)),
-	}
-	for _, terminal := range terminals {
-		payload.Terminals = append(payload.Terminals, discovery.DeviceRegistrationTerminal{
-			ID:      terminal.ID,
-			Name:    terminal.Name,
-			Command: append([]string(nil), terminal.Command...),
-			Cols:    terminal.Cols,
-			Rows:    terminal.Rows,
-			State:   terminal.State,
-		})
 	}
 	return discovery.RegisterDevice(ctx, m.cfg.ControlURL, m.cfg.AccessToken, payload)
 }
@@ -605,6 +605,7 @@ func (m *Manager) ensureHubSignalingLoop(ctx context.Context) {
 	m.mu.Unlock()
 
 	go m.hubSignalingLoop(loopCtx, deviceID, agentSessionID, iceServers)
+	go m.hubPairingLoop(loopCtx, deviceID, agentSessionID)
 }
 
 func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID string, iceServers []hubv1.RTCIceServerConfig) {
@@ -666,6 +667,164 @@ func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID
 	}
 }
 
+func (m *Manager) hubPairingLoop(ctx context.Context, deviceID, agentSessionID string) {
+	pendingResults := make(map[string]hubv1.PairingResult)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		if handled, stop := retrySubmitPendingPairingResult(ctx, m, deviceID, agentSessionID, pendingResults); stop {
+			return
+		} else if handled {
+			continue
+		}
+
+		pollCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		resp, ok, err := discovery.PollHubPairingClaim(pollCtx, m.cfg.HubURL, hubv1.PairingPollRequest{
+			AgentSessionID: agentSessionID,
+			DeviceID:       deviceID,
+			TimeoutSeconds: 15,
+		})
+		cancel()
+		if err != nil {
+			if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
+				m.resetHubSession()
+				m.TriggerSync()
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Second):
+				continue
+			}
+		}
+		if !ok || resp.Claim == nil {
+			continue
+		}
+
+		claimKey := pairingClaimKey(*resp.Claim)
+		result, hasPendingResult := pendingResults[claimKey]
+		if !hasPendingResult {
+			result = m.claimHubPairing(ctx, *resp.Claim)
+			pendingResults[claimKey] = result
+		}
+		submitCtx, submitCancel := context.WithTimeout(ctx, 10*time.Second)
+		err = discovery.SubmitHubPairingResult(submitCtx, m.cfg.HubURL, hubv1.SubmitPairingResultRequest{
+			AgentSessionID: agentSessionID,
+			DeviceID:       deviceID,
+			Result:         result,
+		})
+		submitCancel()
+		if err != nil {
+			if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
+				m.resetHubSession()
+				m.TriggerSync()
+				return
+			}
+			m.setStatus(StateDegraded, err.Error())
+			continue
+		}
+		delete(pendingResults, claimKey)
+	}
+}
+
+func retrySubmitPendingPairingResult(ctx context.Context, m *Manager, deviceID, agentSessionID string, pendingResults map[string]hubv1.PairingResult) (bool, bool) {
+	for claimKey, result := range pendingResults {
+		submitCtx, submitCancel := context.WithTimeout(ctx, 10*time.Second)
+		err := discovery.SubmitHubPairingResult(submitCtx, m.cfg.HubURL, hubv1.SubmitPairingResultRequest{
+			AgentSessionID: agentSessionID,
+			DeviceID:       deviceID,
+			Result:         result,
+		})
+		submitCancel()
+		if err != nil {
+			if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
+				m.resetHubSession()
+				m.TriggerSync()
+				return true, true
+			}
+			m.setStatus(StateDegraded, err.Error())
+			select {
+			case <-ctx.Done():
+				return true, true
+			case <-time.After(2 * time.Second):
+				return true, false
+			}
+		}
+		delete(pendingResults, claimKey)
+		return true, false
+	}
+	return false, false
+}
+
+func pairingClaimKey(claim hubv1.PairingClaim) string {
+	var b strings.Builder
+	appendKeyPart := func(value string) {
+		fmt.Fprintf(&b, "%d:", len(value))
+		b.WriteString(value)
+		b.WriteByte('|')
+	}
+	appendKeyPart(claim.ClaimID)
+	appendKeyPart(claim.MachineID)
+	appendKeyPart(claim.PairSessionID)
+	appendKeyPart(claim.PairSecret)
+	appendKeyPart(claim.AppDeviceID)
+	appendKeyPart(claim.AppName)
+	appendKeyPart(claim.AppPublicKey)
+	for _, capability := range claim.RequestedCapabilities {
+		appendKeyPart(capability)
+	}
+	return b.String()
+}
+
+func (m *Manager) claimHubPairing(ctx context.Context, claim hubv1.PairingClaim) hubv1.PairingResult {
+	result := hubv1.PairingResult{
+		ClaimID:   claim.ClaimID,
+		MachineID: claim.MachineID,
+	}
+	m.mu.RLock()
+	pairing := m.pairing
+	m.mu.RUnlock()
+	if pairing == nil {
+		result.Error = "remote pairing is not available"
+		return result
+	}
+	out, err := pairing.ClaimPairSession(ctx, pairingpkgClaimRequest(claim))
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	if strings.TrimSpace(out.MachineID) != strings.TrimSpace(claim.MachineID) {
+		result.Error = fmt.Sprintf("pairing response machine mismatch: %s != %s", out.MachineID, claim.MachineID)
+		return result
+	}
+	certificate, err := json.Marshal(out.AppCertificate)
+	if err != nil {
+		result.Error = fmt.Sprintf("encode app certificate: %v", err)
+		return result
+	}
+	result.MachineName = out.MachineName
+	result.MachinePublicKey = out.MachinePublicKey
+	result.AppCertificate = certificate
+	result.ExpiresAt = out.AppCertificate.Payload.ExpiresAt.Format(time.RFC3339)
+	return result
+}
+
+func pairingpkgClaimRequest(claim hubv1.PairingClaim) pairing.ClaimRequest {
+	return pairing.ClaimRequest{
+		PairSessionID:         claim.PairSessionID,
+		PairSecret:            claim.PairSecret,
+		AppDeviceID:           claim.AppDeviceID,
+		AppName:               claim.AppName,
+		AppPublicKey:          claim.AppPublicKey,
+		RequestedCapabilities: append([]string(nil), claim.RequestedCapabilities...),
+	}
+}
+
 func pendingAnswerKey(offer hubv1.SignalingOffer) string {
 	var b strings.Builder
 	appendKeyPart := func(value string) {
@@ -719,6 +878,7 @@ func (m *Manager) answerCloudOffer(ctx context.Context, offer hubv1.SignalingOff
 	answer, err := answerer.AnswerOffer(ctx, offer, offerICEServers, m.host, m.files, remotertc.AnswerOptions{
 		ChannelPolicy:      policy,
 		TerminalManagement: terminalManagement,
+		Events:             m.eventRouter(),
 	})
 	if err != nil {
 		return hubv1.SignalingAnswer{
@@ -733,13 +893,6 @@ func (m *Manager) authorizeCloudOffer(ctx context.Context, offer hubv1.Signaling
 	if m == nil {
 		return cert.AppCertificateEnvelope{}, fmt.Errorf("remote manager is nil")
 	}
-	terminalID := strings.TrimSpace(offer.TerminalID)
-	if terminalID == "" {
-		return cert.AppCertificateEnvelope{}, fmt.Errorf("terminal_id is required")
-	}
-	if !m.hasTerminal(ctx, terminalID) {
-		return cert.AppCertificateEnvelope{}, fmt.Errorf("terminal %q is not available for remote access", terminalID)
-	}
 	certificate, appPublicKey, err := m.verifyOfferCertificate(offer)
 	if err != nil {
 		return cert.AppCertificateEnvelope{}, err
@@ -747,8 +900,16 @@ func (m *Manager) authorizeCloudOffer(ctx context.Context, offer hubv1.Signaling
 	if strings.TrimSpace(certificate.Payload.MachineID) != strings.TrimSpace(offer.DeviceID) {
 		return cert.AppCertificateEnvelope{}, fmt.Errorf("offer machine_id does not match app certificate")
 	}
-	if !hasAppCapability(certificate.Payload.Capabilities, "terminal") {
-		return cert.AppCertificateEnvelope{}, fmt.Errorf("app certificate terminal capability is required")
+	terminalID := strings.TrimSpace(offer.TerminalID)
+	if terminalID != "" {
+		if !m.hasTerminal(ctx, terminalID) {
+			return cert.AppCertificateEnvelope{}, fmt.Errorf("terminal %q is not available for remote access", terminalID)
+		}
+		if !hasAppCapability(certificate.Payload.Capabilities, "terminal") {
+			return cert.AppCertificateEnvelope{}, fmt.Errorf("app certificate terminal capability is required")
+		}
+	} else if !hasAppCapability(certificate.Payload.Capabilities, "terminal") && !hasAppCapability(certificate.Payload.Capabilities, "terminal_management") {
+		return cert.AppCertificateEnvelope{}, fmt.Errorf("app certificate terminal or terminal_management capability is required for machine-scoped cloud runtime")
 	}
 	replay := m.offerReplayWindow()
 	if err := remotertc.VerifyOfferSignature(remotertc.OfferSignature{
@@ -814,10 +975,12 @@ func (m *Manager) hasTerminal(ctx context.Context, terminalID string) bool {
 }
 
 func cloudOfferChannelPolicy(offer hubv1.SignalingOffer, capabilities []string, terminalManagement remotertc.TerminalManagementRouter) remotertc.ChannelPolicy {
+	terminalID := strings.TrimSpace(offer.TerminalID)
 	allowTerminal := hasAppCapability(capabilities, "terminal")
 	return remotertc.ChannelPolicy{
-		TerminalID:              strings.TrimSpace(offer.TerminalID),
+		TerminalID:              terminalID,
 		AllowTerminal:           allowTerminal,
+		AllowAPI:                true,
 		AllowFileManager:        hasAppCapability(capabilities, "file_manager"),
 		AllowTerminalManagement: hasAppCapability(capabilities, "terminal_management") && terminalManagement != nil,
 		AllowEvents:             allowTerminal,
@@ -854,6 +1017,19 @@ func (m *Manager) terminalManagementRouter() remotertc.TerminalManagementRouter 
 		return router
 	}
 	if router, ok := m.provider.(remotertc.TerminalManagementRouter); ok {
+		return router
+	}
+	return nil
+}
+
+func (m *Manager) eventRouter() remotertc.EventRouter {
+	if m == nil {
+		return nil
+	}
+	if router, ok := m.host.(remotertc.EventRouter); ok {
+		return router
+	}
+	if router, ok := m.provider.(remotertc.EventRouter); ok {
 		return router
 	}
 	return nil

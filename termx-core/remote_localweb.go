@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lozzow/termx/termx-core/internal/remote/cert"
@@ -219,11 +220,10 @@ func (a localWebServerAdapter) DeleteLocalTerminal(ctx context.Context, terminal
 }
 
 func (a localWebServerAdapter) ClaimPairSession(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
-	_ = ctx
 	if a.server == nil {
 		return pairing.ClaimResponse{}, nil
 	}
-	return a.server.remotePairClaim(req)
+	return a.server.remotePairClaim(ctx, req)
 }
 
 func (a localWebServerAdapter) AnswerLocalRTCOffer(ctx context.Context, req localweb.RTCOfferRequest) (localweb.RTCOfferResponse, error) {
@@ -243,13 +243,23 @@ func (s *Server) remoteLocalRTCAnswer(
 	terminalID := strings.TrimSpace(req.Offer.TerminalID)
 	if terminalID == "" {
 		if strings.TrimSpace(req.Client.Purpose) != "inventory_events" {
-			if !hasCapability(req.AppCertificate.Payload.Capabilities, "terminal_management") {
-				return localweb.RTCOfferResponse{}, pairingErr("app certificate lacks remote RTC api capability")
+			allowTerminal := hasCapability(req.AppCertificate.Payload.Capabilities, "terminal")
+			allowFileManager := hasCapability(req.AppCertificate.Payload.Capabilities, "file_manager")
+			allowTerminalManagement := hasCapability(req.AppCertificate.Payload.Capabilities, "terminal_management")
+			if !allowTerminal && !allowTerminalManagement {
+				return localweb.RTCOfferResponse{}, pairingErr("app certificate lacks machine remote RTC capability")
+			}
+			dataChannels := []string{"api"}
+			if allowTerminal {
+				dataChannels = append(dataChannels, "terminal:{terminal_id}", "events")
+			}
+			if allowFileManager {
+				dataChannels = append(dataChannels, "file:{transfer_id}")
 			}
 			return s.remoteLocalRTCAnswerWithScope(
 				ctx, req, iceTCPMux, iceTCPEnabled, sessionCtx,
-				"", false, false, true, false,
-				[]string{"api"},
+				"", allowTerminal, allowFileManager, allowTerminalManagement, allowTerminal,
+				dataChannels,
 			)
 		}
 		if !hasCapability(req.AppCertificate.Payload.Capabilities, "terminal") {
@@ -266,9 +276,6 @@ func (s *Server) remoteLocalRTCAnswer(
 	}
 	allowFileManager := hasCapability(req.AppCertificate.Payload.Capabilities, "file_manager")
 	allowTerminalManagement := hasCapability(req.AppCertificate.Payload.Capabilities, "terminal_management")
-	if !allowFileManager && !allowTerminalManagement {
-		return localweb.RTCOfferResponse{}, pairingErr("app certificate lacks remote RTC api capability")
-	}
 	dataChannels := []string{"api", "terminal:{terminal_id}"}
 	if allowFileManager {
 		dataChannels = append(dataChannels, "file:{transfer_id}")
@@ -281,9 +288,8 @@ func (s *Server) remoteLocalRTCAnswer(
 }
 
 type localRTCTransportSink struct {
-	server            *Server
-	terminalID        string
-	machineEventsOnly bool
+	server     *Server
+	terminalID string
 }
 
 func (s localRTCTransportSink) ServeRemoteTransport(ctx context.Context, t transport.Transport, remote string) error {
@@ -291,13 +297,64 @@ func (s localRTCTransportSink) ServeRemoteTransport(ctx context.Context, t trans
 		return nil
 	}
 	return s.server.handleTransportScoped(ctx, t, remote, transportScope{
-		TerminalID:        s.terminalID,
-		MachineEventsOnly: s.machineEventsOnly,
+		TerminalID: s.terminalID,
 	})
 }
 
 func (p remoteInventoryProvider) RouteTerminalManagementRequest(ctx context.Context, req remotertc.TerminalManagementRequest) (int32, []byte, string) {
 	return localRTCManagementRouter{adapter: localWebServerAdapter{server: p.server}}.RouteTerminalManagementRequest(ctx, req)
+}
+
+func (p remoteInventoryProvider) SubscribeRemoteEvents(ctx context.Context, filters remotertc.EventFilters) (<-chan []byte, func(), error) {
+	var unsubscribeOnce sync.Once
+	if p.server == nil {
+		ch := make(chan []byte)
+		close(ch)
+		return ch, func() {}, nil
+	}
+	opts := make([]EventsOption, 0, 3)
+	if strings.TrimSpace(filters.TerminalID) != "" {
+		opts = append(opts, WithTerminalFilter(strings.TrimSpace(filters.TerminalID)))
+	}
+	if strings.TrimSpace(filters.SessionID) != "" {
+		opts = append(opts, WithSessionFilter(strings.TrimSpace(filters.SessionID)))
+	}
+	if len(filters.Types) > 0 {
+		types := make([]EventType, 0, len(filters.Types))
+		for _, typ := range filters.Types {
+			types = append(types, EventType(typ))
+		}
+		opts = append(opts, WithTypeFilter(types...))
+	}
+	events, unsubscribe := p.server.events.subscribe(opts...)
+	unsubscribeSafe := func() {
+		unsubscribeOnce.Do(unsubscribe)
+	}
+	out := make(chan []byte, 64)
+	go func() {
+		defer close(out)
+		defer unsubscribeSafe()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case evt, ok := <-events:
+				if !ok {
+					return
+				}
+				payload, err := json.Marshal(evt)
+				if err != nil {
+					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case out <- payload:
+				}
+			}
+		}
+	}()
+	return out, unsubscribeSafe, nil
 }
 
 func (s *Server) remoteLocalRTCAnswerWithScope(
@@ -377,16 +434,18 @@ func (s *Server) remoteLocalRTCAnswerWithScope(
 		TerminalID:    terminalID,
 		SDP:           req.Offer.SDP,
 		ICECandidates: append([]string(nil), req.Offer.ICECandidates...),
-	}, nil, localRTCTransportSink{server: s, terminalID: terminalID, machineEventsOnly: allowEvents}, files, remotertc.AnswerOptions{
+	}, nil, localRTCTransportSink{server: s, terminalID: terminalID}, files, remotertc.AnswerOptions{
 		SettingEngine: iceTCPMux,
 		ChannelPolicy: remotertc.ChannelPolicy{
 			TerminalID:              terminalID,
 			AllowTerminal:           allowTerminal,
+			AllowAPI:                true,
 			AllowFileManager:        allowFileManager,
 			AllowTerminalManagement: allowTerminalManagement,
 			AllowEvents:             allowEvents,
 		},
 		TerminalManagement: localRTCManagementRouter{adapter: localWebServerAdapter{server: s}},
+		Events:             remoteInventoryProvider{server: s},
 		SessionContext:     sessionCtx,
 	})
 	if err != nil {
@@ -417,6 +476,12 @@ type localRTCManagementRouter struct {
 
 func (r localRTCManagementRouter) RouteTerminalManagementRequest(ctx context.Context, req remotertc.TerminalManagementRequest) (int32, []byte, string) {
 	switch req.Path {
+	case "list":
+		terminals, err := r.adapter.ListTerminals(ctx)
+		if err != nil {
+			return http.StatusInternalServerError, nil, err.Error()
+		}
+		return marshalRuntimeAPIResponse(map[string]any{"terminals": terminals})
 	case "create":
 		var body struct {
 			Name    string            `json:"name"`
@@ -499,9 +564,12 @@ func firstNonEmpty(values []string) string {
 	return ""
 }
 
-func (s *Server) remotePairClaim(req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
+func (s *Server) remotePairClaim(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
 	if s == nil {
 		return pairing.ClaimResponse{}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return pairing.ClaimResponse{}, err
 	}
 	if strings.TrimSpace(req.PairSessionID) == "" {
 		return pairing.ClaimResponse{}, pairingErr("pair_session_id is required")

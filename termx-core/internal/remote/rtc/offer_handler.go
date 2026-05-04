@@ -29,29 +29,41 @@ type SettingEngineApplier interface {
 }
 
 type AnswerOptions struct {
-	SettingEngine  SettingEngineApplier
-	ChannelPolicy  ChannelPolicy
+	SettingEngine      SettingEngineApplier
+	ChannelPolicy      ChannelPolicy
 	TerminalManagement TerminalManagementRouter
-	SessionContext context.Context
-	OnSessionClose func()
+	Events             EventRouter
+	SessionContext     context.Context
+	OnSessionClose     func()
 }
 
 type ChannelPolicy struct {
-	TerminalID       string
-	AllowTerminal    bool
-	AllowFileManager bool
+	TerminalID              string
+	AllowTerminal           bool
+	AllowAPI                bool
+	AllowFileManager        bool
 	AllowTerminalManagement bool
-	AllowEvents      bool
+	AllowEvents             bool
 }
 
 type TerminalManagementRouter interface {
 	RouteTerminalManagementRequest(ctx context.Context, req TerminalManagementRequest) (int32, []byte, string)
 }
 
+type EventRouter interface {
+	SubscribeRemoteEvents(ctx context.Context, filters EventFilters) (<-chan []byte, func(), error)
+}
+
 type TerminalManagementRequest struct {
 	Method string
 	Path   string
 	Body   json.RawMessage
+}
+
+type EventFilters struct {
+	TerminalID string
+	SessionID  string
+	Types      []int
 }
 
 func AnswerOfferWithOptions(
@@ -146,7 +158,7 @@ func AnswerOfferWithOptions(
 			if opts.ChannelPolicy.allowTerminalManagement() {
 				apiTerminalManagement = opts.TerminalManagement
 			}
-			if apiFiles == nil && apiTerminalManagement == nil {
+			if !opts.ChannelPolicy.allowAPI() && apiFiles == nil && apiTerminalManagement == nil {
 				dc.OnOpen(func() {
 					_ = dc.Close()
 				})
@@ -168,17 +180,13 @@ func AnswerOfferWithOptions(
 				})
 				return
 			}
-			dc.OnOpen(func() {
-				if sink == nil {
-					_ = dc.Close()
-					return
-				}
-				transport := bridge.NewDataChannelTransport(dc)
-				go func() {
-					defer transport.Close()
-					_ = sink.ServeRemoteTransport(sessionCtx, transport, "webrtc:"+dc.Label())
-				}()
-			})
+			if opts.Events == nil {
+				dc.OnOpen(func() {
+					_ = dc.SendText(`{"type":"runtime_ready","payload":{"channel":"events"}}`)
+				})
+				return
+			}
+			go serveEventChannel(sessionCtx, dc, opts.Events)
 		default:
 			dc.OnOpen(func() {
 				_ = dc.Close()
@@ -232,7 +240,11 @@ func (p ChannelPolicy) allowTerminal(label string) bool {
 		return false
 	}
 	terminalID := strings.TrimSpace(strings.TrimPrefix(label, "terminal:"))
-	return terminalID != "" && terminalID == strings.TrimSpace(p.TerminalID)
+	if terminalID == "" {
+		return false
+	}
+	policyTerminalID := strings.TrimSpace(p.TerminalID)
+	return policyTerminalID == "" || terminalID == policyTerminalID
 }
 
 func (p ChannelPolicy) allowFileManager() bool {
@@ -240,6 +252,13 @@ func (p ChannelPolicy) allowFileManager() bool {
 		return true
 	}
 	return p.AllowFileManager
+}
+
+func (p ChannelPolicy) allowAPI() bool {
+	if !p.active() {
+		return true
+	}
+	return p.AllowAPI || p.AllowFileManager || p.AllowTerminalManagement
 }
 
 func (p ChannelPolicy) allowEvents() bool {
@@ -257,7 +276,7 @@ func (p ChannelPolicy) allowTerminalManagement() bool {
 }
 
 func (p ChannelPolicy) active() bool {
-	return strings.TrimSpace(p.TerminalID) != "" || p.AllowTerminal || p.AllowFileManager || p.AllowTerminalManagement || p.AllowEvents
+	return strings.TrimSpace(p.TerminalID) != "" || p.AllowTerminal || p.AllowAPI || p.AllowFileManager || p.AllowTerminalManagement || p.AllowEvents
 }
 
 type apiRequest struct {
@@ -318,7 +337,9 @@ func routeRuntimeAPIRequestWithContext(ctx context.Context, manager *fileapi.Man
 		return manager.RouteRequest(req.Method, req.Path, req.Body)
 	}
 	switch req.Path {
-	case "create", "set_metadata", "remove":
+	case "ping", "status", "/status":
+		return jsonResponseBody(map[string]any{"ok": true})
+	case "list", "create", "set_metadata", "remove":
 		if terminalManagement == nil {
 			return http.StatusForbidden, nil, "terminal management is not allowed by connection policy"
 		}
@@ -330,6 +351,98 @@ func routeRuntimeAPIRequestWithContext(ctx context.Context, manager *fileapi.Man
 	default:
 		return http.StatusNotFound, nil, fmt.Sprintf("unknown api route: %s %s", req.Method, req.Path)
 	}
+}
+
+func serveEventChannel(ctx context.Context, dc *webrtc.DataChannel, router EventRouter) {
+	type subscribeRequest struct {
+		Type       string `json:"type"`
+		TerminalID string `json:"terminal_id"`
+		SessionID  string `json:"session_id"`
+		Types      []int  `json:"types"`
+	}
+	closed := make(chan struct{})
+	var cancel func()
+	defer func() {
+		if cancel != nil {
+			cancel()
+		}
+	}()
+	dc.OnClose(func() {
+		if cancel != nil {
+			cancel()
+			cancel = nil
+		}
+		select {
+		case <-closed:
+		default:
+			close(closed)
+		}
+	})
+	go func() {
+		<-ctx.Done()
+		if cancel != nil {
+			cancel()
+			cancel = nil
+		}
+	}()
+	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+		var req subscribeRequest
+		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			_ = dc.SendText(`{"type":"error","payload":{"message":"invalid event subscription"}}`)
+			return
+		}
+		if strings.TrimSpace(req.Type) != "subscribe" {
+			_ = dc.SendText(`{"type":"error","payload":{"message":"unknown event request"}}`)
+			return
+		}
+		if cancel != nil {
+			cancel()
+			cancel = nil
+		}
+		subCtx, subCancel := context.WithCancel(ctx)
+		events, unsubscribe, err := router.SubscribeRemoteEvents(subCtx, EventFilters{
+			TerminalID: strings.TrimSpace(req.TerminalID),
+			SessionID:  strings.TrimSpace(req.SessionID),
+			Types:      append([]int(nil), req.Types...),
+		})
+		if err != nil {
+			subCancel()
+			_ = dc.SendText(`{"type":"error","payload":{"message":"event subscription failed"}}`)
+			return
+		}
+		cancel = func() {
+			subCancel()
+			unsubscribe()
+		}
+		go func() {
+			for {
+				select {
+				case <-subCtx.Done():
+					return
+				case payload, ok := <-events:
+					if !ok {
+						return
+					}
+					if err := dc.SendText(string(payload)); err != nil {
+						subCancel()
+						return
+					}
+				}
+			}
+		}()
+	})
+	select {
+	case <-ctx.Done():
+	case <-closed:
+	}
+}
+
+func jsonResponseBody(value any) (int32, []byte, string) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return http.StatusInternalServerError, nil, err.Error()
+	}
+	return http.StatusOK, body, ""
 }
 
 func sendAPIResponse(dc *webrtc.DataChannel, id string, data []byte) {

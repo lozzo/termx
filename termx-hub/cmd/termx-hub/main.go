@@ -23,14 +23,14 @@ import (
 )
 
 var newControlVerifier registryVerifierFactory = func(baseURL string, sharedSecret string) controlVerifier {
-	return controlclient.NewConnectionTicketVerifier(controlclient.ConnectionTicketVerifierConfig{
+	return controlclient.NewAgentControlClient(controlclient.AgentControlClientConfig{
 		BaseURL:      baseURL,
 		SharedSecret: sharedSecret,
 	})
 }
 
 type controlVerifier interface {
-	registry.AuthorityVerifier
+	VerifyAgentRegistration(context.Context, registry.AgentRegistration) error
 	cloud.ConnectionTicketVerifier
 	httpapi.AgentPolicyProvider
 }
@@ -74,8 +74,12 @@ func newHubHandlerFromEnv() (http.Handler, *registry.Registry, error) {
 		return nil, nil, errors.New("TERMX_HUB_CONTROL_URL and TERMX_HUB_CONTROL_SECRET are required")
 	}
 	verifier := newControlVerifier(controlURL, secret)
-	reg := registry.New(registry.Config{Verifier: verifier})
-	svc := cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier})
+	tickets := verifier
+	reg := registry.New(registry.Config{Verifier: hubAuthority{
+		control: verifier,
+		tickets: tickets,
+	}})
+	svc := cloud.NewService(cloud.Config{Registry: reg, Tickets: tickets})
 	return httpapi.NewHandler(httpapi.Config{
 		Cloud:          svc,
 		Registry:       reg,
@@ -85,7 +89,21 @@ func newHubHandlerFromEnv() (http.Handler, *registry.Registry, error) {
 		HubID:          hubIDFromEnv(),
 		InternalSecret: secret,
 		DebugToken:     strings.TrimSpace(os.Getenv("TERMX_HUB_DEBUG_TOKEN")),
+		AllowedOrigins: csvList(os.Getenv("TERMX_HUB_ALLOWED_ORIGINS")),
 	}), reg, nil
+}
+
+type hubAuthority struct {
+	control controlVerifier
+	tickets cloud.ConnectionTicketVerifier
+}
+
+func (a hubAuthority) VerifyAgentRegistration(ctx context.Context, in registry.AgentRegistration) error {
+	return a.control.VerifyAgentRegistration(ctx, in)
+}
+
+func (a hubAuthority) VerifyOfferTicket(ctx context.Context, in registry.OfferTicket) error {
+	return a.tickets.VerifyOfferTicket(ctx, in)
 }
 
 type hubHeartbeatConfig struct {
@@ -240,6 +258,17 @@ func floatFromEnv(name string) float64 {
 func intFromEnv(name string) int {
 	value, _ := strconv.Atoi(strings.TrimSpace(os.Getenv(name)))
 	return value
+}
+
+func csvList(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		value := strings.TrimSpace(part)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func stunServersFromEnv(raw string) []hubv1.RTCIceServerConfig {

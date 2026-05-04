@@ -5,9 +5,8 @@ import { agents } from "@/lib/schema";
 import { getActiveSubscription } from "@/lib/subscription";
 import {
   asError,
-  encodeAgentMetadata,
+  encodeAgentLabels,
   requireAccessToken,
-  type TermxTerminalMetadata,
 } from "@/lib/termx-control";
 import { invalidateUserAgents } from "@/lib/cache-system";
 
@@ -20,14 +19,6 @@ interface DeviceRegistrationBody {
   state?: string;
   hubId?: string;
   labels?: string[];
-  terminals?: Array<{
-    id?: string;
-    name?: string;
-    command?: string[];
-    cols?: number;
-    rows?: number;
-    state?: string;
-  }>;
 }
 
 export async function POST(request: NextRequest) {
@@ -66,17 +57,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const terminalMetadata: TermxTerminalMetadata[] = (body.terminals ?? [])
-    .map((terminal) => ({
-      id: terminal.id?.trim() ?? "",
-      name: terminal.name?.trim() || undefined,
-      command: Array.isArray(terminal.command) ? terminal.command : undefined,
-      cols: typeof terminal.cols === "number" ? terminal.cols : undefined,
-      rows: typeof terminal.rows === "number" ? terminal.rows : undefined,
-      state: terminal.state?.trim() || undefined,
-    }))
-    .filter((terminal) => terminal.id);
-
   const existing = await db.query.agents.findFirst({
     where: eq(agents.id, deviceId),
   });
@@ -108,7 +88,7 @@ export async function POST(request: NextRequest) {
     name: body.displayName?.trim() || existing?.name || body.hostname?.trim() || deviceId,
     hostname: body.hostname?.trim() || existing?.hostname || "",
     osInfo: body.platform?.trim() || existing?.osInfo || "",
-    labels: encodeAgentMetadata({ labels: body.labels, terminals: terminalMetadata }),
+    labels: encodeAgentLabels({ labels: body.labels }),
     paired: existing?.paired ?? false,
     hubId: body.hubId?.trim() || existing?.hubId || null,
     lastSeen: new Date(),
