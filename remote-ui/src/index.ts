@@ -37,6 +37,8 @@ export { MachineList } from './MachineList'
 export type { MachineListProps } from './MachineList'
 export { RemoteAppShell } from './RemoteAppShell'
 export type { RemoteAppShellProps } from './RemoteAppShell'
+export { WebControlRemoteApp } from './WebControlRemoteApp'
+export type { WebControlRemoteAppProps } from './WebControlRemoteApp'
 export type {
   AppMachineRecord,
   AppMachineSource,
@@ -144,6 +146,10 @@ export type {
   WebControlApi,
   WebControlApiOptions,
   WebControlFetch,
+  WebControlAuthResult,
+  WebControlLoginInput,
+  WebControlMachine,
+  WebControlUser,
 } from './webControlApi'
 export { useFileManager } from './useFileManager'
 export type { FileManagerVisibleError, UseFileManagerOptions, UseFileManagerResult } from './useFileManager'

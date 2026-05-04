@@ -10,7 +10,7 @@ import (
 	"github.com/lozzow/termx/termx-hub/internal/ice"
 )
 
-func TestManagedPaidLeaseGetsTemporaryTurnCredentials(t *testing.T) {
+func TestCloudPaidLeaseGetsTemporaryTurnCredentials(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -24,14 +24,14 @@ func TestManagedPaidLeaseGetsTemporaryTurnCredentials(t *testing.T) {
 	})
 	cfg, err := svc.ConfigForLease(ctx, ice.Lease{
 		ID:         "lease_1",
-		Path:       ice.PathManaged,
+		Path:       ice.PathCloud,
 		AllowRelay: true,
 		ExpiresAt:  clock.Now().Add(time.Hour),
 	})
 	if err != nil {
 		t.Fatalf("ice config: %v", err)
 	}
-	if cfg.Path != ice.PathManaged {
+	if cfg.Path != ice.PathCloud {
 		t.Fatalf("path = %q", cfg.Path)
 	}
 	if len(cfg.ICEServers) != 2 {
@@ -75,7 +75,7 @@ func TestTurnCredentialDoesNotOutliveLeaseAndRequiresSecret(t *testing.T) {
 	})
 	cfg, err := svc.ConfigForLease(ctx, ice.Lease{
 		ID:         "lease_short",
-		Path:       ice.PathManaged,
+		Path:       ice.PathCloud,
 		AllowRelay: true,
 		ExpiresAt:  clock.Now().Add(time.Minute),
 	})
@@ -94,14 +94,14 @@ func TestTurnCredentialDoesNotOutliveLeaseAndRequiresSecret(t *testing.T) {
 	})
 	if _, err := missingSecret.ConfigForLease(ctx, ice.Lease{
 		ID:         "lease_no_secret",
-		Path:       ice.PathManaged,
+		Path:       ice.PathCloud,
 		AllowRelay: true,
 		ExpiresAt:  clock.Now().Add(time.Minute),
 	}); err == nil {
 		t.Fatal("turn config without shared secret succeeded")
 	}
 	if _, err := svc.ConfigForLease(ctx, ice.Lease{
-		Path:       ice.PathManaged,
+		Path:       ice.PathCloud,
 		AllowRelay: true,
 		ExpiresAt:  clock.Now().Add(time.Minute),
 	}); !errors.Is(err, ice.ErrLeaseRequired) {
@@ -109,7 +109,7 @@ func TestTurnCredentialDoesNotOutliveLeaseAndRequiresSecret(t *testing.T) {
 	}
 }
 
-func TestManagedWithoutRelayAndPublicP2PDoNotReceiveTurnCredentials(t *testing.T) {
+func TestCloudWithoutRelayAndPublicP2PDoNotReceiveTurnCredentials(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -122,7 +122,7 @@ func TestManagedWithoutRelayAndPublicP2PDoNotReceiveTurnCredentials(t *testing.T
 		TURNURLs:     []string{"turn:hub.termx.test:3478?transport=udp"},
 	})
 	for _, tc := range []ice.Lease{
-		{ID: "free_managed", Path: ice.PathManaged, AllowRelay: false, ExpiresAt: clock.Now().Add(time.Minute)},
+		{ID: "free_cloud", Path: ice.PathCloud, AllowRelay: false, ExpiresAt: clock.Now().Add(time.Minute)},
 		{ID: "public_p2p", Path: ice.PathPublicP2P, AllowRelay: true, ExpiresAt: clock.Now().Add(time.Minute)},
 	} {
 		cfg, err := svc.ConfigForLease(ctx, tc)
@@ -133,10 +133,10 @@ func TestManagedWithoutRelayAndPublicP2PDoNotReceiveTurnCredentials(t *testing.T
 			t.Fatalf("path = %q, want %q", cfg.Path, tc.Path)
 		}
 		if len(cfg.ICEServers) != 1 || cfg.ICEServers[0].Username != "" || cfg.ICEServers[0].Credential != "" {
-			t.Fatalf("non-paid/non-managed got turn credentials: %+v", cfg)
+			t.Fatalf("non-paid/non-cloud got turn credentials: %+v", cfg)
 		}
 		if strings.Contains(strings.ToLower(cfg.String()), "turn:") {
-			t.Fatalf("non-paid/non-managed response contains TURN URL: %+v", cfg)
+			t.Fatalf("non-paid/non-cloud response contains TURN URL: %+v", cfg)
 		}
 	}
 }
@@ -155,7 +155,7 @@ func TestExpiredAndInvalidPathLeasesDoNotReceiveTurn(t *testing.T) {
 	})
 	if _, err := svc.ConfigForLease(ctx, ice.Lease{
 		ID:         "expired",
-		Path:       ice.PathManaged,
+		Path:       ice.PathCloud,
 		AllowRelay: true,
 		ExpiresAt:  clock.Now().Add(-time.Second),
 	}); !errors.Is(err, ice.ErrLeaseExpired) {
@@ -185,7 +185,7 @@ func TestICEConfigRejectsMisconfiguredURLSchemes(t *testing.T) {
 	})
 	if _, err := badSTUN.ConfigForLease(ctx, ice.Lease{
 		ID:         "free",
-		Path:       ice.PathManaged,
+		Path:       ice.PathCloud,
 		AllowRelay: false,
 		ExpiresAt:  clock.Now().Add(time.Minute),
 	}); !errors.Is(err, ice.ErrInvalidICEURL) {
@@ -200,7 +200,7 @@ func TestICEConfigRejectsMisconfiguredURLSchemes(t *testing.T) {
 	})
 	if _, err := badTURN.ConfigForLease(ctx, ice.Lease{
 		ID:         "paid",
-		Path:       ice.PathManaged,
+		Path:       ice.PathCloud,
 		AllowRelay: true,
 		ExpiresAt:  clock.Now().Add(time.Minute),
 	}); !errors.Is(err, ice.ErrInvalidICEURL) {

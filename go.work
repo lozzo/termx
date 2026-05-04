@@ -5,5 +5,4 @@ use (
 	./termx-core
 	./termx-hub
 	./tuiv2
-	./web-control
 )

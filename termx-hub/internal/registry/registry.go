@@ -102,7 +102,7 @@ func (r *Registry) Register(ctx context.Context, in RegisterInput) (Agent, error
 		ID:         agentID,
 		MachineID:  machineID,
 		Status:     AgentOnline,
-		Path:       PathManaged,
+		Path:       PathCloud,
 		Terminals:  cloneTerminals(in.Terminals),
 		LastSeenAt: now,
 		ExpiresAt:  now.Add(r.agentTTL),
@@ -168,6 +168,20 @@ func (r *Registry) GetAgent(agentID string) (Agent, bool) {
 		return Agent{}, false
 	}
 	return cloneAgent(agent), true
+}
+
+func (r *Registry) Agents() []Agent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := r.clock.Now().UTC()
+	out := make([]Agent, 0, len(r.agents))
+	for _, agent := range r.agents {
+		if r.expired(agent) || r.forceOfflineActiveLocked(agent.MachineID, agent.ID, now) {
+			continue
+		}
+		out = append(out, cloneAgent(agent))
+	}
+	return out
 }
 
 func (r *Registry) CleanupExpired(ctx context.Context) int {
@@ -320,7 +334,7 @@ func (r *Registry) submitVerifiedOffer(ctx context.Context, in OfferInput) (Offe
 		ICECandidates:  cloneStrings(in.ICECandidates),
 		AppCertificate: cloneRawMessage(in.AppCertificate),
 		Signature:      in.Signature,
-		Path:           PathManaged,
+		Path:           PathCloud,
 		CreatedAt:      r.clock.Now().UTC(),
 	}
 	r.mu.Lock()

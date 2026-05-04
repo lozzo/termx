@@ -7,6 +7,12 @@
 - `remote-ui` 是 Web / embedded Web UI 的产品壳，不是 `termx-core`。
 - `remote-ui` 负责连接建立、运行时 WebRTC session、前端 terminal/file/events/api 消费层，以及 UI 状态编排。
 - `remote-ui` 不应反向定义或污染 `termx-core` 的 shell-neutral runtime 边界。
+- 当前产品方向是 APP-first：
+  - `remote-ui` 后续应演进为手机 APP 或 APP 内复用的 UI/runtime，而不是 Web Control 内的 terminal 页面。
+  - 默认打开后的第一屏是机器列表，不是 terminal、不是真正的 Web Control dashboard，也不是 marketing/landing page。
+  - 第一屏只展示用户需要操作的机器状态、最近 terminal、连接状态和添加/扫描入口，信息少、密度高、决策直接。
+  - 本地 Web 入口只作为开发调试或临时 embedded local web；正式线上操作入口以后应是 APP。
+  - 如果后续决定砍掉本地 Web 入口，公共 runtime、terminal/file/api/events 组件和连接策略仍应能被 APP 复用。
 
 ## Transport Architecture
 
@@ -22,8 +28,14 @@
   - `local`：本机 WebRTC，允许通过 ICE TCP / WebRTC over TCP 建链。
   - `public_p2p`：通过公共 ICE / STUN 基础设施建立的普通 WebRTC P2P 连接。
   - `managed`：通过自部署 Hub / ICE 基础设施建立的 WebRTC 连接。
+- APP 连接策略必须按阶段升级：
+  - 优先使用扫码保存的本地地址、LAN 地址或本地直连信息。
+  - local/LAN 失败后再尝试 `public_p2p` rendezvous/signaling。
+  - `public_p2p` 失败后再尝试 `managed`，由 Hub/ICE/TURN 决定是否 relay。
+  - 每个阶段都要向用户给出简短、可行动的状态提示；不要让用户理解底层 NAT/ICE 细节。
 - relay 不是客户端单独选择的 transport 类型。`managed` 路径下是否走 relay，必须由 Hub / TURN / ICE 侧策略决定，而不是由客户端抽象出另一套 transport 类型。
 - 客户端只应把 relay 视为连接属性或 capability / policy 结果，例如 `relayInUse`、`fileTransferAllowed`，而不是额外的 transport 家族。
+- 开发阶段 rendezvous 和 managed relay 可先对注册/dev 用户免费开放以跑通主流程；后续计费、订阅、限额再作为 policy/capability 结果接回。即使开发期免费，也不能把 relay 作为第四种 path。
 - `remote-ui` 的正确分层应是：
   - `connector/signaling`
   - `rtc session`（唯一运行时连接对象）
@@ -95,9 +107,30 @@
 ## Remote Web / Hub Integration
 
 - 后续接入真实 Web Control Plane / Hub API 时，`remote-ui` 仍只能通过 `RtcSession`、connector、signaling adapter、capability/policy 接口消费连接能力。
+- Web Control 只提供账号、机器/agent/client 状态、Hub 列表、ticket、rendezvous、device-code 登录确认、强制下线等控制面 API；`remote-ui` 不应要求 Web Control 承载 terminal/file 操作页。
 - 不要恢复 `RemoteTransport` / `PeerTransport` / `TerminalTransport` / `anonymous_p2p` / `managed_p2p` / `paid_relay` 等旧抽象或旧 path taxonomy。
 - 真实 API adapter 可以使用 HTTP 调用 web/hub 的 signaling、discovery、pairing、rendezvous、policy API，但 terminal/file/api/events 运行时必须继续走 WebRTC DataChannel。
-- 付费、订阅、支付、邮件、OAuth、外部 API 等业务在前端只能消费 mock 或真实 provider 返回的 policy/capability 结果；不要在连接 path 中编码套餐或 relay 类型。
+- 付费、订阅、支付、邮件、OAuth、外部 API 等业务在前端只能消费 mock 或真实 provider 返回的 policy/capability 结果；开发期先按 dev-free policy 跑通 rendezvous/relay，不要在连接 path 中编码套餐或 relay 类型。
 - relay 只能显示为 capability / policy / connection info，例如 `relayInUse`、`relayBytesRemaining`、`relayThrottled`，不能变成第四种 transport。
 - 如果前端切片依赖尚未实现的外部服务，使用 mock API client 或 fake provider 先完成 UI/state/adapter 行为，并在 `docs/remote-rebuild/WORKFLOW.md` 记录 deferred external item。
 - 触及 remote web/hub/agent buildout 的 `remote-ui` 改动必须遵守根 `AGENTS.md` 的文件化 todo、TDD、subagent review 规则。
+
+## APP-First UI Direction
+
+- 机器列表是产品默认首页：
+  - 顶部只保留账号/同步状态、搜索或筛选、添加/扫描入口。
+  - 列表项展示机器名、在线状态、最近连接状态、terminal 数量、最后可见时间和简短连接来源。
+  - 空状态只引导添加/扫描或登录，不展示长篇说明。
+- 添加/扫描流程：
+  - 支持扫描 `termx` CLI 输出的二维码。
+  - 二维码 payload 可包含本地地址、公网地址、machine id、pairing/session info、Hub/Web Control endpoint、app certificate/bootstrap metadata；具体 schema 后续切片定义。
+  - app private key 必须留在 APP 安全存储内，machine private key 绝不能进入 APP。
+- 机器点击后的状态机：
+  - `idle -> trying_local -> trying_public_p2p -> trying_managed -> connected | failed`。
+  - 阶段失败提示要短：例如本地不可达、可登录尝试公网 P2P、P2P 失败可使用中转。
+  - terminal/file/api/events 组件只能看到已连接的 `RtcSession` 和 capability，不关心底层阶段。
+- UI 生成或实现时应保持简单、高效、信息密度高；不要引入 dashboard-heavy、marketing-heavy、workspace/tab/pane/tmux 概念。
+- 可以参考 `../tgent/tgent-app` 的 Home/Scan/local store/connection store/native bridge 交互结构：
+  - 可采用机器列表首页、扫码添加、本地簿与云端状态合并、连接 phase、重连和 native bridge 分层。
+  - 必须把 tgent 的 server/session/window/pane/private-key download/`local|hub|p2p|relay` taxonomy 改写为 TermX 的 `machine -> terminal`、APP-owned key/cert、`local|public_p2p|managed`。
+  - 参考 tgent 时只迁移交互和分层模式，不复制 tmux API、HTTP runtime proxy 或 WebSocket runtime。

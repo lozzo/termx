@@ -97,7 +97,7 @@ func TestRootCmdBlocksNestedTUIByDefault(t *testing.T) {
 	cmd.SetErr(io.Discard)
 
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "refusing to start termx TUI inside a termx-managed terminal") {
+	if err == nil || !strings.Contains(err.Error(), "refusing to start termx TUI inside a termx remote terminal") {
 		t.Fatalf("expected nested TUI rejection, got %v", err)
 	}
 }
@@ -195,7 +195,7 @@ func TestAttachCmdBlocksNestedTUIByDefault(t *testing.T) {
 	cmd.SetErr(io.Discard)
 
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "refusing to start termx TUI inside a termx-managed terminal") {
+	if err == nil || !strings.Contains(err.Error(), "refusing to start termx TUI inside a termx remote terminal") {
 		t.Fatalf("expected nested attach rejection, got %v", err)
 	}
 }
@@ -235,7 +235,7 @@ func TestRemoteConfigFromEnv(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_ENABLE", "true")
 	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control.example.test")
 	t.Setenv("TERMX_REMOTE_HUB_URL", "https://hub.example.test")
-	t.Setenv("TERMX_REMOTE_ACCESS_TOKEN", "secret")
+	t.Setenv("TERMX_REMOTE_CONNECTION_KEY", "secret")
 	t.Setenv("TERMX_REMOTE_DATA_DIR", "/tmp/termx-remote")
 	t.Setenv("TERMX_REMOTE_DEVICE_NAME", "device-a")
 	t.Setenv("TERMX_REMOTE_REGION", "sin")
@@ -251,7 +251,7 @@ func TestRemoteConfigFromEnv(t *testing.T) {
 		t.Fatalf("unexpected hub url: %q", cfg.HubURL)
 	}
 	if cfg.AccessToken != "secret" {
-		t.Fatalf("unexpected access token: %q", cfg.AccessToken)
+		t.Fatalf("unexpected connection key: %q", cfg.AccessToken)
 	}
 	if cfg.DataDir != "/tmp/termx-remote" {
 		t.Fatalf("unexpected data dir: %q", cfg.DataDir)
@@ -261,6 +261,15 @@ func TestRemoteConfigFromEnv(t *testing.T) {
 	}
 	if cfg.Region != "sin" {
 		t.Fatalf("unexpected region: %q", cfg.Region)
+	}
+}
+
+func TestRemoteConfigFromEnvAcceptsLegacyAccessToken(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_ACCESS_TOKEN", "legacy-secret")
+
+	cfg := remoteConfigFromEnv()
+	if cfg.AccessToken != "legacy-secret" {
+		t.Fatalf("expected legacy access token env to remain supported, got %q", cfg.AccessToken)
 	}
 }
 
@@ -280,7 +289,7 @@ func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
   enabled: true
   controlURL: https://control-file.example.test
   hubURL: https://hub-file.example.test
-  accessTokenEnv: TERMX_TEST_REMOTE_TOKEN
+  connectionKeyEnv: TERMX_TEST_REMOTE_KEY
   accessToken: should-not-be-used
   dataDir: /tmp/termx-remote-file
   deviceName: file-device
@@ -289,7 +298,7 @@ func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile returned error: %v", err)
 	}
-	t.Setenv("TERMX_TEST_REMOTE_TOKEN", "file-secret")
+	t.Setenv("TERMX_TEST_REMOTE_KEY", "file-secret")
 
 	cfg, err := remoteConfigFromFileAndEnv(configPath)
 	if err != nil {
@@ -305,7 +314,7 @@ func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
 		t.Fatalf("unexpected hub url: %q", cfg.HubURL)
 	}
 	if cfg.AccessToken != "file-secret" {
-		t.Fatalf("expected token from env reference, got %q", cfg.AccessToken)
+		t.Fatalf("expected connection key from env reference, got %q", cfg.AccessToken)
 	}
 	if strings.Contains(cfg.AccessToken, "should-not-be-used") {
 		t.Fatal("raw accessToken from config must not be used")
@@ -327,17 +336,17 @@ func TestRemoteConfigEnvOverridesFile(t *testing.T) {
   enabled: true
   controlURL: https://control-file.example.test
   hubURL: https://hub-file.example.test
-  accessTokenEnv: TERMX_TEST_REMOTE_TOKEN_FILE
+  connectionKeyEnv: TERMX_TEST_REMOTE_KEY_FILE
   dataDir: /tmp/termx-remote-file
   deviceName: file-device
 `
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile returned error: %v", err)
 	}
-	t.Setenv("TERMX_TEST_REMOTE_TOKEN_FILE", "file-secret")
+	t.Setenv("TERMX_TEST_REMOTE_KEY_FILE", "file-secret")
 	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control-env.example.test")
 	t.Setenv("TERMX_REMOTE_HUB_URL", "https://hub-env.example.test")
-	t.Setenv("TERMX_REMOTE_ACCESS_TOKEN", "env-secret")
+	t.Setenv("TERMX_REMOTE_CONNECTION_KEY", "env-secret")
 	t.Setenv("TERMX_REMOTE_DATA_DIR", "/tmp/termx-remote-env")
 	t.Setenv("TERMX_REMOTE_DEVICE_NAME", "env-device")
 	t.Setenv("TERMX_REMOTE_REGION", "sin")
@@ -767,10 +776,11 @@ func TestRootCmdHasRemoteStatusAndPairCommands(t *testing.T) {
 		{"remote", "info"},
 		{"remote", "show"},
 		{"remote", "enable"},
-		{"remote", "local-only"},
+		{"remote", "local"},
 		{"remote", "local_only"},
 		{"remote", "disable"},
 		{"remote", "pair"},
+		{"remote", "qrcode"},
 		{"remote", "open"},
 	} {
 		if _, _, err := cmd.Find(args); err != nil {
@@ -805,7 +815,7 @@ func TestRemoteEnableLocalOnlyEmitsLocalStatus(t *testing.T) {
 
 	var out bytes.Buffer
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"remote", "enable", "--local-only", "--addr", "127.0.0.1:18888", "--ice-tcp-addr", "127.0.0.1:18889"})
+	cmd.SetArgs([]string{"remote", "enable", "--local", "--addr", "127.0.0.1:18888", "--ice-tcp-addr", "127.0.0.1:18889"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 
@@ -864,6 +874,145 @@ func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "pair_session_id:\tpair_test") || !strings.Contains(out.String(), "pair_secret:\tsecret") {
 		t.Fatalf("unexpected remote pair output:\n%s", out.String())
+	}
+}
+
+func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
+	oldStatus := remoteLocalStatusClient
+	oldEnable := remoteLocalEnableClient
+	oldRemoteStatus := remoteStatusClient
+	oldPair := pairStartClient
+	t.Cleanup(func() {
+		remoteLocalStatusClient = oldStatus
+		remoteLocalEnableClient = oldEnable
+		remoteStatusClient = oldRemoteStatus
+		pairStartClient = oldPair
+	})
+
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
+		return &protocol.RemoteLocalStatus{
+			Enabled:      true,
+			LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
+		}, nil
+	}
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
+		t.Fatalf("remote qrcode should not enable local web when it is already running")
+		return nil, nil
+	}
+	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteStatus, error) {
+		return &protocol.RemoteStatus{
+			DeviceID:   "mach_test",
+			DeviceName: "MacBook Pro",
+			ControlURL: "http://114.66.58.243:12306",
+			HubURL:     "http://114.66.58.243:8447",
+			UpdatedAt:  time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+	var gotParams protocol.PairStartParams
+	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params protocol.PairStartParams) (*protocol.PairStartResult, error) {
+		gotParams = params
+		return &protocol.PairStartResult{
+			Type:                        "termx_pair_v1",
+			MachineID:                   "mach_test",
+			MachineName:                 "MacBook Pro",
+			MachinePublicKeyFingerprint: "sha256:test",
+			LocalPairURL:                params.LocalPairURL,
+			PairSessionID:               "pair_test",
+			PairSecret:                  "secret",
+			ExpiresAt:                   time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"remote", "qrcode", "--json", "--ttl", "2m"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if gotParams.LocalPairURL != "http://127.0.0.1:18888/api/local/pair" || gotParams.TTLSeconds != 120 {
+		t.Fatalf("unexpected pair params: %#v", gotParams)
+	}
+	var decoded struct {
+		URI     string         `json:"uri"`
+		Payload map[string]any `json:"payload"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatalf("qrcode output is not JSON: %v\n%s", err, out.String())
+	}
+	if !strings.HasPrefix(decoded.URI, "termx://pair?payload=") {
+		t.Fatalf("unexpected URI: %s", decoded.URI)
+	}
+	if decoded.Payload["preferred_path"] != "public_p2p" {
+		t.Fatalf("expected public_p2p payload, got %#v", decoded.Payload)
+	}
+	endpoints, ok := decoded.Payload["endpoints"].(map[string]any)
+	if !ok || endpoints["web_control"] != "http://114.66.58.243:12306" || endpoints["hub"] != "http://114.66.58.243:8447" {
+		t.Fatalf("unexpected endpoints: %#v", decoded.Payload["endpoints"])
+	}
+	pairing, ok := decoded.Payload["pairing"].(map[string]any)
+	if !ok || pairing["session_id"] != "pair_test" || pairing["secret"] != "secret" {
+		t.Fatalf("unexpected pairing: %#v", decoded.Payload["pairing"])
+	}
+}
+
+func TestRemoteQRCodeStartsLocalWebWhenNeeded(t *testing.T) {
+	oldStatus := remoteLocalStatusClient
+	oldEnable := remoteLocalEnableClient
+	oldRemoteStatus := remoteStatusClient
+	oldPair := pairStartClient
+	t.Cleanup(func() {
+		remoteLocalStatusClient = oldStatus
+		remoteLocalEnableClient = oldEnable
+		remoteStatusClient = oldRemoteStatus
+		pairStartClient = oldPair
+	})
+
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
+		return &protocol.RemoteLocalStatus{}, nil
+	}
+	var gotEnable protocol.RemoteLocalEnableParams
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
+		gotEnable = params
+		return &protocol.RemoteLocalStatus{
+			Enabled:      true,
+			LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
+		}, nil
+	}
+	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteStatus, error) {
+		return &protocol.RemoteStatus{
+			DeviceID:   "mach_test",
+			DeviceName: "MacBook Pro",
+			ControlURL: "http://114.66.58.243:12306",
+			HubURL:     "http://114.66.58.243:8447",
+			UpdatedAt:  time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params protocol.PairStartParams) (*protocol.PairStartResult, error) {
+		return &protocol.PairStartResult{
+			Type:                        "termx_pair_v1",
+			MachineID:                   "mach_test",
+			MachineName:                 "MacBook Pro",
+			MachinePublicKeyFingerprint: "sha256:test",
+			LocalPairURL:                params.LocalPairURL,
+			PairSessionID:               "pair_test",
+			PairSecret:                  "secret",
+			ExpiresAt:                   time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"remote", "qrcode", "--payload"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if gotEnable.LocalWebAddr != "127.0.0.1:18888" || gotEnable.ICETCPAddr != "127.0.0.1:18889" {
+		t.Fatalf("unexpected local web enable params: %#v", gotEnable)
 	}
 }
 
@@ -1054,23 +1203,171 @@ func TestRemoteOpenRequiresEnabledLocalRuntime(t *testing.T) {
 	}
 }
 
-func TestRemoteEnableManagedPathIsExplicitlyDeferred(t *testing.T) {
+func TestRemoteEnableCloudPersistsBootstrapOutsideConfigFile(t *testing.T) {
 	oldEnable := remoteLocalEnableClient
+	oldLogin := remoteLoginHTTPClient
+	oldStore := remoteAuthStorePath
 	t.Cleanup(func() {
 		remoteLocalEnableClient = oldEnable
+		remoteLoginHTTPClient = oldLogin
+		remoteAuthStorePath = oldStore
 	})
 	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
-		t.Fatal("remote local enable client must not be called for managed enable")
+		t.Fatal("remote local enable client must not be called for cloud enable")
 		return nil, nil
 	}
+	remoteAuthStorePath = func(configPath string) (string, error) {
+		return filepath.Join(t.TempDir(), "remote-auth.json"), nil
+	}
+	var validatedToken string
+	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{
+		meFunc: func(ctx context.Context, controlURL string, token string) (remoteLoginUser, error) {
+			validatedToken = token
+			return remoteLoginUser{Email: "cloud@example.com"}, nil
+		},
+	}
 
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"remote", "enable"})
-	cmd.SetOut(io.Discard)
+	var out bytes.Buffer
+	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--cloud", "--server", "https://control.example.test", "--token", "cloud-secret", "--json"})
+	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "managed remote enable is not implemented yet") {
-		t.Fatalf("expected managed enable deferral error, got %v", err)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cloud enable returned error: %v", err)
+	}
+	if validatedToken != "cloud-secret" {
+		t.Fatalf("expected token validation, got %q", validatedToken)
+	}
+	if data, err := os.ReadFile(configPath); err == nil && strings.Contains(string(data), "cloud-secret") {
+		t.Fatal("raw connection key was written to termx config")
+	}
+	var decoded struct {
+		Enabled    bool   `json:"enabled"`
+		ControlURL string `json:"control_url"`
+		AuthStore  string `json:"auth_store"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatalf("cloud enable output is not JSON: %v\n%s", err, out.String())
+	}
+	if !decoded.Enabled || decoded.ControlURL != "https://control.example.test" || decoded.AuthStore == "" {
+		t.Fatalf("unexpected cloud enable JSON: %#v", decoded)
+	}
+	cfg, err := remoteConfigFromFileAndEnv(configPath)
+	if err != nil {
+		t.Fatalf("load cloud config: %v", err)
+	}
+	if !cfg.Enabled || cfg.ControlURL != "https://control.example.test" || cfg.AccessToken != "cloud-secret" {
+		t.Fatalf("unexpected cloud remote config: %#v", cfg)
+	}
+}
+
+func TestRemoteEnableCloudUsesBrowserLoginWhenKeyMissing(t *testing.T) {
+	oldEnable := remoteLocalEnableClient
+	oldLogin := remoteLoginHTTPClient
+	oldStore := remoteAuthStorePath
+	oldOpen := openBrowser
+	t.Cleanup(func() {
+		remoteLocalEnableClient = oldEnable
+		remoteLoginHTTPClient = oldLogin
+		remoteAuthStorePath = oldStore
+		openBrowser = oldOpen
+	})
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
+		t.Fatal("remote local enable client must not be called for cloud enable")
+		return nil, nil
+	}
+	authStore := filepath.Join(t.TempDir(), "remote-auth.json")
+	remoteAuthStorePath = func(configPath string) (string, error) {
+		return authStore, nil
+	}
+	var opened []string
+	openBrowser = func(rawURL string) error {
+		opened = append(opened, rawURL)
+		return nil
+	}
+	var validatedToken string
+	var pollCalls int
+	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{
+		createBrowserLoginFunc: func(ctx context.Context, controlURL string, clientName string) (remoteBrowserLoginResult, error) {
+			if controlURL != "https://control.example.test" || clientName != "termx local service" {
+				t.Fatalf("unexpected browser request control=%q client=%q", controlURL, clientName)
+			}
+			return remoteBrowserLoginResult{
+				BrowserLoginCode:        "browser-1",
+				UserCode:                "USER-CODE",
+				VerificationURIComplete: "https://control.example.test/device-login?code=USER-CODE",
+				ExpiresAt:               time.Now().Add(time.Minute),
+				Interval:                time.Nanosecond,
+			}, nil
+		},
+		pollBrowserLoginFunc: func(ctx context.Context, controlURL string, browserLoginCode string) (remoteLoginAuthResult, bool, error) {
+			pollCalls++
+			if pollCalls == 1 {
+				return remoteLoginAuthResult{}, false, nil
+			}
+			return remoteLoginAuthResult{
+				AccessToken:  "device-cloud-secret",
+				RefreshToken: "device-refresh",
+				User:         remoteLoginUser{Email: "cloud@example.com"},
+			}, true, nil
+		},
+		meFunc: func(ctx context.Context, controlURL string, token string) (remoteLoginUser, error) {
+			validatedToken = token
+			return remoteLoginUser{Email: "cloud@example.com"}, nil
+		},
+	}
+
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	cmd := newRootCmd()
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--cloud", "--server", "https://control.example.test", "--json"})
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cloud enable returned error: %v", err)
+	}
+	if len(opened) != 1 || opened[0] != "https://control.example.test/device-login?code=USER-CODE" {
+		t.Fatalf("unexpected opened login urls: %#v", opened)
+	}
+	if validatedToken != "device-cloud-secret" {
+		t.Fatalf("expected browser token validation, got %q", validatedToken)
+	}
+	if strings.Contains(out.String(), "login_url") {
+		t.Fatalf("JSON stdout should not contain progress output: %q", out.String())
+	}
+	if !strings.Contains(errOut.String(), "login_url:") {
+		t.Fatalf("expected login progress on stderr, got %q", errOut.String())
+	}
+	var decoded struct {
+		Enabled    bool   `json:"enabled"`
+		ControlURL string `json:"control_url"`
+		AuthStore  string `json:"auth_store"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatalf("cloud enable output is not JSON: %v\n%s", err, out.String())
+	}
+	if !decoded.Enabled || decoded.ControlURL != "https://control.example.test" || decoded.AuthStore == "" {
+		t.Fatalf("unexpected cloud enable JSON: %#v", decoded)
+	}
+	cfg, err := remoteConfigFromFileAndEnv(configPath)
+	if err != nil {
+		t.Fatalf("load cloud config: %v", err)
+	}
+	if !cfg.Enabled || cfg.ControlURL != "https://control.example.test" || cfg.AccessToken != "device-cloud-secret" {
+		t.Fatalf("unexpected cloud remote config: %#v", cfg)
+	}
+	var stored struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	if data, err := os.ReadFile(authStore); err != nil {
+		t.Fatalf("read auth store: %v", err)
+	} else if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatalf("decode auth store: %v", err)
+	}
+	if stored.RefreshToken != "device-refresh" {
+		t.Fatalf("expected refresh token to be persisted, got %q", stored.RefreshToken)
 	}
 }
 

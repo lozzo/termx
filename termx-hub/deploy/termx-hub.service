@@ -1,0 +1,16 @@
+[Unit]
+Description=TermX Hub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/termx-hub/termx-hub.env
+ExecStart=/usr/local/bin/termx-hub
+Restart=always
+RestartSec=3
+User=root
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

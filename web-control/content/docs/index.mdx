@@ -1,0 +1,48 @@
+---
+title: termx 文档
+description: termx 的安装、控制台、移动端、连接模式与 AI Agent 使用说明。
+---
+
+## 欢迎使用 termx
+
+termx 由三部分组成：运行在机器上的 `termx` 本机服务、负责账号与节点管理的 Web 控制台，以及负责扫码连接和移动端交互的 Android 客户端。
+
+### 当前版本能做什么
+
+- **机器侧运行 TermX 本机服务**：把终端会话、AI Agent 和文件操作能力暴露给移动端。
+- **Web 控制台统一管理**：登录、订阅、连接密钥、节点列表、Fn 快捷键、代码片段、路径收藏、邀请奖励都在这里完成。
+- **支持三种连接模式**：`local`、`hub`、`both`，分别适合局域网、远程访问和混合场景。
+- **面向 AI Agent 工作流**：适合 Claude Code、OpenCode 等命令行 Agent，手机上也能实时查看、确认和继续工作。
+- **提供发布与下载入口**：官网可分发 termx 二进制和 Android APK。
+
+### 两种推荐起步方式
+
+#### 先从局域网直连开始
+
+1. 安装 termx：`curl -sL https://termx.omscd.com/install.sh | bash`
+2. 启动本地模式：`termx --listen :8080`
+3. 在 Android 客户端中扫码连接
+
+从这里开始请看 [快速开始](/docs/getting-started)。
+
+#### 直接配置远程访问
+
+1. 注册并登录 Web 控制台
+2. 开通可用订阅并创建连接密钥
+3. 使用 `termx remote enable --server <control_url>` 启动 termx
+4. 用 Android 客户端扫码完成配对和远程连接
+
+继续阅读 [控制台与节点管理](/docs/guide/dashboard) 和 [连接模式](/docs/guide/connection-modes)。
+
+### 常用入口
+
+- [快速开始](/docs/getting-started)
+- [安装指南](/docs/getting-started/installation)
+- [配置说明](/docs/getting-started/configuration)
+- [控制台与节点管理](/docs/guide/dashboard)
+- [订阅、支付与密钥](/docs/guide/billing)
+- [移动端使用](/docs/guide/usage)
+- [命令行参考](/docs/guide/cli)
+- [常见问题](/docs/faq)
+
+> 当前公开下载渠道为 Android APK：[/api/v1/app/releases/latest?platform=android&type=apk&redirect=true](/api/v1/app/releases/latest?platform=android&type=apk&redirect=true)。iOS 版本暂未公开发布。

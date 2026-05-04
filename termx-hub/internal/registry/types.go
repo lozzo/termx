@@ -9,8 +9,11 @@ import (
 
 const (
 	AgentOnline = "online"
-	PathManaged = "managed"
+	PathCloud   = "cloud"
 )
+
+// PathManaged is kept as a compatibility alias for older internal callers.
+const PathManaged = PathCloud
 
 type Clock interface {
 	Now() time.Time

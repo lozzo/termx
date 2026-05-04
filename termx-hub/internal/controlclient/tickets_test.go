@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-hub/internal/cloud"
 	"github.com/lozzow/termx/termx-hub/internal/controlclient"
-	"github.com/lozzow/termx/termx-hub/internal/managed"
 	"github.com/lozzow/termx/termx-hub/internal/registry"
 )
 
-func TestManagedTicketVerifierChecksAndConsumesThroughWebControl(t *testing.T) {
+func TestConnectionTicketVerifierChecksAndConsumesThroughWebControl(t *testing.T) {
 	t.Parallel()
 
 	var seen []string
@@ -39,7 +39,7 @@ func TestManagedTicketVerifierChecksAndConsumesThroughWebControl(t *testing.T) {
 				"id":          req.TicketID,
 				"machine_id":  req.MachineID,
 				"terminal_id": req.TerminalID,
-				"path":        "managed",
+				"path":        "cloud",
 				"allow_relay": false,
 				"expires_at":  "2026-05-03T13:00:00Z",
 			},
@@ -47,7 +47,7 @@ func TestManagedTicketVerifierChecksAndConsumesThroughWebControl(t *testing.T) {
 	}))
 	defer control.Close()
 
-	verifier := controlclient.NewManagedTicketVerifier(controlclient.ManagedTicketVerifierConfig{
+	verifier := controlclient.NewConnectionTicketVerifier(controlclient.ConnectionTicketVerifierConfig{
 		BaseURL:      control.URL,
 		SharedSecret: "hub-secret",
 		Client:       control.Client(),
@@ -59,7 +59,7 @@ func TestManagedTicketVerifierChecksAndConsumesThroughWebControl(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("check ticket: %v", err)
 	}
-	ticket, err := verifier.ConsumeManagedTicket(context.Background(), managed.VerifyTicketInput{
+	ticket, err := verifier.ConsumeConnectionTicket(context.Background(), cloud.VerifyTicketInput{
 		TicketID:   "ticket-1",
 		MachineID:  "mach-1",
 		TerminalID: "term-1",
@@ -67,15 +67,15 @@ func TestManagedTicketVerifierChecksAndConsumesThroughWebControl(t *testing.T) {
 	if err != nil {
 		t.Fatalf("consume ticket: %v", err)
 	}
-	if ticket.ID != "ticket-1" || ticket.Path != managed.PathManaged || !ticket.ExpiresAt.Equal(time.Date(2026, 5, 3, 13, 0, 0, 0, time.UTC)) {
+	if ticket.ID != "ticket-1" || ticket.Path != cloud.PathCloud || !ticket.ExpiresAt.Equal(time.Date(2026, 5, 3, 13, 0, 0, 0, time.UTC)) {
 		t.Fatalf("ticket = %+v", ticket)
 	}
-	if len(seen) != 2 || seen[0] != "/api/v1/hub/managed-tickets/check" || seen[1] != "/api/v1/hub/managed-tickets/consume" {
+	if len(seen) != 2 || seen[0] != "/api/v1/hub/connection-tickets/check" || seen[1] != "/api/v1/hub/connection-tickets/consume" {
 		t.Fatalf("paths = %v", seen)
 	}
 }
 
-func TestManagedTicketVerifierVerifiesAgentRegistrationThroughWebControl(t *testing.T) {
+func TestConnectionTicketVerifierVerifiesAgentRegistrationThroughWebControl(t *testing.T) {
 	t.Parallel()
 
 	var got struct {
@@ -103,7 +103,7 @@ func TestManagedTicketVerifierVerifiesAgentRegistrationThroughWebControl(t *test
 	}))
 	defer control.Close()
 
-	verifier := controlclient.NewManagedTicketVerifier(controlclient.ManagedTicketVerifierConfig{
+	verifier := controlclient.NewConnectionTicketVerifier(controlclient.ConnectionTicketVerifierConfig{
 		BaseURL:      control.URL,
 		SharedSecret: "hub-secret",
 		Client:       control.Client(),
@@ -126,7 +126,7 @@ func TestManagedTicketVerifierVerifiesAgentRegistrationThroughWebControl(t *test
 	}
 }
 
-func TestManagedTicketVerifierFetchesAgentPolicyThroughWebControl(t *testing.T) {
+func TestConnectionTicketVerifierFetchesAgentPolicyThroughWebControl(t *testing.T) {
 	t.Parallel()
 
 	var got struct {
@@ -152,13 +152,13 @@ func TestManagedTicketVerifierFetchesAgentPolicyThroughWebControl(t *testing.T) 
 				"reason":         "owner requested",
 				"allow_relay":    false,
 				"relay_in_use":   false,
-				"transport_path": "managed",
+				"transport_path": "cloud",
 			},
 		})
 	}))
 	defer control.Close()
 
-	verifier := controlclient.NewManagedTicketVerifier(controlclient.ManagedTicketVerifierConfig{
+	verifier := controlclient.NewConnectionTicketVerifier(controlclient.ConnectionTicketVerifierConfig{
 		BaseURL:      control.URL,
 		SharedSecret: "hub-secret",
 		Client:       control.Client(),
@@ -178,7 +178,7 @@ func TestManagedTicketVerifierFetchesAgentPolicyThroughWebControl(t *testing.T) 
 	}
 }
 
-func TestManagedTicketVerifierRejectsMismatchedAgentPolicy(t *testing.T) {
+func TestConnectionTicketVerifierRejectsMismatchedAgentPolicy(t *testing.T) {
 	t.Parallel()
 
 	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -192,7 +192,7 @@ func TestManagedTicketVerifierRejectsMismatchedAgentPolicy(t *testing.T) {
 	}))
 	defer control.Close()
 
-	verifier := controlclient.NewManagedTicketVerifier(controlclient.ManagedTicketVerifierConfig{
+	verifier := controlclient.NewConnectionTicketVerifier(controlclient.ConnectionTicketVerifierConfig{
 		BaseURL:      control.URL,
 		SharedSecret: "hub-secret",
 		Client:       control.Client(),
@@ -205,10 +205,10 @@ func TestManagedTicketVerifierRejectsMismatchedAgentPolicy(t *testing.T) {
 	}
 }
 
-func TestManagedTicketVerifierRejectsUnsignedAgentRegistration(t *testing.T) {
+func TestConnectionTicketVerifierRejectsUnsignedAgentRegistration(t *testing.T) {
 	t.Parallel()
 
-	verifier := controlclient.NewManagedTicketVerifier(controlclient.ManagedTicketVerifierConfig{
+	verifier := controlclient.NewConnectionTicketVerifier(controlclient.ConnectionTicketVerifierConfig{
 		BaseURL:      "http://127.0.0.1:1",
 		SharedSecret: "hub-secret",
 	})
@@ -220,7 +220,7 @@ func TestManagedTicketVerifierRejectsUnsignedAgentRegistration(t *testing.T) {
 	}
 }
 
-func TestManagedTicketVerifierFailsClosedWithoutTURNOrRuntimePayload(t *testing.T) {
+func TestConnectionTicketVerifierFailsClosedWithoutTURNOrRuntimePayload(t *testing.T) {
 	t.Parallel()
 
 	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -237,17 +237,17 @@ func TestManagedTicketVerifierFailsClosedWithoutTURNOrRuntimePayload(t *testing.
 	}))
 	defer control.Close()
 
-	verifier := controlclient.NewManagedTicketVerifier(controlclient.ManagedTicketVerifierConfig{
+	verifier := controlclient.NewConnectionTicketVerifier(controlclient.ConnectionTicketVerifierConfig{
 		BaseURL:      control.URL,
 		SharedSecret: "hub-secret",
 		Client:       control.Client(),
 	})
-	_, err := verifier.ConsumeManagedTicket(context.Background(), managed.VerifyTicketInput{
+	_, err := verifier.ConsumeConnectionTicket(context.Background(), cloud.VerifyTicketInput{
 		TicketID:   "ticket-1",
 		MachineID:  "mach-1",
 		TerminalID: "term-1",
 	})
 	if err == nil {
-		t.Fatal("relay path ticket was accepted as managed")
+		t.Fatal("relay path ticket was accepted as cloud")
 	}
 }

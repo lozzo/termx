@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,8 +20,8 @@ import (
 type remoteLoginClient interface {
 	Me(context.Context, string, string) (remoteLoginUser, error)
 	Login(context.Context, string, string, string) (remoteLoginAuthResult, error)
-	CreateDeviceCode(context.Context, string, string) (remoteDeviceCodeResult, error)
-	PollDeviceCode(context.Context, string, string) (remoteLoginAuthResult, bool, error)
+	CreateBrowserLogin(context.Context, string, string) (remoteBrowserLoginResult, error)
+	PollBrowserLogin(context.Context, string, string) (remoteLoginAuthResult, bool, error)
 }
 
 type remoteLoginUser struct {
@@ -33,8 +34,8 @@ type remoteLoginAuthResult struct {
 	RefreshToken string          `json:"refresh_token"`
 }
 
-type remoteDeviceCodeResult struct {
-	DeviceCode              string
+type remoteBrowserLoginResult struct {
+	BrowserLoginCode        string
 	UserCode                string
 	VerificationURIComplete string
 	ExpiresAt               time.Time
@@ -58,31 +59,33 @@ var (
 func remoteLoginCommand(configPath *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Login this daemon to Web Control",
+		Short: "Login this computer to Web Control",
 	}
 	cmd.AddCommand(remoteLoginTokenCommand(configPath))
 	cmd.AddCommand(remoteLoginPasswordCommand(configPath))
-	cmd.AddCommand(remoteLoginDeviceCodeCommand(configPath))
+	cmd.AddCommand(remoteLoginBrowserCommand(configPath))
 	return cmd
 }
 
 func remoteLoginTokenCommand(configPath *string) *cobra.Command {
+	var serverURL string
 	var controlURL string
 	var token string
 	var tokenEnv string
 	var tokenFile string
 	cmd := &cobra.Command{
-		Use:   "token",
-		Short: "Login with an existing Web Control access token",
+		Use:    "token",
+		Short:  "Login with an existing Web Control connection key",
+		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			controlURL = strings.TrimSpace(controlURL)
+			controlURL = firstNonEmpty(serverURL, controlURL)
 			resolvedToken, err := resolveSecretFlag(token, tokenEnv, tokenFile)
 			if err != nil {
 				return err
 			}
 			token = strings.TrimSpace(resolvedToken)
 			if controlURL == "" || token == "" {
-				return fmt.Errorf("control-url and token source are required")
+				return fmt.Errorf("--server and connection key source are required")
 			}
 			if _, err := remoteLoginHTTPClient.Me(cmd.Context(), controlURL, token); err != nil {
 				return err
@@ -90,24 +93,28 @@ func remoteLoginTokenCommand(configPath *string) *cobra.Command {
 			return persistRemoteLogin(cmd, *configPath, remoteAuthRecord{ControlURL: controlURL, AccessToken: token})
 		},
 	}
+	cmd.Flags().StringVar(&serverURL, "server", "", "Web Control URL")
 	cmd.Flags().StringVar(&controlURL, "control-url", "", "Web Control URL")
-	cmd.Flags().StringVar(&token, "token", "", "Web Control access token")
-	cmd.Flags().StringVar(&tokenEnv, "token-env", "", "environment variable containing the Web Control access token")
-	cmd.Flags().StringVar(&tokenFile, "token-file", "", "file containing the Web Control access token")
+	cmd.Flags().StringVar(&token, "token", "", "Web Control connection key")
+	cmd.Flags().StringVar(&tokenEnv, "token-env", "", "environment variable containing the Web Control connection key")
+	cmd.Flags().StringVar(&tokenFile, "token-file", "", "file containing the Web Control connection key")
+	_ = cmd.Flags().MarkHidden("control-url")
 	return cmd
 }
 
 func remoteLoginPasswordCommand(configPath *string) *cobra.Command {
+	var serverURL string
 	var controlURL string
 	var email string
 	var password string
 	var passwordEnv string
 	var passwordFile string
 	cmd := &cobra.Command{
-		Use:   "password",
-		Short: "Login with Web Control email and password",
+		Use:    "password",
+		Short:  "Login with Web Control email and password",
+		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			controlURL = strings.TrimSpace(controlURL)
+			controlURL = firstNonEmpty(serverURL, controlURL)
 			email = strings.TrimSpace(email)
 			resolvedPassword, err := resolveSecretFlag(password, passwordEnv, passwordFile)
 			if err != nil {
@@ -115,7 +122,7 @@ func remoteLoginPasswordCommand(configPath *string) *cobra.Command {
 			}
 			password = resolvedPassword
 			if controlURL == "" || email == "" || password == "" {
-				return fmt.Errorf("control-url, email, and password source are required")
+				return fmt.Errorf("--server, email, and password source are required")
 			}
 			auth, err := remoteLoginHTTPClient.Login(cmd.Context(), controlURL, email, password)
 			if err != nil {
@@ -128,66 +135,102 @@ func remoteLoginPasswordCommand(configPath *string) *cobra.Command {
 			})
 		},
 	}
+	cmd.Flags().StringVar(&serverURL, "server", "", "Web Control URL")
 	cmd.Flags().StringVar(&controlURL, "control-url", "", "Web Control URL")
 	cmd.Flags().StringVar(&email, "email", "", "Web Control email")
 	cmd.Flags().StringVar(&password, "password", "", "Web Control password")
 	cmd.Flags().StringVar(&passwordEnv, "password-env", "", "environment variable containing the Web Control password")
 	cmd.Flags().StringVar(&passwordFile, "password-file", "", "file containing the Web Control password")
+	_ = cmd.Flags().MarkHidden("control-url")
 	return cmd
 }
 
-func remoteLoginDeviceCodeCommand(configPath *string) *cobra.Command {
+func remoteLoginBrowserCommand(configPath *string) *cobra.Command {
+	var serverURL string
 	var controlURL string
 	var timeout time.Duration
+	var noBrowser bool
 	cmd := &cobra.Command{
-		Use:   "device-code",
-		Short: "Login with a Web Control device code",
+		Use:     "browser",
+		Aliases: []string{"device-code"},
+		Short:   "Login in the browser",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			controlURL = strings.TrimSpace(controlURL)
+			controlURL = firstNonEmpty(serverURL, controlURL)
 			if controlURL == "" {
-				return fmt.Errorf("control-url is required")
+				return fmt.Errorf("--server is required")
 			}
 			if timeout <= 0 {
 				timeout = 5 * time.Minute
 			}
-			created, err := remoteLoginHTTPClient.CreateDeviceCode(cmd.Context(), controlURL, "termx cli")
+			created, err := remoteLoginHTTPClient.CreateBrowserLogin(cmd.Context(), controlURL, "termx cli")
 			if err != nil {
 				return err
 			}
-			if created.VerificationURIComplete != "" {
-				fmt.Fprintln(cmd.OutOrStdout(), created.VerificationURIComplete)
-			}
-			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
-			defer cancel()
-			interval := created.Interval
-			if interval <= 0 {
-				interval = 5 * time.Second
-			}
-			for {
-				auth, ok, err := remoteLoginHTTPClient.PollDeviceCode(ctx, controlURL, created.DeviceCode)
-				if err != nil {
-					return err
-				}
-				if ok {
-					return persistRemoteLogin(cmd, *configPath, remoteAuthRecord{
-						ControlURL:   controlURL,
-						AccessToken:  auth.AccessToken,
-						RefreshToken: auth.RefreshToken,
-					})
-				}
-				timer := time.NewTimer(interval)
-				select {
-				case <-ctx.Done():
-					timer.Stop()
-					return ctx.Err()
-				case <-timer.C:
-				}
+			if auth, err := completeRemoteBrowserLogin(cmd, controlURL, created, timeout, !noBrowser, cmd.OutOrStdout()); err != nil {
+				return err
+			} else {
+				return persistRemoteLogin(cmd, *configPath, remoteAuthRecord{
+					ControlURL:   controlURL,
+					AccessToken:  auth.AccessToken,
+					RefreshToken: auth.RefreshToken,
+				})
 			}
 		},
 	}
+	cmd.Flags().StringVar(&serverURL, "server", "", "Web Control URL")
 	cmd.Flags().StringVar(&controlURL, "control-url", "", "Web Control URL")
-	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "device-code polling timeout")
+	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "browser login timeout")
+	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the login URL without opening a browser")
+	_ = cmd.Flags().MarkHidden("control-url")
 	return cmd
+}
+
+func completeRemoteBrowserLogin(cmd *cobra.Command, controlURL string, created remoteBrowserLoginResult, timeout time.Duration, launchBrowser bool, progress io.Writer) (remoteLoginAuthResult, error) {
+	if created.BrowserLoginCode == "" {
+		return remoteLoginAuthResult{}, fmt.Errorf("control did not return a browser login code")
+	}
+	if progress == nil {
+		progress = cmd.OutOrStdout()
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+	if created.VerificationURIComplete != "" {
+		fmt.Fprintf(progress, "login_url:\t%s\n", created.VerificationURIComplete)
+		if launchBrowser {
+			if err := openBrowser(created.VerificationURIComplete); err != nil {
+				fmt.Fprintf(progress, "browser_open:\tfailed: %v\n", err)
+			} else {
+				fmt.Fprintln(progress, "browser_open:\ttrue")
+			}
+		}
+	} else if created.UserCode != "" {
+		fmt.Fprintf(progress, "login_code:\t%s\n", created.UserCode)
+	}
+	fmt.Fprintln(progress, "waiting:\tfinish login in the browser")
+
+	ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
+	defer cancel()
+	interval := created.Interval
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	for {
+		auth, ok, err := remoteLoginHTTPClient.PollBrowserLogin(ctx, controlURL, created.BrowserLoginCode)
+		if err != nil {
+			return remoteLoginAuthResult{}, err
+		}
+		if ok {
+			return auth, nil
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return remoteLoginAuthResult{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func persistRemoteLogin(cmd *cobra.Command, configPath string, record remoteAuthRecord) error {
@@ -255,7 +298,7 @@ func (controlPlaneLoginClient) Login(ctx context.Context, controlURL string, ema
 	return out, nil
 }
 
-func (controlPlaneLoginClient) CreateDeviceCode(ctx context.Context, controlURL string, clientName string) (remoteDeviceCodeResult, error) {
+func (controlPlaneLoginClient) CreateBrowserLogin(ctx context.Context, controlURL string, clientName string) (remoteBrowserLoginResult, error) {
 	var out struct {
 		DeviceCode              string `json:"device_code"`
 		UserCode                string `json:"user_code"`
@@ -263,14 +306,14 @@ func (controlPlaneLoginClient) CreateDeviceCode(ctx context.Context, controlURL 
 		ExpiresIn               int    `json:"expires_in"`
 		Interval                int    `json:"interval"`
 	}
-	if err := controlJSON(ctx, http.MethodPost, strings.TrimRight(controlURL, "/")+"/api/v1/auth/device-code", map[string]string{
+	if err := controlJSON(ctx, http.MethodPost, strings.TrimRight(controlURL, "/")+"/api/v1/auth/browser", map[string]string{
 		"client_name":      clientName,
 		"verification_uri": strings.TrimRight(controlURL, "/") + "/device",
 	}, &out, ""); err != nil {
-		return remoteDeviceCodeResult{}, err
+		return remoteBrowserLoginResult{}, err
 	}
-	return remoteDeviceCodeResult{
-		DeviceCode:              out.DeviceCode,
+	return remoteBrowserLoginResult{
+		BrowserLoginCode:        out.DeviceCode,
 		UserCode:                out.UserCode,
 		VerificationURIComplete: out.VerificationURIComplete,
 		ExpiresAt:               time.Now().Add(time.Duration(out.ExpiresIn) * time.Second),
@@ -278,10 +321,10 @@ func (controlPlaneLoginClient) CreateDeviceCode(ctx context.Context, controlURL 
 	}, nil
 }
 
-func (controlPlaneLoginClient) PollDeviceCode(ctx context.Context, controlURL string, deviceCode string) (remoteLoginAuthResult, bool, error) {
+func (controlPlaneLoginClient) PollBrowserLogin(ctx context.Context, controlURL string, browserLoginCode string) (remoteLoginAuthResult, bool, error) {
 	var out remoteLoginAuthResult
-	err := controlJSON(ctx, http.MethodPost, strings.TrimRight(controlURL, "/")+"/api/v1/auth/device-code/token", map[string]string{
-		"device_code": deviceCode,
+	err := controlJSON(ctx, http.MethodPost, strings.TrimRight(controlURL, "/")+"/api/v1/auth/browser/token", map[string]string{
+		"device_code": browserLoginCode,
 	}, &out, "")
 	if err == nil {
 		return out, true, nil
@@ -358,7 +401,7 @@ func saveRemoteAuthRecord(path string, record remoteAuthRecord) error {
 	record.AccessToken = strings.TrimSpace(record.AccessToken)
 	record.RefreshToken = strings.TrimSpace(record.RefreshToken)
 	if record.ControlURL == "" || record.AccessToken == "" {
-		return errors.New("control url and access token are required")
+		return errors.New("control url and connection key are required")
 	}
 	if record.SavedAt == "" {
 		record.SavedAt = time.Now().UTC().Format(time.RFC3339Nano)

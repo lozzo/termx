@@ -10,23 +10,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-hub/internal/cloud"
 	"github.com/lozzow/termx/termx-hub/internal/httpapi"
 	"github.com/lozzow/termx/termx-hub/internal/ice"
-	"github.com/lozzow/termx/termx-hub/internal/managed"
 	"github.com/lozzow/termx/termx-hub/internal/registry"
 )
 
-func TestManagedSessionHTTPContract(t *testing.T) {
+func TestCloudSessionHTTPContract(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	clock := fixedClock(time.Date(2026, 5, 3, 9, 55, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]managed.Ticket{
+	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]cloud.Ticket{
 		"ticket_allowed": {
 			ID:         "ticket_allowed",
 			MachineID:  "mach_1",
 			TerminalID: "term_1",
-			Path:       managed.PathManaged,
+			Path:       cloud.PathCloud,
 			AllowRelay: true,
 			ExpiresAt:  clock.Now().Add(time.Minute),
 		},
@@ -35,9 +35,9 @@ func TestManagedSessionHTTPContract(t *testing.T) {
 	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	svc := managed.NewService(managed.Config{Registry: reg, Tickets: verifier, Clock: clock})
+	svc := cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
-		Managed: svc,
+		Cloud: svc,
 		ICE: ice.NewService(ice.Config{
 			Clock:        clock,
 			SharedSecret: "turn-secret",
@@ -55,7 +55,7 @@ func TestManagedSessionHTTPContract(t *testing.T) {
 			"signature": "cert-signature",
 		},
 		"offer": map[string]any{
-			"session_id":     "rtc_managed_1",
+			"session_id":     "rtc_cloud_1",
 			"sdp":            minimalSDP("offer"),
 			"ice_candidates": []any{"candidate:1 1 udp 1 192.0.2.1 1 typ host"},
 		},
@@ -72,7 +72,7 @@ func TestManagedSessionHTTPContract(t *testing.T) {
 		responseCh <- postJSON(t, router, "/api/v1/sessions", requestBody)
 	}()
 
-	polled, err := svc.PollAgentOffer(ctx, managed.PollAgentOfferInput{
+	polled, err := svc.PollAgentOffer(ctx, cloud.PollAgentOfferInput{
 		AgentID:   "agent_1",
 		MachineID: "mach_1",
 		Timeout:   time.Second,
@@ -80,10 +80,10 @@ func TestManagedSessionHTTPContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("poll offer: %v", err)
 	}
-	if polled.SDP != minimalSDP("offer") || polled.Path != managed.PathManaged {
+	if polled.SDP != minimalSDP("offer") || polled.Path != cloud.PathCloud {
 		t.Fatalf("polled offer = %+v", polled)
 	}
-	if polled.SessionID != "rtc_managed_1" {
+	if polled.SessionID != "rtc_cloud_1" {
 		t.Fatalf("polled session id = %q, want app session id", polled.SessionID)
 	}
 	if len(polled.AppCertificate) == 0 || !strings.Contains(string(polled.AppCertificate), "cert-signature") {
@@ -95,7 +95,7 @@ func TestManagedSessionHTTPContract(t *testing.T) {
 	if len(polled.ICECandidates) != 1 || polled.ICECandidates[0] != "candidate:1 1 udp 1 192.0.2.1 1 typ host" {
 		t.Fatalf("polled offer missing standalone candidates: %+v", polled.ICECandidates)
 	}
-	if err := svc.SubmitAnswer(ctx, managed.SubmitAnswerInput{
+	if err := svc.SubmitAnswer(ctx, cloud.SubmitAnswerInput{
 		AgentID:   "agent_1",
 		MachineID: "mach_1",
 		OfferID:   polled.ID,
@@ -131,7 +131,7 @@ func TestManagedSessionHTTPContract(t *testing.T) {
 		} `json:"relay_policy"`
 	}
 	decodeJSON(t, answer, &got)
-	if got.SessionID != "rtc_managed_1" || got.Path != "managed" || got.MachineID != "mach_1" || got.Answer.SDP != minimalSDP("answer") {
+	if got.SessionID != "rtc_cloud_1" || got.Path != "cloud" || got.MachineID != "mach_1" || got.Answer.SDP != minimalSDP("answer") {
 		t.Fatalf("answer response = %+v", got)
 	}
 	if !got.RelayPolicy.AllowRelay || got.RelayPolicy.AllowRelayTransfer {
@@ -139,30 +139,30 @@ func TestManagedSessionHTTPContract(t *testing.T) {
 	}
 	if len(got.ICEServers) != 2 || !strings.HasPrefix(got.ICEServers[1].URLs[0], "turn:") ||
 		got.ICEServers[1].Username == "" || got.ICEServers[1].Credential == "" {
-		t.Fatalf("managed ICE servers = %+v", got.ICEServers)
+		t.Fatalf("cloud ICE servers = %+v", got.ICEServers)
 	}
 	if strings.Contains(strings.ToLower(answer.Body.String()), `"path":"relay"`) {
 		t.Fatalf("relay surfaced as client path: %s", answer.Body.String())
 	}
 }
 
-func TestManagedSessionHTTPWaitsForDelayedAgentAnswer(t *testing.T) {
+func TestCloudSessionHTTPWaitsForDelayedAgentAnswer(t *testing.T) {
 	t.Parallel()
 
 	clock := fixedClock(time.Date(2026, 5, 3, 10, 22, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]managed.Ticket{
+	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]cloud.Ticket{
 		"ticket_allowed": {
 			ID:         "ticket_allowed",
 			MachineID:  "mach_1",
 			TerminalID: "term_1",
-			Path:       managed.PathManaged,
+			Path:       cloud.PathCloud,
 			ExpiresAt:  clock.Now().Add(time.Minute),
 		},
 	}}
 	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
-	svc := managed.NewService(managed.Config{Registry: reg, Tickets: verifier, Clock: clock})
+	svc := cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
-		Managed:       svc,
+		Cloud:         svc,
 		Registry:      reg,
 		AnswerTimeout: 500 * time.Millisecond,
 		PollInterval:  time.Millisecond,
@@ -185,7 +185,7 @@ func TestManagedSessionHTTPWaitsForDelayedAgentAnswer(t *testing.T) {
 
 	responseCh := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
-		responseCh <- postJSON(t, router, "/api/v1/sessions", validManagedSessionRequest())
+		responseCh <- postJSON(t, router, "/api/v1/sessions", validCloudSessionRequest())
 	}()
 
 	poll := postJSON(t, router, "/api/v1/agents/signaling/poll", map[string]any{
@@ -202,7 +202,7 @@ func TestManagedSessionHTTPWaitsForDelayedAgentAnswer(t *testing.T) {
 		} `json:"offer"`
 	}
 	decodeJSON(t, poll, &pollResp)
-	if pollResp.Offer.SessionID != "rtc_managed_1" {
+	if pollResp.Offer.SessionID != "rtc_cloud_1" {
 		t.Fatalf("poll session id = %q", pollResp.Offer.SessionID)
 	}
 	answer := postJSON(t, router, "/api/v1/agents/signaling/answer", map[string]any{
@@ -237,17 +237,17 @@ func TestManagedSessionHTTPWaitsForDelayedAgentAnswer(t *testing.T) {
 	}
 }
 
-func TestManagedSessionHTTPRejectsRuntimePayload(t *testing.T) {
+func TestCloudSessionHTTPRejectsRuntimePayload(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	clock := fixedClock(time.Date(2026, 5, 3, 10, 1, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]managed.Ticket{
+	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]cloud.Ticket{
 		"ticket_allowed": {
 			ID:         "ticket_allowed",
 			MachineID:  "mach_1",
 			TerminalID: "term_1",
-			Path:       managed.PathManaged,
+			Path:       cloud.PathCloud,
 			ExpiresAt:  clock.Now().Add(time.Minute),
 		},
 	}}
@@ -256,7 +256,7 @@ func TestManagedSessionHTTPRejectsRuntimePayload(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 	router := httpapi.NewHandler(httpapi.Config{
-		Managed: managed.NewService(managed.Config{Registry: reg, Tickets: verifier, Clock: clock}),
+		Cloud: cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock}),
 	})
 	resp := postJSON(t, router, "/api/v1/sessions", map[string]any{
 		"connect_ticket": "ticket_allowed",
@@ -267,7 +267,7 @@ func TestManagedSessionHTTPRejectsRuntimePayload(t *testing.T) {
 			"signature": "cert-signature",
 		},
 		"offer": map[string]any{
-			"session_id": "rtc_managed_bad",
+			"session_id": "rtc_cloud_bad",
 			"sdp":        "v=0\r\nterminal_data=must-not-forward",
 		},
 		"signature": map[string]any{
@@ -285,17 +285,17 @@ func TestManagedSessionHTTPRejectsRuntimePayload(t *testing.T) {
 	}
 }
 
-func TestManagedSessionHTTPRejectsMissingEnvelopeBeforeConsumingTicket(t *testing.T) {
+func TestCloudSessionHTTPRejectsMissingEnvelopeBeforeConsumingTicket(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	clock := fixedClock(time.Date(2026, 5, 3, 10, 18, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]managed.Ticket{
+	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]cloud.Ticket{
 		"ticket_allowed": {
 			ID:         "ticket_allowed",
 			MachineID:  "mach_1",
 			TerminalID: "term_1",
-			Path:       managed.PathManaged,
+			Path:       cloud.PathCloud,
 			ExpiresAt:  clock.Now().Add(time.Minute),
 		},
 	}}
@@ -304,7 +304,7 @@ func TestManagedSessionHTTPRejectsMissingEnvelopeBeforeConsumingTicket(t *testin
 		t.Fatalf("register: %v", err)
 	}
 	router := httpapi.NewHandler(httpapi.Config{
-		Managed: managed.NewService(managed.Config{Registry: reg, Tickets: verifier, Clock: clock}),
+		Cloud: cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock}),
 	})
 	resp := postJSON(t, router, "/api/v1/sessions", map[string]any{
 		"connect_ticket": "ticket_allowed",
@@ -323,17 +323,17 @@ func TestManagedSessionHTTPRejectsMissingEnvelopeBeforeConsumingTicket(t *testin
 	}
 }
 
-func TestManagedSessionHTTPTimeoutReturnsRecoverableSession(t *testing.T) {
+func TestCloudSessionHTTPTimeoutReturnsRecoverableSession(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	clock := fixedClock(time.Date(2026, 5, 3, 10, 20, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]managed.Ticket{
+	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]cloud.Ticket{
 		"ticket_allowed": {
 			ID:         "ticket_allowed",
 			MachineID:  "mach_1",
 			TerminalID: "term_1",
-			Path:       managed.PathManaged,
+			Path:       cloud.PathCloud,
 			ExpiresAt:  clock.Now().Add(time.Minute),
 		},
 	}}
@@ -341,13 +341,13 @@ func TestManagedSessionHTTPTimeoutReturnsRecoverableSession(t *testing.T) {
 	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	svc := managed.NewService(managed.Config{Registry: reg, Tickets: verifier, Clock: clock})
+	svc := cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
-		Managed:       svc,
+		Cloud:         svc,
 		AnswerTimeout: time.Millisecond,
 		PollInterval:  time.Millisecond,
 	})
-	resp := postJSON(t, router, "/api/v1/sessions", validManagedSessionRequest())
+	resp := postJSON(t, router, "/api/v1/sessions", validCloudSessionRequest())
 	if resp.Code != http.StatusAccepted {
 		t.Fatalf("timeout status = %d body=%s", resp.Code, resp.Body.String())
 	}
@@ -358,11 +358,11 @@ func TestManagedSessionHTTPTimeoutReturnsRecoverableSession(t *testing.T) {
 		Pending   bool   `json:"pending"`
 	}
 	decodeJSON(t, resp, &got)
-	if got.SessionID != "rtc_managed_1" || got.Path != "managed" || got.MachineID != "mach_1" || !got.Pending {
+	if got.SessionID != "rtc_cloud_1" || got.Path != "cloud" || got.MachineID != "mach_1" || !got.Pending {
 		t.Fatalf("timeout response = %+v", got)
 	}
 
-	polled, err := svc.PollAgentOffer(ctx, managed.PollAgentOfferInput{
+	polled, err := svc.PollAgentOffer(ctx, cloud.PollAgentOfferInput{
 		AgentID:   "agent_1",
 		MachineID: "mach_1",
 		Timeout:   time.Second,
@@ -370,7 +370,7 @@ func TestManagedSessionHTTPTimeoutReturnsRecoverableSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("poll after timeout: %v", err)
 	}
-	if err := svc.SubmitAnswer(ctx, managed.SubmitAnswerInput{
+	if err := svc.SubmitAnswer(ctx, cloud.SubmitAnswerInput{
 		AgentID:   "agent_1",
 		MachineID: "mach_1",
 		OfferID:   polled.ID,
@@ -397,7 +397,7 @@ func TestManagedSessionHTTPTimeoutReturnsRecoverableSession(t *testing.T) {
 	}
 }
 
-func TestManagedSessionHTTPRejectsOversizedBody(t *testing.T) {
+func TestCloudSessionHTTPRejectsOversizedBody(t *testing.T) {
 	t.Parallel()
 
 	router := httpapi.NewHandler(httpapi.Config{MaxBodyBytes: 128})
@@ -418,8 +418,8 @@ func TestManagedSessionHTTPRejectsOversizedBody(t *testing.T) {
 	}
 }
 
-func validManagedSessionRequestWithIDs(machineID, terminalID, sessionID string) map[string]any {
-	req := validManagedSessionRequest()
+func validCloudSessionRequestWithIDs(machineID, terminalID, sessionID string) map[string]any {
+	req := validCloudSessionRequest()
 	req["machine_id"] = machineID
 	req["terminal_id"] = terminalID
 	offer := req["offer"].(map[string]any)
@@ -429,12 +429,20 @@ func validManagedSessionRequestWithIDs(machineID, terminalID, sessionID string) 
 
 func postJSON(t *testing.T, handler http.Handler, path string, body map[string]any) *httptest.ResponseRecorder {
 	t.Helper()
+	return postJSONWithSecret(t, handler, path, "", body)
+}
+
+func postJSONWithSecret(t *testing.T, handler http.Handler, path string, secret string, body map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
 	data, err := json.Marshal(body)
 	if err != nil {
 		t.Fatalf("marshal request: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(data))
 	req.Header.Set("Content-Type", "application/json")
+	if secret != "" {
+		req.Header.Set("X-TermX-Hub-Secret", secret)
+	}
 	resp := httptest.NewRecorder()
 	handler.ServeHTTP(resp, req)
 	return resp
@@ -459,7 +467,7 @@ func decodeJSON(t *testing.T, resp *httptest.ResponseRecorder, out any) {
 }
 
 type fakeTicketVerifier struct {
-	tickets               map[string]managed.Ticket
+	tickets               map[string]cloud.Ticket
 	used                  map[string]bool
 	now                   time.Time
 	consumeCalls          []string
@@ -467,43 +475,43 @@ type fakeTicketVerifier struct {
 	forceOffline          map[string]string
 }
 
-func (f *fakeTicketVerifier) CheckManagedTicket(_ context.Context, in managed.VerifyTicketInput) (managed.Ticket, error) {
+func (f *fakeTicketVerifier) CheckConnectionTicket(_ context.Context, in cloud.VerifyTicketInput) (cloud.Ticket, error) {
 	ticket, ok := f.tickets[in.TicketID]
 	if !ok {
-		return managed.Ticket{}, managed.ErrTicketExpired
+		return cloud.Ticket{}, cloud.ErrTicketExpired
 	}
 	if ticket.MachineID != in.MachineID {
-		return managed.Ticket{}, managed.ErrWrongMachine
+		return cloud.Ticket{}, cloud.ErrWrongMachine
 	}
 	if in.TerminalID != "" && ticket.TerminalID != in.TerminalID {
-		return managed.Ticket{}, managed.ErrWrongTerminal
+		return cloud.Ticket{}, cloud.ErrWrongTerminal
 	}
 	if !ticket.ExpiresAt.After(f.now) {
-		return managed.Ticket{}, managed.ErrTicketExpired
+		return cloud.Ticket{}, cloud.ErrTicketExpired
 	}
 	return ticket, nil
 }
 
-func (f *fakeTicketVerifier) ConsumeManagedTicket(_ context.Context, in managed.VerifyTicketInput) (managed.Ticket, error) {
+func (f *fakeTicketVerifier) ConsumeConnectionTicket(_ context.Context, in cloud.VerifyTicketInput) (cloud.Ticket, error) {
 	f.consumeCalls = append(f.consumeCalls, in.MachineID+"/"+in.TerminalID+"/"+in.TicketID)
 	ticket, ok := f.tickets[in.TicketID]
 	if !ok {
-		return managed.Ticket{}, managed.ErrTicketExpired
+		return cloud.Ticket{}, cloud.ErrTicketExpired
 	}
 	if ticket.MachineID != in.MachineID {
-		return managed.Ticket{}, managed.ErrWrongMachine
+		return cloud.Ticket{}, cloud.ErrWrongMachine
 	}
 	if in.TerminalID != "" && ticket.TerminalID != in.TerminalID {
-		return managed.Ticket{}, managed.ErrWrongTerminal
+		return cloud.Ticket{}, cloud.ErrWrongTerminal
 	}
 	if !ticket.ExpiresAt.After(f.now) {
-		return managed.Ticket{}, managed.ErrTicketExpired
+		return cloud.Ticket{}, cloud.ErrTicketExpired
 	}
 	if f.used == nil {
 		f.used = make(map[string]bool)
 	}
 	if f.used[in.TicketID] {
-		return managed.Ticket{}, managed.ErrTicketUsed
+		return cloud.Ticket{}, cloud.ErrTicketUsed
 	}
 	f.used[in.TicketID] = true
 	return ticket, nil
@@ -519,16 +527,16 @@ func (f *fakeTicketVerifier) VerifyAgentRegistration(_ context.Context, in regis
 func (f *fakeTicketVerifier) VerifyOfferTicket(_ context.Context, in registry.OfferTicket) error {
 	ticket, ok := f.tickets[in.TicketID]
 	if !ok {
-		return managed.ErrTicketExpired
+		return cloud.ErrTicketExpired
 	}
 	if ticket.MachineID != in.MachineID {
-		return managed.ErrWrongMachine
+		return cloud.ErrWrongMachine
 	}
 	if in.TerminalID != "" && ticket.TerminalID != in.TerminalID {
-		return managed.ErrWrongTerminal
+		return cloud.ErrWrongTerminal
 	}
 	if !ticket.ExpiresAt.After(f.now) {
-		return managed.ErrTicketExpired
+		return cloud.ErrTicketExpired
 	}
 	return nil
 }
@@ -564,7 +572,7 @@ func minimalSDP(sessionID string) string {
 	return "v=0\r\no=- " + sessionID + " 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel"
 }
 
-func validManagedSessionRequest() map[string]any {
+func validCloudSessionRequest() map[string]any {
 	return map[string]any{
 		"connect_ticket": "ticket_allowed",
 		"machine_id":     "mach_1",
@@ -574,7 +582,7 @@ func validManagedSessionRequest() map[string]any {
 			"signature": "cert-signature",
 		},
 		"offer": map[string]any{
-			"session_id":     "rtc_managed_1",
+			"session_id":     "rtc_cloud_1",
 			"sdp":            minimalSDP("offer"),
 			"ice_candidates": []any{},
 		},

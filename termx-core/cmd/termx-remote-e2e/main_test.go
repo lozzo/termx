@@ -14,7 +14,7 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-func TestBuildManagedSessionRequestSignsTicketBoundOffer(t *testing.T) {
+func TestBuildCloudSessionRequestSignsTicketBoundOffer(t *testing.T) {
 	appPublic, appPrivate, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("generate app key: %v", err)
@@ -32,7 +32,7 @@ func TestBuildManagedSessionRequestSignsTicketBoundOffer(t *testing.T) {
 		t.Fatalf("marshal cert: %v", err)
 	}
 	now := time.Date(2026, 5, 3, 12, 10, 0, 0, time.UTC)
-	req, err := buildManagedSessionRequest(managedSessionRequestInput{
+	req, err := buildCloudSessionRequest(cloudSessionRequestInput{
 		TicketID:       "ticket-1",
 		MachineID:      "machine-1",
 		TerminalID:     "terminal-1",
@@ -78,7 +78,7 @@ func TestBuildManagedSessionRequestSignsTicketBoundOffer(t *testing.T) {
 	}
 }
 
-func TestApplyRemoteICEServersAcceptsManagedTurnConfig(t *testing.T) {
+func TestApplyRemoteICEServersAcceptsCloudTurnConfig(t *testing.T) {
 	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		t.Fatalf("new peer connection: %v", err)

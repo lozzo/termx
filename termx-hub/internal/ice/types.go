@@ -7,9 +7,12 @@ import (
 )
 
 const (
-	PathManaged   = "managed"
+	PathCloud     = "cloud"
 	PathPublicP2P = "public_p2p"
 )
+
+// PathManaged is kept as a compatibility alias for older internal callers.
+const PathManaged = PathCloud
 
 type Clock interface {
 	Now() time.Time

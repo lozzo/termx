@@ -9,13 +9,56 @@ export type WebControlFetch = (input: string, init?: RequestInit) => Promise<Res
 
 export interface WebControlApiOptions {
   baseUrl: string
-  accessToken: string
+  accessToken?: string | undefined
   fetch?: WebControlFetch | undefined
 }
 
 export interface WebControlApi extends PublicP2pRendezvousAdapter {
+  login(input: WebControlLoginInput, options?: RtcConnectOptions): Promise<WebControlAuthResult>
+  me(options?: RtcConnectOptions): Promise<WebControlUser>
+  listMachines(options?: RtcConnectOptions): Promise<WebControlMachine[]>
   createManagedConnectTicket(input: CreateManagedConnectTicketInput, options?: RtcConnectOptions): Promise<ManagedConnectTicket>
   postCandidate(input: PublicP2pCandidateInput, options?: RtcConnectOptions): Promise<void>
+}
+
+export interface WebControlLoginInput {
+  login: string
+  password: string
+}
+
+export interface WebControlUser {
+  id: string
+  username: string
+  email: string
+  role?: string | undefined
+}
+
+export interface WebControlAuthResult {
+  tokenType: 'Bearer'
+  accessToken: string
+  refreshToken?: string | undefined
+  user: WebControlUser
+}
+
+export interface WebControlMachine {
+  id: string
+  name: string
+  hostname?: string | undefined
+  osInfo?: string | undefined
+  online: boolean
+  paired: boolean
+  source: 'cloud'
+  publicKey?: string | undefined
+  machinePublicKeyFingerprint?: string | undefined
+  preferredPath: 'public_p2p'
+  controlUrl?: string | undefined
+  hubId?: string | undefined
+  hubHttpUrl?: string | undefined
+  hubStatus?: string | undefined
+  terminalCount: number
+  terminalIds: string[]
+  lastSeen?: string | undefined
+  createdAt?: string | undefined
 }
 
 export interface CreateManagedConnectTicketInput {
@@ -48,16 +91,57 @@ export function createWebControlApi(options: WebControlApiOptions): WebControlAp
 
 class WebControlHttpApi implements WebControlApi {
   private readonly baseUrl: string
-  private readonly accessToken: string
+  private readonly accessToken: string | undefined
   private readonly fetchImpl: WebControlFetch
 
   constructor(options: WebControlApiOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl)
-    this.accessToken = options.accessToken.trim()
-    if (this.accessToken === '') {
-      throw new Error('Web Control access token is required')
+    if (options.accessToken !== undefined) {
+      const accessToken = options.accessToken.trim()
+      if (accessToken === '') {
+        throw new Error('Web Control access token must be non-empty when provided')
+      }
+      this.accessToken = accessToken
     }
     this.fetchImpl = options.fetch ?? fetch
+  }
+
+  async login(input: WebControlLoginInput, options: RtcConnectOptions = {}): Promise<WebControlAuthResult> {
+    const login = input.login.trim()
+    if (login === '') {
+      throw new Error('Web Control login is required')
+    }
+    if (input.password === '') {
+      throw new Error('Web Control password is required')
+    }
+    const response = await this.requestJSON('POST', '/api/v1/auth/login', {
+      signal: options.signal,
+      body: {
+        email: login,
+        password: input.password,
+      },
+    })
+    return authResult(response)
+  }
+
+  async me(options: RtcConnectOptions = {}): Promise<WebControlUser> {
+    const response = await this.requestJSON('GET', '/api/v1/auth/me', {
+      auth: 'bearer',
+      signal: options.signal,
+    })
+    return userRecord(record(response.user, 'Web Control user'))
+  }
+
+  async listMachines(options: RtcConnectOptions = {}): Promise<WebControlMachine[]> {
+    const response = await this.requestJSON('GET', '/api/v1/machines', {
+      auth: 'bearer',
+      signal: options.signal,
+    })
+    const machines = response.machines
+    if (!Array.isArray(machines)) {
+      throw new Error('Web Control machines response machines is required')
+    }
+    return machines.map((machine) => machineRecord(machine))
   }
 
   async createChannel(input: {
@@ -181,6 +265,9 @@ class WebControlHttpApi implements WebControlApi {
   ): Promise<Record<string, unknown>> {
     const headers: Record<string, string> = {}
     if (options.auth === 'bearer') {
+      if (!this.accessToken) {
+        throw new Error('Web Control access token is required')
+      }
       headers.authorization = `Bearer ${this.accessToken}`
     }
     if (options.rendezvousAuth) {
@@ -213,6 +300,63 @@ class WebControlHttpApi implements WebControlApi {
 
   private url(path: string): string {
     return `${this.baseUrl}${path.replace(/^\//, '')}`
+  }
+}
+
+function authResult(response: Record<string, unknown>): WebControlAuthResult {
+  const tokenType = stringField(response, 'token_type')
+  if (tokenType !== 'Bearer') {
+    throw new Error(`Web Control token_type must be Bearer, got ${tokenType}`)
+  }
+  const refreshToken = optionalTrimmedStringField(response, 'refresh_token')
+  return {
+    tokenType: 'Bearer',
+    accessToken: stringField(response, 'access_token'),
+    ...(refreshToken ? { refreshToken } : {}),
+    user: userRecord(record(response.user, 'Web Control auth user')),
+  }
+}
+
+function userRecord(response: Record<string, unknown>): WebControlUser {
+  return {
+    id: stringField(response, 'id'),
+    username: stringField(response, 'username'),
+    email: stringField(response, 'email'),
+    ...(optionalStringField(response, 'role') ? { role: optionalStringField(response, 'role') } : {}),
+  }
+}
+
+function machineRecord(value: unknown): WebControlMachine {
+  const response = record(value, 'Web Control machine')
+  const source = optionalStringField(response, 'source') ?? 'cloud'
+  if (source !== 'cloud') {
+    throw new Error(`Web Control machine source must be cloud, got ${source}`)
+  }
+  const preferredPath = optionalStringField(response, 'preferred_path') ?? 'public_p2p'
+  if (preferredPath !== 'public_p2p') {
+    throw new Error(`Web Control machine preferred_path must be public_p2p, got ${preferredPath}`)
+  }
+  return {
+    id: stringField(response, 'id'),
+    name: stringField(response, 'name'),
+    ...(optionalStringField(response, 'hostname') ? { hostname: optionalStringField(response, 'hostname') } : {}),
+    ...(optionalStringField(response, 'os_info') ? { osInfo: optionalStringField(response, 'os_info') } : {}),
+    online: booleanField(response, 'online'),
+    paired: booleanField(response, 'paired'),
+    source: 'cloud',
+    ...(optionalStringField(response, 'public_key') ? { publicKey: optionalStringField(response, 'public_key') } : {}),
+    ...(optionalStringField(response, 'machine_public_key_fingerprint')
+      ? { machinePublicKeyFingerprint: optionalStringField(response, 'machine_public_key_fingerprint') }
+      : {}),
+    preferredPath: 'public_p2p',
+    ...(optionalStringField(response, 'control_url') ? { controlUrl: optionalStringField(response, 'control_url') } : {}),
+    ...(optionalStringField(response, 'hub_id') ? { hubId: optionalStringField(response, 'hub_id') } : {}),
+    ...(optionalStringField(response, 'hub_http_url') ? { hubHttpUrl: optionalStringField(response, 'hub_http_url') } : {}),
+    ...(optionalStringField(response, 'hub_status') ? { hubStatus: optionalStringField(response, 'hub_status') } : {}),
+    terminalCount: optionalNumberField(response, 'terminal_count') ?? stringArrayField(response, 'terminal_ids').length,
+    terminalIds: stringArrayField(response, 'terminal_ids'),
+    ...(optionalStringField(response, 'last_seen') ? { lastSeen: optionalStringField(response, 'last_seen') } : {}),
+    ...(optionalStringField(response, 'created_at') ? { createdAt: optionalStringField(response, 'created_at') } : {}),
   }
 }
 
@@ -279,6 +423,16 @@ function optionalStringField(value: Record<string, unknown>, key: string): strin
     throw new Error(`Web Control response ${key} must be a string`)
   }
   return field
+}
+
+function optionalTrimmedStringField(value: Record<string, unknown>, key: string): string | undefined {
+  const field = value[key]
+  if (field === undefined || field === null) return undefined
+  if (typeof field !== 'string') {
+    throw new Error(`Web Control response ${key} must be a string`)
+  }
+  const trimmed = field.trim()
+  return trimmed === '' ? undefined : trimmed
 }
 
 function stringArrayField(value: Record<string, unknown>, key: string): string[] {

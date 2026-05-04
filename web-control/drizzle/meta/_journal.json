@@ -1,0 +1,146 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1772682756202,
+      "tag": "0000_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1772699623896,
+      "tag": "0001_add-agent-releases",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1772885472523,
+      "tag": "0003_add-agent-public-key",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1773100000000,
+      "tag": "0004_setup-tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1773200000000,
+      "tag": "0005_add-agent-paired",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1773300000000,
+      "tag": "0006_access-token-and-encrypted-key",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1773400000000,
+      "tag": "0007_add-agent-pending-kick",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1773500000000,
+      "tag": "0008_add-promo-codes",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1773600000000,
+      "tag": "0009_add-referrals",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1773700000000,
+      "tag": "0010_add-user-fn-configs-and-snippets",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1773800000000,
+      "tag": "0011_add-min-version-fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1773900000000,
+      "tag": "0012_add-agent-release-mirrors",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1774000000000,
+      "tag": "0013_add-allow-relay-transfer",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1774100000000,
+      "tag": "0014_add-user-path-bookmarks",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1774200000000,
+      "tag": "0015_add-hub-resource-fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1774300000000,
+      "tag": "0016_add-user-overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1774400000000,
+      "tag": "0017_relay-traffic-session-model",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1774500000000,
+      "tag": "0018_add-app-release-download-fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1774800000000,
+      "tag": "0019_add-github-auth-fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1774900000000,
+      "tag": "0020_make-password-hash-nullable",
+      "breakpoints": true
+    }
+  ]
+}

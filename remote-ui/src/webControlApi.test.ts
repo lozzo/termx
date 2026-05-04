@@ -253,9 +253,100 @@ describe('WebControlApi', () => {
       baseUrl: 'https://control.termx.test',
       accessToken: '   ',
       fetch: fetch.fetch,
-    })).toThrow(/access token.*required/i)
+    })).toThrow(/access token.*non-empty/i)
+
+    const api = createWebControlApi({
+      baseUrl: 'https://control.termx.test',
+      fetch: fetch.fetch,
+    })
+    await expect(api.me()).rejects.toThrow(/access token.*required/i)
 
     expect(fetch.requests).toEqual([])
+  })
+
+  it('logs in and lists Web Control machines for remote QR selection', async () => {
+    const fetch = new RecordingFetch([
+      jsonResponse(200, {
+        token_type: 'Bearer',
+        access_token: 'access-token-1',
+        refresh_token: '',
+        user: {
+          id: 'user-1',
+          username: 'lozzow',
+          email: 'lozzow@example.test',
+          role: 'user',
+        },
+      }),
+      jsonResponse(200, {
+        user: {
+          id: 'user-1',
+          username: 'lozzow',
+          email: 'lozzow@example.test',
+        },
+      }),
+      jsonResponse(200, {
+        machines: [{
+          id: 'device-1',
+          name: 'RedmiBook',
+          hostname: 'redmibook',
+          os_info: 'linux/amd64',
+          online: true,
+          paired: false,
+          source: 'cloud',
+          machine_public_key_fingerprint: 'sha256:machine',
+          preferred_path: 'public_p2p',
+          control_url: 'http://114.66.58.243:12306',
+          hub_id: 'termx-hub-1',
+          hub_http_url: 'http://114.66.58.243:8447',
+          hub_status: 'online',
+          terminal_count: 1,
+          terminal_ids: ['terminal-1'],
+          last_seen: '2026-05-04T03:08:00.000Z',
+        }],
+      }),
+    ])
+    const loginApi = createWebControlApi({
+      baseUrl: 'http://114.66.58.243:12306',
+      fetch: fetch.fetch,
+    })
+
+    const auth = await loginApi.login({
+      login: 'lozzow@example.test',
+      password: 'secret',
+    })
+    const authedApi = createWebControlApi({
+      baseUrl: 'http://114.66.58.243:12306',
+      accessToken: auth.accessToken,
+      fetch: fetch.fetch,
+    })
+    const me = await authedApi.me()
+    const machines = await authedApi.listMachines()
+
+    expect(auth.accessToken).toBe('access-token-1')
+    expect(me.email).toBe('lozzow@example.test')
+    expect(machines).toEqual([{
+      id: 'device-1',
+      name: 'RedmiBook',
+      hostname: 'redmibook',
+      osInfo: 'linux/amd64',
+      online: true,
+      paired: false,
+      source: 'cloud',
+      machinePublicKeyFingerprint: 'sha256:machine',
+      preferredPath: 'public_p2p',
+      controlUrl: 'http://114.66.58.243:12306',
+      hubId: 'termx-hub-1',
+      hubHttpUrl: 'http://114.66.58.243:8447',
+      hubStatus: 'online',
+      terminalCount: 1,
+      terminalIds: ['terminal-1'],
+      lastSeen: '2026-05-04T03:08:00.000Z',
+    }])
+    expect(fetch.requests.map((request) => [request.method, request.url])).toEqual([
+      ['POST', 'http://114.66.58.243:12306/api/v1/auth/login'],
+      ['GET', 'http://114.66.58.243:12306/api/v1/auth/me'],
+      ['GET', 'http://114.66.58.243:12306/api/v1/machines'],
+    ])
   })
 
   it('keeps Web Control API as signaling/control, not runtime transport', () => {

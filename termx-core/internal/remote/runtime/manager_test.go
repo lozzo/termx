@@ -204,26 +204,26 @@ func TestManagerReregistersHubWhenHeartbeatUnauthorized(t *testing.T) {
 	}
 }
 
-func TestManagerProvidesTerminalManagementRouterForManagedRTC(t *testing.T) {
+func TestManagerProvidesTerminalManagementRouterForCloudRTC(t *testing.T) {
 	manager := NewManager(remoteconfig.Config{}, managementProviderStub{}, nil)
 	if manager.terminalManagementRouter() == nil {
-		t.Fatal("expected managed runtime to provide terminal management router")
+		t.Fatal("expected cloud runtime to provide terminal management router")
 	}
 	status, _, errMsg := manager.terminalManagementRouter().RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
 		Method: "create",
 		Path:   "create",
-		Body:   json.RawMessage(`{"command":["/bin/sh"],"name":"managed shell"}`),
+		Body:   json.RawMessage(`{"command":["/bin/sh"],"name":"cloud shell"}`),
 	})
 	if status == http.StatusForbidden || errMsg == "terminal management is not allowed by connection policy" {
-		t.Fatalf("managed terminal management router must not be nil or forbidden, got status=%d err=%q", status, errMsg)
+		t.Fatalf("cloud terminal management router must not be nil or forbidden, got status=%d err=%q", status, errMsg)
 	}
 }
 
-func TestManagerRejectsManagedOfferWithoutCertificateBeforeAnswering(t *testing.T) {
-	manager, answerer, offer := newManagedOfferFixture(t)
+func TestManagerRejectsCloudOfferWithoutCertificateBeforeAnswering(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixture(t)
 	offer.AppCertificate = nil
 
-	answer := manager.answerManagedOffer(context.Background(), offer, nil)
+	answer := manager.answerCloudOffer(context.Background(), offer, nil)
 
 	if answer.Error == "" || !strings.Contains(answer.Error, "app certificate") {
 		t.Fatalf("expected app certificate rejection, got %#v", answer)
@@ -233,11 +233,11 @@ func TestManagerRejectsManagedOfferWithoutCertificateBeforeAnswering(t *testing.
 	}
 }
 
-func TestManagerRejectsManagedOfferForUnknownTerminalBeforeAnswering(t *testing.T) {
-	manager, answerer, offer := newManagedOfferFixture(t)
+func TestManagerRejectsCloudOfferForUnknownTerminalBeforeAnswering(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixture(t)
 	offer.TerminalID = "term-missing"
 
-	answer := manager.answerManagedOffer(context.Background(), offer, nil)
+	answer := manager.answerCloudOffer(context.Background(), offer, nil)
 
 	if answer.Error == "" || !strings.Contains(answer.Error, "terminal") {
 		t.Fatalf("expected terminal rejection, got %#v", answer)
@@ -247,10 +247,10 @@ func TestManagerRejectsManagedOfferForUnknownTerminalBeforeAnswering(t *testing.
 	}
 }
 
-func TestManagerVerifiesManagedOfferSignatureAndRejectsReplay(t *testing.T) {
-	manager, answerer, offer := newManagedOfferFixture(t)
+func TestManagerVerifiesCloudOfferSignatureAndRejectsReplay(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixture(t)
 
-	answer := manager.answerManagedOffer(context.Background(), offer, []hubv1.RTCIceServerConfig{
+	answer := manager.answerCloudOffer(context.Background(), offer, []hubv1.RTCIceServerConfig{
 		{URLs: []string{"stun:stun.example.test:3478"}},
 	})
 
@@ -270,7 +270,7 @@ func TestManagerVerifiesManagedOfferSignatureAndRejectsReplay(t *testing.T) {
 		t.Fatalf("answerer policy = %#v", answerer.gotOptions.ChannelPolicy)
 	}
 
-	replayed := manager.answerManagedOffer(context.Background(), offer, nil)
+	replayed := manager.answerCloudOffer(context.Background(), offer, nil)
 	if replayed.Error == "" || !strings.Contains(replayed.Error, "nonce") {
 		t.Fatalf("expected replay rejection, got %#v", replayed)
 	}
@@ -279,11 +279,11 @@ func TestManagerVerifiesManagedOfferSignatureAndRejectsReplay(t *testing.T) {
 	}
 }
 
-func TestManagerRejectsTamperedManagedOfferSignatureBeforeAnswering(t *testing.T) {
-	manager, answerer, offer := newManagedOfferFixture(t)
+func TestManagerRejectsTamperedCloudOfferSignatureBeforeAnswering(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixture(t)
 	offer.SDP = "v=0\r\ns=tampered-offer\r\n"
 
-	answer := manager.answerManagedOffer(context.Background(), offer, nil)
+	answer := manager.answerCloudOffer(context.Background(), offer, nil)
 
 	if answer.Error == "" || !strings.Contains(answer.Error, "signature") {
 		t.Fatalf("expected signature rejection, got %#v", answer)
@@ -293,11 +293,11 @@ func TestManagerRejectsTamperedManagedOfferSignatureBeforeAnswering(t *testing.T
 	}
 }
 
-func TestManagerRejectsTamperedManagedOfferCandidatesBeforeAnswering(t *testing.T) {
-	manager, answerer, offer := newManagedOfferFixture(t)
+func TestManagerRejectsTamperedCloudOfferCandidatesBeforeAnswering(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixture(t)
 	offer.ICECandidates = append(offer.ICECandidates, "candidate:tampered")
 
-	answer := manager.answerManagedOffer(context.Background(), offer, nil)
+	answer := manager.answerCloudOffer(context.Background(), offer, nil)
 
 	if answer.Error == "" || !strings.Contains(answer.Error, "signature") {
 		t.Fatalf("expected signature rejection, got %#v", answer)
@@ -307,10 +307,10 @@ func TestManagerRejectsTamperedManagedOfferCandidatesBeforeAnswering(t *testing.
 	}
 }
 
-func TestManagerRejectsManagedOfferWithoutTerminalCapabilityBeforeAnswering(t *testing.T) {
-	manager, answerer, offer := newManagedOfferFixtureWithCapabilities(t, []string{"file_manager"}, nil)
+func TestManagerRejectsCloudOfferWithoutTerminalCapabilityBeforeAnswering(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixtureWithCapabilities(t, []string{"file_manager"}, nil)
 
-	answer := manager.answerManagedOffer(context.Background(), offer, nil)
+	answer := manager.answerCloudOffer(context.Background(), offer, nil)
 
 	if answer.Error == "" || !strings.Contains(answer.Error, "terminal capability") {
 		t.Fatalf("expected terminal capability rejection, got %#v", answer)
@@ -320,10 +320,10 @@ func TestManagerRejectsManagedOfferWithoutTerminalCapabilityBeforeAnswering(t *t
 	}
 }
 
-func TestManagerScopesManagedOfferPolicyToCertificateCapabilities(t *testing.T) {
-	manager, answerer, offer := newManagedOfferFixtureWithCapabilities(t, []string{"terminal"}, nil)
+func TestManagerScopesCloudOfferPolicyToCertificateCapabilities(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixtureWithCapabilities(t, []string{"terminal"}, nil)
 
-	answer := manager.answerManagedOffer(context.Background(), offer, nil)
+	answer := manager.answerCloudOffer(context.Background(), offer, nil)
 
 	if answer.Error != "" {
 		t.Fatalf("valid terminal-only offer returned error: %#v", answer)
@@ -337,13 +337,13 @@ func TestManagerScopesManagedOfferPolicyToCertificateCapabilities(t *testing.T) 
 	}
 }
 
-func TestManagerAllowsManagedTerminalManagementOnlyWithCapabilityAndRouter(t *testing.T) {
+func TestManagerAllowsCloudTerminalManagementOnlyWithCapabilityAndRouter(t *testing.T) {
 	provider := managementProviderStub{inventoryProviderStub: inventoryProviderStub{
 		items: []TerminalInventoryItem{{ID: "term-1", Name: "shell", State: "running"}},
 	}}
-	manager, answerer, offer := newManagedOfferFixtureWithCapabilities(t, []string{"terminal"}, provider)
+	manager, answerer, offer := newCloudOfferFixtureWithCapabilities(t, []string{"terminal"}, provider)
 
-	answer := manager.answerManagedOffer(context.Background(), offer, nil)
+	answer := manager.answerCloudOffer(context.Background(), offer, nil)
 	if answer.Error != "" {
 		t.Fatalf("valid terminal-only offer returned error: %#v", answer)
 	}
@@ -351,8 +351,8 @@ func TestManagerAllowsManagedTerminalManagementOnlyWithCapabilityAndRouter(t *te
 		t.Fatalf("terminal-only certificate overgranted terminal management: %#v", answerer.gotOptions.ChannelPolicy)
 	}
 
-	manager, answerer, offer = newManagedOfferFixtureWithCapabilities(t, []string{"terminal", "terminal_management"}, provider)
-	answer = manager.answerManagedOffer(context.Background(), offer, nil)
+	manager, answerer, offer = newCloudOfferFixtureWithCapabilities(t, []string{"terminal", "terminal_management"}, provider)
+	answer = manager.answerCloudOffer(context.Background(), offer, nil)
 	if answer.Error != "" {
 		t.Fatalf("valid terminal-management offer returned error: %#v", answer)
 	}
@@ -361,18 +361,18 @@ func TestManagerAllowsManagedTerminalManagementOnlyWithCapabilityAndRouter(t *te
 	}
 }
 
-func TestManagerUsesOfferScopedManagedRTCConfig(t *testing.T) {
-	manager, answerer, offer := newManagedOfferFixture(t)
+func TestManagerUsesOfferScopedCloudRTCConfig(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixture(t)
 	registrationICE := []hubv1.RTCIceServerConfig{{URLs: []string{"stun:registration.example:3478"}}}
 	offer.RTCConfig.IceServers = []hubv1.RTCIceServerConfig{
-		{URLs: []string{"stun:managed.example:3478"}},
-		{URLs: []string{"turn:managed.example:3478?transport=udp"}, Username: "lease:1770000000", Credential: "turn-credential"},
+		{URLs: []string{"stun:cloud.example:3478"}},
+		{URLs: []string{"turn:cloud.example:3478?transport=udp"}, Username: "lease:1770000000", Credential: "turn-credential"},
 	}
 	offer.AllowRelay = true
 
-	answer := manager.answerManagedOffer(context.Background(), offer, registrationICE)
+	answer := manager.answerCloudOffer(context.Background(), offer, registrationICE)
 	if answer.Error != "" {
-		t.Fatalf("valid managed relay offer returned error: %#v", answer)
+		t.Fatalf("valid cloud relay offer returned error: %#v", answer)
 	}
 	if len(answerer.gotICE) != 2 || answerer.gotICE[1].Username != "lease:1770000000" {
 		t.Fatalf("answerer ICE servers = %+v", answerer.gotICE)
@@ -383,7 +383,7 @@ func TestManagerUsesOfferScopedManagedRTCConfig(t *testing.T) {
 }
 
 func TestHubSignalingLoopResetsSessionWhenAnswerSubmitUnauthorized(t *testing.T) {
-	manager, _, offer := newManagedOfferFixture(t)
+	manager, _, offer := newCloudOfferFixture(t)
 	var answerRequests atomic.Int32
 	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -437,7 +437,7 @@ func TestHubSignalingLoopResetsSessionWhenAnswerSubmitUnauthorized(t *testing.T)
 }
 
 func TestHubSignalingLoopMarksDegradedWhenAnswerSubmitFails(t *testing.T) {
-	manager, _, offer := newManagedOfferFixture(t)
+	manager, _, offer := newCloudOfferFixture(t)
 	var answerRequests atomic.Int32
 	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -474,7 +474,7 @@ func TestHubSignalingLoopMarksDegradedWhenAnswerSubmitFails(t *testing.T) {
 }
 
 func TestHubSignalingLoopRetriesOriginalAnswerAfterTransientSubmitFailure(t *testing.T) {
-	manager, answerer, offer := newManagedOfferFixture(t)
+	manager, answerer, offer := newCloudOfferFixture(t)
 	var answerRequests atomic.Int32
 	submitted := make(chan hubv1.SignalingAnswer, 2)
 	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -531,20 +531,20 @@ func TestHubSignalingLoopRetriesOriginalAnswerAfterTransientSubmitFailure(t *tes
 }
 
 func TestHubSignalingLoopDoesNotRetryCachedAnswerForChangedOfferPayload(t *testing.T) {
-	manager, answerer, offer := newManagedOfferFixture(t)
+	manager, answerer, offer := newCloudOfferFixture(t)
 	changedOffer := offer
 	changedOffer.SDP = "v=0\r\ns=changed-offer\r\n"
 	testHubSignalingLoopDoesNotRetryCachedAnswerForChangedOffer(t, manager, answerer, offer, changedOffer)
 }
 
 func TestHubSignalingLoopDoesNotRetryCachedAnswerWhenRawOfferWhitespaceChanges(t *testing.T) {
-	manager, answerer, offer := newManagedOfferFixture(t)
+	manager, answerer, offer := newCloudOfferFixture(t)
 	changedOffer := offer
 	changedOffer.SDP = offer.SDP + " "
 	testHubSignalingLoopDoesNotRetryCachedAnswerForChangedOffer(t, manager, answerer, offer, changedOffer)
 }
 
-func testHubSignalingLoopDoesNotRetryCachedAnswerForChangedOffer(t *testing.T, manager *Manager, answerer *managedAnswererStub, offer hubv1.SignalingOffer, changedOffer hubv1.SignalingOffer) {
+func testHubSignalingLoopDoesNotRetryCachedAnswerForChangedOffer(t *testing.T, manager *Manager, answerer *cloudAnswererStub, offer hubv1.SignalingOffer, changedOffer hubv1.SignalingOffer) {
 	t.Helper()
 	var pollRequests atomic.Int32
 	var answerRequests atomic.Int32
@@ -606,7 +606,7 @@ func testHubSignalingLoopDoesNotRetryCachedAnswerForChangedOffer(t *testing.T, m
 	}
 }
 
-func TestManagedOfferEnvelopeDoesNotExposeBrowserWebRTCTypes(t *testing.T) {
+func TestCloudOfferEnvelopeDoesNotExposeBrowserWebRTCTypes(t *testing.T) {
 	typ := reflect.TypeOf(hubv1.SignalingOffer{})
 	for i := 0; i < typ.NumField(); i++ {
 		fieldType := typ.Field(i).Type.String()
@@ -624,17 +624,17 @@ func (s managementProviderStub) RouteTerminalManagementRequest(_ context.Context
 	if req.Path != "create" {
 		return http.StatusNotFound, nil, "unknown terminal management route"
 	}
-	return http.StatusOK, []byte(`{"terminal_id":"managed-terminal-1"}`), ""
+	return http.StatusOK, []byte(`{"terminal_id":"cloud-terminal-1"}`), ""
 }
 
-type managedAnswererStub struct {
+type cloudAnswererStub struct {
 	calls      int
 	gotOffer   hubv1.SignalingOffer
 	gotICE     []hubv1.RTCIceServerConfig
 	gotOptions remotertc.AnswerOptions
 }
 
-func (s *managedAnswererStub) AnswerOffer(
+func (s *cloudAnswererStub) AnswerOffer(
 	_ context.Context,
 	offer hubv1.SignalingOffer,
 	iceServers []hubv1.RTCIceServerConfig,
@@ -652,12 +652,12 @@ func (s *managedAnswererStub) AnswerOffer(
 	}, nil
 }
 
-func newManagedOfferFixture(t *testing.T) (*Manager, *managedAnswererStub, hubv1.SignalingOffer) {
+func newCloudOfferFixture(t *testing.T) (*Manager, *cloudAnswererStub, hubv1.SignalingOffer) {
 	t.Helper()
-	return newManagedOfferFixtureWithCapabilities(t, []string{"terminal", "file_manager"}, nil)
+	return newCloudOfferFixtureWithCapabilities(t, []string{"terminal", "file_manager"}, nil)
 }
 
-func newManagedOfferFixtureWithCapabilities(t *testing.T, capabilities []string, provider InventoryProvider) (*Manager, *managedAnswererStub, hubv1.SignalingOffer) {
+func newCloudOfferFixtureWithCapabilities(t *testing.T, capabilities []string, provider InventoryProvider) (*Manager, *cloudAnswererStub, hubv1.SignalingOffer) {
 	t.Helper()
 	dataDir := t.TempDir()
 	machineKey, err := identity.LoadOrCreateMachineKey(dataDir)
@@ -671,11 +671,11 @@ func newManagedOfferFixtureWithCapabilities(t *testing.T, capabilities []string,
 	now := time.Now().UTC().Round(0)
 	envelope, err := cert.SignAppCertificate(cert.AppCertificatePayload{
 		Version:      1,
-		CertID:       "cert-managed-test",
-		MachineID:    "device-managed-test",
-		AppDeviceID:  "app-device-managed-test",
+		CertID:       "cert-cloud-test",
+		MachineID:    "device-cloud-test",
+		AppDeviceID:  "app-device-cloud-test",
 		AppPublicKey: base64.StdEncoding.EncodeToString(appPublic),
-		AppName:      "Managed Test App",
+		AppName:      "Cloud Test App",
 		Capabilities: append([]string(nil), capabilities...),
 		IssuedAt:     now.Add(-time.Minute),
 		ExpiresAt:    now.Add(time.Hour),
@@ -688,9 +688,9 @@ func newManagedOfferFixtureWithCapabilities(t *testing.T, capabilities []string,
 		t.Fatalf("marshal certificate: %v", err)
 	}
 	offer := hubv1.SignalingOffer{
-		SessionID:      "rtc-managed-test",
-		TicketID:       "ticket-managed-test",
-		DeviceID:       "device-managed-test",
+		SessionID:      "rtc-cloud-test",
+		TicketID:       "ticket-cloud-test",
+		DeviceID:       "device-cloud-test",
 		TerminalID:     "term-1",
 		SDP:            "v=0\r\ns=offer\r\n",
 		ICECandidates:  []string{"candidate:host-test"},
@@ -702,7 +702,7 @@ func newManagedOfferFixtureWithCapabilities(t *testing.T, capabilities []string,
 		TerminalID: offer.TerminalID,
 		SDP:        offer.SDP,
 		Candidates: offer.ICECandidates,
-		Nonce:      "nonce-managed-test",
+		Nonce:      "nonce-cloud-test",
 		Timestamp:  now,
 	}
 	offer.Signature = hubv1.OfferSignature{
@@ -711,7 +711,7 @@ func newManagedOfferFixtureWithCapabilities(t *testing.T, capabilities []string,
 		Timestamp: signatureFields.Timestamp.Unix(),
 		Value:     base64.StdEncoding.EncodeToString(ed25519.Sign(appPrivate, remotertc.CanonicalOfferSignatureMessage(signatureFields))),
 	}
-	answerer := &managedAnswererStub{}
+	answerer := &cloudAnswererStub{}
 	if provider == nil {
 		provider = inventoryProviderStub{
 			items: []TerminalInventoryItem{{ID: "term-1", Name: "shell", State: "running"}},
@@ -720,9 +720,9 @@ func newManagedOfferFixtureWithCapabilities(t *testing.T, capabilities []string,
 	manager := NewManager(remoteconfig.Config{
 		Enabled:    true,
 		DataDir:    dataDir,
-		DeviceName: "managed-test-device",
+		DeviceName: "cloud-test-device",
 	}, provider, nil)
-	manager.identity = identity.DeviceIdentity{DeviceID: "device-managed-test", DisplayName: "managed-test-device"}
+	manager.identity = identity.DeviceIdentity{DeviceID: "device-cloud-test", DisplayName: "cloud-test-device"}
 	manager.answerer = answerer
 	return manager, answerer, offer
 }

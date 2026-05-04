@@ -11,48 +11,58 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/termx-hub/internal/managed"
+	"github.com/lozzow/termx/termx-hub/internal/cloud"
 	"github.com/lozzow/termx/termx-hub/internal/registry"
 )
 
-type ManagedTicketVerifierConfig struct {
+type ConnectionTicketVerifierConfig struct {
 	BaseURL      string
 	SharedSecret string
 	Client       *http.Client
 }
 
-type ManagedTicketVerifier struct {
+type ConnectionTicketVerifier struct {
 	baseURL      string
 	sharedSecret string
 	client       *http.Client
 }
 
-func NewManagedTicketVerifier(cfg ManagedTicketVerifierConfig) *ManagedTicketVerifier {
+func NewConnectionTicketVerifier(cfg ConnectionTicketVerifierConfig) *ConnectionTicketVerifier {
 	client := cfg.Client
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &ManagedTicketVerifier{
+	return &ConnectionTicketVerifier{
 		baseURL:      strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
 		sharedSecret: strings.TrimSpace(cfg.SharedSecret),
 		client:       client,
 	}
 }
 
-func (v *ManagedTicketVerifier) VerifyOfferTicket(ctx context.Context, in registry.OfferTicket) error {
-	_, err := v.requestTicket(ctx, "/api/v1/hub/managed-tickets/check", in.TicketID, in.MachineID, in.TerminalID)
+// ManagedTicketVerifierConfig is kept as a compatibility alias for older code.
+type ManagedTicketVerifierConfig = ConnectionTicketVerifierConfig
+
+// ManagedTicketVerifier is kept as a compatibility alias for older code.
+type ManagedTicketVerifier = ConnectionTicketVerifier
+
+func NewManagedTicketVerifier(cfg ManagedTicketVerifierConfig) *ManagedTicketVerifier {
+	return NewConnectionTicketVerifier(cfg)
+}
+
+func (v *ConnectionTicketVerifier) VerifyOfferTicket(ctx context.Context, in registry.OfferTicket) error {
+	_, err := v.requestTicket(ctx, "/api/v1/hub/connection-tickets/check", in.TicketID, in.MachineID, in.TerminalID)
 	return err
 }
 
-func (v *ManagedTicketVerifier) CheckManagedTicket(ctx context.Context, in managed.VerifyTicketInput) (managed.Ticket, error) {
-	return v.requestTicket(ctx, "/api/v1/hub/managed-tickets/check", in.TicketID, in.MachineID, in.TerminalID)
+func (v *ConnectionTicketVerifier) CheckConnectionTicket(ctx context.Context, in cloud.ConnectionTicketInput) (cloud.Ticket, error) {
+	return v.requestTicket(ctx, "/api/v1/hub/connection-tickets/check", in.TicketID, in.MachineID, in.TerminalID)
 }
 
-func (v *ManagedTicketVerifier) ConsumeManagedTicket(ctx context.Context, in managed.VerifyTicketInput) (managed.Ticket, error) {
-	return v.requestTicket(ctx, "/api/v1/hub/managed-tickets/consume", in.TicketID, in.MachineID, in.TerminalID)
+func (v *ConnectionTicketVerifier) ConsumeConnectionTicket(ctx context.Context, in cloud.ConnectionTicketInput) (cloud.Ticket, error) {
+	return v.requestTicket(ctx, "/api/v1/hub/connection-tickets/consume", in.TicketID, in.MachineID, in.TerminalID)
 }
 
-func (v *ManagedTicketVerifier) VerifyAgentRegistration(ctx context.Context, in registry.AgentRegistration) error {
+func (v *ConnectionTicketVerifier) VerifyAgentRegistration(ctx context.Context, in registry.AgentRegistration) error {
 	if v == nil || v.baseURL == "" || v.sharedSecret == "" {
 		return errors.New("control agent verifier is not configured")
 	}
@@ -92,7 +102,7 @@ func (v *ManagedTicketVerifier) VerifyAgentRegistration(ctx context.Context, in 
 	return nil
 }
 
-func (v *ManagedTicketVerifier) GetAgentPolicy(ctx context.Context, in registry.AgentPolicyRequest) (registry.AgentPolicy, error) {
+func (v *ConnectionTicketVerifier) GetAgentPolicy(ctx context.Context, in registry.AgentPolicyRequest) (registry.AgentPolicy, error) {
 	if v == nil || v.baseURL == "" || v.sharedSecret == "" {
 		return registry.AgentPolicy{}, errors.New("control agent policy client is not configured")
 	}
@@ -140,9 +150,9 @@ func (v *ManagedTicketVerifier) GetAgentPolicy(ctx context.Context, in registry.
 	}, nil
 }
 
-func (v *ManagedTicketVerifier) requestTicket(ctx context.Context, path string, ticketID string, machineID string, terminalID string) (managed.Ticket, error) {
+func (v *ConnectionTicketVerifier) requestTicket(ctx context.Context, path string, ticketID string, machineID string, terminalID string) (cloud.Ticket, error) {
 	if v == nil || v.baseURL == "" || v.sharedSecret == "" {
-		return managed.Ticket{}, errors.New("control ticket verifier is not configured")
+		return cloud.Ticket{}, errors.New("control ticket verifier is not configured")
 	}
 	payload, err := json.Marshal(map[string]string{
 		"ticket_id":   strings.TrimSpace(ticketID),
@@ -150,22 +160,22 @@ func (v *ManagedTicketVerifier) requestTicket(ctx context.Context, path string, 
 		"terminal_id": strings.TrimSpace(terminalID),
 	})
 	if err != nil {
-		return managed.Ticket{}, err
+		return cloud.Ticket{}, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, v.baseURL+path, bytes.NewReader(payload))
 	if err != nil {
-		return managed.Ticket{}, err
+		return cloud.Ticket{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-TermX-Hub-Secret", v.sharedSecret)
 	resp, err := v.client.Do(req)
 	if err != nil {
-		return managed.Ticket{}, err
+		return cloud.Ticket{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-		return managed.Ticket{}, fmt.Errorf("control ticket verifier rejected request: http %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return cloud.Ticket{}, fmt.Errorf("control ticket verifier rejected request: http %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var decoded struct {
 		Ticket struct {
@@ -178,16 +188,16 @@ func (v *ManagedTicketVerifier) requestTicket(ctx context.Context, path string, 
 		} `json:"ticket"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		return managed.Ticket{}, err
+		return cloud.Ticket{}, err
 	}
-	if decoded.Ticket.Path != managed.PathManaged {
-		return managed.Ticket{}, fmt.Errorf("control ticket path %q is not managed", decoded.Ticket.Path)
+	if decoded.Ticket.Path != cloud.PathCloud {
+		return cloud.Ticket{}, fmt.Errorf("control ticket path %q is not cloud", decoded.Ticket.Path)
 	}
 	expiresAt, err := time.Parse(time.RFC3339Nano, decoded.Ticket.ExpiresAt)
 	if err != nil {
-		return managed.Ticket{}, fmt.Errorf("parse ticket expiry: %w", err)
+		return cloud.Ticket{}, fmt.Errorf("parse ticket expiry: %w", err)
 	}
-	return managed.Ticket{
+	return cloud.Ticket{
 		ID:         decoded.Ticket.ID,
 		MachineID:  decoded.Ticket.MachineID,
 		TerminalID: decoded.Ticket.TerminalID,

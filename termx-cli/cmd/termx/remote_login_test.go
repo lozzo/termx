@@ -37,7 +37,7 @@ func TestRemoteLoginTokenPersistsBootstrapOutsideConfigFile(t *testing.T) {
 	if err := os.WriteFile(tokenPath, []byte("access-secret\n"), 0o600); err != nil {
 		t.Fatalf("write token file: %v", err)
 	}
-	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "token", "--control-url", "https://control.example.test", "--token-file", tokenPath})
+	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "token", "--server", "https://control.example.test", "--token-file", tokenPath})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {
@@ -47,7 +47,7 @@ func TestRemoteLoginTokenPersistsBootstrapOutsideConfigFile(t *testing.T) {
 		t.Fatalf("expected token to be validated through control, got %q", validatedToken)
 	}
 	if data, err := os.ReadFile(configPath); err == nil && strings.Contains(string(data), "access-secret") {
-		t.Fatal("raw access token was written to termx config")
+		t.Fatal("raw connection key was written to termx config")
 	}
 	cfg, err := remoteConfigFromFileAndEnv(configPath)
 	if err != nil {
@@ -59,7 +59,7 @@ func TestRemoteLoginTokenPersistsBootstrapOutsideConfigFile(t *testing.T) {
 	}
 }
 
-func TestRemoteLoginPasswordAndDeviceCodePersistTokens(t *testing.T) {
+func TestRemoteLoginPasswordAndBrowserPersistKeys(t *testing.T) {
 	oldClient := remoteLoginHTTPClient
 	oldStore := remoteAuthStorePath
 	t.Cleanup(func() {
@@ -78,16 +78,16 @@ func TestRemoteLoginPasswordAndDeviceCodePersistTokens(t *testing.T) {
 			}
 			return remoteLoginAuthResult{AccessToken: "password-access", RefreshToken: "password-refresh", User: remoteLoginUser{Email: email}}, nil
 		},
-		createDeviceCodeFunc: func(ctx context.Context, controlURL string, clientName string) (remoteDeviceCodeResult, error) {
-			return remoteDeviceCodeResult{
-				DeviceCode:              "device-code-1",
+		createBrowserLoginFunc: func(ctx context.Context, controlURL string, clientName string) (remoteBrowserLoginResult, error) {
+			return remoteBrowserLoginResult{
+				BrowserLoginCode:        "browser-1",
 				UserCode:                "USER-CODE",
 				VerificationURIComplete: "https://control.example.test/device?user_code=USER-CODE",
 				ExpiresAt:               time.Now().Add(time.Minute),
 				Interval:                time.Nanosecond,
 			}, nil
 		},
-		pollDeviceCodeFunc: func(ctx context.Context, controlURL string, deviceCode string) (remoteLoginAuthResult, bool, error) {
+		pollBrowserLoginFunc: func(ctx context.Context, controlURL string, browserLoginCode string) (remoteLoginAuthResult, bool, error) {
 			pollCalls++
 			if pollCalls == 1 {
 				return remoteLoginAuthResult{}, false, nil
@@ -99,7 +99,7 @@ func TestRemoteLoginPasswordAndDeviceCodePersistTokens(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
 	cmd := newRootCmd()
 	t.Setenv("TERMX_TEST_PASSWORD", "valid password")
-	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "password", "--control-url", "https://control.example.test", "--email", "cli@example.com", "--password-env", "TERMX_TEST_PASSWORD"})
+	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "password", "--server", "https://control.example.test", "--email", "cli@example.com", "--password-env", "TERMX_TEST_PASSWORD"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {
@@ -113,22 +113,22 @@ func TestRemoteLoginPasswordAndDeviceCodePersistTokens(t *testing.T) {
 		t.Fatalf("load password login config: %v", err)
 	}
 	if cfg.AccessToken != "password-access" {
-		t.Fatalf("expected password access token in auth store, got %#v", cfg)
+		t.Fatalf("expected password connection key in auth store, got %#v", cfg)
 	}
 
 	cmd = newRootCmd()
-	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "device-code", "--control-url", "https://control.example.test", "--timeout", "100ms"})
+	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "browser", "--server", "https://control.example.test", "--timeout", "100ms"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("device-code login returned error: %v", err)
+		t.Fatalf("browser login returned error: %v", err)
 	}
 	cfg, err = remoteConfigFromFileAndEnv(configPath)
 	if err != nil {
-		t.Fatalf("load device-code config: %v", err)
+		t.Fatalf("load browser config: %v", err)
 	}
 	if cfg.AccessToken != "device-access" {
-		t.Fatalf("expected device-code access token in auth store, got %#v", cfg)
+		t.Fatalf("expected browser connection key in auth store, got %#v", cfg)
 	}
 	var stored struct {
 		RefreshToken string `json:"refresh_token"`
@@ -160,10 +160,10 @@ func TestRemoteLoginDoesNotPersistMachinePrivateKey(t *testing.T) {
 }
 
 type remoteLoginHTTPClientFunc struct {
-	meFunc               func(context.Context, string, string) (remoteLoginUser, error)
-	loginFunc            func(context.Context, string, string, string) (remoteLoginAuthResult, error)
-	createDeviceCodeFunc func(context.Context, string, string) (remoteDeviceCodeResult, error)
-	pollDeviceCodeFunc   func(context.Context, string, string) (remoteLoginAuthResult, bool, error)
+	meFunc                 func(context.Context, string, string) (remoteLoginUser, error)
+	loginFunc              func(context.Context, string, string, string) (remoteLoginAuthResult, error)
+	createBrowserLoginFunc func(context.Context, string, string) (remoteBrowserLoginResult, error)
+	pollBrowserLoginFunc   func(context.Context, string, string) (remoteLoginAuthResult, bool, error)
 }
 
 func (f remoteLoginHTTPClientFunc) Me(ctx context.Context, controlURL string, token string) (remoteLoginUser, error) {
@@ -180,18 +180,18 @@ func (f remoteLoginHTTPClientFunc) Login(ctx context.Context, controlURL string,
 	return f.loginFunc(ctx, controlURL, email, password)
 }
 
-func (f remoteLoginHTTPClientFunc) CreateDeviceCode(ctx context.Context, controlURL string, clientName string) (remoteDeviceCodeResult, error) {
-	if f.createDeviceCodeFunc == nil {
-		return remoteDeviceCodeResult{}, nil
+func (f remoteLoginHTTPClientFunc) CreateBrowserLogin(ctx context.Context, controlURL string, clientName string) (remoteBrowserLoginResult, error) {
+	if f.createBrowserLoginFunc == nil {
+		return remoteBrowserLoginResult{}, nil
 	}
-	return f.createDeviceCodeFunc(ctx, controlURL, clientName)
+	return f.createBrowserLoginFunc(ctx, controlURL, clientName)
 }
 
-func (f remoteLoginHTTPClientFunc) PollDeviceCode(ctx context.Context, controlURL string, deviceCode string) (remoteLoginAuthResult, bool, error) {
-	if f.pollDeviceCodeFunc == nil {
+func (f remoteLoginHTTPClientFunc) PollBrowserLogin(ctx context.Context, controlURL string, browserLoginCode string) (remoteLoginAuthResult, bool, error) {
+	if f.pollBrowserLoginFunc == nil {
 		return remoteLoginAuthResult{}, false, nil
 	}
-	return f.pollDeviceCodeFunc(ctx, controlURL, deviceCode)
+	return f.pollBrowserLoginFunc(ctx, controlURL, browserLoginCode)
 }
 
 var _ = termx.RemoteConfig{}

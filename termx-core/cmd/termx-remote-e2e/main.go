@@ -46,7 +46,7 @@ type terminalsResponse struct {
 	Terminals []terminalRecord `json:"terminals"`
 }
 
-type managedTicketResponse struct {
+type connectionTicketResponse struct {
 	ID         string    `json:"id"`
 	MachineID  string    `json:"machine_id"`
 	TerminalID string    `json:"terminal_id"`
@@ -62,7 +62,7 @@ type pairHTTPResponse struct {
 	ExpiresAt        time.Time                         `json:"expires_at"`
 }
 
-type managedSessionRequestInput struct {
+type cloudSessionRequestInput struct {
 	TicketID       string
 	MachineID      string
 	TerminalID     string
@@ -75,16 +75,16 @@ type managedSessionRequestInput struct {
 	Now            time.Time
 }
 
-type managedSessionRequest struct {
+type cloudSessionRequest struct {
 	ConnectTicket  string                   `json:"connect_ticket"`
 	MachineID      string                   `json:"machine_id"`
 	TerminalID     string                   `json:"terminal_id"`
 	AppCertificate json.RawMessage          `json:"app_certificate"`
-	Offer          managedSessionOffer      `json:"offer"`
+	Offer          cloudSessionOffer        `json:"offer"`
 	Signature      remotertc.OfferSignature `json:"signature"`
 }
 
-type managedSessionOffer struct {
+type cloudSessionOffer struct {
 	SessionID     string   `json:"session_id"`
 	SDP           string   `json:"sdp"`
 	ICECandidates []string `json:"ice_candidates"`
@@ -128,7 +128,7 @@ func main() {
 	}); err != nil {
 		log.Fatal(err)
 	}
-	log.Println("remote managed smoke passed")
+	log.Println("remote cloud connection smoke passed")
 }
 
 type smokeConfig struct {
@@ -175,11 +175,11 @@ func run(cfg smokeConfig) error {
 		return err
 	}
 
-	ticket, err := createManagedTicket(httpClient, cfg.ControlURL, auth.AccessToken, machineID, terminalID)
+	ticket, err := createConnectionTicket(httpClient, cfg.ControlURL, auth.AccessToken, machineID, terminalID)
 	if err != nil {
 		return err
 	}
-	if ticket.Path != "managed" {
+	if ticket.Path != "cloud" {
 		return fmt.Errorf("unexpected ticket policy path=%q allow_relay=%v", ticket.Path, ticket.AllowRelay)
 	}
 
@@ -279,28 +279,28 @@ func claimPairCertificate(client *http.Client, pairURL, pairSessionID, pairSecre
 	return pair.AppCertificate, appPrivate, nil
 }
 
-func createManagedTicket(client *http.Client, controlURL, accessToken, machineID, terminalID string) (managedTicketResponse, error) {
-	var ticket managedTicketResponse
-	_, body, err := postJSONStatus(client, controlURL+"/api/v1/managed/connect-tickets", map[string]any{
+func createConnectionTicket(client *http.Client, controlURL, accessToken, machineID, terminalID string) (connectionTicketResponse, error) {
+	var ticket connectionTicketResponse
+	_, body, err := postJSONStatus(client, controlURL+"/api/v1/connections/tickets", map[string]any{
 		"machine_id":  machineID,
 		"terminal_id": terminalID,
 		"ttl_seconds": 120,
 	}, &ticket, accessToken)
 	if err != nil {
-		return managedTicketResponse{}, fmt.Errorf("create managed ticket failed: body=%s err=%w", body, err)
+		return connectionTicketResponse{}, fmt.Errorf("create connection ticket failed: body=%s err=%w", body, err)
 	}
 	if ticket.ID == "" {
-		return managedTicketResponse{}, fmt.Errorf("control returned empty managed ticket id")
+		return connectionTicketResponse{}, fmt.Errorf("control returned empty connection ticket id")
 	}
 	return ticket, nil
 }
 
-func buildManagedSessionRequest(input managedSessionRequestInput) (managedSessionRequest, error) {
+func buildCloudSessionRequest(input cloudSessionRequestInput) (cloudSessionRequest, error) {
 	if len(input.AppPrivateKey) != ed25519.PrivateKeySize {
-		return managedSessionRequest{}, fmt.Errorf("app private key has size %d, want %d", len(input.AppPrivateKey), ed25519.PrivateKeySize)
+		return cloudSessionRequest{}, fmt.Errorf("app private key has size %d, want %d", len(input.AppPrivateKey), ed25519.PrivateKeySize)
 	}
 	if len(input.AppCertificate) == 0 {
-		return managedSessionRequest{}, fmt.Errorf("app certificate is required")
+		return cloudSessionRequest{}, fmt.Errorf("app certificate is required")
 	}
 	now := input.Now
 	if now.IsZero() {
@@ -320,12 +320,12 @@ func buildManagedSessionRequest(input managedSessionRequestInput) (managedSessio
 		Timestamp:  now,
 	}
 	signature := ed25519.Sign(input.AppPrivateKey, remotertc.CanonicalOfferSignatureMessage(fields))
-	return managedSessionRequest{
+	return cloudSessionRequest{
 		ConnectTicket:  input.TicketID,
 		MachineID:      input.MachineID,
 		TerminalID:     input.TerminalID,
 		AppCertificate: append(json.RawMessage(nil), input.AppCertificate...),
-		Offer: managedSessionOffer{
+		Offer: cloudSessionOffer{
 			SessionID:     input.SessionID,
 			SDP:           input.SDP,
 			ICECandidates: append([]string(nil), input.ICECandidates...),
@@ -341,7 +341,7 @@ func buildManagedSessionRequest(input managedSessionRequestInput) (managedSessio
 
 type openChannelConfig struct {
 	HubURL         string
-	Ticket         managedTicketResponse
+	Ticket         connectionTicketResponse
 	AppCertificate json.RawMessage
 	AppPrivateKey  ed25519.PrivateKey
 	STUNURL        string
@@ -423,7 +423,7 @@ func openLabeledChannel(cfg openChannelConfig, label string) (*webrtc.PeerConnec
 	}
 
 	sessionID := cfg.Ticket.ID + "-" + strings.ReplaceAll(label, ":", "-")
-	requestBody, err := buildManagedSessionRequest(managedSessionRequestInput{
+	requestBody, err := buildCloudSessionRequest(cloudSessionRequestInput{
 		TicketID:       cfg.Ticket.ID,
 		MachineID:      cfg.Ticket.MachineID,
 		TerminalID:     cfg.Ticket.TerminalID,
@@ -448,10 +448,10 @@ func openLabeledChannel(cfg openChannelConfig, label string) (*webrtc.PeerConnec
 	}
 	if _, body, err := postJSONStatus(http.DefaultClient, strings.TrimRight(cfg.HubURL, "/")+"/api/v1/sessions", requestBody, &sessionResp, ""); err != nil {
 		offerPC.Close()
-		return nil, nil, "", fmt.Errorf("submit managed offer failed: body=%s err=%w", body, err)
+		return nil, nil, "", fmt.Errorf("submit cloud offer failed: body=%s err=%w", body, err)
 	}
 	if sessionResp.Pending {
-		if err := pollManagedAnswer(strings.TrimRight(cfg.HubURL, "/"), cfg.Ticket, sessionID, &sessionResp); err != nil {
+		if err := pollCloudAnswer(strings.TrimRight(cfg.HubURL, "/"), cfg.Ticket, sessionID, &sessionResp); err != nil {
 			offerPC.Close()
 			return nil, nil, "", err
 		}
@@ -505,7 +505,7 @@ func applyRemoteICEServers(pc *webrtc.PeerConnection, servers []hubICEServer) er
 	return pc.SetConfiguration(config)
 }
 
-func pollManagedAnswer(hubURL string, ticket managedTicketResponse, sessionID string, out any) error {
+func pollCloudAnswer(hubURL string, ticket connectionTicketResponse, sessionID string, out any) error {
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		_, _, err := postJSONStatus(http.DefaultClient, hubURL+"/api/v1/sessions/"+sessionID+"/answer", map[string]string{
@@ -517,7 +517,7 @@ func pollManagedAnswer(hubURL string, ticket managedTicketResponse, sessionID st
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	return fmt.Errorf("timed out polling managed answer")
+	return fmt.Errorf("timed out polling cloud answer")
 }
 
 func waitGathering(pc *webrtc.PeerConnection, timeout time.Duration) {

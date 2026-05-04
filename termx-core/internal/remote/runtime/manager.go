@@ -77,11 +77,11 @@ type Manager struct {
 	signalingStarted bool
 	signalingCancel  context.CancelFunc
 	explicitHubURL   bool
-	answerer         managedOfferAnswerer
+	answerer         cloudOfferAnswerer
 	replay           *cert.ReplayWindow
 }
 
-type managedOfferAnswerer interface {
+type cloudOfferAnswerer interface {
 	AnswerOffer(
 		ctx context.Context,
 		offer hubv1.SignalingOffer,
@@ -92,9 +92,9 @@ type managedOfferAnswerer interface {
 	) (hubv1.SignalingAnswer, error)
 }
 
-type defaultManagedOfferAnswerer struct{}
+type defaultCloudOfferAnswerer struct{}
 
-func (defaultManagedOfferAnswerer) AnswerOffer(
+func (defaultCloudOfferAnswerer) AnswerOffer(
 	ctx context.Context,
 	offer hubv1.SignalingOffer,
 	iceServers []hubv1.RTCIceServerConfig,
@@ -113,7 +113,7 @@ func NewManager(cfg remoteconfig.Config, provider InventoryProvider, host bridge
 		host:           host,
 		files:          fileapi.NewManager(),
 		explicitHubURL: strings.TrimSpace(cfg.HubURL) != "",
-		answerer:       defaultManagedOfferAnswerer{},
+		answerer:       defaultCloudOfferAnswerer{},
 		replay:         cert.NewReplayWindow(5 * time.Minute),
 		syncCh:         make(chan struct{}, 1),
 		status: Status{
@@ -643,7 +643,7 @@ func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID
 		offerKey := pendingAnswerKey(*resp.Offer)
 		answer, hasPendingAnswer := pendingAnswers[offerKey]
 		if !hasPendingAnswer {
-			answer = m.answerManagedOffer(ctx, *resp.Offer, iceServers)
+			answer = m.answerCloudOffer(ctx, *resp.Offer, iceServers)
 			pendingAnswers[offerKey] = answer
 		}
 		submitCtx, submitCancel := context.WithTimeout(ctx, 10*time.Second)
@@ -698,8 +698,8 @@ func pendingAnswerKey(offer hubv1.SignalingOffer) string {
 	return b.String()
 }
 
-func (m *Manager) answerManagedOffer(ctx context.Context, offer hubv1.SignalingOffer, iceServers []hubv1.RTCIceServerConfig) hubv1.SignalingAnswer {
-	certificate, err := m.authorizeManagedOffer(ctx, offer)
+func (m *Manager) answerCloudOffer(ctx context.Context, offer hubv1.SignalingOffer, iceServers []hubv1.RTCIceServerConfig) hubv1.SignalingAnswer {
+	certificate, err := m.authorizeCloudOffer(ctx, offer)
 	if err != nil {
 		return hubv1.SignalingAnswer{
 			SessionID: offer.SessionID,
@@ -709,9 +709,9 @@ func (m *Manager) answerManagedOffer(ctx context.Context, offer hubv1.SignalingO
 	terminalManagement := m.terminalManagementRouter()
 	answerer := m.answerer
 	if answerer == nil {
-		answerer = defaultManagedOfferAnswerer{}
+		answerer = defaultCloudOfferAnswerer{}
 	}
-	policy := managedOfferChannelPolicy(offer, certificate.Payload.Capabilities, terminalManagement)
+	policy := cloudOfferChannelPolicy(offer, certificate.Payload.Capabilities, terminalManagement)
 	offerICEServers := append([]hubv1.RTCIceServerConfig(nil), iceServers...)
 	if len(offer.RTCConfig.IceServers) > 0 {
 		offerICEServers = append([]hubv1.RTCIceServerConfig(nil), offer.RTCConfig.IceServers...)
@@ -729,7 +729,7 @@ func (m *Manager) answerManagedOffer(ctx context.Context, offer hubv1.SignalingO
 	return answer
 }
 
-func (m *Manager) authorizeManagedOffer(ctx context.Context, offer hubv1.SignalingOffer) (cert.AppCertificateEnvelope, error) {
+func (m *Manager) authorizeCloudOffer(ctx context.Context, offer hubv1.SignalingOffer) (cert.AppCertificateEnvelope, error) {
 	if m == nil {
 		return cert.AppCertificateEnvelope{}, fmt.Errorf("remote manager is nil")
 	}
@@ -813,7 +813,7 @@ func (m *Manager) hasTerminal(ctx context.Context, terminalID string) bool {
 	return false
 }
 
-func managedOfferChannelPolicy(offer hubv1.SignalingOffer, capabilities []string, terminalManagement remotertc.TerminalManagementRouter) remotertc.ChannelPolicy {
+func cloudOfferChannelPolicy(offer hubv1.SignalingOffer, capabilities []string, terminalManagement remotertc.TerminalManagementRouter) remotertc.ChannelPolicy {
 	allowTerminal := hasAppCapability(capabilities, "terminal")
 	return remotertc.ChannelPolicy{
 		TerminalID:              strings.TrimSpace(offer.TerminalID),

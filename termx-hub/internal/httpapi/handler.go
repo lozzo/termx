@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -13,17 +14,19 @@ import (
 	"time"
 
 	hubv1 "github.com/lozzow/termx/termx-core/remote/hubv1"
+	"github.com/lozzow/termx/termx-hub/internal/cloud"
 	"github.com/lozzow/termx/termx-hub/internal/ice"
-	"github.com/lozzow/termx/termx-hub/internal/managed"
 	"github.com/lozzow/termx/termx-hub/internal/registry"
 )
 
 type Config struct {
-	Managed          *managed.Service
+	Cloud            *cloud.Service
 	Registry         *registry.Registry
 	AgentPolicy      AgentPolicyProvider
 	ICE              *ice.Service
 	ICEServers       []hubv1.RTCIceServerConfig
+	HubID            string
+	InternalSecret   string
 	DebugToken       string
 	Clock            Clock
 	AnswerTimeout    time.Duration
@@ -31,6 +34,7 @@ type Config struct {
 	MaxBodyBytes     int64
 	AgentSessionTTL  time.Duration
 	MaxAgentSessions int
+	KickTTL          time.Duration
 }
 
 type Clock interface {
@@ -50,7 +54,7 @@ type AgentPolicyProvider interface {
 type Handler struct {
 	router          http.Handler
 	registry        *registry.Registry
-	managed         *managed.Service
+	cloud           *cloud.Service
 	agents          *agentSessions
 	clock           Clock
 	agentSessionTTL time.Duration
@@ -75,8 +79,8 @@ func (h *Handler) StartCleanup(ctx context.Context, ticks <-chan time.Time) {
 			if h.registry != nil {
 				h.registry.CleanupExpired(ctx)
 			}
-			if h.managed != nil {
-				h.managed.CleanupExpired(ctx)
+			if h.cloud != nil {
+				h.cloud.CleanupExpired(ctx)
 			}
 			if h.agents != nil {
 				h.agents.cleanupExpired(tick.UTC())
@@ -93,6 +97,14 @@ func NewHandler(cfg Config) http.Handler {
 	agentSessionTTL := cfg.AgentSessionTTL
 	if agentSessionTTL <= 0 {
 		agentSessionTTL = 10 * time.Minute
+	}
+	kickTTL := cfg.KickTTL
+	if kickTTL <= 0 {
+		kickTTL = time.Minute
+	}
+	hubID := strings.TrimSpace(cfg.HubID)
+	if hubID == "" {
+		hubID = "termx-hub-local"
 	}
 	maxAgentSessions := cfg.MaxAgentSessions
 	if maxAgentSessions <= 0 {
@@ -166,7 +178,7 @@ func NewHandler(cfg Config) http.Handler {
 		sessionID := agents.put(agentSession{AgentID: agentID, DeviceID: deviceID}, clock.Now().UTC(), agentSessionTTL, maxAgentSessions)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"version":                    "remote.hub.v1",
-			"hub_id":                     "termx-devstack-hub",
+			"hub_id":                     hubID,
 			"agent_session_id":           sessionID,
 			"heartbeat_interval_seconds": 5,
 			"rtc_config": map[string]any{
@@ -176,6 +188,59 @@ func NewHandler(cfg Config) http.Handler {
 				"allow_relay":          false,
 				"allow_relay_transfer": false,
 			},
+		})
+	})
+	mux.HandleFunc("POST /api/internal/kick", func(w http.ResponseWriter, r *http.Request) {
+		if !authorizedInternalRequest(r, cfg.InternalSecret) {
+			writeError(w, http.StatusForbidden, "internal_unauthorized", "valid hub secret is required")
+			return
+		}
+		var req struct {
+			AgentID   string `json:"agent_id"`
+			MachineID string `json:"machine_id"`
+			Reason    string `json:"reason"`
+		}
+		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
+			writeDecodeError(w, err)
+			return
+		}
+		agentID := strings.TrimSpace(req.AgentID)
+		machineID := strings.TrimSpace(req.MachineID)
+		if agentID == "" {
+			writeError(w, http.StatusBadRequest, "invalid_kick_request", "agent_id is required")
+			return
+		}
+		if cfg.Registry == nil {
+			writeError(w, http.StatusServiceUnavailable, "registry_unavailable", "agent registry is not configured")
+			return
+		}
+		kicked := true
+		if machineID == "" {
+			agent, ok := cfg.Registry.GetAgent(agentID)
+			if !ok {
+				kicked = false
+			} else {
+				machineID = agent.MachineID
+			}
+		}
+		if machineID != "" {
+			reason := strings.TrimSpace(req.Reason)
+			if reason == "" {
+				reason = "control requested"
+			}
+			cfg.Registry.ForceOffline(registry.ForceOfflineInput{
+				MachineID: machineID,
+				AgentID:   agentID,
+				Reason:    reason,
+				TTL:       kickTTL,
+			})
+		}
+		agents.deleteByAgentID(agentID)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":         true,
+			"kicked":     kicked,
+			"agent_id":   agentID,
+			"machine_id": machineID,
 		})
 	})
 	mux.HandleFunc("POST /api/v1/agents/heartbeat", func(w http.ResponseWriter, r *http.Request) {
@@ -214,8 +279,8 @@ func NewHandler(cfg Config) http.Handler {
 			writeDecodeError(w, err)
 			return
 		}
-		if cfg.Managed == nil {
-			writeError(w, http.StatusServiceUnavailable, "managed_service_unavailable", "managed service is not configured")
+		if cfg.Cloud == nil {
+			writeError(w, http.StatusServiceUnavailable, "cloud_service_unavailable", "cloud service is not configured")
 			return
 		}
 		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
@@ -233,7 +298,7 @@ func NewHandler(cfg Config) http.Handler {
 		if timeout > 20*time.Second {
 			timeout = 20 * time.Second
 		}
-		offer, err := cfg.Managed.PollAgentOffer(r.Context(), managed.PollAgentOfferInput{
+		offer, err := cfg.Cloud.PollAgentOffer(r.Context(), cloud.PollAgentOfferInput{
 			AgentID:   session.AgentID,
 			MachineID: session.DeviceID,
 			Timeout:   timeout,
@@ -245,7 +310,7 @@ func NewHandler(cfg Config) http.Handler {
 				return
 			}
 			agents.rememberPollError(req.AgentSessionID, err.Error())
-			writeError(w, http.StatusForbidden, "poll_managed_offer_failed", err.Error())
+			writeError(w, http.StatusForbidden, "poll_cloud_offer_failed", err.Error())
 			return
 		}
 		publicID := publicSessionID(offer)
@@ -254,7 +319,7 @@ func NewHandler(cfg Config) http.Handler {
 		rtcConfig, err := rtcConfigForOffer(r.Context(), cfg, offer)
 		if err != nil {
 			agents.rememberPollError(req.AgentSessionID, err.Error())
-			writeError(w, http.StatusInternalServerError, "managed_ice_config_failed", err.Error())
+			writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, hubv1.SignalingPollResponse{
@@ -284,8 +349,8 @@ func NewHandler(cfg Config) http.Handler {
 			writeDecodeError(w, err)
 			return
 		}
-		if cfg.Managed == nil {
-			writeError(w, http.StatusServiceUnavailable, "managed_service_unavailable", "managed service is not configured")
+		if cfg.Cloud == nil {
+			writeError(w, http.StatusServiceUnavailable, "cloud_service_unavailable", "cloud service is not configured")
 			return
 		}
 		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
@@ -298,21 +363,21 @@ func NewHandler(cfg Config) http.Handler {
 		}
 		if strings.TrimSpace(req.Answer.Error) != "" {
 			agents.rememberAnswer(req.AgentSessionID, req.Answer.SessionID, req.Answer.Error)
-			writeError(w, http.StatusForbidden, "managed_answer_error", req.Answer.Error)
+			writeError(w, http.StatusForbidden, "cloud_answer_error", req.Answer.Error)
 			return
 		}
 		offerID := agents.resolveOfferID(req.AgentSessionID, req.Answer.SessionID)
 		if offerID == "" {
 			offerID = req.Answer.SessionID
 		}
-		if err := cfg.Managed.SubmitAnswer(r.Context(), managed.SubmitAnswerInput{
+		if err := cfg.Cloud.SubmitAnswer(r.Context(), cloud.SubmitAnswerInput{
 			AgentID:   session.AgentID,
 			MachineID: session.DeviceID,
 			OfferID:   offerID,
 			SDP:       req.Answer.SDP,
 		}); err != nil {
 			agents.rememberAnswer(req.AgentSessionID, req.Answer.SessionID, err.Error())
-			writeError(w, http.StatusForbidden, "submit_managed_answer_failed", err.Error())
+			writeError(w, http.StatusForbidden, "submit_cloud_answer_failed", err.Error())
 			return
 		}
 		agents.rememberAnswer(req.AgentSessionID, req.Answer.SessionID, "")
@@ -335,15 +400,15 @@ func NewHandler(cfg Config) http.Handler {
 			writeDecodeError(w, err)
 			return
 		}
-		if cfg.Managed == nil {
-			writeError(w, http.StatusServiceUnavailable, "managed_service_unavailable", "managed service is not configured")
+		if cfg.Cloud == nil {
+			writeError(w, http.StatusServiceUnavailable, "cloud_service_unavailable", "cloud service is not configured")
 			return
 		}
 		if err := validateSessionRequestEnvelope(req.Offer.SessionID, req.AppCertificate, req.Signature); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_managed_session_envelope", err.Error())
+			writeError(w, http.StatusBadRequest, "invalid_cloud_session_envelope", err.Error())
 			return
 		}
-		offer, err := cfg.Managed.SubmitOffer(r.Context(), managed.SubmitOfferInput{
+		offer, err := cfg.Cloud.SubmitOffer(r.Context(), cloud.SubmitOfferInput{
 			SessionID:      req.Offer.SessionID,
 			TicketID:       req.ConnectTicket,
 			MachineID:      req.MachineID,
@@ -351,7 +416,7 @@ func NewHandler(cfg Config) http.Handler {
 			SDP:            req.Offer.SDP,
 			ICECandidates:  req.Offer.ICECandidates,
 			AppCertificate: req.AppCertificate,
-			Signature: managed.OfferSignature{
+			Signature: cloud.OfferSignature{
 				Algorithm: req.Signature.Algorithm,
 				Nonce:     req.Signature.Nonce,
 				Timestamp: req.Signature.Timestamp,
@@ -359,7 +424,7 @@ func NewHandler(cfg Config) http.Handler {
 			},
 		})
 		if err != nil {
-			writeError(w, http.StatusForbidden, "submit_managed_offer_failed", err.Error())
+			writeError(w, http.StatusForbidden, "submit_cloud_offer_failed", err.Error())
 			return
 		}
 		answer, err := waitForAnswer(r.Context(), cfg, offer.ID, offer.TicketID, offer.MachineID)
@@ -367,7 +432,7 @@ func NewHandler(cfg Config) http.Handler {
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 				writeJSON(w, http.StatusAccepted, map[string]any{
 					"session_id":   publicSessionID(offer),
-					"path":         managed.PathManaged,
+					"path":         cloud.PathCloud,
 					"machine_id":   offer.MachineID,
 					"terminal_id":  offer.TerminalID,
 					"pending":      true,
@@ -375,19 +440,19 @@ func NewHandler(cfg Config) http.Handler {
 				})
 				return
 			}
-			writeError(w, statusForAnswerError(err), "get_managed_answer_failed", err.Error())
+			writeError(w, statusForAnswerError(err), "get_cloud_answer_failed", err.Error())
 			return
 		}
 		if _, err := iceServersForTicket(r.Context(), cfg, offer.TicketID, offer.AllowRelay); err != nil {
-			writeError(w, http.StatusInternalServerError, "managed_ice_config_failed", err.Error())
+			writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
 			return
 		}
-		if _, err := cfg.Managed.ConsumeOfferTicket(r.Context(), managed.GetAnswerInput{
+		if _, err := cfg.Cloud.ConsumeOfferTicket(r.Context(), cloud.GetAnswerInput{
 			OfferID:   offer.ID,
 			TicketID:  offer.TicketID,
 			MachineID: offer.MachineID,
 		}); err != nil {
-			writeError(w, http.StatusForbidden, "consume_managed_ticket_failed", err.Error())
+			writeError(w, http.StatusForbidden, "consume_connection_ticket_failed", err.Error())
 			return
 		}
 		writeSessionAnswer(w, r.Context(), cfg, publicSessionID(offer), offer.MachineID, offer.TerminalID, offer.AllowRelay, offer.TicketID, answer)
@@ -401,35 +466,35 @@ func NewHandler(cfg Config) http.Handler {
 			writeDecodeError(w, err)
 			return
 		}
-		if cfg.Managed == nil {
-			writeError(w, http.StatusServiceUnavailable, "managed_service_unavailable", "managed service is not configured")
+		if cfg.Cloud == nil {
+			writeError(w, http.StatusServiceUnavailable, "cloud_service_unavailable", "cloud service is not configured")
 			return
 		}
-		answer, err := cfg.Managed.GetAnswer(r.Context(), managed.GetAnswerInput{
+		answer, err := cfg.Cloud.GetAnswer(r.Context(), cloud.GetAnswerInput{
 			OfferID:   r.PathValue("session_id"),
 			TicketID:  req.ConnectTicket,
 			MachineID: req.MachineID,
 		})
 		if err != nil {
-			writeError(w, http.StatusForbidden, "get_managed_answer_failed", err.Error())
+			writeError(w, http.StatusForbidden, "get_cloud_answer_failed", err.Error())
 			return
 		}
-		policy, ok := cfg.Managed.OfferPolicyForAnswer(managed.GetAnswerInput{
+		policy, ok := cfg.Cloud.OfferPolicyForAnswer(cloud.GetAnswerInput{
 			OfferID:   r.PathValue("session_id"),
 			TicketID:  req.ConnectTicket,
 			MachineID: req.MachineID,
 		})
 		allowRelay := ok && policy.Ticket.AllowRelay
 		if _, err := iceServersForTicket(r.Context(), cfg, req.ConnectTicket, allowRelay); err != nil {
-			writeError(w, http.StatusInternalServerError, "managed_ice_config_failed", err.Error())
+			writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
 			return
 		}
-		if _, err := cfg.Managed.ConsumeOfferTicket(r.Context(), managed.GetAnswerInput{
+		if _, err := cfg.Cloud.ConsumeOfferTicket(r.Context(), cloud.GetAnswerInput{
 			OfferID:   r.PathValue("session_id"),
 			TicketID:  req.ConnectTicket,
 			MachineID: req.MachineID,
 		}); err != nil {
-			writeError(w, http.StatusForbidden, "consume_managed_ticket_failed", err.Error())
+			writeError(w, http.StatusForbidden, "consume_connection_ticket_failed", err.Error())
 			return
 		}
 		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), answer.MachineID, "", allowRelay, req.ConnectTicket, answer)
@@ -437,7 +502,7 @@ func NewHandler(cfg Config) http.Handler {
 	return &Handler{
 		router:          mux,
 		registry:        cfg.Registry,
-		managed:         cfg.Managed,
+		cloud:           cfg.Cloud,
 		agents:          agents,
 		clock:           clock,
 		agentSessionTTL: agentSessionTTL,
@@ -643,6 +708,20 @@ func (s *agentSessions) deleteLocked(id string) {
 	}
 }
 
+func (s *agentSessions) deleteByAgentID(agentID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	removed := 0
+	agentID = strings.TrimSpace(agentID)
+	for id, session := range s.sessions {
+		if session.AgentID == agentID {
+			s.deleteLocked(id)
+			removed++
+		}
+	}
+	return removed
+}
+
 type offerSignatureRequest struct {
 	Algorithm string `json:"algorithm"`
 	Nonce     string `json:"nonce"`
@@ -664,7 +743,7 @@ func validateSessionRequestEnvelope(sessionID string, appCertificate json.RawMes
 	return nil
 }
 
-func waitForAnswer(ctx context.Context, cfg Config, offerID string, ticketID string, machineID string) (managed.Answer, error) {
+func waitForAnswer(ctx context.Context, cfg Config, offerID string, ticketID string, machineID string) (cloud.Answer, error) {
 	timeout := cfg.AnswerTimeout
 	if timeout <= 0 {
 		timeout = 10 * time.Second
@@ -678,7 +757,7 @@ func waitForAnswer(ctx context.Context, cfg Config, offerID string, ticketID str
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		answer, err := cfg.Managed.GetAnswer(ctx, managed.GetAnswerInput{
+		answer, err := cfg.Cloud.GetAnswer(ctx, cloud.GetAnswerInput{
 			OfferID:   offerID,
 			TicketID:  ticketID,
 			MachineID: machineID,
@@ -687,11 +766,11 @@ func waitForAnswer(ctx context.Context, cfg Config, offerID string, ticketID str
 			return answer, nil
 		}
 		if !errors.Is(err, registry.ErrOfferNotFound) {
-			return managed.Answer{}, err
+			return cloud.Answer{}, err
 		}
 		select {
 		case <-ctx.Done():
-			return managed.Answer{}, ctx.Err()
+			return cloud.Answer{}, ctx.Err()
 		case <-ticker.C:
 		}
 	}
@@ -704,22 +783,22 @@ func statusForAnswerError(err error) int {
 	return http.StatusForbidden
 }
 
-func publicSessionID(offer managed.Offer) string {
+func publicSessionID(offer cloud.Offer) string {
 	if strings.TrimSpace(offer.SessionID) != "" {
 		return strings.TrimSpace(offer.SessionID)
 	}
 	return offer.ID
 }
 
-func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, sessionID string, machineID string, terminalID string, allowRelay bool, ticketID string, answer managed.Answer) {
+func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, sessionID string, machineID string, terminalID string, allowRelay bool, ticketID string, answer cloud.Answer) {
 	iceServers, err := iceServersForTicket(ctx, cfg, ticketID, allowRelay)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "managed_ice_config_failed", err.Error())
+		writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
 		return
 	}
 	response := map[string]any{
 		"session_id": sessionID,
-		"path":       managed.PathManaged,
+		"path":       cloud.PathCloud,
 		"machine_id": machineID,
 		"answer": map[string]any{
 			"sdp":            answer.SDP,
@@ -735,7 +814,7 @@ func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, 
 	writeJSON(w, http.StatusOK, response)
 }
 
-func rtcConfigForOffer(ctx context.Context, cfg Config, offer managed.Offer) (hubv1.RTCConfig, error) {
+func rtcConfigForOffer(ctx context.Context, cfg Config, offer cloud.Offer) (hubv1.RTCConfig, error) {
 	servers, err := iceServersForTicket(ctx, cfg, offer.TicketID, offer.AllowRelay)
 	if err != nil {
 		return hubv1.RTCConfig{}, err
@@ -749,7 +828,7 @@ func iceServersForTicket(ctx context.Context, cfg Config, ticketID string, allow
 	}
 	rtc, err := cfg.ICE.ConfigForLease(ctx, ice.Lease{
 		ID:         ticketID,
-		Path:       ice.PathManaged,
+		Path:       ice.PathCloud,
 		AllowRelay: allowRelay,
 	})
 	if err != nil {
@@ -833,6 +912,21 @@ func writeError(w http.ResponseWriter, status int, code string, message string) 
 			"message": strings.TrimSpace(message),
 		},
 	})
+}
+
+func authorizedInternalRequest(r *http.Request, secret string) bool {
+	secret = strings.TrimSpace(secret)
+	if secret == "" {
+		return false
+	}
+	provided := strings.TrimSpace(r.Header.Get("X-TermX-Hub-Secret"))
+	if provided == "" {
+		provided = strings.TrimSpace(r.Header.Get("X-Hub-Secret"))
+	}
+	if provided == "" || len(provided) != len(secret) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(secret)) == 1
 }
 
 func randomID(prefix string) string {
