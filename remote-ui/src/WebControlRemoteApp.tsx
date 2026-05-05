@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, CheckCircle2, Loader2, LogIn, Monitor, QrCode, RefreshCw, Server, Settings, ShieldCheck, Wifi, WifiOff, X } from 'lucide-react'
-import { createBrowserRtcSession } from './browserRtcSession'
-import { createBrowserLocalAppCrypto, createLocalAppIdentityStore, createLocalOfferSigner, pairLocalApp, type LocalAppCrypto } from './localAppIdentity'
+import { createLocalAppIdentityStore, createLocalOfferSigner, pairLocalApp, type LocalAppCrypto } from './localAppIdentity'
 import { LocalRemoteApp, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createMachineStore, type StoredMachineRecord } from './machineStore'
 import { createManagedHubRtcConnector } from './managedHubRtcConnector'
 import { createManagedHubApi } from './managedHubApi'
 import { parsePairingPayload, type PairingPayload } from './pairingPayload'
-import type { ConnectionInfo, LocalAgentApi, LocalStatus, RtcBinaryChannel, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSubscription } from './transport'
+import type { ConnectionInfo, LocalAgentApi, LocalStatus, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectionTarget, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionNegotiator, RtcSubscription } from './transport'
 import { normalizeTerminalInventory } from './terminalInventory'
 import { createWebControlApi, type WebControlApi, type WebControlMachine, type WebControlUser } from './webControlApi'
 
@@ -21,11 +20,14 @@ const appName = 'TermX Remote App'
 
 type AppView = 'home' | 'settings' | 'machine'
 type PairApi = Pick<LocalAgentApi, 'pair'>
+type ManagedRtcSessionFactory = (input: RtcConnectionTarget) => RtcSession & RtcSessionNegotiator
 type MachineRuntimeFactory = (input: {
   machine: WebControlMachine
   user: WebControlUser
-  storage: Storage
+  storage: RemoteRuntimeStorage
   api: WebControlApi
+  networkRuntime: RemoteNetworkRuntime
+  createSession: ManagedRtcSessionFactory
   crypto?: LocalAppCrypto | undefined
 }) => MachineRuntime
 
@@ -36,21 +38,27 @@ interface MachineRuntime {
 
 export interface WebControlRemoteAppProps {
   defaultControlUrl?: string | undefined
-  storage?: Storage | undefined
+  storage?: RemoteRuntimeStorage | undefined
+  networkRuntime?: RemoteNetworkRuntime | undefined
   pairCrypto?: LocalAppCrypto | undefined
+  managedRtcSessionFactory?: ManagedRtcSessionFactory | undefined
   pairApiFactory?: ((payload: PairingPayload, machine: WebControlMachine) => PairApi) | undefined
   machineRuntimeFactory?: MachineRuntimeFactory | undefined
 }
 
 export function WebControlRemoteApp({
   defaultControlUrl,
-  storage = globalThis.localStorage,
+  storage: storageProp,
+  networkRuntime: networkRuntimeProp,
   pairCrypto,
+  managedRtcSessionFactory,
   pairApiFactory,
   machineRuntimeFactory = createManagedMachineRuntime,
 }: WebControlRemoteAppProps) {
+  const networkRuntime = networkRuntimeProp ?? unavailableNetworkRuntime
+  const storage = storageProp ?? networkRuntime.storage
   const [view, setView] = useState<AppView>('home')
-  const [controlUrl, setControlUrl] = useState(() => initialControlUrl(storage, defaultControlUrl))
+  const [controlUrl, setControlUrl] = useState(() => initialControlUrl(storage, defaultControlUrl, networkRuntime))
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [accessToken, setAccessToken] = useState(() => storage?.getItem(storageKeys.accessToken) ?? '')
@@ -72,7 +80,8 @@ export function WebControlRemoteApp({
   const api = useMemo(() => createWebControlApi({
     baseUrl: controlUrl,
     ...(accessToken ? { accessToken } : {}),
-  }), [accessToken, controlUrl])
+    fetch: networkRuntime.fetch,
+  }), [accessToken, controlUrl, networkRuntime])
 
   const refreshMachines = useCallback(async () => {
     if (!accessToken) return
@@ -191,9 +200,9 @@ export function WebControlRemoteApp({
         throw new Error(`This pairing code belongs to ${cloudMachine.name}, not ${selectedMachine.name}`)
       }
       const pairResult = await pairLocalApp({
-        api: pairApiFactory?.(payload, cloudMachine) ?? createPairApiFromMachine(cloudMachine),
+        api: pairApiFactory?.(payload, cloudMachine) ?? createPairApiFromMachine(cloudMachine, networkRuntime),
         storage: createLocalAppIdentityStore(storage, { scope: pairingScope(user.id, cloudMachine.id) }),
-        crypto: pairCrypto ?? createBrowserLocalAppCrypto(),
+        crypto: requiredPairCrypto(pairCrypto),
         appName,
         machineId: cloudMachine.id,
         pairSessionId: payload.pairing.sessionId,
@@ -220,7 +229,7 @@ export function WebControlRemoteApp({
     } finally {
       setPairing(false)
     }
-  }, [machines, manualScanValue, pairApiFactory, pairCrypto, selectedMachine, signedIn, storage, user])
+  }, [machines, manualScanValue, networkRuntime, pairApiFactory, pairCrypto, selectedMachine, signedIn, storage, user])
 
   return (
     <main className="flex h-full min-h-[100dvh] flex-col bg-zinc-50 text-zinc-950" data-testid="termx-web-control-remote">
@@ -249,7 +258,9 @@ export function WebControlRemoteApp({
           user={user}
           storage={storage}
           api={api}
+          networkRuntime={networkRuntime}
           crypto={pairCrypto}
+          createSession={managedRtcSessionFactory}
           runtimeFactory={machineRuntimeFactory}
           message={message}
           error={error}
@@ -297,7 +308,9 @@ function MachineTerminalListView({
   user,
   storage,
   api,
+  networkRuntime,
   crypto,
+  createSession,
   runtimeFactory,
   message,
   error,
@@ -305,9 +318,11 @@ function MachineTerminalListView({
 }: {
   machine: WebControlMachine
   user: WebControlUser | null
-  storage: Storage | undefined
+  storage: RemoteRuntimeStorage | undefined
   api: WebControlApi
+  networkRuntime: RemoteNetworkRuntime
   crypto?: LocalAppCrypto | undefined
+  createSession?: ManagedRtcSessionFactory | undefined
   runtimeFactory: MachineRuntimeFactory
   message: string | null
   error: string | null
@@ -315,8 +330,8 @@ function MachineTerminalListView({
 }) {
   const runtime = useMemo(() => {
     if (!user || !storage) return null
-    return runtimeFactory({ machine, user, storage, api, crypto })
-  }, [api, crypto, machine, runtimeFactory, storage, user])
+    return runtimeFactory({ machine, user, storage, api, networkRuntime, createSession: requiredManagedRtcSessionFactory(createSession), crypto })
+  }, [api, createSession, crypto, machine, networkRuntime, runtimeFactory, storage, user])
   if (!user || !storage || !runtime) {
     return (
       <MachineRuntimeErrorShell
@@ -804,8 +819,8 @@ function InfoPill({ children }: { children: string }) {
   )
 }
 
-function initialControlUrl(storage: Storage | undefined, fallback: string | undefined): string {
-  const fromQuery = new URLSearchParams(globalThis.location?.search ?? '').get('control')
+function initialControlUrl(storage: RemoteRuntimeStorage | undefined, fallback: string | undefined, networkRuntime: RemoteNetworkRuntime): string {
+  const fromQuery = networkRuntime.queryParam('control')
   const queryValue = cleanControlUrl(fromQuery)
   if (queryValue) return queryValue
   const storedValue = cleanControlUrl(storage?.getItem(storageKeys.controlUrl))
@@ -828,7 +843,7 @@ function isRemoteUiLocalUrl(value: string): boolean {
   }
 }
 
-function readPairedMachineIds(storage: Storage | undefined, userId: string | undefined): Set<string> {
+function readPairedMachineIds(storage: RemoteRuntimeStorage | undefined, userId: string | undefined): Set<string> {
   if (!storage) return new Set()
   try {
     return new Set(createMachineStore({ storage }).listMachines()
@@ -843,19 +858,21 @@ function pairingScope(userId: string | undefined, machineId: string): string {
   return `user:${userId?.trim() || 'anonymous'}:machine:${machineId.trim()}`
 }
 
-function createPairApiFromMachine(machine: WebControlMachine): PairApi {
+function createPairApiFromMachine(machine: WebControlMachine, networkRuntime: RemoteNetworkRuntime): PairApi {
   const hubUrl = machine.hubHttpUrl?.trim() || machine.hubHttpUrl
   if (!hubUrl) {
     throw new Error('Hub endpoint is required before pairing this Web Control device')
   }
-  return createManagedHubApi({ baseUrl: hubUrl })
+  return createManagedHubApi({ baseUrl: hubUrl, fetch: networkRuntime.fetch })
 }
 
 function createManagedMachineRuntime(input: {
   machine: WebControlMachine
   user: WebControlUser
-  storage: Storage
+  storage: RemoteRuntimeStorage
   api: WebControlApi
+  networkRuntime: RemoteNetworkRuntime
+  createSession: ManagedRtcSessionFactory
   crypto?: LocalAppCrypto | undefined
 }): MachineRuntime {
   const identityStore = createLocalAppIdentityStore(input.storage, {
@@ -863,13 +880,15 @@ function createManagedMachineRuntime(input: {
   })
   const signer = createLocalOfferSigner({
     storage: identityStore,
-    crypto: input.crypto ?? createBrowserLocalAppCrypto(),
+    crypto: requiredPairCrypto(input.crypto),
   })
   const machineSession = createManagedMachineSessionManager({
     machine: input.machine,
     identityStore,
     signer,
     controlApi: input.api,
+    networkRuntime: input.networkRuntime,
+    createSession: input.createSession,
   })
   const machineStatus: LocalStatus = {
     machine: {
@@ -912,6 +931,8 @@ function createManagedMachineSessionManager(input: {
   identityStore: ReturnType<typeof createLocalAppIdentityStore>
   signer: ReturnType<typeof createLocalOfferSigner>
   controlApi: WebControlApi
+  networkRuntime: RemoteNetworkRuntime
+  createSession: ManagedRtcSessionFactory
 }) {
   let sessionPromise: Promise<RtcSession> | null = null
   let currentSession: RtcSession | null = null
@@ -929,8 +950,8 @@ function createManagedMachineSessionManager(input: {
     if (!hubUrl) throw new Error('Hub endpoint is required before opening this machine runtime')
     const appCertificate = parseStoredAppCertificate(input.identityStore.loadCertificate())
     const connector = createManagedHubRtcConnector({
-      api: createManagedHubApi({ baseUrl: hubUrl }),
-      createSession: ({ machineId }) => createBrowserRtcSession({ machineId }),
+      api: createManagedHubApi({ baseUrl: hubUrl, fetch: input.networkRuntime.fetch }),
+      createSession: input.createSession,
       signOffer: (offer) => input.signer.signOffer(offer),
     })
     return connector.connect({
@@ -969,6 +990,29 @@ function createManagedMachineSessionManager(input: {
     },
     reset: resetCurrentSession,
   }
+}
+
+const unavailableNetworkRuntime: RemoteNetworkRuntime = {
+  fetch() {
+    throw new Error('remote network runtime is required')
+  },
+  queryParam() {
+    return null
+  },
+}
+
+function requiredPairCrypto(crypto: LocalAppCrypto | undefined): LocalAppCrypto {
+  if (!crypto) {
+    throw new Error('local app crypto is required')
+  }
+  return crypto
+}
+
+function requiredManagedRtcSessionFactory(factory: ManagedRtcSessionFactory | undefined): ManagedRtcSessionFactory {
+  if (!factory) {
+    throw new Error('managed RTC session factory is required')
+  }
+  return factory
 }
 
 function isRtcSessionAlive(session: RtcSession): boolean {

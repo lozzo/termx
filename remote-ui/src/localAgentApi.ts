@@ -1,18 +1,15 @@
 import { normalizeMachine, normalizeTerminal, type Machine, type Terminal } from './model'
-import type { ConnectionCapabilities, LocalAgentApi, LocalCreateTerminalInput, LocalInventoryRTCAnswer, LocalInventoryRTCOffer, LocalPairInput, LocalPairResult, LocalRTCAnswer, LocalRTCOffer, LocalStatus, LocalUpdateTerminalInput } from './transport'
+import type { ConnectionCapabilities, LocalAgentApi, LocalCreateTerminalInput, LocalInventoryRTCAnswer, LocalInventoryRTCOffer, LocalPairInput, LocalPairResult, LocalRTCAnswer, LocalRTCOffer, LocalStatus, LocalUpdateTerminalInput, RemoteRuntimeFetch } from './transport'
 
 export interface LocalAgentApiOptions {
   baseUrl?: string | undefined
-  fetch?: typeof globalThis.fetch | undefined
+  fetch: RemoteRuntimeFetch
   machineId?: string | undefined
   pairUrl?: string | undefined
 }
 
-export function createLocalAgentApi(options: LocalAgentApiOptions = {}): LocalAgentApi {
-  const fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
-  if (!fetchImpl) {
-    throw new Error('fetch is required for local agent api')
-  }
+export function createLocalAgentApi(options: LocalAgentApiOptions): LocalAgentApi {
+  const fetchImpl = options.fetch
   const baseUrl = normalizeBaseUrl(options.baseUrl ?? '')
   let knownMachineId = options.machineId
   let knownStatus: LocalStatus | null = null

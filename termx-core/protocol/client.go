@@ -259,49 +259,13 @@ func (c *Client) Create(ctx context.Context, params CreateParams) (*CreateResult
 	return &out, nil
 }
 
+func (c *Client) Call(ctx context.Context, method string, params any, out any) error {
+	return c.doRequest(ctx, method, params, out)
+}
+
 func (c *Client) List(ctx context.Context) (*ListResult, error) {
 	var out ListResult
 	if err := c.doRequest(ctx, "list", map[string]any{}, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) RemoteStatus(ctx context.Context) (*RemoteStatus, error) {
-	var out RemoteStatus
-	if err := c.doRequest(ctx, "remote.status", map[string]any{}, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) RemotePairStart(ctx context.Context, params PairStartParams) (*PairStartResult, error) {
-	var out PairStartResult
-	if err := c.doRequest(ctx, "remote.pair.start", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) RemoteLocalEnable(ctx context.Context, params RemoteLocalEnableParams) (*RemoteLocalStatus, error) {
-	var out RemoteLocalStatus
-	if err := c.doRequest(ctx, "remote.local.enable", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) RemoteLocalStatus(ctx context.Context) (*RemoteLocalStatus, error) {
-	var out RemoteLocalStatus
-	if err := c.doRequest(ctx, "remote.local.status", map[string]any{}, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) RemoteLocalDisable(ctx context.Context) (*RemoteLocalStatus, error) {
-	var out RemoteLocalStatus
-	if err := c.doRequest(ctx, "remote.local.disable", map[string]any{}, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

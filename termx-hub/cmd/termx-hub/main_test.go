@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	hubv1 "github.com/lozzow/termx/termx-core/remote/hubv1"
-	"github.com/lozzow/termx/termx-hub/internal/cloud"
-	"github.com/lozzow/termx/termx-hub/internal/registry"
+	"github.com/lozzow/termx/termx-remote/hub/cloud"
+	"github.com/lozzow/termx/termx-remote/hub/registry"
+	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
 )
 
 func TestNewHubHandlerFromEnvRequiresControlConfiguration(t *testing.T) {
@@ -180,77 +180,6 @@ func TestNewHubHandlerFromEnvWiresCloudTurnWithoutRegistrationRelayPolicy(t *tes
 	if resp.RelayPolicy.AllowRelay || len(resp.RTCConfig.IceServers) != 1 ||
 		strings.HasPrefix(resp.RTCConfig.IceServers[0].URLs[0], "turn:") {
 		t.Fatalf("registration exposed cloud relay policy: %+v", resp)
-	}
-}
-
-func TestPostHubHeartbeatReportsStaticInfoAndMachines(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
-	var gotPath string
-	var gotSecret string
-	var gotBody struct {
-		HubID    string   `json:"hub_id"`
-		AgentIDs []string `json:"agent_ids"`
-		Static   struct {
-			Name      string `json:"name"`
-			Region    string `json:"region"`
-			HTTPURL   string `json:"http_url"`
-			MaxAgents int    `json:"max_agents"`
-		} `json:"static"`
-	}
-	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotSecret = r.Header.Get("X-TermX-Hub-Secret")
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-			t.Fatalf("decode heartbeat body: %v", err)
-		}
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	}))
-	defer control.Close()
-
-	reg := registry.New(registry.Config{Verifier: commandVerifierForTest{publicKey: publicKey}})
-	now := time.Date(2026, 5, 3, 14, 35, 0, 0, time.UTC)
-	signature := base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, hubv1.CanonicalAgentRegistrationSignatureMessage(hubv1.AgentRegistrationSignatureFields{
-		MachineID: "machine_1",
-		AgentID:   "agent_1",
-		Nonce:     "nonce-main-test",
-		Timestamp: now,
-	})))
-	if _, err := reg.Register(context.Background(), registry.RegisterInput{
-		MachineID:          "machine_1",
-		AgentID:            "agent_1",
-		SignatureAlgorithm: "ed25519",
-		SignatureNonce:     "nonce-main-test",
-		SignatureTimestamp: now.Unix(),
-		SignatureValue:     signature,
-	}); err != nil {
-		t.Fatalf("register agent: %v", err)
-	}
-
-	err = postHubHeartbeat(context.Background(), hubHeartbeatConfig{
-		ControlURL: control.URL,
-		Secret:     "hub-secret",
-		HubID:      "hub-test",
-		Name:       "Hub Test",
-		Region:     "iad",
-		HTTPURL:    "https://hub.example.test",
-		MaxAgents:  100,
-		Client:     control.Client(),
-	}, reg)
-	if err != nil {
-		t.Fatalf("postHubHeartbeat returned error: %v", err)
-	}
-	if gotPath != "/api/internal/hubs/heartbeat" || gotSecret != "hub-secret" {
-		t.Fatalf("unexpected heartbeat request path=%q secret=%q", gotPath, gotSecret)
-	}
-	if gotBody.HubID != "hub-test" || gotBody.Static.Name != "Hub Test" || gotBody.Static.Region != "iad" ||
-		gotBody.Static.HTTPURL != "https://hub.example.test" || gotBody.Static.MaxAgents != 100 {
-		t.Fatalf("unexpected heartbeat body: %+v", gotBody)
-	}
-	if len(gotBody.AgentIDs) != 1 || gotBody.AgentIDs[0] != "machine_1" {
-		t.Fatalf("expected machine ids in heartbeat, got %+v", gotBody.AgentIDs)
 	}
 }
 

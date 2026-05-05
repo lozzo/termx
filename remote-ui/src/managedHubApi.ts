@@ -1,12 +1,12 @@
 import type { ManagedIceServer, ManagedRelayPolicy } from './managedRtcConnector'
-import type { RtcConnectOptions, RtcSessionDescription } from './transport'
+import type { RemoteRuntimeFetch, RtcConnectOptions, RtcSessionDescription } from './transport'
 
-export type ManagedHubFetch = (input: string, init?: RequestInit) => Promise<Response>
+export type ManagedHubFetch = RemoteRuntimeFetch
 
 export interface ManagedHubApiOptions {
   baseUrl: string
   accessToken?: string | undefined
-  fetch?: ManagedHubFetch | undefined
+  fetch: ManagedHubFetch
 }
 
 export interface ManagedHubApi {
@@ -93,7 +93,7 @@ class ManagedHubHttpApi implements ManagedHubApi {
       }
       this.accessToken = token
     }
-    this.fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
+    this.fetchImpl = options.fetch
   }
 
   async createSession(input: CreateManagedHubSessionInput, options: RtcConnectOptions = {}): Promise<ManagedHubCreateSessionResult> {

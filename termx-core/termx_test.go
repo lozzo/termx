@@ -2,10 +2,14 @@ package termx
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/lozzow/termx/termx-core/protocol"
 )
 
 func TestServerCreateListTagsSubscribeSnapshotAndRemoval(t *testing.T) {
@@ -110,4 +114,38 @@ removedCheck:
 	}
 
 	t.Fatal("terminal was not auto-removed")
+}
+
+func TestServerDoesNotSpecialCaseRemoteRPCMethods(t *testing.T) {
+	server := NewServer()
+	for _, method := range []string{
+		"remote.status",
+		"remote.pair.start",
+		"remote.local.enable",
+		"remote.local.status",
+		"remote.local.disable",
+	} {
+		t.Run(method, func(t *testing.T) {
+			allocator := protocol.NewChannelAllocator()
+			attachments := make(map[uint16]*sessionAttachment)
+			var attachmentsMu sync.RWMutex
+			result, code, err := server.handleRequest(
+				context.Background(),
+				"test",
+				nil,
+				allocator,
+				attachments,
+				&attachmentsMu,
+				transportScope{},
+				protocol.Request{ID: 1, Method: method, Params: json.RawMessage(`{}`)},
+				func(uint16, uint8, []byte) error { return nil },
+			)
+			if err == nil {
+				t.Fatalf("expected %s to be rejected, got code=%d result=%s", method, code, string(result))
+			}
+			if code != 400 || !strings.Contains(err.Error(), "unsupported method") {
+				t.Fatalf("expected generic unsupported method for %s, got code=%d err=%v", method, code, err)
+			}
+		})
+	}
 }

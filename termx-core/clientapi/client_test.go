@@ -3,6 +3,8 @@ package clientapi
 import (
 	"context"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -10,6 +12,48 @@ import (
 	"github.com/lozzow/termx/termx-core/protocol"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
 )
+
+func TestClientAPIBoundaryDoesNotExposeRemoteCapabilities(t *testing.T) {
+	want := []string{
+		"AcquireSessionLease",
+		"ApplySession",
+		"Attach",
+		"AttachSession",
+		"Close",
+		"Create",
+		"CreateSession",
+		"DetachSession",
+		"Events",
+		"GetSession",
+		"Input",
+		"Kill",
+		"List",
+		"ListSessions",
+		"ReleaseSessionLease",
+		"ReplaceSession",
+		"Resize",
+		"Restart",
+		"SetMetadata",
+		"SetTags",
+		"Snapshot",
+		"Stream",
+		"UpdateSessionView",
+	}
+	assertMethodSet(t, reflect.TypeOf((*Client)(nil)).Elem(), want)
+	assertMethodSet(t, reflect.TypeOf((*ProtocolClient)(nil)), want)
+}
+
+func assertMethodSet(t *testing.T, typ reflect.Type, want []string) {
+	t.Helper()
+	got := make([]string, 0, typ.NumMethod())
+	for i := 0; i < typ.NumMethod(); i++ {
+		got = append(got, typ.Method(i).Name)
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Fatalf("%s public methods changed:\n got: %v\nwant: %v", typ, got, want)
+	}
+}
 
 func TestProtocolClientList(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

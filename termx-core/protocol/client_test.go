@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,6 +19,48 @@ import (
 )
 
 var errConcurrentSend = errors.New("concurrent send")
+
+func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
+	want := []string{
+		"AcquireSessionLease",
+		"ApplySession",
+		"Attach",
+		"AttachSession",
+		"AttachWithOptions",
+		"Call",
+		"Close",
+		"Create",
+		"CreateSession",
+		"DetachSession",
+		"Events",
+		"GetSession",
+		"Hello",
+		"Input",
+		"Kill",
+		"List",
+		"ListSessions",
+		"ReleaseSessionLease",
+		"Remove",
+		"ReplaceSession",
+		"Resize",
+		"ResizeRequest",
+		"Restart",
+		"SetMetadata",
+		"SetTags",
+		"Snapshot",
+		"Stream",
+		"UpdateSessionView",
+	}
+	clientType := reflect.TypeOf((*Client)(nil))
+	got := make([]string, 0, clientType.NumMethod())
+	for i := 0; i < clientType.NumMethod(); i++ {
+		got = append(got, clientType.Method(i).Name)
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Fatalf("protocol.Client public methods changed:\n got: %v\nwant: %v", got, want)
+	}
+}
 
 func TestClientRequestStreamAndProtocolError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -159,176 +203,6 @@ func TestClientEvents(t *testing.T) {
 
 	if err := <-serverDone; err != nil {
 		t.Fatalf("fake server failed: %v", err)
-	}
-}
-
-func TestClientRemotePairStart(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	clientTransport, serverTransport := memory.NewPair()
-	defer clientTransport.Close()
-	defer serverTransport.Close()
-
-	serverDone := make(chan error, 1)
-	go func() {
-		if err := expectHello(serverTransport); err != nil {
-			serverDone <- err
-			return
-		}
-		if err := respondHello(serverTransport); err != nil {
-			serverDone <- err
-			return
-		}
-		req, err := expectRequest(serverTransport, "remote.pair.start")
-		if err != nil {
-			serverDone <- err
-			return
-		}
-		var params PairStartParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			serverDone <- err
-			return
-		}
-		if params.LocalPairURL != "http://127.0.0.1:18888/api/local/pair" || params.TTLSeconds != 300 {
-			serverDone <- fmt.Errorf("unexpected pair params: %#v", params)
-			return
-		}
-		result, _ := json.Marshal(PairStartResult{
-			Type:                        "termx_pair_v1",
-			MachineID:                   "mach_test",
-			MachineName:                 "MacBook Pro",
-			MachinePublicKeyFingerprint: "sha256:test",
-			LocalPairURL:                params.LocalPairURL,
-			PairSessionID:               "pair_test",
-			PairSecret:                  "secret",
-			ExpiresAt:                   time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
-		})
-		serverDone <- sendResponse(serverTransport, req.ID, result)
-	}()
-
-	client := NewClient(clientTransport)
-	defer client.Close()
-
-	if err := client.Hello(ctx, Hello{Version: Version, Client: "test"}); err != nil {
-		t.Fatalf("hello failed: %v", err)
-	}
-	result, err := client.RemotePairStart(ctx, PairStartParams{
-		LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
-		TTLSeconds:   300,
-	})
-	if err != nil {
-		t.Fatalf("RemotePairStart returned error: %v", err)
-	}
-	if result.MachineID != "mach_test" || result.PairSessionID != "pair_test" {
-		t.Fatalf("unexpected pair result: %#v", result)
-	}
-	if err := <-serverDone; err != nil {
-		t.Fatalf("fake pair server failed: %v", err)
-	}
-}
-
-func TestClientRemoteLocalManagement(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	clientTransport, serverTransport := memory.NewPair()
-	defer clientTransport.Close()
-	defer serverTransport.Close()
-
-	serverDone := make(chan error, 1)
-	go func() {
-		if err := expectHello(serverTransport); err != nil {
-			serverDone <- err
-			return
-		}
-		if err := respondHello(serverTransport); err != nil {
-			serverDone <- err
-			return
-		}
-		enableReq, err := expectRequest(serverTransport, "remote.local.enable")
-		if err != nil {
-			serverDone <- err
-			return
-		}
-		var params RemoteLocalEnableParams
-		if err := json.Unmarshal(enableReq.Params, &params); err != nil {
-			serverDone <- err
-			return
-		}
-		if params.LocalWebAddr != "127.0.0.1:18888" || params.ICETCPAddr != "127.0.0.1:18889" {
-			serverDone <- fmt.Errorf("unexpected local enable params: %#v", params)
-			return
-		}
-		enabled, _ := json.Marshal(RemoteLocalStatus{
-			Enabled:       true,
-			HTTPURL:       "http://127.0.0.1:18888",
-			LocalWebAddr:  "127.0.0.1:18888",
-			LocalPairURL:  "http://127.0.0.1:18888/api/local/pair",
-			ICETCPEnabled: true,
-			ICETCPAddr:    "127.0.0.1:18889",
-			ICETCPPort:    18889,
-			UpdatedAt:     time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
-		})
-		if err := sendResponse(serverTransport, enableReq.ID, enabled); err != nil {
-			serverDone <- err
-			return
-		}
-
-		statusReq, err := expectRequest(serverTransport, "remote.local.status")
-		if err != nil {
-			serverDone <- err
-			return
-		}
-		if err := sendResponse(serverTransport, statusReq.ID, enabled); err != nil {
-			serverDone <- err
-			return
-		}
-
-		disableReq, err := expectRequest(serverTransport, "remote.local.disable")
-		if err != nil {
-			serverDone <- err
-			return
-		}
-		disabled, _ := json.Marshal(RemoteLocalStatus{
-			Enabled:   false,
-			UpdatedAt: time.Date(2026, 5, 1, 0, 6, 0, 0, time.UTC),
-		})
-		serverDone <- sendResponse(serverTransport, disableReq.ID, disabled)
-	}()
-
-	client := NewClient(clientTransport)
-	defer client.Close()
-
-	if err := client.Hello(ctx, Hello{Version: Version, Client: "test"}); err != nil {
-		t.Fatalf("hello failed: %v", err)
-	}
-	enabled, err := client.RemoteLocalEnable(ctx, RemoteLocalEnableParams{
-		LocalWebAddr: "127.0.0.1:18888",
-		ICETCPAddr:   "127.0.0.1:18889",
-	})
-	if err != nil {
-		t.Fatalf("RemoteLocalEnable returned error: %v", err)
-	}
-	if !enabled.Enabled || enabled.LocalPairURL == "" || enabled.ICETCPPort != 18889 {
-		t.Fatalf("unexpected enable result: %#v", enabled)
-	}
-	status, err := client.RemoteLocalStatus(ctx)
-	if err != nil {
-		t.Fatalf("RemoteLocalStatus returned error: %v", err)
-	}
-	if status.HTTPURL != enabled.HTTPURL {
-		t.Fatalf("unexpected local status: %#v", status)
-	}
-	disabled, err := client.RemoteLocalDisable(ctx)
-	if err != nil {
-		t.Fatalf("RemoteLocalDisable returned error: %v", err)
-	}
-	if disabled.Enabled {
-		t.Fatalf("expected disabled local status, got %#v", disabled)
-	}
-	if err := <-serverDone; err != nil {
-		t.Fatalf("fake local management server failed: %v", err)
 	}
 }
 

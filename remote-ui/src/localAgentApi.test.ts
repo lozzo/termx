@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createBrowserRemoteNetworkRuntime } from './browserNetworkRuntime'
 import { createLocalAgentApi } from './localAgentApi'
 
 describe('createLocalAgentApi', () => {
@@ -147,7 +148,7 @@ describe('createLocalAgentApi', () => {
     expect(calls[0]?.url).toBe('http://127.0.0.1:18888/api/local/pair')
   })
 
-  it('uses the browser fetch binding when no custom fetch is injected', async () => {
+  it('uses the browser runtime fetch binding when injected from the browser adapter', async () => {
     const calls: Array<{ thisValue: unknown; input: string }> = []
     const boundFetch = function (this: unknown, input: RequestInfo | URL) {
       calls.push({ thisValue: this, input: String(input) })
@@ -164,7 +165,8 @@ describe('createLocalAgentApi', () => {
       }))
     }
     vi.stubGlobal('fetch', boundFetch)
-    const api = createLocalAgentApi({ baseUrl: 'http://127.0.0.1:18888' })
+    const runtime = createBrowserRemoteNetworkRuntime()
+    const api = createLocalAgentApi({ baseUrl: 'http://127.0.0.1:18888', fetch: runtime.fetch })
 
     await expect(api.getStatus()).resolves.toMatchObject({
       machine: { machineId: 'machine-local' },

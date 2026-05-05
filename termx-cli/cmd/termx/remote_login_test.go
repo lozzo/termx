@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-core"
+	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 )
 
 func TestRemoteLoginTokenPersistsBootstrapOutsideConfigFile(t *testing.T) {
@@ -194,4 +194,4 @@ func (f remoteLoginHTTPClientFunc) PollBrowserLogin(ctx context.Context, control
 	return f.pollBrowserLoginFunc(ctx, controlURL, browserLoginCode)
 }
 
-var _ = termx.RemoteConfig{}
+var _ = remoteprotocol.Config{}

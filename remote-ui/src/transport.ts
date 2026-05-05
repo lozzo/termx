@@ -4,6 +4,20 @@ export type ConnectionPath = 'local' | 'public_p2p' | 'managed'
 
 export const CONNECTION_PATHS = ['local', 'public_p2p', 'managed'] as const satisfies readonly ConnectionPath[]
 
+export type RemoteRuntimeFetch = (input: string, init?: RequestInit) => Promise<Response>
+
+export interface RemoteRuntimeStorage {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem(key: string): void
+}
+
+export interface RemoteNetworkRuntime {
+  fetch: RemoteRuntimeFetch
+  storage?: RemoteRuntimeStorage | undefined
+  queryParam(name: string): string | null
+}
+
 export interface RtcConnectionTarget {
   machineId: string
   terminalId?: string | undefined

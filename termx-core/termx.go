@@ -16,11 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/internal/remote/cert"
-	remoteconfig "github.com/lozzow/termx/termx-core/internal/remote/config"
-	"github.com/lozzow/termx/termx-core/internal/remote/fileapi"
-	"github.com/lozzow/termx/termx-core/internal/remote/pairing"
-	remoteruntime "github.com/lozzow/termx/termx-core/internal/remote/runtime"
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/transport"
@@ -37,29 +32,19 @@ type serverConfig struct {
 	defaultKeepAfterExit time.Duration
 	liveOutputThrottle   liveOutputThrottleConfig
 	logger               *slog.Logger
-	remoteConfig         RemoteConfig
+	methodHandler        ProtocolMethodHandler
+	terminalObserver     TerminalInventoryObserver
 }
 
 type Server struct {
-	cfg             serverConfig
-	events          *EventBus
-	mu              sync.RWMutex
-	terminals       map[string]*Terminal
-	workbench       *workbenchsvc.Service
-	sessionHandler  sessionRequestHandler
-	remoteManager   *remoteruntime.Manager
-	remotePairMu    sync.Mutex
-	remotePairing   *pairing.Manager
-	remotePairCfg   pairing.Config
-	remoteRTCMu     sync.Mutex
-	remoteRTCReplay *cert.ReplayWindow
-	remoteRTCFiles  *fileapi.Manager
-	remoteRTCCtx    context.Context
-	remoteRTCCancel context.CancelFunc
-	remoteLocalMu   sync.Mutex
-	remoteLocal     *remoteLocalRuntime
-	closed          atomic.Bool
-	listeners       []transport.Listener
+	cfg            serverConfig
+	events         *EventBus
+	mu             sync.RWMutex
+	terminals      map[string]*Terminal
+	workbench      *workbenchsvc.Service
+	sessionHandler sessionRequestHandler
+	closed         atomic.Bool
+	listeners      []transport.Listener
 
 	// protocolListCache stores the marshaled response for the wire-level
 	// unfiltered "list" request. The Go API still returns fresh copies.
@@ -86,18 +71,6 @@ func NewServer(opts ...ServerOption) *Server {
 	}
 	srv.events = NewEventBus(cfg.logger)
 	srv.sessionHandler = newSessionHandler(srv)
-	srv.remoteRTCCtx, srv.remoteRTCCancel = context.WithCancel(context.Background())
-	srv.remoteManager = remoteruntime.NewManager(remoteconfig.Normalize(remoteconfig.Config{
-		Enabled:     cfg.remoteConfig.Enabled,
-		ControlURL:  cfg.remoteConfig.ControlURL,
-		HubURL:      cfg.remoteConfig.HubURL,
-		AccessToken: cfg.remoteConfig.AccessToken,
-		DataDir:     cfg.remoteConfig.DataDir,
-		DeviceName:  cfg.remoteConfig.DeviceName,
-		Region:      cfg.remoteConfig.Region,
-	}), remoteInventoryProvider{server: srv}, remoteInventoryProvider{server: srv})
-	srv.remoteManager.SetPairClaimer(localWebServerAdapter{server: srv})
-	_ = srv.remoteManager.Start(context.Background())
 	return srv
 }
 
@@ -228,9 +201,7 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 	s.terminals[id] = term
 	s.invalidateProtocolListCacheLocked()
 	s.mu.Unlock()
-	if s.remoteManager != nil {
-		s.remoteManager.TriggerSync()
-	}
+	s.notifyTerminalInventoryChanged()
 	s.cfg.logger.Info("server created terminal", "terminal_id", id, "name", name)
 	return term.Info(), nil
 }
@@ -292,6 +263,20 @@ func (s *Server) Restart(ctx context.Context, id string) error {
 	return term.Restart()
 }
 
+func (s *Server) Remove(ctx context.Context, id string) error {
+	_ = ctx
+	term, err := s.getTerminal(id)
+	if err != nil {
+		return err
+	}
+	term.MarkRemoved()
+	if err := term.Close(); err != nil {
+		return err
+	}
+	s.removeTerminal(id, "removed")
+	return nil
+}
+
 func (s *Server) SetTags(ctx context.Context, id string, tags map[string]string) error {
 	_ = ctx
 	term, err := s.getTerminal(id)
@@ -323,9 +308,7 @@ func (s *Server) SetMetadata(ctx context.Context, id string, name string, tags m
 	term.SetMetadata(name, tags)
 	s.invalidateProtocolListCacheLocked()
 	s.mu.Unlock()
-	if s.remoteManager != nil {
-		s.remoteManager.TriggerSync()
-	}
+	s.notifyTerminalInventoryChanged()
 	return nil
 }
 
@@ -490,16 +473,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		_ = term.Close()
 	}
 	s.events.Close()
-	if s.remoteManager != nil {
-		s.remoteManager.Close()
-	}
-	_, _ = s.RemoteLocalDisable(context.Background())
-	if s.remoteRTCFiles != nil {
-		s.remoteRTCFiles.Close()
-	}
-	if s.remoteRTCCancel != nil {
-		s.remoteRTCCancel()
-	}
 	return nil
 }
 
@@ -510,9 +483,7 @@ func (s *Server) removeTerminal(id, reason string) {
 	}
 	s.invalidateProtocolListCacheLocked()
 	s.mu.Unlock()
-	if s.remoteManager != nil {
-		s.remoteManager.TriggerSync()
-	}
+	s.notifyTerminalInventoryChanged()
 
 	s.events.Publish(Event{
 		Type:       EventTerminalRemoved,
@@ -536,9 +507,7 @@ func (s *Server) invalidateProtocolListCache() {
 	s.mu.Lock()
 	s.invalidateProtocolListCacheLocked()
 	s.mu.Unlock()
-	if s.remoteManager != nil {
-		s.remoteManager.TriggerSync()
-	}
+	s.notifyTerminalInventoryChanged()
 }
 
 func (s *Server) invalidateProtocolListCacheLocked() {
@@ -977,6 +946,11 @@ func (s *Server) handleRequest(
 	if strings.HasPrefix(req.Method, "session.") {
 		return s.handleSessionRequest(ctx, remote, req)
 	}
+	if s.cfg.methodHandler != nil {
+		if result, code, handled, err := s.cfg.methodHandler.HandleProtocolMethod(ctx, req.Method, req.Params); handled {
+			return result, code, err
+		}
+	}
 	switch req.Method {
 	case "create":
 		var params protocol.CreateParams
@@ -1000,73 +974,6 @@ func (s *Server) handleRequest(
 		return result, 0, nil
 	case "list":
 		result, err := s.protocolListResponse()
-		if err != nil {
-			return nil, 500, err
-		}
-		return result, 0, nil
-	case "remote.status":
-		status := s.RemoteStatus()
-		result, err := json.Marshal(protocol.RemoteStatus{
-			State:         string(status.State),
-			Detail:        status.Detail,
-			DeviceID:      status.DeviceID,
-			DeviceName:    status.DeviceName,
-			ControlURL:    status.ControlURL,
-			HubURL:        status.HubURL,
-			DataDir:       status.DataDir,
-			TerminalCount: status.TerminalCount,
-			UpdatedAt:     status.UpdatedAt,
-		})
-		if err != nil {
-			return nil, 500, err
-		}
-		return result, 0, nil
-	case "remote.pair.start":
-		var params protocol.PairStartParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return nil, 400, err
-		}
-		pair, err := s.RemotePairStart(PairStartOptions{
-			LocalPairURL: params.LocalPairURL,
-			TTL:          time.Duration(params.TTLSeconds) * time.Second,
-		})
-		if err != nil {
-			return nil, protocolErrorCode(err), err
-		}
-		result, err := json.Marshal(pair)
-		if err != nil {
-			return nil, 500, err
-		}
-		return result, 0, nil
-	case "remote.local.enable":
-		var params protocol.RemoteLocalEnableParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return nil, 400, err
-		}
-		status, err := s.RemoteLocalEnable(ctx, RemoteLocalOptions{
-			LocalWebAddr: params.LocalWebAddr,
-			ICETCPAddr:   params.ICETCPAddr,
-		})
-		if err != nil {
-			return nil, protocolErrorCode(err), err
-		}
-		result, err := json.Marshal(remoteLocalStatusToProtocol(status))
-		if err != nil {
-			return nil, 500, err
-		}
-		return result, 0, nil
-	case "remote.local.status":
-		result, err := json.Marshal(remoteLocalStatusToProtocol(s.RemoteLocalStatus()))
-		if err != nil {
-			return nil, 500, err
-		}
-		return result, 0, nil
-	case "remote.local.disable":
-		status, err := s.RemoteLocalDisable(ctx)
-		if err != nil {
-			return nil, protocolErrorCode(err), err
-		}
-		result, err := json.Marshal(remoteLocalStatusToProtocol(status))
 		if err != nil {
 			return nil, 500, err
 		}

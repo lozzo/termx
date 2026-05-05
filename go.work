@@ -4,5 +4,6 @@ use (
 	./termx-cli
 	./termx-core
 	./termx-hub
+	./termx-remote
 	./tuiv2
 )

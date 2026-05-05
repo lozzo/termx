@@ -19,6 +19,7 @@ import (
 	"github.com/lozzow/termx/termx-core/clientapi"
 	"github.com/lozzow/termx/termx-core/protocol"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
+	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 	tuiv2app "github.com/lozzow/termx/tuiv2/app"
 	"github.com/lozzow/termx/tuiv2/shared" //nolint:typecheck
 	qrcode "github.com/skip2/go-qrcode"
@@ -40,45 +41,65 @@ var (
 		defer client.Close()
 		return tuiv2app.RunWithClient(cfg, clientapi.NewProtocolClient(client), stdin, stdout)
 	}
-	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params protocol.PairStartParams) (*protocol.PairStartResult, error) {
+	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
 		if err != nil {
 			return nil, err
 		}
 		defer client.Close()
-		return client.RemotePairStart(ctx, params)
+		var out remoteprotocol.PairStartResult
+		if err := client.Call(ctx, "remote.pair.start", params, &out); err != nil {
+			return nil, err
+		}
+		return &out, nil
 	}
-	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteStatus, error) {
+	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
 		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
 		if err != nil {
 			return nil, err
 		}
 		defer client.Close()
-		return client.RemoteStatus(ctx)
+		var out remoteprotocol.Status
+		if err := client.Call(ctx, "remote.status", map[string]any{}, &out); err != nil {
+			return nil, err
+		}
+		return &out, nil
 	}
-	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
 		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
 		if err != nil {
 			return nil, err
 		}
 		defer client.Close()
-		return client.RemoteLocalEnable(ctx, params)
+		var out remoteprotocol.LocalStatus
+		if err := client.Call(ctx, "remote.local.enable", params, &out); err != nil {
+			return nil, err
+		}
+		return &out, nil
 	}
-	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
 		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
 		if err != nil {
 			return nil, err
 		}
 		defer client.Close()
-		return client.RemoteLocalStatus(ctx)
+		var out remoteprotocol.LocalStatus
+		if err := client.Call(ctx, "remote.local.status", map[string]any{}, &out); err != nil {
+			return nil, err
+		}
+		return &out, nil
 	}
-	remoteLocalDisableClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
+	remoteLocalDisableClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
 		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
 		if err != nil {
 			return nil, err
 		}
 		defer client.Close()
-		return client.RemoteLocalDisable(ctx)
+		var out remoteprotocol.LocalStatus
+		if err := client.Call(ctx, "remote.local.disable", map[string]any{}, &out); err != nil {
+			return nil, err
+		}
+		return &out, nil
 	}
 	openBrowser = func(rawURL string) error {
 		switch runtime.GOOS {
@@ -93,14 +114,13 @@ var (
 	newServer = func(opts ...termx.ServerOption) termxServer {
 		return termx.NewServer(opts...)
 	}
-	remoteConfigLoader = remoteConfigFromFileAndEnv
-	withRemoteConfig   = termx.WithRemoteConfig
+	remoteConfigLoader     = remoteConfigFromFileAndEnv
+	newRemoteRuntimeHostFn = newRemoteRuntimeHost
 )
 
 type termxServer interface {
 	ListenAndServe(context.Context) error
 	Shutdown(context.Context) error
-	RemoteLocalEnable(context.Context, termx.RemoteLocalOptions) (termx.RemoteLocalStatus, error)
 }
 
 func nestedTUIBlocked() bool {
@@ -200,7 +220,7 @@ func daemonCommand(socket *string, configPath *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := []termx.ServerOption{termx.WithLogger(logger), withRemoteConfig(remoteCfg)}
+			opts := []termx.ServerOption{termx.WithLogger(logger)}
 			if *socket != "" {
 				opts = append(opts, termx.WithSocketPath(*socket))
 			}
@@ -213,12 +233,30 @@ func daemonCommand(socket *string, configPath *string) *cobra.Command {
 					"device_name", remoteCfg.DeviceName,
 				)
 			}
+			remoteHost := newRemoteRuntimeHostFn(nil, remoteCfg)
+			if remoteHost != nil {
+				opts = append(opts, termx.WithProtocolMethodHandler(remoteHost), termx.WithTerminalInventoryObserver(remoteHost))
+			}
 			srv := newServer(opts...)
+			if remoteHost != nil {
+				if core, ok := srv.(remoteRuntimeCore); ok {
+					remoteHost.core = core
+				}
+				if err := remoteHost.Start(ctx); err != nil {
+					return err
+				}
+			}
 			defer func() {
+				if remoteHost != nil {
+					_ = remoteHost.Close(context.Background())
+				}
 				_ = srv.Shutdown(context.Background())
 			}()
 			if localWebAddr := remoteLocalWebAddrFromEnv(); localWebAddr != "" {
-				localStatus, err := srv.RemoteLocalEnable(ctx, termx.RemoteLocalOptions{
+				if remoteHost == nil || remoteHost.service == nil || remoteHost.core == nil {
+					return fmt.Errorf("remote local runtime requires a core daemon")
+				}
+				localStatus, err := remoteHost.service.LocalEnable(ctx, remoteprotocol.LocalEnableParams{
 					LocalWebAddr: localWebAddr,
 					ICETCPAddr:   remoteLocalICETCPAddrFromEnv(),
 				})
@@ -389,7 +427,7 @@ func pairCommand(socket *string, logFile *string) *cobra.Command {
 				ttl = 5 * time.Minute
 			}
 			localURL = strings.TrimSpace(localURL)
-			result, err := pairStartClient(context.Background(), *socket, *logFile, protocol.PairStartParams{
+			result, err := pairStartClient(context.Background(), *socket, *logFile, remoteprotocol.PairStartParams{
 				LocalPairURL: localURL,
 				TTLSeconds:   int(ttl.Seconds()),
 			})
@@ -428,8 +466,8 @@ func remoteStatusCommand(socket *string, logFile *string) *cobra.Command {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
 				return enc.Encode(struct {
-					Remote *protocol.RemoteStatus      `json:"remote"`
-					Local  *protocol.RemoteLocalStatus `json:"local"`
+					Remote *remoteprotocol.Status      `json:"remote"`
+					Local  *remoteprotocol.LocalStatus `json:"local"`
 				}{Remote: status, Local: localStatus})
 			}
 
@@ -461,8 +499,8 @@ func remoteInfoCommand(socket *string, logFile *string) *cobra.Command {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
 				return enc.Encode(struct {
-					Remote *protocol.RemoteStatus      `json:"remote"`
-					Local  *protocol.RemoteLocalStatus `json:"local"`
+					Remote *remoteprotocol.Status      `json:"remote"`
+					Local  *remoteprotocol.LocalStatus `json:"local"`
 				}{Remote: remoteStatus, Local: localStatus})
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "[remote]")
@@ -598,7 +636,7 @@ func remotePairCommand(socket *string, logFile *string) *cobra.Command {
 					localURL = localStatus.LocalPairURL
 				}
 			}
-			result, err := pairStartClient(context.Background(), *socket, *logFile, protocol.PairStartParams{
+			result, err := pairStartClient(context.Background(), *socket, *logFile, remoteprotocol.PairStartParams{
 				LocalPairURL: localURL,
 				TTLSeconds:   int(ttl.Seconds()),
 			})
@@ -641,7 +679,7 @@ func remoteQRCodeCommand(socket *string, logFile *string) *cobra.Command {
 					return err
 				}
 				if localStatus == nil || !localStatus.Enabled || strings.TrimSpace(localStatus.LocalPairURL) == "" {
-					localStatus, err = remoteLocalEnableClient(context.Background(), *socket, *logFile, protocol.RemoteLocalEnableParams{
+					localStatus, err = remoteLocalEnableClient(context.Background(), *socket, *logFile, remoteprotocol.LocalEnableParams{
 						LocalWebAddr: "127.0.0.1:18888",
 						ICETCPAddr:   "127.0.0.1:18889",
 					})
@@ -657,7 +695,7 @@ func remoteQRCodeCommand(socket *string, logFile *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := pairStartClient(context.Background(), *socket, *logFile, protocol.PairStartParams{
+			result, err := pairStartClient(context.Background(), *socket, *logFile, remoteprotocol.PairStartParams{
 				LocalPairURL: localURL,
 				TTLSeconds:   int(ttl.Seconds()),
 			})
@@ -733,7 +771,7 @@ func remoteOpenCommand(socket *string, logFile *string) *cobra.Command {
 }
 
 func runRemoteLocalEnable(cmd *cobra.Command, socket *string, logFile *string, addr string, iceTCPAddr string, outputJSON bool) error {
-	status, err := remoteLocalEnableClient(context.Background(), *socket, *logFile, protocol.RemoteLocalEnableParams{
+	status, err := remoteLocalEnableClient(context.Background(), *socket, *logFile, remoteprotocol.LocalEnableParams{
 		LocalWebAddr: addr,
 		ICETCPAddr:   iceTCPAddr,
 	})
@@ -847,7 +885,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func printRemoteStatus(w io.Writer, status *protocol.RemoteStatus) {
+func printRemoteStatus(w io.Writer, status *remoteprotocol.Status) {
 	if status == nil {
 		return
 	}
@@ -864,7 +902,7 @@ func printRemoteStatus(w io.Writer, status *protocol.RemoteStatus) {
 	}
 }
 
-func printRemoteLocalStatus(w io.Writer, status *protocol.RemoteLocalStatus) {
+func printRemoteLocalStatus(w io.Writer, status *remoteprotocol.LocalStatus) {
 	if status == nil {
 		return
 	}
@@ -878,7 +916,7 @@ func printRemoteLocalStatus(w io.Writer, status *protocol.RemoteLocalStatus) {
 	fmt.Fprintf(w, "updated_at:\t%s\n", status.UpdatedAt.Format(time.RFC3339))
 }
 
-func printPairStartResult(w io.Writer, result *protocol.PairStartResult) {
+func printPairStartResult(w io.Writer, result *remoteprotocol.PairStartResult) {
 	if result == nil {
 		return
 	}
@@ -892,7 +930,7 @@ func printPairStartResult(w io.Writer, result *protocol.PairStartResult) {
 	fmt.Fprintf(w, "expires_at:\t%s\n", result.ExpiresAt.Format(time.RFC3339))
 }
 
-func buildRemotePairPayload(result *protocol.PairStartResult, status *protocol.RemoteStatus, controlURL string, hubURL string) map[string]any {
+func buildRemotePairPayload(result *remoteprotocol.PairStartResult, status *remoteprotocol.Status, controlURL string, hubURL string) map[string]any {
 	controlURL = firstNonEmpty(controlURL, statusValue(status, "control"))
 	hubURL = firstNonEmpty(hubURL, statusValue(status, "hub"))
 	payload := map[string]any{
@@ -933,7 +971,7 @@ func termxPairURI(payload map[string]any) (string, error) {
 	return "termx://pair?payload=" + base64.RawURLEncoding.EncodeToString(data), nil
 }
 
-func statusValue(status *protocol.RemoteStatus, field string) string {
+func statusValue(status *remoteprotocol.Status, field string) string {
 	if status == nil {
 		return ""
 	}
@@ -1073,9 +1111,9 @@ func currentSize() protocol.Size {
 	return protocol.Size{Cols: uint16(cols), Rows: uint16(rows)}
 }
 
-func remoteConfigFromEnv() termx.RemoteConfig {
+func remoteConfigFromEnv() remoteprotocol.Config {
 	enabled, enabledSet, _ := envBoolValue("TERMX_REMOTE_ENABLE")
-	cfg := termx.RemoteConfig{
+	cfg := remoteprotocol.Config{
 		Enabled:    enabled,
 		ControlURL: strings.TrimSpace(os.Getenv("TERMX_REMOTE_CONTROL_URL")),
 		HubURL:     strings.TrimSpace(os.Getenv("TERMX_REMOTE_HUB_URL")),
@@ -1093,10 +1131,10 @@ func remoteConfigFromEnv() termx.RemoteConfig {
 	return cfg
 }
 
-func remoteConfigFromFileAndEnv(path string) (termx.RemoteConfig, error) {
+func remoteConfigFromFileAndEnv(path string) (remoteprotocol.Config, error) {
 	cfg, fileEnabledSet, err := loadRemoteConfigFromFile(path)
 	if err != nil {
-		return termx.RemoteConfig{}, err
+		return remoteprotocol.Config{}, err
 	}
 	envCfg := remoteConfigFromEnv()
 	envEnabled, envEnabledSet, _ := envBoolValue("TERMX_REMOTE_ENABLE")
@@ -1127,31 +1165,31 @@ func remoteConfigFromFileAndEnv(path string) (termx.RemoteConfig, error) {
 	return cfg, nil
 }
 
-func remoteConfigFromFile(path string) (termx.RemoteConfig, error) {
+func remoteConfigFromFile(path string) (remoteprotocol.Config, error) {
 	cfg, _, err := loadRemoteConfigFromFile(path)
 	return cfg, err
 }
 
-func loadRemoteConfigFromFile(path string) (termx.RemoteConfig, bool, error) {
+func loadRemoteConfigFromFile(path string) (remoteprotocol.Config, bool, error) {
 	if strings.TrimSpace(path) == "" {
 		path = shared.DefaultConfigPath()
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return termx.RemoteConfig{}, false, nil
+			return remoteprotocol.Config{}, false, nil
 		}
-		return termx.RemoteConfig{}, false, err
+		return remoteprotocol.Config{}, false, err
 	}
 	values, err := parseRemoteConfigSection(string(data))
 	if err != nil {
-		return termx.RemoteConfig{}, false, fmt.Errorf("remote config %q: %w", path, err)
+		return remoteprotocol.Config{}, false, fmt.Errorf("remote config %q: %w", path, err)
 	}
 	enabled, enabledSet, validEnabled := configBoolValue(values["enabled"])
 	if enabledSet && !validEnabled {
-		return termx.RemoteConfig{}, false, fmt.Errorf("remote enabled has invalid boolean value %q", values["enabled"])
+		return remoteprotocol.Config{}, false, fmt.Errorf("remote enabled has invalid boolean value %q", values["enabled"])
 	}
-	cfg := termx.RemoteConfig{
+	cfg := remoteprotocol.Config{
 		Enabled:    enabled,
 		ControlURL: strings.TrimSpace(values["controlURL"]),
 		HubURL:     strings.TrimSpace(values["hubURL"]),
@@ -1162,7 +1200,7 @@ func loadRemoteConfigFromFile(path string) (termx.RemoteConfig, bool, error) {
 	if authStore := strings.TrimSpace(values["authStore"]); authStore != "" {
 		record, err := loadRemoteAuthRecord(authStore)
 		if err != nil {
-			return termx.RemoteConfig{}, false, fmt.Errorf("load remote auth store: %w", err)
+			return remoteprotocol.Config{}, false, fmt.Errorf("load remote auth store: %w", err)
 		}
 		if cfg.ControlURL == "" {
 			cfg.ControlURL = record.ControlURL

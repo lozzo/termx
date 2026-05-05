@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createBrowserRemoteNetworkRuntime } from './browserNetworkRuntime'
 import {
   createWebControlApi,
   type WebControlFetch,
@@ -171,7 +172,7 @@ describe('WebControlApi', () => {
     await expect(api.listMachines()).rejects.toThrow(/machine_access_denied.*machine is not owned/i)
   })
 
-  it('calls the browser default fetch with the Window binding intact', async () => {
+  it('uses the browser runtime fetch binding when injected from the browser adapter', async () => {
     const calls: Array<{ thisValue: unknown; input: string }> = []
     const boundFetch = function (this: unknown, input: RequestInfo | URL) {
       calls.push({ thisValue: this, input: String(input) })
@@ -189,7 +190,8 @@ describe('WebControlApi', () => {
       }))
     }
     vi.stubGlobal('fetch', boundFetch)
-    const api = createWebControlApi({ baseUrl: 'https://control.termx.test' })
+    const runtime = createBrowserRemoteNetworkRuntime()
+    const api = createWebControlApi({ baseUrl: 'https://control.termx.test', fetch: runtime.fetch })
 
     await expect(api.login({ login: 'lozzow@example.test', password: 'secret' })).resolves.toMatchObject({
       accessToken: 'access-token-1',

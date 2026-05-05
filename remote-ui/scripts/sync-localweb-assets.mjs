@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const remoteUiDir = resolve(scriptDir, '..')
 const distDir = resolve(remoteUiDir, 'dist')
-const staticDir = resolve(remoteUiDir, '../termx-core/internal/remote/localweb/static')
+const staticDir = resolve(remoteUiDir, '../termx-remote/localweb/static')
 
 export function syncLocalWebAssets({ distDir, staticDir }) {
   const localWebHtml = resolve(distDir, 'localweb.html')

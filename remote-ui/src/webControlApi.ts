@@ -1,11 +1,11 @@
-import type { RtcConnectOptions } from './transport'
+import type { RemoteRuntimeFetch, RtcConnectOptions } from './transport'
 
-export type WebControlFetch = (input: string, init?: RequestInit) => Promise<Response>
+export type WebControlFetch = RemoteRuntimeFetch
 
 export interface WebControlApiOptions {
   baseUrl: string
   accessToken?: string | undefined
-  fetch?: WebControlFetch | undefined
+  fetch: WebControlFetch
 }
 
 export interface WebControlApi {
@@ -88,7 +88,7 @@ class WebControlHttpApi implements WebControlApi {
       }
       this.accessToken = accessToken
     }
-    this.fetchImpl = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
+    this.fetchImpl = options.fetch
   }
 
   async login(input: WebControlLoginInput, options: RtcConnectOptions = {}): Promise<WebControlAuthResult> {

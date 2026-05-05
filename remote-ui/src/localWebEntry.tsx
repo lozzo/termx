@@ -1,11 +1,12 @@
 import { StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { createBrowserRemoteNetworkRuntime } from './browserNetworkRuntime'
 import { LocalRemoteApp, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createBrowserLocalAppCrypto, createLocalAppIdentityStore, createLocalOfferSigner } from './localAppIdentity'
 import { createLocalAgentApi } from './localAgentApi'
 import { createBrowserRtcInventoryEvents, createBrowserRtcSession } from './browserRtcSession'
 import { createLocalRtcConnector } from './localRtcConnector'
-import type { LocalAgentApi, TerminalInventoryEvents } from './transport'
+import type { LocalAgentApi, RemoteNetworkRuntime, RemoteRuntimeStorage, TerminalInventoryEvents } from './transport'
 import './localWebEntry.css'
 
 export interface LocalWebAppOptions {
@@ -14,6 +15,7 @@ export interface LocalWebAppOptions {
   pairApi?: Pick<LocalAgentApi, 'pair'> | undefined
   connector?: LocalRemoteSessionConnector | undefined
   inventoryEvents?: TerminalInventoryEvents | undefined
+  networkRuntime?: RemoteNetworkRuntime | undefined
 }
 
 export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
@@ -21,10 +23,11 @@ export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
   if (!rootElement) {
     throw new Error('local web root element is required')
   }
-  const api = options.api ?? createLocalAgentApi()
-  const connector = options.connector ?? createBrowserLocalConnector()
-  const inventoryEvents = options.inventoryEvents ?? createBrowserInventoryEvents(api)
-  const pair = createBrowserPairOptions(options.pairApi ?? createLocalAgentApi())
+  const networkRuntime = options.networkRuntime ?? createBrowserRemoteNetworkRuntime()
+  const api = options.api ?? createLocalAgentApi({ fetch: networkRuntime.fetch })
+  const connector = options.connector ?? createBrowserLocalConnector(networkRuntime)
+  const inventoryEvents = options.inventoryEvents ?? createBrowserInventoryEvents(api, networkRuntime.storage)
+  const pair = createBrowserPairOptions(options.pairApi ?? createLocalAgentApi({ fetch: networkRuntime.fetch }), networkRuntime.storage)
   const root = createRoot(rootElement)
   root.render(
     <StrictMode>
@@ -44,8 +47,7 @@ export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
   return root
 }
 
-function createBrowserPairOptions(api: Pick<LocalAgentApi, 'pair'>) {
-  const storage = browserStorage()
+function createBrowserPairOptions(api: Pick<LocalAgentApi, 'pair'>, storage: RemoteRuntimeStorage | undefined) {
   if (!storage) return undefined
   try {
     return {
@@ -59,8 +61,7 @@ function createBrowserPairOptions(api: Pick<LocalAgentApi, 'pair'>) {
   }
 }
 
-function createBrowserInventoryEvents(api: Partial<Pick<LocalAgentApi, 'createInventoryRTCAnswer'>>): TerminalInventoryEvents | undefined {
-  const storage = browserStorage()
+function createBrowserInventoryEvents(api: Partial<Pick<LocalAgentApi, 'createInventoryRTCAnswer'>>, storage: RemoteRuntimeStorage | undefined): TerminalInventoryEvents | undefined {
   if (!storage) return undefined
   try {
     const crypto = createBrowserLocalAppCrypto()
@@ -89,8 +90,8 @@ function createBrowserInventoryEvents(api: Partial<Pick<LocalAgentApi, 'createIn
   }
 }
 
-function createBrowserLocalConnector(): LocalRemoteSessionConnector {
-  const api = createLocalAgentApi()
+function createBrowserLocalConnector(networkRuntime: RemoteNetworkRuntime): LocalRemoteSessionConnector {
+  const api = createLocalAgentApi({ fetch: networkRuntime.fetch })
   return createLocalRtcConnector({
     api,
     createSession: ({ machineId, terminalId }) => createBrowserRtcSession({
@@ -98,7 +99,7 @@ function createBrowserLocalConnector(): LocalRemoteSessionConnector {
       ...(terminalId ? { terminalId } : {}),
     }),
     getAppCertificate() {
-      const storage = browserStorage()
+      const storage = networkRuntime.storage
       if (!storage) {
         throw new Error('local app storage is required before opening a terminal')
       }
@@ -110,7 +111,7 @@ function createBrowserLocalConnector(): LocalRemoteSessionConnector {
       return appCertificate
     },
     signOffer(input) {
-      const storage = browserStorage()
+      const storage = networkRuntime.storage
       if (!storage) {
         throw new Error('local app storage is required before opening a terminal')
       }
@@ -122,14 +123,6 @@ function createBrowserLocalConnector(): LocalRemoteSessionConnector {
       return signer.signOffer(input)
     },
   })
-}
-
-function browserStorage(): Pick<Storage, 'getItem' | 'setItem'> | undefined {
-  const storage = globalThis.localStorage
-  if (!storage || typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') {
-    return undefined
-  }
-  return storage
 }
 
 if (typeof document !== 'undefined' && document.getElementById('root')) {

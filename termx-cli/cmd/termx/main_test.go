@@ -15,7 +15,7 @@ import (
 	"time"
 
 	termx "github.com/lozzow/termx/termx-core"
-	"github.com/lozzow/termx/termx-core/protocol"
+	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -507,19 +507,19 @@ func TestRemoteConfigFromFileRejectsMalformedRemoteSection(t *testing.T) {
 func TestDaemonCommandUsesRootConfigForRemoteBootstrap(t *testing.T) {
 	oldLoader := remoteConfigLoader
 	oldNewServer := newServer
-	oldWithRemoteConfig := withRemoteConfig
+	oldRemoteRuntimeHost := newRemoteRuntimeHostFn
 	t.Cleanup(func() {
 		remoteConfigLoader = oldLoader
 		newServer = oldNewServer
-		withRemoteConfig = oldWithRemoteConfig
+		newRemoteRuntimeHostFn = oldRemoteRuntimeHost
 	})
 
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
 	var gotConfigPath string
-	var gotRemoteConfig termx.RemoteConfig
-	remoteConfigLoader = func(path string) (termx.RemoteConfig, error) {
+	var gotRemoteConfig remoteprotocol.Config
+	remoteConfigLoader = func(path string) (remoteprotocol.Config, error) {
 		gotConfigPath = path
-		return termx.RemoteConfig{
+		return remoteprotocol.Config{
 			Enabled:     true,
 			ControlURL:  "https://control-config.example.test",
 			HubURL:      "https://hub-config.example.test",
@@ -528,9 +528,9 @@ func TestDaemonCommandUsesRootConfigForRemoteBootstrap(t *testing.T) {
 			DeviceName:  "config-device",
 		}, nil
 	}
-	withRemoteConfig = func(cfg termx.RemoteConfig) termx.ServerOption {
+	newRemoteRuntimeHostFn = func(core remoteRuntimeCore, cfg remoteprotocol.Config) *remoteRuntimeHost {
 		gotRemoteConfig = cfg
-		return termx.WithRemoteConfig(termx.RemoteConfig{})
+		return nil
 	}
 	fake := &fakeTermxServer{}
 	newServer = func(opts ...termx.ServerOption) termxServer {
@@ -599,14 +599,19 @@ func TestRemoteLocalICETCPAddrFromEnv(t *testing.T) {
 }
 
 func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
-	srv := termx.NewServer(termx.WithRemoteConfig(termx.RemoteConfig{
+	srv := termx.NewServer()
+	remoteHost := newRemoteRuntimeHost(srv, remoteprotocol.Config{
 		Enabled:    true,
 		DataDir:    t.TempDir(),
 		DeviceName: "cli-local-web",
-	}))
+	})
 	defer srv.Shutdown(context.Background())
+	defer func() { _ = remoteHost.Close(context.Background()) }()
 
-	localRuntime, err := srv.RemoteLocalEnable(context.Background(), termx.RemoteLocalOptions{
+	if err := remoteHost.Start(context.Background()); err != nil {
+		t.Fatalf("remote start returned error: %v", err)
+	}
+	localRuntime, err := remoteHost.service.LocalEnable(context.Background(), remoteprotocol.LocalEnableParams{
 		LocalWebAddr: "127.0.0.1:0",
 		ICETCPAddr:   "127.0.0.1:0",
 	})
@@ -616,7 +621,7 @@ func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
 	defer func() {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer shutdownCancel()
-		if _, err := srv.RemoteLocalDisable(shutdownCtx); err != nil {
+		if _, err := remoteHost.service.LocalDisable(shutdownCtx); err != nil {
 			t.Fatalf("shutdown local web: %v", err)
 		}
 	}()
@@ -652,6 +657,21 @@ func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
 		t.Fatalf("expected embedded module status 200, got %d: %s", resp.StatusCode, string(assetBody))
 	}
 	assetText := string(assetBody)
+	for _, preloadPath := range embeddedPreloadAssetPaths(t, string(body)) {
+		resp, err = client.Get(baseURL + preloadPath)
+		if err != nil {
+			t.Fatalf("GET embedded preload asset %s: %v", preloadPath, err)
+		}
+		preloadBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatalf("read embedded preload asset %s: %v", preloadPath, err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected embedded preload status 200, got %d: %s", resp.StatusCode, string(preloadBody))
+		}
+		assetText += string(preloadBody)
+	}
 	for _, want := range []string{"termx-local-web-shell", "termx-local-pair-panel", "Pair ID", "Pair secret"} {
 		if !strings.Contains(assetText, want) {
 			t.Fatalf("expected embedded module asset to contain %q", want)
@@ -711,9 +731,9 @@ func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
 		t.Fatalf("expected no terminals on fresh CLI server, got %#v", terminals)
 	}
 
-	session, err := srv.RemotePairStart(termx.PairStartOptions{
+	session, err := remoteHost.service.PairStart(remoteprotocol.PairStartParams{
 		LocalPairURL: baseURL + "/api/local/pair",
-		TTL:          time.Minute,
+		TTLSeconds:   int(time.Minute.Seconds()),
 	})
 	if err != nil {
 		t.Fatalf("RemotePairStart returned error: %v", err)
@@ -769,6 +789,26 @@ func embeddedModuleAssetPath(t *testing.T, html string) string {
 	return html[start : start+end]
 }
 
+func embeddedPreloadAssetPaths(t *testing.T, html string) []string {
+	t.Helper()
+	const marker = `rel="modulepreload" crossorigin href="`
+	var out []string
+	remaining := html
+	for {
+		start := strings.Index(remaining, marker)
+		if start < 0 {
+			return out
+		}
+		start += len(marker)
+		end := strings.Index(remaining[start:], `"`)
+		if end < 0 {
+			t.Fatalf("malformed module preload in embedded html: %q", html)
+		}
+		out = append(out, remaining[start:start+end])
+		remaining = remaining[start+end:]
+	}
+}
+
 func TestRootCmdHasRemoteStatusAndPairCommands(t *testing.T) {
 	cmd := newRootCmd()
 	for _, args := range [][]string{
@@ -798,10 +838,10 @@ func TestRemoteEnableLocalOnlyEmitsLocalStatus(t *testing.T) {
 		remoteLocalEnableClient = oldEnable
 	})
 
-	var gotParams protocol.RemoteLocalEnableParams
-	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
+	var gotParams remoteprotocol.LocalEnableParams
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
 		gotParams = params
-		return &protocol.RemoteLocalStatus{
+		return &remoteprotocol.LocalStatus{
 			Enabled:       true,
 			HTTPURL:       "http://127.0.0.1:18888",
 			LocalWebAddr:  params.LocalWebAddr,
@@ -839,16 +879,16 @@ func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
 		pairStartClient = oldPair
 	})
 
-	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
-		return &protocol.RemoteLocalStatus{
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
+		return &remoteprotocol.LocalStatus{
 			Enabled:      true,
 			LocalPairURL: "http://127.0.0.1:19999/api/local/pair",
 		}, nil
 	}
-	var gotParams protocol.PairStartParams
-	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params protocol.PairStartParams) (*protocol.PairStartResult, error) {
+	var gotParams remoteprotocol.PairStartParams
+	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
-		return &protocol.PairStartResult{
+		return &remoteprotocol.PairStartResult{
 			Type:                        "termx_pair_v1",
 			MachineID:                   "mach_test",
 			MachineName:                 "MacBook Pro",
@@ -889,18 +929,18 @@ func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 		pairStartClient = oldPair
 	})
 
-	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
-		return &protocol.RemoteLocalStatus{
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
+		return &remoteprotocol.LocalStatus{
 			Enabled:      true,
 			LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
 		}, nil
 	}
-	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
 		t.Fatalf("remote qrcode should not enable local web when it is already running")
 		return nil, nil
 	}
-	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteStatus, error) {
-		return &protocol.RemoteStatus{
+	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
+		return &remoteprotocol.Status{
 			DeviceID:   "mach_test",
 			DeviceName: "MacBook Pro",
 			ControlURL: "http://114.66.58.243:12306",
@@ -908,10 +948,10 @@ func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 			UpdatedAt:  time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
-	var gotParams protocol.PairStartParams
-	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params protocol.PairStartParams) (*protocol.PairStartResult, error) {
+	var gotParams remoteprotocol.PairStartParams
+	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
-		return &protocol.PairStartResult{
+		return &remoteprotocol.PairStartResult{
 			Type:                        "termx_pair_v1",
 			MachineID:                   "mach_test",
 			MachineName:                 "MacBook Pro",
@@ -970,19 +1010,19 @@ func TestRemoteQRCodeStartsLocalWebWhenNeeded(t *testing.T) {
 		pairStartClient = oldPair
 	})
 
-	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
-		return &protocol.RemoteLocalStatus{}, nil
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
+		return &remoteprotocol.LocalStatus{}, nil
 	}
-	var gotEnable protocol.RemoteLocalEnableParams
-	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
+	var gotEnable remoteprotocol.LocalEnableParams
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
 		gotEnable = params
-		return &protocol.RemoteLocalStatus{
+		return &remoteprotocol.LocalStatus{
 			Enabled:      true,
 			LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
 		}, nil
 	}
-	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteStatus, error) {
-		return &protocol.RemoteStatus{
+	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
+		return &remoteprotocol.Status{
 			DeviceID:   "mach_test",
 			DeviceName: "MacBook Pro",
 			ControlURL: "http://114.66.58.243:12306",
@@ -990,8 +1030,8 @@ func TestRemoteQRCodeStartsLocalWebWhenNeeded(t *testing.T) {
 			UpdatedAt:  time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
-	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params protocol.PairStartParams) (*protocol.PairStartResult, error) {
-		return &protocol.PairStartResult{
+	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
+		return &remoteprotocol.PairStartResult{
 			Type:                        "termx_pair_v1",
 			MachineID:                   "mach_test",
 			MachineName:                 "MacBook Pro",
@@ -1023,15 +1063,15 @@ func TestRemoteStatusIncludesLocalRuntime(t *testing.T) {
 		remoteStatusClient = oldRemoteStatus
 		remoteLocalStatusClient = oldStatus
 	})
-	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteStatus, error) {
-		return &protocol.RemoteStatus{
+	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
+		return &remoteprotocol.Status{
 			State:      "disabled",
 			DeviceName: "RedmiBook",
 			UpdatedAt:  time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
-	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
-		return &protocol.RemoteLocalStatus{
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
+		return &remoteprotocol.LocalStatus{
 			Enabled:      true,
 			HTTPURL:      "http://127.0.0.1:18888",
 			LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
@@ -1061,16 +1101,16 @@ func TestRemoteInfoShowEmitsJSON(t *testing.T) {
 		remoteStatusClient = oldRemoteStatus
 		remoteLocalStatusClient = oldStatus
 	})
-	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteStatus, error) {
-		return &protocol.RemoteStatus{
+	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
+		return &remoteprotocol.Status{
 			State:      "disabled",
 			DeviceID:   "mach_json",
 			DeviceName: "JSON Machine",
 			UpdatedAt:  time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
-	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
-		return &protocol.RemoteLocalStatus{
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
+		return &remoteprotocol.LocalStatus{
 			Enabled:      true,
 			HTTPURL:      "http://127.0.0.1:18888",
 			LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
@@ -1088,8 +1128,8 @@ func TestRemoteInfoShowEmitsJSON(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	var decoded struct {
-		Remote protocol.RemoteStatus      `json:"remote"`
-		Local  protocol.RemoteLocalStatus `json:"local"`
+		Remote remoteprotocol.Status      `json:"remote"`
+		Local  remoteprotocol.LocalStatus `json:"local"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatalf("remote show output is not JSON: %v\n%s", err, out.String())
@@ -1105,9 +1145,9 @@ func TestRemoteDisableEmitsJSONLocalStatus(t *testing.T) {
 		remoteLocalDisableClient = oldDisable
 	})
 	called := false
-	remoteLocalDisableClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
+	remoteLocalDisableClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
 		called = true
-		return &protocol.RemoteLocalStatus{
+		return &remoteprotocol.LocalStatus{
 			Enabled:   false,
 			UpdatedAt: time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
@@ -1125,7 +1165,7 @@ func TestRemoteDisableEmitsJSONLocalStatus(t *testing.T) {
 	if !called {
 		t.Fatal("expected remote local disable client to be called")
 	}
-	var decoded protocol.RemoteLocalStatus
+	var decoded remoteprotocol.LocalStatus
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatalf("remote disable output is not JSON: %v\n%s", err, out.String())
 	}
@@ -1141,8 +1181,8 @@ func TestRemoteOpenPrintsOrLaunchesRunningLocalURL(t *testing.T) {
 		remoteLocalStatusClient = oldStatus
 		openBrowser = oldOpen
 	})
-	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
-		return &protocol.RemoteLocalStatus{
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
+		return &remoteprotocol.LocalStatus{
 			Enabled: true,
 			HTTPURL: "http://127.0.0.1:18888",
 		}, nil
@@ -1189,8 +1229,8 @@ func TestRemoteOpenRequiresEnabledLocalRuntime(t *testing.T) {
 	t.Cleanup(func() {
 		remoteLocalStatusClient = oldStatus
 	})
-	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
-		return &protocol.RemoteLocalStatus{Enabled: false}, nil
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
+		return &remoteprotocol.LocalStatus{Enabled: false}, nil
 	}
 
 	cmd := newRootCmd()
@@ -1212,7 +1252,7 @@ func TestRemoteEnableCloudPersistsBootstrapOutsideConfigFile(t *testing.T) {
 		remoteLoginHTTPClient = oldLogin
 		remoteAuthStorePath = oldStore
 	})
-	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
 		t.Fatal("remote local enable client must not be called for cloud enable")
 		return nil, nil
 	}
@@ -1273,7 +1313,7 @@ func TestRemoteEnableCloudUsesBrowserLoginWhenKeyMissing(t *testing.T) {
 		remoteAuthStorePath = oldStore
 		openBrowser = oldOpen
 	})
-	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
 		t.Fatal("remote local enable client must not be called for cloud enable")
 		return nil, nil
 	}
@@ -1376,10 +1416,10 @@ func TestRemoteLocalOnlyAliasEnablesRuntime(t *testing.T) {
 	t.Cleanup(func() {
 		remoteLocalEnableClient = oldEnable
 	})
-	var gotParams protocol.RemoteLocalEnableParams
-	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
+	var gotParams remoteprotocol.LocalEnableParams
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
 		gotParams = params
-		return &protocol.RemoteLocalStatus{
+		return &remoteprotocol.LocalStatus{
 			Enabled:      true,
 			HTTPURL:      "http://127.0.0.1:18888",
 			LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
@@ -1405,10 +1445,10 @@ func TestPairCmdEmitsJSONPairSession(t *testing.T) {
 		pairStartClient = oldPairStart
 	})
 
-	var gotParams protocol.PairStartParams
-	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params protocol.PairStartParams) (*protocol.PairStartResult, error) {
+	var gotParams remoteprotocol.PairStartParams
+	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
-		return &protocol.PairStartResult{
+		return &remoteprotocol.PairStartResult{
 			Type:                        "termx_pair_v1",
 			MachineID:                   "mach_test",
 			MachineName:                 "MacBook Pro",
@@ -1442,7 +1482,7 @@ func TestPairCmdEmitsJSONPairSession(t *testing.T) {
 		t.Fatalf("expected ttl seconds 300, got %d", gotParams.TTLSeconds)
 	}
 
-	var decoded protocol.PairStartResult
+	var decoded remoteprotocol.PairStartResult
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatalf("pair output is not JSON: %v\n%s", err, out.String())
 	}
@@ -1465,8 +1505,4 @@ func (s *fakeTermxServer) ListenAndServe(context.Context) error {
 func (s *fakeTermxServer) Shutdown(context.Context) error {
 	s.shutdownCalls++
 	return nil
-}
-
-func (s *fakeTermxServer) RemoteLocalEnable(context.Context, termx.RemoteLocalOptions) (termx.RemoteLocalStatus, error) {
-	return termx.RemoteLocalStatus{}, nil
 }

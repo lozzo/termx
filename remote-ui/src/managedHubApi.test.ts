@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createBrowserRemoteNetworkRuntime } from './browserNetworkRuntime'
 import {
   createManagedHubApi,
   type ManagedHubFetch,
@@ -336,7 +337,7 @@ describe('ManagedHubApi', () => {
     })).rejects.toThrow(/pairing is pending.*agent is online/i)
   })
 
-  it('uses the browser fetch binding when no custom fetch is injected', async () => {
+  it('uses the browser runtime fetch binding when injected from the browser adapter', async () => {
     const calls: Array<{ thisValue: unknown; input: string }> = []
     const boundFetch = function (this: unknown, input: RequestInfo | URL) {
       calls.push({ thisValue: this, input: String(input) })
@@ -352,7 +353,8 @@ describe('ManagedHubApi', () => {
       }))
     }
     vi.stubGlobal('fetch', boundFetch)
-    const api = createManagedHubApi({ baseUrl: 'https://hub.termx.test' })
+    const runtime = createBrowserRemoteNetworkRuntime()
+    const api = createManagedHubApi({ baseUrl: 'https://hub.termx.test', fetch: runtime.fetch })
 
     await expect(api.createSession(validSessionInput())).resolves.toMatchObject({
       sessionId: 'rtc-managed-1',

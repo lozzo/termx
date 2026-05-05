@@ -82,6 +82,11 @@ export type { LocalPairPanelProps } from './LocalPairPanel'
 export { createLocalAgentApi } from './localAgentApi'
 export type { LocalAgentApiOptions } from './localAgentApi'
 export {
+  createBrowserRemoteNetworkRuntime,
+  createFutureNativeRemoteNetworkRuntime,
+} from './browserNetworkRuntime'
+export type { BrowserRemoteNetworkRuntimeOptions } from './browserNetworkRuntime'
+export {
   canonicalLocalOfferMessage,
   createBrowserLocalAppCrypto,
   createLocalAppIdentityStore,

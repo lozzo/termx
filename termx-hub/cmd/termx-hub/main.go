@@ -1,12 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -14,12 +10,13 @@ import (
 	"strings"
 	"time"
 
-	hubv1 "github.com/lozzow/termx/termx-core/remote/hubv1"
-	"github.com/lozzow/termx/termx-hub/internal/cloud"
-	"github.com/lozzow/termx/termx-hub/internal/controlclient"
-	"github.com/lozzow/termx/termx-hub/internal/httpapi"
-	"github.com/lozzow/termx/termx-hub/internal/ice"
-	"github.com/lozzow/termx/termx-hub/internal/registry"
+	"github.com/lozzow/termx/termx-remote/hub/cloud"
+	"github.com/lozzow/termx/termx-remote/hub/controlclient"
+	"github.com/lozzow/termx/termx-remote/hub/heartbeat"
+	"github.com/lozzow/termx/termx-remote/hub/httpapi"
+	"github.com/lozzow/termx/termx-remote/hub/ice"
+	"github.com/lozzow/termx/termx-remote/hub/registry"
+	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
 )
 
 var newControlVerifier registryVerifierFactory = func(baseURL string, sharedSecret string) controlVerifier {
@@ -55,11 +52,11 @@ func main() {
 		defer ticker.Stop()
 		go cleaner.StartCleanup(cleanupCtx, ticker.C)
 	}
-	heartbeat := heartbeatConfigFromEnv(addr)
-	if heartbeat.Enabled() {
+	heartbeatCfg := heartbeatConfigFromEnv(addr)
+	if heartbeatCfg.Enabled() {
 		heartbeatCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go runHubHeartbeatLoop(heartbeatCtx, heartbeat, registry)
+		go heartbeat.RunLoop(heartbeatCtx, heartbeatCfg, registry)
 	}
 	log.Printf("termx hub listening on http://%s", addr)
 	if err := http.ListenAndServe(addr, handler); err != nil {
@@ -106,27 +103,7 @@ func (a hubAuthority) VerifyOfferTicket(ctx context.Context, in registry.OfferTi
 	return a.tickets.VerifyOfferTicket(ctx, in)
 }
 
-type hubHeartbeatConfig struct {
-	ControlURL    string
-	Secret        string
-	HubID         string
-	Name          string
-	Region        string
-	HTTPURL       string
-	GRPCURL       string
-	BandwidthMbps float64
-	CPUCores      float64
-	MemoryGB      float64
-	MaxAgents     int
-	Interval      time.Duration
-	Client        *http.Client
-}
-
-func (c hubHeartbeatConfig) Enabled() bool {
-	return strings.TrimSpace(c.ControlURL) != "" && strings.TrimSpace(c.Secret) != "" && strings.TrimSpace(c.HubID) != "" && strings.TrimSpace(c.HTTPURL) != ""
-}
-
-func heartbeatConfigFromEnv(addr string) hubHeartbeatConfig {
+func heartbeatConfigFromEnv(addr string) heartbeat.Config {
 	interval := durationFromEnv("TERMX_HUB_HEARTBEAT_INTERVAL", 30*time.Second)
 	httpURL := strings.TrimSpace(os.Getenv("TERMX_HUB_PUBLIC_HTTP_URL"))
 	if httpURL == "" {
@@ -137,7 +114,7 @@ func heartbeatConfigFromEnv(addr string) hubHeartbeatConfig {
 	if name == "" {
 		name = hubID
 	}
-	return hubHeartbeatConfig{
+	return heartbeat.Config{
 		ControlURL:    strings.TrimRight(strings.TrimSpace(os.Getenv("TERMX_HUB_CONTROL_URL")), "/"),
 		Secret:        strings.TrimSpace(os.Getenv("TERMX_HUB_CONTROL_SECRET")),
 		HubID:         hubID,
@@ -163,79 +140,6 @@ func hubIDFromEnv() string {
 		hubID = "termx-hub-local"
 	}
 	return hubID
-}
-
-func runHubHeartbeatLoop(ctx context.Context, cfg hubHeartbeatConfig, reg *registry.Registry) {
-	if err := postHubHeartbeat(ctx, cfg, reg); err != nil {
-		log.Printf("hub heartbeat failed: %v", err)
-	}
-	ticker := time.NewTicker(cfg.Interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := postHubHeartbeat(ctx, cfg, reg); err != nil {
-				log.Printf("hub heartbeat failed: %v", err)
-			}
-		}
-	}
-}
-
-func postHubHeartbeat(ctx context.Context, cfg hubHeartbeatConfig, reg *registry.Registry) error {
-	if !cfg.Enabled() {
-		return nil
-	}
-	agentIDs := []string{}
-	if reg != nil {
-		seen := map[string]bool{}
-		for _, agent := range reg.Agents() {
-			if agent.MachineID == "" || seen[agent.MachineID] {
-				continue
-			}
-			seen[agent.MachineID] = true
-			agentIDs = append(agentIDs, agent.MachineID)
-		}
-	}
-	body := map[string]any{
-		"hub_id":    cfg.HubID,
-		"agent_ids": agentIDs,
-		"static": map[string]any{
-			"http_url":       cfg.HTTPURL,
-			"grpc_url":       cfg.GRPCURL,
-			"bandwidth_mbps": cfg.BandwidthMbps,
-			"cpu_cores":      cfg.CPUCores,
-			"memory_gb":      cfg.MemoryGB,
-			"max_agents":     cfg.MaxAgents,
-			"name":           cfg.Name,
-			"region":         cfg.Region,
-		},
-	}
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.ControlURL+"/api/internal/hubs/heartbeat", bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-TermX-Hub-Secret", cfg.Secret)
-	client := cfg.Client
-	if client == nil {
-		client = http.DefaultClient
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-		return fmt.Errorf("control heartbeat rejected request: http %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	return nil
 }
 
 func durationFromEnv(name string, fallback time.Duration) time.Duration {

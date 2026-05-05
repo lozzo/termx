@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebControlRemoteApp } from './WebControlRemoteApp'
-import type { RtcSession } from './transport'
+import type { RemoteNetworkRuntime, RemoteRuntimeStorage, RtcSession } from './transport'
 import type { WebControlFetch } from './webControlApi'
 
 describe('WebControlRemoteApp', () => {
@@ -12,7 +12,14 @@ describe('WebControlRemoteApp', () => {
     const storage = new MemoryStorage()
     storage.setItem('termx.remote.controlUrl', 'http://127.0.0.1:5174')
 
-    render(<WebControlRemoteApp storage={storage as unknown as Storage} />)
+    render(
+      <WebControlRemoteApp
+        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        networkRuntime={testNetworkRuntime(fetchNoRequests)}
+        pairCrypto={createMockCrypto()}
+        storage={storage}
+      />,
+    )
 
     expect(screen.getByTestId('termx-app-home')).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Machines' })).toBeTruthy()
@@ -85,82 +92,78 @@ describe('WebControlRemoteApp', () => {
     }])
     const connect = vi.fn(async () => fakeRtcSession())
     const crypto = createMockCrypto()
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = fetch.fetch as typeof globalThis.fetch
-    try {
-      render(
-        <WebControlRemoteApp
-          defaultControlUrl="http://114.66.58.243:12306"
-          machineRuntimeFactory={({ machine }) => ({
-            api: {
-              async getStatus() {
-                return {
-                  machine: {
-                    machineId: machine.id,
-                    name: machine.name,
-                    state: 'online',
-                  },
-                  localWeb: {
-                    httpUrl: '',
-                    rtcOfferUrl: machine.hubHttpUrl ?? '',
-                  },
-                }
-              },
-              listTerminals,
+    render(
+      <WebControlRemoteApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        machineRuntimeFactory={({ machine }) => ({
+          api: {
+            async getStatus() {
+              return {
+                machine: {
+                  machineId: machine.id,
+                  name: machine.name,
+                  state: 'online',
+                },
+                localWeb: {
+                  httpUrl: '',
+                  rtcOfferUrl: machine.hubHttpUrl ?? '',
+                },
+              }
             },
-            connector: { connect },
-          })}
-          pairCrypto={crypto}
-          storage={storage as unknown as Storage}
-        />,
-      )
+            listTerminals,
+          },
+          connector: { connect },
+        })}
+        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
+        pairCrypto={crypto}
+        storage={storage}
+      />,
+    )
 
-      await userEvent.click(screen.getByRole('button', { name: /open settings/i }))
-      await userEvent.type(screen.getByLabelText(/email or username/i), 'lozzow@example.test')
-      await userEvent.type(screen.getByLabelText(/password/i), 'secret')
-      await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
+    await userEvent.click(screen.getByRole('button', { name: /open settings/i }))
+    await userEvent.type(screen.getByLabelText(/email or username/i), 'lozzow@example.test')
+    await userEvent.type(screen.getByLabelText(/password/i), 'secret')
+    await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
 
-      await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
-      expect(screen.getAllByText('Scan QR').length).toBeGreaterThan(0)
-      expect(screen.getByText('Hub online')).toBeTruthy()
-      expect(screen.queryByText('Ready')).toBeNull()
+    await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
+    expect(screen.getAllByText('Scan QR').length).toBeGreaterThan(0)
+    expect(screen.getByText('Hub online')).toBeTruthy()
+    expect(screen.queryByText('Ready')).toBeNull()
 
-      await userEvent.click(screen.getByRole('button', { name: /pair redmibook/i }))
-      expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy()
-      fireEvent.change(screen.getByLabelText(/termx qr content/i), { target: { value: pairUri } })
-      await userEvent.click(screen.getByRole('button', { name: /^pair device$/i }))
+    await userEvent.click(screen.getByRole('button', { name: /pair redmibook/i }))
+    expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText(/termx qr content/i), { target: { value: pairUri } })
+    await userEvent.click(screen.getByRole('button', { name: /^pair device$/i }))
 
-      await waitFor(() => expect(screen.getByText('Paired RedmiBook')).toBeTruthy())
-      expect(screen.getByTestId('termx-machine-terminal-list')).toBeTruthy()
-      expect(screen.getByRole('heading', { name: 'Terminals' })).toBeTruthy()
-      expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0)
-      await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
-      expect(screen.queryByText('Terminal runtime is not connected yet.')).toBeNull()
-      await userEvent.click(screen.getByRole('button', { name: /back to machines/i }))
-      expect(screen.getAllByText('Ready').length).toBeGreaterThan(0)
-      await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
-      expect(screen.getByTestId('termx-machine-terminal-list')).toBeTruthy()
-      await waitFor(() => expect(listTerminals).toHaveBeenCalledTimes(2))
-      const hubPairRequest = fetch.requests.find((request) => request.url === 'http://114.66.58.243:8447/api/v1/pairing/claims')
-      expect(hubPairRequest?.method).toBe('POST')
-      expect(hubPairRequest?.body).toMatchObject({
-        machine_id: 'device-1',
-        pair_session_id: 'pair-session-1',
-        pair_secret: 'pair-secret-1',
-        app_device_id: expect.stringMatching(/^appweb_/),
-        app_name: 'TermX Remote App',
-        app_public_key: 'AQIDBA==',
-        requested_capabilities: ['terminal', 'file_manager', 'terminal_management'],
-      })
-      const stored = JSON.parse(storage.getItem('termx.app.machines.v1') ?? '[]') as Array<Record<string, unknown>>
-      expect(stored).toHaveLength(1)
-      expect(stored[0]?.machineId).toBe('device-1')
-      expect(stored[0]?.source).toBe('cloud')
-      expect(stored[0]?.preferredPath).toBe('public_p2p')
-      expect(storage.dump()).toHaveProperty('termx.local.user%3Auser-1%3Amachine%3Adevice-1.appCertificate')
-    } finally {
-      globalThis.fetch = originalFetch
-    }
+    await waitFor(() => expect(screen.getByText('Paired RedmiBook')).toBeTruthy())
+    expect(screen.getByTestId('termx-machine-terminal-list')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Terminals' })).toBeTruthy()
+    expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0)
+    await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
+    expect(screen.queryByText('Terminal runtime is not connected yet.')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /back to machines/i }))
+    expect(screen.getAllByText('Ready').length).toBeGreaterThan(0)
+    await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
+    expect(screen.getByTestId('termx-machine-terminal-list')).toBeTruthy()
+    await waitFor(() => expect(listTerminals).toHaveBeenCalledTimes(2))
+    const hubPairRequest = fetch.requests.find((request) => request.url === 'http://114.66.58.243:8447/api/v1/pairing/claims')
+    expect(hubPairRequest?.method).toBe('POST')
+    expect(hubPairRequest?.body).toMatchObject({
+      machine_id: 'device-1',
+      pair_session_id: 'pair-session-1',
+      pair_secret: 'pair-secret-1',
+      app_device_id: expect.stringMatching(/^appweb_/),
+      app_name: 'TermX Remote App',
+      app_public_key: 'AQIDBA==',
+      requested_capabilities: ['terminal', 'file_manager', 'terminal_management'],
+    })
+    const stored = JSON.parse(storage.getItem('termx.app.machines.v1') ?? '[]') as Array<Record<string, unknown>>
+    expect(stored).toHaveLength(1)
+    expect(stored[0]?.machineId).toBe('device-1')
+    expect(stored[0]?.source).toBe('cloud')
+    expect(stored[0]?.preferredPath).toBe('public_p2p')
+    expect(storage.dump()).toHaveProperty('termx.local.user%3Auser-1%3Amachine%3Adevice-1.appCertificate')
   })
 
   it('rejects pairing codes that do not match a Web Control machine in the signed-in account', async () => {
@@ -195,33 +198,29 @@ describe('WebControlRemoteApp', () => {
         }],
       }),
     ])
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = fetch.fetch as typeof globalThis.fetch
-    try {
-      render(
-        <WebControlRemoteApp
-          defaultControlUrl="http://114.66.58.243:12306"
-          pairCrypto={createMockCrypto()}
-          storage={storage as unknown as Storage}
-        />,
-      )
+    render(
+      <WebControlRemoteApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
+        pairCrypto={createMockCrypto()}
+        storage={storage}
+      />,
+    )
 
-      await userEvent.click(screen.getByRole('button', { name: /open settings/i }))
-      await userEvent.type(screen.getByLabelText(/email or username/i), 'lozzow@example.test')
-      await userEvent.type(screen.getByLabelText(/password/i), 'secret')
-      await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
-      await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
+    await userEvent.click(screen.getByRole('button', { name: /open settings/i }))
+    await userEvent.type(screen.getByLabelText(/email or username/i), 'lozzow@example.test')
+    await userEvent.type(screen.getByLabelText(/password/i), 'secret')
+    await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
+    await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
 
-      await userEvent.click(screen.getByRole('button', { name: /scan pairing qr/i }))
-      fireEvent.change(screen.getByLabelText(/termx qr content/i), { target: { value: pairUri } })
-      await userEvent.click(screen.getByRole('button', { name: /^pair device$/i }))
+    await userEvent.click(screen.getByRole('button', { name: /scan pairing qr/i }))
+    fireEvent.change(screen.getByLabelText(/termx qr content/i), { target: { value: pairUri } })
+    await userEvent.click(screen.getByRole('button', { name: /^pair device$/i }))
 
-      await waitFor(() => expect(screen.getByText('This pairing code does not match a Web Control device in this account')).toBeTruthy())
-      expect(fetch.requests.some((request) => request.url.includes('/api/v1/pairing/claims'))).toBe(false)
-      expect(storage.getItem('termx.app.machines.v1')).toBeNull()
-    } finally {
-      globalThis.fetch = originalFetch
-    }
+    await waitFor(() => expect(screen.getByText('This pairing code does not match a Web Control device in this account')).toBeTruthy())
+    expect(fetch.requests.some((request) => request.url.includes('/api/v1/pairing/claims'))).toBe(false)
+    expect(storage.getItem('termx.app.machines.v1')).toBeNull()
   })
 })
 
@@ -261,6 +260,11 @@ function fakeRtcSession(): RtcSession {
   }
 }
 
+const fakeManagedRtcSessionFactory = () => fakeRtcSession() as RtcSession & {
+  createOffer(): Promise<{ sessionId: string; description: { type: 'offer'; sdp: string } }>
+  acceptAnswer(): Promise<void>
+}
+
 interface RecordedRequest {
   url: string
   method: string
@@ -289,7 +293,7 @@ class RecordingFetch {
   }
 }
 
-class MemoryStorage implements Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {
+class MemoryStorage implements RemoteRuntimeStorage {
   private readonly values = new Map<string, string>()
 
   getItem(key: string): string | null {
@@ -306,6 +310,20 @@ class MemoryStorage implements Pick<Storage, 'getItem' | 'setItem' | 'removeItem
 
   dump(): Record<string, string> {
     return Object.fromEntries(this.values)
+  }
+}
+
+const fetchNoRequests: WebControlFetch = async (input) => {
+  throw new Error(`unexpected request to ${String(input)}`)
+}
+
+function testNetworkRuntime(fetch: WebControlFetch, storage?: RemoteRuntimeStorage | undefined): RemoteNetworkRuntime {
+  return {
+    fetch,
+    ...(storage ? { storage } : {}),
+    queryParam() {
+      return null
+    },
   }
 }
 

@@ -5,6 +5,8 @@ import type {
   ConnectionInfo,
   ConnectionPath,
   LocalAgentApi,
+  RemoteNetworkRuntime,
+  RemoteRuntimeStorage,
   RtcBinaryChannel,
   RtcConnector,
   RtcJsonRpcChannel,
@@ -70,5 +72,19 @@ describe('RtcSession public interfaces', () => {
     expectTypeOf<TerminalInventoryEvents>().toMatchTypeOf<{
       subscribe(machineId: string, handler: (event: { type: 'inventory_changed' }) => void): { close(): void }
     }>()
+  })
+
+  it('defines browser-neutral network runtime dependencies before browser implementations', () => {
+    expectTypeOf<RemoteRuntimeStorage>().toMatchTypeOf<{
+      getItem(key: string): string | null
+      setItem(key: string, value: string): void
+      removeItem(key: string): void
+    }>()
+    expectTypeOf<RemoteNetworkRuntime>().toMatchTypeOf<{
+      fetch(input: string, init?: RequestInit): Promise<Response>
+      storage?: RemoteRuntimeStorage | undefined
+      queryParam(name: string): string | null
+    }>()
+    expect(transportSource).toMatch(/interface RemoteNetworkRuntime/)
   })
 })
