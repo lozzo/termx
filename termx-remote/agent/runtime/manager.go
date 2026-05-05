@@ -37,6 +37,8 @@ const (
 	StateDegraded    State = "degraded"
 )
 
+const hubPresenceSyncTimeout = 5 * time.Second
+
 type TerminalInventoryItem struct {
 	ID      string
 	Name    string
@@ -74,14 +76,27 @@ type Manager struct {
 	identity         identity.DeviceIdentity
 	cancel           context.CancelFunc
 	syncCh           chan struct{}
+	agentID          string
+	hubStates        map[string]*hubRuntimeState
 	hubSessionID     string
 	hubRTCServers    []hubv1.RTCIceServerConfig
 	signalingStarted bool
 	signalingCancel  context.CancelFunc
 	explicitHubURL   bool
+	explicitHubURLs  map[string]struct{}
+	answerOptions    remotertc.AnswerOptions
 	answerer         cloudOfferAnswerer
 	pairing          PairClaimer
 	replay           *cert.ReplayWindow
+	discoveredHubURL string
+}
+
+type hubRuntimeState struct {
+	SessionID        string
+	RTCServers       []hubv1.RTCIceServerConfig
+	SignalingStarted bool
+	SignalingCancel  context.CancelFunc
+	AnswerOptions    remotertc.AnswerOptions
 }
 
 type PairClaimer interface {
@@ -114,15 +129,23 @@ func (defaultCloudOfferAnswerer) AnswerOffer(
 
 func NewManager(cfg remoteconfig.Config, provider InventoryProvider, host bridge.TransportSink) *Manager {
 	cfg = remoteconfig.Normalize(cfg)
+	explicitHubURLs := make(map[string]struct{}, len(cfg.HubURLs))
+	for _, hubURL := range cfg.HubURLs {
+		if hubURL = strings.TrimSpace(hubURL); hubURL != "" {
+			explicitHubURLs[hubURL] = struct{}{}
+		}
+	}
 	return &Manager{
-		cfg:            cfg,
-		provider:       provider,
-		host:           host,
-		files:          fileapi.NewManager(),
-		explicitHubURL: strings.TrimSpace(cfg.HubURL) != "",
-		answerer:       defaultCloudOfferAnswerer{},
-		replay:         cert.NewReplayWindow(5 * time.Minute),
-		syncCh:         make(chan struct{}, 1),
+		cfg:             cfg,
+		provider:        provider,
+		host:            host,
+		files:           fileapi.NewManager(),
+		hubStates:       make(map[string]*hubRuntimeState),
+		explicitHubURL:  len(explicitHubURLs) > 0,
+		explicitHubURLs: explicitHubURLs,
+		answerer:        defaultCloudOfferAnswerer{},
+		replay:          cert.NewReplayWindow(5 * time.Minute),
+		syncCh:          make(chan struct{}, 1),
 		status: Status{
 			State:     StateDisabled,
 			Detail:    "remote runtime disabled",
@@ -139,6 +162,142 @@ func (m *Manager) SetPairClaimer(pairing PairClaimer) {
 	m.mu.Lock()
 	m.pairing = pairing
 	m.mu.Unlock()
+}
+
+func (m *Manager) SetHubURL(hubURL string) {
+	if m == nil {
+		return
+	}
+	hubURL = strings.TrimSpace(hubURL)
+	m.mu.Lock()
+	if !sameHubURLsLocked(m.cfg.HubURLs, []string{hubURL}) {
+		m.stopRemovedHubSignalingLocked([]string{hubURL})
+	}
+	m.cfg.HubURL = hubURL
+	if hubURL == "" {
+		m.cfg.HubURLs = nil
+		m.explicitHubURLs = nil
+	} else {
+		m.cfg.HubURLs = []string{hubURL}
+		m.explicitHubURLs = map[string]struct{}{hubURL: {}}
+	}
+	m.explicitHubURL = hubURL != ""
+	m.mu.Unlock()
+}
+
+func (m *Manager) AddHubURL(hubURL string) {
+	m.addHubURL(hubURL, remotertc.AnswerOptions{}, false, false)
+}
+
+func (m *Manager) AddExplicitHubURL(hubURL string) {
+	m.addHubURL(hubURL, remotertc.AnswerOptions{}, false, true)
+}
+
+func (m *Manager) AddHubURLWithAnswerOptions(hubURL string, opts remotertc.AnswerOptions) {
+	m.addHubURL(hubURL, opts, true, false)
+}
+
+func (m *Manager) addHubURL(hubURL string, opts remotertc.AnswerOptions, hasOptions bool, explicit bool) {
+	if m == nil {
+		return
+	}
+	hubURL = strings.TrimSpace(hubURL)
+	if hubURL == "" {
+		return
+	}
+	m.mu.Lock()
+	if !containsString(m.cfg.HubURLs, hubURL) {
+		m.cfg.HubURLs = append(m.cfg.HubURLs, hubURL)
+	}
+	if strings.TrimSpace(m.cfg.HubURL) == "" {
+		m.cfg.HubURL = hubURL
+	}
+	if hasOptions {
+		m.hubStateLocked(hubURL).AnswerOptions = opts
+	}
+	if explicit {
+		m.explicitHubURL = true
+		if m.explicitHubURLs == nil {
+			m.explicitHubURLs = make(map[string]struct{})
+		}
+		m.explicitHubURLs[hubURL] = struct{}{}
+	}
+	m.mu.Unlock()
+	m.TriggerSync()
+}
+
+func (m *Manager) ConfigureHubAnswerOptions(hubURL string, opts remotertc.AnswerOptions) {
+	if m == nil {
+		return
+	}
+	hubURL = strings.TrimSpace(hubURL)
+	if hubURL == "" {
+		return
+	}
+	m.mu.Lock()
+	m.hubStateLocked(hubURL).AnswerOptions = opts
+	m.mu.Unlock()
+	m.TriggerSync()
+}
+
+func (m *Manager) ConfigureCloud(controlURL string, accessToken string, region string) {
+	if m == nil {
+		return
+	}
+	controlURL = strings.TrimSpace(controlURL)
+	accessToken = strings.TrimSpace(accessToken)
+	region = strings.TrimSpace(region)
+	if controlURL == "" && accessToken == "" && region == "" {
+		return
+	}
+	m.mu.Lock()
+	if controlURL != "" {
+		m.cfg.ControlURL = controlURL
+	}
+	if accessToken != "" {
+		m.cfg.AccessToken = accessToken
+	}
+	if region != "" {
+		m.cfg.Region = region
+	}
+	if controlURL != "" || accessToken != "" {
+		m.explicitHubURL = len(m.explicitHubURLs) > 0
+	}
+	m.mu.Unlock()
+	m.TriggerSync()
+}
+
+func (m *Manager) ConfigureAnswerOptions(opts remotertc.AnswerOptions) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.answerOptions = opts
+	m.mu.Unlock()
+}
+
+func (m *Manager) DetachHub(hubURL string) {
+	if m == nil {
+		return
+	}
+	hubURL = strings.TrimSpace(hubURL)
+	m.mu.Lock()
+	if hubURL == "" || containsString(m.cfg.HubURLs, hubURL) || strings.TrimSpace(m.cfg.HubURL) == hubURL {
+		remaining := removeString(m.cfg.HubURLs, hubURL)
+		m.stopRemovedHubSignalingLocked(remaining)
+		m.cfg.HubURLs = remaining
+		delete(m.explicitHubURLs, hubURL)
+		if len(remaining) > 0 {
+			m.cfg.HubURL = remaining[0]
+		} else {
+			m.cfg.HubURL = ""
+			m.explicitHubURL = false
+			m.explicitHubURLs = nil
+			m.answerOptions = remotertc.AnswerOptions{}
+		}
+	}
+	m.mu.Unlock()
+	m.TriggerSync()
 }
 
 func (m *Manager) Start(ctx context.Context) error {
@@ -171,8 +330,15 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.identity = ident
 	m.mu.Unlock()
 
+	defer func() {
+		go m.reconcileLoop(runCtx)
+	}()
+	m.mu.RLock()
+	controlURL := m.cfg.ControlURL
+	hubURLs := append([]string(nil), m.cfg.HubURLs...)
+	m.mu.RUnlock()
 	switch {
-	case m.cfg.ControlURL == "" && m.cfg.HubURL == "":
+	case controlURL == "" && len(hubURLs) == 0:
 		m.setStatus(StateConfigured, "remote identity ready; waiting for control or hub configuration")
 	default:
 		state, detail, err := m.reconcile(runCtx)
@@ -181,7 +347,6 @@ func (m *Manager) Start(ctx context.Context) error {
 		} else {
 			m.setStatus(state, detail)
 		}
-		go m.reconcileLoop(runCtx)
 	}
 	return nil
 }
@@ -190,11 +355,23 @@ func (m *Manager) Close() {
 	m.mu.Lock()
 	cancel := m.cancel
 	signalingCancel := m.signalingCancel
+	var hubCancels []context.CancelFunc
+	for _, state := range m.hubStates {
+		if state != nil && state.SignalingCancel != nil {
+			hubCancels = append(hubCancels, state.SignalingCancel)
+		}
+	}
 	m.cancel = nil
 	m.signalingCancel = nil
+	m.hubStates = make(map[string]*hubRuntimeState)
 	m.mu.Unlock()
 	if signalingCancel != nil {
 		signalingCancel()
+	}
+	for _, hubCancel := range hubCancels {
+		if hubCancel != nil {
+			hubCancel()
+		}
 	}
 	if cancel != nil {
 		cancel()
@@ -259,6 +436,43 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func sameHubURLsLocked(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if strings.TrimSpace(a[i]) != strings.TrimSpace(b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func containsString(values []string, target string) bool {
+	target = strings.TrimSpace(target)
+	for _, value := range values {
+		if strings.TrimSpace(value) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func removeString(values []string, target string) []string {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" && value != target {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
 func (m *Manager) reconcileLoop(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -285,43 +499,118 @@ func (m *Manager) reconcileLoop(ctx context.Context) {
 }
 
 func (m *Manager) reconcile(ctx context.Context) (State, string, error) {
-	if m.cfg.ControlURL != "" {
+	m.mu.RLock()
+	controlURL := m.cfg.ControlURL
+	hubURLs := append([]string(nil), m.cfg.HubURLs...)
+	m.mu.RUnlock()
+	if controlURL != "" {
 		if err := m.syncControlRegistration(ctx); err != nil {
 			return StateDegraded, "", err
 		}
 		if err := m.discoverHub(ctx); err != nil {
 			return StateDegraded, "", err
 		}
+		m.mu.RLock()
+		controlURL = m.cfg.ControlURL
+		hubURLs = append([]string(nil), m.cfg.HubURLs...)
+		m.mu.RUnlock()
 	}
-	if m.cfg.HubURL != "" {
-		if err := m.syncHubPresence(ctx); err != nil {
-			return StateDegraded, "", err
+	if len(hubURLs) > 0 {
+		online, lastErr := m.syncHubPresences(ctx, hubURLs)
+		if online == 0 && lastErr != nil {
+			return StateDegraded, "", lastErr
 		}
-		m.ensureHubSignalingLoop(ctx)
-		if m.cfg.ControlURL != "" {
+		if controlURL != "" {
 			return StateOnline, "device registered in control and hub; terminal signaling active", nil
 		}
 		return StateOnline, "device registered in hub; control registration not configured", nil
 	}
-	if m.cfg.ControlURL != "" {
+	if controlURL != "" {
 		return StateConfigured, "device registered in control; waiting for hub configuration", nil
 	}
 	return StateConfigured, "remote identity ready; waiting for control or hub configuration", nil
 }
 
-func (m *Manager) discoverHub(ctx context.Context) error {
-	if m.cfg.ControlURL == "" || m.cfg.AccessToken == "" {
-		return nil
+type hubSyncResult struct {
+	err error
+}
+
+func (m *Manager) syncHubPresences(ctx context.Context, hubURLs []string) (int, error) {
+	resultCh := make(chan hubSyncResult, len(hubURLs))
+	pending := 0
+	for _, hubURL := range hubURLs {
+		hubURL = strings.TrimSpace(hubURL)
+		if hubURL == "" {
+			continue
+		}
+		pending++
+		go func(hubURL string) {
+			syncCtx, cancel := context.WithTimeout(ctx, hubPresenceSyncTimeout)
+			defer cancel()
+			err := m.syncHubPresence(syncCtx, hubURL)
+			if err == nil {
+				m.ensureHubSignalingLoop(ctx, hubURL)
+			}
+			resultCh <- hubSyncResult{err: err}
+		}(hubURL)
 	}
+	if pending == 0 {
+		return 0, nil
+	}
+
+	online := 0
+	var lastErr error
+	for pending > 0 {
+		select {
+		case <-ctx.Done():
+			if online > 0 {
+				return online, lastErr
+			}
+			return 0, ctx.Err()
+		case result := <-resultCh:
+			pending--
+			if result.err != nil {
+				lastErr = result.err
+			} else {
+				online++
+			}
+			if online > 0 {
+				for pending > 0 {
+					select {
+					case result := <-resultCh:
+						pending--
+						if result.err != nil {
+							lastErr = result.err
+						} else {
+							online++
+						}
+					default:
+						return online, lastErr
+					}
+				}
+				return online, lastErr
+			}
+		}
+	}
+	return online, lastErr
+}
+
+func (m *Manager) discoverHub(ctx context.Context) error {
 	m.mu.RLock()
+	controlURL := m.cfg.ControlURL
+	accessToken := m.cfg.AccessToken
 	hubURL := m.cfg.HubURL
 	preferredRegion := m.cfg.Region
 	explicitHubURL := m.explicitHubURL
+	discoveredHubURL := m.discoveredHubURL
 	m.mu.RUnlock()
-	if strings.TrimSpace(hubURL) != "" && explicitHubURL {
+	if controlURL == "" || accessToken == "" {
 		return nil
 	}
-	hubs, err := discovery.DiscoverHubs(ctx, m.cfg.ControlURL, m.cfg.AccessToken)
+	if strings.TrimSpace(hubURL) != "" && explicitHubURL && strings.TrimSpace(discoveredHubURL) == "" {
+		return nil
+	}
+	hubs, err := discovery.DiscoverHubs(ctx, controlURL, accessToken)
 	if err != nil {
 		return err
 	}
@@ -331,10 +620,22 @@ func (m *Manager) discoverHub(ctx context.Context) error {
 	}); ok {
 		selectedURL := strings.TrimSpace(hub.HTTPURL)
 		m.mu.Lock()
-		if strings.TrimSpace(m.cfg.HubURL) != selectedURL {
-			m.stopHubSignalingLoopLocked()
+		hubURLs := append([]string(nil), m.cfg.HubURLs...)
+		previousDiscovered := strings.TrimSpace(m.discoveredHubURL)
+		if previousDiscovered != "" && previousDiscovered != selectedURL {
+			hubURLs = removeString(hubURLs, previousDiscovered)
 		}
-		m.cfg.HubURL = selectedURL
+		if !containsString(hubURLs, selectedURL) {
+			hubURLs = append(hubURLs, selectedURL)
+		}
+		if previousDiscovered != "" && previousDiscovered != selectedURL {
+			m.stopRemovedHubSignalingLocked(hubURLs)
+		}
+		if strings.TrimSpace(m.cfg.HubURL) == "" || strings.TrimSpace(m.cfg.HubURL) == previousDiscovered {
+			m.cfg.HubURL = selectedURL
+		}
+		m.cfg.HubURLs = hubURLs
+		m.discoveredHubURL = selectedURL
 		m.mu.Unlock()
 	}
 	return nil
@@ -348,6 +649,31 @@ func (m *Manager) stopHubSignalingLoopLocked() {
 	m.signalingStarted = false
 	m.hubSessionID = ""
 	m.hubRTCServers = nil
+}
+
+func (m *Manager) stopRemovedHubSignalingLocked(keep []string) {
+	keepSet := make(map[string]struct{}, len(keep))
+	for _, hubURL := range keep {
+		if hubURL = strings.TrimSpace(hubURL); hubURL != "" {
+			keepSet[hubURL] = struct{}{}
+		}
+	}
+	for hubURL, state := range m.hubStates {
+		if _, ok := keepSet[hubURL]; ok {
+			continue
+		}
+		if state != nil && state.SignalingCancel != nil {
+			state.SignalingCancel()
+		}
+		delete(m.hubStates, hubURL)
+	}
+	if len(keepSet) == 0 {
+		m.stopHubSignalingLoopLocked()
+		return
+	}
+	if _, ok := keepSet[strings.TrimSpace(m.cfg.HubURL)]; !ok {
+		m.stopHubSignalingLoopLocked()
+	}
 }
 
 type hubSelectionOptions struct {
@@ -477,40 +803,59 @@ func hubHealthOK(raw string) bool {
 }
 
 func (m *Manager) syncControlRegistration(ctx context.Context) error {
-	if m.cfg.ControlURL == "" || m.cfg.AccessToken == "" {
+	m.mu.RLock()
+	controlURL := m.cfg.ControlURL
+	accessToken := m.cfg.AccessToken
+	dataDir := m.cfg.DataDir
+	deviceName := m.cfg.DeviceName
+	m.mu.RUnlock()
+	if controlURL == "" || accessToken == "" {
 		return fmt.Errorf("control URL and access token are required for device registration")
 	}
 
 	hostname, _ := os.Hostname()
-	machineKey, err := identity.LoadOrCreateMachineKey(m.cfg.DataDir)
+	machineKey, err := identity.LoadOrCreateMachineKey(dataDir)
 	if err != nil {
 		return err
 	}
 	payload := discovery.DeviceRegistrationRequest{
 		DeviceID:         m.identity.DeviceID,
 		MachinePublicKey: identity.PublicKeyString(machineKey.PublicKey),
-		DisplayName:      firstNonEmpty(m.identity.DisplayName, m.cfg.DeviceName),
+		DisplayName:      firstNonEmpty(m.identity.DisplayName, deviceName),
 		Hostname:         hostname,
 		Platform:         fmt.Sprintf("%s/%s", goruntime.GOOS, goruntime.GOARCH),
 		State:            string(StateConfigured),
 	}
-	return discovery.RegisterDevice(ctx, m.cfg.ControlURL, m.cfg.AccessToken, payload)
+	return discovery.RegisterDevice(ctx, controlURL, accessToken, payload)
 }
 
-func (m *Manager) syncHubPresence(ctx context.Context) error {
+func (m *Manager) syncHubPresence(ctx context.Context, hubURL string) error {
 	hostname, _ := os.Hostname()
 
-	m.mu.RLock()
-	hubSessionID := m.hubSessionID
-	m.mu.RUnlock()
+	m.mu.Lock()
+	hubState := m.hubStateLocked(hubURL)
+	hubSessionID := hubState.SessionID
+	agentID := m.agentID
+	dataDir := m.cfg.DataDir
+	deviceName := m.cfg.DeviceName
+	m.mu.Unlock()
 
 	terminals := m.remoteHubTerminals(ctx)
 	if hubSessionID == "" {
-		machineKey, err := identity.LoadOrCreateMachineKey(m.cfg.DataDir)
+		machineKey, err := identity.LoadOrCreateMachineKey(dataDir)
 		if err != nil {
 			return err
 		}
-		agentID := randomAgentID()
+		if strings.TrimSpace(agentID) == "" {
+			agentID = randomAgentID()
+			m.mu.Lock()
+			if strings.TrimSpace(m.agentID) == "" {
+				m.agentID = agentID
+			} else {
+				agentID = m.agentID
+			}
+			m.mu.Unlock()
+		}
 		nonce := randomAgentID()
 		now := time.Now().UTC()
 		signature := machineKey.Sign(hubv1.CanonicalAgentRegistrationSignatureMessage(hubv1.AgentRegistrationSignatureFields{
@@ -522,11 +867,11 @@ func (m *Manager) syncHubPresence(ctx context.Context) error {
 		if len(signature) != ed25519.SignatureSize {
 			return fmt.Errorf("machine key cannot sign hub registration")
 		}
-		resp, err := discovery.RegisterHub(ctx, m.cfg.HubURL, hubv1.HubRegisterRequest{
+		resp, err := discovery.RegisterHub(ctx, hubURL, hubv1.HubRegisterRequest{
 			Version:        "remote.hub.v1",
 			DeviceID:       m.identity.DeviceID,
 			AgentID:        agentID,
-			DisplayName:    firstNonEmpty(m.identity.DisplayName, m.cfg.DeviceName),
+			DisplayName:    firstNonEmpty(m.identity.DisplayName, deviceName),
 			Hostname:       hostname,
 			Platform:       fmt.Sprintf("%s/%s", goruntime.GOOS, goruntime.GOARCH),
 			RuntimeVersion: "termx-dev",
@@ -542,13 +887,18 @@ func (m *Manager) syncHubPresence(ctx context.Context) error {
 			return err
 		}
 		m.mu.Lock()
-		m.hubSessionID = resp.AgentSessionID
-		m.hubRTCServers = append([]hubv1.RTCIceServerConfig(nil), resp.RTCConfig.IceServers...)
+		state := m.hubStateLocked(hubURL)
+		state.SessionID = resp.AgentSessionID
+		state.RTCServers = append([]hubv1.RTCIceServerConfig(nil), resp.RTCConfig.IceServers...)
+		if hubURL == strings.TrimSpace(m.cfg.HubURL) {
+			m.hubSessionID = resp.AgentSessionID
+			m.hubRTCServers = append([]hubv1.RTCIceServerConfig(nil), resp.RTCConfig.IceServers...)
+		}
 		m.mu.Unlock()
 		return nil
 	}
 
-	_, err := discovery.HeartbeatHub(ctx, m.cfg.HubURL, hubv1.HubHeartbeatRequest{
+	_, err := discovery.HeartbeatHub(ctx, hubURL, hubv1.HubHeartbeatRequest{
 		AgentSessionID: hubSessionID,
 		DeviceID:       m.identity.DeviceID,
 		LastSeenAt:     time.Now().UTC().Format(time.RFC3339),
@@ -558,10 +908,23 @@ func (m *Manager) syncHubPresence(ctx context.Context) error {
 		return nil
 	}
 	if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
-		m.resetHubSession()
-		return m.syncHubPresence(ctx)
+		m.resetHubSession(hubURL)
+		return m.syncHubPresence(ctx, hubURL)
 	}
 	return err
+}
+
+func (m *Manager) hubStateLocked(hubURL string) *hubRuntimeState {
+	hubURL = strings.TrimSpace(hubURL)
+	if m.hubStates == nil {
+		m.hubStates = make(map[string]*hubRuntimeState)
+	}
+	state := m.hubStates[hubURL]
+	if state == nil {
+		state = &hubRuntimeState{}
+		m.hubStates[hubURL] = state
+	}
+	return state
 }
 
 func randomAgentID() string {
@@ -591,25 +954,32 @@ func (m *Manager) remoteHubTerminals(ctx context.Context) []hubv1.HubTerminalInv
 	return out
 }
 
-func (m *Manager) ensureHubSignalingLoop(ctx context.Context) {
+func (m *Manager) ensureHubSignalingLoop(ctx context.Context, hubURL string) {
 	m.mu.Lock()
-	if m.signalingStarted || m.hubSessionID == "" || m.host == nil {
+	state := m.hubStateLocked(hubURL)
+	if state.SignalingStarted || state.SessionID == "" || m.host == nil {
 		m.mu.Unlock()
 		return
 	}
-	m.signalingStarted = true
+	state.SignalingStarted = true
 	deviceID := m.identity.DeviceID
-	agentSessionID := m.hubSessionID
-	iceServers := append([]hubv1.RTCIceServerConfig(nil), m.hubRTCServers...)
+	agentSessionID := state.SessionID
+	iceServers := append([]hubv1.RTCIceServerConfig(nil), state.RTCServers...)
+	answerOptions := state.AnswerOptions
 	loopCtx, cancel := context.WithCancel(ctx)
-	m.signalingCancel = cancel
+	state.SignalingCancel = cancel
+	if hubURL == strings.TrimSpace(m.cfg.HubURL) {
+		m.signalingStarted = true
+		m.signalingCancel = cancel
+	}
 	m.mu.Unlock()
 
-	go m.hubSignalingLoop(loopCtx, deviceID, agentSessionID, iceServers)
-	go m.hubPairingLoop(loopCtx, deviceID, agentSessionID)
+	go m.hubSignalingLoop(loopCtx, hubURL, deviceID, agentSessionID, iceServers, answerOptions)
+	go m.hubPairingLoop(loopCtx, hubURL, deviceID, agentSessionID)
 }
 
-func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID string, iceServers []hubv1.RTCIceServerConfig) {
+func (m *Manager) hubSignalingLoop(ctx context.Context, hubURL, deviceID, agentSessionID string, iceServers []hubv1.RTCIceServerConfig, hubAnswerOptions ...remotertc.AnswerOptions) {
+	answerOptions := m.answerOptionsForHubLoop(hubAnswerOptions...)
 	pendingAnswers := make(map[string]hubv1.SignalingAnswer)
 	for {
 		select {
@@ -619,7 +989,7 @@ func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID
 		}
 
 		pollCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		resp, ok, err := discovery.PollHubOffer(pollCtx, m.cfg.HubURL, hubv1.SignalingPollRequest{
+		resp, ok, err := discovery.PollHubOffer(pollCtx, hubURL, hubv1.SignalingPollRequest{
 			AgentSessionID: agentSessionID,
 			DeviceID:       deviceID,
 			TimeoutSeconds: 15,
@@ -627,7 +997,7 @@ func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID
 		cancel()
 		if err != nil {
 			if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
-				m.resetHubSession()
+				m.resetHubSession(hubURL)
 				m.TriggerSync()
 				return
 			}
@@ -645,11 +1015,11 @@ func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID
 		offerKey := pendingAnswerKey(*resp.Offer)
 		answer, hasPendingAnswer := pendingAnswers[offerKey]
 		if !hasPendingAnswer {
-			answer = m.answerCloudOffer(ctx, *resp.Offer, iceServers)
+			answer = m.answerCloudOfferWithOptions(ctx, *resp.Offer, iceServers, answerOptions)
 			pendingAnswers[offerKey] = answer
 		}
 		submitCtx, submitCancel := context.WithTimeout(ctx, 10*time.Second)
-		err = discovery.SubmitHubAnswer(submitCtx, m.cfg.HubURL, hubv1.SubmitSignalingAnswerRequest{
+		err = discovery.SubmitHubAnswer(submitCtx, hubURL, hubv1.SubmitSignalingAnswerRequest{
 			AgentSessionID: agentSessionID,
 			DeviceID:       deviceID,
 			Answer:         answer,
@@ -657,7 +1027,7 @@ func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID
 		submitCancel()
 		if err != nil {
 			if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
-				m.resetHubSession()
+				m.resetHubSession(hubURL)
 				m.TriggerSync()
 				return
 			}
@@ -668,7 +1038,17 @@ func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID
 	}
 }
 
-func (m *Manager) hubPairingLoop(ctx context.Context, deviceID, agentSessionID string) {
+func (m *Manager) answerOptionsForHubLoop(hubAnswerOptions ...remotertc.AnswerOptions) remotertc.AnswerOptions {
+	if len(hubAnswerOptions) > 0 {
+		return hubAnswerOptions[0]
+	}
+	m.mu.RLock()
+	answerOptions := m.answerOptions
+	m.mu.RUnlock()
+	return answerOptions
+}
+
+func (m *Manager) hubPairingLoop(ctx context.Context, hubURL, deviceID, agentSessionID string) {
 	pendingResults := make(map[string]hubv1.PairingResult)
 	for {
 		select {
@@ -677,14 +1057,14 @@ func (m *Manager) hubPairingLoop(ctx context.Context, deviceID, agentSessionID s
 		default:
 		}
 
-		if handled, stop := retrySubmitPendingPairingResult(ctx, m, deviceID, agentSessionID, pendingResults); stop {
+		if handled, stop := retrySubmitPendingPairingResult(ctx, m, hubURL, deviceID, agentSessionID, pendingResults); stop {
 			return
 		} else if handled {
 			continue
 		}
 
 		pollCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		resp, ok, err := discovery.PollHubPairingClaim(pollCtx, m.cfg.HubURL, hubv1.PairingPollRequest{
+		resp, ok, err := discovery.PollHubPairingClaim(pollCtx, hubURL, hubv1.PairingPollRequest{
 			AgentSessionID: agentSessionID,
 			DeviceID:       deviceID,
 			TimeoutSeconds: 15,
@@ -692,7 +1072,7 @@ func (m *Manager) hubPairingLoop(ctx context.Context, deviceID, agentSessionID s
 		cancel()
 		if err != nil {
 			if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
-				m.resetHubSession()
+				m.resetHubSession(hubURL)
 				m.TriggerSync()
 				return
 			}
@@ -714,7 +1094,7 @@ func (m *Manager) hubPairingLoop(ctx context.Context, deviceID, agentSessionID s
 			pendingResults[claimKey] = result
 		}
 		submitCtx, submitCancel := context.WithTimeout(ctx, 10*time.Second)
-		err = discovery.SubmitHubPairingResult(submitCtx, m.cfg.HubURL, hubv1.SubmitPairingResultRequest{
+		err = discovery.SubmitHubPairingResult(submitCtx, hubURL, hubv1.SubmitPairingResultRequest{
 			AgentSessionID: agentSessionID,
 			DeviceID:       deviceID,
 			Result:         result,
@@ -722,7 +1102,7 @@ func (m *Manager) hubPairingLoop(ctx context.Context, deviceID, agentSessionID s
 		submitCancel()
 		if err != nil {
 			if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
-				m.resetHubSession()
+				m.resetHubSession(hubURL)
 				m.TriggerSync()
 				return
 			}
@@ -733,10 +1113,10 @@ func (m *Manager) hubPairingLoop(ctx context.Context, deviceID, agentSessionID s
 	}
 }
 
-func retrySubmitPendingPairingResult(ctx context.Context, m *Manager, deviceID, agentSessionID string, pendingResults map[string]hubv1.PairingResult) (bool, bool) {
+func retrySubmitPendingPairingResult(ctx context.Context, m *Manager, hubURL, deviceID, agentSessionID string, pendingResults map[string]hubv1.PairingResult) (bool, bool) {
 	for claimKey, result := range pendingResults {
 		submitCtx, submitCancel := context.WithTimeout(ctx, 10*time.Second)
-		err := discovery.SubmitHubPairingResult(submitCtx, m.cfg.HubURL, hubv1.SubmitPairingResultRequest{
+		err := discovery.SubmitHubPairingResult(submitCtx, hubURL, hubv1.SubmitPairingResultRequest{
 			AgentSessionID: agentSessionID,
 			DeviceID:       deviceID,
 			Result:         result,
@@ -744,7 +1124,7 @@ func retrySubmitPendingPairingResult(ctx context.Context, m *Manager, deviceID, 
 		submitCancel()
 		if err != nil {
 			if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
-				m.resetHubSession()
+				m.resetHubSession(hubURL)
 				m.TriggerSync()
 				return true, true
 			}
@@ -859,6 +1239,13 @@ func pendingAnswerKey(offer hubv1.SignalingOffer) string {
 }
 
 func (m *Manager) answerCloudOffer(ctx context.Context, offer hubv1.SignalingOffer, iceServers []hubv1.RTCIceServerConfig) hubv1.SignalingAnswer {
+	m.mu.RLock()
+	answerOptions := m.answerOptions
+	m.mu.RUnlock()
+	return m.answerCloudOfferWithOptions(ctx, offer, iceServers, answerOptions)
+}
+
+func (m *Manager) answerCloudOfferWithOptions(ctx context.Context, offer hubv1.SignalingOffer, iceServers []hubv1.RTCIceServerConfig, answerOptions remotertc.AnswerOptions) hubv1.SignalingAnswer {
 	certificate, err := m.authorizeCloudOffer(ctx, offer)
 	if err != nil {
 		return hubv1.SignalingAnswer{
@@ -876,20 +1263,19 @@ func (m *Manager) answerCloudOffer(ctx context.Context, offer hubv1.SignalingOff
 	if len(offer.RTCConfig.IceServers) > 0 {
 		offerICEServers = append([]hubv1.RTCIceServerConfig(nil), offer.RTCConfig.IceServers...)
 	}
+	answerOptions.ChannelPolicy = policy
+	answerOptions.TerminalManagement = terminalManagement
+	answerOptions.Events = m.eventRouter()
 	flow := sessionflow.ManagedPlan(offerICEServers, sessionflow.RelayPolicy{
 		AllowRelay:         offer.AllowRelay,
 		AllowRelayTransfer: offer.AllowRelayTransfer,
 	})
 	answer, err := sessionflow.AnswerManaged(ctx, answerer, sessionflow.AnswerInput{
-		Plan:  flow,
-		Offer: offer,
-		Sink:  m.host,
-		Files: m.files,
-		Options: remotertc.AnswerOptions{
-			ChannelPolicy:      policy,
-			TerminalManagement: terminalManagement,
-			Events:             m.eventRouter(),
-		},
+		Plan:    flow,
+		Offer:   offer,
+		Sink:    m.host,
+		Files:   m.files,
+		Options: answerOptions,
 	})
 	if err != nil {
 		return hubv1.SignalingAnswer{
@@ -995,6 +1381,7 @@ func cloudOfferChannelPolicy(offer hubv1.SignalingOffer, capabilities []string, 
 		AllowFileManager:        hasAppCapability(capabilities, "file_manager"),
 		AllowTerminalManagement: hasAppCapability(capabilities, "terminal_management") && terminalManagement != nil,
 		AllowEvents:             allowTerminal,
+		AllowRelayTransfer:      offer.AllowRelayTransfer,
 	}
 }
 
@@ -1046,13 +1433,29 @@ func (m *Manager) eventRouter() remotertc.EventRouter {
 	return nil
 }
 
-func (m *Manager) resetHubSession() {
+func (m *Manager) resetHubSession(hubURL string) {
 	m.mu.Lock()
-	cancel := m.signalingCancel
-	m.hubSessionID = ""
-	m.hubRTCServers = nil
-	m.signalingStarted = false
-	m.signalingCancel = nil
+	var cancel context.CancelFunc
+	if hubURL = strings.TrimSpace(hubURL); hubURL != "" {
+		state := m.hubStateLocked(hubURL)
+		cancel = state.SignalingCancel
+		state.SessionID = ""
+		state.RTCServers = nil
+		state.SignalingStarted = false
+		state.SignalingCancel = nil
+		if hubURL == strings.TrimSpace(m.cfg.HubURL) {
+			m.hubSessionID = ""
+			m.hubRTCServers = nil
+			m.signalingStarted = false
+			m.signalingCancel = nil
+		}
+	} else {
+		cancel = m.signalingCancel
+		m.hubSessionID = ""
+		m.hubRTCServers = nil
+		m.signalingStarted = false
+		m.signalingCancel = nil
+	}
 	m.mu.Unlock()
 	if cancel != nil {
 		cancel()

@@ -1,13 +1,8 @@
-import { TERMX_FRAME_TYPES, decodeTermxFrame } from './termxProtocol'
-import type { LocalOfferSignature } from './localAppIdentity'
 import type {
   ConnectionCapabilities,
   ConnectionInfo,
   ConnectionPath,
-  RtcOfferSigningInput,
   RtcSessionCapabilityUpdater,
-  LocalInventoryRTCAnswer,
-  LocalInventoryRTCOffer,
   RtcBinaryChannel,
   RtcEvent,
   RtcJsonRpcChannel,
@@ -18,9 +13,6 @@ import type {
   RtcSessionNegotiator,
   RtcSessionNegotiationTarget,
   RtcSubscription,
-  TerminalInventoryEvent,
-  TerminalInventoryEvents,
-  TerminalInventorySubscription,
 } from './transport'
 
 export interface BrowserRtcSessionOptions {
@@ -32,17 +24,6 @@ export interface BrowserRtcSessionOptions {
   iceGatheringTimeoutMs?: number | undefined
   dataChannelOpenTimeoutMs?: number | undefined
   heartbeatIntervalMs?: number | undefined
-}
-
-export interface BrowserRtcInventoryEventsOptions {
-  machineId: string
-  appCertificate: string
-  peerConnectionFactory?: (() => RTCPeerConnectionLike) | undefined
-  createAnswer(input: LocalInventoryRTCOffer): Promise<LocalInventoryRTCAnswer>
-  signOffer(input: RtcOfferSigningInput): Promise<LocalOfferSignature>
-  sessionIdGenerator?: (() => string) | undefined
-  iceGatheringTimeoutMs?: number | undefined
-  dataChannelOpenTimeoutMs?: number | undefined
 }
 
 export interface BrowserRtcSessionLifecycle {
@@ -90,10 +71,6 @@ interface NetworkInformationLike {
 
 export function createBrowserRtcSession(options: BrowserRtcSessionOptions): BrowserRtcConnectedSession {
   return new BrowserRtcSession(options)
-}
-
-export function createBrowserRtcInventoryEvents(options: BrowserRtcInventoryEventsOptions): TerminalInventoryEvents {
-  return new BrowserRtcInventoryEventsConnection(options)
 }
 
 class BrowserRtcSession implements BrowserRtcConnectedSession {
@@ -644,148 +621,6 @@ function capabilitiesForAnsweredOffer(input: RtcSessionAnswerTarget): Connection
       ? { denialReason: 'managed relay policy blocks file transfer' }
       : {},
   }
-}
-
-class BrowserRtcInventoryEventsConnection implements TerminalInventoryEvents {
-  private pc: RTCPeerConnectionLike | null = null
-  private connectionId = ''
-  private eventsChannel: RTCDataChannelLike | null = null
-  private readonly subscribers = new Set<(event: TerminalInventoryEvent) => void>()
-  private subscribeDone: Promise<void> | null = null
-  private connectPromise: Promise<void> | null = null
-  private disconnecting = false
-
-  constructor(private readonly options: BrowserRtcInventoryEventsOptions) {}
-
-  subscribe(machineId: string, handler: (event: TerminalInventoryEvent) => void): TerminalInventorySubscription {
-    if (machineId !== this.options.machineId) {
-      throw new Error(`local inventory events machine mismatch: ${machineId} != ${this.options.machineId}`)
-    }
-    this.subscribers.add(handler)
-    if (this.subscribers.size === 1) {
-      void this.ensureConnected().catch(() => {})
-    }
-    return {
-      close: () => {
-        this.subscribers.delete(handler)
-        if (this.subscribers.size === 0) {
-          void this.disconnect()
-        }
-      },
-    }
-  }
-
-  private ensureConnected(): Promise<void> {
-    if (this.connectPromise) return this.connectPromise
-    this.connectPromise = this.connectInternal().catch(async (err) => {
-      await this.disconnectInternal()
-      throw err
-    })
-    return this.connectPromise
-  }
-
-  private async connectInternal(): Promise<void> {
-    const pc = (this.options.peerConnectionFactory ?? (() => new RTCPeerConnection()))()
-    const sessionId = this.options.sessionIdGenerator?.() ?? crypto.randomUUID()
-    this.pc = pc
-    this.connectionId = sessionId
-    const eventsChannel = pc.createDataChannel('events', { ordered: true })
-    eventsChannel.binaryType = 'arraybuffer'
-    this.eventsChannel = eventsChannel
-    eventsChannel.addEventListener('message', (event) => this.handleMessage((event as MessageEvent).data))
-    eventsChannel.addEventListener('close', () => {
-      void this.disconnect()
-    })
-    eventsChannel.addEventListener('error', () => {
-      void this.disconnect()
-    })
-
-    const offer = await pc.createOffer()
-    await pc.setLocalDescription(offer)
-    await waitForICEGatheringComplete(pc, this.options.iceGatheringTimeoutMs)
-    const sdp = pc.localDescription?.sdp ?? offer.sdp
-    if (!sdp) throw new Error('local WebRTC offer SDP is required')
-    const signed = await this.options.signOffer({
-      sessionId,
-      machineId: this.options.machineId,
-      terminalId: '',
-      sdp,
-      candidates: [],
-    })
-    const answer = await this.options.createAnswer({
-      sessionId,
-      machineId: this.options.machineId,
-      sdp,
-      appCertificate: this.options.appCertificate,
-      appSignature: signed.signature,
-      nonce: signed.nonce,
-      timestamp: signed.timestamp,
-    })
-    await pc.setRemoteDescription(answer.answer)
-    await waitChannelOpenWithTimeout(eventsChannel, this.options.dataChannelOpenTimeoutMs)
-    await this.subscribeInventoryEvents()
-  }
-
-  private async disconnect(): Promise<void> {
-    await this.disconnectInternal()
-  }
-
-  private async disconnectInternal(): Promise<void> {
-    if (this.disconnecting) return
-    this.disconnecting = true
-    const eventsChannel = this.eventsChannel
-    this.eventsChannel = null
-    eventsChannel?.close()
-    await this.pc?.close()
-    this.pc = null
-    this.connectPromise = null
-    this.subscribeDone = null
-    this.disconnecting = false
-  }
-
-  private subscribeInventoryEvents(): Promise<void> {
-    if (!this.subscribeDone) {
-      this.subscribeDone = Promise.resolve().then(() => {
-        this.eventsChannel?.send(JSON.stringify({
-          type: 'subscribe',
-          types: [1, 2, 3, 4, 10],
-        }))
-      })
-    }
-    return this.subscribeDone
-  }
-
-  private handleMessage(data: unknown): void {
-    try {
-      const bytes = messageBytes(data)
-      if (bytes instanceof Uint8Array) {
-        this.handleMessageBytes(bytes)
-        return
-      }
-      void bytes.then((resolved) => this.handleMessageBytes(resolved))
-    } catch {
-      void this.disconnect()
-    }
-  }
-
-  private handleMessageBytes(data: Uint8Array): void {
-    try {
-      const event = JSON.parse(new TextDecoder().decode(data)) as { type?: unknown }
-      if (event.type) {
-        for (const handler of this.subscribers) {
-          handler({ type: 'inventory_changed' })
-        }
-        return
-      }
-    } catch {
-      const frame = decodeTermxFrame(data)
-      if (frame.channel !== 0 || frame.type !== TERMX_FRAME_TYPES.event) return
-      for (const handler of this.subscribers) {
-        handler({ type: 'inventory_changed' })
-      }
-    }
-  }
-
 }
 
 class LocalApiChannel implements RtcJsonRpcChannel {

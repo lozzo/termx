@@ -1,4 +1,5 @@
 import { cleanup, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./Terminal', () => ({
@@ -18,35 +19,7 @@ describe('local web entry shell', () => {
   it('mounts the shared local remote app with browser local adapters and no forbidden public model text', async () => {
     const entry = await import('./localWebEntry')
     document.body.innerHTML = '<div id="root"></div>'
-    const fetch = vi.fn(async (input: RequestInfo | URL) => {
-      const path = new URL(String(input), 'http://127.0.0.1:18888').pathname
-      if (path === '/api/local/status') {
-        return jsonResponse({
-          machine_id: 'machine-local',
-          machine_name: 'Local Mac',
-          remote_enabled: true,
-          local_rtc: {
-            http_url: 'http://127.0.0.1:18888',
-            ice_tcp_enabled: true,
-            ice_tcp_port: 18889,
-          },
-          updated_at: '2026-05-01T04:00:00Z',
-        })
-      }
-      if (path === '/api/local/terminals') {
-        return jsonResponse({
-          terminals: [{
-            terminal_id: 'terminal-1',
-            name: 'zsh',
-            command: ['/bin/zsh', '-l'],
-            cols: 120,
-            rows: 36,
-            state: 'running',
-          }],
-        })
-      }
-      return jsonResponse({ error: { message: 'not found' } }, 404)
-    })
+    const fetch = vi.fn(async () => jsonResponse({ error: { message: 'unexpected fetch' } }, 500))
     vi.stubGlobal('fetch', fetch)
     const session = {
       async disconnect() {},
@@ -105,6 +78,34 @@ describe('local web entry shell', () => {
     }
 
     entry.mountLocalWebApp({
+      api: {
+        async getStatus() {
+          return {
+            machine: {
+              machineId: 'machine-local',
+              name: 'Local Mac',
+              state: 'online',
+              terminalCount: 1,
+              localRTC: { signalingUrl: 'http://127.0.0.1:18888' },
+            },
+            localWeb: {
+              httpUrl: 'http://127.0.0.1:18888',
+              rtcOfferUrl: 'http://127.0.0.1:18888',
+            },
+          }
+        },
+        async listTerminals() {
+          return [{
+            machineId: 'machine-local',
+            terminalId: 'terminal-1',
+            title: 'zsh',
+            state: 'running' as const,
+            command: '/bin/zsh -l',
+            cols: 120,
+            rows: 36,
+          }]
+        },
+      },
       connector: {
         async connect() {
           return session
@@ -114,12 +115,79 @@ describe('local web entry shell', () => {
 
     await waitFor(() => expect(screen.getByTestId('termx-local-web-shell')).toBeTruthy())
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list')).toBeTruthy())
+    expect(screen.getByLabelText('Local hub URL')).toHaveProperty('value', 'http://127.0.0.1:18888')
     const appShell = screen.getByTestId('termx-local-web-shell').firstElementChild as HTMLElement
     expect(appShell.className).toContain('flex')
     expect(appShell.className).not.toMatch(/\bgrid\b|gap-4|p-4|md:grid-cols/)
     expect(screen.getByTestId('termx-terminal-list').getAttribute('data-machine-id')).toBe('machine-local')
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane|session/i)
     expect(JSON.stringify(fetch.mock.calls)).not.toMatch(/turn|credential|machine_private_key|privateKey/i)
+  })
+
+  it('lets users enter and persist a local embedded hub URL', async () => {
+    const entry = await import('./localWebEntry')
+    document.body.innerHTML = '<div id="root"></div>'
+    const storage = new MemoryStorage()
+
+    entry.mountLocalWebApp({
+      api: {
+        async getStatus() {
+          return {
+            machine: {
+              machineId: 'machine-local',
+              name: 'Local Mac',
+              state: 'online' as const,
+              terminalCount: 0,
+            },
+            localWeb: {
+              httpUrl: 'http://127.0.0.1:18888',
+              rtcOfferUrl: 'http://127.0.0.1:18888',
+            },
+          }
+        },
+        async listTerminals() {
+          return []
+        },
+      },
+      networkRuntime: {
+        fetch: async () => jsonResponse({}),
+        storage,
+        queryParam: () => null,
+      },
+    })
+
+    const input = await screen.findByLabelText('Local hub URL')
+    await userEvent.clear(input)
+    await userEvent.type(input, '192.168.1.100:18888')
+    await userEvent.click(screen.getByRole('button', { name: 'Use' }))
+
+    await waitFor(() => expect(input).toHaveProperty('value', 'http://192.168.1.100:18888'))
+    expect(storage.getItem('termx.local.hubUrl')).toBe('http://192.168.1.100:18888')
+  })
+
+  it('shows the pairing gate before a first-run browser local RTC inventory session exists', async () => {
+    const entry = await import('./localWebEntry')
+    document.body.innerHTML = '<div id="root"></div>'
+    const storage = new MemoryStorage()
+
+    entry.mountLocalWebApp({
+      networkRuntime: {
+        fetch: async () => jsonResponse({}),
+        storage,
+        queryParam: () => null,
+      },
+      pairApi: {
+        pair: vi.fn(async (input) => ({
+          machineId: input.machineId,
+          appCertificate: '{"payload":{"machine_id":"local","app_public_key":"AQIDBA=="},"signature":"machine-sig"}',
+          expiresAt: '2026-05-06T00:00:00Z',
+        })),
+      },
+    })
+
+    await waitFor(() => expect(screen.getByTestId('termx-verification-gate')).toBeTruthy())
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByText('No active terminals')).toBeTruthy()
   })
 
   it('does not require browser crypto or local storage until a terminal session is created', async () => {
@@ -139,7 +207,7 @@ describe('local web entry shell', () => {
             },
             localWeb: {
               httpUrl: 'http://127.0.0.1:18888',
-              rtcOfferUrl: 'http://127.0.0.1:18888/api/local/rtc/offer',
+              rtcOfferUrl: 'http://127.0.0.1:18888',
             },
           }
         },
@@ -170,7 +238,7 @@ describe('local web entry shell', () => {
             },
             localWeb: {
               httpUrl: 'http://127.0.0.1:18888',
-              rtcOfferUrl: 'http://127.0.0.1:18888/api/local/rtc/offer',
+              rtcOfferUrl: 'http://127.0.0.1:18888',
             },
           }
         },
@@ -191,4 +259,32 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+class MemoryStorage implements Storage {
+  private readonly values = new Map<string, string>()
+  length = 0
+
+  clear(): void {
+    this.values.clear()
+    this.length = 0
+  }
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null
+  }
+
+  key(index: number): string | null {
+    return Array.from(this.values.keys())[index] ?? null
+  }
+
+  removeItem(key: string): void {
+    this.values.delete(key)
+    this.length = this.values.size
+  }
+
+  setItem(key: string, value: string): void {
+    this.values.set(key, value)
+    this.length = this.values.size
+  }
 }

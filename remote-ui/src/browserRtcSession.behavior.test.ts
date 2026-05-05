@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createBrowserRtcInventoryEvents, createBrowserRtcSession } from './browserRtcSession'
+import { createBrowserRtcSession } from './browserRtcSession'
 import { TERMX_FRAME_TYPES, encodeTermxFrame } from './termxProtocol'
 
 describe('BrowserRtcSession', () => {
@@ -571,22 +571,26 @@ describe('BrowserRtcSession', () => {
     expect(rtcChannel.sent[0]).toEqual(new Uint8Array([1, 2, 3]))
   })
 
-  it('subscribes to machine inventory events over a dedicated events data channel', async () => {
+  it('subscribes to runtime events over a dedicated events data channel', async () => {
     const factory = createMockPeerConnectionFactory()
-    const inventoryEvents = createBrowserRtcInventoryEvents({
+    const session = createBrowserRtcSession({
       machineId: 'machine-local',
+      path: 'local',
       peerConnectionFactory: factory,
-      createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
-      sessionIdGenerator: () => 'rtc-inventory-1',
-      appCertificate: '{"payload":{"machine_id":"machine-local"}}',
-      signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+      sessionIdGenerator: () => 'rtc-events-1',
     })
     const events: unknown[] = []
 
-    const subscription = inventoryEvents.subscribe('machine-local', (event) => events.push(event))
+    const offer = session.createOffer({ machineId: 'machine-local', path: 'local' })
+    await flushMicrotasks()
+    factory.channel('api').open()
+    await offer
+    await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
+    const subscription = session.subscribeEvents((event) => events.push(event))
 
     await flushMicrotasks()
-    expect(factory.labelsAtCreateOffer()).toEqual(['events'])
+    expect(factory.labelsAtCreateOffer()).toEqual(['api'])
+    expect(factory.createdLabels()).toContain('events')
     const eventsChannel = factory.channel('events')
     const subscribeRequest = JSON.parse(eventsChannel.sentText()[0] ?? '{}')
     expect(subscribeRequest).toEqual({
@@ -594,11 +598,11 @@ describe('BrowserRtcSession', () => {
       types: [1, 2, 3, 4, 10],
     })
     eventsChannel.emitMessage(encodeJSON({
-      type: 1,
-      terminal_id: 'terminal-2',
+      type: 'inventory_changed',
+      payload: { terminalId: 'terminal-2' },
     }))
 
-    expect(events).toContainEqual({ type: 'inventory_changed' })
+    expect(events).toContainEqual({ type: 'inventory_changed', payload: { terminalId: 'terminal-2' } })
     subscription.close()
   })
 })

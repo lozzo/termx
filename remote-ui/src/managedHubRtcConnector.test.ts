@@ -99,6 +99,39 @@ describe('ManagedHubRtcConnector', () => {
     })
   })
 
+  it('can run the same Hub signaling flow for a local embedded Hub path', async () => {
+    const api = new MockManagedHubApi()
+    const session = new MockOffererSession()
+    const connector = createManagedHubRtcConnector({
+      api,
+      createSession: () => session,
+      signOffer: async () => ({
+        signature: 'offer-signature',
+        nonce: 'nonce-1',
+        timestamp: '1777808400',
+      }),
+    })
+
+    await connector.connect({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectTicket: 'local:machine-local',
+      appCertificate: { payload: { machine_id: 'machine-local' } },
+      path: 'local',
+    })
+
+    expect(session.createdOffers).toEqual([{
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      path: 'local',
+    }])
+    expect(api.createdSessions[0]).toMatchObject({
+      connectTicket: 'local:machine-local',
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+    })
+  })
+
   it('disconnects the browser session if Hub signaling fails', async () => {
     const session = new MockOffererSession()
     const connector = createManagedHubRtcConnector({

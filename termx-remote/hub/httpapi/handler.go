@@ -22,7 +22,6 @@ import (
 type Config struct {
 	Cloud            *cloud.Service
 	Registry         *registry.Registry
-	AgentPolicy      AgentPolicyProvider
 	ICE              *ice.Service
 	ICEServers       []hubv1.RTCIceServerConfig
 	HubID            string
@@ -46,10 +45,6 @@ type systemClock struct{}
 
 func (systemClock) Now() time.Time {
 	return time.Now().UTC()
-}
-
-type AgentPolicyProvider interface {
-	GetAgentPolicy(context.Context, registry.AgentPolicyRequest) (registry.AgentPolicy, error)
 }
 
 type Handler struct {
@@ -259,9 +254,6 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
 			return
 		}
-		if checkAgentPolicy(w, r, cfg, session) {
-			return
-		}
 		if err := cfg.Registry.Heartbeat(r.Context(), registry.HeartbeatInput{
 			AgentID:   session.AgentID,
 			MachineID: session.DeviceID,
@@ -287,9 +279,6 @@ func NewHandler(cfg Config) http.Handler {
 		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
-			return
-		}
-		if checkAgentPolicy(w, r, cfg, session) {
 			return
 		}
 		timeout := time.Duration(req.TimeoutSeconds) * time.Second
@@ -359,9 +348,6 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
 			return
 		}
-		if checkAgentPolicy(w, r, cfg, session) {
-			return
-		}
 		if strings.TrimSpace(req.Answer.Error) != "" {
 			agents.rememberAnswer(req.AgentSessionID, req.Answer.SessionID, req.Answer.Error)
 			writeError(w, http.StatusForbidden, "cloud_answer_error", req.Answer.Error)
@@ -397,9 +383,6 @@ func NewHandler(cfg Config) http.Handler {
 		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
-			return
-		}
-		if checkAgentPolicy(w, r, cfg, session) {
 			return
 		}
 		timeout := time.Duration(req.TimeoutSeconds) * time.Second
@@ -448,9 +431,6 @@ func NewHandler(cfg Config) http.Handler {
 		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
-			return
-		}
-		if checkAgentPolicy(w, r, cfg, session) {
 			return
 		}
 		if _, err := cfg.Registry.SubmitPairingResult(r.Context(), registry.PairingResultInput{
@@ -759,33 +739,6 @@ func (s *agentSessions) resolveOfferID(agentSessionID string, publicSessionID st
 
 func agentOfferKey(agentSessionID string, publicSessionID string) string {
 	return strings.TrimSpace(agentSessionID) + "\x00" + strings.TrimSpace(publicSessionID)
-}
-
-func checkAgentPolicy(w http.ResponseWriter, r *http.Request, cfg Config, session agentSession) bool {
-	if cfg.AgentPolicy == nil {
-		return false
-	}
-	policy, err := cfg.AgentPolicy.GetAgentPolicy(r.Context(), registry.AgentPolicyRequest{
-		MachineID: session.DeviceID,
-		AgentID:   session.AgentID,
-	})
-	if err != nil {
-		writeError(w, http.StatusForbidden, "agent_policy_check_failed", err.Error())
-		return true
-	}
-	if !policy.ForceOffline {
-		return false
-	}
-	if cfg.Registry != nil {
-		cfg.Registry.ForceOffline(registry.ForceOfflineInput{
-			MachineID: session.DeviceID,
-			AgentID:   session.AgentID,
-			Reason:    policy.Reason,
-			TTL:       time.Minute,
-		})
-	}
-	writeError(w, http.StatusForbidden, "agent_forced_offline", registry.ErrAgentForcedOffline.Error())
-	return true
 }
 
 func (s *agentSessions) snapshot(now time.Time) []map[string]any {

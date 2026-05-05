@@ -18,19 +18,19 @@ var (
 )
 
 type Config struct {
-	Registry  *registry.Registry
-	Tickets   ConnectionTicketVerifier
-	Clock     Clock
-	OfferTTL  time.Duration
-	MaxOffers int
+	Registry            *registry.Registry
+	Clock               Clock
+	OfferTTL            time.Duration
+	MaxOffers           int
+	AllowRelayByDefault bool
 }
 
 type Service struct {
 	registry      *registry.Registry
-	tickets       ConnectionTicketVerifier
 	clock         Clock
 	offerTTL      time.Duration
 	maxOffers     int
+	allowRelay    bool
 	mu            sync.Mutex
 	offers        map[string]OfferPolicy
 	sessionOffers map[string]string
@@ -52,10 +52,10 @@ func NewService(cfg Config) *Service {
 	}
 	return &Service{
 		registry:      cfg.Registry,
-		tickets:       cfg.Tickets,
 		clock:         clock,
 		offerTTL:      offerTTL,
 		maxOffers:     maxOffers,
+		allowRelay:    cfg.AllowRelayByDefault,
 		offers:        make(map[string]OfferPolicy),
 		sessionOffers: make(map[string]string),
 		ticketOffers:  make(map[string]string),
@@ -63,7 +63,7 @@ func NewService(cfg Config) *Service {
 }
 
 func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, error) {
-	if s == nil || s.registry == nil || s.tickets == nil {
+	if s == nil || s.registry == nil {
 		return Offer{}, errors.New("cloud service is not configured")
 	}
 	preflight := registry.OfferInput{
@@ -76,34 +76,18 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 		AppCertificate: cloneBytes(in.AppCertificate),
 		Signature:      registrySignature(in.Signature),
 	}
-	if err := s.tickets.VerifyOfferTicket(ctx, registry.OfferTicket{
-		MachineID:  preflight.MachineID,
-		TerminalID: preflight.TerminalID,
-		TicketID:   preflight.TicketID,
-	}); err != nil {
-		return Offer{}, err
-	}
 	if err := s.registry.PreflightOffer(ctx, preflight); err != nil {
 		return Offer{}, err
 	}
-	ticket, err := s.tickets.CheckConnectionTicket(ctx, ConnectionTicketInput{
-		TicketID:   preflight.TicketID,
+	ticket := Ticket{
+		ID:         preflight.TicketID,
 		MachineID:  preflight.MachineID,
 		TerminalID: preflight.TerminalID,
-	})
-	if err != nil {
-		return Offer{}, err
+		Path:       PathCloud,
+		AllowRelay: s.allowRelay,
+		ExpiresAt:  s.clock.Now().UTC().Add(s.offerTTL),
 	}
-	if ticket.Path != PathCloud {
-		return Offer{}, ErrWrongMachine
-	}
-	if strings.TrimSpace(in.TerminalID) != "" && ticket.TerminalID != strings.TrimSpace(in.TerminalID) {
-		return Offer{}, ErrWrongTerminal
-	}
-	if !ticket.ExpiresAt.IsZero() && !s.clock.Now().UTC().Before(ticket.ExpiresAt) {
-		return Offer{}, ErrTicketExpired
-	}
-	ticketKey := ticketOfferKey(ticket.MachineID, ticket.ID)
+	ticketKey := ticketOfferKey(preflight.MachineID, preflight.TicketID)
 	s.mu.Lock()
 	s.cleanupExpiredLocked(s.clock.Now().UTC())
 	s.evictToLimitLocked(s.maxOffers - 1)
@@ -114,9 +98,9 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 	s.ticketOffers[ticketKey] = "__pending__"
 	s.mu.Unlock()
 	offer, err := s.registry.SubmitOffer(ctx, registry.OfferInput{
-		MachineID:      ticket.MachineID,
-		TerminalID:     ticket.TerminalID,
-		TicketID:       ticket.ID,
+		MachineID:      preflight.MachineID,
+		TerminalID:     preflight.TerminalID,
+		TicketID:       preflight.TicketID,
 		SDP:            in.SDP,
 		SessionID:      strings.TrimSpace(in.SessionID),
 		ICECandidates:  cloneStrings(in.ICECandidates),
@@ -153,7 +137,8 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 }
 
 func (s *Service) ConsumeOfferTicket(ctx context.Context, in GetAnswerInput) (Ticket, error) {
-	if s == nil || s.tickets == nil {
+	_ = ctx
+	if s == nil {
 		return Ticket{}, errors.New("cloud service is not configured")
 	}
 	ticketID := strings.TrimSpace(in.TicketID)
@@ -171,11 +156,7 @@ func (s *Service) ConsumeOfferTicket(ctx context.Context, in GetAnswerInput) (Ti
 	if !ok || policy.Ticket.ID != ticketID || policy.Ticket.MachineID != machineID {
 		return Ticket{}, ErrWrongMachine
 	}
-	return s.tickets.ConsumeConnectionTicket(ctx, ConnectionTicketInput{
-		TicketID:   policy.Ticket.ID,
-		MachineID:  policy.Ticket.MachineID,
-		TerminalID: policy.Ticket.TerminalID,
-	})
+	return policy.Ticket, nil
 }
 
 func (s *Service) PollAgentOffer(ctx context.Context, in PollAgentOfferInput) (Offer, error) {

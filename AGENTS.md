@@ -1,88 +1,127 @@
-# TermX Remote Migration Agent Notes
+# TermX Remote Build Agent Notes
 
 ## Current Mission
 
-当前工作的唯一主线是把 remote 从 `termx-core` 中完整迁出，形成清晰的四层结构：
+完成可用的 remote 产品主链路：
 
-- `termx-core`：纯 daemon / terminal / protocol / transport / events / file / PTY / session
-- `termx-remote`：remote 产品域，实现 hub / agent / pairing / signaling / registration / session orchestration
-- `termx-cli`：唯一集成层，负责装配 `termx-core` 与 `termx-remote`
-- `remote-ui`：interface-first 的 UI/runtime 层，目前只实现 browser adapter
+- `termx-remote/hub`：dumb relay，无数据库，无认证决策，纯信令转发
+- `termx-remote/agent`：连接 hub、验证 app certificate、控制谁能连入
+- `termx-cli`：装配 local/cloud/both 三种运行模式
+- `remote-ui`：browser 客户端，统一 hub/signaling/session 流程
+- Web Controller：仅做 agent 目录服务，不做连接时认证
 
-## Non-Negotiables
+## Product Model
 
-- `termx-core` 中不得新增或保留 remote 域代码。
-- `termx-core` 只暴露 shell-neutral daemon capability，不暴露 remote product capability。
-- `termx-remote` 与 `termx-core` 的主边界必须是 Go `interface`；RPC 只是该接口的一种 adapter。
-- local/LAN/managed 外网模式必须收敛到同一套 hub/signaling/ICE/session 流程，不允许继续分裂成两套产品链路。
-- `remote-ui` 所有网络相关能力必须先定义 TypeScript `interface`，再提供 browser implementation。当前阶段不要实现 native，只保留 future-native 的工厂/适配器边界。
-- relay 不是第四种客户端 transport path；客户端 path 只允许 `local`、`public_p2p`、`managed`。
+### Hub（dumb relay）
+
+- Hub 是纯信令中继，不做任何认证决策。
+- Hub 不调用 Web Controller 验证 app certificate 或连接票据。
+- Hub 只存储有 TTL 的短时内存状态：online agents、pending offers/answers、pairing claims/results。
+- Hub 没有数据库，没有 durable state。
+- Hub 不区分 local 和 cloud 部署——代码完全相同，只是运行地址不同。
+
+### Web Controller（agent 目录）
+
+- Web Controller 只做：用户登录、列出该用户注册的 agent、返回每个 agent 所在的 hub_url。
+- Web Controller **不做**：连接时 cert 验证、policy 决策、offer/answer 审核、runtime 代理。
+- 用户登录 App 后，App 从 Web Controller 拿到 agent 列表和 hub_url，后续直接连 Hub，不再回调 Web Controller。
+
+### Agent（认证决策方）
+
+- Agent 在收到 offer 时验证 app certificate（签名、有效期、machine_id）。
+- Agent 是唯一的认证决策方；Hub 只是转发 offer，不审核内容。
+- Agent 用 app cert 公钥参与 DataChannel 密钥协商，在 DTLS 之上提供应用层 E2E 加密。
+
+### 三种运行模式
+
+| 模式 | 运行内容 | hub_url 来源 |
+|------|----------|-------------|
+| `local` | 进程内嵌入 hub（cmux: HTTP + ICE-TCP，LAN 暴露） | 本机 LAN IP:port |
+| `cloud` | agent 连接云端 hub | 云端 hub 地址 |
+| `both` | 并行：本地嵌入 hub + agent 同时注册云端 hub | 两个都有 |
+
+- `both` 模式使用**一个** `runtime.Manager`，`hubURLs []string` 持两个地址。
+- 认证逻辑在 agent 侧，与 hub 是 local 还是 cloud 无关，代码路径完全一致。
+
+### Local Mode 技术细节
+
+```
+termx remote --mode local
+  └─► 嵌入启动 hub/httpapi.NewHandler（LAN IP:port）
+  └─► cmux 同端口复用：HTTP（hub API）+ ICE-TCP（WebRTC over TCP）
+  └─► ICE config：只广播 TCP candidate，无 STUN/TURN
+  └─► agent 用标准 register/heartbeat/poll 协议连本地 hub（127.0.0.1:port）
+  └─► hub_url 返回 LAN IP:port
+  └─► app certificate 验证逻辑与 cloud mode 完全相同（agent 侧）
+```
+
+## Architecture Principles
+
+- `termx-core` 保持 shell-neutral daemon/core，不回流 remote 产品代码。
+- `termx-remote` 是 remote 产品域唯一 owner。
+- `termx-hub` 是云端独立部署单元，不归并入 `termx-cli`。
+- Hub 不调 Web Controller；认证在 agent 侧。
+- local 和 cloud 共用完全相同的 hub 代码、agent 代码、cert 验证代码。
+- relay 不是第四种客户端 path；path 只允许 `local`、`public_p2p`、`managed`。
+- runtime 数据面始终是 WebRTC DataChannel，不允许回退成 HTTP/WebSocket proxy。
+
+## Module Structure（模块边界与职责速查）
+
+| 模块 | 角色 | 部署位置 |
+|------|------|----------|
+| `termx-core` | shell-neutral daemon、协议、transport、PTY | 用户机器（in-process） |
+| `termx-remote` | remote 产品域唯一 owner（hub/agent/pairing/protocol） | 用户机器（library） |
+| `termx-hub` | Hub 可执行文件的命令行入口与配置适配器，产品逻辑 100% 在 `termx-remote/hub` | 云服务器（独立进程） |
+| `termx-cli` | 产品壳，装配 core + remote，管理 local/cloud/both 模式 | 用户机器（CLI 工具） |
+| `remote-ui` | Browser 侧 UI，HTTP/WebRTC 通信，不 import Go 代码 | 浏览器 |
+
+### 待删除的死代码（不可违反）
+
+- `termx-remote/localweb/` — 自定义本地 HTTP API，与 hub 协议重复，全部删除。
+- `termx-remote/hub/controlclient/` — hub 不再调 Web Controller，整个包删除。
+- `termx-remote/service.go` 中所有 localweb 相关代码（LocalWebHandler、localRTCAnswer、localWebAdapter 等）。
+- `termx-cli/cmd/termx/web.go` — webshell cobra 入口，删除。
+- `termx-cli/cmd/termx/main.go` 中 `cmd.AddCommand(webCommand(...))` 一行，删除。
+- `termx-remote/hub/sessionflow` 中 `LocalPlan()`、`AnswerLocal()` — 若删除 localweb 后无引用，一并删除。
 
 ## Workflow Discipline
 
-- 本次迁移的唯一任务账本是仓库根目录 `workflow.md`。
-- 开始任何切片前，先更新 `workflow.md`：
-  - 标记正在处理的任务
-  - 记录目标行为与依赖
-  - 记录预期失败测试
-- 完成任何切片后，必须再次更新 `workflow.md`：
-  - 已完成内容
-  - 新发现的问题 / 风险 / deferred item
-  - 已执行的验证命令
-  - review 发现与修复
-- `workflow.md` 中的任务必须：
-  - 使用稳定 ID
-  - 按优先级排序
-  - 保持完整，不遗漏新发现事项
-  - 区分 open / in_progress / blocked / done
-- 旧的 `docs/remote-rebuild/WORKFLOW.md` 只作为历史记录；当前执行以根 `workflow.md` 为准。
-
-## Unattended Execution
-
-- 这项工作默认无人值守推进。
-- 除非遇到以下情况，否则不要停在半成品状态：
-  - 破坏性不可逆操作
-  - 需要用户凭证或外部人工介入
-  - 关键架构目标相互冲突
-- 如果发现新问题，不要口头遗忘；必须立刻写入 `workflow.md` 并重新排序优先级。
+- 当前工作的唯一任务账本是仓库根目录 `workflow.md`。
+- 所有新切片都必须从 `workflow.md` 认领任务并更新状态。
 
 ## TDD Rules
 
-每个切片必须严格按下面顺序推进：
+每个切片必须按下面顺序推进：
 
 1. 定义目标行为
 2. 写失败测试
-3. 运行测试并记录失败结果到 `workflow.md`
+3. 记录失败测试到 `workflow.md`
 4. 写最小实现
 5. 重构
-6. 运行 focused tests
-7. 运行 relevant broader tests
+6. 跑 focused tests
+7. 跑 broader tests
 8. 更新 `workflow.md`
-9. 发起独立 code review
+9. 发起独立 subagent code review
 10. 修复 review 发现
 11. 再次更新 `workflow.md`
 
-禁止直接跳过“失败测试先行”。
-
 ## Review Rules
 
-- 每个切片完成后，必须使用独立 subagent / code-review agent 做一次审查；目标是防止实现只是在迎合测试用例形状。
-- review 重点必须包括：
-  - 测试是否 fake / tautological / 只验证 mock 交互
-  - 实现是否被测试 shape 绑架
-  - 是否残留旧 remote/core 边界泄漏
-  - 是否错误地把浏览器实现细节泄漏到公共接口
-  - 是否把 local/external 做成两套业务流程
-  - 是否遗漏 `workflow.md` 更新
-- 如果当前环境没有 subagent 能力，必须在 `workflow.md` 中明确记录原因，并做一次显式 adversarial self-review。
+每个切片完成后，必须用独立 subagent / review agent 审查，重点检查：
 
-## Validation Expectations
+- 测试是否 fake / tautological
+- Hub 是否偷偷引入了 Web Controller 调用或 cert 验证逻辑
+- Hub 是否引入 durable state / DB / migration
+- local 与 cloud 是否又分叉成两套流程
+- agent 侧 cert 验证是否覆盖了签名、有效期、machine_id 三项
+- 是否把 relay 重新抽象成第四种 path
+- 是否遗漏 `workflow.md` 更新
 
-- 先跑与当前切片强相关的 focused tests。
-- 再跑会被当前切片影响的 broader tests。
-- 如果改动影响 CLI、core、hub、remote-ui 的边界，必须补跨目录验证。
-- 不要在未更新 `workflow.md` 的情况下宣称切片完成。
+## Documentation Rules
+
+- 迁移文档可以保留为历史记录，但必须标注 archived，不得作为当前执行规则。
+- 当前执行规则只写在：根 `AGENTS.md`、子目录 `AGENTS.md`、根 `workflow.md`。
 
 ## Directory Rule
 
-- 如果在迁移过程中创建 `termx-remote/`，应在该目录下同步创建 `AGENTS.md`，并沿用本文件的迁移规则与 `workflow.md` 纪律。
+- `termx-remote/`、`termx-hub/`、`termx-cli/`、`remote-ui/` 的后续改动都必须遵守本文件与根 `workflow.md`。

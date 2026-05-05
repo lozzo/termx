@@ -1,21 +1,25 @@
-import { StrictMode } from 'react'
+import { StrictMode, useMemo, useState, type FormEvent } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { createBrowserRemoteNetworkRuntime } from './browserNetworkRuntime'
 import { LocalRemoteApp, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createBrowserLocalAppCrypto, createLocalAppIdentityStore, createLocalOfferSigner } from './localAppIdentity'
 import { createLocalAgentApi } from './localAgentApi'
-import { createBrowserRtcInventoryEvents, createBrowserRtcSession } from './browserRtcSession'
-import { createLocalRtcConnector } from './localRtcConnector'
-import type { LocalAgentApi, RemoteNetworkRuntime, RemoteRuntimeStorage, TerminalInventoryEvents } from './transport'
+import { createBrowserRtcSession } from './browserRtcSession'
+import { createManagedHubApi } from './managedHubApi'
+import { createManagedHubRtcConnector } from './managedHubRtcConnector'
+import { normalizeTerminalInventory } from './terminalInventory'
+import type { LocalAgentApi, LocalPairingApi, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcConnector, TerminalInventoryEvents } from './transport'
+import type { Terminal } from './model'
 import './localWebEntry.css'
 
 export interface LocalWebAppOptions {
   root?: HTMLElement | null | undefined
-  api?: Pick<LocalAgentApi, 'getStatus' | 'listTerminals'> & Partial<Pick<LocalAgentApi, 'createInventoryRTCAnswer'>> | undefined
-  pairApi?: Pick<LocalAgentApi, 'pair'> | undefined
+  api?: Pick<LocalAgentApi, 'getStatus'> & { listTerminals(): Promise<Terminal[]> } | undefined
+  pairApi?: LocalPairingApi | undefined
   connector?: LocalRemoteSessionConnector | undefined
   inventoryEvents?: TerminalInventoryEvents | undefined
   networkRuntime?: RemoteNetworkRuntime | undefined
+  localHubUrl?: string | undefined
 }
 
 export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
@@ -24,30 +28,105 @@ export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
     throw new Error('local web root element is required')
   }
   const networkRuntime = options.networkRuntime ?? createBrowserRemoteNetworkRuntime()
-  const api = options.api ?? createLocalAgentApi({ fetch: networkRuntime.fetch })
-  const connector = options.connector ?? createBrowserLocalConnector(networkRuntime)
-  const inventoryEvents = options.inventoryEvents ?? createBrowserInventoryEvents(api, networkRuntime.storage)
-  const pair = createBrowserPairOptions(options.pairApi ?? createLocalAgentApi({ fetch: networkRuntime.fetch }), networkRuntime.storage)
+  const hubUrl = options.localHubUrl ?? localHubUrlFromRuntime(networkRuntime)
   const root = createRoot(rootElement)
   root.render(
     <StrictMode>
-      <section
-        className="h-[100dvh] w-screen flex flex-col overflow-hidden bg-slate-50 text-zinc-950 antialiased"
-        data-testid="termx-local-web-shell"
-      >
-        <LocalRemoteApp
-          api={api}
-          connector={connector}
-          inventoryEvents={inventoryEvents}
-          {...(pair ? { pair } : {})}
-        />
-      </section>
+      <LocalWebShell
+        initialHubUrl={hubUrl}
+        networkRuntime={networkRuntime}
+        options={options}
+      />
     </StrictMode>,
   )
   return root
 }
 
-function createBrowserPairOptions(api: Pick<LocalAgentApi, 'pair'>, storage: RemoteRuntimeStorage | undefined) {
+function LocalWebShell({
+  initialHubUrl,
+  networkRuntime,
+  options,
+}: {
+  initialHubUrl: string
+  networkRuntime: RemoteNetworkRuntime
+  options: LocalWebAppOptions
+}) {
+  const [hubUrl, setHubUrl] = useState(initialHubUrl)
+  const [draftHubUrl, setDraftHubUrl] = useState(initialHubUrl)
+  const [hubUrlError, setHubUrlError] = useState<string | null>(null)
+  const connector = useMemo(
+    () => options.connector ?? createBrowserLocalConnector(networkRuntime, hubUrl),
+    [hubUrl, networkRuntime, options.connector],
+  )
+  const api = useMemo(
+    () => options.api ?? createBrowserLocalRuntimeApi(connector, hubUrl, networkRuntime.storage),
+    [connector, hubUrl, networkRuntime.storage, options.api],
+  )
+  const pairApi = useMemo(
+    () => options.pairApi ?? createManagedHubApi({ baseUrl: hubUrl, fetch: networkRuntime.fetch }),
+    [hubUrl, networkRuntime.fetch, options.pairApi],
+  )
+  const pair = useMemo(
+    () => createBrowserPairOptions(pairApi, networkRuntime.storage),
+    [networkRuntime.storage, pairApi],
+  )
+
+  function submitHubUrl(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    try {
+      const normalized = normalizeHubUrlInput(draftHubUrl)
+      setHubUrlError(null)
+      setDraftHubUrl(normalized)
+      setHubUrl(normalized)
+      networkRuntime.storage?.setItem('termx.local.hubUrl', normalized)
+    } catch (err) {
+      setHubUrlError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  return (
+    <section
+      className="relative h-[100dvh] w-screen overflow-hidden bg-slate-50 text-zinc-950 antialiased"
+      data-testid="termx-local-web-shell"
+    >
+      <LocalRemoteApp
+        api={api}
+        className="h-[100dvh]"
+        connector={connector}
+        inventoryEvents={options.inventoryEvents}
+        {...(pair ? { pair } : {})}
+      />
+      <form
+        className="absolute right-3 top-3 z-50 flex max-w-[calc(100vw-1.5rem)] items-center gap-1 rounded-md border border-zinc-200 bg-white/95 p-1 shadow-sm backdrop-blur"
+        data-testid="termx-local-hub-url-form"
+        onSubmit={(event) => submitHubUrl(event)}
+      >
+        <label className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 px-2 text-xs font-semibold text-zinc-500">Local hub</span>
+          <input
+            aria-label="Local hub URL"
+            className="h-8 w-[min(52vw,18rem)] rounded border border-zinc-200 bg-zinc-50 px-2 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+            inputMode="url"
+            spellCheck={false}
+            value={draftHubUrl}
+            onChange={(event) => setDraftHubUrl(event.currentTarget.value)}
+          />
+        </label>
+        <button
+          className="h-8 rounded bg-zinc-900 px-3 text-xs font-semibold text-white active:bg-zinc-700"
+          type="submit"
+        >
+          Use
+        </button>
+        {hubUrlError ? (
+          <span className="sr-only" role="alert">{hubUrlError}</span>
+        ) : null}
+      </form>
+    </section>
+  )
+}
+
+function createBrowserPairOptions(api: LocalPairingApi, storage: RemoteRuntimeStorage | undefined) {
   if (!storage) return undefined
   try {
     return {
@@ -61,55 +140,15 @@ function createBrowserPairOptions(api: Pick<LocalAgentApi, 'pair'>, storage: Rem
   }
 }
 
-function createBrowserInventoryEvents(api: Partial<Pick<LocalAgentApi, 'createInventoryRTCAnswer'>>, storage: RemoteRuntimeStorage | undefined): TerminalInventoryEvents | undefined {
-  if (!storage) return undefined
-  try {
-    const crypto = createBrowserLocalAppCrypto()
-    return {
-      subscribe(machineId, handler) {
-        const store = createLocalAppIdentityStore(storage)
-        const appCertificate = store.loadCertificate()
-        if (!appCertificate || !api.createInventoryRTCAnswer) {
-          return { close() {} }
-        }
-        const signer = createLocalOfferSigner({
-          storage: store,
-          crypto,
-        })
-        const connection = createBrowserRtcInventoryEvents({
-          machineId,
-          appCertificate,
-          createAnswer: (offer) => api.createInventoryRTCAnswer!(offer),
-          signOffer: (input) => signer.signOffer(input),
-        })
-        return connection.subscribe(machineId, handler)
-      },
-    }
-  } catch {
-    return undefined
-  }
-}
-
-function createBrowserLocalConnector(networkRuntime: RemoteNetworkRuntime): LocalRemoteSessionConnector {
-  const api = createLocalAgentApi({ fetch: networkRuntime.fetch })
-  return createLocalRtcConnector({
+function createBrowserLocalConnector(networkRuntime: RemoteNetworkRuntime, hubUrl: string): LocalRemoteSessionConnector {
+  const api = createManagedHubApi({ baseUrl: hubUrl, fetch: networkRuntime.fetch })
+  const connector = createManagedHubRtcConnector({
     api,
     createSession: ({ machineId, terminalId }) => createBrowserRtcSession({
       machineId,
       ...(terminalId ? { terminalId } : {}),
+      path: 'local',
     }),
-    getAppCertificate() {
-      const storage = networkRuntime.storage
-      if (!storage) {
-        throw new Error('local app storage is required before opening a terminal')
-      }
-      const store = createLocalAppIdentityStore(storage)
-      const appCertificate = store.loadCertificate()
-      if (!appCertificate) {
-        throw new Error('local app certificate is required before opening a terminal')
-      }
-      return appCertificate
-    },
     signOffer(input) {
       const storage = networkRuntime.storage
       if (!storage) {
@@ -123,6 +162,89 @@ function createBrowserLocalConnector(networkRuntime: RemoteNetworkRuntime): Loca
       return signer.signOffer(input)
     },
   })
+  return {
+    async connect(input, options) {
+      const storage = networkRuntime.storage
+      if (!storage) {
+        throw new Error('local app storage is required before opening a terminal')
+      }
+      const appCertificate = createLocalAppIdentityStore(storage).loadCertificate()
+      if (!appCertificate) {
+        throw new Error('local app certificate is required before opening a terminal')
+      }
+      return connector.connect({
+        ...input,
+        connectTicket: localConnectTicket(input.machineId),
+        appCertificate: JSON.parse(appCertificate) as unknown,
+        path: 'local',
+      }, options)
+    },
+  }
+}
+
+function createBrowserLocalRuntimeApi(connector: RtcConnector<{ machineId: string }>, hubUrl: string, storage?: RemoteRuntimeStorage | undefined) {
+  const statusApi = createLocalAgentApi({ baseUrl: hubUrl, fetch: async (input) => {
+    if (!/\/api\/local\/status$/i.test(input)) {
+      throw new Error(`unsupported local status request: ${input}`)
+    }
+    return new Response(JSON.stringify({
+      machine_id: 'local',
+      machine_name: 'Local Machine',
+      remote_enabled: true,
+      local_rtc: { http_url: hubUrl },
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }})
+  let machineId: string | null = null
+  return {
+    async getStatus() {
+      const status = await statusApi.getStatus()
+      machineId = status.machine.machineId
+      return status
+    },
+    async listTerminals() {
+      const targetMachineId = machineId ?? 'local'
+      if (!storage?.getItem('termx.local.appCertificate')) {
+        return []
+      }
+      const session = await connector.connect({ machineId: targetMachineId })
+      try {
+        const channel = await session.openApi()
+        const response = await channel.request<{ terminals: Record<string, unknown>[] }>('list', {})
+        return normalizeTerminalInventory({
+          machine_id: targetMachineId,
+          terminals: response.terminals ?? [],
+        }).terminals
+      } finally {
+        await session.disconnect()
+      }
+    },
+  }
+}
+
+function localConnectTicket(machineId: string): string {
+  return `local:${machineId}`
+}
+
+function localHubUrlFromRuntime(networkRuntime: RemoteNetworkRuntime): string {
+  const fromQuery = networkRuntime.queryParam('hub') ?? networkRuntime.queryParam('hub_url')
+  if (fromQuery?.trim()) return fromQuery.trim()
+  const stored = networkRuntime.storage?.getItem('termx.local.hubUrl')?.trim()
+  if (stored) return stored
+  return 'http://127.0.0.1:18888'
+}
+
+function normalizeHubUrlInput(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) throw new Error('local hub URL is required')
+  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`
+  try {
+    return new URL(withScheme).toString().replace(/\/+$/, '')
+  } catch {
+    throw new Error('local hub URL is invalid')
+  }
 }
 
 if (typeof document !== 'undefined' && document.getElementById('root')) {

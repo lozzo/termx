@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createLocalRtcConnector } from './localRtcConnector'
 import {
   createBridgeRtcSession,
   type BridgeRtcSessionAdapter,
@@ -24,30 +23,21 @@ import type {
 } from './transport'
 
 describe('BridgeRtcSession seam', () => {
-  it('lets existing connectors create a bridge-backed RtcSession without browser or platform runtime types', async () => {
+  it('lets bridge-backed local sessions create offers and accept answers without browser or platform runtime types', async () => {
     const bridge = new MockBridgeAdapter()
-    const createRTCAnswer = vi.fn(async (offer) => ({
-      sessionId: offer.sessionId,
-      answer: { type: 'answer' as const, sdp: 'local-answer-sdp' },
-    }))
-    const connector = createLocalRtcConnector({
-      api: { createRTCAnswer },
-      getAppCertificate: () => 'app-cert',
-      createSession: ({ machineId, terminalId }) => createBridgeRtcSession({
-        machineId,
-        terminalId,
-        adapter: bridge,
-      }),
-      signOffer: async () => ({
-        signature: 'sig-local',
-        nonce: 'nonce-local',
-        timestamp: '1770000000',
-      }),
+    const session = createBridgeRtcSession({
+      machineId: 'machine-bridge',
+      terminalId: 'terminal-1',
+      adapter: bridge,
     })
 
-    const connected = await connector.connect({ machineId: 'machine-bridge', terminalId: 'terminal-1' })
+    const offer = await session.createOffer({ machineId: 'machine-bridge', terminalId: 'terminal-1', path: 'local' })
+    await session.acceptAnswer({ type: 'answer', sdp: 'local-answer-sdp' })
 
-    expect(connected).toBeInstanceOf(Object)
+    expect(offer).toEqual({
+      sessionId: 'bridge-offer-1',
+      description: { type: 'offer', sdp: 'bridge-offer-sdp' },
+    })
     expect(bridge.createdOffers).toEqual([{
       machineId: 'machine-bridge',
       terminalId: 'terminal-1',
@@ -57,13 +47,7 @@ describe('BridgeRtcSession seam', () => {
       sessionId: 'bridge-offer-1',
       description: { type: 'answer', sdp: 'local-answer-sdp' },
     }])
-    expect(createRTCAnswer).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: 'bridge-offer-1',
-      machineId: 'machine-bridge',
-      terminalId: 'terminal-1',
-      sdp: 'bridge-offer-sdp',
-    }), {})
-    await expect(connected.getConnectionInfo()).resolves.toMatchObject({
+    await expect(session.getConnectionInfo()).resolves.toMatchObject({
       path: 'local',
       connectionId: 'bridge-offer-1',
       machineId: 'machine-bridge',

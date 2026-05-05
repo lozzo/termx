@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -11,38 +10,23 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-remote/hub/cloud"
-	"github.com/lozzow/termx/termx-remote/hub/controlclient"
-	"github.com/lozzow/termx/termx-remote/hub/heartbeat"
 	"github.com/lozzow/termx/termx-remote/hub/httpapi"
 	"github.com/lozzow/termx/termx-remote/hub/ice"
 	"github.com/lozzow/termx/termx-remote/hub/registry"
+	hubturn "github.com/lozzow/termx/termx-remote/hub/turn"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
 )
-
-var newControlVerifier registryVerifierFactory = func(baseURL string, sharedSecret string) controlVerifier {
-	return controlclient.NewAgentControlClient(controlclient.AgentControlClientConfig{
-		BaseURL:      baseURL,
-		SharedSecret: sharedSecret,
-	})
-}
-
-type controlVerifier interface {
-	VerifyAgentRegistration(context.Context, registry.AgentRegistration) error
-	cloud.ConnectionTicketVerifier
-	httpapi.AgentPolicyProvider
-}
-
-type registryVerifierFactory func(baseURL string, sharedSecret string) controlVerifier
 
 func main() {
 	addr := strings.TrimSpace(os.Getenv("TERMX_HUB_ADDR"))
 	if addr == "" {
 		addr = "127.0.0.1:8447"
 	}
-	handler, registry, err := newHubHandlerFromEnv()
+	handler, _, cleanup, err := newHubHandlerFromEnv()
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer cleanup()
 	if cleaner, ok := handler.(interface {
 		StartCleanup(context.Context, <-chan time.Time)
 	}); ok {
@@ -52,83 +36,35 @@ func main() {
 		defer ticker.Stop()
 		go cleaner.StartCleanup(cleanupCtx, ticker.C)
 	}
-	heartbeatCfg := heartbeatConfigFromEnv(addr)
-	if heartbeatCfg.Enabled() {
-		heartbeatCtx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		go heartbeat.RunLoop(heartbeatCtx, heartbeatCfg, registry)
-	}
 	log.Printf("termx hub listening on http://%s", addr)
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func newHubHandlerFromEnv() (http.Handler, *registry.Registry, error) {
-	controlURL := strings.TrimSpace(os.Getenv("TERMX_HUB_CONTROL_URL"))
-	secret := strings.TrimSpace(os.Getenv("TERMX_HUB_CONTROL_SECRET"))
-	if controlURL == "" || secret == "" {
-		return nil, nil, errors.New("TERMX_HUB_CONTROL_URL and TERMX_HUB_CONTROL_SECRET are required")
+func newHubHandlerFromEnv() (http.Handler, *registry.Registry, func(), error) {
+	turnServer, err := turnServerFromEnv()
+	if err != nil {
+		return nil, nil, nil, err
 	}
-	verifier := newControlVerifier(controlURL, secret)
-	tickets := verifier
-	reg := registry.New(registry.Config{Verifier: hubAuthority{
-		control: verifier,
-		tickets: tickets,
-	}})
-	svc := cloud.NewService(cloud.Config{Registry: reg, Tickets: tickets})
+	cleanup := func() {
+		if turnServer != nil {
+			if err := turnServer.Close(); err != nil {
+				log.Printf("close turn server: %v", err)
+			}
+		}
+	}
+	reg := registry.New(registry.Config{})
+	svc := cloud.NewService(cloud.Config{Registry: reg, AllowRelayByDefault: relayAvailableFromEnv(turnServer)})
 	return httpapi.NewHandler(httpapi.Config{
 		Cloud:          svc,
 		Registry:       reg,
-		AgentPolicy:    verifier,
-		ICE:            iceServiceFromEnv(),
+		ICE:            iceServiceFromEnv(turnServer),
 		ICEServers:     stunServersFromEnv(os.Getenv("TERMX_HUB_STUN_SERVERS")),
 		HubID:          hubIDFromEnv(),
-		InternalSecret: secret,
 		DebugToken:     strings.TrimSpace(os.Getenv("TERMX_HUB_DEBUG_TOKEN")),
 		AllowedOrigins: csvList(os.Getenv("TERMX_HUB_ALLOWED_ORIGINS")),
-	}), reg, nil
-}
-
-type hubAuthority struct {
-	control controlVerifier
-	tickets cloud.ConnectionTicketVerifier
-}
-
-func (a hubAuthority) VerifyAgentRegistration(ctx context.Context, in registry.AgentRegistration) error {
-	return a.control.VerifyAgentRegistration(ctx, in)
-}
-
-func (a hubAuthority) VerifyOfferTicket(ctx context.Context, in registry.OfferTicket) error {
-	return a.tickets.VerifyOfferTicket(ctx, in)
-}
-
-func heartbeatConfigFromEnv(addr string) heartbeat.Config {
-	interval := durationFromEnv("TERMX_HUB_HEARTBEAT_INTERVAL", 30*time.Second)
-	httpURL := strings.TrimSpace(os.Getenv("TERMX_HUB_PUBLIC_HTTP_URL"))
-	if httpURL == "" {
-		httpURL = "http://" + strings.TrimSpace(addr)
-	}
-	hubID := hubIDFromEnv()
-	name := strings.TrimSpace(os.Getenv("TERMX_HUB_NAME"))
-	if name == "" {
-		name = hubID
-	}
-	return heartbeat.Config{
-		ControlURL:    strings.TrimRight(strings.TrimSpace(os.Getenv("TERMX_HUB_CONTROL_URL")), "/"),
-		Secret:        strings.TrimSpace(os.Getenv("TERMX_HUB_CONTROL_SECRET")),
-		HubID:         hubID,
-		Name:          name,
-		Region:        strings.TrimSpace(os.Getenv("TERMX_HUB_REGION")),
-		HTTPURL:       httpURL,
-		GRPCURL:       strings.TrimSpace(os.Getenv("TERMX_HUB_GRPC_URL")),
-		BandwidthMbps: floatFromEnv("TERMX_HUB_BANDWIDTH_MBPS"),
-		CPUCores:      floatFromEnv("TERMX_HUB_CPU_CORES"),
-		MemoryGB:      floatFromEnv("TERMX_HUB_MEMORY_GB"),
-		MaxAgents:     intFromEnv("TERMX_HUB_MAX_AGENTS"),
-		Interval:      interval,
-		Client:        &http.Client{Timeout: 10 * time.Second},
-	}
+	}), reg, cleanup, nil
 }
 
 func hubIDFromEnv() string {
@@ -187,10 +123,16 @@ func stunServersFromEnv(raw string) []hubv1.RTCIceServerConfig {
 	return servers
 }
 
-func iceServiceFromEnv() *ice.Service {
+func iceServiceFromEnv(turnServer *hubturn.Server) *ice.Service {
 	stunURLs := urlsFromEnv(os.Getenv("TERMX_HUB_STUN_SERVERS"), "stun:", "stuns:")
 	turnURLs := urlsFromEnv(os.Getenv("TERMX_HUB_TURN_SERVERS"), "turn:", "turns:")
 	secret := strings.TrimSpace(os.Getenv("TERMX_HUB_TURN_SHARED_SECRET"))
+	if turnServer != nil {
+		return ice.NewService(ice.Config{
+			STUNURLs:   stunURLs,
+			TURNServer: turnServer,
+		})
+	}
 	if len(turnURLs) == 0 || secret == "" {
 		return nil
 	}
@@ -199,6 +141,37 @@ func iceServiceFromEnv() *ice.Service {
 		STUNURLs:     stunURLs,
 		TURNURLs:     turnURLs,
 	})
+}
+
+func relayAvailableFromEnv(turnServer *hubturn.Server) bool {
+	if turnServer != nil {
+		return true
+	}
+	turnURLs := urlsFromEnv(os.Getenv("TERMX_HUB_TURN_SERVERS"), "turn:", "turns:")
+	secret := strings.TrimSpace(os.Getenv("TERMX_HUB_TURN_SHARED_SECRET"))
+	return len(turnURLs) > 0 && secret != ""
+}
+
+func turnServerFromEnv() (*hubturn.Server, error) {
+	secret := strings.TrimSpace(os.Getenv("TERMX_HUB_TURN_SECRET"))
+	if secret == "" {
+		return nil, nil
+	}
+	addr := strings.TrimSpace(os.Getenv("TERMX_HUB_TURN_ADDR"))
+	if addr == "" {
+		addr = "0.0.0.0:3478"
+	}
+	server, err := hubturn.NewServer(hubturn.Config{
+		ListenAddr: addr,
+		PublicIP:   strings.TrimSpace(os.Getenv("TERMX_HUB_TURN_PUBLIC_IP")),
+		Secret:     secret,
+		Realm:      "termx",
+	})
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("termx hub TURN listening on %s", addr)
+	return server, nil
 }
 
 func urlsFromEnv(raw string, prefixes ...string) []string {

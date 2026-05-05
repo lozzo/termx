@@ -1,4 +1,4 @@
-import type { LocalAgentApi, LocalPairResult, RtcOfferSigningInput } from './transport'
+import type { LocalPairingApi, LocalPairResult, RtcOfferSigningInput } from './transport'
 
 const storageKeys = {
   appDeviceId: 'termx.local.appDeviceId',
@@ -69,7 +69,7 @@ export interface LocalOfferSignerOptions {
 }
 
 export interface PairLocalAppOptions {
-  api: Pick<LocalAgentApi, 'pair'>
+  api: LocalPairingApi
   storage: LocalAppIdentityStore
   crypto: LocalAppCrypto
   appName: string

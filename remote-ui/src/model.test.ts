@@ -15,7 +15,7 @@ describe('remote public model', () => {
       state: 'online',
       terminal_count: 2,
       local_rtc: {
-        signaling_url: 'http://127.0.0.1:18888/api/local/rtc/offer',
+        signaling_url: 'http://127.0.0.1:18888',
         ice_tcp_url: 'tcp://127.0.0.1:18889',
       },
     })

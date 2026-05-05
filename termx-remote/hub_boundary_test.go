@@ -9,17 +9,16 @@ import (
 func TestWF003HubProductImplementationOwnedByTermxRemote(t *testing.T) {
 	for _, dir := range []string{
 		"hub/cloud",
-		"hub/controlclient",
-		"hub/heartbeat",
 		"hub/httpapi",
 		"hub/ice",
 		"hub/registry",
 	} {
 		requireGoPackageDir(t, dir)
 	}
+	forbiddenControlClientPackage := strings.Join([]string{"control", "client"}, "")
 	for _, dir := range []string{
 		"../termx-hub/internal/cloud",
-		"../termx-hub/internal/controlclient",
+		filepath.Join("..", "termx-hub", "internal", forbiddenControlClientPackage),
 		"../termx-hub/internal/httpapi",
 		"../termx-hub/internal/ice",
 		"../termx-hub/internal/registry",
@@ -35,6 +34,9 @@ func TestWF003HubProductImplementationOwnedByTermxRemote(t *testing.T) {
 		"type hubHeartbeatConfig",
 		"func runHubHeartbeatLoop",
 		"func postHubHeartbeat",
+		forbiddenControlClientPackage,
+		"TERMX_HUB_CONTROL_URL",
+		"TERMX_HUB_CONTROL_SECRET",
 	})
 }
 

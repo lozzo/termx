@@ -47,7 +47,7 @@ describe('APP connection e2e harness', () => {
       endpoints: {
         web_control: 'http://114.66.58.243:12306',
         hub: 'http://114.66.58.243:8447',
-        local_pairing: 'http://127.0.0.1:18988/api/local/pair',
+        local_pairing: 'http://127.0.0.1:18988/api/v1/pairing/claims',
       },
       pairing: {
         session_id: 'pair-session-1',
@@ -86,7 +86,7 @@ describe('APP connection e2e harness', () => {
           expect(stored.addresses.public).toContain('http://114.66.58.243:18988')
           expect(stored.endpoints.webControl).toBe('http://114.66.58.243:12306')
           expect(stored.endpoints.hub).toBe('http://114.66.58.243:8447')
-          expect(stored.endpoints.localPairing).toBe('http://127.0.0.1:18988/api/local/pair')
+          expect(stored.endpoints.localPairing).toBe('http://127.0.0.1:18988/api/v1/pairing/claims')
           expect(stored.pairing?.sessionId).toBe('pair-session-1')
           return orchestrator.connect({
             machineId: machine.machineId,

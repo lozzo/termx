@@ -16,6 +16,7 @@ type Config struct {
 	Enabled     bool
 	ControlURL  string
 	HubURL      string
+	HubURLs     []string
 	AccessToken string
 	DataDir     string
 	DeviceName  string
@@ -51,8 +52,12 @@ type PairStartResult struct {
 }
 
 type LocalEnableParams struct {
-	LocalWebAddr string `json:"local_web_addr"`
-	ICETCPAddr   string `json:"ice_tcp_addr,omitempty"`
+	LocalWebAddr string   `json:"local_web_addr"`
+	ICETCPAddr   string   `json:"ice_tcp_addr,omitempty"`
+	HubURLs      []string `json:"hub_urls,omitempty"`
+	ControlURL   string   `json:"control_url,omitempty"`
+	AccessToken  string   `json:"access_token,omitempty"`
+	Region       string   `json:"region,omitempty"`
 }
 
 type LocalStatus struct {

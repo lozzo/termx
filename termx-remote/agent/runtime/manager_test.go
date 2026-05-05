@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-core/transport"
 	"github.com/lozzow/termx/termx-remote/bridge"
 	"github.com/lozzow/termx/termx-remote/cert"
 	remoteconfig "github.com/lozzow/termx/termx-remote/config"
@@ -22,6 +23,7 @@ import (
 	"github.com/lozzow/termx/termx-remote/pairing"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
 	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
+	"github.com/pion/webrtc/v4"
 )
 
 type inventoryProviderStub struct {
@@ -190,7 +192,7 @@ func TestManagerReregistersHubWhenHeartbeatUnauthorized(t *testing.T) {
 		t.Fatalf("Start returned error: %v", err)
 	}
 
-	if err := mgr.syncHubPresence(context.Background()); err != nil {
+	if err := mgr.syncHubPresence(context.Background(), hub.URL); err != nil {
 		t.Fatalf("syncHubPresence returned error: %v", err)
 	}
 
@@ -289,7 +291,7 @@ func TestHubPairingLoopClaimsThroughLocalPairingManager(t *testing.T) {
 		return pairManager.ClaimSession(req)
 	}))
 
-	go manager.hubPairingLoop(ctx, "device-pair", "agent-session-1")
+	go manager.hubPairingLoop(ctx, hub.URL, "device-pair", "agent-session-1")
 
 	select {
 	case <-claimReady:
@@ -388,7 +390,7 @@ func TestHubPairingLoopRetriesPendingResultAfterSubmitFailure(t *testing.T) {
 		}, nil
 	}))
 
-	go manager.hubPairingLoop(ctx, "device-pair", "agent-session-1")
+	go manager.hubPairingLoop(ctx, hub.URL, "device-pair", "agent-session-1")
 
 	var result hubv1.PairingResult
 	select {
@@ -464,6 +466,24 @@ func TestManagerVerifiesCloudOfferSignatureAndRejectsReplay(t *testing.T) {
 	}
 	if answerer.calls != 1 {
 		t.Fatalf("replayed offer reached answerer, calls=%d", answerer.calls)
+	}
+}
+
+func TestManagerCopiesRelayTransferPolicyIntoAnswerOptions(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixture(t)
+	offer.AllowRelay = true
+	offer.AllowRelayTransfer = true
+
+	answer := manager.answerCloudOffer(context.Background(), offer, nil)
+
+	if answer.Error != "" {
+		t.Fatalf("valid relay-transfer offer returned error: %#v", answer)
+	}
+	if answerer.calls != 1 {
+		t.Fatalf("answerer calls = %d, want 1", answerer.calls)
+	}
+	if !answerer.gotOptions.ChannelPolicy.AllowRelayTransfer {
+		t.Fatalf("relay transfer policy was not passed to answer options: %#v", answerer.gotOptions.ChannelPolicy)
 	}
 }
 
@@ -640,7 +660,7 @@ func TestHubSignalingLoopResetsSessionWhenAnswerSubmitUnauthorized(t *testing.T)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		manager.hubSignalingLoop(ctx, offer.DeviceID, "agent-session-1", nil)
+		manager.hubSignalingLoop(ctx, hub.URL, offer.DeviceID, "agent-session-1", nil)
 	}()
 
 	waitForCondition(t, time.Second, func() bool {
@@ -690,7 +710,7 @@ func TestHubSignalingLoopMarksDegradedWhenAnswerSubmitFails(t *testing.T) {
 	manager.setStatus(StateOnline, "before submit")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go manager.hubSignalingLoop(ctx, offer.DeviceID, "agent-session-1", nil)
+	go manager.hubSignalingLoop(ctx, hub.URL, offer.DeviceID, "agent-session-1", nil)
 
 	waitForCondition(t, time.Second, func() bool {
 		status := manager.Status()
@@ -730,7 +750,7 @@ func TestHubSignalingLoopRetriesOriginalAnswerAfterTransientSubmitFailure(t *tes
 	manager.cfg.HubURL = hub.URL
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go manager.hubSignalingLoop(ctx, offer.DeviceID, "agent-session-1", nil)
+	go manager.hubSignalingLoop(ctx, hub.URL, offer.DeviceID, "agent-session-1", nil)
 
 	var first hubv1.SignalingAnswer
 	select {
@@ -762,6 +782,25 @@ func TestHubSignalingLoopDoesNotRetryCachedAnswerForChangedOfferPayload(t *testi
 	changedOffer := offer
 	changedOffer.SDP = "v=0\r\ns=changed-offer\r\n"
 	testHubSignalingLoopDoesNotRetryCachedAnswerForChangedOffer(t, manager, answerer, offer, changedOffer)
+}
+
+func TestHubSignalingLoopUsesHubScopedAnswerOptions(t *testing.T) {
+	localManager, localAnswerer, localOffer := newCloudOfferFixture(t)
+	localOptions := runSingleOfferSignalingLoop(t, localManager, localAnswerer, localOffer, func(hubURL string) {
+		localManager.AddHubURLWithAnswerOptions(hubURL, remotertc.AnswerOptions{SettingEngine: noopSettingEngine{}})
+	})
+	if localOptions.SettingEngine == nil {
+		t.Fatal("local hub signaling loop did not receive its scoped ICE TCP setting engine")
+	}
+
+	cloudManager, cloudAnswerer, cloudOffer := newCloudOfferFixture(t)
+	cloudOptions := runSingleOfferSignalingLoop(t, cloudManager, cloudAnswerer, cloudOffer, func(hubURL string) {
+		cloudManager.AddHubURLWithAnswerOptions("http://local.example.test", remotertc.AnswerOptions{SettingEngine: noopSettingEngine{}})
+		cloudManager.AddHubURL(hubURL)
+	})
+	if cloudOptions.SettingEngine != nil {
+		t.Fatal("cloud hub signaling loop inherited the local hub ICE TCP setting engine")
+	}
 }
 
 func TestHubSignalingLoopDoesNotRetryCachedAnswerWhenRawOfferWhitespaceChanges(t *testing.T) {
@@ -806,7 +845,7 @@ func testHubSignalingLoopDoesNotRetryCachedAnswerForChangedOffer(t *testing.T, m
 	manager.cfg.HubURL = hub.URL
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go manager.hubSignalingLoop(ctx, offer.DeviceID, "agent-session-1", nil)
+	go manager.hubSignalingLoop(ctx, hub.URL, offer.DeviceID, "agent-session-1", nil)
 
 	var first hubv1.SignalingAnswer
 	select {
@@ -884,6 +923,62 @@ func (s *cloudAnswererStub) AnswerOffer(
 		SessionID: offer.SessionID,
 		SDP:       "v=0\r\ns=answer\r\n",
 	}, nil
+}
+
+type transportSinkStub struct{}
+
+func (transportSinkStub) ServeRemoteTransport(context.Context, transport.Transport, string) error {
+	return nil
+}
+
+type noopSettingEngine struct{}
+
+func (noopSettingEngine) Apply(*webrtc.SettingEngine) {}
+
+func runSingleOfferSignalingLoop(t *testing.T, manager *Manager, answerer *cloudAnswererStub, offer hubv1.SignalingOffer, configure func(hubURL string)) remotertc.AnswerOptions {
+	t.Helper()
+	submitted := make(chan hubv1.SignalingAnswer, 1)
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/agents/signaling/poll":
+			_ = json.NewEncoder(w).Encode(hubv1.SignalingPollResponse{Offer: &offer})
+		case "/api/v1/agents/signaling/answer":
+			var req hubv1.SubmitSignalingAnswerRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode answer submit: %v", err)
+			}
+			submitted <- req.Answer
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer hub.Close()
+
+	manager.host = transportSinkStub{}
+	configure(hub.URL)
+	manager.mu.Lock()
+	state := manager.hubStateLocked(hub.URL)
+	state.SessionID = "agent-session-1"
+	manager.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	manager.ensureHubSignalingLoop(ctx, hub.URL)
+	select {
+	case answer := <-submitted:
+		cancel()
+		if answer.Error != "" {
+			t.Fatalf("expected successful answer, got %#v", answer)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("manager did not submit signaling answer")
+	}
+	if answerer.calls != 1 {
+		t.Fatalf("answerer calls = %d, want 1", answerer.calls)
+	}
+	return answerer.gotOptions
 }
 
 func newCloudOfferFixture(t *testing.T) (*Manager, *cloudAnswererStub, hubv1.SignalingOffer) {
@@ -964,6 +1059,72 @@ func newCloudOfferFixtureWithCapabilitiesAndTerminal(t *testing.T, capabilities 
 	manager.identity = identity.DeviceIdentity{DeviceID: "device-cloud-test", DisplayName: "cloud-test-device"}
 	manager.answerer = answerer
 	return manager, answerer, offer
+}
+
+type certFixtureOptions struct {
+	MachineID string
+	IssuedAt  time.Time
+	ExpiresAt time.Time
+}
+
+func resignCloudOfferWithCert(t *testing.T, manager *Manager, offer hubv1.SignalingOffer, opts certFixtureOptions) hubv1.SignalingOffer {
+	t.Helper()
+	machineKey, err := identity.LoadOrCreateMachineKey(manager.cfg.DataDir)
+	if err != nil {
+		t.Fatalf("LoadOrCreateMachineKey returned error: %v", err)
+	}
+	appPublic, appPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	machineID := strings.TrimSpace(opts.MachineID)
+	if machineID == "" {
+		machineID = manager.identity.DeviceID
+	}
+	now := time.Now().UTC().Round(0)
+	issuedAt := opts.IssuedAt
+	if issuedAt.IsZero() {
+		issuedAt = now.Add(-time.Minute)
+	}
+	expiresAt := opts.ExpiresAt
+	if expiresAt.IsZero() {
+		expiresAt = now.Add(time.Hour)
+	}
+	envelope, err := cert.SignAppCertificate(cert.AppCertificatePayload{
+		Version:      1,
+		CertID:       "cert-resigned-test",
+		MachineID:    machineID,
+		AppDeviceID:  "app-device-resigned-test",
+		AppPublicKey: base64.StdEncoding.EncodeToString(appPublic),
+		AppName:      "Resigned Test App",
+		Capabilities: []string{"terminal", "file_manager"},
+		IssuedAt:     issuedAt,
+		ExpiresAt:    expiresAt,
+	}, machineKey)
+	if err != nil {
+		t.Fatalf("SignAppCertificate returned error: %v", err)
+	}
+	certificateJSON, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("marshal certificate: %v", err)
+	}
+	offer.AppCertificate = certificateJSON
+	signatureFields := remotertc.OfferSignatureFields{
+		TicketID:   offer.TicketID,
+		MachineID:  offer.DeviceID,
+		TerminalID: offer.TerminalID,
+		SDP:        offer.SDP,
+		Candidates: offer.ICECandidates,
+		Nonce:      "nonce-resigned-test-" + machineID,
+		Timestamp:  now,
+	}
+	offer.Signature = hubv1.OfferSignature{
+		Algorithm: "ed25519",
+		Nonce:     signatureFields.Nonce,
+		Timestamp: signatureFields.Timestamp.Unix(),
+		Value:     base64.StdEncoding.EncodeToString(ed25519.Sign(appPrivate, remotertc.CanonicalOfferSignatureMessage(signatureFields))),
+	}
+	return offer
 }
 
 func waitForCondition(t *testing.T, timeout time.Duration, condition func() bool) {

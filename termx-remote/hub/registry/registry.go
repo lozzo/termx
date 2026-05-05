@@ -22,7 +22,6 @@ var (
 	ErrInvalidSDP           = errors.New("invalid sdp")
 	ErrAgentRebound         = errors.New("agent already belongs to another machine")
 	ErrUnauthorizedTicket   = errors.New("unauthorized ticket")
-	ErrVerifierRequired     = errors.New("authority verifier is required")
 	ErrAnswerAlreadyExists  = errors.New("answer already exists")
 	ErrAgentForcedOffline   = errors.New("agent forced offline")
 )
@@ -32,7 +31,6 @@ type Config struct {
 	AgentTTL     time.Duration
 	SignalingTTL time.Duration
 	MaxSDPBytes  int
-	Verifier     AuthorityVerifier
 }
 
 type Registry struct {
@@ -41,7 +39,6 @@ type Registry struct {
 	agentTTL       time.Duration
 	signalingTTL   time.Duration
 	maxSDPBytes    int
-	verifier       AuthorityVerifier
 	agents         map[string]Agent
 	offers         map[string]Offer
 	answers        map[string]Answer
@@ -83,7 +80,6 @@ func New(cfg Config) *Registry {
 		agentTTL:       ttl,
 		signalingTTL:   signalingTTL,
 		maxSDPBytes:    maxSDPBytes,
-		verifier:       cfg.Verifier,
 		agents:         make(map[string]Agent),
 		offers:         make(map[string]Offer),
 		answers:        make(map[string]Answer),
@@ -116,29 +112,9 @@ func (r *Registry) Register(ctx context.Context, in RegisterInput) (Agent, error
 		LastSeenAt: now,
 		ExpiresAt:  now.Add(r.agentTTL),
 	}
-	if r.verifier == nil {
-		return Agent{}, ErrVerifierRequired
-	}
-	r.mu.Lock()
-	existing, exists := r.agents[agent.ID]
-	if exists && existing.MachineID != agent.MachineID {
-		r.mu.Unlock()
-		return Agent{}, ErrAgentRebound
-	}
-	r.mu.Unlock()
-	if err := r.verifier.VerifyAgentRegistration(ctx, AgentRegistration{
-		MachineID:          agent.MachineID,
-		AgentID:            agent.ID,
-		SignatureAlgorithm: strings.TrimSpace(in.SignatureAlgorithm),
-		SignatureNonce:     strings.TrimSpace(in.SignatureNonce),
-		SignatureTimestamp: in.SignatureTimestamp,
-		SignatureValue:     strings.TrimSpace(in.SignatureValue),
-	}); err != nil {
-		return Agent{}, err
-	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	existing, exists = r.agents[agent.ID]
+	existing, exists := r.agents[agent.ID]
 	if exists && existing.MachineID != agent.MachineID {
 		return Agent{}, ErrAgentRebound
 	}
@@ -293,16 +269,6 @@ func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error
 		ICECandidates:  cloneStrings(in.ICECandidates),
 		AppCertificate: cloneRawMessage(in.AppCertificate),
 		Signature:      in.Signature,
-	}); err != nil {
-		return Offer{}, err
-	}
-	if r.verifier == nil {
-		return Offer{}, ErrVerifierRequired
-	}
-	if err := r.verifier.VerifyOfferTicket(ctx, OfferTicket{
-		MachineID:  machineID,
-		TerminalID: terminalID,
-		TicketID:   ticketID,
 	}); err != nil {
 		return Offer{}, err
 	}

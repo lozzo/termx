@@ -2,40 +2,22 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-remote/hub/cloud"
-	"github.com/lozzow/termx/termx-remote/hub/registry"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
 )
 
-func TestNewHubHandlerFromEnvRequiresControlConfiguration(t *testing.T) {
-	t.Setenv("TERMX_HUB_CONTROL_URL", "")
-	t.Setenv("TERMX_HUB_CONTROL_SECRET", "")
-
-	_, _, err := newHubHandlerFromEnv()
-	if err == nil {
-		t.Fatal("hub handler without control verifier configuration succeeded")
-	}
-}
-
-func TestNewHubHandlerFromEnvBuildsRunnableControlBackedHandler(t *testing.T) {
-	t.Setenv("TERMX_HUB_CONTROL_URL", "http://127.0.0.1:12306")
-	t.Setenv("TERMX_HUB_CONTROL_SECRET", "hub-secret")
-
-	handler, _, err := newHubHandlerFromEnv()
+func TestNewHubHandlerFromEnvBuildsRunnableDumbRelayWithoutControlConfiguration(t *testing.T) {
+	handler, _, cleanup, err := newHubHandlerFromEnv()
 	if err != nil {
 		t.Fatalf("new hub handler: %v", err)
 	}
+	defer cleanup()
 	if handler == nil {
 		t.Fatal("handler is nil")
 	}
@@ -56,18 +38,11 @@ func TestNewHubHandlerFromEnvBuildsRunnableControlBackedHandler(t *testing.T) {
 }
 
 func TestHubHandlerCleanupLoopRemovesExpiredRegistryState(t *testing.T) {
-	t.Setenv("TERMX_HUB_CONTROL_URL", "http://127.0.0.1:12306")
-	t.Setenv("TERMX_HUB_CONTROL_SECRET", "hub-secret")
-
-	oldVerifier := newControlVerifier
-	newControlVerifier = func(baseURL string, sharedSecret string) controlVerifier {
-		return commandVerifierForTest{}
-	}
-	t.Cleanup(func() { newControlVerifier = oldVerifier })
-	handler, _, err := newHubHandlerFromEnv()
+	handler, _, cleanup, err := newHubHandlerFromEnv()
 	if err != nil {
 		t.Fatalf("new hub handler: %v", err)
 	}
+	defer cleanup()
 	cleaner, ok := handler.(interface {
 		StartCleanup(context.Context, <-chan time.Time)
 	})
@@ -92,44 +67,20 @@ func TestHubHandlerCleanupLoopRemovesExpiredRegistryState(t *testing.T) {
 }
 
 func TestNewHubHandlerFromEnvPassesSTUNServersToAgentRegister(t *testing.T) {
-	t.Setenv("TERMX_HUB_CONTROL_URL", "http://127.0.0.1:12306")
-	t.Setenv("TERMX_HUB_CONTROL_SECRET", "hub-secret")
 	t.Setenv("TERMX_HUB_ID", "hub-env-test")
 	t.Setenv("TERMX_HUB_STUN_SERVERS", "stun:stun.example.com:3478, turn:turn.example.com:3478")
 
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
-	oldVerifier := newControlVerifier
-	newControlVerifier = func(baseURL string, sharedSecret string) controlVerifier {
-		return commandVerifierForTest{publicKey: publicKey}
-	}
-	t.Cleanup(func() { newControlVerifier = oldVerifier })
-	handler, _, err := newHubHandlerFromEnv()
+	handler, _, cleanup, err := newHubHandlerFromEnv()
 	if err != nil {
 		t.Fatalf("new hub handler: %v", err)
 	}
-	agentID := "agent-main-test"
-	now := time.Date(2026, 5, 3, 14, 35, 0, 0, time.UTC)
-	signature := base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, hubv1.CanonicalAgentRegistrationSignatureMessage(hubv1.AgentRegistrationSignatureFields{
-		MachineID: "machine_1",
-		AgentID:   agentID,
-		Nonce:     "nonce-main-test",
-		Timestamp: now,
-	})))
+	defer cleanup()
 	reqBody := `{
 		"version":"remote.hub.v1",
 		"device_id":"machine_1",
-		"agent_id":"` + agentID + `",
+		"agent_id":"agent-main-test",
 		"display_name":"Machine 1",
-		"terminals":[{"id":"terminal_1","state":"running"}],
-		"signature":{
-			"algorithm":"ed25519",
-			"nonce":"nonce-main-test",
-			"timestamp":` + "1777818900" + `,
-			"value":"` + signature + `"
-		}
+		"terminals":[{"id":"terminal_1","state":"running"}]
 	}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/register", strings.NewReader(reqBody))
 	rec := httptest.NewRecorder()
@@ -153,23 +104,19 @@ func TestNewHubHandlerFromEnvPassesSTUNServersToAgentRegister(t *testing.T) {
 }
 
 func TestNewHubHandlerFromEnvWiresCloudTurnWithoutRegistrationRelayPolicy(t *testing.T) {
-	t.Setenv("TERMX_HUB_CONTROL_URL", "http://127.0.0.1:12306")
-	t.Setenv("TERMX_HUB_CONTROL_SECRET", "hub-secret")
 	t.Setenv("TERMX_HUB_STUN_SERVERS", "stun:stun.example.com:3478")
 	t.Setenv("TERMX_HUB_TURN_SERVERS", "turn:turn.example.com:3478?transport=udp")
 	t.Setenv("TERMX_HUB_TURN_SHARED_SECRET", "turn-secret")
 
-	oldVerifier := newControlVerifier
-	newControlVerifier = func(baseURL string, sharedSecret string) controlVerifier {
-		return commandVerifierForTest{}
-	}
-	t.Cleanup(func() { newControlVerifier = oldVerifier })
-	handler, _, err := newHubHandlerFromEnv()
+	handler, _, cleanup, err := newHubHandlerFromEnv()
 	if err != nil {
 		t.Fatalf("new hub handler: %v", err)
 	}
+	defer cleanup()
 	register := httptest.NewRecorder()
-	handler.ServeHTTP(register, httptest.NewRequest(http.MethodPost, "/api/v1/agents/register", strings.NewReader(`{"device_id":"machine_1","agent_id":"agent_1"}`)))
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/agents/register", strings.NewReader(`{"device_id":"machine_1","agent_id":"agent_1","terminals":[{"id":"term_1","state":"running"}]}`))
+	registerReq.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(register, registerReq)
 	if register.Code != http.StatusOK {
 		t.Fatalf("agent register status = %d body=%s", register.Code, register.Body.String())
 	}
@@ -183,45 +130,77 @@ func TestNewHubHandlerFromEnvWiresCloudTurnWithoutRegistrationRelayPolicy(t *tes
 	}
 }
 
-type commandVerifierForTest struct {
-	publicKey ed25519.PublicKey
-}
+func TestNewHubHandlerFromEnvStartsEmbeddedTurnWhenSecretSet(t *testing.T) {
+	t.Setenv("TERMX_HUB_STUN_SERVERS", "stun:stun.example.com:3478")
+	t.Setenv("TERMX_HUB_TURN_SECRET", "embedded-secret")
+	t.Setenv("TERMX_HUB_TURN_ADDR", "127.0.0.1:0")
+	t.Setenv("TERMX_HUB_TURN_PUBLIC_IP", "127.0.0.1")
 
-func (v commandVerifierForTest) VerifyAgentRegistration(_ context.Context, in registry.AgentRegistration) error {
-	if v.publicKey == nil {
-		return nil
-	}
-	rawSignature, err := base64.StdEncoding.DecodeString(in.SignatureValue)
+	handler, _, cleanup, err := newHubHandlerFromEnv()
 	if err != nil {
-		return err
+		t.Fatalf("new hub handler: %v", err)
 	}
-	message := hubv1.CanonicalAgentRegistrationSignatureMessage(hubv1.AgentRegistrationSignatureFields{
-		MachineID: in.MachineID,
-		AgentID:   in.AgentID,
-		Nonce:     in.SignatureNonce,
-		Timestamp: time.Unix(in.SignatureTimestamp, 0).UTC(),
-	})
-	if !ed25519.Verify(v.publicKey, message, rawSignature) {
-		return registry.ErrUnauthorizedAgent
+	defer cleanup()
+	if handler == nil {
+		t.Fatal("handler is nil")
 	}
-	return nil
-}
 
-func (commandVerifierForTest) VerifyOfferTicket(context.Context, registry.OfferTicket) error {
-	return nil
-}
-
-func (commandVerifierForTest) CheckConnectionTicket(context.Context, cloud.VerifyTicketInput) (cloud.Ticket, error) {
-	return cloud.Ticket{}, nil
-}
-
-func (commandVerifierForTest) ConsumeConnectionTicket(context.Context, cloud.VerifyTicketInput) (cloud.Ticket, error) {
-	return cloud.Ticket{}, nil
-}
-
-func (commandVerifierForTest) GetAgentPolicy(_ context.Context, in registry.AgentPolicyRequest) (registry.AgentPolicy, error) {
-	if strings.TrimSpace(in.MachineID) == "" || strings.TrimSpace(in.AgentID) == "" {
-		return registry.AgentPolicy{}, errors.New("machine and agent are required")
+	register := httptest.NewRecorder()
+	handler.ServeHTTP(register, httptest.NewRequest(http.MethodPost, "/api/v1/agents/register", strings.NewReader(`{"device_id":"machine_1","agent_id":"agent_1"}`)))
+	if register.Code != http.StatusOK {
+		t.Fatalf("agent register status = %d body=%s", register.Code, register.Body.String())
 	}
-	return registry.AgentPolicy{MachineID: in.MachineID, AgentID: in.AgentID}, nil
+	sessionDone := make(chan int, 1)
+	go func() {
+		resp := httptest.NewRecorder()
+		body := `{"connect_ticket":"ticket_1","machine_id":"machine_1","terminal_id":"term_1","app_certificate":{"payload":{"machine_id":"machine_1"},"signature":"cert"},"offer":{"session_id":"session_1","sdp":"v=0\r\no=- offer 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel","ice_candidates":[]},"signature":{"algorithm":"ed25519","nonce":"nonce","timestamp":1770000000,"value":"sig"}}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		handler.ServeHTTP(resp, req)
+		sessionDone <- resp.Code
+	}()
+	poll := httptest.NewRecorder()
+	pollBody := `{"agent_session_id":"agent-session-1","device_id":"machine_1","timeout_seconds":1}`
+	var regResp hubv1.HubRegisterResponse
+	if err := json.NewDecoder(register.Body).Decode(&regResp); err != nil {
+		t.Fatalf("decode register response: %v", err)
+	}
+	pollBody = strings.ReplaceAll(pollBody, "agent-session-1", regResp.AgentSessionID)
+	pollReq := httptest.NewRequest(http.MethodPost, "/api/v1/agents/signaling/poll", strings.NewReader(pollBody))
+	pollReq.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(poll, pollReq)
+	if poll.Code != http.StatusOK {
+		t.Fatalf("poll status = %d body=%s", poll.Code, poll.Body.String())
+	}
+	var polled hubv1.SignalingPollResponse
+	if err := json.NewDecoder(poll.Body).Decode(&polled); err != nil {
+		t.Fatalf("decode poll response: %v", err)
+	}
+	if polled.Offer == nil || !polled.Offer.AllowRelay {
+		t.Fatalf("embedded turn should enable cloud relay offers: %+v", polled.Offer)
+	}
+	if len(polled.Offer.RTCConfig.IceServers) < 2 {
+		t.Fatalf("expected STUN plus embedded TURN ICE servers: %+v", polled.Offer.RTCConfig.IceServers)
+	}
+	turnICE := polled.Offer.RTCConfig.IceServers[len(polled.Offer.RTCConfig.IceServers)-1]
+	if len(turnICE.URLs) != 2 || !strings.HasPrefix(turnICE.URLs[0], "turn:") || !strings.Contains(turnICE.URLs[0], "transport=udp") ||
+		!strings.Contains(turnICE.URLs[1], "transport=tcp") || turnICE.Username == "" || turnICE.Credential == "" {
+		t.Fatalf("embedded turn ICE server = %+v", turnICE)
+	}
+	if code := <-sessionDone; code != http.StatusAccepted {
+		t.Fatalf("pending session status = %d", code)
+	}
+}
+
+func TestTurnServerFromEnvRejectsUnspecifiedAddressWithoutPublicIP(t *testing.T) {
+	t.Setenv("TERMX_HUB_TURN_SECRET", "embedded-secret")
+	t.Setenv("TERMX_HUB_TURN_ADDR", "0.0.0.0:0")
+
+	server, err := turnServerFromEnv()
+	if err == nil {
+		if server != nil {
+			_ = server.Close()
+		}
+		t.Fatal("expected public IP requirement for unspecified TURN listen address")
+	}
 }

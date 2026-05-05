@@ -10,7 +10,11 @@ import { Terminal, type TerminalHandle } from './Terminal'
 import { TerminalList } from './TerminalList'
 import { createTerminalManagementApi } from './terminalManagementApi'
 import type { Machine, Terminal as RemoteTerminal } from './model'
-import type { ConnectionCapabilities, LocalAgentApi, LocalCreateTerminalInput, LocalUpdateTerminalInput, RtcConnector, RtcSession, TerminalInventoryEvents } from './transport'
+import type { ConnectionCapabilities, LocalAgentApi, LocalCreateTerminalInput, LocalPairingApi, LocalUpdateTerminalInput, RtcConnector, RtcSession, TerminalInventoryEvents } from './transport'
+
+export interface LocalRemoteInventoryApi extends Pick<LocalAgentApi, 'getStatus'> {
+  listTerminals(): Promise<RemoteTerminal[]>
+}
 
 export interface LocalRemoteSessionInput {
   machineId: string
@@ -20,13 +24,13 @@ export interface LocalRemoteSessionInput {
 export type LocalRemoteSessionConnector = RtcConnector<LocalRemoteSessionInput>
 
 export interface LocalRemoteAppProps {
-  api: Pick<LocalAgentApi, 'getStatus' | 'listTerminals'>
+  api: LocalRemoteInventoryApi
   connector: LocalRemoteSessionConnector
   className?: string | undefined
   inventoryEvents?: TerminalInventoryEvents | undefined
   managementPolicy?: Partial<Pick<ConnectionCapabilities, 'apiAllowed' | 'terminalManagementAllowed' | 'denialReason'>> | undefined
   pair?: {
-    api: Pick<LocalAgentApi, 'pair'>
+    api: LocalPairingApi
     storage: LocalAppIdentityStore
     crypto: LocalAppCrypto
     appName: string
@@ -110,8 +114,8 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, man
     setRefreshingTerminals(true)
     try {
       const status = await api.getStatus()
-      const terminalList = await api.listTerminals()
       setMachine(status.machine)
+      const terminalList = await api.listTerminals()
       setTerminals(terminalList)
       setError(null)
     } catch (err) {
@@ -126,9 +130,10 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, man
     async function load() {
       try {
         const status = await api.getStatus()
-        const terminalList = await api.listTerminals()
         if (cancelled) return
         setMachine(status.machine)
+        const terminalList = await api.listTerminals()
+        if (cancelled) return
         setTerminals(terminalList)
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err))
@@ -608,6 +613,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, man
               storage={pair.storage}
               crypto={pair.crypto}
               appName={pair.appName}
+              machineId={machine.machineId}
               onPaired={handlePaired}
             />
           </MobileSheetPanel>
@@ -798,6 +804,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, man
               storage={pair.storage}
               crypto={pair.crypto}
               appName={pair.appName}
+              machineId={machine.machineId}
               onPaired={handlePaired}
             />
           </MobileSheetPanel>

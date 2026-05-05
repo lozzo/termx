@@ -44,18 +44,8 @@ func TestAgentHTTPRegisterHeartbeatPollAndAnswer(t *testing.T) {
 	t.Parallel()
 
 	clock := fixedClock(time.Date(2026, 5, 3, 11, 35, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]cloud.Ticket{
-		"ticket_allowed": {
-			ID:         "ticket_allowed",
-			MachineID:  "device_1",
-			TerminalID: "term_1",
-			Path:       cloud.PathCloud,
-			AllowRelay: true,
-			ExpiresAt:  clock.Now().Add(time.Minute),
-		},
-	}}
-	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
-	svc := cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock})
+	reg := registry.New(registry.Config{Clock: clock})
+	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
 		Cloud:    svc,
 		Registry: reg,
@@ -160,11 +150,10 @@ func TestAgentHTTPRegisterHeartbeatPollAndAnswer(t *testing.T) {
 		polled.Offer.DeviceID != "device_1" || polled.Offer.TerminalID != "term_1" {
 		t.Fatalf("poll response = %+v", polled)
 	}
-	if !polled.Offer.AllowRelay || polled.Offer.AllowRelayTransfer {
+	if polled.Offer.AllowRelay || polled.Offer.AllowRelayTransfer {
 		t.Fatalf("poll relay policy = %+v", polled.Offer)
 	}
-	if len(polled.Offer.RTCConfig.IceServers) != 2 || !strings.HasPrefix(polled.Offer.RTCConfig.IceServers[1].URLs[0], "turn:") ||
-		polled.Offer.RTCConfig.IceServers[1].Username == "" || polled.Offer.RTCConfig.IceServers[1].Credential == "" {
+	if len(polled.Offer.RTCConfig.IceServers) != 1 || polled.Offer.RTCConfig.IceServers[0].URLs[0] != "stun:hub.termx.test:3478" {
 		t.Fatalf("poll cloud ICE servers = %+v", polled.Offer.RTCConfig.IceServers)
 	}
 
@@ -204,8 +193,7 @@ func TestAgentHTTPPairingClaimRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	clock := fixedClock(time.Date(2026, 5, 4, 9, 15, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now()}
-	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	reg := registry.New(registry.Config{Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
 		Registry:      reg,
 		AnswerTimeout: 500 * time.Millisecond,
@@ -311,39 +299,26 @@ func TestAgentHTTPPairingClaimRoundTrip(t *testing.T) {
 	}
 }
 
-func TestAgentHTTPRejectsUnsignedRegistration(t *testing.T) {
+func TestAgentHTTPAcceptsUnsignedRegistrationAsDumbRelay(t *testing.T) {
 	t.Parallel()
 
 	clock := fixedClock(time.Date(2026, 5, 3, 14, 22, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{
-		now:                   clock.Now(),
-		requireAgentSignature: true,
-		tickets: map[string]cloud.Ticket{
-			"ticket_allowed": {
-				ID:         "ticket_allowed",
-				MachineID:  "device_1",
-				TerminalID: "term_1",
-				Path:       cloud.PathCloud,
-				ExpiresAt:  clock.Now().Add(time.Minute),
-			},
-		},
-	}
-	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	reg := registry.New(registry.Config{Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
-		Cloud:       cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock}),
+		Cloud:       cloud.NewService(cloud.Config{Registry: reg, Clock: clock}),
 		Registry:    reg,
-		AgentPolicy: verifier,
 	})
 
 	resp := postJSON(t, router, "/api/v1/agents/register", map[string]any{
 		"version":   "remote.hub.v1",
 		"device_id": "device_1",
+		"agent_id":  "agent_unsigned",
 	})
-	if resp.Code != http.StatusForbidden {
+	if resp.Code != http.StatusOK {
 		t.Fatalf("unsigned register status = %d body=%s", resp.Code, resp.Body.String())
 	}
-	if _, ok := reg.GetAgent("agent_1"); ok {
-		t.Fatal("unsigned registration created an agent")
+	if _, ok := reg.GetAgent("agent_unsigned"); !ok {
+		t.Fatal("unsigned registration was not relayed into the in-memory registry")
 	}
 }
 
@@ -351,10 +326,9 @@ func TestAgentHTTPKickForcesAgentOffline(t *testing.T) {
 	t.Parallel()
 
 	clock := fixedClock(time.Date(2026, 5, 3, 14, 45, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now()}
-	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	reg := registry.New(registry.Config{Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
-		Cloud:          cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock}),
+		Cloud:          cloud.NewService(cloud.Config{Registry: reg, Clock: clock}),
 		Registry:       reg,
 		InternalSecret: "hub-secret",
 		Clock:          clock,
@@ -399,30 +373,14 @@ func TestAgentHTTPKickForcesAgentOffline(t *testing.T) {
 	}
 }
 
-func TestAgentHTTPAppliesForceOfflinePolicy(t *testing.T) {
+func TestAgentHTTPDoesNotApplyExternalForceOfflinePolicy(t *testing.T) {
 	t.Parallel()
 
 	clock := fixedClock(time.Date(2026, 5, 3, 17, 44, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{
-		now: clock.Now(),
-		tickets: map[string]cloud.Ticket{
-			"ticket_allowed": {
-				ID:         "ticket_allowed",
-				MachineID:  "device_1",
-				TerminalID: "term_1",
-				Path:       cloud.PathCloud,
-				ExpiresAt:  clock.Now().Add(time.Minute),
-			},
-		},
-		forceOffline: map[string]string{
-			"device_1/agent_force": "owner requested",
-		},
-	}
-	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	reg := registry.New(registry.Config{Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
-		Cloud:       cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock}),
+		Cloud:       cloud.NewService(cloud.Config{Registry: reg, Clock: clock}),
 		Registry:    reg,
-		AgentPolicy: verifier,
 	})
 
 	register := postJSON(t, router, "/api/v1/agents/register", map[string]any{
@@ -441,16 +399,16 @@ func TestAgentHTTPAppliesForceOfflinePolicy(t *testing.T) {
 		"agent_session_id": registered.AgentSessionID,
 		"device_id":        "device_1",
 	})
-	if heartbeat.Code != http.StatusForbidden {
-		t.Fatalf("forced heartbeat status = %d body=%s", heartbeat.Code, heartbeat.Body.String())
+	if heartbeat.Code != http.StatusOK {
+		t.Fatalf("heartbeat status = %d body=%s", heartbeat.Code, heartbeat.Body.String())
 	}
 	poll := postJSON(t, router, "/api/v1/agents/signaling/poll", map[string]any{
 		"agent_session_id": registered.AgentSessionID,
 		"device_id":        "device_1",
-		"timeout_seconds":  1,
+		"timeout_seconds":  0,
 	})
-	if poll.Code != http.StatusForbidden {
-		t.Fatalf("forced poll status = %d body=%s", poll.Code, poll.Body.String())
+	if poll.Code != http.StatusNoContent {
+		t.Fatalf("poll status = %d body=%s", poll.Code, poll.Body.String())
 	}
 }
 
@@ -458,18 +416,9 @@ func TestAgentHTTPSessionsAreTTLBounded(t *testing.T) {
 	t.Parallel()
 
 	clock := &mutableHTTPClock{value: time.Date(2026, 5, 3, 18, 20, 0, 0, time.UTC)}
-	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]cloud.Ticket{
-		"ticket_allowed": {
-			ID:         "ticket_allowed",
-			MachineID:  "device_1",
-			TerminalID: "term_1",
-			Path:       cloud.PathCloud,
-			ExpiresAt:  clock.Now().Add(time.Minute),
-		},
-	}}
-	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	reg := registry.New(registry.Config{Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
-		Cloud:            cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock}),
+		Cloud:            cloud.NewService(cloud.Config{Registry: reg, Clock: clock}),
 		Registry:         reg,
 		DebugToken:       "debug-secret",
 		Clock:            clock,
@@ -532,17 +481,8 @@ func TestAgentDiagnosticsRequiresDebugTokenAndReportsPolls(t *testing.T) {
 	t.Parallel()
 
 	clock := fixedClock(time.Date(2026, 5, 3, 11, 50, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]cloud.Ticket{
-		"ticket_allowed": {
-			ID:         "ticket_allowed",
-			MachineID:  "device_1",
-			TerminalID: "term_1",
-			Path:       cloud.PathCloud,
-			ExpiresAt:  clock.Now().Add(time.Minute),
-		},
-	}}
-	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
-	svc := cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock})
+	reg := registry.New(registry.Config{Clock: clock})
+	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{Cloud: svc, Registry: reg, DebugToken: "debug-secret"})
 
 	register := postJSON(t, router, "/api/v1/agents/register", map[string]any{
@@ -613,17 +553,8 @@ func TestAgentHTTPRejectsRuntimePayloadAsAnswer(t *testing.T) {
 	t.Parallel()
 
 	clock := fixedClock(time.Date(2026, 5, 3, 11, 45, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]cloud.Ticket{
-		"ticket_allowed": {
-			ID:         "ticket_allowed",
-			MachineID:  "device_1",
-			TerminalID: "term_1",
-			Path:       cloud.PathCloud,
-			ExpiresAt:  clock.Now().Add(time.Minute),
-		},
-	}}
-	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
-	svc := cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock})
+	reg := registry.New(registry.Config{Clock: clock})
+	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{Cloud: svc, Registry: reg})
 	register := postJSON(t, router, "/api/v1/agents/register", map[string]any{
 		"device_id": "device_1",

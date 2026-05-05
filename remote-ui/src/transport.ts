@@ -159,30 +159,8 @@ export interface LocalPairResult {
   expiresAt: string
 }
 
-export interface LocalRTCOffer {
-  sessionId: string
-  machineId: string
-  terminalId?: string | undefined
-  sdp: string
-  iceCandidates?: string[] | undefined
-  appCertificate: string
-  appSignature: string
-  nonce: string
-  timestamp: string
-}
-
-export interface LocalRTCAnswer {
-  sessionId: string
-  answer: {
-    type: 'answer'
-    sdp: string
-  }
-  iceTCP?: {
-    enabled: boolean
-    endpoint?: string
-  }
-  dataChannels?: string[]
-  capabilities?: ConnectionCapabilities
+export interface LocalPairingApi {
+  pair(input: LocalPairInput): Promise<LocalPairResult>
 }
 
 export interface TerminalInventorySubscription {
@@ -199,31 +177,6 @@ export interface TerminalInventoryEvents {
 
 export interface LocalAgentApi {
   getStatus(): Promise<LocalStatus>
-  listTerminals(): Promise<Terminal[]>
-  pair(input: LocalPairInput): Promise<LocalPairResult>
-  createRTCAnswer(input: LocalRTCOffer, options?: RtcConnectOptions): Promise<LocalRTCAnswer>
-  createInventoryRTCAnswer(input: LocalInventoryRTCOffer): Promise<LocalInventoryRTCAnswer>
-  createTerminal(input: LocalCreateTerminalInput): Promise<Terminal>
-  updateTerminal(input: LocalUpdateTerminalInput): Promise<Terminal>
-  deleteTerminal(terminalId: string): Promise<void>
-}
-
-export interface LocalInventoryRTCOffer {
-  sessionId: string
-  machineId: string
-  sdp: string
-  appCertificate: string
-  appSignature: string
-  nonce: string
-  timestamp: string
-}
-
-export interface LocalInventoryRTCAnswer {
-  sessionId: string
-  answer: {
-    type: 'answer'
-    sdp: string
-  }
 }
 
 export interface LocalCreateTerminalInput {

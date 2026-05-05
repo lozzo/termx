@@ -21,21 +21,11 @@ func TestCloudSessionHTTPContract(t *testing.T) {
 
 	ctx := context.Background()
 	clock := fixedClock(time.Date(2026, 5, 3, 9, 55, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]cloud.Ticket{
-		"ticket_allowed": {
-			ID:         "ticket_allowed",
-			MachineID:  "mach_1",
-			TerminalID: "term_1",
-			Path:       cloud.PathCloud,
-			AllowRelay: true,
-			ExpiresAt:  clock.Now().Add(time.Minute),
-		},
-	}}
-	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	reg := registry.New(registry.Config{Clock: clock})
 	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	svc := cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock})
+	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
 		Cloud: svc,
 		ICE: ice.NewService(ice.Config{
@@ -134,11 +124,10 @@ func TestCloudSessionHTTPContract(t *testing.T) {
 	if got.SessionID != "rtc_cloud_1" || got.Path != "cloud" || got.MachineID != "mach_1" || got.Answer.SDP != minimalSDP("answer") {
 		t.Fatalf("answer response = %+v", got)
 	}
-	if !got.RelayPolicy.AllowRelay || got.RelayPolicy.AllowRelayTransfer {
+	if got.RelayPolicy.AllowRelay || got.RelayPolicy.AllowRelayTransfer {
 		t.Fatalf("relay policy = %+v", got.RelayPolicy)
 	}
-	if len(got.ICEServers) != 2 || !strings.HasPrefix(got.ICEServers[1].URLs[0], "turn:") ||
-		got.ICEServers[1].Username == "" || got.ICEServers[1].Credential == "" {
+	if len(got.ICEServers) != 1 || got.ICEServers[0].URLs[0] != "stun:hub.termx.test:3478" {
 		t.Fatalf("cloud ICE servers = %+v", got.ICEServers)
 	}
 	if strings.Contains(strings.ToLower(answer.Body.String()), `"path":"relay"`) {
@@ -150,17 +139,8 @@ func TestCloudSessionHTTPWaitsForDelayedAgentAnswer(t *testing.T) {
 	t.Parallel()
 
 	clock := fixedClock(time.Date(2026, 5, 3, 10, 22, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]cloud.Ticket{
-		"ticket_allowed": {
-			ID:         "ticket_allowed",
-			MachineID:  "mach_1",
-			TerminalID: "term_1",
-			Path:       cloud.PathCloud,
-			ExpiresAt:  clock.Now().Add(time.Minute),
-		},
-	}}
-	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
-	svc := cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock})
+	reg := registry.New(registry.Config{Clock: clock})
+	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
 		Cloud:         svc,
 		Registry:      reg,
@@ -242,21 +222,12 @@ func TestCloudSessionHTTPRejectsRuntimePayload(t *testing.T) {
 
 	ctx := context.Background()
 	clock := fixedClock(time.Date(2026, 5, 3, 10, 1, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]cloud.Ticket{
-		"ticket_allowed": {
-			ID:         "ticket_allowed",
-			MachineID:  "mach_1",
-			TerminalID: "term_1",
-			Path:       cloud.PathCloud,
-			ExpiresAt:  clock.Now().Add(time.Minute),
-		},
-	}}
-	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	reg := registry.New(registry.Config{Clock: clock})
 	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	router := httpapi.NewHandler(httpapi.Config{
-		Cloud: cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock}),
+		Cloud: cloud.NewService(cloud.Config{Registry: reg, Clock: clock}),
 	})
 	resp := postJSON(t, router, "/api/v1/sessions", map[string]any{
 		"connect_ticket": "ticket_allowed",
@@ -290,21 +261,12 @@ func TestCloudSessionHTTPRejectsMissingEnvelopeBeforeConsumingTicket(t *testing.
 
 	ctx := context.Background()
 	clock := fixedClock(time.Date(2026, 5, 3, 10, 18, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]cloud.Ticket{
-		"ticket_allowed": {
-			ID:         "ticket_allowed",
-			MachineID:  "mach_1",
-			TerminalID: "term_1",
-			Path:       cloud.PathCloud,
-			ExpiresAt:  clock.Now().Add(time.Minute),
-		},
-	}}
-	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	reg := registry.New(registry.Config{Clock: clock})
 	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	router := httpapi.NewHandler(httpapi.Config{
-		Cloud: cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock}),
+		Cloud: cloud.NewService(cloud.Config{Registry: reg, Clock: clock}),
 	})
 	resp := postJSON(t, router, "/api/v1/sessions", map[string]any{
 		"connect_ticket": "ticket_allowed",
@@ -318,9 +280,6 @@ func TestCloudSessionHTTPRejectsMissingEnvelopeBeforeConsumingTicket(t *testing.
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("missing envelope status = %d body=%s", resp.Code, resp.Body.String())
 	}
-	if len(verifier.consumeCalls) != 0 {
-		t.Fatalf("missing envelope consumed ticket: %v", verifier.consumeCalls)
-	}
 }
 
 func TestCloudSessionHTTPTimeoutReturnsRecoverableSession(t *testing.T) {
@@ -328,20 +287,11 @@ func TestCloudSessionHTTPTimeoutReturnsRecoverableSession(t *testing.T) {
 
 	ctx := context.Background()
 	clock := fixedClock(time.Date(2026, 5, 3, 10, 20, 0, 0, time.UTC))
-	verifier := &fakeTicketVerifier{now: clock.Now(), tickets: map[string]cloud.Ticket{
-		"ticket_allowed": {
-			ID:         "ticket_allowed",
-			MachineID:  "mach_1",
-			TerminalID: "term_1",
-			Path:       cloud.PathCloud,
-			ExpiresAt:  clock.Now().Add(time.Minute),
-		},
-	}}
-	reg := registry.New(registry.Config{Clock: clock, Verifier: verifier})
+	reg := registry.New(registry.Config{Clock: clock})
 	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	svc := cloud.NewService(cloud.Config{Registry: reg, Tickets: verifier, Clock: clock})
+	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
 		Cloud:         svc,
 		AnswerTimeout: time.Millisecond,
@@ -464,94 +414,6 @@ func decodeJSON(t *testing.T, resp *httptest.ResponseRecorder, out any) {
 	if err := json.Unmarshal(resp.Body.Bytes(), out); err != nil {
 		t.Fatalf("decode response %q: %v", resp.Body.String(), err)
 	}
-}
-
-type fakeTicketVerifier struct {
-	tickets               map[string]cloud.Ticket
-	used                  map[string]bool
-	now                   time.Time
-	consumeCalls          []string
-	requireAgentSignature bool
-	forceOffline          map[string]string
-}
-
-func (f *fakeTicketVerifier) CheckConnectionTicket(_ context.Context, in cloud.VerifyTicketInput) (cloud.Ticket, error) {
-	ticket, ok := f.tickets[in.TicketID]
-	if !ok {
-		return cloud.Ticket{}, cloud.ErrTicketExpired
-	}
-	if ticket.MachineID != in.MachineID {
-		return cloud.Ticket{}, cloud.ErrWrongMachine
-	}
-	if in.TerminalID != "" && ticket.TerminalID != in.TerminalID {
-		return cloud.Ticket{}, cloud.ErrWrongTerminal
-	}
-	if !ticket.ExpiresAt.After(f.now) {
-		return cloud.Ticket{}, cloud.ErrTicketExpired
-	}
-	return ticket, nil
-}
-
-func (f *fakeTicketVerifier) ConsumeConnectionTicket(_ context.Context, in cloud.VerifyTicketInput) (cloud.Ticket, error) {
-	f.consumeCalls = append(f.consumeCalls, in.MachineID+"/"+in.TerminalID+"/"+in.TicketID)
-	ticket, ok := f.tickets[in.TicketID]
-	if !ok {
-		return cloud.Ticket{}, cloud.ErrTicketExpired
-	}
-	if ticket.MachineID != in.MachineID {
-		return cloud.Ticket{}, cloud.ErrWrongMachine
-	}
-	if in.TerminalID != "" && ticket.TerminalID != in.TerminalID {
-		return cloud.Ticket{}, cloud.ErrWrongTerminal
-	}
-	if !ticket.ExpiresAt.After(f.now) {
-		return cloud.Ticket{}, cloud.ErrTicketExpired
-	}
-	if f.used == nil {
-		f.used = make(map[string]bool)
-	}
-	if f.used[in.TicketID] {
-		return cloud.Ticket{}, cloud.ErrTicketUsed
-	}
-	f.used[in.TicketID] = true
-	return ticket, nil
-}
-
-func (f *fakeTicketVerifier) VerifyAgentRegistration(_ context.Context, in registry.AgentRegistration) error {
-	if f.requireAgentSignature && (in.SignatureAlgorithm == "" || in.SignatureNonce == "" || in.SignatureTimestamp == 0 || in.SignatureValue == "") {
-		return registry.ErrUnauthorizedAgent
-	}
-	return nil
-}
-
-func (f *fakeTicketVerifier) VerifyOfferTicket(_ context.Context, in registry.OfferTicket) error {
-	ticket, ok := f.tickets[in.TicketID]
-	if !ok {
-		return cloud.ErrTicketExpired
-	}
-	if ticket.MachineID != in.MachineID {
-		return cloud.ErrWrongMachine
-	}
-	if in.TerminalID != "" && ticket.TerminalID != in.TerminalID {
-		return cloud.ErrWrongTerminal
-	}
-	if !ticket.ExpiresAt.After(f.now) {
-		return cloud.ErrTicketExpired
-	}
-	return nil
-}
-
-func (f *fakeTicketVerifier) GetAgentPolicy(_ context.Context, in registry.AgentPolicyRequest) (registry.AgentPolicy, error) {
-	reason := f.forceOffline[in.MachineID+"/"+in.AgentID]
-	if reason == "" {
-		return registry.AgentPolicy{MachineID: in.MachineID, AgentID: in.AgentID}, nil
-	}
-	return registry.AgentPolicy{
-		MachineID:    in.MachineID,
-		AgentID:      in.AgentID,
-		ForceOffline: true,
-		Reason:       reason,
-	}, nil
 }
 
 type fixedClock time.Time

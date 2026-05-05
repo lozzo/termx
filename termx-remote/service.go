@@ -2,11 +2,9 @@ package remote
 
 import (
 	"context"
-	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io/fs"
 	"net"
 	"net/http"
 	"strconv"
@@ -21,13 +19,14 @@ import (
 	"github.com/lozzow/termx/termx-remote/cert"
 	remoteconfig "github.com/lozzow/termx/termx-remote/config"
 	"github.com/lozzow/termx/termx-remote/fileapi"
-	"github.com/lozzow/termx/termx-remote/hub/sessionflow"
+	"github.com/lozzow/termx/termx-remote/hub/cloud"
+	"github.com/lozzow/termx/termx-remote/hub/httpapi"
+	"github.com/lozzow/termx/termx-remote/hub/registry"
 	"github.com/lozzow/termx/termx-remote/identity"
-	"github.com/lozzow/termx/termx-remote/localweb"
 	"github.com/lozzow/termx/termx-remote/pairing"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
-	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
 	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
+	"github.com/soheilhy/cmux"
 )
 
 type Daemon interface {
@@ -78,7 +77,7 @@ func NewService(cfg remoteprotocol.Config, daemon Daemon) *Service {
 		rtcCancel: cancel,
 	}
 	s.manager = runtime.NewManager(runtimeConfig(cfg), inventoryProvider{service: s}, inventoryProvider{service: s})
-	s.manager.SetPairClaimer(localWebAdapter{service: s})
+	s.manager.SetPairClaimer(pairClaimer{service: s})
 	return s
 }
 
@@ -203,62 +202,10 @@ func (s *Service) PairStart(params remoteprotocol.PairStartParams) (remoteprotoc
 	}, nil
 }
 
-func NewLocalWebStaticAssets(files map[string]string) fs.FS {
-	return localweb.NewStaticAssets(files)
-}
-
-func EmbeddedLocalWebAssets() fs.FS {
-	return localweb.EmbeddedAssets()
-}
-
 type LocalICETCPMux = remotertc.LocalICETCPMux
 
 func StartLocalICETCPMux(ctx context.Context, addr string) (*LocalICETCPMux, error) {
 	return remotertc.StartLocalICETCPMux(ctx, addr)
-}
-
-type LocalWebOptions struct {
-	HTTPURL                string
-	LocalPairURL           string
-	ICETCPEnabled          bool
-	ICETCPPort             int
-	ICETCPMux              *LocalICETCPMux
-	LocalRTCSessionContext context.Context
-	Assets                 fs.FS
-}
-
-func (s *Service) LocalWebHandler(opts LocalWebOptions) http.Handler {
-	assets := opts.Assets
-	if assets == nil {
-		assets = localweb.EmbeddedAssets()
-	}
-	iceTCPEnabled := opts.ICETCPEnabled
-	iceTCPPort := opts.ICETCPPort
-	if opts.ICETCPMux != nil {
-		endpoint := opts.ICETCPMux.Endpoint()
-		iceTCPEnabled = endpoint.Enabled
-		iceTCPPort = endpoint.Port
-	}
-	rtcSessionCtx := opts.LocalRTCSessionContext
-	if rtcSessionCtx == nil && s != nil {
-		rtcSessionCtx = s.rtcCtx
-	}
-	adapter := localWebAdapter{
-		service:       s,
-		httpURL:       strings.TrimSpace(opts.HTTPURL),
-		iceTCPEnabled: iceTCPEnabled,
-		iceTCPPort:    iceTCPPort,
-		iceTCPMux:     opts.ICETCPMux,
-		rtcSessionCtx: rtcSessionCtx,
-	}
-	return localweb.NewHandler(localweb.Config{
-		Assets:           assets,
-		Status:           adapter,
-		Terminals:        adapter,
-		TerminalsManager: adapter,
-		Pairing:          adapter,
-		RTC:              adapter,
-	})
 }
 
 func (s *Service) LocalEnable(ctx context.Context, params remoteprotocol.LocalEnableParams) (remoteprotocol.LocalStatus, error) {
@@ -268,32 +215,33 @@ func (s *Service) LocalEnable(ctx context.Context, params remoteprotocol.LocalEn
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	localWebAddr := strings.TrimSpace(params.LocalWebAddr)
-	if localWebAddr == "" {
-		localWebAddr = "127.0.0.1:18888"
-	}
-	iceTCPAddr := strings.TrimSpace(params.ICETCPAddr)
-	if iceTCPAddr == "" {
-		iceTCPAddr = "127.0.0.1:18889"
-	}
-
 	s.localMu.Lock()
-	defer s.localMu.Unlock()
-	if s.local != nil && s.local.localWebAddr == localWebAddr && s.local.iceTCPAddr == iceTCPAddr {
-		return s.local.statusLocked(), nil
+	if s.local != nil {
+		local := s.local
+		status := s.local.statusLocked()
+		s.localMu.Unlock()
+		s.attachManagerToCloud(params, local.httpURL)
+		return status, nil
 	}
-	runtime, err := s.newLocalRuntime(ctx, localWebAddr, iceTCPAddr)
+	s.localMu.Unlock()
+
+	runtime, err := newEmbeddedLocalHub(ctx, params)
 	if err != nil {
 		return remoteprotocol.LocalStatus{}, err
 	}
-	old := s.local
+	s.localMu.Lock()
+	if s.local != nil {
+		existing := s.local
+		status := existing.statusLocked()
+		s.localMu.Unlock()
+		_ = runtime.close(context.Background())
+		return status, nil
+	}
 	s.local = runtime
 	status := runtime.statusLocked()
-	if old != nil {
-		go func() {
-			_ = old.close(context.Background())
-		}()
-	}
+	s.localMu.Unlock()
+	s.attachManagerToCloud(params, runtime.httpURL)
+	s.attachManagerToLocalHub(ctx, runtime)
 	return status, nil
 }
 
@@ -321,100 +269,12 @@ func (s *Service) LocalDisable(ctx context.Context) (remoteprotocol.LocalStatus,
 	s.local = nil
 	s.localMu.Unlock()
 	if runtime != nil {
+		s.detachManagerFromLocalHub(runtime)
 		if err := runtime.close(ctx); err != nil {
 			return remoteprotocol.LocalStatus{}, err
 		}
 	}
 	return remoteprotocol.LocalStatus{UpdatedAt: time.Now().UTC()}, nil
-}
-
-func (s *Service) newLocalRuntime(ctx context.Context, localWebAddr string, iceTCPAddr string) (*localRuntime, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	runtimeCtx, cancel := context.WithCancel(context.Background())
-	iceMux, err := StartLocalICETCPMux(runtimeCtx, iceTCPAddr)
-	if err != nil {
-		cancel()
-		return nil, err
-	}
-	httpURL, actualWebAddr, shutdown, err := s.startLocalWeb(runtimeCtx, localWebAddr, iceMux)
-	if err != nil {
-		_ = iceMux.Close()
-		cancel()
-		return nil, err
-	}
-	endpoint := iceMux.Endpoint()
-	flow := sessionflow.LocalPlan(nil)
-	if err := sessionflow.ValidateClientPath(flow.Path); err != nil {
-		_ = shutdown(context.Background())
-		_ = iceMux.Close()
-		cancel()
-		return nil, err
-	}
-	return &localRuntime{
-		localWebAddr:  localWebAddr,
-		iceTCPAddr:    iceTCPAddr,
-		httpURL:       httpURL,
-		actualWebAddr: actualWebAddr,
-		localPairURL:  httpURL + "/api/local/pair",
-		iceTCPPort:    endpoint.Port,
-		iceTCPMux:     iceMux,
-		shutdown:      shutdown,
-		cancel:        cancel,
-		updatedAt:     time.Now().UTC(),
-	}, nil
-}
-
-func (s *Service) startLocalWeb(ctx context.Context, addr string, iceTCPMux *LocalICETCPMux) (string, string, func(context.Context) error, error) {
-	addr = strings.TrimSpace(addr)
-	if addr == "" {
-		return "", "", nil, fmt.Errorf("remote local web address is required")
-	}
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		return "", "", nil, err
-	}
-
-	baseURL := localWebBaseURL(listener.Addr())
-	actualAddr := listener.Addr().String()
-	httpServer := &http.Server{
-		Handler: s.LocalWebHandler(LocalWebOptions{
-			HTTPURL:                baseURL,
-			LocalPairURL:           baseURL + "/api/local/pair",
-			ICETCPMux:              iceTCPMux,
-			LocalRTCSessionContext: ctx,
-		}),
-	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
-			return
-		}
-	}()
-
-	var once sync.Once
-	var shutdownErr error
-	shutdown := func(shutdownCtx context.Context) error {
-		once.Do(func() {
-			shutdownErr = httpServer.Shutdown(shutdownCtx)
-			if shutdownErr != nil {
-				_ = httpServer.Close()
-			}
-			<-done
-		})
-		return shutdownErr
-	}
-
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = shutdown(shutdownCtx)
-	}()
-
-	return baseURL, actualAddr, shutdown, nil
 }
 
 type localRuntime struct {
@@ -425,6 +285,8 @@ type localRuntime struct {
 	localPairURL  string
 	iceTCPPort    int
 	iceTCPMux     *LocalICETCPMux
+	listener      net.Listener
+	httpServer    *http.Server
 	shutdown      func(context.Context) error
 	cancel        context.CancelFunc
 	updatedAt     time.Time
@@ -458,327 +320,191 @@ func (r *localRuntime) close(ctx context.Context) error {
 		err = r.shutdown(ctx)
 	}
 	if r.iceTCPMux != nil {
-		if closeErr := r.iceTCPMux.Close(); err == nil {
+		if closeErr := r.iceTCPMux.Close(); err == nil && closeErr != nil && !isClosedNetworkError(closeErr) {
 			err = closeErr
 		}
 	}
 	return err
 }
 
-type localWebAdapter struct {
-	service       *Service
-	httpURL       string
-	iceTCPEnabled bool
-	iceTCPPort    int
-	iceTCPMux     *LocalICETCPMux
-	rtcSessionCtx context.Context
-}
-
-func (a localWebAdapter) LocalStatus(ctx context.Context) (localweb.Status, error) {
-	_ = ctx
-	if a.service == nil {
-		return localweb.Status{}, nil
+func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableParams) (*localRuntime, error) {
+	listenAddr := strings.TrimSpace(params.LocalWebAddr)
+	if listenAddr == "" {
+		listenAddr = "0.0.0.0:18888"
 	}
-	status := a.service.Status()
-	cfg := a.service.normalizedConfig()
-	machineID := strings.TrimSpace(status.DeviceID)
-	machineName := strings.TrimSpace(status.DeviceName)
-	machineKey, err := identity.LoadOrCreateMachineKey(cfg.DataDir)
-	if err != nil {
-		return localweb.Status{}, err
-	}
-	fingerprint := identity.MachinePublicKeyFingerprint(machineKey.PublicKey)
-	if machineID == "" || machineName == "" {
-		ident, identErr := identity.LoadOrCreate(cfg.DataDir, cfg.DeviceName)
-		if identErr != nil {
-			return localweb.Status{}, identErr
-		}
-		if machineID == "" {
-			machineID = ident.DeviceID
-		}
-		if machineName == "" {
-			machineName = ident.DisplayName
-		}
-	}
-	return localweb.Status{
-		MachineID:                   machineID,
-		MachineName:                 machineName,
-		MachinePublicKeyFingerprint: fingerprint,
-		RemoteEnabled:               status.State != remoteprotocol.StateDisabled,
-		LocalRTC: localweb.LocalRTCStatus{
-			HTTPURL:       a.httpURL,
-			ICETCPEnabled: a.iceTCPEnabled,
-			ICETCPPort:    a.iceTCPPort,
-		},
-		UpdatedAt: status.UpdatedAt,
-	}, nil
-}
-
-func (a localWebAdapter) ListTerminals(ctx context.Context) ([]localweb.Terminal, error) {
-	if a.service == nil || a.service.daemon == nil {
-		return nil, nil
-	}
-	list, err := a.service.daemon.List(ctx)
+	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]localweb.Terminal, 0, len(list.Terminals))
-	for _, item := range list.Terminals {
-		out = append(out, localwebTerminalFromProtocol(item))
+	actualAddr := listener.Addr().String()
+	advertisedHost := localHubAdvertisedHost(listener.Addr())
+	port, err := portFromAddr(listener.Addr())
+	if err != nil {
+		_ = listener.Close()
+		return nil, err
 	}
-	return out, nil
-}
 
-func (a localWebAdapter) CreateLocalTerminal(ctx context.Context, req localweb.CreateTerminalRequest) (localweb.Terminal, error) {
-	if a.service == nil || a.service.daemon == nil {
-		return localweb.Terminal{}, nil
-	}
-	size := protocol.Size{}
-	if req.Cols > 0 {
-		size.Cols = uint16(req.Cols)
-	}
-	if req.Rows > 0 {
-		size.Rows = uint16(req.Rows)
-	}
-	created, err := a.service.daemon.Create(ctx, protocol.CreateParams{
-		Command: req.Command,
-		Name:    strings.TrimSpace(req.Name),
-		Tags:    localTerminalTags(req.CWD, req.Environment, req.SizeLockMode),
-		Size:    size,
-		Dir:     strings.TrimSpace(req.CWD),
+	reg := registry.New(registry.Config{AgentTTL: 2 * time.Minute})
+	cloudSvc := cloud.NewService(cloud.Config{Registry: reg})
+	hubHandler := httpapi.NewHandler(httpapi.Config{
+		Cloud:         cloudSvc,
+		Registry:      reg,
+		HubID:         "termx-local-hub",
+		AnswerTimeout: 250 * time.Millisecond,
+		PollInterval:  10 * time.Millisecond,
 	})
+	httpServer := &http.Server{Handler: hubHandler}
+	mux := cmux.New(listener)
+	httpListener := mux.Match(cmux.HTTP1Fast())
+	iceListener := mux.Match(cmux.Any())
+	iceMux, err := remotertc.NewLocalICETCPMuxFromListener(iceListener)
 	if err != nil {
-		return localweb.Terminal{}, err
+		_ = listener.Close()
+		return nil, err
 	}
-	info, err := a.service.daemon.Get(ctx, created.TerminalID)
-	if err == nil && info != nil {
-		return localwebTerminalFromProtocol(*info), nil
-	}
-	return localweb.Terminal{
-		TerminalID: created.TerminalID,
-		Name:       strings.TrimSpace(req.Name),
-		Command:    append([]string(nil), req.Command...),
-		Cols:       int(size.Cols),
-		Rows:       int(size.Rows),
-		State:      created.State,
-	}, nil
-}
 
-func (a localWebAdapter) UpdateLocalTerminal(ctx context.Context, terminalID string, req localweb.UpdateTerminalRequest) (localweb.Terminal, error) {
-	if a.service == nil || a.service.daemon == nil {
-		return localweb.Terminal{}, nil
-	}
-	info, err := a.service.daemon.Get(ctx, terminalID)
-	if err != nil {
-		return localweb.Terminal{}, err
-	}
-	tags := copyTags(info.Tags)
-	if tags == nil {
-		tags = map[string]string{}
-	}
-	mergeLocalTerminalTags(tags, req.CWD, req.Environment, req.SizeLockMode)
-	if err := a.service.daemon.SetMetadata(ctx, terminalID, strings.TrimSpace(req.Name), tags); err != nil {
-		return localweb.Terminal{}, err
-	}
-	updated, err := a.service.daemon.Get(ctx, terminalID)
-	if err != nil {
-		return localweb.Terminal{}, err
-	}
-	return localwebTerminalFromProtocol(*updated), nil
-}
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 2)
+	go func() {
+		if err := httpServer.Serve(httpListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			done <- err
+			cancel()
+			return
+		}
+		done <- nil
+	}()
+	go func() {
+		if err := mux.Serve(); err != nil && !errors.Is(err, net.ErrClosed) && !strings.Contains(strings.ToLower(err.Error()), "use of closed network connection") {
+			done <- err
+			cancel()
+			return
+		}
+		done <- nil
+	}()
 
-func (a localWebAdapter) DeleteLocalTerminal(ctx context.Context, terminalID string) error {
-	if a.service == nil || a.service.daemon == nil {
-		return nil
+	rt := &localRuntime{
+		localWebAddr:  listenAddr,
+		iceTCPAddr:    net.JoinHostPort(advertisedHost, strconv.Itoa(port)),
+		httpURL:       "http://" + net.JoinHostPort(advertisedHost, strconv.Itoa(port)),
+		actualWebAddr: actualAddr,
+		localPairURL:  "http://" + net.JoinHostPort(advertisedHost, strconv.Itoa(port)) + "/api/v1/pairing/claims",
+		iceTCPPort:    port,
+		iceTCPMux:     iceMux,
+		listener:      listener,
+		httpServer:    httpServer,
+		cancel:        cancel,
+		updatedAt:     time.Now().UTC(),
 	}
-	return a.service.daemon.Remove(ctx, terminalID)
-}
-
-func (a localWebAdapter) ClaimPairSession(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
-	if a.service == nil {
-		return pairing.ClaimResponse{}, nil
-	}
-	return a.service.pairClaim(ctx, req)
-}
-
-func (a localWebAdapter) AnswerLocalRTCOffer(ctx context.Context, req localweb.RTCOfferRequest) (localweb.RTCOfferResponse, error) {
-	if a.service == nil {
-		return localweb.RTCOfferResponse{}, nil
-	}
-	return a.service.localRTCAnswer(ctx, req, a.iceTCPMux, a.iceTCPEnabled, a.rtcSessionCtx)
-}
-
-func (s *Service) localRTCAnswer(
-	ctx context.Context,
-	req localweb.RTCOfferRequest,
-	iceTCPMux *LocalICETCPMux,
-	iceTCPEnabled bool,
-	sessionCtx context.Context,
-) (localweb.RTCOfferResponse, error) {
-	terminalID := strings.TrimSpace(req.Offer.TerminalID)
-	if terminalID == "" {
-		if strings.TrimSpace(req.Client.Purpose) != "inventory_events" {
-			allowTerminal := hasCapability(req.AppCertificate.Payload.Capabilities, "terminal")
-			allowFileManager := hasCapability(req.AppCertificate.Payload.Capabilities, "file_manager")
-			allowTerminalManagement := hasCapability(req.AppCertificate.Payload.Capabilities, "terminal_management")
-			if !allowTerminal && !allowTerminalManagement {
-				return localweb.RTCOfferResponse{}, pairingErr("app certificate lacks machine remote RTC capability")
+	rt.shutdown = func(shutdownCtx context.Context) error {
+		if shutdownCtx == nil {
+			shutdownCtx = context.Background()
+		}
+		cancel()
+		var err error
+		if httpServer != nil {
+			err = httpServer.Shutdown(shutdownCtx)
+			if isClosedNetworkError(err) {
+				err = nil
 			}
-			dataChannels := []string{"api"}
-			if allowTerminal {
-				dataChannels = append(dataChannels, "terminal:{terminal_id}", "events")
-			}
-			if allowFileManager {
-				dataChannels = append(dataChannels, "file:{transfer_id}")
-			}
-			return s.localRTCAnswerWithScope(
-				ctx, req, iceTCPMux, iceTCPEnabled, sessionCtx,
-				"", allowTerminal, allowFileManager, allowTerminalManagement, allowTerminal,
-				dataChannels,
-			)
 		}
-		if !hasCapability(req.AppCertificate.Payload.Capabilities, "terminal") {
-			return localweb.RTCOfferResponse{}, pairingErr("app certificate lacks machine inventory capability")
+		if listener != nil {
+			if closeErr := listener.Close(); err == nil && closeErr != nil && !isClosedNetworkError(closeErr) {
+				err = closeErr
+			}
 		}
-		return s.localRTCAnswerWithScope(
-			ctx, req, iceTCPMux, iceTCPEnabled, sessionCtx,
-			"", false, false, false, true,
-			[]string{"events"},
-		)
+		select {
+		case <-runCtx.Done():
+		default:
+		}
+		return err
 	}
-	if !hasCapability(req.AppCertificate.Payload.Capabilities, "terminal") {
-		return localweb.RTCOfferResponse{}, pairingErr("app certificate lacks remote RTC capabilities")
-	}
-	allowFileManager := hasCapability(req.AppCertificate.Payload.Capabilities, "file_manager")
-	allowTerminalManagement := hasCapability(req.AppCertificate.Payload.Capabilities, "terminal_management")
-	dataChannels := []string{"api", "terminal:{terminal_id}"}
-	if allowFileManager {
-		dataChannels = append(dataChannels, "file:{transfer_id}")
-	}
-	return s.localRTCAnswerWithScope(
-		ctx, req, iceTCPMux, iceTCPEnabled, sessionCtx,
-		terminalID, true, allowFileManager, allowTerminalManagement, false,
-		dataChannels,
-	)
+	return rt, nil
 }
 
-func (s *Service) localRTCAnswerWithScope(
-	ctx context.Context,
-	req localweb.RTCOfferRequest,
-	iceTCPMux *LocalICETCPMux,
-	iceTCPEnabled bool,
-	sessionCtx context.Context,
-	terminalID string,
-	allowTerminal bool,
-	allowFileManager bool,
-	allowTerminalManagement bool,
-	allowEvents bool,
-	dataChannels []string,
-) (localweb.RTCOfferResponse, error) {
-	if s == nil {
-		return localweb.RTCOfferResponse{}, nil
+func (s *Service) attachManagerToLocalHub(ctx context.Context, local *localRuntime) {
+	if s == nil || s.manager == nil || local == nil {
+		return
 	}
-	status := s.Status()
-	machineID := strings.TrimSpace(status.DeviceID)
-	cfg := s.normalizedConfig()
-	machineKey, err := identity.LoadOrCreateMachineKey(cfg.DataDir)
-	if err != nil {
-		return localweb.RTCOfferResponse{}, err
+	s.manager.AddHubURLWithAnswerOptions(local.httpURL, remotertc.AnswerOptions{SettingEngine: local.iceTCPMux})
+	if status := s.manager.Status(); status.State == runtime.StateDisabled {
+		_ = s.manager.Start(ctx)
 	}
-	if machineID == "" {
-		ident, identErr := identity.LoadOrCreate(cfg.DataDir, cfg.DeviceName)
-		if identErr != nil {
-			return localweb.RTCOfferResponse{}, identErr
+}
+
+func (s *Service) attachManagerToCloud(params remoteprotocol.LocalEnableParams, localHubURL string) {
+	if s == nil || s.manager == nil {
+		return
+	}
+	localHubURL = strings.TrimSpace(localHubURL)
+	for _, hubURL := range params.HubURLs {
+		hubURL = strings.TrimSpace(hubURL)
+		if hubURL == "" || hubURL == localHubURL {
+			continue
 		}
-		machineID = strings.TrimSpace(ident.DeviceID)
+		s.manager.AddExplicitHubURL(hubURL)
 	}
-	if err := cert.VerifyAppCertificate(req.AppCertificate, machineKey.PublicKey, time.Now().UTC()); err != nil {
-		return localweb.RTCOfferResponse{}, err
+	s.manager.ConfigureCloud(params.ControlURL, params.AccessToken, params.Region)
+}
+
+func (s *Service) detachManagerFromLocalHub(local *localRuntime) {
+	if s == nil || s.manager == nil || local == nil {
+		return
 	}
-	if strings.TrimSpace(req.AppCertificate.Payload.MachineID) != machineID {
-		return localweb.RTCOfferResponse{}, pairingErr("app certificate machine_id does not match local machine")
+	s.manager.DetachHub(local.httpURL)
+}
+
+func localHubAdvertisedHost(addr net.Addr) string {
+	tcpAddr, ok := addr.(*net.TCPAddr)
+	if !ok || tcpAddr.IP == nil || tcpAddr.IP.IsUnspecified() {
+		return localHubLANIP()
 	}
-	if strings.TrimSpace(req.Offer.MachineID) != strings.TrimSpace(req.AppCertificate.Payload.MachineID) {
-		return localweb.RTCOfferResponse{}, pairingErr("offer machine_id does not match app certificate")
+	return tcpAddr.IP.String()
+}
+
+func localHubLANIP() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "127.0.0.1"
 	}
-	if terminalID != "" && s.daemon != nil {
-		if _, err := s.daemon.Get(ctx, terminalID); err != nil {
-			return localweb.RTCOfferResponse{}, err
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch value := addr.(type) {
+			case *net.IPNet:
+				ip = value.IP
+			case *net.IPAddr:
+				ip = value.IP
+			}
+			ip = ip.To4()
+			if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+				continue
+			}
+			return ip.String()
 		}
 	}
-	appPublicKey, err := base64.StdEncoding.DecodeString(req.AppCertificate.Payload.AppPublicKey)
-	if err != nil {
-		return localweb.RTCOfferResponse{}, err
+	return "127.0.0.1"
+}
+
+func portFromAddr(addr net.Addr) (int, error) {
+	tcpAddr, ok := addr.(*net.TCPAddr)
+	if !ok || tcpAddr.Port <= 0 {
+		return 0, fmt.Errorf("local hub listener has invalid address %q", addr.String())
 	}
-	s.rtcMu.Lock()
-	if s.rtcReplay == nil {
-		s.rtcReplay = cert.NewReplayWindow(5 * time.Minute)
+	return tcpAddr.Port, nil
+}
+
+func isClosedNetworkError(err error) bool {
+	if err == nil {
+		return false
 	}
-	replay := s.rtcReplay
-	if s.rtcFiles == nil {
-		s.rtcFiles = fileapi.NewManager()
-	}
-	files := s.rtcFiles
-	s.rtcMu.Unlock()
-	if err := remotertc.VerifyOfferSignature(remotertc.OfferSignature{
-		Algorithm: req.Signature.Algorithm,
-		Nonce:     req.Signature.Nonce,
-		Timestamp: req.Signature.Timestamp,
-		Value:     req.Signature.Value,
-	}, remotertc.OfferSignatureFields{
-		MachineID:  req.Offer.MachineID,
-		TerminalID: req.Offer.TerminalID,
-		SDP:        req.Offer.SDP,
-		Candidates: req.Offer.ICECandidates,
-	}, ed25519.PublicKey(appPublicKey), replay, time.Now().UTC()); err != nil {
-		return localweb.RTCOfferResponse{}, err
-	}
-	answer, err := sessionflow.AnswerLocal(ctx, nil, sessionflow.AnswerInput{
-		Plan: sessionflow.LocalPlan(nil),
-		Offer: hubv1.SignalingOffer{
-			SessionID:     strings.TrimSpace(req.Offer.SessionID),
-			DeviceID:      strings.TrimSpace(req.Offer.MachineID),
-			TerminalID:    terminalID,
-			SDP:           req.Offer.SDP,
-			ICECandidates: append([]string(nil), req.Offer.ICECandidates...),
-		},
-		Sink:  localRTCTransportSink{service: s, terminalID: terminalID},
-		Files: files,
-		Options: remotertc.AnswerOptions{
-			SettingEngine: iceTCPMux,
-			ChannelPolicy: remotertc.ChannelPolicy{
-				TerminalID:              terminalID,
-				AllowTerminal:           allowTerminal,
-				AllowAPI:                true,
-				AllowFileManager:        allowFileManager,
-				AllowTerminalManagement: allowTerminalManagement,
-				AllowEvents:             allowEvents,
-			},
-			TerminalManagement: localRTCManagementRouter{adapter: localWebAdapter{service: s}},
-			Events:             inventoryProvider{service: s},
-			SessionContext:     sessionCtx,
-		},
-	})
-	if err != nil {
-		return localweb.RTCOfferResponse{}, err
-	}
-	return localweb.RTCOfferResponse{
-		Answer: localweb.RTCSessionAnswer{
-			SessionID:     answer.SessionID,
-			SDP:           answer.SDP,
-			ICECandidates: append([]string(nil), answer.ICECandidates...),
-		},
-		ICETCPEnabled: iceTCPEnabled,
-		DataChannels:  dataChannels,
-		Capabilities: localweb.RTCCapabilities{
-			TerminalAllowed:           allowTerminal,
-			APIAllowed:                allowFileManager || allowTerminalManagement,
-			EventsAllowed:             allowEvents,
-			FileTransferAllowed:       allowFileManager,
-			TerminalManagementAllowed: allowTerminalManagement,
-			RelayInUse:                false,
-		},
-	}, nil
+	return errors.Is(err, net.ErrClosed) || strings.Contains(strings.ToLower(err.Error()), "use of closed network connection")
 }
 
 type localRTCTransportSink struct {
@@ -810,14 +536,7 @@ func (p inventoryProvider) ListRemoteTerminals(ctx context.Context) []runtime.Te
 	}
 	out := make([]runtime.TerminalInventoryItem, 0, len(list.Terminals))
 	for _, item := range list.Terminals {
-		out = append(out, runtime.TerminalInventoryItem{
-			ID:      item.ID,
-			Name:    item.Name,
-			State:   item.State,
-			Command: append([]string(nil), item.Command...),
-			Cols:    int(item.Size.Cols),
-			Rows:    int(item.Size.Rows),
-		})
+		out = append(out, terminalInventoryFromProtocol(item))
 	}
 	return out
 }
@@ -830,7 +549,7 @@ func (p inventoryProvider) ServeRemoteTransport(ctx context.Context, t transport
 }
 
 func (p inventoryProvider) RouteTerminalManagementRequest(ctx context.Context, req remotertc.TerminalManagementRequest) (int32, []byte, string) {
-	return localRTCManagementRouter{adapter: localWebAdapter{service: p.service}}.RouteTerminalManagementRequest(ctx, req)
+	return terminalManagementRouter{service: p.service}.RouteTerminalManagementRequest(ctx, req)
 }
 
 func (p inventoryProvider) SubscribeRemoteEvents(ctx context.Context, filters remotertc.EventFilters) (<-chan []byte, func(), error) {
@@ -879,14 +598,14 @@ func (p inventoryProvider) SubscribeRemoteEvents(ctx context.Context, filters re
 	return out, func() {}, nil
 }
 
-type localRTCManagementRouter struct {
-	adapter localWebAdapter
+type terminalManagementRouter struct {
+	service *Service
 }
 
-func (r localRTCManagementRouter) RouteTerminalManagementRequest(ctx context.Context, req remotertc.TerminalManagementRequest) (int32, []byte, string) {
+func (r terminalManagementRouter) RouteTerminalManagementRequest(ctx context.Context, req remotertc.TerminalManagementRequest) (int32, []byte, string) {
 	switch req.Path {
 	case "list":
-		terminals, err := r.adapter.ListTerminals(ctx)
+		terminals, err := r.listTerminals(ctx)
 		if err != nil {
 			return http.StatusInternalServerError, nil, err.Error()
 		}
@@ -902,13 +621,7 @@ func (r localRTCManagementRouter) RouteTerminalManagementRequest(ctx context.Con
 		if err := json.Unmarshal(req.Body, &body); err != nil {
 			return http.StatusBadRequest, nil, "invalid create request"
 		}
-		terminal, err := r.adapter.CreateLocalTerminal(ctx, localweb.CreateTerminalRequest{
-			Name:         body.Name,
-			Command:      append([]string(nil), body.Command...),
-			CWD:          body.Dir,
-			Environment:  firstNonEmpty(body.Env),
-			SizeLockMode: body.Tags[terminalmeta.SizeLockTag],
-		})
+		terminal, err := r.createTerminal(ctx, body.Name, body.Command, body.Dir, firstNonEmpty(body.Env), body.Tags[terminalmeta.SizeLockTag])
 		if err != nil {
 			return http.StatusBadRequest, nil, err.Error()
 		}
@@ -926,12 +639,7 @@ func (r localRTCManagementRouter) RouteTerminalManagementRequest(ctx context.Con
 		if terminalID == "" {
 			return http.StatusBadRequest, nil, "terminal_id is required"
 		}
-		terminal, err := r.adapter.UpdateLocalTerminal(ctx, terminalID, localweb.UpdateTerminalRequest{
-			Name:         body.Name,
-			CWD:          body.Tags["cwd"],
-			Environment:  body.Tags["environment"],
-			SizeLockMode: body.Tags[terminalmeta.SizeLockTag],
-		})
+		terminal, err := r.updateTerminal(ctx, terminalID, body.Name, body.Tags["cwd"], body.Tags["environment"], body.Tags[terminalmeta.SizeLockTag])
 		if err != nil {
 			return http.StatusBadRequest, nil, err.Error()
 		}
@@ -947,13 +655,83 @@ func (r localRTCManagementRouter) RouteTerminalManagementRequest(ctx context.Con
 		if terminalID == "" {
 			return http.StatusBadRequest, nil, "terminal_id is required"
 		}
-		if err := r.adapter.DeleteLocalTerminal(ctx, terminalID); err != nil {
+		if err := r.removeTerminal(ctx, terminalID); err != nil {
 			return http.StatusBadRequest, nil, err.Error()
 		}
 		return http.StatusOK, []byte(`{}`), ""
 	default:
 		return http.StatusNotFound, nil, "unknown terminal management route"
 	}
+}
+
+func (r terminalManagementRouter) listTerminals(ctx context.Context) ([]runtime.TerminalInventoryItem, error) {
+	if r.service == nil || r.service.daemon == nil {
+		return nil, nil
+	}
+	list, err := r.service.daemon.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]runtime.TerminalInventoryItem, 0, len(list.Terminals))
+	for _, item := range list.Terminals {
+		out = append(out, terminalInventoryFromProtocol(item))
+	}
+	return out, nil
+}
+
+func (r terminalManagementRouter) createTerminal(ctx context.Context, name string, command []string, dir string, environment string, sizeLockMode string) (runtime.TerminalInventoryItem, error) {
+	if r.service == nil || r.service.daemon == nil {
+		return runtime.TerminalInventoryItem{}, nil
+	}
+	created, err := r.service.daemon.Create(ctx, protocol.CreateParams{
+		Command: append([]string(nil), command...),
+		Name:    strings.TrimSpace(name),
+		Tags:    localTerminalTags(dir, environment, sizeLockMode),
+		Dir:     strings.TrimSpace(dir),
+	})
+	if err != nil {
+		return runtime.TerminalInventoryItem{}, err
+	}
+	info, err := r.service.daemon.Get(ctx, created.TerminalID)
+	if err == nil && info != nil {
+		return terminalInventoryFromProtocol(*info), nil
+	}
+	return runtime.TerminalInventoryItem{
+		ID:      created.TerminalID,
+		Name:    strings.TrimSpace(name),
+		Command: append([]string(nil), command...),
+		State:   created.State,
+	}, nil
+}
+
+func (r terminalManagementRouter) updateTerminal(ctx context.Context, terminalID string, name string, cwd string, environment string, sizeLockMode string) (runtime.TerminalInventoryItem, error) {
+	if r.service == nil || r.service.daemon == nil {
+		return runtime.TerminalInventoryItem{}, nil
+	}
+	info, err := r.service.daemon.Get(ctx, terminalID)
+	if err != nil {
+		return runtime.TerminalInventoryItem{}, err
+	}
+	tags := copyTags(info.Tags)
+	if tags == nil {
+		tags = map[string]string{}
+	}
+	mergeLocalTerminalTags(tags, cwd, environment, sizeLockMode)
+	if err := r.service.daemon.SetMetadata(ctx, terminalID, strings.TrimSpace(name), tags); err != nil {
+		return runtime.TerminalInventoryItem{}, err
+	}
+	updated, err := r.service.daemon.Get(ctx, terminalID)
+	if err != nil {
+		return runtime.TerminalInventoryItem{}, err
+	}
+	return terminalInventoryFromProtocol(*updated), nil
+}
+
+func (r terminalManagementRouter) removeTerminal(ctx context.Context, terminalID string) error {
+	if r.service == nil || r.service.daemon == nil {
+		return nil
+	}
+	return r.service.daemon.Remove(ctx, terminalID)
 }
 
 func (s *Service) pairClaim(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
@@ -973,6 +751,17 @@ func (s *Service) pairClaim(ctx context.Context, req pairing.ClaimRequest) (pair
 		return pairing.ClaimResponse{}, pairingErr("pair session not found")
 	}
 	return manager.ClaimSession(req)
+}
+
+type pairClaimer struct {
+	service *Service
+}
+
+func (p pairClaimer) ClaimPairSession(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
+	if p.service == nil {
+		return pairing.ClaimResponse{}, pairingErr("remote service is nil")
+	}
+	return p.service.pairClaim(ctx, req)
 }
 
 func (s *Service) normalizedConfig() remoteLocalConfig {
@@ -1004,6 +793,7 @@ func runtimeConfig(cfg remoteprotocol.Config) remoteconfig.Config {
 		Enabled:     cfg.Enabled,
 		ControlURL:  cfg.ControlURL,
 		HubURL:      cfg.HubURL,
+		HubURLs:     append([]string(nil), cfg.HubURLs...),
 		AccessToken: cfg.AccessToken,
 		DataDir:     cfg.DataDir,
 		DeviceName:  cfg.DeviceName,
@@ -1033,20 +823,14 @@ func pairManagerConfigChanged(a, b pairing.Config) bool {
 	return !a.MachineKey.PublicKey.Equal(b.MachineKey.PublicKey)
 }
 
-func localwebTerminalFromProtocol(item protocol.TerminalInfo) localweb.Terminal {
-	sizeLockMode := terminalmeta.SizeLockMode(item.Tags)
-	return localweb.Terminal{
-		TerminalID:   item.ID,
-		Name:         item.Name,
-		Command:      append([]string(nil), item.Command...),
-		Cols:         int(item.Size.Cols),
-		Rows:         int(item.Size.Rows),
-		State:        item.State,
-		LastActiveAt: item.CreatedAt,
-		SizeLocked:   sizeLockMode == terminalmeta.SizeLockLock,
-		SizeLockMode: sizeLockMode,
-		CWD:          item.Tags["termx.cwd"],
-		Environment:  item.Tags["termx.environment"],
+func terminalInventoryFromProtocol(item protocol.TerminalInfo) runtime.TerminalInventoryItem {
+	return runtime.TerminalInventoryItem{
+		ID:      item.ID,
+		Name:    item.Name,
+		State:   item.State,
+		Command: append([]string(nil), item.Command...),
+		Cols:    int(item.Size.Cols),
+		Rows:    int(item.Size.Rows),
 	}
 }
 
@@ -1113,16 +897,4 @@ func copyTags(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
-}
-
-func localWebBaseURL(addr net.Addr) string {
-	tcpAddr, ok := addr.(*net.TCPAddr)
-	if !ok {
-		return "http://" + addr.String()
-	}
-	host := tcpAddr.IP.String()
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		host = "127.0.0.1"
-	}
-	return "http://" + net.JoinHostPort(host, strconv.Itoa(tcpAddr.Port))
 }

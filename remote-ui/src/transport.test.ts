@@ -67,8 +67,8 @@ describe('RtcSession public interfaces', () => {
     expect(transportSource).not.toMatch(/RTCPeerConnection|RTCDataChannel|nativePlugin|turnCredential|relayTransport/i)
   })
 
-  it('keeps local signaling api and inventory events outside runtime transport taxonomy', () => {
-    expectTypeOf<LocalAgentApi>().toHaveProperty('createRTCAnswer')
+  it('keeps local status api and inventory events outside runtime transport taxonomy', () => {
+    expectTypeOf<LocalAgentApi>().toHaveProperty('getStatus')
     expectTypeOf<TerminalInventoryEvents>().toMatchTypeOf<{
       subscribe(machineId: string, handler: (event: { type: 'inventory_changed' }) => void): { close(): void }
     }>()

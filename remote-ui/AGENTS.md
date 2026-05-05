@@ -1,69 +1,80 @@
 # `remote-ui/` Agent Notes
 
-当前项目根目录：`remote-ui/`
-
 ## Boundary
 
-- `remote-ui` 是 Web / embedded Web UI 的产品壳，不是 `termx-core`。
-- `remote-ui` 负责连接建立、运行时 WebRTC session、前端 terminal/file/events/api 消费层，以及 UI 状态编排。
-- `remote-ui` 不应反向定义或污染 `termx-core` 的 shell-neutral runtime 边界。
-- 当前产品方向是 APP-first，但当前阶段**只实现 browser runtime adapter**；native adapter 只保留接口与工厂边界，不落实现。
+- `remote-ui` 是 Web / embedded Web UI，不是 `termx-core` 或 `termx-remote`。
+- `remote-ui` 负责：连接建立、运行时 WebRTC session、terminal/file/events 消费、UI 状态编排。
+- `remote-ui` 不反向定义或污染 `termx-core` / `termx-remote` 的产品边界。
+- 当前阶段只实现 browser adapter；native adapter 只保留 future boundary，不落实现。
+
+## Current Build Direction
+
+主线目标：对齐新 hub 协议，统一 local/cloud 连接路径，消除 localweb 死代码。
+
+核心工作（WF-203）：
+- 删除调用已删除 localweb 端点的代码（`localAgentApi` 中 `/api/local/rtc/offer`、`/api/local/pair`、`/api/local/terminals`、`/api/local/status` 调用）
+- 删除 `localRtcConnector.ts`
+- local mode 统一走 `managedHubRtcConnector`，hub URL 指向本地嵌入 hub
+- local mode pairing 走 `managedHubApi.createPairingClaim()`（同 cloud path）
+- 新增 `LocalHubUrlProvider` 接口，支持 QR 扫描或手动输入本地 hub URL
+
+## 连接架构（新）
+
+所有连接路径都通过 Hub 协议，只是 hub URL 不同：
+
+```
+local mode:   managedHubRtcConnector → http://LAN_IP:18888   (嵌入式本地 hub)
+cloud mode:   managedHubRtcConnector → https://hub.termx.io  (云端 hub)
+both mode:    connectionOrchestrator 先尝试 local，失败再用 cloud
+```
+
+**已删除的旧路径**：
+- `localRtcConnector.ts` → 调用 `/api/local/rtc/offer`（localweb 端点，已删除）
+- `localAgentApi.ts` 中的 offer/pair/terminal 调用（localweb 端点，已删除）
+
+**保留的旧代码**（仍有效）：
+- `managedHubRtcConnector.ts` — 主连接路径，local 和 cloud 共用
+- `managedHubApi.ts` — Hub 标准 API（sessions、pairing/claims、answer）
+- `browserRtcSession.ts` — WebRTC core（offer、answer、DataChannel）
+- `connectionOrchestrator.ts` — 连接路径编排（需更新 local 路径实现）
+
+## 连接流程（本地 hub）
+
+```
+1. 用户提供本地 hub URL（QR 扫描 / 手动输入）
+2. LocalHubUrlProvider.getLocalHubUrl() → "http://192.168.x.x:18888"
+3. 检查是否已配对 → managedHubApi.createPairingClaim(localHubUrl)
+4. 连接 → managedHubRtcConnector.connect(localHubUrl, appCert)
+5. WebRTC DataChannel 建立
+6. terminal/file/events（与 cloud mode 完全一致）
+```
+
+## App 认证与 Cert
+
+- `remote-ui` 持有 app certificate（pairing 时通过 hub pairing/claims 获取，machine key 签名）。
+- 每次发送 offer 时，app cert 作为 offer payload 的一部分随 offer 一起发出。
+- DataChannel 建立后，用 app cert 公钥参与密钥协商（未来 E2E 加密使用）。
+- `remote-ui` 不调 Web Controller 做 offer 前的 cert 验证——验证由 agent 在收到 offer 时完成。
 
 ## Transport Architecture
 
-- `remote-ui` 的运行时 transport 统一基于 WebRTC DataChannel。
-- 平台中立公共接口层必须以 `RtcSession` 作为唯一运行时连接对象，并以 `RtcBinaryChannel` / `RtcJsonRpcChannel` / `ConnectionInfo` / `ConnectionCapabilities` 等中性类型对外暴露能力。
-- HTTP 只允许承担 signaling / discovery / pairing / rendezvous / hub poll-answer 等建链前职责；HTTP 不是运行时 transport。
-- 所有网络相关能力必须先定义 TypeScript `interface`，再提供 browser implementation。
-- 当前阶段不得实现 native 运行时代码；但必须为未来 native 适配器保留清晰的 interface / factory 边界。
-- 前端实现必须先抽象平台中立的公共接口，再提供浏览器 WebRTC 实现；不要把浏览器 `RTCPeerConnection` / `RTCDataChannel` / `fetch` / `localStorage` 直接扩散到高层业务代码。
-- 客户端可见的连接路径只分 3 类：`local`、`public_p2p`、`managed`。
-- APP 连接策略必须按阶段升级：
-  - 优先 local/LAN
-  - 再 `public_p2p`
-  - 最后 `managed`
-- relay 不是客户端单独选择的 transport 类型。`managed` 路径下是否走 relay，必须由 Hub / TURN / ICE 侧策略决定。
-
-## Current Migration Task
-
-- 当前任务不再是局部 WebRTC rewrite，而是配合 remote 域迁移做 `remote-ui` 网络边界重构。
-- 目标是让 `remote-ui` 只依赖稳定接口层，并与未来 `termx-remote` 的统一 hub/signaling 流程对齐。
-- 当前阶段只完成 browser implementation：
-  - `browserRtcSession`
-  - browser connector/signaling adapters
-  - browser API/storage/crypto adapters
-- native 相关文件只允许出现接口或工厂，不允许落真实实现。
+- 运行时 transport 统一基于 WebRTC DataChannel。
+- 所有网络能力必须先定义 TypeScript `interface`，再提供 browser implementation。
+- 组件层不得直接依赖：`RTCPeerConnection`、`RTCDataChannel`、`fetch`、`localStorage`。
+- 客户端 path 只允许：`local`、`public_p2p`、`managed`。
+- relay 只能表现为 capability/policy/connection info，不能变成第四种 transport。
+- Hub 是 dumb relay，`remote-ui` 不假设 Hub 会做任何 cert 验证或 policy 决策。
 
 ## Workflow
 
-- 当前任务必须采用 TDD：
-  - 先定义目标行为
-  - 先写失败测试
-  - 再写最小实现
-  - 再重构
-  - 再跑验证
-  - 再更新根 `workflow.md`
-- 当前任务必须做切片级 code review：
-  - 每个切片完成后必须发起一次独立审查。
-  - 审查重点必须包括：
-    - 测试是否只是迎合实现
-    - 是否存在 fake test / tautological test / 只验证 mock 交互的测试
-    - 是否残留错误抽象
-    - 是否把浏览器类型泄漏进公共接口或业务层
-    - 是否为 future-native 保留了清晰边界而又没有过早实现 native
-    - 是否遗漏 `workflow.md` 更新
+- 遵守根 `AGENTS.md` 与根 `workflow.md`。
+- 每个切片 TDD 推进，切片完成后独立 subagent review。
+- 新发现问题同步写入根 `workflow.md`。
 
-## Validation
+## Review Focus
 
-- 与本任务相关的改动，至少要运行：
-  - `npm test`
-  - `npm run typecheck`
-  - `npm run build`
-- 如果改动影响本地 embedded Web UI 资产同步，还必须运行：
-  - `npm run build:localweb`
-
-## Integration Rules
-
-- `remote-ui` 后续应对接统一的 hub/signaling/session 流程，不要保留 local 与 managed 的两套产品逻辑。
-- Web Control / Hub / local agent 的 HTTP API 只负责建链前 signaling/discovery/pairing/policy；terminal/file/api/events 运行时必须继续走 WebRTC DataChannel。
-- 触及 remote buildout 的 `remote-ui` 改动必须遵守根 `AGENTS.md` 的 `workflow.md` 驱动、TDD、subagent review 规则。
+- 是否还有任何对 `/api/local/rtc/offer`、`/api/local/pair`、`/api/local/terminals`、`/api/local/status` 的调用（不得有）
+- local 连接路径是否已改为 `managedHubRtcConnector`（不得保留旧 localRtcConnector）
+- 组件层是否泄漏了浏览器网络对象（RTCPeerConnection、fetch 等）
+- local 和 cloud 连接代码路径是否真正统一（不得有双轨）
+- 测试是否覆盖了 local path 使用 managedHubRtcConnector 的行为

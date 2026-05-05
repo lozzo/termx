@@ -1,7 +1,6 @@
 package registry
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"time"
@@ -23,11 +22,6 @@ type realClock struct{}
 
 func (realClock) Now() time.Time {
 	return time.Now().UTC()
-}
-
-type AuthorityVerifier interface {
-	VerifyAgentRegistration(context.Context, AgentRegistration) error
-	VerifyOfferTicket(context.Context, OfferTicket) error
 }
 
 type AgentRegistration struct {
@@ -136,18 +130,6 @@ type ForceOfflineInput struct {
 	AgentID   string
 	Reason    string
 	TTL       time.Duration
-}
-
-type AgentPolicyRequest struct {
-	MachineID string
-	AgentID   string
-}
-
-type AgentPolicy struct {
-	MachineID    string
-	AgentID      string
-	ForceOffline bool
-	Reason       string
 }
 
 type PollInput struct {

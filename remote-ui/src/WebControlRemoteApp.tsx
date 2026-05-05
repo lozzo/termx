@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, CheckCircle2, Loader2, LogIn, Monitor, QrCode, RefreshCw, Server, Settings, ShieldCheck, Wifi, WifiOff, X } from 'lucide-react'
 import { createLocalAppIdentityStore, createLocalOfferSigner, pairLocalApp, type LocalAppCrypto } from './localAppIdentity'
-import { LocalRemoteApp, type LocalRemoteSessionConnector } from './LocalRemoteApp'
+import { LocalRemoteApp, type LocalRemoteInventoryApi, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createMachineStore, type StoredMachineRecord } from './machineStore'
 import { createManagedHubRtcConnector } from './managedHubRtcConnector'
 import { createManagedHubApi } from './managedHubApi'
 import { parsePairingPayload, type PairingPayload } from './pairingPayload'
-import type { ConnectionInfo, LocalAgentApi, LocalStatus, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectionTarget, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionNegotiator, RtcSubscription } from './transport'
+import type { ConnectionInfo, LocalPairingApi, LocalStatus, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectionTarget, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionNegotiator, RtcSubscription } from './transport'
 import { normalizeTerminalInventory } from './terminalInventory'
 import { createWebControlApi, type WebControlApi, type WebControlMachine, type WebControlUser } from './webControlApi'
 
@@ -19,7 +19,7 @@ const defaultWebControlUrl = 'http://114.66.58.243:12306'
 const appName = 'TermX Remote App'
 
 type AppView = 'home' | 'settings' | 'machine'
-type PairApi = Pick<LocalAgentApi, 'pair'>
+type PairApi = LocalPairingApi
 type ManagedRtcSessionFactory = (input: RtcConnectionTarget) => RtcSession & RtcSessionNegotiator
 type MachineRuntimeFactory = (input: {
   machine: WebControlMachine
@@ -32,7 +32,7 @@ type MachineRuntimeFactory = (input: {
 }) => MachineRuntime
 
 interface MachineRuntime {
-  api: Pick<LocalAgentApi, 'getStatus' | 'listTerminals'>
+  api: LocalRemoteInventoryApi
   connector: LocalRemoteSessionConnector
 }
 

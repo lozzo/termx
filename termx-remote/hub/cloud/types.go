@@ -1,11 +1,8 @@
 package cloud
 
 import (
-	"context"
 	"encoding/json"
 	"time"
-
-	"github.com/lozzow/termx/termx-remote/hub/registry"
 )
 
 const PathCloud = "cloud"
@@ -17,15 +14,6 @@ const (
 	defaultOfferTTL  = 5 * time.Minute
 	defaultMaxOffers = 4096
 )
-
-type ConnectionTicketVerifier interface {
-	CheckConnectionTicket(context.Context, ConnectionTicketInput) (Ticket, error)
-	ConsumeConnectionTicket(context.Context, ConnectionTicketInput) (Ticket, error)
-	VerifyOfferTicket(context.Context, registry.OfferTicket) error
-}
-
-// TicketVerifier is kept as a compatibility alias for older internal callers.
-type TicketVerifier = ConnectionTicketVerifier
 
 type Clock interface {
 	Now() time.Time

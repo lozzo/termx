@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-remote/hub/ice"
+	hubturn "github.com/lozzow/termx/termx-remote/hub/turn"
 )
 
 func TestCloudPaidLeaseGetsTemporaryTurnCredentials(t *testing.T) {
@@ -58,6 +59,53 @@ func TestCloudPaidLeaseGetsTemporaryTurnCredentials(t *testing.T) {
 	}
 	if svc.VerifyCredential(turn.Username, turn.Credential, clock.Now().Add(ice.MaxCredentialTTL+time.Second), "lease_1") {
 		t.Fatal("expired turn credential still verified")
+	}
+}
+
+func TestCloudPaidLeaseGetsEmbeddedTurnCredentials(t *testing.T) {
+	ctx := context.Background()
+	clock := fixedClock(time.Date(2026, 5, 5, 7, 0, 0, 0, time.UTC))
+	turnServer, err := hubturn.NewServer(hubturn.Config{
+		ListenAddr: "127.0.0.1:0",
+		PublicIP:   "127.0.0.1",
+		Secret:     "embedded-secret",
+		Realm:      "termx",
+		Clock:      clock,
+	})
+	if err != nil {
+		t.Fatalf("turn server: %v", err)
+	}
+	defer turnServer.Close()
+	svc := ice.NewService(ice.Config{
+		Clock:      clock,
+		STUNURLs:   []string{"stun:hub.termx.test:3478"},
+		TURNServer: turnServer,
+	})
+
+	cfg, err := svc.ConfigForLease(ctx, ice.Lease{
+		ID:         "embedded",
+		Path:       ice.PathCloud,
+		AllowRelay: true,
+		ExpiresAt:  clock.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("ice config: %v", err)
+	}
+	if len(cfg.ICEServers) != 2 {
+		t.Fatalf("ice servers = %+v", cfg.ICEServers)
+	}
+	turn := cfg.ICEServers[1]
+	if len(turn.URLs) != 2 || !strings.HasPrefix(turn.URLs[0], "turn:127.0.0.1:") || !strings.Contains(turn.URLs[0], "transport=udp") || !strings.Contains(turn.URLs[1], "transport=tcp") {
+		t.Fatalf("embedded turn urls = %+v", turn.URLs)
+	}
+	if turn.Username == "" || turn.Credential == "" {
+		t.Fatalf("embedded turn credentials missing: %+v", turn)
+	}
+	if turn.ExpiresAt == nil || !turn.ExpiresAt.Equal(clock.Now().Add(24*time.Hour)) {
+		t.Fatalf("embedded turn expires_at = %v", turn.ExpiresAt)
+	}
+	if key, ok := turnServer.AuthHandler()(turn.Username, "termx", nil); !ok || len(key) == 0 {
+		t.Fatal("embedded turn credential did not authenticate")
 	}
 }
 

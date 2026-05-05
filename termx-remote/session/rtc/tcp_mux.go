@@ -41,6 +41,18 @@ func StartLocalICETCPMux(ctx context.Context, addr string) (*LocalICETCPMux, err
 		return nil, err
 	}
 	tcpMux := webrtc.NewICETCPMux(nil, listener, 20)
+	return newLocalICETCPMux(listener, tcpMux), nil
+}
+
+func NewLocalICETCPMuxFromListener(listener net.Listener) (*LocalICETCPMux, error) {
+	if listener == nil {
+		return nil, fmt.Errorf("local ICE TCP listener is required")
+	}
+	tcpMux := webrtc.NewICETCPMux(nil, listener, 20)
+	return newLocalICETCPMux(listener, tcpMux), nil
+}
+
+func newLocalICETCPMux(listener net.Listener, tcpMux ice.TCPMux) *LocalICETCPMux {
 	endpoint := ICETCPMuxEndpointFromAddr(listener.Addr())
 	listenIP := net.IP(nil)
 	if tcpAddr, ok := listener.Addr().(*net.TCPAddr); ok && tcpAddr.IP != nil {
@@ -51,7 +63,7 @@ func StartLocalICETCPMux(ctx context.Context, addr string) (*LocalICETCPMux, err
 		mux:      tcpMux,
 		endpoint: endpoint,
 		listenIP: listenIP,
-	}, nil
+	}
 }
 
 func ICETCPMuxEndpointFromAddr(addr net.Addr) ICETCPMuxEndpoint {
@@ -92,8 +104,6 @@ func (m *LocalICETCPMux) Apply(setting *webrtc.SettingEngine) {
 		})
 	}
 	setting.SetNetworkTypes([]webrtc.NetworkType{
-		webrtc.NetworkTypeUDP4,
-		webrtc.NetworkTypeUDP6,
 		webrtc.NetworkTypeTCP4,
 		webrtc.NetworkTypeTCP6,
 	})

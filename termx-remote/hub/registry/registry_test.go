@@ -3,8 +3,6 @@ package registry_test
 import (
 	"context"
 	"errors"
-	"slices"
-	"sync"
 	"testing"
 	"time"
 
@@ -16,7 +14,7 @@ func TestAgentRegisterHeartbeatExpiryAndCleanup(t *testing.T) {
 
 	ctx := context.Background()
 	clock := &mutableClock{value: time.Date(2026, 5, 3, 9, 41, 0, 0, time.UTC)}
-	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute, Verifier: allowAuthorityVerifier{}})
+	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute})
 
 	agent, err := store.Register(ctx, registry.RegisterInput{
 		MachineID: "mach_1",
@@ -59,7 +57,7 @@ func TestHeartbeatRejectsExpiredAgentBeforeCleanup(t *testing.T) {
 
 	ctx := context.Background()
 	clock := &mutableClock{value: time.Date(2026, 5, 3, 10, 17, 0, 0, time.UTC)}
-	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute, Verifier: allowAuthorityVerifier{}})
+	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -80,7 +78,7 @@ func TestForceOfflineRejectsHeartbeatPollAndOffers(t *testing.T) {
 
 	ctx := context.Background()
 	clock := &mutableClock{value: time.Date(2026, 5, 3, 17, 33, 0, 0, time.UTC)}
-	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute, Verifier: allowAuthorityVerifier{}})
+	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -123,7 +121,7 @@ func TestForceOfflinePolicyExpiresWithoutDurableState(t *testing.T) {
 
 	ctx := context.Background()
 	clock := &mutableClock{value: time.Date(2026, 5, 3, 17, 36, 0, 0, time.UTC)}
-	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute, Verifier: allowAuthorityVerifier{}})
+	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -148,7 +146,7 @@ func TestForceOfflineDoesNotBlockOtherAgentsForSameMachine(t *testing.T) {
 
 	ctx := context.Background()
 	clock := &mutableClock{value: time.Date(2026, 5, 3, 18, 3, 0, 0, time.UTC)}
-	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute, Verifier: allowAuthorityVerifier{}})
+	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_forced"}); err != nil {
 		t.Fatalf("register forced agent: %v", err)
 	}
@@ -189,7 +187,7 @@ func TestPollTimeoutOfferDeliveryAndAnswerCorrelation(t *testing.T) {
 
 	ctx := context.Background()
 	clock := &mutableClock{value: time.Date(2026, 5, 3, 9, 42, 0, 0, time.UTC)}
-	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute, Verifier: allowAuthorityVerifier{}})
+	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -260,7 +258,7 @@ func TestAnswerRequiresPolledOfferAndAssignedAgent(t *testing.T) {
 
 	ctx := context.Background()
 	clock := &mutableClock{value: time.Date(2026, 5, 3, 10, 4, 0, 0, time.UTC)}
-	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute, Verifier: allowAuthorityVerifier{}})
+	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register agent_1: %v", err)
 	}
@@ -312,7 +310,6 @@ func TestOfferRejectsRuntimePayloadMarkers(t *testing.T) {
 	store := registry.New(registry.Config{
 		Clock:    fixedClock(time.Date(2026, 5, 3, 10, 5, 0, 0, time.UTC)),
 		AgentTTL: time.Minute,
-		Verifier: allowAuthorityVerifier{},
 	})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
@@ -346,7 +343,6 @@ func TestSignalingPayloadSizeLimit(t *testing.T) {
 		Clock:       fixedClock(time.Date(2026, 5, 3, 10, 6, 0, 0, time.UTC)),
 		AgentTTL:    time.Minute,
 		MaxSDPBytes: len(validSDP) + 8,
-		Verifier:    allowAuthorityVerifier{},
 	})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
@@ -396,7 +392,6 @@ func TestSignalingPayloadRequiresBasicSDPShape(t *testing.T) {
 	store := registry.New(registry.Config{
 		Clock:    fixedClock(time.Date(2026, 5, 3, 10, 21, 0, 0, time.UTC)),
 		AgentTTL: time.Minute,
-		Verifier: allowAuthorityVerifier{},
 	})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
@@ -439,20 +434,13 @@ func TestSignalingPayloadRequiresBasicSDPShape(t *testing.T) {
 	}
 }
 
-func TestAgentRegistrationRejectsRebindAndVerifierDenial(t *testing.T) {
+func TestAgentRegistrationRejectsRebindOnly(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	verifier := &fakeAuthorityVerifier{
-		register: map[string]error{
-			"mach_1/agent_1": nil,
-			"mach_2/agent_2": registry.ErrUnauthorizedAgent,
-		},
-	}
 	store := registry.New(registry.Config{
 		Clock:    fixedClock(time.Date(2026, 5, 3, 10, 7, 0, 0, time.UTC)),
 		AgentTTL: time.Minute,
-		Verifier: verifier,
 	})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register allowed agent: %v", err)
@@ -460,55 +448,33 @@ func TestAgentRegistrationRejectsRebindAndVerifierDenial(t *testing.T) {
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_2", AgentID: "agent_1"}); !errors.Is(err, registry.ErrAgentRebound) {
 		t.Fatalf("agent rebind err = %v", err)
 	}
-	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_2", AgentID: "agent_2"}); !errors.Is(err, registry.ErrUnauthorizedAgent) {
-		t.Fatalf("verifier denied register err = %v", err)
-	}
-	if got := verifier.registerCalls; !slices.Equal(got, []string{"mach_1/agent_1", "mach_2/agent_2"}) {
-		t.Fatalf("register verifier calls = %v", got)
+	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_2", AgentID: "agent_2"}); err != nil {
+		t.Fatalf("second agent registration should be relayed without authority verifier: %v", err)
 	}
 }
 
-func TestOfferRequiresTicketVerifier(t *testing.T) {
+func TestOfferRelaysTicketIDWithoutVerification(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	verifier := &fakeAuthorityVerifier{
-		register: map[string]error{"mach_1/agent_1": nil},
-		offer: map[string]error{
-			"mach_1/term_1/ticket_allowed": nil,
-			"mach_1/term_1/ticket_denied":  registry.ErrUnauthorizedTicket,
-		},
-	}
 	store := registry.New(registry.Config{
 		Clock:    fixedClock(time.Date(2026, 5, 3, 10, 8, 0, 0, time.UTC)),
 		AgentTTL: time.Minute,
-		Verifier: verifier,
 	})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	if _, err := store.SubmitOffer(ctx, registry.OfferInput{
-		MachineID:  "mach_1",
-		TerminalID: "term_1",
-		TicketID:   "ticket_denied",
-		SDP:        minimalSDP("offer"),
-	}); !errors.Is(err, registry.ErrUnauthorizedTicket) {
-		t.Fatalf("denied offer err = %v", err)
-	}
 	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_allowed",
+		TicketID:   "opaque_ticket_from_app",
 		SDP:        minimalSDP("offer"),
 	})
 	if err != nil {
-		t.Fatalf("allowed offer: %v", err)
+		t.Fatalf("submit offer: %v", err)
 	}
-	if offer.TicketID != "ticket_allowed" {
+	if offer.TicketID != "opaque_ticket_from_app" {
 		t.Fatalf("offer ticket = %q", offer.TicketID)
-	}
-	if got := verifier.offerCalls; !slices.Equal(got, []string{"mach_1/term_1/ticket_denied", "mach_1/term_1/ticket_allowed"}) {
-		t.Fatalf("offer verifier calls = %v", got)
 	}
 }
 
@@ -519,7 +485,6 @@ func TestSubmitOfferPreservesSignedSDPBytes(t *testing.T) {
 	store := registry.New(registry.Config{
 		Clock:    fixedClock(time.Date(2026, 5, 3, 10, 8, 30, 0, time.UTC)),
 		AgentTTL: time.Minute,
-		Verifier: allowAuthorityVerifier{},
 	})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
@@ -553,7 +518,6 @@ func TestSubmitAnswerPreservesSDPBytes(t *testing.T) {
 	store := registry.New(registry.Config{
 		Clock:    fixedClock(time.Date(2026, 5, 3, 10, 8, 45, 0, time.UTC)),
 		AgentTTL: time.Minute,
-		Verifier: allowAuthorityVerifier{},
 	})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
@@ -600,7 +564,6 @@ func TestCleanupKeepsQueuedOfferWhenAnotherAgentOnline(t *testing.T) {
 	store := registry.New(registry.Config{
 		Clock:    clock,
 		AgentTTL: time.Minute,
-		Verifier: allowAuthorityVerifier{},
 	})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_old"}); err != nil {
 		t.Fatalf("register old: %v", err)
@@ -640,7 +603,6 @@ func TestCleanupExpiresStaleOffersAndAnswers(t *testing.T) {
 		Clock:        clock,
 		AgentTTL:     time.Hour,
 		SignalingTTL: time.Second,
-		Verifier:     allowAuthorityVerifier{},
 	})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
@@ -704,7 +666,6 @@ func TestSignalingTTLIsEnforcedWithoutCleanup(t *testing.T) {
 		Clock:        clock,
 		AgentTTL:     time.Hour,
 		SignalingTTL: time.Second,
-		Verifier:     allowAuthorityVerifier{},
 	})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
@@ -785,7 +746,6 @@ func TestCleanupRedeliversUnansweredOfferAfterAssignedAgentExpires(t *testing.T)
 		Clock:        clock,
 		AgentTTL:     time.Minute,
 		SignalingTTL: time.Hour,
-		Verifier:     allowAuthorityVerifier{},
 	})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register agent_1: %v", err)
@@ -832,7 +792,6 @@ func TestDuplicateAnswersRejected(t *testing.T) {
 	store := registry.New(registry.Config{
 		Clock:    fixedClock(time.Date(2026, 5, 3, 10, 13, 0, 0, time.UTC)),
 		AgentTTL: time.Minute,
-		Verifier: allowAuthorityVerifier{},
 	})
 	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
 		t.Fatalf("register: %v", err)
@@ -882,7 +841,6 @@ func TestGetAgentClonesTerminals(t *testing.T) {
 	store := registry.New(registry.Config{
 		Clock:    fixedClock(time.Date(2026, 5, 3, 10, 14, 0, 0, time.UTC)),
 		AgentTTL: time.Minute,
-		Verifier: allowAuthorityVerifier{},
 	})
 	if _, err := store.Register(ctx, registry.RegisterInput{
 		MachineID: "mach_1",
@@ -905,91 +863,6 @@ func TestGetAgentClonesTerminals(t *testing.T) {
 	}
 }
 
-func TestRegisterVerifierDoesNotBlockAgentReads(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	verifier := newBlockingAuthorityVerifier("mach_1/agent_blocked")
-	store := registry.New(registry.Config{
-		Clock:    fixedClock(time.Date(2026, 5, 3, 10, 15, 0, 0, time.UTC)),
-		AgentTTL: time.Minute,
-		Verifier: verifier,
-	})
-	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_existing"}); err != nil {
-		t.Fatalf("register existing: %v", err)
-	}
-	registerDone := make(chan error, 1)
-	go func() {
-		_, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_blocked"})
-		registerDone <- err
-	}()
-	select {
-	case <-verifier.entered:
-	case <-time.After(time.Second):
-		t.Fatal("blocking verifier was not called")
-	}
-
-	readDone := make(chan bool, 1)
-	go func() {
-		_, ok := store.GetAgent("agent_existing")
-		readDone <- ok
-	}()
-	var readOK bool
-	select {
-	case readOK = <-readDone:
-	case <-time.After(50 * time.Millisecond):
-		verifier.release()
-		if err := <-registerDone; err != nil {
-			t.Fatalf("blocked register after release: %v", err)
-		}
-		<-readDone
-		t.Fatal("GetAgent blocked behind a verifier call")
-	}
-	verifier.release()
-	if err := <-registerDone; err != nil {
-		t.Fatalf("blocked register after release: %v", err)
-	}
-	if !readOK {
-		t.Fatal("existing agent missing during blocked registration")
-	}
-}
-
-func TestRegisterRechecksRebindAfterVerifierReturns(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	verifier := newBlockingAuthorityVerifier("mach_1/agent_race")
-	store := registry.New(registry.Config{
-		Clock:    fixedClock(time.Date(2026, 5, 3, 10, 16, 0, 0, time.UTC)),
-		AgentTTL: time.Minute,
-		Verifier: verifier,
-	})
-	registerDone := make(chan error, 1)
-	go func() {
-		_, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_race"})
-		registerDone <- err
-	}()
-	select {
-	case <-verifier.entered:
-	case <-time.After(time.Second):
-		t.Fatal("blocking verifier was not called")
-	}
-	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_2", AgentID: "agent_race"}); err != nil {
-		t.Fatalf("competing register: %v", err)
-	}
-	verifier.release()
-	if err := <-registerDone; !errors.Is(err, registry.ErrAgentRebound) {
-		t.Fatalf("racing register err = %v", err)
-	}
-	agent, ok := store.GetAgent("agent_race")
-	if !ok {
-		t.Fatal("competing agent missing")
-	}
-	if agent.MachineID != "mach_2" {
-		t.Fatalf("agent machine = %q, want mach_2", agent.MachineID)
-	}
-}
-
 type fixedClock time.Time
 
 func (c fixedClock) Now() time.Time {
@@ -1006,79 +879,4 @@ func (c *mutableClock) Now() time.Time {
 
 func minimalSDP(sessionID string) string {
 	return "v=0\r\no=- " + sessionID + " 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel"
-}
-
-type allowAuthorityVerifier struct{}
-
-func (allowAuthorityVerifier) VerifyAgentRegistration(context.Context, registry.AgentRegistration) error {
-	return nil
-}
-
-func (allowAuthorityVerifier) VerifyOfferTicket(context.Context, registry.OfferTicket) error {
-	return nil
-}
-
-type fakeAuthorityVerifier struct {
-	register      map[string]error
-	offer         map[string]error
-	registerCalls []string
-	offerCalls    []string
-}
-
-type blockingAuthorityVerifier struct {
-	blockKey string
-	entered  chan struct{}
-	released chan struct{}
-	once     sync.Once
-}
-
-func newBlockingAuthorityVerifier(blockKey string) *blockingAuthorityVerifier {
-	return &blockingAuthorityVerifier{
-		blockKey: blockKey,
-		entered:  make(chan struct{}),
-		released: make(chan struct{}),
-	}
-}
-
-func (f *blockingAuthorityVerifier) VerifyAgentRegistration(ctx context.Context, req registry.AgentRegistration) error {
-	if req.MachineID+"/"+req.AgentID != f.blockKey {
-		return nil
-	}
-	f.once.Do(func() { close(f.entered) })
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-f.released:
-		return nil
-	}
-}
-
-func (f *blockingAuthorityVerifier) VerifyOfferTicket(context.Context, registry.OfferTicket) error {
-	return nil
-}
-
-func (f *blockingAuthorityVerifier) release() {
-	select {
-	case <-f.released:
-	default:
-		close(f.released)
-	}
-}
-
-func (f *fakeAuthorityVerifier) VerifyAgentRegistration(_ context.Context, req registry.AgentRegistration) error {
-	key := req.MachineID + "/" + req.AgentID
-	f.registerCalls = append(f.registerCalls, key)
-	if err, ok := f.register[key]; ok {
-		return err
-	}
-	return registry.ErrUnauthorizedAgent
-}
-
-func (f *fakeAuthorityVerifier) VerifyOfferTicket(_ context.Context, req registry.OfferTicket) error {
-	key := req.MachineID + "/" + req.TerminalID + "/" + req.TicketID
-	f.offerCalls = append(f.offerCalls, key)
-	if err, ok := f.offer[key]; ok {
-		return err
-	}
-	return registry.ErrUnauthorizedTicket
 }

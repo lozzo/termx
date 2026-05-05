@@ -13,26 +13,11 @@ import (
 	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
 )
 
-func TestAnswerLocalAndManagedUseSharedOrchestrator(t *testing.T) {
+func TestAnswerManagedUsesSharedOrchestrator(t *testing.T) {
 	iceServers := []hubv1.RTCIceServerConfig{{URLs: []string{"stun:stun.example.test:3478"}}}
-	answerer := &recordingAnswerer{answer: hubv1.SignalingAnswer{SessionID: "answer-session"}}
+	answerer := &recordingAnswerer{answer: hubv1.SignalingAnswer{SessionID: "managed-answer"}}
 
-	answer, err := AnswerLocal(context.Background(), answerer, AnswerInput{
-		Plan:  LocalPlan(iceServers),
-		Offer: hubv1.SignalingOffer{SessionID: "local-session"},
-	})
-	if err != nil {
-		t.Fatalf("AnswerLocal returned error: %v", err)
-	}
-	if answer.SessionID != "answer-session" {
-		t.Fatalf("local answer session = %q", answer.SessionID)
-	}
-	if !reflect.DeepEqual(answerer.iceServers, iceServers) {
-		t.Fatalf("local orchestrator did not pass ICE servers: %+v", answerer.iceServers)
-	}
-
-	answerer = &recordingAnswerer{answer: hubv1.SignalingAnswer{SessionID: "managed-answer"}}
-	answer, err = AnswerManaged(context.Background(), answerer, AnswerInput{
+	answer, err := AnswerManaged(context.Background(), answerer, AnswerInput{
 		Plan:  ManagedPlan(iceServers, RelayPolicy{AllowRelay: true}),
 		Offer: hubv1.SignalingOffer{SessionID: "managed-session"},
 	})
@@ -41,6 +26,9 @@ func TestAnswerLocalAndManagedUseSharedOrchestrator(t *testing.T) {
 	}
 	if answer.SessionID != "managed-answer" || answerer.offer.SessionID != "managed-session" {
 		t.Fatalf("managed orchestrator did not delegate offer/answer: answer=%+v offer=%+v", answer, answerer.offer)
+	}
+	if !reflect.DeepEqual(answerer.iceServers, iceServers) {
+		t.Fatalf("managed orchestrator did not pass ICE servers: %+v", answerer.iceServers)
 	}
 }
 

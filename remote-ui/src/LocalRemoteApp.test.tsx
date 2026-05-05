@@ -5,9 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LocalRemoteApp, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createLocalAppIdentityStore, type LocalAppCrypto } from './localAppIdentity'
 import type { TerminalModifierState } from './mobileTerminalInput'
-import type { LocalAgentApi, RtcSession, TerminalInventoryEvents } from './transport'
+import type { LocalPairingApi, LocalStatus, RtcSession, TerminalInventoryEvents } from './transport'
 import { createMockFileSession } from './test/mockFileSession'
 import type { TerminalHandle } from './Terminal'
+import type { Terminal } from './model'
 
 vi.mock('./Terminal', () => ({
   Terminal: forwardRef<TerminalHandle, { machineId: string; terminalId: string; modifierState?: TerminalModifierState }>(function MockTerminal(
@@ -159,7 +160,7 @@ describe('LocalRemoteApp', () => {
       }, machineId, terminalId))),
     )
     const connector = { connect } satisfies LocalRemoteSessionConnector
-    const pairApi = createMockLocalAgentApi()
+    const pairApi = createMockPairApi()
     pairApi.pair = vi.fn(async () => ({
       machineId: 'machine-local',
       appCertificate: '{"payload":{"machine_id":"machine-local","app_public_key":"AQIDBA=="},"signature":"machine-sig"}',
@@ -304,9 +305,6 @@ describe('LocalRemoteApp', () => {
 
   it('opens a terminal management sheet from a long-press style terminal-list gesture and can edit metadata', async () => {
     const api = createMockLocalAgentApi()
-    api.updateTerminal = vi.fn(async () => {
-      throw new Error('runtime terminal management must use RtcSession.openApi')
-    })
     const listTerminals = vi.fn(async () => [{
       machineId: 'machine-local',
       terminalId: 'terminal-1',
@@ -359,17 +357,10 @@ describe('LocalRemoteApp', () => {
         },
       },
     }))
-    expect(api.updateTerminal).not.toHaveBeenCalled()
   })
 
   it('creates and deletes terminals from the list page management controls', async () => {
     const api = createMockLocalAgentApi()
-    api.createTerminal = vi.fn(async () => {
-      throw new Error('runtime terminal management must use RtcSession.openApi')
-    })
-    api.deleteTerminal = vi.fn(async () => {
-      throw new Error('runtime terminal management must use RtcSession.openApi')
-    })
     const managementSession = createMockLocalRemoteSession({
       create: { terminal_id: 'terminal-3', state: 'running' },
       remove: {},
@@ -407,7 +398,6 @@ describe('LocalRemoteApp', () => {
         },
       },
     }))
-    expect(api.createTerminal).not.toHaveBeenCalled()
 
     fireEvent.contextMenu(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal-actions-sheet')).toBeTruthy())
@@ -417,14 +407,10 @@ describe('LocalRemoteApp', () => {
       path: 'remove',
       params: { terminal_id: 'terminal-1' },
     }))
-    expect(api.deleteTerminal).not.toHaveBeenCalled()
   })
 
   it('creates the first terminal through a machine-scoped runtime api session', async () => {
     const api = createMockLocalAgentApi()
-    api.createTerminal = vi.fn(async () => {
-      throw new Error('runtime terminal management must use RtcSession.openApi')
-    })
     api.listTerminals = vi.fn(async () => [])
     const managementSession = createMockLocalRemoteSession({
       create: { terminal_id: 'terminal-1', state: 'running' },
@@ -447,7 +433,6 @@ describe('LocalRemoteApp', () => {
       },
     }))
     expect(connect).toHaveBeenCalledWith({ machineId: 'machine-local' })
-    expect(api.createTerminal).not.toHaveBeenCalled()
   })
 
   it('uses policy rather than local HTTP management methods to expose terminal management controls', async () => {
@@ -548,7 +533,7 @@ describe('LocalRemoteApp', () => {
         api={createMockLocalAgentApi()}
         connector={connector}
         pair={{
-          api: createMockLocalAgentApi(),
+          api: createMockPairApi(),
           storage: createLocalAppIdentityStore(new MemoryStorage()),
           crypto: createMockAppCrypto(),
           appName: 'TermX Local Web',
@@ -573,7 +558,7 @@ describe('LocalRemoteApp', () => {
       return Promise.resolve(createMockLocalRemoteSession({}, 'machine-local', 'terminal-1'))
     })
     const connector = { connect } satisfies LocalRemoteSessionConnector
-    const pairApi = createMockLocalAgentApi()
+    const pairApi = createMockPairApi()
     pairApi.pair = vi.fn(async () => {
       paired = true
       return {
@@ -650,67 +635,57 @@ function createMockLocalRemoteSession(
   })
 }
 
-function createMockLocalAgentApi(): LocalAgentApi {
+function createMockLocalAgentApi() {
   return {
-    async getStatus() {
+    async getStatus(): Promise<LocalStatus> {
       return {
         machine: {
           machineId: 'machine-local',
           name: 'Local Mac',
           state: 'online',
           terminalCount: 1,
-          localRTC: { signalingUrl: 'http://127.0.0.1:18888/api/local/rtc/offer' },
+          localRTC: { signalingUrl: 'http://127.0.0.1:18888' },
         },
         localWeb: {
           httpUrl: 'http://127.0.0.1:18888',
-          rtcOfferUrl: 'http://127.0.0.1:18888/api/local/rtc/offer',
+          rtcOfferUrl: 'http://127.0.0.1:18888',
         },
       }
     },
-    async listTerminals() {
+    async listTerminals(): Promise<Terminal[]> {
       return [{
         machineId: 'machine-local',
         terminalId: 'terminal-1',
         title: 'zsh',
-        state: 'running',
+        state: 'running' as const,
         command: '/bin/zsh',
         cols: 120,
         rows: 36,
         cwd: '/Users/lozzow/project',
         sizeLocked: true,
-        sizeLockMode: 'lock',
+        sizeLockMode: 'lock' as const,
         environment: 'dev',
       }, {
         machineId: 'machine-local',
         terminalId: 'terminal-2',
         title: 'worker',
-        state: 'running',
+        state: 'running' as const,
         command: '/usr/bin/env bash',
         cols: 90,
         rows: 28,
         cwd: '/srv/worker',
         sizeLocked: false,
-        sizeLockMode: 'off',
+        sizeLockMode: 'off' as const,
         environment: 'prod',
       }]
     },
+  }
+}
+
+function createMockPairApi(): LocalPairingApi {
+  return {
     async pair() {
-      throw new Error('pair is not used by LocalRemoteApp tests')
-    },
-    async createRTCAnswer() {
-      throw new Error('createRTCAnswer is not used by LocalRemoteApp tests')
-    },
-    async createInventoryRTCAnswer() {
-      throw new Error('createInventoryRTCAnswer is not used by LocalRemoteApp tests')
-    },
-    async createTerminal() {
-      throw new Error('createTerminal is not used by LocalRemoteApp tests')
-    },
-    async updateTerminal() {
-      throw new Error('updateTerminal is not used by LocalRemoteApp tests')
-    },
-    async deleteTerminal() {
-      throw new Error('deleteTerminal is not used by LocalRemoteApp tests')
+      throw new Error('pair is not used by this test')
     },
   }
 }

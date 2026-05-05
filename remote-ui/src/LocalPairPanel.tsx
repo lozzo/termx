@@ -1,18 +1,19 @@
 import { useState } from 'react'
 import { pairLocalApp, type LocalAppCrypto, type LocalAppIdentityStore } from './localAppIdentity'
-import type { LocalAgentApi } from './transport'
+import type { LocalPairingApi } from './transport'
 import { KeyRound, ShieldCheck, AlertCircle } from 'lucide-react'
 
 export interface LocalPairPanelProps {
-  api: Pick<LocalAgentApi, 'pair'>
+  api: LocalPairingApi
   storage: LocalAppIdentityStore
   crypto: LocalAppCrypto
   appName: string
+  machineId?: string | undefined
   onPaired?: ((machineId: string) => void) | undefined
   className?: string | undefined
 }
 
-export function LocalPairPanel({ api, storage, crypto, appName, onPaired, className }: LocalPairPanelProps) {
+export function LocalPairPanel({ api, storage, crypto, appName, machineId, onPaired, className }: LocalPairPanelProps) {
   const [pairSessionId, setPairSessionId] = useState('')
   const [pairSecret, setPairSecret] = useState('')
   const [status, setStatus] = useState<string | null>(null)
@@ -30,6 +31,7 @@ export function LocalPairPanel({ api, storage, crypto, appName, onPaired, classN
         storage,
         crypto,
         appName,
+        ...(machineId ? { machineId } : {}),
         pairSessionId,
         pairSecret,
       })

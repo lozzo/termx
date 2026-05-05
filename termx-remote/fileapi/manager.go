@@ -663,6 +663,10 @@ func (m *Manager) handleUploadComplete(body []byte) (int32, []byte, string) {
 }
 
 func (m *Manager) HandleFileChannel(dc *webrtc.DataChannel, transferID string) {
+	m.HandleFileChannelWithOpenGuard(dc, transferID, nil)
+}
+
+func (m *Manager) HandleFileChannelWithOpenGuard(dc *webrtc.DataChannel, transferID string, guard func() bool) {
 	m.mu.Lock()
 	transfer, ok := m.transfers[transferID]
 	m.mu.Unlock()
@@ -674,18 +678,22 @@ func (m *Manager) HandleFileChannel(dc *webrtc.DataChannel, transferID string) {
 		return
 	}
 	if transfer.Direction == "download" {
-		m.handleDownloadChannel(dc, transfer)
+		m.handleDownloadChannel(dc, transfer, guard)
 		return
 	}
-	m.handleUploadChannel(dc, transfer)
+	m.handleUploadChannel(dc, transfer, guard)
 }
 
-func (m *Manager) handleDownloadChannel(dc *webrtc.DataChannel, transfer *FileTransfer) {
+func (m *Manager) handleDownloadChannel(dc *webrtc.DataChannel, transfer *FileTransfer, guard func() bool) {
 	const sendBufferLimit = 1 * 1024 * 1024
 	const lowThreshold = 256 * 1024
 
 	dc.SetBufferedAmountLowThreshold(lowThreshold)
 	dc.OnOpen(func() {
+		if guard != nil && !guard() {
+			_ = dc.Close()
+			return
+		}
 		go func() {
 			defer func() {
 				m.mu.Lock()
@@ -762,7 +770,7 @@ func sendErrorFrame(dc *webrtc.DataChannel, msg string) {
 	_ = dc.Send(frame)
 }
 
-func (m *Manager) handleUploadChannel(dc *webrtc.DataChannel, transfer *FileTransfer) {
+func (m *Manager) handleUploadChannel(dc *webrtc.DataChannel, transfer *FileTransfer, guard func() bool) {
 	var (
 		mu      sync.Mutex
 		tmpFile *os.File
@@ -771,6 +779,10 @@ func (m *Manager) handleUploadChannel(dc *webrtc.DataChannel, transfer *FileTran
 	)
 
 	dc.OnOpen(func() {
+		if guard != nil && !guard() {
+			_ = dc.Close()
+			return
+		}
 		openFlags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
 		if transfer.Offset > 0 {
 			openFlags = os.O_WRONLY | os.O_CREATE | os.O_APPEND

@@ -48,23 +48,12 @@ type AnswerInput struct {
 	Options remotertc.AnswerOptions
 }
 
-func LocalPlan(iceServers []hubv1.RTCIceServerConfig) Plan {
-	return Plan{
-		Path:       PathLocal,
-		ICEServers: cloneICEServers(iceServers),
-	}
-}
-
 func ManagedPlan(iceServers []hubv1.RTCIceServerConfig, relay RelayPolicy) Plan {
 	return Plan{
 		Path:       PathManaged,
 		ICEServers: cloneICEServers(iceServers),
 		Relay:      relay,
 	}
-}
-
-func AnswerLocal(ctx context.Context, answerer Answerer, in AnswerInput) (hubv1.SignalingAnswer, error) {
-	return answerWithPath(ctx, answerer, in, PathLocal)
 }
 
 func AnswerManaged(ctx context.Context, answerer Answerer, in AnswerInput) (hubv1.SignalingAnswer, error) {

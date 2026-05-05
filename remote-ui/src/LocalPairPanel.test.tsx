@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LocalPairPanel } from './LocalPairPanel'
 import { createLocalAppIdentityStore, type LocalAppCrypto } from './localAppIdentity'
-import type { LocalAgentApi } from './transport'
+import type { LocalPairingApi } from './transport'
 
 describe('LocalPairPanel', () => {
   afterEach(() => {
@@ -26,6 +26,7 @@ describe('LocalPairPanel', () => {
         storage={createLocalAppIdentityStore(storage)}
         crypto={crypto}
         appName="TermX Local Web"
+        machineId="machine-local"
       />,
     )
 
@@ -35,6 +36,7 @@ describe('LocalPairPanel', () => {
 
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Paired with machine-local'))
     expect(pair).toHaveBeenCalledWith(expect.objectContaining({
+      machineId: 'machine-local',
       pairSessionId: 'pair-1',
       pairSecret: 'secret-1',
       appDeviceId: expect.stringMatching(/^appweb_/),
@@ -103,29 +105,8 @@ function createMockCrypto(): LocalAppCrypto {
   }
 }
 
-function createMockApi(pair: LocalAgentApi['pair']): LocalAgentApi {
+function createMockApi(pair: LocalPairingApi['pair']): LocalPairingApi {
   return {
-    async getStatus() {
-      throw new Error('not used')
-    },
-    async listTerminals() {
-      throw new Error('not used')
-    },
     pair,
-    async createRTCAnswer() {
-      throw new Error('not used')
-    },
-    async createInventoryRTCAnswer() {
-      throw new Error('not used')
-    },
-    async createTerminal() {
-      throw new Error('not used')
-    },
-    async updateTerminal() {
-      throw new Error('not used')
-    },
-    async deleteTerminal() {
-      throw new Error('not used')
-    },
   }
 }

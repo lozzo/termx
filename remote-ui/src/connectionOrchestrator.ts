@@ -4,6 +4,9 @@ import type {
   RtcConnector,
   RtcSession,
 } from './transport'
+import type { LocalHubUrlProvider } from './localHubUrlProvider'
+import type { ManagedHubApi } from './managedHubApi'
+import type { ManagedHubRtcConnectInput } from './managedHubRtcConnector'
 
 export type ConnectionAttemptStage =
   | 'trying_local'
@@ -29,6 +32,7 @@ export interface ConnectionOrchestratorInput {
   machineId: string
   terminalId?: string | undefined
   machinePublicKeyFingerprint: string
+  appCertificate?: unknown
   managed: {
     hubSessionId: string
     deviceId: string
@@ -47,7 +51,12 @@ export interface ConnectionOrchestrator {
 }
 
 export interface ConnectionOrchestratorOptions {
-  local: RtcConnector<{ machineId: string; terminalId?: string | undefined }>
+  local?: RtcConnector<{ machineId: string; terminalId?: string | undefined }> | undefined
+  localHubUrlProvider?: LocalHubUrlProvider | undefined
+  managedHubApiFactory?: ((hubUrl: string) => ManagedHubApi) | undefined
+  managedHubRtcConnectorFactory?: ((options: { hubUrl: string; api: ManagedHubApi }) => {
+    connect(input: ManagedHubRtcConnectInput, options?: RtcConnectOptions): Promise<RtcSession>
+  }) | undefined
   publicP2p: RtcConnector<{
     machineId: string
     terminalId: string
@@ -78,7 +87,7 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
         input,
         failures,
         options,
-        connect: () => this.options.local.connect(localInput(input), options),
+        connect: () => this.connectLocal(input, options),
       })
       if (local) return local
 
@@ -166,6 +175,31 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
       })
       return null
     }
+  }
+
+  private async connectLocal(input: ConnectionOrchestratorInput, options: RtcConnectOptions): Promise<RtcSession> {
+    if (this.options.localHubUrlProvider && this.options.managedHubApiFactory && this.options.managedHubRtcConnectorFactory) {
+      const localHubUrl = await this.options.localHubUrlProvider.getLocalHubUrl()
+      if (!localHubUrl) {
+        throw new Error('local Hub URL is required before opening a local connection')
+      }
+      if (input.appCertificate === undefined || input.appCertificate === null) {
+        throw new Error('app certificate is required before opening a local Hub connection')
+      }
+      const api = this.options.managedHubApiFactory(localHubUrl)
+      const connector = this.options.managedHubRtcConnectorFactory({ hubUrl: localHubUrl, api })
+      return connector.connect({
+        machineId: input.machineId,
+        ...(input.terminalId ? { terminalId: input.terminalId } : {}),
+        connectTicket: input.managed.hubSessionId,
+        appCertificate: input.appCertificate,
+        path: 'local',
+      }, options)
+    }
+    if (!this.options.local) {
+      throw new Error('local connector is not configured')
+    }
+    return this.options.local.connect(localInput(input), options)
   }
 }
 

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	hubturn "github.com/lozzow/termx/termx-remote/hub/turn"
 )
 
 var (
@@ -26,6 +28,7 @@ type Config struct {
 	SharedSecret string
 	STUNURLs     []string
 	TURNURLs     []string
+	TURNServer   *hubturn.Server
 }
 
 type Service struct {
@@ -34,6 +37,7 @@ type Service struct {
 	sharedSecret string
 	stunURLs     []string
 	turnURLs     []string
+	turnServer   *hubturn.Server
 }
 
 func NewService(cfg Config) *Service {
@@ -47,6 +51,7 @@ func NewService(cfg Config) *Service {
 		sharedSecret: cfg.SharedSecret,
 		stunURLs:     cleanURLs(cfg.STUNURLs),
 		turnURLs:     cleanURLs(cfg.TURNURLs),
+		turnServer:   cfg.TURNServer,
 	}
 }
 
@@ -72,6 +77,17 @@ func (s *Service) ConfigForLease(ctx context.Context, lease Lease) (RTCConfig, e
 		return RTCConfig{}, ErrInvalidICEURL
 	}
 	if path != PathCloud || !lease.AllowRelay {
+		return cfg, nil
+	}
+	if s.turnServer != nil {
+		username, credential := s.turnServer.GenerateCredentials()
+		expiresAt := s.clock.Now().UTC().Add(24 * time.Hour)
+		cfg.ICEServers = append(cfg.ICEServers, ICEServer{
+			URLs:       s.turnServer.URLs(),
+			Username:   username,
+			Credential: credential,
+			ExpiresAt:  &expiresAt,
+		})
 		return cfg, nil
 	}
 	if len(s.turnURLs) == 0 {

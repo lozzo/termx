@@ -7,7 +7,7 @@ import {
   ensureLocalAppIdentity,
   pairLocalApp,
 } from './localAppIdentity'
-import type { LocalAgentApi } from './transport'
+import type { LocalPairingApi } from './transport'
 
 describe('local app identity', () => {
   it('creates and persists only browser-local app key material', async () => {
@@ -149,33 +149,12 @@ describe('local app identity', () => {
   it('claims and stores an app certificate without storing machine private keys or TURN credentials', async () => {
     const storage = new MemoryStorage()
     const crypto = createMockCrypto()
-    const api: LocalAgentApi = {
-      async getStatus() {
-        throw new Error('not used')
-      },
-      async listTerminals() {
-        throw new Error('not used')
-      },
+    const api: LocalPairingApi = {
       pair: vi.fn(async () => ({
         machineId: 'machine-local',
         appCertificate: '{"payload":{"machine_id":"machine-local","app_public_key":"AQIDBA=="},"signature":"machine-sig"}',
         expiresAt: '2026-05-02T10:30:00Z',
       })),
-      async createRTCAnswer() {
-        throw new Error('not used')
-      },
-      async createInventoryRTCAnswer() {
-        throw new Error('not used')
-      },
-      async createTerminal() {
-        throw new Error('not used')
-      },
-      async updateTerminal() {
-        throw new Error('not used')
-      },
-      async deleteTerminal() {
-        throw new Error('not used')
-      },
     }
 
     const result = await pairLocalApp({

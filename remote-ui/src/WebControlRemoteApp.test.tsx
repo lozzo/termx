@@ -351,7 +351,7 @@ function pairPayload({ machineId, name }: { machineId: string; name: string }): 
     endpoints: {
       web_control: 'http://114.66.58.243:12306',
       hub: 'http://114.66.58.243:8447',
-      local_pairing: 'http://127.0.0.1:18888/api/local/pair',
+      local_pairing: 'http://127.0.0.1:18888/api/v1/pairing/claims',
     },
     pairing: {
       session_id: 'pair-session-1',

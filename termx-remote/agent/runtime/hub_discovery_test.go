@@ -11,6 +11,7 @@ import (
 
 	remoteconfig "github.com/lozzow/termx/termx-remote/config"
 	"github.com/lozzow/termx/termx-remote/discovery"
+	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
 )
 
 func TestManagerDiscoversAndSelectsHubAfterControlRegistration(t *testing.T) {
@@ -277,6 +278,113 @@ func TestManagerReevaluatesDiscoveredHubOnReconcile(t *testing.T) {
 	}
 	if secondHubRegisters.Load() == 0 {
 		t.Fatal("second hub did not receive registration after policy changed")
+	}
+}
+
+func TestManagerAddsDiscoveredHubWithoutDroppingExistingLocalHub(t *testing.T) {
+	localHub := newMultiHubTestServer(t, "hub-local", false)
+	defer localHub.Close()
+	cloudHub := newMultiHubTestServer(t, "hub-cloud", false)
+	defer cloudHub.Close()
+	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/devices/register":
+			_ = json.NewEncoder(w).Encode(map[string]any{"device": map[string]any{"id": "device-1"}})
+		case "/api/v1/hubs":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"hubs": []map[string]any{{
+					"id":       "hub-cloud",
+					"region":   "sin",
+					"http_url": cloudHub.URL,
+					"status":   "online",
+					"capacity": 1,
+				}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer control.Close()
+
+	manager := NewManager(remoteconfig.Config{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "both-mode-daemon",
+	}, inventoryProviderStub{}, nil)
+	manager.AddHubURLWithAnswerOptions(localHub.URL, remotertc.AnswerOptions{})
+	if err := manager.Start(context.Background()); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	defer manager.Close()
+	localRegister := localHub.waitForRegister(t)
+
+	manager.ConfigureCloud(control.URL, "control-secret", "")
+	state, detail, err := manager.reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("reconcile after cloud discovery config: %v", err)
+	}
+	manager.setStatus(state, detail)
+
+	cloudRegister := cloudHub.waitForRegister(t)
+	if localRegister.AgentID == "" || localRegister.AgentID != cloudRegister.AgentID {
+		t.Fatalf("local/cloud registrations did not share agent identity: local=%+v cloud=%+v", localRegister, cloudRegister)
+	}
+	manager.mu.RLock()
+	hubURLs := append([]string(nil), manager.cfg.HubURLs...)
+	manager.mu.RUnlock()
+	if !containsString(hubURLs, localHub.URL) || !containsString(hubURLs, cloudHub.URL) {
+		t.Fatalf("discovery dropped an existing hub URL: %+v", hubURLs)
+	}
+}
+
+func TestManagerKeepsLocalHubWhenExplicitCloudHubConfigured(t *testing.T) {
+	localHub := newMultiHubTestServer(t, "hub-local", false)
+	defer localHub.Close()
+	cloudHub := newMultiHubTestServer(t, "hub-cloud", false)
+	defer cloudHub.Close()
+	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/devices/register":
+			_ = json.NewEncoder(w).Encode(map[string]any{"device": map[string]any{"id": "device-1"}})
+		case "/api/v1/hubs":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"hubs": []map[string]any{{
+					"id":       "hub-cloud",
+					"region":   "sin",
+					"http_url": cloudHub.URL,
+					"status":   "online",
+					"capacity": 1,
+				}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer control.Close()
+
+	manager := NewManager(remoteconfig.Config{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "both-mode-explicit-daemon",
+	}, inventoryProviderStub{}, nil)
+	manager.AddExplicitHubURL(cloudHub.URL)
+	manager.ConfigureCloud(control.URL, "control-secret", "")
+	manager.AddHubURLWithAnswerOptions(localHub.URL, remotertc.AnswerOptions{})
+	if err := manager.Start(context.Background()); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	defer manager.Close()
+
+	localRegister := localHub.waitForRegister(t)
+	cloudRegister := cloudHub.waitForRegister(t)
+	if localRegister.AgentID == "" || localRegister.AgentID != cloudRegister.AgentID {
+		t.Fatalf("local/cloud registrations did not share agent identity: local=%+v cloud=%+v", localRegister, cloudRegister)
+	}
+	manager.mu.RLock()
+	hubURLs := append([]string(nil), manager.cfg.HubURLs...)
+	manager.mu.RUnlock()
+	if !containsString(hubURLs, localHub.URL) || !containsString(hubURLs, cloudHub.URL) {
+		t.Fatalf("explicit cloud discovery dropped an existing hub URL: %+v", hubURLs)
 	}
 }
 

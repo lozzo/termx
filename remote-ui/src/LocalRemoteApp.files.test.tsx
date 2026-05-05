@@ -4,9 +4,10 @@ import { forwardRef, useImperativeHandle } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LocalRemoteApp, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import type { TerminalModifierState } from './mobileTerminalInput'
-import type { LocalAgentApi, RtcSession } from './transport'
+import type { LocalStatus, RtcSession } from './transport'
 import { createMockFileSession } from './test/mockFileSession'
 import type { TerminalHandle } from './Terminal'
+import type { Terminal } from './model'
 
 vi.mock('./Terminal', () => ({
   Terminal: forwardRef<TerminalHandle, { machineId: string; terminalId: string; modifierState?: TerminalModifierState }>(function MockTerminal(
@@ -145,67 +146,49 @@ function trackSession<T extends ReturnType<typeof createMockLocalRemoteSession>>
   return session
 }
 
-function createMockLocalAgentApi(): LocalAgentApi {
+function createMockLocalAgentApi() {
   return {
-    async getStatus() {
+    async getStatus(): Promise<LocalStatus> {
       return {
         machine: {
           machineId: 'machine-local',
           name: 'Local Mac',
           state: 'online',
           terminalCount: 2,
-          localRTC: { signalingUrl: 'http://127.0.0.1:18888/api/local/rtc/offer' },
+          localRTC: { signalingUrl: 'http://127.0.0.1:18888' },
         },
         localWeb: {
           httpUrl: 'http://127.0.0.1:18888',
-          rtcOfferUrl: 'http://127.0.0.1:18888/api/local/rtc/offer',
+          rtcOfferUrl: 'http://127.0.0.1:18888',
         },
       }
     },
-    async listTerminals() {
+    async listTerminals(): Promise<Terminal[]> {
       return [{
         machineId: 'machine-local',
         terminalId: 'terminal-1',
         title: 'zsh',
-        state: 'running',
+        state: 'running' as const,
         command: '/bin/zsh',
         cols: 120,
         rows: 36,
         cwd: '/Users/lozzow/project',
         sizeLocked: true,
-        sizeLockMode: 'lock',
+        sizeLockMode: 'lock' as const,
         environment: 'dev',
       }, {
         machineId: 'machine-local',
         terminalId: 'terminal-2',
         title: 'worker',
-        state: 'running',
+        state: 'running' as const,
         command: '/usr/bin/env bash',
         cols: 90,
         rows: 28,
         cwd: '/srv/worker',
         sizeLocked: false,
-        sizeLockMode: 'off',
+        sizeLockMode: 'off' as const,
         environment: 'prod',
       }]
-    },
-    async pair() {
-      throw new Error('pair is not used by LocalRemoteApp files tests')
-    },
-    async createRTCAnswer() {
-      throw new Error('createRTCAnswer is not used by LocalRemoteApp files tests')
-    },
-    async createInventoryRTCAnswer() {
-      throw new Error('createInventoryRTCAnswer is not used by LocalRemoteApp files tests')
-    },
-    async createTerminal() {
-      throw new Error('createTerminal is not used by LocalRemoteApp files tests')
-    },
-    async updateTerminal() {
-      throw new Error('updateTerminal is not used by LocalRemoteApp files tests')
-    },
-    async deleteTerminal() {
-      throw new Error('deleteTerminal is not used by LocalRemoteApp files tests')
     },
   }
 }

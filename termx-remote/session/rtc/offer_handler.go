@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/lozzow/termx/termx-remote/bridge"
@@ -44,6 +45,7 @@ type ChannelPolicy struct {
 	AllowFileManager        bool
 	AllowTerminalManagement bool
 	AllowEvents             bool
+	AllowRelayTransfer      bool
 }
 
 type TerminalManagementRouter interface {
@@ -164,7 +166,10 @@ func AnswerOfferWithOptions(
 				})
 				return
 			}
-			handleAPIChannel(sessionCtx, dc, apiFiles, apiTerminalManagement)
+			handleAPIChannel(sessionCtx, dc, apiFiles, apiTerminalManagement, func(ctx context.Context) context.Context {
+				ctx = withRelayTransferAllowed(ctx, opts.ChannelPolicy.allowRelayTransfer())
+				return withRelayConnection(ctx, IsRelayConnection(pc))
+			})
 		case strings.HasPrefix(label, "file:"):
 			if !opts.ChannelPolicy.allowFileManager() {
 				dc.OnOpen(func() {
@@ -172,7 +177,9 @@ func AnswerOfferWithOptions(
 				})
 				return
 			}
-			fileManager.HandleFileChannel(dc, strings.TrimPrefix(label, "file:"))
+			fileManager.HandleFileChannelWithOpenGuard(dc, strings.TrimPrefix(label, "file:"), func() bool {
+				return !IsRelayConnection(pc) || opts.ChannelPolicy.allowRelayTransfer()
+			})
 		case label == "events":
 			if !opts.ChannelPolicy.allowEvents() {
 				dc.OnOpen(func() {
@@ -213,12 +220,11 @@ func AnswerOfferWithOptions(
 	if err != nil {
 		return hubv1.SignalingAnswer{}, fmt.Errorf("create answer: %w", err)
 	}
+	waitForLocalCandidates := newICEGatheringWaiter(pc)
 	if err := pc.SetLocalDescription(answer); err != nil {
 		return hubv1.SignalingAnswer{}, fmt.Errorf("set local description: %w", err)
 	}
-	if err := waitForICEGathering(pc, 8*time.Second); err != nil {
-		return hubv1.SignalingAnswer{}, fmt.Errorf("wait for local candidates: %w", err)
-	}
+	waitForLocalCandidates()
 	local := pc.LocalDescription()
 	if local == nil {
 		return hubv1.SignalingAnswer{}, fmt.Errorf("missing local description")
@@ -275,8 +281,15 @@ func (p ChannelPolicy) allowTerminalManagement() bool {
 	return p.AllowTerminalManagement
 }
 
+func (p ChannelPolicy) allowRelayTransfer() bool {
+	if !p.active() {
+		return true
+	}
+	return p.AllowRelayTransfer
+}
+
 func (p ChannelPolicy) active() bool {
-	return strings.TrimSpace(p.TerminalID) != "" || p.AllowTerminal || p.AllowAPI || p.AllowFileManager || p.AllowTerminalManagement || p.AllowEvents
+	return strings.TrimSpace(p.TerminalID) != "" || p.AllowTerminal || p.AllowAPI || p.AllowFileManager || p.AllowTerminalManagement || p.AllowEvents || p.AllowRelayTransfer
 }
 
 type apiRequest struct {
@@ -299,14 +312,18 @@ const (
 	apiChunkMaxPayload = 200 * 1024
 )
 
-func handleAPIChannel(ctx context.Context, dc *webrtc.DataChannel, manager *fileapi.Manager, terminalManagement TerminalManagementRouter) {
+func handleAPIChannel(ctx context.Context, dc *webrtc.DataChannel, manager *fileapi.Manager, terminalManagement TerminalManagementRouter, contextHook ...func(context.Context) context.Context) {
 	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 		var req apiRequest
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
 			return
 		}
 		go func() {
-			statusCode, respBody, errMsg := routeRuntimeAPIRequestWithContext(ctx, manager, terminalManagement, req)
+			reqCtx := ctx
+			if len(contextHook) > 0 && contextHook[0] != nil {
+				reqCtx = contextHook[0](reqCtx)
+			}
+			statusCode, respBody, errMsg := routeRuntimeAPIRequestWithContext(reqCtx, manager, terminalManagement, req)
 			var body interface{}
 			if errMsg != "" {
 				body = map[string]string{"error": errMsg}
@@ -333,6 +350,9 @@ func routeRuntimeAPIRequestWithContext(ctx context.Context, manager *fileapi.Man
 	if strings.HasPrefix(req.Path, "/files/") {
 		if manager == nil {
 			return http.StatusForbidden, nil, "file api is not allowed by connection policy"
+		}
+		if relayConnectionFromContext(ctx) && !relayTransferAllowedFromContext(ctx) {
+			return http.StatusForbidden, nil, "file transfer is not allowed over relay connection"
 		}
 		return manager.RouteRequest(req.Method, req.Path, req.Body)
 	}
@@ -480,24 +500,46 @@ func sendAPIResponse(dc *webrtc.DataChannel, id string, data []byte) {
 	}
 }
 
-func waitForICEGathering(pc *webrtc.PeerConnection, timeout time.Duration) error {
-	if pc.ICEGatheringState() == webrtc.ICEGatheringStateComplete {
-		return nil
-	}
-	done := make(chan struct{})
-	pc.OnICEGatheringStateChange(func(state webrtc.ICEGatheringState) {
-		if state == webrtc.ICEGatheringStateComplete {
-			select {
-			case <-done:
-			default:
-				close(done)
-			}
+func newICEGatheringWaiter(pc *webrtc.PeerConnection) func() {
+	return newICEGatheringWaiterEvents(
+		pc.OnICECandidate,
+		webrtc.GatheringCompletePromise(pc),
+		500*time.Millisecond,
+		5*time.Second,
+	)
+}
+
+func newICEGatheringWaiterEvents(
+	onICECandidate func(func(*webrtc.ICECandidate)),
+	gatherComplete <-chan struct{},
+	earlyStopDelay time.Duration,
+	hardTimeout time.Duration,
+) func() {
+	earlyStop := make(chan struct{}, 1)
+	var hasCandidate int32
+
+	onICECandidate(func(c *webrtc.ICECandidate) {
+		if c == nil {
+			return
+		}
+		if c.Typ != webrtc.ICECandidateTypeHost && c.Typ != webrtc.ICECandidateTypeSrflx {
+			return
+		}
+		if atomic.CompareAndSwapInt32(&hasCandidate, 0, 1) {
+			time.AfterFunc(earlyStopDelay, func() {
+				select {
+				case earlyStop <- struct{}{}:
+				default:
+				}
+			})
 		}
 	})
-	select {
-	case <-done:
-		return nil
-	case <-time.After(timeout):
-		return nil
+
+	return func() {
+		select {
+		case <-gatherComplete:
+		case <-earlyStop:
+		case <-time.After(hardTimeout):
+		}
 	}
 }

@@ -598,12 +598,12 @@ func TestRemoteLocalICETCPAddrFromEnv(t *testing.T) {
 	}
 }
 
-func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
+func TestStartRemoteLocalRuntimeServesEmbeddedHub(t *testing.T) {
 	srv := termx.NewServer()
 	remoteHost := newRemoteRuntimeHost(srv, remoteprotocol.Config{
 		Enabled:    true,
 		DataDir:    t.TempDir(),
-		DeviceName: "cli-local-web",
+		DeviceName: "cli-local-hub",
 	})
 	defer srv.Shutdown(context.Background())
 	defer func() { _ = remoteHost.Close(context.Background()) }()
@@ -628,111 +628,53 @@ func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
 	baseURL := localRuntime.HTTPURL
 
 	client := http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(baseURL + "/")
+	resp, err := client.Get(baseURL + "/api/health")
 	if err != nil {
-		t.Fatalf("GET embedded page: %v", err)
+		t.Fatalf("GET local hub health: %v", err)
 	}
 	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
-		t.Fatalf("read embedded page: %v", err)
+		t.Fatalf("read local hub health: %v", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected embedded page status 200, got %d: %s", resp.StatusCode, string(body))
+		t.Fatalf("expected local hub health status 200, got %d: %s", resp.StatusCode, string(body))
 	}
-	if !strings.Contains(string(body), "TermX Local Remote") {
-		t.Fatalf("expected embedded TermX Local Remote page, got %s", string(body))
-	}
-	assetPath := embeddedModuleAssetPath(t, string(body))
-	resp, err = client.Get(baseURL + assetPath)
-	if err != nil {
-		t.Fatalf("GET embedded module asset: %v", err)
-	}
-	assetBody, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		t.Fatalf("read embedded module asset: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected embedded module status 200, got %d: %s", resp.StatusCode, string(assetBody))
-	}
-	assetText := string(assetBody)
-	for _, preloadPath := range embeddedPreloadAssetPaths(t, string(body)) {
-		resp, err = client.Get(baseURL + preloadPath)
-		if err != nil {
-			t.Fatalf("GET embedded preload asset %s: %v", preloadPath, err)
-		}
-		preloadBody, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			t.Fatalf("read embedded preload asset %s: %v", preloadPath, err)
-		}
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("expected embedded preload status 200, got %d: %s", resp.StatusCode, string(preloadBody))
-		}
-		assetText += string(preloadBody)
-	}
-	for _, want := range []string{"termx-local-web-shell", "termx-local-pair-panel", "Pair ID", "Pair secret"} {
-		if !strings.Contains(assetText, want) {
-			t.Fatalf("expected embedded module asset to contain %q", want)
-		}
-	}
-	for _, forbidden := range []string{"machine_private_key", "machinePrivateKey", "turn:", "turns:"} {
-		if strings.Contains(strings.ToLower(assetText), strings.ToLower(forbidden)) {
-			t.Fatalf("embedded module asset must not expose %q", forbidden)
-		}
+	if !strings.Contains(string(body), "termx-hub") {
+		t.Fatalf("expected hub health response, got %s", string(body))
 	}
 
-	resp, err = client.Get(baseURL + "/api/local/status")
+	registerPayload := strings.NewReader(`{
+		"version":"remote.hub.v1",
+		"device_id":"` + remoteHost.service.Status().DeviceID + `",
+		"agent_id":"agent-cli-local-hub",
+		"display_name":"TermX CLI Local Hub Test",
+		"runtime_version":"test",
+		"terminals":[]
+	}`)
+	resp, err = client.Post(baseURL+"/api/v1/agents/register", "application/json", registerPayload)
 	if err != nil {
-		t.Fatalf("GET local status: %v", err)
+		t.Fatalf("POST local hub register: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected local status 200, got %d: %s", resp.StatusCode, string(body))
+		t.Fatalf("expected local hub register 200, got %d: %s", resp.StatusCode, string(body))
 	}
-	var status map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		t.Fatalf("decode local status: %v", err)
+	var registerResp map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&registerResp); err != nil {
+		t.Fatalf("decode local hub register: %v", err)
 	}
-	if machineID, _ := status["machine_id"].(string); machineID == "" {
-		t.Fatalf("expected local status machine_id, got %#v", status)
+	if registerResp["agent_session_id"] == "" {
+		t.Fatalf("expected agent_session_id in register response, got %#v", registerResp)
 	}
-	if _, ok := status["device_id"]; ok {
-		t.Fatalf("local status must not expose legacy device_id: %#v", status)
-	}
-	localRTC, ok := status["local_rtc"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected local_rtc status, got %#v", status)
-	}
-	if localRTC["ice_tcp_enabled"] != true || int(localRTC["ice_tcp_port"].(float64)) == 0 {
-		t.Fatalf("expected ICE TCP endpoint in local status, got %#v", localRTC)
-	}
-	rawStatus, _ := json.Marshal(status)
-	if strings.Contains(strings.ToLower(string(rawStatus)), "turn:") || strings.Contains(strings.ToLower(string(rawStatus)), "turns:") {
-		t.Fatalf("local status must not expose TURN credentials: %s", rawStatus)
-	}
-
-	resp, err = client.Get(baseURL + "/api/local/terminals")
-	if err != nil {
-		t.Fatalf("GET local terminals: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected local terminals 200, got %d: %s", resp.StatusCode, string(body))
-	}
-	var terminals map[string][]map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&terminals); err != nil {
-		t.Fatalf("decode local terminals: %v", err)
-	}
-	if len(terminals["terminals"]) != 0 {
-		t.Fatalf("expected no terminals on fresh CLI server, got %#v", terminals)
+	rawRegister, _ := json.Marshal(registerResp)
+	if strings.Contains(strings.ToLower(string(rawRegister)), "turn:") || strings.Contains(strings.ToLower(string(rawRegister)), "turns:") {
+		t.Fatalf("local hub register must not expose TURN credentials: %s", rawRegister)
 	}
 
 	session, err := remoteHost.service.PairStart(remoteprotocol.PairStartParams{
-		LocalPairURL: baseURL + "/api/local/pair",
+		LocalPairURL: baseURL + "/api/v1/pairing/claims",
 		TTLSeconds:   int(time.Minute.Seconds()),
 	})
 	if err != nil {
@@ -743,6 +685,7 @@ func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
 		t.Fatalf("GenerateKey returned error: %v", err)
 	}
 	pairPayload := strings.NewReader(`{
+		"machine_id":"` + session.MachineID + `",
 		"pair_session_id":"` + session.PairSessionID + `",
 		"pair_secret":"` + session.PairSecret + `",
 		"app_device_id":"app-cli-local-web",
@@ -750,62 +693,31 @@ func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
 		"app_public_key":"` + base64.StdEncoding.EncodeToString(appPublic) + `",
 		"requested_capabilities":["terminal","file_manager"]
 	}`)
-	resp, err = client.Post(baseURL+"/api/local/pair", "application/json", pairPayload)
+	resp, err = client.Post(baseURL+"/api/v1/pairing/claims", "application/json", pairPayload)
 	if err != nil {
-		t.Fatalf("POST local pair: %v", err)
+		t.Fatalf("POST local pairing claim: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected local pair 200, got %d: %s", resp.StatusCode, string(body))
+		t.Fatalf("expected local pairing claim 200, got %d: %s", resp.StatusCode, string(body))
 	}
 	var pair map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&pair); err != nil {
-		t.Fatalf("decode local pair: %v", err)
+		t.Fatalf("decode local pairing claim: %v", err)
 	}
 	if pair["machine_id"] != session.MachineID {
 		t.Fatalf("expected pair machine_id %q, got %#v", session.MachineID, pair)
 	}
-	if pair["machine_public_key_fingerprint"] != session.MachinePublicKeyFingerprint {
-		t.Fatalf("expected machine fingerprint %q, got %#v", session.MachinePublicKeyFingerprint, pair)
+	if pair["app_certificate"] == nil || pair["machine_public_key"] == "" {
+		t.Fatalf("expected completed pairing response, got %#v", pair)
 	}
-	if pair["app_certificate"] == nil || pair["machine_private_key"] != nil {
-		t.Fatalf("expected app certificate without machine private key, got %#v", pair)
-	}
-}
 
-func embeddedModuleAssetPath(t *testing.T, html string) string {
-	t.Helper()
-	const marker = `type="module" crossorigin src="`
-	start := strings.Index(html, marker)
-	if start < 0 {
-		t.Fatalf("missing module script in embedded html: %q", html)
+	if _, err := remoteHost.service.LocalDisable(context.Background()); err != nil {
+		t.Fatalf("LocalDisable returned error: %v", err)
 	}
-	start += len(marker)
-	end := strings.Index(html[start:], `"`)
-	if end < 0 {
-		t.Fatalf("malformed module script in embedded html: %q", html)
-	}
-	return html[start : start+end]
-}
-
-func embeddedPreloadAssetPaths(t *testing.T, html string) []string {
-	t.Helper()
-	const marker = `rel="modulepreload" crossorigin href="`
-	var out []string
-	remaining := html
-	for {
-		start := strings.Index(remaining, marker)
-		if start < 0 {
-			return out
-		}
-		start += len(marker)
-		end := strings.Index(remaining[start:], `"`)
-		if end < 0 {
-			t.Fatalf("malformed module preload in embedded html: %q", html)
-		}
-		out = append(out, remaining[start:start+end])
-		remaining = remaining[start+end:]
+	if _, err := client.Get(baseURL + "/api/health"); err == nil {
+		t.Fatalf("expected disabled local hub to reject health requests")
 	}
 }
 
@@ -1299,6 +1211,106 @@ func TestRemoteEnableCloudPersistsBootstrapOutsideConfigFile(t *testing.T) {
 	}
 	if !cfg.Enabled || cfg.ControlURL != "https://control.example.test" || cfg.AccessToken != "cloud-secret" {
 		t.Fatalf("unexpected cloud remote config: %#v", cfg)
+	}
+}
+
+func TestRemoteEnableBothPassesCloudHubToRunningLocalDaemon(t *testing.T) {
+	oldEnable := remoteLocalEnableClient
+	oldLogin := remoteLoginHTTPClient
+	oldStore := remoteAuthStorePath
+	t.Cleanup(func() {
+		remoteLocalEnableClient = oldEnable
+		remoteLoginHTTPClient = oldLogin
+		remoteAuthStorePath = oldStore
+	})
+	remoteAuthStorePath = func(configPath string) (string, error) {
+		return filepath.Join(t.TempDir(), "remote-auth.json"), nil
+	}
+	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{
+		meFunc: func(ctx context.Context, controlURL string, token string) (remoteLoginUser, error) {
+			return remoteLoginUser{Email: "cloud@example.com"}, nil
+		},
+	}
+	var gotParams remoteprotocol.LocalEnableParams
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
+		gotParams = params
+		return &remoteprotocol.LocalStatus{
+			Enabled:      true,
+			HTTPURL:      "http://127.0.0.1:18888",
+			LocalPairURL: "http://127.0.0.1:18888/api/v1/pairing/claims",
+			UpdatedAt:    time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{
+		"--config", configPath,
+		"remote", "enable",
+		"--local",
+		"--cloud",
+		"--server", "https://control.example.test",
+		"--hub-url", "https://hub.example.test",
+		"--token", "cloud-secret",
+	})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("both enable returned error: %v", err)
+	}
+	if gotParams.HubURLs == nil || len(gotParams.HubURLs) != 1 || gotParams.HubURLs[0] != "https://hub.example.test" {
+		t.Fatalf("running local daemon did not receive cloud hub URL: %#v", gotParams)
+	}
+}
+
+func TestRemoteEnableBothPassesCloudDiscoveryToRunningLocalDaemon(t *testing.T) {
+	oldEnable := remoteLocalEnableClient
+	oldLogin := remoteLoginHTTPClient
+	oldStore := remoteAuthStorePath
+	t.Cleanup(func() {
+		remoteLocalEnableClient = oldEnable
+		remoteLoginHTTPClient = oldLogin
+		remoteAuthStorePath = oldStore
+	})
+	remoteAuthStorePath = func(configPath string) (string, error) {
+		return filepath.Join(t.TempDir(), "remote-auth.json"), nil
+	}
+	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{
+		meFunc: func(ctx context.Context, controlURL string, token string) (remoteLoginUser, error) {
+			return remoteLoginUser{Email: "cloud@example.com"}, nil
+		},
+	}
+	var gotParams remoteprotocol.LocalEnableParams
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
+		gotParams = params
+		return &remoteprotocol.LocalStatus{
+			Enabled:      true,
+			HTTPURL:      "http://127.0.0.1:18888",
+			LocalPairURL: "http://127.0.0.1:18888/api/v1/pairing/claims",
+			UpdatedAt:    time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{
+		"--config", configPath,
+		"remote", "enable",
+		"--local",
+		"--cloud",
+		"--server", "https://control.example.test",
+		"--token", "cloud-secret",
+	})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("both enable returned error: %v", err)
+	}
+	if gotParams.ControlURL != "https://control.example.test" || gotParams.AccessToken != "cloud-secret" {
+		t.Fatalf("running local daemon did not receive cloud discovery config: %#v", gotParams)
+	}
+	if len(gotParams.HubURLs) != 0 {
+		t.Fatalf("expected discovery path without explicit hub URLs, got %#v", gotParams.HubURLs)
 	}
 }
 

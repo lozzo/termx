@@ -2,6 +2,7 @@ import type { LocalOfferSignature } from './localAppIdentity'
 import type { ManagedHubApi, ManagedHubSession } from './managedHubApi'
 import type {
   ConnectionCapabilities,
+  ConnectionPath,
   RtcConnectionTarget,
   RtcConnectOptions,
   RtcOfferSigningInput,
@@ -13,6 +14,7 @@ import type {
 export interface ManagedHubRtcConnectInput extends RtcConnectionTarget {
   connectTicket: string
   appCertificate: unknown
+  path?: ConnectionPath | undefined
 }
 
 export interface ManagedHubRtcConnectorOptions<TSession extends RtcSession & RtcSessionNegotiator = RtcSession & RtcSessionNegotiator> {
@@ -40,7 +42,7 @@ class ManagedHubRtcConnector {
       throwIfAborted(options.signal)
       const offer = await session.createOffer({
         machineId: input.machineId,
-        path: 'managed',
+        path: input.path ?? 'managed',
         ...(terminalId ? { terminalId } : {}),
       })
       const sdp = offer.description.sdp
