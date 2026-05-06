@@ -181,6 +181,7 @@ func (m *Manager) SetHubURL(hubURL string) {
 		m.cfg.HubURLs = nil
 		m.explicitHubURLs = nil
 	} else {
+		m.cfg.Enabled = true
 		m.cfg.HubURLs = []string{hubURL}
 		m.explicitHubURLs = map[string]struct{}{hubURL: {}}
 		state := m.hubStateLocked(hubURL)
@@ -213,6 +214,7 @@ func (m *Manager) addHubURL(hubURL string, opts remotertc.AnswerOptions, hasOpti
 		return
 	}
 	m.mu.Lock()
+	m.cfg.Enabled = true
 	if !containsString(m.cfg.HubURLs, hubURL) {
 		m.cfg.HubURLs = append(m.cfg.HubURLs, hubURL)
 	}
@@ -266,6 +268,9 @@ func (m *Manager) ConfigureCloud(controlURL string, accessToken string, region s
 		return
 	}
 	m.mu.Lock()
+	if controlURL != "" || accessToken != "" {
+		m.cfg.Enabled = true
+	}
 	if controlURL != "" {
 		m.cfg.ControlURL = controlURL
 	}
@@ -316,33 +321,38 @@ func (m *Manager) DetachHub(hubURL string) {
 }
 
 func (m *Manager) Start(ctx context.Context) error {
-	m.mu.Lock()
+	m.mu.RLock()
 	if m.started {
-		m.mu.Unlock()
+		m.mu.RUnlock()
 		return nil
 	}
-	m.started = true
-	runCtx, cancel := context.WithCancel(ctx)
-	m.cancel = cancel
-	m.mu.Unlock()
+	cfg := m.cfg
+	m.mu.RUnlock()
 
-	if !m.cfg.Enabled {
+	if !cfg.Enabled {
 		m.setStatus(StateDisabled, "remote runtime disabled")
 		return nil
 	}
-	if err := m.cfg.Validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		m.setStatus(StateDegraded, err.Error())
 		return nil
 	}
 
-	ident, err := identity.LoadOrCreate(m.cfg.DataDir, m.cfg.DeviceName)
+	ident, err := identity.LoadOrCreate(cfg.DataDir, cfg.DeviceName)
 	if err != nil {
 		m.setStatus(StateDegraded, err.Error())
 		return nil
 	}
 
 	m.mu.Lock()
+	if m.started {
+		m.mu.Unlock()
+		return nil
+	}
 	m.identity = ident
+	m.started = true
+	runCtx, cancel := context.WithCancel(ctx)
+	m.cancel = cancel
 	m.mu.Unlock()
 
 	defer func() {

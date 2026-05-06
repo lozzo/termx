@@ -221,6 +221,7 @@ func (s *Service) LocalEnable(ctx context.Context, params remoteprotocol.LocalEn
 		status := s.local.statusLocked()
 		s.localMu.Unlock()
 		s.attachManagerToCloud(params, local.httpURL)
+		s.attachManagerToLocalHub(s.managerContext(ctx), local)
 		return status, nil
 	}
 	s.localMu.Unlock()
@@ -241,8 +242,18 @@ func (s *Service) LocalEnable(ctx context.Context, params remoteprotocol.LocalEn
 	status := runtime.statusLocked()
 	s.localMu.Unlock()
 	s.attachManagerToCloud(params, runtime.httpURL)
-	s.attachManagerToLocalHub(ctx, runtime)
+	s.attachManagerToLocalHub(s.managerContext(ctx), runtime)
 	return status, nil
+}
+
+func (s *Service) managerContext(fallback context.Context) context.Context {
+	if s != nil && s.rtcCtx != nil {
+		return s.rtcCtx
+	}
+	if fallback != nil {
+		return fallback
+	}
+	return context.Background()
 }
 
 func (s *Service) LocalStatus() remoteprotocol.LocalStatus {

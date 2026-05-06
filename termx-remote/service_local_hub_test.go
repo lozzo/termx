@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -145,6 +146,98 @@ func TestLocalEnableRegistersRealAgentWithHub(t *testing.T) {
 	}
 }
 
+func TestLocalEnableCanStartCloudManagerAfterDisabledDaemonStart(t *testing.T) {
+	control := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/devices/register":
+			_ = json.NewEncoder(w).Encode(map[string]any{"device": map[string]any{"id": "device-late-enable"}})
+		case "/api/v1/hubs":
+			_ = json.NewEncoder(w).Encode(map[string]any{"hubs": []map[string]any{}})
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	controlServer := httptest.NewServer(control)
+	defer controlServer.Close()
+
+	service := NewService(remoteprotocol.Config{
+		DataDir:    t.TempDir(),
+		DeviceName: "late-enable-agent-test",
+	}, nil)
+	t.Cleanup(func() { _ = service.Close(context.Background()) })
+	if err := service.Start(context.Background()); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	if status := service.Status(); status.State != remoteprotocol.StateDisabled {
+		t.Fatalf("expected disabled initial status, got %+v", status)
+	}
+
+	status, err := service.LocalEnable(context.Background(), remoteprotocol.LocalEnableParams{
+		LocalWebAddr: "127.0.0.1:0",
+		ControlURL:   controlServer.URL,
+		AccessToken:  "late-token",
+	})
+	if err != nil {
+		t.Fatalf("LocalEnable returned error: %v", err)
+	}
+
+	managerStatus := waitForLocalManagerOnline(t, service)
+	if managerStatus.ControlURL != controlServer.URL {
+		t.Fatalf("cloud control URL was not attached after late enable: %+v", managerStatus)
+	}
+	if managerStatus.HubURL == "" || !containsTestString(managerStatus.HubURLs, status.HTTPURL) {
+		t.Fatalf("local hub was not registered after late enable: status=%+v local=%+v", managerStatus, status)
+	}
+}
+
+func TestLocalEnableCanAttachCloudAfterLocalOnlyEnable(t *testing.T) {
+	control := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/devices/register":
+			_ = json.NewEncoder(w).Encode(map[string]any{"device": map[string]any{"id": "device-late-cloud"}})
+		case "/api/v1/hubs":
+			_ = json.NewEncoder(w).Encode(map[string]any{"hubs": []map[string]any{}})
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	controlServer := httptest.NewServer(control)
+	defer controlServer.Close()
+
+	service := NewService(remoteprotocol.Config{
+		DataDir:    t.TempDir(),
+		DeviceName: "late-cloud-agent-test",
+	}, nil)
+	t.Cleanup(func() { _ = service.Close(context.Background()) })
+	if err := service.Start(context.Background()); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	localStatus, err := service.LocalEnable(context.Background(), remoteprotocol.LocalEnableParams{
+		LocalWebAddr: "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatalf("local-only LocalEnable returned error: %v", err)
+	}
+	waitForLocalManagerOnline(t, service)
+
+	if _, err := service.LocalEnable(context.Background(), remoteprotocol.LocalEnableParams{
+		LocalWebAddr: "127.0.0.1:0",
+		ControlURL:   controlServer.URL,
+		AccessToken:  "late-cloud-token",
+	}); err != nil {
+		t.Fatalf("cloud LocalEnable returned error: %v", err)
+	}
+
+	managerStatus := waitForLocalStatus(t, service, 3*time.Second, func(status remoteprotocol.Status) bool {
+		return status.State == remoteprotocol.StateOnline &&
+			status.ControlURL == controlServer.URL &&
+			containsTestString(status.HubURLs, localStatus.HTTPURL)
+	})
+	if managerStatus.HubURL == "" {
+		t.Fatalf("expected hub after late cloud enable, got %+v", managerStatus)
+	}
+}
+
 func TestLocalDisableStopsHub(t *testing.T) {
 	service := NewService(remoteprotocol.Config{}, nil)
 
@@ -226,6 +319,16 @@ func waitForLocalStatus(t *testing.T, service *Service, timeout time.Duration, c
 	}
 	t.Fatalf("condition not met before timeout; last status = %+v", status)
 	return status
+}
+
+func containsTestString(values []string, target string) bool {
+	target = strings.TrimSpace(target)
+	for _, value := range values {
+		if strings.TrimSpace(value) == target {
+			return true
+		}
+	}
+	return false
 }
 
 func TestLocalEnableIdempotent(t *testing.T) {
