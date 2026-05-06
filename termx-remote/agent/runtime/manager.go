@@ -52,18 +52,65 @@ type InventoryProvider interface {
 }
 
 type Status struct {
-	State         State     `json:"state"`
-	Detail        string    `json:"detail,omitempty"`
-	DeviceID      string    `json:"device_id,omitempty"`
-	DeviceName    string    `json:"device_name,omitempty"`
-	ControlURL    string    `json:"control_url,omitempty"`
-	HubURL        string    `json:"hub_url,omitempty"`
-	HubURLs       []string  `json:"hub_urls,omitempty"`
-	DataDir       string    `json:"data_dir,omitempty"`
-	Mode          string    `json:"mode,omitempty"`
-	AllowLAN      bool      `json:"allow_lan"`
-	TerminalCount int       `json:"terminal_count"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	State         State       `json:"state"`
+	Detail        string      `json:"detail,omitempty"`
+	DeviceID      string      `json:"device_id,omitempty"`
+	DeviceName    string      `json:"device_name,omitempty"`
+	ControlURL    string      `json:"control_url,omitempty"`
+	HubURL        string      `json:"hub_url,omitempty"`
+	HubURLs       []string    `json:"hub_urls,omitempty"`
+	Hubs          []HubStatus `json:"hubs,omitempty"`
+	DataDir       string      `json:"data_dir,omitempty"`
+	Mode          string      `json:"mode,omitempty"`
+	AllowLAN      bool        `json:"allow_lan"`
+	TerminalCount int         `json:"terminal_count"`
+	UpdatedAt     time.Time   `json:"updated_at"`
+}
+
+type HubKind string
+
+const (
+	HubKindLocal  HubKind = "local"
+	HubKindOnline HubKind = "online"
+)
+
+type HubSource string
+
+const (
+	HubSourceConfig     HubSource = "config"
+	HubSourceEmbedded   HubSource = "embedded"
+	HubSourceExplicit   HubSource = "explicit"
+	HubSourceWebControl HubSource = "web_control"
+)
+
+type HubTransport string
+
+const (
+	HubTransportGRPC HubTransport = "grpc"
+)
+
+type HubConnectionState string
+
+const (
+	HubConnectionDisconnected  HubConnectionState = "disconnected"
+	HubConnectionConnecting    HubConnectionState = "connecting"
+	HubConnectionConnected     HubConnectionState = "connected"
+	HubConnectionReconnecting  HubConnectionState = "reconnecting"
+	HubConnectionForcedOffline HubConnectionState = "forced_offline"
+)
+
+type HubStatus struct {
+	URL                string             `json:"url"`
+	Kind               HubKind            `json:"kind"`
+	Source             HubSource          `json:"source"`
+	Transport          HubTransport       `json:"transport"`
+	State              HubConnectionState `json:"state"`
+	ConnectedAt        time.Time          `json:"connected_at,omitempty"`
+	LastAckAt          time.Time          `json:"last_ack_at,omitempty"`
+	LastError          string             `json:"last_error,omitempty"`
+	ForcedReason       string             `json:"forced_reason,omitempty"`
+	AllowRelay         bool               `json:"allow_relay,omitempty"`
+	AllowRelayTransfer bool               `json:"allow_relay_transfer,omitempty"`
 }
 
 type Manager struct {
@@ -80,8 +127,6 @@ type Manager struct {
 	syncCh           chan struct{}
 	agentID          string
 	hubStates        map[string]*hubRuntimeState
-	explicitHubURL   bool
-	explicitHubURLs  map[string]struct{}
 	answerOptions    remotertc.AnswerOptions
 	answerer         cloudOfferAnswerer
 	pairing          PairClaimer
@@ -89,11 +134,19 @@ type Manager struct {
 }
 
 type hubRuntimeState struct {
+	URL             string
+	Kind            HubKind
+	Source          HubSource
+	Transport       HubTransport
+	ConnectionState HubConnectionState
 	SessionID       string
 	RTCServers      []hubv1.RTCIceServerConfig
 	RelayPolicy     hubv1.RelayPolicy
 	SessionContext  context.Context
 	SessionCancel   context.CancelFunc
+	ConnectedAt     time.Time
+	LastAckAt       time.Time
+	LastError       string
 	ForcedOffline   bool
 	ForcedOfflineAt time.Time
 	ForcedReason    string
@@ -131,22 +184,14 @@ func (defaultCloudOfferAnswerer) AnswerOffer(
 
 func NewManager(cfg remoteconfig.Config, provider InventoryProvider, host bridge.TransportSink) *Manager {
 	cfg = remoteconfig.Normalize(cfg)
-	explicitHubURLs := make(map[string]struct{}, len(cfg.HubURLs))
-	for _, hubURL := range cfg.HubURLs {
-		if hubURL = strings.TrimSpace(hubURL); hubURL != "" {
-			explicitHubURLs[hubURL] = struct{}{}
-		}
-	}
-	return &Manager{
-		cfg:             cfg,
-		provider:        provider,
-		host:            host,
-		files:           fileapi.NewManager(),
-		hubStates:       make(map[string]*hubRuntimeState),
-		explicitHubURL:  len(explicitHubURLs) > 0,
-		explicitHubURLs: explicitHubURLs,
-		answerer:        defaultCloudOfferAnswerer{},
-		syncCh:          make(chan struct{}, 1),
+	manager := &Manager{
+		cfg:       cfg,
+		provider:  provider,
+		host:      host,
+		files:     fileapi.NewManager(),
+		hubStates: make(map[string]*hubRuntimeState),
+		answerer:  defaultCloudOfferAnswerer{},
+		syncCh:    make(chan struct{}, 1),
 		status: Status{
 			State:     StateDisabled,
 			Detail:    "remote runtime disabled",
@@ -156,6 +201,12 @@ func NewManager(cfg remoteconfig.Config, provider InventoryProvider, host bridge
 			UpdatedAt: time.Now().UTC(),
 		},
 	}
+	manager.mu.Lock()
+	for _, hubURL := range cfg.HubURLs {
+		manager.configureHubEndpointLocked(hubURL, hubKindForMode(cfg.Mode, true), HubSourceConfig, remotertc.AnswerOptions{}, false)
+	}
+	manager.mu.Unlock()
+	return manager
 }
 
 func (m *Manager) SetPairClaimer(pairing PairClaimer) {
@@ -179,33 +230,27 @@ func (m *Manager) SetHubURL(hubURL string) {
 	m.cfg.HubURL = hubURL
 	if hubURL == "" {
 		m.cfg.HubURLs = nil
-		m.explicitHubURLs = nil
 	} else {
 		m.cfg.Enabled = true
 		m.cfg.HubURLs = []string{hubURL}
-		m.explicitHubURLs = map[string]struct{}{hubURL: {}}
-		state := m.hubStateLocked(hubURL)
-		state.ForcedOffline = false
-		state.ForcedReason = ""
-		state.ForcedOfflineAt = time.Time{}
+		m.configureHubEndpointLocked(hubURL, hubKindForMode(m.cfg.Mode, true), HubSourceExplicit, remotertc.AnswerOptions{}, false)
 	}
-	m.explicitHubURL = hubURL != ""
 	m.mu.Unlock()
 }
 
 func (m *Manager) AddHubURL(hubURL string) {
-	m.addHubURL(hubURL, remotertc.AnswerOptions{}, false, false)
+	m.addHubURL(hubURL, remotertc.AnswerOptions{}, false, HubSourceConfig, hubKindForMode(m.cfg.Mode, false))
 }
 
 func (m *Manager) AddExplicitHubURL(hubURL string) {
-	m.addHubURL(hubURL, remotertc.AnswerOptions{}, false, true)
+	m.addHubURL(hubURL, remotertc.AnswerOptions{}, false, HubSourceExplicit, HubKindOnline)
 }
 
 func (m *Manager) AddHubURLWithAnswerOptions(hubURL string, opts remotertc.AnswerOptions) {
-	m.addHubURL(hubURL, opts, true, false)
+	m.addHubURL(hubURL, opts, true, HubSourceEmbedded, HubKindLocal)
 }
 
-func (m *Manager) addHubURL(hubURL string, opts remotertc.AnswerOptions, hasOptions bool, explicit bool) {
+func (m *Manager) addHubURL(hubURL string, opts remotertc.AnswerOptions, hasOptions bool, source HubSource, kind HubKind) {
 	if m == nil {
 		return
 	}
@@ -221,20 +266,7 @@ func (m *Manager) addHubURL(hubURL string, opts remotertc.AnswerOptions, hasOpti
 	if strings.TrimSpace(m.cfg.HubURL) == "" {
 		m.cfg.HubURL = hubURL
 	}
-	state := m.hubStateLocked(hubURL)
-	state.ForcedOffline = false
-	state.ForcedReason = ""
-	state.ForcedOfflineAt = time.Time{}
-	if hasOptions {
-		state.AnswerOptions = opts
-	}
-	if explicit {
-		m.explicitHubURL = true
-		if m.explicitHubURLs == nil {
-			m.explicitHubURLs = make(map[string]struct{})
-		}
-		m.explicitHubURLs[hubURL] = struct{}{}
-	}
+	m.configureHubEndpointLocked(hubURL, kind, source, opts, hasOptions)
 	m.mu.Unlock()
 	m.TriggerSync()
 }
@@ -249,6 +281,7 @@ func (m *Manager) ConfigureHubAnswerOptions(hubURL string, opts remotertc.Answer
 	}
 	m.mu.Lock()
 	state := m.hubStateLocked(hubURL)
+	m.configureHubEndpointLocked(hubURL, state.Kind, state.Source, opts, true)
 	state.AnswerOptions = opts
 	state.ForcedOffline = false
 	state.ForcedReason = ""
@@ -280,9 +313,6 @@ func (m *Manager) ConfigureCloud(controlURL string, accessToken string, region s
 	if region != "" {
 		m.cfg.Region = region
 	}
-	if controlURL != "" || accessToken != "" {
-		m.explicitHubURL = len(m.explicitHubURLs) > 0
-	}
 	m.mu.Unlock()
 	m.TriggerSync()
 }
@@ -306,13 +336,10 @@ func (m *Manager) DetachHub(hubURL string) {
 		remaining := removeString(m.cfg.HubURLs, hubURL)
 		m.stopRemovedHubSignalingLocked(remaining)
 		m.cfg.HubURLs = remaining
-		delete(m.explicitHubURLs, hubURL)
 		if len(remaining) > 0 {
 			m.cfg.HubURL = remaining[0]
 		} else {
 			m.cfg.HubURL = ""
-			m.explicitHubURL = false
-			m.explicitHubURLs = nil
 			m.answerOptions = remotertc.AnswerOptions{}
 		}
 	}
@@ -412,6 +439,8 @@ func (m *Manager) MarkDegraded(detail string) {
 func (m *Manager) Status() Status {
 	m.mu.RLock()
 	status := m.status
+	status.HubURLs = append([]string(nil), status.HubURLs...)
+	status.Hubs = append([]HubStatus(nil), status.Hubs...)
 	m.mu.RUnlock()
 
 	if m.provider != nil {
@@ -442,11 +471,70 @@ func (m *Manager) setStatus(state State, detail string) {
 		ControlURL:    m.cfg.ControlURL,
 		HubURL:        m.cfg.HubURL,
 		HubURLs:       append([]string(nil), m.cfg.HubURLs...),
+		Hubs:          m.hubStatusesLocked(),
 		DataDir:       m.cfg.DataDir,
 		Mode:          m.cfg.Mode,
 		AllowLAN:      m.cfg.AllowLAN,
 		TerminalCount: m.status.TerminalCount,
 		UpdatedAt:     time.Now().UTC(),
+	}
+}
+
+func (m *Manager) hubStatusesLocked() []HubStatus {
+	out := make([]HubStatus, 0, len(m.cfg.HubURLs))
+	seen := make(map[string]struct{}, len(m.cfg.HubURLs))
+	for _, hubURL := range m.cfg.HubURLs {
+		hubURL = strings.TrimSpace(hubURL)
+		if hubURL == "" {
+			continue
+		}
+		seen[hubURL] = struct{}{}
+		out = append(out, m.hubStatusLocked(hubURL))
+	}
+	for hubURL := range m.hubStates {
+		hubURL = strings.TrimSpace(hubURL)
+		if hubURL == "" {
+			continue
+		}
+		if _, ok := seen[hubURL]; ok {
+			continue
+		}
+		out = append(out, m.hubStatusLocked(hubURL))
+	}
+	return out
+}
+
+func (m *Manager) hubStatusLocked(hubURL string) HubStatus {
+	state := m.hubStates[strings.TrimSpace(hubURL)]
+	if state == nil {
+		kind := hubKindForMode(m.cfg.Mode, true)
+		return HubStatus{
+			URL:       strings.TrimSpace(hubURL),
+			Kind:      kind,
+			Source:    HubSourceConfig,
+			Transport: HubTransportGRPC,
+			State:     HubConnectionDisconnected,
+		}
+	}
+	connectionState := state.ConnectionState
+	if connectionState == "" {
+		connectionState = HubConnectionDisconnected
+	}
+	if state.ForcedOffline {
+		connectionState = HubConnectionForcedOffline
+	}
+	return HubStatus{
+		URL:                firstNonEmpty(state.URL, hubURL),
+		Kind:               state.Kind,
+		Source:             state.Source,
+		Transport:          state.Transport,
+		State:              connectionState,
+		ConnectedAt:        state.ConnectedAt,
+		LastAckAt:          state.LastAckAt,
+		LastError:          state.LastError,
+		ForcedReason:       state.ForcedReason,
+		AllowRelay:         state.RelayPolicy.AllowRelay,
+		AllowRelayTransfer: state.RelayPolicy.AllowRelayTransfer,
 	}
 }
 
@@ -496,6 +584,19 @@ func removeString(values []string, target string) []string {
 	return out
 }
 
+func hubKindForMode(mode string, explicit bool) HubKind {
+	if remoteconfig.ModeIncludesOnline(mode) && (explicit || !remoteconfig.ModeIncludesLocal(mode)) {
+		return HubKindOnline
+	}
+	if remoteconfig.ModeIncludesLocal(mode) {
+		return HubKindLocal
+	}
+	if remoteconfig.ModeIncludesOnline(mode) {
+		return HubKindOnline
+	}
+	return HubKindLocal
+}
+
 func (m *Manager) reconcileLoop(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -539,8 +640,14 @@ func (m *Manager) reconcile(ctx context.Context) (State, string, error) {
 		m.mu.RUnlock()
 	}
 	if len(hubURLs) > 0 {
-		online, lastErr := m.syncHubPresences(ctx, hubURLs)
-		if online == 0 && lastErr != nil {
+		registered, started, lastErr := m.syncHubPresences(ctx, hubURLs)
+		if registered == 0 && started > 0 {
+			if controlURL != "" {
+				return StateRegistering, "device registered in control; hub signaling registering", nil
+			}
+			return StateRegistering, "hub signaling registering; control registration not configured", nil
+		}
+		if registered == 0 && lastErr != nil {
 			return StateDegraded, "", lastErr
 		}
 		if controlURL != "" {
@@ -555,10 +662,11 @@ func (m *Manager) reconcile(ctx context.Context) (State, string, error) {
 }
 
 type hubSyncResult struct {
-	err error
+	started bool
+	err     error
 }
 
-func (m *Manager) syncHubPresences(ctx context.Context, hubURLs []string) (int, error) {
+func (m *Manager) syncHubPresences(ctx context.Context, hubURLs []string) (int, int, error) {
 	resultCh := make(chan hubSyncResult, len(hubURLs))
 	pending := 0
 	for _, hubURL := range hubURLs {
@@ -569,92 +677,98 @@ func (m *Manager) syncHubPresences(ctx context.Context, hubURLs []string) (int, 
 		pending++
 		go func(hubURL string) {
 			var err error
-			switch mode := m.hubConnectionMode(hubURL); mode {
-			case "online", "local":
+			started := false
+			switch kind := m.hubKind(hubURL); kind {
+			case HubKindOnline, HubKindLocal:
 				err = m.ensureGRPCHubLoop(ctx, hubURL)
+				started = err == nil
 			default:
 				err = nil
 			}
-			resultCh <- hubSyncResult{err: err}
+			resultCh <- hubSyncResult{started: started, err: err}
 		}(hubURL)
 	}
 	if pending == 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
 
-	online := 0
+	registered := m.registeredHubCount(hubURLs)
+	started := 0
 	var lastErr error
 	for pending > 0 {
 		select {
 		case <-ctx.Done():
-			if online > 0 {
-				return online, lastErr
+			if registered > 0 {
+				return registered, started, lastErr
 			}
-			return 0, ctx.Err()
+			return 0, started, ctx.Err()
 		case result := <-resultCh:
 			pending--
+			if result.started {
+				started++
+			}
 			if result.err != nil {
 				lastErr = result.err
-			} else {
-				online++
 			}
-			if online > 0 {
+			registered = m.registeredHubCount(hubURLs)
+			if registered > 0 {
 				for pending > 0 {
 					select {
 					case result := <-resultCh:
 						pending--
+						if result.started {
+							started++
+						}
 						if result.err != nil {
 							lastErr = result.err
-						} else {
-							online++
 						}
+						registered = m.registeredHubCount(hubURLs)
 					default:
-						return online, lastErr
+						return registered, started, lastErr
 					}
 				}
-				return online, lastErr
+				return registered, started, lastErr
 			}
 		}
 	}
-	return online, lastErr
+	registered = m.registeredHubCount(hubURLs)
+	return registered, started, lastErr
 }
 
-func (m *Manager) hubConnectionMode(hubURL string) string {
+func (m *Manager) hubKind(hubURL string) HubKind {
 	m.mu.RLock()
+	state := m.hubStates[strings.TrimSpace(hubURL)]
 	mode := m.cfg.Mode
-	explicit := m.explicitHubURLs
-	discoveredHubURL := m.discoveredHubURL
 	m.mu.RUnlock()
-	if remoteconfig.ModeIncludesOnline(mode) {
-		if _, ok := explicit[strings.TrimSpace(hubURL)]; ok {
-			return "online"
+	if state != nil && state.Kind != "" {
+		return state.Kind
+	}
+	return hubKindForMode(mode, true)
+}
+
+func (m *Manager) registeredHubCount(hubURLs []string) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	count := 0
+	for _, hubURL := range hubURLs {
+		state := m.hubStates[strings.TrimSpace(hubURL)]
+		if state == nil || state.ForcedOffline {
+			continue
 		}
-		if strings.TrimSpace(discoveredHubURL) == strings.TrimSpace(hubURL) {
-			return "online"
-		}
-		if !remoteconfig.ModeIncludesLocal(mode) {
-			return "online"
+		if state.ConnectionState == HubConnectionConnected && strings.TrimSpace(state.SessionID) != "" {
+			count++
 		}
 	}
-	if remoteconfig.ModeIncludesLocal(mode) {
-		return "local"
-	}
-	return ""
+	return count
 }
 
 func (m *Manager) discoverHub(ctx context.Context) error {
 	m.mu.RLock()
 	controlURL := m.cfg.ControlURL
 	accessToken := m.cfg.AccessToken
-	hubURL := m.cfg.HubURL
 	preferredRegion := m.cfg.Region
-	explicitHubURL := m.explicitHubURL
-	discoveredHubURL := m.discoveredHubURL
 	m.mu.RUnlock()
 	if controlURL == "" || accessToken == "" {
-		return nil
-	}
-	if strings.TrimSpace(hubURL) != "" && explicitHubURL && strings.TrimSpace(discoveredHubURL) == "" {
 		return nil
 	}
 	hubs, err := discovery.DiscoverHubs(ctx, controlURL, accessToken)
@@ -683,6 +797,7 @@ func (m *Manager) discoverHub(ctx context.Context) error {
 		}
 		m.cfg.HubURLs = hubURLs
 		m.discoveredHubURL = selectedURL
+		m.configureHubEndpointLocked(selectedURL, HubKindOnline, HubSourceWebControl, remotertc.AnswerOptions{}, false)
 		m.mu.Unlock()
 	}
 	return nil
@@ -724,6 +839,8 @@ func (m *Manager) stopHubSignalingLoopLocked() {
 		state.RelayPolicy = hubv1.RelayPolicy{}
 		state.SessionContext = nil
 		state.SessionCancel = nil
+		state.ConnectionState = HubConnectionDisconnected
+		state.ConnectedAt = time.Time{}
 	}
 }
 
@@ -906,8 +1023,47 @@ func (m *Manager) hubStateLocked(hubURL string) *hubRuntimeState {
 	}
 	state := m.hubStates[hubURL]
 	if state == nil {
-		state = &hubRuntimeState{}
+		state = &hubRuntimeState{
+			URL:             hubURL,
+			Kind:            hubKindForMode(m.cfg.Mode, true),
+			Source:          HubSourceConfig,
+			Transport:       HubTransportGRPC,
+			ConnectionState: HubConnectionDisconnected,
+		}
 		m.hubStates[hubURL] = state
+	}
+	if state.URL == "" {
+		state.URL = hubURL
+	}
+	if state.Kind == "" {
+		state.Kind = hubKindForMode(m.cfg.Mode, true)
+	}
+	if state.Source == "" {
+		state.Source = HubSourceConfig
+	}
+	if state.Transport == "" {
+		state.Transport = HubTransportGRPC
+	}
+	if state.ConnectionState == "" {
+		state.ConnectionState = HubConnectionDisconnected
+	}
+	return state
+}
+
+func (m *Manager) configureHubEndpointLocked(hubURL string, kind HubKind, source HubSource, opts remotertc.AnswerOptions, hasOptions bool) *hubRuntimeState {
+	state := m.hubStateLocked(hubURL)
+	if kind != "" {
+		state.Kind = kind
+	}
+	if source != "" {
+		state.Source = source
+	}
+	state.Transport = HubTransportGRPC
+	state.ForcedOffline = false
+	state.ForcedReason = ""
+	state.ForcedOfflineAt = time.Time{}
+	if hasOptions {
+		state.AnswerOptions = opts
 	}
 	return state
 }
@@ -973,6 +1129,8 @@ func (m *Manager) ensureGRPCHubLoop(ctx context.Context, hubURL string) error {
 	loopCtx, cancel := context.WithCancel(ctx)
 	state.SessionContext = loopCtx
 	state.SessionCancel = cancel
+	state.ConnectionState = HubConnectionConnecting
+	state.LastError = ""
 	m.mu.Unlock()
 	go m.runGRPCHubLoop(loopCtx, hubURL)
 	return nil
@@ -1000,29 +1158,35 @@ func (m *Manager) runGRPCHubLoop(ctx context.Context, hubURL string) {
 func (m *Manager) connectAndServeGRPC(ctx context.Context, hubURL string) error {
 	client, err := discovery.NewGRPCHubClient(hubURL, m.grpcAccessTokenForHub(hubURL))
 	if err != nil {
+		m.markHubConnectionError(hubURL, err)
 		return fmt.Errorf("create grpc client: %w", err)
 	}
 	defer client.Close()
 
 	stream, err := client.Connect(ctx)
 	if err != nil {
+		m.markHubConnectionError(hubURL, err)
 		return fmt.Errorf("connect: %w", err)
 	}
 	sender := &lockedGRPCClientSender{stream: stream}
 	if err := sender.Send(&pb.AgentToHub{Payload: &pb.AgentToHub_Register{
 		Register: m.buildGRPCRegisterRequest(),
 	}}); err != nil {
+		m.markHubConnectionError(hubURL, err)
 		return err
 	}
 	msg, err := stream.Recv()
 	if err != nil {
+		m.markHubConnectionError(hubURL, err)
 		return err
 	}
 	ack := msg.GetRegisterAck()
 	if ack == nil {
+		m.markHubConnectionError(hubURL, fmt.Errorf("expected register_ack"))
 		return fmt.Errorf("expected register_ack")
 	}
 	m.updateFromGRPCRegisterAck(hubURL, ack)
+	m.TriggerSync()
 
 	interval := time.Duration(ack.GetHeartbeatIntervalSeconds()) * time.Second
 	if interval <= 0 {
@@ -1035,6 +1199,8 @@ func (m *Manager) connectAndServeGRPC(ctx context.Context, hubURL string) error 
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
+			m.markHubConnectionError(hubURL, err)
+			m.TriggerSync()
 			return err
 		}
 		switch p := msg.GetPayload().(type) {
@@ -1051,11 +1217,15 @@ func (m *Manager) connectAndServeGRPC(ctx context.Context, hubURL string) error 
 func (m *Manager) grpcAccessTokenForHub(hubURL string) string {
 	m.mu.RLock()
 	accessToken := strings.TrimSpace(m.cfg.AccessToken)
+	kind := HubKind("")
+	if state := m.hubStates[strings.TrimSpace(hubURL)]; state != nil {
+		kind = state.Kind
+	}
 	m.mu.RUnlock()
 	if accessToken != "" {
 		return accessToken
 	}
-	if m.hubConnectionMode(hubURL) == "local" {
+	if kind == HubKindLocal {
 		return "local"
 	}
 	return ""
@@ -1103,6 +1273,28 @@ func (m *Manager) updateFromGRPCRegisterAck(hubURL string, ack *pb.RegisterRespo
 	} else {
 		state.RelayPolicy = hubv1.RelayPolicy{}
 	}
+	now := time.Now().UTC()
+	state.ConnectionState = HubConnectionConnected
+	if state.ConnectedAt.IsZero() {
+		state.ConnectedAt = now
+	}
+	state.LastAckAt = now
+	state.LastError = ""
+	m.mu.Unlock()
+}
+
+func (m *Manager) markHubConnectionError(hubURL string, err error) {
+	if err == nil {
+		return
+	}
+	m.mu.Lock()
+	state := m.hubStateLocked(hubURL)
+	if state.ConnectionState == HubConnectionConnected {
+		state.ConnectionState = HubConnectionReconnecting
+	} else if state.ConnectionState != HubConnectionForcedOffline {
+		state.ConnectionState = HubConnectionConnecting
+	}
+	state.LastError = err.Error()
 	m.mu.Unlock()
 }
 
@@ -1378,6 +1570,8 @@ func (m *Manager) resetHubSession(hubURL string) {
 		state.RelayPolicy = hubv1.RelayPolicy{}
 		state.SessionContext = nil
 		state.SessionCancel = nil
+		state.ConnectionState = HubConnectionDisconnected
+		state.ConnectedAt = time.Time{}
 	} else {
 		for _, state := range m.hubStates {
 			if state == nil {
@@ -1391,6 +1585,8 @@ func (m *Manager) resetHubSession(hubURL string) {
 			state.RelayPolicy = hubv1.RelayPolicy{}
 			state.SessionContext = nil
 			state.SessionCancel = nil
+			state.ConnectionState = HubConnectionDisconnected
+			state.ConnectedAt = time.Time{}
 		}
 	}
 	m.mu.Unlock()
@@ -1416,6 +1612,8 @@ func (m *Manager) forceHubOffline(hubURL string, cause error) {
 		state.RelayPolicy = hubv1.RelayPolicy{}
 		state.SessionContext = nil
 		state.SessionCancel = nil
+		state.ConnectionState = HubConnectionForcedOffline
+		state.ConnectedAt = time.Time{}
 		state.ForcedOffline = true
 		state.ForcedOfflineAt = time.Now().UTC()
 		state.ForcedReason = reason

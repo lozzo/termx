@@ -15,6 +15,7 @@ import (
 	"github.com/lozzow/termx/termx-remote/fileapi"
 	"github.com/lozzow/termx/termx-remote/identity"
 	"github.com/lozzow/termx/termx-remote/pairing"
+	pb "github.com/lozzow/termx/termx-remote/protocol/hubgrpc"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
 	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
 	"github.com/lozzow/termx/termx-remote/session/token"
@@ -99,14 +100,41 @@ func TestManagerStartUsesGRPCHubLoopForLocalHub(t *testing.T) {
 		t.Fatalf("Start returned error: %v", err)
 	}
 	status := mgr.Status()
-	if status.State != StateOnline {
-		t.Fatalf("expected online state, got %q detail=%q", status.State, status.Detail)
+	if status.State != StateRegistering {
+		t.Fatalf("expected registering state before register ack, got %q detail=%q", status.State, status.Detail)
 	}
 	mgr.mu.RLock()
 	state := mgr.hubStateLocked("http://127.0.0.1:1")
 	mgr.mu.RUnlock()
 	if state.SessionCancel == nil {
 		t.Fatal("expected local hub to use gRPC signaling loop")
+	}
+	if len(status.Hubs) != 1 ||
+		status.Hubs[0].Kind != HubKindLocal ||
+		status.Hubs[0].Source != HubSourceConfig ||
+		status.Hubs[0].Transport != HubTransportGRPC ||
+		status.Hubs[0].State != HubConnectionConnecting {
+		t.Fatalf("unexpected hub status before ack: %+v", status.Hubs)
+	}
+
+	mgr.updateFromGRPCRegisterAck("http://127.0.0.1:1", &pb.RegisterResponse{
+		AgentSessionId: "agent-session-1",
+		RelayPolicy:    &pb.RelayPolicy{AllowRelay: true},
+	})
+	stateValue, detail, err := mgr.reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("reconcile after register ack: %v", err)
+	}
+	mgr.setStatus(stateValue, detail)
+	status = mgr.Status()
+	if status.State != StateOnline {
+		t.Fatalf("expected online state after register ack, got %q detail=%q", status.State, status.Detail)
+	}
+	if len(status.Hubs) != 1 ||
+		status.Hubs[0].State != HubConnectionConnected ||
+		status.Hubs[0].LastAckAt.IsZero() ||
+		!status.Hubs[0].AllowRelay {
+		t.Fatalf("unexpected hub status after ack: %+v", status.Hubs)
 	}
 	mgr.Close()
 }

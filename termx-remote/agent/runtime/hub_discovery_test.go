@@ -58,11 +58,17 @@ func TestManagerDiscoversAndSelectsHubAfterControlRegistration(t *testing.T) {
 		t.Fatalf("Start returned error: %v", err)
 	}
 	status := manager.Status()
-	if status.State != StateOnline {
-		t.Fatalf("expected online after discovered hub registration, got %+v", status)
+	if status.State != StateRegistering {
+		t.Fatalf("expected registering while discovered hub gRPC registration is pending, got %+v", status)
 	}
 	if status.HubURL != hub.URL {
 		t.Fatalf("expected selected hub URL %q, got %q", hub.URL, status.HubURL)
+	}
+	if len(status.Hubs) != 1 ||
+		status.Hubs[0].Kind != HubKindOnline ||
+		status.Hubs[0].Source != HubSourceWebControl ||
+		status.Hubs[0].State != HubConnectionConnecting {
+		t.Fatalf("unexpected discovered hub status: %+v", status.Hubs)
 	}
 	if controlRegisterPath != "/api/devices/register" || controlHubPath != "/api/v1/hubs" {
 		t.Fatalf("control endpoints not called as expected: register=%q hubs=%q", controlRegisterPath, controlHubPath)
@@ -141,8 +147,8 @@ func TestManagerDiscoversHubUsingRegionAndWeightPolicy(t *testing.T) {
 		t.Fatalf("Start returned error: %v", err)
 	}
 	status := manager.Status()
-	if status.State != StateOnline {
-		t.Fatalf("expected online after selected hub registration, got %+v", status)
+	if status.State != StateRegistering {
+		t.Fatalf("expected registering while selected hub gRPC registration is pending, got %+v", status)
 	}
 	if status.HubURL != selectedHub.URL {
 		t.Fatalf("expected selected hub URL %q, got %q", selectedHub.URL, status.HubURL)

@@ -74,12 +74,23 @@ func TestVerifySessionTokenRejectsTamperedToken(t *testing.T) {
 		IssuedAt:     now.Add(-time.Minute).Unix(),
 		ExpiresAt:    now.Add(time.Hour).Unix(),
 	})
-	sessionToken = sessionToken[:len(sessionToken)-1] + "x"
+	parts := strings.SplitN(sessionToken, ".", 2)
+	if len(parts) != 2 {
+		t.Fatalf("unexpected token format: %q", sessionToken)
+	}
+	sessionToken = parts[0][:len(parts[0])-1] + tamperedTokenChar(parts[0][len(parts[0])-1]) + "." + parts[1]
 
 	_, err := manager.verifySessionToken("device-token-test", sessionToken)
 	if err == nil || !strings.Contains(err.Error(), "invalid session token") {
 		t.Fatalf("expected tampered token error, got %v", err)
 	}
+}
+
+func tamperedTokenChar(original byte) string {
+	if original == 'x' {
+		return "y"
+	}
+	return "x"
 }
 
 func TestVerifySessionTokenRejectsEmptyToken(t *testing.T) {
