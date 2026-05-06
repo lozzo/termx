@@ -6,30 +6,16 @@ import { buildRequestUrl } from "./lib/url";
 const protectedPaths = ["/dashboard", "/device-login"];
 const authPaths = ["/login", "/register", "/forgot-password"];
 
-function getAllowedOrigins(): string[] {
-  const env = process.env.ALLOWED_ORIGINS;
-  if (!env) return [];
-  return env.split(",").map((s) => s.trim()).filter(Boolean);
-}
-
 function handleCors(request: NextRequest, response: NextResponse): NextResponse {
-  const origin = request.headers.get("origin");
-  if (!origin) return response;
-
-  const allowed = getAllowedOrigins();
-  if (allowed.length === 0 || allowed.includes(origin)) {
-    response.headers.set("Access-Control-Allow-Origin", origin);
-    response.headers.set("Access-Control-Allow-Credentials", "true");
-    response.headers.set(
-      "Access-Control-Allow-Headers",
-      "Authorization, Content-Type, X-Client-Type, X-Hub-Secret, X-TermX-Hub-Secret"
-    );
-    response.headers.set(
-      "Access-Control-Allow-Methods",
-      "GET, POST, PUT, DELETE, OPTIONS"
-    );
-  }
-
+  response.headers.set("Access-Control-Allow-Origin", "*");
+  response.headers.set(
+    "Access-Control-Allow-Headers",
+    "Authorization, Content-Type, X-Client-Type, X-Hub-Secret, X-TermX-Hub-Secret"
+  );
+  response.headers.set(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, DELETE, OPTIONS"
+  );
   return response;
 }
 

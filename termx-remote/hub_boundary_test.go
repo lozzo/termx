@@ -35,9 +35,38 @@ func TestWF003HubProductImplementationOwnedByTermxRemote(t *testing.T) {
 		"func runHubHeartbeatLoop",
 		"func postHubHeartbeat",
 		forbiddenControlClientPackage,
+		"ConnectionTicket" + "Verifier",
+		"Ticket" + "Verifier",
+		"ControlVerifier",
+		"Agent" + "Policy",
+		"VerifyAppCertificate",
+	})
+}
+
+func TestWF301TermxHubCmdAllowsManagementHeartbeatEnvOnly(t *testing.T) {
+	data := string(readFile(t, "../termx-hub/cmd/termx-hub/main.go"))
+	for _, allowed := range []string{
 		"TERMX_HUB_CONTROL_URL",
 		"TERMX_HUB_CONTROL_SECRET",
-	})
+		"TERMX_HUB_PUBLIC_HTTP_URL",
+		"hub/heartbeat",
+	} {
+		if !strings.Contains(data, allowed) {
+			t.Fatalf("termx-hub cmd does not wire allowed management heartbeat symbol %q", allowed)
+		}
+	}
+	for _, forbidden := range []string{
+		"hub/controlclient",
+		"ConnectionTicket" + "Verifier",
+		"Ticket" + "Verifier",
+		"ControlVerifier",
+		"Agent" + "Policy",
+		"VerifyAppCertificate",
+	} {
+		if strings.Contains(data, forbidden) {
+			t.Fatalf("termx-hub cmd contains forbidden connection-time control symbol %q", forbidden)
+		}
+	}
 }
 
 func requireSourceNotContains(t *testing.T, path string, forbidden []string) {

@@ -201,6 +201,7 @@ func (s *Service) SubmitAnswer(ctx context.Context, in SubmitAnswerInput) error 
 		MachineID: in.MachineID,
 		OfferID:   in.OfferID,
 		SDP:       in.SDP,
+		Error:     in.Error,
 	})
 	return err
 }
@@ -272,6 +273,7 @@ func (s *Service) GetAnswer(ctx context.Context, in GetAnswerInput) (Answer, err
 		OfferID:   answer.OfferID,
 		MachineID: answer.MachineID,
 		SDP:       answer.SDP,
+		Error:     answer.Error,
 	}, nil
 }
 

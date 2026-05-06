@@ -1,6 +1,8 @@
-import { cleanup, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { LocalAppCrypto } from './localAppIdentity'
+import type { LocalPairingApi } from './transport'
 
 vi.mock('./Terminal', () => ({
   Terminal: ({ machineId, terminalId }: { machineId: string; terminalId: string }) => (
@@ -169,25 +171,62 @@ describe('local web entry shell', () => {
     const entry = await import('./localWebEntry')
     document.body.innerHTML = '<div id="root"></div>'
     const storage = new MemoryStorage()
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/api/v1/agents/online')) {
+        return jsonResponse({
+          agents: [{
+            machine_id: 'device-real-local',
+            machine_name: 'Local Mac',
+            status: 'online',
+            terminals: [],
+          }],
+        })
+      }
+      return jsonResponse({})
+    })
+    const pair = vi.fn(async (input: Parameters<LocalPairingApi['pair']>[0]) => ({
+      machineId: input.machineId ?? 'missing-machine',
+      appCertificate: '{"payload":{"machine_id":"device-real-local","app_public_key":"AQIDBA=="},"signature":"machine-sig"}',
+      expiresAt: '2026-05-06T00:00:00Z',
+    }))
 
     entry.mountLocalWebApp({
       networkRuntime: {
-        fetch: async () => jsonResponse({}),
+        fetch,
         storage,
         queryParam: () => null,
       },
       pairApi: {
-        pair: vi.fn(async (input) => ({
-          machineId: input.machineId,
-          appCertificate: '{"payload":{"machine_id":"local","app_public_key":"AQIDBA=="},"signature":"machine-sig"}',
-          expiresAt: '2026-05-06T00:00:00Z',
-        })),
+        pair,
       },
+      pairCrypto: createMockAppCrypto(),
     })
 
     await waitFor(() => expect(screen.getByTestId('termx-verification-gate')).toBeTruthy())
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByText('No active terminals')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: /verify device/i }))
+    fireEvent.change(screen.getByLabelText(/pair id/i), { target: { value: 'pair-1' } })
+    fireEvent.change(screen.getByLabelText(/pair secret/i), { target: { value: 'secret-1' } })
+    const pairButton = within(screen.getByTestId('termx-local-pair-panel')).getByRole('button', { name: /^pair device$/i })
+    await waitFor(() => expect(pairButton).not.toHaveProperty('disabled', true))
+    fireEvent.click(pairButton)
+
+    await waitFor(() => expect(pair).toHaveBeenCalledWith(expect.objectContaining({ machineId: 'device-real-local' })))
+    expect(screen.getByTestId('termx-local-web-shell').textContent).toContain('Local Mac')
+    expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:18888/api/v1/agents/online', expect.any(Object))
+  })
+
+  it('generates a fresh opaque local connect ticket for each embedded Hub offer', async () => {
+    const entry = await import('./localWebEntry')
+
+    const first = entry.createLocalConnectTicket('machine local', () => 'nonce-1')
+    const second = entry.createLocalConnectTicket('machine local', () => 'nonce-2')
+
+    expect(first).toBe('local:machine%20local:nonce-1')
+    expect(second).toBe('local:machine%20local:nonce-2')
+    expect(first).not.toBe(second)
   })
 
   it('does not require browser crypto or local storage until a terminal session is created', async () => {
@@ -286,5 +325,29 @@ class MemoryStorage implements Storage {
   setItem(key: string, value: string): void {
     this.values.set(key, value)
     this.length = this.values.size
+  }
+}
+
+function createMockAppCrypto(): LocalAppCrypto {
+  return {
+    async generateKeyPair() {
+      return {
+        publicKey: { raw: new Uint8Array([1, 2, 3, 4]) },
+        privateKey: { keyId: 'generated-app-key' },
+      }
+    },
+    async savePrivateKey() {},
+    async loadPrivateKey() {
+      return { keyId: 'generated-app-key' }
+    },
+    async sign() {
+      return new TextEncoder().encode('signed-by-app-key')
+    },
+    async randomBytes(length: number) {
+      return new Uint8Array(length)
+    },
+    async sha256() {
+      return new Uint8Array(32)
+    },
   }
 }

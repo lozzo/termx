@@ -207,6 +207,51 @@ func TestManagerReregistersHubWhenHeartbeatUnauthorized(t *testing.T) {
 	}
 }
 
+func TestManagerDoesNotReregisterHubWhenHeartbeatForcedOffline(t *testing.T) {
+	var registerCount atomic.Int32
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/agents/register":
+			count := registerCount.Add(1)
+			_, _ = w.Write([]byte(`{"version":"remote.hub.v1","hub_id":"hub-forced","agent_session_id":"agent-session-` + string(rune('0'+count)) + `","heartbeat_interval_seconds":15,"rtc_config":{"ice_servers":[]},"relay_policy":{"allow_relay":false,"allow_relay_transfer":false}}`))
+		case "/api/v1/agents/heartbeat":
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"agent_heartbeat_failed","message":"agent forced offline"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer hub.Close()
+
+	mgr := NewManager(remoteconfig.Config{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "device-forced",
+		HubURL:     hub.URL,
+	}, inventoryProviderStub{}, nil)
+	mgr.identity = identity.DeviceIdentity{DeviceID: "device-forced", DisplayName: "device-forced"}
+
+	if err := mgr.syncHubPresence(context.Background(), hub.URL); err != nil {
+		t.Fatalf("initial syncHubPresence returned error: %v", err)
+	}
+	err := mgr.syncHubPresence(context.Background(), hub.URL)
+	if err == nil || !strings.Contains(err.Error(), "forced offline") {
+		t.Fatalf("expected forced offline error, got %v", err)
+	}
+
+	mgr.mu.RLock()
+	hubSessionID := mgr.hubSessionID
+	stateSessionID := mgr.hubStateLocked(hub.URL).SessionID
+	mgr.mu.RUnlock()
+	if hubSessionID != "" || stateSessionID != "" {
+		t.Fatalf("forced offline should clear hub sessions, legacy=%q state=%q", hubSessionID, stateSessionID)
+	}
+	if got := registerCount.Load(); got != 1 {
+		t.Fatalf("forced offline must not re-register hub, got %d registrations", got)
+	}
+}
+
 func TestManagerProvidesTerminalManagementRouterForCloudRTC(t *testing.T) {
 	manager := NewManager(remoteconfig.Config{}, managementProviderStub{}, nil)
 	if manager.terminalManagementRouter() == nil {
@@ -680,6 +725,149 @@ func TestHubSignalingLoopResetsSessionWhenAnswerSubmitUnauthorized(t *testing.T)
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("expected signaling loop to stop after unauthorized answer submit")
+	}
+}
+
+func TestHubSignalingLoopKeepsActiveSessionContextWhenAnswerSubmitUnauthorized(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixture(t)
+	var answerRequests atomic.Int32
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/agents/signaling/poll":
+			if answerRequests.Load() == 0 {
+				_ = json.NewEncoder(w).Encode(hubv1.SignalingPollResponse{Offer: &offer})
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case "/api/v1/agents/signaling/answer":
+			answerRequests.Add(1)
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"unknown agent session"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer hub.Close()
+
+	manager.host = transportSinkStub{}
+	manager.cfg.HubURL = hub.URL
+	manager.mu.Lock()
+	manager.hubStateLocked(hub.URL).SessionID = "agent-session-1"
+	manager.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	manager.ensureHubSignalingLoop(ctx, hub.URL)
+	waitForCondition(t, time.Second, func() bool {
+		return answerRequests.Load() == 1
+	})
+	sessionCtx := answerer.gotOptions.SessionContext
+	if sessionCtx == nil {
+		t.Fatal("cloud answer should receive a hub-scoped session context")
+	}
+	select {
+	case <-manager.syncCh:
+	case <-time.After(time.Second):
+		t.Fatal("expected ordinary unauthorized answer submit to trigger sync")
+	}
+	select {
+	case <-sessionCtx.Done():
+		t.Fatal("ordinary unauthorized should not cancel active RTC session context")
+	default:
+	}
+}
+
+func TestHubSignalingLoopStopsWithoutSyncWhenPollForcedOffline(t *testing.T) {
+	manager, _, offer := newCloudOfferFixture(t)
+	var pollRequests atomic.Int32
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/agents/signaling/poll":
+			pollRequests.Add(1)
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"poll_cloud_offer_failed","message":"agent forced offline"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer hub.Close()
+
+	manager.cfg.HubURL = hub.URL
+	manager.hubSessionID = "agent-session-1"
+	manager.signalingStarted = true
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		manager.hubSignalingLoop(ctx, hub.URL, offer.DeviceID, "agent-session-1", nil)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("expected signaling loop to stop after forced offline")
+	}
+	if pollRequests.Load() != 1 {
+		t.Fatalf("expected one poll before forced offline stop, got %d", pollRequests.Load())
+	}
+	select {
+	case <-manager.syncCh:
+		t.Fatal("forced offline must not trigger automatic hub re-registration")
+	default:
+	}
+}
+
+func TestHubSignalingLoopCancelsActiveSessionContextWhenForcedOffline(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixture(t)
+	var answerRequests atomic.Int32
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/agents/signaling/poll":
+			if answerRequests.Load() == 0 {
+				_ = json.NewEncoder(w).Encode(hubv1.SignalingPollResponse{Offer: &offer})
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case "/api/v1/agents/signaling/answer":
+			answerRequests.Add(1)
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"submit_cloud_answer_failed","message":"agent forced offline"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer hub.Close()
+
+	manager.host = transportSinkStub{}
+	manager.cfg.HubURL = hub.URL
+	manager.mu.Lock()
+	manager.hubStateLocked(hub.URL).SessionID = "agent-session-1"
+	manager.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	manager.ensureHubSignalingLoop(ctx, hub.URL)
+	waitForCondition(t, time.Second, func() bool {
+		return answerRequests.Load() == 1
+	})
+	sessionCtx := answerer.gotOptions.SessionContext
+	if sessionCtx == nil {
+		t.Fatal("cloud answer should receive a hub-scoped session context")
+	}
+	select {
+	case <-sessionCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("forced offline should cancel active RTC session context")
+	}
+	select {
+	case <-manager.syncCh:
+		t.Fatal("forced offline must not trigger automatic hub re-registration")
+	default:
 	}
 }
 

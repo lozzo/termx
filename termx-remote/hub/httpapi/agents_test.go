@@ -29,7 +29,7 @@ func TestHubHTTPHandlesBrowserCORSPreflight(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("preflight status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://127.0.0.1:5173" {
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
 		t.Fatalf("allow origin = %q", got)
 	}
 	if got := strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers")); !strings.Contains(got, "content-type") {
@@ -189,6 +189,108 @@ func TestAgentHTTPRegisterHeartbeatPollAndAnswer(t *testing.T) {
 	}
 }
 
+func TestLocalDiscoveryListsOnlineAgentsOnlyWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	reg := registry.New(registry.Config{})
+	if _, err := reg.Register(t.Context(), registry.RegisterInput{
+		MachineID: "device_local",
+		AgentID:   "agent_local",
+		Terminals: []registry.Terminal{{ID: "term_local", State: "running"}},
+	}); err != nil {
+		t.Fatalf("register local agent: %v", err)
+	}
+	router := httpapi.NewHandler(httpapi.Config{
+		Registry:       reg,
+		LocalDiscovery: true,
+	})
+	resp := getJSON(t, router, "/api/v1/agents/online", "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("local discovery status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		Agents []struct {
+			AgentID   string `json:"agent_id"`
+			MachineID string `json:"machine_id"`
+			Terminals []struct {
+				TerminalID string `json:"terminal_id"`
+				Title      string `json:"title"`
+				State      string `json:"state"`
+			} `json:"terminals"`
+		} `json:"agents"`
+	}
+	decodeJSON(t, resp, &body)
+	if len(body.Agents) != 1 || body.Agents[0].MachineID != "device_local" ||
+		body.Agents[0].AgentID != "agent_local" || len(body.Agents[0].Terminals) != 1 ||
+		body.Agents[0].Terminals[0].TerminalID != "term_local" ||
+		body.Agents[0].Terminals[0].Title != "term_local" {
+		t.Fatalf("unexpected local discovery body: %+v", body)
+	}
+
+	cloudRouter := httpapi.NewHandler(httpapi.Config{Registry: reg})
+	cloudResp := getJSON(t, cloudRouter, "/api/v1/agents/online", "")
+	if cloudResp.Code != http.StatusNotFound {
+		t.Fatalf("cloud hub should not expose local discovery, got %d body=%s", cloudResp.Code, cloudResp.Body.String())
+	}
+}
+
+func TestLocalDiscoveryReflectsHeartbeatTerminalInventory(t *testing.T) {
+	t.Parallel()
+
+	clock := fixedClock(time.Date(2026, 5, 5, 10, 45, 0, 0, time.UTC))
+	reg := registry.New(registry.Config{Clock: clock})
+	router := httpapi.NewHandler(httpapi.Config{
+		Registry:       reg,
+		LocalDiscovery: true,
+		Clock:          clock,
+	})
+	register := postJSON(t, router, "/api/v1/agents/register", map[string]any{
+		"version":   "remote.hub.v1",
+		"device_id": "device_local",
+		"agent_id":  "agent_local",
+	})
+	if register.Code != http.StatusOK {
+		t.Fatalf("register status = %d body=%s", register.Code, register.Body.String())
+	}
+	var registered struct {
+		AgentSessionID string `json:"agent_session_id"`
+	}
+	decodeJSON(t, register, &registered)
+
+	heartbeat := postJSON(t, router, "/api/v1/agents/heartbeat", map[string]any{
+		"agent_session_id": registered.AgentSessionID,
+		"device_id":        "device_local",
+		"last_seen_at":     clock.Now().Format(time.RFC3339),
+		"terminals": []map[string]any{{
+			"id":    "term_after_register",
+			"name":  "Shell",
+			"state": "running",
+		}},
+	})
+	if heartbeat.Code != http.StatusOK {
+		t.Fatalf("heartbeat status = %d body=%s", heartbeat.Code, heartbeat.Body.String())
+	}
+
+	resp := getJSON(t, router, "/api/v1/agents/online", "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("local discovery status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		Agents []struct {
+			Terminals []struct {
+				TerminalID string `json:"terminal_id"`
+				State      string `json:"state"`
+			} `json:"terminals"`
+		} `json:"agents"`
+	}
+	decodeJSON(t, resp, &body)
+	if len(body.Agents) != 1 || len(body.Agents[0].Terminals) != 1 ||
+		body.Agents[0].Terminals[0].TerminalID != "term_after_register" ||
+		body.Agents[0].Terminals[0].State != "running" {
+		t.Fatalf("local discovery did not reflect heartbeat terminals: %+v", body)
+	}
+}
+
 func TestAgentHTTPPairingClaimRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -305,8 +407,8 @@ func TestAgentHTTPAcceptsUnsignedRegistrationAsDumbRelay(t *testing.T) {
 	clock := fixedClock(time.Date(2026, 5, 3, 14, 22, 0, 0, time.UTC))
 	reg := registry.New(registry.Config{Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
-		Cloud:       cloud.NewService(cloud.Config{Registry: reg, Clock: clock}),
-		Registry:    reg,
+		Cloud:    cloud.NewService(cloud.Config{Registry: reg, Clock: clock}),
+		Registry: reg,
 	})
 
 	resp := postJSON(t, router, "/api/v1/agents/register", map[string]any{
@@ -379,8 +481,8 @@ func TestAgentHTTPDoesNotApplyExternalForceOfflinePolicy(t *testing.T) {
 	clock := fixedClock(time.Date(2026, 5, 3, 17, 44, 0, 0, time.UTC))
 	reg := registry.New(registry.Config{Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
-		Cloud:       cloud.NewService(cloud.Config{Registry: reg, Clock: clock}),
-		Registry:    reg,
+		Cloud:    cloud.NewService(cloud.Config{Registry: reg, Clock: clock}),
+		Registry: reg,
 	})
 
 	register := postJSON(t, router, "/api/v1/agents/register", map[string]any{

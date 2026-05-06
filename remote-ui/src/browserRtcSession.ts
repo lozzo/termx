@@ -43,6 +43,7 @@ export interface RTCPeerConnectionLike {
   createAnswer(): Promise<RTCSessionDescriptionInit>
   setLocalDescription(description: RTCSessionDescriptionInit): Promise<void>
   setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void>
+  addIceCandidate?(candidate: RTCIceCandidateInit): Promise<void>
   close(): void | Promise<void>
   addEventListener?(type: 'icegatheringstatechange' | 'datachannel' | 'connectionstatechange', listener: EventListener): void
   removeEventListener?(type: 'icegatheringstatechange' | 'datachannel' | 'connectionstatechange', listener: EventListener): void
@@ -142,7 +143,11 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
 
   async acceptAnswer(answer: RtcSessionDescription): Promise<void> {
     if (!this.pc) throw new Error('browser WebRTC session has no pending offer')
-    await this.pc.setRemoteDescription(answer)
+    const normalized = normalizeRemoteDescription(answer)
+    await this.pc.setRemoteDescription(normalized.description)
+    for (const candidate of normalized.candidates) {
+      await this.pc.addIceCandidate?.(candidate)
+    }
     await waitChannelOpenWithTimeout(await this.ensureAPIChannel(), this.options.dataChannelOpenTimeoutMs)
     this.markReadyForTraffic()
   }
@@ -621,6 +626,78 @@ function capabilitiesForAnsweredOffer(input: RtcSessionAnswerTarget): Connection
       ? { denialReason: 'managed relay policy blocks file transfer' }
       : {},
   }
+}
+
+function normalizeRemoteDescription(description: RtcSessionDescription): { description: RtcSessionDescription; candidates: RTCIceCandidateInit[] } {
+  const normalized = splitOutAnswerCandidates(description.sdp)
+  return {
+    description: {
+      ...description,
+      sdp: normalized.sdp,
+    },
+    candidates: normalized.candidates,
+  }
+}
+
+function splitOutAnswerCandidates(sdp: string): { sdp: string; candidates: RTCIceCandidateInit[] } {
+  const sessionLines: string[] = []
+  const mediaLines: string[] = []
+  const candidates: RTCIceCandidateInit[] = []
+  let sessionFingerprint = ''
+  let currentMid = ''
+  let currentMLineIndex = -1
+  let inMedia = false
+  let normalized = false
+  for (const rawLine of sdp.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (line.startsWith('m=')) {
+      currentMLineIndex += 1
+      inMedia = true
+    }
+    if (line.startsWith('a=mid:')) currentMid = line.slice('a=mid:'.length)
+    if (line === 'a=end-of-candidates') continue
+    if (!inMedia && line.startsWith('a=fingerprint:')) {
+      sessionFingerprint = line
+      normalized = true
+      continue
+    }
+    if (line.startsWith('a=candidate:')) {
+      normalized = true
+      if (/^a=candidate:\S+\s+2\s+/i.test(line)) continue
+      candidates.push({
+        candidate: line.slice('a='.length).replace(/\s+ufrag\s+\S+$/i, ''),
+        ...(currentMid ? { sdpMid: currentMid } : {}),
+        ...(currentMLineIndex >= 0 ? { sdpMLineIndex: currentMLineIndex } : {}),
+      })
+      continue
+    }
+    if (inMedia) {
+      mediaLines.push(line)
+    } else {
+      sessionLines.push(line)
+    }
+  }
+  const media = normalized ? normalizeApplicationMediaLines(mediaLines, sessionFingerprint) : mediaLines
+  const normalizedSDP = [...sessionLines, ...media].join('\r\n')
+  return { sdp: normalized ? `${normalizedSDP}\r\n` : normalizedSDP, candidates }
+}
+
+function normalizeApplicationMediaLines(lines: string[], fallbackFingerprint = ''): string[] {
+  const mLine = lines.find((line) => line.startsWith('m=')) ?? ''
+  if (!mLine.includes('webrtc-datachannel')) return lines.filter((line) => line !== 'a=sendrecv')
+  const byPrefix = (prefix: string) => lines.find((line) => line.startsWith(prefix))
+  return [
+    mLine,
+    byPrefix('c='),
+    byPrefix('a=ice-ufrag:'),
+    byPrefix('a=ice-pwd:'),
+    byPrefix('a=ice-options:') ?? 'a=ice-options:trickle',
+    byPrefix('a=fingerprint:') ?? fallbackFingerprint,
+    byPrefix('a=setup:'),
+    byPrefix('a=mid:'),
+    byPrefix('a=sctp-port:'),
+    'a=max-message-size:262144',
+  ].filter((line): line is string => Boolean(line))
 }
 
 class LocalApiChannel implements RtcJsonRpcChannel {

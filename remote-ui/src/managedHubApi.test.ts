@@ -104,6 +104,46 @@ describe('ManagedHubApi', () => {
     }])
   })
 
+  it('preserves offer SDP exactly so agent-side signature verification sees the signed payload', async () => {
+    const fetch = new RecordingFetch([
+      jsonResponse(202, {
+        session_id: 'rtc-managed-1',
+        path: 'cloud',
+        machine_id: 'machine-1',
+        pending: true,
+        relay_policy: { allow_relay: false, allow_relay_transfer: false },
+      }),
+    ])
+    const api = createManagedHubApi({
+      baseUrl: 'https://hub.termx.test',
+      fetch: fetch.fetch,
+    })
+    const signedSDP = 'v=0\r\ns=-\r\n'
+
+    await api.createSession({
+      connectTicket: 'ticket-1',
+      machineId: 'machine-1',
+      appCertificate: { payload: { machine_id: 'machine-1' } },
+      offer: {
+        sessionId: 'rtc-managed-1',
+        sdp: signedSDP,
+        iceCandidates: [],
+      },
+      signature: {
+        algorithm: 'ed25519',
+        nonce: 'nonce-1',
+        timestamp: 1770000000,
+        value: 'offer-sig',
+      },
+    })
+
+    expect(fetch.requests[0]?.body).toMatchObject({
+      offer: {
+        sdp: signedSDP,
+      },
+    })
+  })
+
   it('fails closed when Hub returns relay as a client path', async () => {
     const fetch = new RecordingFetch([
       jsonResponse(200, {

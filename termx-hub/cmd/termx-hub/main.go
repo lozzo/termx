@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-remote/hub/cloud"
+	hubheartbeat "github.com/lozzow/termx/termx-remote/hub/heartbeat"
 	"github.com/lozzow/termx/termx-remote/hub/httpapi"
 	"github.com/lozzow/termx/termx-remote/hub/ice"
 	"github.com/lozzow/termx/termx-remote/hub/registry"
@@ -22,12 +23,16 @@ func main() {
 	if addr == "" {
 		addr = "127.0.0.1:8447"
 	}
-	handler, _, cleanup, err := newHubHandlerFromEnv()
+	runtime, err := newHubRuntimeFromEnv()
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer cleanup()
-	if cleaner, ok := handler.(interface {
+	defer runtime.Cleanup()
+	heartbeatCfg := heartbeatConfigFromEnv()
+	heartbeatCfg.TrafficReader = runtime.TrafficReader
+	stopHeartbeat := startHubHeartbeatLoop(heartbeatCfg, runtime.Registry)
+	defer stopHeartbeat()
+	if cleaner, ok := runtime.Handler.(interface {
 		StartCleanup(context.Context, <-chan time.Time)
 	}); ok {
 		cleanupCtx, cancel := context.WithCancel(context.Background())
@@ -37,15 +42,30 @@ func main() {
 		go cleaner.StartCleanup(cleanupCtx, ticker.C)
 	}
 	log.Printf("termx hub listening on http://%s", addr)
-	if err := http.ListenAndServe(addr, handler); err != nil {
+	if err := http.ListenAndServe(addr, runtime.Handler); err != nil {
 		log.Fatal(err)
 	}
 }
 
+type hubRuntime struct {
+	Handler       http.Handler
+	Registry      *registry.Registry
+	TrafficReader hubturn.TrafficReader
+	Cleanup       func()
+}
+
 func newHubHandlerFromEnv() (http.Handler, *registry.Registry, func(), error) {
-	turnServer, err := turnServerFromEnv()
+	runtime, err := newHubRuntimeFromEnv()
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	return runtime.Handler, runtime.Registry, runtime.Cleanup, nil
+}
+
+func newHubRuntimeFromEnv() (hubRuntime, error) {
+	turnServer, err := turnServerFromEnv()
+	if err != nil {
+		return hubRuntime{}, err
 	}
 	cleanup := func() {
 		if turnServer != nil {
@@ -56,15 +76,53 @@ func newHubHandlerFromEnv() (http.Handler, *registry.Registry, func(), error) {
 	}
 	reg := registry.New(registry.Config{})
 	svc := cloud.NewService(cloud.Config{Registry: reg, AllowRelayByDefault: relayAvailableFromEnv(turnServer)})
-	return httpapi.NewHandler(httpapi.Config{
-		Cloud:          svc,
-		Registry:       reg,
-		ICE:            iceServiceFromEnv(turnServer),
-		ICEServers:     stunServersFromEnv(os.Getenv("TERMX_HUB_STUN_SERVERS")),
-		HubID:          hubIDFromEnv(),
-		DebugToken:     strings.TrimSpace(os.Getenv("TERMX_HUB_DEBUG_TOKEN")),
-		AllowedOrigins: csvList(os.Getenv("TERMX_HUB_ALLOWED_ORIGINS")),
-	}), reg, cleanup, nil
+	runtime := hubRuntime{
+		Handler: httpapi.NewHandler(httpapi.Config{
+			Cloud:          svc,
+			Registry:       reg,
+			ICE:            iceServiceFromEnv(turnServer),
+			ICEServers:     stunServersFromEnv(os.Getenv("TERMX_HUB_STUN_SERVERS")),
+			HubID:          hubIDFromEnv(),
+			DebugToken:     strings.TrimSpace(os.Getenv("TERMX_HUB_DEBUG_TOKEN")),
+			AllowedOrigins: csvList(os.Getenv("TERMX_HUB_ALLOWED_ORIGINS")),
+		}),
+		Registry: reg,
+		Cleanup:  cleanup,
+	}
+	if turnServer != nil {
+		runtime.TrafficReader = turnServer
+	}
+	return runtime, nil
+}
+
+func heartbeatConfigFromEnv() hubheartbeat.Config {
+	cfg := hubheartbeat.Config{
+		ControlURL:    strings.TrimSpace(os.Getenv("TERMX_HUB_CONTROL_URL")),
+		Secret:        strings.TrimSpace(os.Getenv("TERMX_HUB_CONTROL_SECRET")),
+		HubID:         hubIDFromEnv(),
+		Name:          strings.TrimSpace(os.Getenv("TERMX_HUB_NAME")),
+		Region:        strings.TrimSpace(os.Getenv("TERMX_HUB_REGION")),
+		HTTPURL:       strings.TrimSpace(os.Getenv("TERMX_HUB_PUBLIC_HTTP_URL")),
+		GRPCURL:       strings.TrimSpace(os.Getenv("TERMX_HUB_PUBLIC_GRPC_URL")),
+		BandwidthMbps: floatFromEnv("TERMX_HUB_BANDWIDTH_MBPS"),
+		CPUCores:      floatFromEnv("TERMX_HUB_CPU_CORES"),
+		MemoryGB:      floatFromEnv("TERMX_HUB_MEMORY_GB"),
+		MaxAgents:     intFromEnv("TERMX_HUB_MAX_AGENTS"),
+		Interval:      durationFromEnv("TERMX_HUB_HEARTBEAT_INTERVAL", time.Minute),
+	}
+	return cfg
+}
+
+func startHubHeartbeatLoop(cfg hubheartbeat.Config, reg *registry.Registry) func() {
+	if !cfg.Enabled() {
+		return func() {}
+	}
+	if cfg.Interval <= 0 {
+		cfg.Interval = time.Minute
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go hubheartbeat.RunLoop(ctx, cfg, reg)
+	return cancel
 }
 
 func hubIDFromEnv() string {

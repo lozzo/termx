@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-remote/hub/registry"
+	hubturn "github.com/lozzow/termx/termx-remote/hub/turn"
 )
 
 type Config struct {
@@ -28,6 +29,12 @@ type Config struct {
 	MaxAgents     int
 	Interval      time.Duration
 	Client        *http.Client
+	TrafficReader hubturn.TrafficReader
+}
+
+type responseBody struct {
+	OK         bool     `json:"ok"`
+	KickAgents []string `json:"kick_agents"`
 }
 
 func (c Config) Enabled() bool {
@@ -38,7 +45,11 @@ func RunLoop(ctx context.Context, cfg Config, reg *registry.Registry) {
 	if err := Post(ctx, cfg, reg); err != nil {
 		log.Printf("hub heartbeat failed: %v", err)
 	}
-	ticker := time.NewTicker(cfg.Interval)
+	interval := cfg.Interval
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -81,6 +92,11 @@ func Post(ctx context.Context, cfg Config, reg *registry.Registry) error {
 			"region":         cfg.Region,
 		},
 	}
+	if cfg.TrafficReader != nil {
+		if traffic := trafficDeltas(cfg.TrafficReader.DrainTraffic()); len(traffic) > 0 {
+			body["traffic"] = traffic
+		}
+	}
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -104,5 +120,55 @@ func Post(ctx context.Context, cfg Config, reg *registry.Registry) error {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		return fmt.Errorf("control heartbeat rejected request: http %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
+	var result responseBody
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&result); err != nil && err != io.EOF {
+		return fmt.Errorf("decode control heartbeat response: %w", err)
+	}
+	applyKickAgents(reg, result.KickAgents)
 	return nil
+}
+
+func trafficDeltas(in []hubturn.TrafficDelta) []hubturn.TrafficDelta {
+	out := make([]hubturn.TrafficDelta, 0, len(in))
+	for _, delta := range in {
+		if strings.TrimSpace(delta.AgentID) == "" || (delta.BytesIn <= 0 && delta.BytesOut <= 0) {
+			continue
+		}
+		out = append(out, hubturn.TrafficDelta{
+			AgentID:  strings.TrimSpace(delta.AgentID),
+			BytesIn:  maxInt64(delta.BytesIn, 0),
+			BytesOut: maxInt64(delta.BytesOut, 0),
+		})
+	}
+	return out
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func applyKickAgents(reg *registry.Registry, kickAgents []string) {
+	if reg == nil || len(kickAgents) == 0 {
+		return
+	}
+	agents := reg.Agents()
+	for _, kicked := range kickAgents {
+		kicked = strings.TrimSpace(kicked)
+		if kicked == "" {
+			continue
+		}
+		for _, agent := range agents {
+			if agent.MachineID != kicked && agent.ID != kicked {
+				continue
+			}
+			reg.ForceOffline(registry.ForceOfflineInput{
+				MachineID: agent.MachineID,
+				AgentID:   agent.ID,
+				Reason:    "control heartbeat kick",
+			})
+		}
+	}
 }

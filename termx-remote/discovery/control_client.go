@@ -87,6 +87,18 @@ func IsHTTPStatus(err error, status int) bool {
 	return errors.As(err, &statusErr) && statusErr.StatusCode == status
 }
 
+func IsForcedOffline(err error) bool {
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	if statusErr.StatusCode != http.StatusUnauthorized && statusErr.StatusCode != http.StatusForbidden {
+		return false
+	}
+	body := strings.ToLower(strings.TrimSpace(statusErr.Body))
+	return strings.Contains(body, "forced offline") || strings.Contains(body, "forced_offline")
+}
+
 func doJSON(ctx context.Context, method, url string, input any, out any, headers map[string]string) error {
 	var body io.Reader
 	if input != nil {

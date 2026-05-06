@@ -10,15 +10,16 @@
 
 ## Current Build Direction
 
-主线目标：删除重复代码、统一 local/cloud 流程，完成 remote 产品本体。
+**主线迁移已完成**（WF-201~305 全部 done）。当前重心转向部署就绪与端到端验证。
 
-核心工作：
-- 删除 `localweb/` 包（自定义本地 HTTP API，与 hub 协议重复）
-- 删除 `hub/controlclient/` 包（hub 不再调 Web Controller）
-- 清理 `service.go` 中所有 localweb/localRTCAnswer/localWebAdapter 相关代码
-- 实现 `service.go` LocalEnable()：嵌入启动 hub/httpapi + cmux（HTTP + ICE-TCP）
-- 扩展 `agent/runtime.Manager` 支持 `[]hubURL`（both 模式双注册）
-- 在 agent offer 接收路径上实现 app cert 验证（签名 + 有效期 + machine_id）
+`termx-remote` 本身无新 P0 代码任务。`cd termx-remote && go test ./...` 必须保持全通过。
+
+当前 P0 任务在 `remote-ui`、`web-control`、`termx-hub` 侧（见根 `workflow.md` WF-501~505）。
+
+如发现 `termx-remote` 侧问题需修复，遵守以下规则并在 `workflow.md` 认领切片再动手。
+
+已知 TODO（安全，暂不处理）：
+- `hub/httpapi/handler.go:162` — agent 注册未调用 web-control verify-registration，标有 TODO 注释，后续处理。
 
 ## Product Rules
 
@@ -26,13 +27,16 @@
 
 - Hub 是纯信令中继，不做任何认证决策。
 - Hub 不调用 Web Controller 验证 app certificate 或连接票据。
+- Hub 允许通过管理面 heartbeat 周期性向 Web Controller 汇报 hub 在线状态、online machine/agent 列表、relay/TURN 流量，并接收 forced disconnect 指令。
+- 管理面 heartbeat 不得阻塞或审核单次 offer/answer，不得验证 app certificate 或连接票据。
 - Hub 只存储有 TTL 的短时内存状态：online agents、pending offers/answers、pairing claims。
 - Hub 没有数据库，没有 durable state，没有 migration。
-- `hub/controlclient/` 包应当删除；hub httpapi 不注入任何 control verifier。
+- `hub/controlclient/` 包应当删除；hub httpapi 不注入任何连接时 control verifier。
 
-### Web Controller（仅 agent 目录）
+### Web Controller（目录与管理面）
 
-- Web Controller 只返回：该用户的 agent 列表 + 每个 agent 的 hub_url。
+- Web Controller 返回：hub 目录、该用户的 agent 列表 + 每个 agent 的 hub_url。
+- Web Controller 接收云端 Hub 管理面 heartbeat，用于维护 hub 在线状态、agent 在线状态、relay 流量、订阅/踢下线控制。
 - Web Controller 不做连接时认证、policy 决策、offer 审核。
 - Agent 连上 hub 后，认证由 agent 自己完成，不回调 Web Controller。
 
@@ -57,10 +61,10 @@ local 和 cloud 认证逻辑完全一致（agent 侧 cert 验证），hub 不区
 | `hub/httpapi` | 保留 | Hub HTTP handler（dumb relay） |
 | `hub/registry` | 保留 | Agent 注册表（纯内存 + TTL） |
 | `hub/ice` | 保留 | ICE 配置（cloud: STUN+TURN；local: TCP only） |
-| `hub/heartbeat` | 保留 | 心跳管理 |
+| `hub/heartbeat` | 保留 | 云端 Hub 管理面 heartbeat（hub 状态、agent 列表、relay 流量、kick 指令） |
 | `hub/sessionflow` | 保留（清理） | 删除 LocalPlan/AnswerLocal（若无引用） |
 | `hub/cloud` | 保留 | 云存储 offer/answer 抽象 |
-| `hub/controlclient` | **删除** | Hub 不再调 Web Controller |
+| `hub/controlclient` | **删除** | 旧包混合连接时认证与管理面职责；不得复活 |
 | `agent/runtime` | 保留（扩展） | Manager 支持 []hubURL |
 | `localweb` | **删除** | 与 hub 协议重复的自定义本地 HTTP API |
 | `pairing` | 保留 | Pairing claim/response 类型 |
@@ -77,7 +81,8 @@ local 和 cloud 认证逻辑完全一致（agent 侧 cert 验证），hub 不区
 
 ## Review Focus
 
-- Hub httpapi 是否仍有任何 controlclient 或 Web Controller 调用
+- Hub httpapi 是否仍有任何连接时 controlclient / Web Controller 调用
+- Hub 管理面 heartbeat 是否保持周期性异步，不参与连接认证、offer 审核或 cert 验证
 - Hub 是否引入 durable state / DB / migration
 - local 与 cloud 流程是否重新分裂（代码路径应完全一致）
 - Agent 侧 cert 验证是否覆盖签名、有效期、machine_id 三项

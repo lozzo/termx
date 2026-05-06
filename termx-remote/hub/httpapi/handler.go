@@ -35,6 +35,7 @@ type Config struct {
 	MaxAgentSessions int
 	KickTTL          time.Duration
 	AllowedOrigins   []string
+	LocalDiscovery   bool
 }
 
 type Clock interface {
@@ -120,6 +121,37 @@ func NewHandler(cfg Config) http.Handler {
 			"transport": "signaling-control-only",
 		})
 	})
+	if cfg.LocalDiscovery {
+		mux.HandleFunc("GET /api/v1/agents/online", func(w http.ResponseWriter, r *http.Request) {
+			if cfg.Registry == nil {
+				writeError(w, http.StatusServiceUnavailable, "registry_unavailable", "agent registry is not configured")
+				return
+			}
+			agents := cfg.Registry.Agents()
+			out := make([]map[string]any, 0, len(agents))
+			for _, agent := range agents {
+				terminals := make([]map[string]any, 0, len(agent.Terminals))
+				for _, terminal := range agent.Terminals {
+					terminals = append(terminals, map[string]any{
+						"terminal_id": terminal.ID,
+						"title":       terminal.ID,
+						"state":       terminal.State,
+					})
+				}
+				out = append(out, map[string]any{
+					"agent_id":     agent.ID,
+					"machine_id":   agent.MachineID,
+					"machine_name": agent.MachineID,
+					"status":       agent.Status,
+					"last_seen_at": agent.LastSeenAt.Format(time.RFC3339Nano),
+					"terminals":    terminals,
+				})
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"agents": out,
+			})
+		})
+	}
 	mux.HandleFunc("GET /api/debug/agents", func(w http.ResponseWriter, r *http.Request) {
 		debugToken := strings.TrimSpace(cfg.DebugToken)
 		if debugToken == "" || r.Header.Get("X-TermX-Debug-Token") != debugToken {
@@ -159,6 +191,9 @@ func NewHandler(cfg Config) http.Handler {
 				State: terminal.State,
 			})
 		}
+		// TODO: verify agent registration signature against web-control
+		// (/api/v1/hub/agents/verify-registration) before accepting.
+		// Currently any client can register with any machine_id — security gap, deferred.
 		if _, err := cfg.Registry.Register(r.Context(), registry.RegisterInput{
 			MachineID:          deviceID,
 			AgentID:            agentID,
@@ -257,6 +292,7 @@ func NewHandler(cfg Config) http.Handler {
 		if err := cfg.Registry.Heartbeat(r.Context(), registry.HeartbeatInput{
 			AgentID:   session.AgentID,
 			MachineID: session.DeviceID,
+			Terminals: registryTerminalsFromHub(req.Terminals),
 		}); err != nil {
 			writeError(w, http.StatusUnauthorized, "agent_heartbeat_failed", err.Error())
 			return
@@ -348,11 +384,6 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
 			return
 		}
-		if strings.TrimSpace(req.Answer.Error) != "" {
-			agents.rememberAnswer(req.AgentSessionID, req.Answer.SessionID, req.Answer.Error)
-			writeError(w, http.StatusForbidden, "cloud_answer_error", req.Answer.Error)
-			return
-		}
 		offerID := agents.resolveOfferID(req.AgentSessionID, req.Answer.SessionID)
 		if offerID == "" {
 			offerID = req.Answer.SessionID
@@ -362,6 +393,7 @@ func NewHandler(cfg Config) http.Handler {
 			MachineID: session.DeviceID,
 			OfferID:   offerID,
 			SDP:       req.Answer.SDP,
+			Error:     req.Answer.Error,
 		}); err != nil {
 			agents.rememberAnswer(req.AgentSessionID, req.Answer.SessionID, err.Error())
 			writeError(w, http.StatusForbidden, "submit_cloud_answer_failed", err.Error())
@@ -541,6 +573,23 @@ func NewHandler(cfg Config) http.Handler {
 			MachineID: req.MachineID,
 		})
 		if err != nil {
+			if errors.Is(err, registry.ErrOfferNotFound) {
+				if policy, ok := cfg.Cloud.OfferPolicyForAnswer(cloud.GetAnswerInput{
+					OfferID:   r.PathValue("session_id"),
+					TicketID:  req.ConnectTicket,
+					MachineID: req.MachineID,
+				}); ok {
+					writeJSON(w, http.StatusAccepted, map[string]any{
+						"session_id":   strings.TrimSpace(r.PathValue("session_id")),
+						"path":         cloud.PathCloud,
+						"machine_id":   policy.Ticket.MachineID,
+						"terminal_id":  policy.Ticket.TerminalID,
+						"pending":      true,
+						"relay_policy": relayPolicyResponse(policy.Ticket.AllowRelay),
+					})
+					return
+				}
+			}
 			writeError(w, http.StatusForbidden, "get_cloud_answer_failed", err.Error())
 			return
 		}
@@ -562,7 +611,11 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusForbidden, "consume_connection_ticket_failed", err.Error())
 			return
 		}
-		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), answer.MachineID, "", allowRelay, req.ConnectTicket, answer)
+		terminalID := ""
+		if ok {
+			terminalID = policy.Ticket.TerminalID
+		}
+		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), answer.MachineID, terminalID, allowRelay, req.ConnectTicket, answer)
 	})
 	mux.HandleFunc("POST /api/v1/pairing/claims", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -838,6 +891,20 @@ func validateSessionRequestEnvelope(sessionID string, appCertificate json.RawMes
 	return nil
 }
 
+func registryTerminalsFromHub(in []hubv1.HubTerminalInventoryItem) []registry.Terminal {
+	out := make([]registry.Terminal, 0, len(in))
+	for _, terminal := range in {
+		if strings.TrimSpace(terminal.ID) == "" {
+			continue
+		}
+		out = append(out, registry.Terminal{
+			ID:    terminal.ID,
+			State: terminal.State,
+		})
+	}
+	return out
+}
+
 func waitForAnswer(ctx context.Context, cfg Config, offerID string, ticketID string, machineID string) (cloud.Answer, error) {
 	timeout := cfg.AnswerTimeout
 	if timeout <= 0 {
@@ -915,6 +982,10 @@ func publicSessionID(offer cloud.Offer) string {
 }
 
 func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, sessionID string, machineID string, terminalID string, allowRelay bool, ticketID string, answer cloud.Answer) {
+	if strings.TrimSpace(answer.Error) != "" {
+		writeError(w, http.StatusForbidden, "cloud_answer_error", answer.Error)
+		return
+	}
 	iceServers, err := iceServersForTicket(ctx, cfg, ticketID, allowRelay)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
@@ -1039,32 +1110,9 @@ func writeError(w http.ResponseWriter, status int, code string, message string) 
 }
 
 func corsMiddleware(next http.Handler, allowedOrigins []string) http.Handler {
-	allowed := make(map[string]struct{}, len(allowedOrigins))
-	for _, origin := range allowedOrigins {
-		origin = strings.TrimSpace(origin)
-		if origin != "" {
-			allowed[origin] = struct{}{}
-		}
-	}
-	allowOrigin := func(origin string) string {
-		origin = strings.TrimSpace(origin)
-		if origin == "" {
-			return "*"
-		}
-		if len(allowed) == 0 {
-			return origin
-		}
-		if _, ok := allowed[origin]; ok {
-			return origin
-		}
-		return ""
-	}
+	_ = allowedOrigins
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := allowOrigin(r.Header.Get("Origin"))
-		if origin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-		}
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-TermX-Debug-Token, X-TermX-Hub-Secret, X-Hub-Secret")
 		w.Header().Set("Access-Control-Max-Age", "600")

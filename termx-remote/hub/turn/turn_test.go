@@ -170,8 +170,66 @@ func TestTURNServerGracefulShutdown(t *testing.T) {
 	}
 }
 
+func TestTrafficMeterDrainReturnsDeltasAndClears(t *testing.T) {
+	meter := NewTrafficMeter()
+	meter.Add("machine_1", 120, 45)
+	meter.Add("machine_2", 10, 0)
+	meter.Add("machine_1", 30, 5)
+
+	first := meter.DrainTraffic()
+	if len(first) != 2 {
+		t.Fatalf("first drain = %+v", first)
+	}
+	assertTrafficDelta(t, first, "machine_1", 150, 50)
+	assertTrafficDelta(t, first, "machine_2", 10, 0)
+
+	if second := meter.DrainTraffic(); len(second) != 0 {
+		t.Fatalf("second drain should be empty after reset: %+v", second)
+	}
+}
+
+func TestRelayTrafficEventHandlerRemovesAllocationRelay(t *testing.T) {
+	generator := newMeteredRelayAddressGenerator(nil, NewTrafficMeter())
+	handler := relayTrafficEventHandler(generator)
+	srcAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 41000}
+	dstAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 3478}
+	relayAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 51000}
+
+	generator.remember(relayAddr, &trafficAgentSetterStub{})
+	handler.OnAllocationCreated(srcAddr, dstAddr, "udp", "machine_1:1778052600", "termx", relayAddr, 0)
+	if handler.OnAllocationDeleted == nil {
+		t.Fatal("relay traffic event handler must clean up deleted TURN allocations")
+	}
+	handler.OnAllocationDeleted(srcAddr, dstAddr, "udp", "machine_1:1778052600", "termx")
+
+	generator.mu.Lock()
+	relayCount := len(generator.relays)
+	generator.mu.Unlock()
+	if relayCount != 0 {
+		t.Fatalf("deleted allocation left %d relay wrapper(s) registered", relayCount)
+	}
+}
+
+func assertTrafficDelta(t *testing.T, deltas []TrafficDelta, agentID string, bytesIn, bytesOut int64) {
+	t.Helper()
+	for _, delta := range deltas {
+		if delta.AgentID != agentID {
+			continue
+		}
+		if delta.BytesIn != bytesIn || delta.BytesOut != bytesOut {
+			t.Fatalf("traffic delta for %s = %+v, want in=%d out=%d", agentID, delta, bytesIn, bytesOut)
+		}
+		return
+	}
+	t.Fatalf("missing traffic delta for %s in %+v", agentID, deltas)
+}
+
 type fixedClock time.Time
 
 func (c fixedClock) Now() time.Time {
 	return time.Time(c)
 }
+
+type trafficAgentSetterStub struct{}
+
+func (trafficAgentSetterStub) setAgent(string) {}

@@ -12,6 +12,7 @@
 - Hub product logic (registry, signaling, ICE, heartbeat) belongs in `termx-remote/hub/`.
 - `termx-hub/cmd` may only: read environment variables, construct `termx-remote/hub` services, start HTTP server and cleanup loops.
 - Hub must NOT call Web Controller to verify app certificates or connection tickets.
+- Hub may call Web Controller only through periodic management-plane heartbeat for hub registration, online agent list, relay traffic reporting, and forced disconnect commands.
 - Hub must NOT make any authentication decisions. It is a dumb relay.
 - Hub must NOT be a terminal/file/api/events HTTP or WebSocket runtime proxy.
 - Runtime data path is always WebRTC DataChannel (never HTTP/WebSocket).
@@ -26,12 +27,28 @@ Hub 是纯信令中继，职责边界：
 - 转发 offer 给对应 agent（poll/answer）
 - 处理 pairing claims（中转）
 - 提供 ICE 配置（STUN/TURN URLs）
+- 云端部署时周期性向 Web Controller 汇报管理面状态：hub 在线、online agents、relay/TURN 流量
+- 接收 Web Controller 返回的 `kick_agents`，并在本地 registry 标记 forced offline
 
 **Hub 不做的：**
 - 验证 app certificate（这是 agent 的职责）
-- 调用 Web Controller（hub 与 Web Controller 无运行时依赖）
+- 连接时调用 Web Controller 验证 app certificate、ticket、offer/answer 或做 per-session policy 决策
 - 保存任何 durable state
-- 做任何 policy 或 quota 决策
+- 在 Hub 内做任何用户级 policy 或 quota 决策（只能执行 Web Controller 管理面返回的 forced disconnect / rate metadata）
+
+## Current P0 Task（WF-503）
+
+更新 `termx-hub/deploy/termx-hub.env.example`，补充缺失字段（带注释）：
+
+```
+# Web Controller URL（web-control 服务地址）
+TERMX_HUB_CONTROL_URL=http://localhost:3000
+
+# Hub 与 Web Controller 之间的共享密钥（必须与 web-control 的 HUB_SECRET 一致）
+TERMX_HUB_CONTROL_SECRET=termx-development-hub-secret-change-me
+```
+
+验证：`go run ./cmd/termx-hub` 启动后 `/api/health` 返回 ok，heartbeat log 不报 401/403。
 
 ## Configuration（云端部署）
 
@@ -39,8 +56,27 @@ Hub 启动只需要：
 - 监听地址（TERMX_HUB_ADDR）
 - ICE 配置（STUN/TURN server URLs、credentials）
 - 可选：region 标识、heartbeat 间隔、registry TTL、rate limit 参数
+- 云端管理面 heartbeat 配置：TERMX_HUB_CONTROL_URL、TERMX_HUB_CONTROL_SECRET、TERMX_HUB_PUBLIC_HTTP_URL、TERMX_HUB_NAME、TERMX_HUB_REGION、TERMX_HUB_MAX_AGENTS
 
-**不需要**：TERMX_HUB_CONTROL_URL、TERMX_HUB_CONTROL_SECRET（已删除）
+**env var 完整说明**（`deploy/termx-hub.env.example` 必须包含所有字段）：
+
+| 变量 | 必需 | 说明 |
+|------|------|------|
+| `TERMX_HUB_ADDR` | 否 | 监听地址，默认 `127.0.0.1:8447` |
+| `TERMX_HUB_ID` | 否 | Hub 唯一 ID，默认 hostname；同一 web-control 下多 hub 需不同 ID |
+| `TERMX_HUB_NAME` | 否 | 展示名 |
+| `TERMX_HUB_REGION` | 否 | 区域标识（如 `cn`、`us-west`） |
+| `TERMX_HUB_PUBLIC_HTTP_URL` | heartbeat 需要 | hub 对外 HTTP 地址，heartbeat 上报给 web-control 后，browser 凭此直连 hub |
+| `TERMX_HUB_CONTROL_URL` | heartbeat 需要 | web-control 地址 |
+| `TERMX_HUB_CONTROL_SECRET` | heartbeat 需要 | 与 web-control `HUB_SECRET` 一致 |
+| `TERMX_HUB_STUN_SERVERS` | 否 | 逗号分隔 STUN URL，如 `stun:stun.l.google.com:19302` |
+| `TERMX_HUB_TURN_SECRET` | 否 | 启用内嵌 TURN 的密钥 |
+| `TERMX_HUB_TURN_ADDR` | 否 | 内嵌 TURN 监听地址，默认 `0.0.0.0:3478` |
+| `TERMX_HUB_TURN_PUBLIC_IP` | TURN 需要 | TURN 服务器公网 IP（使用 0.0.0.0 时必填） |
+| `TERMX_HUB_HEARTBEAT_INTERVAL` | 否 | 心跳间隔，默认 `1m` |
+| `TERMX_HUB_MAX_AGENTS` | 否 | 最大在线 agent 数 |
+
+**禁止**：任何用于连接时 cert/ticket/offer 验证的 Web Controller 配置或 control verifier。
 
 ## Build Rules
 
@@ -59,6 +95,7 @@ Hub 启动只需要：
 
 - Hub httpapi に controlclient の呼び出しが残っていないか（残ってはいけない）
 - Hub に durable state / DB / migration がないか
-- Hub が Web Controller をランタイムで呼び出していないか
+- Hub が接続時認証のために Web Controller を呼び出していないか（管理面 heartbeat は許可）
+- 管理面 heartbeat が hub/httpapi の offer/answer request path に入っていないか
 - Registry/signaling map に unbounded な状態がなく TTL cleanup があるか
 - Rate limit と backpressure の動作がテストされているか

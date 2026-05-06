@@ -101,7 +101,7 @@ class ManagedHubHttpApi implements ManagedHubApi {
     const machineId = requiredString(input.machineId, 'machine_id')
     const terminalId = optionalTrimmedString(input.terminalId)
     const sessionId = requiredString(input.offer.sessionId, 'offer session_id')
-    const sdp = requiredString(input.offer.sdp, 'offer sdp')
+    const sdp = requiredPayloadString(input.offer.sdp, 'offer sdp')
     const response = await this.requestJSON('POST', '/api/v1/sessions', {
       signal: options.signal,
       body: {
@@ -267,6 +267,13 @@ function requiredString(value: unknown, label: string): string {
     throw new Error(`Managed Hub ${label} is required`)
   }
   return trimmed
+}
+
+function requiredPayloadString(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`Managed Hub ${label} is required`)
+  }
+  return value
 }
 
 function optionalTrimmedString(value: unknown): string {

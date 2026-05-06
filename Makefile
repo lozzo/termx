@@ -1,4 +1,4 @@
-.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status test-remote-ui test-termx-cli
+.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-cloud-both remote-qrcode test-remote-ui test-termx-cli
 
 BIN_DIR := $(CURDIR)/bin
 TERMX_BIN := $(BIN_DIR)/termx
@@ -8,6 +8,10 @@ LOCAL_WEB_ORIGIN := http://$(LOCAL_WEB_ADDR)
 REMOTE_UI_DEV_HOST ?= 127.0.0.1
 REMOTE_UI_DEV_PORT ?= 5173
 REMOTE_UI_DEV_ORIGIN := http://$(REMOTE_UI_DEV_HOST):$(REMOTE_UI_DEV_PORT)
+REMOTE_SOCKET ?= $(HOME)/.local/state/termx/termx.sock
+REMOTE_LOG ?= $(HOME)/.local/state/termx/termx.log
+CONTROL_URL ?= http://114.66.58.243:12306
+HUB_URL ?= http://114.66.58.243:8447
 
 help:
 	@printf '%s\n' \
@@ -16,6 +20,9 @@ help:
 		'  make termx-build     Build ./bin/termx from termx-cli/cmd/termx' \
 		'  make remote-daemon   Rebuild local web + termx, then run a foreground daemon with local remote env' \
 		'  make remote-dev      Build ./bin/termx, ensure local remote is enabled, then start vite dev server' \
+		'  make remote-clean    Stop local temp daemons/dev servers and remove known temp sockets' \
+		'  make remote-cloud-both  Build ./bin/termx and print the command to start one clean both-mode daemon' \
+		'  make remote-qrcode   Build ./bin/termx and print the command to generate a termx:// payload from one socket' \
 		'  make remote-open     Ensure local remote is enabled, then print the local remote URL' \
 		'  make remote-status   Show local remote status through ./bin/termx' \
 		'' \
@@ -23,7 +30,10 @@ help:
 		'  LOCAL_WEB_ADDR=<host:port>  default 127.0.0.1:18888' \
 		'  ICE_TCP_ADDR=<host:port>    default 127.0.0.1:18889' \
 		'  REMOTE_UI_DEV_HOST=<host>   default 127.0.0.1' \
-		'  REMOTE_UI_DEV_PORT=<port>   default 5173'
+		'  REMOTE_UI_DEV_PORT=<port>   default 5173' \
+		'  REMOTE_SOCKET=<path>        default $(HOME)/.local/state/termx/termx.sock' \
+		'  CONTROL_URL=<url>           default http://114.66.58.243:12306' \
+		'  HUB_URL=<url>               default http://114.66.58.243:8447'
 
 localweb-build:
 	cd remote-ui && npm run build:localweb
@@ -49,6 +59,31 @@ remote-open: termx-build
 
 remote-status: termx-build
 	@"$(TERMX_BIN)" remote status
+
+remote-clean:
+	@pkill -f '/tmp/termx-wf505' 2>/dev/null || true
+	@pkill -f 'termx-501.sock' 2>/dev/null || true
+	@pkill -f 'remote-ui/node_modules/.bin/vite --host 127.0.0.1 --port 5173' 2>/dev/null || true
+	@pkill -f 'remote-ui/node_modules/.bin/vite --host 127.0.0.1 --port 5174' 2>/dev/null || true
+	@pkill -f '/tmp/termx-wf505-chrome-pty' 2>/dev/null || true
+	@rm -f /tmp/termx-wf505.sock /var/folders/_k/rv9v4pv16b96_ss090ljksn80000gn/T/termx-501.sock
+	@printf '%s\n' 'cleaned known local temp daemons, vite servers, headless chrome, and temp sockets'
+
+remote-cloud-both: termx-build
+	@printf '%s\n' \
+		'Run this in one terminal:' \
+		'' \
+		'  $(CURDIR)/bin/termx --socket "$(REMOTE_SOCKET)" --log-file "$(REMOTE_LOG)" daemon' \
+		'' \
+		'Then in another terminal run:' \
+		'' \
+		'  $(CURDIR)/bin/termx --socket "$(REMOTE_SOCKET)" remote enable --cloud --local --server "$(CONTROL_URL)" --hub-url "$(HUB_URL)"'
+
+remote-qrcode: termx-build
+	@printf '%s\n' \
+		'Generate a fresh termx:// payload from one socket with:' \
+		'' \
+		'  $(CURDIR)/bin/termx --socket "$(REMOTE_SOCKET)" remote qrcode --payload --server "$(CONTROL_URL)"'
 
 test-remote-ui:
 	cd remote-ui && npm test

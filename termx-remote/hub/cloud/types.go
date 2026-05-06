@@ -68,6 +68,7 @@ type Answer struct {
 	OfferID    string
 	MachineID  string
 	SDP        string
+	Error      string
 	RelayInUse bool
 }
 
@@ -93,6 +94,7 @@ type SubmitAnswerInput struct {
 	MachineID string
 	OfferID   string
 	SDP       string
+	Error     string
 }
 
 type GetAnswerInput struct {

@@ -352,6 +352,7 @@ func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableP
 		HubID:         "termx-local-hub",
 		AnswerTimeout: 250 * time.Millisecond,
 		PollInterval:  10 * time.Millisecond,
+		LocalDiscovery: true,
 	})
 	httpServer := &http.Server{Handler: hubHandler}
 	mux := cmux.New(listener)

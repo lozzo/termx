@@ -139,6 +139,7 @@ func (r *Registry) Heartbeat(ctx context.Context, in HeartbeatInput) error {
 	}
 	now := r.clock.Now().UTC()
 	agent.Status = AgentOnline
+	agent.Terminals = cloneTerminals(in.Terminals)
 	agent.LastSeenAt = now
 	agent.ExpiresAt = now.Add(r.agentTTL)
 	r.agents[agent.ID] = agent
@@ -422,11 +423,19 @@ func (r *Registry) SubmitAnswer(ctx context.Context, in AnswerInput) (Answer, er
 	if offer.AssignedAgentID == "" || offer.AssignedAgentID != agent.ID {
 		return Answer{}, ErrOfferNotAssigned
 	}
-	if strings.TrimSpace(in.SDP) == "" {
-		return Answer{}, errors.New("answer sdp is required")
+	sdp := in.SDP
+	trimmedSDP := strings.TrimSpace(in.SDP)
+	answerError := strings.TrimSpace(in.Error)
+	if trimmedSDP == "" && answerError == "" {
+		return Answer{}, errors.New("answer sdp or error is required")
 	}
-	if err := r.validateSignalingPayload(strings.TrimSpace(in.SDP)); err != nil {
-		return Answer{}, err
+	if trimmedSDP != "" && answerError != "" {
+		return Answer{}, errors.New("answer sdp and error are mutually exclusive")
+	}
+	if trimmedSDP != "" {
+		if err := r.validateSignalingPayload(sdp); err != nil {
+			return Answer{}, err
+		}
 	}
 	if _, exists := r.answers[offer.ID]; exists {
 		return Answer{}, ErrAnswerAlreadyExists
@@ -436,7 +445,8 @@ func (r *Registry) SubmitAnswer(ctx context.Context, in AnswerInput) (Answer, er
 		OfferID:   offer.ID,
 		AgentID:   agent.ID,
 		MachineID: agent.MachineID,
-		SDP:       in.SDP,
+		SDP:       sdp,
+		Error:     answerError,
 		CreatedAt: r.clock.Now().UTC(),
 	}
 	r.answers[answer.OfferID] = answer

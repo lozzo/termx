@@ -682,15 +682,6 @@ func remoteQRCodeCommand(socket *string, logFile *string) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if localStatus == nil || !localStatus.Enabled || strings.TrimSpace(localStatus.LocalPairURL) == "" {
-					localStatus, err = remoteLocalEnableClient(context.Background(), *socket, *logFile, remoteprotocol.LocalEnableParams{
-						LocalWebAddr: "127.0.0.1:18888",
-						ICETCPAddr:   "127.0.0.1:18889",
-					})
-					if err != nil {
-						return err
-					}
-				}
 				if localStatus != nil {
 					localURL = strings.TrimSpace(localStatus.LocalPairURL)
 				}

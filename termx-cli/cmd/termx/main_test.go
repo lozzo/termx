@@ -831,12 +831,10 @@ func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
 
 func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 	oldStatus := remoteLocalStatusClient
-	oldEnable := remoteLocalEnableClient
 	oldRemoteStatus := remoteStatusClient
 	oldPair := pairStartClient
 	t.Cleanup(func() {
 		remoteLocalStatusClient = oldStatus
-		remoteLocalEnableClient = oldEnable
 		remoteStatusClient = oldRemoteStatus
 		pairStartClient = oldPair
 	})
@@ -846,10 +844,6 @@ func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 			Enabled:      true,
 			LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
 		}, nil
-	}
-	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
-		t.Fatalf("remote qrcode should not enable local web when it is already running")
-		return nil, nil
 	}
 	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
 		return &remoteprotocol.Status{
@@ -910,14 +904,12 @@ func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 	}
 }
 
-func TestRemoteQRCodeStartsLocalWebWhenNeeded(t *testing.T) {
+func TestRemoteQRCodeDoesNotStartLocalWebWhenLocalPairURLMissing(t *testing.T) {
 	oldStatus := remoteLocalStatusClient
-	oldEnable := remoteLocalEnableClient
 	oldRemoteStatus := remoteStatusClient
 	oldPair := pairStartClient
 	t.Cleanup(func() {
 		remoteLocalStatusClient = oldStatus
-		remoteLocalEnableClient = oldEnable
 		remoteStatusClient = oldRemoteStatus
 		pairStartClient = oldPair
 	})
@@ -925,14 +917,7 @@ func TestRemoteQRCodeStartsLocalWebWhenNeeded(t *testing.T) {
 	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
 		return &remoteprotocol.LocalStatus{}, nil
 	}
-	var gotEnable remoteprotocol.LocalEnableParams
-	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
-		gotEnable = params
-		return &remoteprotocol.LocalStatus{
-			Enabled:      true,
-			LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
-		}, nil
-	}
+	var gotParams remoteprotocol.PairStartParams
 	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
 		return &remoteprotocol.Status{
 			DeviceID:   "mach_test",
@@ -943,6 +928,7 @@ func TestRemoteQRCodeStartsLocalWebWhenNeeded(t *testing.T) {
 		}, nil
 	}
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
+		gotParams = params
 		return &remoteprotocol.PairStartResult{
 			Type:                        "termx_pair_v1",
 			MachineID:                   "mach_test",
@@ -963,8 +949,8 @@ func TestRemoteQRCodeStartsLocalWebWhenNeeded(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	if gotEnable.LocalWebAddr != "127.0.0.1:18888" || gotEnable.ICETCPAddr != "127.0.0.1:18889" {
-		t.Fatalf("unexpected local web enable params: %#v", gotEnable)
+	if gotParams.LocalPairURL != "" {
+		t.Fatalf("expected empty local pair URL when runtime has no local endpoint, got %#v", gotParams)
 	}
 }
 

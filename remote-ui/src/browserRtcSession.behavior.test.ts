@@ -480,6 +480,59 @@ describe('BrowserRtcSession', () => {
     expect(accepted).toBe(true)
   })
 
+  it('normalizes Pion-only answer SDP lines before accepting an answer', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const session = createBrowserRtcSession({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      path: 'local',
+      peerConnectionFactory: factory,
+      sessionIdGenerator: () => 'rtc-local-1',
+    })
+    await session.createOffer({ machineId: 'machine-local', terminalId: 'terminal-1', path: 'local' })
+
+    await session.acceptAnswer({
+      type: 'answer',
+      sdp: [
+        'v=0',
+        's=-',
+        'a=fingerprint:sha-256 AA:BB',
+        'm=application 9 UDP/DTLS/SCTP webrtc-datachannel',
+        'a=setup:active',
+        'a=mid:0',
+        'a=sendrecv',
+        'a=sctp-port:5000',
+        'a=max-message-size:1073741823',
+        'a=ice-ufrag:iceuser',
+        'a=ice-pwd:icepassword',
+        'a=candidate:375738803 1 tcp 1671430143 127.0.0.1 18888 typ host tcptype passive ufrag abc123',
+        'a=candidate:375738803 2 tcp 1671430143 127.0.0.1 18888 typ host tcptype passive ufrag abc123',
+        'a=end-of-candidates',
+        '',
+      ].join('\r\n'),
+    })
+
+    expect(factory.lastConnection()?.remoteDescription?.sdp).toBe([
+      'v=0',
+      's=-',
+      'm=application 9 UDP/DTLS/SCTP webrtc-datachannel',
+      'a=ice-ufrag:iceuser',
+      'a=ice-pwd:icepassword',
+      'a=ice-options:trickle',
+      'a=fingerprint:sha-256 AA:BB',
+      'a=setup:active',
+      'a=mid:0',
+      'a=sctp-port:5000',
+      'a=max-message-size:262144',
+      '',
+    ].join('\r\n'))
+    expect(factory.lastConnection()?.addedCandidates).toEqual([{
+      candidate: 'candidate:375738803 1 tcp 1671430143 127.0.0.1 18888 typ host tcptype passive',
+      sdpMid: '0',
+      sdpMLineIndex: 0,
+    }])
+  })
+
   it('waits for browser ICE gathering before returning the offer', async () => {
     const factory = createMockPeerConnectionFactory({
       initialIceGatheringState: 'gathering',
@@ -672,6 +725,7 @@ function createMockPeerConnectionFactory(options: {
 class MockRTCPeerConnection extends EventTarget {
   localDescription: RTCSessionDescriptionInit | null = null
   remoteDescription: RTCSessionDescriptionInit | null = null
+  addedCandidates: RTCIceCandidateInit[] = []
   iceGatheringState: RTCIceGatheringState
   connectionState: RTCPeerConnectionState = 'new'
   closed = false
@@ -720,6 +774,10 @@ class MockRTCPeerConnection extends EventTarget {
 
   async setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void> {
     this.remoteDescription = description
+  }
+
+  async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
+    this.addedCandidates.push(candidate)
   }
 
   async close(): Promise<void> {

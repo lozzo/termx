@@ -13,6 +13,55 @@ import (
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 )
 
+func TestRemoteLoginParentDefaultsToBrowserLogin(t *testing.T) {
+	oldClient := remoteLoginHTTPClient
+	oldStore := remoteAuthStorePath
+	t.Cleanup(func() {
+		remoteLoginHTTPClient = oldClient
+		remoteAuthStorePath = oldStore
+	})
+	authStore := filepath.Join(t.TempDir(), "remote-auth.json")
+	remoteAuthStorePath = func(configPath string) (string, error) { return authStore, nil }
+	var createdForControl string
+	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{
+		createBrowserLoginFunc: func(ctx context.Context, controlURL string, clientName string) (remoteBrowserLoginResult, error) {
+			createdForControl = controlURL
+			return remoteBrowserLoginResult{
+				BrowserLoginCode:        "browser-parent",
+				VerificationURIComplete: "https://control.example.test/device?user_code=PARENT",
+				ExpiresAt:               time.Now().Add(time.Minute),
+				Interval:                time.Nanosecond,
+			}, nil
+		},
+		pollBrowserLoginFunc: func(ctx context.Context, controlURL string, browserLoginCode string) (remoteLoginAuthResult, bool, error) {
+			return remoteLoginAuthResult{
+				AccessToken:  "parent-access",
+				RefreshToken: "parent-refresh",
+				User:         remoteLoginUser{Email: "parent@example.com"},
+			}, true, nil
+		},
+	}
+
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "--server", "https://control.example.test", "--no-browser", "--timeout", "100ms"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("parent login returned error: %v", err)
+	}
+	if createdForControl != "https://control.example.test" {
+		t.Fatalf("expected parent login to start browser flow for control URL, got %q", createdForControl)
+	}
+	cfg, err := remoteConfigFromFileAndEnv(configPath)
+	if err != nil {
+		t.Fatalf("load parent login config: %v", err)
+	}
+	if !cfg.Enabled || cfg.ControlURL != "https://control.example.test" || cfg.AccessToken != "parent-access" {
+		t.Fatalf("unexpected parent login config: %#v", cfg)
+	}
+}
+
 func TestRemoteLoginTokenPersistsBootstrapOutsideConfigFile(t *testing.T) {
 	oldClient := remoteLoginHTTPClient
 	oldStore := remoteAuthStorePath

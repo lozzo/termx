@@ -33,10 +33,17 @@ export function normalizeTerminalInventory(input: TerminalInventoryInput): Termi
     machineId,
     input.terminals.map((terminal) => {
       assertNoTerminalListSessionConcepts(terminal)
+      const terminalId = terminal.terminal_id ?? terminal.terminalId ?? terminal.id ?? terminal.ID
+      const command = normalizeCommand(terminal.command ?? terminal.Command)
       const normalized = normalizeTerminal({
         ...terminal,
+        terminal_id: terminalId,
         machine_id: terminal.machine_id ?? terminal.machineId ?? machineId,
-        title: terminal.title ?? terminal.name ?? terminal.terminal_id ?? terminal.terminalId,
+        title: terminal.title ?? terminal.name ?? terminal.Name ?? terminalId,
+        state: terminal.state ?? terminal.State,
+        command,
+        cols: terminal.cols ?? terminal.Cols,
+        rows: terminal.rows ?? terminal.Rows,
       })
       if (normalized.machineId !== machineId) {
         throw new Error(`terminal ${normalized.terminalId} belongs to ${normalized.machineId}, not ${machineId}`)
@@ -44,6 +51,13 @@ export function normalizeTerminalInventory(input: TerminalInventoryInput): Termi
       return normalized
     }),
   )
+}
+
+function normalizeCommand(value: unknown): string | undefined {
+  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    return value.join(' ')
+  }
+  return value as string | undefined
 }
 
 export function createTerminalInventorySnapshot(

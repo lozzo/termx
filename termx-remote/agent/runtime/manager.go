@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -38,6 +39,8 @@ const (
 )
 
 const hubPresenceSyncTimeout = 5 * time.Second
+
+var errHubForcedOffline = errors.New("hub forced offline")
 
 type TerminalInventoryItem struct {
 	ID      string
@@ -96,6 +99,11 @@ type hubRuntimeState struct {
 	RTCServers       []hubv1.RTCIceServerConfig
 	SignalingStarted bool
 	SignalingCancel  context.CancelFunc
+	SessionContext   context.Context
+	SessionCancel    context.CancelFunc
+	ForcedOffline    bool
+	ForcedOfflineAt  time.Time
+	ForcedReason     string
 	AnswerOptions    remotertc.AnswerOptions
 }
 
@@ -180,6 +188,10 @@ func (m *Manager) SetHubURL(hubURL string) {
 	} else {
 		m.cfg.HubURLs = []string{hubURL}
 		m.explicitHubURLs = map[string]struct{}{hubURL: {}}
+		state := m.hubStateLocked(hubURL)
+		state.ForcedOffline = false
+		state.ForcedReason = ""
+		state.ForcedOfflineAt = time.Time{}
 	}
 	m.explicitHubURL = hubURL != ""
 	m.mu.Unlock()
@@ -212,8 +224,12 @@ func (m *Manager) addHubURL(hubURL string, opts remotertc.AnswerOptions, hasOpti
 	if strings.TrimSpace(m.cfg.HubURL) == "" {
 		m.cfg.HubURL = hubURL
 	}
+	state := m.hubStateLocked(hubURL)
+	state.ForcedOffline = false
+	state.ForcedReason = ""
+	state.ForcedOfflineAt = time.Time{}
 	if hasOptions {
-		m.hubStateLocked(hubURL).AnswerOptions = opts
+		state.AnswerOptions = opts
 	}
 	if explicit {
 		m.explicitHubURL = true
@@ -235,7 +251,11 @@ func (m *Manager) ConfigureHubAnswerOptions(hubURL string, opts remotertc.Answer
 		return
 	}
 	m.mu.Lock()
-	m.hubStateLocked(hubURL).AnswerOptions = opts
+	state := m.hubStateLocked(hubURL)
+	state.AnswerOptions = opts
+	state.ForcedOffline = false
+	state.ForcedReason = ""
+	state.ForcedOfflineAt = time.Time{}
 	m.mu.Unlock()
 	m.TriggerSync()
 }
@@ -359,6 +379,9 @@ func (m *Manager) Close() {
 	for _, state := range m.hubStates {
 		if state != nil && state.SignalingCancel != nil {
 			hubCancels = append(hubCancels, state.SignalingCancel)
+		}
+		if state != nil && state.SessionCancel != nil {
+			hubCancels = append(hubCancels, state.SessionCancel)
 		}
 	}
 	m.cancel = nil
@@ -665,6 +688,9 @@ func (m *Manager) stopRemovedHubSignalingLocked(keep []string) {
 		if state != nil && state.SignalingCancel != nil {
 			state.SignalingCancel()
 		}
+		if state != nil && state.SessionCancel != nil {
+			state.SessionCancel()
+		}
 		delete(m.hubStates, hubURL)
 	}
 	if len(keepSet) == 0 {
@@ -834,6 +860,11 @@ func (m *Manager) syncHubPresence(ctx context.Context, hubURL string) error {
 
 	m.mu.Lock()
 	hubState := m.hubStateLocked(hubURL)
+	if hubState.ForcedOffline {
+		reason := hubState.ForcedReason
+		m.mu.Unlock()
+		return forcedOfflineError(reason)
+	}
 	hubSessionID := hubState.SessionID
 	agentID := m.agentID
 	dataDir := m.cfg.DataDir
@@ -907,6 +938,10 @@ func (m *Manager) syncHubPresence(ctx context.Context, hubURL string) error {
 	if err == nil {
 		return nil
 	}
+	if discovery.IsForcedOffline(err) {
+		m.forceHubOffline(hubURL, err)
+		return forcedOfflineError(err.Error())
+	}
 	if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
 		m.resetHubSession(hubURL)
 		return m.syncHubPresence(ctx, hubURL)
@@ -957,7 +992,7 @@ func (m *Manager) remoteHubTerminals(ctx context.Context) []hubv1.HubTerminalInv
 func (m *Manager) ensureHubSignalingLoop(ctx context.Context, hubURL string) {
 	m.mu.Lock()
 	state := m.hubStateLocked(hubURL)
-	if state.SignalingStarted || state.SessionID == "" || m.host == nil {
+	if state.ForcedOffline || state.SignalingStarted || state.SessionID == "" || m.host == nil {
 		m.mu.Unlock()
 		return
 	}
@@ -967,13 +1002,17 @@ func (m *Manager) ensureHubSignalingLoop(ctx context.Context, hubURL string) {
 	iceServers := append([]hubv1.RTCIceServerConfig(nil), state.RTCServers...)
 	answerOptions := state.AnswerOptions
 	loopCtx, cancel := context.WithCancel(ctx)
+	sessionCtx, sessionCancel := context.WithCancel(ctx)
 	state.SignalingCancel = cancel
+	state.SessionContext = sessionCtx
+	state.SessionCancel = sessionCancel
 	if hubURL == strings.TrimSpace(m.cfg.HubURL) {
 		m.signalingStarted = true
 		m.signalingCancel = cancel
 	}
 	m.mu.Unlock()
 
+	answerOptions.SessionContext = combineSessionContext(sessionCtx, answerOptions.SessionContext)
 	go m.hubSignalingLoop(loopCtx, hubURL, deviceID, agentSessionID, iceServers, answerOptions)
 	go m.hubPairingLoop(loopCtx, hubURL, deviceID, agentSessionID)
 }
@@ -996,6 +1035,10 @@ func (m *Manager) hubSignalingLoop(ctx context.Context, hubURL, deviceID, agentS
 		})
 		cancel()
 		if err != nil {
+			if discovery.IsForcedOffline(err) {
+				m.forceHubOffline(hubURL, err)
+				return
+			}
 			if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
 				m.resetHubSession(hubURL)
 				m.TriggerSync()
@@ -1026,6 +1069,10 @@ func (m *Manager) hubSignalingLoop(ctx context.Context, hubURL, deviceID, agentS
 		})
 		submitCancel()
 		if err != nil {
+			if discovery.IsForcedOffline(err) {
+				m.forceHubOffline(hubURL, err)
+				return
+			}
 			if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
 				m.resetHubSession(hubURL)
 				m.TriggerSync()
@@ -1071,6 +1118,10 @@ func (m *Manager) hubPairingLoop(ctx context.Context, hubURL, deviceID, agentSes
 		})
 		cancel()
 		if err != nil {
+			if discovery.IsForcedOffline(err) {
+				m.forceHubOffline(hubURL, err)
+				return
+			}
 			if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
 				m.resetHubSession(hubURL)
 				m.TriggerSync()
@@ -1101,6 +1152,10 @@ func (m *Manager) hubPairingLoop(ctx context.Context, hubURL, deviceID, agentSes
 		})
 		submitCancel()
 		if err != nil {
+			if discovery.IsForcedOffline(err) {
+				m.forceHubOffline(hubURL, err)
+				return
+			}
 			if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
 				m.resetHubSession(hubURL)
 				m.TriggerSync()
@@ -1123,6 +1178,10 @@ func retrySubmitPendingPairingResult(ctx context.Context, m *Manager, hubURL, de
 		})
 		submitCancel()
 		if err != nil {
+			if discovery.IsForcedOffline(err) {
+				m.forceHubOffline(hubURL, err)
+				return true, true
+			}
 			if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
 				m.resetHubSession(hubURL)
 				m.TriggerSync()
@@ -1435,10 +1494,12 @@ func (m *Manager) eventRouter() remotertc.EventRouter {
 
 func (m *Manager) resetHubSession(hubURL string) {
 	m.mu.Lock()
-	var cancel context.CancelFunc
+	var cancels []context.CancelFunc
 	if hubURL = strings.TrimSpace(hubURL); hubURL != "" {
 		state := m.hubStateLocked(hubURL)
-		cancel = state.SignalingCancel
+		if state.SignalingCancel != nil {
+			cancels = append(cancels, state.SignalingCancel)
+		}
 		state.SessionID = ""
 		state.RTCServers = nil
 		state.SignalingStarted = false
@@ -1450,14 +1511,80 @@ func (m *Manager) resetHubSession(hubURL string) {
 			m.signalingCancel = nil
 		}
 	} else {
-		cancel = m.signalingCancel
+		if m.signalingCancel != nil {
+			cancels = append(cancels, m.signalingCancel)
+		}
 		m.hubSessionID = ""
 		m.hubRTCServers = nil
 		m.signalingStarted = false
 		m.signalingCancel = nil
 	}
 	m.mu.Unlock()
-	if cancel != nil {
+	for _, cancel := range cancels {
 		cancel()
 	}
+}
+
+func (m *Manager) forceHubOffline(hubURL string, cause error) {
+	reason := "hub forced offline"
+	if cause != nil {
+		reason = cause.Error()
+	}
+	m.mu.Lock()
+	var cancels []context.CancelFunc
+	if hubURL = strings.TrimSpace(hubURL); hubURL != "" {
+		state := m.hubStateLocked(hubURL)
+		if state.SignalingCancel != nil {
+			cancels = append(cancels, state.SignalingCancel)
+		}
+		if state.SessionCancel != nil {
+			cancels = append(cancels, state.SessionCancel)
+		}
+		state.SessionID = ""
+		state.RTCServers = nil
+		state.SignalingStarted = false
+		state.SignalingCancel = nil
+		state.SessionContext = nil
+		state.SessionCancel = nil
+		state.ForcedOffline = true
+		state.ForcedOfflineAt = time.Now().UTC()
+		state.ForcedReason = reason
+		if hubURL == strings.TrimSpace(m.cfg.HubURL) {
+			m.hubSessionID = ""
+			m.hubRTCServers = nil
+			m.signalingStarted = false
+			m.signalingCancel = nil
+		}
+	}
+	m.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	m.setStatus(StateDegraded, reason)
+}
+
+func forcedOfflineError(reason string) error {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return errHubForcedOffline
+	}
+	return fmt.Errorf("%w: %s", errHubForcedOffline, reason)
+}
+
+func combineSessionContext(hubCtx, optionCtx context.Context) context.Context {
+	switch {
+	case hubCtx == nil:
+		return optionCtx
+	case optionCtx == nil:
+		return hubCtx
+	}
+	combined, cancel := context.WithCancel(hubCtx)
+	go func() {
+		select {
+		case <-optionCtx.Done():
+			cancel()
+		case <-combined.Done():
+		}
+	}()
+	return combined
 }

@@ -38,6 +38,7 @@ type Config struct {
 type Server struct {
 	cfg         Config
 	clock       Clock
+	traffic     *TrafficMeter
 	udpConn     net.PacketConn
 	tcpListener net.Listener
 	server      *pionturn.Server
@@ -81,16 +82,19 @@ func NewServer(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("listen turn tcp: %w", err)
 	}
 
-	relayGenerator := relayAddressGenerator(cfg, udpConn.LocalAddr())
+	traffic := NewTrafficMeter()
+	relayGenerator := newMeteredRelayAddressGenerator(relayAddressGenerator(cfg, udpConn.LocalAddr()), traffic)
 	s := &Server{
 		cfg:         cfg,
 		clock:       clock,
+		traffic:     traffic,
 		udpConn:     udpConn,
 		tcpListener: tcpListener,
 	}
 	server, err := pionturn.NewServer(pionturn.ServerConfig{
-		Realm:       cfg.Realm,
-		AuthHandler: s.AuthHandler(),
+		Realm:        cfg.Realm,
+		AuthHandler:  s.AuthHandler(),
+		EventHandler: relayTrafficEventHandler(relayGenerator),
 		PacketConnConfigs: []pionturn.PacketConnConfig{{
 			PacketConn:            udpConn,
 			RelayAddressGenerator: relayGenerator,
@@ -115,12 +119,26 @@ func (s *Server) GenerateCredentials() (username, credential string) {
 	return username, computeCredential(username, s.cfg.Secret)
 }
 
+func (s *Server) GenerateCredentialsForAgent(agentID string) (username, credential string) {
+	username, credential = s.GenerateCredentials()
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return username, credential
+	}
+	username = agentID + ":" + username
+	return username, computeCredential(username, s.cfg.Secret)
+}
+
 func (s *Server) AuthHandler() pionturn.AuthHandler {
 	return func(username, realm string, _ net.Addr) ([]byte, bool) {
 		if strings.TrimSpace(realm) != s.cfg.Realm {
 			return nil, false
 		}
-		expiry, err := strconv.ParseInt(strings.TrimSpace(username), 10, 64)
+		expiryPart := strings.TrimSpace(username)
+		if _, rest, ok := strings.Cut(expiryPart, ":"); ok {
+			expiryPart = rest
+		}
+		expiry, err := strconv.ParseInt(strings.TrimSpace(expiryPart), 10, 64)
 		if err != nil || s.clock.Now().UTC().Unix() > expiry {
 			return nil, false
 		}
@@ -146,6 +164,13 @@ func (s *Server) TCPAddr() net.Addr {
 	return s.tcpListener.Addr()
 }
 
+func (s *Server) DrainTraffic() []TrafficDelta {
+	if s == nil || s.traffic == nil {
+		return nil
+	}
+	return s.traffic.DrainTraffic()
+}
+
 func (s *Server) Close() error {
 	s.closeOnce.Do(func() {
 		if s.server != nil {
@@ -153,6 +178,18 @@ func (s *Server) Close() error {
 		}
 	})
 	return s.closeErr
+}
+
+func relayTrafficEventHandler(generator *meteredRelayAddressGenerator) pionturn.EventHandler {
+	return pionturn.EventHandler{
+		OnAllocationCreated: func(srcAddr, dstAddr net.Addr, protocol, username, _ string, relayAddr net.Addr, _ int) {
+			generator.rememberAllocation(srcAddr, dstAddr, protocol, relayAddr)
+			generator.bindAgent(relayAddr, username)
+		},
+		OnAllocationDeleted: func(srcAddr, dstAddr net.Addr, protocol, _, _ string) {
+			generator.forgetAllocation(srcAddr, dstAddr, protocol)
+		},
+	}
 }
 
 func (s *Server) advertiseHost() string {

@@ -35,6 +35,34 @@ describe('terminalInventory', () => {
     expect(JSON.stringify(snapshot)).not.toMatch(/workspace|tab|window|pane|session/i)
   })
 
+  it('normalizes runtime terminal inventory records that use Go JSON field names', () => {
+    const snapshot = normalizeTerminalInventory({
+      machine_id: 'machine-cloud',
+      terminals: [
+        {
+          ID: '1',
+          Name: 'shell',
+          State: 'running',
+          Command: ['/bin/sh'],
+          Cols: 80,
+          Rows: 24,
+        },
+      ],
+    })
+
+    expect(snapshot.terminals).toEqual([
+      expect.objectContaining({
+        terminalId: '1',
+        machineId: 'machine-cloud',
+        title: 'shell',
+        state: 'running',
+        command: '/bin/sh',
+        cols: 80,
+        rows: 24,
+      }),
+    ])
+  })
+
   it('rejects tgent session/window/pane-shaped inventory records', () => {
     expect(() =>
       normalizeTerminalInventory({

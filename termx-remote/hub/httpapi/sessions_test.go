@@ -217,6 +217,73 @@ func TestCloudSessionHTTPWaitsForDelayedAgentAnswer(t *testing.T) {
 	}
 }
 
+func TestCloudSessionHTTPRelaysAgentAnswerError(t *testing.T) {
+	t.Parallel()
+
+	clock := fixedClock(time.Date(2026, 5, 3, 10, 25, 0, 0, time.UTC))
+	reg := registry.New(registry.Config{Clock: clock})
+	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
+	router := httpapi.NewHandler(httpapi.Config{
+		Cloud:         svc,
+		Registry:      reg,
+		AnswerTimeout: time.Millisecond,
+		PollInterval:  time.Millisecond,
+	})
+	register := postJSON(t, router, "/api/v1/agents/register", map[string]any{
+		"version":   "remote.hub.v1",
+		"device_id": "mach_1",
+	})
+	if register.Code != http.StatusOK {
+		t.Fatalf("agent register status = %d body=%s", register.Code, register.Body.String())
+	}
+	var registered struct {
+		AgentSessionID string `json:"agent_session_id"`
+	}
+	decodeJSON(t, register, &registered)
+
+	session := postJSON(t, router, "/api/v1/sessions", validCloudSessionRequest())
+	if session.Code != http.StatusAccepted {
+		t.Fatalf("initial session status = %d body=%s", session.Code, session.Body.String())
+	}
+	poll := postJSON(t, router, "/api/v1/agents/signaling/poll", map[string]any{
+		"agent_session_id": registered.AgentSessionID,
+		"device_id":        "mach_1",
+		"timeout_seconds":  1,
+	})
+	if poll.Code != http.StatusOK {
+		t.Fatalf("agent poll status = %d body=%s", poll.Code, poll.Body.String())
+	}
+	var pollResp struct {
+		Offer struct {
+			SessionID string `json:"session_id"`
+		} `json:"offer"`
+	}
+	decodeJSON(t, poll, &pollResp)
+
+	answer := postJSON(t, router, "/api/v1/agents/signaling/answer", map[string]any{
+		"agent_session_id": registered.AgentSessionID,
+		"device_id":        "mach_1",
+		"answer": map[string]any{
+			"session_id": pollResp.Offer.SessionID,
+			"error":      "set remote description: unsupported offer",
+		},
+	})
+	if answer.Code != http.StatusNoContent {
+		t.Fatalf("agent error answer status = %d body=%s", answer.Code, answer.Body.String())
+	}
+
+	appAnswer := postJSON(t, router, "/api/v1/sessions/rtc_cloud_1/answer", map[string]any{
+		"connect_ticket": "ticket_allowed",
+		"machine_id":     "mach_1",
+	})
+	if appAnswer.Code != http.StatusForbidden {
+		t.Fatalf("app answer error status = %d body=%s", appAnswer.Code, appAnswer.Body.String())
+	}
+	if !strings.Contains(appAnswer.Body.String(), "unsupported offer") {
+		t.Fatalf("app answer error did not include agent reason: %s", appAnswer.Body.String())
+	}
+}
+
 func TestCloudSessionHTTPRejectsRuntimePayload(t *testing.T) {
 	t.Parallel()
 
@@ -344,6 +411,56 @@ func TestCloudSessionHTTPTimeoutReturnsRecoverableSession(t *testing.T) {
 	decodeJSON(t, answer, &recovered)
 	if recovered.SessionID != got.SessionID || recovered.Answer.SDP != minimalSDP("answer-after-timeout") {
 		t.Fatalf("recovered answer = %+v", recovered)
+	}
+}
+
+func TestCloudSessionHTTPPendingAnswerPollReturnsRecoverableSession(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clock := fixedClock(time.Date(2026, 5, 5, 10, 30, 0, 0, time.UTC))
+	reg := registry.New(registry.Config{Clock: clock})
+	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	router := httpapi.NewHandler(httpapi.Config{
+		Cloud:         cloud.NewService(cloud.Config{Registry: reg, Clock: clock}),
+		AnswerTimeout: time.Millisecond,
+		PollInterval:  time.Millisecond,
+	})
+	resp := postJSON(t, router, "/api/v1/sessions", validCloudSessionRequest())
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("timeout status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var pending struct {
+		SessionID  string `json:"session_id"`
+		Path       string `json:"path"`
+		MachineID  string `json:"machine_id"`
+		TerminalID string `json:"terminal_id"`
+		Pending    bool   `json:"pending"`
+	}
+	decodeJSON(t, resp, &pending)
+	if pending.SessionID == "" || !pending.Pending {
+		t.Fatalf("pending session response = %+v", pending)
+	}
+
+	answer := postJSON(t, router, "/api/v1/sessions/"+pending.SessionID+"/answer", map[string]any{
+		"connect_ticket": "ticket_allowed",
+		"machine_id":     "mach_1",
+	})
+	if answer.Code != http.StatusAccepted {
+		t.Fatalf("pending answer status = %d body=%s", answer.Code, answer.Body.String())
+	}
+	var got struct {
+		SessionID  string `json:"session_id"`
+		Path       string `json:"path"`
+		MachineID  string `json:"machine_id"`
+		TerminalID string `json:"terminal_id"`
+		Pending    bool   `json:"pending"`
+	}
+	decodeJSON(t, answer, &got)
+	if got.SessionID != pending.SessionID || got.Path != "cloud" || got.MachineID != "mach_1" || got.TerminalID != "term_1" || !got.Pending {
+		t.Fatalf("pending answer response = %+v", got)
 	}
 }
 

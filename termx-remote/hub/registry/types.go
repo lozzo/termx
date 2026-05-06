@@ -82,6 +82,7 @@ type Answer struct {
 	AgentID   string
 	MachineID string
 	SDP       string
+	Error     string
 	CreatedAt time.Time
 }
 
@@ -123,6 +124,7 @@ type RegisterInput struct {
 type HeartbeatInput struct {
 	AgentID   string
 	MachineID string
+	Terminals []Terminal
 }
 
 type ForceOfflineInput struct {
@@ -154,6 +156,7 @@ type AnswerInput struct {
 	MachineID string
 	OfferID   string
 	SDP       string
+	Error     string
 }
 
 type PairingClaimInput struct {

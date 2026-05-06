@@ -80,7 +80,7 @@ func (s *Service) ConfigForLease(ctx context.Context, lease Lease) (RTCConfig, e
 		return cfg, nil
 	}
 	if s.turnServer != nil {
-		username, credential := s.turnServer.GenerateCredentials()
+		username, credential := s.turnServer.GenerateCredentialsForAgent(lease.ID)
 		expiresAt := s.clock.Now().UTC().Add(24 * time.Hour)
 		cfg.ICEServers = append(cfg.ICEServers, ICEServer{
 			URLs:       s.turnServer.URLs(),

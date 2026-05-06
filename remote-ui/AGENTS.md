@@ -9,14 +9,60 @@
 
 ## Current Build Direction
 
-主线目标：对齐新 hub 协议，统一 local/cloud 连接路径，消除 localweb 死代码。
+**主线 WF-203 已完成**。当前 P0 任务：**WF-501 支持 `VITE_CONTROL_URL` env var**。
 
-核心工作（WF-203）：
-- 删除调用已删除 localweb 端点的代码（`localAgentApi` 中 `/api/local/rtc/offer`、`/api/local/pair`、`/api/local/terminals`、`/api/local/status` 调用）
-- 删除 `localRtcConnector.ts`
-- local mode 统一走 `managedHubRtcConnector`，hub URL 指向本地嵌入 hub
-- local mode pairing 走 `managedHubApi.createPairingClaim()`（同 cloud path）
-- 新增 `LocalHubUrlProvider` 接口，支持 QR 扫描或手动输入本地 hub URL
+### WF-501 实现说明
+
+**目标**：`VITE_CONTROL_URL=http://my-ctrl.example.com npm run dev` 启动后，打开 `/` 时 Control URL 已预填，无需手动改 Settings。
+
+**修改文件**：`remote-ui/src/remoteAppMount.tsx`
+
+当前代码（无 defaultControlUrl）：
+```tsx
+<WebControlRemoteApp
+  managedRtcSessionFactory={...}
+  networkRuntime={networkRuntime}
+  pairCrypto={pairCrypto}
+/>
+```
+
+修改为：
+```tsx
+<WebControlRemoteApp
+  defaultControlUrl={import.meta.env.VITE_CONTROL_URL || undefined}
+  managedRtcSessionFactory={...}
+  networkRuntime={networkRuntime}
+  pairCrypto={pairCrypto}
+/>
+```
+
+**新增文件**：`remote-ui/.env.example`
+```
+# Web Controller URL — 设置后 npm run dev 首页自动预填控制地址
+# VITE_CONTROL_URL=http://localhost:3000
+
+# 本地 hub 代理目标（localweb 模式，访问 /localweb.html 时生效）
+# TERMX_LOCAL_WEB_ORIGIN=http://127.0.0.1:18888
+```
+
+**验证命令**：
+```
+cd remote-ui && npm run typecheck && npm run test
+```
+
+**不需要改**：`WebControlRemoteApp.tsx` 中的 `defaultWebControlUrl` 常量（作为最终 fallback 保留，不删除）。
+
+### npm run dev 使用说明（给运行者）
+
+```bash
+# Cloud 模式（访问 /）
+VITE_CONTROL_URL=http://localhost:3000 npm run dev
+# 打开 http://localhost:5173/ → 登录 web-control → 看到机器列表 → 点连接
+
+# Local 模式（访问 /localweb.html）
+TERMX_LOCAL_WEB_ORIGIN=http://192.168.x.x:18888 npm run dev
+# 打开 http://localhost:5173/localweb.html → 扫描或输入本地 hub URL → 连接
+```
 
 ## 连接架构（新）
 
