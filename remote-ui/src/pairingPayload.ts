@@ -1,7 +1,7 @@
 import type { ConnectionPath } from './transport'
 
 export interface PairingPayload {
-  schemaVersion: 2
+  schemaVersion: 2 | 3
   machine: PairingPayloadMachine
   addresses: PairingPayloadAddresses
   endpoints: PairingPayloadEndpoints
@@ -51,10 +51,10 @@ export function parsePairingPayload(input: string): PairingPayload {
     throw new Error(`unsupported pairing payload type ${type}`)
   }
   const version = numberField(data, 'schema_version', 2)
-  if (version !== 2) {
+  if (version !== 2 && version !== 3) {
     throw new Error(`unsupported pairing payload schema_version ${version}`)
   }
-  return normalizeV2Payload(data)
+  return normalizeV2Payload(data, version)
 }
 
 function parsePairingInput(input: string): unknown {
@@ -76,13 +76,13 @@ function parsePairingInput(input: string): unknown {
   return JSON.parse(decodeBase64url(encoded))
 }
 
-function normalizeV2Payload(data: Record<string, unknown>): PairingPayload {
+function normalizeV2Payload(data: Record<string, unknown>, schemaVersion: 2 | 3): PairingPayload {
   const machine = record(data.machine, 'pairing payload machine')
   const addresses = optionalRecord(data.addresses)
   const endpoints = optionalRecord(data.endpoints)
   const pairing = record(data.pairing, 'pairing payload pairing')
   return {
-    schemaVersion: 2,
+    schemaVersion,
     machine: {
       id: stringField(machine, 'id'),
       name: stringField(machine, 'name'),

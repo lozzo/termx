@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { parsePairingPayload } from './pairingPayload'
 
 describe('pairing payload parser', () => {
-  it('parses termx:// QR payloads with local, public, control, hub, and pairing metadata', () => {
+  it('parses termx:// QR payloads with schema v3 local, public, control, hub, and pairing metadata', () => {
     const payload = parsePairingPayload(`termx://pair?payload=${base64url(JSON.stringify({
       type: 'termx_pair_v2',
-      schema_version: 2,
+      schema_version: 3,
       machine: {
         id: 'machine-1',
         name: '开发 MacBook',
@@ -31,7 +31,7 @@ describe('pairing payload parser', () => {
     }))}`)
 
     expect(payload).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       machine: {
         id: 'machine-1',
         name: '开发 MacBook',
@@ -102,7 +102,7 @@ describe('pairing payload parser', () => {
   it('rejects machine private-key material even when nested inside bootstrap metadata', () => {
     expect(() => parsePairingPayload(JSON.stringify({
       type: 'termx_pair_v2',
-      schema_version: 2,
+      schema_version: 3,
       machine: { id: 'machine-1', name: 'Dev MacBook' },
       pairing: { session_id: 'pair-1', secret: 'pair-secret-1' },
       bootstrap: {
@@ -112,7 +112,7 @@ describe('pairing payload parser', () => {
 
     expect(() => parsePairingPayload(JSON.stringify({
       type: 'termx_pair_v2',
-      schema_version: 2,
+      schema_version: 3,
       machine: {
         id: 'machine-1',
         name: 'Dev MacBook',
@@ -123,7 +123,7 @@ describe('pairing payload parser', () => {
 
     expect(() => parsePairingPayload(JSON.stringify({
       type: 'termx_pair_v2',
-      schema_version: 2,
+      schema_version: 3,
       machine: { id: 'machine-1', name: 'Dev MacBook' },
       pairing: { session_id: 'pair-1', secret: 'pair-secret-1' },
       bootstrap: {
@@ -135,7 +135,7 @@ describe('pairing payload parser', () => {
   it('rejects relay as a client-visible connection path', () => {
     expect(() => parsePairingPayload(JSON.stringify({
       type: 'termx_pair_v2',
-      schema_version: 2,
+      schema_version: 3,
       machine: { id: 'machine-1', name: 'Dev MacBook' },
       pairing: { session_id: 'pair-1', secret: 'pair-secret-1' },
       preferred_path: 'relay',
