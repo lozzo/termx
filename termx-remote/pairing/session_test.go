@@ -139,6 +139,24 @@ func TestClaimSessionRejectsExpiredOrWrongSecret(t *testing.T) {
 	}
 }
 
+func TestCleanupExpiredRemovesStalePairSessions(t *testing.T) {
+	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	manager, _, _ := testManager(&now)
+	if _, err := manager.CreateSession(5 * time.Minute); err != nil {
+		t.Fatalf("CreateSession returned error: %v", err)
+	}
+
+	now = now.Add(6 * time.Minute)
+	if removed := manager.CleanupExpired(); removed != 1 {
+		t.Fatalf("CleanupExpired removed %d sessions, want 1", removed)
+	}
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if len(manager.sessions) != 0 {
+		t.Fatalf("expired sessions remained: %+v", manager.sessions)
+	}
+}
+
 func TestClaimSessionDoesNotConsumeSecretWhenCapabilitiesAreInvalid(t *testing.T) {
 	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	manager, _, machineSecret := testManager(&now)

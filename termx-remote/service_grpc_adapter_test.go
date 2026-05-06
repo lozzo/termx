@@ -61,6 +61,67 @@ func TestGRPCAgentRegisterFallsBackToStaticICEServers(t *testing.T) {
 	}
 }
 
+func TestGRPCAdapterSessionExpires(t *testing.T) {
+	now := time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC)
+	adapter := &hubRegistryAdapter{
+		registry:   registry.New(registry.Config{}),
+		sessionTTL: time.Second,
+		now: func() time.Time {
+			return now
+		},
+	}
+
+	out, err := adapter.RegisterAgent(grpcRegisterInput("agent-1", "machine-1"))
+	if err != nil {
+		t.Fatalf("RegisterAgent returned error: %v", err)
+	}
+	if _, ok := adapter.session(out.SessionID); !ok {
+		t.Fatal("registered session was not available before expiry")
+	}
+
+	now = now.Add(2 * time.Second)
+	if _, ok := adapter.session(out.SessionID); ok {
+		t.Fatal("expired session remained available")
+	}
+}
+
+func TestGRPCAdapterCleanupRemovesExpiredState(t *testing.T) {
+	now := time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC)
+	adapter := &hubRegistryAdapter{
+		now: func() time.Time {
+			return now
+		},
+		sessions: map[string]hubGRPCSessionState{
+			"expired-session": {Session: hubGRPCSession{AgentID: "agent-expired"}, ExpiresAt: now.Add(-time.Second)},
+			"live-session":    {Session: hubGRPCSession{AgentID: "agent-live"}, ExpiresAt: now.Add(time.Minute)},
+		},
+		offers: map[string]hubGRPCOfferState{
+			"expired-offer": {OfferID: "offer-expired", ExpiresAt: now.Add(-time.Second)},
+			"live-offer":    {OfferID: "offer-live", ExpiresAt: now.Add(time.Minute)},
+		},
+		claims: map[string]hubGRPCClaimState{
+			"expired-claim": {Session: hubGRPCSession{AgentID: "agent-expired"}, ExpiresAt: now.Add(-time.Second)},
+			"live-claim":    {Session: hubGRPCSession{AgentID: "agent-live"}, ExpiresAt: now.Add(time.Minute)},
+		},
+	}
+
+	if removed := adapter.cleanupExpired(); removed != 3 {
+		t.Fatalf("cleanupExpired removed %d entries, want 3", removed)
+	}
+	if len(adapter.sessions) != 1 || len(adapter.offers) != 1 || len(adapter.claims) != 1 {
+		t.Fatalf("unexpected map sizes after cleanup: sessions=%d offers=%d claims=%d", len(adapter.sessions), len(adapter.offers), len(adapter.claims))
+	}
+	if _, ok := adapter.sessions["live-session"]; !ok {
+		t.Fatal("live session was removed")
+	}
+	if _, ok := adapter.offers["live-offer"]; !ok {
+		t.Fatal("live offer was removed")
+	}
+	if _, ok := adapter.claims["live-claim"]; !ok {
+		t.Fatal("live claim was removed")
+	}
+}
+
 func grpcRegisterInput(agentID, machineID string) grpcapi.RegisterAgentInput {
 	return grpcapi.RegisterAgentInput{
 		AgentID:   agentID,

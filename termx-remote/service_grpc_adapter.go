@@ -27,16 +27,35 @@ type hubRegistryAdapter struct {
 	ice        *hubice.Service
 	iceServers []hubv1.RTCIceServerConfig
 	allowRelay bool
+	sessionTTL time.Duration
+	offerTTL   time.Duration
+	claimTTL   time.Duration
+	now        func() time.Time
 
 	mu       sync.Mutex
-	sessions map[string]hubGRPCSession
-	offers   map[string]string
-	claims   map[string]hubGRPCSession
+	sessions map[string]hubGRPCSessionState
+	offers   map[string]hubGRPCOfferState
+	claims   map[string]hubGRPCClaimState
 }
 
 type hubGRPCSession struct {
 	AgentID   string
 	MachineID string
+}
+
+type hubGRPCSessionState struct {
+	Session   hubGRPCSession
+	ExpiresAt time.Time
+}
+
+type hubGRPCOfferState struct {
+	OfferID   string
+	ExpiresAt time.Time
+}
+
+type hubGRPCClaimState struct {
+	Session   hubGRPCSession
+	ExpiresAt time.Time
 }
 
 type HubGRPCServerConfig struct {
@@ -63,9 +82,9 @@ func NewHubGRPCServerWithConfig(cfg HubGRPCServerConfig) *grpc.Server {
 		ice:        cfg.ICE,
 		iceServers: cloneHubICEServers(cfg.ICEServers),
 		allowRelay: cfg.AllowRelay,
-		sessions:   make(map[string]hubGRPCSession),
-		offers:     make(map[string]string),
-		claims:     make(map[string]hubGRPCSession),
+		sessions:   make(map[string]hubGRPCSessionState),
+		offers:     make(map[string]hubGRPCOfferState),
+		claims:     make(map[string]hubGRPCClaimState),
 	}))
 	return grpcSrv
 }
@@ -108,10 +127,14 @@ func (a *hubRegistryAdapter) RegisterAgent(in grpcapi.RegisterAgentInput) (grpca
 	}
 	sessionID := randomHubGRPCID("grpc_session")
 	a.mu.Lock()
+	a.cleanupExpiredLocked(a.nowUTC())
 	if a.sessions == nil {
-		a.sessions = make(map[string]hubGRPCSession)
+		a.sessions = make(map[string]hubGRPCSessionState)
 	}
-	a.sessions[sessionID] = hubGRPCSession{AgentID: agentID, MachineID: machineID}
+	a.sessions[sessionID] = hubGRPCSessionState{
+		Session:   hubGRPCSession{AgentID: agentID, MachineID: machineID},
+		ExpiresAt: a.nowUTC().Add(a.sessionTTLDuration()),
+	}
 	a.mu.Unlock()
 	iceServers, allowRelay, err := a.registerAgentICEServers(context.Background(), machineID)
 	if err != nil {
@@ -180,10 +203,14 @@ func (a *hubRegistryAdapter) GetPendingOffer(ctx context.Context, sessionID stri
 	}
 	publicID := grpcPublicSessionID(offer)
 	a.mu.Lock()
+	a.cleanupExpiredLocked(a.nowUTC())
 	if a.offers == nil {
-		a.offers = make(map[string]string)
+		a.offers = make(map[string]hubGRPCOfferState)
 	}
-	a.offers[sessionOfferKey(sessionID, publicID)] = offer.ID
+	a.offers[sessionOfferKey(sessionID, publicID)] = hubGRPCOfferState{
+		OfferID:   offer.ID,
+		ExpiresAt: a.nowUTC().Add(a.offerTTLDuration()),
+	}
 	a.mu.Unlock()
 	return &grpcapi.PendingOffer{
 		SessionID:    publicID,
@@ -240,10 +267,14 @@ func (a *hubRegistryAdapter) GetPendingPairingClaim(ctx context.Context, session
 		return nil, err
 	}
 	a.mu.Lock()
+	a.cleanupExpiredLocked(a.nowUTC())
 	if a.claims == nil {
-		a.claims = make(map[string]hubGRPCSession)
+		a.claims = make(map[string]hubGRPCClaimState)
 	}
-	a.claims[claim.ID] = session
+	a.claims[claim.ID] = hubGRPCClaimState{
+		Session:   session,
+		ExpiresAt: a.nowUTC().Add(a.claimTTLDuration()),
+	}
 	a.mu.Unlock()
 	return &grpcapi.PendingPairingClaim{
 		ClaimID:               claim.ID,
@@ -278,8 +309,13 @@ func (a *hubRegistryAdapter) session(sessionID string) (hubGRPCSession, bool) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	session, ok := a.sessions[strings.TrimSpace(sessionID)]
-	return session, ok
+	now := a.nowUTC()
+	a.cleanupExpiredLocked(now)
+	state, ok := a.sessions[strings.TrimSpace(sessionID)]
+	if !ok || !state.ExpiresAt.After(now) {
+		return hubGRPCSession{}, false
+	}
+	return state.Session, true
 }
 
 func (a *hubRegistryAdapter) claimSession(claimID string) (hubGRPCSession, bool) {
@@ -288,8 +324,13 @@ func (a *hubRegistryAdapter) claimSession(claimID string) (hubGRPCSession, bool)
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	session, ok := a.claims[strings.TrimSpace(claimID)]
-	return session, ok
+	now := a.nowUTC()
+	a.cleanupExpiredLocked(now)
+	state, ok := a.claims[strings.TrimSpace(claimID)]
+	if !ok || !state.ExpiresAt.After(now) {
+		return hubGRPCSession{}, false
+	}
+	return state.Session, true
 }
 
 func (a *hubRegistryAdapter) resolveOfferID(sessionID string, answerSessionID string) string {
@@ -298,10 +339,74 @@ func (a *hubRegistryAdapter) resolveOfferID(sessionID string, answerSessionID st
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if offerID := strings.TrimSpace(a.offers[sessionOfferKey(sessionID, answerSessionID)]); offerID != "" {
-		return offerID
+	now := a.nowUTC()
+	a.cleanupExpiredLocked(now)
+	if state := a.offers[sessionOfferKey(sessionID, answerSessionID)]; state.ExpiresAt.After(now) && strings.TrimSpace(state.OfferID) != "" {
+		return strings.TrimSpace(state.OfferID)
 	}
 	return strings.TrimSpace(answerSessionID)
+}
+
+func (a *hubRegistryAdapter) cleanupExpiredLocked(now time.Time) int {
+	removed := 0
+	for sessionID, state := range a.sessions {
+		if !state.ExpiresAt.After(now) {
+			delete(a.sessions, sessionID)
+			removed++
+		}
+	}
+	for key, state := range a.offers {
+		if !state.ExpiresAt.After(now) {
+			delete(a.offers, key)
+			removed++
+		}
+	}
+	for claimID, state := range a.claims {
+		if !state.ExpiresAt.After(now) {
+			delete(a.claims, claimID)
+			removed++
+		}
+	}
+	return removed
+}
+
+func (a *hubRegistryAdapter) cleanupExpired() int {
+	if a == nil {
+		return 0
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cleanupExpiredLocked(a.nowUTC())
+}
+
+func (a *hubRegistryAdapter) nowUTC() time.Time {
+	if a != nil && a.now != nil {
+		if now := a.now().UTC(); !now.IsZero() {
+			return now
+		}
+	}
+	return time.Now().UTC()
+}
+
+func (a *hubRegistryAdapter) sessionTTLDuration() time.Duration {
+	if a != nil && a.sessionTTL > 0 {
+		return a.sessionTTL
+	}
+	return 2 * time.Minute
+}
+
+func (a *hubRegistryAdapter) offerTTLDuration() time.Duration {
+	if a != nil && a.offerTTL > 0 {
+		return a.offerTTL
+	}
+	return 5 * time.Minute
+}
+
+func (a *hubRegistryAdapter) claimTTLDuration() time.Duration {
+	if a != nil && a.claimTTL > 0 {
+		return a.claimTTL
+	}
+	return 5 * time.Minute
 }
 
 func sessionOfferKey(sessionID string, offerSessionID string) string {

@@ -124,6 +124,7 @@ func (m *Manager) CreateSession(ttl time.Duration) (Session, error) {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.cleanupExpiredLocked(now)
 	m.sessions[session.PairSessionID] = &sessionState{session: session, cfg: cfg}
 	return session, nil
 }
@@ -142,6 +143,7 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 	}
 
 	m.mu.Lock()
+	m.cleanupExpiredLocked(nowFromConfig(m.cfg))
 	state, ok := m.sessions[sessionID]
 	if !ok {
 		m.mu.Unlock()
@@ -213,6 +215,26 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 		SessionToken: tok,
 		ExpiresAt:    expiresAt,
 	}, nil
+}
+
+func (m *Manager) CleanupExpired() int {
+	if m == nil {
+		return 0
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cleanupExpiredLocked(nowFromConfig(m.cfg))
+}
+
+func (m *Manager) cleanupExpiredLocked(now time.Time) int {
+	removed := 0
+	for sessionID, state := range m.sessions {
+		if state == nil || !now.Before(state.session.ExpiresAt) {
+			delete(m.sessions, sessionID)
+			removed++
+		}
+	}
+	return removed
 }
 
 func nowFromConfig(cfg Config) time.Time {
