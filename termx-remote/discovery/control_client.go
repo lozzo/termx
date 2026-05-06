@@ -9,7 +9,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
+
+const defaultControlHTTPTimeout = 10 * time.Second
 
 type DeviceRegistrationRequest struct {
 	DeviceID    string   `json:"deviceId"`
@@ -119,7 +122,7 @@ func doJSON(ctx context.Context, method, url string, input any, out any, headers
 		req.Header.Set(key, value)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := defaultHTTPClient().Do(req)
 	if err != nil {
 		return fmt.Errorf("perform json request: %w", err)
 	}
@@ -139,4 +142,8 @@ func doJSON(ctx context.Context, method, url string, input any, out any, headers
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func defaultHTTPClient() *http.Client {
+	return &http.Client{Timeout: defaultControlHTTPTimeout}
 }

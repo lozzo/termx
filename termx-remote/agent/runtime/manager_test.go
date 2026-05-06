@@ -139,6 +139,44 @@ func TestManagerStartUsesGRPCHubLoopForLocalHub(t *testing.T) {
 	mgr.Close()
 }
 
+func TestManagerCloseAllowsRestart(t *testing.T) {
+	mgr := NewManager(remoteconfig.Config{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "restart-device",
+	}, nil, nil)
+	if err := mgr.Start(context.Background()); err != nil {
+		t.Fatalf("initial Start returned error: %v", err)
+	}
+	mgr.Close()
+	if err := mgr.Start(context.Background()); err != nil {
+		t.Fatalf("restart Start returned error: %v", err)
+	}
+	status := mgr.Status()
+	if status.State != StateConfigured {
+		t.Fatalf("expected configured state after restart, got %+v", status)
+	}
+	mgr.Close()
+}
+
+func TestDetachHubIgnoresEmptyURL(t *testing.T) {
+	mgr := NewManager(remoteconfig.Config{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "detach-device",
+		HubURLs:    []string{"http://127.0.0.1:1", "http://127.0.0.1:2"},
+	}, nil, nil)
+
+	mgr.DetachHub("")
+
+	mgr.mu.RLock()
+	hubURLs := append([]string(nil), mgr.cfg.HubURLs...)
+	mgr.mu.RUnlock()
+	if !reflect.DeepEqual(hubURLs, []string{"http://127.0.0.1:1", "http://127.0.0.1:2"}) {
+		t.Fatalf("empty detach changed hub URLs: %+v", hubURLs)
+	}
+}
+
 func TestManagerProvidesTerminalManagementRouterForCloudRTC(t *testing.T) {
 	manager := NewManager(remoteconfig.Config{}, managementProviderStub{}, nil)
 	if manager.terminalManagementRouter() == nil {

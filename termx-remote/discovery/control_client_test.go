@@ -51,3 +51,12 @@ func TestDiscoverHubsUsesBearerTokenAndReturnsHubList(t *testing.T) {
 		t.Fatalf("unexpected hub payload: %+v", hubs[0])
 	}
 }
+
+func TestDefaultHTTPClientHasTimeout(t *testing.T) {
+	t.Parallel()
+
+	client := defaultHTTPClient()
+	if client == nil || client.Timeout <= 0 {
+		t.Fatalf("expected default control HTTP client timeout, got %#v", client)
+	}
+}

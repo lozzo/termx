@@ -203,6 +203,13 @@ func TestPostAppliesKickAgentsResponseToRegistry(t *testing.T) {
 	}
 }
 
+func TestDefaultHeartbeatHTTPClientHasTimeout(t *testing.T) {
+	client := defaultHTTPClient()
+	if client == nil || client.Timeout <= 0 {
+		t.Fatalf("expected default heartbeat HTTP client timeout, got %#v", client)
+	}
+}
+
 type trafficReaderStub struct {
 	deltas []hubturn.TrafficDelta
 	drains int

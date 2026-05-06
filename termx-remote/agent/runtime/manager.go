@@ -331,8 +331,11 @@ func (m *Manager) DetachHub(hubURL string) {
 		return
 	}
 	hubURL = strings.TrimSpace(hubURL)
+	if hubURL == "" {
+		return
+	}
 	m.mu.Lock()
-	if hubURL == "" || containsString(m.cfg.HubURLs, hubURL) || strings.TrimSpace(m.cfg.HubURL) == hubURL {
+	if containsString(m.cfg.HubURLs, hubURL) || strings.TrimSpace(m.cfg.HubURL) == hubURL {
 		remaining := removeString(m.cfg.HubURLs, hubURL)
 		m.stopRemovedHubSignalingLocked(remaining)
 		m.cfg.HubURLs = remaining
@@ -413,7 +416,14 @@ func (m *Manager) Close() {
 		}
 	}
 	m.cancel = nil
+	m.started = false
 	m.hubStates = make(map[string]*hubRuntimeState)
+	m.status.State = StateDisabled
+	m.status.Detail = "remote runtime closed"
+	m.status.HubURL = ""
+	m.status.HubURLs = nil
+	m.status.Hubs = nil
+	m.status.UpdatedAt = time.Now().UTC()
 	m.mu.Unlock()
 	for _, hubCancel := range hubCancels {
 		if hubCancel != nil {

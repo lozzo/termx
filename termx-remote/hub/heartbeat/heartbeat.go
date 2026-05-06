@@ -32,6 +32,8 @@ type Config struct {
 	TrafficReader hubturn.TrafficReader
 }
 
+const defaultHTTPTimeout = 10 * time.Second
+
 type responseBody struct {
 	OK         bool     `json:"ok"`
 	KickAgents []string `json:"kick_agents"`
@@ -109,7 +111,7 @@ func Post(ctx context.Context, cfg Config, reg *registry.Registry) error {
 	req.Header.Set("X-TermX-Hub-Secret", cfg.Secret)
 	client := cfg.Client
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultHTTPClient()
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -126,6 +128,10 @@ func Post(ctx context.Context, cfg Config, reg *registry.Registry) error {
 	}
 	applyKickAgents(reg, result.KickAgents)
 	return nil
+}
+
+func defaultHTTPClient() *http.Client {
+	return &http.Client{Timeout: defaultHTTPTimeout}
 }
 
 func trafficDeltas(in []hubturn.TrafficDelta) []hubturn.TrafficDelta {
