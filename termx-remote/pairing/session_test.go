@@ -50,6 +50,7 @@ func TestClaimSessionIssuesSessionTokenAndConsumesSecret(t *testing.T) {
 		PairSessionID:         session.PairSessionID,
 		PairSecret:            session.PairSecret,
 		AppDeviceID:           "appdev_test",
+		AppName:               "TermX Test App",
 		RequestedCapabilities: []string{"terminal", "file_manager"},
 	})
 	if err != nil {
@@ -71,7 +72,17 @@ func TestClaimSessionIssuesSessionTokenAndConsumesSecret(t *testing.T) {
 	if got := strings.Join(claims.Capabilities, ","); got != "file_manager,terminal" {
 		t.Fatalf("token capabilities = %q", got)
 	}
-	if resp.ExpiresAt.Sub(now) != defaultTokenTTL {
+	if claims.AppDeviceID != "appdev_test" || claims.AppName != "TermX Test App" {
+		t.Fatalf("token app claims = %+v", claims)
+	}
+	openedProof, err := token.OpenAnswerProofKey(machineSecret, claims)
+	if err != nil {
+		t.Fatalf("answer proof key did not open: %v", err)
+	}
+	if openedProof != session.AnswerProofSecret {
+		t.Fatalf("answer proof secret = %q", openedProof)
+	}
+	if resp.ExpiresAt.Sub(now) != 24*time.Hour {
 		t.Fatalf("unexpected token expiry %s", resp.ExpiresAt)
 	}
 
@@ -97,6 +108,7 @@ func TestClaimSessionAllowsTerminalManagementCapabilitySeparatelyFromFileManager
 		PairSessionID:         session.PairSessionID,
 		PairSecret:            session.PairSecret,
 		AppDeviceID:           "appdev_management",
+		AppName:               "TermX Management App",
 		RequestedCapabilities: []string{"terminal", "file_manager", "terminal_management"},
 	})
 	if err != nil {

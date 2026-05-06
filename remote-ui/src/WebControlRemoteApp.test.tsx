@@ -209,6 +209,63 @@ describe('WebControlRemoteApp', () => {
     expect(fetch.requests.some((request) => request.url.includes('/api/v1/pairing/claims'))).toBe(false)
     expect(storage.getItem('termx.app.machines.v1')).toBeNull()
   })
+
+  it('opens paired Web Control machines by racing all hub_urls instead of only the first', async () => {
+    const storage = new MemoryStorage()
+    storage.setItem('termx.remote.accessToken', 'access-token-1')
+    storage.setItem('termx.session.device-1.token', 'session-token-device-1')
+    storage.setItem('termx.app.machines.v1', JSON.stringify([{
+      machineId: 'device-1',
+      name: 'RedmiBook',
+      hostname: 'redmibook',
+      state: 'online',
+      terminalCount: 0,
+      source: 'cloud',
+      addresses: {
+        local: [],
+        lan: [],
+        public: ['https://hub-1.termx.test', 'https://hub-2.termx.test'],
+      },
+      endpoints: {
+        webControl: 'http://114.66.58.243:12306',
+        hub: 'https://hub-1.termx.test',
+      },
+      schemaVersion: 2,
+      addedAt: '2026-05-05T10:00:00.000Z',
+      updatedAt: '2026-05-05T10:00:00.000Z',
+    }]))
+    const fetch = new WebControlHubFallbackFetch()
+
+    render(
+      <WebControlRemoteApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
+        storage={storage}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
+    await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
+    await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
+
+    const sessionRequests = fetch.requests.filter((request) => request.url.endsWith('/api/v1/sessions'))
+    expect(sessionRequests).toHaveLength(2)
+    expect(new Set(sessionRequests.map((request) => request.url))).toEqual(new Set([
+      'https://hub-1.termx.test/api/v1/sessions',
+      'https://hub-2.termx.test/api/v1/sessions',
+    ]))
+    expect(sessionRequests.map((request) => request.body)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        machine_id: 'device-1',
+        session_token: 'session-token-device-1',
+      }),
+      expect.objectContaining({
+        machine_id: 'device-1',
+        session_token: 'session-token-device-1',
+      }),
+    ]))
+  })
 })
 
 function fakeRtcSession(): RtcSession {
@@ -247,7 +304,64 @@ function fakeRtcSession(): RtcSession {
   }
 }
 
-const fakeManagedRtcSessionFactory = () => fakeRtcSession() as RtcSession & {
+let nextFakeManagedSessionId = 0
+
+const fakeManagedRtcSessionFactory = (target?: { machineId?: string | undefined; terminalId?: string | undefined }) => ({
+  async createOffer() {
+    nextFakeManagedSessionId += 1
+    return {
+      sessionId: `rtc-web-control-${nextFakeManagedSessionId}`,
+      description: { type: 'offer' as const, sdp: `offer-sdp-${nextFakeManagedSessionId}` },
+    }
+  },
+  async acceptAnswer() {},
+  async openTerminal() {
+    throw new Error('terminal channel is not used by Web Control app tests')
+  },
+  async openApi() {
+    return {
+      async request<TResponse>(method: string): Promise<TResponse> {
+        if (method !== 'list') throw new Error(`unexpected api request ${method}`)
+        return {
+          terminals: [{
+            terminal_id: 'terminal-1',
+            title: 'zsh',
+            state: 'running',
+            command: '/bin/zsh -l',
+            cols: 100,
+            rows: 30,
+          }],
+        } as TResponse
+      },
+      close() {},
+    }
+  },
+  async openFileTransfer() {
+    throw new Error('file transfer is not used by Web Control app tests')
+  },
+  subscribeEvents() {
+    return { close() {} }
+  },
+  async getConnectionInfo() {
+    return {
+      path: 'managed' as const,
+      connectionId: 'test-session',
+      machineId: target?.machineId ?? 'device-1',
+      relayInUse: false,
+    }
+  },
+  async getCapabilities() {
+    return {
+      terminalAllowed: true,
+      apiAllowed: true,
+      eventsAllowed: true,
+      fileTransferAllowed: true,
+      terminalManagementAllowed: true,
+      relayInUse: false,
+    }
+  },
+  async disconnect() {},
+}) satisfies RtcSession & {
   createOffer(): Promise<{ sessionId: string; description: { type: 'offer'; sdp: string } }>
   acceptAnswer(): Promise<void>
 }
@@ -277,6 +391,70 @@ class RecordingFetch {
       throw new Error(`unexpected request to ${String(input)}`)
     }
     return response
+  }
+}
+
+class WebControlHubFallbackFetch {
+  readonly requests: RecordedRequest[] = []
+
+  readonly fetch: WebControlFetch = async (input, init = {}) => {
+    const url = String(input)
+    const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined
+    this.requests.push({
+      url,
+      method: init.method ?? 'GET',
+      ...(body !== undefined ? { body } : {}),
+    })
+    if (url === 'http://114.66.58.243:12306/api/v1/auth/me') {
+      return jsonResponse(200, {
+        user: {
+          id: 'user-1',
+          username: 'lozzow',
+          email: 'lozzow@example.test',
+        },
+      })
+    }
+    if (url === 'http://114.66.58.243:12306/api/v1/machines') {
+      return jsonResponse(200, {
+        machines: [{
+          id: 'device-1',
+          name: 'RedmiBook',
+          hostname: 'redmibook',
+          online: true,
+          paired: true,
+          source: 'cloud',
+          control_url: 'http://114.66.58.243:12306',
+          hub_urls: ['https://hub-1.termx.test', 'https://hub-2.termx.test'],
+          hub_status: 'online',
+        }],
+      })
+    }
+    if (url === 'https://hub-1.termx.test/api/v1/sessions') {
+      return jsonResponse(503, {
+        error: {
+          code: 'hub_unavailable',
+          message: 'first hub unavailable',
+        },
+      })
+    }
+    if (url === 'https://hub-2.termx.test/api/v1/sessions') {
+      const request = body as {
+        machine_id: string
+        terminal_id?: string | undefined
+        offer: { session_id: string }
+      }
+      return jsonResponse(200, {
+        session_id: request.offer.session_id,
+        path: 'managed',
+        machine_id: request.machine_id,
+        ...(request.terminal_id ? { terminal_id: request.terminal_id } : {}),
+        answer: { sdp: 'answer-sdp', ice_candidates: [] },
+        ice_servers: [],
+        relay_policy: { allow_relay: true, allow_relay_transfer: true },
+        relay_in_use: true,
+      })
+    }
+    throw new Error(`unexpected request to ${url}`)
   }
 }
 

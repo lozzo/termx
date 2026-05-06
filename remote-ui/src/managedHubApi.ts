@@ -29,6 +29,7 @@ export interface CreateManagedHubSessionInput {
   machineId: string
   terminalId?: string | undefined
   sessionToken: string
+  answerProofChallenge?: string | undefined
   offer: {
     sessionId: string
     sdp: string
@@ -46,6 +47,7 @@ export interface ManagedHubSession {
   iceServers: ManagedIceServer[]
   relayPolicy: ManagedRelayPolicy
   relayInUse: boolean
+  answerProof?: string | undefined
 }
 
 export interface ManagedHubPendingSession {
@@ -113,6 +115,7 @@ class ManagedHubHttpApi implements ManagedHubApi {
         machine_id: machineId,
         terminal_id: terminalId,
         session_token: sessionToken,
+        ...(optionalTrimmedString(input.answerProofChallenge) ? { answer_proof_challenge: optionalTrimmedString(input.answerProofChallenge) } : {}),
         offer: {
           session_id: sessionId,
           sdp,
@@ -226,6 +229,7 @@ function managedSessionFromResponse(response: Record<string, unknown>): ManagedH
     iceServers: iceServersField(response, 'ice_servers'),
     relayPolicy: relayPolicy(response),
     relayInUse: optionalBooleanField(response, 'relay_in_use') ?? false,
+    ...(optionalStringField(answer, 'answer_proof') ? { answerProof: optionalStringField(answer, 'answer_proof') } : {}),
   }
 }
 

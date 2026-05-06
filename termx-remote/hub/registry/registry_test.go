@@ -240,6 +240,17 @@ func TestPollTimeoutOfferDeliveryAndAnswerCorrelation(t *testing.T) {
 	if loaded.ID != answer.ID || loaded.OfferID != offer.ID {
 		t.Fatalf("loaded answer = %+v", loaded)
 	}
+	if _, err := store.GetAnswer(ctx, offer.ID); !errors.Is(err, registry.ErrOfferNotFound) {
+		t.Fatalf("second answer lookup err = %v", err)
+	}
+	if _, err := store.SubmitAnswer(ctx, registry.AnswerInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		OfferID:   offer.ID,
+		SDP:       minimalSDP("answer-after-consume"),
+	}); !errors.Is(err, registry.ErrOfferNotFound) {
+		t.Fatalf("answer after consumption err = %v", err)
+	}
 	if _, err := store.SubmitAnswer(ctx, registry.AnswerInput{
 		AgentID:   "agent_1",
 		MachineID: "wrong_machine",
@@ -812,6 +823,71 @@ func TestDuplicateAnswersRejected(t *testing.T) {
 	}
 	if loaded.ID != answer.ID || loaded.SDP != minimalSDP("answer-1") {
 		t.Fatalf("duplicate answer overwrote first answer: %+v", loaded)
+	}
+}
+
+func TestPairingResultIsConsumedOnFirstRead(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clock := fixedClock(time.Date(2026, 5, 3, 10, 15, 0, 0, time.UTC))
+	store := registry.New(registry.Config{
+		Clock:    clock,
+		AgentTTL: time.Minute,
+	})
+	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	claim, err := store.SubmitPairingClaim(ctx, registry.PairingClaimInput{
+		MachineID:             "mach_1",
+		PairSessionID:         "pair-session-1",
+		PairSecret:            "pair-secret-1",
+		AppDeviceID:           "app-device-1",
+		AppName:               "TermX App",
+		RequestedCapabilities: []string{"terminal"},
+	})
+	if err != nil {
+		t.Fatalf("submit pairing claim: %v", err)
+	}
+	polled, err := store.PollPairingClaim(ctx, registry.PairingPollInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("poll pairing claim: %v", err)
+	}
+	if polled.ID != claim.ID || polled.AppDeviceID != "app-device-1" || polled.AppName != "TermX App" {
+		t.Fatalf("polled claim = %+v", polled)
+	}
+	result, err := store.SubmitPairingResult(ctx, registry.PairingResultInput{
+		AgentID:      "agent_1",
+		MachineID:    "mach_1",
+		ClaimID:      claim.ID,
+		MachineName:  "MacBook Pro",
+		SessionToken: "session-token-1",
+		ExpiresAt:    "2026-05-04T10:15:00Z",
+	})
+	if err != nil {
+		t.Fatalf("submit pairing result: %v", err)
+	}
+	loaded, err := store.GetPairingResult(ctx, claim.ID)
+	if err != nil {
+		t.Fatalf("get pairing result: %v", err)
+	}
+	if loaded.ClaimID != result.ClaimID || loaded.SessionToken != "session-token-1" {
+		t.Fatalf("loaded pairing result = %+v", loaded)
+	}
+	if _, err := store.GetPairingResult(ctx, claim.ID); !errors.Is(err, registry.ErrPairingClaimNotFound) {
+		t.Fatalf("second pairing result lookup err = %v", err)
+	}
+	if _, err := store.SubmitPairingResult(ctx, registry.PairingResultInput{
+		AgentID:      "agent_1",
+		MachineID:    "mach_1",
+		ClaimID:      claim.ID,
+		SessionToken: "session-token-2",
+	}); !errors.Is(err, registry.ErrPairingClaimNotFound) {
+		t.Fatalf("pairing result after consumption err = %v", err)
 	}
 }
 

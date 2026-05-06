@@ -93,3 +93,41 @@ func TestCapabilitiesSorted(t *testing.T) {
 		}
 	}
 }
+
+func TestAnswerProofKeySealedIntoClaims(t *testing.T) {
+	c := baseClaims()
+	sealed, err := token.SealAnswerProofKey(secret, c, "answer-proof-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.AnswerProofKey = sealed
+
+	tok, err := token.Issue(secret, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := token.Verify(tok, secret, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, err := token.OpenAnswerProofKey(secret, got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened != "answer-proof-secret" {
+		t.Fatalf("proof secret = %q", opened)
+	}
+}
+
+func TestAnswerProofKeyAADBindsSessionAndMachine(t *testing.T) {
+	c := baseClaims()
+	sealed, err := token.SealAnswerProofKey(secret, c, "answer-proof-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.AnswerProofKey = sealed
+	c.MachineID = "other-machine"
+	if _, err := token.OpenAnswerProofKey(secret, c); err == nil {
+		t.Fatal("expected answer proof key open to fail after machine change")
+	}
+}

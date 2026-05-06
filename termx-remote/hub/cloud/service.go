@@ -62,12 +62,13 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 		return Offer{}, errors.New("cloud service is not configured")
 	}
 	preflight := registry.OfferInput{
-		MachineID:     strings.TrimSpace(in.MachineID),
-		TerminalID:    strings.TrimSpace(in.TerminalID),
-		SDP:           in.SDP,
-		SessionID:     strings.TrimSpace(in.SessionID),
-		ICECandidates: cloneStrings(in.ICECandidates),
-		SessionToken:  in.SessionToken,
+		MachineID:            strings.TrimSpace(in.MachineID),
+		TerminalID:           strings.TrimSpace(in.TerminalID),
+		SDP:                  in.SDP,
+		SessionID:            strings.TrimSpace(in.SessionID),
+		ICECandidates:        cloneStrings(in.ICECandidates),
+		SessionToken:         in.SessionToken,
+		AnswerProofChallenge: strings.TrimSpace(in.AnswerProofChallenge),
 	}
 	if err := s.registry.PreflightOffer(ctx, preflight); err != nil {
 		return Offer{}, err
@@ -77,12 +78,13 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 	s.evictToLimitLocked(s.maxOffers - 1)
 	s.mu.Unlock()
 	offer, err := s.registry.SubmitOffer(ctx, registry.OfferInput{
-		MachineID:     preflight.MachineID,
-		TerminalID:    preflight.TerminalID,
-		SDP:           in.SDP,
-		SessionID:     strings.TrimSpace(in.SessionID),
-		ICECandidates: cloneStrings(in.ICECandidates),
-		SessionToken:  in.SessionToken,
+		MachineID:            preflight.MachineID,
+		TerminalID:           preflight.TerminalID,
+		SDP:                  in.SDP,
+		SessionID:            strings.TrimSpace(in.SessionID),
+		ICECandidates:        cloneStrings(in.ICECandidates),
+		SessionToken:         in.SessionToken,
+		AnswerProofChallenge: preflight.AnswerProofChallenge,
 	})
 	if err != nil {
 		return Offer{}, err
@@ -102,16 +104,17 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 	}
 	s.mu.Unlock()
 	return Offer{
-		ID:            offer.ID,
-		SessionID:     offer.SessionID,
-		MachineID:     offer.MachineID,
-		TerminalID:    offer.TerminalID,
-		SDP:           offer.SDP,
-		ICECandidates: cloneStrings(offer.ICECandidates),
-		SessionToken:  offer.SessionToken,
-		Path:          PathCloud,
-		AllowRelay:    policy.AllowRelay,
-		RelayInUse:    offer.RelayInUse,
+		ID:                   offer.ID,
+		SessionID:            offer.SessionID,
+		MachineID:            offer.MachineID,
+		TerminalID:           offer.TerminalID,
+		SDP:                  offer.SDP,
+		ICECandidates:        cloneStrings(offer.ICECandidates),
+		SessionToken:         offer.SessionToken,
+		AnswerProofChallenge: offer.AnswerProofChallenge,
+		Path:                 PathCloud,
+		AllowRelay:           policy.AllowRelay,
+		RelayInUse:           offer.RelayInUse,
 	}, nil
 }
 
@@ -128,15 +131,16 @@ func (s *Service) PollAgentOffer(ctx context.Context, in PollAgentOfferInput) (O
 		return Offer{}, err
 	}
 	result := Offer{
-		ID:            offer.ID,
-		SessionID:     offer.SessionID,
-		MachineID:     offer.MachineID,
-		TerminalID:    offer.TerminalID,
-		SDP:           offer.SDP,
-		ICECandidates: cloneStrings(offer.ICECandidates),
-		SessionToken:  offer.SessionToken,
-		Path:          PathCloud,
-		RelayInUse:    offer.RelayInUse,
+		ID:                   offer.ID,
+		SessionID:            offer.SessionID,
+		MachineID:            offer.MachineID,
+		TerminalID:           offer.TerminalID,
+		SDP:                  offer.SDP,
+		ICECandidates:        cloneStrings(offer.ICECandidates),
+		SessionToken:         offer.SessionToken,
+		AnswerProofChallenge: offer.AnswerProofChallenge,
+		Path:                 PathCloud,
+		RelayInUse:           offer.RelayInUse,
 	}
 	s.mu.Lock()
 	if policy, ok := s.offerPolicyLocked(offer.ID); ok {
@@ -151,11 +155,12 @@ func (s *Service) SubmitAnswer(ctx context.Context, in SubmitAnswerInput) error 
 		return errors.New("cloud service is not configured")
 	}
 	_, err := s.registry.SubmitAnswer(ctx, registry.AnswerInput{
-		AgentID:   in.AgentID,
-		MachineID: in.MachineID,
-		OfferID:   in.OfferID,
-		SDP:       in.SDP,
-		Error:     in.Error,
+		AgentID:     in.AgentID,
+		MachineID:   in.MachineID,
+		OfferID:     in.OfferID,
+		SDP:         in.SDP,
+		Error:       in.Error,
+		AnswerProof: in.AnswerProof,
 	})
 	return err
 }
@@ -194,12 +199,16 @@ func (s *Service) GetAnswer(ctx context.Context, in GetAnswerInput) (Answer, err
 	if answer.MachineID != machineID {
 		return Answer{}, ErrWrongMachine
 	}
+	s.mu.Lock()
+	s.deleteOfferLocked(offerID)
+	s.mu.Unlock()
 	return Answer{
-		ID:        answer.ID,
-		OfferID:   answer.OfferID,
-		MachineID: answer.MachineID,
-		SDP:       answer.SDP,
-		Error:     answer.Error,
+		ID:          answer.ID,
+		OfferID:     answer.OfferID,
+		MachineID:   answer.MachineID,
+		SDP:         answer.SDP,
+		Error:       answer.Error,
+		AnswerProof: answer.AnswerProof,
 	}, nil
 }
 

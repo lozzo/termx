@@ -194,13 +194,14 @@ func (s *Service) PairStart(params remoteprotocol.PairStartParams) (remoteprotoc
 		return remoteprotocol.PairStartResult{}, err
 	}
 	return remoteprotocol.PairStartResult{
-		Type:          session.Type,
-		MachineID:     session.MachineID,
-		MachineName:   session.MachineName,
-		LocalPairURL:  session.LocalPairURL,
-		PairSessionID: session.PairSessionID,
-		PairSecret:    session.PairSecret,
-		ExpiresAt:     session.ExpiresAt,
+		Type:              session.Type,
+		MachineID:         session.MachineID,
+		MachineName:       session.MachineName,
+		LocalPairURL:      session.LocalPairURL,
+		PairSessionID:     session.PairSessionID,
+		PairSecret:        session.PairSecret,
+		AnswerProofSecret: session.AnswerProofSecret,
+		ExpiresAt:         session.ExpiresAt,
 	}, nil
 }
 
@@ -300,10 +301,16 @@ type localRuntime struct {
 	iceTCPMux     *LocalICETCPMux
 	listener      net.Listener
 	httpServer    *http.Server
+	registry      *registry.Registry
 	shutdown      func(context.Context) error
 	cancel        context.CancelFunc
 	updatedAt     time.Time
 }
+
+var (
+	localHubAgentTTL        = 2 * time.Minute
+	localHubCleanupInterval = time.Minute
+)
 
 func (r *localRuntime) statusLocked() remoteprotocol.LocalStatus {
 	if r == nil {
@@ -358,7 +365,7 @@ func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableP
 		return nil, err
 	}
 
-	reg := registry.New(registry.Config{AgentTTL: 2 * time.Minute})
+	reg := registry.New(registry.Config{AgentTTL: localHubAgentTTL})
 	cloudSvc := cloud.NewService(cloud.Config{Registry: reg})
 	hubHandler := httpapi.NewHandler(httpapi.Config{
 		Cloud:          cloudSvc,
@@ -386,6 +393,19 @@ func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableP
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
+	cleanupInterval := localHubCleanupInterval
+	if cleanupInterval <= 0 {
+		cleanupInterval = time.Minute
+	}
+	cleanupTicker := time.NewTicker(cleanupInterval)
+	go func() {
+		defer cleanupTicker.Stop()
+		if cleaner, ok := hubHandler.(interface {
+			StartCleanup(context.Context, <-chan time.Time)
+		}); ok {
+			cleaner.StartCleanup(runCtx, cleanupTicker.C)
+		}
+	}()
 	done := make(chan error, 3)
 	go func() {
 		if err := grpcServer.Serve(grpcListener); err != nil && !errors.Is(err, net.ErrClosed) && !isClosedNetworkError(err) {
@@ -422,6 +442,7 @@ func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableP
 		iceTCPMux:     iceMux,
 		listener:      listener,
 		httpServer:    httpServer,
+		registry:      reg,
 		cancel:        cancel,
 		updatedAt:     time.Now().UTC(),
 	}

@@ -11,6 +11,7 @@ import type {
 
 export interface ManagedHubRtcConnectInput extends RtcConnectionTarget {
   sessionToken: string
+  answerProofSecret?: string | undefined
   path?: ConnectionPath | undefined
 }
 
@@ -44,10 +45,12 @@ class ManagedHubRtcConnector {
       const sdp = offer.description.sdp
       if (!sdp) throw new Error('managed Hub WebRTC offer SDP is required')
       throwIfAborted(options.signal)
+      const answerProofChallenge = input.answerProofSecret ? randomProofChallenge() : undefined
       const result = await this.options.api.createSession({
         machineId: input.machineId,
         terminalId,
         sessionToken: input.sessionToken,
+        ...(answerProofChallenge ? { answerProofChallenge } : {}),
         offer: {
           sessionId: offer.sessionId,
           sdp,
@@ -63,6 +66,13 @@ class ManagedHubRtcConnector {
       if (answer.sessionId !== offer.sessionId) {
         throw new Error(`managed Hub RTC answer session mismatch: ${answer.sessionId} != ${offer.sessionId}`)
       }
+      await verifyAnswerProof({
+        answer,
+        offerSessionId: offer.sessionId,
+        pairSessionToken: input.sessionToken,
+        answerProofSecret: input.answerProofSecret,
+        answerProofChallenge,
+      })
       applySessionCapabilities(session, answer)
       await session.acceptAnswer(answer.answer)
       return session
@@ -93,6 +103,75 @@ class ManagedHubRtcConnector {
     }
     throw lastError instanceof Error ? lastError : new Error('managed Hub answer did not become ready')
   }
+}
+
+async function verifyAnswerProof(input: {
+  answer: ManagedHubSession
+  offerSessionId: string
+  pairSessionToken: string
+  answerProofSecret?: string | undefined
+  answerProofChallenge?: string | undefined
+}): Promise<void> {
+  if (!input.answerProofSecret || !input.answerProofChallenge) {
+    return
+  }
+  if (!input.answer.answerProof) {
+    throw new Error('managed Hub answer proof is required')
+  }
+  const pairSessionId = sessionIDFromToken(input.pairSessionToken)
+  const expected = await answerProofHMAC(input.answerProofSecret, pairSessionId, input.offerSessionId, input.answerProofChallenge)
+  if (input.answer.answerProof !== expected) {
+    throw new Error('managed Hub answer proof mismatch')
+  }
+}
+
+function randomProofChallenge(): string {
+  const bytes = new Uint8Array(32)
+  const cryptoImpl = globalThis.crypto
+  cryptoImpl?.getRandomValues?.(bytes)
+  if (bytes.some((value) => value !== 0)) {
+    return base64url(bytes)
+  }
+  return `challenge_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
+}
+
+async function answerProofHMAC(secret: string, pairSessionId: string, offerSessionId: string, challenge: string): Promise<string> {
+  const data = new TextEncoder().encode(`termx-answer-proof-v1:${pairSessionId}:${offerSessionId}:${challenge}`)
+  const cryptoImpl = globalThis.crypto
+  if (!cryptoImpl?.subtle) {
+    throw new Error('WebCrypto is required to verify managed Hub answer proof')
+  }
+  const key = await cryptoImpl.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const signature = await cryptoImpl.subtle.sign('HMAC', key, data)
+  return base64url(new Uint8Array(signature))
+}
+
+function sessionIDFromToken(token: string): string {
+  const [payload] = token.split('.', 1)
+  if (!payload) {
+    throw new Error('session token payload is required for answer proof verification')
+  }
+  const decoded = JSON.parse(decodeBase64url(payload)) as { sid?: unknown }
+  if (typeof decoded.sid !== 'string' || decoded.sid.trim() === '') {
+    throw new Error('session token sid is required for answer proof verification')
+  }
+  return decoded.sid.trim()
+}
+
+function decodeBase64url(value: string): string {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=')
+  const binary = atob(padded)
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
+}
+
+function base64url(bytes: Uint8Array): string {
+  let binary = ''
+  for (const value of bytes) {
+    binary += String.fromCharCode(value)
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
 
 function applySessionCapabilities(session: RtcSession, answer: ManagedHubSession): void {

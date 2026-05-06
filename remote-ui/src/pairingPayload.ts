@@ -31,6 +31,7 @@ export interface PairingPayloadEndpoints {
 export interface PairingPayloadPairing {
   sessionId: string
   secret: string
+  answerProofSecret?: string | undefined
   expiresAt?: string | undefined
 }
 
@@ -97,6 +98,7 @@ function normalizeV2Payload(data: Record<string, unknown>, schemaVersion: 2 | 3)
     pairing: {
       sessionId: stringField(pairing, 'session_id'),
       secret: stringField(pairing, 'secret'),
+      ...(optionalString(pairing.answer_proof_secret) ? { answerProofSecret: optionalString(pairing.answer_proof_secret) } : {}),
       ...(optionalString(pairing.expires_at) ? { expiresAt: optionalString(pairing.expires_at) } : {}),
     },
     bootstrap: {},
@@ -128,6 +130,7 @@ function normalizeV1Payload(data: Record<string, unknown>): PairingPayload {
     pairing: {
       sessionId: stringField(data, 'pair_session_id'),
       secret: stringField(data, 'pair_secret'),
+      ...(optionalString(data.answer_proof_secret) ? { answerProofSecret: optionalString(data.answer_proof_secret) } : {}),
       ...(optionalString(data.expires_at) ? { expiresAt: optionalString(data.expires_at) } : {}),
     },
     bootstrap: {},

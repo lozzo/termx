@@ -260,22 +260,24 @@ func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error
 	machineID := strings.TrimSpace(in.MachineID)
 	terminalID := strings.TrimSpace(in.TerminalID)
 	if err := r.PreflightOffer(ctx, OfferInput{
-		MachineID:     machineID,
-		TerminalID:    terminalID,
-		SDP:           in.SDP,
-		SessionID:     strings.TrimSpace(in.SessionID),
-		ICECandidates: cloneStrings(in.ICECandidates),
-		SessionToken:  in.SessionToken,
+		MachineID:            machineID,
+		TerminalID:           terminalID,
+		SDP:                  in.SDP,
+		SessionID:            strings.TrimSpace(in.SessionID),
+		ICECandidates:        cloneStrings(in.ICECandidates),
+		SessionToken:         in.SessionToken,
+		AnswerProofChallenge: in.AnswerProofChallenge,
 	}); err != nil {
 		return Offer{}, err
 	}
 	return r.submitVerifiedOffer(ctx, OfferInput{
-		MachineID:     machineID,
-		TerminalID:    terminalID,
-		SDP:           in.SDP,
-		SessionID:     strings.TrimSpace(in.SessionID),
-		ICECandidates: cloneStrings(in.ICECandidates),
-		SessionToken:  in.SessionToken,
+		MachineID:            machineID,
+		TerminalID:           terminalID,
+		SDP:                  in.SDP,
+		SessionID:            strings.TrimSpace(in.SessionID),
+		ICECandidates:        cloneStrings(in.ICECandidates),
+		SessionToken:         in.SessionToken,
+		AnswerProofChallenge: in.AnswerProofChallenge,
 	})
 }
 
@@ -303,15 +305,16 @@ func (r *Registry) PreflightOffer(ctx context.Context, in OfferInput) error {
 func (r *Registry) submitVerifiedOffer(ctx context.Context, in OfferInput) (Offer, error) {
 	_ = ctx
 	offer := Offer{
-		ID:            randomID("offer"),
-		SessionID:     strings.TrimSpace(in.SessionID),
-		MachineID:     strings.TrimSpace(in.MachineID),
-		TerminalID:    strings.TrimSpace(in.TerminalID),
-		SDP:           in.SDP,
-		ICECandidates: cloneStrings(in.ICECandidates),
-		SessionToken:  strings.TrimSpace(in.SessionToken),
-		Path:          PathCloud,
-		CreatedAt:     r.clock.Now().UTC(),
+		ID:                   randomID("offer"),
+		SessionID:            strings.TrimSpace(in.SessionID),
+		MachineID:            strings.TrimSpace(in.MachineID),
+		TerminalID:           strings.TrimSpace(in.TerminalID),
+		SDP:                  in.SDP,
+		ICECandidates:        cloneStrings(in.ICECandidates),
+		SessionToken:         strings.TrimSpace(in.SessionToken),
+		AnswerProofChallenge: strings.TrimSpace(in.AnswerProofChallenge),
+		Path:                 PathCloud,
+		CreatedAt:            r.clock.Now().UTC(),
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -432,13 +435,14 @@ func (r *Registry) SubmitAnswer(ctx context.Context, in AnswerInput) (Answer, er
 		return Answer{}, ErrAnswerAlreadyExists
 	}
 	answer := Answer{
-		ID:        randomID("answer"),
-		OfferID:   offer.ID,
-		AgentID:   agent.ID,
-		MachineID: agent.MachineID,
-		SDP:       sdp,
-		Error:     answerError,
-		CreatedAt: r.clock.Now().UTC(),
+		ID:          randomID("answer"),
+		OfferID:     offer.ID,
+		AgentID:     agent.ID,
+		MachineID:   agent.MachineID,
+		SDP:         sdp,
+		Error:       answerError,
+		AnswerProof: strings.TrimSpace(in.AnswerProof),
+		CreatedAt:   r.clock.Now().UTC(),
 	}
 	r.answers[answer.OfferID] = answer
 	return answer, nil
@@ -590,6 +594,14 @@ func (r *Registry) GetPairingResult(ctx context.Context, claimID string) (Pairin
 		}
 		return PairingResult{}, ErrPairingClaimNotFound
 	}
+	claim, claimOK := r.pairingClaims[claimID]
+	if !claimOK || r.signalingExpired(claim.CreatedAt) || r.signalingExpired(result.CreatedAt) {
+		delete(r.pairingClaims, claimID)
+		delete(r.pairingResults, claimID)
+		return PairingResult{}, ErrPairingClaimNotFound
+	}
+	delete(r.pairingClaims, claimID)
+	delete(r.pairingResults, claimID)
 	return clonePairingResult(result), nil
 }
 
@@ -606,6 +618,8 @@ func (r *Registry) GetAnswer(ctx context.Context, offerID string) (Answer, error
 		delete(r.answers, answer.OfferID)
 		return Answer{}, ErrOfferNotFound
 	}
+	delete(r.answers, answer.OfferID)
+	delete(r.offers, answer.OfferID)
 	return answer, nil
 }
 

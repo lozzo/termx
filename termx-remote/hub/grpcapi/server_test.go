@@ -2,7 +2,9 @@ package grpcapi
 
 import (
 	"context"
+	"errors"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -158,13 +160,14 @@ func TestConnectRelaysMessagesThroughRegistryAdapter(t *testing.T) {
 			SessionId:     "offer-session-1",
 			Sdp:           "v=0\r\n",
 			IceCandidates: []string{"candidate:2"},
+			AnswerProof:   "proof-1",
 		},
 	}}); err != nil {
 		t.Fatalf("send answer: %v", err)
 	}
 	if got := <-reg.answers; got.sessionID != "agent-session-1" ||
 		got.answerSessionID != "offer-session-1" || got.sdp != "v=0\r\n" ||
-		len(got.candidates) != 1 {
+		len(got.candidates) != 1 || got.answerProof != "proof-1" {
 		t.Fatalf("answer call = %+v", got)
 	}
 
@@ -183,6 +186,125 @@ func TestConnectRelaysMessagesThroughRegistryAdapter(t *testing.T) {
 	if got := <-reg.pairingResults; got.ClaimID != "claim-1" ||
 		got.SessionToken != "session-token-from-agent" || got.MachineName != "devbox" || got.Error != "pairing rejected" {
 		t.Fatalf("pairing result call = %+v", got)
+	}
+}
+
+func TestConnectRegisterForcedOfflineSendsKickAndClosesStream(t *testing.T) {
+	reg := newFakeRegistry()
+	reg.registerErr = ErrAgentForcedOffline
+	client, cleanup := startTestServer(t, reg)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer relay-token")
+
+	stream, err := client.Connect(ctx)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	if err := stream.Send(registerMessage()); err != nil {
+		t.Fatalf("send register: %v", err)
+	}
+
+	kickMsg, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv kick: %v", err)
+	}
+	if kick := kickMsg.GetKick(); kick == nil || kick.GetReason() != "forced offline" {
+		t.Fatalf("kick = %+v", kickMsg)
+	}
+	_, err = stream.Recv()
+	if status.Code(err) != codes.PermissionDenied || !strings.Contains(err.Error(), "register: forced offline") {
+		t.Fatalf("stream error = %v, want PermissionDenied forced offline", err)
+	}
+}
+
+func TestConnectHeartbeatErrorSendsKickAndClosesStream(t *testing.T) {
+	reg := newFakeRegistry()
+	reg.heartbeatErr = ErrAgentForcedOffline
+	client, cleanup := startTestServer(t, reg)
+	defer cleanup()
+
+	stream := openRegisteredStream(t, client)
+	if err := stream.Send(&pb.AgentToHub{Payload: &pb.AgentToHub_Heartbeat{
+		Heartbeat: &pb.HeartbeatRequest{AgentSessionId: "agent-session-1"},
+	}}); err != nil {
+		t.Fatalf("send heartbeat: %v", err)
+	}
+
+	kickMsg, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv kick: %v", err)
+	}
+	if kick := kickMsg.GetKick(); kick == nil || kick.GetReason() != "forced offline" {
+		t.Fatalf("kick = %+v", kickMsg)
+	}
+	_, err = stream.Recv()
+	if status.Code(err) != codes.PermissionDenied || !strings.Contains(err.Error(), "heartbeat: forced offline") {
+		t.Fatalf("stream error = %v, want PermissionDenied forced offline", err)
+	}
+}
+
+func TestConnectAnswerErrorIsNotSwallowed(t *testing.T) {
+	reg := newFakeRegistry()
+	reg.answerErr = errors.New("answer rejected")
+	client, cleanup := startTestServer(t, reg)
+	defer cleanup()
+
+	stream := openRegisteredStream(t, client)
+	if err := stream.Send(&pb.AgentToHub{Payload: &pb.AgentToHub_SignalingAnswer{
+		SignalingAnswer: &pb.SignalingAnswer{
+			SessionId: "offer-session-1",
+			Sdp:       "v=0\r\n",
+		},
+	}}); err != nil {
+		t.Fatalf("send answer: %v", err)
+	}
+
+	_, err := stream.Recv()
+	if status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "submit answer: answer rejected") {
+		t.Fatalf("stream error = %v, want Internal answer error", err)
+	}
+}
+
+func TestConnectPushOfferSessionInvalidSendsKickAndClosesStream(t *testing.T) {
+	reg := newFakeRegistry()
+	reg.offerErr = ErrAgentSessionInvalid
+	client, cleanup := startTestServer(t, reg)
+	defer cleanup()
+
+	stream := openRegisteredStream(t, client)
+	kickMsg, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv kick: %v", err)
+	}
+	if kick := kickMsg.GetKick(); kick == nil || kick.GetReason() != "agent session invalid" {
+		t.Fatalf("kick = %+v", kickMsg)
+	}
+	_, err = stream.Recv()
+	if status.Code(err) != codes.Unauthenticated || !strings.Contains(err.Error(), "agent stream: agent session invalid") {
+		t.Fatalf("stream error = %v, want Unauthenticated session invalid", err)
+	}
+}
+
+func TestConnectPushPairingForcedOfflineSendsKickAndClosesStream(t *testing.T) {
+	reg := newFakeRegistry()
+	reg.pairingErr = ErrAgentForcedOffline
+	client, cleanup := startTestServer(t, reg)
+	defer cleanup()
+
+	stream := openRegisteredStream(t, client)
+	kickMsg, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv kick: %v", err)
+	}
+	if kick := kickMsg.GetKick(); kick == nil || kick.GetReason() != "forced offline" {
+		t.Fatalf("kick = %+v", kickMsg)
+	}
+	_, err = stream.Recv()
+	if status.Code(err) != codes.PermissionDenied || !strings.Contains(err.Error(), "agent stream: forced offline") {
+		t.Fatalf("stream error = %v, want PermissionDenied forced offline", err)
 	}
 }
 
@@ -218,6 +340,30 @@ func startTestServer(t *testing.T, registry RegistryAdapter) (pb.AgentHubClient,
 	return pb.NewAgentHubClient(conn), cleanup
 }
 
+func openRegisteredStream(t *testing.T, client pb.AgentHubClient) pb.AgentHub_ConnectClient {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer relay-token")
+
+	stream, err := client.Connect(ctx)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	if err := stream.Send(registerMessage()); err != nil {
+		t.Fatalf("send register: %v", err)
+	}
+	ackMsg, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv register ack: %v", err)
+	}
+	if ack := ackMsg.GetRegisterAck(); ack.GetAgentSessionId() != "agent-session-1" {
+		t.Fatalf("register ack = %+v", ack)
+	}
+	return stream
+}
+
 func registerMessage() *pb.AgentToHub {
 	return &pb.AgentToHub{Payload: &pb.AgentToHub_Register{
 		Register: &pb.RegisterRequest{
@@ -240,6 +386,13 @@ func registerMessage() *pb.AgentToHub {
 type fakeRegistry struct {
 	registerOut RegisterAgentOutput
 
+	registerErr    error
+	heartbeatErr   error
+	offerErr       error
+	answerErr      error
+	answerErrorErr error
+	pairingErr     error
+
 	registered     chan RegisterAgentInput
 	heartbeats     chan heartbeatCall
 	answers        chan answerCall
@@ -259,6 +412,7 @@ type answerCall struct {
 	answerSessionID string
 	sdp             string
 	candidates      []string
+	answerProof     string
 }
 
 type answerErrorCall struct {
@@ -285,16 +439,19 @@ func newFakeRegistry() *fakeRegistry {
 
 func (f *fakeRegistry) RegisterAgent(in RegisterAgentInput) (RegisterAgentOutput, error) {
 	f.registered <- in
-	return f.registerOut, nil
+	return f.registerOut, f.registerErr
 }
 
 func (f *fakeRegistry) HeartbeatAgent(sessionID string, terminals []TerminalInput) error {
 	f.heartbeats <- heartbeatCall{sessionID: sessionID, terminals: terminals}
-	return nil
+	return f.heartbeatErr
 }
 
 func (f *fakeRegistry) GetPendingOffer(ctx context.Context, sessionID string) (*PendingOffer, error) {
 	_ = sessionID
+	if f.offerErr != nil {
+		return nil, f.offerErr
+	}
 	select {
 	case offer := <-f.offers:
 		return offer, nil
@@ -303,14 +460,15 @@ func (f *fakeRegistry) GetPendingOffer(ctx context.Context, sessionID string) (*
 	}
 }
 
-func (f *fakeRegistry) SubmitAnswer(sessionID, answerSessionID, sdp string, candidates []string) error {
+func (f *fakeRegistry) SubmitAnswer(sessionID, answerSessionID, sdp string, candidates []string, answerProof string) error {
 	f.answers <- answerCall{
 		sessionID:       sessionID,
 		answerSessionID: answerSessionID,
 		sdp:             sdp,
 		candidates:      candidates,
+		answerProof:     answerProof,
 	}
-	return nil
+	return f.answerErr
 }
 
 func (f *fakeRegistry) SubmitAnswerError(sessionID, answerSessionID, reason string) error {
@@ -319,11 +477,14 @@ func (f *fakeRegistry) SubmitAnswerError(sessionID, answerSessionID, reason stri
 		answerSessionID: answerSessionID,
 		reason:          reason,
 	}
-	return nil
+	return f.answerErrorErr
 }
 
 func (f *fakeRegistry) GetPendingPairingClaim(ctx context.Context, sessionID string) (*PendingPairingClaim, error) {
 	_ = sessionID
+	if f.pairingErr != nil {
+		return nil, f.pairingErr
+	}
 	select {
 	case claim := <-f.claims:
 		return claim, nil

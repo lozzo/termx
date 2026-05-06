@@ -18,12 +18,17 @@ import (
 
 const pushPollInterval = 200 * time.Millisecond
 
+var (
+	ErrAgentForcedOffline  = errors.New("agent forced offline")
+	ErrAgentSessionInvalid = errors.New("agent session invalid")
+)
+
 // RegistryAdapter decouples grpcapi from registry/cloud packages.
 type RegistryAdapter interface {
 	RegisterAgent(RegisterAgentInput) (RegisterAgentOutput, error)
 	HeartbeatAgent(sessionID string, terminals []TerminalInput) error
 	GetPendingOffer(ctx context.Context, sessionID string) (*PendingOffer, error)
-	SubmitAnswer(sessionID, answerSessionID, sdp string, candidates []string) error
+	SubmitAnswer(sessionID, answerSessionID, sdp string, candidates []string, answerProof string) error
 	SubmitAnswerError(sessionID, answerSessionID, reason string) error
 	GetPendingPairingClaim(ctx context.Context, sessionID string) (*PendingPairingClaim, error)
 	SubmitPairingResult(PairingResultInput) error
@@ -61,12 +66,13 @@ type ICEServer struct {
 }
 
 type PendingOffer struct {
-	SessionID    string
-	MachineID    string
-	TerminalID   string
-	SDP          string
-	SessionToken string
-	Candidates   []string
+	SessionID            string
+	MachineID            string
+	TerminalID           string
+	SDP                  string
+	SessionToken         string
+	AnswerProofChallenge string
+	Candidates           []string
 }
 
 type PendingPairingClaim struct {
@@ -114,6 +120,7 @@ func (s *Server) Connect(stream pb.AgentHub_ConnectServer) error {
 		return status.Error(codes.InvalidArgument, "first message must be register")
 	}
 
+	sender := lockedSender{stream: stream}
 	out, err := s.registry.RegisterAgent(RegisterAgentInput{
 		AgentID:     reg.GetAgentId(),
 		DeviceID:    reg.GetDeviceId(),
@@ -125,10 +132,9 @@ func (s *Server) Connect(stream pb.AgentHub_ConnectServer) error {
 		Terminals:   terminalInputs(reg.GetTerminals()),
 	})
 	if err != nil {
-		return status.Errorf(codes.Internal, "register: %v", err)
+		return closeAgentStream(&sender, "register", err)
 	}
 
-	sender := lockedSender{stream: stream}
 	if err := sender.Send(&pb.HubToAgent{Payload: &pb.HubToAgent_RegisterAck{
 		RegisterAck: &pb.RegisterResponse{
 			AgentSessionId:           out.SessionID,
@@ -143,59 +149,108 @@ func (s *Server) Connect(stream pb.AgentHub_ConnectServer) error {
 		return err
 	}
 
-	ctx := stream.Context()
-	go s.pushOffers(ctx, &sender, out.SessionID)
-	go s.pushPairing(ctx, &sender, out.SessionID)
+	ctx, cancel := context.WithCancel(stream.Context())
+	defer cancel()
+	stopStream := newAgentStreamStopper(cancel, &sender)
+	go s.pushOffersWithStop(ctx, &sender, out.SessionID, stopStream.stop)
+	go s.pushPairingWithStop(ctx, &sender, out.SessionID, stopStream.stop)
+
+	recvCh := make(chan agentStreamRecv, 1)
+	go recvAgentMessages(ctx, stream, recvCh)
 
 	for {
-		msg, err := stream.Recv()
-		if errors.Is(err, io.EOF) || ctx.Err() != nil {
-			return nil
-		}
-		if err != nil {
+		select {
+		case err := <-stopStream.errCh:
 			return err
-		}
-		switch p := msg.GetPayload().(type) {
-		case *pb.AgentToHub_Heartbeat:
-			_ = s.registry.HeartbeatAgent(out.SessionID, terminalInputs(p.Heartbeat.GetTerminals()))
-		case *pb.AgentToHub_SignalingAnswer:
-			answer := p.SignalingAnswer
-			if strings.TrimSpace(answer.GetError()) != "" {
-				_ = s.registry.SubmitAnswerError(out.SessionID, answer.GetSessionId(), answer.GetError())
-			} else {
-				_ = s.registry.SubmitAnswer(out.SessionID, answer.GetSessionId(), answer.GetSdp(), answer.GetIceCandidates())
+		case recv := <-recvCh:
+			if ctx.Err() != nil {
+				if err := stopStream.err(); err != nil {
+					return err
+				}
+				return nil
 			}
-		case *pb.AgentToHub_PairingResult:
-			result := p.PairingResult
-			_ = s.registry.SubmitPairingResult(PairingResultInput{
-				ClaimID:      result.GetClaimId(),
-				SessionToken: result.GetSessionToken(),
-				ExpiresAt:    result.GetExpiresAt(),
-				MachineID:    result.GetMachineId(),
-				MachineName:  result.GetMachineName(),
-				Error:        result.GetError(),
-			})
-		default:
-			return status.Error(codes.InvalidArgument, "unsupported message")
+			if errors.Is(recv.err, io.EOF) {
+				return nil
+			}
+			if recv.err != nil {
+				return recv.err
+			}
+			if err := s.handleAgentMessage(&sender, out.SessionID, recv.msg); err != nil {
+				cancel()
+				return err
+			}
+		case <-ctx.Done():
+			if err := stopStream.err(); err != nil {
+				return err
+			}
+			return nil
 		}
 	}
 }
 
+func (s *Server) handleAgentMessage(sender interface{ Send(*pb.HubToAgent) error }, sessionID string, msg *pb.AgentToHub) error {
+	switch p := msg.GetPayload().(type) {
+	case *pb.AgentToHub_Heartbeat:
+		if err := s.registry.HeartbeatAgent(sessionID, terminalInputs(p.Heartbeat.GetTerminals())); err != nil {
+			return closeAgentStream(sender, "heartbeat", err)
+		}
+	case *pb.AgentToHub_SignalingAnswer:
+		answer := p.SignalingAnswer
+		var err error
+		if strings.TrimSpace(answer.GetError()) != "" {
+			err = s.registry.SubmitAnswerError(sessionID, answer.GetSessionId(), answer.GetError())
+		} else {
+			err = s.registry.SubmitAnswer(sessionID, answer.GetSessionId(), answer.GetSdp(), answer.GetIceCandidates(), answer.GetAnswerProof())
+		}
+		if err != nil {
+			return closeAgentStream(sender, "submit answer", err)
+		}
+	case *pb.AgentToHub_PairingResult:
+		result := p.PairingResult
+		if err := s.registry.SubmitPairingResult(PairingResultInput{
+			ClaimID:      result.GetClaimId(),
+			SessionToken: result.GetSessionToken(),
+			ExpiresAt:    result.GetExpiresAt(),
+			MachineID:    result.GetMachineId(),
+			MachineName:  result.GetMachineName(),
+			Error:        result.GetError(),
+		}); err != nil {
+			return closeAgentStream(sender, "submit pairing result", err)
+		}
+	default:
+		return status.Error(codes.InvalidArgument, "unsupported message")
+	}
+	return nil
+}
+
 func (s *Server) pushOffers(ctx context.Context, sender interface{ Send(*pb.HubToAgent) error }, sessionID string) {
+	s.pushOffersWithStop(ctx, sender, sessionID, func(error) {})
+}
+
+func (s *Server) pushOffersWithStop(ctx context.Context, sender interface{ Send(*pb.HubToAgent) error }, sessionID string, stop func(error)) {
 	for ctx.Err() == nil {
 		offer, err := s.registry.GetPendingOffer(ctx, sessionID)
-		if err != nil || offer == nil {
+		if err != nil {
+			if agentStreamTerminalError(err) {
+				stop(err)
+				return
+			}
+			waitOrDone(ctx, pushPollInterval)
+			continue
+		}
+		if offer == nil {
 			waitOrDone(ctx, pushPollInterval)
 			continue
 		}
 		if err := sender.Send(&pb.HubToAgent{Payload: &pb.HubToAgent_SignalingOffer{
 			SignalingOffer: &pb.SignalingOffer{
-				SessionId:     offer.SessionID,
-				MachineId:     offer.MachineID,
-				TerminalId:    offer.TerminalID,
-				Sdp:           offer.SDP,
-				IceCandidates: offer.Candidates,
-				SessionToken:  offer.SessionToken,
+				SessionId:            offer.SessionID,
+				MachineId:            offer.MachineID,
+				TerminalId:           offer.TerminalID,
+				Sdp:                  offer.SDP,
+				IceCandidates:        offer.Candidates,
+				SessionToken:         offer.SessionToken,
+				AnswerProofChallenge: offer.AnswerProofChallenge,
 			},
 		}}); err != nil {
 			return
@@ -204,9 +259,21 @@ func (s *Server) pushOffers(ctx context.Context, sender interface{ Send(*pb.HubT
 }
 
 func (s *Server) pushPairing(ctx context.Context, sender interface{ Send(*pb.HubToAgent) error }, sessionID string) {
+	s.pushPairingWithStop(ctx, sender, sessionID, func(error) {})
+}
+
+func (s *Server) pushPairingWithStop(ctx context.Context, sender interface{ Send(*pb.HubToAgent) error }, sessionID string, stop func(error)) {
 	for ctx.Err() == nil {
 		claim, err := s.registry.GetPendingPairingClaim(ctx, sessionID)
-		if err != nil || claim == nil {
+		if err != nil {
+			if agentStreamTerminalError(err) {
+				stop(err)
+				return
+			}
+			waitOrDone(ctx, pushPollInterval)
+			continue
+		}
+		if claim == nil {
 			waitOrDone(ctx, pushPollInterval)
 			continue
 		}
@@ -222,6 +289,59 @@ func (s *Server) pushPairing(ctx context.Context, sender interface{ Send(*pb.Hub
 		}}); err != nil {
 			return
 		}
+	}
+}
+
+type agentStreamRecv struct {
+	msg *pb.AgentToHub
+	err error
+}
+
+func recvAgentMessages(ctx context.Context, stream pb.AgentHub_ConnectServer, out chan<- agentStreamRecv) {
+	for {
+		msg, err := stream.Recv()
+		select {
+		case out <- agentStreamRecv{msg: msg, err: err}:
+		case <-ctx.Done():
+			return
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+type agentStreamStopper struct {
+	cancel context.CancelFunc
+	sender interface{ Send(*pb.HubToAgent) error }
+	errCh  chan error
+	once   sync.Once
+}
+
+func newAgentStreamStopper(cancel context.CancelFunc, sender interface{ Send(*pb.HubToAgent) error }) *agentStreamStopper {
+	return &agentStreamStopper{
+		cancel: cancel,
+		sender: sender,
+		errCh:  make(chan error, 1),
+	}
+}
+
+func (s *agentStreamStopper) stop(err error) {
+	if err == nil {
+		return
+	}
+	s.once.Do(func() {
+		s.errCh <- closeAgentStream(s.sender, "agent stream", err)
+		s.cancel()
+	})
+}
+
+func (s *agentStreamStopper) err() error {
+	select {
+	case err := <-s.errCh:
+		return err
+	default:
+		return nil
 	}
 }
 
@@ -243,6 +363,40 @@ func waitOrDone(ctx context.Context, d time.Duration) {
 	case <-ctx.Done():
 	case <-timer.C:
 	}
+}
+
+func closeAgentStream(sender interface{ Send(*pb.HubToAgent) error }, operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if agentStreamTerminalError(err) {
+		reason := agentKickReason(err)
+		if sender != nil {
+			_ = sender.Send(&pb.HubToAgent{Payload: &pb.HubToAgent_Kick{
+				Kick: &pb.Kick{Reason: reason},
+			}})
+		}
+		return status.Error(agentTerminalCode(err), operation+": "+reason)
+	}
+	return status.Errorf(codes.Internal, "%s: %v", operation, err)
+}
+
+func agentStreamTerminalError(err error) bool {
+	return errors.Is(err, ErrAgentForcedOffline) || errors.Is(err, ErrAgentSessionInvalid)
+}
+
+func agentKickReason(err error) string {
+	if errors.Is(err, ErrAgentForcedOffline) {
+		return "forced offline"
+	}
+	return "agent session invalid"
+}
+
+func agentTerminalCode(err error) codes.Code {
+	if errors.Is(err, ErrAgentForcedOffline) {
+		return codes.PermissionDenied
+	}
+	return codes.Unauthenticated
 }
 
 func requireBearer(ctx context.Context) error {

@@ -29,6 +29,9 @@ func TestPairStartUsesConfiguredTokenTTL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PairStart returned error: %v", err)
 	}
+	if session.AnswerProofSecret == "" {
+		t.Fatal("PairStart did not return answer proof secret")
+	}
 	resp, err := service.pairClaim(t.Context(), pairClaimRequestForTest(session))
 	if err != nil {
 		t.Fatalf("pairClaim returned error: %v", err)

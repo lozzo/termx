@@ -2,7 +2,10 @@ package runtime
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -1328,12 +1331,13 @@ func (m *Manager) handleGRPCOffer(ctx context.Context, hubURL string, pbOffer *p
 		return
 	}
 	offer := hubv1.SignalingOffer{
-		SessionID:    pbOffer.GetSessionId(),
-		MachineID:    pbOffer.GetMachineId(),
-		TerminalID:   pbOffer.GetTerminalId(),
-		SDP:          pbOffer.GetSdp(),
-		Candidates:   append([]string(nil), pbOffer.GetIceCandidates()...),
-		SessionToken: pbOffer.GetSessionToken(),
+		SessionID:            pbOffer.GetSessionId(),
+		MachineID:            pbOffer.GetMachineId(),
+		TerminalID:           pbOffer.GetTerminalId(),
+		SDP:                  pbOffer.GetSdp(),
+		Candidates:           append([]string(nil), pbOffer.GetIceCandidates()...),
+		SessionToken:         pbOffer.GetSessionToken(),
+		AnswerProofChallenge: pbOffer.GetAnswerProofChallenge(),
 	}
 	answer, err := m.answerOffer(ctx, hubURL, offer)
 	if err != nil {
@@ -1345,6 +1349,7 @@ func (m *Manager) handleGRPCOffer(ctx context.Context, hubURL string, pbOffer *p
 			Sdp:           answer.SDP,
 			IceCandidates: append([]string(nil), answer.ICECandidates...),
 			Error:         answer.Error,
+			AnswerProof:   answer.AnswerProof,
 		},
 	}})
 }
@@ -1416,6 +1421,8 @@ func pairingpkgClaimRequest(claim hubv1.PairingClaim) pairing.ClaimRequest {
 	return pairing.ClaimRequest{
 		PairSessionID:         claim.PairSessionID,
 		PairSecret:            claim.PairSecret,
+		AppDeviceID:           claim.AppDeviceID,
+		AppName:               claim.AppName,
 		RequestedCapabilities: append([]string(nil), claim.RequestedCapabilities...),
 	}
 }
@@ -1462,6 +1469,7 @@ func (m *Manager) answerCloudOfferWithOptions(ctx context.Context, offer hubv1.S
 			Error:     err.Error(),
 		}
 	}
+	answer.AnswerProof = m.answerProof(offer, claims)
 	return answer
 }
 
@@ -1485,6 +1493,29 @@ func (m *Manager) verifyOfferSession(ctx context.Context, offer hubv1.SignalingO
 		return token.Claims{}, fmt.Errorf("session token terminal or terminal_management capability is required for machine-scoped remote runtime")
 	}
 	return claims, nil
+}
+
+func (m *Manager) answerProof(offer hubv1.SignalingOffer, claims token.Claims) string {
+	challenge := strings.TrimSpace(offer.AnswerProofChallenge)
+	if challenge == "" {
+		return ""
+	}
+	secret, err := identity.LoadOrCreateMachineSecret(m.cfg.DataDir)
+	if err != nil {
+		return ""
+	}
+	proofKey, err := token.OpenAnswerProofKey(secret, claims)
+	if err != nil {
+		return ""
+	}
+	mac := hmac.New(sha256.New, []byte(proofKey))
+	mac.Write([]byte("termx-answer-proof-v1:"))
+	mac.Write([]byte(strings.TrimSpace(claims.SessionID)))
+	mac.Write([]byte(":"))
+	mac.Write([]byte(strings.TrimSpace(offer.SessionID)))
+	mac.Write([]byte(":"))
+	mac.Write([]byte(challenge))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
 func (m *Manager) verifySessionToken(machineID, sessionToken string) (token.Claims, error) {

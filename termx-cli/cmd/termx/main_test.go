@@ -837,13 +837,14 @@ func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
 		return &remoteprotocol.PairStartResult{
-			Type:          "termx_pair_v1",
-			MachineID:     "mach_test",
-			MachineName:   "MacBook Pro",
-			LocalPairURL:  params.LocalPairURL,
-			PairSessionID: "pair_test",
-			PairSecret:    "secret",
-			ExpiresAt:     time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+			Type:              "termx_pair_v1",
+			MachineID:         "mach_test",
+			MachineName:       "MacBook Pro",
+			LocalPairURL:      params.LocalPairURL,
+			PairSessionID:     "pair_test",
+			PairSecret:        "secret",
+			AnswerProofSecret: "proof-secret",
+			ExpiresAt:         time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
 
@@ -859,7 +860,9 @@ func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
 	if gotParams.LocalPairURL != "http://127.0.0.1:19999/api/local/pair" || gotParams.TTLSeconds != 120 {
 		t.Fatalf("unexpected pair params: %#v", gotParams)
 	}
-	if !strings.Contains(out.String(), "pair_session_id:\tpair_test") || !strings.Contains(out.String(), "pair_secret:\tsecret") {
+	if !strings.Contains(out.String(), "pair_session_id:\tpair_test") ||
+		!strings.Contains(out.String(), "pair_secret:\tsecret") ||
+		!strings.Contains(out.String(), "answer_proof_secret:\tproof-secret") {
 		t.Fatalf("unexpected remote pair output:\n%s", out.String())
 	}
 }
@@ -894,13 +897,14 @@ func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
 		return &remoteprotocol.PairStartResult{
-			Type:          "termx_pair_v1",
-			MachineID:     "mach_test",
-			MachineName:   "MacBook Pro",
-			LocalPairURL:  params.LocalPairURL,
-			PairSessionID: "pair_test",
-			PairSecret:    "secret",
-			ExpiresAt:     time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+			Type:              "termx_pair_v1",
+			MachineID:         "mach_test",
+			MachineName:       "MacBook Pro",
+			LocalPairURL:      params.LocalPairURL,
+			PairSessionID:     "pair_test",
+			PairSecret:        "secret",
+			AnswerProofSecret: "proof-secret",
+			ExpiresAt:         time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
 
@@ -938,7 +942,7 @@ func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 		t.Fatalf("unexpected public hub urls: %#v", addresses["public"])
 	}
 	pairing, ok := decoded.Payload["pairing"].(map[string]any)
-	if !ok || pairing["session_id"] != "pair_test" || pairing["secret"] != "secret" {
+	if !ok || pairing["session_id"] != "pair_test" || pairing["secret"] != "secret" || pairing["answer_proof_secret"] != "proof-secret" {
 		t.Fatalf("unexpected pairing: %#v", decoded.Payload["pairing"])
 	}
 }
@@ -969,13 +973,14 @@ func TestRemoteQRCodeDoesNotStartLocalWebWhenLocalPairURLMissing(t *testing.T) {
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
 		return &remoteprotocol.PairStartResult{
-			Type:          "termx_pair_v1",
-			MachineID:     "mach_test",
-			MachineName:   "MacBook Pro",
-			LocalPairURL:  params.LocalPairURL,
-			PairSessionID: "pair_test",
-			PairSecret:    "secret",
-			ExpiresAt:     time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+			Type:              "termx_pair_v1",
+			MachineID:         "mach_test",
+			MachineName:       "MacBook Pro",
+			LocalPairURL:      params.LocalPairURL,
+			PairSessionID:     "pair_test",
+			PairSecret:        "secret",
+			AnswerProofSecret: "proof-secret",
+			ExpiresAt:         time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
 
@@ -1013,10 +1018,11 @@ func TestRemoteQRCodeFallsBackToSingleHubURL(t *testing.T) {
 	}
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		return &remoteprotocol.PairStartResult{
-			MachineID:     "mach_test",
-			PairSessionID: "pair_test",
-			PairSecret:    "secret",
-			ExpiresAt:     time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+			MachineID:         "mach_test",
+			PairSessionID:     "pair_test",
+			PairSecret:        "secret",
+			AnswerProofSecret: "proof-secret",
+			ExpiresAt:         time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
 
@@ -1564,13 +1570,14 @@ func TestPairCmdEmitsJSONPairSession(t *testing.T) {
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
 		return &remoteprotocol.PairStartResult{
-			Type:          "termx_pair_v1",
-			MachineID:     "mach_test",
-			MachineName:   "MacBook Pro",
-			LocalPairURL:  params.LocalPairURL,
-			PairSessionID: "pair_test",
-			PairSecret:    "secret",
-			ExpiresAt:     time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+			Type:              "termx_pair_v1",
+			MachineID:         "mach_test",
+			MachineName:       "MacBook Pro",
+			LocalPairURL:      params.LocalPairURL,
+			PairSessionID:     "pair_test",
+			PairSecret:        "secret",
+			AnswerProofSecret: "proof-secret",
+			ExpiresAt:         time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
 

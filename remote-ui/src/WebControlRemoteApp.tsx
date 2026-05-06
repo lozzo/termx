@@ -3,6 +3,7 @@ import { ArrowLeft, CheckCircle2, Loader2, LogIn, Monitor, QrCode, RefreshCw, Se
 import { createMachineSessionStore, type MachineSessionStore } from './localAppIdentity'
 import { LocalRemoteApp, type LocalRemoteInventoryApi, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createMachineStore, type StoredMachineRecord } from './machineStore'
+import { createConnectionOrchestrator } from './connectionOrchestrator'
 import { createManagedHubRtcConnector } from './managedHubRtcConnector'
 import { createManagedHubApi } from './managedHubApi'
 import { parsePairingPayload, type PairingPayload } from './pairingPayload'
@@ -208,7 +209,7 @@ export function WebControlRemoteApp({
       if (pairResult.machineId !== cloudMachine.id) {
         throw new Error(`pairing response machine mismatch: ${pairResult.machineId} != ${cloudMachine.id}`)
       }
-      createMachineSessionStore(storage).saveSessionToken(pairResult.machineId, pairResult.sessionToken, pairResult.expiresAt)
+      createMachineSessionStore(storage).saveSessionToken(pairResult.machineId, pairResult.sessionToken, pairResult.expiresAt, payload.pairing.answerProofSecret)
       const store = createMachineStore({ storage })
       const saved = store.saveFromPairingPayload(payload)
       store.saveMachine(mergeCloudMachine(saved, cloudMachine))
@@ -864,7 +865,7 @@ function readPairedMachineIds(storage: RemoteRuntimeStorage | undefined, userId:
 }
 
 function createPairApiFromMachine(machine: WebControlMachine, networkRuntime: RemoteNetworkRuntime): PairApi {
-  const hubUrl = firstHubUrl(machine)
+  const [hubUrl] = nonEmptyHubUrls(machine)
   if (!hubUrl) {
     throw new Error('Hub endpoint is required before pairing this Web Control device')
   }
@@ -880,6 +881,7 @@ function createManagedMachineRuntime(input: {
   createSession: ManagedRtcSessionFactory
 }): MachineRuntime {
   const sessionStore = createMachineSessionStore(input.storage)
+  const [summaryHubUrl] = nonEmptyHubUrls(input.machine)
   const machineSession = createManagedMachineSessionManager({
     machine: input.machine,
     sessionStore,
@@ -896,7 +898,7 @@ function createManagedMachineRuntime(input: {
     },
     localWeb: {
       httpUrl: input.machine.controlUrl ?? '',
-      rtcOfferUrl: firstHubUrl(input.machine) ?? '',
+      rtcOfferUrl: summaryHubUrl ?? '',
     },
   }
   return {
@@ -942,20 +944,27 @@ function createManagedMachineSessionManager(input: {
     if (options?.signal?.aborted) {
       throw options.signal.reason instanceof Error ? options.signal.reason : new Error('connection aborted')
     }
-    const hubUrl = firstHubUrl(input.machine)
-    if (!hubUrl) throw new Error('Hub endpoint is required before opening this machine runtime')
+    const hubUrls = nonEmptyHubUrls(input.machine)
+    if (hubUrls.length === 0) throw new Error('Hub endpoint is required before opening this machine runtime')
     const sessionToken = input.sessionStore.getSessionToken(input.machine.id)
     if (!sessionToken) {
       throw new Error('Pair this machine before opening the runtime channel')
     }
-    const connector = createManagedHubRtcConnector({
-      api: createManagedHubApi({ baseUrl: hubUrl, fetch: input.networkRuntime.fetch }),
-      createSession: input.createSession,
+    const answerProofSecret = input.sessionStore.getAnswerProofSecret(input.machine.id) ?? undefined
+    const orchestrator = createConnectionOrchestrator({
+      managedHubApiFactory: (hubUrl) => createManagedHubApi({ baseUrl: hubUrl, fetch: input.networkRuntime.fetch }),
+      managedHubRtcConnectorFactory: ({ api }) => createManagedHubRtcConnector({
+        api,
+        createSession: input.createSession,
+      }),
     })
-    return connector.connect({
+    const result = await orchestrator.connect({
       machineId: input.machine.id,
       sessionToken,
+      answerProofSecret,
+      hubUrls,
     }, options)
+    return result.session
   }
   return {
     async get(options?: { signal?: AbortSignal }): Promise<RtcSession> {
@@ -1090,6 +1099,7 @@ function normalizeTerminalsForMachine(machineId: string, terminals: Record<strin
 }
 
 function mergeCloudMachine(saved: StoredMachineRecord, machine: WebControlMachine): StoredMachineRecord {
+  const [summaryHubUrl] = nonEmptyHubUrls(machine)
   return {
     machineId: saved.machineId,
     name: machine.name || saved.name,
@@ -1105,7 +1115,7 @@ function mergeCloudMachine(saved: StoredMachineRecord, machine: WebControlMachin
     endpoints: {
       ...saved.endpoints,
       ...(machine.controlUrl ? { webControl: machine.controlUrl } : {}),
-      ...(firstHubUrl(machine) ? { hub: firstHubUrl(machine) } : {}),
+      ...(summaryHubUrl ? { hub: summaryHubUrl } : {}),
     },
     ...(saved.pairing ? { pairing: saved.pairing } : {}),
     ...(saved.appBootstrap ? { appBootstrap: saved.appBootstrap } : {}),
@@ -1115,8 +1125,8 @@ function mergeCloudMachine(saved: StoredMachineRecord, machine: WebControlMachin
   }
 }
 
-function firstHubUrl(machine: WebControlMachine): string | undefined {
-  return machine.hubUrls.find((hubUrl) => hubUrl.trim() !== '')?.trim()
+function nonEmptyHubUrls(machine: WebControlMachine): string[] {
+  return machine.hubUrls.map((hubUrl) => hubUrl.trim()).filter((hubUrl) => hubUrl !== '')
 }
 
 function formatLastSeen(value: string): string {

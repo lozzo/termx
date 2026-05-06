@@ -39,6 +39,32 @@ func TestHubHTTPHandlesBrowserCORSPreflight(t *testing.T) {
 	}
 }
 
+func TestHubHTTPRestrictsConfiguredCORSOrigins(t *testing.T) {
+	t.Parallel()
+
+	router := httpapi.NewHandler(httpapi.Config{
+		AllowedOrigins: []string{"http://allowed.termx.test"},
+	})
+
+	allowedReq := httptest.NewRequest(http.MethodOptions, "/api/v1/pairing/claims", nil)
+	allowedReq.Header.Set("Origin", "http://allowed.termx.test")
+	allowedReq.Header.Set("Access-Control-Request-Method", "POST")
+	allowedRec := httptest.NewRecorder()
+	router.ServeHTTP(allowedRec, allowedReq)
+	if got := allowedRec.Header().Get("Access-Control-Allow-Origin"); got != "http://allowed.termx.test" {
+		t.Fatalf("allowed origin header = %q", got)
+	}
+
+	blockedReq := httptest.NewRequest(http.MethodOptions, "/api/v1/pairing/claims", nil)
+	blockedReq.Header.Set("Origin", "http://blocked.termx.test")
+	blockedReq.Header.Set("Access-Control-Request-Method", "POST")
+	blockedRec := httptest.NewRecorder()
+	router.ServeHTTP(blockedRec, blockedReq)
+	if got := blockedRec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("blocked origin header = %q", got)
+	}
+}
+
 func TestAgentHTTPControlPlaneEndpointsAreRemoved(t *testing.T) {
 	t.Parallel()
 

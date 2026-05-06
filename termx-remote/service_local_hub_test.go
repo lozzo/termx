@@ -260,6 +260,64 @@ func TestLocalDisableStopsHub(t *testing.T) {
 	}
 }
 
+func TestLocalEmbeddedHubStartsRegistryCleanup(t *testing.T) {
+	originalAgentTTL := localHubAgentTTL
+	originalCleanupInterval := localHubCleanupInterval
+	localHubAgentTTL = 30 * time.Millisecond
+	localHubCleanupInterval = 10 * time.Millisecond
+	t.Cleanup(func() {
+		localHubAgentTTL = originalAgentTTL
+		localHubCleanupInterval = originalCleanupInterval
+	})
+
+	service := NewService(remoteprotocol.Config{}, nil)
+	t.Cleanup(func() { _, _ = service.LocalDisable(context.Background()) })
+
+	status, err := service.LocalEnable(context.Background(), remoteprotocol.LocalEnableParams{
+		LocalWebAddr: "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatalf("LocalEnable returned error: %v", err)
+	}
+	client, err := discovery.NewGRPCHubClient(status.HTTPURL, "local")
+	if err != nil {
+		t.Fatalf("new grpc hub client: %v", err)
+	}
+	defer client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	stream, err := client.Connect(ctx)
+	if err != nil {
+		t.Fatalf("connect grpc hub: %v", err)
+	}
+	if err := stream.Send(&pb.AgentToHub{Payload: &pb.AgentToHub_Register{
+		Register: &pb.RegisterRequest{
+			DeviceId:  "machine-cleanup-test",
+			MachineId: "machine-cleanup-test",
+			AgentId:   "agent-cleanup-test",
+		},
+	}}); err != nil {
+		t.Fatalf("send grpc register: %v", err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatalf("recv grpc register ack: %v", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("close grpc stream: %v", err)
+	}
+
+	service.localMu.Lock()
+	runtime := service.local
+	service.localMu.Unlock()
+	if runtime == nil || runtime.registry == nil {
+		t.Fatal("local runtime registry was not retained")
+	}
+	time.Sleep(200 * time.Millisecond)
+	if removed := runtime.registry.CleanupExpired(context.Background()); removed != 0 {
+		t.Fatalf("local hub cleanup was not running; manual cleanup removed %d entries", removed)
+	}
+}
+
 func TestLocalDisableDetachesManagerFromHub(t *testing.T) {
 	service := NewService(remoteprotocol.Config{
 		Enabled:    true,

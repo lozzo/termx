@@ -42,18 +42,19 @@ type Agent struct {
 }
 
 type Offer struct {
-	ID              string
-	SessionID       string
-	MachineID       string
-	TerminalID      string
-	SDP             string
-	ICECandidates   []string
-	SessionToken    string
-	Path            string
-	RelayInUse      bool
-	AssignedAgentID string
-	DeliveredAt     time.Time
-	CreatedAt       time.Time
+	ID                   string
+	SessionID            string
+	MachineID            string
+	TerminalID           string
+	SDP                  string
+	ICECandidates        []string
+	SessionToken         string
+	AnswerProofChallenge string
+	Path                 string
+	RelayInUse           bool
+	AssignedAgentID      string
+	DeliveredAt          time.Time
+	CreatedAt            time.Time
 }
 
 func (o Offer) ContainsRuntimePayload() bool {
@@ -61,13 +62,14 @@ func (o Offer) ContainsRuntimePayload() bool {
 }
 
 type Answer struct {
-	ID        string
-	OfferID   string
-	AgentID   string
-	MachineID string
-	SDP       string
-	Error     string
-	CreatedAt time.Time
+	ID          string
+	OfferID     string
+	AgentID     string
+	MachineID   string
+	SDP         string
+	Error       string
+	AnswerProof string
+	CreatedAt   time.Time
 }
 
 type PairingClaim struct {
@@ -119,20 +121,22 @@ type PollInput struct {
 }
 
 type OfferInput struct {
-	SessionID     string
-	MachineID     string
-	TerminalID    string
-	SDP           string
-	ICECandidates []string
-	SessionToken  string
+	SessionID            string
+	MachineID            string
+	TerminalID           string
+	SDP                  string
+	ICECandidates        []string
+	SessionToken         string
+	AnswerProofChallenge string
 }
 
 type AnswerInput struct {
-	AgentID   string
-	MachineID string
-	OfferID   string
-	SDP       string
-	Error     string
+	AgentID     string
+	MachineID   string
+	OfferID     string
+	SDP         string
+	Error       string
+	AnswerProof string
 }
 
 type PairingClaimInput struct {

@@ -6,10 +6,12 @@ describe('MachineSessionStore', () => {
     const storage = new MemoryStorage()
     const store = createMachineSessionStore(storage)
 
-    store.saveSessionToken('machine-1', 'session-token-1', '2026-05-06T00:00:00Z')
+    store.saveSessionToken('machine-1', 'session-token-1', '2026-05-06T00:00:00Z', 'answer-proof-secret')
 
     expect(store.getSessionToken('machine-1')).toBe('session-token-1')
+    expect(store.getAnswerProofSecret('machine-1')).toBe('answer-proof-secret')
     expect(storage.dump()).toEqual({
+      'termx.session.machine-1.answerProofSecret': 'answer-proof-secret',
       'termx.session.machine-1.token': 'session-token-1',
       'termx.session.machine-1.exp': '2026-05-06T00:00:00Z',
     })
@@ -24,6 +26,7 @@ describe('MachineSessionStore', () => {
     store.clearSessionToken('machine-1')
 
     expect(store.getSessionToken('machine-1')).toBeNull()
+    expect(store.getAnswerProofSecret('machine-1')).toBeNull()
     expect(storage.dump()).toEqual({})
   })
 })

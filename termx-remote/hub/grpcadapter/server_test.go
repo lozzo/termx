@@ -1,6 +1,7 @@
 package grpcadapter
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -82,6 +83,57 @@ func TestGRPCAdapterSessionExpires(t *testing.T) {
 	now = now.Add(2 * time.Second)
 	if _, ok := adapter.session(out.SessionID); ok {
 		t.Fatal("expired session remained available")
+	}
+}
+
+func TestGRPCAdapterHeartbeatRenewsSessionExpiry(t *testing.T) {
+	now := time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC)
+	reg := registry.New(registry.Config{AgentTTL: time.Minute})
+	adapter := &hubRegistryAdapter{
+		registry:   reg,
+		sessionTTL: time.Second,
+		now: func() time.Time {
+			return now
+		},
+	}
+
+	out, err := adapter.RegisterAgent(grpcRegisterInput("agent-1", "machine-1"))
+	if err != nil {
+		t.Fatalf("RegisterAgent returned error: %v", err)
+	}
+
+	now = now.Add(500 * time.Millisecond)
+	if err := adapter.HeartbeatAgent(out.SessionID, []grpcapi.TerminalInput{{TerminalID: "terminal-1"}}); err != nil {
+		t.Fatalf("HeartbeatAgent returned error: %v", err)
+	}
+
+	now = now.Add(750 * time.Millisecond)
+	if _, ok := adapter.session(out.SessionID); !ok {
+		t.Fatal("heartbeat did not renew adapter session expiry")
+	}
+}
+
+func TestGRPCAdapterHeartbeatForcedOfflineDropsSession(t *testing.T) {
+	reg := registry.New(registry.Config{AgentTTL: time.Minute})
+	adapter := &hubRegistryAdapter{registry: reg}
+
+	out, err := adapter.RegisterAgent(grpcRegisterInput("agent-1", "machine-1"))
+	if err != nil {
+		t.Fatalf("RegisterAgent returned error: %v", err)
+	}
+	reg.ForceOffline(registry.ForceOfflineInput{
+		MachineID: "machine-1",
+		AgentID:   "agent-1",
+		Reason:    "kick",
+		TTL:       time.Minute,
+	})
+
+	err = adapter.HeartbeatAgent(out.SessionID, nil)
+	if !errors.Is(err, grpcapi.ErrAgentForcedOffline) {
+		t.Fatalf("HeartbeatAgent error = %v, want ErrAgentForcedOffline", err)
+	}
+	if _, ok := adapter.session(out.SessionID); ok {
+		t.Fatal("forced-offline heartbeat did not drop adapter session")
 	}
 }
 

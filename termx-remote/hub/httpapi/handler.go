@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,6 +49,8 @@ type Handler struct {
 	cloud    *cloud.Service
 	clock    Clock
 }
+
+var answerProofChallengeGenerator = randomAnswerProofChallenge
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.router.ServeHTTP(w, r)
@@ -188,7 +192,8 @@ func NewHandler(cfg Config) http.Handler {
 				SDP        string   `json:"sdp"`
 				Candidates []string `json:"ice_candidates,omitempty"`
 			} `json:"offer"`
-			SessionToken string `json:"session_token"`
+			SessionToken         string `json:"session_token"`
+			AnswerProofChallenge string `json:"answer_proof_challenge"`
 		}
 		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
 			writeDecodeError(w, err)
@@ -202,13 +207,18 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusBadRequest, "session_token_required", "session_token is required")
 			return
 		}
+		challenge := strings.TrimSpace(req.AnswerProofChallenge)
+		if challenge == "" {
+			challenge = answerProofChallengeGenerator()
+		}
 		offer, err := cfg.Cloud.SubmitOffer(r.Context(), cloud.SubmitOfferInput{
-			SessionID:     req.Offer.SessionID,
-			MachineID:     req.MachineID,
-			TerminalID:    req.TerminalID,
-			SDP:           req.Offer.SDP,
-			ICECandidates: req.Offer.Candidates,
-			SessionToken:  req.SessionToken,
+			SessionID:            req.Offer.SessionID,
+			MachineID:            req.MachineID,
+			TerminalID:           req.TerminalID,
+			SDP:                  req.Offer.SDP,
+			ICECandidates:        req.Offer.Candidates,
+			SessionToken:         req.SessionToken,
+			AnswerProofChallenge: challenge,
 		})
 		if err != nil {
 			writeError(w, http.StatusForbidden, "submit_cloud_offer_failed", err.Error())
@@ -248,16 +258,17 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusServiceUnavailable, "cloud_service_unavailable", "cloud service is not configured")
 			return
 		}
+		policy, hasPolicy := cfg.Cloud.OfferPolicyForAnswer(cloud.GetAnswerInput{
+			OfferID:   r.PathValue("session_id"),
+			MachineID: req.MachineID,
+		})
 		answer, err := cfg.Cloud.GetAnswer(r.Context(), cloud.GetAnswerInput{
 			OfferID:   r.PathValue("session_id"),
 			MachineID: req.MachineID,
 		})
 		if err != nil {
 			if errors.Is(err, registry.ErrOfferNotFound) {
-				if policy, ok := cfg.Cloud.OfferPolicyForAnswer(cloud.GetAnswerInput{
-					OfferID:   r.PathValue("session_id"),
-					MachineID: req.MachineID,
-				}); ok {
+				if hasPolicy {
 					writeJSON(w, http.StatusAccepted, map[string]any{
 						"session_id":   strings.TrimSpace(r.PathValue("session_id")),
 						"path":         cloud.PathCloud,
@@ -272,17 +283,13 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusForbidden, "get_cloud_answer_failed", err.Error())
 			return
 		}
-		policy, ok := cfg.Cloud.OfferPolicyForAnswer(cloud.GetAnswerInput{
-			OfferID:   r.PathValue("session_id"),
-			MachineID: req.MachineID,
-		})
-		allowRelay := ok && policy.AllowRelay
+		allowRelay := hasPolicy && policy.AllowRelay
 		if _, err := iceServersForLease(r.Context(), cfg, r.PathValue("session_id"), allowRelay); err != nil {
 			writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
 			return
 		}
 		terminalID := ""
-		if ok {
+		if hasPolicy {
 			terminalID = policy.TerminalID
 		}
 		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), answer.MachineID, terminalID, allowRelay, r.PathValue("session_id"), answer)
@@ -441,6 +448,7 @@ func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, 
 		"answer": map[string]any{
 			"sdp":            answer.SDP,
 			"ice_candidates": []string{},
+			"answer_proof":   answer.AnswerProof,
 		},
 		"ice_servers":  iceServers,
 		"relay_policy": relayPolicyResponse(allowRelay),
@@ -545,9 +553,12 @@ func writeError(w http.ResponseWriter, status int, code string, message string) 
 }
 
 func corsMiddleware(next http.Handler, allowedOrigins []string) http.Handler {
-	_ = allowedOrigins
+	allowed := normalizeAllowedOrigins(allowedOrigins)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		if origin := allowedOrigin(r.Header.Get("Origin"), allowed); origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-TermX-Debug-Token, X-TermX-Hub-Secret, X-Hub-Secret")
 		w.Header().Set("Access-Control-Max-Age", "600")
@@ -557,6 +568,40 @@ func corsMiddleware(next http.Handler, allowedOrigins []string) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func normalizeAllowedOrigins(origins []string) map[string]struct{} {
+	allowed := make(map[string]struct{})
+	for _, origin := range origins {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			continue
+		}
+		allowed[origin] = struct{}{}
+	}
+	return allowed
+}
+
+func allowedOrigin(origin string, allowed map[string]struct{}) string {
+	origin = strings.TrimSpace(origin)
+	if len(allowed) == 0 {
+		return "*"
+	}
+	if origin == "" {
+		return ""
+	}
+	if _, ok := allowed[origin]; ok {
+		return origin
+	}
+	return ""
+}
+
+func randomAnswerProofChallenge() string {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
 func authorizedInternalRequest(r *http.Request, secret string) bool {

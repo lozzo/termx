@@ -218,6 +218,8 @@ func TestClaimHubPairingClaimsThroughPairingManager(t *testing.T) {
 		MachineID:             "device-pair",
 		PairSessionID:         session.PairSessionID,
 		PairSecret:            session.PairSecret,
+		AppDeviceID:           "app-device-pair",
+		AppName:               "TermX Pair App",
 		RequestedCapabilities: []string{"terminal", "terminal_management"},
 	})
 	if result.ClaimID != "claim-1" || result.MachineID != "device-pair" || result.MachineName != "Pair Device" || result.Error != "" {
@@ -229,6 +231,9 @@ func TestClaimHubPairingClaimsThroughPairingManager(t *testing.T) {
 	}
 	if claims.MachineID != "device-pair" || strings.Join(claims.Capabilities, ",") != "terminal,terminal_management" {
 		t.Fatalf("claims = %+v", claims)
+	}
+	if claims.AppDeviceID != "app-device-pair" || claims.AppName != "TermX Pair App" {
+		t.Fatalf("app claims = %+v", claims)
 	}
 }
 

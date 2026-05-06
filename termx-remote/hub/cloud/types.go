@@ -31,34 +31,37 @@ type OfferPolicy struct {
 }
 
 type Offer struct {
-	ID            string
-	SessionID     string
-	MachineID     string
-	TerminalID    string
-	SDP           string
-	ICECandidates []string
-	SessionToken  string
-	Path          string
-	AllowRelay    bool
-	RelayInUse    bool
+	ID                   string
+	SessionID            string
+	MachineID            string
+	TerminalID           string
+	SDP                  string
+	ICECandidates        []string
+	SessionToken         string
+	AnswerProofChallenge string
+	Path                 string
+	AllowRelay           bool
+	RelayInUse           bool
 }
 
 type Answer struct {
-	ID         string
-	OfferID    string
-	MachineID  string
-	SDP        string
-	Error      string
-	RelayInUse bool
+	ID          string
+	OfferID     string
+	MachineID   string
+	SDP         string
+	Error       string
+	AnswerProof string
+	RelayInUse  bool
 }
 
 type SubmitOfferInput struct {
-	SessionID     string
-	MachineID     string
-	TerminalID    string
-	SDP           string
-	ICECandidates []string
-	SessionToken  string
+	SessionID            string
+	MachineID            string
+	TerminalID           string
+	SDP                  string
+	ICECandidates        []string
+	SessionToken         string
+	AnswerProofChallenge string
 }
 
 type PollAgentOfferInput struct {
@@ -68,11 +71,12 @@ type PollAgentOfferInput struct {
 }
 
 type SubmitAnswerInput struct {
-	AgentID   string
-	MachineID string
-	OfferID   string
-	SDP       string
-	Error     string
+	AgentID     string
+	MachineID   string
+	OfferID     string
+	SDP         string
+	Error       string
+	AnswerProof string
 }
 
 type GetAnswerInput struct {

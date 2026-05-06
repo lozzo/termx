@@ -12,19 +12,21 @@ type RelayPolicy struct {
 }
 
 type SignalingOffer struct {
-	SessionID    string   `json:"session_id"`
-	MachineID    string   `json:"machine_id"`
-	TerminalID   string   `json:"terminal_id,omitempty"`
-	SDP          string   `json:"sdp"`
-	Candidates   []string `json:"ice_candidates,omitempty"`
-	SessionToken string   `json:"session_token"`
+	SessionID            string   `json:"session_id"`
+	MachineID            string   `json:"machine_id"`
+	TerminalID           string   `json:"terminal_id,omitempty"`
+	SDP                  string   `json:"sdp"`
+	Candidates           []string `json:"ice_candidates,omitempty"`
+	SessionToken         string   `json:"session_token"`
+	AnswerProofChallenge string   `json:"answer_proof_challenge,omitempty"`
 }
 
 type SignalingAnswer struct {
 	SessionID     string   `json:"session_id"`
 	SDP           string   `json:"sdp"`
-	ICECandidates []string `json:"ice_candidates"`
 	Error         string   `json:"error,omitempty"`
+	AnswerProof   string   `json:"answer_proof,omitempty"`
+	ICECandidates []string `json:"ice_candidates"`
 }
 
 type PairingClaim struct {

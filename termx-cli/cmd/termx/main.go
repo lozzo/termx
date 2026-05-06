@@ -997,6 +997,7 @@ func printPairStartResult(w io.Writer, result *remoteprotocol.PairStartResult) {
 	fmt.Fprintf(w, "local_pair_url:\t%s\n", result.LocalPairURL)
 	fmt.Fprintf(w, "pair_session_id:\t%s\n", result.PairSessionID)
 	fmt.Fprintf(w, "pair_secret:\t%s\n", result.PairSecret)
+	fmt.Fprintf(w, "answer_proof_secret:\t%s\n", result.AnswerProofSecret)
 	fmt.Fprintf(w, "expires_at:\t%s\n", result.ExpiresAt.Format(time.RFC3339))
 }
 
@@ -1014,9 +1015,10 @@ func buildRemotePairPayload(result *remoteprotocol.PairStartResult, _ *remotepro
 			"public": compactStringListOrEmpty(hubURLs),
 		},
 		"pairing": map[string]any{
-			"session_id": result.PairSessionID,
-			"secret":     result.PairSecret,
-			"expires_at": result.ExpiresAt.Format(time.RFC3339),
+			"session_id":          result.PairSessionID,
+			"secret":              result.PairSecret,
+			"answer_proof_secret": result.AnswerProofSecret,
+			"expires_at":          result.ExpiresAt.Format(time.RFC3339),
 		},
 	}
 	cleanEmptyStrings(payload)

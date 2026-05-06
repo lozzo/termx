@@ -31,6 +31,7 @@ export interface ConnectionOrchestratorInput {
   machineId: string
   terminalId?: string | undefined
   sessionToken?: string | undefined
+  answerProofSecret?: string | undefined
   hubUrls: string[]
   onSnapshot?: ((snapshot: ConnectionAttemptSnapshot) => void) | undefined
 }
@@ -177,6 +178,7 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
         machineId: input.machineId,
         ...(input.terminalId ? { terminalId: input.terminalId } : {}),
         sessionToken: input.sessionToken,
+        ...(input.answerProofSecret ? { answerProofSecret: input.answerProofSecret } : {}),
         path: 'local',
       }, options)
     }
@@ -196,6 +198,7 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
       machineId: input.machineId,
       ...(input.terminalId ? { terminalId: input.terminalId } : {}),
       sessionToken: input.sessionToken,
+      ...(input.answerProofSecret ? { answerProofSecret: input.answerProofSecret } : {}),
       path: 'managed',
     }, options)
     try {

@@ -73,6 +73,7 @@ message SignalingOffer {
   string sdp = 4;
   repeated string ice_candidates = 5;
   string session_token = 6;
+  string answer_proof_challenge = 7;
 }
 
 message SignalingAnswer {
@@ -80,6 +81,7 @@ message SignalingAnswer {
   string sdp = 2;
   repeated string ice_candidates = 3;
   string error = 4;
+  string answer_proof = 5;
 }
 
 message PairingClaim {

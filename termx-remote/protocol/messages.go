@@ -48,13 +48,14 @@ type PairStartParams struct {
 }
 
 type PairStartResult struct {
-	Type          string    `json:"type"`
-	MachineID     string    `json:"machine_id"`
-	MachineName   string    `json:"machine_name"`
-	LocalPairURL  string    `json:"local_pair_url"`
-	PairSessionID string    `json:"pair_session_id"`
-	PairSecret    string    `json:"pair_secret"`
-	ExpiresAt     time.Time `json:"expires_at"`
+	Type              string    `json:"type"`
+	MachineID         string    `json:"machine_id"`
+	MachineName       string    `json:"machine_name"`
+	LocalPairURL      string    `json:"local_pair_url"`
+	PairSessionID     string    `json:"pair_session_id"`
+	PairSecret        string    `json:"pair_secret"`
+	AnswerProofSecret string    `json:"answer_proof_secret,omitempty"`
+	ExpiresAt         time.Time `json:"expires_at"`
 }
 
 type LocalEnableParams struct {

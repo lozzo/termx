@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v6.33.1
-// source: protocol/hubgrpc/hub.proto
+// source: termx-remote/protocol/hubgrpc/hub.proto
 
 package hubgrpc
 
@@ -36,7 +36,7 @@ type AgentToHub struct {
 
 func (x *AgentToHub) Reset() {
 	*x = AgentToHub{}
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[0]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -48,7 +48,7 @@ func (x *AgentToHub) String() string {
 func (*AgentToHub) ProtoMessage() {}
 
 func (x *AgentToHub) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[0]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -61,7 +61,7 @@ func (x *AgentToHub) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentToHub.ProtoReflect.Descriptor instead.
 func (*AgentToHub) Descriptor() ([]byte, []int) {
-	return file_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{0}
+	return file_termx_remote_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *AgentToHub) GetPayload() isAgentToHub_Payload {
@@ -150,7 +150,7 @@ type HubToAgent struct {
 
 func (x *HubToAgent) Reset() {
 	*x = HubToAgent{}
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[1]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -162,7 +162,7 @@ func (x *HubToAgent) String() string {
 func (*HubToAgent) ProtoMessage() {}
 
 func (x *HubToAgent) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[1]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -175,7 +175,7 @@ func (x *HubToAgent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HubToAgent.ProtoReflect.Descriptor instead.
 func (*HubToAgent) Descriptor() ([]byte, []int) {
-	return file_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{1}
+	return file_termx_remote_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *HubToAgent) GetPayload() isHubToAgent_Payload {
@@ -265,7 +265,7 @@ type RegisterRequest struct {
 
 func (x *RegisterRequest) Reset() {
 	*x = RegisterRequest{}
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[2]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -277,7 +277,7 @@ func (x *RegisterRequest) String() string {
 func (*RegisterRequest) ProtoMessage() {}
 
 func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[2]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -290,7 +290,7 @@ func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterRequest.ProtoReflect.Descriptor instead.
 func (*RegisterRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{2}
+	return file_termx_remote_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *RegisterRequest) GetAgentId() string {
@@ -361,7 +361,7 @@ type RegisterResponse struct {
 
 func (x *RegisterResponse) Reset() {
 	*x = RegisterResponse{}
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[3]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -373,7 +373,7 @@ func (x *RegisterResponse) String() string {
 func (*RegisterResponse) ProtoMessage() {}
 
 func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[3]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -386,7 +386,7 @@ func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterResponse.ProtoReflect.Descriptor instead.
 func (*RegisterResponse) Descriptor() ([]byte, []int) {
-	return file_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{3}
+	return file_termx_remote_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *RegisterResponse) GetAgentSessionId() string {
@@ -428,7 +428,7 @@ type Terminal struct {
 
 func (x *Terminal) Reset() {
 	*x = Terminal{}
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[4]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -440,7 +440,7 @@ func (x *Terminal) String() string {
 func (*Terminal) ProtoMessage() {}
 
 func (x *Terminal) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[4]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -453,7 +453,7 @@ func (x *Terminal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Terminal.ProtoReflect.Descriptor instead.
 func (*Terminal) Descriptor() ([]byte, []int) {
-	return file_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{4}
+	return file_termx_remote_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Terminal) GetTerminalId() string {
@@ -488,7 +488,7 @@ type RTCIceServer struct {
 
 func (x *RTCIceServer) Reset() {
 	*x = RTCIceServer{}
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[5]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -500,7 +500,7 @@ func (x *RTCIceServer) String() string {
 func (*RTCIceServer) ProtoMessage() {}
 
 func (x *RTCIceServer) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[5]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -513,7 +513,7 @@ func (x *RTCIceServer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RTCIceServer.ProtoReflect.Descriptor instead.
 func (*RTCIceServer) Descriptor() ([]byte, []int) {
-	return file_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{5}
+	return file_termx_remote_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RTCIceServer) GetUrls() []string {
@@ -547,7 +547,7 @@ type RelayPolicy struct {
 
 func (x *RelayPolicy) Reset() {
 	*x = RelayPolicy{}
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[6]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -559,7 +559,7 @@ func (x *RelayPolicy) String() string {
 func (*RelayPolicy) ProtoMessage() {}
 
 func (x *RelayPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[6]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -572,7 +572,7 @@ func (x *RelayPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelayPolicy.ProtoReflect.Descriptor instead.
 func (*RelayPolicy) Descriptor() ([]byte, []int) {
-	return file_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{6}
+	return file_termx_remote_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RelayPolicy) GetAllowRelay() bool {
@@ -599,7 +599,7 @@ type HeartbeatRequest struct {
 
 func (x *HeartbeatRequest) Reset() {
 	*x = HeartbeatRequest{}
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[7]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -611,7 +611,7 @@ func (x *HeartbeatRequest) String() string {
 func (*HeartbeatRequest) ProtoMessage() {}
 
 func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[7]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -624,7 +624,7 @@ func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatRequest.ProtoReflect.Descriptor instead.
 func (*HeartbeatRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{7}
+	return file_termx_remote_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *HeartbeatRequest) GetAgentSessionId() string {
@@ -642,20 +642,21 @@ func (x *HeartbeatRequest) GetTerminals() []*Terminal {
 }
 
 type SignalingOffer struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	MachineId     string                 `protobuf:"bytes,2,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
-	TerminalId    string                 `protobuf:"bytes,3,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	Sdp           string                 `protobuf:"bytes,4,opt,name=sdp,proto3" json:"sdp,omitempty"`
-	IceCandidates []string               `protobuf:"bytes,5,rep,name=ice_candidates,json=iceCandidates,proto3" json:"ice_candidates,omitempty"`
-	SessionToken  string                 `protobuf:"bytes,6,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	SessionId            string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	MachineId            string                 `protobuf:"bytes,2,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	TerminalId           string                 `protobuf:"bytes,3,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	Sdp                  string                 `protobuf:"bytes,4,opt,name=sdp,proto3" json:"sdp,omitempty"`
+	IceCandidates        []string               `protobuf:"bytes,5,rep,name=ice_candidates,json=iceCandidates,proto3" json:"ice_candidates,omitempty"`
+	SessionToken         string                 `protobuf:"bytes,6,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
+	AnswerProofChallenge string                 `protobuf:"bytes,7,opt,name=answer_proof_challenge,json=answerProofChallenge,proto3" json:"answer_proof_challenge,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *SignalingOffer) Reset() {
 	*x = SignalingOffer{}
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[8]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -667,7 +668,7 @@ func (x *SignalingOffer) String() string {
 func (*SignalingOffer) ProtoMessage() {}
 
 func (x *SignalingOffer) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[8]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -680,7 +681,7 @@ func (x *SignalingOffer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignalingOffer.ProtoReflect.Descriptor instead.
 func (*SignalingOffer) Descriptor() ([]byte, []int) {
-	return file_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{8}
+	return file_termx_remote_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *SignalingOffer) GetSessionId() string {
@@ -725,19 +726,27 @@ func (x *SignalingOffer) GetSessionToken() string {
 	return ""
 }
 
+func (x *SignalingOffer) GetAnswerProofChallenge() string {
+	if x != nil {
+		return x.AnswerProofChallenge
+	}
+	return ""
+}
+
 type SignalingAnswer struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Sdp           string                 `protobuf:"bytes,2,opt,name=sdp,proto3" json:"sdp,omitempty"`
 	IceCandidates []string               `protobuf:"bytes,3,rep,name=ice_candidates,json=iceCandidates,proto3" json:"ice_candidates,omitempty"`
 	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	AnswerProof   string                 `protobuf:"bytes,5,opt,name=answer_proof,json=answerProof,proto3" json:"answer_proof,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SignalingAnswer) Reset() {
 	*x = SignalingAnswer{}
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[9]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -749,7 +758,7 @@ func (x *SignalingAnswer) String() string {
 func (*SignalingAnswer) ProtoMessage() {}
 
 func (x *SignalingAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[9]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -762,7 +771,7 @@ func (x *SignalingAnswer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignalingAnswer.ProtoReflect.Descriptor instead.
 func (*SignalingAnswer) Descriptor() ([]byte, []int) {
-	return file_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{9}
+	return file_termx_remote_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SignalingAnswer) GetSessionId() string {
@@ -793,6 +802,13 @@ func (x *SignalingAnswer) GetError() string {
 	return ""
 }
 
+func (x *SignalingAnswer) GetAnswerProof() string {
+	if x != nil {
+		return x.AnswerProof
+	}
+	return ""
+}
+
 type PairingClaim struct {
 	state                 protoimpl.MessageState `protogen:"open.v1"`
 	ClaimId               string                 `protobuf:"bytes,1,opt,name=claim_id,json=claimId,proto3" json:"claim_id,omitempty"`
@@ -807,7 +823,7 @@ type PairingClaim struct {
 
 func (x *PairingClaim) Reset() {
 	*x = PairingClaim{}
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[10]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -819,7 +835,7 @@ func (x *PairingClaim) String() string {
 func (*PairingClaim) ProtoMessage() {}
 
 func (x *PairingClaim) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[10]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -832,7 +848,7 @@ func (x *PairingClaim) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PairingClaim.ProtoReflect.Descriptor instead.
 func (*PairingClaim) Descriptor() ([]byte, []int) {
-	return file_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{10}
+	return file_termx_remote_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *PairingClaim) GetClaimId() string {
@@ -891,7 +907,7 @@ type PairingResult struct {
 
 func (x *PairingResult) Reset() {
 	*x = PairingResult{}
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[11]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -903,7 +919,7 @@ func (x *PairingResult) String() string {
 func (*PairingResult) ProtoMessage() {}
 
 func (x *PairingResult) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[11]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -916,7 +932,7 @@ func (x *PairingResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PairingResult.ProtoReflect.Descriptor instead.
 func (*PairingResult) Descriptor() ([]byte, []int) {
-	return file_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{11}
+	return file_termx_remote_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *PairingResult) GetClaimId() string {
@@ -970,7 +986,7 @@ type Kick struct {
 
 func (x *Kick) Reset() {
 	*x = Kick{}
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[12]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -982,7 +998,7 @@ func (x *Kick) String() string {
 func (*Kick) ProtoMessage() {}
 
 func (x *Kick) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_hubgrpc_hub_proto_msgTypes[12]
+	mi := &file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -995,7 +1011,7 @@ func (x *Kick) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Kick.ProtoReflect.Descriptor instead.
 func (*Kick) Descriptor() ([]byte, []int) {
-	return file_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{12}
+	return file_termx_remote_protocol_hubgrpc_hub_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Kick) GetReason() string {
@@ -1005,11 +1021,11 @@ func (x *Kick) GetReason() string {
 	return ""
 }
 
-var File_protocol_hubgrpc_hub_proto protoreflect.FileDescriptor
+var File_termx_remote_protocol_hubgrpc_hub_proto protoreflect.FileDescriptor
 
-const file_protocol_hubgrpc_hub_proto_rawDesc = "" +
+const file_termx_remote_protocol_hubgrpc_hub_proto_rawDesc = "" +
 	"\n" +
-	"\x1aprotocol/hubgrpc/hub.proto\x12\vtermxhub.v1\"\xa2\x02\n" +
+	"'termx-remote/protocol/hubgrpc/hub.proto\x12\vtermxhub.v1\"\xa2\x02\n" +
 	"\n" +
 	"AgentToHub\x12:\n" +
 	"\bregister\x18\x01 \x01(\v2\x1c.termxhub.v1.RegisterRequestH\x00R\bregister\x12=\n" +
@@ -1057,7 +1073,7 @@ const file_protocol_hubgrpc_hub_proto_rawDesc = "" +
 	"\x14allow_relay_transfer\x18\x02 \x01(\bR\x12allowRelayTransfer\"q\n" +
 	"\x10HeartbeatRequest\x12(\n" +
 	"\x10agent_session_id\x18\x01 \x01(\tR\x0eagentSessionId\x123\n" +
-	"\tterminals\x18\x02 \x03(\v2\x15.termxhub.v1.TerminalR\tterminals\"\xcd\x01\n" +
+	"\tterminals\x18\x02 \x03(\v2\x15.termxhub.v1.TerminalR\tterminals\"\x83\x02\n" +
 	"\x0eSignalingOffer\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
@@ -1067,13 +1083,15 @@ const file_protocol_hubgrpc_hub_proto_rawDesc = "" +
 	"terminalId\x12\x10\n" +
 	"\x03sdp\x18\x04 \x01(\tR\x03sdp\x12%\n" +
 	"\x0eice_candidates\x18\x05 \x03(\tR\riceCandidates\x12#\n" +
-	"\rsession_token\x18\x06 \x01(\tR\fsessionToken\"\x7f\n" +
+	"\rsession_token\x18\x06 \x01(\tR\fsessionToken\x124\n" +
+	"\x16answer_proof_challenge\x18\a \x01(\tR\x14answerProofChallenge\"\xa2\x01\n" +
 	"\x0fSignalingAnswer\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
 	"\x03sdp\x18\x02 \x01(\tR\x03sdp\x12%\n" +
 	"\x0eice_candidates\x18\x03 \x03(\tR\riceCandidates\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error\"\xe8\x01\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\x12!\n" +
+	"\fanswer_proof\x18\x05 \x01(\tR\vanswerProof\"\xe8\x01\n" +
 	"\fPairingClaim\x12\x19\n" +
 	"\bclaim_id\x18\x01 \x01(\tR\aclaimId\x12&\n" +
 	"\x0fpair_session_id\x18\x02 \x01(\tR\rpairSessionId\x12\x1f\n" +
@@ -1097,19 +1115,19 @@ const file_protocol_hubgrpc_hub_proto_rawDesc = "" +
 	"\aConnect\x12\x17.termxhub.v1.AgentToHub\x1a\x17.termxhub.v1.HubToAgent(\x010\x01B7Z5github.com/lozzow/termx/termx-remote/protocol/hubgrpcb\x06proto3"
 
 var (
-	file_protocol_hubgrpc_hub_proto_rawDescOnce sync.Once
-	file_protocol_hubgrpc_hub_proto_rawDescData []byte
+	file_termx_remote_protocol_hubgrpc_hub_proto_rawDescOnce sync.Once
+	file_termx_remote_protocol_hubgrpc_hub_proto_rawDescData []byte
 )
 
-func file_protocol_hubgrpc_hub_proto_rawDescGZIP() []byte {
-	file_protocol_hubgrpc_hub_proto_rawDescOnce.Do(func() {
-		file_protocol_hubgrpc_hub_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_protocol_hubgrpc_hub_proto_rawDesc), len(file_protocol_hubgrpc_hub_proto_rawDesc)))
+func file_termx_remote_protocol_hubgrpc_hub_proto_rawDescGZIP() []byte {
+	file_termx_remote_protocol_hubgrpc_hub_proto_rawDescOnce.Do(func() {
+		file_termx_remote_protocol_hubgrpc_hub_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_termx_remote_protocol_hubgrpc_hub_proto_rawDesc), len(file_termx_remote_protocol_hubgrpc_hub_proto_rawDesc)))
 	})
-	return file_protocol_hubgrpc_hub_proto_rawDescData
+	return file_termx_remote_protocol_hubgrpc_hub_proto_rawDescData
 }
 
-var file_protocol_hubgrpc_hub_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
-var file_protocol_hubgrpc_hub_proto_goTypes = []any{
+var file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_termx_remote_protocol_hubgrpc_hub_proto_goTypes = []any{
 	(*AgentToHub)(nil),       // 0: termxhub.v1.AgentToHub
 	(*HubToAgent)(nil),       // 1: termxhub.v1.HubToAgent
 	(*RegisterRequest)(nil),  // 2: termxhub.v1.RegisterRequest
@@ -1124,7 +1142,7 @@ var file_protocol_hubgrpc_hub_proto_goTypes = []any{
 	(*PairingResult)(nil),    // 11: termxhub.v1.PairingResult
 	(*Kick)(nil),             // 12: termxhub.v1.Kick
 }
-var file_protocol_hubgrpc_hub_proto_depIdxs = []int32{
+var file_termx_remote_protocol_hubgrpc_hub_proto_depIdxs = []int32{
 	2,  // 0: termxhub.v1.AgentToHub.register:type_name -> termxhub.v1.RegisterRequest
 	7,  // 1: termxhub.v1.AgentToHub.heartbeat:type_name -> termxhub.v1.HeartbeatRequest
 	9,  // 2: termxhub.v1.AgentToHub.signaling_answer:type_name -> termxhub.v1.SignalingAnswer
@@ -1146,18 +1164,18 @@ var file_protocol_hubgrpc_hub_proto_depIdxs = []int32{
 	0,  // [0:12] is the sub-list for field type_name
 }
 
-func init() { file_protocol_hubgrpc_hub_proto_init() }
-func file_protocol_hubgrpc_hub_proto_init() {
-	if File_protocol_hubgrpc_hub_proto != nil {
+func init() { file_termx_remote_protocol_hubgrpc_hub_proto_init() }
+func file_termx_remote_protocol_hubgrpc_hub_proto_init() {
+	if File_termx_remote_protocol_hubgrpc_hub_proto != nil {
 		return
 	}
-	file_protocol_hubgrpc_hub_proto_msgTypes[0].OneofWrappers = []any{
+	file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[0].OneofWrappers = []any{
 		(*AgentToHub_Register)(nil),
 		(*AgentToHub_Heartbeat)(nil),
 		(*AgentToHub_SignalingAnswer)(nil),
 		(*AgentToHub_PairingResult)(nil),
 	}
-	file_protocol_hubgrpc_hub_proto_msgTypes[1].OneofWrappers = []any{
+	file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes[1].OneofWrappers = []any{
 		(*HubToAgent_RegisterAck)(nil),
 		(*HubToAgent_SignalingOffer)(nil),
 		(*HubToAgent_PairingClaim)(nil),
@@ -1167,17 +1185,17 @@ func file_protocol_hubgrpc_hub_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protocol_hubgrpc_hub_proto_rawDesc), len(file_protocol_hubgrpc_hub_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_termx_remote_protocol_hubgrpc_hub_proto_rawDesc), len(file_termx_remote_protocol_hubgrpc_hub_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_protocol_hubgrpc_hub_proto_goTypes,
-		DependencyIndexes: file_protocol_hubgrpc_hub_proto_depIdxs,
-		MessageInfos:      file_protocol_hubgrpc_hub_proto_msgTypes,
+		GoTypes:           file_termx_remote_protocol_hubgrpc_hub_proto_goTypes,
+		DependencyIndexes: file_termx_remote_protocol_hubgrpc_hub_proto_depIdxs,
+		MessageInfos:      file_termx_remote_protocol_hubgrpc_hub_proto_msgTypes,
 	}.Build()
-	File_protocol_hubgrpc_hub_proto = out.File
-	file_protocol_hubgrpc_hub_proto_goTypes = nil
-	file_protocol_hubgrpc_hub_proto_depIdxs = nil
+	File_termx_remote_protocol_hubgrpc_hub_proto = out.File
+	file_termx_remote_protocol_hubgrpc_hub_proto_goTypes = nil
+	file_termx_remote_protocol_hubgrpc_hub_proto_depIdxs = nil
 }

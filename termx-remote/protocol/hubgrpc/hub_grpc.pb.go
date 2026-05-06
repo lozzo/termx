@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v6.33.1
-// source: protocol/hubgrpc/hub.proto
+// source: termx-remote/protocol/hubgrpc/hub.proto
 
 package hubgrpc
 
@@ -111,5 +111,5 @@ var AgentHub_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "protocol/hubgrpc/hub.proto",
+	Metadata: "termx-remote/protocol/hubgrpc/hub.proto",
 }

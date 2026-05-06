@@ -66,6 +66,8 @@ type ServerConfig struct {
 	AllowRelay bool
 }
 
+var answerProofChallengeGenerator = randomHubGRPCID
+
 func NewServer(reg *registry.Registry, cloudSvc *cloud.Service, iceServers []hubv1.RTCIceServerConfig) *grpc.Server {
 	return NewServerWithConfig(ServerConfig{
 		Registry:   reg,
@@ -123,7 +125,7 @@ func (a *hubRegistryAdapter) RegisterAgent(in grpcapi.RegisterAgentInput) (grpca
 		AgentID:   agentID,
 		Terminals: terminals,
 	}); err != nil {
-		return grpcapi.RegisterAgentOutput{}, err
+		return grpcapi.RegisterAgentOutput{}, grpcAgentStateError(err)
 	}
 	sessionID := randomHubGRPCID("grpc_session")
 	a.mu.Lock()
@@ -168,8 +170,11 @@ func (a *hubRegistryAdapter) registerAgentICEServers(ctx context.Context, machin
 
 func (a *hubRegistryAdapter) HeartbeatAgent(sessionID string, terminals []grpcapi.TerminalInput) error {
 	session, ok := a.session(sessionID)
-	if !ok || a.registry == nil {
-		return registry.ErrAgentNotFound
+	if !ok {
+		return grpcSessionInvalidError(registry.ErrAgentNotFound)
+	}
+	if a.registry == nil {
+		return errors.New("registry is not configured")
 	}
 	regTerminals := make([]registry.Terminal, 0, len(terminals))
 	for _, terminal := range terminals {
@@ -178,17 +183,29 @@ func (a *hubRegistryAdapter) HeartbeatAgent(sessionID string, terminals []grpcap
 		}
 		regTerminals = append(regTerminals, registry.Terminal{ID: terminal.TerminalID, State: "running"})
 	}
-	return a.registry.Heartbeat(context.Background(), registry.HeartbeatInput{
+	if err := a.registry.Heartbeat(context.Background(), registry.HeartbeatInput{
 		AgentID:   session.AgentID,
 		MachineID: session.MachineID,
 		Terminals: regTerminals,
-	})
+	}); err != nil {
+		if grpcAgentSessionTerminated(err) {
+			a.dropSession(sessionID)
+		}
+		return grpcAgentStateError(err)
+	}
+	if !a.renewSession(sessionID) {
+		return grpcSessionInvalidError(registry.ErrAgentNotFound)
+	}
+	return nil
 }
 
 func (a *hubRegistryAdapter) GetPendingOffer(ctx context.Context, sessionID string) (*grpcapi.PendingOffer, error) {
 	session, ok := a.session(sessionID)
-	if !ok || a.cloud == nil {
-		return nil, registry.ErrAgentNotFound
+	if !ok {
+		return nil, grpcSessionInvalidError(registry.ErrAgentNotFound)
+	}
+	if a.cloud == nil {
+		return nil, nil
 	}
 	offer, err := a.cloud.PollAgentOffer(ctx, cloud.PollAgentOfferInput{
 		AgentID:   session.AgentID,
@@ -199,7 +216,10 @@ func (a *hubRegistryAdapter) GetPendingOffer(ctx context.Context, sessionID stri
 		if errors.Is(err, registry.ErrPollTimeout) {
 			return nil, nil
 		}
-		return nil, err
+		if grpcAgentSessionTerminated(err) {
+			a.dropSession(sessionID)
+		}
+		return nil, grpcAgentStateError(err)
 	}
 	publicID := grpcPublicSessionID(offer)
 	a.mu.Lock()
@@ -212,48 +232,75 @@ func (a *hubRegistryAdapter) GetPendingOffer(ctx context.Context, sessionID stri
 		ExpiresAt: a.nowUTC().Add(a.offerTTLDuration()),
 	}
 	a.mu.Unlock()
+	challenge := strings.TrimSpace(offer.AnswerProofChallenge)
+	if challenge == "" {
+		challenge = answerProofChallengeGenerator("answer_challenge")
+	}
 	return &grpcapi.PendingOffer{
-		SessionID:    publicID,
-		MachineID:    offer.MachineID,
-		TerminalID:   offer.TerminalID,
-		SDP:          offer.SDP,
-		SessionToken: offer.SessionToken,
-		Candidates:   append([]string(nil), offer.ICECandidates...),
+		SessionID:            publicID,
+		MachineID:            offer.MachineID,
+		TerminalID:           offer.TerminalID,
+		SDP:                  offer.SDP,
+		SessionToken:         offer.SessionToken,
+		AnswerProofChallenge: challenge,
+		Candidates:           append([]string(nil), offer.ICECandidates...),
 	}, nil
 }
 
-func (a *hubRegistryAdapter) SubmitAnswer(sessionID, answerSessionID, sdp string, candidates []string) error {
+func (a *hubRegistryAdapter) SubmitAnswer(sessionID, answerSessionID, sdp string, candidates []string, answerProof string) error {
 	session, ok := a.session(sessionID)
-	if !ok || a.cloud == nil {
-		return registry.ErrAgentNotFound
+	if !ok {
+		return grpcSessionInvalidError(registry.ErrAgentNotFound)
+	}
+	if a.cloud == nil {
+		return errors.New("cloud service is not configured")
 	}
 	offerID := a.resolveOfferID(sessionID, answerSessionID)
-	return a.cloud.SubmitAnswer(context.Background(), cloud.SubmitAnswerInput{
-		AgentID:   session.AgentID,
-		MachineID: session.MachineID,
-		OfferID:   offerID,
-		SDP:       sdp,
-	})
+	if err := a.cloud.SubmitAnswer(context.Background(), cloud.SubmitAnswerInput{
+		AgentID:     session.AgentID,
+		MachineID:   session.MachineID,
+		OfferID:     offerID,
+		SDP:         sdp,
+		AnswerProof: answerProof,
+	}); err != nil {
+		if grpcAgentSessionTerminated(err) {
+			a.dropSession(sessionID)
+		}
+		return grpcAgentStateError(err)
+	}
+	return nil
 }
 
 func (a *hubRegistryAdapter) SubmitAnswerError(sessionID, answerSessionID, reason string) error {
 	session, ok := a.session(sessionID)
-	if !ok || a.cloud == nil {
-		return registry.ErrAgentNotFound
+	if !ok {
+		return grpcSessionInvalidError(registry.ErrAgentNotFound)
+	}
+	if a.cloud == nil {
+		return errors.New("cloud service is not configured")
 	}
 	offerID := a.resolveOfferID(sessionID, answerSessionID)
-	return a.cloud.SubmitAnswer(context.Background(), cloud.SubmitAnswerInput{
+	if err := a.cloud.SubmitAnswer(context.Background(), cloud.SubmitAnswerInput{
 		AgentID:   session.AgentID,
 		MachineID: session.MachineID,
 		OfferID:   offerID,
 		Error:     reason,
-	})
+	}); err != nil {
+		if grpcAgentSessionTerminated(err) {
+			a.dropSession(sessionID)
+		}
+		return grpcAgentStateError(err)
+	}
+	return nil
 }
 
 func (a *hubRegistryAdapter) GetPendingPairingClaim(ctx context.Context, sessionID string) (*grpcapi.PendingPairingClaim, error) {
 	session, ok := a.session(sessionID)
-	if !ok || a.registry == nil {
-		return nil, registry.ErrAgentNotFound
+	if !ok {
+		return nil, grpcSessionInvalidError(registry.ErrAgentNotFound)
+	}
+	if a.registry == nil {
+		return nil, errors.New("registry is not configured")
 	}
 	claim, err := a.registry.PollPairingClaim(ctx, registry.PairingPollInput{
 		AgentID:   session.AgentID,
@@ -264,7 +311,10 @@ func (a *hubRegistryAdapter) GetPendingPairingClaim(ctx context.Context, session
 		if errors.Is(err, registry.ErrPollTimeout) {
 			return nil, nil
 		}
-		return nil, err
+		if grpcAgentSessionTerminated(err) {
+			a.dropSession(sessionID)
+		}
+		return nil, grpcAgentStateError(err)
 	}
 	a.mu.Lock()
 	a.cleanupExpiredLocked(a.nowUTC())
@@ -300,7 +350,10 @@ func (a *hubRegistryAdapter) SubmitPairingResult(in grpcapi.PairingResultInput) 
 		ExpiresAt:    in.ExpiresAt,
 		Error:        in.Error,
 	})
-	return err
+	if grpcAgentSessionTerminated(err) {
+		a.dropClaimsForSession(session)
+	}
+	return grpcAgentStateError(err)
 }
 
 func (a *hubRegistryAdapter) session(sessionID string) (hubGRPCSession, bool) {
@@ -316,6 +369,46 @@ func (a *hubRegistryAdapter) session(sessionID string) (hubGRPCSession, bool) {
 		return hubGRPCSession{}, false
 	}
 	return state.Session, true
+}
+
+func (a *hubRegistryAdapter) renewSession(sessionID string) bool {
+	if a == nil {
+		return false
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	now := a.nowUTC()
+	a.cleanupExpiredLocked(now)
+	key := strings.TrimSpace(sessionID)
+	state, ok := a.sessions[key]
+	if !ok || !state.ExpiresAt.After(now) {
+		return false
+	}
+	state.ExpiresAt = now.Add(a.sessionTTLDuration())
+	a.sessions[key] = state
+	return true
+}
+
+func (a *hubRegistryAdapter) dropSession(sessionID string) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(a.sessions, strings.TrimSpace(sessionID))
+}
+
+func (a *hubRegistryAdapter) dropClaimsForSession(session hubGRPCSession) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for claimID, state := range a.claims {
+		if state.Session == session {
+			delete(a.claims, claimID)
+		}
+	}
 }
 
 func (a *hubRegistryAdapter) claimSession(claimID string) (hubGRPCSession, bool) {
@@ -465,4 +558,31 @@ func randomHubGRPCID(prefix string) string {
 		return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
 	}
 	return prefix + "_" + base64.RawURLEncoding.EncodeToString(raw[:])
+}
+
+func grpcAgentStateError(err error) error {
+	if err == nil {
+		return nil
+	}
+	switch {
+	case errors.Is(err, registry.ErrAgentForcedOffline):
+		return fmt.Errorf("%w: %w", grpcapi.ErrAgentForcedOffline, err)
+	case errors.Is(err, registry.ErrAgentNotFound), errors.Is(err, registry.ErrUnauthorizedAgent):
+		return grpcSessionInvalidError(err)
+	default:
+		return err
+	}
+}
+
+func grpcSessionInvalidError(err error) error {
+	if err == nil {
+		return grpcapi.ErrAgentSessionInvalid
+	}
+	return fmt.Errorf("%w: %w", grpcapi.ErrAgentSessionInvalid, err)
+}
+
+func grpcAgentSessionTerminated(err error) bool {
+	return errors.Is(err, registry.ErrAgentForcedOffline) ||
+		errors.Is(err, registry.ErrAgentNotFound) ||
+		errors.Is(err, registry.ErrUnauthorizedAgent)
 }

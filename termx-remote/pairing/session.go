@@ -15,7 +15,7 @@ import (
 
 const (
 	defaultSessionTTL = 5 * time.Minute
-	defaultTokenTTL   = 365 * 24 * time.Hour
+	defaultTokenTTL   = 24 * time.Hour
 )
 
 var allowedCapabilities = map[string]struct{}{
@@ -41,19 +41,21 @@ type Manager struct {
 }
 
 type Session struct {
-	Type          string    `json:"type"`
-	MachineID     string    `json:"machine_id"`
-	MachineName   string    `json:"machine_name"`
-	LocalPairURL  string    `json:"local_pair_url"`
-	PairSessionID string    `json:"pair_session_id"`
-	PairSecret    string    `json:"pair_secret"`
-	ExpiresAt     time.Time `json:"expires_at"`
+	Type              string    `json:"type"`
+	MachineID         string    `json:"machine_id"`
+	MachineName       string    `json:"machine_name"`
+	LocalPairURL      string    `json:"local_pair_url"`
+	PairSessionID     string    `json:"pair_session_id"`
+	PairSecret        string    `json:"pair_secret"`
+	AnswerProofSecret string    `json:"answer_proof_secret,omitempty"`
+	ExpiresAt         time.Time `json:"expires_at"`
 }
 
 type ClaimRequest struct {
 	PairSessionID         string   `json:"pair_session_id"`
 	PairSecret            string   `json:"pair_secret"`
 	AppDeviceID           string   `json:"app_device_id"`
+	AppName               string   `json:"app_name"`
 	RequestedCapabilities []string `json:"requested_capabilities"`
 }
 
@@ -112,14 +114,19 @@ func (m *Manager) CreateSession(ttl time.Duration) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
+	answerProofSecret, err := randomToken("", 32)
+	if err != nil {
+		return Session{}, err
+	}
 	session := Session{
-		Type:          "termx_pair_v1",
-		MachineID:     strings.TrimSpace(cfg.MachineID),
-		MachineName:   strings.TrimSpace(cfg.MachineName),
-		LocalPairURL:  strings.TrimSpace(cfg.LocalPairURL),
-		PairSessionID: sessionID,
-		PairSecret:    secret,
-		ExpiresAt:     now.Add(ttl).UTC(),
+		Type:              "termx_pair_v1",
+		MachineID:         strings.TrimSpace(cfg.MachineID),
+		MachineName:       strings.TrimSpace(cfg.MachineName),
+		LocalPairURL:      strings.TrimSpace(cfg.LocalPairURL),
+		PairSessionID:     sessionID,
+		PairSecret:        secret,
+		AnswerProofSecret: answerProofSecret,
+		ExpiresAt:         now.Add(ttl).UTC(),
 	}
 
 	m.mu.Lock()
@@ -179,13 +186,23 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 		tokenTTL = defaultTokenTTL
 	}
 	expiresAt := now.Add(tokenTTL).UTC()
-	tok, err := token.Issue(cfg.MachineSecret, token.Claims{
+	claims := token.Claims{
 		SessionID:    session.PairSessionID,
 		MachineID:    strings.TrimSpace(cfg.MachineID),
+		AppDeviceID:  strings.TrimSpace(req.AppDeviceID),
+		AppName:      strings.TrimSpace(req.AppName),
 		Capabilities: capabilities,
 		IssuedAt:     now.Unix(),
 		ExpiresAt:    expiresAt.Unix(),
-	})
+	}
+	if strings.TrimSpace(session.AnswerProofSecret) != "" {
+		sealedProof, err := token.SealAnswerProofKey(cfg.MachineSecret, claims, session.AnswerProofSecret)
+		if err != nil {
+			return ClaimResponse{}, fmt.Errorf("seal answer proof key: %w", err)
+		}
+		claims.AnswerProofKey = sealedProof
+	}
+	tok, err := token.Issue(cfg.MachineSecret, claims)
 	if err != nil {
 		return ClaimResponse{}, fmt.Errorf("issue token: %w", err)
 	}
