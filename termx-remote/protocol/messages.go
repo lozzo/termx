@@ -13,17 +13,18 @@ const (
 )
 
 type Config struct {
-	Enabled     bool
-	ControlURL  string
-	HubURL      string
-	HubURLs     []string
-	AccessToken string
-	DataDir     string
-	DeviceName  string
-	Region      string
-	Mode        string
-	AllowLAN    bool
-	LANIPs      []string
+	Enabled         bool
+	ControlURL      string
+	HubURL          string
+	HubURLs         []string
+	AccessToken     string
+	DataDir         string
+	DeviceName      string
+	Region          string
+	Mode            string
+	AllowLAN        bool
+	LANIPs          []string
+	TokenTTLSeconds int
 }
 
 type Status struct {

@@ -169,10 +169,11 @@ func (s *Service) PairStart(params remoteprotocol.PairStartParams) (remoteprotoc
 		}
 	}
 	pairCfg := pairing.Config{
-		MachineID:     machineID,
-		MachineName:   machineName,
-		MachineSecret: machineSecret,
-		LocalPairURL:  strings.TrimSpace(params.LocalPairURL),
+		MachineID:       machineID,
+		MachineName:     machineName,
+		MachineSecret:   machineSecret,
+		DefaultTokenTTL: time.Duration(s.cfg.TokenTTLSeconds) * time.Second,
+		LocalPairURL:    strings.TrimSpace(params.LocalPairURL),
 	}
 	s.pairMu.Lock()
 	if s.pairing == nil {
@@ -833,6 +834,7 @@ func runtimeConfig(cfg remoteprotocol.Config) remoteconfig.Config {
 		Mode:        cfg.Mode,
 		AllowLAN:    cfg.AllowLAN,
 		LANIPs:      append([]string(nil), cfg.LANIPs...),
+		TokenTTL:    time.Duration(cfg.TokenTTLSeconds) * time.Second,
 	})
 }
 
@@ -852,7 +854,7 @@ func mapRuntimeState(state runtime.State) remoteprotocol.RuntimeState {
 }
 
 func pairManagerConfigChanged(a, b pairing.Config) bool {
-	if a.MachineID != b.MachineID || a.MachineName != b.MachineName || a.LocalPairURL != b.LocalPairURL {
+	if a.MachineID != b.MachineID || a.MachineName != b.MachineName || a.LocalPairURL != b.LocalPairURL || a.DefaultTokenTTL != b.DefaultTokenTTL {
 		return true
 	}
 	return string(a.MachineSecret) != string(b.MachineSecret)

@@ -1215,6 +1215,9 @@ func remoteConfigFromEnv() remoteprotocol.Config {
 		AllowLAN:   allowLAN,
 		LANIPs:     splitTrimmed(os.Getenv("TERMX_REMOTE_LAN_IPS")),
 	}
+	if tokenTTL := durationSecondsFromString(os.Getenv("TERMX_REMOTE_TOKEN_TTL")); tokenTTL > 0 {
+		cfg.TokenTTLSeconds = tokenTTL
+	}
 	if !enabledSet && !cfg.Enabled && remoteConfigHasFields(cfg) {
 		cfg.Enabled = true
 	}
@@ -1257,6 +1260,9 @@ func remoteConfigFromFileAndEnv(path string) (remoteprotocol.Config, error) {
 	}
 	if envCfg.Mode != "" {
 		cfg.Mode = envCfg.Mode
+	}
+	if envCfg.TokenTTLSeconds > 0 {
+		cfg.TokenTTLSeconds = envCfg.TokenTTLSeconds
 	}
 	if envAllowLANSet {
 		cfg.AllowLAN = envAllowLAN
@@ -1303,6 +1309,9 @@ func loadRemoteConfigFromFile(path string) (remoteprotocol.Config, bool, error) 
 		DeviceName: remoteConfigValue(values, "deviceName", "device_name"),
 		Region:     remoteConfigValue(values, "region"),
 		Mode:       remoteConfigValue(values, "mode"),
+	}
+	if tokenTTL := durationSecondsFromString(remoteConfigValue(values, "token_ttl", "tokenTTL")); tokenTTL > 0 {
+		cfg.TokenTTLSeconds = tokenTTL
 	}
 	if rawAllowLAN := remoteConfigValue(values, "allow_lan", "allowLAN"); rawAllowLAN != "" {
 		cfg.AllowLAN, _ = strconv.ParseBool(rawAllowLAN)
@@ -1363,8 +1372,27 @@ func remoteConfigHasFields(cfg remoteprotocol.Config) bool {
 		cfg.DeviceName != "" ||
 		cfg.Region != "" ||
 		cfg.Mode != "" ||
+		cfg.TokenTTLSeconds > 0 ||
 		cfg.AllowLAN ||
 		len(cfg.LANIPs) > 0
+}
+
+func durationSecondsFromString(raw string) int {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0
+	}
+	if seconds, err := strconv.Atoi(raw); err == nil {
+		if seconds > 0 {
+			return seconds
+		}
+		return 0
+	}
+	duration, err := time.ParseDuration(raw)
+	if err != nil || duration <= 0 {
+		return 0
+	}
+	return int(duration.Seconds())
 }
 
 func parseRemoteConfigSection(content string) (map[string]string, error) {

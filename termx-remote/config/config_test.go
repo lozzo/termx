@@ -20,12 +20,18 @@ func TestNormalizeAcceptsRemoteModes(t *testing.T) {
 		{input: " local ", want: "local"},
 		{input: "ONLINE", want: "online"},
 		{input: "both", want: "both"},
-		{input: "bad", want: "both"},
 	} {
 		cfg := Normalize(Config{Mode: tc.input})
 		if cfg.Mode != tc.want {
 			t.Fatalf("Normalize(%q).Mode = %q, want %q", tc.input, cfg.Mode, tc.want)
 		}
+	}
+}
+
+func TestValidateRejectsInvalidRemoteMode(t *testing.T) {
+	cfg := Normalize(Config{Enabled: true, DataDir: t.TempDir(), Mode: "bad"})
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected invalid mode validation error")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -19,6 +20,8 @@ type Config struct {
 	Mode        string
 	AllowLAN    bool
 	LANIPs      []string
+	TokenTTL    time.Duration
+	modeValid   bool
 }
 
 func Normalize(cfg Config) Config {
@@ -35,10 +38,13 @@ func Normalize(cfg Config) Config {
 	switch strings.ToLower(strings.TrimSpace(cfg.Mode)) {
 	case "local", "online", "both":
 		cfg.Mode = strings.ToLower(strings.TrimSpace(cfg.Mode))
+		cfg.modeValid = true
 	case "":
 		cfg.Mode = "both"
+		cfg.modeValid = true
 	default:
 		cfg.Mode = "both"
+		cfg.modeValid = false
 	}
 	cfg.LANIPs = normalizeStringSlice(cfg.LANIPs)
 
@@ -105,6 +111,12 @@ func (c Config) Validate() error {
 	}
 	if c.ControlURL != "" && c.AccessToken == "" {
 		return errors.New("remote access token is required when control URL is configured")
+	}
+	if !c.modeValid {
+		return errors.New("remote mode must be one of local, online, or both")
+	}
+	if c.TokenTTL < 0 {
+		return errors.New("remote token ttl must not be negative")
 	}
 	return nil
 }

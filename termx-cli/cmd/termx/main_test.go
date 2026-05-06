@@ -302,6 +302,7 @@ func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
   device_name: file-device
   region: fra
   mode: online
+  token_ttl: 2h
   allow_lan: true
   lan_ips: 192.168.0.0/16,10.0.0.5
 `
@@ -344,6 +345,9 @@ func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
 	if cfg.Mode != "online" || !cfg.AllowLAN || len(cfg.LANIPs) != 2 || cfg.LANIPs[1] != "10.0.0.5" {
 		t.Fatalf("unexpected mode/LAN config: %#v", cfg)
 	}
+	if cfg.TokenTTLSeconds != int((2 * time.Hour).Seconds()) {
+		t.Fatalf("unexpected token ttl seconds: %d", cfg.TokenTTLSeconds)
+	}
 }
 
 func TestRemoteConfigEnvOverridesFile(t *testing.T) {
@@ -369,6 +373,7 @@ func TestRemoteConfigEnvOverridesFile(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_DEVICE_NAME", "env-device")
 	t.Setenv("TERMX_REMOTE_REGION", "sin")
 	t.Setenv("TERMX_REMOTE_MODE", "online")
+	t.Setenv("TERMX_REMOTE_TOKEN_TTL", "3600")
 	t.Setenv("TERMX_REMOTE_ALLOW_LAN", "false")
 
 	cfg, err := remoteConfigFromFileAndEnv(configPath)
@@ -395,6 +400,9 @@ func TestRemoteConfigEnvOverridesFile(t *testing.T) {
 	}
 	if cfg.Mode != "online" || cfg.AllowLAN {
 		t.Fatalf("expected env mode/allow_lan override, got %#v", cfg)
+	}
+	if cfg.TokenTTLSeconds != 3600 {
+		t.Fatalf("expected env token ttl override, got %d", cfg.TokenTTLSeconds)
 	}
 }
 
