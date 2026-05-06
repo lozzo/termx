@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	remote "github.com/lozzow/termx/termx-remote"
 	"github.com/lozzow/termx/termx-remote/hub/cloud"
+	"github.com/lozzow/termx/termx-remote/hub/grpcadapter"
 	hubheartbeat "github.com/lozzow/termx/termx-remote/hub/heartbeat"
 	"github.com/lozzow/termx/termx-remote/hub/httpapi"
 	"github.com/lozzow/termx/termx-remote/hub/ice"
@@ -93,7 +93,7 @@ func newHubRuntimeFromEnv() (hubRuntime, error) {
 			ICEServers:     iceServers,
 			AllowedOrigins: csvList(os.Getenv("TERMX_HUB_ALLOWED_ORIGINS")),
 		}),
-		GRPCServer: remote.NewHubGRPCServerWithConfig(remote.HubGRPCServerConfig{
+		GRPCServer: grpcadapter.NewServerWithConfig(grpcadapter.ServerConfig{
 			Registry:   reg,
 			Cloud:      svc,
 			ICE:        iceSvc,

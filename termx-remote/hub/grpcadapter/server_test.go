@@ -1,4 +1,4 @@
-package remote
+package grpcadapter
 
 import (
 	"testing"

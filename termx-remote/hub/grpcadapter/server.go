@@ -1,4 +1,4 @@
-package remote
+package grpcadapter
 
 import (
 	"context"
@@ -58,7 +58,7 @@ type hubGRPCClaimState struct {
 	ExpiresAt time.Time
 }
 
-type HubGRPCServerConfig struct {
+type ServerConfig struct {
 	Registry   *registry.Registry
 	Cloud      *cloud.Service
 	ICE        *hubice.Service
@@ -66,15 +66,15 @@ type HubGRPCServerConfig struct {
 	AllowRelay bool
 }
 
-func NewHubGRPCServer(reg *registry.Registry, cloudSvc *cloud.Service, iceServers []hubv1.RTCIceServerConfig) *grpc.Server {
-	return NewHubGRPCServerWithConfig(HubGRPCServerConfig{
+func NewServer(reg *registry.Registry, cloudSvc *cloud.Service, iceServers []hubv1.RTCIceServerConfig) *grpc.Server {
+	return NewServerWithConfig(ServerConfig{
 		Registry:   reg,
 		Cloud:      cloudSvc,
 		ICEServers: iceServers,
 	})
 }
 
-func NewHubGRPCServerWithConfig(cfg HubGRPCServerConfig) *grpc.Server {
+func NewServerWithConfig(cfg ServerConfig) *grpc.Server {
 	grpcSrv := grpc.NewServer(grpc.StreamInterceptor(grpcStreamAuth))
 	pb.RegisterAgentHubServer(grpcSrv, grpcapi.NewServer(&hubRegistryAdapter{
 		registry:   cfg.Registry,

@@ -19,6 +19,7 @@ import (
 	remoteconfig "github.com/lozzow/termx/termx-remote/config"
 	"github.com/lozzow/termx/termx-remote/fileapi"
 	"github.com/lozzow/termx/termx-remote/hub/cloud"
+	"github.com/lozzow/termx/termx-remote/hub/grpcadapter"
 	"github.com/lozzow/termx/termx-remote/hub/httpapi"
 	"github.com/lozzow/termx/termx-remote/hub/registry"
 	"github.com/lozzow/termx/termx-remote/identity"
@@ -372,7 +373,7 @@ func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableP
 	}
 	lanFilter := httpapi.NewLANFilter(cfg.AllowLAN, allowedNets)
 	httpServer := &http.Server{Handler: lanFilter(hubHandler)}
-	grpcServer := NewHubGRPCServer(reg, cloudSvc, nil)
+	grpcServer := grpcadapter.NewServer(reg, cloudSvc, nil)
 	mux := cmux.New(listener)
 	grpcListener := mux.Match(cmux.HTTP2())
 	httpListener := mux.Match(cmux.HTTP1Fast())
