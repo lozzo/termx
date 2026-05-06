@@ -12,6 +12,7 @@ import (
 
 	"github.com/lozzow/termx/termx-remote/hub/cloud"
 	grpcapi "github.com/lozzow/termx/termx-remote/hub/grpcapi"
+	hubice "github.com/lozzow/termx/termx-remote/hub/ice"
 	"github.com/lozzow/termx/termx-remote/hub/registry"
 	pb "github.com/lozzow/termx/termx-remote/protocol/hubgrpc"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
@@ -23,7 +24,9 @@ import (
 type hubRegistryAdapter struct {
 	registry   *registry.Registry
 	cloud      *cloud.Service
+	ice        *hubice.Service
 	iceServers []hubv1.RTCIceServerConfig
+	allowRelay bool
 
 	mu       sync.Mutex
 	sessions map[string]hubGRPCSession
@@ -36,12 +39,30 @@ type hubGRPCSession struct {
 	MachineID string
 }
 
+type HubGRPCServerConfig struct {
+	Registry   *registry.Registry
+	Cloud      *cloud.Service
+	ICE        *hubice.Service
+	ICEServers []hubv1.RTCIceServerConfig
+	AllowRelay bool
+}
+
 func NewHubGRPCServer(reg *registry.Registry, cloudSvc *cloud.Service, iceServers []hubv1.RTCIceServerConfig) *grpc.Server {
+	return NewHubGRPCServerWithConfig(HubGRPCServerConfig{
+		Registry:   reg,
+		Cloud:      cloudSvc,
+		ICEServers: iceServers,
+	})
+}
+
+func NewHubGRPCServerWithConfig(cfg HubGRPCServerConfig) *grpc.Server {
 	grpcSrv := grpc.NewServer(grpc.StreamInterceptor(grpcStreamAuth))
 	pb.RegisterAgentHubServer(grpcSrv, grpcapi.NewServer(&hubRegistryAdapter{
-		registry:   reg,
-		cloud:      cloudSvc,
-		iceServers: cloneHubICEServers(iceServers),
+		registry:   cfg.Registry,
+		cloud:      cfg.Cloud,
+		ice:        cfg.ICE,
+		iceServers: cloneHubICEServers(cfg.ICEServers),
+		allowRelay: cfg.AllowRelay,
 		sessions:   make(map[string]hubGRPCSession),
 		offers:     make(map[string]string),
 		claims:     make(map[string]hubGRPCSession),
@@ -92,11 +113,34 @@ func (a *hubRegistryAdapter) RegisterAgent(in grpcapi.RegisterAgentInput) (grpca
 	}
 	a.sessions[sessionID] = hubGRPCSession{AgentID: agentID, MachineID: machineID}
 	a.mu.Unlock()
+	iceServers, allowRelay, err := a.registerAgentICEServers(context.Background(), machineID)
+	if err != nil {
+		return grpcapi.RegisterAgentOutput{}, err
+	}
 	return grpcapi.RegisterAgentOutput{
 		SessionID:                sessionID,
-		ICEServers:               grpcICEServersFromHub(a.iceServers),
+		ICEServers:               grpcICEServersFromHub(iceServers),
 		HeartbeatIntervalSeconds: 5,
+		AllowRelay:               allowRelay,
 	}, nil
+}
+
+func (a *hubRegistryAdapter) registerAgentICEServers(ctx context.Context, machineID string) ([]hubv1.RTCIceServerConfig, bool, error) {
+	if a == nil {
+		return nil, false, nil
+	}
+	if a.ice == nil {
+		return cloneHubICEServers(a.iceServers), false, nil
+	}
+	rtc, err := a.ice.ConfigForLease(ctx, hubice.Lease{
+		ID:         strings.TrimSpace(machineID),
+		Path:       hubice.PathCloud,
+		AllowRelay: a.allowRelay,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return hubICEServersFromICE(rtc.ICEServers), a.allowRelay, nil
 }
 
 func (a *hubRegistryAdapter) HeartbeatAgent(sessionID string, terminals []grpcapi.TerminalInput) error {
@@ -275,6 +319,21 @@ func grpcICEServersFromHub(in []hubv1.RTCIceServerConfig) []grpcapi.ICEServer {
 	out := make([]grpcapi.ICEServer, 0, len(in))
 	for _, server := range in {
 		out = append(out, grpcapi.ICEServer{
+			URLs:       append([]string(nil), server.URLs...),
+			Username:   server.Username,
+			Credential: server.Credential,
+		})
+	}
+	return out
+}
+
+func hubICEServersFromICE(in []hubice.ICEServer) []hubv1.RTCIceServerConfig {
+	out := make([]hubv1.RTCIceServerConfig, 0, len(in))
+	for _, server := range in {
+		if len(server.URLs) == 0 {
+			continue
+		}
+		out = append(out, hubv1.RTCIceServerConfig{
 			URLs:       append([]string(nil), server.URLs...),
 			Username:   server.Username,
 			Credential: server.Credential,

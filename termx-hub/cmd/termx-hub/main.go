@@ -81,19 +81,27 @@ func newHubRuntimeFromEnv() (hubRuntime, error) {
 		}
 	}
 	reg := registry.New(registry.Config{})
-	svc := cloud.NewService(cloud.Config{Registry: reg, AllowRelayByDefault: relayAvailableFromEnv(turnServer)})
+	allowRelay := relayAvailableFromEnv(turnServer)
+	svc := cloud.NewService(cloud.Config{Registry: reg, AllowRelayByDefault: allowRelay})
 	iceServers := stunServersFromEnv(os.Getenv("TERMX_HUB_STUN_SERVERS"))
+	iceSvc := iceServiceFromEnv(turnServer)
 	runtime := hubRuntime{
 		Handler: httpapi.NewHandler(httpapi.Config{
 			Cloud:          svc,
 			Registry:       reg,
-			ICE:            iceServiceFromEnv(turnServer),
+			ICE:            iceSvc,
 			ICEServers:     iceServers,
 			AllowedOrigins: csvList(os.Getenv("TERMX_HUB_ALLOWED_ORIGINS")),
 		}),
-		GRPCServer: remote.NewHubGRPCServer(reg, svc, iceServers),
-		Registry:   reg,
-		Cleanup:    cleanup,
+		GRPCServer: remote.NewHubGRPCServerWithConfig(remote.HubGRPCServerConfig{
+			Registry:   reg,
+			Cloud:      svc,
+			ICE:        iceSvc,
+			ICEServers: iceServers,
+			AllowRelay: allowRelay,
+		}),
+		Registry: reg,
+		Cleanup:  cleanup,
 	}
 	if turnServer != nil {
 		runtime.TrafficReader = turnServer
