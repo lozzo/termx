@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	goruntime "runtime"
 	"strings"
@@ -36,8 +35,6 @@ const (
 	StateOnline      State = "online"
 	StateDegraded    State = "degraded"
 )
-
-const hubPresenceSyncTimeout = 5 * time.Second
 
 var errHubForcedOffline = errors.New("hub forced offline")
 
@@ -92,7 +89,6 @@ type Manager struct {
 }
 
 type hubRuntimeState struct {
-	HTTPSessionID   string
 	SessionID       string
 	RTCServers      []hubv1.RTCIceServerConfig
 	RelayPolicy     hubv1.RelayPolicy
@@ -564,15 +560,8 @@ func (m *Manager) syncHubPresences(ctx context.Context, hubURLs []string) (int, 
 		go func(hubURL string) {
 			var err error
 			switch mode := m.hubConnectionMode(hubURL); mode {
-			case "online":
+			case "online", "local":
 				err = m.ensureGRPCHubLoop(ctx, hubURL)
-			case "local":
-				syncCtx, cancel := context.WithTimeout(ctx, hubPresenceSyncTimeout)
-				err = m.syncHubPresence(syncCtx, hubURL)
-				cancel()
-				if err == nil {
-					err = m.ensureGRPCHubLoop(ctx, hubURL)
-				}
 			default:
 				err = nil
 			}
@@ -721,7 +710,6 @@ func (m *Manager) stopHubSignalingLoopLocked() {
 			state.SessionCancel()
 		}
 		state.SessionID = ""
-		state.HTTPSessionID = ""
 		state.RTCServers = nil
 		state.RelayPolicy = hubv1.RelayPolicy{}
 		state.SessionContext = nil
@@ -901,75 +889,6 @@ func (m *Manager) syncControlRegistration(ctx context.Context) error {
 	return discovery.RegisterDevice(ctx, controlURL, accessToken, payload)
 }
 
-func (m *Manager) syncHubPresence(ctx context.Context, hubURL string) error {
-	hostname, _ := os.Hostname()
-
-	m.mu.Lock()
-	hubState := m.hubStateLocked(hubURL)
-	if hubState.ForcedOffline {
-		reason := hubState.ForcedReason
-		m.mu.Unlock()
-		return forcedOfflineError(reason)
-	}
-	hubSessionID := hubState.HTTPSessionID
-	agentID := m.agentID
-	deviceName := m.cfg.DeviceName
-	m.mu.Unlock()
-
-	terminals := m.remoteHubTerminals(ctx)
-	if hubSessionID == "" {
-		if strings.TrimSpace(agentID) == "" {
-			agentID = randomAgentID()
-			m.mu.Lock()
-			if strings.TrimSpace(m.agentID) == "" {
-				m.agentID = agentID
-			} else {
-				agentID = m.agentID
-			}
-			m.mu.Unlock()
-		}
-		resp, err := discovery.RegisterHub(ctx, hubURL, hubv1.HubRegisterRequest{
-			Version:        "remote.hub.v1",
-			DeviceID:       m.identity.DeviceID,
-			AgentID:        agentID,
-			DisplayName:    firstNonEmpty(m.identity.DisplayName, deviceName),
-			Hostname:       hostname,
-			Platform:       fmt.Sprintf("%s/%s", goruntime.GOOS, goruntime.GOARCH),
-			RuntimeVersion: "termx-dev",
-			Terminals:      terminals,
-		})
-		if err != nil {
-			return err
-		}
-		m.mu.Lock()
-		state := m.hubStateLocked(hubURL)
-		state.HTTPSessionID = resp.AgentSessionID
-		state.RTCServers = append([]hubv1.RTCIceServerConfig(nil), resp.RTCConfig.IceServers...)
-		state.RelayPolicy = resp.RelayPolicy
-		m.mu.Unlock()
-		return nil
-	}
-
-	_, err := discovery.HeartbeatHub(ctx, hubURL, hubv1.HubHeartbeatRequest{
-		AgentSessionID: hubSessionID,
-		DeviceID:       m.identity.DeviceID,
-		LastSeenAt:     time.Now().UTC().Format(time.RFC3339),
-		Terminals:      terminals,
-	})
-	if err == nil {
-		return nil
-	}
-	if discovery.IsForcedOffline(err) {
-		m.forceHubOffline(hubURL, err)
-		return forcedOfflineError(err.Error())
-	}
-	if discovery.IsHTTPStatus(err, http.StatusUnauthorized) {
-		m.resetHubSession(hubURL)
-		return m.syncHubPresence(ctx, hubURL)
-	}
-	return err
-}
-
 func (m *Manager) hubStateLocked(hubURL string) *hubRuntimeState {
 	hubURL = strings.TrimSpace(hubURL)
 	if m.hubStates == nil {
@@ -989,25 +908,6 @@ func randomAgentID() string {
 		return fmt.Sprintf("agent-%d", time.Now().UnixNano())
 	}
 	return "agent-" + hex.EncodeToString(raw[:])
-}
-
-func (m *Manager) remoteHubTerminals(ctx context.Context) []hubv1.HubTerminalInventoryItem {
-	var terminals []TerminalInventoryItem
-	if m.provider != nil {
-		terminals = m.provider.ListRemoteTerminals(ctx)
-	}
-	out := make([]hubv1.HubTerminalInventoryItem, 0, len(terminals))
-	for _, terminal := range terminals {
-		out = append(out, hubv1.HubTerminalInventoryItem{
-			ID:      terminal.ID,
-			Name:    terminal.Name,
-			Command: append([]string(nil), terminal.Command...),
-			Cols:    terminal.Cols,
-			Rows:    terminal.Rows,
-			State:   terminal.State,
-		})
-	}
-	return out
 }
 
 func (m *Manager) buildGRPCTerminals() []*pb.Terminal {
@@ -1232,6 +1132,7 @@ func (m *Manager) handleGRPCOffer(ctx context.Context, hubURL string, pbOffer *p
 			SessionId:     answer.SessionID,
 			Sdp:           answer.SDP,
 			IceCandidates: append([]string(nil), answer.ICECandidates...),
+			Error:         answer.Error,
 		},
 	}})
 }
@@ -1256,6 +1157,7 @@ func (m *Manager) handleGRPCPairingClaim(ctx context.Context, claim *pb.PairingC
 			ExpiresAt:    result.ExpiresAt,
 			MachineId:    result.MachineID,
 			MachineName:  result.MachineName,
+			Error:        result.Error,
 		},
 	}})
 }
@@ -1461,7 +1363,6 @@ func (m *Manager) resetHubSession(hubURL string) {
 		if state.SessionCancel != nil {
 			cancels = append(cancels, state.SessionCancel)
 		}
-		state.HTTPSessionID = ""
 		state.SessionID = ""
 		state.RTCServers = nil
 		state.RelayPolicy = hubv1.RelayPolicy{}
@@ -1475,7 +1376,6 @@ func (m *Manager) resetHubSession(hubURL string) {
 			if state.SessionCancel != nil {
 				cancels = append(cancels, state.SessionCancel)
 			}
-			state.HTTPSessionID = ""
 			state.SessionID = ""
 			state.RTCServers = nil
 			state.RelayPolicy = hubv1.RelayPolicy{}
@@ -1501,7 +1401,6 @@ func (m *Manager) forceHubOffline(hubURL string, cause error) {
 		if state.SessionCancel != nil {
 			cancels = append(cancels, state.SessionCancel)
 		}
-		state.HTTPSessionID = ""
 		state.SessionID = ""
 		state.RTCServers = nil
 		state.RelayPolicy = hubv1.RelayPolicy{}

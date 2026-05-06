@@ -79,6 +79,7 @@ message SignalingAnswer {
   string session_id = 1;
   string sdp = 2;
   repeated string ice_candidates = 3;
+  string error = 4;
 }
 
 message PairingClaim {
@@ -96,6 +97,7 @@ message PairingResult {
   string expires_at = 3;
   string machine_id = 4;
   string machine_name = 5;
+  string error = 6;
 }
 
 message Kick {

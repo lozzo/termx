@@ -237,9 +237,9 @@ func TestManagerReevaluatesDiscoveredHubOnReconcile(t *testing.T) {
 }
 
 func TestManagerAddsDiscoveredHubWithoutDroppingExistingLocalHub(t *testing.T) {
-	localHub := newMultiHubTestServer(t, "hub-local", false)
+	localHub := newDiscoveryHubTestServer(t, false)
 	defer localHub.Close()
-	cloudHub := newMultiHubTestServer(t, "hub-cloud", false)
+	cloudHub := newDiscoveryHubTestServer(t, false)
 	defer cloudHub.Close()
 	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -272,7 +272,8 @@ func TestManagerAddsDiscoveredHubWithoutDroppingExistingLocalHub(t *testing.T) {
 		t.Fatalf("Start returned error: %v", err)
 	}
 	defer manager.Close()
-	localRegister := localHub.waitForRegister(t)
+	waitForHubLoop(t, manager, localHub.URL)
+	localAgentID := manager.buildGRPCRegisterRequest().GetAgentId()
 
 	manager.ConfigureCloud(control.URL, "control-secret", "")
 	state, detail, err := manager.reconcile(context.Background())
@@ -281,22 +282,24 @@ func TestManagerAddsDiscoveredHubWithoutDroppingExistingLocalHub(t *testing.T) {
 	}
 	manager.setStatus(state, detail)
 
-	cloudRegister := cloudHub.waitForRegister(t)
-	if localRegister.AgentID == "" || localRegister.AgentID != cloudRegister.AgentID {
-		t.Fatalf("local/cloud registrations did not share agent identity: local=%+v cloud=%+v", localRegister, cloudRegister)
-	}
 	manager.mu.RLock()
 	hubURLs := append([]string(nil), manager.cfg.HubURLs...)
 	manager.mu.RUnlock()
+	waitForHubLoop(t, manager, localHub.URL)
+	waitForHubLoop(t, manager, cloudHub.URL)
+	agentID := manager.buildGRPCRegisterRequest().GetAgentId()
 	if !containsString(hubURLs, localHub.URL) || !containsString(hubURLs, cloudHub.URL) {
 		t.Fatalf("discovery dropped an existing hub URL: %+v", hubURLs)
+	}
+	if agentID == "" || localAgentID != agentID {
+		t.Fatalf("expected discovered cloud hub to reuse local agent id, local=%q cloud=%q", localAgentID, agentID)
 	}
 }
 
 func TestManagerKeepsLocalHubWhenExplicitCloudHubConfigured(t *testing.T) {
-	localHub := newMultiHubTestServer(t, "hub-local", false)
+	localHub := newDiscoveryHubTestServer(t, false)
 	defer localHub.Close()
-	cloudHub := newMultiHubTestServer(t, "hub-cloud", false)
+	cloudHub := newDiscoveryHubTestServer(t, false)
 	defer cloudHub.Close()
 	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -332,17 +335,40 @@ func TestManagerKeepsLocalHubWhenExplicitCloudHubConfigured(t *testing.T) {
 	}
 	defer manager.Close()
 
-	localRegister := localHub.waitForRegister(t)
-	cloudRegister := cloudHub.waitForRegister(t)
-	if localRegister.AgentID == "" || localRegister.AgentID != cloudRegister.AgentID {
-		t.Fatalf("local/cloud registrations did not share agent identity: local=%+v cloud=%+v", localRegister, cloudRegister)
-	}
 	manager.mu.RLock()
 	hubURLs := append([]string(nil), manager.cfg.HubURLs...)
 	manager.mu.RUnlock()
+	waitForHubLoop(t, manager, localHub.URL)
+	waitForHubLoop(t, manager, cloudHub.URL)
+	agentID := manager.buildGRPCRegisterRequest().GetAgentId()
 	if !containsString(hubURLs, localHub.URL) || !containsString(hubURLs, cloudHub.URL) {
 		t.Fatalf("explicit cloud discovery dropped an existing hub URL: %+v", hubURLs)
 	}
+	if agentID == "" {
+		t.Fatal("expected explicit cloud hub to share generated agent id")
+	}
+}
+
+type discoveryHubTestServer struct {
+	*httptest.Server
+}
+
+func newDiscoveryHubTestServer(t *testing.T, fail bool) *discoveryHubTestServer {
+	t.Helper()
+	s := &discoveryHubTestServer{}
+	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fail {
+			http.Error(w, "hub unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		switch r.URL.Path {
+		case "/api/health":
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	return s
 }
 
 func TestSelectDiscoveredHubFiltersUnusableAndPrefersRegionThenWeight(t *testing.T) {

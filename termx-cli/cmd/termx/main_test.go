@@ -13,7 +13,9 @@ import (
 	"time"
 
 	termx "github.com/lozzow/termx/termx-core"
+	"github.com/lozzow/termx/termx-remote/discovery"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
+	pb "github.com/lozzow/termx/termx-remote/protocol/hubgrpc"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -665,33 +667,43 @@ func TestStartRemoteLocalRuntimeServesEmbeddedHub(t *testing.T) {
 		t.Fatalf("expected hub health response, got %s", string(body))
 	}
 
-	registerPayload := strings.NewReader(`{
-		"version":"remote.hub.v1",
-		"device_id":"` + remoteHost.service.Status().DeviceID + `",
-		"agent_id":"agent-cli-local-hub",
-		"display_name":"TermX CLI Local Hub Test",
-		"runtime_version":"test",
-		"terminals":[]
-	}`)
-	resp, err = client.Post(baseURL+"/api/v1/agents/register", "application/json", registerPayload)
+	grpcClient, err := discovery.NewGRPCHubClient(baseURL, "local")
 	if err != nil {
-		t.Fatalf("POST local hub register: %v", err)
+		t.Fatalf("new grpc local hub client: %v", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected local hub register 200, got %d: %s", resp.StatusCode, string(body))
+	defer grpcClient.Close()
+	grpcCtx, grpcCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer grpcCancel()
+	stream, err := grpcClient.Connect(grpcCtx)
+	if err != nil {
+		t.Fatalf("connect local hub grpc: %v", err)
 	}
-	var registerResp map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&registerResp); err != nil {
-		t.Fatalf("decode local hub register: %v", err)
+	if err := stream.Send(&pb.AgentToHub{Payload: &pb.AgentToHub_Register{
+		Register: &pb.RegisterRequest{
+			DeviceId:    "manual-cli-local-hub",
+			MachineId:   "manual-cli-local-hub",
+			AgentId:     "agent-cli-local-hub",
+			DisplayName: "TermX CLI Local Hub Test",
+			Version:     "test",
+			Terminals:   []*pb.Terminal{},
+		},
+	}}); err != nil {
+		t.Fatalf("send local hub grpc register: %v", err)
 	}
-	if registerResp["agent_session_id"] == "" {
-		t.Fatalf("expected agent_session_id in register response, got %#v", registerResp)
+	msg, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv local hub grpc register ack: %v", err)
 	}
-	rawRegister, _ := json.Marshal(registerResp)
-	if strings.Contains(strings.ToLower(string(rawRegister)), "turn:") || strings.Contains(strings.ToLower(string(rawRegister)), "turns:") {
-		t.Fatalf("local hub register must not expose TURN credentials: %s", rawRegister)
+	ack := msg.GetRegisterAck()
+	if ack.GetAgentSessionId() == "" {
+		t.Fatalf("expected agent_session_id in register ack, got %#v", ack)
+	}
+	for _, server := range ack.GetIceServers() {
+		for _, url := range server.GetUrls() {
+			if strings.HasPrefix(strings.ToLower(url), "turn:") || strings.HasPrefix(strings.ToLower(url), "turns:") {
+				t.Fatalf("local hub register must not expose TURN credentials: %+v", ack.GetIceServers())
+			}
+		}
 	}
 
 	session, err := remoteHost.service.PairStart(remoteprotocol.PairStartParams{

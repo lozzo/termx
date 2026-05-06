@@ -124,8 +124,16 @@ func TestCloudSessionHTTPContract(t *testing.T) {
 func TestCloudSessionHTTPWaitsForDelayedAgentAnswer(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	clock := fixedClock(time.Date(2026, 5, 3, 10, 22, 0, 0, time.UTC))
 	reg := registry.New(registry.Config{Clock: clock})
+	if _, err := reg.Register(ctx, registry.RegisterInput{
+		MachineID: "mach_1",
+		AgentID:   "agent_1",
+		Terminals: []registry.Terminal{{ID: "term_1", State: "running"}},
+	}); err != nil {
+		t.Fatalf("register agent: %v", err)
+	}
 	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
 		Cloud:         svc,
@@ -133,54 +141,30 @@ func TestCloudSessionHTTPWaitsForDelayedAgentAnswer(t *testing.T) {
 		AnswerTimeout: 500 * time.Millisecond,
 		PollInterval:  time.Millisecond,
 	})
-	register := postJSON(t, router, "/api/v1/agents/register", map[string]any{
-		"version":   "remote.hub.v1",
-		"device_id": "mach_1",
-		"terminals": []map[string]any{{
-			"id":    "term_1",
-			"state": "running",
-		}},
-	})
-	if register.Code != http.StatusOK {
-		t.Fatalf("agent register status = %d body=%s", register.Code, register.Body.String())
-	}
-	var registered struct {
-		AgentSessionID string `json:"agent_session_id"`
-	}
-	decodeJSON(t, register, &registered)
 
 	responseCh := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
 		responseCh <- postJSON(t, router, "/api/v1/sessions", validCloudSessionRequest())
 	}()
 
-	poll := postJSON(t, router, "/api/v1/agents/signaling/poll", map[string]any{
-		"agent_session_id": registered.AgentSessionID,
-		"device_id":        "mach_1",
-		"timeout_seconds":  1,
+	polled, err := svc.PollAgentOffer(ctx, cloud.PollAgentOfferInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		Timeout:   time.Second,
 	})
-	if poll.Code != http.StatusOK {
-		t.Fatalf("agent poll status = %d body=%s", poll.Code, poll.Body.String())
+	if err != nil {
+		t.Fatalf("poll offer: %v", err)
 	}
-	var pollResp struct {
-		Offer struct {
-			SessionID string `json:"session_id"`
-		} `json:"offer"`
+	if polled.SessionID != "rtc_cloud_1" {
+		t.Fatalf("poll session id = %q", polled.SessionID)
 	}
-	decodeJSON(t, poll, &pollResp)
-	if pollResp.Offer.SessionID != "rtc_cloud_1" {
-		t.Fatalf("poll session id = %q", pollResp.Offer.SessionID)
-	}
-	answer := postJSON(t, router, "/api/v1/agents/signaling/answer", map[string]any{
-		"agent_session_id": registered.AgentSessionID,
-		"device_id":        "mach_1",
-		"answer": map[string]any{
-			"session_id": pollResp.Offer.SessionID,
-			"sdp":        minimalSDP("delayed-answer"),
-		},
-	})
-	if answer.Code != http.StatusNoContent {
-		t.Fatalf("agent answer status = %d body=%s", answer.Code, answer.Body.String())
+	if err := svc.SubmitAnswer(ctx, cloud.SubmitAnswerInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		OfferID:   polled.ID,
+		SDP:       minimalSDP("delayed-answer"),
+	}); err != nil {
+		t.Fatalf("submit answer: %v", err)
 	}
 
 	var response *httptest.ResponseRecorder
@@ -206,8 +190,12 @@ func TestCloudSessionHTTPWaitsForDelayedAgentAnswer(t *testing.T) {
 func TestCloudSessionHTTPRelaysAgentAnswerError(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	clock := fixedClock(time.Date(2026, 5, 3, 10, 25, 0, 0, time.UTC))
 	reg := registry.New(registry.Config{Clock: clock})
+	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register agent: %v", err)
+	}
 	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
 	router := httpapi.NewHandler(httpapi.Config{
 		Cloud:         svc,
@@ -215,47 +203,26 @@ func TestCloudSessionHTTPRelaysAgentAnswerError(t *testing.T) {
 		AnswerTimeout: time.Millisecond,
 		PollInterval:  time.Millisecond,
 	})
-	register := postJSON(t, router, "/api/v1/agents/register", map[string]any{
-		"version":   "remote.hub.v1",
-		"device_id": "mach_1",
-	})
-	if register.Code != http.StatusOK {
-		t.Fatalf("agent register status = %d body=%s", register.Code, register.Body.String())
-	}
-	var registered struct {
-		AgentSessionID string `json:"agent_session_id"`
-	}
-	decodeJSON(t, register, &registered)
 
 	session := postJSON(t, router, "/api/v1/sessions", validCloudSessionRequest())
 	if session.Code != http.StatusAccepted {
 		t.Fatalf("initial session status = %d body=%s", session.Code, session.Body.String())
 	}
-	poll := postJSON(t, router, "/api/v1/agents/signaling/poll", map[string]any{
-		"agent_session_id": registered.AgentSessionID,
-		"device_id":        "mach_1",
-		"timeout_seconds":  1,
+	polled, err := svc.PollAgentOffer(ctx, cloud.PollAgentOfferInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		Timeout:   time.Second,
 	})
-	if poll.Code != http.StatusOK {
-		t.Fatalf("agent poll status = %d body=%s", poll.Code, poll.Body.String())
+	if err != nil {
+		t.Fatalf("poll offer: %v", err)
 	}
-	var pollResp struct {
-		Offer struct {
-			SessionID string `json:"session_id"`
-		} `json:"offer"`
-	}
-	decodeJSON(t, poll, &pollResp)
-
-	answer := postJSON(t, router, "/api/v1/agents/signaling/answer", map[string]any{
-		"agent_session_id": registered.AgentSessionID,
-		"device_id":        "mach_1",
-		"answer": map[string]any{
-			"session_id": pollResp.Offer.SessionID,
-			"error":      "set remote description: unsupported offer",
-		},
-	})
-	if answer.Code != http.StatusNoContent {
-		t.Fatalf("agent error answer status = %d body=%s", answer.Code, answer.Body.String())
+	if err := svc.SubmitAnswer(ctx, cloud.SubmitAnswerInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		OfferID:   polled.ID,
+		Error:     "set remote description: unsupported offer",
+	}); err != nil {
+		t.Fatalf("submit answer error: %v", err)
 	}
 
 	appAnswer := postJSON(t, router, "/api/v1/sessions/rtc_cloud_1/answer", map[string]any{"machine_id": "mach_1"})
@@ -501,14 +468,6 @@ type fixedClock time.Time
 
 func (c fixedClock) Now() time.Time {
 	return time.Time(c)
-}
-
-type mutableHTTPClock struct {
-	value time.Time
-}
-
-func (c *mutableHTTPClock) Now() time.Time {
-	return c.value
 }
 
 func minimalSDP(sessionID string) string {

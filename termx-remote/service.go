@@ -350,7 +350,6 @@ func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableP
 	hubHandler := httpapi.NewHandler(httpapi.Config{
 		Cloud:          cloudSvc,
 		Registry:       reg,
-		HubID:          "termx-local-hub",
 		AnswerTimeout:  250 * time.Millisecond,
 		PollInterval:   10 * time.Millisecond,
 		LocalDiscovery: true,
@@ -362,7 +361,7 @@ func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableP
 	}
 	lanFilter := httpapi.NewLANFilter(cfg.AllowLAN, allowedNets)
 	httpServer := &http.Server{Handler: lanFilter(hubHandler)}
-	grpcServer := newLocalHubGRPCServer(reg, cloudSvc, nil)
+	grpcServer := NewHubGRPCServer(reg, cloudSvc, nil)
 	mux := cmux.New(listener)
 	grpcListener := mux.Match(cmux.HTTP2())
 	httpListener := mux.Match(cmux.HTTP1Fast())

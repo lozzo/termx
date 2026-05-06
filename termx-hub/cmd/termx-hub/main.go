@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	remote "github.com/lozzow/termx/termx-remote"
 	"github.com/lozzow/termx/termx-remote/hub/cloud"
 	hubheartbeat "github.com/lozzow/termx/termx-remote/hub/heartbeat"
 	"github.com/lozzow/termx/termx-remote/hub/httpapi"
@@ -16,6 +19,8 @@ import (
 	"github.com/lozzow/termx/termx-remote/hub/registry"
 	hubturn "github.com/lozzow/termx/termx-remote/hub/turn"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
+	"github.com/soheilhy/cmux"
+	"google.golang.org/grpc"
 )
 
 func main() {
@@ -42,13 +47,14 @@ func main() {
 		go cleaner.StartCleanup(cleanupCtx, ticker.C)
 	}
 	log.Printf("termx hub listening on http://%s", addr)
-	if err := http.ListenAndServe(addr, runtime.Handler); err != nil {
+	if err := serveHub(addr, runtime); err != nil {
 		log.Fatal(err)
 	}
 }
 
 type hubRuntime struct {
 	Handler       http.Handler
+	GRPCServer    *grpc.Server
 	Registry      *registry.Registry
 	TrafficReader hubturn.TrafficReader
 	Cleanup       func()
@@ -76,23 +82,69 @@ func newHubRuntimeFromEnv() (hubRuntime, error) {
 	}
 	reg := registry.New(registry.Config{})
 	svc := cloud.NewService(cloud.Config{Registry: reg, AllowRelayByDefault: relayAvailableFromEnv(turnServer)})
+	iceServers := stunServersFromEnv(os.Getenv("TERMX_HUB_STUN_SERVERS"))
 	runtime := hubRuntime{
 		Handler: httpapi.NewHandler(httpapi.Config{
 			Cloud:          svc,
 			Registry:       reg,
 			ICE:            iceServiceFromEnv(turnServer),
-			ICEServers:     stunServersFromEnv(os.Getenv("TERMX_HUB_STUN_SERVERS")),
-			HubID:          hubIDFromEnv(),
-			DebugToken:     strings.TrimSpace(os.Getenv("TERMX_HUB_DEBUG_TOKEN")),
+			ICEServers:     iceServers,
 			AllowedOrigins: csvList(os.Getenv("TERMX_HUB_ALLOWED_ORIGINS")),
 		}),
-		Registry: reg,
-		Cleanup:  cleanup,
+		GRPCServer: remote.NewHubGRPCServer(reg, svc, iceServers),
+		Registry:   reg,
+		Cleanup:    cleanup,
 	}
 	if turnServer != nil {
 		runtime.TrafficReader = turnServer
 	}
 	return runtime, nil
+}
+
+func serveHub(addr string, runtime hubRuntime) error {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	mux := cmux.New(listener)
+	grpcListener := mux.Match(cmux.HTTP2())
+	httpListener := mux.Match(cmux.HTTP1Fast())
+	httpServer := &http.Server{Handler: runtime.Handler}
+	errCh := make(chan error, 3)
+	go func() {
+		if runtime.GRPCServer == nil {
+			errCh <- nil
+			return
+		}
+		if err := runtime.GRPCServer.Serve(grpcListener); err != nil && !errors.Is(err, net.ErrClosed) && !isClosedNetworkError(err) {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+	go func() {
+		if err := httpServer.Serve(httpListener); err != nil && !errors.Is(err, http.ErrServerClosed) && !isClosedNetworkError(err) {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+	go func() {
+		if err := mux.Serve(); err != nil && !errors.Is(err, net.ErrClosed) && !isClosedNetworkError(err) {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+	return <-errCh
+}
+
+func isClosedNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "use of closed network connection") || strings.Contains(text, "listener closed")
 }
 
 func heartbeatConfigFromEnv() hubheartbeat.Config {

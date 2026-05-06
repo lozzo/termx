@@ -2,15 +2,12 @@ package httpapi
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/lozzow/termx/termx-remote/hub/cloud"
@@ -20,22 +17,18 @@ import (
 )
 
 type Config struct {
-	Cloud            *cloud.Service
-	Registry         *registry.Registry
-	ICE              *ice.Service
-	ICEServers       []hubv1.RTCIceServerConfig
-	HubID            string
-	InternalSecret   string
-	DebugToken       string
-	Clock            Clock
-	AnswerTimeout    time.Duration
-	PollInterval     time.Duration
-	MaxBodyBytes     int64
-	AgentSessionTTL  time.Duration
-	MaxAgentSessions int
-	KickTTL          time.Duration
-	AllowedOrigins   []string
-	LocalDiscovery   bool
+	Cloud          *cloud.Service
+	Registry       *registry.Registry
+	ICE            *ice.Service
+	ICEServers     []hubv1.RTCIceServerConfig
+	InternalSecret string
+	Clock          Clock
+	AnswerTimeout  time.Duration
+	PollInterval   time.Duration
+	MaxBodyBytes   int64
+	KickTTL        time.Duration
+	AllowedOrigins []string
+	LocalDiscovery bool
 }
 
 type Clock interface {
@@ -49,12 +42,10 @@ func (systemClock) Now() time.Time {
 }
 
 type Handler struct {
-	router          http.Handler
-	registry        *registry.Registry
-	cloud           *cloud.Service
-	agents          *agentSessions
-	clock           Clock
-	agentSessionTTL time.Duration
+	router   http.Handler
+	registry *registry.Registry
+	cloud    *cloud.Service
+	clock    Clock
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +60,7 @@ func (h *Handler) StartCleanup(ctx context.Context, ticks <-chan time.Time) {
 		select {
 		case <-ctx.Done():
 			return
-		case tick, ok := <-ticks:
+		case _, ok := <-ticks:
 			if !ok {
 				return
 			}
@@ -78,9 +69,6 @@ func (h *Handler) StartCleanup(ctx context.Context, ticks <-chan time.Time) {
 			}
 			if h.cloud != nil {
 				h.cloud.CleanupExpired(ctx)
-			}
-			if h.agents != nil {
-				h.agents.cleanupExpired(tick.UTC())
 			}
 		}
 	}
@@ -91,27 +79,14 @@ func NewHandler(cfg Config) http.Handler {
 	if clock == nil {
 		clock = systemClock{}
 	}
-	agentSessionTTL := cfg.AgentSessionTTL
-	if agentSessionTTL <= 0 {
-		agentSessionTTL = 10 * time.Minute
-	}
 	kickTTL := cfg.KickTTL
 	if kickTTL <= 0 {
 		kickTTL = time.Minute
-	}
-	hubID := strings.TrimSpace(cfg.HubID)
-	if hubID == "" {
-		hubID = "termx-hub-local"
-	}
-	maxAgentSessions := cfg.MaxAgentSessions
-	if maxAgentSessions <= 0 {
-		maxAgentSessions = 4096
 	}
 	maxBodyBytes := cfg.MaxBodyBytes
 	if maxBodyBytes <= 0 {
 		maxBodyBytes = 64 * 1024
 	}
-	agents := newAgentSessions()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -152,68 +127,6 @@ func NewHandler(cfg Config) http.Handler {
 			})
 		})
 	}
-	mux.HandleFunc("GET /api/debug/agents", func(w http.ResponseWriter, r *http.Request) {
-		debugToken := strings.TrimSpace(cfg.DebugToken)
-		if debugToken == "" || r.Header.Get("X-TermX-Debug-Token") != debugToken {
-			writeError(w, http.StatusUnauthorized, "debug_unauthorized", "debug token is required")
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"agents": agents.snapshot(clock.Now().UTC()),
-		})
-	})
-	mux.HandleFunc("POST /api/v1/agents/register", func(w http.ResponseWriter, r *http.Request) {
-		var req hubv1.HubRegisterRequest
-		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
-			writeDecodeError(w, err)
-			return
-		}
-		if cfg.Registry == nil {
-			writeError(w, http.StatusServiceUnavailable, "registry_unavailable", "agent registry is not configured")
-			return
-		}
-		deviceID := strings.TrimSpace(req.DeviceID)
-		if deviceID == "" {
-			writeError(w, http.StatusBadRequest, "invalid_agent_registration", "device_id is required")
-			return
-		}
-		agentID := strings.TrimSpace(req.AgentID)
-		if agentID == "" {
-			agentID = randomID("agent")
-		}
-		terminals := make([]registry.Terminal, 0, len(req.Terminals))
-		for _, terminal := range req.Terminals {
-			if strings.TrimSpace(terminal.ID) == "" {
-				continue
-			}
-			terminals = append(terminals, registry.Terminal{
-				ID:    terminal.ID,
-				State: terminal.State,
-			})
-		}
-		if _, err := cfg.Registry.Register(r.Context(), registry.RegisterInput{
-			MachineID: deviceID,
-			AgentID:   agentID,
-			Terminals: terminals,
-		}); err != nil {
-			writeError(w, http.StatusForbidden, "agent_register_failed", err.Error())
-			return
-		}
-		sessionID := agents.put(agentSession{AgentID: agentID, DeviceID: deviceID}, clock.Now().UTC(), agentSessionTTL, maxAgentSessions)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"version":                    "remote.hub.v1",
-			"hub_id":                     hubID,
-			"agent_session_id":           sessionID,
-			"heartbeat_interval_seconds": 5,
-			"rtc_config": map[string]any{
-				"ice_servers": cloneICEServers(cfg.ICEServers),
-			},
-			"relay_policy": map[string]any{
-				"allow_relay":          false,
-				"allow_relay_transfer": false,
-			},
-		})
-	})
 	mux.HandleFunc("POST /api/internal/kick", func(w http.ResponseWriter, r *http.Request) {
 		if !authorizedInternalRequest(r, cfg.InternalSecret) {
 			writeError(w, http.StatusForbidden, "internal_unauthorized", "valid hub secret is required")
@@ -259,206 +172,12 @@ func NewHandler(cfg Config) http.Handler {
 				TTL:       kickTTL,
 			})
 		}
-		agents.deleteByAgentID(agentID)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":         true,
 			"kicked":     kicked,
 			"agent_id":   agentID,
 			"machine_id": machineID,
 		})
-	})
-	mux.HandleFunc("POST /api/v1/agents/heartbeat", func(w http.ResponseWriter, r *http.Request) {
-		var req hubv1.HubHeartbeatRequest
-		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
-			writeDecodeError(w, err)
-			return
-		}
-		if cfg.Registry == nil {
-			writeError(w, http.StatusServiceUnavailable, "registry_unavailable", "agent registry is not configured")
-			return
-		}
-		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
-			return
-		}
-		if err := cfg.Registry.Heartbeat(r.Context(), registry.HeartbeatInput{
-			AgentID:   session.AgentID,
-			MachineID: session.DeviceID,
-			Terminals: registryTerminalsFromHub(req.Terminals),
-		}); err != nil {
-			writeError(w, http.StatusUnauthorized, "agent_heartbeat_failed", err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, hubv1.HubHeartbeatResponse{
-			Accepted:             true,
-			NextHeartbeatSeconds: 5,
-		})
-	})
-	mux.HandleFunc("POST /api/v1/agents/signaling/poll", func(w http.ResponseWriter, r *http.Request) {
-		var req hubv1.SignalingPollRequest
-		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
-			writeDecodeError(w, err)
-			return
-		}
-		if cfg.Cloud == nil {
-			writeError(w, http.StatusServiceUnavailable, "cloud_service_unavailable", "cloud service is not configured")
-			return
-		}
-		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
-			return
-		}
-		timeout := time.Duration(req.TimeoutSeconds) * time.Second
-		if timeout <= 0 {
-			timeout = 15 * time.Second
-		}
-		if timeout > 20*time.Second {
-			timeout = 20 * time.Second
-		}
-		offer, err := cfg.Cloud.PollAgentOffer(r.Context(), cloud.PollAgentOfferInput{
-			AgentID:   session.AgentID,
-			MachineID: session.DeviceID,
-			Timeout:   timeout,
-		})
-		if err != nil {
-			if errors.Is(err, registry.ErrPollTimeout) {
-				agents.rememberPoll(req.AgentSessionID, "")
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-			agents.rememberPollError(req.AgentSessionID, err.Error())
-			writeError(w, http.StatusForbidden, "poll_cloud_offer_failed", err.Error())
-			return
-		}
-		publicID := publicSessionID(offer)
-		agents.rememberPoll(req.AgentSessionID, publicID)
-		agents.rememberOffer(req.AgentSessionID, publicID, offer.ID)
-		if _, err := rtcConfigForOffer(r.Context(), cfg, offer); err != nil {
-			agents.rememberPollError(req.AgentSessionID, err.Error())
-			writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, hubv1.SignalingPollResponse{
-			Offer: &hubv1.SignalingOffer{
-				SessionID:    publicID,
-				MachineID:    offer.MachineID,
-				TerminalID:   offer.TerminalID,
-				SDP:          offer.SDP,
-				Candidates:   append([]string(nil), offer.ICECandidates...),
-				SessionToken: offer.SessionToken,
-			},
-		})
-	})
-	mux.HandleFunc("POST /api/v1/agents/signaling/answer", func(w http.ResponseWriter, r *http.Request) {
-		var req hubv1.SubmitSignalingAnswerRequest
-		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
-			writeDecodeError(w, err)
-			return
-		}
-		if cfg.Cloud == nil {
-			writeError(w, http.StatusServiceUnavailable, "cloud_service_unavailable", "cloud service is not configured")
-			return
-		}
-		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
-			return
-		}
-		offerID := agents.resolveOfferID(req.AgentSessionID, req.Answer.SessionID)
-		if offerID == "" {
-			offerID = req.Answer.SessionID
-		}
-		if err := cfg.Cloud.SubmitAnswer(r.Context(), cloud.SubmitAnswerInput{
-			AgentID:   session.AgentID,
-			MachineID: session.DeviceID,
-			OfferID:   offerID,
-			SDP:       req.Answer.SDP,
-			Error:     req.Answer.Error,
-		}); err != nil {
-			agents.rememberAnswer(req.AgentSessionID, req.Answer.SessionID, err.Error())
-			writeError(w, http.StatusForbidden, "submit_cloud_answer_failed", err.Error())
-			return
-		}
-		agents.rememberAnswer(req.AgentSessionID, req.Answer.SessionID, "")
-		w.WriteHeader(http.StatusNoContent)
-	})
-	mux.HandleFunc("POST /api/v1/agents/pairing/poll", func(w http.ResponseWriter, r *http.Request) {
-		var req hubv1.PairingPollRequest
-		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
-			writeDecodeError(w, err)
-			return
-		}
-		if cfg.Registry == nil {
-			writeError(w, http.StatusServiceUnavailable, "registry_unavailable", "agent registry is not configured")
-			return
-		}
-		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
-			return
-		}
-		timeout := time.Duration(req.TimeoutSeconds) * time.Second
-		if timeout <= 0 {
-			timeout = 15 * time.Second
-		}
-		if timeout > 20*time.Second {
-			timeout = 20 * time.Second
-		}
-		claim, err := cfg.Registry.PollPairingClaim(r.Context(), registry.PairingPollInput{
-			AgentID:   session.AgentID,
-			MachineID: session.DeviceID,
-			Timeout:   timeout,
-		})
-		if err != nil {
-			if errors.Is(err, registry.ErrPollTimeout) {
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-			writeError(w, http.StatusForbidden, "poll_pairing_claim_failed", err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, hubv1.PairingPollResponse{
-			Claim: &hubv1.PairingClaim{
-				ClaimID:               claim.ID,
-				MachineID:             claim.MachineID,
-				PairSessionID:         claim.PairSessionID,
-				PairSecret:            claim.PairSecret,
-				AppDeviceID:           claim.AppDeviceID,
-				AppName:               claim.AppName,
-				RequestedCapabilities: append([]string(nil), claim.RequestedCapabilities...),
-			},
-		})
-	})
-	mux.HandleFunc("POST /api/v1/agents/pairing/result", func(w http.ResponseWriter, r *http.Request) {
-		var req hubv1.SubmitPairingResultRequest
-		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
-			writeDecodeError(w, err)
-			return
-		}
-		if cfg.Registry == nil {
-			writeError(w, http.StatusServiceUnavailable, "registry_unavailable", "agent registry is not configured")
-			return
-		}
-		session, ok := agents.get(req.AgentSessionID, req.DeviceID, clock.Now().UTC(), agentSessionTTL)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "invalid_agent_session", "agent session is invalid")
-			return
-		}
-		if _, err := cfg.Registry.SubmitPairingResult(r.Context(), registry.PairingResultInput{
-			AgentID:      session.AgentID,
-			MachineID:    session.DeviceID,
-			ClaimID:      req.Result.ClaimID,
-			MachineName:  req.Result.MachineName,
-			SessionToken: req.Result.SessionToken,
-			ExpiresAt:    req.Result.ExpiresAt,
-			Error:        req.Result.Error,
-		}); err != nil {
-			writeError(w, http.StatusForbidden, "submit_pairing_result_failed", err.Error())
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /api/v1/sessions", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -623,213 +342,11 @@ func NewHandler(cfg Config) http.Handler {
 		})
 	})
 	return &Handler{
-		router:          corsMiddleware(mux, cfg.AllowedOrigins),
-		registry:        cfg.Registry,
-		cloud:           cfg.Cloud,
-		agents:          agents,
-		clock:           clock,
-		agentSessionTTL: agentSessionTTL,
+		router:   corsMiddleware(mux, cfg.AllowedOrigins),
+		registry: cfg.Registry,
+		cloud:    cfg.Cloud,
+		clock:    clock,
 	}
-}
-
-type agentSession struct {
-	AgentID    string
-	DeviceID   string
-	LastSeenAt time.Time
-	ExpiresAt  time.Time
-}
-
-type agentSessionStats struct {
-	PollCount           int
-	AnswerCount         int
-	LastOfferSessionID  string
-	LastAnswerSessionID string
-	LastError           string
-}
-
-type agentSessions struct {
-	mu       sync.Mutex
-	sessions map[string]agentSession
-	offers   map[string]string
-	stats    map[string]agentSessionStats
-}
-
-func newAgentSessions() *agentSessions {
-	return &agentSessions{
-		sessions: make(map[string]agentSession),
-		offers:   make(map[string]string),
-		stats:    make(map[string]agentSessionStats),
-	}
-}
-
-func (s *agentSessions) put(session agentSession, now time.Time, ttl time.Duration, maxSessions int) string {
-	id := randomID("agent_session")
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.cleanupExpiredLocked(now)
-	for maxSessions > 0 && len(s.sessions) >= maxSessions {
-		s.evictOldestLocked()
-	}
-	session.LastSeenAt = now
-	session.ExpiresAt = now.Add(ttl)
-	s.sessions[id] = session
-	if _, ok := s.stats[id]; !ok {
-		s.stats[id] = agentSessionStats{}
-	}
-	return id
-}
-
-func (s *agentSessions) get(id string, deviceID string, now time.Time, ttl time.Duration) (agentSession, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	key := strings.TrimSpace(id)
-	s.cleanupExpiredLocked(now)
-	session, ok := s.sessions[key]
-	if !ok || session.DeviceID != strings.TrimSpace(deviceID) || !now.Before(session.ExpiresAt) {
-		if ok {
-			s.deleteLocked(key)
-		}
-		return agentSession{}, false
-	}
-	session.LastSeenAt = now
-	session.ExpiresAt = now.Add(ttl)
-	s.sessions[key] = session
-	return session, true
-}
-
-func (s *agentSessions) rememberPoll(agentSessionID string, publicSessionID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	stats := s.stats[strings.TrimSpace(agentSessionID)]
-	stats.PollCount++
-	stats.LastOfferSessionID = strings.TrimSpace(publicSessionID)
-	stats.LastError = ""
-	s.stats[strings.TrimSpace(agentSessionID)] = stats
-}
-
-func (s *agentSessions) rememberPollError(agentSessionID string, message string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	stats := s.stats[strings.TrimSpace(agentSessionID)]
-	stats.PollCount++
-	stats.LastError = strings.TrimSpace(message)
-	s.stats[strings.TrimSpace(agentSessionID)] = stats
-}
-
-func (s *agentSessions) rememberAnswer(agentSessionID string, publicSessionID string, message string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	stats := s.stats[strings.TrimSpace(agentSessionID)]
-	stats.AnswerCount++
-	stats.LastAnswerSessionID = strings.TrimSpace(publicSessionID)
-	stats.LastError = strings.TrimSpace(message)
-	s.stats[strings.TrimSpace(agentSessionID)] = stats
-}
-
-func (s *agentSessions) rememberOffer(agentSessionID string, publicSessionID string, internalOfferID string) {
-	s.mu.Lock()
-	s.offers[agentOfferKey(agentSessionID, publicSessionID)] = strings.TrimSpace(internalOfferID)
-	s.mu.Unlock()
-}
-
-func (s *agentSessions) resolveOfferID(agentSessionID string, publicSessionID string) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.offers[agentOfferKey(agentSessionID, publicSessionID)]
-}
-
-func agentOfferKey(agentSessionID string, publicSessionID string) string {
-	return strings.TrimSpace(agentSessionID) + "\x00" + strings.TrimSpace(publicSessionID)
-}
-
-func (s *agentSessions) snapshot(now time.Time) []map[string]any {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.cleanupExpiredLocked(now)
-	out := make([]map[string]any, 0, len(s.sessions))
-	for sessionID, session := range s.sessions {
-		stats := s.stats[sessionID]
-		out = append(out, map[string]any{
-			"agent_session_id":       sessionID,
-			"agent_id":               session.AgentID,
-			"machine_id":             session.DeviceID,
-			"poll_count":             stats.PollCount,
-			"answer_count":           stats.AnswerCount,
-			"last_offer_session_id":  stats.LastOfferSessionID,
-			"last_answer_session_id": stats.LastAnswerSessionID,
-			"last_error":             stats.LastError,
-			"expires_at":             session.ExpiresAt,
-		})
-	}
-	return out
-}
-
-func (s *agentSessions) cleanupExpired(now time.Time) int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	before := len(s.sessions)
-	s.cleanupExpiredLocked(now)
-	return before - len(s.sessions)
-}
-
-func (s *agentSessions) cleanupExpiredLocked(now time.Time) {
-	for id, session := range s.sessions {
-		if !now.Before(session.ExpiresAt) {
-			s.deleteLocked(id)
-		}
-	}
-}
-
-func (s *agentSessions) evictOldestLocked() {
-	var oldestID string
-	var oldest time.Time
-	for id, session := range s.sessions {
-		if oldestID == "" || session.LastSeenAt.Before(oldest) {
-			oldestID = id
-			oldest = session.LastSeenAt
-		}
-	}
-	if oldestID != "" {
-		s.deleteLocked(oldestID)
-	}
-}
-
-func (s *agentSessions) deleteLocked(id string) {
-	delete(s.sessions, id)
-	delete(s.stats, id)
-	for key := range s.offers {
-		if strings.HasPrefix(key, id+"\x00") {
-			delete(s.offers, key)
-		}
-	}
-}
-
-func (s *agentSessions) deleteByAgentID(agentID string) int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	removed := 0
-	agentID = strings.TrimSpace(agentID)
-	for id, session := range s.sessions {
-		if session.AgentID == agentID {
-			s.deleteLocked(id)
-			removed++
-		}
-	}
-	return removed
-}
-
-func registryTerminalsFromHub(in []hubv1.HubTerminalInventoryItem) []registry.Terminal {
-	out := make([]registry.Terminal, 0, len(in))
-	for _, terminal := range in {
-		if strings.TrimSpace(terminal.ID) == "" {
-			continue
-		}
-		out = append(out, registry.Terminal{
-			ID:    terminal.ID,
-			State: terminal.State,
-		})
-	}
-	return out
 }
 
 func waitForAnswer(ctx context.Context, cfg Config, offerID string, machineID string) (cloud.Answer, error) {
@@ -933,14 +450,6 @@ func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, 
 		response["terminal_id"] = strings.TrimSpace(terminalID)
 	}
 	writeJSON(w, http.StatusOK, response)
-}
-
-func rtcConfigForOffer(ctx context.Context, cfg Config, offer cloud.Offer) (hubv1.RTCConfig, error) {
-	servers, err := iceServersForLease(ctx, cfg, offer.ID, offer.AllowRelay)
-	if err != nil {
-		return hubv1.RTCConfig{}, err
-	}
-	return hubv1.RTCConfig{IceServers: servers}, nil
 }
 
 func iceServersForLease(ctx context.Context, cfg Config, leaseID string, allowRelay bool) ([]hubv1.RTCIceServerConfig, error) {
@@ -1063,12 +572,4 @@ func authorizedInternalRequest(r *http.Request, secret string) bool {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(provided), []byte(secret)) == 1
-}
-
-func randomID(prefix string) string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		panic(err)
-	}
-	return prefix + "_" + base64.RawURLEncoding.EncodeToString(b[:])
 }

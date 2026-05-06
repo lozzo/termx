@@ -730,6 +730,7 @@ type SignalingAnswer struct {
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Sdp           string                 `protobuf:"bytes,2,opt,name=sdp,proto3" json:"sdp,omitempty"`
 	IceCandidates []string               `protobuf:"bytes,3,rep,name=ice_candidates,json=iceCandidates,proto3" json:"ice_candidates,omitempty"`
+	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -783,6 +784,13 @@ func (x *SignalingAnswer) GetIceCandidates() []string {
 		return x.IceCandidates
 	}
 	return nil
+}
+
+func (x *SignalingAnswer) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
 }
 
 type PairingClaim struct {
@@ -876,6 +884,7 @@ type PairingResult struct {
 	ExpiresAt     string                 `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	MachineId     string                 `protobuf:"bytes,4,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
 	MachineName   string                 `protobuf:"bytes,5,opt,name=machine_name,json=machineName,proto3" json:"machine_name,omitempty"`
+	Error         string                 `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -941,6 +950,13 @@ func (x *PairingResult) GetMachineId() string {
 func (x *PairingResult) GetMachineName() string {
 	if x != nil {
 		return x.MachineName
+	}
+	return ""
+}
+
+func (x *PairingResult) GetError() string {
+	if x != nil {
+		return x.Error
 	}
 	return ""
 }
@@ -1051,12 +1067,13 @@ const file_protocol_hubgrpc_hub_proto_rawDesc = "" +
 	"terminalId\x12\x10\n" +
 	"\x03sdp\x18\x04 \x01(\tR\x03sdp\x12%\n" +
 	"\x0eice_candidates\x18\x05 \x03(\tR\riceCandidates\x12#\n" +
-	"\rsession_token\x18\x06 \x01(\tR\fsessionToken\"i\n" +
+	"\rsession_token\x18\x06 \x01(\tR\fsessionToken\"\x7f\n" +
 	"\x0fSignalingAnswer\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
 	"\x03sdp\x18\x02 \x01(\tR\x03sdp\x12%\n" +
-	"\x0eice_candidates\x18\x03 \x03(\tR\riceCandidates\"\xe8\x01\n" +
+	"\x0eice_candidates\x18\x03 \x03(\tR\riceCandidates\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"\xe8\x01\n" +
 	"\fPairingClaim\x12\x19\n" +
 	"\bclaim_id\x18\x01 \x01(\tR\aclaimId\x12&\n" +
 	"\x0fpair_session_id\x18\x02 \x01(\tR\rpairSessionId\x12\x1f\n" +
@@ -1064,7 +1081,7 @@ const file_protocol_hubgrpc_hub_proto_rawDesc = "" +
 	"pairSecret\x12\"\n" +
 	"\rapp_device_id\x18\x04 \x01(\tR\vappDeviceId\x12\x19\n" +
 	"\bapp_name\x18\x05 \x01(\tR\aappName\x125\n" +
-	"\x16requested_capabilities\x18\x06 \x03(\tR\x15requestedCapabilities\"\xb0\x01\n" +
+	"\x16requested_capabilities\x18\x06 \x03(\tR\x15requestedCapabilities\"\xc6\x01\n" +
 	"\rPairingResult\x12\x19\n" +
 	"\bclaim_id\x18\x01 \x01(\tR\aclaimId\x12#\n" +
 	"\rsession_token\x18\x02 \x01(\tR\fsessionToken\x12\x1d\n" +
@@ -1072,7 +1089,8 @@ const file_protocol_hubgrpc_hub_proto_rawDesc = "" +
 	"expires_at\x18\x03 \x01(\tR\texpiresAt\x12\x1d\n" +
 	"\n" +
 	"machine_id\x18\x04 \x01(\tR\tmachineId\x12!\n" +
-	"\fmachine_name\x18\x05 \x01(\tR\vmachineName\"\x1e\n" +
+	"\fmachine_name\x18\x05 \x01(\tR\vmachineName\x12\x14\n" +
+	"\x05error\x18\x06 \x01(\tR\x05error\"\x1e\n" +
 	"\x04Kick\x12\x16\n" +
 	"\x06reason\x18\x01 \x01(\tR\x06reason2K\n" +
 	"\bAgentHub\x12?\n" +

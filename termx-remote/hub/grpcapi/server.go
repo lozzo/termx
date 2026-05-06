@@ -24,6 +24,7 @@ type RegistryAdapter interface {
 	HeartbeatAgent(sessionID string, terminals []TerminalInput) error
 	GetPendingOffer(ctx context.Context, sessionID string) (*PendingOffer, error)
 	SubmitAnswer(sessionID, answerSessionID, sdp string, candidates []string) error
+	SubmitAnswerError(sessionID, answerSessionID, reason string) error
 	GetPendingPairingClaim(ctx context.Context, sessionID string) (*PendingPairingClaim, error)
 	SubmitPairingResult(PairingResultInput) error
 }
@@ -83,6 +84,7 @@ type PairingResultInput struct {
 	ExpiresAt    string
 	MachineID    string
 	MachineName  string
+	Error        string
 }
 
 type Server struct {
@@ -158,7 +160,11 @@ func (s *Server) Connect(stream pb.AgentHub_ConnectServer) error {
 			_ = s.registry.HeartbeatAgent(out.SessionID, terminalInputs(p.Heartbeat.GetTerminals()))
 		case *pb.AgentToHub_SignalingAnswer:
 			answer := p.SignalingAnswer
-			_ = s.registry.SubmitAnswer(out.SessionID, answer.GetSessionId(), answer.GetSdp(), answer.GetIceCandidates())
+			if strings.TrimSpace(answer.GetError()) != "" {
+				_ = s.registry.SubmitAnswerError(out.SessionID, answer.GetSessionId(), answer.GetError())
+			} else {
+				_ = s.registry.SubmitAnswer(out.SessionID, answer.GetSessionId(), answer.GetSdp(), answer.GetIceCandidates())
+			}
 		case *pb.AgentToHub_PairingResult:
 			result := p.PairingResult
 			_ = s.registry.SubmitPairingResult(PairingResultInput{
@@ -167,6 +173,7 @@ func (s *Server) Connect(stream pb.AgentHub_ConnectServer) error {
 				ExpiresAt:    result.GetExpiresAt(),
 				MachineID:    result.GetMachineId(),
 				MachineName:  result.GetMachineName(),
+				Error:        result.GetError(),
 			})
 		default:
 			return status.Error(codes.InvalidArgument, "unsupported message")

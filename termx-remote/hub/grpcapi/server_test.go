@@ -175,12 +175,13 @@ func TestConnectRelaysMessagesThroughRegistryAdapter(t *testing.T) {
 			ExpiresAt:    "2026-05-06T00:00:00Z",
 			MachineId:    "machine-1",
 			MachineName:  "devbox",
+			Error:        "pairing rejected",
 		},
 	}}); err != nil {
 		t.Fatalf("send pairing result: %v", err)
 	}
 	if got := <-reg.pairingResults; got.ClaimID != "claim-1" ||
-		got.SessionToken != "session-token-from-agent" || got.MachineName != "devbox" {
+		got.SessionToken != "session-token-from-agent" || got.MachineName != "devbox" || got.Error != "pairing rejected" {
 		t.Fatalf("pairing result call = %+v", got)
 	}
 }
@@ -242,6 +243,7 @@ type fakeRegistry struct {
 	registered     chan RegisterAgentInput
 	heartbeats     chan heartbeatCall
 	answers        chan answerCall
+	answerErrors   chan answerErrorCall
 	pairingResults chan PairingResultInput
 	offers         chan *PendingOffer
 	claims         chan *PendingPairingClaim
@@ -259,6 +261,12 @@ type answerCall struct {
 	candidates      []string
 }
 
+type answerErrorCall struct {
+	sessionID       string
+	answerSessionID string
+	reason          string
+}
+
 func newFakeRegistry() *fakeRegistry {
 	return &fakeRegistry{
 		registerOut: RegisterAgentOutput{
@@ -268,6 +276,7 @@ func newFakeRegistry() *fakeRegistry {
 		registered:     make(chan RegisterAgentInput, 1),
 		heartbeats:     make(chan heartbeatCall, 1),
 		answers:        make(chan answerCall, 1),
+		answerErrors:   make(chan answerErrorCall, 1),
 		pairingResults: make(chan PairingResultInput, 1),
 		offers:         make(chan *PendingOffer, 1),
 		claims:         make(chan *PendingPairingClaim, 1),
@@ -300,6 +309,15 @@ func (f *fakeRegistry) SubmitAnswer(sessionID, answerSessionID, sdp string, cand
 		answerSessionID: answerSessionID,
 		sdp:             sdp,
 		candidates:      candidates,
+	}
+	return nil
+}
+
+func (f *fakeRegistry) SubmitAnswerError(sessionID, answerSessionID, reason string) error {
+	f.answerErrors <- answerErrorCall{
+		sessionID:       sessionID,
+		answerSessionID: answerSessionID,
+		reason:          reason,
 	}
 	return nil
 }

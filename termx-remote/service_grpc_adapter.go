@@ -36,7 +36,7 @@ type hubGRPCSession struct {
 	MachineID string
 }
 
-func newLocalHubGRPCServer(reg *registry.Registry, cloudSvc *cloud.Service, iceServers []hubv1.RTCIceServerConfig) *grpc.Server {
+func NewHubGRPCServer(reg *registry.Registry, cloudSvc *cloud.Service, iceServers []hubv1.RTCIceServerConfig) *grpc.Server {
 	grpcSrv := grpc.NewServer(grpc.StreamInterceptor(grpcStreamAuth))
 	pb.RegisterAgentHubServer(grpcSrv, grpcapi.NewServer(&hubRegistryAdapter{
 		registry:   reg,
@@ -165,6 +165,20 @@ func (a *hubRegistryAdapter) SubmitAnswer(sessionID, answerSessionID, sdp string
 	})
 }
 
+func (a *hubRegistryAdapter) SubmitAnswerError(sessionID, answerSessionID, reason string) error {
+	session, ok := a.session(sessionID)
+	if !ok || a.cloud == nil {
+		return registry.ErrAgentNotFound
+	}
+	offerID := a.resolveOfferID(sessionID, answerSessionID)
+	return a.cloud.SubmitAnswer(context.Background(), cloud.SubmitAnswerInput{
+		AgentID:   session.AgentID,
+		MachineID: session.MachineID,
+		OfferID:   offerID,
+		Error:     reason,
+	})
+}
+
 func (a *hubRegistryAdapter) GetPendingPairingClaim(ctx context.Context, sessionID string) (*grpcapi.PendingPairingClaim, error) {
 	session, ok := a.session(sessionID)
 	if !ok || a.registry == nil {
@@ -209,6 +223,7 @@ func (a *hubRegistryAdapter) SubmitPairingResult(in grpcapi.PairingResultInput) 
 		MachineName:  in.MachineName,
 		SessionToken: in.SessionToken,
 		ExpiresAt:    in.ExpiresAt,
+		Error:        in.Error,
 	})
 	return err
 }

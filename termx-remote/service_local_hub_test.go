@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-remote/discovery"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
+	pb "github.com/lozzow/termx/termx-remote/protocol/hubgrpc"
 )
 
 func TestLocalEnableStartsHub(t *testing.T) {
@@ -37,7 +39,7 @@ func TestLocalEnableStartsHub(t *testing.T) {
 	}
 }
 
-func TestLocalHubAcceptsAgentRegistration(t *testing.T) {
+func TestLocalHubAcceptsGRPCAgentRegistration(t *testing.T) {
 	service := NewService(remoteprotocol.Config{}, nil)
 	t.Cleanup(func() { _, _ = service.LocalDisable(context.Background()) })
 
@@ -48,38 +50,44 @@ func TestLocalHubAcceptsAgentRegistration(t *testing.T) {
 		t.Fatalf("LocalEnable returned error: %v", err)
 	}
 
-	payload := map[string]any{
-		"version":         "remote.hub.v1",
-		"device_id":       "machine-local-test",
-		"agent_id":        "agent-local-test",
-		"display_name":    "Local Test Agent",
-		"runtime_version": "test",
-		"terminals": []map[string]any{
-			{"id": "terminal-1", "state": "running"},
-		},
-	}
-	resp, body, err := localHubRequest(context.Background(), http.MethodPost, status.HTTPURL+"/api/v1/agents/register", payload)
+	client, err := discovery.NewGRPCHubClient(status.HTTPURL, "local")
 	if err != nil {
-		t.Fatalf("POST /api/v1/agents/register: %v", err)
+		t.Fatalf("new grpc hub client: %v", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("register status = %d, body = %s", resp.StatusCode, string(body))
+	defer client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	stream, err := client.Connect(ctx)
+	if err != nil {
+		t.Fatalf("connect grpc hub: %v", err)
 	}
-	var decoded struct {
-		AgentSessionID string `json:"agent_session_id"`
-		RelayPolicy    struct {
-			AllowRelay bool `json:"allow_relay"`
-		} `json:"relay_policy"`
+	err = stream.Send(&pb.AgentToHub{Payload: &pb.AgentToHub_Register{
+		Register: &pb.RegisterRequest{
+			DeviceId:    "machine-local-test",
+			MachineId:   "machine-local-test",
+			AgentId:     "agent-local-test",
+			DisplayName: "Local Test Agent",
+			Version:     "test",
+			Terminals: []*pb.Terminal{{
+				TerminalId:    "terminal-1",
+				Name:          "shell",
+				RemoteEnabled: true,
+			}},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("send grpc register: %v", err)
 	}
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		t.Fatalf("decode register response: %v", err)
+	msg, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv grpc register ack: %v", err)
 	}
-	if decoded.AgentSessionID == "" {
-		t.Fatalf("register response missing agent_session_id: %s", string(body))
+	ack := msg.GetRegisterAck()
+	if ack.GetAgentSessionId() == "" {
+		t.Fatalf("register ack missing agent_session_id: %+v", ack)
 	}
-	if decoded.RelayPolicy.AllowRelay {
-		t.Fatalf("local hub must not enable relay by default: %s", string(body))
+	if ack.GetRelayPolicy().GetAllowRelay() {
+		t.Fatalf("local hub must not enable relay by default: %+v", ack.GetRelayPolicy())
 	}
 }
 

@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -80,29 +78,12 @@ func TestManagerStartDegradedWhenControlTokenMissing(t *testing.T) {
 	}
 }
 
-func TestManagerStartRegistersWithLocalHub(t *testing.T) {
-	var got hubv1.HubRegisterRequest
-	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/agents/register" {
-			t.Fatalf("unexpected hub path %s", r.URL.Path)
-		}
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
-			t.Fatalf("decode hub register: %v", err)
-		}
-		_ = json.NewEncoder(w).Encode(hubv1.HubRegisterResponse{
-			Version:                  "remote.hub.v1",
-			HubID:                    "hub-local",
-			AgentSessionID:           "agent-session-1",
-			HeartbeatIntervalSeconds: 15,
-		})
-	}))
-	defer hub.Close()
-
+func TestManagerStartUsesGRPCHubLoopForLocalHub(t *testing.T) {
 	mgr := NewManager(remoteconfig.Config{
 		Enabled:    true,
 		DataDir:    t.TempDir(),
 		DeviceName: "device-b",
-		HubURL:     hub.URL,
+		HubURL:     "http://127.0.0.1:1",
 		Mode:       "local",
 	}, inventoryProviderStub{
 		items: []TerminalInventoryItem{{
@@ -121,120 +102,13 @@ func TestManagerStartRegistersWithLocalHub(t *testing.T) {
 	if status.State != StateOnline {
 		t.Fatalf("expected online state, got %q detail=%q", status.State, status.Detail)
 	}
-	if got.DeviceID == "" || got.AgentID == "" || got.DisplayName != "device-b" {
-		t.Fatalf("registration missing identity fields: %+v", got)
-	}
-	if len(got.Terminals) != 1 || got.Terminals[0].ID != "term-1" {
-		t.Fatalf("registration terminals = %+v", got.Terminals)
-	}
-}
-
-func TestManagerReregistersLocalHubWhenHeartbeatUnauthorized(t *testing.T) {
-	var registerCount atomic.Int32
-	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/v1/agents/register":
-			count := registerCount.Add(1)
-			_ = json.NewEncoder(w).Encode(hubv1.HubRegisterResponse{
-				Version:                  "remote.hub.v1",
-				HubID:                    "hub-local",
-				AgentSessionID:           "agent-session-" + string(rune('0'+count)),
-				HeartbeatIntervalSeconds: 15,
-			})
-		case "/api/v1/agents/heartbeat":
-			var req hubv1.HubHeartbeatRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode heartbeat: %v", err)
-			}
-			if req.AgentSessionID == "agent-session-1" {
-				w.WriteHeader(http.StatusUnauthorized)
-				_, _ = w.Write([]byte(`{"error":"unknown device or agent session"}`))
-				return
-			}
-			_ = json.NewEncoder(w).Encode(hubv1.HubHeartbeatResponse{Accepted: true, NextHeartbeatSeconds: 15})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer hub.Close()
-
-	mgr := NewManager(remoteconfig.Config{
-		Enabled:    true,
-		DataDir:    t.TempDir(),
-		DeviceName: "device-c",
-		HubURL:     hub.URL,
-		Mode:       "local",
-	}, inventoryProviderStub{}, nil)
-	if err := mgr.Start(context.Background()); err != nil {
-		t.Fatalf("Start returned error: %v", err)
-	}
-
-	if err := mgr.syncHubPresence(context.Background(), hub.URL); err != nil {
-		t.Fatalf("syncHubPresence returned error: %v", err)
-	}
-
 	mgr.mu.RLock()
-	stateSessionID := mgr.hubStateLocked(hub.URL).HTTPSessionID
+	state := mgr.hubStateLocked("http://127.0.0.1:1")
 	mgr.mu.RUnlock()
-	if stateSessionID != "agent-session-2" {
-		t.Fatalf("expected hub session to refresh to agent-session-2, got %q", stateSessionID)
+	if state.SessionCancel == nil {
+		t.Fatal("expected local hub to use gRPC signaling loop")
 	}
-	if got := registerCount.Load(); got != 2 {
-		t.Fatalf("expected two hub registrations, got %d", got)
-	}
-}
-
-func TestManagerDoesNotReregisterHubWhenHeartbeatForcedOffline(t *testing.T) {
-	var registerCount atomic.Int32
-	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/v1/agents/register":
-			count := registerCount.Add(1)
-			_ = json.NewEncoder(w).Encode(hubv1.HubRegisterResponse{
-				Version:                  "remote.hub.v1",
-				HubID:                    "hub-forced",
-				AgentSessionID:           "agent-session-" + string(rune('0'+count)),
-				HeartbeatIntervalSeconds: 15,
-			})
-		case "/api/v1/agents/heartbeat":
-			w.WriteHeader(http.StatusUnauthorized)
-			_, _ = w.Write([]byte(`{"error":"agent_heartbeat_failed","message":"agent forced offline"}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer hub.Close()
-
-	mgr := NewManager(remoteconfig.Config{
-		Enabled:    true,
-		DataDir:    t.TempDir(),
-		DeviceName: "device-forced",
-		HubURL:     hub.URL,
-		Mode:       "local",
-	}, inventoryProviderStub{}, nil)
-	mgr.identity = identity.DeviceIdentity{DeviceID: "device-forced", DisplayName: "device-forced"}
-
-	if err := mgr.syncHubPresence(context.Background(), hub.URL); err != nil {
-		t.Fatalf("initial syncHubPresence returned error: %v", err)
-	}
-	err := mgr.syncHubPresence(context.Background(), hub.URL)
-	if err == nil || !strings.Contains(err.Error(), "forced offline") {
-		t.Fatalf("expected forced offline error, got %v", err)
-	}
-
-	mgr.mu.RLock()
-	state := mgr.hubStateLocked(hub.URL)
-	stateSessionID := state.HTTPSessionID
-	forcedOffline := state.ForcedOffline
-	mgr.mu.RUnlock()
-	if stateSessionID != "" || !forcedOffline {
-		t.Fatalf("forced offline should clear hub session and mark state, session=%q forced=%v", stateSessionID, forcedOffline)
-	}
-	if got := registerCount.Load(); got != 1 {
-		t.Fatalf("forced offline must not re-register hub, got %d registrations", got)
-	}
+	mgr.Close()
 }
 
 func TestManagerProvidesTerminalManagementRouterForCloudRTC(t *testing.T) {
