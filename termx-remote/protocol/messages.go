@@ -21,6 +21,9 @@ type Config struct {
 	DataDir     string
 	DeviceName  string
 	Region      string
+	Mode        string
+	AllowLAN    bool
+	LANIPs      []string
 }
 
 type Status struct {
@@ -30,7 +33,10 @@ type Status struct {
 	DeviceName    string       `json:"device_name,omitempty"`
 	ControlURL    string       `json:"control_url,omitempty"`
 	HubURL        string       `json:"hub_url,omitempty"`
+	HubURLs       []string     `json:"hub_urls,omitempty"`
 	DataDir       string       `json:"data_dir,omitempty"`
+	Mode          string       `json:"mode,omitempty"`
+	AllowLAN      bool         `json:"allow_lan"`
 	TerminalCount int          `json:"terminal_count"`
 	UpdatedAt     time.Time    `json:"updated_at"`
 }
@@ -41,14 +47,13 @@ type PairStartParams struct {
 }
 
 type PairStartResult struct {
-	Type                        string    `json:"type"`
-	MachineID                   string    `json:"machine_id"`
-	MachineName                 string    `json:"machine_name"`
-	MachinePublicKeyFingerprint string    `json:"machine_public_key_fingerprint"`
-	LocalPairURL                string    `json:"local_pair_url"`
-	PairSessionID               string    `json:"pair_session_id"`
-	PairSecret                  string    `json:"pair_secret"`
-	ExpiresAt                   time.Time `json:"expires_at"`
+	Type          string    `json:"type"`
+	MachineID     string    `json:"machine_id"`
+	MachineName   string    `json:"machine_name"`
+	LocalPairURL  string    `json:"local_pair_url"`
+	PairSessionID string    `json:"pair_session_id"`
+	PairSecret    string    `json:"pair_secret"`
+	ExpiresAt     time.Time `json:"expires_at"`
 }
 
 type LocalEnableParams struct {

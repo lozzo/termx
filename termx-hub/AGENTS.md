@@ -11,7 +11,7 @@
 - `termx-hub` is the standalone Hub executable and deployment configuration wrapper.
 - Hub product logic (registry, signaling, ICE, heartbeat) belongs in `termx-remote/hub/`.
 - `termx-hub/cmd` may only: read environment variables, construct `termx-remote/hub` services, start HTTP server and cleanup loops.
-- Hub must NOT call Web Controller to verify app certificates or connection tickets.
+- Hub must NOT call Web Controller to verify app certificates, session tokens, connection tickets, offers, or answers.
 - Hub may call Web Controller only through periodic management-plane heartbeat for hub registration, online agent list, relay traffic reporting, and forced disconnect commands.
 - Hub must NOT make any authentication decisions. It is a dumb relay.
 - Hub must NOT be a terminal/file/api/events HTTP or WebSocket runtime proxy.
@@ -32,7 +32,7 @@ Hub 是纯信令中继，职责边界：
 
 **Hub 不做的：**
 - 验证 app certificate（这是 agent 的职责）
-- 连接时调用 Web Controller 验证 app certificate、ticket、offer/answer 或做 per-session policy 决策
+- 连接时调用 Web Controller 验证 app certificate、session token、ticket、offer/answer 或做 per-session policy 决策
 - 保存任何 durable state
 - 在 Hub 内做任何用户级 policy 或 quota 决策（只能执行 Web Controller 管理面返回的 forced disconnect / rate metadata）
 

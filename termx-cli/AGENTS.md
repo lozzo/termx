@@ -14,14 +14,16 @@
 - 绑定 `termx-core/clientapi`
 - 装配 `termx-remote.Service`
 - 根据 `--mode` 启动对应运行时：
-  - `local`：调用 `service.LocalEnable()`，嵌入 hub，LAN 暴露，ICE-TCP
-  - `cloud`：调用 `service.CloudEnable()`，agent 连接云端 hub
-  - `both`：同时启动两者，Manager 持两个 hub URL
-- 输出统一格式的 hub_url / QR payload
+  - `local`：嵌入 hub（cmux: HTTP/2+HTTP/1+ICE-TCP），LAN 暴露
+  - `online`：agent gRPC 长连接云端 hub
+  - `both`：同时启动两者，Manager 持多个 hub URL
+- 输出统一格式的 hub_urls（**数组**）/ QR payload（schema_version: 3）
+- `termx remote enable --mode both --token xxxxxx`（新标志，替代旧的 `--local`/`--cloud`）
 
-`termx-cli` **不应实现**：Hub 逻辑、cert 验证、TURN relay、Web Controller、支付、quota。
+`termx-cli` **不应实现**：Hub 逻辑、session token 验证、TURN relay、Web Controller、支付、quota。
 
-CLI 输出不得泄漏 machine private key、app private key、TURN secret 等敏感材料。
+CLI 输出不得泄漏 machine_secret、TURN secret 等敏感材料。
+**不得输出**：AppCertificate、ed25519 key（已废弃）。
 
 需要人工配置的外部事项（DNS、TLS、OAuth、云账号）不应阻塞主线；使用 mock/stub 并在根 `workflow.md` 记录 deferred external item。
 

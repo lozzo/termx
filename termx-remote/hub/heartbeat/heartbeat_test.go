@@ -197,7 +197,6 @@ func TestPostAppliesKickAgentsResponseToRegistry(t *testing.T) {
 	if _, err := reg.SubmitOffer(context.Background(), registry.OfferInput{
 		MachineID:  "machine_kick",
 		TerminalID: "terminal_kick",
-		TicketID:   "ticket_kick",
 		SDP:        "v=0\r\no=- offer 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel",
 	}); !errors.Is(err, registry.ErrAgentForcedOffline) {
 		t.Fatalf("kicked offer err = %v", err)

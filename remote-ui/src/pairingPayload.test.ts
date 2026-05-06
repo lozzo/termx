@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { parsePairingPayload } from './pairingPayload'
 
 describe('pairing payload parser', () => {
-  it('parses termx:// QR payloads with local, public, control, hub, pairing, and app bootstrap metadata', () => {
+  it('parses termx:// QR payloads with local, public, control, hub, and pairing metadata', () => {
     const payload = parsePairingPayload(`termx://pair?payload=${base64url(JSON.stringify({
       type: 'termx_pair_v2',
       schema_version: 2,
@@ -10,7 +10,6 @@ describe('pairing payload parser', () => {
         id: 'machine-1',
         name: '开发 MacBook',
         hostname: 'dev-mac.local',
-        public_key_fingerprint: 'sha256:machine-public',
       },
       addresses: {
         local: ['http://127.0.0.1:7788'],
@@ -27,12 +26,7 @@ describe('pairing payload parser', () => {
         secret: 'pair-secret-1',
         expires_at: '2026-05-03T12:30:00Z',
       },
-      bootstrap: {
-        app_certificate: '{"payload":{"machine_id":"machine-1"}}',
-        app_public_key: 'app-public-1',
-        app_device_id: 'app-device-1',
-        app_key_ref: 'native-keychain://termx/app-device-1',
-      },
+      bootstrap: {},
       preferred_path: 'local',
     }))}`)
 
@@ -42,7 +36,6 @@ describe('pairing payload parser', () => {
         id: 'machine-1',
         name: '开发 MacBook',
         hostname: 'dev-mac.local',
-        publicKeyFingerprint: 'sha256:machine-public',
       },
       addresses: {
         local: ['http://127.0.0.1:7788'],
@@ -59,12 +52,7 @@ describe('pairing payload parser', () => {
         secret: 'pair-secret-1',
         expiresAt: '2026-05-03T12:30:00Z',
       },
-      bootstrap: {
-        appCertificate: '{"payload":{"machine_id":"machine-1"}}',
-        appPublicKey: 'app-public-1',
-        appDeviceId: 'app-device-1',
-        appKeyRef: 'native-keychain://termx/app-device-1',
-      },
+      bootstrap: {},
       preferredPath: 'local',
     })
   })
@@ -75,7 +63,6 @@ describe('pairing payload parser', () => {
       machine_id: 'machine-legacy',
       machine_name: 'Legacy Mini',
       hostname: 'legacy-mini.local',
-      machine_public_key_fingerprint: 'sha256:legacy-machine',
       local_pair_url: 'http://192.168.1.20:7788/pair',
       local_rtc_url: 'http://192.168.1.20:7788/rtc',
       public_url: 'https://legacy.public.termx.test',
@@ -92,7 +79,6 @@ describe('pairing payload parser', () => {
         id: 'machine-legacy',
         name: 'Legacy Mini',
         hostname: 'legacy-mini.local',
-        publicKeyFingerprint: 'sha256:legacy-machine',
       },
       addresses: {
         local: ['http://192.168.1.20:7788/rtc'],

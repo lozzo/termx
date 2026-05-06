@@ -86,7 +86,6 @@ CREATE TABLE IF NOT EXISTS agents (
   labels TEXT NOT NULL DEFAULT '',
   online INTEGER NOT NULL DEFAULT 0,
   hub_id TEXT REFERENCES hubs(id),
-  public_key TEXT,
   paired INTEGER NOT NULL DEFAULT 0,
   pending_kick INTEGER NOT NULL DEFAULT 0,
   allow_relay_transfer INTEGER NOT NULL DEFAULT 0,

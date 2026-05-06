@@ -13,7 +13,6 @@ func TestWF003RemoteProtocolSessionPackagesMigratedFromCore(t *testing.T) {
 		"pairing",
 		"discovery",
 		"session/rtc",
-		"cert",
 		"identity",
 		"bridge",
 		"fileapi",

@@ -40,11 +40,9 @@ describe('WebControlApi', () => {
           online: true,
           paired: false,
           source: 'cloud',
-          public_key: 'machine-public-key',
-          machine_public_key_fingerprint: 'sha256:machine',
           control_url: 'http://114.66.58.243:12306',
           hub_id: 'termx-hub-1',
-          hub_http_url: 'http://114.66.58.243:8447',
+          hub_urls: ['http://114.66.58.243:8447'],
           hub_status: 'online',
           last_seen: '2026-05-04T03:08:00.000Z',
         }],
@@ -77,11 +75,9 @@ describe('WebControlApi', () => {
       online: true,
       paired: false,
       source: 'cloud',
-      publicKey: 'machine-public-key',
-      machinePublicKeyFingerprint: 'sha256:machine',
       controlUrl: 'http://114.66.58.243:12306',
       hubId: 'termx-hub-1',
-      hubHttpUrl: 'http://114.66.58.243:8447',
+      hubUrls: ['http://114.66.58.243:8447'],
       hubStatus: 'online',
       lastSeen: '2026-05-04T03:08:00.000Z',
     }])
@@ -90,51 +86,6 @@ describe('WebControlApi', () => {
       ['GET', 'http://114.66.58.243:12306/api/v1/auth/me'],
       ['GET', 'http://114.66.58.243:12306/api/v1/machines'],
     ])
-  })
-
-  it('creates machine-scoped cloud connection tickets for Hub WebRTC sessions', async () => {
-    const fetch = new RecordingFetch([
-      jsonResponse(200, {
-        connect_ticket: 'ticket-1',
-        path: 'cloud',
-        machine_id: 'device-1',
-        terminal_id: '',
-        allow_relay: false,
-        relay_in_use: false,
-        relay_throttled: false,
-        hub_http_url: 'http://114.66.58.243:8447',
-        expires_at: '2026-05-04T12:30:00Z',
-      }),
-    ])
-    const api = createWebControlApi({
-      baseUrl: 'http://114.66.58.243:12306',
-      accessToken: 'access-token-1',
-      fetch: fetch.fetch,
-    })
-
-    await expect(api.createConnectTicket({
-      machineId: 'device-1',
-    })).resolves.toEqual({
-      connectTicket: 'ticket-1',
-      machineId: 'device-1',
-      path: 'cloud',
-      allowRelay: false,
-      relayInUse: false,
-      relayThrottled: false,
-      hubHttpUrl: 'http://114.66.58.243:8447',
-      expiresAt: '2026-05-04T12:30:00Z',
-    })
-    expect(fetch.requests).toEqual([{
-      method: 'POST',
-      url: 'http://114.66.58.243:12306/api/v1/machines/device-1/connect-tickets',
-      headers: {
-        authorization: 'Bearer access-token-1',
-        'content-type': 'application/json',
-      },
-      body: {
-        terminal_id: '',
-      },
-    }])
   })
 
   it('requires an access token before authenticated Web Control requests', async () => {

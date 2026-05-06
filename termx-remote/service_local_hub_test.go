@@ -3,8 +3,6 @@ package remote
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -111,17 +109,12 @@ func TestLocalEnableRegistersRealAgentWithHub(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PairStart returned error: %v", err)
 	}
-	appPublic, _, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("GenerateKey returned error: %v", err)
-	}
 	claim := map[string]any{
 		"machine_id":             session.MachineID,
 		"pair_session_id":        session.PairSessionID,
 		"pair_secret":            session.PairSecret,
 		"app_device_id":          "app-local-agent-test",
 		"app_name":               "Local Agent Test",
-		"app_public_key":         base64.StdEncoding.EncodeToString(appPublic),
 		"requested_capabilities": []string{"terminal"},
 	}
 	resp, body, err := localHubRequest(context.Background(), http.MethodPost, status.HTTPURL+"/api/v1/pairing/claims", claim)
@@ -133,13 +126,13 @@ func TestLocalEnableRegistersRealAgentWithHub(t *testing.T) {
 		t.Fatalf("pairing claim status = %d, body = %s; manager status = %+v", resp.StatusCode, string(body), managerStatus)
 	}
 	var pairResp struct {
-		MachineID      string          `json:"machine_id"`
-		AppCertificate json.RawMessage `json:"app_certificate"`
+		MachineID    string `json:"machine_id"`
+		SessionToken string `json:"session_token"`
 	}
 	if err := json.Unmarshal(body, &pairResp); err != nil {
 		t.Fatalf("decode pairing response: %v", err)
 	}
-	if pairResp.MachineID != session.MachineID || len(pairResp.AppCertificate) == 0 {
+	if pairResp.MachineID != session.MachineID || pairResp.SessionToken == "" {
 		t.Fatalf("pairing response did not come from real agent: %s", string(body))
 	}
 }

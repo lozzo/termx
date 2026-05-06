@@ -87,24 +87,10 @@ export {
 } from './browserNetworkRuntime'
 export type { BrowserRemoteNetworkRuntimeOptions } from './browserNetworkRuntime'
 export {
-  canonicalLocalOfferMessage,
-  createBrowserLocalAppCrypto,
-  createLocalAppIdentityStore,
-  createLocalOfferSigner,
-  ensureLocalAppIdentity,
-  pairLocalApp,
+  createMachineSessionStore,
 } from './localAppIdentity'
 export type {
-  CanonicalLocalOfferInput,
-  EnsureLocalAppIdentityOptions,
-  LocalAppCrypto,
-  LocalAppIdentity,
-  LocalAppIdentityStore,
-  LocalOfferSignature,
-  LocalOfferSigner,
-  LocalOfferSignerOptions,
-  LocalOfferSigningInput,
-  PairLocalAppOptions,
+  MachineSessionStore,
 } from './localAppIdentity'
 export { createTerminalProtocolClient } from './terminalProtocolClient'
 export type { TerminalProtocolClientOptions } from './terminalProtocolClient'
@@ -138,12 +124,14 @@ export { createManagedHubApi } from './managedHubApi'
 export { createManagedHubRtcConnector } from './managedHubRtcConnector'
 export type {
   CreateManagedHubSessionInput,
+  ManagedIceServer,
   ManagedHubApi,
   ManagedHubApiOptions,
   ManagedHubCreateSessionResult,
   ManagedHubFetch,
   ManagedHubPendingSession,
   ManagedHubSession,
+  ManagedRelayPolicy,
   PollManagedHubSessionAnswerInput,
 } from './managedHubApi'
 export type {
@@ -154,8 +142,6 @@ export { createWebControlApi } from './webControlApi'
 export type {
   WebControlApi,
   WebControlApiOptions,
-  WebControlConnectTicket,
-  WebControlConnectTicketInput,
   WebControlFetch,
   WebControlAuthResult,
   WebControlLoginInput,

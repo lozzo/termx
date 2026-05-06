@@ -2,7 +2,6 @@ import { StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { createBrowserRemoteNetworkRuntime } from './browserNetworkRuntime'
 import { createBrowserRtcSession } from './browserRtcSession'
-import { createBrowserLocalAppCrypto } from './localAppIdentity'
 import { WebControlRemoteApp } from './WebControlRemoteApp'
 
 export interface RemoteAppEntryOptions {
@@ -16,7 +15,6 @@ export function mountRemoteApp(options: RemoteAppEntryOptions = {}): Root {
   }
   const root = createRoot(rootElement)
   const networkRuntime = createBrowserRemoteNetworkRuntime()
-  const pairCrypto = createBrowserLocalAppCrypto()
   root.render(
     <StrictMode>
       <section
@@ -30,7 +28,6 @@ export function mountRemoteApp(options: RemoteAppEntryOptions = {}): Root {
             ...(terminalId ? { terminalId } : {}),
           })}
           networkRuntime={networkRuntime}
-          pairCrypto={pairCrypto}
         />
       </section>
     </StrictMode>,

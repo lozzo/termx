@@ -68,7 +68,7 @@ func TestLocalICETCPMuxAnswerIncludesLoopbackTCPCandidate(t *testing.T) {
 
 	answer, err := AnswerOfferWithOptions(context.Background(), hubv1.SignalingOffer{
 		SessionID:  "tcp-candidate-session",
-		DeviceID:   "machine-1",
+		MachineID:  "machine-1",
 		TerminalID: "terminal-1",
 		SDP:        offerPC.LocalDescription().SDP,
 	}, nil, nil, nil, AnswerOptions{SettingEngine: mux})

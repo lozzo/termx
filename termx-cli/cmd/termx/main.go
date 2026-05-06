@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -514,10 +515,7 @@ func remoteInfoCommand(socket *string, logFile *string) *cobra.Command {
 }
 
 func remoteEnableCommand(socket *string, logFile *string, configPath *string) *cobra.Command {
-	var local bool
-	var legacyLocalOnly bool
-	var cloud bool
-	var legacyManaged bool
+	var enableMode string
 	var outputJSON bool
 	var addr string
 	var iceTCPAddr string
@@ -532,45 +530,52 @@ func remoteEnableCommand(socket *string, logFile *string, configPath *string) *c
 		Use:   "enable",
 		Short: "Enable remote access features",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			localEnabled := local || legacyLocalOnly
-			cloudEnabled := cloud || legacyManaged
+			mode := strings.ToLower(strings.TrimSpace(enableMode))
+			if mode != "local" && mode != "online" && mode != "both" {
+				return fmt.Errorf("--mode must be local, online, or both")
+			}
+			resolvedToken, err := resolveSecretFlag(token, tokenEnv, tokenFile)
+			if err != nil {
+				return err
+			}
+			token = strings.TrimSpace(resolvedToken)
+			if mode != "local" && token == "" {
+				return fmt.Errorf("--token is required for mode %q", mode)
+			}
 			controlURL = firstNonEmpty(serverURL, controlURL)
-			if localEnabled && cloudEnabled {
-				cloudRuntime, err := runRemoteCloudEnable(cmd, configPath, controlURL, hubURL, token, tokenEnv, tokenFile, noBrowser, outputJSON)
+			switch mode {
+			case "both":
+				onlineRuntime, err := runRemoteOnlineEnable(cmd, configPath, controlURL, hubURL, token, noBrowser, outputJSON, mode)
 				if err != nil {
 					return err
 				}
-				return runRemoteLocalEnable(cmd, socket, logFile, addr, iceTCPAddr, cloudRuntime, outputJSON)
-			}
-			if localEnabled {
-				return runRemoteLocalEnable(cmd, socket, logFile, addr, iceTCPAddr, remoteprotocol.Config{}, outputJSON)
-			}
-			if cloudEnabled || controlURL != "" || hubURL != "" || token != "" || tokenEnv != "" || tokenFile != "" {
-				_, err := runRemoteCloudEnable(cmd, configPath, controlURL, hubURL, token, tokenEnv, tokenFile, noBrowser, outputJSON)
+				return runRemoteLocalEnable(cmd, socket, logFile, addr, iceTCPAddr, onlineRuntime, outputJSON)
+			case "local":
+				if err := ensureRemoteConfigBootstrap(*configPath, "", "", "", mode); err != nil {
+					return err
+				}
+				return runRemoteLocalEnable(cmd, socket, logFile, addr, iceTCPAddr, remoteprotocol.Config{Enabled: true, Mode: mode}, outputJSON)
+			case "online":
+				_, err := runRemoteOnlineEnable(cmd, configPath, controlURL, hubURL, token, noBrowser, outputJSON, mode)
 				return err
+			default:
+				return fmt.Errorf("--mode must be local, online, or both")
 			}
-			return fmt.Errorf("choose --local for local pairing or --server for cloud connection")
 		},
 	}
-	cmd.Flags().BoolVar(&local, "local", false, "enable local browser pairing")
-	cmd.Flags().BoolVar(&legacyLocalOnly, "local-only", false, "enable only local embedded web and local WebRTC")
-	cmd.Flags().BoolVar(&cloud, "cloud", false, "connect this computer through Web Control")
-	cmd.Flags().BoolVar(&legacyManaged, "managed", false, "enable managed Web Control registration")
+	cmd.Flags().StringVar(&enableMode, "mode", "both", "connection mode: local, online, or both")
 	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:18888", "local web listen address")
 	cmd.Flags().StringVar(&iceTCPAddr, "ice-tcp-addr", "127.0.0.1:18889", "local ICE TCP listen address")
 	cmd.Flags().StringVar(&serverURL, "server", "", "Web Control URL")
 	cmd.Flags().StringVar(&controlURL, "control-url", "", "Web Control URL for cloud remote")
 	cmd.Flags().StringVar(&hubURL, "hub-url", "", "optional explicit Hub URL; normally discovered from Web Control")
-	cmd.Flags().StringVar(&token, "token", "", "Web Control connection key for automation")
+	cmd.Flags().StringVar(&token, "token", "", "access token (required for online/both mode)")
 	cmd.Flags().StringVar(&tokenEnv, "token-env", "", "environment variable containing the Web Control connection key for automation")
 	cmd.Flags().StringVar(&tokenFile, "token-file", "", "file containing the Web Control connection key for automation")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the browser login URL without opening it")
 	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
-	_ = cmd.Flags().MarkHidden("local-only")
-	_ = cmd.Flags().MarkHidden("managed")
 	_ = cmd.Flags().MarkHidden("control-url")
 	_ = cmd.Flags().MarkHidden("hub-url")
-	_ = cmd.Flags().MarkHidden("token")
 	_ = cmd.Flags().MarkHidden("token-env")
 	_ = cmd.Flags().MarkHidden("token-file")
 	return cmd
@@ -697,7 +702,8 @@ func remoteQRCodeCommand(socket *string, logFile *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			payload := buildRemotePairPayload(result, remoteStatus, controlURL, hubURL)
+			hubURLs := hubURLsForPairPayload(remoteStatus, hubURL)
+			payload := buildRemotePairPayload(result, remoteStatus, hubURLs)
 			uri, err := termxPairURI(payload)
 			if err != nil {
 				return err
@@ -748,7 +754,7 @@ func remoteOpenCommand(socket *string, logFile *string) *cobra.Command {
 				return err
 			}
 			if localStatus == nil || !localStatus.Enabled || strings.TrimSpace(localStatus.HTTPURL) == "" {
-				return fmt.Errorf("local remote is not enabled; run `termx remote enable --local` first")
+				return fmt.Errorf("local remote is not enabled; run `termx remote enable --mode local` first")
 			}
 			if printOnly {
 				fmt.Fprintln(cmd.OutOrStdout(), localStatus.HTTPURL)
@@ -786,14 +792,26 @@ func runRemoteLocalEnable(cmd *cobra.Command, socket *string, logFile *string, a
 	return nil
 }
 
+func runRemoteOnlineEnable(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, noBrowser bool, outputJSON bool, mode string) (remoteprotocol.Config, error) {
+	return runRemoteCloudEnableWithToken(cmd, configPath, controlURL, hubURL, token, noBrowser, outputJSON, mode)
+}
+
 func runRemoteCloudEnable(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, tokenEnv string, tokenFile string, noBrowser bool, outputJSON bool) (remoteprotocol.Config, error) {
-	controlURL = strings.TrimSpace(controlURL)
-	hubURL = strings.TrimSpace(hubURL)
 	resolvedToken, err := resolveSecretFlag(token, tokenEnv, tokenFile)
 	if err != nil {
 		return remoteprotocol.Config{}, err
 	}
-	token = strings.TrimSpace(resolvedToken)
+	return runRemoteCloudEnableWithToken(cmd, configPath, controlURL, hubURL, resolvedToken, noBrowser, outputJSON, "online")
+}
+
+func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, noBrowser bool, outputJSON bool, mode string) (remoteprotocol.Config, error) {
+	controlURL = strings.TrimSpace(controlURL)
+	hubURL = strings.TrimSpace(hubURL)
+	token = strings.TrimSpace(token)
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
+		mode = "online"
+	}
 	if controlURL == "" || token == "" {
 		cfg, cfgErr := remoteConfigFromFileAndEnv(*configPath)
 		if cfgErr != nil {
@@ -810,7 +828,7 @@ func runRemoteCloudEnable(cmd *cobra.Command, configPath *string, controlURL str
 		}
 	}
 	if controlURL == "" {
-		return remoteprotocol.Config{}, fmt.Errorf("--server is required for cloud remote enable")
+		return remoteprotocol.Config{}, fmt.Errorf("--server is required for online remote enable")
 	}
 	var refreshToken string
 	if token == "" {
@@ -847,15 +865,20 @@ func runRemoteCloudEnable(cmd *cobra.Command, configPath *string, controlURL str
 	}); err != nil {
 		return remoteprotocol.Config{}, err
 	}
-	if err := ensureRemoteConfigBootstrap(*configPath, controlURL, hubURL, authStorePath); err != nil {
+	if err := ensureRemoteConfigBootstrap(*configPath, controlURL, hubURL, authStorePath, mode); err != nil {
 		return remoteprotocol.Config{}, err
+	}
+	hubURLs := compactStringList([]string{hubURL})
+	if hubURL == "" {
+		hubURLs = nil
 	}
 	cloud := remoteprotocol.Config{
 		Enabled:     true,
 		ControlURL:  controlURL,
 		HubURL:      hubURL,
-		HubURLs:     compactStringList([]string{hubURL}),
+		HubURLs:     hubURLs,
 		AccessToken: token,
+		Mode:        mode,
 	}
 	if outputJSON {
 		enc := json.NewEncoder(cmd.OutOrStdout())
@@ -864,21 +887,24 @@ func runRemoteCloudEnable(cmd *cobra.Command, configPath *string, controlURL str
 			Enabled    bool   `json:"enabled"`
 			ControlURL string `json:"control_url"`
 			HubURL     string `json:"hub_url,omitempty"`
+			Mode       string `json:"mode"`
 			AuthStore  string `json:"auth_store"`
 		}{
 			Enabled:    true,
 			ControlURL: controlURL,
 			HubURL:     hubURL,
+			Mode:       mode,
 			AuthStore:  authStorePath,
 		})
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "cloud_enabled:\ttrue")
+	fmt.Fprintln(cmd.OutOrStdout(), "online_enabled:\ttrue")
 	fmt.Fprintf(cmd.OutOrStdout(), "control_url:\t%s\n", controlURL)
 	if hubURL != "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "hub_url:\t%s\n", hubURL)
 	}
+	fmt.Fprintf(cmd.OutOrStdout(), "mode:\t%s\n", mode)
 	fmt.Fprintf(cmd.OutOrStdout(), "auth_store:\t%s\n", authStorePath)
-	fmt.Fprintln(cmd.OutOrStdout(), "next:\trun `termx daemon` to keep cloud remote online")
+	fmt.Fprintln(cmd.OutOrStdout(), "next:\trun `termx daemon` to keep online remote connected")
 	return cloud, nil
 }
 
@@ -912,6 +938,14 @@ func compactStringList(values []string) []string {
 	return out
 }
 
+func compactStringListOrEmpty(values []string) []string {
+	out := compactStringList(values)
+	if out == nil {
+		return []string{}
+	}
+	return out
+}
+
 func printRemoteStatus(w io.Writer, status *remoteprotocol.Status) {
 	if status == nil {
 		return
@@ -921,6 +955,8 @@ func printRemoteStatus(w io.Writer, status *remoteprotocol.Status) {
 	fmt.Fprintf(w, "device_name:\t%s\n", status.DeviceName)
 	fmt.Fprintf(w, "control_url:\t%s\n", status.ControlURL)
 	fmt.Fprintf(w, "hub_url:\t%s\n", status.HubURL)
+	fmt.Fprintf(w, "mode:\t%s\n", statusValue(status, "mode"))
+	fmt.Fprintf(w, "allow_lan:\t%v\n", status.AllowLAN)
 	fmt.Fprintf(w, "data_dir:\t%s\n", status.DataDir)
 	fmt.Fprintf(w, "terminal_count:\t%d\n", status.TerminalCount)
 	fmt.Fprintf(w, "updated_at:\t%s\n", status.UpdatedAt.Format(time.RFC3339))
@@ -950,44 +986,47 @@ func printPairStartResult(w io.Writer, result *remoteprotocol.PairStartResult) {
 	fmt.Fprintf(w, "type:\t%s\n", result.Type)
 	fmt.Fprintf(w, "machine_id:\t%s\n", result.MachineID)
 	fmt.Fprintf(w, "machine_name:\t%s\n", result.MachineName)
-	fmt.Fprintf(w, "machine_public_key_fingerprint:\t%s\n", result.MachinePublicKeyFingerprint)
 	fmt.Fprintf(w, "local_pair_url:\t%s\n", result.LocalPairURL)
 	fmt.Fprintf(w, "pair_session_id:\t%s\n", result.PairSessionID)
 	fmt.Fprintf(w, "pair_secret:\t%s\n", result.PairSecret)
 	fmt.Fprintf(w, "expires_at:\t%s\n", result.ExpiresAt.Format(time.RFC3339))
 }
 
-func buildRemotePairPayload(result *remoteprotocol.PairStartResult, status *remoteprotocol.Status, controlURL string, hubURL string) map[string]any {
-	controlURL = firstNonEmpty(controlURL, statusValue(status, "control"))
-	hubURL = firstNonEmpty(hubURL, statusValue(status, "hub"))
+func buildRemotePairPayload(result *remoteprotocol.PairStartResult, _ *remoteprotocol.Status, hubURLs []string) map[string]any {
 	payload := map[string]any{
 		"type":           "termx_pair_v2",
-		"schema_version": 2,
+		"schema_version": 3,
 		"machine": map[string]any{
-			"id":                     result.MachineID,
-			"name":                   firstNonEmpty(result.MachineName, result.MachineID),
-			"public_key_fingerprint": result.MachinePublicKeyFingerprint,
+			"id":   result.MachineID,
+			"name": firstNonEmpty(result.MachineName, result.MachineID),
 		},
 		"addresses": map[string]any{
 			"local":  []string{},
 			"lan":    compactStringSlice(result.LocalPairURL),
-			"public": compactStringSlice(hubURL),
-		},
-		"endpoints": map[string]any{
-			"web_control":   controlURL,
-			"hub":           hubURL,
-			"local_pairing": result.LocalPairURL,
+			"public": compactStringListOrEmpty(hubURLs),
 		},
 		"pairing": map[string]any{
 			"session_id": result.PairSessionID,
 			"secret":     result.PairSecret,
 			"expires_at": result.ExpiresAt.Format(time.RFC3339),
 		},
-		"bootstrap":      map[string]any{},
-		"preferred_path": "public_p2p",
 	}
 	cleanEmptyStrings(payload)
 	return payload
+}
+
+func hubURLsForPairPayload(status *remoteprotocol.Status, override string) []string {
+	if strings.TrimSpace(override) != "" {
+		return compactStringList([]string{override})
+	}
+	if status == nil {
+		return nil
+	}
+	hubURLs := compactStringList(status.HubURLs)
+	if len(hubURLs) == 0 && strings.TrimSpace(status.HubURL) != "" {
+		hubURLs = []string{strings.TrimSpace(status.HubURL)}
+	}
+	return hubURLs
 }
 
 func termxPairURI(payload map[string]any) (string, error) {
@@ -1007,6 +1046,8 @@ func statusValue(status *remoteprotocol.Status, field string) string {
 		return status.ControlURL
 	case "hub":
 		return status.HubURL
+	case "mode":
+		return status.Mode
 	default:
 		return ""
 	}
@@ -1140,10 +1181,14 @@ func currentSize() protocol.Size {
 
 func remoteConfigFromEnv() remoteprotocol.Config {
 	enabled, enabledSet, _ := envBoolValue("TERMX_REMOTE_ENABLE")
+	allowLAN, _, _ := envBoolValue("TERMX_REMOTE_ALLOW_LAN")
 	hubURLs := csvList(os.Getenv("TERMX_REMOTE_HUB_URLS"))
 	hubURL := strings.TrimSpace(os.Getenv("TERMX_REMOTE_HUB_URL"))
 	if hubURL == "" && len(hubURLs) > 0 {
 		hubURL = hubURLs[0]
+	}
+	if hubURL != "" && len(hubURLs) == 0 {
+		hubURLs = []string{hubURL}
 	}
 	cfg := remoteprotocol.Config{
 		Enabled:    enabled,
@@ -1152,13 +1197,17 @@ func remoteConfigFromEnv() remoteprotocol.Config {
 		HubURLs:    hubURLs,
 		AccessToken: firstNonEmpty(
 			strings.TrimSpace(os.Getenv("TERMX_REMOTE_CONNECTION_KEY")),
+			strings.TrimSpace(os.Getenv("TERMX_REMOTE_TOKEN")),
 			strings.TrimSpace(os.Getenv("TERMX_REMOTE_ACCESS_TOKEN")),
 		),
 		DataDir:    strings.TrimSpace(os.Getenv("TERMX_REMOTE_DATA_DIR")),
 		DeviceName: strings.TrimSpace(os.Getenv("TERMX_REMOTE_DEVICE_NAME")),
 		Region:     strings.TrimSpace(os.Getenv("TERMX_REMOTE_REGION")),
+		Mode:       strings.TrimSpace(os.Getenv("TERMX_REMOTE_MODE")),
+		AllowLAN:   allowLAN,
+		LANIPs:     splitTrimmed(os.Getenv("TERMX_REMOTE_LAN_IPS")),
 	}
-	if !enabledSet && !cfg.Enabled && (cfg.ControlURL != "" || cfg.HubURL != "" || len(cfg.HubURLs) > 0 || cfg.AccessToken != "" || cfg.DataDir != "" || cfg.DeviceName != "" || cfg.Region != "") {
+	if !enabledSet && !cfg.Enabled && remoteConfigHasFields(cfg) {
 		cfg.Enabled = true
 	}
 	return cfg
@@ -1171,6 +1220,7 @@ func remoteConfigFromFileAndEnv(path string) (remoteprotocol.Config, error) {
 	}
 	envCfg := remoteConfigFromEnv()
 	envEnabled, envEnabledSet, _ := envBoolValue("TERMX_REMOTE_ENABLE")
+	envAllowLAN, envAllowLANSet, _ := envBoolValue("TERMX_REMOTE_ALLOW_LAN")
 	if envEnabledSet {
 		cfg.Enabled = envEnabled
 	}
@@ -1179,7 +1229,11 @@ func remoteConfigFromFileAndEnv(path string) (remoteprotocol.Config, error) {
 	}
 	if envCfg.HubURL != "" {
 		cfg.HubURL = envCfg.HubURL
-		cfg.HubURLs = append([]string(nil), envCfg.HubURLs...)
+		if len(envCfg.HubURLs) > 0 {
+			cfg.HubURLs = append([]string(nil), envCfg.HubURLs...)
+		} else {
+			cfg.HubURLs = []string{envCfg.HubURL}
+		}
 	}
 	if envCfg.AccessToken != "" {
 		cfg.AccessToken = envCfg.AccessToken
@@ -1193,7 +1247,16 @@ func remoteConfigFromFileAndEnv(path string) (remoteprotocol.Config, error) {
 	if envCfg.Region != "" {
 		cfg.Region = envCfg.Region
 	}
-	if !envEnabledSet && !fileEnabledSet && !cfg.Enabled && (cfg.ControlURL != "" || cfg.HubURL != "" || len(cfg.HubURLs) > 0 || cfg.AccessToken != "" || cfg.DataDir != "" || cfg.DeviceName != "" || cfg.Region != "") {
+	if envCfg.Mode != "" {
+		cfg.Mode = envCfg.Mode
+	}
+	if envAllowLANSet {
+		cfg.AllowLAN = envAllowLAN
+	}
+	if len(envCfg.LANIPs) > 0 {
+		cfg.LANIPs = append([]string(nil), envCfg.LANIPs...)
+	}
+	if !envEnabledSet && !fileEnabledSet && !cfg.Enabled && remoteConfigHasFields(cfg) {
 		cfg.Enabled = true
 	}
 	return cfg, nil
@@ -1225,16 +1288,28 @@ func loadRemoteConfigFromFile(path string) (remoteprotocol.Config, bool, error) 
 	}
 	cfg := remoteprotocol.Config{
 		Enabled:    enabled,
-		ControlURL: strings.TrimSpace(values["controlURL"]),
-		HubURL:     strings.TrimSpace(values["hubURL"]),
-		DataDir:    strings.TrimSpace(values["dataDir"]),
-		DeviceName: strings.TrimSpace(values["deviceName"]),
-		Region:     strings.TrimSpace(values["region"]),
+		ControlURL: remoteConfigValue(values, "controlURL", "control_url"),
+		HubURL:     remoteConfigValue(values, "hubURL", "hub_url"),
+		HubURLs:    splitTrimmed(remoteConfigValue(values, "hubURLs", "hub_urls")),
+		DataDir:    remoteConfigValue(values, "dataDir", "data_dir"),
+		DeviceName: remoteConfigValue(values, "deviceName", "device_name"),
+		Region:     remoteConfigValue(values, "region"),
+		Mode:       remoteConfigValue(values, "mode"),
 	}
-	if cfg.HubURL != "" {
+	if rawAllowLAN := remoteConfigValue(values, "allow_lan", "allowLAN"); rawAllowLAN != "" {
+		cfg.AllowLAN, _ = strconv.ParseBool(rawAllowLAN)
+	}
+	cfg.LANIPs = splitTrimmed(remoteConfigValue(values, "lan_ips", "lanIPs"))
+	if cfg.HubURL == "" && len(cfg.HubURLs) > 0 {
+		cfg.HubURL = cfg.HubURLs[0]
+	}
+	if cfg.HubURL != "" && len(cfg.HubURLs) == 0 {
 		cfg.HubURLs = []string{cfg.HubURL}
 	}
-	if authStore := strings.TrimSpace(values["authStore"]); authStore != "" {
+	if accessToken := remoteConfigValue(values, "access_token", "token"); accessToken != "" {
+		cfg.AccessToken = accessToken
+	}
+	if authStore := remoteConfigValue(values, "authStore", "auth_store"); authStore != "" {
 		record, err := loadRemoteAuthRecord(authStore)
 		if err != nil {
 			return remoteprotocol.Config{}, false, fmt.Errorf("load remote auth store: %w", err)
@@ -1251,15 +1326,37 @@ func loadRemoteConfigFromFile(path string) (remoteprotocol.Config, bool, error) 
 		cfg.AccessToken = record.AccessToken
 	}
 	if keyEnv := firstNonEmpty(
-		strings.TrimSpace(values["connectionKeyEnv"]),
-		strings.TrimSpace(values["accessTokenEnv"]),
+		remoteConfigValue(values, "connectionKeyEnv", "connection_key_env"),
+		remoteConfigValue(values, "accessTokenEnv", "access_token_env"),
 	); keyEnv != "" {
 		cfg.AccessToken = strings.TrimSpace(os.Getenv(keyEnv))
 	}
-	if !enabledSet && !cfg.Enabled && (cfg.ControlURL != "" || cfg.HubURL != "" || len(cfg.HubURLs) > 0 || cfg.AccessToken != "" || cfg.DataDir != "" || cfg.DeviceName != "" || cfg.Region != "") {
+	if !enabledSet && !cfg.Enabled && remoteConfigHasFields(cfg) {
 		cfg.Enabled = true
 	}
 	return cfg, enabledSet, nil
+}
+
+func remoteConfigValue(values map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(values[key]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func remoteConfigHasFields(cfg remoteprotocol.Config) bool {
+	return cfg.ControlURL != "" ||
+		cfg.HubURL != "" ||
+		len(cfg.HubURLs) > 0 ||
+		cfg.AccessToken != "" ||
+		cfg.DataDir != "" ||
+		cfg.DeviceName != "" ||
+		cfg.Region != "" ||
+		cfg.Mode != "" ||
+		cfg.AllowLAN ||
+		len(cfg.LANIPs) > 0
 }
 
 func parseRemoteConfigSection(content string) (map[string]string, error) {
@@ -1290,6 +1387,27 @@ func parseRemoteConfigSection(content string) (map[string]string, error) {
 		values[key] = value
 	}
 	return values, nil
+}
+
+func splitTrimmed(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	raw = strings.Trim(raw, "[]")
+	if raw == "" {
+		return nil
+	}
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '\n'
+	})
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		field = strings.Trim(field, `"'`)
+		if field == "" {
+			continue
+		}
+		out = append(out, field)
+	}
+	return out
 }
 
 func parseConfigBool(value string) bool {

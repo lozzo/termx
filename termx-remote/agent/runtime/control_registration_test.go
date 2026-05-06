@@ -8,17 +8,12 @@ import (
 	"testing"
 
 	remoteconfig "github.com/lozzow/termx/termx-remote/config"
-	"github.com/lozzow/termx/termx-remote/identity"
 )
 
-func TestManagerControlRegistrationSendsMachinePublicKey(t *testing.T) {
+func TestManagerControlRegistrationOmitsDeprecatedKeyMaterial(t *testing.T) {
 	t.Parallel()
 
 	dataDir := t.TempDir()
-	machineKey, err := identity.LoadOrCreateMachineKey(dataDir)
-	if err != nil {
-		t.Fatalf("load machine key: %v", err)
-	}
 	var got map[string]any
 	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -52,11 +47,11 @@ func TestManagerControlRegistrationSendsMachinePublicKey(t *testing.T) {
 	if status.State != StateConfigured {
 		t.Fatalf("expected configured state, got %q detail=%q", status.State, status.Detail)
 	}
-	if got["machinePublicKey"] == "" {
-		t.Fatalf("control registration did not include machinePublicKey: %#v", got)
+	if got["deviceId"] == "" || got["displayName"] != "keyed-agent" {
+		t.Fatalf("control registration missing device identity fields: %#v", got)
 	}
-	if got["machinePublicKey"] != identity.PublicKeyString(machineKey.PublicKey) {
-		t.Fatalf("machinePublicKey = %q, want %q", got["machinePublicKey"], identity.PublicKeyString(machineKey.PublicKey))
+	if _, ok := got["machinePublicKey"]; ok {
+		t.Fatalf("control registration must not include machinePublicKey: %#v", got)
 	}
 	if _, ok := got["terminals"]; ok {
 		t.Fatalf("control registration leaked terminal inventory: %#v", got)

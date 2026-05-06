@@ -3,7 +3,7 @@ import { parsePairingPayload } from './pairingPayload'
 import { createMachineStore } from './machineStore'
 
 describe('machine store', () => {
-  it('saves QR pairing metadata needed for local, public_p2p, managed, control, hub, and pairing flows', () => {
+  it('saves QR pairing metadata needed for local, managed, control, hub, and pairing flows', () => {
     const storage = new MemoryStorage()
     const store = createMachineStore({ storage, now: () => new Date('2026-05-03T16:00:00Z') })
     const payload = parsePairingPayload(JSON.stringify({
@@ -13,7 +13,6 @@ describe('machine store', () => {
         id: 'machine-1',
         name: 'Dev MacBook',
         hostname: 'dev-mac.local',
-        public_key_fingerprint: 'sha256:machine-public',
       },
       addresses: {
         local: ['http://127.0.0.1:7788'],
@@ -30,12 +29,7 @@ describe('machine store', () => {
         secret: 'pair-secret-1',
         expires_at: '2026-05-03T20:00:00Z',
       },
-      bootstrap: {
-        app_certificate: '{"payload":{"machine_id":"machine-1"}}',
-        app_public_key: 'app-public-1',
-        app_device_id: 'app-device-1',
-        app_key_ref: 'native-keychain://termx/app-device-1',
-      },
+      bootstrap: {},
       preferred_path: 'local',
     }))
 
@@ -49,7 +43,6 @@ describe('machine store', () => {
       terminalCount: 0,
       source: 'local',
       preferredPath: 'local',
-      machinePublicKeyFingerprint: 'sha256:machine-public',
       addresses: {
         local: ['http://127.0.0.1:7788'],
         lan: ['http://192.168.1.40:7788'],
@@ -64,12 +57,6 @@ describe('machine store', () => {
         sessionId: 'pair-1',
         secret: 'pair-secret-1',
         expiresAt: '2026-05-03T20:00:00Z',
-      },
-      appBootstrap: {
-        appCertificate: '{"payload":{"machine_id":"machine-1"}}',
-        appPublicKey: 'app-public-1',
-        appDeviceId: 'app-device-1',
-        appKeyRef: 'native-keychain://termx/app-device-1',
       },
       schemaVersion: 2,
       addedAt: '2026-05-03T16:00:00.000Z',
@@ -144,7 +131,7 @@ describe('machine store', () => {
     expect(storage.getItem('termx.app.machines.v1')).toBeNull()
   })
 
-  it('stores only app key references, never app private keys', () => {
+  it('rejects app private keys in legacy bootstrap metadata', () => {
     const storage = new MemoryStorage()
     const store = createMachineStore({ storage })
 
@@ -157,7 +144,6 @@ describe('machine store', () => {
       addresses: { local: [], lan: [], public: [] },
       endpoints: {},
       appBootstrap: {
-        appKeyRef: 'native-keychain://termx/app-device-1',
         appPrivateKey: 'not-allowed',
       },
       schemaVersion: 2,
@@ -165,19 +151,6 @@ describe('machine store', () => {
       updatedAt: '2026-05-03T16:00:00.000Z',
     } as never)).toThrow(/app private key/i)
 
-    const saved = store.saveFromPairingPayload(parsePairingPayload(JSON.stringify({
-      type: 'termx_pair_v2',
-      schema_version: 2,
-      machine: { id: 'machine-1', name: 'Dev MacBook' },
-      pairing: { session_id: 'pair-1', secret: 'pair-secret-1' },
-      bootstrap: {
-        app_key_ref: 'native-keychain://termx/app-device-1',
-      },
-    })))
-
-    expect(saved.appBootstrap).toEqual({
-      appKeyRef: 'native-keychain://termx/app-device-1',
-    })
     expect(JSON.stringify(storage.dump())).not.toMatch(/app_private_key|appPrivateKey|BEGIN PRIVATE KEY/i)
   })
 
@@ -195,7 +168,6 @@ describe('machine store', () => {
       addedAt: '2026-05-03T16:00:00.000Z',
       updatedAt: '2026-05-03T16:00:00.000Z',
       appBootstrap: {
-        appKeyRef: 'native-keychain://termx/app-device-1',
         private_key: 'not-allowed',
       },
     }]))

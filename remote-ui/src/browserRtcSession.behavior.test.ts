@@ -246,78 +246,6 @@ describe('BrowserRtcSession', () => {
     expect(session.isAlive()).toBe(false)
   })
 
-  it('answers managed hub offers with TURN config while expressing relay as connection capability only', async () => {
-    const factory = createMockPeerConnectionFactory({
-      initialIceGatheringState: 'gathering',
-      gatheredLocalSDP: 'managed-answer-sdp-with-candidates',
-    })
-    const session = createBrowserRtcSession({
-      machineId: 'machine-managed',
-      peerConnectionFactory: factory,
-    })
-
-    const answerPromise = session.acceptOffer({
-      sessionId: 'managed-rtc-1',
-      machineId: 'machine-managed',
-      terminalId: 'terminal-1',
-      path: 'managed',
-      description: { type: 'offer', sdp: 'managed-offer-sdp' },
-      iceServers: [{ urls: ['turn:turn.example:3478'], username: 'u', credential: 'p' }],
-      relayPolicy: { allowRelay: true, allowRelayTransfer: false },
-      relayInUse: true,
-    })
-    await flushMicrotasks()
-    factory.lastConnection()?.completeIceGathering()
-
-    await expect(answerPromise).resolves.toEqual({
-      sessionId: 'managed-rtc-1',
-      description: { type: 'answer', sdp: 'managed-answer-sdp-with-candidates' },
-    })
-    expect(factory.lastConnection()?.remoteDescription).toEqual({ type: 'offer', sdp: 'managed-offer-sdp' })
-    expect(factory.lastConnection()?.configuration).toEqual({
-      iceServers: [{ urls: ['turn:turn.example:3478'], username: 'u', credential: 'p' }],
-    })
-    await expect(session.getConnectionInfo()).resolves.toEqual({
-      path: 'managed',
-      connectionId: 'managed-rtc-1',
-      machineId: 'machine-managed',
-      terminalId: 'terminal-1',
-      relayInUse: true,
-    })
-    await expect(session.getCapabilities()).resolves.toMatchObject({
-      relayInUse: true,
-      fileTransferAllowed: false,
-    })
-    expect(factory.createdLabels()).toEqual([])
-  })
-
-  it('uses incoming managed DataChannels instead of creating browser-local runtime channels', async () => {
-    const factory = createMockPeerConnectionFactory()
-    const session = createBrowserRtcSession({
-      machineId: 'machine-managed',
-      peerConnectionFactory: factory,
-    })
-    await session.acceptOffer({
-      sessionId: 'managed-rtc-1',
-      machineId: 'machine-managed',
-      terminalId: 'terminal-1',
-      path: 'managed',
-      description: { type: 'offer', sdp: 'managed-offer-sdp' },
-      iceServers: [],
-      relayPolicy: { allowRelay: true, allowRelayTransfer: true },
-      relayInUse: false,
-    })
-
-    const terminalPromise = session.openTerminal('terminal-1')
-    await flushMicrotasks()
-    expect(factory.createdLabels()).toEqual([])
-    factory.lastConnection()?.emitIncomingDataChannel('terminal:terminal-1')
-    const terminal = await terminalPromise
-
-    expect(terminal.label).toBe('terminal:terminal-1')
-    expect(factory.channel('terminal:terminal-1').binaryType).toBe('arraybuffer')
-  })
-
   it('does not infer incoming channel ownership from managed path when the browser created the offer', async () => {
     const factory = createMockPeerConnectionFactory()
     const session = createBrowserRtcSession({
@@ -365,58 +293,6 @@ describe('BrowserRtcSession', () => {
     subscription.close()
     eventsChannel.emitMessage(encodeJSON({ type: 'ignored_after_unsubscribe' }))
     expect(events).toHaveLength(1)
-  })
-
-  it('subscribes to managed answerer events from incoming events DataChannel', async () => {
-    const factory = createMockPeerConnectionFactory()
-    const session = createBrowserRtcSession({
-      machineId: 'machine-managed',
-      peerConnectionFactory: factory,
-    })
-    await session.acceptOffer({
-      sessionId: 'managed-rtc-1',
-      machineId: 'machine-managed',
-      path: 'managed',
-      description: { type: 'offer', sdp: 'managed-offer-sdp' },
-      iceServers: [],
-      relayPolicy: { allowRelay: true, allowRelayTransfer: true },
-      relayInUse: false,
-    })
-    const events: unknown[] = []
-
-    const subscription = session.subscribeEvents((event) => events.push(event))
-    await flushMicrotasks()
-    expect(factory.createdLabels()).toEqual([])
-    const eventsChannel = factory.lastConnection()?.emitIncomingDataChannel('events')
-    await flushMicrotasks()
-    expect(JSON.parse(eventsChannel?.sentText()[0] ?? '{}')).toEqual({
-      type: 'subscribe',
-      types: [1, 2, 3, 4, 10],
-    })
-    eventsChannel?.emitMessage(encodeJSON({ type: 'inventory_changed' }))
-
-    expect(events).toEqual([{ type: 'inventory_changed' }])
-    subscription.close()
-  })
-
-  it('rejects file transfer opening when managed relay policy denies it', async () => {
-    const factory = createMockPeerConnectionFactory()
-    const session = createBrowserRtcSession({
-      machineId: 'machine-managed',
-      peerConnectionFactory: factory,
-    })
-    await session.acceptOffer({
-      sessionId: 'managed-rtc-1',
-      machineId: 'machine-managed',
-      path: 'managed',
-      description: { type: 'offer', sdp: 'managed-offer-sdp' },
-      iceServers: [],
-      relayPolicy: { allowRelay: true, allowRelayTransfer: false },
-      relayInUse: true,
-    })
-
-    await expect(session.openFileTransfer('upload-1')).rejects.toThrow(/file transfer|relay policy/i)
-    expect(factory.createdLabels()).toEqual([])
   })
 
   it('rejects wrong terminal targets before creating browser data channels', async () => {

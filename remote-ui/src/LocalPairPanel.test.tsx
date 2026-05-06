@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LocalPairPanel } from './LocalPairPanel'
-import { createLocalAppIdentityStore, type LocalAppCrypto } from './localAppIdentity'
+import { createMachineSessionStore } from './localAppIdentity'
 import type { LocalPairingApi } from './transport'
 
 describe('LocalPairPanel', () => {
@@ -10,12 +10,11 @@ describe('LocalPairPanel', () => {
     cleanup()
   })
 
-  it('claims a local pair session and stores only app identity plus certificate material', async () => {
+  it('claims a local pair session and stores only the machine session token', async () => {
     const storage = new MemoryStorage()
-    const crypto = createMockCrypto()
     const pair = vi.fn(async () => ({
       machineId: 'machine-local',
-      appCertificate: '{"payload":{"machine_id":"machine-local","app_public_key":"AQIDBA=="},"signature":"machine-sig"}',
+      sessionToken: 'session-token-local',
       expiresAt: '2026-05-02T10:30:00Z',
     }))
     const api = createMockApi(pair)
@@ -23,8 +22,7 @@ describe('LocalPairPanel', () => {
     render(
       <LocalPairPanel
         api={api}
-        storage={createLocalAppIdentityStore(storage)}
-        crypto={crypto}
+        sessionStore={createMachineSessionStore(storage)}
         appName="TermX Local Web"
         machineId="machine-local"
       />,
@@ -40,12 +38,11 @@ describe('LocalPairPanel', () => {
       pairSessionId: 'pair-1',
       pairSecret: 'secret-1',
       appDeviceId: expect.stringMatching(/^appweb_/),
-      appPublicKey: 'AQIDBA==',
       requestedCapabilities: ['terminal', 'file_manager', 'terminal_management'],
     }))
-    expect(storage.getItem('termx.local.appCertificate')).toContain('machine-local')
-    expect(storage.getItem('termx.local.appPrivateKey')).toBeNull()
-    expect(JSON.stringify(storage.dump())).not.toMatch(/workspace|tab|pane|machine_private_key|machinePrivateKey|turn|credential/i)
+    expect(storage.getItem('termx.session.machine-local.token')).toBe('session-token-local')
+    expect(storage.getItem('termx.session.machine-local.exp')).toBe('2026-05-02T10:30:00Z')
+    expect(JSON.stringify(storage.dump())).not.toMatch(/workspace|tab|pane|appCertificate|machine_private_key|machinePrivateKey|turn|credential/i)
   })
 })
 
@@ -78,30 +75,6 @@ class MemoryStorage implements Storage {
 
   dump(): Record<string, string> {
     return Object.fromEntries(this.values)
-  }
-}
-
-function createMockCrypto(): LocalAppCrypto {
-  return {
-    async generateKeyPair() {
-      return {
-        publicKey: { raw: new Uint8Array([1, 2, 3, 4]) },
-        privateKey: { keyId: 'generated-app-key' },
-      }
-    },
-    async savePrivateKey() {},
-    async loadPrivateKey() {
-      return { keyId: 'generated-app-key' }
-    },
-    async sign() {
-      return new TextEncoder().encode('signed-by-app-key')
-    },
-    async randomBytes(length: number) {
-      return new Uint8Array(Array.from({ length }, (_, index) => index + 1))
-    },
-    async sha256() {
-      return new Uint8Array(32)
-    },
   }
 }
 

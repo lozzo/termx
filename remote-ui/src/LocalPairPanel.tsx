@@ -1,19 +1,18 @@
 import { useState } from 'react'
-import { pairLocalApp, type LocalAppCrypto, type LocalAppIdentityStore } from './localAppIdentity'
+import type { MachineSessionStore } from './localAppIdentity'
 import type { LocalPairingApi } from './transport'
 import { KeyRound, ShieldCheck, AlertCircle } from 'lucide-react'
 
 export interface LocalPairPanelProps {
   api: LocalPairingApi
-  storage: LocalAppIdentityStore
-  crypto: LocalAppCrypto
+  sessionStore: MachineSessionStore
   appName: string
   machineId?: string | undefined
   onPaired?: ((machineId: string) => void) | undefined
   className?: string | undefined
 }
 
-export function LocalPairPanel({ api, storage, crypto, appName, machineId, onPaired, className }: LocalPairPanelProps) {
+export function LocalPairPanel({ api, sessionStore, appName, machineId, onPaired, className }: LocalPairPanelProps) {
   const [pairSessionId, setPairSessionId] = useState('')
   const [pairSecret, setPairSecret] = useState('')
   const [status, setStatus] = useState<string | null>(null)
@@ -26,15 +25,15 @@ export function LocalPairPanel({ api, storage, crypto, appName, machineId, onPai
     setStatus(null)
     setSubmitting(true)
     try {
-      const result = await pairLocalApp({
-        api,
-        storage,
-        crypto,
-        appName,
+      const result = await api.pair({
         ...(machineId ? { machineId } : {}),
         pairSessionId,
         pairSecret,
+        appDeviceId: createBrowserAppDeviceId(),
+        appName,
+        requestedCapabilities: ['terminal', 'file_manager', 'terminal_management'],
       })
+      sessionStore.saveSessionToken(result.machineId, result.sessionToken, result.expiresAt)
       setStatus(`Paired with ${result.machineId}`)
       onPaired?.(result.machineId)
     } catch (err) {
@@ -110,4 +109,17 @@ export function LocalPairPanel({ api, storage, crypto, appName, machineId, onPai
       )}
     </div>
   )
+}
+
+function createBrowserAppDeviceId(): string {
+  const cryptoImpl = globalThis.crypto
+  if (cryptoImpl?.randomUUID) {
+    return `appweb_${cryptoImpl.randomUUID()}`
+  }
+  const bytes = new Uint8Array(16)
+  cryptoImpl?.getRandomValues?.(bytes)
+  if (bytes.some((value) => value !== 0)) {
+    return `appweb_${Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')}`
+  }
+  return `appweb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
 }

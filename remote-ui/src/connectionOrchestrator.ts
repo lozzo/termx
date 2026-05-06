@@ -1,7 +1,6 @@
 import type {
   ConnectionPath,
   RtcConnectOptions,
-  RtcConnector,
   RtcSession,
 } from './transport'
 import type { LocalHubUrlProvider } from './localHubUrlProvider'
@@ -31,12 +30,8 @@ export interface ConnectionAttemptSnapshot {
 export interface ConnectionOrchestratorInput {
   machineId: string
   terminalId?: string | undefined
-  machinePublicKeyFingerprint: string
-  appCertificate?: unknown
-  managed: {
-    hubSessionId: string
-    deviceId: string
-  }
+  sessionToken?: string | undefined
+  hubUrls: string[]
   onSnapshot?: ((snapshot: ConnectionAttemptSnapshot) => void) | undefined
 }
 
@@ -51,23 +46,11 @@ export interface ConnectionOrchestrator {
 }
 
 export interface ConnectionOrchestratorOptions {
-  local?: RtcConnector<{ machineId: string; terminalId?: string | undefined }> | undefined
   localHubUrlProvider?: LocalHubUrlProvider | undefined
   managedHubApiFactory?: ((hubUrl: string) => ManagedHubApi) | undefined
   managedHubRtcConnectorFactory?: ((options: { hubUrl: string; api: ManagedHubApi }) => {
     connect(input: ManagedHubRtcConnectInput, options?: RtcConnectOptions): Promise<RtcSession>
   }) | undefined
-  publicP2p: RtcConnector<{
-    machineId: string
-    terminalId: string
-    machinePublicKeyFingerprint: string
-  }>
-  managed: RtcConnector<{
-    machineId: string
-    terminalId?: string | undefined
-    hubSessionId: string
-    deviceId: string
-  }>
 }
 
 export function createConnectionOrchestrator(options: ConnectionOrchestratorOptions): ConnectionOrchestrator {
@@ -79,41 +62,43 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
 
   async connect(input: ConnectionOrchestratorInput, options: RtcConnectOptions = {}): Promise<ConnectionOrchestratorResult> {
     const failures: ConnectionAttemptError[] = []
+    const ac = new AbortController()
+    const signal = combineSignals(options.signal, ac.signal)
+    const connectOptions = { ...options, signal }
     try {
-      const local = await this.tryPath({
-        path: 'local',
-        stage: 'trying_local',
-        message: 'Trying local connection',
-        input,
-        failures,
-        options,
-        connect: () => this.connectLocal(input, options),
-      })
-      if (local) return local
+      const local = await this.tryLocalWithTimeout(input, connectOptions, failures, 2000)
+      if (local) {
+        ac.abort()
+        return local
+      }
 
-      const publicP2p = await this.tryPath({
-        path: 'public_p2p',
-        stage: 'trying_public_p2p',
-        message: 'Trying public P2P connection',
-        input,
-        failures,
-        options,
-        connect: () => this.options.publicP2p.connect(publicP2pInput(input), options),
-      })
-      if (publicP2p) return publicP2p
-
-      const managed = await this.tryPath({
-        path: 'managed',
+      const hubUrls = input.hubUrls.length > 0 ? input.hubUrls : []
+      if (hubUrls.length === 0) {
+        throw new Error('no hub URLs configured')
+      }
+      input.onSnapshot?.({
         stage: 'trying_managed',
-        message: 'Trying managed connection',
-        input,
-        failures,
-        options,
-        connect: () => this.options.managed.connect(managedInput(input), options),
+        path: 'managed',
+        message: `Racing ${hubUrls.length} hub(s)`,
       })
-      if (managed) return managed
+      const winner = await raceConnections(
+        hubUrls.map((hubUrl) => () => this.connectManagedHub(input, hubUrl, connectOptions)),
+        signal,
+      )
+      if (winner) {
+        ac.abort()
+        input.onSnapshot?.({
+          stage: 'connected',
+          path: winner.path,
+          relayInUse: winner.relayInUse,
+          message: 'Connected',
+        })
+        return winner
+      }
     } catch (error) {
       throw error
+    } finally {
+      ac.abort()
     }
 
     input.onSnapshot?.({
@@ -183,62 +168,75 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
       if (!localHubUrl) {
         throw new Error('local Hub URL is required before opening a local connection')
       }
-      if (input.appCertificate === undefined || input.appCertificate === null) {
-        throw new Error('app certificate is required before opening a local Hub connection')
+      if (!input.sessionToken) {
+        throw new Error('session token is required before opening a local Hub connection')
       }
       const api = this.options.managedHubApiFactory(localHubUrl)
       const connector = this.options.managedHubRtcConnectorFactory({ hubUrl: localHubUrl, api })
       return connector.connect({
         machineId: input.machineId,
         ...(input.terminalId ? { terminalId: input.terminalId } : {}),
-        connectTicket: input.managed.hubSessionId,
-        appCertificate: input.appCertificate,
+        sessionToken: input.sessionToken,
         path: 'local',
       }, options)
     }
-    if (!this.options.local) {
-      throw new Error('local connector is not configured')
+    throw new Error('local Hub connector is not configured')
+  }
+
+  private async connectManagedHub(input: ConnectionOrchestratorInput, hubUrl: string, options: RtcConnectOptions): Promise<ConnectionOrchestratorResult> {
+    if (!this.options.managedHubApiFactory || !this.options.managedHubRtcConnectorFactory) {
+      throw new Error('managed Hub connector is not configured')
     }
-    return this.options.local.connect(localInput(input), options)
+    if (!input.sessionToken) {
+      throw new Error('session token is required before opening a managed Hub connection')
+    }
+    const api = this.options.managedHubApiFactory(hubUrl)
+    const connector = this.options.managedHubRtcConnectorFactory({ hubUrl, api })
+    const session = await connector.connect({
+      machineId: input.machineId,
+      ...(input.terminalId ? { terminalId: input.terminalId } : {}),
+      sessionToken: input.sessionToken,
+      path: 'managed',
+    }, options)
+    try {
+      const info = await session.getConnectionInfo()
+      if (info.path !== 'managed') {
+        throw new Error(`connection path mismatch: ${info.path} != managed`)
+      }
+      return {
+        path: info.path,
+        session,
+        relayInUse: info.relayInUse === true,
+      }
+    } catch (error) {
+      await session.disconnect().catch(() => {})
+      throw error
+    }
   }
-}
 
-function localInput(input: ConnectionOrchestratorInput): {
-  machineId: string
-  terminalId?: string | undefined
-} {
-  return {
-    machineId: input.machineId,
-    ...(input.terminalId ? { terminalId: input.terminalId } : {}),
-  }
-}
-
-function publicP2pInput(input: ConnectionOrchestratorInput): {
-  machineId: string
-  terminalId: string
-  machinePublicKeyFingerprint: string
-} {
-  if (!input.terminalId) {
-    throw new Error('public_p2p terminalId is required')
-  }
-  return {
-    machineId: input.machineId,
-    terminalId: input.terminalId,
-    machinePublicKeyFingerprint: input.machinePublicKeyFingerprint,
-  }
-}
-
-function managedInput(input: ConnectionOrchestratorInput): {
-  machineId: string
-  terminalId?: string | undefined
-  hubSessionId: string
-  deviceId: string
-} {
-  return {
-    machineId: input.machineId,
-    ...(input.terminalId ? { terminalId: input.terminalId } : {}),
-    hubSessionId: input.managed.hubSessionId,
-    deviceId: input.managed.deviceId,
+  private async tryLocalWithTimeout(
+    input: ConnectionOrchestratorInput,
+    options: RtcConnectOptions,
+    failures: ConnectionAttemptError[],
+    timeoutMs: number,
+  ): Promise<ConnectionOrchestratorResult | null> {
+    if (!this.options.localHubUrlProvider || !this.options.managedHubApiFactory || !this.options.managedHubRtcConnectorFactory) {
+      return null
+    }
+    return this.tryPath({
+      path: 'local',
+      stage: 'trying_local',
+      message: 'Trying local connection',
+      input,
+      failures,
+      options,
+      connect: () => Promise.race([
+        this.connectLocal(input, options),
+        delay(timeoutMs, options.signal).then(() => {
+          throw new Error('local connection timed out')
+        }),
+      ]),
+    })
   }
 }
 
@@ -253,4 +251,70 @@ function isAbortError(error: unknown, signal: AbortSignal | undefined): boolean 
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+async function raceConnections(
+  connectors: Array<() => Promise<ConnectionOrchestratorResult>>,
+  signal?: AbortSignal,
+): Promise<ConnectionOrchestratorResult | null> {
+  if (connectors.length === 0) return null
+  return new Promise((resolve) => {
+    let settled = false
+    let remaining = connectors.length
+    for (const connector of connectors) {
+      connector().then(
+        (result) => {
+          if (!settled) {
+            settled = true
+            resolve(result)
+          }
+        },
+        () => {
+          remaining -= 1
+          if (remaining === 0 && !settled) {
+            settled = true
+            resolve(null)
+          }
+        },
+      )
+    }
+    signal?.addEventListener('abort', () => {
+      if (!settled) {
+        settled = true
+        resolve(null)
+      }
+    }, { once: true })
+  })
+}
+
+function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
+  const ac = new AbortController()
+  for (const s of signals) {
+    if (!s) continue
+    if (s.aborted) {
+      ac.abort(s.reason)
+      return ac.signal
+    }
+    s.addEventListener('abort', () => ac.abort(s.reason), { once: true })
+  }
+  return ac.signal
+}
+
+function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms))
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup()
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      cleanup()
+      reject(signal.reason instanceof Error ? signal.reason : new Error('connection orchestration aborted'))
+    }
+    const cleanup = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', onAbort)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 }

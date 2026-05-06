@@ -119,7 +119,7 @@ func TestAnswerOfferChannelPolicyRejectsWrongTerminalChannel(t *testing.T) {
 
 	answer, err := AnswerOfferWithOptions(context.Background(), hubv1.SignalingOffer{
 		SessionID:  "channel-policy-session",
-		DeviceID:   "machine-1",
+		MachineID:  "machine-1",
 		TerminalID: "signed-terminal",
 		SDP:        offerPC.LocalDescription().SDP,
 	}, nil, nil, fileapi.NewManager(), AnswerOptions{
@@ -179,7 +179,7 @@ func TestAnswerOfferMachineScopedPolicyAllowsAnyTerminalChannel(t *testing.T) {
 
 	answer, err := AnswerOfferWithOptions(context.Background(), hubv1.SignalingOffer{
 		SessionID: "machine-scoped-channel-policy-session",
-		DeviceID:  "machine-1",
+		MachineID: "machine-1",
 		SDP:       offerPC.LocalDescription().SDP,
 	}, nil, nil, fileapi.NewManager(), AnswerOptions{
 		ChannelPolicy: ChannelPolicy{
@@ -239,7 +239,7 @@ func TestAnswerOfferSurvivesCanceledRequestContext(t *testing.T) {
 
 	answer, err := AnswerOfferWithOptions(requestCtx, hubv1.SignalingOffer{
 		SessionID:  "request-context-session",
-		DeviceID:   "machine-1",
+		MachineID:  "machine-1",
 		TerminalID: "terminal-1",
 		SDP:        offerPC.LocalDescription().SDP,
 	}, nil, nil, fileapi.NewManager(), AnswerOptions{SessionContext: sessionCtx})
@@ -301,7 +301,7 @@ func TestAnswerOfferDefaultSessionContextFollowsCallerContext(t *testing.T) {
 
 	answer, err := AnswerOfferWithOptions(callerCtx, hubv1.SignalingOffer{
 		SessionID:  "default-context-session",
-		DeviceID:   "machine-1",
+		MachineID:  "machine-1",
 		TerminalID: "terminal-1",
 		SDP:        offerPC.LocalDescription().SDP,
 	}, nil, nil, fileapi.NewManager(), AnswerOptions{})
@@ -368,7 +368,7 @@ func TestAnswerOfferSessionContextClosesDataChannel(t *testing.T) {
 
 	answer, err := AnswerOfferWithOptions(context.Background(), hubv1.SignalingOffer{
 		SessionID:  "session-context-session",
-		DeviceID:   "machine-1",
+		MachineID:  "machine-1",
 		TerminalID: "terminal-1",
 		SDP:        offerPC.LocalDescription().SDP,
 	}, nil, nil, fileapi.NewManager(), AnswerOptions{SessionContext: sessionCtx})

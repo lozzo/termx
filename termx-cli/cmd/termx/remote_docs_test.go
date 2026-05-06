@@ -15,7 +15,7 @@ func TestTermxCLIBothModeDocsAndSmokeScript(t *testing.T) {
 	for _, want := range []string{
 		"termx remote login --server <web-control-url>",
 		"termx daemon",
-		"termx remote enable --cloud --local",
+		"termx remote enable --mode both",
 		"termx remote status",
 		"local_web_url",
 		"hub_url",
@@ -37,6 +37,7 @@ func TestTermxCLIBothModeDocsAndSmokeScript(t *testing.T) {
 		"curl",
 		"/api/health",
 		"termx remote status --json",
+		"termx remote enable --mode both",
 		"local.http_url",
 		"remote.state",
 		"remote.control_url",

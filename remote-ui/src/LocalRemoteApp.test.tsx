@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { forwardRef, useImperativeHandle } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LocalRemoteApp, type LocalRemoteSessionConnector } from './LocalRemoteApp'
-import { createLocalAppIdentityStore, type LocalAppCrypto } from './localAppIdentity'
+import { createMachineSessionStore } from './localAppIdentity'
 import type { TerminalModifierState } from './mobileTerminalInput'
 import type { LocalPairingApi, LocalStatus, RtcSession, TerminalInventoryEvents } from './transport'
 import { createMockFileSession } from './test/mockFileSession'
@@ -163,9 +163,10 @@ describe('LocalRemoteApp', () => {
     const pairApi = createMockPairApi()
     pairApi.pair = vi.fn(async () => ({
       machineId: 'machine-local',
-      appCertificate: '{"payload":{"machine_id":"machine-local","app_public_key":"AQIDBA=="},"signature":"machine-sig"}',
+      sessionToken: 'session-token-local',
       expiresAt: '2026-05-01T07:00:00Z',
     }))
+    const storage = new MemoryStorage()
 
     render(
       <LocalRemoteApp
@@ -173,8 +174,7 @@ describe('LocalRemoteApp', () => {
         connector={connector}
         pair={{
           api: pairApi,
-          storage: createLocalAppIdentityStore(new MemoryStorage()),
-          crypto: createMockAppCrypto(),
+          sessionStore: createMachineSessionStore(storage),
           appName: 'TermX Local Web',
         }}
       />,
@@ -507,7 +507,7 @@ describe('LocalRemoteApp', () => {
   })
 
   it('renders local session setup errors instead of crashing the embedded shell', async () => {
-    const connect = vi.fn(() => Promise.reject(new Error('local app certificate is required before opening a terminal')))
+    const connect = vi.fn(() => Promise.reject(new Error('session token is required before opening a terminal')))
     const connector = { connect } satisfies LocalRemoteSessionConnector
 
     render(<LocalRemoteApp api={createMockLocalAgentApi()} connector={connector} />)
@@ -515,7 +515,7 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
     expect(connect).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('local app certificate is required'))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('session token is required'))
     expect(connect).toHaveBeenCalledTimes(1)
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane/i)
   })
@@ -534,8 +534,7 @@ describe('LocalRemoteApp', () => {
         connector={connector}
         pair={{
           api: createMockPairApi(),
-          storage: createLocalAppIdentityStore(new MemoryStorage()),
-          crypto: createMockAppCrypto(),
+          sessionStore: createMachineSessionStore(new MemoryStorage()),
           appName: 'TermX Local Web',
         }}
       />,
@@ -550,11 +549,11 @@ describe('LocalRemoteApp', () => {
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane|session/i)
   })
 
-  it('keeps pair reachable when first-run terminal connect needs a certificate and retries after pairing', async () => {
-    const storage = createLocalAppIdentityStore(new MemoryStorage())
+  it('keeps pair reachable when first-run terminal connect needs a token and retries after pairing', async () => {
+    const sessionStore = createMachineSessionStore(new MemoryStorage())
     let paired = false
     const connect = vi.fn(() => {
-      if (!paired) return Promise.reject(new Error('local app certificate is required before opening a terminal'))
+      if (!paired) return Promise.reject(new Error('session token is required before opening a terminal'))
       return Promise.resolve(createMockLocalRemoteSession({}, 'machine-local', 'terminal-1'))
     })
     const connector = { connect } satisfies LocalRemoteSessionConnector
@@ -563,7 +562,7 @@ describe('LocalRemoteApp', () => {
       paired = true
       return {
         machineId: 'machine-local',
-        appCertificate: '{"payload":{"machine_id":"machine-local","app_public_key":"AQIDBA=="},"signature":"machine-sig"}',
+        sessionToken: 'session-token-local',
         expiresAt: '2026-05-01T07:00:00Z',
       }
     })
@@ -574,8 +573,7 @@ describe('LocalRemoteApp', () => {
         connector={connector}
         pair={{
           api: pairApi,
-          storage,
-          crypto: createMockAppCrypto(),
+          sessionStore,
           appName: 'TermX Local Web',
         }}
       />,
@@ -595,7 +593,7 @@ describe('LocalRemoteApp', () => {
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
     expect(connect).toHaveBeenCalledTimes(1)
-    expect(storage.loadCertificate()).toContain('machine-local')
+    expect(sessionStore.getSessionToken('machine-local')).toBe('session-token-local')
   })
 })
 
@@ -715,29 +713,5 @@ class MemoryStorage implements Storage {
   setItem(key: string, value: string): void {
     this.values.set(key, value)
     this.length = this.values.size
-  }
-}
-
-function createMockAppCrypto(): LocalAppCrypto {
-  return {
-    async generateKeyPair() {
-      return {
-        publicKey: { raw: new Uint8Array([1, 2, 3, 4]) },
-        privateKey: { keyId: 'generated-app-key' },
-      }
-    },
-    async savePrivateKey() {},
-    async loadPrivateKey() {
-      return { keyId: 'generated-app-key' }
-    },
-    async sign() {
-      return new TextEncoder().encode('signed-by-app-key')
-    },
-    async randomBytes(length: number) {
-      return new Uint8Array(length)
-    },
-    async sha256() {
-      return new Uint8Array(32)
-    },
   }
 }

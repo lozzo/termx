@@ -28,15 +28,6 @@ export interface RtcSessionDescription {
   sdp: string
 }
 
-export interface RtcOfferSigningInput {
-  sessionId: string
-  ticketId?: string | undefined
-  machineId: string
-  terminalId: string
-  sdp: string
-  candidates?: string[] | undefined
-}
-
 export interface RtcSessionNegotiationTarget extends RtcConnectionTarget {
   path: ConnectionPath
   iceServers?: Array<{
@@ -52,23 +43,6 @@ export interface RtcSessionNegotiator {
     description: RtcSessionDescription
   }>
   acceptAnswer(answer: RtcSessionDescription, options?: RtcConnectOptions): Promise<void>
-}
-
-export interface RtcSessionAnswerTarget extends RtcSessionNegotiationTarget {
-  sessionId: string
-  description: RtcSessionDescription
-  relayPolicy?: {
-    allowRelay: boolean
-    allowRelayTransfer: boolean
-  } | undefined
-  relayInUse?: boolean | undefined
-}
-
-export interface RtcSessionAnswerer {
-  acceptOffer(target: RtcSessionAnswerTarget, options?: RtcConnectOptions): Promise<{
-    sessionId: string
-    description: RtcSessionDescription
-  }>
 }
 
 export interface RtcConnectOptions {
@@ -149,13 +123,12 @@ export interface LocalPairInput {
   pairSecret: string
   appDeviceId: string
   appName: string
-  appPublicKey: string
   requestedCapabilities: string[]
 }
 
 export interface LocalPairResult {
   machineId: string
-  appCertificate: string
+  sessionToken: string
   expiresAt: string
 }
 

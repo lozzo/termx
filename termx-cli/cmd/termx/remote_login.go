@@ -272,7 +272,7 @@ func persistRemoteLogin(cmd *cobra.Command, configPath string, record remoteAuth
 	if err := saveRemoteAuthRecord(path, record); err != nil {
 		return err
 	}
-	if err := ensureRemoteConfigBootstrap(configPath, record.ControlURL, record.HubURL, path); err != nil {
+	if err := ensureRemoteConfigBootstrap(configPath, record.ControlURL, record.HubURL, path, "online"); err != nil {
 		return err
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "remote login saved")
@@ -462,17 +462,25 @@ func loadRemoteAuthRecord(path string) (remoteAuthRecord, error) {
 	return record, nil
 }
 
-func ensureRemoteConfigBootstrap(configPath string, controlURL string, hubURL string, authStorePath string) error {
+func ensureRemoteConfigBootstrap(configPath string, controlURL string, hubURL string, authStorePath string, mode string) error {
 	if strings.TrimSpace(configPath) == "" {
 		configPath = shared.DefaultConfigPath()
 	}
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		return err
 	}
-	content := fmt.Sprintf("remote:\n  enabled: true\n  controlURL: %s\n", strings.TrimSpace(controlURL))
-	if strings.TrimSpace(hubURL) != "" {
-		content += fmt.Sprintf("  hubURL: %s\n", strings.TrimSpace(hubURL))
+	content := "remote:\n  enabled: true\n"
+	if strings.TrimSpace(mode) != "" {
+		content += fmt.Sprintf("  mode: %s\n", strings.TrimSpace(mode))
 	}
-	content += fmt.Sprintf("  authStore: %s\n", authStorePath)
+	if strings.TrimSpace(controlURL) != "" {
+		content += fmt.Sprintf("  control_url: %s\n", strings.TrimSpace(controlURL))
+	}
+	if strings.TrimSpace(hubURL) != "" {
+		content += fmt.Sprintf("  hub_urls: [%s]\n", strings.TrimSpace(hubURL))
+	}
+	if strings.TrimSpace(authStorePath) != "" {
+		content += fmt.Sprintf("  auth_store: %s\n", authStorePath)
+	}
 	return os.WriteFile(configPath, []byte(content), 0o600)
 }

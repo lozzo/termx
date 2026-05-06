@@ -64,15 +64,21 @@ TERMX_LOCAL_WEB_ORIGIN=http://192.168.x.x:18888 npm run dev
 # 打开 http://localhost:5173/localweb.html → 扫描或输入本地 hub URL → 连接
 ```
 
-## 连接架构（新）
+## 连接架构（当前）
 
 所有连接路径都通过 Hub 协议，只是 hub URL 不同：
 
 ```
-local mode:   managedHubRtcConnector → http://LAN_IP:18888   (嵌入式本地 hub)
-cloud mode:   managedHubRtcConnector → https://hub.termx.io  (云端 hub)
-both mode:    connectionOrchestrator 先尝试 local，失败再用 cloud
+local:   managedHubRtcConnector → http://LAN_IP:18888  (嵌入式本地 hub，2s 超时优先)
+online:  所有 hub_urls 并发 race → 最快者胜出
+both:    先 local，再 race 所有 hub_urls
 ```
+
+termx:// URI payload（schema_version: 3）：
+```json
+{ "addresses": { "public": ["hub1_url", "hub2_url"] }, "pairing": {...} }
+```
+`addresses.public` 是**数组**，不是单个字符串。
 
 **已删除的旧路径**：
 - `localRtcConnector.ts` → 调用 `/api/local/rtc/offer`（localweb 端点，已删除）
@@ -95,12 +101,14 @@ both mode:    connectionOrchestrator 先尝试 local，失败再用 cloud
 6. terminal/file/events（与 cloud mode 完全一致）
 ```
 
-## App 认证与 Cert
+## App 认证（已简化）
 
-- `remote-ui` 持有 app certificate（pairing 时通过 hub pairing/claims 获取，machine key 签名）。
-- 每次发送 offer 时，app cert 作为 offer payload 的一部分随 offer 一起发出。
-- DataChannel 建立后，用 app cert 公钥参与密钥协商（未来 E2E 加密使用）。
-- `remote-ui` 不调 Web Controller 做 offer 前的 cert 验证——验证由 agent 在收到 offer 时完成。
+- `remote-ui` 持有 **session_token**（pairing 时从 hub 获取，HMAC-SHA256，由 agent 签发）。
+- session_token 按 machineId 存储：`termx.session.{machineId}.token`
+- 每次发送 offer 时，session_token 作为 offer payload 的 `session_token` 字段随 offer 发出。
+- **不再有**：app ed25519 key pair 生成、AppCertificate 存储、per-offer ed25519 签名。
+- `remote-ui` 不调 Web Controller 做 offer 前验证——验证由 agent 在收到 offer 时 HMAC 验证。
+- DTLS（WebRTC 内置）提供传输层防重放，无需额外签名。
 
 ## Transport Architecture
 

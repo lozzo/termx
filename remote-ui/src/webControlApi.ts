@@ -12,7 +12,6 @@ export interface WebControlApi {
   login(input: WebControlLoginInput, options?: RtcConnectOptions): Promise<WebControlAuthResult>
   me(options?: RtcConnectOptions): Promise<WebControlUser>
   listMachines(options?: RtcConnectOptions): Promise<WebControlMachine[]>
-  createConnectTicket(input: WebControlConnectTicketInput, options?: RtcConnectOptions): Promise<WebControlConnectTicket>
 }
 
 export interface WebControlLoginInput {
@@ -42,32 +41,12 @@ export interface WebControlMachine {
   online: boolean
   paired: boolean
   source: 'cloud'
-  publicKey?: string | undefined
-  machinePublicKeyFingerprint?: string | undefined
   controlUrl?: string | undefined
   hubId?: string | undefined
-  hubHttpUrl?: string | undefined
+  hubUrls: string[]
   hubStatus?: string | undefined
   lastSeen?: string | undefined
   createdAt?: string | undefined
-}
-
-export interface WebControlConnectTicketInput {
-  machineId: string
-  terminalId?: string | undefined
-  ttlSeconds?: number | undefined
-}
-
-export interface WebControlConnectTicket {
-  connectTicket: string
-  machineId: string
-  terminalId?: string | undefined
-  path: 'cloud'
-  allowRelay: boolean
-  relayInUse: boolean
-  relayThrottled: boolean
-  hubHttpUrl?: string | undefined
-  expiresAt: string
 }
 
 export function createWebControlApi(options: WebControlApiOptions): WebControlApi {
@@ -127,19 +106,6 @@ class WebControlHttpApi implements WebControlApi {
       throw new Error('Web Control machines response machines is required')
     }
     return machines.map((machine) => machineRecord(machine))
-  }
-
-  async createConnectTicket(input: WebControlConnectTicketInput, options: RtcConnectOptions = {}): Promise<WebControlConnectTicket> {
-    const machineId = requiredTrimmed(input.machineId, 'machine_id')
-    const response = await this.requestJSON('POST', `/api/v1/machines/${encodeURIComponent(machineId)}/connect-tickets`, {
-      auth: 'bearer',
-      signal: options.signal,
-      body: {
-        terminal_id: input.terminalId?.trim() ?? '',
-        ...(input.ttlSeconds !== undefined ? { ttl_seconds: input.ttlSeconds } : {}),
-      },
-    })
-    return connectTicketRecord(response)
   }
 
   private async requestJSON(
@@ -225,35 +191,21 @@ function machineRecord(value: unknown): WebControlMachine {
     online: booleanField(response, 'online'),
     paired: booleanField(response, 'paired'),
     source: 'cloud',
-    ...(optionalStringField(response, 'public_key') ? { publicKey: optionalStringField(response, 'public_key') } : {}),
-    ...(optionalStringField(response, 'machine_public_key_fingerprint')
-      ? { machinePublicKeyFingerprint: optionalStringField(response, 'machine_public_key_fingerprint') }
-      : {}),
     ...(optionalStringField(response, 'control_url') ? { controlUrl: optionalStringField(response, 'control_url') } : {}),
     ...(optionalStringField(response, 'hub_id') ? { hubId: optionalStringField(response, 'hub_id') } : {}),
-    ...(optionalStringField(response, 'hub_http_url') ? { hubHttpUrl: optionalStringField(response, 'hub_http_url') } : {}),
+    hubUrls: hubUrlsField(response),
     ...(optionalStringField(response, 'hub_status') ? { hubStatus: optionalStringField(response, 'hub_status') } : {}),
     ...(optionalStringField(response, 'last_seen') ? { lastSeen: optionalStringField(response, 'last_seen') } : {}),
     ...(optionalStringField(response, 'created_at') ? { createdAt: optionalStringField(response, 'created_at') } : {}),
   }
 }
 
-function connectTicketRecord(response: Record<string, unknown>): WebControlConnectTicket {
-  const path = stringField(response, 'path')
-  if (path !== 'cloud') {
-    throw new Error(`Web Control connect ticket path must be cloud, got ${path}`)
+function hubUrlsField(response: Record<string, unknown>): string[] {
+  if (Array.isArray(response.hub_urls)) {
+    return response.hub_urls.filter((value): value is string => typeof value === 'string' && value.trim() !== '')
   }
-  return {
-    connectTicket: stringField(response, 'connect_ticket', 'id'),
-    machineId: stringField(response, 'machine_id'),
-    ...(optionalTrimmedStringField(response, 'terminal_id') ? { terminalId: optionalTrimmedStringField(response, 'terminal_id') } : {}),
-    path: 'cloud',
-    allowRelay: optionalBooleanField(response, 'allow_relay') ?? false,
-    relayInUse: optionalBooleanField(response, 'relay_in_use') ?? false,
-    relayThrottled: optionalBooleanField(response, 'relay_throttled') ?? false,
-    ...(optionalStringField(response, 'hub_http_url') ? { hubHttpUrl: optionalStringField(response, 'hub_http_url') } : {}),
-    expiresAt: stringField(response, 'expires_at'),
-  }
+  const legacy = optionalStringField(response, 'hub_http_url')
+  return legacy ? [legacy] : []
 }
 
 async function errorMessage(response: Response): Promise<string> {
@@ -295,26 +247,11 @@ function stringField(value: Record<string, unknown>, key: string, alias?: string
   return field
 }
 
-function requiredTrimmed(value: unknown, label: string): string {
-  const trimmed = typeof value === 'string' ? value.trim() : ''
-  if (!trimmed) throw new Error(`Web Control ${label} is required`)
-  return trimmed
-}
-
 function optionalStringField(value: Record<string, unknown>, key: string): string | undefined {
   const field = value[key]
   if (field === undefined || field === null) return undefined
   if (typeof field !== 'string' || field.trim() === '') {
     throw new Error(`Web Control response ${key} must be a string`)
-  }
-  return field
-}
-
-function optionalBooleanField(value: Record<string, unknown>, key: string): boolean | undefined {
-  const field = value[key]
-  if (field === undefined || field === null) return undefined
-  if (typeof field !== 'boolean') {
-    throw new Error(`Web Control ${key} must be a boolean`)
   }
   return field
 }

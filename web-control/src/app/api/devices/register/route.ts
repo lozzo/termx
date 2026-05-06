@@ -12,7 +12,6 @@ import { invalidateUserAgents } from "@/lib/cache-system";
 
 interface DeviceRegistrationBody {
   deviceId?: string;
-  machinePublicKey?: string;
   displayName?: string;
   hostname?: string;
   platform?: string;
@@ -39,22 +38,6 @@ export async function POST(request: NextRequest) {
   const deviceId = body.deviceId?.trim() ?? "";
   if (!deviceId) {
     return NextResponse.json(asError("invalid_device", "deviceId is required"), { status: 400 });
-  }
-
-  const machinePublicKey = body.machinePublicKey?.trim() ?? "";
-  if (machinePublicKey) {
-    try {
-      const keyBytes = Buffer.from(machinePublicKey, "base64url");
-      if (keyBytes.length !== 32) {
-        return NextResponse.json(asError("invalid_public_key", "machinePublicKey must be a 32 byte Ed25519 key"), {
-          status: 400,
-        });
-      }
-    } catch {
-      return NextResponse.json(asError("invalid_public_key", "machinePublicKey must use base64url encoding"), {
-        status: 400,
-      });
-    }
   }
 
   const existing = await db.query.agents.findFirst({
@@ -84,7 +67,6 @@ export async function POST(request: NextRequest) {
     id: deviceId,
     userId: tokenRecord.userId,
     tokenId: tokenRecord.id,
-    publicKey: machinePublicKey || existing?.publicKey || null,
     name: body.displayName?.trim() || existing?.name || body.hostname?.trim() || deviceId,
     hostname: body.hostname?.trim() || existing?.hostname || "",
     osInfo: body.platform?.trim() || existing?.osInfo || "",
@@ -102,7 +84,6 @@ export async function POST(request: NextRequest) {
       set: {
         userId: values.userId,
         tokenId: values.tokenId,
-        publicKey: values.publicKey,
         name: values.name,
         hostname: values.hostname,
         osInfo: values.osInfo,

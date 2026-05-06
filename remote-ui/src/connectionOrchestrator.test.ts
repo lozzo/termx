@@ -4,249 +4,170 @@ import {
   type ConnectionAttemptSnapshot,
 } from './connectionOrchestrator'
 import source from './connectionOrchestrator.ts?raw'
+import { ManualLocalHubUrlProvider } from './localHubUrlProvider'
+import type { ManagedHubApi } from './managedHubApi'
 import type {
   ConnectionCapabilities,
   ConnectionInfo,
-  RtcConnectionTarget,
   RtcBinaryChannel,
-  RtcConnector,
   RtcJsonRpcChannel,
   RtcSession,
 } from './transport'
 
 describe('ConnectionOrchestrator', () => {
-  it('returns the local RtcSession and does not trigger public_p2p when local succeeds', async () => {
+  it('tries local Hub first and returns before racing online hubs when local succeeds', async () => {
     const localSession = new MockRtcSession({
       path: 'local',
       connectionId: 'local-rtc-1',
       machineId: 'machine-1',
       relayInUse: false,
     })
-    const local = new RecordingConnector(localSession)
-    const publicP2p = new RecordingConnector(new Error('public should not run'))
-    const managed = new RecordingConnector(new Error('managed should not run'))
+    const localConnector = new RecordingManagedHubConnector(localSession)
+    const onlineConnector = new RecordingManagedHubConnector(new Error('online should not run'))
     const snapshots: ConnectionAttemptSnapshot[] = []
-    const orchestrator = createConnectionOrchestrator({ local, publicP2p, managed })
+    const orchestrator = createConnectionOrchestrator({
+      localHubUrlProvider: new ManualLocalHubUrlProvider('http://127.0.0.1:18888'),
+      managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
+      managedHubRtcConnectorFactory: ({ hubUrl }) => hubUrl.includes('127.0.0.1') ? localConnector : onlineConnector,
+    })
 
     const result = await orchestrator.connect({
       machineId: 'machine-1',
       terminalId: 'terminal-1',
-      machinePublicKeyFingerprint: 'sha256:machine',
-      managed: { hubSessionId: 'hub-session-1', deviceId: 'app-device-1' },
+      sessionToken: 'session-token-1',
+      hubUrls: ['https://hub-1.termx.test'],
       onSnapshot: (snapshot) => snapshots.push(snapshot),
     })
 
     expect(result.session).toBe(localSession)
     expect(result.path).toBe('local')
-    expect(local.calls).toEqual([{ machineId: 'machine-1', terminalId: 'terminal-1' }])
-    expect(publicP2p.calls).toEqual([])
-    expect(managed.calls).toEqual([])
-    expect(snapshots.map((snapshot) => snapshot.stage)).toEqual(['trying_local', 'connected'])
-    expect(snapshots.at(-1)).toMatchObject({ stage: 'connected', path: 'local', relayInUse: false })
-  })
-
-  it('tries public_p2p after local fails and stops before managed when public_p2p succeeds', async () => {
-    const publicSession = new MockRtcSession({
-      path: 'public_p2p',
-      connectionId: 'public-rtc-1',
-      machineId: 'machine-1',
-      relayInUse: false,
-    })
-    const local = new RecordingConnector(new Error('local unreachable'))
-    const publicP2p = new RecordingConnector(publicSession)
-    const managed = new RecordingConnector(new Error('managed should not run'))
-    const snapshots: ConnectionAttemptSnapshot[] = []
-    const orchestrator = createConnectionOrchestrator({ local, publicP2p, managed })
-
-    const result = await orchestrator.connect({
+    expect(localConnector.calls).toEqual([{
       machineId: 'machine-1',
       terminalId: 'terminal-1',
-      machinePublicKeyFingerprint: 'sha256:machine',
-      managed: { hubSessionId: 'hub-session-1', deviceId: 'app-device-1' },
-      onSnapshot: (snapshot) => snapshots.push(snapshot),
-    })
-
-    expect(result.session).toBe(publicSession)
-    expect(result.path).toBe('public_p2p')
-    expect(publicP2p.calls).toEqual([{
-      machineId: 'machine-1',
-      terminalId: 'terminal-1',
-      machinePublicKeyFingerprint: 'sha256:machine',
+      sessionToken: 'session-token-1',
+      path: 'local',
     }])
-    expect(managed.calls).toEqual([])
-    expect(snapshots).toEqual([
-      { stage: 'trying_local', path: 'local', message: 'Trying local connection' },
-      { stage: 'trying_public_p2p', path: 'public_p2p', message: 'Trying public P2P connection' },
-      { stage: 'connected', path: 'public_p2p', relayInUse: false, message: 'Connected' },
-    ])
+    expect(onlineConnector.calls).toEqual([])
+    expect(snapshots.map((snapshot) => snapshot.stage)).toEqual(['trying_local', 'connected'])
   })
 
-  it('tries managed after local and public_p2p fail, carrying relay as info not a path', async () => {
-    const managedSession = new MockRtcSession({
+  it('races all configured hub URLs after local fails and returns the first managed success', async () => {
+    const slowFailure = new RecordingManagedHubConnector(new Error('hub 1 unavailable'))
+    const winnerSession = new MockRtcSession({
       path: 'managed',
-      connectionId: 'managed-rtc-1',
+      connectionId: 'managed-rtc-2',
       machineId: 'machine-1',
       relayInUse: true,
     })
-    const local = new RecordingConnector(new Error('local unreachable'))
-    const publicP2p = new RecordingConnector(new Error('public P2P timed out'))
-    const managed = new RecordingConnector(managedSession)
+    const winner = new RecordingManagedHubConnector(winnerSession)
     const snapshots: ConnectionAttemptSnapshot[] = []
-    const orchestrator = createConnectionOrchestrator({ local, publicP2p, managed })
+    const orchestrator = createConnectionOrchestrator({
+      localHubUrlProvider: new ManualLocalHubUrlProvider('http://127.0.0.1:18888'),
+      managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
+      managedHubRtcConnectorFactory: ({ hubUrl }) => {
+        if (hubUrl.includes('127.0.0.1')) return new RecordingManagedHubConnector(new Error('local unreachable'))
+        return hubUrl.includes('hub-1') ? slowFailure : winner
+      },
+    })
 
     const result = await orchestrator.connect({
       machineId: 'machine-1',
       terminalId: 'terminal-1',
-      machinePublicKeyFingerprint: 'sha256:machine',
-      managed: { hubSessionId: 'hub-session-1', deviceId: 'app-device-1' },
+      sessionToken: 'session-token-1',
+      hubUrls: ['https://hub-1.termx.test', 'https://hub-2.termx.test'],
       onSnapshot: (snapshot) => snapshots.push(snapshot),
     })
 
-    expect(result.session).toBe(managedSession)
+    expect(result.session).toBe(winnerSession)
     expect(result.path).toBe('managed')
     expect(result.relayInUse).toBe(true)
-    expect(managed.calls).toEqual([{
+    expect(slowFailure.calls).toHaveLength(1)
+    expect(winner.calls).toEqual([{
       machineId: 'machine-1',
       terminalId: 'terminal-1',
-      hubSessionId: 'hub-session-1',
-      deviceId: 'app-device-1',
+      sessionToken: 'session-token-1',
+      path: 'managed',
     }])
-    expect(snapshots.map((snapshot) => snapshot.stage)).toEqual([
-      'trying_local',
-      'trying_public_p2p',
-      'trying_managed',
-      'connected',
+    expect(snapshots).toEqual([
+      { stage: 'trying_local', path: 'local', message: 'Trying local connection' },
+      { stage: 'trying_managed', path: 'managed', message: 'Racing 2 hub(s)' },
+      { stage: 'connected', path: 'managed', relayInUse: true, message: 'Connected' },
     ])
-    expect(snapshots.at(-1)).toEqual({
-      stage: 'connected',
-      path: 'managed',
-      relayInUse: true,
-      message: 'Connected',
-    })
-    expect(JSON.stringify(snapshots)).not.toMatch(/"path":"relay"|paid_relay|managed_p2p|anonymous_p2p/)
   })
 
-  it('rejects relay reported by public_p2p and falls back to managed', async () => {
-    const publicSession = new MockRtcSession({
-      path: 'public_p2p',
-      connectionId: 'public-rtc-1',
-      machineId: 'machine-1',
-      relayInUse: true,
+  it('fails when no hub URLs are configured after local is unavailable', async () => {
+    const orchestrator = createConnectionOrchestrator({
+      localHubUrlProvider: new ManualLocalHubUrlProvider('http://127.0.0.1:18888'),
+      managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
+      managedHubRtcConnectorFactory: () => new RecordingManagedHubConnector(new Error('local unreachable')),
     })
-    const managedSession = new MockRtcSession({
-      path: 'managed',
-      connectionId: 'managed-rtc-1',
-      machineId: 'machine-1',
-      relayInUse: true,
-    })
-    const local = new RecordingConnector(new Error('local unreachable'))
-    const publicP2p = new RecordingConnector(publicSession)
-    const managed = new RecordingConnector(managedSession)
-    const orchestrator = createConnectionOrchestrator({ local, publicP2p, managed })
-
-    const result = await orchestrator.connect({
-      machineId: 'machine-1',
-      terminalId: 'terminal-1',
-      machinePublicKeyFingerprint: 'sha256:machine',
-      managed: { hubSessionId: 'hub-session-1', deviceId: 'app-device-1' },
-    })
-
-    expect(result.session).toBe(managedSession)
-    expect(result.path).toBe('managed')
-    expect(publicSession.disconnectCalls).toBe(1)
-  })
-
-  it('reports failure after all paths fail without exposing non-RtcSession runtime objects', async () => {
-    const local = new RecordingConnector(new Error('local unreachable'))
-    const publicP2p = new RecordingConnector(new Error('public P2P timed out'))
-    const managed = new RecordingConnector(new Error('managed unavailable'))
-    const snapshots: ConnectionAttemptSnapshot[] = []
-    const orchestrator = createConnectionOrchestrator({ local, publicP2p, managed })
 
     await expect(orchestrator.connect({
       machineId: 'machine-1',
       terminalId: 'terminal-1',
-      machinePublicKeyFingerprint: 'sha256:machine',
-      managed: { hubSessionId: 'hub-session-1', deviceId: 'app-device-1' },
-      onSnapshot: (snapshot) => snapshots.push(snapshot),
-    })).rejects.toThrow(/all connection paths failed/i)
-
-    expect(snapshots.at(-1)).toEqual({
-      stage: 'failed',
-      message: 'All connection paths failed',
-      errors: [
-        { path: 'local', message: 'local unreachable' },
-        { path: 'public_p2p', message: 'public P2P timed out' },
-        { path: 'managed', message: 'managed unavailable' },
-      ],
-    })
+      sessionToken: 'session-token-1',
+      hubUrls: [],
+    })).rejects.toThrow(/no hub URLs configured/i)
   })
 
-  it('stops on abort instead of falling through to later paths', async () => {
+  it('stops on abort instead of continuing to hub racing', async () => {
     const controller = new AbortController()
-    const local = new RecordingConnector(async () => {
-      controller.abort(new Error('user canceled connection'))
-      return new MockRtcSession({
-        path: 'local',
-        connectionId: 'local-rtc-1',
-        machineId: 'machine-1',
-        relayInUse: false,
-      })
+    const orchestrator = createConnectionOrchestrator({
+      localHubUrlProvider: new ManualLocalHubUrlProvider('http://127.0.0.1:18888'),
+      managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
+      managedHubRtcConnectorFactory: () => new RecordingManagedHubConnector(async () => {
+        controller.abort(new Error('user canceled connection'))
+        return new MockRtcSession({
+          path: 'local',
+          connectionId: 'local-rtc-1',
+          machineId: 'machine-1',
+          relayInUse: false,
+        })
+      }),
     })
-    const publicP2p = new RecordingConnector(new Error('public should not run after abort'))
-    const managed = new RecordingConnector(new Error('managed should not run after abort'))
-    const orchestrator = createConnectionOrchestrator({ local, publicP2p, managed })
 
     await expect(orchestrator.connect({
       machineId: 'machine-1',
       terminalId: 'terminal-1',
-      machinePublicKeyFingerprint: 'sha256:machine',
-      managed: { hubSessionId: 'hub-session-1', deviceId: 'app-device-1' },
+      sessionToken: 'session-token-1',
+      hubUrls: ['https://hub-1.termx.test'],
     }, { signal: controller.signal })).rejects.toThrow(/user canceled connection/i)
-
-    expect(publicP2p.calls).toEqual([])
-    expect(managed.calls).toEqual([])
   })
 
-  it('disconnects a created session when post-connect validation fails', async () => {
-    const mismatchedSession = new MockRtcSession({
-      path: 'managed',
-      connectionId: 'managed-rtc-1',
-      machineId: 'machine-1',
-      relayInUse: false,
-    })
-    const local = new RecordingConnector(mismatchedSession)
-    const publicP2p = new RecordingConnector(new Error('public unavailable'))
-    const managed = new RecordingConnector(new Error('managed unavailable'))
-    const orchestrator = createConnectionOrchestrator({ local, publicP2p, managed })
-
-    await expect(orchestrator.connect({
-      machineId: 'machine-1',
-      terminalId: 'terminal-1',
-      machinePublicKeyFingerprint: 'sha256:machine',
-      managed: { hubSessionId: 'hub-session-1', deviceId: 'app-device-1' },
-    })).rejects.toThrow(/all connection paths failed/i)
-
-    expect(mismatchedSession.disconnectCalls).toBe(1)
-  })
-
-  it('keeps orchestration above signaling/runtime adapters', () => {
+  it('keeps orchestration above signaling/runtime adapters and old offer signing', () => {
     expect(source).not.toMatch(/RTCPeerConnection|RTCDataChannel|WebSocket|fetch\(|XMLHttpRequest/)
+    expect(source).not.toMatch(/appCertificate|app_certificate|signOffer|ed25519|offer_signature/)
     expect(source).not.toMatch(/paid_relay|managed_p2p|anonymous_p2p|"relay"|'relay'/)
     expect(source).not.toMatch(/openTerminal\(|openApi\(|openFileTransfer\(|subscribeEvents\(/)
   })
 })
 
-class RecordingConnector<TInput extends RtcConnectionTarget> implements RtcConnector<TInput> {
-  readonly calls: TInput[] = []
+class RecordingManagedHubConnector {
+  readonly calls: unknown[] = []
 
   constructor(private readonly result: RtcSession | Error | (() => Promise<RtcSession>)) {}
 
-  async connect(input: TInput): Promise<RtcSession> {
+  async connect(input: unknown): Promise<RtcSession> {
     this.calls.push(input)
     if (this.result instanceof Error) throw this.result
     if (typeof this.result === 'function') return this.result()
     return this.result
+  }
+}
+
+class MockManagedHubApi implements ManagedHubApi {
+  constructor(readonly hubUrl: string) {}
+
+  async createSession(): ReturnType<ManagedHubApi['createSession']> {
+    throw new Error('createSession is not used by orchestrator tests')
+  }
+
+  async pollSessionAnswer(): ReturnType<ManagedHubApi['pollSessionAnswer']> {
+    throw new Error('pollSessionAnswer is not used by orchestrator tests')
+  }
+
+  async pair(): ReturnType<ManagedHubApi['pair']> {
+    throw new Error('pair is not used by orchestrator tests')
   }
 }
 

@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -341,7 +341,7 @@ func TestNewHubHandlerFromEnvStartsEmbeddedTurnWhenSecretSet(t *testing.T) {
 	sessionDone := make(chan int, 1)
 	go func() {
 		resp := httptest.NewRecorder()
-		body := `{"connect_ticket":"ticket_1","machine_id":"machine_1","terminal_id":"term_1","app_certificate":{"payload":{"machine_id":"machine_1"},"signature":"cert"},"offer":{"session_id":"session_1","sdp":"v=0\r\no=- offer 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel","ice_candidates":[]},"signature":{"algorithm":"ed25519","nonce":"nonce","timestamp":1770000000,"value":"sig"}}`
+		body := `{"machine_id":"machine_1","terminal_id":"term_1","session_token":"session-token-1","offer":{"session_id":"session_1","sdp":"v=0\r\no=- offer 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel","ice_candidates":[]}}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		handler.ServeHTTP(resp, req)
@@ -364,16 +364,8 @@ func TestNewHubHandlerFromEnvStartsEmbeddedTurnWhenSecretSet(t *testing.T) {
 	if err := json.NewDecoder(poll.Body).Decode(&polled); err != nil {
 		t.Fatalf("decode poll response: %v", err)
 	}
-	if polled.Offer == nil || !polled.Offer.AllowRelay {
-		t.Fatalf("embedded turn should enable cloud relay offers: %+v", polled.Offer)
-	}
-	if len(polled.Offer.RTCConfig.IceServers) < 2 {
-		t.Fatalf("expected STUN plus embedded TURN ICE servers: %+v", polled.Offer.RTCConfig.IceServers)
-	}
-	turnICE := polled.Offer.RTCConfig.IceServers[len(polled.Offer.RTCConfig.IceServers)-1]
-	if len(turnICE.URLs) != 2 || !strings.HasPrefix(turnICE.URLs[0], "turn:") || !strings.Contains(turnICE.URLs[0], "transport=udp") ||
-		!strings.Contains(turnICE.URLs[1], "transport=tcp") || turnICE.Username == "" || turnICE.Credential == "" {
-		t.Fatalf("embedded turn ICE server = %+v", turnICE)
+	if polled.Offer == nil || polled.Offer.SessionToken != "session-token-1" {
+		t.Fatalf("embedded turn should still relay session-token offers: %+v", polled.Offer)
 	}
 	if code := <-sessionDone; code != http.StatusAccepted {
 		t.Fatalf("pending session status = %d", code)

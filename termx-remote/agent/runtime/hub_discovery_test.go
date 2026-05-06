@@ -20,17 +20,8 @@ func TestManagerDiscoversAndSelectsHubAfterControlRegistration(t *testing.T) {
 	var controlRegisterPath string
 	var controlHubPath string
 	var controlAuth string
-	var hubRegisterPath string
 	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hubRegisterPath = r.URL.Path
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"version":                    "remote.hub.v1",
-			"hub_id":                     "hub-discovered",
-			"agent_session_id":           "agent-session-discovered",
-			"heartbeat_interval_seconds": 15,
-			"rtc_config":                 map[string]any{"ice_servers": []any{}},
-			"relay_policy":               map[string]any{"allow_relay": false, "allow_relay_transfer": false},
-		})
+		w.WriteHeader(http.StatusOK)
 	}))
 	defer hub.Close()
 	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,29 +70,17 @@ func TestManagerDiscoversAndSelectsHubAfterControlRegistration(t *testing.T) {
 	if controlAuth != "Bearer control-secret" {
 		t.Fatalf("expected bearer auth to control, got %q", controlAuth)
 	}
-	if hubRegisterPath != "/api/v1/agents/register" {
-		t.Fatalf("expected hub registration after discovery, got %q", hubRegisterPath)
-	}
 }
 
 func TestManagerDiscoversHubUsingRegionAndWeightPolicy(t *testing.T) {
 	t.Parallel()
 
-	var selectedHubRegisterPath string
 	selectedHub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		selectedHubRegisterPath = r.URL.Path
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"version":                    "remote.hub.v1",
-			"hub_id":                     "hub-selected",
-			"agent_session_id":           "agent-session-selected",
-			"heartbeat_interval_seconds": 15,
-			"rtc_config":                 map[string]any{"ice_servers": []any{}},
-			"relay_policy":               map[string]any{"allow_relay": false, "allow_relay_transfer": false},
-		})
+		w.WriteHeader(http.StatusOK)
 	}))
 	defer selectedHub.Close()
 	unselectedHub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatalf("unselected hub should not receive registration: %s", r.URL.Path)
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 	}))
 	defer unselectedHub.Close()
 	now := time.Now().UTC()
@@ -168,38 +147,17 @@ func TestManagerDiscoversHubUsingRegionAndWeightPolicy(t *testing.T) {
 	if status.HubURL != selectedHub.URL {
 		t.Fatalf("expected selected hub URL %q, got %q", selectedHub.URL, status.HubURL)
 	}
-	if selectedHubRegisterPath != "/api/v1/agents/register" {
-		t.Fatalf("expected selected hub registration, got %q", selectedHubRegisterPath)
-	}
 }
 
 func TestManagerReevaluatesDiscoveredHubOnReconcile(t *testing.T) {
 	t.Parallel()
 
-	var firstHubRegisters atomic.Int32
 	firstHub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		firstHubRegisters.Add(1)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"version":                    "remote.hub.v1",
-			"hub_id":                     "hub-first",
-			"agent_session_id":           "agent-session-first",
-			"heartbeat_interval_seconds": 15,
-			"rtc_config":                 map[string]any{"ice_servers": []any{}},
-			"relay_policy":               map[string]any{"allow_relay": false, "allow_relay_transfer": false},
-		})
+		w.WriteHeader(http.StatusOK)
 	}))
 	defer firstHub.Close()
-	var secondHubRegisters atomic.Int32
 	secondHub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		secondHubRegisters.Add(1)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"version":                    "remote.hub.v1",
-			"hub_id":                     "hub-second",
-			"agent_session_id":           "agent-session-second",
-			"heartbeat_interval_seconds": 15,
-			"rtc_config":                 map[string]any{"ice_servers": []any{}},
-			"relay_policy":               map[string]any{"allow_relay": false, "allow_relay_transfer": false},
-		})
+		w.WriteHeader(http.StatusOK)
 	}))
 	defer secondHub.Close()
 
@@ -276,9 +234,6 @@ func TestManagerReevaluatesDiscoveredHubOnReconcile(t *testing.T) {
 	if status.HubURL != secondHub.URL {
 		t.Fatalf("reevaluated hub URL = %q, want %q", status.HubURL, secondHub.URL)
 	}
-	if secondHubRegisters.Load() == 0 {
-		t.Fatal("second hub did not receive registration after policy changed")
-	}
 }
 
 func TestManagerAddsDiscoveredHubWithoutDroppingExistingLocalHub(t *testing.T) {
@@ -310,6 +265,7 @@ func TestManagerAddsDiscoveredHubWithoutDroppingExistingLocalHub(t *testing.T) {
 		Enabled:    true,
 		DataDir:    t.TempDir(),
 		DeviceName: "both-mode-daemon",
+		Mode:       "local",
 	}, inventoryProviderStub{}, nil)
 	manager.AddHubURLWithAnswerOptions(localHub.URL, remotertc.AnswerOptions{})
 	if err := manager.Start(context.Background()); err != nil {
@@ -366,6 +322,7 @@ func TestManagerKeepsLocalHubWhenExplicitCloudHubConfigured(t *testing.T) {
 		Enabled:    true,
 		DataDir:    t.TempDir(),
 		DeviceName: "both-mode-explicit-daemon",
+		Mode:       "local",
 	}, inventoryProviderStub{}, nil)
 	manager.AddExplicitHubURL(cloudHub.URL)
 	manager.ConfigureCloud(control.URL, "control-secret", "")

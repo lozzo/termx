@@ -39,7 +39,6 @@ func TestWF003HubProductImplementationOwnedByTermxRemote(t *testing.T) {
 		"Ticket" + "Verifier",
 		"ControlVerifier",
 		"Agent" + "Policy",
-		"VerifyAppCertificate",
 	})
 }
 
@@ -61,7 +60,6 @@ func TestWF301TermxHubCmdAllowsManagementHeartbeatEnvOnly(t *testing.T) {
 		"Ticket" + "Verifier",
 		"ControlVerifier",
 		"Agent" + "Policy",
-		"VerifyAppCertificate",
 	} {
 		if strings.Contains(data, forbidden) {
 			t.Fatalf("termx-hub cmd contains forbidden connection-time control symbol %q", forbidden)

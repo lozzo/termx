@@ -191,17 +191,10 @@ func NewHandler(cfg Config) http.Handler {
 				State: terminal.State,
 			})
 		}
-		// TODO: verify agent registration signature against web-control
-		// (/api/v1/hub/agents/verify-registration) before accepting.
-		// Currently any client can register with any machine_id — security gap, deferred.
 		if _, err := cfg.Registry.Register(r.Context(), registry.RegisterInput{
-			MachineID:          deviceID,
-			AgentID:            agentID,
-			SignatureAlgorithm: req.Signature.Algorithm,
-			SignatureNonce:     req.Signature.Nonce,
-			SignatureTimestamp: req.Signature.Timestamp,
-			SignatureValue:     req.Signature.Value,
-			Terminals:          terminals,
+			MachineID: deviceID,
+			AgentID:   agentID,
+			Terminals: terminals,
 		}); err != nil {
 			writeError(w, http.StatusForbidden, "agent_register_failed", err.Error())
 			return
@@ -342,30 +335,19 @@ func NewHandler(cfg Config) http.Handler {
 		publicID := publicSessionID(offer)
 		agents.rememberPoll(req.AgentSessionID, publicID)
 		agents.rememberOffer(req.AgentSessionID, publicID, offer.ID)
-		rtcConfig, err := rtcConfigForOffer(r.Context(), cfg, offer)
-		if err != nil {
+		if _, err := rtcConfigForOffer(r.Context(), cfg, offer); err != nil {
 			agents.rememberPollError(req.AgentSessionID, err.Error())
 			writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, hubv1.SignalingPollResponse{
 			Offer: &hubv1.SignalingOffer{
-				SessionID:          publicID,
-				TicketID:           offer.TicketID,
-				DeviceID:           offer.MachineID,
-				TerminalID:         offer.TerminalID,
-				SDP:                offer.SDP,
-				ICECandidates:      append([]string(nil), offer.ICECandidates...),
-				RTCConfig:          rtcConfig,
-				AllowRelay:         offer.AllowRelay,
-				AllowRelayTransfer: false,
-				AppCertificate:     append([]byte(nil), offer.AppCertificate...),
-				Signature: hubv1.OfferSignature{
-					Algorithm: offer.Signature.Algorithm,
-					Nonce:     offer.Signature.Nonce,
-					Timestamp: offer.Signature.Timestamp,
-					Value:     offer.Signature.Value,
-				},
+				SessionID:    publicID,
+				MachineID:    offer.MachineID,
+				TerminalID:   offer.TerminalID,
+				SDP:          offer.SDP,
+				Candidates:   append([]string(nil), offer.ICECandidates...),
+				SessionToken: offer.SessionToken,
 			},
 		})
 	})
@@ -445,7 +427,6 @@ func NewHandler(cfg Config) http.Handler {
 				PairSecret:            claim.PairSecret,
 				AppDeviceID:           claim.AppDeviceID,
 				AppName:               claim.AppName,
-				AppPublicKey:          claim.AppPublicKey,
 				RequestedCapabilities: append([]string(nil), claim.RequestedCapabilities...),
 			},
 		})
@@ -466,14 +447,13 @@ func NewHandler(cfg Config) http.Handler {
 			return
 		}
 		if _, err := cfg.Registry.SubmitPairingResult(r.Context(), registry.PairingResultInput{
-			AgentID:          session.AgentID,
-			MachineID:        session.DeviceID,
-			ClaimID:          req.Result.ClaimID,
-			MachineName:      req.Result.MachineName,
-			MachinePublicKey: req.Result.MachinePublicKey,
-			AppCertificate:   req.Result.AppCertificate,
-			ExpiresAt:        req.Result.ExpiresAt,
-			Error:            req.Result.Error,
+			AgentID:      session.AgentID,
+			MachineID:    session.DeviceID,
+			ClaimID:      req.Result.ClaimID,
+			MachineName:  req.Result.MachineName,
+			SessionToken: req.Result.SessionToken,
+			ExpiresAt:    req.Result.ExpiresAt,
+			Error:        req.Result.Error,
 		}); err != nil {
 			writeError(w, http.StatusForbidden, "submit_pairing_result_failed", err.Error())
 			return
@@ -482,16 +462,14 @@ func NewHandler(cfg Config) http.Handler {
 	})
 	mux.HandleFunc("POST /api/v1/sessions", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			ConnectTicket  string          `json:"connect_ticket"`
-			MachineID      string          `json:"machine_id"`
-			TerminalID     string          `json:"terminal_id"`
-			AppCertificate json.RawMessage `json:"app_certificate"`
-			Offer          struct {
-				SessionID     string   `json:"session_id"`
-				SDP           string   `json:"sdp"`
-				ICECandidates []string `json:"ice_candidates"`
+			MachineID  string `json:"machine_id"`
+			TerminalID string `json:"terminal_id,omitempty"`
+			Offer      struct {
+				SessionID  string   `json:"session_id"`
+				SDP        string   `json:"sdp"`
+				Candidates []string `json:"ice_candidates,omitempty"`
 			} `json:"offer"`
-			Signature offerSignatureRequest `json:"signature"`
+			SessionToken string `json:"session_token"`
 		}
 		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
 			writeDecodeError(w, err)
@@ -501,30 +479,23 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusServiceUnavailable, "cloud_service_unavailable", "cloud service is not configured")
 			return
 		}
-		if err := validateSessionRequestEnvelope(req.Offer.SessionID, req.AppCertificate, req.Signature); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_cloud_session_envelope", err.Error())
+		if strings.TrimSpace(req.SessionToken) == "" {
+			writeError(w, http.StatusBadRequest, "session_token_required", "session_token is required")
 			return
 		}
 		offer, err := cfg.Cloud.SubmitOffer(r.Context(), cloud.SubmitOfferInput{
-			SessionID:      req.Offer.SessionID,
-			TicketID:       req.ConnectTicket,
-			MachineID:      req.MachineID,
-			TerminalID:     req.TerminalID,
-			SDP:            req.Offer.SDP,
-			ICECandidates:  req.Offer.ICECandidates,
-			AppCertificate: req.AppCertificate,
-			Signature: cloud.OfferSignature{
-				Algorithm: req.Signature.Algorithm,
-				Nonce:     req.Signature.Nonce,
-				Timestamp: req.Signature.Timestamp,
-				Value:     req.Signature.Value,
-			},
+			SessionID:     req.Offer.SessionID,
+			MachineID:     req.MachineID,
+			TerminalID:    req.TerminalID,
+			SDP:           req.Offer.SDP,
+			ICECandidates: req.Offer.Candidates,
+			SessionToken:  req.SessionToken,
 		})
 		if err != nil {
 			writeError(w, http.StatusForbidden, "submit_cloud_offer_failed", err.Error())
 			return
 		}
-		answer, err := waitForAnswer(r.Context(), cfg, offer.ID, offer.TicketID, offer.MachineID)
+		answer, err := waitForAnswer(r.Context(), cfg, offer.ID, offer.MachineID)
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 				writeJSON(w, http.StatusAccepted, map[string]any{
@@ -540,24 +511,15 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, statusForAnswerError(err), "get_cloud_answer_failed", err.Error())
 			return
 		}
-		if _, err := iceServersForTicket(r.Context(), cfg, offer.TicketID, offer.AllowRelay); err != nil {
+		if _, err := iceServersForLease(r.Context(), cfg, offer.ID, offer.AllowRelay); err != nil {
 			writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
 			return
 		}
-		if _, err := cfg.Cloud.ConsumeOfferTicket(r.Context(), cloud.GetAnswerInput{
-			OfferID:   offer.ID,
-			TicketID:  offer.TicketID,
-			MachineID: offer.MachineID,
-		}); err != nil {
-			writeError(w, http.StatusForbidden, "consume_connection_ticket_failed", err.Error())
-			return
-		}
-		writeSessionAnswer(w, r.Context(), cfg, publicSessionID(offer), offer.MachineID, offer.TerminalID, offer.AllowRelay, offer.TicketID, answer)
+		writeSessionAnswer(w, r.Context(), cfg, publicSessionID(offer), offer.MachineID, offer.TerminalID, offer.AllowRelay, offer.ID, answer)
 	})
 	mux.HandleFunc("POST /api/v1/sessions/{session_id}/answer", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			ConnectTicket string `json:"connect_ticket"`
-			MachineID     string `json:"machine_id"`
+			MachineID string `json:"machine_id"`
 		}
 		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
 			writeDecodeError(w, err)
@@ -569,23 +531,21 @@ func NewHandler(cfg Config) http.Handler {
 		}
 		answer, err := cfg.Cloud.GetAnswer(r.Context(), cloud.GetAnswerInput{
 			OfferID:   r.PathValue("session_id"),
-			TicketID:  req.ConnectTicket,
 			MachineID: req.MachineID,
 		})
 		if err != nil {
 			if errors.Is(err, registry.ErrOfferNotFound) {
 				if policy, ok := cfg.Cloud.OfferPolicyForAnswer(cloud.GetAnswerInput{
 					OfferID:   r.PathValue("session_id"),
-					TicketID:  req.ConnectTicket,
 					MachineID: req.MachineID,
 				}); ok {
 					writeJSON(w, http.StatusAccepted, map[string]any{
 						"session_id":   strings.TrimSpace(r.PathValue("session_id")),
 						"path":         cloud.PathCloud,
-						"machine_id":   policy.Ticket.MachineID,
-						"terminal_id":  policy.Ticket.TerminalID,
+						"machine_id":   policy.MachineID,
+						"terminal_id":  policy.TerminalID,
 						"pending":      true,
-						"relay_policy": relayPolicyResponse(policy.Ticket.AllowRelay),
+						"relay_policy": relayPolicyResponse(policy.AllowRelay),
 					})
 					return
 				}
@@ -595,27 +555,18 @@ func NewHandler(cfg Config) http.Handler {
 		}
 		policy, ok := cfg.Cloud.OfferPolicyForAnswer(cloud.GetAnswerInput{
 			OfferID:   r.PathValue("session_id"),
-			TicketID:  req.ConnectTicket,
 			MachineID: req.MachineID,
 		})
-		allowRelay := ok && policy.Ticket.AllowRelay
-		if _, err := iceServersForTicket(r.Context(), cfg, req.ConnectTicket, allowRelay); err != nil {
+		allowRelay := ok && policy.AllowRelay
+		if _, err := iceServersForLease(r.Context(), cfg, r.PathValue("session_id"), allowRelay); err != nil {
 			writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
-			return
-		}
-		if _, err := cfg.Cloud.ConsumeOfferTicket(r.Context(), cloud.GetAnswerInput{
-			OfferID:   r.PathValue("session_id"),
-			TicketID:  req.ConnectTicket,
-			MachineID: req.MachineID,
-		}); err != nil {
-			writeError(w, http.StatusForbidden, "consume_connection_ticket_failed", err.Error())
 			return
 		}
 		terminalID := ""
 		if ok {
-			terminalID = policy.Ticket.TerminalID
+			terminalID = policy.TerminalID
 		}
-		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), answer.MachineID, terminalID, allowRelay, req.ConnectTicket, answer)
+		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), answer.MachineID, terminalID, allowRelay, r.PathValue("session_id"), answer)
 	})
 	mux.HandleFunc("POST /api/v1/pairing/claims", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -624,7 +575,6 @@ func NewHandler(cfg Config) http.Handler {
 			PairSecret            string   `json:"pair_secret"`
 			AppDeviceID           string   `json:"app_device_id"`
 			AppName               string   `json:"app_name"`
-			AppPublicKey          string   `json:"app_public_key"`
 			RequestedCapabilities []string `json:"requested_capabilities"`
 		}
 		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
@@ -641,7 +591,6 @@ func NewHandler(cfg Config) http.Handler {
 			PairSecret:            req.PairSecret,
 			AppDeviceID:           req.AppDeviceID,
 			AppName:               req.AppName,
-			AppPublicKey:          req.AppPublicKey,
 			RequestedCapabilities: req.RequestedCapabilities,
 		})
 		if err != nil {
@@ -666,12 +615,11 @@ func NewHandler(cfg Config) http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"claim_id":           result.ClaimID,
-			"machine_id":         result.MachineID,
-			"machine_name":       result.MachineName,
-			"machine_public_key": result.MachinePublicKey,
-			"app_certificate":    json.RawMessage(result.AppCertificate),
-			"expires_at":         result.ExpiresAt,
+			"claim_id":      result.ClaimID,
+			"machine_id":    result.MachineID,
+			"machine_name":  result.MachineName,
+			"session_token": result.SessionToken,
+			"expires_at":    result.ExpiresAt,
 		})
 	})
 	return &Handler{
@@ -870,27 +818,6 @@ func (s *agentSessions) deleteByAgentID(agentID string) int {
 	return removed
 }
 
-type offerSignatureRequest struct {
-	Algorithm string `json:"algorithm"`
-	Nonce     string `json:"nonce"`
-	Timestamp int64  `json:"timestamp"`
-	Value     string `json:"value"`
-}
-
-func validateSessionRequestEnvelope(sessionID string, appCertificate json.RawMessage, signature offerSignatureRequest) error {
-	if strings.TrimSpace(sessionID) == "" {
-		return errors.New("offer session_id is required")
-	}
-	if len(appCertificate) == 0 || !json.Valid(appCertificate) || string(appCertificate) == "null" {
-		return errors.New("app_certificate is required")
-	}
-	if strings.TrimSpace(signature.Algorithm) == "" || strings.TrimSpace(signature.Nonce) == "" ||
-		signature.Timestamp == 0 || strings.TrimSpace(signature.Value) == "" {
-		return errors.New("signature envelope is required")
-	}
-	return nil
-}
-
 func registryTerminalsFromHub(in []hubv1.HubTerminalInventoryItem) []registry.Terminal {
 	out := make([]registry.Terminal, 0, len(in))
 	for _, terminal := range in {
@@ -905,7 +832,7 @@ func registryTerminalsFromHub(in []hubv1.HubTerminalInventoryItem) []registry.Te
 	return out
 }
 
-func waitForAnswer(ctx context.Context, cfg Config, offerID string, ticketID string, machineID string) (cloud.Answer, error) {
+func waitForAnswer(ctx context.Context, cfg Config, offerID string, machineID string) (cloud.Answer, error) {
 	timeout := cfg.AnswerTimeout
 	if timeout <= 0 {
 		timeout = 10 * time.Second
@@ -921,7 +848,6 @@ func waitForAnswer(ctx context.Context, cfg Config, offerID string, ticketID str
 	for {
 		answer, err := cfg.Cloud.GetAnswer(ctx, cloud.GetAnswerInput{
 			OfferID:   offerID,
-			TicketID:  ticketID,
 			MachineID: machineID,
 		})
 		if err == nil {
@@ -981,12 +907,12 @@ func publicSessionID(offer cloud.Offer) string {
 	return offer.ID
 }
 
-func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, sessionID string, machineID string, terminalID string, allowRelay bool, ticketID string, answer cloud.Answer) {
+func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, sessionID string, machineID string, terminalID string, allowRelay bool, leaseID string, answer cloud.Answer) {
 	if strings.TrimSpace(answer.Error) != "" {
 		writeError(w, http.StatusForbidden, "cloud_answer_error", answer.Error)
 		return
 	}
-	iceServers, err := iceServersForTicket(ctx, cfg, ticketID, allowRelay)
+	iceServers, err := iceServersForLease(ctx, cfg, leaseID, allowRelay)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
 		return
@@ -1010,19 +936,19 @@ func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, 
 }
 
 func rtcConfigForOffer(ctx context.Context, cfg Config, offer cloud.Offer) (hubv1.RTCConfig, error) {
-	servers, err := iceServersForTicket(ctx, cfg, offer.TicketID, offer.AllowRelay)
+	servers, err := iceServersForLease(ctx, cfg, offer.ID, offer.AllowRelay)
 	if err != nil {
 		return hubv1.RTCConfig{}, err
 	}
 	return hubv1.RTCConfig{IceServers: servers}, nil
 }
 
-func iceServersForTicket(ctx context.Context, cfg Config, ticketID string, allowRelay bool) ([]hubv1.RTCIceServerConfig, error) {
+func iceServersForLease(ctx context.Context, cfg Config, leaseID string, allowRelay bool) ([]hubv1.RTCIceServerConfig, error) {
 	if cfg.ICE == nil {
 		return cloneICEServers(cfg.ICEServers), nil
 	}
 	rtc, err := cfg.ICE.ConfigForLease(ctx, ice.Lease{
-		ID:         ticketID,
+		ID:         leaseID,
 		Path:       ice.PathCloud,
 		AllowRelay: allowRelay,
 	})

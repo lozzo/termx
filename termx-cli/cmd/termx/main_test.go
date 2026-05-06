@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -239,6 +237,9 @@ func TestRemoteConfigFromEnv(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_DATA_DIR", "/tmp/termx-remote")
 	t.Setenv("TERMX_REMOTE_DEVICE_NAME", "device-a")
 	t.Setenv("TERMX_REMOTE_REGION", "sin")
+	t.Setenv("TERMX_REMOTE_MODE", "both")
+	t.Setenv("TERMX_REMOTE_ALLOW_LAN", "true")
+	t.Setenv("TERMX_REMOTE_LAN_IPS", "192.168.0.0/16,10.0.0.5")
 
 	cfg := remoteConfigFromEnv()
 	if !cfg.Enabled {
@@ -261,6 +262,9 @@ func TestRemoteConfigFromEnv(t *testing.T) {
 	}
 	if cfg.Region != "sin" {
 		t.Fatalf("unexpected region: %q", cfg.Region)
+	}
+	if cfg.Mode != "both" || !cfg.AllowLAN || len(cfg.LANIPs) != 2 || cfg.LANIPs[0] != "192.168.0.0/16" {
+		t.Fatalf("unexpected mode/LAN config: %#v", cfg)
 	}
 }
 
@@ -287,13 +291,17 @@ func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
 	content := `remote:
   enabled: true
-  controlURL: https://control-file.example.test
-  hubURL: https://hub-file.example.test
-  connectionKeyEnv: TERMX_TEST_REMOTE_KEY
+  control_url: https://control-file.example.test
+  hub_urls: [https://hub-file.example.test, https://hub2-file.example.test]
+  connection_key_env: TERMX_TEST_REMOTE_KEY
   accessToken: should-not-be-used
-  dataDir: /tmp/termx-remote-file
-  deviceName: file-device
+  token: ignored-by-env-key
+  data_dir: /tmp/termx-remote-file
+  device_name: file-device
   region: fra
+  mode: online
+  allow_lan: true
+  lan_ips: 192.168.0.0/16,10.0.0.5
 `
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile returned error: %v", err)
@@ -313,6 +321,9 @@ func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
 	if cfg.HubURL != "https://hub-file.example.test" {
 		t.Fatalf("unexpected hub url: %q", cfg.HubURL)
 	}
+	if len(cfg.HubURLs) != 2 || cfg.HubURLs[1] != "https://hub2-file.example.test" {
+		t.Fatalf("unexpected hub urls: %#v", cfg.HubURLs)
+	}
 	if cfg.AccessToken != "file-secret" {
 		t.Fatalf("expected connection key from env reference, got %q", cfg.AccessToken)
 	}
@@ -328,6 +339,9 @@ func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
 	if cfg.Region != "fra" {
 		t.Fatalf("unexpected region: %q", cfg.Region)
 	}
+	if cfg.Mode != "online" || !cfg.AllowLAN || len(cfg.LANIPs) != 2 || cfg.LANIPs[1] != "10.0.0.5" {
+		t.Fatalf("unexpected mode/LAN config: %#v", cfg)
+	}
 }
 
 func TestRemoteConfigEnvOverridesFile(t *testing.T) {
@@ -337,6 +351,8 @@ func TestRemoteConfigEnvOverridesFile(t *testing.T) {
   controlURL: https://control-file.example.test
   hubURL: https://hub-file.example.test
   connectionKeyEnv: TERMX_TEST_REMOTE_KEY_FILE
+  mode: both
+  allow_lan: true
   dataDir: /tmp/termx-remote-file
   deviceName: file-device
 `
@@ -350,6 +366,8 @@ func TestRemoteConfigEnvOverridesFile(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_DATA_DIR", "/tmp/termx-remote-env")
 	t.Setenv("TERMX_REMOTE_DEVICE_NAME", "env-device")
 	t.Setenv("TERMX_REMOTE_REGION", "sin")
+	t.Setenv("TERMX_REMOTE_MODE", "online")
+	t.Setenv("TERMX_REMOTE_ALLOW_LAN", "false")
 
 	cfg, err := remoteConfigFromFileAndEnv(configPath)
 	if err != nil {
@@ -372,6 +390,9 @@ func TestRemoteConfigEnvOverridesFile(t *testing.T) {
 	}
 	if cfg.Region != "sin" {
 		t.Fatalf("expected env region override, got %q", cfg.Region)
+	}
+	if cfg.Mode != "online" || cfg.AllowLAN {
+		t.Fatalf("expected env mode/allow_lan override, got %#v", cfg)
 	}
 }
 
@@ -680,17 +701,12 @@ func TestStartRemoteLocalRuntimeServesEmbeddedHub(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RemotePairStart returned error: %v", err)
 	}
-	appPublic, _, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("GenerateKey returned error: %v", err)
-	}
 	pairPayload := strings.NewReader(`{
 		"machine_id":"` + session.MachineID + `",
 		"pair_session_id":"` + session.PairSessionID + `",
 		"pair_secret":"` + session.PairSecret + `",
 		"app_device_id":"app-cli-local-web",
 		"app_name":"TermX CLI Local Web Test",
-		"app_public_key":"` + base64.StdEncoding.EncodeToString(appPublic) + `",
 		"requested_capabilities":["terminal","file_manager"]
 	}`)
 	resp, err = client.Post(baseURL+"/api/v1/pairing/claims", "application/json", pairPayload)
@@ -709,7 +725,7 @@ func TestStartRemoteLocalRuntimeServesEmbeddedHub(t *testing.T) {
 	if pair["machine_id"] != session.MachineID {
 		t.Fatalf("expected pair machine_id %q, got %#v", session.MachineID, pair)
 	}
-	if pair["app_certificate"] == nil || pair["machine_public_key"] == "" {
+	if pair["session_token"] == "" {
 		t.Fatalf("expected completed pairing response, got %#v", pair)
 	}
 
@@ -767,7 +783,7 @@ func TestRemoteEnableLocalOnlyEmitsLocalStatus(t *testing.T) {
 
 	var out bytes.Buffer
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"remote", "enable", "--local", "--addr", "127.0.0.1:18888", "--ice-tcp-addr", "127.0.0.1:18889"})
+	cmd.SetArgs([]string{"remote", "enable", "--mode", "local", "--addr", "127.0.0.1:18888", "--ice-tcp-addr", "127.0.0.1:18889"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 
@@ -801,14 +817,13 @@ func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
 		return &remoteprotocol.PairStartResult{
-			Type:                        "termx_pair_v1",
-			MachineID:                   "mach_test",
-			MachineName:                 "MacBook Pro",
-			MachinePublicKeyFingerprint: "sha256:test",
-			LocalPairURL:                params.LocalPairURL,
-			PairSessionID:               "pair_test",
-			PairSecret:                  "secret",
-			ExpiresAt:                   time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+			Type:          "termx_pair_v1",
+			MachineID:     "mach_test",
+			MachineName:   "MacBook Pro",
+			LocalPairURL:  params.LocalPairURL,
+			PairSessionID: "pair_test",
+			PairSecret:    "secret",
+			ExpiresAt:     time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
 
@@ -851,6 +866,7 @@ func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 			DeviceName: "MacBook Pro",
 			ControlURL: "http://114.66.58.243:12306",
 			HubURL:     "http://114.66.58.243:8447",
+			HubURLs:    []string{"http://114.66.58.243:8447", "http://114.66.58.244:8447"},
 			UpdatedAt:  time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
@@ -858,14 +874,13 @@ func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
 		return &remoteprotocol.PairStartResult{
-			Type:                        "termx_pair_v1",
-			MachineID:                   "mach_test",
-			MachineName:                 "MacBook Pro",
-			MachinePublicKeyFingerprint: "sha256:test",
-			LocalPairURL:                params.LocalPairURL,
-			PairSessionID:               "pair_test",
-			PairSecret:                  "secret",
-			ExpiresAt:                   time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+			Type:          "termx_pair_v1",
+			MachineID:     "mach_test",
+			MachineName:   "MacBook Pro",
+			LocalPairURL:  params.LocalPairURL,
+			PairSessionID: "pair_test",
+			PairSecret:    "secret",
+			ExpiresAt:     time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
 
@@ -891,12 +906,16 @@ func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 	if !strings.HasPrefix(decoded.URI, "termx://pair?payload=") {
 		t.Fatalf("unexpected URI: %s", decoded.URI)
 	}
-	if decoded.Payload["preferred_path"] != "public_p2p" {
-		t.Fatalf("expected public_p2p payload, got %#v", decoded.Payload)
+	if decoded.Payload["schema_version"].(float64) != 3 {
+		t.Fatalf("expected schema version 3 payload, got %#v", decoded.Payload)
 	}
-	endpoints, ok := decoded.Payload["endpoints"].(map[string]any)
-	if !ok || endpoints["web_control"] != "http://114.66.58.243:12306" || endpoints["hub"] != "http://114.66.58.243:8447" {
-		t.Fatalf("unexpected endpoints: %#v", decoded.Payload["endpoints"])
+	addresses, ok := decoded.Payload["addresses"].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected addresses: %#v", decoded.Payload["addresses"])
+	}
+	public, ok := addresses["public"].([]any)
+	if !ok || len(public) != 2 || public[0] != "http://114.66.58.243:8447" || public[1] != "http://114.66.58.244:8447" {
+		t.Fatalf("unexpected public hub urls: %#v", addresses["public"])
 	}
 	pairing, ok := decoded.Payload["pairing"].(map[string]any)
 	if !ok || pairing["session_id"] != "pair_test" || pairing["secret"] != "secret" {
@@ -930,14 +949,13 @@ func TestRemoteQRCodeDoesNotStartLocalWebWhenLocalPairURLMissing(t *testing.T) {
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
 		return &remoteprotocol.PairStartResult{
-			Type:                        "termx_pair_v1",
-			MachineID:                   "mach_test",
-			MachineName:                 "MacBook Pro",
-			MachinePublicKeyFingerprint: "sha256:test",
-			LocalPairURL:                params.LocalPairURL,
-			PairSessionID:               "pair_test",
-			PairSecret:                  "secret",
-			ExpiresAt:                   time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+			Type:          "termx_pair_v1",
+			MachineID:     "mach_test",
+			MachineName:   "MacBook Pro",
+			LocalPairURL:  params.LocalPairURL,
+			PairSessionID: "pair_test",
+			PairSecret:    "secret",
+			ExpiresAt:     time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
 
@@ -954,6 +972,56 @@ func TestRemoteQRCodeDoesNotStartLocalWebWhenLocalPairURLMissing(t *testing.T) {
 	}
 }
 
+func TestRemoteQRCodeFallsBackToSingleHubURL(t *testing.T) {
+	oldStatus := remoteLocalStatusClient
+	oldRemoteStatus := remoteStatusClient
+	oldPair := pairStartClient
+	t.Cleanup(func() {
+		remoteLocalStatusClient = oldStatus
+		remoteStatusClient = oldRemoteStatus
+		pairStartClient = oldPair
+	})
+
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
+		return &remoteprotocol.LocalStatus{}, nil
+	}
+	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
+		return &remoteprotocol.Status{
+			HubURL:    "https://hub-single.example.test",
+			UpdatedAt: time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
+		return &remoteprotocol.PairStartResult{
+			MachineID:     "mach_test",
+			PairSessionID: "pair_test",
+			PairSecret:    "secret",
+			ExpiresAt:     time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"remote", "qrcode", "--json"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	var decoded struct {
+		Payload map[string]any `json:"payload"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatalf("qrcode output is not JSON: %v\n%s", err, out.String())
+	}
+	addresses := decoded.Payload["addresses"].(map[string]any)
+	public := addresses["public"].([]any)
+	if len(public) != 1 || public[0] != "https://hub-single.example.test" {
+		t.Fatalf("unexpected public hub urls: %#v", public)
+	}
+}
+
 func TestRemoteStatusIncludesLocalRuntime(t *testing.T) {
 	oldRemoteStatus := remoteStatusClient
 	oldStatus := remoteLocalStatusClient
@@ -965,6 +1033,8 @@ func TestRemoteStatusIncludesLocalRuntime(t *testing.T) {
 		return &remoteprotocol.Status{
 			State:      "disabled",
 			DeviceName: "RedmiBook",
+			Mode:       "both",
+			AllowLAN:   true,
 			UpdatedAt:  time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
@@ -987,7 +1057,9 @@ func TestRemoteStatusIncludesLocalRuntime(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	if !strings.Contains(out.String(), "local_enabled:\ttrue") ||
-		!strings.Contains(out.String(), "local_web_url:\thttp://127.0.0.1:18888") {
+		!strings.Contains(out.String(), "local_web_url:\thttp://127.0.0.1:18888") ||
+		!strings.Contains(out.String(), "mode:\tboth") ||
+		!strings.Contains(out.String(), "allow_lan:\ttrue") {
 		t.Fatalf("expected local runtime in status output, got:\n%s", out.String())
 	}
 }
@@ -1168,7 +1240,7 @@ func TestRemoteEnableCloudPersistsBootstrapOutsideConfigFile(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
 	cmd := newRootCmd()
 	var out bytes.Buffer
-	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--cloud", "--server", "https://control.example.test", "--token", "cloud-secret", "--json"})
+	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "online", "--server", "https://control.example.test", "--token", "cloud-secret", "--json"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {
@@ -1183,12 +1255,13 @@ func TestRemoteEnableCloudPersistsBootstrapOutsideConfigFile(t *testing.T) {
 	var decoded struct {
 		Enabled    bool   `json:"enabled"`
 		ControlURL string `json:"control_url"`
+		Mode       string `json:"mode"`
 		AuthStore  string `json:"auth_store"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatalf("cloud enable output is not JSON: %v\n%s", err, out.String())
 	}
-	if !decoded.Enabled || decoded.ControlURL != "https://control.example.test" || decoded.AuthStore == "" {
+	if !decoded.Enabled || decoded.ControlURL != "https://control.example.test" || decoded.Mode != "online" || decoded.AuthStore == "" {
 		t.Fatalf("unexpected cloud enable JSON: %#v", decoded)
 	}
 	cfg, err := remoteConfigFromFileAndEnv(configPath)
@@ -1233,8 +1306,7 @@ func TestRemoteEnableBothPassesCloudHubToRunningLocalDaemon(t *testing.T) {
 	cmd.SetArgs([]string{
 		"--config", configPath,
 		"remote", "enable",
-		"--local",
-		"--cloud",
+		"--mode", "both",
 		"--server", "https://control.example.test",
 		"--hub-url", "https://hub.example.test",
 		"--token", "cloud-secret",
@@ -1282,8 +1354,7 @@ func TestRemoteEnableBothPassesCloudDiscoveryToRunningLocalDaemon(t *testing.T) 
 	cmd.SetArgs([]string{
 		"--config", configPath,
 		"remote", "enable",
-		"--local",
-		"--cloud",
+		"--mode", "both",
 		"--server", "https://control.example.test",
 		"--token", "cloud-secret",
 	})
@@ -1300,7 +1371,7 @@ func TestRemoteEnableBothPassesCloudDiscoveryToRunningLocalDaemon(t *testing.T) 
 	}
 }
 
-func TestRemoteEnableCloudUsesBrowserLoginWhenKeyMissing(t *testing.T) {
+func TestRemoteEnableOnlineRequiresToken(t *testing.T) {
 	oldEnable := remoteLocalEnableClient
 	oldLogin := remoteLoginHTTPClient
 	oldStore := remoteAuthStorePath
@@ -1315,97 +1386,25 @@ func TestRemoteEnableCloudUsesBrowserLoginWhenKeyMissing(t *testing.T) {
 		t.Fatal("remote local enable client must not be called for cloud enable")
 		return nil, nil
 	}
-	authStore := filepath.Join(t.TempDir(), "remote-auth.json")
 	remoteAuthStorePath = func(configPath string) (string, error) {
-		return authStore, nil
+		t.Fatal("remote auth store must not be used when token is missing")
+		return "", nil
 	}
-	var opened []string
 	openBrowser = func(rawURL string) error {
-		opened = append(opened, rawURL)
+		t.Fatalf("browser must not open when token is missing: %s", rawURL)
 		return nil
 	}
-	var validatedToken string
-	var pollCalls int
-	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{
-		createBrowserLoginFunc: func(ctx context.Context, controlURL string, clientName string) (remoteBrowserLoginResult, error) {
-			if controlURL != "https://control.example.test" || clientName != "termx local service" {
-				t.Fatalf("unexpected browser request control=%q client=%q", controlURL, clientName)
-			}
-			return remoteBrowserLoginResult{
-				BrowserLoginCode:        "browser-1",
-				UserCode:                "USER-CODE",
-				VerificationURIComplete: "https://control.example.test/device-login?code=USER-CODE",
-				ExpiresAt:               time.Now().Add(time.Minute),
-				Interval:                time.Nanosecond,
-			}, nil
-		},
-		pollBrowserLoginFunc: func(ctx context.Context, controlURL string, browserLoginCode string) (remoteLoginAuthResult, bool, error) {
-			pollCalls++
-			if pollCalls == 1 {
-				return remoteLoginAuthResult{}, false, nil
-			}
-			return remoteLoginAuthResult{
-				AccessToken:  "device-cloud-secret",
-				RefreshToken: "device-refresh",
-				User:         remoteLoginUser{Email: "cloud@example.com"},
-			}, true, nil
-		},
-		meFunc: func(ctx context.Context, controlURL string, token string) (remoteLoginUser, error) {
-			validatedToken = token
-			return remoteLoginUser{Email: "cloud@example.com"}, nil
-		},
-	}
+	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{}
 
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
 	cmd := newRootCmd()
-	var out bytes.Buffer
-	var errOut bytes.Buffer
-	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--cloud", "--server", "https://control.example.test", "--json"})
-	cmd.SetOut(&out)
-	cmd.SetErr(&errOut)
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cloud enable returned error: %v", err)
-	}
-	if len(opened) != 1 || opened[0] != "https://control.example.test/device-login?code=USER-CODE" {
-		t.Fatalf("unexpected opened login urls: %#v", opened)
-	}
-	if validatedToken != "device-cloud-secret" {
-		t.Fatalf("expected browser token validation, got %q", validatedToken)
-	}
-	if strings.Contains(out.String(), "login_url") {
-		t.Fatalf("JSON stdout should not contain progress output: %q", out.String())
-	}
-	if !strings.Contains(errOut.String(), "login_url:") {
-		t.Fatalf("expected login progress on stderr, got %q", errOut.String())
-	}
-	var decoded struct {
-		Enabled    bool   `json:"enabled"`
-		ControlURL string `json:"control_url"`
-		AuthStore  string `json:"auth_store"`
-	}
-	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
-		t.Fatalf("cloud enable output is not JSON: %v\n%s", err, out.String())
-	}
-	if !decoded.Enabled || decoded.ControlURL != "https://control.example.test" || decoded.AuthStore == "" {
-		t.Fatalf("unexpected cloud enable JSON: %#v", decoded)
-	}
-	cfg, err := remoteConfigFromFileAndEnv(configPath)
-	if err != nil {
-		t.Fatalf("load cloud config: %v", err)
-	}
-	if !cfg.Enabled || cfg.ControlURL != "https://control.example.test" || cfg.AccessToken != "device-cloud-secret" {
-		t.Fatalf("unexpected cloud remote config: %#v", cfg)
-	}
-	var stored struct {
-		RefreshToken string `json:"refresh_token"`
-	}
-	if data, err := os.ReadFile(authStore); err != nil {
-		t.Fatalf("read auth store: %v", err)
-	} else if err := json.Unmarshal(data, &stored); err != nil {
-		t.Fatalf("decode auth store: %v", err)
-	}
-	if stored.RefreshToken != "device-refresh" {
-		t.Fatalf("expected refresh token to be persisted, got %q", stored.RefreshToken)
+	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "online", "--server", "https://control.example.test", "--json"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--token is required for mode \"online\"") {
+		t.Fatalf("expected missing token error, got %v", err)
 	}
 }
 
@@ -1447,14 +1446,13 @@ func TestPairCmdEmitsJSONPairSession(t *testing.T) {
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
 		return &remoteprotocol.PairStartResult{
-			Type:                        "termx_pair_v1",
-			MachineID:                   "mach_test",
-			MachineName:                 "MacBook Pro",
-			MachinePublicKeyFingerprint: "sha256:test",
-			LocalPairURL:                params.LocalPairURL,
-			PairSessionID:               "pair_test",
-			PairSecret:                  "secret",
-			ExpiresAt:                   time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+			Type:          "termx_pair_v1",
+			MachineID:     "mach_test",
+			MachineName:   "MacBook Pro",
+			LocalPairURL:  params.LocalPairURL,
+			PairSessionID: "pair_test",
+			PairSecret:    "secret",
+			ExpiresAt:     time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
 

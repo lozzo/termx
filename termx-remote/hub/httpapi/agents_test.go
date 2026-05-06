@@ -129,32 +129,23 @@ func TestAgentHTTPRegisterHeartbeatPollAndAnswer(t *testing.T) {
 	}
 	var polled struct {
 		Offer struct {
-			SessionID          string `json:"session_id"`
-			TicketID           string `json:"ticket_id"`
-			DeviceID           string `json:"device_id"`
-			TerminalID         string `json:"terminal_id"`
-			SDP                string `json:"sdp"`
-			AllowRelay         bool   `json:"allow_relay"`
-			AllowRelayTransfer bool   `json:"allow_relay_transfer"`
-			RTCConfig          struct {
-				IceServers []struct {
-					URLs       []string `json:"urls"`
-					Username   string   `json:"username"`
-					Credential string   `json:"credential"`
-				} `json:"ice_servers"`
-			} `json:"rtc_config"`
+			SessionID    string   `json:"session_id"`
+			MachineID    string   `json:"machine_id"`
+			TerminalID   string   `json:"terminal_id"`
+			SDP          string   `json:"sdp"`
+			Candidates   []string `json:"ice_candidates"`
+			SessionToken string   `json:"session_token"`
 		} `json:"offer"`
 	}
 	decodeJSON(t, poll, &polled)
-	if polled.Offer.SessionID != "rtc_agent_http_1" || polled.Offer.TicketID != "ticket_allowed" ||
-		polled.Offer.DeviceID != "device_1" || polled.Offer.TerminalID != "term_1" {
+	if polled.Offer.SessionID != "rtc_agent_http_1" ||
+		polled.Offer.MachineID != "device_1" ||
+		polled.Offer.TerminalID != "term_1" ||
+		polled.Offer.SessionToken != "session-token-1" {
 		t.Fatalf("poll response = %+v", polled)
 	}
-	if polled.Offer.AllowRelay || polled.Offer.AllowRelayTransfer {
-		t.Fatalf("poll relay policy = %+v", polled.Offer)
-	}
-	if len(polled.Offer.RTCConfig.IceServers) != 1 || polled.Offer.RTCConfig.IceServers[0].URLs[0] != "stun:hub.termx.test:3478" {
-		t.Fatalf("poll cloud ICE servers = %+v", polled.Offer.RTCConfig.IceServers)
+	if len(polled.Offer.Candidates) != 0 {
+		t.Fatalf("poll candidates = %+v", polled.Offer.Candidates)
 	}
 
 	answer := postJSON(t, router, "/api/v1/agents/signaling/answer", map[string]any{
@@ -324,7 +315,6 @@ func TestAgentHTTPPairingClaimRoundTrip(t *testing.T) {
 			"pair_secret":            "pair_secret_from_qr",
 			"app_device_id":          "appweb_1",
 			"app_name":               "TermX Remote App",
-			"app_public_key":         "AQIDBA==",
 			"requested_capabilities": []string{"terminal", "file_manager", "terminal_management"},
 		})
 	}()
@@ -345,7 +335,6 @@ func TestAgentHTTPPairingClaimRoundTrip(t *testing.T) {
 			PairSecret            string   `json:"pair_secret"`
 			AppDeviceID           string   `json:"app_device_id"`
 			AppName               string   `json:"app_name"`
-			AppPublicKey          string   `json:"app_public_key"`
 			RequestedCapabilities []string `json:"requested_capabilities"`
 		} `json:"claim"`
 	}
@@ -359,17 +348,11 @@ func TestAgentHTTPPairingClaimRoundTrip(t *testing.T) {
 		"agent_session_id": registered.AgentSessionID,
 		"device_id":        "device_1",
 		"result": map[string]any{
-			"claim_id":           polled.Claim.ClaimID,
-			"machine_id":         "device_1",
-			"machine_name":       "RedmiBook",
-			"machine_public_key": "machine-public",
-			"app_certificate": map[string]any{
-				"payload": map[string]any{
-					"machine_id": "device_1",
-				},
-				"signature": "machine-signature",
-			},
-			"expires_at": "2027-05-04T09:15:00Z",
+			"claim_id":      polled.Claim.ClaimID,
+			"machine_id":    "device_1",
+			"machine_name":  "RedmiBook",
+			"session_token": "session-token-pair",
+			"expires_at":    "2027-05-04T09:15:00Z",
 		},
 	})
 	if result.Code != http.StatusNoContent {
@@ -386,18 +369,16 @@ func TestAgentHTTPPairingClaimRoundTrip(t *testing.T) {
 		t.Fatalf("claim response status = %d body=%s", response.Code, response.Body.String())
 	}
 	var got struct {
-		ClaimID          string          `json:"claim_id"`
-		MachineID        string          `json:"machine_id"`
-		MachineName      string          `json:"machine_name"`
-		MachinePublicKey string          `json:"machine_public_key"`
-		AppCertificate   json.RawMessage `json:"app_certificate"`
-		ExpiresAt        string          `json:"expires_at"`
+		ClaimID      string `json:"claim_id"`
+		MachineID    string `json:"machine_id"`
+		MachineName  string `json:"machine_name"`
+		SessionToken string `json:"session_token"`
+		ExpiresAt    string `json:"expires_at"`
 	}
 	decodeJSON(t, response, &got)
 	if got.ClaimID != polled.Claim.ClaimID || got.MachineID != "device_1" || got.MachineName != "RedmiBook" ||
-		got.MachinePublicKey != "machine-public" || got.ExpiresAt != "2027-05-04T09:15:00Z" ||
-		!strings.Contains(string(got.AppCertificate), "machine-signature") {
-		t.Fatalf("claim response = %+v cert=%s", got, string(got.AppCertificate))
+		got.SessionToken != "session-token-pair" || got.ExpiresAt != "2027-05-04T09:15:00Z" {
+		t.Fatalf("claim response = %+v", got)
 	}
 }
 

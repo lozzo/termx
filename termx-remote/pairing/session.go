@@ -10,13 +10,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/termx-remote/cert"
-	"github.com/lozzow/termx/termx-remote/identity"
+	"github.com/lozzow/termx/termx-remote/session/token"
 )
 
 const (
-	defaultSessionTTL     = 5 * time.Minute
-	defaultCertificateTTL = 365 * 24 * time.Hour
+	defaultSessionTTL = 5 * time.Minute
+	defaultTokenTTL   = 365 * 24 * time.Hour
 )
 
 var allowedCapabilities = map[string]struct{}{
@@ -26,11 +25,12 @@ var allowedCapabilities = map[string]struct{}{
 }
 
 type Config struct {
-	MachineID    string
-	MachineName  string
-	MachineKey   identity.MachineKey
-	LocalPairURL string
-	Now          func() time.Time
+	MachineID       string
+	MachineName     string
+	MachineSecret   []byte
+	DefaultTokenTTL time.Duration
+	LocalPairURL    string
+	Now             func() time.Time
 }
 
 type Manager struct {
@@ -41,32 +41,27 @@ type Manager struct {
 }
 
 type Session struct {
-	Type                        string    `json:"type"`
-	MachineID                   string    `json:"machine_id"`
-	MachineName                 string    `json:"machine_name"`
-	MachinePublicKeyFingerprint string    `json:"machine_public_key_fingerprint"`
-	LocalPairURL                string    `json:"local_pair_url"`
-	PairSessionID               string    `json:"pair_session_id"`
-	PairSecret                  string    `json:"pair_secret"`
-	ExpiresAt                   time.Time `json:"expires_at"`
+	Type          string    `json:"type"`
+	MachineID     string    `json:"machine_id"`
+	MachineName   string    `json:"machine_name"`
+	LocalPairURL  string    `json:"local_pair_url"`
+	PairSessionID string    `json:"pair_session_id"`
+	PairSecret    string    `json:"pair_secret"`
+	ExpiresAt     time.Time `json:"expires_at"`
 }
 
 type ClaimRequest struct {
-	PairSessionID          string        `json:"pair_session_id"`
-	PairSecret             string        `json:"pair_secret"`
-	AppDeviceID            string        `json:"app_device_id"`
-	AppName                string        `json:"app_name"`
-	AppPublicKey           string        `json:"app_public_key"`
-	RequestedCapabilities  []string      `json:"requested_capabilities"`
-	CertificateTTL         time.Duration `json:"-"`
-	CertificateIDGenerator func() string `json:"-"`
+	PairSessionID         string   `json:"pair_session_id"`
+	PairSecret            string   `json:"pair_secret"`
+	AppDeviceID           string   `json:"app_device_id"`
+	RequestedCapabilities []string `json:"requested_capabilities"`
 }
 
 type ClaimResponse struct {
-	MachineID        string                      `json:"machine_id"`
-	MachineName      string                      `json:"machine_name"`
-	MachinePublicKey string                      `json:"machine_public_key"`
-	AppCertificate   cert.AppCertificateEnvelope `json:"app_certificate"`
+	MachineID    string    `json:"machine_id"`
+	MachineName  string    `json:"machine_name"`
+	SessionToken string    `json:"session_token"`
+	ExpiresAt    time.Time `json:"expires_at"`
 }
 
 type sessionState struct {
@@ -118,14 +113,13 @@ func (m *Manager) CreateSession(ttl time.Duration) (Session, error) {
 		return Session{}, err
 	}
 	session := Session{
-		Type:                        "termx_pair_v1",
-		MachineID:                   strings.TrimSpace(cfg.MachineID),
-		MachineName:                 strings.TrimSpace(cfg.MachineName),
-		MachinePublicKeyFingerprint: identity.MachinePublicKeyFingerprint(cfg.MachineKey.PublicKey),
-		LocalPairURL:                strings.TrimSpace(cfg.LocalPairURL),
-		PairSessionID:               sessionID,
-		PairSecret:                  secret,
-		ExpiresAt:                   now.Add(ttl).UTC(),
+		Type:          "termx_pair_v1",
+		MachineID:     strings.TrimSpace(cfg.MachineID),
+		MachineName:   strings.TrimSpace(cfg.MachineName),
+		LocalPairURL:  strings.TrimSpace(cfg.LocalPairURL),
+		PairSessionID: sessionID,
+		PairSecret:    secret,
+		ExpiresAt:     now.Add(ttl).UTC(),
 	}
 
 	m.mu.Lock()
@@ -174,40 +168,24 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 		return ClaimResponse{}, err
 	}
 
-	certID := ""
-	if req.CertificateIDGenerator != nil {
-		certID = strings.TrimSpace(req.CertificateIDGenerator())
-	}
-	if certID == "" {
-		var err error
-		certID, err = randomToken("cert_", 16)
-		if err != nil {
-			return ClaimResponse{}, err
-		}
-	}
-	certificateTTL := req.CertificateTTL
-	if certificateTTL <= 0 {
-		certificateTTL = defaultCertificateTTL
-	}
 	capabilities, err := normalizeRequestedCapabilities(req.RequestedCapabilities)
 	if err != nil {
 		return ClaimResponse{}, err
 	}
-	payload := cert.AppCertificatePayload{
-		Version:                     1,
-		CertID:                      certID,
-		MachineID:                   strings.TrimSpace(cfg.MachineID),
-		MachinePublicKeyFingerprint: identity.MachinePublicKeyFingerprint(cfg.MachineKey.PublicKey),
-		AppDeviceID:                 strings.TrimSpace(req.AppDeviceID),
-		AppPublicKey:                strings.TrimSpace(req.AppPublicKey),
-		AppName:                     strings.TrimSpace(req.AppName),
-		Capabilities:                capabilities,
-		IssuedAt:                    now.UTC(),
-		ExpiresAt:                   now.Add(certificateTTL).UTC(),
+	tokenTTL := cfg.DefaultTokenTTL
+	if tokenTTL <= 0 {
+		tokenTTL = defaultTokenTTL
 	}
-	envelope, err := cert.SignAppCertificate(payload, cfg.MachineKey)
+	expiresAt := now.Add(tokenTTL).UTC()
+	tok, err := token.Issue(cfg.MachineSecret, token.Claims{
+		SessionID:    session.PairSessionID,
+		MachineID:    strings.TrimSpace(cfg.MachineID),
+		Capabilities: capabilities,
+		IssuedAt:     now.Unix(),
+		ExpiresAt:    expiresAt.Unix(),
+	})
 	if err != nil {
-		return ClaimResponse{}, err
+		return ClaimResponse{}, fmt.Errorf("issue token: %w", err)
 	}
 
 	m.mu.Lock()
@@ -230,16 +208,18 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 	m.mu.Unlock()
 
 	return ClaimResponse{
-		MachineID:        strings.TrimSpace(cfg.MachineID),
-		MachineName:      strings.TrimSpace(cfg.MachineName),
-		MachinePublicKey: base64.StdEncoding.EncodeToString(cfg.MachineKey.PublicKey),
-		AppCertificate:   envelope,
+		MachineID:    strings.TrimSpace(cfg.MachineID),
+		MachineName:  strings.TrimSpace(cfg.MachineName),
+		SessionToken: tok,
+		ExpiresAt:    expiresAt,
 	}, nil
 }
 
 func nowFromConfig(cfg Config) time.Time {
 	if cfg.Now != nil {
-		return cfg.Now().UTC()
+		if now := cfg.Now().UTC(); !now.IsZero() {
+			return now
+		}
 	}
 	return time.Now().UTC()
 }
@@ -251,8 +231,8 @@ func validateConfig(cfg Config) error {
 	if strings.TrimSpace(cfg.MachineName) == "" {
 		return errors.New("machine_name is required")
 	}
-	if len(cfg.MachineKey.PublicKey) == 0 {
-		return errors.New("machine key is required")
+	if len(cfg.MachineSecret) < 32 {
+		return errors.New("machine secret is required")
 	}
 	return nil
 }

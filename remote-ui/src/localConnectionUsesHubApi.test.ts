@@ -29,33 +29,28 @@ describe('local connection over Hub API', () => {
         connect(input) {
           connectorInputs.push(input)
           return api.createSession({
-            connectTicket: input.connectTicket,
             machineId: input.machineId,
             terminalId: input.terminalId,
-            appCertificate: input.appCertificate,
+            sessionToken: input.sessionToken,
             offer: { sessionId: 'rtc-local-1', sdp: 'offer-sdp', iceCandidates: [] },
-            signature: { algorithm: 'ed25519', nonce: 'nonce-1', timestamp: 1770000000, value: 'sig' },
           }).then(() => session)
         },
       }),
-      publicP2p: failingConnector('public should not run'),
-      managed: failingConnector('managed should not run'),
     })
 
     const result = await orchestrator.connect({
       machineId: 'machine-local',
       terminalId: 'terminal-1',
-      machinePublicKeyFingerprint: 'sha256:machine-local',
-      appCertificate: { payload: { machine_id: 'machine-local' } },
-      managed: { hubSessionId: 'cloud-ticket', deviceId: 'app-device' },
+      sessionToken: 'session-token-local',
+      hubUrls: ['http://192.168.1.100:18888'],
     })
 
     expect(result.path).toBe('local')
     expect(connectorInputs).toEqual([expect.objectContaining({
       machineId: 'machine-local',
       terminalId: 'terminal-1',
-      connectTicket: 'cloud-ticket',
       path: 'local',
+      sessionToken: 'session-token-local',
     })])
     expect(calls.map((call) => call.url)).toContain('http://192.168.1.100:18888/api/v1/sessions')
     expect(calls.map((call) => call.url).join('\n')).not.toContain(legacyLocalPath('rtc', 'offer'))
@@ -68,7 +63,7 @@ describe('local connection over Hub API', () => {
       return jsonResponse({
         claim_id: 'claim-1',
         machine_id: 'machine-local',
-        app_certificate: { payload: { machine_id: 'machine-local' }, signature: 'cert-sig' },
+        session_token: 'session-token-local',
         expires_at: '2026-05-06T00:00:00Z',
       })
     })
@@ -80,7 +75,6 @@ describe('local connection over Hub API', () => {
       pairSecret: 'secret-1',
       appDeviceId: 'app-device',
       appName: 'TermX',
-      appPublicKey: 'app-public',
       requestedCapabilities: ['terminal'],
     })).resolves.toMatchObject({ machineId: 'machine-local' })
 
@@ -98,14 +92,6 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
-}
-
-function failingConnector(message: string) {
-  return {
-    async connect() {
-      throw new Error(message)
-    },
-  }
 }
 
 class MockManagedLocalSession implements RtcSession {

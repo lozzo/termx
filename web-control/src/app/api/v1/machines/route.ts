@@ -1,4 +1,3 @@
-import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -42,11 +41,9 @@ export async function GET(request: Request) {
       online: agent.online,
       paired: agent.paired,
       source: "cloud",
-      public_key: agent.publicKey,
-      machine_public_key_fingerprint: machinePublicKeyFingerprint(agent.publicKey),
       control_url: controlUrl,
       hub_id: agent.hubId,
-      hub_http_url: agent.hub?.httpUrl ?? null,
+      hub_urls: agent.hub?.httpUrl ? [agent.hub.httpUrl] : [],
       hub_status: agent.hub?.status ?? null,
       last_seen: agent.lastSeen?.toISOString() ?? null,
       created_at: agent.createdAt.toISOString(),
@@ -57,15 +54,4 @@ export async function GET(request: Request) {
 function requestOrigin(request: Request): string {
   const url = new URL(request.url);
   return `${url.protocol}//${url.host}`;
-}
-
-function machinePublicKeyFingerprint(value: string | null): string | null {
-  if (!value) return null;
-  try {
-    const publicKey = Buffer.from(value, "base64url");
-    if (publicKey.length !== 32) return null;
-    return `sha256:${crypto.createHash("sha256").update(publicKey).digest("hex")}`;
-  } catch {
-    return null;
-  }
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/lozzow/termx/termx-remote/bridge"
 	"github.com/lozzow/termx/termx-remote/fileapi"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
-	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
 )
 
 func TestAnswerManagedUsesSharedOrchestrator(t *testing.T) {
@@ -47,6 +46,7 @@ type recordingAnswerer struct {
 	err        error
 	offer      hubv1.SignalingOffer
 	iceServers []hubv1.RTCIceServerConfig
+	options    any
 }
 
 func (a *recordingAnswerer) AnswerOffer(
@@ -55,10 +55,11 @@ func (a *recordingAnswerer) AnswerOffer(
 	iceServers []hubv1.RTCIceServerConfig,
 	_ bridge.TransportSink,
 	_ *fileapi.Manager,
-	_ remotertc.AnswerOptions,
+	opts any,
 ) (hubv1.SignalingAnswer, error) {
 	a.offer = offer
 	a.iceServers = append([]hubv1.RTCIceServerConfig(nil), iceServers...)
+	a.options = opts
 	if a.err != nil {
 		return hubv1.SignalingAnswer{}, a.err
 	}

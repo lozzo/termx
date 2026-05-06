@@ -10,7 +10,7 @@ import (
 	"github.com/lozzow/termx/termx-remote/hub/registry"
 )
 
-func TestCloudSignalingOpaqueTicketAndAnswerFlow(t *testing.T) {
+func TestCloudSignalingOfferAndAnswerFlow(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -21,10 +21,10 @@ func TestCloudSignalingOpaqueTicketAndAnswerFlow(t *testing.T) {
 	}
 	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
 	offer, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
-		TicketID:   "opaque_ticket",
-		MachineID:  "mach_1",
-		TerminalID: "term_1",
-		SDP:        minimalSDP("offer"),
+		MachineID:    "mach_1",
+		TerminalID:   "term_1",
+		SessionToken: "session-token-1",
+		SDP:          minimalSDP("offer"),
 	})
 	if err != nil {
 		t.Fatalf("submit offer: %v", err)
@@ -32,7 +32,7 @@ func TestCloudSignalingOpaqueTicketAndAnswerFlow(t *testing.T) {
 	if offer.Path != cloud.PathCloud || offer.RelayInUse || offer.AllowRelay {
 		t.Fatalf("offer path/relay = %+v", offer)
 	}
-	if offer.TicketID != "opaque_ticket" || offer.MachineID != "mach_1" || offer.TerminalID != "term_1" {
+	if offer.MachineID != "mach_1" || offer.TerminalID != "term_1" || offer.SessionToken != "session-token-1" {
 		t.Fatalf("offer identity = %+v", offer)
 	}
 	polled, err := svc.PollAgentOffer(ctx, cloud.PollAgentOfferInput{
@@ -56,7 +56,6 @@ func TestCloudSignalingOpaqueTicketAndAnswerFlow(t *testing.T) {
 	}
 	answer, err := svc.GetAnswer(ctx, cloud.GetAnswerInput{
 		OfferID:   offer.ID,
-		TicketID:  "opaque_ticket",
 		MachineID: "mach_1",
 	})
 	if err != nil {
@@ -65,20 +64,9 @@ func TestCloudSignalingOpaqueTicketAndAnswerFlow(t *testing.T) {
 	if answer.SDP != minimalSDP("answer") || answer.RelayInUse {
 		t.Fatalf("answer = %+v", answer)
 	}
-	ticket, err := svc.ConsumeOfferTicket(ctx, cloud.GetAnswerInput{
-		OfferID:   offer.ID,
-		TicketID:  "opaque_ticket",
-		MachineID: "mach_1",
-	})
-	if err != nil {
-		t.Fatalf("consume opaque ticket: %v", err)
-	}
-	if ticket.ID != "opaque_ticket" || ticket.MachineID != "mach_1" || ticket.TerminalID != "term_1" || ticket.AllowRelay {
-		t.Fatalf("opaque ticket metadata = %+v", ticket)
-	}
 }
 
-func TestCloudServiceDefaultRelayAllowancePropagatesToOfferAndTicket(t *testing.T) {
+func TestCloudServiceDefaultRelayAllowancePropagatesToOfferPolicy(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -89,7 +77,6 @@ func TestCloudServiceDefaultRelayAllowancePropagatesToOfferAndTicket(t *testing.
 	}
 	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock, AllowRelayByDefault: true})
 	offer, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
-		TicketID:   "ticket_with_relay",
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
 		SDP:        minimalSDP("offer"),
@@ -111,16 +98,9 @@ func TestCloudServiceDefaultRelayAllowancePropagatesToOfferAndTicket(t *testing.
 	if !polled.AllowRelay {
 		t.Fatalf("polled offer should preserve relay allowance: %+v", polled)
 	}
-	ticket, err := svc.ConsumeOfferTicket(ctx, cloud.GetAnswerInput{
-		OfferID:   offer.ID,
-		TicketID:  "ticket_with_relay",
-		MachineID: "mach_1",
-	})
-	if err != nil {
-		t.Fatalf("consume ticket: %v", err)
-	}
-	if !ticket.AllowRelay {
-		t.Fatalf("ticket should preserve relay allowance: %+v", ticket)
+	policy, ok := svc.OfferPolicy(offer.ID)
+	if !ok || !policy.AllowRelay {
+		t.Fatalf("offer policy should preserve relay allowance: %+v ok=%v", policy, ok)
 	}
 }
 
@@ -132,7 +112,6 @@ func TestCloudSubmitOfferRequiresOnlineMachine(t *testing.T) {
 	reg := registry.New(registry.Config{Clock: clock})
 	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
 	if _, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
-		TicketID:   "opaque_ticket",
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
 		SDP:        minimalSDP("offer-no-agent"),
@@ -141,7 +120,7 @@ func TestCloudSubmitOfferRequiresOnlineMachine(t *testing.T) {
 	}
 }
 
-func TestCloudAnswerRequiresOpaqueTicketAndMachineCorrelation(t *testing.T) {
+func TestCloudAnswerRequiresMachineCorrelation(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -152,7 +131,6 @@ func TestCloudAnswerRequiresOpaqueTicketAndMachineCorrelation(t *testing.T) {
 	}
 	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
 	offer, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
-		TicketID:   "ticket_allowed",
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
 		SDP:        minimalSDP("offer"),
@@ -173,31 +151,22 @@ func TestCloudAnswerRequiresOpaqueTicketAndMachineCorrelation(t *testing.T) {
 	}
 	if _, err := svc.GetAnswer(ctx, cloud.GetAnswerInput{
 		OfferID:   offer.ID,
-		TicketID:  "ticket_wrong",
-		MachineID: "mach_1",
-	}); !errors.Is(err, cloud.ErrWrongMachine) {
-		t.Fatalf("wrong ticket answer err = %v", err)
-	}
-	if _, err := svc.GetAnswer(ctx, cloud.GetAnswerInput{
-		OfferID:   offer.ID,
-		TicketID:  "ticket_allowed",
 		MachineID: "wrong_machine",
 	}); !errors.Is(err, cloud.ErrWrongMachine) {
 		t.Fatalf("wrong machine answer err = %v", err)
 	}
 	if _, err := svc.GetAnswer(ctx, cloud.GetAnswerInput{OfferID: offer.ID}); !errors.Is(err, cloud.ErrWrongMachine) {
-		t.Fatalf("missing ticket answer err = %v", err)
+		t.Fatalf("missing machine answer err = %v", err)
 	}
 	if _, err := svc.GetAnswer(ctx, cloud.GetAnswerInput{
 		OfferID:   offer.ID,
-		TicketID:  "ticket_allowed",
 		MachineID: "mach_1",
 	}); err != nil {
 		t.Fatalf("authorized answer: %v", err)
 	}
 }
 
-func TestCloudAnswerLookupScopesPublicSessionIDByTicket(t *testing.T) {
+func TestCloudAnswerLookupUsesPublicSessionID(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -207,24 +176,14 @@ func TestCloudAnswerLookupScopesPublicSessionIDByTicket(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
-	offerA, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
-		SessionID:  "rtc_same",
-		TicketID:   "ticket_a",
+	offer, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
+		SessionID:  "rtc_public",
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
 		SDP:        minimalSDP("offer-a"),
 	})
 	if err != nil {
-		t.Fatalf("submit offer a: %v", err)
-	}
-	if _, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
-		SessionID:  "rtc_same",
-		TicketID:   "ticket_b",
-		MachineID:  "mach_1",
-		TerminalID: "term_1",
-		SDP:        minimalSDP("offer-b"),
-	}); err != nil {
-		t.Fatalf("submit offer b: %v", err)
+		t.Fatalf("submit offer: %v", err)
 	}
 	polled, err := svc.PollAgentOffer(ctx, cloud.PollAgentOfferInput{
 		AgentID:   "agent_1",
@@ -232,29 +191,28 @@ func TestCloudAnswerLookupScopesPublicSessionIDByTicket(t *testing.T) {
 		Timeout:   time.Second,
 	})
 	if err != nil {
-		t.Fatalf("poll offer a: %v", err)
+		t.Fatalf("poll offer: %v", err)
 	}
-	if polled.ID != offerA.ID {
-		t.Fatalf("polled first offer = %s, want %s", polled.ID, offerA.ID)
+	if polled.ID != offer.ID {
+		t.Fatalf("polled offer = %s, want %s", polled.ID, offer.ID)
 	}
 	if err := svc.SubmitAnswer(ctx, cloud.SubmitAnswerInput{
 		AgentID:   "agent_1",
 		MachineID: "mach_1",
-		OfferID:   offerA.ID,
+		OfferID:   offer.ID,
 		SDP:       minimalSDP("answer-a"),
 	}); err != nil {
-		t.Fatalf("submit answer a: %v", err)
+		t.Fatalf("submit answer: %v", err)
 	}
 	answer, err := svc.GetAnswer(ctx, cloud.GetAnswerInput{
-		OfferID:   "rtc_same",
-		TicketID:  "ticket_a",
+		OfferID:   "rtc_public",
 		MachineID: "mach_1",
 	})
 	if err != nil {
-		t.Fatalf("get answer by scoped public session id: %v", err)
+		t.Fatalf("get answer by public session id: %v", err)
 	}
-	if answer.OfferID != offerA.ID || answer.SDP != minimalSDP("answer-a") {
-		t.Fatalf("answer = %+v, want offer %s", answer, offerA.ID)
+	if answer.OfferID != offer.ID || answer.SDP != minimalSDP("answer-a") {
+		t.Fatalf("answer = %+v, want offer %s", answer, offer.ID)
 	}
 }
 
@@ -275,7 +233,6 @@ func TestCloudOfferPolicyCacheIsTTLBounded(t *testing.T) {
 	})
 	first, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
 		SessionID:  "rtc_a",
-		TicketID:   "ticket_a",
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
 		SDP:        minimalSDP("offer-a"),
@@ -285,7 +242,6 @@ func TestCloudOfferPolicyCacheIsTTLBounded(t *testing.T) {
 	}
 	if _, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
 		SessionID:  "rtc_b",
-		TicketID:   "ticket_b",
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
 		SDP:        minimalSDP("offer-b"),
@@ -294,7 +250,6 @@ func TestCloudOfferPolicyCacheIsTTLBounded(t *testing.T) {
 	}
 	if _, err := svc.GetAnswer(ctx, cloud.GetAnswerInput{
 		OfferID:   first.ID,
-		TicketID:  "ticket_a",
 		MachineID: "mach_1",
 	}); !errors.Is(err, cloud.ErrWrongMachine) {
 		t.Fatalf("evicted offer answer err = %v", err)
@@ -317,7 +272,6 @@ func TestCloudSignalingRejectsRuntimePayload(t *testing.T) {
 	}
 	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
 	if _, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
-		TicketID:   "ticket_allowed",
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
 		SDP:        "v=0\r\nterminal_data=must-not-forward",
@@ -325,16 +279,15 @@ func TestCloudSignalingRejectsRuntimePayload(t *testing.T) {
 		t.Fatalf("runtime payload err = %v", err)
 	}
 	if _, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
-		TicketID:   "ticket_allowed",
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
 		SDP:        minimalSDP("offer-after-runtime-reject"),
 	}); err != nil {
-		t.Fatalf("valid offer after runtime reject should reuse unconsumed ticket: %v", err)
+		t.Fatalf("valid offer after runtime reject should succeed: %v", err)
 	}
 }
 
-func TestCloudSignalingRejectsTicketReuse(t *testing.T) {
+func TestCloudSignalingAllowsConcurrentOffers(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -344,21 +297,24 @@ func TestCloudSignalingRejectsTicketReuse(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
-	if _, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
-		TicketID:   "ticket_once",
+	first, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
 		SDP:        minimalSDP("offer-1"),
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("first offer: %v", err)
 	}
-	if _, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
-		TicketID:   "ticket_once",
+	second, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
 		SDP:        minimalSDP("offer-2"),
-	}); !errors.Is(err, cloud.ErrTicketUsed) {
-		t.Fatalf("second offer err = %v", err)
+	})
+	if err != nil {
+		t.Fatalf("second offer: %v", err)
+	}
+	if first.ID == second.ID {
+		t.Fatalf("offers reused id %q", first.ID)
 	}
 }
 

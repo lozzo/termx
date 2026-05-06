@@ -207,7 +207,7 @@ func AnswerOfferWithOptions(
 	}); err != nil {
 		return hubv1.SignalingAnswer{}, fmt.Errorf("set remote description: %w", err)
 	}
-	for _, candidate := range offer.ICECandidates {
+	for _, candidate := range offer.Candidates {
 		if strings.TrimSpace(candidate) == "" {
 			continue
 		}

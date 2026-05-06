@@ -1,9 +1,9 @@
 # Web Control Deployment
 
 `web-control` is the TermX management-plane service. It handles user login,
-hub directory state, machine listings, connection tickets, subscriptions, and
-forced disconnect control. It does not proxy terminal runtime traffic or relay
-offer/answer signaling.
+hub directory state, machine listings, subscriptions, quotas, and forced
+disconnect control. It does not proxy terminal runtime traffic, issue
+connection tickets, or relay offer/answer signaling.
 
 ## Minimal Local Startup
 

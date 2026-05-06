@@ -3,7 +3,7 @@
 ## 定位
 
 - Web Controller 是管理面服务（Next.js），不做 runtime 代理，不做连接时认证。
-- 职责：用户登录、hub 目录（discover/heartbeat）、机器列表（agent 注册/在线状态）、connection ticket 颁发、订阅/踢下线控制。
+- 职责：用户登录、hub 目录（discover/heartbeat）、机器列表（agent 注册/在线状态）、订阅/配额/踢下线控制。
 - 不得承担：offer/answer 转发、app cert 验证、terminal/file/events 代理。
 
 ## Current P0 Task（WF-502）
@@ -50,9 +50,9 @@ npm run dev
 
 ## Architecture Rules
 
-- Web Controller **不做**：连接时 cert 验证、offer/answer 审核、runtime 代理、hub 信令转发。
+- Web Controller **不做**：连接时 token/cert 验证、connection ticket 颁发、offer/answer 审核、runtime 代理、hub 信令转发。
 - Hub heartbeat 接收端点（`/api/internal/hubs/heartbeat`）只同步 hub/agent 在线状态，返回 `kick_agents`；不参与单次连接流程。
-- connection ticket（`/api/v1/machines/{id}/connect-tickets`）只在机器 online + 有关联 hub 时颁发；ticket 内容对 hub 不透明（hub 不解码验证）。
+- App 登录后从 `GET /api/v1/machines` 获取该用户机器列表和 `hub_urls`，之后直接连接 Hub；Web Controller 不参与单次连接信令。
 
 ## Key Env Vars
 

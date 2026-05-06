@@ -36,24 +36,13 @@ func TestCloudSessionHTTPContract(t *testing.T) {
 		}),
 	})
 
-	requestBody := map[string]any{
-		"connect_ticket": "ticket_allowed",
-		"machine_id":     "mach_1",
-		"terminal_id":    "term_1",
-		"app_certificate": map[string]any{
-			"payload":   map[string]any{"machine_id": "mach_1"},
-			"signature": "cert-signature",
-		},
+	requestBody := map[string]any{"machine_id": "mach_1",
+		"terminal_id":   "term_1",
+		"session_token": "session-token-1",
 		"offer": map[string]any{
 			"session_id":     "rtc_cloud_1",
 			"sdp":            minimalSDP("offer"),
 			"ice_candidates": []any{"candidate:1 1 udp 1 192.0.2.1 1 typ host"},
-		},
-		"signature": map[string]any{
-			"algorithm": "ed25519",
-			"nonce":     "nonce-1",
-			"timestamp": 1770000000,
-			"value":     "offer-signature",
 		},
 	}
 
@@ -76,11 +65,8 @@ func TestCloudSessionHTTPContract(t *testing.T) {
 	if polled.SessionID != "rtc_cloud_1" {
 		t.Fatalf("polled session id = %q, want app session id", polled.SessionID)
 	}
-	if len(polled.AppCertificate) == 0 || !strings.Contains(string(polled.AppCertificate), "cert-signature") {
-		t.Fatalf("polled offer missing app certificate: %+v", polled)
-	}
-	if polled.Signature.Value != "offer-signature" || polled.Signature.Nonce != "nonce-1" || polled.Signature.Timestamp != 1770000000 {
-		t.Fatalf("polled offer missing signature envelope: %+v", polled.Signature)
+	if polled.SessionToken != "session-token-1" {
+		t.Fatalf("polled offer session token = %q", polled.SessionToken)
 	}
 	if len(polled.ICECandidates) != 1 || polled.ICECandidates[0] != "candidate:1 1 udp 1 192.0.2.1 1 typ host" {
 		t.Fatalf("polled offer missing standalone candidates: %+v", polled.ICECandidates)
@@ -272,10 +258,7 @@ func TestCloudSessionHTTPRelaysAgentAnswerError(t *testing.T) {
 		t.Fatalf("agent error answer status = %d body=%s", answer.Code, answer.Body.String())
 	}
 
-	appAnswer := postJSON(t, router, "/api/v1/sessions/rtc_cloud_1/answer", map[string]any{
-		"connect_ticket": "ticket_allowed",
-		"machine_id":     "mach_1",
-	})
+	appAnswer := postJSON(t, router, "/api/v1/sessions/rtc_cloud_1/answer", map[string]any{"machine_id": "mach_1"})
 	if appAnswer.Code != http.StatusForbidden {
 		t.Fatalf("app answer error status = %d body=%s", appAnswer.Code, appAnswer.Body.String())
 	}
@@ -296,23 +279,12 @@ func TestCloudSessionHTTPRejectsRuntimePayload(t *testing.T) {
 	router := httpapi.NewHandler(httpapi.Config{
 		Cloud: cloud.NewService(cloud.Config{Registry: reg, Clock: clock}),
 	})
-	resp := postJSON(t, router, "/api/v1/sessions", map[string]any{
-		"connect_ticket": "ticket_allowed",
-		"machine_id":     "mach_1",
-		"terminal_id":    "term_1",
-		"app_certificate": map[string]any{
-			"payload":   map[string]any{"machine_id": "mach_1"},
-			"signature": "cert-signature",
-		},
+	resp := postJSON(t, router, "/api/v1/sessions", map[string]any{"machine_id": "mach_1",
+		"terminal_id":   "term_1",
+		"session_token": "session-token-1",
 		"offer": map[string]any{
 			"session_id": "rtc_cloud_bad",
 			"sdp":        "v=0\r\nterminal_data=must-not-forward",
-		},
-		"signature": map[string]any{
-			"algorithm": "ed25519",
-			"nonce":     "nonce-1",
-			"timestamp": 1770000000,
-			"value":     "offer-signature",
 		},
 	})
 	if resp.Code != http.StatusForbidden {
@@ -323,7 +295,7 @@ func TestCloudSessionHTTPRejectsRuntimePayload(t *testing.T) {
 	}
 }
 
-func TestCloudSessionHTTPRejectsMissingEnvelopeBeforeConsumingTicket(t *testing.T) {
+func TestCloudSessionHTTPRejectsMissingSessionTokenBeforeSubmittingOffer(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -336,16 +308,18 @@ func TestCloudSessionHTTPRejectsMissingEnvelopeBeforeConsumingTicket(t *testing.
 		Cloud: cloud.NewService(cloud.Config{Registry: reg, Clock: clock}),
 	})
 	resp := postJSON(t, router, "/api/v1/sessions", map[string]any{
-		"connect_ticket": "ticket_allowed",
-		"machine_id":     "mach_1",
-		"terminal_id":    "term_1",
+		"machine_id":  "mach_1",
+		"terminal_id": "term_1",
 		"offer": map[string]any{
 			"session_id": "rtc_missing_envelope",
 			"sdp":        minimalSDP("offer"),
 		},
 	})
 	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("missing envelope status = %d body=%s", resp.Code, resp.Body.String())
+		t.Fatalf("missing session token status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "session_token") {
+		t.Fatalf("missing session token body = %s", resp.Body.String())
 	}
 }
 
@@ -395,10 +369,7 @@ func TestCloudSessionHTTPTimeoutReturnsRecoverableSession(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("answer after timeout: %v", err)
 	}
-	answer := postJSON(t, router, "/api/v1/sessions/"+got.SessionID+"/answer", map[string]any{
-		"connect_ticket": "ticket_allowed",
-		"machine_id":     "mach_1",
-	})
+	answer := postJSON(t, router, "/api/v1/sessions/"+got.SessionID+"/answer", map[string]any{"machine_id": "mach_1"})
 	if answer.Code != http.StatusOK {
 		t.Fatalf("recover answer status = %d body=%s", answer.Code, answer.Body.String())
 	}
@@ -444,10 +415,7 @@ func TestCloudSessionHTTPPendingAnswerPollReturnsRecoverableSession(t *testing.T
 		t.Fatalf("pending session response = %+v", pending)
 	}
 
-	answer := postJSON(t, router, "/api/v1/sessions/"+pending.SessionID+"/answer", map[string]any{
-		"connect_ticket": "ticket_allowed",
-		"machine_id":     "mach_1",
-	})
+	answer := postJSON(t, router, "/api/v1/sessions/"+pending.SessionID+"/answer", map[string]any{"machine_id": "mach_1"})
 	if answer.Code != http.StatusAccepted {
 		t.Fatalf("pending answer status = %d body=%s", answer.Code, answer.Body.String())
 	}
@@ -468,13 +436,9 @@ func TestCloudSessionHTTPRejectsOversizedBody(t *testing.T) {
 	t.Parallel()
 
 	router := httpapi.NewHandler(httpapi.Config{MaxBodyBytes: 128})
-	resp := postJSON(t, router, "/api/v1/sessions", map[string]any{
-		"connect_ticket": "ticket_allowed",
-		"machine_id":     "mach_1",
-		"terminal_id":    "term_1",
-		"app_certificate": map[string]any{
-			"payload": strings.Repeat("x", 512),
-		},
+	resp := postJSON(t, router, "/api/v1/sessions", map[string]any{"machine_id": "mach_1",
+		"terminal_id":   "term_1",
+		"session_token": strings.Repeat("x", 512),
 		"offer": map[string]any{
 			"session_id": "rtc_oversized",
 			"sdp":        minimalSDP("offer"),
@@ -552,24 +516,13 @@ func minimalSDP(sessionID string) string {
 }
 
 func validCloudSessionRequest() map[string]any {
-	return map[string]any{
-		"connect_ticket": "ticket_allowed",
-		"machine_id":     "mach_1",
-		"terminal_id":    "term_1",
-		"app_certificate": map[string]any{
-			"payload":   map[string]any{"machine_id": "mach_1"},
-			"signature": "cert-signature",
-		},
+	return map[string]any{"machine_id": "mach_1",
+		"terminal_id":   "term_1",
+		"session_token": "session-token-1",
 		"offer": map[string]any{
 			"session_id":     "rtc_cloud_1",
 			"sdp":            minimalSDP("offer"),
 			"ice_candidates": []any{},
-		},
-		"signature": map[string]any{
-			"algorithm": "ed25519",
-			"nonce":     "nonce-1",
-			"timestamp": 1770000000,
-			"value":     "offer-signature",
 		},
 	}
 }

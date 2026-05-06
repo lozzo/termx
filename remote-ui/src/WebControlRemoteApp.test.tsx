@@ -16,7 +16,6 @@ describe('WebControlRemoteApp', () => {
       <WebControlRemoteApp
         managedRtcSessionFactory={fakeManagedRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetchNoRequests)}
-        pairCrypto={createMockCrypto()}
         storage={storage}
       />,
     )
@@ -60,9 +59,8 @@ describe('WebControlRemoteApp', () => {
           online: true,
           paired: false,
           source: 'cloud',
-          machine_public_key_fingerprint: 'sha256:machine',
           control_url: 'http://114.66.58.243:12306',
-          hub_http_url: 'http://114.66.58.243:8447',
+          hub_urls: ['http://114.66.58.243:8447'],
           hub_status: 'online',
         }],
       }),
@@ -70,14 +68,7 @@ describe('WebControlRemoteApp', () => {
         claim_id: 'claim-1',
         machine_id: 'device-1',
         machine_name: 'RedmiBook',
-        machine_public_key: 'machine-public-key',
-        app_certificate: {
-          payload: {
-            machine_id: 'device-1',
-            app_public_key: 'AQIDBA==',
-          },
-          signature: 'machine-sig',
-        },
+        session_token: 'session-token-device-1',
         expires_at: '2026-05-05T10:30:00Z',
       }),
     ])
@@ -91,7 +82,6 @@ describe('WebControlRemoteApp', () => {
       rows: 30,
     }])
     const connect = vi.fn(async () => fakeRtcSession())
-    const crypto = createMockCrypto()
     render(
       <WebControlRemoteApp
         defaultControlUrl="http://114.66.58.243:12306"
@@ -106,7 +96,7 @@ describe('WebControlRemoteApp', () => {
                 },
                 localWeb: {
                   httpUrl: '',
-                  rtcOfferUrl: machine.hubHttpUrl ?? '',
+                  rtcOfferUrl: machine.hubUrls[0] ?? '',
                 },
               }
             },
@@ -116,7 +106,6 @@ describe('WebControlRemoteApp', () => {
         })}
         managedRtcSessionFactory={fakeManagedRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
-        pairCrypto={crypto}
         storage={storage}
       />,
     )
@@ -155,7 +144,6 @@ describe('WebControlRemoteApp', () => {
       pair_secret: 'pair-secret-1',
       app_device_id: expect.stringMatching(/^appweb_/),
       app_name: 'TermX Remote App',
-      app_public_key: 'AQIDBA==',
       requested_capabilities: ['terminal', 'file_manager', 'terminal_management'],
     })
     const stored = JSON.parse(storage.getItem('termx.app.machines.v1') ?? '[]') as Array<Record<string, unknown>>
@@ -163,7 +151,7 @@ describe('WebControlRemoteApp', () => {
     expect(stored[0]?.machineId).toBe('device-1')
     expect(stored[0]?.source).toBe('cloud')
     expect(stored[0]?.preferredPath).toBe('public_p2p')
-    expect(storage.dump()).toHaveProperty('termx.local.user%3Auser-1%3Amachine%3Adevice-1.appCertificate')
+    expect(storage.getItem('termx.session.device-1.token')).toBe('session-token-device-1')
   })
 
   it('rejects pairing codes that do not match a Web Control machine in the signed-in account', async () => {
@@ -203,7 +191,6 @@ describe('WebControlRemoteApp', () => {
         defaultControlUrl="http://114.66.58.243:12306"
         managedRtcSessionFactory={fakeManagedRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
-        pairCrypto={createMockCrypto()}
         storage={storage}
       />,
     )
@@ -369,28 +356,4 @@ function termxPairUri(payload: Record<string, unknown>): string {
     binary += String.fromCharCode(byte)
   }
   return `termx://pair?payload=${btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')}`
-}
-
-function createMockCrypto() {
-  return {
-    async generateKeyPair() {
-      return {
-        publicKey: { raw: new Uint8Array([1, 2, 3, 4]) },
-        privateKey: { keyId: 'generated-app-key' },
-      }
-    },
-    async savePrivateKey() {},
-    async loadPrivateKey() {
-      return { keyId: 'generated-app-key' }
-    },
-    async sign() {
-      return new TextEncoder().encode('signed-by-app-key')
-    },
-    async randomBytes(length: number) {
-      return new Uint8Array(Array.from({ length }, (_, index) => index + 1))
-    },
-    async sha256() {
-      return new Uint8Array(32)
-    },
-  }
 }

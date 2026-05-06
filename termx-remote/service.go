@@ -16,7 +16,6 @@ import (
 	"github.com/lozzow/termx/termx-core/terminalmeta"
 	"github.com/lozzow/termx/termx-core/transport"
 	"github.com/lozzow/termx/termx-remote/agent/runtime"
-	"github.com/lozzow/termx/termx-remote/cert"
 	remoteconfig "github.com/lozzow/termx/termx-remote/config"
 	"github.com/lozzow/termx/termx-remote/fileapi"
 	"github.com/lozzow/termx/termx-remote/hub/cloud"
@@ -59,7 +58,6 @@ type Service struct {
 	pairCfg pairing.Config
 
 	rtcMu     sync.Mutex
-	rtcReplay *cert.ReplayWindow
 	rtcFiles  *fileapi.Manager
 	rtcCtx    context.Context
 	rtcCancel context.CancelFunc
@@ -128,7 +126,10 @@ func (s *Service) Status() remoteprotocol.Status {
 		DeviceName:    status.DeviceName,
 		ControlURL:    status.ControlURL,
 		HubURL:        status.HubURL,
+		HubURLs:       append([]string(nil), status.HubURLs...),
 		DataDir:       status.DataDir,
+		Mode:          status.Mode,
+		AllowLAN:      status.AllowLAN,
 		TerminalCount: status.TerminalCount,
 		UpdatedAt:     status.UpdatedAt,
 	}
@@ -143,7 +144,7 @@ func (s *Service) PairStart(params remoteprotocol.PairStartParams) (remoteprotoc
 		DataDir:    s.cfg.DataDir,
 		DeviceName: s.cfg.DeviceName,
 	})
-	machineKey, err := identity.LoadOrCreateMachineKey(cfg.DataDir)
+	machineSecret, err := identity.LoadOrCreateMachineSecret(cfg.DataDir)
 	if err != nil {
 		return remoteprotocol.PairStartResult{}, err
 	}
@@ -167,10 +168,10 @@ func (s *Service) PairStart(params remoteprotocol.PairStartParams) (remoteprotoc
 		}
 	}
 	pairCfg := pairing.Config{
-		MachineID:    machineID,
-		MachineName:  machineName,
-		MachineKey:   machineKey,
-		LocalPairURL: strings.TrimSpace(params.LocalPairURL),
+		MachineID:     machineID,
+		MachineName:   machineName,
+		MachineSecret: machineSecret,
+		LocalPairURL:  strings.TrimSpace(params.LocalPairURL),
 	}
 	s.pairMu.Lock()
 	if s.pairing == nil {
@@ -191,14 +192,13 @@ func (s *Service) PairStart(params remoteprotocol.PairStartParams) (remoteprotoc
 		return remoteprotocol.PairStartResult{}, err
 	}
 	return remoteprotocol.PairStartResult{
-		Type:                        session.Type,
-		MachineID:                   session.MachineID,
-		MachineName:                 session.MachineName,
-		MachinePublicKeyFingerprint: session.MachinePublicKeyFingerprint,
-		LocalPairURL:                session.LocalPairURL,
-		PairSessionID:               session.PairSessionID,
-		PairSecret:                  session.PairSecret,
-		ExpiresAt:                   session.ExpiresAt,
+		Type:          session.Type,
+		MachineID:     session.MachineID,
+		MachineName:   session.MachineName,
+		LocalPairURL:  session.LocalPairURL,
+		PairSessionID: session.PairSessionID,
+		PairSecret:    session.PairSecret,
+		ExpiresAt:     session.ExpiresAt,
 	}, nil
 }
 
@@ -225,7 +225,7 @@ func (s *Service) LocalEnable(ctx context.Context, params remoteprotocol.LocalEn
 	}
 	s.localMu.Unlock()
 
-	runtime, err := newEmbeddedLocalHub(ctx, params)
+	runtime, err := newEmbeddedLocalHub(ctx, params, runtimeConfig(s.cfg))
 	if err != nil {
 		return remoteprotocol.LocalStatus{}, err
 	}
@@ -327,7 +327,8 @@ func (r *localRuntime) close(ctx context.Context) error {
 	return err
 }
 
-func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableParams) (*localRuntime, error) {
+func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableParams, cfg remoteconfig.Config) (*localRuntime, error) {
+	cfg = remoteconfig.Normalize(cfg)
 	listenAddr := strings.TrimSpace(params.LocalWebAddr)
 	if listenAddr == "" {
 		listenAddr = "0.0.0.0:18888"
@@ -347,15 +348,23 @@ func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableP
 	reg := registry.New(registry.Config{AgentTTL: 2 * time.Minute})
 	cloudSvc := cloud.NewService(cloud.Config{Registry: reg})
 	hubHandler := httpapi.NewHandler(httpapi.Config{
-		Cloud:         cloudSvc,
-		Registry:      reg,
-		HubID:         "termx-local-hub",
-		AnswerTimeout: 250 * time.Millisecond,
-		PollInterval:  10 * time.Millisecond,
+		Cloud:          cloudSvc,
+		Registry:       reg,
+		HubID:          "termx-local-hub",
+		AnswerTimeout:  250 * time.Millisecond,
+		PollInterval:   10 * time.Millisecond,
 		LocalDiscovery: true,
 	})
-	httpServer := &http.Server{Handler: hubHandler}
+	allowedNets, err := httpapi.ParseLANIPs(cfg.LANIPs)
+	if err != nil {
+		_ = listener.Close()
+		return nil, fmt.Errorf("parse lan_ips: %w", err)
+	}
+	lanFilter := httpapi.NewLANFilter(cfg.AllowLAN, allowedNets)
+	httpServer := &http.Server{Handler: lanFilter(hubHandler)}
+	grpcServer := newLocalHubGRPCServer(reg, cloudSvc, nil)
 	mux := cmux.New(listener)
+	grpcListener := mux.Match(cmux.HTTP2())
 	httpListener := mux.Match(cmux.HTTP1Fast())
 	iceListener := mux.Match(cmux.Any())
 	iceMux, err := remotertc.NewLocalICETCPMuxFromListener(iceListener)
@@ -365,7 +374,15 @@ func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableP
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
-	done := make(chan error, 2)
+	done := make(chan error, 3)
+	go func() {
+		if err := grpcServer.Serve(grpcListener); err != nil && !errors.Is(err, net.ErrClosed) && !isClosedNetworkError(err) {
+			done <- err
+			cancel()
+			return
+		}
+		done <- nil
+	}()
 	go func() {
 		if err := httpServer.Serve(httpListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			done <- err
@@ -402,6 +419,9 @@ func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableP
 		}
 		cancel()
 		var err error
+		if grpcServer != nil {
+			grpcServer.GracefulStop()
+		}
 		if httpServer != nil {
 			err = httpServer.Shutdown(shutdownCtx)
 			if isClosedNetworkError(err) {
@@ -799,6 +819,9 @@ func runtimeConfig(cfg remoteprotocol.Config) remoteconfig.Config {
 		DataDir:     cfg.DataDir,
 		DeviceName:  cfg.DeviceName,
 		Region:      cfg.Region,
+		Mode:        cfg.Mode,
+		AllowLAN:    cfg.AllowLAN,
+		LANIPs:      append([]string(nil), cfg.LANIPs...),
 	})
 }
 
@@ -821,7 +844,7 @@ func pairManagerConfigChanged(a, b pairing.Config) bool {
 	if a.MachineID != b.MachineID || a.MachineName != b.MachineName || a.LocalPairURL != b.LocalPairURL {
 		return true
 	}
-	return !a.MachineKey.PublicKey.Equal(b.MachineKey.PublicKey)
+	return string(a.MachineSecret) != string(b.MachineSecret)
 }
 
 func terminalInventoryFromProtocol(item protocol.TerminalInfo) runtime.TerminalInventoryItem {

@@ -33,11 +33,10 @@ register through Web Control for managed access.
 3. Enable both local and cloud remote paths:
 
    ```bash
-   termx remote enable --cloud --local --server <web-control-url>
+   termx remote enable --mode both --server <web-control-url> --token <access-token>
    ```
 
-   For automation, provide an existing connection key with `--token-env` or
-   `--token-file`.
+   `--token` is required for `online` and `both` modes.
 
 4. Inspect runtime state:
 

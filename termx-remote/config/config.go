@@ -16,6 +16,9 @@ type Config struct {
 	DataDir     string
 	DeviceName  string
 	Region      string
+	Mode        string
+	AllowLAN    bool
+	LANIPs      []string
 }
 
 func Normalize(cfg Config) Config {
@@ -29,6 +32,15 @@ func Normalize(cfg Config) Config {
 	cfg.DataDir = strings.TrimSpace(cfg.DataDir)
 	cfg.DeviceName = strings.TrimSpace(cfg.DeviceName)
 	cfg.Region = strings.TrimSpace(cfg.Region)
+	switch strings.ToLower(strings.TrimSpace(cfg.Mode)) {
+	case "local", "online", "both":
+		cfg.Mode = strings.ToLower(strings.TrimSpace(cfg.Mode))
+	case "":
+		cfg.Mode = "both"
+	default:
+		cfg.Mode = "both"
+	}
+	cfg.LANIPs = normalizeStringSlice(cfg.LANIPs)
 
 	if cfg.DataDir == "" {
 		cfg.DataDir = DefaultDataDir()
@@ -62,6 +74,18 @@ func normalizeHubURLs(primary string, values []string) []string {
 	return out
 }
 
+func normalizeStringSlice(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		out = append(out, value)
+	}
+	return out
+}
+
 func DefaultDataDir() string {
 	if stateHome := strings.TrimSpace(os.Getenv("XDG_STATE_HOME")); stateHome != "" {
 		return filepath.Join(stateHome, "termx", "remote")
@@ -83,4 +107,12 @@ func (c Config) Validate() error {
 		return errors.New("remote access token is required when control URL is configured")
 	}
 	return nil
+}
+
+func ModeIncludesLocal(mode string) bool {
+	return mode == "local" || mode == "both"
+}
+
+func ModeIncludesOnline(mode string) bool {
+	return mode == "online" || mode == "both"
 }

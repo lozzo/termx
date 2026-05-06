@@ -1,14 +1,10 @@
 package cloud
 
 import (
-	"encoding/json"
 	"time"
 )
 
 const PathCloud = "cloud"
-
-// PathManaged is kept as a compatibility alias for older tests and clients.
-const PathManaged = PathCloud
 
 const (
 	defaultOfferTTL  = 5 * time.Minute
@@ -25,42 +21,26 @@ func (realClock) Now() time.Time {
 	return time.Now().UTC()
 }
 
-type Ticket struct {
-	ID         string
+type OfferPolicy struct {
 	MachineID  string
 	TerminalID string
 	Path       string
 	AllowRelay bool
 	ExpiresAt  time.Time
+	CreatedAt  time.Time
 }
-
-type OfferPolicy struct {
-	Ticket    Ticket
-	CreatedAt time.Time
-}
-
-type ConnectionTicketInput struct {
-	TicketID   string
-	MachineID  string
-	TerminalID string
-}
-
-// VerifyTicketInput is kept as a compatibility alias for older internal callers.
-type VerifyTicketInput = ConnectionTicketInput
 
 type Offer struct {
-	ID             string
-	SessionID      string
-	MachineID      string
-	TerminalID     string
-	TicketID       string
-	SDP            string
-	ICECandidates  []string
-	AppCertificate json.RawMessage
-	Signature      OfferSignature
-	Path           string
-	AllowRelay     bool
-	RelayInUse     bool
+	ID            string
+	SessionID     string
+	MachineID     string
+	TerminalID    string
+	SDP           string
+	ICECandidates []string
+	SessionToken  string
+	Path          string
+	AllowRelay    bool
+	RelayInUse    bool
 }
 
 type Answer struct {
@@ -73,14 +53,12 @@ type Answer struct {
 }
 
 type SubmitOfferInput struct {
-	SessionID      string
-	TicketID       string
-	MachineID      string
-	TerminalID     string
-	SDP            string
-	ICECandidates  []string
-	AppCertificate json.RawMessage
-	Signature      OfferSignature
+	SessionID     string
+	MachineID     string
+	TerminalID    string
+	SDP           string
+	ICECandidates []string
+	SessionToken  string
 }
 
 type PollAgentOfferInput struct {
@@ -99,13 +77,5 @@ type SubmitAnswerInput struct {
 
 type GetAnswerInput struct {
 	OfferID   string
-	TicketID  string
 	MachineID string
-}
-
-type OfferSignature struct {
-	Algorithm string
-	Nonce     string
-	Timestamp int64
-	Value     string
 }

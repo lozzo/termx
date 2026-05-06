@@ -19,10 +19,6 @@ vi.mock('./browserRtcSession', () => ({
   createBrowserRtcSession: vi.fn(),
 }))
 
-vi.mock('./localAppIdentity', () => ({
-  createBrowserLocalAppCrypto: () => ({}),
-}))
-
 describe('mountRemoteApp', () => {
   afterEach(() => {
     cleanup()

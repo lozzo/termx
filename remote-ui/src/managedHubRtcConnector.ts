@@ -1,26 +1,22 @@
-import type { LocalOfferSignature } from './localAppIdentity'
 import type { ManagedHubApi, ManagedHubSession } from './managedHubApi'
 import type {
   ConnectionCapabilities,
   ConnectionPath,
   RtcConnectionTarget,
   RtcConnectOptions,
-  RtcOfferSigningInput,
   RtcSession,
   RtcSessionCapabilityUpdater,
   RtcSessionNegotiator,
 } from './transport'
 
 export interface ManagedHubRtcConnectInput extends RtcConnectionTarget {
-  connectTicket: string
-  appCertificate: unknown
+  sessionToken: string
   path?: ConnectionPath | undefined
 }
 
 export interface ManagedHubRtcConnectorOptions<TSession extends RtcSession & RtcSessionNegotiator = RtcSession & RtcSessionNegotiator> {
   api: Pick<ManagedHubApi, 'createSession' | 'pollSessionAnswer'>
   createSession(input: RtcConnectionTarget): TSession
-  signOffer(input: RtcOfferSigningInput): Promise<LocalOfferSignature>
   maxAnswerPolls?: number | undefined
   answerPollDelayMs?: number | undefined
 }
@@ -48,36 +44,19 @@ class ManagedHubRtcConnector {
       const sdp = offer.description.sdp
       if (!sdp) throw new Error('managed Hub WebRTC offer SDP is required')
       throwIfAborted(options.signal)
-      const signed = await this.options.signOffer({
-        sessionId: offer.sessionId,
-        ticketId: input.connectTicket,
-        machineId: input.machineId,
-        terminalId,
-        sdp,
-        candidates: [],
-      })
-      throwIfAborted(options.signal)
       const result = await this.options.api.createSession({
-        connectTicket: input.connectTicket,
         machineId: input.machineId,
         terminalId,
-        appCertificate: input.appCertificate,
+        sessionToken: input.sessionToken,
         offer: {
           sessionId: offer.sessionId,
           sdp,
           iceCandidates: [],
         },
-        signature: {
-          algorithm: 'ed25519',
-          nonce: signed.nonce,
-          timestamp: Number(signed.timestamp),
-          value: signed.signature,
-        },
       }, options)
       const answer: ManagedHubSession = 'pending' in result && result.pending
         ? await this.pollAnswer({
           sessionId: result.sessionId,
-          connectTicket: input.connectTicket,
           machineId: input.machineId,
         }, options)
         : result as ManagedHubSession
@@ -95,7 +74,6 @@ class ManagedHubRtcConnector {
 
   private async pollAnswer(input: {
     sessionId: string
-    connectTicket: string
     machineId: string
   }, options: RtcConnectOptions): Promise<ManagedHubSession> {
     const maxPolls = this.options.maxAnswerPolls ?? 20

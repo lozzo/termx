@@ -106,7 +106,6 @@ func TestForceOfflineRejectsHeartbeatPollAndOffers(t *testing.T) {
 	if _, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        minimalSDP("offer"),
 	}); !errors.Is(err, registry.ErrAgentForcedOffline) {
 		t.Fatalf("forced offer err = %v", err)
@@ -163,7 +162,6 @@ func TestForceOfflineDoesNotBlockOtherAgentsForSameMachine(t *testing.T) {
 	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        minimalSDP("offer"),
 	})
 	if err != nil {
@@ -203,7 +201,6 @@ func TestPollTimeoutOfferDeliveryAndAnswerCorrelation(t *testing.T) {
 	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        minimalSDP("offer"),
 	})
 	if err != nil {
@@ -268,7 +265,6 @@ func TestAnswerRequiresPolledOfferAndAssignedAgent(t *testing.T) {
 	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        minimalSDP("offer"),
 	})
 	if err != nil {
@@ -325,7 +321,6 @@ func TestOfferRejectsRuntimePayloadMarkers(t *testing.T) {
 		if _, err := store.SubmitOffer(ctx, registry.OfferInput{
 			MachineID:  "mach_1",
 			TerminalID: "term_1",
-			TicketID:   "ticket_1",
 			SDP:        sdp,
 		}); !errors.Is(err, registry.ErrRuntimePayload) {
 			t.Fatalf("runtime payload err = %v for %q", err, sdp)
@@ -350,7 +345,6 @@ func TestSignalingPayloadSizeLimit(t *testing.T) {
 	if _, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        oversizedSDP,
 	}); !errors.Is(err, registry.ErrPayloadTooLarge) {
 		t.Fatalf("large offer err = %v", err)
@@ -358,7 +352,6 @@ func TestSignalingPayloadSizeLimit(t *testing.T) {
 	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        minimalSDP("offer"),
 	})
 	if err != nil {
@@ -399,7 +392,6 @@ func TestSignalingPayloadRequiresBasicSDPShape(t *testing.T) {
 	if _, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        "not an sdp payload",
 	}); !errors.Is(err, registry.ErrInvalidSDP) {
 		t.Fatalf("invalid offer sdp err = %v", err)
@@ -407,7 +399,6 @@ func TestSignalingPayloadRequiresBasicSDPShape(t *testing.T) {
 	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        minimalSDP("offer"),
 	})
 	if err != nil {
@@ -453,7 +444,7 @@ func TestAgentRegistrationRejectsRebindOnly(t *testing.T) {
 	}
 }
 
-func TestOfferRelaysTicketIDWithoutVerification(t *testing.T) {
+func TestOfferRelaysSessionTokenWithoutVerification(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -465,16 +456,16 @@ func TestOfferRelaysTicketIDWithoutVerification(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
-		MachineID:  "mach_1",
-		TerminalID: "term_1",
-		TicketID:   "opaque_ticket_from_app",
-		SDP:        minimalSDP("offer"),
+		MachineID:    "mach_1",
+		TerminalID:   "term_1",
+		SessionToken: "opaque_session_token_from_app",
+		SDP:          minimalSDP("offer"),
 	})
 	if err != nil {
 		t.Fatalf("submit offer: %v", err)
 	}
-	if offer.TicketID != "opaque_ticket_from_app" {
-		t.Fatalf("offer ticket = %q", offer.TicketID)
+	if offer.SessionToken != "opaque_session_token_from_app" {
+		t.Fatalf("offer session token = %q", offer.SessionToken)
 	}
 }
 
@@ -493,7 +484,6 @@ func TestSubmitOfferPreservesSignedSDPBytes(t *testing.T) {
 	if _, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        signedSDP,
 	}); err != nil {
 		t.Fatalf("submit offer: %v", err)
@@ -525,7 +515,6 @@ func TestSubmitAnswerPreservesSDPBytes(t *testing.T) {
 	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        minimalSDP("offer") + "\r\n",
 	})
 	if err != nil {
@@ -575,7 +564,6 @@ func TestCleanupKeepsQueuedOfferWhenAnotherAgentOnline(t *testing.T) {
 	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        minimalSDP("offer"),
 	})
 	if err != nil {
@@ -610,7 +598,6 @@ func TestCleanupExpiresStaleOffersAndAnswers(t *testing.T) {
 	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        minimalSDP("offer"),
 	})
 	if err != nil {
@@ -631,7 +618,6 @@ func TestCleanupExpiresStaleOffersAndAnswers(t *testing.T) {
 	offer, err = store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_2",
 		SDP:        minimalSDP("offer"),
 	})
 	if err != nil {
@@ -673,7 +659,6 @@ func TestSignalingTTLIsEnforcedWithoutCleanup(t *testing.T) {
 	expiredQueued, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        minimalSDP("offer-1"),
 	})
 	if err != nil {
@@ -691,7 +676,6 @@ func TestSignalingTTLIsEnforcedWithoutCleanup(t *testing.T) {
 	expiredPolled, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_2",
 		SDP:        minimalSDP("offer-2"),
 	})
 	if err != nil {
@@ -714,7 +698,6 @@ func TestSignalingTTLIsEnforcedWithoutCleanup(t *testing.T) {
 	answered, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_3",
 		SDP:        minimalSDP("offer-3"),
 	})
 	if err != nil {
@@ -756,7 +739,6 @@ func TestCleanupRedeliversUnansweredOfferAfterAssignedAgentExpires(t *testing.T)
 	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        minimalSDP("offer"),
 	})
 	if err != nil {
@@ -799,7 +781,6 @@ func TestDuplicateAnswersRejected(t *testing.T) {
 	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:  "mach_1",
 		TerminalID: "term_1",
-		TicketID:   "ticket_1",
 		SDP:        minimalSDP("offer"),
 	})
 	if err != nil {

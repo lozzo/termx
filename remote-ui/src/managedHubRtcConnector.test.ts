@@ -1,28 +1,21 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createManagedHubRtcConnector } from './managedHubRtcConnector'
 import source from './managedHubRtcConnector.ts?raw'
 import type { ManagedHubApi } from './managedHubApi'
 import type { ConnectionCapabilities, RtcBinaryChannel, RtcJsonRpcChannel, RtcSession } from './transport'
 
 describe('ManagedHubRtcConnector', () => {
-  it('creates a browser offer, signs it with the Web Control ticket, posts it to Hub, and accepts the answer', async () => {
+  it('creates a browser offer, posts it with the session token to Hub, and accepts the answer', async () => {
     const api = new MockManagedHubApi()
     const session = new MockOffererSession()
-    const signOffer = vi.fn(async () => ({
-      signature: 'offer-signature',
-      nonce: 'nonce-1',
-      timestamp: '1777808400',
-    }))
     const connector = createManagedHubRtcConnector({
       api,
       createSession: () => session,
-      signOffer,
     })
 
     const connected = await connector.connect({
       machineId: 'machine-1',
-      connectTicket: 'ticket-1',
-      appCertificate: { payload: { machine_id: 'machine-1' }, signature: 'cert-sig' },
+      sessionToken: 'session-token-1',
     })
 
     expect(connected).toBe(session)
@@ -30,29 +23,14 @@ describe('ManagedHubRtcConnector', () => {
       machineId: 'machine-1',
       path: 'managed',
     }])
-    expect(signOffer).toHaveBeenCalledWith({
-      sessionId: 'rtc-managed-1',
-      ticketId: 'ticket-1',
-      machineId: 'machine-1',
-      terminalId: '',
-      sdp: 'offer-sdp',
-      candidates: [],
-    })
     expect(api.createdSessions).toEqual([{
-      connectTicket: 'ticket-1',
       machineId: 'machine-1',
       terminalId: '',
-      appCertificate: { payload: { machine_id: 'machine-1' }, signature: 'cert-sig' },
+      sessionToken: 'session-token-1',
       offer: {
         sessionId: 'rtc-managed-1',
         sdp: 'offer-sdp',
         iceCandidates: [],
-      },
-      signature: {
-        algorithm: 'ed25519',
-        nonce: 'nonce-1',
-        timestamp: 1777808400,
-        value: 'offer-signature',
       },
     }])
     expect(session.acceptedAnswers).toEqual([{ type: 'answer', sdp: 'answer-sdp' }])
@@ -70,24 +48,17 @@ describe('ManagedHubRtcConnector', () => {
     const connector = createManagedHubRtcConnector({
       api,
       createSession: () => session,
-      signOffer: async () => ({
-        signature: 'offer-signature',
-        nonce: 'nonce-1',
-        timestamp: '1777808400',
-      }),
       answerPollDelayMs: 0,
     })
 
     await connector.connect({
       machineId: 'machine-1',
       terminalId: 'terminal-1',
-      connectTicket: 'ticket-1',
-      appCertificate: { payload: { machine_id: 'machine-1' } },
+      sessionToken: 'session-token-1',
     })
 
     expect(api.polledAnswers).toEqual([{
       sessionId: 'rtc-managed-1',
-      connectTicket: 'ticket-1',
       machineId: 'machine-1',
     }])
     expect(session.acceptedAnswers).toEqual([{ type: 'answer', sdp: 'answer-after-pending' }])
@@ -105,18 +76,12 @@ describe('ManagedHubRtcConnector', () => {
     const connector = createManagedHubRtcConnector({
       api,
       createSession: () => session,
-      signOffer: async () => ({
-        signature: 'offer-signature',
-        nonce: 'nonce-1',
-        timestamp: '1777808400',
-      }),
     })
 
     await connector.connect({
       machineId: 'machine-local',
       terminalId: 'terminal-1',
-      connectTicket: 'local:machine-local',
-      appCertificate: { payload: { machine_id: 'machine-local' } },
+      sessionToken: 'session-token-local',
       path: 'local',
     })
 
@@ -126,7 +91,6 @@ describe('ManagedHubRtcConnector', () => {
       path: 'local',
     }])
     expect(api.createdSessions[0]).toMatchObject({
-      connectTicket: 'local:machine-local',
       machineId: 'machine-local',
       terminalId: 'terminal-1',
     })
@@ -137,25 +101,19 @@ describe('ManagedHubRtcConnector', () => {
     const connector = createManagedHubRtcConnector({
       api: {
         async createSession() {
-          throw new Error('ticket rejected')
+          throw new Error('session rejected')
         },
         async pollSessionAnswer() {
           throw new Error('not used')
         },
       },
       createSession: () => session,
-      signOffer: async () => ({
-        signature: 'offer-signature',
-        nonce: 'nonce-1',
-        timestamp: '1777808400',
-      }),
     })
 
     await expect(connector.connect({
       machineId: 'machine-1',
-      connectTicket: 'ticket-1',
-      appCertificate: {},
-    })).rejects.toThrow(/ticket rejected/i)
+      sessionToken: 'session-token-1',
+    })).rejects.toThrow(/session rejected/i)
     expect(session.disconnectCalls).toBe(1)
   })
 

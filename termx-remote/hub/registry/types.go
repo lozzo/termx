@@ -1,7 +1,6 @@
 package registry
 
 import (
-	"encoding/json"
 	"strings"
 	"time"
 )
@@ -10,9 +9,6 @@ const (
 	AgentOnline = "online"
 	PathCloud   = "cloud"
 )
-
-// PathManaged is kept as a compatibility alias for older internal callers.
-const PathManaged = PathCloud
 
 type Clock interface {
 	Now() time.Time
@@ -25,18 +21,8 @@ func (realClock) Now() time.Time {
 }
 
 type AgentRegistration struct {
-	MachineID          string
-	AgentID            string
-	SignatureAlgorithm string
-	SignatureNonce     string
-	SignatureTimestamp int64
-	SignatureValue     string
-}
-
-type OfferTicket struct {
-	MachineID  string
-	TerminalID string
-	TicketID   string
+	MachineID string
+	AgentID   string
 }
 
 type Terminal struct {
@@ -60,11 +46,9 @@ type Offer struct {
 	SessionID       string
 	MachineID       string
 	TerminalID      string
-	TicketID        string
 	SDP             string
 	ICECandidates   []string
-	AppCertificate  json.RawMessage
-	Signature       OfferSignature
+	SessionToken    string
 	Path            string
 	RelayInUse      bool
 	AssignedAgentID string
@@ -93,7 +77,6 @@ type PairingClaim struct {
 	PairSecret            string
 	AppDeviceID           string
 	AppName               string
-	AppPublicKey          string
 	RequestedCapabilities []string
 	AssignedAgentID       string
 	DeliveredAt           time.Time
@@ -101,24 +84,19 @@ type PairingClaim struct {
 }
 
 type PairingResult struct {
-	ClaimID          string
-	MachineID        string
-	MachineName      string
-	MachinePublicKey string
-	AppCertificate   json.RawMessage
-	ExpiresAt        string
-	Error            string
-	CreatedAt        time.Time
+	ClaimID      string
+	MachineID    string
+	MachineName  string
+	SessionToken string
+	ExpiresAt    string
+	Error        string
+	CreatedAt    time.Time
 }
 
 type RegisterInput struct {
-	MachineID          string
-	AgentID            string
-	SignatureAlgorithm string
-	SignatureNonce     string
-	SignatureTimestamp int64
-	SignatureValue     string
-	Terminals          []Terminal
+	MachineID string
+	AgentID   string
+	Terminals []Terminal
 }
 
 type HeartbeatInput struct {
@@ -141,14 +119,12 @@ type PollInput struct {
 }
 
 type OfferInput struct {
-	SessionID      string
-	MachineID      string
-	TerminalID     string
-	TicketID       string
-	SDP            string
-	ICECandidates  []string
-	AppCertificate json.RawMessage
-	Signature      OfferSignature
+	SessionID     string
+	MachineID     string
+	TerminalID    string
+	SDP           string
+	ICECandidates []string
+	SessionToken  string
 }
 
 type AnswerInput struct {
@@ -165,7 +141,6 @@ type PairingClaimInput struct {
 	PairSecret            string
 	AppDeviceID           string
 	AppName               string
-	AppPublicKey          string
 	RequestedCapabilities []string
 }
 
@@ -176,14 +151,13 @@ type PairingPollInput struct {
 }
 
 type PairingResultInput struct {
-	AgentID          string
-	MachineID        string
-	ClaimID          string
-	MachineName      string
-	MachinePublicKey string
-	AppCertificate   json.RawMessage
-	ExpiresAt        string
-	Error            string
+	AgentID      string
+	MachineID    string
+	ClaimID      string
+	MachineName  string
+	SessionToken string
+	ExpiresAt    string
+	Error        string
 }
 
 func containsRuntimePayload(payload string) bool {
@@ -201,13 +175,6 @@ func containsRuntimePayload(payload string) bool {
 		}
 	}
 	return false
-}
-
-type OfferSignature struct {
-	Algorithm string
-	Nonce     string
-	Timestamp int64
-	Value     string
 }
 
 func isBasicSDP(payload string) bool {

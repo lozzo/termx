@@ -1,7 +1,6 @@
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { LocalAppCrypto } from './localAppIdentity'
 import type { LocalPairingApi } from './transport'
 
 vi.mock('./Terminal', () => ({
@@ -186,7 +185,7 @@ describe('local web entry shell', () => {
     })
     const pair = vi.fn(async (input: Parameters<LocalPairingApi['pair']>[0]) => ({
       machineId: input.machineId ?? 'missing-machine',
-      appCertificate: '{"payload":{"machine_id":"device-real-local","app_public_key":"AQIDBA=="},"signature":"machine-sig"}',
+      sessionToken: 'session-token-local',
       expiresAt: '2026-05-06T00:00:00Z',
     }))
 
@@ -199,7 +198,6 @@ describe('local web entry shell', () => {
       pairApi: {
         pair,
       },
-      pairCrypto: createMockAppCrypto(),
     })
 
     await waitFor(() => expect(screen.getByTestId('termx-verification-gate')).toBeTruthy())
@@ -214,19 +212,9 @@ describe('local web entry shell', () => {
     fireEvent.click(pairButton)
 
     await waitFor(() => expect(pair).toHaveBeenCalledWith(expect.objectContaining({ machineId: 'device-real-local' })))
+    expect(storage.getItem('termx.session.device-real-local.token')).toBe('session-token-local')
     expect(screen.getByTestId('termx-local-web-shell').textContent).toContain('Local Mac')
     expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:18888/api/v1/agents/online', expect.any(Object))
-  })
-
-  it('generates a fresh opaque local connect ticket for each embedded Hub offer', async () => {
-    const entry = await import('./localWebEntry')
-
-    const first = entry.createLocalConnectTicket('machine local', () => 'nonce-1')
-    const second = entry.createLocalConnectTicket('machine local', () => 'nonce-2')
-
-    expect(first).toBe('local:machine%20local:nonce-1')
-    expect(second).toBe('local:machine%20local:nonce-2')
-    expect(first).not.toBe(second)
   })
 
   it('does not require browser crypto or local storage until a terminal session is created', async () => {
@@ -260,7 +248,7 @@ describe('local web entry shell', () => {
     await waitFor(() => expect(screen.getByText('No active terminals')).toBeTruthy())
   })
 
-  it('keeps the local shell mounted when pair crypto is unavailable', async () => {
+  it('keeps the local shell mounted when browser crypto is unavailable', async () => {
     const entry = await import('./localWebEntry')
     document.body.innerHTML = '<div id="root"></div>'
     vi.stubGlobal('crypto', undefined)
@@ -289,7 +277,6 @@ describe('local web entry shell', () => {
 
     await waitFor(() => expect(screen.getByTestId('termx-local-web-shell')).toBeTruthy())
     await waitFor(() => expect(screen.getByText('No active terminals')).toBeTruthy())
-    expect(screen.queryByTestId('termx-local-pair-panel')).toBeNull()
   })
 })
 
@@ -325,29 +312,5 @@ class MemoryStorage implements Storage {
   setItem(key: string, value: string): void {
     this.values.set(key, value)
     this.length = this.values.size
-  }
-}
-
-function createMockAppCrypto(): LocalAppCrypto {
-  return {
-    async generateKeyPair() {
-      return {
-        publicKey: { raw: new Uint8Array([1, 2, 3, 4]) },
-        privateKey: { keyId: 'generated-app-key' },
-      }
-    },
-    async savePrivateKey() {},
-    async loadPrivateKey() {
-      return { keyId: 'generated-app-key' }
-    },
-    async sign() {
-      return new TextEncoder().encode('signed-by-app-key')
-    },
-    async randomBytes(length: number) {
-      return new Uint8Array(length)
-    },
-    async sha256() {
-      return new Uint8Array(32)
-    },
   }
 }

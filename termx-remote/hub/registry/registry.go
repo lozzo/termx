@@ -21,7 +21,6 @@ var (
 	ErrPayloadTooLarge      = errors.New("signaling payload too large")
 	ErrInvalidSDP           = errors.New("invalid sdp")
 	ErrAgentRebound         = errors.New("agent already belongs to another machine")
-	ErrUnauthorizedTicket   = errors.New("unauthorized ticket")
 	ErrAnswerAlreadyExists  = errors.New("answer already exists")
 	ErrAgentForcedOffline   = errors.New("agent forced offline")
 )
@@ -260,38 +259,32 @@ func (r *Registry) ForceOffline(in ForceOfflineInput) {
 func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error) {
 	machineID := strings.TrimSpace(in.MachineID)
 	terminalID := strings.TrimSpace(in.TerminalID)
-	ticketID := strings.TrimSpace(in.TicketID)
 	if err := r.PreflightOffer(ctx, OfferInput{
-		MachineID:      machineID,
-		TerminalID:     terminalID,
-		TicketID:       ticketID,
-		SDP:            in.SDP,
-		SessionID:      strings.TrimSpace(in.SessionID),
-		ICECandidates:  cloneStrings(in.ICECandidates),
-		AppCertificate: cloneRawMessage(in.AppCertificate),
-		Signature:      in.Signature,
+		MachineID:     machineID,
+		TerminalID:    terminalID,
+		SDP:           in.SDP,
+		SessionID:     strings.TrimSpace(in.SessionID),
+		ICECandidates: cloneStrings(in.ICECandidates),
+		SessionToken:  in.SessionToken,
 	}); err != nil {
 		return Offer{}, err
 	}
 	return r.submitVerifiedOffer(ctx, OfferInput{
-		MachineID:      machineID,
-		TerminalID:     terminalID,
-		TicketID:       ticketID,
-		SDP:            in.SDP,
-		SessionID:      strings.TrimSpace(in.SessionID),
-		ICECandidates:  cloneStrings(in.ICECandidates),
-		AppCertificate: cloneRawMessage(in.AppCertificate),
-		Signature:      in.Signature,
+		MachineID:     machineID,
+		TerminalID:    terminalID,
+		SDP:           in.SDP,
+		SessionID:     strings.TrimSpace(in.SessionID),
+		ICECandidates: cloneStrings(in.ICECandidates),
+		SessionToken:  in.SessionToken,
 	})
 }
 
 func (r *Registry) PreflightOffer(ctx context.Context, in OfferInput) error {
 	_ = ctx
 	machineID := strings.TrimSpace(in.MachineID)
-	ticketID := strings.TrimSpace(in.TicketID)
 	sdp := strings.TrimSpace(in.SDP)
-	if machineID == "" || ticketID == "" || sdp == "" {
-		return errors.New("machine id, ticket id, and sdp are required")
+	if machineID == "" || sdp == "" {
+		return errors.New("machine id and sdp are required")
 	}
 	if err := r.validateSignalingPayload(sdp); err != nil {
 		return err
@@ -310,17 +303,15 @@ func (r *Registry) PreflightOffer(ctx context.Context, in OfferInput) error {
 func (r *Registry) submitVerifiedOffer(ctx context.Context, in OfferInput) (Offer, error) {
 	_ = ctx
 	offer := Offer{
-		ID:             randomID("offer"),
-		SessionID:      strings.TrimSpace(in.SessionID),
-		MachineID:      strings.TrimSpace(in.MachineID),
-		TerminalID:     strings.TrimSpace(in.TerminalID),
-		TicketID:       strings.TrimSpace(in.TicketID),
-		SDP:            in.SDP,
-		ICECandidates:  cloneStrings(in.ICECandidates),
-		AppCertificate: cloneRawMessage(in.AppCertificate),
-		Signature:      in.Signature,
-		Path:           PathCloud,
-		CreatedAt:      r.clock.Now().UTC(),
+		ID:            randomID("offer"),
+		SessionID:     strings.TrimSpace(in.SessionID),
+		MachineID:     strings.TrimSpace(in.MachineID),
+		TerminalID:    strings.TrimSpace(in.TerminalID),
+		SDP:           in.SDP,
+		ICECandidates: cloneStrings(in.ICECandidates),
+		SessionToken:  strings.TrimSpace(in.SessionToken),
+		Path:          PathCloud,
+		CreatedAt:     r.clock.Now().UTC(),
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -463,13 +454,12 @@ func (r *Registry) SubmitPairingClaim(ctx context.Context, in PairingClaimInput)
 		PairSecret:            strings.TrimSpace(in.PairSecret),
 		AppDeviceID:           strings.TrimSpace(in.AppDeviceID),
 		AppName:               strings.TrimSpace(in.AppName),
-		AppPublicKey:          strings.TrimSpace(in.AppPublicKey),
 		RequestedCapabilities: cloneStrings(in.RequestedCapabilities),
 		CreatedAt:             r.clock.Now().UTC(),
 	}
 	if claim.MachineID == "" || claim.PairSessionID == "" || claim.PairSecret == "" ||
-		claim.AppDeviceID == "" || claim.AppName == "" || claim.AppPublicKey == "" {
-		return PairingClaim{}, errors.New("machine id, pair session, pair secret, app device, app name, and app public key are required")
+		claim.AppDeviceID == "" || claim.AppName == "" {
+		return PairingClaim{}, errors.New("machine id, pair session, pair secret, app device, and app name are required")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -572,17 +562,16 @@ func (r *Registry) SubmitPairingResult(ctx context.Context, in PairingResultInpu
 		return PairingResult{}, ErrUnauthorizedAgent
 	}
 	result := PairingResult{
-		ClaimID:          claim.ID,
-		MachineID:        agent.MachineID,
-		MachineName:      strings.TrimSpace(in.MachineName),
-		MachinePublicKey: strings.TrimSpace(in.MachinePublicKey),
-		AppCertificate:   cloneRawMessage(in.AppCertificate),
-		ExpiresAt:        strings.TrimSpace(in.ExpiresAt),
-		Error:            strings.TrimSpace(in.Error),
-		CreatedAt:        r.clock.Now().UTC(),
+		ClaimID:      claim.ID,
+		MachineID:    agent.MachineID,
+		MachineName:  strings.TrimSpace(in.MachineName),
+		SessionToken: strings.TrimSpace(in.SessionToken),
+		ExpiresAt:    strings.TrimSpace(in.ExpiresAt),
+		Error:        strings.TrimSpace(in.Error),
+		CreatedAt:    r.clock.Now().UTC(),
 	}
-	if result.Error == "" && len(result.AppCertificate) == 0 {
-		return PairingResult{}, errors.New("pairing result app certificate or error is required")
+	if result.Error == "" && result.SessionToken == "" {
+		return PairingResult{}, errors.New("pairing result session token or error is required")
 	}
 	r.pairingResults[result.ClaimID] = result
 	return clonePairingResult(result), nil
@@ -792,7 +781,6 @@ func cloneAgent(agent Agent) Agent {
 
 func cloneOffer(offer Offer) Offer {
 	offer.ICECandidates = cloneStrings(offer.ICECandidates)
-	offer.AppCertificate = cloneRawMessage(offer.AppCertificate)
 	return offer
 }
 
@@ -802,7 +790,6 @@ func clonePairingClaim(claim PairingClaim) PairingClaim {
 }
 
 func clonePairingResult(result PairingResult) PairingResult {
-	result.AppCertificate = cloneRawMessage(result.AppCertificate)
 	return result
 }
 
@@ -811,15 +798,6 @@ func cloneStrings(in []string) []string {
 		return nil
 	}
 	out := make([]string, len(in))
-	copy(out, in)
-	return out
-}
-
-func cloneRawMessage(in []byte) []byte {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make([]byte, len(in))
 	copy(out, in)
 	return out
 }

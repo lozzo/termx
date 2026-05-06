@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createConnectionOrchestrator, type ConnectionAttemptSnapshot } from './connectionOrchestrator'
 import { createMachineStore } from './machineStore'
+import type { ManagedHubApi } from './managedHubApi'
 import { parsePairingPayload } from './pairingPayload'
 import { RemoteAppShell } from './RemoteAppShell'
 import { useFileManager } from './useFileManager'
@@ -11,7 +12,6 @@ import { useTerminalSession } from './useTerminalSession'
 import type {
   ConnectionCapabilities,
   ConnectionInfo,
-  RtcConnector,
   RtcEvent,
   RtcJsonRpcChannel,
   RtcSession,
@@ -24,7 +24,7 @@ describe('APP connection e2e harness', () => {
     cleanup()
   })
 
-  it('loads a scanned machine and connects local -> public_p2p -> managed with one RtcSession runtime', async () => {
+  it('loads a scanned machine and connects by racing hub URLs with one RtcSession runtime', async () => {
     const storage = new MemoryStorage()
     const store = createMachineStore({
       storage,
@@ -37,7 +37,6 @@ describe('APP connection e2e harness', () => {
         id: 'machine-public',
         name: 'Public Host',
         hostname: 'public-host-agent',
-        public_key_fingerprint: 'sha256:machine-public',
       },
       addresses: {
         local: ['http://127.0.0.1:18988'],
@@ -53,20 +52,16 @@ describe('APP connection e2e harness', () => {
         session_id: 'pair-session-1',
         secret: 'pair-secret-1',
       },
-      bootstrap: {
-        app_certificate: 'app-cert',
-        app_public_key: 'app-public',
-        app_device_id: 'app-device-1',
-        app_key_ref: 'secure-store://app-key-1',
-      },
+      bootstrap: {},
       preferred_path: 'local',
     })))
     const machines = store.listMachines()
     const managedSession = new ManagedE2ESession('machine-public')
-    const local = new RecordingConnector(new Error('local unreachable'))
-    const publicP2p = new RecordingConnector(new Error('public P2P timed out'))
-    const managed = new RecordingConnector(managedSession)
-    const orchestrator = createConnectionOrchestrator({ local, publicP2p, managed })
+    const hubConnector = new RecordingManagedHubConnector(managedSession)
+    const orchestrator = createConnectionOrchestrator({
+      managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
+      managedHubRtcConnectorFactory: () => hubConnector,
+    })
     const snapshots: ConnectionAttemptSnapshot[] = []
 
     render(
@@ -91,11 +86,8 @@ describe('APP connection e2e harness', () => {
           return orchestrator.connect({
             machineId: machine.machineId,
             terminalId: 'terminal-1',
-            machinePublicKeyFingerprint: stored.machinePublicKeyFingerprint ?? '',
-            managed: {
-              hubSessionId: stored.endpoints.hub ?? 'missing-hub',
-              deviceId: stored.appBootstrap?.appDeviceId ?? 'missing-device',
-            },
+            sessionToken: 'session-token-1',
+            hubUrls: stored.addresses.public,
             onSnapshot: (snapshot) => snapshots.push(snapshot),
           }).then((result) => ({
             stage: 'connected',
@@ -113,21 +105,13 @@ describe('APP connection e2e harness', () => {
     await waitFor(() => expect(screen.getByText('Connected')).toBeTruthy())
     expect(screen.getByText('Connected to terminal runtime.')).toBeTruthy()
     expect(screen.getByText('Relay active')).toBeTruthy()
-    expect(local.calls).toEqual([{ machineId: 'machine-public', terminalId: 'terminal-1' }])
-    expect(publicP2p.calls).toEqual([{
+    expect(hubConnector.calls).toEqual([{
       machineId: 'machine-public',
       terminalId: 'terminal-1',
-      machinePublicKeyFingerprint: 'sha256:machine-public',
-    }])
-    expect(managed.calls).toEqual([{
-      machineId: 'machine-public',
-      terminalId: 'terminal-1',
-      hubSessionId: 'http://114.66.58.243:8447',
-      deviceId: 'app-device-1',
+      sessionToken: 'session-token-1',
+      path: 'managed',
     }])
     expect(snapshots.map((snapshot) => snapshot.stage)).toEqual([
-      'trying_local',
-      'trying_public_p2p',
       'trying_managed',
       'connected',
     ])
@@ -154,15 +138,31 @@ describe('APP connection e2e harness', () => {
   })
 })
 
-class RecordingConnector<TInput extends { machineId: string }> implements RtcConnector<TInput> {
-  readonly calls: TInput[] = []
+class RecordingManagedHubConnector {
+  readonly calls: unknown[] = []
 
   constructor(private readonly result: RtcSession | Error) {}
 
-  async connect(input: TInput): Promise<RtcSession> {
+  async connect(input: unknown): Promise<RtcSession> {
     this.calls.push(input)
     if (this.result instanceof Error) throw this.result
     return this.result
+  }
+}
+
+class MockManagedHubApi implements ManagedHubApi {
+  constructor(readonly hubUrl: string) {}
+
+  async createSession(): ReturnType<ManagedHubApi['createSession']> {
+    throw new Error('createSession is not used by e2e orchestrator harness')
+  }
+
+  async pollSessionAnswer(): ReturnType<ManagedHubApi['pollSessionAnswer']> {
+    throw new Error('pollSessionAnswer is not used by e2e orchestrator harness')
+  }
+
+  async pair(): ReturnType<ManagedHubApi['pair']> {
+    throw new Error('pair is not used by e2e orchestrator harness')
   }
 }
 

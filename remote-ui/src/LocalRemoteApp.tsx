@@ -3,7 +3,7 @@ import { ChevronLeft, Folder, KeyRound, Monitor, Plus, RefreshCw, SquarePen, Tra
 import { FileManager } from './FileManager'
 import { evaluateConnectionCapability } from './connectionPolicy'
 import { LocalPairPanel } from './LocalPairPanel'
-import type { LocalAppCrypto, LocalAppIdentityStore } from './localAppIdentity'
+import type { MachineSessionStore } from './localAppIdentity'
 import { MobileTerminalKeybar } from './MobileTerminalKeybar'
 import type { TerminalModifierState } from './mobileTerminalInput'
 import { Terminal, type TerminalHandle } from './Terminal'
@@ -31,8 +31,7 @@ export interface LocalRemoteAppProps {
   managementPolicy?: Partial<Pick<ConnectionCapabilities, 'apiAllowed' | 'terminalManagementAllowed' | 'denialReason'>> | undefined
   pair?: {
     api: LocalPairingApi
-    storage: LocalAppIdentityStore
-    crypto: LocalAppCrypto
+    sessionStore: MachineSessionStore
     appName: string
   } | undefined
 }
@@ -47,7 +46,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, man
   const [error, setError] = useState<string | null>(null)
   const [pairStatus, setPairStatus] = useState<string | null>(null)
   const [refreshingTerminals, setRefreshingTerminals] = useState(false)
-  const [verifiedDevice, setVerifiedDevice] = useState(() => pair ? Boolean(pair.storage.loadCertificate()) : true)
+  const [verifiedDevice, setVerifiedDevice] = useState(() => pair && machine ? Boolean(pair.sessionStore.getSessionToken(machine.machineId)) : !pair)
   const [connectedSession, setConnectedSession] = useState<RtcSession | null>(null)
   const [fileSession, setFileSession] = useState<RtcSession | null>(null)
   const [fileTerminalId, setFileTerminalId] = useState<string | null>(null)
@@ -210,10 +209,10 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, man
 
   useEffect(() => {
     if (!pair) return
-    if (pair.storage.loadCertificate()) {
+    if (machine && pair.sessionStore.getSessionToken(machine.machineId)) {
       setVerifiedDevice(true)
     }
-  }, [pair, connectionRetryToken])
+  }, [machine, pair, connectionRetryToken])
 
   useEffect(() => {
     if (!pairStatus) return
@@ -610,8 +609,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, man
           <MobileSheetPanel title="Pair device" testId="termx-pair-sheet" onClose={() => setMobileSheet(null)}>
             <LocalPairPanel
               api={pair.api}
-              storage={pair.storage}
-              crypto={pair.crypto}
+              sessionStore={pair.sessionStore}
               appName={pair.appName}
               machineId={machine.machineId}
               onPaired={handlePaired}
@@ -801,8 +799,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, man
           <MobileSheetPanel title="Pair device" testId="termx-pair-sheet" onClose={() => setMobileSheet(null)}>
             <LocalPairPanel
               api={pair.api}
-              storage={pair.storage}
-              crypto={pair.crypto}
+              sessionStore={pair.sessionStore}
               appName={pair.appName}
               machineId={machine.machineId}
               onPaired={handlePaired}

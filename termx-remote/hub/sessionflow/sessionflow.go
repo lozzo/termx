@@ -8,7 +8,6 @@ import (
 	"github.com/lozzow/termx/termx-remote/bridge"
 	"github.com/lozzow/termx/termx-remote/fileapi"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
-	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
 )
 
 const (
@@ -36,7 +35,7 @@ type Answerer interface {
 		iceServers []hubv1.RTCIceServerConfig,
 		sink bridge.TransportSink,
 		fileManager *fileapi.Manager,
-		opts remotertc.AnswerOptions,
+		opts any,
 	) (hubv1.SignalingAnswer, error)
 }
 
@@ -45,7 +44,7 @@ type AnswerInput struct {
 	Offer   hubv1.SignalingOffer
 	Sink    bridge.TransportSink
 	Files   *fileapi.Manager
-	Options remotertc.AnswerOptions
+	Options any
 }
 
 func ManagedPlan(iceServers []hubv1.RTCIceServerConfig, relay RelayPolicy) Plan {
@@ -83,19 +82,6 @@ func cloneICEServers(in []hubv1.RTCIceServerConfig) []hubv1.RTCIceServerConfig {
 	return out
 }
 
-type defaultAnswerer struct{}
-
-func (defaultAnswerer) AnswerOffer(
-	ctx context.Context,
-	offer hubv1.SignalingOffer,
-	iceServers []hubv1.RTCIceServerConfig,
-	sink bridge.TransportSink,
-	fileManager *fileapi.Manager,
-	opts remotertc.AnswerOptions,
-) (hubv1.SignalingAnswer, error) {
-	return remotertc.AnswerOfferWithOptions(ctx, offer, iceServers, sink, fileManager, opts)
-}
-
 func answerWithPath(ctx context.Context, answerer Answerer, in AnswerInput, expectedPath string) (hubv1.SignalingAnswer, error) {
 	path := strings.TrimSpace(in.Plan.Path)
 	if err := ValidateClientPath(path); err != nil {
@@ -105,7 +91,7 @@ func answerWithPath(ctx context.Context, answerer Answerer, in AnswerInput, expe
 		return hubv1.SignalingAnswer{}, fmt.Errorf("session flow path %q cannot answer %s offer", path, expectedPath)
 	}
 	if answerer == nil {
-		answerer = defaultAnswerer{}
+		return hubv1.SignalingAnswer{}, fmt.Errorf("session flow answerer is required")
 	}
 	return answerer.AnswerOffer(ctx, in.Offer, cloneICEServers(in.Plan.ICEServers), in.Sink, in.Files, in.Options)
 }

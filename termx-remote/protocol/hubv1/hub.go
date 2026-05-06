@@ -1,7 +1,5 @@
 package hubv1
 
-import "encoding/json"
-
 type HubTerminalInventoryItem struct {
 	ID      string   `json:"id"`
 	Name    string   `json:"name"`
@@ -22,14 +20,6 @@ type HubRegisterRequest struct {
 	Labels         []string                   `json:"labels"`
 	RuntimeVersion string                     `json:"runtime_version"`
 	Terminals      []HubTerminalInventoryItem `json:"terminals"`
-	Signature      AgentRegistrationSignature `json:"signature,omitempty"`
-}
-
-type AgentRegistrationSignature struct {
-	Algorithm string `json:"algorithm"`
-	Nonce     string `json:"nonce"`
-	Timestamp int64  `json:"timestamp"`
-	Value     string `json:"value"`
 }
 
 type RTCIceServerConfig struct {
@@ -69,24 +59,12 @@ type HubHeartbeatResponse struct {
 }
 
 type SignalingOffer struct {
-	SessionID          string          `json:"session_id"`
-	TicketID           string          `json:"ticket_id"`
-	DeviceID           string          `json:"device_id"`
-	TerminalID         string          `json:"terminal_id"`
-	SDP                string          `json:"sdp"`
-	ICECandidates      []string        `json:"ice_candidates"`
-	RTCConfig          RTCConfig       `json:"rtc_config,omitempty"`
-	AllowRelay         bool            `json:"allow_relay"`
-	AllowRelayTransfer bool            `json:"allow_relay_transfer"`
-	AppCertificate     json.RawMessage `json:"app_certificate,omitempty"`
-	Signature          OfferSignature  `json:"signature,omitempty"`
-}
-
-type OfferSignature struct {
-	Algorithm string `json:"algorithm"`
-	Nonce     string `json:"nonce"`
-	Timestamp int64  `json:"timestamp"`
-	Value     string `json:"value"`
+	SessionID    string   `json:"session_id"`
+	MachineID    string   `json:"machine_id"`
+	TerminalID   string   `json:"terminal_id,omitempty"`
+	SDP          string   `json:"sdp"`
+	Candidates   []string `json:"ice_candidates,omitempty"`
+	SessionToken string   `json:"session_token"`
 }
 
 type SignalingAnswer struct {
@@ -119,7 +97,6 @@ type PairingClaim struct {
 	PairSecret            string   `json:"pair_secret"`
 	AppDeviceID           string   `json:"app_device_id"`
 	AppName               string   `json:"app_name"`
-	AppPublicKey          string   `json:"app_public_key"`
 	RequestedCapabilities []string `json:"requested_capabilities"`
 }
 
@@ -134,13 +111,12 @@ type PairingPollResponse struct {
 }
 
 type PairingResult struct {
-	ClaimID          string          `json:"claim_id"`
-	MachineID        string          `json:"machine_id"`
-	MachineName      string          `json:"machine_name,omitempty"`
-	MachinePublicKey string          `json:"machine_public_key,omitempty"`
-	AppCertificate   json.RawMessage `json:"app_certificate,omitempty"`
-	ExpiresAt        string          `json:"expires_at,omitempty"`
-	Error            string          `json:"error,omitempty"`
+	ClaimID      string `json:"claim_id"`
+	MachineID    string `json:"machine_id"`
+	MachineName  string `json:"machine_name,omitempty"`
+	SessionToken string `json:"session_token,omitempty"`
+	ExpiresAt    string `json:"expires_at,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
 type SubmitPairingResultRequest struct {

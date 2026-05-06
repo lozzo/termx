@@ -7,8 +7,6 @@ import type {
   RtcEvent,
   RtcJsonRpcChannel,
   RtcSession,
-  RtcSessionAnswerTarget,
-  RtcSessionAnswerer,
   RtcSessionDescription,
   RtcSessionNegotiator,
   RtcSessionNegotiationTarget,
@@ -32,7 +30,7 @@ export interface BrowserRtcSessionLifecycle {
   handleAppResume(): Promise<boolean>
 }
 
-export type BrowserRtcConnectedSession = RtcSession & RtcSessionNegotiator & RtcSessionAnswerer & RtcSessionCapabilityUpdater & BrowserRtcSessionLifecycle
+export type BrowserRtcConnectedSession = RtcSession & RtcSessionNegotiator & RtcSessionCapabilityUpdater & BrowserRtcSessionLifecycle
 
 export interface RTCPeerConnectionLike {
   localDescription: RTCSessionDescriptionInit | null
@@ -79,7 +77,6 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   private connectionId = ''
   private path: ConnectionPath | undefined
   private terminalId: string | undefined
-  private dataChannelRole: 'offerer' | 'answerer' | null = null
   private relayInUse = false
   private apiChannel: RTCDataChannelLike | null = null
   private apiJsonChannel: RtcJsonRpcChannel | null = null
@@ -98,10 +95,6 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   private heartbeatFailCount = 0
   private lastRttMs = 0
   private networkChangeCleanup: (() => void) | null = null
-  private readonly incomingWaiters = new Map<string, Array<{
-    resolve: (channel: RTCDataChannelLike) => void
-    reject: (err: Error) => void
-  }>>()
   private capabilities: ConnectionCapabilities = {
     terminalAllowed: true,
     apiAllowed: true,
@@ -124,7 +117,6 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     this.connectionId = sessionId
     this.path = input.path
     this.terminalId = input.terminalId ?? this.options.terminalId
-    this.dataChannelRole = 'offerer'
     if (input.terminalId) {
       await this.ensureTerminalChannel(input.terminalId)
     }
@@ -152,36 +144,6 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     this.markReadyForTraffic()
   }
 
-  async acceptOffer(input: RtcSessionAnswerTarget): Promise<{ sessionId: string; description: RtcSessionDescription }> {
-    this.assertTarget(input.machineId, input.terminalId)
-    const pc = (this.options.peerConnectionFactory ?? ((configuration?: RTCConfiguration) => new RTCPeerConnection(configuration)))(
-      peerConnectionConfiguration(input.iceServers),
-    )
-    this.pc = pc
-    this.setupConnectionStateHandlers(pc)
-    this.connectionId = input.sessionId
-    this.path = input.path
-    this.terminalId = input.terminalId ?? this.options.terminalId
-    this.dataChannelRole = 'answerer'
-    this.relayInUse = input.relayInUse === true
-    this.updateConnectionCapabilities(capabilitiesForAnsweredOffer(input))
-    pc.addEventListener?.('datachannel', (event) => {
-      const channel = (event as RTCDataChannelEvent).channel as RTCDataChannelLike | undefined
-      if (channel) this.registerIncomingChannel(channel)
-    })
-    await pc.setRemoteDescription(input.description)
-    const answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-    await waitForICEGatheringComplete(pc, this.options.iceGatheringTimeoutMs)
-    return {
-      sessionId: input.sessionId,
-      description: {
-        type: 'answer',
-        sdp: pc.localDescription?.sdp ?? answer.sdp ?? '',
-      },
-    }
-  }
-
   async disconnect(): Promise<void> {
     await this.closeInternal(new Error('browser WebRTC session disconnected'), false)
   }
@@ -202,9 +164,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     if (!this.capabilities.fileTransferAllowed) {
       throw new Error(this.capabilities.denialReason ?? 'file transfer is not allowed by connection policy')
     }
-    const channel = this.dataChannelRole === 'answerer'
-      ? await this.waitForIncomingChannel(`file:${transferId}`)
-      : this.openRTCChannel(`file:${transferId}`)
+    const channel = this.openRTCChannel(`file:${transferId}`)
     this.fileChannels.set(transferId, channel)
     await waitChannelOpen(channel)
     return toBinaryChannel(channel)
@@ -276,9 +236,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   private async ensureTerminalChannel(terminalId: string): Promise<RTCDataChannelLike> {
     const existing = this.terminalChannels.get(terminalId)
     if (existing) return existing
-    const channel = this.dataChannelRole === 'answerer'
-      ? await this.waitForIncomingChannel(`terminal:${terminalId}`)
-      : this.openRTCChannel(`terminal:${terminalId}`)
+    const channel = this.openRTCChannel(`terminal:${terminalId}`)
     return this.registerTerminalChannel(terminalId, channel)
   }
 
@@ -286,18 +244,14 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     if (this.apiChannel && this.apiChannel.readyState !== 'closed') return this.apiChannel
     this.apiChannel = null
     this.apiJsonChannel = null
-    this.apiChannel = this.dataChannelRole === 'answerer'
-      ? await this.waitForIncomingChannel('api')
-      : this.openRTCChannel('api')
+    this.apiChannel = this.openRTCChannel('api')
     this.attachAPIChannelLifecycle(this.apiChannel)
     return this.apiChannel
   }
 
   private async ensureEventsChannel(): Promise<RTCDataChannelLike> {
     if (this.eventsChannel) return this.eventsChannel
-    this.eventsChannel = this.dataChannelRole === 'answerer'
-      ? await this.waitForIncomingChannel('events')
-      : this.openRTCChannel('events')
+    this.eventsChannel = this.openRTCChannel('events')
     this.eventsChannel.binaryType = 'arraybuffer'
     this.attachEventsChannelListener(this.eventsChannel)
     return this.eventsChannel
@@ -341,27 +295,6 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     channel.addEventListener('open', send, { once: true })
   }
 
-  private registerIncomingChannel(channel: RTCDataChannelLike): void {
-    if (channel.label === 'api') {
-      this.apiChannel = channel
-      this.apiJsonChannel = null
-      this.attachAPIChannelLifecycle(channel)
-    } else if (channel.label === 'events') {
-      channel.binaryType = 'arraybuffer'
-      this.eventsChannel = channel
-      this.attachEventsChannelListener(channel)
-      if (this.eventHandlers.size > 0) this.sendEventsSubscribe(channel)
-    } else if (channel.label.startsWith('terminal:')) {
-      this.registerTerminalChannel(channel.label.slice('terminal:'.length), channel)
-    } else if (channel.label.startsWith('file:')) {
-      this.fileChannels.set(channel.label.slice('file:'.length), channel)
-    }
-    const waiters = this.incomingWaiters.get(channel.label)
-    if (!waiters) return
-    this.incomingWaiters.delete(channel.label)
-    for (const waiter of waiters) waiter.resolve(channel)
-  }
-
   private registerTerminalChannel(terminalId: string, channel: RTCDataChannelLike): RTCDataChannelLike {
     channel.binaryType = 'arraybuffer'
     this.terminalChannels.set(terminalId, channel)
@@ -369,32 +302,6 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
       this.terminalChannels.delete(terminalId)
     })
     return channel
-  }
-
-  private waitForIncomingChannel(label: string): Promise<RTCDataChannelLike> {
-    if (!this.pc) throw new Error('browser WebRTC session is not connected')
-    if (label === 'api' && this.apiChannel) return Promise.resolve(this.apiChannel)
-    if (label === 'events' && this.eventsChannel) return Promise.resolve(this.eventsChannel)
-    if (label.startsWith('terminal:')) {
-      const channel = this.terminalChannels.get(label.slice('terminal:'.length))
-      if (channel) return Promise.resolve(channel)
-    }
-    if (label.startsWith('file:')) {
-      const channel = this.fileChannels.get(label.slice('file:'.length))
-      if (channel) return Promise.resolve(channel)
-    }
-    return new Promise((resolve, reject) => {
-      const waiters = this.incomingWaiters.get(label) ?? []
-      waiters.push({ resolve, reject })
-      this.incomingWaiters.set(label, waiters)
-    })
-  }
-
-  private rejectIncomingWaiters(err: Error): void {
-    for (const waiters of this.incomingWaiters.values()) {
-      for (const waiter of waiters) waiter.reject(err)
-    }
-    this.incomingWaiters.clear()
   }
 
   private setupConnectionStateHandlers(pc: RTCPeerConnectionLike): void {
@@ -568,7 +475,6 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     this.clearDisconnectGrace()
     this.stopHeartbeat()
     this.pc = null
-    this.dataChannelRole = null
     this.apiChannel = null
     this.apiJsonChannel = null
     this.eventsChannel = null
@@ -582,7 +488,6 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     eventsChannel?.close()
     await pc?.close()
     this.eventHandlers.clear()
-    this.rejectIncomingWaiters(err)
     this.disconnecting = false
     if (notify) {
       for (const handler of Array.from(this.disconnectHandlers)) handler()
@@ -608,23 +513,6 @@ function peerConnectionConfiguration(iceServers: RtcSessionNegotiationTarget['ic
       ...(server.username !== undefined ? { username: server.username } : {}),
       ...(server.credential !== undefined ? { credential: server.credential } : {}),
     })),
-  }
-}
-
-function capabilitiesForAnsweredOffer(input: RtcSessionAnswerTarget): ConnectionCapabilities {
-  const relayInUse = input.relayInUse === true
-  return {
-    terminalAllowed: true,
-    apiAllowed: true,
-    eventsAllowed: true,
-    fileTransferAllowed: relayInUse
-      ? input.relayPolicy?.allowRelayTransfer === true
-      : true,
-    terminalManagementAllowed: true,
-    relayInUse,
-    ...relayInUse && input.relayPolicy?.allowRelayTransfer === false
-      ? { denialReason: 'managed relay policy blocks file transfer' }
-      : {},
   }
 }
 

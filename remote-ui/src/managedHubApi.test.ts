@@ -40,20 +40,13 @@ describe('ManagedHubApi', () => {
     })
 
     const session = await api.createSession({
-      connectTicket: 'ticket-1',
       machineId: 'machine-1',
       terminalId: 'terminal-1',
-      appCertificate: { payload: { machine_id: 'machine-1' }, signature: 'cert-sig' },
+      sessionToken: 'session-token-1',
       offer: {
         sessionId: 'rtc-managed-1',
         sdp: 'offer-sdp',
         iceCandidates: ['candidate:offer 1 udp 1 192.0.2.1 1 typ host'],
-      },
-      signature: {
-        algorithm: 'ed25519',
-        nonce: 'nonce-1',
-        timestamp: 1770000000,
-        value: 'offer-sig',
       },
     })
 
@@ -85,26 +78,19 @@ describe('ManagedHubApi', () => {
         'content-type': 'application/json',
       },
       body: {
-        connect_ticket: 'ticket-1',
         machine_id: 'machine-1',
         terminal_id: 'terminal-1',
-        app_certificate: { payload: { machine_id: 'machine-1' }, signature: 'cert-sig' },
+        session_token: 'session-token-1',
         offer: {
           session_id: 'rtc-managed-1',
           sdp: 'offer-sdp',
           ice_candidates: ['candidate:offer 1 udp 1 192.0.2.1 1 typ host'],
         },
-        signature: {
-          algorithm: 'ed25519',
-          nonce: 'nonce-1',
-          timestamp: 1770000000,
-          value: 'offer-sig',
-        },
       },
     }])
   })
 
-  it('preserves offer SDP exactly so agent-side signature verification sees the signed payload', async () => {
+  it('preserves offer SDP exactly while sending the session token separately', async () => {
     const fetch = new RecordingFetch([
       jsonResponse(202, {
         session_id: 'rtc-managed-1',
@@ -121,23 +107,17 @@ describe('ManagedHubApi', () => {
     const signedSDP = 'v=0\r\ns=-\r\n'
 
     await api.createSession({
-      connectTicket: 'ticket-1',
       machineId: 'machine-1',
-      appCertificate: { payload: { machine_id: 'machine-1' } },
+      sessionToken: 'session-token-1',
       offer: {
         sessionId: 'rtc-managed-1',
         sdp: signedSDP,
         iceCandidates: [],
       },
-      signature: {
-        algorithm: 'ed25519',
-        nonce: 'nonce-1',
-        timestamp: 1770000000,
-        value: 'offer-sig',
-      },
     })
 
     expect(fetch.requests[0]?.body).toMatchObject({
+      session_token: 'session-token-1',
       offer: {
         sdp: signedSDP,
       },
@@ -200,7 +180,6 @@ describe('ManagedHubApi', () => {
     })
     await expect(api.pollSessionAnswer({
       sessionId: 'rtc-managed-1',
-      connectTicket: 'ticket-1',
       machineId: 'machine-1',
     })).resolves.toMatchObject({
       sessionId: 'rtc-managed-1',
@@ -214,7 +193,6 @@ describe('ManagedHubApi', () => {
       method: 'POST',
       url: 'https://hub.termx.test/api/v1/sessions/rtc-managed-1/answer',
       body: {
-        connect_ticket: 'ticket-1',
         machine_id: 'machine-1',
       },
     })
@@ -260,13 +238,12 @@ describe('ManagedHubApi', () => {
       },
     })
     expect(fetch.requests[0]?.body).toMatchObject({
-      connect_ticket: 'ticket-1',
       machine_id: 'machine-1',
       terminal_id: '',
     })
   })
 
-  it('requires a connect ticket before making a Hub request', async () => {
+  it('requires a session token before making a Hub request', async () => {
     const fetch = new RecordingFetch([])
     const api = createManagedHubApi({
       baseUrl: 'https://hub.termx.test',
@@ -275,8 +252,8 @@ describe('ManagedHubApi', () => {
 
     await expect(api.createSession({
       ...validSessionInput(),
-      connectTicket: ' ',
-    })).rejects.toThrow(/connect ticket.*required/i)
+      sessionToken: ' ',
+    })).rejects.toThrow(/session_token.*required/i)
     expect(fetch.requests).toEqual([])
   })
 
@@ -284,8 +261,8 @@ describe('ManagedHubApi', () => {
     const fetch = new RecordingFetch([
       jsonResponse(403, {
         error: {
-          code: 'managed_ticket_rejected',
-          message: 'managed ticket expired',
+          code: 'managed_session_rejected',
+          message: 'managed session expired',
         },
       }),
     ])
@@ -294,7 +271,7 @@ describe('ManagedHubApi', () => {
       fetch: fetch.fetch,
     })
 
-    await expect(api.createSession(validSessionInput())).rejects.toThrow(/managed_ticket_rejected.*expired/i)
+    await expect(api.createSession(validSessionInput())).rejects.toThrow(/managed_session_rejected.*expired/i)
   })
 
   it('claims a pairing code through the Hub while leaving secret validation to the agent', async () => {
@@ -303,14 +280,7 @@ describe('ManagedHubApi', () => {
         claim_id: 'claim-1',
         machine_id: 'machine-1',
         machine_name: 'RedmiBook',
-        machine_public_key: 'machine-public',
-        app_certificate: {
-          payload: {
-            machine_id: 'machine-1',
-            app_public_key: 'AQIDBA==',
-          },
-          signature: 'machine-sig',
-        },
+        session_token: 'session-token-pair',
         expires_at: '2027-05-04T10:30:00Z',
       }),
     ])
@@ -325,14 +295,12 @@ describe('ManagedHubApi', () => {
       pairSecret: 'pair-secret-1',
       appDeviceId: 'appweb-1',
       appName: 'TermX Remote App',
-      appPublicKey: 'AQIDBA==',
       requestedCapabilities: ['terminal', 'file_manager', 'terminal_management'],
     })).resolves.toEqual({
       claimId: 'claim-1',
       machineId: 'machine-1',
       machineName: 'RedmiBook',
-      machinePublicKey: 'machine-public',
-      appCertificate: '{"payload":{"machine_id":"machine-1","app_public_key":"AQIDBA=="},"signature":"machine-sig"}',
+      sessionToken: 'session-token-pair',
       expiresAt: '2027-05-04T10:30:00Z',
     })
     expect(fetch.requests).toEqual([{
@@ -347,7 +315,6 @@ describe('ManagedHubApi', () => {
         pair_secret: 'pair-secret-1',
         app_device_id: 'appweb-1',
         app_name: 'TermX Remote App',
-        app_public_key: 'AQIDBA==',
         requested_capabilities: ['terminal', 'file_manager', 'terminal_management'],
       },
     }])
@@ -372,7 +339,6 @@ describe('ManagedHubApi', () => {
       pairSecret: 'pair-secret-1',
       appDeviceId: 'appweb-1',
       appName: 'TermX Remote App',
-      appPublicKey: 'AQIDBA==',
       requestedCapabilities: ['terminal'],
     })).rejects.toThrow(/pairing is pending.*agent is online/i)
   })
@@ -415,20 +381,13 @@ describe('ManagedHubApi', () => {
 
 function validSessionInput() {
   return {
-    connectTicket: 'ticket-1',
     machineId: 'machine-1',
     terminalId: 'terminal-1',
-    appCertificate: { payload: { machine_id: 'machine-1' }, signature: 'cert-sig' },
+    sessionToken: 'session-token-1',
     offer: {
       sessionId: 'rtc-managed-1',
       sdp: 'offer-sdp',
       iceCandidates: [],
-    },
-    signature: {
-      algorithm: 'ed25519',
-      nonce: 'nonce-1',
-      timestamp: 1770000000,
-      value: 'offer-sig',
     },
   }
 }

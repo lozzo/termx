@@ -1,5 +1,15 @@
-import type { ManagedIceServer, ManagedRelayPolicy } from './managedRtcConnector'
 import type { RemoteRuntimeFetch, RtcConnectOptions, RtcSessionDescription } from './transport'
+
+export interface ManagedRelayPolicy {
+  allowRelay: boolean
+  allowRelayTransfer: boolean
+}
+
+export interface ManagedIceServer {
+  urls: string[]
+  username?: string | undefined
+  credential?: string | undefined
+}
 
 export type ManagedHubFetch = RemoteRuntimeFetch
 
@@ -16,16 +26,14 @@ export interface ManagedHubApi {
 }
 
 export interface CreateManagedHubSessionInput {
-  connectTicket: string
   machineId: string
   terminalId?: string | undefined
-  appCertificate: unknown
+  sessionToken: string
   offer: {
     sessionId: string
     sdp: string
     iceCandidates?: string[] | undefined
   }
-  signature: unknown
 }
 
 export interface ManagedHubSession {
@@ -52,7 +60,6 @@ export type ManagedHubCreateSessionResult = ManagedHubSession | ManagedHubPendin
 
 export interface PollManagedHubSessionAnswerInput {
   sessionId: string
-  connectTicket: string
   machineId: string
 }
 
@@ -62,7 +69,6 @@ export interface ManagedHubPairInput {
   pairSecret: string
   appDeviceId: string
   appName: string
-  appPublicKey: string
   requestedCapabilities: string[]
 }
 
@@ -70,8 +76,7 @@ export interface ManagedHubPairResult {
   claimId: string
   machineId: string
   machineName?: string | undefined
-  machinePublicKey?: string | undefined
-  appCertificate: string
+  sessionToken: string
   expiresAt: string
 }
 
@@ -97,24 +102,22 @@ class ManagedHubHttpApi implements ManagedHubApi {
   }
 
   async createSession(input: CreateManagedHubSessionInput, options: RtcConnectOptions = {}): Promise<ManagedHubCreateSessionResult> {
-    const connectTicket = requiredString(input.connectTicket, 'connect ticket')
     const machineId = requiredString(input.machineId, 'machine_id')
     const terminalId = optionalTrimmedString(input.terminalId)
+    const sessionToken = requiredString(input.sessionToken, 'session_token')
     const sessionId = requiredString(input.offer.sessionId, 'offer session_id')
     const sdp = requiredPayloadString(input.offer.sdp, 'offer sdp')
     const response = await this.requestJSON('POST', '/api/v1/sessions', {
       signal: options.signal,
       body: {
-        connect_ticket: connectTicket,
         machine_id: machineId,
         terminal_id: terminalId,
-        app_certificate: input.appCertificate,
+        session_token: sessionToken,
         offer: {
           session_id: sessionId,
           sdp,
           ice_candidates: input.offer.iceCandidates ?? [],
         },
-        signature: input.signature,
       },
     })
     assertManagedPath(response)
@@ -132,12 +135,10 @@ class ManagedHubHttpApi implements ManagedHubApi {
 
   async pollSessionAnswer(input: PollManagedHubSessionAnswerInput, options: RtcConnectOptions = {}): Promise<ManagedHubSession> {
     const sessionId = requiredString(input.sessionId, 'session_id')
-    const connectTicket = requiredString(input.connectTicket, 'connect ticket')
     const machineId = requiredString(input.machineId, 'machine_id')
     const response = await this.requestJSON('POST', `/api/v1/sessions/${encodeURIComponent(sessionId)}/answer`, {
       signal: options.signal,
       body: {
-        connect_ticket: connectTicket,
         machine_id: machineId,
       },
     })
@@ -154,20 +155,18 @@ class ManagedHubHttpApi implements ManagedHubApi {
         pair_secret: requiredString(input.pairSecret, 'pair_secret'),
         app_device_id: requiredString(input.appDeviceId, 'app_device_id'),
         app_name: requiredString(input.appName, 'app_name'),
-        app_public_key: requiredString(input.appPublicKey, 'app_public_key'),
         requested_capabilities: input.requestedCapabilities,
       },
     })
     if (optionalBooleanField(response, 'pending') === true) {
       throw new Error('Managed Hub pairing is pending; make sure the TermX agent is online, connected to this Hub, and then try Pair Device again')
     }
-    const appCertificate = record(response.app_certificate, 'Managed Hub pairing app_certificate')
+    const sessionToken = requiredString(response.session_token, 'session_token')
     return {
       claimId: stringField(response, 'claim_id'),
       machineId: stringField(response, 'machine_id'),
       ...(optionalStringField(response, 'machine_name') ? { machineName: optionalStringField(response, 'machine_name') } : {}),
-      ...(optionalStringField(response, 'machine_public_key') ? { machinePublicKey: optionalStringField(response, 'machine_public_key') } : {}),
-      appCertificate: JSON.stringify(appCertificate),
+      sessionToken,
       expiresAt: stringField(response, 'expires_at'),
     }
   }

@@ -3,7 +3,6 @@ import type { PairingPayload } from './pairingPayload'
 import type { ConnectionPath } from './transport'
 
 export interface StoredMachineRecord extends AppMachineRecord {
-  machinePublicKeyFingerprint?: string | undefined
   addresses: StoredMachineAddresses
   endpoints: StoredMachineEndpoints
   pairing?: StoredMachinePairing | undefined
@@ -32,10 +31,6 @@ export interface StoredMachinePairing {
 }
 
 export interface StoredAppBootstrap {
-  appCertificate?: string | undefined
-  appPublicKey?: string | undefined
-  appDeviceId?: string | undefined
-  appKeyRef?: string | undefined
 }
 
 export interface MachineStore {
@@ -85,9 +80,6 @@ export function createMachineStore(options: MachineStoreOptions): MachineStore {
         preferredPath: payload.preferredPath,
         ...(existing?.relayInUse !== undefined ? { relayInUse: existing.relayInUse } : {}),
         source: existing?.source ?? 'local',
-        ...(payload.machine.publicKeyFingerprint
-          ? { machinePublicKeyFingerprint: payload.machine.publicKeyFingerprint }
-          : {}),
         addresses: {
           local: payload.addresses.local,
           lan: payload.addresses.lan,
@@ -168,9 +160,6 @@ function normalizeStoredMachine(value: Record<string, unknown> | StoredMachineRe
       : {}),
     ...(typeof record.relayInUse === 'boolean' ? { relayInUse: record.relayInUse } : {}),
     source,
-    ...(optionalString(record.machinePublicKeyFingerprint)
-      ? { machinePublicKeyFingerprint: optionalString(record.machinePublicKeyFingerprint) }
-      : {}),
     addresses,
     endpoints,
     ...(record.pairing !== undefined ? { pairing: pairingField(record.pairing) } : {}),
@@ -209,13 +198,8 @@ function pairingField(value: unknown): StoredMachinePairing {
 }
 
 function appBootstrapField(value: unknown): StoredAppBootstrap {
-  const record = recordValue(value, 'stored app bootstrap')
-  return {
-    ...(optionalString(record.appCertificate) ? { appCertificate: optionalString(record.appCertificate) } : {}),
-    ...(optionalString(record.appPublicKey) ? { appPublicKey: optionalString(record.appPublicKey) } : {}),
-    ...(optionalString(record.appDeviceId) ? { appDeviceId: optionalString(record.appDeviceId) } : {}),
-    ...(optionalString(record.appKeyRef) ? { appKeyRef: optionalString(record.appKeyRef) } : {}),
-  }
+  recordValue(value, 'stored app bootstrap')
+  return {}
 }
 
 function rejectPrivateKeyMaterial(value: unknown): void {
@@ -259,7 +243,7 @@ function looksLikePrivateJwk(value: object): boolean {
 }
 
 function isEmptyBootstrap(value: StoredAppBootstrap): boolean {
-  return !value.appCertificate && !value.appPublicKey && !value.appDeviceId && !value.appKeyRef
+  return Object.keys(value).length === 0
 }
 
 function machineState(value: unknown): AppMachineState {

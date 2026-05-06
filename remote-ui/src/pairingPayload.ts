@@ -14,7 +14,6 @@ export interface PairingPayloadMachine {
   id: string
   name: string
   hostname?: string | undefined
-  publicKeyFingerprint?: string | undefined
 }
 
 export interface PairingPayloadAddresses {
@@ -36,10 +35,6 @@ export interface PairingPayloadPairing {
 }
 
 export interface PairingPayloadBootstrap {
-  appCertificate?: string | undefined
-  appPublicKey?: string | undefined
-  appDeviceId?: string | undefined
-  appKeyRef?: string | undefined
 }
 
 const allowedPaths: readonly ConnectionPath[] = ['local', 'public_p2p', 'managed']
@@ -86,16 +81,12 @@ function normalizeV2Payload(data: Record<string, unknown>): PairingPayload {
   const addresses = optionalRecord(data.addresses)
   const endpoints = optionalRecord(data.endpoints)
   const pairing = record(data.pairing, 'pairing payload pairing')
-  const bootstrap = optionalRecord(data.bootstrap)
   return {
     schemaVersion: 2,
     machine: {
       id: stringField(machine, 'id'),
       name: stringField(machine, 'name'),
       ...(optionalString(machine.hostname) ? { hostname: optionalString(machine.hostname) } : {}),
-      ...(optionalString(machine.public_key_fingerprint)
-        ? { publicKeyFingerprint: optionalString(machine.public_key_fingerprint) }
-        : {}),
     },
     addresses: {
       local: stringArrayField(addresses, 'local'),
@@ -108,7 +99,7 @@ function normalizeV2Payload(data: Record<string, unknown>): PairingPayload {
       secret: stringField(pairing, 'secret'),
       ...(optionalString(pairing.expires_at) ? { expiresAt: optionalString(pairing.expires_at) } : {}),
     },
-    bootstrap: bootstrapFromRecord(bootstrap),
+    bootstrap: {},
     preferredPath: connectionPath(optionalString(data.preferred_path) ?? 'local'),
   }
 }
@@ -123,9 +114,6 @@ function normalizeV1Payload(data: Record<string, unknown>): PairingPayload {
       id: stringField(data, 'machine_id'),
       name: optionalString(data.machine_name) ?? stringField(data, 'machine_id'),
       ...(optionalString(data.hostname) ? { hostname: optionalString(data.hostname) } : {}),
-      ...(optionalString(data.machine_public_key_fingerprint)
-        ? { publicKeyFingerprint: optionalString(data.machine_public_key_fingerprint) }
-        : {}),
     },
     addresses: {
       local: compactStrings([localRTCURL]),
@@ -142,12 +130,7 @@ function normalizeV1Payload(data: Record<string, unknown>): PairingPayload {
       secret: stringField(data, 'pair_secret'),
       ...(optionalString(data.expires_at) ? { expiresAt: optionalString(data.expires_at) } : {}),
     },
-    bootstrap: bootstrapFromRecord({
-      app_certificate: data.app_certificate,
-      app_public_key: data.app_public_key,
-      app_device_id: data.app_device_id,
-      app_key_ref: data.app_key_ref,
-    }),
+    bootstrap: {},
     preferredPath: connectionPath(optionalString(data.preferred_path) ?? 'local'),
   }
 }
@@ -157,15 +140,6 @@ function endpointsFromRecord(data: Record<string, unknown>): PairingPayloadEndpo
     ...(optionalString(data.web_control) ? { webControl: optionalString(data.web_control) } : {}),
     ...(optionalString(data.hub) ? { hub: optionalString(data.hub) } : {}),
     ...(optionalString(data.local_pairing) ? { localPairing: optionalString(data.local_pairing) } : {}),
-  }
-}
-
-function bootstrapFromRecord(data: Record<string, unknown>): PairingPayloadBootstrap {
-  return {
-    ...(optionalString(data.app_certificate) ? { appCertificate: optionalString(data.app_certificate) } : {}),
-    ...(optionalString(data.app_public_key) ? { appPublicKey: optionalString(data.app_public_key) } : {}),
-    ...(optionalString(data.app_device_id) ? { appDeviceId: optionalString(data.app_device_id) } : {}),
-    ...(optionalString(data.app_key_ref) ? { appKeyRef: optionalString(data.app_key_ref) } : {}),
   }
 }
 
