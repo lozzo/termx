@@ -13,16 +13,7 @@
 Use both mode when the same local daemon should expose a LAN local hub and also
 register through Web Control for managed access.
 
-1. Login to Web Control:
-
-   ```bash
-   termx remote login --server <web-control-url>
-   ```
-
-   The command opens the browser/device-code login flow and stores the access
-   token in the remote auth store, not in `termx.yaml`.
-
-2. Start the daemon:
+1. Start the daemon:
 
    ```bash
    termx daemon &
@@ -30,15 +21,18 @@ register through Web Control for managed access.
 
    Or run `termx daemon` in a separate terminal; it stays in the foreground.
 
-3. Enable both local and cloud remote paths:
+2. Enable both local and cloud remote paths:
 
    ```bash
-   termx remote enable --mode both --server <web-control-url> --token <access-token>
+   termx remote enable --mode both --server <web-control-url>
    ```
 
-   `--token` is required for `online` and `both` modes.
+   Without `--token`, the command opens the browser login flow, stores the
+   returned access token in the remote auth store, and keeps the raw token out
+   of `termx.yaml`. Use `--token <access-token>` only for automation, or
+   `--browser` to force a fresh browser login over any saved token.
 
-4. Inspect runtime state:
+3. Inspect runtime state:
 
    ```bash
    termx remote status
@@ -49,7 +43,7 @@ register through Web Control for managed access.
    cloud fields such as `control_url` / `hub_url`. In Web Control, the machine
    should become agent online after hub heartbeat.
 
-5. Run the local smoke checks after `termx remote status` shows `state: online`:
+4. Run the local smoke checks after `termx remote status` shows `state: online`:
 
    ```bash
    CONTROL_URL=http://localhost:12306 TERMX_TOKEN=$TERMX_TOKEN ./scripts/smoke-both.sh
@@ -58,7 +52,7 @@ register through Web Control for managed access.
    The script checks the local hub `/api/health`, validates `termx remote status
    --json`, and queries Web Control machines when `TERMX_TOKEN` is set.
 
-6. Open remote-ui for manual terminal verification:
+5. Open remote-ui for manual terminal verification:
 
    ```bash
    cd ../remote-ui

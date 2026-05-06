@@ -13,9 +13,11 @@ func TestTermxCLIBothModeDocsAndSmokeScript(t *testing.T) {
 	}
 	text := string(readme)
 	for _, want := range []string{
-		"termx remote login --server <web-control-url>",
 		"termx daemon",
 		"termx remote enable --mode both",
+		"termx remote enable --mode both --server <web-control-url>",
+		"Use `--token <access-token>` only for automation",
+		"`--browser` to force a fresh browser login",
 		"termx remote status",
 		"local_web_url",
 		"hub_url",

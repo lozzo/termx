@@ -1383,7 +1383,7 @@ func TestRemoteEnableBothPassesCloudDiscoveryToRunningLocalDaemon(t *testing.T) 
 	}
 }
 
-func TestRemoteEnableOnlineRequiresToken(t *testing.T) {
+func TestRemoteEnableOnlineUsesBrowserLoginWhenTokenMissing(t *testing.T) {
 	oldEnable := remoteLocalEnableClient
 	oldLogin := remoteLoginHTTPClient
 	oldStore := remoteAuthStorePath
@@ -1398,25 +1398,123 @@ func TestRemoteEnableOnlineRequiresToken(t *testing.T) {
 		t.Fatal("remote local enable client must not be called for cloud enable")
 		return nil, nil
 	}
+	authStore := filepath.Join(t.TempDir(), "remote-auth.json")
 	remoteAuthStorePath = func(configPath string) (string, error) {
-		t.Fatal("remote auth store must not be used when token is missing")
-		return "", nil
+		return authStore, nil
 	}
 	openBrowser = func(rawURL string) error {
-		t.Fatalf("browser must not open when token is missing: %s", rawURL)
+		t.Fatalf("--no-browser should prevent browser launch, got %s", rawURL)
 		return nil
 	}
-	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{}
+	var createdForControl string
+	var validatedToken string
+	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{
+		createBrowserLoginFunc: func(ctx context.Context, controlURL string, clientName string) (remoteBrowserLoginResult, error) {
+			createdForControl = controlURL
+			return remoteBrowserLoginResult{
+				BrowserLoginCode:        "enable-browser",
+				VerificationURIComplete: "https://control.example.test/device?user_code=ENABLE",
+				ExpiresAt:               time.Now().Add(time.Minute),
+				Interval:                time.Nanosecond,
+			}, nil
+		},
+		pollBrowserLoginFunc: func(ctx context.Context, controlURL string, browserLoginCode string) (remoteLoginAuthResult, bool, error) {
+			return remoteLoginAuthResult{
+				AccessToken:  "browser-secret",
+				RefreshToken: "browser-refresh",
+				User:         remoteLoginUser{Email: "browser@example.com"},
+			}, true, nil
+		},
+		meFunc: func(ctx context.Context, controlURL string, token string) (remoteLoginUser, error) {
+			validatedToken = token
+			return remoteLoginUser{Email: "browser@example.com"}, nil
+		},
+	}
 
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "online", "--server", "https://control.example.test", "--json"})
+	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "online", "--server", "https://control.example.test", "--no-browser", "--timeout", "100ms", "--json"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 
-	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "--token is required for mode \"online\"") {
-		t.Fatalf("expected missing token error, got %v", err)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("online enable returned error: %v", err)
+	}
+	if createdForControl != "https://control.example.test" {
+		t.Fatalf("expected browser login to use control URL, got %q", createdForControl)
+	}
+	if validatedToken != "browser-secret" {
+		t.Fatalf("expected browser token validation, got %q", validatedToken)
+	}
+	cfg, err := remoteConfigFromFileAndEnv(configPath)
+	if err != nil {
+		t.Fatalf("load browser enable config: %v", err)
+	}
+	if !cfg.Enabled || cfg.ControlURL != "https://control.example.test" || cfg.AccessToken != "browser-secret" {
+		t.Fatalf("unexpected online config after browser enable: %#v", cfg)
+	}
+}
+
+func TestRemoteEnableBrowserForcesFreshTokenOverSavedAuth(t *testing.T) {
+	oldLogin := remoteLoginHTTPClient
+	oldStore := remoteAuthStorePath
+	t.Cleanup(func() {
+		remoteLoginHTTPClient = oldLogin
+		remoteAuthStorePath = oldStore
+	})
+	authStore := filepath.Join(t.TempDir(), "remote-auth.json")
+	remoteAuthStorePath = func(configPath string) (string, error) {
+		return authStore, nil
+	}
+	if err := saveRemoteAuthRecord(authStore, remoteAuthRecord{
+		ControlURL:  "https://control.example.test",
+		AccessToken: "old-secret",
+	}); err != nil {
+		t.Fatalf("save old auth record: %v", err)
+	}
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	if err := ensureRemoteConfigBootstrap(configPath, "https://control.example.test", "", authStore, "online"); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	var validatedToken string
+	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{
+		createBrowserLoginFunc: func(ctx context.Context, controlURL string, clientName string) (remoteBrowserLoginResult, error) {
+			return remoteBrowserLoginResult{
+				BrowserLoginCode:        "enable-browser-refresh",
+				VerificationURIComplete: "https://control.example.test/device?user_code=REFRESH",
+				ExpiresAt:               time.Now().Add(time.Minute),
+				Interval:                time.Nanosecond,
+			}, nil
+		},
+		pollBrowserLoginFunc: func(ctx context.Context, controlURL string, browserLoginCode string) (remoteLoginAuthResult, bool, error) {
+			return remoteLoginAuthResult{
+				AccessToken:  "fresh-secret",
+				RefreshToken: "fresh-refresh",
+				User:         remoteLoginUser{Email: "fresh@example.com"},
+			}, true, nil
+		},
+		meFunc: func(ctx context.Context, controlURL string, token string) (remoteLoginUser, error) {
+			validatedToken = token
+			return remoteLoginUser{Email: "fresh@example.com"}, nil
+		},
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "online", "--browser", "--no-browser", "--timeout", "100ms"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("browser refresh enable returned error: %v", err)
+	}
+	if validatedToken != "fresh-secret" {
+		t.Fatalf("expected fresh token validation, got %q", validatedToken)
+	}
+	cfg, err := remoteConfigFromFileAndEnv(configPath)
+	if err != nil {
+		t.Fatalf("load refreshed config: %v", err)
+	}
+	if cfg.AccessToken != "fresh-secret" {
+		t.Fatalf("expected fresh token in auth store, got %#v", cfg)
 	}
 }
 

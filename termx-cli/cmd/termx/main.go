@@ -525,6 +525,8 @@ func remoteEnableCommand(socket *string, logFile *string, configPath *string) *c
 	var token string
 	var tokenEnv string
 	var tokenFile string
+	var browser bool
+	var browserTimeout time.Duration
 	var noBrowser bool
 	cmd := &cobra.Command{
 		Use:   "enable",
@@ -534,18 +536,22 @@ func remoteEnableCommand(socket *string, logFile *string, configPath *string) *c
 			if mode != "local" && mode != "online" && mode != "both" {
 				return fmt.Errorf("--mode must be local, online, or both")
 			}
+			if mode == "local" && browser {
+				return fmt.Errorf("--browser is only valid for online or both mode")
+			}
+			hasTokenSource := strings.TrimSpace(token) != "" || strings.TrimSpace(tokenEnv) != "" || strings.TrimSpace(tokenFile) != ""
 			resolvedToken, err := resolveSecretFlag(token, tokenEnv, tokenFile)
 			if err != nil {
 				return err
 			}
 			token = strings.TrimSpace(resolvedToken)
-			if mode != "local" && token == "" {
-				return fmt.Errorf("--token is required for mode %q", mode)
+			if browser && hasTokenSource {
+				return fmt.Errorf("--browser cannot be used with --token, --token-env, or --token-file")
 			}
 			controlURL = firstNonEmpty(serverURL, controlURL)
 			switch mode {
 			case "both":
-				onlineRuntime, err := runRemoteOnlineEnable(cmd, configPath, controlURL, hubURL, token, noBrowser, outputJSON, mode)
+				onlineRuntime, err := runRemoteOnlineEnable(cmd, configPath, controlURL, hubURL, token, browser, noBrowser, browserTimeout, outputJSON, mode)
 				if err != nil {
 					return err
 				}
@@ -556,7 +562,7 @@ func remoteEnableCommand(socket *string, logFile *string, configPath *string) *c
 				}
 				return runRemoteLocalEnable(cmd, socket, logFile, addr, iceTCPAddr, remoteprotocol.Config{Enabled: true, Mode: mode}, outputJSON)
 			case "online":
-				_, err := runRemoteOnlineEnable(cmd, configPath, controlURL, hubURL, token, noBrowser, outputJSON, mode)
+				_, err := runRemoteOnlineEnable(cmd, configPath, controlURL, hubURL, token, browser, noBrowser, browserTimeout, outputJSON, mode)
 				return err
 			default:
 				return fmt.Errorf("--mode must be local, online, or both")
@@ -569,9 +575,11 @@ func remoteEnableCommand(socket *string, logFile *string, configPath *string) *c
 	cmd.Flags().StringVar(&serverURL, "server", "", "Web Control URL")
 	cmd.Flags().StringVar(&controlURL, "control-url", "", "Web Control URL for cloud remote")
 	cmd.Flags().StringVar(&hubURL, "hub-url", "", "optional explicit Hub URL; normally discovered from Web Control")
-	cmd.Flags().StringVar(&token, "token", "", "access token (required for online/both mode)")
+	cmd.Flags().StringVar(&token, "token", "", "Web Control access token for automation")
 	cmd.Flags().StringVar(&tokenEnv, "token-env", "", "environment variable containing the Web Control connection key for automation")
 	cmd.Flags().StringVar(&tokenFile, "token-file", "", "file containing the Web Control connection key for automation")
+	cmd.Flags().BoolVar(&browser, "browser", false, "force browser login instead of using a saved token")
+	cmd.Flags().DurationVar(&browserTimeout, "timeout", 5*time.Minute, "browser login timeout")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the browser login URL without opening it")
 	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
 	_ = cmd.Flags().MarkHidden("control-url")
@@ -792,8 +800,8 @@ func runRemoteLocalEnable(cmd *cobra.Command, socket *string, logFile *string, a
 	return nil
 }
 
-func runRemoteOnlineEnable(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, noBrowser bool, outputJSON bool, mode string) (remoteprotocol.Config, error) {
-	return runRemoteCloudEnableWithToken(cmd, configPath, controlURL, hubURL, token, noBrowser, outputJSON, mode)
+func runRemoteOnlineEnable(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, forceBrowser bool, noBrowser bool, browserTimeout time.Duration, outputJSON bool, mode string) (remoteprotocol.Config, error) {
+	return runRemoteCloudEnableWithToken(cmd, configPath, controlURL, hubURL, token, forceBrowser, noBrowser, browserTimeout, outputJSON, mode)
 }
 
 func runRemoteCloudEnable(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, tokenEnv string, tokenFile string, noBrowser bool, outputJSON bool) (remoteprotocol.Config, error) {
@@ -801,10 +809,10 @@ func runRemoteCloudEnable(cmd *cobra.Command, configPath *string, controlURL str
 	if err != nil {
 		return remoteprotocol.Config{}, err
 	}
-	return runRemoteCloudEnableWithToken(cmd, configPath, controlURL, hubURL, resolvedToken, noBrowser, outputJSON, "online")
+	return runRemoteCloudEnableWithToken(cmd, configPath, controlURL, hubURL, resolvedToken, false, noBrowser, 5*time.Minute, outputJSON, "online")
 }
 
-func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, noBrowser bool, outputJSON bool, mode string) (remoteprotocol.Config, error) {
+func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, forceBrowser bool, noBrowser bool, browserTimeout time.Duration, outputJSON bool, mode string) (remoteprotocol.Config, error) {
 	controlURL = strings.TrimSpace(controlURL)
 	hubURL = strings.TrimSpace(hubURL)
 	token = strings.TrimSpace(token)
@@ -812,7 +820,7 @@ func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, contr
 	if mode == "" {
 		mode = "online"
 	}
-	if controlURL == "" || token == "" {
+	if controlURL == "" || hubURL == "" || (!forceBrowser && token == "") {
 		cfg, cfgErr := remoteConfigFromFileAndEnv(*configPath)
 		if cfgErr != nil {
 			return remoteprotocol.Config{}, cfgErr
@@ -823,7 +831,7 @@ func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, contr
 		if hubURL == "" {
 			hubURL = cfg.HubURL
 		}
-		if token == "" {
+		if !forceBrowser && token == "" {
 			token = cfg.AccessToken
 		}
 	}
@@ -831,7 +839,7 @@ func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, contr
 		return remoteprotocol.Config{}, fmt.Errorf("--server is required for online remote enable")
 	}
 	var refreshToken string
-	if token == "" {
+	if forceBrowser || token == "" {
 		created, err := remoteLoginHTTPClient.CreateBrowserLogin(cmd.Context(), controlURL, "termx local service")
 		if err != nil {
 			return remoteprotocol.Config{}, err
@@ -840,7 +848,7 @@ func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, contr
 		if outputJSON {
 			progress = cmd.ErrOrStderr()
 		}
-		auth, err := completeRemoteBrowserLogin(cmd, controlURL, created, 5*time.Minute, !noBrowser, progress)
+		auth, err := completeRemoteBrowserLogin(cmd, controlURL, created, browserTimeout, !noBrowser, progress)
 		if err != nil {
 			return remoteprotocol.Config{}, err
 		}
