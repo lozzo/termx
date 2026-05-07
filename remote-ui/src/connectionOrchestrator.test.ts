@@ -115,10 +115,22 @@ describe('ConnectionOrchestrator', () => {
     })).rejects.toThrow(/all connection paths failed/i)
 
     const failedSnapshot = snapshots.find((snapshot) => snapshot.stage === 'failed')
-    expect(failedSnapshot?.errors).toEqual([{
-      path: 'local',
-      message: 'http://127.0.0.1:18888 rejected offer',
-    }])
+    expect(failedSnapshot?.errors).toEqual([
+      {
+        path: 'local',
+        message: 'http://127.0.0.1:18888 rejected offer',
+      },
+      {
+        path: 'managed',
+        hubUrl: 'https://hub-1.termx.test',
+        message: 'https://hub-1.termx.test rejected offer',
+      },
+      {
+        path: 'managed',
+        hubUrl: 'https://hub-2.termx.test',
+        message: 'https://hub-2.termx.test rejected offer',
+      },
+    ])
     expect(logs).toEqual(expect.arrayContaining([
       expect.objectContaining({ scope: 'orchestrator', event: 'path_attempt_failed', path: 'local', message: 'http://127.0.0.1:18888 rejected offer' }),
       expect.objectContaining({ scope: 'orchestrator', event: 'managed_hub_attempt_failed', path: 'managed', hubUrl: 'https://hub-1.termx.test', message: 'https://hub-1.termx.test rejected offer' }),

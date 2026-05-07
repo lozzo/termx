@@ -19,6 +19,7 @@ export type ConnectionAttemptStage =
 export interface ConnectionAttemptError {
   path: ConnectionPath
   message: string
+  hubUrl?: string | undefined
 }
 
 export interface ConnectionAttemptSnapshot {
@@ -109,7 +110,7 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
         message: `Racing ${hubUrls.length} hub(s)`,
       })
       const winner = await raceConnections(
-        hubUrls.map((hubUrl, index) => () => this.connectManagedHub(input, hubUrl, connectOptions, index)),
+        hubUrls.map((hubUrl, index) => () => this.connectManagedHub(input, hubUrl, connectOptions, failures, index)),
         signal,
       )
       if (winner) {
@@ -259,6 +260,7 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
     input: ConnectionOrchestratorInput,
     hubUrl: string,
     options: RtcConnectOptions,
+    failures: ConnectionAttemptError[],
     index = 0,
   ): Promise<ConnectionOrchestratorResult> {
     if (!this.options.managedHubApiFactory || !this.options.managedHubRtcConnectorFactory) {
@@ -308,6 +310,7 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
         message: errorMessage(error),
         details: { index },
       })
+      this.recordManagedHubFailure(failures, hubUrl, error)
       throw error
     }
     try {
@@ -351,8 +354,17 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
         message: errorMessage(error),
         details: { index },
       })
+      this.recordManagedHubFailure(failures, hubUrl, error)
       throw error
     }
+  }
+
+  private recordManagedHubFailure(failures: ConnectionAttemptError[], hubUrl: string, error: unknown): void {
+    failures.push({
+      path: 'managed',
+      hubUrl,
+      message: errorMessage(error),
+    })
   }
 
   private async tryLocalWithTimeout(
