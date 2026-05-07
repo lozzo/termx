@@ -180,6 +180,15 @@ func writeNormalizedFrame(out *strings.Builder, frame string) {
 	}
 }
 
+func writeHostFramePayload(out *strings.Builder, frame string) {
+	if out == nil || frame == "" {
+		return
+	}
+	out.WriteString(hostAutoWrapOff)
+	writeNormalizedFrame(out, frame)
+	out.WriteString(hostAutoWrapOn)
+}
+
 func frameLikeWritePayload(p []byte) bool {
 	return strings.Trim(xansi.Strip(string(p)), "\r\n") != ""
 }

@@ -48,6 +48,20 @@ func IsStableNarrowTerminalSymbol(content string) bool {
 	return false
 }
 
+func IsPrivateUseCluster(content string) bool {
+	if content == "" || strings.IndexByte(content, '\x1b') >= 0 {
+		return false
+	}
+	runes := []rune(content)
+	if len(runes) != 1 {
+		return false
+	}
+	r := runes[0]
+	return (r >= 0xE000 && r <= 0xF8FF) ||
+		(r >= 0xF0000 && r <= 0xFFFFD) ||
+		(r >= 0x100000 && r <= 0x10FFFD)
+}
+
 func IsPrintableZeroWidthCluster(content string) bool {
 	if content == "" || strings.IndexByte(content, '\x1b') >= 0 {
 		return false
@@ -58,5 +72,6 @@ func IsPrintableZeroWidthCluster(content string) bool {
 func IsHostWidthAmbiguousCluster(content string, width int) bool {
 	return IsAmbiguousEmojiVariationSelectorCluster(content, width) ||
 		IsEastAsianAmbiguousWidthCluster(content) ||
-		IsPrintableZeroWidthCluster(content)
+		IsPrintableZeroWidthCluster(content) ||
+		IsPrivateUseCluster(content)
 }

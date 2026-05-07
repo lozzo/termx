@@ -18,6 +18,9 @@ func TestIsHostWidthAmbiguousCluster(t *testing.T) {
 	if !IsHostWidthAmbiguousCluster("é", 1) {
 		t.Fatal("expected East Asian ambiguous-width text to be treated as host-width ambiguous")
 	}
+	if !IsHostWidthAmbiguousCluster("\U000f0340", 1) {
+		t.Fatal("expected supplementary PUA icon to be treated as host-width ambiguous")
+	}
 	if IsHostWidthAmbiguousCluster("ok", 2) {
 		t.Fatal("expected ordinary ASCII text not to be treated as host-width ambiguous")
 	}
@@ -55,6 +58,16 @@ func TestWidthSafetyForDisplayedClusterTracksAmbiguousEmojiCompensation(t *testi
 	}
 	if decision.NeedsHiddenCompensation(2) {
 		t.Fatalf("expected multi-cell erase not to mark hidden compensation, got %#v", decision)
+	}
+}
+
+func TestWidthSafetyForDisplayedClusterStabilizesSupplementaryPUA(t *testing.T) {
+	decision := WidthSafetyForDisplayedCluster("\U000f0340", 1)
+	if !decision.HostWidthStabilizer {
+		t.Fatalf("expected supplementary PUA icon to request host width stabilizer, got %#v", decision)
+	}
+	if decision.AmbiguousCompensation {
+		t.Fatalf("expected supplementary PUA icon not to request FE0F compensation, got %#v", decision)
 	}
 }
 

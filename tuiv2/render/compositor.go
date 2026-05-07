@@ -7,9 +7,9 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
+	localvterm "github.com/lozzow/termx/termx-core/vterm"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	localvterm "github.com/lozzow/termx/termx-core/vterm"
 	"github.com/rivo/uniseg"
 )
 
@@ -370,7 +370,8 @@ func (c *composedCanvas) drawText(x, y int, text string, style drawStyle) {
 		if cursorX+width > c.width {
 			break
 		}
-		cell := drawCell{Content: content, Width: width, Style: style}
+		widthSafety := shared.WidthSafetyForDisplayedCluster(content, width)
+		cell := drawCell{Content: content, Width: width, Style: style, HostWidthStabilizer: widthSafety.HostWidthStabilizer}
 		c.set(cursorX, y, cell)
 		c.materializeRawAmbiguousContinuation(cursorX, y, cell)
 		cursorX += width
@@ -633,7 +634,7 @@ func drawCellFromVTermCell(cell localvterm.Cell) drawCell {
 }
 
 func shouldReanchorAfterTerminalAmbiguousWidthCell(cell drawCell) bool {
-	return cell.TerminalContent && cell.HostWidthStabilizer
+	return cell.HostWidthStabilizer
 }
 
 // 中文说明：这里只保留“原样输出 cell 内容”这个最小职责。FE0F 歧义 emoji

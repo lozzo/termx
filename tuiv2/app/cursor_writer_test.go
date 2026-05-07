@@ -20,11 +20,11 @@ import (
 	"github.com/lozzow/termx/termx-core/frameaudit"
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
+	localvterm "github.com/lozzow/termx/termx-core/vterm"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	localvterm "github.com/lozzow/termx/termx-core/vterm"
 	"github.com/rivo/uniseg"
 )
 
@@ -383,7 +383,9 @@ func TestOutputCursorWriterWritesDirectFrame(t *testing.T) {
 	wantSingle := synchronizedOutputBegin +
 		hideHostCursorSequence +
 		xansi.MoveCursorOrigin +
+		hostAutoWrapOff +
 		"frame-1\r\nframe-2" +
+		hostAutoWrapOn +
 		"<PROBE>" +
 		"<CURSOR>" +
 		synchronizedOutputEnd
@@ -2262,6 +2264,14 @@ func TestNormalizedLinesLenCountsLineBreakSeparators(t *testing.T) {
 	lines := []string{"ab", "cde", ""}
 	if got, want := normalizedLinesLen(lines), len("ab")+len("cde")+len("")+2; got != want {
 		t.Fatalf("unexpected normalized lines len %d want %d", got, want)
+	}
+}
+
+func TestWriteHostFramePayloadWrapsNormalizedFrameWithAutoWrapGuard(t *testing.T) {
+	var out strings.Builder
+	writeHostFramePayload(&out, "ab\ncd")
+	if got, want := out.String(), hostAutoWrapOff+"ab\r\ncd"+hostAutoWrapOn; got != want {
+		t.Fatalf("unexpected host frame payload %q want %q", got, want)
 	}
 }
 

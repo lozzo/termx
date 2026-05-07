@@ -142,6 +142,8 @@ type presentedStyle struct {
 var (
 	synchronizedOutputBegin = xansi.DECSET(xansi.ModeSynchronizedOutput)
 	synchronizedOutputEnd   = xansi.DECRST(xansi.ModeSynchronizedOutput)
+	hostAutoWrapOff         = xansi.ResetModeAutoWrap
+	hostAutoWrapOn          = xansi.SetModeAutoWrap
 	presentedCellPool       sync.Pool
 )
 
@@ -1023,7 +1025,7 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	}
 	buf.WriteString(hideHostCursorSequence)
 	buf.WriteString(xansi.MoveCursorOrigin)
-	writeNormalizedFrame(&buf, payload)
+	writeHostFramePayload(&buf, payload)
 	for _, seq := range afterWrite {
 		buf.WriteString(seq)
 	}
@@ -1088,7 +1090,7 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 	}
 	buf.WriteString(hideHostCursorSequence)
 	buf.WriteString(xansi.MoveCursorOrigin)
-	writeNormalizedFrame(&buf, payload)
+	writeHostFramePayload(&buf, payload)
 	for _, seq := range afterWrite {
 		buf.WriteString(seq)
 	}

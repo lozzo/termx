@@ -225,6 +225,16 @@ func TestComposedCanvasTerminalPrintableZeroWidthCellReanchorsNextCell(t *testin
 	}
 }
 
+func TestComposedCanvasChromeSupplementaryPUAReanchorsNextCell(t *testing.T) {
+	canvas := newComposedCanvas(4, 1)
+	canvas.drawText(0, 0, "\U000f0340X", drawStyle{})
+
+	rendered := canvas.contentString()
+	if !strings.Contains(rendered, "\U000f0340"+xansi.CHA(2)+"X") {
+		t.Fatalf("expected supplementary PUA chrome cell to re-anchor the following cell, got %q", rendered)
+	}
+}
+
 func TestComposedCanvasSetClearsWideCellContinuationWhenLeadOverwritten(t *testing.T) {
 	canvas := newComposedCanvas(4, 1)
 	canvas.set(0, 0, drawCell{Content: "♻️", Width: 2})
