@@ -2,6 +2,7 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Terminal, type TerminalProps } from './Terminal'
 import { createMockRtcTerminalSession } from './test/mockRtcTerminalSession'
+import type { ConnectionInfo, RtcBinaryChannel, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSubscription } from './transport'
 
 const xtermMocks = vi.hoisted(() => {
   class FakeXTerm {
@@ -11,6 +12,7 @@ const xtermMocks = vi.hoisted(() => {
     readonly writes: string[] = []
     cols = 80
     rows = 24
+    disposed = false
     element: HTMLElement | undefined
     buffer = {
       active: {
@@ -30,6 +32,7 @@ const xtermMocks = vi.hoisted(() => {
     loadAddon(): void {}
 
     open(container: HTMLElement): void {
+      this.assertActive()
       const root = document.createElement('div')
       root.className = 'xterm'
       const screen = document.createElement('div')
@@ -40,6 +43,7 @@ const xtermMocks = vi.hoisted(() => {
     }
 
     write(data: string | Uint8Array, callback?: () => void): void {
+      this.assertActive()
       const text = typeof data === 'string' ? data : new TextDecoder().decode(data)
       this.writes.push(text)
       const screenElement = this.element?.querySelector('.xterm-screen')
@@ -69,16 +73,22 @@ const xtermMocks = vi.hoisted(() => {
       for (const handler of this.cursorHandlers) handler()
     }
 
-    focus(): void {}
+    focus(): void {
+      this.assertActive()
+    }
 
-    blur(): void {}
+    blur(): void {
+      this.assertActive()
+    }
 
     resize(cols: number, rows: number): void {
+      this.assertActive()
       this.cols = cols
       this.rows = rows
     }
 
     clear(): void {
+      this.assertActive()
       const screenElement = this.element?.querySelector('.xterm-screen')
       if (screenElement) screenElement.textContent = ''
     }
@@ -101,7 +111,13 @@ const xtermMocks = vi.hoisted(() => {
 
     clearSelection(): void {}
 
-    dispose(): void {}
+    dispose(): void {
+      this.disposed = true
+    }
+
+    private assertActive(): void {
+      if (this.disposed) throw new Error('xterm used after dispose')
+    }
   }
 
   class FakeFitAddon {
@@ -194,6 +210,22 @@ describe('Terminal', () => {
     const terminalOutput = screen.getByLabelText('Terminal output')
     expect(terminalOutput.className).toContain('overflow-hidden')
     expect(terminalOutput.querySelector('.xterm-screen')).not.toBeNull()
+  })
+
+  it('shows terminal channel loading until the data channel opens', async () => {
+    const session = new DeferredOpenSession()
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText('Connecting terminal...')).toBeTruthy())
+    act(() => session.openChannel())
+    await waitFor(() => expect(screen.queryByText('Connecting terminal...')).toBeNull())
   })
 
   it('writes streaming terminal output chunks into xterm before a snapshot arrives', async () => {
@@ -389,6 +421,26 @@ describe('Terminal', () => {
     expect(session.sentResize('terminal-1')).toBeUndefined()
   })
 
+  it('ignores delayed fit work after xterm has been disposed', async () => {
+    const session = createMockRtcTerminalSession()
+    const { unmount } = render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const term = xtermMocks.FakeXTerm.instances[0]!
+    unmount()
+
+    expect(term.disposed).toBe(true)
+    expect(() => {
+      act(() => TestResizeObserver.instances[0]?.trigger())
+    }).not.toThrow()
+  })
+
   it('re-fits after xterm opens so an early one-row measurement does not persist', async () => {
     const session = createMockRtcTerminalSession()
     xtermMocks.FakeFitAddon.nextDimensionsSequence = [
@@ -482,3 +534,47 @@ describe('Terminal', () => {
     expect(cursorMoves).toHaveBeenCalled()
   })
 })
+
+class DeferredOpenSession implements RtcSession {
+  private readonly backing = createMockRtcTerminalSession()
+  private terminalId = ''
+  private resolveOpen: ((channel: RtcBinaryChannel) => void) | null = null
+
+  async openTerminal(terminalId: string): Promise<RtcBinaryChannel> {
+    this.terminalId = terminalId
+    return new Promise((resolve) => {
+      this.resolveOpen = resolve
+    })
+  }
+
+  openChannel(): void {
+    const resolve = this.resolveOpen
+    this.resolveOpen = null
+    if (!resolve) return
+    void this.backing.openTerminal(this.terminalId).then(resolve)
+  }
+
+  openApi(): Promise<RtcJsonRpcChannel> {
+    return this.backing.openApi()
+  }
+
+  openFileTransfer(transferId: string): Promise<RtcBinaryChannel> {
+    return this.backing.openFileTransfer(transferId)
+  }
+
+  subscribeEvents(handler: (event: RtcEvent) => void): RtcSubscription {
+    return this.backing.subscribeEvents(handler)
+  }
+
+  getConnectionInfo(): Promise<ConnectionInfo> {
+    return this.backing.getConnectionInfo()
+  }
+
+  getCapabilities(): ReturnType<RtcSession['getCapabilities']> {
+    return this.backing.getCapabilities()
+  }
+
+  disconnect(): Promise<void> {
+    return this.backing.disconnect()
+  }
+}

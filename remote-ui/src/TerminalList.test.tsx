@@ -7,6 +7,7 @@ import type { Terminal } from './model'
 describe('TerminalList', () => {
   afterEach(() => {
     cleanup()
+    vi.restoreAllMocks()
   })
 
   it('renders terminals for one machine and opens a terminal by terminalId', async () => {
@@ -92,6 +93,26 @@ describe('TerminalList', () => {
 
     expect(screen.getByText('No active terminals')).toBeTruthy()
     expect(screen.getByTestId('termx-terminal-list').textContent).not.toMatch(/session|window|pane|workspace|tab/i)
+  })
+
+  it('renders duplicate terminal ids without duplicate React keys', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    render(
+      <TerminalList
+        machineId="machine-local"
+        terminals={[
+          terminal({ terminalId: '3', title: 'topic a' }),
+          terminal({ terminalId: '3', title: 'topic b' }),
+        ]}
+        onOpenTerminal={vi.fn()}
+        onManageTerminal={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('topic a')).toBeTruthy()
+    expect(screen.getByText('topic b')).toBeTruthy()
+    expect(consoleError.mock.calls.some((call) => call.some((arg) => String(arg).includes('Encountered two children with the same key')))).toBe(false)
   })
 
   it('keeps the public props machine/terminal only', () => {

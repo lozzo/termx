@@ -10,6 +10,7 @@ import type {
   RtcSessionDescription,
   RtcSessionNegotiator,
   RtcSessionNegotiationTarget,
+  RtcTerminalDataChannelController,
   RtcSubscription,
 } from './transport'
 import type { ConnectionLogger } from './connectionLogger'
@@ -45,7 +46,7 @@ export interface BrowserRtcSessionLifecycle {
   handleAppResume(): Promise<boolean>
 }
 
-export type BrowserRtcConnectedSession = RtcSession & RtcSessionNegotiator & RtcSessionCapabilityUpdater & BrowserRtcSessionLifecycle
+export type BrowserRtcConnectedSession = RtcSession & RtcSessionNegotiator & RtcSessionCapabilityUpdater & BrowserRtcSessionLifecycle & RtcTerminalDataChannelController
 
 export interface RTCPeerConnectionLike {
   localDescription: RTCSessionDescriptionInit | null
@@ -258,6 +259,14 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     return toProtocolBinaryChannel(await this.ensureTerminalChannel(terminalId))
   }
 
+  closeTerminalDataChannel(terminalId: string): void {
+    const channel = this.terminalChannels.get(terminalId)
+    if (!channel) return
+    this.terminalChannels.delete(terminalId)
+    this.suppressedFailureChannels.add(channel)
+    channel.close()
+  }
+
   async openApi(): Promise<RtcJsonRpcChannel> {
     if (!this.apiJsonChannel) {
       this.apiJsonChannel = new LocalApiChannel(await this.ensureAPIChannel())
@@ -349,7 +358,8 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
 
   private async ensureTerminalChannel(terminalId: string): Promise<RTCDataChannelLike> {
     const existing = this.terminalChannels.get(terminalId)
-    if (existing) return existing
+    if (existing && existing.readyState !== 'closing' && existing.readyState !== 'closed') return existing
+    if (existing) this.terminalChannels.delete(terminalId)
     const channel = this.openRTCChannel(`terminal:${terminalId}`)
     return this.registerTerminalChannel(terminalId, channel)
   }
@@ -417,7 +427,9 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     channel.binaryType = 'arraybuffer'
     this.terminalChannels.set(terminalId, channel)
     channel.addEventListener('close', () => {
-      this.terminalChannels.delete(terminalId)
+      if (this.terminalChannels.get(terminalId) === channel) {
+        this.terminalChannels.delete(terminalId)
+      }
     })
     return channel
   }

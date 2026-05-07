@@ -222,6 +222,59 @@ describe('BrowserRtcSession', () => {
     await expect(request).resolves.toEqual({ terminals: [] })
   })
 
+  it('opens a fresh terminal data channel when the cached one is already closing', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const session = createBrowserRtcSession({
+      machineId: 'machine-local',
+      path: 'managed',
+      peerConnectionFactory: factory,
+      sessionIdGenerator: () => 'rtc-machine-1',
+      heartbeatIntervalMs: 60000,
+    })
+
+    await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+    await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
+    await session.openTerminal('terminal-1')
+    const firstRawChannel = factory.channel('terminal:terminal-1')
+    firstRawChannel.readyState = 'closing'
+    const second = await session.openTerminal('terminal-1')
+
+    expect(second.label).toBe('terminal:terminal-1')
+    expect(factory.channel('terminal:terminal-1')).not.toBe(firstRawChannel)
+  })
+
+  it('does not let a delayed old terminal close event remove a fresh terminal data channel', async () => {
+    vi.useFakeTimers()
+    try {
+      const factory = createMockPeerConnectionFactory({ closeEventDelayMs: 25 })
+      const session = createBrowserRtcSession({
+        machineId: 'machine-local',
+        path: 'managed',
+        peerConnectionFactory: factory,
+        sessionIdGenerator: () => 'rtc-machine-1',
+        heartbeatIntervalMs: 60000,
+      })
+
+      await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+      await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
+      const first = await session.openTerminal('terminal-1')
+      const firstRawChannel = factory.channel('terminal:terminal-1')
+
+      session.closeTerminalDataChannel('terminal-1')
+      const second = await session.openTerminal('terminal-1')
+      const secondRawChannel = factory.channel('terminal:terminal-1')
+      vi.advanceTimersByTime(25)
+
+      expect(first.readyState).toBe('closed')
+      expect(second.readyState).toBe('open')
+      expect(secondRawChannel).not.toBe(firstRawChannel)
+      await expect(session.openTerminal('terminal-1')).resolves.toBeTruthy()
+      expect(factory.channel('terminal:terminal-1')).toBe(secondRawChannel)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('runs runtime ping when peer connection state reaches connected', async () => {
     vi.useFakeTimers()
     try {

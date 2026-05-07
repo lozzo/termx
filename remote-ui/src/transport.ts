@@ -109,6 +109,10 @@ export interface RtcSessionLiveness {
   isAlive(): boolean
 }
 
+export interface RtcTerminalDataChannelController {
+  closeTerminalDataChannel(terminalId: string): void
+}
+
 export interface RtcConnector<TInput extends RtcConnectionTarget = RtcConnectionTarget> {
   connect(input: TInput, options?: RtcConnectOptions): Promise<RtcSession>
 }

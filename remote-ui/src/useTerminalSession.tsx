@@ -15,7 +15,7 @@ import {
 } from './terminalClient'
 import { createTerminalProtocolClient } from './terminalProtocolClient'
 import type { Terminal } from './model'
-import type { RtcSession } from './transport'
+import type { RtcSession, RtcTerminalDataChannelController } from './transport'
 
 export interface UseTerminalSessionOptions {
   machineId: string
@@ -70,6 +70,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     clientRef.current = client
 
     let cancelled = false
+    setTerminalSnapshot(null)
+    setTerminalText('')
+    setTerminalInfo(null)
+    setResizeControl(defaultTerminalResizeControl)
     dispatch({ type: 'user.connectMachine', machineId: options.machineId })
 
     options.session.getConnectionInfo().then((info) => {
@@ -149,6 +153,14 @@ function createProtocolSession(
   const pendingSubscribers = new Map<string, Set<Parameters<TerminalProtocolSession['subscribeTerminal']>[1]>>()
   let closed = false
   let pendingChannel: Awaited<ReturnType<RtcSession['openTerminal']>> | null = null
+  const resetProtocol = (id: string) => {
+    protocol?.closeTerminalChannel(id)
+    pendingChannel?.close()
+    protocol = null
+    protocolPromise = null
+    pendingChannel = null
+      closeRtcTerminalDataChannel(session, id)
+  }
   const ensureProtocol = async (id: string): Promise<TerminalProtocolSession> => {
     if (protocol) return protocol
     if (closed) throw new Error(`terminal protocol session ${terminalId} is closed`)
@@ -180,8 +192,13 @@ function createProtocolSession(
   }
   return {
     async openTerminal(id) {
-      const current = await ensureProtocol(id)
-      return current.openTerminal(id)
+      try {
+        const current = await ensureProtocol(id)
+        return await current.openTerminal(id)
+      } catch (err) {
+        if (!closed) resetProtocol(id)
+        throw err
+      }
     },
     getConnectionInfo: () => Promise.resolve(connectionInfo),
     subscribeTerminal(id, handler) {
@@ -199,9 +216,15 @@ function createProtocolSession(
     },
     closeTerminalChannel(id) {
       closed = true
-      protocol?.closeTerminalChannel(id)
-      pendingChannel?.close()
+      resetProtocol(id)
     },
+  }
+}
+
+function closeRtcTerminalDataChannel(session: RtcSession, terminalId: string): void {
+  const controller = session as RtcSession & Partial<RtcTerminalDataChannelController>
+  if (typeof controller.closeTerminalDataChannel === 'function') {
+    controller.closeTerminalDataChannel(terminalId)
   }
 }
 

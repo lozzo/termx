@@ -24,6 +24,8 @@ export function TerminalList({
   activeTerminalId,
   className,
 }: TerminalListProps) {
+  const terminalKeyCounts = new Map<string, number>()
+
   return (
     <div
       className={className}
@@ -39,8 +41,9 @@ export function TerminalList({
         <ul aria-label="Terminals" className="flex flex-col gap-3">
           {terminals.map((terminal) => {
             const isActive = activeTerminalId === terminal.terminalId
+            const itemKey = uniqueTerminalListKey(terminalKeyCounts, machineId, terminal)
             return (
-              <li key={terminal.terminalId} data-terminal-id={terminal.terminalId}>
+              <li key={itemKey} data-terminal-id={terminal.terminalId}>
                 <button
                   className={`group relative flex w-full items-center gap-4 rounded-2xl p-4 text-left transition-all duration-200 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                     isActive
@@ -121,6 +124,13 @@ export function TerminalList({
       )}
     </div>
   )
+}
+
+function uniqueTerminalListKey(counts: Map<string, number>, fallbackMachineId: string, terminal: Terminal): string {
+  const baseKey = `${terminal.machineId || fallbackMachineId}:${terminal.terminalId}`
+  const count = counts.get(baseKey) ?? 0
+  counts.set(baseKey, count + 1)
+  return count === 0 ? baseKey : `${baseKey}:${count}`
 }
 
 function MetadataPill({

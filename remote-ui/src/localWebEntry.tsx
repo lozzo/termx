@@ -141,9 +141,8 @@ function createBrowserLocalConnector(networkRuntime: RemoteNetworkRuntime, hubUr
     api,
     hubUrl,
     logger: consoleConnectionLogger,
-    createSession: ({ machineId, terminalId }) => createBrowserRtcSession({
+    createSession: ({ machineId }) => createBrowserRtcSession({
       machineId,
-      ...(terminalId ? { terminalId } : {}),
       path: 'local',
       logger: consoleConnectionLogger,
     }),
@@ -159,7 +158,7 @@ function createBrowserLocalConnector(networkRuntime: RemoteNetworkRuntime, hubUr
         throw new Error('session token is required before opening a terminal')
       }
       return connector.connect({
-        ...input,
+        machineId: input.machineId,
         sessionToken,
         path: 'local',
       }, options)
@@ -189,13 +188,15 @@ function createBrowserLocalRuntimeApi(connector: RtcConnector<{ machineId: strin
         },
       }
     },
-    async listTerminals() {
+    async listTerminals(options?: { onStatus?: (status: string) => void }) {
       const targetMachineId = machineId ?? 'local'
       if (!storage || !createMachineSessionStore(storage).getSessionToken(targetMachineId)) {
         return cachedTerminals
       }
+      options?.onStatus?.('Connecting to local agent...')
       const session = await connector.connect({ machineId: targetMachineId })
       try {
+        options?.onStatus?.('Fetching terminals...')
         const channel = await session.openApi()
         const response = await channel.request<{ terminals: Record<string, unknown>[] }>('list', {})
         return normalizeTerminalInventory({

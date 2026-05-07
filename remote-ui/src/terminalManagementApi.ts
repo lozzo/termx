@@ -1,4 +1,4 @@
-import type { LocalCreateTerminalInput, LocalUpdateTerminalInput, RtcJsonRpcChannel, RtcSession } from './transport'
+import type { LocalCreateTerminalInput, LocalUpdateTerminalInput, RtcSession } from './transport'
 import { requireConnectionCapability } from './connectionPolicy'
 
 export interface TerminalManagementApi {
@@ -11,7 +11,6 @@ export function createTerminalManagementApi(
   session: Pick<RtcSession, 'openApi' | 'getConnectionInfo' | 'getCapabilities'>,
   machineId: string,
 ): TerminalManagementApi {
-  let apiChannelPromise: Promise<RtcJsonRpcChannel> | null = null
   const api = async () => {
     const [info, capabilities] = await Promise.all([
       session.getConnectionInfo(),
@@ -21,8 +20,7 @@ export function createTerminalManagementApi(
       throw new Error(`terminal management session machine mismatch: connected to ${info.machineId}, expected ${machineId}`)
     }
     requireConnectionCapability(info, capabilities, 'terminal_management')
-    apiChannelPromise ??= session.openApi()
-    return apiChannelPromise
+    return session.openApi()
   }
 
   return {

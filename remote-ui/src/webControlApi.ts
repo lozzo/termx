@@ -40,7 +40,7 @@ export interface WebControlMachine {
   osInfo?: string | undefined
   online: boolean
   paired: boolean
-  source: 'cloud'
+  source: 'cloud' | 'local'
   controlUrl?: string | undefined
   hubId?: string | undefined
   hubUrls: string[]

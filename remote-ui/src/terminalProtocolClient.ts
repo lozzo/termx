@@ -24,6 +24,7 @@ export interface TerminalProtocolClientOptions {
   terminalId: string
   connectionInfo: ConnectionInfo
   resizePolicy?: TerminalResizePolicy
+  handshakeTimeoutMs?: number | undefined
 }
 
 interface PendingRequest {
@@ -58,8 +59,8 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     if (this.options.channel.readyState !== 'open') {
       await this.waitOpen()
     }
-    await this.hello()
-    await this.attach()
+    await this.withHandshakeTimeout(this.hello(), 'hello')
+    await this.withHandshakeTimeout(this.attach(), 'attach')
     const channel = this.options.channel
     void this.request('snapshot', {
       terminal_id: this.options.terminalId,
@@ -100,10 +101,24 @@ class TerminalProtocolClient implements TerminalProtocolSession {
 
   closeTerminalChannel(terminalId: string): void {
     this.assertTerminal(terminalId)
+    this.closed = true
     this.messageSubscription.close()
     this.closeSubscription.close()
     this.rejectPending(new Error(`terminal data channel ${this.options.channel.label} closed`))
     this.options.channel.close()
+  }
+
+  private withHandshakeTimeout<T>(promise: Promise<T>, stage: string): Promise<T> {
+    const timer = setTimeout(() => {
+      const err = new Error(`terminal protocol ${stage} timed out for ${this.options.terminalId}`)
+      this.rejectPending(err)
+      this.options.channel.close()
+    }, this.options.handshakeTimeoutMs ?? 8000)
+    promise.then(
+      () => clearTimeout(timer),
+      () => clearTimeout(timer),
+    )
+    return promise
   }
 
   private hello(): Promise<void> {

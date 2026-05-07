@@ -20,6 +20,7 @@ export function FileManager({
   const manager = useFileManager({ machineId, terminalId, session, initialPath })
 
   const pathSegments = manager.currentPath ? manager.currentPath.split('/').filter(Boolean) : []
+  const entryKeyCounts = new Map<string, number>()
 
   return (
     <div
@@ -46,7 +47,7 @@ export function FileManager({
                  const isLast = index === pathSegments.length - 1
                  const path = '/' + pathSegments.slice(0, index + 1).join('/')
                  return (
-                   <div key={path} className="flex items-center shrink-0">
+                   <div key={`${path}:${index}`} className="flex items-center shrink-0">
                      <ChevronRight className="h-4 w-4 shrink-0 text-zinc-300" />
                      {isLast ? (
                        <span className="px-2 py-1 font-semibold text-zinc-900">{segment}</span>
@@ -103,9 +104,10 @@ export function FileManager({
               const entryPath = joinPath(manager.currentPath, entry.name)
               const isDirectory = entry.type === 'dir' || entry.type === 'symlink-dir'
               const Icon = isDirectory ? Folder : File
+              const itemKey = uniqueFileListKey(entryKeyCounts, entryPath)
 
               return (
-                <li key={entryPath}>
+                <li key={itemKey}>
                   <button
                     className={`group relative flex min-h-[3.5rem] w-full items-center gap-4 rounded-xl px-4 py-2 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 active:bg-zinc-100 ${
                       isDirectory
@@ -143,6 +145,12 @@ export function FileManager({
       </div>
     </div>
   )
+}
+
+function uniqueFileListKey(counts: Map<string, number>, baseKey: string): string {
+  const count = counts.get(baseKey) ?? 0
+  counts.set(baseKey, count + 1)
+  return count === 0 ? baseKey : `${baseKey}:${count}`
 }
 
 function joinPath(base: string, name: string): string {

@@ -66,6 +66,8 @@ export class TerminalClient {
   private unsubscribe: (() => void) | null = null
   private machineId = ''
   private resizeControl: TerminalResizeControl = defaultTerminalResizeControl
+  private bindingGeneration = 0
+  private readonly maxOpenAttempts = 2
 
   constructor(callbacks: TerminalClientCallbacks) {
     this.callbacks = callbacks
@@ -84,6 +86,7 @@ export class TerminalClient {
   }
 
   disconnect(): void {
+    this.bindingGeneration += 1
     const terminalId = this.terminalId
     this.cleanupSubscription()
     if (this.session && terminalId) {
@@ -125,12 +128,10 @@ export class TerminalClient {
 
     this.session = session
     this.terminalId = terminalId
+    const generation = ++this.bindingGeneration
 
-    Promise.all([
-      this.resolveMachineId(session),
-      session.openTerminal(terminalId),
-    ]).then(([machineId, channel]) => {
-      if (this.session !== session || this.terminalId !== terminalId) {
+    this.openForBinding(session, terminalId, generation, 1).then(([machineId, channel]) => {
+      if (!this.isCurrentBinding(session, terminalId, generation)) {
         channel.close()
         return
       }
@@ -148,11 +149,36 @@ export class TerminalClient {
         terminalId,
       })
     }).catch((err: unknown) => {
+      if (!this.isCurrentBinding(session, terminalId, generation)) return
       this.callbacks.onError(errorMessage(err))
       this.callbacks.onClose()
     })
 
-    this.unsubscribe = session.subscribeTerminal(terminalId, (event) => this.handleProtocolEvent(event))
+    this.unsubscribe = session.subscribeTerminal(terminalId, (event) => {
+      if (!this.isCurrentBinding(session, terminalId, generation)) return
+      this.handleProtocolEvent(event)
+    })
+  }
+
+  private async openForBinding(
+    session: TerminalProtocolSession,
+    terminalId: string,
+    generation: number,
+    attempt: number,
+  ): Promise<[string, TerminalProtocolChannel]> {
+    try {
+      return await Promise.all([
+        this.resolveMachineId(session),
+        session.openTerminal(terminalId),
+      ])
+    } catch (err) {
+      if (!this.isCurrentBinding(session, terminalId, generation) || attempt >= this.maxOpenAttempts) throw err
+      return this.openForBinding(session, terminalId, generation, attempt + 1)
+    }
+  }
+
+  private isCurrentBinding(session: TerminalProtocolSession, terminalId: string, generation: number): boolean {
+    return this.session === session && this.terminalId === terminalId && this.bindingGeneration === generation
   }
 
   private handleProtocolEvent(event: TerminalProtocolEvent): void {

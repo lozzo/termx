@@ -55,23 +55,36 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const canSendResizeRef = useRef(false)
   const fitFrameRef = useRef<number | null>(null)
   const fitDelayRef = useRef<number | null>(null)
+  const terminalDisposedRef = useRef(true)
+  const terminalGenerationRef = useRef(0)
   const modifierStateRef = useRef<TerminalModifierState | undefined>(undefined)
   const onModifierStateChangeRef = useRef<((state: TerminalModifierState) => void) | undefined>(undefined)
   const onCursorMoveRef = useRef<(() => void) | undefined>(undefined)
   const onBufferChangeRef = useRef<((isAlternate: boolean) => void) | undefined>(undefined)
 
   const isOpen = terminalSession.snapshot.terminalChannels[terminalId]?.state === 'open'
+  const channelState = terminalSession.snapshot.terminalChannels[terminalId]?.state
+  const showConnectingOverlay = channelState !== 'open' && terminalSession.terminalText.length === 0
 
   const fitAndMaybeSendResize = useCallback(() => {
+    if (terminalDisposedRef.current) return
     const term = xtermRef.current
     const fitAddon = fitAddonRef.current
     const container = containerRef.current
     if (!term || !fitAddon || !container) return
 
-    fitAddon.fit()
-    const dimensions = fitAddon.proposeDimensions()
-    if (!dimensions) return
-    term.resize(dimensions.cols, dimensions.rows)
+    let dimensions: { cols: number; rows: number } | undefined
+    try {
+      fitAddon.fit()
+      dimensions = fitAddon.proposeDimensions()
+      if (!dimensions) return
+      if (terminalDisposedRef.current || xtermRef.current !== term) return
+      term.resize(dimensions.cols, dimensions.rows)
+    } catch {
+      // xterm can leave delayed viewport/fit work behind while React is unmounting.
+      // Treat those races as stale lifecycle work instead of crashing the UI.
+      return
+    }
 
     if (!canSendResizeRef.current) return
     if (!isOpenRef.current) return
@@ -82,6 +95,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   }, [terminalSession.sendResize])
 
   const scheduleFit = useCallback(() => {
+    if (terminalDisposedRef.current) return
+    const generation = terminalGenerationRef.current
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
       fitAndMaybeSendResize()
       return
@@ -91,8 +106,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       fitFrameRef.current = null
     }
     fitFrameRef.current = window.requestAnimationFrame(() => {
+      if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) {
+        fitFrameRef.current = null
+        return
+      }
       fitFrameRef.current = window.requestAnimationFrame(() => {
         fitFrameRef.current = null
+        if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
         fitAndMaybeSendResize()
       })
     })
@@ -103,10 +123,20 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     sendResize: terminalSession.sendResize,
     reattach: terminalSession.reattach,
     focus: () => {
-      xtermRef.current?.focus()
+      if (terminalDisposedRef.current) return
+      try {
+        xtermRef.current?.focus()
+      } catch {
+        // Ignore stale focus calls after xterm has been disposed.
+      }
     },
     blur: () => {
-      xtermRef.current?.blur()
+      if (terminalDisposedRef.current) return
+      try {
+        xtermRef.current?.blur()
+      } catch {
+        // Ignore stale blur calls after xterm has been disposed.
+      }
       containerRef.current?.querySelector('textarea')?.blur()
     },
     fit: () => {
@@ -118,6 +148,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       terminalSession.sendInput(isMultiline ? `\x1b[200~${text}\x1b[201~` : text)
     },
     getCursorInfo: () => {
+      if (terminalDisposedRef.current) return null
       const term = xtermRef.current
       if (!term) return null
       const lineHeight = Math.ceil((term.element?.clientHeight ?? 0) / term.rows) || 20
@@ -128,6 +159,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
     },
     adjustInputPosition: (bottomOffset: number) => {
+      if (terminalDisposedRef.current) return
       const element = xtermRef.current?.element
       if (!element) return
       if (bottomOffset > 0) {
@@ -138,7 +170,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         element.style.removeProperty('--termx-keyboard-bottom')
       }
     },
-    getBufferType: () => xtermRef.current?.buffer.active.type ?? 'normal',
+    getBufferType: () => terminalDisposedRef.current ? 'normal' : xtermRef.current?.buffer.active.type ?? 'normal',
   }), [fitAndMaybeSendResize, scheduleFit, terminalSession.reattach, terminalSession.sendInput, terminalSession.sendResize])
 
   useEffect(() => {
@@ -167,6 +199,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
+
+    const generation = terminalGenerationRef.current + 1
+    terminalGenerationRef.current = generation
+    terminalDisposedRef.current = false
 
     const term = new XTerm({
       allowProposedApi: false,
@@ -205,6 +241,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     fitAddonRef.current = fitAddon
 
     const dataDisposable = term.onData((data) => {
+      if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
       const currentModifiers = modifierStateRef.current
       if (currentModifiers && (currentModifiers.ctrl !== 'off' || currentModifiers.alt !== 'off')) {
         const result = applyTerminalModifiers(data, currentModifiers)
@@ -215,9 +252,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       terminalSession.sendInput(data)
     })
     const cursorDisposable = term.onCursorMove(() => {
+      if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
       onCursorMoveRef.current?.()
     })
     const bufferDisposable = term.buffer.onBufferChange?.(() => {
+      if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
       onBufferChangeRef.current?.(term.buffer.active.type === 'alternate')
     }) ?? { dispose() {} }
 
@@ -227,12 +266,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     let resizeObserver: ResizeObserver | null = null
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => {
+        if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
         scheduleFit()
       })
       resizeObserver.observe(container)
     }
 
     const handleVisualViewportResize = () => {
+      if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
       if (window.visualViewport && containerRef.current) {
         // When keyboard appears, visualViewport.height shrinks.
         // We can limit the container's height to the visual viewport's height relative to its position.
@@ -254,6 +295,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (fitDelayRef.current !== null) window.clearTimeout(fitDelayRef.current)
       fitDelayRef.current = window.setTimeout(() => {
         fitDelayRef.current = null
+        if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
         scheduleFit()
       }, 100)
     }
@@ -264,6 +306,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
 
     return () => {
+      terminalDisposedRef.current = true
+      terminalGenerationRef.current += 1
       if (window.visualViewport) {
         window.visualViewport.removeEventListener('resize', handleVisualViewportResize)
         window.visualViewport.removeEventListener('scroll', handleVisualViewportResize)
@@ -280,9 +324,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       dataDisposable.dispose()
       cursorDisposable.dispose()
       bufferDisposable.dispose()
-      term.dispose()
       if (xtermRef.current === term) xtermRef.current = null
       if (fitAddonRef.current === fitAddon) fitAddonRef.current = null
+      try {
+        term.dispose()
+      } catch {
+        // Ignore dispose races from xterm internals during React teardown.
+      }
       lastWrittenTextRef.current = ''
       lastSentResizeRef.current = null
       isOpenRef.current = false
@@ -294,11 +342,18 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (!isOpen) return
     fitAndMaybeSendResize()
     scheduleFit()
-    xtermRef.current?.focus()
+    if (!terminalDisposedRef.current) {
+      try {
+        xtermRef.current?.focus()
+      } catch {
+        // Ignore stale focus calls after xterm has been disposed.
+      }
+    }
     onReady?.()
   }, [fitAndMaybeSendResize, isOpen, onReady, scheduleFit])
 
   useEffect(() => {
+    if (terminalDisposedRef.current) return
     const term = xtermRef.current
     if (!term) return
 
@@ -306,11 +361,15 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const previousText = lastWrittenTextRef.current
     if (nextText === previousText) return
 
-    if (nextText.startsWith(previousText)) {
-      term.write(nextText.slice(previousText.length))
-    } else {
-      term.reset()
-      term.write(nextText)
+    try {
+      if (nextText.startsWith(previousText)) {
+        term.write(nextText.slice(previousText.length))
+      } else {
+        term.reset()
+        term.write(nextText)
+      }
+    } catch (error) {
+      if (!terminalDisposedRef.current) throw error
     }
     lastWrittenTextRef.current = nextText
   }, [terminalSession.terminalText])
@@ -331,6 +390,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         role="application"
         tabIndex={0}
       />
+      {showConnectingOverlay ? (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black text-sm font-medium text-zinc-500">
+          <div className="flex items-center gap-2">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
+            Connecting terminal...
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 })

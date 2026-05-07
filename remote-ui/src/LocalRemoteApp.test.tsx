@@ -66,10 +66,10 @@ describe('LocalRemoteApp', () => {
   it('loads local machine terminals and composes shared terminal/file manager components', async () => {
     const api = createMockLocalAgentApi()
     const sessions: ReturnType<typeof createMockLocalRemoteSession>[] = []
-    const connect = vi.fn(({ machineId, terminalId }: { machineId: string; terminalId: string }) =>
+    const connect = vi.fn(({ machineId }: { machineId: string }) =>
       Promise.resolve(trackSession(sessions, createMockLocalRemoteSession({
           '/files/list': { path: '/', parent: '', total: 0, entries: [] },
-        }, machineId, terminalId))),
+        }, machineId))),
     )
     const connector = { connect } satisfies LocalRemoteSessionConnector
 
@@ -108,9 +108,9 @@ describe('LocalRemoteApp', () => {
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp')
     expect(connect).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'machine-local',
-      terminalId: 'terminal-1',
     }))
-    expect(sessions[1]).toBeTruthy()
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(sessions[0]).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
     await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').className).toMatch(/invisible/))
     expect(screen.getByTestId('termx-terminal')).toBeTruthy()
@@ -120,10 +120,10 @@ describe('LocalRemoteApp', () => {
   it('preserves file state for the same terminal but resets when the file context terminal changes', async () => {
     const api = createMockLocalAgentApi()
     const sessions: ReturnType<typeof createMockLocalRemoteSession>[] = []
-    const connect = vi.fn(({ machineId, terminalId }: { machineId: string; terminalId: string }) =>
+    const connect = vi.fn(({ machineId }: { machineId: string }) =>
       Promise.resolve(trackSession(sessions, createMockLocalRemoteSession({
         '/files/list': { path: '/', parent: '', total: 0, entries: [] },
-      }, machineId, terminalId))),
+      }, machineId))),
     )
     const connector = { connect } satisfies LocalRemoteSessionConnector
 
@@ -154,10 +154,10 @@ describe('LocalRemoteApp', () => {
   it('uses a terminal-first mobile shell with sheets instead of a Config sidebar', async () => {
     const api = createMockLocalAgentApi()
     const sessions: ReturnType<typeof createMockLocalRemoteSession>[] = []
-    const connect = vi.fn(({ machineId, terminalId }: { machineId: string; terminalId: string }) =>
+    const connect = vi.fn(({ machineId }: { machineId: string }) =>
       Promise.resolve(trackSession(sessions, createMockLocalRemoteSession({
         '/files/list': { path: '/', parent: '', total: 0, entries: [] },
-      }, machineId, terminalId))),
+      }, machineId))),
     )
     const connector = { connect } satisfies LocalRemoteSessionConnector
     const pairApi = createMockPairApi()
@@ -223,9 +223,53 @@ describe('LocalRemoteApp', () => {
     await userEvent.click(screen.getByRole('button', { name: /show terminal list/i }))
     expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy()
     expect(screen.getByTestId('termx-terminal-list-page').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
-    await waitFor(() => expect(sessions[0]?.disconnectCalls).toBe(1))
+    await waitFor(() => expect(sessions[0]?.disconnectCalls).toBe(0))
 
-    expect(connect).toHaveBeenCalledTimes(2)
+    expect(connect).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the terminal RTC session when returning to the list and reuses it for the same terminal', async () => {
+    const api = createMockLocalAgentApi()
+    const sessions: ReturnType<typeof createMockLocalRemoteSession>[] = []
+    const connect = vi.fn(({ machineId }: { machineId: string }) =>
+      Promise.resolve(trackSession(sessions, createMockLocalRemoteSession({}, machineId))),
+    )
+
+    render(<LocalRemoteApp api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-1'))
+    expect(connect).toHaveBeenCalledTimes(1)
+
+    await userEvent.click(screen.getByRole('button', { name: /show terminal list/i }))
+    expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy()
+    expect(sessions[0]?.disconnectCalls).toBe(0)
+
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-1'))
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(sessions[0]?.disconnectCalls).toBe(0)
+  })
+
+  it('keeps the machine RTC session when switching to a different terminal', async () => {
+    const api = createMockLocalAgentApi()
+    const sessions: ReturnType<typeof createMockLocalRemoteSession>[] = []
+    const connect = vi.fn(({ machineId }: { machineId: string }) =>
+      Promise.resolve(trackSession(sessions, createMockLocalRemoteSession({}, machineId))),
+    )
+
+    render(<LocalRemoteApp api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-1'))
+
+    await userEvent.click(screen.getByRole('button', { name: /open worker/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-2'))
+
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(sessions[0]?.disconnectCalls).toBe(0)
   })
 
   it('refreshes the terminal list when a machine-level inventory event arrives', async () => {
@@ -321,7 +365,7 @@ describe('LocalRemoteApp', () => {
     api.listTerminals = listTerminals
     const managementSession = createMockLocalRemoteSession({
       set_metadata: {},
-    }, 'machine-local', 'terminal-1')
+    }, 'machine-local')
     const connect = vi.fn(async () => managementSession)
 
     render(<LocalRemoteApp api={api} connector={{ connect }} />)
@@ -364,7 +408,7 @@ describe('LocalRemoteApp', () => {
     const managementSession = createMockLocalRemoteSession({
       create: { terminal_id: 'terminal-3', state: 'running' },
       remove: {},
-    }, 'machine-local', 'terminal-1')
+    }, 'machine-local')
     const connect = vi.fn(async () => managementSession)
 
     render(<LocalRemoteApp api={api} connector={{ connect }} />)
@@ -443,7 +487,7 @@ describe('LocalRemoteApp', () => {
     }
     const managementSession = createMockLocalRemoteSession({
       create: { terminal_id: 'terminal-3', state: 'running' },
-    }, 'machine-local', 'terminal-1')
+    }, 'machine-local')
     const connect = vi.fn(async () => managementSession)
 
     render(<LocalRemoteApp api={api} connector={{ connect }} />)
@@ -493,7 +537,6 @@ describe('LocalRemoteApp', () => {
     const connect = vi.fn(() => Promise.resolve(createMockLocalRemoteSession(
       {},
       'machine-local',
-      'terminal-1',
     )))
     const connector = { connect } satisfies LocalRemoteSessionConnector
     const props = {
@@ -524,7 +567,6 @@ describe('LocalRemoteApp', () => {
     const connect = vi.fn(() => Promise.resolve(createMockLocalRemoteSession(
       {},
       'machine-local',
-      'terminal-1',
     )))
     const connector = { connect } satisfies LocalRemoteSessionConnector
 
@@ -554,7 +596,7 @@ describe('LocalRemoteApp', () => {
     let paired = false
     const connect = vi.fn(() => {
       if (!paired) return Promise.reject(new Error('session token is required before opening a terminal'))
-      return Promise.resolve(createMockLocalRemoteSession({}, 'machine-local', 'terminal-1'))
+      return Promise.resolve(createMockLocalRemoteSession({}, 'machine-local'))
     })
     const connector = { connect } satisfies LocalRemoteSessionConnector
     const pairApi = createMockPairApi()
@@ -619,7 +661,7 @@ function createMockLocalRemoteSession(
     async disconnect() {
       this.disconnectCalls += 1
     },
-    async openTerminal() {
+    async openTerminal(terminalId: string) {
       return {
         label: `terminal:${terminalId}`,
         readyState: 'open' as const,

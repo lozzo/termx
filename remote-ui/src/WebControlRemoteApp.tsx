@@ -3,12 +3,12 @@ import { ArrowLeft, CheckCircle2, Loader2, LogIn, Monitor, QrCode, RefreshCw, Se
 import { createMachineSessionStore, type MachineSessionStore } from './localAppIdentity'
 import { LocalRemoteApp, type LocalRemoteInventoryApi, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createMachineStore, type StoredMachineRecord } from './machineStore'
-import { createConnectionOrchestrator } from './connectionOrchestrator'
+import { createConnectionOrchestrator, type ConnectionAttemptSnapshot } from './connectionOrchestrator'
 import { createManagedHubRtcConnector } from './managedHubRtcConnector'
 import { consoleConnectionLogger } from './connectionLogger'
 import { createManagedHubApi } from './managedHubApi'
 import { parsePairingPayload, type PairingPayload } from './pairingPayload'
-import type { ConnectionInfo, LocalPairingApi, LocalStatus, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectionTarget, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionLiveness, RtcSessionNegotiator, RtcSubscription } from './transport'
+import type { ConnectionInfo, LocalPairingApi, LocalStatus, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionLiveness, RtcSessionNegotiator, RtcSubscription, RtcTerminalDataChannelController } from './transport'
 import { normalizeTerminalInventory } from './terminalInventory'
 import { createWebControlApi, type WebControlApi, type WebControlMachine, type WebControlUser } from './webControlApi'
 
@@ -22,7 +22,7 @@ const appName = 'TermX Remote App'
 
 type AppView = 'home' | 'settings' | 'machine'
 type PairApi = LocalPairingApi
-type ManagedRtcSessionFactory = (input: RtcConnectionTarget) => RtcSession & RtcSessionNegotiator
+type ManagedRtcSessionFactory = (input: { machineId: string }) => RtcSession & RtcSessionNegotiator
 type MachineRuntimeFactory = (input: {
   machine: WebControlMachine
   user: WebControlUser
@@ -35,6 +35,7 @@ type MachineRuntimeFactory = (input: {
 interface MachineRuntime {
   api: LocalRemoteInventoryApi
   connector: LocalRemoteSessionConnector
+  dispose?(): void | Promise<void>
 }
 
 export interface WebControlRemoteAppProps {
@@ -62,6 +63,7 @@ export function WebControlRemoteApp({
   const [password, setPassword] = useState('')
   const [accessToken, setAccessToken] = useState(() => storage?.getItem(storageKeys.accessToken) ?? '')
   const [user, setUser] = useState<WebControlUser | null>(null)
+  const [localMachines, setLocalMachines] = useState<StoredMachineRecord[]>([])
   const [machines, setMachines] = useState<WebControlMachine[]>([])
   const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null)
   const [scanOpen, setScanOpen] = useState(false)
@@ -74,7 +76,33 @@ export function WebControlRemoteApp({
   const [loading, setLoading] = useState(false)
   const [pairing, setPairing] = useState(false)
   const signedIn = accessToken.trim() !== ''
-  const selectedMachine = machines.find((machine) => machine.id === selectedMachineId) ?? null
+
+  useEffect(() => {
+    if (storage) {
+      setLocalMachines(createMachineStore({ storage }).listMachines())
+    }
+  }, [storage, pairVersion])
+
+  const displayMachines = useMemo(() => {
+    const map = new Map<string, WebControlMachine>()
+    for (const local of localMachines) {
+      map.set(local.machineId, {
+        id: local.machineId,
+        name: local.name,
+        hostname: local.hostname,
+        online: local.state === 'online',
+        paired: true,
+        source: local.source === 'cloud' ? 'cloud' : 'local',
+        hubUrls: local.endpoints.hub ? [local.endpoints.hub] : [],
+      })
+    }
+    for (const cloud of machines) {
+      map.set(cloud.id, cloud)
+    }
+    return Array.from(map.values())
+  }, [localMachines, machines])
+
+  const selectedMachine = displayMachines.find((machine) => machine.id === selectedMachineId) ?? null
 
   const api = useMemo(() => {
     if (controlUrl.trim() === '') {
@@ -176,16 +204,6 @@ export function WebControlRemoteApp({
   }, [openPairSheet, pairedMachineIds])
 
   const importManualScan = useCallback(async () => {
-    if (!signedIn) {
-      setError('Sign in before pairing a device')
-      setMessage(null)
-      return
-    }
-    if (!user) {
-      setError('Account profile is required before pairing')
-      setMessage(null)
-      return
-    }
     if (!storage) {
       setError('Local storage is required before importing a TermX QR')
       setMessage(null)
@@ -196,35 +214,63 @@ export function WebControlRemoteApp({
     setMessage(null)
     try {
       const payload = parsePairingPayload(manualScanValue)
-      const cloudMachine = machines.find((machine) => machine.id === payload.machine.id)
-      if (!cloudMachine) {
-        throw new Error('This pairing code does not match a Web Control device in this account')
+      const isCloud = payload.endpoints.webControl !== undefined || payload.preferredPath === 'managed'
+
+      if (isCloud && !signedIn) {
+        setScanOpen(false)
+        setView('settings')
+        setError('The scanned agent is online. Please sign in to your account first to fetch this agent.')
+        return
       }
-      if (selectedMachine && selectedMachine.id !== cloudMachine.id) {
-        throw new Error(`This pairing code belongs to ${cloudMachine.name}, not ${selectedMachine.name}`)
+
+      let targetMachine: WebControlMachine
+
+      if (isCloud) {
+        if (!user) throw new Error('Account profile is required before pairing a cloud device')
+        const cloudMachine = machines.find((machine) => machine.id === payload.machine.id)
+        if (!cloudMachine) {
+          throw new Error('This pairing code does not match a Web Control device in this account')
+        }
+        targetMachine = cloudMachine
+      } else {
+        targetMachine = {
+          id: payload.machine.id,
+          name: payload.machine.name,
+          hostname: payload.machine.hostname,
+          online: true,
+          paired: false,
+          source: 'local',
+          hubUrls: payload.endpoints.hub ? [payload.endpoints.hub] : (payload.endpoints.localPairing ? [payload.endpoints.localPairing] : []),
+        }
       }
-      const pairApi = pairApiFactory?.(payload, cloudMachine) ?? createPairApiFromMachine(cloudMachine, networkRuntime)
+
+      if (selectedMachine && selectedMachine.id !== targetMachine.id) {
+        throw new Error(`This pairing code belongs to ${targetMachine.name}, not ${selectedMachine.name}`)
+      }
+      const pairApi = pairApiFactory?.(payload, targetMachine) ?? createPairApiFromMachine(targetMachine, networkRuntime)
       const pairResult = await pairApi.pair({
-        machineId: cloudMachine.id,
+        machineId: targetMachine.id,
         pairSessionId: payload.pairing.sessionId,
         pairSecret: payload.pairing.secret,
         appDeviceId: createBrowserAppDeviceId(),
         appName,
         requestedCapabilities: ['terminal', 'file_manager', 'terminal_management'],
       })
-      if (pairResult.machineId !== cloudMachine.id) {
-        throw new Error(`pairing response machine mismatch: ${pairResult.machineId} != ${cloudMachine.id}`)
+      if (pairResult.machineId !== targetMachine.id) {
+        throw new Error(`pairing response machine mismatch: ${pairResult.machineId} != ${targetMachine.id}`)
       }
       createMachineSessionStore(storage).saveSessionToken(pairResult.machineId, pairResult.sessionToken, pairResult.expiresAt, payload.pairing.answerProofSecret)
       const store = createMachineStore({ storage })
       const saved = store.saveFromPairingPayload(payload)
-      store.saveMachine(mergeCloudMachine(saved, cloudMachine))
-      setSelectedMachineId(cloudMachine.id)
-      setPairedMachineIds(readPairedMachineIds(storage, user.id))
+      if (isCloud) {
+        store.saveMachine(mergeCloudMachine(saved, targetMachine))
+      }
+      setSelectedMachineId(targetMachine.id)
+      setPairedMachineIds(readPairedMachineIds(storage, user?.id))
       setPairVersion((current) => current + 1)
       setLastImported(payload)
       setError(null)
-      setMessage(`Paired ${cloudMachine.name}`)
+      setMessage(`Paired ${targetMachine.name}`)
       setManualScanValue('')
       setScanOpen(false)
       setView('machine')
@@ -337,6 +383,12 @@ function MachineTerminalListView({
     return runtimeFactory({ machine: machineRef.current, user, storage, api, networkRuntime, createSession: requiredManagedRtcSessionFactory(createSession) })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, createSession, machine.id, networkRuntime, runtimeFactory, storage, user])
+  useEffect(() => {
+    if (!runtime) return
+    return () => {
+      void runtime.dispose?.()
+    }
+  }, [runtime])
   if (!user || !storage || !runtime) {
     return (
       <MachineRuntimeErrorShell
@@ -349,12 +401,12 @@ function MachineTerminalListView({
   }
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-zinc-50" data-testid="termx-machine-terminal-list">
-      <MachineRuntimeHeader machine={machine} onBack={onBack} />
       <StatusMessages error={error} message={message} />
       <LocalRemoteApp
         api={runtime.api}
         connector={runtime.connector}
         className="min-h-0 flex-1"
+        onBack={onBack}
       />
     </section>
   )
@@ -478,19 +530,11 @@ function HomeView({
 
       <StatusMessages error={error} message={message} />
 
-      {!signedIn ? (
-        <EmptyState
-          actionLabel="Sign in"
-          icon="login"
-          message="Sign in to view your devices."
-          onAction={onSignIn}
-          title="No account connected"
-        />
-      ) : machines.length === 0 ? (
+      {machines.length === 0 ? (
         <EmptyState
           actionLabel="Scan QR"
           icon="scan"
-          message="No devices in this account."
+          message="No devices found. Scan QR to add a local device, or sign in to sync your cloud devices."
           onAction={onOpenPairSheet}
           title="No machines yet"
         />
@@ -756,7 +800,8 @@ function MachineRow({
         </div>
         <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{machine.hostname || machine.id}</div>
         <div className="mt-2 flex flex-wrap gap-1.5">
-          <InfoPill>{machine.hubStatus === 'online' ? 'Hub online' : 'Cloud node'}</InfoPill>
+          <InfoPill>{machine.source === 'cloud' ? 'Cloud node' : 'Local node'}</InfoPill>
+          <InfoPill>{machine.hubStatus === 'online' ? 'Hub online' : (machine.source === 'local' ? 'Direct/Local' : 'Offline')}</InfoPill>
           <InfoPill>{paired ? 'Ready' : 'Scan QR'}</InfoPill>
           {machine.lastSeen ? <InfoPill>{formatLastSeen(machine.lastSeen)}</InfoPill> : null}
         </div>
@@ -926,8 +971,10 @@ function createManagedMachineRuntime(input: {
       async getStatus() {
         return machineStatus
       },
-      async listTerminals() {
-        const session = await machineSession.get()
+      async listTerminals(options) {
+        const session = await machineSession.get({
+          onSnapshot: (snapshot) => options?.onStatus?.(snapshot.message),
+        })
         const channel = await session.openApi()
         const response = await channel.request<{ terminals: Record<string, unknown>[] }>('list', {})
         return normalizeTerminalsForMachine(input.machine.id, response.terminals ?? [])
@@ -939,9 +986,10 @@ function createManagedMachineRuntime(input: {
           throw new Error(`machine runtime mismatch: ${target.machineId} != ${input.machine.id}`)
         }
         const session = await machineSession.get(options)
-        return createManagedMachineSessionLease(session, target.terminalId)
+        return createManagedMachineSessionLease(session)
       },
     },
+    dispose: machineSession.reset,
   }
 }
 
@@ -960,7 +1008,7 @@ function createManagedMachineSessionManager(input: {
     sessionPromise = null
     await session?.disconnect()
   }
-  const connect = async (options?: { signal?: AbortSignal }): Promise<RtcSession> => {
+  const connect = async (options?: { signal?: AbortSignal; onSnapshot?: (snapshot: ConnectionAttemptSnapshot) => void }): Promise<RtcSession> => {
     if (options?.signal?.aborted) {
       throw options.signal.reason instanceof Error ? options.signal.reason : new Error('connection aborted')
     }
@@ -986,11 +1034,12 @@ function createManagedMachineSessionManager(input: {
       sessionToken,
       answerProofSecret,
       hubUrls,
+      onSnapshot: options?.onSnapshot,
     }, options)
     return result.session
   }
   return {
-    async get(options?: { signal?: AbortSignal }): Promise<RtcSession> {
+    async get(options?: { signal?: AbortSignal; onSnapshot?: (snapshot: ConnectionAttemptSnapshot) => void }): Promise<RtcSession> {
       if (currentSession) {
         if (isRtcSessionAlive(currentSession)) return currentSession
         await resetCurrentSession()
@@ -1043,20 +1092,27 @@ function isRtcSessionAlive(session: RtcSession): boolean {
   return candidate.isAlive()
 }
 
-function createManagedMachineSessionLease(session: RtcSession, terminalId: string | undefined): RtcSession {
+function createManagedMachineSessionLease(session: RtcSession): RtcSession & RtcTerminalDataChannelController {
   const openedTerminals = new Map<string, RtcBinaryChannel>()
   const openedFiles = new Map<string, RtcBinaryChannel>()
   const subscriptions = new Set<RtcSubscription>()
-  let apiChannelPromise: Promise<RtcJsonRpcChannel> | null = null
   return {
     async openTerminal(id: string) {
       const channel = await session.openTerminal(id)
       openedTerminals.set(id, channel)
       return channel
     },
+    closeTerminalDataChannel(id: string) {
+      const channel = openedTerminals.get(id)
+      openedTerminals.delete(id)
+      channel?.close()
+      const controller = session as RtcSession & Partial<RtcTerminalDataChannelController>
+      if (typeof controller.closeTerminalDataChannel === 'function') {
+        controller.closeTerminalDataChannel(id)
+      }
+    },
     async openApi() {
-      apiChannelPromise ??= session.openApi()
-      return createSharedApiLeaseChannel(await apiChannelPromise)
+      return createSharedApiLeaseChannel(await session.openApi())
     },
     async openFileTransfer(transferId: string) {
       const channel = await session.openFileTransfer(transferId)
@@ -1074,11 +1130,7 @@ function createManagedMachineSessionLease(session: RtcSession, terminalId: strin
       }
     },
     async getConnectionInfo(): Promise<ConnectionInfo> {
-      const info = await session.getConnectionInfo()
-      return {
-        ...info,
-        ...(terminalId ? { terminalId } : {}),
-      }
+      return session.getConnectionInfo()
     },
     getCapabilities() {
       return session.getCapabilities()
@@ -1096,7 +1148,6 @@ function createManagedMachineSessionLease(session: RtcSession, terminalId: strin
         channel.close()
       }
       openedFiles.clear()
-      await session.disconnect()
     },
   }
 }

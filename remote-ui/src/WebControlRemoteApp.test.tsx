@@ -22,7 +22,8 @@ describe('WebControlRemoteApp', () => {
 
     expect(screen.getByTestId('termx-app-home')).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Machines' })).toBeTruthy()
-    expect(screen.getByText('Sign in to view your devices.')).toBeTruthy()
+    expect(screen.getByText('No machines yet')).toBeTruthy()
+    expect(screen.getByText(/No devices found/)).toBeTruthy()
 
     await userEvent.click(screen.getByRole('button', { name: /open settings/i }))
 
@@ -306,7 +307,7 @@ function fakeRtcSession(): RtcSession {
 
 let nextFakeManagedSessionId = 0
 
-const fakeManagedRtcSessionFactory = (target?: { machineId?: string | undefined; terminalId?: string | undefined }) => ({
+const fakeManagedRtcSessionFactory = (target?: { machineId?: string | undefined }) => ({
   async createOffer() {
     nextFakeManagedSessionId += 1
     return {

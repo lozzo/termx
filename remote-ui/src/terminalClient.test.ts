@@ -84,6 +84,28 @@ describe('TerminalClient', () => {
     client.sendInput('dropped')
     expect(callbacks.onInputDropped).toHaveBeenCalledTimes(1)
   })
+
+  it('ignores stale async terminal opens after switching to another terminal', async () => {
+    const session = new DeferredTerminalProtocolSession()
+    const callbacks = callbacksForTest()
+    const client = new TerminalClient(callbacks)
+
+    client.connect('terminal-1', session)
+    client.connect('terminal-2', session)
+
+    const staleChannel = session.resolveOpen('terminal-1')
+    const activeChannel = session.resolveOpen('terminal-2')
+
+    await vi.waitFor(() => expect(callbacks.onLifecycle).toHaveBeenCalledTimes(1))
+    expect(callbacks.onLifecycle).toHaveBeenCalledWith({
+      type: 'terminal.channelOpen',
+      machineId: 'machine-local',
+      terminalId: 'terminal-2',
+    })
+    expect(staleChannel.readyState).toBe('closed')
+    expect(activeChannel.readyState).toBe('open')
+    expect(session.closedTerminalIds).toContain('terminal-1')
+  })
 })
 
 function callbacksForTest(): TerminalClientCallbacks & {
@@ -183,5 +205,46 @@ class MockTerminalProtocolChannel {
 
   close(): void {
     this.readyState = 'closed'
+  }
+}
+
+class DeferredTerminalProtocolSession implements TerminalProtocolSession {
+  readonly openedTerminalIds: string[] = []
+  readonly openedLabels: string[] = []
+  readonly closedTerminalIds: string[] = []
+  private readonly waiters = new Map<string, (channel: MockTerminalProtocolChannel) => void>()
+
+  async openTerminal(terminalId: string): Promise<MockTerminalProtocolChannel> {
+    this.openedTerminalIds.push(terminalId)
+    this.openedLabels.push(`terminal:${terminalId}`)
+    return new Promise((resolve) => {
+      this.waiters.set(terminalId, resolve)
+    })
+  }
+
+  resolveOpen(terminalId: string): MockTerminalProtocolChannel {
+    const channel = new MockTerminalProtocolChannel(`terminal:${terminalId}`)
+    const resolve = this.waiters.get(terminalId)
+    if (!resolve) throw new Error(`missing pending terminal ${terminalId}`)
+    this.waiters.delete(terminalId)
+    resolve(channel)
+    return channel
+  }
+
+  async getConnectionInfo() {
+    return {
+      path: 'local' as const,
+      connectionId: 'mock-connection',
+      machineId: 'machine-local',
+      relayInUse: false,
+    }
+  }
+
+  subscribeTerminal(): () => void {
+    return () => {}
+  }
+
+  closeTerminalChannel(terminalId: string): void {
+    this.closedTerminalIds.push(terminalId)
   }
 }

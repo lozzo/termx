@@ -45,8 +45,8 @@ describe('LocalRemoteApp real file manager flow', () => {
   it('preserves file navigation across list and terminal pages for the same terminal, then resets for a new terminal context', async () => {
     const api = createMockLocalAgentApi()
     const sessions: Array<ReturnType<typeof createMockLocalRemoteSession>> = []
-    const connect = vi.fn(({ machineId, terminalId }: { machineId: string; terminalId: string }) =>
-      Promise.resolve(trackSession(sessions, createMockLocalRemoteSession(machineId, terminalId))),
+    const connect = vi.fn(({ machineId }: { machineId: string }) =>
+      Promise.resolve(trackSession(sessions, createMockLocalRemoteSession(machineId))),
     )
     const connector = { connect } satisfies LocalRemoteSessionConnector
 
@@ -76,30 +76,29 @@ describe('LocalRemoteApp real file manager flow', () => {
     expect(screen.queryByText('log.txt')).toBeNull()
     expect(connect).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'machine-local',
-      terminalId: 'terminal-2',
     }))
+    expect(connect).toHaveBeenCalledTimes(1)
   })
 })
 
 function createMockLocalRemoteSession(
   machineId: string,
-  terminalId: string,
 ): ReturnType<typeof createMockFileSession> & RtcSession & {
   disconnectCalls: number
 } {
   const session = createMockFileSession({
     '/files/list': ({ path }: { path?: string }) => {
-      if (terminalId === 'terminal-2') {
-        if (path === '/srv/worker/tmp') {
-          return {
-            path: '/srv/worker/tmp',
-            parent: '/srv/worker',
-            total: 1,
-            entries: [{ name: 'cache.log', type: 'file', size: 7 }],
-          }
-        }
+      if (path === '/srv/worker/tmp') {
         return {
-          path: path ?? '/srv/worker',
+          path: '/srv/worker/tmp',
+          parent: '/srv/worker',
+          total: 1,
+          entries: [{ name: 'cache.log', type: 'file', size: 7 }],
+        }
+      }
+      if (path === '/srv/worker') {
+        return {
+          path: '/srv/worker',
           parent: '',
           total: 1,
           entries: [{ name: 'cache', type: 'dir', size: 0 }],
@@ -120,14 +119,14 @@ function createMockLocalRemoteSession(
         entries: [{ name: 'tmp', type: 'dir', size: 0 }],
       }
     },
-  }, {}, { machineId, terminalId })
+  }, {}, { machineId })
 
   return Object.assign(session, {
     disconnectCalls: 0,
     async disconnect() {
       this.disconnectCalls += 1
     },
-    async openTerminal() {
+    async openTerminal(terminalId: string) {
       return {
         label: `terminal:${terminalId}`,
         readyState: 'open' as const,

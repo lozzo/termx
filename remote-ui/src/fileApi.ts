@@ -1,4 +1,4 @@
-import type { RtcJsonRpcChannel, RtcSession } from './transport'
+import type { RtcSession } from './transport'
 
 export type FileEntryType = 'file' | 'dir' | 'symlink' | 'symlink-dir'
 
@@ -27,10 +27,8 @@ export interface FileApi {
 }
 
 export function createFileApi(session: Pick<RtcSession, 'openApi'>): FileApi {
-  let apiChannelPromise: Promise<RtcJsonRpcChannel> | null = null
   const apiChannel = () => {
-    apiChannelPromise ??= session.openApi()
-    return apiChannelPromise
+    return session.openApi()
   }
 
   async function request<TResponse>(

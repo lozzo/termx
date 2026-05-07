@@ -154,7 +154,6 @@ export class LocalApiChannel implements RtcJsonRpcChannel {
   private static readonly openTimeoutMs = 10000
   private static readonly responseTimeoutMs = 10000
   private nextID = 1
-  private readonly openPromise: Promise<void>
   private readonly waiters = new Map<string, {
     chunks: Uint8Array[]
     timeout: ReturnType<typeof setTimeout> | null
@@ -163,7 +162,6 @@ export class LocalApiChannel implements RtcJsonRpcChannel {
   }>()
 
   constructor(private readonly channel: RTCDataChannelLike) {
-    this.openPromise = waitChannelOpen(channel)
     channel.addEventListener('message', (event) => this.handleMessage((event as MessageEvent).data))
     channel.addEventListener('close', () => this.rejectPending(new Error(`api data channel ${channel.label} closed`)))
     channel.addEventListener('error', () => this.rejectPending(new Error(`api data channel ${channel.label} failed`)))
@@ -198,17 +196,16 @@ export class LocalApiChannel implements RtcJsonRpcChannel {
             body: payload.body,
           }))
         } catch (err) {
-          rejectAndDelete(err)
+          rejectAndDelete(normalizeChannelSendError(this.channel, err))
         }
       }
       if (this.channel.readyState === 'open') {
         sendRequest()
         return
       }
-      void withTimeout(
-        this.openPromise,
+      void waitChannelOpenWithTimeout(
+        this.channel,
         LocalApiChannel.openTimeoutMs,
-        () => new Error(`timed out opening data channel ${this.channel.label}`),
       ).then(sendRequest, (err: unknown) => rejectAndDelete(err))
     })
   }
@@ -309,4 +306,15 @@ export class LocalApiChannel implements RtcJsonRpcChannel {
     clearTimeout(waiter.timeout)
     waiter.timeout = null
   }
+}
+
+function normalizeChannelSendError(channel: RTCDataChannelLike, err: unknown): Error {
+  const message = err instanceof Error ? err.message : String(err)
+  if (
+    channel.readyState !== 'open' ||
+    /RTCDataChannel\.readyState is not 'open'|data channel .*not open/i.test(message)
+  ) {
+    return new Error(`api data channel ${channel.label} is not open`)
+  }
+  return err instanceof Error ? err : new Error(message)
 }
