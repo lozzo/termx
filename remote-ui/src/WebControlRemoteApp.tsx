@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, CheckCircle2, Loader2, LogIn, Monitor, QrCode, RefreshCw, Server, Settings, ShieldCheck, Wifi, WifiOff, X } from 'lucide-react'
 import { createMachineSessionStore, type MachineSessionStore } from './localAppIdentity'
 import { LocalRemoteApp, type LocalRemoteInventoryApi, type LocalRemoteSessionConnector } from './LocalRemoteApp'
@@ -8,7 +8,7 @@ import { createManagedHubRtcConnector } from './managedHubRtcConnector'
 import { consoleConnectionLogger } from './connectionLogger'
 import { createManagedHubApi } from './managedHubApi'
 import { parsePairingPayload, type PairingPayload } from './pairingPayload'
-import type { ConnectionInfo, LocalPairingApi, LocalStatus, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectionTarget, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionNegotiator, RtcSubscription } from './transport'
+import type { ConnectionInfo, LocalPairingApi, LocalStatus, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectionTarget, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionLiveness, RtcSessionNegotiator, RtcSubscription } from './transport'
 import { normalizeTerminalInventory } from './terminalInventory'
 import { createWebControlApi, type WebControlApi, type WebControlMachine, type WebControlUser } from './webControlApi'
 
@@ -17,7 +17,7 @@ const storageKeys = {
   accessToken: 'termx.remote.accessToken',
 } as const
 
-const defaultWebControlUrl = 'http://114.66.58.243:12306'
+const defaultWebControlUrl = ''
 const appName = 'TermX Remote App'
 
 type AppView = 'home' | 'settings' | 'machine'
@@ -325,10 +325,13 @@ function MachineTerminalListView({
   error: string | null
   onBack: () => void
 }) {
+  const machineRef = useRef(machine)
+  machineRef.current = machine
   const runtime = useMemo(() => {
     if (!user || !storage) return null
-    return runtimeFactory({ machine, user, storage, api, networkRuntime, createSession: requiredManagedRtcSessionFactory(createSession) })
-  }, [api, createSession, machine, networkRuntime, runtimeFactory, storage, user])
+    return runtimeFactory({ machine: machineRef.current, user, storage, api, networkRuntime, createSession: requiredManagedRtcSessionFactory(createSession) })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, createSession, machine.id, networkRuntime, runtimeFactory, storage, user])
   if (!user || !storage || !runtime) {
     return (
       <MachineRuntimeErrorShell
@@ -566,7 +569,7 @@ function SettingsView({
                 className="mt-1 h-11 w-full rounded-md border border-zinc-300 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 value={controlUrl}
                 onChange={(event) => onControlUrlChange(event.target.value)}
-                placeholder="http://114.66.58.243:12306"
+                placeholder="http://your-control-server:12306"
               />
             </label>
             <button
@@ -1019,7 +1022,7 @@ function requiredManagedRtcSessionFactory(factory: ManagedRtcSessionFactory | un
 }
 
 function isRtcSessionAlive(session: RtcSession): boolean {
-  const candidate = session as RtcSession & Partial<{ isAlive(): boolean }>
+  const candidate = session as RtcSession & Partial<RtcSessionLiveness>
   if (typeof candidate.isAlive !== 'function') return true
   return candidate.isAlive()
 }
@@ -1077,6 +1080,7 @@ function createManagedMachineSessionLease(session: RtcSession, terminalId: strin
         channel.close()
       }
       openedFiles.clear()
+      await session.disconnect()
     },
   }
 }

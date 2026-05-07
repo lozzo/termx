@@ -22,12 +22,13 @@ func (realClock) Now() time.Time {
 }
 
 type OfferPolicy struct {
-	MachineID  string
-	TerminalID string
-	Path       string
-	AllowRelay bool
-	ExpiresAt  time.Time
-	CreatedAt  time.Time
+	MachineID          string
+	TerminalID         string
+	Path               string
+	AllowRelay         bool
+	AllowRelayTransfer bool
+	ExpiresAt          time.Time
+	CreatedAt          time.Time
 }
 
 type Offer struct {
@@ -41,6 +42,7 @@ type Offer struct {
 	AnswerProofChallenge string
 	Path                 string
 	AllowRelay           bool
+	AllowRelayTransfer   bool
 	RelayInUse           bool
 }
 
@@ -71,10 +73,11 @@ type PreflightSessionInput struct {
 }
 
 type PreflightSession struct {
-	MachineID  string
-	TerminalID string
-	Path       string
-	AllowRelay bool
+	MachineID          string
+	TerminalID         string
+	Path               string
+	AllowRelay         bool
+	AllowRelayTransfer bool
 }
 
 type PollAgentOfferInput struct {

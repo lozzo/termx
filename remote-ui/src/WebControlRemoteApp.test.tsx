@@ -27,7 +27,7 @@ describe('WebControlRemoteApp', () => {
     await userEvent.click(screen.getByRole('button', { name: /open settings/i }))
 
     expect(screen.getByTestId('termx-app-settings')).toBeTruthy()
-    expect((screen.getByLabelText(/web control/i) as HTMLInputElement).value).toBe('http://114.66.58.243:12306')
+    expect((screen.getByLabelText(/web control/i) as HTMLInputElement).value).toBe('')
   })
 
   it('logs into Web Control, lists account machines, and claims a TermX pairing code through the machine Hub', async () => {

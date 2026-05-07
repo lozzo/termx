@@ -14,19 +14,21 @@ var (
 )
 
 type Config struct {
-	Registry            *registry.Registry
-	Clock               Clock
-	OfferTTL            time.Duration
-	MaxOffers           int
-	AllowRelayByDefault bool
+	Registry                   *registry.Registry
+	Clock                      Clock
+	OfferTTL                   time.Duration
+	MaxOffers                  int
+	AllowRelayByDefault        bool
+	AllowRelayTransferByDefault bool
 }
 
 type Service struct {
-	registry   *registry.Registry
-	clock      Clock
-	offerTTL   time.Duration
-	maxOffers  int
-	allowRelay bool
+	registry           *registry.Registry
+	clock              Clock
+	offerTTL           time.Duration
+	maxOffers          int
+	allowRelay         bool
+	allowRelayTransfer bool
 }
 
 func NewService(cfg Config) *Service {
@@ -43,11 +45,12 @@ func NewService(cfg Config) *Service {
 		maxOffers = defaultMaxOffers
 	}
 	return &Service{
-		registry:   cfg.Registry,
-		clock:      clock,
-		offerTTL:   offerTTL,
-		maxOffers:  maxOffers,
-		allowRelay: cfg.AllowRelayByDefault,
+		registry:           cfg.Registry,
+		clock:              clock,
+		offerTTL:           offerTTL,
+		maxOffers:          maxOffers,
+		allowRelay:         cfg.AllowRelayByDefault,
+		allowRelayTransfer: cfg.AllowRelayTransferByDefault,
 	}
 }
 
@@ -79,18 +82,20 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 		SessionToken:         in.SessionToken,
 		AnswerProofChallenge: preflight.AnswerProofChallenge,
 		AllowRelay:           s.allowRelay,
+		AllowRelayTransfer:   s.allowRelayTransfer,
 		ExpiresAt:            now.Add(s.offerTTL),
 	})
 	if err != nil {
 		return Offer{}, err
 	}
 	policy := OfferPolicy{
-		MachineID:  offer.MachineID,
-		TerminalID: offer.TerminalID,
-		Path:       PathCloud,
-		AllowRelay: s.allowRelay,
-		ExpiresAt:  offer.ExpiresAt,
-		CreatedAt:  offer.CreatedAt,
+		MachineID:          offer.MachineID,
+		TerminalID:         offer.TerminalID,
+		Path:               PathCloud,
+		AllowRelay:         s.allowRelay,
+		AllowRelayTransfer: s.allowRelayTransfer,
+		ExpiresAt:          offer.ExpiresAt,
+		CreatedAt:          offer.CreatedAt,
 	}
 	return Offer{
 		ID:                   offer.ID,
@@ -103,6 +108,7 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 		AnswerProofChallenge: offer.AnswerProofChallenge,
 		Path:                 PathCloud,
 		AllowRelay:           policy.AllowRelay,
+		AllowRelayTransfer:   policy.AllowRelayTransfer,
 		RelayInUse:           offer.RelayInUse,
 	}, nil
 }
@@ -119,10 +125,11 @@ func (s *Service) PreflightSession(ctx context.Context, in PreflightSessionInput
 		return PreflightSession{}, err
 	}
 	return PreflightSession{
-		MachineID:  machineID,
-		TerminalID: strings.TrimSpace(in.TerminalID),
-		Path:       PathCloud,
-		AllowRelay: s.allowRelay,
+		MachineID:          machineID,
+		TerminalID:         strings.TrimSpace(in.TerminalID),
+		Path:               PathCloud,
+		AllowRelay:         s.allowRelay,
+		AllowRelayTransfer: s.allowRelayTransfer,
 	}, nil
 }
 
@@ -243,11 +250,12 @@ func (s *Service) CleanupExpired(ctx context.Context) int {
 
 func offerPolicyFromRegistry(offer registry.Offer) OfferPolicy {
 	return OfferPolicy{
-		MachineID:  offer.MachineID,
-		TerminalID: offer.TerminalID,
-		Path:       PathCloud,
-		AllowRelay: offer.AllowRelay,
-		ExpiresAt:  offer.ExpiresAt,
-		CreatedAt:  offer.CreatedAt,
+		MachineID:          offer.MachineID,
+		TerminalID:         offer.TerminalID,
+		Path:               PathCloud,
+		AllowRelay:         offer.AllowRelay,
+		AllowRelayTransfer: offer.AllowRelayTransfer,
+		ExpiresAt:          offer.ExpiresAt,
+		CreatedAt:          offer.CreatedAt,
 	}
 }

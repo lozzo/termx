@@ -105,6 +105,10 @@ export interface RtcSession {
   disconnect(): Promise<void>
 }
 
+export interface RtcSessionLiveness {
+  isAlive(): boolean
+}
+
 export interface RtcConnector<TInput extends RtcConnectionTarget = RtcConnectionTarget> {
   connect(input: TInput, options?: RtcConnectOptions): Promise<RtcSession>
 }

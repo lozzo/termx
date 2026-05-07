@@ -50,6 +50,7 @@ type ServerConfig struct {
 	ICE        *hubice.Service
 	ICEServers []hubv1.RTCIceServerConfig
 	AllowRelay bool
+	SessionTTL time.Duration
 }
 
 var answerProofChallengeGenerator = randomHubGRPCID
@@ -65,6 +66,10 @@ func NewServer(reg *registry.Registry, cloudSvc *cloud.Service, iceServers []hub
 }
 
 func NewServerWithConfig(cfg ServerConfig) *grpc.Server {
+	sessionTTL := cfg.SessionTTL
+	if sessionTTL <= 0 {
+		sessionTTL = 5 * time.Minute
+	}
 	grpcSrv := grpc.NewServer(grpc.StreamInterceptor(grpcStreamAuth))
 	pb.RegisterAgentHubServer(grpcSrv, grpcapi.NewServer(&hubRegistryAdapter{
 		registry:   cfg.Registry,
@@ -72,6 +77,7 @@ func NewServerWithConfig(cfg ServerConfig) *grpc.Server {
 		ice:        cfg.ICE,
 		iceServers: cloneHubICEServers(cfg.ICEServers),
 		allowRelay: cfg.AllowRelay,
+		sessionTTL: sessionTTL,
 		sessions:   make(map[string]agentSessionState),
 	}))
 	return grpcSrv

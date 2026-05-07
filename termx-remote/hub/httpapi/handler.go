@@ -216,7 +216,7 @@ func NewHandler(cfg Config) http.Handler {
 			"path":         preflight.Path,
 			"machine_id":   preflight.MachineID,
 			"ice_servers":  iceServers,
-			"relay_policy": relayPolicyResponse(preflight.AllowRelay),
+			"relay_policy": relayPolicyResponse(preflight.AllowRelay, preflight.AllowRelayTransfer),
 		}
 		if strings.TrimSpace(preflight.TerminalID) != "" {
 			response["terminal_id"] = strings.TrimSpace(preflight.TerminalID)
@@ -273,7 +273,7 @@ func NewHandler(cfg Config) http.Handler {
 					"machine_id":   offer.MachineID,
 					"terminal_id":  offer.TerminalID,
 					"pending":      true,
-					"relay_policy": relayPolicyResponse(offer.AllowRelay),
+					"relay_policy": relayPolicyResponse(offer.AllowRelay, offer.AllowRelayTransfer),
 				})
 				return
 			}
@@ -284,7 +284,7 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
 			return
 		}
-		writeSessionAnswer(w, r.Context(), cfg, publicSessionID(offer), offer.MachineID, offer.TerminalID, offer.AllowRelay, offer.ID, answer)
+		writeSessionAnswer(w, r.Context(), cfg, publicSessionID(offer), offer.MachineID, offer.TerminalID, offer.AllowRelay, offer.AllowRelayTransfer, offer.ID, answer)
 	})
 	mux.HandleFunc("POST /api/v1/sessions/{session_id}/answer", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -315,7 +315,7 @@ func NewHandler(cfg Config) http.Handler {
 						"machine_id":   policy.MachineID,
 						"terminal_id":  policy.TerminalID,
 						"pending":      true,
-						"relay_policy": relayPolicyResponse(policy.AllowRelay),
+						"relay_policy": relayPolicyResponse(policy.AllowRelay, policy.AllowRelayTransfer),
 					})
 					return
 				}
@@ -324,6 +324,7 @@ func NewHandler(cfg Config) http.Handler {
 			return
 		}
 		allowRelay := hasPolicy && policy.AllowRelay
+		allowRelayTransfer := hasPolicy && policy.AllowRelayTransfer
 		if _, err := iceServersForLease(r.Context(), cfg, r.PathValue("session_id"), allowRelay); err != nil {
 			writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
 			return
@@ -332,7 +333,7 @@ func NewHandler(cfg Config) http.Handler {
 		if hasPolicy {
 			terminalID = policy.TerminalID
 		}
-		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), answer.MachineID, terminalID, allowRelay, r.PathValue("session_id"), answer)
+		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), answer.MachineID, terminalID, allowRelay, allowRelayTransfer, r.PathValue("session_id"), answer)
 	})
 	mux.HandleFunc("POST /api/v1/pairing/claims", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -396,6 +397,29 @@ func NewHandler(cfg Config) http.Handler {
 	}
 }
 
+func pollUntilReady[T any](ctx context.Context, timeout, interval time.Duration, fetch func(context.Context) (T, error), notFoundErr error) (T, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		result, err := fetch(ctx)
+		if err == nil {
+			return result, nil
+		}
+		if !errors.Is(err, notFoundErr) {
+			var zero T
+			return zero, err
+		}
+		select {
+		case <-ctx.Done():
+			var zero T
+			return zero, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
 func waitForAnswer(ctx context.Context, cfg Config, offerID string, machineID string) (cloud.Answer, error) {
 	timeout := cfg.AnswerTimeout
 	if timeout <= 0 {
@@ -405,27 +429,12 @@ func waitForAnswer(ctx context.Context, cfg Config, offerID string, machineID st
 	if interval <= 0 {
 		interval = 25 * time.Millisecond
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		answer, err := cfg.Cloud.GetAnswer(ctx, cloud.GetAnswerInput{
+	return pollUntilReady(ctx, timeout, interval, func(ctx context.Context) (cloud.Answer, error) {
+		return cfg.Cloud.GetAnswer(ctx, cloud.GetAnswerInput{
 			OfferID:   offerID,
 			MachineID: machineID,
 		})
-		if err == nil {
-			return answer, nil
-		}
-		if !errors.Is(err, registry.ErrOfferNotFound) {
-			return cloud.Answer{}, err
-		}
-		select {
-		case <-ctx.Done():
-			return cloud.Answer{}, ctx.Err()
-		case <-ticker.C:
-		}
-	}
+	}, registry.ErrOfferNotFound)
 }
 
 func waitForPairingResult(ctx context.Context, cfg Config, claimID string) (registry.PairingResult, error) {
@@ -437,24 +446,9 @@ func waitForPairingResult(ctx context.Context, cfg Config, claimID string) (regi
 	if interval <= 0 {
 		interval = 25 * time.Millisecond
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		result, err := cfg.Registry.GetPairingResult(ctx, claimID)
-		if err == nil {
-			return result, nil
-		}
-		if !errors.Is(err, registry.ErrPairingClaimNotFound) {
-			return registry.PairingResult{}, err
-		}
-		select {
-		case <-ctx.Done():
-			return registry.PairingResult{}, ctx.Err()
-		case <-ticker.C:
-		}
-	}
+	return pollUntilReady(ctx, timeout, interval, func(ctx context.Context) (registry.PairingResult, error) {
+		return cfg.Registry.GetPairingResult(ctx, claimID)
+	}, registry.ErrPairingClaimNotFound)
 }
 
 func statusForAnswerError(err error) int {
@@ -480,7 +474,7 @@ func preflightICELeaseID(machineID string) string {
 	return "browser-" + replacer.Replace(machineID)
 }
 
-func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, sessionID string, machineID string, terminalID string, allowRelay bool, leaseID string, answer cloud.Answer) {
+func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, sessionID string, machineID string, terminalID string, allowRelay bool, allowRelayTransfer bool, leaseID string, answer cloud.Answer) {
 	if strings.TrimSpace(answer.Error) != "" {
 		writeError(w, http.StatusForbidden, "cloud_answer_error", answer.Error)
 		return
@@ -500,7 +494,7 @@ func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, 
 			"answer_proof":   answer.AnswerProof,
 		},
 		"ice_servers":  iceServers,
-		"relay_policy": relayPolicyResponse(allowRelay),
+		"relay_policy": relayPolicyResponse(allowRelay, allowRelayTransfer),
 		"relay_in_use": answer.RelayInUse,
 	}
 	if strings.TrimSpace(terminalID) != "" {
@@ -539,10 +533,10 @@ func hubIceServers(in []ice.ICEServer) []hubv1.RTCIceServerConfig {
 	return out
 }
 
-func relayPolicyResponse(allowRelay bool) map[string]any {
+func relayPolicyResponse(allowRelay bool, allowRelayTransfer bool) map[string]any {
 	return map[string]any{
 		"allow_relay":          allowRelay,
-		"allow_relay_transfer": false,
+		"allow_relay_transfer": allowRelayTransfer,
 	}
 }
 
@@ -662,7 +656,7 @@ func authorizedInternalRequest(r *http.Request, secret string) bool {
 	if provided == "" {
 		provided = strings.TrimSpace(r.Header.Get("X-Hub-Secret"))
 	}
-	if provided == "" || len(provided) != len(secret) {
+	if provided == "" {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(provided), []byte(secret)) == 1
