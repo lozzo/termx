@@ -76,11 +76,16 @@ export function WebControlRemoteApp({
   const signedIn = accessToken.trim() !== ''
   const selectedMachine = machines.find((machine) => machine.id === selectedMachineId) ?? null
 
-  const api = useMemo(() => createWebControlApi({
-    baseUrl: controlUrl,
-    ...(accessToken ? { accessToken } : {}),
-    fetch: networkRuntime.fetch,
-  }), [accessToken, controlUrl, networkRuntime])
+  const api = useMemo(() => {
+    if (controlUrl.trim() === '') {
+      return createUnavailableWebControlApi('Web Control URL is required')
+    }
+    return createWebControlApi({
+      baseUrl: controlUrl,
+      ...(accessToken ? { accessToken } : {}),
+      fetch: networkRuntime.fetch,
+    })
+  }, [accessToken, controlUrl, networkRuntime])
 
   const refreshMachines = useCallback(async () => {
     if (!accessToken) return
@@ -830,6 +835,17 @@ function initialControlUrl(storage: RemoteRuntimeStorage | undefined, fallback: 
 
 function cleanControlUrl(value: string | null | undefined): string {
   return value?.trim() ?? ''
+}
+
+function createUnavailableWebControlApi(message: string): WebControlApi {
+  const fail = async (): Promise<never> => {
+    throw new Error(message)
+  }
+  return {
+    login: fail,
+    me: fail,
+    listMachines: fail,
+  }
 }
 
 function createBrowserAppDeviceId(): string {

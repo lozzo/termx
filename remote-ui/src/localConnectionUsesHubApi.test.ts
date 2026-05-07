@@ -71,7 +71,7 @@ describe('local connection over Hub API', () => {
         claim_id: 'claim-1',
         machine_id: 'machine-local',
         session_token: 'session-token-local',
-        expires_at: '2026-05-06T00:00:00Z',
+        expires_at: '2099-05-06T00:00:00Z',
       })
     })
     const api = createManagedHubApi({ baseUrl: 'http://192.168.1.100:18888', fetch })

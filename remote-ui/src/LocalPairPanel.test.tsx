@@ -15,7 +15,7 @@ describe('LocalPairPanel', () => {
     const pair = vi.fn(async () => ({
       machineId: 'machine-local',
       sessionToken: 'session-token-local',
-      expiresAt: '2026-05-02T10:30:00Z',
+      expiresAt: '2099-05-02T10:30:00Z',
     }))
     const api = createMockApi(pair)
 
@@ -41,7 +41,7 @@ describe('LocalPairPanel', () => {
       requestedCapabilities: ['terminal', 'file_manager', 'terminal_management'],
     }))
     expect(storage.getItem('termx.session.machine-local.token')).toBe('session-token-local')
-    expect(storage.getItem('termx.session.machine-local.exp')).toBe('2026-05-02T10:30:00Z')
+    expect(storage.getItem('termx.session.machine-local.exp')).toBe('2099-05-02T10:30:00Z')
     expect(JSON.stringify(storage.dump())).not.toMatch(/workspace|tab|pane|appCertificate|machine_private_key|machinePrivateKey|turn|credential/i)
   })
 })

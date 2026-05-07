@@ -186,7 +186,7 @@ describe('local web entry shell', () => {
     const pair = vi.fn(async (input: Parameters<LocalPairingApi['pair']>[0]) => ({
       machineId: input.machineId ?? 'missing-machine',
       sessionToken: 'session-token-local',
-      expiresAt: '2026-05-06T00:00:00Z',
+      expiresAt: '2099-05-06T00:00:00Z',
     }))
 
     entry.mountLocalWebApp({

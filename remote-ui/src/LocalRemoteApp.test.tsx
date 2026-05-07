@@ -164,7 +164,7 @@ describe('LocalRemoteApp', () => {
     pairApi.pair = vi.fn(async () => ({
       machineId: 'machine-local',
       sessionToken: 'session-token-local',
-      expiresAt: '2026-05-01T07:00:00Z',
+      expiresAt: '2099-05-01T07:00:00Z',
     }))
     const storage = new MemoryStorage()
 
@@ -563,7 +563,7 @@ describe('LocalRemoteApp', () => {
       return {
         machineId: 'machine-local',
         sessionToken: 'session-token-local',
-        expiresAt: '2026-05-01T07:00:00Z',
+        expiresAt: '2099-05-01T07:00:00Z',
       }
     })
 

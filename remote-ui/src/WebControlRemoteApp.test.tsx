@@ -69,7 +69,7 @@ describe('WebControlRemoteApp', () => {
         machine_id: 'device-1',
         machine_name: 'RedmiBook',
         session_token: 'session-token-device-1',
-        expires_at: '2026-05-05T10:30:00Z',
+        expires_at: '2099-05-05T10:30:00Z',
       }),
     ])
     const listTerminals = vi.fn(async () => [{
