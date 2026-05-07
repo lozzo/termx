@@ -261,6 +261,92 @@ func TestPollTimeoutOfferDeliveryAndAnswerCorrelation(t *testing.T) {
 	}
 }
 
+func TestOfferQueueReturnsMultipleOffersFIFO(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := registry.New(registry.Config{
+		Clock:    fixedClock(time.Date(2026, 5, 3, 10, 2, 0, 0, time.UTC)),
+		AgentTTL: time.Minute,
+	})
+	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	first, err := store.SubmitOffer(ctx, registry.OfferInput{
+		MachineID:  "mach_1",
+		TerminalID: "term_1",
+		SDP:        minimalSDP("offer-1"),
+	})
+	if err != nil {
+		t.Fatalf("submit first offer: %v", err)
+	}
+	second, err := store.SubmitOffer(ctx, registry.OfferInput{
+		MachineID:  "mach_1",
+		TerminalID: "term_2",
+		SDP:        minimalSDP("offer-2"),
+	})
+	if err != nil {
+		t.Fatalf("submit second offer: %v", err)
+	}
+
+	gotFirst, err := store.Poll(ctx, registry.PollInput{AgentID: "agent_1", MachineID: "mach_1", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("poll first offer: %v", err)
+	}
+	gotSecond, err := store.Poll(ctx, registry.PollInput{AgentID: "agent_1", MachineID: "mach_1", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("poll second offer: %v", err)
+	}
+	if gotFirst.ID != first.ID || gotSecond.ID != second.ID {
+		t.Fatalf("offer order = %q then %q, want %q then %q", gotFirst.ID, gotSecond.ID, first.ID, second.ID)
+	}
+}
+
+func TestOfferLookupByPublicSessionID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clock := &mutableClock{value: time.Date(2026, 5, 3, 9, 45, 0, 0, time.UTC)}
+	store := registry.New(registry.Config{Clock: clock, AgentTTL: time.Minute})
+	if _, err := store.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	offer, err := store.SubmitOffer(ctx, registry.OfferInput{
+		SessionID:          "rtc_public",
+		MachineID:          "mach_1",
+		TerminalID:         "term_1",
+		SDP:                minimalSDP("offer-public"),
+		AllowRelay:         true,
+		AllowRelayTransfer: true,
+		ExpiresAt:          clock.value.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("submit offer: %v", err)
+	}
+	found, ok := store.Offer(ctx, registry.OfferLookupInput{MachineID: "mach_1", OfferID: "rtc_public"})
+	if !ok || found.ID != offer.ID || !found.AllowRelay || !found.AllowRelayTransfer || !found.ExpiresAt.Equal(clock.value.Add(time.Minute)) {
+		t.Fatalf("offer lookup = %+v ok=%v", found, ok)
+	}
+	if _, err := store.Poll(ctx, registry.PollInput{AgentID: "agent_1", MachineID: "mach_1", Timeout: time.Second}); err != nil {
+		t.Fatalf("poll: %v", err)
+	}
+	if _, err := store.SubmitAnswer(ctx, registry.AnswerInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		OfferID:   "rtc_public",
+		SDP:       minimalSDP("answer-public"),
+	}); err != nil {
+		t.Fatalf("submit answer by public session: %v", err)
+	}
+	answer, err := store.GetAnswerForOffer(ctx, registry.OfferLookupInput{MachineID: "mach_1", OfferID: "rtc_public"})
+	if err != nil {
+		t.Fatalf("get answer by public session: %v", err)
+	}
+	if answer.OfferID != offer.ID || answer.SDP != minimalSDP("answer-public") {
+		t.Fatalf("answer = %+v, want offer %s", answer, offer.ID)
+	}
+}
+
 func TestAnswerRequiresPolledOfferAndAssignedAgent(t *testing.T) {
 	t.Parallel()
 

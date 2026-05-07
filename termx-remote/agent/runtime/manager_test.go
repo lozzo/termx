@@ -261,6 +261,24 @@ func TestManagerAcceptsCloudOfferWithValidSessionToken(t *testing.T) {
 	}
 }
 
+func TestManagerDeepCopiesOfferICEServersBeforeAnswerer(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixture(t)
+	iceServers := []hubv1.RTCIceServerConfig{{
+		URLs:       []string{"stun:stun.example.test:3478"},
+		Username:   "user-1",
+		Credential: "pass-1",
+	}}
+
+	answer := manager.answerCloudOffer(context.Background(), offer, iceServers)
+	if answer.Error != "" {
+		t.Fatalf("valid token offer returned error: %#v", answer)
+	}
+	iceServers[0].URLs[0] = "stun:mutated.example.test:3478"
+	if got := answerer.gotICE[0].URLs[0]; got != "stun:stun.example.test:3478" {
+		t.Fatalf("answerer ICE URL was aliased to caller slice: %q", got)
+	}
+}
+
 func TestManagerRejectsCloudOfferWithoutSessionTokenBeforeAnswering(t *testing.T) {
 	manager, answerer, offer := newCloudOfferFixture(t)
 	offer.SessionToken = ""

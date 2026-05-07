@@ -39,14 +39,10 @@ type Registry struct {
 	signalingTTL   time.Duration
 	maxSDPBytes    int
 	agents         map[string]Agent
-	offers         map[string]Offer
 	answers        map[string]Answer
-	queues         map[string][]Offer
-	waiters        map[string][]chan struct{}
-	pairingClaims  map[string]PairingClaim
+	offerQueue     signalQueue[Offer]
 	pairingResults map[string]PairingResult
-	pairingQueues  map[string][]PairingClaim
-	pairingWaiters map[string][]chan struct{}
+	pairingQueue   signalQueue[PairingClaim]
 	forced         map[string]forceOfflineState
 }
 
@@ -75,20 +71,20 @@ func New(cfg Config) *Registry {
 		maxSDPBytes = 256 * 1024
 	}
 	return &Registry{
-		clock:          clock,
-		agentTTL:       ttl,
-		signalingTTL:   signalingTTL,
-		maxSDPBytes:    maxSDPBytes,
-		agents:         make(map[string]Agent),
-		offers:         make(map[string]Offer),
-		answers:        make(map[string]Answer),
-		queues:         make(map[string][]Offer),
-		waiters:        make(map[string][]chan struct{}),
-		pairingClaims:  make(map[string]PairingClaim),
+		clock:        clock,
+		agentTTL:     ttl,
+		signalingTTL: signalingTTL,
+		maxSDPBytes:  maxSDPBytes,
+		agents:       make(map[string]Agent),
+		answers:      make(map[string]Answer),
+		offerQueue: newSignalQueue(func(offer Offer) string {
+			return offer.ID
+		}),
 		pairingResults: make(map[string]PairingResult),
-		pairingQueues:  make(map[string][]PairingClaim),
-		pairingWaiters: make(map[string][]chan struct{}),
-		forced:         make(map[string]forceOfflineState),
+		pairingQueue: newSignalQueue(func(claim PairingClaim) string {
+			return claim.ID
+		}),
+		forced: make(map[string]forceOfflineState),
 	}
 }
 
@@ -186,14 +182,14 @@ func (r *Registry) CleanupExpired(ctx context.Context) int {
 			removed++
 		}
 	}
-	for id, offer := range r.offers {
-		if r.signalingExpired(offer.CreatedAt) {
-			delete(r.offers, id)
-			removed++
+	for _, offer := range r.offerQueue.itemsSnapshot() {
+		id := offer.ID
+		if r.offerExpired(offer) {
 			if _, ok := r.answers[id]; ok {
-				delete(r.answers, id)
 				removed++
 			}
+			r.deleteOfferLocked(id)
+			removed++
 			continue
 		}
 		if offer.AssignedAgentID != "" {
@@ -201,15 +197,16 @@ func (r *Registry) CleanupExpired(ctx context.Context) int {
 				if _, answered := r.answers[id]; !answered {
 					offer.AssignedAgentID = ""
 					offer.DeliveredAt = time.Time{}
-					r.offers[id] = offer
-					r.queues[offer.MachineID] = append(r.queues[offer.MachineID], offer)
+					r.offerQueue.set(offer)
+					r.offerQueue.enqueue(offer.MachineID, offer)
 				}
 			}
 		}
 	}
 	r.pruneQueuesLocked()
 	for offerID, answer := range r.answers {
-		if _, ok := r.offers[offerID]; !ok {
+		offer, ok := r.offerQueue.get(offerID)
+		if !ok || r.offerExpired(offer) {
 			delete(r.answers, offerID)
 			removed++
 			continue
@@ -219,9 +216,10 @@ func (r *Registry) CleanupExpired(ctx context.Context) int {
 			removed++
 		}
 	}
-	for id, claim := range r.pairingClaims {
+	for _, claim := range r.pairingQueue.itemsSnapshot() {
+		id := claim.ID
 		if r.signalingExpired(claim.CreatedAt) {
-			delete(r.pairingClaims, id)
+			r.pairingQueue.delete(id)
 			if _, ok := r.pairingResults[id]; ok {
 				delete(r.pairingResults, id)
 			}
@@ -267,6 +265,9 @@ func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error
 		ICECandidates:        cloneStrings(in.ICECandidates),
 		SessionToken:         in.SessionToken,
 		AnswerProofChallenge: in.AnswerProofChallenge,
+		AllowRelay:           in.AllowRelay,
+		AllowRelayTransfer:   in.AllowRelayTransfer,
+		ExpiresAt:            in.ExpiresAt,
 	}); err != nil {
 		return Offer{}, err
 	}
@@ -278,6 +279,9 @@ func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error
 		ICECandidates:        cloneStrings(in.ICECandidates),
 		SessionToken:         in.SessionToken,
 		AnswerProofChallenge: in.AnswerProofChallenge,
+		AllowRelay:           in.AllowRelay,
+		AllowRelayTransfer:   in.AllowRelayTransfer,
+		ExpiresAt:            in.ExpiresAt,
 	})
 }
 
@@ -302,6 +306,23 @@ func (r *Registry) PreflightOffer(ctx context.Context, in OfferInput) error {
 	return nil
 }
 
+func (r *Registry) PreflightMachine(ctx context.Context, machineID string) error {
+	_ = ctx
+	machineID = strings.TrimSpace(machineID)
+	if machineID == "" {
+		return errors.New("machine id is required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.machineOnlineLocked(machineID) {
+		if r.machineHasActiveForceOfflineLocked(machineID, r.clock.Now().UTC()) {
+			return ErrAgentForcedOffline
+		}
+		return ErrAgentNotFound
+	}
+	return nil
+}
+
 func (r *Registry) submitVerifiedOffer(ctx context.Context, in OfferInput) (Offer, error) {
 	_ = ctx
 	offer := Offer{
@@ -314,7 +335,10 @@ func (r *Registry) submitVerifiedOffer(ctx context.Context, in OfferInput) (Offe
 		SessionToken:         strings.TrimSpace(in.SessionToken),
 		AnswerProofChallenge: strings.TrimSpace(in.AnswerProofChallenge),
 		Path:                 PathCloud,
+		AllowRelay:           in.AllowRelay,
+		AllowRelayTransfer:   in.AllowRelayTransfer,
 		CreatedAt:            r.clock.Now().UTC(),
+		ExpiresAt:            in.ExpiresAt.UTC(),
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -324,9 +348,8 @@ func (r *Registry) submitVerifiedOffer(ctx context.Context, in OfferInput) (Offe
 		}
 		return Offer{}, ErrAgentNotFound
 	}
-	r.offers[offer.ID] = offer
-	r.queues[offer.MachineID] = append(r.queues[offer.MachineID], offer)
-	r.notifyLocked(offer.MachineID)
+	r.offerQueue.enqueue(offer.MachineID, offer)
+	r.offerQueue.notify(offer.MachineID)
 	return cloneOffer(offer), nil
 }
 
@@ -358,31 +381,28 @@ func (r *Registry) Poll(ctx context.Context, in PollInput) (Offer, error) {
 			r.mu.Unlock()
 			return Offer{}, ErrUnauthorizedAgent
 		}
-		if queue := r.queues[machineID]; len(queue) > 0 {
-			for len(queue) > 0 {
-				offer := queue[0]
-				queue = queue[1:]
+		for {
+			offer, ok := r.offerQueue.dequeue(machineID)
+			if ok {
 				if r.expireOfferLocked(offer.ID, offer) {
 					continue
 				}
 				offer.AssignedAgentID = agent.ID
 				offer.DeliveredAt = r.clock.Now().UTC()
-				r.offers[offer.ID] = offer
-				r.queues[machineID] = queue
+				r.offerQueue.set(offer)
 				r.mu.Unlock()
 				return cloneOffer(offer), nil
 			}
-			delete(r.queues, machineID)
+			break
 		}
-		waiter := make(chan struct{}, 1)
-		r.waiters[machineID] = append(r.waiters[machineID], waiter)
+		waiter := r.offerQueue.addWaiter(machineID)
 		r.mu.Unlock()
 		select {
 		case <-ctx.Done():
-			r.removeWaiter(machineID, waiter)
+			r.removeOfferWaiter(machineID, waiter)
 			return Offer{}, ctx.Err()
 		case <-timer.C:
-			r.removeWaiter(machineID, waiter)
+			r.removeOfferWaiter(machineID, waiter)
 			return Offer{}, ErrPollTimeout
 		case <-waiter:
 		}
@@ -404,7 +424,7 @@ func (r *Registry) SubmitAnswer(ctx context.Context, in AnswerInput) (Answer, er
 	if agent.MachineID != strings.TrimSpace(in.MachineID) {
 		return Answer{}, ErrUnauthorizedAgent
 	}
-	offer, ok := r.offers[strings.TrimSpace(in.OfferID)]
+	offer, ok := r.offerByIDLocked(OfferLookupInput{MachineID: in.MachineID, OfferID: in.OfferID})
 	if !ok {
 		return Answer{}, ErrOfferNotFound
 	}
@@ -473,9 +493,8 @@ func (r *Registry) SubmitPairingClaim(ctx context.Context, in PairingClaimInput)
 		}
 		return PairingClaim{}, ErrAgentNotFound
 	}
-	r.pairingClaims[claim.ID] = claim
-	r.pairingQueues[machineID] = append(r.pairingQueues[machineID], claim)
-	r.notifyPairingLocked(machineID)
+	r.pairingQueue.enqueue(machineID, claim)
+	r.pairingQueue.notify(machineID)
 	return clonePairingClaim(claim), nil
 }
 
@@ -507,27 +526,24 @@ func (r *Registry) PollPairingClaim(ctx context.Context, in PairingPollInput) (P
 			r.mu.Unlock()
 			return PairingClaim{}, ErrUnauthorizedAgent
 		}
-		if queue := r.pairingQueues[machineID]; len(queue) > 0 {
-			for len(queue) > 0 {
-				claim := queue[0]
-				queue = queue[1:]
-				stored, ok := r.pairingClaims[claim.ID]
+		for {
+			claim, ok := r.pairingQueue.dequeue(machineID)
+			if ok {
+				stored, ok := r.pairingQueue.get(claim.ID)
 				if !ok || r.signalingExpired(stored.CreatedAt) {
-					delete(r.pairingClaims, claim.ID)
+					r.pairingQueue.delete(claim.ID)
 					delete(r.pairingResults, claim.ID)
 					continue
 				}
 				stored.AssignedAgentID = agent.ID
 				stored.DeliveredAt = r.clock.Now().UTC()
-				r.pairingClaims[stored.ID] = stored
-				r.pairingQueues[machineID] = queue
+				r.pairingQueue.set(stored)
 				r.mu.Unlock()
 				return clonePairingClaim(stored), nil
 			}
-			delete(r.pairingQueues, machineID)
+			break
 		}
-		waiter := make(chan struct{}, 1)
-		r.pairingWaiters[machineID] = append(r.pairingWaiters[machineID], waiter)
+		waiter := r.pairingQueue.addWaiter(machineID)
 		r.mu.Unlock()
 		select {
 		case <-ctx.Done():
@@ -558,7 +574,7 @@ func (r *Registry) SubmitPairingResult(ctx context.Context, in PairingResultInpu
 	if agent.MachineID != machineID {
 		return PairingResult{}, ErrUnauthorizedAgent
 	}
-	claim, ok := r.pairingClaims[strings.TrimSpace(in.ClaimID)]
+	claim, ok := r.pairingQueue.get(strings.TrimSpace(in.ClaimID))
 	if !ok || r.signalingExpired(claim.CreatedAt) {
 		return PairingResult{}, ErrPairingClaimNotFound
 	}
@@ -588,19 +604,19 @@ func (r *Registry) GetPairingResult(ctx context.Context, claimID string) (Pairin
 	claimID = strings.TrimSpace(claimID)
 	result, ok := r.pairingResults[claimID]
 	if !ok {
-		if claim, ok := r.pairingClaims[claimID]; ok && r.signalingExpired(claim.CreatedAt) {
-			delete(r.pairingClaims, claimID)
+		if claim, ok := r.pairingQueue.get(claimID); ok && r.signalingExpired(claim.CreatedAt) {
+			r.pairingQueue.delete(claimID)
 			delete(r.pairingResults, claimID)
 		}
 		return PairingResult{}, ErrPairingClaimNotFound
 	}
-	claim, claimOK := r.pairingClaims[claimID]
+	claim, claimOK := r.pairingQueue.get(claimID)
 	if !claimOK || r.signalingExpired(claim.CreatedAt) || r.signalingExpired(result.CreatedAt) {
-		delete(r.pairingClaims, claimID)
+		r.pairingQueue.delete(claimID)
 		delete(r.pairingResults, claimID)
 		return PairingResult{}, ErrPairingClaimNotFound
 	}
-	delete(r.pairingClaims, claimID)
+	r.pairingQueue.delete(claimID)
 	delete(r.pairingResults, claimID)
 	return clonePairingResult(result), nil
 }
@@ -613,14 +629,94 @@ func (r *Registry) GetAnswer(ctx context.Context, offerID string) (Answer, error
 	if !ok {
 		return Answer{}, ErrOfferNotFound
 	}
-	offer, ok := r.offers[answer.OfferID]
+	offer, ok := r.offerQueue.get(answer.OfferID)
 	if !ok || r.expireOfferLocked(offer.ID, offer) || r.signalingExpired(answer.CreatedAt) {
-		delete(r.answers, answer.OfferID)
+		r.deleteOfferLocked(answer.OfferID)
 		return Answer{}, ErrOfferNotFound
 	}
-	delete(r.answers, answer.OfferID)
-	delete(r.offers, answer.OfferID)
+	r.deleteOfferLocked(answer.OfferID)
 	return answer, nil
+}
+
+func (r *Registry) GetAnswerForOffer(ctx context.Context, in OfferLookupInput) (Answer, error) {
+	_ = ctx
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	offer, ok := r.offerByIDLocked(in)
+	if !ok || r.offerExpired(offer) {
+		if ok {
+			r.deleteOfferLocked(offer.ID)
+		}
+		return Answer{}, ErrOfferNotFound
+	}
+	answer, ok := r.answers[offer.ID]
+	if !ok || r.signalingExpired(answer.CreatedAt) {
+		if ok {
+			delete(r.answers, offer.ID)
+		}
+		return Answer{}, ErrOfferNotFound
+	}
+	if answer.MachineID != strings.TrimSpace(in.MachineID) {
+		return Answer{}, ErrUnauthorizedAgent
+	}
+	r.deleteOfferLocked(offer.ID)
+	return answer, nil
+}
+
+func (r *Registry) Offer(ctx context.Context, in OfferLookupInput) (Offer, bool) {
+	_ = ctx
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	offer, ok := r.offerByIDLocked(in)
+	if !ok || r.offerExpired(offer) {
+		if ok {
+			r.deleteOfferLocked(offer.ID)
+		}
+		return Offer{}, false
+	}
+	return cloneOffer(offer), true
+}
+
+func (r *Registry) CleanupExpiredOffers(ctx context.Context) int {
+	_ = ctx
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	removed := 0
+	for _, offer := range r.offerQueue.itemsSnapshot() {
+		if r.offerExpired(offer) {
+			r.deleteOfferLocked(offer.ID)
+			removed++
+		}
+	}
+	r.pruneQueuesLocked()
+	return removed
+}
+
+func (r *Registry) EvictOldestOffers(ctx context.Context, limit int) int {
+	_ = ctx
+	if limit < 0 {
+		limit = 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	removed := 0
+	for {
+		offers := r.offerQueue.itemsSnapshot()
+		if len(offers) <= limit {
+			return removed
+		}
+		var oldest Offer
+		for _, offer := range offers {
+			if oldest.ID == "" || offer.CreatedAt.Before(oldest.CreatedAt) {
+				oldest = offer
+			}
+		}
+		if oldest.ID == "" {
+			return removed
+		}
+		r.deleteOfferLocked(oldest.ID)
+		removed++
+	}
 }
 
 func (r *Registry) expired(agent Agent) bool {
@@ -662,17 +758,18 @@ func (r *Registry) forceOfflineActiveLocked(machineID string, agentID string, no
 }
 
 func (r *Registry) dropQueuedOffersLocked(machineID string) {
-	delete(r.queues, machineID)
-	delete(r.pairingQueues, machineID)
-	for id, offer := range r.offers {
+	r.offerQueue.deleteQueue(machineID)
+	r.pairingQueue.deleteQueue(machineID)
+	for _, offer := range r.offerQueue.itemsSnapshot() {
+		id := offer.ID
 		if offer.MachineID == machineID {
-			delete(r.offers, id)
-			delete(r.answers, id)
+			r.deleteOfferLocked(id)
 		}
 	}
-	for id, claim := range r.pairingClaims {
+	for _, claim := range r.pairingQueue.itemsSnapshot() {
+		id := claim.ID
 		if claim.MachineID == machineID {
-			delete(r.pairingClaims, id)
+			r.pairingQueue.delete(id)
 			delete(r.pairingResults, id)
 		}
 	}
@@ -692,94 +789,75 @@ func (r *Registry) validateSignalingPayload(payload string) error {
 }
 
 func (r *Registry) expireOfferLocked(id string, offer Offer) bool {
-	if !r.signalingExpired(offer.CreatedAt) {
+	if !r.offerExpired(offer) {
 		return false
 	}
-	delete(r.offers, id)
-	delete(r.answers, id)
+	r.deleteOfferLocked(id)
 	return true
 }
 
-func (r *Registry) pruneQueuesLocked() {
-	for machineID, queue := range r.queues {
-		kept := queue[:0]
-		for _, queued := range queue {
-			offer, ok := r.offers[queued.ID]
-			if !ok || offer.AssignedAgentID != "" || r.signalingExpired(offer.CreatedAt) {
-				continue
-			}
-			kept = append(kept, offer)
-		}
-		if len(kept) == 0 {
-			delete(r.queues, machineID)
-			continue
-		}
-		r.queues[machineID] = kept
+func (r *Registry) offerExpired(offer Offer) bool {
+	if r.signalingExpired(offer.CreatedAt) {
+		return true
 	}
+	return !offer.ExpiresAt.IsZero() && !r.clock.Now().UTC().Before(offer.ExpiresAt)
+}
+
+func (r *Registry) offerByIDLocked(in OfferLookupInput) (Offer, bool) {
+	machineID := strings.TrimSpace(in.MachineID)
+	offerID := strings.TrimSpace(in.OfferID)
+	if offerID == "" {
+		return Offer{}, false
+	}
+	if machineID != "" {
+		for _, offer := range r.offerQueue.itemsSnapshot() {
+			if offer.MachineID == machineID && strings.TrimSpace(offer.SessionID) == offerID {
+				return offer, true
+			}
+		}
+	}
+	if offer, ok := r.offerQueue.get(offerID); ok {
+		if machineID == "" || offer.MachineID == machineID {
+			return offer, true
+		}
+	}
+	return Offer{}, false
+}
+
+func (r *Registry) deleteOfferLocked(offerID string) {
+	offerID = strings.TrimSpace(offerID)
+	r.offerQueue.delete(offerID)
+	delete(r.answers, offerID)
+}
+
+func (r *Registry) pruneQueuesLocked() {
+	r.offerQueue.pruneQueues(func(offer Offer) (Offer, bool) {
+		if offer.AssignedAgentID != "" || r.offerExpired(offer) {
+			return Offer{}, false
+		}
+		return offer, true
+	})
 }
 
 func (r *Registry) prunePairingQueuesLocked() {
-	for machineID, queue := range r.pairingQueues {
-		kept := queue[:0]
-		for _, queued := range queue {
-			claim, ok := r.pairingClaims[queued.ID]
-			if !ok || claim.AssignedAgentID != "" || r.signalingExpired(claim.CreatedAt) {
-				continue
-			}
-			kept = append(kept, claim)
+	r.pairingQueue.pruneQueues(func(claim PairingClaim) (PairingClaim, bool) {
+		if claim.AssignedAgentID != "" || r.signalingExpired(claim.CreatedAt) {
+			return PairingClaim{}, false
 		}
-		if len(kept) == 0 {
-			delete(r.pairingQueues, machineID)
-			continue
-		}
-		r.pairingQueues[machineID] = kept
-	}
+		return claim, true
+	})
 }
 
 func (r *Registry) notifyLocked(machineID string) {
-	waiters := r.waiters[machineID]
-	delete(r.waiters, machineID)
-	for _, waiter := range waiters {
-		select {
-		case waiter <- struct{}{}:
-		default:
-		}
-	}
+	r.offerQueue.notify(machineID)
 }
 
-func (r *Registry) notifyPairingLocked(machineID string) {
-	waiters := r.pairingWaiters[machineID]
-	delete(r.pairingWaiters, machineID)
-	for _, waiter := range waiters {
-		select {
-		case waiter <- struct{}{}:
-		default:
-		}
-	}
-}
-
-func (r *Registry) removeWaiter(machineID string, target chan struct{}) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	waiters := r.waiters[machineID]
-	for i, waiter := range waiters {
-		if waiter == target {
-			r.waiters[machineID] = append(waiters[:i], waiters[i+1:]...)
-			return
-		}
-	}
+func (r *Registry) removeOfferWaiter(machineID string, target chan struct{}) {
+	r.offerQueue.removeWaiter(machineID, target)
 }
 
 func (r *Registry) removePairingWaiter(machineID string, target chan struct{}) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	waiters := r.pairingWaiters[machineID]
-	for i, waiter := range waiters {
-		if waiter == target {
-			r.pairingWaiters[machineID] = append(waiters[:i], waiters[i+1:]...)
-			return
-		}
-	}
+	r.pairingQueue.removeWaiter(machineID, target)
 }
 
 func cloneTerminals(in []Terminal) []Terminal {

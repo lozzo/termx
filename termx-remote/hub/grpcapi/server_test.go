@@ -2,7 +2,9 @@ package grpcapi
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -121,6 +123,15 @@ func TestConnectRelaysMessagesThroughRegistryAdapter(t *testing.T) {
 	if offer.GetSessionId() != "offer-session-1" || offer.GetSessionToken() != "agent-verifies-this-token" {
 		t.Fatalf("offer = %+v", offer)
 	}
+	if offer.GetNonce() == "" {
+		t.Fatalf("offer nonce is empty")
+	}
+	if raw, err := base64.RawURLEncoding.DecodeString(offer.GetNonce()); err != nil || len(raw) != 32 {
+		t.Fatalf("offer nonce bytes = %d err = %v", len(raw), err)
+	}
+	if issuedAt := offer.GetIssuedAt(); issuedAt <= 0 || time.Since(time.Unix(issuedAt, 0)) > time.Minute {
+		t.Fatalf("offer issued_at = %d", issuedAt)
+	}
 
 	reg.claims <- &PendingPairingClaim{
 		ClaimID:               "claim-1",
@@ -184,7 +195,7 @@ func TestConnectRelaysMessagesThroughRegistryAdapter(t *testing.T) {
 		t.Fatalf("send pairing result: %v", err)
 	}
 	if got := <-reg.pairingResults; got.ClaimID != "claim-1" ||
-		got.SessionToken != "session-token-from-agent" || got.MachineName != "devbox" || got.Error != "pairing rejected" {
+		got.SessionID != "agent-session-1" || got.SessionToken != "session-token-from-agent" || got.MachineName != "devbox" || got.Error != "pairing rejected" {
 		t.Fatalf("pairing result call = %+v", got)
 	}
 }
@@ -308,6 +319,36 @@ func TestConnectPushPairingForcedOfflineSendsKickAndClosesStream(t *testing.T) {
 	}
 }
 
+func TestPushOffersStopsOnNonceGenerationFailure(t *testing.T) {
+	original := randomRead
+	randomRead = func([]byte) (int, error) {
+		return 0, fmt.Errorf("entropy unavailable")
+	}
+	t.Cleanup(func() {
+		randomRead = original
+	})
+
+	reg := newFakeRegistry()
+	reg.offers <- &PendingOffer{SessionID: "offer-session-1"}
+	server := NewServer(reg)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stopErr := make(chan error, 1)
+	server.pushOffersWithStop(ctx, &hubToAgentCapture{}, "agent-session-1", func(err error) {
+		stopErr <- err
+		cancel()
+	})
+
+	select {
+	case err := <-stopErr:
+		if err == nil || !strings.Contains(err.Error(), "generate offer nonce") {
+			t.Fatalf("stop err = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("pushOffersWithStop did not stop after nonce generation failure")
+	}
+}
+
 func startTestServer(t *testing.T, registry RegistryAdapter) (pb.AgentHubClient, func()) {
 	t.Helper()
 
@@ -421,6 +462,15 @@ type answerErrorCall struct {
 	reason          string
 }
 
+type hubToAgentCapture struct {
+	msg *pb.HubToAgent
+}
+
+func (s *hubToAgentCapture) Send(msg *pb.HubToAgent) error {
+	s.msg = msg
+	return nil
+}
+
 func newFakeRegistry() *fakeRegistry {
 	return &fakeRegistry{
 		registerOut: RegisterAgentOutput{
@@ -447,7 +497,7 @@ func (f *fakeRegistry) HeartbeatAgent(sessionID string, terminals []TerminalInpu
 	return f.heartbeatErr
 }
 
-func (f *fakeRegistry) GetPendingOffer(ctx context.Context, sessionID string) (*PendingOffer, error) {
+func (f *fakeRegistry) WaitForOffer(ctx context.Context, sessionID string) (*PendingOffer, error) {
 	_ = sessionID
 	if f.offerErr != nil {
 		return nil, f.offerErr
@@ -480,7 +530,7 @@ func (f *fakeRegistry) SubmitAnswerError(sessionID, answerSessionID, reason stri
 	return f.answerErrorErr
 }
 
-func (f *fakeRegistry) GetPendingPairingClaim(ctx context.Context, sessionID string) (*PendingPairingClaim, error) {
+func (f *fakeRegistry) WaitForPairingClaim(ctx context.Context, sessionID string) (*PendingPairingClaim, error) {
 	_ = sessionID
 	if f.pairingErr != nil {
 		return nil, f.pairingErr

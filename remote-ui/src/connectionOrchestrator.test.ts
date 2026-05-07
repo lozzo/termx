@@ -3,6 +3,7 @@ import {
   createConnectionOrchestrator,
   type ConnectionAttemptSnapshot,
 } from './connectionOrchestrator'
+import type { ConnectionLogEvent } from './connectionLogger'
 import source from './connectionOrchestrator.ts?raw'
 import { ManualLocalHubUrlProvider } from './localHubUrlProvider'
 import type { ManagedHubApi } from './managedHubApi'
@@ -95,6 +96,72 @@ describe('ConnectionOrchestrator', () => {
     ])
   })
 
+  it('logs every attempted path and hub URL when all connection paths fail', async () => {
+    const logs: ConnectionLogEvent[] = []
+    const snapshots: ConnectionAttemptSnapshot[] = []
+    const orchestrator = createConnectionOrchestrator({
+      localHubUrlProvider: new ManualLocalHubUrlProvider('http://127.0.0.1:18888'),
+      managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
+      managedHubRtcConnectorFactory: ({ hubUrl }) => new RecordingManagedHubConnector(new Error(`${hubUrl} rejected offer`)),
+      logger: { log: (event) => logs.push(event) },
+    })
+
+    await expect(orchestrator.connect({
+      machineId: 'machine-1',
+      terminalId: 'terminal-1',
+      sessionToken: 'session-token-1',
+      hubUrls: ['https://hub-1.termx.test', 'https://hub-2.termx.test'],
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+    })).rejects.toThrow(/all connection paths failed/i)
+
+    const failedSnapshot = snapshots.find((snapshot) => snapshot.stage === 'failed')
+    expect(failedSnapshot?.errors).toEqual([{
+      path: 'local',
+      message: 'http://127.0.0.1:18888 rejected offer',
+    }])
+    expect(logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'orchestrator', event: 'path_attempt_failed', path: 'local', message: 'http://127.0.0.1:18888 rejected offer' }),
+      expect.objectContaining({ scope: 'orchestrator', event: 'managed_hub_attempt_failed', path: 'managed', hubUrl: 'https://hub-1.termx.test', message: 'https://hub-1.termx.test rejected offer' }),
+      expect.objectContaining({ scope: 'orchestrator', event: 'managed_hub_attempt_failed', path: 'managed', hubUrl: 'https://hub-2.termx.test', message: 'https://hub-2.termx.test rejected offer' }),
+      expect.objectContaining({ scope: 'orchestrator', event: 'connect_failed_all_paths', level: 'error' }),
+    ]))
+  })
+
+  it('logs cancelled managed Hub race losers without reporting them as failed attempts', async () => {
+    const logs: ConnectionLogEvent[] = []
+    const winnerSession = new MockRtcSession({
+      path: 'managed',
+      connectionId: 'managed-rtc-2',
+      machineId: 'machine-1',
+      relayInUse: true,
+    })
+    const orchestrator = createConnectionOrchestrator({
+      managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
+      managedHubRtcConnectorFactory: ({ hubUrl }) => hubUrl.includes('hub-1')
+        ? new RecordingManagedHubConnector(async (_input, options) => {
+          await neverUntilAbort(options?.signal)
+          return winnerSession
+        })
+        : new RecordingManagedHubConnector(winnerSession),
+      logger: { log: (event) => logs.push(event) },
+    })
+
+    await expect(orchestrator.connect({
+      machineId: 'machine-1',
+      terminalId: 'terminal-1',
+      sessionToken: 'session-token-1',
+      hubUrls: ['https://hub-1.termx.test', 'https://hub-2.termx.test'],
+    })).resolves.toMatchObject({ path: 'managed', relayInUse: true })
+
+    expect(logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'orchestrator', event: 'managed_hub_attempt_success', hubUrl: 'https://hub-2.termx.test' }),
+      expect.objectContaining({ scope: 'orchestrator', event: 'managed_hub_attempt_cancelled', hubUrl: 'https://hub-1.termx.test', level: 'debug' }),
+    ]))
+    expect(logs).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'orchestrator', event: 'managed_hub_attempt_failed', hubUrl: 'https://hub-1.termx.test' }),
+    ]))
+  })
+
   it('fails when no hub URLs are configured after local is unavailable', async () => {
     const orchestrator = createConnectionOrchestrator({
       localHubUrlProvider: new ManualLocalHubUrlProvider('http://127.0.0.1:18888'),
@@ -145,18 +212,22 @@ describe('ConnectionOrchestrator', () => {
 class RecordingManagedHubConnector {
   readonly calls: unknown[] = []
 
-  constructor(private readonly result: RtcSession | Error | (() => Promise<RtcSession>)) {}
+  constructor(private readonly result: RtcSession | Error | ((input: unknown, options?: { signal?: AbortSignal }) => Promise<RtcSession>)) {}
 
-  async connect(input: unknown): Promise<RtcSession> {
+  async connect(input: unknown, options?: { signal?: AbortSignal }): Promise<RtcSession> {
     this.calls.push(input)
     if (this.result instanceof Error) throw this.result
-    if (typeof this.result === 'function') return this.result()
+    if (typeof this.result === 'function') return this.result(input, options)
     return this.result
   }
 }
 
 class MockManagedHubApi implements ManagedHubApi {
   constructor(readonly hubUrl: string) {}
+
+  async getSessionIce(): ReturnType<ManagedHubApi['getSessionIce']> {
+    throw new Error('getSessionIce is not used by orchestrator tests')
+  }
 
   async createSession(): ReturnType<ManagedHubApi['createSession']> {
     throw new Error('createSession is not used by orchestrator tests')
@@ -210,4 +281,12 @@ class MockRtcSession implements RtcSession {
   async disconnect(): Promise<void> {
     this.disconnectCalls += 1
   }
+}
+
+function neverUntilAbort(signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((_resolve, reject) => {
+    signal?.addEventListener('abort', () => {
+      reject(signal.reason instanceof Error ? signal.reason : new Error('connection orchestration aborted'))
+    }, { once: true })
+  })
 }

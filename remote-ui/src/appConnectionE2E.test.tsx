@@ -153,6 +153,10 @@ class RecordingManagedHubConnector {
 class MockManagedHubApi implements ManagedHubApi {
   constructor(readonly hubUrl: string) {}
 
+  async getSessionIce(): ReturnType<ManagedHubApi['getSessionIce']> {
+    throw new Error('getSessionIce is not used by e2e orchestrator harness')
+  }
+
   async createSession(): ReturnType<ManagedHubApi['createSession']> {
     throw new Error('createSession is not used by e2e orchestrator harness')
   }

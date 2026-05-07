@@ -429,12 +429,33 @@ class WebControlHubFallbackFetch {
         }],
       })
     }
+    if (url === 'https://hub-1.termx.test/api/v1/sessions/ice') {
+      return jsonResponse(200, {
+        path: 'managed',
+        machine_id: 'device-1',
+        ice_servers: [],
+        relay_policy: { allow_relay: true, allow_relay_transfer: false },
+      })
+    }
     if (url === 'https://hub-1.termx.test/api/v1/sessions') {
       return jsonResponse(503, {
         error: {
           code: 'hub_unavailable',
           message: 'first hub unavailable',
         },
+      })
+    }
+    if (url === 'https://hub-2.termx.test/api/v1/sessions/ice') {
+      const request = body as {
+        machine_id: string
+        terminal_id?: string | undefined
+      }
+      return jsonResponse(200, {
+        path: 'managed',
+        machine_id: request.machine_id,
+        ...(request.terminal_id ? { terminal_id: request.terminal_id } : {}),
+        ice_servers: [],
+        relay_policy: { allow_relay: true, allow_relay_transfer: false },
       })
     }
     if (url === 'https://hub-2.termx.test/api/v1/sessions') {

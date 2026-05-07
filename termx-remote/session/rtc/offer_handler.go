@@ -220,7 +220,7 @@ func AnswerOfferWithOptions(
 	if err != nil {
 		return hubv1.SignalingAnswer{}, fmt.Errorf("create answer: %w", err)
 	}
-	waitForLocalCandidates := newICEGatheringWaiter(pc)
+	waitForLocalCandidates := newICEGatheringWaiterForServers(pc, config.ICEServers)
 	if err := pc.SetLocalDescription(answer); err != nil {
 		return hubv1.SignalingAnswer{}, fmt.Errorf("set local description: %w", err)
 	}
@@ -500,12 +500,13 @@ func sendAPIResponse(dc *webrtc.DataChannel, id string, data []byte) {
 	}
 }
 
-func newICEGatheringWaiter(pc *webrtc.PeerConnection) func() {
+func newICEGatheringWaiterForServers(pc *webrtc.PeerConnection, iceServers []webrtc.ICEServer) func() {
 	return newICEGatheringWaiterEvents(
 		pc.OnICECandidate,
 		webrtc.GatheringCompletePromise(pc),
 		500*time.Millisecond,
 		5*time.Second,
+		hasTURNServer(iceServers),
 	)
 }
 
@@ -514,6 +515,18 @@ func newICEGatheringWaiterEvents(
 	gatherComplete <-chan struct{},
 	earlyStopDelay time.Duration,
 	hardTimeout time.Duration,
+	requireRelayCandidate ...bool,
+) func() {
+	requireRelay := len(requireRelayCandidate) > 0 && requireRelayCandidate[0]
+	return newICEGatheringWaiterEventsWithPolicy(onICECandidate, gatherComplete, earlyStopDelay, hardTimeout, requireRelay)
+}
+
+func newICEGatheringWaiterEventsWithPolicy(
+	onICECandidate func(func(*webrtc.ICECandidate)),
+	gatherComplete <-chan struct{},
+	earlyStopDelay time.Duration,
+	hardTimeout time.Duration,
+	requireRelayCandidate bool,
 ) func() {
 	earlyStop := make(chan struct{}, 1)
 	var hasCandidate int32
@@ -522,7 +535,7 @@ func newICEGatheringWaiterEvents(
 		if c == nil {
 			return
 		}
-		if c.Typ != webrtc.ICECandidateTypeHost && c.Typ != webrtc.ICECandidateTypeSrflx {
+		if !candidateTypeSatisfiesGatheringPolicy(c.Typ, requireRelayCandidate) {
 			return
 		}
 		if atomic.CompareAndSwapInt32(&hasCandidate, 0, 1) {
@@ -542,4 +555,25 @@ func newICEGatheringWaiterEvents(
 		case <-time.After(hardTimeout):
 		}
 	}
+}
+
+func candidateTypeSatisfiesGatheringPolicy(candidateType webrtc.ICECandidateType, requireRelayCandidate bool) bool {
+	if requireRelayCandidate {
+		return candidateType == webrtc.ICECandidateTypeRelay
+	}
+	return candidateType == webrtc.ICECandidateTypeHost ||
+		candidateType == webrtc.ICECandidateTypeSrflx ||
+		candidateType == webrtc.ICECandidateTypeRelay
+}
+
+func hasTURNServer(iceServers []webrtc.ICEServer) bool {
+	for _, server := range iceServers {
+		for _, rawURL := range server.URLs {
+			url := strings.TrimSpace(strings.ToLower(rawURL))
+			if strings.HasPrefix(url, "turn:") || strings.HasPrefix(url, "turns:") {
+				return true
+			}
+		}
+	}
+	return false
 }

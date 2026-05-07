@@ -64,6 +64,19 @@ type SubmitOfferInput struct {
 	AnswerProofChallenge string
 }
 
+type PreflightSessionInput struct {
+	MachineID    string
+	TerminalID   string
+	SessionToken string
+}
+
+type PreflightSession struct {
+	MachineID  string
+	TerminalID string
+	Path       string
+	AllowRelay bool
+}
+
 type PollAgentOfferInput struct {
 	AgentID   string
 	MachineID string

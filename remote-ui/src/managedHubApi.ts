@@ -20,9 +20,24 @@ export interface ManagedHubApiOptions {
 }
 
 export interface ManagedHubApi {
+  getSessionIce(input: ManagedHubSessionIceInput, options?: RtcConnectOptions): Promise<ManagedHubSessionIceConfig>
   createSession(input: CreateManagedHubSessionInput, options?: RtcConnectOptions): Promise<ManagedHubCreateSessionResult>
   pollSessionAnswer(input: PollManagedHubSessionAnswerInput, options?: RtcConnectOptions): Promise<ManagedHubSession>
   pair(input: ManagedHubPairInput, options?: RtcConnectOptions): Promise<ManagedHubPairResult>
+}
+
+export interface ManagedHubSessionIceInput {
+  machineId: string
+  terminalId?: string | undefined
+  sessionToken: string
+}
+
+export interface ManagedHubSessionIceConfig {
+  path: 'managed'
+  machineId: string
+  terminalId?: string | undefined
+  iceServers: ManagedIceServer[]
+  relayPolicy: ManagedRelayPolicy
 }
 
 export interface CreateManagedHubSessionInput {
@@ -101,6 +116,27 @@ class ManagedHubHttpApi implements ManagedHubApi {
       this.accessToken = token
     }
     this.fetchImpl = options.fetch
+  }
+
+  async getSessionIce(input: ManagedHubSessionIceInput, options: RtcConnectOptions = {}): Promise<ManagedHubSessionIceConfig> {
+    const machineId = requiredString(input.machineId, 'machine_id')
+    const terminalId = optionalTrimmedString(input.terminalId)
+    const response = await this.requestJSON('POST', '/api/v1/sessions/ice', {
+      signal: options.signal,
+      body: {
+        machine_id: machineId,
+        terminal_id: terminalId,
+        session_token: requiredString(input.sessionToken, 'session_token'),
+      },
+    })
+    assertManagedPath(response)
+    return {
+      path: 'managed',
+      machineId: stringField(response, 'machine_id'),
+      ...(optionalStringField(response, 'terminal_id') ? { terminalId: optionalStringField(response, 'terminal_id') } : {}),
+      iceServers: iceServersField(response, 'ice_servers'),
+      relayPolicy: relayPolicy(response),
+    }
   }
 
   async createSession(input: CreateManagedHubSessionInput, options: RtcConnectOptions = {}): Promise<ManagedHubCreateSessionResult> {

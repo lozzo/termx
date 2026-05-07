@@ -28,33 +28,19 @@ type hubRegistryAdapter struct {
 	iceServers []hubv1.RTCIceServerConfig
 	allowRelay bool
 	sessionTTL time.Duration
-	offerTTL   time.Duration
-	claimTTL   time.Duration
 	now        func() time.Time
 
 	mu       sync.Mutex
-	sessions map[string]hubGRPCSessionState
-	offers   map[string]hubGRPCOfferState
-	claims   map[string]hubGRPCClaimState
+	sessions map[string]agentSessionState
 }
 
-type hubGRPCSession struct {
+type agentSession struct {
 	AgentID   string
 	MachineID string
 }
 
-type hubGRPCSessionState struct {
-	Session   hubGRPCSession
-	ExpiresAt time.Time
-}
-
-type hubGRPCOfferState struct {
-	OfferID   string
-	ExpiresAt time.Time
-}
-
-type hubGRPCClaimState struct {
-	Session   hubGRPCSession
+type agentSessionState struct {
+	Session   agentSession
 	ExpiresAt time.Time
 }
 
@@ -67,6 +53,8 @@ type ServerConfig struct {
 }
 
 var answerProofChallengeGenerator = randomHubGRPCID
+
+const hubLongPollTimeout = 30 * time.Second
 
 func NewServer(reg *registry.Registry, cloudSvc *cloud.Service, iceServers []hubv1.RTCIceServerConfig) *grpc.Server {
 	return NewServerWithConfig(ServerConfig{
@@ -84,9 +72,7 @@ func NewServerWithConfig(cfg ServerConfig) *grpc.Server {
 		ice:        cfg.ICE,
 		iceServers: cloneHubICEServers(cfg.ICEServers),
 		allowRelay: cfg.AllowRelay,
-		sessions:   make(map[string]hubGRPCSessionState),
-		offers:     make(map[string]hubGRPCOfferState),
-		claims:     make(map[string]hubGRPCClaimState),
+		sessions:   make(map[string]agentSessionState),
 	}))
 	return grpcSrv
 }
@@ -131,10 +117,10 @@ func (a *hubRegistryAdapter) RegisterAgent(in grpcapi.RegisterAgentInput) (grpca
 	a.mu.Lock()
 	a.cleanupExpiredLocked(a.nowUTC())
 	if a.sessions == nil {
-		a.sessions = make(map[string]hubGRPCSessionState)
+		a.sessions = make(map[string]agentSessionState)
 	}
-	a.sessions[sessionID] = hubGRPCSessionState{
-		Session:   hubGRPCSession{AgentID: agentID, MachineID: machineID},
+	a.sessions[sessionID] = agentSessionState{
+		Session:   agentSession{AgentID: agentID, MachineID: machineID},
 		ExpiresAt: a.nowUTC().Add(a.sessionTTLDuration()),
 	}
 	a.mu.Unlock()
@@ -199,22 +185,24 @@ func (a *hubRegistryAdapter) HeartbeatAgent(sessionID string, terminals []grpcap
 	return nil
 }
 
-func (a *hubRegistryAdapter) GetPendingOffer(ctx context.Context, sessionID string) (*grpcapi.PendingOffer, error) {
+func (a *hubRegistryAdapter) WaitForOffer(ctx context.Context, sessionID string) (*grpcapi.PendingOffer, error) {
 	session, ok := a.session(sessionID)
 	if !ok {
 		return nil, grpcSessionInvalidError(registry.ErrAgentNotFound)
 	}
 	if a.cloud == nil {
-		return nil, nil
+		return nil, waitForHubLongPoll(ctx)
 	}
-	offer, err := a.cloud.PollAgentOffer(ctx, cloud.PollAgentOfferInput{
+	pollCtx, cancel := context.WithTimeout(ctx, hubLongPollTimeout)
+	defer cancel()
+	offer, err := a.cloud.PollAgentOffer(pollCtx, cloud.PollAgentOfferInput{
 		AgentID:   session.AgentID,
 		MachineID: session.MachineID,
-		Timeout:   200 * time.Millisecond,
+		Timeout:   hubLongPollTimeout,
 	})
 	if err != nil {
-		if errors.Is(err, registry.ErrPollTimeout) {
-			return nil, nil
+		if grpcLongPollTimeoutError(err) {
+			return nil, grpcapi.ErrPollTimeout
 		}
 		if grpcAgentSessionTerminated(err) {
 			a.dropSession(sessionID)
@@ -222,16 +210,6 @@ func (a *hubRegistryAdapter) GetPendingOffer(ctx context.Context, sessionID stri
 		return nil, grpcAgentStateError(err)
 	}
 	publicID := grpcPublicSessionID(offer)
-	a.mu.Lock()
-	a.cleanupExpiredLocked(a.nowUTC())
-	if a.offers == nil {
-		a.offers = make(map[string]hubGRPCOfferState)
-	}
-	a.offers[sessionOfferKey(sessionID, publicID)] = hubGRPCOfferState{
-		OfferID:   offer.ID,
-		ExpiresAt: a.nowUTC().Add(a.offerTTLDuration()),
-	}
-	a.mu.Unlock()
 	challenge := strings.TrimSpace(offer.AnswerProofChallenge)
 	if challenge == "" {
 		challenge = answerProofChallengeGenerator("answer_challenge")
@@ -255,11 +233,10 @@ func (a *hubRegistryAdapter) SubmitAnswer(sessionID, answerSessionID, sdp string
 	if a.cloud == nil {
 		return errors.New("cloud service is not configured")
 	}
-	offerID := a.resolveOfferID(sessionID, answerSessionID)
 	if err := a.cloud.SubmitAnswer(context.Background(), cloud.SubmitAnswerInput{
 		AgentID:     session.AgentID,
 		MachineID:   session.MachineID,
-		OfferID:     offerID,
+		OfferID:     answerSessionID,
 		SDP:         sdp,
 		AnswerProof: answerProof,
 	}); err != nil {
@@ -279,11 +256,10 @@ func (a *hubRegistryAdapter) SubmitAnswerError(sessionID, answerSessionID, reaso
 	if a.cloud == nil {
 		return errors.New("cloud service is not configured")
 	}
-	offerID := a.resolveOfferID(sessionID, answerSessionID)
 	if err := a.cloud.SubmitAnswer(context.Background(), cloud.SubmitAnswerInput{
 		AgentID:   session.AgentID,
 		MachineID: session.MachineID,
-		OfferID:   offerID,
+		OfferID:   answerSessionID,
 		Error:     reason,
 	}); err != nil {
 		if grpcAgentSessionTerminated(err) {
@@ -294,7 +270,7 @@ func (a *hubRegistryAdapter) SubmitAnswerError(sessionID, answerSessionID, reaso
 	return nil
 }
 
-func (a *hubRegistryAdapter) GetPendingPairingClaim(ctx context.Context, sessionID string) (*grpcapi.PendingPairingClaim, error) {
+func (a *hubRegistryAdapter) WaitForPairingClaim(ctx context.Context, sessionID string) (*grpcapi.PendingPairingClaim, error) {
 	session, ok := a.session(sessionID)
 	if !ok {
 		return nil, grpcSessionInvalidError(registry.ErrAgentNotFound)
@@ -302,30 +278,22 @@ func (a *hubRegistryAdapter) GetPendingPairingClaim(ctx context.Context, session
 	if a.registry == nil {
 		return nil, errors.New("registry is not configured")
 	}
-	claim, err := a.registry.PollPairingClaim(ctx, registry.PairingPollInput{
+	pollCtx, cancel := context.WithTimeout(ctx, hubLongPollTimeout)
+	defer cancel()
+	claim, err := a.registry.PollPairingClaim(pollCtx, registry.PairingPollInput{
 		AgentID:   session.AgentID,
 		MachineID: session.MachineID,
-		Timeout:   200 * time.Millisecond,
+		Timeout:   hubLongPollTimeout,
 	})
 	if err != nil {
-		if errors.Is(err, registry.ErrPollTimeout) {
-			return nil, nil
+		if grpcLongPollTimeoutError(err) {
+			return nil, grpcapi.ErrPollTimeout
 		}
 		if grpcAgentSessionTerminated(err) {
 			a.dropSession(sessionID)
 		}
 		return nil, grpcAgentStateError(err)
 	}
-	a.mu.Lock()
-	a.cleanupExpiredLocked(a.nowUTC())
-	if a.claims == nil {
-		a.claims = make(map[string]hubGRPCClaimState)
-	}
-	a.claims[claim.ID] = hubGRPCClaimState{
-		Session:   session,
-		ExpiresAt: a.nowUTC().Add(a.claimTTLDuration()),
-	}
-	a.mu.Unlock()
 	return &grpcapi.PendingPairingClaim{
 		ClaimID:               claim.ID,
 		PairSessionID:         claim.PairSessionID,
@@ -337,7 +305,7 @@ func (a *hubRegistryAdapter) GetPendingPairingClaim(ctx context.Context, session
 }
 
 func (a *hubRegistryAdapter) SubmitPairingResult(in grpcapi.PairingResultInput) error {
-	session, ok := a.claimSession(in.ClaimID)
+	session, ok := a.session(in.SessionID)
 	if !ok || a.registry == nil {
 		return registry.ErrAgentNotFound
 	}
@@ -351,14 +319,14 @@ func (a *hubRegistryAdapter) SubmitPairingResult(in grpcapi.PairingResultInput) 
 		Error:        in.Error,
 	})
 	if grpcAgentSessionTerminated(err) {
-		a.dropClaimsForSession(session)
+		a.dropSession(in.SessionID)
 	}
 	return grpcAgentStateError(err)
 }
 
-func (a *hubRegistryAdapter) session(sessionID string) (hubGRPCSession, bool) {
+func (a *hubRegistryAdapter) session(sessionID string) (agentSession, bool) {
 	if a == nil {
-		return hubGRPCSession{}, false
+		return agentSession{}, false
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -366,7 +334,7 @@ func (a *hubRegistryAdapter) session(sessionID string) (hubGRPCSession, bool) {
 	a.cleanupExpiredLocked(now)
 	state, ok := a.sessions[strings.TrimSpace(sessionID)]
 	if !ok || !state.ExpiresAt.After(now) {
-		return hubGRPCSession{}, false
+		return agentSession{}, false
 	}
 	return state.Session, true
 }
@@ -398,65 +366,11 @@ func (a *hubRegistryAdapter) dropSession(sessionID string) {
 	delete(a.sessions, strings.TrimSpace(sessionID))
 }
 
-func (a *hubRegistryAdapter) dropClaimsForSession(session hubGRPCSession) {
-	if a == nil {
-		return
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	for claimID, state := range a.claims {
-		if state.Session == session {
-			delete(a.claims, claimID)
-		}
-	}
-}
-
-func (a *hubRegistryAdapter) claimSession(claimID string) (hubGRPCSession, bool) {
-	if a == nil {
-		return hubGRPCSession{}, false
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	now := a.nowUTC()
-	a.cleanupExpiredLocked(now)
-	state, ok := a.claims[strings.TrimSpace(claimID)]
-	if !ok || !state.ExpiresAt.After(now) {
-		return hubGRPCSession{}, false
-	}
-	return state.Session, true
-}
-
-func (a *hubRegistryAdapter) resolveOfferID(sessionID string, answerSessionID string) string {
-	if a == nil {
-		return strings.TrimSpace(answerSessionID)
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	now := a.nowUTC()
-	a.cleanupExpiredLocked(now)
-	if state := a.offers[sessionOfferKey(sessionID, answerSessionID)]; state.ExpiresAt.After(now) && strings.TrimSpace(state.OfferID) != "" {
-		return strings.TrimSpace(state.OfferID)
-	}
-	return strings.TrimSpace(answerSessionID)
-}
-
 func (a *hubRegistryAdapter) cleanupExpiredLocked(now time.Time) int {
 	removed := 0
 	for sessionID, state := range a.sessions {
 		if !state.ExpiresAt.After(now) {
 			delete(a.sessions, sessionID)
-			removed++
-		}
-	}
-	for key, state := range a.offers {
-		if !state.ExpiresAt.After(now) {
-			delete(a.offers, key)
-			removed++
-		}
-	}
-	for claimID, state := range a.claims {
-		if !state.ExpiresAt.After(now) {
-			delete(a.claims, claimID)
 			removed++
 		}
 	}
@@ -488,22 +402,19 @@ func (a *hubRegistryAdapter) sessionTTLDuration() time.Duration {
 	return 2 * time.Minute
 }
 
-func (a *hubRegistryAdapter) offerTTLDuration() time.Duration {
-	if a != nil && a.offerTTL > 0 {
-		return a.offerTTL
+func waitForHubLongPoll(ctx context.Context) error {
+	timer := time.NewTimer(hubLongPollTimeout)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return grpcapi.ErrPollTimeout
 	}
-	return 5 * time.Minute
 }
 
-func (a *hubRegistryAdapter) claimTTLDuration() time.Duration {
-	if a != nil && a.claimTTL > 0 {
-		return a.claimTTL
-	}
-	return 5 * time.Minute
-}
-
-func sessionOfferKey(sessionID string, offerSessionID string) string {
-	return strings.TrimSpace(sessionID) + "\x00" + strings.TrimSpace(offerSessionID)
+func grpcLongPollTimeoutError(err error) bool {
+	return errors.Is(err, registry.ErrPollTimeout) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func grpcPublicSessionID(offer cloud.Offer) string {

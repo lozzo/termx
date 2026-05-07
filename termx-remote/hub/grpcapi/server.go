@@ -2,6 +2,8 @@ package grpcapi
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -16,21 +18,20 @@ import (
 	pb "github.com/lozzow/termx/termx-remote/protocol/hubgrpc"
 )
 
-const pushPollInterval = 200 * time.Millisecond
-
 var (
 	ErrAgentForcedOffline  = errors.New("agent forced offline")
 	ErrAgentSessionInvalid = errors.New("agent session invalid")
+	ErrPollTimeout         = errors.New("poll timeout")
 )
 
 // RegistryAdapter decouples grpcapi from registry/cloud packages.
 type RegistryAdapter interface {
 	RegisterAgent(RegisterAgentInput) (RegisterAgentOutput, error)
 	HeartbeatAgent(sessionID string, terminals []TerminalInput) error
-	GetPendingOffer(ctx context.Context, sessionID string) (*PendingOffer, error)
+	WaitForOffer(ctx context.Context, sessionID string) (*PendingOffer, error)
 	SubmitAnswer(sessionID, answerSessionID, sdp string, candidates []string, answerProof string) error
 	SubmitAnswerError(sessionID, answerSessionID, reason string) error
-	GetPendingPairingClaim(ctx context.Context, sessionID string) (*PendingPairingClaim, error)
+	WaitForPairingClaim(ctx context.Context, sessionID string) (*PendingPairingClaim, error)
 	SubmitPairingResult(PairingResultInput) error
 }
 
@@ -85,6 +86,7 @@ type PendingPairingClaim struct {
 }
 
 type PairingResultInput struct {
+	SessionID    string
 	ClaimID      string
 	SessionToken string
 	ExpiresAt    string
@@ -208,6 +210,7 @@ func (s *Server) handleAgentMessage(sender interface{ Send(*pb.HubToAgent) error
 	case *pb.AgentToHub_PairingResult:
 		result := p.PairingResult
 		if err := s.registry.SubmitPairingResult(PairingResultInput{
+			SessionID:    sessionID,
 			ClaimID:      result.GetClaimId(),
 			SessionToken: result.GetSessionToken(),
 			ExpiresAt:    result.GetExpiresAt(),
@@ -229,18 +232,29 @@ func (s *Server) pushOffers(ctx context.Context, sender interface{ Send(*pb.HubT
 
 func (s *Server) pushOffersWithStop(ctx context.Context, sender interface{ Send(*pb.HubToAgent) error }, sessionID string, stop func(error)) {
 	for ctx.Err() == nil {
-		offer, err := s.registry.GetPendingOffer(ctx, sessionID)
+		offer, err := s.registry.WaitForOffer(ctx, sessionID)
 		if err != nil {
+			if pollTimeoutError(err) {
+				continue
+			}
 			if agentStreamTerminalError(err) {
 				stop(err)
 				return
 			}
-			waitOrDone(ctx, pushPollInterval)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(200 * time.Millisecond):
+			}
 			continue
 		}
 		if offer == nil {
-			waitOrDone(ctx, pushPollInterval)
 			continue
+		}
+		nonce, err := randomOfferNonce()
+		if err != nil {
+			stop(fmt.Errorf("generate offer nonce: %w", err))
+			return
 		}
 		if err := sender.Send(&pb.HubToAgent{Payload: &pb.HubToAgent_SignalingOffer{
 			SignalingOffer: &pb.SignalingOffer{
@@ -251,6 +265,8 @@ func (s *Server) pushOffersWithStop(ctx context.Context, sender interface{ Send(
 				IceCandidates:        offer.Candidates,
 				SessionToken:         offer.SessionToken,
 				AnswerProofChallenge: offer.AnswerProofChallenge,
+				Nonce:                nonce,
+				IssuedAt:             timeNowUnix(),
 			},
 		}}); err != nil {
 			return
@@ -264,17 +280,18 @@ func (s *Server) pushPairing(ctx context.Context, sender interface{ Send(*pb.Hub
 
 func (s *Server) pushPairingWithStop(ctx context.Context, sender interface{ Send(*pb.HubToAgent) error }, sessionID string, stop func(error)) {
 	for ctx.Err() == nil {
-		claim, err := s.registry.GetPendingPairingClaim(ctx, sessionID)
+		claim, err := s.registry.WaitForPairingClaim(ctx, sessionID)
 		if err != nil {
+			if pollTimeoutError(err) {
+				continue
+			}
 			if agentStreamTerminalError(err) {
 				stop(err)
 				return
 			}
-			waitOrDone(ctx, pushPollInterval)
 			continue
 		}
 		if claim == nil {
-			waitOrDone(ctx, pushPollInterval)
 			continue
 		}
 		if err := sender.Send(&pb.HubToAgent{Payload: &pb.HubToAgent_PairingClaim{
@@ -356,15 +373,6 @@ func (s *lockedSender) Send(msg *pb.HubToAgent) error {
 	return s.stream.Send(msg)
 }
 
-func waitOrDone(ctx context.Context, d time.Duration) {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-	case <-timer.C:
-	}
-}
-
 func closeAgentStream(sender interface{ Send(*pb.HubToAgent) error }, operation string, err error) error {
 	if err == nil {
 		return nil
@@ -383,6 +391,28 @@ func closeAgentStream(sender interface{ Send(*pb.HubToAgent) error }, operation 
 
 func agentStreamTerminalError(err error) bool {
 	return errors.Is(err, ErrAgentForcedOffline) || errors.Is(err, ErrAgentSessionInvalid)
+}
+
+func pollTimeoutError(err error) bool {
+	return errors.Is(err, ErrPollTimeout) || errors.Is(err, context.DeadlineExceeded)
+}
+
+func randomOfferNonce() (string, error) {
+	var raw [32]byte
+	if _, err := randomRead(raw[:]); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw[:]), nil
+}
+
+func timeNowUnix() int64 {
+	return timeNow().Unix()
+}
+
+var randomRead = rand.Read
+
+var timeNow = func() time.Time {
+	return time.Now().UTC()
 }
 
 func agentKickReason(err error) string {

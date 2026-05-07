@@ -28,12 +28,18 @@ describe('local connection over Hub API', () => {
       managedHubRtcConnectorFactory: ({ api }) => ({
         connect(input) {
           connectorInputs.push(input)
-          return api.createSession({
+          return api.getSessionIce({
             machineId: input.machineId,
             terminalId: input.terminalId,
             sessionToken: input.sessionToken,
-            offer: { sessionId: 'rtc-local-1', sdp: 'offer-sdp', iceCandidates: [] },
-          }).then(() => session)
+          })
+            .then(() => api.createSession({
+              machineId: input.machineId,
+              terminalId: input.terminalId,
+              sessionToken: input.sessionToken,
+              offer: { sessionId: 'rtc-local-1', sdp: 'offer-sdp', iceCandidates: [] },
+            }))
+            .then(() => session)
         },
       }),
     })
@@ -52,6 +58,7 @@ describe('local connection over Hub API', () => {
       path: 'local',
       sessionToken: 'session-token-local',
     })])
+    expect(calls.map((call) => call.url)).toContain('http://192.168.1.100:18888/api/v1/sessions/ice')
     expect(calls.map((call) => call.url)).toContain('http://192.168.1.100:18888/api/v1/sessions')
     expect(calls.map((call) => call.url).join('\n')).not.toContain(legacyLocalPath('rtc', 'offer'))
   })

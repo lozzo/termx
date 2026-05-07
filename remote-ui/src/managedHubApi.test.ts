@@ -11,6 +11,60 @@ describe('ManagedHubApi', () => {
     vi.unstubAllGlobals()
   })
 
+  it('fetches ICE servers before creating a managed WebRTC offer', async () => {
+    const fetch = new RecordingFetch([
+      jsonResponse(200, {
+        path: 'cloud',
+        machine_id: 'machine-1',
+        terminal_id: 'terminal-1',
+        ice_servers: [
+          { urls: ['stun:hub.termx.test:3478'] },
+          { urls: ['turn:hub.termx.test:3478?transport=udp'], username: 'u', credential: 'p' },
+        ],
+        relay_policy: {
+          allow_relay: true,
+          allow_relay_transfer: false,
+        },
+      }),
+    ])
+    const api = createManagedHubApi({
+      baseUrl: 'https://hub.termx.test/root/',
+      accessToken: 'hub-access-token',
+      fetch: fetch.fetch,
+    })
+
+    await expect(api.getSessionIce({
+      machineId: 'machine-1',
+      terminalId: 'terminal-1',
+      sessionToken: 'session-token-1',
+    })).resolves.toEqual({
+      path: 'managed',
+      machineId: 'machine-1',
+      terminalId: 'terminal-1',
+      iceServers: [
+        { urls: ['stun:hub.termx.test:3478'] },
+        { urls: ['turn:hub.termx.test:3478?transport=udp'], username: 'u', credential: 'p' },
+      ],
+      relayPolicy: {
+        allowRelay: true,
+        allowRelayTransfer: false,
+      },
+    })
+    expect(fetch.requests).toEqual([{
+      method: 'POST',
+      url: 'https://hub.termx.test/root/api/v1/sessions/ice',
+      headers: {
+        authorization: 'Bearer hub-access-token',
+        'content-type': 'application/json',
+      },
+      body: {
+        machine_id: 'machine-1',
+        terminal_id: 'terminal-1',
+        session_token: 'session-token-1',
+      },
+    }])
+  })
+
   it('submits a managed WebRTC offer to the Hub session endpoint and returns the answer', async () => {
     const fetch = new RecordingFetch([
       jsonResponse(200, {

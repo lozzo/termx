@@ -1,6 +1,9 @@
 package token_test
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +64,31 @@ func TestVerifyTamperedPayload(t *testing.T) {
 	parts := strings.SplitN(tok, ".", 2)
 	if _, err := token.Verify("dGFtcGVyZWQ."+parts[1], secret, time.Now()); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestVerifyTamperedSignature(t *testing.T) {
+	tok, err := token.Issue(secret, baseClaims())
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.SplitN(tok, ".", 2)
+	mac, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	mac[0] ^= 0xff
+	tampered := parts[0] + "." + base64.RawURLEncoding.EncodeToString(mac)
+	if _, err := token.Verify(tampered, secret, time.Now()); err == nil {
+		t.Fatal("expected signature error")
+	}
+}
+
+func TestVerifyRejectsSignedDamagedPayload(t *testing.T) {
+	damagedPayload := base64.RawURLEncoding.EncodeToString([]byte("{"))
+	tok := damagedPayload + "." + signPayloadForTest(secret, damagedPayload)
+	if _, err := token.Verify(tok, secret, time.Now()); err == nil {
+		t.Fatal("expected payload decode error")
 	}
 }
 
@@ -130,4 +158,70 @@ func TestAnswerProofKeyAADBindsSessionAndMachine(t *testing.T) {
 	if _, err := token.OpenAnswerProofKey(secret, c); err == nil {
 		t.Fatal("expected answer proof key open to fail after machine change")
 	}
+
+	c = baseClaims()
+	sealed, err = token.SealAnswerProofKey(secret, c, "answer-proof-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.AnswerProofKey = sealed
+	c.SessionID = "other-session"
+	if _, err := token.OpenAnswerProofKey(secret, c); err == nil {
+		t.Fatal("expected answer proof key open to fail after session change")
+	}
+}
+
+func TestComputeAnswerProof(t *testing.T) {
+	c := baseClaims()
+	sealed, err := token.SealAnswerProofKey(secret, c, "answer-proof-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.AnswerProofKey = sealed
+
+	got, err := token.ComputeAnswerProof(secret, c, "rtc-session-1", "challenge-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := answerProofForTest("answer-proof-secret", c.SessionID, "rtc-session-1", "challenge-1")
+	if got != want {
+		t.Fatalf("answer proof = %q, want %q", got, want)
+	}
+}
+
+func TestComputeAnswerProofRejectsMissingChallenge(t *testing.T) {
+	c := baseClaims()
+	sealed, err := token.SealAnswerProofKey(secret, c, "answer-proof-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.AnswerProofKey = sealed
+	if _, err := token.ComputeAnswerProof(secret, c, "rtc-session-1", " "); err == nil {
+		t.Fatal("expected missing challenge error")
+	}
+}
+
+func TestComputeAnswerProofRejectsInvalidProofKey(t *testing.T) {
+	c := baseClaims()
+	if _, err := token.ComputeAnswerProof(secret, c, "rtc-session-1", "challenge-1"); err == nil {
+		t.Fatal("expected missing proof key error")
+	}
+}
+
+func signPayloadForTest(secret []byte, payload string) string {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte("termx-session-v1:"))
+	mac.Write([]byte(payload))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func answerProofForTest(proofKey string, pairSessionID string, rtcSessionID string, challenge string) string {
+	mac := hmac.New(sha256.New, []byte(proofKey))
+	mac.Write([]byte("termx-answer-proof-v1:"))
+	mac.Write([]byte(strings.TrimSpace(pairSessionID)))
+	mac.Write([]byte(":"))
+	mac.Write([]byte(strings.TrimSpace(rtcSessionID)))
+	mac.Write([]byte(":"))
+	mac.Write([]byte(strings.TrimSpace(challenge)))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }

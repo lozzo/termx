@@ -5,6 +5,7 @@ import { LocalRemoteApp, type LocalRemoteInventoryApi, type LocalRemoteSessionCo
 import { createMachineStore, type StoredMachineRecord } from './machineStore'
 import { createConnectionOrchestrator } from './connectionOrchestrator'
 import { createManagedHubRtcConnector } from './managedHubRtcConnector'
+import { consoleConnectionLogger } from './connectionLogger'
 import { createManagedHubApi } from './managedHubApi'
 import { parsePairingPayload, type PairingPayload } from './pairingPayload'
 import type { ConnectionInfo, LocalPairingApi, LocalStatus, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectionTarget, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionNegotiator, RtcSubscription } from './transport'
@@ -953,10 +954,13 @@ function createManagedMachineSessionManager(input: {
     const answerProofSecret = input.sessionStore.getAnswerProofSecret(input.machine.id) ?? undefined
     const orchestrator = createConnectionOrchestrator({
       managedHubApiFactory: (hubUrl) => createManagedHubApi({ baseUrl: hubUrl, fetch: input.networkRuntime.fetch }),
-      managedHubRtcConnectorFactory: ({ api }) => createManagedHubRtcConnector({
+      managedHubRtcConnectorFactory: ({ hubUrl, api }) => createManagedHubRtcConnector({
         api,
         createSession: input.createSession,
+        hubUrl,
+        logger: consoleConnectionLogger,
       }),
+      logger: consoleConnectionLogger,
     })
     const result = await orchestrator.connect({
       machineId: input.machine.id,

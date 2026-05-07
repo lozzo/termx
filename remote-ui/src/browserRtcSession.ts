@@ -12,6 +12,8 @@ import type {
   RtcSessionNegotiationTarget,
   RtcSubscription,
 } from './transport'
+import type { ConnectionLogger } from './connectionLogger'
+import { logConnectionEvent } from './connectionLogger'
 
 export interface BrowserRtcSessionOptions {
   machineId: string
@@ -22,6 +24,7 @@ export interface BrowserRtcSessionOptions {
   iceGatheringTimeoutMs?: number | undefined
   dataChannelOpenTimeoutMs?: number | undefined
   heartbeatIntervalMs?: number | undefined
+  logger?: ConnectionLogger | undefined
 }
 
 export interface BrowserRtcSessionLifecycle {
@@ -34,17 +37,22 @@ export type BrowserRtcConnectedSession = RtcSession & RtcSessionNegotiator & Rtc
 
 export interface RTCPeerConnectionLike {
   localDescription: RTCSessionDescriptionInit | null
+  remoteDescription?: RTCSessionDescriptionInit | null
   readonly iceGatheringState?: RTCIceGatheringState
   readonly connectionState?: RTCPeerConnectionState
+  readonly iceConnectionState?: RTCIceConnectionState
+  readonly signalingState?: RTCSignalingState
+  readonly sctp?: { state?: string | undefined } | null
   createDataChannel(label: string, options?: RTCDataChannelInit): RTCDataChannelLike
   createOffer(): Promise<RTCSessionDescriptionInit>
   createAnswer(): Promise<RTCSessionDescriptionInit>
   setLocalDescription(description: RTCSessionDescriptionInit): Promise<void>
   setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void>
   addIceCandidate?(candidate: RTCIceCandidateInit): Promise<void>
+  getStats?(): Promise<RTCStatsReport>
   close(): void | Promise<void>
-  addEventListener?(type: 'icegatheringstatechange' | 'datachannel' | 'connectionstatechange', listener: EventListener): void
-  removeEventListener?(type: 'icegatheringstatechange' | 'datachannel' | 'connectionstatechange', listener: EventListener): void
+  addEventListener?(type: 'icegatheringstatechange' | 'iceconnectionstatechange' | 'signalingstatechange' | 'datachannel' | 'connectionstatechange', listener: EventListener): void
+  removeEventListener?(type: 'icegatheringstatechange' | 'iceconnectionstatechange' | 'signalingstatechange' | 'datachannel' | 'connectionstatechange', listener: EventListener): void
 }
 
 export interface RTCDataChannelLike extends EventTarget {
@@ -77,7 +85,9 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   private connectionId = ''
   private path: ConnectionPath | undefined
   private terminalId: string | undefined
-  private relayInUse = false
+  private iceServersSnapshot: unknown[] = []
+  private normalizedAnswerCandidates: RTCIceCandidateInit[] = []
+  private rawAnswerCandidateSummary: Record<string, unknown> = sdpCandidateSummary('')
   private apiChannel: RTCDataChannelLike | null = null
   private apiJsonChannel: RtcJsonRpcChannel | null = null
   private eventsChannel: RTCDataChannelLike | null = null
@@ -85,11 +95,13 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   private eventsSubscribed = false
   private readonly eventHandlers = new Set<(event: RtcEvent) => void>()
   private readonly disconnectHandlers = new Set<() => void>()
+  private readonly suppressedFailureChannels = new WeakSet<RTCDataChannelLike>()
   private terminalChannels = new Map<string, RTCDataChannelLike>()
   private fileChannels = new Map<string, RTCDataChannelLike>()
   private connected = false
   private connectedAt = 0
   private disconnecting = false
+  private disconnectGuard = false
   private disconnectTimer: ReturnType<typeof setTimeout> | null = null
   private heartbeatTimer: ReturnType<typeof setTimeout> | null = null
   private heartbeatFailCount = 0
@@ -108,6 +120,19 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
 
   async createOffer(input: RtcSessionNegotiationTarget): Promise<{ sessionId: string; description: RtcSessionDescription }> {
     this.assertTarget(input.machineId, input.terminalId)
+    this.log('offer_start', {
+      level: 'info',
+      machineId: input.machineId,
+      terminalId: input.terminalId,
+      path: input.path,
+      details: {
+        iceServerCount: input.iceServers?.length ?? 0,
+        iceServers: sanitizeICEServers(input.iceServers),
+      },
+    })
+    this.iceServersSnapshot = sanitizeICEServers(input.iceServers)
+    this.normalizedAnswerCandidates = []
+    this.rawAnswerCandidateSummary = sdpCandidateSummary('')
     const pc = (this.options.peerConnectionFactory ?? ((configuration?: RTCConfiguration) => new RTCPeerConnection(configuration)))(
       peerConnectionConfiguration(input.iceServers),
     )
@@ -122,8 +147,41 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     }
     await this.ensureAPIChannel()
     const offer = await pc.createOffer()
+    this.log('local_offer_created', {
+      machineId: input.machineId,
+      terminalId: input.terminalId,
+      path: input.path,
+      sessionId,
+      details: {
+        sdpBytes: offer.sdp?.length ?? 0,
+      },
+    })
     await pc.setLocalDescription(offer)
-    await waitForICEGatheringComplete(pc, this.options.iceGatheringTimeoutMs)
+    this.log('local_description_set', {
+      machineId: input.machineId,
+      terminalId: input.terminalId,
+      path: input.path,
+      sessionId,
+    })
+    await waitForICEGatheringComplete(pc, this.options.iceGatheringTimeoutMs, (state) => {
+      this.log('ice_gathering_state', {
+        machineId: input.machineId,
+        terminalId: input.terminalId,
+        path: input.path,
+        sessionId,
+        details: { state },
+      })
+    })
+    this.log('ice_gathering_complete', {
+      machineId: input.machineId,
+      terminalId: input.terminalId,
+      path: input.path,
+      sessionId,
+      details: {
+        sdpBytes: pc.localDescription?.sdp?.length ?? offer.sdp?.length ?? 0,
+        candidates: sdpCandidateSummary(pc.localDescription?.sdp ?? offer.sdp ?? ''),
+      },
+    })
     return {
       sessionId,
       description: {
@@ -135,12 +193,47 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
 
   async acceptAnswer(answer: RtcSessionDescription): Promise<void> {
     if (!this.pc) throw new Error('browser WebRTC session has no pending offer')
+    this.log('answer_accept_start', {
+      level: 'info',
+      sessionId: this.connectionId,
+      details: {
+        answerBytes: answer.sdp.length,
+      },
+    })
     const normalized = normalizeRemoteDescription(answer)
+    this.normalizedAnswerCandidates = normalized.candidates
+    this.rawAnswerCandidateSummary = sdpCandidateSummary(answer.sdp)
     await this.pc.setRemoteDescription(normalized.description)
+    this.log('remote_description_set', {
+      sessionId: this.connectionId,
+      details: {
+        candidateCount: normalized.candidates.length,
+        sdpCandidates: sdpCandidateSummary(answer.sdp),
+        normalizedSDPCandidates: sdpCandidateSummary(normalized.description.sdp),
+        addedCandidates: iceCandidateInitSummary(normalized.candidates),
+      },
+    })
     for (const candidate of normalized.candidates) {
       await this.pc.addIceCandidate?.(candidate)
     }
-    await waitChannelOpenWithTimeout(await this.ensureAPIChannel(), this.options.dataChannelOpenTimeoutMs)
+    if (normalized.candidates.length > 0) {
+      this.log('remote_candidates_added', {
+        sessionId: this.connectionId,
+        details: {
+          candidateCount: normalized.candidates.length,
+        },
+      })
+    }
+    const apiChannel = await this.ensureAPIChannel()
+    try {
+      await waitChannelOpenWithTimeout(apiChannel, this.options.dataChannelOpenTimeoutMs)
+    } catch (err) {
+      void this.logDataChannelOpenTimeout(apiChannel, err)
+      throw err
+    }
+    this.log('api_channel_open', {
+      sessionId: this.connectionId,
+    })
     this.markReadyForTraffic()
   }
 
@@ -221,7 +314,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
       path: this.path ?? this.options.path ?? 'local',
       connectionId: this.connectionId || 'local-webrtc',
       machineId: this.options.machineId,
-      relayInUse: this.relayInUse || this.capabilities.relayInUse,
+      relayInUse: this.capabilities.relayInUse,
     }
     const terminalId = this.terminalId ?? this.options.terminalId
     if (terminalId) info.terminalId = terminalId
@@ -230,7 +323,16 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
 
   private openRTCChannel(label: string): RTCDataChannelLike {
     if (!this.pc) throw new Error('browser WebRTC session is not connected')
-    return this.pc.createDataChannel(label, { ordered: true })
+    const channel = this.pc.createDataChannel(label, { ordered: true })
+    this.attachChannelDiagnostics(channel)
+    this.log('data_channel_created', {
+      sessionId: this.connectionId,
+      details: {
+        label,
+        readyState: channel.readyState,
+      },
+    })
+    return channel
   }
 
   private async ensureTerminalChannel(terminalId: string): Promise<RTCDataChannelLike> {
@@ -240,10 +342,14 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     return this.registerTerminalChannel(terminalId, channel)
   }
 
-  private async ensureAPIChannel(): Promise<RTCDataChannelLike> {
-    if (this.apiChannel && this.apiChannel.readyState !== 'closed') return this.apiChannel
+  private clearApiChannel(): void {
     this.apiChannel = null
     this.apiJsonChannel = null
+  }
+
+  private async ensureAPIChannel(): Promise<RTCDataChannelLike> {
+    if (this.apiChannel && this.apiChannel.readyState !== 'closed') return this.apiChannel
+    this.clearApiChannel()
     this.apiChannel = this.openRTCChannel('api')
     this.attachAPIChannelLifecycle(this.apiChannel)
     return this.apiChannel
@@ -307,11 +413,17 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   private setupConnectionStateHandlers(pc: RTCPeerConnectionLike): void {
     pc.addEventListener?.('connectionstatechange', () => {
       const state = pc.connectionState
+      this.log('peer_connection_state', {
+        level: state === 'failed' || state === 'closed' ? 'warn' : 'debug',
+        sessionId: this.connectionId,
+        details: { state },
+      })
       if (state === 'connected') {
         this.markConnected()
         return
       }
       if (state === 'disconnected') {
+        this.disconnectGuard = true
         this.stopHeartbeat()
         const sinceConnected = this.connectedAt > 0 ? Date.now() - this.connectedAt : 0
         this.startDisconnectGrace(sinceConnected < 15000 ? 12000 : 5000)
@@ -322,22 +434,61 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
         void this.failConnection(new Error(`browser WebRTC peer connection ${state}`))
       }
     })
+    pc.addEventListener?.('iceconnectionstatechange', () => {
+      const state = pc.iceConnectionState
+      this.log('ice_connection_state', {
+        level: state === 'failed' || state === 'closed' ? 'warn' : 'debug',
+        sessionId: this.connectionId,
+        details: { state },
+      })
+    })
+    pc.addEventListener?.('signalingstatechange', () => {
+      const state = pc.signalingState
+      this.log('signaling_state', {
+        level: state === 'closed' ? 'warn' : 'debug',
+        sessionId: this.connectionId,
+        details: { state },
+      })
+    })
   }
 
   private attachAPIChannelLifecycle(channel: RTCDataChannelLike): void {
     channel.addEventListener('close', () => {
       if (this.apiChannel === channel) {
-        this.apiChannel = null
-        this.apiJsonChannel = null
+        this.clearApiChannel()
       }
-      if (!this.disconnecting) {
+      if (!this.disconnecting && !this.suppressedFailureChannels.has(channel)) {
+        if (this.disconnectGuard) return
         void this.failConnection(new Error('browser WebRTC api channel closed'))
       }
     })
     channel.addEventListener('error', () => {
-      if (!this.disconnecting) {
+      if (!this.disconnecting && !this.suppressedFailureChannels.has(channel)) {
         void this.failConnection(new Error('browser WebRTC api channel failed'))
       }
+    })
+  }
+
+  private attachChannelDiagnostics(channel: RTCDataChannelLike): void {
+    channel.addEventListener('open', () => {
+      this.log('data_channel_open', {
+        sessionId: this.connectionId,
+        details: { label: channel.label },
+      })
+    })
+    channel.addEventListener('close', () => {
+      this.log('data_channel_close', {
+        level: 'debug',
+        sessionId: this.connectionId,
+        details: { label: channel.label },
+      })
+    })
+    channel.addEventListener('error', () => {
+      this.log('data_channel_error', {
+        level: 'warn',
+        sessionId: this.connectionId,
+        details: { label: channel.label },
+      })
     })
   }
 
@@ -346,6 +497,10 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     this.connected = true
     this.connectedAt = Date.now()
     this.clearDisconnectGrace()
+    this.log('session_connected', {
+      level: 'info',
+      sessionId: this.connectionId,
+    })
     this.startHeartbeat()
   }
 
@@ -355,6 +510,13 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     this.connectedAt = Date.now()
     this.clearDisconnectGrace()
     const state = this.pc?.connectionState
+    this.log('session_ready_for_traffic', {
+      level: 'info',
+      sessionId: this.connectionId,
+      details: {
+        peerConnectionState: state,
+      },
+    })
     if (state === undefined || state === 'connected') {
       this.startHeartbeat()
     }
@@ -460,26 +622,42 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   }
 
   private async failConnection(err: Error): Promise<void> {
+    if (this.disconnecting) return
+    this.log('session_failed', {
+      level: 'error',
+      sessionId: this.connectionId,
+      message: err.message,
+    })
     await this.closeInternal(err, true)
   }
 
   private async closeInternal(err: Error, notify: boolean): Promise<void> {
     if (this.disconnecting) return
     this.disconnecting = true
+    this.log('session_closing', {
+      level: notify ? 'warn' : 'debug',
+      sessionId: this.connectionId,
+      message: err.message,
+      details: { notify },
+    })
     const terminalChannels = Array.from(this.terminalChannels.values())
     const fileChannels = Array.from(this.fileChannels.values())
     const apiChannel = this.apiChannel
     const eventsChannel = this.eventsChannel
     const pc = this.pc
+    for (const channel of terminalChannels) this.suppressedFailureChannels.add(channel)
+    for (const channel of fileChannels) this.suppressedFailureChannels.add(channel)
+    if (apiChannel) this.suppressedFailureChannels.add(apiChannel)
+    if (eventsChannel) this.suppressedFailureChannels.add(eventsChannel)
     this.connected = false
     this.clearDisconnectGrace()
     this.stopHeartbeat()
     this.pc = null
-    this.apiChannel = null
-    this.apiJsonChannel = null
+    this.clearApiChannel()
     this.eventsChannel = null
     this.eventsListener = null
     this.eventsSubscribed = false
+    this.normalizedAnswerCandidates = []
     this.terminalChannels.clear()
     this.fileChannels.clear()
     for (const channel of terminalChannels) channel.close()
@@ -488,10 +666,48 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     eventsChannel?.close()
     await pc?.close()
     this.eventHandlers.clear()
+    this.disconnectGuard = false
     this.disconnecting = false
     if (notify) {
       for (const handler of Array.from(this.disconnectHandlers)) handler()
     }
+  }
+
+  private async logDataChannelOpenTimeout(channel: RTCDataChannelLike, err: unknown): Promise<void> {
+    this.log('data_channel_open_timeout', {
+      level: 'error',
+      sessionId: this.connectionId,
+      message: errorMessage(err),
+      details: await this.connectionDebugSnapshot(channel),
+    })
+  }
+
+  private async connectionDebugSnapshot(channel?: RTCDataChannelLike | null): Promise<Record<string, unknown>> {
+    const pc = this.pc
+    const details: Record<string, unknown> = {
+      label: channel?.label,
+      channelReadyState: channel?.readyState,
+      peerConnectionState: pc?.connectionState,
+      iceConnectionState: pc?.iceConnectionState,
+      iceGatheringState: pc?.iceGatheringState,
+      signalingState: pc?.signalingState,
+      sctpState: pc?.sctp?.state,
+      hasLocalDescription: Boolean(pc?.localDescription?.sdp),
+      hasRemoteDescription: Boolean(pc?.remoteDescription?.sdp),
+      iceServers: this.iceServersSnapshot,
+      localDescriptionCandidates: sdpCandidateSummary(pc?.localDescription?.sdp ?? ''),
+      rawAnswerCandidates: this.rawAnswerCandidateSummary,
+      remoteDescriptionCandidates: sdpCandidateSummary(pc?.remoteDescription?.sdp ?? ''),
+      addedRemoteCandidates: iceCandidateInitSummary(this.normalizedAnswerCandidates),
+    }
+    const statsSnapshot = await rtcStatsSnapshot(pc)
+    if (statsSnapshot) {
+      details.selectedCandidatePair = statsSnapshot.selectedCandidatePair
+      details.candidatePairs = statsSnapshot.candidatePairs
+      details.localCandidates = statsSnapshot.localCandidates
+      details.remoteCandidates = statsSnapshot.remoteCandidates
+    }
+    return details
   }
 
   private assertTarget(machineId: string, terminalId?: string): void {
@@ -501,6 +717,25 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     if (terminalId !== undefined && this.options.terminalId !== undefined && terminalId !== this.options.terminalId) {
       throw new Error(`local WebRTC terminal mismatch: ${terminalId} != ${this.options.terminalId}`)
     }
+  }
+
+  private log(event: string, input: {
+    level?: 'debug' | 'info' | 'warn' | 'error'
+    machineId?: string | undefined
+    terminalId?: string | undefined
+    path?: ConnectionPath | undefined
+    sessionId?: string | undefined
+    message?: string | undefined
+    details?: Record<string, unknown> | undefined
+  }): void {
+    logConnectionEvent(this.options.logger, {
+      scope: 'browser_webrtc',
+      event,
+      machineId: input.machineId ?? this.options.machineId,
+      terminalId: input.terminalId ?? this.terminalId ?? this.options.terminalId,
+      path: input.path ?? this.path ?? this.options.path,
+      ...input,
+    })
   }
 
 }
@@ -514,6 +749,180 @@ function peerConnectionConfiguration(iceServers: RtcSessionNegotiationTarget['ic
       ...(server.credential !== undefined ? { credential: server.credential } : {}),
     })),
   }
+}
+
+function sanitizeICEServers(iceServers: RtcSessionNegotiationTarget['iceServers']): Array<Record<string, unknown>> {
+  return (iceServers ?? []).map((server) => ({
+    urls: server.urls,
+    hasUsername: typeof server.username === 'string' && server.username.length > 0,
+    hasCredential: typeof server.credential === 'string' && server.credential.length > 0,
+  }))
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+interface RTCStatsDebugSnapshot {
+  selectedCandidatePair?: Record<string, unknown> | null
+  candidatePairs?: Array<Record<string, unknown>>
+  localCandidates?: Array<Record<string, unknown>>
+  remoteCandidates?: Array<Record<string, unknown>>
+}
+
+async function rtcStatsSnapshot(pc: RTCPeerConnectionLike | null): Promise<RTCStatsDebugSnapshot | null> {
+  if (!pc?.getStats) return null
+  try {
+    const stats = await withTimeout(
+      pc.getStats(),
+      500,
+      () => new Error('timed out reading browser WebRTC stats'),
+    )
+    const pairStats: Array<Record<string, unknown>> = []
+    const candidates = new Map<string, Record<string, unknown>>()
+    stats.forEach((raw) => {
+      const item = raw as Record<string, unknown>
+      if (typeof item.id === 'string' && (item.type === 'local-candidate' || item.type === 'remote-candidate' || item.type === 'candidate')) {
+        candidates.set(item.id, item)
+      }
+      if (item.type !== 'candidate-pair') return
+      pairStats.push(item)
+    })
+    const localCandidates = Array.from(candidates.values())
+      .filter((item) => item.type === 'local-candidate' || item.type === 'candidate')
+      .map(candidateSnapshot)
+      .filter((item): item is Record<string, unknown> => Boolean(item))
+    const remoteCandidates = Array.from(candidates.values())
+      .filter((item) => item.type === 'remote-candidate')
+      .map(candidateSnapshot)
+      .filter((item): item is Record<string, unknown> => Boolean(item))
+    const candidatePairs = pairStats.map((pair) => candidatePairSnapshot(pair, candidates))
+    const selectedPair = pairStats.find((item) => item.selected === true) ??
+      pairStats.find((item) => item.nominated === true) ??
+      pairStats.find((item) => item.state === 'succeeded') ??
+      null
+    return {
+      selectedCandidatePair: selectedPair ? candidatePairSnapshot(selectedPair, candidates) : null,
+      candidatePairs,
+      localCandidates,
+      remoteCandidates,
+    }
+  } catch (err) {
+    return { selectedCandidatePair: { error: errorMessage(err) } }
+  }
+}
+
+function candidatePairSnapshot(pair: Record<string, unknown>, candidates: Map<string, Record<string, unknown>>): Record<string, unknown> {
+  const localCandidate = candidates.get(String(pair.localCandidateId ?? ''))
+  const remoteCandidate = candidates.get(String(pair.remoteCandidateId ?? ''))
+  return {
+    id: pair.id,
+    state: pair.state,
+    selected: pair.selected,
+    nominated: pair.nominated,
+    writable: pair.writable,
+    bytesSent: pair.bytesSent,
+    bytesReceived: pair.bytesReceived,
+    requestsSent: pair.requestsSent,
+    responsesReceived: pair.responsesReceived,
+    currentRoundTripTime: pair.currentRoundTripTime,
+    availableOutgoingBitrate: pair.availableOutgoingBitrate,
+    local: candidateSnapshot(localCandidate),
+    remote: candidateSnapshot(remoteCandidate),
+  }
+}
+
+function candidateSnapshot(candidate: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!candidate) return undefined
+  return {
+    id: candidate.id,
+    candidateType: candidate.candidateType,
+    protocol: candidate.protocol,
+    address: candidate.address ?? candidate.ip,
+    port: candidate.port,
+    tcpType: candidate.tcpType,
+    relayProtocol: candidate.relayProtocol,
+    url: candidate.url,
+  }
+}
+
+function sdpCandidateSummary(sdp: string): Record<string, unknown> {
+  const candidates = parseSDPCandidates(sdp)
+  return {
+    count: candidates.length,
+    byType: countBy(candidates.map((candidate) => candidate.candidateType ?? 'unknown')),
+    byProtocol: countBy(candidates.map((candidate) => candidate.protocol ?? 'unknown')),
+    candidates: candidates.slice(0, 12),
+    truncated: candidates.length > 12,
+  }
+}
+
+function iceCandidateInitSummary(candidates: RTCIceCandidateInit[]): Record<string, unknown> {
+  const parsed = candidates
+    .map((candidate) => parseCandidateLine(candidate.candidate))
+    .filter((candidate): candidate is ParsedCandidate => Boolean(candidate))
+  return {
+    count: candidates.length,
+    byType: countBy(parsed.map((candidate) => candidate.candidateType ?? 'unknown')),
+    byProtocol: countBy(parsed.map((candidate) => candidate.protocol ?? 'unknown')),
+    candidates: parsed.slice(0, 12),
+    truncated: parsed.length > 12,
+  }
+}
+
+interface ParsedCandidate {
+  foundation?: string
+  component?: string
+  protocol?: string
+  address?: string
+  port?: number
+  candidateType?: string
+  tcpType?: string
+  relayProtocol?: string
+  relatedAddress?: string
+}
+
+function parseSDPCandidates(sdp: string): ParsedCandidate[] {
+  if (!sdp) return []
+  return sdp.split(/\r?\n/)
+    .map((raw) => raw.trim())
+    .filter((line) => line.startsWith('a=candidate:'))
+    .map((line) => parseCandidateLine(line.slice('a='.length)))
+    .filter((candidate): candidate is ParsedCandidate => Boolean(candidate))
+}
+
+function parseCandidateLine(candidateLine: string | undefined): ParsedCandidate | null {
+  const line = candidateLine?.trim()
+  if (!line) return null
+  const parts = line.replace(/^a=/, '').split(/\s+/)
+  if (!parts[0]?.startsWith('candidate:')) return null
+  const typeIndex = parts.findIndex((part) => part === 'typ')
+  const raddrIndex = parts.findIndex((part) => part === 'raddr')
+  const tcpTypeIndex = parts.findIndex((part) => part === 'tcptype')
+  const relayProtocolIndex = parts.findIndex((part) => part === 'relayProtocol')
+  const out: ParsedCandidate = {
+    foundation: parts[0].slice('candidate:'.length),
+  }
+  if (parts[1]) out.component = parts[1]
+  if (parts[2]) out.protocol = parts[2].toLowerCase()
+  if (parts[4]) out.address = parts[4]
+  const port = Number(parts[5])
+  if (port) out.port = port
+  const candidateType = typeIndex >= 0 ? parts[typeIndex + 1] : undefined
+  const tcpType = tcpTypeIndex >= 0 ? parts[tcpTypeIndex + 1] : undefined
+  const relayProtocol = relayProtocolIndex >= 0 ? parts[relayProtocolIndex + 1] : undefined
+  const relatedAddress = raddrIndex >= 0 ? parts[raddrIndex + 1] : undefined
+  if (candidateType) out.candidateType = candidateType
+  if (tcpType) out.tcpType = tcpType
+  if (relayProtocol) out.relayProtocol = relayProtocol
+  if (relatedAddress) out.relatedAddress = relatedAddress
+  return out
+}
+
+function countBy(values: string[]): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const value of values) counts[value] = (counts[value] ?? 0) + 1
+  return counts
 }
 
 function normalizeRemoteDescription(description: RtcSessionDescription): { description: RtcSessionDescription; candidates: RTCIceCandidateInit[] } {
@@ -906,7 +1315,12 @@ function waitChannelOpenWithTimeout(channel: RTCDataChannelLike, timeoutMs = 100
   )
 }
 
-function waitForICEGatheringComplete(pc: RTCPeerConnectionLike, timeoutMs = 10000): Promise<void> {
+function waitForICEGatheringComplete(
+  pc: RTCPeerConnectionLike,
+  timeoutMs = 10000,
+  reportState?: ((state: RTCIceGatheringState | undefined) => void) | undefined,
+): Promise<void> {
+  reportState?.(pc.iceGatheringState)
   if (pc.iceGatheringState === undefined || pc.iceGatheringState === 'complete') {
     return Promise.resolve()
   }
@@ -919,6 +1333,7 @@ function waitForICEGatheringComplete(pc: RTCPeerConnectionLike, timeoutMs = 1000
       pc.removeEventListener?.('icegatheringstatechange', onStateChange)
     }
     const onStateChange = () => {
+      reportState?.(pc.iceGatheringState)
       if (pc.iceGatheringState !== 'complete') return
       cleanup()
       resolve()

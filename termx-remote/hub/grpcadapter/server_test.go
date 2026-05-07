@@ -1,10 +1,12 @@
 package grpcadapter
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-remote/hub/cloud"
 	grpcapi "github.com/lozzow/termx/termx-remote/hub/grpcapi"
 	"github.com/lozzow/termx/termx-remote/hub/ice"
 	"github.com/lozzow/termx/termx-remote/hub/registry"
@@ -137,40 +139,125 @@ func TestGRPCAdapterHeartbeatForcedOfflineDropsSession(t *testing.T) {
 	}
 }
 
-func TestGRPCAdapterCleanupRemovesExpiredState(t *testing.T) {
+func TestGRPCAdapterPublicSessionAnswerRoundTripWithoutOfferCache(t *testing.T) {
+	ctx := context.Background()
+	reg := registry.New(registry.Config{AgentTTL: time.Minute})
+	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "machine-1", AgentID: "agent-1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	cloudSvc := cloud.NewService(cloud.Config{Registry: reg})
+	adapter := &hubRegistryAdapter{registry: reg, cloud: cloudSvc}
+	out, err := adapter.RegisterAgent(grpcRegisterInput("agent-1", "machine-1"))
+	if err != nil {
+		t.Fatalf("RegisterAgent returned error: %v", err)
+	}
+	offer, err := cloudSvc.SubmitOffer(ctx, cloud.SubmitOfferInput{
+		SessionID:  "public-session-1",
+		MachineID:  "machine-1",
+		TerminalID: "terminal-1",
+		SDP:        minimalGRPCAdapterSDP("offer"),
+	})
+	if err != nil {
+		t.Fatalf("submit cloud offer: %v", err)
+	}
+	pending, err := adapter.WaitForOffer(ctx, out.SessionID)
+	if err != nil {
+		t.Fatalf("WaitForOffer returned error: %v", err)
+	}
+	if pending.SessionID != "public-session-1" {
+		t.Fatalf("pending public session id = %q", pending.SessionID)
+	}
+	if err := adapter.SubmitAnswer(out.SessionID, pending.SessionID, minimalGRPCAdapterSDP("answer"), nil, "proof-1"); err != nil {
+		t.Fatalf("SubmitAnswer by public session id returned error: %v", err)
+	}
+	answer, err := cloudSvc.GetAnswer(ctx, cloud.GetAnswerInput{OfferID: offer.ID, MachineID: "machine-1"})
+	if err != nil {
+		t.Fatalf("GetAnswer returned error: %v", err)
+	}
+	if answer.OfferID != offer.ID || answer.SDP != minimalGRPCAdapterSDP("answer") || answer.AnswerProof != "proof-1" {
+		t.Fatalf("answer = %+v", answer)
+	}
+}
+
+func TestGRPCAdapterPairingResultUsesCurrentSession(t *testing.T) {
+	ctx := context.Background()
+	reg := registry.New(registry.Config{AgentTTL: time.Minute})
+	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "machine-1", AgentID: "agent-1"}); err != nil {
+		t.Fatalf("register agent-1: %v", err)
+	}
+	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "machine-1", AgentID: "agent-2"}); err != nil {
+		t.Fatalf("register agent-2: %v", err)
+	}
+	adapter := &hubRegistryAdapter{registry: reg}
+	first, err := adapter.RegisterAgent(grpcRegisterInput("agent-1", "machine-1"))
+	if err != nil {
+		t.Fatalf("RegisterAgent first returned error: %v", err)
+	}
+	second, err := adapter.RegisterAgent(grpcRegisterInput("agent-2", "machine-1"))
+	if err != nil {
+		t.Fatalf("RegisterAgent second returned error: %v", err)
+	}
+	claim, err := reg.SubmitPairingClaim(ctx, registry.PairingClaimInput{
+		MachineID:             "machine-1",
+		PairSessionID:         "pair-session-1",
+		PairSecret:            "pair-secret-1",
+		AppDeviceID:           "app-device-1",
+		AppName:               "TermX App",
+		RequestedCapabilities: []string{"terminal"},
+	})
+	if err != nil {
+		t.Fatalf("SubmitPairingClaim returned error: %v", err)
+	}
+	pending, err := adapter.WaitForPairingClaim(ctx, first.SessionID)
+	if err != nil {
+		t.Fatalf("WaitForPairingClaim returned error: %v", err)
+	}
+	if pending.ClaimID != claim.ID {
+		t.Fatalf("pending claim = %q, want %q", pending.ClaimID, claim.ID)
+	}
+	if err := adapter.SubmitPairingResult(grpcapi.PairingResultInput{
+		SessionID:    second.SessionID,
+		ClaimID:      claim.ID,
+		SessionToken: "wrong-session-token",
+	}); !errors.Is(err, grpcapi.ErrAgentSessionInvalid) {
+		t.Fatalf("wrong session SubmitPairingResult err = %v, want ErrAgentSessionInvalid", err)
+	}
+	if err := adapter.SubmitPairingResult(grpcapi.PairingResultInput{
+		SessionID:    first.SessionID,
+		ClaimID:      claim.ID,
+		SessionToken: "session-token-1",
+	}); err != nil {
+		t.Fatalf("SubmitPairingResult returned error: %v", err)
+	}
+	result, err := reg.GetPairingResult(ctx, claim.ID)
+	if err != nil {
+		t.Fatalf("GetPairingResult returned error: %v", err)
+	}
+	if result.SessionToken != "session-token-1" || result.MachineID != "machine-1" {
+		t.Fatalf("pairing result = %+v", result)
+	}
+}
+
+func TestGRPCAdapterCleanupRemovesExpiredSessions(t *testing.T) {
 	now := time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC)
 	adapter := &hubRegistryAdapter{
 		now: func() time.Time {
 			return now
 		},
-		sessions: map[string]hubGRPCSessionState{
-			"expired-session": {Session: hubGRPCSession{AgentID: "agent-expired"}, ExpiresAt: now.Add(-time.Second)},
-			"live-session":    {Session: hubGRPCSession{AgentID: "agent-live"}, ExpiresAt: now.Add(time.Minute)},
-		},
-		offers: map[string]hubGRPCOfferState{
-			"expired-offer": {OfferID: "offer-expired", ExpiresAt: now.Add(-time.Second)},
-			"live-offer":    {OfferID: "offer-live", ExpiresAt: now.Add(time.Minute)},
-		},
-		claims: map[string]hubGRPCClaimState{
-			"expired-claim": {Session: hubGRPCSession{AgentID: "agent-expired"}, ExpiresAt: now.Add(-time.Second)},
-			"live-claim":    {Session: hubGRPCSession{AgentID: "agent-live"}, ExpiresAt: now.Add(time.Minute)},
+		sessions: map[string]agentSessionState{
+			"expired-session": {Session: agentSession{AgentID: "agent-expired"}, ExpiresAt: now.Add(-time.Second)},
+			"live-session":    {Session: agentSession{AgentID: "agent-live"}, ExpiresAt: now.Add(time.Minute)},
 		},
 	}
 
-	if removed := adapter.cleanupExpired(); removed != 3 {
-		t.Fatalf("cleanupExpired removed %d entries, want 3", removed)
+	if removed := adapter.cleanupExpired(); removed != 1 {
+		t.Fatalf("cleanupExpired removed %d entries, want 1", removed)
 	}
-	if len(adapter.sessions) != 1 || len(adapter.offers) != 1 || len(adapter.claims) != 1 {
-		t.Fatalf("unexpected map sizes after cleanup: sessions=%d offers=%d claims=%d", len(adapter.sessions), len(adapter.offers), len(adapter.claims))
+	if len(adapter.sessions) != 1 {
+		t.Fatalf("unexpected session map size after cleanup: %d", len(adapter.sessions))
 	}
 	if _, ok := adapter.sessions["live-session"]; !ok {
 		t.Fatal("live session was removed")
-	}
-	if _, ok := adapter.offers["live-offer"]; !ok {
-		t.Fatal("live offer was removed")
-	}
-	if _, ok := adapter.claims["live-claim"]; !ok {
-		t.Fatal("live claim was removed")
 	}
 }
 
@@ -183,3 +270,7 @@ func grpcRegisterInput(agentID, machineID string) grpcapi.RegisterAgentInput {
 }
 
 func testNow() time.Time { return time.Now().UTC() }
+
+func minimalGRPCAdapterSDP(sessionID string) string {
+	return "v=0\r\no=- " + sessionID + " 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel"
+}

@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { createBrowserRemoteNetworkRuntime } from './browserNetworkRuntime'
 import { createBrowserRtcSession } from './browserRtcSession'
+import { consoleConnectionLogger } from './connectionLogger'
 import { WebControlRemoteApp } from './WebControlRemoteApp'
 
 export interface RemoteAppEntryOptions {
@@ -26,6 +27,7 @@ export function mountRemoteApp(options: RemoteAppEntryOptions = {}): Root {
           managedRtcSessionFactory={({ machineId, terminalId }) => createBrowserRtcSession({
             machineId,
             ...(terminalId ? { terminalId } : {}),
+            logger: consoleConnectionLogger,
           })}
           networkRuntime={networkRuntime}
         />

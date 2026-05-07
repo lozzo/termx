@@ -4,6 +4,7 @@ import { createBrowserRemoteNetworkRuntime } from './browserNetworkRuntime'
 import { LocalRemoteApp, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createMachineSessionStore } from './localAppIdentity'
 import { createBrowserRtcSession } from './browserRtcSession'
+import { consoleConnectionLogger } from './connectionLogger'
 import { createManagedHubApi } from './managedHubApi'
 import { createManagedHubRtcConnector } from './managedHubRtcConnector'
 import { normalizeTerminalInventory } from './terminalInventory'
@@ -138,10 +139,13 @@ function createBrowserLocalConnector(networkRuntime: RemoteNetworkRuntime, hubUr
   const api = createManagedHubApi({ baseUrl: hubUrl, fetch: networkRuntime.fetch })
   const connector = createManagedHubRtcConnector({
     api,
+    hubUrl,
+    logger: consoleConnectionLogger,
     createSession: ({ machineId, terminalId }) => createBrowserRtcSession({
       machineId,
       ...(terminalId ? { terminalId } : {}),
       path: 'local',
+      logger: consoleConnectionLogger,
     }),
   })
   return {

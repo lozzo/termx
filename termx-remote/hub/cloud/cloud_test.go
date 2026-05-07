@@ -199,10 +199,10 @@ func TestCloudAnswerLookupUsesPublicSessionID(t *testing.T) {
 	if err := svc.SubmitAnswer(ctx, cloud.SubmitAnswerInput{
 		AgentID:   "agent_1",
 		MachineID: "mach_1",
-		OfferID:   offer.ID,
+		OfferID:   "rtc_public",
 		SDP:       minimalSDP("answer-a"),
 	}); err != nil {
-		t.Fatalf("submit answer: %v", err)
+		t.Fatalf("submit answer by public session id: %v", err)
 	}
 	answer, err := svc.GetAnswer(ctx, cloud.GetAnswerInput{
 		OfferID:   "rtc_public",
@@ -216,7 +216,7 @@ func TestCloudAnswerLookupUsesPublicSessionID(t *testing.T) {
 	}
 }
 
-func TestCloudOfferPolicyCacheIsTTLBounded(t *testing.T) {
+func TestCloudOfferStateLivesInRegistry(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -226,10 +226,11 @@ func TestCloudOfferPolicyCacheIsTTLBounded(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 	svc := cloud.NewService(cloud.Config{
-		Registry:  reg,
-		Clock:     clock,
-		OfferTTL:  time.Second,
-		MaxOffers: 1,
+		Registry:            reg,
+		Clock:               clock,
+		OfferTTL:            time.Second,
+		MaxOffers:           1,
+		AllowRelayByDefault: true,
 	})
 	first, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
 		SessionID:  "rtc_a",
@@ -240,6 +241,14 @@ func TestCloudOfferPolicyCacheIsTTLBounded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("submit first: %v", err)
 	}
+	stored, ok := reg.Offer(ctx, registry.OfferLookupInput{MachineID: "mach_1", OfferID: "rtc_a"})
+	if !ok || stored.ID != first.ID || !stored.AllowRelay {
+		t.Fatalf("registry offer lookup by public session = %+v ok=%v", stored, ok)
+	}
+	policy, ok := svc.OfferPolicyForAnswer(cloud.GetAnswerInput{OfferID: "rtc_a", MachineID: "mach_1"})
+	if !ok || !policy.AllowRelay || policy.TerminalID != "term_1" {
+		t.Fatalf("policy from registry offer = %+v ok=%v", policy, ok)
+	}
 	if _, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
 		SessionID:  "rtc_b",
 		MachineID:  "mach_1",
@@ -248,16 +257,68 @@ func TestCloudOfferPolicyCacheIsTTLBounded(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("submit second: %v", err)
 	}
-	if _, err := svc.GetAnswer(ctx, cloud.GetAnswerInput{
-		OfferID:   first.ID,
-		MachineID: "mach_1",
-	}); !errors.Is(err, cloud.ErrWrongMachine) {
-		t.Fatalf("evicted offer answer err = %v", err)
+	if _, ok := reg.Offer(ctx, registry.OfferLookupInput{MachineID: "mach_1", OfferID: "rtc_a"}); ok {
+		t.Fatal("expected oldest offer to be evicted from registry")
 	}
 	clock.value = clock.value.Add(2 * time.Second)
 	removed := svc.CleanupExpired(ctx)
 	if removed == 0 {
-		t.Fatal("expected expired cloud offer policy cache entries to be cleaned")
+		t.Fatal("expected expired registry offer entries to be cleaned")
+	}
+}
+
+func TestCloudPublicSessionAnswerLookupUsesRegistry(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clock := &mutableClock{value: time.Date(2026, 5, 3, 19, 2, 0, 0, time.UTC)}
+	reg := registry.New(registry.Config{Clock: clock})
+	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	svc := cloud.NewService(cloud.Config{Registry: reg, Clock: clock})
+	offer, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
+		SessionID:  "rtc_registry_public",
+		MachineID:  "mach_1",
+		TerminalID: "term_1",
+		SDP:        minimalSDP("offer-registry-public"),
+	})
+	if err != nil {
+		t.Fatalf("submit offer: %v", err)
+	}
+	if _, err := svc.PollAgentOffer(ctx, cloud.PollAgentOfferInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		Timeout:   time.Second,
+	}); err != nil {
+		t.Fatalf("poll offer: %v", err)
+	}
+	if err := svc.SubmitAnswer(ctx, cloud.SubmitAnswerInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		OfferID:   "rtc_registry_public",
+		SDP:       minimalSDP("answer-registry-public"),
+	}); err != nil {
+		t.Fatalf("submit answer by public session: %v", err)
+	}
+	answer, err := svc.GetAnswer(ctx, cloud.GetAnswerInput{
+		OfferID:   "rtc_registry_public",
+		MachineID: "mach_1",
+	})
+	if err != nil {
+		t.Fatalf("get answer by public session: %v", err)
+	}
+	if answer.OfferID != offer.ID || answer.SDP != minimalSDP("answer-registry-public") {
+		t.Fatalf("answer = %+v, want offer %s", answer, offer.ID)
+	}
+}
+
+func TestCloudOfferPolicyForAnswerWithoutRegistryReturnsFalse(t *testing.T) {
+	t.Parallel()
+
+	svc := cloud.NewService(cloud.Config{})
+	if policy, ok := svc.OfferPolicyForAnswer(cloud.GetAnswerInput{OfferID: "offer_1", MachineID: "mach_1"}); ok {
+		t.Fatalf("policy = %+v ok=true, want false", policy)
 	}
 }
 

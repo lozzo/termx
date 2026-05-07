@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createManagedHubRtcConnector } from './managedHubRtcConnector'
+import type { ConnectionLogEvent } from './connectionLogger'
 import source from './managedHubRtcConnector.ts?raw'
 import type { ManagedHubApi } from './managedHubApi'
 import type { ConnectionCapabilities, RtcBinaryChannel, RtcJsonRpcChannel, RtcSession } from './transport'
@@ -26,6 +27,15 @@ describe('ManagedHubRtcConnector', () => {
     expect(session.createdOffers).toEqual([{
       machineId: 'machine-1',
       path: 'managed',
+      iceServers: [
+        { urls: ['stun:hub.termx.test:3478'] },
+        { urls: ['turn:hub.termx.test:3478?transport=udp'], username: 'turn-user', credential: 'turn-pass' },
+      ],
+    }])
+    expect(api.preflightSessions).toEqual([{
+      machineId: 'machine-1',
+      terminalId: '',
+      sessionToken: 'session-token-1',
     }])
     expect(api.createdSessions).toEqual([{
       machineId: 'machine-1',
@@ -93,6 +103,10 @@ describe('ManagedHubRtcConnector', () => {
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       path: 'local',
+      iceServers: [
+        { urls: ['stun:hub.termx.test:3478'] },
+        { urls: ['turn:hub.termx.test:3478?transport=udp'], username: 'turn-user', credential: 'turn-pass' },
+      ],
     }])
     expect(api.createdSessions[0]).toMatchObject({
       machineId: 'machine-local',
@@ -100,10 +114,45 @@ describe('ManagedHubRtcConnector', () => {
     })
   })
 
+  it('logs Hub signaling and answer stages with the hub URL and session id', async () => {
+    const api = new MockManagedHubApi({ pending: true })
+    const session = new MockOffererSession()
+    const logs: ConnectionLogEvent[] = []
+    const connector = createManagedHubRtcConnector({
+      api,
+      createSession: () => session,
+      answerPollDelayMs: 0,
+      hubUrl: 'https://hub-1.termx.test',
+      logger: { log: (event) => logs.push(event) },
+    })
+
+    await connector.connect({
+      machineId: 'machine-1',
+      terminalId: 'terminal-1',
+      sessionToken: 'session-token-1',
+    })
+
+    expect(logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'managed_hub', event: 'offer_created', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-managed-1' }),
+      expect.objectContaining({ scope: 'managed_hub', event: 'hub_session_create_result', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-managed-1' }),
+      expect.objectContaining({ scope: 'managed_hub', event: 'answer_poll_start', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-managed-1' }),
+      expect.objectContaining({ scope: 'managed_hub', event: 'answer_received', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-managed-1' }),
+      expect.objectContaining({ scope: 'managed_hub', event: 'connect_success', level: 'info', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-managed-1' }),
+    ]))
+  })
+
   it('disconnects the browser session if Hub signaling fails', async () => {
     const session = new MockOffererSession()
     const connector = createManagedHubRtcConnector({
       api: {
+        async getSessionIce() {
+          return {
+            path: 'managed' as const,
+            machineId: 'machine-1',
+            iceServers: [],
+            relayPolicy: { allowRelay: false, allowRelayTransfer: false },
+          }
+        },
         async createSession() {
           throw new Error('session rejected')
         },
@@ -163,6 +212,7 @@ describe('ManagedHubRtcConnector', () => {
 })
 
 class MockManagedHubApi implements ManagedHubApi {
+  readonly preflightSessions: unknown[] = []
   readonly createdSessions: unknown[] = []
   readonly polledAnswers: unknown[] = []
   constructor(private readonly options: {
@@ -171,6 +221,20 @@ class MockManagedHubApi implements ManagedHubApi {
     answerProofSecret?: string
     pairSessionId?: string
   } = {}) {}
+
+  async getSessionIce(input: Parameters<ManagedHubApi['getSessionIce']>[0]) {
+    this.preflightSessions.push(input)
+    return {
+      path: 'managed' as const,
+      machineId: input.machineId,
+      terminalId: input.terminalId || undefined,
+      iceServers: [
+        { urls: ['stun:hub.termx.test:3478'] },
+        { urls: ['turn:hub.termx.test:3478?transport=udp'], username: 'turn-user', credential: 'turn-pass' },
+      ],
+      relayPolicy: { allowRelay: true, allowRelayTransfer: false },
+    }
+  }
 
   async createSession(input: Parameters<ManagedHubApi['createSession']>[0]) {
     this.createdSessions.push(input)

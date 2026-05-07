@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createBrowserRtcSession } from './browserRtcSession'
+import type { ConnectionLogEvent } from './connectionLogger'
 import { TERMX_FRAME_TYPES, encodeTermxFrame } from './termxProtocol'
 
 describe('BrowserRtcSession', () => {
@@ -122,6 +123,37 @@ describe('BrowserRtcSession', () => {
     expect(factory.lastConnection()?.configuration).toEqual({
       iceServers: [{ urls: ['stun:one.example:3478'] }],
     })
+  })
+
+  it('logs browser WebRTC negotiation, ICE, answer, and data channel stages', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const logs: ConnectionLogEvent[] = []
+    const session = createBrowserRtcSession({
+      machineId: 'machine-remote',
+      terminalId: 'terminal-1',
+      path: 'managed',
+      peerConnectionFactory: factory,
+      sessionIdGenerator: () => 'rtc-managed-logs',
+      logger: { log: (event) => logs.push(event) },
+    })
+
+    await session.createOffer({
+      machineId: 'machine-remote',
+      terminalId: 'terminal-1',
+      path: 'managed',
+      iceServers: [{ urls: ['stun:one.example:3478'] }],
+    })
+    await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
+    factory.lastConnection()?.setConnectionState('connected')
+
+    expect(logs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'browser_webrtc', event: 'offer_start', path: 'managed' }),
+      expect.objectContaining({ scope: 'browser_webrtc', event: 'local_offer_created', path: 'managed', sessionId: 'rtc-managed-logs' }),
+      expect.objectContaining({ scope: 'browser_webrtc', event: 'ice_gathering_complete', path: 'managed', sessionId: 'rtc-managed-logs' }),
+      expect.objectContaining({ scope: 'browser_webrtc', event: 'answer_accept_start', path: 'managed', sessionId: 'rtc-managed-logs' }),
+      expect.objectContaining({ scope: 'browser_webrtc', event: 'api_channel_open', path: 'managed', sessionId: 'rtc-managed-logs' }),
+      expect.objectContaining({ scope: 'browser_webrtc', event: 'peer_connection_state', path: 'managed', sessionId: 'rtc-managed-logs', details: { state: 'connected' } }),
+    ]))
   })
 
   it('reports server-negotiated channel capabilities instead of hard-coded browser defaults', async () => {
@@ -356,6 +388,228 @@ describe('BrowserRtcSession', () => {
     expect(accepted).toBe(true)
   })
 
+  it('logs WebRTC state and selected candidate details when the api channel never opens', async () => {
+    vi.useFakeTimers()
+    try {
+      const factory = createMockPeerConnectionFactory({
+        initialReadyState: 'connecting',
+        gatheredLocalSDP: [
+          'v=0',
+          'm=application 9 UDP/DTLS/SCTP webrtc-datachannel',
+          'a=candidate:local1 1 udp 2122260223 10.0.0.2 54231 typ host',
+          'a=candidate:local2 1 udp 2122260223 203.0.113.10 50000 typ srflx raddr 10.0.0.2 rport 54231',
+          '',
+        ].join('\r\n'),
+        iceConnectionState: 'checking',
+        signalingState: 'stable',
+        sctpState: 'connecting',
+        stats: new Map<string, Record<string, unknown>>([
+          ['local-candidate-1', {
+            id: 'local-candidate-1',
+            type: 'local-candidate',
+            candidateType: 'host',
+            protocol: 'udp',
+            address: '10.0.0.2',
+            port: 54231,
+          }],
+          ['remote-candidate-1', {
+            id: 'remote-candidate-1',
+            type: 'remote-candidate',
+            candidateType: 'srflx',
+            protocol: 'udp',
+            address: '114.66.58.243',
+            port: 8447,
+          }],
+          ['pair-1', {
+            id: 'pair-1',
+            type: 'candidate-pair',
+            state: 'succeeded',
+            selected: true,
+            nominated: true,
+            localCandidateId: 'local-candidate-1',
+            remoteCandidateId: 'remote-candidate-1',
+            currentRoundTripTime: 0.12,
+            requestsSent: 3,
+            responsesReceived: 3,
+          }],
+          ['pair-2', {
+            id: 'pair-2',
+            type: 'candidate-pair',
+            state: 'in-progress',
+            localCandidateId: 'local-candidate-1',
+            remoteCandidateId: 'remote-candidate-1',
+          }],
+        ]),
+      })
+      const logs: ConnectionLogEvent[] = []
+      const session = createBrowserRtcSession({
+        machineId: 'machine-local',
+        path: 'managed',
+        peerConnectionFactory: factory,
+        sessionIdGenerator: () => 'rtc-timeout-1',
+        dataChannelOpenTimeoutMs: 50,
+        logger: { log: (event) => logs.push(event) },
+      })
+
+      await session.createOffer({
+        machineId: 'machine-local',
+        path: 'managed',
+        iceServers: [{
+          urls: ['turn:114.66.58.243:3478?transport=udp'],
+          username: 'user',
+          credential: 'secret',
+        }],
+      })
+      const acceptPromise = session.acceptAnswer({
+        type: 'answer',
+        sdp: [
+          'v=0',
+          'a=fingerprint:sha-256 AA:BB',
+          'm=application 9 UDP/DTLS/SCTP webrtc-datachannel',
+          'a=ice-ufrag:iceuser',
+          'a=ice-pwd:icepassword',
+          'a=setup:active',
+          'a=mid:0',
+          'a=sctp-port:5000',
+          'a=candidate:remote1 1 udp 2122260223 114.66.58.243 3478 typ relay raddr 10.0.0.3 rport 50000',
+          '',
+        ].join('\r\n'),
+      })
+      const rejection = expect(acceptPromise).rejects.toThrow(/timed out opening data channel api/)
+      await vi.advanceTimersByTimeAsync(50)
+
+      await rejection
+      expect(logs).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          scope: 'browser_webrtc',
+          event: 'data_channel_open_timeout',
+          level: 'error',
+          sessionId: 'rtc-timeout-1',
+          message: 'timed out opening data channel api',
+          details: expect.objectContaining({
+            label: 'api',
+            channelReadyState: 'connecting',
+            peerConnectionState: 'new',
+            iceConnectionState: 'checking',
+            signalingState: 'stable',
+            sctpState: 'connecting',
+            iceServers: [{
+              urls: ['turn:114.66.58.243:3478?transport=udp'],
+              hasUsername: true,
+              hasCredential: true,
+            }],
+            localDescriptionCandidates: expect.objectContaining({
+              count: 2,
+              byType: { host: 1, srflx: 1 },
+            }),
+            remoteDescriptionCandidates: expect.objectContaining({
+              count: 0,
+            }),
+            rawAnswerCandidates: expect.objectContaining({
+              count: 1,
+              byType: { relay: 1 },
+            }),
+            addedRemoteCandidates: expect.objectContaining({
+              count: 1,
+              byType: { relay: 1 },
+            }),
+            selectedCandidatePair: expect.objectContaining({
+              id: 'pair-1',
+              state: 'succeeded',
+              nominated: true,
+              requestsSent: 3,
+              responsesReceived: 3,
+              local: expect.objectContaining({ candidateType: 'host', address: '10.0.0.2' }),
+              remote: expect.objectContaining({ candidateType: 'srflx', address: '114.66.58.243' }),
+            }),
+            candidatePairs: expect.arrayContaining([
+              expect.objectContaining({ id: 'pair-1', state: 'succeeded' }),
+              expect.objectContaining({ id: 'pair-2', state: 'in-progress' }),
+            ]),
+            localCandidates: expect.arrayContaining([
+              expect.objectContaining({ id: 'local-candidate-1', candidateType: 'host' }),
+            ]),
+            remoteCandidates: expect.arrayContaining([
+              expect.objectContaining({ id: 'remote-candidate-1', candidateType: 'srflx' }),
+            ]),
+          }),
+        }),
+      ]))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not delay the api channel open timeout while collecting slow WebRTC stats', async () => {
+    vi.useFakeTimers()
+    try {
+      const factory = createMockPeerConnectionFactory({
+        initialReadyState: 'connecting',
+        statsPromise: new Promise<RTCStatsReport>(() => {}),
+      })
+      const logs: ConnectionLogEvent[] = []
+      const session = createBrowserRtcSession({
+        machineId: 'machine-local',
+        path: 'managed',
+        peerConnectionFactory: factory,
+        sessionIdGenerator: () => 'rtc-slow-stats-1',
+        dataChannelOpenTimeoutMs: 50,
+        logger: { log: (event) => logs.push(event) },
+      })
+      await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+      const acceptPromise = session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
+      const rejection = expect(acceptPromise).rejects.toThrow(/timed out opening data channel api/)
+
+      await vi.advanceTimersByTimeAsync(50)
+      await rejection
+      expect(logs.some((event) => event.event === 'data_channel_open_timeout')).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(500)
+      await flushMicrotasks()
+      expect(logs).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          event: 'data_channel_open_timeout',
+          details: expect.objectContaining({
+            selectedCandidatePair: expect.objectContaining({
+              error: 'timed out reading browser WebRTC stats',
+            }),
+          }),
+        }),
+      ]))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not report a second session failure when active disconnect closes the api channel', async () => {
+    vi.useFakeTimers()
+    try {
+      const factory = createMockPeerConnectionFactory({ closeEventDelayMs: 1 })
+      const logs: ConnectionLogEvent[] = []
+      const session = createBrowserRtcSession({
+        machineId: 'machine-local',
+        path: 'managed',
+        peerConnectionFactory: factory,
+        sessionIdGenerator: () => 'rtc-disconnect-1',
+        logger: { log: (event) => logs.push(event) },
+      })
+      await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+      await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
+
+      await session.disconnect()
+      await vi.advanceTimersByTimeAsync(1)
+      await flushMicrotasks()
+
+      expect(logs.filter((event) => event.event === 'session_failed')).toEqual([])
+      expect(logs).toEqual(expect.arrayContaining([
+        expect.objectContaining({ scope: 'browser_webrtc', event: 'session_closing', message: 'browser WebRTC session disconnected' }),
+        expect.objectContaining({ scope: 'browser_webrtc', event: 'data_channel_close', details: { label: 'api' } }),
+      ]))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('normalizes Pion-only answer SDP lines before accepting an answer', async () => {
     const factory = createMockPeerConnectionFactory()
     const session = createBrowserRtcSession({
@@ -565,6 +819,12 @@ function createMockPeerConnectionFactory(options: {
   initialReadyState?: RTCDataChannelState
   initialIceGatheringState?: RTCIceGatheringState
   gatheredLocalSDP?: string
+  iceConnectionState?: RTCIceConnectionState
+  signalingState?: RTCSignalingState
+  sctpState?: string
+  stats?: Map<string, Record<string, unknown>>
+  statsPromise?: Promise<RTCStatsReport>
+  closeEventDelayMs?: number
 } = {}) {
   const channels = new Map<string, MockRTCDataChannel>()
   const createOfferLabels: string[][] = []
@@ -577,6 +837,12 @@ function createMockPeerConnectionFactory(options: {
       initialReadyState: options.initialReadyState ?? 'open',
       initialIceGatheringState: options.initialIceGatheringState ?? 'complete',
       gatheredLocalSDP: options.gatheredLocalSDP,
+      iceConnectionState: options.iceConnectionState,
+      signalingState: options.signalingState,
+      sctpState: options.sctpState,
+      stats: options.stats,
+      statsPromise: options.statsPromise,
+      closeEventDelayMs: options.closeEventDelayMs,
     })
     return lastConnection
   })
@@ -603,12 +869,18 @@ class MockRTCPeerConnection extends EventTarget {
   remoteDescription: RTCSessionDescriptionInit | null = null
   addedCandidates: RTCIceCandidateInit[] = []
   iceGatheringState: RTCIceGatheringState
+  iceConnectionState: RTCIceConnectionState
+  signalingState: RTCSignalingState
   connectionState: RTCPeerConnectionState = 'new'
+  sctp: { state?: string } | null
   closed = false
   private readonly channels: Map<string, MockRTCDataChannel>
   private readonly createOfferLabels: string[][]
   private readonly initialReadyState: RTCDataChannelState
   private readonly gatheredLocalSDP: string | undefined
+  private readonly stats: Map<string, Record<string, unknown>>
+  private readonly statsPromise: Promise<RTCStatsReport> | undefined
+  private readonly closeEventDelayMs: number | undefined
 
   constructor(options: {
     configuration?: RTCConfiguration | undefined
@@ -617,6 +889,12 @@ class MockRTCPeerConnection extends EventTarget {
     initialReadyState: RTCDataChannelState
     initialIceGatheringState: RTCIceGatheringState
     gatheredLocalSDP?: string | undefined
+    iceConnectionState?: RTCIceConnectionState | undefined
+    signalingState?: RTCSignalingState | undefined
+    sctpState?: string | undefined
+    stats?: Map<string, Record<string, unknown>> | undefined
+    statsPromise?: Promise<RTCStatsReport> | undefined
+    closeEventDelayMs?: number | undefined
   }) {
     super()
     this.configuration = options.configuration
@@ -625,12 +903,18 @@ class MockRTCPeerConnection extends EventTarget {
     this.initialReadyState = options.initialReadyState
     this.iceGatheringState = options.initialIceGatheringState
     this.gatheredLocalSDP = options.gatheredLocalSDP
+    this.iceConnectionState = options.iceConnectionState ?? 'new'
+    this.signalingState = options.signalingState ?? 'stable'
+    this.sctp = options.sctpState ? { state: options.sctpState } : null
+    this.stats = options.stats ?? new Map()
+    this.statsPromise = options.statsPromise
+    this.closeEventDelayMs = options.closeEventDelayMs
   }
 
   readonly configuration: RTCConfiguration | undefined
 
   createDataChannel(label: string): MockRTCDataChannel {
-    const channel = new MockRTCDataChannel(label, this.initialReadyState)
+    const channel = new MockRTCDataChannel(label, this.initialReadyState, this.closeEventDelayMs)
     this.channels.set(label, channel)
     return channel
   }
@@ -645,7 +929,9 @@ class MockRTCPeerConnection extends EventTarget {
   }
 
   async setLocalDescription(description: RTCSessionDescriptionInit): Promise<void> {
-    this.localDescription = description
+    this.localDescription = this.iceGatheringState === 'complete' && this.gatheredLocalSDP
+      ? { ...description, sdp: this.gatheredLocalSDP }
+      : description
   }
 
   async setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void> {
@@ -654,6 +940,18 @@ class MockRTCPeerConnection extends EventTarget {
 
   async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
     this.addedCandidates.push(candidate)
+  }
+
+  async getStats(): Promise<RTCStatsReport> {
+    if (this.statsPromise) return this.statsPromise
+    const stats = this.stats
+    return {
+      forEach(callbackfn: (value: unknown, key: string, parent: RTCStatsReport) => void, thisArg?: unknown) {
+        for (const [key, value] of stats) {
+          callbackfn.call(thisArg, value, key, this as RTCStatsReport)
+        }
+      },
+    } as RTCStatsReport
   }
 
   async close(): Promise<void> {
@@ -674,7 +972,7 @@ class MockRTCPeerConnection extends EventTarget {
   }
 
   emitIncomingDataChannel(label: string): MockRTCDataChannel {
-    const channel = new MockRTCDataChannel(label, this.initialReadyState)
+    const channel = new MockRTCDataChannel(label, this.initialReadyState, this.closeEventDelayMs)
     this.channels.set(label, channel)
     const event = new Event('datachannel') as Event & { channel: MockRTCDataChannel }
     event.channel = channel
@@ -693,7 +991,7 @@ class MockRTCDataChannel extends EventTarget {
   binaryType: BinaryType = 'blob'
   readonly sent: unknown[] = []
 
-  constructor(readonly label: string, initialReadyState: RTCDataChannelState) {
+  constructor(readonly label: string, initialReadyState: RTCDataChannelState, private readonly closeEventDelayMs?: number | undefined) {
     super()
     this.readyState = initialReadyState
   }
@@ -705,7 +1003,11 @@ class MockRTCDataChannel extends EventTarget {
 
   close(): void {
     this.readyState = 'closed'
-    this.dispatchEvent(new Event('close'))
+    if (this.closeEventDelayMs === undefined) {
+      this.dispatchEvent(new Event('close'))
+      return
+    }
+    setTimeout(() => this.dispatchEvent(new Event('close')), this.closeEventDelayMs)
   }
 
   open(): void {

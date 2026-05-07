@@ -51,10 +51,13 @@ type Offer struct {
 	SessionToken         string
 	AnswerProofChallenge string
 	Path                 string
+	AllowRelay           bool
+	AllowRelayTransfer   bool
 	RelayInUse           bool
 	AssignedAgentID      string
 	DeliveredAt          time.Time
 	CreatedAt            time.Time
+	ExpiresAt            time.Time
 }
 
 func (o Offer) ContainsRuntimePayload() bool {
@@ -128,6 +131,9 @@ type OfferInput struct {
 	ICECandidates        []string
 	SessionToken         string
 	AnswerProofChallenge string
+	AllowRelay           bool
+	AllowRelayTransfer   bool
+	ExpiresAt            time.Time
 }
 
 type AnswerInput struct {
@@ -137,6 +143,11 @@ type AnswerInput struct {
 	SDP         string
 	Error       string
 	AnswerProof string
+}
+
+type OfferLookupInput struct {
+	MachineID string
+	OfferID   string
 }
 
 type PairingClaimInput struct {

@@ -8,6 +8,8 @@ import type {
   RtcSessionCapabilityUpdater,
   RtcSessionNegotiator,
 } from './transport'
+import type { ConnectionLogger } from './connectionLogger'
+import { logConnectionEvent } from './connectionLogger'
 
 export interface ManagedHubRtcConnectInput extends RtcConnectionTarget {
   sessionToken: string
@@ -16,10 +18,12 @@ export interface ManagedHubRtcConnectInput extends RtcConnectionTarget {
 }
 
 export interface ManagedHubRtcConnectorOptions<TSession extends RtcSession & RtcSessionNegotiator = RtcSession & RtcSessionNegotiator> {
-  api: Pick<ManagedHubApi, 'createSession' | 'pollSessionAnswer'>
+  api: Pick<ManagedHubApi, 'getSessionIce' | 'createSession' | 'pollSessionAnswer'>
   createSession(input: RtcConnectionTarget): TSession
   maxAnswerPolls?: number | undefined
   answerPollDelayMs?: number | undefined
+  hubUrl?: string | undefined
+  logger?: ConnectionLogger | undefined
 }
 
 export function createManagedHubRtcConnector(options: ManagedHubRtcConnectorOptions) {
@@ -35,17 +39,58 @@ class ManagedHubRtcConnector {
       machineId: input.machineId,
       ...(terminalId ? { terminalId } : {}),
     })
+    const path = input.path ?? 'managed'
     try {
+      this.log('connect_start', {
+        level: 'info',
+        machineId: input.machineId,
+        terminalId,
+        path,
+        details: {
+          hasAnswerProofSecret: Boolean(input.answerProofSecret),
+        },
+      })
+      throwIfAborted(options.signal)
+      const iceConfig = await this.options.api.getSessionIce({
+        machineId: input.machineId,
+        terminalId,
+        sessionToken: input.sessionToken,
+      }, options)
+      this.log('ice_config_received', {
+        machineId: input.machineId,
+        terminalId,
+        path,
+        details: {
+          iceServerCount: iceConfig.iceServers.length,
+          allowRelay: iceConfig.relayPolicy.allowRelay,
+        },
+      })
       throwIfAborted(options.signal)
       const offer = await session.createOffer({
         machineId: input.machineId,
-        path: input.path ?? 'managed',
+        path,
+        iceServers: iceConfig.iceServers,
         ...(terminalId ? { terminalId } : {}),
+      })
+      this.log('offer_created', {
+        machineId: input.machineId,
+        terminalId,
+        path,
+        sessionId: offer.sessionId,
+        details: {
+          sdpBytes: offer.description.sdp.length,
+        },
       })
       const sdp = offer.description.sdp
       if (!sdp) throw new Error('managed Hub WebRTC offer SDP is required')
       throwIfAborted(options.signal)
       const answerProofChallenge = input.answerProofSecret ? randomProofChallenge() : undefined
+      this.log('hub_session_create_start', {
+        machineId: input.machineId,
+        terminalId,
+        path,
+        sessionId: offer.sessionId,
+      })
       const result = await this.options.api.createSession({
         machineId: input.machineId,
         terminalId,
@@ -57,15 +102,36 @@ class ManagedHubRtcConnector {
           iceCandidates: [],
         },
       }, options)
+      this.log('hub_session_create_result', {
+        machineId: input.machineId,
+        terminalId,
+        path,
+        sessionId: offer.sessionId,
+        details: {
+          pending: 'pending' in result && result.pending === true,
+        },
+      })
       const answer: ManagedHubSession = 'pending' in result && result.pending
         ? await this.pollAnswer({
           sessionId: result.sessionId,
           machineId: input.machineId,
+          terminalId,
+          path,
         }, options)
         : result as ManagedHubSession
       if (answer.sessionId !== offer.sessionId) {
         throw new Error(`managed Hub RTC answer session mismatch: ${answer.sessionId} != ${offer.sessionId}`)
       }
+      this.log('answer_received', {
+        machineId: input.machineId,
+        terminalId,
+        path,
+        sessionId: offer.sessionId,
+        details: {
+          relayInUse: answer.relayInUse,
+          answerBytes: answer.answer.sdp.length,
+        },
+      })
       await verifyAnswerProof({
         answer,
         offerSessionId: offer.sessionId,
@@ -73,10 +139,52 @@ class ManagedHubRtcConnector {
         answerProofSecret: input.answerProofSecret,
         answerProofChallenge,
       })
+      this.log('answer_proof_verified', {
+        machineId: input.machineId,
+        terminalId,
+        path,
+        sessionId: offer.sessionId,
+        details: {
+          required: Boolean(input.answerProofSecret),
+        },
+      })
       applySessionCapabilities(session, answer)
+      this.log('answer_accept_start', {
+        machineId: input.machineId,
+        terminalId,
+        path,
+        sessionId: offer.sessionId,
+      })
       await session.acceptAnswer(answer.answer)
+      this.log('connect_success', {
+        level: 'info',
+        machineId: input.machineId,
+        terminalId,
+        path,
+        sessionId: offer.sessionId,
+        details: {
+          relayInUse: answer.relayInUse,
+        },
+      })
       return session
     } catch (err) {
+      if (isAbortError(err, options.signal)) {
+        this.log('connect_cancelled', {
+          level: 'debug',
+          machineId: input.machineId,
+          terminalId,
+          path,
+          message: errorMessage(err),
+        })
+      } else {
+        this.log('connect_failed', {
+          level: 'error',
+          machineId: input.machineId,
+          terminalId,
+          path,
+          message: errorMessage(err),
+        })
+      }
       await session.disconnect()
       throw err
     }
@@ -85,6 +193,8 @@ class ManagedHubRtcConnector {
   private async pollAnswer(input: {
     sessionId: string
     machineId: string
+    terminalId: string
+    path: ConnectionPath
   }, options: RtcConnectOptions): Promise<ManagedHubSession> {
     const maxPolls = this.options.maxAnswerPolls ?? 20
     const delayMs = this.options.answerPollDelayMs ?? 500
@@ -95,13 +205,49 @@ class ManagedHubRtcConnector {
         await delay(delayMs, options.signal)
       }
       try {
-        return await this.options.api.pollSessionAnswer(input, options)
+        this.log('answer_poll_start', {
+          machineId: input.machineId,
+          terminalId: input.terminalId,
+          path: input.path,
+          sessionId: input.sessionId,
+          details: { attempt: attempt + 1, maxPolls },
+        })
+        return await this.options.api.pollSessionAnswer({
+          sessionId: input.sessionId,
+          machineId: input.machineId,
+        }, options)
       } catch (err) {
         lastError = err
+        this.log('answer_poll_failed', {
+          level: isPendingAnswerError(err) ? 'debug' : 'warn',
+          machineId: input.machineId,
+          terminalId: input.terminalId,
+          path: input.path,
+          sessionId: input.sessionId,
+          message: errorMessage(err),
+          details: { attempt: attempt + 1, maxPolls },
+        })
         if (!isPendingAnswerError(err)) throw err
       }
     }
     throw lastError instanceof Error ? lastError : new Error('managed Hub answer did not become ready')
+  }
+
+  private log(event: string, input: {
+    level?: 'debug' | 'info' | 'warn' | 'error'
+    machineId?: string | undefined
+    terminalId?: string | undefined
+    path?: ConnectionPath | undefined
+    sessionId?: string | undefined
+    message?: string | undefined
+    details?: Record<string, unknown> | undefined
+  }): void {
+    logConnectionEvent(this.options.logger, {
+      scope: 'managed_hub',
+      event,
+      hubUrl: this.options.hubUrl,
+      ...input,
+    })
   }
 }
 
@@ -113,6 +259,9 @@ async function verifyAnswerProof(input: {
   answerProofChallenge?: string | undefined
 }): Promise<void> {
   if (!input.answerProofSecret || !input.answerProofChallenge) {
+    if (input.answer.answerProof) {
+      throw new Error('server sent answerProof but client has no answerProofSecret')
+    }
     return
   }
   if (!input.answer.answerProof) {
@@ -199,9 +348,17 @@ function isPendingAnswerError(err: unknown): boolean {
   return err instanceof Error && /pending|gateway timeout|http 504|deadline/i.test(err.message)
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (!signal?.aborted) return
   throw signal.reason instanceof Error ? signal.reason : new Error('managed Hub RTC connection aborted')
+}
+
+function isAbortError(err: unknown, signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true && (err === signal.reason || errorMessage(err) === errorMessage(signal.reason))
 }
 
 function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {

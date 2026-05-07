@@ -290,6 +290,94 @@ func TestCloudSessionHTTPRejectsMissingSessionTokenBeforeSubmittingOffer(t *test
 	}
 }
 
+func TestCloudSessionHTTPPreflightICEServersBeforeOffer(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clock := fixedClock(time.Date(2026, 5, 6, 9, 30, 0, 0, time.UTC))
+	reg := registry.New(registry.Config{Clock: clock})
+	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	router := httpapi.NewHandler(httpapi.Config{
+		Cloud: cloud.NewService(cloud.Config{
+			Registry:            reg,
+			Clock:               clock,
+			AllowRelayByDefault: true,
+		}),
+		ICE: ice.NewService(ice.Config{
+			Clock:        clock,
+			SharedSecret: "turn-secret",
+			STUNURLs:     []string{"stun:hub.termx.test:3478"},
+			TURNURLs:     []string{"turn:hub.termx.test:3478?transport=udp"},
+		}),
+	})
+	resp := postJSON(t, router, "/api/v1/sessions/ice", map[string]any{
+		"machine_id":    "mach_1",
+		"terminal_id":   "term_1",
+		"session_token": "session-token-1",
+	})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("preflight status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var got struct {
+		Path       string `json:"path"`
+		MachineID  string `json:"machine_id"`
+		TerminalID string `json:"terminal_id"`
+		ICEServers []struct {
+			URLs       []string `json:"urls"`
+			Username   string   `json:"username"`
+			Credential string   `json:"credential"`
+		} `json:"ice_servers"`
+		RelayPolicy struct {
+			AllowRelay         bool `json:"allow_relay"`
+			AllowRelayTransfer bool `json:"allow_relay_transfer"`
+		} `json:"relay_policy"`
+	}
+	decodeJSON(t, resp, &got)
+	if got.Path != "cloud" || got.MachineID != "mach_1" || got.TerminalID != "term_1" {
+		t.Fatalf("preflight identity = %+v", got)
+	}
+	if !got.RelayPolicy.AllowRelay || got.RelayPolicy.AllowRelayTransfer {
+		t.Fatalf("relay policy = %+v", got.RelayPolicy)
+	}
+	if len(got.ICEServers) != 2 {
+		t.Fatalf("ICE servers = %+v", got.ICEServers)
+	}
+	if got.ICEServers[0].URLs[0] != "stun:hub.termx.test:3478" {
+		t.Fatalf("STUN server = %+v", got.ICEServers[0])
+	}
+	if got.ICEServers[1].URLs[0] != "turn:hub.termx.test:3478?transport=udp" {
+		t.Fatalf("TURN server = %+v", got.ICEServers[1])
+	}
+	if !strings.HasPrefix(got.ICEServers[1].Username, "browser-mach_1:") || got.ICEServers[1].Credential == "" {
+		t.Fatalf("TURN credential = %+v", got.ICEServers[1])
+	}
+}
+
+func TestCloudSessionHTTPPreflightICERejectsMissingSessionToken(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clock := fixedClock(time.Date(2026, 5, 6, 9, 31, 0, 0, time.UTC))
+	reg := registry.New(registry.Config{Clock: clock})
+	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	router := httpapi.NewHandler(httpapi.Config{
+		Cloud: cloud.NewService(cloud.Config{Registry: reg, Clock: clock}),
+	})
+	resp := postJSON(t, router, "/api/v1/sessions/ice", map[string]any{
+		"machine_id": "mach_1",
+	})
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("missing token status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "session token") {
+		t.Fatalf("missing token body = %s", resp.Body.String())
+	}
+}
+
 func TestCloudSessionHTTPTimeoutReturnsRecoverableSession(t *testing.T) {
 	t.Parallel()
 

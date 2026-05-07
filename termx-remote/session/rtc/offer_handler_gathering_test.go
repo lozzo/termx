@@ -35,6 +35,55 @@ func TestGatheringEarlyStopOnHostCandidate(t *testing.T) {
 	}
 }
 
+func TestGatheringEarlyStopOnRelayCandidate(t *testing.T) {
+	complete := make(chan struct{})
+	mock := newMockICEGatheringPeer()
+
+	wait := newICEGatheringWaiterEvents(mock.onCandidate, complete, 25*time.Millisecond, time.Second)
+	done := runGatheringWait(wait)
+	mock.emitCandidate(&webrtc.ICECandidate{Typ: webrtc.ICECandidateTypeRelay})
+
+	select {
+	case <-done:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("waitForICEGatheringEvents did not early-stop after relay candidate")
+	}
+}
+
+func TestGatheringRequiresRelayCandidateWhenTURNConfigured(t *testing.T) {
+	complete := make(chan struct{})
+	mock := newMockICEGatheringPeer()
+
+	wait := newICEGatheringWaiterEventsWithPolicy(mock.onCandidate, complete, 25*time.Millisecond, time.Second, true)
+	done := runGatheringWait(wait)
+	mock.emitCandidate(&webrtc.ICECandidate{Typ: webrtc.ICECandidateTypeHost})
+
+	select {
+	case <-done:
+		t.Fatal("relay-required gathering returned after host candidate")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	mock.emitCandidate(&webrtc.ICECandidate{Typ: webrtc.ICECandidateTypeRelay})
+	select {
+	case <-done:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("relay-required gathering did not early-stop after relay candidate")
+	}
+}
+
+func TestHasTURNServer(t *testing.T) {
+	if !hasTURNServer([]webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302", " TURN:114.66.58.243:3478?transport=udp "}}}) {
+		t.Fatal("TURN URL was not detected")
+	}
+	if !hasTURNServer([]webrtc.ICEServer{{URLs: []string{"turns:turn.example.com:5349"}}}) {
+		t.Fatal("TURNS URL was not detected")
+	}
+	if hasTURNServer([]webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}}) {
+		t.Fatal("STUN-only config should not require relay gathering")
+	}
+}
+
 func TestGatheringHardTimeoutWhenNoCandidate(t *testing.T) {
 	complete := make(chan struct{})
 	mock := newMockICEGatheringPeer()

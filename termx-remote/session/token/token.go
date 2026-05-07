@@ -17,6 +17,7 @@ import (
 
 const tokenVersion = "termx-session-v1:"
 const answerProofKeyVersion = "termx-answer-proof-key-v1:"
+const answerProofVersion = "termx-answer-proof-v1:"
 
 type Claims struct {
 	SessionID      string   `json:"sid"`
@@ -128,6 +129,25 @@ func OpenAnswerProofKey(machineSecret []byte, claims Claims) (string, error) {
 		return "", fmt.Errorf("open answer proof key: %w", err)
 	}
 	return string(opened), nil
+}
+
+func ComputeAnswerProof(machineSecret []byte, claims Claims, rtcSessionID string, challenge string) (string, error) {
+	proofKey, err := OpenAnswerProofKey(machineSecret, claims)
+	if err != nil {
+		return "", err
+	}
+	challenge = strings.TrimSpace(challenge)
+	if challenge == "" {
+		return "", errors.New("answer proof challenge is required")
+	}
+	mac := hmac.New(sha256.New, []byte(proofKey))
+	mac.Write([]byte(answerProofVersion))
+	mac.Write([]byte(strings.TrimSpace(claims.SessionID)))
+	mac.Write([]byte(":"))
+	mac.Write([]byte(strings.TrimSpace(rtcSessionID)))
+	mac.Write([]byte(":"))
+	mac.Write([]byte(challenge))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
 func computeMAC(secret []byte, msg string) []byte {

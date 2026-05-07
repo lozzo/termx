@@ -183,6 +183,46 @@ func NewHandler(cfg Config) http.Handler {
 			"machine_id": machineID,
 		})
 	})
+	mux.HandleFunc("POST /api/v1/sessions/ice", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			MachineID    string `json:"machine_id"`
+			TerminalID   string `json:"terminal_id,omitempty"`
+			SessionToken string `json:"session_token"`
+		}
+		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
+			writeDecodeError(w, err)
+			return
+		}
+		if cfg.Cloud == nil {
+			writeError(w, http.StatusServiceUnavailable, "cloud_service_unavailable", "cloud service is not configured")
+			return
+		}
+		preflight, err := cfg.Cloud.PreflightSession(r.Context(), cloud.PreflightSessionInput{
+			MachineID:    req.MachineID,
+			TerminalID:   req.TerminalID,
+			SessionToken: req.SessionToken,
+		})
+		if err != nil {
+			writeError(w, http.StatusForbidden, "preflight_cloud_session_failed", err.Error())
+			return
+		}
+		leaseID := preflightICELeaseID(preflight.MachineID)
+		iceServers, err := iceServersForLease(r.Context(), cfg, leaseID, preflight.AllowRelay)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
+			return
+		}
+		response := map[string]any{
+			"path":         preflight.Path,
+			"machine_id":   preflight.MachineID,
+			"ice_servers":  iceServers,
+			"relay_policy": relayPolicyResponse(preflight.AllowRelay),
+		}
+		if strings.TrimSpace(preflight.TerminalID) != "" {
+			response["terminal_id"] = strings.TrimSpace(preflight.TerminalID)
+		}
+		writeJSON(w, http.StatusOK, response)
+	})
 	mux.HandleFunc("POST /api/v1/sessions", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			MachineID  string `json:"machine_id"`
@@ -429,6 +469,15 @@ func publicSessionID(offer cloud.Offer) string {
 		return strings.TrimSpace(offer.SessionID)
 	}
 	return offer.ID
+}
+
+func preflightICELeaseID(machineID string) string {
+	machineID = strings.TrimSpace(machineID)
+	if machineID == "" {
+		return "browser-preflight"
+	}
+	replacer := strings.NewReplacer(":", "_", " ", "_", "\t", "_", "\n", "_", "\r", "_")
+	return "browser-" + replacer.Replace(machineID)
 }
 
 func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, sessionID string, machineID string, terminalID string, allowRelay bool, leaseID string, answer cloud.Answer) {

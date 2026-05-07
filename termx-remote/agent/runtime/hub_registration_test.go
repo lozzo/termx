@@ -23,7 +23,7 @@ func TestManagerGRPCRegistrationIncludesRuntimeIdentity(t *testing.T) {
 	if got.GetDeviceId() == "" || got.GetAgentId() == "" || got.GetMachineId() == "" {
 		t.Fatalf("registration missing identifiers: %+v", got)
 	}
-	if got.GetDisplayName() != "signed-agent" || got.GetVersion() != "termx-dev" {
+	if got.GetDisplayName() != "signed-agent" || got.GetVersion() != AgentVersion {
 		t.Fatalf("registration identity = %+v", got)
 	}
 	if len(got.GetTerminals()) != 1 || got.GetTerminals()[0].GetTerminalId() != "term-1" {

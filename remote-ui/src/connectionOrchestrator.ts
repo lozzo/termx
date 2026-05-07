@@ -6,6 +6,8 @@ import type {
 import type { LocalHubUrlProvider } from './localHubUrlProvider'
 import type { ManagedHubApi } from './managedHubApi'
 import type { ManagedHubRtcConnectInput } from './managedHubRtcConnector'
+import type { ConnectionLogger } from './connectionLogger'
+import { logConnectionEvent } from './connectionLogger'
 
 export type ConnectionAttemptStage =
   | 'trying_local'
@@ -52,6 +54,7 @@ export interface ConnectionOrchestratorOptions {
   managedHubRtcConnectorFactory?: ((options: { hubUrl: string; api: ManagedHubApi }) => {
     connect(input: ManagedHubRtcConnectInput, options?: RtcConnectOptions): Promise<RtcSession>
   }) | undefined
+  logger?: ConnectionLogger | undefined
 }
 
 export function createConnectionOrchestrator(options: ConnectionOrchestratorOptions): ConnectionOrchestrator {
@@ -66,15 +69,38 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
     const ac = new AbortController()
     const signal = combineSignals(options.signal, ac.signal)
     const connectOptions = { ...options, signal }
+    const hubUrls = input.hubUrls.length > 0 ? input.hubUrls : []
+    this.log('connect_start', {
+      level: 'info',
+      machineId: input.machineId,
+      terminalId: input.terminalId,
+      details: {
+        hubCount: hubUrls.length,
+        hasSessionToken: Boolean(input.sessionToken),
+        hasAnswerProofSecret: Boolean(input.answerProofSecret),
+      },
+    })
     try {
       const local = await this.tryLocalWithTimeout(input, connectOptions, failures, 2000)
       if (local) {
         ac.abort()
+        this.log('connect_success', {
+          level: 'info',
+          machineId: input.machineId,
+          terminalId: input.terminalId,
+          path: local.path,
+          details: { relayInUse: local.relayInUse },
+        })
         return local
       }
 
-      const hubUrls = input.hubUrls.length > 0 ? input.hubUrls : []
       if (hubUrls.length === 0) {
+        this.log('connect_no_hubs', {
+          level: 'warn',
+          machineId: input.machineId,
+          terminalId: input.terminalId,
+          details: { failures },
+        })
         throw new Error('no hub URLs configured')
       }
       input.onSnapshot?.({
@@ -83,7 +109,7 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
         message: `Racing ${hubUrls.length} hub(s)`,
       })
       const winner = await raceConnections(
-        hubUrls.map((hubUrl) => () => this.connectManagedHub(input, hubUrl, connectOptions)),
+        hubUrls.map((hubUrl, index) => () => this.connectManagedHub(input, hubUrl, connectOptions, index)),
         signal,
       )
       if (winner) {
@@ -94,9 +120,25 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
           relayInUse: winner.relayInUse,
           message: 'Connected',
         })
+        this.log('connect_success', {
+          level: 'info',
+          machineId: input.machineId,
+          terminalId: input.terminalId,
+          path: winner.path,
+          details: { relayInUse: winner.relayInUse },
+        })
         return winner
       }
     } catch (error) {
+      if (!isAbortError(error, signal)) {
+        this.log('connect_error', {
+          level: 'error',
+          machineId: input.machineId,
+          terminalId: input.terminalId,
+          message: errorMessage(error),
+          details: { failures },
+        })
+      }
       throw error
     } finally {
       ac.abort()
@@ -106,6 +148,13 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
       stage: 'failed',
       message: 'All connection paths failed',
       errors: failures,
+    })
+    this.log('connect_failed_all_paths', {
+      level: 'error',
+      machineId: input.machineId,
+      terminalId: input.terminalId,
+      message: 'All connection paths failed',
+      details: { failures },
     })
     throw new Error(`all connection paths failed: ${failures.map((failure) => `${failure.path}: ${failure.message}`).join('; ')}`)
   }
@@ -120,6 +169,13 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
     connect: () => Promise<RtcSession>
   }): Promise<ConnectionOrchestratorResult | null> {
     throwIfAborted(input.options.signal)
+    this.log('path_attempt_start', {
+      level: 'info',
+      machineId: input.input.machineId,
+      terminalId: input.input.terminalId,
+      path: input.path,
+      message: input.message,
+    })
     input.input.onSnapshot?.({
       stage: input.stage,
       path: input.path,
@@ -147,6 +203,13 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
           relayInUse: result.relayInUse,
           message: 'Connected',
         })
+        this.log('path_attempt_success', {
+          level: 'info',
+          machineId: input.input.machineId,
+          terminalId: input.input.terminalId,
+          path: result.path,
+          details: { relayInUse: result.relayInUse },
+        })
         return result
       } catch (error) {
         await session.disconnect().catch(() => {})
@@ -156,6 +219,13 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
     } catch (error) {
       if (isAbortError(error, input.options.signal)) throw error
       input.failures.push({
+        path: input.path,
+        message: errorMessage(error),
+      })
+      this.log('path_attempt_failed', {
+        level: 'warn',
+        machineId: input.input.machineId,
+        terminalId: input.input.terminalId,
         path: input.path,
         message: errorMessage(error),
       })
@@ -185,27 +255,74 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
     throw new Error('local Hub connector is not configured')
   }
 
-  private async connectManagedHub(input: ConnectionOrchestratorInput, hubUrl: string, options: RtcConnectOptions): Promise<ConnectionOrchestratorResult> {
+  private async connectManagedHub(
+    input: ConnectionOrchestratorInput,
+    hubUrl: string,
+    options: RtcConnectOptions,
+    index = 0,
+  ): Promise<ConnectionOrchestratorResult> {
     if (!this.options.managedHubApiFactory || !this.options.managedHubRtcConnectorFactory) {
       throw new Error('managed Hub connector is not configured')
     }
     if (!input.sessionToken) {
       throw new Error('session token is required before opening a managed Hub connection')
     }
+    this.log('managed_hub_attempt_start', {
+      level: 'info',
+      machineId: input.machineId,
+      terminalId: input.terminalId,
+      path: 'managed',
+      hubUrl,
+      details: { index },
+    })
     const api = this.options.managedHubApiFactory(hubUrl)
     const connector = this.options.managedHubRtcConnectorFactory({ hubUrl, api })
-    const session = await connector.connect({
-      machineId: input.machineId,
-      ...(input.terminalId ? { terminalId: input.terminalId } : {}),
-      sessionToken: input.sessionToken,
-      ...(input.answerProofSecret ? { answerProofSecret: input.answerProofSecret } : {}),
-      path: 'managed',
-    }, options)
+    let session: RtcSession
+    try {
+      session = await connector.connect({
+        machineId: input.machineId,
+        ...(input.terminalId ? { terminalId: input.terminalId } : {}),
+        sessionToken: input.sessionToken,
+        ...(input.answerProofSecret ? { answerProofSecret: input.answerProofSecret } : {}),
+        path: 'managed',
+      }, options)
+    } catch (error) {
+      if (isAbortError(error, options.signal)) {
+        this.log('managed_hub_attempt_cancelled', {
+          level: 'debug',
+          machineId: input.machineId,
+          terminalId: input.terminalId,
+          path: 'managed',
+          hubUrl,
+          message: errorMessage(error),
+          details: { index },
+        })
+        throw error
+      }
+      this.log('managed_hub_attempt_failed', {
+        level: 'warn',
+        machineId: input.machineId,
+        terminalId: input.terminalId,
+        path: 'managed',
+        hubUrl,
+        message: errorMessage(error),
+        details: { index },
+      })
+      throw error
+    }
     try {
       const info = await session.getConnectionInfo()
       if (info.path !== 'managed') {
         throw new Error(`connection path mismatch: ${info.path} != managed`)
       }
+      this.log('managed_hub_attempt_success', {
+        level: 'info',
+        machineId: input.machineId,
+        terminalId: input.terminalId,
+        path: info.path,
+        hubUrl,
+        details: { index, relayInUse: info.relayInUse },
+      })
       return {
         path: info.path,
         session,
@@ -213,6 +330,27 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
       }
     } catch (error) {
       await session.disconnect().catch(() => {})
+      if (isAbortError(error, options.signal)) {
+        this.log('managed_hub_attempt_cancelled', {
+          level: 'debug',
+          machineId: input.machineId,
+          terminalId: input.terminalId,
+          path: 'managed',
+          hubUrl,
+          message: errorMessage(error),
+          details: { index },
+        })
+        throw error
+      }
+      this.log('managed_hub_attempt_failed', {
+        level: 'warn',
+        machineId: input.machineId,
+        terminalId: input.terminalId,
+        path: 'managed',
+        hubUrl,
+        message: errorMessage(error),
+        details: { index },
+      })
       throw error
     }
   }
@@ -239,6 +377,22 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
           throw new Error('local connection timed out')
         }),
       ]),
+    })
+  }
+
+  private log(event: string, input: {
+    level?: 'debug' | 'info' | 'warn' | 'error'
+    machineId?: string | undefined
+    terminalId?: string | undefined
+    path?: ConnectionPath | undefined
+    hubUrl?: string | undefined
+    message?: string | undefined
+    details?: Record<string, unknown> | undefined
+  }): void {
+    logConnectionEvent(this.options.logger, {
+      scope: 'orchestrator',
+      event,
+      ...input,
     })
   }
 }

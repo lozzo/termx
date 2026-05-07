@@ -1,13 +1,11 @@
 package remote
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,15 +16,10 @@ import (
 	"github.com/lozzow/termx/termx-remote/agent/runtime"
 	remoteconfig "github.com/lozzow/termx/termx-remote/config"
 	"github.com/lozzow/termx/termx-remote/fileapi"
-	"github.com/lozzow/termx/termx-remote/hub/cloud"
-	"github.com/lozzow/termx/termx-remote/hub/grpcadapter"
-	"github.com/lozzow/termx/termx-remote/hub/httpapi"
-	"github.com/lozzow/termx/termx-remote/hub/registry"
 	"github.com/lozzow/termx/termx-remote/identity"
 	"github.com/lozzow/termx/termx-remote/pairing"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
-	"github.com/soheilhy/cmux"
 )
 
 type Daemon interface {
@@ -54,9 +47,7 @@ type Service struct {
 
 	manager *runtime.Manager
 
-	pairMu  sync.Mutex
-	pairing *pairing.Manager
-	pairCfg pairing.Config
+	pairing *pairingStore
 
 	rtcMu     sync.Mutex
 	rtcFiles  *fileapi.Manager
@@ -74,9 +65,11 @@ func NewService(cfg remoteprotocol.Config, daemon Daemon) *Service {
 		daemon:    daemon,
 		rtcCtx:    ctx,
 		rtcCancel: cancel,
+		pairing:   &pairingStore{},
 	}
-	s.manager = runtime.NewManager(runtimeConfig(cfg), inventoryProvider{service: s}, inventoryProvider{service: s})
-	s.manager.SetPairClaimer(pairClaimer{service: s})
+	runtimeAdapter := daemonRuntimeAdapter{daemon: daemon}
+	s.manager = runtime.NewManager(runtimeConfig(cfg), runtimeAdapter, runtimeAdapter)
+	s.manager.SetPairClaimer(pairClaimer{store: s.pairing})
 	return s
 }
 
@@ -145,10 +138,6 @@ func (s *Service) PairStart(params remoteprotocol.PairStartParams) (remoteprotoc
 		DataDir:    s.cfg.DataDir,
 		DeviceName: s.cfg.DeviceName,
 	})
-	machineSecret, err := identity.LoadOrCreateMachineSecret(cfg.DataDir)
-	if err != nil {
-		return remoteprotocol.PairStartResult{}, err
-	}
 	machineID := ""
 	machineName := strings.TrimSpace(cfg.DeviceName)
 	if s.manager != nil {
@@ -168,6 +157,10 @@ func (s *Service) PairStart(params remoteprotocol.PairStartParams) (remoteprotoc
 			machineName = ident.DisplayName
 		}
 	}
+	machineSecret, err := identity.LoadOrCreateMachineSecret(cfg.DataDir)
+	if err != nil {
+		return remoteprotocol.PairStartResult{}, err
+	}
 	pairCfg := pairing.Config{
 		MachineID:       machineID,
 		MachineName:     machineName,
@@ -175,19 +168,10 @@ func (s *Service) PairStart(params remoteprotocol.PairStartParams) (remoteprotoc
 		DefaultTokenTTL: time.Duration(s.cfg.TokenTTLSeconds) * time.Second,
 		LocalPairURL:    strings.TrimSpace(params.LocalPairURL),
 	}
-	s.pairMu.Lock()
-	if s.pairing == nil {
-		s.pairing = pairing.NewManager(pairCfg)
-		s.pairCfg = pairCfg
-	} else if pairManagerConfigChanged(s.pairCfg, pairCfg) {
-		if err := s.pairing.UpdateConfig(pairCfg); err != nil {
-			s.pairMu.Unlock()
-			return remoteprotocol.PairStartResult{}, err
-		}
-		s.pairCfg = pairCfg
+	manager, err := s.pairing.managerForConfig(pairCfg)
+	if err != nil {
+		return remoteprotocol.PairStartResult{}, err
 	}
-	manager := s.pairing
-	s.pairMu.Unlock()
 
 	session, err := manager.CreateSession(time.Duration(params.TTLSeconds) * time.Second)
 	if err != nil {
@@ -249,16 +233,6 @@ func (s *Service) LocalEnable(ctx context.Context, params remoteprotocol.LocalEn
 	return status, nil
 }
 
-func (s *Service) managerContext(fallback context.Context) context.Context {
-	if s != nil && s.rtcCtx != nil {
-		return s.rtcCtx
-	}
-	if fallback != nil {
-		return fallback
-	}
-	return context.Background()
-}
-
 func (s *Service) LocalStatus() remoteprotocol.LocalStatus {
 	if s == nil {
 		return remoteprotocol.LocalStatus{UpdatedAt: time.Now().UTC()}
@@ -291,300 +265,15 @@ func (s *Service) LocalDisable(ctx context.Context) (remoteprotocol.LocalStatus,
 	return remoteprotocol.LocalStatus{UpdatedAt: time.Now().UTC()}, nil
 }
 
-type localRuntime struct {
-	localWebAddr  string
-	iceTCPAddr    string
-	httpURL       string
-	actualWebAddr string
-	localPairURL  string
-	iceTCPPort    int
-	iceTCPMux     *LocalICETCPMux
-	listener      net.Listener
-	httpServer    *http.Server
-	registry      *registry.Registry
-	shutdown      func(context.Context) error
-	cancel        context.CancelFunc
-	updatedAt     time.Time
+type daemonRuntimeAdapter struct {
+	daemon Daemon
 }
 
-var (
-	localHubAgentTTL        = 2 * time.Minute
-	localHubCleanupInterval = time.Minute
-)
-
-func (r *localRuntime) statusLocked() remoteprotocol.LocalStatus {
-	if r == nil {
-		return remoteprotocol.LocalStatus{UpdatedAt: time.Now().UTC()}
-	}
-	return remoteprotocol.LocalStatus{
-		Enabled:       true,
-		HTTPURL:       r.httpURL,
-		LocalWebAddr:  nonEmpty(r.actualWebAddr, r.localWebAddr),
-		LocalPairURL:  r.localPairURL,
-		ICETCPEnabled: r.iceTCPMux != nil,
-		ICETCPAddr:    r.iceTCPAddr,
-		ICETCPPort:    r.iceTCPPort,
-		UpdatedAt:     r.updatedAt,
-	}
-}
-
-func (r *localRuntime) close(ctx context.Context) error {
-	if r == nil {
+func (p daemonRuntimeAdapter) ListRemoteTerminals(ctx context.Context) []runtime.TerminalInventoryItem {
+	if p.daemon == nil {
 		return nil
 	}
-	if r.cancel != nil {
-		r.cancel()
-	}
-	var err error
-	if r.shutdown != nil {
-		err = r.shutdown(ctx)
-	}
-	if r.iceTCPMux != nil {
-		if closeErr := r.iceTCPMux.Close(); err == nil && closeErr != nil && !isClosedNetworkError(closeErr) {
-			err = closeErr
-		}
-	}
-	return err
-}
-
-func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableParams, cfg remoteconfig.Config) (*localRuntime, error) {
-	cfg = remoteconfig.Normalize(cfg)
-	listenAddr := strings.TrimSpace(params.LocalWebAddr)
-	if listenAddr == "" {
-		listenAddr = "0.0.0.0:18888"
-	}
-	listener, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		return nil, err
-	}
-	actualAddr := listener.Addr().String()
-	advertisedHost := localHubAdvertisedHost(listener.Addr())
-	port, err := portFromAddr(listener.Addr())
-	if err != nil {
-		_ = listener.Close()
-		return nil, err
-	}
-
-	reg := registry.New(registry.Config{AgentTTL: localHubAgentTTL})
-	cloudSvc := cloud.NewService(cloud.Config{Registry: reg})
-	hubHandler := httpapi.NewHandler(httpapi.Config{
-		Cloud:          cloudSvc,
-		Registry:       reg,
-		AnswerTimeout:  250 * time.Millisecond,
-		PollInterval:   10 * time.Millisecond,
-		LocalDiscovery: true,
-	})
-	allowedNets, err := httpapi.ParseLANIPs(cfg.LANIPs)
-	if err != nil {
-		_ = listener.Close()
-		return nil, fmt.Errorf("parse lan_ips: %w", err)
-	}
-	lanFilter := httpapi.NewLANFilter(cfg.AllowLAN, allowedNets)
-	httpServer := &http.Server{Handler: lanFilter(hubHandler)}
-	grpcServer := grpcadapter.NewServer(reg, cloudSvc, nil)
-	mux := cmux.New(listener)
-	grpcListener := mux.Match(cmux.HTTP2())
-	httpListener := mux.Match(cmux.HTTP1Fast())
-	iceListener := mux.Match(cmux.Any())
-	iceMux, err := remotertc.NewLocalICETCPMuxFromListener(iceListener)
-	if err != nil {
-		_ = listener.Close()
-		return nil, err
-	}
-
-	runCtx, cancel := context.WithCancel(ctx)
-	cleanupInterval := localHubCleanupInterval
-	if cleanupInterval <= 0 {
-		cleanupInterval = time.Minute
-	}
-	cleanupTicker := time.NewTicker(cleanupInterval)
-	go func() {
-		defer cleanupTicker.Stop()
-		if cleaner, ok := hubHandler.(interface {
-			StartCleanup(context.Context, <-chan time.Time)
-		}); ok {
-			cleaner.StartCleanup(runCtx, cleanupTicker.C)
-		}
-	}()
-	done := make(chan error, 3)
-	go func() {
-		if err := grpcServer.Serve(grpcListener); err != nil && !errors.Is(err, net.ErrClosed) && !isClosedNetworkError(err) {
-			done <- err
-			cancel()
-			return
-		}
-		done <- nil
-	}()
-	go func() {
-		if err := httpServer.Serve(httpListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			done <- err
-			cancel()
-			return
-		}
-		done <- nil
-	}()
-	go func() {
-		if err := mux.Serve(); err != nil && !errors.Is(err, net.ErrClosed) && !strings.Contains(strings.ToLower(err.Error()), "use of closed network connection") {
-			done <- err
-			cancel()
-			return
-		}
-		done <- nil
-	}()
-
-	rt := &localRuntime{
-		localWebAddr:  listenAddr,
-		iceTCPAddr:    net.JoinHostPort(advertisedHost, strconv.Itoa(port)),
-		httpURL:       "http://" + net.JoinHostPort(advertisedHost, strconv.Itoa(port)),
-		actualWebAddr: actualAddr,
-		localPairURL:  "http://" + net.JoinHostPort(advertisedHost, strconv.Itoa(port)) + "/api/v1/pairing/claims",
-		iceTCPPort:    port,
-		iceTCPMux:     iceMux,
-		listener:      listener,
-		httpServer:    httpServer,
-		registry:      reg,
-		cancel:        cancel,
-		updatedAt:     time.Now().UTC(),
-	}
-	rt.shutdown = func(shutdownCtx context.Context) error {
-		if shutdownCtx == nil {
-			shutdownCtx = context.Background()
-		}
-		cancel()
-		var err error
-		if grpcServer != nil {
-			grpcServer.GracefulStop()
-		}
-		if httpServer != nil {
-			err = httpServer.Shutdown(shutdownCtx)
-			if isClosedNetworkError(err) {
-				err = nil
-			}
-		}
-		if listener != nil {
-			if closeErr := listener.Close(); err == nil && closeErr != nil && !isClosedNetworkError(closeErr) {
-				err = closeErr
-			}
-		}
-		select {
-		case <-runCtx.Done():
-		default:
-		}
-		return err
-	}
-	return rt, nil
-}
-
-func (s *Service) attachManagerToLocalHub(ctx context.Context, local *localRuntime) {
-	if s == nil || s.manager == nil || local == nil {
-		return
-	}
-	s.manager.AddHubURLWithAnswerOptions(local.httpURL, remotertc.AnswerOptions{SettingEngine: local.iceTCPMux})
-	if status := s.manager.Status(); status.State == runtime.StateDisabled {
-		_ = s.manager.Start(ctx)
-	}
-}
-
-func (s *Service) attachManagerToCloud(params remoteprotocol.LocalEnableParams, localHubURL string) {
-	if s == nil || s.manager == nil {
-		return
-	}
-	localHubURL = strings.TrimSpace(localHubURL)
-	for _, hubURL := range params.HubURLs {
-		hubURL = strings.TrimSpace(hubURL)
-		if hubURL == "" || hubURL == localHubURL {
-			continue
-		}
-		s.manager.AddExplicitHubURL(hubURL)
-	}
-	s.manager.ConfigureCloud(params.ControlURL, params.AccessToken, params.Region)
-}
-
-func (s *Service) detachManagerFromLocalHub(local *localRuntime) {
-	if s == nil || s.manager == nil || local == nil {
-		return
-	}
-	s.manager.DetachHub(local.httpURL)
-}
-
-func localHubAdvertisedHost(addr net.Addr) string {
-	tcpAddr, ok := addr.(*net.TCPAddr)
-	if !ok || tcpAddr.IP == nil || tcpAddr.IP.IsUnspecified() {
-		return localHubLANIP()
-	}
-	return tcpAddr.IP.String()
-}
-
-func localHubLANIP() string {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return "127.0.0.1"
-	}
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-		for _, addr := range addrs {
-			var ip net.IP
-			switch value := addr.(type) {
-			case *net.IPNet:
-				ip = value.IP
-			case *net.IPAddr:
-				ip = value.IP
-			}
-			ip = ip.To4()
-			if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
-				continue
-			}
-			return ip.String()
-		}
-	}
-	return "127.0.0.1"
-}
-
-func portFromAddr(addr net.Addr) (int, error) {
-	tcpAddr, ok := addr.(*net.TCPAddr)
-	if !ok || tcpAddr.Port <= 0 {
-		return 0, fmt.Errorf("local hub listener has invalid address %q", addr.String())
-	}
-	return tcpAddr.Port, nil
-}
-
-func isClosedNetworkError(err error) bool {
-	if err == nil {
-		return false
-	}
-	return errors.Is(err, net.ErrClosed) || strings.Contains(strings.ToLower(err.Error()), "use of closed network connection")
-}
-
-type localRTCTransportSink struct {
-	service    *Service
-	terminalID string
-}
-
-func (s localRTCTransportSink) ServeRemoteTransport(ctx context.Context, t transport.Transport, remote string) error {
-	if s.service == nil || s.service.daemon == nil {
-		return nil
-	}
-	if scoped, ok := s.service.daemon.(ScopedDaemon); ok {
-		return scoped.ServeScopedTransport(ctx, t, remote, TransportScope{TerminalID: s.terminalID})
-	}
-	return s.service.daemon.ServeTransport(ctx, t, remote)
-}
-
-type inventoryProvider struct {
-	service *Service
-}
-
-func (p inventoryProvider) ListRemoteTerminals(ctx context.Context) []runtime.TerminalInventoryItem {
-	if p.service == nil || p.service.daemon == nil {
-		return nil
-	}
-	list, err := p.service.daemon.List(ctx)
+	list, err := p.daemon.List(ctx)
 	if err != nil {
 		return nil
 	}
@@ -595,19 +284,19 @@ func (p inventoryProvider) ListRemoteTerminals(ctx context.Context) []runtime.Te
 	return out
 }
 
-func (p inventoryProvider) ServeRemoteTransport(ctx context.Context, t transport.Transport, remote string) error {
-	if p.service == nil || p.service.daemon == nil {
+func (p daemonRuntimeAdapter) ServeRemoteTransport(ctx context.Context, t transport.Transport, remote string) error {
+	if p.daemon == nil {
 		return nil
 	}
-	return p.service.daemon.ServeTransport(ctx, t, remote)
+	return p.daemon.ServeTransport(ctx, t, remote)
 }
 
-func (p inventoryProvider) RouteTerminalManagementRequest(ctx context.Context, req remotertc.TerminalManagementRequest) (int32, []byte, string) {
-	return terminalManagementRouter{service: p.service}.RouteTerminalManagementRequest(ctx, req)
+func (p daemonRuntimeAdapter) RouteTerminalManagementRequest(ctx context.Context, req remotertc.TerminalManagementRequest) (int32, []byte, string) {
+	return terminalManagementRouter{daemon: p.daemon}.RouteTerminalManagementRequest(ctx, req)
 }
 
-func (p inventoryProvider) SubscribeRemoteEvents(ctx context.Context, filters remotertc.EventFilters) (<-chan []byte, func(), error) {
-	if p.service == nil || p.service.daemon == nil {
+func (p daemonRuntimeAdapter) SubscribeRemoteEvents(ctx context.Context, filters remotertc.EventFilters) (<-chan []byte, func(), error) {
+	if p.daemon == nil {
 		ch := make(chan []byte)
 		close(ch)
 		return ch, func() {}, nil
@@ -622,7 +311,7 @@ func (p inventoryProvider) SubscribeRemoteEvents(ctx context.Context, filters re
 			params.Types = append(params.Types, protocol.EventType(typ))
 		}
 	}
-	events, err := p.service.daemon.Events(ctx, params)
+	events, err := p.daemon.Events(ctx, params)
 	if err != nil {
 		return nil, func() {}, err
 	}
@@ -653,7 +342,7 @@ func (p inventoryProvider) SubscribeRemoteEvents(ctx context.Context, filters re
 }
 
 type terminalManagementRouter struct {
-	service *Service
+	daemon Daemon
 }
 
 func (r terminalManagementRouter) RouteTerminalManagementRequest(ctx context.Context, req remotertc.TerminalManagementRequest) (int32, []byte, string) {
@@ -719,10 +408,10 @@ func (r terminalManagementRouter) RouteTerminalManagementRequest(ctx context.Con
 }
 
 func (r terminalManagementRouter) listTerminals(ctx context.Context) ([]runtime.TerminalInventoryItem, error) {
-	if r.service == nil || r.service.daemon == nil {
+	if r.daemon == nil {
 		return nil, nil
 	}
-	list, err := r.service.daemon.List(ctx)
+	list, err := r.daemon.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -734,10 +423,10 @@ func (r terminalManagementRouter) listTerminals(ctx context.Context) ([]runtime.
 }
 
 func (r terminalManagementRouter) createTerminal(ctx context.Context, name string, command []string, dir string, environment string, sizeLockMode string) (runtime.TerminalInventoryItem, error) {
-	if r.service == nil || r.service.daemon == nil {
+	if r.daemon == nil {
 		return runtime.TerminalInventoryItem{}, nil
 	}
-	created, err := r.service.daemon.Create(ctx, protocol.CreateParams{
+	created, err := r.daemon.Create(ctx, protocol.CreateParams{
 		Command: append([]string(nil), command...),
 		Name:    strings.TrimSpace(name),
 		Tags:    localTerminalTags(dir, environment, sizeLockMode),
@@ -746,7 +435,7 @@ func (r terminalManagementRouter) createTerminal(ctx context.Context, name strin
 	if err != nil {
 		return runtime.TerminalInventoryItem{}, err
 	}
-	info, err := r.service.daemon.Get(ctx, created.TerminalID)
+	info, err := r.daemon.Get(ctx, created.TerminalID)
 	if err == nil && info != nil {
 		return terminalInventoryFromProtocol(*info), nil
 	}
@@ -759,10 +448,10 @@ func (r terminalManagementRouter) createTerminal(ctx context.Context, name strin
 }
 
 func (r terminalManagementRouter) updateTerminal(ctx context.Context, terminalID string, name string, cwd string, environment string, sizeLockMode string) (runtime.TerminalInventoryItem, error) {
-	if r.service == nil || r.service.daemon == nil {
+	if r.daemon == nil {
 		return runtime.TerminalInventoryItem{}, nil
 	}
-	info, err := r.service.daemon.Get(ctx, terminalID)
+	info, err := r.daemon.Get(ctx, terminalID)
 	if err != nil {
 		return runtime.TerminalInventoryItem{}, err
 	}
@@ -771,10 +460,10 @@ func (r terminalManagementRouter) updateTerminal(ctx context.Context, terminalID
 		tags = map[string]string{}
 	}
 	mergeLocalTerminalTags(tags, cwd, environment, sizeLockMode)
-	if err := r.service.daemon.SetMetadata(ctx, terminalID, strings.TrimSpace(name), tags); err != nil {
+	if err := r.daemon.SetMetadata(ctx, terminalID, strings.TrimSpace(name), tags); err != nil {
 		return runtime.TerminalInventoryItem{}, err
 	}
-	updated, err := r.service.daemon.Get(ctx, terminalID)
+	updated, err := r.daemon.Get(ctx, terminalID)
 	if err != nil {
 		return runtime.TerminalInventoryItem{}, err
 	}
@@ -782,15 +471,41 @@ func (r terminalManagementRouter) updateTerminal(ctx context.Context, terminalID
 }
 
 func (r terminalManagementRouter) removeTerminal(ctx context.Context, terminalID string) error {
-	if r.service == nil || r.service.daemon == nil {
+	if r.daemon == nil {
 		return nil
 	}
-	return r.service.daemon.Remove(ctx, terminalID)
+	return r.daemon.Remove(ctx, terminalID)
 }
 
-func (s *Service) pairClaim(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
+type pairingStore struct {
+	mu      sync.Mutex
+	manager *pairing.Manager
+	cfg     pairing.Config
+}
+
+func (s *pairingStore) managerForConfig(cfg pairing.Config) (*pairing.Manager, error) {
 	if s == nil {
-		return pairing.ClaimResponse{}, nil
+		return nil, pairingErr("pairing store is nil")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.manager == nil {
+		s.manager = pairing.NewManager(cfg)
+		s.cfg = cfg
+		return s.manager, nil
+	}
+	if pairManagerConfigChanged(s.cfg, cfg) {
+		if err := s.manager.UpdateConfig(cfg); err != nil {
+			return nil, err
+		}
+		s.cfg = cfg
+	}
+	return s.manager, nil
+}
+
+func (s *pairingStore) claim(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
+	if s == nil {
+		return pairing.ClaimResponse{}, pairingErr("pairing store is nil")
 	}
 	if err := ctx.Err(); err != nil {
 		return pairing.ClaimResponse{}, err
@@ -798,24 +513,31 @@ func (s *Service) pairClaim(ctx context.Context, req pairing.ClaimRequest) (pair
 	if strings.TrimSpace(req.PairSessionID) == "" {
 		return pairing.ClaimResponse{}, pairingErr("pair_session_id is required")
 	}
-	s.pairMu.Lock()
-	manager := s.pairing
-	s.pairMu.Unlock()
+	s.mu.Lock()
+	manager := s.manager
+	s.mu.Unlock()
 	if manager == nil {
 		return pairing.ClaimResponse{}, pairingErr("pair session not found")
 	}
 	return manager.ClaimSession(req)
 }
 
+func (s *Service) pairClaim(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
+	if s == nil || s.pairing == nil {
+		return pairing.ClaimResponse{}, pairingErr("pairing store is nil")
+	}
+	return s.pairing.claim(ctx, req)
+}
+
 type pairClaimer struct {
-	service *Service
+	store *pairingStore
 }
 
 func (p pairClaimer) ClaimPairSession(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
-	if p.service == nil {
-		return pairing.ClaimResponse{}, pairingErr("remote service is nil")
+	if p.store == nil {
+		return pairing.ClaimResponse{}, pairingErr("pairing store is nil")
 	}
-	return p.service.pairClaim(ctx, req)
+	return p.store.claim(ctx, req)
 }
 
 func (s *Service) normalizedConfig() remoteLocalConfig {
@@ -878,7 +600,7 @@ func pairManagerConfigChanged(a, b pairing.Config) bool {
 	if a.MachineID != b.MachineID || a.MachineName != b.MachineName || a.LocalPairURL != b.LocalPairURL || a.DefaultTokenTTL != b.DefaultTokenTTL {
 		return true
 	}
-	return string(a.MachineSecret) != string(b.MachineSecret)
+	return !bytes.Equal(a.MachineSecret, b.MachineSecret)
 }
 
 func terminalInventoryFromProtocol(item protocol.TerminalInfo) runtime.TerminalInventoryItem {

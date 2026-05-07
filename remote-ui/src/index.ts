@@ -131,6 +131,8 @@ export type {
   ManagedHubFetch,
   ManagedHubPendingSession,
   ManagedHubSession,
+  ManagedHubSessionIceConfig,
+  ManagedHubSessionIceInput,
   ManagedRelayPolicy,
   PollManagedHubSessionAnswerInput,
 } from './managedHubApi'
