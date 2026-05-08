@@ -1,4 +1,6 @@
 import { FitAddon } from '@xterm/addon-fit'
+import { CanvasAddon } from '@xterm/addon-canvas'
+import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal as XTerm } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react'
@@ -300,6 +302,28 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
     term.open(container)
+    if (term.element) term.element.style.overflow = 'hidden'
+    const loadCanvasRenderer = () => {
+      try {
+        term.loadAddon(new CanvasAddon())
+      } catch {
+        // Fall back to xterm's DOM renderer when canvas is unavailable.
+      }
+    }
+    const isTestDom = typeof navigator !== 'undefined' && navigator.userAgent.includes('jsdom')
+    if (!isTestDom) {
+      try {
+        const webglAddon = new WebglAddon(true)
+        webglAddon.onContextLoss(() => {
+          webglAddon.dispose()
+          loadCanvasRenderer()
+          term.refresh(0, term.rows - 1)
+        })
+        term.loadAddon(webglAddon)
+      } catch {
+        loadCanvasRenderer()
+      }
+    }
     xtermRef.current = term
     fitAddonRef.current = fitAddon
 
@@ -465,9 +489,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         }
       }
       syncTransform()
-      updateScrollbar()
-      showScrollbar()
-      hideScrollbarDelayed()
       return clamped
     }
 
