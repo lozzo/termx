@@ -77,6 +77,88 @@ func TestTerminalManagementCreateMarshalsProtocolTerminalID(t *testing.T) {
 	}
 }
 
+func TestTerminalManagementListPreservesDistinctTerminalIDs(t *testing.T) {
+	daemon := &terminalManagementDaemonStub{
+		list: []protocol.TerminalInfo{
+			{ID: "1", Name: "one", Command: []string{"/bin/bash"}, State: "running", Size: protocol.Size{Cols: 80, Rows: 24}},
+			{ID: "3", Name: "three", Command: []string{"/bin/bash"}, State: "running", Size: protocol.Size{Cols: 80, Rows: 24}},
+		},
+	}
+	router := terminalManagementRouter{daemon: daemon}
+
+	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
+		Method: "list",
+		Path:   "list",
+		Body:   json.RawMessage(`{}`),
+	})
+	if errMsg != "" {
+		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("RouteTerminalManagementRequest status = %d, body = %s", status, string(body))
+	}
+	var payload struct {
+		Terminals []struct {
+			TerminalID string `json:"terminal_id"`
+			Name       string `json:"name"`
+		} `json:"terminals"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("decode terminal management list response: %v", err)
+	}
+	if len(payload.Terminals) != 2 || payload.Terminals[0].TerminalID != "1" || payload.Terminals[1].TerminalID != "3" {
+		t.Fatalf("expected distinct terminal IDs [1 3], got %#v body=%s", payload.Terminals, string(body))
+	}
+}
+
+func TestTerminalManagementListIncludesTerminalMetadataTags(t *testing.T) {
+	daemon := &terminalManagementDaemonStub{
+		list: []protocol.TerminalInfo{{
+			ID:      "1",
+			Name:    "one",
+			Command: []string{"/bin/bash"},
+			State:   "running",
+			Size:    protocol.Size{Cols: 80, Rows: 24},
+			Tags: map[string]string{
+				"termx.cwd":         "/srv/app",
+				"termx.environment": "prod",
+				"termx.size_lock":   "lock",
+			},
+		}},
+	}
+	router := terminalManagementRouter{daemon: daemon}
+
+	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
+		Method: "list",
+		Path:   "list",
+		Body:   json.RawMessage(`{}`),
+	})
+	if errMsg != "" {
+		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("RouteTerminalManagementRequest status = %d, body = %s", status, string(body))
+	}
+	var payload struct {
+		Terminals []struct {
+			CWD          string `json:"cwd"`
+			Environment  string `json:"environment"`
+			SizeLocked   bool   `json:"size_locked"`
+			SizeLockMode string `json:"size_lock_mode"`
+		} `json:"terminals"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("decode terminal management list response: %v", err)
+	}
+	if len(payload.Terminals) != 1 ||
+		payload.Terminals[0].CWD != "/srv/app" ||
+		payload.Terminals[0].Environment != "prod" ||
+		!payload.Terminals[0].SizeLocked ||
+		payload.Terminals[0].SizeLockMode != "lock" {
+		t.Fatalf("expected terminal metadata in list response, got %#v body=%s", payload.Terminals, string(body))
+	}
+}
+
 func pairClaimRequestForTest(session remoteprotocol.PairStartResult) pairing.ClaimRequest {
 	return pairing.ClaimRequest{
 		PairSessionID:         session.PairSessionID,
@@ -87,6 +169,7 @@ func pairClaimRequestForTest(session remoteprotocol.PairStartResult) pairing.Cla
 
 type terminalManagementDaemonStub struct {
 	createName string
+	list       []protocol.TerminalInfo
 }
 
 func (d *terminalManagementDaemonStub) Create(_ context.Context, params protocol.CreateParams) (*protocol.CreateResult, error) {
@@ -105,7 +188,7 @@ func (d *terminalManagementDaemonStub) Get(_ context.Context, terminalID string)
 }
 
 func (d *terminalManagementDaemonStub) List(context.Context) (*protocol.ListResult, error) {
-	return &protocol.ListResult{}, nil
+	return &protocol.ListResult{Terminals: append([]protocol.TerminalInfo(nil), d.list...)}, nil
 }
 
 func (d *terminalManagementDaemonStub) SetMetadata(context.Context, string, string, map[string]string) error {

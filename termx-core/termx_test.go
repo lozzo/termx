@@ -116,6 +116,39 @@ removedCheck:
 	t.Fatal("terminal was not auto-removed")
 }
 
+func TestServerListReturnsDistinctTerminalIDs(t *testing.T) {
+	srv := NewServer()
+	srv.terminals["1"] = &Terminal{
+		id:        "1",
+		name:      "one",
+		command:   []string{"/bin/bash"},
+		tags:      map[string]string{"group": "test"},
+		size:      Size{Cols: 80, Rows: 24},
+		state:     StateRunning,
+		createdAt: time.Unix(1, 0).UTC(),
+	}
+	srv.terminals["3"] = &Terminal{
+		id:        "3",
+		name:      "three",
+		command:   []string{"/bin/bash"},
+		tags:      map[string]string{"group": "test"},
+		size:      Size{Cols: 80, Rows: 24},
+		state:     StateRunning,
+		createdAt: time.Unix(3, 0).UTC(),
+	}
+
+	list, err := srv.List(context.Background())
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("expected two terminals, got %#v", list)
+	}
+	if list[0].ID != "1" || list[1].ID != "3" {
+		t.Fatalf("expected distinct sorted terminal IDs [1 3], got [%s %s]", list[0].ID, list[1].ID)
+	}
+}
+
 func TestServerDoesNotSpecialCaseRemoteRPCMethods(t *testing.T) {
 	server := NewServer()
 	for _, method := range []string{

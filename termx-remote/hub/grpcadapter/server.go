@@ -109,6 +109,7 @@ func (a *hubRegistryAdapter) RegisterAgent(in grpcapi.RegisterAgentInput) (grpca
 		}
 		terminals = append(terminals, registry.Terminal{
 			ID:    terminal.TerminalID,
+			Name:  terminal.Name,
 			State: "running",
 		})
 	}
@@ -173,7 +174,7 @@ func (a *hubRegistryAdapter) HeartbeatAgent(sessionID string, terminals []grpcap
 		if strings.TrimSpace(terminal.TerminalID) == "" {
 			continue
 		}
-		regTerminals = append(regTerminals, registry.Terminal{ID: terminal.TerminalID, State: "running"})
+		regTerminals = append(regTerminals, registry.Terminal{ID: terminal.TerminalID, Name: terminal.Name, State: "running"})
 	}
 	if err := a.registry.Heartbeat(context.Background(), registry.HeartbeatInput{
 		AgentID:   session.AgentID,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createTerminalManagementApi } from './terminalManagementApi'
-import type { ConnectionCapabilities, RtcJsonRpcChannel, RtcSession } from './transport'
+import type { RtcJsonRpcChannel, RtcSession } from './transport'
 
 describe('terminal management API over RtcSession', () => {
   it('creates, updates, and deletes terminals through the unified session api channel', async () => {
@@ -40,19 +40,30 @@ describe('terminal management API over RtcSession', () => {
     ])
   })
 
-  it('checks session capabilities before opening the api channel', async () => {
+  it('does not check session capabilities before opening the api channel', async () => {
     const session = new MockManagementSession()
-    session.capabilities = {
-      ...session.capabilities,
-      apiAllowed: false,
-      terminalManagementAllowed: false,
-      denialReason: 'anonymous devices cannot manage terminals',
-    }
     const api = createTerminalManagementApi(session, 'machine-local')
 
-    await expect(api.deleteTerminal('terminal-1')).rejects.toThrow(/anonymous devices/)
-    expect(session.openApiCount).toBe(0)
-    expect(session.requests).toEqual([])
+    await api.deleteTerminal('terminal-1')
+    expect(session.openApiCount).toBe(1)
+    expect(session.requests).toEqual([['remove', { terminal_id: 'terminal-1' }]])
+  })
+
+  it('sends an explicit off size-lock tag so the runtime can clear a lock', async () => {
+    const session = new MockManagementSession()
+    const api = createTerminalManagementApi(session, 'machine-local')
+
+    await api.updateTerminal({
+      terminalId: 'terminal-1',
+      sizeLockMode: 'off',
+    })
+
+    expect(session.requests).toEqual([
+      ['set_metadata', {
+        terminal_id: 'terminal-1',
+        tags: { 'termx.size_lock': 'off' },
+      }],
+    ])
   })
 
   it('rejects management through a session connected to another machine before opening api', async () => {
@@ -74,19 +85,11 @@ describe('terminal management API over RtcSession', () => {
   })
 })
 
-class MockManagementSession implements Pick<RtcSession, 'openApi' | 'getCapabilities' | 'getConnectionInfo'> {
+class MockManagementSession implements Pick<RtcSession, 'openApi' | 'getConnectionInfo'> {
   readonly requests: Array<[string, unknown]> = []
   openApiCount = 0
   machineId = 'machine-local'
   createResponse: unknown = { terminal_id: 'terminal-3', state: 'running' }
-  capabilities: ConnectionCapabilities = {
-    terminalAllowed: true,
-    apiAllowed: true,
-    eventsAllowed: true,
-    fileTransferAllowed: true,
-    relayInUse: false,
-    terminalManagementAllowed: true,
-  }
 
   async openApi(): Promise<RtcJsonRpcChannel> {
     this.openApiCount += 1
@@ -100,10 +103,6 @@ class MockManagementSession implements Pick<RtcSession, 'openApi' | 'getCapabili
       },
       close() {},
     }
-  }
-
-  async getCapabilities() {
-    return this.capabilities
   }
 
   async getConnectionInfo() {

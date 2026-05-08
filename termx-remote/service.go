@@ -604,13 +604,18 @@ func pairManagerConfigChanged(a, b pairing.Config) bool {
 }
 
 func terminalInventoryFromProtocol(item protocol.TerminalInfo) runtime.TerminalInventoryItem {
+	sizeLockMode := terminalmeta.SizeLockMode(item.Tags)
 	return runtime.TerminalInventoryItem{
-		ID:      item.ID,
-		Name:    item.Name,
-		State:   item.State,
-		Command: append([]string(nil), item.Command...),
-		Cols:    int(item.Size.Cols),
-		Rows:    int(item.Size.Rows),
+		ID:           item.ID,
+		Name:         item.Name,
+		State:        item.State,
+		Command:      append([]string(nil), item.Command...),
+		Cols:         int(item.Size.Cols),
+		Rows:         int(item.Size.Rows),
+		CWD:          item.Tags["termx.cwd"],
+		Environment:  item.Tags["termx.environment"],
+		SizeLocked:   terminalmeta.SizeLocked(item.Tags),
+		SizeLockMode: sizeLockMode,
 	}
 }
 

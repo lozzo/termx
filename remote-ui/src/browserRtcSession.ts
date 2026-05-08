@@ -275,9 +275,6 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   }
 
   async openFileTransfer(transferId: string): Promise<RtcBinaryChannel> {
-    if (!this.capabilities.fileTransferAllowed) {
-      throw new Error(this.capabilities.denialReason ?? 'file transfer is not allowed by connection policy')
-    }
     const channel = this.openRTCChannel(`file:${transferId}`)
     this.fileChannels.set(transferId, channel)
     await waitChannelOpen(channel)

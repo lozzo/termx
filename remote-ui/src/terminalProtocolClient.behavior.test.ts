@@ -28,7 +28,7 @@ describe('TerminalProtocolClient', () => {
     expect(attach.type).toBe(TERMX_FRAME_TYPES.request)
     const attachRequest = JSON.parse(new TextDecoder().decode(attach.payload))
     expect(attachRequest.method).toBe('attach')
-    expect(attachRequest.params).toEqual({ terminal_id: 'terminal-1', mode: 'collaborator', resize_policy: 'follower' })
+    expect(attachRequest.params).toEqual({ terminal_id: 'terminal-1', mode: 'collaborator', resize_policy: 'owner' })
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
       id: attachRequest.id,
       result: JSON.stringify({ mode: 'collaborator', channel: 7 }),
@@ -39,7 +39,7 @@ describe('TerminalProtocolClient', () => {
     channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.output, new TextEncoder().encode('stream-data')))
 
     expect(events).toHaveLength(2)
-    expect(events[0]).toMatchObject({ type: 'resizeControl', control: { canResize: false, reason: 'follower' } })
+    expect(events[0]).toMatchObject({ type: 'resizeControl', control: { canResize: true, reason: 'owner' } })
     expect(events[1]).toMatchObject({ type: 'output' })
     expect(new TextDecoder().decode((events[1] as { data: Uint8Array }).data)).toBe('stream-data')
   })
@@ -90,6 +90,7 @@ describe('TerminalProtocolClient', () => {
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       connectionInfo: connectionInfo(),
+      resizePolicy: 'follower',
     })
     const events: unknown[] = []
     client.subscribeTerminal('terminal-1', (event: TerminalProtocolEvent) => events.push(event))

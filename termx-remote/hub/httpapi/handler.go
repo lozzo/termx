@@ -111,9 +111,14 @@ func NewHandler(cfg Config) http.Handler {
 			for _, agent := range agents {
 				terminals := make([]map[string]any, 0, len(agent.Terminals))
 				for _, terminal := range agent.Terminals {
+					title := strings.TrimSpace(terminal.Name)
+					if title == "" {
+						title = terminal.ID
+					}
 					terminals = append(terminals, map[string]any{
 						"terminal_id": terminal.ID,
-						"title":       terminal.ID,
+						"title":       title,
+						"name":        title,
 						"state":       terminal.State,
 					})
 				}

@@ -27,6 +27,7 @@ type AgentRegistration struct {
 
 type Terminal struct {
 	ID    string
+	Name  string
 	State string
 }
 

@@ -114,6 +114,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
   }, [])
 
   const reattach = useCallback((session: RtcSession) => {
+    const previousSession = sessionRef.current
+    protocolSessionRef.current?.closeTerminalChannel(options.terminalId)
+    closeRtcTerminalDataChannel(previousSession, options.terminalId)
+    setResizeControl(defaultTerminalResizeControl)
     sessionRef.current = session
     session.getConnectionInfo().then((info) => {
       connectionIdRef.current = info.connectionId
@@ -124,7 +128,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     }).catch((err: unknown) => {
       dispatch({ type: 'connection.failed', reason: err instanceof Error ? err.message : String(err), recoverable: true, surface: 'banner' })
     })
-  }, [])
+  }, [options.machineId, options.terminalId])
 
   return {
     snapshot,

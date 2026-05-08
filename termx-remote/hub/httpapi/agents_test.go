@@ -109,7 +109,7 @@ func TestLocalDiscoveryListsOnlineAgentsOnlyWhenEnabled(t *testing.T) {
 	if _, err := reg.Register(context.Background(), registry.RegisterInput{
 		MachineID: "device_local",
 		AgentID:   "agent_local",
-		Terminals: []registry.Terminal{{ID: "term_local", State: "running"}},
+		Terminals: []registry.Terminal{{ID: "term_local", Name: "dev shell", State: "running"}},
 	}); err != nil {
 		t.Fatalf("register local agent: %v", err)
 	}
@@ -128,6 +128,7 @@ func TestLocalDiscoveryListsOnlineAgentsOnlyWhenEnabled(t *testing.T) {
 			Terminals []struct {
 				TerminalID string `json:"terminal_id"`
 				Title      string `json:"title"`
+				Name       string `json:"name"`
 				State      string `json:"state"`
 			} `json:"terminals"`
 		} `json:"agents"`
@@ -136,7 +137,8 @@ func TestLocalDiscoveryListsOnlineAgentsOnlyWhenEnabled(t *testing.T) {
 	if len(body.Agents) != 1 || body.Agents[0].MachineID != "device_local" ||
 		body.Agents[0].AgentID != "agent_local" || len(body.Agents[0].Terminals) != 1 ||
 		body.Agents[0].Terminals[0].TerminalID != "term_local" ||
-		body.Agents[0].Terminals[0].Title != "term_local" {
+		body.Agents[0].Terminals[0].Title != "dev shell" ||
+		body.Agents[0].Terminals[0].Name != "dev shell" {
 		t.Fatalf("unexpected local discovery body: %+v", body)
 	}
 
@@ -163,6 +165,7 @@ func TestLocalDiscoveryReflectsRegistryHeartbeats(t *testing.T) {
 		AgentID:   "agent_local",
 		Terminals: []registry.Terminal{{
 			ID:    "term_after_register",
+			Name:  "worker",
 			State: "running",
 		}},
 	}); err != nil {
@@ -182,6 +185,7 @@ func TestLocalDiscoveryReflectsRegistryHeartbeats(t *testing.T) {
 		Agents []struct {
 			Terminals []struct {
 				TerminalID string `json:"terminal_id"`
+				Title      string `json:"title"`
 				State      string `json:"state"`
 			} `json:"terminals"`
 		} `json:"agents"`
@@ -189,6 +193,7 @@ func TestLocalDiscoveryReflectsRegistryHeartbeats(t *testing.T) {
 	decodeJSON(t, resp, &body)
 	if len(body.Agents) != 1 || len(body.Agents[0].Terminals) != 1 ||
 		body.Agents[0].Terminals[0].TerminalID != "term_after_register" ||
+		body.Agents[0].Terminals[0].Title != "worker" ||
 		body.Agents[0].Terminals[0].State != "running" {
 		t.Fatalf("local discovery did not reflect heartbeat terminals: %+v", body)
 	}

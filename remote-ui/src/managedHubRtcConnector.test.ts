@@ -79,7 +79,7 @@ describe('ManagedHubRtcConnector', () => {
     await expect(session.getCapabilities()).resolves.toMatchObject({
       terminalAllowed: true,
       eventsAllowed: true,
-      fileTransferAllowed: false,
+      fileTransferAllowed: true,
       relayInUse: true,
     })
   })

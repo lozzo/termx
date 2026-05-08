@@ -43,6 +43,7 @@ type ChannelPolicy struct {
 	AllowTerminal           bool
 	AllowAPI                bool
 	AllowFileManager        bool
+	AllowTerminalInventory  bool
 	AllowTerminalManagement bool
 	AllowEvents             bool
 	AllowRelayTransfer      bool
@@ -134,12 +135,6 @@ func AnswerOfferWithOptions(
 		label := dc.Label()
 		switch {
 		case bridge.IsTerminalChannelLabel(label):
-			if !opts.ChannelPolicy.allowTerminal(label) {
-				dc.OnOpen(func() {
-					_ = dc.Close()
-				})
-				return
-			}
 			dc.OnOpen(func() {
 				if sink == nil {
 					_ = dc.Close()
@@ -152,41 +147,14 @@ func AnswerOfferWithOptions(
 				}()
 			})
 		case label == "api":
-			var apiFiles *fileapi.Manager
-			if opts.ChannelPolicy.allowFileManager() {
-				apiFiles = fileManager
-			}
-			var apiTerminalManagement TerminalManagementRouter
-			if opts.ChannelPolicy.allowTerminalManagement() {
-				apiTerminalManagement = opts.TerminalManagement
-			}
-			if !opts.ChannelPolicy.allowAPI() && apiFiles == nil && apiTerminalManagement == nil {
-				dc.OnOpen(func() {
-					_ = dc.Close()
-				})
-				return
-			}
-			handleAPIChannel(sessionCtx, dc, apiFiles, apiTerminalManagement, func(ctx context.Context) context.Context {
-				ctx = withRelayTransferAllowed(ctx, opts.ChannelPolicy.allowRelayTransfer())
+			handleAPIChannel(sessionCtx, dc, fileManager, opts.TerminalManagement, func(ctx context.Context) context.Context {
 				return withRelayConnection(ctx, IsRelayConnection(pc))
 			})
 		case strings.HasPrefix(label, "file:"):
-			if !opts.ChannelPolicy.allowFileManager() {
-				dc.OnOpen(func() {
-					_ = dc.Close()
-				})
-				return
-			}
 			fileManager.HandleFileChannelWithOpenGuard(dc, strings.TrimPrefix(label, "file:"), func() bool {
-				return !IsRelayConnection(pc) || opts.ChannelPolicy.allowRelayTransfer()
+				return true
 			})
 		case label == "events":
-			if !opts.ChannelPolicy.allowEvents() {
-				dc.OnOpen(func() {
-					_ = dc.Close()
-				})
-				return
-			}
 			if opts.Events == nil {
 				dc.OnOpen(func() {
 					_ = dc.SendText(`{"type":"runtime_ready","payload":{"channel":"events"}}`)
@@ -236,60 +204,6 @@ func AnswerOfferWithOptions(
 		SDP:           local.SDP,
 		ICECandidates: nil,
 	}, nil
-}
-
-func (p ChannelPolicy) allowTerminal(label string) bool {
-	if !p.active() {
-		return true
-	}
-	if !p.AllowTerminal {
-		return false
-	}
-	terminalID := strings.TrimSpace(strings.TrimPrefix(label, "terminal:"))
-	if terminalID == "" {
-		return false
-	}
-	policyTerminalID := strings.TrimSpace(p.TerminalID)
-	return policyTerminalID == "" || terminalID == policyTerminalID
-}
-
-func (p ChannelPolicy) allowFileManager() bool {
-	if !p.active() {
-		return true
-	}
-	return p.AllowFileManager
-}
-
-func (p ChannelPolicy) allowAPI() bool {
-	if !p.active() {
-		return true
-	}
-	return p.AllowAPI || p.AllowFileManager || p.AllowTerminalManagement
-}
-
-func (p ChannelPolicy) allowEvents() bool {
-	if !p.active() {
-		return true
-	}
-	return p.AllowEvents
-}
-
-func (p ChannelPolicy) allowTerminalManagement() bool {
-	if !p.active() {
-		return true
-	}
-	return p.AllowTerminalManagement
-}
-
-func (p ChannelPolicy) allowRelayTransfer() bool {
-	if !p.active() {
-		return true
-	}
-	return p.AllowRelayTransfer
-}
-
-func (p ChannelPolicy) active() bool {
-	return strings.TrimSpace(p.TerminalID) != "" || p.AllowTerminal || p.AllowAPI || p.AllowFileManager || p.AllowTerminalManagement || p.AllowEvents || p.AllowRelayTransfer
 }
 
 type apiRequest struct {
@@ -349,19 +263,25 @@ func routeRuntimeAPIRequest(manager *fileapi.Manager, terminalManagement Termina
 func routeRuntimeAPIRequestWithContext(ctx context.Context, manager *fileapi.Manager, terminalManagement TerminalManagementRouter, req apiRequest) (int32, []byte, string) {
 	if strings.HasPrefix(req.Path, "/files/") {
 		if manager == nil {
-			return http.StatusForbidden, nil, "file api is not allowed by connection policy"
-		}
-		if relayConnectionFromContext(ctx) && !relayTransferAllowedFromContext(ctx) {
-			return http.StatusForbidden, nil, "file transfer is not allowed over relay connection"
+			return http.StatusServiceUnavailable, nil, "file api is not available"
 		}
 		return manager.RouteRequest(req.Method, req.Path, req.Body)
 	}
 	switch req.Path {
 	case "ping", "status", "/status":
 		return jsonResponseBody(map[string]any{"ok": true})
-	case "list", "create", "set_metadata", "remove":
+	case "list":
 		if terminalManagement == nil {
-			return http.StatusForbidden, nil, "terminal management is not allowed by connection policy"
+			return http.StatusServiceUnavailable, nil, "terminal inventory is not available"
+		}
+		return terminalManagement.RouteTerminalManagementRequest(ctx, TerminalManagementRequest{
+			Method: req.Method,
+			Path:   req.Path,
+			Body:   req.Body,
+		})
+	case "create", "set_metadata", "remove":
+		if terminalManagement == nil {
+			return http.StatusServiceUnavailable, nil, "terminal management is not available"
 		}
 		return terminalManagement.RouteTerminalManagementRequest(ctx, TerminalManagementRequest{
 			Method: req.Method,

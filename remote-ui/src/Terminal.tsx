@@ -3,6 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react'
 import { applyTerminalModifiers, type TerminalModifierState } from './mobileTerminalInput'
+import type { TerminalResizeControl } from './terminalClient'
 import { useTerminalSession } from './useTerminalSession'
 import type { RtcSession } from './transport'
 
@@ -14,6 +15,7 @@ export interface TerminalProps {
   onReady?: () => void
   onCursorMove?: (() => void) | undefined
   onBufferChange?: ((isAlternate: boolean) => void) | undefined
+  onResizeControl?: ((control: TerminalResizeControl) => void) | undefined
   modifierState?: TerminalModifierState | undefined
   onModifierStateChange?: ((state: TerminalModifierState) => void) | undefined
 }
@@ -40,6 +42,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     onReady,
     onCursorMove,
     onBufferChange,
+    onResizeControl,
     modifierState,
     onModifierStateChange,
   },
@@ -61,6 +64,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const onModifierStateChangeRef = useRef<((state: TerminalModifierState) => void) | undefined>(undefined)
   const onCursorMoveRef = useRef<(() => void) | undefined>(undefined)
   const onBufferChangeRef = useRef<((isAlternate: boolean) => void) | undefined>(undefined)
+  const onResizeControlRef = useRef<((control: TerminalResizeControl) => void) | undefined>(undefined)
 
   const isOpen = terminalSession.snapshot.terminalChannels[terminalId]?.state === 'open'
   const channelState = terminalSession.snapshot.terminalChannels[terminalId]?.state
@@ -190,11 +194,16 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   }, [onBufferChange])
 
   useEffect(() => {
+    onResizeControlRef.current = onResizeControl
+  }, [onResizeControl])
+
+  useEffect(() => {
     canSendResizeRef.current = terminalSession.resizeControl.canResize
+    onResizeControlRef.current?.(terminalSession.resizeControl)
     if (terminalSession.resizeControl.canResize) {
       fitAndMaybeSendResize()
     }
-  }, [fitAndMaybeSendResize, terminalSession.resizeControl.canResize])
+  }, [fitAndMaybeSendResize, terminalSession.resizeControl])
 
   useEffect(() => {
     const container = containerRef.current

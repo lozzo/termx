@@ -1,5 +1,4 @@
 import type { LocalCreateTerminalInput, LocalUpdateTerminalInput, RtcSession } from './transport'
-import { requireConnectionCapability } from './connectionPolicy'
 
 export interface TerminalManagementApi {
   createTerminal(input: LocalCreateTerminalInput): Promise<{ terminalId: string }>
@@ -8,18 +7,14 @@ export interface TerminalManagementApi {
 }
 
 export function createTerminalManagementApi(
-  session: Pick<RtcSession, 'openApi' | 'getConnectionInfo' | 'getCapabilities'>,
+  session: Pick<RtcSession, 'openApi' | 'getConnectionInfo'>,
   machineId: string,
 ): TerminalManagementApi {
   const api = async () => {
-    const [info, capabilities] = await Promise.all([
-      session.getConnectionInfo(),
-      session.getCapabilities(),
-    ])
+    const info = await session.getConnectionInfo()
     if (info.machineId !== machineId) {
       throw new Error(`terminal management session machine mismatch: connected to ${info.machineId}, expected ${machineId}`)
     }
-    requireConnectionCapability(info, capabilities, 'terminal_management')
     return session.openApi()
   }
 
@@ -66,7 +61,7 @@ function terminalTags(input: {
   sizeLockMode?: LocalCreateTerminalInput['sizeLockMode'] | LocalUpdateTerminalInput['sizeLockMode']
 }): Record<string, string> {
   const tags: Record<string, string> = {}
-  if (input.sizeLockMode && input.sizeLockMode !== 'off') {
+  if (input.sizeLockMode) {
     tags['termx.size_lock'] = input.sizeLockMode
   }
   if (input.cwd) {

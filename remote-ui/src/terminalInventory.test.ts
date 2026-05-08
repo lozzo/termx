@@ -63,6 +63,42 @@ describe('terminalInventory', () => {
     ])
   })
 
+  it('deduplicates repeated terminal ids from runtime inventory responses', () => {
+    const snapshot = normalizeTerminalInventory({
+      machine_id: 'machine-cloud',
+      terminals: [
+        {
+          terminal_id: '1',
+          title: '1',
+          state: 'running',
+        },
+        {
+          terminal_id: '1',
+          name: 'dev shell',
+          command: ['/bin/zsh', '-l'],
+          cols: 120,
+          rows: 36,
+          state: 'running',
+        },
+        {
+          terminal_id: '2',
+          name: 'worker',
+          state: 'running',
+        },
+      ],
+    })
+
+    expect(snapshot.terminals).toHaveLength(2)
+    expect(snapshot.terminals.map((terminal) => terminal.terminalId)).toEqual(['1', '2'])
+    expect(snapshot.terminals[0]).toEqual(expect.objectContaining({
+      terminalId: '1',
+      title: 'dev shell',
+      command: '/bin/zsh -l',
+      cols: 120,
+      rows: 36,
+    }))
+  })
+
   it('rejects tgent session/window/pane-shaped inventory records', () => {
     expect(() =>
       normalizeTerminalInventory({

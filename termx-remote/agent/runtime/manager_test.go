@@ -229,7 +229,7 @@ func TestClaimHubPairingClaimsThroughPairingManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("session token did not verify: %v", err)
 	}
-	if claims.MachineID != "device-pair" || strings.Join(claims.Capabilities, ",") != "terminal,terminal_management" {
+	if claims.MachineID != "device-pair" || len(claims.Capabilities) != 0 {
 		t.Fatalf("claims = %+v", claims)
 	}
 	if claims.AppDeviceID != "app-device-pair" || claims.AppName != "TermX Pair App" {
@@ -307,16 +307,16 @@ func TestManagerRejectsCloudOfferForUnknownTerminalBeforeAnswering(t *testing.T)
 	}
 }
 
-func TestManagerRejectsCloudOfferWithoutTerminalCapabilityBeforeAnswering(t *testing.T) {
+func TestManagerAcceptsCloudOfferWithoutTerminalCapability(t *testing.T) {
 	manager, answerer, offer := newCloudOfferFixtureWithCapabilities(t, []string{"file_manager"}, nil)
 
 	answer := manager.answerCloudOffer(context.Background(), offer, nil)
 
-	if answer.Error == "" || !strings.Contains(answer.Error, "terminal capability") {
-		t.Fatalf("expected terminal capability rejection, got %#v", answer)
+	if answer.Error != "" {
+		t.Fatalf("capabilities should not reject cloud offer: %#v", answer)
 	}
-	if answerer.calls != 0 {
-		t.Fatalf("answerer called %d times for unauthorized offer", answerer.calls)
+	if answerer.calls != 1 {
+		t.Fatalf("answerer calls = %d, want 1", answerer.calls)
 	}
 }
 
@@ -338,12 +338,15 @@ func TestManagerAllowsMachineScopedCloudOfferForTerminalList(t *testing.T) {
 	if !policy.AllowTerminal || !policy.AllowEvents || !policy.AllowFileManager || !policy.AllowAPI {
 		t.Fatalf("machine-scoped offer should allow machine-level terminal/events/files: %#v", policy)
 	}
+	if !policy.AllowTerminalInventory {
+		t.Fatalf("machine-scoped terminal list offer should allow terminal inventory API: %#v", policy)
+	}
 	if !policy.AllowTerminalManagement {
 		t.Fatalf("machine-scoped terminal list offer should allow terminal management API: %#v", policy)
 	}
 }
 
-func TestManagerScopesCloudOfferPolicyToSessionTokenCapabilities(t *testing.T) {
+func TestManagerDoesNotScopeCloudOfferPolicyToSessionTokenCapabilities(t *testing.T) {
 	manager, answerer, offer := newCloudOfferFixtureWithCapabilities(t, []string{"terminal"}, nil)
 
 	answer := manager.answerCloudOffer(context.Background(), offer, nil)
@@ -352,15 +355,30 @@ func TestManagerScopesCloudOfferPolicyToSessionTokenCapabilities(t *testing.T) {
 		t.Fatalf("valid terminal-only offer returned error: %#v", answer)
 	}
 	policy := answerer.gotOptions.ChannelPolicy
-	if !policy.AllowTerminal || !policy.AllowEvents {
-		t.Fatalf("terminal capability should allow terminal/events, got %#v", policy)
-	}
-	if !policy.AllowAPI || policy.AllowFileManager || policy.AllowTerminalManagement || policy.AllowRelayTransfer {
-		t.Fatalf("terminal-only token overgranted channel policy: %#v", policy)
+	if !policy.AllowTerminal || !policy.AllowEvents || !policy.AllowAPI || !policy.AllowFileManager || !policy.AllowRelayTransfer {
+		t.Fatalf("runtime channels should be allowed regardless of token capabilities: %#v", policy)
 	}
 }
 
-func TestManagerAllowsCloudTerminalManagementOnlyWithCapabilityAndRouter(t *testing.T) {
+func TestManagerAllowsCloudTerminalInventoryForMachineScopedTerminalToken(t *testing.T) {
+	provider := managementProviderStub{inventoryProviderStub: inventoryProviderStub{
+		items: []TerminalInventoryItem{{ID: "term-1", Name: "shell", State: "running"}},
+	}}
+	manager, answerer, offer := newCloudOfferFixtureWithCapabilitiesAndTerminal(t, []string{"terminal"}, provider, "")
+
+	answer := manager.answerCloudOffer(context.Background(), offer, nil)
+	if answer.Error != "" {
+		t.Fatalf("valid machine-scoped terminal-only offer returned error: %#v", answer)
+	}
+	if !answerer.gotOptions.ChannelPolicy.AllowTerminalInventory {
+		t.Fatalf("machine-scoped terminal token should allow terminal inventory: %#v", answerer.gotOptions.ChannelPolicy)
+	}
+	if !answerer.gotOptions.ChannelPolicy.AllowTerminalManagement {
+		t.Fatalf("terminal management should not depend on token capabilities: %#v", answerer.gotOptions.ChannelPolicy)
+	}
+}
+
+func TestManagerAllowsCloudTerminalManagementWhenRouterExists(t *testing.T) {
 	provider := managementProviderStub{inventoryProviderStub: inventoryProviderStub{
 		items: []TerminalInventoryItem{{ID: "term-1", Name: "shell", State: "running"}},
 	}}
@@ -370,17 +388,8 @@ func TestManagerAllowsCloudTerminalManagementOnlyWithCapabilityAndRouter(t *test
 	if answer.Error != "" {
 		t.Fatalf("valid terminal-only offer returned error: %#v", answer)
 	}
-	if answerer.gotOptions.ChannelPolicy.AllowTerminalManagement {
-		t.Fatalf("terminal-only token overgranted terminal management: %#v", answerer.gotOptions.ChannelPolicy)
-	}
-
-	manager, answerer, offer = newCloudOfferFixtureWithCapabilities(t, []string{"terminal", "terminal_management"}, provider)
-	answer = manager.answerCloudOffer(context.Background(), offer, nil)
-	if answer.Error != "" {
-		t.Fatalf("valid terminal-management offer returned error: %#v", answer)
-	}
 	if !answerer.gotOptions.ChannelPolicy.AllowTerminalManagement {
-		t.Fatalf("terminal_management capability with router should allow management: %#v", answerer.gotOptions.ChannelPolicy)
+		t.Fatalf("router should allow terminal management independent of capability: %#v", answerer.gotOptions.ChannelPolicy)
 	}
 	if answerer.gotOptions.Events == nil {
 		t.Fatal("cloud runtime should provide machine event router when provider supports it")

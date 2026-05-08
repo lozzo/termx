@@ -217,6 +217,7 @@ class MockBinaryChannel implements RtcBinaryChannel {
           resize_control: {
             can_resize: this.attachResizeControl.canResize,
             reason: this.attachResizeControl.reason,
+            ...(this.attachResizeControl.sizeLocked ? { size_locked: true } : {}),
           },
         }),
       }))))

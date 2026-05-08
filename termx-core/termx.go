@@ -223,14 +223,13 @@ func (s *Server) List(ctx context.Context, opts ...ListOptions) ([]*TerminalInfo
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	values := make([]TerminalInfo, 0, len(s.terminals))
 	out := make([]*TerminalInfo, 0, len(s.terminals))
 	for _, term := range s.terminals {
-		values, ok := term.appendTerminalInfoIfMatch(values, filter)
+		info, ok := term.listInfo(filter)
 		if !ok {
 			continue
 		}
-		out = append(out, &values[len(values)-1])
+		out = append(out, info)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return lessNumericString(out[i].ID, out[j].ID)
@@ -531,14 +530,15 @@ func (s *Server) terminalNameExistsLocked(name, exceptID string) bool {
 	return false
 }
 
-func (t *Terminal) appendTerminalInfoIfMatch(dst []TerminalInfo, filter ListOptions) ([]TerminalInfo, bool) {
+func (t *Terminal) listInfo(filter ListOptions) (*TerminalInfo, bool) {
 	info, ok := t.listInfoSnapshot(filter)
 	if !ok {
-		return dst, false
+		return nil, false
 	}
 	// Copy the top-level struct so callers get distinct *TerminalInfo values
 	// while the immutable nested metadata stays cached per terminal.
-	return append(dst, *info), true
+	snapshot := *info
+	return &snapshot, true
 }
 
 func (s *Server) protocolListResponse() (json.RawMessage, error) {

@@ -603,11 +603,6 @@ func (m *Manager) verifyOfferSession(ctx context.Context, offer hubv1.SignalingO
 		if !m.hasTerminal(ctx, terminalID) {
 			return token.Claims{}, fmt.Errorf("terminal %q is not available for remote access", terminalID)
 		}
-		if !hasAppCapability(claims.Capabilities, "terminal") {
-			return token.Claims{}, fmt.Errorf("session token terminal capability is required")
-		}
-	} else if !hasAppCapability(claims.Capabilities, "terminal") && !hasAppCapability(claims.Capabilities, "terminal_management") {
-		return token.Claims{}, fmt.Errorf("session token terminal or terminal_management capability is required for machine-scoped remote runtime")
 	}
 	return claims, nil
 }
@@ -684,28 +679,18 @@ func (m *Manager) hasTerminal(ctx context.Context, terminalID string) bool {
 	return false
 }
 
-func cloudOfferChannelPolicy(offer hubv1.SignalingOffer, capabilities []string, terminalManagement remotertc.TerminalManagementRouter) remotertc.ChannelPolicy {
+func cloudOfferChannelPolicy(offer hubv1.SignalingOffer, _ []string, terminalManagement remotertc.TerminalManagementRouter) remotertc.ChannelPolicy {
 	terminalID := strings.TrimSpace(offer.TerminalID)
-	allowTerminal := hasAppCapability(capabilities, "terminal")
 	return remotertc.ChannelPolicy{
 		TerminalID:              terminalID,
-		AllowTerminal:           allowTerminal,
+		AllowTerminal:           true,
 		AllowAPI:                true,
-		AllowFileManager:        hasAppCapability(capabilities, "file_manager"),
-		AllowTerminalManagement: hasAppCapability(capabilities, "terminal_management") && terminalManagement != nil,
-		AllowEvents:             allowTerminal,
-		AllowRelayTransfer:      hasAppCapability(capabilities, "file_manager"),
+		AllowFileManager:        true,
+		AllowTerminalInventory:  terminalManagement != nil,
+		AllowTerminalManagement: terminalManagement != nil,
+		AllowEvents:             true,
+		AllowRelayTransfer:      true,
 	}
-}
-
-func hasAppCapability(capabilities []string, capability string) bool {
-	capability = strings.TrimSpace(capability)
-	for _, candidate := range capabilities {
-		if strings.TrimSpace(candidate) == capability {
-			return true
-		}
-	}
-	return false
 }
 
 func (m *Manager) terminalManagementRouter() remotertc.TerminalManagementRouter {

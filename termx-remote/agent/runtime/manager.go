@@ -33,12 +33,16 @@ const (
 var errHubForcedOffline = errors.New("hub forced offline")
 
 type TerminalInventoryItem struct {
-	ID      string   `json:"terminal_id"`
-	Name    string   `json:"name,omitempty"`
-	State   string   `json:"state,omitempty"`
-	Command []string `json:"command,omitempty"`
-	Cols    int      `json:"cols,omitempty"`
-	Rows    int      `json:"rows,omitempty"`
+	ID           string   `json:"terminal_id"`
+	Name         string   `json:"name,omitempty"`
+	State        string   `json:"state,omitempty"`
+	Command      []string `json:"command,omitempty"`
+	Cols         int      `json:"cols,omitempty"`
+	Rows         int      `json:"rows,omitempty"`
+	CWD          string   `json:"cwd,omitempty"`
+	Environment  string   `json:"environment,omitempty"`
+	SizeLocked   bool     `json:"size_locked,omitempty"`
+	SizeLockMode string   `json:"size_lock_mode,omitempty"`
 }
 
 type InventoryProvider interface {

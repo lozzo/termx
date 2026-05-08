@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-core/transport"
 	"github.com/lozzow/termx/termx-remote/fileapi"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
 	"github.com/pion/webrtc/v4"
@@ -88,7 +89,47 @@ func TestRuntimeAPIChannelRouterHandlesTerminalManagement(t *testing.T) {
 	}
 }
 
-func TestAnswerOfferChannelPolicyRejectsWrongTerminalChannel(t *testing.T) {
+func TestRuntimeAPIChannelIgnoresManagementMutationContext(t *testing.T) {
+	manager := &terminalAPIRouterStub{}
+	ctx := context.Background()
+	listStatus, listBody, listErr := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), manager, apiRequest{
+		ID:     "req_list",
+		Method: "list",
+		Path:   "list",
+		Body:   json.RawMessage(`{}`),
+	})
+	if listErr != "" {
+		t.Fatalf("expected terminal inventory request to succeed, got %q", listErr)
+	}
+	if listStatus != http.StatusOK {
+		t.Fatalf("expected terminal inventory status 200, got %d", listStatus)
+	}
+	var listPayload map[string]any
+	if err := json.Unmarshal(listBody, &listPayload); err != nil {
+		t.Fatalf("unmarshal list body: %v", err)
+	}
+	if terminals, ok := listPayload["terminals"].([]any); !ok || len(terminals) != 1 {
+		t.Fatalf("expected terminal list payload, got %#v", listPayload)
+	}
+
+	createStatus, _, createErr := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), manager, apiRequest{
+		ID:     "req_create",
+		Method: "create",
+		Path:   "create",
+		Body:   json.RawMessage(`{"name":"allowed"}`),
+	})
+	if createErr != "" {
+		t.Fatalf("expected terminal create to be routed, got %q", createErr)
+	}
+	if createStatus != http.StatusOK {
+		t.Fatalf("expected terminal create status 200, got %d", createStatus)
+	}
+	if manager.createName != "allowed" {
+		t.Fatalf("expected terminal create to reach manager, got %#v", manager)
+	}
+}
+
+func TestAnswerOfferChannelPolicyDoesNotRejectTerminalChannel(t *testing.T) {
 	offerPC, err := webrtc.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		t.Fatalf("NewPeerConnection returned error: %v", err)
@@ -99,12 +140,12 @@ func TestAnswerOfferChannelPolicyRejectsWrongTerminalChannel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateDataChannel returned error: %v", err)
 	}
-	closed := make(chan struct{})
-	dc.OnClose(func() {
+	open := make(chan struct{})
+	dc.OnOpen(func() {
 		select {
-		case <-closed:
+		case <-open:
 		default:
-			close(closed)
+			close(open)
 		}
 	})
 
@@ -122,7 +163,10 @@ func TestAnswerOfferChannelPolicyRejectsWrongTerminalChannel(t *testing.T) {
 		MachineID:  "machine-1",
 		TerminalID: "signed-terminal",
 		SDP:        offerPC.LocalDescription().SDP,
-	}, nil, nil, fileapi.NewManager(), AnswerOptions{
+	}, nil, transportSinkFunc(func(context.Context, transport.Transport, string) error {
+		<-time.After(10 * time.Millisecond)
+		return nil
+	}), fileapi.NewManager(), AnswerOptions{
 		ChannelPolicy: ChannelPolicy{
 			TerminalID:       "signed-terminal",
 			AllowTerminal:    true,
@@ -140,9 +184,9 @@ func TestAnswerOfferChannelPolicyRejectsWrongTerminalChannel(t *testing.T) {
 	}
 
 	select {
-	case <-closed:
+	case <-open:
 	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for unauthorized terminal data channel to close")
+		t.Fatal("timed out waiting for terminal data channel to open")
 	}
 }
 
@@ -418,6 +462,12 @@ func waitTestPeerICE(t *testing.T, pc *webrtc.PeerConnection, timeout time.Durat
 
 type terminalAPIRouterStub struct {
 	createName string
+}
+
+type transportSinkFunc func(context.Context, transport.Transport, string) error
+
+func (f transportSinkFunc) ServeRemoteTransport(ctx context.Context, t transport.Transport, remote string) error {
+	return f(ctx, t, remote)
 }
 
 func (s *terminalAPIRouterStub) RouteTerminalManagementRequest(_ context.Context, req TerminalManagementRequest) (int32, []byte, string) {

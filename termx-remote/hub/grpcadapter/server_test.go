@@ -115,6 +115,30 @@ func TestGRPCAdapterHeartbeatRenewsSessionExpiry(t *testing.T) {
 	}
 }
 
+func TestGRPCAdapterPreservesTerminalNamesInRegistry(t *testing.T) {
+	reg := registry.New(registry.Config{AgentTTL: time.Minute})
+	adapter := &hubRegistryAdapter{registry: reg}
+	input := grpcRegisterInput("agent-1", "machine-1")
+	input.Terminals = []grpcapi.TerminalInput{{TerminalID: "terminal-1", Name: "dev shell"}}
+
+	out, err := adapter.RegisterAgent(input)
+	if err != nil {
+		t.Fatalf("RegisterAgent returned error: %v", err)
+	}
+	agent, ok := reg.GetAgent("agent-1")
+	if !ok || len(agent.Terminals) != 1 || agent.Terminals[0].Name != "dev shell" {
+		t.Fatalf("registry terminal after register = %+v ok=%v", agent.Terminals, ok)
+	}
+
+	if err := adapter.HeartbeatAgent(out.SessionID, []grpcapi.TerminalInput{{TerminalID: "terminal-2", Name: "worker"}}); err != nil {
+		t.Fatalf("HeartbeatAgent returned error: %v", err)
+	}
+	agent, ok = reg.GetAgent("agent-1")
+	if !ok || len(agent.Terminals) != 1 || agent.Terminals[0].Name != "worker" {
+		t.Fatalf("registry terminal after heartbeat = %+v ok=%v", agent.Terminals, ok)
+	}
+}
+
 func TestGRPCAdapterHeartbeatForcedOfflineDropsSession(t *testing.T) {
 	reg := registry.New(registry.Config{AgentTTL: time.Minute})
 	adapter := &hubRegistryAdapter{registry: reg}

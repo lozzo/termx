@@ -105,7 +105,7 @@ func TestIsRelayConnectionIgnoresNonSelectedSucceededRelayPair(t *testing.T) {
 	}
 }
 
-func TestFileTransferForbiddenOnRelayWithoutPermission(t *testing.T) {
+func TestFileTransferRoutedOnRelayWithoutAppPermission(t *testing.T) {
 	ctx := withRelayConnection(context.Background(), true)
 	status, _, errMsg := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), nil, apiRequest{
 		ID:     "req_file",
@@ -114,10 +114,10 @@ func TestFileTransferForbiddenOnRelayWithoutPermission(t *testing.T) {
 		Body:   json.RawMessage(`{"path":"/tmp"}`),
 	})
 	if status != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403, err=%q", status, errMsg)
+		return
 	}
-	if errMsg != "file transfer is not allowed over relay connection" {
-		t.Fatalf("error = %q", errMsg)
+	if errMsg == "file transfer is not allowed over relay connection" {
+		t.Fatalf("file API should be routed on relay without app permission gate, err=%q", errMsg)
 	}
 }
 

@@ -32,6 +32,8 @@ interface PendingRequest {
   reject: (err: Error) => void
 }
 
+const defaultResizePolicy: TerminalResizePolicy = 'owner'
+
 export function createTerminalProtocolClient(options: TerminalProtocolClientOptions): TerminalProtocolSession {
   return new TerminalProtocolClient(options)
 }
@@ -148,13 +150,13 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       this.attachDone = this.request('attach', {
         terminal_id: this.options.terminalId,
         mode: 'collaborator',
-        resize_policy: this.options.resizePolicy ?? 'follower',
+        resize_policy: this.options.resizePolicy ?? defaultResizePolicy,
       }).then((result) => {
         const channel = attachChannel(result)
         if (channel <= 0) {
           throw new Error('attach response channel is required')
         }
-        this.resizeControl = attachResizeControl(result, this.options.resizePolicy ?? 'follower')
+        this.resizeControl = attachResizeControl(result, this.options.resizePolicy ?? defaultResizePolicy)
         this.emit(this.options.terminalId, { type: 'resizeControl', control: this.resizeControl })
         this.streamChannel = channel
         this.flushEarlyStreamFrames(channel)

@@ -5,23 +5,32 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LocalRemoteApp, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createMachineSessionStore } from './localAppIdentity'
 import type { TerminalModifierState } from './mobileTerminalInput'
+import type { TerminalResizeControl } from './terminalClient'
 import type { LocalPairingApi, LocalStatus, RtcSession, TerminalInventoryEvents } from './transport'
 import { createMockFileSession } from './test/mockFileSession'
 import type { TerminalHandle } from './Terminal'
 import type { Terminal } from './model'
 
 vi.mock('./Terminal', () => ({
-  Terminal: forwardRef<TerminalHandle, { machineId: string; terminalId: string; modifierState?: TerminalModifierState }>(function MockTerminal(
-    { machineId, terminalId, modifierState },
+  Terminal: forwardRef<TerminalHandle, {
+    machineId: string
+    terminalId: string
+    modifierState?: TerminalModifierState
+    onResizeControl?: (control: TerminalResizeControl) => void
+  }>(function MockTerminal(
+    { machineId, terminalId, modifierState, onResizeControl },
     ref,
   ) {
+    const reattach = vi.fn()
+    const fit = vi.fn()
+    const focus = vi.fn()
     useImperativeHandle(ref, () => ({
       sendInput: vi.fn(),
       sendResize: vi.fn(),
-      reattach: vi.fn(),
-      focus: vi.fn(),
+      reattach,
+      focus,
       blur: vi.fn(),
-      fit: vi.fn(),
+      fit,
       pasteText: vi.fn(),
       getCursorInfo: vi.fn(() => null),
       adjustInputPosition: vi.fn(),
@@ -33,7 +42,14 @@ vi.mock('./Terminal', () => ({
         data-modifier-state={`${modifierState?.ctrl ?? 'off'}:${modifierState?.alt ?? 'off'}`}
         data-terminal-id={terminalId}
         data-testid="termx-terminal"
-      />
+      >
+        <button
+          type="button"
+          onClick={() => onResizeControl?.({ canResize: false, reason: 'size_locked', sizeLocked: true })}
+        >
+          Emit size lock
+        </button>
+      </section>
     )
   }),
 }))
@@ -272,6 +288,36 @@ describe('LocalRemoteApp', () => {
     expect(sessions[0]?.disconnectCalls).toBe(0)
   })
 
+  it('shows a resize unlock action when attach reports a size lock and clears the lock through management api', async () => {
+    const api = createMockLocalAgentApi()
+    const listTerminals = vi.fn(api.listTerminals)
+    api.listTerminals = listTerminals
+    const managementSession = createMockLocalRemoteSession({
+      set_metadata: {},
+    }, 'machine-local')
+    const connect = vi.fn(async () => managementSession)
+
+    render(<LocalRemoteApp api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-1'))
+
+    await userEvent.click(within(screen.getByTestId('termx-terminal')).getByRole('button', { name: /emit size lock/i }))
+    const unlock = await screen.findByRole('button', { name: /unlock terminal resize/i })
+    await userEvent.click(unlock)
+
+    await waitFor(() => expect(managementSession.requests).toContainEqual({
+      method: 'set_metadata',
+      path: 'set_metadata',
+      params: {
+        terminal_id: 'terminal-1',
+        tags: { 'termx.size_lock': 'off' },
+      },
+    }))
+    expect(listTerminals.mock.calls.length).toBeGreaterThan(1)
+  })
+
   it('refreshes the terminal list when a machine-level inventory event arrives', async () => {
     let terminals: Array<{
       machineId: string
@@ -345,6 +391,46 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.getByText('worker')).toBeTruthy())
     expect(screen.getByText('/srv/worker')).toBeTruthy()
     expect(screen.getByText('prod')).toBeTruthy()
+  })
+
+  it('ignores stale terminal list refreshes that finish after a newer refresh', async () => {
+    const api = createMockLocalAgentApi()
+    const resolvers: Array<(terminals: Terminal[]) => void> = []
+    api.listTerminals = vi.fn(() => new Promise<Terminal[]>((resolve) => {
+      resolvers.push(resolve)
+    }))
+
+    let handler: ((event: { type: 'inventory_changed' }) => void) | null = null
+    const inventoryEvents: TerminalInventoryEvents = {
+      subscribe(_machineId, next) {
+        handler = next
+        return {
+          close() {
+            handler = null
+          },
+        }
+      },
+    }
+
+    render(<LocalRemoteApp api={api} connector={{ connect: vi.fn(async () => { throw new Error('unexpected connect') }) }} inventoryEvents={inventoryEvents} />)
+
+    await waitFor(() => expect(resolvers).toHaveLength(1))
+    resolvers[0]!([terminalFixture({ terminalId: '1', title: 'first' })])
+    await waitFor(() => expect(screen.getByText('first')).toBeTruthy())
+    await waitFor(() => expect(handler).toBeTruthy())
+
+    handler!({ type: 'inventory_changed' })
+    await waitFor(() => expect(resolvers).toHaveLength(2))
+    handler!({ type: 'inventory_changed' })
+    await waitFor(() => expect(resolvers).toHaveLength(3))
+
+    resolvers[2]!([terminalFixture({ terminalId: '2', title: 'newest' })])
+    await waitFor(() => expect(screen.getByText('newest')).toBeTruthy())
+    resolvers[1]!([terminalFixture({ terminalId: '1', title: 'stale' })])
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.getByText('newest')).toBeTruthy()
+    expect(screen.queryByText('stale')).toBeNull()
   })
 
   it('opens a terminal management sheet from a long-press style terminal-list gesture and can edit metadata', async () => {
@@ -437,6 +523,7 @@ describe('LocalRemoteApp', () => {
         dir: '/srv/app',
         env: ['prod'],
         tags: {
+          'termx.size_lock': 'off',
           cwd: '/srv/app',
           environment: 'prod',
         },
@@ -473,7 +560,7 @@ describe('LocalRemoteApp', () => {
       path: 'create',
       params: {
         command: ['/bin/zsh', '-l'],
-        tags: {},
+        tags: { 'termx.size_lock': 'off' },
       },
     }))
     expect(connect).toHaveBeenCalledWith({ machineId: 'machine-local' })
@@ -497,7 +584,7 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.getByTestId('termx-terminal-actions-sheet')).toBeTruthy())
   })
 
-  it('hides terminal management controls when policy denies them', async () => {
+  it('shows terminal management controls without a local capability policy', async () => {
     const baseApi = createMockLocalAgentApi()
     const api = {
       getStatus: baseApi.getStatus,
@@ -508,14 +595,13 @@ describe('LocalRemoteApp', () => {
       <LocalRemoteApp
         api={api}
         connector={{ connect: vi.fn(async () => { throw new Error('unexpected connect') }) }}
-        managementPolicy={{ terminalManagementAllowed: false, denialReason: 'upgrade required' }}
       />,
     )
 
     await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
-    expect(screen.queryByRole('button', { name: /create terminal/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /create terminal/i })).toBeTruthy()
     fireEvent.contextMenu(screen.getByRole('button', { name: /open zsh/i }))
-    expect(screen.queryByTestId('termx-terminal-actions-sheet')).toBeNull()
+    expect(screen.getByTestId('termx-terminal-actions-sheet')).toBeTruthy()
   })
 
   it('refreshes terminals from the list header action', async () => {
@@ -719,6 +805,23 @@ function createMockLocalAgentApi() {
         environment: 'prod',
       }]
     },
+  }
+}
+
+function terminalFixture(overrides: Partial<Terminal>): Terminal {
+  return {
+    machineId: overrides.machineId ?? 'machine-local',
+    terminalId: overrides.terminalId ?? 'terminal-1',
+    title: overrides.title ?? 'zsh',
+    state: overrides.state ?? 'running',
+    command: overrides.command,
+    cols: overrides.cols,
+    rows: overrides.rows,
+    cwd: overrides.cwd,
+    sizeLocked: overrides.sizeLocked,
+    sizeLockMode: overrides.sizeLockMode,
+    environment: overrides.environment,
+    lastActiveAt: overrides.lastActiveAt,
   }
 }
 

@@ -157,6 +157,9 @@ export class LocalApiChannel implements RtcJsonRpcChannel {
   private readonly waiters = new Map<string, {
     chunks: Uint8Array[]
     timeout: ReturnType<typeof setTimeout> | null
+    method: string
+    path: string
+    startedAt: number
     resolve: (value: unknown) => void
     reject: (err: Error) => void
   }>()
@@ -174,6 +177,9 @@ export class LocalApiChannel implements RtcJsonRpcChannel {
       this.waiters.set(id, {
         chunks: [],
         timeout: null,
+        method: payload.method,
+        path: payload.path,
+        startedAt: Date.now(),
         resolve: (value) => {
           this.clearWaiterTimeout(id)
           resolve(value as TResponse)
@@ -189,6 +195,14 @@ export class LocalApiChannel implements RtcJsonRpcChannel {
       const sendRequest = () => {
         try {
           this.startResponseTimeout(id)
+          this.logAPI('request', {
+            id,
+            channel: this.channel.label,
+            readyState: this.channel.readyState,
+            method: payload.method,
+            path: payload.path,
+            body: summarizeAPIValue(payload.body, payload.path),
+          })
           this.channel.send(JSON.stringify({
             id,
             method: payload.method,
@@ -256,6 +270,15 @@ export class LocalApiChannel implements RtcJsonRpcChannel {
       this.rejectWaiter(frame.id, err instanceof Error ? err : new Error(String(err)))
       return
     }
+    this.logAPI(response.status >= 400 ? 'response_error' : 'response', {
+      id: frame.id,
+      channel: this.channel.label,
+      method: waiter.method,
+      path: waiter.path,
+      status: response.status,
+      durationMs: Date.now() - waiter.startedAt,
+      body: summarizeAPIValue(response.body, waiter.path),
+    }, response.status >= 400 ? 'error' : 'info')
     if (response.status >= 400) {
       const error = response.body as { error?: string; message?: string }
       this.rejectWaiter(frame.id, new Error(error.error ?? error.message ?? `local api failed: ${response.status}`))
@@ -295,6 +318,14 @@ export class LocalApiChannel implements RtcJsonRpcChannel {
   private rejectWaiter(id: string, err: Error): void {
     const waiter = this.waiters.get(id)
     if (!waiter) return
+    this.logAPI('error', {
+      id,
+      channel: this.channel.label,
+      method: waiter.method,
+      path: waiter.path,
+      durationMs: Date.now() - waiter.startedAt,
+      error: err.message,
+    }, 'error')
     this.waiters.delete(id)
     if (waiter.timeout) clearTimeout(waiter.timeout)
     waiter.reject(err)
@@ -305,6 +336,15 @@ export class LocalApiChannel implements RtcJsonRpcChannel {
     if (!waiter?.timeout) return
     clearTimeout(waiter.timeout)
     waiter.timeout = null
+  }
+
+  private logAPI(event: string, details: Record<string, unknown>, level: 'info' | 'error' = 'info'): void {
+    if (!shouldLogAPITraffic(details.path)) return
+    try {
+      console[level](`[termx:webrtc-api] ${event} ${safeJSONStringify(details)}`)
+    } catch {
+      // Frontend diagnostics must not affect WebRTC traffic.
+    }
   }
 }
 
@@ -317,4 +357,146 @@ function normalizeChannelSendError(channel: RTCDataChannelLike, err: unknown): E
     return new Error(`api data channel ${channel.label} is not open`)
   }
   return err instanceof Error ? err : new Error(message)
+}
+
+function shouldLogAPITraffic(path: unknown): boolean {
+  return path !== 'ping'
+}
+
+function summarizeAPIValue(value: unknown, path?: string): unknown {
+  return summarizeAPIValueAtDepth(value, path, 0)
+}
+
+function summarizeAPIValueAtDepth(value: unknown, path: string | undefined, depth: number): unknown {
+  if (value === undefined || value === null) return value
+  if (typeof value === 'boolean' || typeof value === 'number') return value
+  if (typeof value === 'string') return summarizeString(value)
+  if (Array.isArray(value)) return summarizeArray(value, path, depth)
+  if (typeof value !== 'object') return String(value)
+
+  const record = value as Record<string, unknown>
+  if (Array.isArray(record.terminals)) {
+    return {
+      ...summarizeObjectWithout(record, new Set(['terminals']), path, depth),
+      terminalCount: record.terminals.length,
+      terminals: record.terminals.slice(0, 25).map(summarizeTerminal),
+    }
+  }
+  if (Array.isArray(record.entries)) {
+    return {
+      ...summarizeObjectWithout(record, new Set(['entries']), path, depth),
+      entryCount: record.entries.length,
+      entries: record.entries.slice(0, 10).map(summarizeFileEntry),
+    }
+  }
+  return summarizeObjectWithout(record, new Set(), path, depth)
+}
+
+function summarizeObjectWithout(
+  record: Record<string, unknown>,
+  skipped: Set<string>,
+  path: string | undefined,
+  depth: number,
+): Record<string, unknown> {
+  if (depth >= 3) return { type: 'object' }
+  const out: Record<string, unknown> = {}
+  for (const [key, nested] of Object.entries(record).slice(0, 30)) {
+    if (skipped.has(key)) continue
+    out[key] = summarizeRecordField(key, nested, path, depth + 1)
+  }
+  if (Object.keys(record).length > 30) out.truncatedKeys = Object.keys(record).length - 30
+  return out
+}
+
+function summarizeRecordField(key: string, value: unknown, path: string | undefined, depth: number): unknown {
+  if (shouldRedactField(key)) {
+    if (typeof value === 'string') return `[redacted ${value.length} chars]`
+    if (value instanceof Uint8Array) return `[redacted ${value.byteLength} bytes]`
+    if (value instanceof ArrayBuffer) return `[redacted ${value.byteLength} bytes]`
+    return '[redacted]'
+  }
+  return summarizeAPIValueAtDepth(value, path, depth)
+}
+
+function summarizeArray(values: unknown[], path: string | undefined, depth: number): unknown {
+  if (depth >= 3) return { type: 'array', length: values.length }
+  return {
+    type: 'array',
+    length: values.length,
+    sample: values.slice(0, 10).map((item) => summarizeAPIValueAtDepth(item, path, depth + 1)),
+  }
+}
+
+function summarizeTerminal(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { value: summarizeAPIValue(value) }
+  }
+  const record = value as Record<string, unknown>
+  return cleanSummary({
+    terminalId: firstString(record.terminal_id, record.terminalId, record.id, record.ID),
+    machineId: firstString(record.machine_id, record.machineId),
+    name: firstString(record.name, record.title, record.Name),
+    state: firstString(record.state, record.State),
+    command: summarizeCommand(record.command ?? record.Command),
+    cols: firstNumber(record.cols, record.Cols),
+    rows: firstNumber(record.rows, record.Rows),
+  })
+}
+
+function summarizeFileEntry(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { value: summarizeAPIValue(value) }
+  }
+  const record = value as Record<string, unknown>
+  return cleanSummary({
+    name: firstString(record.name),
+    path: firstString(record.path),
+    type: firstString(record.type),
+    size: firstNumber(record.size),
+    modifiedAt: firstString(record.modified_at, record.modifiedAt),
+  })
+}
+
+function summarizeCommand(value: unknown): string | undefined {
+  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    return value.join(' ')
+  }
+  return typeof value === 'string' ? value : undefined
+}
+
+function shouldRedactField(key: string): boolean {
+  return /^(data|bytes|content|payload|chunk|buffer|blob)$/i.test(key)
+}
+
+function summarizeString(value: string): string {
+  return value.length > 240 ? `${value.slice(0, 240)}...[${value.length} chars]` : value
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return undefined
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+  }
+  return undefined
+}
+
+function cleanSummary<T extends Record<string, unknown>>(record: T): T {
+  for (const key of Object.keys(record)) {
+    if (record[key] === undefined) delete record[key]
+  }
+  return record
+}
+
+function safeJSONStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return JSON.stringify({ error: 'failed to serialize api log' })
+  }
 }

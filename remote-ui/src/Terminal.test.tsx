@@ -481,6 +481,27 @@ describe('Terminal', () => {
     await waitFor(() => expect(session.sentResize('terminal-1')).toEqual({ cols: 101, rows: 31 }))
   })
 
+  it('reports resize control changes to the app shell', async () => {
+    const session = createMockRtcTerminalSession()
+    session.emitResizeControl('terminal-1', { canResize: false, reason: 'size_locked', sizeLocked: true })
+    const onResizeControl = vi.fn()
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+        onResizeControl={onResizeControl}
+      />,
+    )
+
+    await waitFor(() => expect(onResizeControl).toHaveBeenCalledWith({
+      canResize: false,
+      reason: 'size_locked',
+      sizeLocked: true,
+    }))
+  })
+
   it('does not publish tgent pane/session props on the TermX component boundary', () => {
     const propKeys = Object.keys({
       machineId: 'machine-local',

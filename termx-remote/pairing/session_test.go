@@ -69,8 +69,8 @@ func TestClaimSessionIssuesSessionTokenAndConsumesSecret(t *testing.T) {
 	if claims.SessionID != session.PairSessionID || claims.MachineID != cfg.MachineID {
 		t.Fatalf("claims = %+v", claims)
 	}
-	if got := strings.Join(claims.Capabilities, ","); got != "file_manager,terminal" {
-		t.Fatalf("token capabilities = %q", got)
+	if len(claims.Capabilities) != 0 {
+		t.Fatalf("session token should not carry feature capabilities, got %#v", claims.Capabilities)
 	}
 	if claims.AppDeviceID != "appdev_test" || claims.AppName != "TermX Test App" {
 		t.Fatalf("token app claims = %+v", claims)
@@ -96,7 +96,7 @@ func TestClaimSessionIssuesSessionTokenAndConsumesSecret(t *testing.T) {
 	}
 }
 
-func TestClaimSessionAllowsTerminalManagementCapabilitySeparatelyFromFileManager(t *testing.T) {
+func TestClaimSessionIgnoresRequestedCapabilities(t *testing.T) {
 	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	manager, _, machineSecret := testManager(&now)
 	session, err := manager.CreateSession(5 * time.Minute)
@@ -118,8 +118,8 @@ func TestClaimSessionAllowsTerminalManagementCapabilitySeparatelyFromFileManager
 	if err != nil {
 		t.Fatalf("session token did not verify: %v", err)
 	}
-	if got := strings.Join(claims.Capabilities, ","); got != "file_manager,terminal,terminal_management" {
-		t.Fatalf("expected independent management capability, got %q", got)
+	if len(claims.Capabilities) != 0 {
+		t.Fatalf("session token should not carry requested capabilities, got %#v", claims.Capabilities)
 	}
 }
 
@@ -169,7 +169,7 @@ func TestCleanupExpiredRemovesStalePairSessions(t *testing.T) {
 	}
 }
 
-func TestClaimSessionDoesNotConsumeSecretWhenCapabilitiesAreInvalid(t *testing.T) {
+func TestClaimSessionDoesNotValidateRequestedCapabilities(t *testing.T) {
 	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	manager, _, machineSecret := testManager(&now)
 	session, err := manager.CreateSession(5 * time.Minute)
@@ -177,30 +177,21 @@ func TestClaimSessionDoesNotConsumeSecretWhenCapabilitiesAreInvalid(t *testing.T
 		t.Fatalf("CreateSession returned error: %v", err)
 	}
 
-	if _, err := manager.ClaimSession(ClaimRequest{
-		PairSessionID:         session.PairSessionID,
-		PairSecret:            session.PairSecret,
-		AppDeviceID:           "appdev_test",
-		RequestedCapabilities: []string{"terminal", "admin"},
-	}); err == nil {
-		t.Fatal("expected unsupported capability to be rejected")
-	}
-
 	resp, err := manager.ClaimSession(ClaimRequest{
 		PairSessionID:         session.PairSessionID,
 		PairSecret:            session.PairSecret,
 		AppDeviceID:           "appdev_test",
-		RequestedCapabilities: []string{"terminal"},
+		RequestedCapabilities: []string{"terminal", "admin"},
 	})
 	if err != nil {
-		t.Fatalf("expected valid retry to consume session: %v", err)
+		t.Fatalf("requested capabilities should not block pairing: %v", err)
 	}
 	claims, err := token.Verify(resp.SessionToken, machineSecret, now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("session token did not verify: %v", err)
 	}
-	if len(claims.Capabilities) != 1 || claims.Capabilities[0] != "terminal" {
-		t.Fatalf("expected only terminal capability, got %#v", claims.Capabilities)
+	if len(claims.Capabilities) != 0 {
+		t.Fatalf("session token should not carry requested capabilities, got %#v", claims.Capabilities)
 	}
 }
 

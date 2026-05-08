@@ -335,12 +335,9 @@ function capabilitiesFromManagedSession(answer: ManagedHubSession): ConnectionCa
     terminalAllowed: true,
     apiAllowed: true,
     eventsAllowed: true,
-    fileTransferAllowed: relayInUse ? answer.relayPolicy.allowRelayTransfer : true,
+    fileTransferAllowed: true,
     terminalManagementAllowed: true,
     relayInUse,
-    ...relayInUse && answer.relayPolicy.allowRelayTransfer === false
-      ? { denialReason: 'managed relay policy blocks file transfer' }
-      : {},
   }
 }
 

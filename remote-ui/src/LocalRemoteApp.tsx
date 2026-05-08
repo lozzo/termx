@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ChevronLeft, Folder, KeyRound, Monitor, Plus, RefreshCw, SquarePen, Trash2, X } from 'lucide-react'
+import { ChevronLeft, Folder, KeyRound, Monitor, Plus, RefreshCw, SquarePen, Trash2, Unlock, X } from 'lucide-react'
 import { FileManager } from './FileManager'
-import { evaluateConnectionCapability } from './connectionPolicy'
 import { LocalPairPanel } from './LocalPairPanel'
 import type { MachineSessionStore } from './localAppIdentity'
 import { MobileTerminalKeybar } from './MobileTerminalKeybar'
 import type { TerminalModifierState } from './mobileTerminalInput'
 import { Terminal, type TerminalHandle } from './Terminal'
+import { defaultTerminalResizeControl, type TerminalResizeControl } from './terminalClient'
 import { TerminalList } from './TerminalList'
 import { createTerminalManagementApi } from './terminalManagementApi'
 import type { Machine, Terminal as RemoteTerminal } from './model'
-import type { ConnectionCapabilities, LocalAgentApi, LocalCreateTerminalInput, LocalPairingApi, LocalUpdateTerminalInput, RtcConnector, RtcSession, RtcSessionLiveness, TerminalInventoryEvents } from './transport'
+import type { LocalAgentApi, LocalCreateTerminalInput, LocalPairingApi, LocalUpdateTerminalInput, RtcConnector, RtcSession, RtcSessionLiveness, TerminalInventoryEvents } from './transport'
 
 export interface LocalRemoteInventoryApi extends Pick<LocalAgentApi, 'getStatus'> {
   listTerminals(options?: { onStatus?: (status: string) => void }): Promise<RemoteTerminal[]>
@@ -27,7 +27,6 @@ export interface LocalRemoteAppProps {
   connector: LocalRemoteSessionConnector
   className?: string | undefined
   inventoryEvents?: TerminalInventoryEvents | undefined
-  managementPolicy?: Partial<Pick<ConnectionCapabilities, 'apiAllowed' | 'terminalManagementAllowed' | 'denialReason'>> | undefined
   pair?: {
     api: LocalPairingApi
     sessionStore: MachineSessionStore
@@ -39,7 +38,7 @@ export interface LocalRemoteAppProps {
 type MobileSheet = 'terminals' | 'pair' | 'manage-terminal' | 'edit-terminal' | 'create-terminal' | null
 type AppPage = 'terminal-list' | 'terminal'
 
-export function LocalRemoteApp({ api, connector, className, inventoryEvents, managementPolicy, pair, onBack }: LocalRemoteAppProps) {
+export function LocalRemoteApp({ api, connector, className, inventoryEvents, pair, onBack }: LocalRemoteAppProps) {
   const [machine, setMachine] = useState<Machine | null>(null)
   const [terminals, setTerminals] = useState<RemoteTerminal[]>([])
   const [loadingTerminals, setLoadingTerminals] = useState(true)
@@ -55,6 +54,8 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, man
   const [fileTerminalId, setFileTerminalId] = useState<string | null>(null)
   const [fileInitialPath, setFileInitialPath] = useState('/')
   const [connectionRetryToken, setConnectionRetryToken] = useState(0)
+  const [terminalResizeControl, setTerminalResizeControl] = useState<TerminalResizeControl>(defaultTerminalResizeControl)
+  const [unlockingResize, setUnlockingResize] = useState(false)
 
   const [page, setPage] = useState<AppPage>('terminal-list')
   const [filesOpen, setFilesOpen] = useState(false)
@@ -91,25 +92,14 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, man
   const listPullStartRef = useRef<number | null>(null)
   const listPullDistanceRef = useRef(0)
   const listContainerRef = useRef<HTMLDivElement | null>(null)
+  const terminalRefreshSeqRef = useRef(0)
   const [listPullDistance, setListPullDistance] = useState(0)
   const activeTerminal = terminals.find((terminal) => terminal.terminalId === activeTerminalId)
   const managedTerminal = terminals.find((terminal) => terminal.terminalId === managedTerminalId)
   const activeTerminalTitle = activeTerminal?.title || activeTerminal?.command || activeTerminalId || 'Terminal'
+  const activeTerminalResizeLocked = terminalResizeControl.sizeLocked === true || terminalResizeControl.reason === 'size_locked'
   const requireVerification = Boolean(pair && !verifiedDevice)
-  const canManageTerminals = evaluateConnectionCapability({
-    path: 'local',
-    connectionId: 'local-management-policy',
-    machineId: machine?.machineId ?? 'pending',
-    relayInUse: false,
-  }, {
-    terminalAllowed: true,
-    apiAllowed: managementPolicy?.apiAllowed ?? true,
-    eventsAllowed: true,
-    fileTransferAllowed: true,
-    terminalManagementAllowed: managementPolicy?.terminalManagementAllowed ?? true,
-    relayInUse: false,
-    ...(managementPolicy?.denialReason ? { denialReason: managementPolicy.denialReason } : {}),
-  }, 'terminal_management').allowed
+  const canManageTerminals = true
 
   const disconnectMachineSession = useCallback(() => {
     machineSessionConnectSeqRef.current += 1
@@ -191,41 +181,53 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, man
   }, [ensureMachineSession, machine])
 
   const refreshTerminals = useCallback(async () => {
+    const seq = terminalRefreshSeqRef.current + 1
+    terminalRefreshSeqRef.current = seq
     setRefreshingTerminals(true)
     try {
       const status = await api.getStatus()
+      if (terminalRefreshSeqRef.current !== seq) return
       setMachine(status.machine)
       const terminalList = await api.listTerminals({
-        onStatus: setConnectionStatus,
+        onStatus: (status) => {
+          if (terminalRefreshSeqRef.current === seq) setConnectionStatus(status)
+        },
       })
+      if (terminalRefreshSeqRef.current !== seq) return
       setTerminals(terminalList)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      if (terminalRefreshSeqRef.current === seq) setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setRefreshingTerminals(false)
-      setConnectionStatus(null)
-      setLoadingTerminals(false)
+      if (terminalRefreshSeqRef.current === seq) {
+        setRefreshingTerminals(false)
+        setConnectionStatus(null)
+        setLoadingTerminals(false)
+      }
     }
   }, [api])
 
   useEffect(() => {
     let cancelled = false
+    const seq = terminalRefreshSeqRef.current + 1
+    terminalRefreshSeqRef.current = seq
     async function load() {
       setLoadingTerminals(true)
       try {
         const status = await api.getStatus()
-        if (cancelled) return
+        if (cancelled || terminalRefreshSeqRef.current !== seq) return
         setMachine(status.machine)
         const terminalList = await api.listTerminals({
-          onStatus: (status) => !cancelled && setConnectionStatus(status),
+          onStatus: (status) => {
+            if (!cancelled && terminalRefreshSeqRef.current === seq) setConnectionStatus(status)
+          },
         })
-        if (cancelled) return
+        if (cancelled || terminalRefreshSeqRef.current !== seq) return
         setTerminals(terminalList)
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+        if (!cancelled && terminalRefreshSeqRef.current === seq) setError(err instanceof Error ? err.message : String(err))
       } finally {
-        if (!cancelled) {
+        if (!cancelled && terminalRefreshSeqRef.current === seq) {
           setLoadingTerminals(false)
           setConnectionStatus(null)
         }
@@ -451,6 +453,30 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, man
     setPairStatus(`Updated ${input.name || managedTerminal?.title || managedTerminalId}`)
     setMobileSheet(null)
   }, [canManageTerminals, managedTerminal, managedTerminalId, refreshTerminals, terminalForm, withManagementApi])
+
+  const unlockTerminalResize = useCallback(async () => {
+    if (!canManageTerminals || !activeTerminalId) return
+    setUnlockingResize(true)
+    try {
+      const management = await withManagementApi()
+      await management.api.updateTerminal({
+        terminalId: activeTerminalId,
+        sizeLockMode: 'off',
+      })
+      setTerminalResizeControl(defaultTerminalResizeControl)
+      await refreshTerminals()
+      terminalRef.current?.reattach(management.session)
+      window.setTimeout(() => {
+        terminalRef.current?.fit()
+        terminalRef.current?.focus()
+      }, 0)
+      setPairStatus('Resize unlocked')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setUnlockingResize(false)
+    }
+  }, [activeTerminalId, canManageTerminals, refreshTerminals, withManagementApi])
 
   const deleteManagedTerminal = useCallback(async () => {
     if (!canManageTerminals || !managedTerminalId) return
@@ -733,6 +759,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, man
   }
 
   useEffect(() => {
+    setTerminalResizeControl(defaultTerminalResizeControl)
     if (typeof window === 'undefined' || !window.visualViewport) {
       terminalRef.current?.adjustInputPosition(0)
       return
@@ -885,12 +912,25 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, man
                 modifierState={modifierState}
                 onModifierStateChange={setModifierState}
                 onCursorMove={resetKeyboardOffset}
+                onResizeControl={setTerminalResizeControl}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-zinc-500">
                 {activeTerminalId && connectingTerminalId === activeTerminalId ? 'Connecting terminal...' : 'No active terminal'}
               </div>
             )}
+            {activeTerminalId && connectedSession && connectedTerminalId === activeTerminalId && activeTerminalResizeLocked ? (
+              <button
+                type="button"
+                aria-label="Unlock terminal resize"
+                className="absolute right-3 top-3 z-20 flex min-h-9 items-center gap-2 rounded-md border border-zinc-700 bg-zinc-950/90 px-3 text-[13px] font-semibold text-zinc-100 shadow-lg backdrop-blur active:bg-zinc-800 disabled:opacity-60"
+                disabled={unlockingResize}
+                onClick={() => { void unlockTerminalResize() }}
+              >
+                <Unlock className="h-4 w-4" />
+                {unlockingResize ? 'Unlocking...' : 'Unlock resize'}
+              </button>
+            ) : null}
           </div>
 
         </div>

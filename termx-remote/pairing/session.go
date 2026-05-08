@@ -18,12 +18,6 @@ const (
 	defaultTokenTTL   = 24 * time.Hour
 )
 
-var allowedCapabilities = map[string]struct{}{
-	"terminal":            {},
-	"file_manager":        {},
-	"terminal_management": {},
-}
-
 type Config struct {
 	MachineID       string
 	MachineName     string
@@ -177,23 +171,18 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 		return ClaimResponse{}, err
 	}
 
-	capabilities, err := normalizeRequestedCapabilities(req.RequestedCapabilities)
-	if err != nil {
-		return ClaimResponse{}, err
-	}
 	tokenTTL := cfg.DefaultTokenTTL
 	if tokenTTL <= 0 {
 		tokenTTL = defaultTokenTTL
 	}
 	expiresAt := now.Add(tokenTTL).UTC()
 	claims := token.Claims{
-		SessionID:    session.PairSessionID,
-		MachineID:    strings.TrimSpace(cfg.MachineID),
-		AppDeviceID:  strings.TrimSpace(req.AppDeviceID),
-		AppName:      strings.TrimSpace(req.AppName),
-		Capabilities: capabilities,
-		IssuedAt:     now.Unix(),
-		ExpiresAt:    expiresAt.Unix(),
+		SessionID:   session.PairSessionID,
+		MachineID:   strings.TrimSpace(cfg.MachineID),
+		AppDeviceID: strings.TrimSpace(req.AppDeviceID),
+		AppName:     strings.TrimSpace(req.AppName),
+		IssuedAt:    now.Unix(),
+		ExpiresAt:   expiresAt.Unix(),
 	}
 	if strings.TrimSpace(session.AnswerProofSecret) != "" {
 		sealedProof, err := token.SealAnswerProofKey(cfg.MachineSecret, claims, session.AnswerProofSecret)
@@ -274,29 +263,6 @@ func validateConfig(cfg Config) error {
 		return errors.New("machine secret is required")
 	}
 	return nil
-}
-
-func normalizeRequestedCapabilities(capabilities []string) ([]string, error) {
-	if len(capabilities) == 0 {
-		return nil, errors.New("requested_capabilities are required")
-	}
-	out := make([]string, 0, len(capabilities))
-	seen := make(map[string]struct{}, len(capabilities))
-	for _, capability := range capabilities {
-		capability = strings.TrimSpace(capability)
-		if capability == "" {
-			return nil, errors.New("requested_capabilities must not contain empty values")
-		}
-		if _, ok := allowedCapabilities[capability]; !ok {
-			return nil, fmt.Errorf("unsupported capability %q", capability)
-		}
-		if _, ok := seen[capability]; ok {
-			return nil, fmt.Errorf("duplicate capability %q", capability)
-		}
-		seen[capability] = struct{}{}
-		out = append(out, capability)
-	}
-	return out, nil
 }
 
 func randomToken(prefix string, byteLen int) (string, error) {
