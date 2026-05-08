@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ChevronLeft, Folder, KeyRound, Monitor, Plus, RefreshCw, SquarePen, Trash2, Unlock, X } from 'lucide-react'
+import { ChevronLeft, Folder, KeyRound, Link2, Link2Off, Monitor, PanelBottomClose, Plus, RefreshCw, Rows2, SquarePen, Trash2, Unlock, X } from 'lucide-react'
 import { FileManager } from './FileManager'
 import { LocalPairPanel } from './LocalPairPanel'
 import type { MachineSessionStore } from './localAppIdentity'
 import { MobileTerminalKeybar } from './MobileTerminalKeybar'
 import type { TerminalModifierState } from './mobileTerminalInput'
+import { PasteConfirmDialog } from './PasteConfirmDialog'
 import { Terminal, type TerminalHandle } from './Terminal'
+import { TerminalActionToolbar, type TerminalToolbarMode } from './TerminalActionToolbar'
+import { TerminalFnPanel } from './TerminalFnPanel'
 import { defaultTerminalResizeControl, type TerminalResizeControl } from './terminalClient'
 import { TerminalList } from './TerminalList'
 import { createTerminalManagementApi } from './terminalManagementApi'
@@ -35,8 +38,9 @@ export interface LocalRemoteAppProps {
   onBack?: (() => void) | undefined
 }
 
-type MobileSheet = 'terminals' | 'pair' | 'manage-terminal' | 'edit-terminal' | 'create-terminal' | null
+type MobileSheet = 'terminals' | 'split-terminal' | 'pair' | 'manage-terminal' | 'edit-terminal' | 'create-terminal' | null
 type AppPage = 'terminal-list' | 'terminal'
+type TerminalSlot = 0 | 1
 
 export function LocalRemoteApp({ api, connector, className, inventoryEvents, pair, onBack }: LocalRemoteAppProps) {
   const [machine, setMachine] = useState<Machine | null>(null)
@@ -75,7 +79,16 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
     sizeLockMode: 'off',
   })
   const [modifierState, setModifierState] = useState<TerminalModifierState>({ ctrl: 'off', alt: 'off' })
+  const [terminalToolbarOpen, setTerminalToolbarOpen] = useState(false)
+  const [terminalToolbarMode, setTerminalToolbarMode] = useState<TerminalToolbarMode>('default')
+  const [terminalFnOpen, setTerminalFnOpen] = useState(false)
+  const [hasTerminalSelection, setHasTerminalSelection] = useState(false)
+  const [pasteConfirmText, setPasteConfirmText] = useState('')
+  const [splitTerminalId, setSplitTerminalId] = useState<string | null>(null)
+  const [activeTerminalSlot, setActiveTerminalSlot] = useState<TerminalSlot>(0)
+  const [syncSplitInput, setSyncSplitInput] = useState(false)
   const terminalRef = useRef<TerminalHandle | null>(null)
+  const splitTerminalRef = useRef<TerminalHandle | null>(null)
   const machineSessionRef = useRef<{
     connector: LocalRemoteSessionConnector
     machineId: string
@@ -95,8 +108,12 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
   const terminalRefreshSeqRef = useRef(0)
   const [listPullDistance, setListPullDistance] = useState(0)
   const activeTerminal = terminals.find((terminal) => terminal.terminalId === activeTerminalId)
+  const splitTerminal = terminals.find((terminal) => terminal.terminalId === splitTerminalId)
+  const activeToolTerminal = activeTerminalSlot === 1 && splitTerminal ? splitTerminal : activeTerminal
   const managedTerminal = terminals.find((terminal) => terminal.terminalId === managedTerminalId)
   const activeTerminalTitle = activeTerminal?.title || activeTerminal?.command || activeTerminalId || 'Terminal'
+  const splitTerminalTitle = splitTerminal?.title || splitTerminal?.command || splitTerminalId || 'Terminal'
+  const terminalHeaderTitle = splitTerminalId ? `${activeTerminalTitle} / ${splitTerminalTitle}` : activeTerminalTitle
   const activeTerminalResizeLocked = terminalResizeControl.sizeLocked === true || terminalResizeControl.reason === 'size_locked'
   const requireVerification = Boolean(pair && !verifiedDevice)
   const canManageTerminals = true
@@ -324,9 +341,99 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
       return
     }
     setActiveTerminalId(intent.terminalId)
+    if (splitTerminalId === intent.terminalId) {
+      setSplitTerminalId(null)
+      setActiveTerminalSlot(0)
+      setSyncSplitInput(false)
+    }
     setPage('terminal')
     setMobileSheet(null)
-  }, [machine, requireVerification])
+  }, [machine, requireVerification, splitTerminalId])
+
+  const openSplitTerminalSheet = useCallback(() => {
+    if (requireVerification) {
+      setMobileSheet('pair')
+      return
+    }
+    if (!activeTerminalId) {
+      setError('Open a terminal before starting split view')
+      return
+    }
+    const availableTerminals = terminals.filter((terminal) => terminal.terminalId !== activeTerminalId)
+    if (availableTerminals.length === 0) {
+      setPairStatus('No other terminal to split')
+      return
+    }
+    setTerminalToolbarOpen(false)
+    setTerminalFnOpen(false)
+    setMobileSheet('split-terminal')
+  }, [activeTerminalId, requireVerification, terminals])
+
+  const selectSplitTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
+    if (machine && intent.machineId !== machine.machineId) {
+      setError(`terminal machine mismatch: ${intent.machineId} != ${machine.machineId}`)
+      return
+    }
+    if (intent.terminalId === activeTerminalId) {
+      setPairStatus('Choose a different terminal')
+      return
+    }
+    setSplitTerminalId(intent.terminalId)
+    setActiveTerminalSlot(1)
+    setMobileSheet(null)
+    window.setTimeout(() => {
+      terminalRef.current?.fit()
+      splitTerminalRef.current?.fit()
+      splitTerminalRef.current?.focus()
+    }, 0)
+  }, [activeTerminalId, machine])
+
+  const closeSplitTerminal = useCallback(() => {
+    setSplitTerminalId(null)
+    setActiveTerminalSlot(0)
+    setSyncSplitInput(false)
+    window.setTimeout(() => {
+      terminalRef.current?.fit()
+      terminalRef.current?.focus()
+    }, 0)
+  }, [])
+
+  const activeTerminalHandle = useCallback(() => {
+    if (activeTerminalSlot === 1 && splitTerminalId) return splitTerminalRef.current
+    return terminalRef.current
+  }, [activeTerminalSlot, splitTerminalId])
+
+  const sendTerminalInput = useCallback((data: string) => {
+    if (syncSplitInput && splitTerminalId) {
+      terminalRef.current?.sendInput(data)
+      splitTerminalRef.current?.sendInput(data)
+      return
+    }
+    activeTerminalHandle()?.sendInput(data)
+  }, [activeTerminalHandle, splitTerminalId, syncSplitInput])
+
+  const pasteTerminalText = useCallback((text: string) => {
+    if (syncSplitInput && splitTerminalId) {
+      terminalRef.current?.pasteText(text)
+      splitTerminalRef.current?.pasteText(text)
+      return
+    }
+    activeTerminalHandle()?.pasteText(text)
+  }, [activeTerminalHandle, splitTerminalId, syncSplitInput])
+
+  const focusActiveTerminal = useCallback(() => {
+    activeTerminalHandle()?.focus()
+  }, [activeTerminalHandle])
+
+  useEffect(() => {
+    if (!splitTerminalId) return
+    const splitStillAvailable = terminals.some((terminal) => terminal.terminalId === splitTerminalId)
+    if (splitTerminalId === activeTerminalId || !splitStillAvailable) {
+      setSplitTerminalId(null)
+      setActiveTerminalSlot(0)
+      setSyncSplitInput(false)
+    }
+  }, [activeTerminalId, splitTerminalId, terminals])
 
   const handlePaired = useCallback((machineId: string) => {
     setError(null)
@@ -352,7 +459,11 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
   const showTerminalListPage = useCallback(() => {
     setPage('terminal-list')
     setMobileSheet(null)
+    setSplitTerminalId(null)
+    setActiveTerminalSlot(0)
+    setSyncSplitInput(false)
     terminalRef.current?.adjustInputPosition(0)
+    splitTerminalRef.current?.adjustInputPosition(0)
   }, [])
 
   const openFiles = useCallback(() => {
@@ -360,7 +471,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
       setMobileSheet('pair')
       return
     }
-    const fileTerminal = activeTerminal ?? terminals[0]
+    const fileTerminal = activeToolTerminal ?? terminals[0]
     if (!machine || !fileTerminal) {
       setError('No terminal is available for local file access')
       return
@@ -377,7 +488,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
     })
     setFilesOpen(true)
     setMobileSheet(null)
-  }, [activeTerminal, ensureMachineSession, fileTerminalId, machine, pair, requireVerification, terminals])
+  }, [activeToolTerminal, ensureMachineSession, fileTerminalId, machine, pair, requireVerification, terminals])
 
   const openManageTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {
@@ -486,28 +597,73 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
     await management.api.deleteTerminal(deletedTerminalId)
     if (activeTerminalId === deletedTerminalId) {
       setActiveTerminalId(null)
+      setSplitTerminalId(null)
+      setActiveTerminalSlot(0)
+      setSyncSplitInput(false)
       setPage('terminal-list')
     }
     if (fileTerminalId === deletedTerminalId) {
       setFilesOpen(false)
       setFileTerminalId(null)
     }
+    if (splitTerminalId === deletedTerminalId) {
+      setSplitTerminalId(null)
+      setActiveTerminalSlot(0)
+      setSyncSplitInput(false)
+    }
     await refreshTerminals()
     setPairStatus(`Deleted ${deletedTitle}`)
     setMobileSheet(null)
-  }, [activeTerminalId, canManageTerminals, fileTerminalId, managedTerminal, managedTerminalId, refreshTerminals, withManagementApi])
+  }, [activeTerminalId, canManageTerminals, fileTerminalId, managedTerminal, managedTerminalId, refreshTerminals, splitTerminalId, withManagementApi])
 
   const openTerminalPanel = useCallback(() => {
     setFilesOpen(false)
     window.setTimeout(() => {
       terminalRef.current?.fit()
-      terminalRef.current?.focus()
+      splitTerminalRef.current?.fit()
+      focusActiveTerminal()
     }, 0)
-  }, [])
+  }, [focusActiveTerminal])
 
   const resetKeyboardOffset = useCallback(() => {
     terminalRef.current?.adjustInputPosition(0)
+    splitTerminalRef.current?.adjustInputPosition(0)
   }, [])
+
+  const setTerminalToolbarModeAndReset = useCallback((mode: TerminalToolbarMode) => {
+    setTerminalToolbarMode(mode)
+    if (mode !== 'selection') {
+      setHasTerminalSelection(false)
+      activeTerminalHandle()?.clearSelection()
+    }
+  }, [activeTerminalHandle])
+
+  useEffect(() => {
+    if (!terminalToolbarOpen || terminalToolbarMode !== 'selection') return
+    const timer = window.setInterval(() => {
+      setHasTerminalSelection(activeTerminalHandle()?.hasSelection() ?? false)
+    }, 200)
+    return () => window.clearInterval(timer)
+  }, [activeTerminalHandle, terminalToolbarMode, terminalToolbarOpen])
+
+  const handleTerminalPaste = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (!text) {
+        setPairStatus('Clipboard is empty')
+        return
+      }
+      const needsConfirm = text.length > 200 || text.includes('\n') || text.includes('\r')
+      if (needsConfirm) {
+        setPasteConfirmText(text)
+        return
+      }
+      pasteTerminalText(text)
+      setTerminalToolbarOpen(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to read clipboard')
+    }
+  }, [pasteTerminalText])
 
   const renderTerminalListPage = () => {
     if (!machine) return null
@@ -762,6 +918,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
     setTerminalResizeControl(defaultTerminalResizeControl)
     if (typeof window === 'undefined' || !window.visualViewport) {
       terminalRef.current?.adjustInputPosition(0)
+      splitTerminalRef.current?.adjustInputPosition(0)
       return
     }
 
@@ -775,7 +932,9 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
         const bottomOffset = currentViewport
           ? Math.max(0, Math.round(window.innerHeight - currentViewport.height - currentViewport.offsetTop))
           : 0
-        terminalRef.current?.adjustInputPosition(bottomOffset > 80 ? bottomOffset : 0)
+        const keyboardOffset = bottomOffset > 80 ? bottomOffset : 0
+        terminalRef.current?.adjustInputPosition(keyboardOffset)
+        splitTerminalRef.current?.adjustInputPosition(keyboardOffset)
       })
     }
 
@@ -788,6 +947,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
       viewport.removeEventListener('resize', syncKeyboardOffset)
       viewport.removeEventListener('scroll', syncKeyboardOffset)
       terminalRef.current?.adjustInputPosition(0)
+      splitTerminalRef.current?.adjustInputPosition(0)
     }
   }, [activeTerminalId, connectedSession])
 
@@ -858,49 +1018,138 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
 
       {page === 'terminal-list' ? renderTerminalListPage() : (
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-black">
-        <header className="relative z-10 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/80 px-2 backdrop-blur-xl md:hidden">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        <header className="absolute inset-x-0 top-0 z-30 flex h-10 items-center justify-between gap-1 border-b border-zinc-800/70 bg-zinc-950/70 px-1.5 backdrop-blur-lg md:hidden">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
             <button
               type="button"
               aria-label="Back to terminal list"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-zinc-400 transition-colors active:bg-zinc-800"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors active:bg-zinc-800"
               onClick={showTerminalListPage}
             >
-              <ChevronLeft className="h-6 w-6" />
+              <ChevronLeft className="h-5 w-5" />
             </button>
             <button
               type="button"
               aria-label="Switch terminal"
-              className="flex min-w-0 flex-1 flex-col items-start justify-center rounded-xl px-2 py-1 text-left transition-colors active:bg-zinc-800"
+              className="flex min-w-0 flex-1 flex-col items-start justify-center rounded-md px-1.5 py-0.5 text-left transition-colors active:bg-zinc-800"
               onClick={() => setMobileSheet('terminals')}
             >
-              <span className="max-w-full truncate text-[11px] font-bold uppercase tracking-wider text-zinc-500">{machine.name}</span>
-              <span className="max-w-full truncate text-[15px] font-semibold leading-tight text-zinc-100" data-testid="termx-terminal-title">{activeTerminalTitle}</span>
+              <span className="max-w-full truncate text-[9px] font-bold uppercase tracking-wider text-zinc-500">{machine.name}</span>
+              <span className="max-w-full truncate text-[12px] font-semibold leading-tight text-zinc-100" data-testid="termx-terminal-title">{terminalHeaderTitle}</span>
             </button>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              aria-label="Split terminal"
+              aria-pressed={Boolean(splitTerminalId)}
+              onClick={openSplitTerminalSheet}
+              className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${splitTerminalId ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 active:bg-zinc-800'}`}
+            >
+              <Rows2 className="h-4 w-4" />
+            </button>
+            {splitTerminalId ? (
+              <>
+                <button
+                  type="button"
+                  aria-label={syncSplitInput ? 'Disable synchronized input' : 'Enable synchronized input'}
+                  aria-pressed={syncSplitInput}
+                  onClick={() => setSyncSplitInput((current) => !current)}
+                  className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${syncSplitInput ? 'bg-blue-500 text-white' : 'text-zinc-400 active:bg-zinc-800'}`}
+                >
+                  {syncSplitInput ? <Link2 className="h-4 w-4" /> : <Link2Off className="h-4 w-4" />}
+                </button>
+                <button
+                  type="button"
+                  aria-label="Close split terminal"
+                  onClick={closeSplitTerminal}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 transition-colors active:scale-95 active:bg-zinc-800"
+                >
+                  <PanelBottomClose className="h-4 w-4" />
+                </button>
+              </>
+            ) : null}
+            <button
+              type="button"
+              aria-label="Terminal tools"
+              onClick={() => {
+                setTerminalToolbarOpen((current) => {
+                  const next = !current
+                  if (next) setTerminalFnOpen(false)
+                  if (!next) setTerminalToolbarModeAndReset('default')
+                  return next
+                })
+              }}
+              className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${terminalToolbarOpen ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 active:bg-zinc-800'}`}
+            >
+              <span className="text-[13px] font-bold leading-none">•••</span>
+            </button>
             <button
               type="button"
               aria-label="Open files"
               onClick={openFiles}
-              className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors active:scale-95 ${filesOpen ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 active:bg-zinc-800'}`}
+              className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${filesOpen ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 active:bg-zinc-800'}`}
             >
-              <Folder className="h-5 w-5" />
+              <Folder className="h-4 w-4" />
             </button>
           </div>
         </header>
 
+        {terminalToolbarOpen ? (
+          <TerminalActionToolbar
+            mode={terminalToolbarMode}
+            hasSelection={hasTerminalSelection}
+            onModeChange={setTerminalToolbarModeAndReset}
+            onSelectAll={() => {
+              activeTerminalHandle()?.selectAll()
+              setHasTerminalSelection(true)
+            }}
+            onSelectVisible={() => {
+              activeTerminalHandle()?.selectVisible()
+              setHasTerminalSelection(true)
+            }}
+            onCopy={() => {
+              const selected = activeTerminalHandle()?.getSelection() ?? ''
+              if (!selected) return
+              void navigator.clipboard.writeText(selected).then(() => {
+                setPairStatus('Copied')
+                setTerminalToolbarOpen(false)
+                setTerminalToolbarModeAndReset('default')
+              }).catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : 'Copy failed')
+              })
+            }}
+            onPaste={() => { void handleTerminalPaste() }}
+            onOpenSnippets={() => {
+              setTerminalFnOpen((current) => !current)
+              setTerminalToolbarOpen(false)
+            }}
+          />
+        ) : null}
+
+        {terminalFnOpen ? (
+          <TerminalFnPanel
+            command={activeToolTerminal?.command || activeToolTerminal?.title}
+            onSend={(data) => {
+              sendTerminalInput(data)
+              if (data.endsWith('\n')) setTerminalFnOpen(false)
+            }}
+          />
+        ) : null}
+
         {error ? (
-          <div className="m-3 shrink-0 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-[14px] font-medium text-red-200 shadow-sm" role="alert">
+          <div className="absolute inset-x-0 top-10 z-40 border-y border-red-500/30 bg-red-950/90 px-3 py-2 text-[12px] font-medium text-red-100 shadow-lg backdrop-blur md:top-3" role="alert">
             {error}
           </div>
         ) : null}
 
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-black md:bg-zinc-950">
+        <div className={`relative flex min-h-0 flex-1 flex-col overflow-hidden bg-black md:bg-zinc-950 ${splitTerminalId ? 'gap-px md:gap-3 md:p-3' : ''}`}>
           <div
-            className="relative min-h-0 flex-1 bg-black md:m-3 md:rounded-2xl md:border md:border-zinc-800 md:shadow-2xl md:overflow-hidden"
+            className={`relative min-h-0 flex-1 bg-black ${splitTerminalId ? `border-b border-zinc-800 md:rounded-xl md:border md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 0 ? 'shadow-[inset_0_0_0_1px_rgba(96,165,250,0.55)]' : ''}` : 'md:m-3 md:rounded-2xl md:border md:border-zinc-800 md:shadow-2xl md:overflow-hidden'}`}
+            data-active-slot={activeTerminalSlot === 0 ? 'true' : 'false'}
             data-testid="termx-terminal-panel"
+            onPointerDown={() => setActiveTerminalSlot(0)}
           >
             {activeTerminalId && connectedSession && connectedTerminalId === activeTerminalId ? (
               <Terminal
@@ -913,6 +1162,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
                 onModifierStateChange={setModifierState}
                 onCursorMove={resetKeyboardOffset}
                 onResizeControl={setTerminalResizeControl}
+                selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 0}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-zinc-500">
@@ -923,25 +1173,69 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
               <button
                 type="button"
                 aria-label="Unlock terminal resize"
-                className="absolute right-3 top-3 z-20 flex min-h-9 items-center gap-2 rounded-md border border-zinc-700 bg-zinc-950/90 px-3 text-[13px] font-semibold text-zinc-100 shadow-lg backdrop-blur active:bg-zinc-800 disabled:opacity-60"
+                className={`absolute right-2 z-20 flex min-h-7 items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-950/90 px-2 text-[11px] font-semibold text-zinc-100 shadow-lg backdrop-blur active:bg-zinc-800 disabled:opacity-60 ${splitTerminalId ? 'top-16' : 'top-12'}`}
                 disabled={unlockingResize}
                 onClick={() => { void unlockTerminalResize() }}
               >
-                <Unlock className="h-4 w-4" />
+                <Unlock className="h-3.5 w-3.5" />
                 {unlockingResize ? 'Unlocking...' : 'Unlock resize'}
               </button>
             ) : null}
           </div>
 
+          {splitTerminalId ? (
+            <div
+              className={`relative min-h-0 flex-1 bg-black md:rounded-xl md:border md:border-zinc-800 md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 1 ? 'shadow-[inset_0_0_0_1px_rgba(96,165,250,0.55)]' : ''}`}
+              data-active-slot={activeTerminalSlot === 1 ? 'true' : 'false'}
+              data-testid="termx-split-terminal-panel"
+              onPointerDown={() => setActiveTerminalSlot(1)}
+            >
+              {connectedSession ? (
+                <Terminal
+                  ref={splitTerminalRef}
+                  machineId={machine.machineId}
+                  terminalId={splitTerminalId}
+                  session={connectedSession}
+                  className="absolute inset-0 outline-none"
+                  modifierState={modifierState}
+                  onModifierStateChange={setModifierState}
+                  onCursorMove={resetKeyboardOffset}
+                  selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 1}
+                />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-500">
+                  Connecting terminal...
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
 
         <MobileTerminalKeybar
-          onInput={(data) => terminalRef.current?.sendInput(data)}
-          onFocusKeyboard={() => terminalRef.current?.focus()}
-          onBlurKeyboard={() => terminalRef.current?.blur()}
+          onInput={sendTerminalInput}
+          onFocusKeyboard={focusActiveTerminal}
+          onBlurKeyboard={() => activeTerminalHandle()?.blur()}
+          fnOpen={terminalFnOpen}
+          onToggleFn={() => {
+            setTerminalFnOpen((current) => !current)
+            setTerminalToolbarOpen(false)
+          }}
           modifierState={modifierState}
           onModifierStateChange={setModifierState}
         />
+
+        {pasteConfirmText ? (
+          <PasteConfirmDialog
+            text={pasteConfirmText}
+            onCancel={() => setPasteConfirmText('')}
+            onConfirm={() => {
+              pasteTerminalText(pasteConfirmText)
+              setPasteConfirmText('')
+              setTerminalToolbarOpen(false)
+              setTerminalToolbarModeAndReset('default')
+            }}
+          />
+        ) : null}
 
         {mobileSheet === 'terminals' ? (
           <MobileSheetPanel title="Terminals" testId="termx-terminal-switcher-sheet" onClose={() => setMobileSheet(null)}>
@@ -951,6 +1245,23 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
               onOpenTerminal={openTerminal}
               activeTerminalId={activeTerminalId ?? undefined}
             />
+          </MobileSheetPanel>
+        ) : null}
+
+        {mobileSheet === 'split-terminal' ? (
+          <MobileSheetPanel title="Split Terminal" testId="termx-split-terminal-sheet" onClose={() => setMobileSheet(null)}>
+            {terminals.filter((terminal) => terminal.terminalId !== activeTerminalId).length > 0 ? (
+              <TerminalList
+                machineId={machine.machineId}
+                terminals={terminals.filter((terminal) => terminal.terminalId !== activeTerminalId)}
+                onOpenTerminal={selectSplitTerminal}
+                activeTerminalId={splitTerminalId ?? undefined}
+              />
+            ) : (
+              <div className="flex min-h-24 items-center justify-center rounded-xl border border-dashed border-zinc-200 bg-white text-sm font-medium text-zinc-500">
+                No other terminal available
+              </div>
+            )}
           </MobileSheetPanel>
         ) : null}
 

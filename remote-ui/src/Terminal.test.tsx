@@ -18,11 +18,21 @@ const xtermMocks = vi.hoisted(() => {
       active: {
         type: 'normal' as const,
         cursorY: 0,
+        length: 200,
+        viewportY: 20,
       },
       onBufferChange: vi.fn(() => ({ dispose: vi.fn() })),
     }
     private readonly dataHandlers = new Set<(data: string) => void>()
     private readonly cursorHandlers = new Set<() => void>()
+    private readonly renderHandlers = new Set<() => void>()
+    readonly scrollLines = vi.fn((amount: number) => {
+      const active = this.buffer.active
+      const maxScroll = active.length - this.rows
+      active.viewportY = Math.max(0, Math.min(maxScroll, active.viewportY + amount))
+      for (const handler of this.renderHandlers) handler()
+    })
+    readonly select = vi.fn()
 
     constructor(options: Record<string, unknown> = {}) {
       this.options = options
@@ -62,6 +72,13 @@ const xtermMocks = vi.hoisted(() => {
       this.cursorHandlers.add(handler)
       return {
         dispose: () => this.cursorHandlers.delete(handler),
+      }
+    }
+
+    onRender(handler: () => void): { dispose(): void } {
+      this.renderHandlers.add(handler)
+      return {
+        dispose: () => this.renderHandlers.delete(handler),
       }
     }
 
@@ -554,7 +571,86 @@ describe('Terminal', () => {
     act(() => xtermMocks.FakeXTerm.instances[0]?.emitCursorMove())
     expect(cursorMoves).toHaveBeenCalled()
   })
+
+  it('uses touch pixel scrolling with a custom scrollbar instead of browser page scrolling', async () => {
+    const session = createMockRtcTerminalSession()
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const terminalOutput = screen.getByLabelText('Terminal output')
+    const screenElement = terminalOutput.querySelector('.xterm-screen') as HTMLElement
+    Object.defineProperty(terminalOutput, 'clientHeight', { configurable: true, value: 400 })
+
+    act(() => {
+      screenElement.dispatchEvent(touchEvent('touchstart', screenElement, 220))
+      screenElement.dispatchEvent(touchEvent('touchmove', screenElement, 160))
+    })
+
+    expect(xtermMocks.FakeXTerm.instances[0]?.scrollLines).toHaveBeenCalled()
+    expect(terminalOutput.querySelector('.termx-scrollbar-track')?.className).toContain('visible')
+  })
+
+  it('shows a magnifier and builds a selection while selection mode is active', async () => {
+    const session = createMockRtcTerminalSession()
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+        selectionMode
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const terminalOutput = screen.getByLabelText('Terminal output')
+    const screenElement = terminalOutput.querySelector('.xterm-screen') as HTMLElement
+    Object.defineProperty(screenElement, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ bottom: 400, height: 400, left: 0, right: 800, top: 0, width: 800 }),
+    })
+    Object.defineProperty(terminalOutput, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ bottom: 400, height: 400, left: 0, right: 800, top: 0, width: 800 }),
+    })
+
+    act(() => {
+      screenElement.dispatchEvent(touchEvent('touchstart', screenElement, 120))
+    })
+
+    expect(terminalOutput.querySelector<HTMLElement>('.termx-selection-anchor')?.style.display).toBe('block')
+    expect(terminalOutput.querySelector<HTMLElement>('.termx-selection-magnifier')?.style.display).toBe('block')
+
+    act(() => {
+      screenElement.dispatchEvent(touchEvent('touchend', screenElement, 120, []))
+      screenElement.dispatchEvent(touchEvent('touchstart', screenElement, 180))
+      screenElement.dispatchEvent(touchEvent('touchmove', screenElement, 220))
+    })
+
+    expect(xtermMocks.FakeXTerm.instances[0]?.select).toHaveBeenCalled()
+  })
 })
+
+function touchEvent(
+  type: string,
+  target: EventTarget,
+  clientY: number,
+  touches: Array<{ clientX: number; clientY: number; identifier: number; target: EventTarget }> = [{ identifier: 1, target, clientX: 20, clientY }],
+): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'touches', {
+    configurable: true,
+    value: touches,
+  })
+  return event
+}
 
 class DeferredOpenSession implements RtcSession {
   private readonly backing = createMockRtcTerminalSession()

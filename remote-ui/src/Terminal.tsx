@@ -18,6 +18,7 @@ export interface TerminalProps {
   onResizeControl?: ((control: TerminalResizeControl) => void) | undefined
   modifierState?: TerminalModifierState | undefined
   onModifierStateChange?: ((state: TerminalModifierState) => void) | undefined
+  selectionMode?: boolean | undefined
 }
 
 export interface TerminalHandle {
@@ -28,6 +29,11 @@ export interface TerminalHandle {
   blur(): void
   fit(): void
   pasteText(text: string): void
+  selectAll(): void
+  selectVisible(): void
+  getSelection(): string
+  hasSelection(): boolean
+  clearSelection(): void
   getCursorInfo(): { cursorY: number; rows: number; lineHeight: number } | null
   adjustInputPosition(bottomOffset: number): void
   getBufferType(): 'normal' | 'alternate'
@@ -45,6 +51,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     onResizeControl,
     modifierState,
     onModifierStateChange,
+    selectionMode = false,
   },
   ref,
 ) {
@@ -65,6 +72,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const onCursorMoveRef = useRef<(() => void) | undefined>(undefined)
   const onBufferChangeRef = useRef<((isAlternate: boolean) => void) | undefined>(undefined)
   const onResizeControlRef = useRef<((control: TerminalResizeControl) => void) | undefined>(undefined)
+  const selectionModeRef = useRef(false)
+  const selectionResetHandlersRef = useRef(new Set<() => void>())
 
   const isOpen = terminalSession.snapshot.terminalChannels[terminalId]?.state === 'open'
   const channelState = terminalSession.snapshot.terminalChannels[terminalId]?.state
@@ -151,6 +160,23 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const isMultiline = text.includes('\n') || text.includes('\r')
       terminalSession.sendInput(isMultiline ? `\x1b[200~${text}\x1b[201~` : text)
     },
+    selectAll: () => {
+      if (terminalDisposedRef.current) return
+      xtermRef.current?.selectAll()
+    },
+    selectVisible: () => {
+      if (terminalDisposedRef.current) return
+      const term = xtermRef.current
+      if (!term) return
+      term.selectLines(0, Math.max(0, term.rows - 1))
+    },
+    getSelection: () => terminalDisposedRef.current ? '' : xtermRef.current?.getSelection() ?? '',
+    hasSelection: () => terminalDisposedRef.current ? false : xtermRef.current?.hasSelection() ?? false,
+    clearSelection: () => {
+      if (terminalDisposedRef.current) return
+      xtermRef.current?.clearSelection()
+      for (const resetSelection of selectionResetHandlersRef.current) resetSelection()
+    },
     getCursorInfo: () => {
       if (terminalDisposedRef.current) return null
       const term = xtermRef.current
@@ -196,6 +222,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   useEffect(() => {
     onResizeControlRef.current = onResizeControl
   }, [onResizeControl])
+
+  useEffect(() => {
+    selectionModeRef.current = selectionMode
+    if (!selectionMode) {
+      for (const resetSelection of selectionResetHandlersRef.current) resetSelection()
+    }
+  }, [selectionMode])
 
   useEffect(() => {
     canSendResizeRef.current = terminalSession.resizeControl.canResize
@@ -264,10 +297,657 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
       onCursorMoveRef.current?.()
     })
+    const coreTerminal = term as XTerm & {
+      _core?: {
+        coreMouseService?: { areMouseEventsActive?: boolean }
+        coreService?: { decPrivateModes?: { applicationCursorKeys?: boolean } }
+      }
+    }
+    const screenElement = container.querySelector('.xterm-screen') as HTMLElement | null
+    const getLineHeight = () => Math.ceil((term.element?.clientHeight ?? 0) / term.rows) || 20
+    let lineHeightPx = getLineHeight()
+    let touchAccum = 0
+    let touchLastY = Number.NaN
+    let touchStartX = Number.NaN
+    let touchStartY = Number.NaN
+    let touchStartTime = 0
+    let touchMoved = false
+    let velocityY = 0
+    let lastTouchTime = 0
+    let momentumFrame = 0
+    let smoothActive = false
+    let totalPxOffset = 0
+    let baseViewportY = 0
+    let renderedViewportY = 0
+    let scrollbarHideTimer = 0
+    let scrollbarDragging = false
+    let scrollbarDragStartY = 0
+    let scrollbarDragStartRatio = 0
+    let selectionAnchorCol = 0
+    let selectionAnchorRow = 0
+    let selectionEndCol = 0
+    let selectionEndRow = 0
+    let selectionTouchActive = false
+    let selectionAutoScrollId: number | null = null
+    let selectionLastClientX = 0
+    let selectionLastClientY = 0
+    let selectionPhase: 'idle' | 'anchor-set' = 'idle'
+    let selectionExtending = false
+
+    const clearMomentum = () => {
+      if (!momentumFrame) return
+      window.cancelAnimationFrame(momentumFrame)
+      momentumFrame = 0
+    }
+
+    const scrollbarTrack = document.createElement('div')
+    scrollbarTrack.className = 'termx-scrollbar-track'
+    const scrollbarThumb = document.createElement('div')
+    scrollbarThumb.className = 'termx-scrollbar-thumb'
+    scrollbarTrack.append(scrollbarThumb)
+    container.append(scrollbarTrack)
+
+    const magnifier = document.createElement('div')
+    magnifier.className = 'termx-selection-magnifier'
+    const magnifierCanvas = document.createElement('canvas')
+    const magnifierFallback = document.createElement('div')
+    magnifierFallback.className = 'termx-selection-magnifier-fallback'
+    const magnifierWidth = 160
+    const magnifierHeight = 60
+    const pixelRatio = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
+    magnifierCanvas.width = magnifierWidth * pixelRatio
+    magnifierCanvas.height = magnifierHeight * pixelRatio
+    magnifierCanvas.style.width = `${magnifierWidth}px`
+    magnifierCanvas.style.height = `${magnifierHeight}px`
+    magnifierCanvas.style.display = 'block'
+    magnifier.append(magnifierCanvas)
+    magnifier.append(magnifierFallback)
+    container.append(magnifier)
+
+    const selectionAnchorMarker = document.createElement('div')
+    selectionAnchorMarker.className = 'termx-selection-anchor'
+    container.append(selectionAnchorMarker)
+
+    const showScrollbar = () => {
+      scrollbarTrack.classList.add('visible')
+      window.clearTimeout(scrollbarHideTimer)
+    }
+
+    const hideScrollbarDelayed = () => {
+      window.clearTimeout(scrollbarHideTimer)
+      if (scrollbarDragging) return
+      scrollbarHideTimer = window.setTimeout(() => {
+        scrollbarTrack.classList.remove('visible')
+      }, 1200)
+    }
+
+    const updateScrollbar = () => {
+      const buffer = term.buffer.active
+      const totalLines = buffer.length
+      const viewportRows = term.rows
+      if (!totalLines || totalLines <= viewportRows) {
+        scrollbarTrack.classList.remove('visible')
+        return
+      }
+      const maxScroll = Math.max(1, totalLines - viewportRows)
+      const ratio = Math.max(0, Math.min(1, buffer.viewportY / maxScroll))
+      const thumbRatio = Math.max(0.06, viewportRows / totalLines)
+      const trackHeight = scrollbarTrack.clientHeight
+      const thumbHeight = Math.max(24, trackHeight * thumbRatio)
+      const thumbTop = ratio * Math.max(0, trackHeight - thumbHeight)
+      scrollbarThumb.style.height = `${thumbHeight}px`
+      scrollbarThumb.style.transform = `translateY(${thumbTop}px)`
+    }
+
+    const isMouseModeActive = () => Boolean(coreTerminal._core?.coreMouseService?.areMouseEventsActive)
+    const isAlternateBuffer = () => term.buffer.active.type === 'alternate'
+    const isApplicationCursor = () => Boolean(coreTerminal._core?.coreService?.decPrivateModes?.applicationCursorKeys)
+
+    const syncTransform = () => {
+      if (!screenElement || !smoothActive) return
+      const renderedPx = (renderedViewportY - baseViewportY) * lineHeightPx
+      const subLinePx = totalPxOffset - renderedPx
+      screenElement.style.transform = `translateY(${-subLinePx}px)`
+    }
+
+    const smoothBegin = () => {
+      if (smoothActive) return
+      smoothActive = true
+      lineHeightPx = getLineHeight()
+      baseViewportY = term.buffer.active.viewportY
+      renderedViewportY = baseViewportY
+      totalPxOffset = 0
+      if (screenElement) screenElement.style.willChange = 'transform'
+    }
+
+    const smoothEnd = () => {
+      if (!smoothActive) return
+      if (screenElement) {
+        screenElement.style.transform = ''
+        screenElement.style.willChange = ''
+      }
+      smoothActive = false
+    }
+
+    const scrollPixels = (px: number): boolean => {
+      if (!Number.isFinite(px) || px === 0) return false
+      totalPxOffset += px
+      const desiredViewportY = baseViewportY + Math.trunc(totalPxOffset / lineHeightPx)
+      const currentViewportY = term.buffer.active.viewportY
+      let clamped = false
+      if (desiredViewportY !== currentViewportY) {
+        term.scrollLines(desiredViewportY - currentViewportY)
+        const actualViewportY = term.buffer.active.viewportY
+        if (actualViewportY !== desiredViewportY) {
+          totalPxOffset = (actualViewportY - baseViewportY) * lineHeightPx
+          clamped = true
+        }
+      }
+      syncTransform()
+      updateScrollbar()
+      showScrollbar()
+      hideScrollbarDelayed()
+      return clamped
+    }
+
+    const sendScrollInput = (down: boolean) => {
+      if (isMouseModeActive()) {
+        if (!screenElement) return
+        const rect = screenElement.getBoundingClientRect()
+        screenElement.dispatchEvent(new WheelEvent('wheel', {
+          bubbles: true,
+          cancelable: true,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + rect.height / 2,
+          deltaMode: WheelEvent.DOM_DELTA_LINE,
+          deltaY: down ? 1 : -1,
+        }))
+        return
+      }
+      const applicationCursor = isApplicationCursor()
+      terminalSession.sendInput(down
+        ? (applicationCursor ? '\x1bOB' : '\x1b[B')
+        : (applicationCursor ? '\x1bOA' : '\x1b[A'))
+    }
+
+    const initTouchScroll = (event: TouchEvent) => {
+      clearMomentum()
+      smoothEnd()
+      let sumX = 0
+      let sumY = 0
+      for (let index = 0; index < event.touches.length; index += 1) {
+        const touch = event.touches[index]!
+        sumX += touch.clientX
+        sumY += touch.clientY
+      }
+      const x = sumX / event.touches.length
+      const y = sumY / event.touches.length
+      touchLastY = y
+      touchAccum = 0
+      touchStartX = x
+      touchStartY = y
+      touchStartTime = Date.now()
+      touchMoved = false
+      velocityY = 0
+      lastTouchTime = Date.now()
+    }
+
+    const stopSelectionAutoScroll = () => {
+      if (selectionAutoScrollId === null) return
+      window.clearInterval(selectionAutoScrollId)
+      selectionAutoScrollId = null
+    }
+
+    const hideMagnifier = () => {
+      magnifier.style.display = 'none'
+    }
+
+    const hideSelectionAnchor = () => {
+      selectionAnchorMarker.style.display = 'none'
+    }
+
+    const resetSelectionTouchState = () => {
+      selectionPhase = 'idle'
+      selectionExtending = false
+      selectionTouchActive = false
+      stopSelectionAutoScroll()
+      hideSelectionAnchor()
+      hideMagnifier()
+    }
+    selectionResetHandlersRef.current.add(resetSelectionTouchState)
+
+    const touchToBufferPosition = (clientX: number, clientY: number) => {
+      const targetElement = screenElement || container
+      const rect = targetElement.getBoundingClientRect()
+      const cellWidth = rect.width / term.cols
+      const col = Math.max(0, Math.min(term.cols - 1, Math.floor((clientX - rect.left) / cellWidth)))
+      const row = Math.floor((clientY - rect.top) / lineHeightPx)
+      const bufferRow = Math.max(0, Math.min(term.buffer.active.length - 1, row + term.buffer.active.viewportY))
+      return { col, row: bufferRow }
+    }
+
+    const applySelection = () => {
+      let row1 = selectionAnchorRow
+      let col1 = selectionAnchorCol
+      let row2 = selectionEndRow
+      let col2 = selectionEndCol
+      if (row1 > row2 || (row1 === row2 && col1 > col2)) {
+        ;[row1, col1, row2, col2] = [row2, col2, row1, col1]
+      }
+      const length = (row2 - row1) * term.cols + (col2 - col1) + 1
+      term.select(col1, row1, length)
+    }
+
+    const showSelectionAnchor = (col: number, row: number) => {
+      const targetElement = screenElement || container
+      const rect = targetElement.getBoundingClientRect()
+      const containerRect = container.getBoundingClientRect()
+      const cellWidth = rect.width / term.cols
+      const viewportRow = row - term.buffer.active.viewportY
+      const x = rect.left - containerRect.left + col * cellWidth
+      const y = rect.top - containerRect.top + viewportRow * lineHeightPx
+      selectionAnchorMarker.style.left = `${x}px`
+      selectionAnchorMarker.style.top = `${y}px`
+      selectionAnchorMarker.style.height = `${lineHeightPx}px`
+      selectionAnchorMarker.style.display = 'block'
+    }
+
+    const updateMagnifier = (col: number, bufferRow: number, clientX: number, clientY: number) => {
+      const canvases = container.querySelectorAll('.xterm-screen canvas') as NodeListOf<HTMLCanvasElement>
+      const context = magnifierCanvas.getContext('2d')
+      if (context) {
+        magnifierFallback.style.display = 'none'
+        context.clearRect(0, 0, magnifierCanvas.width, magnifierCanvas.height)
+        context.fillStyle = '#000'
+        context.fillRect(0, 0, magnifierCanvas.width, magnifierCanvas.height)
+      } else {
+        magnifierFallback.style.display = 'block'
+      }
+
+      if (context && canvases.length > 0) {
+        const referenceCanvas = canvases[0]!
+        const targetElement = screenElement || container
+        const targetRect = targetElement.getBoundingClientRect()
+        const viewRow = bufferRow - term.buffer.active.viewportY
+        const centerX = ((col + 0.5) / term.cols) * referenceCanvas.width
+        const centerY = ((viewRow + 0.5) / term.rows) * referenceCanvas.height
+        const scaleX = referenceCanvas.width / Math.max(1, targetRect.width)
+        const scaleY = referenceCanvas.height / Math.max(1, targetRect.height)
+        const sampleWidth = (magnifierWidth * scaleX) / 2
+        const sampleHeight = (magnifierHeight * scaleY) / 2
+        for (const canvas of canvases) {
+          try {
+            context.drawImage(
+              canvas,
+              centerX - sampleWidth / 2,
+              centerY - sampleHeight / 2,
+              sampleWidth,
+              sampleHeight,
+              0,
+              0,
+              magnifierCanvas.width,
+              magnifierCanvas.height,
+            )
+          } catch {
+            // Canvas can be temporarily unavailable while xterm swaps render layers.
+          }
+        }
+      }
+
+      if (context) {
+        context.strokeStyle = 'rgba(255,255,255,0.55)'
+        context.lineWidth = 1
+        const midX = magnifierCanvas.width / 2
+        const midY = magnifierCanvas.height / 2
+        context.beginPath()
+        context.moveTo(midX, 0)
+        context.lineTo(midX, magnifierCanvas.height)
+        context.moveTo(0, midY)
+        context.lineTo(magnifierCanvas.width, midY)
+        context.stroke()
+      }
+
+      const containerRect = container.getBoundingClientRect()
+      let x = clientX - containerRect.left - magnifierWidth / 2
+      let y = clientY - containerRect.top - 70 - magnifierHeight
+      if (x < 4) x = 4
+      if (x + magnifierWidth > containerRect.width - 4) x = containerRect.width - magnifierWidth - 4
+      if (y < 4) y = clientY - containerRect.top + 30
+      magnifier.style.left = `${x}px`
+      magnifier.style.top = `${y}px`
+      magnifier.style.display = 'block'
+    }
+
+    const checkSelectionAutoScroll = (clientY: number) => {
+      const targetElement = screenElement || container
+      const rect = targetElement.getBoundingClientRect()
+      const zone = 40
+      const atTop = clientY < rect.top + zone
+      const atBottom = clientY > rect.bottom - zone
+      if (!atTop && !atBottom) {
+        stopSelectionAutoScroll()
+        return
+      }
+      if (selectionAutoScrollId !== null) return
+      selectionAutoScrollId = window.setInterval(() => {
+        term.scrollLines(atBottom ? 1 : -1)
+        updateScrollbar()
+        if (selectionExtending) {
+          const position = touchToBufferPosition(selectionLastClientX, selectionLastClientY)
+          selectionEndCol = position.col
+          selectionEndRow = position.row
+          applySelection()
+        }
+      }, 80)
+    }
+
+    const handleTouchStart = (event: TouchEvent) => {
+      if (event.touches.length < 1) return
+      if (selectionModeRef.current && event.touches.length === 1) {
+        event.preventDefault()
+        event.stopPropagation()
+        selectionTouchActive = true
+        selectionExtending = false
+        const touch = event.touches[0]
+        if (!touch) return
+        const position = touchToBufferPosition(touch.clientX, touch.clientY)
+        if (selectionPhase === 'idle') {
+          term.clearSelection()
+          selectionAnchorCol = position.col
+          selectionAnchorRow = position.row
+          selectionPhase = 'anchor-set'
+          showSelectionAnchor(position.col, position.row)
+          updateMagnifier(position.col, position.row, touch.clientX, touch.clientY)
+        } else {
+          selectionEndCol = position.col
+          selectionEndRow = position.row
+          selectionExtending = true
+          applySelection()
+          hideSelectionAnchor()
+          updateMagnifier(position.col, position.row, touch.clientX, touch.clientY)
+        }
+        return
+      }
+      if (selectionModeRef.current && event.touches.length >= 2) {
+        selectionTouchActive = false
+        selectionExtending = false
+        stopSelectionAutoScroll()
+        hideMagnifier()
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      initTouchScroll(event)
+    }
+
+    const handleTouchMove = (event: TouchEvent) => {
+      if (event.touches.length < 1) return
+      if (selectionModeRef.current) {
+        event.preventDefault()
+        event.stopPropagation()
+        if (event.touches.length >= 2 && selectionTouchActive) {
+          selectionTouchActive = false
+          selectionExtending = false
+          stopSelectionAutoScroll()
+          hideMagnifier()
+          initTouchScroll(event)
+          return
+        }
+        if (selectionTouchActive && event.touches.length === 1) {
+          const touch = event.touches[0]
+          if (!touch) return
+          selectionLastClientX = touch.clientX
+          selectionLastClientY = touch.clientY
+          const position = touchToBufferPosition(touch.clientX, touch.clientY)
+          if (selectionExtending) {
+            selectionEndCol = position.col
+            selectionEndRow = position.row
+            applySelection()
+            updateMagnifier(position.col, position.row, touch.clientX, touch.clientY)
+            checkSelectionAutoScroll(touch.clientY)
+            return
+          }
+          selectionAnchorCol = position.col
+          selectionAnchorRow = position.row
+          showSelectionAnchor(position.col, position.row)
+          updateMagnifier(position.col, position.row, touch.clientX, touch.clientY)
+          return
+        }
+        if (event.touches.length >= 2) {
+          let sumY = 0
+          for (let index = 0; index < event.touches.length; index += 1) {
+            sumY += event.touches[index]!.clientY
+          }
+          const y = sumY / event.touches.length
+          if (Number.isNaN(touchLastY)) {
+            touchLastY = y
+            lastTouchTime = Date.now()
+            return
+          }
+          if (Math.abs(y - touchStartY) > 10) touchMoved = true
+          const now = Date.now()
+          const dt = now - lastTouchTime
+          const dy = touchLastY - y
+          if (dt > 0) {
+            const instantVelocity = (dy / dt) * 1000
+            velocityY = velocityY * 0.3 + instantVelocity * 0.7
+          }
+          lastTouchTime = now
+          touchLastY = y
+          smoothBegin()
+          scrollPixels(dy)
+        }
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      let sumY = 0
+      for (let index = 0; index < event.touches.length; index += 1) {
+        sumY += event.touches[index]!.clientY
+      }
+      const y = sumY / event.touches.length
+      if (Number.isNaN(touchLastY)) {
+        touchLastY = y
+        lastTouchTime = Date.now()
+        return
+      }
+      if (Math.abs(y - touchStartY) > 10) touchMoved = true
+
+      const now = Date.now()
+      const dt = now - lastTouchTime
+      const dy = touchLastY - y
+      if (dt > 0) {
+        const instantVelocity = (dy / dt) * 1000
+        velocityY = velocityY * 0.3 + instantVelocity * 0.7
+      }
+      lastTouchTime = now
+      touchLastY = y
+
+      if (isMouseModeActive() || isAlternateBuffer()) {
+        if (smoothActive) smoothEnd()
+        touchAccum += dy
+        const lines = Math.trunc(touchAccum / lineHeightPx)
+        if (lines !== 0) {
+          touchAccum -= lines * lineHeightPx
+          for (let index = 0; index < Math.abs(lines); index += 1) {
+            sendScrollInput(lines > 0)
+          }
+        }
+        return
+      }
+
+      smoothBegin()
+      scrollPixels(dy)
+    }
+
+    const handleTouchEnd = () => {
+      if (selectionModeRef.current) {
+        if (selectionTouchActive) {
+          selectionTouchActive = false
+          stopSelectionAutoScroll()
+          hideMagnifier()
+          if (selectionExtending) {
+            selectionAnchorCol = selectionEndCol
+            selectionAnchorRow = selectionEndRow
+            selectionExtending = false
+          }
+          return
+        }
+        smoothEnd()
+        touchLastY = Number.NaN
+        return
+      }
+      if (!touchMoved && Date.now() - touchStartTime < 500) {
+        if (isMouseModeActive() && screenElement) {
+          const mouseOptions: MouseEventInit = {
+            bubbles: true,
+            button: 0,
+            cancelable: true,
+            clientX: touchStartX,
+            clientY: touchStartY,
+          }
+          screenElement.dispatchEvent(new MouseEvent('mousedown', { ...mouseOptions, buttons: 1 }))
+          screenElement.dispatchEvent(new MouseEvent('mouseup', { ...mouseOptions, buttons: 0 }))
+        }
+        try {
+          xtermRef.current?.focus()
+        } catch {
+          // Ignore stale focus work while unmounting.
+        }
+        velocityY = 0
+        smoothEnd()
+      } else if (Math.abs(velocityY) > 80 && Date.now() - lastTouchTime <= 80) {
+        let lastFrameTime = performance.now()
+        const deceleration = 0.97
+        const minimumVelocity = 80
+        const step = (now: number) => {
+          if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) {
+            momentumFrame = 0
+            smoothEnd()
+            return
+          }
+          const frameDt = (now - lastFrameTime) / 1000
+          lastFrameTime = now
+          velocityY *= Math.pow(deceleration, frameDt * 60)
+          if (Math.abs(velocityY) < minimumVelocity) {
+            momentumFrame = 0
+            smoothEnd()
+            return
+          }
+          const pixelDelta = velocityY * frameDt
+          if (isMouseModeActive() || isAlternateBuffer()) {
+            if (smoothActive) smoothEnd()
+            touchAccum += pixelDelta
+            const lines = Math.trunc(touchAccum / lineHeightPx)
+            if (lines !== 0) {
+              touchAccum -= lines * lineHeightPx
+              for (let index = 0; index < Math.abs(lines); index += 1) {
+                sendScrollInput(lines > 0)
+              }
+            }
+          } else if (scrollPixels(pixelDelta)) {
+            momentumFrame = 0
+            smoothEnd()
+            return
+          }
+          momentumFrame = window.requestAnimationFrame(step)
+        }
+        touchAccum = 0
+        momentumFrame = window.requestAnimationFrame(step)
+      } else {
+        smoothEnd()
+      }
+      touchLastY = Number.NaN
+    }
+
+    const handleRenderDisposable = typeof term.onRender === 'function'
+      ? term.onRender(() => {
+        const viewportY = term.buffer.active.viewportY
+        if (viewportY !== renderedViewportY) {
+          renderedViewportY = viewportY
+          if (smoothActive) syncTransform()
+          updateScrollbar()
+          showScrollbar()
+          hideScrollbarDelayed()
+        }
+      })
+      : { dispose() {} }
     const bufferDisposable = term.buffer.onBufferChange?.(() => {
       if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
+      clearMomentum()
+      smoothEnd()
+      updateScrollbar()
       onBufferChangeRef.current?.(term.buffer.active.type === 'alternate')
     }) ?? { dispose() {} }
+
+    const scrollTouchTarget = screenElement || container
+    scrollTouchTarget.addEventListener('touchstart', handleTouchStart, { passive: false })
+    scrollTouchTarget.addEventListener('touchmove', handleTouchMove, { passive: false })
+    scrollTouchTarget.addEventListener('touchend', handleTouchEnd, { passive: true })
+    scrollTouchTarget.addEventListener('touchcancel', handleTouchEnd, { passive: true })
+
+    const handleScrollbarTouchStart = (event: TouchEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
+      scrollbarDragging = true
+      scrollbarTrack.classList.add('active')
+      showScrollbar()
+      const touch = event.touches[0]
+      if (!touch) return
+      scrollbarDragStartY = touch.clientY
+      const buffer = term.buffer.active
+      const maxScroll = buffer.length - term.rows
+      scrollbarDragStartRatio = maxScroll > 0 ? buffer.viewportY / maxScroll : 0
+    }
+    const handleScrollbarTouchMove = (event: TouchEvent) => {
+      if (!scrollbarDragging) return
+      event.preventDefault()
+      event.stopPropagation()
+      const touch = event.touches[0]
+      if (!touch) return
+      const scrollableTrack = scrollbarTrack.clientHeight - scrollbarThumb.clientHeight
+      if (scrollableTrack <= 0) return
+      const deltaRatio = (touch.clientY - scrollbarDragStartY) / scrollableTrack
+      const nextRatio = Math.max(0, Math.min(1, scrollbarDragStartRatio + deltaRatio))
+      const buffer = term.buffer.active
+      const maxScroll = buffer.length - term.rows
+      const targetY = Math.round(nextRatio * maxScroll)
+      const diff = targetY - buffer.viewportY
+      if (diff !== 0) term.scrollLines(diff)
+      updateScrollbar()
+    }
+    const handleScrollbarTouchEnd = (event: TouchEvent) => {
+      if (!scrollbarDragging) return
+      event.preventDefault()
+      scrollbarDragging = false
+      scrollbarTrack.classList.remove('active')
+      hideScrollbarDelayed()
+    }
+    const handleScrollbarTrackTouchStart = (event: TouchEvent) => {
+      if (event.target !== scrollbarTrack) return
+      event.preventDefault()
+      event.stopPropagation()
+      const touch = event.touches[0]
+      if (!touch) return
+      const rect = scrollbarTrack.getBoundingClientRect()
+      const ratio = Math.max(0, Math.min(1, (touch.clientY - rect.top) / rect.height))
+      const buffer = term.buffer.active
+      const maxScroll = buffer.length - term.rows
+      const targetY = Math.round(ratio * maxScroll)
+      const diff = targetY - buffer.viewportY
+      if (diff !== 0) term.scrollLines(diff)
+      updateScrollbar()
+      scrollbarDragging = true
+      scrollbarTrack.classList.add('active')
+      showScrollbar()
+      scrollbarDragStartY = touch.clientY
+      scrollbarDragStartRatio = maxScroll > 0 ? buffer.viewportY / maxScroll : 0
+    }
+
+    scrollbarThumb.addEventListener('touchstart', handleScrollbarTouchStart, { passive: false })
+    scrollbarTrack.addEventListener('touchstart', handleScrollbarTrackTouchStart, { passive: false })
+    document.addEventListener('touchmove', handleScrollbarTouchMove, { passive: false })
+    document.addEventListener('touchend', handleScrollbarTouchEnd, { passive: false })
+    document.addEventListener('touchcancel', handleScrollbarTouchEnd, { passive: false })
 
     fitAndMaybeSendResize()
     scheduleFit()
@@ -332,7 +1012,25 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       resizeObserver?.disconnect()
       dataDisposable.dispose()
       cursorDisposable.dispose()
+      handleRenderDisposable.dispose()
       bufferDisposable.dispose()
+      clearMomentum()
+      smoothEnd()
+      selectionResetHandlersRef.current.delete(resetSelectionTouchState)
+      resetSelectionTouchState()
+      window.clearTimeout(scrollbarHideTimer)
+      scrollTouchTarget.removeEventListener('touchstart', handleTouchStart)
+      scrollTouchTarget.removeEventListener('touchmove', handleTouchMove)
+      scrollTouchTarget.removeEventListener('touchend', handleTouchEnd)
+      scrollTouchTarget.removeEventListener('touchcancel', handleTouchEnd)
+      scrollbarThumb.removeEventListener('touchstart', handleScrollbarTouchStart)
+      scrollbarTrack.removeEventListener('touchstart', handleScrollbarTrackTouchStart)
+      document.removeEventListener('touchmove', handleScrollbarTouchMove)
+      document.removeEventListener('touchend', handleScrollbarTouchEnd)
+      document.removeEventListener('touchcancel', handleScrollbarTouchEnd)
+      scrollbarTrack.remove()
+      magnifier.remove()
+      selectionAnchorMarker.remove()
       if (xtermRef.current === term) xtermRef.current = null
       if (fitAddonRef.current === fitAddon) fitAddonRef.current = null
       try {
@@ -395,7 +1093,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         ref={containerRef}
         aria-label="Terminal output"
         className="absolute inset-0 min-h-0 overflow-hidden px-1 py-1 md:p-3 xterm-wrapper outline-none"
-        style={{ overscrollBehavior: 'none', touchAction: 'pan-y pan-x' }}
+        style={{ overscrollBehavior: 'contain', touchAction: 'none' }}
         role="application"
         tabIndex={0}
       />

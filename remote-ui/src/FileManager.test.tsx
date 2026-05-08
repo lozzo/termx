@@ -36,6 +36,68 @@ describe('FileManager', () => {
     expect(screen.getByTestId('termx-file-manager').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
   })
 
+  it('supports hidden files, creating directories, renaming, and delete confirmation through the file api', async () => {
+    const entries = [
+      { name: '.env', type: 'file', size: 12 },
+      { name: 'tmp', type: 'dir', size: 0 },
+      { name: 'old.txt', type: 'file', size: 42 },
+    ]
+    const session = createMockFileSession({
+      '/files/list': ({ path }: { path?: string }) => ({
+        path: path || '/',
+        parent: '',
+        total: entries.length,
+        entries,
+      }),
+      '/files/mkdir': {},
+      '/files/rename': {},
+      '/files/delete': {},
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(
+      <FileManager
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+        initialPath="/"
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText('tmp')).toBeTruthy())
+    expect(screen.queryByText('.env')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /show hidden files/i }))
+    expect(screen.getByText('.env')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: /new directory/i }))
+    await userEvent.type(screen.getByLabelText('Directory name'), 'logs')
+    await userEvent.click(screen.getByRole('button', { name: /create directory/i }))
+    await waitFor(() => expect(session.requests).toContainEqual({
+      method: 'POST',
+      path: '/files/mkdir',
+      params: { path: '/logs' },
+    }))
+
+    await userEvent.click(screen.getByRole('button', { name: /more actions for old.txt/i }))
+    await userEvent.click(screen.getByRole('button', { name: /rename/i }))
+    await userEvent.clear(screen.getByLabelText('Rename entry'))
+    await userEvent.type(screen.getByLabelText('Rename entry'), 'new.txt{Enter}')
+    await waitFor(() => expect(session.requests).toContainEqual({
+      method: 'POST',
+      path: '/files/rename',
+      params: { path: '/old.txt', new_path: '/new.txt' },
+    }))
+
+    await userEvent.click(screen.getByRole('button', { name: /more actions for old.txt/i }))
+    await userEvent.click(screen.getByRole('button', { name: /delete/i }))
+    expect(screen.getByTestId('termx-file-delete-confirm')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /^delete$/i }))
+    await waitFor(() => expect(session.requests).toContainEqual({
+      method: 'POST',
+      path: '/files/delete',
+      params: { path: '/old.txt' },
+    }))
+  })
+
   it('keeps props interface-based and free of browser/native runtime implementations', () => {
     const propKeys = Object.keys({
       machineId: 'machine-local',

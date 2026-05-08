@@ -1,6 +1,7 @@
 import { useFileManager } from './useFileManager'
 import type { RtcSession } from './transport'
-import { Folder, File, RefreshCw, ChevronRight, AlertCircle, HardDrive } from 'lucide-react'
+import { useState } from 'react'
+import { AlertCircle, Check, ChevronRight, Eye, EyeOff, File, Folder, HardDrive, MoreVertical, RefreshCw, SquarePen, Trash2, X } from 'lucide-react'
 
 export interface FileManagerProps {
   machineId: string
@@ -18,6 +19,11 @@ export function FileManager({
   className,
 }: FileManagerProps) {
   const manager = useFileManager({ machineId, terminalId, session, initialPath })
+  const [newDirOpen, setNewDirOpen] = useState(false)
+  const [entryMenuPath, setEntryMenuPath] = useState<string | null>(null)
+  const [renamePath, setRenamePath] = useState<string | null>(null)
+  const [renameName, setRenameName] = useState('')
+  const [deletePath, setDeletePath] = useState<string | null>(null)
 
   const pathSegments = manager.currentPath ? manager.currentPath.split('/').filter(Boolean) : []
   const entryKeyCounts = new Map<string, number>()
@@ -66,6 +72,22 @@ export function FileManager({
            )}
         </div>
         <button
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors active:scale-95 ${manager.showHidden ? 'bg-blue-50 text-blue-600' : 'bg-zinc-100 text-zinc-600 active:bg-zinc-200'}`}
+          type="button"
+          onClick={manager.toggleShowHidden}
+          aria-label={manager.showHidden ? 'Hide hidden files' : 'Show hidden files'}
+        >
+          {manager.showHidden ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+        </button>
+        <button
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 transition-colors active:scale-95 active:bg-zinc-200"
+          type="button"
+          onClick={() => setNewDirOpen((current) => !current)}
+          aria-label="New directory"
+        >
+          <Folder className="h-5 w-5" />
+        </button>
+        <button
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 transition-colors active:scale-95 active:bg-zinc-200 disabled:opacity-50"
           type="button"
           onClick={() => { void manager.refresh() }}
@@ -77,6 +99,47 @@ export function FileManager({
       </header>
 
       <div className="absolute top-14 bottom-0 left-0 right-0 overflow-y-auto bg-white p-2">
+        {newDirOpen ? (
+          <div className="m-2 flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2">
+            <Folder className="h-5 w-5 shrink-0 text-blue-500" />
+            <input
+              aria-label="Directory name"
+              className="min-h-10 flex-1 bg-transparent px-2 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-400"
+              placeholder="Directory name"
+              value={manager.newDirName}
+              onChange={(event) => manager.setNewDirName(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void manager.createDirectory().then(() => setNewDirOpen(false))
+                if (event.key === 'Escape') {
+                  manager.setNewDirName('')
+                  setNewDirOpen(false)
+                }
+              }}
+              autoFocus
+            />
+            <button
+              type="button"
+              aria-label="Create directory"
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white disabled:bg-zinc-200 disabled:text-zinc-400"
+              disabled={!manager.newDirName.trim() || manager.creatingDirectory}
+              onClick={() => { void manager.createDirectory().then(() => setNewDirOpen(false)) }}
+            >
+              <Check className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="Cancel new directory"
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-200 text-zinc-600"
+              onClick={() => {
+                manager.setNewDirName('')
+                setNewDirOpen(false)
+              }}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ) : null}
+
         {manager.error ? (
           <div className="m-2 flex items-start gap-3 rounded-xl border border-red-200/60 bg-red-50 p-4 text-[14px] text-red-800 shadow-sm" role="alert">
             <AlertCircle className="h-6 w-6 shrink-0 text-red-500" />
@@ -84,6 +147,12 @@ export function FileManager({
                <h3 className="font-bold text-red-900">Directory Error</h3>
                <p className="mt-1">{manager.error.message}</p>
             </div>
+          </div>
+        ) : null}
+
+        {manager.actionMessage ? (
+          <div className="m-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-[13px] font-medium text-emerald-800" role="status">
+            {manager.actionMessage}
           </div>
         ) : null}
 
@@ -100,49 +169,134 @@ export function FileManager({
                 Directory is empty
               </li>
             ) : null}
-            {manager.entries.map((entry) => {
+            {manager.visibleEntries.map((entry) => {
               const entryPath = joinPath(manager.currentPath, entry.name)
               const isDirectory = entry.type === 'dir' || entry.type === 'symlink-dir'
               const Icon = isDirectory ? Folder : File
               const itemKey = uniqueFileListKey(entryKeyCounts, entryPath)
+              const isMenuOpen = entryMenuPath === entryPath
+              const isRenaming = renamePath === entryPath
+              const openEntry = () => {
+                if (isDirectory) void manager.navigate(entryPath)
+              }
 
               return (
                 <li key={itemKey}>
-                  <button
-                    className={`group relative flex min-h-[3.5rem] w-full items-center gap-4 rounded-xl px-4 py-2 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 active:bg-zinc-100 ${
-                      isDirectory
-                        ? 'cursor-pointer'
-                        : 'cursor-default'
-                    }`}
-                    type="button"
-                    aria-label={`${isDirectory ? 'Open' : 'Select'} ${entry.name}`}
-                    onClick={() => {
-                      if (isDirectory) void manager.navigate(entryPath)
-                    }}
+                  <div
+                    className="group relative flex min-h-[3.5rem] w-full items-center gap-4 rounded-xl px-4 py-2 text-left transition-colors focus-within:ring-2 focus-within:ring-blue-500 active:bg-zinc-100"
                   >
                     <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors ${isDirectory ? 'bg-blue-50 group-active:bg-blue-100' : 'bg-zinc-50'}`}>
                       <Icon className={`h-5 w-5 ${isDirectory ? 'fill-blue-100 text-blue-500' : 'text-zinc-400'}`} />
                     </div>
-                    <div className="flex min-w-0 flex-1 flex-col justify-center">
-                      <span className={`truncate text-[15px] ${isDirectory ? 'font-semibold text-zinc-900' : 'font-medium text-zinc-700'}`}>
-                        {entry.name}
-                      </span>
-                      {!isDirectory && entry.size > 0 ? (
+                    <button
+                      type="button"
+                      aria-label={`${isDirectory ? 'Open' : 'Select'} ${entry.name}`}
+                      className="flex min-w-0 flex-1 flex-col justify-center text-left"
+                      onClick={openEntry}
+                    >
+                      {isRenaming ? (
+                        <input
+                          aria-label="Rename entry"
+                          className="min-h-9 rounded-lg border border-blue-200 bg-white px-2 text-[15px] font-medium text-zinc-900 outline-none"
+                          value={renameName}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => setRenameName(event.currentTarget.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              void manager.renameEntry(entryPath, renameName).then(() => {
+                                setRenamePath(null)
+                                setRenameName('')
+                              })
+                            }
+                            if (event.key === 'Escape') {
+                              setRenamePath(null)
+                              setRenameName('')
+                            }
+                          }}
+                          autoFocus
+                        />
+                      ) : (
+                        <span className={`truncate text-[15px] ${isDirectory ? 'font-semibold text-zinc-900' : 'font-medium text-zinc-700'}`}>
+                          {entry.name}
+                        </span>
+                      )}
+                      {!isDirectory && entry.size > 0 && !isRenaming ? (
                         <span className="truncate text-[12px] font-medium text-zinc-500">
                           {formatBytes(entry.size)}
                         </span>
                       ) : null}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`More actions for ${entry.name}`}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-400 active:bg-zinc-200"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setEntryMenuPath((current) => current === entryPath ? null : entryPath)
+                      }}
+                    >
+                      <MoreVertical className="h-5 w-5" />
+                    </button>
+                    {isDirectory ? <ChevronRight className="h-5 w-5 shrink-0 text-zinc-300 group-active:text-zinc-400" /> : null}
+                  </div>
+                  {isMenuOpen ? (
+                    <div className="mx-2 mb-1 grid grid-cols-2 gap-2 rounded-xl bg-zinc-50 p-2">
+                      <button
+                        type="button"
+                        className="flex h-10 items-center justify-center gap-2 rounded-lg bg-white text-[13px] font-semibold text-zinc-700 shadow-sm"
+                        onClick={() => {
+                          setRenamePath(entryPath)
+                          setRenameName(entry.name)
+                          setEntryMenuPath(null)
+                        }}
+                      >
+                        <SquarePen className="h-4 w-4" />
+                        Rename
+                      </button>
+                      <button
+                        type="button"
+                        className="flex h-10 items-center justify-center gap-2 rounded-lg bg-red-50 text-[13px] font-semibold text-red-700 shadow-sm"
+                        onClick={() => {
+                          setDeletePath(entryPath)
+                          setEntryMenuPath(null)
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete
+                      </button>
                     </div>
-                    {isDirectory ? (
-                      <ChevronRight className="h-5 w-5 shrink-0 text-zinc-300 group-active:text-zinc-400" />
-                    ) : null}
-                  </button>
+                  ) : null}
                 </li>
               )
             })}
           </ul>
         )}
       </div>
+      {deletePath ? (
+        <div className="absolute inset-0 z-50 flex items-end bg-black/40 p-3 backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-file-delete-confirm" onClick={() => setDeletePath(null)}>
+          <section className="w-full rounded-2xl bg-white p-4 shadow-2xl md:max-w-sm" onClick={(event) => event.stopPropagation()}>
+            <h2 className="text-[17px] font-bold text-zinc-950">Delete entry?</h2>
+            <p className="mt-2 break-all text-sm text-zinc-500">{deletePath}</p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <button type="button" className="h-11 rounded-xl bg-zinc-100 text-sm font-semibold text-zinc-700" onClick={() => setDeletePath(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="h-11 rounded-xl bg-red-600 text-sm font-semibold text-white"
+                onClick={() => {
+                  const target = deletePath
+                  setDeletePath(null)
+                  void manager.deleteEntry(target)
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   )
 }

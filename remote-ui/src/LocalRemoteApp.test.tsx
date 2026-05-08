@@ -17,8 +17,9 @@ vi.mock('./Terminal', () => ({
     terminalId: string
     modifierState?: TerminalModifierState
     onResizeControl?: (control: TerminalResizeControl) => void
+    selectionMode?: boolean
   }>(function MockTerminal(
-    { machineId, terminalId, modifierState, onResizeControl },
+    { machineId, terminalId, modifierState, onResizeControl, selectionMode },
     ref,
   ) {
     const reattach = vi.fn()
@@ -32,6 +33,11 @@ vi.mock('./Terminal', () => ({
       blur: vi.fn(),
       fit,
       pasteText: vi.fn(),
+      selectAll: vi.fn(),
+      selectVisible: vi.fn(),
+      getSelection: vi.fn(() => ''),
+      hasSelection: vi.fn(() => false),
+      clearSelection: vi.fn(),
       getCursorInfo: vi.fn(() => null),
       adjustInputPosition: vi.fn(),
       getBufferType: vi.fn(() => 'normal' as const),
@@ -40,6 +46,7 @@ vi.mock('./Terminal', () => ({
       <section
         data-machine-id={machineId}
         data-modifier-state={`${modifierState?.ctrl ?? 'off'}:${modifierState?.alt ?? 'off'}`}
+        data-selection-mode={selectionMode ? 'true' : 'false'}
         data-terminal-id={terminalId}
         data-testid="termx-terminal"
       >
@@ -286,6 +293,42 @@ describe('LocalRemoteApp', () => {
 
     expect(connect).toHaveBeenCalledTimes(1)
     expect(sessions[0]?.disconnectCalls).toBe(0)
+  })
+
+  it('opens a split terminal view from the existing machine RTC session', async () => {
+    const api = createMockLocalAgentApi()
+    const sessions: ReturnType<typeof createMockLocalRemoteSession>[] = []
+    const connect = vi.fn(({ machineId }: { machineId: string }) =>
+      Promise.resolve(trackSession(sessions, createMockLocalRemoteSession({}, machineId))),
+    )
+
+    render(<LocalRemoteApp api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-1'))
+
+    await userEvent.click(screen.getByRole('button', { name: /split terminal/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-split-terminal-sheet')).toBeTruthy())
+    await userEvent.click(within(screen.getByTestId('termx-split-terminal-sheet')).getByRole('button', { name: /open worker/i }))
+
+    await waitFor(() => expect(screen.getAllByTestId('termx-terminal')).toHaveLength(2))
+    expect(screen.getAllByTestId('termx-terminal').map((node) => node.getAttribute('data-terminal-id'))).toEqual([
+      'terminal-1',
+      'terminal-2',
+    ])
+    expect(screen.getByTestId('termx-terminal-panel').getAttribute('data-active-slot')).toBe('false')
+    expect(screen.getByTestId('termx-split-terminal-panel').getAttribute('data-active-slot')).toBe('true')
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(sessions[0]?.disconnectCalls).toBe(0)
+
+    await userEvent.click(screen.getByRole('button', { name: /enable synchronized input/i }))
+    expect(screen.getByRole('button', { name: /disable synchronized input/i })).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: /close split terminal/i }))
+    await waitFor(() => expect(screen.queryByTestId('termx-split-terminal-panel')).toBeNull())
+    expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-1')
+    expect(connect).toHaveBeenCalledTimes(1)
   })
 
   it('shows a resize unlock action when attach reports a size lock and clears the lock through management api', async () => {

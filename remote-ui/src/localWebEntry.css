@@ -6,11 +6,98 @@
   height: 100%;
   width: 100%;
   padding: 0;
+  touch-action: none;
+}
+.xterm-wrapper .xterm-screen {
+  touch-action: none;
 }
 .xterm-wrapper .xterm-viewport {
   background-color: transparent !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  touch-action: none;
+}
+.xterm-wrapper .xterm-viewport::-webkit-scrollbar {
+  display: none;
 }
 .xterm-wrapper .termx-keyboard-adjusted .xterm-helper-textarea,
 .xterm-wrapper .termx-keyboard-adjusted .composition-view {
   bottom: var(--termx-keyboard-bottom, 0px) !important;
+}
+
+.termx-scrollbar-track {
+  bottom: 4px;
+  opacity: 0;
+  pointer-events: auto;
+  position: absolute;
+  right: 2px;
+  top: 4px;
+  transition: opacity 0.25s ease;
+  width: 14px;
+  z-index: 10;
+}
+
+.termx-scrollbar-track.visible {
+  opacity: 1;
+}
+
+.termx-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 2px;
+  min-height: 24px;
+  position: absolute;
+  right: 0;
+  top: 0;
+  transition: width 0.15s ease, background 0.15s ease, border-radius 0.15s ease;
+  width: 4px;
+  will-change: transform;
+}
+
+.termx-scrollbar-track.active .termx-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 5px;
+  width: 10px;
+}
+
+.termx-selection-magnifier {
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  display: none;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  z-index: 100;
+}
+
+.termx-selection-magnifier-fallback {
+  background:
+    linear-gradient(to right, transparent calc(50% - 0.5px), rgba(255, 255, 255, 0.55) 50%, transparent calc(50% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(50% - 0.5px), rgba(255, 255, 255, 0.55) 50%, transparent calc(50% + 0.5px)),
+    #000;
+  display: none;
+  height: 60px;
+  left: 0;
+  position: absolute;
+  top: 0;
+  width: 160px;
+}
+
+.termx-selection-anchor {
+  animation: termx-selection-anchor-blink 1s step-end infinite;
+  background: #58a6ff;
+  box-shadow: 0 0 6px rgba(88, 166, 255, 0.6);
+  display: none;
+  pointer-events: none;
+  position: absolute;
+  width: 3px;
+  z-index: 99;
+}
+
+@keyframes termx-selection-anchor-blink {
+  50% {
+    opacity: 0;
+  }
 }

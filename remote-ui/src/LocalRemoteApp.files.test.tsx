@@ -10,8 +10,8 @@ import type { TerminalHandle } from './Terminal'
 import type { Terminal } from './model'
 
 vi.mock('./Terminal', () => ({
-  Terminal: forwardRef<TerminalHandle, { machineId: string; terminalId: string; modifierState?: TerminalModifierState }>(function MockTerminal(
-    { machineId, terminalId, modifierState },
+  Terminal: forwardRef<TerminalHandle, { machineId: string; terminalId: string; modifierState?: TerminalModifierState; selectionMode?: boolean }>(function MockTerminal(
+    { machineId, terminalId, modifierState, selectionMode },
     ref,
   ) {
     useImperativeHandle(ref, () => ({
@@ -22,6 +22,11 @@ vi.mock('./Terminal', () => ({
       blur: vi.fn(),
       fit: vi.fn(),
       pasteText: vi.fn(),
+      selectAll: vi.fn(),
+      selectVisible: vi.fn(),
+      getSelection: vi.fn(() => ''),
+      hasSelection: vi.fn(() => false),
+      clearSelection: vi.fn(),
       getCursorInfo: vi.fn(() => null),
       adjustInputPosition: vi.fn(),
       getBufferType: vi.fn(() => 'normal' as const),
@@ -30,6 +35,7 @@ vi.mock('./Terminal', () => ({
       <section
         data-machine-id={machineId}
         data-modifier-state={`${modifierState?.ctrl ?? 'off'}:${modifierState?.alt ?? 'off'}`}
+        data-selection-mode={selectionMode ? 'true' : 'false'}
         data-terminal-id={terminalId}
         data-testid="termx-terminal"
       />

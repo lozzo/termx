@@ -80,6 +80,36 @@ describe('MachineList', () => {
     }))
   })
 
+  it('opens machine details from a context-menu style gesture without connecting', async () => {
+    const onSelectMachine = vi.fn()
+    render(
+      <MachineList
+        machines={[
+          machine({
+            machineId: 'machine-local',
+            name: 'MacBook Pro',
+            hostname: 'mbp.local',
+            state: 'online',
+            terminalCount: 3,
+            lastSeenAt: '2026-05-03T07:22:00Z',
+            lastConnectionPath: 'local',
+            source: 'local',
+          }),
+        ]}
+        onAddMachine={vi.fn()}
+        onScanMachine={vi.fn()}
+        onSelectMachine={onSelectMachine}
+      />,
+    )
+
+    screen.getByRole('button', { name: /connect to macbook pro/i }).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+
+    expect(await screen.findByTestId('termx-machine-detail-sheet')).toBeTruthy()
+    expect(screen.getByText('Machine details')).toBeTruthy()
+    expect(screen.getByText('machine-local')).toBeTruthy()
+    expect(onSelectMachine).not.toHaveBeenCalled()
+  })
+
   it('shows a compact empty state that only points to add, scan, or login', () => {
     render(
       <MachineList
