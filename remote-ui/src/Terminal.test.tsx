@@ -24,8 +24,10 @@ const xtermMocks = vi.hoisted(() => {
       onBufferChange: vi.fn(() => ({ dispose: vi.fn() })),
     }
     private readonly dataHandlers = new Set<(data: string) => void>()
+    private readonly binaryHandlers = new Set<(data: string) => void>()
     private readonly cursorHandlers = new Set<() => void>()
     private readonly renderHandlers = new Set<() => void>()
+    private keyEventHandler: ((event: KeyboardEvent) => boolean) | undefined
     readonly scrollLines = vi.fn((amount: number) => {
       const active = this.buffer.active
       const maxScroll = active.length - this.rows
@@ -33,6 +35,7 @@ const xtermMocks = vi.hoisted(() => {
       for (const handler of this.renderHandlers) handler()
     })
     readonly select = vi.fn()
+    readonly selectLines = vi.fn()
 
     constructor(options: Record<string, unknown> = {}) {
       this.options = options
@@ -47,6 +50,12 @@ const xtermMocks = vi.hoisted(() => {
       root.className = 'xterm'
       const screen = document.createElement('div')
       screen.className = 'xterm-screen'
+      const canvas = document.createElement('canvas')
+      canvas.width = 800
+      canvas.height = 400
+      const textLayer = document.createElement('span')
+      textLayer.className = 'xterm-text-layer'
+      screen.append(canvas, textLayer)
       root.append(screen)
       container.append(root)
       this.element = root
@@ -56,8 +65,8 @@ const xtermMocks = vi.hoisted(() => {
       this.assertActive()
       const text = typeof data === 'string' ? data : new TextDecoder().decode(data)
       this.writes.push(text)
-      const screenElement = this.element?.querySelector('.xterm-screen')
-      if (screenElement) screenElement.textContent = `${screenElement.textContent ?? ''}${text}`
+      const textLayer = this.element?.querySelector('.xterm-text-layer')
+      if (textLayer) textLayer.textContent = `${textLayer.textContent ?? ''}${text}`
       callback?.()
     }
 
@@ -66,6 +75,17 @@ const xtermMocks = vi.hoisted(() => {
       return {
         dispose: () => this.dataHandlers.delete(handler),
       }
+    }
+
+    onBinary(handler: (data: string) => void): { dispose(): void } {
+      this.binaryHandlers.add(handler)
+      return {
+        dispose: () => this.binaryHandlers.delete(handler),
+      }
+    }
+
+    attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void {
+      this.keyEventHandler = handler
     }
 
     onCursorMove(handler: () => void): { dispose(): void } {
@@ -84,6 +104,14 @@ const xtermMocks = vi.hoisted(() => {
 
     emitData(data: string): void {
       for (const handler of this.dataHandlers) handler(data)
+    }
+
+    emitBinary(data: string): void {
+      for (const handler of this.binaryHandlers) handler(data)
+    }
+
+    emitKey(event: KeyboardEvent): boolean {
+      return this.keyEventHandler?.(event) ?? true
     }
 
     emitCursorMove(): void {
@@ -106,8 +134,8 @@ const xtermMocks = vi.hoisted(() => {
 
     clear(): void {
       this.assertActive()
-      const screenElement = this.element?.querySelector('.xterm-screen')
-      if (screenElement) screenElement.textContent = ''
+      const textLayer = this.element?.querySelector('.xterm-text-layer')
+      if (textLayer) textLayer.textContent = ''
     }
 
     reset(): void {
@@ -189,8 +217,21 @@ describe('Terminal', () => {
   const originalResizeObserver = globalThis.ResizeObserver
   const originalRequestAnimationFrame = window.requestAnimationFrame
   const originalCancelAnimationFrame = window.cancelAnimationFrame
+  let canvasContextSpy: ReturnType<typeof vi.spyOn> | undefined
 
   beforeEach(() => {
+    canvasContextSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({
+      beginPath: vi.fn(),
+      clearRect: vi.fn(),
+      drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      lineTo: vi.fn(),
+      moveTo: vi.fn(),
+      stroke: vi.fn(),
+      set fillStyle(_value: string) {},
+      set lineWidth(_value: number) {},
+      set strokeStyle(_value: string) {},
+    }) as unknown as CanvasRenderingContext2D)
     xtermMocks.FakeXTerm.instances.length = 0
     xtermMocks.FakeFitAddon.instances.length = 0
     xtermMocks.FakeFitAddon.nextDimensions = { cols: 101, rows: 31 }
@@ -203,6 +244,8 @@ describe('Terminal', () => {
 
   afterEach(() => {
     cleanup()
+    canvasContextSpy?.mockRestore()
+    canvasContextSpy = undefined
     globalThis.ResizeObserver = originalResizeObserver
     window.requestAnimationFrame = originalRequestAnimationFrame
     window.cancelAnimationFrame = originalCancelAnimationFrame
@@ -586,7 +629,7 @@ describe('Terminal', () => {
     act(() => ref.current!.adjustInputPosition(144))
     await waitFor(() => {
       const xtermElement = xtermMocks.FakeXTerm.instances[0]?.element
-      expect(xtermElement?.style.getPropertyValue('--termx-keyboard-bottom')).toBe('144px')
+      expect(xtermElement?.style.getPropertyValue('--kb-input-bottom')).toBe('144px')
     })
 
     act(() => xtermMocks.FakeXTerm.instances[0]?.emitCursorMove())
@@ -615,7 +658,7 @@ describe('Terminal', () => {
     })
 
     expect(xtermMocks.FakeXTerm.instances[0]?.scrollLines).toHaveBeenCalled()
-    expect(terminalOutput.querySelector('.termx-scrollbar-track')?.className).toContain('visible')
+    expect(terminalOutput.querySelector('.term-scrollbar-track')?.className).toContain('visible')
   })
 
   it('shows a magnifier and builds a selection while selection mode is active', async () => {
@@ -646,8 +689,8 @@ describe('Terminal', () => {
       screenElement.dispatchEvent(touchEvent('touchstart', screenElement, 120))
     })
 
-    expect(terminalOutput.querySelector<HTMLElement>('.termx-selection-anchor')?.style.display).toBe('block')
-    expect(terminalOutput.querySelector<HTMLElement>('.termx-selection-magnifier')?.style.display).toBe('block')
+    expect(terminalOutput.querySelector<HTMLElement>('.sel-anchor-marker')?.style.display).toBe('block')
+    expect(terminalOutput.querySelector<HTMLElement>('.sel-magnifier')?.style.display).toBe('block')
 
     act(() => {
       screenElement.dispatchEvent(touchEvent('touchend', screenElement, 120, []))
