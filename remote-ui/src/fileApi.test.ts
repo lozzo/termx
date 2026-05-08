@@ -30,6 +30,38 @@ describe('createFileApi', () => {
     ])
   })
 
+  it('normalizes preview responses from snake case file api fields', async () => {
+    const session = createMockFileSession({
+      '/files/preview': {
+        path: '/README.md',
+        name: 'README.md',
+        size: 18,
+        mime_type: 'text/markdown',
+        category: 'text',
+        is_text: true,
+        content: '# Hello\n',
+      },
+    })
+    const api = createFileApi(session)
+
+    await expect(api.preview('/README.md', 1024)).resolves.toEqual({
+      path: '/README.md',
+      name: 'README.md',
+      size: 18,
+      mimeType: 'text/markdown',
+      category: 'text',
+      isText: true,
+      content: '# Hello\n',
+      contentBase64: undefined,
+      previewLimit: undefined,
+    })
+    expect(session.requests).toContainEqual({
+      method: 'POST',
+      path: '/files/preview',
+      params: { path: '/README.md', max_size: 1024 },
+    })
+  })
+
   it('normalizes channel failures into user-visible file api errors', async () => {
     const session = createMockFileSession({}, {
       '/files/list': { status: 403, body: { error: 'file manager denied' } },

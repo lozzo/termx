@@ -164,6 +164,42 @@ describe('useFileManager', () => {
     expect(session.openApiCount).toBeGreaterThan(0)
   })
 
+  it('opens file previews after validating the connected target', async () => {
+    const session = createMockFileSession({
+      '/files/list': { path: '/', parent: '', total: 1, entries: [{ name: 'README.md', type: 'file', size: 8 }] },
+      '/files/preview': {
+        path: '/README.md',
+        name: 'README.md',
+        size: 8,
+        mime_type: 'text/markdown',
+        category: 'text',
+        is_text: true,
+        content: '# Hello',
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    const { result } = renderHook(() => useFileManager({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      session,
+      initialPath: '/',
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => {
+      await result.current.openPreview('/README.md')
+    })
+
+    expect(result.current.preview?.content).toBe('# Hello')
+    expect(result.current.previewLoading).toBe(false)
+    expect(result.current.previewError).toBeNull()
+    expect(session.requests).toContainEqual({
+      method: 'POST',
+      path: '/files/preview',
+      params: { path: '/README.md', max_size: 8388608 },
+    })
+  })
+
   it('rejects transports connected to another terminal before issuing file requests', async () => {
     const session = createMockFileSession({
       '/files/list': { path: '/', parent: '', total: 0, entries: [] },

@@ -479,6 +479,7 @@ func (m *Manager) handlePreview(body []byte) (int32, []byte, string) {
 		"name":      info.Name(),
 		"size":      info.Size(),
 		"mime_type": mimeType,
+		"category":  category,
 		"is_text":   category == "text",
 	}
 	if category == "unsupported" {
@@ -488,6 +489,7 @@ func (m *Manager) handlePreview(body []byte) (int32, []byte, string) {
 
 	maxText := int64(5 << 20)
 	maxImage := int64(10 << 20)
+	maxVideo := int64(25 << 20)
 	if req.MaxSize > 0 {
 		if category == "text" && req.MaxSize < maxText {
 			maxText = req.MaxSize
@@ -495,12 +497,22 @@ func (m *Manager) handlePreview(body []byte) (int32, []byte, string) {
 		if category == "image" && req.MaxSize < maxImage {
 			maxImage = req.MaxSize
 		}
+		if category == "video" && req.MaxSize < maxVideo {
+			maxVideo = req.MaxSize
+		}
 	}
 	if category == "text" && info.Size() > maxText {
+		resp["preview_limit"] = maxText
 		data, _ := json.Marshal(resp)
 		return http.StatusOK, data, ""
 	}
 	if category == "image" && info.Size() > maxImage {
+		resp["preview_limit"] = maxImage
+		data, _ := json.Marshal(resp)
+		return http.StatusOK, data, ""
+	}
+	if category == "video" && info.Size() > maxVideo {
+		resp["preview_limit"] = maxVideo
 		data, _ := json.Marshal(resp)
 		return http.StatusOK, data, ""
 	}
@@ -918,7 +930,7 @@ func copyDir(src, dest string, mode os.FileMode) error {
 func detectFileCategory(name string) (string, string) {
 	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(name), "."))
 	textExts := map[string]bool{
-		"txt": true, "md": true, "json": true, "js": true, "ts": true, "jsx": true, "tsx": true,
+		"txt": true, "md": true, "markdown": true, "mdx": true, "json": true, "js": true, "ts": true, "jsx": true, "tsx": true,
 		"html": true, "css": true, "py": true, "go": true, "rs": true, "java": true,
 		"c": true, "cpp": true, "h": true, "hpp": true, "yaml": true, "yml": true,
 		"toml": true, "xml": true, "sh": true, "bash": true, "conf": true, "cfg": true,
@@ -929,16 +941,27 @@ func detectFileCategory(name string) (string, string) {
 	imageExts := map[string]string{
 		"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif",
 		"svg": "image/svg+xml", "webp": "image/webp", "bmp": "image/bmp", "ico": "image/x-icon",
+		"avif": "image/avif",
+	}
+	videoExts := map[string]string{
+		"mp4": "video/mp4", "m4v": "video/mp4", "webm": "video/webm", "mov": "video/quicktime",
+		"ogv": "video/ogg", "ogg": "video/ogg",
 	}
 	baseName := strings.ToLower(filepath.Base(name))
 	noExtTextFiles := map[string]bool{
 		"dockerfile": true, "makefile": true, ".gitignore": true, ".env": true, ".editorconfig": true,
+	}
+	if ext == "md" || ext == "markdown" || ext == "mdx" {
+		return "text", "text/markdown"
 	}
 	if textExts[ext] || noExtTextFiles[baseName] {
 		return "text", "text/plain"
 	}
 	if mime, ok := imageExts[ext]; ok {
 		return "image", mime
+	}
+	if mime, ok := videoExts[ext]; ok {
+		return "video", mime
 	}
 	return "unsupported", "application/octet-stream"
 }

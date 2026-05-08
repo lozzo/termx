@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createFileApi, type DirListResponse, type FileApi, type FileEntry } from './fileApi'
+import { createFileApi, type DirListResponse, type FileApi, type FileEntry, type FilePreviewResponse } from './fileApi'
 import type { ConnectionInfo, RtcSession } from './transport'
+
+export const FILE_PREVIEW_MAX_BYTES = 8 * 1024 * 1024
 
 export interface FileManagerVisibleError {
   message: string
@@ -28,9 +30,15 @@ export interface UseFileManagerResult {
   newDirName: string
   creatingDirectory: boolean
   actionMessage: string | null
+  preview: FilePreviewResponse | null
+  previewPath: string | null
+  previewLoading: boolean
+  previewError: FileManagerVisibleError | null
   fileApi: FileApi
   setNewDirName(name: string): void
   toggleShowHidden(): void
+  openPreview(path: string): Promise<void>
+  closePreview(): void
   createDirectory(): Promise<void>
   deleteEntry(path: string): Promise<void>
   renameEntry(path: string, newName: string): Promise<void>
@@ -48,8 +56,13 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   const [newDirName, setNewDirName] = useState('')
   const [creatingDirectory, setCreatingDirectory] = useState(false)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [preview, setPreview] = useState<FilePreviewResponse | null>(null)
+  const [previewPath, setPreviewPath] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<FileManagerVisibleError | null>(null)
   const currentPathRef = useRef(options.initialPath ?? '')
   const requestSeqRef = useRef(0)
+  const previewSeqRef = useRef(0)
 
   const fileApi = useMemo(() => createFileApi(options.session), [options.session])
 
@@ -109,6 +122,39 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
 
   const toggleShowHidden = useCallback(() => {
     setShowHidden((current) => !current)
+  }, [])
+
+  const openPreview = useCallback(async (path: string) => {
+    const seq = ++previewSeqRef.current
+    setPreviewPath(path)
+    setPreview(null)
+    setPreviewError(null)
+    setPreviewLoading(true)
+    try {
+      const info = await options.session.getConnectionInfo()
+      if (seq !== previewSeqRef.current) return
+      assertSessionTarget(info, options.machineId, options.terminalId)
+      const response = await fileApi.preview(path, FILE_PREVIEW_MAX_BYTES)
+      if (seq !== previewSeqRef.current) return
+      setPreview(response)
+    } catch (err) {
+      if (seq !== previewSeqRef.current) return
+      setPreviewError({
+        message: err instanceof Error ? err.message : String(err),
+        surface: 'modal',
+        recoverable: true,
+      })
+    } finally {
+      if (seq === previewSeqRef.current) setPreviewLoading(false)
+    }
+  }, [fileApi, options.machineId, options.terminalId, options.session])
+
+  const closePreview = useCallback(() => {
+    previewSeqRef.current += 1
+    setPreview(null)
+    setPreviewPath(null)
+    setPreviewError(null)
+    setPreviewLoading(false)
   }, [])
 
   const createDirectory = useCallback(async () => {
@@ -177,9 +223,15 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     newDirName,
     creatingDirectory,
     actionMessage,
+    preview,
+    previewPath,
+    previewLoading,
+    previewError,
     fileApi,
     setNewDirName,
     toggleShowHidden,
+    openPreview,
+    closePreview,
     createDirectory,
     deleteEntry,
     renameEntry,

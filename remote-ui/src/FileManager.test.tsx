@@ -122,4 +122,106 @@ describe('FileManager', () => {
 
     expect(Object.keys(props)).not.toContain('terminalId')
   })
+
+  it('renders markdown previews from selected files', async () => {
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/',
+        parent: '',
+        total: 1,
+        entries: [{ name: 'README.md', type: 'file', size: 42 }],
+      },
+      '/files/preview': {
+        path: '/README.md',
+        name: 'README.md',
+        size: 42,
+        mime_type: 'text/markdown',
+        category: 'text',
+        is_text: true,
+        content: '# Title\n\nSome `code` and **bold** text.',
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(fileManager(session))
+
+    await waitFor(() => expect(screen.getByText('README.md')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /preview readme.md/i }))
+
+    await waitFor(() => expect(screen.getByTestId('termx-file-preview')).toBeTruthy())
+    expect(screen.getByRole('heading', { name: 'Title' })).toBeTruthy()
+    expect(screen.getByText('code')).toBeTruthy()
+    expect(session.requests).toContainEqual({
+      method: 'POST',
+      path: '/files/preview',
+      params: { path: '/README.md', max_size: 8388608 },
+    })
+  })
+
+  it('previews wrapped plain text without horizontal-only code layout', async () => {
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/',
+        parent: '',
+        total: 1,
+        entries: [{ name: 'app.log', type: 'file', size: 140 }],
+      },
+      '/files/preview': {
+        path: '/app.log',
+        name: 'app.log',
+        size: 140,
+        mime_type: 'text/plain',
+        category: 'text',
+        is_text: true,
+        content: 'one very long line that should wrap on small mobile screens',
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(fileManager(session))
+
+    await waitFor(() => expect(screen.getByText('app.log')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /preview app.log/i }))
+
+    const text = await screen.findByText(/one very long line/)
+    expect(text.className).toMatch(/whitespace-pre-wrap/)
+    expect(text.className).toMatch(/break-words/)
+  })
+
+  it('renders image previews from base64 preview content', async () => {
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/',
+        parent: '',
+        total: 1,
+        entries: [{ name: 'shot.png', type: 'file', size: 68 }],
+      },
+      '/files/preview': {
+        path: '/shot.png',
+        name: 'shot.png',
+        size: 68,
+        mime_type: 'image/png',
+        category: 'image',
+        is_text: false,
+        content_base64: 'iVBORw0KGgo=',
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(fileManager(session))
+
+    await waitFor(() => expect(screen.getByText('shot.png')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /preview shot.png/i }))
+
+    const image = await screen.findByRole('img', { name: 'shot.png' })
+    expect(image.getAttribute('src')).toBe('data:image/png;base64,iVBORw0KGgo=')
+  })
 })
+
+function fileManager(session: FileManagerProps['session']) {
+  return (
+    <FileManager
+      machineId="machine-local"
+      terminalId="terminal-1"
+      session={session}
+      initialPath="/"
+    />
+  )
+}

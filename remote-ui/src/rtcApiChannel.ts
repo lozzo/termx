@@ -142,10 +142,7 @@ function normalizeAPIBody(params: unknown): unknown {
   if (typeof params !== 'object' || params === null || Array.isArray(params)) return params
   const record = params as Record<string, unknown>
   if (typeof record.path === 'string') {
-    const body: Record<string, unknown> = { path: record.path }
-    if (typeof record.offset === 'number') body.offset = record.offset
-    if (typeof record.limit === 'number') body.limit = record.limit
-    return body
+    return { ...record, path: record.path }
   }
   return params
 }
