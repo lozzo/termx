@@ -1,4 +1,5 @@
 import type { RemoteRuntimeFetch, RtcConnectOptions } from './transport'
+import { serviceFetchError } from './networkErrors'
 
 export type WebControlFetch = RemoteRuntimeFetch
 
@@ -136,7 +137,13 @@ class WebControlHttpApi implements WebControlApi {
       headers['content-type'] = 'application/json'
       init.body = JSON.stringify(options.body)
     }
-    const response = await this.fetchImpl(this.url(path), init)
+    const url = this.url(path)
+    let response: Response
+    try {
+      response = await this.fetchImpl(url, init)
+    } catch (err) {
+      throw serviceFetchError('Web Control', url, err)
+    }
     if (!response.ok) {
       throw new Error(await errorMessage(response))
     }

@@ -125,6 +125,20 @@ describe('WebControlApi', () => {
     await expect(api.listMachines()).rejects.toThrow(/machine_access_denied.*machine is not owned/i)
   })
 
+  it('translates browser fetch failures into actionable service reachability errors', async () => {
+    const fetch: WebControlFetch = async () => {
+      throw new TypeError('Failed to fetch')
+    }
+    const api = createWebControlApi({
+      baseUrl: 'https://control.termx.test',
+      accessToken: 'access-token-1',
+      fetch,
+    })
+
+    await expect(api.listMachines()).rejects.toThrow(/Cannot reach Web Control at https:\/\/control\.termx\.test.*CORS/i)
+    await expect(api.listMachines()).rejects.not.toThrow(/^Failed to fetch$/)
+  })
+
   it('uses the browser runtime fetch binding when injected from the browser adapter', async () => {
     const calls: Array<{ thisValue: unknown; input: string }> = []
     const boundFetch = function (this: unknown, input: RequestInfo | URL) {

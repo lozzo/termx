@@ -229,6 +229,39 @@ describe('WebControlRemoteApp', () => {
     expect(screen.queryByText('Local app identity storage is required before opening this machine')).toBeNull()
   })
 
+  it('shows an actionable error when the browser cannot reach the scanned Hub', async () => {
+    const storage = new MemoryStorage()
+    const pairUri = termxPairUri(pairPayload({
+      machineId: 'self-hosted-1',
+      name: 'Self Hosted Box',
+      addresses: {
+        local: [],
+        lan: [],
+        public: ['https://blocked-hub.termx.test'],
+      },
+      endpoints: {},
+    }))
+    const fetch: WebControlFetch = async () => {
+      throw new TypeError('Failed to fetch')
+    }
+
+    render(
+      <WebControlRemoteApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        networkRuntime={testNetworkRuntime(fetch, storage)}
+        storage={storage}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /scan pairing qr/i }))
+    fireEvent.change(screen.getByLabelText(/termx qr content/i), { target: { value: pairUri } })
+    await userEvent.click(screen.getByRole('button', { name: /^pair device$/i }))
+
+    await waitFor(() => expect(screen.getByText(/Cannot reach Managed Hub at https:\/\/blocked-hub\.termx\.test/i)).toBeTruthy())
+    expect(screen.queryByText(/^Failed to fetch$/)).toBeNull()
+  })
+
   it('rejects pairing codes that do not match a Web Control machine in the signed-in account', async () => {
     const storage = new MemoryStorage()
     const pairUri = termxPairUri(pairPayload({ machineId: 'local-machine-1', name: 'Local Debug Machine' }))

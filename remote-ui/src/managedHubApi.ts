@@ -1,4 +1,5 @@
 import type { RemoteRuntimeFetch, RtcConnectOptions, RtcSessionDescription } from './transport'
+import { serviceFetchError } from './networkErrors'
 
 export interface ManagedRelayPolicy {
   allowRelay: boolean
@@ -230,7 +231,13 @@ class ManagedHubHttpApi implements ManagedHubApi {
       headers['content-type'] = 'application/json'
       init.body = JSON.stringify(options.body)
     }
-    const response = await this.fetchImpl(this.url(path), init)
+    const url = this.url(path)
+    let response: Response
+    try {
+      response = await this.fetchImpl(url, init)
+    } catch (err) {
+      throw serviceFetchError('Managed Hub', url, err)
+    }
     if (!response.ok) {
       throw new Error(await errorMessage(response))
     }

@@ -1,9 +1,13 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBrowserRtcSession } from './browserRtcSession'
 import type { ConnectionLogEvent } from './connectionLogger'
 import { TERMX_FRAME_TYPES, encodeTermxFrame } from './termxProtocol'
 
 describe('BrowserRtcSession', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('creates raw terminal and api DataChannels during browser WebRTC negotiation', async () => {
     const factory = createMockPeerConnectionFactory()
     const session = createBrowserRtcSession({
@@ -101,6 +105,30 @@ describe('BrowserRtcSession', () => {
     await expect(session.getConnectionInfo()).resolves.toMatchObject({
       path: 'public_p2p',
       connectionId: 'rtc-p2p-1',
+    })
+  })
+
+  it('falls back to getRandomValues when crypto.randomUUID is unavailable', async () => {
+    vi.stubGlobal('crypto', {
+      getRandomValues(bytes: Uint8Array) {
+        bytes.set(Array.from({ length: bytes.length }, (_, index) => index + 1))
+        return bytes
+      },
+    })
+    const factory = createMockPeerConnectionFactory()
+    const session = createBrowserRtcSession({
+      machineId: 'machine-remote',
+      terminalId: 'terminal-1',
+      peerConnectionFactory: factory,
+    })
+
+    const offer = await session.createOffer({ machineId: 'machine-remote', terminalId: 'terminal-1', path: 'managed' })
+
+    expect(offer.sessionId).toMatch(/^rtc_/)
+    expect(offer.sessionId).not.toContain('undefined')
+    await expect(session.getConnectionInfo()).resolves.toMatchObject({
+      connectionId: offer.sessionId,
+      path: 'managed',
     })
   })
 

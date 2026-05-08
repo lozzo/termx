@@ -149,7 +149,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     const pc = (this.options.peerConnectionFactory ?? ((configuration?: RTCConfiguration) => new RTCPeerConnection(configuration)))(
       peerConnectionConfiguration(input.iceServers),
     )
-    const sessionId = this.options.sessionIdGenerator?.() ?? crypto.randomUUID()
+    const sessionId = this.options.sessionIdGenerator?.() ?? createRtcSessionId()
     this.pc = pc
     this.setupConnectionStateHandlers(pc)
     this.connectionId = sessionId
@@ -986,6 +986,27 @@ function normalizeProtocolRtcEvent(record: Record<string, unknown>): RtcEvent {
     type: `protocol_event_${protocolType}`,
     payload: record,
   }
+}
+
+function createRtcSessionId(): string {
+  const cryptoImpl = globalThis.crypto
+  if (cryptoImpl?.randomUUID) {
+    return `rtc_${cryptoImpl.randomUUID()}`
+  }
+  const bytes = new Uint8Array(16)
+  cryptoImpl?.getRandomValues?.(bytes)
+  if (bytes.some((value) => value !== 0)) {
+    return `rtc_${base64url(bytes)}`
+  }
+  return `rtc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
+}
+
+function base64url(bytes: Uint8Array): string {
+  let binary = ''
+  for (const value of bytes) {
+    binary += String.fromCharCode(value)
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
 
 function waitForICEGatheringComplete(

@@ -328,6 +328,19 @@ describe('ManagedHubApi', () => {
     await expect(api.createSession(validSessionInput())).rejects.toThrow(/managed_session_rejected.*expired/i)
   })
 
+  it('translates browser fetch failures into actionable Hub reachability errors', async () => {
+    const fetch: ManagedHubFetch = async () => {
+      throw new TypeError('Failed to fetch')
+    }
+    const api = createManagedHubApi({
+      baseUrl: 'https://hub.termx.test',
+      fetch,
+    })
+
+    await expect(api.createSession(validSessionInput())).rejects.toThrow(/Cannot reach Managed Hub at https:\/\/hub\.termx\.test.*CORS/i)
+    await expect(api.createSession(validSessionInput())).rejects.not.toThrow(/^Failed to fetch$/)
+  })
+
   it('claims a pairing code through the Hub while leaving secret validation to the agent', async () => {
     const fetch = new RecordingFetch([
       jsonResponse(200, {
