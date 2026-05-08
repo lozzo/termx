@@ -15,7 +15,7 @@ export type ConnectionPhase =
 export type UserIntent =
   | { kind: 'connectMachine'; machineId: string }
   | { kind: 'terminal'; machineId: string; terminalId: string }
-  | { kind: 'fileManager'; machineId: string; terminalId: string }
+  | { kind: 'fileManager'; machineId: string }
 
 export interface ChannelLifecycle {
   state: 'closed' | 'opening' | 'open' | 'verifying' | 'failed'
@@ -45,7 +45,7 @@ export interface ConnectionSnapshot {
 export type ConnectionMessage =
   | { type: 'user.connectMachine'; machineId: string }
   | { type: 'user.openTerminal'; machineId: string; terminalId: string }
-  | { type: 'user.openFileManager'; machineId: string; terminalId: string }
+  | { type: 'user.openFileManager'; machineId: string }
   | { type: 'user.retry' }
   | { type: 'user.release' }
   | { type: 'connection.connecting'; path: ConnectionPath }
@@ -58,8 +58,8 @@ export type ConnectionMessage =
   | { type: 'app.resume'; resumeKind: 'quick' | 'cold' | 'frozen' }
   | { type: 'terminal.channelOpen'; machineId: string; terminalId: string }
   | { type: 'terminal.channelClosed'; machineId: string; terminalId: string; reason?: string }
-  | { type: 'file.channelOpen'; machineId: string; terminalId: string }
-  | { type: 'file.channelClosed'; machineId: string; terminalId: string; reason?: string }
+  | { type: 'file.channelOpen'; machineId: string }
+  | { type: 'file.channelClosed'; machineId: string; reason?: string }
 
 export function initialConnectionSnapshot(): ConnectionSnapshot {
   return {
@@ -143,15 +143,13 @@ export function reduceConnectionMessage(
       return {
         ...snapshot,
         machineId: message.machineId,
-        activeTerminalId: message.terminalId,
         userIntent: {
           kind: 'fileManager',
           machineId: message.machineId,
-          terminalId: message.terminalId,
         },
         fileManagers: {
           ...snapshot.fileManagers,
-          [message.terminalId]: { state: 'opening' },
+          [message.machineId]: { state: 'opening' },
         },
       }
     case 'file.channelOpen':
@@ -160,7 +158,7 @@ export function reduceConnectionMessage(
         machineId: message.machineId,
         fileManagers: {
           ...snapshot.fileManagers,
-          [message.terminalId]: { state: 'open' },
+          [message.machineId]: { state: 'open' },
         },
       }
     case 'file.channelClosed':
@@ -168,7 +166,7 @@ export function reduceConnectionMessage(
         ...snapshot,
         fileManagers: setChannelState(
           snapshot.fileManagers,
-          message.terminalId,
+          message.machineId,
           message.reason ? { state: 'failed', error: message.reason } : { state: 'closed' },
         ),
       }
@@ -273,12 +271,12 @@ function assertNoTransportImplementationLeak(value: unknown): void {
 
 function setChannelState(
   channels: Record<string, ChannelLifecycle>,
-  terminalId: string,
+  channelId: string,
   state: ChannelLifecycle,
 ): Record<string, ChannelLifecycle> {
   return {
     ...channels,
-    [terminalId]: state,
+    [channelId]: state,
   }
 }
 
@@ -303,8 +301,8 @@ function mapChannelStates(
   mapper: (channel: ChannelLifecycle) => ChannelLifecycle,
 ): Record<string, ChannelLifecycle> {
   const next: Record<string, ChannelLifecycle> = {}
-  for (const [terminalId, channel] of Object.entries(channels)) {
-    next[terminalId] = mapper(channel)
+  for (const [channelId, channel] of Object.entries(channels)) {
+    next[channelId] = mapper(channel)
   }
   return next
 }

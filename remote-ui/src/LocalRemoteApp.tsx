@@ -528,21 +528,19 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
       setMobileSheet('pair')
       return
     }
-    const fileTerminal = page === 'terminal' ? activeToolTerminal : (activeToolTerminal ?? terminals[0])
-    if (!machine || !fileTerminal) {
-      setError('No terminal is available for local file access')
+    if (!machine) {
+      setError('No machine is available for file access')
       return
     }
-    const fallbackPath = fileTerminal.cwd || '/'
-    const resolveTerminalDirectory = page === 'terminal'
+    const fileTerminal = page === 'terminal' ? activeToolTerminal : (activeToolTerminal ?? terminals[0] ?? null)
+    const fallbackPath = fileTerminal?.cwd || '/'
+    const resolveTerminalDirectory = page === 'terminal' && Boolean(fileTerminal)
+    setFileTerminalId(fileTerminal?.terminalId ?? null)
     setFileInitialPath(fallbackPath)
     setFileOpenNonce((current) => current + 1)
-    if (fileTerminalId !== fileTerminal.terminalId) {
-      setFileTerminalId(fileTerminal.terminalId)
-    }
     void ensureMachineSession(machine.machineId)
       .then(async (session) => {
-        if (!resolveTerminalDirectory) return
+        if (!resolveTerminalDirectory || !fileTerminal) return
         try {
           const directory = await createTerminalManagementApi(session, machine.machineId)
             .getTerminalDirectory(fileTerminal.terminalId)
@@ -564,7 +562,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
       })
     setFilesOpen(true)
     setMobileSheet(null)
-  }, [activeToolTerminal, ensureMachineSession, fileTerminalId, machine, page, pair, requireVerification, terminals])
+  }, [activeToolTerminal, ensureMachineSession, machine, page, pair, requireVerification, terminals])
 
   const openManageTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {
@@ -1373,18 +1371,18 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
             <X className="h-5 w-5" />
           </button>
         </div>
-        {fileTerminalId && connectedSession ? (
+        {connectedSession ? (
           <FileManager
-            key={`${fileTerminalId}:${fileInitialPath}:${fileOpenNonce}`}
+            key={`${fileTerminalId ?? 'machine'}:${fileInitialPath}:${fileOpenNonce}`}
             machineId={machine.machineId}
-            terminalId={fileTerminalId}
+            terminalId={fileTerminalId ?? undefined}
             session={connectedSession}
             initialPath={fileInitialPath}
             className="flex h-full min-h-0 flex-col relative"
           />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-            {fileTerminalId ? 'Connecting...' : 'Local file access is not ready'}
+            {filesOpen ? 'Connecting...' : 'File access is not ready'}
           </div>
         )}
       </div>

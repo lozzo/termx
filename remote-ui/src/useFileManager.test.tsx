@@ -164,6 +164,22 @@ describe('useFileManager', () => {
     expect(session.openApiCount).toBeGreaterThan(0)
   })
 
+  it('does not reject machine-scoped file access when no terminal id is requested', async () => {
+    const session = createMockFileSession({
+      '/files/list': { path: '/', parent: '', total: 1, entries: [{ name: 'machine.txt', type: 'file', size: 1 }] },
+    }, {}, { terminalId: 'terminal-2' })
+
+    const { result } = renderHook(() => useFileManager({
+      machineId: 'machine-local',
+      session,
+      initialPath: '/',
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.error).toBeNull()
+    expect(result.current.entries[0]?.name).toBe('machine.txt')
+  })
+
   it('opens file previews after validating the connected target', async () => {
     const session = createMockFileSession({
       '/files/list': { path: '/', parent: '', total: 1, entries: [{ name: 'README.md', type: 'file', size: 8 }] },

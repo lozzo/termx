@@ -64,14 +64,14 @@ vi.mock('./Terminal', () => ({
 vi.mock('./FileManager', async () => {
   const React = await import('react')
   return {
-    FileManager: ({ machineId, terminalId, initialPath }: { machineId: string; terminalId: string; initialPath?: string }) => {
+    FileManager: ({ machineId, terminalId, initialPath }: { machineId: string; terminalId?: string; initialPath?: string }) => {
       const [currentPath, setCurrentPath] = React.useState(initialPath ?? '')
       return (
         <section
           data-current-path={currentPath}
           data-initial-path={initialPath ?? ''}
           data-machine-id={machineId}
-          data-terminal-id={terminalId}
+          data-terminal-id={terminalId ?? ''}
           data-testid="termx-file-manager"
         >
           <button type="button" onClick={() => setCurrentPath('/tmp')}>Open tmp</button>
@@ -172,6 +172,27 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.getByTestId('termx-file-manager').getAttribute('data-terminal-id')).toBe('terminal-2'))
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-initial-path')).toBe('/srv/worker')
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/srv/worker')
+  })
+
+  it('opens machine files from root when no terminal is available', async () => {
+    const api = createMockLocalAgentApi({ terminals: [] })
+    const sessions: ReturnType<typeof createMockLocalRemoteSession>[] = []
+    const connect = vi.fn(({ machineId }: { machineId: string }) =>
+      Promise.resolve(trackSession(sessions, createMockLocalRemoteSession({
+        '/files/list': { path: '/', parent: '', total: 0, entries: [] },
+      }, machineId))),
+    )
+
+    render(<LocalRemoteApp api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+
+    await waitFor(() => expect(screen.getByTestId('termx-file-manager')).toBeTruthy())
+    expect(screen.getByTestId('termx-file-manager').getAttribute('data-terminal-id')).toBe('')
+    expect(screen.getByTestId('termx-file-manager').getAttribute('data-initial-path')).toBe('/')
+    expect(screen.queryByText('No terminal is available for local file access')).toBeNull()
+    expect(connect).toHaveBeenCalledWith(expect.objectContaining({ machineId: 'machine-local' }))
   })
 
   it('uses a terminal-first mobile shell with sheets instead of a Config sidebar', async () => {
@@ -848,7 +869,32 @@ function createMockLocalRemoteSession(
   })
 }
 
-function createMockLocalAgentApi() {
+function createMockLocalAgentApi(options: { terminals?: Terminal[] } = {}) {
+  const terminals = options.terminals ?? [{
+    machineId: 'machine-local',
+    terminalId: 'terminal-1',
+    title: 'zsh',
+    state: 'running' as const,
+    command: '/bin/zsh',
+    cols: 120,
+    rows: 36,
+    cwd: '/Users/lozzow/project',
+    sizeLocked: true,
+    sizeLockMode: 'lock' as const,
+    environment: 'dev',
+  }, {
+    machineId: 'machine-local',
+    terminalId: 'terminal-2',
+    title: 'worker',
+    state: 'running' as const,
+    command: '/usr/bin/env bash',
+    cols: 90,
+    rows: 28,
+    cwd: '/srv/worker',
+    sizeLocked: false,
+    sizeLockMode: 'off' as const,
+    environment: 'prod',
+  }]
   return {
     async getStatus(): Promise<LocalStatus> {
       return {
@@ -856,7 +902,7 @@ function createMockLocalAgentApi() {
           machineId: 'machine-local',
           name: 'Local Mac',
           state: 'online',
-          terminalCount: 1,
+          terminalCount: terminals.length,
           localRTC: { signalingUrl: 'http://127.0.0.1:18888' },
         },
         localWeb: {
@@ -866,31 +912,7 @@ function createMockLocalAgentApi() {
       }
     },
     async listTerminals(): Promise<Terminal[]> {
-      return [{
-        machineId: 'machine-local',
-        terminalId: 'terminal-1',
-        title: 'zsh',
-        state: 'running' as const,
-        command: '/bin/zsh',
-        cols: 120,
-        rows: 36,
-        cwd: '/Users/lozzow/project',
-        sizeLocked: true,
-        sizeLockMode: 'lock' as const,
-        environment: 'dev',
-      }, {
-        machineId: 'machine-local',
-        terminalId: 'terminal-2',
-        title: 'worker',
-        state: 'running' as const,
-        command: '/usr/bin/env bash',
-        cols: 90,
-        rows: 28,
-        cwd: '/srv/worker',
-        sizeLocked: false,
-        sizeLockMode: 'off' as const,
-        environment: 'prod',
-      }]
+      return terminals
     },
   }
 }

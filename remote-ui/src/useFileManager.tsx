@@ -12,14 +12,14 @@ export interface FileManagerVisibleError {
 
 export interface UseFileManagerOptions {
   machineId: string
-  terminalId: string
+  terminalId?: string | undefined
   session: Pick<RtcSession, 'openApi' | 'openFileTransfer' | 'getConnectionInfo'>
   initialPath?: string | undefined
 }
 
 export interface UseFileManagerResult {
   machineId: string
-  terminalId: string
+  terminalId?: string | undefined
   currentPath: string
   entries: FileEntry[]
   visibleEntries: FileEntry[]
@@ -288,7 +288,7 @@ function assertSessionTarget(info: ConnectionInfo, machineId: string, terminalId
   if (info.machineId !== machineId) {
     throw new Error(`file session machine mismatch: connected to ${info.machineId}, expected ${machineId}`)
   }
-  if (info.terminalId !== undefined && info.terminalId !== terminalId) {
+  if (terminalId !== undefined && info.terminalId !== undefined && info.terminalId !== terminalId) {
     throw new Error(`file session terminal mismatch: connected to ${info.terminalId}, expected ${terminalId}`)
   }
 }

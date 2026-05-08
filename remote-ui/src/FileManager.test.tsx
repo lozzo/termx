@@ -111,16 +111,38 @@ describe('FileManager', () => {
     expect(propKeys).not.toContain('relayCredentials')
   })
 
-  it('requires terminalId in the public file manager props contract', () => {
+  it('allows machine-scoped file manager props without a terminal id', () => {
     const props = {
       machineId: 'machine-local',
       session: createMockFileSession(),
     }
 
-    // @ts-expect-error file manager is terminal-scoped and must not be opened for machine-only access.
     const _withoutTerminal: FileManagerProps = props
 
     expect(Object.keys(props)).not.toContain('terminalId')
+  })
+
+  it('shows absolute breadcrumbs without labeling the root slash as root', async () => {
+    const session = createMockFileSession({
+      '/files/list': ({ path }: { path?: string }) => ({
+        path,
+        parent: '/',
+        total: 0,
+        entries: [],
+      }),
+    })
+
+    render(
+      <FileManager
+        machineId="machine-local"
+        session={session}
+        initialPath="/tmp"
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText('tmp')).toBeTruthy())
+    expect(screen.getByRole('button', { name: '/' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'root' })).toBeNull()
   })
 
   it('renders markdown previews from selected files', async () => {

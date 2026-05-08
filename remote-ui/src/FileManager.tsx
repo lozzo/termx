@@ -6,7 +6,7 @@ import { AlertCircle, Check, ChevronRight, Code2, Eye, EyeOff, File, FileText, F
 
 export interface FileManagerProps {
   machineId: string
-  terminalId: string
+  terminalId?: string | undefined
   session: Pick<RtcSession, 'openApi' | 'openFileTransfer' | 'getConnectionInfo'>
   initialPath?: string | undefined
   className?: string | undefined
@@ -48,7 +48,7 @@ export function FileManager({
                  onClick={() => void manager.navigate('/')}
                  className="shrink-0 rounded-md px-2 py-1 text-zinc-500 transition-colors active:bg-zinc-200"
                >
-                 root
+                 /
                </button>
                {pathSegments.map((segment, index) => {
                  const isLast = index === pathSegments.length - 1

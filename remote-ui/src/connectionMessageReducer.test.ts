@@ -20,8 +20,8 @@ describe('connectionMessageReducer', () => {
       { type: 'connection.connected', path: 'local', connectionId: 'conn-1' },
       { type: 'user.openTerminal', machineId: 'machine-local', terminalId: 'term-1' },
       { type: 'terminal.channelOpen', machineId: 'machine-local', terminalId: 'term-1' },
-      { type: 'user.openFileManager', machineId: 'machine-local', terminalId: 'term-1' },
-      { type: 'file.channelOpen', machineId: 'machine-local', terminalId: 'term-1' },
+      { type: 'user.openFileManager', machineId: 'machine-local' },
+      { type: 'file.channelOpen', machineId: 'machine-local' },
     ])
 
     expect(snapshot.phase).toBe('connected')
@@ -29,7 +29,7 @@ describe('connectionMessageReducer', () => {
     expect(snapshot.machineId).toBe('machine-local')
     expect(snapshot.activeTerminalId).toBe('term-1')
     expect(snapshot.terminalChannels['term-1']?.state).toBe('open')
-    expect(snapshot.fileManagers['term-1']?.state).toBe('open')
+    expect(snapshot.fileManagers['machine-local']?.state).toBe('open')
     expect(JSON.stringify(snapshot)).not.toMatch(/workspace|tab|window|pane/i)
   })
 
@@ -67,7 +67,7 @@ describe('connectionMessageReducer', () => {
     const connected = reduceAll([
       { type: 'user.connectMachine', machineId: 'machine-local' },
       { type: 'connection.connected', path: 'local', connectionId: 'conn-1' },
-      { type: 'user.openFileManager', machineId: 'machine-local', terminalId: 'term-1' },
+      { type: 'user.openFileManager', machineId: 'machine-local' },
     ])
 
     const offline = reduceConnectionMessage(connected, { type: 'network.offline' })
@@ -75,7 +75,6 @@ describe('connectionMessageReducer', () => {
     expect(offline.userIntent).toEqual({
       kind: 'fileManager',
       machineId: 'machine-local',
-      terminalId: 'term-1',
     })
 
     const reconnecting = reduceConnectionMessage(offline, { type: 'network.online' })
