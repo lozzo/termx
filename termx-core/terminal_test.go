@@ -3,6 +3,7 @@ package termx
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -73,6 +74,55 @@ func TestTerminalLifecycleAndSnapshot(t *testing.T) {
 
 	if got := term.Info(); got.State != StateExited {
 		t.Fatalf("unexpected state: %s", got.State)
+	}
+}
+
+func TestTerminalTracksReportedWorkingDirectory(t *testing.T) {
+	ctx := context.Background()
+	bus := NewEventBus(nil)
+
+	term, err := newTerminal(ctx, bus, terminalConfig{
+		ID:             "cwd-test",
+		Name:           "shell",
+		Command:        []string{"bash", "--noprofile", "--norc"},
+		Size:           Size{Cols: 80, Rows: 24},
+		Dir:            "/tmp",
+		ScrollbackSize: 128,
+		KeepAfterExit:  time.Second,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("new terminal failed: %v", err)
+	}
+	defer term.Close()
+
+	wantInitialCWD, err := filepath.EvalSymlinks("/tmp")
+	if err != nil {
+		wantInitialCWD = "/tmp"
+	}
+	if got := term.Info().CWD; got != wantInitialCWD {
+		t.Fatalf("expected initial cwd from create dir, got %q", got)
+	}
+	term.installVTermHandlers()
+	if _, err := term.vterm.Write([]byte("\x1b]7;file://host/srv/app\x1b\\")); err != nil {
+		t.Fatalf("vterm write failed: %v", err)
+	}
+
+	reported, ok := term.listInfoSnapshot(ListOptions{})
+	if !ok {
+		t.Fatal("expected terminal list info")
+	}
+	if got := reported.CWD; got != "/srv/app" {
+		t.Fatalf("expected reported cwd, got %q", got)
+	}
+	data, err := term.protocolInfoJSON()
+	if err != nil {
+		t.Fatalf("protocol info failed: %v", err)
+	}
+	if !strings.Contains(string(data), `"cwd":"/srv/app"`) {
+		t.Fatalf("expected protocol cwd in %s", string(data))
 	}
 }
 

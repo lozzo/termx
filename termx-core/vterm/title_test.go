@@ -55,3 +55,19 @@ func TestVTermTitleBELPreservesFollowingPromptText(t *testing.T) {
 		t.Fatalf("expected prompt text to remain visible, got %q", rendered)
 	}
 }
+
+func TestVTermWorkingDirectoryCallback(t *testing.T) {
+	var captured string
+	vt := New(80, 24, 1000, nil)
+	vt.SetWorkingDirectoryHandler(func(path string) {
+		captured = path
+	})
+
+	if _, err := vt.Write([]byte("\x1b]7;file://host/srv/app\x1b\\")); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	if captured != "file://host/srv/app" {
+		t.Fatalf("expected working directory callback, got %q", captured)
+	}
+}

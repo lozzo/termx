@@ -128,7 +128,7 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.getByTestId('termx-file-manager')).toBeTruthy())
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-terminal-id')).toBe('terminal-1')
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-initial-path')).toBe('/Users/lozzow/project')
-    expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp')
+    expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/Users/lozzow/project')
     expect(connect).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'machine-local',
     }))
@@ -140,7 +140,7 @@ describe('LocalRemoteApp', () => {
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane|session/i)
   })
 
-  it('preserves file state for the same terminal but resets when the file context terminal changes', async () => {
+  it('opens terminal files from the terminal cwd and resets when the file context terminal changes', async () => {
     const api = createMockLocalAgentApi()
     const sessions: ReturnType<typeof createMockLocalRemoteSession>[] = []
     const connect = vi.fn(({ machineId }: { machineId: string }) =>
@@ -163,7 +163,7 @@ describe('LocalRemoteApp', () => {
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /open files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp'))
+    await waitFor(() => expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/Users/lozzow/project'))
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
     await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').className).toMatch(/invisible/))

@@ -78,6 +78,22 @@ func TestRuntimeAPIChannelRouterHandlesTerminalManagement(t *testing.T) {
 		t.Fatalf("expected create routed to terminal manager, got %#v", manager)
 	}
 
+	status, body, errMsg = routeRuntimeAPIRequest(fileapi.NewManager(), manager, apiRequest{
+		ID:     "req_directory",
+		Method: "get_directory",
+		Path:   "get_directory",
+		Body:   json.RawMessage(`{"terminal_id":"terminal-1"}`),
+	})
+	if errMsg != "" {
+		t.Fatalf("expected terminal directory request to succeed, got %q", errMsg)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", status)
+	}
+	if string(body) != `{"path":"/srv/app"}` {
+		t.Fatalf("expected terminal directory payload, got %s", string(body))
+	}
+
 	fileStatus, _, fileErr := routeRuntimeAPIRequest(fileapi.NewManager(), manager, apiRequest{
 		ID:     "req_2",
 		Method: "POST",
@@ -481,6 +497,8 @@ func (s *terminalAPIRouterStub) RouteTerminalManagementRequest(_ context.Context
 		_ = json.Unmarshal(req.Body, &body)
 		s.createName = body.Name
 		return http.StatusOK, []byte(`{"terminal_id":"terminal-3"}`), ""
+	case "get_directory":
+		return http.StatusOK, []byte(`{"path":"/srv/app"}`), ""
 	default:
 		return http.StatusNotFound, nil, "unknown terminal management route"
 	}

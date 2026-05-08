@@ -57,6 +57,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
   const [connectingTerminalId, setConnectingTerminalId] = useState<string | null>(null)
   const [fileTerminalId, setFileTerminalId] = useState<string | null>(null)
   const [fileInitialPath, setFileInitialPath] = useState('/')
+  const [fileOpenNonce, setFileOpenNonce] = useState(0)
   const [connectionRetryToken, setConnectionRetryToken] = useState(0)
   const [terminalResizeControl, setTerminalResizeControl] = useState<TerminalResizeControl>(defaultTerminalResizeControl)
   const [unlockingResize, setUnlockingResize] = useState(false)
@@ -471,24 +472,43 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
       setMobileSheet('pair')
       return
     }
-    const fileTerminal = activeToolTerminal ?? terminals[0]
+    const fileTerminal = page === 'terminal' ? activeToolTerminal : (activeToolTerminal ?? terminals[0])
     if (!machine || !fileTerminal) {
       setError('No terminal is available for local file access')
       return
     }
-    setFileInitialPath(fileTerminal.cwd || '/')
+    const fallbackPath = fileTerminal.cwd || '/'
+    const resolveTerminalDirectory = page === 'terminal'
+    setFileInitialPath(fallbackPath)
+    setFileOpenNonce((current) => current + 1)
     if (fileTerminalId !== fileTerminal.terminalId) {
       setFileTerminalId(fileTerminal.terminalId)
     }
-    void ensureMachineSession(machine.machineId).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : String(err))
-      setFilesOpen(false)
-      setFileTerminalId(null)
-      if (pair) setMobileSheet('pair')
-    })
+    void ensureMachineSession(machine.machineId)
+      .then(async (session) => {
+        if (!resolveTerminalDirectory) return
+        try {
+          const directory = await createTerminalManagementApi(session, machine.machineId)
+            .getTerminalDirectory(fileTerminal.terminalId)
+          const livePath = normalizeTerminalDirectory(directory.path)
+          if (livePath) {
+            setFileInitialPath(livePath)
+            setFileOpenNonce((current) => current + 1)
+          }
+        } catch {
+          setFileInitialPath(fallbackPath)
+          setFileOpenNonce((current) => current + 1)
+        }
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+        setFilesOpen(false)
+        setFileTerminalId(null)
+        if (pair) setMobileSheet('pair')
+      })
     setFilesOpen(true)
     setMobileSheet(null)
-  }, [activeToolTerminal, ensureMachineSession, fileTerminalId, machine, pair, requireVerification, terminals])
+  }, [activeToolTerminal, ensureMachineSession, fileTerminalId, machine, page, pair, requireVerification, terminals])
 
   const openManageTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {
@@ -1299,7 +1319,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
         </div>
         {fileTerminalId && connectedSession ? (
           <FileManager
-            key={fileTerminalId}
+            key={`${fileTerminalId}:${fileInitialPath}:${fileOpenNonce}`}
             machineId={machine.machineId}
             terminalId={fileTerminalId}
             session={connectedSession}
@@ -1364,4 +1384,18 @@ function isRtcSessionAlive(session: RtcSession): boolean {
   const candidate = session as RtcSession & Partial<RtcSessionLiveness>
   if (typeof candidate.isAlive !== 'function') return true
   return candidate.isAlive()
+}
+
+function normalizeTerminalDirectory(path: string | undefined): string {
+  const trimmed = path?.trim()
+  if (!trimmed) return ''
+  if (trimmed.startsWith('file://')) {
+    try {
+      const url = new URL(trimmed)
+      if (url.pathname) return decodeURIComponent(url.pathname)
+    } catch {
+      return ''
+    }
+  }
+  return trimmed.startsWith('/') ? trimmed : ''
 }

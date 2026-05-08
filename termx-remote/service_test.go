@@ -159,6 +159,108 @@ func TestTerminalManagementListIncludesTerminalMetadataTags(t *testing.T) {
 	}
 }
 
+func TestTerminalManagementGetDirectoryPrefersProcessCWD(t *testing.T) {
+	daemon := &terminalManagementDaemonStub{
+		get: &protocol.TerminalInfo{
+			ID:      "terminal-1",
+			State:   "running",
+			LiveCWD: "/srv/process",
+			CWD:     "/srv/reported",
+			Tags:    map[string]string{"termx.cwd": "/srv/metadata"},
+		},
+	}
+	router := terminalManagementRouter{daemon: daemon}
+
+	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
+		Method: "get_directory",
+		Path:   "get_directory",
+		Body:   json.RawMessage(`{"terminal_id":"terminal-1"}`),
+	})
+	if errMsg != "" {
+		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("RouteTerminalManagementRequest status = %d, body = %s", status, string(body))
+	}
+	var payload struct {
+		Path   string `json:"path"`
+		Source string `json:"source"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("decode terminal directory response: %v", err)
+	}
+	if payload.Path != "/srv/process" || payload.Source != "process" {
+		t.Fatalf("expected process cwd, got %#v body=%s", payload, string(body))
+	}
+}
+
+func TestTerminalManagementGetDirectoryFallsBackToReportedCWD(t *testing.T) {
+	daemon := &terminalManagementDaemonStub{
+		get: &protocol.TerminalInfo{
+			ID:    "terminal-1",
+			State: "running",
+			CWD:   "/srv/reported",
+			Tags:  map[string]string{"termx.cwd": "/srv/metadata"},
+		},
+	}
+	router := terminalManagementRouter{daemon: daemon}
+
+	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
+		Method: "get_directory",
+		Path:   "get_directory",
+		Body:   json.RawMessage(`{"terminal_id":"terminal-1"}`),
+	})
+	if errMsg != "" {
+		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("RouteTerminalManagementRequest status = %d, body = %s", status, string(body))
+	}
+	var payload struct {
+		Path   string `json:"path"`
+		Source string `json:"source"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("decode terminal directory response: %v", err)
+	}
+	if payload.Path != "/srv/reported" || payload.Source != "reported" {
+		t.Fatalf("expected reported cwd, got %#v body=%s", payload, string(body))
+	}
+}
+
+func TestTerminalManagementGetDirectoryFallsBackToMetadataCWD(t *testing.T) {
+	daemon := &terminalManagementDaemonStub{
+		get: &protocol.TerminalInfo{
+			ID:    "terminal-1",
+			State: "running",
+			Tags:  map[string]string{"termx.cwd": "/srv/metadata"},
+		},
+	}
+	router := terminalManagementRouter{daemon: daemon}
+
+	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
+		Method: "get_directory",
+		Path:   "get_directory",
+		Body:   json.RawMessage(`{"terminal_id":"terminal-1"}`),
+	})
+	if errMsg != "" {
+		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("RouteTerminalManagementRequest status = %d, body = %s", status, string(body))
+	}
+	var payload struct {
+		Path   string `json:"path"`
+		Source string `json:"source"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("decode terminal directory response: %v", err)
+	}
+	if payload.Path != "/srv/metadata" || payload.Source != "metadata" {
+		t.Fatalf("expected metadata cwd, got %#v body=%s", payload, string(body))
+	}
+}
+
 func pairClaimRequestForTest(session remoteprotocol.PairStartResult) pairing.ClaimRequest {
 	return pairing.ClaimRequest{
 		PairSessionID:         session.PairSessionID,
@@ -170,6 +272,7 @@ func pairClaimRequestForTest(session remoteprotocol.PairStartResult) pairing.Cla
 type terminalManagementDaemonStub struct {
 	createName string
 	list       []protocol.TerminalInfo
+	get        *protocol.TerminalInfo
 }
 
 func (d *terminalManagementDaemonStub) Create(_ context.Context, params protocol.CreateParams) (*protocol.CreateResult, error) {
@@ -178,6 +281,13 @@ func (d *terminalManagementDaemonStub) Create(_ context.Context, params protocol
 }
 
 func (d *terminalManagementDaemonStub) Get(_ context.Context, terminalID string) (*protocol.TerminalInfo, error) {
+	if d.get != nil {
+		info := *d.get
+		if info.ID == "" {
+			info.ID = terminalID
+		}
+		return &info, nil
+	}
 	return &protocol.TerminalInfo{
 		ID:      terminalID,
 		Name:    d.createName,

@@ -94,6 +94,10 @@ type ResponseHandler func(data []byte)
 // TitleHandler is called when the terminal title changes (OSC 2).
 type TitleHandler func(title string)
 
+// WorkingDirectoryHandler is called when the terminal reports its current
+// working directory (OSC 7).
+type WorkingDirectoryHandler func(path string)
+
 type VTerm struct {
 	emu *charmvt.SafeEmulator
 
@@ -103,6 +107,7 @@ type VTerm struct {
 	mouseMode mouseModeState
 	resp      ResponseHandler
 	onTitle   TitleHandler
+	onCWD     WorkingDirectoryHandler
 	sbSize    int
 	defaultFG string
 	defaultBG string
@@ -257,6 +262,11 @@ func (v *VTerm) resetEmulator(cols, rows int) {
 		Title: func(title string) {
 			if v.onTitle != nil {
 				v.onTitle(title)
+			}
+		},
+		WorkingDirectory: func(path string) {
+			if v.onCWD != nil {
+				v.onCWD(path)
 			}
 		},
 	})
@@ -1708,6 +1718,12 @@ func (v *VTerm) SetTitleHandler(handler TitleHandler) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.onTitle = handler
+}
+
+func (v *VTerm) SetWorkingDirectoryHandler(handler WorkingDirectoryHandler) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.onCWD = handler
 }
 
 func (v *VTerm) SetDefaultColors(fg, bg string) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,6 +50,7 @@ type Terminal struct {
 	tags           map[string]string
 	size           Size
 	dir            string
+	cwd            string
 	env            []string
 	scrollbackSize int
 	state          TerminalState
@@ -111,6 +113,7 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 		tags:               copyTags(cfg.Tags),
 		size:               cfg.Size,
 		dir:                cfg.Dir,
+		cwd:                cfg.Dir,
 		env:                append([]string(nil), cfg.Env...),
 		scrollbackSize:     cfg.ScrollbackSize,
 		state:              StateRunning,
@@ -172,6 +175,23 @@ func (t *Terminal) installVTermHandlers() {
 			t.updateFunc()
 		}
 	})
+	t.vterm.SetWorkingDirectoryHandler(func(path string) {
+		cwd := normalizeReportedWorkingDirectory(path)
+		if cwd == "" {
+			return
+		}
+		t.mu.Lock()
+		if t.cwd == cwd {
+			t.mu.Unlock()
+			return
+		}
+		t.cwd = cwd
+		t.invalidateProtocolInfoCacheLocked()
+		t.mu.Unlock()
+		if t.updateFunc != nil {
+			t.updateFunc()
+		}
+	})
 }
 
 func (t *Terminal) ID() string {
@@ -189,7 +209,31 @@ func (t *Terminal) Info() *TerminalInfo {
 	// Return a distinct top-level struct so callers cannot mutate cached scalar
 	// fields, while nested metadata continues to reuse the immutable snapshot.
 	snapshot := *info
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if cwd := t.CurrentWorkingDirectory(ctx); cwd != "" {
+		snapshot.LiveCWD = cwd
+		snapshot.CWD = cwd
+	}
 	return &snapshot
+}
+
+func (t *Terminal) CurrentWorkingDirectory(ctx context.Context) string {
+	if t == nil {
+		return ""
+	}
+	t.mu.RLock()
+	state := t.state
+	p := t.pty
+	t.mu.RUnlock()
+	if state != StateRunning || p == nil {
+		return ""
+	}
+	cwd, err := p.CurrentWorkingDirectory(ctx)
+	if err != nil {
+		return ""
+	}
+	return normalizeReportedWorkingDirectory(cwd)
 }
 
 func (t *Terminal) SizeLocked() bool {
@@ -1374,6 +1418,8 @@ func (t *Terminal) protocolInfoJSON() (json.RawMessage, error) {
 		Tags:      t.tags,
 		Size:      protocol.Size{Cols: t.size.Cols, Rows: t.size.Rows},
 		State:     string(t.state),
+		CWD:       t.cwd,
+		LiveCWD:   t.cwd,
 		CreatedAt: t.createdAt,
 		ExitCode:  t.exitCode,
 	})
@@ -1414,6 +1460,8 @@ func (t *Terminal) listInfoSnapshot(filter ListOptions) (*TerminalInfo, bool) {
 		Tags:      copyTags(t.tags),
 		Size:      t.size,
 		State:     t.state,
+		CWD:       t.cwd,
+		LiveCWD:   t.cwd,
 		CreatedAt: t.createdAt,
 		ExitCode:  copyIntPtr(t.exitCode),
 	}
@@ -1430,6 +1478,30 @@ func (t *Terminal) listInfoSnapshot(filter ListOptions) (*TerminalInfo, bool) {
 	}
 	t.mu.Unlock()
 	return info, true
+}
+
+func normalizeReportedWorkingDirectory(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	if strings.HasPrefix(path, "file://") {
+		if u, err := url.Parse(path); err == nil {
+			if decoded, err := url.PathUnescape(u.Path); err == nil && decoded != "" {
+				path = decoded
+			} else {
+				path = u.Path
+			}
+		}
+	}
+	if !strings.HasPrefix(path, "/") {
+		return ""
+	}
+	trimmed := strings.TrimRight(path, "/")
+	if trimmed == "" {
+		return "/"
+	}
+	return trimmed
 }
 
 func cloneRows(rows [][]Cell) [][]Cell {

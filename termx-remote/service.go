@@ -353,6 +353,22 @@ func (r terminalManagementRouter) RouteTerminalManagementRequest(ctx context.Con
 			return http.StatusInternalServerError, nil, err.Error()
 		}
 		return marshalRuntimeAPIResponse(map[string]any{"terminals": terminals})
+	case "get_directory":
+		var body struct {
+			TerminalID string `json:"terminal_id"`
+		}
+		if err := json.Unmarshal(req.Body, &body); err != nil {
+			return http.StatusBadRequest, nil, "invalid get_directory request"
+		}
+		directory, source, err := r.getTerminalDirectory(ctx, body.TerminalID)
+		if err != nil {
+			return http.StatusBadRequest, nil, err.Error()
+		}
+		return marshalRuntimeAPIResponse(map[string]string{
+			"terminal_id": strings.TrimSpace(body.TerminalID),
+			"path":        directory,
+			"source":      source,
+		})
 	case "create":
 		var body struct {
 			Name    string            `json:"name"`
@@ -475,6 +491,33 @@ func (r terminalManagementRouter) removeTerminal(ctx context.Context, terminalID
 		return nil
 	}
 	return r.daemon.Remove(ctx, terminalID)
+}
+
+func (r terminalManagementRouter) getTerminalDirectory(ctx context.Context, terminalID string) (string, string, error) {
+	if r.daemon == nil {
+		return "", "", nil
+	}
+	terminalID = strings.TrimSpace(terminalID)
+	if terminalID == "" {
+		return "", "", fmt.Errorf("terminal_id is required")
+	}
+	info, err := r.daemon.Get(ctx, terminalID)
+	if err != nil {
+		return "", "", err
+	}
+	if info == nil {
+		return "", "", fmt.Errorf("terminal not found")
+	}
+	if cwd := strings.TrimSpace(info.LiveCWD); cwd != "" {
+		return cwd, "process", nil
+	}
+	if cwd := strings.TrimSpace(info.CWD); cwd != "" {
+		return cwd, "reported", nil
+	}
+	if cwd := strings.TrimSpace(info.Tags["termx.cwd"]); cwd != "" {
+		return cwd, "metadata", nil
+	}
+	return "", "", nil
 }
 
 type pairingStore struct {
@@ -605,6 +648,13 @@ func pairManagerConfigChanged(a, b pairing.Config) bool {
 
 func terminalInventoryFromProtocol(item protocol.TerminalInfo) runtime.TerminalInventoryItem {
 	sizeLockMode := terminalmeta.SizeLockMode(item.Tags)
+	cwd := strings.TrimSpace(item.LiveCWD)
+	if cwd == "" {
+		cwd = strings.TrimSpace(item.CWD)
+	}
+	if cwd == "" {
+		cwd = item.Tags["termx.cwd"]
+	}
 	return runtime.TerminalInventoryItem{
 		ID:           item.ID,
 		Name:         item.Name,
@@ -612,7 +662,7 @@ func terminalInventoryFromProtocol(item protocol.TerminalInfo) runtime.TerminalI
 		Command:      append([]string(nil), item.Command...),
 		Cols:         int(item.Size.Cols),
 		Rows:         int(item.Size.Rows),
-		CWD:          item.Tags["termx.cwd"],
+		CWD:          cwd,
 		Environment:  item.Tags["termx.environment"],
 		SizeLocked:   terminalmeta.SizeLocked(item.Tags),
 		SizeLockMode: sizeLockMode,

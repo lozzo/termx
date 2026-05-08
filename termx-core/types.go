@@ -43,6 +43,8 @@ type TerminalInfo struct {
 	Tags      map[string]string `json:"tags,omitempty"`
 	Size      Size              `json:"size"`
 	State     TerminalState     `json:"state"`
+	CWD       string            `json:"cwd,omitempty"`
+	LiveCWD   string            `json:"live_cwd,omitempty"`
 	CreatedAt time.Time         `json:"created_at"`
 	ExitCode  *int              `json:"exit_code,omitempty"`
 }

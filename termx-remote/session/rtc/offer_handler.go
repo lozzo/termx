@@ -279,7 +279,7 @@ func routeRuntimeAPIRequestWithContext(ctx context.Context, manager *fileapi.Man
 			Path:   req.Path,
 			Body:   req.Body,
 		})
-	case "create", "set_metadata", "remove":
+	case "create", "set_metadata", "remove", "get_directory":
 		if terminalManagement == nil {
 			return http.StatusServiceUnavailable, nil, "terminal management is not available"
 		}

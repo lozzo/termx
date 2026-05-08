@@ -4,6 +4,7 @@ export interface TerminalManagementApi {
   createTerminal(input: LocalCreateTerminalInput): Promise<{ terminalId: string }>
   updateTerminal(input: LocalUpdateTerminalInput): Promise<void>
   deleteTerminal(terminalId: string): Promise<void>
+  getTerminalDirectory(terminalId: string): Promise<{ path: string; source?: string | undefined }>
 }
 
 export function createTerminalManagementApi(
@@ -51,6 +52,14 @@ export function createTerminalManagementApi(
     async deleteTerminal(terminalId) {
       const channel = await api()
       await channel.request('remove', { terminal_id: terminalId })
+    },
+    async getTerminalDirectory(terminalId) {
+      const channel = await api()
+      const response = await channel.request<{ path?: string; source?: string }>('get_directory', { terminal_id: terminalId })
+      return {
+        path: response.path ?? '',
+        source: response.source,
+      }
     },
   }
 }

@@ -234,6 +234,8 @@ func protocolInfoFromCore(info *termx.TerminalInfo) *protocol.TerminalInfo {
 		Tags:      copyStringMap(info.Tags),
 		Size:      protocol.Size{Cols: info.Size.Cols, Rows: info.Size.Rows},
 		State:     string(info.State),
+		CWD:       info.CWD,
+		LiveCWD:   info.LiveCWD,
 		CreatedAt: info.CreatedAt,
 		ExitCode:  copyIntPtr(info.ExitCode),
 	}

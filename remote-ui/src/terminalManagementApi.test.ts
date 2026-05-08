@@ -22,6 +22,7 @@ describe('terminal management API over RtcSession', () => {
       sizeLockMode: 'warn',
     })
     await api.deleteTerminal('terminal-1')
+    await api.getTerminalDirectory('terminal-1')
 
     expect(session.requests).toEqual([
       ['create', {
@@ -37,6 +38,7 @@ describe('terminal management API over RtcSession', () => {
         tags: { 'termx.size_lock': 'warn', cwd: '/srv/app-next', environment: 'staging' },
       }],
       ['remove', { terminal_id: 'terminal-1' }],
+      ['get_directory', { terminal_id: 'terminal-1' }],
     ])
   })
 
@@ -83,6 +85,17 @@ describe('terminal management API over RtcSession', () => {
 
     await expect(api.createTerminal({ command: ['/bin/zsh', '-l'] })).rejects.toThrow(/terminal_id.*required/i)
   })
+
+  it('returns the current terminal directory from management api', async () => {
+    const session = new MockManagementSession()
+    session.directoryResponse = { path: '/srv/live', source: 'live' }
+    const api = createTerminalManagementApi(session, 'machine-local')
+
+    await expect(api.getTerminalDirectory('terminal-1')).resolves.toEqual({
+      path: '/srv/live',
+      source: 'live',
+    })
+  })
 })
 
 class MockManagementSession implements Pick<RtcSession, 'openApi' | 'getConnectionInfo'> {
@@ -90,6 +103,7 @@ class MockManagementSession implements Pick<RtcSession, 'openApi' | 'getConnecti
   openApiCount = 0
   machineId = 'machine-local'
   createResponse: unknown = { terminal_id: 'terminal-3', state: 'running' }
+  directoryResponse: unknown = { path: '/srv/app', source: 'metadata' }
 
   async openApi(): Promise<RtcJsonRpcChannel> {
     this.openApiCount += 1
@@ -98,6 +112,9 @@ class MockManagementSession implements Pick<RtcSession, 'openApi' | 'getConnecti
         this.requests.push([method, params])
         if (method === 'create') {
           return this.createResponse as TResponse
+        }
+        if (method === 'get_directory') {
+          return this.directoryResponse as TResponse
         }
         return undefined as TResponse
       },

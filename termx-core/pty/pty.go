@@ -1,9 +1,13 @@
 package pty
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -100,6 +104,24 @@ func (p *PTY) ExitCode() int {
 	return p.exitCode
 }
 
+func (p *PTY) CurrentWorkingDirectory(ctx context.Context) (string, error) {
+	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+		return "", errors.New("pty: process is not available")
+	}
+	pid := p.cmd.Process.Pid
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	switch runtime.GOOS {
+	case "linux":
+		return os.Readlink("/proc/" + strconv.Itoa(pid) + "/cwd")
+	case "darwin":
+		return currentWorkingDirectoryDarwin(ctx, pid)
+	default:
+		return "", errors.New("pty: current working directory is not supported on this platform")
+	}
+}
+
 func (p *PTY) Close() error {
 	var err error
 	p.closeOnce.Do(func() {
@@ -145,6 +167,19 @@ func (p *PTY) waitFor(timeout time.Duration) bool {
 	case <-timer.C:
 		return false
 	}
+}
+
+func currentWorkingDirectoryDarwin(ctx context.Context, pid int) (string, error) {
+	out, err := exec.CommandContext(ctx, "lsof", "-a", "-p", strconv.Itoa(pid), "-d", "cwd", "-Fn").Output()
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "n/") {
+			return strings.TrimPrefix(line, "n"), nil
+		}
+	}
+	return "", errors.New("pty: current working directory was not reported")
 }
 
 func mergedEnv(id string, extra []string) []string {

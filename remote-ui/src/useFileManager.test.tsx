@@ -54,6 +54,39 @@ describe('useFileManager', () => {
     })
   })
 
+  it('falls back to the nearest readable parent when the requested directory cannot be opened', async () => {
+    const session = createMockFileSession({
+      '/files/list': ({ path }: { path?: string }) => {
+        if (path === '/srv') {
+          return {
+            path: '/srv',
+            parent: '/',
+            total: 1,
+            entries: [{ name: 'app', type: 'dir', size: 0 }],
+          }
+        }
+        throw new Error(`denied ${path}`)
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    const { result } = renderHook(() => useFileManager({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      session,
+      initialPath: '/srv/app/private',
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.error).toBeNull()
+    expect(result.current.currentPath).toBe('/srv')
+    expect(result.current.actionMessage).toBe('Opened /srv instead')
+    expect(session.requests.map((request) => request.params?.path)).toEqual([
+      '/srv/app/private',
+      '/srv/app',
+      '/srv',
+    ])
+  })
+
   it('rejects a session connected to a different machine before issuing file requests', async () => {
     const session = createMockFileSession({
       '/files/list': { path: '/', parent: '', total: 0, entries: [] },

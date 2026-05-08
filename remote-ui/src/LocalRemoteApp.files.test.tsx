@@ -71,7 +71,7 @@ describe('LocalRemoteApp real file manager flow', () => {
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /open files/i }))
-    await waitFor(() => expect(screen.getByText('log.txt')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('live.txt')).toBeTruthy())
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
     await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').className).toMatch(/invisible/))
@@ -85,6 +85,27 @@ describe('LocalRemoteApp real file manager flow', () => {
     }))
     expect(connect).toHaveBeenCalledTimes(1)
   })
+
+  it('opens files from the terminal-reported live directory when available', async () => {
+    const api = createMockLocalAgentApi()
+    const sessions: Array<ReturnType<typeof createMockLocalRemoteSession>> = []
+    const connect = vi.fn(({ machineId }: { machineId: string }) =>
+      Promise.resolve(trackSession(sessions, createMockLocalRemoteSession(machineId))),
+    )
+
+    render(<LocalRemoteApp api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+
+    await waitFor(() => expect(screen.getByText('live.txt')).toBeTruthy())
+    expect(sessions[0]?.requests).toEqual(expect.arrayContaining([
+      { method: 'get_directory', path: 'get_directory', params: { terminal_id: 'terminal-1' } },
+      { method: 'GET', path: '/files/list', params: { path: '/Users/lozzow/project', offset: 0, limit: 500 } },
+    ]))
+  })
 })
 
 function createMockLocalRemoteSession(
@@ -93,6 +114,10 @@ function createMockLocalRemoteSession(
   disconnectCalls: number
 } {
   const session = createMockFileSession({
+    get_directory: ({ terminal_id }: { terminal_id?: string }) => ({
+      path: terminal_id === 'terminal-1' ? '/Users/lozzow/project' : '',
+      source: 'live',
+    }),
     '/files/list': ({ path }: { path?: string }) => {
       if (path === '/srv/worker/tmp') {
         return {
@@ -118,11 +143,19 @@ function createMockLocalRemoteSession(
           entries: [{ name: 'log.txt', type: 'file', size: 42 }],
         }
       }
+      if (path === '/Users/lozzow/project') {
+        return {
+          path: '/Users/lozzow/project',
+          parent: '',
+          total: 2,
+          entries: [{ name: 'tmp', type: 'dir', size: 0 }, { name: 'live.txt', type: 'file', size: 1 }],
+        }
+      }
       return {
         path: path ?? '/Users/lozzow/project',
         parent: '',
-        total: 1,
-        entries: [{ name: 'tmp', type: 'dir', size: 0 }],
+        total: 0,
+        entries: [],
       }
     },
   }, {}, { machineId })

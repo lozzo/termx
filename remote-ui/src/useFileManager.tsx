@@ -53,6 +53,11 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
 
   const fileApi = useMemo(() => createFileApi(options.session), [options.session])
 
+  const showActionMessage = useCallback((message: string) => {
+    setActionMessage(message)
+    window.setTimeout(() => setActionMessage(null), 2500)
+  }, [])
+
   const loadPath = useCallback(async (path: string) => {
     const seq = ++requestSeqRef.current
     setLoading(true)
@@ -61,12 +66,15 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
       const info = await options.session.getConnectionInfo()
       if (seq !== requestSeqRef.current) return
       assertSessionTarget(info, options.machineId, options.terminalId)
-      const response: DirListResponse = await fileApi.listDir(path)
+      const { response, fallbackFrom } = await listDirWithParentFallback(fileApi, path)
       if (seq !== requestSeqRef.current) return
       setCurrentPath(response.path)
       currentPathRef.current = response.path
       setEntries(response.entries)
       setTotal(response.total)
+      if (fallbackFrom && fallbackFrom !== response.path) {
+        showActionMessage(`Opened ${response.path} instead`)
+      }
     } catch (err) {
       if (seq !== requestSeqRef.current) return
       setError({
@@ -77,7 +85,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     } finally {
       if (seq === requestSeqRef.current) setLoading(false)
     }
-  }, [fileApi, options.machineId, options.terminalId, options.session])
+  }, [fileApi, options.machineId, options.terminalId, options.session, showActionMessage])
 
   useEffect(() => {
     void loadPath(currentPathRef.current)
@@ -101,11 +109,6 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
 
   const toggleShowHidden = useCallback(() => {
     setShowHidden((current) => !current)
-  }, [])
-
-  const showActionMessage = useCallback((message: string) => {
-    setActionMessage(message)
-    window.setTimeout(() => setActionMessage(null), 2500)
   }, [])
 
   const createDirectory = useCallback(async () => {
@@ -195,6 +198,33 @@ function parentPath(path: string): string {
   const index = normalized.lastIndexOf('/')
   if (index <= 0) return '/'
   return normalized.slice(0, index)
+}
+
+async function listDirWithParentFallback(
+  fileApi: FileApi,
+  path: string,
+): Promise<{ response: DirListResponse; fallbackFrom?: string | undefined }> {
+  const requested = normalizeAbsolutePath(path)
+  let current = requested
+  let fallbackFrom: string | undefined
+  let lastErr: unknown
+  for (;;) {
+    try {
+      return { response: await fileApi.listDir(current), fallbackFrom }
+    } catch (err) {
+      lastErr = err
+      if (current === '/') break
+      fallbackFrom = requested
+      current = parentPath(current)
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
+}
+
+function normalizeAbsolutePath(path: string): string {
+  const trimmed = path.trim()
+  if (!trimmed || trimmed === '/') return '/'
+  return trimmed.replace(/\/+$/, '') || '/'
 }
 
 function basename(path: string): string {
