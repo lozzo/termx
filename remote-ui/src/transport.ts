@@ -150,6 +150,7 @@ export interface TerminalInventorySubscription {
 
 export interface TerminalInventoryEvent {
   type: 'inventory_changed'
+  payload?: unknown
 }
 
 export interface TerminalInventoryEvents {

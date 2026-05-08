@@ -363,7 +363,7 @@ func serveEventChannel(ctx context.Context, dc *webrtc.DataChannel, router Event
 					if !ok {
 						return
 					}
-					if err := dc.SendText(string(payload)); err != nil {
+					if err := dc.SendText(string(runtimeEventPayloadForClient(payload))); err != nil {
 						subCancel()
 						return
 					}
@@ -375,6 +375,59 @@ func serveEventChannel(ctx context.Context, dc *webrtc.DataChannel, router Event
 	case <-ctx.Done():
 	case <-closed:
 	}
+}
+
+const (
+	protocolEventTerminalCreated         = 1
+	protocolEventTerminalStateChanged    = 2
+	protocolEventTerminalResized         = 3
+	protocolEventTerminalRemoved         = 4
+	protocolEventTerminalMetadataChanged = 10
+)
+
+var terminalInventoryProtocolEvents = map[int]string{
+	protocolEventTerminalCreated:         "terminal_created",
+	protocolEventTerminalStateChanged:    "terminal_state_changed",
+	protocolEventTerminalResized:         "terminal_resized",
+	protocolEventTerminalRemoved:         "terminal_removed",
+	protocolEventTerminalMetadataChanged: "terminal_metadata_changed",
+}
+
+func runtimeEventPayloadForClient(payload []byte) []byte {
+	var evt struct {
+		Type       json.RawMessage `json:"type"`
+		TerminalID string          `json:"terminal_id,omitempty"`
+		Timestamp  string          `json:"timestamp,omitempty"`
+	}
+	if err := json.Unmarshal(payload, &evt); err != nil || len(evt.Type) == 0 {
+		return payload
+	}
+	var protocolType int
+	if err := json.Unmarshal(evt.Type, &protocolType); err != nil {
+		return payload
+	}
+	eventType, ok := terminalInventoryProtocolEvents[protocolType]
+	if !ok {
+		return payload
+	}
+	clientPayload := map[string]any{
+		"eventType":    eventType,
+		"protocolType": protocolType,
+	}
+	if strings.TrimSpace(evt.TerminalID) != "" {
+		clientPayload["terminalId"] = strings.TrimSpace(evt.TerminalID)
+	}
+	if strings.TrimSpace(evt.Timestamp) != "" {
+		clientPayload["timestamp"] = strings.TrimSpace(evt.Timestamp)
+	}
+	out, err := json.Marshal(map[string]any{
+		"type":    "inventory_changed",
+		"payload": clientPayload,
+	})
+	if err != nil {
+		return payload
+	}
+	return out
 }
 
 func jsonResponseBody(value any) (int32, []byte, string) {

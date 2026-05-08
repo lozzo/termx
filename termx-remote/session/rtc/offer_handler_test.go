@@ -13,6 +13,36 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+func TestRuntimeEventPayloadForClientMapsTerminalInventoryEvents(t *testing.T) {
+	payload := runtimeEventPayloadForClient([]byte(`{"type":1,"terminal_id":"terminal-2","timestamp":"2026-05-08T10:00:00Z"}`))
+	var got struct {
+		Type    string `json:"type"`
+		Payload struct {
+			TerminalID   string `json:"terminalId"`
+			EventType    string `json:"eventType"`
+			ProtocolType int    `json:"protocolType"`
+			Timestamp    string `json:"timestamp"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal(payload, &got); err != nil {
+		t.Fatalf("unmarshal mapped payload: %v; body=%s", err, string(payload))
+	}
+	if got.Type != "inventory_changed" ||
+		got.Payload.TerminalID != "terminal-2" ||
+		got.Payload.EventType != "terminal_created" ||
+		got.Payload.ProtocolType != protocolEventTerminalCreated ||
+		got.Payload.Timestamp != "2026-05-08T10:00:00Z" {
+		t.Fatalf("unexpected mapped event payload: %+v", got)
+	}
+}
+
+func TestRuntimeEventPayloadForClientLeavesStringEventsUntouched(t *testing.T) {
+	raw := []byte(`{"type":"heartbeat","payload":{"ok":true}}`)
+	if got := runtimeEventPayloadForClient(raw); string(got) != string(raw) {
+		t.Fatalf("expected string event to pass through, got %s", string(got))
+	}
+}
+
 func TestRuntimeAPIChannelRouterHandlesTerminalManagement(t *testing.T) {
 	manager := &terminalAPIRouterStub{}
 	pingStatus, pingBody, pingErr := routeRuntimeAPIRequest(nil, nil, apiRequest{

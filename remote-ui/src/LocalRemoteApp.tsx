@@ -13,7 +13,7 @@ import { defaultTerminalResizeControl, type TerminalResizeControl } from './term
 import { TerminalList } from './TerminalList'
 import { createTerminalManagementApi } from './terminalManagementApi'
 import type { Machine, Terminal as RemoteTerminal } from './model'
-import type { LocalAgentApi, LocalCreateTerminalInput, LocalPairingApi, LocalUpdateTerminalInput, RtcConnector, RtcSession, RtcSessionLiveness, TerminalInventoryEvents } from './transport'
+import type { LocalAgentApi, LocalCreateTerminalInput, LocalPairingApi, LocalUpdateTerminalInput, RtcConnector, RtcEvent, RtcSession, RtcSessionLiveness, TerminalInventoryEvents } from './transport'
 
 export interface LocalRemoteInventoryApi extends Pick<LocalAgentApi, 'getStatus'> {
   listTerminals(options?: { onStatus?: (status: string) => void }): Promise<RemoteTerminal[]>
@@ -30,6 +30,7 @@ export interface LocalRemoteAppProps {
   connector: LocalRemoteSessionConnector
   className?: string | undefined
   inventoryEvents?: TerminalInventoryEvents | undefined
+  subscribeRuntimeInventoryEvents?: boolean | undefined
   pair?: {
     api: LocalPairingApi
     sessionStore: MachineSessionStore
@@ -42,7 +43,7 @@ type MobileSheet = 'terminals' | 'split-terminal' | 'pair' | 'manage-terminal' |
 type AppPage = 'terminal-list' | 'terminal'
 type TerminalSlot = 0 | 1
 
-export function LocalRemoteApp({ api, connector, className, inventoryEvents, pair, onBack }: LocalRemoteAppProps) {
+export function LocalRemoteApp({ api, connector, className, inventoryEvents, subscribeRuntimeInventoryEvents = false, pair, onBack }: LocalRemoteAppProps) {
   const [machine, setMachine] = useState<Machine | null>(null)
   const [terminals, setTerminals] = useState<RemoteTerminal[]>([])
   const [loadingTerminals, setLoadingTerminals] = useState(true)
@@ -107,6 +108,13 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
   const listPullDistanceRef = useRef(0)
   const listContainerRef = useRef<HTMLDivElement | null>(null)
   const terminalRefreshSeqRef = useRef(0)
+  const runtimeInventorySubscriptionRef = useRef<{
+    connector: LocalRemoteSessionConnector
+    machineId: string
+    retryToken: number
+    session: RtcSession
+    subscription: { close(): void }
+  } | null>(null)
   const [listPullDistance, setListPullDistance] = useState(0)
   const activeTerminal = terminals.find((terminal) => terminal.terminalId === activeTerminalId)
   const splitTerminal = terminals.find((terminal) => terminal.terminalId === splitTerminalId)
@@ -124,6 +132,9 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
     const current = machineSessionRef.current
     machineSessionPromiseRef.current = null
     machineSessionRef.current = null
+    const runtimeInventorySubscription = runtimeInventorySubscriptionRef.current
+    runtimeInventorySubscriptionRef.current = null
+    runtimeInventorySubscription?.subscription.close()
     void current?.session.disconnect()
   }, [])
 
@@ -266,6 +277,51 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, pai
       subscription.close()
     }
   }, [inventoryEvents, machine, refreshTerminals, connectionRetryToken])
+
+  useEffect(() => {
+    const machineId = machine?.machineId
+    if (!subscribeRuntimeInventoryEvents || requireVerification || !machineId) return
+    let cancelled = false
+    void ensureMachineSession(machineId).then((session) => {
+      if (cancelled) return
+      const current = runtimeInventorySubscriptionRef.current
+      if (
+        current &&
+        current.connector === connector &&
+        current.machineId === machineId &&
+        current.retryToken === connectionRetryToken &&
+        current.session === session
+      ) {
+        return
+      }
+      current?.subscription.close()
+      const subscription = session.subscribeEvents((event) => {
+        if (isTerminalInventoryRuntimeEvent(event)) void refreshTerminals()
+      })
+      runtimeInventorySubscriptionRef.current = {
+        connector,
+        machineId,
+        retryToken: connectionRetryToken,
+        session,
+        subscription,
+      }
+    }).catch(() => {
+      if (cancelled) return
+    })
+    return () => {
+      cancelled = true
+      const current = runtimeInventorySubscriptionRef.current
+      if (
+        current &&
+        current.connector === connector &&
+        current.machineId === machineId &&
+        current.retryToken === connectionRetryToken
+      ) {
+        runtimeInventorySubscriptionRef.current = null
+        current.subscription.close()
+      }
+    }
+  }, [connectionRetryToken, connector, ensureMachineSession, machine?.machineId, refreshTerminals, requireVerification, subscribeRuntimeInventoryEvents])
 
   useEffect(() => {
     const machineId = machine?.machineId
@@ -1398,4 +1454,14 @@ function normalizeTerminalDirectory(path: string | undefined): string {
     }
   }
   return trimmed.startsWith('/') ? trimmed : ''
+}
+
+function isTerminalInventoryRuntimeEvent(event: RtcEvent): boolean {
+  if (event.type === 'inventory_changed') return true
+  if (event.type === 'terminal_changed') return true
+  return event.type === 'terminal_created' ||
+    event.type === 'terminal_state_changed' ||
+    event.type === 'terminal_resized' ||
+    event.type === 'terminal_removed' ||
+    event.type === 'terminal_metadata_changed'
 }

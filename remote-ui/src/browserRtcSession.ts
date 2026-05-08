@@ -943,12 +943,48 @@ function parseRtcEvent(bytes: Uint8Array): RtcEvent {
     throw new Error('rtc event must be an object')
   }
   const record = value as Record<string, unknown>
+  if (typeof record.type === 'number') {
+    return normalizeProtocolRtcEvent(record)
+  }
   if (typeof record.type !== 'string' || record.type.length === 0) {
     throw new Error('rtc event type is required')
   }
   return {
     type: record.type,
     ...(Object.hasOwn(record, 'payload') ? { payload: record.payload } : {}),
+  }
+}
+
+const terminalInventoryProtocolEventNames = new Map<number, string>([
+  [1, 'terminal_created'],
+  [2, 'terminal_state_changed'],
+  [3, 'terminal_resized'],
+  [4, 'terminal_removed'],
+  [10, 'terminal_metadata_changed'],
+])
+
+function normalizeProtocolRtcEvent(record: Record<string, unknown>): RtcEvent {
+  const protocolType = typeof record.type === 'number' ? record.type : Number.NaN
+  const eventType = terminalInventoryProtocolEventNames.get(protocolType)
+  if (eventType) {
+    const payload: Record<string, unknown> = {
+      eventType,
+      protocolType,
+    }
+    if (typeof record.terminal_id === 'string' && record.terminal_id.trim()) {
+      payload.terminalId = record.terminal_id.trim()
+    }
+    if (typeof record.timestamp === 'string' && record.timestamp.trim()) {
+      payload.timestamp = record.timestamp.trim()
+    }
+    return {
+      type: 'inventory_changed',
+      payload,
+    }
+  }
+  return {
+    type: `protocol_event_${protocolType}`,
+    payload: record,
   }
 }
 

@@ -8,7 +8,7 @@ import { createManagedHubRtcConnector } from './managedHubRtcConnector'
 import { consoleConnectionLogger } from './connectionLogger'
 import { createManagedHubApi } from './managedHubApi'
 import { parsePairingPayload, type PairingPayload } from './pairingPayload'
-import type { ConnectionInfo, LocalPairingApi, LocalStatus, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionLiveness, RtcSessionNegotiator, RtcSubscription, RtcTerminalDataChannelController } from './transport'
+import type { ConnectionInfo, LocalPairingApi, LocalStatus, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionLiveness, RtcSessionNegotiator, RtcSubscription, RtcTerminalDataChannelController, TerminalInventoryEvents } from './transport'
 import { normalizeTerminalInventory } from './terminalInventory'
 import { createWebControlApi, type WebControlApi, type WebControlMachine, type WebControlUser } from './webControlApi'
 
@@ -35,6 +35,7 @@ type MachineRuntimeFactory = (input: {
 interface MachineRuntime {
   api: LocalRemoteInventoryApi
   connector: LocalRemoteSessionConnector
+  inventoryEvents?: TerminalInventoryEvents | undefined
   dispose?(): void | Promise<void>
 }
 
@@ -406,6 +407,7 @@ function MachineTerminalListView({
         api={runtime.api}
         connector={runtime.connector}
         className="min-h-0 flex-1"
+        inventoryEvents={runtime.inventoryEvents}
         onBack={onBack}
       />
     </section>
@@ -989,6 +991,14 @@ function createManagedMachineRuntime(input: {
         return createManagedMachineSessionLease(session)
       },
     },
+    inventoryEvents: {
+      subscribe(machineId, handler) {
+        if (machineId !== input.machine.id) {
+          return { close() {} }
+        }
+        return machineSession.subscribeInventoryEvents(handler)
+      },
+    },
     dispose: machineSession.reset,
   }
 }
@@ -1007,6 +1017,27 @@ function createManagedMachineSessionManager(input: {
     currentSession = null
     sessionPromise = null
     await session?.disconnect()
+  }
+  const subscribeInventoryEvents = (handler: (event: { type: 'inventory_changed'; payload?: unknown }) => void): RtcSubscription => {
+    let closed = false
+    let subscription: RtcSubscription | null = null
+    void getSession().then((session) => {
+      if (closed) return
+      subscription = session.subscribeEvents((event) => {
+        if (isTerminalInventoryRuntimeEvent(event)) handler({ type: 'inventory_changed', payload: event.payload })
+      })
+      if (closed) {
+        subscription.close()
+        subscription = null
+      }
+    }).catch(() => {})
+    return {
+      close() {
+        closed = true
+        subscription?.close()
+        subscription = null
+      },
+    }
   }
   const connect = async (options?: { signal?: AbortSignal; onSnapshot?: (snapshot: ConnectionAttemptSnapshot) => void }): Promise<RtcSession> => {
     if (options?.signal?.aborted) {
@@ -1038,34 +1069,36 @@ function createManagedMachineSessionManager(input: {
     }, options)
     return result.session
   }
+  const getSession = async (options?: { signal?: AbortSignal; onSnapshot?: (snapshot: ConnectionAttemptSnapshot) => void }): Promise<RtcSession> => {
+    if (currentSession) {
+      if (isRtcSessionAlive(currentSession)) return currentSession
+      await resetCurrentSession()
+    }
+    if (!sessionPromise) {
+      sessionPromise = connect(options).then((session) => {
+        currentSession = session
+        const lifecycle = session as RtcSession & Partial<{
+          onDisconnect(handler: () => void): RtcSubscription
+        }>
+        let subscription: RtcSubscription | null = null
+        subscription = lifecycle.onDisconnect?.(() => {
+          if (currentSession === session) {
+            currentSession = null
+            sessionPromise = null
+          }
+          subscription?.close()
+        }) ?? null
+        return session
+      }).catch((err) => {
+        sessionPromise = null
+        throw err
+      })
+    }
+    return sessionPromise
+  }
   return {
-    async get(options?: { signal?: AbortSignal; onSnapshot?: (snapshot: ConnectionAttemptSnapshot) => void }): Promise<RtcSession> {
-      if (currentSession) {
-        if (isRtcSessionAlive(currentSession)) return currentSession
-        await resetCurrentSession()
-      }
-      if (!sessionPromise) {
-        sessionPromise = connect(options).then((session) => {
-          currentSession = session
-          const lifecycle = session as RtcSession & Partial<{
-            onDisconnect(handler: () => void): RtcSubscription
-          }>
-          let subscription: RtcSubscription | null = null
-          subscription = lifecycle.onDisconnect?.(() => {
-            if (currentSession === session) {
-              currentSession = null
-              sessionPromise = null
-            }
-            subscription?.close()
-          }) ?? null
-          return session
-        }).catch((err) => {
-          sessionPromise = null
-          throw err
-        })
-      }
-      return sessionPromise
-    },
+    get: getSession,
+    subscribeInventoryEvents,
     reset: resetCurrentSession,
   }
 }
@@ -1090,6 +1123,16 @@ function isRtcSessionAlive(session: RtcSession): boolean {
   const candidate = session as RtcSession & Partial<RtcSessionLiveness>
   if (typeof candidate.isAlive !== 'function') return true
   return candidate.isAlive()
+}
+
+function isTerminalInventoryRuntimeEvent(event: RtcEvent): boolean {
+  if (event.type === 'inventory_changed') return true
+  if (event.type === 'terminal_changed') return true
+  return event.type === 'terminal_created' ||
+    event.type === 'terminal_state_changed' ||
+    event.type === 'terminal_resized' ||
+    event.type === 'terminal_removed' ||
+    event.type === 'terminal_metadata_changed'
 }
 
 function createManagedMachineSessionLease(session: RtcSession): RtcSession & RtcTerminalDataChannelController {

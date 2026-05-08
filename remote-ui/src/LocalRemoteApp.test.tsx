@@ -436,6 +436,50 @@ describe('LocalRemoteApp', () => {
     expect(screen.getByText('prod')).toBeTruthy()
   })
 
+  it('refreshes the terminal list when a runtime inventory event arrives', async () => {
+    let terminals = [terminalFixture({
+      terminalId: 'terminal-1',
+      title: 'zsh',
+      command: '/bin/zsh',
+      cols: 120,
+      rows: 36,
+      cwd: '/Users/lozzow/project',
+    })]
+    const api = createMockLocalAgentApi()
+    api.listTerminals = vi.fn(async () => terminals)
+    let runtimeHandler: ((event: { type: string; payload?: unknown }) => void) | null = null
+    const runtimeSession = createMockLocalRemoteSession({}, 'machine-local')
+    runtimeSession.subscribeEvents = vi.fn((handler) => {
+      runtimeHandler = handler
+      return {
+        close() {
+          runtimeHandler = null
+        },
+      }
+    })
+    const connect = vi.fn(async () => runtimeSession)
+
+    render(<LocalRemoteApp api={api} connector={{ connect }} subscribeRuntimeInventoryEvents />)
+
+    await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
+    await waitFor(() => expect(runtimeHandler).toBeTruthy())
+    expect(connect).toHaveBeenCalledTimes(1)
+
+    terminals = [
+      ...terminals,
+      terminalFixture({
+        terminalId: 'terminal-3',
+        title: 'ci shell',
+        command: '/usr/bin/env bash',
+        cwd: '/srv/ci',
+      }),
+    ]
+    runtimeHandler!({ type: 'inventory_changed', payload: { terminalId: 'terminal-3' } })
+
+    await waitFor(() => expect(screen.getByText('ci shell')).toBeTruthy())
+    expect(screen.getByText('/srv/ci')).toBeTruthy()
+  })
+
   it('ignores stale terminal list refreshes that finish after a newer refresh', async () => {
     const api = createMockLocalAgentApi()
     const resolvers: Array<(terminals: Terminal[]) => void> = []

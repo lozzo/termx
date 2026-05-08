@@ -94,6 +94,7 @@ function LocalWebShell({
         className="h-[100dvh]"
         connector={connector}
         inventoryEvents={options.inventoryEvents}
+        subscribeRuntimeInventoryEvents
         {...(pair ? { pair } : {})}
       />
       <form

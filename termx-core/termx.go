@@ -201,9 +201,20 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 	s.terminals[id] = term
 	s.invalidateProtocolListCacheLocked()
 	s.mu.Unlock()
+	info := term.Info()
 	s.notifyTerminalInventoryChanged()
+	s.events.Publish(Event{
+		Type:       EventTerminalCreated,
+		TerminalID: info.ID,
+		Timestamp:  time.Now().UTC(),
+		Created: &TerminalCreatedData{
+			Name:    info.Name,
+			Command: append([]string(nil), info.Command...),
+			Size:    info.Size,
+		},
+	})
 	s.cfg.logger.Info("server created terminal", "terminal_id", id, "name", name)
-	return term.Info(), nil
+	return info, nil
 }
 
 func (s *Server) Get(ctx context.Context, id string) (*TerminalInfo, error) {

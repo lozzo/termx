@@ -40,6 +40,13 @@ func TestServerCreateListTagsSubscribeSnapshotAndRemoval(t *testing.T) {
 		if evt.Type != EventTerminalCreated || evt.TerminalID != term.ID {
 			t.Fatalf("unexpected created event: %#v", evt)
 		}
+		list, err := srv.List(ctx, ListOptions{})
+		if err != nil {
+			t.Fatalf("list after create event failed: %v", err)
+		}
+		if len(list) != 1 || list[0].ID != term.ID {
+			t.Fatalf("created terminal was not visible when create event arrived: %#v", list)
+		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for create event")
 	}

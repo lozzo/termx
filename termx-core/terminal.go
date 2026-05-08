@@ -129,17 +129,6 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 	}
 	t.installVTermHandlers()
 
-	t.events.Publish(Event{
-		Type:       EventTerminalCreated,
-		TerminalID: t.id,
-		Timestamp:  time.Now().UTC(),
-		Created: &TerminalCreatedData{
-			Name:    t.name,
-			Command: append([]string(nil), t.command...),
-			Size:    t.size,
-		},
-	})
-
 	t.startProcessLoops()
 	return t, nil
 }

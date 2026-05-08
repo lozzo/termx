@@ -841,6 +841,37 @@ describe('BrowserRtcSession', () => {
     expect(events).toContainEqual({ type: 'inventory_changed', payload: { terminalId: 'terminal-2' } })
     subscription.close()
   })
+
+  it('normalizes core protocol terminal events for inventory refresh handlers', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const session = createBrowserRtcSession({
+      machineId: 'machine-local',
+      path: 'local',
+      peerConnectionFactory: factory,
+      sessionIdGenerator: () => 'rtc-events-protocol-1',
+    })
+    const events: unknown[] = []
+
+    await connectBrowserSession(session)
+    const subscription = session.subscribeEvents((event) => events.push(event))
+    await flushMicrotasks()
+    factory.channel('events').emitMessage(encodeJSON({
+      type: 1,
+      terminal_id: 'terminal-3',
+      timestamp: '2026-05-08T10:00:00Z',
+    }))
+
+    expect(events).toContainEqual({
+      type: 'inventory_changed',
+      payload: {
+        eventType: 'terminal_created',
+        protocolType: 1,
+        terminalId: 'terminal-3',
+        timestamp: '2026-05-08T10:00:00Z',
+      },
+    })
+    subscription.close()
+  })
 })
 
 async function connectBrowserSession(session: ReturnType<typeof createBrowserRtcSession>): Promise<void> {
