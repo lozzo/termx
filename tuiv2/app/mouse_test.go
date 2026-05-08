@@ -9,13 +9,13 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
+	localvterm "github.com/lozzow/termx/termx-core/vterm"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 func resetMouseQueueState() {
@@ -2177,6 +2177,39 @@ func TestMouseClickTerminalPoolFooterKillRefreshesItemAndInvokesBridgeClient(t *
 	}
 	if len(client.killCalls) != 1 || client.killCalls[0] != "term-2" {
 		t.Fatalf("expected kill call for term-2, got %#v", client.killCalls)
+	}
+}
+
+func TestMouseClickTerminalPoolFooterDeleteRemovesItemAndInvokesBridgeClient(t *testing.T) {
+	client := &recordingBridgeClient{listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{
+		{ID: "term-1", Name: "shell", State: "running"},
+	}}}
+	m := setupModel(t, modelOpts{client: client})
+	m.terminalPage = &modal.TerminalManagerState{
+		Title: "Terminal Pool",
+		Items: []modal.PickerItem{
+			{TerminalID: "term-1", Name: "shell", State: "running"},
+			{TerminalID: "term-2", Name: "logs", State: "exited"},
+		},
+		Selected: 1,
+	}
+	m.terminalPage.ApplyFilter()
+	m.input.SetMode(input.ModeState{Kind: input.ModeTerminalManager, RequestID: terminalPoolPageModeToken})
+
+	target := terminalPoolFooterActionRegion(t, m, input.ActionRemoveTerminal)
+	_, cmd := m.Update(tea.MouseMsg{
+		X:      target.Rect.X,
+		Y:      screenYForBodyY(m, target.Rect.Y),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	drainCmd(t, m, cmd, 20)
+
+	if len(client.removeCalls) != 1 || client.removeCalls[0] != "term-2" {
+		t.Fatalf("expected remove call for term-2, got %#v", client.removeCalls)
+	}
+	if idx := terminalManagerVisibleIndexByTerminalID(m.terminalPage.VisibleItems(), "term-2"); idx >= 0 {
+		t.Fatalf("expected removed terminal to leave terminal pool, got %#v", m.terminalPage.VisibleItems())
 	}
 }
 

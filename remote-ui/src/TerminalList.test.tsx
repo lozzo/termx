@@ -12,6 +12,7 @@ describe('TerminalList', () => {
 
   it('renders terminals for one machine and opens a terminal by terminalId', async () => {
     const onOpenTerminal = vi.fn()
+    const onManageTerminal = vi.fn()
 
     render(
       <TerminalList
@@ -21,7 +22,7 @@ describe('TerminalList', () => {
           terminal({ terminalId: 'terminal-2', title: 'logs', command: 'tail -f app.log', cols: 100, rows: 24 }),
         ]}
         onOpenTerminal={onOpenTerminal}
-        onManageTerminal={vi.fn()}
+        onManageTerminal={onManageTerminal}
       />,
     )
 
@@ -33,6 +34,12 @@ describe('TerminalList', () => {
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
 
     expect(onOpenTerminal).toHaveBeenCalledWith({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+    })
+
+    await userEvent.click(screen.getByRole('button', { name: /manage zsh/i }))
+    expect(onManageTerminal).toHaveBeenCalledWith({
       machineId: 'machine-local',
       terminalId: 'terminal-1',
     })

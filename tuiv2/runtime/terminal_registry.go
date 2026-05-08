@@ -66,6 +66,13 @@ func (r *TerminalRegistry) Get(id string) *TerminalRuntime {
 	return r.terminals[id]
 }
 
+func (r *TerminalRegistry) Remove(id string) {
+	if r == nil || id == "" {
+		return
+	}
+	delete(r.terminals, id)
+}
+
 func (r *TerminalRegistry) GetOrCreate(id string) *TerminalRuntime {
 	if r == nil || id == "" {
 		return nil

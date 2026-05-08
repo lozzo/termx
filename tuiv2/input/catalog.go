@@ -188,6 +188,7 @@ func DefaultBindingCatalog() []BindingDoc {
 		{ID: "picker-split", ConfigKey: "picker.split", Mode: ModePicker, Group: "Shared Terminal", Binding: Binding{Type: tea.KeyTab, Action: ActionPickerAttachSplit}, KeyLabel: "Tab", HelpText: "split current pane and attach selected terminal", StatusText: "Tab SPLIT", FooterText: "split+attach"},
 		{ID: "picker-edit", ConfigKey: "picker.edit", Mode: ModePicker, Group: "Shared Terminal", Binding: Binding{Type: tea.KeyCtrlE, Action: ActionEditTerminal}, KeyLabel: "Ctrl-E", HelpText: "edit terminal metadata", StatusText: "Ctrl-E EDIT", FooterText: "edit"},
 		{ID: "picker-kill", ConfigKey: "picker.kill", Mode: ModePicker, Group: "Shared Terminal", Binding: Binding{Type: tea.KeyCtrlK, Action: ActionKillTerminal}, KeyLabel: "Ctrl-K", HelpText: "kill terminal", StatusText: "Ctrl-K KILL", FooterText: "kill"},
+		{ID: "picker-remove", ConfigKey: "picker.remove", Mode: ModePicker, Group: "Shared Terminal", Binding: Binding{Type: tea.KeyCtrlX, Action: ActionRemoveTerminal}, KeyLabel: "Ctrl-X", HelpText: "delete terminal from daemon inventory", StatusText: "Ctrl-X DELETE", FooterText: "delete"},
 		{ID: "picker-exit", ConfigKey: "picker.exit", Mode: ModePicker, Group: "Exit / Close", Binding: Binding{Type: tea.KeyEsc, Action: ActionCancelMode}, KeyLabel: "Esc", StatusText: "Esc BACK", FooterText: "close"},
 
 		{ID: "terminal-manager-up", ConfigKey: "terminal_manager.up", Mode: ModeTerminalManager, Group: "Shared Terminal", Binding: Binding{Type: tea.KeyUp, Action: ActionPickerUp}, StatusText: "UP/DOWN MOVE"},
@@ -198,6 +199,7 @@ func DefaultBindingCatalog() []BindingDoc {
 		{ID: "terminal-manager-floating", ConfigKey: "terminal_manager.floating", Mode: ModeTerminalManager, Group: "Shared Terminal", Binding: Binding{Type: tea.KeyCtrlO, Action: ActionAttachFloating}, KeyLabel: "Ctrl-O", StatusText: "Ctrl-O FLOAT", FooterText: "float"},
 		{ID: "terminal-manager-edit", ConfigKey: "terminal_manager.edit", Mode: ModeTerminalManager, Group: "Shared Terminal", Binding: Binding{Type: tea.KeyCtrlE, Action: ActionEditTerminal}, KeyLabel: "Ctrl-E", StatusText: "Ctrl-E EDIT", FooterText: "edit"},
 		{ID: "terminal-manager-kill", ConfigKey: "terminal_manager.kill", Mode: ModeTerminalManager, Group: "Shared Terminal", Binding: Binding{Type: tea.KeyCtrlK, Action: ActionKillTerminal}, KeyLabel: "Ctrl-K", StatusText: "Ctrl-K KILL", FooterText: "kill"},
+		{ID: "terminal-manager-remove", ConfigKey: "terminal_manager.remove", Mode: ModeTerminalManager, Group: "Shared Terminal", Binding: Binding{Type: tea.KeyCtrlX, Action: ActionRemoveTerminal}, KeyLabel: "Ctrl-X", StatusText: "Ctrl-X DELETE", FooterText: "delete"},
 		{ID: "terminal-manager-exit", ConfigKey: "terminal_manager.exit", Mode: ModeTerminalManager, Group: "Exit / Close", Binding: Binding{Type: tea.KeyEsc, Action: ActionCancelMode}, KeyLabel: "Esc", StatusText: "Esc BACK", FooterText: "close"},
 
 		{ID: "workspace-picker-up", ConfigKey: "workspace_picker.up", Mode: ModeWorkspacePicker, Group: "Workspace", Binding: Binding{Type: tea.KeyUp, Action: ActionPickerUp}, StatusText: "UP/DOWN MOVE"},

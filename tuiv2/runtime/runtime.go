@@ -13,9 +13,9 @@ import (
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/terminalmeta"
+	localvterm "github.com/lozzow/termx/termx-core/vterm"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
-	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 type Runtime struct {
@@ -98,6 +98,21 @@ func (r *Runtime) UnbindPane(paneID, terminalID string) {
 	}
 	delete(r.bindings, paneID)
 	r.unbindPaneFromTerminalCache(paneID, terminalID)
+	r.touch()
+}
+
+func (r *Runtime) RemoveTerminal(terminalID string) {
+	if r == nil || r.registry == nil || terminalID == "" {
+		return
+	}
+	var boundPaneIDs []string
+	if terminal := r.registry.Get(terminalID); terminal != nil {
+		boundPaneIDs = append(boundPaneIDs, terminal.BoundPaneIDs...)
+	}
+	r.registry.Remove(terminalID)
+	for _, paneID := range boundPaneIDs {
+		delete(r.bindings, paneID)
+	}
 	r.touch()
 }
 

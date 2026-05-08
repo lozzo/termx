@@ -16,9 +16,9 @@ import (
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/terminalmeta"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
+	localvterm "github.com/lozzow/termx/termx-core/vterm"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
-	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 func newTestRuntime(t *testing.T) (*Runtime, context.Context) {
@@ -2001,6 +2001,8 @@ func (f *fakeBridgeClient) Stream(channel uint16) (<-chan protocol.StreamFrame, 
 }
 
 func (f *fakeBridgeClient) Kill(context.Context, string) error { return nil }
+
+func (f *fakeBridgeClient) Remove(context.Context, string) error { return nil }
 
 func (f *fakeBridgeClient) Restart(context.Context, string) error { return nil }
 

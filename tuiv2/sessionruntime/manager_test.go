@@ -242,6 +242,8 @@ func (c *fakeClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 
 func (c *fakeClient) Kill(context.Context, string) error { return nil }
 
+func (c *fakeClient) Remove(context.Context, string) error { return nil }
+
 func (c *fakeClient) Restart(context.Context, string) error { return nil }
 
 func (c *fakeClient) CreateSession(context.Context, protocol.CreateSessionParams) (*protocol.SessionSnapshot, error) {

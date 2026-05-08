@@ -617,7 +617,7 @@ describe('LocalRemoteApp', () => {
       },
     }))
 
-    fireEvent.contextMenu(screen.getByRole('button', { name: /open zsh/i }))
+    await userEvent.click(screen.getByRole('button', { name: /manage zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal-actions-sheet')).toBeTruthy())
     await userEvent.click(within(screen.getByTestId('termx-terminal-actions-sheet')).getByRole('button', { name: /delete terminal/i }))
     await waitFor(() => expect(managementSession.requests).toContainEqual({

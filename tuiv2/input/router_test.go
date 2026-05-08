@@ -337,6 +337,7 @@ func TestRouteKeyMsg_PickerMode_LegacyAlignedBindingsRestored(t *testing.T) {
 	}{
 		{msg: specialKey(tea.KeyTab), want: ActionPickerAttachSplit},
 		{msg: specialKey(tea.KeyCtrlE), want: ActionEditTerminal},
+		{msg: specialKey(tea.KeyCtrlX), want: ActionRemoveTerminal},
 	}
 	for _, testCase := range cases {
 		result := r.RouteKeyMsg(testCase.msg)
@@ -369,6 +370,7 @@ func TestRouteKeyMsg_TerminalManagerMode_UsesTerminalManagerBindings(t *testing.
 		{msg: specialKey(tea.KeyCtrlO), want: ActionAttachFloating},
 		{msg: specialKey(tea.KeyCtrlE), want: ActionEditTerminal},
 		{msg: specialKey(tea.KeyCtrlK), want: ActionKillTerminal},
+		{msg: specialKey(tea.KeyCtrlX), want: ActionRemoveTerminal},
 		{msg: specialKey(tea.KeyEsc), want: ActionCancelMode},
 	}
 	for _, testCase := range cases {

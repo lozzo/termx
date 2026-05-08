@@ -2127,6 +2127,37 @@ func TestFeatureTerminalManagerOpenAndKill(t *testing.T) {
 	}
 }
 
+func TestFeatureTerminalManagerDeleteRemovesTerminal(t *testing.T) {
+	client := &recordingBridgeClient{
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{
+				{ID: "term-1", Name: "shell", State: "running"},
+			},
+		},
+		attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{},
+	}
+	model := setupModel(t, modelOpts{client: client})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterGlobalMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenTerminalManager})
+	if model.terminalPage == nil {
+		t.Fatal("expected terminal pool page state")
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionRemoveTerminal})
+
+	if len(client.removeCalls) != 1 || client.removeCalls[0] != "term-1" {
+		t.Fatalf("expected remove call for term-1, got %#v", client.removeCalls)
+	}
+	if pane := model.workbench.CurrentTab().Panes["pane-1"]; pane == nil || pane.TerminalID != "" {
+		t.Fatalf("expected active pane terminal binding cleared, got %#v", pane)
+	}
+	if got := model.runtime.Registry().Get("term-1"); got != nil {
+		t.Fatalf("expected runtime terminal removed, got %#v", got)
+	}
+}
+
 func TestFeatureTerminalManagerLoadsRichGroupedItems(t *testing.T) {
 	exited := 23
 	client := &recordingBridgeClient{

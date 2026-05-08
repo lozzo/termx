@@ -16,6 +16,7 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/termx-core/workbenchdoc"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/input"
@@ -25,7 +26,6 @@ import (
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	"github.com/lozzow/termx/termx-core/workbenchdoc"
 )
 
 type recordingFrameWriter struct {
@@ -3076,6 +3076,41 @@ func TestModelPickerKillTerminalRemovesSelectedItemAndInvokesBridgeClient(t *tes
 	}
 }
 
+func TestModelPickerRemoveTerminalDeletesSelectedItemAndInvokesBridgeClient(t *testing.T) {
+	client := &recordingBridgeClient{}
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(client))
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePicker, Phase: modal.ModalPhaseReady, RequestID: "picker-1"}
+	model.modalHost.Picker = &modal.PickerState{
+		Selected: 1,
+		Items: []modal.PickerItem{
+			{TerminalID: "term-1", Name: "shell"},
+			{TerminalID: "term-2", Name: "logs"},
+		},
+	}
+	model.modalHost.Picker.ApplyFilter()
+	model.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: "picker-1"})
+
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionRemoveTerminal})
+	if cmd == nil {
+		t.Fatal("expected remove terminal command")
+	}
+	if msg := cmd(); msg != nil {
+		t.Fatalf("expected nil message from remove command, got %#v", msg)
+	}
+	if len(client.removeCalls) != 1 {
+		t.Fatalf("expected one remove call, got %d", len(client.removeCalls))
+	}
+	if client.removeCalls[0] != "term-2" {
+		t.Fatalf("expected terminal term-2 to be removed, got %#v", client.removeCalls)
+	}
+	if len(model.modalHost.Picker.Items) != 1 {
+		t.Fatalf("expected 1 picker item after delete, got %d", len(model.modalHost.Picker.Items))
+	}
+	if got := model.modalHost.Picker.Items[0].TerminalID; got != "term-1" {
+		t.Fatalf("expected remaining terminal term-1, got %q", got)
+	}
+}
+
 func TestModelUpdateWindowSizeAndError(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 	_, _ = model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -4115,6 +4150,7 @@ type recordingBridgeClient struct {
 	setTagsCalls       []setTagsCall
 	setMetadataCalls   []setMetadataCall
 	killCalls          []string
+	removeCalls        []string
 	restartCalls       []string
 	sessionSnapshot    *protocol.SessionSnapshot
 	sessionView        *protocol.ViewInfo
@@ -4246,6 +4282,11 @@ func (c *recordingBridgeClient) Stream(uint16) (<-chan protocol.StreamFrame, fun
 
 func (c *recordingBridgeClient) Kill(_ context.Context, terminalID string) error {
 	c.killCalls = append(c.killCalls, terminalID)
+	return nil
+}
+
+func (c *recordingBridgeClient) Remove(_ context.Context, terminalID string) error {
+	c.removeCalls = append(c.removeCalls, terminalID)
 	return nil
 }
 

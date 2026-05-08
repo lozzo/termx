@@ -825,6 +825,26 @@ func TestHandleSemanticActionKillTerminalProducesEffect(t *testing.T) {
 	}
 }
 
+func TestHandleSemanticActionRemoveTerminalProducesEffect(t *testing.T) {
+	orch, _ := newTestOrchestrator(t)
+
+	effects := orch.HandleSemanticAction(input.SemanticAction{
+		Kind:     input.ActionRemoveTerminal,
+		TargetID: "term-42",
+	})
+
+	if len(effects) != 1 {
+		t.Fatalf("expected 1 effect, got %d", len(effects))
+	}
+	effect, ok := effects[0].(RemoveTerminalEffect)
+	if !ok {
+		t.Fatalf("expected RemoveTerminalEffect, got %T", effects[0])
+	}
+	if effect.TerminalID != "term-42" {
+		t.Fatalf("expected terminal ID term-42, got %q", effect.TerminalID)
+	}
+}
+
 func seedTabWithSinglePane(wb *workbench.Workbench, wsName, tabID, paneID string) {
 	wb.AddWorkspace(wsName, &workbench.WorkspaceState{
 		Name:      wsName,

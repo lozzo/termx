@@ -231,6 +231,66 @@ func TestRootCmdUsesExplicitConfigPath(t *testing.T) {
 	}
 }
 
+func TestRemoveCmdDeletesTerminalFromDaemonInventory(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	socketPath := filepath.Join(t.TempDir(), "termx.sock")
+	srv := termx.NewServer(termx.WithSocketPath(socketPath), termx.WithDefaultKeepAfterExit(10*time.Second))
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.ListenAndServe(ctx)
+	}()
+	defer func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("server did not stop in time")
+		}
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(socketPath); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for socket %s", socketPath)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	created, err := srv.Create(context.Background(), termx.CreateOptions{
+		Command: []string{"sh", "-c", "sleep 30"},
+		Name:    "remove-smoke",
+	})
+	if err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "rm", created.ID})
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("rm command failed: %v", err)
+	}
+	if _, err := srv.Get(context.Background(), created.ID); err == nil || !strings.Contains(err.Error(), "terminal not found") {
+		t.Fatalf("expected removed terminal lookup to fail, got %v", err)
+	}
+
+	aliasCmd := newRootCmd()
+	aliasCmd.SetArgs([]string{"--socket", socketPath, "--log-file", filepath.Join(t.TempDir(), "termx.log"), "delete", "missing"})
+	aliasCmd.SetIn(bytes.NewBuffer(nil))
+	aliasCmd.SetOut(io.Discard)
+	aliasCmd.SetErr(io.Discard)
+	err = aliasCmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "protocol error 404") {
+		t.Fatalf("expected delete alias to call remove protocol and return 404, got %v", err)
+	}
+}
+
 func TestRemoteConfigFromEnv(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_ENABLE", "true")
 	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control.example.test")

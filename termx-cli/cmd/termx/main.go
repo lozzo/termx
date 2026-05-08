@@ -156,7 +156,7 @@ func newRootCmd() *cobra.Command {
 			defer closeLogger()
 			logger.Info("starting tuiv2 root command", "log_file", logPath)
 			if !isInteractiveTerminal() {
-				return fmt.Errorf("termx TUI requires an interactive terminal; use `termx --help` or subcommands like `new`, `ls`, `attach`, `kill`, `daemon`")
+				return fmt.Errorf("termx TUI requires an interactive terminal; use `termx --help` or subcommands like `new`, `ls`, `attach`, `kill`, `rm`, `daemon`")
 			}
 			if err := rejectNestedTUI(); err != nil {
 				logger.Warn("blocked nested tui launch")
@@ -176,6 +176,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newCommand(&socket, &logFile))
 	cmd.AddCommand(lsCommand(&socket, &logFile))
 	cmd.AddCommand(killCommand(&socket, &logFile))
+	cmd.AddCommand(removeCommand(&socket, &logFile))
 	cmd.AddCommand(attachCommand(&socket, &logFile, &configPath))
 	cmd.AddCommand(pairCommand(&socket, &logFile))
 	cmd.AddCommand(remoteCommand(&socket, &logFile, &configPath))
@@ -369,6 +370,33 @@ func killCommand(socket *string, logFile *string) *cobra.Command {
 			err = client.Kill(context.Background(), args[0])
 			if err != nil {
 				logger.Error("kill terminal failed", "terminal_id", args[0], "error", err)
+			}
+			return err
+		},
+	}
+}
+
+func removeCommand(socket *string, logFile *string) *cobra.Command {
+	return &cobra.Command{
+		Use:     "rm <id>",
+		Aliases: []string{"delete", "remove", "del"},
+		Short:   "Delete a terminal from the daemon inventory",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			logger, closeLogger, logPath, err := openLogFileLogger(*logFile)
+			if err != nil {
+				return err
+			}
+			defer closeLogger()
+			logger.Info("removing terminal", "terminal_id", args[0], "socket", resolveSocket(*socket), "log_file", logPath)
+			client, err := dialOrStartClient(resolveSocket(*socket), logPath, logger)
+			if err != nil {
+				return err
+			}
+			defer client.Close()
+			err = client.Remove(context.Background(), args[0])
+			if err != nil {
+				logger.Error("remove terminal failed", "terminal_id", args[0], "error", err)
 			}
 			return err
 		},

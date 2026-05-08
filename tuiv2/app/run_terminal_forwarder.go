@@ -46,6 +46,7 @@ func runTerminalEventsForwarder(ctx context.Context, send func(tea.Msg), cfg sha
 		events, err := client.Events(eventsCtx, protocol.EventsParams{
 			Types: []protocol.EventType{
 				protocol.EventTerminalResized,
+				protocol.EventTerminalRemoved,
 			},
 		})
 		if err != nil {
@@ -85,6 +86,7 @@ func runFallbackTerminalEventsForwarder(ctx context.Context, send func(tea.Msg),
 	events, err := client.Events(ctx, protocol.EventsParams{
 		Types: []protocol.EventType{
 			protocol.EventTerminalResized,
+			protocol.EventTerminalRemoved,
 		},
 	})
 	if err != nil {

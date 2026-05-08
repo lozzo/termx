@@ -47,6 +47,11 @@ func (o *Orchestrator) HandleSemanticAction(action input.SemanticAction) []Effec
 			return nil
 		}
 		return []Effect{KillTerminalEffect{TerminalID: action.TargetID}}
+	case input.ActionRemoveTerminal:
+		if action.TargetID == "" {
+			return nil
+		}
+		return []Effect{RemoveTerminalEffect{TerminalID: action.TargetID}}
 	default:
 		return nil
 	}

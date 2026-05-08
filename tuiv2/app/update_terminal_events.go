@@ -25,6 +25,12 @@ func (m *Model) handleTerminalEventMessage(msg tea.Msg) (tea.Cmd, bool) {
 				return nil, true
 			}
 			return m.reloadTerminalSnapshotCmd(typed.Event.TerminalID), true
+		case protocol.EventTerminalRemoved:
+			if m == nil || typed.Event.TerminalID == "" {
+				return nil, true
+			}
+			m.removeTerminalFromLocalState(typed.Event.TerminalID)
+			return nil, true
 		default:
 			return nil, true
 		}

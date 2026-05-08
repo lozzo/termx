@@ -30,6 +30,7 @@ func TestClientAPIBoundaryDoesNotExposeRemoteCapabilities(t *testing.T) {
 		"List",
 		"ListSessions",
 		"ReleaseSessionLease",
+		"Remove",
 		"ReplaceSession",
 		"Resize",
 		"Restart",

@@ -139,6 +139,8 @@ func (m *Model) effectCmdWithOptions(effect orchestrator.Effect, options effectA
 			_ = client.Kill(context.Background(), typed.TerminalID)
 			return nil
 		}
+	case orchestrator.RemoveTerminalEffect:
+		return m.removeTerminalCmd(typed.TerminalID, false)
 	case orchestrator.SetInputModeEffect:
 		return func() tea.Msg {
 			m.setMode(typed.Mode)

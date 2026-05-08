@@ -109,7 +109,29 @@ func (m *Model) handlePickerModalAction(action input.SemanticAction) (bool, tea.
 			return true, m.effectCmd(orchestrator.KillTerminalEffect{TerminalID: terminalID})
 		}
 		return true, nil
+	case input.ActionRemoveTerminal:
+		if selected := m.modalHost.Picker.SelectedItem(); selected != nil && !selected.CreateNew {
+			terminalID := selected.TerminalID
+			return true, m.effectCmd(orchestrator.RemoveTerminalEffect{TerminalID: terminalID})
+		}
+		return true, nil
 	default:
 		return false, nil
 	}
+}
+
+func (m *Model) removeTerminalFromPickerItems(terminalID string) {
+	if m == nil || m.modalHost == nil || m.modalHost.Picker == nil || terminalID == "" {
+		return
+	}
+	items := m.modalHost.Picker.Items
+	filtered := items[:0]
+	for _, item := range items {
+		if item.TerminalID != terminalID {
+			filtered = append(filtered, item)
+		}
+	}
+	m.modalHost.Picker.Items = filtered
+	m.modalHost.Picker.ApplyFilter()
+	normalizeModalSelection(&m.modalHost.Picker.Selected, len(m.modalHost.Picker.VisibleItems()))
 }

@@ -470,6 +470,7 @@ func TestTerminalPoolHitRegionsIncludeFooterActions(t *testing.T) {
 		input.ActionAttachFloating,
 		input.ActionEditTerminal,
 		input.ActionKillTerminal,
+		input.ActionRemoveTerminal,
 	}
 	if len(footerRegions) != len(wantActions) {
 		t.Fatalf("expected %d footer regions, got %#v", len(wantActions), footerRegions)
