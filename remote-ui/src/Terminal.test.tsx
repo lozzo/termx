@@ -393,6 +393,27 @@ describe('Terminal', () => {
     await waitFor(() => expect(session.sentResize('terminal-1')).toEqual({ cols: 120, rows: 40 }))
   })
 
+  it('fits and sends current dimensions before terminal input so mobile can reclaim size', async () => {
+    const session = createMockRtcTerminalSession()
+    session.emitResizeControl('terminal-1', { canResize: true, reason: 'owner' })
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    xtermMocks.FakeFitAddon.instances[0]!.dimensions = { cols: 120, rows: 40 }
+
+    act(() => xtermMocks.FakeXTerm.instances[0]?.emitData('a'))
+
+    await waitFor(() => expect(session.sentText('terminal-1')).toContain('a'))
+    await waitFor(() => expect(session.sentResize('terminal-1')).toEqual({ cols: 120, rows: 40 }))
+  })
+
   it('sends resize later if xterm dimensions are unavailable during initial fit', async () => {
     const session = createMockRtcTerminalSession()
     session.emitResizeControl('terminal-1', { canResize: true, reason: 'owner' })

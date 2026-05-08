@@ -107,6 +107,27 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     terminalSession.sendResize(dimensions.cols, dimensions.rows)
   }, [terminalSession.sendResize])
 
+  const currentTerminalSize = useCallback(() => {
+    if (terminalDisposedRef.current) return undefined
+    const term = xtermRef.current
+    const fitAddon = fitAddonRef.current
+    if (!term || !fitAddon) return undefined
+    try {
+      fitAddon.fit()
+      const dimensions = fitAddon.proposeDimensions()
+      if (!dimensions) return undefined
+      if (terminalDisposedRef.current || xtermRef.current !== term) return undefined
+      term.resize(dimensions.cols, dimensions.rows)
+      return dimensions
+    } catch {
+      return undefined
+    }
+  }, [])
+
+  const sendInputAtCurrentSize = useCallback((data: string) => {
+    terminalSession.sendInput(data, currentTerminalSize())
+  }, [currentTerminalSize, terminalSession.sendInput])
+
   const scheduleFit = useCallback(() => {
     if (terminalDisposedRef.current) return
     const generation = terminalGenerationRef.current
@@ -132,7 +153,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   }, [fitAndMaybeSendResize])
 
   useImperativeHandle(ref, () => ({
-    sendInput: terminalSession.sendInput,
+    sendInput: sendInputAtCurrentSize,
     sendResize: terminalSession.sendResize,
     reattach: terminalSession.reattach,
     focus: () => {
@@ -158,7 +179,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     },
     pasteText: (text: string) => {
       const isMultiline = text.includes('\n') || text.includes('\r')
-      terminalSession.sendInput(isMultiline ? `\x1b[200~${text}\x1b[201~` : text)
+      sendInputAtCurrentSize(isMultiline ? `\x1b[200~${text}\x1b[201~` : text)
     },
     selectAll: () => {
       if (terminalDisposedRef.current) return
@@ -201,7 +222,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
     },
     getBufferType: () => terminalDisposedRef.current ? 'normal' : xtermRef.current?.buffer.active.type ?? 'normal',
-  }), [fitAndMaybeSendResize, scheduleFit, terminalSession.reattach, terminalSession.sendInput, terminalSession.sendResize])
+  }), [fitAndMaybeSendResize, scheduleFit, sendInputAtCurrentSize, terminalSession.reattach, terminalSession.sendResize])
 
   useEffect(() => {
     modifierStateRef.current = modifierState
@@ -288,10 +309,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (currentModifiers && (currentModifiers.ctrl !== 'off' || currentModifiers.alt !== 'off')) {
         const result = applyTerminalModifiers(data, currentModifiers)
         onModifierStateChangeRef.current?.({ ctrl: result.ctrl, alt: result.alt })
-        terminalSession.sendInput(result.data)
+        sendInputAtCurrentSize(result.data)
         return
       }
-      terminalSession.sendInput(data)
+      sendInputAtCurrentSize(data)
     })
     const cursorDisposable = term.onCursorMove(() => {
       if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
@@ -465,7 +486,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         return
       }
       const applicationCursor = isApplicationCursor()
-      terminalSession.sendInput(down
+      sendInputAtCurrentSize(down
         ? (applicationCursor ? '\x1bOB' : '\x1b[B')
         : (applicationCursor ? '\x1bOA' : '\x1b[A'))
     }
@@ -1042,7 +1063,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       lastSentResizeRef.current = null
       isOpenRef.current = false
     }
-  }, [fitAndMaybeSendResize, scheduleFit, terminalSession.sendInput])
+  }, [fitAndMaybeSendResize, scheduleFit, sendInputAtCurrentSize])
 
   useEffect(() => {
     isOpenRef.current = isOpen

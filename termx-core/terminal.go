@@ -207,6 +207,12 @@ func (t *Terminal) Info() *TerminalInfo {
 	return &snapshot
 }
 
+func (t *Terminal) Size() Size {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.size
+}
+
 func (t *Terminal) CurrentWorkingDirectory(ctx context.Context) string {
 	if t == nil {
 		return ""

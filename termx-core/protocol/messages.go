@@ -85,6 +85,20 @@ type ResizeParams struct {
 	Rows       uint16 `json:"rows"`
 }
 
+type EnsureResizeParams struct {
+	TerminalID   string `json:"terminal_id"`
+	Channel      uint16 `json:"channel"`
+	Cols         uint16 `json:"cols"`
+	Rows         uint16 `json:"rows"`
+	ResizePolicy string `json:"resize_policy,omitempty"`
+}
+
+type EnsureResizeResult struct {
+	ResizeControl *ResizeControl `json:"resize_control,omitempty"`
+	Size          Size           `json:"size"`
+	Resized       bool           `json:"resized,omitempty"`
+}
+
 type SetTagsParams struct {
 	TerminalID string            `json:"terminal_id"`
 	Tags       map[string]string `json:"tags"`

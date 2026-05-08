@@ -129,6 +129,7 @@ class MockBinaryChannel implements RtcBinaryChannel {
   private closeHandler: (() => void) | undefined
   private streamChannel = 7
   private attachResizeControl: TerminalResizeControl = { canResize: false, reason: 'follower' }
+  private ensureResizeControl: TerminalResizeControl | undefined
 
   constructor(
     readonly label: string,
@@ -180,6 +181,10 @@ class MockBinaryChannel implements RtcBinaryChannel {
     this.attachResizeControl = control
   }
 
+  setEnsureResizeControl(control: TerminalResizeControl): void {
+    this.ensureResizeControl = control
+  }
+
   respondToNextSnapshot(snapshot: TerminalSnapshotPayload, requestId = 2): void {
     this.emitFrame(TERMX_FRAME_TYPES.response, new TextEncoder().encode(JSON.stringify({
       id: requestId,
@@ -228,6 +233,21 @@ class MockBinaryChannel implements RtcBinaryChannel {
         this.terminalSnapshot() ?? { text: '', cols: 80, rows: 24 },
         request.id,
       )
+      return
+    }
+    if (request.method === 'ensure_resize') {
+      const control = this.ensureResizeControl ?? this.attachResizeControl
+      this.messageHandler?.(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, new TextEncoder().encode(JSON.stringify({
+        id: request.id,
+        result: JSON.stringify({
+          resize_control: {
+            can_resize: control.canResize,
+            reason: control.reason,
+            ...(control.sizeLocked ? { size_locked: true } : {}),
+          },
+          size: { cols: 80, rows: 24 },
+        }),
+      }))))
     }
   }
 

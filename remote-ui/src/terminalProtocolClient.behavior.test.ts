@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createTerminalProtocolClient } from './terminalProtocolClient'
 import { TERMX_FRAME_TYPES, decodeTermxFrame, encodeTermxFrame } from './termxProtocol'
 import type { ConnectionInfo, RtcBinaryChannel } from './transport'
@@ -81,6 +81,104 @@ describe('TerminalProtocolClient', () => {
     expect(resize.channel).toBe(7)
     expect(resize.type).toBe(TERMX_FRAME_TYPES.resize)
     expect(Array.from(resize.payload)).toEqual([0x00, 0x64, 0x00, 0x28])
+  })
+
+  it('ensures resize ownership and target dimensions before forwarding sized input', async () => {
+    const channel = new MockBinaryDataChannel('terminal:terminal-1')
+    const client = createTerminalProtocolClient({
+      channel,
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectionInfo: connectionInfo(),
+      resizePolicy: 'owner',
+    })
+    const events: unknown[] = []
+    client.subscribeTerminal('terminal-1', (event: TerminalProtocolEvent) => events.push(event))
+    const terminalPromise = client.openTerminal('terminal-1')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+    await Promise.resolve()
+    const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: attachRequest.id,
+      result: JSON.stringify({
+        mode: 'collaborator',
+        channel: 7,
+        resize_control: { can_resize: true, reason: 'owner' },
+      }),
+    })))
+    const terminal = await terminalPromise
+
+    terminal.send(new TextEncoder().encode(JSON.stringify({ type: 'input', data: 'a', cols: 120, rows: 40 })))
+    const ensureResize = decodeSentFrame(channel, 3)
+    expect(ensureResize).toMatchObject({ channel: 0, type: TERMX_FRAME_TYPES.request })
+    const ensureResizeRequest = JSON.parse(new TextDecoder().decode(ensureResize.payload))
+    expect(ensureResizeRequest.method).toBe('ensure_resize')
+    expect(ensureResizeRequest.params).toEqual({
+      terminal_id: 'terminal-1',
+      channel: 7,
+      cols: 120,
+      rows: 40,
+      resize_policy: 'owner',
+    })
+    expect(channel.sent).toHaveLength(4)
+
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: ensureResizeRequest.id,
+      result: JSON.stringify({
+        resize_control: { can_resize: true, reason: 'owner' },
+        size: { cols: 120, rows: 40 },
+        resized: true,
+      }),
+    })))
+    await vi.waitFor(() => expect(channel.sent).toHaveLength(5))
+
+    const input = decodeSentFrame(channel, 4)
+    expect(input).toMatchObject({ channel: 7, type: TERMX_FRAME_TYPES.input })
+    expect(new TextDecoder().decode(input.payload)).toBe('a')
+    expect(events).toContainEqual({
+      type: 'resizeControl',
+      control: { canResize: true, reason: 'owner' },
+    })
+  })
+
+  it('refreshes resize control for sized input even when size lock is already known', async () => {
+    const channel = new MockBinaryDataChannel('terminal:terminal-1')
+    const client = createTerminalProtocolClient({
+      channel,
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectionInfo: connectionInfo(),
+      resizePolicy: 'owner',
+    })
+    const terminalPromise = client.openTerminal('terminal-1')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+    await Promise.resolve()
+    const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: attachRequest.id,
+      result: JSON.stringify({
+        mode: 'collaborator',
+        channel: 7,
+        resize_control: { can_resize: false, reason: 'size_locked', size_locked: true },
+      }),
+    })))
+    const terminal = await terminalPromise
+
+    terminal.send(new TextEncoder().encode(JSON.stringify({ type: 'input', data: 'a', cols: 120, rows: 40 })))
+    const ensureResize = decodeSentFrame(channel, 3)
+    expect(ensureResize).toMatchObject({ channel: 0, type: TERMX_FRAME_TYPES.request })
+    const ensureResizeRequest = JSON.parse(new TextDecoder().decode(ensureResize.payload))
+    expect(ensureResizeRequest.method).toBe('ensure_resize')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: ensureResizeRequest.id,
+      result: JSON.stringify({
+        resize_control: { can_resize: false, reason: 'size_locked', size_locked: true },
+        size: { cols: 80, rows: 24 },
+      }),
+    })))
+    await vi.waitFor(() => expect(channel.sent).toHaveLength(5))
+
+    expect(decodeSentFrame(channel, 4)).toMatchObject({ channel: 7, type: TERMX_FRAME_TYPES.input })
   })
 
   it('suppresses resize frames when attach grants follower resize control', async () => {

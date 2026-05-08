@@ -33,6 +33,7 @@ interface PendingRequest {
 }
 
 const defaultResizePolicy: TerminalResizePolicy = 'owner'
+const inputEnsureResizeFallbackMs = 100
 
 export function createTerminalProtocolClient(options: TerminalProtocolClientOptions): TerminalProtocolSession {
   return new TerminalProtocolClient(options)
@@ -49,6 +50,7 @@ class TerminalProtocolClient implements TerminalProtocolSession {
   private readonly messageSubscription: { close(): void }
   private readonly closeSubscription: { close(): void }
   private resizeControl: TerminalResizeControl = { canResize: false, reason: 'unknown' }
+  private ensureResizeAvailable = true
   private closed = false
 
   constructor(private readonly options: TerminalProtocolClientOptions) {
@@ -165,10 +167,26 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     await this.attachDone
   }
 
-  private request(method: string, params: unknown): Promise<unknown> {
+  private request(method: string, params: unknown, timeoutMs?: number): Promise<unknown> {
     const id = this.nextRequestID++
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
+      let timer: ReturnType<typeof setTimeout> | undefined
+      this.pending.set(id, {
+        resolve: (value) => {
+          if (timer) clearTimeout(timer)
+          resolve(value)
+        },
+        reject: (err) => {
+          if (timer) clearTimeout(timer)
+          reject(err)
+        },
+      })
+      if (timeoutMs !== undefined) {
+        timer = setTimeout(() => {
+          this.pending.delete(id)
+          reject(new Error(`terminal protocol ${method} timed out for ${this.options.terminalId}`))
+        }, timeoutMs)
+      }
       this.sendFrame(0, TERMX_FRAME_TYPES.request, {
         id,
         method,
@@ -230,15 +248,50 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       throw new Error('terminal protocol stream is not attached')
     }
     const message = JSON.parse(new TextDecoder().decode(data)) as
-      | { type: 'input'; data: string }
+      | { type: 'input'; data: string; cols?: number; rows?: number }
       | { type: 'resize'; cols: number; rows: number }
     if (message.type === 'input') {
-      this.options.channel.send(encodeTermxFrame(this.streamChannel, TERMX_FRAME_TYPES.input, new TextEncoder().encode(message.data)))
+      if (this.shouldEnsureResizeForInput(message)) {
+        void this.ensureResizeForInput(message).finally(() => this.sendInputFrame(message.data))
+      } else {
+        this.sendInputFrame(message.data)
+      }
       return
     }
     if (message.type === 'resize') {
       if (!this.resizeControl.canResize) return
       this.options.channel.send(encodeTermxFrame(this.streamChannel, TERMX_FRAME_TYPES.resize, encodeResizePayload(message.cols, message.rows)))
+    }
+  }
+
+  private sendInputFrame(data: string): void {
+    if (this.streamChannel <= 0 || this.options.channel.readyState !== 'open') return
+    this.options.channel.send(encodeTermxFrame(this.streamChannel, TERMX_FRAME_TYPES.input, new TextEncoder().encode(data)))
+  }
+
+  private shouldEnsureResizeForInput(message: { cols?: number; rows?: number }): boolean {
+    return validTerminalSize(message.cols, message.rows) &&
+      this.ensureResizeAvailable &&
+      (this.options.resizePolicy ?? defaultResizePolicy) === 'owner'
+  }
+
+  private async ensureResizeForInput(message: { cols?: number; rows?: number }): Promise<void> {
+    try {
+      const result = await this.request('ensure_resize', {
+        terminal_id: this.options.terminalId,
+        channel: this.streamChannel,
+        cols: message.cols,
+        rows: message.rows,
+        resize_policy: this.options.resizePolicy ?? defaultResizePolicy,
+      }, inputEnsureResizeFallbackMs)
+      const control = ensureResizeControl(result)
+      if (control) {
+        this.resizeControl = control
+        this.emit(this.options.terminalId, { type: 'resizeControl', control })
+      }
+    } catch {
+      this.ensureResizeAvailable = false
+      // Input must stay responsive if the connected daemon predates ensure_resize.
     }
   }
 
@@ -338,6 +391,22 @@ function normalizeResizeReason(value: unknown): TerminalResizeControl['reason'] 
     default:
       return 'unknown'
   }
+}
+
+function ensureResizeControl(value: unknown): TerminalResizeControl | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const control = (value as Record<string, unknown>).resize_control
+  if (typeof control !== 'object' || control === null || Array.isArray(control)) return null
+  return attachResizeControl({ resize_control: control }, defaultResizePolicy)
+}
+
+function validTerminalSize(cols: unknown, rows: unknown): cols is number {
+  return typeof cols === 'number' &&
+    typeof rows === 'number' &&
+    Number.isFinite(cols) &&
+    Number.isFinite(rows) &&
+    cols > 0 &&
+    rows > 0
 }
 
 function normalizeSnapshot(value: unknown): TerminalSnapshotPayload {

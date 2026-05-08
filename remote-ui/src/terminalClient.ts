@@ -39,6 +39,11 @@ export interface TerminalProtocolChannel {
   close(): void
 }
 
+export interface TerminalInputSize {
+  cols: number
+  rows: number
+}
+
 export interface TerminalProtocolSession {
   openTerminal(terminalId: string): Promise<TerminalProtocolChannel>
   getConnectionInfo(): Promise<ConnectionInfo>
@@ -97,8 +102,8 @@ export class TerminalClient {
     this.terminalId = ''
   }
 
-  sendInput(data: string): void {
-    this.sendMessage({ type: 'input', data })
+  sendInput(data: string, size?: TerminalInputSize): void {
+    this.sendMessage({ type: 'input', data, ...(size ? { cols: size.cols, rows: size.rows } : {}) })
   }
 
   sendResize(cols: number, rows: number): void {
@@ -212,7 +217,7 @@ export class TerminalClient {
     }
   }
 
-  private sendMessage(message: { type: 'input'; data: string } | { type: 'resize'; cols: number; rows: number }): void {
+  private sendMessage(message: { type: 'input'; data: string; cols?: number; rows?: number } | { type: 'resize'; cols: number; rows: number }): void {
     const channel = this.channel
     if (!channel || channel.readyState !== 'open') {
       this.callbacks.onInputDropped?.()

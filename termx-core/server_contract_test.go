@@ -1196,6 +1196,122 @@ func TestResizeRequestRequiresResizeOwnerAttachment(t *testing.T) {
 	}
 }
 
+func TestEnsureResizeRefreshesControlAndResizesOnlyWhenNeeded(t *testing.T) {
+	ctx := context.Background()
+	srv := NewServer(WithDefaultKeepAfterExit(10 * time.Second))
+
+	info, err := srv.Create(ctx, CreateOptions{
+		ID:      "ensure-resize-request",
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+
+	allocator := protocol.NewChannelAllocator()
+	attachments := make(map[uint16]*sessionAttachment)
+	var attachmentsMu sync.RWMutex
+	sendFrame := func(uint16, uint8, []byte) error { return nil }
+	attachRaw, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
+		ID:     1,
+		Method: "attach",
+		Params: mustJSON(t, protocol.AttachParams{
+			TerminalID:   info.ID,
+			Mode:         string(ModeCollaborator),
+			ResizePolicy: protocol.ResizePolicyOwner,
+		}),
+	}, sendFrame)
+	if err != nil {
+		t.Fatalf("attach owner failed: %v", err)
+	}
+	var attach protocol.AttachResult
+	if err := json.Unmarshal(attachRaw, &attach); err != nil {
+		t.Fatalf("unmarshal attach: %v", err)
+	}
+
+	sameRaw, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
+		ID:     2,
+		Method: "ensure_resize",
+		Params: mustJSON(t, protocol.EnsureResizeParams{
+			TerminalID:   info.ID,
+			Channel:      attach.Channel,
+			Cols:         80,
+			Rows:         24,
+			ResizePolicy: protocol.ResizePolicyOwner,
+		}),
+	}, sendFrame)
+	if err != nil {
+		t.Fatalf("same-size ensure_resize failed: %v", err)
+	}
+	var same protocol.EnsureResizeResult
+	if err := json.Unmarshal(sameRaw, &same); err != nil {
+		t.Fatalf("unmarshal same ensure_resize: %v", err)
+	}
+	if same.Resized || same.Size != (protocol.Size{Cols: 80, Rows: 24}) || same.ResizeControl == nil || !same.ResizeControl.CanResize {
+		t.Fatalf("unexpected same-size ensure_resize result: %#v", same)
+	}
+
+	resizedRaw, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
+		ID:     3,
+		Method: "ensure_resize",
+		Params: mustJSON(t, protocol.EnsureResizeParams{
+			TerminalID:   info.ID,
+			Channel:      attach.Channel,
+			Cols:         120,
+			Rows:         40,
+			ResizePolicy: protocol.ResizePolicyOwner,
+		}),
+	}, sendFrame)
+	if err != nil {
+		t.Fatalf("resize ensure_resize failed: %v", err)
+	}
+	var resized protocol.EnsureResizeResult
+	if err := json.Unmarshal(resizedRaw, &resized); err != nil {
+		t.Fatalf("unmarshal resized ensure_resize: %v", err)
+	}
+	if !resized.Resized || resized.Size != (protocol.Size{Cols: 120, Rows: 40}) {
+		t.Fatalf("unexpected resized ensure_resize result: %#v", resized)
+	}
+
+	if err := srv.SetTags(ctx, info.ID, map[string]string{"termx.size_lock": "lock"}); err != nil {
+		t.Fatalf("set size lock failed: %v", err)
+	}
+	lockedRaw, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
+		ID:     4,
+		Method: "ensure_resize",
+		Params: mustJSON(t, protocol.EnsureResizeParams{
+			TerminalID:   info.ID,
+			Channel:      attach.Channel,
+			Cols:         100,
+			Rows:         30,
+			ResizePolicy: protocol.ResizePolicyOwner,
+		}),
+	}, sendFrame)
+	if err != nil {
+		t.Fatalf("locked ensure_resize failed: %v", err)
+	}
+	var locked protocol.EnsureResizeResult
+	if err := json.Unmarshal(lockedRaw, &locked); err != nil {
+		t.Fatalf("unmarshal locked ensure_resize: %v", err)
+	}
+	if locked.Resized || locked.Size != (protocol.Size{Cols: 120, Rows: 40}) ||
+		locked.ResizeControl == nil || locked.ResizeControl.CanResize ||
+		locked.ResizeControl.Reason != protocol.ResizeControlReasonSizeLocked ||
+		!locked.ResizeControl.SizeLocked {
+		t.Fatalf("unexpected locked ensure_resize result: %#v", locked)
+	}
+	attachmentsMu.RLock()
+	sessionAttach := attachments[attach.Channel]
+	attachmentsMu.RUnlock()
+	if sessionAttach == nil || sessionAttach.canResize() {
+		t.Fatalf("expected attachment resize permission refreshed from size lock, got %#v", sessionAttach)
+	}
+}
+
 func TestScopedResizeRequestRequiresAttachmentOwner(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -29,7 +29,7 @@ export interface UseTerminalSessionResult {
   terminalText: string
   terminalInfo: Terminal | null
   resizeControl: TerminalResizeControl
-  sendInput(data: string): void
+  sendInput(data: string, size?: { cols: number; rows: number }): void
   sendResize(cols: number, rows: number): void
   handleAppResume(resumeKind: 'quick' | 'cold' | 'frozen'): void
   reattach(session: RtcSession): void
@@ -101,8 +101,8 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     }
   }, [callbacks, options.machineId, options.terminalId, options.session])
 
-  const sendInput = useCallback((data: string) => {
-    clientRef.current?.sendInput(data)
+  const sendInput = useCallback((data: string, size?: { cols: number; rows: number }) => {
+    clientRef.current?.sendInput(data, size)
   }, [])
 
   const sendResize = useCallback((cols: number, rows: number) => {
