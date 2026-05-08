@@ -1174,14 +1174,23 @@ func TestStartInputForwarderParsesExtendedCursorPositionReport(t *testing.T) {
 }
 
 type fakeSessionEventsClient struct {
-	events   chan protocol.Event
-	session  *protocol.SessionSnapshot
-	getCalls []string
+	events           chan protocol.Event
+	session          *protocol.SessionSnapshot
+	getCalls         []string
+	eventParams      []protocol.EventsParams
+	eventsSubscribed chan protocol.EventsParams
 }
 
 func (f *fakeSessionEventsClient) Close() error { return nil }
 
-func (f *fakeSessionEventsClient) Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error) {
+func (f *fakeSessionEventsClient) Events(_ context.Context, params protocol.EventsParams) (<-chan protocol.Event, error) {
+	f.eventParams = append(f.eventParams, params)
+	if f.eventsSubscribed != nil {
+		select {
+		case f.eventsSubscribed <- params:
+		default:
+		}
+	}
 	return f.events, nil
 }
 
@@ -1274,4 +1283,67 @@ func TestStartSessionEventsForwarderReconnectsAndRequestsResync(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for forwarded event after reconnect")
 	}
+}
+
+func TestRunTerminalEventsForwarderSubscribesToInventoryPatchEvents(t *testing.T) {
+	originalFactory := newSessionEventsClient
+	originalDelay := sessionEventsReconnectDelay
+	defer func() {
+		newSessionEventsClient = originalFactory
+		sessionEventsReconnectDelay = originalDelay
+	}()
+
+	subscribed := make(chan protocol.EventsParams, 1)
+	client := &fakeSessionEventsClient{
+		events:           make(chan protocol.Event, 1),
+		eventsSubscribed: subscribed,
+	}
+	newSessionEventsClient = func(context.Context, string) (sessionEventsClient, error) {
+		return client, nil
+	}
+	sessionEventsReconnectDelay = time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runDone := make(chan struct{})
+	go func() {
+		runTerminalEventsForwarder(ctx, func(tea.Msg) {}, shared.Config{SocketPath: "/tmp/termx.sock"}, nil)
+		close(runDone)
+	}()
+
+	var params protocol.EventsParams
+	select {
+	case params = <-subscribed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for terminal event subscription")
+	}
+	cancel()
+	select {
+	case <-runDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for terminal event forwarder shutdown")
+	}
+
+	want := []protocol.EventType{
+		protocol.EventTerminalCreated,
+		protocol.EventTerminalStateChanged,
+		protocol.EventTerminalResized,
+		protocol.EventTerminalRemoved,
+		protocol.EventTerminalMetadataChanged,
+	}
+	if got := params.Types; !sameEventTypes(got, want) {
+		t.Fatalf("unexpected terminal event types: got %#v want %#v", got, want)
+	}
+}
+
+func sameEventTypes(left, right []protocol.EventType) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }

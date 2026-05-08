@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
@@ -171,26 +170,7 @@ func (m *Model) effectCmdWithOptions(effect orchestrator.Effect, options effectA
 			if err != nil {
 				terminals = nil
 			}
-			items := make([]modal.PickerItem, 0, len(terminals))
-			for _, terminal := range terminals {
-				items = append(items, modal.PickerItem{
-					TerminalID:    terminal.ID,
-					Name:          terminal.Name,
-					State:         terminal.State,
-					TerminalState: terminal.State,
-					ExitCode:      cloneIntPointer(terminal.ExitCode),
-					Command:       strings.Join(terminal.Command, " "),
-					CommandArgs:   append([]string(nil), terminal.Command...),
-					Tags:          cloneStringMap(terminal.Tags),
-					CreatedAt:     terminal.CreatedAt,
-				})
-			}
-			items = append(items, modal.PickerItem{
-				CreateNew:   true,
-				Name:        "new terminal",
-				Description: "Create a new terminal",
-			})
-			return pickerItemsLoadedMsg{Items: items}
+			return pickerItemsLoadedMsg{Items: m.buildTerminalPickerItems(terminals)}
 		}
 	case orchestrator.LoadWorkspaceItemsEffect:
 		return func() tea.Msg {

@@ -39,6 +39,9 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		m.terminalPage.ApplyFilter()
 		m.render.Invalidate()
 		return nil, true
+	case terminalInventoryLoadedMsg:
+		m.applyTerminalInventoryPatch(typed.Terminals)
+		return nil, true
 	case terminalSizeLockToggledMsg:
 		return m.showNotice(typed.Notice), true
 	case orchestrator.KillTerminalEffect:

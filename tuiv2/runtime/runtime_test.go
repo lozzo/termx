@@ -92,6 +92,37 @@ func TestRuntimeListTerminalsDoesNotPopulateRegistry(t *testing.T) {
 	}
 }
 
+func TestRuntimeApplyTerminalListPatchesRegistryMetadata(t *testing.T) {
+	rt := New(nil)
+	exitCode := 7
+
+	rt.ApplyTerminalList([]protocol.TerminalInfo{{
+		ID:       "term-1",
+		Name:     "renamed-shell",
+		Command:  []string{"zsh", "-l"},
+		Tags:     map[string]string{"termx.environment": "prod"},
+		State:    "exited",
+		ExitCode: &exitCode,
+	}})
+
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected terminal to be created in registry")
+	}
+	if terminal.Name != "renamed-shell" || terminal.State != "exited" {
+		t.Fatalf("unexpected terminal metadata: %#v", terminal)
+	}
+	if !reflect.DeepEqual(terminal.Command, []string{"zsh", "-l"}) {
+		t.Fatalf("unexpected command: %#v", terminal.Command)
+	}
+	if terminal.Tags["termx.environment"] != "prod" {
+		t.Fatalf("unexpected tags: %#v", terminal.Tags)
+	}
+	if terminal.ExitCode == nil || *terminal.ExitCode != exitCode {
+		t.Fatalf("unexpected exit code: %#v", terminal.ExitCode)
+	}
+}
+
 func TestRuntimeAttachAndLoadSnapshotInitializesVTermCache(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()

@@ -2,9 +2,11 @@ package app
 
 import (
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -62,11 +64,102 @@ func TestHandleTerminalEventMessageUnknownEventFallsThroughAsHandled(t *testing.
 	model := setupModel(t, modelOpts{})
 
 	cmd, handled := model.handleTerminalEventMessage(terminalEventMsg{Event: protocol.Event{
-		Type:       protocol.EventTerminalCreated,
+		Type:       protocol.EventTerminalReadError,
 		TerminalID: "term-1",
 	}})
 	if !handled || cmd != nil {
 		t.Fatalf("expected unknown terminal event handled without cmd, got handled=%v cmd=%#v", handled, cmd)
+	}
+}
+
+func TestHandleTerminalEventMessageMetadataChangedRefreshesInventory(t *testing.T) {
+	exitCode := 9
+	client := &recordingBridgeClient{
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:        "term-1",
+			Name:      "renamed-shell",
+			Command:   []string{"zsh", "-l"},
+			Tags:      map[string]string{"termx.environment": "prod"},
+			State:     "exited",
+			ExitCode:  &exitCode,
+			CreatedAt: time.Unix(123, 0),
+		}}},
+	}
+	model := setupModel(t, modelOpts{client: client})
+	model.openTerminalPool()
+	model.terminalPage.Items = []modal.PickerItem{{TerminalID: "term-1", Name: "old-shell", State: "running"}}
+	model.terminalPage.ApplyFilter()
+	model.modalHost.Picker = &modal.PickerState{
+		Items:    []modal.PickerItem{{TerminalID: "term-1", Name: "old-shell", State: "running"}, {CreateNew: true, Name: "new terminal"}},
+		Filtered: []modal.PickerItem{{TerminalID: "term-1", Name: "old-shell", State: "running"}, {CreateNew: true, Name: "new terminal"}},
+	}
+
+	_, cmd := model.Update(terminalEventMsg{Event: protocol.Event{
+		Type:       protocol.EventTerminalMetadataChanged,
+		TerminalID: "term-1",
+	}})
+	drainCmd(t, model, cmd, 10)
+
+	if client.listCalls != 1 {
+		t.Fatalf("expected metadata event to refresh inventory once, got %d", client.listCalls)
+	}
+	terminal := model.runtime.Registry().Get("term-1")
+	if terminal == nil || terminal.Name != "renamed-shell" || terminal.State != "exited" || terminal.ExitCode == nil || *terminal.ExitCode != exitCode {
+		t.Fatalf("expected runtime terminal patched from inventory, got %#v", terminal)
+	}
+	if got := terminal.Tags["termx.environment"]; got != "prod" {
+		t.Fatalf("expected runtime tags patched, got %#v", terminal.Tags)
+	}
+	if pane := model.workbench.CurrentTab().Panes["pane-1"]; pane == nil || pane.Title != "renamed-shell" {
+		t.Fatalf("expected bound pane title patched, got %#v", pane)
+	}
+	managerItem := findPickerItemByTerminalID(model.terminalPage.Items, "term-1")
+	if managerItem == nil || managerItem.Name != "renamed-shell" || managerItem.TerminalState != "exited" || managerItem.ExitCode == nil || *managerItem.ExitCode != exitCode {
+		t.Fatalf("expected terminal manager item patched, got %#v", managerItem)
+	}
+	pickerItem := findPickerItemByTerminalID(model.modalHost.Picker.Items, "term-1")
+	if pickerItem == nil || pickerItem.Name != "renamed-shell" || pickerItem.State != "exited" || pickerItem.ExitCode == nil || *pickerItem.ExitCode != exitCode {
+		t.Fatalf("expected picker item patched, got %#v", pickerItem)
+	}
+}
+
+func TestHandleTerminalEventMessageCreatedAddsTerminalToOpenLists(t *testing.T) {
+	client := &recordingBridgeClient{
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:      "term-1",
+			Name:    "shell",
+			Command: []string{"sh"},
+			State:   "running",
+		}, {
+			ID:      "term-2",
+			Name:    "logs",
+			Command: []string{"tail", "-f", "app.log"},
+			State:   "running",
+		}}},
+	}
+	model := setupModel(t, modelOpts{client: client})
+	model.openTerminalPool()
+	model.terminalPage.Items = []modal.PickerItem{{TerminalID: "term-1", Name: "shell", State: "running"}}
+	model.terminalPage.ApplyFilter()
+	model.modalHost.Picker = &modal.PickerState{
+		Items:    []modal.PickerItem{{TerminalID: "term-1", Name: "shell", State: "running"}, {CreateNew: true, Name: "new terminal"}},
+		Filtered: []modal.PickerItem{{TerminalID: "term-1", Name: "shell", State: "running"}, {CreateNew: true, Name: "new terminal"}},
+	}
+
+	_, cmd := model.Update(terminalEventMsg{Event: protocol.Event{
+		Type:       protocol.EventTerminalCreated,
+		TerminalID: "term-2",
+	}})
+	drainCmd(t, model, cmd, 10)
+
+	if got := model.runtime.Registry().Get("term-2"); got == nil || got.Name != "logs" || got.State != "running" {
+		t.Fatalf("expected created terminal patched into runtime, got %#v", got)
+	}
+	if item := findPickerItemByTerminalID(model.terminalPage.Items, "term-2"); item == nil || item.Name != "logs" {
+		t.Fatalf("expected created terminal in manager items, got %#v", model.terminalPage.Items)
+	}
+	if item := findPickerItemByTerminalID(model.modalHost.Picker.Items, "term-2"); item == nil || item.Name != "logs" {
+		t.Fatalf("expected created terminal in picker items, got %#v", model.modalHost.Picker.Items)
 	}
 }
 
@@ -156,4 +249,13 @@ func TestHandleTerminalEventMessageFallsThroughForNonTerminalEventMsg(t *testing
 	if handled || cmd != nil {
 		t.Fatalf("expected non-terminal event msg to fall through, got handled=%v cmd=%#v", handled, cmd)
 	}
+}
+
+func findPickerItemByTerminalID(items []modal.PickerItem, terminalID string) *modal.PickerItem {
+	for index := range items {
+		if items[index].TerminalID == terminalID {
+			return &items[index]
+		}
+	}
+	return nil
 }

@@ -38,8 +38,8 @@ type keyBurstMsg struct {
 type mouseWheelBurstMsg struct {
 	Seq      uint64
 	QueuedAt time.Time
-	Msg    tea.MouseMsg
-	Repeat int
+	Msg      tea.MouseMsg
+	Repeat   int
 }
 
 type queuedMouseMsg struct {
@@ -112,6 +112,10 @@ type pickerItemsLoadedMsg struct {
 
 type terminalManagerItemsLoadedMsg struct {
 	Items []modal.PickerItem
+}
+
+type terminalInventoryLoadedMsg struct {
+	Terminals []protocol.TerminalInfo
 }
 
 type terminalSizeLockToggledMsg struct {

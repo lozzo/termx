@@ -4152,6 +4152,7 @@ type recordingBridgeClient struct {
 	killCalls          []string
 	removeCalls        []string
 	restartCalls       []string
+	eventsCalls        []protocol.EventsParams
 	sessionSnapshot    *protocol.SessionSnapshot
 	sessionView        *protocol.ViewInfo
 	getSessionErr      error
@@ -4231,7 +4232,8 @@ func (c *recordingBridgeClient) List(context.Context) (*protocol.ListResult, err
 	return c.listResult, nil
 }
 
-func (c *recordingBridgeClient) Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error) {
+func (c *recordingBridgeClient) Events(_ context.Context, params protocol.EventsParams) (<-chan protocol.Event, error) {
+	c.eventsCalls = append(c.eventsCalls, params)
 	return nil, nil
 }
 
