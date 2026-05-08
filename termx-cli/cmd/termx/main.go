@@ -29,6 +29,8 @@ import (
 )
 
 var (
+	defaultRemoteControlURL = "http://114.66.58.243:12306"
+
 	isInteractiveTerminal = func() bool {
 		return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
 	}
@@ -547,8 +549,6 @@ func remoteEnableCommand(socket *string, logFile *string, configPath *string) *c
 	var outputJSON bool
 	var addr string
 	var iceTCPAddr string
-	var serverURL string
-	var controlURL string
 	var hubURL string
 	var token string
 	var tokenEnv string
@@ -576,10 +576,9 @@ func remoteEnableCommand(socket *string, logFile *string, configPath *string) *c
 			if browser && hasTokenSource {
 				return fmt.Errorf("--browser cannot be used with --token, --token-env, or --token-file")
 			}
-			controlURL = firstNonEmpty(serverURL, controlURL)
 			switch mode {
 			case "both":
-				onlineRuntime, err := runRemoteOnlineEnable(cmd, configPath, controlURL, hubURL, token, browser, noBrowser, browserTimeout, outputJSON, mode)
+				onlineRuntime, err := runRemoteOnlineEnable(cmd, configPath, "", hubURL, token, browser, noBrowser, browserTimeout, outputJSON, mode)
 				if err != nil {
 					return err
 				}
@@ -590,7 +589,7 @@ func remoteEnableCommand(socket *string, logFile *string, configPath *string) *c
 				}
 				return runRemoteLocalEnable(cmd, socket, logFile, addr, iceTCPAddr, remoteprotocol.Config{Enabled: true, Mode: mode}, outputJSON)
 			case "online":
-				_, err := runRemoteOnlineEnable(cmd, configPath, controlURL, hubURL, token, browser, noBrowser, browserTimeout, outputJSON, mode)
+				_, err := runRemoteOnlineEnable(cmd, configPath, "", hubURL, token, browser, noBrowser, browserTimeout, outputJSON, mode)
 				return err
 			default:
 				return fmt.Errorf("--mode must be local, online, or both")
@@ -600,8 +599,6 @@ func remoteEnableCommand(socket *string, logFile *string, configPath *string) *c
 	cmd.Flags().StringVar(&enableMode, "mode", "both", "connection mode: local, online, or both")
 	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:18888", "local web listen address")
 	cmd.Flags().StringVar(&iceTCPAddr, "ice-tcp-addr", "127.0.0.1:18889", "local ICE TCP listen address")
-	cmd.Flags().StringVar(&serverURL, "server", "", "Web Control URL")
-	cmd.Flags().StringVar(&controlURL, "control-url", "", "Web Control URL for cloud remote")
 	cmd.Flags().StringVar(&hubURL, "hub-url", "", "optional explicit Hub URL; normally discovered from Web Control")
 	cmd.Flags().StringVar(&token, "token", "", "Web Control access token for automation")
 	cmd.Flags().StringVar(&tokenEnv, "token-env", "", "environment variable containing the Web Control connection key for automation")
@@ -610,7 +607,6 @@ func remoteEnableCommand(socket *string, logFile *string, configPath *string) *c
 	cmd.Flags().DurationVar(&browserTimeout, "timeout", 5*time.Minute, "browser login timeout")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the browser login URL without opening it")
 	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
-	_ = cmd.Flags().MarkHidden("control-url")
 	_ = cmd.Flags().MarkHidden("hub-url")
 	_ = cmd.Flags().MarkHidden("token-env")
 	_ = cmd.Flags().MarkHidden("token-file")
@@ -708,7 +704,6 @@ func remoteQRCodeCommand(socket *string, logFile *string) *cobra.Command {
 	var payloadOnly bool
 	var localURL string
 	var ttl time.Duration
-	var controlURL string
 	var hubURL string
 	cmd := &cobra.Command{
 		Use:   "qrcode",
@@ -773,7 +768,6 @@ func remoteQRCodeCommand(socket *string, logFile *string) *cobra.Command {
 	cmd.Flags().BoolVar(&payloadOnly, "payload", false, "print only the termx://pair URI")
 	cmd.Flags().StringVar(&localURL, "local-url", "", "local pair URL; defaults to running local remote")
 	cmd.Flags().DurationVar(&ttl, "ttl", 5*time.Minute, "pair session TTL")
-	cmd.Flags().StringVar(&controlURL, "server", "", "Web Control URL override")
 	cmd.Flags().StringVar(&hubURL, "hub-url", "", "Hub URL override")
 	_ = cmd.Flags().MarkHidden("hub-url")
 	return cmd
@@ -864,7 +858,10 @@ func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, contr
 		}
 	}
 	if controlURL == "" {
-		return remoteprotocol.Config{}, fmt.Errorf("--server is required for online remote enable")
+		controlURL = defaultRemoteControlURL
+	}
+	if controlURL == "" {
+		return remoteprotocol.Config{}, fmt.Errorf("Web Control URL is not configured")
 	}
 	var refreshToken string
 	if forceBrowser || token == "" {
@@ -1031,7 +1028,7 @@ func printPairStartResult(w io.Writer, result *remoteprotocol.PairStartResult) {
 
 func buildRemotePairPayload(result *remoteprotocol.PairStartResult, _ *remoteprotocol.Status, hubURLs []string) map[string]any {
 	payload := map[string]any{
-		"type":           "termx_pair_v2",
+		"type":           "termx_pair",
 		"schema_version": 3,
 		"machine": map[string]any{
 			"id":   result.MachineID,

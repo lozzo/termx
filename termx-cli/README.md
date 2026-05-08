@@ -24,8 +24,11 @@ register through Web Control for managed access.
 2. Enable both local and cloud remote paths:
 
    ```bash
-   termx remote enable --mode both --server <web-control-url>
+   termx remote enable --mode both
    ```
+
+   The Web Control endpoint is fixed by default. Self-hosted/test builds can
+   set it through `remote.control_url` or `TERMX_REMOTE_CONTROL_URL`.
 
    Without `--token`, the command opens the browser login flow, stores the
    returned access token in the remote auth store, and keeps the raw token out

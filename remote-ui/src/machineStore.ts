@@ -7,7 +7,6 @@ export interface StoredMachineRecord extends AppMachineRecord {
   endpoints: StoredMachineEndpoints
   pairing?: StoredMachinePairing | undefined
   appBootstrap?: StoredAppBootstrap | undefined
-  schemaVersion: 2
   addedAt: string
   updatedAt: string
 }
@@ -21,7 +20,6 @@ export interface StoredMachineAddresses {
 export interface StoredMachineEndpoints {
   webControl?: string | undefined
   hub?: string | undefined
-  localPairing?: string | undefined
 }
 
 export interface StoredMachinePairing {
@@ -88,7 +86,6 @@ export function createMachineStore(options: MachineStoreOptions): MachineStore {
         endpoints: payload.endpoints,
         pairing: payload.pairing,
         ...(isEmptyBootstrap(payload.bootstrap) ? {} : { appBootstrap: payload.bootstrap }),
-        schemaVersion: 2,
         addedAt: existing?.addedAt ?? timestamp,
         updatedAt: timestamp,
       })
@@ -141,10 +138,6 @@ function normalizeStoredMachine(value: Record<string, unknown> | StoredMachineRe
   const source = machineSource(record.source)
   const addresses = addressesField(record.addresses)
   const endpoints = endpointsField(record.endpoints)
-  const schemaVersion = numberField(record, 'schemaVersion')
-  if (schemaVersion !== 2) {
-    throw new Error(`stored machine schemaVersion must be 2, got ${schemaVersion}`)
-  }
   return {
     machineId,
     name,
@@ -164,7 +157,6 @@ function normalizeStoredMachine(value: Record<string, unknown> | StoredMachineRe
     endpoints,
     ...(record.pairing !== undefined ? { pairing: pairingField(record.pairing) } : {}),
     ...(record.appBootstrap !== undefined ? { appBootstrap: appBootstrapField(record.appBootstrap) } : {}),
-    schemaVersion: 2,
     addedAt: stringField(record, 'addedAt'),
     updatedAt: stringField(record, 'updatedAt'),
   }
@@ -184,7 +176,6 @@ function endpointsField(value: unknown): StoredMachineEndpoints {
   return {
     ...(optionalString(record.webControl) ? { webControl: optionalString(record.webControl) } : {}),
     ...(optionalString(record.hub) ? { hub: optionalString(record.hub) } : {}),
-    ...(optionalString(record.localPairing) ? { localPairing: optionalString(record.localPairing) } : {}),
   }
 }
 

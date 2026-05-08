@@ -76,7 +76,7 @@ both:    先 local，再 race 所有 hub_urls
 
 termx:// URI payload（schema_version: 3）：
 ```json
-{ "addresses": { "public": ["hub1_url", "hub2_url"] }, "pairing": {...} }
+{ "type": "termx_pair", "schema_version": 3, "addresses": { "public": ["hub_url"] }, "pairing": {...} }
 ```
 `addresses.public` 是**数组**，不是单个字符串。
 

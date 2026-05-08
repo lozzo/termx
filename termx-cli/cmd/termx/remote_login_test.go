@@ -43,8 +43,9 @@ func TestRemoteLoginParentDefaultsToBrowserLogin(t *testing.T) {
 	}
 
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control.example.test")
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "--server", "https://control.example.test", "--no-browser", "--timeout", "100ms"})
+	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "--no-browser", "--timeout", "100ms"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {
@@ -81,12 +82,13 @@ func TestRemoteLoginTokenPersistsBootstrapOutsideConfigFile(t *testing.T) {
 	}
 
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control.example.test")
 	cmd := newRootCmd()
 	tokenPath := filepath.Join(t.TempDir(), "token")
 	if err := os.WriteFile(tokenPath, []byte("access-secret\n"), 0o600); err != nil {
 		t.Fatalf("write token file: %v", err)
 	}
-	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "token", "--server", "https://control.example.test", "--token-file", tokenPath})
+	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "token", "--token-file", tokenPath})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {
@@ -146,9 +148,10 @@ func TestRemoteLoginPasswordAndBrowserPersistKeys(t *testing.T) {
 	}
 
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control.example.test")
 	cmd := newRootCmd()
 	t.Setenv("TERMX_TEST_PASSWORD", "valid password")
-	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "password", "--server", "https://control.example.test", "--email", "cli@example.com", "--password-env", "TERMX_TEST_PASSWORD"})
+	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "password", "--email", "cli@example.com", "--password-env", "TERMX_TEST_PASSWORD"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {
@@ -166,7 +169,7 @@ func TestRemoteLoginPasswordAndBrowserPersistKeys(t *testing.T) {
 	}
 
 	cmd = newRootCmd()
-	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "browser", "--server", "https://control.example.test", "--timeout", "100ms"})
+	cmd.SetArgs([]string{"--config", configPath, "remote", "login", "browser", "--timeout", "100ms"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {

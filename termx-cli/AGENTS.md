@@ -18,7 +18,7 @@
   - `online`：agent gRPC 长连接云端 hub
   - `both`：同时启动两者，Manager 持多个 hub URL
 - 输出统一格式的 hub_urls（**数组**）/ QR payload（schema_version: 3）
-- `termx remote enable --mode both --server <web-control-url>`；`--token` 只用于自动化，无 token 时走浏览器授权。
+- `termx remote enable --mode both` 使用固定 Web Control；自建/测试场景通过配置文件或 `TERMX_REMOTE_CONTROL_URL` 覆盖。`--token` 只用于自动化，无 token 时走浏览器授权。
 
 `termx-cli` **不应实现**：Hub 逻辑、session token 验证、TURN relay、Web Controller、支付、quota。
 

@@ -1,7 +1,7 @@
 import type { ConnectionPath } from './transport'
 
 export interface PairingPayload {
-  schemaVersion: 2 | 3
+  schemaVersion: 3
   machine: PairingPayloadMachine
   addresses: PairingPayloadAddresses
   endpoints: PairingPayloadEndpoints
@@ -24,8 +24,6 @@ export interface PairingPayloadAddresses {
 
 export interface PairingPayloadEndpoints {
   webControl?: string | undefined
-  hub?: string | undefined
-  localPairing?: string | undefined
 }
 
 export interface PairingPayloadPairing {
@@ -45,17 +43,14 @@ export function parsePairingPayload(input: string): PairingPayload {
   rejectPrivateKeyMaterial(raw)
   const data = record(raw, 'pairing payload')
   const type = optionalString(data.type)
-  if (type === 'termx_pair_v1' || isV1Payload(data)) {
-    return normalizeV1Payload(data)
-  }
-  if (type !== undefined && type !== 'termx_pair_v2') {
+  if (type !== 'termx_pair') {
     throw new Error(`unsupported pairing payload type ${type}`)
   }
-  const version = numberField(data, 'schema_version', 2)
-  if (version !== 2 && version !== 3) {
+  const version = numberField(data, 'schema_version')
+  if (version !== 3) {
     throw new Error(`unsupported pairing payload schema_version ${version}`)
   }
-  return normalizeV2Payload(data, version)
+  return normalizeV3Payload(data)
 }
 
 function parsePairingInput(input: string): unknown {
@@ -77,13 +72,13 @@ function parsePairingInput(input: string): unknown {
   return JSON.parse(decodeBase64url(encoded))
 }
 
-function normalizeV2Payload(data: Record<string, unknown>, schemaVersion: 2 | 3): PairingPayload {
+function normalizeV3Payload(data: Record<string, unknown>): PairingPayload {
   const machine = record(data.machine, 'pairing payload machine')
   const addresses = optionalRecord(data.addresses)
   const endpoints = optionalRecord(data.endpoints)
   const pairing = record(data.pairing, 'pairing payload pairing')
   return {
-    schemaVersion,
+    schemaVersion: 3,
     machine: {
       id: stringField(machine, 'id'),
       name: stringField(machine, 'name'),
@@ -106,43 +101,9 @@ function normalizeV2Payload(data: Record<string, unknown>, schemaVersion: 2 | 3)
   }
 }
 
-function normalizeV1Payload(data: Record<string, unknown>): PairingPayload {
-  const localPairURL = optionalString(data.local_pair_url)
-  const localRTCURL = optionalString(data.local_rtc_url)
-  const publicURL = optionalString(data.public_url)
-  return {
-    schemaVersion: 2,
-    machine: {
-      id: stringField(data, 'machine_id'),
-      name: optionalString(data.machine_name) ?? stringField(data, 'machine_id'),
-      ...(optionalString(data.hostname) ? { hostname: optionalString(data.hostname) } : {}),
-    },
-    addresses: {
-      local: compactStrings([localRTCURL]),
-      lan: compactStrings([localPairURL]),
-      public: compactStrings([publicURL]),
-    },
-    endpoints: endpointsFromRecord({
-      web_control: data.web_control_url,
-      hub: data.hub_url,
-      local_pairing: localPairURL,
-    }),
-    pairing: {
-      sessionId: stringField(data, 'pair_session_id'),
-      secret: stringField(data, 'pair_secret'),
-      ...(optionalString(data.answer_proof_secret) ? { answerProofSecret: optionalString(data.answer_proof_secret) } : {}),
-      ...(optionalString(data.expires_at) ? { expiresAt: optionalString(data.expires_at) } : {}),
-    },
-    bootstrap: {},
-    preferredPath: connectionPath(optionalString(data.preferred_path) ?? 'local'),
-  }
-}
-
 function endpointsFromRecord(data: Record<string, unknown>): PairingPayloadEndpoints {
   return {
     ...(optionalString(data.web_control) ? { webControl: optionalString(data.web_control) } : {}),
-    ...(optionalString(data.hub) ? { hub: optionalString(data.hub) } : {}),
-    ...(optionalString(data.local_pairing) ? { localPairing: optionalString(data.local_pairing) } : {}),
   }
 }
 
@@ -186,10 +147,6 @@ function looksLikePrivateJwk(value: object): boolean {
     typeof record.n === 'string'
 }
 
-function isV1Payload(data: Record<string, unknown>): boolean {
-  return data.machine_id !== undefined && data.pair_session_id !== undefined
-}
-
 function connectionPath(value: string): ConnectionPath {
   if ((allowedPaths as readonly string[]).includes(value)) return value as ConnectionPath
   throw new Error(`unsupported client-visible connection path ${value}`)
@@ -226,9 +183,8 @@ function stringField(data: Record<string, unknown>, key: string): string {
   return value
 }
 
-function numberField(data: Record<string, unknown>, key: string, fallback: number): number {
+function numberField(data: Record<string, unknown>, key: string): number {
   const value = data[key]
-  if (value === undefined) return fallback
   if (typeof value !== 'number' || !Number.isInteger(value)) {
     throw new Error(`pairing payload ${key} must be an integer`)
   }

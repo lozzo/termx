@@ -113,7 +113,7 @@ func (m *Manager) CreateSession(ttl time.Duration) (Session, error) {
 		return Session{}, err
 	}
 	session := Session{
-		Type:              "termx_pair_v1",
+		Type:              "termx_pair",
 		MachineID:         strings.TrimSpace(cfg.MachineID),
 		MachineName:       strings.TrimSpace(cfg.MachineName),
 		LocalPairURL:      strings.TrimSpace(cfg.LocalPairURL),

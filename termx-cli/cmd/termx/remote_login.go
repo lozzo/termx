@@ -57,17 +57,15 @@ var (
 )
 
 func remoteLoginCommand(configPath *string) *cobra.Command {
-	var serverURL string
-	var controlURL string
 	var timeout time.Duration
 	var noBrowser bool
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Login this computer to Web Control",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			controlURL = firstNonEmpty(serverURL, controlURL)
-			if controlURL == "" {
-				return fmt.Errorf("--server is required")
+			controlURL, err := remoteControlURLFromConfigOrDefault(*configPath)
+			if err != nil {
+				return err
 			}
 			if timeout <= 0 {
 				timeout = 5 * time.Minute
@@ -87,11 +85,8 @@ func remoteLoginCommand(configPath *string) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&serverURL, "server", "", "Web Control URL")
-	cmd.Flags().StringVar(&controlURL, "control-url", "", "Web Control URL")
 	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "browser login timeout")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the login URL without opening a browser")
-	_ = cmd.Flags().MarkHidden("control-url")
 	cmd.AddCommand(remoteLoginTokenCommand(configPath))
 	cmd.AddCommand(remoteLoginPasswordCommand(configPath))
 	cmd.AddCommand(remoteLoginBrowserCommand(configPath))
@@ -99,8 +94,6 @@ func remoteLoginCommand(configPath *string) *cobra.Command {
 }
 
 func remoteLoginTokenCommand(configPath *string) *cobra.Command {
-	var serverURL string
-	var controlURL string
 	var token string
 	var tokenEnv string
 	var tokenFile string
@@ -109,14 +102,17 @@ func remoteLoginTokenCommand(configPath *string) *cobra.Command {
 		Short:  "Login with an existing Web Control connection key",
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			controlURL = firstNonEmpty(serverURL, controlURL)
+			controlURL, err := remoteControlURLFromConfigOrDefault(*configPath)
+			if err != nil {
+				return err
+			}
 			resolvedToken, err := resolveSecretFlag(token, tokenEnv, tokenFile)
 			if err != nil {
 				return err
 			}
 			token = strings.TrimSpace(resolvedToken)
-			if controlURL == "" || token == "" {
-				return fmt.Errorf("--server and connection key source are required")
+			if token == "" {
+				return fmt.Errorf("connection key source is required")
 			}
 			if _, err := remoteLoginHTTPClient.Me(cmd.Context(), controlURL, token); err != nil {
 				return err
@@ -124,18 +120,13 @@ func remoteLoginTokenCommand(configPath *string) *cobra.Command {
 			return persistRemoteLogin(cmd, *configPath, remoteAuthRecord{ControlURL: controlURL, AccessToken: token})
 		},
 	}
-	cmd.Flags().StringVar(&serverURL, "server", "", "Web Control URL")
-	cmd.Flags().StringVar(&controlURL, "control-url", "", "Web Control URL")
 	cmd.Flags().StringVar(&token, "token", "", "Web Control connection key")
 	cmd.Flags().StringVar(&tokenEnv, "token-env", "", "environment variable containing the Web Control connection key")
 	cmd.Flags().StringVar(&tokenFile, "token-file", "", "file containing the Web Control connection key")
-	_ = cmd.Flags().MarkHidden("control-url")
 	return cmd
 }
 
 func remoteLoginPasswordCommand(configPath *string) *cobra.Command {
-	var serverURL string
-	var controlURL string
 	var email string
 	var password string
 	var passwordEnv string
@@ -145,15 +136,18 @@ func remoteLoginPasswordCommand(configPath *string) *cobra.Command {
 		Short:  "Login with Web Control email and password",
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			controlURL = firstNonEmpty(serverURL, controlURL)
+			controlURL, err := remoteControlURLFromConfigOrDefault(*configPath)
+			if err != nil {
+				return err
+			}
 			email = strings.TrimSpace(email)
 			resolvedPassword, err := resolveSecretFlag(password, passwordEnv, passwordFile)
 			if err != nil {
 				return err
 			}
 			password = resolvedPassword
-			if controlURL == "" || email == "" || password == "" {
-				return fmt.Errorf("--server, email, and password source are required")
+			if email == "" || password == "" {
+				return fmt.Errorf("email and password source are required")
 			}
 			auth, err := remoteLoginHTTPClient.Login(cmd.Context(), controlURL, email, password)
 			if err != nil {
@@ -166,19 +160,14 @@ func remoteLoginPasswordCommand(configPath *string) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&serverURL, "server", "", "Web Control URL")
-	cmd.Flags().StringVar(&controlURL, "control-url", "", "Web Control URL")
 	cmd.Flags().StringVar(&email, "email", "", "Web Control email")
 	cmd.Flags().StringVar(&password, "password", "", "Web Control password")
 	cmd.Flags().StringVar(&passwordEnv, "password-env", "", "environment variable containing the Web Control password")
 	cmd.Flags().StringVar(&passwordFile, "password-file", "", "file containing the Web Control password")
-	_ = cmd.Flags().MarkHidden("control-url")
 	return cmd
 }
 
 func remoteLoginBrowserCommand(configPath *string) *cobra.Command {
-	var serverURL string
-	var controlURL string
 	var timeout time.Duration
 	var noBrowser bool
 	cmd := &cobra.Command{
@@ -186,9 +175,9 @@ func remoteLoginBrowserCommand(configPath *string) *cobra.Command {
 		Aliases: []string{"device-code"},
 		Short:   "Login in the browser",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			controlURL = firstNonEmpty(serverURL, controlURL)
-			if controlURL == "" {
-				return fmt.Errorf("--server is required")
+			controlURL, err := remoteControlURLFromConfigOrDefault(*configPath)
+			if err != nil {
+				return err
 			}
 			if timeout <= 0 {
 				timeout = 5 * time.Minute
@@ -208,12 +197,22 @@ func remoteLoginBrowserCommand(configPath *string) *cobra.Command {
 			}
 		},
 	}
-	cmd.Flags().StringVar(&serverURL, "server", "", "Web Control URL")
-	cmd.Flags().StringVar(&controlURL, "control-url", "", "Web Control URL")
 	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "browser login timeout")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the login URL without opening a browser")
-	_ = cmd.Flags().MarkHidden("control-url")
 	return cmd
+}
+
+func remoteControlURLFromConfigOrDefault(configPath string) (string, error) {
+	cfg, _, err := loadRemoteConfigFromFile(configPath)
+	if err != nil {
+		return "", err
+	}
+	envURL := strings.TrimSpace(os.Getenv("TERMX_REMOTE_CONTROL_URL"))
+	controlURL := firstNonEmpty(envURL, cfg.ControlURL, defaultRemoteControlURL)
+	if controlURL == "" {
+		return "", fmt.Errorf("Web Control URL is not configured")
+	}
+	return controlURL, nil
 }
 
 func completeRemoteBrowserLogin(cmd *cobra.Command, controlURL string, created remoteBrowserLoginResult, timeout time.Duration, launchBrowser bool, progress io.Writer) (remoteLoginAuthResult, error) {

@@ -24,7 +24,7 @@ status_json="$("$TERMX_BIN" remote status --json)"
 
 local_hub_url="$(printf '%s' "$status_json" | jq -r '.local.http_url // empty')"
 if [[ -z "$local_hub_url" ]]; then
-  echo "local.http_url missing; run: termx remote enable --mode both --server <web-control-url>" >&2
+  echo "local.http_url missing; run: termx remote enable --mode both" >&2
   exit 1
 fi
 

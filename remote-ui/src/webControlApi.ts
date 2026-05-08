@@ -43,6 +43,7 @@ export interface WebControlMachine {
   source: 'cloud' | 'local'
   controlUrl?: string | undefined
   hubId?: string | undefined
+  currentHubUrl?: string | undefined
   hubUrls: string[]
   hubStatus?: string | undefined
   lastSeen?: string | undefined
@@ -183,6 +184,7 @@ function machineRecord(value: unknown): WebControlMachine {
   if (source !== 'cloud') {
     throw new Error(`Web Control machine source must be cloud, got ${source}`)
   }
+  const currentHubUrl = currentHubUrlField(response)
   return {
     id: stringField(response, 'id'),
     name: stringField(response, 'name'),
@@ -193,6 +195,7 @@ function machineRecord(value: unknown): WebControlMachine {
     source: 'cloud',
     ...(optionalStringField(response, 'control_url') ? { controlUrl: optionalStringField(response, 'control_url') } : {}),
     ...(optionalStringField(response, 'hub_id') ? { hubId: optionalStringField(response, 'hub_id') } : {}),
+    ...(currentHubUrl ? { currentHubUrl } : {}),
     hubUrls: hubUrlsField(response),
     ...(optionalStringField(response, 'hub_status') ? { hubStatus: optionalStringField(response, 'hub_status') } : {}),
     ...(optionalStringField(response, 'last_seen') ? { lastSeen: optionalStringField(response, 'last_seen') } : {}),
@@ -200,7 +203,13 @@ function machineRecord(value: unknown): WebControlMachine {
   }
 }
 
+function currentHubUrlField(response: Record<string, unknown>): string | undefined {
+  return optionalStringField(response, 'current_hub_url') ?? optionalStringField(response, 'hub_url')
+}
+
 function hubUrlsField(response: Record<string, unknown>): string[] {
+  const currentHubUrl = currentHubUrlField(response)
+  if (currentHubUrl) return [currentHubUrl]
   if (Array.isArray(response.hub_urls)) {
     return response.hub_urls.filter((value): value is string => typeof value === 'string' && value.trim() !== '')
   }

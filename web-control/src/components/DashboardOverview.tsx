@@ -138,7 +138,7 @@ export default function DashboardOverview({
                 在目标机器上运行启动命令，用浏览器完成登录，然后用 Android 客户端扫码配对。
               </p>
               <code className="text-xs text-green-500 block bg-black p-2 rounded border border-zinc-800">
-                termx remote enable --server &lt;control_url&gt;
+                termx remote enable
               </code>
             </div>
           </CardContent>

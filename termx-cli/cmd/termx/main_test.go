@@ -897,7 +897,7 @@ func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
 		return &remoteprotocol.PairStartResult{
-			Type:              "termx_pair_v1",
+			Type:              "termx_pair",
 			MachineID:         "mach_test",
 			MachineName:       "MacBook Pro",
 			LocalPairURL:      params.LocalPairURL,
@@ -957,7 +957,7 @@ func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
 		return &remoteprotocol.PairStartResult{
-			Type:              "termx_pair_v1",
+			Type:              "termx_pair",
 			MachineID:         "mach_test",
 			MachineName:       "MacBook Pro",
 			LocalPairURL:      params.LocalPairURL,
@@ -1033,7 +1033,7 @@ func TestRemoteQRCodeDoesNotStartLocalWebWhenLocalPairURLMissing(t *testing.T) {
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
 		return &remoteprotocol.PairStartResult{
-			Type:              "termx_pair_v1",
+			Type:              "termx_pair",
 			MachineID:         "mach_test",
 			MachineName:       "MacBook Pro",
 			LocalPairURL:      params.LocalPairURL,
@@ -1324,9 +1324,10 @@ func TestRemoteEnableCloudPersistsBootstrapOutsideConfigFile(t *testing.T) {
 	}
 
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control.example.test")
 	cmd := newRootCmd()
 	var out bytes.Buffer
-	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "online", "--server", "https://control.example.test", "--token", "cloud-secret", "--json"})
+	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "online", "--token", "cloud-secret", "--json"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {
@@ -1388,12 +1389,12 @@ func TestRemoteEnableBothPassesCloudHubToRunningLocalDaemon(t *testing.T) {
 	}
 
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control.example.test")
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{
 		"--config", configPath,
 		"remote", "enable",
 		"--mode", "both",
-		"--server", "https://control.example.test",
 		"--hub-url", "https://hub.example.test",
 		"--token", "cloud-secret",
 	})
@@ -1436,12 +1437,12 @@ func TestRemoteEnableBothPassesCloudDiscoveryToRunningLocalDaemon(t *testing.T) 
 	}
 
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control.example.test")
 	cmd := newRootCmd()
 	cmd.SetArgs([]string{
 		"--config", configPath,
 		"remote", "enable",
 		"--mode", "both",
-		"--server", "https://control.example.test",
 		"--token", "cloud-secret",
 	})
 	cmd.SetOut(io.Discard)
@@ -1506,8 +1507,9 @@ func TestRemoteEnableOnlineUsesBrowserLoginWhenTokenMissing(t *testing.T) {
 	}
 
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control.example.test")
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "online", "--server", "https://control.example.test", "--no-browser", "--timeout", "100ms", "--json"})
+	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "online", "--no-browser", "--timeout", "100ms", "--json"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 
@@ -1630,7 +1632,7 @@ func TestPairCmdEmitsJSONPairSession(t *testing.T) {
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
 		return &remoteprotocol.PairStartResult{
-			Type:              "termx_pair_v1",
+			Type:              "termx_pair",
 			MachineID:         "mach_test",
 			MachineName:       "MacBook Pro",
 			LocalPairURL:      params.LocalPairURL,

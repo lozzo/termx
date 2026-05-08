@@ -25,7 +25,6 @@ type PairApi = LocalPairingApi
 type ManagedRtcSessionFactory = (input: { machineId: string }) => RtcSession & RtcSessionNegotiator
 type MachineRuntimeFactory = (input: {
   machine: WebControlMachine
-  user: WebControlUser
   storage: RemoteRuntimeStorage
   api: WebControlApi
   networkRuntime: RemoteNetworkRuntime
@@ -94,7 +93,7 @@ export function WebControlRemoteApp({
         online: local.state === 'online',
         paired: true,
         source: local.source === 'cloud' ? 'cloud' : 'local',
-        hubUrls: local.endpoints.hub ? [local.endpoints.hub] : [],
+        hubUrls: hubUrlsFromStoredMachine(local),
       })
     }
     for (const cloud of machines) {
@@ -215,9 +214,11 @@ export function WebControlRemoteApp({
     setMessage(null)
     try {
       const payload = parsePairingPayload(manualScanValue)
-      const isCloud = payload.endpoints.webControl !== undefined || payload.preferredPath === 'managed'
+      const cloudMachine = machines.find((machine) => machine.id === payload.machine.id)
+      const isCloud = cloudMachine !== undefined
+      const requiresWebControl = payload.endpoints.webControl !== undefined
 
-      if (isCloud && !signedIn) {
+      if (requiresWebControl && !signedIn) {
         setScanOpen(false)
         setView('settings')
         setError('The scanned agent is online. Please sign in to your account first to fetch this agent.')
@@ -228,11 +229,10 @@ export function WebControlRemoteApp({
 
       if (isCloud) {
         if (!user) throw new Error('Account profile is required before pairing a cloud device')
-        const cloudMachine = machines.find((machine) => machine.id === payload.machine.id)
-        if (!cloudMachine) {
-          throw new Error('This pairing code does not match a Web Control device in this account')
-        }
         targetMachine = cloudMachine
+      } else if (requiresWebControl) {
+        if (!user) throw new Error('Account profile is required before pairing a cloud device')
+        throw new Error('This pairing code does not match a Web Control device in this account')
       } else {
         targetMachine = {
           id: payload.machine.id,
@@ -241,7 +241,7 @@ export function WebControlRemoteApp({
           online: true,
           paired: false,
           source: 'local',
-          hubUrls: payload.endpoints.hub ? [payload.endpoints.hub] : (payload.endpoints.localPairing ? [payload.endpoints.localPairing] : []),
+          hubUrls: hubUrlsFromPairingPayload(payload),
         }
       }
 
@@ -380,17 +380,17 @@ function MachineTerminalListView({
   const machineRef = useRef(machine)
   machineRef.current = machine
   const runtime = useMemo(() => {
-    if (!user || !storage) return null
-    return runtimeFactory({ machine: machineRef.current, user, storage, api, networkRuntime, createSession: requiredManagedRtcSessionFactory(createSession) })
+    if (!storage) return null
+    return runtimeFactory({ machine: machineRef.current, storage, api, networkRuntime, createSession: requiredManagedRtcSessionFactory(createSession) })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, createSession, machine.id, networkRuntime, runtimeFactory, storage, user])
+  }, [api, createSession, machine.id, networkRuntime, runtimeFactory, storage])
   useEffect(() => {
     if (!runtime) return
     return () => {
       void runtime.dispose?.()
     }
   }, [runtime])
-  if (!user || !storage || !runtime) {
+  if (!storage || !runtime) {
     return (
       <MachineRuntimeErrorShell
         machine={machine}
@@ -757,7 +757,7 @@ function PairSheet({
           className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
           type="button"
           onClick={onImport}
-          disabled={!signedIn || pairing || manualScanValue.trim() === ''}
+          disabled={pairing || manualScanValue.trim() === ''}
         >
           {pairing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
           Pair Device
@@ -934,14 +934,13 @@ function readPairedMachineIds(storage: RemoteRuntimeStorage | undefined, userId:
 function createPairApiFromMachine(machine: WebControlMachine, networkRuntime: RemoteNetworkRuntime): PairApi {
   const [hubUrl] = nonEmptyHubUrls(machine)
   if (!hubUrl) {
-    throw new Error('Hub endpoint is required before pairing this Web Control device')
+    throw new Error('Hub endpoint is required before pairing this device')
   }
   return createManagedHubApi({ baseUrl: hubUrl, fetch: networkRuntime.fetch })
 }
 
 function createManagedMachineRuntime(input: {
   machine: WebControlMachine
-  user: WebControlUser
   storage: RemoteRuntimeStorage
   api: WebControlApi
   networkRuntime: RemoteNetworkRuntime
@@ -1237,14 +1236,33 @@ function mergeCloudMachine(saved: StoredMachineRecord, machine: WebControlMachin
     },
     ...(saved.pairing ? { pairing: saved.pairing } : {}),
     ...(saved.appBootstrap ? { appBootstrap: saved.appBootstrap } : {}),
-    schemaVersion: 2,
     addedAt: saved.addedAt,
     updatedAt: saved.updatedAt,
   }
 }
 
+function hubUrlsFromStoredMachine(machine: StoredMachineRecord): string[] {
+  return compactHubUrls([machine.endpoints.hub, ...machine.addresses.public])
+}
+
+function hubUrlsFromPairingPayload(payload: PairingPayload): string[] {
+  return compactHubUrls(payload.addresses.public)
+}
+
 function nonEmptyHubUrls(machine: WebControlMachine): string[] {
-  return machine.hubUrls.map((hubUrl) => hubUrl.trim()).filter((hubUrl) => hubUrl !== '')
+  return compactHubUrls(machine.hubUrls)
+}
+
+function compactHubUrls(values: readonly (string | undefined)[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of values) {
+    const value = raw?.trim()
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    out.push(value)
+  }
+  return out
 }
 
 function formatLastSeen(value: string): string {

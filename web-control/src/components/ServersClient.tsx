@@ -287,7 +287,7 @@ export default function ServersClient({ initialAgents, hasSubscription: initialH
     });
   };
 
-  const startCommand = "termx remote enable --server <control_url>";
+  const startCommand = "termx remote enable";
 
   const openAddDialog = () => {
     if (!hasSubscription) {
@@ -564,7 +564,7 @@ export default function ServersClient({ initialAgents, hasSubscription: initialH
                       <label className="text-xs text-zinc-500 mb-2 block">启动命令</label>
                       <div className="flex items-start gap-2">
                         <code className="flex-1 text-xs text-green-300 bg-black/50 p-3 rounded border border-green-800/50 break-all select-all leading-relaxed">
-                          termx remote enable --server &lt;control_url&gt;
+                          termx remote enable
                         </code>
                         <Button
                           variant="ghost"

@@ -43,6 +43,7 @@ export async function GET(request: Request) {
       source: "cloud",
       control_url: controlUrl,
       hub_id: agent.hubId,
+      current_hub_url: agent.hub?.httpUrl ?? null,
       hub_urls: agent.hub?.httpUrl ? [agent.hub.httpUrl] : [],
       hub_status: agent.hub?.status ?? null,
       last_seen: agent.lastSeen?.toISOString() ?? null,

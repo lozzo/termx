@@ -33,7 +33,14 @@ describe('WebControlRemoteApp', () => {
 
   it('logs into Web Control, lists account machines, and claims a TermX pairing code through the machine Hub', async () => {
     const storage = new MemoryStorage()
-    const pairUri = termxPairUri(pairPayload({ machineId: 'device-1', name: 'RedmiBook' }))
+    const pairUri = termxPairUri(pairPayload({
+      machineId: 'device-1',
+      name: 'RedmiBook',
+      addresses: {
+        public: ['https://stale-payload-hub.termx.test'],
+      },
+      endpoints: {},
+    }))
     const fetch = new RecordingFetch([
       jsonResponse(200, {
         token_type: 'Bearer',
@@ -61,6 +68,7 @@ describe('WebControlRemoteApp', () => {
           paired: false,
           source: 'cloud',
           control_url: 'http://114.66.58.243:12306',
+          current_hub_url: 'http://114.66.58.243:8447',
           hub_urls: ['http://114.66.58.243:8447'],
           hub_status: 'online',
         }],
@@ -152,7 +160,73 @@ describe('WebControlRemoteApp', () => {
     expect(stored[0]?.machineId).toBe('device-1')
     expect(stored[0]?.source).toBe('cloud')
     expect(stored[0]?.preferredPath).toBe('public_p2p')
+    expect(stored[0]?.addresses).toMatchObject({
+      public: ['https://stale-payload-hub.termx.test'],
+    })
+    expect(stored[0]?.endpoints).toMatchObject({
+      hub: 'http://114.66.58.243:8447',
+    })
+    expect(fetch.requests.some((request) => request.url === 'https://stale-payload-hub.termx.test/api/v1/pairing/claims')).toBe(false)
     expect(storage.getItem('termx.session.device-1.token')).toBe('session-token-device-1')
+  })
+
+  it('claims a self-hosted local pairing code through payload public hub URLs', async () => {
+    const storage = new MemoryStorage()
+    const pairUri = termxPairUri(pairPayload({
+      machineId: 'self-hosted-1',
+      name: 'Self Hosted Box',
+      schemaVersion: 3,
+      addresses: {
+        local: [],
+        lan: [],
+        public: ['https://self-hub-1.termx.test', 'https://self-hub-2.termx.test'],
+      },
+      endpoints: {},
+    }))
+    const fetch = new RecordingFetch([
+      jsonResponse(200, {
+        claim_id: 'claim-self-1',
+        machine_id: 'self-hosted-1',
+        machine_name: 'Self Hosted Box',
+        session_token: 'session-token-self-hosted',
+        expires_at: '2099-05-05T10:30:00Z',
+      }),
+    ])
+
+    render(
+      <WebControlRemoteApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
+        storage={storage}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /scan pairing qr/i }))
+    fireEvent.change(screen.getByLabelText(/termx qr content/i), { target: { value: pairUri } })
+    await userEvent.click(screen.getByRole('button', { name: /^pair device$/i }))
+
+    await waitFor(() => expect(screen.getByText('Paired Self Hosted Box')).toBeTruthy())
+    expect(fetch.requests[0]).toMatchObject({
+      method: 'POST',
+      url: 'https://self-hub-1.termx.test/api/v1/pairing/claims',
+      body: expect.objectContaining({
+        machine_id: 'self-hosted-1',
+        pair_session_id: 'pair-session-1',
+        pair_secret: 'pair-secret-1',
+      }),
+    })
+    const stored = JSON.parse(storage.getItem('termx.app.machines.v1') ?? '[]') as Array<Record<string, unknown>>
+    expect(stored[0]).toMatchObject({
+      machineId: 'self-hosted-1',
+      source: 'local',
+      addresses: {
+        public: ['https://self-hub-1.termx.test', 'https://self-hub-2.termx.test'],
+      },
+    })
+    expect(storage.getItem('termx.session.self-hosted-1.token')).toBe('session-token-self-hosted')
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Terminals' })).toBeTruthy())
+    expect(screen.queryByText('Local app identity storage is required before opening this machine')).toBeNull()
   })
 
   it('rejects pairing codes that do not match a Web Control machine in the signed-in account', async () => {
@@ -211,7 +285,7 @@ describe('WebControlRemoteApp', () => {
     expect(storage.getItem('termx.app.machines.v1')).toBeNull()
   })
 
-  it('opens paired Web Control machines by racing all hub_urls instead of only the first', async () => {
+  it('opens paired Web Control machines through the current registered hub from Web Control', async () => {
     const storage = new MemoryStorage()
     storage.setItem('termx.remote.accessToken', 'access-token-1')
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
@@ -231,7 +305,6 @@ describe('WebControlRemoteApp', () => {
         webControl: 'http://114.66.58.243:12306',
         hub: 'https://hub-1.termx.test',
       },
-      schemaVersion: 2,
       addedAt: '2026-05-05T10:00:00.000Z',
       updatedAt: '2026-05-05T10:00:00.000Z',
     }]))
@@ -251,21 +324,14 @@ describe('WebControlRemoteApp', () => {
     await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
 
     const sessionRequests = fetch.requests.filter((request) => request.url.endsWith('/api/v1/sessions'))
-    expect(sessionRequests).toHaveLength(2)
-    expect(new Set(sessionRequests.map((request) => request.url))).toEqual(new Set([
-      'https://hub-1.termx.test/api/v1/sessions',
-      'https://hub-2.termx.test/api/v1/sessions',
-    ]))
-    expect(sessionRequests.map((request) => request.body)).toEqual(expect.arrayContaining([
-      expect.objectContaining({
+    expect(sessionRequests).toHaveLength(1)
+    expect(sessionRequests[0]).toMatchObject({
+      url: 'https://hub-2.termx.test/api/v1/sessions',
+      body: expect.objectContaining({
         machine_id: 'device-1',
         session_token: 'session-token-device-1',
       }),
-      expect.objectContaining({
-        machine_id: 'device-1',
-        session_token: 'session-token-device-1',
-      }),
-    ]))
+    })
   })
 })
 
@@ -425,6 +491,7 @@ class WebControlHubFallbackFetch {
           paired: true,
           source: 'cloud',
           control_url: 'http://114.66.58.243:12306',
+          current_hub_url: 'https://hub-2.termx.test',
           hub_urls: ['https://hub-1.termx.test', 'https://hub-2.termx.test'],
           hub_status: 'online',
         }],
@@ -521,24 +588,40 @@ function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
-function pairPayload({ machineId, name }: { machineId: string; name: string }): Record<string, unknown> {
+function pairPayload({
+  machineId,
+  name,
+  schemaVersion = 3,
+  addresses,
+  endpoints,
+}: {
+  machineId: string
+  name: string
+  schemaVersion?: 3 | undefined
+  addresses?: {
+    local?: string[] | undefined
+    lan?: string[] | undefined
+    public?: string[] | undefined
+  } | undefined
+  endpoints?: {
+    web_control?: string | undefined
+  } | undefined
+}): Record<string, unknown> {
   return {
-    type: 'termx_pair_v2',
-    schema_version: 2,
+    type: 'termx_pair',
+    schema_version: schemaVersion,
     machine: {
       id: machineId,
       name,
       hostname: 'redmibook',
     },
     addresses: {
-      local: ['http://127.0.0.1:18888'],
-      lan: [],
-      public: ['http://114.66.58.243:8447'],
+      local: addresses?.local ?? ['http://127.0.0.1:18888'],
+      lan: addresses?.lan ?? [],
+      public: addresses?.public ?? ['http://114.66.58.243:8447'],
     },
-    endpoints: {
+    endpoints: endpoints ?? {
       web_control: 'http://114.66.58.243:12306',
-      hub: 'http://114.66.58.243:8447',
-      local_pairing: 'http://127.0.0.1:18888/api/v1/pairing/claims',
     },
     pairing: {
       session_id: 'pair-session-1',
