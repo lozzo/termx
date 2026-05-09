@@ -69,3 +69,31 @@ POST /api/internal/hubs/heartbeat
 
 The request must include `X-TermX-Hub-Secret: <HUB_SECRET>` and should receive a
 200 response with a JSON body containing `kick_agents`.
+
+## Docker Deployment
+
+Build the image on a development/CI machine and push it to the registry; do not
+run `next build` on the small production host.
+
+```bash
+VERSION="$(date +%Y%m%d%H%M%S)"
+IMAGE="registry.cn-hangzhou.aliyuncs.com/omscd/termx-web:${VERSION}"
+docker buildx build --platform linux/amd64 -t "${IMAGE}" --push web-control
+```
+
+On the server:
+
+```bash
+docker pull "${IMAGE}"
+TERMX_WEB_CONTROL_ENV_FILE=/etc/termx-web-control/web-control.env \
+TERMX_WEB_CONTROL_DATA_DIR=/opt/termx-web-control/data \
+PORT=12306 \
+  bash web-control/deploy/docker-run.sh "${IMAGE}"
+curl http://127.0.0.1:12306/api/health
+```
+
+The container persists SQLite at `/opt/termx-web-control/data` and listens on
+`0.0.0.0:12306` by default so deployed TermX agents configured with the
+server's public Web Controller URL can register. Set
+`TERMX_WEB_CONTROL_PUBLISH_ADDR=127.0.0.1` when a reverse proxy is the only
+public entrypoint.
