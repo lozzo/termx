@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,24 +46,24 @@ func TestRuntimeEventPayloadForClientLeavesStringEventsUntouched(t *testing.T) {
 
 func TestRuntimeAPIChannelRouterHandlesTerminalManagement(t *testing.T) {
 	manager := &terminalAPIRouterStub{}
-	pingStatus, pingBody, pingErr := routeRuntimeAPIRequest(nil, nil, apiRequest{
-		ID:     "req_ping",
-		Method: "ping",
-		Path:   "ping",
+	statusCode, statusBody, statusErr := routeRuntimeAPIRequest(nil, nil, apiRequest{
+		ID:     "req_status",
+		Method: "GET",
+		Path:   "/status",
 		Body:   json.RawMessage(`{}`),
 	})
-	if pingErr != "" {
-		t.Fatalf("expected ping request to succeed, got %q", pingErr)
+	if statusErr != "" {
+		t.Fatalf("expected status request to succeed, got %q", statusErr)
 	}
-	if pingStatus != http.StatusOK {
-		t.Fatalf("expected ping status 200, got %d", pingStatus)
+	if statusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", statusCode)
 	}
-	var pingPayload map[string]any
-	if err := json.Unmarshal(pingBody, &pingPayload); err != nil {
-		t.Fatalf("unmarshal ping body: %v", err)
+	var statusPayload map[string]any
+	if err := json.Unmarshal(statusBody, &statusPayload); err != nil {
+		t.Fatalf("unmarshal status body: %v", err)
 	}
-	if pingPayload["ok"] != true {
-		t.Fatalf("expected ping ok payload, got %#v", pingPayload)
+	if statusPayload["ok"] != true {
+		t.Fatalf("expected status ok payload, got %#v", statusPayload)
 	}
 
 	listStatus, listBody, listErr := routeRuntimeAPIRequest(fileapi.NewManager(), manager, apiRequest{
@@ -485,6 +486,41 @@ func TestAnswerOfferSessionContextClosesDataChannel(t *testing.T) {
 	}
 }
 
+func TestDisconnectedGraceMonitorAllowsRecovery(t *testing.T) {
+	pc := &fakePeerConnectionState{state: webrtc.PeerConnectionStateDisconnected}
+	canceled := make(chan struct{})
+	monitor := newDisconnectedGraceMonitor(pc, 25*time.Millisecond, func() {
+		close(canceled)
+	})
+
+	monitor.handle(webrtc.PeerConnectionStateDisconnected)
+	time.Sleep(10 * time.Millisecond)
+	pc.set(webrtc.PeerConnectionStateConnected)
+	monitor.handle(webrtc.PeerConnectionStateConnected)
+
+	select {
+	case <-canceled:
+		t.Fatal("connection was canceled after recovering before disconnected grace expired")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestDisconnectedGraceMonitorCancelsAfterGrace(t *testing.T) {
+	pc := &fakePeerConnectionState{state: webrtc.PeerConnectionStateDisconnected}
+	canceled := make(chan struct{})
+	monitor := newDisconnectedGraceMonitor(pc, 10*time.Millisecond, func() {
+		close(canceled)
+	})
+
+	monitor.handle(webrtc.PeerConnectionStateDisconnected)
+
+	select {
+	case <-canceled:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("connection was not canceled after disconnected grace expired")
+	}
+}
+
 func waitTestPeerICE(t *testing.T, pc *webrtc.PeerConnection, timeout time.Duration) {
 	t.Helper()
 	if pc.ICEGatheringState() == webrtc.ICEGatheringStateComplete {
@@ -514,6 +550,23 @@ type transportSinkFunc func(context.Context, transport.Transport, string) error
 
 func (f transportSinkFunc) ServeRemoteTransport(ctx context.Context, t transport.Transport, remote string) error {
 	return f(ctx, t, remote)
+}
+
+type fakePeerConnectionState struct {
+	mu    sync.Mutex
+	state webrtc.PeerConnectionState
+}
+
+func (f *fakePeerConnectionState) ConnectionState() webrtc.PeerConnectionState {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.state
+}
+
+func (f *fakePeerConnectionState) set(state webrtc.PeerConnectionState) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.state = state
 }
 
 func (s *terminalAPIRouterStub) RouteTerminalManagementRequest(_ context.Context, req TerminalManagementRequest) (int32, []byte, string) {

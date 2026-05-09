@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -36,6 +37,7 @@ type AnswerOptions struct {
 	Events             EventRouter
 	SessionContext     context.Context
 	OnSessionClose     func()
+	DisconnectedGrace  time.Duration
 }
 
 type ChannelPolicy struct {
@@ -68,6 +70,8 @@ type EventFilters struct {
 	SessionID  string
 	Types      []int
 }
+
+const defaultDisconnectedGrace = 12 * time.Second
 
 func AnswerOfferWithOptions(
 	ctx context.Context,
@@ -116,15 +120,11 @@ func AnswerOfferWithOptions(
 			_ = pc.Close()
 		}
 	}()
-	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		switch state {
-		case webrtc.PeerConnectionStateClosed, webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateDisconnected:
-			cancel()
-			_ = pc.Close()
-		}
-	})
+	disconnectMonitor := newDisconnectedGraceMonitor(pc, answerDisconnectedGrace(opts), cancel)
+	pc.OnConnectionStateChange(disconnectMonitor.handle)
 	go func() {
 		<-sessionCtx.Done()
+		disconnectMonitor.stop()
 		_ = pc.Close()
 		if opts.OnSessionClose != nil {
 			opts.OnSessionClose()
@@ -206,6 +206,72 @@ func AnswerOfferWithOptions(
 	}, nil
 }
 
+func answerDisconnectedGrace(opts AnswerOptions) time.Duration {
+	if opts.DisconnectedGrace > 0 {
+		return opts.DisconnectedGrace
+	}
+	return defaultDisconnectedGrace
+}
+
+type peerConnectionStateProvider interface {
+	ConnectionState() webrtc.PeerConnectionState
+}
+
+type disconnectedGraceMonitor struct {
+	pc     peerConnectionStateProvider
+	grace  time.Duration
+	cancel context.CancelFunc
+
+	mu    sync.Mutex
+	timer *time.Timer
+}
+
+func newDisconnectedGraceMonitor(
+	pc peerConnectionStateProvider,
+	grace time.Duration,
+	cancel context.CancelFunc,
+) *disconnectedGraceMonitor {
+	return &disconnectedGraceMonitor{pc: pc, grace: grace, cancel: cancel}
+}
+
+func (m *disconnectedGraceMonitor) handle(state webrtc.PeerConnectionState) {
+	switch state {
+	case webrtc.PeerConnectionStateConnected:
+		m.stop()
+	case webrtc.PeerConnectionStateDisconnected:
+		m.start()
+	case webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateClosed:
+		m.stop()
+		m.cancel()
+	}
+}
+
+func (m *disconnectedGraceMonitor) start() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.timer != nil {
+		return
+	}
+	m.timer = time.AfterFunc(m.grace, func() {
+		m.mu.Lock()
+		m.timer = nil
+		m.mu.Unlock()
+		if m.pc.ConnectionState() == webrtc.PeerConnectionStateDisconnected {
+			m.cancel()
+		}
+	})
+}
+
+func (m *disconnectedGraceMonitor) stop() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.timer == nil {
+		return
+	}
+	m.timer.Stop()
+	m.timer = nil
+}
+
 type apiRequest struct {
 	ID     string          `json:"id"`
 	Method string          `json:"method"`
@@ -223,10 +289,20 @@ const (
 	apiChunkMagic      = 0xC0
 	apiChunkFirst      = 0x01
 	apiChunkLast       = 0x02
-	apiChunkMaxPayload = 200 * 1024
+	apiChunkMaxPayload = 64 * 1024
+	apiSendBufferHigh  = 128 * 1024
+	apiSendBufferLow   = 32 * 1024
 )
 
 func handleAPIChannel(ctx context.Context, dc *webrtc.DataChannel, manager *fileapi.Manager, terminalManagement TerminalManagementRouter, contextHook ...func(context.Context) context.Context) {
+	drainCh := make(chan struct{}, 1)
+	dc.SetBufferedAmountLowThreshold(apiSendBufferLow)
+	dc.OnBufferedAmountLow(func() {
+		select {
+		case drainCh <- struct{}{}:
+		default:
+		}
+	})
 	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 		var req apiRequest
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
@@ -251,7 +327,7 @@ func handleAPIChannel(ctx context.Context, dc *webrtc.DataChannel, manager *file
 				Status: int(statusCode),
 				Body:   body,
 			})
-			sendAPIResponse(dc, req.ID, payload)
+			sendAPIResponse(reqCtx, dc, req.ID, payload, drainCh)
 		}()
 	})
 }
@@ -268,7 +344,7 @@ func routeRuntimeAPIRequestWithContext(ctx context.Context, manager *fileapi.Man
 		return manager.RouteRequest(req.Method, req.Path, req.Body)
 	}
 	switch req.Path {
-	case "ping", "status", "/status":
+	case "status", "/status":
 		return jsonResponseBody(map[string]any{"ok": true})
 	case "list":
 		if terminalManagement == nil {
@@ -438,7 +514,7 @@ func jsonResponseBody(value any) (int32, []byte, string) {
 	return http.StatusOK, body, ""
 }
 
-func sendAPIResponse(dc *webrtc.DataChannel, id string, data []byte) {
+func sendAPIResponse(ctx context.Context, dc *webrtc.DataChannel, id string, data []byte, drainCh <-chan struct{}) {
 	idBytes := []byte(id)
 	headerSize := 3 + len(idBytes)
 	chunkDataSize := apiChunkMaxPayload - headerSize
@@ -466,11 +542,27 @@ func sendAPIResponse(dc *webrtc.DataChannel, id string, data []byte) {
 		buf[2] = byte(len(idBytes))
 		copy(buf[3:3+len(idBytes)], idBytes)
 		copy(buf[headerSize:], data[offset:end])
+		if err := waitAPIWritable(ctx, dc, drainCh); err != nil {
+			return
+		}
 		_ = dc.Send(buf)
 
 		offset = end
 		first = false
 	}
+}
+
+func waitAPIWritable(ctx context.Context, dc *webrtc.DataChannel, drainCh <-chan struct{}) error {
+	for dc.BufferedAmount() >= apiSendBufferHigh {
+		select {
+		case <-drainCh:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(30 * time.Second):
+			return context.DeadlineExceeded
+		}
+	}
+	return nil
 }
 
 func newICEGatheringWaiterForServers(pc *webrtc.PeerConnection, iceServers []webrtc.ICEServer) func() {

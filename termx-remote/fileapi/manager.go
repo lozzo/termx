@@ -1,8 +1,10 @@
 package fileapi
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +12,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -52,12 +55,18 @@ type DirListResponse struct {
 }
 
 const (
-	chunkSize       = 64 * 1024
-	transferTimeout = 30 * time.Minute
-	cleanupInterval = 5 * time.Minute
-	frameData       = 0x01
-	frameComplete   = 0x02
-	frameError      = 0xFF
+	chunkSize        = 64 * 1024
+	transferTimeout  = 30 * time.Minute
+	resumeFileMaxAge = 7 * 24 * time.Hour
+	cleanupInterval  = 5 * time.Minute
+	frameData        = 0x01
+	frameComplete    = 0x02
+	frameError       = 0xFF
+
+	downloadSendBufferLimit     = 128 * 1024
+	downloadSendBufferLow       = 32 * 1024
+	defaultDownloadRateLimitBPS = 0
+	downloadRateLimitBPSEnvName = "TERMX_FILE_DOWNLOAD_LIMIT_BPS"
 )
 
 func NewManager() *Manager {
@@ -119,13 +128,11 @@ func (m *Manager) cleanupLoop() {
 			now := time.Now()
 			for id, transfer := range m.transfers {
 				if now.Sub(transfer.CreatedAt) > transferTimeout {
-					if transfer.TempPath != "" {
-						_ = os.Remove(transfer.TempPath)
-					}
 					delete(m.transfers, id)
 				}
 			}
 			m.mu.Unlock()
+			cleanupOldUploadResumeFiles()
 		case <-m.stopCh:
 			return
 		}
@@ -532,8 +539,9 @@ func (m *Manager) handlePreview(body []byte) (int32, []byte, string) {
 
 func (m *Manager) handleDownloadInit(body []byte) (int32, []byte, string) {
 	var req struct {
-		Path   string `json:"path"`
-		Offset int64  `json:"offset"`
+		Path       string `json:"path"`
+		Offset     int64  `json:"offset"`
+		TransferID string `json:"transfer_id"`
 	}
 	if json.Unmarshal(body, &req) != nil || req.Path == "" {
 		return http.StatusBadRequest, nil, "path required"
@@ -554,7 +562,12 @@ func (m *Manager) handleDownloadInit(body []byte) (int32, []byte, string) {
 	if offset < 0 || offset > info.Size() {
 		offset = 0
 	}
-	transferID := fmt.Sprintf("dl-%d", time.Now().UnixNano())
+	transferID := strings.TrimSpace(req.TransferID)
+	if transferID == "" {
+		transferID = fmt.Sprintf("dl-%d", time.Now().UnixNano())
+	} else if !validTransferID(transferID) {
+		return http.StatusBadRequest, nil, "invalid transfer_id"
+	}
 	m.mu.Lock()
 	m.transfers[transferID] = &FileTransfer{
 		ID:        transferID,
@@ -574,6 +587,19 @@ func (m *Manager) handleDownloadInit(body []byte) (int32, []byte, string) {
 		"chunk_size":  chunkSize,
 	})
 	return http.StatusOK, data, ""
+}
+
+func validTransferID(id string) bool {
+	if id == "" || len(id) > 160 {
+		return false
+	}
+	for _, r := range id {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func (m *Manager) handleUploadInit(body []byte) (int32, []byte, string) {
@@ -619,13 +645,28 @@ func (m *Manager) handleUploadInit(body []byte) (int32, []byte, string) {
 		}
 	}
 
-	tmpFile, err := os.CreateTemp(dir, ".termx-upload-*")
-	if err != nil {
-		return http.StatusInternalServerError, nil, err.Error()
-	}
-	_ = tmpFile.Close()
-
 	transferID := fmt.Sprintf("ul-%d", time.Now().UnixNano())
+	tempPath := ""
+	offset := int64(0)
+	if req.ResumeID != "" {
+		transferID = req.ResumeID
+		tempPath = uploadResumeTempPath(p, req.ResumeID)
+		if info, err := os.Stat(tempPath); err == nil {
+			offset = info.Size()
+			if offset > req.Size {
+				_ = os.Remove(tempPath)
+				offset = 0
+			}
+		}
+	} else {
+		tmpFile, err := os.CreateTemp(dir, ".termx-upload-*")
+		if err != nil {
+			return http.StatusInternalServerError, nil, err.Error()
+		}
+		tempPath = tmpFile.Name()
+		_ = tmpFile.Close()
+	}
+
 	m.mu.Lock()
 	m.transfers[transferID] = &FileTransfer{
 		ID:        transferID,
@@ -633,7 +674,8 @@ func (m *Manager) handleUploadInit(body []byte) (int32, []byte, string) {
 		Size:      req.Size,
 		ChunkSize: chunkSize,
 		Direction: "upload",
-		TempPath:  tmpFile.Name(),
+		TempPath:  tempPath,
+		Offset:    offset,
 		CreatedAt: time.Now(),
 	}
 	m.mu.Unlock()
@@ -641,7 +683,7 @@ func (m *Manager) handleUploadInit(body []byte) (int32, []byte, string) {
 	data, _ := json.Marshal(map[string]any{
 		"transfer_id":     transferID,
 		"chunk_size":      chunkSize,
-		"uploaded_offset": int64(0),
+		"uploaded_offset": offset,
 	})
 	return http.StatusOK, data, ""
 }
@@ -697,10 +739,9 @@ func (m *Manager) HandleFileChannelWithOpenGuard(dc *webrtc.DataChannel, transfe
 }
 
 func (m *Manager) handleDownloadChannel(dc *webrtc.DataChannel, transfer *FileTransfer, guard func() bool) {
-	const sendBufferLimit = 1 * 1024 * 1024
-	const lowThreshold = 256 * 1024
+	rateLimitBPS := downloadRateLimitBPS()
 
-	dc.SetBufferedAmountLowThreshold(lowThreshold)
+	dc.SetBufferedAmountLowThreshold(downloadSendBufferLow)
 	dc.OnOpen(func() {
 		if guard != nil && !guard() {
 			_ = dc.Close()
@@ -738,17 +779,28 @@ func (m *Manager) handleDownloadChannel(dc *webrtc.DataChannel, transfer *FileTr
 
 			buf := make([]byte, transfer.ChunkSize)
 			chunkNum := uint32(transfer.Offset / int64(transfer.ChunkSize))
+			sentBytes := int64(0)
+			sendStartedAt := time.Now()
 			for {
 				n, readErr := file.Read(buf)
 				if n > 0 {
+					if dc.ReadyState() != webrtc.DataChannelStateOpen {
+						return
+					}
 					frame := make([]byte, 5+n)
 					frame[0] = frameData
 					binary.BigEndian.PutUint32(frame[1:5], chunkNum)
 					copy(frame[5:], buf[:n])
-					for dc.BufferedAmount() > sendBufferLimit {
+					for dc.BufferedAmount() >= downloadSendBufferLimit {
+						if dc.ReadyState() != webrtc.DataChannelStateOpen {
+							return
+						}
 						select {
 						case <-drainCh:
 						case <-time.After(30 * time.Second):
+							if dc.ReadyState() != webrtc.DataChannelStateOpen {
+								return
+							}
 							sendErrorFrame(dc, "send timeout")
 							return
 						}
@@ -757,6 +809,8 @@ func (m *Manager) handleDownloadChannel(dc *webrtc.DataChannel, transfer *FileTr
 						sendErrorFrame(dc, err.Error())
 						return
 					}
+					sentBytes += int64(n)
+					throttleDownload(sendStartedAt, sentBytes, rateLimitBPS)
 					chunkNum++
 				}
 				if readErr == io.EOF {
@@ -770,9 +824,33 @@ func (m *Manager) handleDownloadChannel(dc *webrtc.DataChannel, transfer *FileTr
 			completeFrame := make([]byte, 5)
 			completeFrame[0] = frameComplete
 			binary.BigEndian.PutUint32(completeFrame[1:5], chunkNum)
-			_ = dc.Send(completeFrame)
+			if dc.ReadyState() == webrtc.DataChannelStateOpen {
+				_ = dc.Send(completeFrame)
+			}
 		}()
 	})
+}
+
+func downloadRateLimitBPS() int64 {
+	raw := strings.TrimSpace(os.Getenv(downloadRateLimitBPSEnvName))
+	if raw == "" {
+		return defaultDownloadRateLimitBPS
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < 0 {
+		return defaultDownloadRateLimitBPS
+	}
+	return value
+}
+
+func throttleDownload(startedAt time.Time, sentBytes int64, rateLimitBPS int64) {
+	if rateLimitBPS <= 0 || sentBytes <= 0 {
+		return
+	}
+	expectedElapsed := time.Duration(sentBytes * int64(time.Second) / rateLimitBPS)
+	if delay := expectedElapsed - time.Since(startedAt); delay > 0 {
+		time.Sleep(delay)
+	}
 }
 
 func sendErrorFrame(dc *webrtc.DataChannel, msg string) {
@@ -874,6 +952,45 @@ func processUploadFrame(file *os.File, data []byte) int {
 	}
 	written, _ := file.Write(data[5:])
 	return written
+}
+
+func uploadResumeTempPath(destPath, resumeID string) string {
+	dir := filepath.Dir(destPath)
+	sum := sha256.Sum256([]byte(destPath + "|" + resumeID))
+	return filepath.Join(dir, ".termx-upload-"+hex.EncodeToString(sum[:])+".part")
+}
+
+func cleanupOldUploadResumeFiles() {
+	// Best effort cleanup in common writable roots. Avoid walking the whole disk.
+	roots := []string{os.TempDir()}
+	if home, err := os.UserHomeDir(); err == nil {
+		roots = append(roots, home)
+	}
+	cutoff := time.Now().Add(-resumeFileMaxAge)
+	for _, root := range roots {
+		filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d == nil {
+				return nil
+			}
+			if d.IsDir() {
+				base := filepath.Base(path)
+				if base == ".cache" || base == "Downloads" || path == root {
+					return nil
+				}
+				if path != root {
+					return filepath.SkipDir
+				}
+			}
+			if !strings.HasPrefix(filepath.Base(path), ".termx-upload-") || !strings.HasSuffix(path, ".part") {
+				return nil
+			}
+			info, err := d.Info()
+			if err == nil && info.ModTime().Before(cutoff) {
+				_ = os.Remove(path)
+			}
+			return nil
+		})
+	}
 }
 
 func resolveConflict(destPath string) string {

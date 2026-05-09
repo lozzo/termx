@@ -72,3 +72,52 @@ func TestPreviewReportsVideoCategoryAndLimit(t *testing.T) {
 		t.Fatalf("expected preview limit 4, got %#v", preview["preview_limit"])
 	}
 }
+
+func TestDownloadInitAcceptsStableTransferIDForResume(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "artifact.bin")
+	if err := os.WriteFile(filePath, []byte("0123456789"), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	manager := NewManager()
+	t.Cleanup(manager.Close)
+
+	status, body, errMsg := manager.RouteRequest("POST", "/files/download/init", []byte(`{"path":"`+filePath+`","offset":4,"transfer_id":"dl-resume-1"}`))
+	if status != 200 || errMsg != "" {
+		t.Fatalf("download init returned status=%d err=%q", status, errMsg)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("unmarshal download init response: %v", err)
+	}
+	if resp["transfer_id"] != "dl-resume-1" {
+		t.Fatalf("expected stable transfer id, got %#v", resp["transfer_id"])
+	}
+
+	manager.mu.Lock()
+	transfer := manager.transfers["dl-resume-1"]
+	manager.mu.Unlock()
+	if transfer == nil {
+		t.Fatal("expected transfer to be registered")
+	}
+	if transfer.Offset != 4 {
+		t.Fatalf("expected offset 4, got %d", transfer.Offset)
+	}
+}
+
+func TestDownloadInitRejectsInvalidStableTransferID(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "artifact.bin")
+	if err := os.WriteFile(filePath, []byte("0123456789"), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	manager := NewManager()
+	t.Cleanup(manager.Close)
+
+	status, _, errMsg := manager.RouteRequest("POST", "/files/download/init", []byte(`{"path":"`+filePath+`","transfer_id":"../bad"}`))
+	if status != 400 || errMsg != "invalid transfer_id" {
+		t.Fatalf("download init returned status=%d err=%q", status, errMsg)
+	}
+}

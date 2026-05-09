@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -74,6 +75,37 @@ func TestTerminalManagementCreateMarshalsProtocolTerminalID(t *testing.T) {
 	}
 	if daemon.createName != "ops shell" {
 		t.Fatalf("create request did not reach daemon, got name %q", daemon.createName)
+	}
+	if got := daemon.createCommand; len(got) != 2 || got[0] != "/bin/zsh" || got[1] != "-l" {
+		t.Fatalf("create command = %#v", got)
+	}
+}
+
+func TestTerminalManagementCreateDefaultsCommandAndDir(t *testing.T) {
+	daemon := &terminalManagementDaemonStub{}
+	router := terminalManagementRouter{daemon: daemon}
+	t.Setenv("SHELL", "/bin/bash")
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+
+	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
+		Method: "create",
+		Path:   "create",
+		Body:   json.RawMessage(`{"name":"default shell"}`),
+	})
+	if errMsg != "" {
+		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("RouteTerminalManagementRequest status = %d, body = %s", status, string(body))
+	}
+	if got := daemon.createCommand; len(got) != 1 || got[0] != "/bin/bash" {
+		t.Fatalf("default create command = %#v", got)
+	}
+	if daemon.createDir != wd {
+		t.Fatalf("default create dir = %q, want %q", daemon.createDir, wd)
 	}
 }
 
@@ -270,13 +302,17 @@ func pairClaimRequestForTest(session remoteprotocol.PairStartResult) pairing.Cla
 }
 
 type terminalManagementDaemonStub struct {
-	createName string
-	list       []protocol.TerminalInfo
-	get        *protocol.TerminalInfo
+	createName    string
+	createCommand []string
+	createDir     string
+	list          []protocol.TerminalInfo
+	get           *protocol.TerminalInfo
 }
 
 func (d *terminalManagementDaemonStub) Create(_ context.Context, params protocol.CreateParams) (*protocol.CreateResult, error) {
 	d.createName = params.Name
+	d.createCommand = append([]string(nil), params.Command...)
+	d.createDir = params.Dir
 	return &protocol.CreateResult{TerminalID: "terminal-created", State: "running"}, nil
 }
 

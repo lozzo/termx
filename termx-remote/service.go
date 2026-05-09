@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -442,11 +443,13 @@ func (r terminalManagementRouter) createTerminal(ctx context.Context, name strin
 	if r.daemon == nil {
 		return runtime.TerminalInventoryItem{}, nil
 	}
+	resolvedCommand := defaultTerminalCommand(command)
+	resolvedDir := defaultTerminalDir(dir)
 	created, err := r.daemon.Create(ctx, protocol.CreateParams{
-		Command: append([]string(nil), command...),
+		Command: append([]string(nil), resolvedCommand...),
 		Name:    strings.TrimSpace(name),
-		Tags:    localTerminalTags(dir, environment, sizeLockMode),
-		Dir:     strings.TrimSpace(dir),
+		Tags:    localTerminalTags(resolvedDir, environment, sizeLockMode),
+		Dir:     resolvedDir,
 	})
 	if err != nil {
 		return runtime.TerminalInventoryItem{}, err
@@ -458,9 +461,40 @@ func (r terminalManagementRouter) createTerminal(ctx context.Context, name strin
 	return runtime.TerminalInventoryItem{
 		ID:      created.TerminalID,
 		Name:    strings.TrimSpace(name),
-		Command: append([]string(nil), command...),
+		Command: append([]string(nil), resolvedCommand...),
 		State:   created.State,
+		CWD:     resolvedDir,
 	}, nil
+}
+
+func defaultTerminalCommand(command []string) []string {
+	out := make([]string, 0, len(command))
+	for _, part := range command {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	shell := strings.TrimSpace(os.Getenv("SHELL"))
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	return []string{shell}
+}
+
+func defaultTerminalDir(dir string) string {
+	dir = strings.TrimSpace(dir)
+	if dir != "" {
+		return dir
+	}
+	wd, err := os.Getwd()
+	if err != nil || wd == "" {
+		return ""
+	}
+	return wd
 }
 
 func (r terminalManagementRouter) updateTerminal(ctx context.Context, terminalID string, name string, cwd string, environment string, sizeLockMode string) (runtime.TerminalInventoryItem, error) {
