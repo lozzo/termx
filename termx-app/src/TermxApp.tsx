@@ -1,6 +1,7 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { App as CapApp } from '@capacitor/app'
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
+import { Html5Qrcode } from 'html5-qrcode'
 import {
   WebControlRemoteApp,
   createMachineSessionStore,
@@ -33,12 +34,15 @@ import { NativeFileTransferStore } from './NativeFileTransferStore'
 import NativeFilePicker from './plugins/nativeFilePicker'
 
 const defaultControlUrl = import.meta.env.VITE_CONTROL_URL || 'http://114.66.58.243:12306'
+const qrScannerRootId = 'termx-camera-qr-scanner'
+const qrScannerReaderId = 'termx-camera-qr-reader'
 
 type MachineRuntimeFactory = NonNullable<WebControlRemoteAppProps['machineRuntimeFactory']>
 type MachineRuntime = ReturnType<MachineRuntimeFactory>
 type NativeSessionManager = ReturnType<typeof createNativeSessionManager>
 type NativeSessionLease = RtcSession & {
   isAlive(): boolean
+  waitUntilConnected(signal?: AbortSignal): Promise<void>
   closeTerminalDataChannel(terminalId: string): void
   subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription
   onTransferSync: NativeRtcSession['onTransferSync']
@@ -69,6 +73,7 @@ export function TermxApp() {
         globalFileTransfer={globalFileTransfer}
         machineRuntimeFactory={machineRuntimeFactory}
         networkRuntime={networkRuntime}
+        scanPairingCode={scanPairingCode}
       />
     </section>
   )
@@ -76,9 +81,17 @@ export function TermxApp() {
 
 /** When the app resumes from background, trigger a sync request on all active sessions. */
 function useAppResumeSync(): void {
+  const backgroundedAtRef = useRef<number | null>(null)
   useEffect(() => {
     const promise = CapApp.addListener('appStateChange', (state) => {
-      if (!state.isActive) return
+      if (!state.isActive) {
+        backgroundedAtRef.current = Date.now()
+        return
+      }
+      const now = Date.now()
+      const backgroundDurationMs = backgroundedAtRef.current ? now - backgroundedAtRef.current : 0
+      backgroundedAtRef.current = null
+      void NativeConnection.handleForegroundResume({ backgroundDurationMs }).catch(() => {})
       recoverNativeBridgeAfterResume()
       // Broadcast a visibility change so existing bridge clients can re-sync
       document.dispatchEvent(new Event('termx:resume'))
@@ -116,6 +129,106 @@ function createNativeNetworkRuntime(): RemoteNetworkRuntime {
     queryParam(name) {
       return new URLSearchParams(globalThis.location?.search ?? '').get(name)
     },
+  }
+}
+
+async function scanPairingCode(): Promise<string | null> {
+  const existing = document.getElementById(qrScannerRootId)
+  existing?.remove()
+
+  const root = document.createElement('div')
+  root.id = qrScannerRootId
+  root.style.position = 'fixed'
+  root.style.inset = '0'
+  root.style.zIndex = '2147483647'
+  root.style.display = 'flex'
+  root.style.flexDirection = 'column'
+  root.style.background = '#09090b'
+  root.style.color = '#ffffff'
+  root.style.padding = 'calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 12px)'
+
+  const header = document.createElement('div')
+  header.style.display = 'flex'
+  header.style.alignItems = 'center'
+  header.style.justifyContent = 'space-between'
+  header.style.gap = '12px'
+  header.style.minHeight = '44px'
+
+  const title = document.createElement('div')
+  title.textContent = 'Scan TermX QR'
+  title.style.fontSize = '16px'
+  title.style.fontWeight = '700'
+
+  const cancelButton = document.createElement('button')
+  cancelButton.type = 'button'
+  cancelButton.textContent = 'Cancel'
+  cancelButton.style.height = '40px'
+  cancelButton.style.border = '1px solid rgba(255,255,255,0.2)'
+  cancelButton.style.borderRadius = '8px'
+  cancelButton.style.background = 'rgba(255,255,255,0.08)'
+  cancelButton.style.color = '#ffffff'
+  cancelButton.style.padding = '0 14px'
+  cancelButton.style.fontSize = '14px'
+  cancelButton.style.fontWeight = '700'
+
+  const reader = document.createElement('div')
+  reader.id = qrScannerReaderId
+  reader.style.flex = '1'
+  reader.style.minHeight = '0'
+  reader.style.marginTop = '12px'
+  reader.style.overflow = 'hidden'
+  reader.style.borderRadius = '12px'
+  reader.style.background = '#000000'
+
+  const hint = document.createElement('div')
+  hint.textContent = 'Point the camera at the QR code shown on the TermX device.'
+  hint.style.padding = '12px 4px 0'
+  hint.style.fontSize = '13px'
+  hint.style.lineHeight = '20px'
+  hint.style.color = 'rgba(255,255,255,0.72)'
+  hint.style.textAlign = 'center'
+
+  header.append(title, cancelButton)
+  root.append(header, reader, hint)
+  document.body.append(root)
+
+  const scanner = new Html5Qrcode(qrScannerReaderId)
+  let settled = false
+
+  return new Promise((resolve, reject) => {
+    const finish = (value: string | null, error?: unknown) => {
+      if (settled) return
+      settled = true
+      cancelButton.disabled = true
+      void scanner.stop()
+        .catch(() => {})
+        .then(() => scanner.clear())
+        .catch(() => {})
+        .finally(() => {
+          root.remove()
+          if (error) {
+            reject(error instanceof Error ? error : new Error(String(error)))
+            return
+          }
+          resolve(value)
+        })
+    }
+
+    cancelButton.onclick = () => finish(null)
+    scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: qrboxSize },
+      (decodedText) => finish(decodedText),
+      () => {},
+    ).catch((error) => finish(null, error))
+  })
+}
+
+function qrboxSize(viewfinderWidth: number, viewfinderHeight: number): { width: number; height: number } {
+  const size = Math.max(180, Math.min(viewfinderWidth, viewfinderHeight) * 0.72)
+  return {
+    width: Math.floor(size),
+    height: Math.floor(size),
   }
 }
 
@@ -161,6 +274,13 @@ function createNativeAppRuntime(): {
 } {
   const transferStore = new NativeFileTransferStore()
   const sessionManagers = new Map<string, NativeSessionManager>()
+  transferStore.setSessionResolver(async (machineId) => {
+    const session = await sessionManagers.get(machineId)?.get()
+    const nativeSession = session as RtcSession & Partial<NativeRtcSession>
+    return typeof nativeSession.onTransferSync === 'function'
+      ? nativeSession as NativeRtcSession
+      : null
+  })
 
   return {
     fileTransfer: createFileTransferContext(undefined, transferStore),
@@ -368,7 +488,10 @@ function createNativeSessionManager(machineId: string, connector: NativeRtcConne
     const requestedForceRelay = options?.forceRelay
     const forceRelay = requestedForceRelay ?? (currentForceRelay || pendingForceRelay)
     if (signal?.aborted) throw abortError(signal)
-    if (currentSession && isSessionAlive(currentSession) && currentForceRelay === forceRelay) return currentSession
+    if (currentSession && isSessionAlive(currentSession) && currentForceRelay === forceRelay) {
+      await waitForSessionConnected(currentSession, signal)
+      return currentSession
+    }
     if (currentSession) await reset()
     if (!sessionPromise) {
       const seq = resetSeq
@@ -625,6 +748,9 @@ function createSessionLease(session: RtcSession): NativeSessionLease {
     isAlive() {
       return !closed && isSessionAlive(session)
     },
+    waitUntilConnected(signal?: AbortSignal) {
+      return waitForSessionConnected(session, signal)
+    },
     closeTerminalDataChannel(terminalId: string) {
       terminalChannels.get(terminalId)?.close()
       terminalChannels.delete(terminalId)
@@ -665,6 +791,13 @@ function compactStrings(values: readonly (string | undefined)[]): string[] {
 function isSessionAlive(session: RtcSession): boolean {
   const candidate = session as RtcSession & Partial<{ isAlive(): boolean }>
   return typeof candidate.isAlive === 'function' ? candidate.isAlive() : true
+}
+
+function waitForSessionConnected(session: RtcSession, signal?: AbortSignal): Promise<void> {
+  const candidate = session as RtcSession & Partial<{ waitUntilConnected(signal?: AbortSignal): Promise<void> }>
+  return typeof candidate.waitUntilConnected === 'function'
+    ? candidate.waitUntilConnected(signal)
+    : Promise.resolve()
 }
 
 function attachDisconnectReset(session: RtcSession, handler: () => void): RtcSubscription | null {

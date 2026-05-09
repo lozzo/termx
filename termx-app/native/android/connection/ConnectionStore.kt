@@ -32,6 +32,8 @@ class ConnectionStore(
         private const val TAG = "TermxConnStore"
         private val RECONNECT_DELAYS = doubleArrayOf(0.5, 2.0, 4.0, 8.0, 15.0)
         private const val MAX_RECONNECT_ATTEMPTS = 20
+        private const val RESUME_VERIFY_TIMEOUT_MS = 2000L
+        private const val RESUME_RECOVERY_WINDOW_MS = 5000L
     }
 
     sealed class Phase {
@@ -132,6 +134,11 @@ class ConnectionStore(
     fun onNetworkStateChange(current: NetworkStateManager.NetworkState, previous: NetworkStateManager.NetworkState) {
         if (released) return
         workerHandler.post { handleNetworkStateChange(current, previous) }
+    }
+
+    fun handleForegroundResume(backgroundDurationMs: Long = 0L, reason: String = "App resumed") {
+        if (released) return
+        workerHandler.post { handleAppResume(backgroundDurationMs, reason) }
     }
 
     fun getSnapshot(): JSONObject {
@@ -242,7 +249,7 @@ class ConnectionStore(
         }
 
         if (current.resumeType != null) {
-            handleAppResume()
+            handleAppResume(current.resumeDuration, "App resumed")
             return
         }
 
@@ -257,17 +264,17 @@ class ConnectionStore(
         }
     }
 
-    private fun handleAppResume() {
+    private fun handleAppResume(backgroundDurationMs: Long = 0L, reason: String = "App resumed") {
         if (released) return
         val p = phase
         if (p is Phase.Connected && transport != null) {
             val currentTransport = transport ?: return
             val resumed = currentTransport.handleAppResume()
-            setPhase(Phase.Verifying(p.path, p.relayInUse), "Verifying connection...")
-            if (resumed) {
-                verifyConnection(currentTransport, p.path, p.relayInUse)
+            setPhase(Phase.Verifying(p.path, p.relayInUse), "$reason, verifying connection...")
+            if (resumed && !currentTransport.isStaleAfterResume(backgroundDurationMs)) {
+                verifyConnection(currentTransport, p.path, p.relayInUse, immediateReconnect = true)
             } else {
-                waitForPeerRecoveryThenVerify(currentTransport, p.path, p.relayInUse, 5000L)
+                waitForPeerRecoveryThenVerify(currentTransport, p.path, p.relayInUse, RESUME_RECOVERY_WINDOW_MS)
             }
             return
         }
@@ -302,9 +309,9 @@ class ConnectionStore(
         val resumed = currentTransport.handleAppResume()
         setPhase(Phase.Verifying(path, relayInUse), "$status, verifying connection...")
         if (resumed) {
-            verifyConnection(currentTransport, path, relayInUse)
+            verifyConnection(currentTransport, path, relayInUse, immediateReconnect = true)
         } else {
-            waitForPeerRecoveryThenVerify(currentTransport, path, relayInUse, 5000L)
+            waitForPeerRecoveryThenVerify(currentTransport, path, relayInUse, RESUME_RECOVERY_WINDOW_MS)
         }
     }
 
@@ -319,48 +326,50 @@ class ConnectionStore(
             override fun run() {
                 if (released || transport !== currentTransport || phase !is Phase.Verifying) return
                 if (currentTransport.isPeerConnected()) {
-                    verifyConnection(currentTransport, path, relayInUse)
+                    verifyConnection(currentTransport, path, relayInUse, immediateReconnect = true)
                     return
                 }
                 if (System.currentTimeMillis() < deadline && currentTransport.hasPeerConnection()) {
                     workerHandler.postDelayed(this, 200)
                     return
                 }
-                reconnectAfterVerificationFailure(currentTransport)
+                reconnectAfterVerificationFailure(currentTransport, immediate = true)
             }
         }
         workerHandler.post(check)
     }
 
-    private fun verifyConnection(currentTransport: WebRTCTransport, path: String, relayInUse: Boolean) {
+    private fun verifyConnection(
+        currentTransport: WebRTCTransport,
+        path: String,
+        relayInUse: Boolean,
+        immediateReconnect: Boolean,
+    ) {
         workerHandler.post {
             if (released || transport !== currentTransport || phase !is Phase.Verifying) return@post
             try {
-                val timeout = (currentTransport.lastRtt * 3).coerceIn(500L, 2000L)
-                val start = System.currentTimeMillis()
-                currentTransport.sendApiRequest("GET", "/status", null, timeout)
-                currentTransport.lastRtt = (System.currentTimeMillis() - start).coerceAtLeast(1L)
+                currentTransport.verifyStatus(RESUME_VERIFY_TIMEOUT_MS)
                 if (released || transport !== currentTransport || phase !is Phase.Verifying) return@post
                 reconnectAttempt = 0
                 setPhase(Phase.Connected(path, relayInUse), "Connected via $path")
             } catch (e: Exception) {
                 if (released || transport !== currentTransport || phase !is Phase.Verifying) return@post
                 Log.i(TAG, "resume verify failed [$machineId]")
-                reconnectAfterVerificationFailure(currentTransport)
+                reconnectAfterVerificationFailure(currentTransport, immediateReconnect)
             }
         }
     }
 
-    private fun reconnectAfterVerificationFailure(currentTransport: WebRTCTransport) {
+    private fun reconnectAfterVerificationFailure(currentTransport: WebRTCTransport, immediate: Boolean = false) {
         if (released || transport !== currentTransport) return
         currentTransport.onDisconnectListener = null
         currentTransport.disconnect()
         transport = null
         reconnectAttempt = 0
-        scheduleReconnect()
+        scheduleReconnect(immediate)
     }
 
-    private fun scheduleReconnect() {
+    private fun scheduleReconnect(immediate: Boolean = false) {
         if (released) return
         reconnectAttempt++
         if (reconnectAttempt > MAX_RECONNECT_ATTEMPTS) {
@@ -368,7 +377,7 @@ class ConnectionStore(
             return
         }
         val delayIdx = (reconnectAttempt - 1).coerceAtMost(RECONNECT_DELAYS.size - 1)
-        val delaySec = RECONNECT_DELAYS[delayIdx]
+        val delaySec = if (immediate) 0.0 else RECONNECT_DELAYS[delayIdx]
         val delayMs = (delaySec * 1000).toLong()
         setPhase(Phase.Reconnecting(reconnectAttempt), "Reconnecting (attempt $reconnectAttempt)...")
 

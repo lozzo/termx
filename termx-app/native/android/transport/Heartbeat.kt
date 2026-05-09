@@ -30,10 +30,12 @@ class Heartbeat(
     private var heartbeatRunnable: Runnable? = null
     private var graceRunnable: Runnable? = null
     private var probeRunnable: Runnable? = null
+    @Volatile private var lastSuccessAt = System.currentTimeMillis()
 
     fun start() {
         stop(); stopProbe()
         failCount = 0
+        markSuccess()
         schedule(INTERVAL)
     }
 
@@ -63,14 +65,15 @@ class Heartbeat(
         graceRunnable?.let {
             handler.removeCallbacks(it)
             graceRunnable = null
-            return transport.isPeerConnected()
         }
-        return true
+        failCount = 0
+        return transport.isPeerConnected() && transport.isApiChannelOpen()
     }
 
     fun onConnectionStateConnected() {
         graceRunnable?.let { handler.removeCallbacks(it); graceRunnable = null }
         stopProbe()
+        markSuccess()
         start()
     }
 
@@ -103,6 +106,13 @@ class Heartbeat(
         stop(); failCount = 0; schedule(200)
     }
 
+    fun millisSinceLastSuccess(now: Long = System.currentTimeMillis()): Long =
+        (now - lastSuccessAt).coerceAtLeast(0L)
+
+    private fun markSuccess() {
+        lastSuccessAt = System.currentTimeMillis()
+    }
+
     private fun schedule(delayMs: Long) {
         val r = Runnable {
             heartbeatRunnable = null
@@ -116,6 +126,7 @@ class Heartbeat(
                 transport.sendApiRequest("GET", "/status", null, timeout)
                 transport.lastRtt = (System.currentTimeMillis() - start).coerceAtLeast(1L)
                 failCount = 0
+                markSuccess()
                 schedule(INTERVAL)
             } catch (e: Exception) {
                 if (transport.hasRecentFileTransferActivity(TRANSFER_ACTIVITY_WINDOW)) {
@@ -148,6 +159,7 @@ class Heartbeat(
                 transport.sendApiRequest("GET", "/status", null, timeout)
                 transport.lastRtt = (System.currentTimeMillis() - start).coerceAtLeast(1L)
                 graceRunnable?.let { handler.removeCallbacks(it); graceRunnable = null }
+                markSuccess()
                 Log.i(TAG, "probe OK, grace cancelled")
                 start()
             } catch (e: Exception) {

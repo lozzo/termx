@@ -38,6 +38,7 @@ class WebRTCTransport(
         private const val SIGNALING_TIMEOUT = 15000
         private const val ANSWER_POLL_MAX = 30
         private const val ANSWER_POLL_DELAY_MS = 2000L
+        private const val RESUME_STALE_THRESHOLD_MS = 7000L
 
         private var factory: PeerConnectionFactory? = null
         private var factoryInitialized = false
@@ -420,6 +421,23 @@ class WebRTCTransport(
 
     fun handleAppResume(): Boolean {
         return heartbeat.handleAppResume()
+    }
+
+    fun isStaleAfterResume(backgroundDurationMs: Long): Boolean {
+        if (!isConnected || !hasPeerConnection()) return true
+        if (!isPeerConnected()) return true
+        if (!isApiChannelOpen()) return true
+        val quietForMs = heartbeat.millisSinceLastSuccess()
+        return backgroundDurationMs >= RESUME_STALE_THRESHOLD_MS ||
+            quietForMs >= RESUME_STALE_THRESHOLD_MS
+    }
+
+    fun verifyStatus(timeoutMs: Long): Long {
+        val start = System.currentTimeMillis()
+        sendApiRequest("GET", "/status", null, timeoutMs)
+        val elapsed = (System.currentTimeMillis() - start).coerceAtLeast(1L)
+        lastRtt = elapsed
+        return elapsed
     }
 
     fun onNetworkTypeChanged() {

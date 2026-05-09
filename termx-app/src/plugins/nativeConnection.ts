@@ -72,6 +72,7 @@ export interface NativeConnectionPlugin extends Plugin {
   retry(opts: { machineId: string; forceRelay?: boolean }): Promise<void>
   release(opts: { machineId: string }): Promise<void>
   releaseAll(): Promise<void>
+  handleForegroundResume(opts?: { backgroundDurationMs?: number }): Promise<void>
   getBridgePort(): Promise<{ port: number }>
   getSnapshot(opts: { machineId: string }): Promise<NativeConnectionSnapshot>
   getConnectionInfo(opts?: { machineId?: string }): Promise<NativeConnectionInfo>

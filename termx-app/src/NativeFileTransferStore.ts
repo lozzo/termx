@@ -44,6 +44,8 @@ export interface FileTransferStoreSnapshot {
   hasActiveTransfers: boolean
 }
 
+type NativeTransferSessionResolver = (machineId: string) => Promise<NativeRtcSession | null | undefined>
+
 export class NativeFileTransferStore {
   private _transfers: TransferInfo[] = []
   private _listeners = new Set<() => void>()
@@ -61,6 +63,7 @@ export class NativeFileTransferStore {
     timestamp: number
     transferredSize: number
   }>()
+  private _sessionResolver: NativeTransferSessionResolver | null = null
 
   constructor() {
     void this.refreshFromNative()
@@ -99,6 +102,10 @@ export class NativeFileTransferStore {
     }
   }
 
+  setSessionResolver(resolver: NativeTransferSessionResolver | null): void {
+    this._sessionResolver = resolver
+  }
+
   async refreshFromNative(): Promise<void> {
     try {
       const snapshot = await NativeConnection.getTransferSnapshot()
@@ -131,17 +138,8 @@ export class NativeFileTransferStore {
       filePath,
     }
     this._addOrUpdate(info)
-
-    if (!this._session) {
-      this._update(transferId, {
-        status: 'failed',
-        error: 'Native transfer bridge is not connected',
-      })
-      return
-    }
-
-    try {
-      this._session.sendTransferRequest({
+    void this._ensureSession(machineId).then((session) => {
+      session.sendTransferRequest({
         action: 'start_download',
         transfer_id: transferId,
         file_name: fileName,
@@ -150,12 +148,13 @@ export class NativeFileTransferStore {
         offset,
         machine_id: machineId,
       })
-    } catch (err) {
+      void this.refreshFromNative()
+    }).catch((err) => {
       this._update(transferId, {
         status: 'failed',
         error: err instanceof Error ? err.message : String(err),
       })
-    }
+    })
   }
 
   async getDownloadResumeOffset(machineId: string, filePath: string, fileSize: number): Promise<number> {
@@ -257,28 +256,39 @@ export class NativeFileTransferStore {
     this._update(id, { status: 'paused', bytesPerSecond: 0, updatedAt: Date.now() })
   }
 
-  resumeTransfer(id: string): void {
+  async resumeTransfer(id: string): Promise<void> {
     const t = this._transfers.find((x) => x.id === id)
     if (!t || !canResumeStatus(t.status)) return
-    if (t.direction === 'download') {
-      this._session?.sendTransferRequest({
-        action: 'resume_download',
-        transfer_id: id,
-        ...(t.machineId ? { machine_id: t.machineId } : {}),
-      })
-    } else {
-      this._session?.sendTransferRequest({
-        action: 'resume_upload',
-        transfer_id: id,
-        ...(t.machineId ? { machine_id: t.machineId } : {}),
-      })
-    }
     this._speedSamples.set(id, {
       bytesPerSecond: 0,
       timestamp: Date.now(),
       transferredSize: t.transferredSize,
     })
     this._update(id, { status: 'pending', error: undefined, bytesPerSecond: 0, updatedAt: Date.now() })
+    try {
+      const session = await this._ensureSession(t.machineId)
+      if (t.direction === 'download') {
+        session.sendTransferRequest({
+          action: 'resume_download',
+          transfer_id: id,
+          ...(t.machineId ? { machine_id: t.machineId } : {}),
+        })
+      } else {
+        session.sendTransferRequest({
+          action: 'resume_upload',
+          transfer_id: id,
+          ...(t.machineId ? { machine_id: t.machineId } : {}),
+        })
+      }
+      void this.refreshFromNative()
+    } catch (err) {
+      this._update(id, {
+        status: 'paused',
+        error: err instanceof Error ? err.message : String(err),
+        bytesPerSecond: 0,
+        updatedAt: Date.now(),
+      })
+    }
   }
 
   dismissTransfer(id: string): void {
@@ -290,12 +300,7 @@ export class NativeFileTransferStore {
     this._remove(id)
   }
 
-  resumeAllTransfers(machineId?: string): void {
-    this._session?.sendTransferRequest({
-      action: 'resume_all',
-      ...(machineId ? { machine_id: machineId } : {}),
-    })
-    void NativeConnection.resumeAllTransfers(machineId ? { machineId } : undefined).catch(() => {})
+  async resumeAllTransfers(machineId?: string): Promise<void> {
     for (const t of this._transfers) {
       if (machineId && t.machineId !== machineId) continue
       if (!canResumeStatus(t.status)) continue
@@ -305,6 +310,29 @@ export class NativeFileTransferStore {
         transferredSize: t.transferredSize,
       })
       this._update(t.id, { status: 'pending', error: undefined, bytesPerSecond: 0, updatedAt: Date.now() })
+    }
+    const machineIds = machineId ? [machineId] : uniqueMachineIds(this._transfers)
+    try {
+      for (const id of machineIds) {
+        await this._ensureSession(id)
+      }
+      this._session?.sendTransferRequest({
+        action: 'resume_all',
+        ...(machineId ? { machine_id: machineId } : {}),
+      })
+      await NativeConnection.resumeAllTransfers(machineId ? { machineId } : undefined)
+      void this.refreshFromNative()
+    } catch (err) {
+      for (const t of this._transfers) {
+        if (machineId && t.machineId !== machineId) continue
+        if (!canResumeStatus(t.status)) continue
+        this._update(t.id, {
+          status: 'paused',
+          error: err instanceof Error ? err.message : String(err),
+          bytesPerSecond: 0,
+          updatedAt: Date.now(),
+        })
+      }
     }
   }
 
@@ -349,6 +377,7 @@ export class NativeFileTransferStore {
 
   private _handleTransferSync(data: TransferSyncPayload): void {
     if (!data.transfers) return
+    const syncReceivedAt = Date.now()
 
     // Remove pending placeholders when real native entries arrive
     const hasRealUploads = data.transfers.some(
@@ -365,10 +394,9 @@ export class NativeFileTransferStore {
       const existing = this._transfers.find((t) => t.id === nt.id)
       const status = normalizeTransferStatus(nt.status)
       const measured = status === 'paused' || status === 'missing'
-        ? { bytesPerSecond: 0, updatedAt: Date.now() }
+        ? { bytesPerSecond: 0, updatedAt: syncReceivedAt }
         : this._measureSpeed(nt.id, nt.transferredSize, nt.bytesPerSecond)
       const machineId = nt.machineId ?? nt.storeKey ?? existing?.machineId
-      const updatedAt = Date.now()
       if (existing) {
         this._update(nt.id, {
           machineId,
@@ -378,7 +406,7 @@ export class NativeFileTransferStore {
           transferredSize: nt.transferredSize,
           status,
           startedAt: nt.startedAt || existing.startedAt,
-          updatedAt: nt.updatedAt || updatedAt,
+          updatedAt: measured.updatedAt,
           bytesPerSecond: measured.bytesPerSecond,
           filePath: nt.filePath ?? existing.filePath,
           ...(nt.localUri ?? existing.localUri ? { localUri: nt.localUri ?? existing.localUri } : {}),
@@ -397,7 +425,7 @@ export class NativeFileTransferStore {
           transferredSize: nt.transferredSize,
           status,
           startedAt: nt.startedAt,
-          updatedAt: nt.updatedAt || updatedAt,
+          updatedAt: measured.updatedAt,
           bytesPerSecond: measured.bytesPerSecond,
           filePath: nt.filePath,
           ...(nt.localUri ? { localUri: nt.localUri } : {}),
@@ -408,6 +436,31 @@ export class NativeFileTransferStore {
         })
       }
     }
+  }
+
+  private async _ensureSession(machineId?: string): Promise<NativeRtcSession> {
+    if (machineId && this._sessionResolver) {
+      const session = await this._sessionResolver(machineId)
+      if (session) this.setSession(session)
+      if (this._isSessionUsable(this._session)) return this._session
+      throw new Error('Native transfer bridge is not connected')
+    }
+    if (this._isSessionUsable(this._session)) return this._session
+    if (!machineId || !this._sessionResolver) {
+      throw new Error('Connect this machine before resuming the transfer')
+    }
+    const session = await this._sessionResolver(machineId)
+    if (session) this.setSession(session)
+    if (!this._isSessionUsable(this._session)) {
+      throw new Error('Native transfer bridge is not connected')
+    }
+    return this._session
+  }
+
+  private _isSessionUsable(session: NativeRtcSession | null): session is NativeRtcSession {
+    if (!session) return false
+    const candidate = session as NativeRtcSession & Partial<{ isAlive(): boolean }>
+    return typeof candidate.isAlive === 'function' ? candidate.isAlive() : true
   }
 
   private _measureSpeed(id: string, transferredSize: number, nativeSpeed?: number): {
@@ -475,6 +528,15 @@ export class NativeFileTransferStore {
 
 function canResumeStatus(status: TransferStatus): boolean {
   return status === 'paused' || status === 'failed' || status === 'missing' || status === 'pending'
+}
+
+function uniqueMachineIds(transfers: TransferInfo[]): string[] {
+  return Array.from(new Set(
+    transfers
+      .filter((transfer) => canResumeStatus(transfer.status))
+      .map((transfer) => transfer.machineId)
+      .filter((machineId): machineId is string => Boolean(machineId)),
+  ))
 }
 
 function normalizeTransferStatus(status: string): TransferStatus {

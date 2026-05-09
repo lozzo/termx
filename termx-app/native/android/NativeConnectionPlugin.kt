@@ -104,6 +104,13 @@ class NativeConnectionPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun handleForegroundResume(call: PluginCall) {
+        val durationMs = call.getDouble("backgroundDurationMs")?.toLong() ?: 0L
+        storeManager?.handleForegroundResume(durationMs)
+        call.resolve()
+    }
+
+    @PluginMethod
     fun getBridgePort(call: PluginCall) {
         val ret = JSObject()
         ret.put("port", BRIDGE_PORT)

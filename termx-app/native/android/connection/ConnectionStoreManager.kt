@@ -81,6 +81,12 @@ class ConnectionStoreManager(
         stores.clear()
     }
 
+    fun handleForegroundResume(backgroundDurationMs: Long) {
+        for (store in stores.values) {
+            store.handleForegroundResume(backgroundDurationMs, "App resumed")
+        }
+    }
+
     fun getSnapshot(machineId: String): JSONObject? =
         stores[machineId]?.getSnapshot()
 

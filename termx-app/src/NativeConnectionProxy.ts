@@ -521,6 +521,11 @@ export class NativeRtcSession implements RtcSession {
 
   private closed = false
   private disconnectHandlers = new Set<() => void>()
+  private connectedWaiters = new Set<{
+    resolve(): void
+    reject(error: Error): void
+    cleanup?: (() => void) | undefined
+  }>()
 
   constructor(
     bridge: NativeBridgeClient,
@@ -548,6 +553,15 @@ export class NativeRtcSession implements RtcSession {
       this.path = snapshot.path ?? this.path
       this.relayInUse = snapshot.relayInUse
       for (const h of this.connectionStateHandlers) h(snapshot)
+      if (snapshot.phase === 'connected' && this.eventHandlers.size > 0) {
+        this.eventsSubscribed = false
+        this.ensureEventsChannel()
+      }
+      if (snapshot.phase === 'connected') {
+        this.resolveConnectedWaiters()
+      } else if (snapshot.phase === 'failed') {
+        this.rejectConnectedWaiters(new Error(snapshot.failReason ?? snapshot.statusText ?? 'connection failed'))
+      }
     }))
     this.cleanups.push(this.bridge.onTransferSync((data) => {
       for (const h of this.transferSyncHandlers) h(data)
@@ -592,6 +606,7 @@ export class NativeRtcSession implements RtcSession {
     this.connectionStateHandlers.clear()
     this.transferSyncHandlers.clear()
     this.syncResponseHandlers.clear()
+    this.rejectConnectedWaiters(error)
     if (options.notifyDisconnect) {
       for (const h of this.disconnectHandlers) h()
     }
@@ -943,7 +958,49 @@ export class NativeRtcSession implements RtcSession {
   isAlive(): boolean {
     if (this.closed) return false
     const snapshot = getCachedNativeState(this.machineId)
-    return !snapshot || snapshot.phase === 'connected'
+    return !snapshot || nativeClientSessionCanStayOpen(snapshot.phase)
+  }
+
+  waitUntilConnected(signal?: AbortSignal): Promise<void> {
+    if (this.closed) return Promise.reject(new Error('native bridge session is closed'))
+    const snapshot = getCachedNativeState(this.machineId)
+    if (!snapshot || snapshot.phase === 'connected') return Promise.resolve()
+    if (snapshot.phase === 'failed') {
+      return Promise.reject(new Error(snapshot.failReason ?? snapshot.statusText ?? 'connection failed'))
+    }
+    if (signal?.aborted) return Promise.reject(new Error('aborted'))
+    return new Promise<void>((resolve, reject) => {
+      const waiter = {
+        resolve: () => {
+          cleanup()
+          resolve()
+        },
+        reject: (error: Error) => {
+          cleanup()
+          reject(error)
+        },
+        cleanup: undefined as (() => void) | undefined,
+      }
+      const onAbort = () => {
+        this.connectedWaiters.delete(waiter)
+        waiter.reject(new Error('aborted'))
+      }
+      const cleanup = () => {
+        this.connectedWaiters.delete(waiter)
+        if (signal) signal.removeEventListener('abort', onAbort)
+      }
+      waiter.cleanup = cleanup
+      this.connectedWaiters.add(waiter)
+      signal?.addEventListener('abort', onAbort, { once: true })
+    })
+  }
+
+  private resolveConnectedWaiters(): void {
+    for (const waiter of Array.from(this.connectedWaiters)) waiter.resolve()
+  }
+
+  private rejectConnectedWaiters(error: Error): void {
+    for (const waiter of Array.from(this.connectedWaiters)) waiter.reject(error)
   }
 
   onDisconnect(handler: () => void): RtcSubscription {
@@ -1028,6 +1085,15 @@ function cacheNativeState(data: NativeConnectionSnapshot | NativeStateChangeEven
 
 function getCachedNativeState(machineId: string): RtcConnectionStateSnapshot | null {
   return nativeStateCache.get(machineId) ?? null
+}
+
+function nativeClientSessionCanStayOpen(phase: RtcConnectionStateSnapshot['phase']): boolean {
+  return phase === 'connected' ||
+    phase === 'verifying' ||
+    phase === 'reconnecting' ||
+    phase === 'waiting_network' ||
+    phase === 'probing' ||
+    phase === 'connecting'
 }
 
 function isNativeStatePayload(data: unknown): data is NativeConnectionSnapshot | NativeStateChangeEvent {
