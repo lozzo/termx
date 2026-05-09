@@ -22,6 +22,8 @@ export function useTerminalKeyboard(opts: UseTerminalKeyboardOptions): UseTermin
   const { containerRef, mainRef, termWrapperRef, getTermRef, shouldResize, onKeyboardHide } = opts
   const onKeyboardHideRef = useRef(onKeyboardHide)
   onKeyboardHideRef.current = onKeyboardHide
+  const shouldResizeRef = useRef(shouldResize)
+  shouldResizeRef.current = shouldResize
   const fullMainHeightRef = useRef(0)
   const [keyboardVisible, setKeyboardVisible] = useState(false)
   const shiftRafRef = useRef(0)
@@ -42,7 +44,7 @@ export function useTerminalKeyboard(opts: UseTerminalKeyboardOptions): UseTermin
   }, [])
 
   const adjustShift = useCallback(() => {
-    if (shouldResize()) return
+    if (shouldResizeRef.current()) return
     if (!termWrapperRef.current || fullMainHeightRef.current <= 0) return
     const vv = window.visualViewport
     if (!vv) return
@@ -60,13 +62,13 @@ export function useTerminalKeyboard(opts: UseTerminalKeyboardOptions): UseTermin
     }
     termWrapperRef.current.style.transform = `translateY(${-shift}px)`
     termRef?.adjustInputPosition(kbH - shift)
-  }, [shouldResize, termWrapperRef, getTermRef, getEffectiveKbH])
+  }, [termWrapperRef, getTermRef, getEffectiveKbH])
 
   const reapplyKeyboardLayout = useCallback(() => {
     if (!termWrapperRef.current || fullMainHeightRef.current <= 0) return
     const kbH = getEffectiveKbH()
     if (kbH <= 1) return
-    if (shouldResize()) {
+    if (shouldResizeRef.current()) {
       termWrapperRef.current.style.height = ''
       termWrapperRef.current.style.transform = ''
       getTermRef()?.adjustInputPosition(0)
@@ -74,7 +76,7 @@ export function useTerminalKeyboard(opts: UseTerminalKeyboardOptions): UseTermin
       termWrapperRef.current.style.height = `${fullMainHeightRef.current}px`
       adjustShift()
     }
-  }, [shouldResize, termWrapperRef, getTermRef, adjustShift, getEffectiveKbH])
+  }, [termWrapperRef, getTermRef, adjustShift, getEffectiveKbH])
 
   const handleBufferChange = useCallback((_isAlternate: boolean) => {
     reapplyKeyboardLayout()
@@ -118,7 +120,7 @@ export function useTerminalKeyboard(opts: UseTerminalKeyboardOptions): UseTermin
         fullMainHeightRef.current = mainRef.current.clientHeight
       }
       if (kbH > 1 && fullMainHeightRef.current > 0 && termWrapperRef.current) {
-        if (shouldResize()) {
+        if (shouldResizeRef.current()) {
           termWrapperRef.current.style.height = ''
           termWrapperRef.current.style.transform = ''
           getTermRef()?.adjustInputPosition(0)

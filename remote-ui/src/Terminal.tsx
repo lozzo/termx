@@ -8,6 +8,7 @@ import { applyTerminalModifiers, type TerminalModifierState } from './mobileTerm
 import type { TerminalResizeControl } from './terminalClient'
 import { useTerminalSession } from './useTerminalSession'
 import type { RtcSession } from './transport'
+import { DEFAULT_TERMINAL_SETTINGS, resolveTerminalTheme, type TerminalSettings } from './terminalSettings'
 
 export type TerminalRenderer = 'auto' | 'webgl' | 'canvas' | 'dom'
 
@@ -24,7 +25,7 @@ export interface TerminalProps {
   onModifierStateChange?: ((state: TerminalModifierState) => void) | undefined
   selectionMode?: boolean | undefined
   renderer?: TerminalRenderer | undefined
-  fontSize?: number | undefined
+  settings?: TerminalSettings | undefined
   preventFocus?: boolean | undefined
   suppressConnectingOverlay?: boolean | undefined
 }
@@ -61,8 +62,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     modifierState,
     onModifierStateChange,
     selectionMode = false,
-    renderer = 'auto',
-    fontSize = 14,
+    renderer,
+    settings = DEFAULT_TERMINAL_SETTINGS,
     preventFocus = false,
     suppressConnectingOverlay = false,
   },
@@ -86,6 +87,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const fitDelayRef = useRef<number | null>(null)
   const terminalDisposedRef = useRef(true)
   const terminalGenerationRef = useRef(0)
+  const settingsRef = useRef(settings)
   const modifierStateRef = useRef<TerminalModifierState | undefined>(undefined)
   const onModifierStateChangeRef = useRef<((state: TerminalModifierState) => void) | undefined>(undefined)
   const onCursorMoveRef = useRef<(() => void) | undefined>(undefined)
@@ -95,6 +97,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const selectionResetHandlersRef = useRef(new Set<() => void>())
 
   latestTerminalTextRef.current = terminalSession.terminalText
+  settingsRef.current = settings
 
   const isOpen = terminalSession.snapshot.terminalChannels[terminalId]?.state === 'open'
   const channelState = terminalSession.snapshot.terminalChannels[terminalId]?.state
@@ -253,6 +256,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (opts.cursorBlink !== undefined) xtermRef.current.options.cursorBlink = opts.cursorBlink
       if (opts.fontFamily !== undefined) xtermRef.current.options.fontFamily = opts.fontFamily
       if (opts.scrollback !== undefined) xtermRef.current.options.scrollback = opts.scrollback
+      settingsRef.current = {
+        ...settingsRef.current,
+        ...(opts.fontSize !== undefined ? { fontSize: opts.fontSize } : {}),
+        ...(opts.cursorBlink !== undefined ? { cursorBlink: opts.cursorBlink } : {}),
+        ...(opts.fontFamily !== undefined ? { fontFamily: opts.fontFamily } : {}),
+        ...(opts.scrollback !== undefined ? { scrollback: opts.scrollback } : {}),
+      }
       fitAndMaybeSendResize()
     },
   }), [fitAndMaybeSendResize, scheduleFit, sendInputAtCurrentSize, terminalSession.reattach, terminalSession.sendResize])
@@ -262,11 +272,15 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   }, [modifierState])
 
   useEffect(() => {
-    if (xtermRef.current && fontSize !== undefined) {
-      xtermRef.current.options.fontSize = fontSize
-      fitAndMaybeSendResize()
-    }
-  }, [fontSize, fitAndMaybeSendResize])
+    const term = xtermRef.current
+    if (!term) return
+    term.options.fontSize = settings.fontSize
+    term.options.fontFamily = settings.fontFamily
+    term.options.cursorBlink = settings.cursorBlink
+    term.options.scrollback = settings.scrollback
+    term.options.theme = resolveTerminalTheme(settings.themeId)
+    fitAndMaybeSendResize()
+  }, [fitAndMaybeSendResize, settings])
 
   useEffect(() => {
     onModifierStateChangeRef.current = onModifierStateChange
@@ -309,33 +323,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     const term = new XTerm({
       allowProposedApi: false,
-      cursorBlink: true,
+      cursorBlink: settingsRef.current.cursorBlink,
       convertEol: false,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-      fontSize,
-      scrollback: 10000,
-      theme: {
-        background: '#0c0c0c',
-        foreground: '#f4f4f5',
-        cursor: '#d4d4d8',
-        selectionBackground: '#3f3f46',
-        black: '#18181b',
-        red: '#ef4444',
-        green: '#22c55e',
-        yellow: '#eab308',
-        blue: '#3b82f6',
-        magenta: '#d946ef',
-        cyan: '#06b6d4',
-        white: '#f4f4f5',
-        brightBlack: '#71717a',
-        brightRed: '#f87171',
-        brightGreen: '#4ade80',
-        brightYellow: '#fde047',
-        brightBlue: '#60a5fa',
-        brightMagenta: '#e879f9',
-        brightCyan: '#22d3ee',
-        brightWhite: '#fafafa',
-      },
+      fontFamily: settingsRef.current.fontFamily,
+      fontSize: settingsRef.current.fontSize,
+      scrollback: settingsRef.current.scrollback,
+      theme: resolveTerminalTheme(settingsRef.current.themeId),
     })
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
@@ -373,20 +366,21 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
     const isTestDom = typeof navigator !== 'undefined' && navigator.userAgent.includes('jsdom')
     if (!isTestDom) {
-      if (renderer === 'canvas') {
+      const rendererMode = renderer ?? settingsRef.current.renderer
+      if (rendererMode === 'canvas') {
         loadCanvasRenderer()
-      } else if (renderer !== 'dom') {
+      } else if (rendererMode !== 'dom') {
         // auto or webgl: try WebGL first, fall back to canvas
         try {
           const webglAddon = new WebglAddon(true)
           webglAddon.onContextLoss(() => {
             webglAddon.dispose()
-            if (renderer !== 'webgl') loadCanvasRenderer()
+            if (rendererMode !== 'webgl') loadCanvasRenderer()
             term.refresh(0, term.rows - 1)
           })
           term.loadAddon(webglAddon)
         } catch {
-          if (renderer !== 'webgl') loadCanvasRenderer()
+          if (rendererMode !== 'webgl') loadCanvasRenderer()
         }
       }
     }
@@ -1209,7 +1203,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       lastSentResizeRef.current = null
       isOpenRef.current = false
     }
-  }, [fitAndMaybeSendResize, renderer, scheduleFit, sendInputAtCurrentSize])
+  }, [fitAndMaybeSendResize, renderer, scheduleFit, sendInputAtCurrentSize, settings.renderer])
 
   useEffect(() => {
     isOpenRef.current = isOpen

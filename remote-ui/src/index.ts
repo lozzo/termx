@@ -146,6 +146,24 @@ export type {
   TerminalSnapshotPayload,
 } from './terminalClient'
 export {
+  DEFAULT_TERMINAL_SETTINGS,
+  TERMINAL_FONT_OPTIONS,
+  TERMINAL_SETTINGS_STORAGE_KEY,
+  TERMINAL_THEME_OPTIONS,
+  TERMX_DARK_TERMINAL_THEME,
+  normalizeTerminalSettings,
+  readTerminalSettings,
+  resolveTerminalTheme,
+  writeTerminalSettings,
+} from './terminalSettings'
+export type {
+  TerminalFontOption,
+  TerminalKeyboardMode,
+  TerminalSettings,
+  TerminalThemeId,
+  TerminalThemeOption,
+} from './terminalSettings'
+export {
   createTerminalInventorySnapshot,
   normalizeTerminalInventory,
   selectTerminal,

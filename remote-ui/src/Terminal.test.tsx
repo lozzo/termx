@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Terminal, type TerminalProps } from './Terminal'
+import { DEFAULT_TERMINAL_SETTINGS } from './terminalSettings'
 import { createMockRtcTerminalSession } from './test/mockRtcTerminalSession'
 import type { ConnectionInfo, RtcBinaryChannel, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSubscription } from './transport'
 
@@ -197,6 +198,8 @@ const xtermMocks = vi.hoisted(() => {
 
 vi.mock('@xterm/xterm', () => ({ Terminal: xtermMocks.FakeXTerm }))
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: xtermMocks.FakeFitAddon }))
+vi.mock('@xterm/addon-canvas', () => ({ CanvasAddon: class FakeCanvasAddon {} }))
+vi.mock('@xterm/addon-webgl', () => ({ WebglAddon: class FakeWebglAddon { onContextLoss(): void {}; dispose(): void {} } }))
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 
 class TestResizeObserver {
@@ -270,6 +273,46 @@ describe('Terminal', () => {
     const terminalOutput = screen.getByLabelText('Terminal output')
     expect(terminalOutput.className).toContain('overflow-hidden')
     expect(terminalOutput.querySelector('.xterm-screen')).not.toBeNull()
+  })
+
+  it('creates xterm with terminal settings and applies setting updates without remounting', async () => {
+    const session = createMockRtcTerminalSession()
+    const settings = {
+      ...DEFAULT_TERMINAL_SETTINGS,
+      fontSize: 16,
+      fontFamily: '"FiraCode NF", monospace',
+      cursorBlink: false,
+      scrollback: 5000,
+    }
+
+    const { rerender } = render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+        settings={settings}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const term = xtermMocks.FakeXTerm.instances[0]!
+    expect(term.options.fontSize).toBe(16)
+    expect(term.options.fontFamily).toBe('"FiraCode NF", monospace')
+    expect(term.options.cursorBlink).toBe(false)
+    expect(term.options.scrollback).toBe(5000)
+
+    rerender(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+        settings={{ ...settings, fontSize: 18, cursorBlink: true }}
+      />,
+    )
+
+    expect(xtermMocks.FakeXTerm.instances).toHaveLength(1)
+    expect(term.options.fontSize).toBe(18)
+    expect(term.options.cursorBlink).toBe(true)
   })
 
   it('shows terminal channel loading until the data channel opens', async () => {

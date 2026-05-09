@@ -10,12 +10,12 @@ import type { TerminalModifierState } from './mobileTerminalInput'
 import { PasteConfirmDialog } from './PasteConfirmDialog'
 import { Terminal, type TerminalHandle } from './Terminal'
 import { TerminalActionToolbar, type TerminalToolbarMode } from './TerminalActionToolbar'
-import { type TerminalRenderer } from './Terminal'
 import { TerminalFnPanel } from './TerminalFnPanel'
 import { addNativeBackHandler } from './nativeBack'
 import { defaultTerminalResizeControl, type TerminalResizeControl } from './terminalClient'
 import { TerminalList } from './TerminalList'
 import { createTerminalManagementApi } from './terminalManagementApi'
+import { readTerminalSettings, writeTerminalSettings, type TerminalSettings } from './terminalSettings'
 import type { Machine, Terminal as RemoteTerminal } from './model'
 import type { ConnectionInfo, LocalAgentApi, LocalCreateTerminalInput, LocalPairingApi, LocalUpdateTerminalInput, MachineConnectionStateEvents, RtcConnectOptions, RtcConnectionStateSnapshot, RtcConnector, RtcEvent, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSubscription, TerminalInventoryEvents } from './transport'
 import { useTerminalKeyboard } from './useTerminalKeyboard'
@@ -46,6 +46,8 @@ export interface LocalRemoteAppProps {
   } | undefined
   onBack?: (() => void) | undefined
   fileTransfer?: import('./fileApi').FileTransferContext | undefined
+  terminalSettings?: TerminalSettings | undefined
+  onTerminalSettingsChange?: ((patch: Partial<TerminalSettings>) => void) | undefined
 }
 
 type MobileSheet = 'terminals' | 'split-terminal' | 'pair' | 'manage-terminal' | 'edit-terminal' | 'create-terminal' | null
@@ -55,7 +57,7 @@ const TERMINAL_CONNECTION_PROGRESS_DELAY_MS = 450
 
 function noopSubscribe(_listener: () => void): () => void { return () => {} }
 
-export function LocalRemoteApp({ api, connector, className, inventoryEvents, connectionStateEvents, subscribeRuntimeInventoryEvents = false, pair, onBack, fileTransfer }: LocalRemoteAppProps) {
+export function LocalRemoteApp({ api, connector, className, inventoryEvents, connectionStateEvents, subscribeRuntimeInventoryEvents = false, pair, onBack, fileTransfer, terminalSettings: terminalSettingsProp, onTerminalSettingsChange }: LocalRemoteAppProps) {
   const [machine, setMachine] = useState<Machine | null>(null)
   const [terminals, setTerminals] = useState<RemoteTerminal[]>([])
   const [loadingTerminals, setLoadingTerminals] = useState(true)
@@ -109,12 +111,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
   const [splitTerminalId, setSplitTerminalId] = useState<string | null>(null)
   const [activeTerminalSlot, setActiveTerminalSlot] = useState<TerminalSlot>(0)
   const [syncSplitInput, setSyncSplitInput] = useState(false)
-  const [renderer, setRenderer] = useState<TerminalRenderer>(() => {
-    try { return (localStorage.getItem('termx.renderer') as TerminalRenderer) || 'auto' } catch { return 'auto' }
-  })
-  const [fontSize, setFontSize] = useState<number>(() => {
-    try { return Number(localStorage.getItem('termx.fontSize')) || 14 } catch { return 14 }
-  })
+  const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => readTerminalSettings())
   const terminalRef = useRef<TerminalHandle | null>(null)
   const splitTerminalRef = useRef<TerminalHandle | null>(null)
   const outerContainerRef = useRef<HTMLDivElement | null>(null)
@@ -147,6 +144,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
     subscription: { close(): void }
   } | null>(null)
   const connectionStateSubscriptionRef = useRef<RtcSubscription | null>(null)
+  const passiveConnectionPhaseRef = useRef<RtcConnectionStateSnapshot['phase'] | null>(null)
   const connectionStatusClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const latestActiveTerminalIdRef = useRef<string | null>(null)
   const latestMachineIdRef = useRef<string | null>(null)
@@ -169,6 +167,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
   )
   const machineForceRelayKey = machine?.machineId ? forceRelayStorageKey(machine.machineId) : null
   const showConnectionProgressBanner = Boolean(connectionStatus && !isSettledConnectionPhase(connectionPhase))
+  const effectiveTerminalSettings = terminalSettingsProp ?? terminalSettings
 
   useEffect(() => {
     latestActiveTerminalIdRef.current = activeTerminalId
@@ -188,9 +187,13 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
     mainRef: terminalAreaRef,
     termWrapperRef: terminalWrapperRef,
     getTermRef: () => activeTerminalSlotRef.current === 1 ? splitTerminalRef.current : terminalRef.current,
-    shouldResize: () =>
-      terminalRef.current?.getBufferType() === 'alternate' ||
-      splitTerminalRef.current?.getBufferType() === 'alternate',
+    shouldResize: () => {
+      if (splitTerminalId) return true
+      if (effectiveTerminalSettings.keyboardMode === 'resize') return true
+      if (effectiveTerminalSettings.keyboardMode === 'shift') return false
+      return terminalRef.current?.getBufferType() === 'alternate' ||
+        splitTerminalRef.current?.getBufferType() === 'alternate'
+    },
     onKeyboardHide: () => {
       requestAnimationFrame(() => {
         terminalRef.current?.fit()
@@ -210,6 +213,14 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
       setConnectionPhase(null)
     }, 1200)
   }, [])
+
+  const updateTerminalSettings = useCallback((patch: Partial<TerminalSettings>) => {
+    if (onTerminalSettingsChange) {
+      onTerminalSettingsChange(patch)
+      return
+    }
+    setTerminalSettings((current) => writeTerminalSettings({ ...current, ...patch }))
+  }, [onTerminalSettingsChange])
 
   const updateConnectionStatus = useCallback((status: string, phase?: RtcConnectionStateSnapshot['phase']) => {
     const snapshot = connectionSnapshotFromStatus({
@@ -438,9 +449,17 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
 
   useEffect(() => {
     if (!connectionStateEvents || !machine) return
+    passiveConnectionPhaseRef.current = null
     const subscription = connectionStateEvents.subscribe(machine.machineId, (snapshot) => {
+      const previousPhase = passiveConnectionPhaseRef.current
+      passiveConnectionPhaseRef.current = snapshot.phase
       const activeSession = machineSessionRef.current?.session
-      if (snapshot.phase === 'connected' && activeTerminalId && (!activeSession || !isRtcSessionAlive(activeSession))) {
+      const recoveredFromInterruption = previousPhase !== null && previousPhase !== 'connected'
+      if (
+        snapshot.phase === 'connected' &&
+        activeTerminalId &&
+        (!activeSession || !isRtcSessionAlive(activeSession) || recoveredFromInterruption)
+      ) {
         void ensureMachineSession(machine.machineId, { forceRelay: forceRelayConnection })
           .then((session) => {
             setConnectedSession(session)
@@ -1504,18 +1523,6 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
             >
               <Info className="h-4 w-4" />
             </button>
-            {fileTransfer && transferState.transfers.length > 0 && filesOpen ? (
-              <FileTransferPanel
-                transfers={transferState.transfers}
-                hasActiveTransfers={transferState.hasActiveTransfers}
-                onCancel={(id) => fileTransfer.cancelTransfer(id)}
-                onDismiss={(id) => fileTransfer.dismissTransfer(id)}
-                onPause={(id) => fileTransfer.pauseTransfer?.(id)}
-                onResume={(id) => fileTransfer.resumeTransfer?.(id)}
-                onResumeAll={() => fileTransfer.resumeAllTransfers?.(machine.machineId)}
-                variant="icon"
-              />
-            ) : null}
             <button
               type="button"
               aria-label="Open files"
@@ -1531,8 +1538,8 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
           <TerminalActionToolbar
             mode={terminalToolbarMode}
             hasSelection={hasTerminalSelection}
-            renderer={renderer}
-            fontSize={fontSize}
+            renderer={effectiveTerminalSettings.renderer}
+            fontSize={effectiveTerminalSettings.fontSize}
             onModeChange={setTerminalToolbarModeAndReset}
             onClose={() => setTerminalToolbarOpen(false)}
             onSelectAll={() => {
@@ -1559,14 +1566,8 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
               setTerminalFnOpen((current) => !current)
               setTerminalToolbarOpen(false)
             }}
-            onRendererChange={(r) => {
-              setRenderer(r)
-              try { localStorage.setItem('termx.renderer', r) } catch {}
-            }}
-            onFontSizeChange={(sz) => {
-              setFontSize(sz)
-              try { localStorage.setItem('termx.fontSize', String(sz)) } catch {}
-            }}
+            onRendererChange={(renderer) => updateTerminalSettings({ renderer })}
+            onFontSizeChange={(fontSize) => updateTerminalSettings({ fontSize })}
           />
         ) : null}
 
@@ -1607,8 +1608,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
                   onBufferChange={handleBufferChange}
                   onResizeControl={setTerminalResizeControl}
                   selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 0}
-                  renderer={renderer}
-                  fontSize={fontSize}
+                  settings={effectiveTerminalSettings}
                   preventFocus={keyboardLocked}
                   suppressConnectingOverlay={showConnectionProgressBanner}
                 />
@@ -1650,8 +1650,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
                     onCursorMove={handleCursorMove}
                     onBufferChange={handleBufferChange}
                     selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 1}
-                    renderer={renderer}
-                    fontSize={fontSize}
+                    settings={effectiveTerminalSettings}
                     preventFocus={keyboardLocked}
                     suppressConnectingOverlay={showConnectionProgressBanner}
                   />
@@ -1794,17 +1793,6 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
         <ConnectionProgressBanner
           phase={connectionPhase}
           status={connectionStatus}
-        />
-      ) : null}
-      {fileTransfer && transferState.transfers.length > 0 && filesOpen && !transferCenterOpen ? (
-        <FileTransferPanel
-          transfers={transferState.transfers}
-          hasActiveTransfers={transferState.hasActiveTransfers}
-          onCancel={(id) => fileTransfer.cancelTransfer(id)}
-          onDismiss={(id) => fileTransfer.dismissTransfer(id)}
-          onPause={(id) => fileTransfer.pauseTransfer?.(id)}
-          onResume={(id) => fileTransfer.resumeTransfer?.(id)}
-          onResumeAll={() => fileTransfer.resumeAllTransfers?.(machine.machineId)}
         />
       ) : null}
       {fileTransfer && transferCenterOpen ? (

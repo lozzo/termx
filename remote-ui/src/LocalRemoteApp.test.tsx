@@ -449,6 +449,55 @@ describe('LocalRemoteApp', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
+  it('reattaches the active terminal when a preserved app-level connection recovers', async () => {
+    const api = createMockLocalAgentApi()
+    const sessions: ReturnType<typeof createMockLocalRemoteSession>[] = []
+    const connect = vi.fn(({ machineId }: { machineId: string }) =>
+      Promise.resolve(trackSession(sessions, createMockLocalRemoteSession({}, machineId))),
+    )
+    const connectionHandlerRef: { current: ((snapshot: RtcConnectionStateSnapshot) => void) | null } = { current: null }
+    const connectionStateEvents: MachineConnectionStateEvents = {
+      subscribe(machineId, handler) {
+        if (machineId === 'machine-local') connectionHandlerRef.current = handler
+        return {
+          close() {
+            if (connectionHandlerRef.current === handler) connectionHandlerRef.current = null
+          },
+        }
+      },
+    }
+
+    render(<LocalRemoteApp api={api} connector={{ connect }} connectionStateEvents={connectionStateEvents} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
+    expect(connect).toHaveBeenCalledTimes(1)
+    const emitConnectionState = connectionHandlerRef.current
+    if (!emitConnectionState) throw new Error('connection state handler was not installed')
+
+    emitConnectionState({
+      machineId: 'machine-local',
+      phase: 'verifying',
+      path: 'managed',
+      statusText: 'App resumed, verifying connection...',
+      relayInUse: false,
+    })
+    await waitFor(() => expect(screen.getByTestId('termx-connection-progress-banner').textContent).toContain('verifying'))
+
+    emitConnectionState({
+      machineId: 'machine-local',
+      phase: 'connected',
+      path: 'managed',
+      statusText: 'Connected',
+      relayInUse: false,
+    })
+
+    await waitFor(() => expect(terminalReattachMock).toHaveBeenCalledWith(sessions[0]))
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(sessions[0]?.disconnectCalls).toBe(0)
+  })
+
   it('reconnects from connection info without changing the current transport mode', async () => {
     const api = createMockLocalAgentApi()
     const sessions: ReturnType<typeof createMockLocalRemoteSession>[] = []
