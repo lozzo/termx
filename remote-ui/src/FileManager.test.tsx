@@ -1,12 +1,30 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FileManager, type FileManagerProps } from './FileManager'
 import { createMockFileSession } from './test/mockFileSession'
 
 describe('FileManager', () => {
+  beforeEach(() => {
+    if (typeof URL.createObjectURL !== 'function') {
+      Object.defineProperty(URL, 'createObjectURL', {
+        configurable: true,
+        value: () => '',
+      })
+    }
+    if (typeof URL.revokeObjectURL !== 'function') {
+      Object.defineProperty(URL, 'revokeObjectURL', {
+        configurable: true,
+        value: () => {},
+      })
+    }
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:termx-preview')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  })
+
   afterEach(() => {
     cleanup()
+    vi.restoreAllMocks()
   })
 
   it('renders directory entries and navigates directories through the injected session', async () => {
@@ -145,6 +163,67 @@ describe('FileManager', () => {
     expect(screen.queryByRole('button', { name: 'root' })).toBeNull()
   })
 
+  it('keeps the path bar separate from file actions and right-aligns row menus', async () => {
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/Users/lozzow/project/deep/path',
+        parent: '/Users/lozzow/project/deep',
+        total: 2,
+        entries: [
+          { name: 'a.txt', type: 'file', size: 1 },
+          { name: 'very-long-file-name-that-should-not-move-actions.png', type: 'file', size: 2 },
+        ],
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(
+      <FileManager
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+        initialPath="/Users/lozzow/project/deep/path"
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText('very-long-file-name-that-should-not-move-actions.png')).toBeTruthy())
+    expect(screen.getByTestId('termx-file-pathbar').textContent).toContain('path')
+    expect(screen.getByTestId('termx-file-pathbar').contains(screen.getByRole('button', { name: /sort files/i }))).toBe(false)
+    expect(screen.getByTestId('termx-file-toolbar').contains(screen.getByRole('button', { name: /sort files/i }))).toBe(true)
+    expect(screen.getAllByTestId('termx-file-row-actions')).toHaveLength(2)
+    for (const actions of screen.getAllByTestId('termx-file-row-actions')) {
+      expect(actions.className).toMatch(/\bw-16\b/)
+      expect(actions.className).toMatch(/\bjustify-end\b/)
+    }
+  })
+
+  it('lets users change file list sorting from the toolbar', async () => {
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/',
+        parent: '',
+        total: 4,
+        entries: [
+          { name: 'zeta.txt', type: 'file', size: 4, mod_time: '2026-05-01T10:00:00Z' },
+          { name: 'src', type: 'dir', size: 0, mod_time: '2026-05-02T10:00:00Z' },
+          { name: 'alpha.log', type: 'file', size: 20, mod_time: '2026-05-03T10:00:00Z' },
+          { name: 'middle.ts', type: 'file', size: 10, mod_time: '2026-05-04T10:00:00Z' },
+        ],
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(fileManager(session))
+
+    await waitFor(() => expect(fileNames()).toEqual(['src', 'alpha.log', 'middle.ts', 'zeta.txt']))
+
+    await userEvent.click(screen.getByRole('button', { name: /sort files: name a to z/i }))
+    await userEvent.click(screen.getByRole('button', { name: /newest first/i }))
+    expect(fileNames()).toEqual(['src', 'middle.ts', 'alpha.log', 'zeta.txt'])
+
+    await userEvent.click(screen.getByRole('button', { name: /sort files: newest first/i }))
+    await userEvent.click(screen.getByRole('button', { name: /largest first/i }))
+    expect(fileNames()).toEqual(['src', 'alpha.log', 'middle.ts', 'zeta.txt'])
+  })
+
   it('renders markdown previews from selected files', async () => {
     const session = createMockFileSession({
       '/files/list': {
@@ -175,7 +254,7 @@ describe('FileManager', () => {
     expect(session.requests).toContainEqual({
       method: 'POST',
       path: '/files/preview',
-      params: { path: '/README.md', max_size: 8388608 },
+      params: { path: '/README.md' },
     })
   })
 
@@ -298,7 +377,38 @@ describe('FileManager', () => {
     await userEvent.click(screen.getByRole('button', { name: /preview shot.png/i }))
 
     const image = await screen.findByRole('img', { name: 'shot.png' })
-    expect(image.getAttribute('src')).toBe('data:image/png;base64,iVBORw0KGgo=')
+    expect(image.getAttribute('src')).toBe('blob:termx-preview')
+    expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
+  })
+
+  it('renders image previews from data URL preview content', async () => {
+    const dataUrl = 'data:image/png;base64,iVBORw0KGgo='
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/',
+        parent: '',
+        total: 1,
+        entries: [{ name: 'shot.png', type: 'file', size: 68 }],
+      },
+      '/files/preview': {
+        path: '/shot.png',
+        name: 'shot.png',
+        size: 68,
+        mime_type: 'image/png',
+        category: 'image',
+        is_text: false,
+        content: dataUrl,
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(fileManager(session))
+
+    await waitFor(() => expect(screen.getByText('shot.png')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /preview shot.png/i }))
+
+    const image = await screen.findByRole('img', { name: 'shot.png' })
+    expect(image.getAttribute('src')).toBe(dataUrl)
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
   })
 })
 
@@ -311,4 +421,9 @@ function fileManager(session: FileManagerProps['session']) {
       initialPath="/"
     />
   )
+}
+
+function fileNames(): string[] {
+  return screen.getAllByRole('button', { name: /^(open|preview) /i })
+    .map((button) => button.getAttribute('aria-label')?.replace(/^(Open|Preview) /, '') ?? '')
 }

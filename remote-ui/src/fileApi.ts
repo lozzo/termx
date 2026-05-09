@@ -70,9 +70,9 @@ export interface FileTransferContext {
   startUpload(machineId: string, files: Array<{ uri: string; name: string; size: number }>, targetDir: string): void
   /** Native mode only: opens system file picker then starts upload. */
   pickAndUpload?(machineId: string, targetDir: string): void
-  pauseTransfer?(id: string): void
-  resumeTransfer?(id: string): void
-  resumeAllTransfers?(machineId?: string): void
+  pauseTransfer?(id: string): void | Promise<void>
+  resumeTransfer?(id: string): void | Promise<void>
+  resumeAllTransfers?(machineId?: string): void | Promise<void>
   cancelTransfer(id: string): void
   dismissTransfer(id: string): void
   isNative: boolean
@@ -110,8 +110,9 @@ export function createFileApi(session: Pick<RtcSession, 'openApi'>): FileApi {
   }
 
   return {
-    listDir: (path = '', offset = 0, limit = 500) =>
-      request<DirListResponse>('POST', '/files/list', { path, offset, limit }),
+    listDir: async (path = '', offset = 0, limit = 500) => normalizeDirListResponse(
+      await request<RawDirListResponse>('POST', '/files/list', { path, offset, limit }),
+    ),
     stat: (path: string) =>
       request<FileEntry>('POST', '/files/stat', { path }),
     preview: async (path: string, maxSize?: number) => normalizeFilePreviewResponse(
@@ -143,6 +144,47 @@ export function createFileApi(session: Pick<RtcSession, 'openApi'>): FileApi {
   }
 }
 
+interface RawFileEntryResponse {
+  name?: string
+  type?: string
+  size?: number
+  mode?: string
+  mod_time?: string
+  modTime?: string
+  modified_at?: string
+  modifiedAt?: string
+  link_target?: string
+  linkTarget?: string
+}
+
+interface RawDirListResponse {
+  path?: string
+  entries?: RawFileEntryResponse[]
+  parent?: string
+  total?: number
+}
+
+function normalizeDirListResponse(raw: RawDirListResponse): DirListResponse {
+  const entries = Array.isArray(raw.entries) ? raw.entries.map(normalizeFileEntryResponse) : []
+  return {
+    path: raw.path ?? '',
+    entries,
+    parent: raw.parent ?? '',
+    total: typeof raw.total === 'number' ? raw.total : entries.length,
+  }
+}
+
+function normalizeFileEntryResponse(raw: RawFileEntryResponse): FileEntry {
+  return {
+    name: raw.name ?? '',
+    type: raw.type ?? 'file',
+    size: typeof raw.size === 'number' ? raw.size : 0,
+    mode: raw.mode,
+    modTime: raw.mod_time ?? raw.modTime ?? raw.modified_at ?? raw.modifiedAt,
+    linkTarget: raw.link_target ?? raw.linkTarget,
+  }
+}
+
 interface RawFilePreviewResponse {
   path?: string
   name?: string
@@ -163,6 +205,7 @@ function normalizeFilePreviewResponse(raw: RawFilePreviewResponse, requestedPath
   const mimeType = raw.mime_type ?? raw.mimeType ?? 'application/octet-stream'
   const category = normalizePreviewCategory(raw.category, mimeType)
   const name = raw.name ?? basename(raw.path ?? requestedPath)
+  const contentBase64 = raw.content_base64 ?? raw.contentBase64 ?? (category === 'image' || category === 'video' ? raw.content : undefined)
   return {
     path: raw.path ?? requestedPath,
     name,
@@ -170,17 +213,19 @@ function normalizeFilePreviewResponse(raw: RawFilePreviewResponse, requestedPath
     mimeType,
     category,
     isText: raw.is_text ?? raw.isText ?? category === 'text',
-    content: raw.content,
-    contentBase64: raw.content_base64 ?? raw.contentBase64,
+    content: category === 'text' ? raw.content : undefined,
+    contentBase64,
     previewLimit: raw.preview_limit ?? raw.previewLimit,
   }
 }
 
 function normalizePreviewCategory(raw: string | undefined, mimeType: string): FilePreviewCategory {
-  if (raw === 'text' || raw === 'image' || raw === 'video' || raw === 'unsupported') return raw
-  if (mimeType.startsWith('text/')) return 'text'
-  if (mimeType.startsWith('image/')) return 'image'
-  if (mimeType.startsWith('video/')) return 'video'
+  const category = raw?.trim().toLowerCase()
+  if (category === 'text' || category === 'image' || category === 'video' || category === 'unsupported') return category
+  const normalizedMime = mimeType.trim().toLowerCase()
+  if (normalizedMime.startsWith('text/')) return 'text'
+  if (normalizedMime.startsWith('image/')) return 'image'
+  if (normalizedMime.startsWith('video/')) return 'video'
   return 'unsupported'
 }
 

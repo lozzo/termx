@@ -62,6 +62,31 @@ describe('createFileApi', () => {
     })
   })
 
+  it('accepts base64 binary preview content from either content field', async () => {
+    const session = createMockFileSession({
+      '/files/preview': {
+        path: '/shot.png',
+        name: 'shot.png',
+        size: 68,
+        mime_type: 'IMAGE/PNG',
+        category: 'IMAGE',
+        is_text: false,
+        content: 'iVBORw0KGgo=',
+      },
+    })
+    const api = createFileApi(session)
+
+    await expect(api.preview('/shot.png')).resolves.toMatchObject({
+      path: '/shot.png',
+      name: 'shot.png',
+      mimeType: 'IMAGE/PNG',
+      category: 'image',
+      isText: false,
+      content: undefined,
+      contentBase64: 'iVBORw0KGgo=',
+    })
+  })
+
   it('normalizes channel failures into user-visible file api errors', async () => {
     const session = createMockFileSession({}, {
       '/files/list': { status: 403, body: { error: 'file manager denied' } },

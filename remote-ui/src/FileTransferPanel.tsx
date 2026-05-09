@@ -7,9 +7,9 @@ interface Props {
   hasActiveTransfers: boolean
   onCancel: (id: string) => void
   onDismiss: (id: string) => void
-  onPause?: ((id: string) => void) | undefined
-  onResume?: ((id: string) => void) | undefined
-  onResumeAll?: (() => void) | undefined
+  onPause?: ((id: string) => void | Promise<void>) | undefined
+  onResume?: ((id: string) => void | Promise<void>) | undefined
+  onResumeAll?: (() => void | Promise<void>) | undefined
   variant?: 'inline' | 'floating' | 'icon' | undefined
   open?: boolean | undefined
   onOpenChange?: ((open: boolean) => void) | undefined
@@ -123,7 +123,6 @@ export function FileTransferPanel({
       {open ? (
         <TransferCenterDialog
           transfers={active}
-          hasActiveTransfers={hasActiveTransfers}
           now={now}
           summary={summary}
           onCancel={onCancel}
@@ -140,7 +139,6 @@ export function FileTransferPanel({
 
 function TransferCenterDialog({
   transfers,
-  hasActiveTransfers,
   now,
   summary,
   onCancel,
@@ -151,14 +149,13 @@ function TransferCenterDialog({
   onClose,
 }: {
   transfers: TransferInfo[]
-  hasActiveTransfers: boolean
   now: number
   summary: string
   onCancel: (id: string) => void
   onDismiss: (id: string) => void
-  onPause?: ((id: string) => void) | undefined
-  onResume?: ((id: string) => void) | undefined
-  onResumeAll?: (() => void) | undefined
+  onPause?: ((id: string) => void | Promise<void>) | undefined
+  onResume?: ((id: string) => void | Promise<void>) | undefined
+  onResumeAll?: (() => void | Promise<void>) | undefined
   onClose: () => void
 }) {
   const resumableCount = transfers.filter((t) => isResumable(t.status)).length
@@ -187,11 +184,6 @@ function TransferCenterDialog({
             </button>
           </div>
         </header>
-        {hasActiveTransfers ? (
-          <p className="shrink-0 border-b border-amber-100 bg-amber-50 px-4 py-2 text-[12px] font-medium text-amber-700">
-            Transfers continue while this machine connection stays alive.
-          </p>
-        ) : null}
         <div className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
           {transfers.length === 0 ? (
             <div className="flex h-48 items-center justify-center px-6 text-center text-[14px] font-medium text-zinc-500">

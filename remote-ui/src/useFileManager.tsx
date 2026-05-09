@@ -2,7 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileApi, type DirListResponse, type FileApi, type FileEntry, type FilePreviewResponse } from './fileApi'
 import type { ConnectionInfo, RtcSession } from './transport'
 
-export const FILE_PREVIEW_MAX_BYTES = 8 * 1024 * 1024
+export type FileSortField = 'name' | 'modified' | 'size' | 'type'
+export type FileSortDirection = 'asc' | 'desc'
+
+export interface FileSortState {
+  field: FileSortField
+  direction: FileSortDirection
+}
+
+export const DEFAULT_FILE_SORT: FileSortState = { field: 'name', direction: 'asc' }
 
 export interface FileManagerVisibleError {
   message: string
@@ -26,6 +34,7 @@ export interface UseFileManagerResult {
   total: number
   loading: boolean
   error: FileManagerVisibleError | null
+  sortState: FileSortState
   showHidden: boolean
   newDirName: string
   creatingDirectory: boolean
@@ -48,6 +57,7 @@ export interface UseFileManagerResult {
   paste(): Promise<void>
   batchDelete(paths: string[]): Promise<void>
   setNewDirName(name: string): void
+  setSort(sort: FileSortState): void
   toggleShowHidden(): void
   openPreview(path: string): Promise<void>
   closePreview(): void
@@ -64,6 +74,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<FileManagerVisibleError | null>(null)
+  const [sortState, setSortState] = useState<FileSortState>(DEFAULT_FILE_SORT)
   const [showHidden, setShowHidden] = useState(false)
   const [newDirName, setNewDirName] = useState('')
   const [creatingDirectory, setCreatingDirectory] = useState(false)
@@ -126,8 +137,11 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   }, [])
 
   const visibleEntries = useMemo(
-    () => showHidden ? entries : entries.filter((entry) => !entry.name.startsWith('.')),
-    [entries, showHidden],
+    () => sortFileEntries(
+      showHidden ? entries : entries.filter((entry) => !entry.name.startsWith('.')),
+      sortState,
+    ),
+    [entries, showHidden, sortState],
   )
 
   const selectAll = useCallback(() => {
@@ -215,6 +229,10 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     setShowHidden((current) => !current)
   }, [])
 
+  const setSort = useCallback((sort: FileSortState) => {
+    setSortState(sort)
+  }, [])
+
   const openPreview = useCallback(async (path: string) => {
     const seq = ++previewSeqRef.current
     setPreviewPath(path)
@@ -225,7 +243,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
       const info = await options.session.getConnectionInfo()
       if (seq !== previewSeqRef.current) return
       assertSessionTarget(info, options.machineId, options.terminalId)
-      const response = await fileApi.preview(path, FILE_PREVIEW_MAX_BYTES)
+      const response = await fileApi.preview(path)
       if (seq !== previewSeqRef.current) return
       setPreview(response)
     } catch (err) {
@@ -310,6 +328,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     total,
     loading,
     error,
+    sortState,
     showHidden,
     newDirName,
     creatingDirectory,
@@ -332,6 +351,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     paste,
     batchDelete,
     setNewDirName,
+    setSort,
     toggleShowHidden,
     openPreview,
     closePreview,
@@ -346,6 +366,66 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
 function joinPath(base: string, name: string): string {
   if (!base || base === '/') return `/${name.replace(/^\/+/, '')}`
   return `${base.replace(/\/+$/, '')}/${name.replace(/^\/+/, '')}`
+}
+
+function sortFileEntries(entries: FileEntry[], sortState: FileSortState): FileEntry[] {
+  return entries
+    .map((entry, index) => ({ entry, index }))
+    .sort((left, right) => {
+      const directoryOrder = directoryRank(left.entry) - directoryRank(right.entry)
+      if (directoryOrder !== 0) return directoryOrder
+
+      const valueOrder = compareFileEntries(left.entry, right.entry, sortState)
+      if (valueOrder !== 0) return valueOrder
+
+      const nameOrder = compareNames(left.entry.name, right.entry.name)
+      if (nameOrder !== 0) return nameOrder
+
+      return left.index - right.index
+    })
+    .map(({ entry }) => entry)
+}
+
+function compareFileEntries(left: FileEntry, right: FileEntry, sortState: FileSortState): number {
+  const direction = sortState.direction === 'asc' ? 1 : -1
+  if (sortState.field === 'name') {
+    return compareNames(left.name, right.name) * direction
+  }
+  if (sortState.field === 'modified') {
+    return compareNumbers(modifiedTimeValue(left), modifiedTimeValue(right)) * direction
+  }
+  if (sortState.field === 'size') {
+    return compareNumbers(left.size, right.size) * direction
+  }
+  return compareNames(fileExtension(left.name), fileExtension(right.name)) * direction
+}
+
+function directoryRank(entry: FileEntry): number {
+  return entry.type === 'dir' || entry.type === 'symlink-dir' ? 0 : 1
+}
+
+function compareNames(left: string, right: string): number {
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  })
+}
+
+function compareNumbers(left: number, right: number): number {
+  if (left === right) return 0
+  return left < right ? -1 : 1
+}
+
+function modifiedTimeValue(entry: FileEntry): number {
+  if (!entry.modTime) return 0
+  const timestamp = Date.parse(entry.modTime)
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function fileExtension(name: string): string {
+  const base = basename(name).toLowerCase()
+  const dot = base.lastIndexOf('.')
+  return dot >= 0 ? base.slice(dot + 1) : ''
 }
 
 function parentPath(path: string): string {

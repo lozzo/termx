@@ -1,4 +1,4 @@
-import { useFileManager } from './useFileManager'
+import { useFileManager, type FileSortState } from './useFileManager'
 import type { FilePreviewResponse, FileTransferContext } from './fileApi'
 import type { RtcSession } from './transport'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -20,7 +20,7 @@ import yaml from 'highlight.js/lib/languages/yaml'
 import 'highlight.js/styles/github.css'
 import { addNativeBackHandler } from './nativeBack'
 import { ActionSheet, type ActionSheetItem } from './ActionSheet'
-import { AlertCircle, ArrowDownToLine, ArrowUpFromLine, Check, ChevronRight, Code2, Eye, EyeOff, File, FileText, Folder, HardDrive, Image, ListChecks, MoreVertical, PlaySquare, RefreshCw, SquarePen, Trash2, WrapText, X } from 'lucide-react'
+import { AlertCircle, ArrowDownAZ, ArrowDownToLine, ArrowUpAZ, ArrowUpFromLine, Check, ChevronRight, Clock, Code2, Eye, EyeOff, File, FileText, FileType, Folder, HardDrive, ListFilter, Image, ListChecks, MoreVertical, PlaySquare, RefreshCw, SquarePen, Trash2, WrapText, X } from 'lucide-react'
 
 hljs.registerLanguage('bash', bash)
 hljs.registerLanguage('cpp', cpp)
@@ -63,11 +63,13 @@ export function FileManager({
   const [renamePath, setRenamePath] = useState<string | null>(null)
   const [renameName, setRenameName] = useState('')
   const [deletePath, setDeletePath] = useState<string | null>(null)
+  const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const [transferError, setTransferError] = useState<string | null>(null)
   const webUploadRef = useRef<HTMLInputElement>(null)
 
   const pathSegments = manager.currentPath ? manager.currentPath.split('/').filter(Boolean) : []
   const entryKeyCounts = new Map<string, number>()
+  const sortLabel = fileSortLabel(manager.sortState)
 
   const menuEntry = useMemo(() => {
     if (!entryMenuPath) return null
@@ -149,6 +151,15 @@ export function FileManager({
     return actions
   }, [menuEntry, entryMenuPath, manager, fileTransfer, machineId])
 
+  const sortActions: ActionSheetItem[] = useMemo(() => fileSortOptions.map((option) => {
+    const active = option.field === manager.sortState.field && option.direction === manager.sortState.direction
+    return {
+      label: `${active ? 'Selected: ' : ''}${option.label}`,
+      icon: active ? <Check className="h-5 w-5" /> : option.icon,
+      onClick: () => manager.setSort({ field: option.field, direction: option.direction }),
+    }
+  }), [manager])
+
   useEffect(() => {
     if (!active) return undefined
     return addNativeBackHandler(() => {
@@ -162,6 +173,10 @@ export function FileManager({
     }
     if (entryMenuPath) {
       setEntryMenuPath(null)
+      return true
+    }
+    if (sortMenuOpen) {
+      setSortMenuOpen(false)
       return true
     }
     if (renamePath) {
@@ -200,6 +215,7 @@ export function FileManager({
     manager.selectionMode,
     newDirOpen,
     renamePath,
+    sortMenuOpen,
   ])
 
   return (
@@ -231,113 +247,132 @@ export function FileManager({
           </button>
         </header>
       ) : (
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-200/70 bg-white px-3">
-          <div className="flex h-9 min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-lg bg-zinc-50 px-2 text-[14px] font-medium text-zinc-600 no-scrollbar">
-             <HardDrive className="h-4 w-4 shrink-0 text-zinc-400" />
-             {pathSegments.length === 0 ? (
-               <span className="shrink-0 font-semibold text-zinc-900">/</span>
-             ) : (
-               <>
-                 <button
-                   onClick={() => void manager.navigate('/')}
-                   className="shrink-0 rounded-md px-1.5 py-1 text-zinc-500 transition-colors active:bg-zinc-200"
-                 >
-                   /
-                 </button>
-                 {pathSegments.map((segment, index) => {
-                   const isLast = index === pathSegments.length - 1
-                   const path = '/' + pathSegments.slice(0, index + 1).join('/')
-                   return (
-                     <div key={`${path}:${index}`} className="flex shrink-0 items-center">
-                       <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-300" />
-                       {isLast ? (
-                         <span className="px-1.5 py-1 font-semibold text-zinc-900">{segment}</span>
-                       ) : (
-                         <button
-                           onClick={() => void manager.navigate(path)}
-                           className="rounded-md px-1.5 py-1 text-zinc-500 transition-colors active:bg-zinc-200"
-                         >
-                           {segment}
-                         </button>
-                       )}
-                     </div>
-                   )
-                 })}
-               </>
-             )}
+        <header className="shrink-0 border-b border-zinc-200/70 bg-white">
+          <div className="flex h-11 min-w-0 items-center px-3">
+            <div
+              data-testid="termx-file-pathbar"
+              className="flex h-9 min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-lg bg-zinc-50 px-2 text-[14px] font-medium text-zinc-600 no-scrollbar"
+            >
+              <HardDrive className="h-4 w-4 shrink-0 text-zinc-400" />
+              {pathSegments.length === 0 ? (
+                <span className="shrink-0 font-semibold text-zinc-900">/</span>
+              ) : (
+                <>
+                  <button
+                    onClick={() => void manager.navigate('/')}
+                    className="shrink-0 rounded-md px-1.5 py-1 text-zinc-500 transition-colors active:bg-zinc-200"
+                  >
+                    /
+                  </button>
+                  {pathSegments.map((segment, index) => {
+                    const isLast = index === pathSegments.length - 1
+                    const path = '/' + pathSegments.slice(0, index + 1).join('/')
+                    return (
+                      <div key={`${path}:${index}`} className="flex shrink-0 items-center">
+                        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-300" />
+                        {isLast ? (
+                          <span className="px-1.5 py-1 font-semibold text-zinc-900">{segment}</span>
+                        ) : (
+                          <button
+                            onClick={() => void manager.navigate(path)}
+                            className="rounded-md px-1.5 py-1 text-zinc-500 transition-colors active:bg-zinc-200"
+                          >
+                            {segment}
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </>
+              )}
+            </div>
           </div>
-          <button
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors active:scale-95 active:bg-zinc-100"
-            type="button"
-            onClick={() => manager.setSelectionMode(true)}
-            aria-label="Select files"
+          <div
+            data-testid="termx-file-toolbar"
+            className="flex h-11 items-center justify-end gap-1 overflow-x-auto border-t border-zinc-100 px-3 no-scrollbar"
           >
-            <ListChecks className="h-5 w-5" />
-          </button>
-          <button
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors active:scale-95 ${manager.showHidden ? 'bg-blue-50 text-blue-600' : 'text-zinc-600 active:bg-zinc-100'}`}
-            type="button"
-            onClick={manager.toggleShowHidden}
-            aria-label={manager.showHidden ? 'Hide hidden files' : 'Show hidden files'}
-          >
-            {manager.showHidden ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
-          </button>
-          <button
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors active:scale-95 active:bg-zinc-100"
-            type="button"
-            onClick={() => setNewDirOpen((current) => !current)}
-            aria-label="New directory"
-          >
-            <Folder className="h-5 w-5" />
-          </button>
-          {fileTransfer ? (
-            <>
-              <button
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors active:scale-95 active:bg-zinc-100"
-                type="button"
-                aria-label="Upload files"
-                onClick={() => {
-                  if (fileTransfer.isNative) {
-                    fileTransfer.pickAndUpload?.(machineId, manager.currentPath || '/')
-                    onOpenTransferCenter?.()
-                  } else {
-                    webUploadRef.current?.click()
-                  }
-                }}
-              >
-                <ArrowUpFromLine className="h-5 w-5" />
-              </button>
-              {!fileTransfer.isNative ? (
-                <input
-                  ref={webUploadRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    const files = e.target.files
-                    if (!files) return
-                    const picked = Array.from(files).map((f) => ({
-                      uri: URL.createObjectURL(f),
-                      name: f.name,
-                      size: f.size,
-                    }))
-                    fileTransfer.startUpload(machineId, picked, manager.currentPath || '/')
-                    onOpenTransferCenter?.()
-                    e.target.value = ''
+            <button
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors active:scale-95 active:bg-zinc-100"
+              type="button"
+              onClick={() => manager.setSelectionMode(true)}
+              aria-label="Select files"
+            >
+              <ListChecks className="h-5 w-5" />
+            </button>
+            <button
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors active:scale-95 ${manager.showHidden ? 'bg-blue-50 text-blue-600' : 'text-zinc-600 active:bg-zinc-100'}`}
+              type="button"
+              onClick={manager.toggleShowHidden}
+              aria-label={manager.showHidden ? 'Hide hidden files' : 'Show hidden files'}
+            >
+              {manager.showHidden ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+            </button>
+            <button
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors active:scale-95 active:bg-zinc-100"
+              type="button"
+              onClick={() => setSortMenuOpen(true)}
+              aria-label={`Sort files: ${sortLabel}`}
+              title={`Sort files: ${sortLabel}`}
+            >
+              <ListFilter className="h-5 w-5" />
+            </button>
+            <button
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors active:scale-95 active:bg-zinc-100"
+              type="button"
+              onClick={() => setNewDirOpen((current) => !current)}
+              aria-label="New directory"
+            >
+              <Folder className="h-5 w-5" />
+            </button>
+            {fileTransfer ? (
+              <>
+                <button
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors active:scale-95 active:bg-zinc-100"
+                  type="button"
+                  aria-label="Upload files"
+                  onClick={() => {
+                    if (fileTransfer.isNative) {
+                      fileTransfer.pickAndUpload?.(machineId, manager.currentPath || '/')
+                      onOpenTransferCenter?.()
+                    } else {
+                      webUploadRef.current?.click()
+                    }
                   }}
-                />
-              ) : null}
-            </>
-          ) : null}
-          <button
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors active:scale-95 active:bg-zinc-100 disabled:opacity-50"
-            type="button"
-            onClick={() => { void manager.refresh() }}
-            disabled={manager.loading}
-            aria-label="Refresh files"
-          >
-            <RefreshCw className={`h-5 w-5 ${manager.loading ? 'animate-spin' : ''}`} />
-          </button>
+                >
+                  <ArrowUpFromLine className="h-5 w-5" />
+                </button>
+                {!fileTransfer.isNative ? (
+                  <input
+                    ref={webUploadRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = e.target.files
+                      if (!files) return
+                      const picked = Array.from(files).map((f) => ({
+                        uri: URL.createObjectURL(f),
+                        name: f.name,
+                        size: f.size,
+                      }))
+                      fileTransfer.startUpload(machineId, picked, manager.currentPath || '/')
+                      onOpenTransferCenter?.()
+                      e.target.value = ''
+                    }}
+                  />
+                ) : null}
+              </>
+            ) : null}
+            <button
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors active:scale-95 active:bg-zinc-100 disabled:opacity-50"
+              type="button"
+              onClick={() => { void manager.refresh() }}
+              disabled={manager.loading}
+              aria-label="Refresh files"
+            >
+              <RefreshCw className={`h-5 w-5 ${manager.loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </header>
       )}
 
@@ -455,7 +490,7 @@ export function FileManager({
                     <button
                       type="button"
                       aria-label={`${manager.selectionMode ? (isSelected ? 'Deselect' : 'Select') : isDirectory ? 'Open' : 'Preview'} ${entry.name}`}
-                      className="flex min-w-0 flex-1 flex-col justify-center text-left"
+                      className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden text-left"
                       onClick={handleItemClick}
                     >
                       {isRenaming ? (
@@ -493,7 +528,10 @@ export function FileManager({
                     </button>
                     {!manager.selectionMode ? (
                       <>
-                        <div className="flex shrink-0 items-center gap-1">
+                        <div
+                          data-testid="termx-file-row-actions"
+                          className="ml-auto flex w-16 shrink-0 items-center justify-end gap-1"
+                        >
                           <button
                             type="button"
                             aria-label={`More actions for ${entry.name}`}
@@ -617,8 +655,38 @@ export function FileManager({
         subtitle={menuEntry ? (menuEntry.type === 'dir' ? 'Folder' : `${formatBytes(menuEntry.size)} · File`) : ''}
         actions={menuActions}
       />
+      <ActionSheet
+        isOpen={sortMenuOpen}
+        onClose={() => setSortMenuOpen(false)}
+        title="Sort files"
+        subtitle={`${sortLabel} · Folders first`}
+        actions={sortActions}
+      />
     </div>
   )
+}
+
+interface FileSortOption extends FileSortState {
+  label: string
+  icon: ReactNode
+}
+
+const fileSortOptions: FileSortOption[] = [
+  { field: 'name', direction: 'asc', label: 'Name A to Z', icon: <ArrowUpAZ className="h-5 w-5" /> },
+  { field: 'name', direction: 'desc', label: 'Name Z to A', icon: <ArrowDownAZ className="h-5 w-5" /> },
+  { field: 'modified', direction: 'desc', label: 'Newest first', icon: <Clock className="h-5 w-5" /> },
+  { field: 'modified', direction: 'asc', label: 'Oldest first', icon: <Clock className="h-5 w-5" /> },
+  { field: 'size', direction: 'desc', label: 'Largest first', icon: <File className="h-5 w-5" /> },
+  { field: 'size', direction: 'asc', label: 'Smallest first', icon: <File className="h-5 w-5" /> },
+  { field: 'type', direction: 'asc', label: 'Type A to Z', icon: <FileType className="h-5 w-5" /> },
+  { field: 'type', direction: 'desc', label: 'Type Z to A', icon: <FileType className="h-5 w-5" /> },
+]
+
+function fileSortLabel(sort: FileSortState): string {
+  const option = fileSortOptions.find((candidate) => (
+    candidate.field === sort.field && candidate.direction === sort.direction
+  ))
+  return option?.label ?? 'Name A to Z'
 }
 
 interface FilePreviewSheetProps {
@@ -685,27 +753,10 @@ function FilePreviewSheet({ path, preview, loading, error, onClose }: FilePrevie
 
 function PreviewContent({ preview }: { preview: FilePreviewResponse }) {
   if (preview.category === 'image' && preview.contentBase64) {
-    return (
-      <div className="flex min-h-full items-center justify-center p-3">
-        <img
-          alt={preview.name}
-          className="max-h-full max-w-full rounded-lg object-contain shadow-sm"
-          src={`data:${preview.mimeType};base64,${preview.contentBase64}`}
-        />
-      </div>
-    )
+    return <BinaryImagePreview preview={preview} />
   }
   if (preview.category === 'video' && preview.contentBase64) {
-    return (
-      <div className="flex min-h-full items-center justify-center bg-black p-2">
-        <video
-          className="max-h-full max-w-full"
-          controls
-          preload="metadata"
-          src={`data:${preview.mimeType};base64,${preview.contentBase64}`}
-        />
-      </div>
-    )
+    return <BinaryVideoPreview preview={preview} />
   }
   if (preview.category === 'text' && preview.content !== undefined) {
     if (isMarkdownFile(preview.name, preview.mimeType)) {
@@ -718,6 +769,69 @@ function PreviewContent({ preview }: { preview: FilePreviewResponse }) {
     ? 'This file type is not available for inline preview.'
     : `This file is too large to preview${limit ? ` within the ${limit} limit` : ''}.`
   return <PreviewNotice title="No Preview" message={message} />
+}
+
+function BinaryImagePreview({ preview }: { preview: FilePreviewResponse }) {
+  const src = useBinaryPreviewUrl(preview.contentBase64, preview.mimeType)
+  if (src === undefined) return null
+  if (!src) return <PreviewNotice title="Preview Error" message="Image preview data is invalid." />
+  return (
+    <div className="flex min-h-full items-center justify-center p-3">
+      <img
+        alt={preview.name}
+        className="max-h-full max-w-full rounded-lg object-contain shadow-sm"
+        src={src}
+      />
+    </div>
+  )
+}
+
+function BinaryVideoPreview({ preview }: { preview: FilePreviewResponse }) {
+  const src = useBinaryPreviewUrl(preview.contentBase64, preview.mimeType)
+  if (src === undefined) return null
+  if (!src) return <PreviewNotice title="Preview Error" message="Video preview data is invalid." />
+  return (
+    <div className="flex min-h-full items-center justify-center bg-black p-2">
+      <video
+        className="max-h-full max-w-full"
+        controls
+        preload="metadata"
+        src={src}
+      />
+    </div>
+  )
+}
+
+function useBinaryPreviewUrl(contentBase64: string | undefined, mimeType: string): string | null | undefined {
+  const [url, setUrl] = useState<string | null | undefined>(undefined)
+
+  useEffect(() => {
+    if (!contentBase64) {
+      setUrl(null)
+      return undefined
+    }
+    const src = binaryPreviewUrl(contentBase64, mimeType)
+    setUrl(src)
+    return () => {
+      if (src?.startsWith('blob:')) URL.revokeObjectURL(src)
+    }
+  }, [contentBase64, mimeType])
+
+  return url
+}
+
+function binaryPreviewUrl(contentBase64: string, mimeType: string): string | null {
+  const trimmed = contentBase64.trim()
+  if (trimmed.startsWith('data:')) return trimmed
+  try {
+    const binary = atob(trimmed)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+    const blob = new Blob([bytes], { type: mimeType || 'application/octet-stream' })
+    return URL.createObjectURL(blob)
+  } catch {
+    return null
+  }
 }
 
 function TextPreview({ text, name, mimeType }: { text: string; name: string; mimeType: string }) {

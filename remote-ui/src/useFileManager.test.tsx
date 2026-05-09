@@ -87,6 +87,42 @@ describe('useFileManager', () => {
     ])
   })
 
+  it('sorts visible entries by user-selected fields while keeping directories first', async () => {
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/',
+        parent: '',
+        total: 4,
+        entries: [
+          { name: 'zeta.txt', type: 'file', size: 4, mod_time: '2026-05-01T10:00:00Z' },
+          { name: 'src', type: 'dir', size: 0, mod_time: '2026-05-02T10:00:00Z' },
+          { name: '.env', type: 'file', size: 1, mod_time: '2026-05-04T10:00:00Z' },
+          { name: 'alpha.log', type: 'file', size: 20, mod_time: '2026-05-03T10:00:00Z' },
+        ],
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    const { result } = renderHook(() => useFileManager({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      session,
+      initialPath: '/',
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.visibleEntries.map((entry) => entry.name)).toEqual(['src', 'alpha.log', 'zeta.txt'])
+
+    act(() => {
+      result.current.setSort({ field: 'modified', direction: 'desc' })
+    })
+    expect(result.current.visibleEntries.map((entry) => entry.name)).toEqual(['src', 'alpha.log', 'zeta.txt'])
+
+    act(() => {
+      result.current.setSort({ field: 'size', direction: 'asc' })
+    })
+    expect(result.current.visibleEntries.map((entry) => entry.name)).toEqual(['src', 'zeta.txt', 'alpha.log'])
+  })
+
   it('rejects a session connected to a different machine before issuing file requests', async () => {
     const session = createMockFileSession({
       '/files/list': { path: '/', parent: '', total: 0, entries: [] },
@@ -212,7 +248,7 @@ describe('useFileManager', () => {
     expect(session.requests).toContainEqual({
       method: 'POST',
       path: '/files/preview',
-      params: { path: '/README.md', max_size: 8388608 },
+      params: { path: '/README.md' },
     })
   })
 
