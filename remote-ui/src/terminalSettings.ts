@@ -5,6 +5,25 @@ import type { RemoteRuntimeStorage } from './transport'
 export type TerminalKeyboardMode = 'auto' | 'resize' | 'shift'
 export type TerminalThemeGroup = 'dark' | 'light'
 
+export interface TerminalThemeUi {
+  page: string
+  surface: string
+  surfaceRaised: string
+  border: string
+  borderSubtle: string
+  text: string
+  muted: string
+  faint: string
+  accent: string
+  accentText: string
+  terminalBackground: string
+  terminalForeground: string
+  terminalCursor: string
+  overlay: string
+  scrollbar: string
+  scrollbarActive: string
+}
+
 export interface TerminalFontOption {
   label: string
   value: string
@@ -545,6 +564,83 @@ export function resolveTerminalTheme(themeId: TerminalThemeId | string | undefin
   return TERMINAL_THEME_OPTIONS.find((option) => option.id === themeId)?.theme ?? TERMX_DARK_TERMINAL_THEME
 }
 
+export function resolveTerminalThemeOption(themeId: TerminalThemeId | string | undefined): TerminalThemeOption {
+  return TERMINAL_THEME_OPTIONS.find((option) => option.id === themeId) ?? TERMINAL_THEME_OPTIONS[0]!
+}
+
+export function resolveTerminalThemeUi(themeId: TerminalThemeId | string | undefined): TerminalThemeUi {
+  const option = resolveTerminalThemeOption(themeId)
+  const theme = option.theme
+  const background = colorValue(theme.background, TERMX_DARK_TERMINAL_THEME.background!)
+  const foreground = colorValue(theme.foreground, TERMX_DARK_TERMINAL_THEME.foreground!)
+  const cursor = colorValue(theme.cursor, foreground)
+  const accent = colorValue(theme.blue ?? theme.cyan ?? theme.brightBlue, cursor)
+  const muted = colorValue(theme.brightBlack ?? theme.black, option.group === 'dark' ? '#71717a' : '#6b7280')
+  const selection = colorValue(theme.selectionBackground, option.group === 'dark' ? '#3f3f46' : '#d4d4d8')
+
+  if (option.group === 'light') {
+    return {
+      page: background,
+      surface: '#ffffff',
+      surfaceRaised: colorValue(theme.white, selection),
+      border: selection,
+      borderSubtle: withAlpha(muted, 0.22),
+      text: foreground,
+      muted,
+      faint: withAlpha(muted, 0.68),
+      accent,
+      accentText: '#ffffff',
+      terminalBackground: background,
+      terminalForeground: foreground,
+      terminalCursor: cursor,
+      overlay: withAlpha('#111827', 0.42),
+      scrollbar: withAlpha(muted, 0.42),
+      scrollbarActive: withAlpha(muted, 0.68),
+    }
+  }
+
+  return {
+    page: background,
+    surface: colorValue(theme.black, background),
+    surfaceRaised: selection,
+    border: colorValue(theme.brightBlack ?? theme.black, selection),
+    borderSubtle: withAlpha(foreground, 0.12),
+    text: foreground,
+    muted,
+    faint: withAlpha(muted, 0.72),
+    accent,
+    accentText: '#ffffff',
+    terminalBackground: background,
+    terminalForeground: foreground,
+    terminalCursor: cursor,
+    overlay: withAlpha(background, 0.72),
+    scrollbar: withAlpha(foreground, 0.35),
+    scrollbarActive: withAlpha(foreground, 0.58),
+  }
+}
+
+export function terminalThemeCssVariables(themeId: TerminalThemeId | string | undefined): Record<string, string> {
+  const ui = resolveTerminalThemeUi(themeId)
+  return {
+    '--termx-bg': ui.page,
+    '--termx-surface': ui.surface,
+    '--termx-surface-raised': ui.surfaceRaised,
+    '--termx-border': ui.border,
+    '--termx-border-subtle': ui.borderSubtle,
+    '--termx-text': ui.text,
+    '--termx-muted': ui.muted,
+    '--termx-faint': ui.faint,
+    '--termx-accent': ui.accent,
+    '--termx-accent-text': ui.accentText,
+    '--termx-terminal-bg': ui.terminalBackground,
+    '--termx-terminal-fg': ui.terminalForeground,
+    '--termx-terminal-cursor': ui.terminalCursor,
+    '--termx-overlay': ui.overlay,
+    '--termx-scrollbar': ui.scrollbar,
+    '--termx-scrollbar-active': ui.scrollbarActive,
+  }
+}
+
 export function normalizeTerminalSettings(input: Partial<TerminalSettings> | Record<string, unknown>): TerminalSettings {
   return {
     fontSize: clampNumber(input.fontSize, DEFAULT_TERMINAL_SETTINGS.fontSize, 8, 32),
@@ -600,4 +696,24 @@ function isTerminalKeyboardMode(value: unknown): value is TerminalKeyboardMode {
 
 function isTerminalThemeId(value: unknown): value is TerminalThemeId {
   return typeof value === 'string' && TERMINAL_THEME_OPTIONS.some((option) => option.id === value)
+}
+
+function colorValue(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value : fallback
+}
+
+function withAlpha(color: string, alpha: number): string {
+  const hex = color.trim()
+  const normalized = hex.startsWith('#') ? hex.slice(1) : hex
+  if (/^[0-9a-fA-F]{3}$/.test(normalized)) {
+    const [r, g, b] = normalized.split('').map((part) => parseInt(part + part, 16))
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    const r = parseInt(normalized.slice(0, 2), 16)
+    const g = parseInt(normalized.slice(2, 4), 16)
+    const b = parseInt(normalized.slice(4, 6), 16)
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+  return color
 }

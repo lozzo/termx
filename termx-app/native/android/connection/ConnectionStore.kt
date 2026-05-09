@@ -34,6 +34,8 @@ class ConnectionStore(
         private const val MAX_RECONNECT_ATTEMPTS = 20
         private const val RESUME_VERIFY_TIMEOUT_MS = 2000L
         private const val RESUME_RECOVERY_WINDOW_MS = 5000L
+        private const val ACTIVE_CONNECT_STALE_MS = 90_000L
+        private const val RESUME_CONNECT_STALE_MS = 15_000L
     }
 
     sealed class Phase {
@@ -63,6 +65,8 @@ class ConnectionStore(
     private var statusText = "Ready"
     private var reconnectAttempt = 0
     private var version = 0L
+    private var connectStartedAt = 0L
+    private var connectGeneration = 0L
 
     var transport: WebRTCTransport? = null
         private set
@@ -94,7 +98,13 @@ class ConnectionStore(
     fun connect() {
         if (released) return
         val p = phase
-        if (p is Phase.Connected || p is Phase.Verifying || p is Phase.Connecting || p is Phase.Probing) return
+        if (p is Phase.Connecting || p is Phase.Probing) {
+            if (!isActiveConnectStale()) return
+            Log.i(TAG, "restarting stale connect request [$machineId]")
+            cancelConnect()
+        } else if (p is Phase.Connected || p is Phase.Verifying) {
+            return
+        }
         clearReconnectTimer()
         launchConnect()
     }
@@ -166,6 +176,9 @@ class ConnectionStore(
 
     private fun launchConnect() {
         connectJob?.cancel()
+        connectGeneration += 1
+        val generation = connectGeneration
+        connectStartedAt = System.currentTimeMillis()
         setPhase(Phase.Probing, "Probing...")
 
         connectJob = scope.launch {
@@ -181,6 +194,10 @@ class ConnectionStore(
                     forceRelay = forceRelay,
                     onProgress = { msg -> setStatus(msg) },
                 )
+                if (!isCurrentConnect(generation)) {
+                    if (result is RaceConnector.Result.Success) result.transport.disconnect()
+                    return@launch
+                }
                 ensureActive()
 
                 when (result) {
@@ -190,11 +207,14 @@ class ConnectionStore(
                         transport.channelManager.fileTransferManager = fileTransferManager
                         this@ConnectionStore.transport = transport
                         reconnectAttempt = 0
+                        clearConnectStartedAt(generation)
                         val path = result.path
                         setPhase(Phase.Connected(path, result.relayInUse), "Connected via $path")
                         fileTransferManager?.resumeInterruptedTransfers(transport)
                     }
                     is RaceConnector.Result.Failure -> {
+                        if (!isCurrentConnect(generation)) return@launch
+                        clearConnectStartedAt(generation)
                         if (result.reason == "auth") {
                             setPhase(Phase.Failed("auth"), "Authentication failed")
                         } else {
@@ -206,8 +226,10 @@ class ConnectionStore(
                 transport?.disconnect()
                 throw e
             } catch (e: Exception) {
+                if (!isCurrentConnect(generation)) return@launch
                 Log.e(TAG, "connect error", e)
                 transport?.disconnect()
+                clearConnectStartedAt(generation)
                 scheduleReconnect()
             }
         }
@@ -267,6 +289,18 @@ class ConnectionStore(
     private fun handleAppResume(backgroundDurationMs: Long = 0L, reason: String = "App resumed") {
         if (released) return
         val p = phase
+        if (p is Phase.Connecting || p is Phase.Probing) {
+            val staleThreshold = if (backgroundDurationMs > 0L) {
+                RESUME_CONNECT_STALE_MS.coerceAtMost(backgroundDurationMs)
+            } else {
+                RESUME_CONNECT_STALE_MS
+            }
+            if (activeConnectAgeMs() >= staleThreshold) {
+                Log.i(TAG, "$reason, restarting stale connection attempt after ${activeConnectAgeMs()}ms [$machineId]")
+                retry()
+            }
+            return
+        }
         if (p is Phase.Connected && transport != null) {
             val currentTransport = transport ?: return
             val resumed = currentTransport.handleAppResume()
@@ -398,6 +432,26 @@ class ConnectionStore(
     private fun cancelConnect() {
         connectJob?.cancel()
         connectJob = null
+        connectGeneration += 1
+        connectStartedAt = 0L
+    }
+
+    private fun activeConnectAgeMs(now: Long = System.currentTimeMillis()): Long {
+        return if (connectStartedAt > 0L) (now - connectStartedAt).coerceAtLeast(0L) else 0L
+    }
+
+    private fun isActiveConnectStale(now: Long = System.currentTimeMillis()): Boolean {
+        val p = phase
+        if (p !is Phase.Connecting && p !is Phase.Probing) return false
+        return connectStartedAt > 0L && now - connectStartedAt >= ACTIVE_CONNECT_STALE_MS
+    }
+
+    private fun isCurrentConnect(generation: Long): Boolean {
+        return generation == connectGeneration
+    }
+
+    private fun clearConnectStartedAt(generation: Long) {
+        if (isCurrentConnect(generation)) connectStartedAt = 0L
     }
 
     private fun setPhase(newPhase: Phase, text: String) {

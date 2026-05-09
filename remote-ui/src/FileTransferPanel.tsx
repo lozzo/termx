@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowDownToLine, ArrowUpFromLine, Download, Pause, Play, RotateCw, Trash2, X } from 'lucide-react'
+import { haptic } from './haptics'
 import type { TransferInfo } from './fileApi'
 
 interface Props {
@@ -94,7 +95,7 @@ export function FileTransferPanel({
   return (
     <div className={rootClass}>
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => { haptic(); setOpen(true) }}
         aria-label={`Open transfer center, ${summary}`}
         className={variant === 'inline'
           ? 'flex w-full items-center justify-between px-4 py-2 text-left'
@@ -173,13 +174,13 @@ function TransferCenterDialog({
                 type="button"
                 aria-label="Resume all transfers"
                 className="flex h-9 items-center gap-1.5 rounded-md bg-zinc-900 px-3 text-[12px] font-semibold text-white active:bg-zinc-800"
-                onClick={onResumeAll}
+                onClick={() => { haptic(); onResumeAll() }}
               >
                 <RotateCw className="h-4 w-4" />
                 Resume All
               </button>
             ) : null}
-            <button type="button" aria-label="Close data transfer center" className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 active:bg-zinc-100" onClick={onClose}>
+            <button type="button" aria-label="Close data transfer center" className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 active:bg-zinc-100" onClick={() => { haptic(); onClose() }}>
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -222,7 +223,7 @@ function TransferCenterDialog({
                             type="button"
                             aria-label={`Pause ${t.name}`}
                             className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 active:bg-zinc-100 active:text-zinc-800"
-                            onClick={() => onPause(t.id)}
+                            onClick={() => { haptic(); onPause(t.id) }}
                           >
                             <Pause className="h-3.5 w-3.5" />
                           </button>
@@ -232,7 +233,7 @@ function TransferCenterDialog({
                             type="button"
                             aria-label={`${isMissing ? 'Retry' : 'Resume'} ${t.name}`}
                             className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 active:bg-zinc-100 active:text-zinc-800"
-                            onClick={() => onResume(t.id)}
+                            onClick={() => { haptic(); onResume(t.id) }}
                           >
                             <Play className="h-3.5 w-3.5" />
                           </button>
@@ -240,7 +241,11 @@ function TransferCenterDialog({
                         <button
                           aria-label={`${isActive || t.status === 'paused' ? 'Cancel' : 'Clear'} ${t.name}`}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-500 active:bg-zinc-100 active:text-zinc-800"
-                          onClick={() => (isActive || t.status === 'paused') ? onCancel(t.id) : onDismiss(t.id)}
+                          onClick={() => {
+                            haptic()
+                            if (isActive || t.status === 'paused') onCancel(t.id)
+                            else onDismiss(t.id)
+                          }}
                         >
                           {isActive || t.status === 'paused' ? <X className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
                         </button>

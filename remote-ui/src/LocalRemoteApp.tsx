@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { ChevronLeft, Folder, Info, KeyRound, Link2, Link2Off, Loader2, Monitor, PanelBottomClose, Plus, Rows2, SquarePen, Trash2, Unlock, X } from 'lucide-react'
 import { connectionPhaseLabel, connectionSnapshotFromStatus } from './connectionState'
 import { FileTransferPanel } from './FileTransferPanel'
 import { FileManager } from './FileManager'
+import { haptic } from './haptics'
 import { LocalPairPanel } from './LocalPairPanel'
 import type { MachineSessionStore } from './localAppIdentity'
 import { MobileTerminalKeybar } from './MobileTerminalKeybar'
@@ -15,7 +16,7 @@ import { addNativeBackHandler } from './nativeBack'
 import { defaultTerminalResizeControl, type TerminalResizeControl } from './terminalClient'
 import { TerminalList } from './TerminalList'
 import { createTerminalManagementApi } from './terminalManagementApi'
-import { readTerminalSettings, writeTerminalSettings, type TerminalSettings } from './terminalSettings'
+import { readTerminalSettings, terminalThemeCssVariables, writeTerminalSettings, type TerminalSettings } from './terminalSettings'
 import type { Machine, Terminal as RemoteTerminal } from './model'
 import type { ConnectionInfo, LocalAgentApi, LocalCreateTerminalInput, LocalPairingApi, LocalUpdateTerminalInput, MachineConnectionStateEvents, RtcConnectOptions, RtcConnectionStateSnapshot, RtcConnector, RtcEvent, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSubscription, TerminalInventoryEvents } from './transport'
 import { useTerminalKeyboard } from './useTerminalKeyboard'
@@ -168,6 +169,10 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
   const machineForceRelayKey = machine?.machineId ? forceRelayStorageKey(machine.machineId) : null
   const showConnectionProgressBanner = Boolean(connectionStatus && !isSettledConnectionPhase(connectionPhase))
   const effectiveTerminalSettings = terminalSettingsProp ?? terminalSettings
+  const terminalThemeStyle = useMemo(
+    () => terminalThemeCssVariables(effectiveTerminalSettings.themeId) as CSSProperties,
+    [effectiveTerminalSettings.themeId],
+  )
 
   useEffect(() => {
     latestActiveTerminalIdRef.current = activeTerminalId
@@ -215,6 +220,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
   }, [])
 
   const updateTerminalSettings = useCallback((patch: Partial<TerminalSettings>) => {
+    haptic()
     if (onTerminalSettingsChange) {
       onTerminalSettingsChange(patch)
       return
@@ -1405,7 +1411,12 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
   }
 
   return (
-    <div ref={outerContainerRef} className={`relative flex h-[100dvh] w-full flex-col overflow-hidden bg-zinc-50 font-sans text-zinc-900 md:flex-row ${className || ''}`} data-machine-id={machine.machineId}>
+    <div
+      ref={outerContainerRef}
+      className={`relative flex h-[100dvh] w-full flex-col overflow-hidden bg-[var(--termx-bg)] font-sans text-[var(--termx-text)] md:flex-row ${className || ''}`}
+      data-machine-id={machine.machineId}
+      style={terminalThemeStyle}
+    >
       {page === 'terminal' ? (
       <aside className="hidden w-72 shrink-0 flex-col border-r border-zinc-200 bg-zinc-100 md:flex">
         <div className="flex h-12 shrink-0 items-center border-b border-zinc-200 px-4">
@@ -1444,27 +1455,27 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
       ) : null}
 
       {page === 'terminal-list' ? renderTerminalListPage() : (
-      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-black">
-        <header className="shrink-0 z-30 flex min-h-10 items-center justify-between gap-1 border-b border-zinc-800/70 bg-zinc-950/70 px-1.5 backdrop-blur-lg md:hidden pt-[env(safe-area-inset-top)]">
+      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--termx-terminal-bg)]">
+        <header className="shrink-0 z-30 flex min-h-10 items-center justify-between gap-1 border-b border-[var(--termx-border-subtle)] bg-[var(--termx-overlay)] px-1.5 backdrop-blur-lg md:hidden pt-[env(safe-area-inset-top)]">
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <button
               type="button"
               aria-label="Back to terminal list"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors active:bg-zinc-800"
-              onClick={showTerminalListPage}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--termx-muted)] transition-colors active:bg-[var(--termx-surface-raised)]"
+              onClick={() => { haptic(); showTerminalListPage() }}
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
             <button
               type="button"
               aria-label="Switch terminal"
-              className="flex min-w-0 flex-1 flex-col items-start justify-center rounded-md px-1.5 py-0.5 text-left transition-colors active:bg-zinc-800"
-              onClick={() => setMobileSheet('terminals')}
+              className="flex min-w-0 flex-1 flex-col items-start justify-center rounded-md px-1.5 py-0.5 text-left transition-colors active:bg-[var(--termx-surface-raised)]"
+              onClick={() => { haptic(); setMobileSheet('terminals') }}
             >
-              <span className="max-w-full truncate text-[9px] font-bold uppercase tracking-wider text-zinc-500">{machine.name}</span>
-              <span className="max-w-full truncate text-[12px] font-semibold leading-tight text-zinc-100" data-testid="termx-terminal-title">{terminalHeaderTitle}</span>
+              <span className="max-w-full truncate text-[9px] font-bold uppercase tracking-wider text-[var(--termx-muted)]">{machine.name}</span>
+              <span className="max-w-full truncate text-[12px] font-semibold leading-tight text-[var(--termx-text)]" data-testid="termx-terminal-title">{terminalHeaderTitle}</span>
               {terminalHeaderDirectory ? (
-                <span className="max-w-full truncate text-[10px] font-medium leading-tight text-zinc-500">{terminalHeaderDirectory}</span>
+                <span className="max-w-full truncate text-[10px] font-medium leading-tight text-[var(--termx-muted)]">{terminalHeaderDirectory}</span>
               ) : null}
             </button>
           </div>
@@ -1474,8 +1485,8 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
               type="button"
               aria-label="Split terminal"
               aria-pressed={Boolean(splitTerminalId)}
-              onClick={openSplitTerminalSheet}
-              className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${splitTerminalId ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 active:bg-zinc-800'}`}
+              onClick={() => { haptic(); openSplitTerminalSheet() }}
+              className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${splitTerminalId ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
             >
               <Rows2 className="h-4 w-4" />
             </button>
@@ -1485,16 +1496,16 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
                   type="button"
                   aria-label={syncSplitInput ? 'Disable synchronized input' : 'Enable synchronized input'}
                   aria-pressed={syncSplitInput}
-                  onClick={() => setSyncSplitInput((current) => !current)}
-                  className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${syncSplitInput ? 'bg-blue-500 text-white' : 'text-zinc-400 active:bg-zinc-800'}`}
+                  onClick={() => { haptic(); setSyncSplitInput((current) => !current) }}
+                  className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${syncSplitInput ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
                 >
                   {syncSplitInput ? <Link2 className="h-4 w-4" /> : <Link2Off className="h-4 w-4" />}
                 </button>
                 <button
                   type="button"
                   aria-label="Close split terminal"
-                  onClick={closeSplitTerminal}
-                  className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 transition-colors active:scale-95 active:bg-zinc-800"
+                  onClick={() => { haptic(); closeSplitTerminal() }}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--termx-muted)] transition-colors active:scale-95 active:bg-[var(--termx-surface-raised)]"
                 >
                   <PanelBottomClose className="h-4 w-4" />
                 </button>
@@ -1504,6 +1515,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
               type="button"
               aria-label="Terminal tools"
               onClick={() => {
+                haptic()
                 setTerminalToolbarOpen((current) => {
                   const next = !current
                   if (next) setTerminalFnOpen(false)
@@ -1511,23 +1523,23 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
                   return next
                 })
               }}
-              className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${terminalToolbarOpen ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 active:bg-zinc-800'}`}
+              className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${terminalToolbarOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
             >
               <span className="text-[13px] font-bold leading-none">•••</span>
             </button>
             <button
               type="button"
               aria-label="Connection info"
-              onClick={openConnectionInfo}
-              className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${connectionInfoOpen ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 active:bg-zinc-800'}`}
+              onClick={() => { haptic(); openConnectionInfo() }}
+              className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${connectionInfoOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
             >
               <Info className="h-4 w-4" />
             </button>
             <button
               type="button"
               aria-label="Open files"
-              onClick={openFiles}
-              className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${filesOpen ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 active:bg-zinc-800'}`}
+              onClick={() => { haptic(); openFiles() }}
+              className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${filesOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
             >
               <Folder className="h-4 w-4" />
             </button>
@@ -1588,12 +1600,12 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
         ) : null}
 
         <div ref={terminalAreaRef} className="relative min-h-0 flex-1 overflow-hidden">
-          <div ref={terminalWrapperRef} className={`absolute inset-0 flex flex-col bg-black md:bg-zinc-950 ${splitTerminalId ? 'gap-px md:gap-3 md:p-3' : ''}`}>
+          <div ref={terminalWrapperRef} className={`absolute inset-0 flex flex-col bg-[var(--termx-terminal-bg)] md:bg-[var(--termx-bg)] ${splitTerminalId ? 'gap-px md:gap-3 md:p-3' : ''}`}>
             <div
-              className={`relative min-h-0 flex-1 bg-black ${splitTerminalId ? `border-b border-zinc-800 md:rounded-xl md:border md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 0 ? 'shadow-[inset_0_0_0_1px_rgba(96,165,250,0.55)]' : ''}` : 'md:m-3 md:rounded-2xl md:border md:border-zinc-800 md:shadow-2xl md:overflow-hidden'}`}
+              className={`relative min-h-0 flex-1 bg-[var(--termx-terminal-bg)] ${splitTerminalId ? `border-b border-[var(--termx-border-subtle)] md:rounded-xl md:border md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 0 ? 'ring-1 ring-inset ring-[var(--termx-accent)]' : ''}` : 'md:m-3 md:rounded-2xl md:border md:border-[var(--termx-border-subtle)] md:shadow-2xl md:overflow-hidden'}`}
               data-active-slot={activeTerminalSlot === 0 ? 'true' : 'false'}
               data-testid="termx-terminal-panel"
-              onPointerDown={() => { setActiveTerminalSlot(0); activeTerminalSlotRef.current = 0 }}
+              onPointerDown={() => { haptic(); setActiveTerminalSlot(0); activeTerminalSlotRef.current = 0 }}
             >
               {activeTerminalId && connectedSession && connectedTerminalId === activeTerminalId ? (
                 <Terminal
@@ -1613,7 +1625,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
                   suppressConnectingOverlay={showConnectionProgressBanner}
                 />
               ) : (
-                <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+                <div className="flex h-full items-center justify-center text-sm text-[var(--termx-muted)]">
                   {activeTerminalId && connectingTerminalId === activeTerminalId ? (connectionStatus ?? 'Connecting terminal...') : 'No active terminal'}
                 </div>
               )}
@@ -1621,9 +1633,9 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
                 <button
                   type="button"
                   aria-label="Unlock terminal resize"
-                  className={`absolute right-2 z-20 flex min-h-7 items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-950/90 px-2 text-[11px] font-semibold text-zinc-100 shadow-lg backdrop-blur active:bg-zinc-800 disabled:opacity-60 ${splitTerminalId ? 'top-16' : 'top-2'}`}
+                  className={`absolute right-2 z-20 flex min-h-7 items-center gap-1.5 rounded-md border border-[var(--termx-border-subtle)] bg-[var(--termx-overlay)] px-2 text-[11px] font-semibold text-[var(--termx-text)] shadow-lg backdrop-blur active:opacity-85 disabled:opacity-60 ${splitTerminalId ? 'top-16' : 'top-2'}`}
                   disabled={unlockingResize}
-                  onClick={() => { void unlockTerminalResize() }}
+                  onClick={() => { haptic(); void unlockTerminalResize() }}
                 >
                   <Unlock className="h-3.5 w-3.5" />
                   {unlockingResize ? 'Unlocking...' : 'Unlock resize'}
@@ -1633,10 +1645,10 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
 
             {splitTerminalId ? (
               <div
-                className={`relative min-h-0 flex-1 bg-black md:rounded-xl md:border md:border-zinc-800 md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 1 ? 'shadow-[inset_0_0_0_1px_rgba(96,165,250,0.55)]' : ''}`}
+                className={`relative min-h-0 flex-1 bg-[var(--termx-terminal-bg)] md:rounded-xl md:border md:border-[var(--termx-border-subtle)] md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 1 ? 'ring-1 ring-inset ring-[var(--termx-accent)]' : ''}`}
                 data-active-slot={activeTerminalSlot === 1 ? 'true' : 'false'}
                 data-testid="termx-split-terminal-panel"
-                onPointerDown={() => { setActiveTerminalSlot(1); activeTerminalSlotRef.current = 1 }}
+                onPointerDown={() => { haptic(); setActiveTerminalSlot(1); activeTerminalSlotRef.current = 1 }}
               >
                 {connectedSession ? (
                   <Terminal
@@ -1655,7 +1667,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, con
                     suppressConnectingOverlay={showConnectionProgressBanner}
                   />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-500">
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--termx-muted)]">
                     {connectionStatus ?? 'Connecting terminal...'}
                   </div>
                 )}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Loader2 } from 'lucide-react'
+import { haptic } from './haptics'
 import { MachineList } from './MachineList'
 import type { AppMachineRecord, ConnectionFlowSnapshot } from './appMachine'
 import { formatConnectionStage } from './appMachine'
@@ -122,7 +123,7 @@ function ConnectionFlowView({
           aria-label="Back to machines"
           className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 shadow-sm hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           type="button"
-          onClick={onBack}
+          onClick={() => { haptic(); onBack() }}
         >
           <ArrowLeft className="h-5 w-5" />
         </button>

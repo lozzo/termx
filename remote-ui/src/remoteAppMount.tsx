@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { createBrowserRemoteNetworkRuntime } from './browserNetworkRuntime'
 import { createBrowserRtcSession } from './browserRtcSession'
 import { consoleConnectionLogger } from './connectionLogger'
+import { terminalThemeCssVariables } from './terminalSettings'
 import { WebControlRemoteApp } from './WebControlRemoteApp'
 
 export interface RemoteAppEntryOptions {
@@ -19,8 +20,9 @@ export function mountRemoteApp(options: RemoteAppEntryOptions = {}): Root {
   root.render(
     <StrictMode>
       <section
-        className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-zinc-50 text-zinc-950 antialiased"
+        className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-[var(--termx-bg)] text-[var(--termx-text)] antialiased"
         data-testid="termx-remote-app-entry"
+        style={terminalThemeCssVariables(undefined)}
       >
         <WebControlRemoteApp
           defaultControlUrl={import.meta.env.VITE_CONTROL_URL || undefined}

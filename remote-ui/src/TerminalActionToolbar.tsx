@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useRef } from 'react'
 import { Clipboard, Copy, Cpu, MousePointer2, PanelTopOpen, X, Minus, Plus } from 'lucide-react'
+import { haptic } from './haptics'
 import type { TerminalRenderer } from './Terminal'
 
 export type TerminalToolbarMode = 'default' | 'selection'
@@ -61,12 +62,12 @@ export function TerminalActionToolbar({
 
   if (mode === 'selection') {
     return (
-      <div className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-40 border-y border-zinc-800/80 bg-zinc-950/90 px-2 py-1.5 text-zinc-100 shadow-[0_-4px_18px_rgba(0,0,0,0.28)] backdrop-blur-lg md:hidden">
+      <div className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-40 border-y border-[var(--termx-border-subtle)] bg-[var(--termx-overlay)] px-2 py-1.5 text-[var(--termx-text)] shadow-[0_-4px_18px_rgba(0,0,0,0.28)] backdrop-blur-lg md:hidden">
         <div className="flex items-center justify-between gap-1.5 overflow-x-auto">
           <div className="flex items-center gap-1.5">
             <ToolbarButton label="全选" onClick={onSelectAll} />
             <ToolbarButton label="可见区域" onClick={onSelectVisible} />
-            <div className="mx-1 h-5 w-px shrink-0 bg-zinc-800" />
+            <div className="mx-1 h-5 w-px shrink-0 bg-[var(--termx-border-subtle)]" />
             <ToolbarButton
               label="复制"
               icon={<Copy className="h-3 w-3" />}
@@ -86,22 +87,22 @@ export function TerminalActionToolbar({
   const nextRenderer = RENDERER_CYCLE[(RENDERER_CYCLE.indexOf(renderer) + 1) % RENDERER_CYCLE.length]!
 
   return (
-    <div ref={panelRef} className="absolute inset-x-0 top-10 z-40 border-b border-zinc-800/80 bg-zinc-950/95 px-3 py-3 text-zinc-100 shadow-xl backdrop-blur-lg md:hidden animate-in slide-in-from-top-2">
+    <div ref={panelRef} className="absolute inset-x-0 top-10 z-40 border-b border-[var(--termx-border-subtle)] bg-[var(--termx-overlay)] px-3 py-3 text-[var(--termx-text)] shadow-xl backdrop-blur-lg md:hidden animate-in slide-in-from-top-2">
       <div className="flex flex-col gap-3">
         {/* Settings Row: Font Size */}
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-zinc-400">字体大小</span>
+          <span className="text-xs font-medium text-[var(--termx-muted)]">字体大小</span>
           <div className="flex items-center gap-2">
             <button
-              onPointerDown={(e) => { e.preventDefault(); onFontSizeChange?.(Math.max(6, fontSize - 1)) }}
-              className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-800 text-zinc-300 active:bg-zinc-700"
+              onPointerDown={(e) => { e.preventDefault(); haptic(); onFontSizeChange?.(Math.max(6, fontSize - 1)) }}
+              className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-75"
             >
               <Minus className="h-3.5 w-3.5" />
             </button>
-            <span className="w-10 text-center font-mono text-xs font-semibold tabular-nums text-zinc-200">{fontSize}px</span>
+            <span className="w-10 text-center font-mono text-xs font-semibold tabular-nums text-[var(--termx-text)]">{fontSize}px</span>
             <button
-              onPointerDown={(e) => { e.preventDefault(); onFontSizeChange?.(Math.min(32, fontSize + 1)) }}
-              className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-800 text-zinc-300 active:bg-zinc-700"
+              onPointerDown={(e) => { e.preventDefault(); haptic(); onFontSizeChange?.(Math.min(32, fontSize + 1)) }}
+              className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-75"
             >
               <Plus className="h-3.5 w-3.5" />
             </button>
@@ -110,17 +111,17 @@ export function TerminalActionToolbar({
 
         {/* Settings Row: Renderer */}
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-zinc-400">渲染模式</span>
+          <span className="text-xs font-medium text-[var(--termx-muted)]">渲染模式</span>
           <button
-            onPointerDown={(e) => { e.preventDefault(); onRendererChange?.(nextRenderer) }}
-            className="flex h-7 items-center justify-center gap-1.5 rounded-md bg-zinc-800 px-3 text-xs font-semibold text-zinc-300 active:bg-zinc-700"
+            onPointerDown={(e) => { e.preventDefault(); haptic(); onRendererChange?.(nextRenderer) }}
+            className="flex h-7 items-center justify-center gap-1.5 rounded-md bg-[var(--termx-surface-raised)] px-3 text-xs font-semibold text-[var(--termx-text)] active:opacity-75"
           >
             <Cpu className="h-3.5 w-3.5" />
             {RENDERER_LABELS[renderer]}
           </button>
         </div>
 
-        <div className="my-1 h-px w-full bg-zinc-800" />
+        <div className="my-1 h-px w-full bg-[var(--termx-border-subtle)]" />
 
         {/* Tools Row */}
         <div className="grid grid-cols-3 gap-2">
@@ -157,11 +158,11 @@ function ToolbarButton({
       type="button"
       title={title}
       className={`flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-semibold transition-colors active:scale-[0.98] disabled:opacity-40 ${
-        primary ? 'bg-blue-500/20 text-blue-300' : 'bg-zinc-800 text-zinc-300 active:bg-zinc-700'
+        primary ? 'bg-[var(--termx-accent)]/20 text-[var(--termx-accent)]' : 'bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-75'
       }`}
       disabled={disabled}
       onPointerDown={(event) => event.preventDefault()}
-      onClick={onClick}
+      onClick={() => { haptic(); onClick() }}
     >
       {icon}
       <span className="truncate">{label}</span>
@@ -184,7 +185,7 @@ function ToolbarIconButton({
       aria-label={label}
       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-500/15 text-red-300 transition-colors active:scale-[0.98] active:bg-red-500/25"
       onPointerDown={(event) => event.preventDefault()}
-      onClick={onClick}
+      onClick={() => { haptic(); onClick() }}
     >
       {children}
     </button>

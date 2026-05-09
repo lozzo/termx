@@ -4,6 +4,7 @@ import {
   type ModifierState,
   type TerminalModifierState,
 } from './mobileTerminalInput'
+import { haptic } from './haptics'
 
 export interface MobileTerminalKeybarProps {
   onInput: (data: string) => void
@@ -87,10 +88,13 @@ function KeyPopup({ label }: { label: string }) {
       className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-0.5 -translate-x-1/2"
       style={{ overflow: 'visible' }}
     >
-      <div className="min-w-[2.5rem] rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-center font-mono text-base font-bold text-zinc-100 shadow-xl whitespace-nowrap">
+      <div className="min-w-[2.5rem] rounded-lg border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-4 py-2 text-center font-mono text-base font-bold text-[var(--termx-text)] shadow-xl whitespace-nowrap">
         {label}
       </div>
-      <div className="mx-auto h-0 w-0 border-l-[7px] border-r-[7px] border-t-[7px] border-l-transparent border-r-transparent border-t-zinc-800" />
+      <div
+        className="mx-auto h-0 w-0 border-l-[7px] border-r-[7px] border-t-[7px] border-l-transparent border-r-transparent"
+        style={{ borderTopColor: 'var(--termx-surface-raised)' }}
+      />
     </div>
   )
 }
@@ -123,7 +127,7 @@ export function MobileTerminalKeybar({
 
   const showPress = useCallback((key: string) => {
     setPressedKey(key)
-    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(10)
+    haptic()
     if (pressTimer.current) clearTimeout(pressTimer.current)
     pressTimer.current = setTimeout(() => setPressedKey(null), 400)
   }, [])
@@ -179,7 +183,7 @@ export function MobileTerminalKeybar({
         data-key-id={id}
         type="button"
         aria-label={ariaLabel}
-        className={`${cls} bg-zinc-800 text-zinc-300 active:opacity-70`}
+        className={`${cls} bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-70`}
         onPointerDown={(e) => { e.preventDefault(); showPress(id); }}
         onClick={() => send(data)}
       >
@@ -193,8 +197,8 @@ export function MobileTerminalKeybar({
     const stateClass = state === 'locked'
       ? 'bg-amber-500 text-white shadow-sm shadow-amber-500/20'
       : state === 'once'
-        ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/20'
-        : 'bg-zinc-800 text-zinc-300 active:opacity-70'
+        ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)] shadow-sm'
+        : 'bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-70'
     return (
       <button
         key={label}
@@ -219,7 +223,7 @@ export function MobileTerminalKeybar({
   return (
     <div
       ref={barRef}
-      className={`shrink-0 border-t border-zinc-800/70 bg-zinc-950/90 text-zinc-100 shadow-[0_-4px_18px_rgba(0,0,0,0.28)] backdrop-blur-lg md:hidden ${className || ''}`}
+      className={`shrink-0 border-t border-[var(--termx-border-subtle)] bg-[var(--termx-overlay)] text-[var(--termx-text)] shadow-[0_-4px_18px_rgba(0,0,0,0.28)] backdrop-blur-lg md:hidden ${className || ''}`}
       data-testid="termx-mobile-keybar"
       style={{ paddingBottom: 'calc(0.375rem + env(safe-area-inset-bottom))', overflow: 'visible' }}
     >
@@ -238,8 +242,8 @@ export function MobileTerminalKeybar({
           aria-label={keyboardLocked ? 'Unlock system keyboard' : 'Toggle system keyboard'}
           className={`${cls} ${
             keyboardLocked
-              ? 'bg-red-600 text-white shadow-sm shadow-red-500/20'
-              : 'bg-transparent text-zinc-400 active:bg-zinc-800'
+                ? 'bg-red-600 text-white shadow-sm shadow-red-500/20'
+                : 'bg-transparent text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'
           }`}
           onMouseDown={(e) => e.preventDefault()}
           onPointerDown={(e) => {
@@ -249,6 +253,7 @@ export function MobileTerminalKeybar({
             if (kbLongPressTimer.current) clearTimeout(kbLongPressTimer.current)
             kbLongPressTimer.current = setTimeout(() => {
               kbLongPressTriggered.current = true
+              haptic()
               onLockKeyboard?.()
             }, LONG_PRESS_MS)
           }}
@@ -298,9 +303,9 @@ export function MobileTerminalKeybar({
           type="button"
           aria-label="Toggle Fn shortcuts"
           aria-pressed={fnOpen}
-          className={`${cls} ${fnOpen ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/20' : 'bg-transparent text-zinc-400 active:bg-zinc-800'}`}
+          className={`${cls} ${fnOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)] shadow-sm' : 'bg-transparent text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
           onPointerDown={(e) => { e.preventDefault(); showPress('Fn') }}
-          onClick={() => onToggleFn?.()}
+          onClick={() => { haptic(); onToggleFn?.() }}
         >
           Fn
           {pressedKey === 'Fn' && <KeyPopup label="Fn" />}

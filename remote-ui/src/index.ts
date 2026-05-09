@@ -153,7 +153,10 @@ export {
   TERMX_DARK_TERMINAL_THEME,
   normalizeTerminalSettings,
   readTerminalSettings,
+  resolveTerminalThemeOption,
   resolveTerminalTheme,
+  resolveTerminalThemeUi,
+  terminalThemeCssVariables,
   writeTerminalSettings,
 } from './terminalSettings'
 export type {
@@ -162,7 +165,9 @@ export type {
   TerminalSettings,
   TerminalThemeId,
   TerminalThemeOption,
+  TerminalThemeUi,
 } from './terminalSettings'
+export { haptic } from './haptics'
 export {
   createTerminalInventorySnapshot,
   normalizeTerminalInventory,

@@ -97,9 +97,18 @@
   overscroll-behavior: contain;
   scrollbar-width: none;
   touch-action: none;
+  width: 100% !important;
 }
 .xterm-wrapper .xterm-viewport::-webkit-scrollbar {
   display: none;
+  height: 0;
+  width: 0;
+}
+.xterm-wrapper .xterm-screen {
+  width: 100% !important;
+}
+.xterm-wrapper .xterm-screen canvas {
+  max-width: 100%;
 }
 .xterm-helper-textarea {
   caret-color: transparent !important;
@@ -149,32 +158,33 @@
   opacity: 0;
   pointer-events: auto;
   position: absolute;
-  right: 2px;
+  right: 3px;
   top: 4px;
   transition: opacity 0.25s ease;
-  width: 14px;
+  width: 16px;
   z-index: 10;
 }
 
-.term-scrollbar-track.visible {
+.term-scrollbar-track.visible,
+.term-scrollbar-track:hover {
   opacity: 1;
 }
 
 .term-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.35);
-  border-radius: 2px;
+  background: var(--termx-scrollbar, rgba(255, 255, 255, 0.35));
+  border-radius: 999px;
   min-height: 24px;
   position: absolute;
-  right: 0;
+  right: 2px;
   top: 0;
   transition: width 0.15s ease, background 0.15s ease, border-radius 0.15s ease;
-  width: 4px;
+  width: 3px;
   will-change: transform;
 }
 
-.term-scrollbar-track.active .term-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.55);
-  border-radius: 5px;
+.term-scrollbar-track.active .term-scrollbar-thumb,
+.term-scrollbar-track:hover .term-scrollbar-thumb {
+  background: var(--termx-scrollbar-active, rgba(255, 255, 255, 0.55));
   width: 10px;
 }
 

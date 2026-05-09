@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type ReactNode } from 'react'
-import { ArrowLeft, Camera, Download, Loader2, LogIn, Monitor, Plus, QrCode, RefreshCw, Server, Settings, ShieldCheck, Wifi, WifiOff, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode } from 'react'
+import { ArrowLeft, Camera, Download, Keyboard, Loader2, LogIn, Monitor, Plus, QrCode, RefreshCw, Server, Settings, ShieldCheck, Wifi, WifiOff, X } from 'lucide-react'
 import { createMachineSessionStore, type MachineSessionStore } from './localAppIdentity'
 import { LocalRemoteApp, type LocalRemoteInventoryApi, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createMachineStore, type StoredMachineRecord } from './machineStore'
@@ -11,6 +11,7 @@ import { createManagedHubApi } from './managedHubApi'
 import { MachineConnectionStore } from './machineConnectionStore'
 import { RemoteNetworkStateManager } from './remoteNetworkState'
 import { FileTransferPanel } from './FileTransferPanel'
+import { haptic } from './haptics'
 import { addNativeBackHandler } from './nativeBack'
 import { parsePairingPayload, type PairingPayload } from './pairingPayload'
 import type { FileTransferContext, TransferInfo } from './fileApi'
@@ -21,9 +22,12 @@ import {
   TERMINAL_FONT_OPTIONS,
   TERMINAL_THEME_OPTIONS,
   readTerminalSettings,
+  resolveTerminalThemeUi,
+  terminalThemeCssVariables,
   writeTerminalSettings,
   type TerminalKeyboardMode,
   type TerminalSettings,
+  type TerminalThemeOption,
 } from './terminalSettings'
 import type { TerminalRenderer } from './Terminal'
 
@@ -110,6 +114,7 @@ export function WebControlRemoteApp({
   const [pairing, setPairing] = useState(false)
   const [cameraScanning, setCameraScanning] = useState(false)
   const signedIn = accessToken.trim() !== ''
+  const appThemeStyle = useMemo(() => terminalThemeCssVariables(terminalSettings.themeId) as CSSProperties, [terminalSettings.themeId])
   const runtimeCacheRef = useRef<{
     api: WebControlApi
     createSession: ManagedRtcSessionFactory | undefined
@@ -320,10 +325,12 @@ export function WebControlRemoteApp({
   }, [storage])
 
   const updateTerminalSettings = useCallback((patch: Partial<TerminalSettings>) => {
+    haptic()
     setTerminalSettings((current) => writeTerminalSettings({ ...current, ...patch }, storage))
   }, [storage])
 
   const openAddLocalSheet = useCallback(() => {
+    haptic()
     setSelectedMachineId(null)
     setPairIntent('add-local')
     setManualScanValue('')
@@ -333,6 +340,7 @@ export function WebControlRemoteApp({
   }, [])
 
   const openPairSheet = useCallback((machineId: string) => {
+    haptic()
     setSelectedMachineId(machineId)
     setPairIntent('authorize-machine')
     setManualScanValue('')
@@ -349,6 +357,7 @@ export function WebControlRemoteApp({
   }, [openPairSheet, pairedMachineIds])
 
   const selectMachine = useCallback((machine: WebControlMachine) => {
+    haptic()
     setSelectedMachineId(machine.id)
     if (!pairedMachineIds.has(machine.id)) {
       openMachinePairSheet(machine)
@@ -439,7 +448,9 @@ export function WebControlRemoteApp({
       setManualScanValue('')
       setScanOpen(false)
       setView('machine')
+      haptic(25)
     } catch (err) {
+      haptic([12, 30, 12])
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setPairing(false)
@@ -447,11 +458,13 @@ export function WebControlRemoteApp({
   }, [machines, networkRuntime, pairApiFactory, pairIntent, selectedMachine, signedIn, storage, user])
 
   const importManualScan = useCallback(async () => {
+    haptic()
     await pairScannedValue(manualScanValue)
   }, [manualScanValue, pairScannedValue])
 
   const scanWithCamera = useCallback(async () => {
     if (!scanPairingCode) return
+    haptic()
     setCameraScanning(true)
     setError(null)
     try {
@@ -484,7 +497,11 @@ export function WebControlRemoteApp({
   }, 10), [scanOpen, view])
 
   return (
-    <main className="flex h-full min-h-[100dvh] flex-col bg-zinc-50 text-zinc-950" data-testid="termx-web-control-remote">
+    <main
+      className="flex h-full min-h-[100dvh] flex-col bg-[var(--termx-bg)] text-[var(--termx-text)]"
+      data-testid="termx-web-control-remote"
+      style={appThemeStyle}
+    >
       {view === 'settings' ? (
         <SettingsView
           error={error}
@@ -495,11 +512,11 @@ export function WebControlRemoteApp({
           signedIn={signedIn}
           terminalSettings={terminalSettings}
           user={user}
-          onBack={() => setView('home')}
+          onBack={() => { haptic(); setView('home') }}
           onLoginChange={setLogin}
           onPasswordChange={setPassword}
-          onRefresh={() => void refreshMachines()}
-          onSignIn={() => void submitLogin()}
+          onRefresh={() => { haptic(); void refreshMachines() }}
+          onSignIn={() => { haptic(); void submitLogin() }}
           onSignOut={signOut}
           onTerminalSettingsChange={updateTerminalSettings}
         />
@@ -510,6 +527,7 @@ export function WebControlRemoteApp({
           terminalSettings={terminalSettings}
           runtime={getMachineRuntime(selectedMachine)}
           onBack={() => {
+            haptic()
             setView('home')
             setError(null)
           }}
@@ -525,12 +543,12 @@ export function WebControlRemoteApp({
           signedIn={signedIn}
           user={user}
           onAddLocalDevice={openAddLocalSheet}
-          onOpenSettings={() => setView('settings')}
-          onOpenTransferCenter={() => setTransferCenterOpen(true)}
+          onOpenSettings={() => { haptic(); setView('settings') }}
+          onOpenTransferCenter={() => { haptic(); setTransferCenterOpen(true) }}
           onPairMachine={openMachinePairSheet}
-          onRefresh={() => void refreshMachines()}
+          onRefresh={() => { haptic(); void refreshMachines() }}
           onSelectMachine={selectMachine}
-          onSignIn={() => setView('settings')}
+          onSignIn={() => { haptic(); setView('settings') }}
         />
       )}
 
@@ -545,7 +563,7 @@ export function WebControlRemoteApp({
           selectedMachine={selectedMachine}
           signedIn={signedIn}
           canScanWithCamera={Boolean(scanPairingCode)}
-          onClose={() => setScanOpen(false)}
+          onClose={() => { haptic(); setScanOpen(false) }}
           onImport={() => void importManualScan()}
           onManualScanValueChange={setManualScanValue}
           onScanWithCamera={() => void scanWithCamera()}
@@ -554,7 +572,7 @@ export function WebControlRemoteApp({
       {transferCenterOpen ? (
         <GlobalTransferCenter
           fileTransfer={globalFileTransfer}
-          onClose={() => setTransferCenterOpen(false)}
+          onClose={() => { haptic(); setTransferCenterOpen(false) }}
           onResumeTransfer={resumeGlobalTransfer}
           onResumeAllTransfers={resumeAllGlobalTransfers}
         />
@@ -762,7 +780,7 @@ function HomeView({
 
       {machines.length === 0 ? (
         <EmptyState
-          actionLabel="Add local device"
+          actionLabel="Scan QR"
           icon="scan"
           message="No devices found. Add a local device, or sign in to sync your cloud devices."
           onAction={onAddLocalDevice}
@@ -831,11 +849,11 @@ function SettingsView({
   }), [])
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-zinc-100" data-testid="termx-app-settings">
-      <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+    <section className="flex min-h-0 flex-1 flex-col bg-[var(--termx-bg)] text-[var(--termx-text)]" data-testid="termx-app-settings">
+      <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <button
           aria-label="Back to machines"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-75 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-accent)]"
           type="button"
           onClick={onBack}
         >
@@ -843,7 +861,7 @@ function SettingsView({
         </button>
         <div className="min-w-0">
           <h1 className="text-lg font-semibold leading-6">Settings</h1>
-          <p className="truncate text-xs font-medium text-zinc-500">{signedIn ? user?.email ?? 'Signed in' : 'Web Control sign in'}</p>
+          <p className="truncate text-xs font-medium text-[var(--termx-muted)]">{signedIn ? user?.email ?? 'Signed in' : 'Web Control sign in'}</p>
         </div>
       </header>
 
@@ -862,10 +880,10 @@ function SettingsView({
 
           <SettingsSection title="Terminal">
             <SettingsRow label="Font size">
-              <div className="inline-flex h-9 items-center overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50">
+              <div className="inline-flex h-9 items-center overflow-hidden rounded-lg border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)]">
                 <button
                   aria-label="Decrease terminal font size"
-                  className="h-9 w-9 text-lg font-semibold text-zinc-700 active:bg-zinc-200"
+                  className="h-9 w-9 text-lg font-semibold text-[var(--termx-text)] active:opacity-70"
                   type="button"
                   onClick={() => onTerminalSettingsChange({ fontSize: Math.max(8, terminalSettings.fontSize - 1) })}
                 >
@@ -873,7 +891,7 @@ function SettingsView({
                 </button>
                 <input
                   aria-label="Terminal font size"
-                  className="h-9 w-12 border-x border-zinc-200 bg-white px-1 text-center text-sm font-semibold text-zinc-950 outline-none focus:ring-2 focus:ring-blue-100"
+                  className="h-9 w-12 border-x border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] px-1 text-center text-sm font-semibold text-[var(--termx-text)] outline-none focus:ring-2 focus:ring-[var(--termx-accent)]/25"
                   inputMode="numeric"
                   max={32}
                   min={8}
@@ -883,7 +901,7 @@ function SettingsView({
                 />
                 <button
                   aria-label="Increase terminal font size"
-                  className="h-9 w-9 text-lg font-semibold text-zinc-700 active:bg-zinc-200"
+                  className="h-9 w-9 text-lg font-semibold text-[var(--termx-text)] active:opacity-70"
                   type="button"
                   onClick={() => onTerminalSettingsChange({ fontSize: Math.min(32, terminalSettings.fontSize + 1) })}
                 >
@@ -903,22 +921,11 @@ function SettingsView({
               </SettingsSelect>
             </SettingsRow>
             <SettingsRow label="Theme">
-              <SettingsSelect
-                ariaLabel="Terminal theme"
+              <ThemePicker
+                groups={themeGroups}
                 value={terminalSettings.themeId}
-                onChange={(value) => onTerminalSettingsChange({ themeId: value as TerminalSettings['themeId'] })}
-              >
-                <optgroup label="Dark">
-                  {themeGroups.dark.map((option) => (
-                    <option key={option.id} value={option.id}>{option.label}</option>
-                  ))}
-                </optgroup>
-                <optgroup label="Light">
-                  {themeGroups.light.map((option) => (
-                    <option key={option.id} value={option.id}>{option.label}</option>
-                  ))}
-                </optgroup>
-              </SettingsSelect>
+                onChange={(value) => onTerminalSettingsChange({ themeId: value })}
+              />
             </SettingsRow>
             <SettingsRow label="Renderer">
               <SettingsSelect
@@ -946,7 +953,7 @@ function SettingsView({
             <SettingsRow label="Scrollback">
               <input
                 aria-label="Terminal scrollback"
-                className="h-9 w-28 rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-right text-sm font-semibold text-zinc-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="h-9 w-28 rounded-lg border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-3 text-right text-sm font-semibold text-[var(--termx-text)] outline-none focus:border-[var(--termx-accent)] focus:ring-2 focus:ring-[var(--termx-accent)]/25"
                 inputMode="numeric"
                 max={50000}
                 min={500}
@@ -971,7 +978,7 @@ function SettingsView({
                 <SettingsRow label="Signed in" value={user?.email ?? 'Account'} />
                 <div className="grid grid-cols-2 gap-2 px-4 py-3">
                   <button
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 active:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-3 text-sm font-semibold text-[var(--termx-text)] active:opacity-75 disabled:cursor-not-allowed disabled:opacity-60"
                     type="button"
                     onClick={onRefresh}
                     disabled={loading}
@@ -980,7 +987,7 @@ function SettingsView({
                     Refresh
                   </button>
                   <button
-                    className="inline-flex h-10 items-center justify-center rounded-lg bg-zinc-900 px-3 text-sm font-semibold text-white active:bg-zinc-800"
+                    className="inline-flex h-10 items-center justify-center rounded-lg bg-[var(--termx-accent)] px-3 text-sm font-semibold text-[var(--termx-accent-text)] active:opacity-85"
                     type="button"
                     onClick={onSignOut}
                   >
@@ -991,21 +998,21 @@ function SettingsView({
             ) : (
               <>
                 <div className="px-4 py-3">
-                  <label className="block text-sm font-medium text-zinc-700">
+                  <label className="block text-sm font-medium text-[var(--termx-muted)]">
                     Email or username
                     <input
-                      className="mt-2 h-11 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      className="mt-2 h-11 w-full rounded-lg border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-3 text-sm text-[var(--termx-text)] outline-none focus:border-[var(--termx-accent)] focus:ring-2 focus:ring-[var(--termx-accent)]/25"
                       value={login}
                       onChange={(event) => onLoginChange(event.target.value)}
                       autoComplete="username"
                     />
                   </label>
                 </div>
-                <div className="border-t border-zinc-100 px-4 py-3">
-                  <label className="block text-sm font-medium text-zinc-700">
+                <div className="border-t border-[var(--termx-border-subtle)] px-4 py-3">
+                  <label className="block text-sm font-medium text-[var(--termx-muted)]">
                     Password
                     <input
-                      className="mt-2 h-11 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      className="mt-2 h-11 w-full rounded-lg border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-3 text-sm text-[var(--termx-text)] outline-none focus:border-[var(--termx-accent)] focus:ring-2 focus:ring-[var(--termx-accent)]/25"
                       value={password}
                       onChange={(event) => onPasswordChange(event.target.value)}
                       type="password"
@@ -1013,9 +1020,9 @@ function SettingsView({
                     />
                   </label>
                 </div>
-                <div className="border-t border-zinc-100 px-4 py-3">
+                <div className="border-t border-[var(--termx-border-subtle)] px-4 py-3">
                   <button
-                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-zinc-900 px-3 text-sm font-semibold text-white active:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[var(--termx-accent)] px-3 text-sm font-semibold text-[var(--termx-accent-text)] active:opacity-85 disabled:cursor-not-allowed disabled:opacity-60"
                     type="button"
                     onClick={onSignIn}
                     disabled={loading}
@@ -1036,8 +1043,8 @@ function SettingsView({
 function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h2 className="mb-2 px-4 text-xs font-semibold uppercase text-zinc-500">{title}</h2>
-      <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+      <h2 className="mb-2 px-4 text-xs font-semibold uppercase text-[var(--termx-muted)]">{title}</h2>
+      <div className="overflow-hidden rounded-xl border border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] shadow-sm">
         {children}
       </div>
     </section>
@@ -1054,12 +1061,12 @@ function SettingsRow({
   value?: string | undefined
 }) {
   return (
-    <div className="flex min-h-12 items-center justify-between gap-4 border-b border-zinc-100 px-4 py-2 last:border-b-0">
-      <div className="min-w-0 text-sm font-medium text-zinc-950">{label}</div>
+    <div className="flex min-h-12 items-center justify-between gap-4 border-b border-[var(--termx-border-subtle)] px-4 py-2 last:border-b-0">
+      <div className="min-w-0 text-sm font-medium text-[var(--termx-text)]">{label}</div>
       {children ? (
         <div className="shrink-0">{children}</div>
       ) : (
-        <div className="min-w-0 truncate text-right text-sm font-medium text-zinc-500">{value}</div>
+        <div className="min-w-0 truncate text-right text-sm font-medium text-[var(--termx-muted)]">{value}</div>
       )}
     </div>
   )
@@ -1079,12 +1086,103 @@ function SettingsSelect({
   return (
     <select
       aria-label={ariaLabel}
-      className="h-9 max-w-[54vw] rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-right text-sm font-semibold text-zinc-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:max-w-xs"
+      className="h-9 max-w-[54vw] rounded-lg border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-3 text-right text-sm font-semibold text-[var(--termx-text)] outline-none focus:border-[var(--termx-accent)] focus:ring-2 focus:ring-[var(--termx-accent)]/25 sm:max-w-xs"
       value={value}
       onChange={(event) => onChange(event.currentTarget.value)}
     >
       {children}
     </select>
+  )
+}
+
+function ThemePicker({
+  groups,
+  onChange,
+  value,
+}: {
+  groups: Record<'dark' | 'light', TerminalThemeOption[]>
+  onChange: (value: TerminalSettings['themeId']) => void
+  value: TerminalSettings['themeId']
+}) {
+  return (
+    <>
+      <select
+        aria-label="Terminal theme"
+        className="sr-only"
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value as TerminalSettings['themeId'])}
+      >
+        <optgroup label="Dark">
+          {groups.dark.map((option) => (
+            <option key={option.id} value={option.id}>{option.label}</option>
+          ))}
+        </optgroup>
+        <optgroup label="Light">
+          {groups.light.map((option) => (
+            <option key={option.id} value={option.id}>{option.label}</option>
+          ))}
+        </optgroup>
+      </select>
+      <div aria-label="Theme previews" className="grid w-[min(28rem,calc(100vw-3rem))] grid-cols-2 gap-2" role="radiogroup">
+        {[...groups.dark, ...groups.light].map((option) => (
+          <ThemePreviewButton
+            key={option.id}
+            option={option}
+            selected={option.id === value}
+            onSelect={() => onChange(option.id)}
+          />
+        ))}
+      </div>
+    </>
+  )
+}
+
+function ThemePreviewButton({
+  onSelect,
+  option,
+  selected,
+}: {
+  onSelect: () => void
+  option: TerminalThemeOption
+  selected: boolean
+}) {
+  const theme = option.theme
+  const ui = resolveTerminalThemeUi(option.id)
+  const colors = [theme.red, theme.green, theme.yellow, theme.blue, theme.magenta, theme.cyan]
+    .filter((color): color is string => typeof color === 'string')
+
+  return (
+    <button
+      aria-checked={selected}
+      className="min-w-0 rounded-lg border p-2 text-left transition-transform active:scale-[0.99]"
+      role="radio"
+      style={{
+        backgroundColor: ui.surface,
+        borderColor: selected ? ui.accent : ui.borderSubtle,
+        boxShadow: selected ? `0 0 0 1px ${ui.accent}` : 'none',
+      }}
+      type="button"
+      onClick={onSelect}
+    >
+      <div className="rounded-md p-2" style={{ backgroundColor: ui.terminalBackground }}>
+        <div className="mb-2 flex gap-1">
+          {colors.map((color) => (
+            <span key={color} className="h-2.5 flex-1 rounded-sm" style={{ backgroundColor: color }} />
+          ))}
+        </div>
+        <div className="space-y-1">
+          <div className="h-1.5 w-4/5 rounded-full" style={{ backgroundColor: ui.terminalForeground, opacity: 0.72 }} />
+          <div className="flex items-center gap-1">
+            <div className="h-1.5 w-1/2 rounded-full" style={{ backgroundColor: ui.terminalForeground, opacity: 0.42 }} />
+            <div className="h-2.5 w-1 rounded-sm" style={{ backgroundColor: ui.terminalCursor }} />
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 flex min-w-0 items-center gap-1.5">
+        <span className="truncate text-xs font-semibold" style={{ color: ui.text }}>{option.label}</span>
+        <span className="ml-auto h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: selected ? ui.accent : ui.borderSubtle }} />
+      </div>
+    </button>
   )
 }
 
@@ -1101,11 +1199,11 @@ function Switch({
     <button
       aria-label={ariaLabel}
       aria-pressed={checked}
-      className={`relative h-8 w-12 rounded-full transition-colors ${checked ? 'bg-zinc-900' : 'bg-zinc-300'}`}
+      className={`relative h-8 w-12 rounded-full transition-colors ${checked ? 'bg-[var(--termx-accent)]' : 'bg-[var(--termx-border)]'}`}
       type="button"
       onClick={() => onChange(!checked)}
     >
-      <span className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-5' : 'translate-x-1'}`} />
+      <span className={`absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
     </button>
   )
 }
@@ -1142,16 +1240,16 @@ function PairSheet({
   const title = pairIntent === 'add-local' ? 'Add Local Device' : 'Re-authorize Device'
   const primaryLabel = pairIntent === 'add-local' ? 'Add Device' : 'Pair Device'
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-zinc-950/30 sm:items-center sm:justify-center" role="dialog" aria-modal="true">
-      <section className="max-h-[88dvh] w-full overflow-y-auto rounded-t-lg border border-zinc-200 bg-white p-4 shadow-xl sm:max-w-md sm:rounded-lg" data-testid="termx-pair-sheet">
+    <div className="fixed inset-0 z-50 flex items-end bg-[var(--termx-overlay)] sm:items-center sm:justify-center" role="dialog" aria-modal="true">
+      <section className="max-h-[88dvh] w-full overflow-y-auto rounded-t-lg border border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] p-4 text-[var(--termx-text)] shadow-xl sm:max-w-md sm:rounded-lg" data-testid="termx-pair-sheet">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
-            <QrCode className="h-5 w-5 shrink-0 text-zinc-600" />
+            <QrCode className="h-5 w-5 shrink-0 text-[var(--termx-accent)]" />
             <h2 className="truncate text-base font-semibold">{title}</h2>
           </div>
           <button
             aria-label="Close pairing"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-accent)]"
             type="button"
             onClick={onClose}
           >
@@ -1160,15 +1258,15 @@ function PairSheet({
         </div>
 
         {selectedMachine ? (
-          <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
-            <div className="truncate text-sm font-semibold text-zinc-950">{selectedMachine.name}</div>
-            <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{selectedMachine.hostname || selectedMachine.id}</div>
+          <div className="mt-4 rounded-md border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-3 py-2">
+            <div className="truncate text-sm font-semibold text-[var(--termx-text)]">{selectedMachine.name}</div>
+            <div className="mt-0.5 truncate text-xs font-medium text-[var(--termx-muted)]">{selectedMachine.hostname || selectedMachine.id}</div>
           </div>
         ) : null}
 
         {canScanWithCamera ? (
           <button
-            className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--termx-accent)] px-3 text-sm font-semibold text-[var(--termx-accent-text)] active:opacity-85 disabled:cursor-not-allowed disabled:opacity-60"
             type="button"
             onClick={onScanWithCamera}
             disabled={pairing || cameraScanning}
@@ -1178,19 +1276,25 @@ function PairSheet({
           </button>
         ) : null}
 
-        <label className="mt-4 block text-xs font-semibold text-zinc-600">
-          TermX QR content
-          <textarea
-            className="mt-1 h-44 w-full resize-none rounded-md border border-zinc-300 p-2 font-mono text-xs leading-5 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            value={manualScanValue}
-            onChange={(event) => onManualScanValueChange(event.target.value)}
-            placeholder="termx://pair?payload=..."
-            spellCheck={false}
-          />
-        </label>
+        <details className="mt-4 rounded-md border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-3 py-2">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold text-[var(--termx-muted)]">
+            <Keyboard className="h-4 w-4" />
+            Enter QR content manually
+          </summary>
+          <label className="mt-3 block text-xs font-semibold text-[var(--termx-muted)]">
+            TermX QR content
+            <textarea
+              className="mt-1 h-36 w-full resize-none rounded-md border border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] p-2 font-mono text-xs leading-5 text-[var(--termx-text)] outline-none focus:border-[var(--termx-accent)] focus:ring-2 focus:ring-[var(--termx-accent)]/25"
+              value={manualScanValue}
+              onChange={(event) => onManualScanValueChange(event.target.value)}
+              placeholder="termx://pair?payload=..."
+              spellCheck={false}
+            />
+          </label>
+        </details>
 
         <button
-          className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-[var(--termx-border-subtle)] bg-[var(--termx-surface-raised)] px-3 text-sm font-semibold text-[var(--termx-text)] active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
           type="button"
           onClick={onImport}
           disabled={pairing || cameraScanning || manualScanValue.trim() === ''}
@@ -1200,12 +1304,12 @@ function PairSheet({
         </button>
 
         {pairError ? (
-          <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{pairError}</p>
+          <p className="mt-3 rounded-md bg-red-500/10 px-3 py-2 text-sm font-medium text-red-500">{pairError}</p>
         ) : null}
 
         {lastImported ? (
-          <div className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
-            <div className="truncate text-emerald-900">{lastImported.machine.name}</div>
+          <div className="mt-3 rounded-md bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500">
+            <div className="truncate font-semibold">{lastImported.machine.name}</div>
             <div className="truncate">{lastImported.machine.id}</div>
           </div>
         ) : null}
@@ -1310,7 +1414,7 @@ function EmptyState({
           type="button"
           onClick={onAction}
         >
-          {icon === 'login' ? <LogIn className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+          {icon === 'login' ? <LogIn className="h-4 w-4" /> : <QrCode className="h-4 w-4" />}
           {actionLabel}
         </button>
       </div>

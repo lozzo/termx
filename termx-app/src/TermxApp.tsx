@@ -67,7 +67,7 @@ export function TermxApp() {
   )
 
   return (
-    <section className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-zinc-50 text-zinc-950 antialiased">
+    <section className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-[var(--termx-bg,#0c0c0c)] text-[var(--termx-text,#f4f4f5)] antialiased">
       <WebControlRemoteApp
         defaultControlUrl={defaultControlUrl}
         globalFileTransfer={globalFileTransfer}

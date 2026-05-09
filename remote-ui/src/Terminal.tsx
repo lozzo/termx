@@ -4,6 +4,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal as XTerm } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react'
+import { haptic } from './haptics'
 import { applyTerminalModifiers, type TerminalModifierState } from './mobileTerminalInput'
 import type { TerminalResizeControl } from './terminalClient'
 import { useTerminalSession } from './useTerminalSession'
@@ -334,6 +335,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     term.loadAddon(fitAddon)
     term.open(container)
     if (term.element) term.element.style.overflow = 'hidden'
+    const coreWithViewport = term as XTerm & { _core?: { viewport?: { scrollBarWidth?: number } } }
+    if (coreWithViewport._core?.viewport) {
+      coreWithViewport._core.viewport.scrollBarWidth = 0
+    }
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
     const textarea = container.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null
     const compositionOverlay = document.createElement('div')
@@ -1042,6 +1047,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const handleScrollbarTouchStart = (event: TouchEvent) => {
       event.preventDefault()
       event.stopPropagation()
+      haptic()
       scrollbarDragging = true
       scrollbarTrack.classList.add('active')
       showScrollbar()
@@ -1080,6 +1086,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (event.target !== scrollbarTrack) return
       event.preventDefault()
       event.stopPropagation()
+      haptic()
       const touch = event.touches[0]
       if (!touch) return
       const rect = scrollbarTrack.getBoundingClientRect()

@@ -1,3 +1,5 @@
+import { haptic } from './haptics'
+
 export interface PasteConfirmDialogProps {
   text: string
   onCancel: () => void
@@ -9,7 +11,7 @@ export function PasteConfirmDialog({ text, onCancel, onConfirm }: PasteConfirmDi
   const preview = text.length > 600 ? `${text.slice(0, 600)}...` : text
 
   return (
-    <div className="absolute inset-0 z-50 flex items-end bg-black/60 backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-paste-confirm" onClick={onCancel}>
+    <div className="absolute inset-0 z-50 flex items-end bg-black/60 backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-paste-confirm" onClick={() => { haptic(); onCancel() }}>
       <section
         className="w-full overflow-hidden border-y border-zinc-700 bg-zinc-950 text-zinc-100 shadow-2xl md:max-w-md md:rounded-2xl md:border"
         onClick={(event) => event.stopPropagation()}
@@ -27,14 +29,14 @@ export function PasteConfirmDialog({ text, onCancel, onConfirm }: PasteConfirmDi
           <button
             type="button"
             className="h-11 rounded-xl bg-zinc-800 text-[14px] font-semibold text-zinc-200 active:bg-zinc-700"
-            onClick={onCancel}
+            onClick={() => { haptic(); onCancel() }}
           >
             Cancel
           </button>
           <button
             type="button"
             className="h-11 rounded-xl bg-blue-600 text-[14px] font-semibold text-white active:bg-blue-500"
-            onClick={onConfirm}
+            onClick={() => { haptic(); onConfirm() }}
           >
             Paste
           </button>
