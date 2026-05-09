@@ -1,14 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, CheckCircle2, Loader2, LogIn, Monitor, QrCode, RefreshCw, Server, Settings, ShieldCheck, Wifi, WifiOff, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { ArrowLeft, CheckCircle2, Download, Loader2, LogIn, Monitor, QrCode, RefreshCw, Server, Settings, ShieldCheck, Wifi, WifiOff, X } from 'lucide-react'
 import { createMachineSessionStore, type MachineSessionStore } from './localAppIdentity'
 import { LocalRemoteApp, type LocalRemoteInventoryApi, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createMachineStore, type StoredMachineRecord } from './machineStore'
 import { createConnectionOrchestrator, type ConnectionAttemptSnapshot } from './connectionOrchestrator'
+import { connectionStateFromAttempt, createConnectionStatePublisher } from './connectionState'
 import { createManagedHubRtcConnector } from './managedHubRtcConnector'
 import { consoleConnectionLogger } from './connectionLogger'
 import { createManagedHubApi } from './managedHubApi'
+import { MachineConnectionStore } from './machineConnectionStore'
+import { RemoteNetworkStateManager } from './remoteNetworkState'
+import { FileTransferPanel } from './FileTransferPanel'
+import { addNativeBackHandler } from './nativeBack'
 import { parsePairingPayload, type PairingPayload } from './pairingPayload'
-import type { ConnectionInfo, LocalPairingApi, LocalStatus, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionLiveness, RtcSessionNegotiator, RtcSubscription, RtcTerminalDataChannelController, TerminalInventoryEvents } from './transport'
+import type { FileTransferContext, TransferInfo } from './fileApi'
+import type { ConnectionInfo, LocalPairingApi, LocalStatus, MachineConnectionStateEvents, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSessionNegotiator, RtcSubscription, RtcTerminalDataChannelController, TerminalInventoryEvents } from './transport'
 import { normalizeTerminalInventory } from './terminalInventory'
 import { createWebControlApi, type WebControlApi, type WebControlMachine, type WebControlUser } from './webControlApi'
 
@@ -20,6 +26,8 @@ const storageKeys = {
 const defaultWebControlUrl = ''
 const appName = 'TermX Remote App'
 
+function noopSubscribe(_listener: () => void): () => void { return () => {} }
+
 type AppView = 'home' | 'settings' | 'machine'
 type PairApi = LocalPairingApi
 type ManagedRtcSessionFactory = (input: { machineId: string }) => RtcSession & RtcSessionNegotiator
@@ -28,13 +36,16 @@ type MachineRuntimeFactory = (input: {
   storage: RemoteRuntimeStorage
   api: WebControlApi
   networkRuntime: RemoteNetworkRuntime
-  createSession: ManagedRtcSessionFactory
+  networkStateManager: RemoteNetworkStateManager
+  createSession?: ManagedRtcSessionFactory | undefined
 }) => MachineRuntime
 
 interface MachineRuntime {
   api: LocalRemoteInventoryApi
   connector: LocalRemoteSessionConnector
   inventoryEvents?: TerminalInventoryEvents | undefined
+  connectionStateEvents?: MachineConnectionStateEvents | undefined
+  fileTransfer?: FileTransferContext | undefined
   dispose?(): void | Promise<void>
 }
 
@@ -45,6 +56,7 @@ export interface WebControlRemoteAppProps {
   managedRtcSessionFactory?: ManagedRtcSessionFactory | undefined
   pairApiFactory?: ((payload: PairingPayload, machine: WebControlMachine) => PairApi) | undefined
   machineRuntimeFactory?: MachineRuntimeFactory | undefined
+  globalFileTransfer?: FileTransferContext | undefined
 }
 
 export function WebControlRemoteApp({
@@ -54,9 +66,15 @@ export function WebControlRemoteApp({
   managedRtcSessionFactory,
   pairApiFactory,
   machineRuntimeFactory = createManagedMachineRuntime,
+  globalFileTransfer,
 }: WebControlRemoteAppProps) {
   const networkRuntime = networkRuntimeProp ?? unavailableNetworkRuntime
   const storage = storageProp ?? networkRuntime.storage
+  const networkStateManagerRef = useRef<RemoteNetworkStateManager | null>(null)
+  if (!networkStateManagerRef.current) {
+    networkStateManagerRef.current = new RemoteNetworkStateManager()
+  }
+  const networkStateManager = networkStateManagerRef.current
   const [view, setView] = useState<AppView>('home')
   const [controlUrl, setControlUrl] = useState(() => initialControlUrl(storage, defaultControlUrl, networkRuntime))
   const [login, setLogin] = useState('')
@@ -67,6 +85,7 @@ export function WebControlRemoteApp({
   const [machines, setMachines] = useState<WebControlMachine[]>([])
   const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null)
   const [scanOpen, setScanOpen] = useState(false)
+  const [transferCenterOpen, setTransferCenterOpen] = useState(false)
   const [manualScanValue, setManualScanValue] = useState('')
   const [lastImported, setLastImported] = useState<PairingPayload | null>(null)
   const [pairedMachineIds, setPairedMachineIds] = useState(() => readPairedMachineIds(storage, undefined))
@@ -76,6 +95,79 @@ export function WebControlRemoteApp({
   const [loading, setLoading] = useState(false)
   const [pairing, setPairing] = useState(false)
   const signedIn = accessToken.trim() !== ''
+  const runtimeCacheRef = useRef<{
+    api: WebControlApi
+    createSession: ManagedRtcSessionFactory | undefined
+    networkRuntime: RemoteNetworkRuntime
+    runtimeFactory: MachineRuntimeFactory
+    storage: RemoteRuntimeStorage
+    runtimes: Map<string, MachineRuntime>
+  } | null>(null)
+
+  const api = useMemo(() => {
+    if (controlUrl.trim() === '') {
+      return createUnavailableWebControlApi('Web Control URL is required')
+    }
+    return createWebControlApi({
+      baseUrl: controlUrl,
+      ...(accessToken ? { accessToken } : {}),
+      fetch: networkRuntime.fetch,
+    })
+  }, [accessToken, controlUrl, networkRuntime])
+
+  if (storage) {
+    const cache = runtimeCacheRef.current
+    const cacheMatches = cache &&
+      cache.api === api &&
+      cache.createSession === managedRtcSessionFactory &&
+      cache.networkRuntime === networkRuntime &&
+      cache.runtimeFactory === machineRuntimeFactory &&
+      cache.storage === storage
+    if (!cacheMatches) {
+      if (cache) {
+        for (const runtime of cache.runtimes.values()) void runtime.dispose?.()
+      }
+      runtimeCacheRef.current = {
+        api,
+        createSession: managedRtcSessionFactory,
+        networkRuntime,
+        runtimeFactory: machineRuntimeFactory,
+        storage,
+        runtimes: new Map(),
+      }
+    }
+  }
+
+  const getMachineRuntime = useCallback((machine: WebControlMachine): MachineRuntime | null => {
+    if (!storage || !runtimeCacheRef.current) return null
+    const cache = runtimeCacheRef.current.runtimes
+    const existing = cache.get(machine.id)
+    if (existing) return existing
+    const created = machineRuntimeFactory({
+      machine,
+      storage,
+      api,
+      networkRuntime,
+      networkStateManager,
+      createSession: managedRtcSessionFactory,
+    })
+    cache.set(machine.id, created)
+    return created
+  }, [api, machineRuntimeFactory, managedRtcSessionFactory, networkRuntime, networkStateManager, storage])
+
+  useEffect(() => {
+    networkStateManager.init()
+    return () => networkStateManager.destroy()
+  }, [networkStateManager])
+
+  useEffect(() => {
+    return () => {
+      const cache = runtimeCacheRef.current
+      if (!cache) return
+      runtimeCacheRef.current = null
+      for (const runtime of cache.runtimes.values()) void runtime.dispose?.()
+    }
+  }, [])
 
   useEffect(() => {
     if (storage) {
@@ -103,30 +195,32 @@ export function WebControlRemoteApp({
   }, [localMachines, machines])
 
   const selectedMachine = displayMachines.find((machine) => machine.id === selectedMachineId) ?? null
-
-  const api = useMemo(() => {
-    if (controlUrl.trim() === '') {
-      return createUnavailableWebControlApi('Web Control URL is required')
-    }
-    return createWebControlApi({
-      baseUrl: controlUrl,
-      ...(accessToken ? { accessToken } : {}),
-      fetch: networkRuntime.fetch,
-    })
-  }, [accessToken, controlUrl, networkRuntime])
+  const emptyTransferSnapshot = useMemo(() => ({ transfers: [], hasActiveTransfers: false }), [])
+  const globalTransferState = useSyncExternalStore(
+    globalFileTransfer?.subscribe ?? noopSubscribe,
+    globalFileTransfer?.getSnapshot ?? (() => emptyTransferSnapshot),
+  )
 
   const refreshMachines = useCallback(async () => {
     if (!accessToken) return
     setLoading(true)
     try {
+      const localMachineList = storage ? createMachineStore({ storage }).listMachines() : []
       const [profile, cloudMachines] = await Promise.all([
         api.me(),
         api.listMachines(),
       ])
       setUser(profile)
       setMachines(cloudMachines)
+      setLocalMachines(localMachineList)
       setSelectedMachineId((current) => {
-        if (current && cloudMachines.some((machine) => machine.id === current)) return current
+        if (
+          current &&
+          (cloudMachines.some((machine) => machine.id === current) ||
+            localMachineList.some((machine) => machine.machineId === current))
+        ) {
+          return current
+        }
         return null
       })
       setError(null)
@@ -135,7 +229,7 @@ export function WebControlRemoteApp({
     } finally {
       setLoading(false)
     }
-  }, [accessToken, api])
+  }, [accessToken, api, storage])
 
   useEffect(() => {
     void refreshMachines()
@@ -283,8 +377,27 @@ export function WebControlRemoteApp({
     }
   }, [machines, manualScanValue, networkRuntime, pairApiFactory, selectedMachine, signedIn, storage, user])
 
+  useEffect(() => addNativeBackHandler(() => {
+    if (scanOpen) {
+      setScanOpen(false)
+      return true
+    }
+    if (view === 'settings') {
+      setView('home')
+      return true
+    }
+    if (view === 'machine') {
+      setView('home')
+      setMessage(null)
+      setError(null)
+      return true
+    }
+    return false
+  }, 10), [scanOpen, view])
+
   return (
     <main className="flex h-full min-h-[100dvh] flex-col bg-zinc-50 text-zinc-950" data-testid="termx-web-control-remote">
+      <RemoteNetworkBanner manager={networkStateManager} />
       {view === 'settings' ? (
         <SettingsView
           controlUrl={controlUrl}
@@ -307,12 +420,8 @@ export function WebControlRemoteApp({
       ) : view === 'machine' && selectedMachine ? (
         <MachineTerminalListView
           machine={selectedMachine}
-          user={user}
           storage={storage}
-          api={api}
-          networkRuntime={networkRuntime}
-          createSession={managedRtcSessionFactory}
-          runtimeFactory={machineRuntimeFactory}
+          runtime={getMachineRuntime(selectedMachine)}
           message={message}
           error={error}
           onBack={() => {
@@ -324,14 +433,17 @@ export function WebControlRemoteApp({
       ) : (
         <HomeView
           error={error}
+          fileTransfer={globalFileTransfer}
+          transferState={globalTransferState as { transfers: TransferInfo[]; hasActiveTransfers: boolean }}
           loading={loading}
-          machines={machines}
+          machines={displayMachines}
           message={message}
           pairedMachineIds={pairedMachineIds}
           signedIn={signedIn}
           user={user}
           onOpenPairSheet={() => openPairSheet()}
           onOpenSettings={() => setView('settings')}
+          onOpenTransferCenter={() => setTransferCenterOpen(true)}
           onRefresh={() => void refreshMachines()}
           onSelectMachine={selectMachine}
           onSignIn={() => setView('settings')}
@@ -350,46 +462,87 @@ export function WebControlRemoteApp({
           onManualScanValueChange={setManualScanValue}
         />
       ) : null}
+      {transferCenterOpen ? (
+        <GlobalTransferCenter
+          fileTransfer={globalFileTransfer}
+          onClose={() => setTransferCenterOpen(false)}
+        />
+      ) : null}
     </main>
+  )
+}
+
+function GlobalTransferCenter({
+  fileTransfer,
+  onClose,
+}: {
+  fileTransfer: FileTransferContext | undefined
+  onClose: () => void
+}) {
+  const emptySnapshot = useMemo(() => ({ transfers: [], hasActiveTransfers: false }), [])
+  const transferState = useSyncExternalStore(
+    fileTransfer?.subscribe ?? noopSubscribe,
+    fileTransfer?.getSnapshot ?? (() => emptySnapshot),
+  )
+
+  if (!fileTransfer) return null
+
+  return (
+    <FileTransferPanel
+      transfers={transferState.transfers}
+      hasActiveTransfers={transferState.hasActiveTransfers}
+      onCancel={(id) => fileTransfer.cancelTransfer(id)}
+      onDismiss={(id) => fileTransfer.dismissTransfer(id)}
+      onPause={(id) => fileTransfer.pauseTransfer?.(id)}
+      onResume={(id) => fileTransfer.resumeTransfer?.(id)}
+      onResumeAll={() => fileTransfer.resumeAllTransfers?.()}
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    />
+  )
+}
+
+function RemoteNetworkBanner({ manager }: { manager: RemoteNetworkStateManager }) {
+  const state = useSyncExternalStore(
+    (listener) => manager.subscribeSnapshot(listener),
+    () => manager.state,
+  )
+
+  if (state.networkReady) return null
+
+  const text = !state.phoneOnline
+    ? 'Network is offline. Connections will resume automatically.'
+    : state.jsFrozenRecovery
+      ? 'Restoring connections...'
+      : 'App is in the background. Connections are paused.'
+
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-[9999] px-3 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
+      <div className="mx-auto flex min-h-9 max-w-md items-center justify-center gap-2 rounded-md bg-amber-500 px-3 py-2 text-xs font-semibold text-amber-950 shadow-lg">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <span>{text}</span>
+      </div>
+    </div>
   )
 }
 
 function MachineTerminalListView({
   machine,
-  user,
   storage,
-  api,
-  networkRuntime,
-  createSession,
-  runtimeFactory,
+  runtime,
   message,
   error,
   onBack,
 }: {
   machine: WebControlMachine
-  user: WebControlUser | null
   storage: RemoteRuntimeStorage | undefined
-  api: WebControlApi
-  networkRuntime: RemoteNetworkRuntime
-  createSession?: ManagedRtcSessionFactory | undefined
-  runtimeFactory: MachineRuntimeFactory
+  runtime: MachineRuntime | null
   message: string | null
   error: string | null
   onBack: () => void
 }) {
-  const machineRef = useRef(machine)
-  machineRef.current = machine
-  const runtime = useMemo(() => {
-    if (!storage) return null
-    return runtimeFactory({ machine: machineRef.current, storage, api, networkRuntime, createSession: requiredManagedRtcSessionFactory(createSession) })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, createSession, machine.id, networkRuntime, runtimeFactory, storage])
-  useEffect(() => {
-    if (!runtime) return
-    return () => {
-      void runtime.dispose?.()
-    }
-  }, [runtime])
   if (!storage || !runtime) {
     return (
       <MachineRuntimeErrorShell
@@ -407,7 +560,9 @@ function MachineTerminalListView({
         api={runtime.api}
         connector={runtime.connector}
         className="min-h-0 flex-1"
+        connectionStateEvents={runtime.connectionStateEvents}
         inventoryEvents={runtime.inventoryEvents}
+        fileTransfer={runtime.fileTransfer}
         onBack={onBack}
       />
     </section>
@@ -416,7 +571,7 @@ function MachineTerminalListView({
 
 function MachineRuntimeHeader({ machine, onBack }: { machine: WebControlMachine; onBack: () => void }) {
   return (
-    <header className="flex shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4 py-3">
+    <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
       <button
         aria-label="Back to machines"
         className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
@@ -465,6 +620,8 @@ function MachineRuntimeErrorShell({
 
 function HomeView({
   error,
+  fileTransfer,
+  transferState,
   loading,
   machines,
   message,
@@ -473,11 +630,14 @@ function HomeView({
   user,
   onOpenPairSheet,
   onOpenSettings,
+  onOpenTransferCenter,
   onRefresh,
   onSelectMachine,
   onSignIn,
 }: {
   error: string | null
+  fileTransfer?: FileTransferContext | undefined
+  transferState: { transfers: TransferInfo[]; hasActiveTransfers: boolean }
   loading: boolean
   machines: WebControlMachine[]
   message: string | null
@@ -486,13 +646,14 @@ function HomeView({
   user: WebControlUser | null
   onOpenPairSheet: () => void
   onOpenSettings: () => void
+  onOpenTransferCenter: () => void
   onRefresh: () => void
   onSelectMachine: (machine: WebControlMachine) => void
   onSignIn: () => void
 }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col" data-testid="termx-app-home">
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 py-3">
+      <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold leading-6">Machines</h1>
           <p className="truncate text-xs font-medium text-zinc-500">
@@ -519,6 +680,17 @@ function HomeView({
           >
             <QrCode className="h-5 w-5" />
           </button>
+          {fileTransfer ? (
+            <button
+              aria-label="Open data transfer center"
+              className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              type="button"
+              onClick={onOpenTransferCenter}
+            >
+              <Download className="h-5 w-5" />
+              {transferState.hasActiveTransfers ? <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-emerald-500" /> : null}
+            </button>
+          ) : null}
           <button
             aria-label="Open settings"
             className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
@@ -594,7 +766,7 @@ function SettingsView({
 }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col" data-testid="termx-app-settings">
-      <header className="flex shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4 py-3">
+      <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <button
           aria-label="Back to machines"
           className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
@@ -944,16 +1116,17 @@ function createManagedMachineRuntime(input: {
   storage: RemoteRuntimeStorage
   api: WebControlApi
   networkRuntime: RemoteNetworkRuntime
-  createSession: ManagedRtcSessionFactory
+  networkStateManager: RemoteNetworkStateManager
+  createSession?: ManagedRtcSessionFactory | undefined
 }): MachineRuntime {
   const sessionStore = createMachineSessionStore(input.storage)
   const [summaryHubUrl] = nonEmptyHubUrls(input.machine)
   const machineSession = createManagedMachineSessionManager({
     machine: input.machine,
     sessionStore,
-    controlApi: input.api,
     networkRuntime: input.networkRuntime,
-    createSession: input.createSession,
+    networkStateManager: input.networkStateManager,
+    createSession: requiredManagedRtcSessionFactory(input.createSession),
   })
   const machineStatus: LocalStatus = {
     machine: {
@@ -974,7 +1147,9 @@ function createManagedMachineRuntime(input: {
       },
       async listTerminals(options) {
         const session = await machineSession.get({
-          onSnapshot: (snapshot) => options?.onStatus?.(snapshot.message),
+          forceRelay: options?.forceRelay,
+          onStatus: options?.onStatus,
+          onConnectionState: options?.onConnectionState,
         })
         const channel = await session.openApi()
         const response = await channel.request<{ terminals: Record<string, unknown>[] }>('list', {})
@@ -986,8 +1161,16 @@ function createManagedMachineRuntime(input: {
         if (target.machineId !== input.machine.id) {
           throw new Error(`machine runtime mismatch: ${target.machineId} != ${input.machine.id}`)
         }
-        const session = await machineSession.get(options)
-        return createManagedMachineSessionLease(session)
+        return machineSession.get(options)
+      },
+      reconnect(options?: { forceRelay?: boolean | undefined }) {
+        machineSession.reconnect(options)
+      },
+    },
+    connectionStateEvents: {
+      subscribe(machineId, handler) {
+        if (machineId !== input.machine.id) return { close() {} }
+        return machineSession.subscribeConnectionState(handler)
       },
     },
     inventoryEvents: {
@@ -1005,40 +1188,32 @@ function createManagedMachineRuntime(input: {
 function createManagedMachineSessionManager(input: {
   machine: WebControlMachine
   sessionStore: MachineSessionStore
-  controlApi: WebControlApi
   networkRuntime: RemoteNetworkRuntime
+  networkStateManager: RemoteNetworkStateManager
   createSession: ManagedRtcSessionFactory
 }) {
-  let sessionPromise: Promise<RtcSession> | null = null
-  let currentSession: RtcSession | null = null
-  const resetCurrentSession = async () => {
-    const session = currentSession
-    currentSession = null
-    sessionPromise = null
-    await session?.disconnect()
+  const connectionState = createConnectionStatePublisher()
+  const publishAttempt = (snapshot: ConnectionAttemptSnapshot) => {
+    connectionState.publish(connectionStateFromAttempt({
+      machineId: input.machine.id,
+      stage: snapshot.stage,
+      message: snapshot.message,
+      ...(snapshot.path ? { path: snapshot.path } : {}),
+      relayInUse: snapshot.relayInUse,
+    }))
   }
+  const connectionStore = new MachineConnectionStore({
+    machineId: input.machine.id,
+    networkStateManager: input.networkStateManager,
+    createLease: createManagedMachineSessionLease,
+    connect: (options = {}) => connect(options),
+  })
   const subscribeInventoryEvents = (handler: (event: { type: 'inventory_changed'; payload?: unknown }) => void): RtcSubscription => {
-    let closed = false
-    let subscription: RtcSubscription | null = null
-    void getSession().then((session) => {
-      if (closed) return
-      subscription = session.subscribeEvents((event) => {
-        if (isTerminalInventoryRuntimeEvent(event)) handler({ type: 'inventory_changed', payload: event.payload })
-      })
-      if (closed) {
-        subscription.close()
-        subscription = null
-      }
-    }).catch(() => {})
-    return {
-      close() {
-        closed = true
-        subscription?.close()
-        subscription = null
-      },
-    }
+    return connectionStore.subscribeSessionEvents((event) => {
+      if (isTerminalInventoryRuntimeEvent(event)) handler({ type: 'inventory_changed', payload: event.payload })
+    })
   }
-  const connect = async (options?: { signal?: AbortSignal; onSnapshot?: (snapshot: ConnectionAttemptSnapshot) => void }): Promise<RtcSession> => {
+  const connect = async (options?: RtcConnectOptions & { onSnapshot?: (snapshot: ConnectionAttemptSnapshot) => void }): Promise<RtcSession> => {
     if (options?.signal?.aborted) {
       throw options.signal.reason instanceof Error ? options.signal.reason : new Error('connection aborted')
     }
@@ -1064,41 +1239,28 @@ function createManagedMachineSessionManager(input: {
       sessionToken,
       answerProofSecret,
       hubUrls,
-      onSnapshot: options?.onSnapshot,
+      onSnapshot: (snapshot) => {
+        publishAttempt(snapshot)
+        options?.onSnapshot?.(snapshot)
+      },
     }, options)
     return result.session
   }
-  const getSession = async (options?: { signal?: AbortSignal; onSnapshot?: (snapshot: ConnectionAttemptSnapshot) => void }): Promise<RtcSession> => {
-    if (currentSession) {
-      if (isRtcSessionAlive(currentSession)) return currentSession
-      await resetCurrentSession()
-    }
-    if (!sessionPromise) {
-      sessionPromise = connect(options).then((session) => {
-        currentSession = session
-        const lifecycle = session as RtcSession & Partial<{
-          onDisconnect(handler: () => void): RtcSubscription
-        }>
-        let subscription: RtcSubscription | null = null
-        subscription = lifecycle.onDisconnect?.(() => {
-          if (currentSession === session) {
-            currentSession = null
-            sessionPromise = null
-          }
-          subscription?.close()
-        }) ?? null
-        return session
-      }).catch((err) => {
-        sessionPromise = null
-        throw err
-      })
-    }
-    return sessionPromise
-  }
   return {
-    get: getSession,
+    get: (options?: RtcConnectOptions) => connectionStore.get(options),
+    reconnect: (options?: { forceRelay?: boolean | undefined }) => connectionStore.reconnect(options),
     subscribeInventoryEvents,
-    reset: resetCurrentSession,
+    subscribeConnectionState: (handler: (snapshot: RtcConnectionStateSnapshot) => void) => {
+      const storeSubscription = connectionStore.subscribeConnectionState(handler)
+      const attemptSubscription = connectionState.subscribe(handler)
+      return {
+        close() {
+          storeSubscription.close()
+          attemptSubscription.close()
+        },
+      }
+    },
+    reset: () => connectionStore.release(),
   }
 }
 
@@ -1118,12 +1280,6 @@ function requiredManagedRtcSessionFactory(factory: ManagedRtcSessionFactory | un
   return factory
 }
 
-function isRtcSessionAlive(session: RtcSession): boolean {
-  const candidate = session as RtcSession & Partial<RtcSessionLiveness>
-  if (typeof candidate.isAlive !== 'function') return true
-  return candidate.isAlive()
-}
-
 function isTerminalInventoryRuntimeEvent(event: RtcEvent): boolean {
   if (event.type === 'inventory_changed') return true
   if (event.type === 'terminal_changed') return true
@@ -1134,12 +1290,14 @@ function isTerminalInventoryRuntimeEvent(event: RtcEvent): boolean {
     event.type === 'terminal_metadata_changed'
 }
 
-function createManagedMachineSessionLease(session: RtcSession): RtcSession & RtcTerminalDataChannelController {
+function createManagedMachineSessionLease(session: RtcSession): RtcSession & RtcTerminalDataChannelController & RtcSessionLiveness {
   const openedTerminals = new Map<string, RtcBinaryChannel>()
   const openedFiles = new Map<string, RtcBinaryChannel>()
   const subscriptions = new Set<RtcSubscription>()
+  let closed = false
   return {
     async openTerminal(id: string) {
+      if (closed) throw new Error('machine session lease is closed')
       const channel = await session.openTerminal(id)
       openedTerminals.set(id, channel)
       return channel
@@ -1154,14 +1312,17 @@ function createManagedMachineSessionLease(session: RtcSession): RtcSession & Rtc
       }
     },
     async openApi() {
+      if (closed) throw new Error('machine session lease is closed')
       return createSharedApiLeaseChannel(await session.openApi())
     },
     async openFileTransfer(transferId: string) {
+      if (closed) throw new Error('machine session lease is closed')
       const channel = await session.openFileTransfer(transferId)
       openedFiles.set(transferId, channel)
       return channel
     },
     subscribeEvents(handler: (event: RtcEvent) => void) {
+      if (closed) return { close() {} }
       const subscription = session.subscribeEvents(handler)
       subscriptions.add(subscription)
       return {
@@ -1177,7 +1338,14 @@ function createManagedMachineSessionLease(session: RtcSession): RtcSession & Rtc
     getCapabilities() {
       return session.getCapabilities()
     },
+    isAlive() {
+      if (closed) return false
+      const candidate = session as RtcSession & Partial<RtcSessionLiveness>
+      if (typeof candidate.isAlive !== 'function') return true
+      return candidate.isAlive()
+    },
     async disconnect() {
+      closed = true
       for (const subscription of Array.from(subscriptions)) {
         subscription.close()
       }

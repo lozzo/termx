@@ -2,7 +2,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebControlRemoteApp } from './WebControlRemoteApp'
-import type { RemoteNetworkRuntime, RemoteRuntimeStorage, RtcSession } from './transport'
+import { createMachineStore } from './machineStore'
+import { parsePairingPayload } from './pairingPayload'
+import type { RemoteNetworkRuntime, RemoteRuntimeStorage, RtcConnectionStateSnapshot, RtcSession, RtcSessionNegotiationTarget, RtcSubscription } from './transport'
 import type { WebControlFetch } from './webControlApi'
 
 describe('WebControlRemoteApp', () => {
@@ -113,7 +115,6 @@ describe('WebControlRemoteApp', () => {
           },
           connector: { connect },
         })}
-        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -366,6 +367,110 @@ describe('WebControlRemoteApp', () => {
       }),
     })
   })
+
+  it('keeps a machine runtime alive when returning to the machine list', async () => {
+    const storage = new MemoryStorage()
+    createMachineStore({ storage }).saveFromPairingPayload(parsePairingPayload(JSON.stringify(pairPayload({
+      machineId: 'device-1',
+      name: 'RedmiBook',
+      addresses: { local: [], lan: [], public: ['https://hub-1.termx.test'] },
+      endpoints: {},
+    }))))
+    storage.setItem('termx.session.device-1.token', 'session-token-device-1')
+    const dispose = vi.fn()
+    const listTerminals = vi.fn(async () => [{
+      terminalId: 'terminal-1',
+      machineId: 'device-1',
+      title: 'zsh',
+      state: 'running' as const,
+      command: '/bin/zsh -l',
+      cols: 100,
+      rows: 30,
+    }])
+    const runtimeFactory = vi.fn(({ machine }) => ({
+      api: {
+        async getStatus() {
+          return {
+            machine: {
+              machineId: machine.id,
+              name: machine.name,
+              state: 'online' as const,
+            },
+            localWeb: {
+              httpUrl: '',
+              rtcOfferUrl: machine.hubUrls[0] ?? '',
+            },
+          }
+        },
+        listTerminals,
+      },
+      connector: { connect: vi.fn(async () => fakeRtcSession()) },
+      dispose,
+    }))
+
+    render(
+      <WebControlRemoteApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        machineRuntimeFactory={runtimeFactory}
+        networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
+        storage={storage}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
+    await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
+    await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
+    expect(runtimeFactory).toHaveBeenCalledTimes(1)
+
+    await userEvent.click(screen.getByRole('button', { name: /back to machines/i }))
+    expect(screen.getByTestId('termx-app-home')).toBeTruthy()
+    expect(dispose).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
+    await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
+    expect(runtimeFactory).toHaveBeenCalledTimes(1)
+    expect(dispose).not.toHaveBeenCalled()
+  })
+
+  it('keeps the default managed WebRTC session alive when returning to the machine list', async () => {
+    const storage = new MemoryStorage()
+    createMachineStore({ storage }).saveFromPairingPayload(parsePairingPayload(JSON.stringify(pairPayload({
+      machineId: 'device-1',
+      name: 'RedmiBook',
+      addresses: { local: [], lan: [], public: ['https://hub-1.termx.test'] },
+      endpoints: {},
+    }))))
+    storage.setItem('termx.session.device-1.token', 'session-token-device-1')
+    const fetch = new ManagedRuntimeFetch()
+    const sessions: Array<ReturnType<typeof managedTestRtcSession>> = []
+
+    render(
+      <WebControlRemoteApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        managedRtcSessionFactory={({ machineId }) => {
+          const session = managedTestRtcSession(machineId)
+          sessions.push(session)
+          return session
+        }}
+        networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
+        storage={storage}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
+    await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
+    await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
+    expect(sessions).toHaveLength(1)
+
+    await userEvent.click(screen.getByRole('button', { name: /back to machines/i }))
+    expect(screen.getByTestId('termx-app-home')).toBeTruthy()
+    expect(sessions[0]?.disconnectCalls).toBe(0)
+
+    await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
+    await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]?.disconnectCalls).toBe(0)
+  })
 })
 
 function fakeRtcSession(): RtcSession {
@@ -464,6 +569,105 @@ const fakeManagedRtcSessionFactory = (target?: { machineId?: string | undefined 
 }) satisfies RtcSession & {
   createOffer(): Promise<{ sessionId: string; description: { type: 'offer'; sdp: string } }>
   acceptAnswer(): Promise<void>
+}
+
+function managedTestRtcSession(machineId: string) {
+  let path: RtcSessionNegotiationTarget['path'] | undefined
+  let connectionId = ''
+  const connectionStateHandlers = new Set<(snapshot: RtcConnectionStateSnapshot) => void>()
+  return {
+    disconnectCalls: 0,
+    async createOffer(input: RtcSessionNegotiationTarget) {
+      path = input.path
+      nextFakeManagedSessionId += 1
+      connectionId = `rtc-managed-test-${nextFakeManagedSessionId}`
+      return {
+        sessionId: connectionId,
+        description: { type: 'offer' as const, sdp: `offer-sdp-${nextFakeManagedSessionId}` },
+      }
+    },
+    async acceptAnswer() {
+      for (const handler of connectionStateHandlers) {
+        handler({
+          machineId,
+          phase: 'connected',
+          path: 'managed',
+          statusText: 'Connected',
+          relayInUse: false,
+        })
+      }
+    },
+    async openTerminal() {
+      throw new Error('terminal channel is not used by this test')
+    },
+    async openApi() {
+      return {
+        async request<TResponse>(method: string): Promise<TResponse> {
+          if (method !== 'list') throw new Error(`unexpected api request ${method}`)
+          return {
+            terminals: [{
+              terminal_id: 'terminal-1',
+              title: 'zsh',
+              state: 'running',
+              command: '/bin/zsh -l',
+              cols: 100,
+              rows: 30,
+            }],
+          } as TResponse
+        },
+        close() {},
+      }
+    },
+    async openFileTransfer() {
+      throw new Error('file transfer is not used by this test')
+    },
+    subscribeEvents() {
+      return { close() {} }
+    },
+    subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription {
+      connectionStateHandlers.add(handler)
+      if (path) {
+        handler({
+          machineId,
+          phase: 'connected',
+          path,
+          statusText: 'Connected',
+          relayInUse: false,
+        })
+      }
+      return { close: () => connectionStateHandlers.delete(handler) }
+    },
+    isAlive() {
+      return true
+    },
+    async getConnectionInfo() {
+      return {
+        path: path ?? 'managed',
+        connectionId: connectionId || 'rtc-managed-test',
+        machineId,
+        relayInUse: false,
+      }
+    },
+    async getCapabilities() {
+      return {
+        terminalAllowed: true,
+        apiAllowed: true,
+        eventsAllowed: true,
+        fileTransferAllowed: true,
+        terminalManagementAllowed: true,
+        relayInUse: false,
+      }
+    },
+    async disconnect() {
+      this.disconnectCalls += 1
+    },
+  } satisfies RtcSession & {
+    disconnectCalls: number
+    createOffer(input: RtcSessionNegotiationTarget): Promise<{ sessionId: string; description: { type: 'offer'; sdp: string } }>
+    acceptAnswer(): Promise<void>
+    subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription
+    isAlive(): boolean
+  }
 }
 
 interface RecordedRequest {
@@ -574,6 +778,45 @@ class WebControlHubFallbackFetch {
         ice_servers: [],
         relay_policy: { allow_relay: true, allow_relay_transfer: true },
         relay_in_use: true,
+      })
+    }
+    throw new Error(`unexpected request to ${url}`)
+  }
+}
+
+class ManagedRuntimeFetch {
+  readonly requests: RecordedRequest[] = []
+
+  readonly fetch: WebControlFetch = async (input, init = {}) => {
+    const url = String(input)
+    const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined
+    this.requests.push({
+      url,
+      method: init.method ?? 'GET',
+      ...(body !== undefined ? { body } : {}),
+    })
+    if (url === 'https://hub-1.termx.test/api/v1/sessions/ice') {
+      return jsonResponse(200, {
+        path: 'managed',
+        machine_id: 'device-1',
+        ice_servers: [],
+        relay_policy: { allow_relay: true, allow_relay_transfer: false },
+      })
+    }
+    if (url === 'https://hub-1.termx.test/api/v1/sessions') {
+      const request = body as {
+        machine_id: string
+        offer: { session_id: string }
+      }
+      return jsonResponse(200, {
+        session_id: request.offer.session_id,
+        path: 'managed',
+        machine_id: request.machine_id,
+        answer: { type: 'answer', sdp: 'answer-sdp' },
+        ice_candidates: [],
+        ice_servers: [],
+        relay_policy: { allow_relay: true, allow_relay_transfer: false },
+        relay_in_use: false,
       })
     }
     throw new Error(`unexpected request to ${url}`)

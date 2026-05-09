@@ -208,6 +208,71 @@ describe('FileManager', () => {
     expect(text.className).toMatch(/break-words/)
   })
 
+  it('opens previews as fullscreen dialogs outside the file manager container', async () => {
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/',
+        parent: '',
+        total: 1,
+        entries: [{ name: 'app.log', type: 'file', size: 20 }],
+      },
+      '/files/preview': {
+        path: '/app.log',
+        name: 'app.log',
+        size: 20,
+        mime_type: 'text/plain',
+        category: 'text',
+        is_text: true,
+        content: 'hello',
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(fileManager(session))
+
+    await waitFor(() => expect(screen.getByText('app.log')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /preview app.log/i }))
+
+    const preview = await screen.findByTestId('termx-file-preview')
+    expect(preview.className).toMatch(/\bfixed\b/)
+    expect(preview.className).toMatch(/\binset-0\b/)
+    expect(screen.getByTestId('termx-file-manager').contains(preview)).toBe(false)
+  })
+
+  it('renders code previews with highlight.js markup, line numbers, and wrap toggle', async () => {
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/',
+        parent: '',
+        total: 1,
+        entries: [{ name: 'app.ts', type: 'file', size: 42 }],
+      },
+      '/files/preview': {
+        path: '/app.ts',
+        name: 'app.ts',
+        size: 42,
+        mime_type: 'text/typescript',
+        category: 'text',
+        is_text: true,
+        content: 'const answer = 42\nexport default answer',
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(fileManager(session))
+
+    await waitFor(() => expect(screen.getByText('app.ts')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /preview app.ts/i }))
+
+    expect(await screen.findByText('TypeScript')).toBeTruthy()
+    expect(screen.getByText('1')).toBeTruthy()
+    expect(screen.getByText('2')).toBeTruthy()
+    const firstLine = screen.getByTestId('termx-file-preview-line-1')
+    expect(firstLine.className).toMatch(/whitespace-pre\b/)
+    expect(firstLine.querySelector('.hljs-keyword')?.textContent).toBe('const')
+
+    await userEvent.click(screen.getByRole('button', { name: /enable line wrap/i }))
+    expect(screen.getByTestId('termx-file-preview-line-1').className).toMatch(/whitespace-pre-wrap/)
+  })
+
   it('renders image previews from base64 preview content', async () => {
     const session = createMockFileSession({
       '/files/list': {

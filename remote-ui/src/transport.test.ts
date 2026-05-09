@@ -42,7 +42,17 @@ describe('RtcSession public interfaces', () => {
       disconnect(): Promise<void>
     }>()
     expectTypeOf<keyof ConnectionInfo>().toEqualTypeOf<
-      'path' | 'connectionId' | 'machineId' | 'terminalId' | 'relayInUse'
+      | 'path'
+      | 'connectionId'
+      | 'machineId'
+      | 'terminalId'
+      | 'relayInUse'
+      | 'type'
+      | 'localAddr'
+      | 'remoteAddr'
+      | 'candidateType'
+      | 'remoteCandidateType'
+      | 'rtt'
     >()
     expectTypeOf<keyof ConnectionCapabilities>().toEqualTypeOf<
       | 'terminalAllowed'

@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ChevronLeft, Folder, KeyRound, Link2, Link2Off, Monitor, PanelBottomClose, Plus, RefreshCw, Rows2, SquarePen, Trash2, Unlock, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { ChevronLeft, Folder, Info, KeyRound, Link2, Link2Off, Loader2, Monitor, PanelBottomClose, Plus, Rows2, SquarePen, Trash2, Unlock, X } from 'lucide-react'
+import { connectionPhaseLabel, connectionSnapshotFromStatus } from './connectionState'
+import { FileTransferPanel } from './FileTransferPanel'
 import { FileManager } from './FileManager'
 import { LocalPairPanel } from './LocalPairPanel'
 import type { MachineSessionStore } from './localAppIdentity'
@@ -8,28 +10,34 @@ import type { TerminalModifierState } from './mobileTerminalInput'
 import { PasteConfirmDialog } from './PasteConfirmDialog'
 import { Terminal, type TerminalHandle } from './Terminal'
 import { TerminalActionToolbar, type TerminalToolbarMode } from './TerminalActionToolbar'
+import { type TerminalRenderer } from './Terminal'
 import { TerminalFnPanel } from './TerminalFnPanel'
+import { addNativeBackHandler } from './nativeBack'
 import { defaultTerminalResizeControl, type TerminalResizeControl } from './terminalClient'
 import { TerminalList } from './TerminalList'
 import { createTerminalManagementApi } from './terminalManagementApi'
 import type { Machine, Terminal as RemoteTerminal } from './model'
-import type { LocalAgentApi, LocalCreateTerminalInput, LocalPairingApi, LocalUpdateTerminalInput, RtcConnector, RtcEvent, RtcSession, RtcSessionLiveness, TerminalInventoryEvents } from './transport'
+import type { ConnectionInfo, LocalAgentApi, LocalCreateTerminalInput, LocalPairingApi, LocalUpdateTerminalInput, MachineConnectionStateEvents, RtcConnectOptions, RtcConnectionStateSnapshot, RtcConnector, RtcEvent, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSubscription, TerminalInventoryEvents } from './transport'
+import { useTerminalKeyboard } from './useTerminalKeyboard'
 
 export interface LocalRemoteInventoryApi extends Pick<LocalAgentApi, 'getStatus'> {
-  listTerminals(options?: { onStatus?: (status: string) => void }): Promise<RemoteTerminal[]>
+  listTerminals(options?: Pick<RtcConnectOptions, 'forceRelay' | 'onStatus' | 'onConnectionState'>): Promise<RemoteTerminal[]>
 }
 
 export interface LocalRemoteSessionInput {
   machineId: string
 }
 
-export type LocalRemoteSessionConnector = RtcConnector<LocalRemoteSessionInput>
+export type LocalRemoteSessionConnector = RtcConnector<LocalRemoteSessionInput> & {
+  reconnect?: ((options?: { forceRelay?: boolean | undefined }) => void) | undefined
+}
 
 export interface LocalRemoteAppProps {
   api: LocalRemoteInventoryApi
   connector: LocalRemoteSessionConnector
   className?: string | undefined
   inventoryEvents?: TerminalInventoryEvents | undefined
+  connectionStateEvents?: MachineConnectionStateEvents | undefined
   subscribeRuntimeInventoryEvents?: boolean | undefined
   pair?: {
     api: LocalPairingApi
@@ -37,34 +45,46 @@ export interface LocalRemoteAppProps {
     appName: string
   } | undefined
   onBack?: (() => void) | undefined
+  fileTransfer?: import('./fileApi').FileTransferContext | undefined
 }
 
 type MobileSheet = 'terminals' | 'split-terminal' | 'pair' | 'manage-terminal' | 'edit-terminal' | 'create-terminal' | null
 type AppPage = 'terminal-list' | 'terminal'
 type TerminalSlot = 0 | 1
+const TERMINAL_CONNECTION_PROGRESS_DELAY_MS = 450
 
-export function LocalRemoteApp({ api, connector, className, inventoryEvents, subscribeRuntimeInventoryEvents = false, pair, onBack }: LocalRemoteAppProps) {
+function noopSubscribe(_listener: () => void): () => void { return () => {} }
+
+export function LocalRemoteApp({ api, connector, className, inventoryEvents, connectionStateEvents, subscribeRuntimeInventoryEvents = false, pair, onBack, fileTransfer }: LocalRemoteAppProps) {
   const [machine, setMachine] = useState<Machine | null>(null)
   const [terminals, setTerminals] = useState<RemoteTerminal[]>([])
   const [loadingTerminals, setLoadingTerminals] = useState(true)
+  const [terminalListConnectionStatus, setTerminalListConnectionStatus] = useState<string | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<string | null>(null)
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pairStatus, setPairStatus] = useState<string | null>(null)
-  const [refreshingTerminals, setRefreshingTerminals] = useState(false)
   const [verifiedDevice, setVerifiedDevice] = useState(() => pair && machine ? Boolean(pair.sessionStore.getSessionToken(machine.machineId)) : !pair)
   const [connectedSession, setConnectedSession] = useState<RtcSession | null>(null)
   const [connectedTerminalId, setConnectedTerminalId] = useState<string | null>(null)
   const [connectingTerminalId, setConnectingTerminalId] = useState<string | null>(null)
   const [fileTerminalId, setFileTerminalId] = useState<string | null>(null)
   const [fileInitialPath, setFileInitialPath] = useState('/')
-  const [fileOpenNonce, setFileOpenNonce] = useState(0)
+  const [fileContextKey, setFileContextKey] = useState('machine:/')
   const [connectionRetryToken, setConnectionRetryToken] = useState(0)
+  const [connectionPhase, setConnectionPhase] = useState<RtcConnectionStateSnapshot['phase'] | null>(null)
+  const [forceRelayConnection, setForceRelayConnection] = useState(false)
+  const [connectionInfoOpen, setConnectionInfoOpen] = useState(false)
+  const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null)
+  const [connectionInfoLoading, setConnectionInfoLoading] = useState(false)
+  const [connectionInfoError, setConnectionInfoError] = useState<string | null>(null)
+  const [manualReconnectNonce, setManualReconnectNonce] = useState(0)
   const [terminalResizeControl, setTerminalResizeControl] = useState<TerminalResizeControl>(defaultTerminalResizeControl)
   const [unlockingResize, setUnlockingResize] = useState(false)
 
   const [page, setPage] = useState<AppPage>('terminal-list')
   const [filesOpen, setFilesOpen] = useState(false)
+  const [transferCenterOpen, setTransferCenterOpen] = useState(false)
   const [mobileSheet, setMobileSheet] = useState<MobileSheet>(null)
   const [managedTerminalId, setManagedTerminalId] = useState<string | null>(null)
   const [terminalForm, setTerminalForm] = useState<{
@@ -75,7 +95,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
     sizeLockMode: 'off' | 'warn' | 'lock'
   }>({
     name: '',
-    command: '/bin/zsh -l',
+    command: '',
     cwd: '',
     environment: '',
     sizeLockMode: 'off',
@@ -89,24 +109,35 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
   const [splitTerminalId, setSplitTerminalId] = useState<string | null>(null)
   const [activeTerminalSlot, setActiveTerminalSlot] = useState<TerminalSlot>(0)
   const [syncSplitInput, setSyncSplitInput] = useState(false)
+  const [renderer, setRenderer] = useState<TerminalRenderer>(() => {
+    try { return (localStorage.getItem('termx.renderer') as TerminalRenderer) || 'auto' } catch { return 'auto' }
+  })
+  const [fontSize, setFontSize] = useState<number>(() => {
+    try { return Number(localStorage.getItem('termx.fontSize')) || 14 } catch { return 14 }
+  })
   const terminalRef = useRef<TerminalHandle | null>(null)
   const splitTerminalRef = useRef<TerminalHandle | null>(null)
+  const outerContainerRef = useRef<HTMLDivElement | null>(null)
+  const terminalAreaRef = useRef<HTMLDivElement | null>(null)
+  const terminalWrapperRef = useRef<HTMLDivElement | null>(null)
+  const activeTerminalSlotRef = useRef<TerminalSlot>(0)
+  const [keyboardLocked, setKeyboardLocked] = useState(false)
+  const keyboardLockedRef = useRef(false)
   const machineSessionRef = useRef<{
     connector: LocalRemoteSessionConnector
     machineId: string
     retryToken: number
     session: RtcSession
+    forceRelay: boolean
   } | null>(null)
   const machineSessionPromiseRef = useRef<{
     connector: LocalRemoteSessionConnector
     machineId: string
     retryToken: number
+    forceRelay: boolean
     promise: Promise<RtcSession>
   } | null>(null)
   const machineSessionConnectSeqRef = useRef(0)
-  const listPullStartRef = useRef<number | null>(null)
-  const listPullDistanceRef = useRef(0)
-  const listContainerRef = useRef<HTMLDivElement | null>(null)
   const terminalRefreshSeqRef = useRef(0)
   const runtimeInventorySubscriptionRef = useRef<{
     connector: LocalRemoteSessionConnector
@@ -115,7 +146,11 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
     session: RtcSession
     subscription: { close(): void }
   } | null>(null)
-  const [listPullDistance, setListPullDistance] = useState(0)
+  const connectionStateSubscriptionRef = useRef<RtcSubscription | null>(null)
+  const connectionStatusClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const latestActiveTerminalIdRef = useRef<string | null>(null)
+  const latestMachineIdRef = useRef<string | null>(null)
+  const handledManualReconnectNonceRef = useRef(0)
   const activeTerminal = terminals.find((terminal) => terminal.terminalId === activeTerminalId)
   const splitTerminal = terminals.find((terminal) => terminal.terminalId === splitTerminalId)
   const activeToolTerminal = activeTerminalSlot === 1 && splitTerminal ? splitTerminal : activeTerminal
@@ -123,12 +158,115 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
   const activeTerminalTitle = activeTerminal?.title || activeTerminal?.command || activeTerminalId || 'Terminal'
   const splitTerminalTitle = splitTerminal?.title || splitTerminal?.command || splitTerminalId || 'Terminal'
   const terminalHeaderTitle = splitTerminalId ? `${activeTerminalTitle} / ${splitTerminalTitle}` : activeTerminalTitle
+  const terminalHeaderDirectory = activeToolTerminal?.cwd || activeTerminal?.cwd || splitTerminal?.cwd || ''
   const activeTerminalResizeLocked = terminalResizeControl.sizeLocked === true || terminalResizeControl.reason === 'size_locked'
   const requireVerification = Boolean(pair && !verifiedDevice)
   const canManageTerminals = true
+  const emptyTransferSnapshot = useMemo(() => ({ transfers: [], hasActiveTransfers: false }), [])
+  const transferState = useSyncExternalStore(
+    fileTransfer?.subscribe ?? noopSubscribe,
+    fileTransfer?.getSnapshot ?? (() => emptyTransferSnapshot),
+  )
+  const machineForceRelayKey = machine?.machineId ? forceRelayStorageKey(machine.machineId) : null
+  const showConnectionProgressBanner = Boolean(connectionStatus && !isSettledConnectionPhase(connectionPhase))
+
+  useEffect(() => {
+    latestActiveTerminalIdRef.current = activeTerminalId
+  }, [activeTerminalId])
+
+  useEffect(() => {
+    latestMachineIdRef.current = machine?.machineId ?? null
+  }, [machine?.machineId])
+
+  useEffect(() => {
+    if (!machineForceRelayKey) return
+    setForceRelayConnection(readStoredForceRelay(machineForceRelayKey))
+  }, [machineForceRelayKey])
+
+  const { keyboardVisible, handleBufferChange, handleCursorMove } = useTerminalKeyboard({
+    containerRef: outerContainerRef,
+    mainRef: terminalAreaRef,
+    termWrapperRef: terminalWrapperRef,
+    getTermRef: () => activeTerminalSlotRef.current === 1 ? splitTerminalRef.current : terminalRef.current,
+    shouldResize: () =>
+      terminalRef.current?.getBufferType() === 'alternate' ||
+      splitTerminalRef.current?.getBufferType() === 'alternate',
+    onKeyboardHide: () => {
+      requestAnimationFrame(() => {
+        terminalRef.current?.fit()
+        splitTerminalRef.current?.fit()
+      })
+    },
+  })
+
+  const clearConnectionStatusSoon = useCallback(() => {
+    if (connectionStatusClearTimerRef.current) {
+      clearTimeout(connectionStatusClearTimerRef.current)
+      connectionStatusClearTimerRef.current = null
+    }
+    connectionStatusClearTimerRef.current = setTimeout(() => {
+      connectionStatusClearTimerRef.current = null
+      setConnectionStatus(null)
+      setConnectionPhase(null)
+    }, 1200)
+  }, [])
+
+  const updateConnectionStatus = useCallback((status: string, phase?: RtcConnectionStateSnapshot['phase']) => {
+    const snapshot = connectionSnapshotFromStatus({
+      machineId: latestMachineIdRef.current ?? machineSessionRef.current?.machineId ?? 'machine',
+      statusText: status,
+      ...(phase ? { phase } : {}),
+    })
+    if (connectionStatusClearTimerRef.current) {
+      clearTimeout(connectionStatusClearTimerRef.current)
+      connectionStatusClearTimerRef.current = null
+    }
+    setConnectionStatus(snapshot.statusText)
+    setConnectionPhase(snapshot.phase)
+  }, [])
+
+  const clearConnectionStatus = useCallback(() => {
+    if (connectionStatusClearTimerRef.current) {
+      clearTimeout(connectionStatusClearTimerRef.current)
+      connectionStatusClearTimerRef.current = null
+    }
+    setConnectionStatus(null)
+    setConnectionPhase(null)
+  }, [])
+
+  const updateFromConnectionState = useCallback((snapshot: RtcConnectionStateSnapshot, session?: RtcSession) => {
+    if (snapshot.phase === 'connected') {
+      setError(null)
+      if (session) {
+        setConnectedSession(session)
+        const terminalId = latestActiveTerminalIdRef.current
+        if (terminalId) {
+          setConnectedTerminalId(terminalId)
+          setConnectingTerminalId(null)
+        }
+      }
+      updateConnectionStatus(snapshot.statusText || 'Connected', 'connected')
+      clearConnectionStatusSoon()
+      return
+    }
+    if (snapshot.phase === 'idle') {
+      clearConnectionStatus()
+      return
+    }
+    if (snapshot.phase === 'reconnecting' || snapshot.phase === 'waiting_network') setError(null)
+    updateConnectionStatus(snapshot.statusText || connectionPhaseLabel(snapshot.phase), snapshot.phase)
+    if (snapshot.phase === 'failed') setError(snapshot.failReason || snapshot.statusText || 'Connection failed')
+  }, [clearConnectionStatus, clearConnectionStatusSoon, updateConnectionStatus])
+
+  const updateFromPassiveConnectionState = useCallback((snapshot: RtcConnectionStateSnapshot, session?: RtcSession) => {
+    if (isTransientConnectionPhase(snapshot.phase)) return
+    updateFromConnectionState(snapshot, session)
+  }, [updateFromConnectionState])
 
   const disconnectMachineSession = useCallback(() => {
     machineSessionConnectSeqRef.current += 1
+    connectionStateSubscriptionRef.current?.close()
+    connectionStateSubscriptionRef.current = null
     const current = machineSessionRef.current
     machineSessionPromiseRef.current = null
     machineSessionRef.current = null
@@ -138,6 +276,18 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
     void current?.session.disconnect()
   }, [])
 
+  const attachConnectionStateSubscription = useCallback((session: RtcSession) => {
+    connectionStateSubscriptionRef.current?.close()
+    const candidate = session as RtcSession & Partial<RtcSessionConnectionStateEvents>
+    if (typeof candidate.subscribeConnectionState !== 'function') {
+      connectionStateSubscriptionRef.current = null
+      return
+    }
+    connectionStateSubscriptionRef.current = candidate.subscribeConnectionState((snapshot) => {
+      updateFromPassiveConnectionState(snapshot, session)
+    })
+  }, [updateFromPassiveConnectionState])
+
   const releaseMachineSession = useCallback(() => {
     disconnectMachineSession()
     setConnectedSession(null)
@@ -145,13 +295,16 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
     setConnectingTerminalId(null)
   }, [disconnectMachineSession])
 
-  const ensureMachineSession = useCallback(async (machineId: string): Promise<RtcSession> => {
+  const ensureMachineSession = useCallback(async (machineId: string, connectOptions?: RtcConnectOptions): Promise<RtcSession> => {
+    const forceRelay = connectOptions?.forceRelay ?? forceRelayConnection
+    const effectiveConnectOptions: RtcConnectOptions = { ...connectOptions, forceRelay }
     const reusable = machineSessionRef.current
     if (
       reusable &&
       reusable.connector === connector &&
       reusable.machineId === machineId &&
-      reusable.retryToken === connectionRetryToken
+      reusable.retryToken === connectionRetryToken &&
+      reusable.forceRelay === forceRelay
     ) {
       if (isRtcSessionAlive(reusable.session)) return reusable.session
       releaseMachineSession()
@@ -161,7 +314,8 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
       pending &&
       pending.connector === connector &&
       pending.machineId === machineId &&
-      pending.retryToken === connectionRetryToken
+      pending.retryToken === connectionRetryToken &&
+      pending.forceRelay === forceRelay
     ) {
       return pending.promise
     }
@@ -169,14 +323,16 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
       connector: LocalRemoteSessionConnector
       machineId: string
       retryToken: number
+      forceRelay: boolean
       promise: Promise<RtcSession>
     } = {
       connector,
       machineId,
       retryToken: connectionRetryToken,
+      forceRelay,
       promise: Promise.resolve(null as unknown as RtcSession),
     }
-    entry.promise = connector.connect({ machineId }).then((session) => {
+    entry.promise = connector.connect({ machineId }, effectiveConnectOptions).then((session) => {
       if (machineSessionPromiseRef.current !== entry) {
         void session.disconnect()
         return session
@@ -186,8 +342,10 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
         connector,
         machineId,
         retryToken: connectionRetryToken,
+        forceRelay,
         session,
       }
+      attachConnectionStateSubscription(session)
       setConnectedSession(session)
       return session
     }).catch((err: unknown) => {
@@ -198,30 +356,27 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
     })
     machineSessionPromiseRef.current = entry
     return entry.promise
-  }, [connector, connectionRetryToken, releaseMachineSession])
+  }, [attachConnectionStateSubscription, connector, connectionRetryToken, forceRelayConnection, releaseMachineSession])
 
   const withManagementApi = useCallback(async () => {
     if (!machine) throw new Error('machine is required before managing terminals')
-    const session = await ensureMachineSession(machine.machineId)
+    const session = await ensureMachineSession(machine.machineId, { forceRelay: forceRelayConnection })
     return {
       session,
       api: createTerminalManagementApi(session, machine.machineId),
     }
-  }, [ensureMachineSession, machine])
+  }, [ensureMachineSession, forceRelayConnection, machine])
 
   const refreshTerminals = useCallback(async () => {
     const seq = terminalRefreshSeqRef.current + 1
     terminalRefreshSeqRef.current = seq
-    setRefreshingTerminals(true)
     try {
       const status = await api.getStatus()
       if (terminalRefreshSeqRef.current !== seq) return
       setMachine(status.machine)
-      const terminalList = await api.listTerminals({
-        onStatus: (status) => {
-          if (terminalRefreshSeqRef.current === seq) setConnectionStatus(status)
-        },
-      })
+      const forceRelay = forceRelayPreference(status.machine.machineId)
+      setForceRelayConnection(forceRelay)
+      const terminalList = await api.listTerminals({ forceRelay })
       if (terminalRefreshSeqRef.current !== seq) return
       setTerminals(terminalList)
       setError(null)
@@ -229,12 +384,11 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
       if (terminalRefreshSeqRef.current === seq) setError(err instanceof Error ? err.message : String(err))
     } finally {
       if (terminalRefreshSeqRef.current === seq) {
-        setRefreshingTerminals(false)
-        setConnectionStatus(null)
+        clearConnectionStatus()
         setLoadingTerminals(false)
       }
     }
-  }, [api])
+  }, [api, clearConnectionStatus])
 
   useEffect(() => {
     let cancelled = false
@@ -246,9 +400,12 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
         const status = await api.getStatus()
         if (cancelled || terminalRefreshSeqRef.current !== seq) return
         setMachine(status.machine)
+        const forceRelay = forceRelayPreference(status.machine.machineId)
+        setForceRelayConnection(forceRelay)
         const terminalList = await api.listTerminals({
+          forceRelay,
           onStatus: (status) => {
-            if (!cancelled && terminalRefreshSeqRef.current === seq) setConnectionStatus(status)
+            if (!cancelled && terminalRefreshSeqRef.current === seq) setTerminalListConnectionStatus(status)
           },
         })
         if (cancelled || terminalRefreshSeqRef.current !== seq) return
@@ -258,7 +415,8 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
       } finally {
         if (!cancelled && terminalRefreshSeqRef.current === seq) {
           setLoadingTerminals(false)
-          setConnectionStatus(null)
+          setTerminalListConnectionStatus(null)
+          clearConnectionStatus()
         }
       }
     }
@@ -266,7 +424,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
     return () => {
       cancelled = true
     }
-  }, [api])
+  }, [api, clearConnectionStatus])
 
   useEffect(() => {
     if (!inventoryEvents || !machine) return
@@ -279,10 +437,36 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
   }, [inventoryEvents, machine, refreshTerminals, connectionRetryToken])
 
   useEffect(() => {
+    if (!connectionStateEvents || !machine) return
+    const subscription = connectionStateEvents.subscribe(machine.machineId, (snapshot) => {
+      const activeSession = machineSessionRef.current?.session
+      if (snapshot.phase === 'connected' && activeTerminalId && (!activeSession || !isRtcSessionAlive(activeSession))) {
+        void ensureMachineSession(machine.machineId, { forceRelay: forceRelayConnection })
+          .then((session) => {
+            setConnectedSession(session)
+            setConnectedTerminalId(activeTerminalId)
+            setConnectingTerminalId(null)
+            terminalRef.current?.reattach(session)
+            splitTerminalRef.current?.reattach(session)
+            updateFromPassiveConnectionState(snapshot, session)
+          })
+          .catch((err: unknown) => {
+            setError(err instanceof Error ? err.message : String(err))
+          })
+        return
+      }
+      updateFromPassiveConnectionState(snapshot, activeSession)
+    })
+    return () => {
+      subscription.close()
+    }
+  }, [activeTerminalId, connectionStateEvents, ensureMachineSession, forceRelayConnection, machine, updateFromPassiveConnectionState])
+
+  useEffect(() => {
     const machineId = machine?.machineId
     if (!subscribeRuntimeInventoryEvents || requireVerification || !machineId) return
     let cancelled = false
-    void ensureMachineSession(machineId).then((session) => {
+    void ensureMachineSession(machineId, { forceRelay: forceRelayConnection }).then((session) => {
       if (cancelled) return
       const current = runtimeInventorySubscriptionRef.current
       if (
@@ -321,7 +505,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
         current.subscription.close()
       }
     }
-  }, [connectionRetryToken, connector, ensureMachineSession, machine?.machineId, refreshTerminals, requireVerification, subscribeRuntimeInventoryEvents])
+  }, [connectionRetryToken, connector, ensureMachineSession, forceRelayConnection, machine?.machineId, refreshTerminals, requireVerification, subscribeRuntimeInventoryEvents])
 
   useEffect(() => {
     const machineId = machine?.machineId
@@ -369,24 +553,107 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
     setConnectedSession(null)
     setConnectedTerminalId(null)
     setConnectingTerminalId(activeTerminalId)
-    ensureMachineSession(machineId).then((session) => {
+    let showConnectionProgress = false
+    let lastConnectionSnapshot: RtcConnectionStateSnapshot | null = null
+    let lastConnectionStatus: string | null = null
+    const updateFromConnectionStatusText = (status: string) => {
+      updateFromConnectionState(connectionSnapshotFromStatus({
+        machineId,
+        statusText: status,
+      }))
+    }
+    const progressTimer = window.setTimeout(() => {
+      if (cancelled || machineSessionConnectSeqRef.current !== connectSeq) return
+      showConnectionProgress = true
+      if (lastConnectionSnapshot) {
+        updateFromConnectionState(lastConnectionSnapshot)
+        return
+      }
+      updateFromConnectionStatusText(lastConnectionStatus ?? (forceRelayConnection ? 'Connecting through relay...' : 'Connecting...'))
+    }, TERMINAL_CONNECTION_PROGRESS_DELAY_MS)
+    ensureMachineSession(machineId, {
+      forceRelay: forceRelayConnection,
+      onConnectionState: (snapshot) => {
+        if (cancelled || machineSessionConnectSeqRef.current !== connectSeq) return
+        lastConnectionSnapshot = snapshot
+        if (showConnectionProgress || snapshot.phase === 'failed' || snapshot.phase === 'reconnecting' || snapshot.phase === 'waiting_network') {
+          updateFromConnectionState(snapshot)
+        }
+      },
+      onStatus: (status) => {
+        if (cancelled || machineSessionConnectSeqRef.current !== connectSeq) return
+        lastConnectionStatus = status
+        const snapshot = connectionSnapshotFromStatus({ machineId, statusText: status })
+        if (showConnectionProgress || snapshot.phase === 'failed' || snapshot.phase === 'reconnecting' || snapshot.phase === 'waiting_network') {
+          updateFromConnectionState(snapshot)
+        }
+      },
+    }).then((session) => {
+      window.clearTimeout(progressTimer)
       if (cancelled || machineSessionConnectSeqRef.current !== connectSeq) return
       setConnectedSession(session)
       setConnectedTerminalId(activeTerminalId)
       setConnectingTerminalId(null)
+      if (showConnectionProgress) {
+        updateConnectionStatus('Connected', 'connected')
+        clearConnectionStatusSoon()
+      } else {
+        clearConnectionStatus()
+      }
     }).catch((err: unknown) => {
+      window.clearTimeout(progressTimer)
       if (!cancelled && machineSessionConnectSeqRef.current === connectSeq) {
         setConnectedSession(null)
         setConnectedTerminalId(null)
         setConnectingTerminalId(null)
+        clearConnectionStatus()
         setError(err instanceof Error ? err.message : String(err))
         if (pair) setMobileSheet('pair')
       }
     })
     return () => {
       cancelled = true
+      window.clearTimeout(progressTimer)
     }
-  }, [activeTerminalId, connector, connectionRetryToken, ensureMachineSession, machine?.machineId, page, pair, releaseMachineSession])
+  }, [activeTerminalId, clearConnectionStatus, clearConnectionStatusSoon, connector, connectionRetryToken, ensureMachineSession, forceRelayConnection, machine?.machineId, manualReconnectNonce, page, pair, releaseMachineSession, updateConnectionStatus, updateFromConnectionState])
+
+  useEffect(() => {
+    if (manualReconnectNonce === 0 || handledManualReconnectNonceRef.current === manualReconnectNonce) return
+    const machineId = machine?.machineId
+    if (!machineId || requireVerification) return
+    handledManualReconnectNonceRef.current = manualReconnectNonce
+    let cancelled = false
+    void ensureMachineSession(machineId, {
+      forceRelay: forceRelayConnection,
+      onConnectionState: (snapshot) => {
+        if (!cancelled) updateFromConnectionState(snapshot)
+      },
+      onStatus: (status) => {
+        if (!cancelled) updateConnectionStatus(status, 'connecting')
+      },
+    }).then((session) => {
+      if (cancelled) return
+      setConnectedSession(session)
+      if (page === 'terminal' && activeTerminalId) {
+        setConnectedTerminalId(activeTerminalId)
+        setConnectingTerminalId(null)
+        terminalRef.current?.reattach(session)
+        splitTerminalRef.current?.reattach(session)
+      }
+      updateConnectionStatus('Connected', 'connected')
+      clearConnectionStatusSoon()
+    }).catch((err: unknown) => {
+      if (cancelled) return
+      setConnectedSession(null)
+      setConnectedTerminalId(null)
+      setConnectingTerminalId(null)
+      clearConnectionStatus()
+      setError(err instanceof Error ? err.message : String(err))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [activeTerminalId, clearConnectionStatus, clearConnectionStatusSoon, ensureMachineSession, forceRelayConnection, machine?.machineId, manualReconnectNonce, page, requireVerification, updateConnectionStatus, updateFromConnectionState])
 
   const openTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {
@@ -500,6 +767,39 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
     setMobileSheet(null)
   }, [])
 
+  const retryConnection = useCallback((options: { forceRelay?: boolean; closeDialog?: boolean } = {}) => {
+    const targetForceRelay = options.forceRelay ?? forceRelayConnection
+    setForceRelayConnection(targetForceRelay)
+    if (machineForceRelayKey) writeStoredForceRelay(machineForceRelayKey, targetForceRelay)
+    if (options.closeDialog !== false) setConnectionInfoOpen(false)
+    setConnectionInfo(null)
+    setConnectionInfoError(null)
+    updateConnectionStatus(targetForceRelay ? 'Reconnecting through relay...' : 'Reconnecting...', 'reconnecting')
+    if (connector.reconnect) {
+      const current = machineSessionRef.current
+      connector.reconnect({ forceRelay: targetForceRelay })
+      machineSessionConnectSeqRef.current += 1
+      connectionStateSubscriptionRef.current?.close()
+      connectionStateSubscriptionRef.current = null
+      machineSessionPromiseRef.current = null
+      machineSessionRef.current = null
+      const runtimeInventorySubscription = runtimeInventorySubscriptionRef.current
+      runtimeInventorySubscriptionRef.current = null
+      runtimeInventorySubscription?.subscription.close()
+      void current?.session.disconnect()
+      setConnectedSession(null)
+      setConnectedTerminalId(null)
+      setConnectingTerminalId(activeTerminalId)
+    } else {
+      releaseMachineSession()
+      setConnectedSession(null)
+      setConnectedTerminalId(null)
+      setConnectingTerminalId(activeTerminalId)
+    }
+    setManualReconnectNonce((value) => value + 1)
+    setConnectionRetryToken((value) => value + 1)
+  }, [activeTerminalId, connector, forceRelayConnection, machineForceRelayKey, releaseMachineSession, updateConnectionStatus])
+
   useEffect(() => {
     if (!pair) return
     if (machine && pair.sessionStore.getSessionToken(machine.machineId)) {
@@ -535,10 +835,12 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
     const fileTerminal = page === 'terminal' ? activeToolTerminal : (activeToolTerminal ?? terminals[0] ?? null)
     const fallbackPath = fileTerminal?.cwd || '/'
     const resolveTerminalDirectory = page === 'terminal' && Boolean(fileTerminal)
+    const contextScope = page === 'terminal' ? 'terminal' : 'list'
+    const nextContextKey = `${contextScope}:${fileTerminal?.terminalId ?? 'machine'}:${fallbackPath}`
     setFileTerminalId(fileTerminal?.terminalId ?? null)
     setFileInitialPath(fallbackPath)
-    setFileOpenNonce((current) => current + 1)
-    void ensureMachineSession(machine.machineId)
+    if (!filesOpen && fileContextKey !== nextContextKey) setFileContextKey(nextContextKey)
+    void ensureMachineSession(machine.machineId, { forceRelay: forceRelayConnection })
       .then(async (session) => {
         if (!resolveTerminalDirectory || !fileTerminal) return
         try {
@@ -547,11 +849,12 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
           const livePath = normalizeTerminalDirectory(directory.path)
           if (livePath) {
             setFileInitialPath(livePath)
-            setFileOpenNonce((current) => current + 1)
+            const liveContextKey = `${contextScope}:${fileTerminal.terminalId}:${livePath}`
+            if (!filesOpen && fileContextKey !== liveContextKey) setFileContextKey(liveContextKey)
           }
         } catch {
           setFileInitialPath(fallbackPath)
-          setFileOpenNonce((current) => current + 1)
+          if (!filesOpen && fileContextKey !== nextContextKey) setFileContextKey(nextContextKey)
         }
       })
       .catch((err: unknown) => {
@@ -562,7 +865,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
       })
     setFilesOpen(true)
     setMobileSheet(null)
-  }, [activeToolTerminal, ensureMachineSession, machine, page, pair, requireVerification, terminals])
+  }, [activeToolTerminal, ensureMachineSession, fileContextKey, filesOpen, forceRelayConnection, machine, page, pair, requireVerification, terminals])
 
   const openManageTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {
@@ -587,7 +890,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
     setManagedTerminalId(null)
     setTerminalForm({
       name: '',
-      command: '/bin/zsh -l',
+      command: '',
       cwd: '',
       environment: '',
       sizeLockMode: 'off',
@@ -599,7 +902,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
     if (!managedTerminal) return
     setTerminalForm({
       name: managedTerminal.title,
-      command: managedTerminal.command ?? '/bin/zsh -l',
+      command: managedTerminal.command ?? '',
       cwd: managedTerminal.cwd ?? '',
       environment: managedTerminal.environment ?? '',
       sizeLockMode: managedTerminal.sizeLockMode ?? 'off',
@@ -609,9 +912,10 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
 
   const submitCreateTerminal = useCallback(async () => {
     if (!canManageTerminals) return
+    const command = terminalForm.command.trim().split(/\s+/).filter(Boolean)
     const input: LocalCreateTerminalInput = {
       name: terminalForm.name.trim() || undefined,
-      command: terminalForm.command.trim().split(/\s+/).filter(Boolean),
+      ...(command.length > 0 ? { command } : {}),
       cwd: terminalForm.cwd.trim() || undefined,
       environment: terminalForm.environment.trim() || undefined,
       sizeLockMode: terminalForm.sizeLockMode,
@@ -699,9 +1003,45 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
     }, 0)
   }, [focusActiveTerminal])
 
-  const resetKeyboardOffset = useCallback(() => {
-    terminalRef.current?.adjustInputPosition(0)
-    splitTerminalRef.current?.adjustInputPosition(0)
+  const openConnectionInfo = useCallback(() => {
+    const existingSession = connectedSession ?? machineSessionRef.current?.session ?? null
+    if (!existingSession && !machine) {
+      setConnectionInfoError('No machine connection is available')
+      setConnectionInfo(null)
+      setConnectionInfoOpen(true)
+      return
+    }
+    setConnectionInfoOpen(true)
+    setConnectionInfoLoading(true)
+    setConnectionInfoError(null)
+    const sessionPromise = existingSession
+      ? Promise.resolve(existingSession)
+      : ensureMachineSession(machine!.machineId, { forceRelay: forceRelayConnection })
+    sessionPromise.then((session) => session.getConnectionInfo()).then((info) => {
+      setConnectionInfo(info)
+    }).catch((err: unknown) => {
+      setConnectionInfoError(err instanceof Error ? err.message : String(err))
+    }).finally(() => {
+      setConnectionInfoLoading(false)
+    })
+  }, [connectedSession, ensureMachineSession, forceRelayConnection, machine])
+
+  const toggleConnectionMode = useCallback(() => {
+    retryConnection({ forceRelay: !forceRelayConnection })
+  }, [forceRelayConnection, retryConnection])
+
+  const lockKeyboard = useCallback(() => {
+    setKeyboardLocked((prev) => {
+      const next = !prev
+      keyboardLockedRef.current = next
+      if (next) {
+        terminalRef.current?.blur()
+        splitTerminalRef.current?.blur()
+      } else {
+        terminalRef.current?.focus()
+      }
+      return next
+    })
   }, [])
 
   const setTerminalToolbarModeAndReset = useCallback((mode: TerminalToolbarMode) => {
@@ -739,12 +1079,62 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
     }
   }, [pasteTerminalText])
 
+  useEffect(() => addNativeBackHandler(() => {
+    if (pasteConfirmText) {
+      setPasteConfirmText('')
+      return true
+    }
+    if (connectionInfoOpen) {
+      setConnectionInfoOpen(false)
+      return true
+    }
+    if (filesOpen) {
+      openTerminalPanel()
+      return true
+    }
+    if (mobileSheet) {
+      setMobileSheet(null)
+      return true
+    }
+    if (terminalFnOpen) {
+      setTerminalFnOpen(false)
+      return true
+    }
+    if (terminalToolbarOpen) {
+      setTerminalToolbarOpen(false)
+      setTerminalToolbarModeAndReset('default')
+      return true
+    }
+    if (splitTerminalId) {
+      closeSplitTerminal()
+      return true
+    }
+    if (page === 'terminal') {
+      showTerminalListPage()
+      return true
+    }
+    return false
+  }, 20), [
+    closeSplitTerminal,
+    connectionInfoOpen,
+    filesOpen,
+    mobileSheet,
+    openTerminalPanel,
+    page,
+    pasteConfirmText,
+    setTerminalToolbarModeAndReset,
+    showTerminalListPage,
+    splitTerminalId,
+    terminalFnOpen,
+    terminalToolbarOpen,
+  ])
+
   const renderTerminalListPage = () => {
     if (!machine) return null
 
     return (
       <main className="relative flex min-h-0 flex-1 flex-col bg-zinc-50" data-testid="termx-terminal-list-page">
-        <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-4">
+        <header className="flex min-h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-4 pt-[env(safe-area-inset-top)]">
           <div className="flex min-w-0 items-center gap-2">
             {onBack ? (
               <button
@@ -765,11 +1155,11 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
           <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
-              aria-label="Refresh terminals"
+              aria-label="Connection info"
               className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
-              onClick={() => { void refreshTerminals() }}
+              onClick={openConnectionInfo}
             >
-              <RefreshCw className={`h-5 w-5 ${refreshingTerminals ? 'animate-spin' : ''}`} />
+              <Info className="h-5 w-5" />
             </button>
             <button
               type="button"
@@ -818,41 +1208,14 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
           </section>
         ) : null}
         <div
-          ref={listContainerRef}
           className="min-h-0 flex-1 overflow-y-auto p-3"
           data-testid="termx-terminal-list-scroll"
-          onTouchStart={(event) => {
-            if ((listContainerRef.current?.scrollTop ?? 0) > 0) return
-            listPullStartRef.current = event.touches[0]?.clientY ?? null
-          }}
-          onTouchMove={(event) => {
-            if (listPullStartRef.current === null) return
-            const currentY = event.touches[0]?.clientY ?? listPullStartRef.current
-            const nextDistance = Math.max(0, Math.min(96, currentY - listPullStartRef.current))
-            listPullDistanceRef.current = nextDistance
-            setListPullDistance(nextDistance)
-          }}
-          onTouchEnd={() => {
-            const shouldRefresh = listPullDistanceRef.current >= 64
-            listPullStartRef.current = null
-            listPullDistanceRef.current = 0
-            setListPullDistance(0)
-            if (shouldRefresh) {
-              void refreshTerminals()
-            }
-          }}
         >
-          <div
-            className="flex items-center justify-center overflow-hidden text-xs font-medium text-zinc-500 transition-all"
-            style={{ height: `${Math.min(listPullDistance, 48)}px` }}
-          >
-            {refreshingTerminals ? 'Refreshing terminals...' : listPullDistance >= 64 ? 'Release to refresh terminals' : 'Pull down to refresh'}
-          </div>
           <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Terminals</h2>
           {loadingTerminals ? (
             <div className="flex flex-col items-center justify-center p-8 text-sm text-zinc-500">
               <div className="mb-3 h-6 w-6 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600"></div>
-              {connectionStatus ? <p className="animate-pulse">{connectionStatus}</p> : <p>Loading terminals...</p>}
+              {terminalListConnectionStatus ? <p className="animate-pulse">{terminalListConnectionStatus}</p> : <p>Loading terminals...</p>}
             </div>
           ) : (
             <TerminalList
@@ -990,42 +1353,13 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
 
   useEffect(() => {
     setTerminalResizeControl(defaultTerminalResizeControl)
-    if (typeof window === 'undefined' || !window.visualViewport) {
-      terminalRef.current?.adjustInputPosition(0)
-      splitTerminalRef.current?.adjustInputPosition(0)
-      return
-    }
-
-    const viewport = window.visualViewport
-    let frame = 0
-    const syncKeyboardOffset = () => {
-      if (frame) return
-      frame = window.requestAnimationFrame(() => {
-        frame = 0
-        const currentViewport = window.visualViewport
-        const bottomOffset = currentViewport
-          ? Math.max(0, Math.round(window.innerHeight - currentViewport.height - currentViewport.offsetTop))
-          : 0
-        const keyboardOffset = bottomOffset > 80 ? bottomOffset : 0
-        terminalRef.current?.adjustInputPosition(keyboardOffset)
-        splitTerminalRef.current?.adjustInputPosition(keyboardOffset)
-      })
-    }
-
-    viewport.addEventListener('resize', syncKeyboardOffset)
-    viewport.addEventListener('scroll', syncKeyboardOffset)
-    syncKeyboardOffset()
-
-    return () => {
-      if (frame) window.cancelAnimationFrame(frame)
-      viewport.removeEventListener('resize', syncKeyboardOffset)
-      viewport.removeEventListener('scroll', syncKeyboardOffset)
-      terminalRef.current?.adjustInputPosition(0)
-      splitTerminalRef.current?.adjustInputPosition(0)
-    }
   }, [activeTerminalId, connectedSession])
 
   useEffect(() => () => {
+    if (connectionStatusClearTimerRef.current) {
+      clearTimeout(connectionStatusClearTimerRef.current)
+      connectionStatusClearTimerRef.current = null
+    }
     disconnectMachineSession()
   }, [disconnectMachineSession])
 
@@ -1052,7 +1386,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
   }
 
   return (
-    <div className={`relative flex h-[100dvh] w-full flex-col overflow-hidden bg-zinc-50 font-sans text-zinc-900 md:flex-row ${className || ''}`} data-machine-id={machine.machineId}>
+    <div ref={outerContainerRef} className={`relative flex h-[100dvh] w-full flex-col overflow-hidden bg-zinc-50 font-sans text-zinc-900 md:flex-row ${className || ''}`} data-machine-id={machine.machineId}>
       {page === 'terminal' ? (
       <aside className="hidden w-72 shrink-0 flex-col border-r border-zinc-200 bg-zinc-100 md:flex">
         <div className="flex h-12 shrink-0 items-center border-b border-zinc-200 px-4">
@@ -1075,7 +1409,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
           {loadingTerminals ? (
             <div className="flex flex-col items-center justify-center p-8 text-sm text-zinc-500">
               <div className="mb-3 h-6 w-6 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600"></div>
-              {connectionStatus ? <p className="animate-pulse">{connectionStatus}</p> : <p>Loading terminals...</p>}
+              {terminalListConnectionStatus ? <p className="animate-pulse">{terminalListConnectionStatus}</p> : <p>Loading terminals...</p>}
             </div>
           ) : (
             <TerminalList
@@ -1092,7 +1426,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
 
       {page === 'terminal-list' ? renderTerminalListPage() : (
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-black">
-        <header className="absolute inset-x-0 top-0 z-30 flex h-10 items-center justify-between gap-1 border-b border-zinc-800/70 bg-zinc-950/70 px-1.5 backdrop-blur-lg md:hidden">
+        <header className="shrink-0 z-30 flex min-h-10 items-center justify-between gap-1 border-b border-zinc-800/70 bg-zinc-950/70 px-1.5 backdrop-blur-lg md:hidden pt-[env(safe-area-inset-top)]">
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <button
               type="button"
@@ -1110,6 +1444,9 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
             >
               <span className="max-w-full truncate text-[9px] font-bold uppercase tracking-wider text-zinc-500">{machine.name}</span>
               <span className="max-w-full truncate text-[12px] font-semibold leading-tight text-zinc-100" data-testid="termx-terminal-title">{terminalHeaderTitle}</span>
+              {terminalHeaderDirectory ? (
+                <span className="max-w-full truncate text-[10px] font-medium leading-tight text-zinc-500">{terminalHeaderDirectory}</span>
+              ) : null}
             </button>
           </div>
 
@@ -1161,6 +1498,26 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
             </button>
             <button
               type="button"
+              aria-label="Connection info"
+              onClick={openConnectionInfo}
+              className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${connectionInfoOpen ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 active:bg-zinc-800'}`}
+            >
+              <Info className="h-4 w-4" />
+            </button>
+            {fileTransfer && transferState.transfers.length > 0 && filesOpen ? (
+              <FileTransferPanel
+                transfers={transferState.transfers}
+                hasActiveTransfers={transferState.hasActiveTransfers}
+                onCancel={(id) => fileTransfer.cancelTransfer(id)}
+                onDismiss={(id) => fileTransfer.dismissTransfer(id)}
+                onPause={(id) => fileTransfer.pauseTransfer?.(id)}
+                onResume={(id) => fileTransfer.resumeTransfer?.(id)}
+                onResumeAll={() => fileTransfer.resumeAllTransfers?.(machine.machineId)}
+                variant="icon"
+              />
+            ) : null}
+            <button
+              type="button"
               aria-label="Open files"
               onClick={openFiles}
               className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors active:scale-95 ${filesOpen ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 active:bg-zinc-800'}`}
@@ -1174,7 +1531,10 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
           <TerminalActionToolbar
             mode={terminalToolbarMode}
             hasSelection={hasTerminalSelection}
+            renderer={renderer}
+            fontSize={fontSize}
             onModeChange={setTerminalToolbarModeAndReset}
+            onClose={() => setTerminalToolbarOpen(false)}
             onSelectAll={() => {
               activeTerminalHandle()?.selectAll()
               setHasTerminalSelection(true)
@@ -1199,6 +1559,14 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
               setTerminalFnOpen((current) => !current)
               setTerminalToolbarOpen(false)
             }}
+            onRendererChange={(r) => {
+              setRenderer(r)
+              try { localStorage.setItem('termx.renderer', r) } catch {}
+            }}
+            onFontSizeChange={(sz) => {
+              setFontSize(sz)
+              try { localStorage.setItem('termx.fontSize', String(sz)) } catch {}
+            }}
           />
         ) : null}
 
@@ -1218,77 +1586,90 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
           </div>
         ) : null}
 
-        <div className={`relative flex min-h-0 flex-1 flex-col overflow-hidden bg-black md:bg-zinc-950 ${splitTerminalId ? 'gap-px md:gap-3 md:p-3' : ''}`}>
-          <div
-            className={`relative min-h-0 flex-1 bg-black ${splitTerminalId ? `border-b border-zinc-800 md:rounded-xl md:border md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 0 ? 'shadow-[inset_0_0_0_1px_rgba(96,165,250,0.55)]' : ''}` : 'md:m-3 md:rounded-2xl md:border md:border-zinc-800 md:shadow-2xl md:overflow-hidden'}`}
-            data-active-slot={activeTerminalSlot === 0 ? 'true' : 'false'}
-            data-testid="termx-terminal-panel"
-            onPointerDown={() => setActiveTerminalSlot(0)}
-          >
-            {activeTerminalId && connectedSession && connectedTerminalId === activeTerminalId ? (
-              <Terminal
-                ref={terminalRef}
-                machineId={machine.machineId}
-                terminalId={activeTerminalId}
-                session={connectedSession}
-                className="absolute inset-0 outline-none"
-                modifierState={modifierState}
-                onModifierStateChange={setModifierState}
-                onCursorMove={resetKeyboardOffset}
-                onResizeControl={setTerminalResizeControl}
-                selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 0}
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-                {activeTerminalId && connectingTerminalId === activeTerminalId ? 'Connecting terminal...' : 'No active terminal'}
-              </div>
-            )}
-            {activeTerminalId && connectedSession && connectedTerminalId === activeTerminalId && activeTerminalResizeLocked ? (
-              <button
-                type="button"
-                aria-label="Unlock terminal resize"
-                className={`absolute right-2 z-20 flex min-h-7 items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-950/90 px-2 text-[11px] font-semibold text-zinc-100 shadow-lg backdrop-blur active:bg-zinc-800 disabled:opacity-60 ${splitTerminalId ? 'top-16' : 'top-12'}`}
-                disabled={unlockingResize}
-                onClick={() => { void unlockTerminalResize() }}
-              >
-                <Unlock className="h-3.5 w-3.5" />
-                {unlockingResize ? 'Unlocking...' : 'Unlock resize'}
-              </button>
-            ) : null}
-          </div>
-
-          {splitTerminalId ? (
+        <div ref={terminalAreaRef} className="relative min-h-0 flex-1 overflow-hidden">
+          <div ref={terminalWrapperRef} className={`absolute inset-0 flex flex-col bg-black md:bg-zinc-950 ${splitTerminalId ? 'gap-px md:gap-3 md:p-3' : ''}`}>
             <div
-              className={`relative min-h-0 flex-1 bg-black md:rounded-xl md:border md:border-zinc-800 md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 1 ? 'shadow-[inset_0_0_0_1px_rgba(96,165,250,0.55)]' : ''}`}
-              data-active-slot={activeTerminalSlot === 1 ? 'true' : 'false'}
-              data-testid="termx-split-terminal-panel"
-              onPointerDown={() => setActiveTerminalSlot(1)}
+              className={`relative min-h-0 flex-1 bg-black ${splitTerminalId ? `border-b border-zinc-800 md:rounded-xl md:border md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 0 ? 'shadow-[inset_0_0_0_1px_rgba(96,165,250,0.55)]' : ''}` : 'md:m-3 md:rounded-2xl md:border md:border-zinc-800 md:shadow-2xl md:overflow-hidden'}`}
+              data-active-slot={activeTerminalSlot === 0 ? 'true' : 'false'}
+              data-testid="termx-terminal-panel"
+              onPointerDown={() => { setActiveTerminalSlot(0); activeTerminalSlotRef.current = 0 }}
             >
-              {connectedSession ? (
+              {activeTerminalId && connectedSession && connectedTerminalId === activeTerminalId ? (
                 <Terminal
-                  ref={splitTerminalRef}
+                  ref={terminalRef}
                   machineId={machine.machineId}
-                  terminalId={splitTerminalId}
+                  terminalId={activeTerminalId}
                   session={connectedSession}
                   className="absolute inset-0 outline-none"
                   modifierState={modifierState}
                   onModifierStateChange={setModifierState}
-                  onCursorMove={resetKeyboardOffset}
-                  selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 1}
+                  onCursorMove={handleCursorMove}
+                  onBufferChange={handleBufferChange}
+                  onResizeControl={setTerminalResizeControl}
+                  selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 0}
+                  renderer={renderer}
+                  fontSize={fontSize}
+                  preventFocus={keyboardLocked}
+                  suppressConnectingOverlay={showConnectionProgressBanner}
                 />
               ) : (
-                <div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-500">
-                  Connecting terminal...
+                <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+                  {activeTerminalId && connectingTerminalId === activeTerminalId ? (connectionStatus ?? 'Connecting terminal...') : 'No active terminal'}
                 </div>
               )}
+              {activeTerminalId && connectedSession && connectedTerminalId === activeTerminalId && activeTerminalResizeLocked ? (
+                <button
+                  type="button"
+                  aria-label="Unlock terminal resize"
+                  className={`absolute right-2 z-20 flex min-h-7 items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-950/90 px-2 text-[11px] font-semibold text-zinc-100 shadow-lg backdrop-blur active:bg-zinc-800 disabled:opacity-60 ${splitTerminalId ? 'top-16' : 'top-2'}`}
+                  disabled={unlockingResize}
+                  onClick={() => { void unlockTerminalResize() }}
+                >
+                  <Unlock className="h-3.5 w-3.5" />
+                  {unlockingResize ? 'Unlocking...' : 'Unlock resize'}
+                </button>
+              ) : null}
             </div>
-          ) : null}
+
+            {splitTerminalId ? (
+              <div
+                className={`relative min-h-0 flex-1 bg-black md:rounded-xl md:border md:border-zinc-800 md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 1 ? 'shadow-[inset_0_0_0_1px_rgba(96,165,250,0.55)]' : ''}`}
+                data-active-slot={activeTerminalSlot === 1 ? 'true' : 'false'}
+                data-testid="termx-split-terminal-panel"
+                onPointerDown={() => { setActiveTerminalSlot(1); activeTerminalSlotRef.current = 1 }}
+              >
+                {connectedSession ? (
+                  <Terminal
+                    ref={splitTerminalRef}
+                    machineId={machine.machineId}
+                    terminalId={splitTerminalId}
+                    session={connectedSession}
+                    className="absolute inset-0 outline-none"
+                    modifierState={modifierState}
+                    onModifierStateChange={setModifierState}
+                    onCursorMove={handleCursorMove}
+                    onBufferChange={handleBufferChange}
+                    selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 1}
+                    renderer={renderer}
+                    fontSize={fontSize}
+                    preventFocus={keyboardLocked}
+                    suppressConnectingOverlay={showConnectionProgressBanner}
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-500">
+                    {connectionStatus ?? 'Connecting terminal...'}
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <MobileTerminalKeybar
           onInput={sendTerminalInput}
           onFocusKeyboard={focusActiveTerminal}
           onBlurKeyboard={() => activeTerminalHandle()?.blur()}
+          onLockKeyboard={lockKeyboard}
           fnOpen={terminalFnOpen}
           onToggleFn={() => {
             setTerminalFnOpen((current) => !current)
@@ -1296,6 +1677,8 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
           }}
           modifierState={modifierState}
           onModifierStateChange={setModifierState}
+          keyboardVisible={keyboardVisible}
+          keyboardLocked={keyboardLocked}
         />
 
         {pasteConfirmText ? (
@@ -1354,10 +1737,10 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
       )}
 
       <div
-        className={`absolute inset-0 z-30 flex flex-col bg-zinc-50 shadow-[0_-20px_40px_rgba(0,0,0,0.15)] transition-all duration-300 md:m-6 md:rounded-2xl md:border md:border-zinc-200/60 ${filesOpen ? 'translate-y-0 visible' : 'translate-y-full invisible'}`}
+        className={`absolute inset-0 z-30 flex flex-col bg-white shadow-[0_-20px_40px_rgba(0,0,0,0.15)] transition-all duration-300 md:m-6 md:rounded-2xl md:border md:border-zinc-200/60 ${filesOpen ? 'translate-y-0 visible' : 'translate-y-full invisible'}`}
         data-testid="termx-machine-files-overlay"
       >
-        <div className="flex h-16 shrink-0 items-center justify-between border-b border-zinc-200/50 bg-white/80 px-4 backdrop-blur-xl md:h-14">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200/70 bg-white px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
           <div className="flex items-center gap-2">
             <Folder className="h-5 w-5 text-zinc-500" />
             <span className="text-[17px] font-bold tracking-tight text-zinc-900">Files</span>
@@ -1365,7 +1748,7 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
           <button
             type="button"
             aria-label="Close files"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 transition-colors active:scale-95 active:bg-zinc-200"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition-colors active:scale-95 active:bg-zinc-100"
             onClick={openTerminalPanel}
           >
             <X className="h-5 w-5" />
@@ -1373,12 +1756,15 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
         </div>
         {connectedSession ? (
           <FileManager
-            key={`${fileTerminalId ?? 'machine'}:${fileInitialPath}:${fileOpenNonce}`}
+            key={fileContextKey}
             machineId={machine.machineId}
             terminalId={fileTerminalId ?? undefined}
             session={connectedSession}
             initialPath={fileInitialPath}
             className="flex h-full min-h-0 flex-col relative"
+            active={filesOpen}
+            fileTransfer={fileTransfer}
+            onOpenTransferCenter={() => setTransferCenterOpen(true)}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-zinc-500">
@@ -1392,6 +1778,50 @@ export function LocalRemoteApp({ api, connector, className, inventoryEvents, sub
           {pairStatus}
         </div>
       </div>
+      {connectionInfoOpen ? (
+        <ConnectionInfoDialog
+          info={connectionInfo}
+          loading={connectionInfoLoading}
+          error={connectionInfoError}
+          forceRelayActive={forceRelayConnection}
+          onClose={() => setConnectionInfoOpen(false)}
+          onRefresh={openConnectionInfo}
+          onReconnect={() => retryConnection()}
+          onToggleMode={toggleConnectionMode}
+        />
+      ) : null}
+      {showConnectionProgressBanner ? (
+        <ConnectionProgressBanner
+          phase={connectionPhase}
+          status={connectionStatus}
+        />
+      ) : null}
+      {fileTransfer && transferState.transfers.length > 0 && filesOpen && !transferCenterOpen ? (
+        <FileTransferPanel
+          transfers={transferState.transfers}
+          hasActiveTransfers={transferState.hasActiveTransfers}
+          onCancel={(id) => fileTransfer.cancelTransfer(id)}
+          onDismiss={(id) => fileTransfer.dismissTransfer(id)}
+          onPause={(id) => fileTransfer.pauseTransfer?.(id)}
+          onResume={(id) => fileTransfer.resumeTransfer?.(id)}
+          onResumeAll={() => fileTransfer.resumeAllTransfers?.(machine.machineId)}
+        />
+      ) : null}
+      {fileTransfer && transferCenterOpen ? (
+        <FileTransferPanel
+          transfers={transferState.transfers}
+          hasActiveTransfers={transferState.hasActiveTransfers}
+          onCancel={(id) => fileTransfer.cancelTransfer(id)}
+          onDismiss={(id) => fileTransfer.dismissTransfer(id)}
+          onPause={(id) => fileTransfer.pauseTransfer?.(id)}
+          onResume={(id) => fileTransfer.resumeTransfer?.(id)}
+          onResumeAll={() => fileTransfer.resumeAllTransfers?.(machine.machineId)}
+          open
+          onOpenChange={(open) => {
+            if (!open) setTransferCenterOpen(false)
+          }}
+        />
+      ) : null}
     </div>
   )
 }
@@ -1434,10 +1864,135 @@ function MobileSheetPanel({
   )
 }
 
+function ConnectionInfoDialog({
+  info,
+  loading,
+  error,
+  forceRelayActive,
+  onClose,
+  onRefresh,
+  onReconnect,
+  onToggleMode,
+}: {
+  info: ConnectionInfo | null
+  loading: boolean
+  error: string | null
+  forceRelayActive: boolean
+  onClose: () => void
+  onRefresh: () => void
+  onReconnect: () => void
+  onToggleMode: () => void
+}) {
+  const type = info?.type ?? (info?.relayInUse ? 'relay' : 'unknown')
+  const isP2P = type === 'p2p'
+  const canToggleMode = forceRelayActive || isP2P
+  const modeActionLabel = forceRelayActive ? 'Try P2P' : 'Use relay'
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" onClick={onClose}>
+      <section className="w-full max-w-md overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <header className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-semibold text-zinc-950">Connection Info</h2>
+            <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{connectionTypeLabel(type)}</p>
+          </div>
+          <button type="button" aria-label="Close connection info" className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 active:bg-zinc-100" onClick={onClose}>
+            <X className="h-5 w-5" />
+          </button>
+        </header>
+
+        <div className="space-y-3 px-4 py-4">
+          {error ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-800">{error}</div>
+          ) : null}
+          <div className="grid grid-cols-1 gap-2">
+            <ConnectionInfoRow label="Mode" value={loading ? 'Reading stats...' : connectionTypeLabel(type)} strong />
+            <ConnectionInfoRow label="Path" value={info?.path ?? '-'} />
+            <ConnectionInfoRow label="Local" value={info?.localAddr ?? '-'} />
+            <ConnectionInfoRow label="Remote" value={info?.remoteAddr ?? '-'} />
+            <ConnectionInfoRow label="Candidates" value={candidateTypeText(info)} />
+            <ConnectionInfoRow label="RTT" value={info?.rtt !== undefined ? `${Math.round(info.rtt)} ms` : '-'} />
+            <ConnectionInfoRow label="Connection" value={info?.connectionId ?? '-'} />
+          </div>
+        </div>
+
+        <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-3">
+          <button type="button" className="flex min-h-9 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 active:bg-zinc-100" onClick={onRefresh}>
+            Refresh
+          </button>
+          <button type="button" className="flex min-h-9 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 active:bg-zinc-100" onClick={onReconnect}>
+            Reconnect
+          </button>
+          <button
+            type="button"
+            className="flex min-h-9 items-center justify-center rounded-md bg-zinc-900 px-3 text-[13px] font-semibold text-white disabled:bg-zinc-300 disabled:text-zinc-500"
+            disabled={loading || !canToggleMode}
+            onClick={onToggleMode}
+          >
+            {modeActionLabel}
+          </button>
+        </footer>
+      </section>
+    </div>
+  )
+}
+
+function ConnectionProgressBanner({
+  phase,
+  status,
+}: {
+  phase: RtcConnectionStateSnapshot['phase'] | null
+  status: string | null
+}) {
+  const label = status || connectionPhaseLabel(phase)
+  return (
+    <div
+      className="pointer-events-none absolute left-1/2 top-[calc(env(safe-area-inset-top)+3.75rem)] z-[70] w-[min(calc(100%-1.5rem),26rem)] -translate-x-1/2 md:top-5"
+      data-testid="termx-connection-progress-banner"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-950/92 px-3 py-2 text-zinc-100 shadow-2xl backdrop-blur">
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-300" />
+        <div className="min-w-0 truncate text-[12px] font-semibold">{label}</div>
+      </div>
+    </div>
+  )
+}
+
+function ConnectionInfoRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean | undefined }) {
+  return (
+    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-3 rounded-md bg-zinc-50 px-3 py-2">
+      <dt className="text-[12px] font-semibold text-zinc-500">{label}</dt>
+      <dd className={`min-w-0 break-words text-[12px] ${strong ? 'font-semibold text-zinc-950' : 'font-medium text-zinc-700'}`}>{value}</dd>
+    </div>
+  )
+}
+
+function connectionTypeLabel(type: ConnectionInfo['type']): string {
+  if (type === 'p2p') return 'P2P direct'
+  if (type === 'relay') return 'Relay'
+  return 'Unknown'
+}
+
+function candidateTypeText(info: ConnectionInfo | null): string {
+  const local = info?.candidateType ?? '-'
+  const remote = info?.remoteCandidateType ?? '-'
+  return `${local} / ${remote}`
+}
+
 function isRtcSessionAlive(session: RtcSession): boolean {
   const candidate = session as RtcSession & Partial<RtcSessionLiveness>
   if (typeof candidate.isAlive !== 'function') return true
   return candidate.isAlive()
+}
+
+function isTransientConnectionPhase(phase: RtcConnectionStateSnapshot['phase']): boolean {
+  return phase === 'probing' || phase === 'connecting'
+}
+
+function isSettledConnectionPhase(phase: RtcConnectionStateSnapshot['phase'] | null): boolean {
+  return phase === 'connected' || phase === 'idle'
 }
 
 function normalizeTerminalDirectory(path: string | undefined): string {
@@ -1452,6 +2007,34 @@ function normalizeTerminalDirectory(path: string | undefined): string {
     }
   }
   return trimmed.startsWith('/') ? trimmed : ''
+}
+
+function forceRelayStorageKey(machineId: string): string {
+  return `termx.forceRelay.${machineId}`
+}
+
+function forceRelayPreference(machineId: string): boolean {
+  return readStoredForceRelay(forceRelayStorageKey(machineId))
+}
+
+function readStoredForceRelay(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeStoredForceRelay(key: string, value: boolean): void {
+  try {
+    if (value) {
+      localStorage.setItem(key, '1')
+    } else {
+      localStorage.removeItem(key)
+    }
+  } catch {
+    // Storage can be unavailable in restricted WebViews.
+  }
 }
 
 function isTerminalInventoryRuntimeEvent(event: RtcEvent): boolean {

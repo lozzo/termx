@@ -34,7 +34,7 @@ export function MachineList({
       className={`flex min-h-0 flex-1 flex-col bg-zinc-50 text-zinc-950 ${className ?? ''}`}
       data-testid="termx-machine-list"
     >
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 py-3">
+      <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold leading-6 text-zinc-950">Machines</h1>
           <p className="truncate text-xs font-medium text-zinc-500">

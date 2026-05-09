@@ -1,45 +1,81 @@
-import type { ReactNode } from 'react'
-import { Clipboard, Copy, MousePointer2, PanelTopOpen, X } from 'lucide-react'
+import { type ReactNode, useEffect, useRef } from 'react'
+import { Clipboard, Copy, Cpu, MousePointer2, PanelTopOpen, X, Minus, Plus } from 'lucide-react'
+import type { TerminalRenderer } from './Terminal'
 
 export type TerminalToolbarMode = 'default' | 'selection'
 
 export interface TerminalActionToolbarProps {
   mode: TerminalToolbarMode
   hasSelection: boolean
+  renderer?: TerminalRenderer | undefined
+  fontSize?: number
   onModeChange: (mode: TerminalToolbarMode) => void
   onSelectAll: () => void
   onSelectVisible: () => void
   onCopy: () => void
   onPaste: () => void
   onOpenSnippets: () => void
+  onRendererChange?: ((renderer: TerminalRenderer) => void) | undefined
+  onFontSizeChange?: ((size: number) => void) | undefined
+  onClose?: () => void
 }
+
+const RENDERER_LABELS: Record<TerminalRenderer, string> = {
+  auto: 'Auto',
+  webgl: 'WebGL',
+  canvas: 'Canvas',
+  dom: 'DOM',
+}
+const RENDERER_CYCLE: TerminalRenderer[] = ['auto', 'webgl', 'canvas', 'dom']
 
 export function TerminalActionToolbar({
   mode,
   hasSelection,
+  renderer = 'auto',
+  fontSize = 14,
   onModeChange,
   onSelectAll,
   onSelectVisible,
   onCopy,
   onPaste,
   onOpenSnippets,
+  onRendererChange,
+  onFontSizeChange,
+  onClose,
 }: TerminalActionToolbarProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (mode === 'selection' || !onClose) return
+    const handler = (e: PointerEvent) => {
+      const target = e.target as HTMLElement
+      // Allow clicking buttons that open this menu (they usually stop propagation or we can check closest)
+      if (target.closest('button[aria-label="Terminal tools"]')) return
+      if (panelRef.current && !panelRef.current.contains(target)) {
+        onClose()
+      }
+    }
+    document.addEventListener('pointerdown', handler, true)
+    return () => document.removeEventListener('pointerdown', handler, true)
+  }, [mode, onClose])
+
   if (mode === 'selection') {
     return (
-      <div className="absolute inset-x-0 top-10 z-40 border-y border-zinc-800/80 bg-zinc-950/90 px-1.5 py-1.5 text-zinc-100 shadow-lg backdrop-blur-lg md:hidden">
-        <div className="flex items-center gap-1.5 overflow-x-auto">
-          <ToolbarButton label="All" onClick={onSelectAll} />
-          <ToolbarButton label="Visible" onClick={onSelectVisible} />
-          <div className="h-5 w-px shrink-0 bg-zinc-800" />
-          <ToolbarButton
-            label="Copy"
-            icon={<Copy className="h-3 w-3" />}
-            onClick={onCopy}
-            disabled={!hasSelection}
-            primary={hasSelection}
-          />
-          <div className="flex-1" />
-          <ToolbarIconButton label="Close selection tools" onClick={() => onModeChange('default')}>
+      <div className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-40 border-y border-zinc-800/80 bg-zinc-950/90 px-2 py-1.5 text-zinc-100 shadow-[0_-4px_18px_rgba(0,0,0,0.28)] backdrop-blur-lg md:hidden">
+        <div className="flex items-center justify-between gap-1.5 overflow-x-auto">
+          <div className="flex items-center gap-1.5">
+            <ToolbarButton label="全选" onClick={onSelectAll} />
+            <ToolbarButton label="可见区域" onClick={onSelectVisible} />
+            <div className="mx-1 h-5 w-px shrink-0 bg-zinc-800" />
+            <ToolbarButton
+              label="复制"
+              icon={<Copy className="h-3 w-3" />}
+              onClick={onCopy}
+              disabled={!hasSelection}
+              primary={hasSelection}
+            />
+          </div>
+          <ToolbarIconButton label="取消选择" onClick={() => onModeChange('default')}>
             <X className="h-3.5 w-3.5" />
           </ToolbarIconButton>
         </div>
@@ -47,16 +83,55 @@ export function TerminalActionToolbar({
     )
   }
 
+  const nextRenderer = RENDERER_CYCLE[(RENDERER_CYCLE.indexOf(renderer) + 1) % RENDERER_CYCLE.length]!
+
   return (
-    <div className="absolute inset-x-0 top-10 z-40 border-y border-zinc-800/80 bg-zinc-950/90 px-1.5 py-1.5 text-zinc-100 shadow-lg backdrop-blur-lg md:hidden">
-      <div className="grid grid-cols-3 gap-1.5">
-        <ToolbarButton
-          label="Select"
-          icon={<MousePointer2 className="h-3 w-3" />}
-          onClick={() => onModeChange('selection')}
-        />
-        <ToolbarButton label="Paste" icon={<Clipboard className="h-3 w-3" />} onClick={onPaste} />
-        <ToolbarButton label="Fn" icon={<PanelTopOpen className="h-3 w-3" />} onClick={onOpenSnippets} />
+    <div ref={panelRef} className="absolute inset-x-0 top-10 z-40 border-b border-zinc-800/80 bg-zinc-950/95 px-3 py-3 text-zinc-100 shadow-xl backdrop-blur-lg md:hidden animate-in slide-in-from-top-2">
+      <div className="flex flex-col gap-3">
+        {/* Settings Row: Font Size */}
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-zinc-400">字体大小</span>
+          <div className="flex items-center gap-2">
+            <button
+              onPointerDown={(e) => { e.preventDefault(); onFontSizeChange?.(Math.max(6, fontSize - 1)) }}
+              className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-800 text-zinc-300 active:bg-zinc-700"
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </button>
+            <span className="w-10 text-center font-mono text-xs font-semibold tabular-nums text-zinc-200">{fontSize}px</span>
+            <button
+              onPointerDown={(e) => { e.preventDefault(); onFontSizeChange?.(Math.min(32, fontSize + 1)) }}
+              className="flex h-7 w-7 items-center justify-center rounded-md bg-zinc-800 text-zinc-300 active:bg-zinc-700"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Settings Row: Renderer */}
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-zinc-400">渲染模式</span>
+          <button
+            onPointerDown={(e) => { e.preventDefault(); onRendererChange?.(nextRenderer) }}
+            className="flex h-7 items-center justify-center gap-1.5 rounded-md bg-zinc-800 px-3 text-xs font-semibold text-zinc-300 active:bg-zinc-700"
+          >
+            <Cpu className="h-3.5 w-3.5" />
+            {RENDERER_LABELS[renderer]}
+          </button>
+        </div>
+
+        <div className="my-1 h-px w-full bg-zinc-800" />
+
+        {/* Tools Row */}
+        <div className="grid grid-cols-3 gap-2">
+          <ToolbarButton
+            label="选择"
+            icon={<MousePointer2 className="h-3 w-3" />}
+            onClick={() => onModeChange('selection')}
+          />
+          <ToolbarButton label="粘贴" icon={<Clipboard className="h-3 w-3" />} onClick={onPaste} />
+          <ToolbarButton label="快捷短语" icon={<PanelTopOpen className="h-3 w-3" />} onClick={onOpenSnippets} />
+        </div>
       </div>
     </div>
   )
@@ -68,17 +143,20 @@ function ToolbarButton({
   label,
   onClick,
   primary,
+  title,
 }: {
   disabled?: boolean
   icon?: ReactNode
   label: string
   onClick: () => void
   primary?: boolean
+  title?: string
 }) {
   return (
     <button
       type="button"
-      className={`flex h-7 min-w-0 items-center justify-center gap-1 rounded-md px-1.5 text-[10px] font-semibold transition-colors active:scale-[0.98] disabled:opacity-40 ${
+      title={title}
+      className={`flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-semibold transition-colors active:scale-[0.98] disabled:opacity-40 ${
         primary ? 'bg-blue-500/20 text-blue-300' : 'bg-zinc-800 text-zinc-300 active:bg-zinc-700'
       }`}
       disabled={disabled}
@@ -104,7 +182,7 @@ function ToolbarIconButton({
     <button
       type="button"
       aria-label={label}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-red-500/15 text-red-300 active:bg-red-500/25"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-500/15 text-red-300 transition-colors active:scale-[0.98] active:bg-red-500/25"
       onPointerDown={(event) => event.preventDefault()}
       onClick={onClick}
     >

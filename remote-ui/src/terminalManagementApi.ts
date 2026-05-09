@@ -23,7 +23,7 @@ export function createTerminalManagementApi(
     async createTerminal(input) {
       const channel = await api()
       const response = await channel.request<{ terminal_id?: string; terminalId?: string }>('create', {
-        command: input.command,
+        ...(input.command && input.command.length > 0 ? { command: input.command } : {}),
         ...(input.name ? { name: input.name } : {}),
         ...(input.cwd ? { dir: input.cwd } : {}),
         ...(input.environment ? { env: [input.environment] } : {}),

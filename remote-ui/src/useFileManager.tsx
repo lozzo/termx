@@ -35,6 +35,18 @@ export interface UseFileManagerResult {
   previewLoading: boolean
   previewError: FileManagerVisibleError | null
   fileApi: FileApi
+  selectionMode: boolean
+  selectedPaths: Set<string>
+  clipboard: { mode: 'copy' | 'cut'; paths: string[] } | null
+  setSelectionMode(mode: boolean): void
+  toggleSelect(path: string): void
+  selectAll(): void
+  deselectAll(): void
+  setClipboard(clipboard: { mode: 'copy' | 'cut'; paths: string[] } | null): void
+  copy(paths: string[]): void
+  cut(paths: string[]): void
+  paste(): Promise<void>
+  batchDelete(paths: string[]): Promise<void>
   setNewDirName(name: string): void
   toggleShowHidden(): void
   openPreview(path: string): Promise<void>
@@ -65,6 +77,10 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   const previewSeqRef = useRef(0)
 
   const fileApi = useMemo(() => createFileApi(options.session), [options.session])
+
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
+  const [clipboard, setClipboard] = useState<{ mode: 'copy' | 'cut'; paths: string[] } | null>(null)
 
   const showActionMessage = useCallback((message: string) => {
     setActionMessage(message)
@@ -100,6 +116,86 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     }
   }, [fileApi, options.machineId, options.terminalId, options.session, showActionMessage])
 
+  const toggleSelect = useCallback((path: string) => {
+    setSelectedPaths(prev => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }, [])
+
+  const visibleEntries = useMemo(
+    () => showHidden ? entries : entries.filter((entry) => !entry.name.startsWith('.')),
+    [entries, showHidden],
+  )
+
+  const selectAll = useCallback(() => {
+    setSelectedPaths(new Set(visibleEntries.map(e => joinPath(currentPathRef.current, e.name))))
+  }, [visibleEntries])
+
+  const deselectAll = useCallback(() => {
+    setSelectedPaths(new Set())
+  }, [])
+
+  const copy = useCallback((paths: string[]) => {
+    setClipboard({ mode: 'copy', paths })
+    showActionMessage(`Copied ${paths.length} items`)
+  }, [showActionMessage])
+
+  const cut = useCallback((paths: string[]) => {
+    setClipboard({ mode: 'cut', paths })
+    showActionMessage(`Cut ${paths.length} items`)
+  }, [showActionMessage])
+
+  const paste = useCallback(async () => {
+    if (!clipboard || clipboard.paths.length === 0) return
+    setError(null)
+    setLoading(true)
+    try {
+      if (clipboard.mode === 'copy') {
+        await fileApi.copy(clipboard.paths, currentPathRef.current)
+        showActionMessage(`Pasted ${clipboard.paths.length} items`)
+      } else {
+        await fileApi.move(clipboard.paths, currentPathRef.current)
+        showActionMessage(`Moved ${clipboard.paths.length} items`)
+        setClipboard(null) // clear clipboard after move
+      }
+      await loadPath(currentPathRef.current)
+    } catch (err) {
+      setError({
+        message: err instanceof Error ? err.message : String(err),
+        surface: 'toast',
+        recoverable: true,
+      })
+      setLoading(false)
+    }
+  }, [clipboard, fileApi, loadPath, showActionMessage])
+
+  const batchDelete = useCallback(async (paths: string[]) => {
+    if (paths.length === 0) return
+    setError(null)
+    setLoading(true)
+    try {
+      await fileApi.batchDelete(paths)
+      showActionMessage(`Deleted ${paths.length} items`)
+      setSelectedPaths(new Set())
+      setSelectionMode(false)
+      await loadPath(currentPathRef.current)
+    } catch (err) {
+      setError({
+        message: err instanceof Error ? err.message : String(err),
+        surface: 'toast',
+        recoverable: true,
+      })
+      setLoading(false)
+    }
+  }, [fileApi, loadPath, showActionMessage])
+
+  useEffect(() => {
+    if (!selectionMode) setSelectedPaths(new Set())
+  }, [selectionMode])
+
   useEffect(() => {
     void loadPath(currentPathRef.current)
     return () => {
@@ -114,11 +210,6 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   const refresh = useCallback(async () => {
     await loadPath(currentPathRef.current)
   }, [loadPath])
-
-  const visibleEntries = useMemo(
-    () => showHidden ? entries : entries.filter((entry) => !entry.name.startsWith('.')),
-    [entries, showHidden],
-  )
 
   const toggleShowHidden = useCallback(() => {
     setShowHidden((current) => !current)
@@ -228,6 +319,18 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     previewLoading,
     previewError,
     fileApi,
+    selectionMode,
+    selectedPaths,
+    clipboard,
+    setSelectionMode,
+    toggleSelect,
+    selectAll,
+    deselectAll,
+    setClipboard,
+    copy,
+    cut,
+    paste,
+    batchDelete,
     setNewDirName,
     toggleShowHidden,
     openPreview,

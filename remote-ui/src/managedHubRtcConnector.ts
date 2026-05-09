@@ -2,6 +2,7 @@ import type { ManagedHubApi, ManagedHubSession } from './managedHubApi'
 import type {
   ConnectionCapabilities,
   ConnectionPath,
+  RtcConnectionPhase,
   RtcConnectionTarget,
   RtcConnectOptions,
   RtcSession,
@@ -51,6 +52,7 @@ class ManagedHubRtcConnector {
         },
       })
       throwIfAborted(options.signal)
+      emitConnectionState(options, input, 'probing', 'Fetching ICE servers...', path)
       const iceConfig = await this.options.api.getSessionIce({
         machineId: input.machineId,
         terminalId,
@@ -66,12 +68,13 @@ class ManagedHubRtcConnector {
         },
       })
       throwIfAborted(options.signal)
+      emitConnectionState(options, input, 'probing', 'Creating WebRTC offer...', path)
       const offer = await session.createOffer({
         machineId: input.machineId,
         path,
         iceServers: iceConfig.iceServers,
         ...(terminalId ? { terminalId } : {}),
-      })
+      }, options)
       this.log('offer_created', {
         machineId: input.machineId,
         terminalId,
@@ -85,6 +88,7 @@ class ManagedHubRtcConnector {
       if (!sdp) throw new Error('managed Hub WebRTC offer SDP is required')
       throwIfAborted(options.signal)
       const answerProofChallenge = input.answerProofSecret ? randomProofChallenge() : undefined
+      emitConnectionState(options, input, 'connecting', 'Exchanging signals with hub...', path)
       this.log('hub_session_create_start', {
         machineId: input.machineId,
         terminalId,
@@ -155,7 +159,9 @@ class ManagedHubRtcConnector {
         path,
         sessionId: offer.sessionId,
       })
+      emitConnectionState(options, input, 'connecting', 'Opening data channels...', path, answer.relayInUse)
       await session.acceptAnswer(answer.answer)
+      emitConnectionState(options, input, 'connected', 'Connected', path, answer.relayInUse)
       this.log('connect_success', {
         level: 'info',
         machineId: input.machineId,
@@ -177,6 +183,7 @@ class ManagedHubRtcConnector {
           message: errorMessage(err),
         })
       } else {
+        emitConnectionState(options, input, 'failed', errorMessage(err), path)
         this.log('connect_failed', {
           level: 'error',
           machineId: input.machineId,
@@ -205,6 +212,7 @@ class ManagedHubRtcConnector {
         await delay(delayMs, options.signal)
       }
       try {
+        emitConnectionState(options, input, 'connecting', `Waiting for machine response (${attempt + 1}/${maxPolls})...`, input.path)
         this.log('answer_poll_start', {
           machineId: input.machineId,
           terminalId: input.terminalId,
@@ -477,6 +485,25 @@ function capabilitiesFromManagedSession(answer: ManagedHubSession): ConnectionCa
     terminalManagementAllowed: true,
     relayInUse,
   }
+}
+
+function emitConnectionState(
+  options: RtcConnectOptions,
+  input: RtcConnectionTarget,
+  phase: RtcConnectionPhase,
+  statusText: string,
+  path: ConnectionPath | undefined,
+  relayInUse = false,
+): void {
+  options.onStatus?.(statusText)
+  options.onConnectionState?.({
+    machineId: input.machineId,
+    phase,
+    ...(path ? { path } : {}),
+    statusText,
+    relayInUse,
+    ...(phase === 'failed' ? { failReason: statusText } : {}),
+  })
 }
 
 function isPendingAnswerError(err: unknown): boolean {

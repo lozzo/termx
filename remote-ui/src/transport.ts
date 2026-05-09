@@ -47,10 +47,24 @@ export interface RtcSessionNegotiator {
 
 export interface RtcConnectOptions {
   signal?: AbortSignal
+  forceRelay?: boolean | undefined
+  onStatus?: ((status: string) => void) | undefined
+  onConnectionState?: ((snapshot: RtcConnectionStateSnapshot) => void) | undefined
 }
 
 export interface RtcSubscription {
   close(): void
+}
+
+export type RtcConnectionPhase = 'idle' | 'probing' | 'connecting' | 'connected' | 'verifying' | 'reconnecting' | 'waiting_network' | 'failed'
+
+export interface RtcConnectionStateSnapshot {
+  machineId: string
+  phase: RtcConnectionPhase
+  path?: ConnectionPath | undefined
+  statusText: string
+  relayInUse: boolean
+  failReason?: string | undefined
 }
 
 export interface RtcEvent {
@@ -64,6 +78,12 @@ export interface ConnectionInfo {
   machineId: string
   terminalId?: string
   relayInUse: boolean
+  type?: 'p2p' | 'relay' | 'unknown' | undefined
+  localAddr?: string | undefined
+  remoteAddr?: string | undefined
+  candidateType?: string | undefined
+  remoteCandidateType?: string | undefined
+  rtt?: number | undefined
 }
 
 export interface ConnectionCapabilities {
@@ -107,6 +127,14 @@ export interface RtcSession {
 
 export interface RtcSessionLiveness {
   isAlive(): boolean
+}
+
+export interface RtcSessionConnectionStateEvents {
+  subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription
+}
+
+export interface MachineConnectionStateEvents {
+  subscribe(machineId: string, handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription
 }
 
 export interface RtcTerminalDataChannelController {
@@ -163,7 +191,7 @@ export interface LocalAgentApi {
 
 export interface LocalCreateTerminalInput {
   name?: string | undefined
-  command: string[]
+  command?: string[] | undefined
   cols?: number | undefined
   rows?: number | undefined
   cwd?: string | undefined

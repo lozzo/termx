@@ -14,7 +14,7 @@ export function TerminalFnPanel({ command, onSend }: TerminalFnPanelProps) {
   const groups = selectedTab === 'program' ? programPreset?.groups ?? SYSTEM_FN_GROUPS : SYSTEM_FN_GROUPS
 
   return (
-    <div className="absolute inset-x-0 bottom-[4.8rem] z-40 border-y border-zinc-800/80 bg-zinc-950/90 text-zinc-100 shadow-2xl backdrop-blur-lg md:hidden" data-testid="termx-fn-panel">
+    <div className="border-t border-zinc-800/80 bg-zinc-950/90 text-zinc-100 shadow-2xl backdrop-blur-lg md:hidden" data-testid="termx-fn-panel">
       <div className="max-h-[42vh] overflow-y-auto px-2 py-2">
         <div className="mb-2 flex items-center gap-1.5">
           {programPreset ? (

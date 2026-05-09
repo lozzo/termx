@@ -1,6 +1,12 @@
 export * from './connectionMessageReducer'
 export * from './eventQueue'
 export {
+  TERMX_NATIVE_BACK_EVENT,
+  addNativeBackHandler,
+  dispatchNativeBack,
+} from './nativeBack'
+export type { TermxNativeBackHandler } from './nativeBack'
+export {
   assertRemoteModelShape,
   normalizeMachine,
   normalizeTerminal,
@@ -28,7 +34,29 @@ export type {
   TerminalModifierState,
 } from './mobileTerminalInput'
 export { createFileApi } from './fileApi'
-export type { DirListResponse, FileApi, FileEntry, FileEntryType } from './fileApi'
+export type {
+  DirListResponse,
+  DownloadInitResponse,
+  FileApi,
+  FileEntry,
+  FileEntryType,
+  FileTransferContext,
+  TransferInfo,
+  TransferStatus,
+} from './fileApi'
+export { FileTransferPanel } from './FileTransferPanel'
+export { ConnectionStatusBanner } from './ConnectionStatusBanner'
+export type { ConnectionStatusBannerProps } from './ConnectionStatusBanner'
+export {
+  connectionPathLabel,
+  connectionPhaseLabel,
+  connectionSnapshotFromStatus,
+  connectionStateFromAttempt,
+  connectionStatusIsSettled,
+  createConnectionStatePublisher,
+  inferConnectionPhase,
+} from './connectionState'
+export type { ConnectionStatePublisher } from './connectionState'
 export { FileManager } from './FileManager'
 export type { FileManagerProps } from './FileManager'
 export { LocalRemoteApp } from './LocalRemoteApp'
@@ -86,6 +114,10 @@ export {
   createFutureNativeRemoteNetworkRuntime,
 } from './browserNetworkRuntime'
 export type { BrowserRemoteNetworkRuntimeOptions } from './browserNetworkRuntime'
+export { MachineConnectionStore } from './machineConnectionStore'
+export type { MachineConnectionSnapshot, MachineConnectionStoreOptions } from './machineConnectionStore'
+export { RemoteNetworkStateManager } from './remoteNetworkState'
+export type { RemoteNetworkState, RemoteResumeType } from './remoteNetworkState'
 export {
   createMachineSessionStore,
 } from './localAppIdentity'

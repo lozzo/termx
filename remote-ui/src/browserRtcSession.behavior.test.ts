@@ -37,6 +37,7 @@ describe('BrowserRtcSession', () => {
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       relayInUse: false,
+      type: 'unknown',
     })
 
     const apiChannel = factory.channel('api')
@@ -106,6 +107,70 @@ describe('BrowserRtcSession', () => {
       path: 'public_p2p',
       connectionId: 'rtc-p2p-1',
     })
+  })
+
+  it('publishes browser transport connection state during negotiation and peer reconnects', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const session = createBrowserRtcSession({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      path: 'local',
+      peerConnectionFactory: factory,
+      sessionIdGenerator: () => 'rtc-local-state-1',
+      heartbeatIntervalMs: 60000,
+    })
+    const states: Array<{ phase: string; statusText: string; path?: string }> = []
+    const subscription = session.subscribeConnectionState((snapshot) => {
+      const state: { phase: string; statusText: string; path?: string } = {
+        phase: snapshot.phase,
+        statusText: snapshot.statusText,
+      }
+      if (snapshot.path) state.path = snapshot.path
+      states.push(state)
+    })
+
+    await connectBrowserSession(session)
+    factory.lastConnection()?.setConnectionState('disconnected')
+    await flushMicrotasks()
+
+    expect(states).toEqual(expect.arrayContaining([
+      { phase: 'probing', statusText: 'Creating WebRTC session...', path: 'local' },
+      { phase: 'probing', statusText: 'Opening browser data channels...', path: 'local' },
+      { phase: 'connecting', statusText: 'Applying WebRTC answer...', path: 'local' },
+      { phase: 'connected', statusText: 'Connected', path: 'local' },
+      { phase: 'reconnecting', statusText: 'WebRTC disconnected, probing connection...', path: 'local' },
+    ]))
+    subscription.close()
+    await session.disconnect()
+  })
+
+  it('emits browser transport state through connect options during direct negotiation', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const session = createBrowserRtcSession({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      path: 'local',
+      peerConnectionFactory: factory,
+      sessionIdGenerator: () => 'rtc-local-options-state-1',
+      heartbeatIntervalMs: 60000,
+    })
+    const states: string[] = []
+    const options = {
+      onConnectionState: (snapshot: { statusText: string }) => states.push(snapshot.statusText),
+    }
+
+    await session.createOffer({ machineId: 'machine-local', terminalId: 'terminal-1', path: 'local' }, options)
+    await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' }, options)
+
+    expect(states).toEqual(expect.arrayContaining([
+      'Creating WebRTC session...',
+      'Opening browser data channels...',
+      'Gathering ICE candidates...',
+      'Applying WebRTC answer...',
+      'Opening data channels...',
+      'Connected',
+    ]))
+    await session.disconnect()
   })
 
   it('falls back to getRandomValues when crypto.randomUUID is unavailable', async () => {
@@ -238,6 +303,7 @@ describe('BrowserRtcSession', () => {
       connectionId: 'rtc-machine-1',
       machineId: 'machine-local',
       relayInUse: false,
+      type: 'unknown',
     })
 
     const apiChannel = factory.channel('api')
@@ -303,7 +369,7 @@ describe('BrowserRtcSession', () => {
     }
   })
 
-  it('runs runtime ping when peer connection state reaches connected', async () => {
+  it('runs runtime status check when peer connection state reaches connected', async () => {
     vi.useFakeTimers()
     try {
       const factory = createMockPeerConnectionFactory()
@@ -324,9 +390,8 @@ describe('BrowserRtcSession', () => {
       const heartbeatRequest = JSON.parse(apiChannel.sentText().at(-1) ?? '{}')
       expect(heartbeatRequest).toMatchObject({
         id: 'req_1',
-        method: 'ping',
-        path: 'ping',
-        body: {},
+        method: 'GET',
+        path: '/status',
       })
       apiChannel.emitMessage(apiResponseChunk('req_1', {
         id: 'req_1',

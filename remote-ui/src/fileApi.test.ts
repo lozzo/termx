@@ -25,8 +25,8 @@ describe('createFileApi', () => {
       expect.objectContaining({ name: 'README.md', size: 128 }),
     )
     expect(session.requests).toEqual([
-      { method: 'GET', path: '/files/list', params: { path: '/', offset: 0, limit: 500 } },
-      { method: 'GET', path: '/files/stat', params: { path: '/README.md' } },
+      { method: 'POST', path: '/files/list', params: { path: '/', offset: 0, limit: 500 } },
+      { method: 'POST', path: '/files/stat', params: { path: '/README.md' } },
     ])
   })
 

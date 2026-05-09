@@ -30,6 +30,7 @@ vi.mock('./Terminal', () => ({
       getCursorInfo: vi.fn(() => null),
       adjustInputPosition: vi.fn(),
       getBufferType: vi.fn(() => 'normal' as const),
+      updateOptions: vi.fn(),
     }))
     return (
       <section
@@ -82,7 +83,7 @@ describe('LocalRemoteApp real file manager flow', () => {
     expect(screen.queryByText('log.txt')).toBeNull()
     expect(connect).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'machine-local',
-    }))
+    }), expect.objectContaining({ forceRelay: false }))
     expect(connect).toHaveBeenCalledTimes(1)
   })
 
@@ -103,7 +104,7 @@ describe('LocalRemoteApp real file manager flow', () => {
     await waitFor(() => expect(screen.getByText('live.txt')).toBeTruthy())
     expect(sessions[0]?.requests).toEqual(expect.arrayContaining([
       { method: 'get_directory', path: 'get_directory', params: { terminal_id: 'terminal-1' } },
-      { method: 'GET', path: '/files/list', params: { path: '/Users/lozzow/project', offset: 0, limit: 500 } },
+      { method: 'POST', path: '/files/list', params: { path: '/Users/lozzow/project', offset: 0, limit: 500 } },
     ]))
   })
 })

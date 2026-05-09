@@ -1,7 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react'
 import {
   applyTerminalModifiers,
-  nextModifierState,
   type ModifierState,
   type TerminalModifierState,
 } from './mobileTerminalInput'
@@ -10,175 +9,303 @@ export interface MobileTerminalKeybarProps {
   onInput: (data: string) => void
   onFocusKeyboard?: (() => void) | undefined
   onBlurKeyboard?: (() => void) | undefined
+  onLockKeyboard?: (() => void) | undefined
   fnOpen?: boolean | undefined
   onToggleFn?: (() => void) | undefined
   modifierState?: TerminalModifierState | undefined
   onModifierStateChange?: ((state: TerminalModifierState) => void) | undefined
+  keyboardVisible?: boolean | undefined
+  keyboardLocked?: boolean | undefined
   className?: string | undefined
+}
+
+const DOUBLE_TAP_MS = 300
+const LONG_PRESS_MS = 400
+
+function useModifierToggle(state: ModifierState, setState: (v: ModifierState) => void) {
+  const lastTapRef = useRef(0)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressTriggered = useRef(false)
+
+  const clearLP = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }, [])
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    longPressTriggered.current = false
+    clearLP()
+    longPressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true
+      setState('locked')
+    }, LONG_PRESS_MS)
+  }, [setState, clearLP])
+
+  const handlePointerUp = useCallback(() => { clearLP() }, [clearLP])
+
+  const handleClick = useCallback(() => {
+    if (longPressTriggered.current) { longPressTriggered.current = false; return }
+    const now = Date.now()
+    if (state === 'off') {
+      setState('once')
+      lastTapRef.current = now
+    } else if (state === 'once') {
+      if (now - lastTapRef.current < DOUBLE_TAP_MS) {
+        setState('locked')
+      } else {
+        setState('off')
+      }
+    } else {
+      setState('off')
+    }
+  }, [state, setState])
+
+  return { handlePointerDown, handlePointerUp, handleClick }
+}
+
+function KeyPopup({ label }: { label: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const pad = 4
+    if (rect.left < pad) {
+      el.style.transform = `translateX(calc(-50% + ${pad - rect.left}px))`
+    } else if (rect.right > window.innerWidth - pad) {
+      el.style.transform = `translateX(calc(-50% - ${rect.right - (window.innerWidth - pad)}px))`
+    } else {
+      el.style.transform = 'translateX(-50%)'
+    }
+  })
+  return (
+    <div
+      ref={ref}
+      className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-0.5 -translate-x-1/2"
+      style={{ overflow: 'visible' }}
+    >
+      <div className="min-w-[2.5rem] rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-center font-mono text-base font-bold text-zinc-100 shadow-xl whitespace-nowrap">
+        {label}
+      </div>
+      <div className="mx-auto h-0 w-0 border-l-[7px] border-r-[7px] border-t-[7px] border-l-transparent border-r-transparent border-t-zinc-800" />
+    </div>
+  )
 }
 
 export function MobileTerminalKeybar({
   onInput,
   onFocusKeyboard,
   onBlurKeyboard,
+  onLockKeyboard,
   fnOpen = false,
   onToggleFn,
   modifierState,
   onModifierStateChange,
+  keyboardVisible,
+  keyboardLocked = false,
   className,
 }: MobileTerminalKeybarProps) {
   const [internalModifierState, setInternalModifierState] = useState<TerminalModifierState>({ ctrl: 'off', alt: 'off' })
-  const [keyboardLocked, setKeyboardLocked] = useState(false)
   const activeModifierState = modifierState ?? internalModifierState
   const setModifierState = onModifierStateChange ?? setInternalModifierState
 
-  const send = useCallback((data: string) => {
-    // Light haptic feedback
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      navigator.vibrate(10)
+  const [pressedKey, setPressedKey] = useState<string | null>(null)
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const barRef = useRef<HTMLDivElement>(null)
+  const touchingRef = useRef(false)
+
+  const kbLastTapRef = useRef(0)
+  const kbLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const kbLongPressTriggered = useRef(false)
+
+  const showPress = useCallback((key: string) => {
+    setPressedKey(key)
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(10)
+    if (pressTimer.current) clearTimeout(pressTimer.current)
+    pressTimer.current = setTimeout(() => setPressedKey(null), 400)
+  }, [])
+
+  // Swipe-across detection
+  useEffect(() => {
+    const bar = barRef.current
+    if (!bar) return
+    const onTouchStart = () => { touchingRef.current = true }
+    const onTouchEnd = () => { touchingRef.current = false }
+    const onTouchMove = (e: TouchEvent) => {
+      if (!touchingRef.current || e.touches.length < 1) return
+      const touch = e.touches[0]!
+      const el = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null
+      const btn = el?.closest('[data-key-id]') as HTMLElement | null
+      if (btn) {
+        const id = btn.getAttribute('data-key-id')!
+        if (id !== pressedKey) {
+          setPressedKey(id)
+          if (pressTimer.current) clearTimeout(pressTimer.current)
+          pressTimer.current = setTimeout(() => setPressedKey(null), 400)
+        }
+      }
     }
+    bar.addEventListener('touchstart', onTouchStart, { passive: true })
+    bar.addEventListener('touchmove', onTouchMove, { passive: true })
+    bar.addEventListener('touchend', onTouchEnd, { passive: true })
+    bar.addEventListener('touchcancel', onTouchEnd, { passive: true })
+    return () => {
+      bar.removeEventListener('touchstart', onTouchStart)
+      bar.removeEventListener('touchmove', onTouchMove)
+      bar.removeEventListener('touchend', onTouchEnd)
+      bar.removeEventListener('touchcancel', onTouchEnd)
+    }
+  }, [pressedKey])
+
+  const send = useCallback((data: string) => {
     const result = applyTerminalModifiers(data, activeModifierState)
     setModifierState({ ctrl: result.ctrl, alt: result.alt })
     onInput(result.data)
   }, [activeModifierState, onInput, setModifierState])
 
-  const toggleKeyboard = useCallback(() => {
-    setKeyboardLocked((current) => {
-      const next = !current
-      if (next) onBlurKeyboard?.()
-      else onFocusKeyboard?.()
-      return next
-    })
-  }, [onBlurKeyboard, onFocusKeyboard])
+  const ctrlToggle = useModifierToggle(activeModifierState.ctrl, (v) => setModifierState({ ...activeModifierState, ctrl: v }))
+  const altToggle = useModifierToggle(activeModifierState.alt, (v) => setModifierState({ ...activeModifierState, alt: v }))
+
+  const cls = 'flex h-8 flex-1 min-w-0 items-center justify-center rounded-md text-center font-mono text-[10px] font-medium select-none touch-manipulation relative overflow-visible'
+
+  const btn = (label: string, data: string, ariaLabel?: string) => {
+    const id = label + ':' + data
+    return (
+      <button
+        key={id}
+        data-key-id={id}
+        type="button"
+        aria-label={ariaLabel}
+        className={`${cls} bg-zinc-800 text-zinc-300 active:opacity-70`}
+        onPointerDown={(e) => { e.preventDefault(); showPress(id); }}
+        onClick={() => send(data)}
+      >
+        {label}
+        {pressedKey === id && <KeyPopup label={label} />}
+      </button>
+    )
+  }
+
+  const modBtn = (label: string, state: ModifierState, toggle: ReturnType<typeof useModifierToggle>) => {
+    const stateClass = state === 'locked'
+      ? 'bg-amber-500 text-white shadow-sm shadow-amber-500/20'
+      : state === 'once'
+        ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/20'
+        : 'bg-zinc-800 text-zinc-300 active:opacity-70'
+    return (
+      <button
+        key={label}
+        data-key-id={label}
+        type="button"
+        aria-pressed={state !== 'off'}
+        className={`${cls} ${stateClass}`}
+        onPointerDown={(e) => { toggle.handlePointerDown(e); showPress(label) }}
+        onPointerUp={toggle.handlePointerUp}
+        onPointerCancel={toggle.handlePointerUp}
+        onClick={toggle.handleClick}
+      >
+        {label}
+        {state === 'locked' && (
+          <span className="absolute bottom-0.5 left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-full bg-white/80" />
+        )}
+        {pressedKey === label && <KeyPopup label={label} />}
+      </button>
+    )
+  }
 
   return (
     <div
-      className={`absolute inset-x-0 bottom-0 z-30 border-t border-zinc-800/70 bg-zinc-950/90 px-1.5 py-1.5 text-zinc-100 shadow-[0_-4px_18px_rgba(0,0,0,0.28)] backdrop-blur-lg md:hidden ${className || ''}`}
+      ref={barRef}
+      className={`shrink-0 border-t border-zinc-800/70 bg-zinc-950/90 text-zinc-100 shadow-[0_-4px_18px_rgba(0,0,0,0.28)] backdrop-blur-lg md:hidden ${className || ''}`}
       data-testid="termx-mobile-keybar"
-      style={{ paddingBottom: 'calc(0.375rem + env(safe-area-inset-bottom))' }}
+      style={{ paddingBottom: 'calc(0.375rem + env(safe-area-inset-bottom))', overflow: 'visible' }}
     >
-      <div className="grid grid-cols-9 gap-1">
-        {keyButton('Esc', '\x1b', send)}
-        {keyButton('/', '/', send)}
-        {keyButton('|', '|', send)}
-        {keyButton('-', '-', send)}
-        {keyButton('Home', '\x1b[H', send)}
-        {keyButton('↑', '\x1b[A', send)}
-        {keyButton('End', '\x1b[F', send)}
-        {keyButton('PgU', '\x1b[5~', send)}
+      <div className="flex gap-1 px-1.5 pt-1.5" style={{ overflow: 'visible' }}>
+        {btn('Esc', '\x1b')}
+        {btn('/', '/')}
+        {btn('|', '|')}
+        {btn('-', '-')}
+        {btn('Home', '\x1b[H')}
+        {btn('↑', '\x1b[A')}
+        {btn('End', '\x1b[F')}
+        {btn('PgU', '\x1b[5~')}
         <button
+          data-key-id="⌨"
           type="button"
-          aria-label={keyboardLocked ? 'Unlock system keyboard' : 'Lock system keyboard'}
-          className={`flex h-8 flex-col items-center justify-center rounded-md text-center font-mono text-[11px] font-medium transition-transform active:scale-95 select-none touch-manipulation ${keyboardLocked ? 'bg-red-500 text-white shadow-sm shadow-red-500/20' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 active:bg-zinc-600'}`}
+          aria-label={keyboardLocked ? 'Unlock system keyboard' : 'Toggle system keyboard'}
+          className={`${cls} ${
+            keyboardLocked
+              ? 'bg-red-600 text-white shadow-sm shadow-red-500/20'
+              : 'bg-transparent text-zinc-400 active:bg-zinc-800'
+          }`}
+          onMouseDown={(e) => e.preventDefault()}
           onPointerDown={(e) => {
             e.preventDefault()
-            e.currentTarget.dataset.pointerHandled = '1'
-            toggleKeyboard()
+            showPress('⌨')
+            kbLongPressTriggered.current = false
+            if (kbLongPressTimer.current) clearTimeout(kbLongPressTimer.current)
+            kbLongPressTimer.current = setTimeout(() => {
+              kbLongPressTriggered.current = true
+              onLockKeyboard?.()
+            }, LONG_PRESS_MS)
           }}
-          onClick={(e) => {
-            if (e.currentTarget.dataset.pointerHandled === '1') {
-              delete e.currentTarget.dataset.pointerHandled
-              return
+          onPointerUp={() => {
+            if (kbLongPressTimer.current) { clearTimeout(kbLongPressTimer.current); kbLongPressTimer.current = null }
+          }}
+          onPointerCancel={() => {
+            if (kbLongPressTimer.current) { clearTimeout(kbLongPressTimer.current); kbLongPressTimer.current = null }
+          }}
+          onClick={() => {
+            if (kbLongPressTriggered.current) { kbLongPressTriggered.current = false; return }
+            const now = Date.now()
+            if (now - kbLastTapRef.current < DOUBLE_TAP_MS) {
+              onLockKeyboard?.()
+              kbLastTapRef.current = 0
+            } else {
+              if (keyboardLocked) {
+                onLockKeyboard?.()
+                onFocusKeyboard?.()
+              } else if (keyboardVisible) {
+                onBlurKeyboard?.()
+              } else {
+                onFocusKeyboard?.()
+              }
+              kbLastTapRef.current = now
             }
-            toggleKeyboard()
           }}
         >
           ⌨
+          {keyboardLocked && (
+            <span className="absolute bottom-0.5 left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-full bg-white/80" />
+          )}
+          {pressedKey === '⌨' && <KeyPopup label="⌨" />}
         </button>
       </div>
-      <div className="mt-1 grid grid-cols-9 gap-1">
-        {keyButton('⇥', '\t', send, 'Tab key')}
-        {modifierButton('Ctrl', activeModifierState.ctrl, () => setModifierState({
-          ...activeModifierState,
-          ctrl: nextModifierState(activeModifierState.ctrl),
-        }))}
-        {modifierButton('Alt', activeModifierState.alt, () => setModifierState({
-          ...activeModifierState,
-          alt: nextModifierState(activeModifierState.alt),
-        }))}
-        {keyButton('\\', '\\', send)}
-        {keyButton('←', '\x1b[D', send)}
-        {keyButton('↓', '\x1b[B', send)}
-        {keyButton('→', '\x1b[C', send)}
-        {keyButton('PgD', '\x1b[6~', send)}
+      <div className="flex gap-1 px-1.5 pb-1.5 pt-1" style={{ overflow: 'visible' }}>
+        {btn('⇥', '\t', 'Tab key')}
+        {modBtn('Ctrl', activeModifierState.ctrl, ctrlToggle)}
+        {modBtn('Alt', activeModifierState.alt, altToggle)}
+        {btn('\\', '\\')}
+        {btn('←', '\x1b[D')}
+        {btn('↓', '\x1b[B')}
+        {btn('→', '\x1b[C')}
+        {btn('PgD', '\x1b[6~')}
         <button
+          data-key-id="Fn"
           type="button"
           aria-label="Toggle Fn shortcuts"
           aria-pressed={fnOpen}
-          className={`flex h-8 flex-col items-center justify-center rounded-md text-center font-mono text-[10px] font-medium shadow-sm transition-transform active:scale-95 select-none touch-manipulation ${fnOpen ? 'bg-blue-500 text-white shadow-blue-500/20' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 active:bg-zinc-600'}`}
-          onPointerDown={(e) => {
-            e.preventDefault()
-            e.currentTarget.dataset.pointerHandled = '1'
-            onToggleFn?.()
-          }}
-          onClick={(e) => {
-            if (e.currentTarget.dataset.pointerHandled === '1') {
-              delete e.currentTarget.dataset.pointerHandled
-              return
-            }
-            onToggleFn?.()
-          }}
+          className={`${cls} ${fnOpen ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/20' : 'bg-transparent text-zinc-400 active:bg-zinc-800'}`}
+          onPointerDown={(e) => { e.preventDefault(); showPress('Fn') }}
+          onClick={() => onToggleFn?.()}
         >
           Fn
+          {pressedKey === 'Fn' && <KeyPopup label="Fn" />}
         </button>
       </div>
     </div>
-  )
-}
-
-function keyButton(label: string, data: string, send: (data: string) => void, ariaLabel?: string) {
-  return (
-    <button
-      key={`${label}:${data}`}
-      type="button"
-      aria-label={ariaLabel}
-      className="flex h-8 flex-col items-center justify-center rounded-md bg-zinc-800 text-center font-mono text-[10px] font-medium text-zinc-300 shadow-sm transition-transform hover:bg-zinc-700 active:scale-95 active:bg-zinc-600 select-none touch-manipulation"
-      onPointerDown={(e) => {
-        e.preventDefault()
-        e.currentTarget.dataset.pointerHandled = '1'
-        send(data)
-      }}
-      onClick={(e) => {
-        if (e.currentTarget.dataset.pointerHandled === '1') {
-          delete e.currentTarget.dataset.pointerHandled
-          return
-        }
-        send(data)
-      }}
-    >
-      {label}
-    </button>
-  )
-}
-
-function modifierButton(label: string, state: ModifierState, onClick: () => void) {
-  const activeClass = state === 'locked'
-    ? 'bg-amber-500 text-white shadow-sm shadow-amber-500/20'
-    : state === 'once'
-      ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/20'
-      : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 active:bg-zinc-600'
-
-  return (
-    <button
-      key={label}
-      type="button"
-      aria-pressed={state !== 'off'}
-      className={`relative flex h-8 flex-col items-center justify-center rounded-md text-center font-mono text-[10px] font-medium shadow-sm transition-transform active:scale-95 select-none touch-manipulation ${activeClass}`}
-      onPointerDown={(e) => {
-        e.preventDefault()
-        e.currentTarget.dataset.pointerHandled = '1'
-        onClick()
-      }}
-      onClick={(e) => {
-        if (e.currentTarget.dataset.pointerHandled === '1') {
-          delete e.currentTarget.dataset.pointerHandled
-          return
-        }
-        onClick()
-      }}
-    >
-      {label}
-      {state === 'locked' ? <span className="absolute bottom-0.5 left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-full bg-white/80" /> : null}
-    </button>
   )
 }

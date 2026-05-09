@@ -239,7 +239,7 @@ class ManagedE2ESession extends MockRtcTerminalSession {
     this.openApiCount += 1
     return {
       async request<TResponse>(method: string, params?: unknown): Promise<TResponse> {
-        if (method === 'GET' && isFileListParams(params)) {
+        if (method === 'POST' && isFileListParams(params)) {
           return {
             path: params.params.path,
             parent: '',

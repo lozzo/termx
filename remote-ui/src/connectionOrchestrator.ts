@@ -3,6 +3,7 @@ import type {
   RtcConnectOptions,
   RtcSession,
 } from './transport'
+import { connectionStateFromAttempt } from './connectionState'
 import type { LocalHubUrlProvider } from './localHubUrlProvider'
 import type { ManagedHubApi } from './managedHubApi'
 import type { ManagedHubRtcConnectInput } from './managedHubRtcConnector'
@@ -82,7 +83,7 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
       },
     })
     try {
-      const local = await this.tryLocalWithTimeout(input, connectOptions, failures, 2000)
+      const local = options.forceRelay ? null : await this.tryLocalWithTimeout(input, connectOptions, failures, 2000)
       if (local) {
         ac.abort()
         this.log('connect_success', {
@@ -107,8 +108,14 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
       input.onSnapshot?.({
         stage: 'trying_managed',
         path: 'managed',
-        message: `Racing ${hubUrls.length} hub(s)`,
+        message: options.forceRelay ? `Connecting through relay on ${hubUrls.length} hub(s)` : `Racing ${hubUrls.length} hub(s)`,
       })
+      emitConnectionState(input, options, {
+        stage: 'trying_managed',
+        path: 'managed',
+        message: options.forceRelay ? `Connecting through relay on ${hubUrls.length} hub(s)` : `Racing ${hubUrls.length} hub(s)`,
+      })
+      options.onStatus?.(options.forceRelay ? `Connecting through relay on ${hubUrls.length} hub(s)` : `Racing ${hubUrls.length} hub(s)`)
       const winner = await raceConnections(
         hubUrls.map((hubUrl, index) => () => this.connectManagedHub(input, hubUrl, connectOptions, failures, index)),
         signal,
@@ -116,6 +123,12 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
       if (winner) {
         ac.abort()
         input.onSnapshot?.({
+          stage: 'connected',
+          path: winner.path,
+          relayInUse: winner.relayInUse,
+          message: 'Connected',
+        })
+        emitConnectionState(input, options, {
           stage: 'connected',
           path: winner.path,
           relayInUse: winner.relayInUse,
@@ -150,6 +163,10 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
       message: 'All connection paths failed',
       errors: failures,
     })
+    emitConnectionState(input, options, {
+      stage: 'failed',
+      message: 'All connection paths failed',
+    })
     this.log('connect_failed_all_paths', {
       level: 'error',
       machineId: input.machineId,
@@ -182,6 +199,12 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
       path: input.path,
       message: input.message,
     })
+    emitConnectionState(input.input, input.options, {
+      stage: input.stage,
+      path: input.path,
+      message: input.message,
+    })
+    input.options.onStatus?.(input.message)
     try {
       const session = await input.connect()
       try {
@@ -204,6 +227,13 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
           relayInUse: result.relayInUse,
           message: 'Connected',
         })
+        emitConnectionState(input.input, input.options, {
+          stage: 'connected',
+          path: result.path,
+          relayInUse: result.relayInUse,
+          message: 'Connected',
+        })
+        input.options.onStatus?.('Connected')
         this.log('path_attempt_success', {
           level: 'info',
           machineId: input.input.machineId,
@@ -420,6 +450,20 @@ function isAbortError(error: unknown, signal: AbortSignal | undefined): boolean 
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function emitConnectionState(
+  input: Pick<ConnectionOrchestratorInput, 'machineId'>,
+  options: RtcConnectOptions,
+  snapshot: ConnectionAttemptSnapshot,
+): void {
+  options.onConnectionState?.(connectionStateFromAttempt({
+    machineId: input.machineId,
+    stage: snapshot.stage,
+    message: snapshot.message,
+    ...(snapshot.path ? { path: snapshot.path } : {}),
+    relayInUse: snapshot.relayInUse,
+  }))
 }
 
 async function raceConnections(

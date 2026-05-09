@@ -6,13 +6,18 @@ import type {
   RtcBinaryChannel,
   RtcEvent,
   RtcJsonRpcChannel,
+  RtcConnectOptions,
+  RtcConnectionPhase,
+  RtcConnectionStateSnapshot,
   RtcSession,
   RtcSessionDescription,
+  RtcSessionConnectionStateEvents,
   RtcSessionNegotiator,
   RtcSessionNegotiationTarget,
   RtcTerminalDataChannelController,
   RtcSubscription,
 } from './transport'
+import { createConnectionStatePublisher } from './connectionState'
 import type { ConnectionLogger } from './connectionLogger'
 import { logConnectionEvent } from './connectionLogger'
 import {
@@ -46,7 +51,7 @@ export interface BrowserRtcSessionLifecycle {
   handleAppResume(): Promise<boolean>
 }
 
-export type BrowserRtcConnectedSession = RtcSession & RtcSessionNegotiator & RtcSessionCapabilityUpdater & BrowserRtcSessionLifecycle & RtcTerminalDataChannelController
+export type BrowserRtcConnectedSession = RtcSession & RtcSessionNegotiator & RtcSessionCapabilityUpdater & BrowserRtcSessionLifecycle & RtcTerminalDataChannelController & RtcSessionConnectionStateEvents
 
 export interface RTCPeerConnectionLike {
   localDescription: RTCSessionDescriptionInit | null
@@ -108,6 +113,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   private eventsSubscribed = false
   private readonly eventHandlers = new Set<(event: RtcEvent) => void>()
   private readonly disconnectHandlers = new Set<() => void>()
+  private readonly connectionState = createConnectionStatePublisher()
   private readonly suppressedFailureChannels = new WeakSet<RTCDataChannelLike>()
   private terminalChannels = new Map<string, RTCDataChannelLike>()
   private fileChannels = new Map<string, RTCDataChannelLike>()
@@ -120,6 +126,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
   private heartbeatFailCount = 0
   private lastRttMs = 0
   private networkChangeCleanup: (() => void) | null = null
+  private negotiationConnectionStateHandler: ((snapshot: RtcConnectionStateSnapshot) => void) | null = null
   private capabilities: ConnectionCapabilities = {
     terminalAllowed: true,
     apiAllowed: true,
@@ -131,8 +138,10 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
 
   constructor(private readonly options: BrowserRtcSessionOptions) {}
 
-  async createOffer(input: RtcSessionNegotiationTarget): Promise<{ sessionId: string; description: RtcSessionDescription }> {
+  async createOffer(input: RtcSessionNegotiationTarget, options: RtcConnectOptions = {}): Promise<{ sessionId: string; description: RtcSessionDescription }> {
     this.assertTarget(input.machineId, input.terminalId)
+    this.negotiationConnectionStateHandler = options.onConnectionState ?? null
+    this.publishConnectionState('probing', 'Creating WebRTC session...', input.path)
     this.log('offer_start', {
       level: 'info',
       machineId: input.machineId,
@@ -147,7 +156,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     this.normalizedAnswerCandidates = []
     this.rawAnswerCandidateSummary = sdpCandidateSummary('')
     const pc = (this.options.peerConnectionFactory ?? ((configuration?: RTCConfiguration) => new RTCPeerConnection(configuration)))(
-      peerConnectionConfiguration(input.iceServers),
+      peerConnectionConfiguration(input.iceServers, options.forceRelay),
     )
     const sessionId = this.options.sessionIdGenerator?.() ?? createRtcSessionId()
     this.pc = pc
@@ -155,6 +164,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     this.connectionId = sessionId
     this.path = input.path
     this.terminalId = input.terminalId ?? this.options.terminalId
+    this.publishConnectionState('probing', 'Opening browser data channels...', input.path)
     if (input.terminalId) {
       await this.ensureTerminalChannel(input.terminalId)
     }
@@ -170,6 +180,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
       },
     })
     await pc.setLocalDescription(offer)
+    this.publishConnectionState('probing', 'Gathering ICE candidates...', input.path)
     this.log('local_description_set', {
       machineId: input.machineId,
       terminalId: input.terminalId,
@@ -204,8 +215,10 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     }
   }
 
-  async acceptAnswer(answer: RtcSessionDescription): Promise<void> {
+  async acceptAnswer(answer: RtcSessionDescription, options: RtcConnectOptions = {}): Promise<void> {
     if (!this.pc) throw new Error('browser WebRTC session has no pending offer')
+    if (options.onConnectionState) this.negotiationConnectionStateHandler = options.onConnectionState
+    this.publishConnectionState('connecting', 'Applying WebRTC answer...')
     this.log('answer_accept_start', {
       level: 'info',
       sessionId: this.connectionId,
@@ -239,6 +252,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     }
     const apiChannel = await this.ensureAPIChannel()
     try {
+      this.publishConnectionState('connecting', 'Opening data channels...')
       await waitChannelOpenWithTimeout(apiChannel, this.options.dataChannelOpenTimeoutMs)
     } catch (err) {
       void this.logDataChannelOpenTimeout(apiChannel, err)
@@ -248,6 +262,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
       sessionId: this.connectionId,
     })
     this.markReadyForTraffic()
+    this.negotiationConnectionStateHandler = null
   }
 
   async disconnect(): Promise<void> {
@@ -293,6 +308,13 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     }
   }
 
+  subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription {
+    const subscription = this.connectionState.subscribe(handler)
+    const phase = this.browserPhaseFromPeerState(this.pc?.connectionState)
+    handler(this.connectionSnapshot(phase, this.connected ? 'Connected' : browserPhaseMessage(phase)))
+    return subscription
+  }
+
   async getCapabilities(): Promise<ConnectionCapabilities> {
     return this.capabilities
   }
@@ -336,6 +358,14 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     }
     const terminalId = this.terminalId ?? this.options.terminalId
     if (terminalId) info.terminalId = terminalId
+    const statsInfo = await rtcConnectionInfo(this.pc)
+    if (statsInfo.type) info.type = statsInfo.type
+    if (statsInfo.type === 'relay') info.relayInUse = true
+    if (statsInfo.localAddr) info.localAddr = statsInfo.localAddr
+    if (statsInfo.remoteAddr) info.remoteAddr = statsInfo.remoteAddr
+    if (statsInfo.candidateType) info.candidateType = statsInfo.candidateType
+    if (statsInfo.remoteCandidateType) info.remoteCandidateType = statsInfo.remoteCandidateType
+    if (statsInfo.rtt !== undefined) info.rtt = statsInfo.rtt
     return info
   }
 
@@ -444,6 +474,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
         return
       }
       if (state === 'disconnected') {
+        this.publishConnectionState('reconnecting', 'WebRTC disconnected, probing connection...')
         this.disconnectGuard = true
         this.stopHeartbeat()
         const sinceConnected = this.connectedAt > 0 ? Date.now() - this.connectedAt : 0
@@ -452,6 +483,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
         return
       }
       if (state === 'failed' || state === 'closed') {
+        this.publishConnectionState('failed', `WebRTC connection ${state}`)
         void this.failConnection(new Error(`browser WebRTC peer connection ${state}`))
       }
     })
@@ -462,6 +494,8 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
         sessionId: this.connectionId,
         details: { state },
       })
+      const phase = this.browserPhaseFromIceState(state)
+      if (phase) this.publishConnectionState(phase, browserPhaseMessage(phase))
     })
     pc.addEventListener?.('signalingstatechange', () => {
       const state = pc.signalingState
@@ -522,6 +556,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
       level: 'info',
       sessionId: this.connectionId,
     })
+    this.publishConnectionState('connected', 'Connected')
     this.startHeartbeat()
   }
 
@@ -538,6 +573,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
         peerConnectionState: state,
       },
     })
+    this.publishConnectionState('connected', 'Connected')
     if (state === undefined || state === 'connected') {
       this.startHeartbeat()
     }
@@ -561,8 +597,10 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
 
   private async probeConnection(aggressiveFirst: boolean): Promise<void> {
     try {
+      this.publishConnectionState('reconnecting', 'Checking WebRTC connection...')
       await this.pingRuntime()
       this.clearDisconnectGrace()
+      this.publishConnectionState('connected', 'Connected')
       this.startHeartbeat()
     } catch {
       if (aggressiveFirst && this.pc?.connectionState !== 'connected') {
@@ -590,6 +628,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
       this.pingRuntime().then(() => {
         this.lastRttMs = Date.now() - start
         this.heartbeatFailCount = 0
+        this.publishConnectionState('connected', 'Connected')
         this.scheduleHeartbeat(this.options.heartbeatIntervalMs ?? 5000)
       }, () => {
         this.heartbeatFailCount += 1
@@ -597,6 +636,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
           void this.failConnection(new Error('browser WebRTC heartbeat failed'))
           return
         }
+        this.publishConnectionState('reconnecting', `WebRTC heartbeat retry ${this.heartbeatFailCount}/4...`)
         this.scheduleHeartbeat(this.heartbeatFailCount * 1000)
       })
     }, delayMs)
@@ -626,6 +666,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
         this.heartbeatTimer = null
       }
       this.heartbeatFailCount = 0
+      this.publishConnectionState('waiting_network', 'Network changed, checking WebRTC connection...')
       this.scheduleHeartbeat(200)
     }
     connection.addEventListener('change', onChange)
@@ -636,7 +677,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     const timeoutMs = this.lastRttMs ? Math.min(Math.max(this.lastRttMs * 3, 500), 3000) : 1500
     const channel = await this.openApi()
     await withTimeout(
-      channel.request('ping', {}),
+      channel.request('GET', { path: '/status' }),
       timeoutMs,
       () => new Error('browser WebRTC heartbeat timeout'),
     )
@@ -644,6 +685,7 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
 
   private async failConnection(err: Error): Promise<void> {
     if (this.disconnecting) return
+    this.publishConnectionState('failed', err.message)
     this.log('session_failed', {
       level: 'error',
       sessionId: this.connectionId,
@@ -689,9 +731,46 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
     this.eventHandlers.clear()
     this.disconnectGuard = false
     this.disconnecting = false
+    if (!notify) this.publishConnectionState('idle', 'Ready')
+    this.negotiationConnectionStateHandler = null
     if (notify) {
       for (const handler of Array.from(this.disconnectHandlers)) handler()
     }
+  }
+
+  private publishConnectionState(phase: RtcConnectionPhase, statusText: string, path: ConnectionPath | undefined = this.path ?? this.options.path): void {
+    const snapshot = this.connectionSnapshot(phase, statusText, path)
+    this.connectionState.publish(snapshot)
+    this.negotiationConnectionStateHandler?.(snapshot)
+  }
+
+  private connectionSnapshot(phase: RtcConnectionPhase, statusText: string, path: ConnectionPath | undefined = this.path ?? this.options.path): RtcConnectionStateSnapshot {
+    return {
+      machineId: this.options.machineId,
+      phase,
+      ...(path ? { path } : {}),
+      statusText,
+      relayInUse: this.capabilities.relayInUse,
+      ...(phase === 'failed' ? { failReason: statusText } : {}),
+    }
+  }
+
+  private browserPhaseFromPeerState(state: RTCPeerConnectionState | undefined): RtcConnectionPhase {
+    if (!this.pc) return 'idle'
+    if (state === 'connected') return 'connected'
+    if (state === 'disconnected') return 'reconnecting'
+    if (state === 'failed') return 'failed'
+    if (state === 'closed') return 'idle'
+    return this.connected ? 'connected' : 'connecting'
+  }
+
+  private browserPhaseFromIceState(state: RTCIceConnectionState | undefined): RtcConnectionPhase | null {
+    if (state === 'checking') return this.connected ? 'reconnecting' : 'connecting'
+    if (state === 'connected' || state === 'completed') return 'connected'
+    if (state === 'disconnected') return 'reconnecting'
+    if (state === 'failed') return 'failed'
+    if (state === 'closed') return this.disconnecting ? 'idle' : 'failed'
+    return null
   }
 
   private async logDataChannelOpenTimeout(channel: RTCDataChannelLike, err: unknown): Promise<void> {
@@ -761,15 +840,84 @@ class BrowserRtcSession implements BrowserRtcConnectedSession {
 
 }
 
-function peerConnectionConfiguration(iceServers: RtcSessionNegotiationTarget['iceServers']): RTCConfiguration | undefined {
-  if (!iceServers || iceServers.length === 0) return undefined
+function peerConnectionConfiguration(iceServers: RtcSessionNegotiationTarget['iceServers'], forceRelay?: boolean | undefined): RTCConfiguration | undefined {
+  if ((!iceServers || iceServers.length === 0) && !forceRelay) return undefined
   return {
-    iceServers: iceServers.map((server) => ({
+    ...(forceRelay ? { iceTransportPolicy: 'relay' as RTCIceTransportPolicy } : {}),
+    iceServers: (iceServers ?? []).map((server) => ({
       urls: server.urls,
       ...(server.username !== undefined ? { username: server.username } : {}),
       ...(server.credential !== undefined ? { credential: server.credential } : {}),
     })),
   }
+}
+
+function browserPhaseMessage(phase: RtcConnectionPhase): string {
+  if (phase === 'idle') return 'Ready'
+  if (phase === 'probing') return 'Probing WebRTC connection...'
+  if (phase === 'connecting') return 'Connecting WebRTC...'
+  if (phase === 'connected') return 'Connected'
+  if (phase === 'verifying') return 'Verifying WebRTC...'
+  if (phase === 'reconnecting') return 'Reconnecting WebRTC...'
+  if (phase === 'waiting_network') return 'Waiting for network...'
+  return 'WebRTC connection failed'
+}
+
+async function rtcConnectionInfo(pc: RTCPeerConnectionLike | null): Promise<Partial<ConnectionInfo> & { type?: 'p2p' | 'relay' | 'unknown' }> {
+  if (!pc?.getStats) return { type: 'unknown' }
+  try {
+    const stats = await withTimeout(
+      pc.getStats(),
+      700,
+      () => new Error('timed out reading browser WebRTC stats'),
+    )
+    const pairs: Array<Record<string, unknown>> = []
+    const candidates = new Map<string, Record<string, unknown>>()
+    stats.forEach((raw) => {
+      const item = raw as Record<string, unknown>
+      if (typeof item.id === 'string' && (item.type === 'local-candidate' || item.type === 'remote-candidate' || item.type === 'candidate')) {
+        candidates.set(item.id, item)
+      }
+      if (item.type === 'candidate-pair') pairs.push(item)
+    })
+    const pair = pairs.find((item) => item.selected === true) ??
+      pairs.find((item) => item.nominated === true) ??
+      pairs.find((item) => item.state === 'succeeded') ??
+      null
+    if (!pair) return { type: 'unknown' }
+    const local = candidates.get(String(pair.localCandidateId ?? ''))
+    const remote = candidates.get(String(pair.remoteCandidateId ?? ''))
+    const localType = stringValue(local?.candidateType)
+    const remoteType = stringValue(remote?.candidateType)
+    const rttSeconds = numberValue(pair.currentRoundTripTime)
+    const type = localType === 'relay' || remoteType === 'relay' ? 'relay' : 'p2p'
+    return {
+      type,
+      localAddr: candidateAddr(local),
+      remoteAddr: candidateAddr(remote),
+      candidateType: localType,
+      remoteCandidateType: remoteType,
+      ...(rttSeconds !== undefined ? { rtt: Math.round(rttSeconds * 1000) } : {}),
+    }
+  } catch {
+    return { type: 'unknown' }
+  }
+}
+
+function candidateAddr(candidate: Record<string, unknown> | undefined): string | undefined {
+  if (!candidate) return undefined
+  const address = stringValue(candidate.address) ?? stringValue(candidate.ip)
+  const port = numberValue(candidate.port)
+  if (!address || port === undefined) return undefined
+  return `${address}:${port}`
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 function sanitizeICEServers(iceServers: RtcSessionNegotiationTarget['iceServers']): Array<Record<string, unknown>> {

@@ -32,6 +32,52 @@ export interface FilePreviewResponse {
   previewLimit?: number | undefined
 }
 
+export interface DownloadInitResponse {
+  transfer_id: string
+  name: string
+  size: number
+  chunk_size: number
+}
+
+export type TransferStatus = 'pending' | 'transferring' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'missing'
+
+export interface TransferInfo {
+  id: string
+  machineId?: string
+  name: string
+  direction: 'download' | 'upload'
+  totalSize: number
+  transferredSize: number
+  status: TransferStatus
+  startedAt: number
+  updatedAt?: number
+  bytesPerSecond?: number
+  error?: string
+  filePath?: string
+  localUri?: string | undefined
+  targetDir?: string | undefined
+  savedPath?: string | undefined
+  savedUri?: string | undefined
+}
+
+export interface FileTransferContext {
+  /** Subscribe to state changes (useSyncExternalStore API). */
+  subscribe(listener: () => void): () => void
+  /** Get current snapshot (useSyncExternalStore API). */
+  getSnapshot(): { transfers: TransferInfo[]; hasActiveTransfers: boolean }
+  getDownloadResumeOffset?(machineId: string, filePath: string, fileSize: number): Promise<number> | number
+  startDownload(machineId: string, transferId: string, fileName: string, fileSize: number, filePath: string, offset?: number): void
+  startUpload(machineId: string, files: Array<{ uri: string; name: string; size: number }>, targetDir: string): void
+  /** Native mode only: opens system file picker then starts upload. */
+  pickAndUpload?(machineId: string, targetDir: string): void
+  pauseTransfer?(id: string): void
+  resumeTransfer?(id: string): void
+  resumeAllTransfers?(machineId?: string): void
+  cancelTransfer(id: string): void
+  dismissTransfer(id: string): void
+  isNative: boolean
+}
+
 export interface FileApi {
   listDir(path?: string, offset?: number, limit?: number): Promise<DirListResponse>
   stat(path: string): Promise<FileEntry>
@@ -39,6 +85,10 @@ export interface FileApi {
   mkdir(path: string): Promise<{ path: string }>
   delete(path: string): Promise<{ path: string }>
   rename(path: string, newPath: string): Promise<{ path: string }>
+  copy(paths: string[], targetDir: string): Promise<{ task_id: string }>
+  move(paths: string[], targetDir: string): Promise<{ task_id: string }>
+  batchDelete(paths: string[]): Promise<{ task_id: string }>
+  downloadInit(path: string, offset?: number, transferId?: string): Promise<DownloadInitResponse>
 }
 
 export function createFileApi(session: Pick<RtcSession, 'openApi'>): FileApi {
@@ -61,9 +111,9 @@ export function createFileApi(session: Pick<RtcSession, 'openApi'>): FileApi {
 
   return {
     listDir: (path = '', offset = 0, limit = 500) =>
-      request<DirListResponse>('GET', '/files/list', { path, offset, limit }),
+      request<DirListResponse>('POST', '/files/list', { path, offset, limit }),
     stat: (path: string) =>
-      request<FileEntry>('GET', '/files/stat', { path }),
+      request<FileEntry>('POST', '/files/stat', { path }),
     preview: async (path: string, maxSize?: number) => normalizeFilePreviewResponse(
       await request<RawFilePreviewResponse>(
         'POST',
@@ -78,6 +128,18 @@ export function createFileApi(session: Pick<RtcSession, 'openApi'>): FileApi {
       request<{ path: string }>('POST', '/files/delete', { path }),
     rename: (path: string, newPath: string) =>
       request<{ path: string }>('POST', '/files/rename', { path, new_path: newPath }),
+    copy: (paths: string[], targetDir: string) =>
+      request<{ task_id: string }>('POST', '/files/copy', { paths, target_dir: targetDir }),
+    move: (paths: string[], targetDir: string) =>
+      request<{ task_id: string }>('POST', '/files/move', { paths, target_dir: targetDir }),
+    batchDelete: (paths: string[]) =>
+      request<{ task_id: string }>('POST', '/files/batch-delete', { paths }),
+    downloadInit: (path: string, offset = 0, transferId?: string) =>
+      request<DownloadInitResponse>('POST', '/files/download/init', {
+        path,
+        ...(offset > 0 ? { offset } : {}),
+        ...(transferId ? { transfer_id: transferId } : {}),
+      }),
   }
 }
 

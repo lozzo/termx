@@ -9,6 +9,8 @@ import type { TerminalResizeControl } from './terminalClient'
 import { useTerminalSession } from './useTerminalSession'
 import type { RtcSession } from './transport'
 
+export type TerminalRenderer = 'auto' | 'webgl' | 'canvas' | 'dom'
+
 export interface TerminalProps {
   machineId: string
   terminalId: string
@@ -21,6 +23,10 @@ export interface TerminalProps {
   modifierState?: TerminalModifierState | undefined
   onModifierStateChange?: ((state: TerminalModifierState) => void) | undefined
   selectionMode?: boolean | undefined
+  renderer?: TerminalRenderer | undefined
+  fontSize?: number | undefined
+  preventFocus?: boolean | undefined
+  suppressConnectingOverlay?: boolean | undefined
 }
 
 export interface TerminalHandle {
@@ -39,6 +45,7 @@ export interface TerminalHandle {
   getCursorInfo(): { cursorY: number; rows: number; lineHeight: number } | null
   adjustInputPosition(bottomOffset: number): void
   getBufferType(): 'normal' | 'alternate'
+  updateOptions(opts: { fontSize?: number; cursorBlink?: boolean; fontFamily?: string; scrollback?: number }): void
 }
 
 export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal(
@@ -54,6 +61,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     modifierState,
     onModifierStateChange,
     selectionMode = false,
+    renderer = 'auto',
+    fontSize = 14,
+    preventFocus = false,
+    suppressConnectingOverlay = false,
   },
   ref,
 ) {
@@ -62,10 +73,16 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const xtermRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const lastWrittenTextRef = useRef('')
+  const latestTerminalTextRef = useRef('')
   const lastSentResizeRef = useRef<{ cols: number; rows: number } | null>(null)
   const isOpenRef = useRef(false)
   const canSendResizeRef = useRef(false)
   const fitFrameRef = useRef<number | null>(null)
+  const preventFocusRef = useRef(preventFocus)
+
+  useEffect(() => {
+    preventFocusRef.current = preventFocus
+  }, [preventFocus])
   const fitDelayRef = useRef<number | null>(null)
   const terminalDisposedRef = useRef(true)
   const terminalGenerationRef = useRef(0)
@@ -77,9 +94,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const selectionModeRef = useRef(false)
   const selectionResetHandlersRef = useRef(new Set<() => void>())
 
+  latestTerminalTextRef.current = terminalSession.terminalText
+
   const isOpen = terminalSession.snapshot.terminalChannels[terminalId]?.state === 'open'
   const channelState = terminalSession.snapshot.terminalChannels[terminalId]?.state
-  const showConnectingOverlay = channelState !== 'open' && terminalSession.terminalText.length === 0
+  const showConnectingOverlay = !suppressConnectingOverlay && channelState !== 'open' && terminalSession.terminalText.length === 0
 
   const fitAndMaybeSendResize = useCallback(() => {
     if (terminalDisposedRef.current) return
@@ -159,7 +178,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     sendResize: terminalSession.sendResize,
     reattach: terminalSession.reattach,
     focus: () => {
-      if (terminalDisposedRef.current) return
+      if (terminalDisposedRef.current || preventFocusRef.current) return
       try {
         xtermRef.current?.focus()
       } catch {
@@ -228,11 +247,26 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
     },
     getBufferType: () => terminalDisposedRef.current ? 'normal' : xtermRef.current?.buffer.active.type ?? 'normal',
+    updateOptions: (opts) => {
+      if (terminalDisposedRef.current || !xtermRef.current) return
+      if (opts.fontSize !== undefined) xtermRef.current.options.fontSize = opts.fontSize
+      if (opts.cursorBlink !== undefined) xtermRef.current.options.cursorBlink = opts.cursorBlink
+      if (opts.fontFamily !== undefined) xtermRef.current.options.fontFamily = opts.fontFamily
+      if (opts.scrollback !== undefined) xtermRef.current.options.scrollback = opts.scrollback
+      fitAndMaybeSendResize()
+    },
   }), [fitAndMaybeSendResize, scheduleFit, sendInputAtCurrentSize, terminalSession.reattach, terminalSession.sendResize])
 
   useEffect(() => {
     modifierStateRef.current = modifierState
   }, [modifierState])
+
+  useEffect(() => {
+    if (xtermRef.current && fontSize !== undefined) {
+      xtermRef.current.options.fontSize = fontSize
+      fitAndMaybeSendResize()
+    }
+  }, [fontSize, fitAndMaybeSendResize])
 
   useEffect(() => {
     onModifierStateChangeRef.current = onModifierStateChange
@@ -278,7 +312,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       cursorBlink: true,
       convertEol: false,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-      fontSize: 14,
+      fontSize,
       scrollback: 10000,
       theme: {
         background: '#0c0c0c',
@@ -328,6 +362,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     textarea?.addEventListener('compositionstart', handleCompositionStart)
     textarea?.addEventListener('compositionupdate', handleCompositionUpdate)
     textarea?.addEventListener('compositionend', handleCompositionEnd)
+    const onFocus = () => { if (preventFocusRef.current && textarea) textarea.blur() }
+    textarea?.addEventListener('focus', onFocus)
     const loadCanvasRenderer = () => {
       try {
         term.loadAddon(new CanvasAddon())
@@ -337,20 +373,34 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
     const isTestDom = typeof navigator !== 'undefined' && navigator.userAgent.includes('jsdom')
     if (!isTestDom) {
-      try {
-        const webglAddon = new WebglAddon(true)
-        webglAddon.onContextLoss(() => {
-          webglAddon.dispose()
-          loadCanvasRenderer()
-          term.refresh(0, term.rows - 1)
-        })
-        term.loadAddon(webglAddon)
-      } catch {
+      if (renderer === 'canvas') {
         loadCanvasRenderer()
+      } else if (renderer !== 'dom') {
+        // auto or webgl: try WebGL first, fall back to canvas
+        try {
+          const webglAddon = new WebglAddon(true)
+          webglAddon.onContextLoss(() => {
+            webglAddon.dispose()
+            if (renderer !== 'webgl') loadCanvasRenderer()
+            term.refresh(0, term.rows - 1)
+          })
+          term.loadAddon(webglAddon)
+        } catch {
+          if (renderer !== 'webgl') loadCanvasRenderer()
+        }
       }
     }
     xtermRef.current = term
     fitAddonRef.current = fitAddon
+
+    // Write existing session text so the terminal isn't blank after renderer switch
+    const initialText = latestTerminalTextRef.current
+    if (initialText) {
+      try {
+        term.write(initialText)
+      } catch {}
+      lastWrittenTextRef.current = initialText
+    }
 
     const dataDisposable = term.onData((data) => {
       if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
@@ -914,7 +964,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           screenElement.dispatchEvent(new MouseEvent('mouseup', { ...mouseOptions, buttons: 0 }))
         }
         try {
-          xtermRef.current?.focus()
+          if (!preventFocusRef.current) xtermRef.current?.focus()
         } catch {
           // Ignore stale focus work while unmounting.
         }
@@ -1129,6 +1179,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       textarea?.removeEventListener('compositionstart', handleCompositionStart)
       textarea?.removeEventListener('compositionupdate', handleCompositionUpdate)
       textarea?.removeEventListener('compositionend', handleCompositionEnd)
+      textarea?.removeEventListener('focus', onFocus)
       compositionOverlay.remove()
       clearMomentum()
       smoothEnd()
@@ -1158,7 +1209,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       lastSentResizeRef.current = null
       isOpenRef.current = false
     }
-  }, [fitAndMaybeSendResize, scheduleFit, sendInputAtCurrentSize])
+  }, [fitAndMaybeSendResize, renderer, scheduleFit, sendInputAtCurrentSize])
 
   useEffect(() => {
     isOpenRef.current = isOpen
@@ -1167,7 +1218,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     scheduleFit()
     if (!terminalDisposedRef.current) {
       try {
-        xtermRef.current?.focus()
+        if (!preventFocusRef.current) xtermRef.current?.focus()
       } catch {
         // Ignore stale focus calls after xterm has been disposed.
       }

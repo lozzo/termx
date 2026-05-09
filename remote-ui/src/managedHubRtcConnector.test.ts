@@ -13,6 +13,7 @@ describe('ManagedHubRtcConnector', () => {
   it('creates a browser offer, posts it with the session token to Hub, and accepts the answer', async () => {
     const api = new MockManagedHubApi()
     const session = new MockOffererSession()
+    const states: unknown[] = []
     const connector = createManagedHubRtcConnector({
       api,
       createSession: () => session,
@@ -21,6 +22,8 @@ describe('ManagedHubRtcConnector', () => {
     const connected = await connector.connect({
       machineId: 'machine-1',
       sessionToken: 'session-token-1',
+    }, {
+      onConnectionState: (snapshot) => states.push(snapshot),
     })
 
     expect(connected).toBe(session)
@@ -48,6 +51,13 @@ describe('ManagedHubRtcConnector', () => {
       },
     }])
     expect(session.acceptedAnswers).toEqual([{ type: 'answer', sdp: 'answer-sdp' }])
+    expect(states).toEqual([
+      expect.objectContaining({ machineId: 'machine-1', phase: 'probing', path: 'managed', statusText: 'Fetching ICE servers...' }),
+      expect.objectContaining({ machineId: 'machine-1', phase: 'probing', path: 'managed', statusText: 'Creating WebRTC offer...' }),
+      expect.objectContaining({ machineId: 'machine-1', phase: 'connecting', path: 'managed', statusText: 'Exchanging signals with hub...' }),
+      expect.objectContaining({ machineId: 'machine-1', phase: 'connecting', path: 'managed', statusText: 'Opening data channels...' }),
+      expect.objectContaining({ machineId: 'machine-1', phase: 'connected', path: 'managed', statusText: 'Connected', relayInUse: false }),
+    ])
     await expect(session.getCapabilities()).resolves.toMatchObject({
       terminalAllowed: true,
       eventsAllowed: true,
@@ -59,6 +69,7 @@ describe('ManagedHubRtcConnector', () => {
   it('polls accepted pending Hub sessions until an answer is available', async () => {
     const api = new MockManagedHubApi({ pending: true })
     const session = new MockOffererSession()
+    const statuses: string[] = []
     const connector = createManagedHubRtcConnector({
       api,
       createSession: () => session,
@@ -69,6 +80,8 @@ describe('ManagedHubRtcConnector', () => {
       machineId: 'machine-1',
       terminalId: 'terminal-1',
       sessionToken: 'session-token-1',
+    }, {
+      onStatus: (status) => statuses.push(status),
     })
 
     expect(api.polledAnswers).toEqual([{
@@ -76,6 +89,7 @@ describe('ManagedHubRtcConnector', () => {
       machineId: 'machine-1',
     }])
     expect(session.acceptedAnswers).toEqual([{ type: 'answer', sdp: 'answer-after-pending' }])
+    expect(statuses).toContain('Waiting for machine response (1/20)...')
     await expect(session.getCapabilities()).resolves.toMatchObject({
       terminalAllowed: true,
       eventsAllowed: true,

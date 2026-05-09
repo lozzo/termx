@@ -1,8 +1,40 @@
 import { useFileManager } from './useFileManager'
-import type { FilePreviewResponse } from './fileApi'
+import type { FilePreviewResponse, FileTransferContext } from './fileApi'
 import type { RtcSession } from './transport'
-import { useState, type ReactNode } from 'react'
-import { AlertCircle, Check, ChevronRight, Code2, Eye, EyeOff, File, FileText, Folder, HardDrive, Image, MoreVertical, PlaySquare, RefreshCw, SquarePen, Trash2, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import hljs from 'highlight.js/lib/core'
+import bash from 'highlight.js/lib/languages/bash'
+import cpp from 'highlight.js/lib/languages/cpp'
+import css from 'highlight.js/lib/languages/css'
+import go from 'highlight.js/lib/languages/go'
+import java from 'highlight.js/lib/languages/java'
+import javascript from 'highlight.js/lib/languages/javascript'
+import json from 'highlight.js/lib/languages/json'
+import python from 'highlight.js/lib/languages/python'
+import rust from 'highlight.js/lib/languages/rust'
+import sql from 'highlight.js/lib/languages/sql'
+import typescript from 'highlight.js/lib/languages/typescript'
+import xml from 'highlight.js/lib/languages/xml'
+import yaml from 'highlight.js/lib/languages/yaml'
+import 'highlight.js/styles/github.css'
+import { addNativeBackHandler } from './nativeBack'
+import { ActionSheet, type ActionSheetItem } from './ActionSheet'
+import { AlertCircle, ArrowDownToLine, ArrowUpFromLine, Check, ChevronRight, Code2, Eye, EyeOff, File, FileText, Folder, HardDrive, Image, ListChecks, MoreVertical, PlaySquare, RefreshCw, SquarePen, Trash2, WrapText, X } from 'lucide-react'
+
+hljs.registerLanguage('bash', bash)
+hljs.registerLanguage('cpp', cpp)
+hljs.registerLanguage('css', css)
+hljs.registerLanguage('go', go)
+hljs.registerLanguage('java', java)
+hljs.registerLanguage('javascript', javascript)
+hljs.registerLanguage('json', json)
+hljs.registerLanguage('python', python)
+hljs.registerLanguage('rust', rust)
+hljs.registerLanguage('sql', sql)
+hljs.registerLanguage('typescript', typescript)
+hljs.registerLanguage('xml', xml)
+hljs.registerLanguage('yaml', yaml)
 
 export interface FileManagerProps {
   machineId: string
@@ -10,6 +42,9 @@ export interface FileManagerProps {
   session: Pick<RtcSession, 'openApi' | 'openFileTransfer' | 'getConnectionInfo'>
   initialPath?: string | undefined
   className?: string | undefined
+  active?: boolean | undefined
+  fileTransfer?: FileTransferContext | undefined
+  onOpenTransferCenter?: (() => void) | undefined
 }
 
 export function FileManager({
@@ -18,6 +53,9 @@ export function FileManager({
   session,
   initialPath,
   className,
+  active = true,
+  fileTransfer,
+  onOpenTransferCenter,
 }: FileManagerProps) {
   const manager = useFileManager({ machineId, terminalId, session, initialPath })
   const [newDirOpen, setNewDirOpen] = useState(false)
@@ -25,9 +63,144 @@ export function FileManager({
   const [renamePath, setRenamePath] = useState<string | null>(null)
   const [renameName, setRenameName] = useState('')
   const [deletePath, setDeletePath] = useState<string | null>(null)
+  const [transferError, setTransferError] = useState<string | null>(null)
+  const webUploadRef = useRef<HTMLInputElement>(null)
 
   const pathSegments = manager.currentPath ? manager.currentPath.split('/').filter(Boolean) : []
   const entryKeyCounts = new Map<string, number>()
+
+  const menuEntry = useMemo(() => {
+    if (!entryMenuPath) return null
+    return manager.entries.find(e => joinPath(manager.currentPath, e.name) === entryMenuPath)
+  }, [entryMenuPath, manager.entries, manager.currentPath])
+
+  const menuActions: ActionSheetItem[] = useMemo(() => {
+    if (!menuEntry || !entryMenuPath) return []
+    const isDirectory = menuEntry.type === 'dir' || menuEntry.type === 'symlink-dir'
+    const actions: ActionSheetItem[] = []
+
+    if (!isDirectory) {
+      actions.push({
+        label: 'Preview',
+        icon: <Eye className="h-5 w-5" />,
+        onClick: () => void manager.openPreview(entryMenuPath),
+      })
+    }
+
+    if (!isDirectory && fileTransfer) {
+      actions.push({
+        label: 'Download',
+        icon: <ArrowDownToLine className="h-5 w-5" />,
+        onClick: async () => {
+          setTransferError(null)
+          try {
+            const resumeOffset = Math.max(
+              0,
+              Math.min(
+                menuEntry.size,
+                await Promise.resolve(fileTransfer.getDownloadResumeOffset?.(machineId, entryMenuPath, menuEntry.size) ?? 0),
+              ),
+            )
+            const init = await manager.fileApi.downloadInit(entryMenuPath, resumeOffset)
+            fileTransfer.startDownload(
+              machineId,
+              init.transfer_id,
+              init.name || menuEntry.name,
+              init.size,
+              entryMenuPath,
+              resumeOffset,
+            )
+            onOpenTransferCenter?.()
+          } catch (err) {
+            setTransferError(err instanceof Error ? err.message : String(err))
+          }
+        },
+      })
+    }
+
+    actions.push({
+      label: 'Copy',
+      icon: <File className="h-5 w-5" />,
+      onClick: () => manager.copy([entryMenuPath]),
+    })
+
+    actions.push({
+      label: 'Cut',
+      icon: <Folder className="h-5 w-5" />,
+      onClick: () => manager.cut([entryMenuPath]),
+    })
+
+    actions.push({
+      label: 'Rename',
+      icon: <SquarePen className="h-5 w-5" />,
+      onClick: () => {
+        setRenamePath(entryMenuPath)
+        setRenameName(menuEntry.name)
+      },
+    })
+
+    actions.push({
+      label: 'Delete',
+      icon: <Trash2 className="h-5 w-5" />,
+      onClick: () => setDeletePath(entryMenuPath),
+      danger: true,
+    })
+
+    return actions
+  }, [menuEntry, entryMenuPath, manager, fileTransfer, machineId])
+
+  useEffect(() => {
+    if (!active) return undefined
+    return addNativeBackHandler(() => {
+    if (deletePath) {
+      setDeletePath(null)
+      return true
+    }
+    if (manager.previewPath) {
+      manager.closePreview()
+      return true
+    }
+    if (entryMenuPath) {
+      setEntryMenuPath(null)
+      return true
+    }
+    if (renamePath) {
+      setRenamePath(null)
+      setRenameName('')
+      return true
+    }
+    if (newDirOpen) {
+      manager.setNewDirName('')
+      setNewDirOpen(false)
+      return true
+    }
+    if (manager.selectionMode) {
+      manager.setSelectionMode(false)
+      return true
+    }
+    if (manager.clipboard) {
+      manager.setClipboard(null)
+      return true
+    }
+    const currentPath = normalizeFilePath(manager.currentPath)
+    if (currentPath !== '/') {
+      void manager.navigate(parentPath(currentPath))
+      return true
+    }
+    return false
+    }, 30)
+  }, [
+    active,
+    deletePath,
+    entryMenuPath,
+    manager,
+    manager.clipboard,
+    manager.currentPath,
+    manager.previewPath,
+    manager.selectionMode,
+    newDirOpen,
+    renamePath,
+  ])
 
   return (
     <div
@@ -36,72 +209,141 @@ export function FileManager({
       data-terminal-id={terminalId}
       data-testid="termx-file-manager"
     >
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-zinc-200/60 bg-zinc-50/80 px-4 backdrop-blur-md">
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-[15px] font-medium text-zinc-600 no-scrollbar">
-           <HardDrive className="h-5 w-5 shrink-0 text-zinc-400" />
-           <ChevronRight className="h-4 w-4 shrink-0 text-zinc-300" />
-           {pathSegments.length === 0 ? (
-             <span className="text-zinc-900 shrink-0 font-semibold">/</span>
-           ) : (
-             <>
-               <button
-                 onClick={() => void manager.navigate('/')}
-                 className="shrink-0 rounded-md px-2 py-1 text-zinc-500 transition-colors active:bg-zinc-200"
-               >
-                 /
-               </button>
-               {pathSegments.map((segment, index) => {
-                 const isLast = index === pathSegments.length - 1
-                 const path = '/' + pathSegments.slice(0, index + 1).join('/')
-                 return (
-                   <div key={`${path}:${index}`} className="flex items-center shrink-0">
-                     <ChevronRight className="h-4 w-4 shrink-0 text-zinc-300" />
-                     {isLast ? (
-                       <span className="px-2 py-1 font-semibold text-zinc-900">{segment}</span>
-                     ) : (
-                       <button
-                         onClick={() => void manager.navigate(path)}
-                         className="rounded-md px-2 py-1 text-zinc-500 transition-colors active:bg-zinc-200"
-                       >
-                         {segment}
-                       </button>
-                     )}
-                   </div>
-                 )
-               })}
-             </>
-           )}
-        </div>
-        <button
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors active:scale-95 ${manager.showHidden ? 'bg-blue-50 text-blue-600' : 'bg-zinc-100 text-zinc-600 active:bg-zinc-200'}`}
-          type="button"
-          onClick={manager.toggleShowHidden}
-          aria-label={manager.showHidden ? 'Hide hidden files' : 'Show hidden files'}
-        >
-          {manager.showHidden ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
-        </button>
-        <button
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 transition-colors active:scale-95 active:bg-zinc-200"
-          type="button"
-          onClick={() => setNewDirOpen((current) => !current)}
-          aria-label="New directory"
-        >
-          <Folder className="h-5 w-5" />
-        </button>
-        <button
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 transition-colors active:scale-95 active:bg-zinc-200 disabled:opacity-50"
-          type="button"
-          onClick={() => { void manager.refresh() }}
-          disabled={manager.loading}
-          aria-label="Refresh files"
-        >
-          <RefreshCw className={`h-5 w-5 ${manager.loading ? 'animate-spin' : ''}`} />
-        </button>
-      </header>
+      {manager.selectionMode ? (
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200/70 bg-white px-4">
+          <button
+            className="text-[15px] font-medium text-zinc-500 active:text-zinc-800"
+            onClick={() => manager.setSelectionMode(false)}
+          >
+            Cancel
+          </button>
+          <div className="text-[16px] font-semibold text-zinc-900">
+            {manager.selectedPaths.size} selected
+          </div>
+          <button
+            className="text-[15px] font-medium text-blue-600 active:text-blue-800"
+            onClick={() => {
+              if (manager.selectedPaths.size === manager.visibleEntries.length) manager.deselectAll()
+              else manager.selectAll()
+            }}
+          >
+            {manager.selectedPaths.size === manager.visibleEntries.length ? 'Deselect All' : 'Select All'}
+          </button>
+        </header>
+      ) : (
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-200/70 bg-white px-3">
+          <div className="flex h-9 min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-lg bg-zinc-50 px-2 text-[14px] font-medium text-zinc-600 no-scrollbar">
+             <HardDrive className="h-4 w-4 shrink-0 text-zinc-400" />
+             {pathSegments.length === 0 ? (
+               <span className="shrink-0 font-semibold text-zinc-900">/</span>
+             ) : (
+               <>
+                 <button
+                   onClick={() => void manager.navigate('/')}
+                   className="shrink-0 rounded-md px-1.5 py-1 text-zinc-500 transition-colors active:bg-zinc-200"
+                 >
+                   /
+                 </button>
+                 {pathSegments.map((segment, index) => {
+                   const isLast = index === pathSegments.length - 1
+                   const path = '/' + pathSegments.slice(0, index + 1).join('/')
+                   return (
+                     <div key={`${path}:${index}`} className="flex shrink-0 items-center">
+                       <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-300" />
+                       {isLast ? (
+                         <span className="px-1.5 py-1 font-semibold text-zinc-900">{segment}</span>
+                       ) : (
+                         <button
+                           onClick={() => void manager.navigate(path)}
+                           className="rounded-md px-1.5 py-1 text-zinc-500 transition-colors active:bg-zinc-200"
+                         >
+                           {segment}
+                         </button>
+                       )}
+                     </div>
+                   )
+                 })}
+               </>
+             )}
+          </div>
+          <button
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors active:scale-95 active:bg-zinc-100"
+            type="button"
+            onClick={() => manager.setSelectionMode(true)}
+            aria-label="Select files"
+          >
+            <ListChecks className="h-5 w-5" />
+          </button>
+          <button
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors active:scale-95 ${manager.showHidden ? 'bg-blue-50 text-blue-600' : 'text-zinc-600 active:bg-zinc-100'}`}
+            type="button"
+            onClick={manager.toggleShowHidden}
+            aria-label={manager.showHidden ? 'Hide hidden files' : 'Show hidden files'}
+          >
+            {manager.showHidden ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+          </button>
+          <button
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors active:scale-95 active:bg-zinc-100"
+            type="button"
+            onClick={() => setNewDirOpen((current) => !current)}
+            aria-label="New directory"
+          >
+            <Folder className="h-5 w-5" />
+          </button>
+          {fileTransfer ? (
+            <>
+              <button
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors active:scale-95 active:bg-zinc-100"
+                type="button"
+                aria-label="Upload files"
+                onClick={() => {
+                  if (fileTransfer.isNative) {
+                    fileTransfer.pickAndUpload?.(machineId, manager.currentPath || '/')
+                    onOpenTransferCenter?.()
+                  } else {
+                    webUploadRef.current?.click()
+                  }
+                }}
+              >
+                <ArrowUpFromLine className="h-5 w-5" />
+              </button>
+              {!fileTransfer.isNative ? (
+                <input
+                  ref={webUploadRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = e.target.files
+                    if (!files) return
+                    const picked = Array.from(files).map((f) => ({
+                      uri: URL.createObjectURL(f),
+                      name: f.name,
+                      size: f.size,
+                    }))
+                    fileTransfer.startUpload(machineId, picked, manager.currentPath || '/')
+                    onOpenTransferCenter?.()
+                    e.target.value = ''
+                  }}
+                />
+              ) : null}
+            </>
+          ) : null}
+          <button
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition-colors active:scale-95 active:bg-zinc-100 disabled:opacity-50"
+            type="button"
+            onClick={() => { void manager.refresh() }}
+            disabled={manager.loading}
+            aria-label="Refresh files"
+          >
+            <RefreshCw className={`h-5 w-5 ${manager.loading ? 'animate-spin' : ''}`} />
+          </button>
+        </header>
+      )}
 
-      <div className="absolute top-14 bottom-0 left-0 right-0 overflow-y-auto bg-white p-2">
+      <div className="min-h-0 flex-1 overflow-y-auto bg-white">
         {newDirOpen ? (
-          <div className="m-2 flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2">
+          <div className="mx-3 my-2 flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-2">
             <Folder className="h-5 w-5 shrink-0 text-blue-500" />
             <input
               aria-label="Directory name"
@@ -157,13 +399,19 @@ export function FileManager({
           </div>
         ) : null}
 
+        {transferError ? (
+          <div className="m-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-[13px] font-medium text-red-800" role="alert">
+            {transferError}
+          </div>
+        ) : null}
+
         {manager.loading && manager.entries.length === 0 ? (
           <div className="flex h-40 flex-col items-center justify-center gap-3 text-[14px] font-medium text-zinc-500">
             <RefreshCw className="h-6 w-6 animate-spin text-zinc-400" />
             Loading directory...
           </div>
         ) : (
-          <ul aria-label="Files" className="flex flex-col gap-1 pb-safe">
+          <ul aria-label="Files" className="divide-y divide-zinc-100 pb-[120px]">
             {manager.entries.length === 0 && !manager.loading && !manager.error ? (
               <li className="flex h-32 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-zinc-200 bg-zinc-50/50 text-[14px] font-medium text-zinc-500">
                 <Folder className="h-8 w-8 text-zinc-300" />
@@ -175,26 +423,40 @@ export function FileManager({
               const isDirectory = entry.type === 'dir' || entry.type === 'symlink-dir'
               const Icon = isDirectory ? Folder : iconForFile(entry.name)
               const itemKey = uniqueFileListKey(entryKeyCounts, entryPath)
-              const isMenuOpen = entryMenuPath === entryPath
               const isRenaming = renamePath === entryPath
-              const openEntry = () => {
-                if (isDirectory) void manager.navigate(entryPath)
-                else void manager.openPreview(entryPath)
+              const isSelected = manager.selectedPaths.has(entryPath)
+
+              const handleItemClick = () => {
+                if (manager.selectionMode) {
+                  manager.toggleSelect(entryPath)
+                } else {
+                  if (isDirectory) void manager.navigate(entryPath)
+                  else void manager.openPreview(entryPath)
+                }
               }
 
               return (
                 <li key={itemKey}>
                   <div
-                    className="group relative flex min-h-[3.5rem] w-full items-center gap-4 rounded-xl px-4 py-2 text-left transition-colors focus-within:ring-2 focus-within:ring-blue-500 active:bg-zinc-100"
+                    className={`group relative flex min-h-[3.25rem] w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors focus-within:ring-2 focus-within:ring-blue-500 active:bg-zinc-50 ${isSelected ? 'bg-blue-50/70' : ''}`}
                   >
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors ${isDirectory ? 'bg-blue-50 group-active:bg-blue-100' : 'bg-zinc-50'}`}>
-                      <Icon className={`h-5 w-5 ${isDirectory ? 'fill-blue-100 text-blue-500' : 'text-zinc-400'}`} />
+                    {manager.selectionMode ? (
+                      <div className="shrink-0 pr-1">
+                        <div
+                          className={`flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors ${isSelected ? 'border-blue-500 bg-blue-500' : 'border-zinc-300 bg-transparent'}`}
+                        >
+                          {isSelected ? <Check className="h-4 w-4 text-white" strokeWidth={3} /> : null}
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors ${isDirectory ? 'bg-blue-50 group-active:bg-blue-100' : 'bg-zinc-50'}`}>
+                      <Icon className={`h-5 w-5 ${isDirectory ? 'fill-blue-50 text-blue-500' : 'text-zinc-400'}`} />
                     </div>
                     <button
                       type="button"
-                      aria-label={`${isDirectory ? 'Open' : 'Preview'} ${entry.name}`}
+                      aria-label={`${manager.selectionMode ? (isSelected ? 'Deselect' : 'Select') : isDirectory ? 'Open' : 'Preview'} ${entry.name}`}
                       className="flex min-w-0 flex-1 flex-col justify-center text-left"
-                      onClick={openEntry}
+                      onClick={handleItemClick}
                     >
                       {isRenaming ? (
                         <input
@@ -219,7 +481,7 @@ export function FileManager({
                           autoFocus
                         />
                       ) : (
-                        <span className={`truncate text-[15px] ${isDirectory ? 'font-semibold text-zinc-900' : 'font-medium text-zinc-700'}`}>
+                        <span className={`truncate text-[15px] leading-5 ${isDirectory ? 'font-medium text-zinc-950' : 'font-medium text-zinc-800'}`}>
                           {entry.name}
                         </span>
                       )}
@@ -229,59 +491,25 @@ export function FileManager({
                         </span>
                       ) : null}
                     </button>
-                    <button
-                      type="button"
-                      aria-label={`More actions for ${entry.name}`}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-400 active:bg-zinc-200"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        setEntryMenuPath((current) => current === entryPath ? null : entryPath)
-                      }}
-                    >
-                      <MoreVertical className="h-5 w-5" />
-                    </button>
-                    {isDirectory ? <ChevronRight className="h-5 w-5 shrink-0 text-zinc-300 group-active:text-zinc-400" /> : null}
+                    {!manager.selectionMode ? (
+                      <>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            aria-label={`More actions for ${entry.name}`}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 active:bg-zinc-100"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setEntryMenuPath((current) => current === entryPath ? null : entryPath)
+                            }}
+                          >
+                            <MoreVertical className="h-5 w-5" />
+                          </button>
+                          {isDirectory ? <ChevronRight className="h-5 w-5 text-zinc-300 group-active:text-zinc-400" /> : null}
+                        </div>
+                      </>
+                    ) : null}
                   </div>
-                  {isMenuOpen ? (
-                    <div className={`mx-2 mb-1 grid gap-2 rounded-xl bg-zinc-50 p-2 ${isDirectory ? 'grid-cols-2' : 'grid-cols-3'}`}>
-                      {!isDirectory ? (
-                        <button
-                          type="button"
-                          className="flex h-10 items-center justify-center gap-2 rounded-lg bg-white text-[13px] font-semibold text-zinc-700 shadow-sm"
-                          onClick={() => {
-                            setEntryMenuPath(null)
-                            void manager.openPreview(entryPath)
-                          }}
-                        >
-                          <Eye className="h-4 w-4" />
-                          Preview
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="flex h-10 items-center justify-center gap-2 rounded-lg bg-white text-[13px] font-semibold text-zinc-700 shadow-sm"
-                        onClick={() => {
-                          setRenamePath(entryPath)
-                          setRenameName(entry.name)
-                          setEntryMenuPath(null)
-                        }}
-                      >
-                        <SquarePen className="h-4 w-4" />
-                        Rename
-                      </button>
-                      <button
-                        type="button"
-                        className="flex h-10 items-center justify-center gap-2 rounded-lg bg-red-50 text-[13px] font-semibold text-red-700 shadow-sm"
-                        onClick={() => {
-                          setDeletePath(entryPath)
-                          setEntryMenuPath(null)
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Delete
-                      </button>
-                    </div>
-                  ) : null}
                 </li>
               )
             })}
@@ -289,7 +517,7 @@ export function FileManager({
         )}
       </div>
       {deletePath ? (
-        <div className="absolute inset-0 z-50 flex items-end bg-black/40 p-3 backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-file-delete-confirm" onClick={() => setDeletePath(null)}>
+        <div className="absolute inset-0 z-50 flex items-end bg-black/40 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-file-delete-confirm" onClick={() => setDeletePath(null)}>
           <section className="w-full rounded-2xl bg-white p-4 shadow-2xl md:max-w-sm" onClick={(event) => event.stopPropagation()}>
             <h2 className="text-[17px] font-bold text-zinc-950">Delete entry?</h2>
             <p className="mt-2 break-all text-sm text-zinc-500">{deletePath}</p>
@@ -321,6 +549,74 @@ export function FileManager({
           onClose={manager.closePreview}
         />
       ) : null}
+
+      {/* Selection Mode Bottom Bar */}
+      {manager.selectionMode && manager.selectedPaths.size > 0 ? (
+        <div className="absolute bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-xl border-t border-zinc-200 pb-[env(safe-area-inset-bottom)]">
+          <div className="flex h-[60px] items-stretch justify-around px-2">
+            <button
+              onClick={() => {
+                manager.copy(Array.from(manager.selectedPaths))
+                manager.setSelectionMode(false)
+              }}
+              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 active:bg-zinc-100 rounded-lg"
+            >
+              <File className="h-5 w-5" />
+              <span className="text-[11px] font-medium">Copy</span>
+            </button>
+            <button
+              onClick={() => {
+                manager.cut(Array.from(manager.selectedPaths))
+                manager.setSelectionMode(false)
+              }}
+              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 active:bg-zinc-100 rounded-lg"
+            >
+              <Folder className="h-5 w-5" />
+              <span className="text-[11px] font-medium">Cut</span>
+            </button>
+            <button
+              onClick={() => void manager.batchDelete(Array.from(manager.selectedPaths))}
+              className="flex flex-col items-center justify-center gap-1 px-3 text-red-500 hover:text-red-700 active:bg-red-50 rounded-lg"
+            >
+              <Trash2 className="h-5 w-5" />
+              <span className="text-[11px] font-medium">Delete</span>
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Clipboard Paste Bar */}
+      {!manager.selectionMode && manager.clipboard && manager.clipboard.paths.length > 0 ? (
+        <div className="absolute bottom-0 left-0 right-0 z-40 bg-zinc-900/95 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]">
+          <div className="flex h-14 items-center justify-between px-4">
+            <span className="text-sm font-medium text-zinc-300">
+              {manager.clipboard.paths.length} {manager.clipboard.paths.length === 1 ? 'item' : 'items'} to {manager.clipboard.mode}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => manager.setClipboard(null)}
+                className="rounded-lg px-3 py-1.5 text-sm font-semibold text-zinc-400 hover:bg-zinc-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void manager.paste()}
+                className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                Paste
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <ActionSheet
+        isOpen={!!entryMenuPath}
+        onClose={() => setEntryMenuPath(null)}
+        title={menuEntry?.name}
+        subtitle={menuEntry ? (menuEntry.type === 'dir' ? 'Folder' : `${formatBytes(menuEntry.size)} · File`) : ''}
+        actions={menuActions}
+      />
     </div>
   )
 }
@@ -337,45 +633,54 @@ function FilePreviewSheet({ path, preview, loading, error, onClose }: FilePrevie
   const title = preview?.name ?? basename(path)
   const subtitle = preview ? `${formatBytes(preview.size)} · ${preview.mimeType}` : path
 
-  return (
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [])
+
+  const dialog = (
     <div
-      className="absolute inset-0 z-40 flex items-end bg-black/45 p-2 backdrop-blur-sm md:items-center md:justify-center md:p-4"
+      className="fixed inset-0 z-[80] flex h-[100dvh] flex-col bg-white"
       data-testid="termx-file-preview"
-      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="termx-file-preview-title"
     >
-      <section
-        className="flex max-h-[92%] w-full min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-2xl md:max-h-[86%] md:max-w-4xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <header className="flex shrink-0 items-center gap-3 border-b border-zinc-200 px-4 py-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-[16px] font-bold text-zinc-950">{title}</h2>
-            <p className="mt-0.5 truncate text-[12px] font-medium text-zinc-500">{subtitle}</p>
-          </div>
-          <button
-            type="button"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 active:bg-zinc-200"
-            aria-label="Close preview"
-            onClick={onClose}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </header>
-        <div className="min-h-0 flex-1 overflow-auto bg-zinc-50">
-          {loading ? (
-            <div className="flex h-56 flex-col items-center justify-center gap-3 text-[14px] font-medium text-zinc-500">
-              <RefreshCw className="h-6 w-6 animate-spin text-zinc-400" />
-              Loading preview...
-            </div>
-          ) : error ? (
-            <PreviewNotice title="Preview Error" message={error} />
-          ) : preview ? (
-            <PreviewContent preview={preview} />
-          ) : null}
+      <header className="flex shrink-0 items-center gap-3 border-b border-zinc-200/70 bg-white px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
+        <div className="min-w-0 flex-1">
+          <h2 id="termx-file-preview-title" className="truncate text-[17px] font-bold tracking-tight text-zinc-950">{title}</h2>
+          <p className="mt-0.5 truncate text-[12px] font-medium text-zinc-500">{subtitle}</p>
         </div>
-      </section>
+        <button
+          type="button"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors active:scale-95 active:bg-zinc-100"
+          aria-label="Close preview"
+          onClick={onClose}
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-auto bg-zinc-50 pb-[env(safe-area-inset-bottom)]">
+        {loading ? (
+          <div className="flex h-56 flex-col items-center justify-center gap-3 text-[14px] font-medium text-zinc-500">
+            <RefreshCw className="h-6 w-6 animate-spin text-zinc-400" />
+            Loading preview...
+          </div>
+        ) : error ? (
+          <PreviewNotice title="Preview Error" message={error} />
+        ) : preview ? (
+          <PreviewContent preview={preview} />
+        ) : null}
+      </div>
     </div>
   )
+
+  if (typeof document === 'undefined') return dialog
+  return createPortal(dialog, document.body)
 }
 
 function PreviewContent({ preview }: { preview: FilePreviewResponse }) {
@@ -406,7 +711,7 @@ function PreviewContent({ preview }: { preview: FilePreviewResponse }) {
     if (isMarkdownFile(preview.name, preview.mimeType)) {
       return <MarkdownPreview text={preview.content} />
     }
-    return <TextPreview text={preview.content} />
+    return <TextPreview text={preview.content} name={preview.name} mimeType={preview.mimeType} />
   }
   const limit = preview.previewLimit && preview.previewLimit > 0 ? formatBytes(preview.previewLimit) : ''
   const message = preview.category === 'unsupported'
@@ -415,11 +720,64 @@ function PreviewContent({ preview }: { preview: FilePreviewResponse }) {
   return <PreviewNotice title="No Preview" message={message} />
 }
 
-function TextPreview({ text }: { text: string }) {
+function TextPreview({ text, name, mimeType }: { text: string; name: string; mimeType: string }) {
+  const language = detectCodeLanguage(name, mimeType)
+  const languageId = language?.id
+  const isCode = !!languageId
+  const [softWrap, setSoftWrap] = useState(() => !isCode)
+  const lines = useMemo(() => normalizePreviewText(text).split('\n'), [text])
+  const highlightedLines = useMemo(
+    () => languageId ? lines.map((line) => highlightCodeLine(line, languageId)) : [],
+    [languageId, lines],
+  )
+
+  useEffect(() => {
+    setSoftWrap(!isCode)
+  }, [isCode, name, mimeType])
+
+  const wrapLabel = softWrap ? 'Disable line wrap' : 'Enable line wrap'
+
   return (
-    <pre className="min-h-full whitespace-pre-wrap break-words bg-white p-4 font-mono text-[13px] leading-6 text-zinc-900">
-      {text}
-    </pre>
+    <div className="flex min-h-full flex-col bg-white">
+      <div className="sticky top-0 z-10 flex min-h-11 shrink-0 items-center justify-between gap-2 border-b border-zinc-200/70 bg-white px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {isCode ? <Code2 className="h-4 w-4 shrink-0 text-zinc-500" /> : <FileText className="h-4 w-4 shrink-0 text-zinc-500" />}
+          <span className="truncate text-[12px] font-semibold uppercase tracking-wide text-zinc-500">
+            {language?.label ?? 'Plain text'}
+          </span>
+        </div>
+        <button
+          type="button"
+          aria-label={wrapLabel}
+          title={wrapLabel}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors active:scale-95 ${softWrap ? 'bg-blue-50 text-blue-600' : 'text-zinc-600 active:bg-zinc-100'}`}
+          onClick={() => setSoftWrap((current) => !current)}
+        >
+          <WrapText className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto bg-white">
+        <div className={`py-2 font-mono text-[12px] leading-5 text-zinc-900 ${softWrap ? 'min-w-0' : 'w-max min-w-full'}`}>
+          {lines.map((line, index) => (
+            <div
+              key={`line-${index}`}
+              className={`grid min-h-5 ${softWrap ? 'grid-cols-[3.25rem_minmax(0,1fr)]' : 'grid-cols-[3.25rem_max-content]'}`}
+            >
+              <span className="select-none border-r border-zinc-100 pr-2 text-right text-[11px] leading-5 text-zinc-400">
+                {index + 1}
+              </span>
+              <code
+                data-testid={`termx-file-preview-line-${index + 1}`}
+                className={`hljs block bg-transparent px-3 text-[12px] leading-5 ${softWrap ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'}`}
+                {...(isCode
+                  ? { dangerouslySetInnerHTML: { __html: highlightedLines[index] ?? '' } }
+                  : { children: line })}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -439,6 +797,67 @@ function PreviewNotice({ title, message }: { title: string; message: string }) {
       <p className="max-w-sm text-[14px] leading-6 text-zinc-500">{message}</p>
     </div>
   )
+}
+
+interface CodeLanguage {
+  id: string
+  label: string
+}
+
+const codeLanguageByExtension: Record<string, CodeLanguage> = {
+  bash: { id: 'bash', label: 'Shell' },
+  c: { id: 'cpp', label: 'C' },
+  cc: { id: 'cpp', label: 'C++' },
+  cpp: { id: 'cpp', label: 'C++' },
+  cs: { id: 'java', label: 'C#' },
+  css: { id: 'css', label: 'CSS' },
+  go: { id: 'go', label: 'Go' },
+  h: { id: 'cpp', label: 'C/C++' },
+  hpp: { id: 'cpp', label: 'C++' },
+  html: { id: 'xml', label: 'HTML' },
+  java: { id: 'java', label: 'Java' },
+  js: { id: 'javascript', label: 'JavaScript' },
+  json: { id: 'json', label: 'JSON' },
+  jsx: { id: 'javascript', label: 'JSX' },
+  kt: { id: 'java', label: 'Kotlin' },
+  mjs: { id: 'javascript', label: 'JavaScript' },
+  py: { id: 'python', label: 'Python' },
+  rb: { id: 'python', label: 'Ruby' },
+  rs: { id: 'rust', label: 'Rust' },
+  scss: { id: 'css', label: 'SCSS' },
+  sh: { id: 'bash', label: 'Shell' },
+  sql: { id: 'sql', label: 'SQL' },
+  ts: { id: 'typescript', label: 'TypeScript' },
+  tsx: { id: 'typescript', label: 'TSX' },
+  xml: { id: 'xml', label: 'XML' },
+  yaml: { id: 'yaml', label: 'YAML' },
+  yml: { id: 'yaml', label: 'YAML' },
+  zsh: { id: 'bash', label: 'Shell' },
+}
+
+function normalizePreviewText(text: string): string {
+  return text.replace(/\r\n?/g, '\n')
+}
+
+function detectCodeLanguage(name: string, mimeType: string): CodeLanguage | null {
+  const ext = extension(name)
+  const language = codeLanguageByExtension[ext]
+  if (language) return language
+  if (/typescript/i.test(mimeType)) return { id: 'typescript', label: 'TypeScript' }
+  if (/javascript|ecmascript/i.test(mimeType)) return { id: 'javascript', label: 'JavaScript' }
+  if (/json/i.test(mimeType)) return { id: 'json', label: 'JSON' }
+  if (/html|xml/i.test(mimeType)) return { id: 'xml', label: mimeType.includes('xml') ? 'XML' : 'HTML' }
+  if (/css/i.test(mimeType)) return { id: 'css', label: 'CSS' }
+  if (/x-python/i.test(mimeType)) return { id: 'python', label: 'Python' }
+  if (/x-sh|shellscript/i.test(mimeType)) return { id: 'bash', label: 'Shell' }
+  return null
+}
+
+function highlightCodeLine(line: string, language: string): string {
+  return hljs.highlight(line || ' ', {
+    language,
+    ignoreIllegals: true,
+  }).value
 }
 
 function renderMarkdownBlocks(text: string) {
@@ -613,6 +1032,20 @@ function uniqueFileListKey(counts: Map<string, number>, baseKey: string): string
 function joinPath(base: string, name: string): string {
   if (!base || base === '/') return `/${name}`
   return `${base.replace(/\/+$/, '')}/${name}`
+}
+
+function normalizeFilePath(path: string): string {
+  const trimmed = path.trim()
+  if (!trimmed || trimmed === '/') return '/'
+  return trimmed.replace(/\/+$/, '') || '/'
+}
+
+function parentPath(path: string): string {
+  const normalized = normalizeFilePath(path)
+  if (normalized === '/') return '/'
+  const index = normalized.lastIndexOf('/')
+  if (index <= 0) return '/'
+  return normalized.slice(0, index)
 }
 
 function basename(path: string): string {

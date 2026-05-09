@@ -1,20 +1,20 @@
 import { StrictMode, useMemo, useState, type FormEvent } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { createBrowserRemoteNetworkRuntime } from './browserNetworkRuntime'
-import { LocalRemoteApp, type LocalRemoteSessionConnector } from './LocalRemoteApp'
+import { LocalRemoteApp, type LocalRemoteInventoryApi, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createMachineSessionStore } from './localAppIdentity'
 import { createBrowserRtcSession } from './browserRtcSession'
 import { consoleConnectionLogger } from './connectionLogger'
 import { createManagedHubApi } from './managedHubApi'
 import { createManagedHubRtcConnector } from './managedHubRtcConnector'
 import { normalizeTerminalInventory } from './terminalInventory'
-import type { LocalAgentApi, LocalPairingApi, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcConnector, TerminalInventoryEvents } from './transport'
 import type { Terminal } from './model'
+import type { LocalPairingApi, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcConnectOptions, RtcConnector, RtcSession, TerminalInventoryEvents } from './transport'
 import './localWebEntry.css'
 
 export interface LocalWebAppOptions {
   root?: HTMLElement | null | undefined
-  api?: Pick<LocalAgentApi, 'getStatus'> & { listTerminals(): Promise<Terminal[]> } | undefined
+  api?: LocalRemoteInventoryApi | undefined
   pairApi?: LocalPairingApi | undefined
   connector?: LocalRemoteSessionConnector | undefined
   inventoryEvents?: TerminalInventoryEvents | undefined
@@ -170,6 +170,9 @@ function createBrowserLocalConnector(networkRuntime: RemoteNetworkRuntime, hubUr
 function createBrowserLocalRuntimeApi(connector: RtcConnector<{ machineId: string }>, hubUrl: string, fetchImpl: RemoteNetworkRuntime['fetch'], storage?: RemoteRuntimeStorage | undefined) {
   let machineId: string | null = null
   let cachedTerminals: Terminal[] = []
+  let inventorySession: RtcSession | null = null
+  let inventorySessionMachineId: string | null = null
+  let inventorySessionForceRelay = false
   return {
     async getStatus() {
       const discovered = await discoverLocalAgent(hubUrl, fetchImpl)
@@ -189,26 +192,59 @@ function createBrowserLocalRuntimeApi(connector: RtcConnector<{ machineId: strin
         },
       }
     },
-    async listTerminals(options?: { onStatus?: (status: string) => void }) {
+    async listTerminals(options?: Pick<RtcConnectOptions, 'forceRelay' | 'onStatus' | 'onConnectionState'>) {
       const targetMachineId = machineId ?? 'local'
       if (!storage || !createMachineSessionStore(storage).getSessionToken(targetMachineId)) {
         return cachedTerminals
       }
-      options?.onStatus?.('Connecting to local agent...')
-      const session = await connector.connect({ machineId: targetMachineId })
+      emitLocalConnectionState(options, targetMachineId, 'connecting', 'Connecting to local agent...')
+      const forceRelay = options?.forceRelay === true
+      if (
+        !inventorySession ||
+        inventorySessionMachineId !== targetMachineId ||
+        inventorySessionForceRelay !== forceRelay ||
+        !isSessionAlive(inventorySession)
+      ) {
+        await inventorySession?.disconnect().catch(() => {})
+        inventorySession = await connector.connect({ machineId: targetMachineId }, options)
+        inventorySessionMachineId = targetMachineId
+        inventorySessionForceRelay = forceRelay
+      }
+      emitLocalConnectionState(options, targetMachineId, 'connecting', 'Fetching terminals...')
+      const channel = await inventorySession.openApi()
       try {
-        options?.onStatus?.('Fetching terminals...')
-        const channel = await session.openApi()
         const response = await channel.request<{ terminals: Record<string, unknown>[] }>('list', {})
+        emitLocalConnectionState(options, targetMachineId, 'connected', 'Connected')
         return normalizeTerminalInventory({
           machine_id: targetMachineId,
           terminals: response.terminals ?? [],
         }).terminals
       } finally {
-        await session.disconnect()
+        channel.close()
       }
     },
   }
+}
+
+function isSessionAlive(session: RtcSession): boolean {
+  const candidate = session as RtcSession & { isAlive?: () => boolean }
+  return typeof candidate.isAlive === 'function' ? candidate.isAlive() : true
+}
+
+function emitLocalConnectionState(
+  options: Pick<RtcConnectOptions, 'onStatus' | 'onConnectionState'> | undefined,
+  machineId: string,
+  phase: 'connecting' | 'connected',
+  statusText: string,
+): void {
+  options?.onStatus?.(statusText)
+  options?.onConnectionState?.({
+    machineId,
+    phase,
+    path: 'local',
+    statusText,
+    relayInUse: false,
+  })
 }
 
 async function discoverLocalAgent(hubUrl: string, fetchImpl: RemoteNetworkRuntime['fetch']): Promise<{ machineId: string; machineName: string; terminals: Terminal[] }> {

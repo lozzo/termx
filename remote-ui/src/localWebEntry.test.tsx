@@ -166,6 +166,94 @@ describe('local web entry shell', () => {
     expect(storage.getItem('termx.local.hubUrl')).toBe('http://192.168.1.100:18888')
   })
 
+  it('reuses the browser local inventory session instead of disconnecting after list', async () => {
+    const entry = await import('./localWebEntry')
+    document.body.innerHTML = '<div id="root"></div>'
+    const storage = new MemoryStorage()
+    storage.setItem('termx.session.device-real-local.token', 'session-token-local')
+    storage.setItem('termx.session.device-real-local.exp', '2099-05-09T00:00:00.000Z')
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/api/v1/agents/online')) {
+        return jsonResponse({
+          agents: [{
+            machine_id: 'device-real-local',
+            machine_name: 'Local Mac',
+            status: 'online',
+            terminals: [{
+              terminal_id: 'terminal-1',
+              title: 'zsh',
+              state: 'running',
+            }],
+          }],
+        })
+      }
+      return jsonResponse({})
+    })
+    const disconnect = vi.fn()
+    const connector = {
+      connect: vi.fn(async () => ({
+        async disconnect() { disconnect() },
+        async openTerminal() {
+          return {
+            label: 'terminal:terminal-1',
+            readyState: 'open' as const,
+            send() {},
+            close() {},
+            onMessage() { return { close() {} } },
+            onClose() { return { close() {} } },
+            async waitOpen() {},
+          }
+        },
+        async openApi() {
+          return {
+            async request<TResponse>(method: string) {
+              if (method === 'list') return { terminals: [] } as TResponse
+              return { path: '/', parent: '', total: 0, entries: [] } as TResponse
+            },
+            close() {},
+          }
+        },
+        async openFileTransfer() {
+          throw new Error('not used')
+        },
+        subscribeEvents() {
+          return { close() {} }
+        },
+        async getConnectionInfo() {
+          return {
+            path: 'local' as const,
+            connectionId: 'local-test',
+            machineId: 'device-real-local',
+            relayInUse: false,
+          }
+        },
+        async getCapabilities() {
+          return {
+            terminalAllowed: true,
+            apiAllowed: true,
+            eventsAllowed: true,
+            fileTransferAllowed: true,
+            terminalManagementAllowed: true,
+            relayInUse: false,
+          }
+        },
+      })),
+    }
+
+    entry.mountLocalWebApp({
+      connector,
+      networkRuntime: {
+        fetch,
+        storage,
+        queryParam: () => null,
+      },
+    })
+
+    await waitFor(() => expect(connector.connect).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list')).toBeTruthy())
+    expect(disconnect).not.toHaveBeenCalled()
+  })
+
   it('shows the pairing gate before a first-run browser local RTC inventory session exists', async () => {
     const entry = await import('./localWebEntry')
     document.body.innerHTML = '<div id="root"></div>'

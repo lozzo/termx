@@ -357,7 +357,7 @@ function normalizeChannelSendError(channel: RTCDataChannelLike, err: unknown): E
 }
 
 function shouldLogAPITraffic(path: unknown): boolean {
-  return path !== 'ping'
+  return path !== '/status'
 }
 
 function summarizeAPIValue(value: unknown, path?: string): unknown {
