@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -293,6 +295,133 @@ func TestAnswerOfferMachineScopedPolicyAllowsAnyTerminalChannel(t *testing.T) {
 	case <-open:
 	case <-time.After(10 * time.Second):
 		t.Fatal("timed out waiting for machine-scoped terminal data channel to open")
+	}
+}
+
+func TestAnswerOfferTerminalChannelBuffersFrameSentOnClientOpen(t *testing.T) {
+	sessionCtx, cancelSession := context.WithCancel(context.Background())
+	defer cancelSession()
+	offerPC, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("NewPeerConnection returned error: %v", err)
+	}
+	defer offerPC.Close()
+
+	dc, err := offerPC.CreateDataChannel("terminal:term-early", nil)
+	if err != nil {
+		t.Fatalf("CreateDataChannel returned error: %v", err)
+	}
+	firstFrame := []byte("first-frame")
+	clientOpen := make(chan struct{})
+	sendErr := make(chan error, 1)
+	dc.OnOpen(func() {
+		select {
+		case <-clientOpen:
+		default:
+			close(clientOpen)
+		}
+		sendErr <- dc.Send(firstFrame)
+	})
+
+	offer, err := offerPC.CreateOffer(nil)
+	if err != nil {
+		t.Fatalf("CreateOffer returned error: %v", err)
+	}
+	if err := offerPC.SetLocalDescription(offer); err != nil {
+		t.Fatalf("SetLocalDescription returned error: %v", err)
+	}
+	waitTestPeerICE(t, offerPC, 5*time.Second)
+
+	received := make(chan []byte, 1)
+	recvErr := make(chan error, 1)
+	answer, err := AnswerOfferWithOptions(context.Background(), hubv1.SignalingOffer{
+		SessionID: "early-terminal-frame-session",
+		MachineID: "machine-1",
+		SDP:       offerPC.LocalDescription().SDP,
+	}, nil, transportSinkFunc(func(_ context.Context, t transport.Transport, remote string) error {
+		if remote != "webrtc:terminal:term-early" {
+			t.Close()
+			return nil
+		}
+		frame, err := t.Recv()
+		if err != nil {
+			recvErr <- err
+			return err
+		}
+		received <- frame
+		return nil
+	}), fileapi.NewManager(), AnswerOptions{
+		ChannelPolicy: ChannelPolicy{
+			AllowTerminal: true,
+		},
+		SessionContext: sessionCtx,
+	})
+	if err != nil {
+		t.Fatalf("AnswerOfferWithOptions returned error: %v", err)
+	}
+	if err := offerPC.SetRemoteDescription(webrtc.SessionDescription{
+		Type: webrtc.SDPTypeAnswer,
+		SDP:  answer.SDP,
+	}); err != nil {
+		t.Fatalf("SetRemoteDescription returned error: %v", err)
+	}
+
+	select {
+	case <-clientOpen:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for terminal data channel to open")
+	}
+	select {
+	case err := <-sendErr:
+		if err != nil {
+			t.Fatalf("Send on client open returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for client open send result")
+	}
+	select {
+	case frame := <-received:
+		if string(frame) != string(firstFrame) {
+			t.Fatalf("expected first frame %q, got %q", string(firstFrame), string(frame))
+		}
+	case err := <-recvErr:
+		t.Fatalf("server transport Recv returned error: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for server to receive first terminal frame")
+	}
+}
+
+func TestTerminalDataChannelTransportIsRegisteredBeforeOpen(t *testing.T) {
+	source, err := os.ReadFile("offer_handler.go")
+	if err != nil {
+		t.Fatalf("read offer_handler.go: %v", err)
+	}
+	text := string(source)
+	terminalCase := strings.Index(text, "case bridge.IsTerminalChannelLabel(label):")
+	if terminalCase < 0 {
+		t.Fatal("terminal data channel case not found")
+	}
+	nextCase := strings.Index(text[terminalCase+1:], "\n\t\tcase ")
+	if nextCase < 0 {
+		t.Fatal("next data channel case not found")
+	}
+	block := text[terminalCase : terminalCase+1+nextCase]
+	transportIndex := strings.Index(block, "transport := bridge.NewDataChannelTransport(dc)")
+	onOpenIndex := strings.Index(block, "dc.OnOpen(func()")
+	if transportIndex < 0 {
+		t.Fatal("terminal data channel must create DataChannelTransport")
+	}
+	serveIndex := strings.Index(block, "sink.ServeRemoteTransport")
+	if serveIndex < 0 {
+		t.Fatal("terminal data channel must serve the transport after open")
+	}
+	serveBlock := block[:serveIndex]
+	onOpenIndex = strings.LastIndex(serveBlock, "dc.OnOpen(func()")
+	if onOpenIndex < 0 {
+		t.Fatal("terminal data channel must handle OnOpen before serving transport")
+	}
+	if transportIndex > onOpenIndex {
+		t.Fatal("terminal DataChannelTransport must be created before OnOpen so first client frames are buffered")
 	}
 }
 

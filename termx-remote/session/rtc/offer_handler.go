@@ -135,12 +135,14 @@ func AnswerOfferWithOptions(
 		label := dc.Label()
 		switch {
 		case bridge.IsTerminalChannelLabel(label):
-			dc.OnOpen(func() {
-				if sink == nil {
+			if sink == nil {
+				dc.OnOpen(func() {
 					_ = dc.Close()
-					return
-				}
-				transport := bridge.NewDataChannelTransport(dc)
+				})
+				return
+			}
+			transport := bridge.NewDataChannelTransport(dc)
+			dc.OnOpen(func() {
 				go func() {
 					defer transport.Close()
 					_ = sink.ServeRemoteTransport(sessionCtx, transport, "webrtc:"+dc.Label())
