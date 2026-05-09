@@ -13,6 +13,7 @@ export interface WebControlApi {
   login(input: WebControlLoginInput, options?: RtcConnectOptions): Promise<WebControlAuthResult>
   me(options?: RtcConnectOptions): Promise<WebControlUser>
   listMachines(options?: RtcConnectOptions): Promise<WebControlMachine[]>
+  pairMachine(input: WebControlPairMachineInput, options?: RtcConnectOptions): Promise<WebControlPairMachineResult>
 }
 
 export interface WebControlLoginInput {
@@ -49,6 +50,23 @@ export interface WebControlMachine {
   hubStatus?: string | undefined
   lastSeen?: string | undefined
   createdAt?: string | undefined
+}
+
+export interface WebControlPairMachineInput {
+  machineId: string
+  pairSessionId: string
+  pairSecret: string
+  appDeviceId: string
+  appName: string
+  requestedCapabilities: string[]
+}
+
+export interface WebControlPairMachineResult {
+  claimId: string
+  machineId: string
+  machineName?: string | undefined
+  sessionToken: string
+  expiresAt: string
 }
 
 export function createWebControlApi(options: WebControlApiOptions): WebControlApi {
@@ -108,6 +126,31 @@ class WebControlHttpApi implements WebControlApi {
       throw new Error('Web Control machines response machines is required')
     }
     return machines.map((machine) => machineRecord(machine))
+  }
+
+  async pairMachine(input: WebControlPairMachineInput, options: RtcConnectOptions = {}): Promise<WebControlPairMachineResult> {
+    const machineId = requiredString(input.machineId, 'machine_id')
+    const response = await this.requestJSON('POST', `/api/v1/machines/${encodeURIComponent(machineId)}/pairing/claims`, {
+      auth: 'bearer',
+      signal: options.signal,
+      body: {
+        pair_session_id: requiredString(input.pairSessionId, 'pair_session_id'),
+        pair_secret: requiredString(input.pairSecret, 'pair_secret'),
+        app_device_id: requiredString(input.appDeviceId, 'app_device_id'),
+        app_name: requiredString(input.appName, 'app_name'),
+        requested_capabilities: input.requestedCapabilities,
+      },
+    })
+    if (optionalBooleanField(response, 'pending') === true) {
+      throw new Error('Web Control pairing is pending; make sure the TermX agent is online and try Pair Device again')
+    }
+    return {
+      claimId: stringField(response, 'claim_id'),
+      machineId: stringField(response, 'machine_id'),
+      ...(optionalStringField(response, 'machine_name') ? { machineName: optionalStringField(response, 'machine_name') } : {}),
+      sessionToken: stringField(response, 'session_token'),
+      expiresAt: stringField(response, 'expires_at'),
+    }
   }
 
   private async requestJSON(
@@ -288,4 +331,20 @@ function booleanField(value: Record<string, unknown>, key: string): boolean {
     throw new Error(`Web Control response ${key} must be a boolean`)
   }
   return field
+}
+
+function optionalBooleanField(value: Record<string, unknown>, key: string): boolean | undefined {
+  const field = value[key]
+  if (field === undefined || field === null) return undefined
+  if (typeof field !== 'boolean') {
+    throw new Error(`Web Control response ${key} must be a boolean`)
+  }
+  return field
+}
+
+function requiredString(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`Web Control ${label} is required`)
+  }
+  return value.trim()
 }

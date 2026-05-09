@@ -83,6 +83,7 @@ type PendingPairingClaim struct {
 	AppDeviceID           string
 	AppName               string
 	RequestedCapabilities []string
+	AllowedPaths          []string
 }
 
 type PairingResultInput struct {
@@ -302,6 +303,7 @@ func (s *Server) pushPairingWithStop(ctx context.Context, sender interface{ Send
 				AppDeviceId:           claim.AppDeviceID,
 				AppName:               claim.AppName,
 				RequestedCapabilities: claim.RequestedCapabilities,
+				AllowedPaths:          claim.AllowedPaths,
 			},
 		}}); err != nil {
 			return

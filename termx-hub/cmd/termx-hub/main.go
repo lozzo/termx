@@ -91,6 +91,7 @@ func newHubRuntimeFromEnv() (hubRuntime, error) {
 			Registry:       reg,
 			ICE:            iceSvc,
 			ICEServers:     iceServers,
+			InternalSecret: strings.TrimSpace(os.Getenv("TERMX_HUB_CONTROL_SECRET")),
 			AllowedOrigins: csvList(os.Getenv("TERMX_HUB_ALLOWED_ORIGINS")),
 		}),
 		GRPCServer: grpcadapter.NewServerWithConfig(grpcadapter.ServerConfig{

@@ -107,6 +107,7 @@ func TestVerifyWrongSecret(t *testing.T) {
 func TestCapabilitiesSorted(t *testing.T) {
 	c := baseClaims()
 	c.Capabilities = []string{"terminal_management", "file_manager", "terminal"}
+	c.Paths = []string{"local", "cloud"}
 	tok, err := token.Issue(secret, c)
 	if err != nil {
 		t.Fatal(err)
@@ -118,6 +119,11 @@ func TestCapabilitiesSorted(t *testing.T) {
 	for i := 1; i < len(got.Capabilities); i++ {
 		if got.Capabilities[i] < got.Capabilities[i-1] {
 			t.Fatal("capabilities not sorted")
+		}
+	}
+	for i := 1; i < len(got.Paths); i++ {
+		if got.Paths[i] < got.Paths[i-1] {
+			t.Fatal("paths not sorted")
 		}
 	}
 }

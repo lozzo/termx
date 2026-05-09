@@ -51,6 +51,7 @@ type ClaimRequest struct {
 	AppDeviceID           string   `json:"app_device_id"`
 	AppName               string   `json:"app_name"`
 	RequestedCapabilities []string `json:"requested_capabilities"`
+	AllowedPaths          []string `json:"allowed_paths,omitempty"`
 }
 
 type ClaimResponse struct {
@@ -181,6 +182,7 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 		MachineID:   strings.TrimSpace(cfg.MachineID),
 		AppDeviceID: strings.TrimSpace(req.AppDeviceID),
 		AppName:     strings.TrimSpace(req.AppName),
+		Paths:       normalizeTokenList(req.AllowedPaths),
 		IssuedAt:    now.Unix(),
 		ExpiresAt:   expiresAt.Unix(),
 	}
@@ -263,6 +265,26 @@ func validateConfig(cfg Config) error {
 		return errors.New("machine secret is required")
 	}
 	return nil
+}
+
+func normalizeTokenList(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func randomToken(prefix string, byteLen int) (string, error) {

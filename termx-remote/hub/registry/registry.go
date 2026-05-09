@@ -495,6 +495,7 @@ func (r *Registry) SubmitPairingClaim(ctx context.Context, in PairingClaimInput)
 		AppDeviceID:           strings.TrimSpace(in.AppDeviceID),
 		AppName:               strings.TrimSpace(in.AppName),
 		RequestedCapabilities: cloneStrings(in.RequestedCapabilities),
+		AllowedPaths:          cloneStrings(in.AllowedPaths),
 		CreatedAt:             r.clock.Now().UTC(),
 	}
 	if claim.MachineID == "" || claim.PairSessionID == "" || claim.PairSecret == "" ||
@@ -922,6 +923,7 @@ func cloneOffer(offer Offer) Offer {
 
 func clonePairingClaim(claim PairingClaim) PairingClaim {
 	claim.RequestedCapabilities = cloneStrings(claim.RequestedCapabilities)
+	claim.AllowedPaths = cloneStrings(claim.AllowedPaths)
 	return claim
 }
 

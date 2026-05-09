@@ -341,58 +341,18 @@ func NewHandler(cfg Config) http.Handler {
 		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), answer.MachineID, terminalID, allowRelay, allowRelayTransfer, r.PathValue("session_id"), answer)
 	})
 	mux.HandleFunc("POST /api/v1/pairing/claims", func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			MachineID             string   `json:"machine_id"`
-			PairSessionID         string   `json:"pair_session_id"`
-			PairSecret            string   `json:"pair_secret"`
-			AppDeviceID           string   `json:"app_device_id"`
-			AppName               string   `json:"app_name"`
-			RequestedCapabilities []string `json:"requested_capabilities"`
-		}
-		if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
-			writeDecodeError(w, err)
+		if managedPairingRequiresWebControl(cfg) {
+			writeError(w, http.StatusForbidden, "web_control_required", "managed pairing claims must be submitted through Web Control")
 			return
 		}
-		if cfg.Registry == nil {
-			writeError(w, http.StatusServiceUnavailable, "registry_unavailable", "agent registry is not configured")
+		handlePairingClaim(w, r, cfg, maxBodyBytes, []string{registry.PathLocal})
+	})
+	mux.HandleFunc("POST /api/internal/pairing/claims", func(w http.ResponseWriter, r *http.Request) {
+		if !authorizedInternalRequest(r, cfg.InternalSecret) {
+			writeError(w, http.StatusForbidden, "internal_unauthorized", "valid hub secret is required")
 			return
 		}
-		claim, err := cfg.Registry.SubmitPairingClaim(r.Context(), registry.PairingClaimInput{
-			MachineID:             req.MachineID,
-			PairSessionID:         req.PairSessionID,
-			PairSecret:            req.PairSecret,
-			AppDeviceID:           req.AppDeviceID,
-			AppName:               req.AppName,
-			RequestedCapabilities: req.RequestedCapabilities,
-		})
-		if err != nil {
-			writeError(w, http.StatusForbidden, "submit_pairing_claim_failed", err.Error())
-			return
-		}
-		result, err := waitForPairingResult(r.Context(), cfg, claim.ID)
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				writeJSON(w, http.StatusAccepted, map[string]any{
-					"claim_id":   claim.ID,
-					"machine_id": claim.MachineID,
-					"pending":    true,
-				})
-				return
-			}
-			writeError(w, statusForAnswerError(err), "get_pairing_result_failed", err.Error())
-			return
-		}
-		if strings.TrimSpace(result.Error) != "" {
-			writeError(w, http.StatusForbidden, "pairing_rejected", result.Error)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"claim_id":      result.ClaimID,
-			"machine_id":    result.MachineID,
-			"machine_name":  result.MachineName,
-			"session_token": result.SessionToken,
-			"expires_at":    result.ExpiresAt,
-		})
+		handlePairingClaim(w, r, cfg, maxBodyBytes, []string{registry.PathCloud})
 	})
 	return &Handler{
 		router:   corsMiddleware(mux, cfg.AllowedOrigins),
@@ -400,6 +360,66 @@ func NewHandler(cfg Config) http.Handler {
 		cloud:    cfg.Cloud,
 		clock:    clock,
 	}
+}
+
+func managedPairingRequiresWebControl(cfg Config) bool {
+	return strings.TrimSpace(cfg.InternalSecret) != "" && !cfg.LocalDiscovery
+}
+
+func handlePairingClaim(w http.ResponseWriter, r *http.Request, cfg Config, maxBodyBytes int64, allowedPaths []string) {
+	var req struct {
+		MachineID             string   `json:"machine_id"`
+		PairSessionID         string   `json:"pair_session_id"`
+		PairSecret            string   `json:"pair_secret"`
+		AppDeviceID           string   `json:"app_device_id"`
+		AppName               string   `json:"app_name"`
+		RequestedCapabilities []string `json:"requested_capabilities"`
+	}
+	if err := decodeJSON(w, r, maxBodyBytes, &req); err != nil {
+		writeDecodeError(w, err)
+		return
+	}
+	if cfg.Registry == nil {
+		writeError(w, http.StatusServiceUnavailable, "registry_unavailable", "agent registry is not configured")
+		return
+	}
+	claim, err := cfg.Registry.SubmitPairingClaim(r.Context(), registry.PairingClaimInput{
+		MachineID:             req.MachineID,
+		PairSessionID:         req.PairSessionID,
+		PairSecret:            req.PairSecret,
+		AppDeviceID:           req.AppDeviceID,
+		AppName:               req.AppName,
+		RequestedCapabilities: req.RequestedCapabilities,
+		AllowedPaths:          append([]string(nil), allowedPaths...),
+	})
+	if err != nil {
+		writeError(w, http.StatusForbidden, "submit_pairing_claim_failed", err.Error())
+		return
+	}
+	result, err := waitForPairingResult(r.Context(), cfg, claim.ID)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			writeJSON(w, http.StatusAccepted, map[string]any{
+				"claim_id":   claim.ID,
+				"machine_id": claim.MachineID,
+				"pending":    true,
+			})
+			return
+		}
+		writeError(w, statusForAnswerError(err), "get_pairing_result_failed", err.Error())
+		return
+	}
+	if strings.TrimSpace(result.Error) != "" {
+		writeError(w, http.StatusForbidden, "pairing_rejected", result.Error)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"claim_id":      result.ClaimID,
+		"machine_id":    result.MachineID,
+		"machine_name":  result.MachineName,
+		"session_token": result.SessionToken,
+		"expires_at":    result.ExpiresAt,
+	})
 }
 
 func pollUntilReady[T any](ctx context.Context, timeout, interval time.Duration, fetch func(context.Context) (T, error), notFoundErr error) (T, error) {

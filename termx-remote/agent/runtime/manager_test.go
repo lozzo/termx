@@ -221,6 +221,7 @@ func TestClaimHubPairingClaimsThroughPairingManager(t *testing.T) {
 		AppDeviceID:           "app-device-pair",
 		AppName:               "TermX Pair App",
 		RequestedCapabilities: []string{"terminal", "terminal_management"},
+		AllowedPaths:          []string{"cloud"},
 	})
 	if result.ClaimID != "claim-1" || result.MachineID != "device-pair" || result.MachineName != "Pair Device" || result.Error != "" {
 		t.Fatalf("pairing result = %+v", result)
@@ -229,7 +230,7 @@ func TestClaimHubPairingClaimsThroughPairingManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("session token did not verify: %v", err)
 	}
-	if claims.MachineID != "device-pair" || len(claims.Capabilities) != 0 {
+	if claims.MachineID != "device-pair" || len(claims.Capabilities) != 0 || strings.Join(claims.Paths, ",") != "cloud" {
 		t.Fatalf("claims = %+v", claims)
 	}
 	if claims.AppDeviceID != "app-device-pair" || claims.AppName != "TermX Pair App" {
@@ -287,6 +288,19 @@ func TestManagerRejectsCloudOfferWithoutSessionTokenBeforeAnswering(t *testing.T
 
 	if answer.Error == "" || !strings.Contains(answer.Error, "session_token") {
 		t.Fatalf("expected session_token rejection, got %#v", answer)
+	}
+	if answerer.calls != 0 {
+		t.Fatalf("answerer called %d times for unauthorized offer", answerer.calls)
+	}
+}
+
+func TestManagerRejectsCloudOfferWithLocalOnlySessionTokenBeforeAnswering(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixtureWithPaths(t, []string{"local"})
+
+	answer := manager.answerCloudOffer(context.Background(), offer, nil)
+
+	if answer.Error == "" || !strings.Contains(answer.Error, "not authorized for cloud") {
+		t.Fatalf("expected cloud path rejection, got %#v", answer)
 	}
 	if answerer.calls != 0 {
 		t.Fatalf("answerer called %d times for unauthorized offer", answerer.calls)
@@ -500,6 +514,16 @@ func newCloudOfferFixtureWithCapabilities(t *testing.T, capabilities []string, p
 
 func newCloudOfferFixtureWithCapabilitiesAndTerminal(t *testing.T, capabilities []string, provider InventoryProvider, terminalID string) (*Manager, *cloudAnswererStub, hubv1.SignalingOffer) {
 	t.Helper()
+	return newCloudOfferFixtureWithCapabilitiesTerminalAndPaths(t, capabilities, provider, terminalID, []string{"cloud"})
+}
+
+func newCloudOfferFixtureWithPaths(t *testing.T, paths []string) (*Manager, *cloudAnswererStub, hubv1.SignalingOffer) {
+	t.Helper()
+	return newCloudOfferFixtureWithCapabilitiesTerminalAndPaths(t, []string{"terminal", "file_manager"}, nil, "term-1", paths)
+}
+
+func newCloudOfferFixtureWithCapabilitiesTerminalAndPaths(t *testing.T, capabilities []string, provider InventoryProvider, terminalID string, paths []string) (*Manager, *cloudAnswererStub, hubv1.SignalingOffer) {
+	t.Helper()
 	dataDir := t.TempDir()
 	machineSecret, err := identity.LoadOrCreateMachineSecret(dataDir)
 	if err != nil {
@@ -510,6 +534,7 @@ func newCloudOfferFixtureWithCapabilitiesAndTerminal(t *testing.T, capabilities 
 		SessionID:    "pair-cloud-test",
 		MachineID:    "device-cloud-test",
 		Capabilities: append([]string(nil), capabilities...),
+		Paths:        append([]string(nil), paths...),
 		IssuedAt:     now.Add(-time.Minute).Unix(),
 		ExpiresAt:    now.Add(time.Hour).Unix(),
 	})

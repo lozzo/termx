@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { ArrowLeft, CheckCircle2, Download, Loader2, LogIn, Monitor, QrCode, RefreshCw, Server, Settings, ShieldCheck, Wifi, WifiOff, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type ReactNode } from 'react'
+import { ArrowLeft, Camera, Download, Loader2, LogIn, Monitor, Plus, QrCode, RefreshCw, Server, Settings, ShieldCheck, Wifi, WifiOff, X } from 'lucide-react'
 import { createMachineSessionStore, type MachineSessionStore } from './localAppIdentity'
 import { LocalRemoteApp, type LocalRemoteInventoryApi, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createMachineStore, type StoredMachineRecord } from './machineStore'
@@ -17,9 +17,17 @@ import type { FileTransferContext, TransferInfo } from './fileApi'
 import type { ConnectionInfo, LocalPairingApi, LocalStatus, MachineConnectionStateEvents, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSessionNegotiator, RtcSubscription, RtcTerminalDataChannelController, TerminalInventoryEvents } from './transport'
 import { normalizeTerminalInventory } from './terminalInventory'
 import { createWebControlApi, type WebControlApi, type WebControlMachine, type WebControlUser } from './webControlApi'
+import {
+  TERMINAL_FONT_OPTIONS,
+  TERMINAL_THEME_OPTIONS,
+  readTerminalSettings,
+  writeTerminalSettings,
+  type TerminalKeyboardMode,
+  type TerminalSettings,
+} from './terminalSettings'
+import type { TerminalRenderer } from './Terminal'
 
 const storageKeys = {
-  controlUrl: 'termx.remote.controlUrl',
   accessToken: 'termx.remote.accessToken',
 } as const
 
@@ -29,8 +37,11 @@ const appName = 'TermX Remote App'
 function noopSubscribe(_listener: () => void): () => void { return () => {} }
 
 type AppView = 'home' | 'settings' | 'machine'
+type PairIntent = 'add-local' | 'authorize-machine'
 type PairApi = LocalPairingApi
+type PairMethod = 'local-hub' | 'web-control'
 type ManagedRtcSessionFactory = (input: { machineId: string }) => RtcSession & RtcSessionNegotiator
+type MachineAuthorizationState = 'ready' | 'needs-session' | 'unpaired'
 type MachineRuntimeFactory = (input: {
   machine: WebControlMachine
   storage: RemoteRuntimeStorage
@@ -57,6 +68,7 @@ export interface WebControlRemoteAppProps {
   pairApiFactory?: ((payload: PairingPayload, machine: WebControlMachine) => PairApi) | undefined
   machineRuntimeFactory?: MachineRuntimeFactory | undefined
   globalFileTransfer?: FileTransferContext | undefined
+  scanPairingCode?: (() => Promise<string | null>) | undefined
 }
 
 export function WebControlRemoteApp({
@@ -67,6 +79,7 @@ export function WebControlRemoteApp({
   pairApiFactory,
   machineRuntimeFactory = createManagedMachineRuntime,
   globalFileTransfer,
+  scanPairingCode,
 }: WebControlRemoteAppProps) {
   const networkRuntime = networkRuntimeProp ?? unavailableNetworkRuntime
   const storage = storageProp ?? networkRuntime.storage
@@ -76,24 +89,26 @@ export function WebControlRemoteApp({
   }
   const networkStateManager = networkStateManagerRef.current
   const [view, setView] = useState<AppView>('home')
-  const [controlUrl, setControlUrl] = useState(() => initialControlUrl(storage, defaultControlUrl, networkRuntime))
+  const controlUrl = useMemo(() => initialControlUrl(defaultControlUrl, networkRuntime), [defaultControlUrl, networkRuntime])
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [accessToken, setAccessToken] = useState(() => storage?.getItem(storageKeys.accessToken) ?? '')
+  const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => readTerminalSettings(storage))
   const [user, setUser] = useState<WebControlUser | null>(null)
   const [localMachines, setLocalMachines] = useState<StoredMachineRecord[]>([])
   const [machines, setMachines] = useState<WebControlMachine[]>([])
   const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null)
   const [scanOpen, setScanOpen] = useState(false)
+  const [pairIntent, setPairIntent] = useState<PairIntent>('add-local')
   const [transferCenterOpen, setTransferCenterOpen] = useState(false)
   const [manualScanValue, setManualScanValue] = useState('')
   const [lastImported, setLastImported] = useState<PairingPayload | null>(null)
   const [pairedMachineIds, setPairedMachineIds] = useState(() => readPairedMachineIds(storage, undefined))
   const [pairVersion, setPairVersion] = useState(0)
-  const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [pairing, setPairing] = useState(false)
+  const [cameraScanning, setCameraScanning] = useState(false)
   const signedIn = accessToken.trim() !== ''
   const runtimeCacheRef = useRef<{
     api: WebControlApi
@@ -205,13 +220,17 @@ export function WebControlRemoteApp({
     if (!accessToken) return
     setLoading(true)
     try {
-      const localMachineList = storage ? createMachineStore({ storage }).listMachines() : []
+      let localMachineList = storage ? createMachineStore({ storage }).listMachines() : []
       const [profile, cloudMachines] = await Promise.all([
         api.me(),
         api.listMachines(),
       ])
       setUser(profile)
       setMachines(cloudMachines)
+      if (storage) {
+        mergeSignedInCloudMachines(storage, cloudMachines)
+        localMachineList = createMachineStore({ storage }).listMachines()
+      }
       setLocalMachines(localMachineList)
       setSelectedMachineId((current) => {
         if (
@@ -231,6 +250,36 @@ export function WebControlRemoteApp({
     }
   }, [accessToken, api, storage])
 
+  const prepareTransferMachineRuntime = useCallback((transferId?: string) => {
+    if (!globalFileTransfer || !transferId) return
+    const transfer = globalFileTransfer.getSnapshot().transfers.find((item) => item.id === transferId)
+    const machineId = transfer?.machineId
+    if (!machineId) return
+    const machine = displayMachines.find((item) => item.id === machineId)
+    if (!machine) return
+    getMachineRuntime(machine)
+  }, [displayMachines, getMachineRuntime, globalFileTransfer])
+
+  const resumeGlobalTransfer = useCallback(async (transferId: string) => {
+    prepareTransferMachineRuntime(transferId)
+    await globalFileTransfer?.resumeTransfer?.(transferId)
+  }, [globalFileTransfer, prepareTransferMachineRuntime])
+
+  const resumeAllGlobalTransfers = useCallback(async () => {
+    if (!globalFileTransfer) return
+    const machineIds = new Set(
+      globalFileTransfer.getSnapshot().transfers
+        .map((transfer) => transfer.machineId)
+        .filter((machineId): machineId is string => Boolean(machineId)),
+    )
+    for (const machineId of machineIds) {
+      const machine = displayMachines.find((item) => item.id === machineId)
+      if (!machine) continue
+      getMachineRuntime(machine)
+    }
+    await globalFileTransfer.resumeAllTransfers?.()
+  }, [displayMachines, getMachineRuntime, globalFileTransfer])
+
   useEffect(() => {
     void refreshMachines()
   }, [refreshMachines])
@@ -242,15 +291,12 @@ export function WebControlRemoteApp({
   const submitLogin = useCallback(async () => {
     setLoading(true)
     setError(null)
-    setMessage(null)
     try {
       const auth = await api.login({ login, password })
-      storage?.setItem(storageKeys.controlUrl, controlUrl)
       storage?.setItem(storageKeys.accessToken, auth.accessToken)
       setAccessToken(auth.accessToken)
       setUser(auth.user)
       setPassword('')
-      setMessage('Signed in')
       setView('home')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -261,56 +307,72 @@ export function WebControlRemoteApp({
 
   const signOut = useCallback(() => {
     storage?.removeItem(storageKeys.accessToken)
+    const signedOutMachines = pruneMachinesForSignOut(storage)
     setAccessToken('')
     setUser(null)
     setMachines([])
+    setLocalMachines(signedOutMachines)
+    setPairedMachineIds(readPairedMachineIds(storage, undefined))
+    setPairVersion((current) => current + 1)
     setSelectedMachineId(null)
-    setMessage(null)
     setError(null)
     setView('settings')
   }, [storage])
 
-  const saveSettings = useCallback(() => {
-    storage?.setItem(storageKeys.controlUrl, controlUrl)
-    setMessage('Settings saved')
-    setError(null)
-    setView('home')
-  }, [controlUrl, storage])
+  const updateTerminalSettings = useCallback((patch: Partial<TerminalSettings>) => {
+    setTerminalSettings((current) => writeTerminalSettings({ ...current, ...patch }, storage))
+  }, [storage])
 
-  const openPairSheet = useCallback((machineId?: string | undefined) => {
-    if (machineId) setSelectedMachineId(machineId)
+  const openAddLocalSheet = useCallback(() => {
+    setSelectedMachineId(null)
+    setPairIntent('add-local')
     setManualScanValue('')
     setLastImported(null)
     setError(null)
-    setMessage(null)
     setScanOpen(true)
   }, [])
+
+  const openPairSheet = useCallback((machineId: string) => {
+    setSelectedMachineId(machineId)
+    setPairIntent('authorize-machine')
+    setManualScanValue('')
+    setLastImported(null)
+    setError(null)
+    setScanOpen(true)
+  }, [])
+
+  const openMachinePairSheet = useCallback((machine: WebControlMachine) => {
+    openPairSheet(machine.id)
+    if (machine.paired && !pairedMachineIds.has(machine.id)) {
+      setError('This machine is already paired with your account, but this phone needs a fresh local session. Scan the machine QR again to re-authorize this phone.')
+    }
+  }, [openPairSheet, pairedMachineIds])
 
   const selectMachine = useCallback((machine: WebControlMachine) => {
     setSelectedMachineId(machine.id)
     if (!pairedMachineIds.has(machine.id)) {
-      openPairSheet(machine.id)
+      openMachinePairSheet(machine)
       return
     }
     setView('machine')
-    setMessage(null)
     setError(null)
-  }, [openPairSheet, pairedMachineIds])
+  }, [openMachinePairSheet, pairedMachineIds])
 
-  const importManualScan = useCallback(async () => {
+  const pairScannedValue = useCallback(async (rawValue: string) => {
     if (!storage) {
       setError('Local storage is required before importing a TermX QR')
-      setMessage(null)
       return
     }
     setPairing(true)
     setError(null)
-    setMessage(null)
     try {
-      const payload = parsePairingPayload(manualScanValue)
+      const payload = parsePairingPayload(rawValue)
       const cloudMachine = machines.find((machine) => machine.id === payload.machine.id)
-      const isCloud = cloudMachine !== undefined
+      const isCloud = pairIntent === 'authorize-machine' && cloudMachine !== undefined
       const requiresWebControl = payload.endpoints.webControl !== undefined
+      if (pairIntent === 'add-local' && requiresWebControl) {
+        throw new Error('This QR belongs to an online Web Control device. Sign in and re-authorize it from your machine list.')
+      }
 
       if (requiresWebControl && !signedIn) {
         setScanOpen(false)
@@ -320,6 +382,10 @@ export function WebControlRemoteApp({
       }
 
       let targetMachine: WebControlMachine
+
+      if (pairIntent === 'authorize-machine' && !selectedMachine) {
+        throw new Error('Choose a machine before re-authorizing it')
+      }
 
       if (isCloud) {
         if (!user) throw new Error('Account profile is required before pairing a cloud device')
@@ -342,15 +408,20 @@ export function WebControlRemoteApp({
       if (selectedMachine && selectedMachine.id !== targetMachine.id) {
         throw new Error(`This pairing code belongs to ${targetMachine.name}, not ${selectedMachine.name}`)
       }
-      const pairApi = pairApiFactory?.(payload, targetMachine) ?? createPairApiFromMachine(targetMachine, networkRuntime)
-      const pairResult = await pairApi.pair({
+      const pairInput = {
         machineId: targetMachine.id,
         pairSessionId: payload.pairing.sessionId,
         pairSecret: payload.pairing.secret,
         appDeviceId: createBrowserAppDeviceId(),
         appName,
         requestedCapabilities: ['terminal', 'file_manager', 'terminal_management'],
-      })
+      }
+      const pairMethod: PairMethod = isCloud ? 'web-control' : 'local-hub'
+      const pairResult = pairApiFactory
+        ? await pairApiFactory(payload, targetMachine).pair(pairInput)
+        : pairMethod === 'web-control'
+          ? await api.pairMachine(pairInput)
+          : await createPairApiFromMachine(targetMachine, networkRuntime).pair(pairInput)
       if (pairResult.machineId !== targetMachine.id) {
         throw new Error(`pairing response machine mismatch: ${pairResult.machineId} != ${targetMachine.id}`)
       }
@@ -365,17 +436,35 @@ export function WebControlRemoteApp({
       setPairVersion((current) => current + 1)
       setLastImported(payload)
       setError(null)
-      setMessage(`Paired ${targetMachine.name}`)
       setManualScanValue('')
       setScanOpen(false)
       setView('machine')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-      setMessage(null)
     } finally {
       setPairing(false)
     }
-  }, [machines, manualScanValue, networkRuntime, pairApiFactory, selectedMachine, signedIn, storage, user])
+  }, [machines, networkRuntime, pairApiFactory, pairIntent, selectedMachine, signedIn, storage, user])
+
+  const importManualScan = useCallback(async () => {
+    await pairScannedValue(manualScanValue)
+  }, [manualScanValue, pairScannedValue])
+
+  const scanWithCamera = useCallback(async () => {
+    if (!scanPairingCode) return
+    setCameraScanning(true)
+    setError(null)
+    try {
+      const value = await scanPairingCode()
+      if (!value) return
+      setManualScanValue(value)
+      await pairScannedValue(value)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCameraScanning(false)
+    }
+  }, [pairScannedValue, scanPairingCode])
 
   useEffect(() => addNativeBackHandler(() => {
     if (scanOpen) {
@@ -388,7 +477,6 @@ export function WebControlRemoteApp({
     }
     if (view === 'machine') {
       setView('home')
-      setMessage(null)
       setError(null)
       return true
     }
@@ -397,53 +485,49 @@ export function WebControlRemoteApp({
 
   return (
     <main className="flex h-full min-h-[100dvh] flex-col bg-zinc-50 text-zinc-950" data-testid="termx-web-control-remote">
-      <RemoteNetworkBanner manager={networkStateManager} />
       {view === 'settings' ? (
         <SettingsView
-          controlUrl={controlUrl}
           error={error}
+          controlUrl={controlUrl}
           loading={loading}
           login={login}
-          message={message}
           password={password}
           signedIn={signedIn}
+          terminalSettings={terminalSettings}
           user={user}
           onBack={() => setView('home')}
-          onControlUrlChange={setControlUrl}
           onLoginChange={setLogin}
           onPasswordChange={setPassword}
           onRefresh={() => void refreshMachines()}
-          onSaveSettings={saveSettings}
           onSignIn={() => void submitLogin()}
           onSignOut={signOut}
+          onTerminalSettingsChange={updateTerminalSettings}
         />
       ) : view === 'machine' && selectedMachine ? (
         <MachineTerminalListView
           machine={selectedMachine}
           storage={storage}
+          terminalSettings={terminalSettings}
           runtime={getMachineRuntime(selectedMachine)}
-          message={message}
-          error={error}
           onBack={() => {
             setView('home')
-            setMessage(null)
             setError(null)
           }}
+          onTerminalSettingsChange={updateTerminalSettings}
         />
       ) : (
         <HomeView
-          error={error}
           fileTransfer={globalFileTransfer}
           transferState={globalTransferState as { transfers: TransferInfo[]; hasActiveTransfers: boolean }}
           loading={loading}
           machines={displayMachines}
-          message={message}
           pairedMachineIds={pairedMachineIds}
           signedIn={signedIn}
           user={user}
-          onOpenPairSheet={() => openPairSheet()}
+          onAddLocalDevice={openAddLocalSheet}
           onOpenSettings={() => setView('settings')}
           onOpenTransferCenter={() => setTransferCenterOpen(true)}
+          onPairMachine={openMachinePairSheet}
           onRefresh={() => void refreshMachines()}
           onSelectMachine={selectMachine}
           onSignIn={() => setView('settings')}
@@ -454,18 +538,25 @@ export function WebControlRemoteApp({
         <PairSheet
           lastImported={lastImported}
           manualScanValue={manualScanValue}
+          pairError={error}
           pairing={pairing}
+          cameraScanning={cameraScanning}
+          pairIntent={pairIntent}
           selectedMachine={selectedMachine}
           signedIn={signedIn}
+          canScanWithCamera={Boolean(scanPairingCode)}
           onClose={() => setScanOpen(false)}
           onImport={() => void importManualScan()}
           onManualScanValueChange={setManualScanValue}
+          onScanWithCamera={() => void scanWithCamera()}
         />
       ) : null}
       {transferCenterOpen ? (
         <GlobalTransferCenter
           fileTransfer={globalFileTransfer}
           onClose={() => setTransferCenterOpen(false)}
+          onResumeTransfer={resumeGlobalTransfer}
+          onResumeAllTransfers={resumeAllGlobalTransfers}
         />
       ) : null}
     </main>
@@ -475,9 +566,13 @@ export function WebControlRemoteApp({
 function GlobalTransferCenter({
   fileTransfer,
   onClose,
+  onResumeTransfer,
+  onResumeAllTransfers,
 }: {
   fileTransfer: FileTransferContext | undefined
   onClose: () => void
+  onResumeTransfer?: ((id: string) => void | Promise<void>) | undefined
+  onResumeAllTransfers?: (() => void | Promise<void>) | undefined
 }) {
   const emptySnapshot = useMemo(() => ({ transfers: [], hasActiveTransfers: false }), [])
   const transferState = useSyncExternalStore(
@@ -494,8 +589,8 @@ function GlobalTransferCenter({
       onCancel={(id) => fileTransfer.cancelTransfer(id)}
       onDismiss={(id) => fileTransfer.dismissTransfer(id)}
       onPause={(id) => fileTransfer.pauseTransfer?.(id)}
-      onResume={(id) => fileTransfer.resumeTransfer?.(id)}
-      onResumeAll={() => fileTransfer.resumeAllTransfers?.()}
+      onResume={onResumeTransfer ?? ((id) => fileTransfer.resumeTransfer?.(id))}
+      onResumeAll={onResumeAllTransfers ?? (() => fileTransfer.resumeAllTransfers?.())}
       open
       onOpenChange={(open) => {
         if (!open) onClose()
@@ -504,58 +599,31 @@ function GlobalTransferCenter({
   )
 }
 
-function RemoteNetworkBanner({ manager }: { manager: RemoteNetworkStateManager }) {
-  const state = useSyncExternalStore(
-    (listener) => manager.subscribeSnapshot(listener),
-    () => manager.state,
-  )
-
-  if (state.networkReady) return null
-
-  const text = !state.phoneOnline
-    ? 'Network is offline. Connections will resume automatically.'
-    : state.jsFrozenRecovery
-      ? 'Restoring connections...'
-      : 'App is in the background. Connections are paused.'
-
-  return (
-    <div className="pointer-events-none fixed inset-x-0 top-0 z-[9999] px-3 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
-      <div className="mx-auto flex min-h-9 max-w-md items-center justify-center gap-2 rounded-md bg-amber-500 px-3 py-2 text-xs font-semibold text-amber-950 shadow-lg">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        <span>{text}</span>
-      </div>
-    </div>
-  )
-}
-
 function MachineTerminalListView({
   machine,
   storage,
+  terminalSettings,
   runtime,
-  message,
-  error,
   onBack,
+  onTerminalSettingsChange,
 }: {
   machine: WebControlMachine
   storage: RemoteRuntimeStorage | undefined
+  terminalSettings: TerminalSettings
   runtime: MachineRuntime | null
-  message: string | null
-  error: string | null
   onBack: () => void
+  onTerminalSettingsChange: (patch: Partial<TerminalSettings>) => void
 }) {
   if (!storage || !runtime) {
     return (
       <MachineRuntimeErrorShell
         machine={machine}
-        message={message}
-        error={error ?? 'Local app identity storage is required before opening this machine'}
         onBack={onBack}
       />
     )
   }
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-zinc-50" data-testid="termx-machine-terminal-list">
-      <StatusMessages error={error} message={message} />
       <LocalRemoteApp
         api={runtime.api}
         connector={runtime.connector}
@@ -563,6 +631,8 @@ function MachineTerminalListView({
         connectionStateEvents={runtime.connectionStateEvents}
         inventoryEvents={runtime.inventoryEvents}
         fileTransfer={runtime.fileTransfer}
+        terminalSettings={terminalSettings}
+        onTerminalSettingsChange={onTerminalSettingsChange}
         onBack={onBack}
       />
     </section>
@@ -596,57 +666,45 @@ function MachineRuntimeHeader({ machine, onBack }: { machine: WebControlMachine;
 
 function MachineRuntimeErrorShell({
   machine,
-  message,
-  error,
   onBack,
 }: {
   machine: WebControlMachine
-  message: string | null
-  error: string | null
   onBack: () => void
 }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-zinc-50" data-testid="termx-machine-terminal-list">
       <MachineRuntimeHeader machine={machine} onBack={onBack} />
-      <StatusMessages error={error} message={message} />
-      <div className="flex flex-1 items-center justify-center p-4">
-        <div className="w-full max-w-sm rounded-lg border border-red-200 bg-white p-4 text-sm font-medium text-red-700 shadow-sm">
-          {error}
-        </div>
-      </div>
     </section>
   )
 }
 
 function HomeView({
-  error,
   fileTransfer,
   transferState,
   loading,
   machines,
-  message,
   pairedMachineIds,
   signedIn,
   user,
-  onOpenPairSheet,
+  onAddLocalDevice,
   onOpenSettings,
   onOpenTransferCenter,
+  onPairMachine,
   onRefresh,
   onSelectMachine,
   onSignIn,
 }: {
-  error: string | null
   fileTransfer?: FileTransferContext | undefined
   transferState: { transfers: TransferInfo[]; hasActiveTransfers: boolean }
   loading: boolean
   machines: WebControlMachine[]
-  message: string | null
   pairedMachineIds: Set<string>
   signedIn: boolean
   user: WebControlUser | null
-  onOpenPairSheet: () => void
+  onAddLocalDevice: () => void
   onOpenSettings: () => void
   onOpenTransferCenter: () => void
+  onPairMachine: (machine: WebControlMachine) => void
   onRefresh: () => void
   onSelectMachine: (machine: WebControlMachine) => void
   onSignIn: () => void
@@ -673,12 +731,12 @@ function HomeView({
             </button>
           ) : null}
           <button
-            aria-label="Scan pairing QR"
+            aria-label="Add local device"
             className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             type="button"
-            onClick={onOpenPairSheet}
+            onClick={onAddLocalDevice}
           >
-            <QrCode className="h-5 w-5" />
+            <Plus className="h-5 w-5" />
           </button>
           {fileTransfer ? (
             <button
@@ -702,14 +760,12 @@ function HomeView({
         </div>
       </header>
 
-      <StatusMessages error={error} message={message} />
-
       {machines.length === 0 ? (
         <EmptyState
-          actionLabel="Scan QR"
+          actionLabel="Add local device"
           icon="scan"
-          message="No devices found. Scan QR to add a local device, or sign in to sync your cloud devices."
-          onAction={onOpenPairSheet}
+          message="No devices found. Add a local device, or sign in to sync your cloud devices."
+          onAction={onAddLocalDevice}
           title="No machines yet"
         />
       ) : (
@@ -717,8 +773,9 @@ function HomeView({
           {machines.map((machine) => (
             <li key={machine.id} className="mb-2 last:mb-0">
               <MachineRow
+                authorizationState={machineAuthorizationState(machine, pairedMachineIds)}
                 machine={machine}
-                paired={pairedMachineIds.has(machine.id)}
+                onPairMachine={onPairMachine}
                 onSelectMachine={onSelectMachine}
               />
             </li>
@@ -734,38 +791,47 @@ function SettingsView({
   error,
   loading,
   login,
-  message,
   password,
   signedIn,
+  terminalSettings,
   user,
   onBack,
-  onControlUrlChange,
   onLoginChange,
   onPasswordChange,
   onRefresh,
-  onSaveSettings,
   onSignIn,
   onSignOut,
+  onTerminalSettingsChange,
 }: {
   controlUrl: string
   error: string | null
   loading: boolean
   login: string
-  message: string | null
   password: string
   signedIn: boolean
+  terminalSettings: TerminalSettings
   user: WebControlUser | null
   onBack: () => void
-  onControlUrlChange: (value: string) => void
   onLoginChange: (value: string) => void
   onPasswordChange: (value: string) => void
   onRefresh: () => void
-  onSaveSettings: () => void
   onSignIn: () => void
   onSignOut: () => void
+  onTerminalSettingsChange: (patch: Partial<TerminalSettings>) => void
 }) {
+  const handleNumberSetting = (key: 'fontSize' | 'scrollback', min: number, max: number) =>
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const value = Number(event.currentTarget.value)
+      if (!Number.isFinite(value)) return
+      onTerminalSettingsChange({ [key]: Math.max(min, Math.min(max, Math.round(value))) })
+    }
+  const themeGroups = useMemo(() => ({
+    dark: TERMINAL_THEME_OPTIONS.filter((option) => option.group === 'dark'),
+    light: TERMINAL_THEME_OPTIONS.filter((option) => option.group === 'light'),
+  }), [])
+
   return (
-    <section className="flex min-h-0 flex-1 flex-col" data-testid="termx-app-settings">
+    <section className="flex min-h-0 flex-1 flex-col bg-zinc-100" data-testid="termx-app-settings">
       <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <button
           aria-label="Back to machines"
@@ -781,39 +847,131 @@ function SettingsView({
         </div>
       </header>
 
-      <StatusMessages error={error} message={message} />
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+        <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
+          {error ? (
+            <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
+          ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <div className="mx-auto flex w-full max-w-xl flex-col gap-4">
-          <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-            <label className="block text-sm font-semibold text-zinc-800">
-              Web Control
+          <SettingsSection title="Connection">
+            <SettingsRow
+              label="Web Control"
+              value={controlUrl || 'Built-in endpoint'}
+            />
+          </SettingsSection>
+
+          <SettingsSection title="Terminal">
+            <SettingsRow label="Font size">
+              <div className="inline-flex h-9 items-center overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50">
+                <button
+                  aria-label="Decrease terminal font size"
+                  className="h-9 w-9 text-lg font-semibold text-zinc-700 active:bg-zinc-200"
+                  type="button"
+                  onClick={() => onTerminalSettingsChange({ fontSize: Math.max(8, terminalSettings.fontSize - 1) })}
+                >
+                  -
+                </button>
+                <input
+                  aria-label="Terminal font size"
+                  className="h-9 w-12 border-x border-zinc-200 bg-white px-1 text-center text-sm font-semibold text-zinc-950 outline-none focus:ring-2 focus:ring-blue-100"
+                  inputMode="numeric"
+                  max={32}
+                  min={8}
+                  type="number"
+                  value={terminalSettings.fontSize}
+                  onChange={handleNumberSetting('fontSize', 8, 32)}
+                />
+                <button
+                  aria-label="Increase terminal font size"
+                  className="h-9 w-9 text-lg font-semibold text-zinc-700 active:bg-zinc-200"
+                  type="button"
+                  onClick={() => onTerminalSettingsChange({ fontSize: Math.min(32, terminalSettings.fontSize + 1) })}
+                >
+                  +
+                </button>
+              </div>
+            </SettingsRow>
+            <SettingsRow label="Font">
+              <SettingsSelect
+                ariaLabel="Terminal font"
+                value={terminalSettings.fontFamily}
+                onChange={(value) => onTerminalSettingsChange({ fontFamily: value })}
+              >
+                {TERMINAL_FONT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </SettingsSelect>
+            </SettingsRow>
+            <SettingsRow label="Theme">
+              <SettingsSelect
+                ariaLabel="Terminal theme"
+                value={terminalSettings.themeId}
+                onChange={(value) => onTerminalSettingsChange({ themeId: value as TerminalSettings['themeId'] })}
+              >
+                <optgroup label="Dark">
+                  {themeGroups.dark.map((option) => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Light">
+                  {themeGroups.light.map((option) => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))}
+                </optgroup>
+              </SettingsSelect>
+            </SettingsRow>
+            <SettingsRow label="Renderer">
+              <SettingsSelect
+                ariaLabel="Terminal renderer"
+                value={terminalSettings.renderer}
+                onChange={(value) => onTerminalSettingsChange({ renderer: value as TerminalRenderer })}
+              >
+                <option value="auto">Auto</option>
+                <option value="webgl">WebGL</option>
+                <option value="canvas">Canvas</option>
+                <option value="dom">DOM</option>
+              </SettingsSelect>
+            </SettingsRow>
+            <SettingsRow label="Keyboard">
+              <SettingsSelect
+                ariaLabel="Terminal keyboard mode"
+                value={terminalSettings.keyboardMode}
+                onChange={(value) => onTerminalSettingsChange({ keyboardMode: value as TerminalKeyboardMode })}
+              >
+                <option value="auto">Auto</option>
+                <option value="resize">Resize</option>
+                <option value="shift">Shift up</option>
+              </SettingsSelect>
+            </SettingsRow>
+            <SettingsRow label="Scrollback">
               <input
-                className="mt-1 h-11 w-full rounded-md border border-zinc-300 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                value={controlUrl}
-                onChange={(event) => onControlUrlChange(event.target.value)}
-                placeholder="http://your-control-server:12306"
+                aria-label="Terminal scrollback"
+                className="h-9 w-28 rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-right text-sm font-semibold text-zinc-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                inputMode="numeric"
+                max={50000}
+                min={500}
+                step={500}
+                type="number"
+                value={terminalSettings.scrollback}
+                onChange={handleNumberSetting('scrollback', 500, 50000)}
               />
-            </label>
-            <button
-              className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-md border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-              type="button"
-              onClick={onSaveSettings}
-            >
-              Save settings
-            </button>
-          </section>
+            </SettingsRow>
+            <SettingsRow label="Cursor blink">
+              <Switch
+                ariaLabel="Terminal cursor blink"
+                checked={terminalSettings.cursorBlink}
+                onChange={(checked) => onTerminalSettingsChange({ cursorBlink: checked })}
+              />
+            </SettingsRow>
+          </SettingsSection>
 
-          <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+          <SettingsSection title="Account">
             {signedIn ? (
-              <div className="space-y-3">
-                <div>
-                  <h2 className="text-base font-semibold">Account</h2>
-                  <p className="mt-1 truncate text-sm font-medium text-zinc-500">{user?.email ?? 'Signed in'}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
+              <>
+                <SettingsRow label="Signed in" value={user?.email ?? 'Account'} />
+                <div className="grid grid-cols-2 gap-2 px-4 py-3">
                   <button
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 active:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
                     type="button"
                     onClick={onRefresh}
                     disabled={loading}
@@ -822,80 +980,174 @@ function SettingsView({
                     Refresh
                   </button>
                   <button
-                    className="inline-flex h-10 items-center justify-center rounded-md bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800"
+                    className="inline-flex h-10 items-center justify-center rounded-lg bg-zinc-900 px-3 text-sm font-semibold text-white active:bg-zinc-800"
                     type="button"
                     onClick={onSignOut}
                   >
                     Sign out
                   </button>
                 </div>
-              </div>
+              </>
             ) : (
-              <div className="space-y-3">
-                <h2 className="text-base font-semibold">Account</h2>
-                <label className="block text-sm font-semibold text-zinc-800">
-                  Email or username
-                  <input
-                    className="mt-1 h-11 w-full rounded-md border border-zinc-300 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    value={login}
-                    onChange={(event) => onLoginChange(event.target.value)}
-                    autoComplete="username"
-                  />
-                </label>
-                <label className="block text-sm font-semibold text-zinc-800">
-                  Password
-                  <input
-                    className="mt-1 h-11 w-full rounded-md border border-zinc-300 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    value={password}
-                    onChange={(event) => onPasswordChange(event.target.value)}
-                    type="password"
-                    autoComplete="current-password"
-                  />
-                </label>
-                <button
-                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
-                  type="button"
-                  onClick={onSignIn}
-                  disabled={loading}
-                >
-                  <LogIn className="h-4 w-4" />
-                  Sign in
-                </button>
-              </div>
+              <>
+                <div className="px-4 py-3">
+                  <label className="block text-sm font-medium text-zinc-700">
+                    Email or username
+                    <input
+                      className="mt-2 h-11 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      value={login}
+                      onChange={(event) => onLoginChange(event.target.value)}
+                      autoComplete="username"
+                    />
+                  </label>
+                </div>
+                <div className="border-t border-zinc-100 px-4 py-3">
+                  <label className="block text-sm font-medium text-zinc-700">
+                    Password
+                    <input
+                      className="mt-2 h-11 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      value={password}
+                      onChange={(event) => onPasswordChange(event.target.value)}
+                      type="password"
+                      autoComplete="current-password"
+                    />
+                  </label>
+                </div>
+                <div className="border-t border-zinc-100 px-4 py-3">
+                  <button
+                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-zinc-900 px-3 text-sm font-semibold text-white active:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    type="button"
+                    onClick={onSignIn}
+                    disabled={loading}
+                  >
+                    <LogIn className="h-4 w-4" />
+                    Sign in
+                  </button>
+                </div>
+              </>
             )}
-          </section>
+          </SettingsSection>
         </div>
       </div>
     </section>
   )
 }
 
+function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <h2 className="mb-2 px-4 text-xs font-semibold uppercase text-zinc-500">{title}</h2>
+      <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+        {children}
+      </div>
+    </section>
+  )
+}
+
+function SettingsRow({
+  children,
+  label,
+  value,
+}: {
+  children?: ReactNode
+  label: string
+  value?: string | undefined
+}) {
+  return (
+    <div className="flex min-h-12 items-center justify-between gap-4 border-b border-zinc-100 px-4 py-2 last:border-b-0">
+      <div className="min-w-0 text-sm font-medium text-zinc-950">{label}</div>
+      {children ? (
+        <div className="shrink-0">{children}</div>
+      ) : (
+        <div className="min-w-0 truncate text-right text-sm font-medium text-zinc-500">{value}</div>
+      )}
+    </div>
+  )
+}
+
+function SettingsSelect({
+  ariaLabel,
+  children,
+  onChange,
+  value,
+}: {
+  ariaLabel: string
+  children: ReactNode
+  onChange: (value: string) => void
+  value: string
+}) {
+  return (
+    <select
+      aria-label={ariaLabel}
+      className="h-9 max-w-[54vw] rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-right text-sm font-semibold text-zinc-950 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:max-w-xs"
+      value={value}
+      onChange={(event) => onChange(event.currentTarget.value)}
+    >
+      {children}
+    </select>
+  )
+}
+
+function Switch({
+  ariaLabel,
+  checked,
+  onChange,
+}: {
+  ariaLabel: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <button
+      aria-label={ariaLabel}
+      aria-pressed={checked}
+      className={`relative h-8 w-12 rounded-full transition-colors ${checked ? 'bg-zinc-900' : 'bg-zinc-300'}`}
+      type="button"
+      onClick={() => onChange(!checked)}
+    >
+      <span className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-5' : 'translate-x-1'}`} />
+    </button>
+  )
+}
+
 function PairSheet({
+  cameraScanning,
+  canScanWithCamera,
   lastImported,
   manualScanValue,
+  pairError,
+  pairIntent,
   pairing,
   selectedMachine,
   signedIn,
   onClose,
   onImport,
   onManualScanValueChange,
+  onScanWithCamera,
 }: {
+  cameraScanning: boolean
+  canScanWithCamera: boolean
   lastImported: PairingPayload | null
   manualScanValue: string
+  pairError: string | null
+  pairIntent: PairIntent
   pairing: boolean
   selectedMachine: WebControlMachine | null
   signedIn: boolean
   onClose: () => void
   onImport: () => void
   onManualScanValueChange: (value: string) => void
+  onScanWithCamera: () => void
 }) {
+  const title = pairIntent === 'add-local' ? 'Add Local Device' : 'Re-authorize Device'
+  const primaryLabel = pairIntent === 'add-local' ? 'Add Device' : 'Pair Device'
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-zinc-950/30 sm:items-center sm:justify-center" role="dialog" aria-modal="true">
       <section className="max-h-[88dvh] w-full overflow-y-auto rounded-t-lg border border-zinc-200 bg-white p-4 shadow-xl sm:max-w-md sm:rounded-lg" data-testid="termx-pair-sheet">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <QrCode className="h-5 w-5 shrink-0 text-zinc-600" />
-            <h2 className="truncate text-base font-semibold">Pair Device</h2>
+            <h2 className="truncate text-base font-semibold">{title}</h2>
           </div>
           <button
             aria-label="Close pairing"
@@ -914,6 +1166,18 @@ function PairSheet({
           </div>
         ) : null}
 
+        {canScanWithCamera ? (
+          <button
+            className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+            type="button"
+            onClick={onScanWithCamera}
+            disabled={pairing || cameraScanning}
+          >
+            {cameraScanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+            Scan QR with camera
+          </button>
+        ) : null}
+
         <label className="mt-4 block text-xs font-semibold text-zinc-600">
           TermX QR content
           <textarea
@@ -929,11 +1193,15 @@ function PairSheet({
           className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
           type="button"
           onClick={onImport}
-          disabled={pairing || manualScanValue.trim() === ''}
+          disabled={pairing || cameraScanning || manualScanValue.trim() === ''}
         >
           {pairing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-          Pair Device
+          {primaryLabel}
         </button>
+
+        {pairError ? (
+          <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{pairError}</p>
+        ) : null}
 
         {lastImported ? (
           <div className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
@@ -947,41 +1215,71 @@ function PairSheet({
 }
 
 function MachineRow({
+  authorizationState,
   machine,
-  paired,
+  onPairMachine,
   onSelectMachine,
 }: {
+  authorizationState: MachineAuthorizationState
   machine: WebControlMachine
-  paired: boolean
+  onPairMachine: (machine: WebControlMachine) => void
   onSelectMachine: (machine: WebControlMachine) => void
 }) {
+  const actionLabel = authorizationState === 'ready'
+    ? 'Open'
+    : authorizationState === 'needs-session'
+      ? 'Re-authorize'
+      : 'Pair'
+  const authPill = authorizationState === 'ready'
+    ? 'Ready'
+    : authorizationState === 'needs-session'
+      ? 'Re-authorize'
+      : 'Scan QR'
   return (
-    <button
-      aria-label={`${paired ? 'Open' : 'Pair'} ${machine.name}`}
-      className="grid w-full grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-3 text-left shadow-sm hover:border-zinc-300 hover:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-      type="button"
-      onClick={() => onSelectMachine(machine)}
-    >
-      <div className="flex h-11 w-11 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
-        {machine.online ? <Wifi className="h-5 w-5" /> : <WifiOff className="h-5 w-5" />}
-      </div>
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center justify-between gap-2">
-          <span className="truncate text-[15px] font-semibold leading-5 text-zinc-950">{machine.name}</span>
-          <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold leading-4 ring-1 ${machine.online ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-zinc-100 text-zinc-600 ring-zinc-200'}`}>
-            {machine.online ? 'Online' : 'Offline'}
-          </span>
+    <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+      <button
+        aria-label={`${actionLabel} ${machine.name}`}
+        className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-3 px-3 py-3 text-left hover:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        type="button"
+        onClick={() => onSelectMachine(machine)}
+      >
+        <div className="flex h-11 w-11 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+          {machine.online ? <Wifi className="h-5 w-5" /> : <WifiOff className="h-5 w-5" />}
         </div>
-        <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{machine.hostname || machine.id}</div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          <InfoPill>{machine.source === 'cloud' ? 'Cloud node' : 'Local node'}</InfoPill>
-          <InfoPill>{machine.hubStatus === 'online' ? 'Hub online' : (machine.source === 'local' ? 'Direct/Local' : 'Offline')}</InfoPill>
-          <InfoPill>{paired ? 'Ready' : 'Scan QR'}</InfoPill>
-          {machine.lastSeen ? <InfoPill>{formatLastSeen(machine.lastSeen)}</InfoPill> : null}
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <span className="truncate text-[15px] font-semibold leading-5 text-zinc-950">{machine.name}</span>
+            <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold leading-4 ring-1 ${machine.online ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-zinc-100 text-zinc-600 ring-zinc-200'}`}>
+              {machine.online ? 'Online' : 'Offline'}
+            </span>
+          </div>
+          <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{machine.hostname || machine.id}</div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <InfoPill>{machine.source === 'cloud' ? 'Cloud node' : 'Local node'}</InfoPill>
+            <InfoPill>{machine.hubStatus === 'online' ? 'Hub online' : (machine.source === 'local' ? 'Direct/Local' : 'Offline')}</InfoPill>
+            <InfoPill>{authPill}</InfoPill>
+            {machine.lastSeen ? <InfoPill>{formatLastSeen(machine.lastSeen)}</InfoPill> : null}
+          </div>
         </div>
-      </div>
-    </button>
+      </button>
+      {authorizationState !== 'ready' ? (
+        <button
+          aria-label={`Scan to ${authorizationState === 'needs-session' ? 're-authorize' : 'pair'} ${machine.name}`}
+          className="flex h-full w-12 items-center justify-center border-l border-zinc-100 text-zinc-600 hover:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+          type="button"
+          onClick={() => onPairMachine(machine)}
+        >
+          <QrCode className="h-5 w-5" />
+        </button>
+      ) : null}
+    </div>
   )
+}
+
+function machineAuthorizationState(machine: WebControlMachine, pairedMachineIds: Set<string>): MachineAuthorizationState {
+  if (pairedMachineIds.has(machine.id)) return 'ready'
+  if (machine.paired) return 'needs-session'
+  return 'unpaired'
 }
 
 function EmptyState({
@@ -1012,25 +1310,10 @@ function EmptyState({
           type="button"
           onClick={onAction}
         >
-          {icon === 'login' ? <LogIn className="h-4 w-4" /> : <QrCode className="h-4 w-4" />}
+          {icon === 'login' ? <LogIn className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
           {actionLabel}
         </button>
       </div>
-    </div>
-  )
-}
-
-function StatusMessages({ error, message }: { error: string | null; message: string | null }) {
-  if (!error && !message) return null
-  return (
-    <div className="shrink-0 space-y-2 px-4 py-3">
-      {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{error}</p> : null}
-      {message ? (
-        <p className="inline-flex w-full items-center gap-2 rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          {message}
-        </p>
-      ) : null}
     </div>
   )
 }
@@ -1043,12 +1326,10 @@ function InfoPill({ children }: { children: string }) {
   )
 }
 
-function initialControlUrl(storage: RemoteRuntimeStorage | undefined, fallback: string | undefined, networkRuntime: RemoteNetworkRuntime): string {
+function initialControlUrl(fallback: string | undefined, networkRuntime: RemoteNetworkRuntime): string {
   const fromQuery = networkRuntime.queryParam('control')
   const queryValue = cleanControlUrl(fromQuery)
   if (queryValue) return queryValue
-  const storedValue = cleanControlUrl(storage?.getItem(storageKeys.controlUrl))
-  if (storedValue && !isRemoteUiLocalUrl(storedValue)) return storedValue
   return cleanControlUrl(fallback) || defaultWebControlUrl
 }
 
@@ -1064,6 +1345,7 @@ function createUnavailableWebControlApi(message: string): WebControlApi {
     login: fail,
     me: fail,
     listMachines: fail,
+    pairMachine: fail,
   }
 }
 
@@ -1080,17 +1362,6 @@ function createBrowserAppDeviceId(): string {
   return `appweb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
 }
 
-function isRemoteUiLocalUrl(value: string): boolean {
-  try {
-    const url = new URL(value)
-    const host = url.hostname.toLowerCase()
-    return (host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1') &&
-      (url.port === '5173' || url.port === '5174' || url.port === '18888')
-  } catch {
-    return false
-  }
-}
-
 function readPairedMachineIds(storage: RemoteRuntimeStorage | undefined, userId: string | undefined): Set<string> {
   if (!storage) return new Set()
   try {
@@ -1100,6 +1371,52 @@ function readPairedMachineIds(storage: RemoteRuntimeStorage | undefined, userId:
       .map((machine) => machine.machineId))
   } catch {
     return new Set()
+  }
+}
+
+function pruneMachinesForSignOut(storage: RemoteRuntimeStorage | undefined): StoredMachineRecord[] {
+  if (!storage) return []
+  const store = createMachineStore({ storage })
+  const sessionStore = createMachineSessionStore(storage)
+  for (const machine of store.listMachines()) {
+    if (machine.source !== 'cloud') continue
+    if (hasLocalAddresses(machine)) {
+      store.saveMachine(downgradeCloudMachineToLocal(machine))
+    } else {
+      store.forgetMachine(machine.machineId)
+      sessionStore.clearSessionToken(machine.machineId)
+    }
+  }
+  return store.listMachines()
+}
+
+function mergeSignedInCloudMachines(storage: RemoteRuntimeStorage, cloudMachines: WebControlMachine[]): void {
+  const store = createMachineStore({ storage })
+  for (const cloud of cloudMachines) {
+    const stored = store.getMachine(cloud.id)
+    if (!stored) continue
+    if (stored.source !== 'local' && stored.source !== 'manual') continue
+    store.saveMachine(mergeCloudMachine(stored, cloud))
+  }
+}
+
+function hasLocalAddresses(machine: StoredMachineRecord): boolean {
+  return machine.addresses.local.length > 0 || machine.addresses.lan.length > 0
+}
+
+function downgradeCloudMachineToLocal(machine: StoredMachineRecord): StoredMachineRecord {
+  return {
+    ...machine,
+    state: machine.state === 'online' ? 'unknown' : machine.state,
+    source: 'local',
+    preferredPath: 'local',
+    addresses: {
+      local: machine.addresses.local,
+      lan: machine.addresses.lan,
+      public: [],
+    },
+    endpoints: {},
+    updatedAt: new Date().toISOString(),
   }
 }
 
@@ -1393,7 +1710,7 @@ function mergeCloudMachine(saved: StoredMachineRecord, machine: WebControlMachin
     terminalCount: saved.terminalCount,
     ...(machine.lastSeen || saved.lastSeenAt ? { lastSeenAt: machine.lastSeen ?? saved.lastSeenAt } : {}),
     ...(saved.lastConnectionPath ? { lastConnectionPath: saved.lastConnectionPath } : {}),
-    ...(saved.preferredPath ? { preferredPath: saved.preferredPath } : {}),
+    preferredPath: 'managed',
     ...(saved.relayInUse !== undefined ? { relayInUse: saved.relayInUse } : {}),
     source: 'cloud',
     addresses: saved.addresses,
@@ -1410,11 +1727,11 @@ function mergeCloudMachine(saved: StoredMachineRecord, machine: WebControlMachin
 }
 
 function hubUrlsFromStoredMachine(machine: StoredMachineRecord): string[] {
-  return compactHubUrls([machine.endpoints.hub, ...machine.addresses.public])
+  return compactHubUrls([machine.endpoints.hub, ...machine.addresses.local, ...machine.addresses.lan, ...machine.addresses.public])
 }
 
 function hubUrlsFromPairingPayload(payload: PairingPayload): string[] {
-  return compactHubUrls(payload.addresses.public)
+  return compactHubUrls([...payload.addresses.local, ...payload.addresses.lan, ...payload.addresses.public])
 }
 
 function nonEmptyHubUrls(machine: WebControlMachine): string[] {

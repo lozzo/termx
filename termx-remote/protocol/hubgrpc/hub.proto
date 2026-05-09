@@ -93,6 +93,7 @@ message PairingClaim {
   string app_device_id = 4;
   string app_name = 5;
   repeated string requested_capabilities = 6;
+  repeated string allowed_paths = 7;
 }
 
 message PairingResult {

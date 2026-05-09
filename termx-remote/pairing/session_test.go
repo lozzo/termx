@@ -96,7 +96,7 @@ func TestClaimSessionIssuesSessionTokenAndConsumesSecret(t *testing.T) {
 	}
 }
 
-func TestClaimSessionIgnoresRequestedCapabilities(t *testing.T) {
+func TestClaimSessionStoresAllowedPaths(t *testing.T) {
 	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	manager, _, machineSecret := testManager(&now)
 	session, err := manager.CreateSession(5 * time.Minute)
@@ -109,7 +109,8 @@ func TestClaimSessionIgnoresRequestedCapabilities(t *testing.T) {
 		PairSecret:            session.PairSecret,
 		AppDeviceID:           "appdev_management",
 		AppName:               "TermX Management App",
-		RequestedCapabilities: []string{"terminal", "file_manager", "terminal_management"},
+		RequestedCapabilities: []string{"terminal_management", "file_manager", "terminal"},
+		AllowedPaths:          []string{"cloud"},
 	})
 	if err != nil {
 		t.Fatalf("ClaimSession returned error: %v", err)
@@ -120,6 +121,9 @@ func TestClaimSessionIgnoresRequestedCapabilities(t *testing.T) {
 	}
 	if len(claims.Capabilities) != 0 {
 		t.Fatalf("session token should not carry requested capabilities, got %#v", claims.Capabilities)
+	}
+	if strings.Join(claims.Paths, ",") != "cloud" {
+		t.Fatalf("paths = %#v", claims.Paths)
 	}
 }
 

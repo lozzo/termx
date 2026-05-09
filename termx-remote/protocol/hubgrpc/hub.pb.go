@@ -833,6 +833,7 @@ type PairingClaim struct {
 	AppDeviceId           string                 `protobuf:"bytes,4,opt,name=app_device_id,json=appDeviceId,proto3" json:"app_device_id,omitempty"`
 	AppName               string                 `protobuf:"bytes,5,opt,name=app_name,json=appName,proto3" json:"app_name,omitempty"`
 	RequestedCapabilities []string               `protobuf:"bytes,6,rep,name=requested_capabilities,json=requestedCapabilities,proto3" json:"requested_capabilities,omitempty"`
+	AllowedPaths          []string               `protobuf:"bytes,7,rep,name=allowed_paths,json=allowedPaths,proto3" json:"allowed_paths,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -905,6 +906,13 @@ func (x *PairingClaim) GetAppName() string {
 func (x *PairingClaim) GetRequestedCapabilities() []string {
 	if x != nil {
 		return x.RequestedCapabilities
+	}
+	return nil
+}
+
+func (x *PairingClaim) GetAllowedPaths() []string {
+	if x != nil {
+		return x.AllowedPaths
 	}
 	return nil
 }
@@ -1109,7 +1117,7 @@ const file_termx_remote_protocol_hubgrpc_hub_proto_rawDesc = "" +
 	"\x03sdp\x18\x02 \x01(\tR\x03sdp\x12%\n" +
 	"\x0eice_candidates\x18\x03 \x03(\tR\riceCandidates\x12\x14\n" +
 	"\x05error\x18\x04 \x01(\tR\x05error\x12!\n" +
-	"\fanswer_proof\x18\x05 \x01(\tR\vanswerProof\"\xe8\x01\n" +
+	"\fanswer_proof\x18\x05 \x01(\tR\vanswerProof\"\x8d\x02\n" +
 	"\fPairingClaim\x12\x19\n" +
 	"\bclaim_id\x18\x01 \x01(\tR\aclaimId\x12&\n" +
 	"\x0fpair_session_id\x18\x02 \x01(\tR\rpairSessionId\x12\x1f\n" +
@@ -1117,7 +1125,8 @@ const file_termx_remote_protocol_hubgrpc_hub_proto_rawDesc = "" +
 	"pairSecret\x12\"\n" +
 	"\rapp_device_id\x18\x04 \x01(\tR\vappDeviceId\x12\x19\n" +
 	"\bapp_name\x18\x05 \x01(\tR\aappName\x125\n" +
-	"\x16requested_capabilities\x18\x06 \x03(\tR\x15requestedCapabilities\"\xc6\x01\n" +
+	"\x16requested_capabilities\x18\x06 \x03(\tR\x15requestedCapabilities\x12#\n" +
+	"\rallowed_paths\x18\a \x03(\tR\fallowedPaths\"\xc6\x01\n" +
 	"\rPairingResult\x12\x19\n" +
 	"\bclaim_id\x18\x01 \x01(\tR\aclaimId\x12#\n" +
 	"\rsession_token\x18\x02 \x01(\tR\fsessionToken\x12\x1d\n" +

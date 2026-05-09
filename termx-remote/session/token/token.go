@@ -26,6 +26,7 @@ type Claims struct {
 	AppName        string   `json:"app_name,omitempty"`
 	AnswerProofKey string   `json:"apk,omitempty"`
 	Capabilities   []string `json:"cap"`
+	Paths          []string `json:"paths,omitempty"`
 	IssuedAt       int64    `json:"iat"`
 	ExpiresAt      int64    `json:"exp"`
 }
@@ -37,6 +38,9 @@ func Issue(machineSecret []byte, claims Claims) (string, error) {
 	caps := append([]string(nil), claims.Capabilities...)
 	sort.Strings(caps)
 	claims.Capabilities = caps
+	paths := append([]string(nil), claims.Paths...)
+	sort.Strings(paths)
+	claims.Paths = paths
 	payload, err := json.Marshal(claims)
 	if err != nil {
 		return "", fmt.Errorf("marshal token claims: %w", err)

@@ -103,8 +103,60 @@ describe('WebControlApi', () => {
       fetch: fetch.fetch,
     })
     await expect(api.me()).rejects.toThrow(/access token.*required/i)
+    await expect(api.pairMachine({
+      machineId: 'device-1',
+      pairSessionId: 'pair-1',
+      pairSecret: 'secret-1',
+      appDeviceId: 'app-device',
+      appName: 'TermX',
+      requestedCapabilities: ['terminal'],
+    })).rejects.toThrow(/access token.*required/i)
 
     expect(fetch.requests).toEqual([])
+  })
+
+  it('claims cloud pairing through Web Control using bearer auth', async () => {
+    const fetch = new RecordingFetch([
+      jsonResponse(200, {
+        claim_id: 'claim-1',
+        machine_id: 'device-1',
+        machine_name: 'RedmiBook',
+        session_token: 'session-token-1',
+        expires_at: '2099-05-06T00:00:00Z',
+      }),
+    ])
+    const api = createWebControlApi({
+      baseUrl: 'https://control.termx.test',
+      accessToken: 'access-token-1',
+      fetch: fetch.fetch,
+    })
+
+    await expect(api.pairMachine({
+      machineId: 'device-1',
+      pairSessionId: 'pair-1',
+      pairSecret: 'secret-1',
+      appDeviceId: 'app-device',
+      appName: 'TermX',
+      requestedCapabilities: ['terminal', 'file_manager'],
+    })).resolves.toMatchObject({
+      claimId: 'claim-1',
+      machineId: 'device-1',
+      sessionToken: 'session-token-1',
+    })
+
+    expect(fetch.requests).toEqual([{
+      method: 'POST',
+      url: 'https://control.termx.test/api/v1/machines/device-1/pairing/claims',
+      headers: expect.objectContaining({ authorization: 'Bearer access-token-1' }),
+      body: {
+        pair_session_id: 'pair-1',
+        pair_secret: 'secret-1',
+        app_device_id: 'app-device',
+        app_name: 'TermX',
+        requested_capabilities: ['terminal', 'file_manager'],
+      },
+    }])
+    expect(fetch.requests[0]?.body).not.toHaveProperty('machine_id')
   })
 
   it('surfaces HTTP error envelopes', async () => {

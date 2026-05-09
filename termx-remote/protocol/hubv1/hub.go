@@ -37,6 +37,7 @@ type PairingClaim struct {
 	AppDeviceID           string   `json:"app_device_id"`
 	AppName               string   `json:"app_name"`
 	RequestedCapabilities []string `json:"requested_capabilities"`
+	AllowedPaths          []string `json:"allowed_paths,omitempty"`
 }
 
 type PairingResult struct {

@@ -20,7 +20,10 @@ import (
 	"github.com/lozzow/termx/termx-remote/session/token"
 )
 
-const offerReplayWindow = 60 * time.Second
+const (
+	offerReplayWindow     = 60 * time.Second
+	sessionTokenPathCloud = "cloud"
+)
 
 func randomAgentID() string {
 	var raw [16]byte
@@ -412,6 +415,7 @@ func (m *Manager) handleGRPCPairingClaim(ctx context.Context, claim *pb.PairingC
 		AppDeviceID:           claim.GetAppDeviceId(),
 		AppName:               claim.GetAppName(),
 		RequestedCapabilities: append([]string(nil), claim.GetRequestedCapabilities()...),
+		AllowedPaths:          append([]string(nil), claim.GetAllowedPaths()...),
 	})
 	_ = sender.Send(&pb.AgentToHub{Payload: &pb.AgentToHub_PairingResult{
 		PairingResult: &pb.PairingResult{
@@ -539,6 +543,7 @@ func pairingpkgClaimRequest(claim hubv1.PairingClaim) pairing.ClaimRequest {
 		AppDeviceID:           claim.AppDeviceID,
 		AppName:               claim.AppName,
 		RequestedCapabilities: append([]string(nil), claim.RequestedCapabilities...),
+		AllowedPaths:          append([]string(nil), claim.AllowedPaths...),
 	}
 }
 
@@ -598,6 +603,9 @@ func (m *Manager) verifyOfferSession(ctx context.Context, offer hubv1.SignalingO
 	if err != nil {
 		return token.Claims{}, err
 	}
+	if !sessionTokenAllowsPath(claims, sessionTokenPathCloud) {
+		return token.Claims{}, fmt.Errorf("session token is not authorized for cloud connections")
+	}
 	terminalID := strings.TrimSpace(offer.TerminalID)
 	if terminalID != "" {
 		if !m.hasTerminal(ctx, terminalID) {
@@ -605,6 +613,22 @@ func (m *Manager) verifyOfferSession(ctx context.Context, offer hubv1.SignalingO
 		}
 	}
 	return claims, nil
+}
+
+func sessionTokenAllowsPath(claims token.Claims, path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	if len(claims.Paths) == 0 {
+		return true
+	}
+	for _, allowed := range claims.Paths {
+		if strings.TrimSpace(allowed) == path {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) answerProof(offer hubv1.SignalingOffer, claims token.Claims) string {
