@@ -25,6 +25,8 @@ export class MockRtcTerminalSession implements RtcSession {
   private readonly channels = new Map<string, MockBinaryChannel>()
   private readonly resizeControls = new Map<string, TerminalResizeControl>()
   private readonly snapshots = new Map<string, TerminalSnapshotPayload>()
+  private readonly snapshotPages = new Map<string, MockSnapshotPage[]>()
+  private readonly failingSends = new Set<string>()
 
   constructor(
     private readonly machineId: string,
@@ -38,6 +40,9 @@ export class MockRtcTerminalSession implements RtcSession {
     const label = `terminal:${terminalId}`
     this.openedLabels.push(label)
     const channel = new MockBinaryChannel(label, terminalId, this)
+    if (this.failingSends.delete(terminalId)) {
+      channel.failNextSend()
+    }
     const resizeControl = this.resizeControls.get(terminalId)
     if (resizeControl) {
       channel.setResizeControl(resizeControl)
@@ -57,6 +62,12 @@ export class MockRtcTerminalSession implements RtcSession {
 
   async openFileTransfer(transferId: string): Promise<RtcBinaryChannel> {
     return new MockBinaryChannel(`file:${transferId}`, transferId, this)
+  }
+
+  closeTerminalDataChannel(terminalId: string): void {
+    this.closedTerminalIds.push(terminalId)
+    this.channels.get(terminalId)?.close()
+    this.channels.delete(terminalId)
   }
 
   subscribeEvents(_handler: (event: RtcEvent) => void): RtcSubscription {
@@ -92,6 +103,11 @@ export class MockRtcTerminalSession implements RtcSession {
     this.channels.get(terminalId)?.respondToNextSnapshot(snapshot)
   }
 
+  setTerminalSnapshot(terminalId: string, snapshot: TerminalSnapshotPayload & { pages?: MockSnapshotPage[] }): void {
+    this.snapshots.set(terminalId, snapshot)
+    this.snapshotPages.set(terminalId, snapshot.pages ?? [])
+  }
+
   emitTerminalInfo(terminalId: string, info: TerminalInfoPayload): void {
     this.channels.get(terminalId)?.emitFrame(TERMX_FRAME_TYPES.response, new TextEncoder().encode(JSON.stringify({
       id: 9999,
@@ -108,6 +124,15 @@ export class MockRtcTerminalSession implements RtcSession {
     this.channels.get(terminalId)?.close(reason)
   }
 
+  failNextTerminalSend(terminalId: string): void {
+    const channel = this.channels.get(terminalId)
+    if (channel) {
+      channel.failNextSend()
+      return
+    }
+    this.failingSends.add(terminalId)
+  }
+
   sentText(terminalId: string): string {
     return this.channels.get(terminalId)?.sentText ?? ''
   }
@@ -119,27 +144,47 @@ export class MockRtcTerminalSession implements RtcSession {
   snapshotFor(terminalId: string): TerminalSnapshotPayload | undefined {
     return this.snapshots.get(terminalId)
   }
+
+  snapshotPageFor(terminalId: string, offset: number): MockSnapshotPage | undefined {
+    return this.snapshotPages.get(terminalId)?.find((page) => page.offset === offset)
+  }
+
+  snapshotRequests(terminalId: string): Array<{ offset: number; limit: number }> {
+    return this.channels.get(terminalId)?.snapshotRequests ?? []
+  }
+}
+
+export interface MockSnapshotPage {
+  offset: number
+  rows: string[]
 }
 
 class MockBinaryChannel implements RtcBinaryChannel {
   readyState: RtcBinaryChannel['readyState'] = 'open'
   sentText = ''
   lastResize: { cols: number; rows: number } | undefined
+  readonly snapshotRequests: Array<{ offset: number; limit: number }> = []
   private messageHandler: ((data: Uint8Array) => void) | undefined
   private closeHandler: (() => void) | undefined
   private streamChannel = 7
   private attachResizeControl: TerminalResizeControl = { canResize: false, reason: 'follower' }
   private ensureResizeControl: TerminalResizeControl | undefined
+  private failSendOnce = false
 
   constructor(
     readonly label: string,
     private readonly terminalId: string,
-    private readonly owner: Pick<MockRtcTerminalSession, 'snapshotFor'>,
+    private readonly owner: Pick<MockRtcTerminalSession, 'snapshotFor' | 'snapshotPageFor'>,
   ) {}
 
   send(data: Uint8Array): void {
     if (this.readyState !== 'open') {
       throw new Error('channel closed')
+    }
+    if (this.failSendOnce) {
+      this.failSendOnce = false
+      this.close('terminal channel send failed')
+      throw new Error('terminal channel send failed')
     }
     const frame = decodeTermxFrame(data)
     if (frame.channel === 0) {
@@ -185,7 +230,19 @@ class MockBinaryChannel implements RtcBinaryChannel {
     this.ensureResizeControl = control
   }
 
+  failNextSend(): void {
+    this.failSendOnce = true
+  }
+
   respondToNextSnapshot(snapshot: TerminalSnapshotPayload, requestId = 2): void {
+    const raw = snapshot.raw
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      this.emitFrame(TERMX_FRAME_TYPES.response, new TextEncoder().encode(JSON.stringify({
+        id: requestId,
+        result: JSON.stringify(raw),
+      })), 0)
+      return
+    }
     this.emitFrame(TERMX_FRAME_TYPES.response, new TextEncoder().encode(JSON.stringify({
       id: requestId,
       result: JSON.stringify({
@@ -212,7 +269,11 @@ class MockBinaryChannel implements RtcBinaryChannel {
       }))))
       return
     }
-    const request = JSON.parse(new TextDecoder().decode(frame.payload)) as { id: number; method: string }
+    const request = JSON.parse(new TextDecoder().decode(frame.payload)) as {
+      id: number
+      method: string
+      params?: { scrollback_offset?: number; scrollback_limit?: number }
+    }
     if (request.method === 'attach') {
       this.messageHandler?.(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, new TextEncoder().encode(JSON.stringify({
         id: request.id,
@@ -229,6 +290,25 @@ class MockBinaryChannel implements RtcBinaryChannel {
       return
     }
     if (request.method === 'snapshot') {
+      const offset = request.params?.scrollback_offset ?? 0
+      const limit = request.params?.scrollback_limit ?? 0
+      this.snapshotRequests.push({ offset, limit })
+      const page = limit > 1 ? this.owner.snapshotPageFor(this.terminalId, offset) : undefined
+      if (page) {
+        this.respondToNextSnapshot({
+          text: '',
+          cols: 80,
+          rows: 24,
+          raw: {
+            size: { cols: 80, rows: 24 },
+            screen: { rows: [] },
+            scrollback: page.rows.map((row) => ({
+              cells: Array.from(row).map((char) => ({ r: char })),
+            })),
+          },
+        }, request.id)
+        return
+      }
       this.respondToNextSnapshot(
         this.terminalSnapshot() ?? { text: '', cols: 80, rows: 24 },
         request.id,

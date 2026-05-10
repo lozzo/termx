@@ -36,6 +36,7 @@ export interface TerminalSettings {
   renderer: TerminalRenderer
   keyboardMode: TerminalKeyboardMode
   scrollback: number
+  scrollbackPrefetchThresholdRows: number
   cursorBlink: boolean
 }
 
@@ -734,6 +735,7 @@ export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   renderer: 'auto',
   keyboardMode: 'auto',
   scrollback: 10000,
+  scrollbackPrefetchThresholdRows: 30,
   cursorBlink: true,
 }
 
@@ -831,6 +833,12 @@ export function normalizeTerminalSettings(input: Partial<TerminalSettings> | Rec
     renderer: isTerminalRenderer(input.renderer) ? input.renderer : DEFAULT_TERMINAL_SETTINGS.renderer,
     keyboardMode: isTerminalKeyboardMode(input.keyboardMode) ? input.keyboardMode : DEFAULT_TERMINAL_SETTINGS.keyboardMode,
     scrollback: clampNumber(input.scrollback, DEFAULT_TERMINAL_SETTINGS.scrollback, 500, 50000),
+    scrollbackPrefetchThresholdRows: clampNumber(
+      input.scrollbackPrefetchThresholdRows,
+      DEFAULT_TERMINAL_SETTINGS.scrollbackPrefetchThresholdRows,
+      0,
+      1000,
+    ),
     cursorBlink: typeof input.cursorBlink === 'boolean' ? input.cursorBlink : DEFAULT_TERMINAL_SETTINGS.cursorBlink,
   }
 }

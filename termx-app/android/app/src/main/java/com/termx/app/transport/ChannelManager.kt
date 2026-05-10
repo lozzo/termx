@@ -138,8 +138,16 @@ class ChannelManager(
     }
 
     fun sendTerminalData(terminalId: String, data: ByteArray) {
-        terminalChannels[terminalId]?.takeIf { it.state() == DataChannel.State.OPEN }
-            ?.send(DataChannel.Buffer(ByteBuffer.wrap(data), true))
+        val dc = terminalChannels[terminalId]
+        if (dc?.state() == DataChannel.State.OPEN) {
+            val sent = dc.send(DataChannel.Buffer(ByteBuffer.wrap(data), true))
+            if (sent) return
+            Log.w(TAG, "sendTerminalData[$terminalId]: send returned false [$machineId]")
+            notifyTerminalChannelError(terminalId, "terminal channel send failed")
+            return
+        }
+        Log.w(TAG, "sendTerminalData[$terminalId]: channel not open state=${dc?.state()} [$machineId]")
+        notifyTerminalChannelError(terminalId, "terminal channel not open")
     }
 
     fun sendFileData(transferId: String, data: ByteArray) {
@@ -303,6 +311,12 @@ class ChannelManager(
                 }
             }
         })
+    }
+
+    private fun notifyTerminalChannelError(terminalId: String, message: String) {
+        val label = terminalLabel(terminalId)
+        val chId = bridge?.getChannelId(label) ?: -1
+        if (chId >= 0) bridge?.sendChanError(chId, message)
     }
 
     private fun setupFileChannel(dc: DataChannel, transferId: String) {

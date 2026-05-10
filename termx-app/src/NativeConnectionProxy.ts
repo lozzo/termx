@@ -40,6 +40,7 @@ const HEADER_SIZE = 7
 const CONNECT_TIMEOUT_MS = 90_000
 const CHANNEL_OPEN_TIMEOUT_MS = 10_000
 const API_REQUEST_TIMEOUT_MS = 60_000
+const NATIVE_RESUME_WAIT_TIMEOUT_MS = 8_000
 const API_CHUNK_MAGIC = 0xc0
 const API_CHUNK_LAST = 0x02
 
@@ -511,6 +512,7 @@ export class NativeRtcSession implements RtcSession {
   private eventsChannelPromise: Promise<void> | null = null
   private eventsSubscribed = false
   private eventsDataCleanup: (() => void) | null = null
+  private eventsCloseCleanup: (() => void) | null = null
   private apiChannelPromise: Promise<SharedApiChannel> | null = null
   private apiChannel: SharedApiChannel | null = null
 
@@ -556,6 +558,8 @@ export class NativeRtcSession implements RtcSession {
       if (snapshot.phase === 'connected' && this.eventHandlers.size > 0) {
         this.eventsSubscribed = false
         this.ensureEventsChannel()
+      } else if (snapshot.phase === 'reconnecting' || snapshot.phase === 'waiting_network' || snapshot.phase === 'failed') {
+        this.resetEventsChannel()
       }
       if (snapshot.phase === 'connected') {
         this.resolveConnectedWaiters()
@@ -574,9 +578,7 @@ export class NativeRtcSession implements RtcSession {
   private handleBridgeDisconnected(): void {
     if (this.closed) return
     this.eventsChannelPromise = null
-    this.eventsSubscribed = false
-    this.eventsDataCleanup?.()
-    this.eventsDataCleanup = null
+    this.resetEventsChannel()
     this.apiChannel?.forceClose(new Error('native bridge disconnected'))
     this.apiChannel = null
     this.apiChannelPromise = null
@@ -597,9 +599,7 @@ export class NativeRtcSession implements RtcSession {
     for (const cleanup of this.cleanups) cleanup()
     this.cleanups = []
     this.eventsChannelPromise = null
-    this.eventsSubscribed = false
-    this.eventsDataCleanup?.()
-    this.eventsDataCleanup = null
+    this.resetEventsChannel()
     this.apiChannel?.forceClose(error)
     this.apiChannel = null
     this.apiChannelPromise = null
@@ -635,7 +635,9 @@ export class NativeRtcSession implements RtcSession {
         return (!session.closed && session.bridge.isChannelOpen(label)) ? 'open' as const : 'closed' as const
       },
       send: (data: Uint8Array) => {
-        this.bridge.sendData(label, data)
+        if (!this.bridge.sendData(label, data)) {
+          throw new Error(`native bridge channel is not open: ${label}`)
+        }
       },
       close: () => {
         this.bridge.closeChannel(label)
@@ -865,6 +867,14 @@ export class NativeRtcSession implements RtcSession {
           for (const h of this.eventHandlers) h(event)
         } catch { /* ignore malformed events */ }
       })
+      this.eventsCloseCleanup?.()
+      this.eventsCloseCleanup = this.bridge.onChannelClose(label, () => {
+        this.eventsChannelPromise = null
+        this.resetEventsChannel()
+        if (!this.closed && this.eventHandlers.size > 0) {
+          this.ensureEventsChannel()
+        }
+      })
       this.sendEventsSubscribe(label)
     }).catch((error) => {
       this.eventsChannelPromise = null
@@ -882,6 +892,14 @@ export class NativeRtcSession implements RtcSession {
     if (this.bridge.sendData(label, payload)) {
       this.eventsSubscribed = true
     }
+  }
+
+  private resetEventsChannel(): void {
+    this.eventsSubscribed = false
+    this.eventsDataCleanup?.()
+    this.eventsDataCleanup = null
+    this.eventsCloseCleanup?.()
+    this.eventsCloseCleanup = null
   }
 
   private parseRtcEvent(payload: Uint8Array): RtcEvent {
@@ -963,6 +981,34 @@ export class NativeRtcSession implements RtcSession {
     if (this.closed) return false
     const snapshot = getCachedNativeState(this.machineId)
     return !snapshot || nativeClientSessionCanStayOpen(snapshot.phase)
+  }
+
+  async handleAppResume(): Promise<boolean> {
+    if (this.closed) return false
+    try {
+      await this.bridge.ensureConnected()
+      this.sendSyncRequest()
+    } catch {
+      // Native may still publish state through the reconnect path below.
+    }
+
+    const initial = await NativeConnection.getSnapshot({ machineId: this.machineId })
+      .then(cacheNativeState)
+      .catch(() => null)
+    if (!initial) return false
+    if (initial?.phase === 'connected') return true
+    if (initial?.phase === 'failed') return false
+
+    const ac = new AbortController()
+    const timer = setTimeout(() => ac.abort(new Error('native resume verification timed out')), NATIVE_RESUME_WAIT_TIMEOUT_MS)
+    try {
+      await this.waitUntilConnected(ac.signal)
+      return true
+    } catch {
+      return false
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   waitUntilConnected(signal?: AbortSignal): Promise<void> {

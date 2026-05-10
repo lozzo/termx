@@ -46,6 +46,8 @@ interface LogicalEventSubscription {
 const RECONNECT_DELAYS_MS = [500, 2000, 4000, 8000, 15000]
 const RESUME_RECONNECT_DELAYS_MS = [0, 500, 2000, 4000, 8000]
 const MAX_RECONNECT_ATTEMPTS = 20
+const RESUME_VERIFY_TIMEOUT_MS = 8500
+const CONNECTION_INFO_TIMEOUT_MS = 3000
 
 export class MachineConnectionStore {
   private readonly connectionState = createConnectionStatePublisher()
@@ -63,6 +65,7 @@ export class MachineConnectionStore {
   private pendingForceRelay = false
   private reconnectAttempt = 0
   private resumeReconnect = false
+  private verificationGeneration = 0
   private snapshot: MachineConnectionSnapshot
 
   constructor(private readonly options: MachineConnectionStoreOptions) {
@@ -124,6 +127,7 @@ export class MachineConnectionStore {
     this.currentForceRelay = forceRelay
     this.resumeReconnect = false
     this.reconnectAttempt = 0
+    this.verificationGeneration += 1
     this.transition({
       phase: 'reconnecting',
       statusText: forceRelay ? 'Reconnecting through relay...' : 'Reconnecting...',
@@ -330,6 +334,8 @@ export class MachineConnectionStore {
     if (this.released) return
     this.clearReconnectTimer()
     this.resumeReconnect = true
+    const generation = this.verificationGeneration + 1
+    this.verificationGeneration = generation
     const session = this.currentSession
     if (!session) {
       this.reconnectAttempt = 0
@@ -349,9 +355,14 @@ export class MachineConnectionStore {
       error: null,
     })
     try {
-      await verifySession(session)
-      if (this.currentSession !== session || this.released) return
-      const info = await session.getConnectionInfo()
+      await verifySession(session, RESUME_VERIFY_TIMEOUT_MS)
+      if (this.currentSession !== session || this.released || this.verificationGeneration !== generation) return
+      const info = await withTimeout(
+        session.getConnectionInfo(),
+        CONNECTION_INFO_TIMEOUT_MS,
+        () => new Error('connection info timed out after resume'),
+      )
+      if (this.currentSession !== session || this.released || this.verificationGeneration !== generation) return
       this.reconnectAttempt = 0
       this.resumeReconnect = false
       this.transition({
@@ -363,12 +374,14 @@ export class MachineConnectionStore {
         error: null,
       })
     } catch (err) {
+      if (this.currentSession !== session || this.released || this.verificationGeneration !== generation) return
       await this.handleSessionDead(session, errorMessage(err))
     }
   }
 
   private async handleSessionDead(session: RtcSession, message: string): Promise<void> {
     if (this.currentSession !== session || this.released) return
+    this.verificationGeneration += 1
     this.currentSession = null
     this.connectionStateSubscription?.close()
     this.connectionStateSubscription = null
@@ -423,6 +436,7 @@ export class MachineConnectionStore {
     this.clearReconnectTimer()
     this.abortController?.abort(new Error('machine connection reset'))
     this.abortController = null
+    this.verificationGeneration += 1
     const session = this.currentSession
     this.currentSession = null
     this.sessionPromise = null
@@ -515,16 +529,34 @@ function isRtcSessionAlive(session: RtcSession): boolean {
   return candidate.isAlive()
 }
 
-async function verifySession(session: RtcSession): Promise<void> {
+async function verifySession(session: RtcSession, timeoutMs: number): Promise<void> {
   const candidate = session as RtcSession & Partial<{ handleAppResume(): Promise<boolean> }>
   if (typeof candidate.handleAppResume === 'function') {
-    const ok = await candidate.handleAppResume()
+    const ok = await withTimeout(
+      candidate.handleAppResume(),
+      timeoutMs,
+      () => new Error('connection verification timed out'),
+    )
     if (!ok) throw new Error('connection verification failed')
     return
   }
   if (!isRtcSessionAlive(session)) throw new Error('connection is no longer alive')
   const api = await session.openApi()
-  await api.request('GET', { path: '/status' })
+  await withTimeout(
+    api.request('GET', { path: '/status' }),
+    timeoutMs,
+    () => new Error('connection verification timed out'),
+  )
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorFactory: () => Error): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(errorFactory()), timeoutMs)
+  })
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
 }
 
 function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {

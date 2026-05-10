@@ -1,6 +1,7 @@
 import type {
   TerminalResizeControl,
   TerminalResizePolicy,
+  TerminalScrollbackPage,
   TerminalSnapshotPayload,
   TerminalProtocolEvent,
   TerminalProtocolChannel,
@@ -12,7 +13,11 @@ import {
   decodeTermxFrame,
   encodeResizePayload,
   encodeTermxFrame,
+  rowsToPlainText,
   rowsToText,
+  rowsToReplay,
+  snapshotScrollbackRows,
+  snapshotUsesAlternateScreen,
   snapshotToReplay,
   type TermxFrame,
 } from './termxProtocol'
@@ -101,6 +106,28 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     handlers.add(handler)
     return () => {
       handlers?.delete(handler)
+    }
+  }
+
+  async loadScrollback(terminalId: string, offset: number, limit: number): Promise<TerminalScrollbackPage> {
+    this.assertTerminal(terminalId)
+    await this.withHandshakeTimeout(this.hello(), 'hello')
+    await this.withHandshakeTimeout(this.attach(), 'attach')
+    const normalizedOffset = Math.max(0, Math.floor(offset))
+    const normalizedLimit = Math.max(1, Math.floor(limit))
+    const rawSnapshot = await this.request('snapshot', {
+      terminal_id: this.options.terminalId,
+      scrollback_offset: normalizedOffset,
+      scrollback_limit: normalizedLimit,
+    }, 8000)
+    const rows = snapshotScrollbackRows(rawSnapshot)
+    return {
+      offset: normalizedOffset,
+      limit: normalizedLimit,
+      rows,
+      rawSnapshot,
+      snapshot: normalizeScrollbackRows(rawSnapshot, rows),
+      hasMore: rows.length >= normalizedLimit,
     }
   }
 
@@ -215,6 +242,9 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       case TERMX_FRAME_TYPES.output:
         this.emit(this.options.terminalId, { type: 'output', data: frame.payload })
         return
+      case TERMX_FRAME_TYPES.error:
+        this.handleChannelClosed(streamErrorMessage(frame.payload))
+        return
       case TERMX_FRAME_TYPES.closed:
         this.emitClosed(closedReason(frame.payload))
         return
@@ -253,7 +283,13 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       | { type: 'resize'; cols: number; rows: number }
     if (message.type === 'input') {
       if (this.shouldEnsureResizeForInput(message)) {
-        void this.ensureResizeForInput(message).finally(() => this.sendInputFrame(message.data))
+        void this.ensureResizeForInput(message).then(() => {
+          try {
+            this.sendInputFrame(message.data)
+          } catch (err) {
+            this.handleAsyncSendFailure(err)
+          }
+        })
       } else {
         this.sendInputFrame(message.data)
       }
@@ -266,7 +302,12 @@ class TerminalProtocolClient implements TerminalProtocolSession {
   }
 
   private sendInputFrame(data: string): void {
-    if (this.streamChannel <= 0 || this.options.channel.readyState !== 'open') return
+    if (this.streamChannel <= 0) {
+      throw new Error('terminal protocol stream is not attached')
+    }
+    if (this.options.channel.readyState !== 'open') {
+      throw new Error(`terminal data channel ${this.options.channel.label} is not open`)
+    }
     this.options.channel.send(encodeTermxFrame(this.streamChannel, TERMX_FRAME_TYPES.input, new TextEncoder().encode(data)))
   }
 
@@ -329,6 +370,10 @@ class TerminalProtocolClient implements TerminalProtocolSession {
   private handleChannelClosed(reason?: string): void {
     this.rejectPending(new Error(reason ?? `terminal data channel ${this.options.channel.label} closed`))
     this.emitClosed(reason)
+  }
+
+  private handleAsyncSendFailure(err: unknown): void {
+    this.handleChannelClosed(err instanceof Error ? err.message : String(err))
   }
 
   private rejectPending(err: Error): void {
@@ -421,6 +466,25 @@ function normalizeSnapshot(value: unknown): TerminalSnapshotPayload {
     text: rowsToText(record),
     cols: typeof size?.cols === 'number' ? size.cols : 0,
     rows: typeof size?.rows === 'number' ? size.rows : 0,
+    raw: record,
+    scrollbackRows: snapshotScrollbackRows(record),
+    alternateScreen: snapshotUsesAlternateScreen(record),
+    ...(replay ? { replay } : {}),
+  }
+}
+
+function normalizeScrollbackRows(rawSnapshot: unknown, rows: unknown[]): TerminalSnapshotPayload {
+  const size = typeof rawSnapshot === 'object' && rawSnapshot !== null && !Array.isArray(rawSnapshot)
+    ? (rawSnapshot as Record<string, unknown>).size as Record<string, unknown> | undefined
+    : undefined
+  const replay = rowsToReplay(rows)
+  return {
+    text: rowsToPlainText(rows),
+    cols: typeof size?.cols === 'number' ? size.cols : 0,
+    rows: rows.length,
+    raw: rawSnapshot,
+    scrollbackRows: rows,
+    alternateScreen: snapshotUsesAlternateScreen(rawSnapshot),
     ...(replay ? { replay } : {}),
   }
 }
@@ -429,4 +493,13 @@ function closedReason(payload: Uint8Array): string | undefined {
   if (payload.length === 0) return undefined
   const text = new TextDecoder().decode(payload).trim()
   return text || undefined
+}
+
+function streamErrorMessage(payload: Uint8Array): string {
+  try {
+    const message = JSON.parse(new TextDecoder().decode(payload)) as { error?: { message?: string } }
+    return message.error?.message || 'terminal stream error'
+  } catch {
+    return 'terminal stream error'
+  }
 }

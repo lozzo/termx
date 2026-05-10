@@ -203,11 +203,14 @@ class BridgeServer(port: Int) : WebSocketServer(InetSocketAddress("127.0.0.1", p
     }
 
     fun resetChannelsForMachine(machineId: String) {
-        val prefixes = listOf("terminal:$machineId:", "file:$machineId:")
         val toRemove = channelLabels.entries.filter { (_, label) ->
-            prefixes.any { label.startsWith(it) }
+            label == "api:$machineId" ||
+                label == "events:$machineId" ||
+                label.startsWith("terminal:$machineId:") ||
+                label.startsWith("file:$machineId:")
         }
         for ((id, label) in toRemove) {
+            sendCloseChannel(id)
             channelLabels.remove(id)
             labelToChannel.remove(label)
         }

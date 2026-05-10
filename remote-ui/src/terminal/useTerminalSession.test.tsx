@@ -37,6 +37,24 @@ describe('useTerminalSession', () => {
     await waitFor(() => expect(session.openedTerminalIds).toEqual(['terminal-1', 'terminal-1']))
   })
 
+  it('can force a terminal data channel refresh while preserving the app-level session', async () => {
+    const session = createMockRtcTerminalSession()
+    const { result } = renderHook(() =>
+      useTerminalSession({
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        session,
+      }),
+    )
+
+    await waitFor(() => expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open'))
+
+    act(() => result.current.reattach(session, { forceTerminalChannel: true }))
+
+    await waitFor(() => expect(session.openedTerminalIds).toEqual(['terminal-1', 'terminal-1']))
+    expect(session.closedTerminalIds).toContain('terminal-1')
+  })
+
   it('derives connection path from the injected session instead of assuming local', async () => {
     const session = createMockRtcTerminalSession('machine-remote', 'public_p2p')
     const { result } = renderHook(() =>
@@ -82,6 +100,64 @@ describe('useTerminalSession', () => {
 
     await waitFor(() => expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open'))
     expect(JSON.stringify(result.current.snapshot)).not.toMatch(/pane|session|window|workspace|tab/i)
+  })
+
+  it('loads older scrollback incrementally without reopening the terminal', async () => {
+    const session = createMockRtcTerminalSession()
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'current',
+      cols: 80,
+      rows: 24,
+      pages: [
+        { offset: 0, rows: ['older'] },
+      ],
+    })
+    const { result } = renderHook(() =>
+      useTerminalSession({
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        session,
+      }),
+    )
+
+    await waitFor(() => expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open'))
+    await waitFor(() => expect(result.current.terminalText).toMatch(/c[\s\S]*u[\s\S]*r[\s\S]*r[\s\S]*e[\s\S]*n[\s\S]*t/))
+
+    await act(async () => {
+      await expect(result.current.loadScrollback(100)).resolves.toMatchObject({
+        loadedRows: 1,
+        totalRows: 1,
+        hasMore: false,
+      })
+    })
+
+    expect(session.openedTerminalIds).toEqual(['terminal-1'])
+    expect(session.snapshotRequests('terminal-1')).toContainEqual({ offset: 0, limit: 100 })
+    expect(result.current.terminalText).toMatch(/o[\s\S]*l[\s\S]*d[\s\S]*e[\s\S]*r/)
+    expect(result.current.terminalText).toMatch(/c[\s\S]*u[\s\S]*r[\s\S]*r[\s\S]*e[\s\S]*n[\s\S]*t/)
+  })
+
+  it('refreshes the terminal data channel and retries recent input when the channel closes during send', async () => {
+    const session = createMockRtcTerminalSession()
+    const { result } = renderHook(() =>
+      useTerminalSession({
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        session,
+      }),
+    )
+
+    await waitFor(() => expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open'))
+    session.failNextTerminalSend('terminal-1')
+
+    act(() => {
+      result.current.sendInput('echo recovered\n')
+    })
+
+    await waitFor(() => expect(session.openedTerminalIds).toEqual(['terminal-1', 'terminal-1']))
+    await waitFor(() => expect(session.sentText('terminal-1')).toBe('echo recovered\n'))
+    expect(session.closedTerminalIds).toContain('terminal-1')
+    expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open')
   })
 
   it('closes a raw terminal channel that resolves after the hook has unmounted', async () => {

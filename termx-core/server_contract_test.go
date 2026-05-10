@@ -2188,6 +2188,63 @@ func TestHandleTransportMalformedHelloReturnsProtocolError(t *testing.T) {
 	}
 }
 
+func TestHandleTransportRejectsInputForUnknownStreamChannel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewServer()
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.handleTransport(ctx, serverTransport, "memory")
+	}()
+
+	helloPayload, err := json.Marshal(protocol.Hello{Version: protocol.Version, Client: "test"})
+	if err != nil {
+		t.Fatalf("marshal hello failed: %v", err)
+	}
+	helloFrame, err := protocol.EncodeFrame(0, protocol.TypeHello, helloPayload)
+	if err != nil {
+		t.Fatalf("encode hello frame failed: %v", err)
+	}
+	if err := clientTransport.Send(helloFrame); err != nil {
+		t.Fatalf("send hello frame failed: %v", err)
+	}
+	channel, typ, _ := recvDecodedFrame(t, clientTransport)
+	if channel != 0 || typ != protocol.TypeHello {
+		t.Fatalf("expected hello response, got channel=%d type=%d", channel, typ)
+	}
+
+	inputFrame, err := protocol.EncodeFrame(77, protocol.TypeInput, []byte("echo lost\n"))
+	if err != nil {
+		t.Fatalf("encode input frame failed: %v", err)
+	}
+	if err := clientTransport.Send(inputFrame); err != nil {
+		t.Fatalf("send input frame failed: %v", err)
+	}
+	channel, typ, payload := recvDecodedFrame(t, clientTransport)
+	if channel != 77 || typ != protocol.TypeError {
+		t.Fatalf("expected stream error on channel 77, got channel=%d type=%d", channel, typ)
+	}
+	var msg protocol.ErrorMessage
+	if err := json.Unmarshal(payload, &msg); err != nil {
+		t.Fatalf("unmarshal stream error failed: %v", err)
+	}
+	if msg.Error.Code != 404 || !strings.Contains(msg.Error.Message, "not attached") {
+		t.Fatalf("unexpected stream error: %#v", msg)
+	}
+
+	_ = clientTransport.Close()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for transport handler exit")
+	}
+}
+
 func TestHandleTransportBadResizePayloadIgnoredThenValidResizeWorks(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

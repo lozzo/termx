@@ -512,7 +512,7 @@ describe('MachineWorkspace', () => {
     })
 
     await waitFor(() => expect(connect).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(terminalReattachMock).toHaveBeenCalledWith(sessions[1]))
+    await waitFor(() => expect(terminalReattachMock).toHaveBeenCalledWith(sessions[1], { forceTerminalChannel: true }))
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -560,7 +560,7 @@ describe('MachineWorkspace', () => {
       relayInUse: false,
     })
 
-    await waitFor(() => expect(terminalReattachMock).toHaveBeenCalledWith(sessions[0]))
+    await waitFor(() => expect(terminalReattachMock).toHaveBeenCalledWith(sessions[0], { forceTerminalChannel: true }))
     expect(connect).toHaveBeenCalledTimes(1)
     expect(sessions[0]?.disconnectCalls).toBe(0)
   })
@@ -581,7 +581,7 @@ describe('MachineWorkspace', () => {
 
     fireEvent(document, new Event('termx:resume'))
 
-    await waitFor(() => expect(terminalReattachMock).toHaveBeenCalledWith(sessions[0]))
+    await waitFor(() => expect(terminalReattachMock).toHaveBeenCalledWith(sessions[0], { forceTerminalChannel: true }))
     expect(connect).toHaveBeenCalledTimes(1)
     expect(sessions[0]?.disconnectCalls).toBe(0)
   })

@@ -329,6 +329,55 @@ describe('TerminalProtocolClient', () => {
     expect((events[1] as { snapshot: { replay?: string } }).snapshot.replay).toContain('\x1b[1;1H')
   })
 
+  it('loads older scrollback pages over the active protocol channel', async () => {
+    const channel = new MockBinaryDataChannel('terminal:terminal-1')
+    const client = createTerminalProtocolClient({
+      channel,
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectionInfo: connectionInfo(),
+    })
+    const terminalPromise = client.openTerminal('terminal-1')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+    await Promise.resolve()
+    const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: attachRequest.id,
+      result: JSON.stringify({ mode: 'collaborator', channel: 7 }),
+    })))
+    await terminalPromise
+    expect(decodeSentFrame(channel, 2)).toMatchObject({ channel: 0, type: TERMX_FRAME_TYPES.request })
+
+    const pagePromise = client.loadScrollback('terminal-1', 100, 50)
+    await vi.waitFor(() => expect(channel.sent).toHaveLength(4))
+    const pageRequestFrame = decodeSentFrame(channel, 3)
+    const pageRequest = JSON.parse(new TextDecoder().decode(pageRequestFrame.payload))
+    expect(pageRequest.method).toBe('snapshot')
+    expect(pageRequest.params).toEqual({
+      terminal_id: 'terminal-1',
+      scrollback_offset: 100,
+      scrollback_limit: 50,
+    })
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: pageRequest.id,
+      result: JSON.stringify({
+        terminal_id: 'terminal-1',
+        size: { cols: 80, rows: 24 },
+        screen: { rows: [] },
+        scrollback: [
+          { cells: [{ r: 'o' }, { r: 'l' }, { r: 'd' }] },
+        ],
+      }),
+    })))
+
+    await expect(pagePromise).resolves.toMatchObject({
+      offset: 100,
+      limit: 50,
+      hasMore: false,
+      snapshot: { text: 'old', cols: 80, rows: 1 },
+    })
+  })
+
   it('rejects machine or terminal mismatch before writing protocol frames', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
     const client = createTerminalProtocolClient({
@@ -358,6 +407,60 @@ describe('TerminalProtocolClient', () => {
     channel.close()
 
     await expect(opened).rejects.toThrow(/closed/i)
+  })
+
+  it('throws instead of silently dropping input when the data channel is closed', async () => {
+    const channel = new MockBinaryDataChannel('terminal:terminal-1')
+    const client = createTerminalProtocolClient({
+      channel,
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectionInfo: connectionInfo(),
+    })
+    const terminalPromise = client.openTerminal('terminal-1')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+    await Promise.resolve()
+    const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: attachRequest.id,
+      result: JSON.stringify({ mode: 'collaborator', channel: 7 }),
+    })))
+    const terminal = await terminalPromise
+
+    channel.close()
+
+    expect(() => terminal.send(new TextEncoder().encode(JSON.stringify({ type: 'input', data: 'x' })))).toThrow(/not open|closed/i)
+  })
+
+  it('emits a closed terminal event when the runtime rejects stream input', async () => {
+    const channel = new MockBinaryDataChannel('terminal:terminal-1')
+    const client = createTerminalProtocolClient({
+      channel,
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectionInfo: connectionInfo(),
+    })
+    const events: TerminalProtocolEvent[] = []
+    client.subscribeTerminal('terminal-1', (event) => events.push(event))
+    const terminalPromise = client.openTerminal('terminal-1')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+    await Promise.resolve()
+    const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: attachRequest.id,
+      result: JSON.stringify({ mode: 'collaborator', channel: 7 }),
+    })))
+    await terminalPromise
+
+    channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.error, encodeJSON({
+      id: 0,
+      error: { code: 404, message: 'terminal attachment channel 7 is not attached' },
+    })))
+
+    expect(events).toContainEqual({
+      type: 'closed',
+      reason: 'terminal attachment channel 7 is not attached',
+    })
   })
 })
 
@@ -390,6 +493,7 @@ class MockBinaryDataChannel implements RtcBinaryChannel {
   constructor(readonly label: string) {}
 
   send(data: Uint8Array): void {
+    if (this.readyState !== 'open') throw new Error('mock data channel is closed')
     this.sent.push(data)
   }
 

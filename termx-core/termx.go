@@ -822,9 +822,21 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 		attachment, ok := attachments[channel]
 		attachmentsMu.RUnlock()
 		if !ok {
+			s.cfg.logger.Warn("transport stream frame for unknown attachment", "remote", remote, "channel", channel, "type", typ)
+			if typ == protocol.TypeInput || typ == protocol.TypeResize {
+				if err := sendProtocolError(sendFrame, 0, channel, 404, fmt.Sprintf("terminal attachment channel %d is not attached", channel)); err != nil {
+					return err
+				}
+			}
 			continue
 		}
 		if attachment.mode() != ModeCollaborator {
+			s.cfg.logger.Warn("transport stream frame rejected for readonly attachment", "remote", remote, "terminal_id", attachment.terminalID, "channel", channel, "type", typ, "mode", attachment.mode())
+			if typ == protocol.TypeInput || typ == protocol.TypeResize {
+				if err := sendProtocolError(sendFrame, 0, channel, 403, fmt.Sprintf("terminal attachment channel %d is readonly", channel)); err != nil {
+					return err
+				}
+			}
 			continue
 		}
 		switch typ {

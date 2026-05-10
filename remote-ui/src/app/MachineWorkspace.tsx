@@ -479,8 +479,8 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
             setConnectedSession(session)
             setConnectedTerminalId(activeTerminalId)
             setConnectingTerminalId(null)
-            terminalRef.current?.reattach(session)
-            splitTerminalRef.current?.reattach(session)
+            terminalRef.current?.reattach(session, { forceTerminalChannel: true })
+            splitTerminalRef.current?.reattach(session, { forceTerminalChannel: true })
             updateFromPassiveConnectionState(snapshot, session)
           })
           .catch((err: unknown) => {
@@ -671,8 +671,8 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
       if (page === 'terminal' && activeTerminalId) {
         setConnectedTerminalId(activeTerminalId)
         setConnectingTerminalId(null)
-        terminalRef.current?.reattach(session)
-        splitTerminalRef.current?.reattach(session)
+        terminalRef.current?.reattach(session, { forceTerminalChannel: true })
+        splitTerminalRef.current?.reattach(session, { forceTerminalChannel: true })
       }
       updateConnectionStatus('Connected', 'connected')
       clearConnectionStatusSoon()
@@ -700,10 +700,10 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
       if (activeTerminalId) {
         setConnectedTerminalId(activeTerminalId)
         setConnectingTerminalId(null)
-        terminalRef.current?.reattach(session)
+        terminalRef.current?.reattach(session, { forceTerminalChannel: true })
       }
       if (splitTerminalId) {
-        splitTerminalRef.current?.reattach(session)
+        splitTerminalRef.current?.reattach(session, { forceTerminalChannel: true })
       }
     }
     document.addEventListener('termx:resume', handleResume)

@@ -78,6 +78,28 @@ export function rowsToText(snapshot: unknown): string {
   return chunks.map(rowText).join('\n')
 }
 
+export function snapshotScrollbackRows(snapshot: unknown): unknown[] {
+  if (!isRecord(snapshot)) {
+    return []
+  }
+  return rowsFrom(snapshot.scrollback)
+}
+
+export function snapshotUsesAlternateScreen(snapshot: unknown): boolean {
+  if (!isRecord(snapshot)) {
+    return false
+  }
+  return modesFrom(snapshot.modes).alternateScreen
+}
+
+export function rowsToPlainText(rows: unknown[]): string {
+  return rows.map(rowText).join('\n')
+}
+
+export function rowsToReplay(rows: unknown[]): string {
+  return writeSequentialRows(rows)
+}
+
 function rowsFrom(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }

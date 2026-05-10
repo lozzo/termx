@@ -7,6 +7,30 @@ export interface TerminalSnapshotPayload {
   cols: number
   rows: number
   replay?: string
+  raw?: unknown
+  scrollbackRows?: unknown[]
+  alternateScreen?: boolean
+  history?: {
+    revision: number
+    prependedRows: number
+    loadedRows: number
+    hasMore: boolean
+  }
+}
+
+export interface TerminalScrollbackPage {
+  offset: number
+  limit: number
+  rows: unknown[]
+  rawSnapshot: unknown
+  snapshot: TerminalSnapshotPayload
+  hasMore: boolean
+}
+
+export interface TerminalScrollbackLoadResult {
+  loadedRows: number
+  totalRows: number
+  hasMore: boolean
 }
 
 export type TerminalInfoPayload = Record<string, unknown>
@@ -48,6 +72,7 @@ export interface TerminalProtocolSession {
   openTerminal(terminalId: string): Promise<TerminalProtocolChannel>
   getConnectionInfo(): Promise<ConnectionInfo>
   subscribeTerminal(terminalId: string, handler: (event: TerminalProtocolEvent) => void): () => void
+  loadScrollback(terminalId: string, offset: number, limit: number): Promise<TerminalScrollbackPage>
   closeTerminalChannel(terminalId: string): void
 }
 
@@ -58,9 +83,10 @@ export interface TerminalClientCallbacks {
   onResizeControl?: (control: TerminalResizeControl) => void
   onLifecycle?: (message: Extract<ConnectionMessage, { type: 'terminal.channelOpen' | 'terminal.channelClosed' }>) => void
   onError: (message: string) => void
-  onClose: () => void
+  onClose: (reason?: string) => void
   onOpen?: () => void
   onInputDropped?: () => void
+  onInputSendFailed?: (message: string) => void
 }
 
 export class TerminalClient {
@@ -79,15 +105,15 @@ export class TerminalClient {
   }
 
   connect(terminalId: string, session: TerminalProtocolSession): void {
-    this.bind(terminalId, session, { closePrevious: true })
+    void this.bind(terminalId, session, { closePrevious: true }).catch(() => {})
   }
 
-  reattach(session: TerminalProtocolSession): void {
+  reattach(session: TerminalProtocolSession): Promise<void> {
     if (!this.terminalId) {
       this.callbacks.onError('terminal client is not connected')
-      return
+      return Promise.resolve()
     }
-    this.bind(this.terminalId, session, { closePrevious: false })
+    return this.bind(this.terminalId, session, { closePrevious: false })
   }
 
   disconnect(): void {
@@ -102,22 +128,32 @@ export class TerminalClient {
     this.terminalId = ''
   }
 
-  sendInput(data: string, size?: TerminalInputSize): void {
-    this.sendMessage({ type: 'input', data, ...(size ? { cols: size.cols, rows: size.rows } : {}) })
+  sendInput(data: string, size?: TerminalInputSize): boolean {
+    return this.sendMessage(
+      { type: 'input', data, ...(size ? { cols: size.cols, rows: size.rows } : {}) },
+      { reportInputFailure: true },
+    )
   }
 
-  sendResize(cols: number, rows: number): void {
+  sendResize(cols: number, rows: number): boolean {
     if (!this.resizeControl.canResize) {
-      return
+      return false
     }
-    this.sendMessage({ type: 'resize', cols, rows })
+    return this.sendMessage({ type: 'resize', cols, rows }, { reportInputFailure: false })
+  }
+
+  loadScrollback(offset: number, limit: number): Promise<TerminalScrollbackPage> {
+    if (!this.session || !this.terminalId) {
+      return Promise.reject(new Error('terminal client is not connected'))
+    }
+    return this.session.loadScrollback(this.terminalId, offset, limit)
   }
 
   private bind(
     terminalId: string,
     session: TerminalProtocolSession,
     options: { closePrevious: boolean },
-  ): void {
+  ): Promise<void> {
     if (!terminalId) {
       throw new Error('terminalId is required')
     }
@@ -135,7 +171,7 @@ export class TerminalClient {
     this.terminalId = terminalId
     const generation = ++this.bindingGeneration
 
-    this.openForBinding(session, terminalId, generation, 1).then(([machineId, channel]) => {
+    const openPromise = this.openForBinding(session, terminalId, generation, 1).then(([machineId, channel]) => {
       if (!this.isCurrentBinding(session, terminalId, generation)) {
         channel.close()
         return
@@ -144,7 +180,7 @@ export class TerminalClient {
       if (channel.label !== `terminal:${terminalId}`) {
         channel.close()
         this.callbacks.onError(`unexpected terminal channel label ${channel.label}`)
-        return
+        throw new Error(`unexpected terminal channel label ${channel.label}`)
       }
       this.channel = channel
       this.callbacks.onOpen?.()
@@ -153,6 +189,7 @@ export class TerminalClient {
         machineId,
         terminalId,
       })
+      return
     }).catch((err: unknown) => {
       if (!this.isCurrentBinding(session, terminalId, generation)) return
       this.callbacks.onError(errorMessage(err))
@@ -163,6 +200,7 @@ export class TerminalClient {
       if (!this.isCurrentBinding(session, terminalId, generation)) return
       this.handleProtocolEvent(event)
     })
+    return openPromise
   }
 
   private async openForBinding(
@@ -212,22 +250,33 @@ export class TerminalClient {
           terminalId: this.terminalId,
           ...(event.reason ? { reason: event.reason } : {}),
         })
-        this.callbacks.onClose()
+        this.callbacks.onClose(event.reason)
         return
     }
   }
 
-  private sendMessage(message: { type: 'input'; data: string; cols?: number; rows?: number } | { type: 'resize'; cols: number; rows: number }): void {
+  private sendMessage(
+    message: { type: 'input'; data: string; cols?: number; rows?: number } | { type: 'resize'; cols: number; rows: number },
+    options: { reportInputFailure: boolean },
+  ): boolean {
     const channel = this.channel
     if (!channel || channel.readyState !== 'open') {
-      this.callbacks.onInputDropped?.()
-      return
+      if (options.reportInputFailure) {
+        this.callbacks.onInputDropped?.()
+        this.callbacks.onInputSendFailed?.('terminal channel is not open')
+      }
+      return false
     }
 
     try {
       channel.send(new TextEncoder().encode(JSON.stringify(message)))
-    } catch {
-      this.callbacks.onInputDropped?.()
+      return true
+    } catch (err) {
+      if (options.reportInputFailure) {
+        this.callbacks.onInputDropped?.()
+        this.callbacks.onInputSendFailed?.(errorMessage(err))
+      }
+      return false
     }
   }
 

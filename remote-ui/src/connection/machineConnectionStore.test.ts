@@ -198,6 +198,45 @@ describe('MachineConnectionStore', () => {
     expect(states.some((state) => state.phase === 'verifying')).toBe(true)
     await store.release()
   })
+
+  it('times out a stuck resume verification and starts a fresh reconnect', async () => {
+    vi.useFakeTimers()
+    try {
+      const first = new StoreTestSession('machine-1')
+      first.apiRequestDelay = deferred<unknown>()
+      const second = new StoreTestSession('machine-1')
+      const sessions = [first, second]
+      const connect = vi.fn(async () => {
+        const session = sessions.shift()
+        if (!session) throw new Error('unexpected reconnect')
+        return session
+      })
+      const networkStateManager = new TestNetworkStateManager()
+      const store = new MachineConnectionStore({
+        machineId: 'machine-1',
+        connect,
+        createLease,
+        networkStateManager: networkStateManager as unknown as RemoteNetworkStateManager,
+      })
+
+      await store.get()
+      networkStateManager.emit(
+        networkState({ resumeType: 'normal', resumeDuration: 60_000 }),
+        networkState(),
+      )
+      expect(store.getSnapshot().phase).toBe('verifying')
+
+      await vi.advanceTimersByTimeAsync(8500)
+      await vi.runOnlyPendingTimersAsync()
+      await waitForConnectCount(connect, 2)
+
+      expect(first.disconnectCalls).toBe(1)
+      expect(store.getSnapshot().phase).toBe('connected')
+      await store.release()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 function createLease(session: RtcSession): RtcSession {
@@ -237,6 +276,7 @@ function deferred<T>(): {
 class StoreTestSession implements RtcSession {
   disconnectCalls = 0
   connectionInfoDelay: ReturnType<typeof deferred<ConnectionInfo>> | null = null
+  apiRequestDelay: ReturnType<typeof deferred<unknown>> | null = null
   private readonly eventHandlers = new Set<(event: RtcEvent) => void>()
   private readonly disconnectHandlers = new Set<() => void>()
   private readonly connectionStateHandlers = new Set<(snapshot: RtcConnectionStateSnapshot) => void>()
@@ -248,8 +288,10 @@ class StoreTestSession implements RtcSession {
   }
 
   async openApi(): Promise<RtcJsonRpcChannel> {
+    const delay = this.apiRequestDelay
     return {
       async request<TResponse>(): Promise<TResponse> {
+        if (delay) return delay.promise as Promise<TResponse>
         return undefined as TResponse
       },
       close() {},

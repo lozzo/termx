@@ -83,6 +83,21 @@ describe('TerminalClient', () => {
     session.closeTerminalChannel('terminal-1')
     client.sendInput('dropped')
     expect(callbacks.onInputDropped).toHaveBeenCalledTimes(1)
+    expect(callbacks.onInputSendFailed).toHaveBeenCalledWith('terminal channel is not open')
+  })
+
+  it('loads scrollback through the active protocol session', async () => {
+    const session = createMockTerminalProtocolSession()
+    const callbacks = callbacksForTest()
+    const client = new TerminalClient(callbacks)
+
+    client.connect('terminal-1', session)
+    await vi.waitFor(() => expect(callbacks.onLifecycle).toHaveBeenCalledTimes(1))
+
+    const page = await client.loadScrollback(100, 50)
+
+    expect(session.scrollbackRequests).toEqual([{ terminalId: 'terminal-1', offset: 100, limit: 50 }])
+    expect(page.rows).toEqual(['older'])
   })
 
   it('ignores stale async terminal opens after switching to another terminal', async () => {
@@ -114,6 +129,7 @@ function callbacksForTest(): TerminalClientCallbacks & {
   onTerminalInfo: Mock<NonNullable<TerminalClientCallbacks['onTerminalInfo']>>
   onLifecycle: Mock<NonNullable<TerminalClientCallbacks['onLifecycle']>>
   onInputDropped: Mock<NonNullable<TerminalClientCallbacks['onInputDropped']>>
+  onInputSendFailed: Mock<NonNullable<TerminalClientCallbacks['onInputSendFailed']>>
 } {
   return {
     onOutput: vi.fn<TerminalClientCallbacks['onOutput']>(),
@@ -124,6 +140,7 @@ function callbacksForTest(): TerminalClientCallbacks & {
     onClose: vi.fn<TerminalClientCallbacks['onClose']>(),
     onOpen: vi.fn<NonNullable<TerminalClientCallbacks['onOpen']>>(),
     onInputDropped: vi.fn<NonNullable<TerminalClientCallbacks['onInputDropped']>>(),
+    onInputSendFailed: vi.fn<NonNullable<TerminalClientCallbacks['onInputSendFailed']>>(),
   }
 }
 
@@ -135,6 +152,7 @@ class MockTerminalProtocolSession implements TerminalProtocolSession {
   readonly openedTerminalIds: string[] = []
   readonly openedLabels: string[] = []
   readonly closedTerminalIds: string[] = []
+  readonly scrollbackRequests: Array<{ terminalId: string; offset: number; limit: number }> = []
   private readonly channels = new Map<string, MockTerminalProtocolChannel>()
   private readonly subscribers = new Map<string, Set<(event: TerminalProtocolEvent) => void>>()
 
@@ -168,6 +186,18 @@ class MockTerminalProtocolSession implements TerminalProtocolSession {
   closeTerminalChannel(terminalId: string): void {
     this.closedTerminalIds.push(terminalId)
     this.channels.get(terminalId)?.close()
+  }
+
+  async loadScrollback(terminalId: string, offset: number, limit: number) {
+    this.scrollbackRequests.push({ terminalId, offset, limit })
+    return {
+      offset,
+      limit,
+      rows: ['older'],
+      rawSnapshot: {},
+      snapshot: { text: 'older', cols: 80, rows: 1 },
+      hasMore: false,
+    }
   }
 
   emit(terminalId: string, event: TerminalProtocolEvent): void {
@@ -242,6 +272,17 @@ class DeferredTerminalProtocolSession implements TerminalProtocolSession {
 
   subscribeTerminal(): () => void {
     return () => {}
+  }
+
+  async loadScrollback(terminalId: string, offset: number, limit: number) {
+    return {
+      offset,
+      limit,
+      rows: [],
+      rawSnapshot: {},
+      snapshot: { text: '', cols: 0, rows: 0 },
+      hasMore: false,
+    }
   }
 
   closeTerminalChannel(terminalId: string): void {

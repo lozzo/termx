@@ -13,6 +13,7 @@ import java.util.*
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * WebRTCTransport — termx PeerConnection 生命周期
@@ -60,13 +61,16 @@ class WebRTCTransport(
     var isConnected = false
         private set
     private var connectedAt = 0L
+    @Volatile private var disconnectedAt = 0L
     var lastRtt = 0L
     @Volatile private var relayInUse = false
+    private val generation = AtomicLong(0)
 
     val channelManager = ChannelManager(bridge, machineId)
     private val heartbeat = Heartbeat(this) { triggerDisconnect() }
 
     var onDisconnectListener: (() -> Unit)? = null
+    var onChannelResetListener: (() -> Unit)? = null
 
     var lastFailureReason: String? = null
         private set
@@ -342,13 +346,19 @@ class WebRTCTransport(
             Log.i(TAG, "connectionState: $state [$machineId]")
             when (state) {
                 PeerConnection.PeerConnectionState.CONNECTED -> {
+                    disconnectedAt = 0L
                     heartbeat.onConnectionStateConnected()
                 }
                 PeerConnection.PeerConnectionState.DISCONNECTED -> {
+                    disconnectedAt = System.currentTimeMillis()
                     if (isConnected) heartbeat.onConnectionStateDisconnected(connectedAt)
                 }
                 PeerConnection.PeerConnectionState.FAILED -> {
+                    disconnectedAt = System.currentTimeMillis()
                     if (isConnected) heartbeat.onConnectionStateFailed()
+                }
+                PeerConnection.PeerConnectionState.CLOSED -> {
+                    disconnectedAt = System.currentTimeMillis()
                 }
                 else -> {}
             }
@@ -428,9 +438,17 @@ class WebRTCTransport(
         if (!isPeerConnected()) return true
         if (!isApiChannelOpen()) return true
         val quietForMs = heartbeat.millisSinceLastSuccess()
+        val disconnectedForMs = if (disconnectedAt > 0L) {
+            (System.currentTimeMillis() - disconnectedAt).coerceAtLeast(0L)
+        } else {
+            0L
+        }
         return backgroundDurationMs >= RESUME_STALE_THRESHOLD_MS ||
-            quietForMs >= RESUME_STALE_THRESHOLD_MS
+            quietForMs >= RESUME_STALE_THRESHOLD_MS ||
+            disconnectedForMs >= RESUME_STALE_THRESHOLD_MS
     }
+
+    fun generation(): Long = generation.get()
 
     fun verifyStatus(timeoutMs: Long): Long {
         val start = System.currentTimeMillis()
@@ -533,11 +551,14 @@ class WebRTCTransport(
     }
 
     fun disconnect() {
+        generation.incrementAndGet()
+        onChannelResetListener?.invoke()
         heartbeat.destroy()
         channelManager.closeAll()
         try { pc?.close() } catch (_: Exception) {}
         pc = null
         isConnected = false
+        disconnectedAt = 0L
         relayInUse = false
         synchronized(iceGatherLock) {
             hasHostOrSrflx = false

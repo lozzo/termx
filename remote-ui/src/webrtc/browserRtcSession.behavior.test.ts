@@ -369,6 +369,31 @@ describe('BrowserRtcSession', () => {
     }
   })
 
+  it('force closes and recreates an open terminal data channel on resume reattach', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const session = createBrowserRtcSession({
+      machineId: 'machine-local',
+      path: 'managed',
+      peerConnectionFactory: factory,
+      sessionIdGenerator: () => 'rtc-machine-1',
+      heartbeatIntervalMs: 60000,
+    })
+
+    await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+    await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
+    const first = await session.openTerminal('terminal-1')
+    const firstRawChannel = factory.channel('terminal:terminal-1')
+
+    session.closeTerminalDataChannel('terminal-1')
+    const second = await session.openTerminal('terminal-1')
+    const secondRawChannel = factory.channel('terminal:terminal-1')
+
+    expect(first.readyState).toBe('closed')
+    expect(second.label).toBe('terminal:terminal-1')
+    expect(second.readyState).toBe('open')
+    expect(secondRawChannel).not.toBe(firstRawChannel)
+  })
+
   it('runs runtime status check when peer connection state reaches connected', async () => {
     vi.useFakeTimers()
     try {
