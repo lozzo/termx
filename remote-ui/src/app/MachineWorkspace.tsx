@@ -179,21 +179,14 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
     () => terminalThemeCssVariables(effectiveTerminalSettings.themeId) as CSSProperties,
     [effectiveTerminalSettings.themeId],
   )
-
-  useEffect(() => {
-    latestActiveTerminalIdRef.current = activeTerminalId
-  }, [activeTerminalId])
-
-  useEffect(() => {
-    setMachineNetworkMachineId(machine?.machineId ?? null)
-  }, [machine?.machineId, setMachineNetworkMachineId])
-
-  useEffect(() => {
-    if (!machineForceRelayKey) return
-    setForceRelayConnection(readStoredForceRelay(machineForceRelayKey))
-  }, [machineForceRelayKey])
-
-  const { keyboardVisible, handleBufferChange, handleCursorMove } = useTerminalKeyboard({
+  const {
+    keyboardVisible,
+    handleBufferChange,
+    handleCursorMove,
+    markKeyboardVisible,
+    markKeyboardHidden,
+    resetKeyboardLayout,
+  } = useTerminalKeyboard({
     containerRef: outerContainerRef,
     mainRef: terminalAreaRef,
     termWrapperRef: terminalWrapperRef,
@@ -212,6 +205,19 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
       })
     },
   })
+
+  useEffect(() => {
+    latestActiveTerminalIdRef.current = activeTerminalId
+  }, [activeTerminalId])
+
+  useEffect(() => {
+    setMachineNetworkMachineId(machine?.machineId ?? null)
+  }, [machine?.machineId, setMachineNetworkMachineId])
+
+  useEffect(() => {
+    if (!machineForceRelayKey) return
+    setForceRelayConnection(readStoredForceRelay(machineForceRelayKey))
+  }, [machineForceRelayKey])
 
   useEffect(() => {
     const keybar = mobileKeybarRef.current
@@ -692,6 +698,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
   useEffect(() => {
     const handleResume = () => {
       if (page !== 'terminal') return
+      resetKeyboardLayout()
       const session = machineSessionRef.current?.session ?? connectedSession
       if (!session || !isRtcSessionAlive(session)) return
       if (!activeTerminalId && !splitTerminalId) return
@@ -710,7 +717,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
     return () => {
       document.removeEventListener('termx:resume', handleResume)
     }
-  }, [activeTerminalId, connectedSession, page, splitTerminalId])
+  }, [activeTerminalId, connectedSession, page, resetKeyboardLayout, splitTerminalId])
 
   const openTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {
@@ -803,8 +810,14 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
   }, [activeTerminalHandle, splitTerminalId, syncSplitInput])
 
   const focusActiveTerminal = useCallback(() => {
+    markKeyboardVisible()
     activeTerminalHandle()?.focus()
-  }, [activeTerminalHandle])
+  }, [activeTerminalHandle, markKeyboardVisible])
+
+  const blurActiveTerminal = useCallback(() => {
+    activeTerminalHandle()?.blur()
+    markKeyboardHidden()
+  }, [activeTerminalHandle, markKeyboardHidden])
 
   useEffect(() => {
     if (!splitTerminalId) return
@@ -876,9 +889,10 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
     setSplitTerminalId(null)
     setActiveTerminalSlot(0)
     setSyncSplitInput(false)
+    resetKeyboardLayout()
     terminalRef.current?.adjustInputPosition(0)
     splitTerminalRef.current?.adjustInputPosition(0)
-  }, [])
+  }, [resetKeyboardLayout])
 
   const openFiles = useCallback(() => {
     if (requireVerification) {
@@ -1727,7 +1741,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
           className="relative z-20 w-full max-w-full"
           onInput={sendTerminalInput}
           onFocusKeyboard={focusActiveTerminal}
-          onBlurKeyboard={() => activeTerminalHandle()?.blur()}
+          onBlurKeyboard={blurActiveTerminal}
           onLockKeyboard={lockKeyboard}
           fnOpen={terminalFnOpen}
           onToggleFn={() => {

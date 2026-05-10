@@ -108,7 +108,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
   onToggleFn,
   modifierState,
   onModifierStateChange,
-  keyboardVisible,
+  keyboardVisible = false,
   keyboardLocked = false,
   className,
 }: MobileTerminalKeybarProps, forwardedRef: Ref<HTMLDivElement>) {
@@ -182,6 +182,11 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
   const altToggle = useModifierToggle(activeModifierState.alt, (v) => setModifierState({ ...activeModifierState, alt: v }))
 
   const cls = 'flex h-8 min-w-0 flex-[1_1_0] items-center justify-center rounded-md text-center font-mono text-[10px] font-medium select-none touch-manipulation relative overflow-visible'
+  const keyboardButtonClass = keyboardLocked
+    ? 'bg-red-600 text-white shadow-sm shadow-red-500/20'
+    : keyboardVisible
+      ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)] shadow-sm'
+      : 'bg-transparent text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'
 
   const btn = (label: string, data: string, ariaLabel?: string) => {
     const id = label + ':' + data
@@ -248,11 +253,8 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
           data-key-id="⌨"
           type="button"
           aria-label={keyboardLocked ? 'Unlock system keyboard' : 'Toggle system keyboard'}
-          className={`${cls} ${
-            keyboardLocked
-                ? 'bg-red-600 text-white shadow-sm shadow-red-500/20'
-                : 'bg-transparent text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'
-          }`}
+          aria-pressed={keyboardLocked || keyboardVisible}
+          className={`${cls} ${keyboardButtonClass}`}
           onMouseDown={(e) => e.preventDefault()}
           onPointerDown={(e) => {
             e.preventDefault()

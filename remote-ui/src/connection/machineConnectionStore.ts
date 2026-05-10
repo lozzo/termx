@@ -338,6 +338,10 @@ export class MachineConnectionStore {
     this.verificationGeneration = generation
     const session = this.currentSession
     if (!session) {
+      if (this.sessionPromise) {
+        await this.resetCurrentSession({ keepForceRelay: true })
+        if (this.released) return
+      }
       this.reconnectAttempt = 0
       this.transition({
         phase: 'reconnecting',

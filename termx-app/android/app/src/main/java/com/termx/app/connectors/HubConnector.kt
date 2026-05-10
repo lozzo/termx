@@ -52,13 +52,15 @@ object HubConnector {
         var transport: WebRTCTransport? = null
         return try {
             onProgress?.invoke("Fetching ICE servers...")
-            val iceServers = fetchIceServers(hubUrl, machineId, sessionToken)
+            val iceServers = runInterruptible(Dispatchers.IO) {
+                fetchIceServers(hubUrl, machineId, sessionToken)
+            }
             coroutineContext.ensureActive()
 
             onProgress?.invoke("Connecting via hub...")
             val t = WebRTCTransport(bridge, machineId)
             transport = t
-            val ok = withContext(Dispatchers.IO) {
+            val ok = runInterruptible(Dispatchers.IO) {
                 t.connectHub(hubUrl, sessionToken, iceServers, forceRelay, onProgress)
             }
             coroutineContext.ensureActive()

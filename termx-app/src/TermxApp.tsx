@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { App as CapApp } from '@capacitor/app'
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
+import { Keyboard } from '@capacitor/keyboard'
 import { Html5Qrcode } from 'html5-qrcode'
 import {
   RemoteControlApp,
   createMachineSessionStore,
   createMachineStore,
+  dispatchNativeKeyboardEvent,
   dispatchNativeBack,
   normalizeTerminalInventory,
 } from '@termx/remote-ui'
@@ -54,6 +56,7 @@ type NativeSessionLease = RtcSession & {
 export function TermxApp() {
   useAndroidBackButton()
   useAppResumeSync()
+  useNativeKeyboardEvents()
 
   const networkRuntime = useMemo(() => createNativeNetworkRuntime(), [])
   const nativeAppRuntime = useMemo(() => createNativeAppRuntime(), [])
@@ -77,6 +80,31 @@ export function TermxApp() {
       />
     </section>
   )
+}
+
+function useNativeKeyboardEvents(): void {
+  useEffect(() => {
+    const subscriptions = [
+      Keyboard.addListener('keyboardWillShow', (info) => {
+        dispatchNativeKeyboardEvent({ visible: true, keyboardHeight: info.keyboardHeight })
+      }),
+      Keyboard.addListener('keyboardDidShow', (info) => {
+        dispatchNativeKeyboardEvent({ visible: true, keyboardHeight: info.keyboardHeight })
+      }),
+      Keyboard.addListener('keyboardWillHide', () => {
+        dispatchNativeKeyboardEvent({ visible: false })
+      }),
+      Keyboard.addListener('keyboardDidHide', () => {
+        dispatchNativeKeyboardEvent({ visible: false })
+      }),
+    ]
+
+    return () => {
+      for (const subscription of subscriptions) {
+        void subscription.then((handle) => handle.remove())
+      }
+    }
+  }, [])
 }
 
 /** When the app resumes from background, trigger a sync request on all active sessions. */

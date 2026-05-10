@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { forwardRef, useImperativeHandle } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -10,12 +10,17 @@ import type { LocalPairingApi, LocalStatus, MachineConnectionStateEvents, RtcCon
 import { createMockFileSession } from '../test/mockFileSession'
 import type { TerminalHandle } from '../terminal/Terminal'
 import type { Terminal } from '../core/model'
+import { DEFAULT_TERMINAL_SETTINGS } from '../terminal/terminalSettings'
+import { dispatchNativeKeyboardEvent } from '../platform/nativeKeyboard'
 
 const terminalReattachMock = vi.fn()
 const terminalHandleMocks = vi.hoisted(() => ({
   handles: new Map<string, {
     sendInput: ReturnType<typeof vi.fn>
     pasteText: ReturnType<typeof vi.fn>
+    fit: ReturnType<typeof vi.fn>
+    focus: ReturnType<typeof vi.fn>
+    adjustInputPosition: ReturnType<typeof vi.fn>
   }>(),
 }))
 
@@ -33,9 +38,10 @@ vi.mock('../terminal/Terminal', () => ({
   ) {
     const fit = vi.fn()
     const focus = vi.fn()
+    const adjustInputPosition = vi.fn()
     const sendInput = vi.fn()
     const pasteText = vi.fn()
-    terminalHandleMocks.handles.set(terminalId, { sendInput, pasteText })
+    terminalHandleMocks.handles.set(terminalId, { sendInput, pasteText, fit, focus, adjustInputPosition })
     useImperativeHandle(ref, () => ({
       sendInput,
       sendResize: vi.fn(),
@@ -50,7 +56,7 @@ vi.mock('../terminal/Terminal', () => ({
       hasSelection: vi.fn(() => false),
       clearSelection: vi.fn(),
       getCursorInfo: vi.fn(() => null),
-      adjustInputPosition: vi.fn(),
+      adjustInputPosition,
       getBufferType: vi.fn(() => 'normal' as const),
       updateOptions: vi.fn(),
     }))
@@ -584,6 +590,71 @@ describe('MachineWorkspace', () => {
     await waitFor(() => expect(terminalReattachMock).toHaveBeenCalledWith(sessions[0], { forceTerminalChannel: true }))
     expect(connect).toHaveBeenCalledTimes(1)
     expect(sessions[0]?.disconnectCalls).toBe(0)
+  })
+
+  it('clears mobile keyboard layout offsets on native app resume', async () => {
+    vi.stubGlobal('innerHeight', 800)
+    const api = createMockLocalAgentApi()
+    const sessions: ReturnType<typeof createMockMachineWorkspaceSession>[] = []
+    const connect = vi.fn(({ machineId }: { machineId: string }) =>
+      Promise.resolve(trackSession(sessions, createMockMachineWorkspaceSession({}, machineId))),
+    )
+
+    render(<MachineWorkspace api={api} connector={{ connect }} terminalSettings={{ ...DEFAULT_TERMINAL_SETTINGS, keyboardMode: 'shift' }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
+    const shell = screen.getByTestId('termx-terminal-page').parentElement as HTMLElement
+    const wrapper = screen.getByTestId('termx-terminal-body').querySelector('[data-testid="termx-terminal-panel"]')?.parentElement as HTMLElement
+    Object.defineProperty(screen.getByTestId('termx-terminal-body'), 'clientHeight', { configurable: true, value: 640 })
+
+    act(() => {
+      dispatchNativeKeyboardEvent({ visible: true, keyboardHeight: 260 })
+      shell.style.height = '540px'
+      wrapper.style.height = '640px'
+      wrapper.style.transform = 'translateY(-120px)'
+    })
+    const terminalHandleBeforeResume = terminalHandleMocks.handles.get('terminal-1')
+
+    fireEvent(document, new Event('termx:resume'))
+
+    await waitFor(() => expect(shell.style.height).toBe(''))
+    expect(wrapper.style.height).toBe('')
+    expect(wrapper.style.transform).toBe('')
+    expect(terminalHandleBeforeResume?.adjustInputPosition).toHaveBeenCalledWith(0)
+  })
+
+  it('highlights the keyboard button immediately after requesting the system keyboard', async () => {
+    const api = createMockLocalAgentApi()
+    const connect = vi.fn(({ machineId }: { machineId: string }) =>
+      Promise.resolve(createMockMachineWorkspaceSession({}, machineId)),
+    )
+
+    render(<MachineWorkspace api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
+
+    const keyboardButton = screen.getByRole('button', { name: /toggle system keyboard/i })
+    expect(keyboardButton.getAttribute('aria-pressed')).toBe('false')
+    expect(keyboardButton.className).not.toContain('bg-[var(--termx-accent)]')
+    const terminalHandleBeforeFocus = terminalHandleMocks.handles.get('terminal-1')
+
+    await userEvent.click(keyboardButton)
+
+    await waitFor(() => expect(keyboardButton.getAttribute('aria-pressed')).toBe('true'))
+    expect(keyboardButton.className).toContain('bg-[var(--termx-accent)]')
+    expect(keyboardButton.className).toContain('text-[var(--termx-accent-text)]')
+    expect(terminalHandleBeforeFocus?.focus).toHaveBeenCalled()
+
+    act(() => {
+      dispatchNativeKeyboardEvent({ visible: false })
+    })
+
+    await waitFor(() => expect(keyboardButton.getAttribute('aria-pressed')).toBe('false'))
+    expect(keyboardButton.className).not.toContain('bg-[var(--termx-accent)]')
   })
 
   it('reconnects from connection info without changing the current transport mode', async () => {

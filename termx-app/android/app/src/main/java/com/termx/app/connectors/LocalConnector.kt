@@ -45,12 +45,14 @@ object LocalConnector {
             Log.i(TAG, "Found local hub: $hubUrl")
             onProgress?.invoke("Connecting locally...")
 
-            val iceServers = fetchIceServers(hubUrl, machineId, sessionToken)
+            val iceServers = runInterruptible(Dispatchers.IO) {
+                fetchIceServers(hubUrl, machineId, sessionToken)
+            }
             coroutineContext.ensureActive()
 
             val t = WebRTCTransport(bridge, machineId)
             transport = t
-            val ok = withContext(Dispatchers.IO) {
+            val ok = runInterruptible(Dispatchers.IO) {
                 t.connectHub(hubUrl, sessionToken, iceServers, onProgress = onProgress)
             }
             coroutineContext.ensureActive()
@@ -75,7 +77,9 @@ object LocalConnector {
             val jobs = addresses.map { addr ->
                 async(Dispatchers.IO) {
                     val url = normalizeUrl(addr)
-                    val status = HttpHelper.probe("$url$STATUS_PATH", PROBE_TIMEOUT)
+                    val status = runInterruptible {
+                        HttpHelper.probe("$url$STATUS_PATH", PROBE_TIMEOUT)
+                    }
                     if (status > 0 && status < 500) {
                         winner.complete(url)
                     }

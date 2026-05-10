@@ -237,6 +237,40 @@ describe('MachineConnectionStore', () => {
       vi.useRealTimers()
     }
   })
+
+  it('cancels an in-flight session request when resume recovery starts', async () => {
+    const firstConnect = deferred<RtcSession>()
+    const second = new StoreTestSession('machine-1')
+    const connect = vi.fn((options?: { signal?: AbortSignal }) => {
+      if (connect.mock.calls.length === 1) {
+        options?.signal?.addEventListener('abort', () => {
+          firstConnect.reject(new Error('aborted stale connection'))
+        }, { once: true })
+        return firstConnect.promise
+      }
+      return Promise.resolve(second)
+    })
+    const networkStateManager = new TestNetworkStateManager()
+    const store = new MachineConnectionStore({
+      machineId: 'machine-1',
+      connect,
+      createLease,
+      networkStateManager: networkStateManager as unknown as RemoteNetworkStateManager,
+    })
+
+    const firstGet = store.get().catch((err: unknown) => err)
+    await waitForConnectCount(connect, 1)
+    networkStateManager.emit(
+      networkState({ resumeType: 'normal', resumeDuration: 60_000 }),
+      networkState(),
+    )
+    await waitForConnectCount(connect, 2)
+    const firstResult = await firstGet
+
+    expect(firstResult).toBeInstanceOf(Error)
+    expect(store.getSnapshot().phase).toBe('connected')
+    await store.release()
+  })
 })
 
 function createLease(session: RtcSession): RtcSession {

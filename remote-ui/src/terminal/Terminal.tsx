@@ -5,6 +5,7 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react'
 import { haptic } from '../platform/haptics'
+import { addNativeKeyboardListener } from '../platform/nativeKeyboard'
 import { applyTerminalModifiers, type TerminalModifierState } from './mobileTerminalInput'
 import type { TerminalResizeControl, TerminalScrollbackLoadResult } from './terminalClient'
 import { useTerminalSession } from './useTerminalSession'
@@ -175,6 +176,15 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     lastSentResizeRef.current = dimensions
     terminalSession.sendResize(dimensions.cols, dimensions.rows)
   }, [terminalSession.sendResize])
+
+  const scrollToBottomIfCurrent = useCallback((term: XTerm) => {
+    if (terminalDisposedRef.current || xtermRef.current !== term) return
+    try {
+      term.scrollToBottom()
+    } catch (error) {
+      if (!terminalDisposedRef.current) throw error
+    }
+  }, [])
 
   const currentTerminalSize = useCallback(() => {
     if (terminalDisposedRef.current) return undefined
@@ -472,7 +482,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const initialText = latestTerminalTextRef.current
     if (initialText) {
       try {
-        term.write(initialText)
+        term.write(initialText, () => {
+          scrollToBottomIfCurrent(term)
+        })
       } catch {}
       lastWrittenTextRef.current = initialText
     }
@@ -677,6 +689,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         term.write(pending.text, () => {
           if (pending.restoreViewportY !== null) {
             term.scrollToLine(pending.restoreViewportY + pending.prependedRows)
+          } else {
+            scrollToBottomIfCurrent(term)
           }
           historyLoadedRowsAppliedRef.current = pending.loadedRows
           historyApplyingRef.current = false
@@ -781,6 +795,18 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         screenElement.style.willChange = ''
       }
       smoothActive = false
+    }
+
+    const resetTransientViewportOffset = () => {
+      clearMomentum()
+      if (screenElement) {
+        screenElement.style.transform = ''
+        screenElement.style.willChange = ''
+      }
+      smoothActive = false
+      touchAccum = 0
+      velocityY = 0
+      touchLastY = Number.NaN
     }
 
     const scrollPixels = (px: number): boolean => {
@@ -1361,6 +1387,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => {
         if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
+        resetTransientViewportOffset()
         fitAndMaybeSendResize()
         lineHeightPx = getLineHeight()
       })
@@ -1369,6 +1396,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     const handleVisualViewportResize = () => {
       if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
+      resetTransientViewportOffset()
       if (fitDelayRef.current !== null) window.clearTimeout(fitDelayRef.current)
       fitDelayRef.current = window.setTimeout(() => {
         fitDelayRef.current = null
@@ -1376,6 +1404,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         scheduleFit()
       }, 100)
     }
+
+    const removeNativeKeyboardListener = addNativeKeyboardListener(handleVisualViewportResize)
+    document.addEventListener('termx:resume', handleVisualViewportResize)
 
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', handleVisualViewportResize)
@@ -1389,6 +1420,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         window.visualViewport.removeEventListener('resize', handleVisualViewportResize)
         window.visualViewport.removeEventListener('scroll', handleVisualViewportResize)
       }
+      removeNativeKeyboardListener()
+      document.removeEventListener('termx:resume', handleVisualViewportResize)
       if (fitFrameRef.current !== null) {
         window.cancelAnimationFrame(fitFrameRef.current)
         fitFrameRef.current = null
@@ -1453,7 +1486,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       lastSentResizeRef.current = null
       isOpenRef.current = false
     }
-  }, [fitAndMaybeSendResize, renderer, scheduleFit, sendInputAtCurrentSize, sendUserInput, settings.renderer])
+  }, [fitAndMaybeSendResize, renderer, scheduleFit, scrollToBottomIfCurrent, sendInputAtCurrentSize, sendUserInput, settings.renderer])
 
   useEffect(() => {
     isOpenRef.current = isOpen
@@ -1501,17 +1534,26 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     try {
       if (nextText.startsWith(previousText)) {
-        term.write(nextText.slice(previousText.length))
+        const appendedText = nextText.slice(previousText.length)
+        if (previousText === '') {
+          term.write(appendedText, () => {
+            scrollToBottomIfCurrent(term)
+          })
+        } else {
+          term.write(appendedText)
+        }
       } else {
         term.reset()
-        term.write(nextText)
+        term.write(nextText, () => {
+          scrollToBottomIfCurrent(term)
+        })
       }
       scheduleInitialHistoryPreloadRef.current()
     } catch (error) {
       if (!terminalDisposedRef.current) throw error
     }
     lastWrittenTextRef.current = nextText
-  }, [terminalSession.terminalSnapshot, terminalSession.terminalText])
+  }, [scrollToBottomIfCurrent, terminalSession.terminalSnapshot, terminalSession.terminalText])
 
   return (
     <section

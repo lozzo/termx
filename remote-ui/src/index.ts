@@ -7,6 +7,12 @@ export {
 } from './platform/nativeBack'
 export type { TermxNativeBackHandler } from './platform/nativeBack'
 export {
+  TERMX_NATIVE_KEYBOARD_EVENT,
+  addNativeKeyboardListener,
+  dispatchNativeKeyboardEvent,
+} from './platform/nativeKeyboard'
+export type { TermxNativeKeyboardEventDetail, TermxNativeKeyboardHandler } from './platform/nativeKeyboard'
+export {
   assertRemoteModelShape,
   normalizeMachine,
   normalizeTerminal,

@@ -36,7 +36,9 @@ class ConnectionStore(
         private const val RESUME_VERIFY_TIMEOUT_MS = 2000L
         private const val RESUME_RECOVERY_WINDOW_MS = 5000L
         private const val ACTIVE_CONNECT_STALE_MS = 90_000L
-        private const val RESUME_CONNECT_STALE_MS = 15_000L
+        private const val RESUME_CONNECT_STALE_MS = 6_000L
+        private const val RESUME_RESTART_CONNECT_MS = 1_000L
+        private val RESUME_VERIFY_WATCHDOG_DELAYS_MS = longArrayOf(2_000L, 3_000L, 4_000L)
     }
 
     sealed class Phase {
@@ -69,7 +71,12 @@ class ConnectionStore(
     private var version = 0L
     private var connectStartedAt = 0L
     private var connectGeneration = 0L
+    private var connectStartedWhileInactive = false
     private var verifyGeneration = 0L
+    private var verifyStartedAt = 0L
+    private var verifyWatchdogDelayMs = 0L
+    private var verifyWatchdogAttempt = 0
+    private var appActive = true
 
     var transport: WebRTCTransport? = null
         private set
@@ -79,6 +86,7 @@ class ConnectionStore(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var connectJob: Job? = null
     private var reconnectRunnable: Runnable? = null
+    private var verifyWatchdogRunnable: Runnable? = null
     private var released = false
 
     var stateChangeListener: ((machineId: String, snapshot: JSONObject) -> Unit)? = null
@@ -105,7 +113,19 @@ class ConnectionStore(
             if (!isActiveConnectStale()) return
             Log.i(TAG, "restarting stale connect request [$machineId]")
             cancelConnect()
-        } else if (p is Phase.Connected || p is Phase.Verifying) {
+        } else if (p is Phase.Verifying) {
+            if (!isVerificationStale()) return
+            Log.i(TAG, "restarting stale verification after ${verifyAgeMs()}ms [$machineId]")
+            reconnectFromResume()
+            return
+        } else if (p is Phase.Connected) {
+            return
+        }
+        if (!appActive) {
+            resumeReconnect = true
+            if (phase !is Phase.Reconnecting) {
+                setPhase(Phase.Reconnecting(reconnectAttempt), "Restoring connection...")
+            }
             return
         }
         clearReconnectTimer()
@@ -117,6 +137,7 @@ class ConnectionStore(
         if (released) return
         cancelConnect()
         clearReconnectTimer()
+        clearVerificationWatchdog()
         verifyGeneration += 1
         transport?.let { fileTransferManager?.onTransportLost() }
         transport?.let { it.onDisconnectListener = null; it.disconnect() }
@@ -130,6 +151,7 @@ class ConnectionStore(
         if (released) return
         cancelConnect()
         clearReconnectTimer()
+        clearVerificationWatchdog()
         verifyGeneration += 1
         transport?.let { fileTransferManager?.onTransportLost() }
         transport?.let { it.onDisconnectListener = null; it.disconnect() }
@@ -141,6 +163,7 @@ class ConnectionStore(
         released = true
         cancelConnect()
         clearReconnectTimer()
+        clearVerificationWatchdog()
         verifyGeneration += 1
         transport?.let { fileTransferManager?.onTransportLost() }
         transport?.let { it.onDisconnectListener = null; it.disconnect() }
@@ -187,7 +210,9 @@ class ConnectionStore(
         connectGeneration += 1
         val generation = connectGeneration
         connectStartedAt = System.currentTimeMillis()
+        connectStartedWhileInactive = !appActive
         setPhase(Phase.Probing, "Probing...")
+        if (resumeReconnect) scheduleResumeConnectWatchdog(generation)
 
         connectJob = scope.launch {
             var transport: WebRTCTransport? = null
@@ -200,7 +225,9 @@ class ConnectionStore(
                     bridge = bridge,
                     preferredPath = preferredPath,
                     forceRelay = forceRelay,
-                    onProgress = { msg -> setStatus(msg) },
+                    onProgress = { msg ->
+                        if (isCurrentConnect(generation)) setStatus(msg)
+                    },
                 )
                 if (!isCurrentConnect(generation)) {
                     if (result is RaceConnector.Result.Success) result.transport.disconnect()
@@ -217,6 +244,7 @@ class ConnectionStore(
                         this@ConnectionStore.transport = transport
                         reconnectAttempt = 0
                         resumeReconnect = false
+                        resetVerificationWatchdogBackoff()
                         clearConnectStartedAt(generation)
                         val path = result.path
                         setPhase(Phase.Connected(path, result.relayInUse), "Connected via $path")
@@ -251,6 +279,7 @@ class ConnectionStore(
         fileTransferManager?.onTransportLost()
         transport = null
         verifyGeneration += 1
+        if (!appActive || phase is Phase.Verifying) resumeReconnect = true
         scheduleReconnect()
     }
 
@@ -259,6 +288,26 @@ class ConnectionStore(
         previous: NetworkStateManager.NetworkState,
     ) {
         if (released) return
+        val wasActive = appActive
+        appActive = current.appActive
+
+        if (wasActive && !current.appActive) {
+            handleAppBackgrounded()
+        }
+
+        if (!current.appActive) {
+            if (previous.phoneOnline && !current.phoneOnline) {
+                val p = phase
+                if (p is Phase.Connected || p is Phase.Verifying || p is Phase.Connecting ||
+                    p is Phase.Probing || p is Phase.Reconnecting) {
+                    cancelConnect()
+                    clearReconnectTimer()
+                    verifyGeneration += 1
+                    setPhase(Phase.WaitingNetwork, "Waiting for network...")
+                }
+            }
+            return
+        }
 
         if (previous.phoneOnline && !current.phoneOnline) {
             val p = phase
@@ -300,6 +349,7 @@ class ConnectionStore(
 
     private fun handleAppResume(backgroundDurationMs: Long = 0L, reason: String = "App resumed") {
         if (released) return
+        appActive = true
         val p = phase
         clearReconnectTimer()
         if (p is Phase.Connecting || p is Phase.Probing) {
@@ -308,9 +358,13 @@ class ConnectionStore(
             } else {
                 RESUME_CONNECT_STALE_MS
             }
-            if (activeConnectAgeMs() >= staleThreshold) {
-                Log.i(TAG, "$reason, restarting stale connection attempt after ${activeConnectAgeMs()}ms [$machineId]")
-                retry()
+            val ageMs = activeConnectAgeMs()
+            if (connectStartedWhileInactive ||
+                resumeReconnect ||
+                backgroundDurationMs >= RESUME_RESTART_CONNECT_MS ||
+                ageMs >= staleThreshold) {
+                Log.i(TAG, "$reason, restarting resume connection attempt after ${ageMs}ms [$machineId]")
+                reconnectFromResume()
             }
             return
         }
@@ -319,6 +373,7 @@ class ConnectionStore(
             val resumed = currentTransport.handleAppResume()
             val generation = nextVerifyGeneration()
             setPhase(Phase.Verifying(p.path, p.relayInUse), "$reason, verifying connection...")
+            scheduleVerificationWatchdog(currentTransport, generation)
             if (resumed && !currentTransport.isStaleAfterResume(backgroundDurationMs)) {
                 verifyConnection(currentTransport, p.path, p.relayInUse, generation, immediateReconnect = true)
             } else {
@@ -357,6 +412,7 @@ class ConnectionStore(
         val resumed = currentTransport.handleAppResume()
         val generation = nextVerifyGeneration()
         setPhase(Phase.Verifying(path, relayInUse), "$status, verifying connection...")
+        scheduleVerificationWatchdog(currentTransport, generation)
         if (resumed) {
             verifyConnection(currentTransport, path, relayInUse, generation, immediateReconnect = true)
         } else {
@@ -371,11 +427,10 @@ class ConnectionStore(
         generation: Long,
         timeoutMs: Long,
     ) {
-        val transportGeneration = currentTransport.generation()
         val deadline = System.currentTimeMillis() + timeoutMs
         val check = object : Runnable {
             override fun run() {
-                if (!isCurrentVerification(currentTransport, generation, transportGeneration)) return
+                if (!isCurrentVerificationOwner(currentTransport, generation)) return
                 if (currentTransport.isPeerConnected()) {
                     verifyConnection(currentTransport, path, relayInUse, generation, immediateReconnect = true)
                     return
@@ -405,14 +460,16 @@ class ConnectionStore(
                 }
                 workerHandler.post {
                     if (!isCurrentVerification(currentTransport, generation, transportGeneration)) return@post
+                    clearVerificationWatchdog()
+                    resetVerificationWatchdogBackoff()
                     reconnectAttempt = 0
                     resumeReconnect = false
                     setPhase(Phase.Connected(path, relayInUse), "Connected via $path")
                 }
             } catch (e: Exception) {
                 workerHandler.post {
-                    if (!isCurrentVerification(currentTransport, generation, transportGeneration)) return@post
-                    Log.i(TAG, "resume verify failed [$machineId]")
+                    if (!isCurrentVerificationOwner(currentTransport, generation)) return@post
+                    Log.i(TAG, "resume verify failed: ${e.message} [$machineId]")
                     reconnectAfterVerificationFailure(currentTransport, immediateReconnect)
                 }
             }
@@ -421,6 +478,7 @@ class ConnectionStore(
 
     private fun reconnectAfterVerificationFailure(currentTransport: WebRTCTransport, immediate: Boolean = false) {
         if (released || transport !== currentTransport) return
+        clearVerificationWatchdog()
         currentTransport.onDisconnectListener = null
         currentTransport.disconnect()
         transport = null
@@ -432,6 +490,14 @@ class ConnectionStore(
     private fun scheduleReconnect(immediate: Boolean = false) {
         if (released) return
         clearReconnectTimer()
+        if (!appActive) {
+            resumeReconnect = true
+            if (phase !is Phase.Reconnecting) {
+                setPhase(Phase.Reconnecting(reconnectAttempt), "Restoring connection...")
+            }
+            Log.i(TAG, "reconnect paused while app inactive [$machineId]")
+            return
+        }
         reconnectAttempt++
         if (reconnectAttempt > MAX_RECONNECT_ATTEMPTS) {
             resumeReconnect = false
@@ -463,11 +529,23 @@ class ConnectionStore(
         reconnectRunnable = null
     }
 
+    private fun clearVerificationWatchdog() {
+        verifyWatchdogRunnable?.let { workerHandler.removeCallbacks(it) }
+        verifyWatchdogRunnable = null
+        verifyStartedAt = 0L
+        verifyWatchdogDelayMs = 0L
+    }
+
+    private fun resetVerificationWatchdogBackoff() {
+        verifyWatchdogAttempt = 0
+    }
+
     private fun cancelConnect() {
         connectJob?.cancel()
         connectJob = null
         connectGeneration += 1
         connectStartedAt = 0L
+        connectStartedWhileInactive = false
     }
 
     private fun attachTransportResetHandler(currentTransport: WebRTCTransport) {
@@ -478,8 +556,10 @@ class ConnectionStore(
 
     private fun reconnectFromResume() {
         if (released) return
+        appActive = true
         cancelConnect()
         clearReconnectTimer()
+        clearVerificationWatchdog()
         transport?.let { fileTransferManager?.onTransportLost() }
         transport?.let { it.onDisconnectListener = null; it.disconnect() }
         transport = null
@@ -498,11 +578,18 @@ class ConnectionStore(
         generation: Long,
         transportGeneration: Long,
     ): Boolean {
+        return isCurrentVerificationOwner(currentTransport, generation) &&
+            currentTransport.generation() == transportGeneration
+    }
+
+    private fun isCurrentVerificationOwner(
+        currentTransport: WebRTCTransport,
+        generation: Long,
+    ): Boolean {
         return !released &&
             transport === currentTransport &&
             phase is Phase.Verifying &&
-            verifyGeneration == generation &&
-            currentTransport.generation() == transportGeneration
+            verifyGeneration == generation
     }
 
     private fun activeConnectAgeMs(now: Long = System.currentTimeMillis()): Long {
@@ -520,10 +607,78 @@ class ConnectionStore(
     }
 
     private fun clearConnectStartedAt(generation: Long) {
-        if (isCurrentConnect(generation)) connectStartedAt = 0L
+        if (isCurrentConnect(generation)) {
+            connectStartedAt = 0L
+            connectStartedWhileInactive = false
+        }
+    }
+
+    private fun verifyAgeMs(now: Long = System.currentTimeMillis()): Long {
+        return if (verifyStartedAt > 0L) (now - verifyStartedAt).coerceAtLeast(0L) else 0L
+    }
+
+    private fun isVerificationStale(now: Long = System.currentTimeMillis()): Boolean {
+        val delayMs = if (verifyWatchdogDelayMs > 0L) {
+            verifyWatchdogDelayMs
+        } else {
+            RESUME_VERIFY_WATCHDOG_DELAYS_MS.first()
+        }
+        return phase is Phase.Verifying &&
+            verifyStartedAt > 0L &&
+            now - verifyStartedAt >= delayMs
+    }
+
+    private fun handleAppBackgrounded() {
+        clearReconnectTimer()
+        val p = phase
+        if (p is Phase.Connecting || p is Phase.Probing) {
+            Log.i(TAG, "app backgrounded, cancelling active connection attempt after ${activeConnectAgeMs()}ms [$machineId]")
+            cancelConnect()
+            reconnectAttempt = 0
+            resumeReconnect = true
+            setPhase(Phase.Reconnecting(reconnectAttempt), "Restoring connection...")
+        } else if (p is Phase.Verifying && transport != null) {
+            Log.i(TAG, "app backgrounded during verification, pausing reconnect [$machineId]")
+            reconnectAfterVerificationFailure(transport ?: return, immediate = true)
+        } else if (p is Phase.Reconnecting) {
+            resumeReconnect = true
+            setPhase(Phase.Reconnecting(reconnectAttempt), "Restoring connection...")
+        }
+    }
+
+    private fun scheduleResumeConnectWatchdog(generation: Long) {
+        workerHandler.postDelayed({
+            if (!isCurrentConnect(generation) || released) return@postDelayed
+            val p = phase
+            if (p !is Phase.Connecting && p !is Phase.Probing) return@postDelayed
+            Log.i(TAG, "resume connection attempt stale after ${activeConnectAgeMs()}ms, restarting [$machineId]")
+            cancelConnect()
+            reconnectAttempt = 0
+            resumeReconnect = true
+            scheduleReconnect(immediate = true)
+        }, RESUME_CONNECT_STALE_MS)
+    }
+
+    private fun scheduleVerificationWatchdog(currentTransport: WebRTCTransport, generation: Long) {
+        clearVerificationWatchdog()
+        val attempt = verifyWatchdogAttempt + 1
+        val delayIdx = verifyWatchdogAttempt.coerceAtMost(RESUME_VERIFY_WATCHDOG_DELAYS_MS.size - 1)
+        val delayMs = RESUME_VERIFY_WATCHDOG_DELAYS_MS[delayIdx]
+        verifyWatchdogAttempt += 1
+        verifyWatchdogDelayMs = delayMs
+        verifyStartedAt = System.currentTimeMillis()
+        val r = Runnable {
+            verifyWatchdogRunnable = null
+            if (!isCurrentVerificationOwner(currentTransport, generation)) return@Runnable
+            Log.i(TAG, "resume verification watchdog expired after ${verifyAgeMs()}ms (limit ${delayMs}ms, attempt $attempt) [$machineId]")
+            reconnectAfterVerificationFailure(currentTransport, immediate = true)
+        }
+        verifyWatchdogRunnable = r
+        workerHandler.postDelayed(r, delayMs)
     }
 
     private fun setPhase(newPhase: Phase, text: String) {
+        if (newPhase !is Phase.Verifying) clearVerificationWatchdog()
         phase = newPhase
         statusText = text
         version += 1

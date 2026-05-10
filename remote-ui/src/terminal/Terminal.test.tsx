@@ -2,6 +2,7 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Terminal, type TerminalProps } from './Terminal'
 import { DEFAULT_TERMINAL_SETTINGS } from './terminalSettings'
+import { dispatchNativeKeyboardEvent } from '../platform/nativeKeyboard'
 import { createMockRtcTerminalSession } from '../test/mockRtcTerminalSession'
 import type { ConnectionInfo, RtcBinaryChannel, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSubscription } from '../core/transport'
 
@@ -39,6 +40,11 @@ const xtermMocks = vi.hoisted(() => {
       const active = this.buffer.active
       const maxScroll = active.length - this.rows
       active.viewportY = Math.max(0, Math.min(maxScroll, line))
+      for (const handler of this.renderHandlers) handler()
+    })
+    readonly scrollToBottom = vi.fn(() => {
+      const active = this.buffer.active
+      active.viewportY = Math.max(0, active.length - this.rows)
       for (const handler of this.renderHandlers) handler()
     })
     readonly select = vi.fn()
@@ -382,6 +388,7 @@ describe('Terminal', () => {
     expect(replay).toMatch(/o[\s\S]*l[\s\S]*d/)
     expect(replay).toMatch(/c[\s\S]*u[\s\S]*r[\s\S]*r[\s\S]*e[\s\S]*n[\s\S]*t/)
     expect(xtermMocks.FakeXTerm.instances[0]?.writes).not.toContain('old\ncurrent')
+    expect(xtermMocks.FakeXTerm.instances[0]?.scrollToBottom).toHaveBeenCalled()
   })
 
   it('forwards xterm input through the terminal protocol interface', async () => {
@@ -734,6 +741,35 @@ describe('Terminal', () => {
     expect(terminalOutput.querySelector('.term-scrollbar-track')?.className).toContain('visible')
   })
 
+  it('clears transient touch-scroll transforms when native keyboard state changes', async () => {
+    const session = createMockRtcTerminalSession()
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const terminalOutput = screen.getByLabelText('Terminal output')
+    const screenElement = terminalOutput.querySelector('.xterm-screen') as HTMLElement
+    Object.defineProperty(terminalOutput, 'clientHeight', { configurable: true, value: 400 })
+
+    act(() => {
+      screenElement.dispatchEvent(touchEvent('touchstart', screenElement, 220))
+      screenElement.dispatchEvent(touchEvent('touchmove', screenElement, 167))
+    })
+
+    expect(screenElement.style.transform).not.toBe('')
+
+    act(() => dispatchNativeKeyboardEvent({ visible: false }))
+
+    await waitFor(() => expect(screenElement.style.transform).toBe(''))
+    expect(screenElement.style.willChange).toBe('')
+  })
+
   it('preloads older normal-buffer scrollback after the terminal opens', async () => {
     const session = createMockRtcTerminalSession()
     const firstPageRows = Array.from({ length: 250 }, (_value, index) => `older-${index}`)
@@ -771,6 +807,47 @@ describe('Terminal', () => {
     expect(term.writes.join('')).toMatch(/o[\s\S]*l[\s\S]*d[\s\S]*e[\s\S]*r[\s\S]*-[\s\S]*1[\s\S]*0[\s\S]*0/)
     expect(term.writes.join('')).toMatch(/c[\s\S]*u[\s\S]*r[\s\S]*r[\s\S]*e[\s\S]*n[\s\S]*t/)
     expect(term.scrollToLine).not.toHaveBeenCalled()
+    expect(term.scrollToBottom).toHaveBeenCalled()
+  })
+
+  it('preserves the user viewport when older scrollback is loaded from an explicit upward scroll', async () => {
+    const session = createMockRtcTerminalSession()
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'current',
+      cols: 80,
+      rows: 24,
+      pages: [
+        { offset: 0, rows: Array.from({ length: 250 }, (_value, index) => `manual-${index}`) },
+      ],
+    })
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const term = xtermMocks.FakeXTerm.instances[0]!
+    await waitFor(() => expect(term.scrollToBottom).toHaveBeenCalled())
+
+    term.scrollToBottom.mockClear()
+    const restoreViewportY = 12
+    term.buffer.active.viewportY = restoreViewportY
+    const terminalOutput = screen.getByLabelText('Terminal output')
+    const screenElement = terminalOutput.querySelector('.xterm-screen') as HTMLElement
+    act(() => {
+      screenElement.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }))
+    })
+
+    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
+      offset: 0,
+      limit: 250,
+    }))
+    await waitFor(() => expect(term.scrollToLine).toHaveBeenCalledWith(restoreViewportY + 250))
+    expect(term.scrollToBottom).not.toHaveBeenCalled()
   })
 
   it('prefetches more scrollback before the user reaches the top', async () => {
