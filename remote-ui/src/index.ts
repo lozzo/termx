@@ -1,39 +1,39 @@
-export * from './connectionMessageReducer'
-export * from './eventQueue'
+export * from './connection/connectionMessageReducer'
+export * from './connection/eventQueue'
 export {
   TERMX_NATIVE_BACK_EVENT,
   addNativeBackHandler,
   dispatchNativeBack,
-} from './nativeBack'
-export type { TermxNativeBackHandler } from './nativeBack'
+} from './platform/nativeBack'
+export type { TermxNativeBackHandler } from './platform/nativeBack'
 export {
   assertRemoteModelShape,
   normalizeMachine,
   normalizeTerminal,
-} from './model'
+} from './core/model'
 export type {
   LocalRTCInfo,
   Machine,
   MachineState,
   Terminal as RemoteTerminal,
   TerminalState,
-} from './model'
-export { Terminal } from './Terminal'
-export type { TerminalHandle, TerminalProps } from './Terminal'
-export { TerminalList } from './TerminalList'
-export type { OpenTerminalIntent, TerminalListProps } from './TerminalList'
-export { MobileTerminalKeybar } from './MobileTerminalKeybar'
-export type { MobileTerminalKeybarProps } from './MobileTerminalKeybar'
+} from './core/model'
+export { Terminal } from './terminal/Terminal'
+export type { TerminalHandle, TerminalProps } from './terminal/Terminal'
+export { TerminalList } from './terminal/TerminalList'
+export type { OpenTerminalIntent, TerminalListProps } from './terminal/TerminalList'
+export { MobileTerminalKeybar } from './terminal/MobileTerminalKeybar'
+export type { MobileTerminalKeybarProps } from './terminal/MobileTerminalKeybar'
 export {
   applyTerminalModifiers,
   nextModifierState,
-} from './mobileTerminalInput'
+} from './terminal/mobileTerminalInput'
 export type {
   ModifierState,
   TerminalModifierResult,
   TerminalModifierState,
-} from './mobileTerminalInput'
-export { createFileApi } from './fileApi'
+} from './terminal/mobileTerminalInput'
+export { createFileApi } from './files/fileApi'
 export type {
   DirListResponse,
   DownloadInitResponse,
@@ -43,10 +43,10 @@ export type {
   FileTransferContext,
   TransferInfo,
   TransferStatus,
-} from './fileApi'
-export { FileTransferPanel } from './FileTransferPanel'
-export { ConnectionStatusBanner } from './ConnectionStatusBanner'
-export type { ConnectionStatusBannerProps } from './ConnectionStatusBanner'
+} from './files/fileApi'
+export { FileTransferPanel } from './files/FileTransferPanel'
+export { ConnectionStatusBanner } from './connection/ConnectionStatusBanner'
+export type { ConnectionStatusBannerProps } from './connection/ConnectionStatusBanner'
 export {
   connectionPathLabel,
   connectionPhaseLabel,
@@ -55,28 +55,28 @@ export {
   connectionStatusIsSettled,
   createConnectionStatePublisher,
   inferConnectionPhase,
-} from './connectionState'
-export type { ConnectionStatePublisher } from './connectionState'
-export { FileManager } from './FileManager'
-export type { FileManagerProps } from './FileManager'
-export { LocalRemoteApp } from './LocalRemoteApp'
-export type { LocalRemoteAppProps, LocalRemoteSessionConnector, LocalRemoteSessionInput } from './LocalRemoteApp'
-export { MachineList } from './MachineList'
-export type { MachineListProps } from './MachineList'
-export { RemoteAppShell } from './RemoteAppShell'
-export type { RemoteAppShellProps } from './RemoteAppShell'
-export { WebControlRemoteApp } from './WebControlRemoteApp'
-export type { WebControlRemoteAppProps } from './WebControlRemoteApp'
-export { mountRemoteApp } from './remoteAppMount'
-export type { RemoteAppEntryOptions } from './remoteAppMount'
+} from './connection/connectionState'
+export type { ConnectionStatePublisher } from './connection/connectionState'
+export { FileManager } from './files/FileManager'
+export type { FileManagerProps } from './files/FileManager'
+export { MachineWorkspace } from './app/MachineWorkspace'
+export type { MachineWorkspaceProps, MachineWorkspaceConnector, MachineWorkspaceSessionInput, MachineWorkspaceInventoryApi } from './app/MachineWorkspace'
+export { MachineList } from './machines/MachineList'
+export type { MachineListProps } from './machines/MachineList'
+export { MachineBrowserShell } from './app/MachineBrowserShell'
+export type { MachineBrowserShellProps } from './app/MachineBrowserShell'
+export { RemoteControlApp } from './app/RemoteControlApp'
+export type { RemoteControlAppProps } from './app/RemoteControlApp'
+export { mountRemoteControlApp } from './entries/mountRemoteControlApp'
+export type { RemoteControlEntryOptions } from './entries/mountRemoteControlApp'
 export type {
   AppMachineRecord,
   AppMachineSource,
   AppMachineState,
   ConnectionFlowSnapshot,
   ConnectionFlowStage,
-} from './appMachine'
-export { parsePairingPayload } from './pairingPayload'
+} from './state/appMachine'
+export { parsePairingPayload } from './state/pairingPayload'
 export type {
   PairingPayload,
   PairingPayloadAddresses,
@@ -84,8 +84,8 @@ export type {
   PairingPayloadEndpoints,
   PairingPayloadMachine,
   PairingPayloadPairing,
-} from './pairingPayload'
-export { createMachineStore } from './machineStore'
+} from './state/pairingPayload'
+export { createMachineStore } from './state/machineStore'
 export type {
   MachineStore,
   MachineStoreOptions,
@@ -94,8 +94,8 @@ export type {
   StoredMachineEndpoints,
   StoredMachinePairing,
   StoredMachineRecord,
-} from './machineStore'
-export { createConnectionOrchestrator } from './connectionOrchestrator'
+} from './state/machineStore'
+export { createConnectionOrchestrator } from './connection/connectionOrchestrator'
 export type {
   ConnectionAttemptError,
   ConnectionAttemptSnapshot,
@@ -104,28 +104,28 @@ export type {
   ConnectionOrchestratorInput,
   ConnectionOrchestratorOptions,
   ConnectionOrchestratorResult,
-} from './connectionOrchestrator'
-export { LocalPairPanel } from './LocalPairPanel'
-export type { LocalPairPanelProps } from './LocalPairPanel'
-export { createLocalAgentApi } from './localAgentApi'
-export type { LocalAgentApiOptions } from './localAgentApi'
+} from './connection/connectionOrchestrator'
+export { PairDevicePanel } from './pairing/PairDevicePanel'
+export type { PairDevicePanelProps } from './pairing/PairDevicePanel'
+export { createLocalAgentApi } from './api/localAgentApi'
+export type { LocalAgentApiOptions } from './api/localAgentApi'
 export {
   createBrowserRemoteNetworkRuntime,
   createFutureNativeRemoteNetworkRuntime,
-} from './browserNetworkRuntime'
-export type { BrowserRemoteNetworkRuntimeOptions } from './browserNetworkRuntime'
-export { MachineConnectionStore } from './machineConnectionStore'
-export type { MachineConnectionSnapshot, MachineConnectionStoreOptions } from './machineConnectionStore'
-export { RemoteNetworkStateManager } from './remoteNetworkState'
-export type { RemoteNetworkState, RemoteResumeType } from './remoteNetworkState'
+} from './connection/browserNetworkRuntime'
+export type { BrowserRemoteNetworkRuntimeOptions } from './connection/browserNetworkRuntime'
+export { MachineConnectionStore } from './connection/machineConnectionStore'
+export type { MachineConnectionSnapshot, MachineConnectionStoreOptions } from './connection/machineConnectionStore'
+export { RemoteNetworkStateManager } from './connection/remoteNetworkState'
+export type { RemoteNetworkState, RemoteResumeType } from './connection/remoteNetworkState'
 export {
   createMachineSessionStore,
-} from './localAppIdentity'
+} from './state/localAppIdentity'
 export type {
   MachineSessionStore,
-} from './localAppIdentity'
-export { createTerminalProtocolClient } from './terminalProtocolClient'
-export type { TerminalProtocolClientOptions } from './terminalProtocolClient'
+} from './state/localAppIdentity'
+export { createTerminalProtocolClient } from './terminal/terminalProtocolClient'
+export type { TerminalProtocolClientOptions } from './terminal/terminalProtocolClient'
 export {
   TERMX_FRAME_TYPES,
   TERMX_MAX_FRAME_SIZE,
@@ -135,16 +135,16 @@ export {
   encodeTermxFrame,
   rowsToText,
   snapshotToReplay,
-} from './termxProtocol'
-export type { TermxFrame, TermxFrameType } from './termxProtocol'
-export { TerminalClient } from './terminalClient'
+} from './terminal/termxProtocol'
+export type { TermxFrame, TermxFrameType } from './terminal/termxProtocol'
+export { TerminalClient } from './terminal/terminalClient'
 export type {
   TerminalClientCallbacks,
   TerminalInfoPayload,
   TerminalProtocolEvent,
   TerminalProtocolSession,
   TerminalSnapshotPayload,
-} from './terminalClient'
+} from './terminal/terminalClient'
 export {
   DEFAULT_TERMINAL_SETTINGS,
   TERMINAL_FONT_OPTIONS,
@@ -158,7 +158,7 @@ export {
   resolveTerminalThemeUi,
   terminalThemeCssVariables,
   writeTerminalSettings,
-} from './terminalSettings'
+} from './terminal/terminalSettings'
 export type {
   TerminalFontOption,
   TerminalKeyboardMode,
@@ -166,17 +166,21 @@ export type {
   TerminalThemeId,
   TerminalThemeOption,
   TerminalThemeUi,
-} from './terminalSettings'
-export { haptic } from './haptics'
+} from './terminal/terminalSettings'
+export {
+  haptic,
+  setHapticImpactHandler,
+} from './platform/haptics'
+export type { HapticImpactHandler, HapticPattern } from './platform/haptics'
 export {
   createTerminalInventorySnapshot,
   normalizeTerminalInventory,
   selectTerminal,
-} from './terminalInventory'
-export type { TerminalInventoryInput, TerminalInventorySnapshot } from './terminalInventory'
-export * from './transport'
-export { createManagedHubApi } from './managedHubApi'
-export { createManagedHubRtcConnector } from './managedHubRtcConnector'
+} from './terminal/terminalInventory'
+export type { TerminalInventoryInput, TerminalInventorySnapshot } from './terminal/terminalInventory'
+export * from './core/transport'
+export { createManagedHubApi } from './api/managedHubApi'
+export { createManagedHubRtcConnector } from './webrtc/managedHubRtcConnector'
 export type {
   CreateManagedHubSessionInput,
   ManagedIceServer,
@@ -190,12 +194,12 @@ export type {
   ManagedHubSessionIceInput,
   ManagedRelayPolicy,
   PollManagedHubSessionAnswerInput,
-} from './managedHubApi'
+} from './api/managedHubApi'
 export type {
   ManagedHubRtcConnectInput,
   ManagedHubRtcConnectorOptions,
-} from './managedHubRtcConnector'
-export { createWebControlApi } from './webControlApi'
+} from './webrtc/managedHubRtcConnector'
+export { createWebControlApi } from './api/webControlApi'
 export type {
   WebControlApi,
   WebControlApiOptions,
@@ -204,7 +208,7 @@ export type {
   WebControlLoginInput,
   WebControlMachine,
   WebControlUser,
-} from './webControlApi'
-export { useFileManager } from './useFileManager'
-export type { FileManagerVisibleError, UseFileManagerOptions, UseFileManagerResult } from './useFileManager'
-export * from './useTerminalSession'
+} from './api/webControlApi'
+export { useFileManager } from './files/useFileManager'
+export type { FileManagerVisibleError, UseFileManagerOptions, UseFileManagerResult } from './files/useFileManager'
+export * from './terminal/useTerminalSession'

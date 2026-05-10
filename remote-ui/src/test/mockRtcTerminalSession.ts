@@ -1,14 +1,14 @@
-import type { ConnectionInfo, ConnectionPath, RtcBinaryChannel, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSubscription } from '../transport'
+import type { ConnectionInfo, ConnectionPath, RtcBinaryChannel, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSubscription } from '../core/transport'
 import {
   TERMX_FRAME_TYPES,
   decodeTermxFrame,
   encodeTermxFrame,
-} from '../termxProtocol'
+} from '../terminal/termxProtocol'
 import type {
   TerminalInfoPayload,
   TerminalResizeControl,
   TerminalSnapshotPayload,
-} from '../terminalClient'
+} from '../terminal/terminalClient'
 
 export function createMockRtcTerminalSession(
   machineId = 'machine-local',

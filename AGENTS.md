@@ -13,3 +13,9 @@
 - After changing TermX runtime/agent/CLI code, SSH to `al`, update the checkout/artifacts there, restart or relaunch the relevant TermX process, then verify the runtime path.
 - After changing `remote-ui`, validate locally with `cd remote-ui && npm run typecheck && npm run test`; use the local dev server for browser verification.
 - Before restarting remote services, inspect the existing deploy path and service names on the target host instead of guessing.
+
+## Development Compatibility Policy
+
+- This repository is still in active development. Do not preserve compatibility aliases, deprecated exports, wrapper files, or old module names when refactoring.
+- Prefer direct breaking changes with all call sites updated in the same change.
+- If a name or boundary is wrong, rename it and fix the imports instead of adding a compatibility layer.

@@ -670,6 +670,10 @@ export class NativeRtcSession implements RtcSession {
     return this.makeBinaryChannel(label)
   }
 
+  closeTerminalDataChannel(terminalId: string): void {
+    this.bridge.closeChannel(`terminal:${this.machineId}:${terminalId}`)
+  }
+
   async openApi(): Promise<RtcJsonRpcChannel> {
     if (this.apiChannel?.isOpen()) return this.apiChannel
     if (this.apiChannelPromise) return this.apiChannelPromise

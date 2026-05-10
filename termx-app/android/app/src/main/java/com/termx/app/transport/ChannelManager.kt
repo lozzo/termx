@@ -75,14 +75,10 @@ class ChannelManager(
             Log.w(TAG, "getOrCreateTerminal[$terminalId]: pc=${pc != null} connected=$connected [$machineId]")
             return null
         }
-        val existing = terminalChannels[terminalId]
-        if (existing?.state() == DataChannel.State.OPEN) {
-            Log.i(TAG, "reuse open terminal[$terminalId] [$machineId]")
-            return existing
-        }
-        existing?.let {
+        terminalChannels[terminalId]?.let {
             Log.i(TAG, "replace terminal[$terminalId] state=${it.state()} [$machineId]")
-            terminalChannels.remove(terminalId)
+            terminalChannels.remove(terminalId, it)
+            try { it.close() } catch (_: Exception) {}
         }
         val dc = pc.createDataChannel("terminal:$terminalId", DataChannel.Init().apply { ordered = true }) ?: return null
         terminalChannels[terminalId] = dc
@@ -289,10 +285,11 @@ class ChannelManager(
                         if (chId >= 0) bridge?.sendChanOpened(chId, label)
                     }
                     DataChannel.State.CLOSED -> {
-                        terminalChannels.remove(terminalId)
-                        val label = terminalLabel(terminalId)
-                        val chId = bridge?.getChannelId(label) ?: -1
-                        if (chId >= 0) bridge?.sendCloseChannel(chId)
+                        if (terminalChannels.remove(terminalId, dc)) {
+                            val label = terminalLabel(terminalId)
+                            val chId = bridge?.getChannelId(label) ?: -1
+                            if (chId >= 0) bridge?.sendCloseChannel(chId)
+                        }
                     }
                     else -> {}
                 }

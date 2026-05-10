@@ -12,6 +12,7 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(NativeConnectionPlugin.class);
         registerPlugin(NativeFilePickerPlugin.class);
+        registerPlugin(NativeHapticPlugin.class);
         super.onCreate(savedInstanceState);
 
         boolean isDebug = (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;

@@ -6,6 +6,7 @@
 - `remote-ui` 负责：连接建立、运行时 WebRTC session、terminal/file/events 消费、UI 状态编排。
 - `remote-ui` 不反向定义或污染 `termx-core` / `termx-remote` 的产品边界。
 - 当前阶段只实现 browser adapter；native adapter 只保留 future boundary，不落实现。
+- 当前仍是开发阶段。重构时不要保留兼容别名、旧导出、wrapper 文件或旧模块名；直接改成新的命名和边界，并同步更新所有调用方。
 
 ## Current Build Direction
 
@@ -15,11 +16,11 @@
 
 **目标**：`VITE_CONTROL_URL=http://my-ctrl.example.com npm run dev` 启动后，打开 `/` 时 Control URL 已预填，无需手动改 Settings。
 
-**修改文件**：`remote-ui/src/remoteAppMount.tsx`
+**修改文件**：`remote-ui/src/entries/mountRemoteControlApp.tsx`
 
 当前代码（无 defaultControlUrl）：
 ```tsx
-<WebControlRemoteApp
+<RemoteControlApp
   managedRtcSessionFactory={...}
   networkRuntime={networkRuntime}
   pairCrypto={pairCrypto}
@@ -28,7 +29,7 @@
 
 修改为：
 ```tsx
-<WebControlRemoteApp
+<RemoteControlApp
   defaultControlUrl={import.meta.env.VITE_CONTROL_URL || undefined}
   managedRtcSessionFactory={...}
   networkRuntime={networkRuntime}
@@ -50,7 +51,7 @@
 cd remote-ui && npm run typecheck && npm run test
 ```
 
-**不需要改**：`WebControlRemoteApp.tsx` 中的 `defaultWebControlUrl` 常量（作为最终 fallback 保留，不删除）。
+**不需要改**：`RemoteControlApp.tsx` 中的 `defaultWebControlUrl` 常量（作为最终 fallback 保留，不删除）。
 
 ### npm run dev 使用说明（给运行者）
 

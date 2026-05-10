@@ -3,7 +3,7 @@ import { App as CapApp } from '@capacitor/app'
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { Html5Qrcode } from 'html5-qrcode'
 import {
-  WebControlRemoteApp,
+  RemoteControlApp,
   createMachineSessionStore,
   createMachineStore,
   dispatchNativeBack,
@@ -11,7 +11,7 @@ import {
 } from '@termx/remote-ui'
 import type {
   FileTransferContext,
-  LocalRemoteAppProps,
+  MachineWorkspaceProps,
   LocalStatus,
   Machine,
   RemoteNetworkRuntime,
@@ -26,7 +26,7 @@ import type {
   StoredMachineRecord,
   TerminalInventoryEvents,
   WebControlMachine,
-  WebControlRemoteAppProps,
+  RemoteControlAppProps,
 } from '@termx/remote-ui'
 import { NativeConnection, type NativeConnectOpts, type NativeConnectionSnapshot, type NativeStateChangeEvent } from './plugins/nativeConnection'
 import { NativeRtcConnector, recoverNativeBridgeAfterResume, type NativeRtcSession } from './NativeConnectionProxy'
@@ -37,7 +37,7 @@ const defaultControlUrl = import.meta.env.VITE_CONTROL_URL || 'http://114.66.58.
 const qrScannerRootId = 'termx-camera-qr-scanner'
 const qrScannerReaderId = 'termx-camera-qr-reader'
 
-type MachineRuntimeFactory = NonNullable<WebControlRemoteAppProps['machineRuntimeFactory']>
+type MachineRuntimeFactory = NonNullable<RemoteControlAppProps['machineRuntimeFactory']>
 type MachineRuntime = ReturnType<MachineRuntimeFactory>
 type NativeSessionManager = ReturnType<typeof createNativeSessionManager>
 type NativeSessionLease = RtcSession & {
@@ -68,7 +68,7 @@ export function TermxApp() {
 
   return (
     <section className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-[var(--termx-bg,#0c0c0c)] text-[var(--termx-text,#f4f4f5)] antialiased">
-      <WebControlRemoteApp
+      <RemoteControlApp
         defaultControlUrl={defaultControlUrl}
         globalFileTransfer={globalFileTransfer}
         machineRuntimeFactory={machineRuntimeFactory}
@@ -132,9 +132,11 @@ function createNativeNetworkRuntime(): RemoteNetworkRuntime {
   }
 }
 
-async function scanPairingCode(): Promise<string | null> {
+async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?: () => void }): Promise<string | null> {
   const existing = document.getElementById(qrScannerRootId)
   existing?.remove()
+  const scannerSize = scannerSquareSize()
+  const qrboxSize = Math.min(220, Math.max(180, scannerSize - 32))
 
   const root = document.createElement('div')
   root.id = qrScannerRootId
@@ -143,9 +145,36 @@ async function scanPairingCode(): Promise<string | null> {
   root.style.zIndex = '2147483647'
   root.style.display = 'flex'
   root.style.flexDirection = 'column'
+  root.style.alignItems = 'stretch'
   root.style.background = '#09090b'
   root.style.color = '#ffffff'
   root.style.padding = 'calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 12px)'
+
+  const scannerStyle = document.createElement('style')
+  scannerStyle.textContent = `
+    #${qrScannerReaderId} {
+      width: ${scannerSize}px !important;
+      height: ${scannerSize}px !important;
+      aspect-ratio: 1 / 1 !important;
+      overflow: hidden !important;
+      border: none !important;
+    }
+    #${qrScannerReaderId} > div,
+    #${qrScannerReaderId}__scan_region,
+    #${qrScannerReaderId}__scan_region > div,
+    #${qrScannerReaderId} video,
+    #${qrScannerReaderId} canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
+    #${qrScannerReaderId} video,
+    #${qrScannerReaderId} canvas {
+      object-fit: cover !important;
+    }
+    #${qrScannerReaderId} img {
+      display: none !important;
+    }
+  `
 
   const header = document.createElement('div')
   header.style.display = 'flex'
@@ -171,11 +200,58 @@ async function scanPairingCode(): Promise<string | null> {
   cancelButton.style.fontSize = '14px'
   cancelButton.style.fontWeight = '700'
 
+  const manualContainer = document.createElement('div')
+  manualContainer.style.marginTop = 'auto'
+  manualContainer.style.display = 'flex'
+  manualContainer.style.flexDirection = 'column'
+  manualContainer.style.gap = '12px'
+
+  const manualInput = document.createElement('textarea')
+  manualInput.placeholder = 'Or enter TermX QR content manually...'
+  manualInput.style.width = '100%'
+  manualInput.style.height = '90px'
+  manualInput.style.padding = '12px'
+  manualInput.style.borderRadius = '8px'
+  manualInput.style.border = '1px solid rgba(255,255,255,0.2)'
+  manualInput.style.background = 'rgba(255,255,255,0.08)'
+  manualInput.style.color = '#ffffff'
+  manualInput.style.fontSize = '13px'
+  manualInput.style.fontFamily = 'monospace'
+  manualInput.style.resize = 'none'
+  manualInput.style.outline = 'none'
+
+  const manualSubmit = document.createElement('button')
+  manualSubmit.type = 'button'
+  manualSubmit.textContent = 'Add Device'
+  manualSubmit.style.height = '44px'
+  manualSubmit.style.width = '100%'
+  manualSubmit.style.border = 'none'
+  manualSubmit.style.borderRadius = '8px'
+  manualSubmit.style.background = '#2563eb'
+  manualSubmit.style.color = '#ffffff'
+  manualSubmit.style.fontSize = '14px'
+  manualSubmit.style.fontWeight = '700'
+  manualSubmit.disabled = true
+  manualSubmit.style.opacity = '0.5'
+
+  manualInput.oninput = () => {
+    const hasValue = manualInput.value.trim().length > 0
+    manualSubmit.disabled = !hasValue
+    manualSubmit.style.opacity = hasValue ? '1' : '0.5'
+  }
+
+  manualContainer.append(manualInput, manualSubmit)
+
   const reader = document.createElement('div')
   reader.id = qrScannerReaderId
-  reader.style.flex = '1'
-  reader.style.minHeight = '0'
+  reader.style.width = `${scannerSize}px`
+  reader.style.height = `${scannerSize}px`
+  reader.style.minWidth = `${scannerSize}px`
+  reader.style.minHeight = `${scannerSize}px`
+  reader.style.maxWidth = `${scannerSize}px`
+  reader.style.maxHeight = `${scannerSize}px`
   reader.style.marginTop = '12px'
+  reader.style.alignSelf = 'center'
   reader.style.overflow = 'hidden'
   reader.style.borderRadius = '12px'
   reader.style.background = '#000000'
@@ -189,7 +265,7 @@ async function scanPairingCode(): Promise<string | null> {
   hint.style.textAlign = 'center'
 
   header.append(title, cancelButton)
-  root.append(header, reader, hint)
+  root.append(scannerStyle, header, reader, hint, manualContainer)
   document.body.append(root)
 
   const scanner = new Html5Qrcode(qrScannerReaderId)
@@ -214,22 +290,30 @@ async function scanPairingCode(): Promise<string | null> {
         })
     }
 
-    cancelButton.onclick = () => finish(null)
+    cancelButton.onclick = () => {
+      options?.onCancel?.()
+      finish(null)
+    }
+    manualSubmit.onclick = () => {
+      const value = manualInput.value.trim()
+      if (!value) return
+      options?.onManualEntry?.()
+      finish(value)
+    }
     scanner.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: qrboxSize },
+      { fps: 10, qrbox: { width: qrboxSize, height: qrboxSize }, aspectRatio: 1.0 },
       (decodedText) => finish(decodedText),
       () => {},
     ).catch((error) => finish(null, error))
   })
 }
 
-function qrboxSize(viewfinderWidth: number, viewfinderHeight: number): { width: number; height: number } {
-  const size = Math.max(180, Math.min(viewfinderWidth, viewfinderHeight) * 0.72)
-  return {
-    width: Math.floor(size),
-    height: Math.floor(size),
-  }
+function scannerSquareSize(): number {
+  const width = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 360)
+  const height = Math.max(0, window.innerHeight || document.documentElement.clientHeight || 640)
+  const availableHeight = Math.max(180, height - 340)
+  return Math.floor(Math.max(220, Math.min(width * 0.78, availableHeight, 280)))
 }
 
 const nativeFetch: RemoteRuntimeFetch = async (input, init = {}) => {
@@ -312,7 +396,7 @@ function createNativeMachineRuntime(
   }
   const transferStore = shared.transferStore
 
-  const api: LocalRemoteAppProps['api'] = {
+  const api: MachineWorkspaceProps['api'] = {
     async getStatus(): Promise<LocalStatus> {
       const statusMachine: Machine = {
         machineId: machine.id,
@@ -754,6 +838,7 @@ function createSessionLease(session: RtcSession): NativeSessionLease {
     closeTerminalDataChannel(terminalId: string) {
       terminalChannels.get(terminalId)?.close()
       terminalChannels.delete(terminalId)
+      nativeSession.closeTerminalDataChannel?.(terminalId)
     },
   }
 }

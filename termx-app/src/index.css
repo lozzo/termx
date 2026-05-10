@@ -1,4 +1,4 @@
-@import '../../remote-ui/src/localWebEntry.css';
+@import '../../remote-ui/src/entries/appStyles.css';
 
 @tailwind base;
 @tailwind components;
