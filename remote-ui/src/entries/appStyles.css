@@ -7,7 +7,7 @@
   font-display: swap;
   font-style: normal;
   font-weight: 400;
-  src: url('./assets/fonts/FiraCodeNerdFontMono-Regular.woff2') format('woff2');
+  src: url('../assets/fonts/FiraCodeNerdFontMono-Regular.woff2') format('woff2');
 }
 
 @font-face {
@@ -15,7 +15,7 @@
   font-display: swap;
   font-style: normal;
   font-weight: 700;
-  src: url('./assets/fonts/FiraCodeNerdFontMono-Bold.woff2') format('woff2');
+  src: url('../assets/fonts/FiraCodeNerdFontMono-Bold.woff2') format('woff2');
 }
 
 @font-face {
@@ -23,7 +23,7 @@
   font-display: swap;
   font-style: normal;
   font-weight: 400;
-  src: url('./assets/fonts/JetBrainsMonoNerdFontMono-Regular.woff2') format('woff2');
+  src: url('../assets/fonts/JetBrainsMonoNerdFontMono-Regular.woff2') format('woff2');
 }
 
 @font-face {
@@ -31,7 +31,7 @@
   font-display: swap;
   font-style: normal;
   font-weight: 700;
-  src: url('./assets/fonts/JetBrainsMonoNerdFontMono-Bold.woff2') format('woff2');
+  src: url('../assets/fonts/JetBrainsMonoNerdFontMono-Bold.woff2') format('woff2');
 }
 
 @font-face {
@@ -39,7 +39,7 @@
   font-display: swap;
   font-style: normal;
   font-weight: 400;
-  src: url('./assets/fonts/CaskaydiaCoveNerdFontMono-Regular.woff2') format('woff2');
+  src: url('../assets/fonts/CaskaydiaCoveNerdFontMono-Regular.woff2') format('woff2');
 }
 
 @font-face {
@@ -47,7 +47,7 @@
   font-display: swap;
   font-style: normal;
   font-weight: 700;
-  src: url('./assets/fonts/CaskaydiaCoveNerdFontMono-Bold.woff2') format('woff2');
+  src: url('../assets/fonts/CaskaydiaCoveNerdFontMono-Bold.woff2') format('woff2');
 }
 
 @font-face {
@@ -55,7 +55,7 @@
   font-display: swap;
   font-style: normal;
   font-weight: 400;
-  src: url('./assets/fonts/HackNerdFontMono-Regular.woff2') format('woff2');
+  src: url('../assets/fonts/HackNerdFontMono-Regular.woff2') format('woff2');
 }
 
 @font-face {
@@ -63,7 +63,7 @@
   font-display: swap;
   font-style: normal;
   font-weight: 700;
-  src: url('./assets/fonts/HackNerdFontMono-Bold.woff2') format('woff2');
+  src: url('../assets/fonts/HackNerdFontMono-Bold.woff2') format('woff2');
 }
 
 @font-face {
@@ -71,7 +71,7 @@
   font-display: swap;
   font-style: normal;
   font-weight: 400;
-  src: url('./assets/fonts/IosevkaNerdFontMono-Regular.woff2') format('woff2');
+  src: url('../assets/fonts/IosevkaNerdFontMono-Regular.woff2') format('woff2');
 }
 
 @font-face {
@@ -79,7 +79,7 @@
   font-display: swap;
   font-style: normal;
   font-weight: 700;
-  src: url('./assets/fonts/IosevkaNerdFontMono-Bold.woff2') format('woff2');
+  src: url('../assets/fonts/IosevkaNerdFontMono-Bold.woff2') format('woff2');
 }
 
 .xterm-wrapper .xterm {

@@ -395,6 +395,7 @@ class NativeBridgeClient {
             activeLabels: this.activeLabels.size,
           })
           ws.addEventListener('message', (ev: MessageEvent) => {
+            if (this.ws !== ws || this.socketEpoch !== epoch) return
             if (ev.data instanceof ArrayBuffer) this.handleFrame(new Uint8Array(ev.data))
           })
           ws.addEventListener('close', () => {

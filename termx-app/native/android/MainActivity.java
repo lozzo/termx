@@ -23,6 +23,9 @@ public class MainActivity extends BridgeActivity {
         WebView webView = getBridge().getWebView();
         if (webView != null) {
             webView.setWebChromeClient(new TermxWebChromeClient(getBridge()));
+            webView.setOverScrollMode(WebView.OVER_SCROLL_NEVER);
+            webView.setVerticalScrollBarEnabled(false);
+            webView.setHorizontalScrollBarEnabled(false);
             WebSettings settings = webView.getSettings();
             settings.setDomStorageEnabled(true);
             settings.setCacheMode(WebSettings.LOAD_DEFAULT);

@@ -256,6 +256,42 @@ describe('useTerminalSession', () => {
     expect(result.current.terminalText).not.toContain('oldoldoldoldold')
   })
 
+  it('keeps newly loaded scrollback visible after the live output cache reaches its soft limit', async () => {
+    const session = createMockRtcTerminalSession()
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'current',
+      cols: 80,
+      rows: 24,
+      pages: [
+        { offset: 0, rows: ['HISTORY-PAGE-SHOULD-STAY'] },
+      ],
+    })
+    const { result } = renderHook(() =>
+      useTerminalSession({
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        session,
+      }),
+    )
+
+    await waitFor(() => expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open'))
+
+    const encoder = new TextEncoder()
+    act(() => {
+      session.emitTerminalOutput('terminal-1', encoder.encode(`${'stale'.repeat(400_000)}\nLIVE-TAIL`))
+    })
+    await waitFor(() => expect(result.current.terminalText).toContain('LIVE-TAIL'))
+    expect(result.current.terminalText).not.toContain('HISTORY-PAGE-SHOULD-STAY')
+
+    await act(async () => {
+      await result.current.loadScrollback(100)
+    })
+
+    expect(session.historyReplayRequests('terminal-1')).toContainEqual({ beforeOffset: 0, limit: 100 })
+    expect(result.current.terminalText).toContain('HISTORY-PAGE-SHOULD-STAY')
+    expect(result.current.terminalText).toContain('LIVE-TAIL')
+  })
+
   it('refreshes the terminal data channel and retries recent input when the channel closes during send', async () => {
     const session = createMockRtcTerminalSession()
     const { result } = renderHook(() =>

@@ -500,7 +500,7 @@ func TestScreenSnapshotFallbackFlushesPendingVTermOutput(t *testing.T) {
 	}
 }
 
-func TestForwardLiveStreamMessagesCoalescesBurstOutput(t *testing.T) {
+func TestForwardLiveStreamMessagesPreservesOutputBoundaries(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -520,11 +520,13 @@ func TestForwardLiveStreamMessagesCoalescesBurstOutput(t *testing.T) {
 
 	received := collectStreamMessages(t, dst)
 	<-done
-	if len(received) != 1 {
-		t.Fatalf("expected one merged output frame, got %#v", received)
+	if len(received) != 3 {
+		t.Fatalf("expected three output frames, got %#v", received)
 	}
-	if received[0].Type != StreamOutput || string(received[0].Output) != "abc" {
-		t.Fatalf("expected merged output %q, got %#v", "abc", received[0])
+	for i, want := range []string{"a", "b", "c"} {
+		if received[i].Type != StreamOutput || string(received[i].Output) != want {
+			t.Fatalf("frame %d expected output %q, got %#v", i, want, received[i])
+		}
 	}
 }
 
@@ -676,8 +678,8 @@ func TestTerminalSharedLiveOutputThrottleSplitsOversizedFlush(t *testing.T) {
 func TestDefaultLiveOutputThrottleConfigHonorsEnv(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		t.Setenv("TERMX_LIVE_OUTPUT_FPS", "")
-		if got := defaultLiveOutputThrottleConfig(); got.FPS != 60 {
-			t.Fatalf("expected default live output fps 60, got %#v", got)
+		if got := defaultLiveOutputThrottleConfig(); got.FPS != 0 {
+			t.Fatalf("expected default live output fps 0, got %#v", got)
 		}
 	})
 

@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultLiveOutputFPS              = 60
+	defaultLiveOutputFPS              = 0
 	liveOutputInteractiveWindow       = 24 * time.Millisecond
 	liveOutputInteractiveFrameFloor   = 4 * time.Millisecond
 	liveOutputInteractiveBypassDelay  = 500 * time.Microsecond

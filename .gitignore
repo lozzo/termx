@@ -9,3 +9,5 @@ cover.out
 .worktrees/
 *.tsbuildinfo
 .build/
+Screenshot_*.jpg
+termx-debug-*.zip

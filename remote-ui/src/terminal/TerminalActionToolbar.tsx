@@ -137,7 +137,7 @@ export function TerminalActionToolbar({
             onPointerDown={(e) => { e.preventDefault(); hapticSelection(); ownsResize ? onReleaseResizeOwner?.() : onAcquireResizeOwner?.() }}
             className="flex h-7 items-center justify-center gap-1.5 rounded-md bg-[var(--termx-surface-raised)] px-3 text-xs font-semibold text-[var(--termx-text)] active:opacity-75"
           >
-            <span className="font-mono text-[10px] font-bold leading-none">{ownsResize ? 'OW' : 'FL'}</span>
+            <span className="font-mono text-[11px] font-extrabold leading-none tracking-[-0.04em]">{ownsResize ? 'OW' : 'FL'}</span>
             {ownsResize ? 'Owner' : 'Follower'}
           </button>
         </div>

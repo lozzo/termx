@@ -1,0 +1,59 @@
+<svg width="1440" height="720" viewBox="0 0 1440 720" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">TermX logo on dark background</title>
+  <desc id="desc">Presentation artwork for the TermX logo and its single-piece X mark on a dark grid background.</desc>
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" stroke="#27272A" stroke-opacity="0.5" stroke-width="1"/>
+    </pattern>
+    <radialGradient id="halo" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(720 360) rotate(90) scale(288 560)">
+      <stop stop-color="#10B981" stop-opacity="0.24"/>
+      <stop offset="0.58" stop-color="#22D3EE" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#09090B" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1440" height="720" fill="#09090B"/>
+  <rect width="1440" height="720" fill="url(#grid)"/>
+  <rect width="1440" height="720" fill="url(#halo)"/>
+
+  <svg x="96" y="178" width="1248" height="364" viewBox="0 0 1440 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="showcase-mark-panel" x1="68" y1="52" x2="352" y2="368" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#18181B"/>
+        <stop offset="1" stop-color="#050507"/>
+      </linearGradient>
+      <linearGradient id="showcase-mark-primary" x1="92" y1="128" x2="340" y2="300" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#34D399"/>
+        <stop offset="0.54" stop-color="#10B981"/>
+        <stop offset="1" stop-color="#22D3EE"/>
+      </linearGradient>
+      <linearGradient id="showcase-mark-secondary" x1="96" y1="302" x2="330" y2="134" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#22D3EE"/>
+        <stop offset="1" stop-color="#A7F3D0"/>
+      </linearGradient>
+      <linearGradient id="showcase-word-accent" x1="884" y1="126" x2="1048" y2="272" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#34D399"/>
+        <stop offset="1" stop-color="#22D3EE"/>
+      </linearGradient>
+    </defs>
+
+    <g>
+      <rect x="42" y="34" width="352" height="352" rx="78" fill="#09090B"/>
+      <path d="M98 134C98 112.461 115.461 95 137 95H299C320.539 95 338 112.461 338 134V286C338 307.539 320.539 325 299 325H137C115.461 325 98 307.539 98 286V134Z" fill="url(#showcase-mark-panel)" stroke="#27272A" stroke-width="7"/>
+      <path d="M98 149H338" stroke="#27272A" stroke-width="7"/>
+      <circle cx="135" cy="123" r="8" fill="#EF4444"/>
+      <circle cx="164" cy="123" r="8" fill="#F59E0B"/>
+      <circle cx="193" cy="123" r="8" fill="#10B981"/>
+      <path d="M132 168C138 159 150 157 158 164L218 202L286 160C295 153 307 155 313 164C319 173 317 186 307 192L246 231L307 270C317 276 319 289 313 298C307 307 295 309 286 302L218 260L158 298C150 305 138 303 132 294C126 285 128 273 138 267L198 231L138 192C128 186 126 177 132 168Z" fill="url(#showcase-mark-primary)"/>
+      <path d="M176 292H270" stroke="#E4E4E7" stroke-width="24" stroke-linecap="round"/>
+    </g>
+
+    <g aria-label="TermX">
+      <path d="M484 145H430V99H594V145H540V310H484V145Z" fill="#F4F4F5"/>
+      <path d="M679.974 313C629.674 313 596.174 281 596.174 232.9C596.174 185.7 629.374 153.1 677.274 153.1C724.274 153.1 755.974 184.2 755.974 230.2C755.974 236.3 755.574 242.4 754.774 248.5H649.174C654.374 265.2 667.574 273.7 688.774 273.7C705.274 273.7 721.774 269.6 738.274 261.4L753.274 297.1C732.674 307.7 708.274 313 679.974 313ZM677.874 191.2C660.274 191.2 649.274 200.8 646.374 218.7H707.474C705.274 201.1 694.374 191.2 677.874 191.2Z" fill="#F4F4F5"/>
+      <path d="M783.662 156.1H834.662L837.062 177.1C847.862 161.9 863.262 154.3 883.262 154.3C890.262 154.3 896.662 155.1 902.462 156.7V205.9C893.662 203.1 885.962 201.7 879.362 201.7C852.762 201.7 839.462 216.3 839.462 245.5V310H783.662V156.1Z" fill="#F4F4F5"/>
+      <path d="M927.381 156.1H978.081L980.181 173.5C991.981 159.9 1007.68 153.1 1027.28 153.1C1049.48 153.1 1065.68 161.4 1075.88 178C1088.68 161.4 1106.68 153.1 1129.88 153.1C1164.08 153.1 1183.48 174.8 1183.48 213.4V310H1127.68V225.1C1127.68 205.2 1120.68 195.2 1106.68 195.2C1090.38 195.2 1082.18 207.2 1082.18 231.1V310H1026.38V225.1C1026.38 205.2 1019.38 195.2 1005.38 195.2C989.081 195.2 980.881 207.2 980.881 231.1V310H927.381V156.1Z" fill="#F4F4F5"/>
+      <path d="M1254.06 200.5L1192.86 99H1257.66L1288.56 154.6L1321.56 99H1383.66L1321.86 198.1L1390.86 310H1326.06L1287.36 243.1L1248.06 310H1185.66L1254.06 200.5Z" fill="url(#showcase-word-accent)"/>
+    </g>
+  </svg>
+</svg>

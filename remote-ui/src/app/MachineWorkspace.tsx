@@ -1628,9 +1628,9 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
               aria-label={activeTerminalOwnsResize ? 'Release resize control' : 'Acquire resize control'}
               aria-pressed={activeTerminalOwnsResize}
               onClick={() => { hapticImpact(); void (activeTerminalOwnsResize ? releaseActiveResizeOwner() : acquireActiveResizeOwner()) }}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--termx-muted)] transition-colors active:scale-95 active:bg-[var(--termx-surface-raised)]"
+              className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-md px-1 text-[var(--termx-muted)] transition-colors active:scale-95 active:bg-[var(--termx-surface-raised)]"
             >
-              <span className="font-mono text-[10px] font-bold leading-none">{resizeControlBadgeText(terminalResizeControl)}</span>
+              <span className="font-mono text-[11px] font-extrabold leading-none tracking-[-0.04em]">{resizeControlBadgeText(terminalResizeControl)}</span>
             </button>
             <button
               type="button"

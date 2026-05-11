@@ -3,12 +3,13 @@ import { CanvasAddon } from '@xterm/addon-canvas'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal as XTerm } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { hapticSelection } from '../platform/haptics'
 import { addNativeKeyboardListener } from '../platform/nativeKeyboard'
 import { applyTerminalModifiers, type TerminalModifierState } from './mobileTerminalInput'
 import type { TerminalResizeControl, TerminalScrollbackLoadResult } from './terminalClient'
 import { logTerminalDiagnostic, terminalNow } from './terminalDiagnostics'
+import { appendTerminalText } from './terminalTextWindow'
 import { useTerminalSession } from './useTerminalSession'
 import type { RtcSession } from '../core/transport'
 import { DEFAULT_TERMINAL_SETTINGS, resolveTerminalTheme, type TerminalSettings } from './terminalSettings'
@@ -28,6 +29,21 @@ const xtermWriteSlowMs = 500
 const xtermWriteLargeChars = 128 * 1024
 const eventLoopProbeIntervalMs = 1000
 const eventLoopLagWarnMs = 250
+const liveOutputFlushDelayMs = 16
+
+function isNativeAndroidWebView(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const userAgent = navigator.userAgent || ''
+  const cap = globalThis as typeof globalThis & { Capacitor?: { isNativePlatform?: () => boolean } }
+  return /Android/i.test(userAgent) && cap.Capacitor?.isNativePlatform?.() === true
+}
+
+function effectiveRendererMode(configuredRenderer: TerminalRenderer): TerminalRenderer {
+  if (configuredRenderer === 'auto' && isNativeAndroidWebView()) {
+    return 'canvas'
+  }
+  return configuredRenderer
+}
 
 interface PendingHistoryApply {
   revision: number
@@ -100,7 +116,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   },
   ref,
 ) {
-  const terminalSession = useTerminalSession({ machineId, terminalId, session })
   const containerRef = useRef<HTMLDivElement | null>(null)
   const xtermRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -108,12 +123,16 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const latestTerminalTextRef = useRef('')
   const lastSentResizeRef = useRef<{ cols: number; rows: number } | null>(null)
   const isOpenRef = useRef(false)
+  const pendingLiveOutputRef = useRef('')
+  const liveOutputFlushTimerRef = useRef<number | null>(null)
+  const surfaceReadyRef = useRef(false)
   const canSendResizeRef = useRef(false)
   const historyLoadingRef = useRef(false)
   const historyApplyingRef = useRef(false)
   const historyRestoreViewportOnLoadRef = useRef(false)
   const historyRevisionAppliedRef = useRef(0)
   const historyLoadedRowsAppliedRef = useRef(0)
+  const lastSnapshotTextRef = useRef('')
   const pendingHistoryViewportRef = useRef<number | null>(null)
   const pendingHistoryApplyRef = useRef<PendingHistoryApply | null>(null)
   const historyApplyQueuedAtRef = useRef(0)
@@ -122,7 +141,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const lastHistoryScrollActivityAtRef = useRef(0)
   const initialHistoryPreloadScheduledRef = useRef(false)
   const historyPreloadTimerRef = useRef<number | null>(null)
-  const loadScrollbackRef = useRef(terminalSession.loadScrollback)
+  const loadScrollbackRef = useRef<(limit?: number) => Promise<TerminalScrollbackLoadResult>>(async () => ({
+    loadedRows: 0,
+    totalRows: 0,
+    hasMore: false,
+  }))
   const scheduleInitialHistoryPreloadRef = useRef<() => void>(() => {})
   const maybePrefetchScrollbackRef = useRef<() => void>(() => {})
   const scheduleHistoryApplyRef = useRef<() => void>(() => {})
@@ -156,19 +179,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const onResizeControlRef = useRef<((control: TerminalResizeControl) => void) | undefined>(undefined)
   const selectionModeRef = useRef(false)
   const selectionResetHandlersRef = useRef(new Set<() => void>())
-
-  latestTerminalTextRef.current = terminalSession.terminalText
-  settingsRef.current = settings
-  hasTerminalSnapshotRef.current = terminalSession.terminalSnapshot !== null
-  snapshotAlternateScreenRef.current = terminalSession.terminalSnapshot?.alternateScreen === true
-
-  useEffect(() => {
-    loadScrollbackRef.current = terminalSession.loadScrollback
-  }, [terminalSession.loadScrollback])
-
-  const isOpen = terminalSession.snapshot.terminalChannels[terminalId]?.state === 'open'
-  const channelState = terminalSession.snapshot.terminalChannels[terminalId]?.state
-  const showConnectingOverlay = !suppressConnectingOverlay && channelState !== 'open' && terminalSession.terminalText.length === 0
+  const [surfaceReady, setSurfaceReady] = useState(false)
+  const automaticHistoryPreloadEnabled = !isNativeAndroidWebView()
 
   const logTerminal = useCallback((event: string, input: {
     level?: 'debug' | 'info' | 'warn' | 'error'
@@ -257,6 +269,55 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       throw error
     }
   }, [logTerminal])
+
+  const markSurfaceReady = useCallback(() => {
+    if (surfaceReadyRef.current) return
+    surfaceReadyRef.current = true
+    setSurfaceReady(true)
+  }, [])
+
+  const handleTerminalOutput = useCallback((text: string) => {
+    if (terminalDisposedRef.current) return
+    pendingLiveOutputRef.current += text
+    if (liveOutputFlushTimerRef.current !== null) return
+    liveOutputFlushTimerRef.current = window.setTimeout(() => {
+      liveOutputFlushTimerRef.current = null
+      const term = xtermRef.current
+      const pending = pendingLiveOutputRef.current
+      pendingLiveOutputRef.current = ''
+      if (!term || !pending) return
+      writeToXterm(term, pending, 'stream_output', () => {
+        markSurfaceReady()
+      })
+      lastWrittenTextRef.current = appendTerminalText(lastWrittenTextRef.current, pending)
+      scheduleInitialHistoryPreloadRef.current()
+    }, liveOutputFlushDelayMs)
+  }, [markSurfaceReady, writeToXterm])
+
+  const terminalSession = useTerminalSession({
+    machineId,
+    terminalId,
+    session,
+    onOutput: handleTerminalOutput,
+  })
+
+  latestTerminalTextRef.current = terminalSession.terminalText
+  settingsRef.current = settings
+  hasTerminalSnapshotRef.current = terminalSession.terminalSnapshot !== null
+  snapshotAlternateScreenRef.current = terminalSession.terminalSnapshot?.alternateScreen === true
+
+  useEffect(() => {
+    loadScrollbackRef.current = terminalSession.loadScrollback
+  }, [terminalSession.loadScrollback])
+
+  useEffect(() => {
+    surfaceReadyRef.current = false
+    setSurfaceReady(false)
+  }, [machineId, session, terminalId])
+
+  const isOpen = terminalSession.snapshot.terminalChannels[terminalId]?.state === 'open'
+  const channelState = terminalSession.snapshot.terminalChannels[terminalId]?.state
+  const showConnectingOverlay = !suppressConnectingOverlay && (channelState !== 'open' || !surfaceReady)
 
   const isScrolledToBottom = useCallback((term: XTerm) => {
     const buffer = term.buffer.active
@@ -561,6 +622,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     historyApplyingRef.current = false
     historyRevisionAppliedRef.current = 0
     historyLoadedRowsAppliedRef.current = 0
+    lastSnapshotTextRef.current = ''
 
     const term = new XTerm({
       allowProposedApi: false,
@@ -602,32 +664,58 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     textarea?.addEventListener('compositionend', handleCompositionEnd)
     const onFocus = () => { if (preventFocusRef.current && textarea) textarea.blur() }
     textarea?.addEventListener('focus', onFocus)
-    const loadCanvasRenderer = () => {
+    let activeRenderer: TerminalRenderer | 'canvas-fallback' = 'dom'
+    const loadCanvasRenderer = (reason: 'requested' | 'fallback') => {
       try {
         term.loadAddon(new CanvasAddon())
+        activeRenderer = reason === 'requested' ? 'canvas' : 'canvas-fallback'
       } catch {
         // Fall back to xterm's DOM renderer when canvas is unavailable.
+        activeRenderer = 'dom'
       }
     }
     const isTestDom = typeof navigator !== 'undefined' && navigator.userAgent.includes('jsdom')
     if (!isTestDom) {
-      const rendererMode = renderer ?? settingsRef.current.renderer
+      const configuredRenderer = renderer ?? settingsRef.current.renderer
+      const rendererMode = effectiveRendererMode(configuredRenderer)
       if (rendererMode === 'canvas') {
-        loadCanvasRenderer()
+        loadCanvasRenderer('requested')
       } else if (rendererMode !== 'dom') {
         // auto or webgl: try WebGL first, fall back to canvas
         try {
           const webglAddon = new WebglAddon(true)
           webglAddon.onContextLoss(() => {
             webglAddon.dispose()
-            if (rendererMode !== 'webgl') loadCanvasRenderer()
+            if (rendererMode !== 'webgl') loadCanvasRenderer('fallback')
             term.refresh(0, term.rows - 1)
+            logTerminal('renderer_context_loss', {
+              level: 'warn',
+              details: {
+                configuredRenderer,
+                effectiveRenderer: rendererMode,
+                fallbackRenderer: activeRenderer,
+              },
+            })
           })
           term.loadAddon(webglAddon)
+          activeRenderer = 'webgl'
         } catch {
-          if (rendererMode !== 'webgl') loadCanvasRenderer()
+          if (rendererMode !== 'webgl') {
+            loadCanvasRenderer('fallback')
+          } else {
+            activeRenderer = 'dom'
+          }
         }
       }
+      logTerminal('renderer_selected', {
+        level: 'info',
+        details: {
+          configuredRenderer,
+          effectiveRenderer: rendererMode,
+          activeRenderer,
+          nativeAndroidWebView: isNativeAndroidWebView(),
+        },
+      })
     }
     xtermRef.current = term
     fitAddonRef.current = fitAddon
@@ -637,6 +725,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (initialText) {
       try {
         writeToXterm(term, initialText, 'initial_text', () => {
+          markSurfaceReady()
           keepBottomAnchored()
         })
       } catch {}
@@ -752,6 +841,15 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const selectionAnchorMarker = document.createElement('div')
     selectionAnchorMarker.className = 'sel-anchor-marker'
     container.append(selectionAnchorMarker)
+
+    const hideSelectionAnchor = () => {
+      selectionAnchorMarker.style.display = 'none'
+      selectionAnchorMarker.style.opacity = '0'
+      selectionAnchorMarker.style.left = '-9999px'
+      selectionAnchorMarker.style.top = '-9999px'
+      selectionAnchorMarker.style.height = '0px'
+    }
+    hideSelectionAnchor()
 
     const showScrollbar = () => {
       scrollbarTrack.classList.add('visible')
@@ -875,6 +973,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         const textToApply = latestText.startsWith(pending.text) ? latestText : pending.text
         term.reset()
         writeToXterm(term, textToApply, 'history_apply', () => {
+          markSurfaceReady()
           if (pending.restoreViewportY !== null) {
             term.scrollToLine(pending.restoreViewportY + pending.prependedRows)
           } else if (shouldKeepBottom) {
@@ -901,6 +1000,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     scheduleHistoryApplyRef.current = scheduleHistoryApply
 
     const scheduleIdleHistoryPreload = (delayMs: number) => {
+      if (!automaticHistoryPreloadEnabled) return
       if (historyIdlePreloadTimerRef.current !== null) return
       historyIdlePreloadTimerRef.current = window.setTimeout(async () => {
         historyIdlePreloadTimerRef.current = null
@@ -918,6 +1018,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
 
     const scheduleInitialScrollbackPreload = () => {
+      if (!automaticHistoryPreloadEnabled) return
       if (initialHistoryPreloadScheduledRef.current) return
       if (!canLoadScrollbackPage()) return
       initialHistoryPreloadScheduledRef.current = true
@@ -1068,10 +1169,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       magnifier.style.display = 'none'
     }
 
-    const hideSelectionAnchor = () => {
-      selectionAnchorMarker.style.display = 'none'
-    }
-
     const resetSelectionTouchState = () => {
       selectionPhase = 'idle'
       selectionExtending = false
@@ -1105,6 +1202,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
 
     const showSelectionAnchor = (col: number, row: number) => {
+      if (!selectionModeRef.current) {
+        hideSelectionAnchor()
+        return
+      }
       const targetElement = screenElement || container
       const rect = targetElement.getBoundingClientRect()
       const containerRect = container.getBoundingClientRect()
@@ -1112,10 +1213,15 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const viewportRow = row - term.buffer.active.viewportY
       const x = rect.left - containerRect.left + col * cellWidth
       const y = rect.top - containerRect.top + viewportRow * lineHeightPx
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        hideSelectionAnchor()
+        return
+      }
       selectionAnchorMarker.style.left = `${x}px`
       selectionAnchorMarker.style.top = `${y}px`
       selectionAnchorMarker.style.height = `${lineHeightPx}px`
       selectionAnchorMarker.style.display = 'block'
+      selectionAnchorMarker.style.opacity = '1'
     }
 
     const updateMagnifier = (col: number, bufferRow: number, clientX: number, clientY: number) => {
@@ -1644,6 +1750,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         window.clearTimeout(historyPreloadTimerRef.current)
         historyPreloadTimerRef.current = null
       }
+      if (liveOutputFlushTimerRef.current !== null) {
+        window.clearTimeout(liveOutputFlushTimerRef.current)
+        liveOutputFlushTimerRef.current = null
+      }
+      pendingLiveOutputRef.current = ''
       if (historyApplyTimerRef.current !== null) {
         window.clearTimeout(historyApplyTimerRef.current)
         historyApplyTimerRef.current = null
@@ -1696,7 +1807,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       lastSentResizeRef.current = null
       isOpenRef.current = false
     }
-  }, [cancelBottomAnchor, fitAndMaybeSendResize, isScrolledToBottom, keepBottomAnchored, logTerminal, renderer, scheduleFit, sendInputAtCurrentSize, sendUserInput, settings.renderer, writeToXterm])
+  }, [automaticHistoryPreloadEnabled, cancelBottomAnchor, fitAndMaybeSendResize, isScrolledToBottom, keepBottomAnchored, logTerminal, markSurfaceReady, renderer, scheduleFit, sendInputAtCurrentSize, sendUserInput, settings.renderer, writeToXterm])
 
   useEffect(() => {
     isOpenRef.current = isOpen
@@ -1717,6 +1828,23 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (terminalDisposedRef.current) return
     const term = xtermRef.current
     if (!term) return
+
+    const snapshot = terminalSession.terminalSnapshot
+    const snapshotText = snapshot ? (snapshot.replay ?? snapshot.text) : ''
+
+    if (snapshot && snapshotText && snapshotText !== lastSnapshotTextRef.current && lastWrittenTextRef.current === '') {
+      try {
+        term.reset()
+        writeToXterm(term, terminalSession.terminalText, 'snapshot_full_text', () => {
+          markSurfaceReady()
+          keepBottomAnchored()
+        })
+        lastWrittenTextRef.current = terminalSession.terminalText
+      } catch (error) {
+        if (!terminalDisposedRef.current) throw error
+      }
+    }
+    lastSnapshotTextRef.current = snapshotText
 
     const history = terminalSession.terminalSnapshot?.history
     if (history && history.revision > historyRevisionAppliedRef.current) {
@@ -1746,39 +1874,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       return
     }
 
-    const nextText = terminalSession.terminalText
-    const previousText = lastWrittenTextRef.current
-    if (nextText === previousText) return
-
-    try {
-      if (nextText.startsWith(previousText)) {
-        const appendedText = nextText.slice(previousText.length)
-        if (previousText === '') {
-          writeToXterm(term, appendedText, 'append_initial', () => {
-            keepBottomAnchored()
-          })
-        } else {
-          writeToXterm(term, appendedText, 'append')
-        }
-      } else {
-        term.reset()
-        logTerminal('text_reset', {
-          level: 'warn',
-          details: {
-            previousChars: previousText.length,
-            nextChars: nextText.length,
-          },
-        })
-        writeToXterm(term, nextText, 'reset_full_text', () => {
-          keepBottomAnchored()
-        })
-      }
-      scheduleInitialHistoryPreloadRef.current()
-    } catch (error) {
-      if (!terminalDisposedRef.current) throw error
-    }
-    lastWrittenTextRef.current = nextText
-  }, [keepBottomAnchored, logTerminal, terminalSession.terminalSnapshot, terminalSession.terminalText, writeToXterm])
+    scheduleInitialHistoryPreloadRef.current()
+  }, [keepBottomAnchored, markSurfaceReady, terminalSession.terminalSnapshot, terminalSession.terminalText, writeToXterm])
 
   return (
     <section
@@ -1792,7 +1889,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         ref={containerRef}
         aria-label="Terminal output"
         className="absolute inset-0 min-h-0 overflow-hidden xterm-wrapper outline-none"
-        style={{ overscrollBehavior: 'contain', touchAction: 'none' }}
+        style={{
+          opacity: showConnectingOverlay ? 0 : 1,
+          overscrollBehavior: 'contain',
+          touchAction: 'none',
+        }}
         role="application"
         tabIndex={0}
       />

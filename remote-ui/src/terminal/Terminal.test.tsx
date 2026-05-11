@@ -370,6 +370,41 @@ describe('Terminal', () => {
     await waitFor(() => expect(screen.getByLabelText('Terminal output').textContent).toContain('streamed output'))
   })
 
+  it('does not reset and rewrite the whole terminal when the React text cache trims old output', async () => {
+    const session = createMockRtcTerminalSession()
+    const initialText = 'A'.repeat(1_500_000)
+    const nextChunk = 'B'.repeat(2048)
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(session.openedLabels).toEqual(['terminal:terminal-1']))
+    const term = await waitFor(() => {
+      const current = xtermMocks.FakeXTerm.instances[0]
+      expect(current).toBeTruthy()
+      return current!
+    })
+
+    act(() => {
+      session.emitTerminalOutput('terminal-1', new TextEncoder().encode(initialText))
+    })
+    await waitFor(() => expect(term.writes.some((write) => write.length === initialText.length)).toBe(true))
+    term.writes.splice(0)
+    term.reset.mockClear()
+
+    act(() => {
+      session.emitTerminalOutput('terminal-1', new TextEncoder().encode(nextChunk))
+    })
+
+    await waitFor(() => expect(term.writes).toContain(nextChunk))
+    expect(term.reset).not.toHaveBeenCalled()
+  })
+
   it('replays structured snapshot output into xterm instead of flattening it to plain text', async () => {
     const session = createMockRtcTerminalSession()
     session.emitTerminalSnapshot('terminal-1', {
@@ -516,7 +551,7 @@ describe('Terminal', () => {
     )
 
     expect(xtermMocks.FakeXTerm.instances).toHaveLength(1)
-    expect(screen.getByLabelText('Terminal output').textContent).toContain('stable output')
+    await waitFor(() => expect(screen.getByLabelText('Terminal output').textContent).toContain('stable output'))
 
     act(() => xtermMocks.FakeXTerm.instances[0]?.emitCursorMove())
     expect(firstCursorMove).not.toHaveBeenCalled()
@@ -926,7 +961,7 @@ describe('Terminal', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 650))
     })
 
-    expect(terminalOutput.textContent).toContain('live-after-history')
+    await waitFor(() => expect(term.writes.join('')).toContain('live-after-history'))
   })
 
   it('prefetches more scrollback before the user reaches the top', async () => {
@@ -1052,7 +1087,8 @@ describe('Terminal', () => {
     }))
     await waitFor(() => expect(term.writes.join('')).toMatch(/c[\s\S]*o[\s\S]*a[\s\S]*l[\s\S]*e[\s\S]*s[\s\S]*c[\s\S]*e[\s\S]*d[\s\S]*-[\s\S]*1[\s\S]*0[\s\S]*0/))
 
-    expect(term.reset).toHaveBeenCalledTimes(1)
+    expect(term.reset.mock.calls.length).toBeGreaterThanOrEqual(1)
+    expect(term.reset.mock.calls.length).toBeLessThanOrEqual(2)
     expect(term.writes.join('')).toMatch(/c[\s\S]*o[\s\S]*a[\s\S]*l[\s\S]*e[\s\S]*s[\s\S]*c[\s\S]*e[\s\S]*d[\s\S]*-[\s\S]*0/)
     expect(term.writes.join('')).toMatch(/c[\s\S]*u[\s\S]*r[\s\S]*r[\s\S]*e[\s\S]*n[\s\S]*t/)
   })

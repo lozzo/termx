@@ -16,18 +16,20 @@ import {
 } from './terminalClient'
 import { createTerminalProtocolClient } from './terminalProtocolClient'
 import { logTerminalDiagnostic, terminalNow } from './terminalDiagnostics'
+import { appendTerminalText, terminalTextSoftLimitChars, trimTerminalTextToRecentWindow } from './terminalTextWindow'
 import type { Terminal } from '../core/model'
 import type { RtcSession, RtcTerminalDataChannelController } from '../core/transport'
 
 const recentInputRecoveryWindowMs = 1500
-const terminalTextSoftLimitChars = 1_500_000
 const outputStatsIntervalMs = 1000
 const largeOutputChunkBytes = 64 * 1024
+const liveOutputPublishDelayMs = 120
 
 export interface UseTerminalSessionOptions {
   machineId: string
   terminalId: string
   session: RtcSession
+  onOutput?: ((text: string) => void) | undefined
 }
 
 export interface UseTerminalSessionResult {
@@ -65,6 +67,9 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
   const pendingRecoveryInputRef = useRef<{ data: string; size?: { cols: number; rows: number } } | null>(null)
   const pendingRecoveryInputTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const textDecoderRef = useRef(new TextDecoder())
+  const onOutputRef = useRef<((text: string) => void) | undefined>(options.onOutput)
+  const terminalTextRef = useRef('')
+  const terminalTextPublishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const outputStatsRef = useRef({
     chunks: 0,
     bytes: 0,
@@ -120,6 +125,29 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     }
     pendingRecoveryInputRef.current = null
   }, [])
+
+  const clearTerminalTextPublishTimer = useCallback(() => {
+    if (terminalTextPublishTimerRef.current === null) return
+    clearTimeout(terminalTextPublishTimerRef.current)
+    terminalTextPublishTimerRef.current = null
+  }, [])
+
+  const publishTerminalTextNow = useCallback(() => {
+    clearTerminalTextPublishTimer()
+    setTerminalText(terminalTextRef.current)
+  }, [clearTerminalTextPublishTimer])
+
+  const scheduleTerminalTextPublish = useCallback(() => {
+    if (terminalTextPublishTimerRef.current !== null) return
+    terminalTextPublishTimerRef.current = setTimeout(() => {
+      terminalTextPublishTimerRef.current = null
+      setTerminalText(terminalTextRef.current)
+    }, liveOutputPublishDelayMs)
+  }, [])
+
+  useEffect(() => {
+    onOutputRef.current = options.onOutput
+  }, [options.onOutput])
 
   const rememberRecoveryInput = useCallback((pending: { data: string; size?: { cols: number; rows: number } }) => {
     if (pendingRecoveryInputTimerRef.current !== null) {
@@ -202,15 +230,16 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
           },
         })
       }
-      setTerminalText((current) => {
-        const next = appendTerminalText(current, decoded)
-        const expectedLength = current.length + decoded.length
-        if (next.length < expectedLength) {
-          stats.trimmedChars += expectedLength - next.length
-        }
-        maybeLogOutputStats(next.length)
-        return next
-      })
+      onOutputRef.current?.(decoded)
+      const current = terminalTextRef.current
+      const next = appendTerminalText(current, decoded)
+      const expectedLength = current.length + decoded.length
+      if (next.length < expectedLength) {
+        stats.trimmedChars += expectedLength - next.length
+      }
+      terminalTextRef.current = next
+      maybeLogOutputStats(next.length)
+      scheduleTerminalTextPublish()
     },
     onSnapshot: (nextSnapshot) => {
       const canPreserveHistory = !nextSnapshot.alternateScreen && scrollbackPrefixTextRef.current !== ''
@@ -234,9 +263,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         scrollbackPrefixTextRef.current = ''
       }
       hasMoreScrollbackRef.current = !nextSnapshot.alternateScreen
-      setTerminalText(canPreserveHistory && screenText !== undefined
+      terminalTextRef.current = canPreserveHistory && screenText !== undefined
         ? joinHistoryAndSnapshotText(scrollbackPrefixTextRef.current, screenText, nextSnapshot.rows)
-        : nextText)
+        : nextText
+      publishTerminalTextNow()
     },
     onTerminalInfo: setTerminalInfo,
     onResizeControl: setResizeControl,
@@ -260,7 +290,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         void recoverInputChannel(pending, reason)
       }
     },
-  }), [logSession, maybeLogOutputStats, recoverInputChannel])
+  }), [logSession, maybeLogOutputStats, publishTerminalTextNow, recoverInputChannel, scheduleTerminalTextPublish])
 
   useEffect(() => {
     sessionRef.current = options.session
@@ -269,6 +299,8 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
 
     let cancelled = false
     logSession('mount', { level: 'info' })
+    clearTerminalTextPublishTimer()
+    terminalTextRef.current = ''
     setTerminalSnapshot(null)
     setTerminalText('')
     setTerminalInfo(null)
@@ -335,9 +367,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       protocolSessionRef.current = null
       clientRef.current = null
       clearPendingRecoveryInput()
+      clearTerminalTextPublishTimer()
       dispatch({ type: 'user.release' })
     }
-  }, [callbacks, clearPendingRecoveryInput, logSession, options.machineId, options.terminalId, options.session])
+  }, [callbacks, clearPendingRecoveryInput, clearTerminalTextPublishTimer, logSession, options.machineId, options.terminalId, options.session])
 
   const sendInput = useCallback((data: string, size?: { cols: number; rows: number }) => {
     const message = { data, ...(size ? { size } : {}) }
@@ -417,7 +450,8 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
           hasMore: page.hasMore,
         },
       } : current)
-      setTerminalText((current) => prependTerminalText(prefix, current))
+      terminalTextRef.current = prependTerminalText(prefix, terminalTextRef.current)
+      publishTerminalTextNow()
       logSession('scrollback_load_success', {
         details: {
           elapsedMs: Math.round(terminalNow() - startedAt),
@@ -435,7 +469,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     } finally {
       loadingScrollbackRef.current = false
     }
-  }, [])
+  }, [publishTerminalTextNow])
 
   const handleAppResume = useCallback((resumeKind: 'quick' | 'cold' | 'frozen') => {
     dispatch({ type: 'app.resume', resumeKind })
@@ -481,13 +515,9 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
 
 export type TerminalSessionMessage = ConnectionMessage
 
-function appendTerminalText(current: string, next: string): string {
-  return trimTerminalTextToRecentWindow(current + next)
-}
-
 function prependTerminalText(prefix: string, current: string): string {
   if (!prefix) return current
-  return trimTerminalTextToRecentWindow(joinTerminalText(prefix, current))
+  return trimTerminalTextPreservingPrefix(prefix, current, '\r\n')
 }
 
 function joinTerminalText(prefix: string, current: string): string {
@@ -501,14 +531,27 @@ function joinHistoryAndSnapshotText(prefix: string, current: string, rows: numbe
   if (!current) return prefix
   const spacerRows = Math.max(0, rows - 1)
   const spacer = spacerRows > 0 ? `\r\n${'\n'.repeat(spacerRows)}` : '\r\n'
-  return trimTerminalTextToRecentWindow(`${prefix}${spacer}${current}`)
+  return trimTerminalTextPreservingPrefix(prefix, current, spacer)
 }
 
-function trimTerminalTextToRecentWindow(text: string): string {
-  if (text.length <= terminalTextSoftLimitChars) return text
-  const start = text.length - terminalTextSoftLimitChars
-  const newline = text.indexOf('\n', start)
-  return text.slice(newline >= 0 ? newline + 1 : start)
+function trimTerminalTextPreservingPrefix(prefix: string, current: string, separator: string): string {
+  if (!prefix) return trimTerminalTextToRecentWindow(current)
+  if (!current) return trimTerminalTextToRecentWindow(prefix)
+  const joined = joinTerminalTextWithSeparator(prefix, current, separator)
+  if (joined.length <= terminalTextSoftLimitChars) return joined
+  const currentLimit = terminalTextSoftLimitChars - prefix.length - separator.length
+  if (currentLimit <= 0) {
+    return trimTerminalTextToRecentWindow(prefix)
+  }
+  const trimmedCurrent = trimTerminalTextToRecentWindow(current, currentLimit)
+  if (!trimmedCurrent) return trimTerminalTextToRecentWindow(prefix)
+  return joinTerminalTextWithSeparator(prefix, trimmedCurrent, separator)
+}
+
+function joinTerminalTextWithSeparator(prefix: string, current: string, separator: string): string {
+  if (!prefix) return current
+  if (!current) return prefix
+  return `${prefix}${separator}${current}`
 }
 
 function createProtocolSession(

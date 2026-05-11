@@ -312,36 +312,14 @@ const (
 )
 
 func forwardLiveStreamMessages(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage) {
-	var (
-		pending    fanout.StreamMessage
-		hasPending bool
-	)
 	for {
-		msg, ok := nextLiveStreamMessage(src, &pending, &hasPending)
+		msg, ok := <-src
 		if !ok {
 			return
 		}
-		if msg.Type != fanout.StreamOutput && msg.Type != fanout.StreamSyncLost {
-			select {
-			case <-ctx.Done():
-				return
-			case dst <- cloneFanoutStreamMessage(msg):
-			}
-			continue
-		}
-		batch, next, nextHasPending, nextOK := coalesceLiveStreamMessages(msg, src)
-		for _, out := range batch {
-			select {
-			case <-ctx.Done():
-				return
-			case dst <- out:
-			}
-		}
-		if !nextOK {
+		if !sendFanoutStreamMessage(ctx, dst, msg, nil) {
 			return
 		}
-		pending = next
-		hasPending = nextHasPending
 	}
 }
 
@@ -358,144 +336,47 @@ func (t *Terminal) forwardTerminalStreamMessages(ctx context.Context, src <-chan
 }
 
 func forwardTerminalStreamMessagesImmediate(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage, fallback func() StreamMessage) {
-	var (
-		pending    fanout.StreamMessage
-		hasPending bool
-	)
 	for {
-		msg, ok := nextLiveStreamMessage(src, &pending, &hasPending)
+		msg, ok := <-src
 		if !ok {
 			return
 		}
-		if msg.Type != fanout.StreamOutput && msg.Type != fanout.StreamSyncLost {
-			select {
-			case <-ctx.Done():
-				return
-			case dst <- cloneFanoutStreamMessage(msg):
-			}
-			continue
-		}
-		batch, next, nextHasPending, nextOK := coalesceLiveStreamMessages(msg, src)
-		for _, out := range batch {
-			if out.Type == StreamSyncLost && fallback != nil {
-				out = fallback()
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case dst <- out:
-			}
-		}
-		if !nextOK {
+		if !sendFanoutStreamMessage(ctx, dst, msg, fallback) {
 			return
 		}
-		pending = next
-		hasPending = nextHasPending
 	}
 }
 
-func nextLiveStreamMessage(src <-chan fanout.StreamMessage, pending *fanout.StreamMessage, hasPending *bool) (fanout.StreamMessage, bool) {
-	if hasPending != nil && *hasPending {
-		*hasPending = false
-		return *pending, true
-	}
-	msg, ok := <-src
-	return msg, ok
-}
-
-func coalesceLiveStreamMessages(first fanout.StreamMessage, src <-chan fanout.StreamMessage) ([]StreamMessage, fanout.StreamMessage, bool, bool) {
-	batch := make([]StreamMessage, 0, 4)
-	var (
-		output       []byte
-		outputShared bool
-		dropped      uint64
-	)
-	flushOutput := func() {
-		if len(output) == 0 {
-			return
-		}
-		appendOutputStreamMessages(&batch, output)
-		output = nil
-		outputShared = false
-	}
-	flushDropped := func() {
-		if dropped == 0 {
-			return
-		}
-		batch = append(batch, StreamMessage{Type: StreamSyncLost, DroppedBytes: dropped})
-		dropped = 0
-	}
-	handle := func(msg fanout.StreamMessage) (fanout.StreamMessage, bool, bool) {
-		switch msg.Type {
-		case fanout.StreamOutput:
-			if dropped > 0 {
-				flushDropped()
-			}
-			if len(output) > 0 && len(output)+len(msg.Output) > maxMergedLiveOutputBytes {
-				flushOutput()
-			}
-			if len(output) == 0 {
-				output = msg.Output
-				outputShared = true
-				return fanout.StreamMessage{}, false, true
-			}
-			if outputShared {
-				merged := make([]byte, 0, len(output)+len(msg.Output))
-				merged = append(merged, output...)
-				merged = append(merged, msg.Output...)
-				output = merged
-				outputShared = false
-				return fanout.StreamMessage{}, false, true
-			}
-			output = append(output, msg.Output...)
-			return fanout.StreamMessage{}, false, true
-		case fanout.StreamSyncLost:
-			flushOutput()
-			dropped += msg.DroppedBytes
-			return fanout.StreamMessage{}, false, true
-		default:
-			flushOutput()
-			flushDropped()
-			return msg, true, true
-		}
-	}
-	if pending, hasPending, ok := handle(first); hasPending || !ok {
-		if !ok {
-			return batch, fanout.StreamMessage{}, false, false
-		}
-		return batch, pending, true, true
-	}
-	for {
+func sendFanoutStreamMessage(ctx context.Context, dst chan<- StreamMessage, msg fanout.StreamMessage, fallback func() StreamMessage) bool {
+	if msg.Type == fanout.StreamSyncLost && fallback != nil {
+		out := fallback()
 		select {
-		case msg, ok := <-src:
-			if !ok {
-				flushOutput()
-				flushDropped()
-				return batch, fanout.StreamMessage{}, false, false
-			}
-			if pending, hasPending, ok := handle(msg); hasPending || !ok {
-				if !ok {
-					return batch, fanout.StreamMessage{}, false, false
-				}
-				return batch, pending, true, true
-			}
-		default:
-			flushOutput()
-			flushDropped()
-			return batch, fanout.StreamMessage{}, false, true
+		case <-ctx.Done():
+			return false
+		case dst <- out:
+			return true
 		}
 	}
-}
-
-func appendOutputStreamMessages(batch *[]StreamMessage, output []byte) {
-	if batch == nil || len(output) == 0 {
-		return
+	if msg.Type != fanout.StreamOutput {
+		select {
+		case <-ctx.Done():
+			return false
+		case dst <- cloneFanoutStreamMessage(msg):
+			return true
+		}
 	}
+	output := msg.Output
 	for len(output) > 0 {
 		n := minInt(len(output), maxLiveOutputFrameBytes)
-		*batch = append(*batch, StreamMessage{Type: StreamOutput, Output: output[:n]})
+		out := StreamMessage{Type: StreamOutput, Output: output[:n]}
+		select {
+		case <-ctx.Done():
+			return false
+		case dst <- out:
+		}
 		output = output[n:]
 	}
+	return true
 }
 
 func broadcastLiveOutputChunks(stream *fanout.Fanout, output []byte, rateLimited bool) {
