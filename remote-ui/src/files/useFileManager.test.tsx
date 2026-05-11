@@ -1,9 +1,13 @@
 import { renderHook, act, waitFor } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useFileManager } from './useFileManager'
 import { createDeferredFileResponder, createMockFileSession } from '../test/mockFileSession'
 
 describe('useFileManager', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('loads the current directory and navigates through file session interfaces', async () => {
     const session = createMockFileSession({
       '/files/list': ({ path }: { path?: string }) => ({
@@ -250,6 +254,34 @@ describe('useFileManager', () => {
       path: '/files/preview',
       params: { path: '/README.md' },
     })
+  })
+
+  it('copies selected file paths to the system clipboard without changing the file clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const session = createMockFileSession({
+      '/files/list': { path: '/', parent: '', total: 0, entries: [] },
+    }, {}, { terminalId: 'terminal-1' })
+
+    const { result } = renderHook(() => useFileManager({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      session,
+      initialPath: '/',
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => {
+      await result.current.copyFilePaths(['/tmp/a.txt', '/tmp/b.txt'])
+    })
+
+    expect(writeText).toHaveBeenCalledWith('/tmp/a.txt\n/tmp/b.txt')
+    expect(result.current.actionMessage).toBe('Copied 2 paths')
+    expect(result.current.clipboard).toBeNull()
+    expect(result.current.error).toBeNull()
   })
 
   it('rejects transports connected to another terminal before issuing file requests', async () => {

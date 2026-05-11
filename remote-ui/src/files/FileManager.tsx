@@ -20,7 +20,7 @@ import yaml from 'highlight.js/lib/languages/yaml'
 import 'highlight.js/styles/github.css'
 import { addNativeBackHandler } from '../platform/nativeBack'
 import { ActionSheet, type ActionSheetItem } from '../ui/ActionSheet'
-import { AlertCircle, ArrowDownAZ, ArrowDownToLine, ArrowUpAZ, ArrowUpFromLine, Check, ChevronRight, Clock, Code2, Eye, EyeOff, File, FileText, FileType, Folder, HardDrive, ListFilter, Image, ListChecks, MoreVertical, PlaySquare, RefreshCw, SquarePen, Trash2, WrapText, X } from 'lucide-react'
+import { AlertCircle, ArrowDownAZ, ArrowDownToLine, ArrowUpAZ, ArrowUpFromLine, Check, ChevronRight, ClipboardCopy, Clock, Code2, Eye, EyeOff, File, FileText, FileType, Folder, HardDrive, ListFilter, Image, ListChecks, MoreVertical, PlaySquare, RefreshCw, SquarePen, Trash2, WrapText, X } from 'lucide-react'
 
 hljs.registerLanguage('bash', bash)
 hljs.registerLanguage('cpp', cpp)
@@ -119,6 +119,12 @@ export function FileManager({
         },
       })
     }
+
+    actions.push({
+      label: 'Copy Path',
+      icon: <ClipboardCopy className="h-5 w-5" />,
+      onClick: () => { void manager.copyFilePaths([entryMenuPath]) },
+    })
 
     actions.push({
       label: 'Copy',
@@ -286,6 +292,15 @@ export function FileManager({
                 </>
               )}
             </div>
+            <button
+              type="button"
+              aria-label="Copy current directory path"
+              title="Copy current directory path"
+              className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors active:bg-zinc-100"
+              onClick={() => { void manager.copyFilePaths([manager.currentPath || '/']) }}
+            >
+              <ClipboardCopy className="h-4 w-4" />
+            </button>
           </div>
         </header>
       )}
@@ -616,6 +631,15 @@ export function FileManager({
             </button>
             <button
               onClick={() => {
+                void manager.copyFilePaths(Array.from(manager.selectedPaths)).then(() => manager.setSelectionMode(false))
+              }}
+              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 active:bg-zinc-100 rounded-lg"
+            >
+              <ClipboardCopy className="h-5 w-5" />
+              <span className="text-[11px] font-medium">Path</span>
+            </button>
+            <button
+              onClick={() => {
                 manager.cut(Array.from(manager.selectedPaths))
                 manager.setSelectionMode(false)
               }}
@@ -788,10 +812,10 @@ function BinaryImagePreview({ preview }: { preview: FilePreviewResponse }) {
   if (src === undefined) return null
   if (!src) return <PreviewNotice title="Preview Error" message="Image preview data is invalid." />
   return (
-    <div className="flex min-h-full items-center justify-center p-3">
+    <div className="flex min-h-full items-center justify-center bg-zinc-950 p-3">
       <img
         alt={preview.name}
-        className="max-h-full max-w-full rounded-lg object-contain shadow-sm"
+        className="max-h-[calc(100dvh-5rem)] max-w-full rounded-md object-contain shadow-sm"
         src={src}
       />
     </div>
@@ -835,15 +859,26 @@ function useBinaryPreviewUrl(contentBase64: string | undefined, mimeType: string
 function binaryPreviewUrl(contentBase64: string, mimeType: string): string | null {
   const trimmed = contentBase64.trim()
   if (trimmed.startsWith('data:')) return trimmed
+  const normalizedMimeType = mimeType.trim() || 'application/octet-stream'
+  const compact = trimmed.replace(/\s+/g, '')
+  if (/^[A-Za-z0-9+/=_-]+$/.test(compact)) {
+    return `data:${normalizedMimeType};base64,${normalizeBase64ForDataUrl(compact)}`
+  }
   try {
     const binary = atob(trimmed)
     const bytes = new Uint8Array(binary.length)
     for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
-    const blob = new Blob([bytes], { type: mimeType || 'application/octet-stream' })
+    const blob = new Blob([bytes], { type: normalizedMimeType })
     return URL.createObjectURL(blob)
   } catch {
     return null
   }
+}
+
+function normalizeBase64ForDataUrl(contentBase64: string): string {
+  const normalized = contentBase64.replace(/-/g, '+').replace(/_/g, '/')
+  const padding = normalized.length % 4
+  return padding === 0 ? normalized : `${normalized}${'='.repeat(4 - padding)}`
 }
 
 function TextPreview({ text, name, mimeType }: { text: string; name: string; mimeType: string }) {

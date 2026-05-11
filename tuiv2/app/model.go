@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/termx-core/workbenchdoc"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -20,7 +21,6 @@ import (
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	"github.com/lozzow/termx/termx-core/workbenchdoc"
 )
 
 type Model struct {
@@ -391,14 +391,11 @@ func (m *Model) sendAsync(msg tea.Msg) {
 	if m == nil || m.send == nil {
 		return
 	}
-	fields := debugMessageFields(msg)
-	m.debugLog("send_async_start", fields...)
 	// Runtime callbacks can fire from PTY/stream goroutines. Program.Send uses
 	// an unbuffered channel, so sending asynchronously avoids stalling terminal
 	// output when Bubble Tea is busy rendering or handling another message.
 	go func() {
 		m.send(msg)
-		m.debugLog("send_async_done", fields...)
 	}()
 }
 

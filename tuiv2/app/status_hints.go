@@ -147,6 +147,10 @@ func statusDocVisible(doc input.BindingDoc, mode input.ModeKind, ctx statusHintC
 			input.ActionResizePaneLargeLeft, input.ActionResizePaneLargeRight, input.ActionResizePaneLargeUp, input.ActionResizePaneLargeDown,
 			input.ActionBalancePanes, input.ActionCycleLayout:
 			return ctx.activeTab != nil
+		case input.ActionMovePaneContentLeft, input.ActionMovePaneContentRight, input.ActionMovePaneContentUp, input.ActionMovePaneContentDown,
+			input.ActionAlignPaneContentLeft, input.ActionAlignPaneContentRight, input.ActionAlignPaneContentTop, input.ActionAlignPaneContentBottom,
+			input.ActionCenterPaneContent, input.ActionCenterPaneContentHorizontal, input.ActionCenterPaneContentVertical, input.ActionResetPaneContentOffset:
+			return ctx.activePane != nil
 		}
 	case input.ModeTab:
 		switch doc.Binding.Action {
@@ -198,8 +202,6 @@ func statusDocVisible(doc input.BindingDoc, mode input.ModeKind, ctx statusHintC
 		switch doc.Binding.Action {
 		case input.ActionScrollUp, input.ActionScrollDown:
 			return ctx.activePaneConnected()
-		case input.ActionZoomPane:
-			return ctx.activePane != nil
 		}
 	}
 	return true

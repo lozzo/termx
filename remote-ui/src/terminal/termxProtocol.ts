@@ -100,6 +100,22 @@ export function rowsToReplay(rows: unknown[]): string {
   return writeSequentialRows(rows)
 }
 
+export function screenRowsToPlainText(snapshot: unknown): string {
+  if (!isRecord(snapshot)) {
+    return ''
+  }
+  const screenRecord = snapshot.screen && isRecord(snapshot.screen) ? snapshot.screen : null
+  return rowsFrom(screenRecord?.rows).map(rowText).join('\n')
+}
+
+export function screenRowsToReplay(snapshot: unknown): string {
+  if (!isRecord(snapshot)) {
+    return ''
+  }
+  const screenRecord = snapshot.screen && isRecord(snapshot.screen) ? snapshot.screen : null
+  return encodeScreenSnapshot(rowsFrom(screenRecord?.rows))
+}
+
 function rowsFrom(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
@@ -130,6 +146,7 @@ export function snapshotToReplay(snapshot: unknown): string {
   const modes = modesFrom(snapshot.modes)
   const parts: string[] = []
 
+  parts.push(writePrivateModeANSI(1049, modes.alternateScreen))
   if (!modes.alternateScreen && scrollbackRows.length > 0) {
     parts.push(writeSequentialRows(scrollbackRows))
     parts.push('\r\n')
@@ -140,9 +157,6 @@ export function snapshotToReplay(snapshot: unknown): string {
     parts.push('\x1b[0m')
   }
 
-  if (modes.alternateScreen) {
-    parts.push('\x1b[?1049h')
-  }
   parts.push('\x1b[H\x1b[2J\x1b[H')
   parts.push(encodeScreenSnapshot(screenRows))
   parts.push(writeTerminalModesANSI(modes))

@@ -417,6 +417,8 @@ func (r *Runtime) Visible() *VisibleRuntime {
 			Role:           string(binding.Role),
 			Connected:      binding.Connected,
 			ViewportOffset: binding.Viewport.Offset,
+			ContentOffsetX: binding.ContentOffset.X,
+			ContentOffsetY: binding.ContentOffset.Y,
 		})
 	}
 	r.visibleCache = visible

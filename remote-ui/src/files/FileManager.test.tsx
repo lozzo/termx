@@ -196,6 +196,106 @@ describe('FileManager', () => {
     }
   })
 
+  it('copies the current directory path from the path bar', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/Users/lozzow/project/deep/path',
+        parent: '/Users/lozzow/project/deep',
+        total: 0,
+        entries: [],
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(
+      <FileManager
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+        initialPath="/Users/lozzow/project/deep/path"
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('termx-file-pathbar').textContent).toContain('path'))
+    await userEvent.click(screen.getByRole('button', { name: /copy current directory path/i }))
+
+    expect(writeText).toHaveBeenCalledWith('/Users/lozzow/project/deep/path')
+    expect(await screen.findByText('Copied path')).toBeTruthy()
+  })
+
+  it('copies a file path from the entry action sheet', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/srv/app',
+        parent: '/srv',
+        total: 1,
+        entries: [{ name: 'config.json', type: 'file', size: 32 }],
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(
+      <FileManager
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+        initialPath="/srv/app"
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText('config.json')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /more actions for config.json/i }))
+    await userEvent.click(screen.getByRole('button', { name: /copy path/i }))
+
+    expect(writeText).toHaveBeenCalledWith('/srv/app/config.json')
+    expect(await screen.findByText('Copied path')).toBeTruthy()
+  })
+
+  it('copies selected file paths from selection mode', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/srv/app',
+        parent: '/srv',
+        total: 2,
+        entries: [
+          { name: 'a.txt', type: 'file', size: 1 },
+          { name: 'b.txt', type: 'file', size: 1 },
+        ],
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(
+      <FileManager
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+        initialPath="/srv/app"
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText('a.txt')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /select files/i }))
+    await userEvent.click(screen.getByRole('button', { name: /select a.txt/i }))
+    await userEvent.click(screen.getByRole('button', { name: /select b.txt/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^path$/i }))
+
+    expect(writeText).toHaveBeenCalledWith('/srv/app/a.txt\n/srv/app/b.txt')
+    expect(await screen.findByText('Copied 2 paths')).toBeTruthy()
+  })
+
   it('lets users change file list sorting from the toolbar', async () => {
     const session = createMockFileSession({
       '/files/list': {
@@ -377,8 +477,9 @@ describe('FileManager', () => {
     await userEvent.click(screen.getByRole('button', { name: /preview shot.png/i }))
 
     const image = await screen.findByRole('img', { name: 'shot.png' })
-    expect(image.getAttribute('src')).toBe('blob:termx-preview')
-    expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
+    expect(image.getAttribute('src')).toBe('data:image/png;base64,iVBORw0KGgo=')
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+    expect(image.className).toMatch(/max-h-\[calc\(100dvh-5rem\)\]/)
   })
 
   it('renders image previews from data URL preview content', async () => {

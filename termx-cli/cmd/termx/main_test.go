@@ -13,10 +13,12 @@ import (
 	"time"
 
 	termx "github.com/lozzow/termx/termx-core"
+	"github.com/lozzow/termx/termx-core/transport"
 	"github.com/lozzow/termx/termx-remote/discovery"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 	pb "github.com/lozzow/termx/termx-remote/protocol/hubgrpc"
 	"github.com/lozzow/termx/tuiv2/shared"
+	"github.com/spf13/cobra"
 )
 
 func TestRootCmdRoutesToTUIv2ByDefault(t *testing.T) {
@@ -362,6 +364,8 @@ func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
   device_name: file-device
   region: fra
   mode: online
+  local_web_addr: 127.0.0.1:19998
+  ice_tcp_addr: 127.0.0.1:19999
   token_ttl: 2h
   allow_lan: true
   lan_ips: 192.168.0.0/16,10.0.0.5
@@ -405,6 +409,9 @@ func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
 	if cfg.Mode != "online" || !cfg.AllowLAN || len(cfg.LANIPs) != 2 || cfg.LANIPs[1] != "10.0.0.5" {
 		t.Fatalf("unexpected mode/LAN config: %#v", cfg)
 	}
+	if cfg.LocalWebAddr != "127.0.0.1:19998" || cfg.ICETCPAddr != "127.0.0.1:19999" {
+		t.Fatalf("unexpected local runtime config: %#v", cfg)
+	}
 	if cfg.TokenTTLSeconds != int((2 * time.Hour).Seconds()) {
 		t.Fatalf("unexpected token ttl seconds: %d", cfg.TokenTTLSeconds)
 	}
@@ -433,6 +440,8 @@ func TestRemoteConfigEnvOverridesFile(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_DEVICE_NAME", "env-device")
 	t.Setenv("TERMX_REMOTE_REGION", "sin")
 	t.Setenv("TERMX_REMOTE_MODE", "online")
+	t.Setenv("TERMX_REMOTE_LOCAL_WEB_ADDR", "127.0.0.1:18880")
+	t.Setenv("TERMX_REMOTE_LOCAL_ICE_TCP_ADDR", "127.0.0.1:18881")
 	t.Setenv("TERMX_REMOTE_TOKEN_TTL", "3600")
 	t.Setenv("TERMX_REMOTE_ALLOW_LAN", "false")
 
@@ -460,6 +469,9 @@ func TestRemoteConfigEnvOverridesFile(t *testing.T) {
 	}
 	if cfg.Mode != "online" || cfg.AllowLAN {
 		t.Fatalf("expected env mode/allow_lan override, got %#v", cfg)
+	}
+	if cfg.LocalWebAddr != "127.0.0.1:18880" || cfg.ICETCPAddr != "127.0.0.1:18881" {
+		t.Fatalf("expected env local runtime override, got %#v", cfg)
 	}
 	if cfg.TokenTTLSeconds != 3600 {
 		t.Fatalf("expected env token ttl override, got %d", cfg.TokenTTLSeconds)
@@ -617,6 +629,7 @@ func TestDaemonCommandUsesRootConfigForRemoteBootstrap(t *testing.T) {
 			AccessToken: "loader-secret",
 			DataDir:     t.TempDir(),
 			DeviceName:  "config-device",
+			Mode:        "online",
 		}, nil
 	}
 	newRemoteRuntimeHostFn = func(core remoteRuntimeCore, cfg remoteprotocol.Config) *remoteRuntimeHost {
@@ -650,6 +663,87 @@ func TestDaemonCommandUsesRootConfigForRemoteBootstrap(t *testing.T) {
 	}
 	if fake.newServerCalls != 1 || fake.listenCalls != 1 || fake.shutdownCalls != 1 {
 		t.Fatalf("unexpected fake server calls: new=%d listen=%d shutdown=%d", fake.newServerCalls, fake.listenCalls, fake.shutdownCalls)
+	}
+}
+
+func TestDaemonStartsConfiguredLocalRuntime(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	config := `remote:
+  enabled: true
+  mode: both
+  control_url: https://control.example.test
+  access_token: loader-secret
+  local_web_addr: 127.0.0.1:0
+  ice_tcp_addr: 127.0.0.1:0
+`
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	fake := &fakeTermxServer{}
+	oldNewServer := newServer
+	t.Cleanup(func() {
+		newServer = oldNewServer
+	})
+	newServer = func(opts ...termx.ServerOption) termxServer {
+		fake.newServerCalls++
+		return fake
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--config", configPath, "daemon", "--log-file", filepath.Join(t.TempDir(), "termx.log")})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if fake.newServerCalls != 1 || fake.listenCalls != 1 || fake.shutdownCalls != 1 {
+		t.Fatalf("unexpected fake server calls: new=%d listen=%d shutdown=%d", fake.newServerCalls, fake.listenCalls, fake.shutdownCalls)
+	}
+}
+
+func TestDaemonLocalAddrDefaultsFromEnabledMode(t *testing.T) {
+	cfg := remoteprotocol.Config{Enabled: true, Mode: "both"}
+	if got := daemonLocalWebAddr(cfg); got != defaultRemoteLocalWebAddr {
+		t.Fatalf("expected default local web addr, got %q", got)
+	}
+	if got := daemonLocalICETCPAddr(cfg); got != defaultRemoteLocalICEAddr {
+		t.Fatalf("expected default ICE TCP addr, got %q", got)
+	}
+}
+
+func TestDaemonLocalAddrUsesConfigAndEnvOverride(t *testing.T) {
+	cfg := remoteprotocol.Config{
+		Enabled:      true,
+		Mode:         "local",
+		LocalWebAddr: "127.0.0.1:19998",
+		ICETCPAddr:   "127.0.0.1:19999",
+	}
+	if got := daemonLocalWebAddr(cfg); got != "127.0.0.1:19998" {
+		t.Fatalf("expected config local web addr, got %q", got)
+	}
+	if got := daemonLocalICETCPAddr(cfg); got != "127.0.0.1:19999" {
+		t.Fatalf("expected config ICE TCP addr, got %q", got)
+	}
+
+	t.Setenv("TERMX_REMOTE_LOCAL_WEB_ADDR", "127.0.0.1:18880")
+	t.Setenv("TERMX_REMOTE_LOCAL_ICE_TCP_ADDR", "127.0.0.1:18881")
+	if got := daemonLocalWebAddr(cfg); got != "127.0.0.1:18880" {
+		t.Fatalf("expected env local web addr override, got %q", got)
+	}
+	if got := daemonLocalICETCPAddr(cfg); got != "127.0.0.1:18881" {
+		t.Fatalf("expected env ICE TCP addr override, got %q", got)
+	}
+}
+
+func TestDaemonLocalAddrDisabledForOnlineMode(t *testing.T) {
+	cfg := remoteprotocol.Config{Enabled: true, Mode: "online"}
+	if got := daemonLocalWebAddr(cfg); got != "" {
+		t.Fatalf("expected no local web addr for online mode, got %q", got)
+	}
+	if got := daemonLocalICETCPAddr(cfg); got != "" {
+		t.Fatalf("expected no ICE TCP addr for online mode, got %q", got)
 	}
 }
 
@@ -824,23 +918,54 @@ func TestRootCmdHasRemoteStatusAndPairCommands(t *testing.T) {
 		{"remote", "info"},
 		{"remote", "show"},
 		{"remote", "enable"},
-		{"remote", "local"},
-		{"remote", "local_only"},
 		{"remote", "disable"},
 		{"remote", "pair"},
-		{"remote", "qrcode"},
 		{"remote", "open"},
 	} {
 		if _, _, err := cmd.Find(args); err != nil {
 			t.Fatalf("expected %q command to exist: %v", strings.Join(args, " "), err)
 		}
 	}
-	if _, _, err := cmd.Find([]string{"pair"}); err != nil {
-		t.Fatalf("expected pair command to exist: %v", err)
+}
+
+func TestRootCmdDoesNotExposeRemovedRemotePairCommands(t *testing.T) {
+	cmd := newRootCmd()
+	if commandHasNameOrAlias(cmd, "pair") {
+		t.Fatal("top-level pair command should not be exposed")
+	}
+	remoteCmd := commandByNameOrAlias(cmd, "remote")
+	if remoteCmd == nil {
+		t.Fatal("remote command should exist")
+	}
+	for _, name := range []string{"qrcode", "local", "local-only", "local_only"} {
+		if commandHasNameOrAlias(remoteCmd, name) {
+			t.Fatalf("remote %s command should not be exposed", name)
+		}
 	}
 }
 
-func TestRemoteEnableLocalOnlyEmitsLocalStatus(t *testing.T) {
+func commandByNameOrAlias(cmd *cobra.Command, name string) *cobra.Command {
+	if cmd == nil {
+		return nil
+	}
+	for _, child := range cmd.Commands() {
+		if child.Name() == name {
+			return child
+		}
+		for _, alias := range child.Aliases {
+			if alias == name {
+				return child
+			}
+		}
+	}
+	return nil
+}
+
+func commandHasNameOrAlias(cmd *cobra.Command, name string) bool {
+	return commandByNameOrAlias(cmd, name) != nil
+}
+
+func TestRemoteEnableLocalModeEmitsLocalStatus(t *testing.T) {
 	oldEnable := remoteLocalEnableClient
 	t.Cleanup(func() {
 		remoteLocalEnableClient = oldEnable
@@ -863,7 +988,8 @@ func TestRemoteEnableLocalOnlyEmitsLocalStatus(t *testing.T) {
 
 	var out bytes.Buffer
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"remote", "enable", "--mode", "local", "--addr", "127.0.0.1:18888", "--ice-tcp-addr", "127.0.0.1:18889"})
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "local", "--addr", "127.0.0.1:18888", "--ice-tcp-addr", "127.0.0.1:18889"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 
@@ -881,9 +1007,11 @@ func TestRemoteEnableLocalOnlyEmitsLocalStatus(t *testing.T) {
 
 func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
 	oldStatus := remoteLocalStatusClient
+	oldRemoteStatus := remoteStatusClient
 	oldPair := pairStartClient
 	t.Cleanup(func() {
 		remoteLocalStatusClient = oldStatus
+		remoteStatusClient = oldRemoteStatus
 		pairStartClient = oldPair
 	})
 
@@ -891,6 +1019,12 @@ func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
 		return &remoteprotocol.LocalStatus{
 			Enabled:      true,
 			LocalPairURL: "http://127.0.0.1:19999/api/local/pair",
+		}, nil
+	}
+	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
+		return &remoteprotocol.Status{
+			HubURL:    "http://114.66.58.243:8447",
+			UpdatedAt: time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
 		}, nil
 	}
 	var gotParams remoteprotocol.PairStartParams
@@ -910,7 +1044,7 @@ func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
 
 	var out bytes.Buffer
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"remote", "pair", "--ttl", "2m"})
+	cmd.SetArgs([]string{"remote", "pair", "--uri", "--ttl", "2m"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 
@@ -920,14 +1054,14 @@ func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
 	if gotParams.LocalPairURL != "http://127.0.0.1:19999/api/local/pair" || gotParams.TTLSeconds != 120 {
 		t.Fatalf("unexpected pair params: %#v", gotParams)
 	}
-	if !strings.Contains(out.String(), "pair_session_id:\tpair_test") ||
-		!strings.Contains(out.String(), "pair_secret:\tsecret") ||
-		!strings.Contains(out.String(), "answer_proof_secret:\tproof-secret") {
+	if !strings.HasPrefix(strings.TrimSpace(out.String()), "termx://pair?payload=") ||
+		strings.Contains(out.String(), "pair_secret:\tsecret") ||
+		strings.Contains(out.String(), "answer_proof_secret:\tproof-secret") {
 		t.Fatalf("unexpected remote pair output:\n%s", out.String())
 	}
 }
 
-func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
+func TestRemotePairEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 	oldStatus := remoteLocalStatusClient
 	oldRemoteStatus := remoteStatusClient
 	oldPair := pairStartClient
@@ -970,7 +1104,7 @@ func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 
 	var out bytes.Buffer
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"remote", "qrcode", "--json", "--ttl", "2m"})
+	cmd.SetArgs([]string{"remote", "pair", "--json", "--ttl", "2m"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 
@@ -985,7 +1119,7 @@ func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 		Payload map[string]any `json:"payload"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
-		t.Fatalf("qrcode output is not JSON: %v\n%s", err, out.String())
+		t.Fatalf("pair output is not JSON: %v\n%s", err, out.String())
 	}
 	if !strings.HasPrefix(decoded.URI, "termx://pair?payload=") {
 		t.Fatalf("unexpected URI: %s", decoded.URI)
@@ -1007,7 +1141,7 @@ func TestRemoteQRCodeEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 	}
 }
 
-func TestRemoteQRCodeDoesNotStartLocalWebWhenLocalPairURLMissing(t *testing.T) {
+func TestRemotePairDoesNotStartLocalWebWhenLocalPairURLMissing(t *testing.T) {
 	oldStatus := remoteLocalStatusClient
 	oldRemoteStatus := remoteStatusClient
 	oldPair := pairStartClient
@@ -1045,7 +1179,7 @@ func TestRemoteQRCodeDoesNotStartLocalWebWhenLocalPairURLMissing(t *testing.T) {
 	}
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"remote", "qrcode", "--payload"})
+	cmd.SetArgs([]string{"remote", "pair", "--uri"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 
@@ -1057,7 +1191,7 @@ func TestRemoteQRCodeDoesNotStartLocalWebWhenLocalPairURLMissing(t *testing.T) {
 	}
 }
 
-func TestRemoteQRCodeFallsBackToSingleHubURL(t *testing.T) {
+func TestRemotePairFallsBackToSingleHubURL(t *testing.T) {
 	oldStatus := remoteLocalStatusClient
 	oldRemoteStatus := remoteStatusClient
 	oldPair := pairStartClient
@@ -1088,7 +1222,7 @@ func TestRemoteQRCodeFallsBackToSingleHubURL(t *testing.T) {
 
 	var out bytes.Buffer
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"remote", "qrcode", "--json"})
+	cmd.SetArgs([]string{"remote", "pair", "--json"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 
@@ -1099,7 +1233,7 @@ func TestRemoteQRCodeFallsBackToSingleHubURL(t *testing.T) {
 		Payload map[string]any `json:"payload"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
-		t.Fatalf("qrcode output is not JSON: %v\n%s", err, out.String())
+		t.Fatalf("pair output is not JSON: %v\n%s", err, out.String())
 	}
 	addresses := decoded.Payload["addresses"].(map[string]any)
 	public := addresses["public"].([]any)
@@ -1549,7 +1683,7 @@ func TestRemoteEnableBrowserForcesFreshTokenOverSavedAuth(t *testing.T) {
 		t.Fatalf("save old auth record: %v", err)
 	}
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
-	if err := ensureRemoteConfigBootstrap(configPath, "https://control.example.test", "", authStore, "online"); err != nil {
+	if err := ensureRemoteConfigBootstrap(configPath, "https://control.example.test", "", authStore, "online", "", ""); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	var validatedToken string
@@ -1594,86 +1728,6 @@ func TestRemoteEnableBrowserForcesFreshTokenOverSavedAuth(t *testing.T) {
 	}
 }
 
-func TestRemoteLocalOnlyAliasEnablesRuntime(t *testing.T) {
-	oldEnable := remoteLocalEnableClient
-	t.Cleanup(func() {
-		remoteLocalEnableClient = oldEnable
-	})
-	var gotParams remoteprotocol.LocalEnableParams
-	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
-		gotParams = params
-		return &remoteprotocol.LocalStatus{
-			Enabled:      true,
-			HTTPURL:      "http://127.0.0.1:18888",
-			LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
-			UpdatedAt:    time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
-		}, nil
-	}
-
-	cmd := newRootCmd()
-	cmd.SetArgs([]string{"remote", "local_only", "--addr", "127.0.0.1:18888", "--ice-tcp-addr", "127.0.0.1:18889"})
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if gotParams.LocalWebAddr != "127.0.0.1:18888" || gotParams.ICETCPAddr != "127.0.0.1:18889" {
-		t.Fatalf("unexpected enable params: %#v", gotParams)
-	}
-}
-
-func TestPairCmdEmitsJSONPairSession(t *testing.T) {
-	oldPairStart := pairStartClient
-	t.Cleanup(func() {
-		pairStartClient = oldPairStart
-	})
-
-	var gotParams remoteprotocol.PairStartParams
-	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
-		gotParams = params
-		return &remoteprotocol.PairStartResult{
-			Type:              "termx_pair",
-			MachineID:         "mach_test",
-			MachineName:       "MacBook Pro",
-			LocalPairURL:      params.LocalPairURL,
-			PairSessionID:     "pair_test",
-			PairSecret:        "secret",
-			AnswerProofSecret: "proof-secret",
-			ExpiresAt:         time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
-		}, nil
-	}
-
-	var out bytes.Buffer
-	cmd := newRootCmd()
-	cmd.SetArgs([]string{
-		"--socket", filepath.Join(t.TempDir(), "termx.sock"),
-		"pair",
-		"--local-url", "http://127.0.0.1:18888/api/local/pair",
-		"--ttl", "5m",
-		"--json",
-	})
-	cmd.SetOut(&out)
-	cmd.SetErr(io.Discard)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if gotParams.LocalPairURL != "http://127.0.0.1:18888/api/local/pair" {
-		t.Fatalf("unexpected local pair url param %q", gotParams.LocalPairURL)
-	}
-	if gotParams.TTLSeconds != 300 {
-		t.Fatalf("expected ttl seconds 300, got %d", gotParams.TTLSeconds)
-	}
-
-	var decoded remoteprotocol.PairStartResult
-	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
-		t.Fatalf("pair output is not JSON: %v\n%s", err, out.String())
-	}
-	if decoded.MachineID != "mach_test" || decoded.PairSessionID != "pair_test" {
-		t.Fatalf("unexpected pair output: %#v", decoded)
-	}
-}
-
 type fakeTermxServer struct {
 	newServerCalls int
 	listenCalls    int
@@ -1687,5 +1741,39 @@ func (s *fakeTermxServer) ListenAndServe(context.Context) error {
 
 func (s *fakeTermxServer) Shutdown(context.Context) error {
 	s.shutdownCalls++
+	return nil
+}
+
+func (s *fakeTermxServer) Create(context.Context, termx.CreateOptions) (*termx.TerminalInfo, error) {
+	return &termx.TerminalInfo{ID: "fake-terminal"}, nil
+}
+
+func (s *fakeTermxServer) Get(context.Context, string) (*termx.TerminalInfo, error) {
+	return &termx.TerminalInfo{ID: "fake-terminal"}, nil
+}
+
+func (s *fakeTermxServer) List(context.Context, ...termx.ListOptions) ([]*termx.TerminalInfo, error) {
+	return nil, nil
+}
+
+func (s *fakeTermxServer) SetMetadata(context.Context, string, string, map[string]string) error {
+	return nil
+}
+
+func (s *fakeTermxServer) Remove(context.Context, string) error {
+	return nil
+}
+
+func (s *fakeTermxServer) Events(context.Context, ...termx.EventsOption) <-chan termx.Event {
+	ch := make(chan termx.Event)
+	close(ch)
+	return ch
+}
+
+func (s *fakeTermxServer) ServeTransport(context.Context, transport.Transport, string) error {
+	return nil
+}
+
+func (s *fakeTermxServer) ServeScopedTransport(context.Context, transport.Transport, string, termx.TransportScope) error {
 	return nil
 }

@@ -137,6 +137,125 @@ describe('useTerminalSession', () => {
     expect(result.current.terminalText).toMatch(/c[\s\S]*u[\s\S]*r[\s\S]*r[\s\S]*e[\s\S]*n[\s\S]*t/)
   })
 
+  it('preserves loaded scrollback when a live snapshot refresh replaces the current screen', async () => {
+    const session = createMockRtcTerminalSession()
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'current',
+      cols: 80,
+      rows: 24,
+      pages: [
+        { offset: 0, rows: ['older'] },
+      ],
+    })
+    const { result } = renderHook(() =>
+      useTerminalSession({
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        session,
+      }),
+    )
+
+    await waitFor(() => expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open'))
+    await act(async () => {
+      await result.current.loadScrollback(100)
+    })
+    expect(result.current.terminalText).toMatch(/o[\s\S]*l[\s\S]*d[\s\S]*e[\s\S]*r/)
+
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'updated',
+      cols: 80,
+      rows: 24,
+      scrollbackRows: [],
+      alternateScreen: false,
+    })
+    act(() => {
+      session.emitTerminalScreenUpdate('terminal-1')
+    })
+
+    await waitFor(() => {
+      expect(session.snapshotRequests('terminal-1').some((request) => request.limit === 1)).toBe(true)
+    })
+    await waitFor(() => expect(result.current.terminalText).toMatch(/u[\s\S]*p[\s\S]*d[\s\S]*a[\s\S]*t[\s\S]*e[\s\S]*d/))
+    expect(result.current.terminalText).toMatch(/o[\s\S]*l[\s\S]*d[\s\S]*e[\s\S]*r/)
+  })
+
+  it('drops preserved normal scrollback when a snapshot enters alternate screen', async () => {
+    const session = createMockRtcTerminalSession()
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'current',
+      cols: 80,
+      rows: 24,
+      pages: [
+        { offset: 0, rows: ['older'] },
+      ],
+    })
+    const { result } = renderHook(() =>
+      useTerminalSession({
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        session,
+      }),
+    )
+
+    await waitFor(() => expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open'))
+    await act(async () => {
+      await result.current.loadScrollback(100)
+    })
+    expect(result.current.terminalText).toMatch(/o[\s\S]*l[\s\S]*d[\s\S]*e[\s\S]*r/)
+
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'updated',
+      cols: 80,
+      rows: 24,
+      raw: {
+        size: { cols: 80, rows: 24 },
+        modes: { alternate_screen: true },
+        screen: {
+          rows: [{
+            cells: Array.from('updated').map((char) => ({ r: char })),
+          }],
+        },
+      },
+      alternateScreen: true,
+    })
+    act(() => {
+      session.emitTerminalScreenUpdate('terminal-1')
+    })
+
+    await waitFor(() => {
+      expect(session.snapshotRequests('terminal-1').some((request) => request.limit === 1)).toBe(true)
+    })
+    await waitFor(() => expect(result.current.terminalText).toMatch(/u[\s\S]*p[\s\S]*d[\s\S]*a[\s\S]*t[\s\S]*e[\s\S]*d/))
+    expect(result.current.terminalText).not.toMatch(/o[\s\S]*l[\s\S]*d[\s\S]*e[\s\S]*r/)
+  })
+
+  it('keeps the terminal text cache bounded during high-volume output bursts', async () => {
+    const session = createMockRtcTerminalSession()
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'current',
+      cols: 80,
+      rows: 24,
+    })
+    const { result } = renderHook(() =>
+      useTerminalSession({
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        session,
+      }),
+    )
+
+    await waitFor(() => expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open'))
+
+    const encoder = new TextEncoder()
+    act(() => {
+      session.emitTerminalOutput('terminal-1', encoder.encode(`${'old'.repeat(600_000)}\nKEEP-RECENT`))
+    })
+
+    await waitFor(() => expect(result.current.terminalText).toContain('KEEP-RECENT'))
+    expect(result.current.terminalText.length).toBeLessThanOrEqual(1_500_000)
+    expect(result.current.terminalText).not.toContain('oldoldoldoldold')
+  })
+
   it('refreshes the terminal data channel and retries recent input when the channel closes during send', async () => {
     const session = createMockRtcTerminalSession()
     const { result } = renderHook(() =>

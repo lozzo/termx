@@ -7,6 +7,8 @@ export interface TerminalSnapshotPayload {
   cols: number
   rows: number
   replay?: string
+  screenReplay?: string
+  screenText?: string
   raw?: unknown
   scrollbackRows?: unknown[]
   alternateScreen?: boolean

@@ -42,6 +42,58 @@ func TestPaneEntriesForTabPreferRuntimePaneViewport(t *testing.T) {
 	}
 }
 
+func TestPaneEntriesForTabCarryRuntimeContentOffsetIntoKeysAndOverflow(t *testing.T) {
+	tab := workbench.VisibleTab{
+		ID:           "tab-1",
+		ActivePaneID: "pane-1",
+		Panes: []workbench.VisiblePane{{
+			ID:         "pane-1",
+			TerminalID: "term-1",
+			Rect:       workbench.Rect{X: 0, Y: 0, W: 4, H: 4},
+		}},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Bindings: []runtime.VisiblePaneBinding{{
+			PaneID:         "pane-1",
+			ContentOffsetX: -1,
+			ContentOffsetY: -1,
+		}},
+		Terminals: []runtime.VisibleTerminal{{
+			TerminalID: "term-1",
+			State:      "running",
+			Snapshot: &protocol.Snapshot{
+				TerminalID: "term-1",
+				Size:       protocol.Size{Cols: 3, Rows: 3},
+				Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+					repeatCells("abc"),
+					repeatCells("def"),
+					repeatCells("ghi"),
+				}},
+			},
+		}},
+	}
+
+	entries, _ := paneEntriesForTab(tab, nil, 4, 4, newRuntimeLookup(runtimeState), bodyProjectionOptions{}, defaultUITheme())
+	if len(entries) != 1 {
+		t.Fatalf("expected one pane render entry, got %#v", entries)
+	}
+	if got := entries[0].ContentOffsetX; got != -1 {
+		t.Fatalf("expected render entry content offset x -1, got %d", got)
+	}
+	if got := entries[0].ContentOffsetY; got != -1 {
+		t.Fatalf("expected render entry content offset y -1, got %d", got)
+	}
+	if got := entries[0].ContentKey.ContentOffsetX; got != -1 {
+		t.Fatalf("expected content key content offset x -1, got %d", got)
+	}
+	if got := entries[0].ContentKey.ContentOffsetY; got != -1 {
+		t.Fatalf("expected content key content offset y -1, got %d", got)
+	}
+	if !entries[0].Overflow.Left || !entries[0].Overflow.Top || entries[0].Overflow.Right || entries[0].Overflow.Bottom {
+		t.Fatalf("expected offset overflow on left/top only, got %#v", entries[0].Overflow)
+	}
+}
+
 func TestPaneEntriesForTabMarksAlternateScreenEntriesConservativeOnlyInMultiPaneLayouts(t *testing.T) {
 	tab := workbench.VisibleTab{
 		ID:           "tab-1",

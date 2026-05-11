@@ -54,6 +54,7 @@ export interface UseFileManagerResult {
   setClipboard(clipboard: { mode: 'copy' | 'cut'; paths: string[] } | null): void
   copy(paths: string[]): void
   cut(paths: string[]): void
+  copyFilePaths(paths: string[]): Promise<void>
   paste(): Promise<void>
   batchDelete(paths: string[]): Promise<void>
   setNewDirName(name: string): void
@@ -160,6 +161,20 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   const cut = useCallback((paths: string[]) => {
     setClipboard({ mode: 'cut', paths })
     showActionMessage(`Cut ${paths.length} items`)
+  }, [showActionMessage])
+
+  const copyFilePaths = useCallback(async (paths: string[]) => {
+    if (paths.length === 0) return
+    try {
+      await writeTextToClipboard(paths.join('\n'))
+      showActionMessage(paths.length === 1 ? 'Copied path' : `Copied ${paths.length} paths`)
+    } catch (err) {
+      setError({
+        message: err instanceof Error ? err.message : String(err),
+        surface: 'toast',
+        recoverable: true,
+      })
+    }
   }, [showActionMessage])
 
   const paste = useCallback(async () => {
@@ -348,6 +363,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     setClipboard,
     copy,
     cut,
+    copyFilePaths,
     paste,
     batchDelete,
     setNewDirName,
@@ -465,6 +481,36 @@ function normalizeAbsolutePath(path: string): string {
 function basename(path: string): string {
   const normalized = path.replace(/\/+$/, '')
   return normalized.slice(normalized.lastIndexOf('/') + 1) || normalized
+}
+
+async function writeTextToClipboard(text: string): Promise<void> {
+  let clipboardErr: unknown
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return
+    } catch (err) {
+      clipboardErr = err
+    }
+  }
+  if (typeof document === 'undefined') {
+    throw clipboardErr instanceof Error ? clipboardErr : new Error('Clipboard is unavailable')
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  try {
+    if (!document.execCommand('copy')) {
+      throw new Error('Clipboard copy failed')
+    }
+  } finally {
+    document.body.removeChild(textarea)
+  }
 }
 
 function assertSessionTarget(info: ConnectionInfo, machineId: string, terminalId?: string): void {

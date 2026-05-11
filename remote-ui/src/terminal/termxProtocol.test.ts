@@ -69,11 +69,18 @@ describe('termxProtocol', () => {
     })
 
     expect(replay).toContain('\x1b[H\x1b[2J\x1b[H')
+    expect(replay).toContain('\x1b[?1049l')
     expect(replay).toContain('\x1b[0;38;5;208mo')
     expect(replay).toContain('\x1b[1;1H\x1b[0;1;31mh')
     expect(replay).toContain('\x1b[1;2H\x1b[0;38;2;0;255;0mi')
     expect(replay).toContain('\x1b[5 q')
     expect(replay).toContain('\x1b[1;2H')
     expect(replay).toContain('\x1b[?25h')
+  })
+
+  it('emits alternate screen enter and exit sequences from snapshot modes', () => {
+    expect(snapshotToReplay({ modes: { alternate_screen: true }, screen: { rows: [] } })).toContain('\x1b[?1049h')
+    expect(snapshotToReplay({ modes: { alternate_screen: false }, screen: { rows: [] } })).toContain('\x1b[?1049l')
+    expect(snapshotToReplay({ screen: { rows: [] } })).toContain('\x1b[?1049l')
   })
 })

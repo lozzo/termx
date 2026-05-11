@@ -1,4 +1,4 @@
-.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-cloud-both remote-qrcode test-remote-ui test-termx-cli
+.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-cloud-both remote-pair test-remote-ui test-termx-cli
 
 BIN_DIR := $(CURDIR)/bin
 TERMX_BIN := $(BIN_DIR)/termx
@@ -22,7 +22,7 @@ help:
 		'  make remote-dev      Build ./bin/termx, ensure local remote is enabled, then start vite dev server' \
 		'  make remote-clean    Stop local temp daemons/dev servers and remove known temp sockets' \
 		'  make remote-cloud-both  Build ./bin/termx and print the command to start one clean both-mode daemon' \
-		'  make remote-qrcode   Build ./bin/termx and print the command to generate a termx:// payload from one socket' \
+		'  make remote-pair     Build ./bin/termx and generate a termx:// pairing URI from one socket' \
 		'  make remote-open     Ensure local remote is enabled, then print the local remote URL' \
 		'  make remote-status   Show local remote status through ./bin/termx' \
 		'' \
@@ -43,7 +43,7 @@ termx-build:
 	go build -o "$(TERMX_BIN)" ./termx-cli/cmd/termx
 
 remote-dev: termx-build
-	@"$(TERMX_BIN)" remote local-only --addr "$(LOCAL_WEB_ADDR)" --ice-tcp-addr "$(ICE_TCP_ADDR)"
+	@"$(TERMX_BIN)" remote enable --mode local --addr "$(LOCAL_WEB_ADDR)" --ice-tcp-addr "$(ICE_TCP_ADDR)"
 	@printf 'termx local remote: %s\n' "$(LOCAL_WEB_ORIGIN)"
 	@printf 'remote-ui dev server: %s\n' "$(REMOTE_UI_DEV_ORIGIN)"
 	@printf '%s\n' 'local pair session:'
@@ -54,7 +54,7 @@ remote-daemon: localweb-build termx-build
 	TERMX_REMOTE_LOCAL_WEB_ADDR="$(LOCAL_WEB_ADDR)" TERMX_REMOTE_LOCAL_ICE_TCP_ADDR="$(ICE_TCP_ADDR)" "$(TERMX_BIN)" daemon
 
 remote-open: termx-build
-	@"$(TERMX_BIN)" remote local-only --addr "$(LOCAL_WEB_ADDR)" --ice-tcp-addr "$(ICE_TCP_ADDR)"
+	@"$(TERMX_BIN)" remote enable --mode local --addr "$(LOCAL_WEB_ADDR)" --ice-tcp-addr "$(ICE_TCP_ADDR)"
 	@"$(TERMX_BIN)" remote open --print
 
 remote-status: termx-build
@@ -77,13 +77,13 @@ remote-cloud-both: termx-build
 		'' \
 		'Then in another terminal run:' \
 		'' \
-		'  $(CURDIR)/bin/termx --socket "$(REMOTE_SOCKET)" remote enable --cloud --local --server "$(CONTROL_URL)" --hub-url "$(HUB_URL)"'
+		'  TERMX_REMOTE_CONTROL_URL="$(CONTROL_URL)" $(CURDIR)/bin/termx --socket "$(REMOTE_SOCKET)" remote enable --mode both --hub-url "$(HUB_URL)"'
 
-remote-qrcode: termx-build
+remote-pair: termx-build
 	@printf '%s\n' \
-		'Generate a fresh termx:// payload from one socket with:' \
+		'Generate a fresh termx:// pairing URI from one socket with:' \
 		'' \
-		'  $(CURDIR)/bin/termx --socket "$(REMOTE_SOCKET)" remote qrcode --payload --server "$(CONTROL_URL)"'
+		'  $(CURDIR)/bin/termx --socket "$(REMOTE_SOCKET)" remote pair --uri'
 
 test-remote-ui:
 	cd remote-ui && npm test

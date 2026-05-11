@@ -38,6 +38,15 @@ func cloneStreamScreenState(state *streamScreenState) *streamScreenState {
 	}
 }
 
+func streamScreenStateWithScrollbackLimit(state *streamScreenState, limit int) *streamScreenState {
+	if state == nil || state.snapshot == nil || limit < 0 {
+		return state
+	}
+	next := cloneStreamScreenState(state)
+	trimProtocolSnapshotScrollbackToLast(next.snapshot, limit)
+	return next
+}
+
 func applyStreamScreenUpdateState(current *streamScreenState, terminalID string, update protocol.ScreenUpdate) *streamScreenState {
 	next := cloneStreamScreenState(current)
 	if next == nil {
@@ -1148,6 +1157,13 @@ func trimSnapshotScrollbackFront(snapshot *protocol.Snapshot, trim int) {
 	snapshot.Scrollback = cloneProtocolRowsWindow(snapshot.Scrollback, trim)
 	snapshot.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps[minInt(trim, len(snapshot.ScrollbackTimestamps)):]...)
 	snapshot.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds[minInt(trim, len(snapshot.ScrollbackRowKinds)):]...)
+}
+
+func trimProtocolSnapshotScrollbackToLast(snapshot *protocol.Snapshot, limit int) {
+	if snapshot == nil || limit < 0 || len(snapshot.Scrollback) <= limit {
+		return
+	}
+	trimSnapshotScrollbackFront(snapshot, len(snapshot.Scrollback)-limit)
 }
 
 func cloneProtocolRowsWindow(rows [][]protocol.Cell, start int) [][]protocol.Cell {

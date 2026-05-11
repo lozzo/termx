@@ -90,6 +90,9 @@ func shouldApplySessionSnapshot(snapshot *protocol.SessionSnapshot) bool {
 func (m *Model) dispatchSemanticActionCmd(action input.SemanticAction, allowLocal bool) tea.Cmd {
 	if allowLocal {
 		if handled, cmd := m.handleLocalAction(action); handled {
+			if m.shouldRearmStickyModeAfterLocalAction(action) {
+				cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
+			}
 			return batchCmds(cmd, m.resizePendingPaneResizesCmd(), m.updateSessionViewCmd())
 		}
 	}
@@ -104,6 +107,27 @@ func (m *Model) dispatchSemanticActionCmd(action input.SemanticAction, allowLoca
 		cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
 	}
 	return batchCmds(cmd, m.resizePendingPaneResizesCmd(), m.updateSessionViewCmd())
+}
+
+func (m *Model) shouldRearmStickyModeAfterLocalAction(action input.SemanticAction) bool {
+	if m == nil || !m.isStickyMode() {
+		return false
+	}
+	switch action.Kind {
+	case input.ActionEnterPaneMode,
+		input.ActionEnterResizeMode,
+		input.ActionEnterTabMode,
+		input.ActionEnterWorkspaceMode,
+		input.ActionEnterFloatingMode,
+		input.ActionEnterDisplayMode,
+		input.ActionEnterGlobalMode,
+		input.ActionCancelMode:
+		return false
+	case input.ActionQuit:
+		return !m.quitting
+	default:
+		return true
+	}
 }
 
 func (m *Model) semanticActionEffectsCmd(action input.SemanticAction) tea.Cmd {
@@ -170,7 +194,6 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	}
 	return nil
 }
-
 
 func (m *Model) restartActionForKeyMsg(msg tea.KeyMsg) (input.SemanticAction, bool) {
 	if m == nil || m.input == nil || m.mode().Kind != input.ModeNormal {

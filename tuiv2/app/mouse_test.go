@@ -2768,7 +2768,7 @@ func TestMouseForwardsZoomedTerminalTopRowsWithoutFrameOffset(t *testing.T) {
 		t.Fatal("expected recording bridge client")
 	}
 
-	m.input.SetMode(input.ModeState{Kind: input.ModeDisplay})
+	m.input.SetMode(input.ModeState{Kind: input.ModePane})
 	dispatchAction(t, m, input.SemanticAction{Kind: input.ActionZoomPane, PaneID: "pane-1"})
 	tab := m.workbench.CurrentTab()
 	if tab == nil || tab.ZoomedPaneID != "pane-1" {

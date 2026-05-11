@@ -97,6 +97,7 @@ Help overlay 则负责：
 ### 3.2 `resize mode` (`Ctrl-r`)
 
 负责 pane 或相关可见区域的 resize 行为。
+也负责不改变 pane 尺寸、只调整 terminal 内容在 pane 内显示位置的行为。
 
 ### 3.3 `tab mode` (`Ctrl-t`)
 
@@ -121,11 +122,10 @@ Help overlay 则负责：
 
 ### 3.6 `display mode` (`Ctrl-v`)
 
-负责显示相关动作，例如：
-- viewport / offset-pan
+负责 copy / scrollback 查看相关动作，例如：
 - scrollback / 历史查看
-- fit / fixed / follow 等显示行为
-- zoom pane（如最终归入显示层）
+- copy cursor / selection
+- clipboard history
 
 ### 3.7 `terminal picker` (`Ctrl-f`)
 

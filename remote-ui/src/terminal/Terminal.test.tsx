@@ -49,6 +49,7 @@ const xtermMocks = vi.hoisted(() => {
     })
     readonly select = vi.fn()
     readonly selectLines = vi.fn()
+    skipNextWriteCallback = false
 
     constructor(options: Record<string, unknown> = {}) {
       this.options = options
@@ -80,6 +81,10 @@ const xtermMocks = vi.hoisted(() => {
       this.writes.push(text)
       const textLayer = this.element?.querySelector('.xterm-text-layer')
       if (textLayer) textLayer.textContent = `${textLayer.textContent ?? ''}${text}`
+      if (this.skipNextWriteCallback) {
+        this.skipNextWriteCallback = false
+        return
+      }
       callback?.()
     }
 
@@ -389,6 +394,34 @@ describe('Terminal', () => {
     expect(replay).toMatch(/c[\s\S]*u[\s\S]*r[\s\S]*r[\s\S]*e[\s\S]*n[\s\S]*t/)
     expect(xtermMocks.FakeXTerm.instances[0]?.writes).not.toContain('old\ncurrent')
     expect(xtermMocks.FakeXTerm.instances[0]?.scrollToBottom).toHaveBeenCalled()
+  })
+
+  it('keeps a reopened terminal anchored to the cursor after snapshot rendering and refit settle', async () => {
+    const session = createMockRtcTerminalSession()
+    session.emitTerminalSnapshot('terminal-1', {
+      text: Array.from({ length: 120 }, (_value, index) => `line-${index}`).join('\n'),
+      cols: 80,
+      rows: 24,
+    })
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const term = xtermMocks.FakeXTerm.instances[0]!
+    await waitFor(() => expect(term.scrollToBottom).toHaveBeenCalled())
+
+    term.scrollToBottom.mockClear()
+    term.buffer.active.viewportY = 20
+    act(() => TestResizeObserver.instances[0]?.trigger())
+
+    await waitFor(() => expect(term.scrollToBottom).toHaveBeenCalled())
+    expect(term.buffer.active.viewportY).toBe(Math.max(0, term.buffer.active.length - term.rows))
   })
 
   it('forwards xterm input through the terminal protocol interface', async () => {
@@ -850,6 +883,52 @@ describe('Terminal', () => {
     expect(term.scrollToBottom).not.toHaveBeenCalled()
   })
 
+  it('keeps live output that arrives while scrollback history rendering is queued', async () => {
+    const session = createMockRtcTerminalSession()
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'current',
+      cols: 80,
+      rows: 24,
+      pages: [
+        { offset: 0, rows: Array.from({ length: 250 }, (_value, index) => `queued-${index}`) },
+      ],
+    })
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const term = xtermMocks.FakeXTerm.instances[0]!
+    term.buffer.active.viewportY = 12
+    const terminalOutput = screen.getByLabelText('Terminal output')
+    const screenElement = terminalOutput.querySelector('.xterm-screen') as HTMLElement
+
+    act(() => {
+      screenElement.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }))
+    })
+    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
+      offset: 0,
+      limit: 250,
+    }))
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    act(() => {
+      session.emitTerminalOutput('terminal-1', new TextEncoder().encode('\nlive-after-history'))
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 650))
+    })
+
+    expect(terminalOutput.textContent).toContain('live-after-history')
+  })
+
   it('prefetches more scrollback before the user reaches the top', async () => {
     const session = createMockRtcTerminalSession()
     session.setTerminalSnapshot('terminal-1', {
@@ -976,6 +1055,54 @@ describe('Terminal', () => {
     expect(term.reset).toHaveBeenCalledTimes(1)
     expect(term.writes.join('')).toMatch(/c[\s\S]*o[\s\S]*a[\s\S]*l[\s\S]*e[\s\S]*s[\s\S]*c[\s\S]*e[\s\S]*d[\s\S]*-[\s\S]*0/)
     expect(term.writes.join('')).toMatch(/c[\s\S]*u[\s\S]*r[\s\S]*r[\s\S]*e[\s\S]*n[\s\S]*t/)
+  })
+
+  it('recovers scrollback loading if a history write callback is lost after a stalled renderer', async () => {
+    const session = createMockRtcTerminalSession()
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'current',
+      cols: 80,
+      rows: 24,
+      pages: [
+        { offset: 0, rows: Array.from({ length: 250 }, (_value, index) => `stalled-${index}`) },
+        { offset: 250, rows: ['after-stall'] },
+      ],
+    })
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const term = xtermMocks.FakeXTerm.instances[0]!
+    term.skipNextWriteCallback = true
+    term.buffer.active.viewportY = 0
+    const terminalOutput = screen.getByLabelText('Terminal output')
+    const screenElement = terminalOutput.querySelector('.xterm-screen') as HTMLElement
+
+    act(() => {
+      screenElement.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }))
+    })
+    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
+      offset: 0,
+      limit: 250,
+    }))
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 4200))
+    })
+    act(() => {
+      screenElement.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }))
+    })
+
+    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
+      offset: 250,
+      limit: 250,
+    }))
+    await waitFor(() => expect(term.writes.join('')).toMatch(/a[\s\S]*f[\s\S]*t[\s\S]*e[\s\S]*r[\s\S]*-[\s\S]*s[\s\S]*t[\s\S]*a[\s\S]*l[\s\S]*l/))
   })
 
   it('shows a magnifier and builds a selection while selection mode is active', async () => {

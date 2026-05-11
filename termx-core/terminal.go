@@ -92,7 +92,10 @@ type Terminal struct {
 	readDone chan struct{}
 }
 
-const attachReplayScrollbackLimit = 0
+// Attach streams only need a small replay window to bootstrap lightweight
+// clients. Full history is fetched through Snapshot pagination; sending the
+// entire scrollback as the first stream frame can exceed transport frame caps.
+const attachReplayScrollbackLimit = 128
 const serverVTermFlushThreshold = 512 * 1024
 
 var serverVTermFlushIdleDelay = 8 * time.Millisecond
@@ -288,7 +291,10 @@ func (t *Terminal) Subscribe(ctx context.Context) <-chan StreamMessage {
 	return dst
 }
 
-const maxMergedLiveOutputBytes = protocol.MaxFrameSize
+const (
+	maxMergedLiveOutputBytes = 512 * 1024
+	maxLiveOutputFrameBytes  = 512 * 1024
+)
 
 func forwardLiveStreamMessages(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage) {
 	var (
@@ -389,7 +395,7 @@ func coalesceLiveStreamMessages(first fanout.StreamMessage, src <-chan fanout.St
 		if len(output) == 0 {
 			return
 		}
-		batch = append(batch, StreamMessage{Type: StreamOutput, Output: output})
+		appendOutputStreamMessages(&batch, output)
 		output = nil
 		outputShared = false
 	}
@@ -459,6 +465,33 @@ func coalesceLiveStreamMessages(first fanout.StreamMessage, src <-chan fanout.St
 			flushDropped()
 			return batch, fanout.StreamMessage{}, false, true
 		}
+	}
+}
+
+func appendOutputStreamMessages(batch *[]StreamMessage, output []byte) {
+	if batch == nil || len(output) == 0 {
+		return
+	}
+	for len(output) > 0 {
+		n := minInt(len(output), maxLiveOutputFrameBytes)
+		*batch = append(*batch, StreamMessage{Type: StreamOutput, Output: output[:n]})
+		output = output[n:]
+	}
+}
+
+func broadcastLiveOutputChunks(stream *fanout.Fanout, output []byte, rateLimited bool) {
+	if stream == nil || len(output) == 0 {
+		return
+	}
+	for len(output) > 0 {
+		n := minInt(len(output), maxLiveOutputFrameBytes)
+		chunk := append([]byte(nil), output[:n]...)
+		stream.BroadcastMessage(fanout.StreamMessage{
+			Type:              fanout.StreamOutput,
+			Output:            chunk,
+			OutputRateLimited: rateLimited,
+		})
+		output = output[n:]
 	}
 }
 
@@ -897,7 +930,7 @@ func (t *Terminal) queuePendingLiveOutputLocked(epoch uint64, stream *fanout.Fan
 		return
 	}
 	if !t.liveOutputThrottle.enabled() {
-		stream.Broadcast(chunk)
+		broadcastLiveOutputChunks(stream, chunk, false)
 		return
 	}
 	if t.pendingLiveOutputEpoch != epoch {
@@ -1024,11 +1057,7 @@ func (t *Terminal) flushPendingLiveOutputLocked(stream *fanout.Fanout) {
 	t.pendingLiveOutput = nil
 	t.pendingLiveOutputEpoch = 0
 	resetLiveOutputSyncState(&t.pendingLiveOutputSync)
-	stream.BroadcastMessage(fanout.StreamMessage{
-		Type:              fanout.StreamOutput,
-		Output:            output,
-		OutputRateLimited: true,
-	})
+	broadcastLiveOutputChunks(stream, output, true)
 	if cap(output) <= maxMergedLiveOutputBytes {
 		t.pendingLiveOutput = output[:0]
 	}
@@ -1260,7 +1289,7 @@ func (t *Terminal) bootstrapMessagesLocked(scrollbackLimit int) []StreamMessage 
 	if size.Cols > 0 && size.Rows > 0 {
 		msgs = append(msgs, StreamMessage{Type: StreamResize, Cols: size.Cols, Rows: size.Rows})
 	}
-	if payload, ok := t.screenSnapshotPayloadLocked(scrollbackLimit == 0); ok {
+	if payload, ok := t.screenSnapshotPayloadLockedWithScrollbackLimit(scrollbackLimit, true); ok {
 		msgs = append(msgs, StreamMessage{Type: StreamScreenUpdate, Payload: payload})
 	}
 	msgs = append(msgs, StreamMessage{Type: StreamBootstrapDone})
@@ -1282,6 +1311,10 @@ func (t *Terminal) screenSnapshotFallbackMessage() StreamMessage {
 }
 
 func (t *Terminal) screenSnapshotPayloadLocked(resetScrollback bool) ([]byte, bool) {
+	return t.screenSnapshotPayloadLockedWithScrollbackLimit(-1, resetScrollback)
+}
+
+func (t *Terminal) screenSnapshotPayloadLockedWithScrollbackLimit(scrollbackLimit int, resetScrollback bool) ([]byte, bool) {
 	finish := perftrace.Measure("terminal.screen_update.snapshot_payload")
 	defer finish(0)
 	if t == nil || t.vterm == nil {
@@ -1291,6 +1324,7 @@ func (t *Terminal) screenSnapshotPayloadLocked(resetScrollback bool) ([]byte, bo
 	if state == nil || state.snapshot == nil {
 		return nil, false
 	}
+	state = streamScreenStateWithScrollbackLimit(state, scrollbackLimit)
 	update := fullReplaceUpdateForStateDelta(nil, state, resetScrollback)
 	encodeFinish := perftrace.Measure("terminal.screen_update.encode")
 	payload, err := protocol.EncodeScreenUpdatePayload(update)

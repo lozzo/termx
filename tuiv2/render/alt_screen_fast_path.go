@@ -5,9 +5,9 @@ import (
 
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
+	localvterm "github.com/lozzow/termx/termx-core/vterm"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 // altScreenRowCache caches serialized ANSI strings for alt-screen rows keyed
@@ -43,13 +43,13 @@ func renderAltScreenFastPathVM(coordinator *Coordinator, vm RenderVM, entries []
 		return renderedBody{}, false
 	}
 	entry := entries[0]
-	if !entry.Active || entry.TerminalID == "" || entry.Floating || entry.CopyModeActive || entry.ScrollOffset > 0 {
+	if !entry.Active || entry.TerminalID == "" || entry.Floating || entry.CopyModeActive || entry.ScrollOffset > 0 || entry.ContentOffsetX != 0 || entry.ContentOffsetY != 0 {
 		return renderedBody{}, false
 	}
 	if entry.EmptyActionSelected >= 0 || entry.ExitedActionSelected >= 0 {
 		return renderedBody{}, false
 	}
-	if entry.Overflow.Right || entry.Overflow.Bottom {
+	if entry.Overflow.Left || entry.Overflow.Top || entry.Overflow.Right || entry.Overflow.Bottom {
 		return renderedBody{}, false
 	}
 	resolved := resolvePaneContent(entry, vm.Runtime, false)

@@ -3,26 +3,35 @@ package viewstate
 import "github.com/lozzow/termx/tuiv2/workbench"
 
 type Projection struct {
-	WorkspaceName   string
-	ActiveTabID     string
-	FocusedPaneID   string
-	ZoomedPaneByTab map[string]string
-	ViewportByPane  map[string]int
+	WorkspaceName       string
+	ActiveTabID         string
+	FocusedPaneID       string
+	ZoomedPaneByTab     map[string]string
+	ViewportByPane      map[string]int
+	ContentOffsetByPane map[string]ContentOffset
+}
+
+type ContentOffset struct {
+	X int
+	Y int
 }
 
 type CaptureOptions struct {
 	PaneViewportOffset         func(paneID string) (int, bool)
+	PaneContentOffset          func(paneID string) (int, int, bool)
 	EffectiveTabViewportOffset func(tab *workbench.TabState) int
 }
 
 type ApplyOptions struct {
 	SetPaneViewportOffset func(paneID string, offset int) bool
+	SetPaneContentOffset  func(paneID string, x, y int) bool
 }
 
 func Capture(wb *workbench.Workbench, opts CaptureOptions) Projection {
 	proj := Projection{
-		ZoomedPaneByTab: make(map[string]string),
-		ViewportByPane:  make(map[string]int),
+		ZoomedPaneByTab:     make(map[string]string),
+		ViewportByPane:      make(map[string]int),
+		ContentOffsetByPane: make(map[string]ContentOffset),
 	}
 	if wb == nil {
 		return proj
@@ -47,6 +56,9 @@ func Capture(wb *workbench.Workbench, opts CaptureOptions) Projection {
 			for paneID := range tab.Panes {
 				if offset, ok := capturePaneViewport(opts, paneID); ok {
 					proj.ViewportByPane[paneID] = offset
+				}
+				if x, y, ok := capturePaneContentOffset(opts, paneID); ok {
+					proj.ContentOffsetByPane[paneID] = ContentOffset{X: x, Y: y}
 				}
 			}
 			if tab.ActivePaneID != "" {
@@ -77,10 +89,12 @@ func Apply(wb *workbench.Workbench, proj Projection, opts ApplyOptions) {
 			}
 			for paneID := range tab.Panes {
 				scroll, ok := proj.ViewportByPane[paneID]
-				if !ok || opts.SetPaneViewportOffset == nil {
-					continue
+				if ok && opts.SetPaneViewportOffset != nil {
+					_ = opts.SetPaneViewportOffset(paneID, scroll)
 				}
-				_ = opts.SetPaneViewportOffset(paneID, scroll)
+				if offset, ok := proj.ContentOffsetByPane[paneID]; ok && opts.SetPaneContentOffset != nil {
+					_ = opts.SetPaneContentOffset(paneID, offset.X, offset.Y)
+				}
 			}
 		}
 	}
@@ -109,6 +123,13 @@ func capturePaneViewport(opts CaptureOptions, paneID string) (int, bool) {
 		return 0, false
 	}
 	return opts.PaneViewportOffset(paneID)
+}
+
+func capturePaneContentOffset(opts CaptureOptions, paneID string) (int, int, bool) {
+	if paneID == "" || opts.PaneContentOffset == nil {
+		return 0, 0, false
+	}
+	return opts.PaneContentOffset(paneID)
 }
 
 func effectiveTabViewportOffset(opts CaptureOptions, tab *workbench.TabState) int {

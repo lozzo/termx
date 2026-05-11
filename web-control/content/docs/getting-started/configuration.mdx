@@ -17,31 +17,34 @@ termx 现在统一使用：
 ### 本地直连
 
 ```bash
-termx remote enable --local
+termx remote enable --mode local
 ```
 
 ### 云端连接
 
 ```bash
-termx remote enable --server <control_url>
+termx remote enable --mode online
 termx daemon
+termx remote pair
 ```
 
 ### 本地 + 云端
 
 ```bash
-termx remote enable --local
-termx remote enable --server <control_url>
+termx remote enable --mode both
 termx daemon
+termx remote pair
 ```
 
 ## 参数说明
 
 | 参数 | 说明 |
 |------|------|
-| `remote enable --local` | 启用本地 Web 和本地 WebRTC 配对 |
-| `remote enable --server <control_url>` | 启用 Web Control 云端连接 |
-| `--server` | Web Control 地址 |
+| `remote login` | 可选：提前登录 Web Control 并保存连接凭据 |
+| `remote enable --mode local` | 启用本地 Web 和本地 WebRTC 配对 |
+| `remote enable --mode online` | 启用 Web Control 云端连接 |
+| `remote enable --mode both` | 同时启用本地和云端连接 |
+| `remote pair` | 生成配对二维码和 `termx://pair` URI |
 | `daemon` | 常驻运行 TermX runtime 和远程注册循环 |
 
 ## 环境变量
@@ -54,20 +57,20 @@ termx daemon
 | `TERMX_REMOTE_HUB_URL` | 可选的固定 Hub 地址 |
 | `TERMX_REMOTE_LOCAL_WEB_ENABLE` | 设为 `1` 时 daemon 启动本地 Web |
 
-普通用户通常只需要通过 `termx remote enable --server <control_url>` 写入配置，不需要手写环境变量。
+普通用户通常只需要通过 `termx remote enable --mode both` 写入配置，不需要手写环境变量；没有已保存凭据时命令会自动打开浏览器登录。
 
 ## 常见组合示例
 
 ### 给节点指定名称
 
 ```bash
-termx remote enable --server <control_url>
+termx remote enable --mode online
 ```
 
 ### 明确告诉客户端该连哪些地址
 
 ```bash
-termx remote enable --server <control_url> --hub-url <hub_url>
+termx remote enable --mode online --hub-url <hub_url>
 ```
 
 ### 在非交互环境运行 daemon

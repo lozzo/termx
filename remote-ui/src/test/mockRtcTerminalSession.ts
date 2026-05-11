@@ -98,6 +98,10 @@ export class MockRtcTerminalSession implements RtcSession {
     this.channels.get(terminalId)?.emitFrame(TERMX_FRAME_TYPES.output, data)
   }
 
+  emitTerminalScreenUpdate(terminalId: string): void {
+    this.channels.get(terminalId)?.emitFrame(TERMX_FRAME_TYPES.screenUpdate, new Uint8Array([1]))
+  }
+
   emitTerminalSnapshot(terminalId: string, snapshot: TerminalSnapshotPayload): void {
     this.snapshots.set(terminalId, snapshot)
     this.channels.get(terminalId)?.respondToNextSnapshot(snapshot)

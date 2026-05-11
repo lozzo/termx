@@ -38,8 +38,8 @@ Web 控制台是账号、订阅和节点的管理入口。当前面向普通用�
 #### 当前添加节点流程
 
 1. 在“连接密钥”页面创建密钥
-2. 在目标机器上运行：`termx remote enable --server <control_url>`
-3. 本机服务启动后会显示二维码
+2. 在目标机器上运行：`termx remote enable --mode both`
+3. 启动守护进程后运行：`termx remote pair`
 4. 用 Android 客户端扫码完成配对
 
 > “未配对”表示节点已经注册到你的账号，但手机端还没有完成二维码配对。

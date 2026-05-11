@@ -28,6 +28,11 @@ import (
 	"golang.org/x/term"
 )
 
+const (
+	defaultRemoteLocalWebAddr = "127.0.0.1:18888"
+	defaultRemoteLocalICEAddr = "127.0.0.1:18889"
+)
+
 var (
 	defaultRemoteControlURL = "http://114.66.58.243:12306"
 
@@ -180,7 +185,6 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(killCommand(&socket, &logFile))
 	cmd.AddCommand(removeCommand(&socket, &logFile))
 	cmd.AddCommand(attachCommand(&socket, &logFile, &configPath))
-	cmd.AddCommand(pairCommand(&socket, &logFile))
 	cmd.AddCommand(remoteCommand(&socket, &logFile, &configPath))
 	return cmd
 }
@@ -255,13 +259,17 @@ func daemonCommand(socket *string, configPath *string) *cobra.Command {
 				}
 				_ = srv.Shutdown(context.Background())
 			}()
-			if localWebAddr := remoteLocalWebAddrFromEnv(); localWebAddr != "" {
+			if localWebAddr := daemonLocalWebAddr(remoteCfg); localWebAddr != "" {
 				if remoteHost == nil || remoteHost.service == nil || remoteHost.core == nil {
 					return fmt.Errorf("remote local runtime requires a core daemon")
 				}
 				localStatus, err := remoteHost.service.LocalEnable(ctx, remoteprotocol.LocalEnableParams{
 					LocalWebAddr: localWebAddr,
-					ICETCPAddr:   remoteLocalICETCPAddrFromEnv(),
+					ICETCPAddr:   daemonLocalICETCPAddr(remoteCfg),
+					HubURLs:      compactStringList(remoteCfg.HubURLs),
+					ControlURL:   remoteCfg.ControlURL,
+					AccessToken:  remoteCfg.AccessToken,
+					Region:       remoteCfg.Region,
 				})
 				if err != nil {
 					return err
@@ -438,44 +446,9 @@ func remoteCommand(socket *string, logFile *string, configPath *string) *cobra.C
 	cmd.AddCommand(remoteStatusCommand(socket, logFile))
 	cmd.AddCommand(remoteInfoCommand(socket, logFile))
 	cmd.AddCommand(remoteEnableCommand(socket, logFile, configPath))
-	cmd.AddCommand(remoteLocalOnlyCommand(socket, logFile))
 	cmd.AddCommand(remoteDisableCommand(socket, logFile))
 	cmd.AddCommand(remotePairCommand(socket, logFile))
-	cmd.AddCommand(remoteQRCodeCommand(socket, logFile))
 	cmd.AddCommand(remoteOpenCommand(socket, logFile))
-	return cmd
-}
-
-func pairCommand(socket *string, logFile *string) *cobra.Command {
-	var outputJSON bool
-	var localURL string
-	var ttl time.Duration
-	cmd := &cobra.Command{
-		Use: "pair",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if ttl <= 0 {
-				ttl = 5 * time.Minute
-			}
-			localURL = strings.TrimSpace(localURL)
-			result, err := pairStartClient(context.Background(), *socket, *logFile, remoteprotocol.PairStartParams{
-				LocalPairURL: localURL,
-				TTLSeconds:   int(ttl.Seconds()),
-			})
-			if err != nil {
-				return err
-			}
-			if outputJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(result)
-			}
-			printPairStartResult(cmd.OutOrStdout(), result)
-			return nil
-		},
-	}
-	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
-	cmd.Flags().StringVar(&localURL, "local-url", "", "local pair URL; optional when pairing through hub")
-	cmd.Flags().DurationVar(&ttl, "ttl", 5*time.Minute, "pair session TTL")
 	return cmd
 }
 
@@ -578,18 +551,18 @@ func remoteEnableCommand(socket *string, logFile *string, configPath *string) *c
 			}
 			switch mode {
 			case "both":
-				onlineRuntime, err := runRemoteOnlineEnable(cmd, configPath, "", hubURL, token, browser, noBrowser, browserTimeout, outputJSON, mode)
+				onlineRuntime, err := runRemoteOnlineEnable(cmd, configPath, "", hubURL, token, browser, noBrowser, browserTimeout, outputJSON, mode, addr, iceTCPAddr)
 				if err != nil {
 					return err
 				}
 				return runRemoteLocalEnable(cmd, socket, logFile, addr, iceTCPAddr, onlineRuntime, outputJSON)
 			case "local":
-				if err := ensureRemoteConfigBootstrap(*configPath, "", "", "", mode); err != nil {
+				if err := ensureRemoteConfigBootstrap(*configPath, "", "", "", mode, addr, iceTCPAddr); err != nil {
 					return err
 				}
 				return runRemoteLocalEnable(cmd, socket, logFile, addr, iceTCPAddr, remoteprotocol.Config{Enabled: true, Mode: mode}, outputJSON)
 			case "online":
-				_, err := runRemoteOnlineEnable(cmd, configPath, "", hubURL, token, browser, noBrowser, browserTimeout, outputJSON, mode)
+				_, err := runRemoteOnlineEnable(cmd, configPath, "", hubURL, token, browser, noBrowser, browserTimeout, outputJSON, mode, "", "")
 				return err
 			default:
 				return fmt.Errorf("--mode must be local, online, or both")
@@ -610,24 +583,6 @@ func remoteEnableCommand(socket *string, logFile *string, configPath *string) *c
 	_ = cmd.Flags().MarkHidden("hub-url")
 	_ = cmd.Flags().MarkHidden("token-env")
 	_ = cmd.Flags().MarkHidden("token-file")
-	return cmd
-}
-
-func remoteLocalOnlyCommand(socket *string, logFile *string) *cobra.Command {
-	var outputJSON bool
-	var addr string
-	var iceTCPAddr string
-	cmd := &cobra.Command{
-		Use:     "local",
-		Aliases: []string{"local-only", "local_only"},
-		Short:   "Enable local browser pairing",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRemoteLocalEnable(cmd, socket, logFile, addr, iceTCPAddr, remoteprotocol.Config{}, outputJSON)
-		},
-	}
-	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:18888", "local web listen address")
-	cmd.Flags().StringVar(&iceTCPAddr, "ice-tcp-addr", "127.0.0.1:18889", "local ICE TCP listen address")
-	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
 	return cmd
 }
 
@@ -656,12 +611,17 @@ func remoteDisableCommand(socket *string, logFile *string) *cobra.Command {
 
 func remotePairCommand(socket *string, logFile *string) *cobra.Command {
 	var outputJSON bool
+	var uriOnly bool
 	var localURL string
 	var ttl time.Duration
+	var hubURL string
 	cmd := &cobra.Command{
 		Use:   "pair",
-		Short: "Create a local pairing session for the running local remote web",
+		Short: "Create a TermX remote pairing QR",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if outputJSON && uriOnly {
+				return fmt.Errorf("--json and --uri cannot be used together")
+			}
 			if ttl <= 0 {
 				ttl = 5 * time.Minute
 			}
@@ -675,51 +635,6 @@ func remotePairCommand(socket *string, logFile *string) *cobra.Command {
 					localURL = ""
 				} else {
 					localURL = localStatus.LocalPairURL
-				}
-			}
-			result, err := pairStartClient(context.Background(), *socket, *logFile, remoteprotocol.PairStartParams{
-				LocalPairURL: localURL,
-				TTLSeconds:   int(ttl.Seconds()),
-			})
-			if err != nil {
-				return err
-			}
-			if outputJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(result)
-			}
-			printPairStartResult(cmd.OutOrStdout(), result)
-			return nil
-		},
-	}
-	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
-	cmd.Flags().StringVar(&localURL, "local-url", "", "local pair URL; defaults to running local remote")
-	cmd.Flags().DurationVar(&ttl, "ttl", 5*time.Minute, "pair session TTL")
-	return cmd
-}
-
-func remoteQRCodeCommand(socket *string, logFile *string) *cobra.Command {
-	var outputJSON bool
-	var payloadOnly bool
-	var localURL string
-	var ttl time.Duration
-	var hubURL string
-	cmd := &cobra.Command{
-		Use:   "qrcode",
-		Short: "Show a TermX remote pairing QR",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if ttl <= 0 {
-				ttl = 5 * time.Minute
-			}
-			localURL = strings.TrimSpace(localURL)
-			if localURL == "" {
-				localStatus, err := remoteLocalStatusClient(context.Background(), *socket, *logFile)
-				if err != nil {
-					return err
-				}
-				if localStatus != nil {
-					localURL = strings.TrimSpace(localStatus.LocalPairURL)
 				}
 			}
 			remoteStatus, err := remoteStatusClient(context.Background(), *socket, *logFile)
@@ -739,7 +654,7 @@ func remoteQRCodeCommand(socket *string, logFile *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if payloadOnly {
+			if uriOnly {
 				fmt.Fprintln(cmd.OutOrStdout(), uri)
 				return nil
 			}
@@ -765,10 +680,11 @@ func remoteQRCodeCommand(socket *string, logFile *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
-	cmd.Flags().BoolVar(&payloadOnly, "payload", false, "print only the termx://pair URI")
+	cmd.Flags().BoolVar(&uriOnly, "uri", false, "print only the termx://pair URI")
 	cmd.Flags().StringVar(&localURL, "local-url", "", "local pair URL; defaults to running local remote")
 	cmd.Flags().DurationVar(&ttl, "ttl", 5*time.Minute, "pair session TTL")
 	cmd.Flags().StringVar(&hubURL, "hub-url", "", "Hub URL override")
+	_ = cmd.Flags().MarkHidden("local-url")
 	_ = cmd.Flags().MarkHidden("hub-url")
 	return cmd
 }
@@ -822,8 +738,8 @@ func runRemoteLocalEnable(cmd *cobra.Command, socket *string, logFile *string, a
 	return nil
 }
 
-func runRemoteOnlineEnable(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, forceBrowser bool, noBrowser bool, browserTimeout time.Duration, outputJSON bool, mode string) (remoteprotocol.Config, error) {
-	return runRemoteCloudEnableWithToken(cmd, configPath, controlURL, hubURL, token, forceBrowser, noBrowser, browserTimeout, outputJSON, mode)
+func runRemoteOnlineEnable(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, forceBrowser bool, noBrowser bool, browserTimeout time.Duration, outputJSON bool, mode string, localWebAddr string, iceTCPAddr string) (remoteprotocol.Config, error) {
+	return runRemoteCloudEnableWithToken(cmd, configPath, controlURL, hubURL, token, forceBrowser, noBrowser, browserTimeout, outputJSON, mode, localWebAddr, iceTCPAddr)
 }
 
 func runRemoteCloudEnable(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, tokenEnv string, tokenFile string, noBrowser bool, outputJSON bool) (remoteprotocol.Config, error) {
@@ -831,10 +747,10 @@ func runRemoteCloudEnable(cmd *cobra.Command, configPath *string, controlURL str
 	if err != nil {
 		return remoteprotocol.Config{}, err
 	}
-	return runRemoteCloudEnableWithToken(cmd, configPath, controlURL, hubURL, resolvedToken, false, noBrowser, 5*time.Minute, outputJSON, "online")
+	return runRemoteCloudEnableWithToken(cmd, configPath, controlURL, hubURL, resolvedToken, false, noBrowser, 5*time.Minute, outputJSON, "online", "", "")
 }
 
-func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, forceBrowser bool, noBrowser bool, browserTimeout time.Duration, outputJSON bool, mode string) (remoteprotocol.Config, error) {
+func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, forceBrowser bool, noBrowser bool, browserTimeout time.Duration, outputJSON bool, mode string, localWebAddr string, iceTCPAddr string) (remoteprotocol.Config, error) {
 	controlURL = strings.TrimSpace(controlURL)
 	hubURL = strings.TrimSpace(hubURL)
 	token = strings.TrimSpace(token)
@@ -898,7 +814,7 @@ func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, contr
 	}); err != nil {
 		return remoteprotocol.Config{}, err
 	}
-	if err := ensureRemoteConfigBootstrap(*configPath, controlURL, hubURL, authStorePath, mode); err != nil {
+	if err := ensureRemoteConfigBootstrap(*configPath, controlURL, hubURL, authStorePath, mode, localWebAddr, iceTCPAddr); err != nil {
 		return remoteprotocol.Config{}, err
 	}
 	hubURLs := compactStringList([]string{hubURL})
@@ -906,12 +822,14 @@ func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, contr
 		hubURLs = nil
 	}
 	cloud := remoteprotocol.Config{
-		Enabled:     true,
-		ControlURL:  controlURL,
-		HubURL:      hubURL,
-		HubURLs:     hubURLs,
-		AccessToken: token,
-		Mode:        mode,
+		Enabled:      true,
+		ControlURL:   controlURL,
+		HubURL:       hubURL,
+		HubURLs:      hubURLs,
+		AccessToken:  token,
+		Mode:         mode,
+		LocalWebAddr: strings.TrimSpace(localWebAddr),
+		ICETCPAddr:   strings.TrimSpace(iceTCPAddr),
 	}
 	if outputJSON {
 		enc := json.NewEncoder(cmd.OutOrStdout())
@@ -1010,20 +928,6 @@ func printRemoteLocalStatus(w io.Writer, status *remoteprotocol.LocalStatus) {
 	fmt.Fprintf(w, "ice_tcp_addr:\t%s\n", status.ICETCPAddr)
 	fmt.Fprintf(w, "ice_tcp_port:\t%d\n", status.ICETCPPort)
 	fmt.Fprintf(w, "updated_at:\t%s\n", status.UpdatedAt.Format(time.RFC3339))
-}
-
-func printPairStartResult(w io.Writer, result *remoteprotocol.PairStartResult) {
-	if result == nil {
-		return
-	}
-	fmt.Fprintf(w, "type:\t%s\n", result.Type)
-	fmt.Fprintf(w, "machine_id:\t%s\n", result.MachineID)
-	fmt.Fprintf(w, "machine_name:\t%s\n", result.MachineName)
-	fmt.Fprintf(w, "local_pair_url:\t%s\n", result.LocalPairURL)
-	fmt.Fprintf(w, "pair_session_id:\t%s\n", result.PairSessionID)
-	fmt.Fprintf(w, "pair_secret:\t%s\n", result.PairSecret)
-	fmt.Fprintf(w, "answer_proof_secret:\t%s\n", result.AnswerProofSecret)
-	fmt.Fprintf(w, "expires_at:\t%s\n", result.ExpiresAt.Format(time.RFC3339))
 }
 
 func buildRemotePairPayload(result *remoteprotocol.PairStartResult, _ *remoteprotocol.Status, hubURLs []string) map[string]any {
@@ -1235,12 +1139,14 @@ func remoteConfigFromEnv() remoteprotocol.Config {
 			strings.TrimSpace(os.Getenv("TERMX_REMOTE_TOKEN")),
 			strings.TrimSpace(os.Getenv("TERMX_REMOTE_ACCESS_TOKEN")),
 		),
-		DataDir:    strings.TrimSpace(os.Getenv("TERMX_REMOTE_DATA_DIR")),
-		DeviceName: strings.TrimSpace(os.Getenv("TERMX_REMOTE_DEVICE_NAME")),
-		Region:     strings.TrimSpace(os.Getenv("TERMX_REMOTE_REGION")),
-		Mode:       strings.TrimSpace(os.Getenv("TERMX_REMOTE_MODE")),
-		AllowLAN:   allowLAN,
-		LANIPs:     splitTrimmed(os.Getenv("TERMX_REMOTE_LAN_IPS")),
+		DataDir:      strings.TrimSpace(os.Getenv("TERMX_REMOTE_DATA_DIR")),
+		DeviceName:   strings.TrimSpace(os.Getenv("TERMX_REMOTE_DEVICE_NAME")),
+		Region:       strings.TrimSpace(os.Getenv("TERMX_REMOTE_REGION")),
+		Mode:         strings.TrimSpace(os.Getenv("TERMX_REMOTE_MODE")),
+		LocalWebAddr: remoteLocalWebAddrFromEnv(),
+		ICETCPAddr:   remoteLocalICETCPAddrFromEnv(),
+		AllowLAN:     allowLAN,
+		LANIPs:       splitTrimmed(os.Getenv("TERMX_REMOTE_LAN_IPS")),
 	}
 	if tokenTTL := durationSecondsFromString(os.Getenv("TERMX_REMOTE_TOKEN_TTL")); tokenTTL > 0 {
 		cfg.TokenTTLSeconds = tokenTTL
@@ -1287,6 +1193,12 @@ func remoteConfigFromFileAndEnv(path string) (remoteprotocol.Config, error) {
 	}
 	if envCfg.Mode != "" {
 		cfg.Mode = envCfg.Mode
+	}
+	if envCfg.LocalWebAddr != "" {
+		cfg.LocalWebAddr = envCfg.LocalWebAddr
+	}
+	if envCfg.ICETCPAddr != "" {
+		cfg.ICETCPAddr = envCfg.ICETCPAddr
 	}
 	if envCfg.TokenTTLSeconds > 0 {
 		cfg.TokenTTLSeconds = envCfg.TokenTTLSeconds
@@ -1336,6 +1248,15 @@ func loadRemoteConfigFromFile(path string) (remoteprotocol.Config, bool, error) 
 		DeviceName: remoteConfigValue(values, "deviceName", "device_name"),
 		Region:     remoteConfigValue(values, "region"),
 		Mode:       remoteConfigValue(values, "mode"),
+		LocalWebAddr: remoteConfigValue(
+			values,
+			"localWebAddr",
+			"local_web_addr",
+			"localWebAddress",
+			"local_web_address",
+			"local_web",
+		),
+		ICETCPAddr: remoteConfigValue(values, "iceTCPAddr", "ice_tcp_addr", "iceTCPAddress", "ice_tcp_address"),
 	}
 	if tokenTTL := durationSecondsFromString(remoteConfigValue(values, "token_ttl", "tokenTTL")); tokenTTL > 0 {
 		cfg.TokenTTLSeconds = tokenTTL
@@ -1399,6 +1320,8 @@ func remoteConfigHasFields(cfg remoteprotocol.Config) bool {
 		cfg.DeviceName != "" ||
 		cfg.Region != "" ||
 		cfg.Mode != "" ||
+		cfg.LocalWebAddr != "" ||
+		cfg.ICETCPAddr != "" ||
 		cfg.TokenTTLSeconds > 0 ||
 		cfg.AllowLAN ||
 		len(cfg.LANIPs) > 0
@@ -1498,7 +1421,7 @@ func remoteLocalWebAddrFromEnv() string {
 		return addr
 	}
 	if envBool("TERMX_REMOTE_LOCAL_WEB_ENABLE") {
-		return "127.0.0.1:18888"
+		return defaultRemoteLocalWebAddr
 	}
 	return ""
 }
@@ -1508,9 +1431,44 @@ func remoteLocalICETCPAddrFromEnv() string {
 		return addr
 	}
 	if envBool("TERMX_REMOTE_LOCAL_ICE_TCP_ENABLE") {
-		return "127.0.0.1:18889"
+		return defaultRemoteLocalICEAddr
 	}
 	return ""
+}
+
+func daemonLocalWebAddr(cfg remoteprotocol.Config) string {
+	if addr := remoteLocalWebAddrFromEnv(); addr != "" {
+		return addr
+	}
+	if !cfg.Enabled || !modeIncludesLocal(cfg.Mode) {
+		return ""
+	}
+	if addr := strings.TrimSpace(cfg.LocalWebAddr); addr != "" {
+		return addr
+	}
+	return defaultRemoteLocalWebAddr
+}
+
+func daemonLocalICETCPAddr(cfg remoteprotocol.Config) string {
+	if addr := remoteLocalICETCPAddrFromEnv(); addr != "" {
+		return addr
+	}
+	if !cfg.Enabled || !modeIncludesLocal(cfg.Mode) {
+		return ""
+	}
+	if addr := strings.TrimSpace(cfg.ICETCPAddr); addr != "" {
+		return addr
+	}
+	return defaultRemoteLocalICEAddr
+}
+
+func modeIncludesLocal(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", "local", "both":
+		return true
+	default:
+		return false
+	}
 }
 
 func envBool(key string) bool {

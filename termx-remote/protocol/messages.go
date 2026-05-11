@@ -22,6 +22,8 @@ type Config struct {
 	DeviceName      string
 	Region          string
 	Mode            string
+	LocalWebAddr    string
+	ICETCPAddr      string
 	AllowLAN        bool
 	LANIPs          []string
 	TokenTTLSeconds int

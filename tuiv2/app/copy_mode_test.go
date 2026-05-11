@@ -758,7 +758,7 @@ func TestClipboardHistoryPickerOpensFromKeysAndRendersOverlay(t *testing.T) {
 	model.pushClipboardHistory("first entry", "pane-1")
 
 	dispatchKey(t, model, ctrlKey(tea.KeyCtrlV))
-	dispatchKey(t, model, runeKeyMsg('h'))
+	dispatchKey(t, model, runeKeyMsg('H'))
 
 	if got := model.input.Mode().Kind; got != input.ModePicker {
 		t.Fatalf("expected clipboard history picker mode, got %q", got)
@@ -776,7 +776,7 @@ func TestClipboardHistoryPickerShowsEmptyState(t *testing.T) {
 	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
 
 	dispatchKey(t, model, ctrlKey(tea.KeyCtrlV))
-	dispatchKey(t, model, runeKeyMsg('h'))
+	dispatchKey(t, model, runeKeyMsg('H'))
 
 	if got := model.input.Mode().Kind; got != input.ModePicker {
 		t.Fatalf("expected clipboard history picker mode, got %q", got)

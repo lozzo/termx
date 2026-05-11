@@ -8,8 +8,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 var appDebugLogMu sync.Mutex
@@ -19,10 +17,25 @@ var latestQueuedMouseWheelSeq atomic.Uint64
 var latestMouseBoundaryAt atomic.Int64
 
 func (m *Model) debugLog(event string, kv ...any) {
-	if m == nil || strings.TrimSpace(m.cfg.LogFilePath) == "" {
+	if m == nil {
 		return
 	}
-	appendDebugLogLine(m.cfg.LogFilePath, event, kv...)
+	path := tuiDebugLogPath(m.cfg.LogFilePath)
+	if path == "" {
+		return
+	}
+	appendDebugLogLine(path, event, kv...)
+}
+
+func tuiDebugLogPath(defaultPath string) string {
+	value := strings.TrimSpace(os.Getenv("TERMX_TUI_DEBUG_LOG"))
+	if value == "" {
+		return ""
+	}
+	if value == "1" || strings.EqualFold(value, "true") {
+		return strings.TrimSpace(defaultPath)
+	}
+	return value
 }
 
 func appendDebugLogLine(path, event string, kv ...any) {
@@ -121,23 +134,4 @@ func sanitizeDebugKey(key string) string {
 			return '_'
 		}
 	}, key)
-}
-
-func debugMessageFields(msg tea.Msg) []any {
-	switch typed := msg.(type) {
-	case terminalTitleMsg:
-		return []any{
-			"msg", "terminal_title",
-			"terminal_id", typed.TerminalID,
-			"title", typed.Title,
-		}
-	case InvalidateMsg:
-		return []any{
-			"msg", "invalidate",
-		}
-	default:
-		return []any{
-			"msg", fmt.Sprintf("%T", msg),
-		}
-	}
 }

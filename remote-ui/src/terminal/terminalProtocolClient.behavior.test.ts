@@ -329,6 +329,59 @@ describe('TerminalProtocolClient', () => {
     expect((events[1] as { snapshot: { replay?: string } }).snapshot.replay).toContain('\x1b[1;1H')
   })
 
+  it('refreshes terminal content when the runtime streams screen update frames', async () => {
+    const channel = new MockBinaryDataChannel('terminal:terminal-1')
+    const client = createTerminalProtocolClient({
+      channel,
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectionInfo: connectionInfo(),
+    })
+    const events: TerminalProtocolEvent[] = []
+    client.subscribeTerminal('terminal-1', (event) => events.push(event))
+    const terminalPromise = client.openTerminal('terminal-1')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+    await Promise.resolve()
+    const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: attachRequest.id,
+      result: JSON.stringify({ mode: 'collaborator', channel: 7 }),
+    })))
+    await terminalPromise
+
+    const initialSnapshot = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 2).payload))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: initialSnapshot.id,
+      result: JSON.stringify({
+        terminal_id: 'terminal-1',
+        size: { cols: 80, rows: 24 },
+        screen: { rows: [{ cells: [{ r: 'o' }, { r: 'l' }, { r: 'd' }] }] },
+      }),
+    })))
+    await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({
+      type: 'snapshot',
+      snapshot: expect.objectContaining({ text: 'old' }),
+    })))
+
+    channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.screenUpdate, new Uint8Array([1, 2, 3])))
+    await vi.waitFor(() => expect(channel.sent).toHaveLength(4))
+    const refreshSnapshot = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 3).payload))
+    expect(refreshSnapshot.method).toBe('snapshot')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: refreshSnapshot.id,
+      result: JSON.stringify({
+        terminal_id: 'terminal-1',
+        size: { cols: 80, rows: 24 },
+        screen: { rows: [{ cells: [{ r: 'n' }, { r: 'e' }, { r: 'w' }] }] },
+      }),
+    })))
+
+    await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({
+      type: 'snapshot',
+      snapshot: expect.objectContaining({ text: 'new' }),
+    })))
+  })
+
   it('loads older scrollback pages over the active protocol channel', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
     const client = createTerminalProtocolClient({

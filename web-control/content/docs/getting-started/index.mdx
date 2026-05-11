@@ -82,22 +82,24 @@ termx --listen :8080
 只走远程访问：
 
 ```bash
-termx remote enable --server <control_url>
+termx remote enable --mode online
 termx daemon
+termx remote pair
 ```
 
 同时保留局域网直连：
 
 ```bash
-TERMX_REMOTE_LOCAL_WEB_ENABLE=1 termx remote enable --server <control_url>
+termx remote enable --mode both
 termx daemon
+termx remote pair
 ```
 </Step>
 
 <Step>
 ### 用 Android 客户端扫码完成配对
 
-本机服务启动后会显示新的二维码。Android 客户端扫码后会保存与该节点对应的配对信息，之后即可在外网环境通过 Hub 远程连接。
+`termx remote pair` 会显示新的二维码。Android 客户端扫码后会保存与该节点对应的配对信息，之后即可在外网环境通过 Hub 远程连接。
 </Step>
 </Steps>
 
@@ -105,7 +107,7 @@ termx daemon
 </Tabs>
 
 <Callout type="info">
-`hub` 模式适合只关心远程访问的场景；`both` 模式更适合常驻机器，因为它会同时保留局域网与 Hub 两条路径。
+`online` 模式适合只关心远程访问的场景；`both` 模式更适合常驻机器，因为它会同时保留局域网与 Hub 两条路径。
 </Callout>
 
 下一步建议：

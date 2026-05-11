@@ -48,7 +48,7 @@ func newAttachmentStreamPump(
 	return pump
 }
 
-func (p *attachmentStreamPump) run() {
+func (p *attachmentStreamPump) run() error {
 	readerDone := make(chan struct{})
 	go func() {
 		defer close(readerDone)
@@ -63,6 +63,7 @@ func (p *attachmentStreamPump) run() {
 	p.cond.Broadcast()
 	p.mu.Unlock()
 	<-readerDone
+	return err
 }
 
 func (p *attachmentStreamPump) readLoop() {
@@ -87,14 +88,31 @@ func (p *attachmentStreamPump) sendLoop() error {
 		if !ok {
 			return nil
 		}
-		typ, payload, ok := streamMessageFramePayload(msg)
-		if !ok {
-			continue
-		}
-		if err := p.sendFrame(p.channel, typ, payload); err != nil {
+		if err := p.sendMessageFrame(msg); err != nil {
 			return err
 		}
 	}
+}
+
+func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) error {
+	if msg.Type == StreamOutput {
+		for len(msg.Output) > 0 {
+			n := minInt(len(msg.Output), maxLiveOutputFrameBytes)
+			if err := p.sendFrame(p.channel, protocol.TypeOutput, msg.Output[:n]); err != nil {
+				return err
+			}
+			msg.Output = msg.Output[n:]
+		}
+		return nil
+	}
+	typ, payload, ok := streamMessageFramePayload(msg)
+	if !ok {
+		return nil
+	}
+	if len(payload) > protocol.MaxFrameSize {
+		return p.sendFrame(p.channel, protocol.TypeSyncLost, protocol.EncodeSyncLostPayload(uint64(len(payload))))
+	}
+	return p.sendFrame(p.channel, typ, payload)
 }
 
 func (p *attachmentStreamPump) closeInput() {

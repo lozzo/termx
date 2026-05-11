@@ -1739,6 +1739,57 @@ func TestE2ETabSwitchSharedTerminalPromotesOwnerResizesAndShowsCursor(t *testing
 	e2eWaitForCursorHighlight(t, env.ctx, model, env.invalidated)
 }
 
+func TestE2EResizeModeContentPlacementKeys(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(nil)
+	term := rt.Registry().GetOrCreate("term-1")
+	term.Name = "shell"
+	term.State = "running"
+	term.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 2, Rows: 1},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "o", Width: 1}, {Content: "k", Width: 1}},
+		}},
+	}
+	binding := rt.BindPane("pane-1")
+	binding.Connected = true
+	model := New(shared.Config{}, wb, rt)
+	model.width = 20
+	model.height = 8
+
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	e2eDrainSkippingPrefixTimeout(t, model, cmd)
+	if got := model.input.Mode().Kind; got != input.ModeResize {
+		t.Fatalf("expected resize mode after Ctrl-R, got %q", got)
+	}
+	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}})
+	e2eDrainSkippingPrefixTimeout(t, model, cmd)
+	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
+	e2eDrainSkippingPrefixTimeout(t, model, cmd)
+	if gotX, gotY := model.runtime.PaneContentOffset("pane-1"); gotX != 1 || gotY != 1 {
+		t.Fatalf("expected content placement keys to move pane content to 1,1 got %d,%d", gotX, gotY)
+	}
+
+	view := xansi.Strip(model.View())
+	if !strings.Contains(view, "·ok") && !strings.Contains(view, "ok·") {
+		t.Fatalf("expected moved content to render with extent dots:\n%s", view)
+	}
+}
+
 type realMouseE2EEnv struct {
 	ctx         context.Context
 	model       *Model

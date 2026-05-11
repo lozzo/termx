@@ -20,6 +20,8 @@ const historyIdlePreloadTargetRows = 1500
 const historyApplyBatchDelayMs = 160
 const historyApplyScrollIdleMs = 180
 const historyApplyMaxDelayMs = 900
+const historyApplyWatchdogMs = 4000
+const bottomAnchorSettleMs = 900
 
 interface PendingHistoryApply {
   revision: number
@@ -101,6 +103,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const canSendResizeRef = useRef(false)
   const historyLoadingRef = useRef(false)
   const historyApplyingRef = useRef(false)
+  const historyRestoreViewportOnLoadRef = useRef(false)
   const historyRevisionAppliedRef = useRef(0)
   const historyLoadedRowsAppliedRef = useRef(0)
   const pendingHistoryViewportRef = useRef<number | null>(null)
@@ -119,6 +122,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const snapshotAlternateScreenRef = useRef(false)
   const fitFrameRef = useRef<number | null>(null)
   const preventFocusRef = useRef(preventFocus)
+  const bottomAnchorUntilRef = useRef(0)
+  const bottomAnchorFrameRef = useRef<number | null>(null)
 
   useEffect(() => {
     preventFocusRef.current = preventFocus
@@ -149,12 +154,18 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const channelState = terminalSession.snapshot.terminalChannels[terminalId]?.state
   const showConnectingOverlay = !suppressConnectingOverlay && channelState !== 'open' && terminalSession.terminalText.length === 0
 
+  const isScrolledToBottom = useCallback((term: XTerm) => {
+    const buffer = term.buffer.active
+    return buffer.viewportY >= Math.max(0, buffer.length - term.rows - 1)
+  }, [])
+
   const fitAndMaybeSendResize = useCallback(() => {
     if (terminalDisposedRef.current) return
     const term = xtermRef.current
     const fitAddon = fitAddonRef.current
     const container = containerRef.current
     if (!term || !fitAddon || !container) return
+    const shouldKeepBottom = Date.now() <= bottomAnchorUntilRef.current || isScrolledToBottom(term)
 
     let dimensions: { cols: number; rows: number } | undefined
     try {
@@ -163,6 +174,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (!dimensions) return
       if (terminalDisposedRef.current || xtermRef.current !== term) return
       term.resize(dimensions.cols, dimensions.rows)
+      if (shouldKeepBottom) term.scrollToBottom()
     } catch {
       // xterm can leave delayed viewport/fit work behind while React is unmounting.
       // Treat those races as stale lifecycle work instead of crashing the UI.
@@ -175,7 +187,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (last?.cols === dimensions.cols && last.rows === dimensions.rows) return
     lastSentResizeRef.current = dimensions
     terminalSession.sendResize(dimensions.cols, dimensions.rows)
-  }, [terminalSession.sendResize])
+  }, [isScrolledToBottom, terminalSession.sendResize])
 
   const scrollToBottomIfCurrent = useCallback((term: XTerm) => {
     if (terminalDisposedRef.current || xtermRef.current !== term) return
@@ -185,6 +197,42 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (!terminalDisposedRef.current) throw error
     }
   }, [])
+
+  const cancelBottomAnchor = useCallback(() => {
+    bottomAnchorUntilRef.current = 0
+    if (bottomAnchorFrameRef.current !== null && typeof window !== 'undefined') {
+      window.cancelAnimationFrame(bottomAnchorFrameRef.current)
+      bottomAnchorFrameRef.current = null
+    }
+  }, [])
+
+  const keepBottomAnchored = useCallback(() => {
+    if (terminalDisposedRef.current) return
+    const term = xtermRef.current
+    if (!term) return
+    bottomAnchorUntilRef.current = Date.now() + bottomAnchorSettleMs
+    scrollToBottomIfCurrent(term)
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return
+    if (bottomAnchorFrameRef.current !== null) {
+      window.cancelAnimationFrame(bottomAnchorFrameRef.current)
+      bottomAnchorFrameRef.current = null
+    }
+    const generation = terminalGenerationRef.current
+    const tick = () => {
+      if (
+        terminalDisposedRef.current ||
+        terminalGenerationRef.current !== generation ||
+        Date.now() > bottomAnchorUntilRef.current
+      ) {
+        bottomAnchorFrameRef.current = null
+        return
+      }
+      const current = xtermRef.current
+      if (current) scrollToBottomIfCurrent(current)
+      bottomAnchorFrameRef.current = window.requestAnimationFrame(tick)
+    }
+    bottomAnchorFrameRef.current = window.requestAnimationFrame(tick)
+  }, [scrollToBottomIfCurrent])
 
   const currentTerminalSize = useCallback(() => {
     if (terminalDisposedRef.current) return undefined
@@ -483,7 +531,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (initialText) {
       try {
         term.write(initialText, () => {
-          scrollToBottomIfCurrent(term)
+          keepBottomAnchored()
         })
       } catch {}
       lastWrittenTextRef.current = initialText
@@ -563,6 +611,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       lastHistoryScrollActivityAtRef.current = Date.now()
     }
 
+    const noteUserScrollActivity = () => {
+      cancelBottomAnchor()
+      noteHistoryScrollActivity()
+    }
+
     const clearMomentum = () => {
       if (!momentumFrame) return
       window.cancelAnimationFrame(momentumFrame)
@@ -638,6 +691,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const emptyResult = { loadedRows: 0, totalRows: 0, hasMore: false }
       if (!canLoadScrollbackPage()) return emptyResult
       historyLoadingRef.current = true
+      historyRestoreViewportOnLoadRef.current = restoreViewport
       pendingHistoryViewportRef.current = restoreViewport ? term.buffer.active.viewportY : null
       try {
         const result = await loadScrollbackRef.current(historyScrollbackPageRows)
@@ -650,6 +704,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         return emptyResult
       } finally {
         historyLoadingRef.current = false
+        historyRestoreViewportOnLoadRef.current = false
       }
     }
 
@@ -680,17 +735,20 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       historyApplyQueuedAtRef.current = 0
       try {
         historyApplyingRef.current = true
-        const previousScrollback = term.options.scrollback
-        const rowsAddedSinceLastApply = Math.max(0, pending.loadedRows - historyLoadedRowsAppliedRef.current)
-        if (typeof previousScrollback === 'number' && rowsAddedSinceLastApply > 0) {
-          term.options.scrollback = Math.max(previousScrollback, previousScrollback + rowsAddedSinceLastApply)
-        }
-        term.reset()
-        term.write(pending.text, () => {
-          if (pending.restoreViewportY !== null) {
-            term.scrollToLine(pending.restoreViewportY + pending.prependedRows)
-          } else {
-            scrollToBottomIfCurrent(term)
+        let historyApplyReleased = false
+        let historyApplyWatchdog: number | null = window.setTimeout(() => {
+          historyApplyWatchdog = null
+          if (historyApplyReleased) return
+          historyApplyReleased = true
+          historyApplyingRef.current = false
+          scheduleInitialHistoryPreloadRef.current()
+        }, historyApplyWatchdogMs)
+        const finishHistoryApply = () => {
+          if (historyApplyReleased) return
+          historyApplyReleased = true
+          if (historyApplyWatchdog !== null) {
+            window.clearTimeout(historyApplyWatchdog)
+            historyApplyWatchdog = null
           }
           historyLoadedRowsAppliedRef.current = pending.loadedRows
           historyApplyingRef.current = false
@@ -698,12 +756,33 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           if (pending.restoreViewportY !== null) {
             maybePrefetchScrollbackRef.current()
           }
+        }
+        const previousScrollback = term.options.scrollback
+        const rowsAddedSinceLastApply = Math.max(0, pending.loadedRows - historyLoadedRowsAppliedRef.current)
+        const currentViewportY = term.buffer.active.viewportY
+        const shouldKeepBottom = pending.restoreViewportY === null &&
+          (Date.now() <= bottomAnchorUntilRef.current || isScrolledToBottom(term))
+        if (typeof previousScrollback === 'number' && rowsAddedSinceLastApply > 0) {
+          term.options.scrollback = Math.max(previousScrollback, previousScrollback + rowsAddedSinceLastApply)
+        }
+        const latestText = latestTerminalTextRef.current
+        const textToApply = latestText.startsWith(pending.text) ? latestText : pending.text
+        term.reset()
+        term.write(textToApply, () => {
+          if (pending.restoreViewportY !== null) {
+            term.scrollToLine(pending.restoreViewportY + pending.prependedRows)
+          } else if (shouldKeepBottom) {
+            keepBottomAnchored()
+          } else {
+            term.scrollToLine(currentViewportY + pending.prependedRows)
+          }
+          finishHistoryApply()
         })
+        lastWrittenTextRef.current = textToApply
       } catch (error) {
         historyApplyingRef.current = false
         if (!terminalDisposedRef.current) throw error
       }
-      lastWrittenTextRef.current = pending.text
     }
 
     const scheduleHistoryApply = () => {
@@ -744,6 +823,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
             if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
             const result = await loadScrollbackPage(false)
             if (result.loadedRows <= 0 || !result.hasMore) return
+            if (Date.now() <= bottomAnchorUntilRef.current || isScrolledToBottom(term)) {
+              keepBottomAnchored()
+            }
             if (page < historyInitialPreloadPages - 1) {
               await new Promise((resolve) => window.setTimeout(resolve, historyInitialPreloadPageGapMs))
             }
@@ -822,7 +904,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           clamped = true
           if (px < 0) maybePrefetchScrollback()
         }
-        noteHistoryScrollActivity()
+        noteUserScrollActivity()
       }
       syncTransform()
       return clamped
@@ -1012,6 +1094,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     const handleTouchStart = (event: TouchEvent) => {
       if (event.touches.length < 1) return
+      cancelBottomAnchor()
       if (selectionModeRef.current && !selectionModeWasActive) {
         resetSelectionTouchState()
         selectionModeWasActive = true
@@ -1266,7 +1349,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           if (smoothActive) syncTransform()
           updateScrollbar()
           if (historyLoadingRef.current) {
-            pendingHistoryViewportRef.current = term.buffer.active.viewportY
+            if (historyRestoreViewportOnLoadRef.current) {
+              pendingHistoryViewportRef.current = term.buffer.active.viewportY
+            }
           } else {
             maybePrefetchScrollback()
           }
@@ -1299,9 +1384,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     scrollTouchTarget.addEventListener('touchcancel', handleTouchEnd, { passive: true })
 
     const handleWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0) {
-        noteHistoryScrollActivity()
-      }
+      if (event.deltaY !== 0) noteUserScrollActivity()
       if (event.deltaY < 0 && term.buffer.active.viewportY <= settingsRef.current.scrollbackPrefetchThresholdRows) {
         maybePrefetchScrollback()
       }
@@ -1337,7 +1420,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const targetY = Math.round(nextRatio * maxScroll)
       const diff = targetY - buffer.viewportY
       if (diff !== 0) term.scrollLines(diff)
-      if (diff !== 0) noteHistoryScrollActivity()
+      if (diff !== 0) noteUserScrollActivity()
       updateScrollbar()
     }
     const handleScrollbarTouchEnd = (event: TouchEvent) => {
@@ -1364,7 +1447,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const targetY = Math.round(ratio * maxScroll)
       const diff = targetY - buffer.viewportY
       if (diff !== 0) term.scrollLines(diff)
-      if (diff !== 0) noteHistoryScrollActivity()
+      if (diff !== 0) noteUserScrollActivity()
       updateScrollbar()
       scrollbarDragging = true
       scrollbarTrack.classList.add('active')
@@ -1426,6 +1509,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         window.cancelAnimationFrame(fitFrameRef.current)
         fitFrameRef.current = null
       }
+      cancelBottomAnchor()
       if (fitDelayRef.current !== null) {
         window.clearTimeout(fitDelayRef.current)
         fitDelayRef.current = null
@@ -1486,7 +1570,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       lastSentResizeRef.current = null
       isOpenRef.current = false
     }
-  }, [fitAndMaybeSendResize, renderer, scheduleFit, scrollToBottomIfCurrent, sendInputAtCurrentSize, sendUserInput, settings.renderer])
+  }, [cancelBottomAnchor, fitAndMaybeSendResize, isScrolledToBottom, keepBottomAnchored, renderer, scheduleFit, sendInputAtCurrentSize, sendUserInput, settings.renderer])
 
   useEffect(() => {
     isOpenRef.current = isOpen
@@ -1523,8 +1607,16 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         restoreViewportY: restoreViewportY ?? previousPending?.restoreViewportY ?? null,
         text: terminalSession.terminalText,
       }
-      lastWrittenTextRef.current = terminalSession.terminalText
       scheduleHistoryApplyRef.current()
+      return
+    }
+
+    const pendingHistoryApply = pendingHistoryApplyRef.current
+    if (pendingHistoryApply) {
+      pendingHistoryApplyRef.current = {
+        ...pendingHistoryApply,
+        text: terminalSession.terminalText,
+      }
       return
     }
 
@@ -1537,7 +1629,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         const appendedText = nextText.slice(previousText.length)
         if (previousText === '') {
           term.write(appendedText, () => {
-            scrollToBottomIfCurrent(term)
+            keepBottomAnchored()
           })
         } else {
           term.write(appendedText)
@@ -1545,7 +1637,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       } else {
         term.reset()
         term.write(nextText, () => {
-          scrollToBottomIfCurrent(term)
+          keepBottomAnchored()
         })
       }
       scheduleInitialHistoryPreloadRef.current()
@@ -1553,7 +1645,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (!terminalDisposedRef.current) throw error
     }
     lastWrittenTextRef.current = nextText
-  }, [scrollToBottomIfCurrent, terminalSession.terminalSnapshot, terminalSession.terminalText])
+  }, [keepBottomAnchored, terminalSession.terminalSnapshot, terminalSession.terminalText])
 
   return (
     <section

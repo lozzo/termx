@@ -1177,7 +1177,9 @@ func (s *Server) handleRequest(
 		go func() {
 			defer attachment.cleanup()
 			pump := newAttachmentStreamPump(subCtx, cancel, params.TerminalID, ch, stream, sendFrame)
-			pump.run()
+			if err := pump.run(); err != nil {
+				s.cfg.logger.Warn("transport attachment stream send failed", "terminal_id", params.TerminalID, "remote", remote, "channel", ch, "error", err)
+			}
 		}()
 		result, _ := json.Marshal(protocol.AttachResult{Mode: params.Mode, Channel: ch, ResizeControl: &resizeControl})
 		return result, 0, nil

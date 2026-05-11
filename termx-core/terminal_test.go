@@ -1,8 +1,10 @@
 package termx
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -355,6 +357,62 @@ func TestSubscribeFlushesPendingVTermOutputBeforeBootstrap(t *testing.T) {
 	}
 }
 
+func TestSubscribeBootstrapCapsScrollbackReplay(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	scrollbackRows := attachReplayScrollbackLimit + 8
+	vt := localvterm.New(12, 2, scrollbackRows+16, nil)
+	for i := 0; i < scrollbackRows+2; i++ {
+		if _, err := vt.Write([]byte(fmt.Sprintf("line-%03d\r\n", i))); err != nil {
+			t.Fatalf("seed vterm row %d: %v", i, err)
+		}
+	}
+
+	term := &Terminal{
+		size:         Size{Cols: 12, Rows: 2},
+		state:        StateRunning,
+		vterm:        vt,
+		stream:       fanout.New(),
+		processEpoch: 1,
+	}
+
+	stream := term.Subscribe(ctx)
+
+	select {
+	case msg := <-stream:
+		if msg.Type != StreamResize || msg.Cols != 12 || msg.Rows != 2 {
+			t.Fatalf("expected resize bootstrap, got %#v", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for resize bootstrap")
+	}
+
+	select {
+	case msg := <-stream:
+		if msg.Type != StreamScreenUpdate {
+			t.Fatalf("expected screen update bootstrap, got %#v", msg)
+		}
+		update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
+		if err != nil {
+			t.Fatalf("decode screen update: %v", err)
+		}
+		if got := len(update.ScrollbackAppend); got > attachReplayScrollbackLimit {
+			t.Fatalf("expected capped scrollback replay, got %d rows", got)
+		}
+		if len(update.ScrollbackAppend) == 0 {
+			t.Fatal("expected recent scrollback rows in bootstrap")
+		}
+		for _, row := range update.ScrollbackAppend {
+			if protocolRowToString(row.Cells) == "line-000" {
+				t.Fatalf("expected oldest scrollback row to be trimmed, got %#v", update.ScrollbackAppend)
+			}
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for screen update bootstrap")
+	}
+}
+
 func TestTerminalIdleFlushesPendingVTermOutput(t *testing.T) {
 	originalDelay := serverVTermFlushIdleDelay
 	serverVTermFlushIdleDelay = 2 * time.Millisecond
@@ -500,6 +558,43 @@ func TestForwardLiveStreamMessagesPreservesSingleOutputBuffer(t *testing.T) {
 	}
 }
 
+func TestForwardLiveStreamMessagesSplitsOversizedOutput(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	src := make(chan fanout.StreamMessage, 2)
+	dst := make(chan StreamMessage, 8)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		forwardLiveStreamMessages(ctx, src, dst)
+		close(dst)
+	}()
+
+	payload := bytes.Repeat([]byte("x"), maxLiveOutputFrameBytes*2+17)
+	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: payload}
+	close(src)
+
+	received := collectStreamMessages(t, dst)
+	<-done
+	if len(received) != 3 {
+		t.Fatalf("expected oversized output split into 3 frames, got %#v", received)
+	}
+	totalBytes := 0
+	for i, msg := range received {
+		if msg.Type != StreamOutput {
+			t.Fatalf("frame %d expected output, got %#v", i, msg)
+		}
+		if len(msg.Output) > maxLiveOutputFrameBytes {
+			t.Fatalf("frame %d exceeded output chunk cap: %d", i, len(msg.Output))
+		}
+		totalBytes += len(msg.Output)
+	}
+	if totalBytes != len(payload) {
+		t.Fatalf("expected %d total output bytes, got %d", len(payload), totalBytes)
+	}
+}
+
 func TestForwardLiveStreamMessagesPreservesSyncLostBoundaries(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -535,6 +630,46 @@ func TestForwardLiveStreamMessagesPreservesSyncLostBoundaries(t *testing.T) {
 	}
 	if received[3].Type != StreamResize || received[3].Cols != 80 || received[3].Rows != 24 {
 		t.Fatalf("unexpected resize frame %#v", received[3])
+	}
+}
+
+func TestTerminalSharedLiveOutputThrottleSplitsOversizedFlush(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	term := &Terminal{
+		stream:             fanout.New(),
+		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
+		processEpoch:       1,
+	}
+	stream := term.stream.Subscribe(ctx)
+	payload := bytes.Repeat([]byte("x"), maxLiveOutputFrameBytes+11)
+
+	term.streamMu.Lock()
+	term.queuePendingLiveOutputLocked(1, term.stream, payload)
+	term.flushPendingLiveOutputLocked(term.stream)
+	term.streamMu.Unlock()
+
+	totalBytes := 0
+	for i := 0; i < 2; i++ {
+		select {
+		case msg := <-stream:
+			if msg.Type != fanout.StreamOutput {
+				t.Fatalf("frame %d expected output, got %#v", i, msg)
+			}
+			if len(msg.Output) > maxLiveOutputFrameBytes {
+				t.Fatalf("frame %d exceeded output chunk cap: %d", i, len(msg.Output))
+			}
+			if !msg.OutputRateLimited {
+				t.Fatalf("frame %d expected rate-limited output tag, got %#v", i, msg)
+			}
+			totalBytes += len(msg.Output)
+		case <-time.After(100 * time.Millisecond):
+			t.Fatalf("timed out waiting for split output frame %d", i)
+		}
+	}
+	if totalBytes != len(payload) {
+		t.Fatalf("expected %d total output bytes, got %d", len(payload), totalBytes)
 	}
 }
 

@@ -1,11 +1,11 @@
 ---
 title: 连接模式
-description: 了解 local、hub、both 三种模式分别适合什么场景。
+description: 了解 local、online、both 三种模式分别适合什么场景。
 ---
 
 ## 连接模式
 
-termx 当前有三种运行模式：`local`、`hub`、`both`。
+termx 当前有三种远程运行模式：`local`、`online`、`both`。
 
 ### `local`：只做本地或局域网连接
 
@@ -25,11 +25,12 @@ termx --listen :8080
 - 二维码里会包含本地连接信息
 - 默认带本地密码认证（除非使用 `--no-auth`）
 
-### `hub`：只做远程 Hub 连接
+### `online`：只做远程 Hub 连接
 
 ```bash
-termx remote enable --server <control_url>
+termx remote enable --mode online
 termx daemon
+termx remote pair
 ```
 
 适合：
@@ -47,8 +48,9 @@ termx daemon
 ### `both`：本地 + Hub 混合模式
 
 ```bash
-TERMX_REMOTE_LOCAL_WEB_ENABLE=1 termx remote enable --server <control_url>
+termx remote enable --mode both
 termx daemon
+termx remote pair
 ```
 
 这是最推荐的长期运行模式。
@@ -70,10 +72,10 @@ termx daemon
 | 场景 | 推荐模式 |
 |------|----------|
 | 只想先体验 | `local` |
-| 只关心远程 | `hub` |
+| 只关心远程 | `online` |
 | 日常长期使用 | `both` |
 
 ### 两个容易忽略的点
 
-1. `hub` 模式下，`--connect-addr` 没有意义，会被忽略。
+1. `online` 模式下，`--connect-addr` 没有意义，会被忽略。
 2. 远程节点通常要经过“注册 + 扫码配对”两个阶段；注册不等于已经完成配对。

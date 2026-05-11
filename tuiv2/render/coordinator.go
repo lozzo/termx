@@ -119,6 +119,8 @@ type paneContentKey struct {
 	SharedLeft           bool
 	SharedTop            bool
 	ScrollOffset         int
+	ContentOffsetX       int
+	ContentOffsetY       int
 	EmptyActionSelected  int
 	ExitedActionSelected int
 	ExitedActionPulse    bool

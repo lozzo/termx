@@ -12,6 +12,10 @@ func TestCaptureApplyPreservesPureClientProjection(t *testing.T) {
 		"pane-main-1": 2,
 		"pane-dev-3":  7,
 	}
+	contentOffsets := map[string]ContentOffset{
+		"pane-main-1": {X: 3, Y: 1},
+		"pane-dev-3":  {X: -4, Y: -2},
+	}
 
 	_ = wb.SwitchWorkspace("dev")
 	_ = wb.SwitchTab("dev", 1)
@@ -21,6 +25,10 @@ func TestCaptureApplyPreservesPureClientProjection(t *testing.T) {
 		PaneViewportOffset: func(paneID string) (int, bool) {
 			offset, ok := offsets[paneID]
 			return offset, ok
+		},
+		PaneContentOffset: func(paneID string) (int, int, bool) {
+			offset, ok := contentOffsets[paneID]
+			return offset.X, offset.Y, ok
 		},
 		EffectiveTabViewportOffset: func(tab *workbench.TabState) int {
 			if tab == nil {
@@ -37,10 +45,16 @@ func TestCaptureApplyPreservesPureClientProjection(t *testing.T) {
 	wb.WorkspaceByName("dev").Tabs[1].ZoomedPaneID = ""
 	offsets["pane-main-1"] = 0
 	offsets["pane-dev-3"] = 0
+	contentOffsets["pane-main-1"] = ContentOffset{}
+	contentOffsets["pane-dev-3"] = ContentOffset{}
 
 	Apply(wb, proj, ApplyOptions{
 		SetPaneViewportOffset: func(paneID string, offset int) bool {
 			offsets[paneID] = offset
+			return true
+		},
+		SetPaneContentOffset: func(paneID string, x, y int) bool {
+			contentOffsets[paneID] = ContentOffset{X: x, Y: y}
 			return true
 		},
 	})
@@ -65,6 +79,12 @@ func TestCaptureApplyPreservesPureClientProjection(t *testing.T) {
 	}
 	if got := offsets["pane-dev-3"]; got != 7 {
 		t.Fatalf("expected pane-dev-3 viewport 7, got %d", got)
+	}
+	if got := contentOffsets["pane-main-1"]; got != (ContentOffset{X: 3, Y: 1}) {
+		t.Fatalf("expected pane-main-1 content offset 3,1 got %#v", got)
+	}
+	if got := contentOffsets["pane-dev-3"]; got != (ContentOffset{X: -4, Y: -2}) {
+		t.Fatalf("expected pane-dev-3 content offset -4,-2 got %#v", got)
 	}
 }
 

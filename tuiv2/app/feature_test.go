@@ -96,7 +96,8 @@ func drainMsg(t *testing.T, model *Model, msg tea.Msg, depth int) {
 	if msg == nil || depth <= 0 {
 		return
 	}
-	if _, ok := msg.(prefixTimeoutMsg); ok {
+	switch msg.(type) {
+	case prefixTimeoutMsg, clearNoticeMsg, clearErrorMsg, clearOwnerConfirmMsg:
 		return
 	}
 	if batch, ok := msg.(tea.BatchMsg); ok {
@@ -104,8 +105,7 @@ func drainMsg(t *testing.T, model *Model, msg tea.Msg, depth int) {
 			if item == nil {
 				continue
 			}
-			next := item()
-			drainMsg(t, model, next, depth-1)
+			drainCmd(t, model, item, depth-1)
 		}
 		return
 	}
@@ -460,8 +460,7 @@ func TestFeaturePaneZoom(t *testing.T) {
 		t.Fatal("expected no zoom initially")
 	}
 
-	// Must be in display mode for zoom action to reach orchestrator
-	model.input.SetMode(input.ModeState{Kind: input.ModeDisplay})
+	model.input.SetMode(input.ModeState{Kind: input.ModePane})
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionZoomPane, PaneID: "pane-1"})
 
 	tab = model.workbench.CurrentTab()
@@ -471,7 +470,7 @@ func TestFeaturePaneZoom(t *testing.T) {
 	assertMode(t, model, input.ModeNormal)
 
 	// Toggle zoom off
-	model.input.SetMode(input.ModeState{Kind: input.ModeDisplay})
+	model.input.SetMode(input.ModeState{Kind: input.ModePane})
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionZoomPane, PaneID: "pane-1"})
 
 	tab = model.workbench.CurrentTab()
@@ -479,6 +478,22 @@ func TestFeaturePaneZoom(t *testing.T) {
 		t.Fatalf("expected zoom cleared, got %q", tab.ZoomedPaneID)
 	}
 	assertMode(t, model, input.ModeNormal)
+}
+
+func TestFeatureDisplayModeDoesNotZoomPane(t *testing.T) {
+	model := setupTwoPaneModel(t)
+
+	model.input.SetMode(input.ModeState{Kind: input.ModeDisplay})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionZoomPane, PaneID: "pane-1"})
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if tab.ZoomedPaneID != "" {
+		t.Fatalf("expected display mode to ignore zoom action, got %q", tab.ZoomedPaneID)
+	}
+	assertMode(t, model, input.ModeDisplay)
 }
 
 func TestFeaturePaneReconnect(t *testing.T) {
@@ -1796,6 +1811,62 @@ func TestFeatureScrollUpDown(t *testing.T) {
 	}
 }
 
+func TestFeatureResizeModeMovesPaneContentOffset(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 20, height: 8})
+	term := model.runtime.Registry().Get("term-1")
+	term.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 2, Rows: 1},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "h", Width: 1}, {Content: "i", Width: 1}},
+		}},
+	}
+
+	model.input.SetMode(input.ModeState{Kind: input.ModeResize})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionMovePaneContentRight, PaneID: "pane-1"})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionMovePaneContentDown, PaneID: "pane-1"})
+	if gotX, gotY := model.runtime.PaneContentOffset("pane-1"); gotX != 1 || gotY != 1 {
+		t.Fatalf("expected pane content offset 1,1 got %d,%d", gotX, gotY)
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCenterPaneContent, PaneID: "pane-1"})
+	bounds, ok := model.paneContentOffsetBounds("pane-1")
+	if !ok {
+		t.Fatal("expected pane content offset bounds")
+	}
+	wantX := centeredPaneContentOffset(bounds.minX, bounds.maxX)
+	wantY := centeredPaneContentOffset(bounds.minY, bounds.maxY)
+	if gotX, gotY := model.runtime.PaneContentOffset("pane-1"); gotX != wantX || gotY != wantY {
+		t.Fatalf("expected centered pane content offset %d,%d got %d,%d", wantX, wantY, gotX, gotY)
+	}
+	if view := xansi.Strip(model.View()); !strings.Contains(view, "·hi") && !strings.Contains(view, "hi·") {
+		t.Fatalf("expected view to show placed content with dot extent hints:\n%s", view)
+	}
+}
+
+func TestFeatureResizeModeAlignsOversizedPaneContent(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 24, height: 8})
+	term := model.runtime.Registry().Get("term-1")
+	term.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 80, Rows: 24},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "a", Width: 1}},
+		}},
+	}
+
+	model.input.SetMode(input.ModeState{Kind: input.ModeResize})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionAlignPaneContentRight, PaneID: "pane-1"})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionAlignPaneContentBottom, PaneID: "pane-1"})
+	bounds, ok := model.paneContentOffsetBounds("pane-1")
+	if !ok {
+		t.Fatal("expected pane content offset bounds")
+	}
+	if gotX, gotY := model.runtime.PaneContentOffset("pane-1"); gotX != bounds.minX || gotY != bounds.minY {
+		t.Fatalf("expected right/bottom aligned offset %d,%d got %d,%d", bounds.minX, bounds.minY, gotX, gotY)
+	}
+}
+
 func TestFeatureScrollToTopBottom(t *testing.T) {
 	t.Skip("scroll-to-top/bottom actions are not part of the current baseline")
 }
@@ -2352,7 +2423,7 @@ func TestFeatureZoomPaneBlockedByTerminalSizeLock(t *testing.T) {
 	terminal := model.runtime.Registry().GetOrCreate("term-1")
 	terminal.Tags = map[string]string{"termx.size_lock": "lock"}
 
-	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterPaneMode})
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionZoomPane, PaneID: "pane-1"})
 
 	tab := model.workbench.CurrentTab()
@@ -2682,6 +2753,71 @@ func TestFeatureStickyModeRearmOnAction(t *testing.T) {
 	// Old timeout should be ignored
 	_, _ = model.Update(prefixTimeoutMsg{seq: seqBefore})
 	assertMode(t, model, input.ModePane)
+}
+
+func TestFeatureStickyModeRearmOnLocalAction(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 20, height: 8})
+	term := model.runtime.Registry().Get("term-1")
+	term.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 2, Rows: 1},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "o", Width: 1}, {Content: "k", Width: 1}},
+		}},
+	}
+
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlR))
+	assertMode(t, model, input.ModeResize)
+	seqBefore := model.prefixSeq
+
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyShiftRight})
+	if model.prefixSeq == seqBefore {
+		t.Fatal("expected prefix seq to increment after local content placement action")
+	}
+	if gotX, gotY := model.runtime.PaneContentOffset("pane-1"); gotX != 1 || gotY != 0 {
+		t.Fatalf("expected content offset 1,0 got %d,%d", gotX, gotY)
+	}
+
+	_, _ = model.Update(prefixTimeoutMsg{seq: seqBefore})
+	assertMode(t, model, input.ModeResize)
+}
+
+func TestFeatureStickyModeRearmsOnRepeatedLocalContentPlacementActions(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 20, height: 8})
+	term := model.runtime.Registry().Get("term-1")
+	term.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 2, Rows: 1},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "o", Width: 1}, {Content: "k", Width: 1}},
+		}},
+	}
+
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlR))
+	assertMode(t, model, input.ModeResize)
+	oldSeqs := []int{model.prefixSeq}
+
+	for _, msg := range []tea.KeyMsg{
+		{Type: tea.KeyShiftRight},
+		runeKeyMsg('D'),
+		runeKeyMsg('S'),
+		runeKeyMsg('A'),
+	} {
+		dispatchKey(t, model, msg)
+		oldSeqs = append(oldSeqs, model.prefixSeq)
+		assertMode(t, model, input.ModeResize)
+	}
+	if gotX, gotY := model.runtime.PaneContentOffset("pane-1"); gotX != 1 || gotY != 1 {
+		t.Fatalf("expected repeated content placement to end at 1,1 got %d,%d", gotX, gotY)
+	}
+
+	for _, seq := range oldSeqs[:len(oldSeqs)-1] {
+		_, _ = model.Update(prefixTimeoutMsg{seq: seq})
+		assertMode(t, model, input.ModeResize)
+	}
+
+	_, _ = model.Update(prefixTimeoutMsg{seq: model.prefixSeq})
+	assertMode(t, model, input.ModeNormal)
 }
 
 // ─── Group 12: Render Integration ───────────────────────────────────────────
@@ -3232,6 +3368,42 @@ func TestFeatureKeyDrivenTabMode(t *testing.T) {
 	// 'c' creates tab
 	dispatchKey(t, model, runeKeyMsg('c'))
 	assertTabCount(t, model, 2)
+}
+
+func TestFeatureKeyDrivenResizeContentPlacement(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 20, height: 8})
+	term := model.runtime.Registry().Get("term-1")
+	term.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 2, Rows: 1},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "o", Width: 1}, {Content: "k", Width: 1}},
+		}},
+	}
+
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlR))
+	assertMode(t, model, input.ModeResize)
+	dispatchKey(t, model, runeKeyMsg('D'))
+	dispatchKey(t, model, runeKeyMsg('S'))
+	if gotX, gotY := model.runtime.PaneContentOffset("pane-1"); gotX != 1 || gotY != 1 {
+		t.Fatalf("expected key-driven pane content offset 1,1 got %d,%d", gotX, gotY)
+	}
+
+	dispatchKey(t, model, runeKeyMsg('m'))
+	bounds, ok := model.paneContentOffsetBounds("pane-1")
+	if !ok {
+		t.Fatal("expected pane content offset bounds")
+	}
+	wantX := centeredPaneContentOffset(bounds.minX, bounds.maxX)
+	wantY := centeredPaneContentOffset(bounds.minY, bounds.maxY)
+	if gotX, gotY := model.runtime.PaneContentOffset("pane-1"); gotX != wantX || gotY != wantY {
+		t.Fatalf("expected centered key-driven pane content offset %d,%d got %d,%d", wantX, wantY, gotX, gotY)
+	}
+
+	dispatchKey(t, model, runeKeyMsg('r'))
+	if gotX, gotY := model.runtime.PaneContentOffset("pane-1"); gotX != 0 || gotY != 0 {
+		t.Fatalf("expected key-driven reset pane content offset 0,0 got %d,%d", gotX, gotY)
+	}
 }
 
 func TestFeatureKeyDrivenPickerOpen(t *testing.T) {

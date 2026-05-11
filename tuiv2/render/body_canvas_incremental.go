@@ -75,6 +75,8 @@ func buildBodyCanvasIncrementalUpdates(cache *bodyRenderCache, entries []paneRen
 				update.mode = bodyCanvasUpdateFullPane
 			case prev.ContentRect != next.cache.ContentRect || prev.Metrics != next.cache.Metrics:
 				update.mode = bodyCanvasUpdateFullPane
+			case next.resolved.contentOffsetX != 0 || next.resolved.contentOffsetY != 0:
+				update.mode = bodyCanvasUpdateFullPane
 			case next.resolved.source == nil:
 				update.mode = bodyCanvasUpdateFullPane
 			default:
@@ -203,7 +205,7 @@ func applyBodyCanvasIncrementalUpdates(canvas *composedCanvas, updates []bodyCan
 				if update.scrollPlan.valid(contentRect.H) {
 					canvas.shiftRectRowBand(contentRect, update.scrollPlan.start, update.scrollPlan.end, update.scrollPlan.shift, update.scrollPlan.direction)
 				}
-				drawTerminalSourceWindowRowsWithMetrics(canvas, contentRect, update.captured.resolved.source, update.captured.resolved.renderOffset, update.entry.Theme, update.captured.cache.Metrics, update.rows)
+				drawTerminalSourceWindowRowsWithPlacementAndMetrics(canvas, contentRect, update.captured.resolved.source, update.captured.resolved.renderOffset, update.captured.resolved.contentOffsetX, update.captured.resolved.contentOffsetY, update.entry.Theme, update.captured.cache.Metrics, update.rows)
 			})
 		}
 	}

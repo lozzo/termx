@@ -43,4 +43,6 @@ type VisiblePaneBinding struct {
 	Role           string
 	Connected      bool
 	ViewportOffset int
+	ContentOffsetX int
+	ContentOffsetY int
 }

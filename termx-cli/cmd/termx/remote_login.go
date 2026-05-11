@@ -271,7 +271,7 @@ func persistRemoteLogin(cmd *cobra.Command, configPath string, record remoteAuth
 	if err := saveRemoteAuthRecord(path, record); err != nil {
 		return err
 	}
-	if err := ensureRemoteConfigBootstrap(configPath, record.ControlURL, record.HubURL, path, "online"); err != nil {
+	if err := ensureRemoteConfigBootstrap(configPath, record.ControlURL, record.HubURL, path, "online", "", ""); err != nil {
 		return err
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "remote login saved")
@@ -461,7 +461,7 @@ func loadRemoteAuthRecord(path string) (remoteAuthRecord, error) {
 	return record, nil
 }
 
-func ensureRemoteConfigBootstrap(configPath string, controlURL string, hubURL string, authStorePath string, mode string) error {
+func ensureRemoteConfigBootstrap(configPath string, controlURL string, hubURL string, authStorePath string, mode string, localWebAddr string, iceTCPAddr string) error {
 	if strings.TrimSpace(configPath) == "" {
 		configPath = shared.DefaultConfigPath()
 	}
@@ -480,6 +480,12 @@ func ensureRemoteConfigBootstrap(configPath string, controlURL string, hubURL st
 	}
 	if strings.TrimSpace(authStorePath) != "" {
 		content += fmt.Sprintf("  auth_store: %s\n", authStorePath)
+	}
+	if strings.TrimSpace(localWebAddr) != "" {
+		content += fmt.Sprintf("  local_web_addr: %s\n", strings.TrimSpace(localWebAddr))
+	}
+	if strings.TrimSpace(iceTCPAddr) != "" {
+		content += fmt.Sprintf("  ice_tcp_addr: %s\n", strings.TrimSpace(iceTCPAddr))
 	}
 	return os.WriteFile(configPath, []byte(content), 0o600)
 }

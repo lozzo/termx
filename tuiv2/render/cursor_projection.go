@@ -71,7 +71,7 @@ func activeEntryCursorRenderTarget(entries []paneRenderEntry, runtimeState *Visi
 		if entry.CopyModeActive || entry.ScrollOffset > 0 {
 			return cursorRenderTarget{}, false
 		}
-		target, ok := entryCursorRenderTarget(rect, source)
+		target, ok := entryCursorRenderTargetWithPlacement(rect, source, entry.ContentOffsetX, entry.ContentOffsetY, entry.Metrics)
 		if !ok {
 			return cursorRenderTarget{}, false
 		}
@@ -92,8 +92,14 @@ func activeEntryCursorTarget(entries []paneRenderEntry, runtimeState *VisibleRun
 }
 
 func entryCursorRenderTarget(rect workbench.Rect, source terminalRenderSource) (cursorRenderTarget, bool) {
-	snapshotTarget, snapshotOK := renderSourceCursorProjectionTarget(rect, source)
-	fallbackTarget, fallbackOK := visualCursorProjectionTargetForSource(rect, source)
+	return entryCursorRenderTargetWithPlacement(rect, source, 0, 0, terminalVisibleMetricsForSource(source))
+}
+
+func entryCursorRenderTargetWithPlacement(rect workbench.Rect, source terminalRenderSource, offsetX, offsetY int, metrics renderTerminalMetrics) (cursorRenderTarget, bool) {
+	offsetX = clampTerminalContentOffset(offsetX, rect.W, metrics.Cols)
+	offsetY = clampTerminalContentOffset(offsetY, rect.H, metrics.Rows)
+	snapshotTarget, snapshotOK := renderSourceCursorProjectionTargetWithPlacement(rect, source, offsetX, offsetY)
+	fallbackTarget, fallbackOK := visualCursorProjectionTargetForSourceWithPlacement(rect, source, offsetX, offsetY)
 	cursor := protocol.CursorState{}
 	if source != nil {
 		cursor = source.Cursor()

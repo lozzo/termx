@@ -22,6 +22,8 @@ type resolvedPaneContent struct {
 	metrics       renderTerminalMetrics
 	contentRect   workbench.Rect
 	renderOffset  int
+	contentOffsetX int
+	contentOffsetY int
 }
 
 type terminalSourceWindowState struct {
@@ -54,9 +56,9 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 		}
 		return
 	}
-	drawTerminalSourceWithOffsetAndMetrics(canvas, contentRect, resolved.source, resolved.renderOffset, entry.Theme, resolved.metrics)
+	drawTerminalSourceWithPlacementAndMetrics(canvas, contentRect, resolved.source, resolved.renderOffset, resolved.contentOffsetX, resolved.contentOffsetY, entry.Theme, resolved.metrics)
 	if entry.CopyModeActive {
-		drawCopyModeOverlay(canvas, contentRect, resolved.snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol)
+		drawCopyModeOverlay(canvas, contentRect, resolved.snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol, resolved.contentOffsetX, resolved.contentOffsetY)
 	}
 	if resolved.terminalState == "exited" {
 		drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
@@ -204,8 +206,12 @@ func resolvePaneContent(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 		resolved.metrics = terminalExtentProfileCached(resolved.snapshot, resolved.surface, entry.SurfaceVersion).Metrics
 	}
 	resolved.renderOffset = entry.ScrollOffset
+	resolved.contentOffsetX = clampTerminalContentOffset(entry.ContentOffsetX, resolved.contentRect.W, resolved.metrics.Cols)
+	resolved.contentOffsetY = clampTerminalContentOffset(entry.ContentOffsetY, resolved.contentRect.H, resolved.metrics.Rows)
 	if entry.CopyModeActive {
 		resolved.renderOffset = scrollOffsetForViewportTop(resolved.snapshot, resolved.contentRect.H, entry.CopyModeViewTopRow)
+		resolved.contentOffsetX = 0
+		resolved.contentOffsetY = 0
 	}
 	return resolved
 }

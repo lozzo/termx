@@ -6,13 +6,18 @@ func TestLocalViewProjectionPreservesPaneViewport(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 
 	_ = model.runtime.SetPaneViewportOffset("pane-1", 4)
+	_ = model.runtime.SetPaneContentOffset("pane-1", 3, 2)
 	proj := model.captureLocalViewProjection()
 	_ = model.runtime.SetPaneViewportOffset("pane-1", 0)
+	_ = model.runtime.SetPaneContentOffset("pane-1", 0, 0)
 
 	model.applyLocalViewProjection(proj)
 
 	if got := model.runtime.PaneViewportOffset("pane-1"); got != 4 {
 		t.Fatalf("expected local view projection to restore pane viewport 4, got %d", got)
+	}
+	if gotX, gotY := model.runtime.PaneContentOffset("pane-1"); gotX != 3 || gotY != 2 {
+		t.Fatalf("expected local view projection to restore pane content offset 3,2 got %d,%d", gotX, gotY)
 	}
 }
 

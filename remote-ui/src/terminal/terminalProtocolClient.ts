@@ -16,6 +16,8 @@ import {
   rowsToPlainText,
   rowsToText,
   rowsToReplay,
+  screenRowsToPlainText,
+  screenRowsToReplay,
   snapshotScrollbackRows,
   snapshotUsesAlternateScreen,
   snapshotToReplay,
@@ -40,6 +42,8 @@ interface PendingRequest {
 const defaultResizePolicy: TerminalResizePolicy = 'owner'
 const inputEnsureResizeFallbackMs = 100
 const initialSnapshotScrollbackLimit = 1
+const streamSnapshotRefreshDelayMs = 100
+const streamSnapshotRefreshMinIntervalMs = 500
 
 export function createTerminalProtocolClient(options: TerminalProtocolClientOptions): TerminalProtocolSession {
   return new TerminalProtocolClient(options)
@@ -58,6 +62,10 @@ class TerminalProtocolClient implements TerminalProtocolSession {
   private resizeControl: TerminalResizeControl = { canResize: false, reason: 'unknown' }
   private ensureResizeAvailable = true
   private closed = false
+  private snapshotRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  private snapshotRefreshInFlight = false
+  private snapshotRefreshQueued = false
+  private lastSnapshotRefreshAt = 0
 
   constructor(private readonly options: TerminalProtocolClientOptions) {
     this.messageSubscription = options.channel.onMessage((data) => this.handleFrame(data))
@@ -72,16 +80,7 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     await this.withHandshakeTimeout(this.hello(), 'hello')
     await this.withHandshakeTimeout(this.attach(), 'attach')
     const channel = this.options.channel
-    void this.request('snapshot', {
-      terminal_id: this.options.terminalId,
-      scrollback_offset: 0,
-      scrollback_limit: initialSnapshotScrollbackLimit,
-    }).then((snapshot) => {
-      this.emit(this.options.terminalId, {
-        type: 'snapshot',
-        snapshot: normalizeSnapshot(snapshot),
-      })
-    }).catch(() => {})
+    void this.refreshSnapshot().catch(() => {})
     return {
       label: `terminal:${terminalId}`,
       get readyState() {
@@ -134,6 +133,7 @@ class TerminalProtocolClient implements TerminalProtocolSession {
   closeTerminalChannel(terminalId: string): void {
     this.assertTerminal(terminalId)
     this.closed = true
+    this.clearSnapshotRefreshTimer()
     this.messageSubscription.close()
     this.closeSubscription.close()
     this.rejectPending(new Error(`terminal data channel ${this.options.channel.label} closed`))
@@ -242,6 +242,14 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       case TERMX_FRAME_TYPES.output:
         this.emit(this.options.terminalId, { type: 'output', data: frame.payload })
         return
+      case TERMX_FRAME_TYPES.resize:
+        return
+      case TERMX_FRAME_TYPES.screenUpdate:
+      case TERMX_FRAME_TYPES.syncLost:
+        this.scheduleSnapshotRefresh()
+        return
+      case TERMX_FRAME_TYPES.bootstrapDone:
+        return
       case TERMX_FRAME_TYPES.error:
         this.handleChannelClosed(streamErrorMessage(frame.payload))
         return
@@ -335,6 +343,59 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       this.ensureResizeAvailable = false
       // Input must stay responsive if the connected daemon predates ensure_resize.
     }
+  }
+
+  private scheduleSnapshotRefresh(): void {
+    if (this.closed) return
+    this.snapshotRefreshQueued = true
+    if (this.snapshotRefreshTimer !== null || this.snapshotRefreshInFlight) return
+    const elapsed = Date.now() - this.lastSnapshotRefreshAt
+    const intervalDelay = this.lastSnapshotRefreshAt > 0
+      ? Math.max(0, streamSnapshotRefreshMinIntervalMs - elapsed)
+      : 0
+    const delay = Math.max(streamSnapshotRefreshDelayMs, intervalDelay)
+    this.snapshotRefreshTimer = setTimeout(() => {
+      this.snapshotRefreshTimer = null
+      void this.refreshQueuedSnapshot()
+    }, delay)
+  }
+
+  private async refreshQueuedSnapshot(): Promise<void> {
+    if (this.closed || !this.snapshotRefreshQueued || this.snapshotRefreshInFlight) return
+    try {
+      await this.refreshSnapshot()
+    } catch {
+      // Live stream updates are best-effort; the explicit snapshot request on open remains authoritative.
+    }
+  }
+
+  private async refreshSnapshot(): Promise<void> {
+    this.snapshotRefreshQueued = false
+    this.clearSnapshotRefreshTimer()
+    this.snapshotRefreshInFlight = true
+    try {
+      const snapshot = await this.request('snapshot', {
+        terminal_id: this.options.terminalId,
+        scrollback_offset: 0,
+        scrollback_limit: initialSnapshotScrollbackLimit,
+      })
+      this.lastSnapshotRefreshAt = Date.now()
+      this.emit(this.options.terminalId, {
+        type: 'snapshot',
+        snapshot: normalizeSnapshot(snapshot),
+      })
+    } finally {
+      this.snapshotRefreshInFlight = false
+      if (this.snapshotRefreshQueued && !this.closed) {
+        this.scheduleSnapshotRefresh()
+      }
+    }
+  }
+
+  private clearSnapshotRefreshTimer(): void {
+    if (this.snapshotRefreshTimer === null) return
+    clearTimeout(this.snapshotRefreshTimer)
+    this.snapshotRefreshTimer = null
   }
 
   private sendFrame(channel: number, type: number, payload: unknown): void {
@@ -468,6 +529,8 @@ function normalizeSnapshot(value: unknown): TerminalSnapshotPayload {
     rows: typeof size?.rows === 'number' ? size.rows : 0,
     raw: record,
     scrollbackRows: snapshotScrollbackRows(record),
+    screenText: screenRowsToPlainText(record),
+    screenReplay: screenRowsToReplay(record),
     alternateScreen: snapshotUsesAlternateScreen(record),
     ...(replay ? { replay } : {}),
   }

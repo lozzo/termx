@@ -1169,6 +1169,94 @@ func TestDrawSnapshotWithOffsetMarksPanelAreaOutsideTerminalWithDots(t *testing.
 	}
 }
 
+func TestDrawSnapshotWithPlacementCentersSmallerTerminalExtent(t *testing.T) {
+	canvas := newComposedCanvas(4, 3)
+	rect := workbench.Rect{X: 0, Y: 0, W: 4, H: 3}
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 2, Rows: 1},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{{Content: "h", Width: 1}, {Content: "i", Width: 1}}},
+		},
+	}
+
+	fillRect(canvas, rect, blankDrawCell())
+	drawTerminalSourceWithPlacementAndMetrics(canvas, rect, renderSource(snapshot, nil), 0, 1, 1, defaultUITheme(), terminalVisibleMetricsForSource(renderSource(snapshot, nil)))
+
+	if got := canvas.rawString(); got != "····\n·hi·\n····" {
+		t.Fatalf("expected centered terminal extent with dots around it, got %q", got)
+	}
+}
+
+func TestDrawSnapshotWithPlacementPansLargerTerminalExtent(t *testing.T) {
+	canvas := newComposedCanvas(3, 2)
+	rect := workbench.Rect{X: 0, Y: 0, W: 3, H: 2}
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 5, Rows: 3},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{
+				{{Content: "a", Width: 1}, {Content: "b", Width: 1}, {Content: "c", Width: 1}, {Content: "d", Width: 1}, {Content: "e", Width: 1}},
+				{{Content: "f", Width: 1}, {Content: "g", Width: 1}, {Content: "h", Width: 1}, {Content: "i", Width: 1}, {Content: "j", Width: 1}},
+				{{Content: "k", Width: 1}, {Content: "l", Width: 1}, {Content: "m", Width: 1}, {Content: "n", Width: 1}, {Content: "o", Width: 1}},
+			},
+		},
+	}
+
+	fillRect(canvas, rect, blankDrawCell())
+	drawTerminalSourceWithPlacementAndMetrics(canvas, rect, renderSource(snapshot, nil), 0, -2, -1, defaultUITheme(), terminalOverflowMetricsForSource(renderSource(snapshot, nil)))
+
+	if got := canvas.rawString(); got != "hij\nmno" {
+		t.Fatalf("expected panned terminal window, got %q", got)
+	}
+}
+
+func TestDrawSnapshotWithScrollbackPlacementMovesSelectedWindow(t *testing.T) {
+	canvas := newComposedCanvas(3, 5)
+	rect := workbench.Rect{X: 1, Y: 1, W: 1, H: 3}
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 1, Rows: 5},
+		Scrollback: [][]protocol.Cell{
+			{{Content: "a", Width: 1}},
+			{{Content: "b", Width: 1}},
+			{{Content: "c", Width: 1}},
+			{{Content: "d", Width: 1}},
+		},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "e", Width: 1}},
+		}},
+	}
+
+	fillRect(canvas, workbench.Rect{X: 0, Y: 0, W: 3, H: 5}, drawCell{Content: "x", Width: 1})
+	drawTerminalSourceWithPlacementAndMetrics(canvas, rect, renderSource(snapshot, nil), 1, 0, 1, defaultUITheme(), terminalVisibleMetricsForSource(renderSource(snapshot, nil)))
+
+	if got := canvas.rawString(); got != "xxx\nx·x\nxbx\nxcx\nxxx" {
+		t.Fatalf("expected scrollback placement to move the selected window, got %q", got)
+	}
+}
+
+func TestDrawSnapshotWithScrollbackNegativePlacementStaysInsideRect(t *testing.T) {
+	canvas := newComposedCanvas(3, 5)
+	rect := workbench.Rect{X: 1, Y: 2, W: 1, H: 2}
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 1, Rows: 5},
+		Scrollback: [][]protocol.Cell{
+			{{Content: "a", Width: 1}},
+			{{Content: "b", Width: 1}},
+			{{Content: "c", Width: 1}},
+		},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "d", Width: 1}},
+			{{Content: "e", Width: 1}},
+		}},
+	}
+
+	fillRect(canvas, workbench.Rect{X: 0, Y: 0, W: 3, H: 5}, drawCell{Content: "x", Width: 1})
+	drawTerminalSourceWithPlacementAndMetrics(canvas, rect, renderSource(snapshot, nil), 2, 0, -1, defaultUITheme(), terminalOverflowMetricsForSource(renderSource(snapshot, nil)))
+
+	if got := canvas.cells[1][1].Content; got != "x" {
+		t.Fatalf("expected row above content rect to stay untouched, got %q", got)
+	}
+}
+
 func TestDrawSnapshotWithOffsetUsesSnapshotHeightWhenRenderedRowsLagAfterShrink(t *testing.T) {
 	canvas := newComposedCanvas(4, 3)
 	rect := workbench.Rect{X: 0, Y: 0, W: 4, H: 3}
@@ -1436,17 +1524,20 @@ func TestDrawPaneFrameMarksOverflowWithStableCornerIndicators(t *testing.T) {
 	canvas := newComposedCanvas(6, 4)
 	rect := workbench.Rect{X: 0, Y: 0, W: 6, H: 4}
 
-	drawPaneFrame(canvas, rect, false, false, "", paneBorderInfo{}, defaultUITheme(), paneOverflowHints{Right: true, Bottom: true}, false, false, DefaultUIChromeConfig())
+	drawPaneFrame(canvas, rect, false, false, "", paneBorderInfo{}, defaultUITheme(), paneOverflowHints{Left: true, Top: true, Right: true, Bottom: true}, false, false, DefaultUIChromeConfig())
 
 	lines := strings.Split(canvas.rawString(), "\n")
 	if len(lines) != 4 {
 		t.Fatalf("expected 4 rendered lines, got %d", len(lines))
 	}
-	if !strings.HasSuffix(lines[0], "┐") {
-		t.Fatalf("expected top-right corner to remain solid, got %q", lines[0])
+	if !strings.Contains(lines[0], "^┐") {
+		t.Fatalf("expected top overflow marker before top-right corner, got %q", lines[0])
 	}
 	if !strings.HasPrefix(lines[3], "└") || !strings.HasSuffix(lines[3], "┘") {
 		t.Fatalf("expected bottom corners to remain solid, got %q", lines[3])
+	}
+	if !strings.HasPrefix(lines[2], "<") {
+		t.Fatalf("expected left overflow marker near bottom-left edge, got %q", lines[2])
 	}
 	if !strings.HasSuffix(lines[2], ">") {
 		t.Fatalf("expected right overflow marker near bottom-right edge, got %q", lines[2])

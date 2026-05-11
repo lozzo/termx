@@ -20,6 +20,7 @@ import type { Terminal } from '../core/model'
 import type { RtcSession, RtcTerminalDataChannelController } from '../core/transport'
 
 const recentInputRecoveryWindowMs = 1500
+const terminalTextSoftLimitChars = 1_500_000
 
 export interface UseTerminalSessionOptions {
   machineId: string
@@ -51,6 +52,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
   const sessionRef = useRef(options.session)
   const connectionIdRef = useRef('terminal-connection')
   const protocolSessionRef = useRef<TerminalProtocolSession | null>(null)
+  const scrollbackPrefixTextRef = useRef('')
   const loadedScrollbackRowsRef = useRef(0)
   const historyRevisionRef = useRef(0)
   const loadingScrollbackRef = useRef(false)
@@ -132,13 +134,22 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
 
   const callbacks = useMemo<TerminalClientCallbacks>(() => ({
     onOutput: (data) => {
-      setTerminalText((current) => current + new TextDecoder().decode(data))
+      hasMoreScrollbackRef.current = true
+      setTerminalText((current) => appendTerminalText(current, new TextDecoder().decode(data)))
     },
     onSnapshot: (nextSnapshot) => {
+      const canPreserveHistory = !nextSnapshot.alternateScreen && scrollbackPrefixTextRef.current !== ''
+      const nextText = nextSnapshot.replay ?? nextSnapshot.text
+      const screenText = nextSnapshot.replay ?? nextSnapshot.screenReplay ?? nextSnapshot.screenText
       setTerminalSnapshot(nextSnapshot)
-      loadedScrollbackRowsRef.current = nextSnapshot.scrollbackRows?.length ?? 0
-      hasMoreScrollbackRef.current = true
-      setTerminalText(nextSnapshot.replay ?? nextSnapshot.text)
+      if (!canPreserveHistory) {
+        loadedScrollbackRowsRef.current = nextSnapshot.scrollbackRows?.length ?? 0
+        scrollbackPrefixTextRef.current = ''
+      }
+      hasMoreScrollbackRef.current = !nextSnapshot.alternateScreen
+      setTerminalText(canPreserveHistory && screenText !== undefined
+        ? joinHistoryAndSnapshotText(scrollbackPrefixTextRef.current, screenText, nextSnapshot.rows)
+        : nextText)
     },
     onTerminalInfo: setTerminalInfo,
     onResizeControl: setResizeControl,
@@ -174,6 +185,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     setTerminalText('')
     setTerminalInfo(null)
     setResizeControl(defaultTerminalResizeControl)
+    scrollbackPrefixTextRef.current = ''
     loadedScrollbackRowsRef.current = 0
     historyRevisionRef.current = 0
     loadingScrollbackRef.current = false
@@ -256,6 +268,8 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       historyRevisionRef.current = revision
       const text = rowsToPlainText(rows)
       const replay = rowsToReplay(rows)
+      const prefix = replay || text
+      scrollbackPrefixTextRef.current = prependTerminalText(prefix, scrollbackPrefixTextRef.current)
       setTerminalSnapshot((current) => current ? {
         ...current,
         history: {
@@ -265,7 +279,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
           hasMore: page.hasMore,
         },
       } : current)
-      setTerminalText((current) => `${replay || text}\r\n${current}`)
+      setTerminalText((current) => prependTerminalText(prefix, current))
       return {
         loadedRows,
         totalRows: loadedScrollbackRowsRef.current,
@@ -317,6 +331,36 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
 }
 
 export type TerminalSessionMessage = ConnectionMessage
+
+function appendTerminalText(current: string, next: string): string {
+  return trimTerminalTextToRecentWindow(current + next)
+}
+
+function prependTerminalText(prefix: string, current: string): string {
+  if (!prefix) return current
+  return trimTerminalTextToRecentWindow(joinTerminalText(prefix, current))
+}
+
+function joinTerminalText(prefix: string, current: string): string {
+  if (!prefix) return current
+  if (!current) return prefix
+  return `${prefix}\r\n${current}`
+}
+
+function joinHistoryAndSnapshotText(prefix: string, current: string, rows: number): string {
+  if (!prefix) return current
+  if (!current) return prefix
+  const spacerRows = Math.max(0, rows - 1)
+  const spacer = spacerRows > 0 ? `\r\n${'\n'.repeat(spacerRows)}` : '\r\n'
+  return trimTerminalTextToRecentWindow(`${prefix}${spacer}${current}`)
+}
+
+function trimTerminalTextToRecentWindow(text: string): string {
+  if (text.length <= terminalTextSoftLimitChars) return text
+  const start = text.length - terminalTextSoftLimitChars
+  const newline = text.indexOf('\n', start)
+  return text.slice(newline >= 0 ? newline + 1 : start)
+}
 
 function createProtocolSession(
   session: RtcSession,
