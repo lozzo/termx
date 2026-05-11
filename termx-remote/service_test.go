@@ -144,20 +144,24 @@ func TestTerminalManagementListPreservesDistinctTerminalIDs(t *testing.T) {
 }
 
 func TestTerminalManagementListIncludesTerminalMetadataTags(t *testing.T) {
-	daemon := &terminalManagementDaemonStub{
-		list: []protocol.TerminalInfo{{
-			ID:      "1",
-			Name:    "one",
-			Command: []string{"/bin/bash"},
-			State:   "running",
-			Size:    protocol.Size{Cols: 80, Rows: 24},
-			Tags: map[string]string{
-				"termx.cwd":         "/srv/app",
-				"termx.environment": "prod",
-				"termx.size_lock":   "lock",
-			},
-		}},
-	}
+		daemon := &terminalManagementDaemonStub{
+			list: []protocol.TerminalInfo{{
+				ID:      "1",
+				Name:    "one",
+				Command: []string{"/bin/bash"},
+				State:   "running",
+				Size:    protocol.Size{Cols: 80, Rows: 24},
+				Tags: map[string]string{
+					"termx.cwd":         "/srv/app",
+					"termx.environment": "prod",
+					"termx.size_lock":   "lock",
+				},
+				ResizeOwnership: &protocol.ResizeOwnership{
+					OwnerSurfaceID: "app:machine-local:terminal:1",
+				},
+				ResizeOwnerAttachmentCount: 1,
+			}},
+		}
 	router := terminalManagementRouter{daemon: daemon}
 
 	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
@@ -171,25 +175,31 @@ func TestTerminalManagementListIncludesTerminalMetadataTags(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("RouteTerminalManagementRequest status = %d, body = %s", status, string(body))
 	}
-	var payload struct {
-		Terminals []struct {
-			CWD          string `json:"cwd"`
-			Environment  string `json:"environment"`
-			SizeLocked   bool   `json:"size_locked"`
-			SizeLockMode string `json:"size_lock_mode"`
-		} `json:"terminals"`
-	}
+		var payload struct {
+			Terminals []struct {
+				CWD          string `json:"cwd"`
+				Environment  string `json:"environment"`
+				SizeLocked   bool   `json:"size_locked"`
+				SizeLockMode string `json:"size_lock_mode"`
+				ResizeOwnership struct {
+					OwnerSurfaceID string `json:"owner_surface_id"`
+				} `json:"resize_ownership"`
+				ResizeOwnerAttachmentCount int `json:"resize_owner_attachment_count"`
+			} `json:"terminals"`
+		}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("decode terminal management list response: %v", err)
 	}
-	if len(payload.Terminals) != 1 ||
-		payload.Terminals[0].CWD != "/srv/app" ||
-		payload.Terminals[0].Environment != "prod" ||
-		!payload.Terminals[0].SizeLocked ||
-		payload.Terminals[0].SizeLockMode != "lock" {
-		t.Fatalf("expected terminal metadata in list response, got %#v body=%s", payload.Terminals, string(body))
+		if len(payload.Terminals) != 1 ||
+			payload.Terminals[0].CWD != "/srv/app" ||
+			payload.Terminals[0].Environment != "prod" ||
+			!payload.Terminals[0].SizeLocked ||
+			payload.Terminals[0].SizeLockMode != "lock" ||
+			payload.Terminals[0].ResizeOwnership.OwnerSurfaceID != "app:machine-local:terminal:1" ||
+			payload.Terminals[0].ResizeOwnerAttachmentCount != 1 {
+			t.Fatalf("expected terminal metadata in list response, got %#v body=%s", payload.Terminals, string(body))
+		}
 	}
-}
 
 func TestTerminalManagementGetDirectoryPrefersProcessCWD(t *testing.T) {
 	daemon := &terminalManagementDaemonStub{

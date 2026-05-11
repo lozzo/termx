@@ -158,9 +158,19 @@ func (c *fakeClient) List(context.Context) (*protocol.ListResult, error) {
 func (c *fakeClient) Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error) {
 	return nil, nil
 }
-func (c *fakeClient) Attach(context.Context, string, string) (*protocol.AttachResult, error) {
+func (c *fakeClient) Attach(context.Context, protocol.AttachParams) (*protocol.AttachResult, error) {
 	return nil, nil
 }
+
+func (c *fakeClient) EnsureResize(_ context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error) {
+	c.resizes = append(c.resizes, resizeCall{channel: params.Channel, cols: params.Cols, rows: params.Rows})
+	return &protocol.EnsureResizeResult{
+		ResizeControl: &protocol.ResizeControl{CanResize: true, Reason: protocol.ResizeControlReasonOwner},
+		Size:          protocol.Size{Cols: params.Cols, Rows: params.Rows},
+		Resized:       true,
+	}, nil
+}
+
 func (c *fakeClient) Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error) {
 	return nil, nil
 }

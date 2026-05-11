@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,6 +35,7 @@ type FileTransfer struct {
 	ChunkSize int
 	Direction string
 	Offset    int64
+	Length    int64
 	TempPath  string
 	CreatedAt time.Time
 }
@@ -45,6 +47,10 @@ type FileEntry struct {
 	Mode       string `json:"mode"`
 	ModTime    string `json:"mod_time"`
 	LinkTarget string `json:"link_target,omitempty"`
+	ChildCount *int   `json:"child_count,omitempty"`
+	HardLink   bool   `json:"hard_link,omitempty"`
+	LinkCount  uint64 `json:"link_count,omitempty"`
+	Inode      uint64 `json:"inode,omitempty"`
 }
 
 type DirListResponse struct {
@@ -204,35 +210,12 @@ func (m *Manager) handleListDir(body []byte) (int32, []byte, string) {
 
 	fileEntries := make([]FileEntry, 0, end-offset)
 	for _, entry := range entries[offset:end] {
-		info, err := entry.Info()
-		if err != nil {
+		fullPath := filepath.Join(dirPath, entry.Name())
+		fileEntry, ok := describeFileEntry(fullPath, entry.Name())
+		if !ok {
 			continue
 		}
-		entryType := "file"
-		linkTarget := ""
-		if entry.IsDir() {
-			entryType = "dir"
-		} else if entry.Type()&os.ModeSymlink != 0 {
-			entryType = "symlink"
-			fullPath := filepath.Join(dirPath, entry.Name())
-			if target, err := os.Readlink(fullPath); err == nil {
-				if !filepath.IsAbs(target) {
-					target = filepath.Join(dirPath, target)
-				}
-				linkTarget = filepath.Clean(target)
-				if targetInfo, err := os.Stat(fullPath); err == nil && targetInfo.IsDir() {
-					entryType = "symlink-dir"
-				}
-			}
-		}
-		fileEntries = append(fileEntries, FileEntry{
-			Name:       entry.Name(),
-			Type:       entryType,
-			Size:       info.Size(),
-			Mode:       info.Mode().String(),
-			ModTime:    info.ModTime().Format(time.RFC3339),
-			LinkTarget: linkTarget,
-		})
+		fileEntries = append(fileEntries, fileEntry)
 	}
 
 	parent := ""
@@ -264,21 +247,104 @@ func (m *Manager) handleStat(body []byte) (int32, []byte, string) {
 	if err != nil {
 		return http.StatusNotFound, nil, err.Error()
 	}
+	fileEntry, ok := describeFileEntry(p, info.Name())
+	if !ok {
+		return http.StatusNotFound, nil, "file metadata unavailable"
+	}
+	data, _ := json.Marshal(fileEntry)
+	return http.StatusOK, data, ""
+}
+
+func describeFileEntry(fullPath string, displayName string) (FileEntry, bool) {
+	linfo, err := os.Lstat(fullPath)
+	if err != nil {
+		return FileEntry{}, false
+	}
+	info := linfo
 	entryType := "file"
-	if info.IsDir() {
+	linkTarget := ""
+	if linfo.IsDir() {
 		entryType = "dir"
 	}
-	if linfo, err := os.Lstat(p); err == nil && linfo.Mode()&os.ModeSymlink != 0 {
+	if linfo.Mode()&os.ModeSymlink != 0 {
 		entryType = "symlink"
+		if target, err := os.Readlink(fullPath); err == nil {
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(fullPath), target)
+			}
+			linkTarget = filepath.Clean(target)
+		}
+		if targetInfo, err := os.Stat(fullPath); err == nil {
+			info = targetInfo
+			if targetInfo.IsDir() {
+				entryType = "symlink-dir"
+			}
+		}
 	}
-	data, _ := json.Marshal(FileEntry{
-		Name:    info.Name(),
-		Type:    entryType,
-		Size:    info.Size(),
-		Mode:    info.Mode().String(),
-		ModTime: info.ModTime().Format(time.RFC3339),
-	})
-	return http.StatusOK, data, ""
+	linkCount, inode := fileLinkMetadata(info)
+	hardLink := entryType == "file" && linkCount > 1
+	return FileEntry{
+		Name:       displayName,
+		Type:       entryType,
+		Size:       info.Size(),
+		Mode:       info.Mode().String(),
+		ModTime:    info.ModTime().Format(time.RFC3339),
+		LinkTarget: linkTarget,
+		ChildCount: directoryChildCount(fullPath, entryType),
+		HardLink:   hardLink,
+		LinkCount:  linkCount,
+		Inode:      inode,
+	}, true
+}
+
+func directoryChildCount(fullPath string, entryType string) *int {
+	if entryType != "dir" && entryType != "symlink-dir" {
+		return nil
+	}
+	entries, err := os.ReadDir(fullPath)
+	if err != nil {
+		return nil
+	}
+	count := len(entries)
+	return &count
+}
+
+func fileLinkMetadata(info os.FileInfo) (linkCount uint64, inode uint64) {
+	if info == nil || info.Sys() == nil {
+		return 0, 0
+	}
+	value := reflect.ValueOf(info.Sys())
+	if !value.IsValid() {
+		return 0, 0
+	}
+	if value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return 0, 0
+		}
+		value = value.Elem()
+	}
+	if value.Kind() != reflect.Struct {
+		return 0, 0
+	}
+	if field := value.FieldByName("Nlink"); field.IsValid() {
+		linkCount = reflectUint(field)
+	}
+	if field := value.FieldByName("Ino"); field.IsValid() {
+		inode = reflectUint(field)
+	}
+	return linkCount, inode
+}
+
+func reflectUint(value reflect.Value) uint64 {
+	switch value.Kind() {
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return value.Uint()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if value.Int() > 0 {
+			return uint64(value.Int())
+		}
+	}
+	return 0
 }
 
 func (m *Manager) handleMkdir(body []byte) (int32, []byte, string) {
@@ -495,17 +561,9 @@ func (m *Manager) handlePreview(body []byte) (int32, []byte, string) {
 	}
 
 	maxText := int64(5 << 20)
-	maxImage := int64(10 << 20)
-	maxVideo := int64(25 << 20)
 	if req.MaxSize > 0 {
 		if category == "text" && req.MaxSize < maxText {
 			maxText = req.MaxSize
-		}
-		if category == "image" && req.MaxSize < maxImage {
-			maxImage = req.MaxSize
-		}
-		if category == "video" && req.MaxSize < maxVideo {
-			maxVideo = req.MaxSize
 		}
 	}
 	if category == "text" && info.Size() > maxText {
@@ -513,13 +571,7 @@ func (m *Manager) handlePreview(body []byte) (int32, []byte, string) {
 		data, _ := json.Marshal(resp)
 		return http.StatusOK, data, ""
 	}
-	if category == "image" && info.Size() > maxImage {
-		resp["preview_limit"] = maxImage
-		data, _ := json.Marshal(resp)
-		return http.StatusOK, data, ""
-	}
-	if category == "video" && info.Size() > maxVideo {
-		resp["preview_limit"] = maxVideo
+	if category == "video" {
 		data, _ := json.Marshal(resp)
 		return http.StatusOK, data, ""
 	}
@@ -541,6 +593,7 @@ func (m *Manager) handleDownloadInit(body []byte) (int32, []byte, string) {
 	var req struct {
 		Path       string `json:"path"`
 		Offset     int64  `json:"offset"`
+		Length     int64  `json:"length"`
 		TransferID string `json:"transfer_id"`
 	}
 	if json.Unmarshal(body, &req) != nil || req.Path == "" {
@@ -562,6 +615,11 @@ func (m *Manager) handleDownloadInit(body []byte) (int32, []byte, string) {
 	if offset < 0 || offset > info.Size() {
 		offset = 0
 	}
+	length := req.Length
+	available := info.Size() - offset
+	if length <= 0 || length > available {
+		length = available
+	}
 	transferID := strings.TrimSpace(req.TransferID)
 	if transferID == "" {
 		transferID = fmt.Sprintf("dl-%d", time.Now().UnixNano())
@@ -576,6 +634,7 @@ func (m *Manager) handleDownloadInit(body []byte) (int32, []byte, string) {
 		ChunkSize: chunkSize,
 		Direction: "download",
 		Offset:    offset,
+		Length:    length,
 		CreatedAt: time.Now(),
 	}
 	m.mu.Unlock()
@@ -585,6 +644,8 @@ func (m *Manager) handleDownloadInit(body []byte) (int32, []byte, string) {
 		"name":        info.Name(),
 		"size":        info.Size(),
 		"chunk_size":  chunkSize,
+		"offset":      offset,
+		"length":      length,
 	})
 	return http.StatusOK, data, ""
 }
@@ -780,9 +841,14 @@ func (m *Manager) handleDownloadChannel(dc *webrtc.DataChannel, transfer *FileTr
 			buf := make([]byte, transfer.ChunkSize)
 			chunkNum := uint32(transfer.Offset / int64(transfer.ChunkSize))
 			sentBytes := int64(0)
+			remainingBytes := transfer.Length
 			sendStartedAt := time.Now()
-			for {
-				n, readErr := file.Read(buf)
+			for remainingBytes > 0 {
+				readSize := len(buf)
+				if int64(readSize) > remainingBytes {
+					readSize = int(remainingBytes)
+				}
+				n, readErr := file.Read(buf[:readSize])
 				if n > 0 {
 					if dc.ReadyState() != webrtc.DataChannelStateOpen {
 						return
@@ -810,6 +876,7 @@ func (m *Manager) handleDownloadChannel(dc *webrtc.DataChannel, transfer *FileTr
 						return
 					}
 					sentBytes += int64(n)
+					remainingBytes -= int64(n)
 					throttleDownload(sendStartedAt, sentBytes, rateLimitBPS)
 					chunkNum++
 				}

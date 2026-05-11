@@ -1,6 +1,6 @@
 import { Settings } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { haptic } from '../platform/haptics'
+import { hapticImpact } from '../platform/haptics'
 import { matchTerminalFnPreset, SYSTEM_FN_GROUPS, type TerminalFnGroup } from './terminalFnPresets'
 
 export interface TerminalFnPanelProps {
@@ -22,7 +22,7 @@ export function TerminalFnPanel({ command, onSend }: TerminalFnPanelProps) {
             <button
               type="button"
               className={`h-7 rounded-md px-2 text-[10px] font-semibold ${selectedTab === 'program' ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'bg-[var(--termx-surface-raised)] text-[var(--termx-text)]'}`}
-              onClick={() => { haptic(); setActiveTab('program') }}
+              onClick={() => setActiveTab('program')}
             >
               {programPreset.name}
             </button>
@@ -30,7 +30,7 @@ export function TerminalFnPanel({ command, onSend }: TerminalFnPanelProps) {
           <button
             type="button"
             className={`h-7 rounded-md px-2 text-[10px] font-semibold ${selectedTab === 'system' ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'bg-[var(--termx-surface-raised)] text-[var(--termx-text)]'}`}
-            onClick={() => { haptic(); setActiveTab('system') }}
+            onClick={() => setActiveTab('system')}
           >
             System
           </button>
@@ -58,7 +58,7 @@ function FnGroupView({ group, onSend }: { group: TerminalFnGroup; onSend: (data:
             type="button"
             className="min-h-10 rounded-lg bg-[var(--termx-surface-raised)] px-2 py-1.5 text-left active:scale-[0.98] active:opacity-80"
             onPointerDown={(event) => event.preventDefault()}
-            onClick={() => { haptic(); onSend(item.data) }}
+            onClick={() => { hapticImpact(); onSend(item.data) }}
           >
             <span className="block truncate font-mono text-[11px] font-semibold text-[var(--termx-accent)]">{item.label}</span>
             {item.description ? <span className="mt-0.5 block truncate text-[9px] font-medium text-[var(--termx-muted)]">{item.description}</span> : null}

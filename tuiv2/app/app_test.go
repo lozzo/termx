@@ -4237,12 +4237,21 @@ func (c *recordingBridgeClient) Events(_ context.Context, params protocol.Events
 	return nil, nil
 }
 
-func (c *recordingBridgeClient) Attach(_ context.Context, terminalID, mode string) (*protocol.AttachResult, error) {
-	c.attachCalls = append(c.attachCalls, attachCall{terminalID: terminalID, mode: mode})
+func (c *recordingBridgeClient) Attach(_ context.Context, params protocol.AttachParams) (*protocol.AttachResult, error) {
+	c.attachCalls = append(c.attachCalls, attachCall{terminalID: params.TerminalID, mode: params.Mode})
 	if c.attachErr != nil {
 		return nil, c.attachErr
 	}
 	return c.attachResult, nil
+}
+
+func (c *recordingBridgeClient) EnsureResize(_ context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error) {
+	c.resizes = append(c.resizes, resizeCall{channel: params.Channel, cols: params.Cols, rows: params.Rows})
+	return &protocol.EnsureResizeResult{
+		ResizeControl: &protocol.ResizeControl{CanResize: true, Reason: protocol.ResizeControlReasonOwner},
+		Size:          protocol.Size{Cols: params.Cols, Rows: params.Rows},
+		Resized:       true,
+	}, nil
 }
 
 func (c *recordingBridgeClient) Snapshot(_ context.Context, terminalID string, _ int, _ int) (*protocol.Snapshot, error) {

@@ -138,10 +138,10 @@ func (m *Manager) resizeIfNeeded(ctx context.Context, req SyncRequest) error {
 		return nil
 	}
 	decision := m.runtime.ResizeDecision(req.PaneID, req.TerminalID)
-	if !decision.Force && m.terminalAlreadySized(req.TerminalID, req.TargetCols, req.TargetRows) {
+	if !decision.Force && m.lease.ViewID == "" && m.terminalAlreadySized(req.TerminalID, req.TargetCols, req.TargetRows) {
 		return nil
 	}
-	return m.runtime.ResizeTerminal(ctx, req.PaneID, req.TerminalID, req.TargetCols, req.TargetRows)
+	return m.runtime.ResizePaneForView(ctx, req.PaneID, req.TerminalID, req.TargetCols, req.TargetRows, m.lease.ViewID)
 }
 
 func (m *Manager) terminalAlreadySized(terminalID string, cols, rows uint16) bool {

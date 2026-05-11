@@ -827,12 +827,12 @@ describe('Terminal', () => {
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
     const term = xtermMocks.FakeXTerm.instances[0]!
 
-    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
-      offset: 0,
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 0,
       limit: 250,
     }))
-    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
-      offset: 250,
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 250,
       limit: 250,
     }))
     await waitFor(() => expect(term.writes.join('')).toMatch(/o[\s\S]*l[\s\S]*d[\s\S]*e[\s\S]*r[\s\S]*-[\s\S]*0/))
@@ -875,8 +875,8 @@ describe('Terminal', () => {
       screenElement.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }))
     })
 
-    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
-      offset: 0,
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 0,
       limit: 250,
     }))
     await waitFor(() => expect(term.scrollToLine).toHaveBeenCalledWith(restoreViewportY + 250))
@@ -911,8 +911,8 @@ describe('Terminal', () => {
     act(() => {
       screenElement.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }))
     })
-    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
-      offset: 0,
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 0,
       limit: 250,
     }))
     await act(async () => {
@@ -951,19 +951,19 @@ describe('Terminal', () => {
 
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
     const term = xtermMocks.FakeXTerm.instances[0]!
-    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
-      offset: 0,
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 0,
       limit: 250,
     }))
-    await waitFor(() => expect(session.snapshotRequests('terminal-1')).not.toContainEqual({
-      offset: 250,
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).not.toContainEqual({
+      beforeOffset: 250,
       limit: 250,
     }))
 
     act(() => term.scrollToLine(150))
 
-    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
-      offset: 250,
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 250,
       limit: 250,
     }))
     expect(term.buffer.active.viewportY).toBeGreaterThan(0)
@@ -1005,8 +1005,8 @@ describe('Terminal', () => {
       screenElement.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }))
     })
 
-    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
-      offset: 0,
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 0,
       limit: 250,
     }))
     await waitFor(() => expect(term.writes.join('')).toMatch(/o[\s\S]*l[\s\S]*d[\s\S]*e[\s\S]*r[\s\S]*-[\s\S]*f[\s\S]*r[\s\S]*o[\s\S]*m[\s\S]*-[\s\S]*w[\s\S]*h[\s\S]*e[\s\S]*e[\s\S]*l/))
@@ -1042,12 +1042,12 @@ describe('Terminal', () => {
       screenElement.dispatchEvent(touchEvent('touchmove', screenElement, 120))
     })
 
-    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
-      offset: 0,
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 0,
       limit: 250,
     }))
-    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
-      offset: 250,
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 250,
       limit: 250,
     }))
     await waitFor(() => expect(term.writes.join('')).toMatch(/c[\s\S]*o[\s\S]*a[\s\S]*l[\s\S]*e[\s\S]*s[\s\S]*c[\s\S]*e[\s\S]*d[\s\S]*-[\s\S]*1[\s\S]*0[\s\S]*0/))
@@ -1087,8 +1087,8 @@ describe('Terminal', () => {
     act(() => {
       screenElement.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }))
     })
-    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
-      offset: 0,
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 0,
       limit: 250,
     }))
     await act(async () => {
@@ -1098,8 +1098,8 @@ describe('Terminal', () => {
       screenElement.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }))
     })
 
-    await waitFor(() => expect(session.snapshotRequests('terminal-1')).toContainEqual({
-      offset: 250,
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 250,
       limit: 250,
     }))
     await waitFor(() => expect(term.writes.join('')).toMatch(/a[\s\S]*f[\s\S]*t[\s\S]*e[\s\S]*r[\s\S]*-[\s\S]*s[\s\S]*t[\s\S]*a[\s\S]*l[\s\S]*l/))

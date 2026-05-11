@@ -14,6 +14,12 @@
 - After changing `remote-ui`, validate locally with `cd remote-ui && npm run typecheck && npm run test`; use the local dev server for browser verification.
 - Before restarting remote services, inspect the existing deploy path and service names on the target host instead of guessing.
 
+## App-Agent Network Boundary
+
+- All application-to-agent data traffic must go through the established WebRTC transport.
+- Do not add direct HTTP, WebSocket, TCP, localhost, LAN, or filesystem-serving shortcuts between the app/browser and the agent for terminal, file, preview, upload, download, or runtime data.
+- Browser adapters such as service workers may translate browser APIs into app-local requests only when the bytes still come from WebRTC data channels.
+
 ## Development Compatibility Policy
 
 - This repository is still in active development. Do not preserve compatibility aliases, deprecated exports, wrapper files, or old module names when refactoring.

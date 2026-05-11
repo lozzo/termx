@@ -47,16 +47,18 @@ type Size struct {
 }
 
 type TerminalInfo struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Command   []string          `json:"command"`
-	Tags      map[string]string `json:"tags,omitempty"`
-	Size      Size              `json:"size"`
-	State     string            `json:"state"`
-	CWD       string            `json:"cwd,omitempty"`
-	LiveCWD   string            `json:"live_cwd,omitempty"`
-	CreatedAt time.Time         `json:"created_at"`
-	ExitCode  *int              `json:"exit_code,omitempty"`
+	ID                         string            `json:"id"`
+	Name                       string            `json:"name"`
+	Command                    []string          `json:"command"`
+	Tags                       map[string]string `json:"tags,omitempty"`
+	Size                       Size              `json:"size"`
+	State                      string            `json:"state"`
+	CWD                        string            `json:"cwd,omitempty"`
+	LiveCWD                    string            `json:"live_cwd,omitempty"`
+	CreatedAt                  time.Time         `json:"created_at"`
+	ExitCode                   *int              `json:"exit_code,omitempty"`
+	ResizeOwnership            *ResizeOwnership  `json:"resize_ownership,omitempty"`
+	ResizeOwnerAttachmentCount int               `json:"resize_owner_attachment_count,omitempty"`
 }
 
 type CreateParams struct {
@@ -91,6 +93,8 @@ type EnsureResizeParams struct {
 	Cols         uint16 `json:"cols"`
 	Rows         uint16 `json:"rows"`
 	ResizePolicy string `json:"resize_policy,omitempty"`
+	SurfaceID    string `json:"surface_id,omitempty"`
+	ViewID       string `json:"view_id,omitempty"`
 }
 
 type EnsureResizeResult struct {
@@ -114,6 +118,9 @@ type AttachParams struct {
 	TerminalID   string `json:"terminal_id"`
 	Mode         string `json:"mode"`
 	ResizePolicy string `json:"resize_policy,omitempty"`
+	StreamMode   string `json:"stream_mode,omitempty"`
+	SurfaceID    string `json:"surface_id,omitempty"`
+	ViewID       string `json:"view_id,omitempty"`
 }
 
 type AttachResult struct {
@@ -122,9 +129,24 @@ type AttachResult struct {
 	ResizeControl *ResizeControl `json:"resize_control,omitempty"`
 }
 
+type ResizeOwnership struct {
+	OwnerAttachmentID string `json:"owner_attachment_id,omitempty"`
+	OwnerSurfaceID    string `json:"owner_surface_id,omitempty"`
+	OwnerViewID       string `json:"owner_view_id,omitempty"`
+	OwnerRemoteAddr   string `json:"owner_remote_addr,omitempty"`
+	Size              Size   `json:"size,omitempty"`
+	SizeLocked        bool   `json:"size_locked,omitempty"`
+	Epoch             uint64 `json:"epoch,omitempty"`
+}
+
 const (
 	ResizePolicyOwner    = "owner"
 	ResizePolicyFollower = "follower"
+)
+
+const (
+	StreamModeScreen = "screen"
+	StreamModeRaw    = "raw"
 )
 
 const (
@@ -135,9 +157,13 @@ const (
 )
 
 type ResizeControl struct {
-	CanResize  bool   `json:"can_resize"`
-	Reason     string `json:"reason,omitempty"`
-	SizeLocked bool   `json:"size_locked,omitempty"`
+	CanResize       bool             `json:"can_resize"`
+	Reason          string           `json:"reason,omitempty"`
+	SizeLocked      bool             `json:"size_locked,omitempty"`
+	SurfaceID       string           `json:"surface_id,omitempty"`
+	OwnerSurfaceID  string           `json:"owner_surface_id,omitempty"`
+	OwnerViewID     string           `json:"owner_view_id,omitempty"`
+	ResizeOwnership *ResizeOwnership `json:"resize_ownership,omitempty"`
 }
 
 type EventType int

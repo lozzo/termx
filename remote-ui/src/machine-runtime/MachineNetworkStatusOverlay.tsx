@@ -14,18 +14,18 @@ export function MachineNetworkStatusOverlay({
   const label = status || connectionPhaseLabel(phase)
   return (
     <div
-      className="pointer-events-none absolute inset-0 z-[70] flex items-center justify-center bg-zinc-950/22 px-5 backdrop-blur-[5px]"
+      className="pointer-events-none absolute inset-0 z-[70] flex items-center justify-center bg-[var(--termx-overlay)] px-5 backdrop-blur-[5px]"
       data-testid="termx-machine-network-overlay"
       role="status"
       aria-live="polite"
       aria-busy="true"
     >
-      <div className="w-full max-w-sm rounded-lg border border-white/12 bg-zinc-950/82 px-4 py-3 text-zinc-100 shadow-2xl backdrop-blur-xl">
+      <div className="w-full max-w-sm rounded-lg border border-[var(--termx-border)] bg-[var(--termx-surface)] px-4 py-3 text-[var(--termx-text)] shadow-2xl backdrop-blur-xl">
         <div className="flex items-center gap-3">
-          <Loader2 className="h-5 w-5 shrink-0 animate-spin text-blue-300" />
+          <Loader2 className="h-5 w-5 shrink-0 animate-spin text-[var(--termx-accent)]" />
           <div className="min-w-0">
             <p className="text-[13px] font-semibold leading-5">Network status</p>
-            <p className="mt-0.5 break-words text-[12px] font-medium leading-5 text-zinc-300">{label}</p>
+            <p className="mt-0.5 break-words text-[12px] font-medium leading-5 text-[var(--termx-muted)]">{label}</p>
           </div>
         </div>
       </div>

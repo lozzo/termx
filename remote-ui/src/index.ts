@@ -39,13 +39,18 @@ export type {
   TerminalModifierResult,
   TerminalModifierState,
 } from './terminal/mobileTerminalInput'
-export { createFileApi } from './files/fileApi'
+export { createFileApi, createFilePreviewSource } from './files/fileApi'
 export type {
   DirListResponse,
   DownloadInitResponse,
   FileApi,
   FileEntry,
   FileEntryType,
+  FilePreviewSource,
+  FilePreviewStreamChunk,
+  FilePreviewStreamOptions,
+  FilePreviewStreamProgress,
+  FilePreviewStreamResult,
   FileTransferContext,
   TransferInfo,
   TransferStatus,
@@ -175,6 +180,10 @@ export type {
 } from './terminal/terminalSettings'
 export {
   haptic,
+  hapticError,
+  hapticImpact,
+  hapticSelection,
+  hapticSuccess,
   setHapticImpactHandler,
 } from './platform/haptics'
 export type { HapticImpactHandler, HapticPattern } from './platform/haptics'

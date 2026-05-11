@@ -15,6 +15,10 @@ func (r *Runtime) ResizeTerminal(ctx context.Context, paneID, terminalID string,
 }
 
 func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, cols, rows uint16) error {
+	return r.ResizePaneForView(ctx, paneID, terminalID, cols, rows, "")
+}
+
+func (r *Runtime) ResizePaneForView(ctx context.Context, paneID, terminalID string, cols, rows uint16, viewID string) error {
 	if r == nil || r.client == nil {
 		return shared.UserVisibleError{Op: "resize terminal", Err: fmt.Errorf("runtime client is nil")}
 	}
@@ -33,12 +37,28 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 			return nil
 		}
 		forceResize := decision.Force
-		if !forceResize && terminalAlreadySized(terminal, cols, rows) {
+		if !forceResize && viewID == "" && terminalAlreadySized(terminal, cols, rows) {
 			return nil
 		}
 	}
-	if err := r.client.Resize(ctx, binding.Channel, cols, rows); err != nil {
+	ensure, err := r.client.EnsureResize(ctx, protocol.EnsureResizeParams{
+		TerminalID:   terminalID,
+		Channel:      binding.Channel,
+		Cols:         cols,
+		Rows:         rows,
+		ResizePolicy: protocol.ResizePolicyOwner,
+		SurfaceID:    TerminalPaneSurfaceID(paneID),
+		ViewID:       viewID,
+	})
+	if err != nil {
 		return shared.UserVisibleError{Op: "resize terminal", Err: err}
+	}
+	if terminal != nil && ensure != nil && ensure.ResizeControl != nil {
+		terminal.ResizeOwnership = cloneProtocolResizeOwnership(ensure.ResizeControl.ResizeOwnership)
+		r.applyExternalResizeOwnershipInfo(terminal, ensure.ResizeControl.ResizeOwnership, terminal.ResizeOwnerAttachmentCount)
+	}
+	if ensure == nil || ensure.ResizeControl == nil || !ensure.ResizeControl.CanResize {
+		return nil
 	}
 	if terminal != nil {
 		prevSnapshot := terminal.Snapshot

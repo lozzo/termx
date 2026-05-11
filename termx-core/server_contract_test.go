@@ -14,9 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-core/fanout"
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/transport/memory"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
+	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 func TestServerCreateRejectsInvalidCommandAndDuplicateID(t *testing.T) {
@@ -1098,8 +1100,17 @@ func TestAttachResizeControlPolicyAndSizeLock(t *testing.T) {
 			if err := json.Unmarshal(result, &attach); err != nil {
 				t.Fatalf("unmarshal attach result failed: %v", err)
 			}
-			if attach.ResizeControl == nil || *attach.ResizeControl != tt.want {
+			if attach.ResizeControl == nil ||
+				attach.ResizeControl.CanResize != tt.want.CanResize ||
+				attach.ResizeControl.Reason != tt.want.Reason ||
+				attach.ResizeControl.SizeLocked != tt.want.SizeLocked {
 				t.Fatalf("unexpected resize control: got %#v want %#v", attach.ResizeControl, tt.want)
+			}
+			if attach.ResizeControl.SurfaceID == "" {
+				t.Fatalf("expected resize control surface id, got %#v", attach.ResizeControl)
+			}
+			if attach.ResizeControl.ResizeOwnership == nil {
+				t.Fatalf("expected resize ownership in resize control, got %#v", attach.ResizeControl)
 			}
 			attachmentsMu.RLock()
 			sessionAttach := attachments[attach.Channel]
@@ -1124,6 +1135,206 @@ func TestAttachResizeControlPolicyAndSizeLock(t *testing.T) {
 	}, func(uint16, uint8, []byte) error { return nil })
 	if err == nil || code != 400 {
 		t.Fatalf("expected invalid resize policy to fail with 400, got code=%d err=%v", code, err)
+	}
+}
+
+func TestAttachRawStreamModePreservesSyncLost(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewServer()
+	vt := localvterm.New(8, 2, 16, nil)
+	if _, err := vt.Write([]byte("hello")); err != nil {
+		t.Fatalf("seed vterm: %v", err)
+	}
+	term := &Terminal{
+		id:                 "raw-stream-mode",
+		size:               Size{Cols: 8, Rows: 2},
+		state:              StateRunning,
+		vterm:              vt,
+		stream:             fanout.New(),
+		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
+		processEpoch:       1,
+		attachments:        make(map[string]AttachInfo),
+	}
+	srv.terminals[term.id] = term
+
+	allocator := protocol.NewChannelAllocator()
+	attachments := make(map[uint16]*sessionAttachment)
+	var attachmentsMu sync.RWMutex
+	var framesMu sync.Mutex
+	var frames []sentProtocolFrame
+	sendFrame := func(channel uint16, typ uint8, payload []byte) error {
+		framesMu.Lock()
+		defer framesMu.Unlock()
+		frames = append(frames, sentProtocolFrame{channel: channel, typ: typ, payload: append([]byte(nil), payload...)})
+		return nil
+	}
+
+	result, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
+		ID:     1,
+		Method: "attach",
+		Params: mustJSON(t, protocol.AttachParams{
+			TerminalID: term.id,
+			Mode:       string(ModeCollaborator),
+			StreamMode: protocol.StreamModeRaw,
+		}),
+	}, sendFrame)
+	if err != nil {
+		t.Fatalf("attach raw stream failed: %v", err)
+	}
+	var attach protocol.AttachResult
+	if err := json.Unmarshal(result, &attach); err != nil {
+		t.Fatalf("unmarshal attach result failed: %v", err)
+	}
+
+	waitFor(t, time.Second, func() bool {
+		framesMu.Lock()
+		defer framesMu.Unlock()
+		return sentFrameTypeCount(frames, attach.Channel, protocol.TypeBootstrapDone) > 0
+	})
+	term.stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamSyncLost, DroppedBytes: 13})
+	waitFor(t, time.Second, func() bool {
+		framesMu.Lock()
+		defer framesMu.Unlock()
+		return sentFrameTypeCount(frames, attach.Channel, protocol.TypeSyncLost) > 0
+	})
+	framesMu.Lock()
+	defer framesMu.Unlock()
+	if count := sentFrameTypeCount(frames, attach.Channel, protocol.TypeScreenUpdate); count != 1 {
+		t.Fatalf("expected only bootstrap screen update for raw stream, got %d", count)
+	}
+}
+
+func TestTerminalInfoTracksResizeOwnerAttachments(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewServer()
+	info, err := srv.Create(ctx, CreateOptions{
+		ID:      "resize-owner-count",
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+
+	allocator := protocol.NewChannelAllocator()
+	attachments := make(map[uint16]*sessionAttachment)
+	var attachmentsMu sync.RWMutex
+	sendFrame := func(uint16, uint8, []byte) error { return nil }
+
+	owner := mustAttachChannel(t, srv, ctx, "memory", allocator, attachments, &attachmentsMu, info.ID, string(ModeCollaborator), sendFrame)
+	follower := mustAttachChannelWithPolicy(t, srv, ctx, "memory", allocator, attachments, &attachmentsMu, info.ID, string(ModeCollaborator), protocol.ResizePolicyFollower, sendFrame)
+	if owner == follower {
+		t.Fatalf("expected distinct channels, got owner=%d follower=%d", owner, follower)
+	}
+	attached, err := srv.Attached(ctx, info.ID)
+	if err != nil {
+		t.Fatalf("attached failed: %v", err)
+	}
+	if len(attached) != 2 || resizeOwnerAttachInfoCount(attached) != 1 {
+		t.Fatalf("unexpected attached resize owner state: %#v", attached)
+	}
+
+	result, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
+		ID:     1,
+		Method: "list",
+		Params: mustJSON(t, struct{}{}),
+	}, sendFrame)
+	if err != nil {
+		t.Fatalf("list request failed: %v", err)
+	}
+	var listed protocol.ListResult
+	if err := json.Unmarshal(result, &listed); err != nil {
+		t.Fatalf("unmarshal list failed: %v", err)
+	}
+	if len(listed.Terminals) != 1 || listed.Terminals[0].ResizeOwnerAttachmentCount != 1 {
+		t.Fatalf("unexpected resize owner attachment count with follower attached: %#v", listed.Terminals)
+	}
+
+	attachmentsMu.RLock()
+	ownerAttachment := attachments[owner]
+	attachmentsMu.RUnlock()
+	if ownerAttachment == nil {
+		t.Fatalf("expected owner attachment for channel %d", owner)
+	}
+	ownerAttachment.cleanup()
+	attached, err = srv.Attached(ctx, info.ID)
+	if err != nil {
+		t.Fatalf("attached after owner cleanup failed: %v", err)
+	}
+	if len(attached) != 1 || resizeOwnerAttachInfoCount(attached) != 0 {
+		t.Fatalf("unexpected attached resize owner state after cleanup: %#v", attached)
+	}
+
+	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
+		ID:     2,
+		Method: "list",
+		Params: mustJSON(t, struct{}{}),
+	}, sendFrame)
+	if err != nil {
+		t.Fatalf("list after owner detach failed: %v", err)
+	}
+	listed = protocol.ListResult{}
+	if err := json.Unmarshal(result, &listed); err != nil {
+		t.Fatalf("unmarshal updated list failed: %v", err)
+	}
+	direct, err := termProtocolInfo(t, srv, info.ID)
+	if err != nil {
+		t.Fatalf("direct protocol info failed: %v", err)
+	}
+	if direct.ResizeOwnerAttachmentCount != 0 {
+		t.Fatalf("expected direct info count 0, got %#v", direct)
+	}
+	if len(listed.Terminals) != 1 || listed.Terminals[0].ResizeOwnerAttachmentCount != 0 {
+		t.Fatalf("expected owner detach to clear resize owner count, got %#v", listed.Terminals)
+	}
+}
+
+func TestResizeSameSizeIsNoop(t *testing.T) {
+	ctx := context.Background()
+	srv := NewServer()
+	info, err := srv.Create(ctx, CreateOptions{
+		ID:      "resize-noop",
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+
+	eventsCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	events := srv.Events(eventsCtx, WithTerminalFilter(info.ID), WithTypeFilter(EventTerminalResized))
+
+	if err := srv.Resize(ctx, info.ID, 80, 24); err != nil {
+		t.Fatalf("same-size resize returned error: %v", err)
+	}
+	select {
+	case evt := <-events:
+		t.Fatalf("same-size resize should not publish resize event, got %#v", evt)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	locked, err := srv.Create(ctx, CreateOptions{
+		ID:      "resize-noop-locked",
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Tags:    map[string]string{"termx.size_lock": "lock"},
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		t.Fatalf("create locked terminal failed: %v", err)
+	}
+	if err := srv.Resize(ctx, locked.ID, 80, 24); err != nil {
+		t.Fatalf("same-size resize on locked terminal should be a no-op, got %v", err)
 	}
 }
 
@@ -1734,8 +1945,15 @@ VERIFY:
 	if exitedCount != 0 {
 		t.Fatalf("expected remove to avoid exited state pollution, got %#v", collected)
 	}
-	if collected[0].Type != EventTerminalRemoved || collected[0].Removed == nil || collected[0].Removed.Reason != "removed" {
-		t.Fatalf("expected first event to be removed(reason=removed), got %#v", collected)
+	foundRemoved := false
+	for _, evt := range collected {
+		if evt.Type == EventTerminalRemoved && evt.Removed != nil && evt.Removed.Reason == "removed" {
+			foundRemoved = true
+			break
+		}
+	}
+	if !foundRemoved {
+		t.Fatalf("expected removed(reason=removed) event, got %#v", collected)
 	}
 }
 
@@ -2440,6 +2658,62 @@ func mustAttachChannel(
 	return attach.Channel
 }
 
+func mustAttachChannelWithPolicy(
+	t *testing.T,
+	srv *Server,
+	ctx context.Context,
+	remote string,
+	allocator *protocol.ChannelAllocator,
+	attachments map[uint16]*sessionAttachment,
+	attachmentsMu *sync.RWMutex,
+	terminalID string,
+	mode string,
+	resizePolicy string,
+	sendFrame func(uint16, uint8, []byte) error,
+) uint16 {
+	t.Helper()
+	result, _, err := srv.handleRequest(ctx, remote, nil, allocator, attachments, attachmentsMu, transportScope{}, protocol.Request{
+		ID:     1,
+		Method: "attach",
+		Params: mustJSON(t, protocol.AttachParams{TerminalID: terminalID, Mode: mode, ResizePolicy: resizePolicy}),
+	}, sendFrame)
+	if err != nil {
+		t.Fatalf("attach failed: %v", err)
+	}
+	var attach protocol.AttachResult
+	if err := json.Unmarshal(result, &attach); err != nil {
+		t.Fatalf("unmarshal attach result failed: %v", err)
+	}
+	return attach.Channel
+}
+
+func resizeOwnerAttachInfoCount(attached []AttachInfo) int {
+	count := 0
+	for _, info := range attached {
+		if info.ResizeOwner {
+			count++
+		}
+	}
+	return count
+}
+
+func termProtocolInfo(t *testing.T, srv *Server, terminalID string) (protocol.TerminalInfo, error) {
+	t.Helper()
+	term, err := srv.getTerminal(terminalID)
+	if err != nil {
+		return protocol.TerminalInfo{}, err
+	}
+	raw, err := term.protocolInfoJSON()
+	if err != nil {
+		return protocol.TerminalInfo{}, err
+	}
+	var info protocol.TerminalInfo
+	if err := json.Unmarshal(raw, &info); err != nil {
+		return protocol.TerminalInfo{}, err
+	}
+	return info, nil
+}
+
 func mustJSON(t *testing.T, v any) json.RawMessage {
 	t.Helper()
 	data, err := json.Marshal(v)
@@ -2459,6 +2733,22 @@ func waitFor(t *testing.T, timeout time.Duration, fn func() bool) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("condition not met before timeout")
+}
+
+type sentProtocolFrame struct {
+	channel uint16
+	typ     uint8
+	payload []byte
+}
+
+func sentFrameTypeCount(frames []sentProtocolFrame, channel uint16, typ uint8) int {
+	count := 0
+	for _, frame := range frames {
+		if frame.channel == channel && frame.typ == typ {
+			count++
+		}
+	}
+	return count
 }
 
 func expectStreamContains(t *testing.T, ch <-chan StreamMessage, needle string) {

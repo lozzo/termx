@@ -11,7 +11,7 @@ import { createManagedHubApi } from '../api/managedHubApi'
 import { MachineConnectionStore } from '../connection/machineConnectionStore'
 import { RemoteNetworkStateManager } from '../connection/remoteNetworkState'
 import { FileTransferPanel } from '../files/FileTransferPanel'
-import { haptic } from '../platform/haptics'
+import { hapticError, hapticImpact, hapticSuccess } from '../platform/haptics'
 import { addNativeBackHandler } from '../platform/nativeBack'
 import { parsePairingPayload, type PairingPayload } from '../state/pairingPayload'
 import type { FileTransferContext, TransferInfo } from '../files/fileApi'
@@ -77,6 +77,7 @@ export interface RemoteControlAppProps {
   machineRuntimeFactory?: MachineRuntimeFactory | undefined
   globalFileTransfer?: FileTransferContext | undefined
   scanPairingCode?: ((options?: ScanPairingCodeOptions) => Promise<string | null>) | undefined
+  exportDebugLogs?: (() => Promise<void>) | undefined
 }
 
 export function RemoteControlApp({
@@ -88,6 +89,7 @@ export function RemoteControlApp({
   machineRuntimeFactory = createManagedMachineRuntime,
   globalFileTransfer,
   scanPairingCode,
+  exportDebugLogs,
 }: RemoteControlAppProps) {
   const networkRuntime = networkRuntimeProp ?? unavailableNetworkRuntime
   const storage = storageProp ?? networkRuntime.storage
@@ -332,12 +334,10 @@ export function RemoteControlApp({
   }, [storage])
 
   const updateTerminalSettings = useCallback((patch: Partial<TerminalSettings>) => {
-    haptic()
     setTerminalSettings((current) => writeTerminalSettings({ ...current, ...patch }, storage))
   }, [storage])
 
   const openAddLocalSheet = useCallback(() => {
-    haptic()
     setSelectedMachineId(null)
     setPairIntent('add-local')
     setManualScanValue('')
@@ -349,7 +349,6 @@ export function RemoteControlApp({
   }, [])
 
   const openPairSheet = useCallback((machineId: string) => {
-    haptic()
     setSelectedMachineId(machineId)
     setPairIntent('authorize-machine')
     setManualScanValue('')
@@ -368,7 +367,6 @@ export function RemoteControlApp({
   }, [openPairSheet, pairedMachineIds])
 
   const selectMachine = useCallback((machine: WebControlMachine) => {
-    haptic()
     setSelectedMachineId(machine.id)
     if (!pairedMachineIds.has(machine.id)) {
       openMachinePairSheet(machine)
@@ -459,9 +457,9 @@ export function RemoteControlApp({
       setManualScanValue('')
       setScanOpen(false)
       setView('machine')
-      haptic(25)
+      hapticSuccess()
     } catch (err) {
-      haptic([12, 30, 12])
+      hapticError()
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setPairing(false)
@@ -469,13 +467,12 @@ export function RemoteControlApp({
   }, [machines, networkRuntime, pairApiFactory, pairIntent, selectedMachine, signedIn, storage, user])
 
   const importManualScan = useCallback(async () => {
-    haptic()
+    hapticImpact()
     await pairScannedValue(manualScanValue)
   }, [manualScanValue, pairScannedValue])
 
   const scanWithCamera = useCallback(async () => {
     if (!scanPairingCode) return
-    haptic()
     setManualEntryOpen(false)
     setCameraScanning(true)
     setError(null)
@@ -534,13 +531,14 @@ export function RemoteControlApp({
           signedIn={signedIn}
           terminalSettings={terminalSettings}
           user={user}
-          onBack={() => { haptic(); setView('home') }}
+          onBack={() => setView('home')}
           onLoginChange={setLogin}
           onPasswordChange={setPassword}
-          onRefresh={() => { haptic(); void refreshMachines() }}
-          onSignIn={() => { haptic(); void submitLogin() }}
+          onRefresh={() => { void refreshMachines() }}
+          onSignIn={() => { hapticImpact(); void submitLogin() }}
           onSignOut={signOut}
           onTerminalSettingsChange={updateTerminalSettings}
+          onExportDebugLogs={exportDebugLogs}
         />
       ) : view === 'machine' && selectedMachine ? (
         <MachineTerminalListView
@@ -549,7 +547,6 @@ export function RemoteControlApp({
           terminalSettings={terminalSettings}
           runtime={getMachineRuntime(selectedMachine)}
           onBack={() => {
-            haptic()
             setView('home')
             setError(null)
           }}
@@ -565,12 +562,12 @@ export function RemoteControlApp({
           signedIn={signedIn}
           user={user}
           onAddLocalDevice={openAddLocalSheet}
-          onOpenSettings={() => { haptic(); setView('settings') }}
-          onOpenTransferCenter={() => { haptic(); setTransferCenterOpen(true) }}
+          onOpenSettings={() => setView('settings')}
+          onOpenTransferCenter={() => setTransferCenterOpen(true)}
           onPairMachine={openMachinePairSheet}
-          onRefresh={() => { haptic(); void refreshMachines() }}
+          onRefresh={() => { void refreshMachines() }}
           onSelectMachine={selectMachine}
-          onSignIn={() => { haptic(); setView('settings') }}
+          onSignIn={() => setView('settings')}
         />
       )}
 
@@ -586,9 +583,9 @@ export function RemoteControlApp({
           selectedMachine={selectedMachine}
           signedIn={signedIn}
           canScanWithCamera={Boolean(scanPairingCode)}
-          onClose={() => { haptic(); setScanOpen(false) }}
+          onClose={() => setScanOpen(false)}
           onImport={() => void importManualScan()}
-          onManualEntryOpen={() => { haptic(); setManualEntryOpen(true) }}
+          onManualEntryOpen={() => setManualEntryOpen(true)}
           onManualScanValueChange={setManualScanValue}
           onScanWithCamera={() => void scanWithCamera()}
         />
@@ -596,7 +593,7 @@ export function RemoteControlApp({
       {transferCenterOpen ? (
         <GlobalTransferCenter
           fileTransfer={globalFileTransfer}
-          onClose={() => { haptic(); setTransferCenterOpen(false) }}
+          onClose={() => setTransferCenterOpen(false)}
           onResumeTransfer={resumeGlobalTransfer}
           onResumeAllTransfers={resumeAllGlobalTransfers}
         />
@@ -844,6 +841,7 @@ function SettingsView({
   onSignIn,
   onSignOut,
   onTerminalSettingsChange,
+  onExportDebugLogs,
 }: {
   controlUrl: string
   error: string | null
@@ -860,6 +858,7 @@ function SettingsView({
   onSignIn: () => void
   onSignOut: () => void
   onTerminalSettingsChange: (patch: Partial<TerminalSettings>) => void
+  onExportDebugLogs?: (() => Promise<void>) | undefined
 }) {
   const handleNumberSetting = (key: 'fontSize' | 'scrollback' | 'scrollbackPrefetchThresholdRows', min: number, max: number) =>
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -901,6 +900,24 @@ function SettingsView({
               value={controlUrl || 'Built-in endpoint'}
             />
           </SettingsSection>
+
+          {onExportDebugLogs ? (
+            <SettingsSection title="Diagnostics">
+              <div className="px-4 py-3">
+                <button
+                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-zinc-900 px-3 text-sm font-semibold text-white active:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  type="button"
+                  onClick={() => {
+                    hapticImpact()
+                    void onExportDebugLogs()
+                  }}
+                >
+                  <Download className="h-4 w-4" />
+                  Export logs
+                </button>
+              </div>
+            </SettingsSection>
+          ) : null}
 
           <SettingsSection title="Terminal">
             <SettingsRow label="Font size">

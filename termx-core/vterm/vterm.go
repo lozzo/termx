@@ -1211,6 +1211,41 @@ func (v *VTerm) EncodeReplay(scrollbackLimit int) []byte {
 	return encodeTerminalReplay(scrollback, v.screenRowsLocked(), v.cursor, v.modes)
 }
 
+func (v *VTerm) EncodeHistoryReplay(beforeOffset int, limit int) ([]byte, int, bool) {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
+	scrollback := v.scrollbackRowsLocked()
+	total := len(scrollback)
+	if total == 0 {
+		return nil, 0, false
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	if beforeOffset < 0 {
+		beforeOffset = 0
+	}
+	if beforeOffset > total {
+		beforeOffset = total
+	}
+	end := total - beforeOffset
+	if end < 0 {
+		end = 0
+	}
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+	rows := scrollback[start:end]
+	if len(rows) == 0 {
+		return nil, 0, false
+	}
+	var b strings.Builder
+	writeSequentialRows(&b, rows)
+	return []byte(b.String()), len(rows), start > 0
+}
+
 func (v *VTerm) setMode(mode ansi.Mode, enabled bool) {
 	switch mode {
 	case ansi.ModeCursorKeys:

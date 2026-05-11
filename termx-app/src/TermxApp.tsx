@@ -73,6 +73,7 @@ export function TermxApp() {
     <section className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-[var(--termx-bg,#0c0c0c)] text-[var(--termx-text,#f4f4f5)] antialiased">
       <RemoteControlApp
         defaultControlUrl={defaultControlUrl}
+        exportDebugLogs={exportNativeDebugLogs}
         globalFileTransfer={globalFileTransfer}
         machineRuntimeFactory={machineRuntimeFactory}
         networkRuntime={networkRuntime}
@@ -80,6 +81,10 @@ export function TermxApp() {
       />
     </section>
   )
+}
+
+async function exportNativeDebugLogs(): Promise<void> {
+  await NativeConnection.exportDebugLogs()
 }
 
 function useNativeKeyboardEvents(): void {
@@ -109,17 +114,11 @@ function useNativeKeyboardEvents(): void {
 
 /** When the app resumes from background, trigger a sync request on all active sessions. */
 function useAppResumeSync(): void {
-  const backgroundedAtRef = useRef<number | null>(null)
   useEffect(() => {
     const promise = CapApp.addListener('appStateChange', (state) => {
       if (!state.isActive) {
-        backgroundedAtRef.current = Date.now()
         return
       }
-      const now = Date.now()
-      const backgroundDurationMs = backgroundedAtRef.current ? now - backgroundedAtRef.current : 0
-      backgroundedAtRef.current = null
-      void NativeConnection.handleForegroundResume({ backgroundDurationMs }).catch(() => {})
       recoverNativeBridgeAfterResume()
       // Broadcast a visibility change so existing bridge clients can re-sync
       document.dispatchEvent(new Event('termx:resume'))

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { MachineSessionStore } from '../state/localAppIdentity'
 import type { LocalPairingApi } from '../core/transport'
 import { KeyRound, ShieldCheck, AlertCircle } from 'lucide-react'
+import { hapticError, hapticSuccess } from '../platform/haptics'
 
 export interface PairDevicePanelProps {
   api: LocalPairingApi
@@ -35,8 +36,10 @@ export function PairDevicePanel({ api, sessionStore, appName, machineId, onPaire
       })
       sessionStore.saveSessionToken(result.machineId, result.sessionToken, result.expiresAt)
       setStatus(`Paired with ${result.machineId}`)
+      hapticSuccess()
       onPaired?.(result.machineId)
     } catch (err) {
+      hapticError()
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setSubmitting(false)

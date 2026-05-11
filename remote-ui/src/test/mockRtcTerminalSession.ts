@@ -24,9 +24,11 @@ export class MockRtcTerminalSession implements RtcSession {
 
   private readonly channels = new Map<string, MockBinaryChannel>()
   private readonly resizeControls = new Map<string, TerminalResizeControl>()
+  private readonly ensureResizeControls = new Map<string, TerminalResizeControl>()
   private readonly snapshots = new Map<string, TerminalSnapshotPayload>()
   private readonly snapshotPages = new Map<string, MockSnapshotPage[]>()
   private readonly failingSends = new Set<string>()
+  private readonly failingEnsureResizes = new Map<string, string>()
 
   constructor(
     private readonly machineId: string,
@@ -46,6 +48,15 @@ export class MockRtcTerminalSession implements RtcSession {
     const resizeControl = this.resizeControls.get(terminalId)
     if (resizeControl) {
       channel.setResizeControl(resizeControl)
+    }
+    const ensureResizeControl = this.ensureResizeControls.get(terminalId)
+    if (ensureResizeControl) {
+      channel.setEnsureResizeControl(ensureResizeControl)
+    }
+    const ensureResizeFailure = this.failingEnsureResizes.get(terminalId)
+    if (ensureResizeFailure) {
+      this.failingEnsureResizes.delete(terminalId)
+      channel.failNextEnsureResize(ensureResizeFailure)
     }
     this.channels.set(terminalId, channel)
     return channel
@@ -102,6 +113,10 @@ export class MockRtcTerminalSession implements RtcSession {
     this.channels.get(terminalId)?.emitFrame(TERMX_FRAME_TYPES.screenUpdate, new Uint8Array([1]))
   }
 
+  emitTerminalSyncLost(terminalId: string): void {
+    this.channels.get(terminalId)?.emitFrame(TERMX_FRAME_TYPES.syncLost, new Uint8Array([1]))
+  }
+
   emitTerminalSnapshot(terminalId: string, snapshot: TerminalSnapshotPayload): void {
     this.snapshots.set(terminalId, snapshot)
     this.channels.get(terminalId)?.respondToNextSnapshot(snapshot)
@@ -124,6 +139,11 @@ export class MockRtcTerminalSession implements RtcSession {
     this.channels.get(terminalId)?.setResizeControl(control)
   }
 
+  setEnsureResizeControl(terminalId: string, control: TerminalResizeControl): void {
+    this.ensureResizeControls.set(terminalId, control)
+    this.channels.get(terminalId)?.setEnsureResizeControl(control)
+  }
+
   closeTerminal(terminalId: string, reason?: string): void {
     this.channels.get(terminalId)?.close(reason)
   }
@@ -135,6 +155,15 @@ export class MockRtcTerminalSession implements RtcSession {
       return
     }
     this.failingSends.add(terminalId)
+  }
+
+  failNextEnsureResize(terminalId: string, message: string): void {
+    const channel = this.channels.get(terminalId)
+    if (channel) {
+      channel.failNextEnsureResize(message)
+      return
+    }
+    this.failingEnsureResizes.set(terminalId, message)
   }
 
   sentText(terminalId: string): string {
@@ -156,6 +185,10 @@ export class MockRtcTerminalSession implements RtcSession {
   snapshotRequests(terminalId: string): Array<{ offset: number; limit: number }> {
     return this.channels.get(terminalId)?.snapshotRequests ?? []
   }
+
+  historyReplayRequests(terminalId: string): Array<{ beforeOffset: number; limit: number }> {
+    return this.channels.get(terminalId)?.historyReplayRequests ?? []
+  }
 }
 
 export interface MockSnapshotPage {
@@ -168,12 +201,14 @@ class MockBinaryChannel implements RtcBinaryChannel {
   sentText = ''
   lastResize: { cols: number; rows: number } | undefined
   readonly snapshotRequests: Array<{ offset: number; limit: number }> = []
+  readonly historyReplayRequests: Array<{ beforeOffset: number; limit: number }> = []
   private messageHandler: ((data: Uint8Array) => void) | undefined
   private closeHandler: (() => void) | undefined
   private streamChannel = 7
   private attachResizeControl: TerminalResizeControl = { canResize: false, reason: 'follower' }
   private ensureResizeControl: TerminalResizeControl | undefined
   private failSendOnce = false
+  private failEnsureResizeOnce: string | undefined
 
   constructor(
     readonly label: string,
@@ -196,6 +231,10 @@ class MockBinaryChannel implements RtcBinaryChannel {
       return
     }
     if (frame.channel !== this.streamChannel) return
+    if (frame.type === TERMX_FRAME_TYPES.historyRequest) {
+      this.handleHistoryRequest(frame)
+      return
+    }
     if (frame.type === TERMX_FRAME_TYPES.input) {
       this.sentText += new TextDecoder().decode(frame.payload)
       return
@@ -236,6 +275,10 @@ class MockBinaryChannel implements RtcBinaryChannel {
 
   failNextSend(): void {
     this.failSendOnce = true
+  }
+
+  failNextEnsureResize(message: string): void {
+    this.failEnsureResizeOnce = message
   }
 
   respondToNextSnapshot(snapshot: TerminalSnapshotPayload, requestId = 2): void {
@@ -320,6 +363,15 @@ class MockBinaryChannel implements RtcBinaryChannel {
       return
     }
     if (request.method === 'ensure_resize') {
+      if (this.failEnsureResizeOnce) {
+        const message = this.failEnsureResizeOnce
+        this.failEnsureResizeOnce = undefined
+        this.messageHandler?.(encodeTermxFrame(0, TERMX_FRAME_TYPES.error, new TextEncoder().encode(JSON.stringify({
+          id: request.id,
+          error: { code: 403, message },
+        }))))
+        return
+      }
       const control = this.ensureResizeControl ?? this.attachResizeControl
       this.messageHandler?.(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, new TextEncoder().encode(JSON.stringify({
         id: request.id,
@@ -337,5 +389,23 @@ class MockBinaryChannel implements RtcBinaryChannel {
 
   private terminalSnapshot(): TerminalSnapshotPayload | undefined {
     return this.owner?.snapshotFor(this.terminalId)
+  }
+
+  private handleHistoryRequest(frame: ReturnType<typeof decodeTermxFrame>): void {
+    const view = new DataView(frame.payload.buffer, frame.payload.byteOffset, frame.payload.byteLength)
+    const beforeOffset = view.getUint32(0)
+    const limit = view.getUint32(4)
+    this.historyReplayRequests.push({ beforeOffset, limit })
+    const page = this.owner.snapshotPageFor(this.terminalId, beforeOffset)
+    const rows = page?.rows ?? []
+    const replay = new TextEncoder().encode(rows.join('\r\n'))
+    const nextOffset = beforeOffset + rows.length
+    const hasMore = rows.length > 0 && this.owner.snapshotPageFor(this.terminalId, nextOffset) !== undefined
+    const payload = new Uint8Array(5 + replay.length)
+    const payloadView = new DataView(payload.buffer)
+    payloadView.setUint32(0, rows.length)
+    payloadView.setUint8(4, hasMore ? 1 : 0)
+    payload.set(replay, 5)
+    this.emitFrame(TERMX_FRAME_TYPES.historyReplay, payload)
   }
 }

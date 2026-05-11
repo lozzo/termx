@@ -45,6 +45,8 @@ vi.mock('../terminal/Terminal', () => ({
     useImperativeHandle(ref, () => ({
       sendInput,
       sendResize: vi.fn(),
+      requestResizeOwner: vi.fn(async () => ({ canResize: true, reason: 'owner' as const })),
+      releaseResizeOwner: vi.fn(async () => ({ canResize: false, reason: 'follower' as const })),
       reattach: terminalReattachMock,
       focus,
       blur: vi.fn(),
@@ -866,6 +868,62 @@ describe('MachineWorkspace', () => {
 
     await waitFor(() => expect(screen.getByText('ci shell')).toBeTruthy())
     expect(screen.getByText('/srv/ci')).toBeTruthy()
+  })
+
+  it('updates resize ownership from a pushed runtime terminal event without reloading the terminal list', async () => {
+    const api = createMockLocalAgentApi({
+      terminals: [terminalFixture({
+        terminalId: 'terminal-1',
+        title: 'zsh',
+        command: '/bin/zsh',
+        cols: 120,
+        rows: 36,
+        cwd: '/Users/lozzow/project',
+      })],
+    })
+    const listTerminals = vi.fn(api.listTerminals)
+    api.listTerminals = listTerminals
+    let runtimeHandler: ((event: { type: string; payload?: unknown }) => void) | null = null
+    const runtimeSession = createMockMachineWorkspaceSession({}, 'machine-local')
+    runtimeSession.subscribeEvents = vi.fn((handler) => {
+      runtimeHandler = handler
+      return {
+        close() {
+          runtimeHandler = null
+        },
+      }
+    })
+
+    render(<MachineWorkspace api={api} connector={{ connect: vi.fn(async () => runtimeSession) }} subscribeRuntimeInventoryEvents />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(runtimeHandler).toBeTruthy())
+    expect(screen.getByRole('button', { name: /acquire resize control/i })).toBeTruthy()
+
+    runtimeHandler!({
+      type: 'terminal_metadata_changed',
+      payload: {
+        terminalId: 'terminal-1',
+        terminal: {
+          terminal_id: 'terminal-1',
+          machine_id: 'machine-local',
+          name: 'zsh',
+          state: 'running',
+          command: ['/bin/zsh'],
+          cols: 120,
+          rows: 36,
+          cwd: '/Users/lozzow/project',
+          resize_ownership: {
+            owner_surface_id: 'app:machine-local:terminal:terminal-1',
+          },
+          resize_owner_attachment_count: 1,
+        },
+      },
+    })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /release resize control/i })).toBeTruthy())
+    expect(listTerminals).toHaveBeenCalledTimes(1)
   })
 
   it('ignores stale terminal list refreshes that finish after a newer refresh', async () => {

@@ -17,6 +17,8 @@ vi.mock('../terminal/Terminal', () => ({
     useImperativeHandle(ref, () => ({
       sendInput: vi.fn(),
       sendResize: vi.fn(),
+      requestResizeOwner: vi.fn(async () => ({ canResize: true, reason: 'owner' as const })),
+      releaseResizeOwner: vi.fn(async () => ({ canResize: false, reason: 'follower' as const })),
       reattach: vi.fn(),
       focus: vi.fn(),
       blur: vi.fn(),

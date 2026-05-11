@@ -4,10 +4,11 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal as XTerm } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react'
-import { haptic } from '../platform/haptics'
+import { hapticSelection } from '../platform/haptics'
 import { addNativeKeyboardListener } from '../platform/nativeKeyboard'
 import { applyTerminalModifiers, type TerminalModifierState } from './mobileTerminalInput'
 import type { TerminalResizeControl, TerminalScrollbackLoadResult } from './terminalClient'
+import { logTerminalDiagnostic, terminalNow } from './terminalDiagnostics'
 import { useTerminalSession } from './useTerminalSession'
 import type { RtcSession } from '../core/transport'
 import { DEFAULT_TERMINAL_SETTINGS, resolveTerminalTheme, type TerminalSettings } from './terminalSettings'
@@ -22,6 +23,11 @@ const historyApplyScrollIdleMs = 180
 const historyApplyMaxDelayMs = 900
 const historyApplyWatchdogMs = 4000
 const bottomAnchorSettleMs = 900
+const xtermWriteStatsIntervalMs = 1000
+const xtermWriteSlowMs = 500
+const xtermWriteLargeChars = 128 * 1024
+const eventLoopProbeIntervalMs = 1000
+const eventLoopLagWarnMs = 250
 
 interface PendingHistoryApply {
   revision: number
@@ -55,6 +61,8 @@ export interface TerminalProps {
 export interface TerminalHandle {
   sendInput(data: string): void
   sendResize(cols: number, rows: number): void
+  requestResizeOwner(): Promise<TerminalResizeControl>
+  releaseResizeOwner(): Promise<TerminalResizeControl>
   reattach(session: RtcSession, options?: { forceTerminalChannel?: boolean }): void
   focus(): void
   blur(): void
@@ -124,6 +132,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const preventFocusRef = useRef(preventFocus)
   const bottomAnchorUntilRef = useRef(0)
   const bottomAnchorFrameRef = useRef<number | null>(null)
+  const xtermWriteStatsRef = useRef({
+    writes: 0,
+    chars: 0,
+    pendingCallbacks: 0,
+    lastLogAt: terminalNow(),
+    lastChars: 0,
+    lastWrites: 0,
+  })
 
   useEffect(() => {
     preventFocusRef.current = preventFocus
@@ -153,6 +169,94 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const isOpen = terminalSession.snapshot.terminalChannels[terminalId]?.state === 'open'
   const channelState = terminalSession.snapshot.terminalChannels[terminalId]?.state
   const showConnectingOverlay = !suppressConnectingOverlay && channelState !== 'open' && terminalSession.terminalText.length === 0
+
+  const logTerminal = useCallback((event: string, input: {
+    level?: 'debug' | 'info' | 'warn' | 'error'
+    details?: Record<string, unknown> | undefined
+  } = {}) => {
+    logTerminalDiagnostic(`xterm.${event}`, {
+      level: input.level,
+      machineId,
+      terminalId,
+      details: input.details,
+    })
+  }, [machineId, terminalId])
+
+  const writeToXterm = useCallback((
+    term: XTerm,
+    text: string,
+    reason: string,
+    onDone?: () => void,
+  ) => {
+    const stats = xtermWriteStatsRef.current
+    const startedAt = terminalNow()
+    stats.writes += 1
+    stats.chars += text.length
+    stats.pendingCallbacks += 1
+    const writeId = stats.writes
+    const now = terminalNow()
+    if (text.length >= xtermWriteLargeChars || now - stats.lastLogAt >= xtermWriteStatsIntervalMs) {
+      const elapsedSeconds = Math.max(0.001, (now - stats.lastLogAt) / 1000)
+      const intervalChars = stats.chars - stats.lastChars
+      const intervalWrites = stats.writes - stats.lastWrites
+      logTerminal('write_start', {
+        level: text.length >= xtermWriteLargeChars ? 'warn' : 'debug',
+        details: {
+          writeId,
+          reason,
+          chars: text.length,
+          writes: stats.writes,
+          totalChars: stats.chars,
+          intervalWrites,
+          intervalChars,
+          charsPerSecond: Math.round(intervalChars / elapsedSeconds),
+          pendingCallbacks: stats.pendingCallbacks,
+        },
+      })
+      stats.lastLogAt = now
+      stats.lastChars = stats.chars
+      stats.lastWrites = stats.writes
+    }
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      stats.pendingCallbacks = Math.max(0, stats.pendingCallbacks - 1)
+      const elapsedMs = Math.round(terminalNow() - startedAt)
+      if (elapsedMs >= xtermWriteSlowMs || text.length >= xtermWriteLargeChars) {
+        logTerminal('write_done', {
+          level: elapsedMs >= xtermWriteSlowMs ? 'warn' : 'debug',
+          details: {
+            writeId,
+            reason,
+            chars: text.length,
+            elapsedMs,
+            pendingCallbacks: stats.pendingCallbacks,
+            bufferLength: term.buffer.active.length,
+            viewportY: term.buffer.active.viewportY,
+            rows: term.rows,
+            cols: term.cols,
+          },
+        })
+      }
+      onDone?.()
+    }
+    try {
+      term.write(text, finish)
+    } catch (error) {
+      stats.pendingCallbacks = Math.max(0, stats.pendingCallbacks - 1)
+      logTerminal('write_error', {
+        level: 'error',
+        details: {
+          writeId,
+          reason,
+          chars: text.length,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      })
+      throw error
+    }
+  }, [logTerminal])
 
   const isScrolledToBottom = useCallback((term: XTerm) => {
     const buffer = term.buffer.active
@@ -291,6 +395,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   useImperativeHandle(ref, () => ({
     sendInput: sendInputAtCurrentSize,
     sendResize: terminalSession.sendResize,
+    requestResizeOwner: () => terminalSession.requestResizeOwner(currentTerminalSize()),
+    releaseResizeOwner: terminalSession.releaseResizeOwner,
     reattach: terminalSession.reattach,
     focus: () => {
       if (terminalDisposedRef.current || preventFocusRef.current) return
@@ -377,7 +483,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
       fitAndMaybeSendResize()
     },
-  }), [fitAndMaybeSendResize, scheduleFit, sendInputAtCurrentSize, terminalSession.reattach, terminalSession.sendResize])
+  }), [currentTerminalSize, fitAndMaybeSendResize, scheduleFit, sendInputAtCurrentSize, terminalSession.reattach, terminalSession.releaseResizeOwner, terminalSession.requestResizeOwner, terminalSession.sendResize])
 
   useEffect(() => {
     modifierStateRef.current = modifierState
@@ -530,7 +636,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const initialText = latestTerminalTextRef.current
     if (initialText) {
       try {
-        term.write(initialText, () => {
+        writeToXterm(term, initialText, 'initial_text', () => {
           keepBottomAnchored()
         })
       } catch {}
@@ -768,7 +874,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         const latestText = latestTerminalTextRef.current
         const textToApply = latestText.startsWith(pending.text) ? latestText : pending.text
         term.reset()
-        term.write(textToApply, () => {
+        writeToXterm(term, textToApply, 'history_apply', () => {
           if (pending.restoreViewportY !== null) {
             term.scrollToLine(pending.restoreViewportY + pending.prependedRows)
           } else if (shouldKeepBottom) {
@@ -1394,7 +1500,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const handleScrollbarTouchStart = (event: TouchEvent) => {
       event.preventDefault()
       event.stopPropagation()
-      haptic()
+      hapticSelection()
       scrollbarDragging = true
       scrollbarTrack.classList.add('active')
       showScrollbar()
@@ -1437,7 +1543,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (event.target !== scrollbarTrack) return
       event.preventDefault()
       event.stopPropagation()
-      haptic()
+      hapticSelection()
       const touch = event.touches[0]
       if (!touch) return
       const rect = scrollbarTrack.getBoundingClientRect()
@@ -1490,6 +1596,25 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     const removeNativeKeyboardListener = addNativeKeyboardListener(handleVisualViewportResize)
     document.addEventListener('termx:resume', handleVisualViewportResize)
+    let expectedProbeAt = terminalNow() + eventLoopProbeIntervalMs
+    const eventLoopProbe = window.setInterval(() => {
+      const now = terminalNow()
+      const lagMs = now - expectedProbeAt
+      expectedProbeAt = now + eventLoopProbeIntervalMs
+      if (lagMs >= eventLoopLagWarnMs) {
+        logTerminal('event_loop_lag', {
+          level: 'warn',
+          details: {
+            lagMs: Math.round(lagMs),
+            pendingWriteCallbacks: xtermWriteStatsRef.current.pendingCallbacks,
+            terminalTextChars: latestTerminalTextRef.current.length,
+            lastWrittenChars: lastWrittenTextRef.current.length,
+            historyApplying: historyApplyingRef.current,
+            historyLoading: historyLoadingRef.current,
+          },
+        })
+      }
+    }, eventLoopProbeIntervalMs)
 
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', handleVisualViewportResize)
@@ -1505,6 +1630,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
       removeNativeKeyboardListener()
       document.removeEventListener('termx:resume', handleVisualViewportResize)
+      window.clearInterval(eventLoopProbe)
       if (fitFrameRef.current !== null) {
         window.cancelAnimationFrame(fitFrameRef.current)
         fitFrameRef.current = null
@@ -1570,7 +1696,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       lastSentResizeRef.current = null
       isOpenRef.current = false
     }
-  }, [cancelBottomAnchor, fitAndMaybeSendResize, isScrolledToBottom, keepBottomAnchored, renderer, scheduleFit, sendInputAtCurrentSize, sendUserInput, settings.renderer])
+  }, [cancelBottomAnchor, fitAndMaybeSendResize, isScrolledToBottom, keepBottomAnchored, logTerminal, renderer, scheduleFit, sendInputAtCurrentSize, sendUserInput, settings.renderer, writeToXterm])
 
   useEffect(() => {
     isOpenRef.current = isOpen
@@ -1628,15 +1754,22 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (nextText.startsWith(previousText)) {
         const appendedText = nextText.slice(previousText.length)
         if (previousText === '') {
-          term.write(appendedText, () => {
+          writeToXterm(term, appendedText, 'append_initial', () => {
             keepBottomAnchored()
           })
         } else {
-          term.write(appendedText)
+          writeToXterm(term, appendedText, 'append')
         }
       } else {
         term.reset()
-        term.write(nextText, () => {
+        logTerminal('text_reset', {
+          level: 'warn',
+          details: {
+            previousChars: previousText.length,
+            nextChars: nextText.length,
+          },
+        })
+        writeToXterm(term, nextText, 'reset_full_text', () => {
           keepBottomAnchored()
         })
       }
@@ -1645,7 +1778,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (!terminalDisposedRef.current) throw error
     }
     lastWrittenTextRef.current = nextText
-  }, [keepBottomAnchored, terminalSession.terminalSnapshot, terminalSession.terminalText])
+  }, [keepBottomAnchored, logTerminal, terminalSession.terminalSnapshot, terminalSession.terminalText, writeToXterm])
 
   return (
     <section

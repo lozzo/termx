@@ -4,6 +4,7 @@ import (
 	"maps"
 	"sort"
 
+	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
@@ -23,6 +24,10 @@ type TerminalRuntime struct {
 	State    string
 	ExitCode *int
 	Title    string // OSC 2 标题，由 VTerm 回调更新
+	// Core reports every active attachment that can drive PTY resize. If this
+	// exceeds local bound panes, another client currently owns resize.
+	ResizeOwnerAttachmentCount int
+	ResizeOwnership            *protocol.ResizeOwnership
 
 	Channel         uint16
 	AttachMode      string

@@ -323,15 +323,15 @@ func (p daemonRuntimeAdapter) SubscribeRemoteEvents(ctx context.Context, filters
 			select {
 			case <-ctx.Done():
 				return
-			case evt, ok := <-events:
-				if !ok {
-					return
-				}
-				payload, err := json.Marshal(evt)
-				if err != nil {
-					return
-				}
-				select {
+				case evt, ok := <-events:
+					if !ok {
+						return
+					}
+					payload, err := p.marshalRemoteEvent(ctx, evt)
+					if err != nil {
+						return
+					}
+					select {
 				case <-ctx.Done():
 					return
 				case out <- payload:
@@ -340,6 +340,38 @@ func (p daemonRuntimeAdapter) SubscribeRemoteEvents(ctx context.Context, filters
 		}
 	}()
 	return out, func() {}, nil
+}
+
+func (p daemonRuntimeAdapter) marshalRemoteEvent(ctx context.Context, evt protocol.Event) ([]byte, error) {
+	if p.daemon == nil {
+		return json.Marshal(evt)
+	}
+	record, err := eventRecord(evt)
+	if err != nil {
+		return json.Marshal(evt)
+	}
+	if evt.Type == protocol.EventTerminalMetadataChanged || evt.Type == protocol.EventTerminalResized {
+		terminalID := strings.TrimSpace(evt.TerminalID)
+		if terminalID != "" {
+			info, getErr := p.daemon.Get(ctx, terminalID)
+			if getErr == nil && info != nil {
+				record["terminal"] = terminalInventoryFromProtocol(*info)
+			}
+		}
+	}
+	return json.Marshal(record)
+}
+
+func eventRecord(evt protocol.Event) (map[string]any, error) {
+	payload, err := json.Marshal(evt)
+	if err != nil {
+		return nil, err
+	}
+	var record map[string]any
+	if err := json.Unmarshal(payload, &record); err != nil {
+		return nil, err
+	}
+	return record, nil
 }
 
 type terminalManagementRouter struct {
@@ -700,7 +732,17 @@ func terminalInventoryFromProtocol(item protocol.TerminalInfo) runtime.TerminalI
 		Environment:  item.Tags["termx.environment"],
 		SizeLocked:   terminalmeta.SizeLocked(item.Tags),
 		SizeLockMode: sizeLockMode,
+		ResizeOwnership:            cloneProtocolResizeOwnership(item.ResizeOwnership),
+		ResizeOwnerAttachmentCount: item.ResizeOwnerAttachmentCount,
 	}
+}
+
+func cloneProtocolResizeOwnership(in *protocol.ResizeOwnership) *protocol.ResizeOwnership {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
 }
 
 func localTerminalTags(cwd string, environment string, sizeLockMode string) map[string]string {

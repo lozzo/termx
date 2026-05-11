@@ -33,7 +33,13 @@ describe('FileManager', () => {
         path,
         parent: path === '/' ? '' : '/',
         total: 1,
-        entries: [{ name: path === '/' ? 'tmp' : 'log.txt', type: path === '/' ? 'dir' : 'file', size: 42 }],
+        entries: [{
+          name: path === '/' ? 'tmp' : 'log.txt',
+          type: path === '/' ? 'dir' : 'file',
+          size: 42,
+          childCount: path === '/' ? 3 : undefined,
+          modTime: '2026-05-01T10:00:00Z',
+        }],
       }),
     }, {}, { terminalId: 'terminal-1' })
 
@@ -47,11 +53,41 @@ describe('FileManager', () => {
     )
 
     await waitFor(() => expect(screen.getByText('tmp')).toBeTruthy())
+    expect(screen.getByText(/3 items/)).toBeTruthy()
     expect(screen.getByTestId('termx-file-manager').className).toMatch(/\brelative\b/)
     expect(screen.getByTestId('termx-file-manager').className).toMatch(/\bmin-h-0\b/)
     await userEvent.click(screen.getByRole('button', { name: /open tmp/i }))
     await waitFor(() => expect(screen.getByText('log.txt')).toBeTruthy())
     expect(screen.getByTestId('termx-file-manager').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
+  })
+
+  it('shows file metadata, symlink target, and directory item counts in the list', async () => {
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/srv/app',
+        parent: '/srv',
+        total: 3,
+        entries: [
+          { name: 'logs', type: 'dir', size: 0, childCount: 12, modTime: '2026-05-01T10:00:00Z' },
+          { name: 'latest.log', type: 'file', size: 2048, modTime: '2026-05-02T11:30:00Z' },
+          { name: 'config-link', type: 'symlink', size: 16, linkTarget: '/etc/app/config.yml', modTime: '2026-05-03T12:45:00Z' },
+        ],
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(
+      <FileManager
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+        initialPath="/srv/app"
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText('logs')).toBeTruthy())
+    expect(screen.getByText(/12 items/)).toBeTruthy()
+    expect(screen.getByText(/2 KB/)).toBeTruthy()
+    expect(screen.getByText(/-> \/etc\/app\/config\.yml/)).toBeTruthy()
   })
 
   it('supports hidden files, creating directories, renaming, and delete confirmation through the file api', async () => {
@@ -479,7 +515,93 @@ describe('FileManager', () => {
     const image = await screen.findByRole('img', { name: 'shot.png' })
     expect(image.getAttribute('src')).toBe('data:image/png;base64,iVBORw0KGgo=')
     expect(URL.createObjectURL).not.toHaveBeenCalled()
-    expect(image.className).toMatch(/max-h-\[calc\(100dvh-5rem\)\]/)
+    expect(image.className).toMatch(/select-none/)
+    expect(screen.queryByText(/Preview transfers the original file over this connection/i)).toBeNull()
+  })
+
+  it('supports image preview zoom, rotation, and wheel zooming', async () => {
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/',
+        parent: '',
+        total: 1,
+        entries: [{ name: 'shot.png', type: 'file', size: 68 }],
+      },
+      '/files/preview': {
+        path: '/shot.png',
+        name: 'shot.png',
+        size: 68,
+        mime_type: 'image/png',
+        category: 'image',
+        is_text: false,
+        content_base64: 'iVBORw0KGgo=',
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(fileManager(session))
+
+    await waitFor(() => expect(screen.getByText('shot.png')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /preview shot.png/i }))
+
+    expect(await screen.findByRole('button', { name: /zoom in shot.png/i })).toBeTruthy()
+    const transform = screen.getByTestId('termx-media-transform')
+    expect(transform.getAttribute('style')).toContain('scale(1)')
+
+    await userEvent.click(screen.getByRole('button', { name: /zoom in shot.png/i }))
+    expect(transform.getAttribute('style')).toContain('scale(1.25)')
+
+    await userEvent.click(screen.getByRole('button', { name: /rotate shot.png/i }))
+    expect(transform.getAttribute('style')).toContain('rotate(90deg)')
+
+    screen.getByTestId('termx-media-zoom-canvas').dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 100,
+      clientY: 100,
+      deltaY: -120,
+    }))
+    await waitFor(() => expect(transform.getAttribute('style')).not.toContain('scale(1.25)'))
+
+    await userEvent.click(screen.getByRole('button', { name: /reset zoom shot.png/i }))
+    expect(transform.getAttribute('style')).toContain('scale(1)')
+    expect(transform.getAttribute('style')).toContain('rotate(0deg)')
+  })
+
+  it('does not full-download video previews when seekable range preview is unavailable', async () => {
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: undefined,
+    })
+    Object.defineProperty(window, 'isSecureContext', {
+      configurable: true,
+      value: true,
+    })
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/',
+        parent: '',
+        total: 1,
+        entries: [{ name: 'clip.mp4', type: 'file', size: 5 }],
+      },
+      '/files/preview': {
+        path: '/clip.mp4',
+        name: 'clip.mp4',
+        size: 5,
+        mime_type: 'video/mp4',
+        category: 'video',
+        is_text: false,
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(fileManager(session))
+
+    await waitFor(() => expect(screen.getByText('clip.mp4')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /preview clip.mp4/i }))
+
+    expect(await screen.findByText(/Preview Unavailable/i)).toBeTruthy()
+    expect(screen.queryByText(/Streaming preview/i)).toBeNull()
+    expect(session.requests.some((request) => request.path === '/files/download/init')).toBe(false)
+    expect(session.openedTransfers).toEqual([])
   })
 
   it('renders image previews from data URL preview content', async () => {

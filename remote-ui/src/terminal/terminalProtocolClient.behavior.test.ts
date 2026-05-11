@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createTerminalProtocolClient } from './terminalProtocolClient'
-import { TERMX_FRAME_TYPES, decodeTermxFrame, encodeTermxFrame } from './termxProtocol'
+import { TERMX_FRAME_TYPES, decodeHistoryReplayPayload, decodeTermxFrame, encodeTermxFrame } from './termxProtocol'
 import type { ConnectionInfo, RtcBinaryChannel } from '../core/transport'
 import type { TerminalProtocolEvent } from './terminalClient'
 
@@ -28,7 +28,13 @@ describe('TerminalProtocolClient', () => {
     expect(attach.type).toBe(TERMX_FRAME_TYPES.request)
     const attachRequest = JSON.parse(new TextDecoder().decode(attach.payload))
     expect(attachRequest.method).toBe('attach')
-    expect(attachRequest.params).toEqual({ terminal_id: 'terminal-1', mode: 'collaborator', resize_policy: 'owner' })
+    expect(attachRequest.params).toEqual({
+      terminal_id: 'terminal-1',
+      mode: 'collaborator',
+      resize_policy: 'follower',
+      stream_mode: 'raw',
+      surface_id: 'app:terminal:terminal-1',
+    })
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
       id: attachRequest.id,
       result: JSON.stringify({ mode: 'collaborator', channel: 7 }),
@@ -39,7 +45,7 @@ describe('TerminalProtocolClient', () => {
     channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.output, new TextEncoder().encode('stream-data')))
 
     expect(events).toHaveLength(2)
-    expect(events[0]).toMatchObject({ type: 'resizeControl', control: { canResize: true, reason: 'owner' } })
+    expect(events[0]).toMatchObject({ type: 'resizeControl', control: { canResize: false, reason: 'follower' } })
     expect(events[1]).toMatchObject({ type: 'output' })
     expect(new TextDecoder().decode((events[1] as { data: Uint8Array }).data)).toBe('stream-data')
   })
@@ -119,6 +125,7 @@ describe('TerminalProtocolClient', () => {
       cols: 120,
       rows: 40,
       resize_policy: 'owner',
+      surface_id: 'app:terminal:terminal-1',
     })
     expect(channel.sent).toHaveLength(4)
 
@@ -139,6 +146,38 @@ describe('TerminalProtocolClient', () => {
       type: 'resizeControl',
       control: { canResize: true, reason: 'owner' },
     })
+  })
+
+  it('rejects a closed channel before requesting resize ownership so the caller can reattach', async () => {
+    const channel = new MockBinaryDataChannel('terminal:terminal-1')
+    const client = createTerminalProtocolClient({
+      channel,
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectionInfo: connectionInfo(),
+      resizePolicy: 'follower',
+    })
+    const terminalPromise = client.openTerminal('terminal-1')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+    await Promise.resolve()
+    const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: attachRequest.id,
+      result: JSON.stringify({
+        mode: 'collaborator',
+        channel: 7,
+        resize_control: { can_resize: false, reason: 'follower' },
+      }),
+    })))
+    await terminalPromise
+
+    channel.readyState = 'closed'
+    const requestPromise = client.requestResizeOwner?.('terminal-1', { cols: 120, rows: 40 })
+    expect(requestPromise).toBeDefined()
+
+    await expect(requestPromise!).rejects.toThrow(/not open|closed/i)
+    expect(channel.waitOpenCalls).toBe(0)
+    expect(channel.sent).toHaveLength(3)
   })
 
   it('refreshes resize control for sized input even when size lock is already known', async () => {
@@ -230,7 +269,7 @@ describe('TerminalProtocolClient', () => {
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
-    expect(attachRequest.params).toMatchObject({ resize_policy: 'owner' })
+    expect(attachRequest.params).toMatchObject({ resize_policy: 'owner', stream_mode: 'raw' })
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
       id: attachRequest.id,
       result: JSON.stringify({
@@ -329,7 +368,7 @@ describe('TerminalProtocolClient', () => {
     expect((events[1] as { snapshot: { replay?: string } }).snapshot.replay).toContain('\x1b[1;1H')
   })
 
-  it('refreshes terminal content when the runtime streams screen update frames', async () => {
+  it('ignores routine screen update frames because raw PTY output drives xterm', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
     const client = createTerminalProtocolClient({
       channel,
@@ -363,7 +402,54 @@ describe('TerminalProtocolClient', () => {
       snapshot: expect.objectContaining({ text: 'old' }),
     })))
 
-    channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.screenUpdate, new Uint8Array([1, 2, 3])))
+    const sentBeforeScreenUpdate = channel.sent.length
+    vi.useFakeTimers()
+    try {
+      channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.screenUpdate, new Uint8Array([1, 2, 3])))
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(channel.sent).toHaveLength(sentBeforeScreenUpdate)
+      expect(events.filter((event) => event.type === 'snapshot')).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('refreshes terminal content when the raw terminal stream reports sync loss', async () => {
+    const channel = new MockBinaryDataChannel('terminal:terminal-1')
+    const client = createTerminalProtocolClient({
+      channel,
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectionInfo: connectionInfo(),
+    })
+    const events: TerminalProtocolEvent[] = []
+    client.subscribeTerminal('terminal-1', (event) => events.push(event))
+    const terminalPromise = client.openTerminal('terminal-1')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+    await Promise.resolve()
+    const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: attachRequest.id,
+      result: JSON.stringify({ mode: 'collaborator', channel: 7 }),
+    })))
+    await terminalPromise
+
+    const initialSnapshot = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 2).payload))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: initialSnapshot.id,
+      result: JSON.stringify({
+        terminal_id: 'terminal-1',
+        size: { cols: 80, rows: 24 },
+        screen: { rows: [{ cells: [{ r: 'o' }, { r: 'l' }, { r: 'd' }] }] },
+      }),
+    })))
+    await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({
+      type: 'snapshot',
+      snapshot: expect.objectContaining({ text: 'old' }),
+    })))
+
+    channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.syncLost, new Uint8Array([1, 2, 3])))
     await vi.waitFor(() => expect(channel.sent).toHaveLength(4))
     const refreshSnapshot = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 3).payload))
     expect(refreshSnapshot.method).toBe('snapshot')
@@ -404,30 +490,24 @@ describe('TerminalProtocolClient', () => {
     const pagePromise = client.loadScrollback('terminal-1', 100, 50)
     await vi.waitFor(() => expect(channel.sent).toHaveLength(4))
     const pageRequestFrame = decodeSentFrame(channel, 3)
-    const pageRequest = JSON.parse(new TextDecoder().decode(pageRequestFrame.payload))
-    expect(pageRequest.method).toBe('snapshot')
-    expect(pageRequest.params).toEqual({
-      terminal_id: 'terminal-1',
-      scrollback_offset: 100,
-      scrollback_limit: 50,
-    })
-    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
-      id: pageRequest.id,
-      result: JSON.stringify({
-        terminal_id: 'terminal-1',
-        size: { cols: 80, rows: 24 },
-        screen: { rows: [] },
-        scrollback: [
-          { cells: [{ r: 'o' }, { r: 'l' }, { r: 'd' }] },
-        ],
-      }),
-    })))
+    expect(pageRequestFrame.channel).toBe(7)
+    expect(pageRequestFrame.type).toBe(TERMX_FRAME_TYPES.historyRequest)
+    const requestView = new DataView(pageRequestFrame.payload.buffer, pageRequestFrame.payload.byteOffset, pageRequestFrame.payload.byteLength)
+    expect(requestView.getUint32(0)).toBe(100)
+    expect(requestView.getUint32(4)).toBe(50)
+    const replayPayload = new Uint8Array(5 + 3)
+    const replayView = new DataView(replayPayload.buffer)
+    replayView.setUint32(0, 1)
+    replayView.setUint8(4, 0)
+    replayPayload.set(new TextEncoder().encode('old'), 5)
+    channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.historyReplay, replayPayload))
 
     await expect(pagePromise).resolves.toMatchObject({
-      offset: 100,
+      beforeOffset: 100,
       limit: 50,
       hasMore: false,
-      snapshot: { text: 'old', cols: 80, rows: 1 },
+      rows: 1,
+      replay: 'old',
     })
   })
 
@@ -540,8 +620,10 @@ function decodeSentFrame(channel: MockBinaryDataChannel, index: number) {
 class MockBinaryDataChannel implements RtcBinaryChannel {
   readyState: RtcBinaryChannel['readyState'] = 'open'
   readonly sent: Uint8Array[] = []
+  waitOpenCalls = 0
   private messageHandler: ((data: Uint8Array) => void) | null = null
   private closeHandler: (() => void) | null = null
+  private openWaiters: Array<() => void> = []
 
   constructor(readonly label: string) {}
 
@@ -566,7 +648,17 @@ class MockBinaryDataChannel implements RtcBinaryChannel {
   }
 
   waitOpen(): Promise<void> {
-    return Promise.resolve()
+    this.waitOpenCalls += 1
+    if (this.readyState === 'open') return Promise.resolve()
+    return new Promise((resolve) => {
+      this.openWaiters.push(resolve)
+    })
+  }
+
+  reopen(): void {
+    this.readyState = 'open'
+    const waiters = this.openWaiters.splice(0)
+    for (const resolve of waiters) resolve()
   }
 
   emitFrame(data: Uint8Array): void {

@@ -2,7 +2,9 @@ package termx
 
 import (
 	"context"
+	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
@@ -13,8 +15,10 @@ type attachmentStreamPump struct {
 	cancel     context.CancelFunc
 	terminalID string
 	channel    uint16
+	remote     string
 	src        <-chan StreamMessage
 	sendFrame  func(uint16, uint8, []byte) error
+	logger     *slog.Logger
 
 	mu          sync.Mutex
 	cond        *sync.Cond
@@ -25,6 +29,7 @@ type attachmentStreamPump struct {
 	suffixBase  *streamScreenState
 	sentState   *streamScreenState
 	queueState  *streamScreenState
+	stats       attachmentPumpStats
 }
 
 func newAttachmentStreamPump(
@@ -32,23 +37,47 @@ func newAttachmentStreamPump(
 	cancel context.CancelFunc,
 	terminalID string,
 	channel uint16,
+	remote string,
 	src <-chan StreamMessage,
 	sendFrame func(uint16, uint8, []byte) error,
+	logger *slog.Logger,
 ) *attachmentStreamPump {
 	pump := &attachmentStreamPump{
 		ctx:         ctx,
 		cancel:      cancel,
 		terminalID:  terminalID,
 		channel:     channel,
+		remote:      remote,
 		src:         src,
 		sendFrame:   sendFrame,
+		logger:      logger,
 		suffixStart: -1,
 	}
+	pump.stats.lastLog = time.Now()
 	pump.cond = sync.NewCond(&pump.mu)
 	return pump
 }
 
+type attachmentPumpStats struct {
+	lastLog         time.Time
+	enqueuedFrames  int
+	enqueuedBytes   int
+	sentFrames      int
+	sentBytes       int
+	outputFrames    int
+	screenFrames    int
+	syncLostFrames  int
+	closedFrames    int
+	coalescedFrames int
+	maxPayloadBytes int
+	maxQueueFrames  int
+	maxQueueBytes   int
+}
+
 func (p *attachmentStreamPump) run() error {
+	if p.logger != nil {
+		p.logger.Info("termx attachment stream pump started", "terminal_id", p.terminalID, "remote", p.remote, "channel", p.channel)
+	}
 	readerDone := make(chan struct{})
 	go func() {
 		defer close(readerDone)
@@ -61,6 +90,7 @@ func (p *attachmentStreamPump) run() error {
 	p.mu.Lock()
 	p.inputClosed = true
 	p.cond.Broadcast()
+	p.flushStatsLocked("closed")
 	p.mu.Unlock()
 	<-readerDone
 	return err
@@ -101,6 +131,7 @@ func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) error {
 			if err := p.sendFrame(p.channel, protocol.TypeOutput, msg.Output[:n]); err != nil {
 				return err
 			}
+			p.recordSentFrame(protocol.TypeOutput, n)
 			msg.Output = msg.Output[n:]
 		}
 		return nil
@@ -110,9 +141,29 @@ func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) error {
 		return nil
 	}
 	if len(payload) > protocol.MaxFrameSize {
-		return p.sendFrame(p.channel, protocol.TypeSyncLost, protocol.EncodeSyncLostPayload(uint64(len(payload))))
+		syncLostPayload := protocol.EncodeSyncLostPayload(uint64(len(payload)))
+		if p.logger != nil {
+			p.logger.Warn(
+				"termx attachment stream payload exceeded frame cap",
+				"terminal_id", p.terminalID,
+				"remote", p.remote,
+				"channel", p.channel,
+				"type", streamMessageTypeName(msg.Type),
+				"payload_bytes", len(payload),
+				"max_frame_bytes", protocol.MaxFrameSize,
+			)
+		}
+		if err := p.sendFrame(p.channel, protocol.TypeSyncLost, syncLostPayload); err != nil {
+			return err
+		}
+		p.recordSentFrame(protocol.TypeSyncLost, len(syncLostPayload))
+		return nil
 	}
-	return p.sendFrame(p.channel, typ, payload)
+	if err := p.sendFrame(p.channel, typ, payload); err != nil {
+		return err
+	}
+	p.recordSentFrame(typ, len(payload))
+	return nil
 }
 
 func (p *attachmentStreamPump) closeInput() {
@@ -148,6 +199,7 @@ func (p *attachmentStreamPump) enqueue(msg StreamMessage) {
 	if len(p.queue) > msgCountBefore {
 		perftrace.Count("transport.stream.backlog.enqueued_frames", len(p.queue)-msgCountBefore)
 	}
+	p.recordEnqueuedLocked(msg)
 	p.cond.Signal()
 }
 
@@ -211,7 +263,137 @@ func (p *attachmentStreamPump) collapseSuffixLocked() {
 	if beforeBytes > afterBytes {
 		perftrace.Count("transport.stream.backlog.saved_bytes", beforeBytes-afterBytes)
 	}
+	p.stats.coalescedFrames += suffixLen - 1
+	if p.logger != nil {
+		p.logger.Warn(
+			"termx attachment stream backlog collapsed",
+			"terminal_id", p.terminalID,
+			"remote", p.remote,
+			"channel", p.channel,
+			"suffix_frames", suffixLen,
+			"before_bytes", beforeBytes,
+			"after_bytes", afterBytes,
+			"alternate_screen", p.queueState.snapshot.Modes.AlternateScreen,
+		)
+	}
 	p.suffixStart = len(p.queue) - 1
+}
+
+func (p *attachmentStreamPump) recordEnqueuedLocked(msg StreamMessage) {
+	if p == nil {
+		return
+	}
+	payloadBytes := streamMessagePayloadBytes(msg)
+	p.stats.enqueuedFrames++
+	p.stats.enqueuedBytes += payloadBytes
+	if msg.Type == StreamOutput {
+		p.stats.outputFrames++
+	}
+	if msg.Type == StreamScreenUpdate {
+		p.stats.screenFrames++
+	}
+	if msg.Type == StreamSyncLost {
+		p.stats.syncLostFrames++
+	}
+	if msg.Type == StreamClosed {
+		p.stats.closedFrames++
+	}
+	if payloadBytes > p.stats.maxPayloadBytes {
+		p.stats.maxPayloadBytes = payloadBytes
+	}
+	if len(p.queue) > p.stats.maxQueueFrames {
+		p.stats.maxQueueFrames = len(p.queue)
+	}
+	if p.queueBytes > p.stats.maxQueueBytes {
+		p.stats.maxQueueBytes = p.queueBytes
+	}
+	if payloadBytes >= coreDiagnosticsLargePayloadBytes && p.logger != nil {
+		p.logger.Warn(
+			"termx attachment stream large enqueue",
+			"terminal_id", p.terminalID,
+			"remote", p.remote,
+			"channel", p.channel,
+			"type", streamMessageTypeName(msg.Type),
+			"payload_bytes", payloadBytes,
+			"queue_frames", len(p.queue),
+			"queue_bytes", p.queueBytes,
+		)
+	}
+	if time.Since(p.stats.lastLog) >= coreDiagnosticsInterval {
+		p.flushStatsLocked("interval")
+	}
+}
+
+func (p *attachmentStreamPump) recordSentFrame(typ uint8, payloadBytes int) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.stats.sentFrames++
+	p.stats.sentBytes += payloadBytes
+	if payloadBytes > p.stats.maxPayloadBytes {
+		p.stats.maxPayloadBytes = payloadBytes
+	}
+	if payloadBytes >= coreDiagnosticsLargePayloadBytes && p.logger != nil {
+		p.logger.Warn(
+			"termx attachment stream large send",
+			"terminal_id", p.terminalID,
+			"remote", p.remote,
+			"channel", p.channel,
+			"type", protocolFrameTypeName(typ),
+			"payload_bytes", payloadBytes,
+			"queue_frames", len(p.queue),
+			"queue_bytes", p.queueBytes,
+		)
+	}
+	if time.Since(p.stats.lastLog) >= coreDiagnosticsInterval {
+		p.flushStatsLocked("interval")
+	}
+}
+
+func (p *attachmentStreamPump) flushStatsLocked(reason string) {
+	if p == nil {
+		return
+	}
+	if p.logger == nil || (p.stats.enqueuedFrames == 0 && p.stats.sentFrames == 0 && p.stats.coalescedFrames == 0) {
+		p.stats.lastLog = time.Now()
+		return
+	}
+	p.logger.Info(
+		"termx attachment stream stats",
+		"terminal_id", p.terminalID,
+		"remote", p.remote,
+		"channel", p.channel,
+		"reason", reason,
+		"enqueued_frames", p.stats.enqueuedFrames,
+		"enqueued_bytes", p.stats.enqueuedBytes,
+		"sent_frames", p.stats.sentFrames,
+		"sent_bytes", p.stats.sentBytes,
+		"output_frames", p.stats.outputFrames,
+		"screen_update_frames", p.stats.screenFrames,
+		"sync_lost_frames", p.stats.syncLostFrames,
+		"closed_frames", p.stats.closedFrames,
+		"coalesced_frames", p.stats.coalescedFrames,
+		"max_payload_bytes", p.stats.maxPayloadBytes,
+		"max_queue_frames", p.stats.maxQueueFrames,
+		"max_queue_bytes", p.stats.maxQueueBytes,
+		"current_queue_frames", len(p.queue),
+		"current_queue_bytes", p.queueBytes,
+	)
+	p.stats.lastLog = time.Now()
+	p.stats.enqueuedFrames = 0
+	p.stats.enqueuedBytes = 0
+	p.stats.sentFrames = 0
+	p.stats.sentBytes = 0
+	p.stats.outputFrames = 0
+	p.stats.screenFrames = 0
+	p.stats.syncLostFrames = 0
+	p.stats.closedFrames = 0
+	p.stats.coalescedFrames = 0
+	p.stats.maxPayloadBytes = 0
+	p.stats.maxQueueFrames = len(p.queue)
+	p.stats.maxQueueBytes = p.queueBytes
 }
 
 func (p *attachmentStreamPump) next() (StreamMessage, bool) {
@@ -279,6 +461,14 @@ func estimateStreamMessageWireBytes(msg StreamMessage) int {
 		return 0
 	}
 	return 7 + len(payload)
+}
+
+func streamMessagePayloadBytes(msg StreamMessage) int {
+	_, payload, ok := streamMessageFramePayload(msg)
+	if !ok {
+		return 0
+	}
+	return len(payload)
 }
 
 func streamMessageFramePayload(msg StreamMessage) (uint8, []byte, bool) {

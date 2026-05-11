@@ -2,7 +2,7 @@
  * NativeConnectionProxy — 将 Native WebRTC 连接包装为 RtcSession / RtcConnector
  *
  * 控制面：通过 Capacitor NativeConnection 插件调用 Kotlin 层
- * 数据面：通过 BridgeServer (localhost WebSocket) 收发二进制帧
+ * 数据面：通过带一次性 token 鉴权的 BridgeServer (localhost WebSocket) 收发二进制帧
  *
  * BridgeServer 帧格式：
  *   [1 byte frameType][2 bytes channelId BE][4 bytes payloadLen BE][payload]
@@ -22,6 +22,7 @@ import type {
   RtcSubscription,
 } from '@termx/remote-ui'
 import { NativeConnection, type NativeConnectOpts, type NativeConnectionInfo, type NativeConnectionSnapshot, type NativeStateChangeEvent } from './plugins/nativeConnection'
+import { writeNativeDebugLog } from './nativeDebugLog'
 
 // ─── Frame constants ──────────────────────────────────────────────────────────
 
@@ -30,6 +31,8 @@ const FRAME_OPEN_CHAN: number = 0x02
 const FRAME_CHAN_OPENED: number = 0x03
 const FRAME_CLOSE_CHAN: number = 0x04
 const FRAME_CHAN_ERROR: number = 0x05
+const FRAME_AUTH: number = 0x06
+const FRAME_AUTH_OK: number = 0x07
 const FRAME_STATE_UPDATE: number = 0x10
 const FRAME_TRANSFER_SYNC: number = 0x11     // Native→JS: transfer progress updates
 const FRAME_TRANSFER_REQUEST: number = 0x12  // JS→Native: start/cancel transfer
@@ -43,6 +46,8 @@ const API_REQUEST_TIMEOUT_MS = 60_000
 const NATIVE_RESUME_WAIT_TIMEOUT_MS = 8_000
 const API_CHUNK_MAGIC = 0xc0
 const API_CHUNK_LAST = 0x02
+const BRIDGE_STATS_INTERVAL_MS = 1000
+const BRIDGE_LARGE_PAYLOAD_BYTES = 64 * 1024
 
 export interface TransferSyncItem {
   id: string
@@ -85,6 +90,11 @@ interface PendingChannelOpen {
 interface PendingApiRequest {
   chunks: Uint8Array[]
   timer: ReturnType<typeof setTimeout>
+  method: string
+  path: string
+  startedAt: number
+  bytes: number
+  chunksSeen: number
   resolve(value: unknown): void
   reject(error: Error): void
 }
@@ -120,6 +130,15 @@ class NativeBridgeClient {
   private disconnectHandlers = new Set<() => void>()
   private readyHandlers = new Set<BridgeLifecycleHandler>()
   private bridgeDisconnectHandlers = new Set<BridgeLifecycleHandler>()
+  private frameStats = new Map<string, {
+    rxFrames: number
+    rxBytes: number
+    txFrames: number
+    txBytes: number
+    lastLogAt: number
+    lastRxBytes: number
+    lastTxBytes: number
+  }>()
 
   get isConnected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN
@@ -149,6 +168,13 @@ class NativeBridgeClient {
     await this.getSocket(signal)
     if (this.isChannelOpen(label)) return
 
+    const startedAt = bridgeNow()
+    nativeBridgeLog('channel_open_request', {
+      label,
+      activeLabels: this.activeLabels.size,
+      pendingOpens: this.pendingOpens.size,
+      generation: this.generationValue,
+    })
     let resolve!: (channelId: number) => void
     let reject!: (error: Error) => void
     const promise = new Promise<number>((res, rej) => {
@@ -159,6 +185,11 @@ class NativeBridgeClient {
       const current = this.pendingOpens.get(label)
       if (current?.promise !== promise) return
       this.pendingOpens.delete(label)
+      nativeBridgeLog('channel_open_timeout', {
+        level: 'warn',
+        label,
+        elapsedMs: Math.round(bridgeNow() - startedAt),
+      })
       reject(new Error(`native bridge channel open timed out: ${label}`))
     }, CHANNEL_OPEN_TIMEOUT_MS)
     this.pendingOpens.set(label, { promise, resolve, reject, timer })
@@ -174,7 +205,18 @@ class NativeBridgeClient {
     }
     try {
       await abortable(promise, signal)
+      nativeBridgeLog('channel_open_success', {
+        label,
+        elapsedMs: Math.round(bridgeNow() - startedAt),
+        channelId: this.labelToChannel.get(label),
+      })
     } catch (error) {
+      nativeBridgeLog('channel_open_failed', {
+        level: 'warn',
+        label,
+        elapsedMs: Math.round(bridgeNow() - startedAt),
+        reason: error instanceof Error ? error.message : String(error),
+      })
       this.releaseLabelIfUnused(label)
       throw error
     }
@@ -198,7 +240,14 @@ class NativeBridgeClient {
 
   sendData(label: string, payload: Uint8Array): boolean {
     const channelId = this.labelToChannel.get(label)
-    if (channelId === undefined) return false
+    if (channelId === undefined) {
+      nativeBridgeLog('send_data_missing_channel', {
+        level: 'warn',
+        label,
+        bytes: payload.byteLength,
+      })
+      return false
+    }
     return this.sendFrame(FRAME_DATA, channelId, payload)
   }
 
@@ -274,6 +323,11 @@ class NativeBridgeClient {
     if (this.destroyed) return
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     this.reconnectTimer = null
+    nativeBridgeLog('force_reconnect', {
+      level: 'warn',
+      activeLabels: this.activeLabels.size,
+      generation: this.generationValue,
+    })
     const ws = this.ws
     this.socketEpoch += 1
     this.ws = null
@@ -314,8 +368,16 @@ class NativeBridgeClient {
     if (!this.connectPromise) {
       const epoch = this.socketEpoch
       let promise!: Promise<WebSocket>
-      promise = NativeConnection.getBridgePort()
-        .then(({ port }) => openWebSocket(`ws://127.0.0.1:${port}`))
+      const startedAt = bridgeNow()
+      nativeBridgeLog('socket_connect_start', {
+        epoch,
+        activeLabels: this.activeLabels.size,
+      })
+      promise = NativeConnection.getBridgeEndpoint()
+        .then(({ port, token }) => {
+          nativeBridgeLog('socket_endpoint', { port, tokenBytes: token.length })
+          return openAuthenticatedWebSocket(`ws://127.0.0.1:${port}`, token, signal)
+        })
         .then((ws) => {
           if (this.destroyed || epoch !== this.socketEpoch) {
             try {
@@ -326,6 +388,12 @@ class NativeBridgeClient {
           }
           this.ws = ws
           if (this.connectPromise === promise) this.connectPromise = null
+          nativeBridgeLog('socket_connected', {
+            level: 'info',
+            elapsedMs: Math.round(bridgeNow() - startedAt),
+            epoch,
+            activeLabels: this.activeLabels.size,
+          })
           ws.addEventListener('message', (ev: MessageEvent) => {
             if (ev.data instanceof ArrayBuffer) this.handleFrame(new Uint8Array(ev.data))
           })
@@ -336,6 +404,11 @@ class NativeBridgeClient {
               return
             }
             if (this.ws !== ws) return
+            nativeBridgeLog('socket_closed', {
+              level: 'warn',
+              activeLabels: this.activeLabels.size,
+              mappedChannels: this.channelToLabel.size,
+            })
             this.ws = null
             this.clearChannelMappings(new Error('native bridge WebSocket closed'), { notifyChannels: false })
             this.generationValue += 1
@@ -347,6 +420,11 @@ class NativeBridgeClient {
           return ws
         })
         .catch((error) => {
+          nativeBridgeLog('socket_connect_failed', {
+            level: 'warn',
+            elapsedMs: Math.round(bridgeNow() - startedAt),
+            reason: error instanceof Error ? error.message : String(error),
+          })
           if (this.connectPromise === promise) {
             this.connectPromise = null
             this.scheduleReconnect()
@@ -360,6 +438,10 @@ class NativeBridgeClient {
 
   private scheduleReconnect(): void {
     if (this.destroyed || this.reconnectTimer || this.activeLabels.size === 0) return
+    nativeBridgeLog('socket_reconnect_scheduled', {
+      activeLabels: this.activeLabels.size,
+      generation: this.generationValue,
+    })
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null
       if (this.destroyed || this.activeLabels.size === 0) return
@@ -368,6 +450,10 @@ class NativeBridgeClient {
   }
 
   private reopenActiveLabels(): void {
+    nativeBridgeLog('reopen_active_labels', {
+      activeLabels: this.activeLabels.size,
+      labels: Array.from(this.activeLabels).slice(0, 10),
+    })
     for (const label of this.activeLabels) {
       void this.openChannel(label).catch(() => {})
     }
@@ -382,6 +468,15 @@ class NativeBridgeClient {
   }
 
   private clearChannelMappings(error: Error, options: { notifyChannels: boolean }): void {
+    if (this.labelToChannel.size > 0 || this.pendingOpens.size > 0) {
+      nativeBridgeLog('clear_channel_mappings', {
+        level: 'warn',
+        mappedChannels: this.labelToChannel.size,
+        pendingOpens: this.pendingOpens.size,
+        notifyChannels: options.notifyChannels,
+        reason: error.message,
+      })
+    }
     this.labelToChannel.clear()
     this.channelToLabel.clear()
     for (const pending of this.pendingOpens.values()) {
@@ -397,17 +492,35 @@ class NativeBridgeClient {
   }
 
   private handleFrame(buf: Uint8Array): void {
-    if (buf.length < HEADER_SIZE) return
+    if (buf.length < HEADER_SIZE) {
+      nativeBridgeLog('short_frame', { level: 'warn', bytes: buf.byteLength })
+      return
+    }
     const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength)
     const frameType = view.getUint8(0)
     const channelId = view.getUint16(1, false)
     const payloadLen = view.getUint32(3, false)
+    if (payloadLen > buf.length - HEADER_SIZE) {
+      nativeBridgeLog('truncated_frame', {
+        level: 'warn',
+        frameType,
+        channelId,
+        payloadLen,
+        frameBytes: buf.byteLength,
+      })
+      return
+    }
     const payload = buf.slice(HEADER_SIZE, HEADER_SIZE + payloadLen)
 
     if (frameType === FRAME_CHAN_OPENED) {
       const label = new TextDecoder().decode(payload)
       this.labelToChannel.set(label, channelId)
       this.channelToLabel.set(channelId, label)
+      nativeBridgeLog('channel_opened_frame', {
+        label,
+        channelId,
+        pending: this.pendingOpens.has(label),
+      })
       const pending = this.pendingOpens.get(label)
       if (pending) {
         this.pendingOpens.delete(label)
@@ -419,7 +532,15 @@ class NativeBridgeClient {
 
     if (frameType === FRAME_DATA) {
       const label = this.channelToLabel.get(channelId)
-      if (!label) return
+      if (!label) {
+        nativeBridgeLog('data_unknown_channel', {
+          level: 'warn',
+          channelId,
+          bytes: payload.byteLength,
+        })
+        return
+      }
+      this.noteFrameStat(label, 'rx', payload.byteLength)
       const handlers = this.dataHandlers.get(label)
       if (handlers) {
         for (const handler of handlers) handler(payload)
@@ -431,8 +552,21 @@ class NativeBridgeClient {
       try {
         const snapshot = JSON.parse(new TextDecoder().decode(payload)) as NativeConnectionSnapshot | NativeStateChangeEvent
         cacheNativeState(snapshot)
+        nativeBridgeLog('state_update', {
+          machineId: snapshot.machineId,
+          phase: snapshot.phase,
+          path: snapshot.path,
+          relayInUse: snapshot.relayInUse === true,
+          statusText: snapshot.statusText,
+        })
         for (const handler of this.stateUpdateHandlers) handler(snapshot)
-      } catch { /* ignore malformed */ }
+      } catch (error) {
+        nativeBridgeLog('state_update_parse_failed', {
+          level: 'warn',
+          bytes: payload.byteLength,
+          reason: error instanceof Error ? error.message : String(error),
+        })
+      }
       return
     }
 
@@ -447,6 +581,11 @@ class NativeBridgeClient {
     if (frameType === FRAME_SYNC_RESPONSE) {
       try {
         const data = JSON.parse(new TextDecoder().decode(payload)) as SyncResponsePayload
+        nativeBridgeLog('sync_response', {
+          stores: Array.isArray(data.stores) ? data.stores.length : 0,
+          transfers: Array.isArray(data.transfers) ? data.transfers.length : 0,
+          bytes: payload.byteLength,
+        })
         if (Array.isArray(data.stores)) {
           for (const store of data.stores) {
             if (isNativeStatePayload(store)) {
@@ -456,7 +595,13 @@ class NativeBridgeClient {
           }
         }
         for (const handler of this.syncResponseHandlers) handler(data)
-      } catch { /* ignore malformed */ }
+      } catch (error) {
+        nativeBridgeLog('sync_response_parse_failed', {
+          level: 'warn',
+          bytes: payload.byteLength,
+          reason: error instanceof Error ? error.message : String(error),
+        })
+      }
       return
     }
 
@@ -466,6 +611,12 @@ class NativeBridgeClient {
       const error = new Error(frameType === FRAME_CHAN_ERROR
         ? new TextDecoder().decode(payload) || 'native bridge channel error'
         : 'native bridge channel closed')
+      nativeBridgeLog(frameType === FRAME_CHAN_ERROR ? 'channel_error_frame' : 'channel_close_frame', {
+        level: 'warn',
+        label,
+        channelId,
+        message: error.message,
+      })
       this.labelToChannel.delete(label)
       this.channelToLabel.delete(channelId)
       this.activeLabels.delete(label)
@@ -484,7 +635,18 @@ class NativeBridgeClient {
 
   private sendFrame(frameType: number, channelId: number, payload: Uint8Array): boolean {
     const ws = this.ws
-    if (!ws || ws.readyState !== WebSocket.OPEN) return false
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      nativeBridgeLog('send_frame_socket_closed', {
+        level: 'warn',
+        frameType,
+        channelId,
+        bytes: payload.byteLength,
+        readyState: ws?.readyState,
+      })
+      return false
+    }
+    const label = channelId === CHAN_CONTROL ? 'control' : this.channelToLabel.get(channelId)
+    if (label) this.noteFrameStat(label, 'tx', payload.byteLength)
     const buf = new ArrayBuffer(HEADER_SIZE + payload.length)
     const view = new DataView(buf)
     view.setUint8(0, frameType)
@@ -493,6 +655,58 @@ class NativeBridgeClient {
     new Uint8Array(buf, HEADER_SIZE).set(payload)
     ws.send(buf)
     return true
+  }
+
+  private noteFrameStat(label: string, direction: 'rx' | 'tx', bytes: number): void {
+    const now = bridgeNow()
+    let stats = this.frameStats.get(label)
+    if (!stats) {
+      stats = {
+        rxFrames: 0,
+        rxBytes: 0,
+        txFrames: 0,
+        txBytes: 0,
+        lastLogAt: now,
+        lastRxBytes: 0,
+        lastTxBytes: 0,
+      }
+      this.frameStats.set(label, stats)
+    }
+    if (direction === 'rx') {
+      stats.rxFrames += 1
+      stats.rxBytes += bytes
+    } else {
+      stats.txFrames += 1
+      stats.txBytes += bytes
+    }
+    if (bytes >= BRIDGE_LARGE_PAYLOAD_BYTES) {
+      nativeBridgeLog('large_payload', {
+        level: 'warn',
+        label,
+        direction,
+        bytes,
+        rxBytes: stats.rxBytes,
+        txBytes: stats.txBytes,
+      })
+    }
+    if (now - stats.lastLogAt < BRIDGE_STATS_INTERVAL_MS) return
+    const elapsedSeconds = Math.max(0.001, (now - stats.lastLogAt) / 1000)
+    const intervalRxBytes = stats.rxBytes - stats.lastRxBytes
+    const intervalTxBytes = stats.txBytes - stats.lastTxBytes
+    nativeBridgeLog('channel_stats', {
+      label,
+      rxFrames: stats.rxFrames,
+      rxBytes: stats.rxBytes,
+      txFrames: stats.txFrames,
+      txBytes: stats.txBytes,
+      intervalRxBytes,
+      intervalTxBytes,
+      rxBytesPerSecond: Math.round(intervalRxBytes / elapsedSeconds),
+      txBytesPerSecond: Math.round(intervalTxBytes / elapsedSeconds),
+    })
+    stats.lastLogAt = now
+    stats.lastRxBytes = stats.rxBytes
+    stats.lastTxBytes = stats.txBytes
   }
 }
 
@@ -621,10 +835,15 @@ export class NativeRtcSession implements RtcSession {
     return false
   }
 
-  private async openChannel(label: string): Promise<string> {
+  private async openChannel(label: string): Promise<void> {
     if (this.closed) throw new Error('native bridge session is closed')
     await this.bridge.openChannel(label)
-    return label
+  }
+
+  private async ensureChannelOpen(label: string): Promise<void> {
+    if (this.closed) throw new Error('native bridge session is closed')
+    if (this.bridge.isChannelOpen(label)) return
+    await this.bridge.openChannel(label)
   }
 
   private makeBinaryChannel(label: string): RtcBinaryChannel {
@@ -662,7 +881,7 @@ export class NativeRtcSession implements RtcSession {
           },
         }
       },
-      waitOpen: () => Promise.resolve(),
+      waitOpen: () => this.ensureChannelOpen(label),
     }
   }
 
@@ -721,6 +940,16 @@ export class NativeRtcSession implements RtcSession {
       if (!request) return
       pending.delete(id)
       clearTimeout(request.timer)
+      nativeBridgeLog('api_request_reject', {
+        level: 'warn',
+        id,
+        method: request.method,
+        path: request.path,
+        elapsedMs: Math.round(bridgeNow() - request.startedAt),
+        bytes: request.bytes,
+        chunks: request.chunksSeen,
+        reason: error.message,
+      })
       request.reject(error)
     }
 
@@ -729,6 +958,15 @@ export class NativeRtcSession implements RtcSession {
       if (!request) return
       pending.delete(id)
       clearTimeout(request.timer)
+      nativeBridgeLog('api_request_resolve', {
+        id,
+        method: request.method,
+        path: request.path,
+        elapsedMs: Math.round(bridgeNow() - request.startedAt),
+        bytes: request.bytes,
+        chunks: request.chunksSeen,
+        responseBytes: estimateJSONBytes(value),
+      })
       request.resolve(value)
     }
 
@@ -743,6 +981,8 @@ export class NativeRtcSession implements RtcSession {
       const request = pending.get(chunk.id)
       if (!request) return
       request.chunks.push(chunk.payload)
+      request.bytes += chunk.payload.byteLength
+      request.chunksSeen += 1
       if (!chunk.last) return
       let response: { status: number; body: unknown }
       try {
@@ -779,6 +1019,11 @@ export class NativeRtcSession implements RtcSession {
           pending.set(id, {
             chunks: [],
             timer,
+            method: payload.method,
+            path: payload.path,
+            startedAt: bridgeNow(),
+            bytes: 0,
+            chunksSeen: 0,
             resolve: resolve as (value: unknown) => void,
             reject,
           })
@@ -788,7 +1033,14 @@ export class NativeRtcSession implements RtcSession {
             path: payload.path,
             ...(payload.body !== undefined ? { body: payload.body } : {}),
           }
-          if (!session.bridge.sendData(label, new TextEncoder().encode(JSON.stringify(request)))) {
+          const requestBytes = new TextEncoder().encode(JSON.stringify(request))
+          nativeBridgeLog('api_request_send', {
+            id,
+            method: payload.method,
+            path: payload.path,
+            requestBytes: requestBytes.byteLength,
+          })
+          if (!session.bridge.sendData(label, requestBytes)) {
             rejectRequest(id, new Error('native bridge WebSocket is not open'))
           }
         })
@@ -1339,6 +1591,34 @@ function normalizeNativePhaseText(phase: string): string {
   return 'Ready'
 }
 
+function bridgeNow(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+}
+
+function nativeBridgeLog(event: string, details: Record<string, unknown> = {}): void {
+  try {
+    const level = details.level === 'error' || details.level === 'warn' || details.level === 'info' || details.level === 'debug'
+      ? details.level
+      : 'debug'
+    const { level: _level, ...metadata } = details
+    const method = level === 'error' ? 'error' : level === 'warn' ? 'warn' : level === 'info' ? 'info' : 'debug'
+    console[method](`[termx:native-bridge] ${event}`, metadata)
+    writeNativeDebugLog(level, 'NativeBridgeJS', `${event} ${JSON.stringify(metadata)}`)
+  } catch {
+    // Diagnostics must not affect bridge behavior.
+  }
+}
+
+function estimateJSONBytes(value: unknown): number {
+  try {
+    return new TextEncoder().encode(JSON.stringify(value)).byteLength
+  } catch {
+    return 0
+  }
+}
+
 const terminalInventoryProtocolEventNames = new Map<number, string>([
   [1, 'terminal_created'],
   [2, 'terminal_state_changed'],
@@ -1426,6 +1706,103 @@ function apiResponseErrorMessage(body: unknown, status: number): string {
     if (typeof record.message === 'string' && record.message) return record.message
   }
   return `native api failed: ${status}`
+}
+
+async function openAuthenticatedWebSocket(url: string, token: string, signal?: AbortSignal): Promise<WebSocket> {
+  const ws = await openWebSocket(url, signal)
+  try {
+    await authenticateBridgeSocket(ws, token, signal)
+    return ws
+  } catch (error) {
+    try {
+      ws.close()
+    } catch { /* ignore */ }
+    throw error
+  }
+}
+
+function authenticateBridgeSocket(ws: WebSocket, token: string, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const finishResolve = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve()
+    }
+    const finishReject = (error: Error) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(error)
+    }
+    const cleanup = () => {
+      clearTimeout(timer)
+      ws.removeEventListener('message', onMessage)
+      ws.removeEventListener('close', onClose)
+      ws.removeEventListener('error', onError)
+      signal?.removeEventListener('abort', onAbort)
+    }
+    const onAbort = () => {
+      finishReject(new Error('aborted'))
+    }
+    const onClose = () => {
+      finishReject(new Error('native bridge WebSocket closed before authentication'))
+    }
+    const onError = () => {
+      finishReject(new Error('native bridge WebSocket authentication failed'))
+    }
+    const onMessage = (ev: MessageEvent) => {
+      if (!(ev.data instanceof ArrayBuffer)) return
+      const frame = parseBridgeFrame(new Uint8Array(ev.data))
+      if (!frame) return
+      if (frame.frameType === FRAME_AUTH_OK) {
+        finishResolve()
+        return
+      }
+      if (frame.frameType === FRAME_CHAN_ERROR) {
+        const message = new TextDecoder().decode(frame.payload) || 'native bridge authentication rejected'
+        finishReject(new Error(message))
+      }
+    }
+    const timer = setTimeout(() => {
+      finishReject(new Error('native bridge authentication timed out'))
+    }, 5000)
+
+    if (signal?.aborted) {
+      finishReject(new Error('aborted'))
+      return
+    }
+    ws.addEventListener('message', onMessage)
+    ws.addEventListener('close', onClose)
+    ws.addEventListener('error', onError)
+    signal?.addEventListener('abort', onAbort, { once: true })
+    sendBridgeFrame(ws, FRAME_AUTH, CHAN_CONTROL, new TextEncoder().encode(token))
+  })
+}
+
+function parseBridgeFrame(buf: Uint8Array): { frameType: number; channelId: number; payload: Uint8Array } | null {
+  if (buf.length < HEADER_SIZE) return null
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength)
+  const frameType = view.getUint8(0)
+  const channelId = view.getUint16(1, false)
+  const payloadLen = view.getUint32(3, false)
+  if (payloadLen > buf.length - HEADER_SIZE) return null
+  return {
+    frameType,
+    channelId,
+    payload: buf.slice(HEADER_SIZE, HEADER_SIZE + payloadLen),
+  }
+}
+
+function sendBridgeFrame(ws: WebSocket, frameType: number, channelId: number, payload: Uint8Array): void {
+  const buf = new ArrayBuffer(HEADER_SIZE + payload.length)
+  const view = new DataView(buf)
+  view.setUint8(0, frameType)
+  view.setUint16(1, channelId, false)
+  view.setUint32(3, payload.length, false)
+  new Uint8Array(buf, HEADER_SIZE).set(payload)
+  ws.send(buf)
 }
 
 function openWebSocket(url: string, signal?: AbortSignal): Promise<WebSocket> {

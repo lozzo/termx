@@ -1,4 +1,4 @@
-import type { RtcSession } from '../core/transport'
+import type { RtcBinaryChannel, RtcSession } from '../core/transport'
 
 export type FileEntryType = 'file' | 'dir' | 'symlink' | 'symlink-dir'
 
@@ -9,6 +9,10 @@ export interface FileEntry {
   mode?: string | undefined
   modTime?: string | undefined
   linkTarget?: string | undefined
+  childCount?: number | undefined
+  hardLink?: boolean | undefined
+  linkCount?: number | undefined
+  inode?: number | undefined
 }
 
 export interface DirListResponse {
@@ -37,6 +41,8 @@ export interface DownloadInitResponse {
   name: string
   size: number
   chunk_size: number
+  offset?: number | undefined
+  length?: number | undefined
 }
 
 export type TransferStatus = 'pending' | 'transferring' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'missing'
@@ -78,6 +84,30 @@ export interface FileTransferContext {
   isNative: boolean
 }
 
+export interface FilePreviewStreamProgress {
+  receivedSize: number
+  totalSize: number
+}
+
+export interface FilePreviewStreamChunk extends FilePreviewStreamProgress {
+  chunk: ArrayBuffer
+}
+
+export interface FilePreviewStreamResult {
+  blob: Blob
+  receivedSize: number
+  offset: number
+  totalSize: number
+}
+
+export interface FilePreviewStreamOptions {
+  signal?: AbortSignal | undefined
+  offset?: number | undefined
+  length?: number | undefined
+  onChunk?: ((chunk: FilePreviewStreamChunk) => void) | undefined
+  onProgress?: ((progress: FilePreviewStreamProgress) => void) | undefined
+}
+
 export interface FileApi {
   listDir(path?: string, offset?: number, limit?: number): Promise<DirListResponse>
   stat(path: string): Promise<FileEntry>
@@ -89,6 +119,12 @@ export interface FileApi {
   move(paths: string[], targetDir: string): Promise<{ task_id: string }>
   batchDelete(paths: string[]): Promise<{ task_id: string }>
   downloadInit(path: string, offset?: number, transferId?: string): Promise<DownloadInitResponse>
+  downloadRangeInit(path: string, offset: number, length: number, transferId?: string): Promise<DownloadInitResponse>
+}
+
+export interface FilePreviewSource {
+  preview(path: string, maxSize?: number): Promise<FilePreviewResponse>
+  stream(path: string, mimeType: string, options?: FilePreviewStreamOptions): Promise<FilePreviewStreamResult>
 }
 
 export function createFileApi(session: Pick<RtcSession, 'openApi'>): FileApi {
@@ -141,7 +177,140 @@ export function createFileApi(session: Pick<RtcSession, 'openApi'>): FileApi {
         ...(offset > 0 ? { offset } : {}),
         ...(transferId ? { transfer_id: transferId } : {}),
       }),
+    downloadRangeInit: (path: string, offset: number, length: number, transferId?: string) =>
+      request<DownloadInitResponse>('POST', '/files/download/init', {
+        path,
+        ...(offset > 0 ? { offset } : {}),
+        ...(length > 0 ? { length } : {}),
+        ...(transferId ? { transfer_id: transferId } : {}),
+      }),
   }
+}
+
+export function createFilePreviewSource(session: Pick<RtcSession, 'openApi' | 'openFileTransfer'>): FilePreviewSource {
+  const api = createFileApi(session)
+  return {
+    preview: api.preview,
+    async stream(path: string, mimeType: string, options: FilePreviewStreamOptions = {}) {
+      const transferId = `preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+      const offset = normalizeByteRangeValue(options.offset)
+      const init = await downloadRangeInit(api, path, offset, normalizeByteRangeValue(options.length), transferId)
+      throwIfAborted(options.signal)
+      const channel = await session.openFileTransfer(init.transfer_id)
+      try {
+        return await readFileTransferStream(channel, init.size, mimeType, {
+          ...options,
+          offset: init.offset ?? offset,
+        })
+      } finally {
+        channel.close()
+      }
+    },
+  }
+}
+
+async function downloadRangeInit(
+  api: FileApi,
+  path: string,
+  offset: number,
+  length: number,
+  transferId: string,
+): Promise<DownloadInitResponse> {
+  if (length > 0) {
+    return await api.downloadRangeInit(path, offset, length, transferId)
+  }
+  return await api.downloadInit(path, offset, transferId)
+}
+
+const fileFrameData = 0x01
+const fileFrameComplete = 0x02
+const fileFrameError = 0xff
+
+async function readFileTransferStream(
+  channel: RtcBinaryChannel,
+  totalSize: number,
+  mimeType: string,
+  options: FilePreviewStreamOptions,
+): Promise<FilePreviewStreamResult> {
+  await channel.waitOpen()
+  throwIfAborted(options.signal)
+
+  return await new Promise<FilePreviewStreamResult>((resolve, reject) => {
+    const chunks: ArrayBuffer[] = []
+    let receivedSize = 0
+    let settled = false
+    let messageSubscription: { close(): void } | null = null
+    let closeSubscription: { close(): void } | null = null
+
+    const cleanup = () => {
+      messageSubscription?.close()
+      closeSubscription?.close()
+      options.signal?.removeEventListener('abort', abortListener)
+    }
+    const finish = (result: FilePreviewStreamResult) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(result)
+    }
+    const fail = (err: unknown) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(err)
+    }
+    const abortListener = () => {
+      channel.close()
+      fail(abortError())
+    }
+    messageSubscription = channel.onMessage((frame) => {
+      if (settled) return
+      if (frame.length === 0) return
+      const frameType = frame[0]
+      if (frameType === fileFrameData) {
+        if (frame.length < 5) {
+          fail(new Error('file preview stream sent an invalid data frame'))
+          return
+        }
+        const payload = frame.slice(5)
+        const chunk = new ArrayBuffer(payload.byteLength)
+        new Uint8Array(chunk).set(payload)
+        chunks.push(chunk)
+        receivedSize += payload.byteLength
+        try {
+          options.onChunk?.({ chunk, receivedSize, totalSize })
+          options.onProgress?.({ receivedSize, totalSize })
+        } catch (err) {
+          fail(err)
+        }
+        return
+      }
+      if (frameType === fileFrameComplete) {
+        try {
+          options.onProgress?.({ receivedSize, totalSize })
+        } catch (err) {
+          fail(err)
+          return
+        }
+        finish({
+          blob: new Blob(chunks, { type: mimeType.trim() || 'application/octet-stream' }),
+          receivedSize,
+          offset: options.offset ?? 0,
+          totalSize,
+        })
+        return
+      }
+      if (frameType === fileFrameError) {
+        fail(new Error(new TextDecoder().decode(frame.slice(1)) || 'file preview stream failed'))
+      }
+    })
+    closeSubscription = channel.onClose(() => {
+      if (!settled) fail(new Error('file preview stream closed before completion'))
+    })
+
+    options.signal?.addEventListener('abort', abortListener, { once: true })
+    if (options.signal?.aborted) abortListener()
+  })
 }
 
 interface RawFileEntryResponse {
@@ -155,6 +324,13 @@ interface RawFileEntryResponse {
   modifiedAt?: string
   link_target?: string
   linkTarget?: string
+  child_count?: number
+  childCount?: number
+  hard_link?: boolean
+  hardLink?: boolean
+  link_count?: number
+  linkCount?: number
+  inode?: number
 }
 
 interface RawDirListResponse {
@@ -182,6 +358,10 @@ function normalizeFileEntryResponse(raw: RawFileEntryResponse): FileEntry {
     mode: raw.mode,
     modTime: raw.mod_time ?? raw.modTime ?? raw.modified_at ?? raw.modifiedAt,
     linkTarget: raw.link_target ?? raw.linkTarget,
+    childCount: typeof raw.child_count === 'number' ? raw.child_count : typeof raw.childCount === 'number' ? raw.childCount : undefined,
+    hardLink: raw.hard_link === true || raw.hardLink === true,
+    linkCount: typeof raw.link_count === 'number' ? raw.link_count : typeof raw.linkCount === 'number' ? raw.linkCount : undefined,
+    inode: typeof raw.inode === 'number' ? raw.inode : undefined,
   }
 }
 
@@ -237,4 +417,18 @@ function basename(path: string): string {
 function normalizeFileError(err: unknown): Error {
   if (err instanceof Error) return err
   return new Error(String(err))
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw abortError()
+}
+
+function normalizeByteRangeValue(value: number | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+}
+
+function abortError(): Error {
+  const err = new Error('File preview stream was cancelled.')
+  err.name = 'AbortError'
+  return err
 }

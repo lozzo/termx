@@ -13,7 +13,8 @@ type Client interface {
 	SetMetadata(ctx context.Context, terminalID string, name string, tags map[string]string) error
 	List(ctx context.Context) (*protocol.ListResult, error)
 	Events(ctx context.Context, params protocol.EventsParams) (<-chan protocol.Event, error)
-	Attach(ctx context.Context, terminalID string, mode string) (*protocol.AttachResult, error)
+	Attach(ctx context.Context, params protocol.AttachParams) (*protocol.AttachResult, error)
+	EnsureResize(ctx context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error)
 	Snapshot(ctx context.Context, terminalID string, offset, limit int) (*protocol.Snapshot, error)
 	Input(ctx context.Context, channel uint16, data []byte) error
 	Resize(ctx context.Context, channel uint16, cols, rows uint16) error
@@ -63,8 +64,12 @@ func (c *ProtocolClient) Events(ctx context.Context, params protocol.EventsParam
 	return c.inner.Events(ctx, params)
 }
 
-func (c *ProtocolClient) Attach(ctx context.Context, terminalID string, mode string) (*protocol.AttachResult, error) {
-	return c.inner.Attach(ctx, terminalID, mode)
+func (c *ProtocolClient) Attach(ctx context.Context, params protocol.AttachParams) (*protocol.AttachResult, error) {
+	return c.inner.AttachWithOptions(ctx, params)
+}
+
+func (c *ProtocolClient) EnsureResize(ctx context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error) {
+	return c.inner.EnsureResize(ctx, params)
 }
 
 func (c *ProtocolClient) Snapshot(ctx context.Context, terminalID string, offset, limit int) (*protocol.Snapshot, error) {

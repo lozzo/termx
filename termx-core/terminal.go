@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
@@ -33,6 +34,7 @@ type terminalConfig struct {
 	ScrollbackSize     int
 	KeepAfterExit      time.Duration
 	LiveOutputThrottle liveOutputThrottleConfig
+	Logger             *slog.Logger
 	RemoveFunc         func(string, string)
 	UpdateFunc         func()
 }
@@ -42,6 +44,7 @@ type Terminal struct {
 	pty    *ptymgr.PTY
 	vterm  *vterm.VTerm
 	stream *fanout.Fanout
+	logger *slog.Logger
 
 	mu             sync.RWMutex
 	id             string
@@ -74,8 +77,9 @@ type Terminal struct {
 	listInfoCache     *TerminalInfo
 	metadataVersion   uint64
 
-	attachMu    sync.Mutex
-	attachments map[string]AttachInfo
+	attachMu         sync.Mutex
+	attachments      map[string]AttachInfo
+	resizeOwnerEpoch uint64
 
 	pendingVTermEpoch       uint64
 	pendingVTermOutput      []byte
@@ -110,6 +114,7 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 		pty:                p,
 		vterm:              vt,
 		stream:             fanout.New(),
+		logger:             cfg.Logger,
 		id:                 cfg.ID,
 		name:               cfg.Name,
 		command:            append([]string(nil), cfg.Command...),
@@ -216,6 +221,12 @@ func (t *Terminal) Size() Size {
 	return t.size
 }
 
+func (t *Terminal) RunningSize() (Size, bool) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.size, t.state != StateExited
+}
+
 func (t *Terminal) CurrentWorkingDirectory(ctx context.Context) string {
 	if t == nil {
 		return ""
@@ -245,6 +256,10 @@ func (t *Terminal) Done() <-chan struct{} {
 }
 
 func (t *Terminal) Subscribe(ctx context.Context) <-chan StreamMessage {
+	return t.SubscribeWithOptions(ctx, TerminalSubscribeOptions{})
+}
+
+func (t *Terminal) SubscribeWithOptions(ctx context.Context, opts TerminalSubscribeOptions) <-chan StreamMessage {
 	t.streamMu.Lock()
 	t.flushPendingVTermOutputLocked()
 	t.flushPendingLiveOutputLocked(t.stream)
@@ -286,7 +301,7 @@ func (t *Terminal) Subscribe(ctx context.Context) <-chan StreamMessage {
 			case dst <- cloneTerminalStreamMessage(msg):
 			}
 		}
-		t.forwardTerminalStreamMessages(ctx, src, dst)
+		t.forwardTerminalStreamMessages(ctx, src, dst, opts)
 	}()
 	return dst
 }
@@ -330,8 +345,12 @@ func forwardLiveStreamMessages(ctx context.Context, src <-chan fanout.StreamMess
 	}
 }
 
-func (t *Terminal) forwardTerminalStreamMessages(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage) {
-	if t == nil {
+func (t *Terminal) forwardTerminalStreamMessages(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage, opts ...TerminalSubscribeOptions) {
+	var subscribeOpts TerminalSubscribeOptions
+	if len(opts) > 0 {
+		subscribeOpts = opts[0]
+	}
+	if t == nil || subscribeOpts.RawOutput {
 		forwardTerminalStreamMessagesImmediate(ctx, src, dst, nil)
 		return
 	}
@@ -578,11 +597,15 @@ func (t *Terminal) Resize(cols, rows uint16) error {
 		t.mu.Unlock()
 		return ErrTerminalExited
 	}
+	old := t.size
+	if old.Cols == cols && old.Rows == rows {
+		t.mu.Unlock()
+		return nil
+	}
 	if terminalmeta.SizeLocked(t.tags) {
 		t.mu.Unlock()
 		return fmt.Errorf("%w: terminal %q size is locked", ErrPermissionDenied, t.id)
 	}
-	old := t.size
 	t.size = Size{Cols: cols, Rows: rows}
 	t.invalidateProtocolInfoCacheLocked()
 	t.mu.Unlock()
@@ -797,6 +820,25 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	}
 }
 
+func (t *Terminal) HistoryReplay(opts HistoryReplayOptions) HistoryReplayResult {
+	t.flushPendingVTermOutput(0)
+	if t == nil || t.vterm == nil {
+		return HistoryReplayResult{}
+	}
+	replay, rows, hasMore := t.vterm.EncodeHistoryReplay(opts.BeforeOffset, opts.Limit)
+	t.mu.RLock()
+	id := t.id
+	t.mu.RUnlock()
+	return HistoryReplayResult{
+		TerminalID:   id,
+		BeforeOffset: opts.BeforeOffset,
+		Limit:        opts.Limit,
+		Rows:         rows,
+		HasMore:      hasMore,
+		Replay:       string(replay),
+	}
+}
+
 func (t *Terminal) SetTags(tags map[string]string) {
 	t.mu.Lock()
 	if t.tags == nil {
@@ -833,14 +875,22 @@ func (t *Terminal) SetMetadata(name string, tags map[string]string) {
 	})
 }
 
-func (t *Terminal) AddAttachment(id, remote string, mode AttachMode) {
+func (t *Terminal) AddAttachment(id, remote string, mode AttachMode, surfaceID, viewID string, resizeOwner bool) {
 	t.attachMu.Lock()
-	defer t.attachMu.Unlock()
-	t.attachments[id] = AttachInfo{
-		RemoteAddr: remote,
-		Mode:       string(mode),
-		AttachedAt: time.Now().UTC(),
+	if resizeOwner {
+		t.clearResizeOwnersLocked("")
+		t.resizeOwnerEpoch++
 	}
+	t.attachments[id] = AttachInfo{
+		RemoteAddr:  remote,
+		Mode:        string(mode),
+		SurfaceID:   strings.TrimSpace(surfaceID),
+		ViewID:      strings.TrimSpace(viewID),
+		ResizeOwner: resizeOwner,
+		AttachedAt:  time.Now().UTC(),
+	}
+	t.attachMu.Unlock()
+	t.invalidateAttachmentInfo()
 }
 
 func (t *Terminal) AttachmentMode(id string) (AttachMode, bool) {
@@ -853,12 +903,75 @@ func (t *Terminal) AttachmentMode(id string) (AttachMode, bool) {
 	return AttachMode(info.Mode), true
 }
 
+func (t *Terminal) AttachmentResizeOwner(id string) bool {
+	t.attachMu.Lock()
+	defer t.attachMu.Unlock()
+	info, ok := t.attachments[id]
+	return ok && info.ResizeOwner
+}
+
+func (t *Terminal) SetAttachmentResizeOwner(id string, resizeOwner bool) {
+	t.attachMu.Lock()
+	info, ok := t.attachments[id]
+	if !ok || info.ResizeOwner == resizeOwner {
+		t.attachMu.Unlock()
+		return
+	}
+	if resizeOwner {
+		t.clearResizeOwnersLocked(id)
+	}
+	info.ResizeOwner = resizeOwner
+	t.attachments[id] = info
+	t.resizeOwnerEpoch++
+	t.attachMu.Unlock()
+	t.invalidateAttachmentInfo()
+}
+
+func (t *Terminal) SetAttachmentResizeSurface(id string, surfaceID, viewID string) {
+	t.attachMu.Lock()
+	info, ok := t.attachments[id]
+	if !ok {
+		t.attachMu.Unlock()
+		return
+	}
+	nextSurfaceID := strings.TrimSpace(surfaceID)
+	nextViewID := strings.TrimSpace(viewID)
+	if info.SurfaceID == nextSurfaceID && info.ViewID == nextViewID {
+		t.attachMu.Unlock()
+		return
+	}
+	info.SurfaceID = nextSurfaceID
+	info.ViewID = nextViewID
+	t.attachments[id] = info
+	if info.ResizeOwner {
+		t.resizeOwnerEpoch++
+	}
+	t.attachMu.Unlock()
+	t.invalidateAttachmentInfo()
+}
+
+func (t *Terminal) clearResizeOwnersLocked(exceptID string) {
+	for id, info := range t.attachments {
+		if id == exceptID || !info.ResizeOwner {
+			continue
+		}
+		info.ResizeOwner = false
+		t.attachments[id] = info
+	}
+}
+
 func (t *Terminal) RemoveAttachment(id string) {
 	t.attachMu.Lock()
 	info, had := t.attachments[id]
 	delete(t.attachments, id)
+	if had && info.ResizeOwner {
+		t.resizeOwnerEpoch++
+	}
 	shouldFlush := had && info.Mode == string(ModeCollaborator) && !t.hasCollaboratorAttachmentLocked()
 	t.attachMu.Unlock()
+	if had {
+		t.invalidateAttachmentInfo()
+	}
 	if shouldFlush {
 		t.flushPendingVTermOutput(0)
 	}
@@ -876,18 +989,45 @@ func (t *Terminal) Attached() []AttachInfo {
 
 func (t *Terminal) RevokeCollaborators() int {
 	t.attachMu.Lock()
-	defer t.attachMu.Unlock()
-
 	revoked := 0
+	revokedResizeOwner := false
 	for id, info := range t.attachments {
 		if info.Mode != string(ModeCollaborator) {
 			continue
 		}
+		revokedResizeOwner = revokedResizeOwner || info.ResizeOwner
 		info.Mode = string(ModeObserver)
+		info.ResizeOwner = false
 		t.attachments[id] = info
 		revoked++
 	}
+	if revokedResizeOwner {
+		t.resizeOwnerEpoch++
+	}
+	t.attachMu.Unlock()
+	if revoked > 0 {
+		t.invalidateAttachmentInfo()
+	}
 	return revoked
+}
+
+func (t *Terminal) invalidateAttachmentInfo() {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	t.invalidateProtocolInfoCacheLocked()
+	t.mu.Unlock()
+	if t.updateFunc != nil {
+		t.updateFunc()
+	}
+	if t.events != nil {
+		t.events.Publish(Event{
+			Type:       EventTerminalMetadataChanged,
+			TerminalID: t.id,
+			Timestamp:  time.Now().UTC(),
+		})
+	}
 }
 
 func (t *Terminal) hasCollaboratorAttachmentLocked() bool {
@@ -897,6 +1037,31 @@ func (t *Terminal) hasCollaboratorAttachmentLocked() bool {
 		}
 	}
 	return false
+}
+
+func (t *Terminal) resizeOwnerAttachmentCountLocked() int {
+	count := 0
+	for _, info := range t.attachments {
+		if info.ResizeOwner {
+			count++
+		}
+	}
+	return count
+}
+
+func (t *Terminal) resizeOwnershipSnapshotLocked() ResizeOwnership {
+	out := ResizeOwnership{Epoch: t.resizeOwnerEpoch}
+	for id, info := range t.attachments {
+		if !info.ResizeOwner {
+			continue
+		}
+		out.OwnerAttachmentID = id
+		out.OwnerSurfaceID = info.SurfaceID
+		out.OwnerViewID = info.ViewID
+		out.OwnerRemoteAddr = info.RemoteAddr
+		break
+	}
+	return out
 }
 
 func (t *Terminal) startProcessLoops() {
@@ -1117,15 +1282,55 @@ func (t *Terminal) closeStreamLocked(stream *fanout.Fanout, exitCode *int) {
 func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, readDone chan struct{}) {
 	defer close(readDone)
 	buf := make([]byte, 32*1024)
+	var (
+		lastStatsLog = time.Now()
+		readCount    int
+		readBytes    int
+		maxReadBytes int
+	)
+	flushStats := func(reason string) {
+		if t == nil || t.logger == nil || readCount == 0 {
+			lastStatsLog = time.Now()
+			return
+		}
+		t.logger.Info(
+			"termx terminal pty read stats",
+			"terminal_id", t.id,
+			"epoch", epoch,
+			"reason", reason,
+			"reads", readCount,
+			"bytes", readBytes,
+			"max_read_bytes", maxReadBytes,
+		)
+		lastStatsLog = time.Now()
+		readCount = 0
+		readBytes = 0
+		maxReadBytes = 0
+	}
+	if t.logger != nil {
+		t.logger.Info("termx terminal read loop started", "terminal_id", t.id, "epoch", epoch)
+	}
+	defer flushStats("closed")
 	for {
 		n, err := p.Read(buf)
 		if n > 0 {
 			chunk := append([]byte(nil), buf[:n]...)
+			readCount++
+			readBytes += n
+			if n > maxReadBytes {
+				maxReadBytes = n
+			}
+			if n >= coreDiagnosticsLargePayloadBytes && t.logger != nil {
+				t.logger.Warn("termx terminal pty large read", "terminal_id", t.id, "epoch", epoch, "bytes", n)
+			}
 			t.streamMu.Lock()
 			t.queuePendingLiveOutputLocked(epoch, stream, chunk)
 			t.queuePendingVTermOutputLocked(epoch, chunk)
 			t.armPendingVTermFlushLocked(epoch)
 			t.streamMu.Unlock()
+			if time.Since(lastStatsLog) >= coreDiagnosticsInterval {
+				flushStats("interval")
+			}
 		}
 		if err != nil {
 			t.mu.RLock()
@@ -1135,9 +1340,13 @@ func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, 
 			if currentEpoch != epoch {
 				return
 			}
+			flushStats("read_error")
 			if err != io.EOF {
 				if removed {
 					return
+				}
+				if t.logger != nil {
+					t.logger.Warn("termx terminal pty read failed", "terminal_id", t.id, "epoch", epoch, "error", err)
 				}
 				t.events.Publish(Event{
 					Type:       EventTerminalReadError,
@@ -1276,6 +1485,23 @@ func copyIntPtr(v *int) *int {
 	}
 	n := *v
 	return &n
+}
+
+func cloneResizeOwnership(in ResizeOwnership) *ResizeOwnership {
+	out := in
+	return &out
+}
+
+func protocolResizeOwnership(in ResizeOwnership) *protocol.ResizeOwnership {
+	return &protocol.ResizeOwnership{
+		OwnerAttachmentID: in.OwnerAttachmentID,
+		OwnerSurfaceID:    in.OwnerSurfaceID,
+		OwnerViewID:       in.OwnerViewID,
+		OwnerRemoteAddr:   in.OwnerRemoteAddr,
+		Size:              protocol.Size{Cols: in.Size.Cols, Rows: in.Size.Rows},
+		SizeLocked:        in.SizeLocked,
+		Epoch:             in.Epoch,
+	}
 }
 
 func (t *Terminal) bootstrapMessagesLocked(scrollbackLimit int) []StreamMessage {
@@ -1432,25 +1658,41 @@ func (t *Terminal) invalidateProtocolInfoCacheLocked() {
 }
 
 func (t *Terminal) protocolInfoJSON() (json.RawMessage, error) {
+	t.attachMu.Lock()
+	resizeOwnerAttachmentCount := t.resizeOwnerAttachmentCountLocked()
+	resizeOwnership := t.resizeOwnershipSnapshotLocked()
 	t.mu.RLock()
+	t.attachMu.Unlock()
 	if cached := t.protocolInfoCache; cached != nil {
 		t.mu.RUnlock()
 		return cached, nil
+	}
+	version := t.metadataVersion
+	resizeOwnership.Size = Size{Cols: t.size.Cols, Rows: t.size.Rows}
+	resizeOwnership.SizeLocked = terminalmeta.SizeLocked(t.tags)
+	if terminalmeta.SizeLocked(t.tags) {
+		resizeOwnerAttachmentCount = 0
+		resizeOwnership.OwnerAttachmentID = ""
+		resizeOwnership.OwnerSurfaceID = ""
+		resizeOwnership.OwnerViewID = ""
+		resizeOwnership.OwnerRemoteAddr = ""
 	}
 
 	// Marshal under the read lock so command/tags/state stay consistent and we
 	// can safely reuse internal metadata without allocating fresh copies.
 	data, err := json.Marshal(protocol.TerminalInfo{
-		ID:        t.id,
-		Name:      t.name,
-		Command:   t.command,
-		Tags:      t.tags,
-		Size:      protocol.Size{Cols: t.size.Cols, Rows: t.size.Rows},
-		State:     string(t.state),
-		CWD:       t.cwd,
-		LiveCWD:   t.cwd,
-		CreatedAt: t.createdAt,
-		ExitCode:  t.exitCode,
+		ID:                         t.id,
+		Name:                       t.name,
+		Command:                    t.command,
+		Tags:                       t.tags,
+		Size:                       protocol.Size{Cols: t.size.Cols, Rows: t.size.Rows},
+		State:                      string(t.state),
+		CWD:                        t.cwd,
+		LiveCWD:                    t.cwd,
+		CreatedAt:                  t.createdAt,
+		ExitCode:                   t.exitCode,
+		ResizeOwnership:            protocolResizeOwnership(resizeOwnership),
+		ResizeOwnerAttachmentCount: resizeOwnerAttachmentCount,
 	})
 	t.mu.RUnlock()
 	if err != nil {
@@ -1458,16 +1700,23 @@ func (t *Terminal) protocolInfoJSON() (json.RawMessage, error) {
 	}
 
 	t.mu.Lock()
-	if t.protocolInfoCache == nil {
+	if t.metadataVersion == version && t.protocolInfoCache == nil {
 		t.protocolInfoCache = data
 	}
 	cached := t.protocolInfoCache
 	t.mu.Unlock()
+	if cached == nil {
+		return data, nil
+	}
 	return cached, nil
 }
 
 func (t *Terminal) listInfoSnapshot(filter ListOptions) (*TerminalInfo, bool) {
+	t.attachMu.Lock()
+	resizeOwnerAttachmentCount := t.resizeOwnerAttachmentCountLocked()
+	resizeOwnership := t.resizeOwnershipSnapshotLocked()
 	t.mu.RLock()
+	t.attachMu.Unlock()
 	if filter.State != nil && t.state != *filter.State {
 		t.mu.RUnlock()
 		return nil, false
@@ -1480,19 +1729,29 @@ func (t *Terminal) listInfoSnapshot(filter ListOptions) (*TerminalInfo, bool) {
 		t.mu.RUnlock()
 		return cached, true
 	}
-
 	version := t.metadataVersion
+	resizeOwnership.Size = t.size
+	resizeOwnership.SizeLocked = terminalmeta.SizeLocked(t.tags)
+	if terminalmeta.SizeLocked(t.tags) {
+		resizeOwnerAttachmentCount = 0
+		resizeOwnership.OwnerAttachmentID = ""
+		resizeOwnership.OwnerSurfaceID = ""
+		resizeOwnership.OwnerViewID = ""
+		resizeOwnership.OwnerRemoteAddr = ""
+	}
 	info := &TerminalInfo{
-		ID:        t.id,
-		Name:      t.name,
-		Command:   append([]string(nil), t.command...),
-		Tags:      copyTags(t.tags),
-		Size:      t.size,
-		State:     t.state,
-		CWD:       t.cwd,
-		LiveCWD:   t.cwd,
-		CreatedAt: t.createdAt,
-		ExitCode:  copyIntPtr(t.exitCode),
+		ID:                         t.id,
+		Name:                       t.name,
+		Command:                    append([]string(nil), t.command...),
+		Tags:                       copyTags(t.tags),
+		Size:                       t.size,
+		State:                      t.state,
+		CWD:                        t.cwd,
+		LiveCWD:                    t.cwd,
+		CreatedAt:                  t.createdAt,
+		ExitCode:                   copyIntPtr(t.exitCode),
+		ResizeOwnership:            cloneResizeOwnership(resizeOwnership),
+		ResizeOwnerAttachmentCount: resizeOwnerAttachmentCount,
 	}
 	t.mu.RUnlock()
 

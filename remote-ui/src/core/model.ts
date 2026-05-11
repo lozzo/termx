@@ -28,6 +28,9 @@ export interface Terminal {
   sizeLocked?: boolean | undefined
   sizeLockMode?: 'off' | 'warn' | 'lock' | undefined
   environment?: string | undefined
+  resizeOwnerSurfaceId?: string | undefined
+  resizeOwnerViewId?: string | undefined
+  resizeOwnerAttachmentCount?: number | undefined
 }
 
 const blockedPublicModelKeys = [
@@ -105,6 +108,9 @@ export function normalizeTerminal(input: Record<string, unknown>): Terminal {
     sizeLocked: getOptionalBoolean(input, 'size_locked', 'sizeLocked'),
     sizeLockMode: normalizeSizeLockMode(getOptionalString(input, 'size_lock_mode', 'sizeLockMode')),
     environment: getOptionalString(input, 'environment', 'env'),
+    resizeOwnerSurfaceId: getResizeOwnershipString(input, 'owner_surface_id'),
+    resizeOwnerViewId: getResizeOwnershipString(input, 'owner_view_id'),
+    resizeOwnerAttachmentCount: getOptionalNumber(input, 'resize_owner_attachment_count', 'resizeOwnerAttachmentCount'),
   })
 }
 
@@ -134,6 +140,14 @@ function normalizeTerminalState(value: string | undefined): TerminalState {
 function normalizeSizeLockMode(value: string | undefined): Terminal['sizeLockMode'] {
   if (value === 'off' || value === 'warn' || value === 'lock') return value
   return undefined
+}
+
+function getResizeOwnershipString(record: Record<string, unknown>, key: 'owner_surface_id' | 'owner_view_id'): string | undefined {
+  const direct = getOptionalString(record, key)
+  if (direct) return direct
+  const ownership = record.resize_ownership
+  if (typeof ownership !== 'object' || ownership === null || Array.isArray(ownership)) return undefined
+  return getOptionalString(ownership as Record<string, unknown>, key)
 }
 
 function getRequiredString(record: Record<string, unknown>, ...keys: string[]): string {

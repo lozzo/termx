@@ -39,6 +39,14 @@ type StreamFrame struct {
 	Payload []byte
 }
 
+type HistoryReplayPage struct {
+	BeforeOffset int
+	Limit        int
+	Rows         int
+	HasMore      bool
+	Replay       string
+}
+
 type clientStream struct {
 	mu                  sync.Mutex
 	cond                *sync.Cond
@@ -328,6 +336,14 @@ func (c *Client) AttachWithOptions(ctx context.Context, params AttachParams) (*A
 	return &out, nil
 }
 
+func (c *Client) EnsureResize(ctx context.Context, params EnsureResizeParams) (*EnsureResizeResult, error) {
+	var out EnsureResizeResult
+	if err := c.doRequest(ctx, "ensure_resize", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) Snapshot(ctx context.Context, terminalID string, offset, limit int) (*Snapshot, error) {
 	var out Snapshot
 	if err := c.doRequest(ctx, "snapshot", SnapshotParams{
@@ -485,6 +501,52 @@ func (c *Client) Stream(channel uint16) (<-chan StreamFrame, func()) {
 		}
 		delete(c.pending, channel)
 		c.mu.Unlock()
+	}
+}
+
+func (c *Client) HistoryReplay(ctx context.Context, channel uint16, beforeOffset, limit int) (*HistoryReplayPage, error) {
+	stream, stop := c.Stream(channel)
+	defer stop()
+
+	frame, err := EncodeFrame(channel, TypeHistoryRequest, EncodeHistoryRequestPayload(beforeOffset, limit))
+	if err != nil {
+		return nil, err
+	}
+	if err := c.send(frame); err != nil {
+		return nil, err
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case msg, ok := <-stream:
+			if !ok {
+				return nil, io.EOF
+			}
+			switch msg.Type {
+			case TypeHistoryReplay:
+				rows, hasMore, replay, err := DecodeHistoryReplayPayload(msg.Payload)
+				if err != nil {
+					return nil, err
+				}
+				return &HistoryReplayPage{
+					BeforeOffset: beforeOffset,
+					Limit:        limit,
+					Rows:         rows,
+					HasMore:      hasMore,
+					Replay:       string(replay),
+				}, nil
+			case TypeError:
+				var msgErr ErrorMessage
+				if err := json.Unmarshal(msg.Payload, &msgErr); err != nil {
+					return nil, err
+				}
+				return nil, fmt.Errorf("protocol error %d: %s", msgErr.Error.Code, msgErr.Error.Message)
+			case TypeClosed:
+				return nil, io.EOF
+			}
+		}
 	}
 }
 

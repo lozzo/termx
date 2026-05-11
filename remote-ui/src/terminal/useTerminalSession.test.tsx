@@ -132,12 +132,12 @@ describe('useTerminalSession', () => {
     })
 
     expect(session.openedTerminalIds).toEqual(['terminal-1'])
-    expect(session.snapshotRequests('terminal-1')).toContainEqual({ offset: 0, limit: 100 })
+    expect(session.historyReplayRequests('terminal-1')).toContainEqual({ beforeOffset: 0, limit: 100 })
     expect(result.current.terminalText).toMatch(/o[\s\S]*l[\s\S]*d[\s\S]*e[\s\S]*r/)
     expect(result.current.terminalText).toMatch(/c[\s\S]*u[\s\S]*r[\s\S]*r[\s\S]*e[\s\S]*n[\s\S]*t/)
   })
 
-  it('preserves loaded scrollback when a live snapshot refresh replaces the current screen', async () => {
+  it('preserves loaded scrollback when sync loss recovery replaces the current screen', async () => {
     const session = createMockRtcTerminalSession()
     session.setTerminalSnapshot('terminal-1', {
       text: 'current',
@@ -169,7 +169,7 @@ describe('useTerminalSession', () => {
       alternateScreen: false,
     })
     act(() => {
-      session.emitTerminalScreenUpdate('terminal-1')
+      session.emitTerminalSyncLost('terminal-1')
     })
 
     await waitFor(() => {
@@ -179,7 +179,7 @@ describe('useTerminalSession', () => {
     expect(result.current.terminalText).toMatch(/o[\s\S]*l[\s\S]*d[\s\S]*e[\s\S]*r/)
   })
 
-  it('drops preserved normal scrollback when a snapshot enters alternate screen', async () => {
+  it('drops preserved normal scrollback when sync loss recovery enters alternate screen', async () => {
     const session = createMockRtcTerminalSession()
     session.setTerminalSnapshot('terminal-1', {
       text: 'current',
@@ -219,7 +219,7 @@ describe('useTerminalSession', () => {
       alternateScreen: true,
     })
     act(() => {
-      session.emitTerminalScreenUpdate('terminal-1')
+      session.emitTerminalSyncLost('terminal-1')
     })
 
     await waitFor(() => {
@@ -277,6 +277,32 @@ describe('useTerminalSession', () => {
     await waitFor(() => expect(session.sentText('terminal-1')).toBe('echo recovered\n'))
     expect(session.closedTerminalIds).toContain('terminal-1')
     expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open')
+  })
+
+  it('reattaches and retries resize ownership when the attachment channel is stale', async () => {
+    const session = createMockRtcTerminalSession()
+    session.setEnsureResizeControl('terminal-1', { canResize: true, reason: 'owner' })
+    const { result } = renderHook(() =>
+      useTerminalSession({
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        session,
+      }),
+    )
+
+    await waitFor(() => expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open'))
+    session.failNextEnsureResize('terminal-1', 'termx: permission denied: attachment channel 1 does not match terminal "1"')
+
+    await act(async () => {
+      await expect(result.current.requestResizeOwner({ cols: 120, rows: 40 })).resolves.toEqual({
+        canResize: true,
+        reason: 'owner',
+      })
+    })
+
+    expect(session.openedTerminalIds).toEqual(['terminal-1', 'terminal-1'])
+    expect(session.closedTerminalIds).toContain('terminal-1')
+    expect(result.current.resizeControl).toEqual({ canResize: true, reason: 'owner' })
   })
 
   it('closes a raw terminal channel that resolves after the hook has unmounted', async () => {

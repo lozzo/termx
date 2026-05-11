@@ -5,9 +5,11 @@ import { setHapticImpactHandler } from '@termx/remote-ui'
 import './index.css'
 import { TermxApp } from './TermxApp'
 import NativeHaptic from './plugins/nativeHaptic'
+import { installNativeDebugLogCapture } from './nativeDebugLog'
 
 if (Capacitor.isNativePlatform()) {
-  setHapticImpactHandler(() => NativeHaptic.impact())
+  installNativeDebugLogCapture()
+  setHapticImpactHandler((pattern) => NativeHaptic.impact({ pattern }))
 }
 
 const root = document.getElementById('root')

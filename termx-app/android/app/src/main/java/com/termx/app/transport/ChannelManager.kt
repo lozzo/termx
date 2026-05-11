@@ -32,6 +32,8 @@ class ChannelManager(
         // termx API 分块协议（与 JS 侧 rtcApiChannel.ts 对齐）
         private const val API_CHUNK_MAGIC: Byte = 0xC0.toByte()
         private const val FLAG_LAST = 0x02
+        private const val STATS_INTERVAL_MS = 1000L
+        private const val LARGE_PAYLOAD_BYTES = 64 * 1024
     }
 
     var fileTransferManager: FileTransferManager? = null
@@ -47,6 +49,7 @@ class ChannelManager(
     // 等待 API 响应
     private val pendingApiRequests = ConcurrentHashMap<String, PendingApiRequest>()
     private val pendingApiChunks = ConcurrentHashMap<String, MutableList<ByteArray>>()
+    private val channelStats = ConcurrentHashMap<String, ChannelStats>()
 
     private val apiLabel get() = "api:$machineId"
     private val eventsLabel get() = "events:$machineId"
@@ -61,6 +64,16 @@ class ChannelManager(
         var result: String? = null
         var error: Exception? = null
     }
+
+    private data class ChannelStats(
+        var rxFrames: Long = 0,
+        var rxBytes: Long = 0,
+        var txFrames: Long = 0,
+        var txBytes: Long = 0,
+        var lastLogAt: Long = System.currentTimeMillis(),
+        var lastRxBytes: Long = 0,
+        var lastTxBytes: Long = 0,
+    )
 
     fun createInitialChannels(pc: PeerConnection) {
         val apiInit = DataChannel.Init().apply { ordered = true }
@@ -121,7 +134,9 @@ class ChannelManager(
     fun sendRawApi(data: ByteArray) {
         val dc = apiChannel
         if (dc?.state() == DataChannel.State.OPEN) {
-            dc.send(DataChannel.Buffer(ByteBuffer.wrap(data), false))
+            noteChannelFrame("api", "tx", data.size, dc.bufferedAmount())
+            val sent = dc.send(DataChannel.Buffer(ByteBuffer.wrap(data), false))
+            if (!sent) Log.w(TAG, "sendRawApi: send returned false buffered=${dc.bufferedAmount()} [$machineId]")
         } else {
             Log.w(TAG, "sendRawApi: apiChannel not open")
         }
@@ -130,7 +145,9 @@ class ChannelManager(
     fun sendRawEvents(data: ByteArray) {
         val dc = eventsChannel
         if (dc?.state() == DataChannel.State.OPEN) {
-            dc.send(DataChannel.Buffer(ByteBuffer.wrap(data), false))
+            noteChannelFrame("events", "tx", data.size, dc.bufferedAmount())
+            val sent = dc.send(DataChannel.Buffer(ByteBuffer.wrap(data), false))
+            if (!sent) Log.w(TAG, "sendRawEvents: send returned false buffered=${dc.bufferedAmount()} [$machineId]")
         } else {
             pendingEventsData.add(data)
             Log.w(TAG, "sendRawEvents: eventsChannel not open")
@@ -140,6 +157,7 @@ class ChannelManager(
     fun sendTerminalData(terminalId: String, data: ByteArray) {
         val dc = terminalChannels[terminalId]
         if (dc?.state() == DataChannel.State.OPEN) {
+            noteChannelFrame("terminal:$terminalId", "tx", data.size, dc.bufferedAmount())
             val sent = dc.send(DataChannel.Buffer(ByteBuffer.wrap(data), true))
             if (sent) return
             Log.w(TAG, "sendTerminalData[$terminalId]: send returned false [$machineId]")
@@ -152,7 +170,10 @@ class ChannelManager(
 
     fun sendFileData(transferId: String, data: ByteArray) {
         fileChannels[transferId]?.takeIf { it.state() == DataChannel.State.OPEN }
-            ?.send(DataChannel.Buffer(ByteBuffer.wrap(data), true))
+            ?.let {
+                noteChannelFrame("file:$transferId", "tx", data.size, it.bufferedAmount())
+                it.send(DataChannel.Buffer(ByteBuffer.wrap(data), true))
+            }
     }
 
     /** Blocking API request (for heartbeat). Returns response body or throws on error/timeout. */
@@ -164,6 +185,7 @@ class ChannelManager(
         val id = UUID.randomUUID().toString()
         val pending = PendingApiRequest()
         pendingApiRequests[id] = pending
+        val startedAt = System.currentTimeMillis()
 
         val payload = buildString {
             append("""{"id":""")
@@ -175,13 +197,18 @@ class ChannelManager(
             if (body != null) { append(""","body":"""); append(body) }
             append('}')
         }
-        dc.send(DataChannel.Buffer(ByteBuffer.wrap(payload.toByteArray(StandardCharsets.UTF_8)), false))
+        val bytes = payload.toByteArray(StandardCharsets.UTF_8)
+        Log.i(TAG, "native api request send id=$id method=$method path=$path bytes=${bytes.size} [$machineId]")
+        noteChannelFrame("api", "tx", bytes.size, dc.bufferedAmount())
+        dc.send(DataChannel.Buffer(ByteBuffer.wrap(bytes), false))
 
         if (!pending.latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
             pendingApiRequests.remove(id)
+            Log.w(TAG, "native api request timeout id=$id method=$method path=$path elapsed=${System.currentTimeMillis() - startedAt}ms [$machineId]")
             throw RuntimeException("api request timed out: $method $path")
         }
         pending.error?.let { throw it }
+        Log.i(TAG, "native api request done id=$id method=$method path=$path elapsed=${System.currentTimeMillis() - startedAt}ms bytes=${pending.result?.length ?: 0} [$machineId]")
         return pending.result ?: ""
     }
 
@@ -226,6 +253,7 @@ class ChannelManager(
             override fun onMessage(buffer: DataChannel.Buffer) {
                 val data = ByteArray(buffer.data.remaining())
                 buffer.data.get(data)
+                noteChannelFrame("api", "rx", data.size, dc.bufferedAmount())
 
                 // Forward raw bytes to Bridge (JS handles JSON-RPC)
                 val chId = getApiChannelId()
@@ -275,6 +303,7 @@ class ChannelManager(
             override fun onMessage(buffer: DataChannel.Buffer) {
                 val data = ByteArray(buffer.data.remaining())
                 buffer.data.get(data)
+                noteChannelFrame("events", "rx", data.size, dc.bufferedAmount())
                 val chId = getEventsChannelId()
                 if (chId >= 0) bridge?.sendDataFrame(chId, data)
             }
@@ -305,6 +334,7 @@ class ChannelManager(
             override fun onMessage(buffer: DataChannel.Buffer) {
                 val data = ByteArray(buffer.data.remaining())
                 buffer.data.get(data)
+                noteChannelFrame("terminal:$terminalId", "rx", data.size, dc.bufferedAmount())
                 if (bridge?.hasClients() == true) {
                     val chId = bridge.getChannelId(terminalLabel(terminalId))
                     if (chId >= 0) bridge.sendDataFrame(chId, data)
@@ -345,6 +375,7 @@ class ChannelManager(
             override fun onMessage(buffer: DataChannel.Buffer) {
                 val data = ByteArray(buffer.data.remaining())
                 buffer.data.get(data)
+                noteChannelFrame("file:$transferId", "rx", data.size, dc.bufferedAmount())
                 // Native transfer manager takes priority for downloads it owns
                 if (fileTransferManager?.isHandling(transferId) == true) {
                     fileTransferManager?.onFileData(transferId, data)
@@ -356,5 +387,30 @@ class ChannelManager(
                 }
             }
         })
+    }
+
+    private fun noteChannelFrame(label: String, direction: String, bytes: Int, bufferedAmount: Long) {
+        val stats = channelStats.getOrPut(label) { ChannelStats() }
+        val now = System.currentTimeMillis()
+        synchronized(stats) {
+            if (direction == "rx") {
+                stats.rxFrames += 1
+                stats.rxBytes += bytes.toLong()
+            } else {
+                stats.txFrames += 1
+                stats.txBytes += bytes.toLong()
+            }
+            if (bytes >= LARGE_PAYLOAD_BYTES) {
+                Log.w(TAG, "large datachannel payload direction=$direction label=$label bytes=$bytes buffered=$bufferedAmount [$machineId]")
+            }
+            if (now - stats.lastLogAt < STATS_INTERVAL_MS) return
+            val elapsed = ((now - stats.lastLogAt).coerceAtLeast(1)).toDouble() / 1000.0
+            val intervalRx = stats.rxBytes - stats.lastRxBytes
+            val intervalTx = stats.txBytes - stats.lastTxBytes
+            Log.i(TAG, "datachannel stats label=$label rxFrames=${stats.rxFrames} rxBytes=${stats.rxBytes} txFrames=${stats.txFrames} txBytes=${stats.txBytes} rxBps=${(intervalRx / elapsed).toLong()} txBps=${(intervalTx / elapsed).toLong()} buffered=$bufferedAmount [$machineId]")
+            stats.lastLogAt = now
+            stats.lastRxBytes = stats.rxBytes
+            stats.lastTxBytes = stats.txBytes
+        }
     }
 }

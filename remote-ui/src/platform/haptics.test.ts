@@ -60,4 +60,26 @@ describe('haptic', () => {
 
     expect(vibrate).toHaveBeenCalledWith(25)
   })
+
+  it('exposes semantic feedback patterns for key interaction types', async () => {
+    const vibrate = vi.fn()
+    Object.defineProperty(navigator, 'vibrate', {
+      configurable: true,
+      value: vibrate,
+    })
+    const { hapticSelection, hapticImpact, hapticSuccess, hapticError } = await import('./haptics')
+
+    hapticSelection()
+    vi.advanceTimersByTime(40)
+    hapticImpact()
+    vi.advanceTimersByTime(40)
+    hapticSuccess()
+    vi.advanceTimersByTime(40)
+    hapticError()
+
+    expect(vibrate).toHaveBeenNthCalledWith(1, 8)
+    expect(vibrate).toHaveBeenNthCalledWith(2, 10)
+    expect(vibrate).toHaveBeenNthCalledWith(3, 25)
+    expect(vibrate).toHaveBeenNthCalledWith(4, [12, 30, 12])
+  })
 })

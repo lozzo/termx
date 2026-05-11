@@ -5,6 +5,10 @@ export type MockFileResponder =
   | Promise<unknown>
   | ((params: Record<string, unknown> | undefined) => unknown | Promise<unknown>)
 
+export type MockFileTransferResponder =
+  | Uint8Array[]
+  | ((transferId: string) => Uint8Array[])
+
 export interface MockFileError {
   status: number
   body: { error?: string; message?: string }
@@ -13,9 +17,9 @@ export interface MockFileError {
 export function createMockFileSession(
   responders: Record<string, MockFileResponder> = {},
   errors: Record<string, MockFileError> = {},
-  options: { machineId?: string; terminalId?: string } = {},
+  options: { machineId?: string; terminalId?: string; transfers?: Record<string, MockFileTransferResponder> } = {},
 ): MockFileSession {
-  return new MockFileSession(responders, errors, options.machineId ?? 'machine-local', options.terminalId)
+  return new MockFileSession(responders, errors, options.machineId ?? 'machine-local', options.terminalId, options.transfers ?? {})
 }
 
 export function createDeferredFileResponder(): {
@@ -31,6 +35,7 @@ export function createDeferredFileResponder(): {
 
 export class MockFileSession implements RtcSession {
   readonly requests: Array<{ method: string; path: string; params?: Record<string, unknown> }> = []
+  readonly openedTransfers: string[] = []
   openApiCount = 0
 
   constructor(
@@ -38,6 +43,7 @@ export class MockFileSession implements RtcSession {
     private readonly errors: Record<string, MockFileError>,
     private readonly machineId: string,
     private readonly terminalId: string | undefined,
+    private readonly transfers: Record<string, MockFileTransferResponder>,
   ) {}
 
   async connect(): Promise<void> {}
@@ -72,15 +78,10 @@ export class MockFileSession implements RtcSession {
   }
 
   async openFileTransfer(transferId: string): Promise<RtcBinaryChannel> {
-    return {
-      label: `file:${transferId}`,
-      readyState: 'open',
-      send() {},
-      close() {},
-      onMessage() { return { close() {} } },
-      onClose() { return { close() {} } },
-      async waitOpen() {},
-    }
+    this.openedTransfers.push(transferId)
+    const responder = this.transfers[transferId]
+    const frames = typeof responder === 'function' ? responder(transferId) : responder
+    return new MockFileTransferChannel(transferId, frames ?? [])
   }
 
   subscribeEvents(_handler: (event: RtcEvent) => void): RtcSubscription {
@@ -108,6 +109,43 @@ export class MockFileSession implements RtcSession {
     if (this.terminalId !== undefined) info.terminalId = this.terminalId
     return info
   }
+}
+
+class MockFileTransferChannel implements RtcBinaryChannel {
+  readonly label: string
+  readyState: 'connecting' | 'open' | 'closing' | 'closed' = 'open'
+  private readonly messageHandlers = new Set<(data: Uint8Array) => void>()
+  private readonly closeHandlers = new Set<() => void>()
+
+  constructor(transferId: string, private readonly frames: Uint8Array[]) {
+    this.label = `file:${transferId}`
+  }
+
+  send() {}
+
+  close() {
+    if (this.readyState === 'closed') return
+    this.readyState = 'closed'
+    for (const handler of Array.from(this.closeHandlers)) handler()
+  }
+
+  onMessage(handler: (data: Uint8Array) => void): RtcSubscription {
+    this.messageHandlers.add(handler)
+    window.setTimeout(() => {
+      if (this.readyState !== 'open') return
+      for (const frame of this.frames) {
+        for (const current of Array.from(this.messageHandlers)) current(frame)
+      }
+    }, 0)
+    return { close: () => { this.messageHandlers.delete(handler) } }
+  }
+
+  onClose(handler: () => void): RtcSubscription {
+    this.closeHandlers.add(handler)
+    return { close: () => { this.closeHandlers.delete(handler) } }
+  }
+
+  async waitOpen(): Promise<void> {}
 }
 
 function normalizeRequest(method: string, params: unknown): { method: string; path: string; params?: Record<string, unknown> } {

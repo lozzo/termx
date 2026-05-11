@@ -30,12 +30,45 @@ func TestRuntimeEventPayloadForClientMapsTerminalInventoryEvents(t *testing.T) {
 	if err := json.Unmarshal(payload, &got); err != nil {
 		t.Fatalf("unmarshal mapped payload: %v; body=%s", err, string(payload))
 	}
-	if got.Type != "inventory_changed" ||
+	if got.Type != "terminal_created" ||
 		got.Payload.TerminalID != "terminal-2" ||
 		got.Payload.EventType != "terminal_created" ||
 		got.Payload.ProtocolType != protocolEventTerminalCreated ||
 		got.Payload.Timestamp != "2026-05-08T10:00:00Z" {
 		t.Fatalf("unexpected mapped event payload: %+v", got)
+	}
+}
+
+func TestRuntimeEventPayloadForClientIncludesTerminalSnapshot(t *testing.T) {
+	payload := runtimeEventPayloadForClient([]byte(`{
+		"type":10,
+		"terminal_id":"terminal-2",
+		"timestamp":"2026-05-08T10:00:00Z",
+		"terminal":{
+			"terminal_id":"terminal-2",
+			"machine_id":"machine-local",
+			"name":"shell",
+			"state":"running",
+			"resize_ownership":{
+				"owner_surface_id":"app:machine-local:terminal:terminal-2"
+			},
+			"resize_owner_attachment_count":1
+		}
+	}`))
+	var got struct {
+		Type    string `json:"type"`
+		Payload struct {
+			Terminal map[string]any `json:"terminal"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal(payload, &got); err != nil {
+		t.Fatalf("unmarshal terminal snapshot payload: %v; body=%s", err, string(payload))
+	}
+	if got.Type != "terminal_metadata_changed" {
+		t.Fatalf("unexpected event type %q", got.Type)
+	}
+	if got.Payload.Terminal["machine_id"] != "machine-local" {
+		t.Fatalf("expected machine_id in terminal payload, got %#v", got.Payload.Terminal)
 	}
 }
 

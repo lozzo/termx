@@ -1,7 +1,13 @@
 import { useFileManager, type FileSortState } from './useFileManager'
-import type { FilePreviewResponse, FileTransferContext } from './fileApi'
+import { createFilePreviewRangeUrl, type FilePreviewRangeUrl } from './filePreviewRangeUrl'
+import type {
+  FilePreviewResponse,
+  FilePreviewStreamOptions,
+  FilePreviewStreamResult,
+  FileTransferContext,
+} from './fileApi'
 import type { RtcSession } from '../core/transport'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react'
 import { createPortal } from 'react-dom'
 import hljs from 'highlight.js/lib/core'
 import bash from 'highlight.js/lib/languages/bash'
@@ -19,8 +25,9 @@ import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
 import 'highlight.js/styles/github.css'
 import { addNativeBackHandler } from '../platform/nativeBack'
+import { hapticImpact, hapticSelection } from '../platform/haptics'
 import { ActionSheet, type ActionSheetItem } from '../ui/ActionSheet'
-import { AlertCircle, ArrowDownAZ, ArrowDownToLine, ArrowUpAZ, ArrowUpFromLine, Check, ChevronRight, ClipboardCopy, Clock, Code2, Eye, EyeOff, File, FileText, FileType, Folder, HardDrive, ListFilter, Image, ListChecks, MoreVertical, PlaySquare, RefreshCw, SquarePen, Trash2, WrapText, X } from 'lucide-react'
+import { AlertCircle, ArrowDownAZ, ArrowDownToLine, ArrowUpAZ, ArrowUpFromLine, Check, ChevronRight, ClipboardCopy, Clock, Code2, Eye, EyeOff, File, FileText, FileType, Folder, HardDrive, Image, ListChecks, ListFilter, Maximize2, MoreVertical, PlaySquare, RefreshCw, RotateCcw, RotateCw, SquarePen, Trash2, WrapText, X, ZoomIn, ZoomOut } from 'lucide-react'
 
 hljs.registerLanguage('bash', bash)
 hljs.registerLanguage('cpp', cpp)
@@ -123,19 +130,19 @@ export function FileManager({
     actions.push({
       label: 'Copy Path',
       icon: <ClipboardCopy className="h-5 w-5" />,
-      onClick: () => { void manager.copyFilePaths([entryMenuPath]) },
+      onClick: () => { hapticImpact(); void manager.copyFilePaths([entryMenuPath]) },
     })
 
     actions.push({
       label: 'Copy',
       icon: <File className="h-5 w-5" />,
-      onClick: () => manager.copy([entryMenuPath]),
+      onClick: () => { hapticImpact(); manager.copy([entryMenuPath]) },
     })
 
     actions.push({
       label: 'Cut',
       icon: <Folder className="h-5 w-5" />,
-      onClick: () => manager.cut([entryMenuPath]),
+      onClick: () => { hapticImpact(); manager.cut([entryMenuPath]) },
     })
 
     actions.push({
@@ -245,6 +252,7 @@ export function FileManager({
           <button
             className="text-[15px] font-medium text-blue-600 active:text-blue-800"
             onClick={() => {
+              hapticSelection()
               if (manager.selectedPaths.size === manager.visibleEntries.length) manager.deselectAll()
               else manager.selectAll()
             }}
@@ -297,7 +305,7 @@ export function FileManager({
               aria-label="Copy current directory path"
               title="Copy current directory path"
               className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors active:bg-zinc-100"
-              onClick={() => { void manager.copyFilePaths([manager.currentPath || '/']) }}
+              onClick={() => { hapticImpact(); void manager.copyFilePaths([manager.currentPath || '/']) }}
             >
               <ClipboardCopy className="h-4 w-4" />
             </button>
@@ -329,7 +337,7 @@ export function FileManager({
               aria-label="Create directory"
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white disabled:bg-zinc-200 disabled:text-zinc-400"
               disabled={!manager.newDirName.trim() || manager.creatingDirectory}
-              onClick={() => { void manager.createDirectory().then(() => setNewDirOpen(false)) }}
+              onClick={() => { hapticImpact(); void manager.createDirectory().then(() => setNewDirOpen(false)) }}
             >
               <Check className="h-4 w-4" />
             </button>
@@ -392,6 +400,7 @@ export function FileManager({
 
               const handleItemClick = () => {
                 if (manager.selectionMode) {
+                  hapticSelection()
                   manager.toggleSelect(entryPath)
                 } else {
                   if (isDirectory) void manager.navigate(entryPath)
@@ -449,9 +458,9 @@ export function FileManager({
                           {entry.name}
                         </span>
                       )}
-                      {!isDirectory && entry.size > 0 && !isRenaming ? (
+                      {!isRenaming ? (
                         <span className="truncate text-[12px] font-medium text-zinc-500">
-                          {formatBytes(entry.size)}
+                          {fileEntryMeta(entry)}
                         </span>
                       ) : null}
                     </button>
@@ -496,6 +505,7 @@ export function FileManager({
                 type="button"
                 className="h-11 rounded-xl bg-red-600 text-sm font-semibold text-white"
                 onClick={() => {
+                  hapticImpact()
                   const target = deletePath
                   setDeletePath(null)
                   void manager.deleteEntry(target)
@@ -513,6 +523,7 @@ export function FileManager({
           path={manager.previewPath}
           loading={manager.previewLoading}
           error={manager.previewError?.message ?? null}
+          streamPreview={manager.streamPreview}
           onClose={manager.closePreview}
         />
       ) : null}
@@ -527,7 +538,7 @@ export function FileManager({
             <button
               className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 active:bg-zinc-100 rounded-lg"
               type="button"
-              onClick={() => manager.setSelectionMode(true)}
+              onClick={() => { hapticImpact(); manager.setSelectionMode(true) }}
               aria-label="Select files"
             >
               <ListChecks className="h-5 w-5" />
@@ -536,7 +547,7 @@ export function FileManager({
             <button
               className={`flex flex-col items-center justify-center gap-1 px-3 rounded-lg ${manager.showHidden ? 'text-blue-600 bg-blue-50' : 'text-zinc-600 hover:text-blue-600 active:bg-zinc-100'}`}
               type="button"
-              onClick={manager.toggleShowHidden}
+              onClick={() => { hapticSelection(); manager.toggleShowHidden() }}
               aria-label={manager.showHidden ? 'Hide hidden files' : 'Show hidden files'}
             >
               {manager.showHidden ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
@@ -568,6 +579,7 @@ export function FileManager({
                   type="button"
                   aria-label="Upload files"
                   onClick={() => {
+                    hapticImpact()
                     if (fileTransfer.isNative) {
                       fileTransfer.pickAndUpload?.(machineId, manager.currentPath || '/')
                       onOpenTransferCenter?.()
@@ -621,6 +633,7 @@ export function FileManager({
           <div className="flex h-[60px] items-stretch justify-around px-2">
             <button
               onClick={() => {
+                hapticImpact()
                 manager.copy(Array.from(manager.selectedPaths))
                 manager.setSelectionMode(false)
               }}
@@ -631,6 +644,7 @@ export function FileManager({
             </button>
             <button
               onClick={() => {
+                hapticImpact()
                 void manager.copyFilePaths(Array.from(manager.selectedPaths)).then(() => manager.setSelectionMode(false))
               }}
               className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 active:bg-zinc-100 rounded-lg"
@@ -640,6 +654,7 @@ export function FileManager({
             </button>
             <button
               onClick={() => {
+                hapticImpact()
                 manager.cut(Array.from(manager.selectedPaths))
                 manager.setSelectionMode(false)
               }}
@@ -649,7 +664,7 @@ export function FileManager({
               <span className="text-[11px] font-medium">Cut</span>
             </button>
             <button
-              onClick={() => void manager.batchDelete(Array.from(manager.selectedPaths))}
+              onClick={() => { hapticImpact(); void manager.batchDelete(Array.from(manager.selectedPaths)) }}
               className="flex flex-col items-center justify-center gap-1 px-3 text-red-500 hover:text-red-700 active:bg-red-50 rounded-lg"
             >
               <Trash2 className="h-5 w-5" />
@@ -674,7 +689,7 @@ export function FileManager({
                 Cancel
               </button>
               <button
-                onClick={() => void manager.paste()}
+                onClick={() => { hapticImpact(); void manager.paste() }}
                 className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
               >
                 Paste
@@ -688,7 +703,7 @@ export function FileManager({
         isOpen={!!entryMenuPath}
         onClose={() => setEntryMenuPath(null)}
         title={menuEntry?.name}
-        subtitle={menuEntry ? (menuEntry.type === 'dir' ? 'Folder' : `${formatBytes(menuEntry.size)} · File`) : ''}
+        subtitle={menuEntry ? fileEntryMenuSubtitle(menuEntry) : ''}
         actions={menuActions}
       />
       <ActionSheet
@@ -730,12 +745,14 @@ interface FilePreviewSheetProps {
   preview: FilePreviewResponse | null
   loading: boolean
   error: string | null
+  streamPreview(path: string, mimeType: string, options?: FilePreviewStreamOptions): Promise<FilePreviewStreamResult>
   onClose(): void
 }
 
-function FilePreviewSheet({ path, preview, loading, error, onClose }: FilePreviewSheetProps) {
+function FilePreviewSheet({ path, preview, loading, error, streamPreview, onClose }: FilePreviewSheetProps) {
   const title = preview?.name ?? basename(path)
   const subtitle = preview ? `${formatBytes(preview.size)} · ${preview.mimeType}` : path
+  const isMediaPreview = preview?.category === 'image' || preview?.category === 'video'
 
   useEffect(() => {
     if (typeof document === 'undefined') return undefined
@@ -768,7 +785,7 @@ function FilePreviewSheet({ path, preview, loading, error, onClose }: FilePrevie
           <X className="h-5 w-5" />
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-auto bg-zinc-50 pb-[env(safe-area-inset-bottom)]">
+      <div className={`min-h-0 flex-1 pb-[env(safe-area-inset-bottom)] ${isMediaPreview ? 'overflow-hidden bg-black' : 'overflow-auto bg-zinc-50'}`}>
         {loading ? (
           <div className="flex h-56 flex-col items-center justify-center gap-3 text-[14px] font-medium text-zinc-500">
             <RefreshCw className="h-6 w-6 animate-spin text-zinc-400" />
@@ -777,7 +794,7 @@ function FilePreviewSheet({ path, preview, loading, error, onClose }: FilePrevie
         ) : error ? (
           <PreviewNotice title="Preview Error" message={error} />
         ) : preview ? (
-          <PreviewContent preview={preview} />
+          <PreviewContent preview={preview} streamPreview={streamPreview} />
         ) : null}
       </div>
     </div>
@@ -787,12 +804,21 @@ function FilePreviewSheet({ path, preview, loading, error, onClose }: FilePrevie
   return createPortal(dialog, document.body)
 }
 
-function PreviewContent({ preview }: { preview: FilePreviewResponse }) {
+function PreviewContent({
+  preview,
+  streamPreview,
+}: {
+  preview: FilePreviewResponse
+  streamPreview(path: string, mimeType: string, options?: FilePreviewStreamOptions): Promise<FilePreviewStreamResult>
+}) {
   if (preview.category === 'image' && preview.contentBase64) {
     return <BinaryImagePreview preview={preview} />
   }
   if (preview.category === 'video' && preview.contentBase64) {
     return <BinaryVideoPreview preview={preview} />
+  }
+  if (preview.category === 'video') {
+    return <StreamedVideoPreview preview={preview} streamPreview={streamPreview} />
   }
   if (preview.category === 'text' && preview.content !== undefined) {
     if (isMarkdownFile(preview.name, preview.mimeType)) {
@@ -812,13 +838,16 @@ function BinaryImagePreview({ preview }: { preview: FilePreviewResponse }) {
   if (src === undefined) return null
   if (!src) return <PreviewNotice title="Preview Error" message="Image preview data is invalid." />
   return (
-    <div className="flex min-h-full items-center justify-center bg-zinc-950 p-3">
+    <ZoomableMediaCanvas
+      zoomLabel={preview.name}
+    >
       <img
         alt={preview.name}
-        className="max-h-[calc(100dvh-5rem)] max-w-full rounded-md object-contain shadow-sm"
+        className="block max-h-[calc(100dvh-8rem)] max-w-[calc(100vw-1rem)] select-none rounded-md shadow-sm"
+        draggable={false}
         src={src}
       />
-    </div>
+    </ZoomableMediaCanvas>
   )
 }
 
@@ -826,16 +855,454 @@ function BinaryVideoPreview({ preview }: { preview: FilePreviewResponse }) {
   const src = useBinaryPreviewUrl(preview.contentBase64, preview.mimeType)
   if (src === undefined) return null
   if (!src) return <PreviewNotice title="Preview Error" message="Video preview data is invalid." />
+  return <VideoPreviewPlayer preview={preview} src={src} />
+}
+
+interface MediaPreviewShellProps {
+  toolbar?: ReactNode
+  children: ReactNode
+}
+
+function MediaPreviewShell({ toolbar, children }: MediaPreviewShellProps) {
   return (
-    <div className="flex min-h-full items-center justify-center bg-black p-2">
-      <video
-        className="max-h-full max-w-full"
-        controls
-        preload="metadata"
-        src={src}
-      />
+    <div className="flex h-full min-h-full flex-col bg-black text-white">
+      {toolbar}
+      <div className="relative min-h-0 flex-1">
+        {children}
+      </div>
     </div>
   )
+}
+
+interface ZoomTransform {
+  scale: number
+  x: number
+  y: number
+  rotation: number
+}
+
+interface ZoomPoint {
+  x: number
+  y: number
+}
+
+const defaultZoomTransform: ZoomTransform = { scale: 1, x: 0, y: 0, rotation: 0 }
+const minPreviewScale = 0.25
+const maxPreviewScale = 6
+
+function ZoomableMediaCanvas({
+  toolbar,
+  zoomLabel,
+  children,
+}: {
+  toolbar?: ReactNode
+  zoomLabel: string
+  children: ReactNode
+}) {
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const pointersRef = useRef(new Map<number, ZoomPoint>())
+  const transformRef = useRef<ZoomTransform>(defaultZoomTransform)
+  const gestureRef = useRef<
+    | {
+      type: 'pan'
+      startTransform: ZoomTransform
+      startPointer: ZoomPoint
+    }
+    | {
+      type: 'pinch'
+      startTransform: ZoomTransform
+      startDistance: number
+      startCenter: ZoomPoint
+    }
+    | null
+  >(null)
+  const [transform, setTransform] = useState<ZoomTransform>(defaultZoomTransform)
+
+  const commitTransform = (next: ZoomTransform) => {
+    const clamped = {
+      scale: clamp(next.scale, minPreviewScale, maxPreviewScale),
+      x: clamp(next.x, -20000, 20000),
+      y: clamp(next.y, -20000, 20000),
+      rotation: normalizeRotation(next.rotation),
+    }
+    transformRef.current = clamped
+    setTransform(clamped)
+  }
+
+  const resetZoom = () => {
+    hapticSelection()
+    pointersRef.current.clear()
+    gestureRef.current = null
+    commitTransform(defaultZoomTransform)
+  }
+
+  const zoomAt = (point: ZoomPoint, scale: number) => {
+    commitTransform(scaleTransformAroundPoint(transformRef.current, point, scale))
+  }
+
+  const zoomBy = (factor: number, point = viewportCenter(viewportRef)) => {
+    hapticSelection()
+    zoomAt(point, transformRef.current.scale * factor)
+  }
+
+  const rotateBy = (degrees: number) => {
+    hapticSelection()
+    commitTransform({
+      ...transformRef.current,
+      rotation: transformRef.current.rotation + degrees,
+    })
+  }
+
+  const startGestureFromPointers = () => {
+    const pointers = Array.from(pointersRef.current.values())
+    if (pointers.length >= 2) {
+      const first = pointers[0]
+      const second = pointers[1]
+      if (!first || !second) return
+      gestureRef.current = {
+        type: 'pinch',
+        startTransform: transformRef.current,
+        startDistance: Math.max(1, distance(first, second)),
+        startCenter: midpoint(first, second),
+      }
+      return
+    }
+    if (pointers.length === 1) {
+      const pointer = pointers[0]
+      if (!pointer) return
+      gestureRef.current = {
+        type: 'pan',
+        startTransform: transformRef.current,
+        startPointer: pointer,
+      }
+      return
+    }
+    gestureRef.current = null
+  }
+
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 && event.pointerType === 'mouse') return
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    pointersRef.current.set(event.pointerId, relativePointer(event, viewportRef))
+    startGestureFromPointers()
+  }
+
+  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!pointersRef.current.has(event.pointerId)) return
+    pointersRef.current.set(event.pointerId, relativePointer(event, viewportRef))
+    const gesture = gestureRef.current
+    if (!gesture) return
+    if (gesture.type === 'pan') {
+      const pointer = pointersRef.current.get(event.pointerId)
+      if (!pointer) return
+      commitTransform({
+        scale: gesture.startTransform.scale,
+        x: gesture.startTransform.x + pointer.x - gesture.startPointer.x,
+        y: gesture.startTransform.y + pointer.y - gesture.startPointer.y,
+        rotation: gesture.startTransform.rotation,
+      })
+      return
+    }
+    const pointers = Array.from(pointersRef.current.values())
+    if (pointers.length < 2) return
+    const first = pointers[0]
+    const second = pointers[1]
+    if (!first || !second) return
+    const nextDistance = Math.max(1, distance(first, second))
+    const nextCenter = midpoint(first, second)
+    const centered = scaleTransformAroundPoint(
+      gesture.startTransform,
+      gesture.startCenter,
+      gesture.startTransform.scale * (nextDistance / gesture.startDistance),
+    )
+    commitTransform({
+      scale: centered.scale,
+      x: centered.x + nextCenter.x - gesture.startCenter.x,
+      y: centered.y + nextCenter.y - gesture.startCenter.y,
+      rotation: gesture.startTransform.rotation,
+    })
+  }
+
+  const onPointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    pointersRef.current.delete(event.pointerId)
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    startGestureFromPointers()
+  }
+
+  const onWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const point = relativeWheelPoint(event, viewportRef)
+    const factor = Math.exp(-event.deltaY * 0.0015)
+    zoomAt(point, transformRef.current.scale * factor)
+  }
+
+  const onDoubleClick = (event: ReactPointerEvent<HTMLDivElement>) => {
+    hapticSelection()
+    const point = relativePointer(event, viewportRef)
+    if (transformRef.current.scale <= 1.05) {
+      zoomAt(point, 2)
+      return
+    }
+    commitTransform(defaultZoomTransform)
+  }
+
+  return (
+    <MediaPreviewShell toolbar={toolbar}>
+      <div
+        ref={viewportRef}
+        className="relative h-full min-h-[calc(100dvh-7.5rem)] touch-none overflow-hidden bg-zinc-950"
+        data-testid="termx-media-zoom-canvas"
+        onDoubleClick={onDoubleClick}
+        onPointerCancel={onPointerEnd}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerEnd}
+        onWheel={onWheel}
+      >
+        <div className="absolute right-3 top-3 z-20 flex items-center overflow-hidden rounded-lg border border-white/10 bg-black/70 text-white shadow-lg backdrop-blur">
+          <button
+            type="button"
+            aria-label={`Zoom out ${zoomLabel}`}
+            title="Zoom out"
+            className="flex h-9 w-9 items-center justify-center text-zinc-200 transition-colors active:scale-95 active:bg-white/10"
+            onClick={() => zoomBy(0.8)}
+          >
+            <ZoomOut className="h-4 w-4" />
+          </button>
+          <span className="min-w-14 border-x border-white/10 px-2 text-center text-[12px] font-semibold tabular-nums text-zinc-200">
+            {Math.round(transform.scale * 100)}%
+          </span>
+          <button
+            type="button"
+            aria-label={`Zoom in ${zoomLabel}`}
+            title="Zoom in"
+            className="flex h-9 w-9 items-center justify-center text-zinc-200 transition-colors active:scale-95 active:bg-white/10"
+            onClick={() => zoomBy(1.25)}
+          >
+            <ZoomIn className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            aria-label={`Reset zoom ${zoomLabel}`}
+            title="Reset zoom"
+            className="flex h-9 w-9 items-center justify-center border-l border-white/10 text-zinc-200 transition-colors active:scale-95 active:bg-white/10"
+            onClick={resetZoom}
+          >
+            <RotateCcw className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            aria-label={`Rotate ${zoomLabel}`}
+            title="Rotate"
+            className="flex h-9 w-9 items-center justify-center border-l border-white/10 text-zinc-200 transition-colors active:scale-95 active:bg-white/10"
+            onClick={() => rotateBy(90)}
+          >
+            <RotateCw className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex h-full min-h-[calc(100dvh-7.5rem)] items-center justify-center p-2">
+          <div
+            className="will-change-transform"
+            data-testid="termx-media-transform"
+            style={{
+              transform: `translate3d(${transform.x}px, ${transform.y}px, 0) rotate(${transform.rotation}deg) scale(${transform.scale})`,
+              transformOrigin: 'center',
+            }}
+          >
+            {children}
+          </div>
+        </div>
+      </div>
+    </MediaPreviewShell>
+  )
+}
+
+function StreamedVideoPreview({
+  preview,
+  streamPreview,
+}: {
+  preview: FilePreviewResponse
+  streamPreview(path: string, mimeType: string, options?: FilePreviewStreamOptions): Promise<FilePreviewStreamResult>
+}) {
+  const [rangeUrl, setRangeUrl] = useState<string | null | undefined>(undefined)
+  const rangeSourceRef = useRef<FilePreviewRangeUrl | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    rangeSourceRef.current?.revoke()
+    rangeSourceRef.current = null
+    setRangeUrl(undefined)
+    void createFilePreviewRangeUrl({
+      path: preview.path,
+      mimeType: preview.mimeType,
+      size: preview.size,
+      streamPreview,
+    }).then((result) => {
+      if (cancelled) {
+        result?.revoke()
+        return
+      }
+      rangeSourceRef.current = result
+      setRangeUrl(result?.url ?? null)
+    })
+    return () => {
+      cancelled = true
+      rangeSourceRef.current?.revoke()
+      rangeSourceRef.current = null
+    }
+  }, [preview.mimeType, preview.path, preview.size, streamPreview])
+
+  if (rangeUrl === undefined) {
+    return (
+      <VideoPreviewPlayer
+        preview={preview}
+      />
+    )
+  }
+
+  if (rangeUrl) {
+    return (
+      <VideoPreviewPlayer
+        preview={preview}
+        src={rangeUrl}
+        onLoadedMetadata={(duration) => {
+          rangeSourceRef.current?.configure({ duration })
+        }}
+      />
+    )
+  }
+
+  return <PreviewNotice title="Preview Unavailable" message="This browser context cannot provide seekable video preview without full-file buffering." />
+}
+
+function VideoPreviewPlayer({
+  preview,
+  src,
+  onLoadedMetadata,
+}: {
+  preview: FilePreviewResponse
+  src?: string | undefined
+  onLoadedMetadata?: ((duration: number) => void) | undefined
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [fullscreenSupported, setFullscreenSupported] = useState(false)
+
+  useEffect(() => {
+    const video = videoRef.current
+    setFullscreenSupported(!!video && (canRequestFullscreen(video) || canEnterFullscreen(video)))
+  }, [src])
+
+  const requestFullscreen = () => {
+    const video = videoRef.current
+    if (!video) return
+    hapticSelection()
+    if (canRequestFullscreen(video)) {
+      void video.requestFullscreen().catch(() => {})
+      return
+    }
+    if (canEnterFullscreen(video)) {
+      ;(video as FullscreenVideoElement).webkitEnterFullscreen?.()
+    }
+  }
+
+  return (
+    <MediaPreviewShell
+      toolbar={fullscreenSupported ? (
+        <div className="sticky top-0 z-20 flex min-h-11 items-center justify-end gap-2 border-b border-white/10 bg-black/85 px-4 py-2 text-zinc-200 backdrop-blur">
+          <button
+            type="button"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-200 transition-colors active:scale-95 active:bg-white/10"
+            aria-label={`Fullscreen ${preview.name}`}
+            title="Fullscreen"
+            onClick={requestFullscreen}
+          >
+            <Maximize2 className="h-4 w-4" />
+          </button>
+        </div>
+      ) : undefined}
+    >
+      <div className="relative flex h-full min-h-[calc(100dvh-7.5rem)] items-center justify-center p-2">
+        {src ? (
+          <video
+            ref={videoRef}
+            className="h-full max-h-[calc(100dvh-8rem)] w-full object-contain"
+            controls
+            onLoadedMetadata={(event) => {
+              const duration = event.currentTarget.duration
+              if (Number.isFinite(duration) && duration > 0) onLoadedMetadata?.(duration)
+            }}
+            playsInline
+            preload="metadata"
+            src={src}
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-3 text-zinc-300" data-testid="termx-video-stream-status">
+            <RefreshCw className="h-7 w-7 animate-spin text-zinc-500" />
+          </div>
+        )}
+      </div>
+    </MediaPreviewShell>
+  )
+}
+
+interface FullscreenVideoElement extends HTMLVideoElement {
+  webkitEnterFullscreen?: () => void
+}
+
+function canRequestFullscreen(element: HTMLElement): element is HTMLElement & { requestFullscreen: () => Promise<void> } {
+  return typeof element.requestFullscreen === 'function'
+}
+
+function canEnterFullscreen(element: HTMLVideoElement): element is FullscreenVideoElement & { webkitEnterFullscreen: () => void } {
+  return typeof (element as FullscreenVideoElement).webkitEnterFullscreen === 'function'
+}
+
+function scaleTransformAroundPoint(transform: ZoomTransform, point: ZoomPoint, nextScale: number): ZoomTransform {
+  const scale = clamp(nextScale, minPreviewScale, maxPreviewScale)
+  const ratio = scale / transform.scale
+  return {
+    scale,
+    x: point.x - (point.x - transform.x) * ratio,
+    y: point.y - (point.y - transform.y) * ratio,
+    rotation: transform.rotation,
+  }
+}
+
+function relativePointer(
+  event: ReactPointerEvent<HTMLDivElement> | ReactMouseEvent<HTMLDivElement>,
+  ref: React.RefObject<HTMLDivElement | null>,
+): ZoomPoint {
+  const rect = ref.current?.getBoundingClientRect()
+  if (!rect) return { x: event.clientX, y: event.clientY }
+  return { x: event.clientX - rect.left, y: event.clientY - rect.top }
+}
+
+function relativeWheelPoint(event: ReactWheelEvent<HTMLDivElement>, ref: React.RefObject<HTMLDivElement | null>): ZoomPoint {
+  const rect = ref.current?.getBoundingClientRect()
+  if (!rect) return { x: event.clientX, y: event.clientY }
+  return { x: event.clientX - rect.left, y: event.clientY - rect.top }
+}
+
+function viewportCenter(ref: React.RefObject<HTMLDivElement | null>): ZoomPoint {
+  const rect = ref.current?.getBoundingClientRect()
+  if (!rect) return { x: 0, y: 0 }
+  return { x: rect.width / 2, y: rect.height / 2 }
+}
+
+function distance(first: ZoomPoint, second: ZoomPoint): number {
+  return Math.hypot(first.x - second.x, first.y - second.y)
+}
+
+function midpoint(first: ZoomPoint, second: ZoomPoint): ZoomPoint {
+  return {
+    x: (first.x + second.x) / 2,
+    y: (first.y + second.y) / 2,
+  }
+}
+
+function normalizeRotation(value: number): number {
+  const normalized = value % 360
+  return normalized < 0 ? normalized + 360 : normalized
 }
 
 function useBinaryPreviewUrl(contentBase64: string | undefined, mimeType: string): string | null | undefined {
@@ -912,7 +1379,7 @@ function TextPreview({ text, name, mimeType }: { text: string; name: string; mim
           aria-label={wrapLabel}
           title={wrapLabel}
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors active:scale-95 ${softWrap ? 'bg-blue-50 text-blue-600' : 'text-zinc-600 active:bg-zinc-100'}`}
-          onClick={() => setSoftWrap((current) => !current)}
+          onClick={() => { hapticSelection(); setSoftWrap((current) => !current) }}
         >
           <WrapText className="h-4 w-4" />
         </button>
@@ -1214,6 +1681,10 @@ function basename(path: string): string {
   return normalized.slice(normalized.lastIndexOf('/') + 1) || normalized
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
 function formatBytes(bytes: number, decimals = 1) {
   if (!+bytes) return '0 B'
   const k = 1024
@@ -1221,4 +1692,75 @@ function formatBytes(bytes: number, decimals = 1) {
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`
+}
+
+function fileEntryMeta(entry: {
+  type: string
+  size: number
+  modTime?: string | undefined
+  childCount?: number | undefined
+  linkTarget?: string | undefined
+  hardLink?: boolean | undefined
+  linkCount?: number | undefined
+  inode?: number | undefined
+}): string {
+  const parts: string[] = []
+  const isDirectory = entry.type === 'dir' || entry.type === 'symlink-dir'
+  if (isDirectory) {
+    if (typeof entry.childCount === 'number') {
+      parts.push(`${entry.childCount} ${entry.childCount === 1 ? 'item' : 'items'}`)
+    } else {
+      parts.push('Folder')
+    }
+  } else {
+    parts.push(formatBytes(entry.size))
+  }
+  const modified = formatModifiedTime(entry.modTime)
+  if (modified) parts.push(modified)
+  if (entry.linkTarget) parts.push(`-> ${entry.linkTarget}`)
+  else if (entry.hardLink) {
+    const hardLink = entry.linkCount && entry.linkCount > 1
+      ? `hard link x${entry.linkCount}`
+      : 'hard link'
+    parts.push(entry.inode ? `${hardLink} · inode ${entry.inode}` : hardLink)
+  }
+  return parts.join(' · ')
+}
+
+function fileEntryMenuSubtitle(entry: {
+  type: string
+  size: number
+  childCount?: number | undefined
+  linkTarget?: string | undefined
+  hardLink?: boolean | undefined
+  linkCount?: number | undefined
+  inode?: number | undefined
+}): string {
+  const isDirectory = entry.type === 'dir' || entry.type === 'symlink-dir'
+  if (isDirectory) {
+    const count = typeof entry.childCount === 'number' ? `${entry.childCount} ${entry.childCount === 1 ? 'item' : 'items'}` : 'Folder'
+    if (entry.linkTarget) return `${count} · -> ${entry.linkTarget}`
+    return count
+  }
+  if (entry.linkTarget) return `${formatBytes(entry.size)} · -> ${entry.linkTarget}`
+  if (entry.hardLink) {
+    const hardLink = entry.linkCount && entry.linkCount > 1
+      ? `hard link x${entry.linkCount}`
+      : 'hard link'
+    return entry.inode ? `${formatBytes(entry.size)} · ${hardLink} · inode ${entry.inode}` : `${formatBytes(entry.size)} · ${hardLink}`
+  }
+  return `${formatBytes(entry.size)} · File`
+}
+
+function formatModifiedTime(value: string | undefined): string {
+  if (!value) return ''
+  const timestamp = Date.parse(value)
+  if (!Number.isFinite(timestamp)) return value
+  return new Date(timestamp).toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }

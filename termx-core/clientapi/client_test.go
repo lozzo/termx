@@ -23,6 +23,7 @@ func TestClientAPIBoundaryDoesNotExposeRemoteCapabilities(t *testing.T) {
 		"Create",
 		"CreateSession",
 		"DetachSession",
+		"EnsureResize",
 		"Events",
 		"GetSession",
 		"Input",

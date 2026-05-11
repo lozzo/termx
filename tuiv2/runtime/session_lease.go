@@ -21,17 +21,22 @@ func (r *Runtime) ApplySessionLeases(viewID string, leases []protocol.LeaseInfo)
 		}
 		prev := r.terminalControlStatus(terminal)
 		lease, ok := index[terminalID]
+		localLease := false
 		switch {
 		case !ok:
 			r.restoreLocalTerminalControl(terminal)
 		case lease.ViewID != "":
 			if lease.ViewID == viewID && containsPaneID(terminal.BoundPaneIDs, lease.PaneID) && r.connectedLocalBinding(lease.PaneID) != nil {
 				r.promoteTerminalControlPane(terminal, lease.PaneID, true)
+				localLease = true
 			} else {
 				r.clearTerminalLocalControl(terminal, lease.PaneID, len(terminal.BoundPaneIDs) > 0)
 			}
 		default:
 			r.clearTerminalLocalControl(terminal, "", len(terminal.BoundPaneIDs) > 0)
+		}
+		if !localLease {
+			r.applyExternalResizeOwnerInfo(terminal, terminal.ResizeOwnerAttachmentCount)
 		}
 		r.syncTerminalOwnership(terminal)
 		if next := r.terminalControlStatus(terminal); prev.OwnerPaneID != next.OwnerPaneID || prev.ControlPaneID != next.ControlPaneID || prev.RequiresExplicitOwner != next.RequiresExplicitOwner || prev.PendingOwnerResize != next.PendingOwnerResize {

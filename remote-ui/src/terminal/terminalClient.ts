@@ -21,11 +21,10 @@ export interface TerminalSnapshotPayload {
 }
 
 export interface TerminalScrollbackPage {
-  offset: number
+  beforeOffset: number
   limit: number
-  rows: unknown[]
-  rawSnapshot: unknown
-  snapshot: TerminalSnapshotPayload
+  rows: number
+  replay: string
   hasMore: boolean
 }
 
@@ -44,6 +43,9 @@ export interface TerminalResizeControl {
   canResize: boolean
   reason: TerminalResizeControlReason
   sizeLocked?: boolean
+  surfaceId?: string
+  ownerSurfaceId?: string
+  ownerViewId?: string
 }
 
 export const defaultTerminalResizeControl: TerminalResizeControl = {
@@ -76,6 +78,8 @@ export interface TerminalProtocolSession {
   subscribeTerminal(terminalId: string, handler: (event: TerminalProtocolEvent) => void): () => void
   loadScrollback(terminalId: string, offset: number, limit: number): Promise<TerminalScrollbackPage>
   closeTerminalChannel(terminalId: string): void
+  requestResizeOwner?(terminalId: string, size?: TerminalInputSize): Promise<TerminalResizeControl>
+  releaseResizeOwner?(terminalId: string): Promise<TerminalResizeControl>
 }
 
 export interface TerminalClientCallbacks {
@@ -142,6 +146,26 @@ export class TerminalClient {
       return false
     }
     return this.sendMessage({ type: 'resize', cols, rows }, { reportInputFailure: false })
+  }
+
+  async requestResizeOwner(size?: TerminalInputSize): Promise<TerminalResizeControl> {
+    if (!this.session || !this.terminalId || !this.session.requestResizeOwner) {
+      throw new Error('terminal resize ownership is not available')
+    }
+    const control = await this.session.requestResizeOwner(this.terminalId, size)
+    this.resizeControl = control
+    this.callbacks.onResizeControl?.(control)
+    return control
+  }
+
+  async releaseResizeOwner(): Promise<TerminalResizeControl> {
+    if (!this.session || !this.terminalId || !this.session.releaseResizeOwner) {
+      throw new Error('terminal resize ownership is not available')
+    }
+    const control = await this.session.releaseResizeOwner(this.terminalId)
+    this.resizeControl = control
+    this.callbacks.onResizeControl?.(control)
+    return control
   }
 
   loadScrollback(offset: number, limit: number): Promise<TerminalScrollbackPage> {

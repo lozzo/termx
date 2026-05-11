@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -12,7 +13,16 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 	if r == nil || r.client == nil {
 		return nil, shared.UserVisibleError{Op: "attach terminal", Err: fmt.Errorf("runtime client is nil")}
 	}
-	attached, err := r.client.Attach(ctx, terminalID, mode)
+	resizePolicy := protocol.ResizePolicyOwner
+	if terminal := r.registry.Get(terminalID); terminal != nil && len(terminal.BoundPaneIDs) > 0 {
+		resizePolicy = protocol.ResizePolicyFollower
+	}
+	attached, err := r.client.Attach(ctx, protocol.AttachParams{
+		TerminalID:   terminalID,
+		Mode:         mode,
+		ResizePolicy: resizePolicy,
+		SurfaceID:    TerminalPaneSurfaceID(paneID),
+	})
 	if err != nil {
 		return nil, shared.UserVisibleError{Op: "attach terminal", Err: err}
 	}
@@ -43,6 +53,7 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 			terminal.RequiresExplicitOwner = false
 		}
 	}
+	r.applyExternalResizeOwnerInfo(terminal, terminal.ResizeOwnerAttachmentCount)
 	r.syncTerminalOwnership(terminal)
 	r.touch()
 	return terminal, nil
@@ -94,6 +105,8 @@ func (r *Runtime) hydrateTerminalMetadata(ctx context.Context, terminalID string
 		terminal.Tags = cloneTags(info.Tags)
 		terminal.State = info.State
 		terminal.ExitCode = cloneExitCode(info.ExitCode)
+		terminal.ResizeOwnerAttachmentCount = info.ResizeOwnerAttachmentCount
+		terminal.ResizeOwnership = cloneProtocolResizeOwnership(info.ResizeOwnership)
 		r.touch()
 		return
 	}

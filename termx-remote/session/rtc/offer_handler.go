@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -308,13 +309,16 @@ func handleAPIChannel(ctx context.Context, dc *webrtc.DataChannel, manager *file
 	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 		var req apiRequest
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			log.Printf("termx remote api invalid request bytes=%d err=%v", len(msg.Data), err)
 			return
 		}
 		go func() {
+			started := time.Now()
 			reqCtx := ctx
 			if len(contextHook) > 0 && contextHook[0] != nil {
 				reqCtx = contextHook[0](reqCtx)
 			}
+			log.Printf("termx remote api request id=%s method=%s path=%s body_bytes=%d buffered=%d", req.ID, req.Method, req.Path, len(req.Body), dc.BufferedAmount())
 			statusCode, respBody, errMsg := routeRuntimeAPIRequestWithContext(reqCtx, manager, terminalManagement, req)
 			var body interface{}
 			if errMsg != "" {
@@ -329,6 +333,7 @@ func handleAPIChannel(ctx context.Context, dc *webrtc.DataChannel, manager *file
 				Status: int(statusCode),
 				Body:   body,
 			})
+			log.Printf("termx remote api response id=%s method=%s path=%s status=%d body_bytes=%d payload_bytes=%d elapsed_ms=%d err=%q", req.ID, req.Method, req.Path, statusCode, len(respBody), len(payload), time.Since(started).Milliseconds(), errMsg)
 			sendAPIResponse(reqCtx, dc, req.ID, payload, drainCh)
 		}()
 	})
@@ -472,16 +477,19 @@ var terminalInventoryProtocolEvents = map[int]string{
 }
 
 func runtimeEventPayloadForClient(payload []byte) []byte {
-	var evt struct {
-		Type       json.RawMessage `json:"type"`
-		TerminalID string          `json:"terminal_id,omitempty"`
-		Timestamp  string          `json:"timestamp,omitempty"`
+	var record map[string]any
+	if err := json.Unmarshal(payload, &record); err != nil {
+		return payload
 	}
-	if err := json.Unmarshal(payload, &evt); err != nil || len(evt.Type) == 0 {
+	rawType, ok := record["type"]
+	if !ok {
 		return payload
 	}
 	var protocolType int
-	if err := json.Unmarshal(evt.Type, &protocolType); err != nil {
+	switch typed := rawType.(type) {
+	case float64:
+		protocolType = int(typed)
+	default:
 		return payload
 	}
 	eventType, ok := terminalInventoryProtocolEvents[protocolType]
@@ -492,14 +500,17 @@ func runtimeEventPayloadForClient(payload []byte) []byte {
 		"eventType":    eventType,
 		"protocolType": protocolType,
 	}
-	if strings.TrimSpace(evt.TerminalID) != "" {
-		clientPayload["terminalId"] = strings.TrimSpace(evt.TerminalID)
+	if terminalID, ok := record["terminal_id"].(string); ok && strings.TrimSpace(terminalID) != "" {
+		clientPayload["terminalId"] = strings.TrimSpace(terminalID)
 	}
-	if strings.TrimSpace(evt.Timestamp) != "" {
-		clientPayload["timestamp"] = strings.TrimSpace(evt.Timestamp)
+	if timestamp, ok := record["timestamp"].(string); ok && strings.TrimSpace(timestamp) != "" {
+		clientPayload["timestamp"] = strings.TrimSpace(timestamp)
+	}
+	if terminal, ok := record["terminal"]; ok {
+		clientPayload["terminal"] = terminal
 	}
 	out, err := json.Marshal(map[string]any{
-		"type":    "inventory_changed",
+		"type":    eventType,
 		"payload": clientPayload,
 	})
 	if err != nil {
@@ -522,6 +533,8 @@ func sendAPIResponse(ctx context.Context, dc *webrtc.DataChannel, id string, dat
 	chunkDataSize := apiChunkMaxPayload - headerSize
 	offset := 0
 	first := true
+	chunks := 0
+	started := time.Now()
 
 	for offset < len(data) {
 		end := offset + chunkDataSize
@@ -545,17 +558,24 @@ func sendAPIResponse(ctx context.Context, dc *webrtc.DataChannel, id string, dat
 		copy(buf[3:3+len(idBytes)], idBytes)
 		copy(buf[headerSize:], data[offset:end])
 		if err := waitAPIWritable(ctx, dc, drainCh); err != nil {
+			log.Printf("termx remote api send wait failed id=%s chunks=%d sent_bytes=%d total_bytes=%d buffered=%d err=%v", id, chunks, offset, len(data), dc.BufferedAmount(), err)
 			return
 		}
-		_ = dc.Send(buf)
+		if err := dc.Send(buf); err != nil {
+			log.Printf("termx remote api send failed id=%s chunk=%d chunk_bytes=%d sent_bytes=%d total_bytes=%d buffered=%d err=%v", id, chunks+1, len(buf), offset, len(data), dc.BufferedAmount(), err)
+			return
+		}
+		chunks += 1
 
 		offset = end
 		first = false
 	}
+	log.Printf("termx remote api send complete id=%s chunks=%d total_bytes=%d elapsed_ms=%d buffered=%d", id, chunks, len(data), time.Since(started).Milliseconds(), dc.BufferedAmount())
 }
 
 func waitAPIWritable(ctx context.Context, dc *webrtc.DataChannel, drainCh <-chan struct{}) error {
 	for dc.BufferedAmount() >= apiSendBufferHigh {
+		log.Printf("termx remote api waiting writable buffered=%d high=%d", dc.BufferedAmount(), apiSendBufferHigh)
 		select {
 		case <-drainCh:
 		case <-ctx.Done():

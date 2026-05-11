@@ -52,8 +52,19 @@ export interface NativeTransferSnapshotItem {
   error?: string
 }
 
+export interface NativeDebugLogExport {
+  path: string
+  name: string
+  bytes: number
+}
+
 export interface NativeTransferSnapshot {
   transfers: NativeTransferSnapshotItem[]
+}
+
+export interface NativeBridgeEndpoint {
+  port: number
+  token: string
 }
 
 export interface NativeStateChangeEvent {
@@ -73,13 +84,15 @@ export interface NativeConnectionPlugin extends Plugin {
   release(opts: { machineId: string }): Promise<void>
   releaseAll(): Promise<void>
   handleForegroundResume(opts?: { backgroundDurationMs?: number }): Promise<void>
-  getBridgePort(): Promise<{ port: number }>
+  getBridgeEndpoint(): Promise<NativeBridgeEndpoint>
   getSnapshot(opts: { machineId: string }): Promise<NativeConnectionSnapshot>
   getConnectionInfo(opts?: { machineId?: string }): Promise<NativeConnectionInfo>
   getDownloadResumeOffset(opts: { machineId: string; filePath: string; fileSize: number }): Promise<{ offset: number }>
   getTransferSnapshot(): Promise<NativeTransferSnapshot>
   clearTransfer(opts: { transferId: string }): Promise<void>
   resumeAllTransfers(opts?: { machineId?: string }): Promise<void>
+  exportDebugLogs(): Promise<NativeDebugLogExport>
+  writeDebugLog(opts: { level?: 'debug' | 'info' | 'warn' | 'error'; tag?: string; message: string }): Promise<void>
 
   addListener(
     event: 'stateChange',

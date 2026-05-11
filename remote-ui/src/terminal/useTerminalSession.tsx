@@ -14,13 +14,15 @@ import {
   type TerminalScrollbackLoadResult,
   type TerminalSnapshotPayload,
 } from './terminalClient'
-import { rowsToPlainText, rowsToReplay } from './termxProtocol'
 import { createTerminalProtocolClient } from './terminalProtocolClient'
+import { logTerminalDiagnostic, terminalNow } from './terminalDiagnostics'
 import type { Terminal } from '../core/model'
 import type { RtcSession, RtcTerminalDataChannelController } from '../core/transport'
 
 const recentInputRecoveryWindowMs = 1500
 const terminalTextSoftLimitChars = 1_500_000
+const outputStatsIntervalMs = 1000
+const largeOutputChunkBytes = 64 * 1024
 
 export interface UseTerminalSessionOptions {
   machineId: string
@@ -36,6 +38,8 @@ export interface UseTerminalSessionResult {
   resizeControl: TerminalResizeControl
   sendInput(data: string, size?: { cols: number; rows: number }): boolean
   sendResize(cols: number, rows: number): boolean
+  requestResizeOwner(size?: { cols: number; rows: number }): Promise<TerminalResizeControl>
+  releaseResizeOwner(): Promise<TerminalResizeControl>
   loadScrollback(limit?: number): Promise<TerminalScrollbackLoadResult>
   handleAppResume(resumeKind: 'quick' | 'cold' | 'frozen'): void
   reattach(session: RtcSession, options?: { forceTerminalChannel?: boolean }): void
@@ -60,6 +64,53 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
   const recoveringInputRef = useRef(false)
   const pendingRecoveryInputRef = useRef<{ data: string; size?: { cols: number; rows: number } } | null>(null)
   const pendingRecoveryInputTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const textDecoderRef = useRef(new TextDecoder())
+  const outputStatsRef = useRef({
+    chunks: 0,
+    bytes: 0,
+    chars: 0,
+    trimmedChars: 0,
+    lastLogAt: terminalNow(),
+    lastBytes: 0,
+    lastChunks: 0,
+  })
+
+  const logSession = useCallback((event: string, input: {
+    level?: 'debug' | 'info' | 'warn' | 'error'
+    details?: Record<string, unknown> | undefined
+  } = {}) => {
+    logTerminalDiagnostic(`session.${event}`, {
+      level: input.level,
+      machineId: options.machineId,
+      terminalId: options.terminalId,
+      connectionId: connectionIdRef.current,
+      details: input.details,
+    })
+  }, [options.machineId, options.terminalId])
+
+  const maybeLogOutputStats = useCallback((currentTextChars: number) => {
+    const now = terminalNow()
+    const stats = outputStatsRef.current
+    if (now - stats.lastLogAt < outputStatsIntervalMs) return
+    const elapsedSeconds = Math.max(0.001, (now - stats.lastLogAt) / 1000)
+    const intervalBytes = stats.bytes - stats.lastBytes
+    const intervalChunks = stats.chunks - stats.lastChunks
+    logSession('output_stats', {
+      details: {
+        chunks: stats.chunks,
+        bytes: stats.bytes,
+        chars: stats.chars,
+        currentTextChars,
+        trimmedChars: stats.trimmedChars,
+        intervalChunks,
+        intervalBytes,
+        bytesPerSecond: Math.round(intervalBytes / elapsedSeconds),
+      },
+    })
+    stats.lastLogAt = now
+    stats.lastBytes = stats.bytes
+    stats.lastChunks = stats.chunks
+  }, [logSession])
 
   const clearPendingRecoveryInput = useCallback((pending?: { data: string; size?: { cols: number; rows: number } } | null) => {
     if (pending && pendingRecoveryInputRef.current !== pending) return
@@ -135,13 +186,49 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
   const callbacks = useMemo<TerminalClientCallbacks>(() => ({
     onOutput: (data) => {
       hasMoreScrollbackRef.current = true
-      setTerminalText((current) => appendTerminalText(current, new TextDecoder().decode(data)))
+      const decoded = textDecoderRef.current.decode(data)
+      const stats = outputStatsRef.current
+      stats.chunks += 1
+      stats.bytes += data.byteLength
+      stats.chars += decoded.length
+      if (data.byteLength >= largeOutputChunkBytes) {
+        logSession('large_output_chunk', {
+          level: 'warn',
+          details: {
+            bytes: data.byteLength,
+            decodedChars: decoded.length,
+            chunks: stats.chunks,
+            totalBytes: stats.bytes,
+          },
+        })
+      }
+      setTerminalText((current) => {
+        const next = appendTerminalText(current, decoded)
+        const expectedLength = current.length + decoded.length
+        if (next.length < expectedLength) {
+          stats.trimmedChars += expectedLength - next.length
+        }
+        maybeLogOutputStats(next.length)
+        return next
+      })
     },
     onSnapshot: (nextSnapshot) => {
       const canPreserveHistory = !nextSnapshot.alternateScreen && scrollbackPrefixTextRef.current !== ''
       const nextText = nextSnapshot.replay ?? nextSnapshot.text
       const screenText = nextSnapshot.replay ?? nextSnapshot.screenReplay ?? nextSnapshot.screenText
       setTerminalSnapshot(nextSnapshot)
+      logSession('snapshot_received', {
+        details: {
+          textChars: nextSnapshot.text.length,
+          replayChars: nextSnapshot.replay?.length ?? 0,
+          screenTextChars: nextSnapshot.screenText?.length ?? 0,
+          screenReplayChars: nextSnapshot.screenReplay?.length ?? 0,
+          rows: nextSnapshot.rows,
+          cols: nextSnapshot.cols,
+          scrollbackRows: nextSnapshot.scrollbackRows?.length ?? 0,
+          alternateScreen: nextSnapshot.alternateScreen === true,
+        },
+      })
       if (!canPreserveHistory) {
         loadedScrollbackRowsRef.current = nextSnapshot.scrollbackRows?.length ?? 0
         scrollbackPrefixTextRef.current = ''
@@ -173,7 +260,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         void recoverInputChannel(pending, reason)
       }
     },
-  }), [recoverInputChannel])
+  }), [logSession, maybeLogOutputStats, recoverInputChannel])
 
   useEffect(() => {
     sessionRef.current = options.session
@@ -181,6 +268,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     clientRef.current = client
 
     let cancelled = false
+    logSession('mount', { level: 'info' })
     setTerminalSnapshot(null)
     setTerminalText('')
     setTerminalInfo(null)
@@ -191,12 +279,30 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     loadingScrollbackRef.current = false
     hasMoreScrollbackRef.current = true
     recoveringInputRef.current = false
+    outputStatsRef.current = {
+      chunks: 0,
+      bytes: 0,
+      chars: 0,
+      trimmedChars: 0,
+      lastLogAt: terminalNow(),
+      lastBytes: 0,
+      lastChunks: 0,
+    }
     clearPendingRecoveryInput()
     dispatch({ type: 'user.connectMachine', machineId: options.machineId })
 
     options.session.getConnectionInfo().then((info) => {
       if (cancelled) return
       connectionIdRef.current = info.connectionId
+      logSession('connection_info', {
+        level: 'info',
+        details: {
+          path: info.path,
+          relayInUse: info.relayInUse === true,
+          type: info.type,
+          rtt: info.rtt,
+        },
+      })
       dispatch({ type: 'connection.connected', path: info.path, connectionId: info.connectionId })
       dispatch({ type: 'user.openTerminal', machineId: options.machineId, terminalId: options.terminalId })
       return createProtocolSession(options.session, options.machineId, options.terminalId, info)
@@ -207,18 +313,31 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     }).catch((err: unknown) => {
       if (cancelled) return
       const reason = err instanceof Error ? err.message : String(err)
+      logSession('connect_failed', {
+        level: 'error',
+        details: { reason },
+      })
       dispatch({ type: 'connection.failed', reason, recoverable: true, surface: 'banner' })
     })
 
     return () => {
       cancelled = true
+      logSession('unmount', {
+        level: 'info',
+        details: {
+          chunks: outputStatsRef.current.chunks,
+          bytes: outputStatsRef.current.bytes,
+          chars: outputStatsRef.current.chars,
+          trimmedChars: outputStatsRef.current.trimmedChars,
+        },
+      })
       client.disconnect()
       protocolSessionRef.current = null
       clientRef.current = null
       clearPendingRecoveryInput()
       dispatch({ type: 'user.release' })
     }
-  }, [callbacks, clearPendingRecoveryInput, options.machineId, options.terminalId, options.session])
+  }, [callbacks, clearPendingRecoveryInput, logSession, options.machineId, options.terminalId, options.session])
 
   const sendInput = useCallback((data: string, size?: { cols: number; rows: number }) => {
     const message = { data, ...(size ? { size } : {}) }
@@ -231,6 +350,14 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
 
   const sendResize = useCallback((cols: number, rows: number) => {
     return clientRef.current?.sendResize(cols, rows) ?? false
+  }, [logSession])
+
+  const requestResizeOwner = useCallback((size?: { cols: number; rows: number }) => {
+    return clientRef.current?.requestResizeOwner(size) ?? Promise.reject(new Error('terminal client is not connected'))
+  }, [])
+
+  const releaseResizeOwner = useCallback(() => {
+    return clientRef.current?.releaseResizeOwner() ?? Promise.reject(new Error('terminal client is not connected'))
   }, [])
 
   const loadScrollback = useCallback(async (limit = 100): Promise<TerminalScrollbackLoadResult> => {
@@ -250,12 +377,25 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       }
     }
     loadingScrollbackRef.current = true
+    const startedAt = terminalNow()
+    logSession('scrollback_load_start', {
+      details: {
+        offset: loadedScrollbackRowsRef.current,
+        limit,
+      },
+    })
     try {
       const page = await client.loadScrollback(loadedScrollbackRowsRef.current, limit)
-      const rows = page.rows
-      const loadedRows = rows.length
+      const loadedRows = page.rows
       if (loadedRows === 0) {
         hasMoreScrollbackRef.current = false
+        logSession('scrollback_load_empty', {
+          details: {
+            elapsedMs: Math.round(terminalNow() - startedAt),
+            offset: loadedScrollbackRowsRef.current,
+            limit,
+          },
+        })
         return {
           loadedRows: 0,
           totalRows: loadedScrollbackRowsRef.current,
@@ -266,9 +406,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       hasMoreScrollbackRef.current = page.hasMore
       const revision = historyRevisionRef.current + 1
       historyRevisionRef.current = revision
-      const text = rowsToPlainText(rows)
-      const replay = rowsToReplay(rows)
-      const prefix = replay || text
+      const prefix = page.replay
       scrollbackPrefixTextRef.current = prependTerminalText(prefix, scrollbackPrefixTextRef.current)
       setTerminalSnapshot((current) => current ? {
         ...current,
@@ -280,6 +418,15 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         },
       } : current)
       setTerminalText((current) => prependTerminalText(prefix, current))
+      logSession('scrollback_load_success', {
+        details: {
+          elapsedMs: Math.round(terminalNow() - startedAt),
+          loadedRows,
+          totalRows: loadedScrollbackRowsRef.current,
+          hasMore: page.hasMore,
+          prefixChars: prefix.length,
+        },
+      })
       return {
         loadedRows,
         totalRows: loadedScrollbackRowsRef.current,
@@ -323,6 +470,8 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     resizeControl,
     sendInput,
     sendResize,
+    requestResizeOwner,
+    releaseResizeOwner,
     loadScrollback,
     handleAppResume,
     reattach,
@@ -379,7 +528,7 @@ function createProtocolSession(
     protocol = null
     protocolPromise = null
     pendingChannel = null
-      closeRtcTerminalDataChannel(session, id)
+    closeRtcTerminalDataChannel(session, id)
   }
   const ensureProtocol = async (id: string): Promise<TerminalProtocolSession> => {
     if (protocol) return protocol
@@ -396,6 +545,8 @@ function createProtocolSession(
           machineId,
           terminalId,
           connectionInfo,
+          resizePolicy: 'follower',
+          surfaceId: `app:${machineId}:terminal:${terminalId}`,
         })
         for (const [pendingTerminalId, handlers] of pendingSubscribers) {
           for (const handler of handlers) {
@@ -442,6 +593,33 @@ function createProtocolSession(
       closed = true
       resetProtocol(id)
     },
+    async requestResizeOwner(id, size) {
+      return withRecoverableProtocolRetry(id, async (current) => {
+        if (!current.requestResizeOwner) throw new Error('terminal resize ownership is not available')
+        return current.requestResizeOwner(id, size)
+      })
+    },
+    async releaseResizeOwner(id) {
+      return withRecoverableProtocolRetry(id, async (current) => {
+        if (!current.releaseResizeOwner) throw new Error('terminal resize ownership is not available')
+        return current.releaseResizeOwner(id)
+      })
+    },
+  }
+
+  async function withRecoverableProtocolRetry<T>(
+    id: string,
+    run: (current: TerminalProtocolSession) => Promise<T>,
+  ): Promise<T> {
+    const current = await ensureProtocol(id)
+    try {
+      return await run(current)
+    } catch (err) {
+      if (closed || !isRecoverableTerminalProtocolError(err)) throw err
+      resetProtocol(id)
+      const next = await ensureProtocol(id)
+      return run(next)
+    }
   }
 }
 
@@ -450,6 +628,11 @@ function closeRtcTerminalDataChannel(session: RtcSession, terminalId: string): v
   if (typeof controller.closeTerminalDataChannel === 'function') {
     controller.closeTerminalDataChannel(terminalId)
   }
+}
+
+function isRecoverableTerminalProtocolError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  return /channel .*not open|channel is not open|attachment channel \d+ does not match terminal|terminal attachment channel \d+ is not attached|ensure resize requires attachment/i.test(err.message)
 }
 
 function shouldRecoverRecentInput(reason?: string): boolean {
@@ -471,11 +654,10 @@ function createClosedProtocolSession(
     },
     async loadScrollback() {
       return {
-        offset: 0,
+        beforeOffset: 0,
         limit: 0,
-        rows: [],
-        rawSnapshot: {},
-        snapshot: { text: '', cols: 0, rows: 0 },
+        rows: 0,
+        replay: '',
         hasMore: false,
       }
     },

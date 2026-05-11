@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { X } from 'lucide-react'
-import { haptic } from '../platform/haptics'
+import { hapticImpact } from '../platform/haptics'
 
 export interface ActionSheetItem {
   label: string
@@ -23,7 +23,7 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
   return (
     <div
       className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 backdrop-blur-[2px]"
-      onClick={() => { haptic(); onClose() }}
+      onClick={onClose}
       data-testid="action-sheet-backdrop"
     >
       <div
@@ -42,7 +42,7 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
             <button
               type="button"
               className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 active:bg-zinc-200"
-              onClick={() => { haptic(); onClose() }}
+              onClick={onClose}
             >
               <X className="h-4 w-4" />
             </button>
@@ -57,7 +57,7 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
                   action.danger ? 'text-red-600' : 'text-zinc-700'
                 }`}
                 onClick={() => {
-                  haptic()
+                  if (action.danger) hapticImpact()
                   action.onClick()
                   onClose()
                 }}

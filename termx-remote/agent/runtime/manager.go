@@ -16,6 +16,7 @@ import (
 	"github.com/lozzow/termx/termx-remote/fileapi"
 	"github.com/lozzow/termx/termx-remote/identity"
 	"github.com/lozzow/termx/termx-remote/pairing"
+	"github.com/lozzow/termx/termx-core/protocol"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
 	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
 )
@@ -43,6 +44,8 @@ type TerminalInventoryItem struct {
 	Environment  string   `json:"environment,omitempty"`
 	SizeLocked   bool     `json:"size_locked,omitempty"`
 	SizeLockMode string   `json:"size_lock_mode,omitempty"`
+	ResizeOwnership            *protocol.ResizeOwnership `json:"resize_ownership,omitempty"`
+	ResizeOwnerAttachmentCount int                       `json:"resize_owner_attachment_count,omitempty"`
 }
 
 type InventoryProvider interface {

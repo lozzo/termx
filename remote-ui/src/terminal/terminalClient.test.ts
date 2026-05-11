@@ -97,7 +97,13 @@ describe('TerminalClient', () => {
     const page = await client.loadScrollback(100, 50)
 
     expect(session.scrollbackRequests).toEqual([{ terminalId: 'terminal-1', offset: 100, limit: 50 }])
-    expect(page.rows).toEqual(['older'])
+    expect(page).toMatchObject({
+      beforeOffset: 100,
+      limit: 50,
+      rows: 1,
+      replay: 'older',
+      hasMore: false,
+    })
   })
 
   it('ignores stale async terminal opens after switching to another terminal', async () => {
@@ -191,11 +197,10 @@ class MockTerminalProtocolSession implements TerminalProtocolSession {
   async loadScrollback(terminalId: string, offset: number, limit: number) {
     this.scrollbackRequests.push({ terminalId, offset, limit })
     return {
-      offset,
+      beforeOffset: offset,
       limit,
-      rows: ['older'],
-      rawSnapshot: {},
-      snapshot: { text: 'older', cols: 80, rows: 1 },
+      rows: 1,
+      replay: 'older',
       hasMore: false,
     }
   }
@@ -276,11 +281,10 @@ class DeferredTerminalProtocolSession implements TerminalProtocolSession {
 
   async loadScrollback(terminalId: string, offset: number, limit: number) {
     return {
-      offset,
+      beforeOffset: offset,
       limit,
-      rows: [],
-      rawSnapshot: {},
-      snapshot: { text: '', cols: 0, rows: 0 },
+      rows: 0,
+      replay: '',
       hasMore: false,
     }
   }

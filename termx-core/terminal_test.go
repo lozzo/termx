@@ -818,6 +818,45 @@ func TestTerminalForwardTerminalStreamMessagesRecoversSyncLostWithSnapshotFallba
 	<-done
 }
 
+func TestTerminalForwardTerminalStreamMessagesPreservesSyncLostForRawOutput(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	vt := localvterm.New(8, 2, 16, nil)
+	if _, err := vt.Write([]byte("hello")); err != nil {
+		t.Fatalf("seed vterm: %v", err)
+	}
+
+	src := make(chan fanout.StreamMessage, 4)
+	dst := make(chan StreamMessage, 8)
+	done := make(chan struct{})
+	term := &Terminal{
+		size:               Size{Cols: 8, Rows: 2},
+		state:              StateRunning,
+		vterm:              vt,
+		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
+	}
+	go func() {
+		defer close(done)
+		term.forwardTerminalStreamMessages(ctx, src, dst, TerminalSubscribeOptions{RawOutput: true})
+		close(dst)
+	}()
+
+	src <- fanout.StreamMessage{Type: fanout.StreamSyncLost, DroppedBytes: 9}
+	close(src)
+
+	select {
+	case msg := <-dst:
+		if msg.Type != StreamSyncLost || msg.DroppedBytes != 9 {
+			t.Fatalf("expected raw output stream to preserve sync-lost, got %#v", msg)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timed out waiting for sync-lost frame")
+	}
+
+	<-done
+}
+
 func TestTerminalForwardTerminalStreamMessagesKeepsSnapshotFallbackWhenThrottleDisabled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1296,6 +1335,35 @@ func TestTerminalSnapshotReturnsNewestScrollbackWindow(t *testing.T) {
 	}
 	if got := snapshotRowString(older.Scrollback[1]); !strings.Contains(got, "2") {
 		t.Fatalf("expected older window to include next history row, got %q", got)
+	}
+}
+
+func TestTerminalHistoryReplayReturnsNewestReplayWindow(t *testing.T) {
+	vt := localvterm.New(4, 2, 16, nil)
+	if _, err := vt.Write([]byte("1\n2\n3\n4\n5\n")); err != nil {
+		t.Fatalf("write scrollback seed failed: %v", err)
+	}
+
+	term := &Terminal{
+		id:    "hist-1",
+		size:  Size{Cols: 4, Rows: 2},
+		vterm: vt,
+	}
+
+	latest := term.HistoryReplay(HistoryReplayOptions{BeforeOffset: 0, Limit: 2})
+	if latest.Rows != 2 || latest.Replay == "" {
+		t.Fatalf("expected latest replay rows, got %#v", latest)
+	}
+	if !strings.Contains(latest.Replay, "3") || !strings.Contains(latest.Replay, "4") {
+		t.Fatalf("expected latest replay to contain newest scrollback rows, got %q", latest.Replay)
+	}
+
+	older := term.HistoryReplay(HistoryReplayOptions{BeforeOffset: 2, Limit: 2})
+	if older.Rows != 2 || older.Replay == "" {
+		t.Fatalf("expected older replay rows, got %#v", older)
+	}
+	if !strings.Contains(older.Replay, "1") || !strings.Contains(older.Replay, "2") {
+		t.Fatalf("expected older replay to contain earlier scrollback rows, got %q", older.Replay)
 	}
 }
 

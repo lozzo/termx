@@ -14,6 +14,8 @@ export const TERMX_FRAME_TYPES = {
   screenUpdate: 0x14,
   syncLost: 0x16,
   closed: 0x17,
+  historyRequest: 0x18,
+  historyReplay: 0x19,
 } as const
 
 export type TermxFrameType = typeof TERMX_FRAME_TYPES[keyof typeof TERMX_FRAME_TYPES]
@@ -64,6 +66,26 @@ export function encodeResizePayload(cols: number, rows: number): Uint8Array {
   view.setUint16(0, cols)
   view.setUint16(2, rows)
   return payload
+}
+
+export function encodeHistoryRequestPayload(beforeOffset: number, limit: number): Uint8Array {
+  const payload = new Uint8Array(8)
+  const view = new DataView(payload.buffer)
+  view.setUint32(0, Math.max(0, beforeOffset))
+  view.setUint32(4, Math.max(0, limit))
+  return payload
+}
+
+export function decodeHistoryReplayPayload(payload: Uint8Array): { rows: number; hasMore: boolean; replay: Uint8Array } {
+  if (payload.byteLength < 5) {
+    throw new Error('termx history replay payload too short')
+  }
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
+  return {
+    rows: view.getUint32(0),
+    hasMore: view.getUint8(4) === 1,
+    replay: payload.slice(5),
+  }
 }
 
 export function rowsToText(snapshot: unknown): string {

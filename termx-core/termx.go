@@ -18,6 +18,7 @@ import (
 
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/termx-core/terminalmeta"
 	"github.com/lozzow/termx/termx-core/transport"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
 	"github.com/lozzow/termx/termx-core/workbenchsvc"
@@ -180,6 +181,7 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 		ScrollbackSize:     scrollback,
 		KeepAfterExit:      keepAfterExit,
 		LiveOutputThrottle: s.cfg.liveOutputThrottle,
+		Logger:             s.cfg.logger,
 		RemoveFunc:         s.removeTerminal,
 		UpdateFunc:         s.invalidateProtocolListCache,
 	})
@@ -365,6 +367,9 @@ func (s *Server) Resize(ctx context.Context, id string, cols, rows uint16) error
 	if err != nil {
 		return err
 	}
+	if size, running := term.RunningSize(); running && size.Cols == cols && size.Rows == rows {
+		return nil
+	}
 	if err := term.Resize(cols, rows); err != nil {
 		return err
 	}
@@ -391,6 +396,20 @@ func (s *Server) Snapshot(ctx context.Context, id string, opts ...SnapshotOption
 		opt = opts[0]
 	}
 	return term.Snapshot(opt.ScrollbackOffset, opt.ScrollbackLimit), nil
+}
+
+func (s *Server) HistoryReplay(ctx context.Context, id string, opts ...HistoryReplayOptions) (*HistoryReplayResult, error) {
+	_ = ctx
+	term, err := s.getTerminal(id)
+	if err != nil {
+		return nil, err
+	}
+	var opt HistoryReplayOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	result := term.HistoryReplay(opt)
+	return &result, nil
 }
 
 func (s *Server) Events(ctx context.Context, opts ...EventsOption) <-chan Event {
@@ -684,6 +703,9 @@ type sessionAttachment struct {
 	terminal      *Terminal
 	terminalID    string
 	attachmentID  string
+	surfaceID     string
+	viewID        string
+	streamMode    string
 	mu            sync.RWMutex
 	resizeControl protocol.ResizeControl
 	cleanup       func()
@@ -720,12 +742,16 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 	var attachmentsMu sync.RWMutex
 	var eventsCancelMu sync.Mutex
 	var eventsCancel context.CancelFunc
+	rxStats := newTransportFrameStats(s.cfg.logger, remote, "rx")
+	txStats := newTransportFrameStats(s.cfg.logger, remote, "tx")
 	defer func() {
 		eventsCancelMu.Lock()
 		if eventsCancel != nil {
 			eventsCancel()
 		}
 		eventsCancelMu.Unlock()
+		rxStats.flush("termx transport frame stats final")
+		txStats.flush("termx transport frame stats final")
 	}()
 
 	var sendMu sync.Mutex
@@ -740,7 +766,22 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 		if channel != 0 {
 			perftrace.Count("transport.stream.bytes_over_wire", len(frame))
 		}
-		return t.Send(frame)
+		txStats.record(channel, typ, len(payload), len(frame))
+		started := time.Now()
+		err = t.Send(frame)
+		if elapsed := time.Since(started); elapsed >= coreDiagnosticsSlowOperation && s.cfg.logger != nil {
+			s.cfg.logger.Warn(
+				"termx transport send slow",
+				"remote", remote,
+				"channel", channel,
+				"type", protocolFrameTypeName(typ),
+				"payload_bytes", len(payload),
+				"frame_bytes", len(frame),
+				"elapsed_ms", diagnosticDurationMillis(elapsed),
+				"error", err,
+			)
+		}
+		return err
 	}
 
 	for {
@@ -763,6 +804,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 			s.cfg.logger.Warn("transport decode failed", "remote", remote, "error", err)
 			return err
 		}
+		rxStats.record(channel, typ, len(payload), len(raw))
 
 		if channel == 0 {
 			switch typ {
@@ -790,6 +832,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 				}
 				s.cfg.logger.Debug("transport request", "remote", remote, "method", req.Method, "id", req.ID)
 				if err := scope.authorizeRequest(req); err != nil {
+					s.cfg.logger.Warn("termx protocol request rejected", "remote", remote, "id", req.ID, "method", req.Method, "params_bytes", len(req.Params), "error", err)
 					if err := sendProtocolError(sendFrame, req.ID, 0, protocolErrorCode(err), err.Error()); err != nil {
 						return err
 					}
@@ -799,18 +842,53 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 					result json.RawMessage
 					code   int
 				)
+				requestStarted := time.Now()
+				if s.cfg.logger != nil {
+					s.cfg.logger.Info("termx protocol request started", "remote", remote, "id", req.ID, "method", req.Method, "params_bytes", len(req.Params))
+				}
 				if req.Method == "events" {
 					result, code, err = s.handleEventsRequest(sessionCtx, req, cancel, &eventsCancelMu, &eventsCancel, sendFrame)
 				} else {
 					result, code, err = s.handleRequest(sessionCtx, remote, nil, allocator, attachments, &attachmentsMu, scope, req, sendFrame)
 				}
 				if err != nil {
+					if s.cfg.logger != nil {
+						s.cfg.logger.Warn(
+							"termx protocol request failed",
+							"remote", remote,
+							"id", req.ID,
+							"method", req.Method,
+							"code", code,
+							"params_bytes", len(req.Params),
+							"elapsed_ms", diagnosticDurationMillis(time.Since(requestStarted)),
+							"error", err,
+						)
+					}
 					if err := sendProtocolError(sendFrame, req.ID, 0, code, err.Error()); err != nil {
 						return err
 					}
 					continue
 				}
 				respPayload, _ := json.Marshal(protocol.Response{ID: req.ID, Result: result})
+				if s.cfg.logger != nil {
+					elapsed := time.Since(requestStarted)
+					level := slog.LevelInfo
+					if elapsed >= coreDiagnosticsSlowOperation || len(result) >= coreDiagnosticsLargePayloadBytes || len(respPayload) >= coreDiagnosticsLargePayloadBytes {
+						level = slog.LevelWarn
+					}
+					s.cfg.logger.Log(
+						sessionCtx,
+						level,
+						"termx protocol request completed",
+						"remote", remote,
+						"id", req.ID,
+						"method", req.Method,
+						"params_bytes", len(req.Params),
+						"result_bytes", len(result),
+						"response_bytes", len(respPayload),
+						"elapsed_ms", diagnosticDurationMillis(elapsed),
+					)
+				}
 				if err := sendFrame(0, protocol.TypeResponse, respPayload); err != nil {
 					return err
 				}
@@ -841,6 +919,9 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 		}
 		switch typ {
 		case protocol.TypeInput:
+			if len(payload) >= coreDiagnosticsLargePayloadBytes && s.cfg.logger != nil {
+				s.cfg.logger.Warn("termx transport large input frame", "remote", remote, "terminal_id", attachment.terminalID, "channel", channel, "bytes", len(payload))
+			}
 			if err := s.WriteInput(sessionCtx, attachment.terminalID, payload); err != nil && !errors.Is(err, ErrTerminalExited) {
 				s.cfg.logger.Warn("transport input failed", "remote", remote, "terminal_id", attachment.terminalID, "error", err)
 				return err
@@ -856,10 +937,51 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 			if err != nil {
 				continue
 			}
+			if s.cfg.logger != nil {
+				s.cfg.logger.Info("termx transport resize frame", "remote", remote, "terminal_id", attachment.terminalID, "channel", channel, "cols", cols, "rows", rows)
+			}
 			if err := s.Resize(sessionCtx, attachment.terminalID, cols, rows); err != nil &&
 				!errors.Is(err, ErrTerminalExited) &&
 				!errors.Is(err, ErrPermissionDenied) {
 				s.cfg.logger.Warn("transport resize failed", "remote", remote, "terminal_id", attachment.terminalID, "error", err)
+				return err
+			}
+		case protocol.TypeHistoryRequest:
+			beforeOffset, limit, err := protocol.DecodeHistoryRequestPayload(payload)
+			if err != nil {
+				if err := sendProtocolError(sendFrame, 0, channel, 400, err.Error()); err != nil {
+					return err
+				}
+				continue
+			}
+			replay, err := s.HistoryReplay(sessionCtx, attachment.terminalID, HistoryReplayOptions{
+				BeforeOffset: beforeOffset,
+				Limit:        limit,
+			})
+			if err != nil {
+				if err := sendProtocolError(sendFrame, 0, channel, protocolErrorCode(err), err.Error()); err != nil {
+					return err
+				}
+				continue
+			}
+			replayPayload, err := protocol.EncodeHistoryReplayPayload(replay.Rows, replay.HasMore, []byte(replay.Replay))
+			if err != nil {
+				return err
+			}
+			if s.cfg.logger != nil {
+				s.cfg.logger.Info(
+					"termx history replay served",
+					"remote", remote,
+					"terminal_id", attachment.terminalID,
+					"channel", channel,
+					"before_offset", beforeOffset,
+					"limit", limit,
+					"rows", replay.Rows,
+					"has_more", replay.HasMore,
+					"replay_bytes", len(replay.Replay),
+				)
+			}
+			if err := sendFrame(channel, protocol.TypeHistoryReplay, replayPayload); err != nil {
 				return err
 			}
 		}
@@ -973,6 +1095,15 @@ func (s *Server) handleRequest(
 	req protocol.Request,
 	sendFrame func(uint16, uint8, []byte) error,
 ) (json.RawMessage, int, error) {
+	started := time.Now()
+	if s.cfg.logger != nil {
+		defer func() {
+			elapsed := time.Since(started)
+			if elapsed >= coreDiagnosticsSlowOperation {
+				s.cfg.logger.Warn("termx protocol handler slow", "remote", remote, "id", req.ID, "method", req.Method, "elapsed_ms", diagnosticDurationMillis(elapsed), "params_bytes", len(req.Params))
+			}
+		}()
+	}
 	if strings.HasPrefix(req.Method, "session.") {
 		return s.handleSessionRequest(ctx, remote, req)
 	}
@@ -1001,12 +1132,14 @@ func (s *Server) handleRequest(
 			return nil, protocolErrorCode(err), err
 		}
 		result, _ := json.Marshal(protocol.CreateResult{TerminalID: info.ID, State: string(info.State)})
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", info.ID)
 		return result, 0, nil
 	case "list":
 		result, err := s.protocolListResponse()
 		if err != nil {
 			return nil, 500, err
 		}
+		s.logProtocolMethodResult(ctx, remote, req, result, started)
 		return result, 0, nil
 	case "get":
 		var params protocol.GetParams
@@ -1021,6 +1154,7 @@ func (s *Server) handleRequest(
 		if err != nil {
 			return nil, 500, err
 		}
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", params.TerminalID)
 		return result, 0, nil
 	case "kill":
 		var params protocol.GetParams
@@ -1033,6 +1167,7 @@ func (s *Server) handleRequest(
 		if err := s.Kill(ctx, params.TerminalID); err != nil {
 			return nil, protocolErrorCode(err), err
 		}
+		s.logProtocolMethodResult(ctx, remote, req, json.RawMessage(`{}`), started, "terminal_id", params.TerminalID)
 		return json.RawMessage(`{}`), 0, nil
 	case "restart":
 		var params protocol.GetParams
@@ -1045,6 +1180,7 @@ func (s *Server) handleRequest(
 		if err := s.Restart(ctx, params.TerminalID); err != nil {
 			return nil, protocolErrorCode(err), err
 		}
+		s.logProtocolMethodResult(ctx, remote, req, json.RawMessage(`{}`), started, "terminal_id", params.TerminalID)
 		return json.RawMessage(`{}`), 0, nil
 	case "remove":
 		var params protocol.GetParams
@@ -1075,6 +1211,7 @@ func (s *Server) handleRequest(
 			return nil, 500, err
 		}
 		s.removeTerminal(params.TerminalID, "removed")
+		s.logProtocolMethodResult(ctx, remote, req, json.RawMessage(`{}`), started, "terminal_id", params.TerminalID, "cleaned_attachments", len(toCleanup))
 		return json.RawMessage(`{}`), 0, nil
 	case "resize":
 		var params protocol.ResizeParams
@@ -1087,6 +1224,7 @@ func (s *Server) handleRequest(
 		if err := s.Resize(ctx, params.TerminalID, params.Cols, params.Rows); err != nil {
 			return nil, protocolErrorCode(err), err
 		}
+		s.logProtocolMethodResult(ctx, remote, req, json.RawMessage(`{}`), started, "terminal_id", params.TerminalID, "cols", params.Cols, "rows", params.Rows)
 		return json.RawMessage(`{}`), 0, nil
 	case "ensure_resize":
 		var params protocol.EnsureResizeParams
@@ -1098,6 +1236,7 @@ func (s *Server) handleRequest(
 			return nil, protocolErrorCode(err), err
 		}
 		data, _ := json.Marshal(result)
+		s.logProtocolMethodResult(ctx, remote, req, data, started, "terminal_id", params.TerminalID, "channel", params.Channel, "cols", params.Cols, "rows", params.Rows)
 		return data, 0, nil
 	case "set_tags":
 		var params protocol.SetTagsParams
@@ -1107,6 +1246,7 @@ func (s *Server) handleRequest(
 		if err := s.SetTags(ctx, params.TerminalID, params.Tags); err != nil {
 			return nil, protocolErrorCode(err), err
 		}
+		s.logProtocolMethodResult(ctx, remote, req, json.RawMessage(`{}`), started, "terminal_id", params.TerminalID)
 		return json.RawMessage(`{}`), 0, nil
 	case "set_metadata":
 		var params protocol.SetMetadataParams
@@ -1116,6 +1256,7 @@ func (s *Server) handleRequest(
 		if err := s.SetMetadata(ctx, params.TerminalID, params.Name, params.Tags); err != nil {
 			return nil, protocolErrorCode(err), err
 		}
+		s.logProtocolMethodResult(ctx, remote, req, json.RawMessage(`{}`), started, "terminal_id", params.TerminalID)
 		return json.RawMessage(`{}`), 0, nil
 	case "snapshot":
 		var params protocol.SnapshotParams
@@ -1130,6 +1271,18 @@ func (s *Server) handleRequest(
 			return nil, protocolErrorCode(err), err
 		}
 		result, _ := json.Marshal(snap)
+		s.logProtocolMethodResult(
+			ctx,
+			remote,
+			req,
+			result,
+			started,
+			"terminal_id", params.TerminalID,
+			"scrollback_offset", params.ScrollbackOffset,
+			"scrollback_limit", params.ScrollbackLimit,
+			"snapshot_scrollback_rows", len(snap.Scrollback),
+			"snapshot_screen_rows", len(snap.Screen.Cells),
+		)
 		return result, 0, nil
 	case "attach":
 		var params protocol.AttachParams
@@ -1144,17 +1297,22 @@ func (s *Server) handleRequest(
 		if err != nil {
 			return nil, 500, err
 		}
-		resizeControl, err := terminalResizeControl(term, AttachMode(params.Mode), params.ResizePolicy)
+		attachmentID := fmt.Sprintf("%s:%d", remote, ch)
+		surfaceID := normalizeResizeSurfaceID(params.SurfaceID, attachmentID)
+		viewID := strings.TrimSpace(params.ViewID)
+		resizeControl, err := terminalResizeControl(term, attachmentID, surfaceID, viewID, AttachMode(params.Mode), params.ResizePolicy)
 		if err != nil {
 			allocator.Free(ch)
 			return nil, 400, err
 		}
 		subCtx, cancel := context.WithCancel(ctx)
-		attachmentID := fmt.Sprintf("%s:%d", remote, ch)
 		attachment := &sessionAttachment{
 			terminal:      term,
 			terminalID:    params.TerminalID,
 			attachmentID:  attachmentID,
+			surfaceID:     surfaceID,
+			viewID:        viewID,
+			streamMode:    normalizeAttachStreamMode(params.StreamMode),
 			resizeControl: resizeControl,
 		}
 		var cleanupOnce sync.Once
@@ -1171,17 +1329,20 @@ func (s *Server) handleRequest(
 		attachmentsMu.Lock()
 		attachments[ch] = attachment
 		attachmentsMu.Unlock()
-		term.AddAttachment(attachmentID, remote, AttachMode(params.Mode))
-		s.cfg.logger.Info("server attached terminal", "terminal_id", params.TerminalID, "remote", remote, "channel", ch, "mode", params.Mode)
-		stream := term.Subscribe(subCtx)
+		term.AddAttachment(attachmentID, remote, AttachMode(params.Mode), surfaceID, viewID, resizeControl.CanResize)
+		resizeControl = withResizeOwnership(resizeControl, term, surfaceID)
+		attachment.setResizeControl(resizeControl)
+		s.cfg.logger.Info("server attached terminal", "terminal_id", params.TerminalID, "remote", remote, "channel", ch, "mode", params.Mode, "surface_id", surfaceID, "resize_owner", resizeControl.CanResize)
+		stream := term.SubscribeWithOptions(subCtx, terminalSubscribeOptionsForStreamMode(attachment.streamMode))
 		go func() {
 			defer attachment.cleanup()
-			pump := newAttachmentStreamPump(subCtx, cancel, params.TerminalID, ch, stream, sendFrame)
+			pump := newAttachmentStreamPump(subCtx, cancel, params.TerminalID, ch, remote, stream, sendFrame, s.cfg.logger)
 			if err := pump.run(); err != nil {
 				s.cfg.logger.Warn("transport attachment stream send failed", "terminal_id", params.TerminalID, "remote", remote, "channel", ch, "error", err)
 			}
 		}()
 		result, _ := json.Marshal(protocol.AttachResult{Mode: params.Mode, Channel: ch, ResizeControl: &resizeControl})
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", params.TerminalID, "channel", ch, "stream_mode", attachment.streamMode, "resize_owner", resizeControl.CanResize)
 		return result, 0, nil
 	case "detach":
 		var params protocol.DetachParams
@@ -1199,9 +1360,46 @@ func (s *Server) handleRequest(
 		for _, attachment := range toCleanup {
 			attachment.cleanup()
 		}
+		s.logProtocolMethodResult(ctx, remote, req, json.RawMessage(`{}`), started, "terminal_id", params.TerminalID, "detached_attachments", len(toCleanup))
 		return json.RawMessage(`{}`), 0, nil
 	default:
 		return nil, 400, fmt.Errorf("unsupported method: %s", req.Method)
+	}
+}
+
+func normalizeAttachStreamMode(mode string) string {
+	switch strings.TrimSpace(mode) {
+	case protocol.StreamModeRaw:
+		return protocol.StreamModeRaw
+	default:
+		return protocol.StreamModeScreen
+	}
+}
+
+func (s *Server) logProtocolMethodResult(ctx context.Context, remote string, req protocol.Request, result json.RawMessage, started time.Time, attrs ...any) {
+	if s == nil || s.cfg.logger == nil {
+		return
+	}
+	elapsed := time.Since(started)
+	level := slog.LevelDebug
+	if elapsed >= coreDiagnosticsSlowOperation || len(result) >= coreDiagnosticsLargePayloadBytes {
+		level = slog.LevelWarn
+	}
+	base := []any{
+		"remote", remote,
+		"id", req.ID,
+		"method", req.Method,
+		"params_bytes", len(req.Params),
+		"result_bytes", len(result),
+		"elapsed_ms", diagnosticDurationMillis(elapsed),
+	}
+	base = append(base, attrs...)
+	s.cfg.logger.Log(ctx, level, "termx protocol method result", base...)
+}
+
+func terminalSubscribeOptionsForStreamMode(mode string) TerminalSubscribeOptions {
+	return TerminalSubscribeOptions{
+		RawOutput: mode == protocol.StreamModeRaw,
 	}
 }
 
@@ -1220,10 +1418,20 @@ func (s *Server) ensureResize(
 	if err != nil {
 		return protocol.EnsureResizeResult{}, err
 	}
-	control, err := terminalResizeControl(term, attachment.mode(), params.ResizePolicy)
+	if strings.TrimSpace(params.SurfaceID) != "" || strings.TrimSpace(params.ViewID) != "" {
+		attachment.setResizeSurface(
+			normalizeResizeSurfaceID(params.SurfaceID, attachment.attachmentID),
+			strings.TrimSpace(params.ViewID),
+		)
+		term.SetAttachmentResizeSurface(attachment.attachmentID, attachment.surfaceIDValue(), attachment.viewIDValue())
+	}
+	control, err := terminalResizeControl(term, attachment.attachmentID, attachment.surfaceIDValue(), attachment.viewIDValue(), attachment.mode(), params.ResizePolicy)
 	if err != nil {
 		return protocol.EnsureResizeResult{}, err
 	}
+	attachment.setResizeControl(control)
+	term.SetAttachmentResizeOwner(attachment.attachmentID, control.CanResize)
+	control = withResizeOwnership(control, term, attachment.surfaceIDValue())
 	attachment.setResizeControl(control)
 	size := term.Size()
 	result := protocol.EnsureResizeResult{
@@ -1324,7 +1532,7 @@ func (a *sessionAttachment) canResize() bool {
 	if a == nil || !a.currentResizeControl().CanResize {
 		return false
 	}
-	return a.mode() == ModeCollaborator
+	return a.mode() == ModeCollaborator && a.terminal.AttachmentResizeOwner(a.attachmentID)
 }
 
 func (a *sessionAttachment) currentResizeControl() protocol.ResizeControl {
@@ -1345,7 +1553,35 @@ func (a *sessionAttachment) setResizeControl(control protocol.ResizeControl) {
 	a.resizeControl = control
 }
 
-func terminalResizeControl(term *Terminal, mode AttachMode, policy string) (protocol.ResizeControl, error) {
+func (a *sessionAttachment) setResizeSurface(surfaceID, viewID string) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.surfaceID = strings.TrimSpace(surfaceID)
+	a.viewID = strings.TrimSpace(viewID)
+}
+
+func (a *sessionAttachment) surfaceIDValue() string {
+	if a == nil {
+		return ""
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.surfaceID
+}
+
+func (a *sessionAttachment) viewIDValue() string {
+	if a == nil {
+		return ""
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.viewID
+}
+
+func terminalResizeControl(term *Terminal, attachmentID, surfaceID, viewID string, mode AttachMode, policy string) (protocol.ResizeControl, error) {
 	trimmedPolicy := strings.TrimSpace(policy)
 	if trimmedPolicy == "" {
 		trimmedPolicy = protocol.ResizePolicyOwner
@@ -1355,29 +1591,73 @@ func terminalResizeControl(term *Terminal, mode AttachMode, policy string) (prot
 	default:
 		return protocol.ResizeControl{}, fmt.Errorf("%w: unsupported resize_policy %q", ErrInvalidCommand, policy)
 	}
+	surfaceID = normalizeResizeSurfaceID(surfaceID, attachmentID)
 	if term != nil && term.SizeLocked() {
-		return protocol.ResizeControl{
+		return withResizeOwnership(protocol.ResizeControl{
 			CanResize:  false,
 			Reason:     protocol.ResizeControlReasonSizeLocked,
 			SizeLocked: true,
-		}, nil
+			SurfaceID:  surfaceID,
+		}, term, surfaceID), nil
 	}
 	if mode != ModeCollaborator {
-		return protocol.ResizeControl{
+		return withResizeOwnership(protocol.ResizeControl{
 			CanResize: false,
 			Reason:    protocol.ResizeControlReasonObserver,
-		}, nil
+			SurfaceID: surfaceID,
+		}, term, surfaceID), nil
 	}
 	if trimmedPolicy == protocol.ResizePolicyFollower {
-		return protocol.ResizeControl{
+		return withResizeOwnership(protocol.ResizeControl{
 			CanResize: false,
 			Reason:    protocol.ResizeControlReasonFollower,
-		}, nil
+			SurfaceID: surfaceID,
+		}, term, surfaceID), nil
 	}
-	return protocol.ResizeControl{
+	return withResizeOwnership(protocol.ResizeControl{
 		CanResize: true,
 		Reason:    protocol.ResizeControlReasonOwner,
-	}, nil
+		SurfaceID: surfaceID,
+	}, term, surfaceID), nil
+}
+
+func normalizeResizeSurfaceID(surfaceID, fallback string) string {
+	if trimmed := strings.TrimSpace(surfaceID); trimmed != "" {
+		return trimmed
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func withResizeOwnership(control protocol.ResizeControl, term *Terminal, surfaceID string) protocol.ResizeControl {
+	ownership := terminalProtocolResizeOwnership(term)
+	control.SurfaceID = normalizeResizeSurfaceID(control.SurfaceID, surfaceID)
+	control.ResizeOwnership = ownership
+	if ownership != nil {
+		control.OwnerSurfaceID = ownership.OwnerSurfaceID
+		control.OwnerViewID = ownership.OwnerViewID
+		control.SizeLocked = control.SizeLocked || ownership.SizeLocked
+	}
+	return control
+}
+
+func terminalProtocolResizeOwnership(term *Terminal) *protocol.ResizeOwnership {
+	if term == nil {
+		return nil
+	}
+	term.attachMu.Lock()
+	ownership := term.resizeOwnershipSnapshotLocked()
+	term.mu.RLock()
+	term.attachMu.Unlock()
+	ownership.Size = Size{Cols: term.size.Cols, Rows: term.size.Rows}
+	ownership.SizeLocked = terminalmeta.SizeLocked(term.tags)
+	if ownership.SizeLocked {
+		ownership.OwnerAttachmentID = ""
+		ownership.OwnerSurfaceID = ""
+		ownership.OwnerViewID = ""
+		ownership.OwnerRemoteAddr = ""
+	}
+	term.mu.RUnlock()
+	return protocolResizeOwnership(ownership)
 }
 
 func resizeAttachment(attachments map[uint16]*sessionAttachment, attachmentsMu *sync.RWMutex, terminalID string, channel uint16, scope transportScope) (*sessionAttachment, error) {

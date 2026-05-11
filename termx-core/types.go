@@ -36,17 +36,33 @@ type StreamMessage struct {
 	Rows         uint16
 }
 
+type TerminalSubscribeOptions struct {
+	RawOutput bool
+}
+
 type TerminalInfo struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Command   []string          `json:"command"`
-	Tags      map[string]string `json:"tags,omitempty"`
-	Size      Size              `json:"size"`
-	State     TerminalState     `json:"state"`
-	CWD       string            `json:"cwd,omitempty"`
-	LiveCWD   string            `json:"live_cwd,omitempty"`
-	CreatedAt time.Time         `json:"created_at"`
-	ExitCode  *int              `json:"exit_code,omitempty"`
+	ID                         string            `json:"id"`
+	Name                       string            `json:"name"`
+	Command                    []string          `json:"command"`
+	Tags                       map[string]string `json:"tags,omitempty"`
+	Size                       Size              `json:"size"`
+	State                      TerminalState     `json:"state"`
+	CWD                        string            `json:"cwd,omitempty"`
+	LiveCWD                    string            `json:"live_cwd,omitempty"`
+	CreatedAt                  time.Time         `json:"created_at"`
+	ExitCode                   *int              `json:"exit_code,omitempty"`
+	ResizeOwnership            *ResizeOwnership  `json:"resize_ownership,omitempty"`
+	ResizeOwnerAttachmentCount int               `json:"resize_owner_attachment_count,omitempty"`
+}
+
+type ResizeOwnership struct {
+	OwnerAttachmentID string `json:"owner_attachment_id,omitempty"`
+	OwnerSurfaceID    string `json:"owner_surface_id,omitempty"`
+	OwnerViewID       string `json:"owner_view_id,omitempty"`
+	OwnerRemoteAddr   string `json:"owner_remote_addr,omitempty"`
+	Size              Size   `json:"size,omitempty"`
+	SizeLocked        bool   `json:"size_locked,omitempty"`
+	Epoch             uint64 `json:"epoch,omitempty"`
 }
 
 type Cell struct {
@@ -117,6 +133,20 @@ type SnapshotOptions struct {
 	ScrollbackLimit  int
 }
 
+type HistoryReplayOptions struct {
+	BeforeOffset int
+	Limit        int
+}
+
+type HistoryReplayResult struct {
+	TerminalID   string
+	BeforeOffset int
+	Limit        int
+	Rows         int
+	HasMore      bool
+	Replay       string
+}
+
 type CreateOptions struct {
 	Command        []string
 	ID             string
@@ -142,7 +172,10 @@ const (
 )
 
 type AttachInfo struct {
-	RemoteAddr string    `json:"remote_addr"`
-	Mode       string    `json:"mode"`
-	AttachedAt time.Time `json:"attached_at"`
+	RemoteAddr  string    `json:"remote_addr"`
+	Mode        string    `json:"mode"`
+	SurfaceID   string    `json:"surface_id,omitempty"`
+	ViewID      string    `json:"view_id,omitempty"`
+	ResizeOwner bool      `json:"resize_owner,omitempty"`
+	AttachedAt  time.Time `json:"attached_at"`
 }

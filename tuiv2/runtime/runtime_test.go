@@ -123,6 +123,44 @@ func TestRuntimeApplyTerminalListPatchesRegistryMetadata(t *testing.T) {
 	}
 }
 
+func TestRuntimeApplyTerminalListDemotesLocalOwnerForExternalResizeOwner(t *testing.T) {
+	rt := New(nil)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.BoundPaneIDs = []string{"pane-1"}
+	terminal.OwnerPaneID = "pane-1"
+	terminal.ControlPaneID = "pane-1"
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	binding.Role = BindingRoleOwner
+
+	rt.ApplyTerminalList([]protocol.TerminalInfo{{
+		ID:                         "term-1",
+		State:                      "running",
+		ResizeOwnerAttachmentCount: 2,
+	}})
+
+	if terminal.OwnerPaneID != externalResizeOwnerPaneID || terminal.ControlPaneID != "" || !terminal.RequiresExplicitOwner {
+		t.Fatalf("expected external owner to demote local control, got owner=%q control=%q explicit=%v", terminal.OwnerPaneID, terminal.ControlPaneID, terminal.RequiresExplicitOwner)
+	}
+	if binding.Role != BindingRoleFollower {
+		t.Fatalf("expected local binding to become follower, got %q", binding.Role)
+	}
+
+	rt.ApplyTerminalList([]protocol.TerminalInfo{{
+		ID:                         "term-1",
+		State:                      "running",
+		ResizeOwnerAttachmentCount: 1,
+	}})
+
+	if terminal.OwnerPaneID != "pane-1" || terminal.ControlPaneID != "pane-1" || terminal.RequiresExplicitOwner {
+		t.Fatalf("expected local owner to restore after external owner leaves, got owner=%q control=%q explicit=%v", terminal.OwnerPaneID, terminal.ControlPaneID, terminal.RequiresExplicitOwner)
+	}
+	if binding.Role != BindingRoleOwner {
+		t.Fatalf("expected local binding to become owner again, got %q", binding.Role)
+	}
+}
+
 func TestRuntimeAttachAndLoadSnapshotInitializesVTermCache(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
@@ -1976,11 +2014,22 @@ func (f *fakeBridgeClient) Events(context.Context, protocol.EventsParams) (<-cha
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (f *fakeBridgeClient) Attach(context.Context, string, string) (*protocol.AttachResult, error) {
+func (f *fakeBridgeClient) Attach(context.Context, protocol.AttachParams) (*protocol.AttachResult, error) {
 	if f.attachResult == nil {
 		return nil, fmt.Errorf("attach result not configured")
 	}
 	return f.attachResult, nil
+}
+
+func (f *fakeBridgeClient) EnsureResize(_ context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resizeCalls = append(f.resizeCalls, resizeCall{channel: params.Channel, cols: params.Cols, rows: params.Rows})
+	return &protocol.EnsureResizeResult{
+		ResizeControl: &protocol.ResizeControl{CanResize: true, Reason: protocol.ResizeControlReasonOwner},
+		Size:          protocol.Size{Cols: params.Cols, Rows: params.Rows},
+		Resized:       true,
+	}, nil
 }
 
 func (f *fakeBridgeClient) Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error) {

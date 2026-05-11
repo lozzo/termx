@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
-import { ChevronLeft, Folder, Info, KeyRound, Link2, Link2Off, Monitor, PanelBottomClose, Plus, Rows2, SquarePen, Trash2, Unlock, X } from 'lucide-react'
+import { ChevronLeft, Folder, Info, KeyRound, Link2, Link2Off, Monitor, PanelBottomClose, Plus, Rows2, SlidersHorizontal, SquarePen, Trash2, Unlock, X } from 'lucide-react'
 import { connectionPhaseLabel, connectionSnapshotFromStatus } from '../connection/connectionState'
 import { FileTransferPanel } from '../files/FileTransferPanel'
 import { FileManager } from '../files/FileManager'
-import { haptic } from '../platform/haptics'
+import { hapticImpact } from '../platform/haptics'
 import { PairDevicePanel } from '../pairing/PairDevicePanel'
 import type { MachineSessionStore } from '../state/localAppIdentity'
 import { MachineNetworkStatusOverlay } from '../machine-runtime/MachineNetworkStatusOverlay'
@@ -157,6 +157,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
   const terminalHeaderTitle = splitTerminalId ? `${activeTerminalTitle} / ${splitTerminalTitle}` : activeTerminalTitle
   const terminalHeaderDirectory = activeToolTerminal?.cwd || activeTerminal?.cwd || splitTerminal?.cwd || ''
   const activeTerminalResizeLocked = terminalResizeControl.sizeLocked === true || terminalResizeControl.reason === 'size_locked'
+  const activeTerminalOwnsResize = terminalResizeControl.canResize === true
   const requireVerification = Boolean(pair && !verifiedDevice)
   const canManageTerminals = true
   const emptyTransferSnapshot = useMemo(() => ({ transfers: [], hasActiveTransfers: false }), [])
@@ -175,6 +176,9 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
   } = useMachineNetworkStatus()
   const machineForceRelayKey = machine?.machineId ? forceRelayStorageKey(machine.machineId) : null
   const effectiveTerminalSettings = terminalSettingsProp ?? terminalSettings
+  const activeResizeSurfaceId = activeTerminalId && machine?.machineId
+    ? appTerminalSurfaceId(machine.machineId, activeTerminalId)
+    : ''
   const terminalThemeStyle = useMemo(
     () => terminalThemeCssVariables(effectiveTerminalSettings.themeId) as CSSProperties,
     [effectiveTerminalSettings.themeId],
@@ -247,7 +251,6 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
   }, [page])
 
   const updateTerminalSettings = useCallback((patch: Partial<TerminalSettings>) => {
-    haptic()
     if (onTerminalSettingsChange) {
       onTerminalSettingsChange(patch)
       return
@@ -415,6 +418,27 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
     }
   }, [api, setMachineNetworkMachineId, updateConnectionStatus])
 
+  const applyRuntimeTerminalEvent = useCallback((event: RtcEvent | { payload?: unknown }): boolean => {
+    const payload = event.payload
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return false
+    const record = payload as Record<string, unknown>
+    const terminal = normalizeRuntimeTerminalEvent(record)
+    if (!terminal) return false
+
+    setTerminals((current) => {
+      const index = current.findIndex((item) => item.terminalId === terminal.terminalId)
+      if (index < 0) return current
+      const next = current.slice()
+      next[index] = { ...next[index], ...terminal }
+      return next
+    })
+
+    if (activeTerminalId === terminal.terminalId && activeResizeSurfaceId) {
+      setTerminalResizeControl(resizeControlFromRuntimeTerminal(terminal, activeResizeSurfaceId))
+    }
+    return true
+  }, [activeResizeSurfaceId, activeTerminalId])
+
   useEffect(() => {
     let cancelled = false
     const seq = terminalRefreshSeqRef.current + 1
@@ -459,13 +483,15 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
 
   useEffect(() => {
     if (!inventoryEvents || !machine) return
-    const subscription = inventoryEvents.subscribe(machine.machineId, () => {
-      void refreshTerminals()
+    const subscription = inventoryEvents.subscribe(machine.machineId, (event) => {
+      if (!applyRuntimeTerminalEvent(event)) {
+        void refreshTerminals()
+      }
     })
     return () => {
       subscription.close()
     }
-  }, [inventoryEvents, machine, refreshTerminals, connectionRetryToken])
+  }, [applyRuntimeTerminalEvent, inventoryEvents, machine, refreshTerminals, connectionRetryToken])
 
   useEffect(() => {
     if (!connectionStateEvents || !machine) return
@@ -520,7 +546,10 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
       }
       current?.subscription.close()
       const subscription = session.subscribeEvents((event) => {
-        if (isTerminalInventoryRuntimeEvent(event)) void refreshTerminals()
+        if (!isTerminalInventoryRuntimeEvent(event)) return
+        if (!applyRuntimeTerminalEvent(event)) {
+          void refreshTerminals()
+        }
       })
       runtimeInventorySubscriptionRef.current = {
         connector,
@@ -545,7 +574,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
         current.subscription.close()
       }
     }
-  }, [connectionRetryToken, connector, ensureMachineSession, forceRelayConnection, machine?.machineId, refreshTerminals, requireVerification, subscribeRuntimeInventoryEvents])
+  }, [applyRuntimeTerminalEvent, connectionRetryToken, connector, ensureMachineSession, forceRelayConnection, machine?.machineId, refreshTerminals, requireVerification, subscribeRuntimeInventoryEvents])
 
   useEffect(() => {
     const machineId = machine?.machineId
@@ -1044,6 +1073,34 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
     }
   }, [activeTerminalId, canManageTerminals, refreshTerminals, updateConnectionStatus, withManagementApi])
 
+  const acquireActiveResizeOwner = useCallback(async () => {
+    try {
+      const control = await activeTerminalHandle()?.requestResizeOwner()
+      if (control?.canResize) {
+        setPairStatus('Resize control acquired')
+        window.setTimeout(() => {
+          activeTerminalHandle()?.fit()
+          activeTerminalHandle()?.focus()
+        }, 0)
+      } else if (control?.sizeLocked || control?.reason === 'size_locked') {
+        setPairStatus('Resize is locked')
+      } else {
+        setPairStatus('Resize control unavailable')
+      }
+    } catch (err) {
+      updateConnectionStatus(err instanceof Error ? err.message : String(err), 'failed')
+    }
+  }, [activeTerminalHandle, updateConnectionStatus])
+
+  const releaseActiveResizeOwner = useCallback(async () => {
+    try {
+      await activeTerminalHandle()?.releaseResizeOwner()
+      setPairStatus('Resize control released')
+    } catch (err) {
+      updateConnectionStatus(err instanceof Error ? err.message : String(err), 'failed')
+    }
+  }, [activeTerminalHandle, updateConnectionStatus])
+
   const deleteManagedTerminal = useCallback(async () => {
     if (!canManageTerminals || !managedTerminalId) return
     const deletedTerminalId = managedTerminalId
@@ -1319,7 +1376,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
               <button
                 type="button"
                 className="flex min-h-12 w-full items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 text-left text-[15px] font-medium text-red-700 shadow-sm"
-                onClick={() => { void deleteManagedTerminal() }}
+                onClick={() => { hapticImpact(); void deleteManagedTerminal() }}
               >
                 <span>Delete terminal</span>
                 <Trash2 className="h-4 w-4 text-red-500" />
@@ -1400,6 +1457,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
                 type="button"
                 className="mt-2 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 text-[15px] font-semibold text-white shadow-md transition-all active:scale-[0.98] active:bg-zinc-800"
                 onClick={() => {
+                  hapticImpact()
                   if (mobileSheet === 'create-terminal') {
                     void submitCreateTerminal()
                     return
@@ -1516,7 +1574,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
               type="button"
               aria-label="Back to terminal list"
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--termx-muted)] transition-colors active:bg-[var(--termx-surface-raised)]"
-              onClick={() => { haptic(); showTerminalListPage() }}
+              onClick={showTerminalListPage}
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
@@ -1524,7 +1582,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
               type="button"
               aria-label="Switch terminal"
               className="flex min-w-0 flex-1 flex-col items-start justify-center rounded-md px-1.5 py-0.5 text-left transition-colors active:bg-[var(--termx-surface-raised)]"
-              onClick={() => { haptic(); setMobileSheet('terminals') }}
+              onClick={() => setMobileSheet('terminals')}
             >
               <span className="max-w-full truncate text-[9px] font-bold uppercase tracking-wider text-[var(--termx-muted)]">{machine.name}</span>
               <span className="max-w-full truncate text-[12px] font-semibold leading-tight text-[var(--termx-text)]" data-testid="termx-terminal-title">{terminalHeaderTitle}</span>
@@ -1539,7 +1597,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
               type="button"
               aria-label="Split terminal"
               aria-pressed={Boolean(splitTerminalId)}
-              onClick={() => { haptic(); openSplitTerminalSheet() }}
+              onClick={() => { hapticImpact(); openSplitTerminalSheet() }}
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-95 ${splitTerminalId ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
             >
               <Rows2 className="h-4 w-4" />
@@ -1550,7 +1608,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
                   type="button"
                   aria-label={syncSplitInput ? 'Disable synchronized input' : 'Enable synchronized input'}
                   aria-pressed={syncSplitInput}
-                  onClick={() => { haptic(); setSyncSplitInput((current) => !current) }}
+                  onClick={() => { hapticImpact(); setSyncSplitInput((current) => !current) }}
                   className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-95 ${syncSplitInput ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
                 >
                   {syncSplitInput ? <Link2 className="h-4 w-4" /> : <Link2Off className="h-4 w-4" />}
@@ -1558,7 +1616,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
                 <button
                   type="button"
                   aria-label="Close split terminal"
-                  onClick={() => { haptic(); closeSplitTerminal() }}
+                  onClick={closeSplitTerminal}
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--termx-muted)] transition-colors active:scale-95 active:bg-[var(--termx-surface-raised)]"
                 >
                   <PanelBottomClose className="h-4 w-4" />
@@ -1567,9 +1625,17 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
             ) : null}
             <button
               type="button"
+              aria-label={activeTerminalOwnsResize ? 'Release resize control' : 'Acquire resize control'}
+              aria-pressed={activeTerminalOwnsResize}
+              onClick={() => { hapticImpact(); void (activeTerminalOwnsResize ? releaseActiveResizeOwner() : acquireActiveResizeOwner()) }}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--termx-muted)] transition-colors active:scale-95 active:bg-[var(--termx-surface-raised)]"
+            >
+              <span className="font-mono text-[10px] font-bold leading-none">{resizeControlBadgeText(terminalResizeControl)}</span>
+            </button>
+            <button
+              type="button"
               aria-label="Terminal tools"
               onClick={() => {
-                haptic()
                 setTerminalToolbarOpen((current) => {
                   const next = !current
                   if (next) setTerminalFnOpen(false)
@@ -1579,12 +1645,12 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
               }}
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-95 ${terminalToolbarOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
             >
-              <span className="text-[13px] font-bold leading-none">•••</span>
+              <SlidersHorizontal className="h-4 w-4" />
             </button>
             <button
               type="button"
               aria-label="Connection info"
-              onClick={() => { haptic(); openConnectionInfo() }}
+              onClick={openConnectionInfo}
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-95 ${connectionInfoOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
             >
               <Info className="h-4 w-4" />
@@ -1592,7 +1658,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
             <button
               type="button"
               aria-label="Open files"
-              onClick={() => { haptic(); openFiles() }}
+              onClick={openFiles}
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-95 ${filesOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
             >
               <Folder className="h-4 w-4" />
@@ -1611,6 +1677,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
               hasSelection={hasTerminalSelection}
               renderer={effectiveTerminalSettings.renderer}
               fontSize={effectiveTerminalSettings.fontSize}
+              resizeControl={terminalResizeControl}
               onModeChange={setTerminalToolbarModeAndReset}
               onClose={() => setTerminalToolbarOpen(false)}
               onSelectAll={() => {
@@ -1639,6 +1706,8 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
               }}
               onRendererChange={(renderer) => updateTerminalSettings({ renderer })}
               onFontSizeChange={(fontSize) => updateTerminalSettings({ fontSize })}
+              onAcquireResizeOwner={() => { void acquireActiveResizeOwner() }}
+              onReleaseResizeOwner={() => { void releaseActiveResizeOwner() }}
             />
           ) : null}
 
@@ -1663,7 +1732,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
               className={`relative min-h-0 flex-1 bg-[var(--termx-terminal-bg)] ${splitTerminalId ? `border-b border-[var(--termx-border-subtle)] md:rounded-xl md:border md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 0 ? 'ring-1 ring-inset ring-[var(--termx-accent)]' : ''}` : 'md:m-3 md:rounded-2xl md:border md:border-[var(--termx-border-subtle)] md:shadow-2xl md:overflow-hidden'}`}
               data-active-slot={activeTerminalSlot === 0 ? 'true' : 'false'}
               data-testid="termx-terminal-panel"
-              onPointerDown={() => { haptic(); setActiveTerminalSlot(0); activeTerminalSlotRef.current = 0 }}
+              onPointerDown={() => { setActiveTerminalSlot(0); activeTerminalSlotRef.current = 0 }}
             >
               {activeTerminalId && connectedSession && connectedTerminalId === activeTerminalId ? (
                 <Terminal
@@ -1694,7 +1763,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
                   aria-label="Unlock terminal resize"
                   className={`absolute right-2 z-20 flex min-h-7 items-center gap-1.5 rounded-md border border-[var(--termx-border-subtle)] bg-[var(--termx-overlay)] px-2 text-[11px] font-semibold text-[var(--termx-text)] shadow-lg backdrop-blur active:opacity-85 disabled:opacity-60 ${splitTerminalId ? 'top-16' : 'top-2'}`}
                   disabled={unlockingResize}
-                  onClick={() => { haptic(); void unlockTerminalResize() }}
+                  onClick={() => { hapticImpact(); void unlockTerminalResize() }}
                 >
                   <Unlock className="h-3.5 w-3.5" />
                   {unlockingResize ? 'Unlocking...' : 'Unlock resize'}
@@ -1707,7 +1776,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
                 className={`relative min-h-0 flex-1 bg-[var(--termx-terminal-bg)] md:rounded-xl md:border md:border-[var(--termx-border-subtle)] md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 1 ? 'ring-1 ring-inset ring-[var(--termx-accent)]' : ''}`}
                 data-active-slot={activeTerminalSlot === 1 ? 'true' : 'false'}
                 data-testid="termx-split-terminal-panel"
-                onPointerDown={() => { haptic(); setActiveTerminalSlot(1); activeTerminalSlotRef.current = 1 }}
+                onPointerDown={() => { setActiveTerminalSlot(1); activeTerminalSlotRef.current = 1 }}
               >
                 {connectedSession ? (
                   <Terminal
@@ -2079,4 +2148,92 @@ function isTerminalInventoryRuntimeEvent(event: RtcEvent): boolean {
     event.type === 'terminal_resized' ||
     event.type === 'terminal_removed' ||
     event.type === 'terminal_metadata_changed'
+}
+
+function normalizeRuntimeTerminalEvent(payload: Record<string, unknown>): RemoteTerminal | null {
+  const terminal = payload.terminal
+  if (typeof terminal !== 'object' || terminal === null || Array.isArray(terminal)) return null
+  const record = terminal as Record<string, unknown>
+  const terminalId = record.terminal_id ?? record.terminalId ?? record.id ?? record.ID
+  const machineId = record.machine_id ?? record.machineId
+  if (typeof terminalId !== 'string' || !terminalId.trim()) return null
+  if (typeof machineId !== 'string' || !machineId.trim()) return null
+  return {
+    terminalId: terminalId.trim(),
+    machineId: machineId.trim(),
+    title: typeof record.title === 'string' && record.title.trim()
+      ? record.title.trim()
+      : typeof record.name === 'string' && record.name.trim()
+        ? record.name.trim()
+        : terminalId.trim(),
+    state: record.state === 'running' || record.state === 'exited' ? record.state : 'unknown',
+    command: typeof record.command === 'string'
+      ? record.command
+      : Array.isArray(record.command) && record.command.every((item) => typeof item === 'string')
+        ? record.command.join(' ')
+        : undefined,
+    cols: typeof record.cols === 'number' ? record.cols : undefined,
+    rows: typeof record.rows === 'number' ? record.rows : undefined,
+    cwd: typeof record.cwd === 'string' ? record.cwd : undefined,
+    environment: typeof record.environment === 'string' ? record.environment : undefined,
+    sizeLocked: record.size_locked === true || record.sizeLocked === true,
+    sizeLockMode: record.size_lock_mode === 'off' || record.size_lock_mode === 'warn' || record.size_lock_mode === 'lock'
+      ? record.size_lock_mode
+      : undefined,
+    resizeOwnerSurfaceId: resizeOwnershipString(record, 'owner_surface_id'),
+    resizeOwnerViewId: resizeOwnershipString(record, 'owner_view_id'),
+    resizeOwnerAttachmentCount: typeof record.resize_owner_attachment_count === 'number'
+      ? record.resize_owner_attachment_count
+      : undefined,
+  }
+}
+
+function resizeControlFromRuntimeTerminal(terminal: RemoteTerminal, surfaceId: string): TerminalResizeControl {
+  if (terminal.sizeLocked) {
+    return { canResize: false, reason: 'size_locked', sizeLocked: true }
+  }
+  if (terminal.resizeOwnerSurfaceId && terminal.resizeOwnerSurfaceId === surfaceId) {
+    return {
+      canResize: true,
+      reason: 'owner',
+      surfaceId,
+      ownerSurfaceId: terminal.resizeOwnerSurfaceId,
+      ...(terminal.resizeOwnerViewId ? { ownerViewId: terminal.resizeOwnerViewId } : {}),
+    }
+  }
+  if (terminal.resizeOwnerSurfaceId) {
+    return {
+      canResize: false,
+      reason: 'follower',
+      surfaceId,
+      ownerSurfaceId: terminal.resizeOwnerSurfaceId,
+      ...(terminal.resizeOwnerViewId ? { ownerViewId: terminal.resizeOwnerViewId } : {}),
+    }
+  }
+  return {
+    canResize: false,
+    reason: 'unknown',
+    surfaceId,
+  }
+}
+
+function resizeOwnershipString(record: Record<string, unknown>, key: 'owner_surface_id' | 'owner_view_id'): string | undefined {
+  const direct = record[key]
+  if (typeof direct === 'string' && direct.trim()) return direct.trim()
+  const ownership = record.resize_ownership
+  if (typeof ownership !== 'object' || ownership === null || Array.isArray(ownership)) return undefined
+  const nested = (ownership as Record<string, unknown>)[key]
+  return typeof nested === 'string' && nested.trim() ? nested.trim() : undefined
+}
+
+function appTerminalSurfaceId(machineId: string, terminalId: string): string {
+  return `app:${machineId}:terminal:${terminalId}`
+}
+
+function resizeControlBadgeText(control: TerminalResizeControl): string {
+  if (control.sizeLocked || control.reason === 'size_locked') return 'LK'
+  if (control.canResize) return 'OW'
+  if (control.reason === 'follower') return 'FL'
+  if (control.reason === 'observer') return 'OB'
+  return 'FL'
 }

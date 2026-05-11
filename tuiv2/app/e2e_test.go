@@ -2619,7 +2619,7 @@ func (c *delayedAttachBridgeClient) DelayNextAttach(release <-chan struct{}, att
 	c.attachStarted = attachStarted
 }
 
-func (c *delayedAttachBridgeClient) Attach(ctx context.Context, terminalID, mode string) (*protocol.AttachResult, error) {
+func (c *delayedAttachBridgeClient) Attach(ctx context.Context, params protocol.AttachParams) (*protocol.AttachResult, error) {
 	c.mu.Lock()
 	release := c.release
 	attachStarted := c.attachStarted
@@ -2640,7 +2640,7 @@ func (c *delayedAttachBridgeClient) Attach(ctx context.Context, terminalID, mode
 			return nil, ctx.Err()
 		}
 	}
-	return c.Client.Attach(ctx, terminalID, mode)
+	return c.Client.Attach(ctx, params)
 }
 
 func e2eVisiblePaneRect(t *testing.T, m *Model, paneID string) workbench.Rect {

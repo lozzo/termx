@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createFileApi, type DirListResponse, type FileApi, type FileEntry, type FilePreviewResponse } from './fileApi'
+import {
+  createFileApi,
+  createFilePreviewSource,
+  type DirListResponse,
+  type FileApi,
+  type FileEntry,
+  type FilePreviewResponse,
+  type FilePreviewStreamOptions,
+  type FilePreviewStreamResult,
+} from './fileApi'
 import type { ConnectionInfo, RtcSession } from '../core/transport'
 
 export type FileSortField = 'name' | 'modified' | 'size' | 'type'
@@ -61,6 +70,7 @@ export interface UseFileManagerResult {
   setSort(sort: FileSortState): void
   toggleShowHidden(): void
   openPreview(path: string): Promise<void>
+  streamPreview(path: string, mimeType: string, options?: FilePreviewStreamOptions): Promise<FilePreviewStreamResult>
   closePreview(): void
   createDirectory(): Promise<void>
   deleteEntry(path: string): Promise<void>
@@ -89,6 +99,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   const previewSeqRef = useRef(0)
 
   const fileApi = useMemo(() => createFileApi(options.session), [options.session])
+  const previewSource = useMemo(() => createFilePreviewSource(options.session), [options.session])
 
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
@@ -258,7 +269,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
       const info = await options.session.getConnectionInfo()
       if (seq !== previewSeqRef.current) return
       assertSessionTarget(info, options.machineId, options.terminalId)
-      const response = await fileApi.preview(path)
+      const response = await previewSource.preview(path)
       if (seq !== previewSeqRef.current) return
       setPreview(response)
     } catch (err) {
@@ -271,7 +282,17 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     } finally {
       if (seq === previewSeqRef.current) setPreviewLoading(false)
     }
-  }, [fileApi, options.machineId, options.terminalId, options.session])
+  }, [options.machineId, options.terminalId, options.session, previewSource])
+
+  const streamPreview = useCallback(async (
+    path: string,
+    mimeType: string,
+    streamOptions?: FilePreviewStreamOptions,
+  ) => {
+    const info = await options.session.getConnectionInfo()
+    assertSessionTarget(info, options.machineId, options.terminalId)
+    return await previewSource.stream(path, mimeType, streamOptions)
+  }, [options.machineId, options.terminalId, options.session, previewSource])
 
   const closePreview = useCallback(() => {
     previewSeqRef.current += 1
@@ -370,6 +391,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     setSort,
     toggleShowHidden,
     openPreview,
+    streamPreview,
     closePreview,
     createDirectory,
     deleteEntry,

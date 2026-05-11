@@ -1,7 +1,8 @@
 import { type ReactNode, useEffect, useRef } from 'react'
 import { Clipboard, Copy, Cpu, MousePointer2, PanelTopOpen, X, Minus, Plus } from 'lucide-react'
-import { haptic } from '../platform/haptics'
+import { hapticImpact, hapticSelection } from '../platform/haptics'
 import type { TerminalRenderer } from './Terminal'
+import type { TerminalResizeControl } from './terminalClient'
 
 export type TerminalToolbarMode = 'default' | 'selection'
 
@@ -10,6 +11,7 @@ export interface TerminalActionToolbarProps {
   hasSelection: boolean
   renderer?: TerminalRenderer | undefined
   fontSize?: number
+  resizeControl?: TerminalResizeControl | undefined
   onModeChange: (mode: TerminalToolbarMode) => void
   onSelectAll: () => void
   onSelectVisible: () => void
@@ -18,6 +20,8 @@ export interface TerminalActionToolbarProps {
   onOpenSnippets: () => void
   onRendererChange?: ((renderer: TerminalRenderer) => void) | undefined
   onFontSizeChange?: ((size: number) => void) | undefined
+  onAcquireResizeOwner?: (() => void) | undefined
+  onReleaseResizeOwner?: (() => void) | undefined
   onClose?: () => void
 }
 
@@ -34,6 +38,7 @@ export function TerminalActionToolbar({
   hasSelection,
   renderer = 'auto',
   fontSize = 14,
+  resizeControl,
   onModeChange,
   onSelectAll,
   onSelectVisible,
@@ -42,6 +47,8 @@ export function TerminalActionToolbar({
   onOpenSnippets,
   onRendererChange,
   onFontSizeChange,
+  onAcquireResizeOwner,
+  onReleaseResizeOwner,
   onClose,
 }: TerminalActionToolbarProps) {
   const panelRef = useRef<HTMLDivElement>(null)
@@ -85,6 +92,7 @@ export function TerminalActionToolbar({
   }
 
   const nextRenderer = RENDERER_CYCLE[(RENDERER_CYCLE.indexOf(renderer) + 1) % RENDERER_CYCLE.length]!
+  const ownsResize = resizeControl?.canResize === true
 
   return (
     <div ref={panelRef} className="absolute inset-x-0 top-0 z-40 border-b border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] px-3 py-3 text-[var(--termx-text)] shadow-xl md:hidden animate-in slide-in-from-top-2">
@@ -94,14 +102,14 @@ export function TerminalActionToolbar({
           <span className="text-xs font-medium text-[var(--termx-muted)]">字体大小</span>
           <div className="flex items-center gap-2">
             <button
-              onPointerDown={(e) => { e.preventDefault(); haptic(); onFontSizeChange?.(Math.max(6, fontSize - 1)) }}
+              onPointerDown={(e) => { e.preventDefault(); hapticSelection(); onFontSizeChange?.(Math.max(6, fontSize - 1)) }}
               className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-75"
             >
               <Minus className="h-3.5 w-3.5" />
             </button>
             <span className="w-10 text-center font-mono text-xs font-semibold tabular-nums text-[var(--termx-text)]">{fontSize}px</span>
             <button
-              onPointerDown={(e) => { e.preventDefault(); haptic(); onFontSizeChange?.(Math.min(32, fontSize + 1)) }}
+              onPointerDown={(e) => { e.preventDefault(); hapticSelection(); onFontSizeChange?.(Math.min(32, fontSize + 1)) }}
               className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--termx-surface-raised)] text-[var(--termx-text)] active:opacity-75"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -113,7 +121,7 @@ export function TerminalActionToolbar({
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-[var(--termx-muted)]">渲染模式</span>
           <button
-            onPointerDown={(e) => { e.preventDefault(); haptic(); onRendererChange?.(nextRenderer) }}
+            onPointerDown={(e) => { e.preventDefault(); hapticSelection(); onRendererChange?.(nextRenderer) }}
             className="flex h-7 items-center justify-center gap-1.5 rounded-md bg-[var(--termx-surface-raised)] px-3 text-xs font-semibold text-[var(--termx-text)] active:opacity-75"
           >
             <Cpu className="h-3.5 w-3.5" />
@@ -122,6 +130,17 @@ export function TerminalActionToolbar({
         </div>
 
         <div className="my-1 h-px w-full bg-[var(--termx-border-subtle)]" />
+
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-[var(--termx-muted)]">尺寸控制</span>
+          <button
+            onPointerDown={(e) => { e.preventDefault(); hapticSelection(); ownsResize ? onReleaseResizeOwner?.() : onAcquireResizeOwner?.() }}
+            className="flex h-7 items-center justify-center gap-1.5 rounded-md bg-[var(--termx-surface-raised)] px-3 text-xs font-semibold text-[var(--termx-text)] active:opacity-75"
+          >
+            <span className="font-mono text-[10px] font-bold leading-none">{ownsResize ? 'OW' : 'FL'}</span>
+            {ownsResize ? 'Owner' : 'Follower'}
+          </button>
+        </div>
 
         {/* Tools Row */}
         <div className="grid grid-cols-3 gap-2">
@@ -162,7 +181,7 @@ function ToolbarButton({
       }`}
       disabled={disabled}
       onPointerDown={(event) => event.preventDefault()}
-      onClick={() => { haptic(); onClick() }}
+      onClick={() => { hapticImpact(); onClick() }}
     >
       {icon}
       <span className="truncate">{label}</span>
@@ -185,7 +204,7 @@ function ToolbarIconButton({
       aria-label={label}
       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-500/15 text-red-300 transition-colors active:scale-[0.98] active:bg-red-500/25"
       onPointerDown={(event) => event.preventDefault()}
-      onClick={() => { haptic(); onClick() }}
+      onClick={onClick}
     >
       {children}
     </button>

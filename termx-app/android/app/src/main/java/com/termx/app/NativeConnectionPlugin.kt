@@ -1,6 +1,7 @@
 package com.termx.app
 
 import android.util.Log
+import android.util.Base64
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
@@ -14,25 +15,31 @@ import com.termx.app.transfer.FileTransferManager
 import com.termx.app.transport.WebRTCTransport
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.SecureRandom
+import java.io.File
 
 @CapacitorPlugin(name = "NativeConnection")
 class NativeConnectionPlugin : Plugin() {
 
     companion object {
         private const val TAG = "TermxNativePlugin"
-        private const val BRIDGE_PORT = 17171
+        private const val BRIDGE_TOKEN_BYTES = 32
     }
 
     private var bridgeServer: BridgeServer? = null
+    private var bridgePort: Int = 0
+    private var bridgeToken: String = ""
     private var storeManager: ConnectionStoreManager? = null
     private var networkStateManager: NetworkStateManager? = null
     private var bridgeRouter: BridgeRouter? = null
     private var fileTransferManager: FileTransferManager? = null
 
     override fun load() {
+        TermxDebugLog.init(context)
         WebRTCTransport.initFactory(context)
         startBridgeServer()
         Log.i(TAG, "NativeConnectionPlugin loaded")
+        TermxDebugLog.i(TAG, "NativeConnectionPlugin loaded")
     }
 
     // ─── Connection Management ────────────────────────────────────────────────
@@ -111,9 +118,16 @@ class NativeConnectionPlugin : Plugin() {
     }
 
     @PluginMethod
-    fun getBridgePort(call: PluginCall) {
+    fun getBridgeEndpoint(call: PluginCall) {
+        if (bridgePort <= 0) {
+            call.reject("native bridge server is not ready")
+            return
+        }
+        bridgeToken = generateBridgeToken()
+        bridgeServer?.rotateAuthToken(bridgeToken)
         val ret = JSObject()
-        ret.put("port", BRIDGE_PORT)
+        ret.put("port", bridgePort)
+        ret.put("token", bridgeToken)
         call.resolve(ret)
     }
 
@@ -189,10 +203,39 @@ class NativeConnectionPlugin : Plugin() {
         call.resolve()
     }
 
+    @PluginMethod
+    fun exportDebugLogs(call: PluginCall) {
+        try {
+            val archive: File = TermxDebugLog.exportAndShare(activity)
+            val ret = JSObject()
+            ret.put("path", archive.absolutePath)
+            ret.put("name", archive.name)
+            ret.put("bytes", archive.length())
+            call.resolve(ret)
+        } catch (e: Exception) {
+            TermxDebugLog.e(TAG, "exportDebugLogs failed", e)
+            call.reject("failed to export debug logs: ${e.message}", e)
+        }
+    }
+
+    @PluginMethod
+    fun writeDebugLog(call: PluginCall) {
+        val level = call.getString("level") ?: "INFO"
+        val tag = call.getString("tag") ?: "JS"
+        val message = call.getString("message") ?: ""
+        when (level.lowercase()) {
+            "error" -> TermxDebugLog.e(tag, message)
+            "warn", "warning" -> TermxDebugLog.w(tag, message)
+            else -> TermxDebugLog.i(tag, message)
+        }
+        call.resolve()
+    }
+
     // ─── Bridge Server Setup ─────────────────────────────────────────────────
 
     private fun startBridgeServer() {
-        val bridge = BridgeServer(BRIDGE_PORT)
+        bridgeToken = generateBridgeToken()
+        val bridge = BridgeServer(0, bridgeToken)
         bridgeServer = bridge
 
         val manager = ConnectionStoreManager(context, bridge)
@@ -217,10 +260,20 @@ class NativeConnectionPlugin : Plugin() {
 
         try {
             bridge.start()
-            Log.i(TAG, "BridgeServer started on port $BRIDGE_PORT")
+            if (!bridge.awaitStarted(5000)) {
+                throw IllegalStateException("BridgeServer start timed out")
+            }
+            bridgePort = bridge.port
+            Log.i(TAG, "BridgeServer started on random loopback port $bridgePort")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start BridgeServer", e)
         }
+    }
+
+    private fun generateBridgeToken(): String {
+        val bytes = ByteArray(BRIDGE_TOKEN_BYTES)
+        SecureRandom().nextBytes(bytes)
+        return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
     }
 
     private fun notifyStateChange(@Suppress("UNUSED_PARAMETER") machineId: String, snapshot: JSONObject) {

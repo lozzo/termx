@@ -4,7 +4,7 @@ import {
   type ModifierState,
   type TerminalModifierState,
 } from './mobileTerminalInput'
-import { haptic } from '../platform/haptics'
+import { hapticImpact, hapticSelection } from '../platform/haptics'
 
 export interface MobileTerminalKeybarProps {
   onInput: (data: string) => void
@@ -41,6 +41,7 @@ function useModifierToggle(state: ModifierState, setState: (v: ModifierState) =>
     clearLP()
     longPressTimer.current = setTimeout(() => {
       longPressTriggered.current = true
+      hapticImpact()
       setState('locked')
     }, LONG_PRESS_MS)
   }, [setState, clearLP])
@@ -135,7 +136,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
 
   const showPress = useCallback((key: string) => {
     setPressedKey(key)
-    haptic()
+    hapticSelection()
     if (pressTimer.current) clearTimeout(pressTimer.current)
     pressTimer.current = setTimeout(() => setPressedKey(null), 400)
   }, [])
@@ -263,7 +264,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
             if (kbLongPressTimer.current) clearTimeout(kbLongPressTimer.current)
             kbLongPressTimer.current = setTimeout(() => {
               kbLongPressTriggered.current = true
-              haptic()
+              hapticImpact()
               onLockKeyboard?.()
             }, LONG_PRESS_MS)
           }}
@@ -315,7 +316,7 @@ export const MobileTerminalKeybar = forwardRef<HTMLDivElement, MobileTerminalKey
           aria-pressed={fnOpen}
           className={`${cls} ${fnOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)] shadow-sm' : 'bg-transparent text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
           onPointerDown={(e) => { e.preventDefault(); showPress('Fn') }}
-          onClick={() => { haptic(); onToggleFn?.() }}
+          onClick={() => onToggleFn?.()}
         >
           Fn
           {pressedKey === 'Fn' && <KeyPopup label="Fn" />}

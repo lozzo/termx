@@ -383,7 +383,9 @@ class ConnectionStore(
         }
 
         if (p is Phase.Verifying && transport != null) {
-            reconnectAfterVerificationFailure(transport ?: return, immediate = true)
+            if (isVerificationStale()) {
+                reconnectAfterVerificationFailure(transport ?: return, immediate = true)
+            }
             return
         }
 

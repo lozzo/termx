@@ -310,11 +310,17 @@ func (c *fakeClient) Events(context.Context, protocol.EventsParams) (<-chan prot
 	return nil, nil
 }
 
-func (c *fakeClient) Attach(context.Context, string, string) (*protocol.AttachResult, error) {
+func (c *fakeClient) Attach(context.Context, protocol.AttachParams) (*protocol.AttachResult, error) {
 	if c.attachErr != nil {
 		return nil, c.attachErr
 	}
 	return c.attachResult, nil
+}
+
+func (c *fakeClient) EnsureResize(context.Context, protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error) {
+	return &protocol.EnsureResizeResult{
+		ResizeControl: &protocol.ResizeControl{CanResize: true, Reason: protocol.ResizeControlReasonOwner},
+	}, nil
 }
 
 func (c *fakeClient) Snapshot(_ context.Context, terminalID string, _ int, _ int) (*protocol.Snapshot, error) {

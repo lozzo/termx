@@ -32,9 +32,11 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"Create",
 		"CreateSession",
 		"DetachSession",
+		"EnsureResize",
 		"Events",
 		"GetSession",
 		"Hello",
+		"HistoryReplay",
 		"Input",
 		"Kill",
 		"List",
@@ -142,6 +144,14 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 	}
 	if snap.TerminalID != "term-1" || len(snap.Scrollback) != 1 {
 		t.Fatalf("unexpected snapshot result: %#v", snap)
+	}
+
+	history, err := client.HistoryReplay(ctx, attach.Channel, 0, 50)
+	if err != nil {
+		t.Fatalf("history replay failed: %v", err)
+	}
+	if history.Rows != 1 || history.Replay != "old" {
+		t.Fatalf("unexpected history replay result: %#v", history)
 	}
 
 	err = client.Kill(ctx, "missing")
@@ -615,6 +625,28 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 		"timestamp":"2026-03-18T00:00:00Z"
 	}`)
 	if err := sendResponse(tr, req.ID, snapshotResult); err != nil {
+		return err
+	}
+
+	channel, typ, payload, err = recvFrame(tr)
+	if err != nil {
+		return err
+	}
+	if channel != 7 || typ != TypeHistoryRequest {
+		return fmt.Errorf("unexpected history request frame: channel=%d type=%d", channel, typ)
+	}
+	beforeOffset, limit, err := DecodeHistoryRequestPayload(payload)
+	if err != nil {
+		return err
+	}
+	if beforeOffset != 0 || limit != 50 {
+		return fmt.Errorf("unexpected history request payload: before=%d limit=%d", beforeOffset, limit)
+	}
+	historyPayload, err := EncodeHistoryReplayPayload(1, false, []byte("old"))
+	if err != nil {
+		return err
+	}
+	if err := sendFrame(tr, 7, TypeHistoryReplay, historyPayload); err != nil {
 		return err
 	}
 
