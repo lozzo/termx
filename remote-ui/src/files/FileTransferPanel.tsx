@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { ArrowDownToLine, ArrowUpFromLine, Download, Pause, Play, RotateCw, Trash2, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowDownToLine, ArrowUpFromLine, CheckSquare, Download, Pause, Play, RotateCw, Square, Trash2, X } from 'lucide-react'
 import { hapticImpact } from '../platform/haptics'
 import type { TransferInfo } from './fileApi'
 
@@ -57,7 +57,7 @@ export function FileTransferPanel({
   open: controlledOpen,
   onOpenChange,
 }: Props) {
-  const active = transfers
+  const active = useMemo(() => sortTransfersByNewestFirst(transfers), [transfers])
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const open = controlledOpen ?? uncontrolledOpen
@@ -164,7 +164,73 @@ function TransferCenterDialog({
   onResumeAll?: (() => void | Promise<void>) | undefined
   onClose: () => void
 }) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+
+  useEffect(() => {
+    setSelectedIds((current) => {
+      if (current.size === 0) return current
+      const availableIds = new Set(transfers.map((transfer) => transfer.id))
+      let changed = false
+      const next = new Set<string>()
+      for (const id of current) {
+        if (availableIds.has(id)) {
+          next.add(id)
+        } else {
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
+  }, [transfers])
+
   const resumableCount = transfers.filter((t) => isResumable(t.status)).length
+  const selectedTransfers = transfers.filter((transfer) => selectedIds.has(transfer.id))
+  const selectedPausableCount = selectedTransfers.filter((transfer) => isPausable(transfer.status)).length
+  const selectedStartableCount = selectedTransfers.filter((transfer) => isResumable(transfer.status)).length
+  const completedCount = transfers.filter((transfer) => transfer.status === 'completed').length
+  const failedCount = transfers.filter((transfer) => isFailedClearable(transfer.status)).length
+  const allSelected = transfers.length > 0 && selectedIds.size === transfers.length
+  const toggleSelectAll = () => {
+    setSelectedIds((current) => {
+      if (transfers.length > 0 && current.size === transfers.length) return new Set()
+      return new Set(transfers.map((transfer) => transfer.id))
+    })
+  }
+  const toggleSelected = (transferId: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(transferId)) next.delete(transferId)
+      else next.add(transferId)
+      return next
+    })
+  }
+  const pauseSelected = () => {
+    if (!onPause) return
+    const pausable = selectedTransfers.filter((transfer) => isPausable(transfer.status))
+    if (pausable.length === 0) return
+    hapticImpact()
+    for (const transfer of pausable) onPause(transfer.id)
+  }
+  const startSelected = () => {
+    if (!onResume) return
+    const startable = selectedTransfers.filter((transfer) => isResumable(transfer.status))
+    if (startable.length === 0) return
+    hapticImpact()
+    for (const transfer of startable) onResume(transfer.id)
+  }
+  const clearCompleted = () => {
+    const completed = transfers.filter((transfer) => transfer.status === 'completed')
+    if (completed.length === 0) return
+    hapticImpact()
+    for (const transfer of completed) onDismiss(transfer.id)
+  }
+  const clearFailed = () => {
+    const failed = transfers.filter((transfer) => isFailedClearable(transfer.status))
+    if (failed.length === 0) return
+    hapticImpact()
+    for (const transfer of failed) onDismiss(transfer.id)
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex bg-white" role="dialog" aria-modal="true">
       <section className="flex h-full min-h-0 w-full flex-col bg-white">
@@ -190,7 +256,62 @@ function TransferCenterDialog({
             </button>
           </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
+        {transfers.length > 0 ? (
+          <div className="shrink-0 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2">
+            <div className="flex items-center gap-2 overflow-x-auto">
+              <button
+                type="button"
+                aria-label={allSelected ? 'Clear transfer selection' : 'Select all transfers'}
+                className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-semibold text-zinc-700 active:bg-zinc-100"
+                onClick={toggleSelectAll}
+              >
+                {allSelected ? <CheckSquare className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
+                {selectedIds.size > 0 ? `${selectedIds.size} Selected` : 'Select'}
+              </button>
+              <button
+                type="button"
+                aria-label="Pause selected transfers"
+                disabled={!onPause || selectedPausableCount === 0}
+                className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 active:bg-zinc-100"
+                onClick={pauseSelected}
+              >
+                <Pause className="h-3.5 w-3.5" />
+                Pause Selected
+              </button>
+              <button
+                type="button"
+                aria-label="Start selected transfers"
+                disabled={!onResume || selectedStartableCount === 0}
+                className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 active:bg-zinc-100"
+                onClick={startSelected}
+              >
+                <Play className="h-3.5 w-3.5" />
+                Start Selected
+              </button>
+              <button
+                type="button"
+                aria-label="Delete all completed transfers"
+                disabled={completedCount === 0}
+                className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 active:bg-zinc-100"
+                onClick={clearCompleted}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Done
+              </button>
+              <button
+                type="button"
+                aria-label="Delete all failed transfers"
+                disabled={failedCount === 0}
+                className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 active:bg-zinc-100"
+                onClick={clearFailed}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Failed
+              </button>
+            </div>
+          </div>
+        ) : null}
+        <div className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)]" role="list">
           {transfers.length === 0 ? (
             <div className="flex h-48 items-center justify-center px-6 text-center text-[14px] font-medium text-zinc-500">
               No transfer tasks.
@@ -205,9 +326,18 @@ function TransferCenterDialog({
             const isCompleted = t.status === 'completed'
             const machineLabel = resolveMachineLabel?.(t.machineId) ?? t.machineId ?? 'Unknown machine'
             const transferTarget = describeTransferTarget(t)
+            const selected = selectedIds.has(t.id)
             return (
-              <div key={t.id} className="border-b border-zinc-100 px-4 py-3 last:border-b-0">
+              <div key={t.id} role="listitem" className="border-b border-zinc-100 px-4 py-3 last:border-b-0">
                 <div className="flex items-start gap-3">
+                  <button
+                    type="button"
+                    aria-label={`${selected ? 'Deselect' : 'Select'} ${t.name}`}
+                    className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-400 active:bg-zinc-100 active:text-zinc-800"
+                    onClick={() => toggleSelected(t.id)}
+                  >
+                    {selected ? <CheckSquare className="h-4 w-4 text-zinc-900" /> : <Square className="h-4 w-4" />}
+                  </button>
                   <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${t.direction === 'download' ? 'bg-blue-50 text-blue-600' : 'bg-violet-50 text-violet-600'}`}>
                     {t.direction === 'download' ? <ArrowDownToLine className="h-4 w-4" /> : <ArrowUpFromLine className="h-4 w-4" />}
                   </div>
@@ -281,8 +411,24 @@ function TransferCenterDialog({
   )
 }
 
+function sortTransfersByNewestFirst(transfers: TransferInfo[]): TransferInfo[] {
+  return [...transfers].sort((left, right) => {
+    const startedDelta = right.startedAt - left.startedAt
+    if (startedDelta !== 0) return startedDelta
+    return right.id.localeCompare(left.id)
+  })
+}
+
+function isPausable(status: TransferInfo['status']): boolean {
+  return status === 'pending' || status === 'transferring'
+}
+
 function isResumable(status: TransferInfo['status']): boolean {
   return status === 'paused' || status === 'failed' || status === 'missing' || status === 'pending'
+}
+
+function isFailedClearable(status: TransferInfo['status']): boolean {
+  return status === 'failed' || status === 'missing'
 }
 
 function describeTransferTarget(transfer: TransferInfo): string | null {

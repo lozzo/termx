@@ -22,6 +22,14 @@ const terminalHandleMocks = vi.hoisted(() => ({
     focus: ReturnType<typeof vi.fn>
     adjustInputPosition: ReturnType<typeof vi.fn>
   }>(),
+  allHandles: [] as Array<{
+    terminalId: string
+    sendInput: ReturnType<typeof vi.fn>
+    pasteText: ReturnType<typeof vi.fn>
+    fit: ReturnType<typeof vi.fn>
+    focus: ReturnType<typeof vi.fn>
+    adjustInputPosition: ReturnType<typeof vi.fn>
+  }>,
 }))
 
 vi.mock('../terminal/Terminal', () => ({
@@ -41,7 +49,9 @@ vi.mock('../terminal/Terminal', () => ({
     const adjustInputPosition = vi.fn()
     const sendInput = vi.fn()
     const pasteText = vi.fn()
-    terminalHandleMocks.handles.set(terminalId, { sendInput, pasteText, fit, focus, adjustInputPosition })
+    const handle = { terminalId, sendInput, pasteText, fit, focus, adjustInputPosition }
+    terminalHandleMocks.handles.set(terminalId, handle)
+    terminalHandleMocks.allHandles.push(handle)
     useImperativeHandle(ref, () => ({
       sendInput,
       sendResize: vi.fn(),
@@ -106,6 +116,7 @@ describe('MachineWorkspace', () => {
   afterEach(() => {
     terminalReattachMock.mockReset()
     terminalHandleMocks.handles.clear()
+    terminalHandleMocks.allHandles.length = 0
     window.localStorage?.clear?.()
     vi.unstubAllGlobals()
     cleanup()
@@ -657,6 +668,31 @@ describe('MachineWorkspace', () => {
 
     await waitFor(() => expect(keyboardButton.getAttribute('aria-pressed')).toBe('false'))
     expect(keyboardButton.className).not.toContain('bg-[var(--termx-accent)]')
+  })
+
+  it('does not focus the terminal or show the keyboard when toggling resize control', async () => {
+    const api = createMockLocalAgentApi()
+    const connect = vi.fn(({ machineId }: { machineId: string }) =>
+      Promise.resolve(createMockMachineWorkspaceSession({}, machineId)),
+    )
+
+    render(<MachineWorkspace api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
+
+    for (const handle of terminalHandleMocks.allHandles) {
+      handle.focus.mockClear()
+      handle.fit.mockClear()
+    }
+    const keyboardButton = screen.getByRole('button', { name: /toggle system keyboard/i })
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: /acquire resize control/i }))
+
+    await waitFor(() => expect(totalTerminalHandleCalls('fit')).toBeGreaterThan(0))
+    expect(totalTerminalHandleCalls('focus')).toBe(0)
+    expect(keyboardButton.getAttribute('aria-pressed')).toBe('false')
   })
 
   it('reconnects from connection info without changing the current transport mode', async () => {
@@ -1432,6 +1468,10 @@ function terminalFixture(overrides: Partial<Terminal>): Terminal {
     environment: overrides.environment,
     lastActiveAt: overrides.lastActiveAt,
   }
+}
+
+function totalTerminalHandleCalls(method: 'fit' | 'focus'): number {
+  return terminalHandleMocks.allHandles.reduce((sum, handle) => sum + handle[method].mock.calls.length, 0)
 }
 
 function createMockPairApi(): LocalPairingApi {

@@ -291,6 +291,75 @@ describe('TerminalProtocolClient', () => {
     })
   })
 
+  it('automatically requests resize ownership before the initial snapshot when enabled', async () => {
+    const channel = new MockBinaryDataChannel('terminal:terminal-1')
+    const client = createTerminalProtocolClient({
+      channel,
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectionInfo: connectionInfo(),
+      autoRequestResizeOwner: true,
+    })
+    const terminalPromise = client.openTerminal('terminal-1')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+    await Promise.resolve()
+    const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: attachRequest.id,
+      result: JSON.stringify({
+        mode: 'collaborator',
+        channel: 7,
+        resize_control: { can_resize: false, reason: 'follower' },
+      }),
+    })))
+    await Promise.resolve()
+
+    const ensureResize = decodeSentFrame(channel, 2)
+    expect(ensureResize).toMatchObject({ channel: 0, type: TERMX_FRAME_TYPES.request })
+    const ensureResizeRequest = JSON.parse(new TextDecoder().decode(ensureResize.payload))
+    expect(ensureResizeRequest.method).toBe('ensure_resize')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: ensureResizeRequest.id,
+      result: JSON.stringify({
+        resize_control: { can_resize: true, reason: 'owner' },
+        size: { cols: 120, rows: 40 },
+      }),
+    })))
+
+    await terminalPromise
+    const snapshotRequest = decodeSentFrame(channel, 3)
+    const snapshot = JSON.parse(new TextDecoder().decode(snapshotRequest.payload))
+    expect(snapshot.method).toBe('snapshot')
+  })
+
+  it('skips automatic resize ownership when attach already reports a size lock', async () => {
+    const channel = new MockBinaryDataChannel('terminal:terminal-1')
+    const client = createTerminalProtocolClient({
+      channel,
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectionInfo: connectionInfo(),
+      autoRequestResizeOwner: true,
+    })
+    const terminalPromise = client.openTerminal('terminal-1')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+    await Promise.resolve()
+    const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: attachRequest.id,
+      result: JSON.stringify({
+        mode: 'collaborator',
+        channel: 7,
+        resize_control: { can_resize: false, reason: 'size_locked', size_locked: true },
+      }),
+    })))
+
+    await terminalPromise
+    const snapshotRequest = decodeSentFrame(channel, 2)
+    const snapshot = JSON.parse(new TextDecoder().decode(snapshotRequest.payload))
+    expect(snapshot.method).toBe('snapshot')
+  })
+
   it('buffers stream frames that arrive before the attach response names the stream channel', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
     const client = createTerminalProtocolClient({

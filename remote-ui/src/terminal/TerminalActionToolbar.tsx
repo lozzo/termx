@@ -134,7 +134,18 @@ export function TerminalActionToolbar({
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-[var(--termx-muted)]">尺寸控制</span>
           <button
-            onPointerDown={(e) => { e.preventDefault(); hapticSelection(); ownsResize ? onReleaseResizeOwner?.() : onAcquireResizeOwner?.() }}
+            type="button"
+            aria-label={ownsResize ? 'Release resize control' : 'Acquire resize control'}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              hapticSelection()
+              ownsResize ? onReleaseResizeOwner?.() : onAcquireResizeOwner?.()
+            }}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+            }}
             className="flex h-7 items-center justify-center gap-1.5 rounded-md bg-[var(--termx-surface-raised)] px-3 text-xs font-semibold text-[var(--termx-text)] active:opacity-75"
           >
             <span className="font-mono text-[11px] font-extrabold leading-none tracking-[-0.04em]">{ownsResize ? 'OW' : 'FL'}</span>

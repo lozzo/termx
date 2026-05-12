@@ -590,6 +590,7 @@ function createProtocolSession(
           connectionInfo,
           resizePolicy: 'follower',
           surfaceId: `app:${machineId}:terminal:${terminalId}`,
+          autoRequestResizeOwner: true,
         })
         for (const [pendingTerminalId, handlers] of pendingSubscribers) {
           for (const handler of handlers) {

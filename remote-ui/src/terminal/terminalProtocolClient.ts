@@ -34,6 +34,7 @@ export interface TerminalProtocolClientOptions {
   resizePolicy?: TerminalResizePolicy
   surfaceId?: string | undefined
   handshakeTimeoutMs?: number | undefined
+  autoRequestResizeOwner?: boolean | undefined
 }
 
 interface PendingRequest {
@@ -110,6 +111,19 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     }
     await this.withHandshakeTimeout(this.hello(), 'hello')
     await this.withHandshakeTimeout(this.attach(), 'attach')
+    if (this.options.autoRequestResizeOwner === true && !this.resizeControl.sizeLocked && this.resizeControl.reason !== 'size_locked') {
+      try {
+        const control = await this.requestResizeOwner(terminalId)
+        this.resizeControl = control
+      } catch (err) {
+        this.log('auto_resize_owner_skipped', {
+          level: 'warn',
+          details: {
+            reason: err instanceof Error ? err.message : String(err),
+          },
+        })
+      }
+    }
     const channel = this.options.channel
     void this.refreshSnapshot().catch(() => {})
     this.log('open_terminal_ready', {

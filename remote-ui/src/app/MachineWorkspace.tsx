@@ -174,6 +174,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const passiveConnectionPhaseRef = useRef<RtcConnectionStateSnapshot['phase'] | null>(null)
   const latestActiveTerminalIdRef = useRef<string | null>(null)
   const handledManualReconnectNonceRef = useRef(0)
+  const resizeLockedHintShownRef = useRef(false)
   const hasLoadedTerminalsRef = useRef(hasLoadedTerminals)
   const activeTerminal = terminals.find((terminal) => terminal.terminalId === activeTerminalId)
   const splitTerminal = terminals.find((terminal) => terminal.terminalId === splitTerminalId)
@@ -240,6 +241,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
   useEffect(() => {
     latestActiveTerminalIdRef.current = activeTerminalId
+  }, [activeTerminalId])
+
+  useEffect(() => {
+    resizeLockedHintShownRef.current = false
   }, [activeTerminalId])
 
   useEffect(() => {
@@ -970,9 +975,16 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
   useEffect(() => {
     if (!pairStatus) return
-    const timer = setTimeout(() => setPairStatus(null), 3000)
+    const timer = setTimeout(() => setPairStatus(null), pairStatus === 'Resize is locked. Tap LK to request manually.' ? 1800 : 3000)
     return () => clearTimeout(timer)
   }, [pairStatus])
+
+  useEffect(() => {
+    if (!(terminalResizeControl.sizeLocked || terminalResizeControl.reason === 'size_locked')) return
+    if (resizeLockedHintShownRef.current) return
+    resizeLockedHintShownRef.current = true
+    setPairStatus('Resize is locked. Tap LK to request manually.')
+  }, [terminalResizeControl.reason, terminalResizeControl.sizeLocked])
 
   const showTerminalListPage = useCallback(() => {
     setPage('terminal-list')
@@ -1142,7 +1154,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         setPairStatus('Resize control acquired')
         window.setTimeout(() => {
           activeTerminalHandle()?.fit()
-          activeTerminalHandle()?.focus()
         }, 0)
       } else if (control?.sizeLocked || control?.reason === 'size_locked') {
         setPairStatus('Resize is locked')
@@ -1686,7 +1697,16 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               type="button"
               aria-label={activeTerminalOwnsResize ? 'Release resize control' : 'Acquire resize control'}
               aria-pressed={activeTerminalOwnsResize}
-              onClick={() => { hapticImpact(); void (activeTerminalOwnsResize ? releaseActiveResizeOwner() : acquireActiveResizeOwner()) }}
+              onPointerDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                hapticImpact()
+                void (activeTerminalOwnsResize ? releaseActiveResizeOwner() : acquireActiveResizeOwner())
+              }}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
               className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-md px-1 text-[var(--termx-muted)] transition-colors active:scale-95 active:bg-[var(--termx-surface-raised)]"
             >
               <span className="font-mono text-[11px] font-extrabold leading-none tracking-[-0.04em]">{resizeControlBadgeText(terminalResizeControl)}</span>
