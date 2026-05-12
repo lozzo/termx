@@ -838,6 +838,28 @@ describe('Terminal', () => {
     expect(screenElement.style.willChange).toBe('')
   })
 
+  it('does not send terminal resize directly from native keyboard events', async () => {
+    const session = createMockRtcTerminalSession()
+    session.emitResizeControl('terminal-1', { canResize: true, reason: 'owner' })
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    session.sentResize('terminal-1')
+    xtermMocks.FakeFitAddon.instances[0]!.dimensions = { cols: 140, rows: 20 }
+    const before = session.sentResize('terminal-1')
+
+    act(() => dispatchNativeKeyboardEvent({ visible: true, keyboardHeight: 300 }))
+
+    expect(session.sentResize('terminal-1')).toEqual(before)
+  })
+
   it('preloads older normal-buffer scrollback after the terminal opens', async () => {
     const session = createMockRtcTerminalSession()
     const firstPageRows = Array.from({ length: 250 }, (_value, index) => `older-${index}`)

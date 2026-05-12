@@ -14,6 +14,10 @@
 - After changing `remote-ui`, validate locally with `cd remote-ui && npm run typecheck && npm run test`; use the local dev server for browser verification.
 - Before restarting remote services, inspect the existing deploy path and service names on the target host instead of guessing.
 
+## Android Build Default
+
+- Unless explicitly requested otherwise, build Android APKs as `debug` packages for `arm64-v8a` only, to keep artifact size smaller and download/install faster.
+
 ## App-Agent Network Boundary
 
 - All application-to-agent data traffic must go through the established WebRTC transport.

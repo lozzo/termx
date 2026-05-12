@@ -137,6 +137,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const [splitTerminalId, setSplitTerminalId] = useState<string | null>(null)
   const [activeTerminalSlot, setActiveTerminalSlot] = useState<TerminalSlot>(0)
   const [syncSplitInput, setSyncSplitInput] = useState(false)
+  const [terminalBufferBySlot, setTerminalBufferBySlot] = useState<Record<TerminalSlot, 'normal' | 'alternate'>>({
+    0: 'normal',
+    1: 'normal',
+  })
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => readTerminalSettings())
   const terminalRef = useRef<TerminalHandle | null>(null)
   const splitTerminalRef = useRef<TerminalHandle | null>(null)
@@ -212,8 +216,15 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     () => terminalThemeCssVariables(effectiveTerminalSettings.themeId) as CSSProperties,
     [effectiveTerminalSettings.themeId],
   )
+  const keyboardShouldResize = useCallback(() => {
+    if (splitTerminalId) return true
+    if (effectiveTerminalSettings.keyboardMode === 'resize') return true
+    if (effectiveTerminalSettings.keyboardMode === 'shift') return false
+    return terminalBufferBySlot[0] === 'alternate'
+  }, [effectiveTerminalSettings.keyboardMode, splitTerminalId, terminalBufferBySlot])
   const {
     keyboardVisible,
+    reapplyKeyboardLayout,
     handleBufferChange,
     handleCursorMove,
     markKeyboardVisible,
@@ -224,13 +235,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     mainRef: terminalAreaRef,
     termWrapperRef: terminalWrapperRef,
     getTermRef: () => activeTerminalSlotRef.current === 1 ? splitTerminalRef.current : terminalRef.current,
-    shouldResize: () => {
-      if (splitTerminalId) return true
-      if (effectiveTerminalSettings.keyboardMode === 'resize') return true
-      if (effectiveTerminalSettings.keyboardMode === 'shift') return false
-      return terminalRef.current?.getBufferType() === 'alternate' ||
-        splitTerminalRef.current?.getBufferType() === 'alternate'
-    },
+    shouldResize: keyboardShouldResize,
     onKeyboardHide: () => {
       requestAnimationFrame(() => {
         terminalRef.current?.fit()
@@ -240,12 +245,29 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   })
 
   useEffect(() => {
+    reapplyKeyboardLayout()
+    if (keyboardShouldResize()) {
+      requestAnimationFrame(() => {
+        terminalRef.current?.fit()
+        splitTerminalRef.current?.fit()
+      })
+    }
+  }, [activeTerminalSlot, effectiveTerminalSettings.keyboardMode, keyboardShouldResize, reapplyKeyboardLayout, splitTerminalId, terminalBufferBySlot])
+
+  useEffect(() => {
     latestActiveTerminalIdRef.current = activeTerminalId
   }, [activeTerminalId])
 
   useEffect(() => {
     resizeLockedHintShownRef.current = false
   }, [activeTerminalId])
+
+  useEffect(() => {
+    setTerminalBufferBySlot((current) => {
+      if (current[0] === 'normal' && current[1] === 'normal') return current
+      return { 0: 'normal', 1: 'normal' }
+    })
+  }, [activeTerminalId, splitTerminalId])
 
   useEffect(() => {
     hasLoadedTerminalsRef.current = hasLoadedTerminals
@@ -275,6 +297,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
     let fitFrame = 0
     const refitTerminals = () => {
+      if (keyboardVisible && !keyboardShouldResize()) {
+        reapplyKeyboardLayout()
+        return
+      }
       if (fitFrame) cancelAnimationFrame(fitFrame)
       fitFrame = requestAnimationFrame(() => {
         fitFrame = requestAnimationFrame(() => {
@@ -293,7 +319,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       observer.disconnect()
       if (fitFrame) cancelAnimationFrame(fitFrame)
     }
-  }, [page])
+  }, [keyboardShouldResize, keyboardVisible, page, reapplyKeyboardLayout])
 
   const updateTerminalSettings = useCallback((patch: Partial<TerminalSettings>) => {
     if (onTerminalSettingsChange) {
@@ -901,6 +927,15 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }
     activeTerminalHandle()?.pasteText(text)
   }, [activeTerminalHandle, splitTerminalId, syncSplitInput])
+
+  const handleTerminalBufferChange = useCallback((slot: TerminalSlot, isAlternate: boolean) => {
+    setTerminalBufferBySlot((current) => {
+      const nextBuffer = isAlternate ? 'alternate' : 'normal'
+      if (current[slot] === nextBuffer) return current
+      return { ...current, [slot]: nextBuffer }
+    })
+    handleBufferChange(isAlternate)
+  }, [handleBufferChange])
 
   const focusActiveTerminal = useCallback(() => {
     markKeyboardVisible()
@@ -1824,7 +1859,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   onModifierStateChange={setModifierState}
                   onCursorMove={handleCursorMove}
                   onInput={sendTerminalInput}
-                  onBufferChange={handleBufferChange}
+                  onBufferChange={(isAlternate) => handleTerminalBufferChange(0, isAlternate)}
                   onResizeControl={setTerminalResizeControl}
                   selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 0}
                   settings={effectiveTerminalSettings}
@@ -1868,7 +1903,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                     onModifierStateChange={setModifierState}
                     onCursorMove={handleCursorMove}
                     onInput={sendTerminalInput}
-                    onBufferChange={handleBufferChange}
+                    onBufferChange={(isAlternate) => handleTerminalBufferChange(1, isAlternate)}
                     selectionMode={terminalToolbarOpen && terminalToolbarMode === 'selection' && activeTerminalSlot === 1}
                     settings={effectiveTerminalSettings}
                     preventFocus={keyboardLocked}

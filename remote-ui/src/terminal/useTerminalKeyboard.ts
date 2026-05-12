@@ -1,6 +1,11 @@
-import { useRef, useCallback, useEffect, useState } from 'react'
-import type { TerminalHandle } from './Terminal'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { addNativeKeyboardListener } from '../platform/nativeKeyboard'
+import type { TerminalHandle } from './Terminal'
+
+const keyboardVisibleThresholdPx = 100
+const keyboardClosedThresholdPx = 1
+const keyboardVisibilityDebounceMs = 120
+const focusFallbackDelayMs = 300
 
 export interface UseTerminalKeyboardOptions {
   containerRef: React.RefObject<HTMLDivElement | null>
@@ -22,109 +27,156 @@ export interface UseTerminalKeyboardReturn {
   handleCursorMove: () => void
 }
 
+interface KeyboardMeasurement {
+  keyboardHeight: number
+  visibleHeight: number
+  hasNativeHeight: boolean
+}
+
 export function useTerminalKeyboard(opts: UseTerminalKeyboardOptions): UseTerminalKeyboardReturn {
   const { containerRef, mainRef, termWrapperRef, getTermRef, shouldResize, onKeyboardHide } = opts
-  const onKeyboardHideRef = useRef(onKeyboardHide)
-  onKeyboardHideRef.current = onKeyboardHide
-  const shouldResizeRef = useRef(shouldResize)
-  shouldResizeRef.current = shouldResize
-  const fullMainHeightRef = useRef(0)
   const [keyboardVisible, setKeyboardVisible] = useState(false)
-  const shiftRafRef = useRef(0)
-  const terminalFocusedRef = useRef(false)
+  const fullMainHeightRef = useRef(0)
+  const fullWindowHeightRef = useRef(typeof window === 'undefined' ? 0 : window.innerHeight)
   const nativeKeyboardHeightRef = useRef(0)
-  // Tracks the largest observed window.innerHeight — the "no keyboard" baseline.
-  // Android adjustResize shrinks window.innerHeight when keyboard shows; by comparing
-  // against this we get a keyboard height estimate even when vv.height tracks innerHeight.
-  const fullWindowHeightRef = useRef(typeof window !== 'undefined' ? window.innerHeight : 0)
+  const keyboardRequestedRef = useRef(false)
+  const shiftRafRef = useRef(0)
+  const onKeyboardHideRef = useRef(onKeyboardHide)
+  const shouldResizeRef = useRef(shouldResize)
 
-  // Helper: compute effective keyboard height from both detection methods.
-  // iOS:     vv.height shrinks, innerHeight stays → vvKbH > 0
-  // Android: innerHeight shrinks, vv.height ≈ innerHeight → winShrink > 0
-  const getEffectiveKbH = useCallback(() => {
+  onKeyboardHideRef.current = onKeyboardHide
+  shouldResizeRef.current = shouldResize
+
+  const measureKeyboard = useCallback((): KeyboardMeasurement => {
     const vv = window.visualViewport
-    const vvKbH = vv ? window.innerHeight - vv.height : 0
-    const winShrink = Math.max(0, fullWindowHeightRef.current - window.innerHeight)
-    return Math.max(vvKbH, winShrink, nativeKeyboardHeightRef.current)
+    if (window.innerHeight > fullWindowHeightRef.current) {
+      fullWindowHeightRef.current = window.innerHeight
+    }
+
+    const visualViewportKeyboardHeight = vv ? Math.max(0, window.innerHeight - vv.height) : 0
+    const windowShrinkKeyboardHeight = Math.max(0, fullWindowHeightRef.current - window.innerHeight)
+    const nativeKeyboardHeight = nativeKeyboardHeightRef.current
+    const keyboardHeight = Math.max(visualViewportKeyboardHeight, windowShrinkKeyboardHeight, nativeKeyboardHeight)
+    const hasNativeHeight = nativeKeyboardHeight > keyboardClosedThresholdPx
+
+    let visibleHeight = vv?.height ?? window.innerHeight
+    if (hasNativeHeight && windowShrinkKeyboardHeight <= keyboardClosedThresholdPx) {
+      visibleHeight = Math.max(0, window.innerHeight - nativeKeyboardHeight)
+    }
+
+    return { keyboardHeight, visibleHeight, hasNativeHeight }
   }, [])
+
+  const rememberFullMainHeight = useCallback(() => {
+    const main = mainRef.current
+    if (!main) return
+    fullMainHeightRef.current = main.clientHeight
+  }, [mainRef])
 
   const clearKeyboardLayout = useCallback(() => {
     if (shiftRafRef.current) {
       cancelAnimationFrame(shiftRafRef.current)
       shiftRafRef.current = 0
     }
-    if (containerRef.current) {
-      containerRef.current.style.height = ''
-    }
+    if (containerRef.current) containerRef.current.style.height = ''
     if (termWrapperRef.current) {
       termWrapperRef.current.style.height = ''
       termWrapperRef.current.style.transform = ''
     }
     getTermRef()?.adjustInputPosition(0)
-  }, [containerRef, termWrapperRef, getTermRef])
+  }, [containerRef, getTermRef, termWrapperRef])
 
   const resetKeyboardLayout = useCallback(() => {
     nativeKeyboardHeightRef.current = 0
+    keyboardRequestedRef.current = false
     clearKeyboardLayout()
     setKeyboardVisible(false)
     onKeyboardHideRef.current?.()
   }, [clearKeyboardLayout])
 
   const markKeyboardVisible = useCallback(() => {
-    terminalFocusedRef.current = true
+    keyboardRequestedRef.current = true
     setKeyboardVisible(true)
   }, [])
 
   const markKeyboardHidden = useCallback(() => {
-    terminalFocusedRef.current = false
     resetKeyboardLayout()
   }, [resetKeyboardLayout])
 
   const adjustShift = useCallback(() => {
     if (shouldResizeRef.current()) return
     if (!termWrapperRef.current || fullMainHeightRef.current <= 0) return
-    const vv = window.visualViewport
-    if (!vv) return
-    const kbH = getEffectiveKbH()
-    if (kbH <= 1) return
+    const { keyboardHeight } = measureKeyboard()
+    if (keyboardHeight <= keyboardClosedThresholdPx) return
+
     const termRef = getTermRef()
     const cursorInfo = termRef?.getCursorInfo()
     let shift = 0
+
     if (cursorInfo) {
       const cursorPxFromTop = cursorInfo.cursorY * cursorInfo.lineHeight
-      const visibleMainHeight = fullMainHeightRef.current - kbH
+      const visibleMainHeight = fullMainHeightRef.current - keyboardHeight
       if (cursorPxFromTop >= visibleMainHeight) {
-        shift = Math.min(kbH, cursorPxFromTop - visibleMainHeight + cursorInfo.lineHeight * 2)
+        shift = Math.min(
+          keyboardHeight,
+          cursorPxFromTop - visibleMainHeight + cursorInfo.lineHeight * 2,
+        )
       }
     }
-    termWrapperRef.current.style.transform = `translateY(${-shift}px)`
-    termRef?.adjustInputPosition(kbH - shift)
-  }, [termWrapperRef, getTermRef, getEffectiveKbH])
 
-  const reapplyKeyboardLayout = useCallback(() => {
-    if (!termWrapperRef.current || fullMainHeightRef.current <= 0) return
-    const kbH = getEffectiveKbH()
-    if (kbH <= 1) {
-      if (terminalFocusedRef.current) {
-        clearKeyboardLayout()
-      } else {
-        resetKeyboardLayout()
-      }
+    termWrapperRef.current.style.transform = `translateY(${-shift}px)`
+    termRef?.adjustInputPosition(keyboardHeight - shift)
+  }, [getTermRef, measureKeyboard, termWrapperRef])
+
+  const applyKeyboardLayout = useCallback(() => {
+    const wrapper = termWrapperRef.current
+    const container = containerRef.current
+    if (!wrapper || !container) return
+
+    if (fullMainHeightRef.current <= 0) rememberFullMainHeight()
+    const { keyboardHeight, visibleHeight } = measureKeyboard()
+    const keyboardIsOpen = keyboardHeight > keyboardClosedThresholdPx
+
+    if (!keyboardIsOpen) {
+      if (!keyboardRequestedRef.current) resetKeyboardLayout()
+      else clearKeyboardLayout()
       return
     }
-    if (shouldResizeRef.current()) {
-      termWrapperRef.current.style.height = ''
-      termWrapperRef.current.style.transform = ''
-      getTermRef()?.adjustInputPosition(0)
+
+    if (keyboardHeight > keyboardVisibleThresholdPx) {
+      container.style.height = `${visibleHeight}px`
     } else {
-      termWrapperRef.current.style.height = `${fullMainHeightRef.current}px`
-      adjustShift()
+      container.style.height = ''
     }
-  }, [termWrapperRef, getTermRef, adjustShift, getEffectiveKbH, clearKeyboardLayout, resetKeyboardLayout])
+
+    if (shouldResizeRef.current()) {
+      wrapper.style.height = ''
+      wrapper.style.transform = ''
+      getTermRef()?.adjustInputPosition(0)
+      return
+    }
+
+    if (fullMainHeightRef.current <= 0) return
+    wrapper.style.height = `${fullMainHeightRef.current}px`
+    adjustShift()
+  }, [
+    adjustShift,
+    clearKeyboardLayout,
+    containerRef,
+    getTermRef,
+    measureKeyboard,
+    rememberFullMainHeight,
+    resetKeyboardLayout,
+    termWrapperRef,
+  ])
+
+  const reapplyKeyboardLayout = useCallback(() => {
+    applyKeyboardLayout()
+  }, [applyKeyboardLayout])
 
   const handleBufferChange = useCallback((_isAlternate: boolean) => {
-    reapplyKeyboardLayout()
-  }, [reapplyKeyboardLayout])
+    applyKeyboardLayout()
+  }, [applyKeyboardLayout])
 
   const handleCursorMove = useCallback(() => {
     if (shiftRafRef.current) return
@@ -137,66 +189,31 @@ export function useTerminalKeyboard(opts: UseTerminalKeyboardOptions): UseTermin
   useEffect(() => {
     const vv = window.visualViewport
     fullWindowHeightRef.current = window.innerHeight
-    let kbDebounce: ReturnType<typeof setTimeout> | undefined
-    let scrollRafId = 0
+    let visibilityDebounce: ReturnType<typeof setTimeout> | undefined
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined
+    let scrollRafId = 0
 
-    const update = () => {
-      if (!containerRef.current) return
-
-      // Keep fullWindowHeight up-to-date: it's the max observed innerHeight
-      // (keyboard hidden = full size, keyboard shown = shrunk).
-      if (window.innerHeight > fullWindowHeightRef.current) {
-        fullWindowHeightRef.current = window.innerHeight
-      }
-
-      const vvKbH = vv ? window.innerHeight - vv.height : 0
-      const winShrink = Math.max(0, fullWindowHeightRef.current - window.innerHeight)
-      const kbH = Math.max(vvKbH, winShrink, nativeKeyboardHeightRef.current)
-
-      if (fullMainHeightRef.current <= 0 && mainRef.current) {
-        fullMainHeightRef.current = mainRef.current.clientHeight
-      }
-      if (kbH > 100) {
-        const visibleHeight = nativeKeyboardHeightRef.current > 0 && winShrink <= 1
-          ? Math.max(0, window.innerHeight - nativeKeyboardHeightRef.current)
-          : vv?.height ?? window.innerHeight
-        containerRef.current.style.height = `${visibleHeight}px`
-      } else {
-        containerRef.current.style.height = ''
-      }
-      if (kbH <= 1 && mainRef.current) {
-        fullMainHeightRef.current = mainRef.current.clientHeight
-      }
-      if (kbH > 1 && fullMainHeightRef.current > 0 && termWrapperRef.current) {
-        if (shouldResizeRef.current()) {
-          termWrapperRef.current.style.height = ''
-          termWrapperRef.current.style.transform = ''
-          getTermRef()?.adjustInputPosition(0)
-        } else {
-          termWrapperRef.current.style.height = `${fullMainHeightRef.current}px`
-          adjustShift()
-        }
-      } else if (termWrapperRef.current) {
-        if (terminalFocusedRef.current) {
-          clearKeyboardLayout()
-        } else {
-          resetKeyboardLayout()
-        }
-      }
-
-      const isKb = kbH > 100 || nativeKeyboardHeightRef.current > 0 || terminalFocusedRef.current
-      clearTimeout(kbDebounce)
-      if (isKb) {
+    const publishVisibility = (isVisible: boolean) => {
+      clearTimeout(visibilityDebounce)
+      if (isVisible) {
         setKeyboardVisible(true)
-      } else {
-        kbDebounce = setTimeout(() => setKeyboardVisible(false), 120)
+        return
       }
+      visibilityDebounce = setTimeout(() => {
+        if (!keyboardRequestedRef.current) setKeyboardVisible(false)
+      }, keyboardVisibilityDebounceMs)
     }
 
-    update()
+    const update = () => {
+      const { keyboardHeight } = measureKeyboard()
+      if (keyboardHeight <= keyboardClosedThresholdPx || fullMainHeightRef.current <= 0) {
+        rememberFullMainHeight()
+      }
+      applyKeyboardLayout()
+      publishVisibility(keyboardHeight > keyboardVisibleThresholdPx || keyboardRequestedRef.current)
+    }
 
-    const preventScroll = () => {
+    const preventPageScroll = () => {
       if (scrollRafId) return
       scrollRafId = requestAnimationFrame(() => {
         scrollRafId = 0
@@ -208,8 +225,27 @@ export function useTerminalKeyboard(opts: UseTerminalKeyboardOptions): UseTermin
       })
     }
 
-    // window.resize fires on Android (adjustResize mode) when keyboard shows/hides.
-    // Update fullWindowHeight and run the full update so height-based detection kicks in.
+    const updateSoonAfterFocusChange = () => {
+      clearTimeout(fallbackTimer)
+      fallbackTimer = setTimeout(update, focusFallbackDelayMs)
+    }
+
+    const onTerminalFocusIn = (event: FocusEvent) => {
+      if (!termWrapperRef.current?.contains(event.target as Node)) return
+      keyboardRequestedRef.current = true
+      publishVisibility(true)
+      updateSoonAfterFocusChange()
+    }
+
+    const onTerminalFocusOut = () => {
+      setTimeout(() => {
+        if (termWrapperRef.current?.contains(document.activeElement)) return
+        keyboardRequestedRef.current = false
+        const { keyboardHeight } = measureKeyboard()
+        if (keyboardHeight <= keyboardClosedThresholdPx) resetKeyboardLayout()
+      }, 0)
+    }
+
     const handleWindowResize = () => {
       if (window.innerHeight > fullWindowHeightRef.current) {
         fullWindowHeightRef.current = window.innerHeight
@@ -217,77 +253,52 @@ export function useTerminalKeyboard(opts: UseTerminalKeyboardOptions): UseTermin
       update()
     }
 
-    const onFocusChange = () => {
-      clearTimeout(fallbackTimer)
-      fallbackTimer = setTimeout(update, 300)
-    }
-
-    const onTerminalFocusIn = (e: FocusEvent) => {
-      if (termWrapperRef.current?.contains(e.target as Node)) {
-        terminalFocusedRef.current = true
-        clearTimeout(kbDebounce)
-        setKeyboardVisible(true)
-      }
-    }
-    const onTerminalFocusOut = () => {
-      setTimeout(() => {
-        if (termWrapperRef.current && !termWrapperRef.current.contains(document.activeElement)) {
-          terminalFocusedRef.current = false
-          const kbH = getEffectiveKbH()
-          if (kbH <= 1) {
-            clearTimeout(kbDebounce)
-            kbDebounce = setTimeout(() => setKeyboardVisible(false), 120)
-          }
-        }
-      }, 0)
-    }
-
     const removeNativeKeyboardListener = addNativeKeyboardListener((event) => {
-      nativeKeyboardHeightRef.current = event.visible ? event.keyboardHeight ?? getEffectiveKbH() : 0
+      nativeKeyboardHeightRef.current = event.visible ? event.keyboardHeight ?? measureKeyboard().keyboardHeight : 0
+      keyboardRequestedRef.current = event.visible
       if (event.visible) {
-        terminalFocusedRef.current = true
-        clearTimeout(kbDebounce)
-        setKeyboardVisible(true)
+        publishVisibility(true)
         update()
         return
       }
-      terminalFocusedRef.current = false
       resetKeyboardLayout()
     })
 
     const onResume = () => {
-      terminalFocusedRef.current = false
       resetKeyboardLayout()
-      window.setTimeout(update, 120)
+      window.setTimeout(update, keyboardVisibilityDebounceMs)
     }
 
+    update()
     vv?.addEventListener('resize', update)
     vv?.addEventListener('scroll', update)
     window.addEventListener('resize', handleWindowResize)
-    window.addEventListener('scroll', preventScroll, { passive: false })
-    document.addEventListener('visibilitychange', onResume)
-    document.addEventListener('termx:resume', onResume)
-    document.addEventListener('focusin', onFocusChange)
-    document.addEventListener('focusout', onFocusChange)
+    window.addEventListener('scroll', preventPageScroll, { passive: false })
+    document.addEventListener('focusin', updateSoonAfterFocusChange)
+    document.addEventListener('focusout', updateSoonAfterFocusChange)
     document.addEventListener('focusin', onTerminalFocusIn)
     document.addEventListener('focusout', onTerminalFocusOut)
+    document.addEventListener('visibilitychange', onResume)
+    document.addEventListener('termx:resume', onResume)
+
     return () => {
       removeNativeKeyboardListener()
       vv?.removeEventListener('resize', update)
       vv?.removeEventListener('scroll', update)
       window.removeEventListener('resize', handleWindowResize)
-      window.removeEventListener('scroll', preventScroll)
-      document.removeEventListener('visibilitychange', onResume)
-      document.removeEventListener('termx:resume', onResume)
-      document.removeEventListener('focusin', onFocusChange)
-      document.removeEventListener('focusout', onFocusChange)
+      window.removeEventListener('scroll', preventPageScroll)
+      document.removeEventListener('focusin', updateSoonAfterFocusChange)
+      document.removeEventListener('focusout', updateSoonAfterFocusChange)
       document.removeEventListener('focusin', onTerminalFocusIn)
       document.removeEventListener('focusout', onTerminalFocusOut)
-      clearTimeout(kbDebounce)
+      document.removeEventListener('visibilitychange', onResume)
+      document.removeEventListener('termx:resume', onResume)
+      clearTimeout(visibilityDebounce)
       clearTimeout(fallbackTimer)
       if (scrollRafId) cancelAnimationFrame(scrollRafId)
+      if (shiftRafRef.current) cancelAnimationFrame(shiftRafRef.current)
     }
-  }, [])
+  }, [applyKeyboardLayout, measureKeyboard, rememberFullMainHeight, resetKeyboardLayout, termWrapperRef])
 
   return {
     keyboardVisible,

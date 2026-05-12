@@ -312,7 +312,7 @@ describe('TerminalProtocolClient', () => {
         resize_control: { can_resize: false, reason: 'follower' },
       }),
     })))
-    await Promise.resolve()
+    await vi.waitFor(() => expect(channel.sent.length).toBeGreaterThanOrEqual(3))
 
     const ensureResize = decodeSentFrame(channel, 2)
     expect(ensureResize).toMatchObject({ channel: 0, type: TERMX_FRAME_TYPES.request })

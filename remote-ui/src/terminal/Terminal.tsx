@@ -167,7 +167,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   useEffect(() => {
     preventFocusRef.current = preventFocus
   }, [preventFocus])
-  const fitDelayRef = useRef<number | null>(null)
   const terminalDisposedRef = useRef(true)
   const terminalGenerationRef = useRef(0)
   const settingsRef = useRef(settings)
@@ -1689,19 +1688,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       resizeObserver.observe(container)
     }
 
-    const handleVisualViewportResize = () => {
+    const clearViewportOffsetForKeyboard = () => {
       if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
       resetTransientViewportOffset()
-      if (fitDelayRef.current !== null) window.clearTimeout(fitDelayRef.current)
-      fitDelayRef.current = window.setTimeout(() => {
-        fitDelayRef.current = null
-        if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
-        scheduleFit()
-      }, 100)
+      smoothEnd()
     }
 
-    const removeNativeKeyboardListener = addNativeKeyboardListener(handleVisualViewportResize)
-    document.addEventListener('termx:resume', handleVisualViewportResize)
+    const removeNativeKeyboardListener = addNativeKeyboardListener(clearViewportOffsetForKeyboard)
+    document.addEventListener('termx:resume', clearViewportOffsetForKeyboard)
     let expectedProbeAt = terminalNow() + eventLoopProbeIntervalMs
     const eventLoopProbe = window.setInterval(() => {
       const now = terminalNow()
@@ -1723,29 +1717,25 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }, eventLoopProbeIntervalMs)
 
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', handleVisualViewportResize)
-      window.visualViewport.addEventListener('scroll', handleVisualViewportResize)
+      window.visualViewport.addEventListener('resize', clearViewportOffsetForKeyboard)
+      window.visualViewport.addEventListener('scroll', clearViewportOffsetForKeyboard)
     }
 
     return () => {
       terminalDisposedRef.current = true
       terminalGenerationRef.current += 1
       if (window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', handleVisualViewportResize)
-        window.visualViewport.removeEventListener('scroll', handleVisualViewportResize)
+        window.visualViewport.removeEventListener('resize', clearViewportOffsetForKeyboard)
+        window.visualViewport.removeEventListener('scroll', clearViewportOffsetForKeyboard)
       }
       removeNativeKeyboardListener()
-      document.removeEventListener('termx:resume', handleVisualViewportResize)
+      document.removeEventListener('termx:resume', clearViewportOffsetForKeyboard)
       window.clearInterval(eventLoopProbe)
       if (fitFrameRef.current !== null) {
         window.cancelAnimationFrame(fitFrameRef.current)
         fitFrameRef.current = null
       }
       cancelBottomAnchor()
-      if (fitDelayRef.current !== null) {
-        window.clearTimeout(fitDelayRef.current)
-        fitDelayRef.current = null
-      }
       if (historyPreloadTimerRef.current !== null) {
         window.clearTimeout(historyPreloadTimerRef.current)
         historyPreloadTimerRef.current = null
