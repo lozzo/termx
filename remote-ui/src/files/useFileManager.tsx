@@ -84,6 +84,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [hasLoadedEntries, setHasLoadedEntries] = useState(false)
   const [error, setError] = useState<FileManagerVisibleError | null>(null)
   const [sortState, setSortState] = useState<FileSortState>(DEFAULT_FILE_SORT)
   const [showHidden, setShowHidden] = useState(false)
@@ -97,6 +98,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   const currentPathRef = useRef(options.initialPath ?? '')
   const requestSeqRef = useRef(0)
   const previewSeqRef = useRef(0)
+  const hasLoadedEntriesRef = useRef(hasLoadedEntries)
 
   const fileApi = useMemo(() => createFileApi(options.session), [options.session])
   const previewSource = useMemo(() => createFilePreviewSource(options.session), [options.session])
@@ -105,6 +107,10 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [clipboard, setClipboard] = useState<{ mode: 'copy' | 'cut'; paths: string[] } | null>(null)
 
+  useEffect(() => {
+    hasLoadedEntriesRef.current = hasLoadedEntries
+  }, [hasLoadedEntries])
+
   const showActionMessage = useCallback((message: string) => {
     setActionMessage(message)
     window.setTimeout(() => setActionMessage(null), 2500)
@@ -112,7 +118,19 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
 
   const loadPath = useCallback(async (path: string) => {
     const seq = ++requestSeqRef.current
-    setLoading(true)
+    const isNavigation = path !== currentPathRef.current
+
+    if (!hasLoadedEntriesRef.current) setLoading(true)
+
+    const loadingTimer = window.setTimeout(() => {
+      if (seq === requestSeqRef.current) {
+        setLoading(true)
+        if (isNavigation) {
+          setEntries([])
+        }
+      }
+    }, 200)
+
     setError(null)
     try {
       const info = await options.session.getConnectionInfo()
@@ -124,6 +142,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
       currentPathRef.current = response.path
       setEntries(response.entries)
       setTotal(response.total)
+      setHasLoadedEntries(true)
       if (fallbackFrom && fallbackFrom !== response.path) {
         showActionMessage(`Opened ${response.path} instead`)
       }
@@ -135,6 +154,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
         recoverable: true,
       })
     } finally {
+      clearTimeout(loadingTimer)
       if (seq === requestSeqRef.current) setLoading(false)
     }
   }, [fileApi, options.machineId, options.terminalId, options.session, showActionMessage])
@@ -191,7 +211,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   const paste = useCallback(async () => {
     if (!clipboard || clipboard.paths.length === 0) return
     setError(null)
-    setLoading(true)
+    if (!hasLoadedEntriesRef.current) setLoading(true)
     try {
       if (clipboard.mode === 'copy') {
         await fileApi.copy(clipboard.paths, currentPathRef.current)
@@ -215,7 +235,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   const batchDelete = useCallback(async (paths: string[]) => {
     if (paths.length === 0) return
     setError(null)
-    setLoading(true)
+    if (!hasLoadedEntriesRef.current) setLoading(true)
     try {
       await fileApi.batchDelete(paths)
       showActionMessage(`Deleted ${paths.length} items`)

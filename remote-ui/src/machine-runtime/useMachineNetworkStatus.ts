@@ -9,6 +9,7 @@ export interface MachineNetworkStatusState {
   connectionStatus: string | null
   connectionPhase: RtcConnectionPhase | null
   showMachineNetworkOverlay: boolean
+  showDelayedMachineNetworkOverlay: boolean
   setMachineNetworkMachineId(machineId: string | null): void
   updateConnectionStatus(status: string, phase?: RtcConnectionPhase | undefined): void
   clearConnectionStatus(): void
@@ -18,6 +19,7 @@ export interface MachineNetworkStatusState {
 export function useMachineNetworkStatus(): MachineNetworkStatusState {
   const [connectionStatus, setConnectionStatus] = useState<string | null>(null)
   const [connectionPhase, setConnectionPhase] = useState<RtcConnectionPhase | null>(null)
+  const [showDelayedMachineNetworkOverlay, setShowDelayedMachineNetworkOverlay] = useState(false)
   const machineIdRef = useRef<string | null>(null)
   const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -61,10 +63,24 @@ export function useMachineNetworkStatus(): MachineNetworkStatusState {
     clearTimer()
   }, [clearTimer])
 
+  const showMachineNetworkOverlay = Boolean(connectionStatus && !connectionStatusIsSettled(connectionPhase))
+
+  useEffect(() => {
+    if (showMachineNetworkOverlay) {
+      const timer = setTimeout(() => {
+        setShowDelayedMachineNetworkOverlay(true)
+      }, 300)
+      return () => clearTimeout(timer)
+    } else {
+      setShowDelayedMachineNetworkOverlay(false)
+    }
+  }, [showMachineNetworkOverlay])
+
   return {
     connectionStatus,
     connectionPhase,
-    showMachineNetworkOverlay: Boolean(connectionStatus && !connectionStatusIsSettled(connectionPhase)),
+    showMachineNetworkOverlay,
+    showDelayedMachineNetworkOverlay,
     setMachineNetworkMachineId,
     updateConnectionStatus,
     clearConnectionStatus,

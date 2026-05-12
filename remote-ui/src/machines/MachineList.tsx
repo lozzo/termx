@@ -1,12 +1,10 @@
 import { useRef, useState } from 'react'
-import { LogIn, Plus, QrCode, Server, Wifi, WifiOff, X } from 'lucide-react'
+import { ChevronRight, LaptopMinimal, LogIn, Plus, QrCode, Server, X } from 'lucide-react'
 import { hapticImpact } from '../platform/haptics'
 import type { AppMachineRecord } from '../state/appMachine'
 import {
-  formatConnectionPath,
   formatLastSeen,
   formatMachineState,
-  formatTerminalCount,
 } from '../state/appMachine'
 
 export interface MachineListProps {
@@ -29,6 +27,8 @@ export function MachineList({
   className,
 }: MachineListProps) {
   const [detailMachine, setDetailMachine] = useState<AppMachineRecord | null>(null)
+  const onlineMachines = machines.filter((machine) => machine.state === 'online' || machine.state === 'connecting')
+  const otherMachines = machines.filter((machine) => machine.state !== 'online' && machine.state !== 'connecting')
 
   return (
     <section
@@ -106,19 +106,55 @@ export function MachineList({
           </div>
         </div>
       ) : (
-        <ul aria-label="Machines" className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-          {machines.map((machine) => (
-            <li key={machine.machineId} className="mb-2 last:mb-0">
-              <MachineRow
-                machine={machine}
-                onSelectMachine={onSelectMachine}
-                onShowDetails={setDetailMachine}
-              />
-            </li>
-          ))}
-        </ul>
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+          {onlineMachines.length > 0 ? (
+            <MachineSection
+              title="Available"
+              machines={onlineMachines}
+              onSelectMachine={onSelectMachine}
+              onShowDetails={setDetailMachine}
+            />
+          ) : null}
+          {otherMachines.length > 0 ? (
+            <MachineSection
+              title={onlineMachines.length > 0 ? 'Offline' : 'Machines'}
+              machines={otherMachines}
+              onSelectMachine={onSelectMachine}
+              onShowDetails={setDetailMachine}
+            />
+          ) : null}
+        </div>
       )}
       {detailMachine ? <MachineDetailSheet machine={detailMachine} onClose={() => setDetailMachine(null)} /> : null}
+    </section>
+  )
+}
+
+function MachineSection({
+  title,
+  machines,
+  onSelectMachine,
+  onShowDetails,
+}: {
+  title: string
+  machines: AppMachineRecord[]
+  onSelectMachine: (machine: AppMachineRecord) => void
+  onShowDetails?: ((machine: AppMachineRecord) => void) | undefined
+}) {
+  return (
+    <section className="mb-5 last:mb-0">
+      <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">{title}</div>
+      <ul aria-label={title} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+        {machines.map((machine, index) => (
+          <li key={machine.machineId} className={index > 0 ? 'border-t border-zinc-100' : ''}>
+            <MachineRow
+              machine={machine}
+              onSelectMachine={onSelectMachine}
+              onShowDetails={onShowDetails}
+            />
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }
@@ -132,9 +168,20 @@ function MachineRow({
   onSelectMachine: (machine: AppMachineRecord) => void
   onShowDetails?: ((machine: AppMachineRecord) => void) | undefined
 }) {
-  const path = machine.lastConnectionPath ?? machine.preferredPath
   const longPressTimerRef = useRef<number | null>(null)
   const longPressTriggeredRef = useRef(false)
+  const subtitle = machine.hostname ?? shortenMachineId(machine.machineId)
+  const availability = machine.state === 'online'
+    ? 'Tap to connect'
+    : machine.state === 'connecting'
+      ? 'Connecting...'
+      : `Last online ${formatLastSeen(machine.lastSeenAt)}`
+  const sourceLabel = machine.source === 'cloud'
+    ? 'Cloud'
+    : machine.source === 'manual'
+      ? 'Manual'
+      : 'Local'
+  const DeviceIcon = machine.source === 'cloud' ? Server : LaptopMinimal
 
   const clearLongPress = () => {
     if (longPressTimerRef.current !== null) {
@@ -146,7 +193,7 @@ function MachineRow({
   return (
     <button
       aria-label={`Connect to ${machine.name}`}
-      className="grid w-full grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-3 text-left shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      className="grid w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left transition-colors active:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
       type="button"
       onClick={() => {
         if (longPressTriggeredRef.current) {
@@ -175,42 +222,51 @@ function MachineRow({
       onPointerLeave={clearLongPress}
       onPointerCancel={clearLongPress}
     >
-      <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-zinc-100 text-zinc-600">
-        {machine.state === 'offline' ? <WifiOff className="h-5 w-5" /> : <Wifi className="h-5 w-5" />}
+      <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-700">
+        <DeviceIcon className="h-5 w-5" />
+        <span className={`absolute bottom-0.5 right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
+          machine.state === 'online'
+            ? 'bg-emerald-500'
+            : machine.state === 'connecting'
+              ? 'bg-blue-500'
+              : machine.state === 'stale'
+                ? 'bg-amber-500'
+                : 'bg-zinc-400'
+        }`} />
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center justify-between gap-2">
           <span className="truncate text-[15px] font-semibold leading-5 text-zinc-950">{machine.name}</span>
           <StateBadge state={machine.state} />
         </div>
-        <div className="mt-0.5 flex min-w-0 items-center gap-2 text-xs font-medium text-zinc-500">
-          <span className="truncate">{machine.hostname ?? machine.machineId}</span>
-          <span className="shrink-0 text-zinc-300">/</span>
-          <span className="shrink-0">{formatTerminalCount(machine.terminalCount)}</span>
+        <div className="mt-1 truncate text-xs font-medium text-zinc-500">{subtitle}</div>
+        <div className="mt-2 flex min-w-0 items-center justify-between gap-3">
+          <span className={`truncate text-[12px] font-medium ${machine.state === 'online' ? 'text-zinc-900' : machine.state === 'connecting' ? 'text-blue-700' : 'text-zinc-500'}`}>
+            {availability}
+          </span>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <InfoPill>{sourceLabel}</InfoPill>
+          </div>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          {path ? <InfoPill>{formatConnectionPath(path)}</InfoPill> : null}
-          <InfoPill>{machine.source === 'cloud' ? 'Cloud' : machine.source === 'manual' ? 'Manual' : 'Saved'}</InfoPill>
-          {machine.relayInUse ? <InfoPill>Relay active</InfoPill> : null}
-          <InfoPill>{formatLastSeen(machine.lastSeenAt)}</InfoPill>
-        </div>
+      </div>
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center self-center rounded-full bg-zinc-100 text-zinc-400">
+        <ChevronRight className="h-4 w-4" />
       </div>
     </button>
   )
 }
 
 function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; onClose: () => void }) {
-  const path = machine.lastConnectionPath ?? machine.preferredPath
   const fields = [
     ['Name', machine.name],
     ['Machine ID', machine.machineId],
     ['Hostname', machine.hostname ?? '-'],
     ['State', formatMachineState(machine.state)],
-    ['Terminals', formatTerminalCount(machine.terminalCount)],
-    ['Source', machine.source === 'cloud' ? 'Cloud' : machine.source === 'manual' ? 'Manual' : 'Saved'],
-    ['Connection', path ? formatConnectionPath(path) : '-'],
-    ['Relay', machine.relayInUse ? 'Active' : 'Inactive'],
-    ['Last seen', formatLastSeen(machine.lastSeenAt)],
+    ['Source', machine.source === 'cloud' ? 'Cloud' : machine.source === 'manual' ? 'Manual' : 'Local'],
+    ['Terminal count', String(machine.terminalCount)],
+    ['Recent path', machine.lastConnectionPath ?? machine.preferredPath ?? '-'],
+    ['Relay', machine.relayInUse ? 'In use' : 'No'],
+    ['Last online', formatLastSeen(machine.lastSeenAt)],
   ] as const
 
   return (
@@ -270,4 +326,9 @@ function InfoPill({ children }: { children: string }) {
       {children}
     </span>
   )
+}
+
+function shortenMachineId(machineId: string): string {
+  if (machineId.length <= 18) return machineId
+  return `${machineId.slice(0, 8)}...${machineId.slice(-6)}`
 }

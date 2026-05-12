@@ -59,13 +59,19 @@ export function formatTerminalCount(count: number): string {
 }
 
 export function formatLastSeen(value: string | undefined): string {
-  if (!value) return 'Never seen'
+  if (!value) return 'Never online'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString(undefined, {
+  const diffMs = Date.now() - date.getTime()
+  if (diffMs < 60_000) return 'Just now'
+  const diffMinutes = Math.floor(diffMs / 60_000)
+  if (diffMinutes < 60) return `${diffMinutes} min ago`
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) return `${diffHours} hr ago`
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`
+  return date.toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
   })
 }

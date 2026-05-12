@@ -15,6 +15,7 @@ export interface TerminalListProps {
   onManageTerminal?: ((intent: OpenTerminalIntent) => void) | undefined
   activeTerminalId?: string | undefined
   className?: string
+  loading?: boolean
 }
 
 export function TerminalList({
@@ -24,6 +25,7 @@ export function TerminalList({
   onManageTerminal,
   activeTerminalId,
   className,
+  loading,
 }: TerminalListProps) {
   const terminalKeyCounts = new Map<string, number>()
 
@@ -34,10 +36,28 @@ export function TerminalList({
       data-testid="termx-terminal-list"
     >
       {terminals.length === 0 ? (
-        <div className="flex h-32 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-zinc-200 bg-zinc-50/50 text-sm text-zinc-500">
-          <TerminalIcon className="h-8 w-8 text-zinc-300" />
-          <p>No active terminals</p>
-        </div>
+        loading ? (
+          <ul className="flex flex-col gap-3 animate-pulse" aria-hidden="true">
+            {[1, 2, 3].map((i) => (
+              <li key={i} className="flex w-full items-center gap-3 rounded-xl p-3 bg-white border border-zinc-200/60 shadow-sm">
+                <div className="flex h-10 w-10 shrink-0 rounded-lg bg-zinc-100" />
+                <div className="flex min-w-0 flex-1 flex-col gap-2 py-1">
+                  <div className="h-3.5 w-1/3 rounded bg-zinc-200" />
+                  <div className="flex gap-2">
+                    <div className="h-2.5 w-16 rounded bg-zinc-100" />
+                    <div className="h-2.5 w-12 rounded bg-zinc-100" />
+                  </div>
+                </div>
+                <div className="h-4 w-4 shrink-0 rounded bg-zinc-100" />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="flex h-32 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-zinc-200 bg-zinc-50/50 text-sm text-zinc-500 animate-in fade-in duration-300">
+            <TerminalIcon className="h-8 w-8 text-zinc-300" />
+            <p>No active terminals</p>
+          </div>
+        )
       ) : (
         <ul aria-label="Terminals" className="flex flex-col gap-3">
           {terminals.map((terminal) => {

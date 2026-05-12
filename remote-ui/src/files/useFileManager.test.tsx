@@ -301,4 +301,60 @@ describe('useFileManager', () => {
     expect(session.openApiCount).toBe(0)
     expect(session.requests).toEqual([])
   })
+
+  it('keeps directory entries visible while a refresh is in flight', async () => {
+    const initialLoad = createDeferredFileResponder()
+    const refreshLoad = createDeferredFileResponder()
+    let requestCount = 0
+    const session = createMockFileSession({
+      '/files/list': ({ path }: { path?: string }) => {
+        requestCount += 1
+        if (requestCount === 1) return initialLoad.promise
+        if (requestCount === 2) return refreshLoad.promise
+        return {
+          path,
+          parent: '',
+          total: 1,
+          entries: [{ name: 'new.txt', type: 'file', size: 2 }],
+        }
+      },
+    }, {}, { terminalId: 'terminal-1' })
+
+    const { result } = renderHook(() => useFileManager({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      session,
+      initialPath: '/',
+    }))
+
+    initialLoad.resolve({
+      path: '/',
+      parent: '',
+      total: 1,
+      entries: [{ name: 'old.txt', type: 'file', size: 1 }],
+    })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.entries[0]?.name).toBe('old.txt')
+
+    let refreshPromise: Promise<void> | undefined
+    await act(async () => {
+      refreshPromise = result.current.refresh()
+      await Promise.resolve()
+    })
+
+    expect(result.current.loading).toBe(false)
+    expect(result.current.entries[0]?.name).toBe('old.txt')
+
+    refreshLoad.resolve({
+      path: '/',
+      parent: '',
+      total: 1,
+      entries: [{ name: 'new.txt', type: 'file', size: 2 }],
+    })
+    await act(async () => {
+      await refreshPromise
+    })
+
+    expect(result.current.entries[0]?.name).toBe('new.txt')
+  })
 })

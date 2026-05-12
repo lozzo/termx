@@ -377,7 +377,7 @@ export function FileManager({
           </div>
         ) : null}
 
-        {manager.loading && manager.entries.length === 0 ? (
+        {manager.loading && manager.entries.length === 0 && !manager.error ? (
           <div className="flex h-40 flex-col items-center justify-center gap-3 text-[14px] font-medium text-zinc-500">
             <RefreshCw className="h-6 w-6 animate-spin text-zinc-400" />
             Loading directory...

@@ -116,7 +116,7 @@ function ConnectionFlowView({
 }) {
   const active = connection.stage.startsWith('trying_')
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-zinc-50" data-testid="termx-connection-flow">
+    <section className="flex min-h-0 flex-1 flex-col bg-zinc-50 animate-in fade-in slide-in-from-right-4 duration-200" data-testid="termx-connection-flow">
       <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <button
           aria-label="Back to machines"

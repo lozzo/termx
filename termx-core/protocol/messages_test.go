@@ -173,6 +173,57 @@ func TestScreenUpdatePayloadKeepsStyledTrailingBlankCell(t *testing.T) {
 	}
 }
 
+func TestScreenUpdatePayloadWrappedMetadataRoundTrip(t *testing.T) {
+	now := time.Date(2026, 5, 12, 1, 2, 3, 0, time.UTC)
+	update := ScreenUpdate{
+		FullReplace: true,
+		Size:        protocolSize(5, 2),
+		Screen: ScreenData{Cells: [][]Cell{
+			rowWithTextAt(5, 0, "abcde"),
+			rowWithTextAt(5, 0, "f"),
+		}},
+		ScreenWrapped: []bool{true, false},
+		ChangedSpans: []ScreenSpanUpdate{{
+			Row:        0,
+			ColStart:   0,
+			Cells:      []Cell{{Content: "x", Width: 1}},
+			Op:         ScreenSpanOpWrite,
+			Timestamp:  now,
+			Wrapped:    true,
+			WrappedSet: true,
+		}},
+		ScrollbackAppend: []ScrollbackRowAppend{{
+			Cells:      rowWithTextAt(5, 0, "old"),
+			Timestamp:  now,
+			Wrapped:    true,
+			WrappedSet: true,
+		}},
+		Cursor: CursorState{Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
+	}
+
+	payload, err := EncodeScreenUpdatePayload(update)
+	if err != nil {
+		t.Fatalf("encode payload: %v", err)
+	}
+	if !bytes.HasPrefix(payload, []byte(screenUpdatePayloadMagicV5)) {
+		t.Fatalf("expected wrapped metadata to use TSU5, got prefix %q", payload[:minInt(len(payload), 8)])
+	}
+	decoded, err := DecodeScreenUpdatePayload(payload)
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if len(decoded.ScreenWrapped) != 2 || !decoded.ScreenWrapped[0] || decoded.ScreenWrapped[1] {
+		t.Fatalf("unexpected decoded screen wrapped: %#v", decoded.ScreenWrapped)
+	}
+	if len(decoded.ChangedSpans) != 1 || !decoded.ChangedSpans[0].WrappedSet || !decoded.ChangedSpans[0].Wrapped {
+		t.Fatalf("unexpected decoded span wrapped metadata: %#v", decoded.ChangedSpans)
+	}
+	if len(decoded.ScrollbackAppend) != 1 || !decoded.ScrollbackAppend[0].WrappedSet || !decoded.ScrollbackAppend[0].Wrapped {
+		t.Fatalf("unexpected decoded scrollback wrapped metadata: %#v", decoded.ScrollbackAppend)
+	}
+}
+
 func TestDecodeScreenUpdatePayloadRejectsLegacyJSON(t *testing.T) {
 	raw := []byte(`{
 		"size": {"cols": 4, "rows": 1},
@@ -360,6 +411,37 @@ func TestScreenUpdatePayloadTSU4RoundTrip(t *testing.T) {
 	}
 	if decoded.Ops[5].Cursor.Shape != "bar" || !decoded.Ops[6].Modes.MouseTracking {
 		t.Fatalf("unexpected control op round-trip: %#v %#v", decoded.Ops[5], decoded.Ops[6])
+	}
+}
+
+func TestScreenUpdatePayloadWrappedOpsUseTSU6(t *testing.T) {
+	update := ScreenUpdate{
+		Size: protocolSize(10, 2),
+		Ops: []ScreenOp{{
+			Code:       ScreenOpWriteSpan,
+			Row:        0,
+			Col:        0,
+			Cells:      []Cell{{Content: "x", Width: 1}},
+			Wrapped:    true,
+			WrappedSet: true,
+		}},
+		Cursor: CursorState{Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
+	}
+
+	payload, err := EncodeScreenUpdatePayload(update)
+	if err != nil {
+		t.Fatalf("encode payload: %v", err)
+	}
+	if !bytes.HasPrefix(payload, []byte(screenUpdatePayloadMagicV6)) {
+		t.Fatalf("expected wrapped opcode metadata to use TSU6, got prefix %q", payload[:minInt(len(payload), 8)])
+	}
+	decoded, err := DecodeScreenUpdatePayload(payload)
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if len(decoded.Ops) != 1 || !decoded.Ops[0].WrappedSet || !decoded.Ops[0].Wrapped {
+		t.Fatalf("unexpected decoded op wrapped metadata: %#v", decoded.Ops)
 	}
 }
 

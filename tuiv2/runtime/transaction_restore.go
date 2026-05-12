@@ -229,6 +229,8 @@ func cloneRuntimeSnapshot(snapshot *bridge.SnapshotRef) *bridge.SnapshotRef {
 	cloned.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps...)
 	cloned.ScreenRowKinds = append([]string(nil), snapshot.ScreenRowKinds...)
 	cloned.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds...)
+	cloned.ScreenWrapped = append([]bool(nil), snapshot.ScreenWrapped...)
+	cloned.ScrollbackWrapped = append([]bool(nil), snapshot.ScrollbackWrapped...)
 	return &cloned
 }
 

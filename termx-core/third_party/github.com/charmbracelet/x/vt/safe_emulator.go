@@ -210,6 +210,38 @@ func (se *SafeEmulator) ScrollbackCellAt(x, y int) *uv.Cell {
 	return se.Emulator.ScrollbackCellAt(x, y)
 }
 
+// ScrollbackLineWrapped returns whether a scrollback row visually continues
+// onto the next row in a concurrency-safe manner.
+func (se *SafeEmulator) ScrollbackLineWrapped(y int) bool {
+	se.mu.RLock()
+	defer se.mu.RUnlock()
+	return se.Emulator.ScrollbackLineWrapped(y)
+}
+
+// SetScrollbackLineWrapped updates whether a scrollback row visually continues
+// onto the next row in a concurrency-safe manner.
+func (se *SafeEmulator) SetScrollbackLineWrapped(y int, wrapped bool) {
+	se.mu.Lock()
+	defer se.mu.Unlock()
+	se.Emulator.SetScrollbackLineWrapped(y, wrapped)
+}
+
+// ScreenLineWrapped returns whether a visible row visually continues onto the
+// next row in a concurrency-safe manner.
+func (se *SafeEmulator) ScreenLineWrapped(y int) bool {
+	se.mu.RLock()
+	defer se.mu.RUnlock()
+	return se.Emulator.ScreenLineWrapped(y)
+}
+
+// SetScreenLineWrapped updates whether a visible row visually continues onto
+// the next row in a concurrency-safe manner.
+func (se *SafeEmulator) SetScreenLineWrapped(y int, wrapped bool) {
+	se.mu.Lock()
+	defer se.mu.Unlock()
+	se.Emulator.SetScreenLineWrapped(y, wrapped)
+}
+
 // SetScrollbackSize sets the scrollback buffer size in a concurrency-safe manner.
 func (se *SafeEmulator) SetScrollbackSize(maxLines int) {
 	se.mu.Lock()

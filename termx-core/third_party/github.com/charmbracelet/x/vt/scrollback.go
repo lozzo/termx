@@ -12,6 +12,7 @@ const DefaultScrollbackSize = 10000
 // Scrollback represents a scrollback buffer that stores lines scrolled off the screen.
 type Scrollback struct {
 	lines    []uv.Line
+	wrapped  []bool
 	maxLines int
 }
 
@@ -29,6 +30,12 @@ func NewScrollback(maxLines int) *Scrollback {
 // Push adds a line to the scrollback buffer.
 // If the buffer is full, the oldest line is removed.
 func (s *Scrollback) Push(line uv.Line) {
+	s.PushWrapped(line, false)
+}
+
+// PushWrapped adds a line to the scrollback buffer with its soft-wrap marker.
+// The marker means this row visually continues onto the next row.
+func (s *Scrollback) PushWrapped(line uv.Line, wrapped bool) {
 	if s == nil || s.maxLines <= 0 {
 		return
 	}
@@ -50,19 +57,22 @@ func (s *Scrollback) Push(line uv.Line) {
 	if len(s.lines) >= s.maxLines {
 		// Remove oldest line and append new one
 		s.lines = slices.Delete(s.lines, 0, 1)
+		s.normalizeWrapped()
+		s.wrapped = slices.Delete(s.wrapped, 0, 1)
 	}
 	s.lines = append(s.lines, cloned)
+	s.wrapped = append(s.wrapped, wrapped)
 }
 
 // PushN adds n lines from the buffer starting at line y to the scrollback.
-func (s *Scrollback) PushN(buf *uv.RenderBuffer, y, n int) {
+func (s *Scrollback) PushN(buf *uv.RenderBuffer, wrapped []bool, y, n int) {
 	if s == nil || buf == nil || n <= 0 {
 		return
 	}
 
 	for i := range min(n, buf.Height()-y) {
 		if line := buf.Line(y + i); line != nil {
-			s.Push(line)
+			s.PushWrapped(line, boolAt(wrapped, y+i))
 		}
 	}
 }
@@ -94,7 +104,11 @@ func (s *Scrollback) SetMaxLines(maxLines int) {
 	if len(s.lines) > maxLines {
 		// Remove oldest lines
 		s.lines = s.lines[len(s.lines)-maxLines:]
+		if len(s.wrapped) > maxLines {
+			s.wrapped = s.wrapped[len(s.wrapped)-maxLines:]
+		}
 	}
+	s.normalizeWrapped()
 }
 
 // Line returns the line at the given index.
@@ -116,12 +130,48 @@ func (s *Scrollback) Lines() []uv.Line {
 	return s.lines
 }
 
+// LineWrapped returns whether the row visually continues onto the next row.
+func (s *Scrollback) LineWrapped(index int) bool {
+	if s == nil || index < 0 || index >= len(s.wrapped) {
+		return false
+	}
+	return s.wrapped[index]
+}
+
+// Wrapped returns the soft-wrap markers for all scrollback rows.
+func (s *Scrollback) Wrapped() []bool {
+	if s == nil {
+		return nil
+	}
+	s.normalizeWrapped()
+	return s.wrapped
+}
+
+// SetLineWrapped updates the soft-wrap marker for a scrollback row.
+func (s *Scrollback) SetLineWrapped(index int, wrapped bool) {
+	if s == nil || index < 0 || index >= len(s.lines) {
+		return
+	}
+	s.normalizeWrapped()
+	s.wrapped[index] = wrapped
+}
+
+// SetWrapped replaces all soft-wrap markers.
+func (s *Scrollback) SetWrapped(wrapped []bool) {
+	if s == nil {
+		return
+	}
+	s.wrapped = make([]bool, len(s.lines))
+	copy(s.wrapped, wrapped)
+}
+
 // Clear removes all lines from the scrollback buffer.
 func (s *Scrollback) Clear() {
 	if s == nil {
 		return
 	}
 	s.lines = s.lines[:0]
+	s.wrapped = s.wrapped[:0]
 }
 
 // CellAt returns the cell at the given position in the scrollback buffer.
@@ -133,4 +183,22 @@ func (s *Scrollback) CellAt(x, y int) *uv.Cell {
 		return nil
 	}
 	return &line[x]
+}
+
+func (s *Scrollback) normalizeWrapped() {
+	if s == nil {
+		return
+	}
+	switch {
+	case len(s.wrapped) == len(s.lines):
+		return
+	case len(s.wrapped) > len(s.lines):
+		s.wrapped = s.wrapped[:len(s.lines)]
+	default:
+		s.wrapped = append(s.wrapped, make([]bool, len(s.lines)-len(s.wrapped))...)
+	}
+}
+
+func boolAt(values []bool, index int) bool {
+	return index >= 0 && index < len(values) && values[index]
 }

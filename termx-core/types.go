@@ -123,6 +123,8 @@ type Snapshot struct {
 	ScrollbackTimestamps []time.Time   `json:"scrollback_timestamps,omitempty"`
 	ScreenRowKinds       []string      `json:"screen_row_kinds,omitempty"`
 	ScrollbackRowKinds   []string      `json:"scrollback_row_kinds,omitempty"`
+	ScreenWrapped        []bool        `json:"screen_wrapped,omitempty"`
+	ScrollbackWrapped    []bool        `json:"scrollback_wrapped,omitempty"`
 	Cursor               CursorState   `json:"cursor"`
 	Modes                TerminalModes `json:"modes"`
 	Timestamp            time.Time     `json:"timestamp"`

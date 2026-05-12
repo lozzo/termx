@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode } from 'react'
-import { ArrowLeft, Camera, Download, Keyboard, Loader2, LogIn, Monitor, Plus, QrCode, RefreshCw, Server, Settings, ShieldCheck, Wifi, WifiOff, X } from 'lucide-react'
+import { ArrowLeft, Camera, Download, Keyboard, LaptopMinimal, Loader2, LogIn, Monitor, QrCode, RefreshCw, Server, Settings, ShieldCheck, X } from 'lucide-react'
 import { createMachineSessionStore, type MachineSessionStore } from '../state/localAppIdentity'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
@@ -105,7 +105,9 @@ export function RemoteControlApp({
   const [accessToken, setAccessToken] = useState(() => storage?.getItem(storageKeys.accessToken) ?? '')
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => readTerminalSettings(storage))
   const [user, setUser] = useState<WebControlUser | null>(null)
-  const [localMachines, setLocalMachines] = useState<StoredMachineRecord[]>([])
+  const [localMachines, setLocalMachines] = useState<StoredMachineRecord[]>(() => {
+    return storage ? createMachineStore({ storage }).listMachines() : []
+  })
   const [machines, setMachines] = useState<WebControlMachine[]>([])
   const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null)
   const [scanOpen, setScanOpen] = useState(false)
@@ -593,6 +595,7 @@ export function RemoteControlApp({
       {transferCenterOpen ? (
         <GlobalTransferCenter
           fileTransfer={globalFileTransfer}
+          resolveMachineLabel={(machineId) => displayMachines.find((machine) => machine.id === machineId)?.name ?? machineId}
           onClose={() => setTransferCenterOpen(false)}
           onResumeTransfer={resumeGlobalTransfer}
           onResumeAllTransfers={resumeAllGlobalTransfers}
@@ -604,11 +607,13 @@ export function RemoteControlApp({
 
 function GlobalTransferCenter({
   fileTransfer,
+  resolveMachineLabel,
   onClose,
   onResumeTransfer,
   onResumeAllTransfers,
 }: {
   fileTransfer: FileTransferContext | undefined
+  resolveMachineLabel?: ((machineId: string | undefined) => string | null | undefined) | undefined
   onClose: () => void
   onResumeTransfer?: ((id: string) => void | Promise<void>) | undefined
   onResumeAllTransfers?: (() => void | Promise<void>) | undefined
@@ -625,6 +630,7 @@ function GlobalTransferCenter({
     <FileTransferPanel
       transfers={transferState.transfers}
       hasActiveTransfers={transferState.hasActiveTransfers}
+      resolveMachineLabel={resolveMachineLabel}
       onCancel={(id) => fileTransfer.cancelTransfer(id)}
       onDismiss={(id) => fileTransfer.dismissTransfer(id)}
       onPause={(id) => fileTransfer.pauseTransfer?.(id)}
@@ -662,11 +668,17 @@ function MachineTerminalListView({
     )
   }
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-zinc-50" data-testid="termx-machine-terminal-list">
+    <section className="flex min-h-0 flex-1 flex-col bg-zinc-50 animate-in fade-in slide-in-from-right-4 duration-200" data-testid="termx-machine-terminal-list">
       <MachineWorkspace
         api={runtime.api}
         connector={runtime.connector}
         className="min-h-0 flex-1"
+        initialMachine={{
+          machineId: machine.id,
+          name: machine.name,
+          state: machine.online ? 'online' : 'offline',
+          ...(machine.lastSeen ? { lastSeenAt: machine.lastSeen } : {}),
+        }}
         connectionStateEvents={runtime.connectionStateEvents}
         inventoryEvents={runtime.inventoryEvents}
         fileTransfer={runtime.fileTransfer}
@@ -711,7 +723,7 @@ function MachineRuntimeErrorShell({
   onBack: () => void
 }) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-zinc-50" data-testid="termx-machine-terminal-list">
+    <section className="flex min-h-0 flex-1 flex-col bg-zinc-50 animate-in fade-in slide-in-from-right-4 duration-200" data-testid="termx-machine-terminal-list">
       <MachineRuntimeHeader machine={machine} onBack={onBack} />
     </section>
   )
@@ -770,12 +782,12 @@ function HomeView({
             </button>
           ) : null}
           <button
-            aria-label="Add local device"
+            aria-label="Scan new machine"
             className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             type="button"
             onClick={onAddLocalDevice}
           >
-            <Plus className="h-5 w-5" />
+            <QrCode className="h-5 w-5" />
           </button>
           {fileTransfer ? (
             <button
@@ -872,7 +884,7 @@ function SettingsView({
   }), [])
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-zinc-50 text-zinc-950" data-testid="termx-app-settings">
+    <section className="flex min-h-0 flex-1 flex-col bg-zinc-50 text-zinc-950 animate-in fade-in slide-in-from-bottom-4 duration-200" data-testid="termx-app-settings">
       <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-zinc-200/70 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <button
           aria-label="Back to machines"
@@ -1494,16 +1506,27 @@ function MachineRow({
     : authorizationState === 'needs-session'
       ? 'Re-authorize'
       : 'Scan QR'
+  const subtitle = machine.hostname || shortenMachineId(machine.id)
+  const availability = authorizationState === 'ready'
+    ? (machine.online ? 'Tap to connect' : machine.lastSeen ? `Last online ${formatLastSeen(machine.lastSeen)}` : 'Offline')
+    : authorizationState === 'needs-session'
+      ? 'Needs this phone to re-authorize'
+      : 'Pair this phone to open it'
+  const sourcePill = machine.source === 'cloud' ? 'Cloud' : 'Local'
+  const DeviceIcon = machine.source === 'cloud' ? Server : LaptopMinimal
   return (
-    <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
       <button
         aria-label={`${actionLabel} ${machine.name}`}
-        className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-3 px-3 py-3 text-left hover:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        className="grid min-w-0 w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left active:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
         type="button"
         onClick={() => onSelectMachine(machine)}
       >
-        <div className="flex h-11 w-11 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
-          {machine.online ? <Wifi className="h-5 w-5" /> : <WifiOff className="h-5 w-5" />}
+        <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-700">
+          <DeviceIcon className="h-5 w-5" />
+          <span className={`absolute bottom-0.5 right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
+            machine.online ? 'bg-emerald-500' : 'bg-zinc-400'
+          }`} />
         </div>
         <div className="min-w-0">
           <div className="flex min-w-0 items-center justify-between gap-2">
@@ -1512,24 +1535,30 @@ function MachineRow({
               {machine.online ? 'Online' : 'Offline'}
             </span>
           </div>
-          <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{machine.hostname || machine.id}</div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <InfoPill>{machine.source === 'cloud' ? 'Cloud node' : 'Local node'}</InfoPill>
-            <InfoPill>{machine.hubStatus === 'online' ? 'Hub online' : (machine.source === 'local' ? 'Direct/Local' : 'Offline')}</InfoPill>
-            <InfoPill>{authPill}</InfoPill>
-            {machine.lastSeen ? <InfoPill>{formatLastSeen(machine.lastSeen)}</InfoPill> : null}
+          <div className="mt-1 truncate text-xs font-medium text-zinc-500">{subtitle}</div>
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <span className={`truncate text-[12px] font-medium ${machine.online && authorizationState === 'ready' ? 'text-zinc-900' : 'text-zinc-500'}`}>
+              {availability}
+            </span>
+            <div className="flex shrink-0 flex-wrap gap-1.5">
+              <InfoPill>{sourcePill}</InfoPill>
+              <InfoPill>{authPill}</InfoPill>
+            </div>
           </div>
         </div>
       </button>
       {authorizationState !== 'ready' ? (
-        <button
-          aria-label={`Scan to ${authorizationState === 'needs-session' ? 're-authorize' : 'pair'} ${machine.name}`}
-          className="flex h-full w-12 items-center justify-center border-l border-zinc-100 text-zinc-600 hover:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
-          type="button"
-          onClick={() => onPairMachine(machine)}
-        >
-          <QrCode className="h-5 w-5" />
-        </button>
+        <div className="border-t border-zinc-100 px-4 py-2.5">
+          <button
+            aria-label={`Scan to ${authorizationState === 'needs-session' ? 're-authorize' : 'pair'} ${machine.name}`}
+            className="inline-flex h-9 items-center gap-2 rounded-full bg-zinc-100 px-3 text-[12px] font-semibold text-zinc-700 active:bg-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            type="button"
+            onClick={() => onPairMachine(machine)}
+          >
+            <QrCode className="h-4 w-4" />
+            {authorizationState === 'needs-session' ? 'Scan to re-authorize' : 'Scan to pair'}
+          </button>
+        </div>
       ) : null}
     </div>
   )
@@ -2012,10 +2041,21 @@ function compactHubUrls(values: readonly (string | undefined)[]): string[] {
 function formatLastSeen(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString(undefined, {
+  const diffMs = Date.now() - date.getTime()
+  if (diffMs < 60_000) return 'just now'
+  const diffMinutes = Math.floor(diffMs / 60_000)
+  if (diffMinutes < 60) return `${diffMinutes} min ago`
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) return `${diffHours} hr ago`
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`
+  return date.toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
   })
+}
+
+function shortenMachineId(value: string): string {
+  if (value.length <= 18) return value
+  return `${value.slice(0, 8)}...${value.slice(-6)}`
 }

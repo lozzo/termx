@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
-import { ChevronLeft, Folder, Info, KeyRound, Link2, Link2Off, Monitor, PanelBottomClose, Plus, Rows2, SlidersHorizontal, SquarePen, Trash2, Unlock, X } from 'lucide-react'
+import { ChevronLeft, Folder, Info, KeyRound, Link2, Link2Off, Loader2, Monitor, PanelBottomClose, Plus, Rows2, SlidersHorizontal, SquarePen, Trash2, Unlock, X } from 'lucide-react'
 import { connectionPhaseLabel, connectionSnapshotFromStatus } from '../connection/connectionState'
 import { FileTransferPanel } from '../files/FileTransferPanel'
 import { FileManager } from '../files/FileManager'
@@ -39,6 +39,7 @@ export interface MachineWorkspaceProps {
   api: MachineWorkspaceInventoryApi
   connector: MachineWorkspaceConnector
   className?: string | undefined
+  initialMachine?: Machine | undefined
   inventoryEvents?: TerminalInventoryEvents | undefined
   connectionStateEvents?: MachineConnectionStateEvents | undefined
   subscribeRuntimeInventoryEvents?: boolean | undefined
@@ -57,17 +58,42 @@ type MobileSheet = 'terminals' | 'split-terminal' | 'pair' | 'manage-terminal' |
 type AppPage = 'terminal-list' | 'terminal'
 type TerminalSlot = 0 | 1
 const TERMINAL_CONNECTION_PROGRESS_DELAY_MS = 450
+const machineWorkspaceInventoryCache = new WeakMap<MachineWorkspaceConnector, Map<string, {
+  machine: Machine
+  terminals: RemoteTerminal[]
+}>>()
 
 function noopSubscribe(_listener: () => void): () => void { return () => {} }
 
-export function MachineWorkspace({ api, connector, className, inventoryEvents, connectionStateEvents, subscribeRuntimeInventoryEvents = false, pair, onBack, fileTransfer, terminalSettings: terminalSettingsProp, onTerminalSettingsChange }: MachineWorkspaceProps) {
-  const [machine, setMachine] = useState<Machine | null>(null)
-  const [terminals, setTerminals] = useState<RemoteTerminal[]>([])
-  const [loadingTerminals, setLoadingTerminals] = useState(true)
+function inventoryCacheForConnector(connector: MachineWorkspaceConnector): Map<string, {
+  machine: Machine
+  terminals: RemoteTerminal[]
+}> {
+  const existing = machineWorkspaceInventoryCache.get(connector)
+  if (existing) return existing
+  const created = new Map<string, {
+    machine: Machine
+    terminals: RemoteTerminal[]
+  }>()
+  machineWorkspaceInventoryCache.set(connector, created)
+  return created
+}
+
+export function MachineWorkspace({ api, connector, className, initialMachine, inventoryEvents, connectionStateEvents, subscribeRuntimeInventoryEvents = false, pair, onBack, fileTransfer, terminalSettings: terminalSettingsProp, onTerminalSettingsChange }: MachineWorkspaceProps) {
+  const initialInventory = initialMachine ? inventoryCacheForConnector(connector).get(initialMachine.machineId) : undefined
+  const [machine, setMachine] = useState<Machine | null>(() => initialInventory?.machine ?? initialMachine ?? null)
+  const [terminals, setTerminals] = useState<RemoteTerminal[]>(() => initialInventory?.terminals ?? [])
+  const [hasLoadedTerminals, setHasLoadedTerminals] = useState(() => Boolean(initialInventory))
+  const [loadingTerminals, setLoadingTerminals] = useState(() => !initialInventory)
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pairStatus, setPairStatus] = useState<string | null>(null)
-  const [verifiedDevice, setVerifiedDevice] = useState(() => pair && machine ? Boolean(pair.sessionStore.getSessionToken(machine.machineId)) : !pair)
+  const [verifiedDevice, setVerifiedDevice] = useState<boolean | null>(() => {
+    if (!pair) return true
+    const machineId = initialInventory?.machine.machineId ?? initialMachine?.machineId
+    if (!machineId) return null
+    return Boolean(pair.sessionStore.getSessionToken(machineId))
+  })
   const [connectedSession, setConnectedSession] = useState<RtcSession | null>(null)
   const [connectedTerminalId, setConnectedTerminalId] = useState<string | null>(null)
   const [connectingTerminalId, setConnectingTerminalId] = useState<string | null>(null)
@@ -148,6 +174,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
   const passiveConnectionPhaseRef = useRef<RtcConnectionStateSnapshot['phase'] | null>(null)
   const latestActiveTerminalIdRef = useRef<string | null>(null)
   const handledManualReconnectNonceRef = useRef(0)
+  const hasLoadedTerminalsRef = useRef(hasLoadedTerminals)
   const activeTerminal = terminals.find((terminal) => terminal.terminalId === activeTerminalId)
   const splitTerminal = terminals.find((terminal) => terminal.terminalId === splitTerminalId)
   const activeToolTerminal = activeTerminalSlot === 1 && splitTerminal ? splitTerminal : activeTerminal
@@ -158,7 +185,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
   const terminalHeaderDirectory = activeToolTerminal?.cwd || activeTerminal?.cwd || splitTerminal?.cwd || ''
   const activeTerminalResizeLocked = terminalResizeControl.sizeLocked === true || terminalResizeControl.reason === 'size_locked'
   const activeTerminalOwnsResize = terminalResizeControl.canResize === true
-  const requireVerification = Boolean(pair && !verifiedDevice)
+  const requireVerification = Boolean(pair && verifiedDevice === false)
   const canManageTerminals = true
   const emptyTransferSnapshot = useMemo(() => ({ transfers: [], hasActiveTransfers: false }), [])
   const transferState = useSyncExternalStore(
@@ -169,6 +196,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
     connectionStatus,
     connectionPhase,
     showMachineNetworkOverlay,
+    showDelayedMachineNetworkOverlay,
     setMachineNetworkMachineId,
     updateConnectionStatus,
     clearConnectionStatus,
@@ -213,6 +241,18 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
   useEffect(() => {
     latestActiveTerminalIdRef.current = activeTerminalId
   }, [activeTerminalId])
+
+  useEffect(() => {
+    hasLoadedTerminalsRef.current = hasLoadedTerminals
+  }, [hasLoadedTerminals])
+
+  useEffect(() => {
+    if (!initialMachine) return
+    setMachine((current) => {
+      if (!current || current.machineId !== initialMachine.machineId) return initialMachine
+      return current
+    })
+  }, [initialMachine])
 
   useEffect(() => {
     setMachineNetworkMachineId(machine?.machineId ?? null)
@@ -394,16 +434,19 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
   const refreshTerminals = useCallback(async () => {
     const seq = terminalRefreshSeqRef.current + 1
     terminalRefreshSeqRef.current = seq
+    if (!hasLoadedTerminalsRef.current) setLoadingTerminals(true)
     try {
       const status = await api.getStatus()
       if (terminalRefreshSeqRef.current !== seq) return
       setMachineNetworkMachineId(status.machine.machineId)
       setMachine(status.machine)
+      if (pair) setVerifiedDevice(Boolean(pair.sessionStore.getSessionToken(status.machine.machineId)))
       const forceRelay = forceRelayPreference(status.machine.machineId)
       setForceRelayConnection(forceRelay)
       const terminalList = await api.listTerminals({ forceRelay })
       if (terminalRefreshSeqRef.current !== seq) return
       setTerminals(terminalList)
+      setHasLoadedTerminals(true)
       setError(null)
     } catch (err) {
       if (terminalRefreshSeqRef.current === seq) {
@@ -416,7 +459,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
         setLoadingTerminals(false)
       }
     }
-  }, [api, setMachineNetworkMachineId, updateConnectionStatus])
+  }, [api, pair, setMachineNetworkMachineId, updateConnectionStatus])
 
   const applyRuntimeTerminalEvent = useCallback((event: RtcEvent | { payload?: unknown }): boolean => {
     const payload = event.payload
@@ -444,13 +487,20 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
     const seq = terminalRefreshSeqRef.current + 1
     terminalRefreshSeqRef.current = seq
     async function load() {
-      setLoadingTerminals(true)
+      if (!hasLoadedTerminalsRef.current) setLoadingTerminals(true)
       let failed = false
       try {
         const status = await api.getStatus()
         if (cancelled || terminalRefreshSeqRef.current !== seq) return
         setMachineNetworkMachineId(status.machine.machineId)
         setMachine(status.machine)
+        if (pair) setVerifiedDevice(Boolean(pair.sessionStore.getSessionToken(status.machine.machineId)))
+        const cachedInventory = inventoryCacheForConnector(connector).get(status.machine.machineId)
+        if (cachedInventory && !hasLoadedTerminalsRef.current) {
+          setTerminals(cachedInventory.terminals)
+          setHasLoadedTerminals(true)
+          setLoadingTerminals(false)
+        }
         const forceRelay = forceRelayPreference(status.machine.machineId)
         setForceRelayConnection(forceRelay)
         const terminalList = await api.listTerminals({
@@ -461,6 +511,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
         })
         if (cancelled || terminalRefreshSeqRef.current !== seq) return
         setTerminals(terminalList)
+        setHasLoadedTerminals(true)
       } catch (err) {
         if (!cancelled && terminalRefreshSeqRef.current === seq) {
           failed = true
@@ -479,7 +530,15 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
     return () => {
       cancelled = true
     }
-  }, [api, clearConnectionStatus, setMachineNetworkMachineId, updateConnectionStatus])
+  }, [api, clearConnectionStatus, connector, pair, setMachineNetworkMachineId, updateConnectionStatus])
+
+  useEffect(() => {
+    if (!machine || !hasLoadedTerminals) return
+    inventoryCacheForConnector(connector).set(machine.machineId, {
+      machine,
+      terminals,
+    })
+  }, [connector, hasLoadedTerminals, machine, terminals])
 
   useEffect(() => {
     if (!inventoryEvents || !machine) return
@@ -901,10 +960,13 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
 
   useEffect(() => {
     if (!pair) return
-    if (machine && pair.sessionStore.getSessionToken(machine.machineId)) {
-      setVerifiedDevice(true)
+    const machineId = machine?.machineId ?? initialMachine?.machineId
+    if (!machineId) {
+      setVerifiedDevice(null)
+      return
     }
-  }, [machine, pair, connectionRetryToken])
+    setVerifiedDevice(Boolean(pair.sessionStore.getSessionToken(machineId)))
+  }, [machine?.machineId, pair, connectionRetryToken, initialMachine?.machineId])
 
   useEffect(() => {
     if (!pairStatus) return
@@ -1265,6 +1327,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
 
   const renderTerminalListPage = () => {
     if (!machine) return null
+    const showTerminalListLoader = loadingTerminals && !hasLoadedTerminals
 
     return (
       <main className="relative flex min-h-0 flex-1 flex-col bg-zinc-50" data-testid="termx-terminal-list-page">
@@ -1315,7 +1378,15 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
             ) : null}
           </div>
         </header>
-        {error && !showMachineNetworkOverlay ? (
+        {showDelayedMachineNetworkOverlay ? (
+          <div className="flex animate-in fade-in slide-in-from-top-1 duration-200 items-center justify-center gap-2 border-b border-zinc-200 bg-blue-50/50 px-3 py-1.5">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+            <span className="text-[11px] font-medium text-blue-700">
+              {connectionStatus || 'Connecting...'}
+            </span>
+          </div>
+        ) : null}
+        {error ? (
           <div className="m-3 shrink-0 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 shadow-sm" role="alert">
             {error}
           </div>
@@ -1346,20 +1417,14 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
           data-testid="termx-terminal-list-scroll"
         >
           <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Terminals</h2>
-          {loadingTerminals ? (
-            <div className="flex flex-col items-center justify-center p-8 text-sm text-zinc-500">
-              <div className="mb-3 h-6 w-6 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600"></div>
-              <p>Loading terminals...</p>
-            </div>
-          ) : (
-            <TerminalList
-              machineId={machine.machineId}
-              terminals={terminals}
-              onOpenTerminal={openTerminal}
-              onManageTerminal={openManageTerminal}
-              activeTerminalId={activeTerminalId ?? undefined}
-            />
-          )}
+          <TerminalList
+            machineId={machine.machineId}
+            terminals={terminals}
+            onOpenTerminal={openTerminal}
+            onManageTerminal={openManageTerminal}
+            activeTerminalId={activeTerminalId ?? undefined}
+            loading={showTerminalListLoader}
+          />
         </div>
 
         {mobileSheet === 'manage-terminal' && managedTerminal ? (
@@ -1542,20 +1607,14 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
         </div>
         <div className="flex-1 overflow-y-auto p-3">
           <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Terminals</h2>
-          {loadingTerminals ? (
-            <div className="flex flex-col items-center justify-center p-8 text-sm text-zinc-500">
-              <div className="mb-3 h-6 w-6 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600"></div>
-              <p>Loading terminals...</p>
-            </div>
-          ) : (
-            <TerminalList
-              machineId={machine.machineId}
-              terminals={terminals}
-              onOpenTerminal={openTerminal}
-              onManageTerminal={openManageTerminal}
-              activeTerminalId={activeTerminalId ?? undefined}
-            />
-          )}
+          <TerminalList
+            machineId={machine.machineId}
+            terminals={terminals}
+            onOpenTerminal={openTerminal}
+            onManageTerminal={openManageTerminal}
+            activeTerminalId={activeTerminalId ?? undefined}
+            loading={loadingTerminals && !hasLoadedTerminals}
+          />
         </div>
       </aside>
       ) : null}
@@ -1932,7 +1991,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
           onToggleMode={toggleConnectionMode}
         />
       ) : null}
-      {showMachineNetworkOverlay ? (
+      {showMachineNetworkOverlay && page === 'terminal' ? (
         <MachineNetworkStatusOverlay
           phase={connectionPhase}
           status={connectionStatus}
@@ -1942,6 +2001,7 @@ export function MachineWorkspace({ api, connector, className, inventoryEvents, c
         <FileTransferPanel
           transfers={transferState.transfers}
           hasActiveTransfers={transferState.hasActiveTransfers}
+          resolveMachineLabel={() => machine.name}
           onCancel={(id) => fileTransfer.cancelTransfer(id)}
           onDismiss={(id) => fileTransfer.dismissTransfer(id)}
           onPause={(id) => fileTransfer.pauseTransfer?.(id)}

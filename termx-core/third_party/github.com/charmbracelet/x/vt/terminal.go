@@ -37,6 +37,8 @@ type Terminal interface {
 	Resize(width int, height int)
 	Scrollback() *Scrollback
 	ScrollbackCellAt(x, y int) *uv.Cell
+	ScreenLineWrapped(y int) bool
+	ScrollbackLineWrapped(y int) bool
 	ScrollbackLen() int
 	SendKey(k uv.KeyEvent)
 	SendKeys(keys ...uv.KeyEvent)
@@ -52,7 +54,9 @@ type Terminal interface {
 	SetForegroundColor(c color.Color)
 	SetIndexedColor(i int, c color.Color)
 	SetLogger(l Logger)
+	SetScreenLineWrapped(y int, wrapped bool)
 	SetScrollbackSize(maxLines int)
+	SetScrollbackLineWrapped(y int, wrapped bool)
 	String() string
 	Touched() []*uv.LineData
 	Width() int

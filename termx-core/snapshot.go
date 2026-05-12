@@ -39,6 +39,8 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 		ScrollbackTimestamps []string      `json:"scrollback_timestamps,omitempty"`
 		ScreenRowKinds       []string      `json:"screen_row_kinds,omitempty"`
 		ScrollbackRowKinds   []string      `json:"scrollback_row_kinds,omitempty"`
+		ScreenWrapped        []bool        `json:"screen_wrapped,omitempty"`
+		ScrollbackWrapped    []bool        `json:"scrollback_wrapped,omitempty"`
 		Cursor               CursorState   `json:"cursor"`
 		Modes                TerminalModes `json:"modes"`
 		Timestamp            string        `json:"timestamp"`
@@ -128,6 +130,23 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 		}
 		return out
 	}
+	encodeBoolSlice := func(values []bool) []bool {
+		if len(values) == 0 {
+			return nil
+		}
+		out := make([]bool, len(values))
+		nonEmpty := false
+		for i, value := range values {
+			if value {
+				out[i] = true
+				nonEmpty = true
+			}
+		}
+		if !nonEmpty {
+			return nil
+		}
+		return out
+	}
 
 	return json.Marshal(jsonSnapshot{
 		TerminalID: s.TerminalID,
@@ -142,6 +161,8 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 		ScrollbackTimestamps: encodeRowTimestamps(s.ScrollbackTimestamps),
 		ScreenRowKinds:       encodeStringSlice(s.ScreenRowKinds),
 		ScrollbackRowKinds:   encodeStringSlice(s.ScrollbackRowKinds),
+		ScreenWrapped:        encodeBoolSlice(s.ScreenWrapped),
+		ScrollbackWrapped:    encodeBoolSlice(s.ScrollbackWrapped),
 		Cursor:               s.Cursor,
 		Modes:                s.Modes,
 		Timestamp:            s.Timestamp.UTC().Format(timeLayout),

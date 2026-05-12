@@ -236,7 +236,11 @@ func (e *Emulator) Resize(width int, height int) {
 		x = width - 1
 	}
 
-	e.scrs[0].Resize(width, height)
+	if !e.IsAltScreen() {
+		x, y = e.scrs[0].Reflow(width, height, x, y)
+	} else {
+		_, _ = e.scrs[0].Reflow(width, height, x, y)
+	}
 	e.scrs[1].Resize(width, height)
 	e.tabstops = uv.DefaultTabStops(width)
 
@@ -488,6 +492,44 @@ func (e *Emulator) ScrollbackCellAt(x, y int) *uv.Cell {
 		return nil
 	}
 	return sb.CellAt(x, y)
+}
+
+// ScrollbackLineWrapped returns whether the scrollback row visually continues
+// onto the next row.
+func (e *Emulator) ScrollbackLineWrapped(y int) bool {
+	sb := e.Scrollback()
+	if sb == nil {
+		return false
+	}
+	return sb.LineWrapped(y)
+}
+
+// SetScrollbackLineWrapped updates whether a scrollback row visually continues
+// onto the next row.
+func (e *Emulator) SetScrollbackLineWrapped(y int, wrapped bool) {
+	sb := e.Scrollback()
+	if sb == nil {
+		return
+	}
+	sb.SetLineWrapped(y, wrapped)
+}
+
+// ScreenLineWrapped returns whether the visible row visually continues onto
+// the next row.
+func (e *Emulator) ScreenLineWrapped(y int) bool {
+	if e.scr == nil {
+		return false
+	}
+	return e.scr.LineWrapped(y)
+}
+
+// SetScreenLineWrapped updates whether a visible row visually continues onto
+// the next row.
+func (e *Emulator) SetScreenLineWrapped(y int, wrapped bool) {
+	if e.scr == nil {
+		return
+	}
+	e.scr.SetLineWrapped(y, wrapped)
 }
 
 // SetScrollbackSize sets the maximum number of lines in the scrollback buffer.

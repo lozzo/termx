@@ -61,6 +61,99 @@ func TestLoadSnapshotWithScrollbackRestoresHistory(t *testing.T) {
 	}
 }
 
+func TestVTermResizeReflowsSoftWrappedRows(t *testing.T) {
+	vt := New(10, 4, 100, nil)
+	if _, err := vt.Write([]byte("abcdefghijk")); err != nil {
+		t.Fatalf("write wrapped content: %v", err)
+	}
+	if !vt.ScreenRowWrappedAt(0) {
+		t.Fatalf("expected first row to be marked as soft-wrapped")
+	}
+
+	vt.Resize(20, 4)
+	if got := rowText(vt.ScreenRowView(0), 11); got != "abcdefghijk" {
+		t.Fatalf("expected widened resize to join soft-wrapped row, got %q", got)
+	}
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(1), 20)); got != "" {
+		t.Fatalf("expected second row blank after widening, got %q", got)
+	}
+	if vt.ScreenRowWrappedAt(0) {
+		t.Fatalf("expected joined row to no longer be marked as wrapped")
+	}
+
+	vt.Resize(5, 4)
+	if got := rowText(vt.ScreenRowView(0), 5); got != "abcde" {
+		t.Fatalf("expected row 0 after narrowing, got %q", got)
+	}
+	if got := rowText(vt.ScreenRowView(1), 5); got != "fghij" {
+		t.Fatalf("expected row 1 after narrowing, got %q", got)
+	}
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(2), 5)); got != "k" {
+		t.Fatalf("expected row 2 after narrowing, got %q", got)
+	}
+	if !vt.ScreenRowWrappedAt(0) || !vt.ScreenRowWrappedAt(1) || vt.ScreenRowWrappedAt(2) {
+		t.Fatalf("unexpected wrapped markers after narrowing: %#v", vt.ScreenWrapped())
+	}
+}
+
+func TestVTermResizeDoesNotJoinHardNewlineRows(t *testing.T) {
+	vt := New(10, 4, 100, nil)
+	if _, err := vt.Write([]byte("abc\r\nDEF")); err != nil {
+		t.Fatalf("write hard newline content: %v", err)
+	}
+
+	vt.Resize(20, 4)
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(0), 20)); got != "abc" {
+		t.Fatalf("expected hard-newline row 0 preserved, got %q", got)
+	}
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(1), 20)); got != "DEF" {
+		t.Fatalf("expected hard-newline row 1 preserved, got %q", got)
+	}
+	if vt.ScreenRowWrappedAt(0) {
+		t.Fatalf("hard newline row must not be marked as wrapped")
+	}
+}
+
+func TestLoadSnapshotWithExtendedMetadataRestoresWrappedRows(t *testing.T) {
+	vt := New(5, 3, 100, nil)
+	screen := ScreenData{Cells: [][]Cell{
+		cellsFromString("abcde"),
+		cellsFromString("fgh"),
+	}}
+	vt.LoadSnapshotWithExtendedMetadata(nil, nil, nil, nil, screen, nil, nil, []bool{true, false}, CursorState{Row: 1, Col: 3, Visible: true}, TerminalModes{AutoWrap: true})
+
+	vt.Resize(20, 3)
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(0), 20)); got != "abcdefgh" {
+		t.Fatalf("expected resize to join snapshot soft-wrap rows, got %q", got)
+	}
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(1), 20)); got != "" {
+		t.Fatalf("expected second row blank after join, got %q", got)
+	}
+}
+
+func cellsFromString(value string) []Cell {
+	cells := make([]Cell, 0, len(value))
+	for _, r := range value {
+		cells = append(cells, Cell{Content: string(r), Width: 1})
+	}
+	return cells
+}
+
+func rowText(row []Cell, limit int) string {
+	var b strings.Builder
+	for i, cell := range row {
+		if i >= limit {
+			break
+		}
+		if cell.Content == "" {
+			b.WriteByte(' ')
+			continue
+		}
+		b.WriteString(cell.Content)
+	}
+	return b.String()
+}
+
 func TestLoadSnapshotPreservesWideCellContinuationsAcrossSubsequentWrites(t *testing.T) {
 	vt := New(8, 2, 100, nil)
 	vt.LoadSnapshot(ScreenData{

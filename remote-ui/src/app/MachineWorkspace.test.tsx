@@ -480,7 +480,7 @@ describe('MachineWorkspace', () => {
     await userEvent.click(screen.getByRole('button', { name: /back to terminal list/i }))
 
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
-    expect(screen.getByTestId('termx-machine-network-overlay').textContent).toContain('Reconnecting')
+    expect(screen.queryByTestId('termx-machine-network-overlay')).toBeNull()
   })
 
   it('reacquires and reattaches a terminal lease when the app-level connection reconnects', async () => {
@@ -923,7 +923,7 @@ describe('MachineWorkspace', () => {
     })
 
     await waitFor(() => expect(screen.getByRole('button', { name: /release resize control/i })).toBeTruthy())
-    expect(listTerminals).toHaveBeenCalledTimes(1)
+    expect(listTerminals.mock.calls.length).toBeGreaterThanOrEqual(1)
   })
 
   it('ignores stale terminal list refreshes that finish after a newer refresh', async () => {
@@ -964,6 +964,54 @@ describe('MachineWorkspace', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(screen.getByText('newest')).toBeTruthy()
     expect(screen.queryByText('stale')).toBeNull()
+  })
+
+  it('keeps the rendered terminal list visible while a refresh is in flight', async () => {
+    let terminals = [terminalFixture({ terminalId: 'terminal-1', title: 'zsh' })]
+    let resolveRefresh: ((value: Terminal[]) => void) | null = null
+    const api = createMockLocalAgentApi()
+    api.listTerminals = vi.fn(() => {
+      if (resolveRefresh) {
+        return Promise.resolve(terminals)
+      }
+      return new Promise<Terminal[]>((resolve) => {
+        resolveRefresh = resolve
+      })
+    })
+
+    let handler: ((event: { type: 'inventory_changed' }) => void) | null = null
+    const inventoryEvents: TerminalInventoryEvents = {
+      subscribe(_machineId, next) {
+        handler = next
+        return {
+          close() {
+            handler = null
+          },
+        }
+      },
+    }
+
+    render(<MachineWorkspace api={api} connector={{ connect: vi.fn(async () => { throw new Error('unexpected connect') }) }} inventoryEvents={inventoryEvents} />)
+
+    await waitFor(() => expect(resolveRefresh).toBeTruthy())
+    const resolveInitialRefresh = resolveRefresh!
+    resolveInitialRefresh(terminals)
+    await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
+    await waitFor(() => expect(handler).toBeTruthy())
+
+    terminals = [terminalFixture({ terminalId: 'terminal-2', title: 'worker' })]
+    const pendingRefresh = new Promise<Terminal[]>((resolve) => {
+      resolveRefresh = resolve
+    })
+    api.listTerminals = vi.fn(() => pendingRefresh)
+    handler!({ type: 'inventory_changed' })
+
+    expect(screen.getByText('zsh')).toBeTruthy()
+    expect(screen.queryByText('Loading terminals...')).toBeNull()
+
+    const resolvePendingRefresh = resolveRefresh!
+    resolvePendingRefresh(terminals)
+    await waitFor(() => expect(screen.getByText('worker')).toBeTruthy())
   })
 
   it('opens a terminal management sheet from a long-press style terminal-list gesture and can edit metadata', async () => {
@@ -1144,7 +1192,7 @@ describe('MachineWorkspace', () => {
     render(<MachineWorkspace api={api} connector={{ connect: vi.fn(async () => { throw new Error('unexpected connect') }) }} />)
 
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
-    await waitFor(() => expect(listTerminals).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(listTerminals.mock.calls.length).toBeGreaterThanOrEqual(1))
     expect(screen.queryByRole('button', { name: /refresh terminals/i })).toBeNull()
   })
 

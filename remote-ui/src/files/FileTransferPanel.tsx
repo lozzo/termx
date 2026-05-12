@@ -6,6 +6,7 @@ import type { TransferInfo } from './fileApi'
 interface Props {
   transfers: TransferInfo[]
   hasActiveTransfers: boolean
+  resolveMachineLabel?: ((machineId: string | undefined) => string | null | undefined) | undefined
   onCancel: (id: string) => void
   onDismiss: (id: string) => void
   onPause?: ((id: string) => void | Promise<void>) | undefined
@@ -46,6 +47,7 @@ function transferSpeed(transfer: TransferInfo, now: number): string {
 export function FileTransferPanel({
   transfers,
   hasActiveTransfers,
+  resolveMachineLabel,
   onCancel,
   onDismiss,
   onPause,
@@ -126,6 +128,7 @@ export function FileTransferPanel({
           transfers={active}
           now={now}
           summary={summary}
+          resolveMachineLabel={resolveMachineLabel}
           onCancel={onCancel}
           onDismiss={onDismiss}
           onPause={onPause}
@@ -142,6 +145,7 @@ function TransferCenterDialog({
   transfers,
   now,
   summary,
+  resolveMachineLabel,
   onCancel,
   onDismiss,
   onPause,
@@ -152,6 +156,7 @@ function TransferCenterDialog({
   transfers: TransferInfo[]
   now: number
   summary: string
+  resolveMachineLabel?: ((machineId: string | undefined) => string | null | undefined) | undefined
   onCancel: (id: string) => void
   onDismiss: (id: string) => void
   onPause?: ((id: string) => void | Promise<void>) | undefined
@@ -198,6 +203,8 @@ function TransferCenterDialog({
             const isActive = t.status === 'pending' || t.status === 'transferring'
             const isPaused = t.status === 'paused' || isMissing
             const isCompleted = t.status === 'completed'
+            const machineLabel = resolveMachineLabel?.(t.machineId) ?? t.machineId ?? 'Unknown machine'
+            const transferTarget = describeTransferTarget(t)
             return (
               <div key={t.id} className="border-b border-zinc-100 px-4 py-3 last:border-b-0">
                 <div className="flex items-start gap-3">
@@ -208,6 +215,12 @@ function TransferCenterDialog({
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-[13px] font-semibold text-zinc-900">{t.name}</p>
+                        <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
+                          {t.direction === 'download' ? 'From' : 'To'} {machineLabel}
+                        </p>
+                        {transferTarget ? (
+                          <p className="mt-1 truncate text-[11px] font-medium text-zinc-500">{transferTarget}</p>
+                        ) : null}
                         <p className="mt-0.5 text-[11px] font-medium text-zinc-500">
                           {isActive && t.totalSize > 0 ? `${formatSize(t.transferredSize)} / ${formatSize(t.totalSize)} · ${transferSpeed(t, now)}` : null}
                           {t.status === 'paused' ? `${formatSize(t.transferredSize)} / ${formatSize(t.totalSize)} · Paused` : null}
@@ -270,4 +283,20 @@ function TransferCenterDialog({
 
 function isResumable(status: TransferInfo['status']): boolean {
   return status === 'paused' || status === 'failed' || status === 'missing' || status === 'pending'
+}
+
+function describeTransferTarget(transfer: TransferInfo): string | null {
+  if (transfer.direction === 'download') {
+    if (transfer.status === 'completed' && transfer.savedPath) {
+      return `${transfer.filePath ?? transfer.name} -> ${transfer.savedPath}`
+    }
+    if (transfer.filePath) return transfer.filePath
+    if (transfer.savedPath) return transfer.savedPath
+    return null
+  }
+  if (transfer.targetDir) {
+    return `${transfer.targetDir.replace(/\/+$/, '') || '/'} / ${transfer.name}`
+  }
+  if (transfer.localUri) return transfer.localUri
+  return null
 }

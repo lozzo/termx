@@ -167,15 +167,7 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
 
   const root = document.createElement('div')
   root.id = qrScannerRootId
-  root.style.position = 'fixed'
-  root.style.inset = '0'
-  root.style.zIndex = '2147483647'
-  root.style.display = 'flex'
-  root.style.flexDirection = 'column'
-  root.style.alignItems = 'stretch'
-  root.style.background = '#09090b'
-  root.style.color = '#ffffff'
-  root.style.padding = 'calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 12px)'
+  root.className = 'fixed inset-0 z-[2147483647] flex flex-col items-stretch bg-zinc-50 text-zinc-900 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-[calc(env(safe-area-inset-top)+12px)]'
 
   const scannerStyle = document.createElement('style')
   scannerStyle.textContent = `
@@ -204,92 +196,50 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
   `
 
   const header = document.createElement('div')
-  header.style.display = 'flex'
-  header.style.alignItems = 'center'
-  header.style.justifyContent = 'space-between'
-  header.style.gap = '12px'
-  header.style.minHeight = '44px'
+  header.className = 'flex items-center justify-between gap-3 min-h-[44px]'
 
   const title = document.createElement('div')
   title.textContent = 'Scan TermX QR'
-  title.style.fontSize = '16px'
-  title.style.fontWeight = '700'
+  title.className = 'text-[17px] font-bold tracking-tight text-zinc-900'
 
   const cancelButton = document.createElement('button')
   cancelButton.type = 'button'
   cancelButton.textContent = 'Cancel'
-  cancelButton.style.height = '40px'
-  cancelButton.style.border = '1px solid rgba(255,255,255,0.2)'
-  cancelButton.style.borderRadius = '8px'
-  cancelButton.style.background = 'rgba(255,255,255,0.08)'
-  cancelButton.style.color = '#ffffff'
-  cancelButton.style.padding = '0 14px'
-  cancelButton.style.fontSize = '14px'
-  cancelButton.style.fontWeight = '700'
+  cancelButton.className = 'flex h-10 items-center justify-center rounded-xl bg-zinc-200/50 px-4 text-[14px] font-semibold text-zinc-700 active:bg-zinc-200'
 
   const manualContainer = document.createElement('div')
-  manualContainer.style.marginTop = 'auto'
-  manualContainer.style.display = 'flex'
-  manualContainer.style.flexDirection = 'column'
-  manualContainer.style.gap = '12px'
+  manualContainer.className = 'mt-auto flex flex-col gap-3'
 
   const manualInput = document.createElement('textarea')
   manualInput.placeholder = 'Or enter TermX QR content manually...'
-  manualInput.style.width = '100%'
-  manualInput.style.height = '90px'
-  manualInput.style.padding = '12px'
-  manualInput.style.borderRadius = '8px'
-  manualInput.style.border = '1px solid rgba(255,255,255,0.2)'
-  manualInput.style.background = 'rgba(255,255,255,0.08)'
-  manualInput.style.color = '#ffffff'
-  manualInput.style.fontSize = '13px'
-  manualInput.style.fontFamily = 'monospace'
-  manualInput.style.resize = 'none'
-  manualInput.style.outline = 'none'
+  manualInput.className = 'h-[90px] w-full resize-none rounded-xl border border-zinc-200 bg-white p-3 font-mono text-[13px] text-zinc-900 shadow-sm outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400'
 
   const manualSubmit = document.createElement('button')
   manualSubmit.type = 'button'
   manualSubmit.textContent = 'Add Device'
-  manualSubmit.style.height = '44px'
-  manualSubmit.style.width = '100%'
-  manualSubmit.style.border = 'none'
-  manualSubmit.style.borderRadius = '8px'
-  manualSubmit.style.background = '#2563eb'
-  manualSubmit.style.color = '#ffffff'
-  manualSubmit.style.fontSize = '14px'
-  manualSubmit.style.fontWeight = '700'
+  manualSubmit.className = 'flex min-h-12 w-full items-center justify-center rounded-xl bg-zinc-900 px-4 text-[15px] font-semibold text-white shadow-md transition-all active:scale-[0.98] active:bg-zinc-800 disabled:opacity-50 disabled:active:scale-100'
   manualSubmit.disabled = true
-  manualSubmit.style.opacity = '0.5'
 
   manualInput.oninput = () => {
     const hasValue = manualInput.value.trim().length > 0
     manualSubmit.disabled = !hasValue
-    manualSubmit.style.opacity = hasValue ? '1' : '0.5'
   }
 
   manualContainer.append(manualInput, manualSubmit)
 
   const reader = document.createElement('div')
   reader.id = qrScannerReaderId
+  reader.className = 'mt-4 self-center overflow-hidden rounded-2xl bg-black shadow-sm ring-1 ring-zinc-200/60'
   reader.style.width = `${scannerSize}px`
   reader.style.height = `${scannerSize}px`
   reader.style.minWidth = `${scannerSize}px`
   reader.style.minHeight = `${scannerSize}px`
   reader.style.maxWidth = `${scannerSize}px`
   reader.style.maxHeight = `${scannerSize}px`
-  reader.style.marginTop = '12px'
-  reader.style.alignSelf = 'center'
-  reader.style.overflow = 'hidden'
-  reader.style.borderRadius = '12px'
-  reader.style.background = '#000000'
 
   const hint = document.createElement('div')
   hint.textContent = 'Point the camera at the QR code shown on the TermX device.'
-  hint.style.padding = '12px 4px 0'
-  hint.style.fontSize = '13px'
-  hint.style.lineHeight = '20px'
-  hint.style.color = 'rgba(255,255,255,0.72)'
-  hint.style.textAlign = 'center'
+  hint.className = 'mt-4 px-4 text-center text-[13px] font-medium leading-[20px] text-zinc-500'
 
   header.append(title, cancelButton)
   root.append(scannerStyle, header, reader, hint, manualContainer)
