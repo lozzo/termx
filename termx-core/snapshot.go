@@ -6,6 +6,111 @@ import (
 	"time"
 )
 
+func trimSnapshotResultToFrameBudget(snapshot *Snapshot, encoded []byte, budget int) (*Snapshot, []byte) {
+	if snapshot == nil || budget <= 0 || len(encoded) <= budget || len(snapshot.Scrollback) == 0 {
+		return snapshot, encoded
+	}
+	trimmed := cloneSnapshotForResult(snapshot)
+	low, high := 0, len(trimmed.Scrollback)
+	var best *Snapshot
+	var bestEncoded []byte
+	for low <= high {
+		keep := (low + high) / 2
+		candidate := cloneSnapshotForResult(snapshot)
+		trimSnapshotScrollbackHead(candidate, len(candidate.Scrollback)-keep)
+		data, err := json.Marshal(candidate)
+		if err != nil {
+			break
+		}
+		if len(data) <= budget {
+			best = candidate
+			bestEncoded = data
+			low = keep + 1
+			continue
+		}
+		high = keep - 1
+	}
+	if best != nil {
+		return best, bestEncoded
+	}
+	trimSnapshotScrollbackHead(trimmed, len(trimmed.Scrollback))
+	data, err := json.Marshal(trimmed)
+	if err != nil || len(data) > len(encoded) {
+		return snapshot, encoded
+	}
+	return trimmed, data
+}
+
+func cloneSnapshotForResult(snapshot *Snapshot) *Snapshot {
+	if snapshot == nil {
+		return nil
+	}
+	out := *snapshot
+	out.Screen = ScreenData{
+		Cells:             cloneRows(snapshot.Screen.Cells),
+		IsAlternateScreen: snapshot.Screen.IsAlternateScreen,
+	}
+	out.Scrollback = cloneRows(snapshot.Scrollback)
+	out.ScreenTimestamps = cloneTimeSlice(snapshot.ScreenTimestamps)
+	out.ScrollbackTimestamps = cloneTimeSlice(snapshot.ScrollbackTimestamps)
+	out.ScreenRowKinds = cloneStringSlice(snapshot.ScreenRowKinds)
+	out.ScrollbackRowKinds = cloneStringSlice(snapshot.ScrollbackRowKinds)
+	out.ScreenWrapped = cloneBoolSlice(snapshot.ScreenWrapped)
+	out.ScrollbackWrapped = cloneBoolSlice(snapshot.ScrollbackWrapped)
+	return &out
+}
+
+func trimSnapshotScrollbackHead(snapshot *Snapshot, trim int) {
+	if snapshot == nil || trim <= 0 {
+		return
+	}
+	if trim >= len(snapshot.Scrollback) {
+		if len(snapshot.Scrollback) > 0 {
+			snapshot.ScrollbackHasMore = true
+		}
+		snapshot.Scrollback = nil
+		snapshot.ScrollbackTimestamps = nil
+		snapshot.ScrollbackRowKinds = nil
+		snapshot.ScrollbackWrapped = nil
+		return
+	}
+	snapshot.Scrollback = cloneRows(snapshot.Scrollback[trim:])
+	snapshot.ScrollbackTimestamps = trimTimeMetadataHead(snapshot.ScrollbackTimestamps, trim)
+	snapshot.ScrollbackRowKinds = trimStringMetadataHead(snapshot.ScrollbackRowKinds, trim)
+	snapshot.ScrollbackWrapped = trimBoolMetadataHead(snapshot.ScrollbackWrapped, trim)
+	snapshot.ScrollbackHasMore = true
+}
+
+func trimTimeMetadataHead(values []time.Time, trim int) []time.Time {
+	if len(values) == 0 {
+		return nil
+	}
+	if trim >= len(values) {
+		return nil
+	}
+	return cloneTimeSlice(values[trim:])
+}
+
+func trimStringMetadataHead(values []string, trim int) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	if trim >= len(values) {
+		return nil
+	}
+	return cloneStringSlice(values[trim:])
+}
+
+func trimBoolMetadataHead(values []bool, trim int) []bool {
+	if len(values) == 0 {
+		return nil
+	}
+	if trim >= len(values) {
+		return nil
+	}
+	return cloneBoolSlice(values[trim:])
+}
+
 func (s Snapshot) MarshalJSON() ([]byte, error) {
 	type jsonStyle struct {
 		FG            string `json:"fg,omitempty"`

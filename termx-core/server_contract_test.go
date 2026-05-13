@@ -2228,6 +2228,50 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	}
 }
 
+func TestTrimSnapshotResultToFrameBudgetKeepsResponseBelowFrameCap(t *testing.T) {
+	snapshot := &Snapshot{
+		TerminalID:        "large-snapshot-1",
+		Size:              Size{Cols: 120, Rows: 24},
+		Screen:            ScreenData{Cells: [][]Cell{{{Content: "screen", Width: 1}}}},
+		ScrollbackTotal:   500,
+		ScrollbackHasMore: false,
+		Cursor:            CursorState{Visible: true},
+		Modes:             TerminalModes{AutoWrap: true},
+		Timestamp:         time.Now().UTC(),
+	}
+	for i := 0; i < 500; i++ {
+		snapshot.Scrollback = append(snapshot.Scrollback, []Cell{{Content: fmt.Sprintf("%03d-%s", i, strings.Repeat("x", 12000)), Width: 1}})
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	if len(encoded) <= snapshotResponseFrameBudget {
+		t.Fatalf("test fixture did not exceed budget: encoded=%d budget=%d", len(encoded), snapshotResponseFrameBudget)
+	}
+	trimmed, result := trimSnapshotResultToFrameBudget(snapshot, encoded, snapshotResponseFrameBudget)
+	responsePayload, err := json.Marshal(protocol.Response{ID: 1, Result: json.RawMessage(result)})
+	if len(responsePayload) > protocol.MaxFrameSize {
+		t.Fatalf("expected trimmed snapshot response under frame cap, got %d > %d", len(responsePayload), protocol.MaxFrameSize)
+	}
+	var snap protocol.Snapshot
+	if err := json.Unmarshal(result, &snap); err != nil {
+		t.Fatalf("unmarshal snapshot: %v", err)
+	}
+	if len(snap.Scrollback) >= 500 {
+		t.Fatalf("expected oversized snapshot to be trimmed, got %d rows", len(snap.Scrollback))
+	}
+	if trimmed == snapshot {
+		t.Fatal("expected trim to return cloned snapshot")
+	}
+	if !snap.ScrollbackHasMore {
+		t.Fatal("expected trimmed snapshot to preserve has_more")
+	}
+	if snap.ScrollbackTotal == 0 {
+		t.Fatal("expected trimmed snapshot to preserve scrollback_total")
+	}
+}
+
 func TestHandleRequestListCacheInvalidatesOnSetTags(t *testing.T) {
 	ctx := context.Background()
 	srv := NewServer()

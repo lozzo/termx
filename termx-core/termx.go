@@ -25,6 +25,8 @@ import (
 	"github.com/lozzow/termx/termx-core/workbenchsvc"
 )
 
+const snapshotResponseFrameBudget = protocol.MaxFrameSize - 64*1024
+
 type ServerOption func(*serverConfig)
 
 type serverConfig struct {
@@ -1439,6 +1441,7 @@ func (s *Server) handleRequest(
 			return nil, protocolErrorCode(err), err
 		}
 		result, _ := json.Marshal(snap)
+		snap, result = trimSnapshotResultToFrameBudget(snap, result, snapshotResponseFrameBudget)
 		s.logProtocolMethodResult(
 			ctx,
 			remote,
