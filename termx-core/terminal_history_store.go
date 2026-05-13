@@ -25,7 +25,8 @@ const (
 	maxHistoryReplayRows              = 250
 	defaultHistoryChunkMaxBytes       = 4 * 1024 * 1024
 
-	terminalHistoryFormatVersion = 3
+	terminalHistoryFormatVersion = 4
+	terminalHistoryCodec         = "compact-line-v1"
 	terminalHistoryManifestName  = "manifest.json"
 	terminalHistoryIndexName     = "history.index"
 	terminalHistoryIndexRecord   = 20
@@ -57,7 +58,10 @@ const terminalHistoryRowFlagWrapped uint32 = 1 << 0
 type terminalHistoryManifest struct {
 	FormatVersion int    `json:"format_version"`
 	TerminalID    string `json:"terminal_id"`
+	Codec         string `json:"codec"`
 	ChunkMaxBytes int64  `json:"chunk_max_bytes"`
+	RowCount      int    `json:"row_count,omitempty"`
+	ChunkCount    int    `json:"chunk_count,omitempty"`
 	CreatedAtUnix int64  `json:"created_at_unix"`
 	UpdatedAtUnix int64  `json:"updated_at_unix"`
 }
@@ -113,6 +117,7 @@ func openTerminalHistoryStoreDir(dir, terminalID string, create bool, removeOnCl
 		manifest = terminalHistoryManifest{
 			FormatVersion: terminalHistoryFormatVersion,
 			TerminalID:    terminalID,
+			Codec:         terminalHistoryCodec,
 			ChunkMaxBytes: defaultHistoryChunkMaxBytes,
 			CreatedAtUnix: time.Now().UTC().Unix(),
 		}
@@ -200,25 +205,6 @@ type terminalHistoryRow struct {
 	timestamp time.Time
 	rowKind   string
 	wrapped   bool
-}
-
-type terminalHistoryRowPayload struct {
-	Cells     []terminalHistoryCellPayload `json:"cells,omitempty"`
-	Timestamp int64                        `json:"timestamp,omitempty"`
-	RowKind   string                       `json:"row_kind,omitempty"`
-}
-
-type terminalHistoryCellPayload struct {
-	Content       string `json:"r,omitempty"`
-	Width         int    `json:"w,omitempty"`
-	FG            string `json:"fg,omitempty"`
-	BG            string `json:"bg,omitempty"`
-	Bold          bool   `json:"b,omitempty"`
-	Italic        bool   `json:"i,omitempty"`
-	Underline     bool   `json:"u,omitempty"`
-	Blink         bool   `json:"k,omitempty"`
-	Reverse       bool   `json:"rv,omitempty"`
-	Strikethrough bool   `json:"st,omitempty"`
 }
 
 func (s *terminalHistoryStore) appendRows(rows []terminalHistoryRow) error {
@@ -433,7 +419,10 @@ func (s *terminalHistoryStore) Close() error {
 	manifest := terminalHistoryManifest{
 		FormatVersion: terminalHistoryFormatVersion,
 		TerminalID:    s.terminalID,
+		Codec:         terminalHistoryCodec,
 		ChunkMaxBytes: s.chunkMaxBytes,
+		RowCount:      len(s.rows),
+		ChunkCount:    int(s.currentSeq) + 1,
 	}
 	if existing, err := readTerminalHistoryManifest(dir); err == nil {
 		manifest.CreatedAtUnix = existing.CreatedAtUnix
@@ -634,98 +623,6 @@ func uint32At(values []uint32, index int) uint32 {
 		return 0
 	}
 	return values[index]
-}
-
-func encodeTerminalHistoryRow(row terminalHistoryRow) ([]byte, error) {
-	payload := terminalHistoryRowPayload{
-		Cells:   terminalHistoryCellPayloads(row.cells),
-		RowKind: strings.TrimSpace(row.rowKind),
-	}
-	if !row.timestamp.IsZero() {
-		payload.Timestamp = row.timestamp.UTC().UnixNano()
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-	data = append(data, '\n')
-	return data, nil
-}
-
-func decodeTerminalHistoryRow(data []byte) (terminalHistoryRow, error) {
-	var payload terminalHistoryRowPayload
-	if err := json.Unmarshal(bytes.TrimSpace(data), &payload); err != nil {
-		return terminalHistoryRow{}, err
-	}
-	row := terminalHistoryRow{
-		cells:   vtermCellsFromHistoryPayload(payload.Cells),
-		rowKind: payload.RowKind,
-	}
-	if payload.Timestamp != 0 {
-		row.timestamp = time.Unix(0, payload.Timestamp).UTC()
-	}
-	return row, nil
-}
-
-func terminalHistoryCellPayloads(cells []vterm.Cell) []terminalHistoryCellPayload {
-	last := len(cells)
-	for last > 0 {
-		cell := cells[last-1]
-		if cell.Content != "" && strings.TrimSpace(cell.Content) != "" {
-			break
-		}
-		if cell.Style != (vterm.CellStyle{}) || cell.Width > 1 {
-			break
-		}
-		last--
-	}
-	out := make([]terminalHistoryCellPayload, 0, last)
-	for _, cell := range cells[:last] {
-		payload := terminalHistoryCellPayload{
-			Content: cell.Content,
-		}
-		if cell.Width != 1 {
-			payload.Width = cell.Width
-		}
-		payload.FG = cell.Style.FG
-		payload.BG = cell.Style.BG
-		payload.Bold = cell.Style.Bold
-		payload.Italic = cell.Style.Italic
-		payload.Underline = cell.Style.Underline
-		payload.Blink = cell.Style.Blink
-		payload.Reverse = cell.Style.Reverse
-		payload.Strikethrough = cell.Style.Strikethrough
-		out = append(out, payload)
-	}
-	return out
-}
-
-func vtermCellsFromHistoryPayload(cells []terminalHistoryCellPayload) []vterm.Cell {
-	if len(cells) == 0 {
-		return nil
-	}
-	out := make([]vterm.Cell, len(cells))
-	for i, cell := range cells {
-		width := cell.Width
-		if width == 0 && cell.Content != "" {
-			width = 1
-		}
-		out[i] = vterm.Cell{
-			Content: cell.Content,
-			Width:   width,
-			Style: vterm.CellStyle{
-				FG:            cell.FG,
-				BG:            cell.BG,
-				Bold:          cell.Bold,
-				Italic:        cell.Italic,
-				Underline:     cell.Underline,
-				Blink:         cell.Blink,
-				Reverse:       cell.Reverse,
-				Strikethrough: cell.Strikethrough,
-			},
-		}
-	}
-	return out
 }
 
 func encodeHistoryRowsReplay(rows []terminalHistoryRow) []byte {
@@ -948,6 +845,9 @@ func readTerminalHistoryManifest(dir string) (terminalHistoryManifest, error) {
 	if manifest.FormatVersion != 0 && manifest.FormatVersion != terminalHistoryFormatVersion {
 		return terminalHistoryManifest{}, fmt.Errorf("unsupported terminal history format version %d", manifest.FormatVersion)
 	}
+	if manifest.Codec != "" && manifest.Codec != terminalHistoryCodec {
+		return terminalHistoryManifest{}, fmt.Errorf("unsupported terminal history codec %q", manifest.Codec)
+	}
 	return manifest, nil
 }
 
@@ -957,6 +857,9 @@ func writeTerminalHistoryManifest(dir string, manifest terminalHistoryManifest) 
 	}
 	if manifest.FormatVersion == 0 {
 		manifest.FormatVersion = terminalHistoryFormatVersion
+	}
+	if manifest.Codec == "" {
+		manifest.Codec = terminalHistoryCodec
 	}
 	if manifest.ChunkMaxBytes <= 0 {
 		manifest.ChunkMaxBytes = defaultHistoryChunkMaxBytes

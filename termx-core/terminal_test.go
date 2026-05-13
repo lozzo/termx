@@ -1,9 +1,11 @@
 package termx
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -582,6 +584,88 @@ func TestTerminalHistoryStoreReopensPersistedRows(t *testing.T) {
 	}
 	if got := vtermRowToString(decoded.Rows[0]); !strings.Contains(got, "old-1") {
 		t.Fatalf("expected first decoded row from disk, got %q", got)
+	}
+}
+
+func TestTerminalHistoryStoreUsesCompactBinaryRows(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalHistoryStore(root, "compact-1")
+	if err != nil {
+		t.Fatalf("new history store: %v", err)
+	}
+	row := terminalHistoryRow{
+		cells: []localvterm.Cell{
+			{Content: "A", Width: 1},
+			{Content: "界", Width: 2, Style: localvterm.CellStyle{FG: "ansi:2", BG: "idx:17", Bold: true, Underline: true}},
+		},
+		timestamp: time.Unix(12, 345).UTC(),
+		rowKind:   SnapshotRowKindRestart,
+		wrapped:   true,
+	}
+	if err := store.appendRows([]terminalHistoryRow{row}); err != nil {
+		t.Fatalf("append compact row: %v", err)
+	}
+	dir := store.dir
+	if err := store.Close(); err != nil {
+		t.Fatalf("close compact store: %v", err)
+	}
+
+	manifest, err := readTerminalHistoryManifest(dir)
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	if manifest.FormatVersion != terminalHistoryFormatVersion || manifest.Codec != terminalHistoryCodec {
+		t.Fatalf("unexpected manifest format=%d codec=%q", manifest.FormatVersion, manifest.Codec)
+	}
+	chunk, err := os.ReadFile(filepath.Join(dir, terminalHistoryChunkName(0)))
+	if err != nil {
+		t.Fatalf("read compact chunk: %v", err)
+	}
+	if !bytes.HasPrefix(chunk, []byte{terminalHistoryRowMagic0, terminalHistoryRowMagic1, terminalHistoryRowMagic2, terminalHistoryRowMagic3}) {
+		t.Fatalf("expected compact row magic prefix, got %q", chunk[:minInt(len(chunk), 8)])
+	}
+	if bytes.Contains(chunk, []byte(`"cells"`)) || bytes.Contains(chunk, []byte(`"row_kind"`)) {
+		t.Fatalf("expected compact binary history chunk, got JSON-looking payload %q", chunk)
+	}
+
+	reopened, err := openTerminalHistoryStoreForReplay(root, "compact-1")
+	if err != nil {
+		t.Fatalf("reopen compact store: %v", err)
+	}
+	defer reopened.Close()
+	refs, refCount, _ := reopened.windowRefs(0, 1)
+	if refCount != 1 {
+		t.Fatalf("expected one compact row ref, got %d", refCount)
+	}
+	rawRows, err := readTerminalHistoryRows(reopened.dir, refs)
+	if err != nil {
+		t.Fatalf("read compact raw rows: %v", err)
+	}
+	if len(rawRows) != 1 {
+		t.Fatalf("expected one compact raw row, got %d", len(rawRows))
+	}
+	if got := rawRows[0].rowKind; got != SnapshotRowKindRestart {
+		t.Fatalf("expected raw row kind round trip, got %q", got)
+	}
+	if got := rawRows[0].timestamp; !got.Equal(row.timestamp) {
+		t.Fatalf("expected raw timestamp round trip, got %v want %v", got, row.timestamp)
+	}
+	if !rawRows[0].wrapped {
+		t.Fatalf("expected raw wrapped flag round trip")
+	}
+
+	decoded, err := reopened.Rows(0, 1, 10)
+	if err != nil {
+		t.Fatalf("decode compact rows: %v", err)
+	}
+	if decoded.LoadedRows != 1 {
+		t.Fatalf("expected one loaded row, got rows=%d", decoded.LoadedRows)
+	}
+	if got := vtermRowToString(decoded.Rows[0]); got != "A界" {
+		t.Fatalf("expected compact row text round trip, got %q", got)
+	}
+	if got := decoded.Rows[0][1].Style; got != row.cells[1].Style {
+		t.Fatalf("expected style round trip, got %#v want %#v", got, row.cells[1].Style)
 	}
 }
 
