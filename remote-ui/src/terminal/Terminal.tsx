@@ -1842,13 +1842,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
     fitAndMaybeSendResize()
     scheduleFit()
-    if (!terminalDisposedRef.current) {
-      try {
-        if (!preventFocusRef.current) xtermRef.current?.focus()
-      } catch {
-        // Ignore stale focus calls after xterm has been disposed.
-      }
-    }
     onReady?.()
   }, [clearLiveOutputWatchdog, fitAndMaybeSendResize, isOpen, onReady, scheduleFit])
 

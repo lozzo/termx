@@ -50,6 +50,12 @@ const xtermMocks = vi.hoisted(() => {
     })
     readonly select = vi.fn()
     readonly selectLines = vi.fn()
+    readonly focus = vi.fn(() => {
+      this.assertActive()
+    })
+    readonly blur = vi.fn(() => {
+      this.assertActive()
+    })
     skipNextWriteCallback = false
     deferWriteCallbacks = false
 
@@ -148,14 +154,6 @@ const xtermMocks = vi.hoisted(() => {
 
     emitCursorMove(): void {
       for (const handler of this.cursorHandlers) handler()
-    }
-
-    focus(): void {
-      this.assertActive()
-    }
-
-    blur(): void {
-      this.assertActive()
     }
 
     resize(cols: number, rows: number): void {
@@ -364,6 +362,46 @@ describe('Terminal', () => {
     await waitFor(() => expect(screen.getByText('Connecting terminal...')).toBeTruthy())
     act(() => session.openChannel())
     await waitFor(() => expect(screen.queryByText('Connecting terminal...')).toBeNull())
+  })
+
+  it('does not focus xterm automatically when the terminal opens', async () => {
+    const session = createMockRtcTerminalSession()
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    await waitFor(() => expect(session.openedLabels).toEqual(['terminal:terminal-1']))
+    expect(xtermMocks.FakeXTerm.instances[0]?.focus).not.toHaveBeenCalled()
+  })
+
+  it('focuses xterm when the user taps the terminal surface', async () => {
+    const session = createMockRtcTerminalSession()
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const term = xtermMocks.FakeXTerm.instances[0]!
+    const terminalOutput = screen.getByLabelText('Terminal output')
+    const screenElement = terminalOutput.querySelector('.xterm-screen') as HTMLElement
+
+    act(() => {
+      screenElement.dispatchEvent(touchEvent('touchstart', screenElement, 120))
+      screenElement.dispatchEvent(touchEvent('touchend', screenElement, 120, []))
+    })
+
+    expect(term.focus).toHaveBeenCalled()
   })
 
   it('writes streaming terminal output chunks into xterm before a snapshot arrives', async () => {
