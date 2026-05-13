@@ -17,6 +17,7 @@ type attachmentStreamPump struct {
 	channel    uint16
 	remote     string
 	src        <-chan StreamMessage
+	latest     func() StreamMessage
 	sendFrame  func(uint16, uint8, []byte) error
 	logger     *slog.Logger
 
@@ -38,6 +39,7 @@ func newAttachmentStreamPump(
 	channel uint16,
 	remote string,
 	src <-chan StreamMessage,
+	latest func() StreamMessage,
 	sendFrame func(uint16, uint8, []byte) error,
 	logger *slog.Logger,
 ) *attachmentStreamPump {
@@ -48,6 +50,7 @@ func newAttachmentStreamPump(
 		channel:     channel,
 		remote:      remote,
 		src:         src,
+		latest:      latest,
 		sendFrame:   sendFrame,
 		logger:      logger,
 		suffixStart: -1,
@@ -123,6 +126,19 @@ func (p *attachmentStreamPump) sendLoop() error {
 }
 
 func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) error {
+	if msg.Type == StreamScreenUpdate && len(msg.Payload) == 0 {
+		latest := msg.Latest
+		if latest == nil {
+			latest = p.latest
+		}
+		if latest == nil {
+			return nil
+		}
+		msg = latest()
+		if msg.Type != StreamScreenUpdate || len(msg.Payload) == 0 {
+			return nil
+		}
+	}
 	typ, payload, ok := streamMessageFramePayload(msg)
 	if !ok {
 		return nil
@@ -170,6 +186,10 @@ func (p *attachmentStreamPump) enqueue(msg StreamMessage) {
 		if p.suffixStart < 0 || p.suffixStart > len(p.queue) {
 			p.suffixStart = len(p.queue)
 		}
+		if len(msg.Payload) == 0 && len(p.queue) > p.suffixStart {
+			perftrace.Count("transport.stream.backlog.coalesced_frames", len(p.queue)-p.suffixStart)
+			p.queue = p.queue[:p.suffixStart]
+		}
 		p.queue = append(p.queue, msg)
 		p.queueState = nextState
 		if p.shouldCollapseSuffixLocked() {
@@ -192,6 +212,9 @@ func (p *attachmentStreamPump) applyMessageToQueueStateLocked(msg StreamMessage)
 	base := p.queueState
 	switch msg.Type {
 	case StreamScreenUpdate:
+		if len(msg.Payload) == 0 {
+			return base
+		}
 		update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
 		if err != nil {
 			return nil
@@ -406,6 +429,9 @@ func (p *attachmentStreamPump) next() (StreamMessage, bool) {
 func (p *attachmentStreamPump) advanceSentStateLocked(msg StreamMessage) {
 	switch msg.Type {
 	case StreamScreenUpdate:
+		if len(msg.Payload) == 0 {
+			return
+		}
 		update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
 		if err != nil {
 			p.sentState = nil

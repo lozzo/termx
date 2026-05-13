@@ -32,6 +32,7 @@ type StreamMessage struct {
 	ExitCode     *int
 	Cols         uint16
 	Rows         uint16
+	Latest       func() StreamMessage
 }
 
 type TerminalInfo struct {

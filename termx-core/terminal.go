@@ -243,6 +243,14 @@ func (t *Terminal) Done() <-chan struct{} {
 }
 
 func (t *Terminal) Subscribe(ctx context.Context) <-chan StreamMessage {
+	return t.subscribe(ctx, t.screenSnapshotFallbackMessage)
+}
+
+func (t *Terminal) SubscribeLatest(ctx context.Context) <-chan StreamMessage {
+	return t.subscribeLatest(ctx)
+}
+
+func (t *Terminal) subscribe(ctx context.Context, fallback func() StreamMessage) <-chan StreamMessage {
 	t.streamMu.Lock()
 	bootstrap := t.bootstrapMessagesLocked()
 	t.mu.RLock()
@@ -275,6 +283,15 @@ func (t *Terminal) Subscribe(ctx context.Context) <-chan StreamMessage {
 	dst := make(chan StreamMessage, 1)
 	go func() {
 		defer close(dst)
+		if fallback == nil {
+			for _, msg := range bootstrap {
+				if !sendTerminalStreamMessage(ctx, dst, cloneTerminalStreamMessage(msg)) {
+					return
+				}
+			}
+			forwardTerminalStreamMessagesImmediate(ctx, src, dst, nil)
+			return
+		}
 		for _, msg := range bootstrap {
 			select {
 			case <-ctx.Done():
@@ -282,7 +299,44 @@ func (t *Terminal) Subscribe(ctx context.Context) <-chan StreamMessage {
 			case dst <- cloneTerminalStreamMessage(msg):
 			}
 		}
-		t.forwardTerminalStreamMessages(ctx, src, dst)
+		forwardTerminalStreamMessagesImmediate(ctx, src, dst, fallback)
+	}()
+	return dst
+}
+
+func (t *Terminal) subscribeLatest(ctx context.Context) <-chan StreamMessage {
+	t.streamMu.Lock()
+	bootstrap := t.bootstrapMessagesLocked()
+	t.mu.RLock()
+	state := t.state
+	exitCode := copyIntPtr(t.exitCode)
+	t.mu.RUnlock()
+	if state == StateExited {
+		t.streamMu.Unlock()
+		ch := make(chan StreamMessage, len(bootstrap)+1)
+		go func() {
+			defer close(ch)
+			for _, msg := range bootstrap {
+				if !sendTerminalStreamMessage(ctx, ch, cloneTerminalStreamMessage(msg)) {
+					return
+				}
+			}
+			_ = sendTerminalStreamMessage(ctx, ch, StreamMessage{Type: StreamClosed, ExitCode: exitCode})
+		}()
+		return ch
+	}
+
+	src := t.stream.Subscribe(ctx)
+	t.streamMu.Unlock()
+	dst := make(chan StreamMessage, 1)
+	go func() {
+		defer close(dst)
+		for _, msg := range bootstrap {
+			if !sendTerminalStreamMessage(ctx, dst, cloneTerminalStreamMessage(msg)) {
+				return
+			}
+		}
+		forwardTerminalStreamMessagesImmediate(ctx, src, dst, t.screenInvalidationMessage)
 	}()
 	return dst
 }
@@ -304,10 +358,21 @@ func (t *Terminal) forwardTerminalStreamMessages(ctx context.Context, src <-chan
 }
 
 func forwardTerminalStreamMessagesImmediate(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage, fallback func() StreamMessage) {
+	var pending *fanout.StreamMessage
 	for {
-		msg, ok := <-src
-		if !ok {
-			return
+		var msg fanout.StreamMessage
+		if pending != nil {
+			msg = *pending
+			pending = nil
+		} else {
+			var ok bool
+			msg, ok = <-src
+			if !ok {
+				return
+			}
+		}
+		if msg.Type == fanout.StreamScreenUpdate {
+			msg, pending = collapseTerminalStreamScreenUpdates(src, msg)
 		}
 		if !sendFanoutStreamMessage(ctx, dst, msg, fallback) {
 			return
@@ -315,20 +380,52 @@ func forwardTerminalStreamMessagesImmediate(ctx context.Context, src <-chan fano
 	}
 }
 
-func sendFanoutStreamMessage(ctx context.Context, dst chan<- StreamMessage, msg fanout.StreamMessage, fallback func() StreamMessage) bool {
-	if msg.Type == fanout.StreamSyncLost && fallback != nil {
-		out := fallback()
+func collapseTerminalStreamScreenUpdates(src <-chan fanout.StreamMessage, first fanout.StreamMessage) (fanout.StreamMessage, *fanout.StreamMessage) {
+	msg := first
+	collapsed := 0
+	for {
 		select {
-		case <-ctx.Done():
-			return false
-		case dst <- out:
-			return true
+		case next, ok := <-src:
+			if !ok {
+				if collapsed > 0 {
+					perftrace.Count("terminal.stream.screen_update.coalesced", collapsed)
+				}
+				return msg, nil
+			}
+			if next.Type == fanout.StreamScreenUpdate {
+				msg = next
+				collapsed++
+				continue
+			}
+			if collapsed > 0 {
+				perftrace.Count("terminal.stream.screen_update.coalesced", collapsed)
+			}
+			pending := next
+			return msg, &pending
+		default:
+			if collapsed > 0 {
+				perftrace.Count("terminal.stream.screen_update.coalesced", collapsed)
+			}
+			return msg, nil
 		}
 	}
+}
+
+func sendFanoutStreamMessage(ctx context.Context, dst chan<- StreamMessage, msg fanout.StreamMessage, fallback func() StreamMessage) bool {
+	if msg.Type == fanout.StreamSyncLost && fallback != nil {
+		return sendTerminalStreamMessage(ctx, dst, fallback())
+	}
+	if msg.Type == fanout.StreamScreenUpdate && len(msg.Payload) == 0 && fallback != nil {
+		return sendTerminalStreamMessage(ctx, dst, fallback())
+	}
+	return sendTerminalStreamMessage(ctx, dst, cloneFanoutStreamMessage(msg))
+}
+
+func sendTerminalStreamMessage(ctx context.Context, dst chan<- StreamMessage, msg StreamMessage) bool {
 	select {
 	case <-ctx.Done():
 		return false
-	case dst <- cloneFanoutStreamMessage(msg):
+	case dst <- msg:
 		return true
 	}
 }
@@ -583,9 +680,6 @@ func (t *Terminal) MarkRemoved() {
 }
 
 func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
-	if limit <= 0 {
-		limit = 500
-	}
 	scrollback := t.vterm.ScrollbackContent()
 	if offset < 0 {
 		offset = 0
@@ -599,9 +693,12 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	if end < 0 {
 		end = 0
 	}
-	start := end - limit
-	if start < 0 {
-		start = 0
+	start := end
+	if limit > 0 {
+		start = end - limit
+		if start < 0 {
+			start = 0
+		}
 	}
 
 	t.mu.RLock()
@@ -620,7 +717,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	outScrollbackWrapped := sliceBoolRange(scrollbackWrapped, start, end)
 	scrollbackTotal := len(scrollback)
 	scrollbackHasMore := start > 0
-	if t.grid != nil {
+	if t.grid != nil && limit > 0 {
 		gridViewport, err := t.grid.Viewport(gridOffset, limit, int(size.Cols))
 		if err != nil {
 			if t.logger != nil {
@@ -634,6 +731,9 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 			scrollbackTotal = gridViewport.TotalRows
 			scrollbackHasMore = gridViewport.HasMore
 		}
+	} else if t.grid != nil {
+		scrollbackTotal = t.grid.RowCount()
+		scrollbackHasMore = offset < scrollbackTotal
 	}
 
 	return &Snapshot{
@@ -1021,14 +1121,7 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 		return
 	}
 	t.appendGridFromDamageLocked(damage)
-	payload, ok := t.screenUpdatePayloadFromDamageLocked(damage)
-	if !ok {
-		return
-	}
-	stream.BroadcastMessage(fanout.StreamMessage{
-		Type:    fanout.StreamScreenUpdate,
-		Payload: payload,
-	})
+	stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate})
 }
 
 func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
@@ -1037,6 +1130,13 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 	}
 	if err := t.grid.AppendDamageRows(damage.ScrollbackAppend); err != nil && t.logger != nil {
 		t.logger.Warn("termx terminal grid append failed", "terminal_id", t.id, "error", err)
+	}
+}
+
+func (t *Terminal) screenInvalidationMessage() StreamMessage {
+	return StreamMessage{
+		Type:   StreamScreenUpdate,
+		Latest: t.screenSnapshotFallbackMessage,
 	}
 }
 
@@ -1401,6 +1501,7 @@ func cloneTerminalStreamMessage(msg StreamMessage) StreamMessage {
 		ExitCode:     copyIntPtr(msg.ExitCode),
 		Cols:         msg.Cols,
 		Rows:         msg.Rows,
+		Latest:       msg.Latest,
 	}
 }
 

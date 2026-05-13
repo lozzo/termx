@@ -315,11 +315,8 @@ func writeSyntheticTerminalUpdate(term *Terminal, input []byte) error {
 	if _, err, damage := term.vterm.WriteWithDamage(input); err != nil {
 		return err
 	} else {
-		payload, ok := term.screenUpdatePayloadFromDamageLocked(damage)
-		if !ok {
-			return fmt.Errorf("encode screen update payload")
-		}
-		term.stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Payload: payload})
+		term.appendGridFromDamageLocked(damage)
+		term.stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate})
 	}
 	return nil
 }

@@ -417,6 +417,14 @@ func TestTerminalSnapshotPagesLiveHistoryFromDisk(t *testing.T) {
 		grid:  store,
 	}
 
+	screenOnly := term.Snapshot(0, 0)
+	if len(screenOnly.Scrollback) != 0 || screenOnly.ScrollbackTotal != 12 || !screenOnly.ScrollbackHasMore {
+		t.Fatalf("expected screen-only snapshot with disk history metadata, got rows=%d total=%d has_more=%v", len(screenOnly.Scrollback), screenOnly.ScrollbackTotal, screenOnly.ScrollbackHasMore)
+	}
+	if got := snapshotRowString(screenOnly.Screen.Cells[0]); !strings.Contains(got, "live-a") {
+		t.Fatalf("expected screen-only snapshot to keep live screen, got %q", got)
+	}
+
 	latest := term.Snapshot(0, 5)
 	if len(latest.Scrollback) != 5 || latest.ScrollbackTotal != 12 || !latest.ScrollbackHasMore {
 		t.Fatalf("expected latest disk snapshot page with more history, got rows=%d total=%d has_more=%v", len(latest.Scrollback), latest.ScrollbackTotal, latest.ScrollbackHasMore)

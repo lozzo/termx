@@ -501,15 +501,38 @@ func (s *Server) gridSnapshotFromStore(id string, opt SnapshotOptions) (*Snapsho
 		return nil, err
 	}
 	defer store.Close()
-	beforeOffset, limit := sanitizeGridViewportWindow(opt.ScrollbackOffset, opt.ScrollbackLimit)
-	result, err := store.Viewport(beforeOffset, limit, int(s.cfg.defaultSize.Cols))
+	beforeOffset := opt.ScrollbackOffset
+	if beforeOffset < 0 {
+		beforeOffset = 0
+	}
+	limit := opt.ScrollbackLimit
+	if limit < 0 {
+		limit = 0
+	}
+	screenRowsWanted := int(s.cfg.defaultSize.Rows)
+	if screenRowsWanted <= 0 {
+		screenRowsWanted = 1
+	}
+	readLimit := screenRowsWanted + limit
+	result, err := store.Viewport(beforeOffset, readLimit, int(s.cfg.defaultSize.Cols))
 	if err != nil {
 		return nil, err
 	}
-	scrollbackRows, screenRows := splitGridSnapshotRows(result.Rows, int(s.cfg.defaultSize.Rows), int(s.cfg.defaultSize.Cols))
-	scrollbackTimestamps, screenTimestamps := splitGridSnapshotTimes(result.Timestamps, len(scrollbackRows), len(screenRows))
-	scrollbackRowKinds, screenRowKinds := splitGridSnapshotStrings(result.RowKinds, len(scrollbackRows), len(screenRows))
-	scrollbackWrapped, screenWrapped := splitGridSnapshotBools(result.Wrapped, len(scrollbackRows), len(screenRows))
+	scrollbackRows, screenRows := splitGridSnapshotRows(result.Rows, screenRowsWanted, int(s.cfg.defaultSize.Cols))
+	metaRows := append([][]vterm.Cell(nil), scrollbackRows...)
+	metaRows = append(metaRows, screenRows...)
+	if limit == 0 {
+		scrollbackRows = nil
+	} else if len(scrollbackRows) > limit {
+		scrollbackRows = scrollbackRows[len(scrollbackRows)-limit:]
+	}
+	scrollbackMetaRows := len(scrollbackRows)
+	scrollbackTimestamps, screenTimestamps := splitGridSnapshotTimes(result.Timestamps, len(metaRows)-len(screenRows), len(screenRows))
+	scrollbackRowKinds, screenRowKinds := splitGridSnapshotStrings(result.RowKinds, len(metaRows)-len(screenRows), len(screenRows))
+	scrollbackWrapped, screenWrapped := splitGridSnapshotBools(result.Wrapped, len(metaRows)-len(screenRows), len(screenRows))
+	scrollbackTimestamps = tailTimeSlice(scrollbackTimestamps, scrollbackMetaRows)
+	scrollbackRowKinds = tailStringSlice(scrollbackRowKinds, scrollbackMetaRows)
+	scrollbackWrapped = tailBoolSlice(scrollbackWrapped, scrollbackMetaRows)
 	return &Snapshot{
 		TerminalID: id,
 		Size:       s.cfg.defaultSize,
@@ -578,6 +601,36 @@ func splitGridSnapshotBools(values []bool, scrollbackRows int, screenRows int) (
 	}
 	values = alignBoolSliceTail(values, scrollbackRows+screenRows)
 	return cloneBoolSlice(values[:scrollbackRows]), cloneBoolSlice(values[scrollbackRows:])
+}
+
+func tailTimeSlice(values []time.Time, count int) []time.Time {
+	if count <= 0 || len(values) == 0 {
+		return nil
+	}
+	if count >= len(values) {
+		return cloneTimeSlice(values)
+	}
+	return cloneTimeSlice(values[len(values)-count:])
+}
+
+func tailStringSlice(values []string, count int) []string {
+	if count <= 0 || len(values) == 0 {
+		return nil
+	}
+	if count >= len(values) {
+		return cloneStringSlice(values)
+	}
+	return cloneStringSlice(values[len(values)-count:])
+}
+
+func tailBoolSlice(values []bool, count int) []bool {
+	if count <= 0 || len(values) == 0 {
+		return nil
+	}
+	if count >= len(values) {
+		return cloneBoolSlice(values)
+	}
+	return cloneBoolSlice(values[len(values)-count:])
 }
 
 func alignTimeSliceTail(values []time.Time, size int) []time.Time {
@@ -1580,10 +1633,10 @@ func (s *Server) handleRequest(
 		resizeControl = withResizeOwnership(resizeControl, term, surfaceID)
 		attachment.setResizeControl(resizeControl)
 		s.cfg.logger.Info("server attached terminal", "terminal_id", params.TerminalID, "remote", remote, "channel", ch, "mode", params.Mode, "surface_id", surfaceID, "resize_owner", resizeControl.CanResize)
-		stream := term.Subscribe(subCtx)
+		stream := term.SubscribeLatest(subCtx)
 		go func() {
 			defer attachment.cleanup()
-			pump := newAttachmentStreamPump(subCtx, cancel, params.TerminalID, ch, remote, stream, sendFrame, s.cfg.logger)
+			pump := newAttachmentStreamPump(subCtx, cancel, params.TerminalID, ch, remote, stream, term.screenSnapshotFallbackMessage, sendFrame, s.cfg.logger)
 			if err := pump.run(); err != nil {
 				s.cfg.logger.Warn("transport attachment stream send failed", "terminal_id", params.TerminalID, "remote", remote, "channel", ch, "error", err)
 			}

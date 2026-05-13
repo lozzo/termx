@@ -19,7 +19,8 @@ var ownerConfirmDelay = 400 * time.Millisecond
 var sharedTerminalSnapshotResyncDelay = 120 * time.Millisecond
 
 const (
-	defaultTerminalSnapshotScrollbackLimit = 500
+	defaultTerminalSnapshotScrollbackLimit = 0
+	terminalHistoryInitialPageLimit        = 500
 	terminalScrollbackPageLimit            = 500
 	terminalScrollbackPrefetchMargin       = 8
 )
@@ -282,8 +283,8 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 		return nil
 	}
 	nextLimit := loaded + terminalScrollbackPageLimit
-	if nextLimit < defaultTerminalSnapshotScrollbackLimit {
-		nextLimit = defaultTerminalSnapshotScrollbackLimit
+	if nextLimit < terminalHistoryInitialPageLimit {
+		nextLimit = terminalHistoryInitialPageLimit
 	}
 	if nextLimit < want {
 		nextLimit = minInt(want, loaded+terminalScrollbackPageLimit)
@@ -318,8 +319,8 @@ func (m *Model) ensureCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
 	}
 	loaded := len(buffer.snapshot.Scrollback)
 	nextLimit := loaded + terminalScrollbackPageLimit
-	if nextLimit < defaultTerminalSnapshotScrollbackLimit {
-		nextLimit = defaultTerminalSnapshotScrollbackLimit
+	if nextLimit < terminalHistoryInitialPageLimit {
+		nextLimit = terminalHistoryInitialPageLimit
 	}
 	if nextLimit <= loaded || terminal.ScrollbackLoadingLimit >= nextLimit {
 		return nil

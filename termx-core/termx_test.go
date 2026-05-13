@@ -183,6 +183,16 @@ func TestServerHistorySurvivesServerRestart(t *testing.T) {
 	if plain := stripANSIForTest(replay.Replay); !strings.Contains(plain, "disk-11") {
 		t.Fatalf("expected replay after restart to include persisted output, got %q", plain)
 	}
+	screenOnly, err := restarted.Snapshot(ctx, "persist-server-1")
+	if err != nil {
+		t.Fatalf("screen-only snapshot after restart failed: %v", err)
+	}
+	if len(screenOnly.Scrollback) != 0 || screenOnly.ScrollbackTotal != 12 || !screenOnly.ScrollbackHasMore {
+		t.Fatalf("expected restarted screen-only snapshot with disk history metadata, got rows=%d total=%d has_more=%v", len(screenOnly.Scrollback), screenOnly.ScrollbackTotal, screenOnly.ScrollbackHasMore)
+	}
+	if len(screenOnly.Screen.Cells) == 0 || !strings.Contains(rowToString(screenOnly.Screen.Cells[len(screenOnly.Screen.Cells)-1]), "disk-11") {
+		t.Fatalf("expected persisted tail on screen-only snapshot after restart, got %#v", screenOnly.Screen.Cells)
+	}
 	snap, err := restarted.Snapshot(ctx, "persist-server-1", SnapshotOptions{ScrollbackLimit: 6})
 	if err != nil {
 		t.Fatalf("snapshot after restart failed: %v", err)

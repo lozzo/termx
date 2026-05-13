@@ -458,7 +458,7 @@ func TestClientSerializesConcurrentSends(t *testing.T) {
 	}
 }
 
-func TestClientStreamQueuesScreenUpdateFrames(t *testing.T) {
+func TestClientStreamCoalescesQueuedScreenUpdateFrames(t *testing.T) {
 	stream := newClientStreamWithConfig(4, 0)
 	defer stream.close()
 
@@ -472,14 +472,36 @@ func TestClientStreamQueuesScreenUpdateFrames(t *testing.T) {
 
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
-	if len(stream.queue) != 2 {
-		t.Fatalf("expected two queued screen update frames, got %d", len(stream.queue))
+	if len(stream.queue) != 1 {
+		t.Fatalf("expected one coalesced screen update frame, got %d", len(stream.queue))
 	}
-	if stream.queue[0].Type != TypeScreenUpdate || string(stream.queue[0].Payload) != "b" {
+	if stream.queue[0].Type != TypeScreenUpdate || string(stream.queue[0].Payload) != "c" {
+		t.Fatalf("unexpected coalesced frame: %#v", stream.queue[0])
+	}
+}
+
+func TestClientStreamKeepsControlFrameBetweenScreenUpdates(t *testing.T) {
+	stream := newClientStreamWithConfig(4, 0)
+	defer stream.close()
+
+	stream.send(StreamFrame{Type: TypeScreenUpdate, Payload: []byte("a")})
+	stream.send(StreamFrame{Type: TypeResize, Payload: []byte("resize")})
+	stream.send(StreamFrame{Type: TypeScreenUpdate, Payload: []byte("b")})
+	stream.send(StreamFrame{Type: TypeScreenUpdate, Payload: []byte("c")})
+
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	if len(stream.queue) != 3 {
+		t.Fatalf("expected control frame to split coalescing window, got %d queued frames", len(stream.queue))
+	}
+	if stream.queue[0].Type != TypeScreenUpdate || string(stream.queue[0].Payload) != "a" {
 		t.Fatalf("unexpected first queued frame: %#v", stream.queue[0])
 	}
-	if stream.queue[1].Type != TypeScreenUpdate || string(stream.queue[1].Payload) != "c" {
-		t.Fatalf("unexpected second queued frame: %#v", stream.queue[1])
+	if stream.queue[1].Type != TypeResize {
+		t.Fatalf("unexpected control frame: %#v", stream.queue[1])
+	}
+	if stream.queue[2].Type != TypeScreenUpdate || string(stream.queue[2].Payload) != "c" {
+		t.Fatalf("unexpected final coalesced frame: %#v", stream.queue[2])
 	}
 }
 
@@ -494,23 +516,17 @@ func TestClientStreamOverflowQueuesSyncLostInsteadOfSilentDrop(t *testing.T) {
 	})
 
 	stream.send(StreamFrame{Type: TypeScreenUpdate, Payload: payload})
+	stream.send(StreamFrame{Type: TypeResize, Payload: EncodeResizePayload(80, 24)})
 	stream.send(StreamFrame{Type: TypeScreenUpdate, Payload: payload})
-	stream.send(StreamFrame{Type: TypeScreenUpdate, Payload: payload})
+	stream.send(StreamFrame{Type: TypeResize, Payload: EncodeResizePayload(80, 25)})
 
 	waitForClientStreamState(t, stream, func() bool {
-		return len(stream.queue) == 2 && stream.pendingDroppedBytes == uint64(len(payload))
+		return len(stream.queue) == 3 && stream.pendingDroppedBytes == 0
 	})
 
 	stream.mu.Lock()
-	if len(stream.queue) != 2 {
-		t.Fatalf("expected queue cap to hold two frames before sync-lost flush, got %d frames", len(stream.queue))
-	}
-	if stream.pendingDroppedBytes != uint64(len(payload)) {
-		t.Fatalf("expected pending dropped bytes %d, got %d", len(payload), stream.pendingDroppedBytes)
-	}
-	stream.flushPendingSyncLostLocked()
 	if len(stream.queue) != 3 {
-		t.Fatalf("expected sync-lost frame after explicit flush, got %d frames", len(stream.queue))
+		t.Fatalf("expected sync-lost frame after overflow flush, got %d frames", len(stream.queue))
 	}
 	frame := stream.queue[2]
 	if frame.Type != TypeSyncLost {
@@ -520,11 +536,8 @@ func TestClientStreamOverflowQueuesSyncLostInsteadOfSilentDrop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode sync-lost payload: %v", err)
 	}
-	if dropped != uint64(len(payload)) {
-		t.Fatalf("expected dropped byte count %d, got %d", len(payload), dropped)
-	}
-	if stream.pendingDroppedBytes != 0 {
-		t.Fatalf("expected dropped bytes to be flushed into sync-lost frame, got %d", stream.pendingDroppedBytes)
+	if dropped == 0 {
+		t.Fatalf("expected non-zero dropped byte count, got %d", dropped)
 	}
 	stream.mu.Unlock()
 }
