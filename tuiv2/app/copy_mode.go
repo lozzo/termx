@@ -250,6 +250,14 @@ func (m *Model) adjustCopyModeAfterSnapshotLoaded(terminalID string, snapshot *p
 	m.adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID, snapshot, 0)
 }
 
+func (m *Model) snapshotPageTargetsActiveCopyMode(terminalID string) bool {
+	if m == nil || terminalID == "" || m.copyMode.PaneID == "" || m.workbench == nil || m.copyMode.Snapshot == nil {
+		return false
+	}
+	pane := m.workbench.ActivePane()
+	return pane != nil && pane.ID == m.copyMode.PaneID && pane.TerminalID == terminalID
+}
+
 func (m *Model) adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID string, snapshot *protocol.Snapshot, offset int) {
 	if m == nil || terminalID == "" || m.copyMode.PaneID == "" || m.workbench == nil {
 		return

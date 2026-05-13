@@ -193,6 +193,24 @@ func TestServerHistorySurvivesServerRestart(t *testing.T) {
 	if len(snap.Screen.Cells) == 0 || !strings.Contains(rowToString(snap.Screen.Cells[len(snap.Screen.Cells)-1]), "disk-11") {
 		t.Fatalf("expected persisted tail on visible screen after restart, got %#v", snap.Screen.Cells)
 	}
+	viewport, err := restarted.GridViewport(ctx, "persist-server-1", GridViewportOptions{ScrollbackOffset: 6, ScrollbackLimit: 4, Cols: 12})
+	if err != nil {
+		t.Fatalf("grid viewport after restart failed: %v", err)
+	}
+	if viewport.ScrollbackTotal != 12 || !viewport.ScrollbackHasMore {
+		t.Fatalf("unexpected viewport metadata after restart: %#v", viewport)
+	}
+	if len(viewport.Rows) == 0 || !strings.Contains(protocolTestRowToString(viewport.Rows[0]), "disk-02") {
+		t.Fatalf("expected older persisted rows from viewport, got %#v", viewport.Rows)
+	}
+}
+
+func protocolTestRowToString(row []protocol.Cell) string {
+	var b strings.Builder
+	for _, cell := range row {
+		b.WriteString(cell.Content)
+	}
+	return strings.TrimRight(b.String(), " ")
 }
 
 func TestServerDoesNotSpecialCaseRemoteRPCMethods(t *testing.T) {

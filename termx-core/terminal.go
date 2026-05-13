@@ -656,6 +656,75 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	}
 }
 
+func (t *Terminal) GridViewport(offset, limit, cols int) *GridViewport {
+	if t == nil || t.vterm == nil {
+		return nil
+	}
+	if limit <= 0 {
+		limit = 500
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	t.mu.RLock()
+	size := t.size
+	id := t.id
+	t.mu.RUnlock()
+	if cols <= 0 {
+		cols = int(size.Cols)
+	}
+	if cols <= 0 {
+		cols = 80
+	}
+	if t.grid != nil {
+		gridViewport, err := t.grid.Viewport(offset, limit, cols)
+		if err != nil {
+			if t.logger != nil {
+				t.logger.Warn("termx terminal grid viewport failed", "terminal_id", id, "error", err)
+			}
+		} else if gridViewport.TotalRows > 0 {
+			return &GridViewport{
+				TerminalID:           id,
+				Size:                 Size{Cols: uint16(cols), Rows: size.Rows},
+				Rows:                 convertRows(gridViewport.Rows),
+				ScrollbackOffset:     offset,
+				ScrollbackLimit:      limit,
+				ScrollbackTotal:      gridViewport.TotalRows,
+				ScrollbackHasMore:    gridViewport.HasMore,
+				ScrollbackTimestamps: cloneTimeSlice(gridViewport.Timestamps),
+				ScrollbackRowKinds:   cloneStringSlice(gridViewport.RowKinds),
+				ScrollbackWrapped:    cloneBoolSlice(gridViewport.Wrapped),
+				Timestamp:            time.Now().UTC(),
+			}
+		}
+	}
+	scrollback := t.vterm.ScrollbackContent()
+	if offset > len(scrollback) {
+		offset = len(scrollback)
+	}
+	end := len(scrollback) - offset
+	if end < 0 {
+		end = 0
+	}
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+	return &GridViewport{
+		TerminalID:           id,
+		Size:                 Size{Cols: uint16(cols), Rows: size.Rows},
+		Rows:                 convertRows(scrollback[start:end]),
+		ScrollbackOffset:     offset,
+		ScrollbackLimit:      limit,
+		ScrollbackTotal:      len(scrollback),
+		ScrollbackHasMore:    start > 0,
+		ScrollbackTimestamps: sliceTimeRange(t.vterm.ScrollbackTimestamps(), start, end),
+		ScrollbackRowKinds:   sliceStringRange(t.vterm.ScrollbackRowKinds(), start, end),
+		ScrollbackWrapped:    sliceBoolRange(t.vterm.ScrollbackWrapped(), start, end),
+		Timestamp:            time.Now().UTC(),
+	}
+}
+
 func (t *Terminal) HistoryReplay(opts HistoryReplayOptions) HistoryReplayResult {
 	if t == nil || t.vterm == nil {
 		return HistoryReplayResult{}
@@ -1668,6 +1737,60 @@ func protocolRowsFromVTerm(rows [][]vterm.Cell) [][]protocol.Cell {
 		out[i] = protocolCellsFromVTermRow(row)
 	}
 	return out
+}
+
+func protocolRowsFromCore(rows [][]Cell) [][]protocol.Cell {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([][]protocol.Cell, len(rows))
+	for i, row := range rows {
+		out[i] = protocolCellsFromCoreRow(row)
+	}
+	return out
+}
+
+func protocolCellsFromCoreRow(row []Cell) []protocol.Cell {
+	if len(row) == 0 {
+		return nil
+	}
+	out := make([]protocol.Cell, len(row))
+	for i, cell := range row {
+		out[i] = protocol.Cell{
+			Content: cell.Content,
+			Width:   cell.Width,
+			Style: protocol.CellStyle{
+				FG:            cell.Style.FG,
+				BG:            cell.Style.BG,
+				Bold:          cell.Style.Bold,
+				Italic:        cell.Style.Italic,
+				Underline:     cell.Style.Underline,
+				Blink:         cell.Style.Blink,
+				Reverse:       cell.Style.Reverse,
+				Strikethrough: cell.Style.Strikethrough,
+			},
+		}
+	}
+	return out
+}
+
+func protocolGridViewportFromCore(viewport *GridViewport) *protocol.GridViewport {
+	if viewport == nil {
+		return nil
+	}
+	return &protocol.GridViewport{
+		TerminalID:           viewport.TerminalID,
+		Size:                 protocol.Size{Cols: viewport.Size.Cols, Rows: viewport.Size.Rows},
+		Rows:                 protocolRowsFromCore(viewport.Rows),
+		ScrollbackOffset:     viewport.ScrollbackOffset,
+		ScrollbackLimit:      viewport.ScrollbackLimit,
+		ScrollbackTotal:      viewport.ScrollbackTotal,
+		ScrollbackHasMore:    viewport.ScrollbackHasMore,
+		ScrollbackTimestamps: cloneTimeSlice(viewport.ScrollbackTimestamps),
+		ScrollbackRowKinds:   cloneStringSlice(viewport.ScrollbackRowKinds),
+		ScrollbackWrapped:    cloneBoolSlice(viewport.ScrollbackWrapped),
+		Timestamp:            viewport.Timestamp,
+	}
 }
 
 func protocolCellsFromVTermRow(row []vterm.Cell) []protocol.Cell {

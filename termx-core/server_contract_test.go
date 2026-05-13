@@ -17,6 +17,7 @@ import (
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/transport/memory"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
+	"github.com/lozzow/termx/termx-core/vterm"
 )
 
 func TestServerCreateRejectsInvalidCommandAndDuplicateID(t *testing.T) {
@@ -2219,6 +2220,33 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 		t.Fatalf("unexpected snapshot result: %#v", snap)
 	}
 
+	term, err := srv.getTerminal(info.ID)
+	if err != nil {
+		t.Fatalf("get terminal for viewport seed failed: %v", err)
+	}
+	if term.grid == nil {
+		t.Fatal("expected terminal grid store")
+	}
+	if err := term.grid.AppendRows([][]vterm.Cell{{{Content: "history-viewport-grid", Width: 1}}}); err != nil {
+		t.Fatalf("append viewport grid row failed: %v", err)
+	}
+
+	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
+		ID:     41,
+		Method: "grid.viewport",
+		Params: mustJSON(t, protocol.GridViewportParams{TerminalID: info.ID, ScrollbackLimit: 50, Cols: 100}),
+	}, sendFrame)
+	if err != nil {
+		t.Fatalf("grid viewport request failed: %v", err)
+	}
+	var viewport protocol.GridViewport
+	if err := json.Unmarshal(result, &viewport); err != nil {
+		t.Fatalf("unmarshal grid viewport result failed: %v", err)
+	}
+	if viewport.TerminalID != info.ID || !protocolRowsContain(viewport.Rows, "history-viewport-grid") {
+		t.Fatalf("unexpected grid viewport result: %#v", viewport)
+	}
+
 	gotInfo, err := srv.Get(ctx, info.ID)
 	if err != nil {
 		t.Fatalf("get after requests failed: %v", err)
@@ -2791,6 +2819,23 @@ func waitForSnapshotContains(t *testing.T, srv *Server, terminalID, needle strin
 		snap, err := srv.Snapshot(context.Background(), terminalID, SnapshotOptions{ScrollbackLimit: 50})
 		return err == nil && snapshotContains(snap, needle)
 	})
+}
+
+func protocolRowsContain(rows [][]protocol.Cell, needle string) bool {
+	for _, row := range rows {
+		if strings.Contains(protocolGridRowString(row), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func protocolGridRowString(row []protocol.Cell) string {
+	var b strings.Builder
+	for _, cell := range row {
+		b.WriteString(cell.Content)
+	}
+	return strings.TrimRight(b.String(), " ")
 }
 
 func hasAttachedMode(attached []AttachInfo, mode string) bool {

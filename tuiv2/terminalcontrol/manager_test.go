@@ -257,6 +257,11 @@ func (c *fakeClient) EnsureResize(_ context.Context, params protocol.EnsureResiz
 func (c *fakeClient) Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error) {
 	return nil, nil
 }
+
+func (c *fakeClient) GridViewport(context.Context, string, int, int, int) (*protocol.GridViewport, error) {
+	return nil, nil
+}
+
 func (c *fakeClient) Input(context.Context, uint16, []byte) error { return nil }
 func (c *fakeClient) Resize(_ context.Context, channel uint16, cols, rows uint16) error {
 	c.resizes = append(c.resizes, resizeCall{channel: channel, cols: cols, rows: rows})

@@ -476,14 +476,18 @@ func TestCopyModeTopLoadsOlderScrollbackIntoFrozenBuffer(t *testing.T) {
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
 	beforeScreen := copyModeSnapshotScreenText(model.copyMode.Snapshot)
-	beforeCalls := len(model.runtime.Client().(*recordingBridgeClient).snapshotCalls)
+	client := model.runtime.Client().(*recordingBridgeClient)
+	beforeSnapshotCalls := len(client.snapshotCalls)
+	beforeViewportCalls := len(client.viewportRequests)
 
 	seedCopyModeSnapshot(t, model, []string{"old0", "old1", "old2", "old3"}, []string{"live0", "live1", "live2", "live3"})
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
 
-	client := model.runtime.Client().(*recordingBridgeClient)
-	if got := len(client.snapshotCalls); got != beforeCalls+1 {
-		t.Fatalf("expected copy-mode top to request more history once, before=%d after=%d calls=%#v", beforeCalls, got, client.snapshotCalls)
+	if got := len(client.snapshotCalls); got != beforeSnapshotCalls {
+		t.Fatalf("expected copy-mode top to avoid snapshot history requests, before=%d after=%d calls=%#v", beforeSnapshotCalls, got, client.snapshotCalls)
+	}
+	if got := len(client.viewportRequests); got != beforeViewportCalls+1 {
+		t.Fatalf("expected copy-mode top to request one history viewport, before=%d after=%d calls=%#v", beforeViewportCalls, got, client.viewportRequests)
 	}
 	if model.copyMode.Snapshot == nil {
 		t.Fatal("expected copy-mode snapshot")
@@ -519,18 +523,22 @@ func TestCopyModeLoadsOlderScrollbackByOffsetPage(t *testing.T) {
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
 	client := model.runtime.Client().(*recordingBridgeClient)
-	beforeCalls := len(client.snapshotRequests)
+	beforeSnapshotCalls := len(client.snapshotRequests)
+	beforeViewportCalls := len(client.viewportRequests)
 
 	serverSnapshot := copyModeTestSnapshot(allRows, []string{"next0", "next1", "next2", "next3"})
 	client.snapshotByTerminal["term-1"] = serverSnapshot
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
 
-	if got := len(client.snapshotRequests); got != beforeCalls+1 {
-		t.Fatalf("expected one paged snapshot request, before=%d after=%d calls=%#v", beforeCalls, got, client.snapshotRequests)
+	if got := len(client.snapshotRequests); got != beforeSnapshotCalls {
+		t.Fatalf("expected paged history to avoid snapshot requests, before=%d after=%d calls=%#v", beforeSnapshotCalls, got, client.snapshotRequests)
 	}
-	request := client.snapshotRequests[len(client.snapshotRequests)-1]
-	if request.terminalID != "term-1" || request.offset != 500 || request.limit != 500 {
-		t.Fatalf("expected offset page request for older copy-mode history, got %#v", request)
+	if got := len(client.viewportRequests); got != beforeViewportCalls+1 {
+		t.Fatalf("expected one paged viewport request, before=%d after=%d calls=%#v", beforeViewportCalls, got, client.viewportRequests)
+	}
+	request := client.viewportRequests[len(client.viewportRequests)-1]
+	if request.terminalID != "term-1" || request.offset != 500 || request.limit != 500 || request.cols <= 0 {
+		t.Fatalf("expected offset viewport request for older copy-mode history, got %#v", request)
 	}
 	if got, want := len(model.copyMode.Snapshot.Scrollback), 1000; got != want {
 		t.Fatalf("expected paged history to be prepended, got %d rows want %d", got, want)
@@ -558,17 +566,21 @@ func TestCopyModeLoadsOlderScrollbackBeyondFullSnapshotCap(t *testing.T) {
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
 	client := model.runtime.Client().(*recordingBridgeClient)
-	beforeCalls := len(client.snapshotRequests)
+	beforeSnapshotCalls := len(client.snapshotRequests)
+	beforeViewportCalls := len(client.viewportRequests)
 
 	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot(allRows, []string{"next0", "next1", "next2", "next3"})
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
 
-	if got := len(client.snapshotRequests); got != beforeCalls+1 {
-		t.Fatalf("expected one paged snapshot request beyond full snapshot cap, before=%d after=%d calls=%#v", beforeCalls, got, client.snapshotRequests)
+	if got := len(client.snapshotRequests); got != beforeSnapshotCalls {
+		t.Fatalf("expected paged history to avoid snapshot requests beyond full snapshot cap, before=%d after=%d calls=%#v", beforeSnapshotCalls, got, client.snapshotRequests)
 	}
-	request := client.snapshotRequests[len(client.snapshotRequests)-1]
-	if request.terminalID != "term-1" || request.offset != 10000 || request.limit != 500 {
-		t.Fatalf("expected offset page request beyond full snapshot cap, got %#v", request)
+	if got := len(client.viewportRequests); got != beforeViewportCalls+1 {
+		t.Fatalf("expected one paged viewport request beyond full snapshot cap, before=%d after=%d calls=%#v", beforeViewportCalls, got, client.viewportRequests)
+	}
+	request := client.viewportRequests[len(client.viewportRequests)-1]
+	if request.terminalID != "term-1" || request.offset != 10000 || request.limit != 500 || request.cols <= 0 {
+		t.Fatalf("expected offset viewport request beyond full snapshot cap, got %#v", request)
 	}
 	if got, want := len(model.copyMode.Snapshot.Scrollback), 10500; got != want {
 		t.Fatalf("expected paged history beyond full snapshot cap to be prepended, got %d rows want %d", got, want)

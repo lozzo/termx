@@ -404,6 +404,22 @@ func (s *Server) Snapshot(ctx context.Context, id string, opts ...SnapshotOption
 	return term.Snapshot(opt.ScrollbackOffset, opt.ScrollbackLimit), nil
 }
 
+func (s *Server) GridViewport(ctx context.Context, id string, opts ...GridViewportOptions) (*protocol.GridViewport, error) {
+	_ = ctx
+	var opt GridViewportOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	term, err := s.getTerminal(id)
+	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+		return s.gridViewportFromStore(id, opt)
+	}
+	return protocolGridViewportFromCore(term.GridViewport(opt.ScrollbackOffset, opt.ScrollbackLimit, opt.Cols)), nil
+}
+
 func (s *Server) HistoryReplay(ctx context.Context, id string, opts ...HistoryReplayOptions) (*HistoryReplayResult, error) {
 	_ = ctx
 	var opt HistoryReplayOptions
@@ -444,6 +460,39 @@ func (s *Server) gridReplayFromStore(id string, opt HistoryReplayOptions) (*Hist
 		HasMore:      hasMore,
 		Replay:       string(replay),
 	}, nil
+}
+
+func (s *Server) gridViewportFromStore(id string, opt GridViewportOptions) (*protocol.GridViewport, error) {
+	store, err := openTerminalGridStoreForReplay(s.cfg.gridRoot, id)
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+	beforeOffset, limit := sanitizeGridViewportWindow(opt.ScrollbackOffset, opt.ScrollbackLimit)
+	cols := opt.Cols
+	if cols <= 0 {
+		cols = int(s.cfg.defaultSize.Cols)
+	}
+	if cols <= 0 {
+		cols = 80
+	}
+	result, err := store.Viewport(beforeOffset, limit, cols)
+	if err != nil {
+		return nil, err
+	}
+	return protocolGridViewportFromCore(&GridViewport{
+		TerminalID:           id,
+		Size:                 Size{Cols: uint16(cols), Rows: s.cfg.defaultSize.Rows},
+		Rows:                 convertRows(result.Rows),
+		ScrollbackOffset:     beforeOffset,
+		ScrollbackLimit:      limit,
+		ScrollbackTotal:      result.TotalRows,
+		ScrollbackHasMore:    result.HasMore,
+		ScrollbackTimestamps: cloneTimeSlice(result.Timestamps),
+		ScrollbackRowKinds:   cloneStringSlice(result.RowKinds),
+		ScrollbackWrapped:    cloneBoolSlice(result.Wrapped),
+		Timestamp:            time.Now().UTC(),
+	}), nil
 }
 
 func (s *Server) gridSnapshotFromStore(id string, opt SnapshotOptions) (*Snapshot, error) {
@@ -1453,6 +1502,34 @@ func (s *Server) handleRequest(
 			"scrollback_limit", params.ScrollbackLimit,
 			"snapshot_scrollback_rows", len(snap.Scrollback),
 			"snapshot_screen_rows", len(snap.Screen.Cells),
+		)
+		return result, 0, nil
+	case "grid.viewport":
+		var params protocol.GridViewportParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return nil, 400, err
+		}
+		viewport, err := s.GridViewport(ctx, params.TerminalID, GridViewportOptions{
+			ScrollbackOffset: params.ScrollbackOffset,
+			ScrollbackLimit:  params.ScrollbackLimit,
+			Cols:             params.Cols,
+		})
+		if err != nil {
+			return nil, protocolErrorCode(err), err
+		}
+		result, _ := json.Marshal(viewport)
+		viewport, result = trimGridViewportResultToFrameBudget(viewport, result, snapshotResponseFrameBudget)
+		s.logProtocolMethodResult(
+			ctx,
+			remote,
+			req,
+			result,
+			started,
+			"terminal_id", params.TerminalID,
+			"scrollback_offset", params.ScrollbackOffset,
+			"scrollback_limit", params.ScrollbackLimit,
+			"cols", params.Cols,
+			"viewport_rows", len(viewport.Rows),
 		)
 		return result, 0, nil
 	case "attach":

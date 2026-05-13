@@ -21,7 +21,6 @@ var sharedTerminalSnapshotResyncDelay = 120 * time.Millisecond
 const (
 	defaultTerminalSnapshotScrollbackLimit = 500
 	terminalScrollbackPageLimit            = 500
-	maxFullSnapshotScrollbackLimit         = 10000
 	terminalScrollbackPrefetchMargin       = 8
 )
 
@@ -289,20 +288,11 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 	if nextLimit < want {
 		nextLimit = minInt(want, loaded+terminalScrollbackPageLimit)
 	}
-	if !copyModeActive {
-		nextLimit = minInt(nextLimit, maxFullSnapshotScrollbackLimit)
-	}
 	if nextLimit <= loaded || terminal.ScrollbackLoadingLimit >= nextLimit {
 		return nil
 	}
 	terminal.ScrollbackLoadingLimit = nextLimit
-	offset := 0
-	limit := nextLimit
-	if copyModeActive {
-		offset = loaded
-		limit = nextLimit - loaded
-	}
-	return m.loadTerminalSnapshotCmd(pane.TerminalID, offset, limit)
+	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, contentRect.W)
 }
 
 func (m *Model) ensureCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
@@ -335,13 +325,17 @@ func (m *Model) ensureCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
 		return nil
 	}
 	terminal.ScrollbackLoadingLimit = nextLimit
-	return m.loadTerminalSnapshotCmd(pane.TerminalID, loaded, nextLimit-loaded)
+	cols := int(buffer.snapshot.Size.Cols)
+	if cols <= 0 {
+		cols = len(buffer.row(0))
+	}
+	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, cols)
 }
 
-func (m *Model) loadTerminalSnapshotCmd(terminalID string, offset int, limit int) tea.Cmd {
+func (m *Model) loadTerminalHistoryViewportCmd(terminalID string, offset int, limit int, cols int) tea.Cmd {
 	loadingLimit := offset + limit
 	return func() tea.Msg {
-		snapshot, err := m.runtime.LoadSnapshot(context.Background(), terminalID, offset, limit)
+		snapshot, err := m.runtime.LoadGridViewport(context.Background(), terminalID, offset, limit, cols)
 		if err != nil {
 			if terminal := m.runtime.Registry().Get(terminalID); terminal != nil && terminal.ScrollbackLoadingLimit == loadingLimit {
 				terminal.ScrollbackLoadingLimit = 0

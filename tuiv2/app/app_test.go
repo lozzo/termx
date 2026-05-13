@@ -4206,6 +4206,7 @@ type recordingBridgeClient struct {
 	snapshotByTerminal map[string]*protocol.Snapshot
 	snapshotCalls      []string
 	snapshotRequests   []snapshotCall
+	viewportRequests   []gridViewportCall
 	snapshotErr        error
 	createCalls        []createCall
 	attachCalls        []attachCall
@@ -4244,6 +4245,13 @@ type snapshotCall struct {
 	terminalID string
 	offset     int
 	limit      int
+}
+
+type gridViewportCall struct {
+	terminalID string
+	offset     int
+	limit      int
+	cols       int
 }
 
 type createCall struct {
@@ -4332,6 +4340,33 @@ func (c *recordingBridgeClient) Snapshot(_ context.Context, terminalID string, o
 		return nil, nil
 	}
 	return snapshotWindow(c.snapshotByTerminal[terminalID], offset, limit), nil
+}
+
+func (c *recordingBridgeClient) GridViewport(_ context.Context, terminalID string, offset int, limit int, cols int) (*protocol.GridViewport, error) {
+	c.viewportRequests = append(c.viewportRequests, gridViewportCall{terminalID: terminalID, offset: offset, limit: limit, cols: cols})
+	if c.snapshotErr != nil {
+		return nil, c.snapshotErr
+	}
+	if c.snapshotByTerminal == nil {
+		return nil, nil
+	}
+	snapshot := snapshotWindow(c.snapshotByTerminal[terminalID], offset, limit)
+	if snapshot == nil {
+		return nil, nil
+	}
+	return &protocol.GridViewport{
+		TerminalID:           terminalID,
+		Size:                 snapshot.Size,
+		Rows:                 cloneProtocolRows(snapshot.Scrollback),
+		ScrollbackOffset:     snapshot.ScrollbackOffset,
+		ScrollbackLimit:      limit,
+		ScrollbackTotal:      snapshot.ScrollbackTotal,
+		ScrollbackHasMore:    snapshot.ScrollbackHasMore,
+		ScrollbackTimestamps: append([]time.Time(nil), snapshot.ScrollbackTimestamps...),
+		ScrollbackRowKinds:   append([]string(nil), snapshot.ScrollbackRowKinds...),
+		ScrollbackWrapped:    append([]bool(nil), snapshot.ScrollbackWrapped...),
+		Timestamp:            snapshot.Timestamp,
+	}, nil
 }
 
 func (c *recordingBridgeClient) Input(_ context.Context, channel uint16, data []byte) error {

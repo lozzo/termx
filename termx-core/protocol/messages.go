@@ -237,6 +237,13 @@ type SnapshotParams struct {
 	ScrollbackLimit  int    `json:"scrollback_limit,omitempty"`
 }
 
+type GridViewportParams struct {
+	TerminalID       string `json:"terminal_id"`
+	ScrollbackOffset int    `json:"scrollback_offset,omitempty"`
+	ScrollbackLimit  int    `json:"scrollback_limit,omitempty"`
+	Cols             int    `json:"cols,omitempty"`
+}
+
 type ScreenRect struct {
 	X      int `json:"x"`
 	Y      int `json:"y"`
@@ -1724,6 +1731,20 @@ type Snapshot struct {
 	Timestamp            time.Time     `json:"timestamp"`
 }
 
+type GridViewport struct {
+	TerminalID           string      `json:"terminal_id"`
+	Size                 Size        `json:"size"`
+	Rows                 [][]Cell    `json:"rows,omitempty"`
+	ScrollbackOffset     int         `json:"scrollback_offset,omitempty"`
+	ScrollbackLimit      int         `json:"scrollback_limit,omitempty"`
+	ScrollbackTotal      int         `json:"scrollback_total,omitempty"`
+	ScrollbackHasMore    bool        `json:"scrollback_has_more,omitempty"`
+	ScrollbackTimestamps []time.Time `json:"scrollback_timestamps,omitempty"`
+	ScrollbackRowKinds   []string    `json:"scrollback_row_kinds,omitempty"`
+	ScrollbackWrapped    []bool      `json:"scrollback_wrapped,omitempty"`
+	Timestamp            time.Time   `json:"timestamp"`
+}
+
 type SessionOp = workbenchops.Op
 
 type SessionInfo struct {
@@ -1932,6 +1953,249 @@ func (s *Snapshot) UnmarshalJSON(data []byte) error {
 	s.Cursor = raw.Cursor
 	s.Modes = raw.Modes
 	s.Timestamp = raw.Timestamp
+	return nil
+}
+
+func (s CellStyle) isZero() bool {
+	return s == CellStyle{}
+}
+
+func encodeRowTimestamps(values []time.Time) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, len(values))
+	nonEmpty := false
+	for i, value := range values {
+		if value.IsZero() {
+			continue
+		}
+		out[i] = value.UTC().Format(time.RFC3339Nano)
+		nonEmpty = true
+	}
+	if !nonEmpty {
+		return nil
+	}
+	return out
+}
+
+func encodeStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, len(values))
+	nonEmpty := false
+	for i, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		out[i] = value
+		nonEmpty = true
+	}
+	if !nonEmpty {
+		return nil
+	}
+	return out
+}
+
+func encodeBoolSlice(values []bool) []bool {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]bool, len(values))
+	nonEmpty := false
+	for i, value := range values {
+		if value {
+			out[i] = true
+			nonEmpty = true
+		}
+	}
+	if !nonEmpty {
+		return nil
+	}
+	return out
+}
+
+func decodeRowTimestamps(raw []string) []time.Time {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make([]time.Time, len(raw))
+	for i, value := range raw {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, value)
+		if err != nil {
+			continue
+		}
+		out[i] = parsed
+	}
+	return out
+}
+
+func (v GridViewport) MarshalJSON() ([]byte, error) {
+	type jsonStyle struct {
+		FG            string `json:"fg,omitempty"`
+		BG            string `json:"bg,omitempty"`
+		Bold          bool   `json:"b,omitempty"`
+		Italic        bool   `json:"i,omitempty"`
+		Underline     bool   `json:"u,omitempty"`
+		Blink         bool   `json:"k,omitempty"`
+		Reverse       bool   `json:"rv,omitempty"`
+		Strikethrough bool   `json:"st,omitempty"`
+	}
+	type jsonCell struct {
+		Content string     `json:"r,omitempty"`
+		Width   int        `json:"w,omitempty"`
+		Style   *jsonStyle `json:"s,omitempty"`
+	}
+	type jsonRow struct {
+		Cells []jsonCell `json:"cells,omitempty"`
+	}
+	type jsonGridViewport struct {
+		TerminalID           string    `json:"terminal_id"`
+		Size                 Size      `json:"size"`
+		Rows                 []jsonRow `json:"rows,omitempty"`
+		ScrollbackRows       int       `json:"scrollback_rows"`
+		ScrollbackOffset     int       `json:"scrollback_offset,omitempty"`
+		ScrollbackLimit      int       `json:"scrollback_limit,omitempty"`
+		ScrollbackTotal      int       `json:"scrollback_total,omitempty"`
+		ScrollbackHasMore    bool      `json:"scrollback_has_more,omitempty"`
+		ScrollbackTimestamps []string  `json:"scrollback_timestamps,omitempty"`
+		ScrollbackRowKinds   []string  `json:"scrollback_row_kinds,omitempty"`
+		ScrollbackWrapped    []bool    `json:"scrollback_wrapped,omitempty"`
+		Timestamp            string    `json:"timestamp"`
+	}
+	encodeCell := func(cell Cell) jsonCell {
+		out := jsonCell{Content: cell.Content}
+		if cell.Width > 1 {
+			out.Width = cell.Width
+		}
+		if !cell.Style.isZero() {
+			out.Style = &jsonStyle{
+				FG:            cell.Style.FG,
+				BG:            cell.Style.BG,
+				Bold:          cell.Style.Bold,
+				Italic:        cell.Style.Italic,
+				Underline:     cell.Style.Underline,
+				Blink:         cell.Style.Blink,
+				Reverse:       cell.Style.Reverse,
+				Strikethrough: cell.Style.Strikethrough,
+			}
+		}
+		return out
+	}
+	encodeRow := func(row []Cell) jsonRow {
+		last := len(row)
+		for last > 0 {
+			cell := row[last-1]
+			if cell.Content != "" && strings.TrimSpace(cell.Content) != "" {
+				break
+			}
+			if !cell.Style.isZero() {
+				break
+			}
+			last--
+		}
+		cells := make([]jsonCell, 0, last)
+		for _, cell := range row[:last] {
+			cells = append(cells, encodeCell(cell))
+		}
+		return jsonRow{Cells: cells}
+	}
+	encodeRows := make([]jsonRow, 0, len(v.Rows))
+	for _, row := range v.Rows {
+		encodeRows = append(encodeRows, encodeRow(row))
+	}
+	return json.Marshal(jsonGridViewport{
+		TerminalID:           v.TerminalID,
+		Size:                 v.Size,
+		Rows:                 encodeRows,
+		ScrollbackRows:       len(v.Rows),
+		ScrollbackOffset:     v.ScrollbackOffset,
+		ScrollbackLimit:      v.ScrollbackLimit,
+		ScrollbackTotal:      v.ScrollbackTotal,
+		ScrollbackHasMore:    v.ScrollbackHasMore,
+		ScrollbackTimestamps: encodeRowTimestamps(v.ScrollbackTimestamps),
+		ScrollbackRowKinds:   encodeStringSlice(v.ScrollbackRowKinds),
+		ScrollbackWrapped:    encodeBoolSlice(v.ScrollbackWrapped),
+		Timestamp:            v.Timestamp.UTC().Format(time.RFC3339Nano),
+	})
+}
+
+func (v *GridViewport) UnmarshalJSON(data []byte) error {
+	type jsonStyle struct {
+		FG            string `json:"fg,omitempty"`
+		BG            string `json:"bg,omitempty"`
+		Bold          bool   `json:"b,omitempty"`
+		Italic        bool   `json:"i,omitempty"`
+		Underline     bool   `json:"u,omitempty"`
+		Blink         bool   `json:"k,omitempty"`
+		Reverse       bool   `json:"rv,omitempty"`
+		Strikethrough bool   `json:"st,omitempty"`
+	}
+	type jsonCell struct {
+		Content string     `json:"r,omitempty"`
+		Width   int        `json:"w,omitempty"`
+		Style   *jsonStyle `json:"s,omitempty"`
+	}
+	type jsonRow struct {
+		Cells []jsonCell `json:"cells,omitempty"`
+	}
+	type jsonGridViewport struct {
+		TerminalID           string    `json:"terminal_id"`
+		Size                 Size      `json:"size"`
+		Rows                 []jsonRow `json:"rows"`
+		ScrollbackOffset     int       `json:"scrollback_offset,omitempty"`
+		ScrollbackLimit      int       `json:"scrollback_limit,omitempty"`
+		ScrollbackTotal      int       `json:"scrollback_total,omitempty"`
+		ScrollbackHasMore    bool      `json:"scrollback_has_more,omitempty"`
+		ScrollbackTimestamps []string  `json:"scrollback_timestamps,omitempty"`
+		ScrollbackRowKinds   []string  `json:"scrollback_row_kinds,omitempty"`
+		ScrollbackWrapped    []bool    `json:"scrollback_wrapped,omitempty"`
+		Timestamp            time.Time `json:"timestamp"`
+	}
+	var raw jsonGridViewport
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	convertRows := func(rows []jsonRow) [][]Cell {
+		out := make([][]Cell, len(rows))
+		for i, row := range rows {
+			cells := make([]Cell, len(row.Cells))
+			for j, cell := range row.Cells {
+				cells[j] = Cell{Content: cell.Content, Width: cell.Width}
+				if cell.Style != nil {
+					cells[j].Style = CellStyle{
+						FG:            cell.Style.FG,
+						BG:            cell.Style.BG,
+						Bold:          cell.Style.Bold,
+						Italic:        cell.Style.Italic,
+						Underline:     cell.Style.Underline,
+						Blink:         cell.Style.Blink,
+						Reverse:       cell.Style.Reverse,
+						Strikethrough: cell.Style.Strikethrough,
+					}
+				}
+			}
+			out[i] = cells
+		}
+		return out
+	}
+	v.TerminalID = raw.TerminalID
+	v.Size = raw.Size
+	v.Rows = convertRows(raw.Rows)
+	v.ScrollbackOffset = raw.ScrollbackOffset
+	v.ScrollbackLimit = raw.ScrollbackLimit
+	v.ScrollbackTotal = raw.ScrollbackTotal
+	v.ScrollbackHasMore = raw.ScrollbackHasMore
+	v.ScrollbackTimestamps = decodeRowTimestamps(raw.ScrollbackTimestamps)
+	v.ScrollbackRowKinds = append([]string(nil), raw.ScrollbackRowKinds...)
+	v.ScrollbackWrapped = append([]bool(nil), raw.ScrollbackWrapped...)
+	v.Timestamp = raw.Timestamp
 	return nil
 }
 

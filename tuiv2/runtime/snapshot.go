@@ -88,6 +88,84 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 	return snapshot, nil
 }
 
+func (r *Runtime) LoadGridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*protocol.Snapshot, error) {
+	if r == nil || r.client == nil {
+		return nil, shared.UserVisibleError{Op: "load terminal history", Err: fmt.Errorf("runtime client is nil")}
+	}
+	viewport, err := r.client.GridViewport(ctx, terminalID, offset, limit, cols)
+	if err != nil {
+		return nil, shared.UserVisibleError{Op: "load terminal history", Err: err}
+	}
+	return snapshotFromGridViewport(terminalID, viewport), nil
+}
+
+func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapshot, offset int) bool {
+	if r == nil || r.registry == nil || terminalID == "" || page == nil || len(page.Scrollback) == 0 {
+		return false
+	}
+	terminal := r.registry.Get(terminalID)
+	if terminal == nil || terminal.Snapshot == nil {
+		return false
+	}
+	current := terminal.Snapshot
+	if offset < 0 || offset > len(current.Scrollback) {
+		return false
+	}
+	if offset > 0 && offset != len(current.Scrollback) {
+		return false
+	}
+	merged := cloneProtocolSnapshot(current)
+	if offset == 0 {
+		if len(page.Scrollback) <= len(merged.Scrollback) {
+			return false
+		}
+		merged.Scrollback = cloneProtocolRows(page.Scrollback)
+		merged.ScrollbackTimestamps = append([]time.Time(nil), page.ScrollbackTimestamps...)
+		merged.ScrollbackRowKinds = append([]string(nil), page.ScrollbackRowKinds...)
+		merged.ScrollbackWrapped = append([]bool(nil), page.ScrollbackWrapped...)
+	} else {
+		merged.Scrollback = append(cloneProtocolRows(page.Scrollback), merged.Scrollback...)
+		merged.ScrollbackTimestamps = append(append([]time.Time(nil), page.ScrollbackTimestamps...), merged.ScrollbackTimestamps...)
+		merged.ScrollbackRowKinds = append(append([]string(nil), page.ScrollbackRowKinds...), merged.ScrollbackRowKinds...)
+		merged.ScrollbackWrapped = append(append([]bool(nil), page.ScrollbackWrapped...), merged.ScrollbackWrapped...)
+	}
+	merged.ScrollbackOffset = page.ScrollbackOffset
+	merged.ScrollbackTotal = page.ScrollbackTotal
+	merged.ScrollbackHasMore = page.ScrollbackHasMore
+	merged.Timestamp = time.Now()
+	terminal.Snapshot = merged
+	if loaded := len(merged.Scrollback); loaded > terminal.ScrollbackLoadedLimit {
+		terminal.ScrollbackLoadedLimit = loaded
+	}
+	terminal.ScrollbackExhausted = !page.ScrollbackHasMore
+	vt := r.ensureVTerm(terminal)
+	loadSnapshotIntoVTerm(vt, merged)
+	r.bumpSurfaceVersion(terminal)
+	terminal.SnapshotVersion = terminal.SurfaceVersion
+	terminal.PreferSnapshot = false
+	r.touch()
+	return true
+}
+
+func snapshotFromGridViewport(terminalID string, viewport *protocol.GridViewport) *protocol.Snapshot {
+	if viewport == nil {
+		return nil
+	}
+	return &protocol.Snapshot{
+		TerminalID:           terminalID,
+		Size:                 viewport.Size,
+		Scrollback:           cloneProtocolRows(viewport.Rows),
+		ScrollbackOffset:     viewport.ScrollbackOffset,
+		ScrollbackTotal:      viewport.ScrollbackTotal,
+		ScrollbackHasMore:    viewport.ScrollbackHasMore,
+		ScrollbackTimestamps: append([]time.Time(nil), viewport.ScrollbackTimestamps...),
+		ScrollbackRowKinds:   append([]string(nil), viewport.ScrollbackRowKinds...),
+		ScrollbackWrapped:    append([]bool(nil), viewport.ScrollbackWrapped...),
+		Modes:                protocol.TerminalModes{AutoWrap: true},
+		Timestamp:            viewport.Timestamp,
+	}
+}
+
 func (r *Runtime) refreshSnapshot(terminalID string) {
 	if r == nil || r.registry == nil || terminalID == "" {
 		return

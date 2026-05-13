@@ -16,6 +16,7 @@ type Client interface {
 	Attach(ctx context.Context, params protocol.AttachParams) (*protocol.AttachResult, error)
 	EnsureResize(ctx context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error)
 	Snapshot(ctx context.Context, terminalID string, offset, limit int) (*protocol.Snapshot, error)
+	GridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*protocol.GridViewport, error)
 	Input(ctx context.Context, channel uint16, data []byte) error
 	Resize(ctx context.Context, channel uint16, cols, rows uint16) error
 	Stream(channel uint16) (<-chan protocol.StreamFrame, func())
@@ -74,6 +75,10 @@ func (c *ProtocolClient) EnsureResize(ctx context.Context, params protocol.Ensur
 
 func (c *ProtocolClient) Snapshot(ctx context.Context, terminalID string, offset, limit int) (*protocol.Snapshot, error) {
 	return c.inner.Snapshot(ctx, terminalID, offset, limit)
+}
+
+func (c *ProtocolClient) GridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*protocol.GridViewport, error) {
+	return c.inner.GridViewport(ctx, terminalID, offset, limit, cols)
 }
 
 func (c *ProtocolClient) Input(ctx context.Context, channel uint16, data []byte) error {

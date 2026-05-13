@@ -35,6 +35,7 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"EnsureResize",
 		"Events",
 		"GetSession",
+		"GridViewport",
 		"Hello",
 		"HistoryReplay",
 		"Input",
@@ -144,6 +145,14 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 	}
 	if snap.TerminalID != "term-1" || len(snap.Scrollback) != 1 {
 		t.Fatalf("unexpected snapshot result: %#v", snap)
+	}
+
+	viewport, err := client.GridViewport(ctx, "term-1", 1, 2, 80)
+	if err != nil {
+		t.Fatalf("grid viewport failed: %v", err)
+	}
+	if viewport.TerminalID != "term-1" || len(viewport.Rows) != 1 || viewport.ScrollbackOffset != 1 || viewport.ScrollbackLimit != 2 {
+		t.Fatalf("unexpected grid viewport result: %#v", viewport)
 	}
 
 	history, err := client.HistoryReplay(ctx, attach.Channel, 0, 50)
@@ -631,6 +640,31 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 		"timestamp":"2026-03-18T00:00:00Z"
 	}`)
 	if err := sendResponse(tr, req.ID, snapshotResult); err != nil {
+		return err
+	}
+
+	req, err = expectRequest(tr, "grid.viewport")
+	if err != nil {
+		return err
+	}
+	var viewportParams GridViewportParams
+	if err := json.Unmarshal(req.Params, &viewportParams); err != nil {
+		return err
+	}
+	if viewportParams.TerminalID != "term-1" || viewportParams.ScrollbackOffset != 1 || viewportParams.ScrollbackLimit != 2 || viewportParams.Cols != 80 {
+		return fmt.Errorf("unexpected grid viewport params: %#v", viewportParams)
+	}
+	viewportResult := json.RawMessage(`{
+		"terminal_id":"term-1",
+		"size":{"cols":80,"rows":24},
+		"rows":[{"cells":[{"r":"o"},{"r":"l"},{"r":"d"}]}],
+		"scrollback_offset":1,
+		"scrollback_limit":2,
+		"scrollback_total":3,
+		"scrollback_has_more":true,
+		"timestamp":"2026-03-18T00:00:00Z"
+	}`)
+	if err := sendResponse(tr, req.ID, viewportResult); err != nil {
 		return err
 	}
 

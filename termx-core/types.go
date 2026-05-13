@@ -132,6 +132,26 @@ type SnapshotOptions struct {
 	ScrollbackLimit  int
 }
 
+type GridViewportOptions struct {
+	ScrollbackOffset int
+	ScrollbackLimit  int
+	Cols             int
+}
+
+type GridViewport struct {
+	TerminalID           string      `json:"terminal_id"`
+	Size                 Size        `json:"size"`
+	Rows                 [][]Cell    `json:"rows,omitempty"`
+	ScrollbackOffset     int         `json:"scrollback_offset,omitempty"`
+	ScrollbackLimit      int         `json:"scrollback_limit,omitempty"`
+	ScrollbackTotal      int         `json:"scrollback_total,omitempty"`
+	ScrollbackHasMore    bool        `json:"scrollback_has_more,omitempty"`
+	ScrollbackTimestamps []time.Time `json:"scrollback_timestamps,omitempty"`
+	ScrollbackRowKinds   []string    `json:"scrollback_row_kinds,omitempty"`
+	ScrollbackWrapped    []bool      `json:"scrollback_wrapped,omitempty"`
+	Timestamp            time.Time   `json:"timestamp"`
+}
+
 type HistoryReplayOptions struct {
 	BeforeOffset int
 	Limit        int

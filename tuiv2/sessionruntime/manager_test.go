@@ -236,6 +236,10 @@ func (c *fakeClient) Snapshot(_ context.Context, terminalID string, _ int, _ int
 	return c.snapshotByID[terminalID], nil
 }
 
+func (c *fakeClient) GridViewport(context.Context, string, int, int, int) (*protocol.GridViewport, error) {
+	return nil, nil
+}
+
 func (c *fakeClient) Input(context.Context, uint16, []byte) error { return nil }
 
 func (c *fakeClient) Resize(context.Context, uint16, uint16, uint16) error { return nil }

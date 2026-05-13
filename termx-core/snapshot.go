@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	"github.com/lozzow/termx/termx-core/protocol"
 )
 
 func trimSnapshotResultToFrameBudget(snapshot *Snapshot, encoded []byte, budget int) (*Snapshot, []byte) {
@@ -109,6 +111,85 @@ func trimBoolMetadataHead(values []bool, trim int) []bool {
 		return nil
 	}
 	return cloneBoolSlice(values[trim:])
+}
+
+func trimGridViewportResultToFrameBudget(viewport *protocol.GridViewport, encoded []byte, budget int) (*protocol.GridViewport, []byte) {
+	if viewport == nil || budget <= 0 || len(encoded) <= budget || len(viewport.Rows) == 0 {
+		return viewport, encoded
+	}
+	low, high := 0, len(viewport.Rows)
+	var best *protocol.GridViewport
+	var bestEncoded []byte
+	for low <= high {
+		keep := (low + high) / 2
+		candidate := cloneProtocolGridViewport(viewport)
+		trimProtocolGridViewportHead(candidate, len(candidate.Rows)-keep)
+		data, err := json.Marshal(candidate)
+		if err != nil {
+			break
+		}
+		if len(data) <= budget {
+			best = candidate
+			bestEncoded = data
+			low = keep + 1
+			continue
+		}
+		high = keep - 1
+	}
+	if best != nil {
+		return best, bestEncoded
+	}
+	trimmed := cloneProtocolGridViewport(viewport)
+	trimProtocolGridViewportHead(trimmed, len(trimmed.Rows))
+	data, err := json.Marshal(trimmed)
+	if err != nil || len(data) > len(encoded) {
+		return viewport, encoded
+	}
+	return trimmed, data
+}
+
+func cloneProtocolGridViewport(viewport *protocol.GridViewport) *protocol.GridViewport {
+	if viewport == nil {
+		return nil
+	}
+	out := *viewport
+	out.Rows = cloneProtocolRowsForResult(viewport.Rows)
+	out.ScrollbackTimestamps = cloneTimeSlice(viewport.ScrollbackTimestamps)
+	out.ScrollbackRowKinds = cloneStringSlice(viewport.ScrollbackRowKinds)
+	out.ScrollbackWrapped = cloneBoolSlice(viewport.ScrollbackWrapped)
+	return &out
+}
+
+func trimProtocolGridViewportHead(viewport *protocol.GridViewport, trim int) {
+	if viewport == nil || trim <= 0 {
+		return
+	}
+	if trim >= len(viewport.Rows) {
+		if len(viewport.Rows) > 0 {
+			viewport.ScrollbackHasMore = true
+		}
+		viewport.Rows = nil
+		viewport.ScrollbackTimestamps = nil
+		viewport.ScrollbackRowKinds = nil
+		viewport.ScrollbackWrapped = nil
+		return
+	}
+	viewport.Rows = cloneProtocolRowsForResult(viewport.Rows[trim:])
+	viewport.ScrollbackTimestamps = trimTimeMetadataHead(viewport.ScrollbackTimestamps, trim)
+	viewport.ScrollbackRowKinds = trimStringMetadataHead(viewport.ScrollbackRowKinds, trim)
+	viewport.ScrollbackWrapped = trimBoolMetadataHead(viewport.ScrollbackWrapped, trim)
+	viewport.ScrollbackHasMore = true
+}
+
+func cloneProtocolRowsForResult(rows [][]protocol.Cell) [][]protocol.Cell {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([][]protocol.Cell, len(rows))
+	for i, row := range rows {
+		out[i] = append([]protocol.Cell(nil), row...)
+	}
+	return out
 }
 
 func (s Snapshot) MarshalJSON() ([]byte, error) {

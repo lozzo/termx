@@ -338,6 +338,19 @@ func (c *Client) Snapshot(ctx context.Context, terminalID string, offset, limit 
 	return &out, nil
 }
 
+func (c *Client) GridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*GridViewport, error) {
+	var out GridViewport
+	if err := c.doRequest(ctx, "grid.viewport", GridViewportParams{
+		TerminalID:       terminalID,
+		ScrollbackOffset: offset,
+		ScrollbackLimit:  limit,
+		Cols:             cols,
+	}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) CreateSession(ctx context.Context, params CreateSessionParams) (*SessionSnapshot, error) {
 	var out SessionSnapshot
 	if err := c.doRequest(ctx, "session.create", params, &out); err != nil {

@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -209,6 +210,118 @@ func TestRuntimeAttachAndLoadSnapshotInitializesVTermCache(t *testing.T) {
 	}
 	if got := screen.Cells[1][0].Content + screen.Cells[1][1].Content + screen.Cells[1][2].Content + screen.Cells[1][3].Content + screen.Cells[1][4].Content; got != "world" {
 		t.Fatalf("expected second row to contain world, got %q", got)
+	}
+}
+
+func TestRuntimeLoadGridViewportDoesNotReplaceLiveSnapshot(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 6, 3, []string{"live"})
+	live.Scrollback = [][]protocol.Cell{
+		protocolRowFromString("new0"),
+		protocolRowFromString("new1"),
+		protocolRowFromString("new2"),
+	}
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	loaded, err := rt.LoadSnapshot(ctx, "term-1", 0, 2)
+	if err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if loaded == nil || len(loaded.Scrollback) != 3 {
+		t.Fatalf("expected initial snapshot page, got %#v", loaded)
+	}
+	stored := rt.Registry().Get("term-1")
+	if stored == nil || stored.Snapshot == nil {
+		t.Fatal("expected runtime snapshot")
+	}
+	before := stored.Snapshot
+
+	page, err := rt.LoadGridViewport(ctx, "term-1", 2, 1, 6)
+	if err != nil {
+		t.Fatalf("load grid viewport: %v", err)
+	}
+	if page == nil || len(page.Scrollback) != 1 || rowText(page.Scrollback[0]) != "new0" {
+		t.Fatalf("unexpected grid viewport page: %#v", page)
+	}
+	if stored.Snapshot != before {
+		t.Fatal("expected history viewport load to leave live runtime snapshot untouched")
+	}
+}
+
+func TestRuntimeApplyGridViewportPagePrependsHistory(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 6, 3, []string{"live"})
+	live.Scrollback = [][]protocol.Cell{
+		protocolRowFromString("new0"),
+		protocolRowFromString("new1"),
+	}
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 2); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	stored := rt.Registry().Get("term-1")
+	if stored == nil || stored.Snapshot == nil {
+		t.Fatal("expected runtime snapshot")
+	}
+	page := &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 6, Rows: 3},
+		Scrollback:           [][]protocol.Cell{protocolRowFromString("old0")},
+		ScrollbackOffset:     2,
+		ScrollbackTotal:      3,
+		ScrollbackHasMore:    false,
+		ScrollbackTimestamps: []time.Time{time.Now()},
+	}
+	if !rt.ApplyGridViewportPage("term-1", page, 2) {
+		t.Fatal("expected viewport page to apply")
+	}
+	got := rt.Registry().Get("term-1").Snapshot
+	if len(got.Scrollback) != 3 || rowText(got.Scrollback[0]) != "old0" || rowText(got.Scrollback[1]) != "new0" {
+		t.Fatalf("expected older page prepended, got %#v", got.Scrollback)
+	}
+	if !stored.ScrollbackExhausted {
+		t.Fatal("expected exhausted flag from page metadata")
+	}
+	if stored.VTerm == nil || stored.VTerm.ScrollbackContent() == nil {
+		t.Fatal("expected local vterm reloaded after page apply")
+	}
+}
+
+func TestRuntimeApplyGridViewportPageReplacesLatestWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 6, 3, []string{"live"})
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	page := &protocol.Snapshot{
+		TerminalID:         "term-1",
+		Size:               protocol.Size{Cols: 6, Rows: 3},
+		Scrollback:         [][]protocol.Cell{protocolRowFromString("new0"), protocolRowFromString("new1")},
+		ScrollbackOffset:   0,
+		ScrollbackTotal:    2,
+		ScrollbackHasMore:  false,
+		ScrollbackRowKinds: []string{"", ""},
+		ScrollbackWrapped:  []bool{false, false},
+		ScrollbackTimestamps: []time.Time{
+			time.Now(),
+			time.Now(),
+		},
+	}
+	if !rt.ApplyGridViewportPage("term-1", page, 0) {
+		t.Fatal("expected latest viewport page to apply")
+	}
+	got := rt.Registry().Get("term-1").Snapshot
+	if len(got.Scrollback) != 2 || rowText(got.Scrollback[0]) != "new0" || rowText(got.Scrollback[1]) != "new1" {
+		t.Fatalf("expected latest page to replace loaded scrollback, got %#v", got.Scrollback)
 	}
 }
 
@@ -1820,6 +1933,35 @@ func (f *fakeBridgeClient) Snapshot(_ context.Context, terminalID string, _ int,
 	return nil, fmt.Errorf("snapshot not configured")
 }
 
+func (f *fakeBridgeClient) GridViewport(_ context.Context, terminalID string, offset int, limit int, _ int) (*protocol.GridViewport, error) {
+	f.mu.Lock()
+	var snapshot *protocol.Snapshot
+	if candidate := f.snapshotByTerminal[terminalID]; candidate != nil {
+		snapshot = cloneSnapshot(candidate)
+	}
+	f.mu.Unlock()
+	if snapshot == nil {
+		return nil, fmt.Errorf("snapshot not configured")
+	}
+	window := testSnapshotWindow(snapshot, offset, limit)
+	if window == nil {
+		return nil, nil
+	}
+	return &protocol.GridViewport{
+		TerminalID:           terminalID,
+		Size:                 window.Size,
+		Rows:                 testCloneProtocolRows(window.Scrollback),
+		ScrollbackOffset:     window.ScrollbackOffset,
+		ScrollbackLimit:      limit,
+		ScrollbackTotal:      window.ScrollbackTotal,
+		ScrollbackHasMore:    window.ScrollbackHasMore,
+		ScrollbackTimestamps: append([]time.Time(nil), window.ScrollbackTimestamps...),
+		ScrollbackRowKinds:   append([]string(nil), window.ScrollbackRowKinds...),
+		ScrollbackWrapped:    append([]bool(nil), window.ScrollbackWrapped...),
+		Timestamp:            window.Timestamp,
+	}, nil
+}
+
 func (f *fakeBridgeClient) Input(_ context.Context, channel uint16, data []byte) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1983,6 +2125,78 @@ func cloneSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {
 		cloned.Scrollback[y] = append([]protocol.Cell(nil), row...)
 	}
 	return &cloned
+}
+
+func testSnapshotWindow(snapshot *protocol.Snapshot, offset int, limit int) *protocol.Snapshot {
+	if snapshot == nil {
+		return nil
+	}
+	cloned := cloneSnapshot(snapshot)
+	if cloned == nil || limit <= 0 {
+		return cloned
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	total := len(snapshot.Scrollback)
+	if offset > total {
+		offset = total
+	}
+	end := total - offset
+	if end < 0 {
+		end = 0
+	}
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+	cloned.Scrollback = testCloneProtocolRows(snapshot.Scrollback[start:end])
+	if len(snapshot.ScrollbackTimestamps) >= end {
+		cloned.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps[start:end]...)
+	} else {
+		cloned.ScrollbackTimestamps = nil
+	}
+	if len(snapshot.ScrollbackRowKinds) >= end {
+		cloned.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds[start:end]...)
+	} else {
+		cloned.ScrollbackRowKinds = nil
+	}
+	if len(snapshot.ScrollbackWrapped) >= end {
+		cloned.ScrollbackWrapped = append([]bool(nil), snapshot.ScrollbackWrapped[start:end]...)
+	} else {
+		cloned.ScrollbackWrapped = nil
+	}
+	cloned.ScrollbackOffset = offset
+	cloned.ScrollbackTotal = total
+	cloned.ScrollbackHasMore = start > 0
+	return cloned
+}
+
+func testCloneProtocolRows(rows [][]protocol.Cell) [][]protocol.Cell {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([][]protocol.Cell, len(rows))
+	for i, row := range rows {
+		out[i] = append([]protocol.Cell(nil), row...)
+	}
+	return out
+}
+
+func protocolRowFromString(value string) []protocol.Cell {
+	row := make([]protocol.Cell, 0, len(value))
+	for _, r := range value {
+		row = append(row, protocol.Cell{Content: string(r), Width: 1})
+	}
+	return row
+}
+
+func rowText(row []protocol.Cell) string {
+	var buf bytes.Buffer
+	for _, cell := range row {
+		buf.WriteString(cell.Content)
+	}
+	return strings.TrimRight(buf.String(), " ")
 }
 
 func snapshotContains(snapshot *protocol.Snapshot, want string) bool {
