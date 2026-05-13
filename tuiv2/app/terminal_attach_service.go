@@ -9,6 +9,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
+	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/terminalattach"
 )
 
@@ -207,11 +208,9 @@ func (s *terminalAttachService) reattachRestoredCmd(hint bootstrap.PaneReattachH
 		})
 		switch msg.(type) {
 		case nil:
-			s.rollbackRestoredBinding(hint.TabID, hint.PaneID, hint.TerminalID)
-			return reattachFailedMsg{tabID: hint.TabID, paneID: hint.PaneID}
+			return s.restoredSnapshotFallbackMsg(hint)
 		case error, paneAttachFailedMsg:
-			s.rollbackRestoredBinding(hint.TabID, hint.PaneID, hint.TerminalID)
-			return reattachFailedMsg{tabID: hint.TabID, paneID: hint.PaneID}
+			return s.restoredSnapshotFallbackMsg(hint)
 		default:
 			return msg
 		}
@@ -297,6 +296,26 @@ func (s *terminalAttachService) rollbackRestoredBinding(tabID, paneID, terminalI
 	if s.model.workbench != nil && tabID != "" {
 		_ = s.model.workbench.BindPaneTerminal(tabID, paneID, "")
 	}
+}
+
+func (s *terminalAttachService) restoredSnapshotFallbackMsg(hint bootstrap.PaneReattachHint) tea.Msg {
+	if s == nil || s.model == nil || s.model.runtime == nil || hint.PaneID == "" || hint.TerminalID == "" {
+		s.rollbackRestoredBinding(hint.TabID, hint.PaneID, hint.TerminalID)
+		return reattachFailedMsg{tabID: hint.TabID, paneID: hint.PaneID}
+	}
+	s.model.clearPendingPaneAttach(hint.PaneID, hint.TerminalID)
+	if s.model.runtime.Registry().Get(hint.TerminalID) == nil {
+		s.model.runtime.BindDetachedTerminal(hint.PaneID, hint.TerminalID, runtime.DetachedTerminalBinding{
+			Name:  hint.TerminalID,
+			State: "exited",
+		})
+	}
+	snapshot, err := s.model.runtime.LoadSnapshot(context.Background(), hint.TerminalID, 0, defaultTerminalSnapshotScrollbackLimit)
+	if err != nil || snapshot == nil {
+		s.rollbackRestoredBinding(hint.TabID, hint.PaneID, hint.TerminalID)
+		return reattachFailedMsg{tabID: hint.TabID, paneID: hint.PaneID}
+	}
+	return orchestrator.SnapshotLoadedMsg{TerminalID: hint.TerminalID, Snapshot: snapshot}
 }
 
 func (s *terminalAttachService) finalizeAttachCmd(tabID, paneID, terminalID string) tea.Cmd {

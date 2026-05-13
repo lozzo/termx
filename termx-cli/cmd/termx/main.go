@@ -220,14 +220,15 @@ func daemonCommand(socket *string, configPath *string) *cobra.Command {
 				return err
 			}
 			defer closeLogger()
-			logger.Info("starting daemon", "socket", resolveSocket(*socket), "log_file", logPath)
+			historyRoot := resolveHistoryStatePath()
+			logger.Info("starting daemon", "socket", resolveSocket(*socket), "log_file", logPath, "history_root", historyRoot)
 			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 			remoteCfg, err := remoteConfigLoader(*configPath)
 			if err != nil {
 				return err
 			}
-			opts := []termx.ServerOption{termx.WithLogger(logger)}
+			opts := []termx.ServerOption{termx.WithLogger(logger), termx.WithHistoryRoot(historyRoot)}
 			if *socket != "" {
 				opts = append(opts, termx.WithSocketPath(*socket))
 			}

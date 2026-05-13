@@ -34,6 +34,9 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 		Size                 Size          `json:"size"`
 		Screen               jsonScreen    `json:"screen"`
 		ScrollbackRows       int           `json:"scrollback_rows"`
+		ScrollbackOffset     int           `json:"scrollback_offset,omitempty"`
+		ScrollbackTotal      int           `json:"scrollback_total,omitempty"`
+		ScrollbackHasMore    bool          `json:"scrollback_has_more,omitempty"`
 		Scrollback           []jsonRow     `json:"scrollback,omitempty"`
 		ScreenTimestamps     []string      `json:"screen_timestamps,omitempty"`
 		ScrollbackTimestamps []string      `json:"scrollback_timestamps,omitempty"`
@@ -156,6 +159,9 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 			Rows:        screenRows,
 		},
 		ScrollbackRows:       len(s.Scrollback),
+		ScrollbackOffset:     s.ScrollbackOffset,
+		ScrollbackTotal:      s.ScrollbackTotal,
+		ScrollbackHasMore:    s.ScrollbackHasMore,
 		Scrollback:           scrollbackRows,
 		ScreenTimestamps:     encodeRowTimestamps(s.ScreenTimestamps),
 		ScrollbackTimestamps: encodeRowTimestamps(s.ScrollbackTimestamps),

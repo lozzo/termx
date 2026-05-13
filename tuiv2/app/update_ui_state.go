@@ -61,7 +61,7 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 	case terminalAttachReadyMsg:
 		return m.dequeueTerminalInputCmd(), true
 	case orchestrator.SnapshotLoadedMsg:
-		m.adjustCopyModeAfterSnapshotLoaded(typed.TerminalID)
+		m.adjustCopyModeAfterSnapshotLoaded(typed.TerminalID, typed.Snapshot)
 		m.render.Invalidate()
 		return m.maybeAutoFitFloatingPanesCmd(), true
 	case hostDefaultColorsMsg:

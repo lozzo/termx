@@ -33,6 +33,7 @@ type terminalConfig struct {
 	Env            []string
 	ScrollbackSize int
 	KeepAfterExit  time.Duration
+	HistoryRoot    string
 	Logger         *slog.Logger
 	RemoveFunc     func(string, string)
 	UpdateFunc     func()
@@ -90,7 +91,7 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 	if err != nil {
 		return nil, err
 	}
-	history, err := newTerminalHistoryStore(cfg.ID)
+	history, err := newTerminalHistoryStore(cfg.HistoryRoot, cfg.ID)
 	if err != nil {
 		_ = p.Close()
 		return nil, err
@@ -601,24 +602,51 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	size := t.size
 	id := t.id
 	t.mu.RUnlock()
+	var historyRows terminalHistoryRowsResult
+	historyLoaded := false
+	if t.history != nil && offset == 0 && limit > len(scrollback) && t.history.RowCount() > len(scrollback) {
+		var err error
+		historyRows, err = t.history.Rows(0, limit, int(size.Cols))
+		if err != nil && t.logger != nil {
+			t.logger.Warn("termx terminal history snapshot failed", "terminal_id", id, "error", err)
+		}
+		historyLoaded = err == nil && historyRows.LoadedRows > 0
+	}
 	scrollbackTimestamps := t.vterm.ScrollbackTimestamps()
 	screenTimestamps := t.vterm.ScreenTimestamps()
 	scrollbackRowKinds := t.vterm.ScrollbackRowKinds()
 	screenRowKinds := t.vterm.ScreenRowKinds()
 	scrollbackWrapped := t.vterm.ScrollbackWrapped()
 	screenWrapped := t.vterm.ScreenWrapped()
+	outScrollback := convertRows(scrollback[start:end])
+	outScrollbackTimestamps := sliceTimeRange(scrollbackTimestamps, start, end)
+	outScrollbackRowKinds := sliceStringRange(scrollbackRowKinds, start, end)
+	outScrollbackWrapped := sliceBoolRange(scrollbackWrapped, start, end)
+	scrollbackTotal := len(scrollback)
+	scrollbackHasMore := start > 0
+	if historyLoaded {
+		outScrollback = convertRows(historyRows.Rows)
+		outScrollbackTimestamps = cloneTimeSlice(historyRows.Timestamps)
+		outScrollbackRowKinds = cloneStringSlice(historyRows.RowKinds)
+		outScrollbackWrapped = cloneBoolSlice(historyRows.Wrapped)
+		scrollbackTotal = historyRows.TotalRows
+		scrollbackHasMore = historyRows.HasMore
+	}
 
 	return &Snapshot{
 		TerminalID:           id,
 		Size:                 size,
 		Screen:               convertScreenData(t.vterm.ScreenContent()),
-		Scrollback:           convertRows(scrollback[start:end]),
+		Scrollback:           outScrollback,
+		ScrollbackOffset:     offset,
+		ScrollbackTotal:      scrollbackTotal,
+		ScrollbackHasMore:    scrollbackHasMore,
 		ScreenTimestamps:     cloneTimeSlice(screenTimestamps),
-		ScrollbackTimestamps: sliceTimeRange(scrollbackTimestamps, start, end),
+		ScrollbackTimestamps: outScrollbackTimestamps,
 		ScreenRowKinds:       cloneStringSlice(screenRowKinds),
-		ScrollbackRowKinds:   sliceStringRange(scrollbackRowKinds, start, end),
+		ScrollbackRowKinds:   outScrollbackRowKinds,
 		ScreenWrapped:        cloneBoolSlice(screenWrapped),
-		ScrollbackWrapped:    sliceBoolRange(scrollbackWrapped, start, end),
+		ScrollbackWrapped:    outScrollbackWrapped,
 		Cursor:               convertCursorState(t.vterm.CursorState()),
 		Modes:                convertModes(t.vterm.Modes()),
 		Timestamp:            time.Now().UTC(),

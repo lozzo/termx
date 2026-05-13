@@ -113,6 +113,9 @@ type Snapshot struct {
 	Size                 Size          `json:"size"`
 	Screen               ScreenData    `json:"screen"`
 	Scrollback           [][]Cell      `json:"scrollback,omitempty"`
+	ScrollbackOffset     int           `json:"scrollback_offset,omitempty"`
+	ScrollbackTotal      int           `json:"scrollback_total,omitempty"`
+	ScrollbackHasMore    bool          `json:"scrollback_has_more,omitempty"`
 	ScreenTimestamps     []time.Time   `json:"screen_timestamps,omitempty"`
 	ScrollbackTimestamps []time.Time   `json:"scrollback_timestamps,omitempty"`
 	ScreenRowKinds       []string      `json:"screen_row_kinds,omitempty"`

@@ -75,6 +75,26 @@ func copyModeTestSnapshot(scrollback, screen []string) *protocol.Snapshot {
 	}
 }
 
+func copyModeSnapshotScreenText(snapshot *protocol.Snapshot) string {
+	if snapshot == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, row := range snapshot.Screen.Cells {
+		b.WriteString(rowTextFromProtocolCells(row))
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func rowTextFromProtocolCells(row []protocol.Cell) string {
+	var b strings.Builder
+	for _, cell := range row {
+		b.WriteString(cell.Content)
+	}
+	return strings.TrimRight(b.String(), " ")
+}
+
 func seedCopyModeSnapshot(t *testing.T, m *Model, scrollback, screen []string) {
 	t.Helper()
 	seedCopyModeSnapshotForTerminal(t, m, "term-1", scrollback, screen)
@@ -363,7 +383,7 @@ func TestCopyModeAutoScrollStopsAfterBoundaryCancelKey(t *testing.T) {
 	}
 }
 
-func TestCopyModeFreezesCursorAndSelectionWhenScrollbackExpands(t *testing.T) {
+func TestCopyModeExtendsFrozenScrollbackWhenSnapshotLoads(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, []string{"old2", "old3"}, []string{"line0", "line1", "line2", "line3"})
 
@@ -374,8 +394,9 @@ func TestCopyModeFreezesCursorAndSelectionWhenScrollbackExpands(t *testing.T) {
 	beforeRow := model.copyMode.Cursor.Row
 	beforeMark := *model.copyMode.Mark
 	beforeSnapshot := model.copyMode.Snapshot
+	beforeScreen := copyModeSnapshotScreenText(beforeSnapshot)
 
-	seedCopyModeSnapshot(t, model, []string{"old0", "old1", "old2", "old3"}, []string{"line0", "line1", "line2", "line3"})
+	seedCopyModeSnapshot(t, model, []string{"old0", "old1", "old2", "old3"}, []string{"live0", "live1", "live2", "live3"})
 	loaded, err := model.runtime.LoadSnapshot(context.Background(), "term-1", 0, 0)
 	if err != nil {
 		t.Fatalf("load updated snapshot: %v", err)
@@ -383,17 +404,23 @@ func TestCopyModeFreezesCursorAndSelectionWhenScrollbackExpands(t *testing.T) {
 	_, cmd := model.Update(orchestrator.SnapshotLoadedMsg{TerminalID: "term-1", Snapshot: loaded})
 	drainCmd(t, model, cmd, 20)
 
-	if got := model.copyMode.Cursor.Row; got != beforeRow {
-		t.Fatalf("expected frozen copy-mode cursor row to stay fixed, before=%d after=%d", beforeRow, got)
+	if model.copyMode.Snapshot == beforeSnapshot {
+		t.Fatal("expected copy mode to extend frozen snapshot with loaded scrollback")
+	}
+	if got := copyModeSnapshotScreenText(model.copyMode.Snapshot); got != beforeScreen {
+		t.Fatalf("expected frozen screen to stay unchanged, before=%q after=%q", beforeScreen, got)
+	}
+	if got := rowTextFromProtocolCells(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old0") {
+		t.Fatalf("expected loaded older scrollback to be prepended, got %q", got)
+	}
+	if got := model.copyMode.Cursor.Row; got != beforeRow+2 {
+		t.Fatalf("expected copy-mode cursor row to shift with prepended history, before=%d after=%d", beforeRow, got)
 	}
 	if model.copyMode.Mark == nil {
 		t.Fatal("expected mark to remain set")
 	}
-	if got := model.copyMode.Mark.Row; got != beforeMark.Row {
-		t.Fatalf("expected frozen copy-mode mark row to stay fixed, before=%d after=%d", beforeMark.Row, got)
-	}
-	if model.copyMode.Snapshot != beforeSnapshot {
-		t.Fatal("expected copy mode to keep rendering the frozen snapshot while live scrollback changes")
+	if got := model.copyMode.Mark.Row; got != beforeMark.Row+2 {
+		t.Fatalf("expected copy-mode mark row to shift with prepended history, before=%d after=%d", beforeMark.Row, got)
 	}
 }
 

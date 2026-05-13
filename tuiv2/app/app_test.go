@@ -3939,7 +3939,7 @@ func TestModelInitRestoreAutoReattachesPersistedPanes(t *testing.T) {
 	}
 }
 
-func TestModelInitRestoreAutoReattachClearsMissingTerminalBinding(t *testing.T) {
+func TestModelInitRestoreAutoReattachKeepsBindingWhenSnapshotFallbackLoads(t *testing.T) {
 	statePath := t.TempDir() + "/workspace-state.json"
 	source := workbench.NewWorkbench()
 	source.AddWorkspace("dev", &workbench.WorkspaceState{
@@ -3963,7 +3963,68 @@ func TestModelInitRestoreAutoReattachClearsMissingTerminalBinding(t *testing.T) 
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	client := &recordingBridgeClient{attachErr: errors.New("terminal not found")}
+	client := &recordingBridgeClient{
+		attachErr: errors.New("terminal not found"),
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-missing": {
+				TerminalID: "term-missing",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+				Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "persisted", Width: 1}}}},
+			},
+		},
+	}
+	model := New(shared.Config{WorkspaceStatePath: statePath}, workbench.NewWorkbench(), runtime.New(client))
+
+	cmd := model.Init()
+	if cmd == nil {
+		t.Fatal("expected init command for failed restore auto-reattach")
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, item := range batch {
+			_ = item()
+		}
+	}
+	pane := model.workbench.ActivePane()
+	if pane == nil {
+		t.Fatal("expected restored pane to exist")
+	}
+	if pane.ID == "" || pane.TerminalID != "term-missing" {
+		t.Fatalf("expected restored binding kept after snapshot fallback, got %#v", pane)
+	}
+	if got := len(client.snapshotCalls); got != 1 || client.snapshotCalls[0] != "term-missing" {
+		t.Fatalf("expected one snapshot fallback call for term-missing, got %#v", client.snapshotCalls)
+	}
+	if model.modalHost.Session != nil {
+		t.Fatalf("expected no startup picker during snapshot fallback, got %#v", model.modalHost.Session)
+	}
+}
+
+func TestModelInitRestoreAutoReattachClearsMissingTerminalBindingWhenSnapshotFallbackFails(t *testing.T) {
+	statePath := t.TempDir() + "/workspace-state.json"
+	source := workbench.NewWorkbench()
+	source.AddWorkspace("dev", &workbench.WorkspaceState{
+		Name:      "dev",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-dev",
+			Name:         "code",
+			ActivePaneID: "pane-dev",
+			Panes: map[string]*workbench.PaneState{
+				"pane-dev": {ID: "pane-dev", Title: "shell", TerminalID: "term-missing"},
+			},
+			Root: workbench.NewLeaf("pane-dev"),
+		}},
+	})
+	data, err := persist.Save(source)
+	if err != nil {
+		t.Fatalf("persist.Save: %v", err)
+	}
+	if err := os.WriteFile(statePath, data, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	client := &recordingBridgeClient{attachErr: errors.New("terminal not found"), snapshotErr: errors.New("history not found")}
 	model := New(shared.Config{WorkspaceStatePath: statePath}, workbench.NewWorkbench(), runtime.New(client))
 
 	cmd := model.Init()

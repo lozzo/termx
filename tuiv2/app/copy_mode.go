@@ -246,15 +246,16 @@ func (m *Model) ensureCopyMode() bool {
 	return true
 }
 
-func (m *Model) adjustCopyModeAfterSnapshotLoaded(terminalID string) {
+func (m *Model) adjustCopyModeAfterSnapshotLoaded(terminalID string, snapshot *protocol.Snapshot) {
 	if m == nil || terminalID == "" || m.copyMode.PaneID == "" || m.workbench == nil {
-		return
-	}
-	if m.copyMode.Snapshot != nil {
 		return
 	}
 	pane := m.workbench.ActivePane()
 	if pane == nil || pane.ID != m.copyMode.PaneID || pane.TerminalID != terminalID {
+		return
+	}
+	if m.copyMode.Snapshot != nil {
+		m.extendFrozenCopyModeSnapshot(snapshot)
 		return
 	}
 	buffer, ok := m.activeCopyModeBuffer()
@@ -273,6 +274,44 @@ func (m *Model) adjustCopyModeAfterSnapshotLoaded(terminalID string) {
 		}
 	}
 	m.copyMode.LoadedRows = len(buffer.snapshot.Scrollback)
+	m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
+}
+
+func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot) {
+	if m == nil || m.copyMode.Snapshot == nil || loaded == nil {
+		return
+	}
+	if len(loaded.Scrollback) <= len(m.copyMode.Snapshot.Scrollback) {
+		return
+	}
+	next := cloneSnapshot(m.copyMode.Snapshot)
+	if next == nil {
+		return
+	}
+	delta := len(loaded.Scrollback) - len(next.Scrollback)
+	next.Scrollback = cloneProtocolRows(loaded.Scrollback)
+	next.ScrollbackTimestamps = append([]time.Time(nil), loaded.ScrollbackTimestamps...)
+	next.ScrollbackRowKinds = append([]string(nil), loaded.ScrollbackRowKinds...)
+	next.ScrollbackWrapped = append([]bool(nil), loaded.ScrollbackWrapped...)
+	next.ScrollbackOffset = loaded.ScrollbackOffset
+	next.ScrollbackTotal = loaded.ScrollbackTotal
+	next.ScrollbackHasMore = loaded.ScrollbackHasMore
+	m.copyMode.Snapshot = next
+	m.copyMode.LoadedRows = len(next.Scrollback)
+
+	buffer, ok := m.activeCopyModeBuffer()
+	if !ok {
+		return
+	}
+	m.copyMode.ViewTopRow += delta
+	m.copyMode.Cursor.Row += delta
+	m.copyMode.Cursor = buffer.clampPoint(m.copyMode.Cursor)
+	if m.copyMode.Mark != nil {
+		point := *m.copyMode.Mark
+		point.Row += delta
+		point = buffer.clampPoint(point)
+		m.copyMode.Mark = &point
+	}
 	m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
 }
 

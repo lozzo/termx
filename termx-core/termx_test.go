@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/lozzow/termx/termx-core/protocol"
+	vterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 func TestServerCreateListTagsSubscribeSnapshotAndRemoval(t *testing.T) {
@@ -153,6 +155,43 @@ func TestServerListReturnsDistinctTerminalIDs(t *testing.T) {
 	}
 	if list[0].ID != "1" || list[1].ID != "3" {
 		t.Fatalf("expected distinct sorted terminal IDs [1 3], got [%s %s]", list[0].ID, list[1].ID)
+	}
+}
+
+func TestServerHistorySurvivesServerRestart(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := newTerminalHistoryStore(root, "persist-server-1")
+	if err != nil {
+		t.Fatalf("new history store: %v", err)
+	}
+	for i := 0; i < 12; i++ {
+		rows := [][]vterm.Cell{{{Content: fmt.Sprintf("disk-%02d", i), Width: 1}}}
+		if err := store.AppendRows(rows); err != nil {
+			t.Fatalf("append history row %d: %v", i, err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close history store: %v", err)
+	}
+
+	restarted := NewServer(WithHistoryRoot(root), WithDefaultSize(12, 2), WithDefaultScrollback(3))
+	replay, err := restarted.HistoryReplay(ctx, "persist-server-1", HistoryReplayOptions{BeforeOffset: 0, Limit: 4})
+	if err != nil {
+		t.Fatalf("history replay after restart failed: %v", err)
+	}
+	if plain := stripANSIForTest(replay.Replay); !strings.Contains(plain, "disk-11") {
+		t.Fatalf("expected replay after restart to include persisted output, got %q", plain)
+	}
+	snap, err := restarted.Snapshot(ctx, "persist-server-1", SnapshotOptions{ScrollbackLimit: 6})
+	if err != nil {
+		t.Fatalf("snapshot after restart failed: %v", err)
+	}
+	if !snapshotContains(snap, "disk-11") {
+		t.Fatalf("expected snapshot after restart to include persisted output, got %#v", snap)
+	}
+	if len(snap.Screen.Cells) == 0 || !strings.Contains(rowToString(snap.Screen.Cells[len(snap.Screen.Cells)-1]), "disk-11") {
+		t.Fatalf("expected persisted tail on visible screen after restart, got %#v", snap.Screen.Cells)
 	}
 }
 

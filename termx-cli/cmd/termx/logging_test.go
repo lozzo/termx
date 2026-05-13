@@ -47,6 +47,25 @@ func TestResolveWorkspaceStatePathFallsBackToXDGStateHome(t *testing.T) {
 	}
 }
 
+func TestResolveHistoryStatePathPrefersEnvironmentOverride(t *testing.T) {
+	want := filepath.Join(t.TempDir(), "history")
+	t.Setenv("TERMX_HISTORY_DIR", want)
+	if got := resolveHistoryStatePath(); got != want {
+		t.Fatalf("expected TERMX_HISTORY_DIR path %q, got %q", want, got)
+	}
+}
+
+func TestResolveHistoryStatePathFallsBackToXDGStateHome(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("TERMX_HISTORY_DIR", "")
+	t.Setenv("XDG_STATE_HOME", base)
+	got := resolveHistoryStatePath()
+	want := filepath.Join(base, "termx", "history")
+	if got != want {
+		t.Fatalf("expected history state path %q, got %q", want, got)
+	}
+}
+
 func TestOpenLogFileLoggerCreatesFileAndWrites(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "logs", "termx.log")
 	logger, closeFn, resolved, err := openLogFileLogger(path)

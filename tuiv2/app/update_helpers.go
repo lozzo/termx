@@ -269,7 +269,9 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 		return nil
 	}
 	loaded := terminal.ScrollbackLoadedLimit
-	if terminal.Snapshot != nil && len(terminal.Snapshot.Scrollback) > loaded {
+	if m.copyMode.PaneID == pane.ID && m.copyMode.Snapshot != nil && len(m.copyMode.Snapshot.Scrollback) > loaded {
+		loaded = len(m.copyMode.Snapshot.Scrollback)
+	} else if terminal.Snapshot != nil && len(terminal.Snapshot.Scrollback) > loaded {
 		loaded = len(terminal.Snapshot.Scrollback)
 	}
 	want := viewportOffset + contentRect.H + terminalScrollbackPrefetchMargin

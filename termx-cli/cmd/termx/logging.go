@@ -38,6 +38,19 @@ func resolveWorkspaceStatePath() string {
 	return filepath.Join(os.TempDir(), "termx-workspace-state.json")
 }
 
+func resolveHistoryStatePath() string {
+	if path := os.Getenv("TERMX_HISTORY_DIR"); path != "" {
+		return path
+	}
+	if stateDir := os.Getenv("XDG_STATE_HOME"); stateDir != "" {
+		return filepath.Join(stateDir, "termx", "history")
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".local", "state", "termx", "history")
+	}
+	return filepath.Join(os.TempDir(), "termx-history")
+}
+
 func resolveLogLevel() slog.Leveler {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("TERMX_LOG_LEVEL"))) {
 	case "debug":

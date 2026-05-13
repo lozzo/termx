@@ -1710,6 +1710,9 @@ type Snapshot struct {
 	Size                 Size          `json:"size"`
 	Screen               ScreenData    `json:"screen"`
 	Scrollback           [][]Cell      `json:"scrollback,omitempty"`
+	ScrollbackOffset     int           `json:"scrollback_offset,omitempty"`
+	ScrollbackTotal      int           `json:"scrollback_total,omitempty"`
+	ScrollbackHasMore    bool          `json:"scrollback_has_more,omitempty"`
 	ScreenTimestamps     []time.Time   `json:"screen_timestamps,omitempty"`
 	ScrollbackTimestamps []time.Time   `json:"scrollback_timestamps,omitempty"`
 	ScreenRowKinds       []string      `json:"screen_row_kinds,omitempty"`
@@ -1853,6 +1856,9 @@ func (s *Snapshot) UnmarshalJSON(data []byte) error {
 		Size                 Size          `json:"size"`
 		Screen               jsonScreen    `json:"screen"`
 		Scrollback           []jsonRow     `json:"scrollback"`
+		ScrollbackOffset     int           `json:"scrollback_offset,omitempty"`
+		ScrollbackTotal      int           `json:"scrollback_total,omitempty"`
+		ScrollbackHasMore    bool          `json:"scrollback_has_more,omitempty"`
 		ScreenTimestamps     []string      `json:"screen_timestamps,omitempty"`
 		ScrollbackTimestamps []string      `json:"scrollback_timestamps,omitempty"`
 		ScreenRowKinds       []string      `json:"screen_row_kinds,omitempty"`
@@ -1914,6 +1920,9 @@ func (s *Snapshot) UnmarshalJSON(data []byte) error {
 	s.Size = raw.Size
 	s.Screen = ScreenData{Cells: convertRows(raw.Screen.Rows), IsAlternateScreen: raw.Screen.IsAlternate}
 	s.Scrollback = convertRows(raw.Scrollback)
+	s.ScrollbackOffset = raw.ScrollbackOffset
+	s.ScrollbackTotal = raw.ScrollbackTotal
+	s.ScrollbackHasMore = raw.ScrollbackHasMore
 	s.ScreenTimestamps = decodeRowTimestamps(raw.ScreenTimestamps)
 	s.ScrollbackTimestamps = decodeRowTimestamps(raw.ScrollbackTimestamps)
 	s.ScreenRowKinds = append([]string(nil), raw.ScreenRowKinds...)

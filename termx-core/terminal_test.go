@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -481,6 +482,117 @@ func TestTerminalHistoryReplayReadsBeyondShortLiveScrollback(t *testing.T) {
 	plainReplay := stripANSIForTest(older.Replay)
 	if !strings.Contains(plainReplay, "row-01") || !strings.Contains(plainReplay, "row-02") {
 		t.Fatalf("expected replay beyond live scrollback to contain oldest stored rows, got %q", older.Replay)
+	}
+}
+
+func TestTerminalHistoryStoreReopensPersistedRows(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalHistoryStore(root, "persist-1")
+	if err != nil {
+		t.Fatalf("new history store: %v", err)
+	}
+	rows := [][]localvterm.Cell{
+		{{Content: "old-1", Width: 1}},
+		{{Content: "old-2", Width: 1}},
+		{{Content: "old-3", Width: 1}},
+	}
+	if err := store.AppendRows(rows); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	reopened, err := openTerminalHistoryStoreForReplay(root, "persist-1")
+	if err != nil {
+		t.Fatalf("reopen history store: %v", err)
+	}
+	defer reopened.Close()
+	replay, count, hasMore, err := reopened.Replay(0, 2)
+	if err != nil {
+		t.Fatalf("replay reopened history: %v", err)
+	}
+	if count != 2 || !hasMore {
+		t.Fatalf("expected 2 replay rows with more history, got rows=%d hasMore=%v", count, hasMore)
+	}
+	plainReplay := stripANSIForTest(string(replay))
+	if !strings.Contains(plainReplay, "old-2") || !strings.Contains(plainReplay, "old-3") {
+		t.Fatalf("expected reopened replay to contain newest rows, got %q", plainReplay)
+	}
+	decoded, err := reopened.Rows(0, 3, 12)
+	if err != nil {
+		t.Fatalf("decode reopened rows: %v", err)
+	}
+	if decoded.LoadedRows != 3 || decoded.HasMore {
+		t.Fatalf("expected all reopened rows, got rows=%d hasMore=%v", decoded.LoadedRows, decoded.HasMore)
+	}
+	if got := vtermRowToString(decoded.Rows[0]); !strings.Contains(got, "old-1") {
+		t.Fatalf("expected first decoded row from disk, got %q", got)
+	}
+}
+
+func TestTerminalHistoryStoreRowsReflowSoftWrappedColdBuffer(t *testing.T) {
+	store := newMemoryTerminalHistoryStoreForTest(t)
+	defer store.Close()
+
+	if err := store.appendRows([]terminalHistoryRow{
+		{cells: []localvterm.Cell{{Content: "a", Width: 1}, {Content: "b", Width: 1}, {Content: "c", Width: 1}, {Content: "d", Width: 1}, {Content: "e", Width: 1}}, wrapped: true},
+		{cells: []localvterm.Cell{{Content: "f", Width: 1}, {Content: "g", Width: 1}}},
+		{cells: []localvterm.Cell{{Content: "H", Width: 1}, {Content: "I", Width: 1}}},
+	}); err != nil {
+		t.Fatalf("append structured rows: %v", err)
+	}
+
+	wide, err := store.Rows(0, 3, 10)
+	if err != nil {
+		t.Fatalf("read wide rows: %v", err)
+	}
+	if got := vtermRowToString(wide.Rows[0]); got != "abcdefg" {
+		t.Fatalf("expected soft-wrapped rows to join when widened, got %q", got)
+	}
+	if got := vtermRowToString(wide.Rows[1]); got != "HI" {
+		t.Fatalf("expected hard newline row to remain separate, got %q", got)
+	}
+
+	narrow, err := store.Rows(0, 3, 3)
+	if err != nil {
+		t.Fatalf("read narrow rows: %v", err)
+	}
+	gotRows := make([]string, 0, len(narrow.Rows))
+	for _, row := range narrow.Rows {
+		gotRows = append(gotRows, vtermRowToString(row))
+	}
+	if !reflect.DeepEqual(gotRows, []string{"abc", "def", "g", "HI"}) {
+		t.Fatalf("expected cold buffer to reflow by requested width, got %#v", gotRows)
+	}
+}
+
+func TestTerminalHistoryStoreRowsLoadsEnoughRawRowsForVisualLimit(t *testing.T) {
+	store := newMemoryTerminalHistoryStoreForTest(t)
+	defer store.Close()
+
+	if err := store.appendRows([]terminalHistoryRow{
+		{cells: []localvterm.Cell{{Content: "A", Width: 1}}, wrapped: true},
+		{cells: []localvterm.Cell{{Content: "B", Width: 1}}, wrapped: true},
+		{cells: []localvterm.Cell{{Content: "C", Width: 1}}},
+		{cells: []localvterm.Cell{{Content: "D", Width: 1}}},
+	}); err != nil {
+		t.Fatalf("append structured rows: %v", err)
+	}
+
+	wide, err := store.Rows(0, 3, 10)
+	if err != nil {
+		t.Fatalf("read wide rows: %v", err)
+	}
+	gotRows := make([]string, 0, len(wide.Rows))
+	for _, row := range wide.Rows {
+		gotRows = append(gotRows, vtermRowToString(row))
+	}
+	if !reflect.DeepEqual(gotRows, []string{"ABC", "D"}) {
+		t.Fatalf("expected store to read enough raw rows after soft-wrap joins, got %#v", gotRows)
+	}
+	if wide.HasMore {
+		t.Fatal("expected complete soft-wrap group to satisfy request without hidden older rows")
 	}
 }
 

@@ -1301,11 +1301,15 @@ func (v *VTerm) EncodeHistoryReplay(beforeOffset int, limit int) ([]byte, int, b
 }
 
 func EncodeHistoryRowsReplay(rows [][]Cell) []byte {
+	return EncodeHistoryRowsReplayWithWrapped(rows, nil)
+}
+
+func EncodeHistoryRowsReplayWithWrapped(rows [][]Cell, wrapped []bool) []byte {
 	if len(rows) == 0 {
 		return nil
 	}
 	var b strings.Builder
-	writeSequentialRows(&b, rows)
+	writeSequentialRowsWithWrapped(&b, rows, wrapped)
 	return []byte(b.String())
 }
 
@@ -1552,13 +1556,17 @@ func encodeTerminalReplay(scrollback, screen [][]Cell, cursor CursorState, modes
 }
 
 func writeSequentialRows(b *strings.Builder, rows [][]Cell) {
+	writeSequentialRowsWithWrapped(b, rows, nil)
+}
+
+func writeSequentialRowsWithWrapped(b *strings.Builder, rows [][]Cell, wrapped []bool) {
 	if b == nil || len(rows) == 0 {
 		return
 	}
 	style := CellStyle{}
 	for i, row := range rows {
 		style = writeSequentialRow(b, row, style)
-		if i < len(rows)-1 {
+		if i < len(rows)-1 && !boolAt(wrapped, i) {
 			b.WriteString("\r\n")
 		}
 	}

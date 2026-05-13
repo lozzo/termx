@@ -72,7 +72,7 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 				terminal.ScrollbackLoadedLimit = loaded
 			}
 			if limit > 0 {
-				terminal.ScrollbackExhausted = len(snapshot.Scrollback) < limit
+				terminal.ScrollbackExhausted = !snapshot.ScrollbackHasMore
 			}
 		}
 		r.ensureVTerm(terminal)

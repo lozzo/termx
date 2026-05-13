@@ -21,6 +21,7 @@ import (
 	"github.com/lozzow/termx/termx-core/terminalmeta"
 	"github.com/lozzow/termx/termx-core/transport"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
+	"github.com/lozzow/termx/termx-core/vterm"
 	"github.com/lozzow/termx/termx-core/workbenchsvc"
 )
 
@@ -31,6 +32,7 @@ type serverConfig struct {
 	defaultSize          Size
 	defaultScrollback    int
 	defaultKeepAfterExit time.Duration
+	historyRoot          string
 	logger               *slog.Logger
 	methodHandler        ProtocolMethodHandler
 	terminalObserver     TerminalInventoryObserver
@@ -63,6 +65,7 @@ func NewServer(opts ...ServerOption) *Server {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+	observeTerminalHistoryIDs(cfg.historyRoot)
 	srv := &Server{
 		cfg:       cfg,
 		terminals: make(map[string]*Terminal),
@@ -101,6 +104,12 @@ func WithDefaultScrollback(lines int) ServerOption {
 func WithDefaultKeepAfterExit(d time.Duration) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.defaultKeepAfterExit = d
+	}
+}
+
+func WithHistoryRoot(path string) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.historyRoot = strings.TrimSpace(path)
 	}
 }
 
@@ -172,6 +181,7 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 		Env:            opts.Env,
 		ScrollbackSize: scrollback,
 		KeepAfterExit:  keepAfterExit,
+		HistoryRoot:    s.cfg.historyRoot,
 		Logger:         s.cfg.logger,
 		RemoveFunc:     s.removeTerminal,
 		UpdateFunc:     s.invalidateProtocolListCache,
@@ -378,29 +388,181 @@ func (s *Server) Subscribe(ctx context.Context, id string) (<-chan StreamMessage
 
 func (s *Server) Snapshot(ctx context.Context, id string, opts ...SnapshotOptions) (*Snapshot, error) {
 	_ = ctx
-	term, err := s.getTerminal(id)
-	if err != nil {
-		return nil, err
-	}
 	var opt SnapshotOptions
 	if len(opts) > 0 {
 		opt = opts[0]
+	}
+	term, err := s.getTerminal(id)
+	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+		return s.historySnapshotFromDisk(id, opt)
 	}
 	return term.Snapshot(opt.ScrollbackOffset, opt.ScrollbackLimit), nil
 }
 
 func (s *Server) HistoryReplay(ctx context.Context, id string, opts ...HistoryReplayOptions) (*HistoryReplayResult, error) {
 	_ = ctx
-	term, err := s.getTerminal(id)
-	if err != nil {
-		return nil, err
-	}
 	var opt HistoryReplayOptions
 	if len(opts) > 0 {
 		opt = opts[0]
 	}
+	term, err := s.getTerminal(id)
+	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+		result, replayErr := s.historyReplayFromDisk(id, opt)
+		if replayErr != nil {
+			return nil, replayErr
+		}
+		return result, nil
+	}
 	result := term.HistoryReplay(opt)
 	return &result, nil
+}
+
+func (s *Server) historyReplayFromDisk(id string, opt HistoryReplayOptions) (*HistoryReplayResult, error) {
+	store, err := openTerminalHistoryStoreForReplay(s.cfg.historyRoot, id)
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+	beforeOffset, limit := sanitizeHistoryReplayWindow(opt.BeforeOffset, opt.Limit)
+	replay, rows, hasMore, err := store.Replay(beforeOffset, limit)
+	if err != nil {
+		return nil, err
+	}
+	return &HistoryReplayResult{
+		TerminalID:   id,
+		BeforeOffset: beforeOffset,
+		Limit:        limit,
+		Rows:         rows,
+		HasMore:      hasMore,
+		Replay:       string(replay),
+	}, nil
+}
+
+func (s *Server) historySnapshotFromDisk(id string, opt SnapshotOptions) (*Snapshot, error) {
+	store, err := openTerminalHistoryStoreForReplay(s.cfg.historyRoot, id)
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+	beforeOffset, limit := sanitizeHistorySnapshotWindow(opt.ScrollbackOffset, opt.ScrollbackLimit)
+	result, err := store.Rows(beforeOffset, limit, int(s.cfg.defaultSize.Cols))
+	if err != nil {
+		return nil, err
+	}
+	scrollbackRows, screenRows := splitHistorySnapshotRows(result.Rows, int(s.cfg.defaultSize.Rows), int(s.cfg.defaultSize.Cols))
+	scrollbackTimestamps, screenTimestamps := splitHistorySnapshotTimes(result.Timestamps, len(scrollbackRows), len(screenRows))
+	scrollbackRowKinds, screenRowKinds := splitHistorySnapshotStrings(result.RowKinds, len(scrollbackRows), len(screenRows))
+	scrollbackWrapped, screenWrapped := splitHistorySnapshotBools(result.Wrapped, len(scrollbackRows), len(screenRows))
+	return &Snapshot{
+		TerminalID: id,
+		Size:       s.cfg.defaultSize,
+		Screen: ScreenData{
+			Cells:             convertRows(screenRows),
+			IsAlternateScreen: false,
+		},
+		Scrollback:           convertRows(scrollbackRows),
+		ScrollbackOffset:     beforeOffset,
+		ScrollbackTotal:      result.TotalRows,
+		ScrollbackHasMore:    result.HasMore,
+		ScreenTimestamps:     screenTimestamps,
+		ScrollbackTimestamps: scrollbackTimestamps,
+		ScreenRowKinds:       screenRowKinds,
+		ScrollbackRowKinds:   scrollbackRowKinds,
+		ScreenWrapped:        screenWrapped,
+		ScrollbackWrapped:    scrollbackWrapped,
+		Cursor:               CursorState{Visible: true},
+		Modes:                TerminalModes{AutoWrap: true},
+		Timestamp:            time.Now().UTC(),
+	}, nil
+}
+
+func splitHistorySnapshotRows(rows [][]vterm.Cell, screenHeight int, cols int) ([][]vterm.Cell, [][]vterm.Cell) {
+	if screenHeight <= 0 {
+		screenHeight = 1
+	}
+	if cols <= 0 {
+		cols = 80
+	}
+	screen := make([][]vterm.Cell, screenHeight)
+	for i := range screen {
+		screen[i] = make([]vterm.Cell, cols)
+	}
+	if len(rows) == 0 {
+		return nil, screen
+	}
+	visibleStart := len(rows) - screenHeight
+	if visibleStart < 0 {
+		visibleStart = 0
+	}
+	visible := rows[visibleStart:]
+	copy(screen[screenHeight-len(visible):], visible)
+	return rows[:visibleStart], screen
+}
+
+func splitHistorySnapshotTimes(values []time.Time, scrollbackRows int, screenRows int) ([]time.Time, []time.Time) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	values = alignTimeSliceTail(values, scrollbackRows+screenRows)
+	return cloneTimeSlice(values[:scrollbackRows]), cloneTimeSlice(values[scrollbackRows:])
+}
+
+func splitHistorySnapshotStrings(values []string, scrollbackRows int, screenRows int) ([]string, []string) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	values = alignStringSliceTail(values, scrollbackRows+screenRows)
+	return cloneStringSlice(values[:scrollbackRows]), cloneStringSlice(values[scrollbackRows:])
+}
+
+func splitHistorySnapshotBools(values []bool, scrollbackRows int, screenRows int) ([]bool, []bool) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	values = alignBoolSliceTail(values, scrollbackRows+screenRows)
+	return cloneBoolSlice(values[:scrollbackRows]), cloneBoolSlice(values[scrollbackRows:])
+}
+
+func alignTimeSliceTail(values []time.Time, size int) []time.Time {
+	if size <= 0 {
+		return nil
+	}
+	out := make([]time.Time, size)
+	if len(values) > size {
+		values = values[len(values)-size:]
+	}
+	copy(out[size-len(values):], values)
+	return out
+}
+
+func alignStringSliceTail(values []string, size int) []string {
+	if size <= 0 {
+		return nil
+	}
+	out := make([]string, size)
+	if len(values) > size {
+		values = values[len(values)-size:]
+	}
+	copy(out[size-len(values):], values)
+	return out
+}
+
+func alignBoolSliceTail(values []bool, size int) []bool {
+	if size <= 0 {
+		return nil
+	}
+	out := make([]bool, size)
+	if len(values) > size {
+		values = values[len(values)-size:]
+	}
+	copy(out[size-len(values):], values)
+	return out
 }
 
 func (s *Server) Events(ctx context.Context, opts ...EventsOption) <-chan Event {
