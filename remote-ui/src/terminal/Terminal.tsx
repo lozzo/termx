@@ -15,10 +15,6 @@ import type { RtcSession } from '../core/transport'
 import { DEFAULT_TERMINAL_SETTINGS, resolveTerminalTheme, type TerminalSettings } from './terminalSettings'
 
 const historyScrollbackPageRows = 250
-const historyInitialPreloadDelayMs = 300
-const historyInitialPreloadPages = 4
-const historyInitialPreloadPageGapMs = 120
-const historyIdlePreloadTargetRows = 1500
 const historyApplyBatchDelayMs = 160
 const historyApplyScrollIdleMs = 180
 const historyApplyMaxDelayMs = 900
@@ -27,9 +23,11 @@ const bottomAnchorSettleMs = 900
 const xtermWriteStatsIntervalMs = 1000
 const xtermWriteSlowMs = 500
 const xtermWriteLargeChars = 128 * 1024
+const liveOutputPendingSoftLimitChars = 512 * 1024
+const liveOutputPendingHardLimitChars = 1024 * 1024
+const liveOutputWatchdogMs = 4000
 const eventLoopProbeIntervalMs = 1000
 const eventLoopLagWarnMs = 250
-const liveOutputFlushDelayMs = 16
 
 function isNativeAndroidWebView(): boolean {
   if (typeof navigator === 'undefined') return false
@@ -124,7 +122,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const lastSentResizeRef = useRef<{ cols: number; rows: number } | null>(null)
   const isOpenRef = useRef(false)
   const pendingLiveOutputRef = useRef('')
-  const liveOutputFlushTimerRef = useRef<number | null>(null)
+  const liveOutputInFlightRef = useRef(false)
+  const liveOutputGenerationRef = useRef(0)
+  const liveOutputDroppedCharsRef = useRef(0)
+  const liveOutputSyncLostRef = useRef(false)
+  const liveOutputWatchdogRef = useRef<number | null>(null)
+  const markLiveOutputSyncLostRef = useRef<(reason?: string) => void>(() => {})
   const surfaceReadyRef = useRef(false)
   const canSendResizeRef = useRef(false)
   const historyLoadingRef = useRef(false)
@@ -133,20 +136,18 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const historyRevisionAppliedRef = useRef(0)
   const historyLoadedRowsAppliedRef = useRef(0)
   const lastSnapshotTextRef = useRef('')
+  const recoveryRevisionAppliedRef = useRef(0)
   const pendingHistoryViewportRef = useRef<number | null>(null)
   const pendingHistoryApplyRef = useRef<PendingHistoryApply | null>(null)
   const historyApplyQueuedAtRef = useRef(0)
   const historyApplyTimerRef = useRef<number | null>(null)
-  const historyIdlePreloadTimerRef = useRef<number | null>(null)
+  const historyLoadArmedByUserRef = useRef(false)
   const lastHistoryScrollActivityAtRef = useRef(0)
-  const initialHistoryPreloadScheduledRef = useRef(false)
-  const historyPreloadTimerRef = useRef<number | null>(null)
   const loadScrollbackRef = useRef<(limit?: number) => Promise<TerminalScrollbackLoadResult>>(async () => ({
     loadedRows: 0,
     totalRows: 0,
     hasMore: false,
   }))
-  const scheduleInitialHistoryPreloadRef = useRef<() => void>(() => {})
   const maybePrefetchScrollbackRef = useRef<() => void>(() => {})
   const scheduleHistoryApplyRef = useRef<() => void>(() => {})
   const hasTerminalSnapshotRef = useRef(false)
@@ -179,7 +180,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const selectionModeRef = useRef(false)
   const selectionResetHandlersRef = useRef(new Set<() => void>())
   const [surfaceReady, setSurfaceReady] = useState(false)
-  const automaticHistoryPreloadEnabled = !isNativeAndroidWebView()
 
   const logTerminal = useCallback((event: string, input: {
     level?: 'debug' | 'info' | 'warn' | 'error'
@@ -269,29 +269,91 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
   }, [logTerminal])
 
+  const clearLiveOutputWatchdog = useCallback(() => {
+    if (liveOutputWatchdogRef.current === null) return
+    window.clearTimeout(liveOutputWatchdogRef.current)
+    liveOutputWatchdogRef.current = null
+  }, [])
+
   const markSurfaceReady = useCallback(() => {
     if (surfaceReadyRef.current) return
     surfaceReadyRef.current = true
     setSurfaceReady(true)
   }, [])
 
+  const flushPendingTerminalOutput = useCallback(() => {
+    if (terminalDisposedRef.current) return
+    if (liveOutputInFlightRef.current) return
+    const term = xtermRef.current
+    const pending = pendingLiveOutputRef.current
+    if (!term || !pending) return
+    pendingLiveOutputRef.current = ''
+    liveOutputInFlightRef.current = true
+    liveOutputSyncLostRef.current = false
+    const writeGeneration = liveOutputGenerationRef.current + 1
+    liveOutputGenerationRef.current = writeGeneration
+    clearLiveOutputWatchdog()
+    liveOutputWatchdogRef.current = window.setTimeout(() => {
+      liveOutputWatchdogRef.current = null
+      if (!liveOutputInFlightRef.current || terminalDisposedRef.current || liveOutputGenerationRef.current !== writeGeneration) return
+      const droppedChars = pendingLiveOutputRef.current.length + liveOutputDroppedCharsRef.current
+      pendingLiveOutputRef.current = ''
+      liveOutputDroppedCharsRef.current = 0
+      liveOutputSyncLostRef.current = true
+      liveOutputInFlightRef.current = false
+      liveOutputGenerationRef.current += 1
+      logTerminal('live_output_write_stalled', {
+        level: 'warn',
+        details: {
+          inFlightChars: pending.length,
+          droppedChars,
+          watchdogMs: liveOutputWatchdogMs,
+        },
+      })
+      markLiveOutputSyncLostRef.current('xterm renderer stalled while applying live output')
+    }, liveOutputWatchdogMs)
+    writeToXterm(term, pending, 'stream_output', () => {
+      if (liveOutputGenerationRef.current !== writeGeneration) return
+      clearLiveOutputWatchdog()
+      const syncLost = liveOutputSyncLostRef.current
+      liveOutputSyncLostRef.current = false
+      liveOutputInFlightRef.current = false
+      markSurfaceReady()
+      if (!syncLost) {
+        flushPendingTerminalOutput()
+      }
+    })
+    lastWrittenTextRef.current = appendTerminalText(lastWrittenTextRef.current, pending)
+  }, [clearLiveOutputWatchdog, logTerminal, markSurfaceReady, writeToXterm])
+
   const handleTerminalOutput = useCallback((text: string) => {
     if (terminalDisposedRef.current) return
-    pendingLiveOutputRef.current += text
-    if (liveOutputFlushTimerRef.current !== null) return
-    liveOutputFlushTimerRef.current = window.setTimeout(() => {
-      liveOutputFlushTimerRef.current = null
-      const term = xtermRef.current
-      const pending = pendingLiveOutputRef.current
+    if (liveOutputSyncLostRef.current) return
+    const nextLength = pendingLiveOutputRef.current.length + text.length
+    if (liveOutputInFlightRef.current && nextLength > liveOutputPendingSoftLimitChars) {
+      const droppedChars = nextLength + liveOutputDroppedCharsRef.current
       pendingLiveOutputRef.current = ''
-      if (!term || !pending) return
-      writeToXterm(term, pending, 'stream_output', () => {
-        markSurfaceReady()
+      liveOutputDroppedCharsRef.current = 0
+      liveOutputSyncLostRef.current = true
+      liveOutputGenerationRef.current += 1
+      const hardLimitExceeded = nextLength > liveOutputPendingHardLimitChars
+      logTerminal(hardLimitExceeded ? 'live_output_pending_hard_limit' : 'live_output_pending_soft_limit', {
+        level: 'warn',
+        details: {
+          incomingChars: text.length,
+          droppedChars,
+          softLimitChars: liveOutputPendingSoftLimitChars,
+          hardLimitChars: liveOutputPendingHardLimitChars,
+        },
       })
-      lastWrittenTextRef.current = appendTerminalText(lastWrittenTextRef.current, pending)
-      scheduleInitialHistoryPreloadRef.current()
-    }, liveOutputFlushDelayMs)
-  }, [markSurfaceReady, writeToXterm])
+      markLiveOutputSyncLostRef.current(hardLimitExceeded
+        ? 'xterm live output buffer exceeded hard limit'
+        : 'xterm live output buffer exceeded soft limit')
+      return
+    }
+    pendingLiveOutputRef.current += text
+    flushPendingTerminalOutput()
+  }, [flushPendingTerminalOutput, logTerminal])
 
   const terminalSession = useTerminalSession({
     machineId,
@@ -299,6 +361,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     session,
     onOutput: handleTerminalOutput,
   })
+  markLiveOutputSyncLostRef.current = terminalSession.markSyncLost
 
   latestTerminalTextRef.current = terminalSession.terminalText
   settingsRef.current = settings
@@ -602,26 +665,19 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const generation = terminalGenerationRef.current + 1
     terminalGenerationRef.current = generation
     terminalDisposedRef.current = false
-    initialHistoryPreloadScheduledRef.current = false
-    if (historyPreloadTimerRef.current !== null) {
-      window.clearTimeout(historyPreloadTimerRef.current)
-      historyPreloadTimerRef.current = null
-    }
     if (historyApplyTimerRef.current !== null) {
       window.clearTimeout(historyApplyTimerRef.current)
       historyApplyTimerRef.current = null
     }
-    if (historyIdlePreloadTimerRef.current !== null) {
-      window.clearTimeout(historyIdlePreloadTimerRef.current)
-      historyIdlePreloadTimerRef.current = null
-    }
     pendingHistoryApplyRef.current = null
     historyApplyQueuedAtRef.current = 0
+    historyLoadArmedByUserRef.current = false
     lastHistoryScrollActivityAtRef.current = 0
     historyApplyingRef.current = false
     historyRevisionAppliedRef.current = 0
     historyLoadedRowsAppliedRef.current = 0
     lastSnapshotTextRef.current = ''
+    recoveryRevisionAppliedRef.current = 0
 
     const term = new XTerm({
       allowProposedApi: false,
@@ -810,6 +866,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       noteHistoryScrollActivity()
     }
 
+    const armHistoryScrollbackLoad = () => {
+      historyLoadArmedByUserRef.current = true
+      noteUserScrollActivity()
+    }
+
     const clearMomentum = () => {
       if (!momentumFrame) return
       window.cancelAnimationFrame(momentumFrame)
@@ -912,6 +973,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
 
     const maybePrefetchScrollback = () => {
+      if (!historyLoadArmedByUserRef.current) return
       if (term.buffer.active.viewportY > settingsRef.current.scrollbackPrefetchThresholdRows) return
       void loadScrollbackPage(true)
     }
@@ -944,7 +1006,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           if (historyApplyReleased) return
           historyApplyReleased = true
           historyApplyingRef.current = false
-          scheduleInitialHistoryPreloadRef.current()
         }, historyApplyWatchdogMs)
         const finishHistoryApply = () => {
           if (historyApplyReleased) return
@@ -955,7 +1016,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           }
           historyLoadedRowsAppliedRef.current = pending.loadedRows
           historyApplyingRef.current = false
-          scheduleInitialHistoryPreloadRef.current()
           if (pending.restoreViewportY !== null) {
             maybePrefetchScrollbackRef.current()
           }
@@ -997,51 +1057,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       historyApplyTimerRef.current = window.setTimeout(applyPendingHistory, historyApplyBatchDelayMs)
     }
     scheduleHistoryApplyRef.current = scheduleHistoryApply
-
-    const scheduleIdleHistoryPreload = (delayMs: number) => {
-      if (!automaticHistoryPreloadEnabled) return
-      if (historyIdlePreloadTimerRef.current !== null) return
-      historyIdlePreloadTimerRef.current = window.setTimeout(async () => {
-        historyIdlePreloadTimerRef.current = null
-        if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
-        if (pendingHistoryApplyRef.current || historyApplyTimerRef.current !== null) {
-          scheduleIdleHistoryPreload(historyApplyScrollIdleMs)
-          return
-        }
-        const loadedRows = historyLoadedRowsAppliedRef.current
-        if (loadedRows >= historyIdlePreloadTargetRows) return
-        const result = await loadScrollbackPage(false)
-        if (result.loadedRows <= 0 || !result.hasMore) return
-        scheduleIdleHistoryPreload(historyInitialPreloadPageGapMs)
-      }, delayMs)
-    }
-
-    const scheduleInitialScrollbackPreload = () => {
-      if (!automaticHistoryPreloadEnabled) return
-      if (initialHistoryPreloadScheduledRef.current) return
-      if (!canLoadScrollbackPage()) return
-      initialHistoryPreloadScheduledRef.current = true
-      historyPreloadTimerRef.current = window.setTimeout(() => {
-        historyPreloadTimerRef.current = null
-        if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
-        const preload = async () => {
-          for (let page = 0; page < historyInitialPreloadPages; page += 1) {
-            if (terminalDisposedRef.current || terminalGenerationRef.current !== generation) return
-            const result = await loadScrollbackPage(false)
-            if (result.loadedRows <= 0 || !result.hasMore) return
-            if (Date.now() <= bottomAnchorUntilRef.current || isScrolledToBottom(term)) {
-              keepBottomAnchored()
-            }
-            if (page < historyInitialPreloadPages - 1) {
-              await new Promise((resolve) => window.setTimeout(resolve, historyInitialPreloadPageGapMs))
-            }
-          }
-          scheduleIdleHistoryPreload(historyInitialPreloadPageGapMs)
-        }
-        void preload()
-      }, historyInitialPreloadDelayMs)
-    }
-    scheduleInitialHistoryPreloadRef.current = scheduleInitialScrollbackPreload
 
     const isMouseModeActive = () => {
       try {
@@ -1103,6 +1118,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const currentViewportY = term.buffer.active.viewportY
       let clamped = false
       if (desiredViewportY !== currentViewportY) {
+        if (px < 0) {
+          armHistoryScrollbackLoad()
+        } else {
+          noteUserScrollActivity()
+        }
         term.scrollLines(desiredViewportY - currentViewportY)
         const actualViewportY = term.buffer.active.viewportY
         if (actualViewportY !== desiredViewportY) {
@@ -1110,7 +1130,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           clamped = true
           if (px < 0) maybePrefetchScrollback()
         }
-        noteUserScrollActivity()
       }
       syncTransform()
       return clamped
@@ -1564,7 +1583,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
               pendingHistoryViewportRef.current = term.buffer.active.viewportY
             }
           } else {
-            maybePrefetchScrollback()
+            if (historyLoadArmedByUserRef.current) {
+              maybePrefetchScrollback()
+            }
           }
           const pendingHistoryApply = pendingHistoryApplyRef.current
           if (pendingHistoryApply !== null && pendingHistoryApply.restoreViewportY !== null) {
@@ -1574,7 +1595,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
             }
           }
           noteHistoryScrollActivity()
-          scheduleInitialScrollbackPreload()
           showScrollbar()
           hideScrollbarDelayed()
         }
@@ -1595,9 +1615,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     scrollTouchTarget.addEventListener('touchcancel', handleTouchEnd, { passive: true })
 
     const handleWheel = (event: WheelEvent) => {
-      if (event.deltaY !== 0) noteUserScrollActivity()
       if (event.deltaY < 0 && term.buffer.active.viewportY <= settingsRef.current.scrollbackPrefetchThresholdRows) {
+        armHistoryScrollbackLoad()
         maybePrefetchScrollback()
+      } else if (event.deltaY !== 0) {
+        noteUserScrollActivity()
       }
     }
     scrollTouchTarget.addEventListener('wheel', handleWheel, { passive: true })
@@ -1630,8 +1652,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const maxScroll = buffer.length - term.rows
       const targetY = Math.round(nextRatio * maxScroll)
       const diff = targetY - buffer.viewportY
-      if (diff !== 0) term.scrollLines(diff)
-      if (diff !== 0) noteUserScrollActivity()
+      if (diff !== 0) {
+        if (diff < 0) {
+          armHistoryScrollbackLoad()
+        } else {
+          noteUserScrollActivity()
+        }
+        term.scrollLines(diff)
+      }
       updateScrollbar()
     }
     const handleScrollbarTouchEnd = (event: TouchEvent) => {
@@ -1657,8 +1685,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const maxScroll = buffer.length - term.rows
       const targetY = Math.round(ratio * maxScroll)
       const diff = targetY - buffer.viewportY
-      if (diff !== 0) term.scrollLines(diff)
-      if (diff !== 0) noteUserScrollActivity()
+      if (diff !== 0) {
+        if (diff < 0) {
+          armHistoryScrollbackLoad()
+        } else {
+          noteUserScrollActivity()
+        }
+        term.scrollLines(diff)
+      }
       updateScrollbar()
       scrollbarDragging = true
       scrollbarTrack.classList.add('active')
@@ -1675,8 +1709,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     fitAndMaybeSendResize()
     scheduleFit()
-    scheduleInitialScrollbackPreload()
-
     let resizeObserver: ResizeObserver | null = null
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => {
@@ -1736,25 +1768,18 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         fitFrameRef.current = null
       }
       cancelBottomAnchor()
-      if (historyPreloadTimerRef.current !== null) {
-        window.clearTimeout(historyPreloadTimerRef.current)
-        historyPreloadTimerRef.current = null
-      }
-      if (liveOutputFlushTimerRef.current !== null) {
-        window.clearTimeout(liveOutputFlushTimerRef.current)
-        liveOutputFlushTimerRef.current = null
-      }
+      clearLiveOutputWatchdog()
+      liveOutputInFlightRef.current = false
+      liveOutputGenerationRef.current += 1
       pendingLiveOutputRef.current = ''
+      liveOutputDroppedCharsRef.current = 0
+      liveOutputSyncLostRef.current = false
       if (historyApplyTimerRef.current !== null) {
         window.clearTimeout(historyApplyTimerRef.current)
         historyApplyTimerRef.current = null
       }
-      if (historyIdlePreloadTimerRef.current !== null) {
-        window.clearTimeout(historyIdlePreloadTimerRef.current)
-        historyIdlePreloadTimerRef.current = null
-      }
       pendingHistoryApplyRef.current = null
-      scheduleInitialHistoryPreloadRef.current = () => {}
+      historyLoadArmedByUserRef.current = false
       maybePrefetchScrollbackRef.current = () => {}
       scheduleHistoryApplyRef.current = () => {}
       resizeObserver?.disconnect()
@@ -1797,11 +1822,24 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       lastSentResizeRef.current = null
       isOpenRef.current = false
     }
-  }, [automaticHistoryPreloadEnabled, cancelBottomAnchor, fitAndMaybeSendResize, isScrolledToBottom, keepBottomAnchored, logTerminal, markSurfaceReady, renderer, scheduleFit, sendInputAtCurrentSize, sendUserInput, settings.renderer, writeToXterm])
+  }, [cancelBottomAnchor, clearLiveOutputWatchdog, fitAndMaybeSendResize, isScrolledToBottom, keepBottomAnchored, logTerminal, markSurfaceReady, renderer, scheduleFit, sendInputAtCurrentSize, sendUserInput, settings.renderer, writeToXterm])
 
   useEffect(() => {
     isOpenRef.current = isOpen
-    if (!isOpen) return
+    if (!isOpen) {
+      clearLiveOutputWatchdog()
+      liveOutputInFlightRef.current = false
+      liveOutputGenerationRef.current += 1
+      pendingLiveOutputRef.current = ''
+      liveOutputDroppedCharsRef.current = 0
+      liveOutputSyncLostRef.current = false
+      lastWrittenTextRef.current = ''
+      lastSnapshotTextRef.current = ''
+      recoveryRevisionAppliedRef.current = 0
+      surfaceReadyRef.current = false
+      setSurfaceReady(false)
+      return
+    }
     fitAndMaybeSendResize()
     scheduleFit()
     if (!terminalDisposedRef.current) {
@@ -1812,7 +1850,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
     }
     onReady?.()
-  }, [fitAndMaybeSendResize, isOpen, onReady, scheduleFit])
+  }, [clearLiveOutputWatchdog, fitAndMaybeSendResize, isOpen, onReady, scheduleFit])
 
   useEffect(() => {
     if (terminalDisposedRef.current) return
@@ -1821,15 +1859,31 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     const snapshot = terminalSession.terminalSnapshot
     const snapshotText = snapshot ? (snapshot.replay ?? snapshot.text) : ''
+    const recoveryRevision = snapshot?.recovery?.revision ?? 0
+    const shouldReplaySnapshot = Boolean(
+      snapshot &&
+      snapshotText &&
+      (snapshotText !== lastSnapshotTextRef.current || recoveryRevision > recoveryRevisionAppliedRef.current) &&
+      (lastWrittenTextRef.current === '' || recoveryRevision > recoveryRevisionAppliedRef.current),
+    )
 
-    if (snapshot && snapshotText && snapshotText !== lastSnapshotTextRef.current && lastWrittenTextRef.current === '') {
+    if (shouldReplaySnapshot) {
       try {
+        clearLiveOutputWatchdog()
+        liveOutputInFlightRef.current = false
+        liveOutputGenerationRef.current += 1
+        pendingLiveOutputRef.current = ''
+        liveOutputDroppedCharsRef.current = 0
+        liveOutputSyncLostRef.current = false
         term.reset()
-        writeToXterm(term, terminalSession.terminalText, 'snapshot_full_text', () => {
+        writeToXterm(term, terminalSession.terminalText, recoveryRevision > recoveryRevisionAppliedRef.current ? 'snapshot_recovery' : 'snapshot_full_text', () => {
           markSurfaceReady()
           keepBottomAnchored()
         })
         lastWrittenTextRef.current = terminalSession.terminalText
+        if (recoveryRevision > recoveryRevisionAppliedRef.current) {
+          recoveryRevisionAppliedRef.current = recoveryRevision
+        }
       } catch (error) {
         if (!terminalDisposedRef.current) throw error
       }
@@ -1863,9 +1917,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
       return
     }
-
-    scheduleInitialHistoryPreloadRef.current()
-  }, [keepBottomAnchored, markSurfaceReady, terminalSession.terminalSnapshot, terminalSession.terminalText, writeToXterm])
+  }, [clearLiveOutputWatchdog, keepBottomAnchored, markSurfaceReady, terminalSession.terminalSnapshot, terminalSession.terminalText, writeToXterm])
 
   return (
     <section

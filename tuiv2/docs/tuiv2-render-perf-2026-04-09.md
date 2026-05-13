@@ -18,9 +18,9 @@
 
 输出链路:
 
-1. live output 先进入 terminal 的 live stream。
-2. 连续 `StreamOutput` 会在 server 侧先合并，再往订阅者广播。
-3. server 自己的 `VTerm` 不再追着每个小 chunk 立即更新，而是延迟到正确性边界时再 flush。
+1. server 将 PTY chunk 写入权威 `VTerm.WriteWithDamage()`。
+2. `WriteDamage` 被编码为二进制 `ScreenUpdate` payload。
+3. attachment stream pump 对慢消费者执行 latest-state collapse，再发给订阅者。
 
 关键文件:
 
@@ -32,9 +32,9 @@
 attach 后，client runtime 维护一份本地权威可见状态:
 
 1. `runtime/stream.go` 接收 protocol stream。
-2. 连续 `TypeOutput` 在 client 侧再做一次短窗口合批。
-3. 合并后的 output 只触发一次本地 `VTerm.Write()`。
-4. stream 侧只在真正需要时请求 `Invalidate`。
+2. `TypeScreenUpdate` 直接应用到本地 `VTerm` / snapshot cache。
+3. 成功应用后请求 `Invalidate`，render pipeline 只消费最新可见状态。
+4. `SyncLost` 触发 snapshot 恢复。
 
 关键文件:
 
@@ -64,11 +64,11 @@ attach 后，client runtime 维护一份本地权威可见状态:
 当前系统里有两份 terminal state:
 
 1. server 侧 `VTerm`
-   用于 snapshot / bootstrap / restart / resize / late attach 的权威恢复。
+   作为权威 screen，负责解析 PTY output 并生成 screen update。
 2. client 侧 `VTerm`
-   用于 live attach 时的本地即时渲染。
+   作为 screen update 的本地投影，用于即时渲染。
 
-正常 live scroll 期间，用户看到的是 client 侧 `VTerm + render coordinator` 的结果。server 侧 `VTerm` 现在更偏向恢复和边界一致性，不再参与每个滚动 chunk 的热路径。
+正常 live scroll 期间，用户看到的是 client 侧 `VTerm + render coordinator` 的结果。正确性来源是 server 侧 screen update，而不是 client 自行解析 PTY 字节。
 
 ## What Was Slow
 
@@ -76,8 +76,8 @@ attach 后，client runtime 维护一份本地权威可见状态:
 
 1. `vterm.Write()`
    之前每次 write 都会整屏抓 `before/after` screen，再做 row metadata reconcile。
-2. server/client 双重 `VTerm.Write()`
-   同一批 PTY output 会在 server 写一遍、client 再写一遍。
+2. 旧链路 server/client 双重解析 PTY output。
+   现在 PTY output 只在 server 解析一次，client 消费 screen update。
 3. 前台重复 `View()/RenderFrame()`
    即使 runtime 只 invalidate 一次，滚动输入本身仍会驱动多轮 `Update -> View`。
 4. direct writer backlog 下的重复 frame flush。
@@ -92,30 +92,32 @@ attach 后，client runtime 维护一份本地权威可见状态:
 
 已落地:
 
-1. protocol client 连续 `TypeOutput` 合并。
+1. protocol client 不再发送 raw output，终端内容统一走 `TypeScreenUpdate`。
 2. stream 溢出不再 silent drop，改为显式 `SyncLost`。
-3. server live stream 合并连续 output。
-4. client runtime stream 再合并连续 output。
+3. server attachment queue 合并连续 screen update。
+4. client runtime 直接应用 screen update，不再做 PTY output batching。
 
 效果:
 
-- `runtime.stream.output` 从多次下降到大多数滚动场景 1 次。
+- 慢消费者不再追赶过期中间帧，最终只需要应用最新 screen state。
 
-### B. Server-side lazy VTerm flush
+### B. Server-authoritative screen stream
 
 目标:
 
-- 把 server `VTerm` 从 live scroll 热路径里挪开。
+- PTY output 只解析一次，所有客户端消费同一份权威 screen delta。
 
 已落地:
 
-1. 普通 live output 先缓存，不立即写 server `VTerm`。
-2. `Subscribe / Snapshot / Resize / Restart / Exit` 等边界前强制 flush。
-3. 保留阈值，避免 pending output 无界增长。
+1. `StreamOutput` / `TypeOutput` / raw attach mode 已删除。
+2. `Terminal.readLoop` 直接写 server `VTerm.WriteWithDamage()`。
+3. server 广播 `StreamScreenUpdate` / protocol `TypeScreenUpdate`。
+4. `SyncLost` 仍作为恢复边界，客户端通过 snapshot 重建。
 
 效果:
 
-- 同一串 scroll 的 `vterm.write.count` 从 `2` 压到 `1`。
+- 消除 server/client 双重 PTY 解析。
+- 全屏程序、滚动和 resize 都走同一条权威 screen path。
 
 ### C. VTerm metadata reconcile fingerprinting
 
@@ -199,27 +201,27 @@ attach 后，client runtime 维护一份本地权威可见状态:
 
 - `down_single / up_single / down_burst_8` 的 `render.frame` 和 `app.view` 进一步明显下降。
 
-### G. Synchronized-output-aware client batching
+### G. Scrollback memory cap
 
 目标:
 
-- 避免把同一个 `nvim` synchronized output group 切成两次 client `VTerm.Write()` / `RenderFrame()`。
+- stress 输出不再因历史行常驻对象爆炸到 GB 级内存。
 
 已落地:
 
-1. client stream 合批现在不仅看时间窗，也看 synchronized output 是否已经闭合。
-2. 如果当前 output 还处于 `DECSET 2026` 打开的状态，会在很短的 grace window 内继续等后续 frame。
-3. grace window 只对“同步输出尚未结束”的情况生效，不影响普通 output。
+1. 默认 scrollback 调整为 2000 行。
+2. 底层 scrollback 改为 ring buffer + 批量 trim。
+3. 后续无限历史应放磁盘，不应让内存承载无限上下文。
 
 关键文件:
 
-- `tuiv2/runtime/stream.go`
-- `tuiv2/runtime/runtime_test.go`
+- `termx-core/third_party/github.com/charmbracelet/x/vt/scrollback.go`
+- `termx-core/termx.go`
+- `tuiv2/runtime/runtime.go`
 
 效果:
 
-- `up_burst_8` 在多数跑法下可以重新压回 `1` 次 local `vterm.write / render.frame`。
-- 即使仍偶发拆成 `2` 次，首帧和总 render 时间也显著低于更早的基线。
+- 高行数 stress 不再按每个 cell 常驻增长到 GB 级。
 
 ## Perf Harness
 
@@ -300,8 +302,8 @@ termx web -- nvim -u NONE your-file
 
 1. input forwarder 到 Bubble Tea 的排队时间
 2. `runtime.SendInput()` 到 server PTY 的往返时间
-3. server 从 PTY 收到 output 到 stream 广播的等待时间
-4. client stream 收到 output 到 `VTerm.Write()` 的时间
+3. server 从 PTY 收到 output 到 screen update 广播的时间
+4. client stream 收到 `TypeScreenUpdate` 到本地应用完成的时间
 
 换句话说，下一阶段应该回答的问题是:
 
@@ -335,33 +337,32 @@ termx web -- nvim -u NONE your-file
 2. `up_burst_8`
    - `first_output_ms`: `17.70`
    - `protocol.input.send`: `0.020ms`
-   - `runtime.stream.output`: `5.448ms`
-   - 同场景下 `vterm.write` 与 `render.frame` 仍然占据主要本地处理时间
+   - 旧基线里 `runtime.stream.output`: `5.448ms`
+   - 当前链路应重点看 `runtime.stream.screen_update`、screen update apply 与 `render.frame`
 
 这说明:
 
 1. `Input RPC` 不是拖手感的主因。
 2. 首帧延迟主要由:
    - 程序本身对输入的响应时间
-   - output 到达 client 后的 `VTerm.Write()`
+   - screen update 到达 client 后的本地应用
    - 首次 `RenderFrame()`
 3. 所谓“端到端输入延迟”，在当前基线上已经更多是在问:
-   “output 到了以后，termx 还能不能更快把第一帧画出来？”
+   “screen update 到了以后，termx 还能不能更快把第一帧画出来？”
 
 ## Interactive Low-latency Path
 
 后续又加了一条更偏交互手感的低延迟旁路:
 
 1. `Runtime.SendInput()` 会标记“最近有本地输入”。
-2. 紧接着到来的首个 output batch 会走更短的 client stream 合批窗口。
+2. 紧接着到来的首个 screen update 会走低延迟 invalidate 路径。
 3. `Model.queueInvalidate()` 在这个窗口内直接绕过 `invalidateBatchDelay`。
 4. `outputCursorWriter` 在这个窗口内直接绕过 `directFrameBatchDelay`。
-5. 如果 output 处于 synchronized output group 内，client stream 合批会优先等到 sync end，再交给本地 `VTerm.Write()`。
 
 注意:
 
 - 这条旁路只对“最近本地输入”生效。
-- 试过把 input forwarder 的 key/wheel 首帧也改成立即发送，但会重新把 `up_burst / alternating` 拆成多次 `vterm.write` 和 `render.frame`，所以当前没有保留。
+- 试过把 input forwarder 的 key/wheel 首帧也改成立即发送，但会重新把 `up_burst / alternating` 拆成多次 render，所以当前没有保留。
 
 ## Recommended Next Measurements
 
@@ -369,15 +370,15 @@ termx web -- nvim -u NONE your-file
 
 1. 在 input forwarder 给每个输入打本地 seq + timestamp。
 2. 在 `runtime.SendInput()` 前后打点。
-3. 在 server `Input` handler、PTY write、PTY output read 打点。
-4. 在 client stream 收到对应 output 时闭环。
+3. 在 server `Input` handler、PTY write、PTY output read、screen update encode 打点。
+4. 在 client stream 收到对应 `TypeScreenUpdate` 时闭环。
 
 目标不是先做优化，而是先拿到:
 
 - input enqueue delay
 - network / protocol delay
 - PTY response delay
-- server batching delay
+- server screen update encode delay
 - client apply/render delay
 
 只有这条链路完整后，后面的优化才不会继续靠猜。

@@ -36,6 +36,7 @@ func (s *Screen) Reflow(width, height, cursorX, cursorY int) (int, int) {
 	}
 	allRows := make([]reflowLine, 0, historyCount+oldHeight)
 	if sb != nil {
+		sb.compact()
 		for i, row := range sb.Lines() {
 			allRows = append(allRows, reflowLine{
 				cells:   cloneUVLineTrimmed(row),
@@ -79,6 +80,12 @@ func (s *Screen) Reflow(width, height, cursorX, cursorY int) (int, int) {
 		for i := 0; i < visibleStart; i++ {
 			sb.lines[i] = cloneUVLineTrimmed(reflowed[i].cells)
 			sb.wrapped[i] = reflowed[i].wrapped
+		}
+		sb.offset = 0
+		sb.size = len(sb.lines)
+		if sb.size > sb.maxLines {
+			sb.dropOldest(sb.size - sb.maxLines)
+			sb.compact()
 		}
 		sb.normalizeWrapped()
 	}

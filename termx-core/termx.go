@@ -31,7 +31,6 @@ type serverConfig struct {
 	defaultSize          Size
 	defaultScrollback    int
 	defaultKeepAfterExit time.Duration
-	liveOutputThrottle   liveOutputThrottleConfig
 	logger               *slog.Logger
 	methodHandler        ProtocolMethodHandler
 	terminalObserver     TerminalInventoryObserver
@@ -57,9 +56,8 @@ func NewServer(opts ...ServerOption) *Server {
 	cfg := serverConfig{
 		socketPath:           defaultSocketPath(),
 		defaultSize:          Size{Cols: 80, Rows: 24},
-		defaultScrollback:    10000,
+		defaultScrollback:    2000,
 		defaultKeepAfterExit: 5 * time.Minute,
-		liveOutputThrottle:   defaultLiveOutputThrottleConfig(),
 		logger:               slog.New(slog.NewTextHandler(discardWriter{}, nil)),
 	}
 	for _, opt := range opts {
@@ -114,12 +112,6 @@ func WithLogger(logger *slog.Logger) ServerOption {
 	}
 }
 
-func WithLiveOutputFPS(fps int) ServerOption {
-	return func(cfg *serverConfig) {
-		cfg.liveOutputThrottle = sanitizeLiveOutputThrottleConfig(liveOutputThrottleConfig{FPS: fps})
-	}
-}
-
 func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo, error) {
 	if s.closed.Load() {
 		return nil, ErrServerClosed
@@ -171,19 +163,18 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 	s.mu.Unlock()
 
 	term, err := newTerminal(context.Background(), s.events, terminalConfig{
-		ID:                 id,
-		Name:               name,
-		Command:            append([]string(nil), opts.Command...),
-		Tags:               copyTags(opts.Tags),
-		Size:               size,
-		Dir:                opts.Dir,
-		Env:                opts.Env,
-		ScrollbackSize:     scrollback,
-		KeepAfterExit:      keepAfterExit,
-		LiveOutputThrottle: s.cfg.liveOutputThrottle,
-		Logger:             s.cfg.logger,
-		RemoveFunc:         s.removeTerminal,
-		UpdateFunc:         s.invalidateProtocolListCache,
+		ID:             id,
+		Name:           name,
+		Command:        append([]string(nil), opts.Command...),
+		Tags:           copyTags(opts.Tags),
+		Size:           size,
+		Dir:            opts.Dir,
+		Env:            opts.Env,
+		ScrollbackSize: scrollback,
+		KeepAfterExit:  keepAfterExit,
+		Logger:         s.cfg.logger,
+		RemoveFunc:     s.removeTerminal,
+		UpdateFunc:     s.invalidateProtocolListCache,
 	})
 	if err != nil {
 		return nil, err
@@ -705,7 +696,6 @@ type sessionAttachment struct {
 	attachmentID  string
 	surfaceID     string
 	viewID        string
-	streamMode    string
 	mu            sync.RWMutex
 	resizeControl protocol.ResizeControl
 	cleanup       func()
@@ -1312,7 +1302,6 @@ func (s *Server) handleRequest(
 			attachmentID:  attachmentID,
 			surfaceID:     surfaceID,
 			viewID:        viewID,
-			streamMode:    normalizeAttachStreamMode(params.StreamMode),
 			resizeControl: resizeControl,
 		}
 		var cleanupOnce sync.Once
@@ -1333,7 +1322,7 @@ func (s *Server) handleRequest(
 		resizeControl = withResizeOwnership(resizeControl, term, surfaceID)
 		attachment.setResizeControl(resizeControl)
 		s.cfg.logger.Info("server attached terminal", "terminal_id", params.TerminalID, "remote", remote, "channel", ch, "mode", params.Mode, "surface_id", surfaceID, "resize_owner", resizeControl.CanResize)
-		stream := term.SubscribeWithOptions(subCtx, terminalSubscribeOptionsForStreamMode(attachment.streamMode))
+		stream := term.Subscribe(subCtx)
 		go func() {
 			defer attachment.cleanup()
 			pump := newAttachmentStreamPump(subCtx, cancel, params.TerminalID, ch, remote, stream, sendFrame, s.cfg.logger)
@@ -1342,7 +1331,7 @@ func (s *Server) handleRequest(
 			}
 		}()
 		result, _ := json.Marshal(protocol.AttachResult{Mode: params.Mode, Channel: ch, ResizeControl: &resizeControl})
-		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", params.TerminalID, "channel", ch, "stream_mode", attachment.streamMode, "resize_owner", resizeControl.CanResize)
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", params.TerminalID, "channel", ch, "resize_owner", resizeControl.CanResize)
 		return result, 0, nil
 	case "detach":
 		var params protocol.DetachParams
@@ -1367,15 +1356,6 @@ func (s *Server) handleRequest(
 	}
 }
 
-func normalizeAttachStreamMode(mode string) string {
-	switch strings.TrimSpace(mode) {
-	case protocol.StreamModeRaw:
-		return protocol.StreamModeRaw
-	default:
-		return protocol.StreamModeScreen
-	}
-}
-
 func (s *Server) logProtocolMethodResult(ctx context.Context, remote string, req protocol.Request, result json.RawMessage, started time.Time, attrs ...any) {
 	if s == nil || s.cfg.logger == nil {
 		return
@@ -1395,12 +1375,6 @@ func (s *Server) logProtocolMethodResult(ctx context.Context, remote string, req
 	}
 	base = append(base, attrs...)
 	s.cfg.logger.Log(ctx, level, "termx protocol method result", base...)
-}
-
-func terminalSubscribeOptionsForStreamMode(mode string) TerminalSubscribeOptions {
-	return TerminalSubscribeOptions{
-		RawOutput: mode == protocol.StreamModeRaw,
-	}
 }
 
 func (s *Server) ensureResize(

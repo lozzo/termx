@@ -24,27 +24,27 @@ import (
 var terminalIDCounter atomic.Uint64
 
 type terminalConfig struct {
-	ID                 string
-	Name               string
-	Command            []string
-	Tags               map[string]string
-	Size               Size
-	Dir                string
-	Env                []string
-	ScrollbackSize     int
-	KeepAfterExit      time.Duration
-	LiveOutputThrottle liveOutputThrottleConfig
-	Logger             *slog.Logger
-	RemoveFunc         func(string, string)
-	UpdateFunc         func()
+	ID             string
+	Name           string
+	Command        []string
+	Tags           map[string]string
+	Size           Size
+	Dir            string
+	Env            []string
+	ScrollbackSize int
+	KeepAfterExit  time.Duration
+	Logger         *slog.Logger
+	RemoveFunc     func(string, string)
+	UpdateFunc     func()
 }
 
 type Terminal struct {
-	events *EventBus
-	pty    *ptymgr.PTY
-	vterm  *vterm.VTerm
-	stream *fanout.Fanout
-	logger *slog.Logger
+	events  *EventBus
+	pty     *ptymgr.PTY
+	vterm   *vterm.VTerm
+	stream  *fanout.Fanout
+	history *terminalHistoryStore
+	logger  *slog.Logger
 
 	mu             sync.RWMutex
 	id             string
@@ -81,59 +81,45 @@ type Terminal struct {
 	attachments      map[string]AttachInfo
 	resizeOwnerEpoch uint64
 
-	pendingVTermEpoch       uint64
-	pendingVTermOutput      []byte
-	pendingVTermFlushTimer  *time.Timer
-	pendingLiveOutputEpoch  uint64
-	pendingLiveOutput       []byte
-	pendingLiveOutputTimer  *time.Timer
-	pendingLiveOutputSync   liveOutputSyncState
-	liveOutputThrottle      liveOutputThrottleConfig
-	liveOutputRecentInputAt atomic.Int64
-	liveOutputBypassArmed   atomic.Bool
-
 	done     chan struct{}
 	readDone chan struct{}
 }
-
-// Attach streams only need a small replay window to bootstrap lightweight
-// clients. Full history is fetched through Snapshot pagination; sending the
-// entire scrollback as the first stream frame can exceed transport frame caps.
-const attachReplayScrollbackLimit = 128
-const serverVTermFlushThreshold = 512 * 1024
-
-var serverVTermFlushIdleDelay = 8 * time.Millisecond
 
 func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Terminal, error) {
 	p, vt, err := spawnTerminalProcess(cfg)
 	if err != nil {
 		return nil, err
 	}
+	history, err := newTerminalHistoryStore(cfg.ID)
+	if err != nil {
+		_ = p.Close()
+		return nil, err
+	}
 	t := &Terminal{
-		events:             events,
-		pty:                p,
-		vterm:              vt,
-		stream:             fanout.New(),
-		logger:             cfg.Logger,
-		id:                 cfg.ID,
-		name:               cfg.Name,
-		command:            append([]string(nil), cfg.Command...),
-		tags:               copyTags(cfg.Tags),
-		size:               cfg.Size,
-		dir:                cfg.Dir,
-		cwd:                cfg.Dir,
-		env:                append([]string(nil), cfg.Env...),
-		scrollbackSize:     cfg.ScrollbackSize,
-		state:              StateRunning,
-		createdAt:          time.Now().UTC(),
-		keepAfterExit:      cfg.KeepAfterExit,
-		liveOutputThrottle: sanitizeLiveOutputThrottleConfig(cfg.LiveOutputThrottle),
-		removeFunc:         cfg.RemoveFunc,
-		updateFunc:         cfg.UpdateFunc,
-		attachments:        make(map[string]AttachInfo),
-		done:               make(chan struct{}),
-		readDone:           make(chan struct{}),
-		processEpoch:       1,
+		events:         events,
+		pty:            p,
+		vterm:          vt,
+		stream:         fanout.New(),
+		history:        history,
+		logger:         cfg.Logger,
+		id:             cfg.ID,
+		name:           cfg.Name,
+		command:        append([]string(nil), cfg.Command...),
+		tags:           copyTags(cfg.Tags),
+		size:           cfg.Size,
+		dir:            cfg.Dir,
+		cwd:            cfg.Dir,
+		env:            append([]string(nil), cfg.Env...),
+		scrollbackSize: cfg.ScrollbackSize,
+		state:          StateRunning,
+		createdAt:      time.Now().UTC(),
+		keepAfterExit:  cfg.KeepAfterExit,
+		removeFunc:     cfg.RemoveFunc,
+		updateFunc:     cfg.UpdateFunc,
+		attachments:    make(map[string]AttachInfo),
+		done:           make(chan struct{}),
+		readDone:       make(chan struct{}),
+		processEpoch:   1,
 	}
 	t.installVTermHandlers()
 
@@ -152,7 +138,7 @@ func spawnTerminalProcess(cfg terminalConfig) (*ptymgr.PTY, *vterm.VTerm, error)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %v", ErrSpawnFailed, err)
 	}
-	vt := vterm.New(int(cfg.Size.Cols), int(cfg.Size.Rows), cfg.ScrollbackSize, func(data []byte) {
+	vt := vterm.New(int(cfg.Size.Cols), int(cfg.Size.Rows), liveScrollbackRows(cfg.ScrollbackSize), func(data []byte) {
 		// Forward emulator responses (e.g. DSR cursor position) to the PTY
 		// so the child process receives them.
 		_, _ = p.Write(data)
@@ -256,14 +242,8 @@ func (t *Terminal) Done() <-chan struct{} {
 }
 
 func (t *Terminal) Subscribe(ctx context.Context) <-chan StreamMessage {
-	return t.SubscribeWithOptions(ctx, TerminalSubscribeOptions{})
-}
-
-func (t *Terminal) SubscribeWithOptions(ctx context.Context, opts TerminalSubscribeOptions) <-chan StreamMessage {
 	t.streamMu.Lock()
-	t.flushPendingVTermOutputLocked()
-	t.flushPendingLiveOutputLocked(t.stream)
-	bootstrap := t.bootstrapMessagesLocked(attachReplayScrollbackLimit)
+	bootstrap := t.bootstrapMessagesLocked()
 	t.mu.RLock()
 	state := t.state
 	exitCode := copyIntPtr(t.exitCode)
@@ -301,15 +281,10 @@ func (t *Terminal) SubscribeWithOptions(ctx context.Context, opts TerminalSubscr
 			case dst <- cloneTerminalStreamMessage(msg):
 			}
 		}
-		t.forwardTerminalStreamMessages(ctx, src, dst, opts)
+		t.forwardTerminalStreamMessages(ctx, src, dst)
 	}()
 	return dst
 }
-
-const (
-	maxMergedLiveOutputBytes = 512 * 1024
-	maxLiveOutputFrameBytes  = 512 * 1024
-)
 
 func forwardLiveStreamMessages(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage) {
 	for {
@@ -323,15 +298,7 @@ func forwardLiveStreamMessages(ctx context.Context, src <-chan fanout.StreamMess
 	}
 }
 
-func (t *Terminal) forwardTerminalStreamMessages(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage, opts ...TerminalSubscribeOptions) {
-	var subscribeOpts TerminalSubscribeOptions
-	if len(opts) > 0 {
-		subscribeOpts = opts[0]
-	}
-	if t == nil || subscribeOpts.RawOutput {
-		forwardTerminalStreamMessagesImmediate(ctx, src, dst, nil)
-		return
-	}
+func (t *Terminal) forwardTerminalStreamMessages(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage) {
 	forwardTerminalStreamMessagesImmediate(ctx, src, dst, t.screenSnapshotFallbackMessage)
 }
 
@@ -357,41 +324,11 @@ func sendFanoutStreamMessage(ctx context.Context, dst chan<- StreamMessage, msg 
 			return true
 		}
 	}
-	if msg.Type != fanout.StreamOutput {
-		select {
-		case <-ctx.Done():
-			return false
-		case dst <- cloneFanoutStreamMessage(msg):
-			return true
-		}
-	}
-	output := msg.Output
-	for len(output) > 0 {
-		n := minInt(len(output), maxLiveOutputFrameBytes)
-		out := StreamMessage{Type: StreamOutput, Output: output[:n]}
-		select {
-		case <-ctx.Done():
-			return false
-		case dst <- out:
-		}
-		output = output[n:]
-	}
-	return true
-}
-
-func broadcastLiveOutputChunks(stream *fanout.Fanout, output []byte, rateLimited bool) {
-	if stream == nil || len(output) == 0 {
-		return
-	}
-	for len(output) > 0 {
-		n := minInt(len(output), maxLiveOutputFrameBytes)
-		chunk := append([]byte(nil), output[:n]...)
-		stream.BroadcastMessage(fanout.StreamMessage{
-			Type:              fanout.StreamOutput,
-			Output:            chunk,
-			OutputRateLimited: rateLimited,
-		})
-		output = output[n:]
+	select {
+	case <-ctx.Done():
+		return false
+	case dst <- cloneFanoutStreamMessage(msg):
+		return true
 	}
 }
 
@@ -406,67 +343,8 @@ func (t *Terminal) WriteInput(data []byte) error {
 		return ErrTerminalExited
 	}
 	t.mu.RUnlock()
-	t.noteLiveOutputInput()
 	_, err := t.pty.Write(data)
 	return err
-}
-
-func (t *Terminal) noteLiveOutputInput() {
-	if t == nil {
-		return
-	}
-	t.liveOutputRecentInputAt.Store(time.Now().UnixNano())
-	t.liveOutputBypassArmed.Store(true)
-	if t.stream == nil {
-		return
-	}
-	t.streamMu.Lock()
-	t.flushPendingLiveOutputLocked(t.stream)
-	t.streamMu.Unlock()
-}
-
-func (t *Terminal) recentLiveOutputInput() bool {
-	if t == nil {
-		return false
-	}
-	at := t.liveOutputRecentInputAt.Load()
-	if at == 0 {
-		return false
-	}
-	return time.Since(time.Unix(0, at)) <= liveOutputInteractiveWindow
-}
-
-func (t *Terminal) consumeLiveOutputBypass() bool {
-	if t == nil || !t.recentLiveOutputInput() {
-		return false
-	}
-	return t.liveOutputBypassArmed.Swap(false)
-}
-
-func (t *Terminal) liveOutputFrameInterval() time.Duration {
-	if t == nil {
-		return 0
-	}
-	if t.consumeLiveOutputBypass() {
-		delay := liveOutputInteractiveBypassDelay
-		if delay <= 0 {
-			return 0
-		}
-		if interactive := t.liveOutputThrottle.interactiveFrameInterval(); interactive > 0 && interactive < delay {
-			return interactive
-		}
-		return delay
-	}
-	delay := t.liveOutputThrottle.frameInterval()
-	if delay <= 0 {
-		return 0
-	}
-	if t.recentLiveOutputInput() {
-		if interactive := t.liveOutputThrottle.interactiveFrameInterval(); interactive > 0 && interactive < delay {
-			return interactive
-		}
-	}
-	return delay
 }
 
 func (t *Terminal) Resize(cols, rows uint16) error {
@@ -496,7 +374,6 @@ func (t *Terminal) Resize(cols, rows uint16) error {
 		t.streamMu.Unlock()
 		return err
 	}
-	t.flushPendingVTermOutputLocked()
 	t.vterm.Resize(int(cols), int(rows))
 	t.broadcastResizeLocked(t.stream, cols, rows)
 	t.streamMu.Unlock()
@@ -517,18 +394,28 @@ func (t *Terminal) Kill() error {
 }
 
 func (t *Terminal) Close() error {
-	return t.pty.Close()
+	if t == nil {
+		return nil
+	}
+	var err error
+	if t.pty != nil {
+		err = t.pty.Close()
+	}
+	if historyErr := closeTerminalHistoryStore(t.history); historyErr != nil && err == nil {
+		err = historyErr
+	}
+	return err
 }
 
 func (t *Terminal) Restart() error {
-	t.flushPendingVTermOutput(0)
-	t.flushPendingLiveOutput(0, t.stream)
 	t.mu.Lock()
 	if t.state != StateExited {
 		t.mu.Unlock()
 		return ErrTerminalNotExited
 	}
 	preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped := restartPreservedScrollback(t.vterm)
+	preservedHistoryRows := restartPreservedHistoryRows(t.vterm)
+	history := t.history
 	cfg := terminalConfig{
 		ID:             t.id,
 		Command:        append([]string(nil), t.command...),
@@ -539,6 +426,12 @@ func (t *Terminal) Restart() error {
 	}
 	currentEpoch := t.processEpoch
 	t.mu.Unlock()
+
+	if history != nil {
+		if err := history.AppendRows(preservedHistoryRows); err != nil {
+			return err
+		}
+	}
 
 	p, vt, err := spawnTerminalProcess(cfg)
 	if err != nil {
@@ -621,6 +514,17 @@ func restartPreservedScrollback(vt *vterm.VTerm) ([][]vterm.Cell, []time.Time, [
 	return appendRestartMarker(out, timestamps, rowKinds, wrapped, restartAt)
 }
 
+func restartPreservedHistoryRows(vt *vterm.VTerm) [][]vterm.Cell {
+	if vt == nil {
+		return nil
+	}
+	screen := trimTrailingBlankVTermRows(vt.ScreenContent().Cells)
+	out := make([][]vterm.Cell, 0, len(screen)+1)
+	out = append(out, screen...)
+	out = append(out, nil)
+	return out
+}
+
 func appendRestartMarker(rows [][]vterm.Cell, timestamps []time.Time, rowKinds []string, wrapped []bool, restartAt time.Time) ([][]vterm.Cell, []time.Time, []string, []bool) {
 	rows = append(rows, nil)
 	timestamps = append(timestamps, restartAt)
@@ -674,7 +578,6 @@ func (t *Terminal) MarkRemoved() {
 }
 
 func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
-	t.flushPendingVTermOutput(0)
 	if limit <= 0 {
 		limit = 500
 	}
@@ -723,18 +626,32 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 }
 
 func (t *Terminal) HistoryReplay(opts HistoryReplayOptions) HistoryReplayResult {
-	t.flushPendingVTermOutput(0)
 	if t == nil || t.vterm == nil {
 		return HistoryReplayResult{}
 	}
-	replay, rows, hasMore := t.vterm.EncodeHistoryReplay(opts.BeforeOffset, opts.Limit)
+	beforeOffset, limit := sanitizeHistoryReplayWindow(opts.BeforeOffset, opts.Limit)
+	var (
+		replay  []byte
+		rows    int
+		hasMore bool
+	)
+	if t.history != nil {
+		var err error
+		replay, rows, hasMore, err = t.history.Replay(beforeOffset, limit)
+		if err != nil && t.logger != nil {
+			t.logger.Warn("termx terminal history replay failed", "terminal_id", t.id, "error", err)
+		}
+	}
+	if t.history == nil || (rows == 0 && beforeOffset == 0) {
+		replay, rows, hasMore = t.vterm.EncodeHistoryReplay(beforeOffset, limit)
+	}
 	t.mu.RLock()
 	id := t.id
 	t.mu.RUnlock()
 	return HistoryReplayResult{
 		TerminalID:   id,
-		BeforeOffset: opts.BeforeOffset,
-		Limit:        opts.Limit,
+		BeforeOffset: beforeOffset,
+		Limit:        limit,
 		Rows:         rows,
 		HasMore:      hasMore,
 		Replay:       string(replay),
@@ -869,13 +786,9 @@ func (t *Terminal) RemoveAttachment(id string) {
 	if had && info.ResizeOwner {
 		t.resizeOwnerEpoch++
 	}
-	shouldFlush := had && info.Mode == string(ModeCollaborator) && !t.hasCollaboratorAttachmentLocked()
 	t.attachMu.Unlock()
 	if had {
 		t.invalidateAttachmentInfo()
-	}
-	if shouldFlush {
-		t.flushPendingVTermOutput(0)
 	}
 }
 
@@ -978,198 +891,10 @@ func (t *Terminal) startProcessLoops() {
 	go t.waitLoop(epoch, p, stream, readDone, done)
 }
 
-func (t *Terminal) queuePendingVTermOutputLocked(epoch uint64, chunk []byte) {
-	if t == nil || len(chunk) == 0 {
-		return
-	}
-	if t.pendingVTermEpoch != epoch {
-		t.clearPendingVTermOutputLocked()
-		t.pendingVTermEpoch = epoch
-	}
-	t.pendingVTermOutput = append(t.pendingVTermOutput, chunk...)
-	if len(t.pendingVTermOutput) >= serverVTermFlushThreshold || len(t.pendingVTermOutput) >= protocol.MaxFrameSize {
-		t.flushPendingVTermOutputLocked()
-	}
-}
-
-func (t *Terminal) queuePendingLiveOutputLocked(epoch uint64, stream *fanout.Fanout, chunk []byte) {
-	if t == nil || len(chunk) == 0 || stream == nil {
-		return
-	}
-	if !t.liveOutputThrottle.enabled() {
-		broadcastLiveOutputChunks(stream, chunk, false)
-		return
-	}
-	if t.pendingLiveOutputEpoch != epoch {
-		t.clearPendingLiveOutputLocked()
-		t.pendingLiveOutputEpoch = epoch
-	}
-	t.pendingLiveOutput = append(t.pendingLiveOutput, chunk...)
-	syncActive := updateLiveOutputSyncState(&t.pendingLiveOutputSync, chunk)
-	if len(t.pendingLiveOutput) >= maxMergedLiveOutputBytes {
-		t.flushPendingLiveOutputLocked(stream)
-		return
-	}
-	delay := t.liveOutputFrameInterval()
-	if syncActive {
-		if step := serverLiveOutputSyncWaitStep; step > 0 && (delay <= 0 || step < delay) {
-			delay = step
-		}
-	}
-	if delay <= 0 {
-		t.flushPendingLiveOutputLocked(stream)
-		return
-	}
-	t.armPendingLiveOutputFlushLocked(epoch, stream, delay)
-}
-
-func (t *Terminal) armPendingVTermFlushLocked(epoch uint64) {
-	if t == nil || len(t.pendingVTermOutput) == 0 || serverVTermFlushIdleDelay <= 0 {
-		return
-	}
-	if t.hasCollaboratorAttachmentLocked() {
-		return
-	}
-	t.stopPendingVTermFlushTimerLocked()
-	t.pendingVTermFlushTimer = time.AfterFunc(serverVTermFlushIdleDelay, func() {
-		t.flushPendingVTermOutput(epoch)
-	})
-}
-
-func (t *Terminal) armPendingLiveOutputFlushLocked(epoch uint64, stream *fanout.Fanout, delay time.Duration) {
-	if t == nil || stream == nil || len(t.pendingLiveOutput) == 0 || delay <= 0 {
-		return
-	}
-	if t.pendingLiveOutputTimer != nil {
-		return
-	}
-	t.pendingLiveOutputTimer = time.AfterFunc(delay, func() {
-		t.flushPendingLiveOutput(epoch, stream)
-	})
-}
-
-func (t *Terminal) flushPendingVTermOutput(epoch uint64) {
-	if t == nil {
-		return
-	}
-	t.streamMu.Lock()
-	defer t.streamMu.Unlock()
-	if epoch != 0 && t.pendingVTermEpoch != 0 && t.pendingVTermEpoch != epoch {
-		return
-	}
-	t.flushPendingVTermOutputLocked()
-}
-
-func (t *Terminal) flushPendingLiveOutput(epoch uint64, stream *fanout.Fanout) {
-	if t == nil || stream == nil {
-		return
-	}
-	t.streamMu.Lock()
-	defer t.streamMu.Unlock()
-	if epoch != 0 && t.pendingLiveOutputEpoch != 0 && t.pendingLiveOutputEpoch != epoch {
-		return
-	}
-	t.flushPendingLiveOutputLocked(stream)
-}
-
-func (t *Terminal) flushPendingVTermOutputLocked() {
-	if t == nil {
-		return
-	}
-	t.stopPendingVTermFlushTimerLocked()
-	if len(t.pendingVTermOutput) == 0 {
-		t.pendingVTermEpoch = 0
-		return
-	}
-	output := t.pendingVTermOutput
-	t.pendingVTermOutput = nil
-	t.pendingVTermEpoch = 0
-	if t.vterm != nil {
-		writeFinish := perftrace.Measure("terminal.pending_vterm_flush.write")
-		_, _ = t.vterm.WriteMirror(output)
-		writeFinish(len(output))
-	}
-	if cap(output) <= maxInt(serverVTermFlushThreshold, protocol.MaxFrameSize) {
-		t.pendingVTermOutput = output[:0]
-	}
-}
-
-func (t *Terminal) flushPendingLiveOutputLocked(stream *fanout.Fanout) {
-	if t == nil || stream == nil {
-		return
-	}
-	t.stopPendingLiveOutputFlushTimerLocked()
-	if len(t.pendingLiveOutput) == 0 {
-		t.pendingLiveOutputEpoch = 0
-		resetLiveOutputSyncState(&t.pendingLiveOutputSync)
-		return
-	}
-	if t.pendingLiveOutputSync.synchronizedOutputActive && serverLiveOutputSyncWaitBudget > t.pendingLiveOutputSync.waited {
-		wait := serverLiveOutputSyncWaitStep
-		if remaining := serverLiveOutputSyncWaitBudget - t.pendingLiveOutputSync.waited; wait > remaining {
-			wait = remaining
-		}
-		if wait > 0 {
-			t.pendingLiveOutputSync.waited += wait
-			t.armPendingLiveOutputFlushLocked(t.pendingLiveOutputEpoch, stream, wait)
-			return
-		}
-	}
-	if len(t.pendingLiveOutput) == 0 {
-		t.pendingLiveOutputEpoch = 0
-		resetLiveOutputSyncState(&t.pendingLiveOutputSync)
-		return
-	}
-	output := t.pendingLiveOutput
-	t.pendingLiveOutput = nil
-	t.pendingLiveOutputEpoch = 0
-	resetLiveOutputSyncState(&t.pendingLiveOutputSync)
-	broadcastLiveOutputChunks(stream, output, true)
-	if cap(output) <= maxMergedLiveOutputBytes {
-		t.pendingLiveOutput = output[:0]
-	}
-}
-
-func (t *Terminal) clearPendingVTermOutputLocked() {
-	if t == nil {
-		return
-	}
-	t.stopPendingVTermFlushTimerLocked()
-	t.pendingVTermOutput = nil
-	t.pendingVTermEpoch = 0
-}
-
-func (t *Terminal) clearPendingLiveOutputLocked() {
-	if t == nil {
-		return
-	}
-	t.stopPendingLiveOutputFlushTimerLocked()
-	t.pendingLiveOutput = nil
-	t.pendingLiveOutputEpoch = 0
-	resetLiveOutputSyncState(&t.pendingLiveOutputSync)
-}
-
-func (t *Terminal) stopPendingVTermFlushTimerLocked() {
-	if t == nil || t.pendingVTermFlushTimer == nil {
-		return
-	}
-	t.pendingVTermFlushTimer.Stop()
-	t.pendingVTermFlushTimer = nil
-}
-
-func (t *Terminal) stopPendingLiveOutputFlushTimerLocked() {
-	if t == nil || t.pendingLiveOutputTimer == nil {
-		return
-	}
-	t.pendingLiveOutputTimer.Stop()
-	t.pendingLiveOutputTimer = nil
-}
-
 func (t *Terminal) broadcastResizeLocked(stream *fanout.Fanout, cols, rows uint16) {
 	if t == nil || stream == nil {
 		return
 	}
-	t.flushPendingLiveOutputLocked(stream)
 	stream.BroadcastResize(cols, rows)
 }
 
@@ -1177,8 +902,42 @@ func (t *Terminal) closeStreamLocked(stream *fanout.Fanout, exitCode *int) {
 	if t == nil || stream == nil {
 		return
 	}
-	t.flushPendingLiveOutputLocked(stream)
 	stream.Close(exitCode)
+}
+
+func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, chunk []byte) {
+	if t == nil || stream == nil || t.vterm == nil || len(chunk) == 0 {
+		return
+	}
+	writeFinish := perftrace.Measure("terminal.screen_update.write_vterm")
+	n, err, damage := t.vterm.WriteWithDamage(chunk)
+	writeFinish(len(chunk))
+	if err != nil || n != len(chunk) {
+		dropped := len(chunk) - maxInt(0, n)
+		stream.BroadcastMessage(fanout.StreamMessage{
+			Type:         fanout.StreamSyncLost,
+			DroppedBytes: uint64(dropped),
+		})
+		return
+	}
+	t.appendHistoryFromDamageLocked(damage)
+	payload, ok := t.screenUpdatePayloadFromDamageLocked(damage)
+	if !ok {
+		return
+	}
+	stream.BroadcastMessage(fanout.StreamMessage{
+		Type:    fanout.StreamScreenUpdate,
+		Payload: payload,
+	})
+}
+
+func (t *Terminal) appendHistoryFromDamageLocked(damage vterm.WriteDamage) {
+	if t == nil || t.history == nil || len(damage.ScrollbackAppend) == 0 {
+		return
+	}
+	if err := t.history.AppendDamageRows(damage.ScrollbackAppend); err != nil && t.logger != nil {
+		t.logger.Warn("termx terminal history append failed", "terminal_id", t.id, "error", err)
+	}
 }
 
 func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, readDone chan struct{}) {
@@ -1216,7 +975,6 @@ func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, 
 	for {
 		n, err := p.Read(buf)
 		if n > 0 {
-			chunk := append([]byte(nil), buf[:n]...)
 			readCount++
 			readBytes += n
 			if n > maxReadBytes {
@@ -1226,9 +984,7 @@ func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, 
 				t.logger.Warn("termx terminal pty large read", "terminal_id", t.id, "epoch", epoch, "bytes", n)
 			}
 			t.streamMu.Lock()
-			t.queuePendingLiveOutputLocked(epoch, stream, chunk)
-			t.queuePendingVTermOutputLocked(epoch, chunk)
-			t.armPendingVTermFlushLocked(epoch)
+			t.writeAuthoritativeScreenUpdateLocked(stream, buf[:n])
 			t.streamMu.Unlock()
 			if time.Since(lastStatsLog) >= coreDiagnosticsInterval {
 				flushStats("interval")
@@ -1291,7 +1047,6 @@ func (t *Terminal) waitLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, 
 	}
 
 	t.streamMu.Lock()
-	t.flushPendingVTermOutputLocked()
 	t.closeStreamLocked(stream, &code)
 	t.streamMu.Unlock()
 	if !removed {
@@ -1336,6 +1091,14 @@ func (t *Terminal) removeIfEpoch(epoch uint64, reason string) {
 	if removeFunc != nil {
 		removeFunc(id, reason)
 	}
+	_ = closeTerminalHistoryStore(t.history)
+}
+
+func liveScrollbackRows(configured int) int {
+	if configured <= 0 {
+		return defaultTerminalLiveScrollbackRows
+	}
+	return minInt(configured, defaultTerminalLiveScrollbackRows)
 }
 
 func GenerateID() (string, error) {
@@ -1406,7 +1169,7 @@ func protocolResizeOwnership(in ResizeOwnership) *protocol.ResizeOwnership {
 	}
 }
 
-func (t *Terminal) bootstrapMessagesLocked(scrollbackLimit int) []StreamMessage {
+func (t *Terminal) bootstrapMessagesLocked() []StreamMessage {
 	if t == nil {
 		return nil
 	}
@@ -1417,7 +1180,7 @@ func (t *Terminal) bootstrapMessagesLocked(scrollbackLimit int) []StreamMessage 
 	if size.Cols > 0 && size.Rows > 0 {
 		msgs = append(msgs, StreamMessage{Type: StreamResize, Cols: size.Cols, Rows: size.Rows})
 	}
-	if payload, ok := t.screenSnapshotPayloadLockedWithScrollbackLimit(scrollbackLimit, true); ok {
+	if payload, ok := t.screenSnapshotPayloadLocked(true); ok {
 		msgs = append(msgs, StreamMessage{Type: StreamScreenUpdate, Payload: payload})
 	}
 	msgs = append(msgs, StreamMessage{Type: StreamBootstrapDone})
@@ -1430,7 +1193,6 @@ func (t *Terminal) screenSnapshotFallbackMessage() StreamMessage {
 	}
 	t.streamMu.Lock()
 	defer t.streamMu.Unlock()
-	t.flushPendingVTermOutputLocked()
 	payload, ok := t.screenSnapshotPayloadLocked(true)
 	if !ok {
 		return StreamMessage{Type: StreamSyncLost}
@@ -1439,10 +1201,6 @@ func (t *Terminal) screenSnapshotFallbackMessage() StreamMessage {
 }
 
 func (t *Terminal) screenSnapshotPayloadLocked(resetScrollback bool) ([]byte, bool) {
-	return t.screenSnapshotPayloadLockedWithScrollbackLimit(-1, resetScrollback)
-}
-
-func (t *Terminal) screenSnapshotPayloadLockedWithScrollbackLimit(scrollbackLimit int, resetScrollback bool) ([]byte, bool) {
 	finish := perftrace.Measure("terminal.screen_update.snapshot_payload")
 	defer finish(0)
 	if t == nil || t.vterm == nil {
@@ -1452,8 +1210,9 @@ func (t *Terminal) screenSnapshotPayloadLockedWithScrollbackLimit(scrollbackLimi
 	if state == nil || state.snapshot == nil {
 		return nil, false
 	}
-	state = streamScreenStateWithScrollbackLimit(state, scrollbackLimit)
+	state = streamScreenStateWithoutScrollback(state)
 	update := fullReplaceUpdateForStateDelta(nil, state, resetScrollback)
+	update = screenOnlyUpdate(update)
 	encodeFinish := perftrace.Measure("terminal.screen_update.encode")
 	payload, err := protocol.EncodeScreenUpdatePayload(update)
 	encodeFinish(len(payload))
@@ -1471,6 +1230,23 @@ func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage)
 		return nil, false
 	}
 	deltaUpdate := screenUpdateFromDamageState(damage, t.currentTitleLocked())
+	if damage.RequiresFullReplace {
+		perftrace.Count("terminal.screen_update.requires_full_replace_damage", 0)
+		state := t.currentStreamScreenStateLocked()
+		if state == nil || state.snapshot == nil {
+			return nil, false
+		}
+		state = streamScreenStateWithoutScrollback(state)
+		fullUpdate := screenOnlyUpdate(fullReplaceUpdateForStateDelta(nil, state, false))
+		encodeFinish := perftrace.Measure("terminal.screen_update.encode")
+		payload, err := protocol.EncodeScreenUpdatePayload(fullUpdate)
+		encodeFinish(len(payload))
+		if err != nil {
+			return nil, false
+		}
+		recordEncodedScreenUpdatePayload(screenUpdateEncodeModeFullReplace, payload)
+		return payload, true
+	}
 	if screenUpdateShouldEncodeDeltaOnly(deltaUpdate, damage.Modes.AlternateScreen) {
 		perftrace.Count("terminal.screen_update.delta_only_shortcut", 0)
 		encodeFinish := perftrace.Measure("terminal.screen_update.encode")
@@ -1487,12 +1263,8 @@ func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage)
 	if state == nil || state.snapshot == nil {
 		return nil, false
 	}
-	fullUpdate := fullReplaceUpdateForStateDelta(nil, state, !state.snapshot.Modes.AlternateScreen)
-	if state.snapshot.Modes.AlternateScreen {
-		fullUpdate.ResetScrollback = false
-		fullUpdate.ScrollbackTrim = deltaUpdate.ScrollbackTrim
-		fullUpdate.ScrollbackAppend = append([]protocol.ScrollbackRowAppend(nil), deltaUpdate.ScrollbackAppend...)
-	}
+	state = streamScreenStateWithoutScrollback(state)
+	fullUpdate := screenOnlyUpdate(fullReplaceUpdateForStateDelta(nil, state, false))
 	payload, _, ok := encodeScreenUpdatePayloadByStrategy(deltaUpdate, fullUpdate, state.snapshot.Modes.AlternateScreen)
 	if !ok {
 		return nil, false
@@ -1524,7 +1296,6 @@ func (t *Terminal) currentTitleLocked() string {
 func cloneTerminalStreamMessage(msg StreamMessage) StreamMessage {
 	return StreamMessage{
 		Type:         msg.Type,
-		Output:       append([]byte(nil), msg.Output...),
 		Payload:      append([]byte(nil), msg.Payload...),
 		DroppedBytes: msg.DroppedBytes,
 		ExitCode:     copyIntPtr(msg.ExitCode),
@@ -1536,7 +1307,6 @@ func cloneTerminalStreamMessage(msg StreamMessage) StreamMessage {
 func cloneFanoutStreamMessage(msg fanout.StreamMessage) StreamMessage {
 	return StreamMessage{
 		Type:         StreamMessageType(msg.Type),
-		Output:       append([]byte(nil), msg.Output...),
 		Payload:      append([]byte(nil), msg.Payload...),
 		DroppedBytes: msg.DroppedBytes,
 		ExitCode:     copyIntPtr(msg.ExitCode),

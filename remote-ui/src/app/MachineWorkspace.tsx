@@ -176,7 +176,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   } | null>(null)
   const connectionStateSubscriptionRef = useRef<RtcSubscription | null>(null)
   const passiveConnectionPhaseRef = useRef<RtcConnectionStateSnapshot['phase'] | null>(null)
+  const sessionConnectionPhaseRef = useRef<RtcConnectionStateSnapshot['phase'] | null>(null)
   const latestActiveTerminalIdRef = useRef<string | null>(null)
+  const latestSplitTerminalIdRef = useRef<string | null>(null)
   const handledManualReconnectNonceRef = useRef(0)
   const resizeLockedHintShownRef = useRef(false)
   const hasLoadedTerminalsRef = useRef(hasLoadedTerminals)
@@ -257,6 +259,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   useEffect(() => {
     latestActiveTerminalIdRef.current = activeTerminalId
   }, [activeTerminalId])
+
+  useEffect(() => {
+    latestSplitTerminalIdRef.current = splitTerminalId
+  }, [splitTerminalId])
 
   useEffect(() => {
     resizeLockedHintShownRef.current = false
@@ -358,6 +364,21 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     updateFromConnectionState(snapshot, session)
   }, [updateFromConnectionState])
 
+  const reattachActiveTerminals = useCallback((session: RtcSession) => {
+    const terminalId = latestActiveTerminalIdRef.current
+    const currentSplitTerminalId = latestSplitTerminalIdRef.current
+    if (!terminalId && !currentSplitTerminalId) return
+    setConnectedSession(session)
+    if (terminalId) {
+      setConnectedTerminalId(terminalId)
+      setConnectingTerminalId(null)
+      terminalRef.current?.reattach(session, { forceTerminalChannel: true })
+    }
+    if (currentSplitTerminalId) {
+      splitTerminalRef.current?.reattach(session, { forceTerminalChannel: true })
+    }
+  }, [])
+
   const disconnectMachineSession = useCallback(() => {
     machineSessionConnectSeqRef.current += 1
     connectionStateSubscriptionRef.current?.close()
@@ -373,15 +394,21 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
 
   const attachConnectionStateSubscription = useCallback((session: RtcSession) => {
     connectionStateSubscriptionRef.current?.close()
+    sessionConnectionPhaseRef.current = null
     const candidate = session as RtcSession & Partial<RtcSessionConnectionStateEvents>
     if (typeof candidate.subscribeConnectionState !== 'function') {
       connectionStateSubscriptionRef.current = null
       return
     }
     connectionStateSubscriptionRef.current = candidate.subscribeConnectionState((snapshot) => {
+      const previousPhase = sessionConnectionPhaseRef.current
+      sessionConnectionPhaseRef.current = snapshot.phase
+      if (snapshot.phase === 'connected' && previousPhase !== null && previousPhase !== 'connected') {
+        reattachActiveTerminals(session)
+      }
       updateFromPassiveConnectionState(snapshot, session)
     })
-  }, [updateFromPassiveConnectionState])
+  }, [reattachActiveTerminals, updateFromPassiveConnectionState])
 
   const releaseMachineSession = useCallback(() => {
     disconnectMachineSession()
@@ -598,11 +625,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       ) {
         void ensureMachineSession(machine.machineId, { forceRelay: forceRelayConnection })
           .then((session) => {
-            setConnectedSession(session)
-            setConnectedTerminalId(activeTerminalId)
-            setConnectingTerminalId(null)
-            terminalRef.current?.reattach(session, { forceTerminalChannel: true })
-            splitTerminalRef.current?.reattach(session, { forceTerminalChannel: true })
+            reattachActiveTerminals(session)
             updateFromPassiveConnectionState(snapshot, session)
           })
           .catch((err: unknown) => {
@@ -616,7 +639,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     return () => {
       subscription.close()
     }
-  }, [activeTerminalId, connectionStateEvents, ensureMachineSession, forceRelayConnection, machine, updateConnectionStatus, updateFromPassiveConnectionState])
+  }, [activeTerminalId, connectionStateEvents, ensureMachineSession, forceRelayConnection, machine, reattachActiveTerminals, updateConnectionStatus, updateFromPassiveConnectionState])
 
   useEffect(() => {
     const machineId = machine?.machineId
@@ -794,10 +817,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       if (cancelled) return
       setConnectedSession(session)
       if (page === 'terminal' && activeTerminalId) {
-        setConnectedTerminalId(activeTerminalId)
-        setConnectingTerminalId(null)
-        terminalRef.current?.reattach(session, { forceTerminalChannel: true })
-        splitTerminalRef.current?.reattach(session, { forceTerminalChannel: true })
+        reattachActiveTerminals(session)
       }
       updateConnectionStatus('Connected', 'connected')
       clearConnectionStatusSoon()
@@ -812,7 +832,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     return () => {
       cancelled = true
     }
-  }, [activeTerminalId, clearConnectionStatusSoon, ensureMachineSession, forceRelayConnection, machine?.machineId, manualReconnectNonce, page, requireVerification, updateConnectionStatus, updateFromConnectionState])
+  }, [activeTerminalId, clearConnectionStatusSoon, ensureMachineSession, forceRelayConnection, machine?.machineId, manualReconnectNonce, page, reattachActiveTerminals, requireVerification, updateConnectionStatus, updateFromConnectionState])
 
   useEffect(() => {
     const handleResume = () => {
@@ -823,20 +843,13 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       if (!activeTerminalId && !splitTerminalId) return
 
       setConnectedSession(session)
-      if (activeTerminalId) {
-        setConnectedTerminalId(activeTerminalId)
-        setConnectingTerminalId(null)
-        terminalRef.current?.reattach(session, { forceTerminalChannel: true })
-      }
-      if (splitTerminalId) {
-        splitTerminalRef.current?.reattach(session, { forceTerminalChannel: true })
-      }
+      reattachActiveTerminals(session)
     }
     document.addEventListener('termx:resume', handleResume)
     return () => {
       document.removeEventListener('termx:resume', handleResume)
     }
-  }, [activeTerminalId, connectedSession, page, resetKeyboardLayout, splitTerminalId])
+  }, [activeTerminalId, connectedSession, page, reattachActiveTerminals, resetKeyboardLayout, splitTerminalId])
 
   const openTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {

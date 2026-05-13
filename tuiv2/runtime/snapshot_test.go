@@ -8,7 +8,7 @@ import (
 	"github.com/lozzow/termx/termx-core/protocol"
 )
 
-func TestApplyScreenUpdateSnapshotChangedRowsDoesNotMutatePreviousSnapshot(t *testing.T) {
+func TestApplyScreenUpdateSnapshotWriteSpanDoesNotMutatePreviousSnapshot(t *testing.T) {
 	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
 	current := &protocol.Snapshot{
 		TerminalID: "term-1",
@@ -27,8 +27,10 @@ func TestApplyScreenUpdateSnapshotChangedRowsDoesNotMutatePreviousSnapshot(t *te
 	previous := cloneProtocolSnapshot(current)
 
 	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
-		ChangedRows: []protocol.ScreenRowUpdate{{
+		Ops: []protocol.ScreenOp{{
+			Code:      protocol.ScreenOpWriteSpan,
 			Row:       1,
+			Col:       0,
 			Cells:     snapshotTestRow("edit"),
 			Timestamp: now.Add(3 * time.Second),
 			RowKind:   "edited",
@@ -100,7 +102,7 @@ func TestApplyScreenUpdateSnapshotScrollbackTrimAppendDoesNotMutatePreviousSnaps
 	}
 }
 
-func TestApplyScreenUpdateSnapshotChangedSpansDoesNotMutatePreviousSnapshot(t *testing.T) {
+func TestApplyScreenUpdateSnapshotOpsDoNotMutatePreviousSnapshot(t *testing.T) {
 	now := time.Date(2026, 4, 18, 10, 30, 0, 0, time.UTC)
 	current := &protocol.Snapshot{
 		TerminalID: "term-1",
@@ -117,19 +119,19 @@ func TestApplyScreenUpdateSnapshotChangedSpansDoesNotMutatePreviousSnapshot(t *t
 	previous := cloneProtocolSnapshot(current)
 
 	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
-		ChangedSpans: []protocol.ScreenSpanUpdate{
+		Ops: []protocol.ScreenOp{
 			{
-				Row:      0,
-				ColStart: 2,
+				Code: protocol.ScreenOpWriteSpan,
+				Row:  0,
+				Col:  2,
 				Cells: []protocol.Cell{
 					{Content: "Q", Width: 1},
 				},
-				Op: protocol.ScreenSpanOpWrite,
 			},
 			{
-				Row:      0,
-				ColStart: 6,
-				Op:       protocol.ScreenSpanOpClearToEOL,
+				Code: protocol.ScreenOpClearToEOL,
+				Row:  0,
+				Col:  6,
 			},
 		},
 		Cursor: protocol.CursorState{Visible: true},
@@ -147,7 +149,7 @@ func TestApplyScreenUpdateSnapshotChangedSpansDoesNotMutatePreviousSnapshot(t *t
 	}
 }
 
-func TestApplyScreenUpdateSnapshotWideSpanPreservesContinuation(t *testing.T) {
+func TestApplyScreenUpdateSnapshotWideWriteOpPreservesContinuation(t *testing.T) {
 	now := time.Date(2026, 4, 18, 10, 45, 0, 0, time.UTC)
 	current := &protocol.Snapshot{
 		TerminalID: "term-1",
@@ -164,14 +166,14 @@ func TestApplyScreenUpdateSnapshotWideSpanPreservesContinuation(t *testing.T) {
 	}
 
 	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
-		ChangedSpans: []protocol.ScreenSpanUpdate{{
-			Row:      0,
-			ColStart: 0,
+		Ops: []protocol.ScreenOp{{
+			Code: protocol.ScreenOpWriteSpan,
+			Row:  0,
+			Col:  0,
 			Cells: []protocol.Cell{
 				{Content: "界", Width: 2},
 				{Content: "", Width: 0},
 			},
-			Op: protocol.ScreenSpanOpWrite,
 		}},
 		Cursor: protocol.CursorState{Visible: true},
 		Modes:  protocol.TerminalModes{AutoWrap: true},
@@ -257,12 +259,10 @@ func TestApplyScreenUpdateSnapshotScreenScrollShiftPreservesPreviousSnapshot(t *
 
 	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
 		ScreenScroll: 1,
-		ChangedRows: []protocol.ScreenRowUpdate{{
-			Row:       2,
-			Cells:     snapshotTestRow("row4"),
-			Timestamp: now.Add(3 * time.Second),
-			RowKind:   "d",
-		}},
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 4, Height: 3}, Dy: -1},
+			{Code: protocol.ScreenOpWriteSpan, Row: 2, Col: 0, Cells: snapshotTestRow("row4"), Timestamp: now.Add(3 * time.Second), RowKind: "d"},
+		},
 		Cursor: protocol.CursorState{Visible: true},
 		Modes:  protocol.TerminalModes{AutoWrap: true},
 	})

@@ -17,7 +17,6 @@ const (
 	TypeEvent    uint8 = 0x03
 	TypeError    uint8 = 0x04
 
-	TypeOutput         uint8 = 0x10
 	TypeInput          uint8 = 0x11
 	TypeResize         uint8 = 0x12
 	TypeBootstrapDone  uint8 = 0x13

@@ -1,4 +1,5 @@
 import type { RtcBinaryChannel, RtcSession } from '../core/transport'
+import { isModelPreviewFile } from './modelFileTypes'
 
 export type FileEntryType = 'file' | 'dir' | 'symlink' | 'symlink-dir'
 
@@ -22,7 +23,7 @@ export interface DirListResponse {
   total: number
 }
 
-export type FilePreviewCategory = 'text' | 'image' | 'video' | 'unsupported'
+export type FilePreviewCategory = 'text' | 'image' | 'video' | 'model' | 'unsupported'
 
 export interface FilePreviewResponse {
   path: string
@@ -383,8 +384,8 @@ interface RawFilePreviewResponse {
 
 function normalizeFilePreviewResponse(raw: RawFilePreviewResponse, requestedPath: string): FilePreviewResponse {
   const mimeType = raw.mime_type ?? raw.mimeType ?? 'application/octet-stream'
-  const category = normalizePreviewCategory(raw.category, mimeType)
   const name = raw.name ?? basename(raw.path ?? requestedPath)
+  const category = normalizePreviewCategory(raw.category, mimeType, name)
   const contentBase64 = raw.content_base64 ?? raw.contentBase64 ?? (category === 'image' || category === 'video' ? raw.content : undefined)
   return {
     path: raw.path ?? requestedPath,
@@ -399,13 +400,16 @@ function normalizeFilePreviewResponse(raw: RawFilePreviewResponse, requestedPath
   }
 }
 
-function normalizePreviewCategory(raw: string | undefined, mimeType: string): FilePreviewCategory {
+function normalizePreviewCategory(raw: string | undefined, mimeType: string, name: string): FilePreviewCategory {
   const category = raw?.trim().toLowerCase()
-  if (category === 'text' || category === 'image' || category === 'video' || category === 'unsupported') return category
   const normalizedMime = mimeType.trim().toLowerCase()
+  if (category === 'text' || category === 'image' || category === 'video' || category === 'model') return category
+  if (isModelPreviewFile(name, normalizedMime)) return 'model'
+  if (category === 'unsupported') return category
   if (normalizedMime.startsWith('text/')) return 'text'
   if (normalizedMime.startsWith('image/')) return 'image'
   if (normalizedMime.startsWith('video/')) return 'video'
+  if (normalizedMime.startsWith('model/')) return 'model'
   return 'unsupported'
 }
 

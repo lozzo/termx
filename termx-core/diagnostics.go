@@ -23,7 +23,6 @@ type transportFrameStats struct {
 	bytes              int
 	controlFrames      int
 	streamFrames       int
-	outputFrames       int
 	screenUpdateFrames int
 	inputFrames        int
 	resizeFrames       int
@@ -55,8 +54,6 @@ func (s *transportFrameStats) record(channel uint16, typ uint8, payloadBytes int
 		s.streamFrames++
 	}
 	switch typ {
-	case protocol.TypeOutput:
-		s.outputFrames++
 	case protocol.TypeScreenUpdate:
 		s.screenUpdateFrames++
 	case protocol.TypeInput:
@@ -103,7 +100,6 @@ func (s *transportFrameStats) flush(message string) {
 		"bytes", s.bytes,
 		"control_frames", s.controlFrames,
 		"stream_frames", s.streamFrames,
-		"output_frames", s.outputFrames,
 		"screen_update_frames", s.screenUpdateFrames,
 		"input_frames", s.inputFrames,
 		"resize_frames", s.resizeFrames,
@@ -118,7 +114,6 @@ func (s *transportFrameStats) flush(message string) {
 	s.bytes = 0
 	s.controlFrames = 0
 	s.streamFrames = 0
-	s.outputFrames = 0
 	s.screenUpdateFrames = 0
 	s.inputFrames = 0
 	s.resizeFrames = 0
@@ -141,8 +136,6 @@ func protocolFrameTypeName(typ uint8) string {
 		return "event"
 	case protocol.TypeError:
 		return "error"
-	case protocol.TypeOutput:
-		return "output"
 	case protocol.TypeInput:
 		return "input"
 	case protocol.TypeResize:
@@ -162,8 +155,6 @@ func protocolFrameTypeName(typ uint8) string {
 
 func streamMessageTypeName(typ StreamMessageType) string {
 	switch typ {
-	case StreamOutput:
-		return "output"
 	case StreamSyncLost:
 		return "sync_lost"
 	case StreamClosed:

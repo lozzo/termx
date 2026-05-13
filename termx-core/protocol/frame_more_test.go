@@ -8,7 +8,7 @@ import (
 func TestDecodeFrameRejectsMalformedLength(t *testing.T) {
 	frame := []byte{
 		0x00, 0x03,
-		TypeOutput,
+		TypeScreenUpdate,
 		0x00, 0x00, 0x00, 0x03,
 		'o', 'k',
 	}

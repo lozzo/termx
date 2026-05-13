@@ -246,9 +246,8 @@ describe('useTerminalSession', () => {
 
     await waitFor(() => expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open'))
 
-    const encoder = new TextEncoder()
     act(() => {
-      session.emitTerminalOutput('terminal-1', encoder.encode(`${'old'.repeat(600_000)}\nKEEP-RECENT`))
+      session.emitTerminalScreenUpdate('terminal-1', `${'old'.repeat(600_000)}\nKEEP-RECENT`)
     })
 
     await waitFor(() => expect(result.current.terminalText).toContain('KEEP-RECENT'))
@@ -276,9 +275,8 @@ describe('useTerminalSession', () => {
 
     await waitFor(() => expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open'))
 
-    const encoder = new TextEncoder()
     act(() => {
-      session.emitTerminalOutput('terminal-1', encoder.encode(`${'stale'.repeat(400_000)}\nLIVE-TAIL`))
+      session.emitTerminalScreenUpdate('terminal-1', `${'stale'.repeat(400_000)}\nLIVE-TAIL`)
     })
     await waitFor(() => expect(result.current.terminalText).toContain('LIVE-TAIL'))
     expect(result.current.terminalText).not.toContain('HISTORY-PAGE-SHOULD-STAY')
@@ -315,6 +313,25 @@ describe('useTerminalSession', () => {
     expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open')
   })
 
+  it('refreshes a recoverable terminal data channel close even without pending input', async () => {
+    const session = createMockRtcTerminalSession()
+    const { result } = renderHook(() =>
+      useTerminalSession({
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        session,
+      }),
+    )
+
+    await waitFor(() => expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open'))
+
+    act(() => session.closeTerminal('terminal-1', 'terminal data channel terminal:terminal-1 closed'))
+
+    await waitFor(() => expect(session.openedTerminalIds).toEqual(['terminal-1', 'terminal-1']))
+    expect(session.closedTerminalIds).toContain('terminal-1')
+    expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open')
+  })
+
   it('reattaches and retries resize ownership when the attachment channel is stale', async () => {
     const session = createMockRtcTerminalSession()
     session.setEnsureResizeControl('terminal-1', { canResize: true, reason: 'owner' })
@@ -341,7 +358,7 @@ describe('useTerminalSession', () => {
     expect(result.current.resizeControl).toEqual({ canResize: true, reason: 'owner' })
   })
 
-  it('closes a raw terminal channel that resolves after the hook has unmounted', async () => {
+  it('closes a terminal channel that resolves after the hook has unmounted', async () => {
     const session = new DeferredTerminalSession()
     const { unmount } = renderHook(() =>
       useTerminalSession({

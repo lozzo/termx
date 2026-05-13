@@ -18,12 +18,24 @@ import { createTerminalProtocolClient } from './terminalProtocolClient'
 import { logTerminalDiagnostic, terminalNow } from './terminalDiagnostics'
 import { appendTerminalText, terminalTextSoftLimitChars, trimTerminalTextToRecentWindow } from './terminalTextWindow'
 import type { Terminal } from '../core/model'
-import type { RtcSession, RtcTerminalDataChannelController } from '../core/transport'
+import type {
+  RtcConnectionStateSnapshot,
+  RtcSession,
+  RtcSessionConnectionStateEvents,
+  RtcTerminalDataChannelController,
+} from '../core/transport'
 
 const recentInputRecoveryWindowMs = 1500
 const outputStatsIntervalMs = 1000
 const largeOutputChunkBytes = 64 * 1024
 const liveOutputPublishDelayMs = 120
+
+interface TerminalChannelRecoveryOptions {
+  session?: RtcSession | undefined
+  forceTerminalChannel?: boolean | undefined
+  supersede?: boolean | undefined
+  showClosedReason?: boolean | undefined
+}
 
 export interface UseTerminalSessionOptions {
   machineId: string
@@ -43,6 +55,7 @@ export interface UseTerminalSessionResult {
   requestResizeOwner(size?: { cols: number; rows: number }): Promise<TerminalResizeControl>
   releaseResizeOwner(): Promise<TerminalResizeControl>
   loadScrollback(limit?: number): Promise<TerminalScrollbackLoadResult>
+  markSyncLost(reason?: string): void
   handleAppResume(resumeKind: 'quick' | 'cold' | 'frozen'): void
   reattach(session: RtcSession, options?: { forceTerminalChannel?: boolean }): void
   client: TerminalClient | null
@@ -64,6 +77,9 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
   const loadingScrollbackRef = useRef(false)
   const hasMoreScrollbackRef = useRef(true)
   const recoveringInputRef = useRef(false)
+  const terminalRecoveryPromiseRef = useRef<Promise<boolean> | null>(null)
+  const terminalRecoverySeqRef = useRef(0)
+  const sessionConnectionPhaseRef = useRef<RtcConnectionStateSnapshot['phase'] | null>(null)
   const pendingRecoveryInputRef = useRef<{ data: string; size?: { cols: number; rows: number } } | null>(null)
   const pendingRecoveryInputTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const textDecoderRef = useRef(new TextDecoder())
@@ -163,6 +179,91 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     }, recentInputRecoveryWindowMs)
   }, [])
 
+  const recoverTerminalChannel = useCallback((
+    reason: string,
+    recoveryOptions: TerminalChannelRecoveryOptions = {},
+  ): Promise<boolean> => {
+    const existing = terminalRecoveryPromiseRef.current
+    if (existing && recoveryOptions.supersede !== true) return existing
+
+    const seq = terminalRecoverySeqRef.current + 1
+    terminalRecoverySeqRef.current = seq
+    const targetSession = recoveryOptions.session ?? sessionRef.current
+    const previousSession = sessionRef.current
+    const client = clientRef.current
+    if (!client) return Promise.resolve(false)
+
+    const startedAt = terminalNow()
+    logSession('terminal_recovery_start', {
+      level: 'warn',
+      details: {
+        reason,
+        forceTerminalChannel: recoveryOptions.forceTerminalChannel === true,
+        supersede: recoveryOptions.supersede === true,
+      },
+    })
+
+    const recoveryPromise = (async (): Promise<boolean> => {
+      try {
+        dispatch({
+          type: 'terminal.channelClosed',
+          machineId: options.machineId,
+          terminalId: options.terminalId,
+          ...(recoveryOptions.showClosedReason === false ? {} : { reason }),
+        })
+        protocolSessionRef.current?.closeTerminalChannel(options.terminalId)
+        closeRtcTerminalDataChannel(previousSession, options.terminalId)
+        if (recoveryOptions.forceTerminalChannel) {
+          closeRtcTerminalDataChannel(targetSession, options.terminalId)
+        }
+        setResizeControl(defaultTerminalResizeControl)
+        sessionRef.current = targetSession
+        const info = await targetSession.getConnectionInfo()
+        if (terminalRecoverySeqRef.current !== seq) return false
+        connectionIdRef.current = info.connectionId
+        const protocolSession = createProtocolSession(targetSession, options.machineId, options.terminalId, info)
+        protocolSessionRef.current = protocolSession
+        await client.reattach(protocolSession)
+        if (terminalRecoverySeqRef.current !== seq) return false
+        dispatch({ type: 'connection.verified', connectionId: info.connectionId })
+        logSession('terminal_recovery_done', {
+          level: 'info',
+          details: {
+            reason,
+            elapsedMs: Math.round(terminalNow() - startedAt),
+            connectionId: info.connectionId,
+          },
+        })
+        return true
+      } catch (err) {
+        if (terminalRecoverySeqRef.current === seq) {
+          const message = err instanceof Error ? err.message : String(err)
+          logSession('terminal_recovery_failed', {
+            level: 'error',
+            details: {
+              reason,
+              elapsedMs: Math.round(terminalNow() - startedAt),
+              error: message,
+            },
+          })
+          dispatch({
+            type: 'connection.failed',
+            reason: message,
+            recoverable: true,
+            surface: 'banner',
+          })
+        }
+        return false
+      } finally {
+        if (terminalRecoverySeqRef.current === seq) {
+          terminalRecoveryPromiseRef.current = null
+        }
+      }
+    })()
+    terminalRecoveryPromiseRef.current = recoveryPromise
+    return recoveryPromise
+  }, [logSession, options.machineId, options.terminalId])
+
   const recoverInputChannel = useCallback(async (
     pending: { data: string; size?: { cols: number; rows: number } },
     reason: string,
@@ -177,26 +278,21 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       return
     }
     try {
-      dispatch({
-        type: 'terminal.channelClosed',
-        machineId: options.machineId,
-        terminalId: options.terminalId,
-        reason,
+      const recovered = await recoverTerminalChannel(reason, {
+        session,
+        forceTerminalChannel: true,
       })
-      protocolSessionRef.current?.closeTerminalChannel(options.terminalId)
-      closeRtcTerminalDataChannel(session, options.terminalId)
-      const info = await session.getConnectionInfo()
-      connectionIdRef.current = info.connectionId
-      const protocolSession = createProtocolSession(session, options.machineId, options.terminalId, info)
-      protocolSessionRef.current = protocolSession
-      await client.reattach(protocolSession)
-      if (pendingRecoveryInputRef.current !== pending) return
+      if (!recovered || pendingRecoveryInputRef.current !== pending) {
+        recoveringInputRef.current = false
+        return
+      }
       clearPendingRecoveryInput(pending)
       const retried = client.sendInput(pending.data, pending.size)
       recoveringInputRef.current = false
       if (!retried) {
         dispatch({ type: 'connection.failed', reason: 'terminal input retry failed', recoverable: true, surface: 'banner' })
       } else {
+        const info = await session.getConnectionInfo()
         dispatch({ type: 'connection.verified', connectionId: info.connectionId })
       }
     } catch (err) {
@@ -209,7 +305,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         surface: 'banner',
       })
     }
-  }, [clearPendingRecoveryInput, options.machineId, options.terminalId, rememberRecoveryInput])
+  }, [clearPendingRecoveryInput, recoverTerminalChannel, rememberRecoveryInput])
 
   const callbacks = useMemo<TerminalClientCallbacks>(() => ({
     onOutput: (data) => {
@@ -276,6 +372,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       const pending = pendingRecoveryInputRef.current
       if (pending && (recoveringInputRef.current || shouldRecoverRecentInput(reason))) {
         void recoverInputChannel(pending, reason ?? 'terminal channel closed')
+      } else if (shouldRecoverTerminalChannel(reason)) {
+        void recoverTerminalChannel(reason ?? 'terminal channel closed', {
+          forceTerminalChannel: true,
+        })
       }
     },
     onOpen: () => {},
@@ -288,9 +388,11 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       const pending = pendingRecoveryInputRef.current
       if (pending) {
         void recoverInputChannel(pending, reason)
+      } else if (shouldRecoverTerminalChannel(reason)) {
+        void recoverTerminalChannel(reason, { forceTerminalChannel: true })
       }
     },
-  }), [logSession, maybeLogOutputStats, publishTerminalTextNow, recoverInputChannel, scheduleTerminalTextPublish])
+  }), [logSession, maybeLogOutputStats, publishTerminalTextNow, recoverInputChannel, recoverTerminalChannel, scheduleTerminalTextPublish])
 
   useEffect(() => {
     sessionRef.current = options.session
@@ -311,6 +413,9 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     loadingScrollbackRef.current = false
     hasMoreScrollbackRef.current = true
     recoveringInputRef.current = false
+    terminalRecoveryPromiseRef.current = null
+    terminalRecoverySeqRef.current += 1
+    sessionConnectionPhaseRef.current = null
     outputStatsRef.current = {
       chunks: 0,
       bytes: 0,
@@ -372,6 +477,35 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     }
   }, [callbacks, clearPendingRecoveryInput, clearTerminalTextPublishTimer, logSession, options.machineId, options.terminalId, options.session])
 
+  useEffect(() => {
+    sessionConnectionPhaseRef.current = null
+    const candidate = options.session as RtcSession & Partial<RtcSessionConnectionStateEvents>
+    if (typeof candidate.subscribeConnectionState !== 'function') return
+    const subscription = candidate.subscribeConnectionState((state) => {
+      const previousPhase = sessionConnectionPhaseRef.current
+      sessionConnectionPhaseRef.current = state.phase
+      if (state.phase === 'connected' && previousPhase !== null && previousPhase !== 'connected') {
+        void recoverTerminalChannel('terminal session connection restored', {
+          session: options.session,
+          forceTerminalChannel: true,
+          supersede: true,
+          showClosedReason: false,
+        })
+      }
+      if (state.phase === 'reconnecting' || state.phase === 'waiting_network') {
+        dispatch({ type: 'connection.disconnected', reason: state.statusText })
+      } else if (state.phase === 'failed') {
+        dispatch({
+          type: 'connection.failed',
+          reason: state.failReason ?? state.statusText ?? 'terminal session connection failed',
+          recoverable: true,
+          surface: 'banner',
+        })
+      }
+    })
+    return () => subscription.close()
+  }, [options.session, recoverTerminalChannel])
+
   const sendInput = useCallback((data: string, size?: { cols: number; rows: number }) => {
     const message = { data, ...(size ? { size } : {}) }
     rememberRecoveryInput(message)
@@ -391,6 +525,10 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
 
   const releaseResizeOwner = useCallback(() => {
     return clientRef.current?.releaseResizeOwner() ?? Promise.reject(new Error('terminal client is not connected'))
+  }, [])
+
+  const markSyncLost = useCallback((reason?: string) => {
+    clientRef.current?.markSyncLost(reason)
   }, [])
 
   const loadScrollback = useCallback(async (limit = 100): Promise<TerminalScrollbackLoadResult> => {
@@ -476,25 +614,13 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
   }, [])
 
   const reattach = useCallback((session: RtcSession, reattachOptions: { forceTerminalChannel?: boolean } = {}) => {
-    const previousSession = sessionRef.current
-    protocolSessionRef.current?.closeTerminalChannel(options.terminalId)
-    closeRtcTerminalDataChannel(previousSession, options.terminalId)
-    if (reattachOptions.forceTerminalChannel) {
-      closeRtcTerminalDataChannel(session, options.terminalId)
-    }
-    setResizeControl(defaultTerminalResizeControl)
-    sessionRef.current = session
-    session.getConnectionInfo().then((info) => {
-      connectionIdRef.current = info.connectionId
-      const protocolSession = createProtocolSession(session, options.machineId, options.terminalId, info)
-      protocolSessionRef.current = protocolSession
-      void clientRef.current?.reattach(protocolSession).then(() => {
-        dispatch({ type: 'connection.verified', connectionId: info.connectionId })
-      })
-    }).catch((err: unknown) => {
-      dispatch({ type: 'connection.failed', reason: err instanceof Error ? err.message : String(err), recoverable: true, surface: 'banner' })
+    void recoverTerminalChannel('terminal reattach requested', {
+      session,
+      forceTerminalChannel: reattachOptions.forceTerminalChannel,
+      supersede: true,
+      showClosedReason: false,
     })
-  }, [options.machineId, options.terminalId])
+  }, [recoverTerminalChannel])
 
   return {
     snapshot,
@@ -507,6 +633,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     requestResizeOwner,
     releaseResizeOwner,
     loadScrollback,
+    markSyncLost,
     handleAppResume,
     reattach,
     client: clientRef.current,
@@ -637,6 +764,16 @@ function createProtocolSession(
       closed = true
       resetProtocol(id)
     },
+    markSyncLost(id, reason) {
+      if (closed) return
+      if (protocol?.markSyncLost) {
+        protocol.markSyncLost(id, reason)
+        return
+      }
+      void ensureProtocol(id).then((current) => {
+        current.markSyncLost?.(id, reason)
+      }).catch(() => {})
+    },
     async requestResizeOwner(id, size) {
       return withRecoverableProtocolRetry(id, async (current) => {
         if (!current.requestResizeOwner) throw new Error('terminal resize ownership is not available')
@@ -684,6 +821,11 @@ function shouldRecoverRecentInput(reason?: string): boolean {
   return /not open|send failed|unavailable|input send failed|not attached|readonly/i.test(reason)
 }
 
+function shouldRecoverTerminalChannel(reason?: string): boolean {
+  if (!reason) return false
+  return /terminal data channel|terminal channel send failed|terminal protocol .* timed out|native bridge|not open|closed|timed out|send failed|not attached|attachment channel|ensure resize requires attachment/i.test(reason)
+}
+
 function createClosedProtocolSession(
   connectionInfo: Awaited<ReturnType<RtcSession['getConnectionInfo']>>,
   reason: string,
@@ -706,5 +848,6 @@ function createClosedProtocolSession(
       }
     },
     closeTerminalChannel() {},
+    markSyncLost() {},
   }
 }

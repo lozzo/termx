@@ -119,7 +119,7 @@ snap, err := srv.Snapshot(ctx, terminalID)
 
 ## Scrollback 传输策略
 
-Scrollback 可能很大（10000 行），但客户端通常只需要最近的几百行。传输策略：
+Scrollback 可能很大（默认 2000 行，可配置更高），但客户端通常只需要最近的几百行。传输策略：
 
 1. **快照响应分两部分**：Screen + Cursor + Modes 立即返回，Scrollback 可选请求
 2. **Scrollback 分页**：客户端通过 `snapshot` 请求指定 `scrollback_limit`（默认 500 行）

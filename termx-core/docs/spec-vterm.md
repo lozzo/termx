@@ -192,7 +192,7 @@ func New(cols, rows int, scrollbackSize int) *VTerm {
 
 ## 滚动回看缓冲区
 
-- 默认最大 10000 行（通过 `CreateOptions.ScrollbackSize` 配置）
+- 默认最大 2000 行（通过 `CreateOptions.ScrollbackSize` 配置）
 - 只在主屏幕模式下累积（备用屏幕没有 scrollback）
 - 当 scrollback 超过最大值时，底层库自动移除最旧的行
 
@@ -205,22 +205,23 @@ func New(cols, rows int, scrollbackSize int) *VTerm {
 
 ## 数据流架构
 
-VTerm **不在输出分发的关键路径上**。数据流如下：
+VTerm 是服务端权威屏幕状态，位于输出分发路径上。数据流如下：
 
 ```
 PTY read goroutine:
   buf := pty.Read()
-  fanout.Broadcast(buf)   // 1. 先分发给所有订阅者（低延迟）
-  vterm.Write(buf)         // 2. 再异步喂给 VTerm 解析（仅维护屏幕状态）
+  damage := vterm.WriteWithDamage(buf)     // 解析 PTY，更新权威屏幕
+  payload := EncodeScreenUpdate(damage)     // 编码屏幕增量
+  fanout.Broadcast(ScreenUpdate(payload))   // 分发给订阅者
 ```
 
-VTerm 的唯一消费者是 `Snapshot()`。订阅者收到的是 PTY 原始字节，由客户端自己解析 ANSI 序列。这样即使 VTerm 解析较慢（如大量滚动输出），也不影响订阅者的实时性。
+订阅者收到的是二进制 screen update，而不是 PTY 原始字节。这样可以避免每个客户端重复解析同一批 ANSI 输出，并让慢消费者通过队列折叠恢复到最新屏幕。
 
 ## 性能考虑
 
-- **不阻塞分发**：VTerm 解析在 Fan-out 之后，不影响订阅者延迟
-- **批量处理**：`Write` 一次处理整个 `[]byte`，不是逐字节调用
-- **脏行追踪**：`charmbracelet/x/vt` 的 `Touched()` 返回脏行列表，未来可用于增量快照
+- **单次解析**：PTY 输出只在服务端 VTerm 解析一次，客户端消费结构化增量
+- **批量处理**：`WriteWithDamage` 一次处理整个 `[]byte`，不是逐字节调用
+- **脏区追踪**：damage op 直接转成 screen update，滚动场景优先用 scroll/copy/clear 等操作表达
 - **Scrollback 上限**：防止长时间运行的进程占用过多内存
 
 ## 相关文档

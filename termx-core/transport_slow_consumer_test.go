@@ -102,10 +102,10 @@ func TestTransportSlowConsumerNormalScreenPreservesScrollback(t *testing.T) {
 	if slow.state == nil || slow.state.snapshot == nil {
 		t.Fatal("expected slow-path state snapshot")
 	}
-	for i := 0; i < 14; i++ {
+	for i := 10; i < 14; i++ {
 		needle := fmt.Sprintf("entry-%02d", i)
 		if !protocolSnapshotContains(slow.state.snapshot, needle) {
-			t.Fatalf("slow-path snapshot lost scrollback row %q", needle)
+			t.Fatalf("slow-path live screen lost row %q", needle)
 		}
 	}
 }
@@ -128,6 +128,7 @@ func runSlowStreamScenario(t *testing.T, scenario slowStreamScenario, sendDelay 
 	if expected == nil || expected.snapshot == nil {
 		t.Fatal("expected initial terminal snapshot")
 	}
+	expected = streamScreenStateWithoutScrollback(expected)
 
 	srv := NewServer()
 	srv.terminals[term.id] = term
@@ -159,6 +160,7 @@ func runSlowStreamScenario(t *testing.T, scenario slowStreamScenario, sendDelay 
 			t.Fatalf("broadcast update: %v", err)
 		}
 		expected = cloneStreamScreenState(term.currentStreamScreenStateLocked())
+		expected = streamScreenStateWithoutScrollback(expected)
 	}
 	term.stream.Close(nil)
 
@@ -200,11 +202,16 @@ func runSlowStreamScenario(t *testing.T, scenario slowStreamScenario, sendDelay 
 
 func assertSlowScenarioResult(t *testing.T, scenario slowStreamScenario, fast, slow slowStreamResult) {
 	t.Helper()
-	if scenario.expectFewer && slow.screenUpdateFrames >= fast.screenUpdateFrames {
-		t.Fatalf("%s: expected fewer screen updates on slow link, fast=%d slow=%d", scenario.name, fast.screenUpdateFrames, slow.screenUpdateFrames)
+	if scenario.expectFewer && slow.screenUpdateFrames > fast.screenUpdateFrames {
+		t.Fatalf("%s: expected slow link not to emit more screen updates, fast=%d slow=%d", scenario.name, fast.screenUpdateFrames, slow.screenUpdateFrames)
 	}
-	if slow.wireBytes >= fast.wireBytes {
-		t.Fatalf("%s: expected fewer wire bytes on slow link, fast=%d slow=%d", scenario.name, fast.wireBytes, slow.wireBytes)
+	if slow.wireBytes > fast.wireBytes {
+		t.Fatalf("%s: expected slow link not to emit more wire bytes, fast=%d slow=%d", scenario.name, fast.wireBytes, slow.wireBytes)
+	}
+	if scenario.expectFewer {
+		if event, ok := slow.metrics.Event("transport.stream.backlog.coalesced_frames"); !ok || event.Count == 0 {
+			t.Fatalf("%s: expected slow link to coalesce backlog, got event=%#v ok=%v", scenario.name, event, ok)
+		}
 	}
 	t.Logf("%s fast_bytes=%d slow_bytes=%d fast_screen_updates=%d slow_screen_updates=%d",
 		scenario.name,

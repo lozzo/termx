@@ -21,13 +21,6 @@ const (
 	screenUpdateEncodeModeFullReplace screenUpdateEncodeMode = "full_replace"
 )
 
-const (
-	backlogAlternateScreenCollapseFrames = 2
-	backlogNormalScreenCollapseFrames    = 4
-	backlogAlternateScreenCollapseBytes  = 16 * 1024
-	backlogNormalScreenCollapseBytes     = 64 * 1024
-)
-
 func cloneStreamScreenState(state *streamScreenState) *streamScreenState {
 	if state == nil {
 		return nil
@@ -44,6 +37,15 @@ func streamScreenStateWithScrollbackLimit(state *streamScreenState, limit int) *
 	}
 	next := cloneStreamScreenState(state)
 	trimProtocolSnapshotScrollbackToLast(next.snapshot, limit)
+	return next
+}
+
+func streamScreenStateWithoutScrollback(state *streamScreenState) *streamScreenState {
+	if state == nil || state.snapshot == nil {
+		return state
+	}
+	next := cloneStreamScreenState(state)
+	clearProtocolSnapshotScrollback(next.snapshot)
 	return next
 }
 
@@ -97,6 +99,13 @@ func encodeMergedScreenStatePayload(before, after *streamScreenState, resetScrol
 	perftrace.Count("terminal.screen_update.encoded_bytes", len(payload))
 	perftrace.Count("terminal.screen_update.encode_mode.full_replace", len(payload))
 	return payload, true
+}
+
+func encodeCollapsedScreenStatePayload(state *streamScreenState) ([]byte, bool) {
+	if state == nil || state.snapshot == nil {
+		return nil, false
+	}
+	return encodeMergedScreenStatePayload(nil, state, !state.snapshot.Modes.AlternateScreen)
 }
 
 func recordEncodedScreenUpdatePayload(mode screenUpdateEncodeMode, payload []byte) {
@@ -235,31 +244,23 @@ func fullReplaceUpdateForStateDelta(before, after *streamScreenState, resetScrol
 	return update
 }
 
+func screenOnlyUpdate(update protocol.ScreenUpdate) protocol.ScreenUpdate {
+	update.ResetScrollback = false
+	update.ScrollbackTrim = 0
+	update.ScrollbackAppend = nil
+	return update
+}
+
 func screenUpdateFromDamageState(damage localvterm.WriteDamage, title string) protocol.ScreenUpdate {
 	finish := perftrace.Measure("terminal.screen_update.from_damage_state")
 	defer finish(0)
 	update := protocol.ScreenUpdate{
-		Size:             protocol.Size{Cols: uint16(damage.SizeCols), Rows: uint16(damage.SizeRows)},
-		ScreenScroll:     damage.ScreenScroll,
-		ChangedSpans:     make([]protocol.ScreenSpanUpdate, 0, len(damage.ChangedScreenSpans)),
-		Ops:              make([]protocol.ScreenOp, 0, len(damage.Ops)),
-		ScrollbackTrim:   damage.ScrollbackTrim,
-		ScrollbackAppend: make([]protocol.ScrollbackRowAppend, 0, len(damage.ScrollbackAppend)),
-		Cursor:           protocolCursorStateFromVTerm(damage.Cursor),
-		Modes:            protocolModesFromVTerm(damage.Modes),
-		Title:            title,
-	}
-	for _, span := range damage.ChangedScreenSpans {
-		update.ChangedSpans = append(update.ChangedSpans, protocol.ScreenSpanUpdate{
-			Row:        span.Row,
-			ColStart:   span.ColStart,
-			Cells:      protocolCellsFromVTermRow(span.Cells),
-			Op:         span.Op,
-			Timestamp:  span.Timestamp,
-			RowKind:    span.RowKind,
-			Wrapped:    span.Wrapped,
-			WrappedSet: span.WrappedSet,
-		})
+		Size:         protocol.Size{Cols: uint16(damage.SizeCols), Rows: uint16(damage.SizeRows)},
+		ScreenScroll: damage.ScreenScroll,
+		Ops:          make([]protocol.ScreenOp, 0, len(damage.Ops)),
+		Cursor:       protocolCursorStateFromVTerm(damage.Cursor),
+		Modes:        protocolModesFromVTerm(damage.Modes),
+		Title:        title,
 	}
 	for _, op := range damage.Ops {
 		update.Ops = append(update.Ops, protocol.ScreenOp{
@@ -277,15 +278,6 @@ func screenUpdateFromDamageState(damage localvterm.WriteDamage, title string) pr
 			RowKind:    op.RowKind,
 			Wrapped:    op.Wrapped,
 			WrappedSet: op.WrappedSet,
-		})
-	}
-	for _, row := range damage.ScrollbackAppend {
-		update.ScrollbackAppend = append(update.ScrollbackAppend, protocol.ScrollbackRowAppend{
-			Cells:      protocolCellsFromVTermRow(row.Cells),
-			Timestamp:  row.Timestamp,
-			RowKind:    row.RowKind,
-			Wrapped:    row.Wrapped,
-			WrappedSet: row.WrappedSet,
 		})
 	}
 	return update
@@ -388,10 +380,7 @@ func screenUpdateHasScrollOpcode(update protocol.ScreenUpdate) bool {
 }
 
 func screenUpdateChangedRowCount(update protocol.ScreenUpdate) int {
-	seen := make(map[int]struct{}, len(update.ChangedSpans)+len(update.Ops))
-	for _, span := range update.ChangedSpans {
-		seen[span.Row] = struct{}{}
-	}
+	seen := make(map[int]struct{}, len(update.Ops))
 	for _, op := range update.Ops {
 		switch op.Code {
 		case protocol.ScreenOpWriteSpan, protocol.ScreenOpClearToEOL:
@@ -411,16 +400,6 @@ func screenUpdateChangedRowCount(update protocol.ScreenUpdate) int {
 
 func screenUpdateChangedCellCount(update protocol.ScreenUpdate) int {
 	count := 0
-	for _, span := range update.ChangedSpans {
-		switch span.Op {
-		case protocol.ScreenSpanOpClearToEOL:
-			continue
-		case protocol.ScreenSpanOpReplaceRow:
-			count += len(trimTrailingProtocolCells(span.Cells))
-		default:
-			count += len(span.Cells)
-		}
-	}
 	for _, op := range update.Ops {
 		switch op.Code {
 		case protocol.ScreenOpWriteSpan:
@@ -703,27 +682,6 @@ func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, up
 	screenRowCellsOwned := make(map[int]bool)
 	if len(update.Ops) > 0 {
 		applySnapshotScreenOps(snapshot, update, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned, &screenWrappedOwned, screenRowCellsOwned)
-	} else {
-		for _, span := range update.ChangedSpans {
-			if span.Row < 0 {
-				continue
-			}
-			ensureSnapshotScreenRowsCOW(snapshot, span.Row+1, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned, &screenWrappedOwned)
-			ensureSnapshotScreenRowCellsCOW(snapshot, span.Row, &screenCellsOwned, screenRowCellsOwned)
-			switch span.Op {
-			case protocol.ScreenSpanOpClearToEOL:
-				snapshot.Screen.Cells[span.Row] = clearProtocolCellRowFrom(snapshot.Screen.Cells[span.Row], span.ColStart)
-			case protocol.ScreenSpanOpReplaceRow:
-				snapshot.Screen.Cells[span.Row] = trimProtocolCellRow(cloneProtocolCellRow(span.Cells))
-			default:
-				snapshot.Screen.Cells[span.Row] = applyProtocolCellSpan(snapshot.Screen.Cells[span.Row], span.ColStart, span.Cells)
-			}
-			snapshot.ScreenTimestamps[span.Row] = span.Timestamp
-			snapshot.ScreenRowKinds[span.Row] = span.RowKind
-			if span.WrappedSet {
-				snapshot.ScreenWrapped[span.Row] = span.Wrapped
-			}
-		}
 	}
 	if appendCount := len(update.ScrollbackAppend); appendCount > 0 {
 		baseRows := len(snapshot.Scrollback)
@@ -1254,6 +1212,16 @@ func trimProtocolSnapshotScrollbackToLast(snapshot *protocol.Snapshot, limit int
 	trimSnapshotScrollbackFront(snapshot, len(snapshot.Scrollback)-limit)
 }
 
+func clearProtocolSnapshotScrollback(snapshot *protocol.Snapshot) {
+	if snapshot == nil {
+		return
+	}
+	snapshot.Scrollback = nil
+	snapshot.ScrollbackTimestamps = nil
+	snapshot.ScrollbackRowKinds = nil
+	snapshot.ScrollbackWrapped = nil
+}
+
 func cloneProtocolRowsWindow(rows [][]protocol.Cell, start int) [][]protocol.Cell {
 	start = minInt(maxInt(start, 0), len(rows))
 	if start >= len(rows) {
@@ -1266,11 +1234,6 @@ func cloneProtocolRowsWindow(rows [][]protocol.Cell, start int) [][]protocol.Cel
 
 func maxChangedScreenRow(update protocol.ScreenUpdate) int {
 	maxRow := -1
-	for _, span := range update.ChangedSpans {
-		if span.Row > maxRow {
-			maxRow = span.Row
-		}
-	}
 	for _, op := range update.Ops {
 		switch op.Code {
 		case protocol.ScreenOpWriteSpan, protocol.ScreenOpClearToEOL:

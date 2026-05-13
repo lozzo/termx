@@ -2,6 +2,8 @@ package vt
 
 import (
 	"testing"
+
+	uv "github.com/charmbracelet/ultraviolet"
 )
 
 func TestScrollback(t *testing.T) {
@@ -63,6 +65,42 @@ func TestScrollback(t *testing.T) {
 
 		if sb.Len() != 5 {
 			t.Errorf("expected len 5 after overflow, got %d", sb.Len())
+		}
+	})
+
+	t.Run("scrollback trims overflow in batches", func(t *testing.T) {
+		sb := NewScrollback(20)
+
+		for i := 0; i < 23; i++ {
+			sb.Push(nil)
+		}
+
+		if sb.Len() != 19 {
+			t.Errorf("expected batched overflow trim to leave 19 lines, got %d", sb.Len())
+		}
+		if sb.MaxLines() != 20 {
+			t.Errorf("expected max 20 after overflow, got %d", sb.MaxLines())
+		}
+	})
+
+	t.Run("reflow preserves ring order and max", func(t *testing.T) {
+		s := NewScreen(4, 2)
+		s.SetScrollbackSize(5)
+		for i := 0; i < 8; i++ {
+			s.scrollback.Push(uv.Line{{Content: string(rune('0' + i)), Width: 1}})
+		}
+
+		s.Reflow(4, 2, 0, 0)
+
+		sb := s.Scrollback()
+		if got := sb.Len(); got != 5 {
+			t.Fatalf("expected reflow to keep scrollback capped at 5 rows, got %d", got)
+		}
+		for i, want := range []string{"3", "4", "5", "6", "7"} {
+			line := sb.Line(i)
+			if len(line) == 0 || line[0].Content != want {
+				t.Fatalf("unexpected row %d after reflow: got %#v want %q", i, line, want)
+			}
 		}
 	})
 

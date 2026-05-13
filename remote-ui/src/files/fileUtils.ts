@@ -1,0 +1,103 @@
+import type { FileEntry } from './fileApi'
+import { extension as modelExtension } from './modelFileTypes'
+
+export function basename(path: string): string {
+  const normalized = path.replace(/\/+$/, '')
+  const index = normalized.lastIndexOf('/')
+  return index >= 0 ? normalized.slice(index + 1) : normalized
+}
+
+export function extension(name: string): string {
+  return modelExtension(name)
+}
+
+export function joinPath(base: string, name: string): string {
+  if (!base || base === '/') return `/${name}`
+  return `${base.replace(/\/+$/, '')}/${name}`
+}
+
+export function normalizeFilePath(path: string): string {
+  const trimmed = path.trim()
+  if (!trimmed || trimmed === '/') return '/'
+  return trimmed.replace(/\/+$/, '') || '/'
+}
+
+export function parentPath(path: string): string {
+  const normalized = normalizeFilePath(path)
+  if (normalized === '/') return '/'
+  const index = normalized.lastIndexOf('/')
+  if (index <= 0) return '/'
+  return normalized.slice(0, index)
+}
+
+export function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
+export function formatBytes(bytes: number, decimals = 1) {
+  if (!+bytes) return '0 B'
+  const k = 1024
+  const dm = decimals < 0 ? 0 : decimals
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`
+}
+
+export function isMarkdownFile(name: string, mimeType: string): boolean {
+  const ext = extension(name)
+  return mimeType === 'text/markdown' || ext === 'md' || ext === 'markdown' || ext === 'mdx'
+}
+
+export function fileEntryMeta(entry: Pick<FileEntry, 'type' | 'size' | 'modTime' | 'childCount' | 'linkTarget' | 'hardLink' | 'linkCount' | 'inode'>): string {
+  const parts: string[] = []
+  const isDirectory = entry.type === 'dir' || entry.type === 'symlink-dir'
+  if (isDirectory) {
+    if (typeof entry.childCount === 'number') {
+      parts.push(`${entry.childCount} ${entry.childCount === 1 ? 'item' : 'items'}`)
+    } else {
+      parts.push('Folder')
+    }
+  } else {
+    parts.push(formatBytes(entry.size))
+  }
+  const modified = formatModifiedTime(entry.modTime)
+  if (modified) parts.push(modified)
+  if (entry.linkTarget) parts.push(`-> ${entry.linkTarget}`)
+  else if (entry.hardLink) {
+    const hardLink = entry.linkCount && entry.linkCount > 1
+      ? `hard link x${entry.linkCount}`
+      : 'hard link'
+    parts.push(entry.inode ? `${hardLink} · inode ${entry.inode}` : hardLink)
+  }
+  return parts.join(' · ')
+}
+
+export function fileEntryMenuSubtitle(entry: Pick<FileEntry, 'type' | 'size' | 'childCount' | 'linkTarget' | 'hardLink' | 'linkCount' | 'inode'>): string {
+  const isDirectory = entry.type === 'dir' || entry.type === 'symlink-dir'
+  if (isDirectory) {
+    const count = typeof entry.childCount === 'number' ? `${entry.childCount} ${entry.childCount === 1 ? 'item' : 'items'}` : 'Folder'
+    if (entry.linkTarget) return `${count} · -> ${entry.linkTarget}`
+    return count
+  }
+  if (entry.linkTarget) return `${formatBytes(entry.size)} · -> ${entry.linkTarget}`
+  if (entry.hardLink) {
+    const hardLink = entry.linkCount && entry.linkCount > 1
+      ? `hard link x${entry.linkCount}`
+      : 'hard link'
+    return entry.inode ? `${formatBytes(entry.size)} · ${hardLink} · inode ${entry.inode}` : `${formatBytes(entry.size)} · ${hardLink}`
+  }
+  return `${formatBytes(entry.size)} · File`
+}
+
+function formatModifiedTime(value: string | undefined): string {
+  if (!value) return ''
+  const timestamp = Date.parse(value)
+  if (!Number.isFinite(timestamp)) return value
+  return new Date(timestamp).toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}

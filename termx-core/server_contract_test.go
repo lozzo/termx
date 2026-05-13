@@ -14,11 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/fanout"
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/transport/memory"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
-	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 func TestServerCreateRejectsInvalidCommandAndDuplicateID(t *testing.T) {
@@ -1135,74 +1133,6 @@ func TestAttachResizeControlPolicyAndSizeLock(t *testing.T) {
 	}, func(uint16, uint8, []byte) error { return nil })
 	if err == nil || code != 400 {
 		t.Fatalf("expected invalid resize policy to fail with 400, got code=%d err=%v", code, err)
-	}
-}
-
-func TestAttachRawStreamModePreservesSyncLost(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	srv := NewServer()
-	vt := localvterm.New(8, 2, 16, nil)
-	if _, err := vt.Write([]byte("hello")); err != nil {
-		t.Fatalf("seed vterm: %v", err)
-	}
-	term := &Terminal{
-		id:                 "raw-stream-mode",
-		size:               Size{Cols: 8, Rows: 2},
-		state:              StateRunning,
-		vterm:              vt,
-		stream:             fanout.New(),
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
-		processEpoch:       1,
-		attachments:        make(map[string]AttachInfo),
-	}
-	srv.terminals[term.id] = term
-
-	allocator := protocol.NewChannelAllocator()
-	attachments := make(map[uint16]*sessionAttachment)
-	var attachmentsMu sync.RWMutex
-	var framesMu sync.Mutex
-	var frames []sentProtocolFrame
-	sendFrame := func(channel uint16, typ uint8, payload []byte) error {
-		framesMu.Lock()
-		defer framesMu.Unlock()
-		frames = append(frames, sentProtocolFrame{channel: channel, typ: typ, payload: append([]byte(nil), payload...)})
-		return nil
-	}
-
-	result, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
-		ID:     1,
-		Method: "attach",
-		Params: mustJSON(t, protocol.AttachParams{
-			TerminalID: term.id,
-			Mode:       string(ModeCollaborator),
-			StreamMode: protocol.StreamModeRaw,
-		}),
-	}, sendFrame)
-	if err != nil {
-		t.Fatalf("attach raw stream failed: %v", err)
-	}
-	var attach protocol.AttachResult
-	if err := json.Unmarshal(result, &attach); err != nil {
-		t.Fatalf("unmarshal attach result failed: %v", err)
-	}
-
-	waitFor(t, time.Second, func() bool {
-		framesMu.Lock()
-		defer framesMu.Unlock()
-		return sentFrameTypeCount(frames, attach.Channel, protocol.TypeBootstrapDone) > 0
-	})
-	term.stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamSyncLost, DroppedBytes: 13})
-	waitFor(t, time.Second, func() bool {
-		framesMu.Lock()
-		defer framesMu.Unlock()
-		return sentFrameTypeCount(frames, attach.Channel, protocol.TypeSyncLost) > 0
-	})
-	framesMu.Lock()
-	defer framesMu.Unlock()
-	if count := sentFrameTypeCount(frames, attach.Channel, protocol.TypeScreenUpdate); count != 1 {
-		t.Fatalf("expected only bootstrap screen update for raw stream, got %d", count)
 	}
 }
 

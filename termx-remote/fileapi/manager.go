@@ -571,7 +571,7 @@ func (m *Manager) handlePreview(body []byte) (int32, []byte, string) {
 		data, _ := json.Marshal(resp)
 		return http.StatusOK, data, ""
 	}
-	if category == "video" {
+	if category == "video" || category == "model" {
 		data, _ := json.Marshal(resp)
 		return http.StatusOK, data, ""
 	}
@@ -1131,6 +1131,24 @@ func detectFileCategory(name string) (string, string) {
 		"mp4": "video/mp4", "m4v": "video/mp4", "webm": "video/webm", "mov": "video/quicktime",
 		"ogv": "video/ogg", "ogg": "video/ogg",
 	}
+	modelExts := map[string]string{
+		"3ds":  "application/x-3ds",
+		"3mf":  "model/3mf",
+		"amf":  "application/x-amf",
+		"dae":  "model/vnd.collada+xml",
+		"fbx":  "application/vnd.autodesk.fbx",
+		"glb":  "model/gltf-binary",
+		"gltf": "model/gltf+json",
+		"obj":  "model/obj",
+		"pcd":  "application/vnd.pointcloud",
+		"ply":  "model/ply",
+		"stl":  "model/stl",
+		"vox":  "application/x-vox",
+		"vrml": "model/vrml",
+		"vtk":  "model/vtk",
+		"wrl":  "model/vrml",
+		"xyz":  "chemical/x-xyz",
+	}
 	baseName := strings.ToLower(filepath.Base(name))
 	noExtTextFiles := map[string]bool{
 		"dockerfile": true, "makefile": true, ".gitignore": true, ".env": true, ".editorconfig": true,
@@ -1146,6 +1164,9 @@ func detectFileCategory(name string) (string, string) {
 	}
 	if mime, ok := videoExts[ext]; ok {
 		return "video", mime
+	}
+	if mime, ok := modelExts[ext]; ok {
+		return "model", mime
 	}
 	return "unsupported", "application/octet-stream"
 }

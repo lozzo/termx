@@ -80,7 +80,7 @@ Terminal 是 termx 的**唯一服务端实体**，包含：
 类似 tmux 的终端界面，但组织方式完全在客户端：
 
 - 列表视图：显示所有 Terminal，支持按名称、命令或本地布局分组
-- 全屏 attach：raw passthrough，直连 PTY I/O
+- 全屏 attach：消费服务端 screen update，输入仍直写 PTY
 - 快捷键驱动
 
 详见 [spec-tui-client.md](spec-tui-client.md)。
@@ -112,26 +112,24 @@ term, _ := srv.Create(ctx, termx.CreateOptions{Command: []string{"bash"}})
 ### 终端输出（PTY → 客户端）
 
 ```
-PTY stdout → Fan-out → [Subscriber 1, Subscriber 2, ...]
-                ↓
-              VTerm（异步解析，维护屏幕缓冲区，仅服务 Snapshot）
+PTY stdout → Server VTerm（权威屏幕） → ScreenUpdate Fan-out → [Subscriber 1, Subscriber 2, ...]
 ```
 
-- PTY 原始字节先经过 Fan-out 分发给所有订阅者，再异步送入 VTerm 解析
-- VTerm 不在数据分发的关键路径上，仅为 Snapshot 维护屏幕状态
-- Fan-out 处理背压：慢消费者被丢弃（不阻塞其他订阅者）
+- PTY 输出只在服务端解析一次，VTerm 维护权威屏幕和 scrollback
+- Fan-out 发送二进制 `ScreenUpdate`，客户端按增量更新自己的显示状态
+- Fan-out 处理背压：慢消费者的连续 screen update 会被折叠到最新状态，不阻塞其他订阅者
 
 ### 控制面 vs 数据面
 
 termx 在协议和架构上明确区分两条路径：
 
 - **控制面（control plane）**：create/list/get/kill/attach/snapshot/events 等管理操作，频率低，使用 JSON
-- **数据面（data plane）**：Terminal 输入输出字节流，频率高，使用二进制帧透传 PTY 原始字节
+- **数据面（data plane）**：Terminal 输入和服务端 screen update，频率高，使用二进制帧
 
 这一区分是刻意设计，而不是过渡实现。性能评审后的结论是：
 
 - JSON 主要存在于低频控制面，不应成为终端渲染卡顿的首要怀疑对象
-- 高负载场景（`htop`、`vim`、大量日志、频繁 resize）的主要风险，通常在**客户端 VT 解析、本地屏幕模型、分屏合成和最终渲染输出**
+- 高负载场景（`htop`、`vim`、大量日志、频繁 resize）的主要风险，通常在**屏幕增量合并、本地显示模型、分屏合成和最终渲染输出**
 - 因此 termx 的优化重点应放在 TUI 渲染链路，而不是把控制面 JSON 过早替换成二进制协议
 
 ### TUI 性能关注点

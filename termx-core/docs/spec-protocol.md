@@ -134,27 +134,32 @@
 
 ## 终端 I/O 通道（Channel 1..N）
 
-I/O 通道传输终端的输入/输出数据。消息体使用**二进制格式**。
+I/O 通道传输终端输入和服务端权威屏幕更新。消息体使用**二进制格式**。
 
 ### 消息类型
 
 | Type 值 | 名称 | 方向 | 说明 |
 |---------|------|------|------|
-| 0x10 | Output | S->C | 终端输出数据 |
+| 0x10 | Reserved | - | 已废弃，不再发送 PTY 原始输出 |
 | 0x11 | Input | C->S | 终端输入数据 |
 | 0x12 | Resize | C->S | 调整终端尺寸 |
+| 0x13 | BootstrapDone | S->C | 初始屏幕状态已发送完成 |
+| 0x14 | ScreenUpdate | S->C | 服务端权威屏幕更新 |
 | 0x16 | SyncLost | S->C | 数据丢失通知 |
 | 0x17 | Closed | S->C | 终端已关闭 |
+| 0x18 | HistoryRequest | C->S | 请求滚动回看页 |
+| 0x19 | HistoryReplay | S->C | 滚动回看页 replay |
 
-### Output（0x10）
+### ScreenUpdate（0x14）
 
 ```
-Payload: raw bytes (PTY 输出数据)
+Payload: binary screen update (TSU6)
 ```
 
-- 直接是 PTY 输出的原始字节，不做任何转换
-- 客户端负责解析 ANSI 转义序列
-- 这一通道是性能敏感路径，设计目标是“少复制、少编码、少语义变换”
+- 服务端先把 PTY 输出写入权威 VTerm，再广播屏幕增量
+- 客户端消费 screen update，不再各自解析 PTY 原始输出
+- 增量 payload 只使用 `ScreenOp` 序列；旧的 changed_rows / changed_spans payload 已删除
+- 慢消费者队列会折叠连续 screen update，只保留可恢复到最新状态的一帧
 
 ### Input（0x11）
 

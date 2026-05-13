@@ -7,7 +7,6 @@ export const TERMX_FRAME_TYPES = {
   response: 0x02,
   event: 0x03,
   error: 0x04,
-  output: 0x10,
   input: 0x11,
   resize: 0x12,
   bootstrapDone: 0x13,
@@ -86,6 +85,655 @@ export function decodeHistoryReplayPayload(payload: Uint8Array): { rows: number;
     hasMore: view.getUint8(4) === 1,
     replay: payload.slice(5),
   }
+}
+
+interface CellStyleLike {
+  fg: string
+  bg: string
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  blink: boolean
+  reverse: boolean
+  strikethrough: boolean
+}
+
+interface DecodedCell {
+  content: string
+  width: number
+  style: CellStyleLike
+}
+
+interface DecodedCursor {
+  row: number
+  col: number
+  visible: boolean
+  shape: string
+  blink: boolean
+}
+
+interface DecodedModes {
+  alternateScreen: boolean
+  alternateScroll: boolean
+  mouseTracking: boolean
+  mouseX10: boolean
+  mouseNormal: boolean
+  mouseButtonEvent: boolean
+  mouseAnyEvent: boolean
+  mouseSGR: boolean
+  bracketedPaste: boolean
+  applicationCursor: boolean
+  autoWrap: boolean
+}
+
+interface DecodedScreenRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface DecodedScreenOp {
+  code: number
+  rect: DecodedScreenRect
+  src: DecodedScreenRect
+  dstX: number
+  dstY: number
+  dx: number
+  dy: number
+  row: number
+  col: number
+  cells: DecodedCell[]
+  cursor: DecodedCursor
+  modes: DecodedModes
+  size: { cols: number; rows: number }
+  title: string
+}
+
+interface DecodedScreenUpdate {
+  fullReplace: boolean
+  resetScrollback: boolean
+  size: { cols: number; rows: number }
+  screenScroll: number
+  title: string
+  screen: { rows: DecodedCell[][]; alternateScreen: boolean }
+  ops: DecodedScreenOp[]
+  scrollbackTrim: number
+  scrollbackAppend: DecodedCell[][]
+  cursor: DecodedCursor
+  modes: DecodedModes
+}
+
+const screenUpdatePayloadMagic = 'TSU6'
+
+const screenUpdateFlagFullReplace = 1 << 0
+const screenUpdateFlagResetScrollback = 1 << 1
+const screenUpdateFlagHasTitle = 1 << 2
+const screenUpdateFlagHasScreenScroll = 1 << 3
+
+const screenOpWriteSpan = 0
+const screenOpScrollRect = 1
+const screenOpCopyRect = 2
+const screenOpClearRect = 3
+const screenOpClearToEOL = 4
+const screenOpCursor = 5
+const screenOpModes = 6
+const screenOpResize = 7
+const screenOpTitle = 8
+
+const emptyStyle: CellStyleLike = {
+  fg: '',
+  bg: '',
+  bold: false,
+  italic: false,
+  underline: false,
+  blink: false,
+  reverse: false,
+  strikethrough: false,
+}
+
+const emptyCursor: DecodedCursor = {
+  row: -1,
+  col: -1,
+  visible: false,
+  shape: '',
+  blink: false,
+}
+
+const emptyModes: DecodedModes = {
+  alternateScreen: false,
+  alternateScroll: false,
+  mouseTracking: false,
+  mouseX10: false,
+  mouseNormal: false,
+  mouseButtonEvent: false,
+  mouseAnyEvent: false,
+  mouseSGR: false,
+  bracketedPaste: false,
+  applicationCursor: false,
+  autoWrap: false,
+}
+
+export function screenUpdatePayloadToReplay(payload: Uint8Array): string | null {
+  const update = decodeScreenUpdatePayload(payload)
+  return screenUpdateToReplay(update)
+}
+
+function decodeScreenUpdatePayload(payload: Uint8Array): DecodedScreenUpdate {
+  const magic = new TextDecoder().decode(payload.slice(0, 4))
+  if (magic !== screenUpdatePayloadMagic) {
+    throw new Error('unsupported terminal screen update payload')
+  }
+  return decodeScreenUpdatePayloadCurrent(payload)
+}
+
+function decodeScreenUpdatePayloadCurrent(payload: Uint8Array): DecodedScreenUpdate {
+  const dec = new ScreenUpdateDecoder(payload)
+  dec.consumeMagic(screenUpdatePayloadMagic)
+  const update = dec.readHeader()
+  const styles = dec.readStyles()
+  if (update.fullReplace) {
+    update.screen.alternateScreen = dec.readByte() !== 0
+    update.screen.rows = dec.readRows(styles)
+    dec.skipTimeSlice()
+    dec.skipStringSlice()
+    dec.skipBoolSlice()
+  }
+  const opCount = dec.readUvarint()
+  for (let index = 0; index < opCount; index += 1) {
+    update.ops.push(dec.readScreenOp(styles))
+  }
+  update.scrollbackTrim = dec.readUvarint()
+  const appendCount = dec.readUvarint()
+  for (let index = 0; index < appendCount; index += 1) {
+    dec.skipTime()
+    dec.skipString()
+    dec.skipWrapped()
+    update.scrollbackAppend.push(dec.readCells(styles))
+  }
+  dec.assertEOF()
+  return update
+}
+
+class ScreenUpdateDecoder {
+  private off = 0
+  private readonly textDecoder = new TextDecoder()
+
+  constructor(private readonly data: Uint8Array) {}
+
+  consumeMagic(magic: string): void {
+    if (this.remaining() < magic.length || this.textDecoder.decode(this.data.slice(this.off, this.off + magic.length)) !== magic) {
+      throw new Error('invalid terminal screen update magic')
+    }
+    this.off += magic.length
+  }
+
+  readHeader(): DecodedScreenUpdate {
+    const flags = this.readByte()
+    const cols = this.readUint16()
+    const rows = this.readUint16()
+    const update: DecodedScreenUpdate = {
+      fullReplace: (flags & screenUpdateFlagFullReplace) !== 0,
+      resetScrollback: (flags & screenUpdateFlagResetScrollback) !== 0,
+      size: { cols, rows },
+      screenScroll: 0,
+      title: '',
+      screen: { rows: [], alternateScreen: false },
+      ops: [],
+      scrollbackTrim: 0,
+      scrollbackAppend: [],
+      cursor: { ...emptyCursor },
+      modes: { ...emptyModes },
+    }
+    if ((flags & screenUpdateFlagHasScreenScroll) !== 0) {
+      update.screenScroll = this.readInt32()
+    }
+    if ((flags & screenUpdateFlagHasTitle) !== 0) {
+      update.title = this.readString()
+    }
+    update.modes = decodeTerminalModesMask(this.readUint16())
+    update.cursor = {
+      row: this.readInt32(),
+      col: this.readInt32(),
+      visible: this.readByte() !== 0,
+      shape: decodeScreenUpdateCursorShape(this.readByte()),
+      blink: this.readByte() !== 0,
+    }
+    if (!update.fullReplace) {
+      update.screen.alternateScreen = update.modes.alternateScreen
+    }
+    return update
+  }
+
+  readStyles(): CellStyleLike[] {
+    const count = this.readUvarint()
+    const styles: CellStyleLike[] = [{ ...emptyStyle }]
+    for (let index = 0; index < count; index += 1) {
+      const fg = this.readString()
+      const bg = this.readString()
+      const mask = this.readByte()
+      styles.push({
+        fg,
+        bg,
+        bold: (mask & (1 << 0)) !== 0,
+        italic: (mask & (1 << 1)) !== 0,
+        underline: (mask & (1 << 2)) !== 0,
+        blink: (mask & (1 << 3)) !== 0,
+        reverse: (mask & (1 << 4)) !== 0,
+        strikethrough: (mask & (1 << 5)) !== 0,
+      })
+    }
+    return styles
+  }
+
+  readScreenOp(styles: CellStyleLike[]): DecodedScreenOp {
+    const code = this.readByte()
+    const op: DecodedScreenOp = {
+      code,
+      rect: { x: 0, y: 0, width: 0, height: 0 },
+      src: { x: 0, y: 0, width: 0, height: 0 },
+      dstX: 0,
+      dstY: 0,
+      dx: 0,
+      dy: 0,
+      row: 0,
+      col: 0,
+      cells: [],
+      cursor: { ...emptyCursor },
+      modes: { ...emptyModes },
+      size: { cols: 0, rows: 0 },
+      title: '',
+    }
+    switch (code) {
+      case screenOpWriteSpan:
+        op.row = this.readUvarint()
+        op.col = this.readUvarint()
+        this.skipTime()
+        this.skipString()
+        this.skipWrapped()
+        op.cells = this.readCells(styles)
+        break
+      case screenOpScrollRect:
+        op.rect = this.readScreenRect()
+        op.dx = this.readInt32()
+        op.dy = this.readInt32()
+        break
+      case screenOpCopyRect:
+        op.src = this.readScreenRect()
+        op.dstX = this.readInt32()
+        op.dstY = this.readInt32()
+        break
+      case screenOpClearRect:
+        op.rect = this.readScreenRect()
+        this.skipTime()
+        this.skipString()
+        this.skipWrapped()
+        break
+      case screenOpClearToEOL:
+        op.row = this.readUvarint()
+        op.col = this.readUvarint()
+        this.skipTime()
+        this.skipString()
+        this.skipWrapped()
+        break
+      case screenOpCursor:
+        op.cursor = {
+          row: this.readInt32(),
+          col: this.readInt32(),
+          visible: this.readByte() !== 0,
+          shape: decodeScreenUpdateCursorShape(this.readByte()),
+          blink: this.readByte() !== 0,
+        }
+        break
+      case screenOpModes:
+        op.modes = decodeTerminalModesMask(this.readUint16())
+        break
+      case screenOpResize:
+        op.size = { cols: this.readUint16(), rows: this.readUint16() }
+        break
+      case screenOpTitle:
+        op.title = this.readString()
+        break
+      default:
+        throw new Error(`invalid terminal screen op ${code}`)
+    }
+    return op
+  }
+
+  readRows(styles: CellStyleLike[]): DecodedCell[][] {
+    const count = this.readUvarint()
+    const rows: DecodedCell[][] = []
+    for (let index = 0; index < count; index += 1) {
+      rows.push(this.readCells(styles))
+    }
+    return rows
+  }
+
+  readCells(styles: CellStyleLike[]): DecodedCell[] {
+    const count = this.readUvarint()
+    const cells: DecodedCell[] = []
+    for (let index = 0; index < count; index += 1) {
+      const styleIndex = this.readUvarint()
+      if (styleIndex >= styles.length) {
+        throw new Error(`invalid terminal cell style ${styleIndex}`)
+      }
+      const style = styles[styleIndex]
+      if (!style) {
+        throw new Error(`invalid terminal cell style ${styleIndex}`)
+      }
+      cells.push({
+        style,
+        width: this.readUvarint(),
+        content: this.readString(),
+      })
+    }
+    return cells
+  }
+
+  readScreenRect(): DecodedScreenRect {
+    return {
+      x: this.readInt32(),
+      y: this.readInt32(),
+      width: this.readInt32(),
+      height: this.readInt32(),
+    }
+  }
+
+  readByte(): number {
+    this.ensure(1)
+    const value = this.data[this.off] ?? 0
+    this.off += 1
+    return value
+  }
+
+  readUint16(): number {
+    this.ensure(2)
+    const view = new DataView(this.data.buffer, this.data.byteOffset + this.off, 2)
+    const value = view.getUint16(0, true)
+    this.off += 2
+    return value
+  }
+
+  readInt32(): number {
+    this.ensure(4)
+    const view = new DataView(this.data.buffer, this.data.byteOffset + this.off, 4)
+    const value = view.getInt32(0, true)
+    this.off += 4
+    return value
+  }
+
+  readUvarint(): number {
+    let value = 0
+    let shift = 0
+    for (let index = 0; index < 10; index += 1) {
+      const byte = this.readByte()
+      if (byte < 0x80) {
+        value += byte * (2 ** shift)
+        return value
+      }
+      value += (byte & 0x7f) * (2 ** shift)
+      shift += 7
+    }
+    throw new Error('invalid terminal screen update varint')
+  }
+
+  readString(): string {
+    const length = this.readUvarint()
+    this.ensure(length)
+    const value = this.textDecoder.decode(this.data.slice(this.off, this.off + length))
+    this.off += length
+    return value
+  }
+
+  skipTime(): void {
+    this.ensure(8)
+    this.off += 8
+  }
+
+  skipString(): void {
+    const length = this.readUvarint()
+    this.ensure(length)
+    this.off += length
+  }
+
+  skipTimeSlice(): void {
+    const count = this.readUvarint()
+    this.ensure(count * 8)
+    this.off += count * 8
+  }
+
+  skipStringSlice(): void {
+    const count = this.readUvarint()
+    for (let index = 0; index < count; index += 1) {
+      this.skipString()
+    }
+  }
+
+  skipBoolSlice(): void {
+    const count = this.readUvarint()
+    this.ensure(count)
+    this.off += count
+  }
+
+  skipWrapped(): void {
+    const hasWrapped = this.readByte() !== 0
+    if (hasWrapped) this.readByte()
+  }
+
+  assertEOF(): void {
+    if (this.off !== this.data.length) {
+      throw new Error('trailing bytes in terminal screen update payload')
+    }
+  }
+
+  private ensure(length: number): void {
+    if (length < 0 || this.remaining() < length) {
+      throw new Error('terminal screen update payload ended early')
+    }
+  }
+
+  private remaining(): number {
+    return this.data.length - this.off
+  }
+}
+
+function screenUpdateToReplay(update: DecodedScreenUpdate): string | null {
+  const parts: string[] = []
+  let cursor = update.cursor
+  let modes = update.modes
+
+  if (update.title) {
+    parts.push(writeTitleANSI(update.title))
+  }
+
+  if (update.fullReplace) {
+    parts.push(writePrivateModeANSI(1049, modes.alternateScreen))
+    if (!modes.alternateScreen && update.resetScrollback && update.scrollbackAppend.length > 0) {
+      parts.push(writeSequentialDecodedRows(update.scrollbackAppend))
+      parts.push('\r\n')
+      const visibleRows = Math.max(1, update.screen.rows.length)
+      for (let index = 0; index < visibleRows - 1; index += 1) {
+        parts.push('\n')
+      }
+      parts.push('\x1b[0m')
+    }
+    parts.push('\x1b[H\x1b[2J\x1b[H')
+    parts.push(writeDecodedRowsAbsolute(update.screen.rows))
+  } else {
+    for (const op of update.ops) {
+      switch (op.code) {
+        case screenOpWriteSpan:
+          parts.push(writeCellsAt(op.row, op.col, op.cells))
+          break
+        case screenOpScrollRect: {
+          const scrollReplay = writeScrollRectANSI(op.rect, op.dx, op.dy, update.size.cols, update.size.rows)
+          if (scrollReplay === null) return null
+          parts.push(scrollReplay)
+          break
+        }
+        case screenOpCopyRect:
+          return null
+        case screenOpClearRect:
+          parts.push(writeClearRectANSI(op.rect))
+          break
+        case screenOpClearToEOL:
+          parts.push(moveCursorANSI(op.row, op.col), '\x1b[K')
+          break
+        case screenOpCursor:
+          cursor = op.cursor
+          break
+        case screenOpModes:
+          modes = op.modes
+          break
+        case screenOpResize:
+          break
+        case screenOpTitle:
+          if (op.title) parts.push(writeTitleANSI(op.title))
+          break
+        default:
+          return null
+      }
+    }
+  }
+
+  parts.push(writeTerminalModesANSI(modes))
+  parts.push(writeCursorShapeANSI(cursor))
+  if (cursor.row >= 0 && cursor.col >= 0) {
+    parts.push(moveCursorANSI(cursor.row, cursor.col))
+  }
+  parts.push(cursor.visible ? '\x1b[?25h' : '\x1b[?25l')
+  return parts.join('')
+}
+
+function decodeTerminalModesMask(mask: number): DecodedModes {
+  return {
+    alternateScreen: (mask & (1 << 0)) !== 0,
+    alternateScroll: (mask & (1 << 1)) !== 0,
+    mouseTracking: (mask & (1 << 2)) !== 0,
+    mouseX10: (mask & (1 << 3)) !== 0,
+    mouseNormal: (mask & (1 << 4)) !== 0,
+    mouseButtonEvent: (mask & (1 << 5)) !== 0,
+    mouseAnyEvent: (mask & (1 << 6)) !== 0,
+    mouseSGR: (mask & (1 << 7)) !== 0,
+    bracketedPaste: (mask & (1 << 8)) !== 0,
+    applicationCursor: (mask & (1 << 9)) !== 0,
+    autoWrap: (mask & (1 << 10)) !== 0,
+  }
+}
+
+function decodeScreenUpdateCursorShape(shape: number): string {
+  switch (shape) {
+    case 1:
+      return 'underline'
+    case 2:
+      return 'bar'
+    default:
+      return 'block'
+  }
+}
+
+function writeCellsAt(row: number, col: number, cells: DecodedCell[]): string {
+  if (row < 0 || col < 0) return ''
+  return `${moveCursorANSI(row, col)}${writeDecodedCells(cells)}`
+}
+
+function writeDecodedRowsAbsolute(rows: DecodedCell[][]): string {
+  const parts: string[] = []
+  for (let row = 0; row < rows.length; row += 1) {
+    const cells = rows[row] ?? []
+    for (let col = 0; col < cells.length; col += 1) {
+      const cell = cells[col]
+      if (!cell) continue
+      if (cell.width === 0 || (cell.content === '' && isEmptyStyle(cell.style))) {
+        continue
+      }
+      parts.push(moveCursorANSI(row, col))
+      parts.push(cellStyleANSI(cell.style))
+      parts.push(cell.content || ' ')
+    }
+  }
+  if (parts.length > 0) parts.push('\x1b[0m')
+  return parts.join('')
+}
+
+function writeDecodedCells(cells: DecodedCell[]): string {
+  const parts: string[] = []
+  for (const cell of cells) {
+    if (cell.width === 0) continue
+    parts.push(cellStyleANSI(cell.style))
+    parts.push(cell.content || ' ')
+  }
+  if (parts.length > 0) parts.push('\x1b[0m')
+  return parts.join('')
+}
+
+function writeSequentialDecodedRows(rows: DecodedCell[][]): string {
+  return rows.map((row) => writeSequentialDecodedRow(row)).join('\r\n')
+}
+
+function writeSequentialDecodedRow(row: DecodedCell[]): string {
+  let last = row.length - 1
+  while (last >= 0) {
+    const cell = row[last]
+    if (!cell) {
+      last -= 1
+      continue
+    }
+    if (cell.width > 0 && cell.content.trim() !== '') break
+    last -= 1
+  }
+  const parts: string[] = []
+  for (let index = 0; index <= last; index += 1) {
+    const cell = row[index]
+    if (!cell) continue
+    if (cell.width === 0) continue
+    parts.push(cellStyleANSI(cell.style))
+    parts.push(cell.content || ' ')
+  }
+  parts.push('\x1b[0m')
+  return parts.join('')
+}
+
+function writeScrollRectANSI(rect: DecodedScreenRect, dx: number, dy: number, cols: number, rows: number): string | null {
+  if (dy === 0 && dx === 0) return ''
+  if (dx !== 0 || rect.width <= 0 || rect.height <= 0 || rect.y < 0) return null
+  const screenCols = cols > 0 ? cols : rect.width
+  const screenRows = rows > 0 ? rows : rect.y + rect.height
+  if (rect.x !== 0 || rect.width < screenCols) return null
+  const top = rect.y + 1
+  const bottom = Math.min(screenRows, rect.y + rect.height)
+  if (top < 1 || bottom < top) return null
+  const count = Math.abs(dy)
+  const command = dy < 0 ? 'S' : 'T'
+  return `\x1b[${top};${bottom}r\x1b[${count}${command}\x1b[r`
+}
+
+function writeClearRectANSI(rect: DecodedScreenRect): string {
+  if (rect.width <= 0 || rect.height <= 0 || rect.y < 0) return ''
+  const parts: string[] = []
+  for (let row = rect.y; row < rect.y + rect.height; row += 1) {
+    parts.push(moveCursorANSI(row, Math.max(0, rect.x)), `\x1b[${rect.width}X`)
+  }
+  return parts.join('')
+}
+
+function moveCursorANSI(row: number, col: number): string {
+  return `\x1b[${row + 1};${col + 1}H`
+}
+
+function writeTitleANSI(title: string): string {
+  return `\x1b]0;${title.replace(/[\x00-\x1f\x7f]/g, '')}\x07`
+}
+
+function isEmptyStyle(style: CellStyleLike): boolean {
+  return !style.fg &&
+    !style.bg &&
+    !style.bold &&
+    !style.italic &&
+    !style.underline &&
+    !style.blink &&
+    !style.reverse &&
+    !style.strikethrough
 }
 
 export function rowsToText(snapshot: unknown): string {

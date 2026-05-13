@@ -11,8 +11,7 @@ import (
 type StreamMessageType int
 
 const (
-	StreamOutput StreamMessageType = iota + 1
-	StreamSyncLost
+	StreamSyncLost StreamMessageType = iota + 1
 	StreamClosed
 	StreamResize
 	StreamBootstrapDone
@@ -20,14 +19,12 @@ const (
 )
 
 type StreamMessage struct {
-	Type              StreamMessageType
-	Output            []byte
-	OutputRateLimited bool
-	Payload           []byte
-	DroppedBytes      uint64
-	ExitCode          *int
-	Cols              uint16
-	Rows              uint16
+	Type         StreamMessageType
+	Payload      []byte
+	DroppedBytes uint64
+	ExitCode     *int
+	Cols         uint16
+	Rows         uint16
 }
 
 type Fanout struct {
@@ -67,12 +64,6 @@ func (f *Fanout) Subscribe(ctx context.Context) <-chan StreamMessage {
 	}()
 
 	return sub.ch
-}
-
-// Broadcast shares the provided payload with every subscriber. Callers must
-// treat data as immutable after broadcasting.
-func (f *Fanout) Broadcast(data []byte) {
-	f.BroadcastMessage(StreamMessage{Type: StreamOutput, Output: data})
 }
 
 // BroadcastMessage shares the provided message with every subscriber. Callers
@@ -134,8 +125,6 @@ func copyIntPtr(v *int) *int {
 
 func messagePayloadLen(msg StreamMessage) int {
 	switch msg.Type {
-	case StreamOutput:
-		return len(msg.Output)
 	case StreamScreenUpdate:
 		return len(msg.Payload)
 	default:
@@ -154,7 +143,7 @@ func isPriorityMessage(msg StreamMessage) bool {
 
 func isDroppableBufferedMessage(msg StreamMessage) bool {
 	switch msg.Type {
-	case StreamOutput, StreamSyncLost, StreamScreenUpdate:
+	case StreamSyncLost, StreamScreenUpdate:
 		return true
 	default:
 		return false

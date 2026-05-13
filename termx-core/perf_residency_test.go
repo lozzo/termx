@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/workbenchsvc"
 )
 
@@ -91,6 +92,99 @@ func TestPerfResidencyDaemon(t *testing.T) {
 		after.Label, after.RSSKB, after.HeapAlloc, after.HeapObjects, after.NumGC, after.Goroutines)
 }
 
+func TestPerfTerminalStressScreenUpdates(t *testing.T) {
+	if os.Getenv("TERMX_RUN_TERMINAL_STRESS") != "1" {
+		t.Skip("set TERMX_RUN_TERMINAL_STRESS=1 to run terminal stress harness")
+	}
+
+	script := "../scripts/generate_terminal_stress.py"
+	if _, err := os.Stat(script); err != nil {
+		t.Skipf("stress script unavailable: %v", err)
+	}
+
+	lines := envInt("TERMX_STRESS_LINES", 20000)
+	timeout := time.Duration(envInt("TERMX_STRESS_TIMEOUT_SECONDS", 60)) * time.Second
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	srv := NewServer(WithDefaultScrollback(2000), WithDefaultKeepAfterExit(time.Second))
+	defer func() {
+		_ = srv.Shutdown(context.Background())
+	}()
+
+	before := takeDaemonResidencySnapshot(t, "terminal_stress_before")
+	info, err := srv.Create(ctx, CreateOptions{
+		Command: []string{
+			"python3",
+			script,
+			"--lines", strconv.Itoa(lines),
+			"--seed", "1",
+			"--width-hint", "120",
+		},
+		Name:           "perf-terminal-stress",
+		Size:           Size{Cols: 120, Rows: 40},
+		ScrollbackSize: 2000,
+		KeepAfterExit:  time.Second,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create terminal: %v", err)
+	}
+
+	streamCtx, cancelStream := context.WithCancel(ctx)
+	defer cancelStream()
+	stream, err := srv.Subscribe(streamCtx, info.ID)
+	if err != nil {
+		t.Fatalf("subscribe terminal: %v", err)
+	}
+
+	start := time.Now()
+	var stats terminalStressStreamStats
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("timed out after %s waiting for stress terminal; stats=%+v: %v", timeout, stats, ctx.Err())
+		case msg, ok := <-stream:
+			if !ok {
+				goto done
+			}
+			stats.observe(t, msg)
+			if msg.Type == StreamClosed {
+				goto done
+			}
+		}
+	}
+
+done:
+	elapsed := time.Since(start)
+	snap, err := srv.Snapshot(context.Background(), info.ID, SnapshotOptions{ScrollbackLimit: 2000})
+	if err != nil {
+		t.Fatalf("snapshot terminal: %v", err)
+	}
+	after := takeDaemonResidencySnapshot(t, "terminal_stress_after")
+	t.Logf("%s rss_kb=%d heap_alloc=%d heap_objects=%d num_gc=%d goroutines=%d",
+		before.Label, before.RSSKB, before.HeapAlloc, before.HeapObjects, before.NumGC, before.Goroutines)
+	t.Logf("%s rss_kb=%d heap_alloc=%d heap_objects=%d num_gc=%d goroutines=%d",
+		after.Label, after.RSSKB, after.HeapAlloc, after.HeapObjects, after.NumGC, after.Goroutines)
+	t.Logf("terminal_stress lines=%d elapsed=%s frames=%d screen_updates=%d screen_bytes=%d bootstrap=%d resizes=%d sync_lost=%d decoded_ops=%d scrollback_appends=%d snapshot_scrollback=%d screen_rows=%d",
+		lines,
+		elapsed,
+		stats.frames,
+		stats.screenUpdates,
+		stats.screenUpdateBytes,
+		stats.bootstrapDone,
+		stats.resizes,
+		stats.syncLost,
+		stats.decodedOps,
+		stats.scrollbackAppends,
+		len(snap.Scrollback),
+		len(snap.Screen.Cells),
+	)
+}
+
 func takeDaemonResidencySnapshot(t *testing.T, label string) daemonResidencySnapshot {
 	t.Helper()
 	goruntime.GC()
@@ -105,6 +199,51 @@ func takeDaemonResidencySnapshot(t *testing.T, label string) daemonResidencySnap
 		NumGC:       mem.NumGC,
 		Goroutines:  goruntime.NumGoroutine(),
 	}
+}
+
+type terminalStressStreamStats struct {
+	frames            int
+	screenUpdates     int
+	screenUpdateBytes int
+	bootstrapDone     int
+	resizes           int
+	syncLost          int
+	decodedOps        int
+	scrollbackAppends int
+}
+
+func (s *terminalStressStreamStats) observe(t *testing.T, msg StreamMessage) {
+	t.Helper()
+	s.frames++
+	switch msg.Type {
+	case StreamScreenUpdate:
+		s.screenUpdates++
+		s.screenUpdateBytes += len(msg.Payload)
+		update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
+		if err != nil {
+			t.Fatalf("decode screen update: %v", err)
+		}
+		s.decodedOps += len(update.Ops)
+		s.scrollbackAppends += len(update.ScrollbackAppend)
+	case StreamBootstrapDone:
+		s.bootstrapDone++
+	case StreamResize:
+		s.resizes++
+	case StreamSyncLost:
+		s.syncLost++
+	}
+}
+
+func envInt(key string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 func currentDaemonRSSKB(t *testing.T) uint64 {

@@ -1,7 +1,6 @@
 package termx
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -239,7 +238,7 @@ func TestSubscribeAfterExitReplaysSnapshotAndClosed(t *testing.T) {
 	}
 }
 
-func TestSubscribeRunningTerminalBootstrapsResizeReplayThenLiveOutput(t *testing.T) {
+func TestSubscribeRunningTerminalBootstrapsResizeReplayThenLiveScreenUpdate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -275,12 +274,23 @@ func TestSubscribeRunningTerminalBootstrapsResizeReplayThenLiveOutput(t *testing
 		t.Fatal("timed out waiting for replay bootstrap")
 	}
 
-	term.stream.Broadcast([]byte("later"))
+	term.stream.BroadcastMessage(fanout.StreamMessage{
+		Type: fanout.StreamScreenUpdate,
+		Payload: encodeTestScreenUpdatePayload(t, protocol.ScreenUpdate{
+			FullReplace: true,
+			Size:        protocol.Size{Cols: 6, Rows: 2},
+			Screen: protocol.ScreenData{
+				Cells: [][]protocol.Cell{{{Content: "later"}}},
+			},
+			Cursor: protocol.CursorState{Visible: true},
+			Modes:  protocol.TerminalModes{AutoWrap: true},
+		}),
+	})
 
 	select {
 	case msg := <-stream:
 		if msg.Type != StreamBootstrapDone {
-			t.Fatalf("expected bootstrap-done before live output, got %#v", msg)
+			t.Fatalf("expected bootstrap-done before live screen update, got %#v", msg)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for bootstrap-done frame")
@@ -289,79 +299,18 @@ func TestSubscribeRunningTerminalBootstrapsResizeReplayThenLiveOutput(t *testing
 	select {
 	case msg := <-stream:
 		if !streamMessageContainsText(msg, 6, 2, "later") {
-			t.Fatalf("expected live output after bootstrap, got %#v", msg)
+			t.Fatalf("expected live screen update after bootstrap, got %#v", msg)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for live output")
+		t.Fatal("timed out waiting for live screen update")
 	}
 }
 
-func TestTerminalSnapshotFlushesPendingVTermOutput(t *testing.T) {
-	vt := localvterm.New(8, 2, 16, nil)
-	term := &Terminal{
-		id:           "snap-pending",
-		size:         Size{Cols: 8, Rows: 2},
-		state:        StateRunning,
-		vterm:        vt,
-		processEpoch: 1,
-	}
-
-	term.streamMu.Lock()
-	term.queuePendingVTermOutputLocked(1, []byte("hello"))
-	term.streamMu.Unlock()
-	if replayContainsText(vt.EncodeReplay(16), 8, 2, "hello") {
-		t.Fatal("expected pending output to remain buffered until a flush boundary")
-	}
-
-	snap := term.Snapshot(0, 10)
-	if !snapshotContains(snap, "hello") {
-		t.Fatalf("expected snapshot to flush pending vterm output, got %#v", snap)
-	}
-}
-
-func TestSubscribeFlushesPendingVTermOutputBeforeBootstrap(t *testing.T) {
+func TestSubscribeBootstrapSendsScreenOnlyAndHistoryReplayStaysAvailable(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	vt := localvterm.New(8, 2, 16, nil)
-	term := &Terminal{
-		size:         Size{Cols: 8, Rows: 2},
-		state:        StateRunning,
-		vterm:        vt,
-		stream:       fanout.New(),
-		processEpoch: 1,
-	}
-
-	term.streamMu.Lock()
-	term.queuePendingVTermOutputLocked(1, []byte("hello"))
-	term.streamMu.Unlock()
-
-	stream := term.Subscribe(ctx)
-
-	select {
-	case msg := <-stream:
-		if msg.Type != StreamResize || msg.Cols != 8 || msg.Rows != 2 {
-			t.Fatalf("expected resize bootstrap, got %#v", msg)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for resize bootstrap")
-	}
-
-	select {
-	case msg := <-stream:
-		if !streamMessageContainsText(msg, 8, 2, "hello") {
-			t.Fatalf("expected replay bootstrap output with pending bytes, got %#v", msg)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for replay bootstrap")
-	}
-}
-
-func TestSubscribeBootstrapCapsScrollbackReplay(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	scrollbackRows := attachReplayScrollbackLimit + 8
+	scrollbackRows := 136
 	vt := localvterm.New(12, 2, scrollbackRows+16, nil)
 	for i := 0; i < scrollbackRows+2; i++ {
 		if _, err := vt.Write([]byte(fmt.Sprintf("line-%03d\r\n", i))); err != nil {
@@ -397,912 +346,17 @@ func TestSubscribeBootstrapCapsScrollbackReplay(t *testing.T) {
 		if err != nil {
 			t.Fatalf("decode screen update: %v", err)
 		}
-		if got := len(update.ScrollbackAppend); got > attachReplayScrollbackLimit {
-			t.Fatalf("expected capped scrollback replay, got %d rows", got)
-		}
-		if len(update.ScrollbackAppend) == 0 {
-			t.Fatal("expected recent scrollback rows in bootstrap")
-		}
-		for _, row := range update.ScrollbackAppend {
-			if protocolRowToString(row.Cells) == "line-000" {
-				t.Fatalf("expected oldest scrollback row to be trimmed, got %#v", update.ScrollbackAppend)
-			}
+		if update.ResetScrollback || update.ScrollbackTrim != 0 || len(update.ScrollbackAppend) != 0 {
+			t.Fatalf("expected bootstrap live screen to omit scrollback, got %#v", update)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for screen update bootstrap")
 	}
-}
 
-func TestTerminalIdleFlushesPendingVTermOutput(t *testing.T) {
-	originalDelay := serverVTermFlushIdleDelay
-	serverVTermFlushIdleDelay = 2 * time.Millisecond
-	defer func() { serverVTermFlushIdleDelay = originalDelay }()
-
-	vt := localvterm.New(8, 2, 16, nil)
-	term := &Terminal{
-		id:           "idle-flush",
-		size:         Size{Cols: 8, Rows: 2},
-		state:        StateRunning,
-		vterm:        vt,
-		processEpoch: 1,
-	}
-
-	term.streamMu.Lock()
-	term.queuePendingVTermOutputLocked(1, []byte("hello"))
-	term.armPendingVTermFlushLocked(1)
-	term.streamMu.Unlock()
-
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		if replayContainsText(vt.EncodeReplay(16), 8, 2, "hello") {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("expected idle flush to apply pending output to the server vterm")
-}
-
-func TestTerminalIdleFlushSkipsWhileCollaboratorAttached(t *testing.T) {
-	originalDelay := serverVTermFlushIdleDelay
-	serverVTermFlushIdleDelay = 2 * time.Millisecond
-	defer func() { serverVTermFlushIdleDelay = originalDelay }()
-
-	vt := localvterm.New(8, 2, 16, nil)
-	term := &Terminal{
-		id:           "idle-skip",
-		size:         Size{Cols: 8, Rows: 2},
-		state:        StateRunning,
-		vterm:        vt,
-		processEpoch: 1,
-		attachments: map[string]AttachInfo{
-			"a": {Mode: string(ModeCollaborator)},
-		},
-	}
-
-	term.streamMu.Lock()
-	term.queuePendingVTermOutputLocked(1, []byte("hello"))
-	term.armPendingVTermFlushLocked(1)
-	term.streamMu.Unlock()
-
-	time.Sleep(20 * time.Millisecond)
-	if replayContainsText(vt.EncodeReplay(16), 8, 2, "hello") {
-		t.Fatal("expected collaborator attach to defer idle vterm flush")
-	}
-
-	term.RemoveAttachment("a")
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		if replayContainsText(vt.EncodeReplay(16), 8, 2, "hello") {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("expected pending output to flush after collaborator detaches")
-}
-
-func TestScreenSnapshotFallbackFlushesPendingVTermOutput(t *testing.T) {
-	vt := localvterm.New(8, 2, 16, nil)
-	term := &Terminal{
-		id:           "fallback-flush",
-		size:         Size{Cols: 8, Rows: 2},
-		state:        StateRunning,
-		vterm:        vt,
-		processEpoch: 1,
-	}
-
-	term.streamMu.Lock()
-	term.queuePendingVTermOutputLocked(1, []byte("hello"))
-	term.streamMu.Unlock()
-
-	msg := term.screenSnapshotFallbackMessage()
-	if msg.Type != StreamScreenUpdate || !streamMessageContainsText(msg, 8, 2, "hello") {
-		t.Fatalf("expected fallback snapshot to include pending vterm output, got %#v", msg)
-	}
-}
-
-func TestForwardLiveStreamMessagesPreservesOutputBoundaries(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	src := make(chan fanout.StreamMessage, 8)
-	dst := make(chan StreamMessage, 8)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		forwardLiveStreamMessages(ctx, src, dst)
-		close(dst)
-	}()
-
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("a")}
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("b")}
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("c")}
-	close(src)
-
-	received := collectStreamMessages(t, dst)
-	<-done
-	if len(received) != 3 {
-		t.Fatalf("expected three output frames, got %#v", received)
-	}
-	for i, want := range []string{"a", "b", "c"} {
-		if received[i].Type != StreamOutput || string(received[i].Output) != want {
-			t.Fatalf("frame %d expected output %q, got %#v", i, want, received[i])
-		}
-	}
-}
-
-func TestForwardLiveStreamMessagesPreservesSingleOutputBuffer(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	src := make(chan fanout.StreamMessage, 2)
-	dst := make(chan StreamMessage, 2)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		forwardLiveStreamMessages(ctx, src, dst)
-		close(dst)
-	}()
-
-	payload := []byte("solo")
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: payload}
-	close(src)
-
-	received := collectStreamMessages(t, dst)
-	<-done
-	if len(received) != 1 {
-		t.Fatalf("expected one output frame, got %#v", received)
-	}
-	if received[0].Type != StreamOutput || string(received[0].Output) != "solo" {
-		t.Fatalf("unexpected output %#v", received[0])
-	}
-	if len(received[0].Output) == 0 || &received[0].Output[0] != &payload[0] {
-		t.Fatal("expected single-message coalescing path to preserve the original buffer")
-	}
-}
-
-func TestForwardLiveStreamMessagesSplitsOversizedOutput(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	src := make(chan fanout.StreamMessage, 2)
-	dst := make(chan StreamMessage, 8)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		forwardLiveStreamMessages(ctx, src, dst)
-		close(dst)
-	}()
-
-	payload := bytes.Repeat([]byte("x"), maxLiveOutputFrameBytes*2+17)
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: payload}
-	close(src)
-
-	received := collectStreamMessages(t, dst)
-	<-done
-	if len(received) != 3 {
-		t.Fatalf("expected oversized output split into 3 frames, got %#v", received)
-	}
-	totalBytes := 0
-	for i, msg := range received {
-		if msg.Type != StreamOutput {
-			t.Fatalf("frame %d expected output, got %#v", i, msg)
-		}
-		if len(msg.Output) > maxLiveOutputFrameBytes {
-			t.Fatalf("frame %d exceeded output chunk cap: %d", i, len(msg.Output))
-		}
-		totalBytes += len(msg.Output)
-	}
-	if totalBytes != len(payload) {
-		t.Fatalf("expected %d total output bytes, got %d", len(payload), totalBytes)
-	}
-}
-
-func TestForwardLiveStreamMessagesPreservesSyncLostBoundaries(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	src := make(chan fanout.StreamMessage, 8)
-	dst := make(chan StreamMessage, 8)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		forwardLiveStreamMessages(ctx, src, dst)
-		close(dst)
-	}()
-
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("ab")}
-	src <- fanout.StreamMessage{Type: fanout.StreamSyncLost, DroppedBytes: 7}
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("cd")}
-	src <- fanout.StreamMessage{Type: fanout.StreamResize, Cols: 80, Rows: 24}
-	close(src)
-
-	received := collectStreamMessages(t, dst)
-	<-done
-	if len(received) != 4 {
-		t.Fatalf("expected output, sync-lost, output, resize; got %#v", received)
-	}
-	if received[0].Type != StreamOutput || string(received[0].Output) != "ab" {
-		t.Fatalf("unexpected first frame %#v", received[0])
-	}
-	if received[1].Type != StreamSyncLost || received[1].DroppedBytes != 7 {
-		t.Fatalf("unexpected sync-lost frame %#v", received[1])
-	}
-	if received[2].Type != StreamOutput || string(received[2].Output) != "cd" {
-		t.Fatalf("unexpected second output %#v", received[2])
-	}
-	if received[3].Type != StreamResize || received[3].Cols != 80 || received[3].Rows != 24 {
-		t.Fatalf("unexpected resize frame %#v", received[3])
-	}
-}
-
-func TestTerminalSharedLiveOutputThrottleSplitsOversizedFlush(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	term := &Terminal{
-		stream:             fanout.New(),
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
-		processEpoch:       1,
-	}
-	stream := term.stream.Subscribe(ctx)
-	payload := bytes.Repeat([]byte("x"), maxLiveOutputFrameBytes+11)
-
-	term.streamMu.Lock()
-	term.queuePendingLiveOutputLocked(1, term.stream, payload)
-	term.flushPendingLiveOutputLocked(term.stream)
-	term.streamMu.Unlock()
-
-	totalBytes := 0
-	for i := 0; i < 2; i++ {
-		select {
-		case msg := <-stream:
-			if msg.Type != fanout.StreamOutput {
-				t.Fatalf("frame %d expected output, got %#v", i, msg)
-			}
-			if len(msg.Output) > maxLiveOutputFrameBytes {
-				t.Fatalf("frame %d exceeded output chunk cap: %d", i, len(msg.Output))
-			}
-			if !msg.OutputRateLimited {
-				t.Fatalf("frame %d expected rate-limited output tag, got %#v", i, msg)
-			}
-			totalBytes += len(msg.Output)
-		case <-time.After(100 * time.Millisecond):
-			t.Fatalf("timed out waiting for split output frame %d", i)
-		}
-	}
-	if totalBytes != len(payload) {
-		t.Fatalf("expected %d total output bytes, got %d", len(payload), totalBytes)
-	}
-}
-
-func TestDefaultLiveOutputThrottleConfigHonorsEnv(t *testing.T) {
-	t.Run("default", func(t *testing.T) {
-		t.Setenv("TERMX_LIVE_OUTPUT_FPS", "")
-		if got := defaultLiveOutputThrottleConfig(); got.FPS != 0 {
-			t.Fatalf("expected default live output fps 0, got %#v", got)
-		}
-	})
-
-	t.Run("off", func(t *testing.T) {
-		t.Setenv("TERMX_LIVE_OUTPUT_FPS", "off")
-		if got := defaultLiveOutputThrottleConfig(); got.FPS != 0 {
-			t.Fatalf("expected TERMX_LIVE_OUTPUT_FPS=off to disable throttling, got %#v", got)
-		}
-	})
-
-	t.Run("explicit", func(t *testing.T) {
-		t.Setenv("TERMX_LIVE_OUTPUT_FPS", "144")
-		if got := defaultLiveOutputThrottleConfig(); got.FPS != 144 {
-			t.Fatalf("expected TERMX_LIVE_OUTPUT_FPS=144, got %#v", got)
-		}
-	})
-}
-
-func TestTerminalForwardTerminalStreamMessagesPreservesResizeBoundary(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	src := make(chan fanout.StreamMessage, 8)
-	dst := make(chan StreamMessage, 8)
-	done := make(chan struct{})
-	term := &Terminal{
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
-	}
-	go func() {
-		defer close(done)
-		term.forwardTerminalStreamMessages(ctx, src, dst)
-		close(dst)
-	}()
-
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("ab")}
-	src <- fanout.StreamMessage{Type: fanout.StreamResize, Cols: 120, Rows: 40}
-	close(src)
-
-	select {
-	case msg := <-dst:
-		if msg.Type != StreamOutput || string(msg.Output) != "ab" {
-			t.Fatalf("expected pending output to flush before resize, got %#v", msg)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for flushed output before resize")
-	}
-
-	select {
-	case msg := <-dst:
-		if msg.Type != StreamResize || msg.Cols != 120 || msg.Rows != 40 {
-			t.Fatalf("expected resize frame to bypass rate limiting, got %#v", msg)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for resize boundary frame")
-	}
-
-	<-done
-}
-
-func TestTerminalForwardTerminalStreamMessagesPreservesClosedBoundary(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	src := make(chan fanout.StreamMessage, 8)
-	dst := make(chan StreamMessage, 8)
-	done := make(chan struct{})
-	exitCode := 7
-	term := &Terminal{
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
-	}
-	go func() {
-		defer close(done)
-		term.forwardTerminalStreamMessages(ctx, src, dst)
-		close(dst)
-	}()
-
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("bye")}
-	src <- fanout.StreamMessage{Type: fanout.StreamClosed, ExitCode: &exitCode}
-	close(src)
-
-	select {
-	case msg := <-dst:
-		if msg.Type != StreamOutput || string(msg.Output) != "bye" {
-			t.Fatalf("expected pending output to flush before close, got %#v", msg)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for output before close")
-	}
-
-	select {
-	case msg := <-dst:
-		if msg.Type != StreamClosed || msg.ExitCode == nil || *msg.ExitCode != exitCode {
-			t.Fatalf("expected close frame to bypass rate limiting, got %#v", msg)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for close frame")
-	}
-
-	<-done
-}
-
-func TestTerminalForwardTerminalStreamMessagesRecoversSyncLostWithSnapshotFallback(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	vt := localvterm.New(8, 2, 16, nil)
-	if _, err := vt.Write([]byte("hello")); err != nil {
-		t.Fatalf("seed vterm: %v", err)
-	}
-
-	src := make(chan fanout.StreamMessage, 4)
-	dst := make(chan StreamMessage, 8)
-	done := make(chan struct{})
-	term := &Terminal{
-		size:               Size{Cols: 8, Rows: 2},
-		state:              StateRunning,
-		vterm:              vt,
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
-	}
-	go func() {
-		defer close(done)
-		term.forwardTerminalStreamMessages(ctx, src, dst)
-		close(dst)
-	}()
-
-	src <- fanout.StreamMessage{Type: fanout.StreamSyncLost, DroppedBytes: 9}
-	close(src)
-
-	select {
-	case msg := <-dst:
-		if msg.Type != StreamScreenUpdate || !streamMessageContainsText(msg, 8, 2, "hello") {
-			t.Fatalf("expected snapshot fallback on sync-lost, got %#v", msg)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for sync-lost frame")
-	}
-
-	<-done
-}
-
-func TestTerminalForwardTerminalStreamMessagesPreservesSyncLostForRawOutput(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	vt := localvterm.New(8, 2, 16, nil)
-	if _, err := vt.Write([]byte("hello")); err != nil {
-		t.Fatalf("seed vterm: %v", err)
-	}
-
-	src := make(chan fanout.StreamMessage, 4)
-	dst := make(chan StreamMessage, 8)
-	done := make(chan struct{})
-	term := &Terminal{
-		size:               Size{Cols: 8, Rows: 2},
-		state:              StateRunning,
-		vterm:              vt,
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
-	}
-	go func() {
-		defer close(done)
-		term.forwardTerminalStreamMessages(ctx, src, dst, TerminalSubscribeOptions{RawOutput: true})
-		close(dst)
-	}()
-
-	src <- fanout.StreamMessage{Type: fanout.StreamSyncLost, DroppedBytes: 9}
-	close(src)
-
-	select {
-	case msg := <-dst:
-		if msg.Type != StreamSyncLost || msg.DroppedBytes != 9 {
-			t.Fatalf("expected raw output stream to preserve sync-lost, got %#v", msg)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for sync-lost frame")
-	}
-
-	<-done
-}
-
-func TestTerminalForwardTerminalStreamMessagesKeepsSnapshotFallbackWhenThrottleDisabled(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	vt := localvterm.New(8, 2, 16, nil)
-	if _, err := vt.Write([]byte("hello")); err != nil {
-		t.Fatalf("seed vterm: %v", err)
-	}
-
-	src := make(chan fanout.StreamMessage, 4)
-	dst := make(chan StreamMessage, 8)
-	done := make(chan struct{})
-	term := &Terminal{
-		size:               Size{Cols: 8, Rows: 2},
-		state:              StateRunning,
-		vterm:              vt,
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 0},
-	}
-	go func() {
-		defer close(done)
-		term.forwardTerminalStreamMessages(ctx, src, dst)
-		close(dst)
-	}()
-
-	src <- fanout.StreamMessage{Type: fanout.StreamSyncLost, DroppedBytes: 11}
-	close(src)
-
-	select {
-	case msg := <-dst:
-		if msg.Type != StreamScreenUpdate || !streamMessageContainsText(msg, 8, 2, "hello") {
-			t.Fatalf("expected disabled throttle to keep snapshot fallback semantics, got %#v", msg)
-		}
-	case <-time.After(20 * time.Millisecond):
-		t.Fatal("expected sync-lost fallback even when throttle is disabled")
-	}
-
-	<-done
-}
-
-func TestSubscribeKeepsBootstrapImmediateWhileSharedLiveOutputIsRateLimited(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	vt := localvterm.New(6, 2, 16, nil)
-	if _, err := vt.Write([]byte("hello\r\nworld")); err != nil {
-		t.Fatalf("seed vterm: %v", err)
-	}
-
-	term := &Terminal{
-		size:               Size{Cols: 6, Rows: 2},
-		state:              StateRunning,
-		vterm:              vt,
-		stream:             fanout.New(),
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
-		processEpoch:       1,
-	}
-
-	stream := term.Subscribe(ctx)
-
-	select {
-	case msg := <-stream:
-		if msg.Type != StreamResize || msg.Cols != 6 || msg.Rows != 2 {
-			t.Fatalf("expected resize bootstrap, got %#v", msg)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for resize bootstrap")
-	}
-
-	select {
-	case msg := <-stream:
-		if !streamMessageContainsText(msg, 6, 2, "hello") || !streamMessageContainsText(msg, 6, 2, "world") {
-			t.Fatalf("expected replay bootstrap output, got %#v", msg)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for replay bootstrap")
-	}
-
-	select {
-	case msg := <-stream:
-		if msg.Type != StreamBootstrapDone {
-			t.Fatalf("expected bootstrap-done before live output, got %#v", msg)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for bootstrap-done")
-	}
-
-	term.streamMu.Lock()
-	term.queuePendingLiveOutputLocked(1, term.stream, []byte("later"))
-	term.streamMu.Unlock()
-
-	select {
-	case msg := <-stream:
-		t.Fatalf("expected live output to stay capped after immediate bootstrap, got %#v", msg)
-	case <-time.After(20 * time.Millisecond):
-	}
-
-	select {
-	case msg := <-stream:
-		if !streamMessageContainsText(msg, 6, 2, "later") {
-			t.Fatalf("expected delayed live output after bootstrap, got %#v", msg)
-		}
-	case <-time.After(250 * time.Millisecond):
-		t.Fatal("timed out waiting for rate-limited live output")
-	}
-}
-
-func TestTerminalSharedLiveOutputThrottleRateLimitsBroadcastBurst(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	term := &Terminal{
-		stream:             fanout.New(),
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
-		processEpoch:       1,
-	}
-	stream := term.stream.Subscribe(ctx)
-
-	term.streamMu.Lock()
-	term.queuePendingLiveOutputLocked(1, term.stream, []byte("a"))
-	term.queuePendingLiveOutputLocked(1, term.stream, []byte("b"))
-	term.queuePendingLiveOutputLocked(1, term.stream, []byte("c"))
-	term.streamMu.Unlock()
-
-	select {
-	case msg := <-stream:
-		t.Fatalf("expected shared throttle to keep burst output pending, got %#v", msg)
-	case <-time.After(20 * time.Millisecond):
-	}
-
-	select {
-	case msg := <-stream:
-		if msg.Type != fanout.StreamOutput || string(msg.Output) != "abc" {
-			t.Fatalf("expected one coalesced broadcast frame, got %#v", msg)
-		}
-		if !msg.OutputRateLimited {
-			t.Fatalf("expected shared throttled output to be tagged, got %#v", msg)
-		}
-	case <-time.After(250 * time.Millisecond):
-		t.Fatal("timed out waiting for shared throttled output flush")
-	}
-}
-
-func TestTerminalSharedLiveOutputThrottleDefersInteractiveSynchronizedOutputUntilGroupEnd(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	prevStep := serverLiveOutputSyncWaitStep
-	prevBudget := serverLiveOutputSyncWaitBudget
-	serverLiveOutputSyncWaitStep = time.Millisecond
-	serverLiveOutputSyncWaitBudget = 6 * time.Millisecond
-	t.Cleanup(func() {
-		serverLiveOutputSyncWaitStep = prevStep
-		serverLiveOutputSyncWaitBudget = prevBudget
-	})
-
-	term := &Terminal{
-		stream:             fanout.New(),
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 60},
-		processEpoch:       1,
-	}
-	stream := term.stream.Subscribe(ctx)
-
-	term.noteLiveOutputInput()
-	term.streamMu.Lock()
-	term.queuePendingLiveOutputLocked(1, term.stream, []byte(liveOutputSynchronizedOutputBegin))
-	term.streamMu.Unlock()
-
-	select {
-	case msg := <-stream:
-		t.Fatalf("expected synchronized-output prologue to stay buffered during interactive bypass, got %#v", msg)
-	case <-time.After(2 * time.Millisecond):
-	}
-
-	term.streamMu.Lock()
-	term.queuePendingLiveOutputLocked(1, term.stream, []byte("body"+liveOutputSynchronizedOutputEnd))
-	term.streamMu.Unlock()
-
-	select {
-	case msg := <-stream:
-		if msg.Type != fanout.StreamOutput || string(msg.Output) != liveOutputSynchronizedOutputBegin+"body"+liveOutputSynchronizedOutputEnd {
-			t.Fatalf("expected synchronized-output group to flush as one merged broadcast, got %#v", msg)
-		}
-		if !msg.OutputRateLimited {
-			t.Fatalf("expected deferred synchronized output to stay tagged as rate-limited, got %#v", msg)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for synchronized-output flush")
-	}
-}
-
-func TestTerminalSharedLiveOutputThrottleDisabledBroadcastsImmediately(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	term := &Terminal{
-		stream:             fanout.New(),
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 0},
-		processEpoch:       1,
-	}
-	stream := term.stream.Subscribe(ctx)
-
-	term.streamMu.Lock()
-	term.queuePendingLiveOutputLocked(1, term.stream, []byte("abc"))
-	term.streamMu.Unlock()
-
-	select {
-	case msg := <-stream:
-		if msg.Type != fanout.StreamOutput || string(msg.Output) != "abc" {
-			t.Fatalf("expected immediate broadcast without shared throttling, got %#v", msg)
-		}
-		if msg.OutputRateLimited {
-			t.Fatalf("expected immediate output not to be tagged as throttled, got %#v", msg)
-		}
-	case <-time.After(20 * time.Millisecond):
-		t.Fatal("timed out waiting for immediate shared output flush")
-	}
-}
-
-func TestTerminalSharedLiveOutputThrottleFlushesPendingBeforeResize(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	term := &Terminal{
-		stream:             fanout.New(),
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
-		processEpoch:       1,
-	}
-	stream := term.stream.Subscribe(ctx)
-
-	term.streamMu.Lock()
-	term.queuePendingLiveOutputLocked(1, term.stream, []byte("ab"))
-	term.broadcastResizeLocked(term.stream, 120, 40)
-	term.streamMu.Unlock()
-
-	select {
-	case msg := <-stream:
-		if msg.Type != fanout.StreamOutput || string(msg.Output) != "ab" {
-			t.Fatalf("expected pending output before resize, got %#v", msg)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for flushed output before resize")
-	}
-
-	select {
-	case msg := <-stream:
-		if msg.Type != fanout.StreamResize || msg.Cols != 120 || msg.Rows != 40 {
-			t.Fatalf("expected resize boundary after flushed output, got %#v", msg)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for resize boundary")
-	}
-}
-
-func TestTerminalSharedLiveOutputThrottleFlushesPendingBeforeClose(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	term := &Terminal{
-		stream:             fanout.New(),
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
-		processEpoch:       1,
-	}
-	stream := term.stream.Subscribe(ctx)
-	exitCode := 7
-
-	term.streamMu.Lock()
-	term.queuePendingLiveOutputLocked(1, term.stream, []byte("bye"))
-	term.closeStreamLocked(term.stream, &exitCode)
-	term.streamMu.Unlock()
-
-	select {
-	case msg := <-stream:
-		if msg.Type != fanout.StreamOutput || string(msg.Output) != "bye" {
-			t.Fatalf("expected pending output before close, got %#v", msg)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for flushed output before close")
-	}
-
-	select {
-	case msg := <-stream:
-		if msg.Type != fanout.StreamClosed || msg.ExitCode == nil || *msg.ExitCode != exitCode {
-			t.Fatalf("expected close after flushed output, got %#v", msg)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for close boundary")
-	}
-}
-
-func TestTerminalSharedLiveOutputThrottleBypassesAfterInput(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	term := &Terminal{
-		stream:             fanout.New(),
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
-		processEpoch:       1,
-	}
-	stream := term.stream.Subscribe(ctx)
-
-	term.noteLiveOutputInput()
-	term.streamMu.Lock()
-	term.queuePendingLiveOutputLocked(1, term.stream, []byte("prompt"))
-	term.streamMu.Unlock()
-
-	select {
-	case msg := <-stream:
-		if msg.Type != fanout.StreamOutput || string(msg.Output) != "prompt" {
-			t.Fatalf("expected input bypass to flush shared output immediately, got %#v", msg)
-		}
-		if !msg.OutputRateLimited {
-			t.Fatalf("expected bypassed shared output to remain tagged for subscriber fast-path, got %#v", msg)
-		}
-	case <-time.After(20 * time.Millisecond):
-		t.Fatal("expected recent input to bypass shared live output delay")
-	}
-}
-
-func TestTerminalSharedLiveOutputThrottleBypassesAfterInputForAllSubscribers(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	term := &Terminal{
-		stream:             fanout.New(),
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
-		processEpoch:       1,
-	}
-	streamA := term.stream.Subscribe(ctx)
-	streamB := term.stream.Subscribe(ctx)
-
-	term.noteLiveOutputInput()
-	term.streamMu.Lock()
-	term.queuePendingLiveOutputLocked(1, term.stream, []byte("prompt"))
-	term.streamMu.Unlock()
-
-	for i, stream := range []<-chan fanout.StreamMessage{streamA, streamB} {
-		select {
-		case msg := <-stream:
-			if msg.Type != fanout.StreamOutput || string(msg.Output) != "prompt" {
-				t.Fatalf("subscriber %d expected immediate shared output after input, got %#v", i+1, msg)
-			}
-		case <-time.After(20 * time.Millisecond):
-			t.Fatalf("subscriber %d did not receive immediate shared output after input", i+1)
-		}
-	}
-}
-
-func TestSubscribeDoesNotApplySecondRateLimitToSharedThrottledOutput(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	vt := localvterm.New(6, 2, 16, nil)
-	term := &Terminal{
-		size:               Size{Cols: 6, Rows: 2},
-		state:              StateRunning,
-		vterm:              vt,
-		stream:             fanout.New(),
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
-		processEpoch:       1,
-	}
-	stream := term.Subscribe(ctx)
-	consumeBootstrapMessages(t, stream, 3)
-
-	start := time.Now()
-	term.streamMu.Lock()
-	term.queuePendingLiveOutputLocked(1, term.stream, []byte("later"))
-	term.streamMu.Unlock()
-
-	select {
-	case msg := <-stream:
-		t.Fatalf("expected shared throttle to keep live output pending initially, got %#v", msg)
-	case <-time.After(20 * time.Millisecond):
-	}
-
-	select {
-	case msg := <-stream:
-		if msg.Type != StreamOutput || string(msg.Output) != "later" {
-			t.Fatalf("expected shared throttled live output to arrive without a second cap, got %#v", msg)
-		}
-	case <-time.After(80 * time.Millisecond):
-		t.Fatal("timed out waiting for shared throttled live output")
-	}
-
-	if elapsed := time.Since(start); elapsed > 95*time.Millisecond {
-		t.Fatalf("expected only one 20fps frame window, got %v", elapsed)
-	}
-}
-
-func TestTerminalSharedLiveOutputThrottleSustainedOutputCoalescesAcrossWindows(t *testing.T) {
-	const chunkCount = 120
-	received, elapsed := runSustainedSharedLiveOutputHarness(t, 20, chunkCount, time.Millisecond)
-
-	totalBytes := 0
-	outputFrames := 0
-	for _, msg := range received {
-		if msg.Type != fanout.StreamOutput {
-			t.Fatalf("expected only output frames in sustained shared output test, got %#v", received)
-		}
-		outputFrames++
-		totalBytes += len(msg.Output)
-	}
-
-	if totalBytes != chunkCount {
-		t.Fatalf("expected %d output bytes after shared coalescing, got %d via %#v", chunkCount, totalBytes, received)
-	}
-	if outputFrames >= chunkCount {
-		t.Fatalf("expected shared throttling to collapse frame count below %d, got %d", chunkCount, outputFrames)
-	}
-	if outputFrames < 2 {
-		t.Fatalf("expected sustained shared throttling to flush more than one frame window, got %d", outputFrames)
-	}
-	if outputFrames > 4 {
-		t.Fatalf("expected 20fps shared cap over ~120ms to flush at most 4 output frames, got %d", outputFrames)
-	}
-	if elapsed < 100*time.Millisecond {
-		t.Fatalf("expected sustained shared test to span multiple frame windows, got %v", elapsed)
-	}
-	t.Logf("shared_sustained_output fps=20 frames=%d bytes=%d elapsed=%v", outputFrames, totalBytes, elapsed)
-}
-
-func TestTerminalSharedLiveOutputThrottleDisabledKeepsHighFrameCount(t *testing.T) {
-	const chunkCount = 120
-	received, elapsed := runSustainedSharedLiveOutputHarness(t, 0, chunkCount, time.Millisecond)
-
-	totalBytes := 0
-	outputFrames := 0
-	for _, msg := range received {
-		if msg.Type != fanout.StreamOutput {
-			t.Fatalf("expected only output frames without shared throttling, got %#v", received)
-		}
-		outputFrames++
-		totalBytes += len(msg.Output)
-	}
-
-	if totalBytes != chunkCount {
-		t.Fatalf("expected %d output bytes without shared throttling, got %d via %#v", chunkCount, totalBytes, received)
-	}
-	if outputFrames <= 20 {
-		t.Fatalf("expected disabled shared throttling to keep a high frame count, got %d", outputFrames)
-	}
-	if elapsed < 100*time.Millisecond {
-		t.Fatalf("expected sustained unthrottled shared test to span multiple ticks, got %v", elapsed)
+	replay := term.HistoryReplay(HistoryReplayOptions{BeforeOffset: 0, Limit: 4})
+	if replay.Rows == 0 || replay.Replay == "" {
+		t.Fatalf("expected history replay to remain available, got %#v", replay)
 	}
-	t.Logf("shared_sustained_output fps=off frames=%d bytes=%d elapsed=%v", outputFrames, totalBytes, elapsed)
 }
 
 func TestTerminalSnapshotReturnsNewestScrollbackWindow(t *testing.T) {
@@ -1366,6 +420,67 @@ func TestTerminalHistoryReplayReturnsNewestReplayWindow(t *testing.T) {
 	}
 	if !strings.Contains(older.Replay, "1") || !strings.Contains(older.Replay, "2") {
 		t.Fatalf("expected older replay to contain earlier scrollback rows, got %q", older.Replay)
+	}
+}
+
+func TestTerminalHistoryReplayClampsRequestWindow(t *testing.T) {
+	vt := localvterm.New(16, 2, maxHistoryReplayRows+32, nil)
+	for i := 0; i < maxHistoryReplayRows+20; i++ {
+		if _, err := vt.Write([]byte(fmt.Sprintf("row-%03d\r\n", i))); err != nil {
+			t.Fatalf("write scrollback seed %d failed: %v", i, err)
+		}
+	}
+
+	term := &Terminal{
+		id:    "hist-clamp-1",
+		size:  Size{Cols: 16, Rows: 2},
+		vterm: vt,
+	}
+
+	replay := term.HistoryReplay(HistoryReplayOptions{BeforeOffset: -10, Limit: maxHistoryReplayRows + 1000})
+	if replay.BeforeOffset != 0 {
+		t.Fatalf("expected negative beforeOffset to clamp to 0, got %d", replay.BeforeOffset)
+	}
+	if replay.Limit != maxHistoryReplayRows {
+		t.Fatalf("expected replay limit clamp to %d, got %d", maxHistoryReplayRows, replay.Limit)
+	}
+	if replay.Rows != maxHistoryReplayRows {
+		t.Fatalf("expected replay rows clamp to %d, got %d", maxHistoryReplayRows, replay.Rows)
+	}
+	if replay.Replay == "" {
+		t.Fatal("expected clamped replay payload")
+	}
+}
+
+func TestTerminalHistoryReplayReadsBeyondShortLiveScrollback(t *testing.T) {
+	vt := localvterm.New(12, 2, 3, nil)
+	term := &Terminal{
+		id:      "hist-store-1",
+		size:    Size{Cols: 12, Rows: 2},
+		vterm:   vt,
+		stream:  fanout.New(),
+		history: newMemoryTerminalHistoryStoreForTest(t),
+	}
+	defer term.history.Close()
+
+	for i := 0; i < 12; i++ {
+		_, err, damage := vt.WriteWithDamage([]byte(fmt.Sprintf("row-%02d\r\n", i)))
+		if err != nil {
+			t.Fatalf("write row %d: %v", i, err)
+		}
+		term.appendHistoryFromDamageLocked(damage)
+	}
+
+	if got := len(vt.ScrollbackContent()); got > 3 {
+		t.Fatalf("expected short live scrollback, got %d rows", got)
+	}
+	older := term.HistoryReplay(HistoryReplayOptions{BeforeOffset: 8, Limit: 2})
+	if older.Rows != 2 || older.Replay == "" {
+		t.Fatalf("expected older history rows from store, got %#v", older)
+	}
+	plainReplay := stripANSIForTest(older.Replay)
+	if !strings.Contains(plainReplay, "row-01") || !strings.Contains(plainReplay, "row-02") {
+		t.Fatalf("expected replay beyond live scrollback to contain oldest stored rows, got %q", older.Replay)
 	}
 }
 
@@ -1468,7 +583,7 @@ func TestTerminalDeliversTrailingOutputBeforeClosedFrame(t *testing.T) {
 			break
 		}
 		switch msg.Type {
-		case StreamOutput, StreamScreenUpdate:
+		case StreamScreenUpdate:
 			if streamMessageContainsText(msg, 80, 24, "A^I^[B$") {
 				sawOutput = true
 			}
@@ -1499,101 +614,6 @@ func snapshotContains(s *Snapshot, needle string) bool {
 	return false
 }
 
-func collectStreamMessages(t *testing.T, ch <-chan StreamMessage) []StreamMessage {
-	t.Helper()
-	out := make([]StreamMessage, 0, 4)
-	timeout := time.After(3 * time.Second)
-	for {
-		select {
-		case msg, ok := <-ch:
-			if !ok {
-				return out
-			}
-			out = append(out, msg)
-		case <-timeout:
-			t.Fatalf("timed out collecting stream messages: %#v", out)
-		}
-	}
-}
-
-func collectFanoutMessages(t *testing.T, ch <-chan fanout.StreamMessage, maxCount int) []fanout.StreamMessage {
-	t.Helper()
-	out := make([]fanout.StreamMessage, 0, min(4, maxCount))
-	timeout := time.After(3 * time.Second)
-	idleDelay := 120 * time.Millisecond
-	idle := time.NewTimer(idleDelay)
-	defer idle.Stop()
-	for {
-		select {
-		case msg, ok := <-ch:
-			if !ok {
-				return out
-			}
-			out = append(out, msg)
-			if len(out) >= maxCount {
-				return out
-			}
-			if !idle.Stop() {
-				select {
-				case <-idle.C:
-				default:
-				}
-			}
-			idle.Reset(idleDelay)
-		case <-idle.C:
-			return out
-		case <-timeout:
-			t.Fatalf("timed out collecting fanout messages: %#v", out)
-		}
-	}
-}
-
-func consumeBootstrapMessages(t *testing.T, ch <-chan StreamMessage, count int) {
-	t.Helper()
-	for i := 0; i < count; i++ {
-		select {
-		case _, ok := <-ch:
-			if !ok {
-				t.Fatalf("stream closed while consuming bootstrap message %d/%d", i+1, count)
-			}
-		case <-time.After(time.Second):
-			t.Fatalf("timed out consuming bootstrap message %d/%d", i+1, count)
-		}
-	}
-}
-
-func runSustainedSharedLiveOutputHarness(t *testing.T, fps int, chunkCount int, interval time.Duration) ([]fanout.StreamMessage, time.Duration) {
-	t.Helper()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	term := &Terminal{
-		stream:             fanout.New(),
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: fps},
-		processEpoch:       1,
-	}
-	stream := term.stream.Subscribe(ctx)
-
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for i := 0; i < chunkCount; i++ {
-			<-ticker.C
-			term.streamMu.Lock()
-			term.queuePendingLiveOutputLocked(1, term.stream, []byte("x"))
-			term.streamMu.Unlock()
-		}
-		term.streamMu.Lock()
-		term.flushPendingLiveOutputLocked(term.stream)
-		term.streamMu.Unlock()
-	}()
-
-	start := time.Now()
-	received := collectFanoutMessages(t, stream, chunkCount)
-	return received, time.Since(start)
-}
-
 func snapshotTimestampForNeedle(s *Snapshot, needle string) (time.Time, bool) {
 	if s == nil {
 		return time.Time{}, false
@@ -1617,40 +637,8 @@ func snapshotTimestampForNeedle(s *Snapshot, needle string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func replayContainsText(payload []byte, cols, rows int, needle string) bool {
-	if len(payload) == 0 {
-		return false
-	}
-	if cols < 1 {
-		cols = 1
-	}
-	if rows < 1 {
-		rows = 1
-	}
-	vt := localvterm.New(cols, rows, 256, nil)
-	if _, err := vt.Write(payload); err != nil {
-		return false
-	}
-	for _, row := range vt.ScrollbackContent() {
-		if strings.Contains(vtermRowToString(row), needle) {
-			return true
-		}
-	}
-	for _, row := range vt.ScreenContent().Cells {
-		if strings.Contains(vtermRowToString(row), needle) {
-			return true
-		}
-	}
-	return false
-}
-
 func streamMessageContainsText(msg StreamMessage, cols, rows int, needle string) bool {
 	switch msg.Type {
-	case StreamOutput:
-		if cols > 0 && rows > 0 {
-			return replayContainsText(msg.Output, cols, rows, needle)
-		}
-		return strings.Contains(string(msg.Output), needle)
 	case StreamScreenUpdate:
 		update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
 		if err != nil {
@@ -1662,22 +650,21 @@ func streamMessageContainsText(msg StreamMessage, cols, rows int, needle string)
 	}
 }
 
+func encodeTestScreenUpdatePayload(t *testing.T, update protocol.ScreenUpdate) []byte {
+	t.Helper()
+	payload, err := protocol.EncodeScreenUpdatePayload(update)
+	if err != nil {
+		t.Fatalf("encode screen update: %v", err)
+	}
+	return payload
+}
+
 func screenUpdateContainsText(update protocol.ScreenUpdate, needle string) bool {
 	if update.FullReplace {
 		for _, row := range update.Screen.Cells {
 			if strings.Contains(protocolRowToString(row), needle) {
 				return true
 			}
-		}
-	}
-	for _, row := range update.ChangedRows {
-		if strings.Contains(protocolRowToString(row.Cells), needle) {
-			return true
-		}
-	}
-	for _, span := range update.ChangedSpans {
-		if strings.Contains(protocolRowToString(span.Cells), needle) {
-			return true
 		}
 	}
 	for _, row := range update.ScrollbackAppend {
@@ -1832,7 +819,10 @@ func TestScreenUpdatePayloadFromDamageScrollUsesDeltaPayload(t *testing.T) {
 	if update.Title != "demo" {
 		t.Fatalf("expected title propagated, got %q", update.Title)
 	}
-	if update.ScreenScroll == 0 && len(update.Ops) == 0 && len(update.ScrollbackAppend) == 0 {
+	if len(update.ScrollbackAppend) != 0 || update.ScrollbackTrim != 0 || update.ResetScrollback {
+		t.Fatalf("expected live delta to omit scrollback history, got %#v", update)
+	}
+	if update.ScreenScroll == 0 && len(update.Ops) == 0 {
 		t.Fatalf("expected scroll delta operations, got %#v", update)
 	}
 }
@@ -1884,6 +874,29 @@ func vtermRowToString(row []localvterm.Cell) string {
 		b.WriteString(cell.Content)
 	}
 	return strings.TrimRight(b.String(), " ")
+}
+
+func stripANSIForTest(value string) string {
+	var b strings.Builder
+	for i := 0; i < len(value); i++ {
+		if value[i] != 0x1b {
+			b.WriteByte(value[i])
+			continue
+		}
+		i++
+		if i >= len(value) {
+			break
+		}
+		if value[i] == '[' {
+			for i+1 < len(value) {
+				i++
+				if value[i] >= '@' && value[i] <= '~' {
+					break
+				}
+			}
+		}
+	}
+	return b.String()
 }
 
 func shellQuote(s string) string {

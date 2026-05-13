@@ -127,7 +127,7 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 
 	select {
 	case msg := <-stream:
-		if msg.Type != TypeOutput || string(msg.Payload) != "stream-data" {
+		if msg.Type != TypeScreenUpdate || string(msg.Payload) != "stream-data" {
 			t.Fatalf("unexpected stream frame: %#v", msg)
 		}
 	case <-time.After(3 * time.Second):
@@ -246,11 +246,11 @@ func TestClientAttachBuffersFramesThatArriveBeforeStreamRegistration(t *testing.
 
 	select {
 	case msg := <-stream:
-		if msg.Type != TypeOutput || string(msg.Payload) != "early-output" {
+		if msg.Type != TypeScreenUpdate || string(msg.Payload) != "early-output" {
 			t.Fatalf("unexpected buffered stream frame: %#v", msg)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for buffered output")
+		t.Fatal("timed out waiting for buffered screen update")
 	}
 
 	select {
@@ -355,7 +355,7 @@ func TestClientStreamCancelKeepsEarlyFramesWhenSameChannelIsReattached(t *testin
 
 	select {
 	case frame := <-stream:
-		if frame.Type != TypeOutput || string(frame.Payload) != "replayed-after-reattach" {
+		if frame.Type != TypeScreenUpdate || string(frame.Payload) != "replayed-after-reattach" {
 			t.Fatalf("unexpected replayed frame: %#v", frame)
 		}
 	case <-time.After(3 * time.Second):
@@ -449,26 +449,28 @@ func TestClientSerializesConcurrentSends(t *testing.T) {
 	}
 }
 
-func TestClientStreamCoalescesAdjacentOutputFrames(t *testing.T) {
+func TestClientStreamQueuesScreenUpdateFrames(t *testing.T) {
 	stream := newClientStreamWithConfig(4, 0)
 	defer stream.close()
 
-	stream.send(StreamFrame{Type: TypeOutput, Payload: []byte("a")})
+	stream.send(StreamFrame{Type: TypeScreenUpdate, Payload: []byte("a")})
 	waitForClientStreamState(t, stream, func() bool {
 		return len(stream.queue) == 0
 	})
 
-	stream.send(StreamFrame{Type: TypeOutput, Payload: []byte("b")})
-	stream.send(StreamFrame{Type: TypeOutput, Payload: []byte("c")})
+	stream.send(StreamFrame{Type: TypeScreenUpdate, Payload: []byte("b")})
+	stream.send(StreamFrame{Type: TypeScreenUpdate, Payload: []byte("c")})
 
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
-	if len(stream.queue) != 1 {
-		t.Fatalf("expected one queued output frame, got %d", len(stream.queue))
+	if len(stream.queue) != 2 {
+		t.Fatalf("expected two queued screen update frames, got %d", len(stream.queue))
 	}
-	frame := stream.queue[0]
-	if frame.Type != TypeOutput || string(frame.Payload) != "bc" {
-		t.Fatalf("expected merged output payload %q, got %#v", "bc", frame)
+	if stream.queue[0].Type != TypeScreenUpdate || string(stream.queue[0].Payload) != "b" {
+		t.Fatalf("unexpected first queued frame: %#v", stream.queue[0])
+	}
+	if stream.queue[1].Type != TypeScreenUpdate || string(stream.queue[1].Payload) != "c" {
+		t.Fatalf("unexpected second queued frame: %#v", stream.queue[1])
 	}
 }
 
@@ -477,26 +479,29 @@ func TestClientStreamOverflowQueuesSyncLostInsteadOfSilentDrop(t *testing.T) {
 	defer stream.close()
 
 	payload := bytes.Repeat([]byte("x"), MaxFrameSize/2+1)
-	stream.send(StreamFrame{Type: TypeOutput, Payload: payload})
+	stream.send(StreamFrame{Type: TypeScreenUpdate, Payload: payload})
 	waitForClientStreamState(t, stream, func() bool {
 		return len(stream.queue) == 0
 	})
 
-	stream.send(StreamFrame{Type: TypeOutput, Payload: payload})
-	stream.send(StreamFrame{Type: TypeOutput, Payload: payload})
-	stream.send(StreamFrame{Type: TypeOutput, Payload: payload})
+	stream.send(StreamFrame{Type: TypeScreenUpdate, Payload: payload})
+	stream.send(StreamFrame{Type: TypeScreenUpdate, Payload: payload})
+	stream.send(StreamFrame{Type: TypeScreenUpdate, Payload: payload})
 
 	waitForClientStreamState(t, stream, func() bool {
-		if len(stream.queue) != 3 {
-			return false
-		}
-		return stream.queue[2].Type == TypeSyncLost
+		return len(stream.queue) == 2 && stream.pendingDroppedBytes == uint64(len(payload))
 	})
 
 	stream.mu.Lock()
-	defer stream.mu.Unlock()
+	if len(stream.queue) != 2 {
+		t.Fatalf("expected queue cap to hold two frames before sync-lost flush, got %d frames", len(stream.queue))
+	}
+	if stream.pendingDroppedBytes != uint64(len(payload)) {
+		t.Fatalf("expected pending dropped bytes %d, got %d", len(payload), stream.pendingDroppedBytes)
+	}
+	stream.flushPendingSyncLostLocked()
 	if len(stream.queue) != 3 {
-		t.Fatalf("expected queued overflow state, got %d frames", len(stream.queue))
+		t.Fatalf("expected sync-lost frame after explicit flush, got %d frames", len(stream.queue))
 	}
 	frame := stream.queue[2]
 	if frame.Type != TypeSyncLost {
@@ -512,6 +517,7 @@ func TestClientStreamOverflowQueuesSyncLostInsteadOfSilentDrop(t *testing.T) {
 	if stream.pendingDroppedBytes != 0 {
 		t.Fatalf("expected dropped bytes to be flushed into sync-lost frame, got %d", stream.pendingDroppedBytes)
 	}
+	stream.mu.Unlock()
 }
 
 func runFakeProtocolServer(tr *memory.Transport) error {
@@ -592,7 +598,7 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	if channel != 7 || typ != TypeInput || string(payload) != "echo hi\n" {
 		return fmt.Errorf("unexpected input frame: channel=%d type=%d payload=%q", channel, typ, string(payload))
 	}
-	if err := sendFrame(tr, 7, TypeOutput, []byte("stream-data")); err != nil {
+	if err := sendFrame(tr, 7, TypeScreenUpdate, []byte("stream-data")); err != nil {
 		return err
 	}
 
@@ -824,7 +830,7 @@ func runBufferedAttachServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	if err := sendFrame(tr, 7, TypeOutput, []byte("early-output")); err != nil {
+	if err := sendFrame(tr, 7, TypeScreenUpdate, []byte("early-output")); err != nil {
 		return err
 	}
 	if err := sendFrame(tr, 7, TypeClosed, EncodeClosedPayload(0)); err != nil {
@@ -851,7 +857,7 @@ func runLateFrameAfterCancelServer(tr *memory.Transport) error {
 		return err
 	}
 	time.Sleep(50 * time.Millisecond)
-	if err := sendFrame(tr, 7, TypeOutput, []byte("late-output")); err != nil {
+	if err := sendFrame(tr, 7, TypeScreenUpdate, []byte("late-output")); err != nil {
 		return err
 	}
 
@@ -889,7 +895,7 @@ func runReusedChannelAttachServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	if err := sendFrame(tr, 7, TypeOutput, []byte("replayed-after-reattach")); err != nil {
+	if err := sendFrame(tr, 7, TypeScreenUpdate, []byte("replayed-after-reattach")); err != nil {
 		return err
 	}
 	secondResult, _ := json.Marshal(AttachResult{Mode: "observer", Channel: 7})

@@ -144,8 +144,6 @@ func waitStreamClosed(t *testing.T, stream <-chan protocol.StreamFrame, timeout 
 
 func streamFrameContainsText(frame protocol.StreamFrame, needle string) bool {
 	switch frame.Type {
-	case protocol.TypeOutput:
-		return strings.Contains(string(frame.Payload), needle)
 	case protocol.TypeScreenUpdate:
 		update, err := protocol.DecodeScreenUpdatePayload(frame.Payload)
 		if err != nil {
@@ -153,11 +151,6 @@ func streamFrameContainsText(frame protocol.StreamFrame, needle string) bool {
 		}
 		for _, row := range update.Screen.Cells {
 			if strings.Contains(protocolCellsText(row), needle) {
-				return true
-			}
-		}
-		for _, row := range update.ChangedRows {
-			if strings.Contains(protocolCellsText(row.Cells), needle) {
 				return true
 			}
 		}

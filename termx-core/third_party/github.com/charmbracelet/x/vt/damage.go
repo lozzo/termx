@@ -129,3 +129,16 @@ type ScrollDamage struct {
 func (d ScrollDamage) Bounds() uv.Rectangle {
 	return d.Rectangle
 }
+
+// ScrollbackDamage represents a row captured before it leaves the visible
+// screen and enters scrollback.
+type ScrollbackDamage struct {
+	Y       int
+	Cells   []uv.Cell
+	Wrapped bool
+}
+
+// Bounds returns the original row bounds.
+func (d ScrollbackDamage) Bounds() uv.Rectangle {
+	return uv.Rect(0, d.Y, len(d.Cells), 1)
+}

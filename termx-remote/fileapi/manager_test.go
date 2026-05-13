@@ -119,6 +119,52 @@ func TestPreviewReportsVideoCategoryWithoutInlineContent(t *testing.T) {
 	}
 }
 
+func TestPreviewReportsModelCategoryWithoutInlineContent(t *testing.T) {
+	cases := []struct {
+		name     string
+		content  []byte
+		mimeType string
+	}{
+		{name: "part.stl", content: []byte("solid part\nendsolid part\n"), mimeType: "model/stl"},
+		{name: "mesh.obj", content: []byte("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n"), mimeType: "model/obj"},
+		{name: "scene.glb", content: []byte("glb bytes"), mimeType: "model/gltf-binary"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			filePath := filepath.Join(dir, tc.name)
+			if err := os.WriteFile(filePath, tc.content, 0o644); err != nil {
+				t.Fatalf("WriteFile returned error: %v", err)
+			}
+
+			manager := NewManager()
+			t.Cleanup(manager.Close)
+
+			status, body, errMsg := manager.RouteRequest("POST", "/files/preview", []byte(`{"path":"`+filePath+`","max_size":4}`))
+			if status != 200 || errMsg != "" {
+				t.Fatalf("preview returned status=%d err=%q", status, errMsg)
+			}
+			var preview map[string]any
+			if err := json.Unmarshal(body, &preview); err != nil {
+				t.Fatalf("unmarshal preview response: %v", err)
+			}
+			if preview["category"] != "model" {
+				t.Fatalf("expected model category, got %#v", preview["category"])
+			}
+			if preview["mime_type"] != tc.mimeType {
+				t.Fatalf("expected %s mime, got %#v", tc.mimeType, preview["mime_type"])
+			}
+			if preview["content_base64"] != nil {
+				t.Fatalf("expected model preview to omit inline content, got %#v", preview["content_base64"])
+			}
+			if preview["preview_limit"] != nil {
+				t.Fatalf("expected model preview to avoid size limit, got %#v", preview["preview_limit"])
+			}
+		})
+	}
+}
+
 func TestPreviewAllowsImageBeyondRequestedMaxSize(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "shot.png")

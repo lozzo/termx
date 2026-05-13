@@ -118,7 +118,6 @@ type AttachParams struct {
 	TerminalID   string `json:"terminal_id"`
 	Mode         string `json:"mode"`
 	ResizePolicy string `json:"resize_policy,omitempty"`
-	StreamMode   string `json:"stream_mode,omitempty"`
 	SurfaceID    string `json:"surface_id,omitempty"`
 	ViewID       string `json:"view_id,omitempty"`
 }
@@ -142,11 +141,6 @@ type ResizeOwnership struct {
 const (
 	ResizePolicyOwner    = "owner"
 	ResizePolicyFollower = "follower"
-)
-
-const (
-	StreamModeScreen = "screen"
-	StreamModeRaw    = "raw"
 )
 
 const (
@@ -243,34 +237,6 @@ type SnapshotParams struct {
 	ScrollbackLimit  int    `json:"scrollback_limit,omitempty"`
 }
 
-type ScreenRowUpdate struct {
-	Row        int       `json:"row"`
-	Cells      []Cell    `json:"cells,omitempty"`
-	Timestamp  time.Time `json:"timestamp,omitempty"`
-	RowKind    string    `json:"row_kind,omitempty"`
-	Wrapped    bool      `json:"wrapped"`
-	WrappedSet bool      `json:"wrapped_set,omitempty"`
-}
-
-type ScreenSpanOp uint8
-
-const (
-	ScreenSpanOpWrite ScreenSpanOp = iota
-	ScreenSpanOpClearToEOL
-	ScreenSpanOpReplaceRow
-)
-
-type ScreenSpanUpdate struct {
-	Row        int          `json:"row"`
-	ColStart   int          `json:"col_start,omitempty"`
-	Cells      []Cell       `json:"cells,omitempty"`
-	Op         ScreenSpanOp `json:"op,omitempty"`
-	Timestamp  time.Time    `json:"timestamp,omitempty"`
-	RowKind    string       `json:"row_kind,omitempty"`
-	Wrapped    bool         `json:"wrapped"`
-	WrappedSet bool         `json:"wrapped_set,omitempty"`
-}
-
 type ScreenRect struct {
 	X      int `json:"x"`
 	Y      int `json:"y"`
@@ -331,8 +297,6 @@ type ScreenUpdate struct {
 	ScreenTimestamps []time.Time           `json:"screen_timestamps,omitempty"`
 	ScreenRowKinds   []string              `json:"screen_row_kinds,omitempty"`
 	ScreenWrapped    []bool                `json:"screen_wrapped,omitempty"`
-	ChangedRows      []ScreenRowUpdate     `json:"changed_rows,omitempty"` // legacy TSU2 input; NormalizeScreenUpdate folds this into ChangedSpans
-	ChangedSpans     []ScreenSpanUpdate    `json:"changed_spans,omitempty"`
 	Ops              []ScreenOp            `json:"ops,omitempty"`
 	ScrollbackTrim   int                   `json:"scrollback_trim,omitempty"`
 	ScrollbackAppend []ScrollbackRowAppend `json:"scrollback_append,omitempty"`
@@ -362,18 +326,13 @@ func NormalizeScreenUpdate(update ScreenUpdate) ScreenUpdate {
 	} else {
 		normalized.Screen.IsAlternateScreen = normalized.Modes.AlternateScreen
 	}
-	normalized.ChangedRows = normalizeChangedScreenRows(normalized.ChangedRows)
-	normalized.ChangedSpans = normalizeChangedScreenSpans(normalized.ChangedRows, normalized.ChangedSpans)
 	normalized.Ops = normalizeScreenOps(normalized.Ops)
 	normalized.ScrollbackAppend = normalizeScrollbackAppendWrapped(normalized.ScrollbackAppend)
-	if len(normalized.ChangedRows) == 0 {
-		normalized.ChangedRows = legacyScreenRowsFromSpans(normalized.ChangedSpans)
-	}
 	return normalized
 }
 
 func ClassifyScreenUpdate(update ScreenUpdate) ScreenUpdateClassification {
-	changedRows := len(update.ChangedSpans) > 0 || len(update.ChangedRows) > 0 || len(screenUpdateChangedRowsFromOps(update.Ops)) > 0
+	changedRows := len(screenUpdateChangedRowsFromOps(update.Ops)) > 0
 	return ScreenUpdateClassification{
 		FullReplace:         update.FullReplace,
 		BlankFullReplace:    isBlankFullReplaceScreenUpdate(update),
@@ -383,84 +342,6 @@ func ClassifyScreenUpdate(update ScreenUpdate) ScreenUpdateClassification {
 		HasScrollbackChange: update.ResetScrollback || update.ScrollbackTrim > 0 || len(update.ScrollbackAppend) > 0,
 		HasTitle:            update.Title != "",
 	}
-}
-
-func normalizeChangedScreenRows(rows []ScreenRowUpdate) []ScreenRowUpdate {
-	for i := range rows {
-		rows[i].Wrapped = wrappedSet(rows[i].WrappedSet, rows[i].Wrapped)
-	}
-	if len(rows) <= 1 {
-		return rows
-	}
-	lastIndex := make(map[int]int, len(rows))
-	for index, row := range rows {
-		lastIndex[row.Row] = index
-	}
-	normalized := make([]ScreenRowUpdate, 0, len(lastIndex))
-	for index, row := range rows {
-		if lastIndex[row.Row] != index {
-			continue
-		}
-		normalized = append(normalized, row)
-	}
-	if len(normalized) == len(rows) {
-		return rows
-	}
-	return normalized
-}
-
-func normalizeChangedScreenSpans(rows []ScreenRowUpdate, spans []ScreenSpanUpdate) []ScreenSpanUpdate {
-	if len(rows) == 0 && len(spans) == 0 {
-		return nil
-	}
-	normalized := make([]ScreenSpanUpdate, 0, len(rows)+len(spans))
-	for _, row := range rows {
-		normalized = append(normalized, normalizeScreenSpanUpdate(ScreenSpanUpdate{
-			Row:        row.Row,
-			Op:         ScreenSpanOpReplaceRow,
-			Cells:      row.Cells,
-			Timestamp:  row.Timestamp,
-			RowKind:    row.RowKind,
-			Wrapped:    row.Wrapped,
-			WrappedSet: row.WrappedSet,
-		}))
-	}
-	for _, span := range spans {
-		normalized = append(normalized, normalizeScreenSpanUpdate(span))
-	}
-	return normalized
-}
-
-func legacyScreenRowsFromSpans(spans []ScreenSpanUpdate) []ScreenRowUpdate {
-	if len(spans) == 0 {
-		return nil
-	}
-	rows := make([]ScreenRowUpdate, 0, len(spans))
-	for _, span := range spans {
-		if span.Op != ScreenSpanOpReplaceRow {
-			return nil
-		}
-		rows = append(rows, ScreenRowUpdate{
-			Row:        span.Row,
-			Cells:      span.Cells,
-			Timestamp:  span.Timestamp,
-			RowKind:    span.RowKind,
-			Wrapped:    span.Wrapped,
-			WrappedSet: span.WrappedSet,
-		})
-	}
-	return rows
-}
-
-func normalizeScreenSpanUpdate(span ScreenSpanUpdate) ScreenSpanUpdate {
-	span.Wrapped = wrappedSet(span.WrappedSet, span.Wrapped)
-	switch span.Op {
-	case ScreenSpanOpClearToEOL:
-		span.Cells = nil
-	case ScreenSpanOpReplaceRow:
-		span.ColStart = 0
-	}
-	return span
 }
 
 func normalizeScreenOp(op ScreenOp) ScreenOp {
@@ -613,19 +494,6 @@ func normalizeScreenOps(ops []ScreenOp) []ScreenOp {
 	return normalized
 }
 
-func isValidScreenSpanOp(op ScreenSpanOp) bool {
-	switch op {
-	case ScreenSpanOpWrite, ScreenSpanOpClearToEOL, ScreenSpanOpReplaceRow:
-		return true
-	default:
-		return false
-	}
-}
-
-func screenSpanOpHasCells(op ScreenSpanOp) bool {
-	return op != ScreenSpanOpClearToEOL
-}
-
 func isValidScreenOpCode(code ScreenOpCode) bool {
 	switch code {
 	case ScreenOpWriteSpan,
@@ -689,7 +557,7 @@ func normalizeScreenUpdateBoolSlice(values []bool, size int) []bool {
 }
 
 func isBlankFullReplaceScreenUpdate(update ScreenUpdate) bool {
-	if !update.FullReplace || len(update.ChangedRows) > 0 || len(update.ChangedSpans) > 0 || len(update.Ops) > 0 || len(update.ScrollbackAppend) > 0 {
+	if !update.FullReplace || len(update.Ops) > 0 || len(update.ScrollbackAppend) > 0 {
 		return false
 	}
 	for _, row := range update.Screen.Cells {
@@ -704,8 +572,6 @@ func isBlankFullReplaceScreenUpdate(update ScreenUpdate) bool {
 
 func screenUpdateHasContentChange(update ScreenUpdate) bool {
 	return update.FullReplace ||
-		len(update.ChangedRows) > 0 ||
-		len(update.ChangedSpans) > 0 ||
 		update.ScreenScroll != 0 ||
 		screenUpdateHasContentOps(update.Ops) ||
 		update.ResetScrollback ||
@@ -836,27 +702,13 @@ func DecodeScreenUpdatePayload(payload []byte) (ScreenUpdate, error) {
 	if len(payload) == 0 {
 		return ScreenUpdate{}, nil
 	}
-	if len(payload) < len(screenUpdatePayloadMagicV2) {
+	if len(payload) < len(screenUpdatePayloadMagic) {
 		return ScreenUpdate{}, fmt.Errorf("invalid screen update payload magic")
 	}
-	var (
-		update ScreenUpdate
-		err    error
-	)
-	switch string(payload[:len(screenUpdatePayloadMagicV2)]) {
-	case screenUpdatePayloadMagicV2:
-		update, err = decodeScreenUpdatePayloadBinaryV2(payload)
-	case screenUpdatePayloadMagicV3:
-		update, err = decodeScreenUpdatePayloadBinaryV3(payload)
-	case screenUpdatePayloadMagicV4:
-		update, err = decodeScreenUpdatePayloadBinaryV4(payload)
-	case screenUpdatePayloadMagicV5:
-		update, err = decodeScreenUpdatePayloadBinaryV5(payload)
-	case screenUpdatePayloadMagicV6:
-		update, err = decodeScreenUpdatePayloadBinaryV6(payload)
-	default:
+	if string(payload[:len(screenUpdatePayloadMagic)]) != screenUpdatePayloadMagic {
 		return ScreenUpdate{}, fmt.Errorf("invalid screen update payload magic")
 	}
+	update, err := decodeScreenUpdatePayloadBinary(payload)
 	if err != nil {
 		return ScreenUpdate{}, err
 	}
@@ -864,12 +716,7 @@ func DecodeScreenUpdatePayload(payload []byte) (ScreenUpdate, error) {
 }
 
 const (
-	screenUpdatePayloadMagicV2 = "TSU2"
-	screenUpdatePayloadMagicV3 = "TSU3"
-	screenUpdatePayloadMagicV4 = "TSU4"
-	screenUpdatePayloadMagicV5 = "TSU5"
-	screenUpdatePayloadMagicV6 = "TSU6"
-	screenUpdatePayloadMagic   = screenUpdatePayloadMagicV3
+	screenUpdatePayloadMagic = "TSU6"
 )
 
 const (
@@ -884,73 +731,13 @@ type screenUpdateEncoder struct {
 }
 
 func encodeScreenUpdatePayloadBinary(update ScreenUpdate) ([]byte, error) {
-	if screenUpdateHasWrappedMetadata(update) {
-		if !update.FullReplace && len(update.Ops) > 0 {
-			return encodeScreenUpdatePayloadBinaryV6(update)
-		}
-		return encodeScreenUpdatePayloadBinaryV5(update)
-	}
-	if !update.FullReplace && len(update.Ops) > 0 {
-		v4Payload, err := encodeScreenUpdatePayloadBinaryV4(update)
-		if err != nil {
-			return nil, err
-		}
-		if !screenUpdateCanFallbackToV3(update) {
-			return v4Payload, nil
-		}
-		v3Payload, err := encodeScreenUpdatePayloadBinaryV3(update)
-		if err != nil {
-			return nil, err
-		}
-		if len(v3Payload) <= len(v4Payload) {
-			return v3Payload, nil
-		}
-		return v4Payload, nil
-	}
-	return encodeScreenUpdatePayloadBinaryV3(update)
+	return encodeScreenUpdatePayloadBinaryCurrent(update)
 }
 
-func screenUpdateHasWrappedMetadata(update ScreenUpdate) bool {
-	for _, value := range update.ScreenWrapped {
-		if value {
-			return true
-		}
-	}
-	for _, row := range update.ChangedRows {
-		if row.WrappedSet {
-			return true
-		}
-	}
-	for _, span := range update.ChangedSpans {
-		if span.WrappedSet {
-			return true
-		}
-	}
-	for _, op := range update.Ops {
-		if op.WrappedSet {
-			return true
-		}
-	}
-	for _, row := range update.ScrollbackAppend {
-		if row.WrappedSet {
-			return true
-		}
-	}
-	return false
-}
-
-func encodeScreenUpdatePayloadBinaryV3(update ScreenUpdate) ([]byte, error) {
-	return encodeScreenUpdatePayloadBinaryV3WithMagic(update, screenUpdatePayloadMagic, false)
-}
-
-func encodeScreenUpdatePayloadBinaryV5(update ScreenUpdate) ([]byte, error) {
-	return encodeScreenUpdatePayloadBinaryV3WithMagic(update, screenUpdatePayloadMagicV5, true)
-}
-
-func encodeScreenUpdatePayloadBinaryV3WithMagic(update ScreenUpdate, magic string, includeWrapped bool) ([]byte, error) {
+func encodeScreenUpdatePayloadBinaryCurrent(update ScreenUpdate) ([]byte, error) {
 	styles, styleIndex := collectScreenUpdateStyles(update)
 	enc := screenUpdateEncoder{buf: make([]byte, 0, 256)}
-	enc.appendBytes([]byte(magic))
+	enc.appendBytes([]byte(screenUpdatePayloadMagic))
 	flags := uint8(0)
 	if update.FullReplace {
 		flags |= screenUpdateFlagFullReplace
@@ -988,96 +775,7 @@ func encodeScreenUpdatePayloadBinaryV3WithMagic(update ScreenUpdate, magic strin
 		enc.appendRows(update.Screen.Cells, styleIndex)
 		enc.appendTimeSlice(update.ScreenTimestamps)
 		enc.appendStringSlice(update.ScreenRowKinds)
-		if includeWrapped {
-			enc.appendBoolSlice(update.ScreenWrapped)
-		}
-	}
-	enc.appendUvarint(uint64(len(update.ChangedSpans)))
-	for _, span := range update.ChangedSpans {
-		span.Wrapped = wrappedSet(span.WrappedSet, span.Wrapped)
-		if !isValidScreenSpanOp(span.Op) {
-			return nil, fmt.Errorf("invalid screen span op %d", span.Op)
-		}
-		enc.appendUvarint(uint64(span.Row))
-		enc.appendByte(byte(span.Op))
-		enc.appendUvarint(uint64(span.ColStart))
-		enc.appendTime(span.Timestamp)
-		enc.appendString(span.RowKind)
-		if includeWrapped {
-			enc.appendByte(boolByte(span.WrappedSet))
-			if span.WrappedSet {
-				enc.appendByte(boolByte(span.Wrapped))
-			}
-		}
-		if !screenSpanOpHasCells(span.Op) {
-			continue
-		}
-		if span.Op == ScreenSpanOpReplaceRow {
-			enc.appendRow(span.Cells, styleIndex)
-			continue
-		}
-		enc.appendCells(span.Cells, styleIndex)
-	}
-	enc.appendUvarint(uint64(maxInt(0, update.ScrollbackTrim)))
-	enc.appendUvarint(uint64(len(update.ScrollbackAppend)))
-	for _, row := range update.ScrollbackAppend {
-		row.Wrapped = wrappedSet(row.WrappedSet, row.Wrapped)
-		enc.appendTime(row.Timestamp)
-		enc.appendString(row.RowKind)
-		if includeWrapped {
-			enc.appendByte(boolByte(row.WrappedSet))
-			if row.WrappedSet {
-				enc.appendByte(boolByte(row.Wrapped))
-			}
-		}
-		enc.appendRow(row.Cells, styleIndex)
-	}
-	return enc.buf, nil
-}
-
-func encodeScreenUpdatePayloadBinaryV4(update ScreenUpdate) ([]byte, error) {
-	return encodeScreenUpdatePayloadBinaryV4WithMagic(update, screenUpdatePayloadMagicV4, false)
-}
-
-func encodeScreenUpdatePayloadBinaryV6(update ScreenUpdate) ([]byte, error) {
-	return encodeScreenUpdatePayloadBinaryV4WithMagic(update, screenUpdatePayloadMagicV6, true)
-}
-
-func encodeScreenUpdatePayloadBinaryV4WithMagic(update ScreenUpdate, magic string, includeWrapped bool) ([]byte, error) {
-	styles, styleIndex := collectScreenUpdateStyles(update)
-	enc := screenUpdateEncoder{buf: make([]byte, 0, 256)}
-	enc.appendBytes([]byte(magic))
-	flags := uint8(0)
-	if update.FullReplace {
-		flags |= screenUpdateFlagFullReplace
-	}
-	if update.ResetScrollback {
-		flags |= screenUpdateFlagResetScrollback
-	}
-	if update.Title != "" {
-		flags |= screenUpdateFlagHasTitle
-	}
-	if update.ScreenScroll != 0 {
-		flags |= screenUpdateFlagHasScreenScroll
-	}
-	enc.appendByte(flags)
-	enc.appendUint16(update.Size.Cols)
-	enc.appendUint16(update.Size.Rows)
-	if flags&screenUpdateFlagHasScreenScroll != 0 {
-		enc.appendInt32(int32(update.ScreenScroll))
-	}
-	if flags&screenUpdateFlagHasTitle != 0 {
-		enc.appendString(update.Title)
-	}
-	enc.appendUint16(encodeTerminalModesMask(update.Modes))
-	enc.appendInt32(int32(update.Cursor.Row))
-	enc.appendInt32(int32(update.Cursor.Col))
-	enc.appendByte(boolByte(update.Cursor.Visible))
-	enc.appendByte(encodeCursorShape(update.Cursor.Shape))
-	enc.appendByte(boolByte(update.Cursor.Blink))
-	enc.appendUvarint(uint64(maxInt(0, len(styles)-1)))
-	for _, style := range styles[1:] {
-		enc.appendCellStyle(style)
+		enc.appendBoolSlice(update.ScreenWrapped)
 	}
 	enc.appendUvarint(uint64(len(update.Ops)))
 	for _, op := range update.Ops {
@@ -1092,11 +790,9 @@ func encodeScreenUpdatePayloadBinaryV4WithMagic(update ScreenUpdate, magic strin
 			enc.appendUvarint(uint64(op.Col))
 			enc.appendTime(op.Timestamp)
 			enc.appendString(op.RowKind)
-			if includeWrapped {
-				enc.appendByte(boolByte(op.WrappedSet))
-				if op.WrappedSet {
-					enc.appendByte(boolByte(op.Wrapped))
-				}
+			enc.appendByte(boolByte(op.WrappedSet))
+			if op.WrappedSet {
+				enc.appendByte(boolByte(op.Wrapped))
 			}
 			enc.appendCells(op.Cells, styleIndex)
 		case ScreenOpScrollRect:
@@ -1111,22 +807,18 @@ func encodeScreenUpdatePayloadBinaryV4WithMagic(update ScreenUpdate, magic strin
 			enc.appendScreenRect(op.Rect)
 			enc.appendTime(op.Timestamp)
 			enc.appendString(op.RowKind)
-			if includeWrapped {
-				enc.appendByte(boolByte(op.WrappedSet))
-				if op.WrappedSet {
-					enc.appendByte(boolByte(op.Wrapped))
-				}
+			enc.appendByte(boolByte(op.WrappedSet))
+			if op.WrappedSet {
+				enc.appendByte(boolByte(op.Wrapped))
 			}
 		case ScreenOpClearToEOL:
 			enc.appendUvarint(uint64(op.Row))
 			enc.appendUvarint(uint64(op.Col))
 			enc.appendTime(op.Timestamp)
 			enc.appendString(op.RowKind)
-			if includeWrapped {
-				enc.appendByte(boolByte(op.WrappedSet))
-				if op.WrappedSet {
-					enc.appendByte(boolByte(op.Wrapped))
-				}
+			enc.appendByte(boolByte(op.WrappedSet))
+			if op.WrappedSet {
+				enc.appendByte(boolByte(op.Wrapped))
 			}
 		case ScreenOpCursor:
 			enc.appendInt32(int32(op.Cursor.Row))
@@ -1149,111 +841,10 @@ func encodeScreenUpdatePayloadBinaryV4WithMagic(update ScreenUpdate, magic strin
 		row.Wrapped = wrappedSet(row.WrappedSet, row.Wrapped)
 		enc.appendTime(row.Timestamp)
 		enc.appendString(row.RowKind)
-		if includeWrapped {
-			enc.appendByte(boolByte(row.WrappedSet))
-			if row.WrappedSet {
-				enc.appendByte(boolByte(row.Wrapped))
-			}
+		enc.appendByte(boolByte(row.WrappedSet))
+		if row.WrappedSet {
+			enc.appendByte(boolByte(row.Wrapped))
 		}
-		enc.appendRow(row.Cells, styleIndex)
-	}
-	return enc.buf, nil
-}
-
-func screenUpdateCanFallbackToV3(update ScreenUpdate) bool {
-	if update.FullReplace {
-		return true
-	}
-	hasSpanFallback := len(update.ChangedSpans) > 0 || len(update.ChangedRows) > 0
-	for _, op := range update.Ops {
-		switch op.Code {
-		case ScreenOpCursor, ScreenOpModes, ScreenOpResize, ScreenOpTitle:
-			continue
-		case ScreenOpScrollRect:
-			if screenUpdateScrollRectRepresentableInV3(update, op) {
-				continue
-			}
-			if hasSpanFallback {
-				continue
-			}
-			return false
-		default:
-			if hasSpanFallback {
-				continue
-			}
-			return false
-		}
-	}
-	return true
-}
-
-func screenUpdateScrollRectRepresentableInV3(update ScreenUpdate, op ScreenOp) bool {
-	if op.Code != ScreenOpScrollRect || op.Dx != 0 || update.ScreenScroll != -op.Dy {
-		return false
-	}
-	if update.Size.Cols == 0 || update.Size.Rows == 0 {
-		return false
-	}
-	return op.Rect.X == 0 &&
-		op.Rect.Y == 0 &&
-		op.Rect.Width >= int(update.Size.Cols) &&
-		op.Rect.Height >= int(update.Size.Rows)
-}
-
-func encodeScreenUpdatePayloadBinaryV2(update ScreenUpdate) ([]byte, error) {
-	styles, styleIndex := collectScreenUpdateStyles(update)
-	enc := screenUpdateEncoder{buf: make([]byte, 0, 256)}
-	enc.appendBytes([]byte(screenUpdatePayloadMagicV2))
-	flags := uint8(0)
-	if update.FullReplace {
-		flags |= screenUpdateFlagFullReplace
-	}
-	if update.ResetScrollback {
-		flags |= screenUpdateFlagResetScrollback
-	}
-	if update.Title != "" {
-		flags |= screenUpdateFlagHasTitle
-	}
-	if update.ScreenScroll != 0 {
-		flags |= screenUpdateFlagHasScreenScroll
-	}
-	enc.appendByte(flags)
-	enc.appendUint16(update.Size.Cols)
-	enc.appendUint16(update.Size.Rows)
-	if flags&screenUpdateFlagHasScreenScroll != 0 {
-		enc.appendInt32(int32(update.ScreenScroll))
-	}
-	if flags&screenUpdateFlagHasTitle != 0 {
-		enc.appendString(update.Title)
-	}
-	enc.appendUint16(encodeTerminalModesMask(update.Modes))
-	enc.appendInt32(int32(update.Cursor.Row))
-	enc.appendInt32(int32(update.Cursor.Col))
-	enc.appendByte(boolByte(update.Cursor.Visible))
-	enc.appendByte(encodeCursorShape(update.Cursor.Shape))
-	enc.appendByte(boolByte(update.Cursor.Blink))
-	enc.appendUvarint(uint64(maxInt(0, len(styles)-1)))
-	for _, style := range styles[1:] {
-		enc.appendCellStyle(style)
-	}
-	if update.FullReplace {
-		enc.appendByte(boolByte(update.Screen.IsAlternateScreen))
-		enc.appendRows(update.Screen.Cells, styleIndex)
-		enc.appendTimeSlice(update.ScreenTimestamps)
-		enc.appendStringSlice(update.ScreenRowKinds)
-	}
-	enc.appendUvarint(uint64(len(update.ChangedRows)))
-	for _, row := range update.ChangedRows {
-		enc.appendUvarint(uint64(row.Row))
-		enc.appendTime(row.Timestamp)
-		enc.appendString(row.RowKind)
-		enc.appendRow(row.Cells, styleIndex)
-	}
-	enc.appendUvarint(uint64(maxInt(0, update.ScrollbackTrim)))
-	enc.appendUvarint(uint64(len(update.ScrollbackAppend)))
-	for _, row := range update.ScrollbackAppend {
-		enc.appendTime(row.Timestamp)
-		enc.appendString(row.RowKind)
 		enc.appendRow(row.Cells, styleIndex)
 	}
 	return enc.buf, nil
@@ -1277,24 +868,11 @@ func collectScreenUpdateStyles(update ScreenUpdate) ([]CellStyle, map[CellStyle]
 	for _, row := range update.Screen.Cells {
 		addRow(row)
 	}
-	for _, span := range update.ChangedSpans {
-		if !screenSpanOpHasCells(span.Op) {
-			continue
-		}
-		if span.Op == ScreenSpanOpReplaceRow {
-			addRow(span.Cells)
-			continue
-		}
-		addCells(span.Cells)
-	}
 	for _, op := range update.Ops {
 		if op.Code != ScreenOpWriteSpan {
 			continue
 		}
 		addCells(op.Cells)
-	}
-	for _, row := range update.ChangedRows {
-		addRow(row.Cells)
 	}
 	for _, row := range update.ScrollbackAppend {
 		addRow(row.Cells)
@@ -1302,17 +880,9 @@ func collectScreenUpdateStyles(update ScreenUpdate) ([]CellStyle, map[CellStyle]
 	return styles, index
 }
 
-func decodeScreenUpdatePayloadBinaryV3(payload []byte) (ScreenUpdate, error) {
-	return decodeScreenUpdatePayloadBinaryV3WithMagic(payload, screenUpdatePayloadMagic, false)
-}
-
-func decodeScreenUpdatePayloadBinaryV5(payload []byte) (ScreenUpdate, error) {
-	return decodeScreenUpdatePayloadBinaryV3WithMagic(payload, screenUpdatePayloadMagicV5, true)
-}
-
-func decodeScreenUpdatePayloadBinaryV3WithMagic(payload []byte, magic string, includeWrapped bool) (ScreenUpdate, error) {
+func decodeScreenUpdatePayloadBinary(payload []byte) (ScreenUpdate, error) {
 	dec := screenUpdateDecoder{data: payload}
-	if !dec.consumeMagic(magic) {
+	if !dec.consumeMagic(screenUpdatePayloadMagic) {
 		return ScreenUpdate{}, fmt.Errorf("invalid screen update payload magic")
 	}
 	flags, err := dec.readByte()
@@ -1408,208 +978,10 @@ func decodeScreenUpdatePayloadBinaryV3WithMagic(payload []byte, magic string, in
 		if err != nil {
 			return ScreenUpdate{}, err
 		}
-		if includeWrapped {
-			update.ScreenWrapped, err = dec.readBoolSlice()
-			if err != nil {
-				return ScreenUpdate{}, err
-			}
-		}
-	}
-	changedCount, err := dec.readUvarint()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	update.ChangedSpans = make([]ScreenSpanUpdate, 0, int(changedCount))
-	for i := uint64(0); i < changedCount; i++ {
-		rowIndex, err := dec.readUvarint()
+		update.ScreenWrapped, err = dec.readBoolSlice()
 		if err != nil {
 			return ScreenUpdate{}, err
 		}
-		opRaw, err := dec.readByte()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		op := ScreenSpanOp(opRaw)
-		if !isValidScreenSpanOp(op) {
-			return ScreenUpdate{}, fmt.Errorf("invalid screen span op %d", opRaw)
-		}
-		colStart, err := dec.readUvarint()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		ts, err := dec.readTime()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		kind, err := dec.readString()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		wrappedSet := false
-		wrapped := false
-		if includeWrapped {
-			wrappedSet, wrapped, err = dec.readWrapped()
-			if err != nil {
-				return ScreenUpdate{}, err
-			}
-		}
-		var cells []Cell
-		if screenSpanOpHasCells(op) {
-			if op == ScreenSpanOpReplaceRow {
-				cells, err = dec.readRow(styles)
-			} else {
-				cells, err = dec.readCells(styles)
-			}
-			if err != nil {
-				return ScreenUpdate{}, err
-			}
-		}
-		update.ChangedSpans = append(update.ChangedSpans, ScreenSpanUpdate{
-			Row:        int(rowIndex),
-			ColStart:   int(colStart),
-			Cells:      cells,
-			Op:         op,
-			Timestamp:  ts,
-			RowKind:    kind,
-			Wrapped:    wrapped,
-			WrappedSet: wrappedSet,
-		})
-	}
-	scrollbackTrim, err := dec.readUvarint()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	update.ScrollbackTrim = int(scrollbackTrim)
-	appendCount, err := dec.readUvarint()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	update.ScrollbackAppend = make([]ScrollbackRowAppend, 0, int(appendCount))
-	for i := uint64(0); i < appendCount; i++ {
-		ts, err := dec.readTime()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		kind, err := dec.readString()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		wrappedSet := false
-		wrapped := false
-		if includeWrapped {
-			wrappedSet, wrapped, err = dec.readWrapped()
-			if err != nil {
-				return ScreenUpdate{}, err
-			}
-		}
-		cells, err := dec.readRow(styles)
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		update.ScrollbackAppend = append(update.ScrollbackAppend, ScrollbackRowAppend{
-			Cells:      cells,
-			Timestamp:  ts,
-			RowKind:    kind,
-			Wrapped:    wrapped,
-			WrappedSet: wrappedSet,
-		})
-	}
-	if dec.off != len(dec.data) {
-		return ScreenUpdate{}, fmt.Errorf("trailing bytes in screen update payload")
-	}
-	if !update.FullReplace {
-		update.Screen.IsAlternateScreen = update.Modes.AlternateScreen
-	}
-	return update, nil
-}
-
-func decodeScreenUpdatePayloadBinaryV4(payload []byte) (ScreenUpdate, error) {
-	return decodeScreenUpdatePayloadBinaryV4WithMagic(payload, screenUpdatePayloadMagicV4, false)
-}
-
-func decodeScreenUpdatePayloadBinaryV6(payload []byte) (ScreenUpdate, error) {
-	return decodeScreenUpdatePayloadBinaryV4WithMagic(payload, screenUpdatePayloadMagicV6, true)
-}
-
-func decodeScreenUpdatePayloadBinaryV4WithMagic(payload []byte, magic string, includeWrapped bool) (ScreenUpdate, error) {
-	dec := screenUpdateDecoder{data: payload}
-	if !dec.consumeMagic(magic) {
-		return ScreenUpdate{}, fmt.Errorf("invalid screen update payload magic")
-	}
-	flags, err := dec.readByte()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	cols, err := dec.readUint16()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	rows, err := dec.readUint16()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	update := ScreenUpdate{
-		FullReplace:     flags&screenUpdateFlagFullReplace != 0,
-		ResetScrollback: flags&screenUpdateFlagResetScrollback != 0,
-		Size:            Size{Cols: cols, Rows: rows},
-	}
-	if flags&screenUpdateFlagHasScreenScroll != 0 {
-		scroll, err := dec.readInt32()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		update.ScreenScroll = int(scroll)
-	}
-	if flags&screenUpdateFlagHasTitle != 0 {
-		update.Title, err = dec.readString()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-	}
-	modeMask, err := dec.readUint16()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	cursorRow, err := dec.readInt32()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	cursorCol, err := dec.readInt32()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	cursorVisible, err := dec.readByte()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	cursorShape, err := dec.readByte()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	cursorBlink, err := dec.readByte()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	update.Modes = decodeTerminalModesMask(modeMask)
-	update.Cursor = CursorState{
-		Row:     int(cursorRow),
-		Col:     int(cursorCol),
-		Visible: cursorVisible != 0,
-		Shape:   decodeCursorShape(cursorShape),
-		Blink:   cursorBlink != 0,
-	}
-	styleCount, err := dec.readUvarint()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	styles := make([]CellStyle, 1, int(styleCount)+1)
-	styles[0] = CellStyle{}
-	for i := uint64(0); i < styleCount; i++ {
-		style, err := dec.readCellStyle()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		styles = append(styles, style)
 	}
 	opCount, err := dec.readUvarint()
 	if err != nil {
@@ -1646,11 +1018,9 @@ func decodeScreenUpdatePayloadBinaryV4WithMagic(payload []byte, magic string, in
 			if err != nil {
 				return ScreenUpdate{}, err
 			}
-			if includeWrapped {
-				op.WrappedSet, op.Wrapped, err = dec.readWrapped()
-				if err != nil {
-					return ScreenUpdate{}, err
-				}
+			op.WrappedSet, op.Wrapped, err = dec.readWrapped()
+			if err != nil {
+				return ScreenUpdate{}, err
 			}
 			op.Cells, err = dec.readCells(styles)
 			if err != nil {
@@ -1699,11 +1069,9 @@ func decodeScreenUpdatePayloadBinaryV4WithMagic(payload []byte, magic string, in
 			if err != nil {
 				return ScreenUpdate{}, err
 			}
-			if includeWrapped {
-				op.WrappedSet, op.Wrapped, err = dec.readWrapped()
-				if err != nil {
-					return ScreenUpdate{}, err
-				}
+			op.WrappedSet, op.Wrapped, err = dec.readWrapped()
+			if err != nil {
+				return ScreenUpdate{}, err
 			}
 		case ScreenOpClearToEOL:
 			rowIndex, err := dec.readUvarint()
@@ -1724,11 +1092,9 @@ func decodeScreenUpdatePayloadBinaryV4WithMagic(payload []byte, magic string, in
 			if err != nil {
 				return ScreenUpdate{}, err
 			}
-			if includeWrapped {
-				op.WrappedSet, op.Wrapped, err = dec.readWrapped()
-				if err != nil {
-					return ScreenUpdate{}, err
-				}
+			op.WrappedSet, op.Wrapped, err = dec.readWrapped()
+			if err != nil {
+				return ScreenUpdate{}, err
 			}
 		case ScreenOpCursor:
 			row, err := dec.readInt32()
@@ -1801,13 +1167,9 @@ func decodeScreenUpdatePayloadBinaryV4WithMagic(payload []byte, magic string, in
 		if err != nil {
 			return ScreenUpdate{}, err
 		}
-		wrappedSet := false
-		wrapped := false
-		if includeWrapped {
-			wrappedSet, wrapped, err = dec.readWrapped()
-			if err != nil {
-				return ScreenUpdate{}, err
-			}
+		wrappedSet, wrapped, err := dec.readWrapped()
+		if err != nil {
+			return ScreenUpdate{}, err
 		}
 		cells, err := dec.readRow(styles)
 		if err != nil {
@@ -1819,172 +1181,6 @@ func decodeScreenUpdatePayloadBinaryV4WithMagic(payload []byte, magic string, in
 			RowKind:    kind,
 			Wrapped:    wrapped,
 			WrappedSet: wrappedSet,
-		})
-	}
-	if dec.off != len(dec.data) {
-		return ScreenUpdate{}, fmt.Errorf("trailing bytes in screen update payload")
-	}
-	if !update.FullReplace {
-		update.Screen.IsAlternateScreen = update.Modes.AlternateScreen
-	}
-	return update, nil
-}
-
-func decodeScreenUpdatePayloadBinaryV2(payload []byte) (ScreenUpdate, error) {
-	dec := screenUpdateDecoder{data: payload}
-	if !dec.consumeMagic(screenUpdatePayloadMagicV2) {
-		return ScreenUpdate{}, fmt.Errorf("invalid screen update payload magic")
-	}
-	flags, err := dec.readByte()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	cols, err := dec.readUint16()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	rows, err := dec.readUint16()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	update := ScreenUpdate{
-		FullReplace:     flags&screenUpdateFlagFullReplace != 0,
-		ResetScrollback: flags&screenUpdateFlagResetScrollback != 0,
-		Size:            Size{Cols: cols, Rows: rows},
-	}
-	if flags&screenUpdateFlagHasScreenScroll != 0 {
-		scroll, err := dec.readInt32()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		update.ScreenScroll = int(scroll)
-	}
-	if flags&screenUpdateFlagHasTitle != 0 {
-		update.Title, err = dec.readString()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-	}
-	modeMask, err := dec.readUint16()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	cursorRow, err := dec.readInt32()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	cursorCol, err := dec.readInt32()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	cursorVisible, err := dec.readByte()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	cursorShape, err := dec.readByte()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	cursorBlink, err := dec.readByte()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	update.Modes = decodeTerminalModesMask(modeMask)
-	update.Cursor = CursorState{
-		Row:     int(cursorRow),
-		Col:     int(cursorCol),
-		Visible: cursorVisible != 0,
-		Shape:   decodeCursorShape(cursorShape),
-		Blink:   cursorBlink != 0,
-	}
-	styleCount, err := dec.readUvarint()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	styles := make([]CellStyle, 1, int(styleCount)+1)
-	styles[0] = CellStyle{}
-	for i := uint64(0); i < styleCount; i++ {
-		style, err := dec.readCellStyle()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		styles = append(styles, style)
-	}
-	if update.FullReplace {
-		screenAlt, err := dec.readByte()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		update.Screen.IsAlternateScreen = screenAlt != 0
-		update.Screen.Cells, err = dec.readRows(styles)
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		update.ScreenTimestamps, err = dec.readTimeSlice()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		update.ScreenRowKinds, err = dec.readStringSlice()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-	}
-	changedCount, err := dec.readUvarint()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	update.ChangedRows = make([]ScreenRowUpdate, 0, int(changedCount))
-	for i := uint64(0); i < changedCount; i++ {
-		rowIndex, err := dec.readUvarint()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		ts, err := dec.readTime()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		kind, err := dec.readString()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		cells, err := dec.readRow(styles)
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		update.ChangedRows = append(update.ChangedRows, ScreenRowUpdate{
-			Row:       int(rowIndex),
-			Cells:     cells,
-			Timestamp: ts,
-			RowKind:   kind,
-		})
-	}
-	scrollbackTrim, err := dec.readUvarint()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	update.ScrollbackTrim = int(scrollbackTrim)
-	appendCount, err := dec.readUvarint()
-	if err != nil {
-		return ScreenUpdate{}, err
-	}
-	update.ScrollbackAppend = make([]ScrollbackRowAppend, 0, int(appendCount))
-	for i := uint64(0); i < appendCount; i++ {
-		ts, err := dec.readTime()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		kind, err := dec.readString()
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		cells, err := dec.readRow(styles)
-		if err != nil {
-			return ScreenUpdate{}, err
-		}
-		update.ScrollbackAppend = append(update.ScrollbackAppend, ScrollbackRowAppend{
-			Cells:     cells,
-			Timestamp: ts,
-			RowKind:   kind,
 		})
 	}
 	if dec.off != len(dec.data) {

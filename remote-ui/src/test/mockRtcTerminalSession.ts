@@ -17,6 +17,63 @@ export function createMockRtcTerminalSession(
   return new MockRtcTerminalSession(machineId, path)
 }
 
+export function encodeMockScreenUpdatePayload(text: string, cols = 80, rows = 24): Uint8Array {
+  const bytes: number[] = []
+  const textEncoder = new TextEncoder()
+  const appendBytes = (value: Uint8Array) => {
+    for (const byte of value) bytes.push(byte)
+  }
+  const appendByte = (value: number) => bytes.push(value & 0xff)
+  const appendUint16 = (value: number) => {
+    bytes.push(value & 0xff, (value >> 8) & 0xff)
+  }
+  const appendInt32 = (value: number) => {
+    bytes.push(value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff, (value >> 24) & 0xff)
+  }
+  const appendInt64Zero = () => {
+    for (let index = 0; index < 8; index += 1) bytes.push(0)
+  }
+  const appendUvarint = (input: number) => {
+    let value = Math.max(0, Math.floor(input))
+    while (value >= 0x80) {
+      bytes.push((value & 0x7f) | 0x80)
+      value = Math.floor(value / 0x80)
+    }
+    bytes.push(value)
+  }
+  const appendString = (value: string) => {
+    const raw = textEncoder.encode(value)
+    appendUvarint(raw.length)
+    appendBytes(raw)
+  }
+
+  appendBytes(textEncoder.encode('TSU6'))
+  appendByte(0)
+  appendUint16(cols)
+  appendUint16(rows)
+  appendUint16(1 << 10)
+  appendInt32(0)
+  appendInt32(text.length)
+  appendByte(1)
+  appendByte(0)
+  appendByte(0)
+  appendUvarint(0)
+  appendUvarint(1)
+  appendByte(0)
+  appendUvarint(0)
+  appendUvarint(0)
+  appendInt64Zero()
+  appendString('')
+  appendByte(0)
+  appendUvarint(1)
+  appendUvarint(0)
+  appendUvarint(1)
+  appendString(text)
+  appendUvarint(0)
+  appendUvarint(0)
+  return new Uint8Array(bytes)
+}
+
 export class MockRtcTerminalSession implements RtcSession {
   readonly openedTerminalIds: string[] = []
   readonly openedLabels: string[] = []
@@ -105,12 +162,8 @@ export class MockRtcTerminalSession implements RtcSession {
     }
   }
 
-  emitTerminalOutput(terminalId: string, data: Uint8Array): void {
-    this.channels.get(terminalId)?.emitFrame(TERMX_FRAME_TYPES.output, data)
-  }
-
-  emitTerminalScreenUpdate(terminalId: string): void {
-    this.channels.get(terminalId)?.emitFrame(TERMX_FRAME_TYPES.screenUpdate, new Uint8Array([1]))
+  emitTerminalScreenUpdate(terminalId: string, text: string): void {
+    this.channels.get(terminalId)?.emitFrame(TERMX_FRAME_TYPES.screenUpdate, encodeMockScreenUpdatePayload(text))
   }
 
   emitTerminalSyncLost(terminalId: string): void {

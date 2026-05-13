@@ -150,12 +150,8 @@ func BenchmarkScreenUpdateEncodeStages(b *testing.B) {
 		if state == nil || state.snapshot == nil {
 			b.Fatalf("%s: expected stream screen state", scenario.name)
 		}
-		fullUpdate := fullReplaceUpdateForStateDelta(nil, state, !state.snapshot.Modes.AlternateScreen)
-		if state.snapshot.Modes.AlternateScreen {
-			fullUpdate.ResetScrollback = false
-			fullUpdate.ScrollbackTrim = deltaUpdate.ScrollbackTrim
-			fullUpdate.ScrollbackAppend = append([]protocol.ScrollbackRowAppend(nil), deltaUpdate.ScrollbackAppend...)
-		}
+		state = streamScreenStateWithoutScrollback(state)
+		fullUpdate := screenOnlyUpdate(fullReplaceUpdateForStateDelta(nil, state, false))
 
 		b.Run(fmt.Sprintf("%s/from_damage_state", scenario.name), func(b *testing.B) {
 			b.ResetTimer()
@@ -541,22 +537,11 @@ func benchmarkEncodeDamagePayload(damage vterm.WriteDamage) ([]byte, error) {
 	update := protocol.ScreenUpdate{
 		Size:             protocol.Size{Cols: uint16(damage.SizeCols), Rows: uint16(damage.SizeRows)},
 		ScreenScroll:     damage.ScreenScroll,
-		ChangedSpans:     make([]protocol.ScreenSpanUpdate, 0, len(damage.ChangedScreenSpans)),
 		Ops:              make([]protocol.ScreenOp, 0, len(damage.Ops)+2),
 		ScrollbackTrim:   damage.ScrollbackTrim,
 		ScrollbackAppend: make([]protocol.ScrollbackRowAppend, 0, len(damage.ScrollbackAppend)),
 		Cursor:           protocolCursorStateFromVTerm(damage.Cursor),
 		Modes:            protocolModesFromVTerm(damage.Modes),
-	}
-	for _, span := range damage.ChangedScreenSpans {
-		update.ChangedSpans = append(update.ChangedSpans, protocol.ScreenSpanUpdate{
-			Row:       span.Row,
-			ColStart:  span.ColStart,
-			Cells:     protocolCellsFromVTermRow(span.Cells),
-			Op:        span.Op,
-			Timestamp: span.Timestamp,
-			RowKind:   span.RowKind,
-		})
 	}
 	for _, op := range damage.Ops {
 		update.Ops = append(update.Ops, protocol.ScreenOp{

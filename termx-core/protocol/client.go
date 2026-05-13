@@ -90,23 +90,18 @@ func (s *clientStream) send(frame StreamFrame) {
 	if s.closed {
 		return
 	}
-	switch frame.Type {
-	case TypeOutput:
-		if !s.enqueueOutputLocked(frame.Payload) {
-			s.noteDroppedOutputLocked(uint64(len(frame.Payload)))
-			s.flushPendingSyncLostLocked()
-		}
-	case TypeSyncLost:
+	if frame.Type == TypeSyncLost {
 		dropped, err := DecodeSyncLostPayload(frame.Payload)
 		if err != nil {
 			return
 		}
 		s.noteDroppedOutputLocked(dropped)
 		s.flushPendingSyncLostLocked()
-	default:
-		s.flushPendingSyncLostLocked()
-		s.enqueueFrameLocked(frame)
+		s.cond.Signal()
+		return
 	}
+	s.flushPendingSyncLostLocked()
+	s.enqueueFrameLocked(frame)
 	s.cond.Signal()
 }
 
@@ -159,26 +154,13 @@ func (s *clientStream) nextFrame() (StreamFrame, bool) {
 	}
 }
 
-func (s *clientStream) enqueueOutputLocked(payload []byte) bool {
-	s.flushPendingSyncLostLocked()
-	if len(s.queue) > 0 {
-		last := &s.queue[len(s.queue)-1]
-		if last.Type == TypeOutput && len(last.Payload)+len(payload) <= MaxFrameSize {
-			last.Payload = append(last.Payload, payload...)
-			return true
-		}
-	}
-	if len(s.queue) >= s.queueLimit {
-		return false
-	}
-	s.queue = append(s.queue, StreamFrame{
-		Type:    TypeOutput,
-		Payload: append([]byte(nil), payload...),
-	})
-	return true
-}
-
 func (s *clientStream) enqueueFrameLocked(frame StreamFrame) {
+	if len(s.queue) >= s.queueLimit {
+		if frame.Type == TypeScreenUpdate {
+			s.noteDroppedOutputLocked(uint64(len(frame.Payload)))
+		}
+		return
+	}
 	payload := frame.Payload
 	if len(payload) > 0 {
 		payload = append([]byte(nil), payload...)

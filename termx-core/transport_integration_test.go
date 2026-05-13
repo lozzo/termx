@@ -52,13 +52,7 @@ func TestProtocolClientOverMemoryTransport(t *testing.T) {
 		t.Fatalf("input failed: %v", err)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		msg := <-output
-		if msg.Type == protocol.TypeOutput && strings.Contains(string(msg.Payload), "proto-test") {
-			break
-		}
-	}
+	waitProtocolStreamContains(t, output, "proto-test", 5*time.Second)
 
 	snap, err := client.Snapshot(ctx, created.TerminalID, 0, 50)
 	if err != nil {
@@ -77,6 +71,50 @@ func protocolSnapshotContains(s *protocol.Snapshot, needle string) bool {
 	}
 	for _, row := range s.Screen.Cells {
 		if strings.Contains(protocolRowString(row), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func waitProtocolStreamContains(t *testing.T, stream <-chan protocol.StreamFrame, needle string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for stream to contain %q", needle)
+		case msg, ok := <-stream:
+			if !ok {
+				t.Fatalf("stream closed while waiting for %q", needle)
+			}
+			if protocolStreamFrameContainsText(msg, needle) {
+				return
+			}
+		}
+	}
+}
+
+func protocolStreamFrameContainsText(frame protocol.StreamFrame, needle string) bool {
+	if frame.Type != protocol.TypeScreenUpdate {
+		return false
+	}
+	update, err := protocol.DecodeScreenUpdatePayload(frame.Payload)
+	if err != nil {
+		return false
+	}
+	for _, row := range update.Screen.Cells {
+		if strings.Contains(protocolRowString(row), needle) {
+			return true
+		}
+	}
+	for _, row := range update.ScrollbackAppend {
+		if strings.Contains(protocolRowString(row.Cells), needle) {
+			return true
+		}
+	}
+	for _, op := range update.Ops {
+		if strings.Contains(protocolRowString(op.Cells), needle) {
 			return true
 		}
 	}

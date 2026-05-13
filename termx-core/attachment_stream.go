@@ -26,7 +26,6 @@ type attachmentStreamPump struct {
 	queueBytes  int
 	inputClosed bool
 	suffixStart int
-	suffixBase  *streamScreenState
 	sentState   *streamScreenState
 	queueState  *streamScreenState
 	stats       attachmentPumpStats
@@ -64,7 +63,6 @@ type attachmentPumpStats struct {
 	enqueuedBytes   int
 	sentFrames      int
 	sentBytes       int
-	outputFrames    int
 	screenFrames    int
 	syncLostFrames  int
 	closedFrames    int
@@ -125,17 +123,6 @@ func (p *attachmentStreamPump) sendLoop() error {
 }
 
 func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) error {
-	if msg.Type == StreamOutput {
-		for len(msg.Output) > 0 {
-			n := minInt(len(msg.Output), maxLiveOutputFrameBytes)
-			if err := p.sendFrame(p.channel, protocol.TypeOutput, msg.Output[:n]); err != nil {
-				return err
-			}
-			p.recordSentFrame(protocol.TypeOutput, n)
-			msg.Output = msg.Output[n:]
-		}
-		return nil
-	}
 	typ, payload, ok := streamMessageFramePayload(msg)
 	if !ok {
 		return nil
@@ -182,7 +169,6 @@ func (p *attachmentStreamPump) enqueue(msg StreamMessage) {
 	if msg.Type == StreamScreenUpdate {
 		if p.suffixStart < 0 || p.suffixStart > len(p.queue) {
 			p.suffixStart = len(p.queue)
-			p.suffixBase = cloneStreamScreenState(p.queueState)
 		}
 		p.queue = append(p.queue, msg)
 		p.queueState = nextState
@@ -193,7 +179,6 @@ func (p *attachmentStreamPump) enqueue(msg StreamMessage) {
 		p.queue = append(p.queue, msg)
 		p.queueState = nextState
 		p.suffixStart = -1
-		p.suffixBase = nil
 	}
 	p.queueBytes = estimateStreamQueueWireBytes(p.queue)
 	if len(p.queue) > msgCountBefore {
@@ -214,7 +199,7 @@ func (p *attachmentStreamPump) applyMessageToQueueStateLocked(msg StreamMessage)
 		return applyStreamScreenUpdateState(base, p.terminalID, update)
 	case StreamResize:
 		return resizeStreamScreenState(base, p.terminalID, msg.Cols, msg.Rows)
-	case StreamOutput, StreamSyncLost:
+	case StreamSyncLost:
 		return nil
 	default:
 		return base
@@ -229,13 +214,7 @@ func (p *attachmentStreamPump) shouldCollapseSuffixLocked() bool {
 	if suffixLen < 2 || p.queueState == nil || p.queueState.snapshot == nil {
 		return false
 	}
-	collapseFrames := backlogNormalScreenCollapseFrames
-	collapseBytes := backlogNormalScreenCollapseBytes
-	if p.queueState.snapshot.Modes.AlternateScreen {
-		collapseFrames = backlogAlternateScreenCollapseFrames
-		collapseBytes = backlogAlternateScreenCollapseBytes
-	}
-	return len(p.queue) >= collapseFrames || p.queueBytes >= collapseBytes
+	return true
 }
 
 func (p *attachmentStreamPump) collapseSuffixLocked() {
@@ -246,7 +225,7 @@ func (p *attachmentStreamPump) collapseSuffixLocked() {
 	if suffixLen < 2 {
 		return
 	}
-	payload, ok := encodeMergedScreenStatePayload(p.suffixBase, p.queueState, false)
+	payload, ok := encodeCollapsedScreenStatePayload(p.queueState)
 	if !ok {
 		return
 	}
@@ -286,9 +265,6 @@ func (p *attachmentStreamPump) recordEnqueuedLocked(msg StreamMessage) {
 	payloadBytes := streamMessagePayloadBytes(msg)
 	p.stats.enqueuedFrames++
 	p.stats.enqueuedBytes += payloadBytes
-	if msg.Type == StreamOutput {
-		p.stats.outputFrames++
-	}
 	if msg.Type == StreamScreenUpdate {
 		p.stats.screenFrames++
 	}
@@ -370,7 +346,6 @@ func (p *attachmentStreamPump) flushStatsLocked(reason string) {
 		"enqueued_bytes", p.stats.enqueuedBytes,
 		"sent_frames", p.stats.sentFrames,
 		"sent_bytes", p.stats.sentBytes,
-		"output_frames", p.stats.outputFrames,
 		"screen_update_frames", p.stats.screenFrames,
 		"sync_lost_frames", p.stats.syncLostFrames,
 		"closed_frames", p.stats.closedFrames,
@@ -386,7 +361,6 @@ func (p *attachmentStreamPump) flushStatsLocked(reason string) {
 	p.stats.enqueuedBytes = 0
 	p.stats.sentFrames = 0
 	p.stats.sentBytes = 0
-	p.stats.outputFrames = 0
 	p.stats.screenFrames = 0
 	p.stats.syncLostFrames = 0
 	p.stats.closedFrames = 0
@@ -411,10 +385,8 @@ func (p *attachmentStreamPump) next() (StreamMessage, bool) {
 				case p.suffixStart == 0:
 					if len(p.queue) > 0 && p.queue[0].Type == StreamScreenUpdate {
 						p.suffixStart = 0
-						p.suffixBase = cloneStreamScreenState(p.sentState)
 					} else {
 						p.suffixStart = -1
-						p.suffixBase = nil
 					}
 				}
 			}
@@ -442,7 +414,7 @@ func (p *attachmentStreamPump) advanceSentStateLocked(msg StreamMessage) {
 		p.sentState = applyStreamScreenUpdateState(p.sentState, p.terminalID, update)
 	case StreamResize:
 		p.sentState = resizeStreamScreenState(p.sentState, p.terminalID, msg.Cols, msg.Rows)
-	case StreamOutput, StreamSyncLost:
+	case StreamSyncLost:
 		p.sentState = nil
 	}
 }
@@ -473,8 +445,6 @@ func streamMessagePayloadBytes(msg StreamMessage) int {
 
 func streamMessageFramePayload(msg StreamMessage) (uint8, []byte, bool) {
 	switch msg.Type {
-	case StreamOutput:
-		return protocol.TypeOutput, msg.Output, true
 	case StreamSyncLost:
 		return protocol.TypeSyncLost, protocol.EncodeSyncLostPayload(msg.DroppedBytes), true
 	case StreamResize:

@@ -18,6 +18,7 @@ import {
   rowsToText,
   screenRowsToPlainText,
   screenRowsToReplay,
+  screenUpdatePayloadToReplay,
   snapshotScrollbackRows,
   snapshotUsesAlternateScreen,
   snapshotToReplay,
@@ -54,8 +55,19 @@ const inputEnsureResizeFallbackMs = 100
 const initialSnapshotScrollbackLimit = 1
 const streamSnapshotRefreshDelayMs = 100
 const streamSnapshotRefreshMinIntervalMs = 500
+const streamSnapshotRefreshMaxIntervalMs = 4000
+const streamSnapshotRefreshBackoffResetMs = 10_000
+const snapshotRefreshTimeoutMs = 8000
 const streamStatsIntervalMs = 1000
 const largeFrameBytes = 64 * 1024
+
+type SnapshotRefreshReason = 'open' | 'sync_lost' | 'manual_sync_lost'
+
+interface SnapshotRefreshRecovery {
+  reason: string
+  syncLostCount: number
+  droppedBytes: number
+}
 
 export function createTerminalProtocolClient(options: TerminalProtocolClientOptions): TerminalProtocolSession {
   return new TerminalProtocolClient(options)
@@ -78,18 +90,23 @@ class TerminalProtocolClient implements TerminalProtocolSession {
   private snapshotRefreshTimer: ReturnType<typeof setTimeout> | null = null
   private snapshotRefreshInFlight = false
   private snapshotRefreshQueued = false
+  private snapshotRefreshReason: SnapshotRefreshReason | null = null
+  private snapshotRecovery: SnapshotRefreshRecovery | null = null
+  private recoveryRevision = 0
   private lastSnapshotRefreshAt = 0
+  private consecutiveRecoveryRefreshes = 0
   private receivedFrames = 0
   private receivedBytes = 0
-  private outputFrames = 0
-  private outputBytes = 0
+  private screenUpdateFrames = 0
+  private screenUpdateBytes = 0
   private lastStatsLogAt = terminalNow()
 
   constructor(private readonly options: TerminalProtocolClientOptions) {
     this.messageSubscription = options.channel.onMessage((data) => this.handleFrame(data))
     this.closeSubscription = options.channel.onClose(() => {
-      this.log('channel_close_event', { level: 'warn' })
-      this.handleChannelClosed()
+      const reason = `terminal data channel ${options.channel.label} closed`
+      this.log('channel_close_event', { level: 'warn', details: { reason } })
+      this.handleChannelClosed(reason)
     })
     this.log('client_created', {
       level: 'info',
@@ -125,7 +142,7 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       }
     }
     const channel = this.options.channel
-    void this.refreshSnapshot().catch(() => {})
+    void this.refreshSnapshot('open').catch(() => {})
     this.log('open_terminal_ready', {
       level: 'info',
       details: {
@@ -210,6 +227,18 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     this.options.channel.close()
   }
 
+  markSyncLost(terminalId: string, reason = 'terminal stream sync lost'): void {
+    this.assertTerminal(terminalId)
+    this.log('manual_sync_lost', {
+      level: 'warn',
+      details: {
+        reason,
+        ...this.streamStatsDetails(),
+      },
+    })
+    this.scheduleSnapshotRefresh('manual_sync_lost', reason)
+  }
+
   private withHandshakeTimeout<T>(promise: Promise<T>, stage: string): Promise<T> {
     const timer = setTimeout(() => {
       const err = new Error(`terminal protocol ${stage} timed out for ${this.options.terminalId}`)
@@ -256,7 +285,6 @@ class TerminalProtocolClient implements TerminalProtocolSession {
         terminal_id: this.options.terminalId,
         mode: 'collaborator',
         resize_policy: this.options.resizePolicy ?? defaultResizePolicy,
-        stream_mode: 'raw',
         surface_id: this.surfaceId(),
       }).then((result) => {
         const channel = attachChannel(result)
@@ -378,25 +406,44 @@ class TerminalProtocolClient implements TerminalProtocolSession {
   private handleStreamFrame(frame: TermxFrame): void {
     if (frame.channel !== this.streamChannel) return
     switch (frame.type) {
-      case TERMX_FRAME_TYPES.output:
-        this.outputFrames += 1
-        this.outputBytes += frame.payload.byteLength
-        this.maybeLogStreamStats()
-        this.emit(this.options.terminalId, { type: 'output', data: frame.payload })
-        return
       case TERMX_FRAME_TYPES.resize:
         return
-      case TERMX_FRAME_TYPES.screenUpdate:
-        // The local terminal is xterm.js, so steady-state rendering must be driven by
-        // raw PTY output. Replaying server screen snapshots here resets xterm state and
-        // can lock up full-screen programs with large output.
+      case TERMX_FRAME_TYPES.screenUpdate: {
+        this.screenUpdateFrames += 1
+        this.screenUpdateBytes += frame.payload.byteLength
+        this.maybeLogStreamStats()
+        let replay: string | null = null
+        try {
+          replay = screenUpdatePayloadToReplay(frame.payload)
+        } catch (err) {
+          this.log('screen_update_decode_failed', {
+            level: 'warn',
+            details: {
+              message: err instanceof Error ? err.message : String(err),
+              payloadBytes: frame.payload.byteLength,
+              ...this.streamStatsDetails(),
+            },
+          })
+        }
+        if (replay === null) {
+          this.scheduleSnapshotRefresh('sync_lost', 'terminal screen update could not be replayed')
+          return
+        }
+        if (replay.length > 0) {
+          this.emit(this.options.terminalId, { type: 'output', data: new TextEncoder().encode(replay) })
+        }
         return
+      }
       case TERMX_FRAME_TYPES.syncLost:
+        const droppedBytes = decodeSyncLostDroppedBytes(frame.payload)
         this.log('sync_lost', {
           level: 'warn',
-          details: this.streamStatsDetails(),
+          details: {
+            droppedBytes,
+            ...this.streamStatsDetails(),
+          },
         })
-        this.scheduleSnapshotRefresh()
+        this.scheduleSnapshotRefresh('sync_lost', 'terminal stream sync lost', droppedBytes)
         return
       case TERMX_FRAME_TYPES.bootstrapDone:
         return
@@ -522,15 +569,47 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     }
   }
 
-  private scheduleSnapshotRefresh(): void {
+  private scheduleSnapshotRefresh(
+    reason: SnapshotRefreshReason = 'sync_lost',
+    recoveryReason = 'terminal stream sync lost',
+    droppedBytes = 0,
+  ): void {
     if (this.closed) return
     this.snapshotRefreshQueued = true
+    this.snapshotRefreshReason = reason
+    if (reason !== 'open') {
+      const recovery = this.snapshotRecovery ?? {
+        reason: recoveryReason,
+        syncLostCount: 0,
+        droppedBytes: 0,
+      }
+      recovery.reason = recoveryReason
+      recovery.syncLostCount += 1
+      recovery.droppedBytes += droppedBytes
+      this.snapshotRecovery = recovery
+    }
+    this.armSnapshotRefreshTimer(reason)
+  }
+
+  private armSnapshotRefreshTimer(reason: SnapshotRefreshReason): void {
     if (this.snapshotRefreshTimer !== null || this.snapshotRefreshInFlight) return
+    const minInterval = reason === 'open'
+      ? streamSnapshotRefreshMinIntervalMs
+      : this.currentRecoveryRefreshInterval()
     const elapsed = Date.now() - this.lastSnapshotRefreshAt
     const intervalDelay = this.lastSnapshotRefreshAt > 0
-      ? Math.max(0, streamSnapshotRefreshMinIntervalMs - elapsed)
+      ? Math.max(0, minInterval - elapsed)
       : 0
     const delay = Math.max(streamSnapshotRefreshDelayMs, intervalDelay)
+    this.log('snapshot_refresh_scheduled', {
+      level: reason === 'open' ? 'debug' : 'warn',
+      details: {
+        reason,
+        delay,
+        minInterval,
+        recovery: this.snapshotRecovery,
+      },
+    })
     this.snapshotRefreshTimer = setTimeout(() => {
       this.snapshotRefreshTimer = null
       void this.refreshQueuedSnapshot()
@@ -540,14 +619,17 @@ class TerminalProtocolClient implements TerminalProtocolSession {
   private async refreshQueuedSnapshot(): Promise<void> {
     if (this.closed || !this.snapshotRefreshQueued || this.snapshotRefreshInFlight) return
     try {
-      await this.refreshSnapshot()
+      await this.refreshSnapshot(this.snapshotRefreshReason ?? 'sync_lost')
     } catch {
       // Live stream updates are best-effort; the explicit snapshot request on open remains authoritative.
     }
   }
 
-  private async refreshSnapshot(): Promise<void> {
+  private async refreshSnapshot(reason: SnapshotRefreshReason): Promise<void> {
+    const recovery = this.snapshotRecovery
     this.snapshotRefreshQueued = false
+    this.snapshotRefreshReason = null
+    this.snapshotRecovery = null
     this.clearSnapshotRefreshTimer()
     this.snapshotRefreshInFlight = true
     try {
@@ -555,16 +637,55 @@ class TerminalProtocolClient implements TerminalProtocolSession {
         terminal_id: this.options.terminalId,
         scrollback_offset: 0,
         scrollback_limit: initialSnapshotScrollbackLimit,
-      })
+      }, snapshotRefreshTimeoutMs)
       this.lastSnapshotRefreshAt = Date.now()
+      if (recovery) this.recoveryRevision += 1
+      const normalized = normalizeSnapshot(snapshot)
+      if (recovery) {
+        this.consecutiveRecoveryRefreshes += 1
+      } else {
+        this.consecutiveRecoveryRefreshes = 0
+      }
       this.emit(this.options.terminalId, {
         type: 'snapshot',
-        snapshot: normalizeSnapshot(snapshot),
+        snapshot: recovery ? {
+          ...normalized,
+          recovery: {
+            revision: this.recoveryRevision,
+            reason: recovery.reason,
+            syncLostCount: recovery.syncLostCount,
+            droppedBytes: recovery.droppedBytes,
+          },
+        } : normalized,
       })
+      this.log('snapshot_refresh_done', {
+        level: recovery ? 'warn' : 'debug',
+        details: {
+          reason,
+          recovery,
+          queuedDuringRefresh: this.snapshotRefreshQueued,
+          consecutiveRecoveryRefreshes: this.consecutiveRecoveryRefreshes,
+        },
+      })
+    } catch (err) {
+      const message = errorMessage(err)
+      this.log('snapshot_refresh_failed', {
+        level: 'warn',
+        details: {
+          reason,
+          recovery,
+          message,
+          ...this.streamStatsDetails(),
+        },
+      })
+      if (isRecoverableSnapshotRefreshFailure(message)) {
+        this.handleChannelClosed(message)
+      }
+      throw err
     } finally {
       this.snapshotRefreshInFlight = false
       if (this.snapshotRefreshQueued && !this.closed) {
-        this.scheduleSnapshotRefresh()
+        this.armSnapshotRefreshTimer(this.snapshotRefreshReason ?? 'sync_lost')
       }
     }
   }
@@ -573,6 +694,15 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     if (this.snapshotRefreshTimer === null) return
     clearTimeout(this.snapshotRefreshTimer)
     this.snapshotRefreshTimer = null
+  }
+
+  private currentRecoveryRefreshInterval(): number {
+    if (Date.now() - this.lastSnapshotRefreshAt > streamSnapshotRefreshBackoffResetMs) {
+      this.consecutiveRecoveryRefreshes = 0
+    }
+    if (this.consecutiveRecoveryRefreshes <= 0) return streamSnapshotRefreshMinIntervalMs
+    const interval = streamSnapshotRefreshMinIntervalMs * (2 ** Math.min(this.consecutiveRecoveryRefreshes, 3))
+    return Math.min(streamSnapshotRefreshMaxIntervalMs, interval)
   }
 
   private sendFrame(channel: number, type: number, payload: unknown): Promise<void> {
@@ -728,11 +858,13 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     return {
       receivedFrames: this.receivedFrames,
       receivedBytes: this.receivedBytes,
-      outputFrames: this.outputFrames,
-      outputBytes: this.outputBytes,
-      outputBytesPerSecond: Math.round(this.outputBytes / elapsedSeconds),
+      screenUpdateFrames: this.screenUpdateFrames,
+      screenUpdateBytes: this.screenUpdateBytes,
+      screenUpdateBytesPerSecond: Math.round(this.screenUpdateBytes / elapsedSeconds),
       streamChannel: this.streamChannel,
       pendingRequests: this.pending.size,
+      snapshotRefreshInFlight: this.snapshotRefreshInFlight,
+      snapshotRefreshQueued: this.snapshotRefreshQueued,
       readyState: this.options.channel.readyState,
     }
   }
@@ -758,6 +890,14 @@ function estimateJSONBytes(value: unknown): number {
   } catch {
     return 0
   }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+function isRecoverableSnapshotRefreshFailure(message: string): boolean {
+  return /timed out|not open|closed|native bridge|send failed/i.test(message)
 }
 
 function parseProtocolResult(value: unknown): unknown {
@@ -820,6 +960,12 @@ function validTerminalSize(cols: unknown, rows: unknown): cols is number {
     Number.isFinite(rows) &&
     cols > 0 &&
     rows > 0
+}
+
+function decodeSyncLostDroppedBytes(payload: Uint8Array): number {
+  if (payload.byteLength !== 4) return 0
+  const dropped = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint32(0)
+  return Number.isFinite(dropped) ? dropped : 0
 }
 
 function normalizeSnapshot(value: unknown): TerminalSnapshotPayload {

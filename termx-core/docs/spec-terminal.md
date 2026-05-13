@@ -196,7 +196,7 @@ type CreateOptions struct {
     Env  []string // 额外环境变量（KEY=VALUE 格式）
 
     // 高级
-    ScrollbackSize int           // 滚动回看行数（默认 10000）
+    ScrollbackSize int           // 滚动回看行数（默认 2000）
     KeepAfterExit  time.Duration // 进程退出后保留时间（默认 5 分钟）
 }
 ```

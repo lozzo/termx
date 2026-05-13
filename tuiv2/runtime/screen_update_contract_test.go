@@ -6,12 +6,12 @@ import (
 	"github.com/lozzow/termx/termx-core/protocol"
 )
 
-func TestDecodeScreenUpdateContractPayloadNormalizesChangedRows(t *testing.T) {
+func TestDecodeScreenUpdateContractPayloadSummarizesChangedRowsFromOps(t *testing.T) {
 	update := protocol.ScreenUpdate{
 		Size: protocol.Size{Cols: 8, Rows: 2},
-		ChangedRows: []protocol.ScreenRowUpdate{
-			{Row: 0, Cells: []protocol.Cell{{Content: "old", Width: 1}}},
-			{Row: 0, Cells: []protocol.Cell{{Content: "new", Width: 1}}},
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: []protocol.Cell{{Content: "old", Width: 1}}},
+			{Code: protocol.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: []protocol.Cell{{Content: "new", Width: 1}}},
 		},
 		Cursor: protocol.CursorState{Visible: true},
 		Modes:  protocol.TerminalModes{AutoWrap: true},
@@ -25,11 +25,8 @@ func TestDecodeScreenUpdateContractPayloadNormalizesChangedRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode contract: %v", err)
 	}
-	if len(contract.Update.ChangedRows) != 1 {
-		t.Fatalf("expected duplicate changed rows collapsed, got %#v", contract.Update.ChangedRows)
-	}
-	if got := contract.Update.ChangedRows[0].Cells[0].Content; got != "new" {
-		t.Fatalf("expected normalized changed row to keep latest payload, got %#v", contract.Update.ChangedRows[0])
+	if len(contract.Update.Ops) != 2 {
+		t.Fatalf("expected screen ops to round-trip, got %#v", contract.Update.Ops)
 	}
 	if len(contract.Summary.ChangedRows) != 1 || contract.Summary.ChangedRows[0] != 0 {
 		t.Fatalf("expected summary changed rows deduped, got %#v", contract.Summary)

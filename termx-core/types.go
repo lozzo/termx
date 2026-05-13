@@ -18,8 +18,7 @@ const (
 type StreamMessageType int
 
 const (
-	StreamOutput StreamMessageType = iota + 1
-	StreamSyncLost
+	StreamSyncLost StreamMessageType = iota + 1
 	StreamClosed
 	StreamResize
 	StreamBootstrapDone
@@ -28,16 +27,11 @@ const (
 
 type StreamMessage struct {
 	Type         StreamMessageType
-	Output       []byte
 	Payload      []byte
 	DroppedBytes uint64
 	ExitCode     *int
 	Cols         uint16
 	Rows         uint16
-}
-
-type TerminalSubscribeOptions struct {
-	RawOutput bool
 }
 
 type TerminalInfo struct {

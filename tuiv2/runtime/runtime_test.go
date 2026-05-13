@@ -259,7 +259,7 @@ func TestRuntimeLoadSnapshotDoesNotRaceWithAlternateScreenExit(t *testing.T) {
 		t.Fatalf("start stream: %v", err)
 	}
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("\x1b[?1049l\x1b[?25h\x1b[?1002l$\x20")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 80, 24, "$ "))
 	waitFor(t, func() bool {
 		stored := rt.Registry().Get("term-1")
 		return stored != nil && vtermContains(stored.VTerm, "$ ")
@@ -304,7 +304,7 @@ func TestRuntimeStartStreamUpdatesSurfaceAndInvalidates(t *testing.T) {
 		t.Fatalf("start stream: %v", err)
 	}
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("hi")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 80, 24, "hi"))
 
 	waitFor(t, func() bool {
 		stored := rt.Registry().Get("term-1")
@@ -409,8 +409,10 @@ func TestRuntimeScreenUpdateUsesIncrementalVTermApplyWhenSupported(t *testing.T)
 
 	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
 		Size: protocol.Size{Cols: 80, Rows: 24},
-		ChangedRows: []protocol.ScreenRowUpdate{{
-			Row: 0,
+		Ops: []protocol.ScreenOp{{
+			Code: protocol.ScreenOpWriteSpan,
+			Row:  0,
+			Col:  0,
 			Cells: []protocol.Cell{
 				{Content: "o", Width: 1},
 				{Content: "k", Width: 1},
@@ -457,10 +459,10 @@ func TestRuntimeScreenUpdateAppliesScreenScrollShiftToLocalVTerm(t *testing.T) {
 	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
 		Size:         protocol.Size{Cols: 4, Rows: 3},
 		ScreenScroll: 1,
-		ChangedRows: []protocol.ScreenRowUpdate{{
-			Row:   2,
-			Cells: []protocol.Cell{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "4", Width: 1}},
-		}},
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 4, Height: 3}, Dy: -1},
+			{Code: protocol.ScreenOpWriteSpan, Row: 2, Col: 0, Cells: []protocol.Cell{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "4", Width: 1}}},
+		},
 		Cursor: protocol.CursorState{Row: 2, Col: 0, Visible: true},
 		Modes:  protocol.TerminalModes{AutoWrap: true},
 	})
@@ -648,190 +650,15 @@ func TestRuntimeScreenUpdateFullReplaceClearsRecoveryState(t *testing.T) {
 
 func TestNewScreenUpdateContractDeduplicatesChangedRows(t *testing.T) {
 	contract := NewScreenUpdateContract(protocol.ScreenUpdate{
-		ChangedRows: []protocol.ScreenRowUpdate{
-			{Row: 4},
-			{Row: 4},
-			{Row: 1},
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpWriteSpan, Row: 4},
+			{Code: protocol.ScreenOpClearToEOL, Row: 4},
+			{Code: protocol.ScreenOpWriteSpan, Row: 1},
 		},
 	})
 
 	if !reflect.DeepEqual(contract.Summary.ChangedRows, []int{4, 1}) {
 		t.Fatalf("expected changed row summary to deduplicate in wire order, got %#v", contract.Summary.ChangedRows)
-	}
-}
-
-func TestRuntimeStartStreamCoalescesBurstOutputFrames(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	client := newFakeBridgeClient()
-	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
-
-	var invalidateCount atomic.Int32
-	var counted *countingVTerm
-	rt := New(
-		client,
-		WithInvalidate(func() {
-			invalidateCount.Add(1)
-		}),
-		WithVTermFactory(func(channel uint16) VTermLike {
-			counted = &countingVTerm{VTermLike: localvterm.New(80, 24, 10000, nil)}
-			return counted
-		}),
-	)
-
-	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
-		t.Fatalf("attach terminal: %v", err)
-	}
-	if counted == nil {
-		t.Fatal("expected counting vterm to be installed")
-	}
-	if err := rt.StartStream(ctx, "term-1"); err != nil {
-		t.Fatalf("start stream: %v", err)
-	}
-
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("a")})
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("b")})
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("c")})
-
-	waitFor(t, func() bool {
-		stored := rt.Registry().Get("term-1")
-		return stored != nil && vtermContains(stored.VTerm, "abc")
-	})
-
-	if got := counted.writeCalls.Load(); got != 1 {
-		t.Fatalf("expected one coalesced vterm write, got %d", got)
-	}
-	if got := invalidateCount.Load(); got != 1 {
-		t.Fatalf("expected one invalidate after coalesced output, got %d", got)
-	}
-}
-
-func TestRuntimeHandleStreamFrameDefersSnapshotRefreshDuringSynchronizedOutput(t *testing.T) {
-	var invalidateCount atomic.Int32
-	rt := New(nil, WithInvalidate(func() {
-		invalidateCount.Add(1)
-	}))
-
-	terminal := rt.Registry().GetOrCreate("term-1")
-	terminal.Snapshot = snapshotWithLines("term-1", 12, 4, []string{"old state"})
-	if vt := rt.ensureVTerm(terminal); vt == nil {
-		t.Fatal("expected vterm cache")
-	}
-
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{
-		Type:    protocol.TypeOutput,
-		Payload: []byte("\x1b[?2026h\x1b[H\x1b[J"),
-	})
-
-	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "old state") {
-		t.Fatalf("expected old snapshot to stay visible during synchronized output, got %#v", terminal.Snapshot)
-	}
-	if invalidateCount.Load() != 0 {
-		t.Fatalf("expected no redraw invalidation during synchronized output, got %d", invalidateCount.Load())
-	}
-
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{
-		Type:    protocol.TypeOutput,
-		Payload: []byte("new state\x1b[?2026l"),
-	})
-
-	if !vtermContains(terminal.VTerm, "new state") {
-		t.Fatalf("expected synchronized output flush to update live surface, got %#v", terminal.VTerm)
-	}
-	if invalidateCount.Load() != 1 {
-		t.Fatalf("expected exactly one redraw invalidation after synchronized output flush, got %d", invalidateCount.Load())
-	}
-}
-
-func TestCoalesceClientOutputFramesMergesBurstOutput(t *testing.T) {
-	stream := make(chan protocol.StreamFrame, 4)
-	stream <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("b")}
-	stream <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("c")}
-	close(stream)
-
-	merged, pending, hasPending, ok := coalesceClientOutputFrames(
-		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("a")},
-		stream,
-		clientOutputBatchDelay,
-		StreamState{},
-	)
-
-	if merged.Type != protocol.TypeOutput || string(merged.Payload) != "abc" {
-		t.Fatalf("expected merged output %q, got %#v", "abc", merged)
-	}
-	if hasPending {
-		t.Fatalf("expected no pending frame, got %#v", pending)
-	}
-	if ok {
-		t.Fatal("expected closed source stream after draining burst output")
-	}
-}
-
-func TestCoalesceClientOutputFramesPreservesNonOutputBoundary(t *testing.T) {
-	stream := make(chan protocol.StreamFrame, 4)
-	stream <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("b")}
-	stream <- protocol.StreamFrame{Type: protocol.TypeResize, Payload: protocol.EncodeResizePayload(120, 40)}
-	stream <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("c")}
-
-	merged, pending, hasPending, ok := coalesceClientOutputFrames(
-		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("a")},
-		stream,
-		clientOutputBatchDelay,
-		StreamState{},
-	)
-
-	if merged.Type != protocol.TypeOutput || string(merged.Payload) != "ab" {
-		t.Fatalf("expected merged output %q, got %#v", "ab", merged)
-	}
-	if !hasPending {
-		t.Fatal("expected resize frame to stay pending")
-	}
-	if pending.Type != protocol.TypeResize {
-		t.Fatalf("expected pending resize frame, got %#v", pending)
-	}
-	if !ok {
-		t.Fatal("expected source stream to remain open after boundary frame")
-	}
-}
-
-func TestRuntimeClientOutputBatchDelayBypassesAfterRecentInput(t *testing.T) {
-	t.Setenv("TERMX_REMOTE_LATENCY", "0")
-	t.Setenv("TERMX_CLIENT_OUTPUT_BATCH_DELAY", "")
-	t.Setenv("TERMX_INTERACTIVE_OUTPUT_BATCH_DELAY", "")
-
-	rt := New(nil)
-	if got := rt.clientOutputBatchDelay(); got != clientOutputBatchDelay {
-		t.Fatalf("expected default client output batch delay %v, got %v", clientOutputBatchDelay, got)
-	}
-
-	rt.noteLocalInput()
-	// Interactive bypass reduces delay for all batches during the latency window.
-	if got := rt.clientOutputBatchDelay(); got != interactiveOutputBatchDelay {
-		t.Fatalf("expected recent local input to shrink output batch delay to %v, got %v", interactiveOutputBatchDelay, got)
-	}
-	if got := rt.clientOutputBatchDelay(); got != interactiveOutputBatchDelay {
-		t.Fatalf("expected interactive bypass to remain active during window, got %v", got)
-	}
-}
-
-func TestRuntimeClientOutputBatchDelayUsesRemoteProfile(t *testing.T) {
-	t.Setenv("TERMX_REMOTE_LATENCY", "1")
-	t.Setenv("TERMX_CLIENT_OUTPUT_BATCH_DELAY", "")
-	t.Setenv("TERMX_INTERACTIVE_OUTPUT_BATCH_DELAY", "")
-
-	rt := New(nil)
-	if got := rt.clientOutputBatchDelay(); got != remoteClientOutputBatchDelay {
-		t.Fatalf("expected remote client output batch delay %v, got %v", remoteClientOutputBatchDelay, got)
-	}
-
-	rt.noteLocalInput()
-	// Remote interactive bypass applies to all batches during the latency window.
-	if got := rt.clientOutputBatchDelay(); got != remoteInteractiveOutputBatchDelay {
-		t.Fatalf("expected remote interactive output batch delay %v, got %v", remoteInteractiveOutputBatchDelay, got)
-	}
-	if got := rt.clientOutputBatchDelay(); got != remoteInteractiveOutputBatchDelay {
-		t.Fatalf("expected remote interactive bypass to remain active during window, got %v", got)
 	}
 }
 
@@ -843,115 +670,7 @@ func TestEffectiveInteractiveLatencyWindowUsesRemoteProfile(t *testing.T) {
 	}
 }
 
-func TestCoalesceClientOutputFramesExitsEarlyOnSynchronizedOutputEnd(t *testing.T) {
-	// Sync begin in first frame, sync end arrives mid-batch-window. The coalesce
-	// function should merge both frames and return as soon as the group closes,
-	// without waiting for the full batch timer to expire.
-	stream := make(chan protocol.StreamFrame, 8)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		time.Sleep(2 * time.Millisecond)
-		stream <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("body\x1b[?2026l")}
-	}()
-
-	start := time.Now()
-	merged, pending, hasPending, _ := coalesceClientOutputFrames(
-		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("\x1b[?2026h")},
-		stream,
-		10*time.Millisecond, // long batch window — early exit must fire before this
-		StreamState{},
-	)
-	elapsed := time.Since(start)
-
-	<-done
-	if merged.Type != protocol.TypeOutput || string(merged.Payload) != "\x1b[?2026hbody\x1b[?2026l" {
-		t.Fatalf("expected synchronized output burst to merge, got %#v", merged)
-	}
-	if hasPending {
-		t.Fatalf("expected no pending frame, got %#v", pending)
-	}
-	// Early exit should fire within a few ms of the sync end arriving, well
-	// before the 10ms batch timer would expire.
-	if elapsed > 6*time.Millisecond {
-		t.Fatalf("expected early exit within ~3ms of sync end, took %v", elapsed)
-	}
-}
-
-func TestCoalesceClientOutputFramesEarlyExitOnCompleteGroupInFirstFrame(t *testing.T) {
-	// Complete sync group (begin + content + end) in the first frame:
-	// must return immediately without starting the batch timer.
-	stream := make(chan protocol.StreamFrame)
-	start := time.Now()
-	merged, pending, hasPending, ok := coalesceClientOutputFrames(
-		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("\x1b[?2026hcontent\x1b[?2026l")},
-		stream,
-		10*time.Millisecond,
-		StreamState{},
-	)
-	elapsed := time.Since(start)
-
-	if string(merged.Payload) != "\x1b[?2026hcontent\x1b[?2026l" {
-		t.Fatalf("expected complete sync group, got %#v", merged)
-	}
-	if hasPending {
-		t.Fatalf("unexpected pending: %#v", pending)
-	}
-	if !ok {
-		t.Fatal("expected stream still open after early exit")
-	}
-	if elapsed > 2*time.Millisecond {
-		t.Fatalf("expected immediate return for complete sync group, took %v", elapsed)
-	}
-}
-
-func TestRuntimeHandleStreamFrameTracksSynchronizedOutputAcrossFrameBoundaries(t *testing.T) {
-	var invalidateCount atomic.Int32
-	rt := New(nil, WithInvalidate(func() {
-		invalidateCount.Add(1)
-	}))
-
-	terminal := rt.Registry().GetOrCreate("term-1")
-	terminal.Snapshot = snapshotWithLines("term-1", 12, 4, []string{"steady"})
-	if vt := rt.ensureVTerm(terminal); vt == nil {
-		t.Fatal("expected vterm cache")
-	}
-
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{
-		Type:    protocol.TypeOutput,
-		Payload: []byte("\x1b[?20"),
-	})
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{
-		Type:    protocol.TypeOutput,
-		Payload: []byte("26h\x1b[H\x1b[J"),
-	})
-
-	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "steady") {
-		t.Fatalf("expected split synchronized-output begin to keep old snapshot visible, got %#v", terminal.Snapshot)
-	}
-
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{
-		Type:    protocol.TypeOutput,
-		Payload: []byte("done\x1b[?202"),
-	})
-	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "steady") {
-		t.Fatalf("expected partial synchronized-output end to keep old snapshot visible, got %#v", terminal.Snapshot)
-	}
-
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{
-		Type:    protocol.TypeOutput,
-		Payload: []byte("6l"),
-	})
-
-	if !vtermContains(terminal.VTerm, "done") {
-		t.Fatalf("expected split synchronized-output end to flush live surface, got %#v", terminal.VTerm)
-	}
-	if invalidateCount.Load() == 0 {
-		t.Fatal("expected synchronized-output flush to invalidate rendering")
-	}
-}
-
-func TestRuntimeStreamOutputPreservesAuthoritativeSnapshotSize(t *testing.T) {
+func TestRuntimeScreenUpdatePreservesAuthoritativeSnapshotSize(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -978,7 +697,7 @@ func TestRuntimeStreamOutputPreservesAuthoritativeSnapshotSize(t *testing.T) {
 	if err := rt.StartStream(ctx, "term-1"); err != nil {
 		t.Fatalf("start stream: %v", err)
 	}
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("x")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 118, 36, "x"))
 
 	waitFor(t, func() bool {
 		current := rt.Registry().Get("term-1")
@@ -995,7 +714,7 @@ func TestRuntimeStreamOutputPreservesAuthoritativeSnapshotSize(t *testing.T) {
 	}
 }
 
-func TestRuntimeStreamOutputPreservesWideSnapshotCellsAfterReattach(t *testing.T) {
+func TestRuntimeScreenUpdatePreservesWideSnapshotCellsAfterReattach(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1041,7 +760,21 @@ func TestRuntimeStreamOutputPreservesWideSnapshotCellsAfterReattach(t *testing.T
 		t.Fatalf("start stream: %v", err)
 	}
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("!")})
+	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 8, Rows: 2},
+		Ops: []protocol.ScreenOp{{
+			Code:  protocol.ScreenOpWriteSpan,
+			Row:   0,
+			Col:   5,
+			Cells: []protocol.Cell{{Content: "!", Width: 1}},
+		}},
+		Cursor: protocol.CursorState{Row: 0, Col: 6, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode screen update: %v", err)
+	}
+	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
 
 	waitFor(t, func() bool {
 		current := rt.Registry().Get("term-1")
@@ -1375,7 +1108,7 @@ func TestRuntimeResizePaneShrinkKeepsRenderOnSnapshotUntilOutput(t *testing.T) {
 		t.Fatalf("expected visible runtime to hide live surface during shrink preview, got %#v", visible.Terminals)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("x")})
+	rt.handleStreamFrame("term-1", screenUpdateFrameForLines(t, 57, 20, "x"))
 
 	if terminal.PreferSnapshot {
 		t.Fatalf("expected first post-resize output to clear shrink preview flag, got %#v", terminal)
@@ -1922,19 +1655,6 @@ type fakeBridgeClient struct {
 	resizeCalls         []resizeCall
 }
 
-type countingVTerm struct {
-	VTermLike
-	writeCalls atomic.Int32
-}
-
-func (v *countingVTerm) Write(data []byte) (int, error) {
-	if v == nil || v.VTermLike == nil {
-		return 0, nil
-	}
-	v.writeCalls.Add(1)
-	return v.VTermLike.Write(data)
-}
-
 type incrementalCountingVTerm struct {
 	*localvterm.VTerm
 	partialCalls  atomic.Int32
@@ -2184,6 +1904,21 @@ func snapshotWithLines(terminalID string, cols, rows uint16, lines []string) *pr
 	}
 }
 
+func screenUpdateFrameForLines(t *testing.T, cols, rows uint16, lines ...string) protocol.StreamFrame {
+	t.Helper()
+	payload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		FullReplace: true,
+		Size:        protocol.Size{Cols: cols, Rows: rows},
+		Screen:      snapshotWithLines("term-1", cols, rows, lines).Screen,
+		Cursor:      protocol.CursorState{Visible: true},
+		Modes:       protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode screen update: %v", err)
+	}
+	return protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: payload}
+}
+
 func cloneSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {
 	if snapshot == nil {
 		return nil
@@ -2260,7 +1995,7 @@ func TestRuntimeStartStreamReconnectsAfterChannelClose(t *testing.T) {
 		t.Fatalf("start stream: %v", err)
 	}
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("one")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 80, 24, "one"))
 	waitFor(t, func() bool {
 		stored := rt.Registry().Get("term-1")
 		return stored != nil && vtermContains(stored.VTerm, "one")
@@ -2272,7 +2007,7 @@ func TestRuntimeStartStreamReconnectsAfterChannelClose(t *testing.T) {
 		return client.subscriptionCount(9) >= 2
 	})
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("two")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 80, 24, "two"))
 	waitFor(t, func() bool {
 		stored := rt.Registry().Get("term-1")
 		return stored != nil && vtermContains(stored.VTerm, "two")
@@ -2310,7 +2045,7 @@ func TestRuntimeReattachIgnoresLateFramesFromPreviousStreamGeneration(t *testing
 		t.Fatalf("start initial stream: %v", err)
 	}
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("seed")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 80, 24, "seed"))
 	waitFor(t, func() bool {
 		stored := rt.Registry().Get("term-1")
 		return stored != nil && vtermContains(stored.VTerm, "seed")
@@ -2327,8 +2062,8 @@ func TestRuntimeReattachIgnoresLateFramesFromPreviousStreamGeneration(t *testing
 	waitFor(t, func() bool { return client.stopCount(9) > 0 })
 	waitFor(t, func() bool { return client.subscriptionCount(10) > 0 })
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("stale")})
-	client.sendFrame(10, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("fresh")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 80, 24, "stale"))
+	client.sendFrame(10, screenUpdateFrameForLines(t, 80, 24, "fresh"))
 
 	waitFor(t, func() bool {
 		stored := rt.Registry().Get("term-1")
@@ -2402,7 +2137,7 @@ func TestRuntimeStreamResizeFrameRefreshesSnapshotGeometryDuringBootstrap(t *tes
 	})
 
 	// Subsequent output should be processed correctly at the new size.
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("after-resize")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 120, 40, "after-resize"))
 	waitFor(t, func() bool {
 		return vtermContains(terminal.VTerm, "after-resize")
 	})

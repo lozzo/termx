@@ -14,14 +14,14 @@ func TestFanoutSyncLost(t *testing.T) {
 	slow := f.Subscribe(ctx)
 
 	for i := 0; i < 257; i++ {
-		f.Broadcast([]byte("x"))
+		f.BroadcastMessage(StreamMessage{Type: StreamScreenUpdate, Payload: []byte("x")})
 	}
 
 	for i := 0; i < 256; i++ {
 		<-slow
 	}
 
-	f.Broadcast([]byte("third"))
+	f.BroadcastMessage(StreamMessage{Type: StreamScreenUpdate, Payload: []byte("third")})
 
 	select {
 	case msg := <-slow:
@@ -37,11 +37,11 @@ func TestFanoutSyncLost(t *testing.T) {
 
 	select {
 	case msg := <-slow:
-		if msg.Type != StreamOutput || string(msg.Output) != "third" {
-			t.Fatalf("unexpected recovery output: %#v", msg)
+		if msg.Type != StreamScreenUpdate || string(msg.Payload) != "third" {
+			t.Fatalf("unexpected recovery screen update: %#v", msg)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for output after sync lost")
+		t.Fatal("timed out waiting for screen update after sync lost")
 	}
 }
 
@@ -70,7 +70,7 @@ func TestFanoutClose(t *testing.T) {
 	}
 }
 
-func TestFanoutBroadcastSharesPayloadAcrossSubscribers(t *testing.T) {
+func TestFanoutBroadcastMessageSharesPayloadAcrossSubscribers(t *testing.T) {
 	f := New()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -79,35 +79,35 @@ func TestFanoutBroadcastSharesPayloadAcrossSubscribers(t *testing.T) {
 	right := f.Subscribe(ctx)
 	payload := []byte("shared")
 
-	f.Broadcast(payload)
+	f.BroadcastMessage(StreamMessage{Type: StreamScreenUpdate, Payload: payload})
 
 	leftMsg := <-left
 	rightMsg := <-right
-	if leftMsg.Type != StreamOutput || rightMsg.Type != StreamOutput {
-		t.Fatalf("expected output messages, got left=%#v right=%#v", leftMsg, rightMsg)
+	if leftMsg.Type != StreamScreenUpdate || rightMsg.Type != StreamScreenUpdate {
+		t.Fatalf("expected screen update messages, got left=%#v right=%#v", leftMsg, rightMsg)
 	}
-	if len(leftMsg.Output) == 0 || len(rightMsg.Output) == 0 {
-		t.Fatalf("expected payload bytes, got left=%#v right=%#v", leftMsg.Output, rightMsg.Output)
+	if len(leftMsg.Payload) == 0 || len(rightMsg.Payload) == 0 {
+		t.Fatalf("expected payload bytes, got left=%#v right=%#v", leftMsg.Payload, rightMsg.Payload)
 	}
-	if &leftMsg.Output[0] != &payload[0] {
+	if &leftMsg.Payload[0] != &payload[0] {
 		t.Fatal("expected first subscriber to receive the shared payload buffer")
 	}
-	if &rightMsg.Output[0] != &payload[0] {
+	if &rightMsg.Payload[0] != &payload[0] {
 		t.Fatal("expected second subscriber to receive the shared payload buffer")
 	}
-	if &leftMsg.Output[0] != &rightMsg.Output[0] {
+	if &leftMsg.Payload[0] != &rightMsg.Payload[0] {
 		t.Fatal("expected subscribers to share the same payload buffer")
 	}
 }
 
-func TestFanoutResizePreemptsBufferedOutputWhenSubscriberBackedUp(t *testing.T) {
+func TestFanoutResizePreemptsBufferedScreenUpdateWhenSubscriberBackedUp(t *testing.T) {
 	f := New()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	ch := f.Subscribe(ctx)
 	for i := 0; i < 256; i++ {
-		f.Broadcast([]byte("x"))
+		f.BroadcastMessage(StreamMessage{Type: StreamScreenUpdate, Payload: []byte("x")})
 	}
 
 	f.BroadcastResize(120, 40)
@@ -129,14 +129,14 @@ func TestFanoutResizePreemptsBufferedOutputWhenSubscriberBackedUp(t *testing.T) 
 	}
 }
 
-func TestFanoutScreenUpdatePreemptsBufferedOutputWhenSubscriberBackedUp(t *testing.T) {
+func TestFanoutScreenUpdatePreemptsBufferedScreenUpdateWhenSubscriberBackedUp(t *testing.T) {
 	f := New()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	ch := f.Subscribe(ctx)
 	for i := 0; i < 256; i++ {
-		f.Broadcast([]byte("x"))
+		f.BroadcastMessage(StreamMessage{Type: StreamScreenUpdate, Payload: []byte("x")})
 	}
 
 	payload := []byte(`{"full_replace":true}`)
@@ -147,11 +147,8 @@ func TestFanoutScreenUpdatePreemptsBufferedOutputWhenSubscriberBackedUp(t *testi
 	for !sawUpdate {
 		select {
 		case msg := <-ch:
-			if msg.Type == StreamScreenUpdate {
+			if msg.Type == StreamScreenUpdate && string(msg.Payload) == string(payload) {
 				sawUpdate = true
-				if string(msg.Payload) != string(payload) {
-					t.Fatalf("unexpected screen update %#v", msg)
-				}
 			}
 		case <-timeout:
 			t.Fatal("timed out waiting for priority screen update frame")

@@ -66,18 +66,7 @@ func screenUpdateSummaryFromProtocol(update protocol.ScreenUpdate) VisibleScreen
 			}
 		}
 	}
-	switch {
-	case len(update.ChangedSpans) > 0:
-		summary.ChangedRows = make([]int, 0, len(update.ChangedSpans))
-		seen := make(map[int]struct{}, len(update.ChangedSpans))
-		for _, span := range update.ChangedSpans {
-			if _, ok := seen[span.Row]; ok {
-				continue
-			}
-			seen[span.Row] = struct{}{}
-			summary.ChangedRows = append(summary.ChangedRows, span.Row)
-		}
-	case len(update.Ops) > 0:
+	if len(update.Ops) > 0 {
 		rows := make([]int, 0, len(update.Ops))
 		seen := make(map[int]struct{}, len(update.Ops))
 		addRow := func(row int) {

@@ -41,7 +41,7 @@ func WithWebSocket(addr string, opts ...ws.Option) ServerOption
 func WithDefaultSize(cols, rows uint16) ServerOption
 
 // WithDefaultScrollback 设置默认滚动回看行数
-// 默认：10000
+// 默认：2000
 func WithDefaultScrollback(lines int) ServerOption
 
 // WithDefaultKeepAfterExit 设置进程退出后保留时间
@@ -207,22 +207,28 @@ func (s *Server) Resize(ctx context.Context, id string, cols, rows uint16) error
 type StreamMessageType int
 
 const (
-    StreamOutput StreamMessageType = iota + 1
-    StreamSyncLost
+    StreamSyncLost StreamMessageType = iota + 1
     StreamClosed
+    StreamResize
+    StreamBootstrapDone
+    StreamScreenUpdate
 )
 
 type StreamMessage struct {
     Type StreamMessageType
 
-    // Type == StreamOutput 时有效
-    Output []byte
+    // Type == StreamScreenUpdate 时有效，payload 是协议层二进制 screen update
+    Payload []byte
 
     // Type == StreamSyncLost 时有效
     DroppedBytes uint64
 
     // Type == StreamClosed 时有效
     ExitCode *int
+
+    // Type == StreamResize 时有效
+    Cols uint16
+    Rows uint16
 }
 
 // Subscribe 订阅 Terminal 的输出流
@@ -231,9 +237,9 @@ func (s *Server) Subscribe(ctx context.Context, id string) (<-chan StreamMessage
 ```
 
 - 返回的 channel 缓冲区大小为 256
-- `StreamOutput` 携带 PTY 原始输出字节
-- 如果消费者跟不上，服务端会丢弃部分输出，并在下一次成功投递时发送 `StreamSyncLost`
-- 需要恢复屏幕状态时，调用 `Snapshot()`；Subscribe 不再内嵌快照数据
+- `StreamScreenUpdate` 携带服务端权威屏幕增量，客户端不再解析 PTY 原始输出
+- 如果消费者跟不上，服务端会合并队尾 screen update，只保留最新屏幕状态；溢出时发送 `StreamSyncLost`
+- 需要恢复屏幕状态时，调用 `Snapshot()`
 - 终端退出时，订阅者会收到 `StreamClosed`
 
 错误：
@@ -378,10 +384,10 @@ if err != nil {
 go func() {
     for msg := range stream {
         switch msg.Type {
-        case termx.StreamOutput:
-            os.Stdout.Write(msg.Output)
+        case termx.StreamScreenUpdate:
+            applyScreenUpdate(msg.Payload)
         case termx.StreamSyncLost:
-            log.Printf("output dropped: %d bytes", msg.DroppedBytes)
+            log.Printf("screen stream sync lost: %d bytes dropped", msg.DroppedBytes)
         case termx.StreamClosed:
             log.Printf("terminal closed: %v", msg.ExitCode)
         }

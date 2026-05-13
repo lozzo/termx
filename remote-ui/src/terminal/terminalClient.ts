@@ -12,6 +12,12 @@ export interface TerminalSnapshotPayload {
   raw?: unknown
   scrollbackRows?: unknown[]
   alternateScreen?: boolean
+  recovery?: {
+    revision: number
+    reason: string
+    syncLostCount?: number
+    droppedBytes?: number
+  }
   history?: {
     revision: number
     prependedRows: number
@@ -78,6 +84,7 @@ export interface TerminalProtocolSession {
   subscribeTerminal(terminalId: string, handler: (event: TerminalProtocolEvent) => void): () => void
   loadScrollback(terminalId: string, offset: number, limit: number): Promise<TerminalScrollbackPage>
   closeTerminalChannel(terminalId: string): void
+  markSyncLost?(terminalId: string, reason?: string): void
   requestResizeOwner?(terminalId: string, size?: TerminalInputSize): Promise<TerminalResizeControl>
   releaseResizeOwner?(terminalId: string): Promise<TerminalResizeControl>
 }
@@ -173,6 +180,11 @@ export class TerminalClient {
       return Promise.reject(new Error('terminal client is not connected'))
     }
     return this.session.loadScrollback(this.terminalId, offset, limit)
+  }
+
+  markSyncLost(reason?: string): void {
+    if (!this.session || !this.terminalId) return
+    this.session.markSyncLost?.(this.terminalId, reason)
   }
 
   private bind(

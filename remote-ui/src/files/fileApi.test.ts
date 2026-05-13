@@ -87,6 +87,63 @@ describe('createFileApi', () => {
     })
   })
 
+  it('normalizes 3D model previews from model metadata and legacy unsupported responses', async () => {
+    const session = createMockFileSession({
+      '/files/preview': ({ path }: { path?: string } = {}) => {
+        if (path === '/legacy.stl') {
+          return {
+            path: '/legacy.stl',
+            name: 'legacy.stl',
+            size: 84,
+            mime_type: 'application/octet-stream',
+            category: 'unsupported',
+            is_text: false,
+          }
+        }
+        if (path === '/legacy.obj') {
+          return {
+            path: '/legacy.obj',
+            name: 'legacy.obj',
+            size: 84,
+            mime_type: 'application/octet-stream',
+            category: 'unsupported',
+            is_text: false,
+          }
+        }
+        return {
+          path: '/part.stl',
+          name: 'part.stl',
+          size: 84,
+          mime_type: 'model/stl',
+          category: 'model',
+          is_text: false,
+        }
+      },
+    })
+    const api = createFileApi(session)
+
+    await expect(api.preview('/part.stl')).resolves.toMatchObject({
+      path: '/part.stl',
+      mimeType: 'model/stl',
+      category: 'model',
+      isText: false,
+      content: undefined,
+      contentBase64: undefined,
+    })
+    await expect(api.preview('/legacy.stl')).resolves.toMatchObject({
+      path: '/legacy.stl',
+      category: 'model',
+      content: undefined,
+      contentBase64: undefined,
+    })
+    await expect(api.preview('/legacy.obj')).resolves.toMatchObject({
+      path: '/legacy.obj',
+      category: 'model',
+      content: undefined,
+      contentBase64: undefined,
+    })
+  })
+
   it('streams preview files through the download channel without embedding binary JSON', async () => {
     const session = createMockFileSession({
       '/files/download/init': {

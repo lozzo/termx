@@ -3,9 +3,10 @@ import { createTerminalProtocolClient } from './terminalProtocolClient'
 import { TERMX_FRAME_TYPES, decodeHistoryReplayPayload, decodeTermxFrame, encodeTermxFrame } from './termxProtocol'
 import type { ConnectionInfo, RtcBinaryChannel } from '../core/transport'
 import type { TerminalProtocolEvent } from './terminalClient'
+import { encodeMockScreenUpdatePayload } from '../test/mockRtcTerminalSession'
 
 describe('TerminalProtocolClient', () => {
-  it('performs hello and attach over the Go binary protocol before exposing terminal output', async () => {
+  it('performs hello and attach over the Go binary protocol before exposing terminal screen updates', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
     const client = createTerminalProtocolClient({
       channel,
@@ -32,7 +33,6 @@ describe('TerminalProtocolClient', () => {
       terminal_id: 'terminal-1',
       mode: 'collaborator',
       resize_policy: 'follower',
-      stream_mode: 'raw',
       surface_id: 'app:terminal:terminal-1',
     })
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
@@ -42,12 +42,12 @@ describe('TerminalProtocolClient', () => {
 
     const terminal = await opened
     expect(terminal.label).toBe('terminal:terminal-1')
-    channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.output, new TextEncoder().encode('stream-data')))
+    channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.screenUpdate, encodeMockScreenUpdatePayload('stream-data')))
 
     expect(events).toHaveLength(2)
     expect(events[0]).toMatchObject({ type: 'resizeControl', control: { canResize: false, reason: 'follower' } })
     expect(events[1]).toMatchObject({ type: 'output' })
-    expect(new TextDecoder().decode((events[1] as { data: Uint8Array }).data)).toBe('stream-data')
+    expect(new TextDecoder().decode((events[1] as { data: Uint8Array }).data)).toContain('stream-data')
   })
 
   it('maps BinaryChannel JSON input and resize messages to Go TypeInput and TypeResize frames', async () => {
@@ -269,7 +269,8 @@ describe('TerminalProtocolClient', () => {
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
-    expect(attachRequest.params).toMatchObject({ resize_policy: 'owner', stream_mode: 'raw' })
+    expect(attachRequest.params).toMatchObject({ resize_policy: 'owner' })
+    expect(attachRequest.params).not.toHaveProperty('stream_mode')
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
       id: attachRequest.id,
       result: JSON.stringify({
@@ -375,7 +376,7 @@ describe('TerminalProtocolClient', () => {
     await Promise.resolve()
     const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
 
-    channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.output, new TextEncoder().encode('early-output')))
+    channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.screenUpdate, encodeMockScreenUpdatePayload('early-output')))
     expect(events).toEqual([])
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
       id: attachRequest.id,
@@ -385,7 +386,7 @@ describe('TerminalProtocolClient', () => {
 
     expect(events).toHaveLength(2)
     expect(events[0]).toMatchObject({ type: 'resizeControl' })
-    expect(new TextDecoder().decode((events[1] as { data: Uint8Array }).data)).toBe('early-output')
+    expect(new TextDecoder().decode((events[1] as { data: Uint8Array }).data)).toContain('early-output')
   })
 
   it('requests a snapshot and emits replayable snapshot content through the terminal protocol interface', async () => {
@@ -437,7 +438,7 @@ describe('TerminalProtocolClient', () => {
     expect((events[1] as { snapshot: { replay?: string } }).snapshot.replay).toContain('\x1b[1;1H')
   })
 
-  it('ignores routine screen update frames because raw PTY output drives xterm', async () => {
+  it('emits replayable output for routine screen update frames', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
     const client = createTerminalProtocolClient({
       channel,
@@ -474,17 +475,20 @@ describe('TerminalProtocolClient', () => {
     const sentBeforeScreenUpdate = channel.sent.length
     vi.useFakeTimers()
     try {
-      channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.screenUpdate, new Uint8Array([1, 2, 3])))
+      channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.screenUpdate, encodeMockScreenUpdatePayload('new')))
       await vi.advanceTimersByTimeAsync(1000)
 
       expect(channel.sent).toHaveLength(sentBeforeScreenUpdate)
       expect(events.filter((event) => event.type === 'snapshot')).toHaveLength(1)
+      expect(events).toContainEqual(expect.objectContaining({ type: 'output' }))
+      const outputEvents = events.filter((event): event is Extract<TerminalProtocolEvent, { type: 'output' }> => event.type === 'output')
+      expect(new TextDecoder().decode(outputEvents[outputEvents.length - 1]!.data)).toContain('new')
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('refreshes terminal content when the raw terminal stream reports sync loss', async () => {
+  it('refreshes terminal content when the screen stream reports sync loss', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
     const client = createTerminalProtocolClient({
       channel,
@@ -533,8 +537,81 @@ describe('TerminalProtocolClient', () => {
 
     await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({
       type: 'snapshot',
-      snapshot: expect.objectContaining({ text: 'new' }),
+      snapshot: expect.objectContaining({
+        text: 'new',
+        recovery: expect.objectContaining({
+          revision: 1,
+          reason: 'terminal stream sync lost',
+          syncLostCount: 1,
+          droppedBytes: 0,
+        }),
+      }),
     })))
+  })
+
+  it('coalesces repeated sync loss frames into a single in-flight snapshot refresh', async () => {
+    vi.useFakeTimers()
+    try {
+      const channel = new MockBinaryDataChannel('terminal:terminal-1')
+      const client = createTerminalProtocolClient({
+        channel,
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        connectionInfo: connectionInfo(),
+      })
+      const events: TerminalProtocolEvent[] = []
+      client.subscribeTerminal('terminal-1', (event) => events.push(event))
+      const terminalPromise = client.openTerminal('terminal-1')
+      channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+      await Promise.resolve()
+      const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
+      channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+        id: attachRequest.id,
+        result: JSON.stringify({ mode: 'collaborator', channel: 7 }),
+      })))
+      await terminalPromise
+
+      const initialSnapshot = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 2).payload))
+      channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+        id: initialSnapshot.id,
+        result: JSON.stringify({
+          terminal_id: 'terminal-1',
+          size: { cols: 80, rows: 24 },
+          screen: { rows: [{ cells: [{ r: 'o' }, { r: 'l' }, { r: 'd' }] }] },
+        }),
+      })))
+      await vi.waitFor(() => expect(events.filter((event) => event.type === 'snapshot')).toHaveLength(1))
+
+      const droppedPayload = new Uint8Array([0, 0, 0, 7])
+      channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.syncLost, droppedPayload))
+      channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.syncLost, droppedPayload))
+      channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.syncLost, droppedPayload))
+      await vi.advanceTimersByTimeAsync(500)
+
+      expect(channel.sent).toHaveLength(4)
+      const refreshSnapshot = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 3).payload))
+      expect(refreshSnapshot.method).toBe('snapshot')
+      channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+        id: refreshSnapshot.id,
+        result: JSON.stringify({
+          terminal_id: 'terminal-1',
+          size: { cols: 80, rows: 24 },
+          screen: { rows: [{ cells: [{ r: 'n' }, { r: 'e' }, { r: 'w' }] }] },
+        }),
+      })))
+
+      await vi.waitFor(() => expect(events.filter((event) => event.type === 'snapshot')).toHaveLength(2))
+      const snapshotEvents = events.filter((event): event is Extract<TerminalProtocolEvent, { type: 'snapshot' }> => event.type === 'snapshot')
+      const recoverySnapshot = snapshotEvents[snapshotEvents.length - 1]!
+      expect(recoverySnapshot.snapshot.recovery).toEqual({
+        revision: 1,
+        reason: 'terminal stream sync lost',
+        syncLostCount: 3,
+        droppedBytes: 21,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('loads older scrollback pages over the active protocol channel', async () => {
@@ -609,6 +686,41 @@ describe('TerminalProtocolClient', () => {
     channel.close()
 
     await expect(opened).rejects.toThrow(/closed/i)
+  })
+
+  it('emits a closed event when a snapshot refresh times out on a half-open channel', async () => {
+    vi.useFakeTimers()
+    try {
+      const channel = new MockBinaryDataChannel('terminal:terminal-1')
+      const client = createTerminalProtocolClient({
+        channel,
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        connectionInfo: connectionInfo(),
+      })
+      const events: TerminalProtocolEvent[] = []
+      client.subscribeTerminal('terminal-1', (event) => events.push(event))
+
+      const terminalPromise = client.openTerminal('terminal-1')
+      channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+      await Promise.resolve()
+      const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
+      channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+        id: attachRequest.id,
+        result: JSON.stringify({ mode: 'collaborator', channel: 7 }),
+      })))
+
+      await terminalPromise
+      expect(decodeSentFrame(channel, 2)).toMatchObject({ channel: 0, type: TERMX_FRAME_TYPES.request })
+
+      await vi.advanceTimersByTimeAsync(8000)
+      await vi.waitFor(() => expect(events).toContainEqual({
+        type: 'closed',
+        reason: 'terminal protocol snapshot timed out for terminal-1',
+      }))
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('throws instead of silently dropping input when the data channel is closed', async () => {

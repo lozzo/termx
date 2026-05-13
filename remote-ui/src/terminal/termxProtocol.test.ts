@@ -5,21 +5,23 @@ import {
   encodeResizePayload,
   encodeTermxFrame,
   rowsToText,
+  screenUpdatePayloadToReplay,
   snapshotToReplay,
 } from './termxProtocol'
+import { encodeMockScreenUpdatePayload } from '../test/mockRtcTerminalSession'
 
 describe('termxProtocol', () => {
   it('encodes and decodes Go-compatible binary frames', () => {
-    const frame = encodeTermxFrame(7, TERMX_FRAME_TYPES.output, new TextEncoder().encode('hello'))
+    const frame = encodeTermxFrame(7, TERMX_FRAME_TYPES.screenUpdate, new TextEncoder().encode('hello'))
 
     expect(Array.from(frame.slice(0, 7))).toEqual([
       0x00, 0x07,
-      TERMX_FRAME_TYPES.output,
+      TERMX_FRAME_TYPES.screenUpdate,
       0x00, 0x00, 0x00, 0x05,
     ])
     const decoded = decodeTermxFrame(frame)
     expect(decoded.channel).toBe(7)
-    expect(decoded.type).toBe(TERMX_FRAME_TYPES.output)
+    expect(decoded.type).toBe(TERMX_FRAME_TYPES.screenUpdate)
     expect(Array.from(decoded.payload)).toEqual(Array.from(new TextEncoder().encode('hello')))
   })
 
@@ -82,5 +84,13 @@ describe('termxProtocol', () => {
     expect(snapshotToReplay({ modes: { alternate_screen: true }, screen: { rows: [] } })).toContain('\x1b[?1049h')
     expect(snapshotToReplay({ modes: { alternate_screen: false }, screen: { rows: [] } })).toContain('\x1b[?1049l')
     expect(snapshotToReplay({ screen: { rows: [] } })).toContain('\x1b[?1049l')
+  })
+
+  it('decodes screen update payloads into replayable terminal output', () => {
+    const replay = screenUpdatePayloadToReplay(encodeMockScreenUpdatePayload('stream-data'))
+
+    expect(replay).toContain('\x1b[1;1H')
+    expect(replay).toContain('stream-data')
+    expect(replay).toContain('\x1b[?25h')
   })
 })

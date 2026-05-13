@@ -125,6 +125,7 @@ func (s *Screen) ClearWithScrollback(blank *uv.Cell) {
 		for y := 0; y < s.buf.Height(); y++ {
 			line := s.buf.Line(y)
 			if line != nil && !s.isLineEmpty(line) {
+				s.recordScrollbackLine(y, line, s.LineWrapped(y))
 				s.scrollback.PushWrapped(line, s.LineWrapped(y))
 			}
 		}
@@ -439,6 +440,11 @@ func (s *Screen) DeleteLine(n int) bool {
 		scroll.Min.X == 0 && scroll.Max.X == s.buf.Width() {
 		// Save lines that will be deleted
 		linesToSave := min(n, scroll.Max.Y-y)
+		for i := range min(linesToSave, s.buf.Height()-y) {
+			if line := s.buf.Line(y + i); line != nil {
+				s.recordScrollbackLine(y+i, line, boolAt(s.wrapped, y+i))
+			}
+		}
 		s.scrollback.PushN(s.buf, s.wrapped, y, linesToSave)
 	}
 
@@ -579,11 +585,7 @@ func (s *Screen) recordCellDamage(x, y int, c *uv.Cell) {
 		s.recordDamage(ClearDamage(uv.Rect(x, y, 1, 1)))
 		return
 	}
-	s.recordDamage(SpanDamage{
-		X:     x,
-		Y:     y,
-		Cells: []uv.Cell{cloneDamageCell(c)},
-	})
+	s.damage.recordSpanCell(x, y, cloneDamageCell(c))
 }
 
 func (s *Screen) recordFillDamage(c *uv.Cell, area uv.Rectangle) {
@@ -596,15 +598,7 @@ func (s *Screen) recordFillDamage(c *uv.Cell, area uv.Rectangle) {
 	}
 	cell := cloneDamageCell(c)
 	for y := area.Min.Y; y < area.Max.Y; y++ {
-		cells := make([]uv.Cell, area.Dx())
-		for i := range cells {
-			cells[i] = cell
-		}
-		s.recordDamage(SpanDamage{
-			X:     area.Min.X,
-			Y:     y,
-			Cells: cells,
-		})
+		s.damage.recordRepeatedSpan(area.Min.X, y, area.Dx(), cell)
 	}
 }
 
@@ -613,4 +607,11 @@ func (s *Screen) recordDamage(d Damage) {
 		return
 	}
 	s.damage.record(d)
+}
+
+func (s *Screen) recordScrollbackLine(y int, line uv.Line, wrapped bool) {
+	if s == nil || s.damage == nil || line == nil {
+		return
+	}
+	s.damage.recordScrollbackLine(y, line, wrapped)
 }

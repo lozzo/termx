@@ -514,7 +514,7 @@ describe('BrowserRtcSession', () => {
     expect(factory.createdLabels()).toEqual([])
   })
 
-  it('passes raw binary terminal frames without implementing the terminal protocol itself', async () => {
+  it('passes binary terminal frames without implementing the terminal protocol itself', async () => {
     const factory = createMockPeerConnectionFactory()
     const session = createBrowserRtcSession({
       machineId: 'machine-local',
@@ -529,7 +529,7 @@ describe('BrowserRtcSession', () => {
     const received: Uint8Array[] = []
     terminal.onMessage?.((data) => received.push(data))
 
-    const output = encodeTermxFrame(7, TERMX_FRAME_TYPES.output, new TextEncoder().encode('hello'))
+    const output = encodeTermxFrame(7, TERMX_FRAME_TYPES.screenUpdate, new TextEncoder().encode('hello'))
     terminalChannel.emitMessage(output)
     terminal.send(new Uint8Array([1, 2, 3]))
 

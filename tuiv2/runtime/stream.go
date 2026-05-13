@@ -1,34 +1,13 @@
 package runtime
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/tuiv2/shared"
-)
-
-const (
-	synchronizedOutputBegin           = "\x1b[?2026h"
-	synchronizedOutputEnd             = "\x1b[?2026l"
-	clientOutputBatchDelay            = 2 * time.Millisecond
-	interactiveOutputBatchDelay       = 500 * time.Microsecond
-	remoteClientOutputBatchDelay      = 1 * time.Millisecond
-	remoteInteractiveOutputBatchDelay = 250 * time.Microsecond
-	// If a synchronized-output group is still open when the normal batch timer
-	// fires, wait in small increments for the trailing sync-end chunk so we can
-	// keep the whole redraw in one local VTerm.Write()/render pass.
-	synchronizedOutputWaitStep       = 500 * time.Microsecond
-	remoteSynchronizedOutputWaitStep = 250 * time.Microsecond
-	// Cap the extra wait so an incomplete or delayed sync group cannot stall the
-	// first visible frame indefinitely. This is a pragmatic latency ceiling, not
-	// a protocol guarantee.
-	synchronizedOutputWaitBudget       = 5 * time.Millisecond
-	remoteSynchronizedOutputWaitBudget = 1500 * time.Microsecond
 )
 
 type screenUpdateApplier interface {
@@ -39,7 +18,7 @@ func recordScreenUpdateMetrics(update protocol.ScreenUpdate) {
 	if update.FullReplace {
 		perftrace.Count("runtime.stream.screen_update.full_replace", 1)
 	}
-	if changedRows := len(update.ChangedRows); changedRows > 0 {
+	if changedRows := len(screenUpdateSummaryFromProtocol(update).ChangedRows); changedRows > 0 {
 		perftrace.Count("runtime.stream.screen_update.changed_rows", changedRows)
 	}
 	if update.ScrollbackTrim > 0 {
@@ -113,21 +92,13 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 			terminal.Stream.Stop = stop
 			return true
 		}
-		var (
-			pending    protocol.StreamFrame
-			hasPending bool
-		)
 		for {
-			frame, ok := nextClientStreamFrame(ctx, stream, &pending, &hasPending)
+			frame, ok := nextClientStreamFrame(ctx, stream)
 			if !ok {
 				if !reconnectStream() {
 					return
 				}
-				hasPending = false
 				continue
-			}
-			if frame.Type == protocol.TypeOutput {
-				frame, pending, hasPending, ok = coalesceClientOutputFrames(frame, stream, r.clientOutputBatchDelay(), terminal.Stream)
 			}
 			if terminal.Stream.Generation != generation {
 				return
@@ -141,158 +112,19 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 				if !reconnectStream() {
 					return
 				}
-				hasPending = false
 			}
 		}
 	}(generation)
 	return nil
 }
 
-func nextClientStreamFrame(ctx context.Context, stream <-chan protocol.StreamFrame, pending *protocol.StreamFrame, hasPending *bool) (protocol.StreamFrame, bool) {
-	if hasPending != nil && *hasPending {
-		*hasPending = false
-		return *pending, true
-	}
+func nextClientStreamFrame(ctx context.Context, stream <-chan protocol.StreamFrame) (protocol.StreamFrame, bool) {
 	select {
 	case <-ctx.Done():
 		return protocol.StreamFrame{}, false
 	case frame, ok := <-stream:
 		return frame, ok
 	}
-}
-
-func (r *Runtime) clientOutputBatchDelay() time.Duration {
-	delay := effectiveClientOutputBatchDelay()
-	if delay <= 0 {
-		return 0
-	}
-	if r != nil && r.consumeInteractiveBypass() {
-		perftrace.Count("runtime.stream.output.interactive_bypass", 0)
-		return effectiveInteractiveOutputBatchDelay()
-	}
-	return delay
-}
-
-func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protocol.StreamFrame, batchDelay time.Duration, syncState StreamState) (protocol.StreamFrame, protocol.StreamFrame, bool, bool) {
-	merged := protocol.StreamFrame{
-		Type:    protocol.TypeOutput,
-		Payload: append([]byte(nil), first.Payload...),
-	}
-	prevSyncActive := syncState.synchronizedOutputActive
-	_ = updateSynchronizedOutputState(&syncState, first.Payload)
-	handle := func(frame protocol.StreamFrame) (protocol.StreamFrame, bool, bool) {
-		if frame.Type != protocol.TypeOutput {
-			return frame, true, true
-		}
-		if len(merged.Payload) > 0 && len(merged.Payload)+len(frame.Payload) > protocol.MaxFrameSize {
-			return frame, true, true
-		}
-		merged.Payload = append(merged.Payload, frame.Payload...)
-		_ = updateSynchronizedOutputState(&syncState, frame.Payload)
-		return protocol.StreamFrame{}, false, true
-	}
-	drainReady := func() (protocol.StreamFrame, bool, bool) {
-		for {
-			select {
-			case frame, ok := <-stream:
-				if !ok {
-					return protocol.StreamFrame{}, false, false
-				}
-				if pending, hasPending, ok := handle(frame); hasPending || !ok {
-					return pending, hasPending, ok
-				}
-			default:
-				return protocol.StreamFrame{}, false, true
-			}
-		}
-	}
-	// Early exit: if a synchronized output group completed in the first payload,
-	// deliver immediately without starting the batch timer. This covers both
-	// the common case (begin + content + end in one frame) and carry-over from
-	// a previous partial batch (prevActive=true, now closed).
-	if !syncState.synchronizedOutputActive &&
-		(prevSyncActive || bytes.Contains(first.Payload, []byte(synchronizedOutputEnd))) {
-		pending, hasPending, ok := drainReady()
-		return merged, pending, hasPending, ok
-	}
-	if batchDelay <= 0 || len(merged.Payload) >= protocol.MaxFrameSize {
-		pending, hasPending, ok := drainReady()
-		return merged, pending, hasPending, ok
-	}
-	timer := time.NewTimer(batchDelay)
-	defer timer.Stop()
-	waitBudget := effectiveSynchronizedOutputWaitBudget()
-	waitStep := effectiveSynchronizedOutputWaitStep()
-	waitedForSync := time.Duration(0)
-	for {
-		select {
-		case frame, ok := <-stream:
-			if !ok {
-				return merged, protocol.StreamFrame{}, false, false
-			}
-			loopPrevSyncActive := syncState.synchronizedOutputActive
-			if pending, hasPending, ok := handle(frame); hasPending || !ok {
-				return merged, pending, hasPending, ok
-			}
-			if len(merged.Payload) >= protocol.MaxFrameSize {
-				return merged, protocol.StreamFrame{}, false, true
-			}
-			// Early exit: sync group just completed in this frame
-			if loopPrevSyncActive && !syncState.synchronizedOutputActive {
-				timer.Stop()
-				pending, hasPending, ok := drainReady()
-				return merged, pending, hasPending, ok
-			}
-		case <-timer.C:
-			if syncState.synchronizedOutputActive && waitBudget > waitedForSync {
-				nextWait := waitStep
-				if remaining := waitBudget - waitedForSync; nextWait > remaining {
-					nextWait = remaining
-				}
-				if nextWait <= 0 {
-					pending, hasPending, ok := drainReady()
-					return merged, pending, hasPending, ok
-				}
-				waitedForSync += nextWait
-				timer.Reset(nextWait)
-				continue
-			}
-			pending, hasPending, ok := drainReady()
-			return merged, pending, hasPending, ok
-		}
-	}
-}
-
-func effectiveClientOutputBatchDelay() time.Duration {
-	delay := clientOutputBatchDelay
-	if shared.RemoteLatencyProfileEnabled() && (delay <= 0 || delay > remoteClientOutputBatchDelay) {
-		delay = remoteClientOutputBatchDelay
-	}
-	return shared.DurationOverride("TERMX_CLIENT_OUTPUT_BATCH_DELAY", delay)
-}
-
-func effectiveInteractiveOutputBatchDelay() time.Duration {
-	delay := interactiveOutputBatchDelay
-	if shared.RemoteLatencyProfileEnabled() && (delay <= 0 || delay > remoteInteractiveOutputBatchDelay) {
-		delay = remoteInteractiveOutputBatchDelay
-	}
-	return shared.DurationOverride("TERMX_INTERACTIVE_OUTPUT_BATCH_DELAY", delay)
-}
-
-func effectiveSynchronizedOutputWaitStep() time.Duration {
-	delay := synchronizedOutputWaitStep
-	if shared.RemoteLatencyProfileEnabled() && (delay <= 0 || delay > remoteSynchronizedOutputWaitStep) {
-		delay = remoteSynchronizedOutputWaitStep
-	}
-	return shared.DurationOverride("TERMX_SYNC_OUTPUT_WAIT_STEP", delay)
-}
-
-func effectiveSynchronizedOutputWaitBudget() time.Duration {
-	delay := synchronizedOutputWaitBudget
-	if shared.RemoteLatencyProfileEnabled() && (delay <= 0 || delay > remoteSynchronizedOutputWaitBudget) {
-		delay = remoteSynchronizedOutputWaitBudget
-	}
-	return shared.DurationOverride("TERMX_SYNC_OUTPUT_WAIT_BUDGET", delay)
 }
 
 func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFrame) {
@@ -305,8 +137,6 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 		return
 	}
 	switch frame.Type {
-	case protocol.TypeOutput:
-		r.handleOutputFrame(terminal, terminalID, frame)
 	case protocol.TypeScreenUpdate:
 		r.handleStructuredScreenUpdateFrame(terminal, terminalID, frame)
 	case protocol.TypeResize:
@@ -318,44 +148,6 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 	case protocol.TypeClosed:
 		r.handleClosedFrame(terminal, frame)
 	}
-}
-
-func (r *Runtime) handleOutputFrame(terminal *TerminalRuntime, terminalID string, frame protocol.StreamFrame) {
-	vt := r.ensureVTerm(terminal)
-	if vt == nil {
-		return
-	}
-	loadFinish := perftrace.Measure("runtime.stream.output.load_vterm")
-	n, err := vt.Write(frame.Payload)
-	loadFinish(len(frame.Payload))
-	if err != nil || n != len(frame.Payload) {
-		terminal.Recovery.SyncLost = true
-		if dropped := len(frame.Payload) - max(0, n); dropped > 0 {
-			terminal.Recovery.DroppedBytes += uint64(dropped)
-		}
-		resetSynchronizedOutputState(&terminal.Stream)
-		r.recoverSnapshot(terminalID)
-		return
-	}
-	syncActive := updateSynchronizedOutputState(&terminal.Stream, frame.Payload)
-	terminal.Recovery = RecoveryState{}
-	if terminal.PreferSnapshot {
-		// Once the terminal emits real output, keep the provisional snapshot lock
-		// only until the current synchronized-output group finishes, not across
-		// subsequent render cycles. Otherwise live surfaces can stay hidden long
-		// after a resize/bootstrap preview has been superseded by actual redraws.
-		terminal.PreferSnapshot = false
-	}
-	if syncActive {
-		return
-	}
-	terminal.BootstrapPending = false
-	r.bumpSurfaceVersion(terminal)
-	if terminal.PreferSnapshot || terminal.Snapshot == nil {
-		r.refreshSnapshot(terminalID)
-		return
-	}
-	r.invalidate()
 }
 
 func (r *Runtime) handleStructuredScreenUpdateFrame(terminal *TerminalRuntime, terminalID string, frame protocol.StreamFrame) {
@@ -387,7 +179,6 @@ func (r *Runtime) handleResizeFrame(terminal *TerminalRuntime, terminalID string
 	currentCols, currentRows := vt.Size()
 	if currentCols != int(cols) || currentRows != int(rows) {
 		vt.Resize(int(cols), int(rows))
-		resetSynchronizedOutputState(&terminal.Stream)
 		if terminal.PreferSnapshot {
 			r.bumpSurfaceVersion(terminal)
 			if terminal.Snapshot == nil {
@@ -424,14 +215,12 @@ func (r *Runtime) handleBootstrapDoneFrame(terminal *TerminalRuntime, terminalID
 func (r *Runtime) handleSyncLostFrame(terminal *TerminalRuntime, terminalID string, frame protocol.StreamFrame) {
 	if terminal.PreferSnapshot && terminal.Snapshot != nil {
 		terminal.BootstrapPending = false
-		resetSynchronizedOutputState(&terminal.Stream)
 		terminal.Recovery = RecoveryState{}
 		terminal.SnapshotVersion++
 		r.invalidate()
 		return
 	}
 	terminal.BootstrapPending = false
-	resetSynchronizedOutputState(&terminal.Stream)
 	terminal.Recovery.SyncLost = true
 	dropped, err := protocol.DecodeSyncLostPayload(frame.Payload)
 	if err == nil {
@@ -443,7 +232,6 @@ func (r *Runtime) handleSyncLostFrame(terminal *TerminalRuntime, terminalID stri
 func (r *Runtime) handleClosedFrame(terminal *TerminalRuntime, frame protocol.StreamFrame) {
 	terminal.Stream.Active = false
 	terminal.BootstrapPending = false
-	resetSynchronizedOutputState(&terminal.Stream)
 	code, err := protocol.DecodeClosedPayload(frame.Payload)
 	if err == nil {
 		exitCode := int(code)
@@ -456,8 +244,6 @@ func (r *Runtime) handleClosedFrame(terminal *TerminalRuntime, frame protocol.St
 
 func streamFrameMetric(frameType uint8) string {
 	switch frameType {
-	case protocol.TypeOutput:
-		return "runtime.stream.output"
 	case protocol.TypeResize:
 		return "runtime.stream.resize"
 	case protocol.TypeScreenUpdate:
@@ -471,54 +257,4 @@ func streamFrameMetric(frameType uint8) string {
 	default:
 		return "runtime.stream.unknown"
 	}
-}
-
-func updateSynchronizedOutputState(state *StreamState, payload []byte) bool {
-	if state == nil {
-		return false
-	}
-	if len(payload) == 0 {
-		return state.synchronizedOutputActive
-	}
-
-	tail := state.synchronizedOutputTail
-	combined := tail + string(payload)
-	tailLen := len(tail)
-
-	for i := 0; i < len(combined); {
-		switch {
-		case strings.HasPrefix(combined[i:], synchronizedOutputBegin):
-			if i+len(synchronizedOutputBegin) <= tailLen {
-				i++
-				continue
-			}
-			state.synchronizedOutputActive = true
-			i += len(synchronizedOutputBegin)
-		case strings.HasPrefix(combined[i:], synchronizedOutputEnd):
-			if i+len(synchronizedOutputEnd) <= tailLen {
-				i++
-				continue
-			}
-			state.synchronizedOutputActive = false
-			i += len(synchronizedOutputEnd)
-		default:
-			i++
-		}
-	}
-
-	maxTail := len(synchronizedOutputBegin) - 1
-	if len(combined) > maxTail {
-		state.synchronizedOutputTail = combined[len(combined)-maxTail:]
-	} else {
-		state.synchronizedOutputTail = combined
-	}
-	return state.synchronizedOutputActive
-}
-
-func resetSynchronizedOutputState(state *StreamState) {
-	if state == nil {
-		return
-	}
-	state.synchronizedOutputActive = false
-	state.synchronizedOutputTail = ""
 }

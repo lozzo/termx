@@ -167,7 +167,7 @@ func WithVTermFactory(factory VTermFactory) Option {
 }
 
 func (r *Runtime) defaultVTermFactory(channel uint16) VTermLike {
-	return localvterm.New(80, 24, 10000, func(data []byte) {
+	return localvterm.New(80, 24, 2000, func(data []byte) {
 		if r == nil || r.client == nil || channel == 0 || len(data) == 0 {
 			return
 		}

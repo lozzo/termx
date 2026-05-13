@@ -406,27 +406,6 @@ func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, up
 	screenRowCellsOwned := make(map[int]bool)
 	if len(update.Ops) > 0 {
 		applySnapshotScreenOps(snapshot, update, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned, &screenWrappedOwned, screenRowCellsOwned)
-	} else {
-		for _, span := range update.ChangedSpans {
-			if span.Row < 0 {
-				continue
-			}
-			ensureSnapshotScreenRowsCOW(snapshot, span.Row+1, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned, &screenWrappedOwned)
-			ensureSnapshotScreenRowCellsCOW(snapshot, span.Row, &screenCellsOwned, screenRowCellsOwned)
-			switch span.Op {
-			case protocol.ScreenSpanOpClearToEOL:
-				snapshot.Screen.Cells[span.Row] = clearProtocolCellRowFrom(snapshot.Screen.Cells[span.Row], span.ColStart)
-			case protocol.ScreenSpanOpReplaceRow:
-				snapshot.Screen.Cells[span.Row] = trimProtocolCellRow(cloneProtocolCellRow(span.Cells))
-			default:
-				snapshot.Screen.Cells[span.Row] = applyProtocolCellSpan(snapshot.Screen.Cells[span.Row], span.ColStart, span.Cells)
-			}
-			snapshot.ScreenTimestamps[span.Row] = span.Timestamp
-			snapshot.ScreenRowKinds[span.Row] = span.RowKind
-			if span.WrappedSet {
-				snapshot.ScreenWrapped[span.Row] = span.Wrapped
-			}
-		}
 	}
 	if appendCount := len(update.ScrollbackAppend); appendCount > 0 {
 		baseRows := len(snapshot.Scrollback)
@@ -994,16 +973,6 @@ func cloneProtocolRowsWindow(rows [][]protocol.Cell, start int) [][]protocol.Cel
 
 func maxChangedScreenRow(update protocol.ScreenUpdate) int {
 	maxRow := -1
-	for _, span := range update.ChangedSpans {
-		if span.Row > maxRow {
-			maxRow = span.Row
-		}
-	}
-	for _, row := range update.ChangedRows {
-		if row.Row > maxRow {
-			maxRow = row.Row
-		}
-	}
 	for _, op := range update.Ops {
 		switch op.Code {
 		case protocol.ScreenOpWriteSpan, protocol.ScreenOpClearToEOL:

@@ -604,6 +604,169 @@ describe('FileManager', () => {
     expect(session.openedTransfers).toEqual([])
   })
 
+  it('streams STL files over the preview transfer channel and opens the 3D preview surface', async () => {
+    const stl = new TextEncoder().encode([
+      'solid part',
+      'facet normal 0 0 1',
+      'outer loop',
+      'vertex 0 0 0',
+      'vertex 1 0 0',
+      'vertex 0 1 0',
+      'endloop',
+      'endfacet',
+      'endsolid part',
+    ].join('\n'))
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/',
+        parent: '',
+        total: 1,
+        entries: [{ name: 'part.stl', type: 'file', size: stl.byteLength }],
+      },
+      '/files/preview': {
+        path: '/part.stl',
+        name: 'part.stl',
+        size: stl.byteLength,
+        mime_type: 'model/stl',
+        category: 'model',
+        is_text: false,
+      },
+      '/files/download/init': {
+        transfer_id: 'preview-stl-1',
+        name: 'part.stl',
+        size: stl.byteLength,
+        chunk_size: 65536,
+      },
+    }, {}, {
+      terminalId: 'terminal-1',
+      transfers: {
+        'preview-stl-1': [
+          fileDataFrame(0, stl),
+          fileCompleteFrame(1),
+        ],
+      },
+    })
+
+    render(fileManager(session))
+
+    await waitFor(() => expect(screen.getByText('part.stl')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /preview part.stl/i }))
+
+    expect(await screen.findByText('STL Model')).toBeTruthy()
+    expect(await screen.findByTestId('termx-stl-preview')).toBeTruthy()
+    expect(session.requests).toContainEqual({
+      method: 'POST',
+      path: '/files/download/init',
+      params: expect.objectContaining({
+        path: '/part.stl',
+        transfer_id: expect.stringMatching(/^preview-/),
+      }),
+    })
+    expect(session.openedTransfers).toEqual(['preview-stl-1'])
+  })
+
+  it('previews STL files even when older agents report them as unsupported', async () => {
+    const stl = new TextEncoder().encode([
+      'solid legacy',
+      'facet normal 0 0 1',
+      'outer loop',
+      'vertex 0 0 0',
+      'vertex 1 0 0',
+      'vertex 0 1 0',
+      'endloop',
+      'endfacet',
+      'endsolid legacy',
+    ].join('\n'))
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/',
+        parent: '',
+        total: 1,
+        entries: [{ name: 'legacy.stl', type: 'file', size: stl.byteLength }],
+      },
+      '/files/preview': {
+        path: '/legacy.stl',
+        name: 'legacy.stl',
+        size: stl.byteLength,
+        mime_type: 'application/octet-stream',
+        category: 'unsupported',
+        is_text: false,
+      },
+      '/files/download/init': {
+        transfer_id: 'preview-stl-legacy',
+        name: 'legacy.stl',
+        size: stl.byteLength,
+        chunk_size: 65536,
+      },
+    }, {}, {
+      terminalId: 'terminal-1',
+      transfers: {
+        'preview-stl-legacy': [
+          fileDataFrame(0, stl),
+          fileCompleteFrame(1),
+        ],
+      },
+    })
+
+    render(fileManager(session))
+
+    await waitFor(() => expect(screen.getByText('legacy.stl')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /preview legacy.stl/i }))
+
+    expect(await screen.findByText('STL Model')).toBeTruthy()
+    expect(screen.queryByText('No Preview')).toBeNull()
+    expect(session.openedTransfers).toEqual(['preview-stl-legacy'])
+  })
+
+  it('previews OBJ files even when older agents report them as unsupported', async () => {
+    const obj = new TextEncoder().encode([
+      'o part',
+      'v 0 0 0',
+      'v 1 0 0',
+      'v 0 1 0',
+      'f 1 2 3',
+    ].join('\n'))
+    const session = createMockFileSession({
+      '/files/list': {
+        path: '/',
+        parent: '',
+        total: 1,
+        entries: [{ name: 'legacy.obj', type: 'file', size: obj.byteLength }],
+      },
+      '/files/preview': {
+        path: '/legacy.obj',
+        name: 'legacy.obj',
+        size: obj.byteLength,
+        mime_type: 'application/octet-stream',
+        category: 'unsupported',
+        is_text: false,
+      },
+      '/files/download/init': {
+        transfer_id: 'preview-obj-legacy',
+        name: 'legacy.obj',
+        size: obj.byteLength,
+        chunk_size: 65536,
+      },
+    }, {}, {
+      terminalId: 'terminal-1',
+      transfers: {
+        'preview-obj-legacy': [
+          fileDataFrame(0, obj),
+          fileCompleteFrame(1),
+        ],
+      },
+    })
+
+    render(fileManager(session))
+
+    await waitFor(() => expect(screen.getByText('legacy.obj')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /preview legacy.obj/i }))
+
+    expect(await screen.findByText('OBJ Model')).toBeTruthy()
+    expect(screen.queryByText('No Preview')).toBeNull()
+    expect(session.openedTransfers).toEqual(['preview-obj-legacy'])
+  })
+
   it('renders image previews from data URL preview content', async () => {
     const dataUrl = 'data:image/png;base64,iVBORw0KGgo='
     const session = createMockFileSession({
@@ -649,4 +812,21 @@ function fileManager(session: FileManagerProps['session']) {
 function fileNames(): string[] {
   return screen.getAllByRole('button', { name: /^(open|preview) /i })
     .map((button) => button.getAttribute('aria-label')?.replace(/^(Open|Preview) /, '') ?? '')
+}
+
+function fileDataFrame(chunk: number, payload: Uint8Array): Uint8Array {
+  const frame = new Uint8Array(5 + payload.byteLength)
+  frame[0] = 0x01
+  const view = new DataView(frame.buffer)
+  view.setUint32(1, chunk)
+  frame.set(payload, 5)
+  return frame
+}
+
+function fileCompleteFrame(chunk: number): Uint8Array {
+  const frame = new Uint8Array(5)
+  frame[0] = 0x02
+  const view = new DataView(frame.buffer)
+  view.setUint32(1, chunk)
+  return frame
 }

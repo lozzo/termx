@@ -9,7 +9,7 @@ import (
 func TestFrameRoundTrip(t *testing.T) {
 	var buf bytes.Buffer
 	enc := NewEncoder(&buf)
-	if err := enc.WriteFrame(3, TypeOutput, []byte("hello")); err != nil {
+	if err := enc.WriteFrame(3, TypeScreenUpdate, []byte("hello")); err != nil {
 		t.Fatalf("write frame failed: %v", err)
 	}
 
@@ -18,7 +18,7 @@ func TestFrameRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read frame failed: %v", err)
 	}
-	if ch != 3 || typ != TypeOutput || string(payload) != "hello" {
+	if ch != 3 || typ != TypeScreenUpdate || string(payload) != "hello" {
 		t.Fatalf("unexpected frame: %d %d %q", ch, typ, string(payload))
 	}
 }
@@ -26,7 +26,7 @@ func TestFrameRoundTrip(t *testing.T) {
 func TestFrameRejectsOversizePayload(t *testing.T) {
 	var buf bytes.Buffer
 	enc := NewEncoder(&buf)
-	err := enc.WriteFrame(1, TypeOutput, make([]byte, MaxFrameSize+1))
+	err := enc.WriteFrame(1, TypeScreenUpdate, make([]byte, MaxFrameSize+1))
 	if !errors.Is(err, ErrFrameTooLarge) {
 		t.Fatalf("expected ErrFrameTooLarge, got %v", err)
 	}

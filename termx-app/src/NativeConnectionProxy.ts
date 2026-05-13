@@ -451,11 +451,14 @@ class NativeBridgeClient {
   }
 
   private reopenActiveLabels(): void {
+    const labels = Array.from(this.activeLabels)
+    const reopenedLabels = labels.filter((label) => !label.startsWith('terminal:'))
     nativeBridgeLog('reopen_active_labels', {
       activeLabels: this.activeLabels.size,
-      labels: Array.from(this.activeLabels).slice(0, 10),
+      labels: reopenedLabels.slice(0, 10),
+      skippedTerminalLabels: labels.length - reopenedLabels.length,
     })
-    for (const label of this.activeLabels) {
+    for (const label of reopenedLabels) {
       void this.openChannel(label).catch(() => {})
     }
     this.sendControl(FRAME_SYNC_REQUEST, new Uint8Array(0))
@@ -735,6 +738,7 @@ export class NativeRtcSession implements RtcSession {
   private connectionStateHandlers = new Set<(snapshot: RtcConnectionStateSnapshot) => void>()
   private transferSyncHandlers = new Set<(data: TransferSyncPayload) => void>()
   private syncResponseHandlers = new Set<(data: SyncResponsePayload) => void>()
+  private bridgeDisconnected = false
 
   private closed = false
   private disconnectHandlers = new Set<() => void>()
@@ -792,11 +796,13 @@ export class NativeRtcSession implements RtcSession {
 
   private handleBridgeDisconnected(): void {
     if (this.closed) return
+    this.bridgeDisconnected = true
     this.eventsChannelPromise = null
     this.resetEventsChannel()
     this.apiChannel?.forceClose(new Error('native bridge disconnected'))
     this.apiChannel = null
     this.apiChannelPromise = null
+    this.emitSyntheticConnectionState('reconnecting', 'Reconnecting native bridge...')
   }
 
   private handleBridgeReady(): void {
@@ -805,6 +811,11 @@ export class NativeRtcSession implements RtcSession {
     if (this.eventHandlers.size > 0) {
       this.eventsSubscribed = false
       this.ensureEventsChannel()
+    }
+    if (this.bridgeDisconnected) {
+      this.bridgeDisconnected = false
+      this.emitSyntheticConnectionState('connected', 'Connected')
+      this.resolveConnectedWaiters()
     }
   }
 
@@ -834,6 +845,28 @@ export class NativeRtcSession implements RtcSession {
   private sendFrame(frameType: number, channelId: number, payload: Uint8Array): boolean {
     if (channelId === CHAN_CONTROL) return this.bridge.sendControl(frameType, payload)
     return false
+  }
+
+  private emitSyntheticConnectionState(
+    phase: RtcConnectionStateSnapshot['phase'],
+    statusText: string,
+  ): void {
+    const snapshot: RtcConnectionStateSnapshot = {
+      machineId: this.machineId,
+      phase,
+      path: this.path,
+      statusText,
+      relayInUse: this.relayInUse,
+    }
+    nativeStateCache.set(this.machineId, snapshot)
+    nativeBridgeLog('session_connection_state', {
+      machineId: snapshot.machineId,
+      phase: snapshot.phase,
+      path: snapshot.path,
+      relayInUse: snapshot.relayInUse,
+      statusText: snapshot.statusText,
+    })
+    for (const handler of this.connectionStateHandlers) handler(snapshot)
   }
 
   private async openChannel(label: string): Promise<void> {

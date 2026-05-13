@@ -301,20 +301,17 @@ func TestVTermWriteWithDamagePreservesWideRuneContinuations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write wide rune: %v", err)
 	}
-	if len(damage.ChangedScreenRows) != 1 {
-		t.Fatalf("expected one changed row, got %#v", damage.ChangedScreenRows)
+	op := firstWriteSpanOp(t, damage)
+	if op.Row != 0 || op.Col != 0 {
+		t.Fatalf("expected first-row write op, got %#v", op)
 	}
-	row := damage.ChangedScreenRows[0]
-	if row.Row != 0 {
-		t.Fatalf("expected first row damage, got row=%d", row.Row)
-	}
-	if got := row.Cells[0]; got.Content != "你" || got.Width != 2 {
+	if got := op.Cells[0]; got.Content != "你" || got.Width != 2 {
 		t.Fatalf("expected wide rune anchor cell, got %#v", got)
 	}
-	if got := row.Cells[1]; got.Content != "" || got.Width != 0 {
+	if got := op.Cells[1]; got.Content != "" || got.Width != 0 {
 		t.Fatalf("expected wide rune continuation placeholder, got %#v", got)
 	}
-	if got := row.Cells[2]; got.Content != "a" || got.Width != 1 {
+	if got := op.Cells[2]; got.Content != "a" || got.Width != 1 {
 		t.Fatalf("expected trailing ascii cell, got %#v", got)
 	}
 }
@@ -326,11 +323,8 @@ func TestVTermWriteWithDamageNormalizesCombiningRuneClusters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write combining rune: %v", err)
 	}
-	if len(damage.ChangedScreenRows) != 1 {
-		t.Fatalf("expected one changed row, got %#v", damage.ChangedScreenRows)
-	}
-	row := damage.ChangedScreenRows[0]
-	if got := row.Cells[0]; got.Content != "é" || got.Width != 1 {
+	op := firstWriteSpanOp(t, damage)
+	if got := op.Cells[0]; got.Content != "é" || got.Width != 1 {
 		t.Fatalf("expected normalized grapheme cell, got %#v", got)
 	}
 	screen := vt.ScreenContent()
@@ -346,15 +340,12 @@ func TestVTermWriteWithDamageProducesSingleHighColumnSpan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write high-column edit: %v", err)
 	}
-	if len(damage.ChangedScreenSpans) != 1 {
-		t.Fatalf("expected one changed span, got %#v", damage.ChangedScreenSpans)
+	op := firstWriteSpanOp(t, damage)
+	if op.Row != 0 || op.Col != 137 {
+		t.Fatalf("unexpected high-column op metadata: %#v", op)
 	}
-	span := damage.ChangedScreenSpans[0]
-	if span.Row != 0 || span.ColStart != 137 || span.Op != protocol.ScreenSpanOpWrite {
-		t.Fatalf("unexpected high-column span metadata: %#v", span)
-	}
-	if len(span.Cells) != 1 || span.Cells[0].Content != "Z" {
-		t.Fatalf("expected single-cell sparse span, got %#v", span.Cells)
+	if len(op.Cells) != 1 || op.Cells[0].Content != "Z" {
+		t.Fatalf("expected single-cell sparse op, got %#v", op.Cells)
 	}
 }
 
@@ -378,12 +369,9 @@ func TestVTermWriteWithDamageUsesClearToEOLForTailClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clear to eol: %v", err)
 	}
-	if len(damage.ChangedScreenSpans) != 1 {
-		t.Fatalf("expected one clear-to-eol span, got %#v", damage.ChangedScreenSpans)
-	}
-	span := damage.ChangedScreenSpans[0]
-	if span.Op != protocol.ScreenSpanOpClearToEOL || span.ColStart != 6 {
-		t.Fatalf("unexpected clear-to-eol span: %#v", span)
+	op := firstOpWithCode(t, damage, protocol.ScreenOpClearToEOL)
+	if op.Row != 0 || op.Col != 6 {
+		t.Fatalf("unexpected clear-to-eol op: %#v", op)
 	}
 }
 
@@ -405,14 +393,11 @@ func TestVTermWriteWithDamageCapturesMidRowStyleOnlySpan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("style-only write: %v", err)
 	}
-	if len(damage.ChangedScreenSpans) != 1 {
-		t.Fatalf("expected one style-only span, got %#v", damage.ChangedScreenSpans)
+	op := firstWriteSpanOp(t, damage)
+	if op.Col != 5 || len(op.Cells) != 1 {
+		t.Fatalf("unexpected style-only op window: %#v", op)
 	}
-	span := damage.ChangedScreenSpans[0]
-	if span.ColStart != 5 || len(span.Cells) != 1 {
-		t.Fatalf("unexpected style-only span window: %#v", span)
-	}
-	if got := span.Cells[0]; got.Content != "x" || !got.Style.Bold {
+	if got := op.Cells[0]; got.Content != "x" || !got.Style.Bold {
 		t.Fatalf("expected bold style-only cell, got %#v", got)
 	}
 }
@@ -431,17 +416,14 @@ func TestVTermWriteWithDamageKeepsWideCharSpanBoundaryStable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wide-boundary write: %v", err)
 	}
-	if len(damage.ChangedScreenSpans) != 1 {
-		t.Fatalf("expected one wide-boundary span, got %#v", damage.ChangedScreenSpans)
+	op := firstWriteSpanOp(t, damage)
+	if op.Col != 0 || len(op.Cells) != 2 {
+		t.Fatalf("expected op expanded to include wide continuation, got %#v", op)
 	}
-	span := damage.ChangedScreenSpans[0]
-	if span.ColStart != 0 || len(span.Cells) != 2 {
-		t.Fatalf("expected span expanded to include wide continuation, got %#v", span)
-	}
-	if got := span.Cells[0]; got.Content != "界" || got.Width != 2 {
+	if got := op.Cells[0]; got.Content != "界" || got.Width != 2 {
 		t.Fatalf("expected wide anchor cell, got %#v", got)
 	}
-	if got := span.Cells[1]; got.Content != "" || got.Width != 0 {
+	if got := op.Cells[1]; got.Content != "" || got.Width != 0 {
 		t.Fatalf("expected continuation placeholder preserved, got %#v", got)
 	}
 }
@@ -580,11 +562,8 @@ func TestVTermWriteAltScreenScrollDoesNotInvalidateWholeScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("alt-screen scroll write: %v", err)
 	}
-	if len(damage.ChangedScreenRows) >= 4 {
-		t.Fatalf("expected alt-screen scroll to avoid full-screen invalidation, got %#v", damage.ChangedScreenRows)
-	}
-	if len(damage.ChangedScreenRows) == 0 {
-		t.Fatal("expected at least the edge row to be redrawn after alt-screen scroll")
+	if damage.RequiresFullReplace {
+		t.Fatalf("expected direct scroll ops instead of full replace, got %#v", damage)
 	}
 	cols, rows := vt.Size()
 	foundScroll := false
@@ -638,8 +617,8 @@ func TestVTermWriteAltScreenSwitchKeepsDamageCorrect(t *testing.T) {
 	if !vt.IsAltScreen() {
 		t.Fatal("expected alt-screen to be enabled")
 	}
-	if len(damage.ChangedScreenRows) != 3 {
-		t.Fatalf("expected full-screen damage on alt-screen switch, got %#v", damage.ChangedScreenRows)
+	if !damage.RequiresFullReplace {
+		t.Fatalf("expected full replace damage on alt-screen switch, got %#v", damage)
 	}
 	screen := vt.ScreenContent()
 	for row := range screen.Cells {
@@ -655,8 +634,8 @@ func TestVTermWriteAltScreenSwitchKeepsDamageCorrect(t *testing.T) {
 	if vt.IsAltScreen() {
 		t.Fatal("expected alt-screen to be disabled")
 	}
-	if len(damage.ChangedScreenRows) != 3 {
-		t.Fatalf("expected full-screen damage when restoring main screen, got %#v", damage.ChangedScreenRows)
+	if !damage.RequiresFullReplace {
+		t.Fatalf("expected full replace damage when restoring main screen, got %#v", damage)
 	}
 	screen = vt.ScreenContent()
 	if got := strings.TrimSpace(rowToString(screen.Cells[0])) + strings.TrimSpace(rowToString(screen.Cells[1])) + strings.TrimSpace(rowToString(screen.Cells[2])); got != "abc" {
@@ -752,7 +731,7 @@ func TestLoadSnapshotRestoresAlternateScrollMode(t *testing.T) {
 	}
 }
 
-func TestApplyScreenUpdateUpdatesChangedRowsInPlace(t *testing.T) {
+func TestApplyScreenUpdateAppliesWriteSpanInPlace(t *testing.T) {
 	vt := New(6, 3, 100, nil)
 	now := time.Date(2026, 4, 18, 8, 0, 0, 0, time.UTC)
 	vt.LoadSnapshotWithMetadata(nil, nil, nil, ScreenData{
@@ -776,8 +755,10 @@ func TestApplyScreenUpdateUpdatesChangedRowsInPlace(t *testing.T) {
 	oldEmu := vt.emu
 	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
 		Size: protocol.Size{Cols: 4, Rows: 2},
-		ChangedRows: []protocol.ScreenRowUpdate{{
-			Row: 1,
+		Ops: []protocol.ScreenOp{{
+			Code: protocol.ScreenOpWriteSpan,
+			Row:  1,
+			Col:  0,
 			Cells: []protocol.Cell{
 				{Content: "n", Width: 1},
 				{Content: "e", Width: 1},
@@ -811,7 +792,7 @@ func TestApplyScreenUpdateUpdatesChangedRowsInPlace(t *testing.T) {
 	}
 }
 
-func TestApplyScreenUpdateAppliesClearToEOLSpan(t *testing.T) {
+func TestApplyScreenUpdateAppliesClearToEOLOp(t *testing.T) {
 	vt := New(8, 1, 100, nil)
 	vt.LoadSnapshot(ScreenData{
 		Cells: [][]Cell{{
@@ -829,10 +810,10 @@ func TestApplyScreenUpdateAppliesClearToEOLSpan(t *testing.T) {
 
 	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
 		Size: protocol.Size{Cols: 8, Rows: 1},
-		ChangedSpans: []protocol.ScreenSpanUpdate{{
-			Row:      0,
-			ColStart: 6,
-			Op:       protocol.ScreenSpanOpClearToEOL,
+		Ops: []protocol.ScreenOp{{
+			Code: protocol.ScreenOpClearToEOL,
+			Row:  0,
+			Col:  6,
 		}},
 		Cursor: protocol.CursorState{Row: 0, Col: 6, Visible: true},
 		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
@@ -846,7 +827,7 @@ func TestApplyScreenUpdateAppliesClearToEOLSpan(t *testing.T) {
 	}
 }
 
-func TestApplyScreenUpdateAppliesStyleOnlySpan(t *testing.T) {
+func TestApplyScreenUpdateAppliesStyleOnlyWriteOp(t *testing.T) {
 	vt := New(8, 1, 100, nil)
 	vt.LoadSnapshot(ScreenData{
 		Cells: [][]Cell{{
@@ -862,15 +843,15 @@ func TestApplyScreenUpdateAppliesStyleOnlySpan(t *testing.T) {
 
 	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
 		Size: protocol.Size{Cols: 8, Rows: 1},
-		ChangedSpans: []protocol.ScreenSpanUpdate{{
-			Row:      0,
-			ColStart: 5,
+		Ops: []protocol.ScreenOp{{
+			Code: protocol.ScreenOpWriteSpan,
+			Row:  0,
+			Col:  5,
 			Cells: []protocol.Cell{{
 				Content: "x",
 				Width:   1,
 				Style:   protocol.CellStyle{Bold: true},
 			}},
-			Op:        protocol.ScreenSpanOpWrite,
 			Timestamp: time.Date(2026, 4, 18, 8, 0, 2, 0, time.UTC),
 			RowKind:   "style-only",
 		}},
@@ -889,7 +870,7 @@ func TestApplyScreenUpdateAppliesStyleOnlySpan(t *testing.T) {
 	}
 }
 
-func TestApplyScreenUpdateAppliesWideCharBoundarySpan(t *testing.T) {
+func TestApplyScreenUpdateAppliesWideCharBoundaryWriteOp(t *testing.T) {
 	vt := New(8, 1, 100, nil)
 	vt.LoadSnapshot(ScreenData{
 		Cells: [][]Cell{{
@@ -902,14 +883,14 @@ func TestApplyScreenUpdateAppliesWideCharBoundarySpan(t *testing.T) {
 
 	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
 		Size: protocol.Size{Cols: 8, Rows: 1},
-		ChangedSpans: []protocol.ScreenSpanUpdate{{
-			Row:      0,
-			ColStart: 0,
+		Ops: []protocol.ScreenOp{{
+			Code: protocol.ScreenOpWriteSpan,
+			Row:  0,
+			Col:  0,
 			Cells: []protocol.Cell{
 				{Content: "界", Width: 2},
 				{Content: "", Width: 0},
 			},
-			Op: protocol.ScreenSpanOpWrite,
 		}},
 		Cursor: protocol.CursorState{Row: 0, Col: 3, Visible: true},
 		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
@@ -1010,7 +991,7 @@ func TestApplyScreenUpdateAppliesOpcodeCopyRect(t *testing.T) {
 	}
 }
 
-func TestApplyScreenUpdateAppliesResizeThenSparseSpan(t *testing.T) {
+func TestApplyScreenUpdateAppliesResizeThenSparseWriteOp(t *testing.T) {
 	vt := New(4, 2, 100, nil)
 	vt.LoadSnapshot(ScreenData{
 		Cells: [][]Cell{
@@ -1026,14 +1007,14 @@ func TestApplyScreenUpdateAppliesResizeThenSparseSpan(t *testing.T) {
 
 	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
 		Size: protocol.Size{Cols: 8, Rows: 3},
-		ChangedSpans: []protocol.ScreenSpanUpdate{{
-			Row:      2,
-			ColStart: 5,
+		Ops: []protocol.ScreenOp{{
+			Code: protocol.ScreenOpWriteSpan,
+			Row:  2,
+			Col:  5,
 			Cells: []protocol.Cell{
 				{Content: "o", Width: 1},
 				{Content: "k", Width: 1},
 			},
-			Op: protocol.ScreenSpanOpWrite,
 		}},
 		Cursor: protocol.CursorState{Row: 2, Col: 7, Visible: true},
 		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
@@ -1096,8 +1077,10 @@ func TestApplyScreenUpdateAllowsSafeResizeWithoutRecreatingEmulator(t *testing.T
 	oldEmu := vt.emu
 	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
 		Size: protocol.Size{Cols: 6, Rows: 3},
-		ChangedRows: []protocol.ScreenRowUpdate{{
-			Row: 2,
+		Ops: []protocol.ScreenOp{{
+			Code: protocol.ScreenOpWriteSpan,
+			Row:  2,
+			Col:  0,
 			Cells: []protocol.Cell{
 				{Content: "x", Width: 1},
 				{Content: "y", Width: 1},
@@ -1170,4 +1153,62 @@ func TestApplyScreenUpdateUpdatesScrollbackWithoutRecreatingEmulator(t *testing.
 	if got := vt.ScrollbackRowKindAt(2); got != "d" {
 		t.Fatalf("expected appended row kind, got %q", got)
 	}
+}
+
+func TestApplyScreenUpdateScrollbackAppendKeepsMetadataTailWhenCapped(t *testing.T) {
+	vt := New(4, 2, 3, nil)
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	vt.LoadSnapshotWithMetadata([][]Cell{
+		{{Content: "a", Width: 1}},
+		{{Content: "b", Width: 1}},
+		{{Content: "c", Width: 1}},
+	}, []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second)}, []string{"a", "b", "c"}, ScreenData{
+		Cells: [][]Cell{{{Content: "x", Width: 1}}},
+	}, []time.Time{now}, []string{"screen"}, CursorState{Row: 0, Col: 1, Visible: true}, TerminalModes{AutoWrap: true})
+
+	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 1, Rows: 1},
+		ScrollbackAppend: []protocol.ScrollbackRowAppend{{
+			Cells:     []protocol.Cell{{Content: "d", Width: 1}},
+			Timestamp: now.Add(3 * time.Second),
+			RowKind:   "d",
+		}},
+		Cursor: protocol.CursorState{Row: 0, Col: 1, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	}) {
+		t.Fatal("expected capped scrollback append to apply incrementally")
+	}
+
+	scrollback := vt.ScrollbackContent()
+	if len(scrollback) != 3 {
+		t.Fatalf("expected capped scrollback length 3, got %d", len(scrollback))
+	}
+	if got := scrollback[0][0].Content + scrollback[1][0].Content + scrollback[2][0].Content; got != "bcd" {
+		t.Fatalf("expected capped scrollback to keep bcd, got %q", got)
+	}
+	if got := vt.ScrollbackRowTimestampAt(0); !got.Equal(now.Add(time.Second)) {
+		t.Fatalf("expected metadata to drop capped prefix, got %v", got)
+	}
+	if got := vt.ScrollbackRowKindAt(0); got != "b" {
+		t.Fatalf("expected metadata row 0 kind b after cap, got %q", got)
+	}
+	if got := vt.ScrollbackRowKindAt(2); got != "d" {
+		t.Fatalf("expected appended metadata kind d, got %q", got)
+	}
+}
+
+func firstWriteSpanOp(t *testing.T, damage WriteDamage) DamageOp {
+	t.Helper()
+	return firstOpWithCode(t, damage, protocol.ScreenOpWriteSpan)
+}
+
+func firstOpWithCode(t *testing.T, damage WriteDamage, code protocol.ScreenOpCode) DamageOp {
+	t.Helper()
+	for _, op := range damage.Ops {
+		if op.Code == code {
+			return op
+		}
+	}
+	t.Fatalf("expected op %v in damage, got %#v", code, damage)
+	return DamageOp{}
 }

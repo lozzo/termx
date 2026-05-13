@@ -122,7 +122,7 @@ describe('APP connection e2e harness', () => {
 
     await waitFor(() => expect(managedSession.openedLabels).toContain('terminal:terminal-1'))
     await waitFor(() => expect(managedSession.subscribedEvents).toBe(1))
-    managedSession.emitTerminalOutput('terminal-1', new TextEncoder().encode('hello from managed'))
+    managedSession.emitTerminalScreenUpdate('terminal-1', 'hello from managed')
     managedSession.emitEvent({ type: 'heartbeat', payload: { ok: true } })
     await waitFor(() => expect(screen.getByTestId('runtime-terminal').textContent).toContain('hello from managed'))
     await waitFor(() => expect(screen.getByTestId('runtime-files').textContent).toContain('remote.log'))
