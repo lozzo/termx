@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
@@ -112,6 +113,51 @@ func seedCopyModeSnapshotForTerminal(t *testing.T, m *Model, terminalID string, 
 		}
 		client.snapshotByTerminal[terminalID] = snapshot
 	}
+}
+
+func snapshotWindow(snapshot *protocol.Snapshot, offset int, limit int) *protocol.Snapshot {
+	if snapshot == nil {
+		return nil
+	}
+	cloned := cloneSnapshot(snapshot)
+	if cloned == nil || limit <= 0 {
+		return cloned
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	total := len(snapshot.Scrollback)
+	if offset > total {
+		offset = total
+	}
+	end := total - offset
+	if end < 0 {
+		end = 0
+	}
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+	cloned.Scrollback = cloneProtocolRows(snapshot.Scrollback[start:end])
+	if len(snapshot.ScrollbackTimestamps) >= end {
+		cloned.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps[start:end]...)
+	} else {
+		cloned.ScrollbackTimestamps = nil
+	}
+	if len(snapshot.ScrollbackRowKinds) >= end {
+		cloned.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds[start:end]...)
+	} else {
+		cloned.ScrollbackRowKinds = nil
+	}
+	if len(snapshot.ScrollbackWrapped) >= end {
+		cloned.ScrollbackWrapped = append([]bool(nil), snapshot.ScrollbackWrapped[start:end]...)
+	} else {
+		cloned.ScrollbackWrapped = nil
+	}
+	cloned.ScrollbackOffset = offset
+	cloned.ScrollbackTotal = total
+	cloned.ScrollbackHasMore = start > 0
+	return cloned
 }
 
 func setupSplitCopyModeModel(t *testing.T) *Model {
@@ -456,6 +502,47 @@ func TestCopyModeTopLoadsOlderScrollbackIntoFrozenBuffer(t *testing.T) {
 	}
 }
 
+func TestCopyModeLoadsOlderScrollbackByOffsetPage(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	latest := make([]string, 500)
+	allRows := make([]string, 1000)
+	for i := range allRows {
+		allRows[i] = "hist"
+		if i < 500 {
+			allRows[i] = "old"
+		}
+	}
+	for i := range latest {
+		latest[i] = allRows[i+500]
+	}
+	seedCopyModeSnapshot(t, model, latest, []string{"live0", "live1", "live2", "live3"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	client := model.runtime.Client().(*recordingBridgeClient)
+	beforeCalls := len(client.snapshotRequests)
+
+	serverSnapshot := copyModeTestSnapshot(allRows, []string{"next0", "next1", "next2", "next3"})
+	client.snapshotByTerminal["term-1"] = serverSnapshot
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+
+	if got := len(client.snapshotRequests); got != beforeCalls+1 {
+		t.Fatalf("expected one paged snapshot request, before=%d after=%d calls=%#v", beforeCalls, got, client.snapshotRequests)
+	}
+	request := client.snapshotRequests[len(client.snapshotRequests)-1]
+	if request.terminalID != "term-1" || request.offset != 500 || request.limit != 500 {
+		t.Fatalf("expected offset page request for older copy-mode history, got %#v", request)
+	}
+	if got, want := len(model.copyMode.Snapshot.Scrollback), 1000; got != want {
+		t.Fatalf("expected paged history to be prepended, got %d rows want %d", got, want)
+	}
+	if got := rowTextFromProtocolCells(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old") {
+		t.Fatalf("expected older page at top of frozen scrollback, got %q", got)
+	}
+	if got := rowTextFromProtocolCells(model.runtime.Registry().Get("term-1").Snapshot.Scrollback[0]); !strings.Contains(got, "hist") {
+		t.Fatalf("expected live runtime snapshot to stay on latest page, got %q", got)
+	}
+}
+
 func TestCopyModeTopDoesNotReloadWhenScrollbackExhausted(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})
@@ -467,6 +554,32 @@ func TestCopyModeTopDoesNotReloadWhenScrollbackExhausted(t *testing.T) {
 	client := model.runtime.Client().(*recordingBridgeClient)
 	if len(client.snapshotCalls) != 0 {
 		t.Fatalf("expected exhausted copy-mode terminal not to request history, got %#v", client.snapshotCalls)
+	}
+}
+
+func TestCopyModeExitAfterHistoryLoadForwardsInput(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	seedCopyModeSnapshot(t, model, []string{"old0", "old1", "old2", "old3"}, []string{"live0", "live1", "live2", "live3"})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCancelMode})
+
+	client := model.runtime.Client().(*recordingBridgeClient)
+	dispatchKey(t, model, runeKeyMsg('x'))
+
+	if got := model.mode().Kind; got != input.ModeNormal {
+		t.Fatalf("expected copy-mode cancel to return to normal mode, got %q", got)
+	}
+	if got := model.copyMode.PaneID; got != "" {
+		t.Fatalf("expected copy mode to be cleared after cancel, got %#v", model.copyMode)
+	}
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected normal key input after leaving copy mode, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[0].data); got != "x" {
+		t.Fatalf("expected key input to be forwarded after leaving copy mode, got %q", got)
 	}
 }
 

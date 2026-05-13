@@ -13,4 +13,7 @@ type SnapshotLoadedMsg struct {
 	PaneID     string
 	TerminalID string
 	Snapshot   *protocol.Snapshot
+	Offset     int
+	Limit      int
+	Paged      bool
 }

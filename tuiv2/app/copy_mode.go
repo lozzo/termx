@@ -247,6 +247,10 @@ func (m *Model) ensureCopyMode() bool {
 }
 
 func (m *Model) adjustCopyModeAfterSnapshotLoaded(terminalID string, snapshot *protocol.Snapshot) {
+	m.adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID, snapshot, 0)
+}
+
+func (m *Model) adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID string, snapshot *protocol.Snapshot, offset int) {
 	if m == nil || terminalID == "" || m.copyMode.PaneID == "" || m.workbench == nil {
 		return
 	}
@@ -255,7 +259,7 @@ func (m *Model) adjustCopyModeAfterSnapshotLoaded(terminalID string, snapshot *p
 		return
 	}
 	if m.copyMode.Snapshot != nil {
-		m.extendFrozenCopyModeSnapshot(snapshot)
+		m.extendFrozenCopyModeSnapshot(snapshot, offset)
 		return
 	}
 	buffer, ok := m.activeCopyModeBuffer()
@@ -277,22 +281,38 @@ func (m *Model) adjustCopyModeAfterSnapshotLoaded(terminalID string, snapshot *p
 	m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
 }
 
-func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot) {
+func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset int) {
 	if m == nil || m.copyMode.Snapshot == nil || loaded == nil {
-		return
-	}
-	if len(loaded.Scrollback) <= len(m.copyMode.Snapshot.Scrollback) {
 		return
 	}
 	next := cloneSnapshot(m.copyMode.Snapshot)
 	if next == nil {
 		return
 	}
-	delta := len(loaded.Scrollback) - len(next.Scrollback)
-	next.Scrollback = cloneProtocolRows(loaded.Scrollback)
-	next.ScrollbackTimestamps = append([]time.Time(nil), loaded.ScrollbackTimestamps...)
-	next.ScrollbackRowKinds = append([]string(nil), loaded.ScrollbackRowKinds...)
-	next.ScrollbackWrapped = append([]bool(nil), loaded.ScrollbackWrapped...)
+	delta := 0
+	switch {
+	case offset > 0:
+		if offset != len(next.Scrollback) {
+			return
+		}
+		delta = len(loaded.Scrollback)
+		if delta == 0 {
+			return
+		}
+		next.Scrollback = append(cloneProtocolRows(loaded.Scrollback), next.Scrollback...)
+		next.ScrollbackTimestamps = append(append([]time.Time(nil), loaded.ScrollbackTimestamps...), next.ScrollbackTimestamps...)
+		next.ScrollbackRowKinds = append(append([]string(nil), loaded.ScrollbackRowKinds...), next.ScrollbackRowKinds...)
+		next.ScrollbackWrapped = append(append([]bool(nil), loaded.ScrollbackWrapped...), next.ScrollbackWrapped...)
+	default:
+		if len(loaded.Scrollback) <= len(next.Scrollback) {
+			return
+		}
+		delta = len(loaded.Scrollback) - len(next.Scrollback)
+		next.Scrollback = cloneProtocolRows(loaded.Scrollback)
+		next.ScrollbackTimestamps = append([]time.Time(nil), loaded.ScrollbackTimestamps...)
+		next.ScrollbackRowKinds = append([]string(nil), loaded.ScrollbackRowKinds...)
+		next.ScrollbackWrapped = append([]bool(nil), loaded.ScrollbackWrapped...)
+	}
 	next.ScrollbackOffset = loaded.ScrollbackOffset
 	next.ScrollbackTotal = loaded.ScrollbackTotal
 	next.ScrollbackHasMore = loaded.ScrollbackHasMore

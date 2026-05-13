@@ -1696,6 +1696,7 @@ type fakeBridgeClient struct {
 	attachResult        *protocol.AttachResult
 	listResult          *protocol.ListResult
 	snapshotByTerminal  map[string]*protocol.Snapshot
+	snapshotTerminalID  string
 	snapshotHook        func()
 	streams             map[uint16]chan protocol.StreamFrame
 	streamSubscriptions map[uint16]int
@@ -1801,13 +1802,13 @@ func (f *fakeBridgeClient) EnsureResize(_ context.Context, params protocol.Ensur
 	}, nil
 }
 
-func (f *fakeBridgeClient) Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error) {
+func (f *fakeBridgeClient) Snapshot(_ context.Context, terminalID string, _ int, _ int) (*protocol.Snapshot, error) {
 	f.mu.Lock()
 	var snapshot *protocol.Snapshot
+	f.snapshotTerminalID = terminalID
 	hook := f.snapshotHook
-	for _, candidate := range f.snapshotByTerminal {
+	if candidate := f.snapshotByTerminal[terminalID]; candidate != nil {
 		snapshot = cloneSnapshot(candidate)
-		break
 	}
 	f.mu.Unlock()
 	if hook != nil {

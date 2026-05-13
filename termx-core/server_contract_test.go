@@ -45,6 +45,54 @@ func TestServerCreateRejectsInvalidCommandAndDuplicateID(t *testing.T) {
 	}
 }
 
+type protocolMethodHandlerFunc func(context.Context, string, json.RawMessage) (json.RawMessage, int, bool, error)
+
+func (f protocolMethodHandlerFunc) HandleProtocolMethod(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, int, bool, error) {
+	return f(ctx, method, params)
+}
+
+func TestProtocolOversizedResponseReturnsErrorAndKeepsTransportOpen(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewServer(WithProtocolMethodHandler(protocolMethodHandlerFunc(func(_ context.Context, method string, _ json.RawMessage) (json.RawMessage, int, bool, error) {
+		switch method {
+		case "oversized":
+			return json.RawMessage(`"` + strings.Repeat("x", protocol.MaxFrameSize) + `"`), 0, true, nil
+		case "small":
+			return json.RawMessage(`{"ok":true}`), 0, true, nil
+		default:
+			return nil, 0, false, nil
+		}
+	})))
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	go func() {
+		_ = srv.handleTransport(ctx, serverTransport, "memory")
+	}()
+
+	client := protocol.NewClient(clientTransport)
+	defer client.Close()
+	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+	var oversized map[string]bool
+	if err := client.Call(ctx, "oversized", map[string]any{}, &oversized); err == nil || !strings.Contains(err.Error(), "protocol error 413") {
+		t.Fatalf("expected oversized response protocol error, got %v", err)
+	}
+	var small struct {
+		OK bool `json:"ok"`
+	}
+	if err := client.Call(ctx, "small", map[string]any{}, &small); err != nil {
+		t.Fatalf("expected transport to remain usable after oversized response, got %v", err)
+	}
+	if !small.OK {
+		t.Fatalf("unexpected small response: %#v", small)
+	}
+}
+
 func TestServerCreateRejectsDuplicateName(t *testing.T) {
 	srv := NewServer()
 	ctx := context.Background()

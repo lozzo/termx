@@ -1041,6 +1041,22 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 						"elapsed_ms", diagnosticDurationMillis(elapsed),
 					)
 				}
+				if len(respPayload) > protocol.MaxFrameSize {
+					if s.cfg.logger != nil {
+						s.cfg.logger.Warn(
+							"termx protocol response too large",
+							"remote", remote,
+							"id", req.ID,
+							"method", req.Method,
+							"response_bytes", len(respPayload),
+							"max_frame_bytes", protocol.MaxFrameSize,
+						)
+					}
+					if err := sendProtocolError(sendFrame, req.ID, 0, 413, "protocol response too large"); err != nil {
+						return err
+					}
+					continue
+				}
 				if err := sendFrame(0, protocol.TypeResponse, respPayload); err != nil {
 					return err
 				}

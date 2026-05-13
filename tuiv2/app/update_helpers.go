@@ -20,6 +20,7 @@ var sharedTerminalSnapshotResyncDelay = 120 * time.Millisecond
 
 const (
 	defaultTerminalSnapshotScrollbackLimit = 500
+	terminalScrollbackPageLimit            = 500
 	maxTerminalSnapshotScrollbackLimit     = 10000
 	terminalScrollbackPrefetchMargin       = 8
 )
@@ -268,28 +269,38 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 	if terminal.VTerm == nil && terminal.Snapshot != nil && terminal.Snapshot.Modes.AlternateScreen {
 		return nil
 	}
-	loaded := terminal.ScrollbackLoadedLimit
-	if m.copyMode.PaneID == pane.ID && m.copyMode.Snapshot != nil && len(m.copyMode.Snapshot.Scrollback) > loaded {
+	copyModeActive := m.copyMode.PaneID == pane.ID && m.copyMode.Snapshot != nil
+	loaded := 0
+	if copyModeActive {
 		loaded = len(m.copyMode.Snapshot.Scrollback)
-	} else if terminal.Snapshot != nil && len(terminal.Snapshot.Scrollback) > loaded {
+	} else if terminal.Snapshot != nil {
 		loaded = len(terminal.Snapshot.Scrollback)
+	} else {
+		loaded = terminal.ScrollbackLoadedLimit
 	}
 	want := viewportOffset + contentRect.H + terminalScrollbackPrefetchMargin
 	if want <= loaded {
 		return nil
 	}
-	nextLimit := maxInt(defaultTerminalSnapshotScrollbackLimit, loaded)
-	for nextLimit < want && nextLimit < maxTerminalSnapshotScrollbackLimit {
-		nextLimit *= 2
+	nextLimit := loaded + terminalScrollbackPageLimit
+	if nextLimit < defaultTerminalSnapshotScrollbackLimit {
+		nextLimit = defaultTerminalSnapshotScrollbackLimit
 	}
-	if nextLimit > maxTerminalSnapshotScrollbackLimit {
-		nextLimit = maxTerminalSnapshotScrollbackLimit
+	if nextLimit < want {
+		nextLimit = minInt(want, loaded+terminalScrollbackPageLimit)
 	}
+	nextLimit = minInt(nextLimit, maxTerminalSnapshotScrollbackLimit)
 	if nextLimit <= loaded || terminal.ScrollbackLoadingLimit >= nextLimit {
 		return nil
 	}
 	terminal.ScrollbackLoadingLimit = nextLimit
-	return m.loadTerminalSnapshotCmd(pane.TerminalID, nextLimit)
+	offset := 0
+	limit := nextLimit
+	if copyModeActive {
+		offset = loaded
+		limit = nextLimit - loaded
+	}
+	return m.loadTerminalSnapshotCmd(pane.TerminalID, offset, limit)
 }
 
 func (m *Model) ensureCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
@@ -313,40 +324,43 @@ func (m *Model) ensureCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
 	if terminal.VTerm != nil && terminal.VTerm.Modes().AlternateScreen {
 		return nil
 	}
-	loaded := terminal.ScrollbackLoadedLimit
-	if len(buffer.snapshot.Scrollback) > loaded {
-		loaded = len(buffer.snapshot.Scrollback)
-	}
-	if terminal.Snapshot != nil && len(terminal.Snapshot.Scrollback) > loaded {
-		loaded = len(terminal.Snapshot.Scrollback)
-	}
-	nextLimit := defaultTerminalSnapshotScrollbackLimit
-	if loaded > 0 {
-		nextLimit = loaded * 2
-	}
+	loaded := len(buffer.snapshot.Scrollback)
+	nextLimit := loaded + terminalScrollbackPageLimit
 	if nextLimit < defaultTerminalSnapshotScrollbackLimit {
 		nextLimit = defaultTerminalSnapshotScrollbackLimit
 	}
-	if nextLimit > maxTerminalSnapshotScrollbackLimit {
-		nextLimit = maxTerminalSnapshotScrollbackLimit
-	}
+	nextLimit = minInt(nextLimit, maxTerminalSnapshotScrollbackLimit)
 	if nextLimit <= loaded || terminal.ScrollbackLoadingLimit >= nextLimit {
 		return nil
 	}
 	terminal.ScrollbackLoadingLimit = nextLimit
-	return m.loadTerminalSnapshotCmd(pane.TerminalID, nextLimit)
+	return m.loadTerminalSnapshotCmd(pane.TerminalID, loaded, nextLimit-loaded)
 }
 
-func (m *Model) loadTerminalSnapshotCmd(terminalID string, limit int) tea.Cmd {
+func (m *Model) loadTerminalSnapshotCmd(terminalID string, offset int, limit int) tea.Cmd {
+	loadingLimit := offset + limit
 	return func() tea.Msg {
-		snapshot, err := m.runtime.LoadSnapshot(context.Background(), terminalID, 0, limit)
+		snapshot, err := m.runtime.LoadSnapshot(context.Background(), terminalID, offset, limit)
 		if err != nil {
-			if terminal := m.runtime.Registry().Get(terminalID); terminal != nil && terminal.ScrollbackLoadingLimit == limit {
+			if terminal := m.runtime.Registry().Get(terminalID); terminal != nil && terminal.ScrollbackLoadingLimit == loadingLimit {
 				terminal.ScrollbackLoadingLimit = 0
 			}
 			return err
 		}
-		return orchestrator.SnapshotLoadedMsg{TerminalID: terminalID, Snapshot: snapshot}
+		if terminal := m.runtime.Registry().Get(terminalID); terminal != nil {
+			if terminal.ScrollbackLoadingLimit == loadingLimit {
+				terminal.ScrollbackLoadingLimit = 0
+			}
+			if snapshot != nil {
+				if loadedRows := offset + len(snapshot.Scrollback); loadedRows > terminal.ScrollbackLoadedLimit {
+					terminal.ScrollbackLoadedLimit = loadedRows
+				}
+				if limit > 0 {
+					terminal.ScrollbackExhausted = !snapshot.ScrollbackHasMore
+				}
+			}
+		}
+		return orchestrator.SnapshotLoadedMsg{TerminalID: terminalID, Snapshot: snapshot, Offset: offset, Limit: limit, Paged: true}
 	}
 }
 

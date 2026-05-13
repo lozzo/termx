@@ -4205,6 +4205,7 @@ type recordingBridgeClient struct {
 	listResult         *protocol.ListResult
 	snapshotByTerminal map[string]*protocol.Snapshot
 	snapshotCalls      []string
+	snapshotRequests   []snapshotCall
 	snapshotErr        error
 	createCalls        []createCall
 	attachCalls        []attachCall
@@ -4237,6 +4238,12 @@ type resizeCall struct {
 type inputCall struct {
 	channel uint16
 	data    []byte
+}
+
+type snapshotCall struct {
+	terminalID string
+	offset     int
+	limit      int
 }
 
 type createCall struct {
@@ -4315,15 +4322,16 @@ func (c *recordingBridgeClient) EnsureResize(_ context.Context, params protocol.
 	}, nil
 }
 
-func (c *recordingBridgeClient) Snapshot(_ context.Context, terminalID string, _ int, _ int) (*protocol.Snapshot, error) {
+func (c *recordingBridgeClient) Snapshot(_ context.Context, terminalID string, offset int, limit int) (*protocol.Snapshot, error) {
 	c.snapshotCalls = append(c.snapshotCalls, terminalID)
+	c.snapshotRequests = append(c.snapshotRequests, snapshotCall{terminalID: terminalID, offset: offset, limit: limit})
 	if c.snapshotErr != nil {
 		return nil, c.snapshotErr
 	}
 	if c.snapshotByTerminal == nil {
 		return nil, nil
 	}
-	return c.snapshotByTerminal[terminalID], nil
+	return snapshotWindow(c.snapshotByTerminal[terminalID], offset, limit), nil
 }
 
 func (c *recordingBridgeClient) Input(_ context.Context, channel uint16, data []byte) error {

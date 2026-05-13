@@ -63,6 +63,9 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 	if err != nil {
 		return nil, shared.UserVisibleError{Op: "snapshot terminal", Err: err}
 	}
+	if offset > 0 {
+		return snapshot, nil
+	}
 	terminal := r.registry.GetOrCreate(terminalID)
 	if terminal != nil {
 		terminal.Snapshot = snapshot
