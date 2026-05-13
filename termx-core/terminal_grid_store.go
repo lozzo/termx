@@ -42,7 +42,7 @@ type terminalGridStore struct {
 	currentSeq    uint32
 	currentBytes  int64
 	pageMaxBytes  int64
-	rows          []terminalGridRowRef
+	rowCount      int
 	closed        bool
 	removeOnClose bool
 }
@@ -132,16 +132,16 @@ func openTerminalGridStoreDir(dir, terminalID string, create bool, removeOnClose
 		metadata.PageMaxBytes = defaultGridPageMaxBytes
 	}
 
-	rows, lastSeq, err := loadTerminalGridIndex(dir)
+	indexState, err := loadTerminalGridIndexState(dir)
 	if err != nil {
 		return nil, err
 	}
 	store := &terminalGridStore{
 		dir:           dir,
 		terminalID:    terminalID,
-		currentSeq:    lastSeq,
+		currentSeq:    indexState.lastSeq,
 		pageMaxBytes:  metadata.PageMaxBytes,
-		rows:          rows,
+		rowCount:      indexState.rowCount,
 		removeOnClose: removeOnClose,
 	}
 	if !create {
@@ -256,7 +256,7 @@ func (s *terminalGridStore) RowCount() int {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.rows)
+	return s.rowCount
 }
 
 func (s *terminalGridStore) Replay(beforeOffset int, limit int) ([]byte, int, bool, error) {
@@ -265,7 +265,10 @@ func (s *terminalGridStore) Replay(beforeOffset int, limit int) ([]byte, int, bo
 	}
 	beforeOffset, limit = sanitizeGridReplayWindow(beforeOffset, limit)
 
-	refs, rows, hasMore := s.windowRefs(beforeOffset, limit)
+	refs, rows, hasMore, err := s.windowRefs(beforeOffset, limit)
+	if err != nil {
+		return nil, 0, false, err
+	}
 	if rows == 0 {
 		return nil, 0, false, nil
 	}
@@ -288,7 +291,10 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 	beforeOffset, limit = sanitizeGridViewportWindow(beforeOffset, limit)
 	rawLimit := limit
 	for {
-		refs, rows, hasMore := s.windowRefs(beforeOffset, rawLimit)
+		refs, rows, hasMore, err := s.windowRefs(beforeOffset, rawLimit)
+		if err != nil {
+			return result, err
+		}
 		if rows == 0 {
 			return result, nil
 		}
@@ -350,12 +356,14 @@ func trimTerminalGridViewportToTail(result *terminalGridViewport, limit int) boo
 	return true
 }
 
-func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalGridRowRef, int, bool) {
+func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalGridRowRef, int, bool, error) {
 	s.mu.Lock()
-	total := len(s.rows)
+	total := s.rowCount
+	indexPath := filepath.Join(s.dir, terminalGridIndexName)
+	s.mu.Unlock()
+
 	if total == 0 {
-		s.mu.Unlock()
-		return nil, 0, false
+		return nil, 0, false, nil
 	}
 	if beforeOffset > total {
 		beforeOffset = total
@@ -368,16 +376,30 @@ func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalG
 	if start < 0 {
 		start = 0
 	}
-	for start > 0 && s.rows[start-1].flags&terminalGridRowFlagWrapped != 0 {
+	file, err := os.Open(indexPath)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	defer file.Close()
+	for start > 0 {
+		ref, err := readTerminalGridIndexRecordFromFile(file, start-1)
+		if err != nil {
+			return nil, 0, false, err
+		}
+		if ref.flags&terminalGridRowFlagWrapped == 0 {
+			break
+		}
 		start--
 	}
-	refs := append([]terminalGridRowRef(nil), s.rows[start:end]...)
-	s.mu.Unlock()
+	refs, err := readTerminalGridIndexWindowFromFile(file, start, end-start)
+	if err != nil {
+		return nil, 0, false, err
+	}
 
 	if len(refs) == 0 {
-		return nil, 0, false
+		return nil, 0, false, nil
 	}
-	return refs, len(refs), start > 0
+	return refs, len(refs), start > 0, nil
 }
 
 func sanitizeGridReplayWindow(beforeOffset int, limit int) (int, int) {
@@ -425,7 +447,7 @@ func (s *terminalGridStore) Close() error {
 		RowCodec:     terminalGridRowCodec,
 		IndexCodec:   terminalGridIndexCodec,
 		PageMaxBytes: s.pageMaxBytes,
-		RowCount:     len(s.rows),
+		RowCount:     s.rowCount,
 		PageCount:    int(s.currentSeq) + 1,
 	}
 	if existing, err := readTerminalGridMetadata(dir); err == nil {
@@ -508,7 +530,7 @@ func (s *terminalGridStore) appendEncodedRowsLocked(payloads [][]byte, flags []u
 		if err := s.appendIndexRowsLocked(refs); err != nil {
 			return err
 		}
-		s.rows = append(s.rows, refs...)
+		s.rowCount += len(refs)
 		s.currentBytes += int64(n)
 	}
 	return nil
@@ -887,39 +909,81 @@ func writeTerminalGridMetadata(dir string, metadata terminalGridMetadata) error 
 	return os.WriteFile(filepath.Join(dir, terminalGridMetadataName), data, 0o600)
 }
 
-func loadTerminalGridIndex(dir string) ([]terminalGridRowRef, uint32, error) {
+type terminalGridIndexState struct {
+	rowCount int
+	lastSeq  uint32
+}
+
+func loadTerminalGridIndexState(dir string) (terminalGridIndexState, error) {
 	file, err := os.Open(filepath.Join(dir, terminalGridIndexName))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, 0, nil
+			return terminalGridIndexState{}, nil
 		}
-		return nil, 0, err
+		return terminalGridIndexState{}, err
 	}
 	defer file.Close()
 
-	var (
-		rows []terminalGridRowRef
-		last uint32
-	)
+	info, err := file.Stat()
+	if err != nil {
+		return terminalGridIndexState{}, err
+	}
+	rowCount := int(info.Size() / terminalGridIndexRecord)
+	if rowCount <= 0 {
+		return terminalGridIndexState{}, nil
+	}
+	ref, err := readTerminalGridIndexRecordFromFile(file, rowCount-1)
+	if err != nil {
+		return terminalGridIndexState{}, err
+	}
+	return terminalGridIndexState{rowCount: rowCount, lastSeq: ref.seq}, nil
+}
+
+func readTerminalGridIndexRecordFromFile(file *os.File, row int) (terminalGridRowRef, error) {
+	if file == nil || row < 0 {
+		return terminalGridRowRef{}, ErrNotFound
+	}
 	rec := make([]byte, terminalGridIndexRecord)
-	for {
-		if _, err := io.ReadFull(file, rec); err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				break
-			}
-			return nil, 0, err
+	if _, err := file.ReadAt(rec, int64(row*terminalGridIndexRecord)); err != nil {
+		return terminalGridRowRef{}, err
+	}
+	return decodeTerminalGridIndexRecord(rec)
+}
+
+func readTerminalGridIndexWindowFromFile(file *os.File, start int, count int) ([]terminalGridRowRef, error) {
+	if file == nil || start < 0 {
+		return nil, ErrNotFound
+	}
+	buf := make([]byte, count*terminalGridIndexRecord)
+	if _, err := file.ReadAt(buf, int64(start*terminalGridIndexRecord)); err != nil {
+		return nil, err
+	}
+	refs := make([]terminalGridRowRef, 0, count)
+	for offset := 0; offset < len(buf); offset += terminalGridIndexRecord {
+		ref, err := decodeTerminalGridIndexRecord(buf[offset : offset+terminalGridIndexRecord])
+		if err != nil {
+			return nil, err
 		}
-		seq := binary.LittleEndian.Uint32(rec[0:4])
-		offset := int64(binary.LittleEndian.Uint64(rec[4:12]))
-		length := int64(binary.LittleEndian.Uint32(rec[12:16]))
-		flags := binary.LittleEndian.Uint32(rec[16:20])
-		if length <= 0 {
+		if ref.length <= 0 {
 			continue
 		}
-		rows = append(rows, terminalGridRowRef{seq: seq, offset: offset, length: length, flags: flags})
-		last = seq
+		refs = append(refs, ref)
 	}
-	return rows, last, nil
+	return refs, nil
+}
+
+func decodeTerminalGridIndexRecord(rec []byte) (terminalGridRowRef, error) {
+	if len(rec) != terminalGridIndexRecord {
+		return terminalGridRowRef{}, io.ErrUnexpectedEOF
+	}
+	seq := binary.LittleEndian.Uint32(rec[0:4])
+	offset := int64(binary.LittleEndian.Uint64(rec[4:12]))
+	length := int64(binary.LittleEndian.Uint32(rec[12:16]))
+	flags := binary.LittleEndian.Uint32(rec[16:20])
+	if length <= 0 {
+		return terminalGridRowRef{}, fmt.Errorf("termx grid index row length out of range: %d", length)
+	}
+	return terminalGridRowRef{seq: seq, offset: offset, length: length, flags: flags}, nil
 }
 
 func observeTerminalGridIDs(root string) {

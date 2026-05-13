@@ -633,7 +633,10 @@ func TestTerminalGridStoreUsesCompactBinaryRows(t *testing.T) {
 		t.Fatalf("reopen compact store: %v", err)
 	}
 	defer reopened.Close()
-	refs, refCount, _ := reopened.windowRefs(0, 1)
+	refs, refCount, _, err := reopened.windowRefs(0, 1)
+	if err != nil {
+		t.Fatalf("read compact row refs: %v", err)
+	}
 	if refCount != 1 {
 		t.Fatalf("expected one compact row ref, got %d", refCount)
 	}
@@ -731,6 +734,57 @@ func TestTerminalGridStoreRowsLoadsEnoughRawRowsForVisualLimit(t *testing.T) {
 	}
 	if wide.HasMore {
 		t.Fatal("expected complete soft-wrap group to satisfy request without hidden older rows")
+	}
+}
+
+func TestTerminalGridStoreIndexIsReadOnDemandAfterReopen(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "ondemand-1")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	for i := 0; i < 32; i++ {
+		wrapped := i == 28 || i == 29
+		row := terminalGridRow{
+			cells:   []localvterm.Cell{{Content: fmt.Sprintf("row-%02d", i), Width: 1}},
+			wrapped: wrapped,
+		}
+		if err := store.appendRows([]terminalGridRow{row}); err != nil {
+			t.Fatalf("append row %d: %v", i, err)
+		}
+	}
+	if got := store.RowCount(); got != 32 {
+		t.Fatalf("expected live row count 32, got %d", got)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	reopened, err := openTerminalGridStoreForReplay(root, "ondemand-1")
+	if err != nil {
+		t.Fatalf("reopen grid store: %v", err)
+	}
+	defer reopened.Close()
+	if got := reopened.RowCount(); got != 32 {
+		t.Fatalf("expected reopened row count from index size, got %d", got)
+	}
+	refs, refCount, hasMore, err := reopened.windowRefs(0, 2)
+	if err != nil {
+		t.Fatalf("read window refs: %v", err)
+	}
+	if refCount != 4 || !hasMore {
+		t.Fatalf("expected wrapped group to extend latest window, got refs=%d hasMore=%v", refCount, hasMore)
+	}
+	rawRows, err := readTerminalGridRows(reopened.dir, refs)
+	if err != nil {
+		t.Fatalf("read raw rows: %v", err)
+	}
+	gotRows := make([]string, 0, len(rawRows))
+	for _, row := range rawRows {
+		gotRows = append(gotRows, vtermRowToString(row.cells))
+	}
+	if !reflect.DeepEqual(gotRows, []string{"row-28", "row-29", "row-30", "row-31"}) {
+		t.Fatalf("expected on-demand index window to preserve wrapped prefix, got %#v", gotRows)
 	}
 }
 
