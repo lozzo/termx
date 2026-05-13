@@ -414,8 +414,7 @@ func (t *Terminal) Restart() error {
 		t.mu.Unlock()
 		return ErrTerminalNotExited
 	}
-	preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped := restartPreservedScrollback(t.vterm)
-	preservedHistoryRows := restartPreservedHistoryRows(t.vterm)
+	preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped := restartPreservedRows(t.vterm)
 	history := t.history
 	cfg := terminalConfig{
 		ID:             t.id,
@@ -429,7 +428,7 @@ func (t *Terminal) Restart() error {
 	t.mu.Unlock()
 
 	if history != nil {
-		if err := history.AppendRows(preservedHistoryRows); err != nil {
+		if err := history.appendRows(terminalHistoryRowsFromPreserved(preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped)); err != nil {
 			return err
 		}
 	}
@@ -480,7 +479,7 @@ func (t *Terminal) Restart() error {
 	return nil
 }
 
-func restartPreservedScrollback(vt *vterm.VTerm) ([][]vterm.Cell, []time.Time, []string, []bool) {
+func restartPreservedRows(vt *vterm.VTerm) ([][]vterm.Cell, []time.Time, []string, []bool) {
 	if vt == nil {
 		return nil, nil, nil, nil
 	}
@@ -515,23 +514,28 @@ func restartPreservedScrollback(vt *vterm.VTerm) ([][]vterm.Cell, []time.Time, [
 	return appendRestartMarker(out, timestamps, rowKinds, wrapped, restartAt)
 }
 
-func restartPreservedHistoryRows(vt *vterm.VTerm) [][]vterm.Cell {
-	if vt == nil {
-		return nil
-	}
-	screen := trimTrailingBlankVTermRows(vt.ScreenContent().Cells)
-	out := make([][]vterm.Cell, 0, len(screen)+1)
-	out = append(out, screen...)
-	out = append(out, nil)
-	return out
-}
-
 func appendRestartMarker(rows [][]vterm.Cell, timestamps []time.Time, rowKinds []string, wrapped []bool, restartAt time.Time) ([][]vterm.Cell, []time.Time, []string, []bool) {
 	rows = append(rows, nil)
 	timestamps = append(timestamps, restartAt)
 	rowKinds = append(rowKinds, SnapshotRowKindRestart)
 	wrapped = append(wrapped, false)
 	return rows, timestamps, rowKinds, wrapped
+}
+
+func terminalHistoryRowsFromPreserved(rows [][]vterm.Cell, timestamps []time.Time, rowKinds []string, wrapped []bool) []terminalHistoryRow {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]terminalHistoryRow, 0, len(rows))
+	for i, row := range rows {
+		out = append(out, terminalHistoryRow{
+			cells:     row,
+			timestamp: timeAt(timestamps, i),
+			rowKind:   stringAt(rowKinds, i),
+			wrapped:   boolAt(wrapped, i),
+		})
+	}
+	return out
 }
 
 func seedRestartScrollback(vt *vterm.VTerm, scrollback [][]vterm.Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, scrollbackWrapped []bool) {
@@ -586,10 +590,12 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	if offset < 0 {
 		offset = 0
 	}
-	if offset > len(scrollback) {
-		offset = len(scrollback)
+	historyOffset := offset
+	liveOffset := offset
+	if liveOffset > len(scrollback) {
+		liveOffset = len(scrollback)
 	}
-	end := len(scrollback) - offset
+	end := len(scrollback) - liveOffset
 	if end < 0 {
 		end = 0
 	}
@@ -602,16 +608,6 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	size := t.size
 	id := t.id
 	t.mu.RUnlock()
-	var historyRows terminalHistoryRowsResult
-	historyLoaded := false
-	if t.history != nil && offset == 0 && limit > len(scrollback) && t.history.RowCount() > len(scrollback) {
-		var err error
-		historyRows, err = t.history.Rows(0, limit, int(size.Cols))
-		if err != nil && t.logger != nil {
-			t.logger.Warn("termx terminal history snapshot failed", "terminal_id", id, "error", err)
-		}
-		historyLoaded = err == nil && historyRows.LoadedRows > 0
-	}
 	scrollbackTimestamps := t.vterm.ScrollbackTimestamps()
 	screenTimestamps := t.vterm.ScreenTimestamps()
 	scrollbackRowKinds := t.vterm.ScrollbackRowKinds()
@@ -624,13 +620,20 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	outScrollbackWrapped := sliceBoolRange(scrollbackWrapped, start, end)
 	scrollbackTotal := len(scrollback)
 	scrollbackHasMore := start > 0
-	if historyLoaded {
-		outScrollback = convertRows(historyRows.Rows)
-		outScrollbackTimestamps = cloneTimeSlice(historyRows.Timestamps)
-		outScrollbackRowKinds = cloneStringSlice(historyRows.RowKinds)
-		outScrollbackWrapped = cloneBoolSlice(historyRows.Wrapped)
-		scrollbackTotal = historyRows.TotalRows
-		scrollbackHasMore = historyRows.HasMore
+	if t.history != nil {
+		historyRows, err := t.history.Rows(historyOffset, limit, int(size.Cols))
+		if err != nil {
+			if t.logger != nil {
+				t.logger.Warn("termx terminal history snapshot failed", "terminal_id", id, "error", err)
+			}
+		} else if historyRows.TotalRows > 0 {
+			outScrollback = convertRows(historyRows.Rows)
+			outScrollbackTimestamps = cloneTimeSlice(historyRows.Timestamps)
+			outScrollbackRowKinds = cloneStringSlice(historyRows.RowKinds)
+			outScrollbackWrapped = cloneBoolSlice(historyRows.Wrapped)
+			scrollbackTotal = historyRows.TotalRows
+			scrollbackHasMore = historyRows.HasMore
+		}
 	}
 
 	return &Snapshot{

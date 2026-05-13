@@ -395,6 +395,60 @@ func TestTerminalSnapshotReturnsNewestScrollbackWindow(t *testing.T) {
 	}
 }
 
+func TestTerminalSnapshotPagesLiveHistoryFromDisk(t *testing.T) {
+	store := newMemoryTerminalHistoryStoreForTest(t)
+	defer store.Close()
+	for i := 0; i < 12; i++ {
+		if err := store.AppendRows([][]localvterm.Cell{{{Content: fmt.Sprintf("row-%02d", i), Width: 1}}}); err != nil {
+			t.Fatalf("append history row %d: %v", i, err)
+		}
+	}
+	vt := localvterm.New(8, 2, 3, nil)
+	vt.LoadSnapshot(localvterm.ScreenData{Cells: [][]localvterm.Cell{
+		localVTermRowForTest("live-a", 8),
+		localVTermRowForTest("live-b", 8),
+	}}, localvterm.CursorState{Visible: true}, localvterm.TerminalModes{AutoWrap: true})
+	term := &Terminal{
+		id:      "disk-snap-1",
+		size:    Size{Cols: 8, Rows: 2},
+		vterm:   vt,
+		history: store,
+	}
+
+	latest := term.Snapshot(0, 5)
+	if len(latest.Scrollback) != 5 || latest.ScrollbackTotal != 12 || !latest.ScrollbackHasMore {
+		t.Fatalf("expected latest disk snapshot page with more history, got rows=%d total=%d has_more=%v", len(latest.Scrollback), latest.ScrollbackTotal, latest.ScrollbackHasMore)
+	}
+	if got := snapshotRowString(latest.Scrollback[0]); !strings.Contains(got, "row-07") {
+		t.Fatalf("expected latest page to start at row-07, got %q", got)
+	}
+	if got := snapshotRowString(latest.Scrollback[4]); !strings.Contains(got, "row-11") {
+		t.Fatalf("expected latest page to end at row-11, got %q", got)
+	}
+	if got := snapshotRowString(latest.Screen.Cells[0]); !strings.Contains(got, "live") {
+		t.Fatalf("expected current live screen to come from vterm, got %q", got)
+	}
+
+	older := term.Snapshot(5, 5)
+	if len(older.Scrollback) != 5 || older.ScrollbackTotal != 12 || !older.ScrollbackHasMore {
+		t.Fatalf("expected older disk snapshot page with more history, got rows=%d total=%d has_more=%v", len(older.Scrollback), older.ScrollbackTotal, older.ScrollbackHasMore)
+	}
+	if got := snapshotRowString(older.Scrollback[0]); !strings.Contains(got, "row-02") {
+		t.Fatalf("expected older page to start at row-02, got %q", got)
+	}
+	if got := snapshotRowString(older.Scrollback[4]); !strings.Contains(got, "row-06") {
+		t.Fatalf("expected older page to end at row-06, got %q", got)
+	}
+
+	oldest := term.Snapshot(10, 5)
+	if len(oldest.Scrollback) != 2 || oldest.ScrollbackTotal != 12 || oldest.ScrollbackHasMore {
+		t.Fatalf("expected oldest disk snapshot page without more history, got rows=%d total=%d has_more=%v", len(oldest.Scrollback), oldest.ScrollbackTotal, oldest.ScrollbackHasMore)
+	}
+	if got := snapshotRowString(oldest.Scrollback[0]); !strings.Contains(got, "row-00") {
+		t.Fatalf("expected oldest page to start at row-00, got %q", got)
+	}
+}
+
 func TestTerminalHistoryReplayReturnsNewestReplayWindow(t *testing.T) {
 	vt := localvterm.New(4, 2, 16, nil)
 	if _, err := vt.Write([]byte("1\n2\n3\n4\n5\n")); err != nil {
@@ -986,6 +1040,20 @@ func vtermRowToString(row []localvterm.Cell) string {
 		b.WriteString(cell.Content)
 	}
 	return strings.TrimRight(b.String(), " ")
+}
+
+func localVTermRowForTest(text string, cols int) []localvterm.Cell {
+	row := make([]localvterm.Cell, cols)
+	for i := range row {
+		row[i] = localvterm.Cell{Content: " ", Width: 1}
+	}
+	for i, r := range []rune(text) {
+		if i >= len(row) {
+			break
+		}
+		row[i] = localvterm.Cell{Content: string(r), Width: 1}
+	}
+	return row
 }
 
 func stripANSIForTest(value string) string {
