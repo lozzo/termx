@@ -289,10 +289,61 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 		return nil
 	}
 	terminal.ScrollbackLoadingLimit = nextLimit
-	terminalID := pane.TerminalID
+	return m.loadTerminalSnapshotCmd(pane.TerminalID, nextLimit)
+}
+
+func (m *Model) ensureCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
+	if m == nil || m.workbench == nil || m.runtime == nil || m.copyMode.PaneID == "" || buffer.snapshot == nil {
+		return nil
+	}
+	pane := m.workbench.ActivePane()
+	if pane == nil || pane.ID != m.copyMode.PaneID || pane.TerminalID == "" {
+		return nil
+	}
+	if m.copyMode.Cursor.Row > terminalScrollbackPrefetchMargin && m.copyMode.ViewTopRow > terminalScrollbackPrefetchMargin {
+		return nil
+	}
+	if buffer.snapshot.Modes.AlternateScreen || buffer.snapshot.Screen.IsAlternateScreen {
+		return nil
+	}
+	terminal := m.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil || terminal.ScrollbackExhausted {
+		return nil
+	}
+	if terminal.VTerm != nil && terminal.VTerm.Modes().AlternateScreen {
+		return nil
+	}
+	loaded := terminal.ScrollbackLoadedLimit
+	if len(buffer.snapshot.Scrollback) > loaded {
+		loaded = len(buffer.snapshot.Scrollback)
+	}
+	if terminal.Snapshot != nil && len(terminal.Snapshot.Scrollback) > loaded {
+		loaded = len(terminal.Snapshot.Scrollback)
+	}
+	nextLimit := defaultTerminalSnapshotScrollbackLimit
+	if loaded > 0 {
+		nextLimit = loaded * 2
+	}
+	if nextLimit < defaultTerminalSnapshotScrollbackLimit {
+		nextLimit = defaultTerminalSnapshotScrollbackLimit
+	}
+	if nextLimit > maxTerminalSnapshotScrollbackLimit {
+		nextLimit = maxTerminalSnapshotScrollbackLimit
+	}
+	if nextLimit <= loaded || terminal.ScrollbackLoadingLimit >= nextLimit {
+		return nil
+	}
+	terminal.ScrollbackLoadingLimit = nextLimit
+	return m.loadTerminalSnapshotCmd(pane.TerminalID, nextLimit)
+}
+
+func (m *Model) loadTerminalSnapshotCmd(terminalID string, limit int) tea.Cmd {
 	return func() tea.Msg {
-		snapshot, err := m.runtime.LoadSnapshot(context.Background(), terminalID, 0, nextLimit)
+		snapshot, err := m.runtime.LoadSnapshot(context.Background(), terminalID, 0, limit)
 		if err != nil {
+			if terminal := m.runtime.Registry().Get(terminalID); terminal != nil && terminal.ScrollbackLoadingLimit == limit {
+				terminal.ScrollbackLoadingLimit = 0
+			}
 			return err
 		}
 		return orchestrator.SnapshotLoadedMsg{TerminalID: terminalID, Snapshot: snapshot}

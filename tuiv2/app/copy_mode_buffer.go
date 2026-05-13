@@ -251,7 +251,7 @@ func (m *Model) moveCopyCursor(deltaRow, deltaCol int) tea.Cmd {
 	m.copyMode.Cursor = next
 	m.syncCopyModeViewport(buffer, next)
 	m.render.Invalidate()
-	return m.ensureActivePaneScrollbackCmd()
+	return batchCmds(m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer))
 }
 
 func (m *Model) moveCopyCursorVertical(delta int) tea.Cmd {
@@ -269,7 +269,7 @@ func (m *Model) moveCopyCursorVertical(delta int) tea.Cmd {
 	m.copyMode.Cursor = next
 	m.syncCopyModeViewport(buffer, next)
 	m.render.Invalidate()
-	return m.ensureActivePaneScrollbackCmd()
+	return batchCmds(m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer))
 }
 
 func (m *Model) jumpCopyCursor(row int) tea.Cmd {
@@ -284,7 +284,7 @@ func (m *Model) jumpCopyCursor(row int) tea.Cmd {
 	m.copyMode.Cursor = next
 	m.syncCopyModeViewport(buffer, next)
 	m.render.Invalidate()
-	return m.ensureActivePaneScrollbackCmd()
+	return batchCmds(m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer))
 }
 
 func (m *Model) setCopyCursorCol(col int) {
