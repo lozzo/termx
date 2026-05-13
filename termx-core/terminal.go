@@ -33,19 +33,19 @@ type terminalConfig struct {
 	Env            []string
 	ScrollbackSize int
 	KeepAfterExit  time.Duration
-	HistoryRoot    string
+	GridRoot       string
 	Logger         *slog.Logger
 	RemoveFunc     func(string, string)
 	UpdateFunc     func()
 }
 
 type Terminal struct {
-	events  *EventBus
-	pty     *ptymgr.PTY
-	vterm   *vterm.VTerm
-	stream  *fanout.Fanout
-	history *terminalHistoryStore
-	logger  *slog.Logger
+	events *EventBus
+	pty    *ptymgr.PTY
+	vterm  *vterm.VTerm
+	stream *fanout.Fanout
+	grid   *terminalGridStore
+	logger *slog.Logger
 
 	mu             sync.RWMutex
 	id             string
@@ -91,7 +91,7 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 	if err != nil {
 		return nil, err
 	}
-	history, err := newTerminalHistoryStore(cfg.HistoryRoot, cfg.ID)
+	grid, err := newTerminalGridStore(cfg.GridRoot, cfg.ID)
 	if err != nil {
 		_ = p.Close()
 		return nil, err
@@ -101,7 +101,7 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 		pty:            p,
 		vterm:          vt,
 		stream:         fanout.New(),
-		history:        history,
+		grid:           grid,
 		logger:         cfg.Logger,
 		id:             cfg.ID,
 		name:           cfg.Name,
@@ -402,8 +402,8 @@ func (t *Terminal) Close() error {
 	if t.pty != nil {
 		err = t.pty.Close()
 	}
-	if historyErr := closeTerminalHistoryStore(t.history); historyErr != nil && err == nil {
-		err = historyErr
+	if gridErr := closeTerminalGridStore(t.grid); gridErr != nil && err == nil {
+		err = gridErr
 	}
 	return err
 }
@@ -415,7 +415,7 @@ func (t *Terminal) Restart() error {
 		return ErrTerminalNotExited
 	}
 	preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped := restartPreservedRows(t.vterm)
-	history := t.history
+	grid := t.grid
 	cfg := terminalConfig{
 		ID:             t.id,
 		Command:        append([]string(nil), t.command...),
@@ -427,8 +427,8 @@ func (t *Terminal) Restart() error {
 	currentEpoch := t.processEpoch
 	t.mu.Unlock()
 
-	if history != nil {
-		if err := history.appendRows(terminalHistoryRowsFromPreserved(preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped)); err != nil {
+	if grid != nil {
+		if err := grid.appendRows(terminalGridRowsFromPreserved(preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped)); err != nil {
 			return err
 		}
 	}
@@ -522,13 +522,13 @@ func appendRestartMarker(rows [][]vterm.Cell, timestamps []time.Time, rowKinds [
 	return rows, timestamps, rowKinds, wrapped
 }
 
-func terminalHistoryRowsFromPreserved(rows [][]vterm.Cell, timestamps []time.Time, rowKinds []string, wrapped []bool) []terminalHistoryRow {
+func terminalGridRowsFromPreserved(rows [][]vterm.Cell, timestamps []time.Time, rowKinds []string, wrapped []bool) []terminalGridRow {
 	if len(rows) == 0 {
 		return nil
 	}
-	out := make([]terminalHistoryRow, 0, len(rows))
+	out := make([]terminalGridRow, 0, len(rows))
 	for i, row := range rows {
-		out = append(out, terminalHistoryRow{
+		out = append(out, terminalGridRow{
 			cells:     row,
 			timestamp: timeAt(timestamps, i),
 			rowKind:   stringAt(rowKinds, i),
@@ -590,7 +590,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	if offset < 0 {
 		offset = 0
 	}
-	historyOffset := offset
+	gridOffset := offset
 	liveOffset := offset
 	if liveOffset > len(scrollback) {
 		liveOffset = len(scrollback)
@@ -620,19 +620,19 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	outScrollbackWrapped := sliceBoolRange(scrollbackWrapped, start, end)
 	scrollbackTotal := len(scrollback)
 	scrollbackHasMore := start > 0
-	if t.history != nil {
-		historyRows, err := t.history.Rows(historyOffset, limit, int(size.Cols))
+	if t.grid != nil {
+		gridViewport, err := t.grid.Viewport(gridOffset, limit, int(size.Cols))
 		if err != nil {
 			if t.logger != nil {
-				t.logger.Warn("termx terminal history snapshot failed", "terminal_id", id, "error", err)
+				t.logger.Warn("termx terminal grid snapshot failed", "terminal_id", id, "error", err)
 			}
-		} else if historyRows.TotalRows > 0 {
-			outScrollback = convertRows(historyRows.Rows)
-			outScrollbackTimestamps = cloneTimeSlice(historyRows.Timestamps)
-			outScrollbackRowKinds = cloneStringSlice(historyRows.RowKinds)
-			outScrollbackWrapped = cloneBoolSlice(historyRows.Wrapped)
-			scrollbackTotal = historyRows.TotalRows
-			scrollbackHasMore = historyRows.HasMore
+		} else if gridViewport.TotalRows > 0 {
+			outScrollback = convertRows(gridViewport.Rows)
+			outScrollbackTimestamps = cloneTimeSlice(gridViewport.Timestamps)
+			outScrollbackRowKinds = cloneStringSlice(gridViewport.RowKinds)
+			outScrollbackWrapped = cloneBoolSlice(gridViewport.Wrapped)
+			scrollbackTotal = gridViewport.TotalRows
+			scrollbackHasMore = gridViewport.HasMore
 		}
 	}
 
@@ -660,20 +660,20 @@ func (t *Terminal) HistoryReplay(opts HistoryReplayOptions) HistoryReplayResult 
 	if t == nil || t.vterm == nil {
 		return HistoryReplayResult{}
 	}
-	beforeOffset, limit := sanitizeHistoryReplayWindow(opts.BeforeOffset, opts.Limit)
+	beforeOffset, limit := sanitizeGridReplayWindow(opts.BeforeOffset, opts.Limit)
 	var (
 		replay  []byte
 		rows    int
 		hasMore bool
 	)
-	if t.history != nil {
+	if t.grid != nil {
 		var err error
-		replay, rows, hasMore, err = t.history.Replay(beforeOffset, limit)
+		replay, rows, hasMore, err = t.grid.Replay(beforeOffset, limit)
 		if err != nil && t.logger != nil {
-			t.logger.Warn("termx terminal history replay failed", "terminal_id", t.id, "error", err)
+			t.logger.Warn("termx terminal grid replay failed", "terminal_id", t.id, "error", err)
 		}
 	}
-	if t.history == nil || (rows == 0 && beforeOffset == 0) {
+	if t.grid == nil || (rows == 0 && beforeOffset == 0) {
 		replay, rows, hasMore = t.vterm.EncodeHistoryReplay(beforeOffset, limit)
 	}
 	t.mu.RLock()
@@ -951,7 +951,7 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 		})
 		return
 	}
-	t.appendHistoryFromDamageLocked(damage)
+	t.appendGridFromDamageLocked(damage)
 	payload, ok := t.screenUpdatePayloadFromDamageLocked(damage)
 	if !ok {
 		return
@@ -962,12 +962,12 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 	})
 }
 
-func (t *Terminal) appendHistoryFromDamageLocked(damage vterm.WriteDamage) {
-	if t == nil || t.history == nil || len(damage.ScrollbackAppend) == 0 {
+func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
+	if t == nil || t.grid == nil || len(damage.ScrollbackAppend) == 0 {
 		return
 	}
-	if err := t.history.AppendDamageRows(damage.ScrollbackAppend); err != nil && t.logger != nil {
-		t.logger.Warn("termx terminal history append failed", "terminal_id", t.id, "error", err)
+	if err := t.grid.AppendDamageRows(damage.ScrollbackAppend); err != nil && t.logger != nil {
+		t.logger.Warn("termx terminal grid append failed", "terminal_id", t.id, "error", err)
 	}
 }
 
@@ -1122,7 +1122,7 @@ func (t *Terminal) removeIfEpoch(epoch uint64, reason string) {
 	if removeFunc != nil {
 		removeFunc(id, reason)
 	}
-	_ = closeTerminalHistoryStore(t.history)
+	_ = closeTerminalGridStore(t.grid)
 }
 
 func liveScrollbackRows(configured int) int {

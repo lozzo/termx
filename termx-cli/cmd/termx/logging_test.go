@@ -47,22 +47,22 @@ func TestResolveWorkspaceStatePathFallsBackToXDGStateHome(t *testing.T) {
 	}
 }
 
-func TestResolveHistoryStatePathPrefersEnvironmentOverride(t *testing.T) {
-	want := filepath.Join(t.TempDir(), "history")
-	t.Setenv("TERMX_HISTORY_DIR", want)
-	if got := resolveHistoryStatePath(); got != want {
-		t.Fatalf("expected TERMX_HISTORY_DIR path %q, got %q", want, got)
+func TestResolveGridStatePathPrefersEnvironmentOverride(t *testing.T) {
+	want := filepath.Join(t.TempDir(), "grid")
+	t.Setenv("TERMX_GRID_DIR", want)
+	if got := resolveGridStatePath(); got != want {
+		t.Fatalf("expected TERMX_GRID_DIR path %q, got %q", want, got)
 	}
 }
 
-func TestResolveHistoryStatePathFallsBackToXDGStateHome(t *testing.T) {
+func TestResolveGridStatePathFallsBackToXDGStateHome(t *testing.T) {
 	base := t.TempDir()
-	t.Setenv("TERMX_HISTORY_DIR", "")
+	t.Setenv("TERMX_GRID_DIR", "")
 	t.Setenv("XDG_STATE_HOME", base)
-	got := resolveHistoryStatePath()
-	want := filepath.Join(base, "termx", "history")
+	got := resolveGridStatePath()
+	want := filepath.Join(base, "termx", "grid")
 	if got != want {
-		t.Fatalf("expected history state path %q, got %q", want, got)
+		t.Fatalf("expected grid state path %q, got %q", want, got)
 	}
 }
 

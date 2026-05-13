@@ -12,35 +12,35 @@ import (
 )
 
 const (
-	terminalHistoryRowMagic0 byte = 'T'
-	terminalHistoryRowMagic1 byte = 'X'
-	terminalHistoryRowMagic2 byte = 'H'
-	terminalHistoryRowMagic3 byte = 'R'
+	terminalGridRowMagic0 byte = 'T'
+	terminalGridRowMagic1 byte = 'X'
+	terminalGridRowMagic2 byte = 'G'
+	terminalGridRowMagic3 byte = 'R'
 
-	terminalHistoryRowCodecVersion byte = 1
+	terminalGridRowCodecVersion byte = 1
 
-	terminalHistoryRowFlagTimestamp uint16 = 1 << 0
-	terminalHistoryRowFlagRowKind   uint16 = 1 << 1
+	terminalGridRowFlagTimestamp uint16 = 1 << 0
+	terminalGridRowFlagRowKind   uint16 = 1 << 1
 
-	terminalHistoryRunFlagStyle uint8 = 1 << 0
-	terminalHistoryRunFlagASCII uint8 = 1 << 1
+	terminalGridRunFlagStyle uint8 = 1 << 0
+	terminalGridRunFlagASCII uint8 = 1 << 1
 
-	terminalHistoryCellFlagContent byte = 1 << 0
-	terminalHistoryCellFlagWidth   byte = 1 << 1
+	terminalGridCellFlagContent byte = 1 << 0
+	terminalGridCellFlagWidth   byte = 1 << 1
 
-	terminalHistoryStyleFlagFG            uint16 = 1 << 0
-	terminalHistoryStyleFlagBG            uint16 = 1 << 1
-	terminalHistoryStyleFlagBold          uint16 = 1 << 2
-	terminalHistoryStyleFlagItalic        uint16 = 1 << 3
-	terminalHistoryStyleFlagUnderline     uint16 = 1 << 4
-	terminalHistoryStyleFlagBlink         uint16 = 1 << 5
-	terminalHistoryStyleFlagReverse       uint16 = 1 << 6
-	terminalHistoryStyleFlagStrikethrough uint16 = 1 << 7
+	terminalGridStyleFlagFG            uint16 = 1 << 0
+	terminalGridStyleFlagBG            uint16 = 1 << 1
+	terminalGridStyleFlagBold          uint16 = 1 << 2
+	terminalGridStyleFlagItalic        uint16 = 1 << 3
+	terminalGridStyleFlagUnderline     uint16 = 1 << 4
+	terminalGridStyleFlagBlink         uint16 = 1 << 5
+	terminalGridStyleFlagReverse       uint16 = 1 << 6
+	terminalGridStyleFlagStrikethrough uint16 = 1 << 7
 )
 
-func encodeTerminalHistoryRow(row terminalHistoryRow) ([]byte, error) {
-	cells := trimTerminalHistoryCells(row.cells)
-	runs := terminalHistoryRuns(cells)
+func encodeTerminalGridRow(row terminalGridRow) ([]byte, error) {
+	cells := trimTerminalGridCells(row.cells)
+	runs := terminalGridRuns(cells)
 	size := 8
 	if !row.timestamp.IsZero() {
 		size += binary.MaxVarintLen64
@@ -50,96 +50,96 @@ func encodeTerminalHistoryRow(row terminalHistoryRow) ([]byte, error) {
 		size += binary.MaxVarintLen64 + len(rowKind)
 	}
 	for _, run := range runs {
-		size += terminalHistoryEncodedRunSize(run)
+		size += terminalGridEncodedRunSize(run)
 	}
 
 	out := make([]byte, 0, size)
-	out = append(out, terminalHistoryRowMagic0, terminalHistoryRowMagic1, terminalHistoryRowMagic2, terminalHistoryRowMagic3)
-	out = append(out, terminalHistoryRowCodecVersion)
+	out = append(out, terminalGridRowMagic0, terminalGridRowMagic1, terminalGridRowMagic2, terminalGridRowMagic3)
+	out = append(out, terminalGridRowCodecVersion)
 	var rowFlags uint16
 	if !row.timestamp.IsZero() {
-		rowFlags |= terminalHistoryRowFlagTimestamp
+		rowFlags |= terminalGridRowFlagTimestamp
 	}
 	if rowKind != "" {
-		rowFlags |= terminalHistoryRowFlagRowKind
+		rowFlags |= terminalGridRowFlagRowKind
 	}
 	out = appendUvarint(out, uint64(rowFlags))
-	if rowFlags&terminalHistoryRowFlagTimestamp != 0 {
+	if rowFlags&terminalGridRowFlagTimestamp != 0 {
 		out = appendVarint(out, row.timestamp.UTC().UnixNano())
 	}
-	if rowFlags&terminalHistoryRowFlagRowKind != 0 {
+	if rowFlags&terminalGridRowFlagRowKind != 0 {
 		out = appendString(out, rowKind)
 	}
 	out = appendUvarint(out, uint64(len(runs)))
 	for _, run := range runs {
-		out = appendTerminalHistoryRun(out, run)
+		out = appendTerminalGridRun(out, run)
 	}
 	return out, nil
 }
 
-func decodeTerminalHistoryRow(data []byte) (terminalHistoryRow, error) {
-	reader := terminalHistoryReader{data: data}
+func decodeTerminalGridRow(data []byte) (terminalGridRow, error) {
+	reader := terminalGridReader{data: data}
 	if len(data) < 5 ||
-		data[0] != terminalHistoryRowMagic0 ||
-		data[1] != terminalHistoryRowMagic1 ||
-		data[2] != terminalHistoryRowMagic2 ||
-		data[3] != terminalHistoryRowMagic3 {
-		return terminalHistoryRow{}, fmt.Errorf("invalid terminal history row magic")
+		data[0] != terminalGridRowMagic0 ||
+		data[1] != terminalGridRowMagic1 ||
+		data[2] != terminalGridRowMagic2 ||
+		data[3] != terminalGridRowMagic3 {
+		return terminalGridRow{}, fmt.Errorf("invalid terminal grid row magic")
 	}
 	reader.pos = 4
 	version, err := reader.readByte()
 	if err != nil {
-		return terminalHistoryRow{}, err
+		return terminalGridRow{}, err
 	}
-	if version != terminalHistoryRowCodecVersion {
-		return terminalHistoryRow{}, fmt.Errorf("unsupported terminal history row codec version %d", version)
+	if version != terminalGridRowCodecVersion {
+		return terminalGridRow{}, fmt.Errorf("unsupported terminal grid row codec version %d", version)
 	}
 	rowFlags64, err := reader.readUvarint()
 	if err != nil {
-		return terminalHistoryRow{}, err
+		return terminalGridRow{}, err
 	}
 	if rowFlags64 > uint64(^uint16(0)) {
-		return terminalHistoryRow{}, fmt.Errorf("terminal history row flags out of range: %d", rowFlags64)
+		return terminalGridRow{}, fmt.Errorf("terminal grid row flags out of range: %d", rowFlags64)
 	}
 	rowFlags := uint16(rowFlags64)
-	row := terminalHistoryRow{}
-	if rowFlags&terminalHistoryRowFlagTimestamp != 0 {
+	row := terminalGridRow{}
+	if rowFlags&terminalGridRowFlagTimestamp != 0 {
 		nanos, err := reader.readVarint()
 		if err != nil {
-			return terminalHistoryRow{}, err
+			return terminalGridRow{}, err
 		}
 		if nanos != 0 {
 			row.timestamp = time.Unix(0, nanos).UTC()
 		}
 	}
-	if rowFlags&terminalHistoryRowFlagRowKind != 0 {
+	if rowFlags&terminalGridRowFlagRowKind != 0 {
 		rowKind, err := reader.readString()
 		if err != nil {
-			return terminalHistoryRow{}, err
+			return terminalGridRow{}, err
 		}
 		row.rowKind = rowKind
 	}
 	runCount64, err := reader.readUvarint()
 	if err != nil {
-		return terminalHistoryRow{}, err
+		return terminalGridRow{}, err
 	}
 	if runCount64 > uint64(^uint32(0)) {
-		return terminalHistoryRow{}, fmt.Errorf("terminal history row run count out of range: %d", runCount64)
+		return terminalGridRow{}, fmt.Errorf("terminal grid row run count out of range: %d", runCount64)
 	}
 	for i := 0; i < int(runCount64); i++ {
 		cells, err := reader.readRun()
 		if err != nil {
-			return terminalHistoryRow{}, err
+			return terminalGridRow{}, err
 		}
 		row.cells = append(row.cells, cells...)
 	}
 	if reader.pos != len(reader.data) {
-		return terminalHistoryRow{}, fmt.Errorf("terminal history row has %d trailing bytes", len(reader.data)-reader.pos)
+		return terminalGridRow{}, fmt.Errorf("terminal grid row has %d trailing bytes", len(reader.data)-reader.pos)
 	}
 	return row, nil
 }
 
-func trimTerminalHistoryCells(cells []vterm.Cell) []vterm.Cell {
+func trimTerminalGridCells(cells []vterm.Cell) []vterm.Cell {
 	last := len(cells)
 	for last > 0 {
 		cell := cells[last-1]
@@ -154,28 +154,28 @@ func trimTerminalHistoryCells(cells []vterm.Cell) []vterm.Cell {
 	return cells[:last]
 }
 
-type terminalHistoryRun struct {
+type terminalGridRun struct {
 	style vterm.CellStyle
 	ascii bool
 	cells []vterm.Cell
 	text  string
 }
 
-func terminalHistoryRuns(cells []vterm.Cell) []terminalHistoryRun {
+func terminalGridRuns(cells []vterm.Cell) []terminalGridRun {
 	if len(cells) == 0 {
 		return nil
 	}
-	runs := make([]terminalHistoryRun, 0, 4)
+	runs := make([]terminalGridRun, 0, 4)
 	for i := 0; i < len(cells); {
 		style := cells[i].Style
-		ascii := terminalHistoryASCIICompactCell(cells[i])
+		ascii := terminalGridASCIICompactCell(cells[i])
 		start := i
 		i++
-		for i < len(cells) && cells[i].Style == style && terminalHistoryASCIICompactCell(cells[i]) == ascii {
+		for i < len(cells) && cells[i].Style == style && terminalGridASCIICompactCell(cells[i]) == ascii {
 			i++
 		}
 		runCells := cells[start:i]
-		run := terminalHistoryRun{style: style, ascii: ascii, cells: runCells}
+		run := terminalGridRun{style: style, ascii: ascii, cells: runCells}
 		if ascii {
 			var b strings.Builder
 			b.Grow(len(runCells))
@@ -189,14 +189,14 @@ func terminalHistoryRuns(cells []vterm.Cell) []terminalHistoryRun {
 	return runs
 }
 
-func terminalHistoryASCIICompactCell(cell vterm.Cell) bool {
+func terminalGridASCIICompactCell(cell vterm.Cell) bool {
 	return cell.Width == 1 && len(cell.Content) == 1 && cell.Content[0] < utf8.RuneSelf
 }
 
-func terminalHistoryEncodedRunSize(run terminalHistoryRun) int {
+func terminalGridEncodedRunSize(run terminalGridRun) int {
 	size := 1
 	if run.style != (vterm.CellStyle{}) {
-		size += terminalHistoryEncodedStyleSize(run.style)
+		size += terminalGridEncodedStyleSize(run.style)
 	}
 	if run.ascii {
 		return size + binary.MaxVarintLen64 + len(run.text)
@@ -214,60 +214,60 @@ func terminalHistoryEncodedRunSize(run terminalHistoryRun) int {
 	return size
 }
 
-func appendTerminalHistoryRun(out []byte, run terminalHistoryRun) []byte {
+func appendTerminalGridRun(out []byte, run terminalGridRun) []byte {
 	flags := uint8(0)
 	if run.style != (vterm.CellStyle{}) {
-		flags |= terminalHistoryRunFlagStyle
+		flags |= terminalGridRunFlagStyle
 	}
 	if run.ascii {
-		flags |= terminalHistoryRunFlagASCII
+		flags |= terminalGridRunFlagASCII
 	}
 	out = append(out, flags)
-	if flags&terminalHistoryRunFlagStyle != 0 {
-		out = appendTerminalHistoryStyle(out, run.style)
+	if flags&terminalGridRunFlagStyle != 0 {
+		out = appendTerminalGridStyle(out, run.style)
 	}
-	if flags&terminalHistoryRunFlagASCII != 0 {
+	if flags&terminalGridRunFlagASCII != 0 {
 		return appendString(out, run.text)
 	}
 	out = appendUvarint(out, uint64(len(run.cells)))
 	for _, cell := range run.cells {
-		out = appendTerminalHistoryCell(out, cell)
+		out = appendTerminalGridCell(out, cell)
 	}
 	return out
 }
 
-func appendTerminalHistoryCell(out []byte, cell vterm.Cell) []byte {
+func appendTerminalGridCell(out []byte, cell vterm.Cell) []byte {
 	flags := byte(0)
 	content := cell.Content
 	if content != " " || cell.Width == 0 {
-		flags |= terminalHistoryCellFlagContent
+		flags |= terminalGridCellFlagContent
 	}
 	if cell.Width != 1 {
-		flags |= terminalHistoryCellFlagWidth
+		flags |= terminalGridCellFlagWidth
 	}
 	out = append(out, flags)
-	if flags&terminalHistoryCellFlagContent != 0 {
+	if flags&terminalGridCellFlagContent != 0 {
 		out = appendString(out, content)
 	}
-	if flags&terminalHistoryCellFlagWidth != 0 {
+	if flags&terminalGridCellFlagWidth != 0 {
 		out = appendVarint(out, int64(cell.Width))
 	}
 	return out
 }
 
-func appendTerminalHistoryStyle(out []byte, style vterm.CellStyle) []byte {
-	flags := terminalHistoryStyleFlags(style)
+func appendTerminalGridStyle(out []byte, style vterm.CellStyle) []byte {
+	flags := terminalGridStyleFlags(style)
 	out = appendUvarint(out, uint64(flags))
-	if flags&terminalHistoryStyleFlagFG != 0 {
+	if flags&terminalGridStyleFlagFG != 0 {
 		out = appendString(out, style.FG)
 	}
-	if flags&terminalHistoryStyleFlagBG != 0 {
+	if flags&terminalGridStyleFlagBG != 0 {
 		out = appendString(out, style.BG)
 	}
 	return out
 }
 
-func terminalHistoryEncodedStyleSize(style vterm.CellStyle) int {
+func terminalGridEncodedStyleSize(style vterm.CellStyle) int {
 	size := binary.MaxVarintLen64
 	if style.FG != "" {
 		size += binary.MaxVarintLen64 + len(style.FG)
@@ -278,31 +278,31 @@ func terminalHistoryEncodedStyleSize(style vterm.CellStyle) int {
 	return size
 }
 
-func terminalHistoryStyleFlags(style vterm.CellStyle) uint16 {
+func terminalGridStyleFlags(style vterm.CellStyle) uint16 {
 	var flags uint16
 	if style.FG != "" {
-		flags |= terminalHistoryStyleFlagFG
+		flags |= terminalGridStyleFlagFG
 	}
 	if style.BG != "" {
-		flags |= terminalHistoryStyleFlagBG
+		flags |= terminalGridStyleFlagBG
 	}
 	if style.Bold {
-		flags |= terminalHistoryStyleFlagBold
+		flags |= terminalGridStyleFlagBold
 	}
 	if style.Italic {
-		flags |= terminalHistoryStyleFlagItalic
+		flags |= terminalGridStyleFlagItalic
 	}
 	if style.Underline {
-		flags |= terminalHistoryStyleFlagUnderline
+		flags |= terminalGridStyleFlagUnderline
 	}
 	if style.Blink {
-		flags |= terminalHistoryStyleFlagBlink
+		flags |= terminalGridStyleFlagBlink
 	}
 	if style.Reverse {
-		flags |= terminalHistoryStyleFlagReverse
+		flags |= terminalGridStyleFlagReverse
 	}
 	if style.Strikethrough {
-		flags |= terminalHistoryStyleFlagStrikethrough
+		flags |= terminalGridStyleFlagStrikethrough
 	}
 	return flags
 }
@@ -324,12 +324,12 @@ func appendVarint(out []byte, value int64) []byte {
 	return append(out, buf[:n]...)
 }
 
-type terminalHistoryReader struct {
+type terminalGridReader struct {
 	data []byte
 	pos  int
 }
 
-func (r *terminalHistoryReader) readByte() (byte, error) {
+func (r *terminalGridReader) readByte() (byte, error) {
 	if r.pos >= len(r.data) {
 		return 0, io.ErrUnexpectedEOF
 	}
@@ -338,7 +338,7 @@ func (r *terminalHistoryReader) readByte() (byte, error) {
 	return value, nil
 }
 
-func (r *terminalHistoryReader) readUvarint() (uint64, error) {
+func (r *terminalGridReader) readUvarint() (uint64, error) {
 	value, n := binary.Uvarint(r.data[r.pos:])
 	if n <= 0 {
 		return 0, io.ErrUnexpectedEOF
@@ -347,7 +347,7 @@ func (r *terminalHistoryReader) readUvarint() (uint64, error) {
 	return value, nil
 }
 
-func (r *terminalHistoryReader) readVarint() (int64, error) {
+func (r *terminalGridReader) readVarint() (int64, error) {
 	value, n := binary.Varint(r.data[r.pos:])
 	if n <= 0 {
 		return 0, io.ErrUnexpectedEOF
@@ -356,7 +356,7 @@ func (r *terminalHistoryReader) readVarint() (int64, error) {
 	return value, nil
 }
 
-func (r *terminalHistoryReader) readString() (string, error) {
+func (r *terminalGridReader) readString() (string, error) {
 	length64, err := r.readUvarint()
 	if err != nil {
 		return "", err
@@ -368,24 +368,24 @@ func (r *terminalHistoryReader) readString() (string, error) {
 	value := string(r.data[r.pos : r.pos+length])
 	r.pos += length
 	if !utf8.ValidString(value) {
-		return "", fmt.Errorf("terminal history row contains invalid utf-8 string")
+		return "", fmt.Errorf("terminal grid row contains invalid utf-8 string")
 	}
 	return value, nil
 }
 
-func (r *terminalHistoryReader) readRun() ([]vterm.Cell, error) {
+func (r *terminalGridReader) readRun() ([]vterm.Cell, error) {
 	flags, err := r.readByte()
 	if err != nil {
 		return nil, err
 	}
 	style := vterm.CellStyle{}
-	if flags&terminalHistoryRunFlagStyle != 0 {
+	if flags&terminalGridRunFlagStyle != 0 {
 		style, err = r.readStyle()
 		if err != nil {
 			return nil, err
 		}
 	}
-	if flags&terminalHistoryRunFlagASCII != 0 {
+	if flags&terminalGridRunFlagASCII != 0 {
 		text, err := r.readString()
 		if err != nil {
 			return nil, err
@@ -393,7 +393,7 @@ func (r *terminalHistoryReader) readRun() ([]vterm.Cell, error) {
 		cells := make([]vterm.Cell, 0, len(text))
 		for i := 0; i < len(text); i++ {
 			if text[i] >= utf8.RuneSelf {
-				return nil, fmt.Errorf("terminal history ascii run contains non-ascii byte")
+				return nil, fmt.Errorf("terminal grid ascii run contains non-ascii byte")
 			}
 			cells = append(cells, vterm.Cell{Content: string(text[i]), Width: 1, Style: style})
 		}
@@ -404,7 +404,7 @@ func (r *terminalHistoryReader) readRun() ([]vterm.Cell, error) {
 		return nil, err
 	}
 	if cellCount64 > uint64(^uint32(0)) {
-		return nil, fmt.Errorf("terminal history cell count out of range: %d", cellCount64)
+		return nil, fmt.Errorf("terminal grid cell count out of range: %d", cellCount64)
 	}
 	cells := make([]vterm.Cell, int(cellCount64))
 	for i := range cells {
@@ -417,20 +417,20 @@ func (r *terminalHistoryReader) readRun() ([]vterm.Cell, error) {
 	return cells, nil
 }
 
-func (r *terminalHistoryReader) readCell(style vterm.CellStyle) (vterm.Cell, error) {
+func (r *terminalGridReader) readCell(style vterm.CellStyle) (vterm.Cell, error) {
 	flags, err := r.readByte()
 	if err != nil {
 		return vterm.Cell{}, err
 	}
 	cell := vterm.Cell{Content: " ", Width: 1, Style: style}
-	if flags&terminalHistoryCellFlagContent != 0 {
+	if flags&terminalGridCellFlagContent != 0 {
 		content, err := r.readString()
 		if err != nil {
 			return vterm.Cell{}, err
 		}
 		cell.Content = content
 	}
-	if flags&terminalHistoryCellFlagWidth != 0 {
+	if flags&terminalGridCellFlagWidth != 0 {
 		width, err := r.readVarint()
 		if err != nil {
 			return vterm.Cell{}, err
@@ -440,31 +440,31 @@ func (r *terminalHistoryReader) readCell(style vterm.CellStyle) (vterm.Cell, err
 	return cell, nil
 }
 
-func (r *terminalHistoryReader) readStyle() (vterm.CellStyle, error) {
+func (r *terminalGridReader) readStyle() (vterm.CellStyle, error) {
 	flags64, err := r.readUvarint()
 	if err != nil {
 		return vterm.CellStyle{}, err
 	}
 	if flags64 > uint64(^uint16(0)) {
-		return vterm.CellStyle{}, fmt.Errorf("terminal history style flags out of range: %d", flags64)
+		return vterm.CellStyle{}, fmt.Errorf("terminal grid style flags out of range: %d", flags64)
 	}
 	flags := uint16(flags64)
 	style := vterm.CellStyle{
-		Bold:          flags&terminalHistoryStyleFlagBold != 0,
-		Italic:        flags&terminalHistoryStyleFlagItalic != 0,
-		Underline:     flags&terminalHistoryStyleFlagUnderline != 0,
-		Blink:         flags&terminalHistoryStyleFlagBlink != 0,
-		Reverse:       flags&terminalHistoryStyleFlagReverse != 0,
-		Strikethrough: flags&terminalHistoryStyleFlagStrikethrough != 0,
+		Bold:          flags&terminalGridStyleFlagBold != 0,
+		Italic:        flags&terminalGridStyleFlagItalic != 0,
+		Underline:     flags&terminalGridStyleFlagUnderline != 0,
+		Blink:         flags&terminalGridStyleFlagBlink != 0,
+		Reverse:       flags&terminalGridStyleFlagReverse != 0,
+		Strikethrough: flags&terminalGridStyleFlagStrikethrough != 0,
 	}
-	if flags&terminalHistoryStyleFlagFG != 0 {
+	if flags&terminalGridStyleFlagFG != 0 {
 		value, err := r.readString()
 		if err != nil {
 			return vterm.CellStyle{}, err
 		}
 		style.FG = value
 	}
-	if flags&terminalHistoryStyleFlagBG != 0 {
+	if flags&terminalGridStyleFlagBG != 0 {
 		value, err := r.readString()
 		if err != nil {
 			return vterm.CellStyle{}, err

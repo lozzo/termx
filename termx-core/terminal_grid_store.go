@@ -21,18 +21,19 @@ import (
 
 const (
 	defaultTerminalLiveScrollbackRows = 128
-	defaultHistoryReplayRows          = 100
-	maxHistoryReplayRows              = 250
-	defaultHistoryChunkMaxBytes       = 4 * 1024 * 1024
+	defaultGridReplayRows             = 100
+	maxGridReplayRows                 = 250
+	defaultGridPageMaxBytes           = 4 * 1024 * 1024
 
-	terminalHistoryFormatVersion = 4
-	terminalHistoryCodec         = "compact-line-v1"
-	terminalHistoryManifestName  = "manifest.json"
-	terminalHistoryIndexName     = "history.index"
-	terminalHistoryIndexRecord   = 20
+	terminalGridStoreVersion = 4
+	terminalGridRowCodec     = "compact-line-v1"
+	terminalGridIndexCodec   = "fixed20-le-v1"
+	terminalGridMetadataName = "grid.meta.json"
+	terminalGridIndexName    = "grid.index"
+	terminalGridIndexRecord  = 20
 )
 
-type terminalHistoryStore struct {
+type terminalGridStore struct {
 	mu            sync.Mutex
 	dir           string
 	terminalID    string
@@ -40,56 +41,57 @@ type terminalHistoryStore struct {
 	index         *os.File
 	currentSeq    uint32
 	currentBytes  int64
-	chunkMaxBytes int64
-	rows          []terminalHistoryRowRef
+	pageMaxBytes  int64
+	rows          []terminalGridRowRef
 	closed        bool
 	removeOnClose bool
 }
 
-type terminalHistoryRowRef struct {
+type terminalGridRowRef struct {
 	seq    uint32
 	offset int64
 	length int64
 	flags  uint32
 }
 
-const terminalHistoryRowFlagWrapped uint32 = 1 << 0
+const terminalGridRowFlagWrapped uint32 = 1 << 0
 
-type terminalHistoryManifest struct {
-	FormatVersion int    `json:"format_version"`
+type terminalGridMetadata struct {
+	StoreVersion  int    `json:"store_version"`
 	TerminalID    string `json:"terminal_id"`
-	Codec         string `json:"codec"`
-	ChunkMaxBytes int64  `json:"chunk_max_bytes"`
+	RowCodec      string `json:"row_codec"`
+	IndexCodec    string `json:"index_codec"`
+	PageMaxBytes  int64  `json:"page_max_bytes"`
 	RowCount      int    `json:"row_count,omitempty"`
-	ChunkCount    int    `json:"chunk_count,omitempty"`
+	PageCount     int    `json:"page_count,omitempty"`
 	CreatedAtUnix int64  `json:"created_at_unix"`
 	UpdatedAtUnix int64  `json:"updated_at_unix"`
 }
 
-func newTerminalHistoryStore(historyRoot, terminalID string) (*terminalHistoryStore, error) {
-	if strings.TrimSpace(historyRoot) == "" {
-		dir, err := os.MkdirTemp("", "termx-history-"+sanitizeHistoryStoreID(terminalID)+"-*")
+func newTerminalGridStore(gridRoot, terminalID string) (*terminalGridStore, error) {
+	if strings.TrimSpace(gridRoot) == "" {
+		dir, err := os.MkdirTemp("", "termx-grid-"+sanitizeGridStoreID(terminalID)+"-*")
 		if err != nil {
 			return nil, err
 		}
-		store, err := openTerminalHistoryStoreDir(dir, terminalID, true, true)
+		store, err := openTerminalGridStoreDir(dir, terminalID, true, true)
 		if err != nil {
 			_ = os.RemoveAll(dir)
 			return nil, err
 		}
 		return store, nil
 	}
-	return openTerminalHistoryStoreDir(terminalHistoryDir(historyRoot, terminalID), terminalID, true, false)
+	return openTerminalGridStoreDir(terminalGridDir(gridRoot, terminalID), terminalID, true, false)
 }
 
-func openTerminalHistoryStoreForReplay(historyRoot, terminalID string) (*terminalHistoryStore, error) {
-	if strings.TrimSpace(historyRoot) == "" {
+func openTerminalGridStoreForReplay(gridRoot, terminalID string) (*terminalGridStore, error) {
+	if strings.TrimSpace(gridRoot) == "" {
 		return nil, ErrNotFound
 	}
-	return openTerminalHistoryStoreDir(terminalHistoryDir(historyRoot, terminalID), terminalID, false, false)
+	return openTerminalGridStoreDir(terminalGridDir(gridRoot, terminalID), terminalID, false, false)
 }
 
-func openTerminalHistoryStoreDir(dir, terminalID string, create bool, removeOnClose bool) (*terminalHistoryStore, error) {
+func openTerminalGridStoreDir(dir, terminalID string, create bool, removeOnClose bool) (*terminalGridStore, error) {
 	if create {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, err
@@ -103,41 +105,42 @@ func openTerminalHistoryStoreDir(dir, terminalID string, create bool, removeOnCl
 		return nil, ErrNotFound
 	}
 
-	manifest, err := readTerminalHistoryManifest(dir)
+	metadata, err := readTerminalGridMetadata(dir)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
-	if err == nil && manifest.TerminalID != "" && terminalID != "" && manifest.TerminalID != terminalID {
-		return nil, fmt.Errorf("termx history manifest terminal id mismatch: got %q, want %q", manifest.TerminalID, terminalID)
+	if err == nil && metadata.TerminalID != "" && terminalID != "" && metadata.TerminalID != terminalID {
+		return nil, fmt.Errorf("termx grid metadata terminal id mismatch: got %q, want %q", metadata.TerminalID, terminalID)
 	}
 	if os.IsNotExist(err) {
 		if !create {
 			return nil, ErrNotFound
 		}
-		manifest = terminalHistoryManifest{
-			FormatVersion: terminalHistoryFormatVersion,
+		metadata = terminalGridMetadata{
+			StoreVersion:  terminalGridStoreVersion,
 			TerminalID:    terminalID,
-			Codec:         terminalHistoryCodec,
-			ChunkMaxBytes: defaultHistoryChunkMaxBytes,
+			RowCodec:      terminalGridRowCodec,
+			IndexCodec:    terminalGridIndexCodec,
+			PageMaxBytes:  defaultGridPageMaxBytes,
 			CreatedAtUnix: time.Now().UTC().Unix(),
 		}
-		if writeErr := writeTerminalHistoryManifest(dir, manifest); writeErr != nil {
+		if writeErr := writeTerminalGridMetadata(dir, metadata); writeErr != nil {
 			return nil, writeErr
 		}
 	}
-	if manifest.ChunkMaxBytes <= 0 {
-		manifest.ChunkMaxBytes = defaultHistoryChunkMaxBytes
+	if metadata.PageMaxBytes <= 0 {
+		metadata.PageMaxBytes = defaultGridPageMaxBytes
 	}
 
-	rows, lastSeq, err := loadTerminalHistoryIndex(dir)
+	rows, lastSeq, err := loadTerminalGridIndex(dir)
 	if err != nil {
 		return nil, err
 	}
-	store := &terminalHistoryStore{
+	store := &terminalGridStore{
 		dir:           dir,
 		terminalID:    terminalID,
 		currentSeq:    lastSeq,
-		chunkMaxBytes: manifest.ChunkMaxBytes,
+		pageMaxBytes:  metadata.PageMaxBytes,
 		rows:          rows,
 		removeOnClose: removeOnClose,
 	}
@@ -145,24 +148,24 @@ func openTerminalHistoryStoreDir(dir, terminalID string, create bool, removeOnCl
 		return store, nil
 	}
 
-	index, err := os.OpenFile(filepath.Join(dir, terminalHistoryIndexName), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	index, err := os.OpenFile(filepath.Join(dir, terminalGridIndexName), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
 	}
 	store.index = index
-	if err := store.openCurrentChunkLocked(); err != nil {
+	if err := store.openCurrentPageLocked(); err != nil {
 		_ = store.Close()
 		return nil, err
 	}
 	return store, nil
 }
 
-func newMemoryTerminalHistoryStoreForTest(t testTempDirProvider) *terminalHistoryStore {
+func newMemoryTerminalGridStoreForTest(t testTempDirProvider) *terminalGridStore {
 	if t == nil {
 		return nil
 	}
-	store, err := openTerminalHistoryStoreDir(t.TempDir(), "test", true, false)
+	store, err := openTerminalGridStoreDir(t.TempDir(), "test", true, false)
 	if err != nil {
 		panic(err)
 	}
@@ -173,13 +176,13 @@ type testTempDirProvider interface {
 	TempDir() string
 }
 
-func (s *terminalHistoryStore) AppendDamageRows(rows []vterm.DamageOp) error {
+func (s *terminalGridStore) AppendDamageRows(rows []vterm.DamageOp) error {
 	if s == nil || len(rows) == 0 {
 		return nil
 	}
-	replayRows := make([]terminalHistoryRow, 0, len(rows))
+	replayRows := make([]terminalGridRow, 0, len(rows))
 	for _, row := range rows {
-		replayRows = append(replayRows, terminalHistoryRow{
+		replayRows = append(replayRows, terminalGridRow{
 			cells:     row.Cells,
 			timestamp: row.Timestamp,
 			rowKind:   row.RowKind,
@@ -189,35 +192,35 @@ func (s *terminalHistoryStore) AppendDamageRows(rows []vterm.DamageOp) error {
 	return s.appendRows(replayRows)
 }
 
-func (s *terminalHistoryStore) AppendRows(rows [][]vterm.Cell) error {
+func (s *terminalGridStore) AppendRows(rows [][]vterm.Cell) error {
 	if len(rows) == 0 {
 		return nil
 	}
-	historyRows := make([]terminalHistoryRow, 0, len(rows))
+	gridRows := make([]terminalGridRow, 0, len(rows))
 	for _, row := range rows {
-		historyRows = append(historyRows, terminalHistoryRow{cells: row})
+		gridRows = append(gridRows, terminalGridRow{cells: row})
 	}
-	return s.appendRows(historyRows)
+	return s.appendRows(gridRows)
 }
 
-type terminalHistoryRow struct {
+type terminalGridRow struct {
 	cells     []vterm.Cell
 	timestamp time.Time
 	rowKind   string
 	wrapped   bool
 }
 
-func (s *terminalHistoryStore) appendRows(rows []terminalHistoryRow) error {
+func (s *terminalGridStore) appendRows(rows []terminalGridRow) error {
 	if s == nil || len(rows) == 0 {
 		return nil
 	}
-	finish := perftrace.Measure("terminal.history.append")
+	finish := perftrace.Measure("terminal.grid.append")
 
 	encoded := make([][]byte, 0, len(rows))
 	flags := make([]uint32, 0, len(rows))
 	totalBytes := 0
 	for _, row := range rows {
-		payload, err := encodeTerminalHistoryRow(row)
+		payload, err := encodeTerminalGridRow(row)
 		if err != nil {
 			finish(0)
 			return err
@@ -225,7 +228,7 @@ func (s *terminalHistoryStore) appendRows(rows []terminalHistoryRow) error {
 		encoded = append(encoded, payload)
 		var rowFlags uint32
 		if row.wrapped {
-			rowFlags |= terminalHistoryRowFlagWrapped
+			rowFlags |= terminalGridRowFlagWrapped
 		}
 		flags = append(flags, rowFlags)
 		totalBytes += len(payload)
@@ -242,12 +245,12 @@ func (s *terminalHistoryStore) appendRows(rows []terminalHistoryRow) error {
 		return err
 	}
 	finish(totalBytes)
-	perftrace.Count("terminal.history.rows", len(encoded))
-	perftrace.Count("terminal.history.bytes", totalBytes)
+	perftrace.Count("terminal.grid.rows", len(encoded))
+	perftrace.Count("terminal.grid.bytes", totalBytes)
 	return nil
 }
 
-func (s *terminalHistoryStore) RowCount() int {
+func (s *terminalGridStore) RowCount() int {
 	if s == nil {
 		return 0
 	}
@@ -256,49 +259,49 @@ func (s *terminalHistoryStore) RowCount() int {
 	return len(s.rows)
 }
 
-func (s *terminalHistoryStore) Replay(beforeOffset int, limit int) ([]byte, int, bool, error) {
+func (s *terminalGridStore) Replay(beforeOffset int, limit int) ([]byte, int, bool, error) {
 	if s == nil {
 		return nil, 0, false, nil
 	}
-	beforeOffset, limit = sanitizeHistoryReplayWindow(beforeOffset, limit)
+	beforeOffset, limit = sanitizeGridReplayWindow(beforeOffset, limit)
 
 	refs, rows, hasMore := s.windowRefs(beforeOffset, limit)
 	if rows == 0 {
 		return nil, 0, false, nil
 	}
-	finish := perftrace.Measure("terminal.history.replay")
-	historyRows, err := readTerminalHistoryRows(s.dir, refs)
+	finish := perftrace.Measure("terminal.grid.replay")
+	gridRows, err := readTerminalGridRows(s.dir, refs)
 	if err != nil {
 		finish(0)
 		return nil, 0, false, err
 	}
-	replay := encodeHistoryRowsReplay(historyRows)
+	replay := encodeGridRowsReplay(gridRows)
 	finish(len(replay))
 	return replay, rows, hasMore, nil
 }
 
-func (s *terminalHistoryStore) Rows(beforeOffset int, limit int, cols int) (terminalHistoryRowsResult, error) {
-	var result terminalHistoryRowsResult
+func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (terminalGridViewport, error) {
+	var result terminalGridViewport
 	if s == nil {
 		return result, nil
 	}
-	beforeOffset, limit = sanitizeHistorySnapshotWindow(beforeOffset, limit)
+	beforeOffset, limit = sanitizeGridViewportWindow(beforeOffset, limit)
 	rawLimit := limit
 	for {
 		refs, rows, hasMore := s.windowRefs(beforeOffset, rawLimit)
 		if rows == 0 {
 			return result, nil
 		}
-		finish := perftrace.Measure("terminal.history.rows_read")
-		historyRows, err := readTerminalHistoryRows(s.dir, refs)
-		finish(len(historyRows))
+		finish := perftrace.Measure("terminal.grid.rows_read")
+		gridRows, err := readTerminalGridRows(s.dir, refs)
+		finish(len(gridRows))
 		if err != nil {
 			return result, err
 		}
-		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped = reflowTerminalHistoryRows(historyRows, cols)
+		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped = reflowTerminalGridRows(gridRows, cols)
 		cropped := false
 		if hasMore {
-			cropped = trimTerminalHistoryRowsResultToTail(&result, limit)
+			cropped = trimTerminalGridViewportToTail(&result, limit)
 		}
 		result.LoadedRows = rows
 		result.HasMore = hasMore || cropped
@@ -323,7 +326,7 @@ func (s *terminalHistoryStore) Rows(beforeOffset int, limit int, cols int) (term
 	}
 }
 
-type terminalHistoryRowsResult struct {
+type terminalGridViewport struct {
 	Rows         [][]vterm.Cell
 	Timestamps   []time.Time
 	RowKinds     []string
@@ -335,7 +338,7 @@ type terminalHistoryRowsResult struct {
 	TotalRows    int
 }
 
-func trimTerminalHistoryRowsResultToTail(result *terminalHistoryRowsResult, limit int) bool {
+func trimTerminalGridViewportToTail(result *terminalGridViewport, limit int) bool {
 	if result == nil || limit <= 0 || len(result.Rows) <= limit {
 		return false
 	}
@@ -347,7 +350,7 @@ func trimTerminalHistoryRowsResultToTail(result *terminalHistoryRowsResult, limi
 	return true
 }
 
-func (s *terminalHistoryStore) windowRefs(beforeOffset int, limit int) ([]terminalHistoryRowRef, int, bool) {
+func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalGridRowRef, int, bool) {
 	s.mu.Lock()
 	total := len(s.rows)
 	if total == 0 {
@@ -365,10 +368,10 @@ func (s *terminalHistoryStore) windowRefs(beforeOffset int, limit int) ([]termin
 	if start < 0 {
 		start = 0
 	}
-	for start > 0 && s.rows[start-1].flags&terminalHistoryRowFlagWrapped != 0 {
+	for start > 0 && s.rows[start-1].flags&terminalGridRowFlagWrapped != 0 {
 		start--
 	}
-	refs := append([]terminalHistoryRowRef(nil), s.rows[start:end]...)
+	refs := append([]terminalGridRowRef(nil), s.rows[start:end]...)
 	s.mu.Unlock()
 
 	if len(refs) == 0 {
@@ -377,20 +380,20 @@ func (s *terminalHistoryStore) windowRefs(beforeOffset int, limit int) ([]termin
 	return refs, len(refs), start > 0
 }
 
-func sanitizeHistoryReplayWindow(beforeOffset int, limit int) (int, int) {
+func sanitizeGridReplayWindow(beforeOffset int, limit int) (int, int) {
 	if beforeOffset < 0 {
 		beforeOffset = 0
 	}
 	if limit <= 0 {
-		limit = defaultHistoryReplayRows
+		limit = defaultGridReplayRows
 	}
-	if limit > maxHistoryReplayRows {
-		limit = maxHistoryReplayRows
+	if limit > maxGridReplayRows {
+		limit = maxGridReplayRows
 	}
 	return beforeOffset, limit
 }
 
-func sanitizeHistorySnapshotWindow(beforeOffset int, limit int) (int, int) {
+func sanitizeGridViewportWindow(beforeOffset int, limit int) (int, int) {
 	if beforeOffset < 0 {
 		beforeOffset = 0
 	}
@@ -400,7 +403,7 @@ func sanitizeHistorySnapshotWindow(beforeOffset int, limit int) (int, int) {
 	return beforeOffset, limit
 }
 
-func (s *terminalHistoryStore) Close() error {
+func (s *terminalGridStore) Close() error {
 	if s == nil {
 		return nil
 	}
@@ -416,16 +419,17 @@ func (s *terminalHistoryStore) Close() error {
 	s.index = nil
 	dir := s.dir
 	removeOnClose := s.removeOnClose
-	manifest := terminalHistoryManifest{
-		FormatVersion: terminalHistoryFormatVersion,
-		TerminalID:    s.terminalID,
-		Codec:         terminalHistoryCodec,
-		ChunkMaxBytes: s.chunkMaxBytes,
-		RowCount:      len(s.rows),
-		ChunkCount:    int(s.currentSeq) + 1,
+	metadata := terminalGridMetadata{
+		StoreVersion: terminalGridStoreVersion,
+		TerminalID:   s.terminalID,
+		RowCodec:     terminalGridRowCodec,
+		IndexCodec:   terminalGridIndexCodec,
+		PageMaxBytes: s.pageMaxBytes,
+		RowCount:     len(s.rows),
+		PageCount:    int(s.currentSeq) + 1,
 	}
-	if existing, err := readTerminalHistoryManifest(dir); err == nil {
-		manifest.CreatedAtUnix = existing.CreatedAtUnix
+	if existing, err := readTerminalGridMetadata(dir); err == nil {
+		metadata.CreatedAtUnix = existing.CreatedAtUnix
 	}
 	s.mu.Unlock()
 
@@ -439,8 +443,8 @@ func (s *terminalHistoryStore) Close() error {
 		}
 	}
 	if !removeOnClose {
-		if manifestErr := writeTerminalHistoryManifest(dir, manifest); manifestErr != nil && err == nil {
-			err = manifestErr
+		if metadataErr := writeTerminalGridMetadata(dir, metadata); metadataErr != nil && err == nil {
+			err = metadataErr
 		}
 	}
 	if removeOnClose {
@@ -451,18 +455,18 @@ func (s *terminalHistoryStore) Close() error {
 	return err
 }
 
-func (s *terminalHistoryStore) appendEncodedRowsLocked(payloads [][]byte, flags []uint32) error {
+func (s *terminalGridStore) appendEncodedRowsLocked(payloads [][]byte, flags []uint32) error {
 	if s == nil || len(payloads) == 0 {
 		return nil
 	}
 	for index := 0; index < len(payloads); {
 		if s.current == nil {
-			if err := s.openCurrentChunkLocked(); err != nil {
+			if err := s.openCurrentPageLocked(); err != nil {
 				return err
 			}
 		}
 		next := payloads[index]
-		if s.currentBytes > 0 && s.currentBytes+int64(len(next)) > s.chunkMaxBytes {
+		if s.currentBytes > 0 && s.currentBytes+int64(len(next)) > s.pageMaxBytes {
 			if err := s.rotateLocked(); err != nil {
 				return err
 			}
@@ -472,14 +476,14 @@ func (s *terminalHistoryStore) appendEncodedRowsLocked(payloads [][]byte, flags 
 		seq := s.currentSeq
 		offset := s.currentBytes
 		var batch bytes.Buffer
-		refs := make([]terminalHistoryRowRef, 0, len(payloads)-index)
+		refs := make([]terminalGridRowRef, 0, len(payloads)-index)
 		for index < len(payloads) {
 			payload := payloads[index]
 			projected := s.currentBytes + int64(batch.Len()) + int64(len(payload))
-			if batch.Len() > 0 && projected > s.chunkMaxBytes {
+			if batch.Len() > 0 && projected > s.pageMaxBytes {
 				break
 			}
-			refs = append(refs, terminalHistoryRowRef{
+			refs = append(refs, terminalGridRowRef{
 				seq:    seq,
 				offset: offset + int64(batch.Len()),
 				length: int64(len(payload)),
@@ -487,7 +491,7 @@ func (s *terminalHistoryStore) appendEncodedRowsLocked(payloads [][]byte, flags 
 			})
 			batch.Write(payload)
 			index++
-			if projected >= s.chunkMaxBytes {
+			if projected >= s.pageMaxBytes {
 				break
 			}
 		}
@@ -510,14 +514,14 @@ func (s *terminalHistoryStore) appendEncodedRowsLocked(payloads [][]byte, flags 
 	return nil
 }
 
-func (s *terminalHistoryStore) openCurrentChunkLocked() error {
+func (s *terminalGridStore) openCurrentPageLocked() error {
 	if s == nil {
 		return nil
 	}
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {
 		return err
 	}
-	path := filepath.Join(s.dir, terminalHistoryChunkName(s.currentSeq))
+	path := filepath.Join(s.dir, terminalGridPageName(s.currentSeq))
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
@@ -532,7 +536,7 @@ func (s *terminalHistoryStore) openCurrentChunkLocked() error {
 	return nil
 }
 
-func (s *terminalHistoryStore) rotateLocked() error {
+func (s *terminalGridStore) rotateLocked() error {
 	if s == nil {
 		return nil
 	}
@@ -543,26 +547,26 @@ func (s *terminalHistoryStore) rotateLocked() error {
 		s.current = nil
 	}
 	s.currentSeq++
-	return s.openCurrentChunkLocked()
+	return s.openCurrentPageLocked()
 }
 
-func (s *terminalHistoryStore) appendIndexRowsLocked(refs []terminalHistoryRowRef) error {
+func (s *terminalGridStore) appendIndexRowsLocked(refs []terminalGridRowRef) error {
 	if s == nil || len(refs) == 0 {
 		return nil
 	}
 	if s.index == nil {
-		index, err := os.OpenFile(filepath.Join(s.dir, terminalHistoryIndexName), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		index, err := os.OpenFile(filepath.Join(s.dir, terminalGridIndexName), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
 			return err
 		}
 		s.index = index
 	}
-	buf := make([]byte, len(refs)*terminalHistoryIndexRecord)
+	buf := make([]byte, len(refs)*terminalGridIndexRecord)
 	for i, ref := range refs {
 		if ref.length <= 0 || ref.length > int64(^uint32(0)) {
-			return fmt.Errorf("termx history row length out of range: %d", ref.length)
+			return fmt.Errorf("termx grid row length out of range: %d", ref.length)
 		}
-		base := i * terminalHistoryIndexRecord
+		base := i * terminalGridIndexRecord
 		binary.LittleEndian.PutUint32(buf[base:base+4], ref.seq)
 		binary.LittleEndian.PutUint64(buf[base+4:base+12], uint64(ref.offset))
 		binary.LittleEndian.PutUint32(buf[base+12:base+16], uint32(ref.length))
@@ -578,8 +582,8 @@ func (s *terminalHistoryStore) appendIndexRowsLocked(refs []terminalHistoryRowRe
 	return nil
 }
 
-func readTerminalHistoryRows(dir string, refs []terminalHistoryRowRef) ([]terminalHistoryRow, error) {
-	out := make([]terminalHistoryRow, 0, len(refs))
+func readTerminalGridRows(dir string, refs []terminalGridRowRef) ([]terminalGridRow, error) {
+	out := make([]terminalGridRow, 0, len(refs))
 	var currentSeq uint32
 	var file *os.File
 	defer func() {
@@ -597,7 +601,7 @@ func readTerminalHistoryRows(dir string, refs []terminalHistoryRowRef) ([]termin
 					return nil, err
 				}
 			}
-			f, err := os.Open(filepath.Join(dir, terminalHistoryChunkName(ref.seq)))
+			f, err := os.Open(filepath.Join(dir, terminalGridPageName(ref.seq)))
 			if err != nil {
 				return nil, err
 			}
@@ -608,11 +612,11 @@ func readTerminalHistoryRows(dir string, refs []terminalHistoryRowRef) ([]termin
 		if _, err := file.ReadAt(payload, ref.offset); err != nil {
 			return nil, err
 		}
-		row, err := decodeTerminalHistoryRow(payload)
+		row, err := decodeTerminalGridRow(payload)
 		if err != nil {
 			return nil, err
 		}
-		row.wrapped = ref.flags&terminalHistoryRowFlagWrapped != 0
+		row.wrapped = ref.flags&terminalGridRowFlagWrapped != 0
 		out = append(out, row)
 	}
 	return out, nil
@@ -625,7 +629,7 @@ func uint32At(values []uint32, index int) uint32 {
 	return values[index]
 }
 
-func encodeHistoryRowsReplay(rows []terminalHistoryRow) []byte {
+func encodeGridRowsReplay(rows []terminalGridRow) []byte {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -638,15 +642,15 @@ func encodeHistoryRowsReplay(rows []terminalHistoryRow) []byte {
 	return vterm.EncodeHistoryRowsReplayWithWrapped(plainRows, wrapped)
 }
 
-func reflowTerminalHistoryRows(rows []terminalHistoryRow, cols int) ([][]vterm.Cell, []time.Time, []string, []bool) {
+func reflowTerminalGridRows(rows []terminalGridRow, cols int) ([][]vterm.Cell, []time.Time, []string, []bool) {
 	if len(rows) == 0 {
 		return nil, nil, nil, nil
 	}
 	if cols <= 0 {
 		cols = 80
 	}
-	scrollback, timestamps, rowKinds, wrapped := terminalHistoryRowSlices(rows)
-	vt := vterm.New(vtInitialWidth(cols, scrollback), 1, historyReflowScrollbackSize(scrollback, cols), nil)
+	scrollback, timestamps, rowKinds, wrapped := terminalGridRowSlices(rows)
+	vt := vterm.New(vtInitialWidth(cols, scrollback), 1, gridReflowScrollbackSize(scrollback, cols), nil)
 	vt.LoadSnapshotWithExtendedMetadata(scrollback, timestamps, rowKinds, wrapped, vterm.ScreenData{Cells: [][]vterm.Cell{make([]vterm.Cell, vtInitialWidth(cols, scrollback))}}, nil, nil, nil, vterm.CursorState{Visible: true}, vterm.TerminalModes{AutoWrap: true})
 	vt.Resize(cols, 1)
 	out := vt.ScrollbackContent()
@@ -654,7 +658,7 @@ func reflowTerminalHistoryRows(rows []terminalHistoryRow, cols int) ([][]vterm.C
 	outRowKinds := vt.ScrollbackRowKinds()
 	outWrapped := vt.ScrollbackWrapped()
 	screen := vt.ScreenContent()
-	if len(screen.Cells) > 0 && !isBlankHistoryRow(screen.Cells[0]) {
+	if len(screen.Cells) > 0 && !isBlankGridRow(screen.Cells[0]) {
 		out = append(out, screen.Cells[0])
 		outTimestamps = append(outTimestamps, timeAt(vt.ScreenTimestamps(), 0))
 		outRowKinds = append(outRowKinds, stringAt(vt.ScreenRowKinds(), 0))
@@ -663,10 +667,10 @@ func reflowTerminalHistoryRows(rows []terminalHistoryRow, cols int) ([][]vterm.C
 	if len(out) == 0 {
 		out = [][]vterm.Cell{make([]vterm.Cell, cols)}
 	}
-	return out, alignHistoryTimes(outTimestamps, len(out)), alignHistoryStrings(outRowKinds, len(out)), alignHistoryBools(outWrapped, len(out))
+	return out, alignGridTimes(outTimestamps, len(out)), alignGridStrings(outRowKinds, len(out)), alignGridBools(outWrapped, len(out))
 }
 
-func terminalHistoryRowSlices(rows []terminalHistoryRow) ([][]vterm.Cell, []time.Time, []string, []bool) {
+func terminalGridRowSlices(rows []terminalGridRow) ([][]vterm.Cell, []time.Time, []string, []bool) {
 	cells := make([][]vterm.Cell, 0, len(rows))
 	timestamps := make([]time.Time, 0, len(rows))
 	rowKinds := make([]string, 0, len(rows))
@@ -681,16 +685,16 @@ func terminalHistoryRowSlices(rows []terminalHistoryRow) ([][]vterm.Cell, []time
 }
 
 func vtInitialWidth(cols int, rows [][]vterm.Cell) int {
-	return maxHistoryCellRowDisplayWidth(rows)
+	return maxGridCellRowDisplayWidth(rows)
 }
 
-func historyReflowScrollbackSize(rows [][]vterm.Cell, cols int) int {
+func gridReflowScrollbackSize(rows [][]vterm.Cell, cols int) int {
 	if cols <= 0 {
 		cols = 80
 	}
 	needed := len(rows) + 2
 	for _, row := range rows {
-		width := historyCellRowDisplayWidth(row)
+		width := gridCellRowDisplayWidth(row)
 		if width <= cols {
 			continue
 		}
@@ -699,17 +703,17 @@ func historyReflowScrollbackSize(rows [][]vterm.Cell, cols int) int {
 	return maxInt(needed, 32)
 }
 
-func maxHistoryCellRowDisplayWidth(rows [][]vterm.Cell) int {
+func maxGridCellRowDisplayWidth(rows [][]vterm.Cell) int {
 	width := 1
 	for _, row := range rows {
-		if rowWidth := historyCellRowDisplayWidth(row); rowWidth > width {
+		if rowWidth := gridCellRowDisplayWidth(row); rowWidth > width {
 			width = rowWidth
 		}
 	}
 	return width
 }
 
-func historyCellRowDisplayWidth(row []vterm.Cell) int {
+func gridCellRowDisplayWidth(row []vterm.Cell) int {
 	width := 0
 	for _, cell := range row {
 		if cell.Width > 0 {
@@ -719,7 +723,7 @@ func historyCellRowDisplayWidth(row []vterm.Cell) int {
 	return width
 }
 
-func alignHistoryTimes(values []time.Time, size int) []time.Time {
+func alignGridTimes(values []time.Time, size int) []time.Time {
 	if size <= 0 || len(values) == 0 {
 		return nil
 	}
@@ -734,7 +738,7 @@ func alignHistoryTimes(values []time.Time, size int) []time.Time {
 	return out
 }
 
-func alignHistoryStrings(values []string, size int) []string {
+func alignGridStrings(values []string, size int) []string {
 	if size <= 0 || len(values) == 0 {
 		return nil
 	}
@@ -749,7 +753,7 @@ func alignHistoryStrings(values []string, size int) []string {
 	return out
 }
 
-func alignHistoryBools(values []bool, size int) []bool {
+func alignGridBools(values []bool, size int) []bool {
 	if size <= 0 || len(values) == 0 {
 		return nil
 	}
@@ -812,7 +816,7 @@ func boolAt(values []bool, index int) bool {
 	return index >= 0 && index < len(values) && values[index]
 }
 
-func isBlankHistoryRow(row []vterm.Cell) bool {
+func isBlankGridRow(row []vterm.Cell) bool {
 	for _, cell := range row {
 		if strings.TrimSpace(cell.Content) != "" {
 			return false
@@ -824,61 +828,67 @@ func isBlankHistoryRow(row []vterm.Cell) bool {
 	return true
 }
 
-func terminalHistoryDir(root, terminalID string) string {
+func terminalGridDir(root, terminalID string) string {
 	sum := sha1.Sum([]byte(terminalID))
-	return filepath.Join(root, fmt.Sprintf("terminal-v%d-%s-%s", terminalHistoryFormatVersion, sanitizeHistoryStoreID(terminalID), hex.EncodeToString(sum[:6])))
+	return filepath.Join(root, fmt.Sprintf("terminal-grid-v%d-%s-%s", terminalGridStoreVersion, sanitizeGridStoreID(terminalID), hex.EncodeToString(sum[:6])))
 }
 
-func terminalHistoryChunkName(seq uint32) string {
-	return fmt.Sprintf("history-%06d.chunk", seq)
+func terminalGridPageName(seq uint32) string {
+	return fmt.Sprintf("grid-%06d.page", seq)
 }
 
-func readTerminalHistoryManifest(dir string) (terminalHistoryManifest, error) {
-	data, err := os.ReadFile(filepath.Join(dir, terminalHistoryManifestName))
+func readTerminalGridMetadata(dir string) (terminalGridMetadata, error) {
+	data, err := os.ReadFile(filepath.Join(dir, terminalGridMetadataName))
 	if err != nil {
-		return terminalHistoryManifest{}, err
+		return terminalGridMetadata{}, err
 	}
-	var manifest terminalHistoryManifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return terminalHistoryManifest{}, err
+	var metadata terminalGridMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return terminalGridMetadata{}, err
 	}
-	if manifest.FormatVersion != 0 && manifest.FormatVersion != terminalHistoryFormatVersion {
-		return terminalHistoryManifest{}, fmt.Errorf("unsupported terminal history format version %d", manifest.FormatVersion)
+	if metadata.StoreVersion != 0 && metadata.StoreVersion != terminalGridStoreVersion {
+		return terminalGridMetadata{}, fmt.Errorf("unsupported terminal grid store version %d", metadata.StoreVersion)
 	}
-	if manifest.Codec != "" && manifest.Codec != terminalHistoryCodec {
-		return terminalHistoryManifest{}, fmt.Errorf("unsupported terminal history codec %q", manifest.Codec)
+	if metadata.RowCodec != "" && metadata.RowCodec != terminalGridRowCodec {
+		return terminalGridMetadata{}, fmt.Errorf("unsupported terminal grid row codec %q", metadata.RowCodec)
 	}
-	return manifest, nil
+	if metadata.IndexCodec != "" && metadata.IndexCodec != terminalGridIndexCodec {
+		return terminalGridMetadata{}, fmt.Errorf("unsupported terminal grid index codec %q", metadata.IndexCodec)
+	}
+	return metadata, nil
 }
 
-func writeTerminalHistoryManifest(dir string, manifest terminalHistoryManifest) error {
+func writeTerminalGridMetadata(dir string, metadata terminalGridMetadata) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	if manifest.FormatVersion == 0 {
-		manifest.FormatVersion = terminalHistoryFormatVersion
+	if metadata.StoreVersion == 0 {
+		metadata.StoreVersion = terminalGridStoreVersion
 	}
-	if manifest.Codec == "" {
-		manifest.Codec = terminalHistoryCodec
+	if metadata.RowCodec == "" {
+		metadata.RowCodec = terminalGridRowCodec
 	}
-	if manifest.ChunkMaxBytes <= 0 {
-		manifest.ChunkMaxBytes = defaultHistoryChunkMaxBytes
+	if metadata.IndexCodec == "" {
+		metadata.IndexCodec = terminalGridIndexCodec
+	}
+	if metadata.PageMaxBytes <= 0 {
+		metadata.PageMaxBytes = defaultGridPageMaxBytes
 	}
 	now := time.Now().UTC().Unix()
-	if manifest.CreatedAtUnix == 0 {
-		manifest.CreatedAtUnix = now
+	if metadata.CreatedAtUnix == 0 {
+		metadata.CreatedAtUnix = now
 	}
-	manifest.UpdatedAtUnix = now
-	data, err := json.MarshalIndent(manifest, "", "  ")
+	metadata.UpdatedAtUnix = now
+	data, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile(filepath.Join(dir, terminalHistoryManifestName), data, 0o600)
+	return os.WriteFile(filepath.Join(dir, terminalGridMetadataName), data, 0o600)
 }
 
-func loadTerminalHistoryIndex(dir string) ([]terminalHistoryRowRef, uint32, error) {
-	file, err := os.Open(filepath.Join(dir, terminalHistoryIndexName))
+func loadTerminalGridIndex(dir string) ([]terminalGridRowRef, uint32, error) {
+	file, err := os.Open(filepath.Join(dir, terminalGridIndexName))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, 0, nil
@@ -888,10 +898,10 @@ func loadTerminalHistoryIndex(dir string) ([]terminalHistoryRowRef, uint32, erro
 	defer file.Close()
 
 	var (
-		rows []terminalHistoryRowRef
+		rows []terminalGridRowRef
 		last uint32
 	)
-	rec := make([]byte, terminalHistoryIndexRecord)
+	rec := make([]byte, terminalGridIndexRecord)
 	for {
 		if _, err := io.ReadFull(file, rec); err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
@@ -906,13 +916,13 @@ func loadTerminalHistoryIndex(dir string) ([]terminalHistoryRowRef, uint32, erro
 		if length <= 0 {
 			continue
 		}
-		rows = append(rows, terminalHistoryRowRef{seq: seq, offset: offset, length: length, flags: flags})
+		rows = append(rows, terminalGridRowRef{seq: seq, offset: offset, length: length, flags: flags})
 		last = seq
 	}
 	return rows, last, nil
 }
 
-func observeTerminalHistoryIDs(root string) {
+func observeTerminalGridIDs(root string) {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return
@@ -925,15 +935,15 @@ func observeTerminalHistoryIDs(root string) {
 		if !entry.IsDir() {
 			continue
 		}
-		manifest, err := readTerminalHistoryManifest(filepath.Join(root, entry.Name()))
-		if err != nil || manifest.TerminalID == "" {
+		metadata, err := readTerminalGridMetadata(filepath.Join(root, entry.Name()))
+		if err != nil || metadata.TerminalID == "" {
 			continue
 		}
-		ObserveGeneratedID(manifest.TerminalID)
+		ObserveGeneratedID(metadata.TerminalID)
 	}
 }
 
-func sanitizeHistoryStoreID(id string) string {
+func sanitizeGridStoreID(id string) string {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return "terminal"
@@ -963,7 +973,7 @@ func sanitizeHistoryStoreID(id string) string {
 	return out
 }
 
-func closeTerminalHistoryStore(store *terminalHistoryStore) error {
+func closeTerminalGridStore(store *terminalGridStore) error {
 	if store == nil {
 		return nil
 	}

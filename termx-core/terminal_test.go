@@ -393,16 +393,16 @@ func TestTerminalSnapshotReturnsNewestScrollbackWindow(t *testing.T) {
 		t.Fatalf("expected older window to include oldest history, got %q", got)
 	}
 	if got := snapshotRowString(older.Scrollback[1]); !strings.Contains(got, "2") {
-		t.Fatalf("expected older window to include next history row, got %q", got)
+		t.Fatalf("expected older window to include next grid row, got %q", got)
 	}
 }
 
 func TestTerminalSnapshotPagesLiveHistoryFromDisk(t *testing.T) {
-	store := newMemoryTerminalHistoryStoreForTest(t)
+	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 	for i := 0; i < 12; i++ {
 		if err := store.AppendRows([][]localvterm.Cell{{{Content: fmt.Sprintf("row-%02d", i), Width: 1}}}); err != nil {
-			t.Fatalf("append history row %d: %v", i, err)
+			t.Fatalf("append grid row %d: %v", i, err)
 		}
 	}
 	vt := localvterm.New(8, 2, 3, nil)
@@ -411,10 +411,10 @@ func TestTerminalSnapshotPagesLiveHistoryFromDisk(t *testing.T) {
 		localVTermRowForTest("live-b", 8),
 	}}, localvterm.CursorState{Visible: true}, localvterm.TerminalModes{AutoWrap: true})
 	term := &Terminal{
-		id:      "disk-snap-1",
-		size:    Size{Cols: 8, Rows: 2},
-		vterm:   vt,
-		history: store,
+		id:    "disk-snap-1",
+		size:  Size{Cols: 8, Rows: 2},
+		vterm: vt,
+		grid:  store,
 	}
 
 	latest := term.Snapshot(0, 5)
@@ -481,8 +481,8 @@ func TestTerminalHistoryReplayReturnsNewestReplayWindow(t *testing.T) {
 }
 
 func TestTerminalHistoryReplayClampsRequestWindow(t *testing.T) {
-	vt := localvterm.New(16, 2, maxHistoryReplayRows+32, nil)
-	for i := 0; i < maxHistoryReplayRows+20; i++ {
+	vt := localvterm.New(16, 2, maxGridReplayRows+32, nil)
+	for i := 0; i < maxGridReplayRows+20; i++ {
 		if _, err := vt.Write([]byte(fmt.Sprintf("row-%03d\r\n", i))); err != nil {
 			t.Fatalf("write scrollback seed %d failed: %v", i, err)
 		}
@@ -494,15 +494,15 @@ func TestTerminalHistoryReplayClampsRequestWindow(t *testing.T) {
 		vterm: vt,
 	}
 
-	replay := term.HistoryReplay(HistoryReplayOptions{BeforeOffset: -10, Limit: maxHistoryReplayRows + 1000})
+	replay := term.HistoryReplay(HistoryReplayOptions{BeforeOffset: -10, Limit: maxGridReplayRows + 1000})
 	if replay.BeforeOffset != 0 {
 		t.Fatalf("expected negative beforeOffset to clamp to 0, got %d", replay.BeforeOffset)
 	}
-	if replay.Limit != maxHistoryReplayRows {
-		t.Fatalf("expected replay limit clamp to %d, got %d", maxHistoryReplayRows, replay.Limit)
+	if replay.Limit != maxGridReplayRows {
+		t.Fatalf("expected replay limit clamp to %d, got %d", maxGridReplayRows, replay.Limit)
 	}
-	if replay.Rows != maxHistoryReplayRows {
-		t.Fatalf("expected replay rows clamp to %d, got %d", maxHistoryReplayRows, replay.Rows)
+	if replay.Rows != maxGridReplayRows {
+		t.Fatalf("expected replay rows clamp to %d, got %d", maxGridReplayRows, replay.Rows)
 	}
 	if replay.Replay == "" {
 		t.Fatal("expected clamped replay payload")
@@ -512,20 +512,20 @@ func TestTerminalHistoryReplayClampsRequestWindow(t *testing.T) {
 func TestTerminalHistoryReplayReadsBeyondShortLiveScrollback(t *testing.T) {
 	vt := localvterm.New(12, 2, 3, nil)
 	term := &Terminal{
-		id:      "hist-store-1",
-		size:    Size{Cols: 12, Rows: 2},
-		vterm:   vt,
-		stream:  fanout.New(),
-		history: newMemoryTerminalHistoryStoreForTest(t),
+		id:     "hist-store-1",
+		size:   Size{Cols: 12, Rows: 2},
+		vterm:  vt,
+		stream: fanout.New(),
+		grid:   newMemoryTerminalGridStoreForTest(t),
 	}
-	defer term.history.Close()
+	defer term.grid.Close()
 
 	for i := 0; i < 12; i++ {
 		_, err, damage := vt.WriteWithDamage([]byte(fmt.Sprintf("row-%02d\r\n", i)))
 		if err != nil {
 			t.Fatalf("write row %d: %v", i, err)
 		}
-		term.appendHistoryFromDamageLocked(damage)
+		term.appendGridFromDamageLocked(damage)
 	}
 
 	if got := len(vt.ScrollbackContent()); got > 3 {
@@ -533,7 +533,7 @@ func TestTerminalHistoryReplayReadsBeyondShortLiveScrollback(t *testing.T) {
 	}
 	older := term.HistoryReplay(HistoryReplayOptions{BeforeOffset: 8, Limit: 2})
 	if older.Rows != 2 || older.Replay == "" {
-		t.Fatalf("expected older history rows from store, got %#v", older)
+		t.Fatalf("expected older grid rows from store, got %#v", older)
 	}
 	plainReplay := stripANSIForTest(older.Replay)
 	if !strings.Contains(plainReplay, "row-01") || !strings.Contains(plainReplay, "row-02") {
@@ -541,11 +541,11 @@ func TestTerminalHistoryReplayReadsBeyondShortLiveScrollback(t *testing.T) {
 	}
 }
 
-func TestTerminalHistoryStoreReopensPersistedRows(t *testing.T) {
+func TestTerminalGridStoreReopensPersistedRows(t *testing.T) {
 	root := t.TempDir()
-	store, err := newTerminalHistoryStore(root, "persist-1")
+	store, err := newTerminalGridStore(root, "persist-1")
 	if err != nil {
-		t.Fatalf("new history store: %v", err)
+		t.Fatalf("new grid store: %v", err)
 	}
 	rows := [][]localvterm.Cell{
 		{{Content: "old-1", Width: 1}},
@@ -559,14 +559,14 @@ func TestTerminalHistoryStoreReopensPersistedRows(t *testing.T) {
 		t.Fatalf("close store: %v", err)
 	}
 
-	reopened, err := openTerminalHistoryStoreForReplay(root, "persist-1")
+	reopened, err := openTerminalGridStoreForReplay(root, "persist-1")
 	if err != nil {
-		t.Fatalf("reopen history store: %v", err)
+		t.Fatalf("reopen grid store: %v", err)
 	}
 	defer reopened.Close()
 	replay, count, hasMore, err := reopened.Replay(0, 2)
 	if err != nil {
-		t.Fatalf("replay reopened history: %v", err)
+		t.Fatalf("replay reopened grid: %v", err)
 	}
 	if count != 2 || !hasMore {
 		t.Fatalf("expected 2 replay rows with more history, got rows=%d hasMore=%v", count, hasMore)
@@ -575,7 +575,7 @@ func TestTerminalHistoryStoreReopensPersistedRows(t *testing.T) {
 	if !strings.Contains(plainReplay, "old-2") || !strings.Contains(plainReplay, "old-3") {
 		t.Fatalf("expected reopened replay to contain newest rows, got %q", plainReplay)
 	}
-	decoded, err := reopened.Rows(0, 3, 12)
+	decoded, err := reopened.Viewport(0, 3, 12)
 	if err != nil {
 		t.Fatalf("decode reopened rows: %v", err)
 	}
@@ -587,13 +587,13 @@ func TestTerminalHistoryStoreReopensPersistedRows(t *testing.T) {
 	}
 }
 
-func TestTerminalHistoryStoreUsesCompactBinaryRows(t *testing.T) {
+func TestTerminalGridStoreUsesCompactBinaryRows(t *testing.T) {
 	root := t.TempDir()
-	store, err := newTerminalHistoryStore(root, "compact-1")
+	store, err := newTerminalGridStore(root, "compact-1")
 	if err != nil {
-		t.Fatalf("new history store: %v", err)
+		t.Fatalf("new grid store: %v", err)
 	}
-	row := terminalHistoryRow{
+	row := terminalGridRow{
 		cells: []localvterm.Cell{
 			{Content: "A", Width: 1},
 			{Content: "界", Width: 2, Style: localvterm.CellStyle{FG: "ansi:2", BG: "idx:17", Bold: true, Underline: true}},
@@ -602,7 +602,7 @@ func TestTerminalHistoryStoreUsesCompactBinaryRows(t *testing.T) {
 		rowKind:   SnapshotRowKindRestart,
 		wrapped:   true,
 	}
-	if err := store.appendRows([]terminalHistoryRow{row}); err != nil {
+	if err := store.appendRows([]terminalGridRow{row}); err != nil {
 		t.Fatalf("append compact row: %v", err)
 	}
 	dir := store.dir
@@ -610,25 +610,25 @@ func TestTerminalHistoryStoreUsesCompactBinaryRows(t *testing.T) {
 		t.Fatalf("close compact store: %v", err)
 	}
 
-	manifest, err := readTerminalHistoryManifest(dir)
+	metadata, err := readTerminalGridMetadata(dir)
 	if err != nil {
-		t.Fatalf("read manifest: %v", err)
+		t.Fatalf("read metadata: %v", err)
 	}
-	if manifest.FormatVersion != terminalHistoryFormatVersion || manifest.Codec != terminalHistoryCodec {
-		t.Fatalf("unexpected manifest format=%d codec=%q", manifest.FormatVersion, manifest.Codec)
+	if metadata.StoreVersion != terminalGridStoreVersion || metadata.RowCodec != terminalGridRowCodec {
+		t.Fatalf("unexpected metadata store=%d row_codec=%q", metadata.StoreVersion, metadata.RowCodec)
 	}
-	chunk, err := os.ReadFile(filepath.Join(dir, terminalHistoryChunkName(0)))
+	page, err := os.ReadFile(filepath.Join(dir, terminalGridPageName(0)))
 	if err != nil {
-		t.Fatalf("read compact chunk: %v", err)
+		t.Fatalf("read compact page: %v", err)
 	}
-	if !bytes.HasPrefix(chunk, []byte{terminalHistoryRowMagic0, terminalHistoryRowMagic1, terminalHistoryRowMagic2, terminalHistoryRowMagic3}) {
-		t.Fatalf("expected compact row magic prefix, got %q", chunk[:minInt(len(chunk), 8)])
+	if !bytes.HasPrefix(page, []byte{terminalGridRowMagic0, terminalGridRowMagic1, terminalGridRowMagic2, terminalGridRowMagic3}) {
+		t.Fatalf("expected compact row magic prefix, got %q", page[:minInt(len(page), 8)])
 	}
-	if bytes.Contains(chunk, []byte(`"cells"`)) || bytes.Contains(chunk, []byte(`"row_kind"`)) {
-		t.Fatalf("expected compact binary history chunk, got JSON-looking payload %q", chunk)
+	if bytes.Contains(page, []byte(`"cells"`)) || bytes.Contains(page, []byte(`"row_kind"`)) {
+		t.Fatalf("expected compact binary grid page, got JSON-looking payload %q", page)
 	}
 
-	reopened, err := openTerminalHistoryStoreForReplay(root, "compact-1")
+	reopened, err := openTerminalGridStoreForReplay(root, "compact-1")
 	if err != nil {
 		t.Fatalf("reopen compact store: %v", err)
 	}
@@ -637,7 +637,7 @@ func TestTerminalHistoryStoreUsesCompactBinaryRows(t *testing.T) {
 	if refCount != 1 {
 		t.Fatalf("expected one compact row ref, got %d", refCount)
 	}
-	rawRows, err := readTerminalHistoryRows(reopened.dir, refs)
+	rawRows, err := readTerminalGridRows(reopened.dir, refs)
 	if err != nil {
 		t.Fatalf("read compact raw rows: %v", err)
 	}
@@ -654,7 +654,7 @@ func TestTerminalHistoryStoreUsesCompactBinaryRows(t *testing.T) {
 		t.Fatalf("expected raw wrapped flag round trip")
 	}
 
-	decoded, err := reopened.Rows(0, 1, 10)
+	decoded, err := reopened.Viewport(0, 1, 10)
 	if err != nil {
 		t.Fatalf("decode compact rows: %v", err)
 	}
@@ -669,11 +669,11 @@ func TestTerminalHistoryStoreUsesCompactBinaryRows(t *testing.T) {
 	}
 }
 
-func TestTerminalHistoryStoreRowsReflowSoftWrappedColdBuffer(t *testing.T) {
-	store := newMemoryTerminalHistoryStoreForTest(t)
+func TestTerminalGridStoreRowsReflowSoftWrappedColdBuffer(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 
-	if err := store.appendRows([]terminalHistoryRow{
+	if err := store.appendRows([]terminalGridRow{
 		{cells: []localvterm.Cell{{Content: "a", Width: 1}, {Content: "b", Width: 1}, {Content: "c", Width: 1}, {Content: "d", Width: 1}, {Content: "e", Width: 1}}, wrapped: true},
 		{cells: []localvterm.Cell{{Content: "f", Width: 1}, {Content: "g", Width: 1}}},
 		{cells: []localvterm.Cell{{Content: "H", Width: 1}, {Content: "I", Width: 1}}},
@@ -681,7 +681,7 @@ func TestTerminalHistoryStoreRowsReflowSoftWrappedColdBuffer(t *testing.T) {
 		t.Fatalf("append structured rows: %v", err)
 	}
 
-	wide, err := store.Rows(0, 3, 10)
+	wide, err := store.Viewport(0, 3, 10)
 	if err != nil {
 		t.Fatalf("read wide rows: %v", err)
 	}
@@ -692,7 +692,7 @@ func TestTerminalHistoryStoreRowsReflowSoftWrappedColdBuffer(t *testing.T) {
 		t.Fatalf("expected hard newline row to remain separate, got %q", got)
 	}
 
-	narrow, err := store.Rows(0, 3, 3)
+	narrow, err := store.Viewport(0, 3, 3)
 	if err != nil {
 		t.Fatalf("read narrow rows: %v", err)
 	}
@@ -705,11 +705,11 @@ func TestTerminalHistoryStoreRowsReflowSoftWrappedColdBuffer(t *testing.T) {
 	}
 }
 
-func TestTerminalHistoryStoreRowsLoadsEnoughRawRowsForVisualLimit(t *testing.T) {
-	store := newMemoryTerminalHistoryStoreForTest(t)
+func TestTerminalGridStoreRowsLoadsEnoughRawRowsForVisualLimit(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 
-	if err := store.appendRows([]terminalHistoryRow{
+	if err := store.appendRows([]terminalGridRow{
 		{cells: []localvterm.Cell{{Content: "A", Width: 1}}, wrapped: true},
 		{cells: []localvterm.Cell{{Content: "B", Width: 1}}, wrapped: true},
 		{cells: []localvterm.Cell{{Content: "C", Width: 1}}},
@@ -718,7 +718,7 @@ func TestTerminalHistoryStoreRowsLoadsEnoughRawRowsForVisualLimit(t *testing.T) 
 		t.Fatalf("append structured rows: %v", err)
 	}
 
-	wide, err := store.Rows(0, 3, 10)
+	wide, err := store.Viewport(0, 3, 10)
 	if err != nil {
 		t.Fatalf("read wide rows: %v", err)
 	}

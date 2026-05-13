@@ -161,21 +161,21 @@ func TestServerListReturnsDistinctTerminalIDs(t *testing.T) {
 func TestServerHistorySurvivesServerRestart(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	store, err := newTerminalHistoryStore(root, "persist-server-1")
+	store, err := newTerminalGridStore(root, "persist-server-1")
 	if err != nil {
-		t.Fatalf("new history store: %v", err)
+		t.Fatalf("new grid store: %v", err)
 	}
 	for i := 0; i < 12; i++ {
 		rows := [][]vterm.Cell{{{Content: fmt.Sprintf("disk-%02d", i), Width: 1}}}
 		if err := store.AppendRows(rows); err != nil {
-			t.Fatalf("append history row %d: %v", i, err)
+			t.Fatalf("append grid row %d: %v", i, err)
 		}
 	}
 	if err := store.Close(); err != nil {
-		t.Fatalf("close history store: %v", err)
+		t.Fatalf("close grid store: %v", err)
 	}
 
-	restarted := NewServer(WithHistoryRoot(root), WithDefaultSize(12, 2), WithDefaultScrollback(3))
+	restarted := NewServer(WithGridRoot(root), WithDefaultSize(12, 2), WithDefaultScrollback(3))
 	replay, err := restarted.HistoryReplay(ctx, "persist-server-1", HistoryReplayOptions{BeforeOffset: 0, Limit: 4})
 	if err != nil {
 		t.Fatalf("history replay after restart failed: %v", err)

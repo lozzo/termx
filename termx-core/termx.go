@@ -32,7 +32,7 @@ type serverConfig struct {
 	defaultSize          Size
 	defaultScrollback    int
 	defaultKeepAfterExit time.Duration
-	historyRoot          string
+	gridRoot             string
 	logger               *slog.Logger
 	methodHandler        ProtocolMethodHandler
 	terminalObserver     TerminalInventoryObserver
@@ -65,7 +65,7 @@ func NewServer(opts ...ServerOption) *Server {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	observeTerminalHistoryIDs(cfg.historyRoot)
+	observeTerminalGridIDs(cfg.gridRoot)
 	srv := &Server{
 		cfg:       cfg,
 		terminals: make(map[string]*Terminal),
@@ -107,9 +107,9 @@ func WithDefaultKeepAfterExit(d time.Duration) ServerOption {
 	}
 }
 
-func WithHistoryRoot(path string) ServerOption {
+func WithGridRoot(path string) ServerOption {
 	return func(cfg *serverConfig) {
-		cfg.historyRoot = strings.TrimSpace(path)
+		cfg.gridRoot = strings.TrimSpace(path)
 	}
 }
 
@@ -181,7 +181,7 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 		Env:            opts.Env,
 		ScrollbackSize: scrollback,
 		KeepAfterExit:  keepAfterExit,
-		HistoryRoot:    s.cfg.historyRoot,
+		GridRoot:       s.cfg.gridRoot,
 		Logger:         s.cfg.logger,
 		RemoveFunc:     s.removeTerminal,
 		UpdateFunc:     s.invalidateProtocolListCache,
@@ -397,7 +397,7 @@ func (s *Server) Snapshot(ctx context.Context, id string, opts ...SnapshotOption
 		if !errors.Is(err, ErrNotFound) {
 			return nil, err
 		}
-		return s.historySnapshotFromDisk(id, opt)
+		return s.gridSnapshotFromStore(id, opt)
 	}
 	return term.Snapshot(opt.ScrollbackOffset, opt.ScrollbackLimit), nil
 }
@@ -413,7 +413,7 @@ func (s *Server) HistoryReplay(ctx context.Context, id string, opts ...HistoryRe
 		if !errors.Is(err, ErrNotFound) {
 			return nil, err
 		}
-		result, replayErr := s.historyReplayFromDisk(id, opt)
+		result, replayErr := s.gridReplayFromStore(id, opt)
 		if replayErr != nil {
 			return nil, replayErr
 		}
@@ -423,13 +423,13 @@ func (s *Server) HistoryReplay(ctx context.Context, id string, opts ...HistoryRe
 	return &result, nil
 }
 
-func (s *Server) historyReplayFromDisk(id string, opt HistoryReplayOptions) (*HistoryReplayResult, error) {
-	store, err := openTerminalHistoryStoreForReplay(s.cfg.historyRoot, id)
+func (s *Server) gridReplayFromStore(id string, opt HistoryReplayOptions) (*HistoryReplayResult, error) {
+	store, err := openTerminalGridStoreForReplay(s.cfg.gridRoot, id)
 	if err != nil {
 		return nil, err
 	}
 	defer store.Close()
-	beforeOffset, limit := sanitizeHistoryReplayWindow(opt.BeforeOffset, opt.Limit)
+	beforeOffset, limit := sanitizeGridReplayWindow(opt.BeforeOffset, opt.Limit)
 	replay, rows, hasMore, err := store.Replay(beforeOffset, limit)
 	if err != nil {
 		return nil, err
@@ -444,21 +444,21 @@ func (s *Server) historyReplayFromDisk(id string, opt HistoryReplayOptions) (*Hi
 	}, nil
 }
 
-func (s *Server) historySnapshotFromDisk(id string, opt SnapshotOptions) (*Snapshot, error) {
-	store, err := openTerminalHistoryStoreForReplay(s.cfg.historyRoot, id)
+func (s *Server) gridSnapshotFromStore(id string, opt SnapshotOptions) (*Snapshot, error) {
+	store, err := openTerminalGridStoreForReplay(s.cfg.gridRoot, id)
 	if err != nil {
 		return nil, err
 	}
 	defer store.Close()
-	beforeOffset, limit := sanitizeHistorySnapshotWindow(opt.ScrollbackOffset, opt.ScrollbackLimit)
-	result, err := store.Rows(beforeOffset, limit, int(s.cfg.defaultSize.Cols))
+	beforeOffset, limit := sanitizeGridViewportWindow(opt.ScrollbackOffset, opt.ScrollbackLimit)
+	result, err := store.Viewport(beforeOffset, limit, int(s.cfg.defaultSize.Cols))
 	if err != nil {
 		return nil, err
 	}
-	scrollbackRows, screenRows := splitHistorySnapshotRows(result.Rows, int(s.cfg.defaultSize.Rows), int(s.cfg.defaultSize.Cols))
-	scrollbackTimestamps, screenTimestamps := splitHistorySnapshotTimes(result.Timestamps, len(scrollbackRows), len(screenRows))
-	scrollbackRowKinds, screenRowKinds := splitHistorySnapshotStrings(result.RowKinds, len(scrollbackRows), len(screenRows))
-	scrollbackWrapped, screenWrapped := splitHistorySnapshotBools(result.Wrapped, len(scrollbackRows), len(screenRows))
+	scrollbackRows, screenRows := splitGridSnapshotRows(result.Rows, int(s.cfg.defaultSize.Rows), int(s.cfg.defaultSize.Cols))
+	scrollbackTimestamps, screenTimestamps := splitGridSnapshotTimes(result.Timestamps, len(scrollbackRows), len(screenRows))
+	scrollbackRowKinds, screenRowKinds := splitGridSnapshotStrings(result.RowKinds, len(scrollbackRows), len(screenRows))
+	scrollbackWrapped, screenWrapped := splitGridSnapshotBools(result.Wrapped, len(scrollbackRows), len(screenRows))
 	return &Snapshot{
 		TerminalID: id,
 		Size:       s.cfg.defaultSize,
@@ -482,7 +482,7 @@ func (s *Server) historySnapshotFromDisk(id string, opt SnapshotOptions) (*Snaps
 	}, nil
 }
 
-func splitHistorySnapshotRows(rows [][]vterm.Cell, screenHeight int, cols int) ([][]vterm.Cell, [][]vterm.Cell) {
+func splitGridSnapshotRows(rows [][]vterm.Cell, screenHeight int, cols int) ([][]vterm.Cell, [][]vterm.Cell) {
 	if screenHeight <= 0 {
 		screenHeight = 1
 	}
@@ -505,7 +505,7 @@ func splitHistorySnapshotRows(rows [][]vterm.Cell, screenHeight int, cols int) (
 	return rows[:visibleStart], screen
 }
 
-func splitHistorySnapshotTimes(values []time.Time, scrollbackRows int, screenRows int) ([]time.Time, []time.Time) {
+func splitGridSnapshotTimes(values []time.Time, scrollbackRows int, screenRows int) ([]time.Time, []time.Time) {
 	if len(values) == 0 {
 		return nil, nil
 	}
@@ -513,7 +513,7 @@ func splitHistorySnapshotTimes(values []time.Time, scrollbackRows int, screenRow
 	return cloneTimeSlice(values[:scrollbackRows]), cloneTimeSlice(values[scrollbackRows:])
 }
 
-func splitHistorySnapshotStrings(values []string, scrollbackRows int, screenRows int) ([]string, []string) {
+func splitGridSnapshotStrings(values []string, scrollbackRows int, screenRows int) ([]string, []string) {
 	if len(values) == 0 {
 		return nil, nil
 	}
@@ -521,7 +521,7 @@ func splitHistorySnapshotStrings(values []string, scrollbackRows int, screenRows
 	return cloneStringSlice(values[:scrollbackRows]), cloneStringSlice(values[scrollbackRows:])
 }
 
-func splitHistorySnapshotBools(values []bool, scrollbackRows int, screenRows int) ([]bool, []bool) {
+func splitGridSnapshotBools(values []bool, scrollbackRows int, screenRows int) ([]bool, []bool) {
 	if len(values) == 0 {
 		return nil, nil
 	}
@@ -1138,7 +1138,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 			}
 			if s.cfg.logger != nil {
 				s.cfg.logger.Info(
-					"termx history replay served",
+					"termx grid replay served",
 					"remote", remote,
 					"terminal_id", attachment.terminalID,
 					"channel", channel,
