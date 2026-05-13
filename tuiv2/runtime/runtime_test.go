@@ -386,6 +386,55 @@ func TestRuntimeScreenUpdateAlsoRefreshesLocalVTermSurface(t *testing.T) {
 	}
 }
 
+func TestRuntimeScrollbackChangeInvalidatesExhaustedSnapshotState(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 6, 2, []string{"live"})
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 500); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected terminal")
+	}
+	if !terminal.ScrollbackExhausted {
+		t.Fatalf("expected initial no-history snapshot to mark scrollback exhausted, got %#v", terminal)
+	}
+
+	payload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 6, Rows: 2},
+		ScrollbackAppend: []protocol.ScrollbackRowAppend{{
+			Cells: []protocol.Cell{
+				{Content: "h", Width: 1},
+				{Content: "i", Width: 1},
+			},
+			Timestamp: time.Now(),
+		}},
+		Ops: []protocol.ScreenOp{{
+			Code:  protocol.ScreenOpWriteSpan,
+			Row:   1,
+			Col:   0,
+			Cells: []protocol.Cell{{Content: "x", Width: 1}},
+		}},
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: payload})
+
+	if terminal.ScrollbackExhausted {
+		t.Fatalf("expected live scrollback change to clear exhausted state, got %#v", terminal)
+	}
+	if terminal.ScrollbackLoadedLimit == 0 {
+		t.Fatalf("expected local scrollback state to track appended rows, got %#v", terminal)
+	}
+}
+
 func TestRuntimeScreenUpdateUsesIncrementalVTermApplyWhenSupported(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()

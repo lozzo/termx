@@ -109,6 +109,9 @@ func (r *Runtime) applyScreenUpdateContract(terminal *TerminalRuntime, terminalI
 	}
 	update := classified.Contract.Update
 	summary := classified.Contract.Summary
+	if classified.Contract.Classification.HasScrollbackChange {
+		terminal.ScrollbackExhausted = false
+	}
 
 	snapshotApplyFinish := perftrace.Measure("runtime.stream.screen_update.snapshot_apply")
 	terminal.Snapshot = applyScreenUpdateSnapshot(terminal.Snapshot, terminalID, update)

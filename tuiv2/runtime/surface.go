@@ -317,10 +317,14 @@ func syncSurfaceScrollbackState(terminal *TerminalRuntime) {
 	if surface == nil {
 		return
 	}
-	if loaded := surface.ScrollbackRows(); loaded > terminal.ScrollbackLoadedLimit {
+	loaded := surface.ScrollbackRows()
+	if terminal.ScrollbackExhausted && loaded > terminal.ScrollbackLoadedLimit {
+		terminal.ScrollbackExhausted = false
+	}
+	if loaded > terminal.ScrollbackLoadedLimit {
 		terminal.ScrollbackLoadedLimit = loaded
 	}
-	if terminal.ScrollbackLoadingLimit > 0 && surface.ScrollbackRows() >= terminal.ScrollbackLoadingLimit {
+	if terminal.ScrollbackLoadingLimit > 0 && loaded >= terminal.ScrollbackLoadingLimit {
 		terminal.ScrollbackLoadingLimit = 0
 	}
 }
