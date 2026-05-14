@@ -10,6 +10,7 @@ import (
 const (
 	coreDiagnosticsInterval          = time.Second
 	coreDiagnosticsLargePayloadBytes = 128 * 1024
+	coreDiagnosticsScreenUpdateBytes = 32 * 1024
 	coreDiagnosticsSlowOperation     = 500 * time.Millisecond
 )
 
@@ -26,6 +27,7 @@ type transportFrameStats struct {
 	screenUpdateFrames int
 	inputFrames        int
 	resizeFrames       int
+	streamReadyFrames  int
 	errorFrames        int
 	maxPayloadBytes    int
 	maxFrameBytes      int
@@ -60,6 +62,8 @@ func (s *transportFrameStats) record(channel uint16, typ uint8, payloadBytes int
 		s.inputFrames++
 	case wire.TypeResize:
 		s.resizeFrames++
+	case wire.TypeStreamReady:
+		s.streamReadyFrames++
 	case wire.TypeError:
 		s.errorFrames++
 	}
@@ -103,6 +107,7 @@ func (s *transportFrameStats) flush(message string) {
 		"screen_update_frames", s.screenUpdateFrames,
 		"input_frames", s.inputFrames,
 		"resize_frames", s.resizeFrames,
+		"stream_ready_frames", s.streamReadyFrames,
 		"error_frames", s.errorFrames,
 		"max_payload_bytes", s.maxPayloadBytes,
 		"max_frame_bytes", s.maxFrameBytes,
@@ -117,6 +122,7 @@ func (s *transportFrameStats) flush(message string) {
 	s.screenUpdateFrames = 0
 	s.inputFrames = 0
 	s.resizeFrames = 0
+	s.streamReadyFrames = 0
 	s.errorFrames = 0
 	s.maxPayloadBytes = 0
 	s.maxFrameBytes = 0

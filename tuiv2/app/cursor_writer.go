@@ -68,6 +68,13 @@ type outputCursorWriter struct {
 	disableVerticalScroll   bool
 	disableOwnerAwareDelta  bool
 	forceFullFrameLines     bool
+	useUVRenderer           bool
+	uvRenderer              *uvTerminalFrameRenderer
+	uvHostWidthFallbacks    int
+	uvHostWidthBackoff      int
+	uvSlowFrames            int
+	uvSlowBackoff           int
+	debugLogPath            string
 	verticalScrollMode      verticalScrollMode
 	drainHook               func()
 	interactiveFlushHint    func() bool
@@ -78,6 +85,32 @@ type outputCursorWriter struct {
 	flushTimer              *time.Timer
 	flushTimerArmed         bool
 	perfSampleHook          func(string)
+	presentPlanLogHook      func(presentPlanLog)
+}
+
+type presentPlanLog struct {
+	Rows                 int
+	PreviousBytes        int
+	NextBytes            int
+	Mode                 string
+	ChangedRows          int
+	UpdatedRows          int
+	BaselineChangedRows  int
+	PayloadBytes         int
+	FullWireBytes        int
+	QuickRowsMs          float64
+	DiffMs               float64
+	OwnerAwareMs         float64
+	VerticalScrollMs     float64
+	PlanMs               float64
+	RenderChangedRowsMs  float64
+	OwnerAwareAttempted  bool
+	VerticalAttempted    bool
+	QuickCandidateUsed   bool
+	QuickCandidateValid  bool
+	OwnerAwareValid      bool
+	VerticalValid        bool
+	FullRepaintCandidate bool
 }
 
 type pendingDirectFrame struct {
@@ -102,6 +135,7 @@ type framePresenter struct {
 	fullWidthLines                     bool
 	debugFaultScrollDropRemainderEvery int
 	verticalScrollCount                int
+	planLogHook                        func(presentPlanLog)
 }
 
 type presentedRow struct {
@@ -313,6 +347,15 @@ func shouldUseOwnerAwareDelta(meta *presentMeta) bool {
 	return false
 }
 
+func presentedLinesHaveWidthSafetyState(lines []string) bool {
+	for _, line := range lines {
+		if lineHasWidthSafetyState(line) {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *framePresenter) setLines(lines []string, resetParsed bool) {
 	if p == nil {
 		return
@@ -336,10 +379,16 @@ func (p *framePresenter) presentVerticalScroll(lines []string) string {
 }
 
 func (p *framePresenter) verticalScrollCandidate(lines []string) framePatchCandidate {
+	if candidate := p.verticalScrollRowsCandidate(lines); candidate.valid() {
+		return candidate
+	}
+	return p.verticalScrollRectCandidate(lines)
+}
+
+func (p *framePresenter) verticalScrollRowsCandidate(lines []string) framePatchCandidate {
 	if len(lines) < 6 || len(lines) != len(p.lines) {
 		return framePatchCandidate{}
 	}
-	best := framePatchCandidate{}
 	if p.verticalScrollMode.RowsAllowed() {
 		plan, ok := detectVerticalScrollPlan(p.lines, lines)
 		if ok {
@@ -347,7 +396,7 @@ func (p *framePresenter) verticalScrollCandidate(lines []string) framePatchCandi
 			remainder, _ := renderChangedRows(afterScroll, lines)
 			prefix := renderVerticalScrollPlan(plan, len(lines))
 			if prefix != "" {
-				best = framePatchCandidate{
+				return framePatchCandidate{
 					mode:         framePatchCandidateVerticalScrollRows,
 					payload:      prefix + remainder,
 					faultPayload: prefix,
@@ -359,9 +408,14 @@ func (p *framePresenter) verticalScrollCandidate(lines []string) framePatchCandi
 			}
 		}
 	}
-	if best.mode == framePatchCandidateVerticalScrollRows {
-		return best
+	return framePatchCandidate{}
+}
+
+func (p *framePresenter) verticalScrollRectCandidate(lines []string) framePatchCandidate {
+	if len(lines) < 6 || len(lines) != len(p.lines) {
+		return framePatchCandidate{}
 	}
+	best := framePatchCandidate{}
 	if p.verticalScrollMode.RectsAllowed() && p.fullWidthLines && shared.ExperimentalLRScrollEnabled() {
 		nextRows := make([]presentedRow, len(lines))
 		for i := range lines {
@@ -641,6 +695,8 @@ func (w *outputCursorWriter) enterDirectTerminal() error {
 	w.presenter.Reset()
 	w.presenter.verticalScrollMode = w.effectiveVerticalScrollModeLocked()
 	w.presenter.ownerAwareDeltaEnabled = w.ownerAwareDeltaEnabledLocked()
+	w.resetUVRendererLocked()
+	w.resetUVFallbackStateLocked()
 	w.lastTTYWidth = 0
 	w.lastDirectCursor = ""
 	w.stopFlushTimerLocked()
@@ -684,6 +740,8 @@ func (w *outputCursorWriter) exitDirectTerminal() error {
 	}
 	w.presenter.Reset()
 	w.presenter.ownerAwareDeltaEnabled = w.ownerAwareDeltaEnabledLocked()
+	w.resetUVRendererLocked()
+	w.resetUVFallbackStateLocked()
 	w.lastDirectCursor = ""
 	w.stopFlushTimerLocked()
 	w.mu.Unlock()
@@ -773,6 +831,14 @@ func (w *outputCursorWriter) WriteFrameLinesWithMeta(lines []string, cursor stri
 	w.pending.afterWrite = append(w.pending.afterWrite, w.afterWrite...)
 	w.afterWrite = nil
 	w.backlogActive.Store(true)
+	w.debugLog(
+		"cursor_writer.enqueue",
+		"mode", "lines",
+		"rows", len(w.pending.lines),
+		"input_bytes", lineBytes,
+		"pending_scheduled", w.pending.scheduled,
+		"adaptive_level", w.adaptiveBatchLevel,
+	)
 	if w.forceImmediateNextFrame {
 		w.forceImmediateNextFrame = false
 		// ResetFrameState() clears the presenter baseline. The next frame must
@@ -810,6 +876,7 @@ func (w *outputCursorWriter) WriteFrameLinesWithMeta(lines []string, cursor stri
 		return nil
 	}
 	w.pending.scheduled = true
+	w.debugLog("cursor_writer.schedule_flush", "delay_ms", delay.Milliseconds(), "adaptive_level", w.adaptiveBatchLevel)
 	w.scheduleFlushLocked(delay)
 	return nil
 }
@@ -840,6 +907,7 @@ func (w *outputCursorWriter) flushPendingFrameLocked() (func(), error) {
 	if frame == "" && len(lines) == 0 && len(afterWrite) == 0 {
 		perftrace.Count("cursor_writer.direct_flush.empty", 0)
 		w.backlogActive.Store(false)
+		w.debugLog("cursor_writer.flush_empty")
 		return w.drainHook, nil
 	}
 	err := error(nil)
@@ -850,11 +918,21 @@ func (w *outputCursorWriter) flushPendingFrameLocked() (func(), error) {
 		err = w.writeFrameLocked(frame, cursor, afterWrite)
 	}
 	if err != nil {
+		w.debugLog("cursor_writer.flush_error", "err", err)
 		return nil, err
 	}
-	w.observeDirectFlushCostLocked(time.Since(flushStart))
+	cost := time.Since(flushStart)
+	w.observeDirectFlushCostLocked(cost)
 	w.backlogActive.Store(false)
 	w.lastFlushAt = time.Now()
+	w.debugLog(
+		"cursor_writer.flush_done",
+		"elapsed_ms", float64(cost.Microseconds())/1000.0,
+		"rows", len(lines),
+		"frame_bytes", len(frame),
+		"after_write", len(afterWrite),
+		"adaptive_level", w.adaptiveBatchLevel,
+	)
 	return w.drainHook, nil
 }
 
@@ -876,6 +954,7 @@ func (w *outputCursorWriter) SetTTYWidth(width int) {
 	// Frames are rendered against the current WindowSizeMsg width, so matching
 	// that width here lets the writer skip redundant truncate passes/syscalls.
 	w.lastTTYWidth = width
+	w.resetUVFallbackStateLocked()
 	w.mu.Unlock()
 }
 
@@ -1000,10 +1079,13 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	defer func() {
 		finish(writtenBytes)
 	}()
+	totalStart := time.Now()
 	presentFinish := perftrace.Measure("cursor_writer.present")
+	presentStart := time.Now()
 	w.presenter.fullWidthLines = false
 	payload := w.presenter.Present(frame)
 	presentFinish(len(payload))
+	presentElapsed := time.Since(presentStart)
 	syncOutput := w.tty != nil
 	if cursor == "" {
 		cursor = hideHostCursorSequence
@@ -1038,8 +1120,10 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	output := buf.String()
 	writtenBytes = len(output)
 	ioFinish := perftrace.Measure("cursor_writer.io_write")
+	ioStart := time.Now()
 	_, err := io.WriteString(w.out, output)
 	ioFinish(writtenBytes)
+	ioElapsed := time.Since(ioStart)
 	if err == nil {
 		w.appendFrameDumpLocked("direct_frame", output)
 		w.lastDirectCursor = cursor
@@ -1047,6 +1131,17 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 			w.perfSampleHook("writer_flush")
 		}
 	}
+	w.debugLog(
+		"cursor_writer.frame_write",
+		"mode", "frame",
+		"input_bytes", len(frame),
+		"payload_bytes", len(payload),
+		"output_bytes", writtenBytes,
+		"present_ms", float64(presentElapsed.Microseconds())/1000.0,
+		"io_ms", float64(ioElapsed.Microseconds())/1000.0,
+		"total_ms", float64(time.Since(totalStart).Microseconds())/1000.0,
+		"err", err,
+	)
 	return err
 }
 
@@ -1056,21 +1151,77 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 	defer func() {
 		finish(writtenBytes)
 	}()
+	totalStart := time.Now()
 	presentFinish := perftrace.Measure("cursor_writer.present")
-	w.presenter.fullWidthLines = true
-	previousVerticalScrollMode := w.presenter.verticalScrollMode
-	previousOwnerAwareDeltaEnabled := w.presenter.ownerAwareDeltaEnabled
-	if w.forceFullFrameLines {
-		w.presenter.Reset()
+	presentStart := time.Now()
+	useRawPayload := false
+	renderLines := stripTrailingEraseLineRight(lines)
+	payload := ""
+	presentMode := "delta"
+	uvFallbackReason := ""
+	uvAttemptElapsed := time.Duration(0)
+	fallbackPresentElapsed := time.Duration(0)
+	planLog := presentPlanLog{}
+	if w.useUVRenderer {
+		if w.forceFullFrameLines {
+			w.resetUVRendererLocked()
+			perftrace.Count("cursor_writer.present.mode.full_repaint_forced", len(lines))
+		}
+		var ok bool
+		uvRendererWasActive := w.uvRenderer != nil
+		uvAttemptStart := time.Now()
+		payload, ok, uvFallbackReason = w.presentFrameLinesWithUVLocked(renderLines, meta)
+		uvAttemptElapsed = time.Since(uvAttemptStart)
+		if ok {
+			useRawPayload = true
+			presentMode = "uv"
+			w.observeUVSuccessLocked(uvAttemptElapsed, len(renderLines), len(payload))
+		} else {
+			perftrace.Count("cursor_writer.renderer.uv.fallback", len(lines))
+			if uvRendererWasActive || w.uvRenderer != nil {
+				w.resetUVRendererLocked()
+				w.presenter.Reset()
+				w.presenter.verticalScrollMode = w.effectiveVerticalScrollModeLocked()
+				w.presenter.ownerAwareDeltaEnabled = w.ownerAwareDeltaEnabledLocked()
+			}
+			if uvFallbackReason == uvFallbackReasonHostWidthBackoff {
+				presentMode = "delta_after_uv_backoff"
+			} else {
+				presentMode = "delta_after_uv_fallback"
+			}
+		}
+	}
+	if !useRawPayload {
+		fallbackPresentStart := time.Now()
+		w.presenter.fullWidthLines = true
+		previousVerticalScrollMode := w.presenter.verticalScrollMode
+		previousOwnerAwareDeltaEnabled := w.presenter.ownerAwareDeltaEnabled
+		previousPlanLogHook := w.presenter.planLogHook
+		w.presenter.planLogHook = func(log presentPlanLog) {
+			planLog = log
+			if w.presentPlanLogHook != nil {
+				w.presentPlanLogHook(log)
+			}
+			if previousPlanLogHook != nil {
+				previousPlanLogHook(log)
+			}
+		}
+		if w.forceFullFrameLines {
+			w.presenter.Reset()
+			w.presenter.verticalScrollMode = previousVerticalScrollMode
+			w.presenter.ownerAwareDeltaEnabled = previousOwnerAwareDeltaEnabled
+			w.presenter.planLogHook = previousPlanLogHook
+			w.presenter.fullWidthLines = true
+			perftrace.Count("cursor_writer.present.mode.full_repaint_forced", len(lines))
+		}
+		payload = w.presenter.PresentLinesWithMeta(renderLines, meta)
+		w.presenter.planLogHook = previousPlanLogHook
 		w.presenter.verticalScrollMode = previousVerticalScrollMode
 		w.presenter.ownerAwareDeltaEnabled = previousOwnerAwareDeltaEnabled
-		w.presenter.fullWidthLines = true
-		perftrace.Count("cursor_writer.present.mode.full_repaint_forced", len(lines))
+		fallbackPresentElapsed = time.Since(fallbackPresentStart)
 	}
-	payload := w.presenter.PresentLinesWithMeta(stripTrailingEraseLineRight(lines), meta)
-	w.presenter.verticalScrollMode = previousVerticalScrollMode
-	w.presenter.ownerAwareDeltaEnabled = previousOwnerAwareDeltaEnabled
 	presentFinish(len(payload))
+	presentElapsed := time.Since(presentStart)
 	syncOutput := w.tty != nil
 	if cursor == "" {
 		cursor = hideHostCursorSequence
@@ -1090,7 +1241,11 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 	}
 	buf.WriteString(hideHostCursorSequence)
 	buf.WriteString(xansi.MoveCursorOrigin)
-	writeHostFramePayload(&buf, payload)
+	if useRawPayload {
+		buf.WriteString(payload)
+	} else {
+		writeHostFramePayload(&buf, payload)
+	}
 	for _, seq := range afterWrite {
 		buf.WriteString(seq)
 	}
@@ -1103,15 +1258,61 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 	output := buf.String()
 	writtenBytes = len(output)
 	ioFinish := perftrace.Measure("cursor_writer.io_write")
+	ioStart := time.Now()
 	_, err := io.WriteString(w.out, output)
 	ioFinish(writtenBytes)
+	ioElapsed := time.Since(ioStart)
 	if err == nil {
-		w.appendFrameDumpLocked("direct_frame", output)
+		if useRawPayload {
+			w.appendFrameDumpLocked("direct_frame_uv", output)
+		} else {
+			w.appendFrameDumpLocked("direct_frame", output)
+		}
 		w.lastDirectCursor = cursor
 		if w.perfSampleHook != nil {
 			w.perfSampleHook("writer_flush")
 		}
 	}
+	w.debugLog(
+		"cursor_writer.frame_write",
+		"mode", presentMode,
+		"rows", len(lines),
+		"input_bytes", joinedLinesLen(lines),
+		"payload_bytes", len(payload),
+		"output_bytes", writtenBytes,
+		"after_write", len(afterWrite),
+		"present_ms", float64(presentElapsed.Microseconds())/1000.0,
+		"uv_attempt_ms", float64(uvAttemptElapsed.Microseconds())/1000.0,
+		"fallback_present_ms", float64(fallbackPresentElapsed.Microseconds())/1000.0,
+		"uv_fallback_reason", uvFallbackReason,
+		"uv_host_width_fallbacks", w.uvHostWidthFallbacks,
+		"uv_host_width_backoff", w.uvHostWidthBackoff,
+		"uv_slow_frames", w.uvSlowFrames,
+		"uv_slow_backoff", w.uvSlowBackoff,
+		"plan_mode", planLog.Mode,
+		"plan_rows", planLog.Rows,
+		"plan_changed_rows", planLog.ChangedRows,
+		"plan_updated_rows", planLog.UpdatedRows,
+		"plan_baseline_changed_rows", planLog.BaselineChangedRows,
+		"plan_payload_bytes", planLog.PayloadBytes,
+		"plan_full_wire_bytes", planLog.FullWireBytes,
+		"plan_quick_rows_ms", planLog.QuickRowsMs,
+		"plan_diff_ms", planLog.DiffMs,
+		"plan_render_changed_rows_ms", planLog.RenderChangedRowsMs,
+		"plan_owner_aware_ms", planLog.OwnerAwareMs,
+		"plan_vertical_scroll_ms", planLog.VerticalScrollMs,
+		"plan_total_ms", planLog.PlanMs,
+		"plan_owner_aware_attempted", planLog.OwnerAwareAttempted,
+		"plan_vertical_attempted", planLog.VerticalAttempted,
+		"plan_quick_used", planLog.QuickCandidateUsed,
+		"plan_quick_valid", planLog.QuickCandidateValid,
+		"plan_owner_aware_valid", planLog.OwnerAwareValid,
+		"plan_vertical_valid", planLog.VerticalValid,
+		"plan_full_repaint_candidate", planLog.FullRepaintCandidate,
+		"io_ms", float64(ioElapsed.Microseconds())/1000.0,
+		"total_ms", float64(time.Since(totalStart).Microseconds())/1000.0,
+		"err", err,
+	)
 	return err
 }
 
@@ -1123,7 +1324,11 @@ func newOutputCursorWriter(out io.Writer) *outputCursorWriter {
 		out:                   out,
 		frameDumpPath:         os.Getenv("TERMX_FRAME_DUMP"),
 		disableVerticalScroll: os.Getenv("TERMX_DISABLE_VERTICAL_SCROLL") == "1",
+		useUVRenderer:         globalUVRendererEnabled(false),
 		verticalScrollMode:    verticalScrollModeRowsAndRects,
+	}
+	if writer.useUVRenderer {
+		perftrace.Count("cursor_writer.renderer.uv.enabled", 0)
 	}
 	writer.presenter.verticalScrollMode = writer.effectiveVerticalScrollModeLocked()
 	writer.presenter.ownerAwareDeltaEnabled = true
@@ -1132,6 +1337,39 @@ func newOutputCursorWriter(out io.Writer) *outputCursorWriter {
 		writer.tty = tty
 	}
 	return writer
+}
+
+func (w *outputCursorWriter) SetDebugLogPath(path string) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	w.debugLogPath = rendererDebugLogPath(path, w.useUVRenderer)
+	w.mu.Unlock()
+}
+
+func (w *outputCursorWriter) SetUVRendererEnabled(enabled bool) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	if w.useUVRenderer != enabled {
+		w.useUVRenderer = enabled
+		w.resetUVRendererLocked()
+		w.resetUVFallbackStateLocked()
+		w.debugLog("cursor_writer.uv.configure", "enabled", enabled)
+	}
+	if w.useUVRenderer {
+		perftrace.Count("cursor_writer.renderer.uv.enabled", 0)
+	}
+	w.mu.Unlock()
+}
+
+func (w *outputCursorWriter) debugLog(event string, kv ...any) {
+	if w == nil || w.debugLogPath == "" {
+		return
+	}
+	appendDebugLogLine(w.debugLogPath, event, kv...)
 }
 
 func (w *outputCursorWriter) SetVerticalScrollEnabled(enabled bool) {
@@ -1258,6 +1496,8 @@ func (w *outputCursorWriter) ResetFrameState() {
 	w.presenter.Reset()
 	w.presenter.verticalScrollMode = w.effectiveVerticalScrollModeLocked()
 	w.presenter.ownerAwareDeltaEnabled = w.ownerAwareDeltaEnabledLocked()
+	w.resetUVRendererLocked()
+	w.resetUVFallbackStateLocked()
 	w.lastDirectCursor = ""
 	w.lastTTYWidth = 0
 	w.pending = pendingDirectFrame{}

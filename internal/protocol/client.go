@@ -183,6 +183,9 @@ func (s *clientStream) coalesceQueuedScreenUpdateLocked(frame StreamFrame) bool 
 	if last.Type != wire.TypeScreenUpdate {
 		return false
 	}
+	if !screenUpdateFrameCanReplaceQueued(frame) {
+		return false
+	}
 	payload := frame.Payload
 	if len(payload) > 0 {
 		payload = append([]byte(nil), payload...)
@@ -190,6 +193,14 @@ func (s *clientStream) coalesceQueuedScreenUpdateLocked(frame StreamFrame) bool 
 	last.Payload = payload
 	perftrace.Count("protocol.client.stream.screen_update.coalesced", 1)
 	return true
+}
+
+func screenUpdateFrameCanReplaceQueued(frame StreamFrame) bool {
+	if frame.Type != wire.TypeScreenUpdate || len(frame.Payload) == 0 {
+		return false
+	}
+	update, err := DecodeScreenUpdatePayload(frame.Payload)
+	return err == nil && update.FullReplace
 }
 
 func (s *clientStream) noteDroppedOutputLocked(dropped uint64) {

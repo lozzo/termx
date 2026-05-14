@@ -382,7 +382,11 @@ func forwardTerminalStreamMessagesImmediate(ctx context.Context, src <-chan fano
 			}
 		}
 		if msg.Type == fanout.StreamScreenUpdate {
-			msg, pending = collapseTerminalStreamScreenUpdates(src, msg)
+			var collapsed int
+			msg, pending, collapsed = collapseTerminalStreamScreenUpdates(src, msg)
+			if collapsed > 0 && fallback != nil {
+				msg = fanout.StreamMessage{Type: fanout.StreamScreenUpdate}
+			}
 		}
 		if !sendFanoutStreamMessage(ctx, dst, msg, fallback) {
 			return
@@ -390,7 +394,7 @@ func forwardTerminalStreamMessagesImmediate(ctx context.Context, src <-chan fano
 	}
 }
 
-func collapseTerminalStreamScreenUpdates(src <-chan fanout.StreamMessage, first fanout.StreamMessage) (fanout.StreamMessage, *fanout.StreamMessage) {
+func collapseTerminalStreamScreenUpdates(src <-chan fanout.StreamMessage, first fanout.StreamMessage) (fanout.StreamMessage, *fanout.StreamMessage, int) {
 	msg := first
 	collapsed := 0
 	for {
@@ -400,7 +404,7 @@ func collapseTerminalStreamScreenUpdates(src <-chan fanout.StreamMessage, first 
 				if collapsed > 0 {
 					perftrace.Count("terminal.stream.screen_update.coalesced", collapsed)
 				}
-				return msg, nil
+				return msg, nil, collapsed
 			}
 			if next.Type == fanout.StreamScreenUpdate {
 				msg = next
@@ -411,12 +415,12 @@ func collapseTerminalStreamScreenUpdates(src <-chan fanout.StreamMessage, first 
 				perftrace.Count("terminal.stream.screen_update.coalesced", collapsed)
 			}
 			pending := next
-			return msg, &pending
+			return msg, &pending, collapsed
 		default:
 			if collapsed > 0 {
 				perftrace.Count("terminal.stream.screen_update.coalesced", collapsed)
 			}
-			return msg, nil
+			return msg, nil, collapsed
 		}
 	}
 }
@@ -1145,8 +1149,8 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 	if t == nil || stream == nil || t.vterm == nil || len(chunk) == 0 {
 		return
 	}
-	writeFinish := perftrace.Measure("terminal.screen_update.write_vterm_latest")
-	n, err, damage := t.vterm.WriteForLatestFrame(chunk)
+	writeFinish := perftrace.Measure("terminal.screen_update.write_vterm")
+	n, err, damage := t.vterm.WriteWithDamage(chunk)
 	writeFinish(len(chunk))
 	if err != nil || n != len(chunk) {
 		dropped := len(chunk) - maxInt(0, n)
@@ -1157,7 +1161,12 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 		return
 	}
 	t.appendGridFromDamageLocked(damage)
-	stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate})
+	payload, ok := t.screenUpdatePayloadFromDamageLocked(damage)
+	if !ok {
+		stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate})
+		return
+	}
+	stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Payload: payload})
 }
 
 func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
@@ -1557,6 +1566,9 @@ func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage)
 	deltaUpdate := screenUpdateFromDamageState(damage, t.currentTitleLocked())
 	if damage.RequiresFullReplace {
 		perftrace.Count("terminal.screen_update.requires_full_replace_damage", 0)
+		if damage.FullReplaceReason != "" {
+			perftrace.Count("terminal.screen_update.requires_full_replace."+damage.FullReplaceReason, 0)
+		}
 		fullUpdate := screenFullReplaceUpdateFromVTerm(t.vterm, t.currentTitleLocked())
 		encodeFinish := perftrace.Measure("terminal.screen_update.encode")
 		payload, err := protocol.EncodeScreenUpdatePayload(fullUpdate)
@@ -1565,6 +1577,12 @@ func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage)
 			return nil, false
 		}
 		recordEncodedScreenUpdatePayload(screenUpdateEncodeModeFullReplace, payload)
+		t.logScreenUpdatePayloadDiagnosticsLocked(damage, screenUpdateEncodeResult{
+			Payload:          payload,
+			Mode:             screenUpdateEncodeModeFullReplace,
+			FullPayloadBytes: len(payload),
+			Reason:           fullReplaceDamageReason(damage),
+		})
 		return payload, true
 	}
 	if screenUpdateShouldEncodeDeltaOnly(deltaUpdate, damage.Modes.AlternateScreen) {
@@ -1572,19 +1590,138 @@ func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage)
 		encodeFinish := perftrace.Measure("terminal.screen_update.encode")
 		payload, err := protocol.EncodeScreenUpdatePayload(deltaUpdate)
 		encodeFinish(len(payload))
-		if err == nil {
+		if err == nil && len(payload) <= screenUpdateDeltaOnlyShortcutMaxPayloadBytes {
 			recordEncodedScreenUpdatePayload(screenUpdateEncodeModeDelta, payload)
+			t.logScreenUpdatePayloadDiagnosticsLocked(damage, screenUpdateEncodeResult{
+				Payload:           payload,
+				Mode:              screenUpdateEncodeModeDelta,
+				DeltaPayloadBytes: len(payload),
+				Reason:            "delta_only_shortcut",
+			})
 			return payload, true
 		}
-		perftrace.Count("terminal.screen_update.delta_only_encode_error", 0)
+		if err != nil {
+			perftrace.Count("terminal.screen_update.delta_only_encode_error", 0)
+		} else {
+			perftrace.Count("terminal.screen_update.delta_only_shortcut_large_compare", len(payload))
+		}
 	}
 	perftrace.Count("terminal.screen_update.requires_full_snapshot", 0)
 	fullUpdate := screenFullReplaceUpdateFromVTerm(t.vterm, t.currentTitleLocked())
-	payload, _, ok := encodeScreenUpdatePayloadByStrategy(deltaUpdate, fullUpdate, fullUpdate.Modes.AlternateScreen)
+	result, ok := encodeScreenUpdatePayloadByStrategyWithDiagnostics(deltaUpdate, fullUpdate, fullUpdate.Modes.AlternateScreen)
 	if !ok {
 		return nil, false
 	}
-	return payload, true
+	t.logScreenUpdatePayloadDiagnosticsLocked(damage, result)
+	return result.Payload, true
+}
+
+func fullReplaceDamageReason(damage vterm.WriteDamage) string {
+	if damage.FullReplaceReason == "" {
+		return "requires_full_replace_damage"
+	}
+	return "requires_full_replace_" + damage.FullReplaceReason
+}
+
+type screenUpdateDamageDiagnostics struct {
+	Ops                  int
+	WriteSpanOps         int
+	WriteSpanCells       int
+	ScrollRectOps        int
+	CopyRectOps          int
+	ClearRectOps         int
+	ClearToEOLOps        int
+	ControlOps           int
+	ScrollbackAppendRows int
+	ScrollbackAppendCell int
+	ChangedRows          int
+	ChangedCells         int
+}
+
+func (t *Terminal) logScreenUpdatePayloadDiagnosticsLocked(damage vterm.WriteDamage, result screenUpdateEncodeResult) {
+	if t == nil || t.logger == nil || len(result.Payload) == 0 {
+		return
+	}
+	stats := screenUpdateDamageStats(damage)
+	if len(result.Payload) < coreDiagnosticsScreenUpdateBytes && !result.Compared {
+		return
+	}
+	t.logger.Info(
+		"termx screen update payload detail",
+		"terminal_id", t.id,
+		"mode", string(result.Mode),
+		"reason", result.Reason,
+		"payload_bytes", len(result.Payload),
+		"delta_payload_bytes", result.DeltaPayloadBytes,
+		"full_payload_bytes", result.FullPayloadBytes,
+		"compared", result.Compared,
+		"requires_full_replace", damage.RequiresFullReplace,
+		"alternate_screen", damage.Modes.AlternateScreen,
+		"cols", damage.SizeCols,
+		"rows", damage.SizeRows,
+		"screen_scroll", damage.ScreenScroll,
+		"ops", stats.Ops,
+		"full_replace_reason", damage.FullReplaceReason,
+		"direct_damage_items", damage.DirectDamageItems,
+		"direct_damage_rows", damage.DirectDamageRows,
+		"direct_damage_cells", damage.DirectDamageCells,
+		"write_span_ops", stats.WriteSpanOps,
+		"write_span_cells", stats.WriteSpanCells,
+		"scroll_rect_ops", stats.ScrollRectOps,
+		"copy_rect_ops", stats.CopyRectOps,
+		"clear_rect_ops", stats.ClearRectOps,
+		"clear_to_eol_ops", stats.ClearToEOLOps,
+		"control_ops", stats.ControlOps,
+		"scrollback_trim", damage.ScrollbackTrim,
+		"scrollback_append_rows", stats.ScrollbackAppendRows,
+		"scrollback_append_cells", stats.ScrollbackAppendCell,
+		"changed_rows", stats.ChangedRows,
+		"changed_cells", stats.ChangedCells,
+		"diff_cpu_ms", float64(damage.DiffCPUNanos)/1_000_000.0,
+	)
+}
+
+func screenUpdateDamageStats(damage vterm.WriteDamage) screenUpdateDamageDiagnostics {
+	stats := screenUpdateDamageDiagnostics{Ops: len(damage.Ops)}
+	changedRows := make(map[int]struct{}, len(damage.Ops))
+	markRectRows := func(y, h int) {
+		for row := y; row < y+h; row++ {
+			changedRows[row] = struct{}{}
+		}
+	}
+	for _, op := range damage.Ops {
+		switch op.Code {
+		case vterm.ScreenOpWriteSpan:
+			stats.WriteSpanOps++
+			stats.WriteSpanCells += len(op.Cells)
+			changedRows[op.Row] = struct{}{}
+		case vterm.ScreenOpScrollRect:
+			stats.ScrollRectOps++
+			stats.ChangedCells += maxInt(0, op.Rect.Width*op.Rect.Height)
+			markRectRows(op.Rect.Y, op.Rect.Height)
+		case vterm.ScreenOpCopyRect:
+			stats.CopyRectOps++
+			stats.ChangedCells += maxInt(0, op.Src.Width*op.Src.Height)
+			markRectRows(op.DstY, op.Src.Height)
+		case vterm.ScreenOpClearRect:
+			stats.ClearRectOps++
+			stats.ChangedCells += maxInt(0, op.Rect.Width*op.Rect.Height)
+			markRectRows(op.Rect.Y, op.Rect.Height)
+		case vterm.ScreenOpClearToEOL:
+			stats.ClearToEOLOps++
+			stats.ChangedCells++
+			changedRows[op.Row] = struct{}{}
+		case vterm.ScreenOpCursor, vterm.ScreenOpModes, vterm.ScreenOpResize, vterm.ScreenOpTitle:
+			stats.ControlOps++
+		}
+	}
+	stats.ScrollbackAppendRows = len(damage.ScrollbackAppend)
+	for _, row := range damage.ScrollbackAppend {
+		stats.ScrollbackAppendCell += len(row.Cells)
+	}
+	stats.ChangedRows = len(changedRows) + stats.ScrollbackAppendRows
+	stats.ChangedCells += stats.WriteSpanCells + stats.ScrollbackAppendCell
+	return stats
 }
 
 func (t *Terminal) currentStreamScreenStateLocked() *streamScreenState {

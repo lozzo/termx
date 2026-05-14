@@ -309,6 +309,52 @@ func TestSubscribeRunningTerminalBootstrapsResizeReplayThenLiveScreenUpdate(t *t
 	}
 }
 
+func TestWriteAuthoritativeScreenUpdateBroadcastsLiveDeltaPayload(t *testing.T) {
+	vt := localvterm.New(80, 24, 128, nil)
+	vt.LoadSnapshot(
+		benchmarkFilledScreen(80, 24, "log"),
+		localvterm.CursorState{Row: 23, Col: 0, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	term := &Terminal{
+		id:     "term-1",
+		size:   Size{Cols: 80, Rows: 24},
+		state:  StateRunning,
+		title:  "demo",
+		vterm:  vt,
+		stream: fanout.New(),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := term.stream.Subscribe(ctx)
+
+	term.streamMu.Lock()
+	term.writeAuthoritativeScreenUpdateLocked(term.stream, []byte("scroll-a\n"))
+	term.streamMu.Unlock()
+
+	select {
+	case msg := <-stream:
+		if msg.Type != fanout.StreamScreenUpdate {
+			t.Fatalf("expected screen update, got %#v", msg)
+		}
+		if len(msg.Payload) == 0 {
+			t.Fatal("expected live screen update to carry a delta payload, got empty invalidation")
+		}
+		update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
+		if err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		if update.FullReplace {
+			t.Fatalf("expected live scroll delta payload, got full replace %#v", update)
+		}
+		if update.ScreenScroll == 0 && len(update.Ops) == 0 {
+			t.Fatalf("expected live scroll delta operations, got %#v", update)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for live screen update")
+	}
+}
+
 func TestSubscribeBootstrapSendsScreenOnlyAndHistoryReplayStaysAvailable(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1136,6 +1182,56 @@ func TestScreenUpdatePayloadFromDamageScrollUsesDeltaPayload(t *testing.T) {
 	}
 	if update.ScreenScroll == 0 && len(update.Ops) == 0 {
 		t.Fatalf("expected scroll delta operations, got %#v", update)
+	}
+}
+
+func TestScreenUpdatePayloadFromBroadDirectDamageUsesFullReplaceReason(t *testing.T) {
+	vt := localvterm.New(8, 2, 32, nil)
+	vt.LoadSnapshot(
+		localvterm.ScreenData{
+			Cells: [][]localvterm.Cell{
+				localVTermRowForTest("abcdefgh", 8),
+				localVTermRowForTest("ijklmnop", 8),
+			},
+		},
+		localvterm.CursorState{Row: 1, Col: 8, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	term := &Terminal{
+		vterm: vt,
+		title: "demo",
+	}
+	damage := localvterm.WriteDamage{
+		RequiresFullReplace: true,
+		FullReplaceReason:   "broad_direct_cell_damage",
+		DirectDamageItems:   2,
+		DirectDamageRows:    2,
+		DirectDamageCells:   16,
+		Cursor:              localvterm.CursorState{Row: 1, Col: 8, Visible: true},
+		Modes:               localvterm.TerminalModes{AutoWrap: true},
+		SizeCols:            8,
+		SizeRows:            2,
+	}
+
+	payload, ok := term.screenUpdatePayloadFromDamageLocked(damage)
+	if !ok {
+		t.Fatal("expected payload")
+	}
+	update, err := protocol.DecodeScreenUpdatePayload(payload)
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if !update.FullReplace {
+		t.Fatalf("expected full replace payload, got %#v", update)
+	}
+	if update.Title != "demo" {
+		t.Fatalf("expected title propagated, got %q", update.Title)
+	}
+	if got := protocolRowToString(update.Screen.Cells[0]); got != "abcdefgh" {
+		t.Fatalf("expected screen row preserved in full replace, got %q", got)
+	}
+	if got := fullReplaceDamageReason(damage); got != "requires_full_replace_broad_direct_cell_damage" {
+		t.Fatalf("unexpected diagnostic reason %q", got)
 	}
 }
 

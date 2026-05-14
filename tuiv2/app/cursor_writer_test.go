@@ -15,10 +15,11 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	uv "github.com/charmbracelet/ultraviolet"
 	xansi "github.com/charmbracelet/x/ansi"
 	creackpty "github.com/creack/pty"
-	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/internal/frameaudit"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/input"
@@ -1273,6 +1274,115 @@ func TestFramePresenterOwnerAwareDeltaFallsBackForHostWidthSafetyRows(t *testing
 	}
 }
 
+func TestFramePresenterPlanSkipsOwnerAwareProbeForHostWidthSafetyRows(t *testing.T) {
+	previous := []string{
+		"left RRRR",
+		"é" + xansi.CHA(2) + "X" + xansi.CHA(6) + "│",
+		"tail RRRR",
+	}
+	next := []string{
+		"left RRRR",
+		"è" + xansi.CHA(2) + "Y" + xansi.CHA(6) + "│",
+		"tail RRRR",
+	}
+	meta := ownerAwareTestMeta(
+		[]hostOwnerID{10, 10, 10, 10, 0, 20, 20, 20, 20},
+		[]hostOwnerID{10, 10, 10, 10, 0, 20, 20, 20, 20},
+		[]hostOwnerID{10, 10, 10, 10, 0, 20, 20, 20, 20},
+	)
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	presenter.ownerAwareDeltaEnabled = true
+	presenter.setLines(previous, true)
+	presenter.ready = true
+	presenter.meta = clonePresentMeta(meta)
+
+	var planLog presentPlanLog
+	presenter.planLogHook = func(log presentPlanLog) {
+		planLog = log
+	}
+	got := presenter.PresentLinesWithMeta(next, meta)
+
+	if got == "" {
+		t.Fatal("expected host-width safety diff payload")
+	}
+	if planLog.OwnerAwareAttempted {
+		t.Fatalf("expected owner-aware probe to be skipped for host-width safety rows, got log %#v", planLog)
+	}
+}
+
+func TestFramePresenterPlanSkipsVerticalScrollProbeForTinyDamage(t *testing.T) {
+	previous := []string{
+		"row0 " + strings.Repeat("a", 32),
+		"row1 " + strings.Repeat("b", 32),
+		"row2 " + strings.Repeat("c", 32),
+		"row3 " + strings.Repeat("d", 32),
+		"row4 " + strings.Repeat("e", 32),
+		"row5 " + strings.Repeat("f", 32),
+		"row6 " + strings.Repeat("g", 32),
+		"row7 " + strings.Repeat("h", 32),
+	}
+	next := append([]string(nil), previous...)
+	next[3] = "row3 " + strings.Repeat("z", 32)
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	presenter.verticalScrollMode = verticalScrollModeRowsAndRects
+	presenter.setLines(previous, true)
+	presenter.ready = true
+
+	var planLog presentPlanLog
+	presenter.planLogHook = func(log presentPlanLog) {
+		planLog = log
+	}
+	got := presenter.PresentLines(next)
+
+	if got == "" {
+		t.Fatal("expected tiny damage diff payload")
+	}
+	if planLog.VerticalAttempted {
+		t.Fatalf("expected vertical-scroll probe to be skipped for tiny damage, got log %#v", planLog)
+	}
+}
+
+func TestFramePresenterPlanSkipsVerticalScrollProbeForSmallDiffPayload(t *testing.T) {
+	previous := make([]string, 77)
+	next := make([]string, 77)
+	for row := range previous {
+		previous[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("a", 96))
+		next[row] = previous[row]
+	}
+	for row := 20; row < 42; row++ {
+		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("b", 96))
+	}
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	presenter.verticalScrollMode = verticalScrollModeRowsAndRects
+	presenter.setLines(previous, true)
+	presenter.ready = true
+
+	var planLog presentPlanLog
+	presenter.planLogHook = func(log presentPlanLog) {
+		planLog = log
+	}
+	got := presenter.PresentLines(next)
+
+	if got == "" {
+		t.Fatal("expected small diff payload")
+	}
+	if planLog.ChangedRows != 22 {
+		t.Fatalf("expected 22 changed rows, got log %#v", planLog)
+	}
+	if planLog.PayloadBytes >= verticalScrollProbeMinPayloadBytes {
+		t.Fatalf("test fixture no longer exercises small payload path, got log %#v", planLog)
+	}
+	if planLog.VerticalAttempted {
+		t.Fatalf("expected vertical-scroll probe to be skipped for small diff payload, got log %#v", planLog)
+	}
+}
+
 func TestOutputCursorWriterDiffOnCompositorOwnedRowSkipsExtraEraseLineRight(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
@@ -1369,6 +1479,54 @@ func TestOutputCursorWriterFrameLinesFallsBackToFullRowForUnsafeEmojiRow(t *test
 	}
 	screen := replayCursorWriterLineScreen(t, 16, 2, [][]string{{line1}, {line2}})
 	want := replayCursorWriterLineScreen(t, 16, 2, [][]string{{line2}})
+	assertScreenEqual(t, screen, want)
+}
+
+func TestFramePresenterBroadFrameLineDamageUsesRawRowsWithoutParsingCells(t *testing.T) {
+	base := make([]string, 12)
+	next := make([]string, 12)
+	for row := range base {
+		base[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("a", 511))
+		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("b", 511))
+	}
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	if got := presenter.PresentLines(base); got == "" {
+		t.Fatal("expected initial full frame")
+	}
+
+	var planLog presentPlanLog
+	presenter.planLogHook = func(log presentPlanLog) {
+		planLog = log
+	}
+	got := presenter.PresentLines(next)
+
+	if planLog.Mode != "raw_rows" {
+		t.Fatalf("expected broad raw row mode, got log %#v payload %q", planLog, got)
+	}
+	if planLog.RenderChangedRowsMs != 0 || planLog.DiffMs != 0 {
+		t.Fatalf("expected broad raw rows to skip cell diff, got log %#v", planLog)
+	}
+	if !strings.Contains(got, "row-00 "+strings.Repeat("b", 511)) || !strings.Contains(got, "row-11 "+strings.Repeat("b", 511)) {
+		t.Fatalf("expected raw row payload to include changed rows, got length %d", len(got))
+	}
+}
+
+func TestOutputCursorWriterFrameLinesBroadRawRowsReplaysToTarget(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	base := make([]string, 12)
+	next := make([]string, 12)
+	for row := range base {
+		base[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("x", 73))
+		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("y", 73))
+	}
+
+	screen := replayCursorWriterLineScreen(t, 80, 12, [][]string{base, next})
+	want := replayCursorWriterLineScreen(t, 80, 12, [][]string{next})
 	assertScreenEqual(t, screen, want)
 }
 
@@ -2338,6 +2496,303 @@ func TestStripLeadingCHA1DropsRedundantLineAnchors(t *testing.T) {
 	want := []string{"abc", "def", "ghi"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("unexpected stripped lines %q want %q", got, want)
+	}
+}
+
+func TestOutputCursorWriterUVRendererFrameLinesRoundTripMatchesDefaultPresenter(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("COLORTERM", "truecolor")
+	t.Setenv("TERMX_GLOBAL_RENDERER", "")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "1")
+
+	frames := [][]string{
+		{
+			"\x1b[38;2;220;40;30mhello\x1b[0m      ",
+			"alpha beta     ",
+			"scroll-old-1   ",
+			"scroll-old-2   ",
+		},
+		{
+			"alpha beta     ",
+			"scroll-old-1   ",
+			"\x1b[48;2;0;80;50mUV\x1b[0m frame    ",
+			"界-wide row    ",
+		},
+	}
+
+	got := replayCursorWriterLineScreen(t, 16, 4, frames)
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "")
+	want := replayCursorWriterLineScreen(t, 16, 4, [][]string{frames[len(frames)-1]})
+	assertScreenEqual(t, got, want)
+}
+
+func TestOutputCursorWriterUVRendererSkipsUnchangedFrame(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERMX_GLOBAL_RENDERER", "")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "1")
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetTTYWidth(8)
+	lines := []string{"abc     ", "def     "}
+	if err := writer.WriteFrameLines(lines, ""); err != nil {
+		t.Fatalf("write initial uv frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLines(lines, ""); err != nil {
+		t.Fatalf("write unchanged uv frame: %v", err)
+	}
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	if got != "" {
+		t.Fatalf("expected unchanged uv frame to skip host write, got %q", got)
+	}
+}
+
+func TestBuildUVRenderBufferTouchedRowsFollowLineDiff(t *testing.T) {
+	buf, _, ok := buildUVRenderBufferFromLines([]string{"abc", "def", "ghi"}, 3)
+	if !ok {
+		t.Fatal("expected uv render buffer build to succeed")
+	}
+	previous := []string{"abc", "def", "ghi"}
+	next := []string{"abc", "dEf", "ghi"}
+
+	if got := markUVRenderBufferTouchedRows(buf, previous, next, false); got != 1 {
+		t.Fatalf("expected one touched row, got %d", got)
+	}
+	for row, touch := range buf.Touched {
+		if row == 1 {
+			if touch == nil || touch.FirstCell != 0 || touch.LastCell != 3 {
+				t.Fatalf("expected row 1 to be touched across width, got %#v", touch)
+			}
+			continue
+		}
+		if touch != nil {
+			t.Fatalf("expected row %d to remain untouched, got %#v", row, touch)
+		}
+	}
+}
+
+func TestOutputCursorWriterUVRendererSlowBackoff(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERMX_GLOBAL_RENDERER", "")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "1")
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetTTYWidth(16)
+	writer.uvRenderer = newUVTerminalFrameRenderer()
+	writer.uvSlowFrames = uvSlowBackoffAfter - 1
+
+	writer.observeUVSuccessLocked(uvSlowFrameThreshold+time.Millisecond, 2, 8)
+	if got := writer.uvSlowBackoff; got != uvSlowBackoffFrames {
+		t.Fatalf("expected slow uv backoff %d, got %d", uvSlowBackoffFrames, got)
+	}
+
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+	lines := []string{"abc             ", "def             "}
+	if err := writer.WriteFrameLines(lines, ""); err != nil {
+		t.Fatalf("write slow-backoff frame: %v", err)
+	}
+	if got, want := writer.uvSlowBackoff, uvSlowBackoffFrames-1; got != want {
+		t.Fatalf("expected slow backoff to decrement to %d, got %d", want, got)
+	}
+	if writer.uvRenderer != nil {
+		t.Fatalf("expected slow-backoff fallback to reset uv renderer")
+	}
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	if !strings.Contains(got, "abc") || !strings.Contains(got, "def") {
+		t.Fatalf("expected fallback presenter payload during slow backoff, got %q", got)
+	}
+}
+
+func TestBuildUVRenderBufferFromLinesConvertsPresentedRows(t *testing.T) {
+	buf, stats, ok := buildUVRenderBufferFromLines([]string{"\x1b[31;44;1mA\x1b[2X\x1b[0m"}, 3)
+	if !ok {
+		t.Fatal("expected uv render buffer build to succeed")
+	}
+	if stats.Cells != 3 || stats.StyledCells != 3 || stats.EraseCells != 2 {
+		t.Fatalf("unexpected uv build stats %#v", stats)
+	}
+	first := buf.CellAt(0, 0)
+	if first == nil || first.Content != "A" || first.Style.Fg == nil || first.Style.Bg == nil || first.Style.Attrs&uv.AttrBold == 0 {
+		t.Fatalf("unexpected first uv cell %#v", first)
+	}
+	erase := buf.CellAt(1, 0)
+	if erase == nil || erase.Content != " " || erase.Style.Fg == nil || erase.Style.Bg == nil {
+		t.Fatalf("unexpected styled erase uv cell %#v", erase)
+	}
+}
+
+func TestOutputCursorWriterUVRendererFallsBackForHostWidthSafetyRows(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERMX_GLOBAL_RENDERER", "")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "1")
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	line := "é" + xansi.CHA(2) + "X"
+	if err := writer.WriteFrameLines([]string{line}, ""); err != nil {
+		t.Fatalf("write host-width-safe fallback frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	if strings.Contains(got, xansi.EraseEntireDisplay) {
+		t.Fatalf("expected fallback to old presenter initial payload, got unexpected erase display in %q", got)
+	}
+	if !strings.Contains(got, xansi.CHA(2)+"X") {
+		t.Fatalf("expected fallback payload to preserve host-width reanchor, got %q", got)
+	}
+}
+
+func TestOutputCursorWriterUVRendererConsecutiveFallbackKeepsDeltaBaseline(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERMX_GLOBAL_RENDERER", "")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "1")
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetTTYWidth(24)
+
+	initial := []string{
+		"alpha stable row        ",
+		"beta stable row         ",
+		"gamma stable row        ",
+	}
+	fallbackA := []string{
+		"alpha stable row        ",
+		"é" + xansi.CHA(2) + "X first fallback      ",
+		"gamma stable row        ",
+	}
+	fallbackB := []string{
+		"alpha stable row        ",
+		"é" + xansi.CHA(2) + "Y second fallback     ",
+		"gamma stable row        ",
+	}
+	if err := writer.WriteFrameLines(initial, ""); err != nil {
+		t.Fatalf("write initial uv frame: %v", err)
+	}
+	if err := writer.WriteFrameLines(fallbackA, ""); err != nil {
+		t.Fatalf("write first fallback frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLines(fallbackB, ""); err != nil {
+		t.Fatalf("write second fallback frame: %v", err)
+	}
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	if strings.Contains(got, fallbackB[0]) || strings.Contains(got, fallbackB[2]) {
+		t.Fatalf("expected consecutive fallback to emit changed-row diff, got full-row payload %q", got)
+	}
+	if !strings.Contains(got, xansi.CHA(2)+"Y") {
+		t.Fatalf("expected changed host-width row to preserve reanchor, got %q", got)
+	}
+}
+
+func TestOutputCursorWriterUVRendererHostWidthFallbackBackoff(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERMX_GLOBAL_RENDERER", "")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "1")
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetTTYWidth(32)
+
+	for i := 0; i < uvHostWidthFallbackBackoffAfter; i++ {
+		lines := []string{
+			"stable top                    ",
+			"é" + xansi.CHA(2) + string(rune('A'+i)) + " host width fallback       ",
+			"stable bottom                 ",
+		}
+		if err := writer.WriteFrameLines(lines, ""); err != nil {
+			t.Fatalf("write fallback frame %d: %v", i, err)
+		}
+	}
+	if writer.uvHostWidthBackoff != uvHostWidthFallbackBackoffFrames {
+		t.Fatalf("expected host-width fallback backoff %d, got %d", uvHostWidthFallbackBackoffFrames, writer.uvHostWidthBackoff)
+	}
+
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+	next := []string{
+		"stable top                    ",
+		"é" + xansi.CHA(2) + "Z backoff frame          ",
+		"stable bottom                 ",
+	}
+	if err := writer.WriteFrameLines(next, ""); err != nil {
+		t.Fatalf("write backoff frame: %v", err)
+	}
+	if got, want := writer.uvHostWidthBackoff, uvHostWidthFallbackBackoffFrames-1; got != want {
+		t.Fatalf("expected backoff to decrement to %d, got %d", want, got)
+	}
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	if strings.Contains(got, next[0]) || strings.Contains(got, next[2]) {
+		t.Fatalf("expected backoff fallback to preserve delta baseline, got %q", got)
+	}
+	if !strings.Contains(got, xansi.CHA(2)+"Z") {
+		t.Fatalf("expected changed host-width row to preserve reanchor during backoff, got %q", got)
+	}
+}
+
+func TestInspectUVFrameHostWidthSafetySamplesUnsafeRows(t *testing.T) {
+	lines := []string{
+		"safe",
+		"é" + xansi.CHA(2) + "X",
+		xansi.CHA(1) + "AAA❄️" + xansi.ECH(1) + xansi.CHA(6) + "BB",
+	}
+	got := inspectUVFrameHostWidthSafety(lines, 2)
+	if got.UnsafeRows != 2 || got.HostWidthRows != 2 || got.HiddenEmojiRows != 1 {
+		t.Fatalf("unexpected safety inspection %#v", got)
+	}
+	if len(got.Samples) != 2 {
+		t.Fatalf("expected two samples, got %#v", got.Samples)
+	}
+	if !strings.Contains(got.Samples[0], "row=1") || !strings.Contains(got.Samples[0], "host_width=true") {
+		t.Fatalf("unexpected host-width sample %q", got.Samples[0])
+	}
+	if !strings.Contains(got.Samples[1], "row=2") || !strings.Contains(got.Samples[1], "hidden_emoji=true") {
+		t.Fatalf("unexpected hidden-emoji sample %q", got.Samples[1])
 	}
 }
 

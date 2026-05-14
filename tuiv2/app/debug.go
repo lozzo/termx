@@ -38,6 +38,23 @@ func tuiDebugLogPath(defaultPath string) string {
 	return value
 }
 
+func rendererDebugLogPath(defaultPath string, defaultEnabled bool) string {
+	value := strings.TrimSpace(os.Getenv("TERMX_RENDERER_DEBUG_LOG"))
+	if value != "" {
+		if value == "1" || strings.EqualFold(value, "true") {
+			return strings.TrimSpace(defaultPath)
+		}
+		return value
+	}
+	if path := tuiDebugLogPath(defaultPath); path != "" {
+		return path
+	}
+	if defaultEnabled {
+		return strings.TrimSpace(defaultPath)
+	}
+	return ""
+}
+
 func appendDebugLogLine(path, event string, kv ...any) {
 	appDebugLogMu.Lock()
 	defer appDebugLogMu.Unlock()

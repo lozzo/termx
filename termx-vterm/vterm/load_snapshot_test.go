@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	uv "github.com/charmbracelet/ultraviolet"
+	charmvt "github.com/lozzow/termx/termx-vterm/internal/vt"
 )
 
 func TestLoadSnapshotRestoresScreenAndCursor(t *testing.T) {
@@ -595,6 +598,117 @@ func TestVTermWriteWithDamageUsesDirectSpanOps(t *testing.T) {
 	}
 	if got := span.Cells[0].Content + span.Cells[1].Content + span.Cells[2].Content; got != "abc" {
 		t.Fatalf("unexpected direct span contents: %#v", span.Cells)
+	}
+}
+
+func TestVTermWriteWithDamageBroadDirectSpanUsesFullReplace(t *testing.T) {
+	vt := New(80, 24, 100, nil)
+	prevWithDamage := safeEmulatorWriteWithDamage
+	safeEmulatorWriteWithDamage = func(emu *charmvt.SafeEmulator, data []byte) (int, error, []charmvt.Damage, bool) {
+		n, err := emu.Write(data)
+		cells := make([]uv.Cell, emu.Width())
+		for col := range cells {
+			cells[col] = uv.Cell{Content: "x", Width: 1}
+		}
+		damages := make([]charmvt.Damage, emu.Height())
+		for row := 0; row < emu.Height(); row++ {
+			damages[row] = charmvt.SpanDamage{X: 0, Y: row, Cells: cells}
+		}
+		return n, err, damages, true
+	}
+	t.Cleanup(func() {
+		safeEmulatorWriteWithDamage = prevWithDamage
+	})
+
+	_, err, damage := vt.WriteWithDamage([]byte("x"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if !damage.RequiresFullReplace {
+		t.Fatalf("expected broad direct span damage to use full replace, got %#v", damage)
+	}
+	if damage.FullReplaceReason != "broad_direct_cell_damage" {
+		t.Fatalf("unexpected full replace reason %q", damage.FullReplaceReason)
+	}
+	if len(damage.Ops) != 0 {
+		t.Fatalf("expected no expanded span ops for broad damage, got %#v", damage.Ops)
+	}
+	if damage.DirectDamageItems != 24 || damage.DirectDamageRows != 24 || damage.DirectDamageCells != 1920 {
+		t.Fatalf("unexpected direct damage stats: items=%d rows=%d cells=%d", damage.DirectDamageItems, damage.DirectDamageRows, damage.DirectDamageCells)
+	}
+}
+
+func TestVTermWriteWithDamageRepeatedDirectSpanUsesFullReplace(t *testing.T) {
+	vt := New(146, 73, 100, nil)
+	prevWithDamage := safeEmulatorWriteWithDamage
+	safeEmulatorWriteWithDamage = func(emu *charmvt.SafeEmulator, data []byte) (int, error, []charmvt.Damage, bool) {
+		n, err := emu.Write(data)
+		cells := []uv.Cell{{Content: "x", Width: 1}}
+		damages := make([]charmvt.Damage, 0, 6000)
+		for col := 0; col < 6000; col++ {
+			damages = append(damages, charmvt.SpanDamage{X: col % emu.Width(), Y: 2, Cells: cells})
+		}
+		return n, err, damages, true
+	}
+	t.Cleanup(func() {
+		safeEmulatorWriteWithDamage = prevWithDamage
+	})
+
+	_, err, damage := vt.WriteWithDamage([]byte("x"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if !damage.RequiresFullReplace {
+		t.Fatalf("expected repeated direct span damage to use full replace, got %#v", damage)
+	}
+	if damage.FullReplaceReason != "repeated_direct_damage" {
+		t.Fatalf("unexpected full replace reason %q", damage.FullReplaceReason)
+	}
+	if len(damage.Ops) != 0 {
+		t.Fatalf("expected no expanded span ops for repeated damage, got %#v", damage.Ops)
+	}
+	if damage.DirectDamageItems != 6000 || damage.DirectDamageRows != 1 || damage.DirectDamageCells != 6000 {
+		t.Fatalf("unexpected direct damage stats: items=%d rows=%d cells=%d", damage.DirectDamageItems, damage.DirectDamageRows, damage.DirectDamageCells)
+	}
+}
+
+func TestVTermWriteWithDamageKeepsScrollDirectDamageIncremental(t *testing.T) {
+	vt := New(10, 4, 100, nil)
+	prevWithDamage := safeEmulatorWriteWithDamage
+	safeEmulatorWriteWithDamage = func(emu *charmvt.SafeEmulator, data []byte) (int, error, []charmvt.Damage, bool) {
+		n, err := emu.Write(data)
+		cells := make([]uv.Cell, emu.Width())
+		for col := range cells {
+			cells[col] = uv.Cell{Content: "x", Width: 1}
+		}
+		damages := []charmvt.Damage{
+			charmvt.ScrollDamage{Rectangle: uv.Rect(0, 0, emu.Width(), emu.Height()), Dy: -1},
+			charmvt.SpanDamage{X: 0, Y: emu.Height() - 1, Cells: cells},
+		}
+		return n, err, damages, true
+	}
+	t.Cleanup(func() {
+		safeEmulatorWriteWithDamage = prevWithDamage
+	})
+
+	_, err, damage := vt.WriteWithDamage([]byte("\n"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if damage.RequiresFullReplace {
+		t.Fatalf("expected scroll damage to remain incremental, got %#v", damage)
+	}
+	if damage.DirectDamageItems != 2 || damage.DirectDamageRows != 1 || damage.DirectDamageCells != 10 {
+		t.Fatalf("unexpected direct damage stats: items=%d rows=%d cells=%d", damage.DirectDamageItems, damage.DirectDamageRows, damage.DirectDamageCells)
+	}
+	foundScroll := false
+	for _, op := range damage.Ops {
+		if op.Code == ScreenOpScrollRect {
+			foundScroll = true
+		}
+	}
+	if !foundScroll {
+		t.Fatalf("expected scroll op to be preserved, got %#v", damage.Ops)
 	}
 }
 

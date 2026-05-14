@@ -395,6 +395,10 @@ type WriteDamage struct {
 	ScrollbackTrim      int
 	ScreenScroll        int
 	RequiresFullReplace bool
+	FullReplaceReason   string
+	DirectDamageItems   int
+	DirectDamageRows    int
+	DirectDamageCells   int
 	Cursor              CursorState
 	Modes               TerminalModes
 	SizeCols            int
@@ -431,6 +435,17 @@ const modeAlternateScroll ansi.DECMode = 1007
 const (
 	rowFingerprintOffset64 = 14695981039346656037
 	rowFingerprintPrime64  = 1099511628211
+
+	broadDirectDamageRowRatioNumerator       = 3
+	broadDirectDamageRowRatioDenominator     = 4
+	broadDirectDamageCellRatioNumerator      = 3
+	broadDirectDamageCellRatioDenominator    = 5
+	broadDirectDamageMinRows                 = 8
+	broadDirectDamageMinCells                = 512
+	repeatedDirectDamageItemRatioNumerator   = 3
+	repeatedDirectDamageItemRatioDenominator = 2
+	repeatedDirectDamageMinItems             = 512
+	repeatedDirectDamageMinCells             = 4096
 )
 
 func New(cols, rows int, scrollbackSize int, onResponse ResponseHandler) *VTerm {
@@ -727,21 +742,32 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 			if !afterAltScreen {
 				historyOps = v.scrollbackAppendOpsFromCharmVTDamages(directDamages, beforeScreenTimestamps, beforeScreenRowKinds)
 			}
-			if directOps, ok := v.damageOpsFromCharmVTDamages(directDamages, afterWidth, afterHeight, v.screenTimestamps, v.screenRowKinds); ok {
+			directStats := directDamageStats(directDamages, afterWidth, afterHeight)
+			if reason, broad := directStats.fullReplaceReason(); broad {
+				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, reason)
+				if len(historyOps) > 0 {
+					damage.ScrollbackAppend = historyOps
+					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
+				}
+				traceCount("vterm.write.direct_damage_full_replace", 1)
+			} else if directOps, ok := v.damageOpsFromCharmVTDamages(directDamages, afterWidth, afterHeight, v.screenTimestamps, v.screenRowKinds); ok {
 				damage = v.writeDamageFromDirectOpsLocked(directOps, cachePlan)
 				if len(historyOps) > 0 {
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
 				}
 			} else {
-				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan)
+				damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, "direct_damage_unsupported")
 				if len(historyOps) > 0 {
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
 				}
 			}
+			damage.DirectDamageItems = directStats.Items
+			damage.DirectDamageRows = directStats.Rows
+			damage.DirectDamageCells = directStats.Cells
 		} else {
-			damage = v.writeDamageRequiresFullReplaceLocked(cachePlan)
+			damage = v.writeDamageRequiresFullReplaceLocked(cachePlan, "screen_shape_changed")
 		}
 		damage.DiffCPUNanos = time.Since(diffStart).Nanoseconds()
 		traceCount("vterm.write.changed_rows", damageChangedRowCount(damage))
@@ -2724,9 +2750,10 @@ func (v *VTerm) writeDamageFromDirectOpsLocked(ops []DamageOp, plan rowCacheReco
 	return damage
 }
 
-func (v *VTerm) writeDamageRequiresFullReplaceLocked(plan rowCacheReconcilePlan) WriteDamage {
+func (v *VTerm) writeDamageRequiresFullReplaceLocked(plan rowCacheReconcilePlan, reason string) WriteDamage {
 	damage := v.writeDamageHeaderLocked(plan)
 	damage.RequiresFullReplace = true
+	damage.FullReplaceReason = reason
 	v.appendScrollbackDamageLocked(&damage, plan)
 	return damage
 }
@@ -2923,6 +2950,149 @@ func damageChangedCellCount(damage WriteDamage) int {
 		count += len(row.Cells)
 	}
 	return count
+}
+
+type directDamageSummary struct {
+	Items                  int
+	Rows                   int
+	Cells                  int
+	MaxItemsPerRow         int
+	ScreenWidth            int
+	ScreenHeight           int
+	HasScrollOrMove        bool
+	HasUnsupported         bool
+	HasFullScreenDamage    bool
+	HasPartialScreenDamage bool
+}
+
+func (s directDamageSummary) fullReplaceReason() (string, bool) {
+	if s.Items == 0 || s.ScreenWidth <= 0 || s.ScreenHeight <= 0 {
+		return "", false
+	}
+	if s.HasScrollOrMove || s.HasUnsupported || s.HasPartialScreenDamage {
+		return "", false
+	}
+	if s.HasFullScreenDamage {
+		return "direct_screen_damage", true
+	}
+	if s.Cells <= 0 && s.Rows == 0 {
+		return "", false
+	}
+	if s.Items >= repeatedDirectDamageMinItems &&
+		s.Cells >= repeatedDirectDamageMinCells &&
+		s.Rows > 0 &&
+		s.MaxItemsPerRow >= maxInt(1, s.ScreenWidth*repeatedDirectDamageItemRatioNumerator/repeatedDirectDamageItemRatioDenominator) {
+		return "repeated_direct_damage", true
+	}
+	if s.ScreenHeight < broadDirectDamageMinRows || s.Cells < broadDirectDamageMinCells {
+		return "", false
+	}
+	rowThreshold := maxInt(1, s.ScreenHeight*broadDirectDamageRowRatioNumerator/broadDirectDamageRowRatioDenominator)
+	totalCells := s.ScreenWidth * s.ScreenHeight
+	cellThreshold := maxInt(1, totalCells*broadDirectDamageCellRatioNumerator/broadDirectDamageCellRatioDenominator)
+	if s.Rows >= rowThreshold && s.Cells >= cellThreshold {
+		return "broad_direct_cell_damage", true
+	}
+	return "", false
+}
+
+func directDamageStats(damages []charmvt.Damage, screenWidth, screenHeight int) directDamageSummary {
+	stats := directDamageSummary{
+		Items:        len(damages),
+		ScreenWidth:  screenWidth,
+		ScreenHeight: screenHeight,
+	}
+	if len(damages) == 0 || screenWidth <= 0 || screenHeight <= 0 {
+		return stats
+	}
+	changedRows := make(map[int]struct{}, minInt(screenHeight, len(damages)))
+	rowItems := make(map[int]int, minInt(screenHeight, len(damages)))
+	markItemRow := func(y int) {
+		if y < 0 || y >= screenHeight {
+			return
+		}
+		rowItems[y]++
+		if rowItems[y] > stats.MaxItemsPerRow {
+			stats.MaxItemsPerRow = rowItems[y]
+		}
+	}
+	for _, raw := range damages {
+		switch d := raw.(type) {
+		case charmvt.SpanDamage:
+			width := spanDamageCellWidth(d.Cells)
+			if width <= 0 {
+				continue
+			}
+			stats.Cells += clampedRectArea(d.X, d.Y, width, 1, screenWidth, screenHeight)
+			markClampedRows(changedRows, d.Y, 1, screenHeight)
+			markItemRow(d.Y)
+		case charmvt.CellDamage:
+			width := d.Width
+			if width <= 0 {
+				width = 1
+			}
+			stats.Cells += clampedRectArea(d.X, d.Y, width, 1, screenWidth, screenHeight)
+			markClampedRows(changedRows, d.Y, 1, screenHeight)
+			markItemRow(d.Y)
+		case charmvt.RectDamage:
+			rect := uv.Rectangle(d)
+			stats.Cells += clampedRectArea(rect.Min.X, rect.Min.Y, rect.Dx(), rect.Dy(), screenWidth, screenHeight)
+			markClampedRows(changedRows, rect.Min.Y, rect.Dy(), screenHeight)
+			for row := maxInt(0, rect.Min.Y); row < minInt(screenHeight, rect.Max.Y); row++ {
+				markItemRow(row)
+			}
+		case charmvt.ClearDamage:
+			rect := uv.Rectangle(d)
+			stats.Cells += clampedRectArea(rect.Min.X, rect.Min.Y, rect.Dx(), rect.Dy(), screenWidth, screenHeight)
+			markClampedRows(changedRows, rect.Min.Y, rect.Dy(), screenHeight)
+			for row := maxInt(0, rect.Min.Y); row < minInt(screenHeight, rect.Max.Y); row++ {
+				markItemRow(row)
+			}
+		case charmvt.ScrollbackDamage:
+			continue
+		case charmvt.ScrollDamage, charmvt.MoveDamage:
+			stats.HasScrollOrMove = true
+		case charmvt.ScreenDamage:
+			if d.Width == screenWidth && d.Height == screenHeight {
+				stats.HasFullScreenDamage = true
+				for row := 0; row < screenHeight; row++ {
+					changedRows[row] = struct{}{}
+				}
+				stats.Cells = maxInt(stats.Cells, screenWidth*screenHeight)
+			} else {
+				stats.HasPartialScreenDamage = true
+			}
+		default:
+			stats.HasUnsupported = true
+		}
+	}
+	stats.Rows = len(changedRows)
+	return stats
+}
+
+func clampedRectArea(x, y, width, height, maxWidth, maxHeight int) int {
+	if width <= 0 || height <= 0 || maxWidth <= 0 || maxHeight <= 0 {
+		return 0
+	}
+	x0 := maxInt(0, x)
+	y0 := maxInt(0, y)
+	x1 := minInt(maxWidth, x+width)
+	y1 := minInt(maxHeight, y+height)
+	if x1 <= x0 || y1 <= y0 {
+		return 0
+	}
+	return (x1 - x0) * (y1 - y0)
+}
+
+func markClampedRows(rows map[int]struct{}, y, height, maxHeight int) {
+	if height <= 0 || maxHeight <= 0 {
+		return
+	}
+	start := maxInt(0, y)
+	end := minInt(maxHeight, y+height)
+	for row := start; row < end; row++ {
+		rows[row] = struct{}{}
+	}
 }
 
 func (v *VTerm) damageOpsFromCharmVTDamages(damages []charmvt.Damage, screenWidth, screenHeight int, timestamps []time.Time, rowKinds []string) ([]DamageOp, bool) {

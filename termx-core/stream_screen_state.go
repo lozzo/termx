@@ -21,6 +21,17 @@ const (
 	screenUpdateEncodeModeFullReplace screenUpdateEncodeMode = "full_replace"
 )
 
+const screenUpdateDeltaOnlyShortcutMaxPayloadBytes = 64 * 1024
+
+type screenUpdateEncodeResult struct {
+	Payload           []byte
+	Mode              screenUpdateEncodeMode
+	DeltaPayloadBytes int
+	FullPayloadBytes  int
+	Compared          bool
+	Reason            string
+}
+
 func cloneStreamScreenState(state *streamScreenState) *streamScreenState {
 	if state == nil {
 		return nil
@@ -154,15 +165,28 @@ func screenUpdateShouldEncodeDeltaOnly(damage protocol.ScreenUpdate, preferAggre
 }
 
 func encodeScreenUpdatePayloadByStrategy(damage protocol.ScreenUpdate, full protocol.ScreenUpdate, preferAggressiveFullReplace bool) ([]byte, screenUpdateEncodeMode, bool) {
+	result, ok := encodeScreenUpdatePayloadByStrategyWithDiagnostics(damage, full, preferAggressiveFullReplace)
+	return result.Payload, result.Mode, ok
+}
+
+func encodeScreenUpdatePayloadByStrategyWithDiagnostics(damage protocol.ScreenUpdate, full protocol.ScreenUpdate, preferAggressiveFullReplace bool) (screenUpdateEncodeResult, bool) {
 	finish := perftrace.Measure("terminal.screen_update.encode")
 	defer finish(0)
 	damagePayload := []byte(nil)
 	damageErr := error(nil)
 	if screenUpdateShouldEncodeDeltaOnly(damage, preferAggressiveFullReplace) {
 		damagePayload, damageErr = protocol.EncodeScreenUpdatePayload(damage)
-		if damageErr == nil {
+		if damageErr == nil && len(damagePayload) <= screenUpdateDeltaOnlyShortcutMaxPayloadBytes {
 			recordEncodedScreenUpdatePayload(screenUpdateEncodeModeDelta, damagePayload)
-			return damagePayload, screenUpdateEncodeModeDelta, true
+			return screenUpdateEncodeResult{
+				Payload:           damagePayload,
+				Mode:              screenUpdateEncodeModeDelta,
+				DeltaPayloadBytes: len(damagePayload),
+				Reason:            "delta_only_shortcut",
+			}, true
+		}
+		if damageErr == nil {
+			perftrace.Count("terminal.screen_update.delta_only_shortcut_large_compare", len(damagePayload))
 		}
 	}
 	if damagePayload == nil && damageErr == nil {
@@ -171,13 +195,25 @@ func encodeScreenUpdatePayloadByStrategy(damage protocol.ScreenUpdate, full prot
 	fullPayload, fullErr := protocol.EncodeScreenUpdatePayload(full)
 	switch {
 	case damageErr != nil && fullErr != nil:
-		return nil, "", false
+		return screenUpdateEncodeResult{Reason: "encode_failed"}, false
 	case damageErr != nil:
 		recordEncodedScreenUpdatePayload(screenUpdateEncodeModeFullReplace, fullPayload)
-		return fullPayload, screenUpdateEncodeModeFullReplace, true
+		return screenUpdateEncodeResult{
+			Payload:          fullPayload,
+			Mode:             screenUpdateEncodeModeFullReplace,
+			FullPayloadBytes: len(fullPayload),
+			Compared:         true,
+			Reason:           "delta_encode_error",
+		}, true
 	case fullErr != nil:
 		recordEncodedScreenUpdatePayload(screenUpdateEncodeModeDelta, damagePayload)
-		return damagePayload, screenUpdateEncodeModeDelta, true
+		return screenUpdateEncodeResult{
+			Payload:           damagePayload,
+			Mode:              screenUpdateEncodeModeDelta,
+			DeltaPayloadBytes: len(damagePayload),
+			Compared:          true,
+			Reason:            "full_encode_error",
+		}, true
 	}
 
 	compareFinish := perftrace.Measure("terminal.screen_update.strategy_compare")
@@ -208,10 +244,24 @@ func encodeScreenUpdatePayloadByStrategy(damage protocol.ScreenUpdate, full prot
 
 	if chooseFull {
 		recordEncodedScreenUpdatePayload(screenUpdateEncodeModeFullReplace, fullPayload)
-		return fullPayload, screenUpdateEncodeModeFullReplace, true
+		return screenUpdateEncodeResult{
+			Payload:           fullPayload,
+			Mode:              screenUpdateEncodeModeFullReplace,
+			DeltaPayloadBytes: len(damagePayload),
+			FullPayloadBytes:  len(fullPayload),
+			Compared:          true,
+			Reason:            "full_smaller",
+		}, true
 	}
 	recordEncodedScreenUpdatePayload(screenUpdateEncodeModeDelta, damagePayload)
-	return damagePayload, screenUpdateEncodeModeDelta, true
+	return screenUpdateEncodeResult{
+		Payload:           damagePayload,
+		Mode:              screenUpdateEncodeModeDelta,
+		DeltaPayloadBytes: len(damagePayload),
+		FullPayloadBytes:  len(fullPayload),
+		Compared:          true,
+		Reason:            "delta_smaller",
+	}, true
 }
 
 func fullReplaceUpdateForStateDelta(before, after *streamScreenState, resetScrollback bool) protocol.ScreenUpdate {

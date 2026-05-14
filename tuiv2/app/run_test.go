@@ -293,6 +293,26 @@ func TestConfigureProgramOutputUsesCursorWriterForTTY(t *testing.T) {
 	if model.cursorOut != writer {
 		t.Fatalf("expected model cursor writer to match configured output writer, got %#v want %#v", model.cursorOut, writer)
 	}
+	if !writer.useUVRenderer {
+		t.Fatal("expected tty output to enable UV renderer by default")
+	}
+}
+
+func TestConfigureProgramOutputCanDisableUVRendererForTTY(t *testing.T) {
+	t.Setenv("TERMX_GLOBAL_RENDERER", "legacy")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "")
+	model := New(shared.Config{}, nil, nil)
+	tty := &cursorWriterProbeTTY{}
+
+	output, _ := configureProgramOutput(model, tty)
+
+	writer, ok := output.(*outputCursorWriter)
+	if !ok || writer == nil {
+		t.Fatalf("expected tty output to use outputCursorWriter, got %#v", output)
+	}
+	if writer.useUVRenderer {
+		t.Fatal("expected legacy renderer env to disable UV renderer")
+	}
 }
 
 func TestConfigureProgramOutputCanKeepBubbleTeaRendererForTTY(t *testing.T) {

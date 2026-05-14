@@ -458,21 +458,43 @@ func TestClientStreamCoalescesQueuedScreenUpdateFrames(t *testing.T) {
 	stream := newClientStreamWithConfig(4, 0)
 	defer stream.close()
 
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: []byte("a")})
+	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testFullReplaceScreenUpdatePayload(t, "a")})
 	waitForClientStreamState(t, stream, func() bool {
 		return len(stream.queue) == 0
 	})
 
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: []byte("b")})
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: []byte("c")})
+	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testFullReplaceScreenUpdatePayload(t, "b")})
+	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testFullReplaceScreenUpdatePayload(t, "c")})
 
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
 	if len(stream.queue) != 1 {
 		t.Fatalf("expected one coalesced screen update frame, got %d", len(stream.queue))
 	}
-	if stream.queue[0].Type != wire.TypeScreenUpdate || string(stream.queue[0].Payload) != "c" {
+	if stream.queue[0].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, stream.queue[0].Payload, "c") {
 		t.Fatalf("unexpected coalesced frame: %#v", stream.queue[0])
+	}
+}
+
+func TestClientStreamDoesNotCoalesceQueuedDeltaScreenUpdates(t *testing.T) {
+	stream := newClientStreamWithConfig(4, 0)
+	defer stream.close()
+
+	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testDeltaScreenUpdatePayload(t, "a")})
+	waitForClientStreamState(t, stream, func() bool {
+		return len(stream.queue) == 0
+	})
+
+	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testDeltaScreenUpdatePayload(t, "b")})
+	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testDeltaScreenUpdatePayload(t, "c")})
+
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	if len(stream.queue) != 2 {
+		t.Fatalf("expected queued delta screen updates to be preserved, got %d", len(stream.queue))
+	}
+	if !testScreenUpdatePayloadContainsText(t, stream.queue[0].Payload, "b") || !testScreenUpdatePayloadContainsText(t, stream.queue[1].Payload, "c") {
+		t.Fatalf("unexpected queued delta frames: %#v", stream.queue)
 	}
 }
 
@@ -480,23 +502,23 @@ func TestClientStreamKeepsControlFrameBetweenScreenUpdates(t *testing.T) {
 	stream := newClientStreamWithConfig(4, 0)
 	defer stream.close()
 
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: []byte("a")})
+	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testFullReplaceScreenUpdatePayload(t, "a")})
 	stream.send(StreamFrame{Type: wire.TypeResize, Payload: []byte("resize")})
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: []byte("b")})
-	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: []byte("c")})
+	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testFullReplaceScreenUpdatePayload(t, "b")})
+	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: testFullReplaceScreenUpdatePayload(t, "c")})
 
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
 	if len(stream.queue) != 3 {
 		t.Fatalf("expected control frame to split coalescing window, got %d queued frames", len(stream.queue))
 	}
-	if stream.queue[0].Type != wire.TypeScreenUpdate || string(stream.queue[0].Payload) != "a" {
+	if stream.queue[0].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, stream.queue[0].Payload, "a") {
 		t.Fatalf("unexpected first queued frame: %#v", stream.queue[0])
 	}
 	if stream.queue[1].Type != wire.TypeResize {
 		t.Fatalf("unexpected control frame: %#v", stream.queue[1])
 	}
-	if stream.queue[2].Type != wire.TypeScreenUpdate || string(stream.queue[2].Payload) != "c" {
+	if stream.queue[2].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, stream.queue[2].Payload, "c") {
 		t.Fatalf("unexpected final coalesced frame: %#v", stream.queue[2])
 	}
 }
@@ -536,6 +558,65 @@ func TestClientStreamOverflowQueuesSyncLostInsteadOfSilentDrop(t *testing.T) {
 		t.Fatalf("expected non-zero dropped byte count, got %d", dropped)
 	}
 	stream.mu.Unlock()
+}
+
+func testFullReplaceScreenUpdatePayload(t *testing.T, text string) []byte {
+	t.Helper()
+	payload, err := EncodeScreenUpdatePayload(ScreenUpdate{
+		FullReplace: true,
+		Size:        Size{Cols: 8, Rows: 1},
+		Screen: ScreenData{
+			Cells: [][]Cell{{{Content: text, Width: 1}}},
+		},
+		Cursor: CursorState{Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode full screen update: %v", err)
+	}
+	return payload
+}
+
+func testDeltaScreenUpdatePayload(t *testing.T, text string) []byte {
+	t.Helper()
+	payload, err := EncodeScreenUpdatePayload(ScreenUpdate{
+		Size: Size{Cols: 8, Rows: 1},
+		Ops: []ScreenOp{{
+			Code:  ScreenOpWriteSpan,
+			Row:   0,
+			Col:   0,
+			Cells: []Cell{{Content: text, Width: 1}},
+		}},
+		Cursor: CursorState{Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode delta screen update: %v", err)
+	}
+	return payload
+}
+
+func testScreenUpdatePayloadContainsText(t *testing.T, payload []byte, text string) bool {
+	t.Helper()
+	update, err := DecodeScreenUpdatePayload(payload)
+	if err != nil {
+		t.Fatalf("decode screen update: %v", err)
+	}
+	for _, row := range update.Screen.Cells {
+		for _, cell := range row {
+			if cell.Content == text {
+				return true
+			}
+		}
+	}
+	for _, op := range update.Ops {
+		for _, cell := range op.Cells {
+			if cell.Content == text {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func runFakeProtocolServer(tr *memory.Transport) error {

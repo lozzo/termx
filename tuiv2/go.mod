@@ -7,6 +7,7 @@ toolchain go1.26.1
 require (
 	charm.land/lipgloss/v2 v2.0.2
 	github.com/charmbracelet/bubbletea v0.27.1
+	github.com/charmbracelet/colorprofile v0.4.2
 	github.com/charmbracelet/ultraviolet v0.0.0-20260303162955-0b88c25f3fff
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/charmbracelet/x/term v0.2.2
@@ -22,7 +23,6 @@ require github.com/lozzow/termx/termx-proto v0.0.0
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
-	github.com/charmbracelet/colorprofile v0.4.2 // indirect
 	github.com/charmbracelet/lipgloss v0.13.0 // indirect
 	github.com/charmbracelet/x/exp/ordered v0.1.0 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect

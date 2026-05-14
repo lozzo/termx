@@ -198,19 +198,16 @@ func (p *attachmentStreamPump) enqueue(msg StreamMessage) {
 
 	msgCountBefore := len(p.queue)
 	if msg.Type == StreamScreenUpdate {
-		if p.readyMode && len(msg.Payload) == 0 {
-			if p.screenInFlight || !p.screenCredit || p.hasQueuedScreenUpdateLocked() {
-				p.screenDirty = true
-				p.stats.coalescedFrames++
-				perftrace.Count("transport.stream.ready.coalesced_frames", 1)
-				return
-			}
+		if p.readyMode && (p.screenInFlight || !p.screenCredit || p.hasQueuedScreenUpdateLocked()) {
+			p.screenDirty = true
+			p.stats.coalescedFrames++
+			perftrace.Count("transport.stream.ready.coalesced_frames", 1)
+			return
 		}
-		if len(msg.Payload) == 0 {
-			if removed := p.dropQueuedLatestScreenUpdatesLocked(); removed > 0 {
-				p.stats.coalescedFrames += removed
-				perftrace.Count("transport.stream.backlog.coalesced_frames", removed)
-			}
+		if removed := p.dropQueuedScreenUpdatesLocked(); removed > 0 {
+			p.stats.coalescedFrames += removed
+			perftrace.Count("transport.stream.backlog.coalesced_frames", removed)
+			msg = StreamMessage{Type: StreamScreenUpdate}
 		}
 		p.appendQueueMessageLocked(msg)
 	} else {
@@ -238,14 +235,14 @@ func (p *attachmentStreamPump) hasQueuedScreenUpdateLocked() bool {
 	return false
 }
 
-func (p *attachmentStreamPump) dropQueuedLatestScreenUpdatesLocked() int {
+func (p *attachmentStreamPump) dropQueuedScreenUpdatesLocked() int {
 	if p == nil || len(p.queue) == 0 {
 		return 0
 	}
 	removed := 0
 	dst := p.queue[:0]
 	for _, msg := range p.queue {
-		if msg.Type == StreamScreenUpdate && len(msg.Payload) == 0 {
+		if msg.Type == StreamScreenUpdate {
 			removed++
 			continue
 		}
