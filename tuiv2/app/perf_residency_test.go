@@ -3,26 +3,20 @@ package app
 import (
 	"context"
 	"fmt"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/tuiv2/bridge"
+	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/shared"
+	"github.com/lozzow/termx/tuiv2/workbench"
 	"os"
 	"os/exec"
-	"path/filepath"
 	goruntime "runtime"
 	rtdebug "runtime/debug"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/lozzow/termx/termx-proto/wire"
-
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/termx-core"
-	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
-	"github.com/lozzow/termx/tuiv2/bridge"
-	"github.com/lozzow/termx/tuiv2/runtime"
-	"github.com/lozzow/termx/tuiv2/shared"
-	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 type perfResidencySnapshot struct {
@@ -133,23 +127,10 @@ func TestPerfResidencyCombined(t *testing.T) {
 		t.Skip("set TERMX_RUN_COMBINED_RESIDENCY=1 to run combined residency harness")
 	}
 
-	socketPath := filepath.Join(t.TempDir(), "termx.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	serverDone := make(chan error, 1)
-	go func() {
-		serverDone <- srv.ListenAndServe(ctx)
-	}()
-	defer func() {
-		_ = srv.Shutdown(context.Background())
-		cancel()
-		select {
-		case <-serverDone:
-		case <-time.After(2 * time.Second):
-		}
-	}()
+	daemon := startAppTestDaemon(t, ctx, "termx.sock")
+	socketPath := daemon.SocketPath()
 
 	client := dialPerfProtocolClient(t, ctx, socketPath)
 	defer client.Close()
@@ -166,7 +147,7 @@ func TestPerfResidencyCombined(t *testing.T) {
 		_ = client.Kill(context.Background(), created.TerminalID)
 	}()
 
-	attach, err := client.Attach(ctx, created.TerminalID, string(termx.ModeCollaborator))
+	attach, err := client.Attach(ctx, created.TerminalID, appTestModeCollaborator)
 	if err != nil {
 		t.Fatalf("attach terminal: %v", err)
 	}
@@ -322,25 +303,7 @@ func currentPerfRSSKB(t *testing.T) uint64 {
 
 func dialPerfProtocolClient(t *testing.T, ctx context.Context, socketPath string) *protocol.Client {
 	t.Helper()
-	var lastErr error
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		transport, err := unixtransport.Dial(socketPath)
-		if err == nil {
-			client := protocol.NewClient(transport)
-			if err := client.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-				lastErr = err
-				_ = client.Close()
-			} else {
-				return client
-			}
-		} else {
-			lastErr = err
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	t.Fatalf("dial protocol client: %v", lastErr)
-	return nil
+	return dialAppTestProtocolClient(t, ctx, socketPath)
 }
 
 func waitForPerfCondition(t *testing.T, timeout time.Duration, cond func() bool) {

@@ -4,6 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
+	creackpty "github.com/creack/pty"
+	"github.com/lozzow/termx/internal/protocol"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
+	"github.com/lozzow/termx/tuiv2/bridge"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,18 +18,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/lozzow/termx/termx-proto/wire"
-
-	tea "github.com/charmbracelet/bubbletea"
-	xansi "github.com/charmbracelet/x/ansi"
-	creackpty "github.com/creack/pty"
-	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/termx-core"
-	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
-	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
-	"github.com/lozzow/termx/tuiv2/bridge"
-	"github.com/lozzow/termx/tuiv2/shared"
 )
 
 func TestDebugNvimScrollTrace(t *testing.T) {
@@ -38,32 +33,10 @@ func TestDebugNvimScrollTrace(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-debug-nvim.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-debug-nvim.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := waitTestSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	ctrlTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial control client: %v", err)
-	}
-	ctrlClient := protocol.NewClient(ctrlTransport)
-	if err := ctrlClient.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello control client: %v", err)
-	}
-	t.Cleanup(func() { _ = ctrlClient.Close() })
+	ctrlClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	tmpFile := filepath.Join(t.TempDir(), "nvim-scroll.txt")
 	var lines []string
@@ -89,15 +62,7 @@ func TestDebugNvimScrollTrace(t *testing.T) {
 		t.Fatalf("create terminal: %v", err)
 	}
 
-	appTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial app client: %v", err)
-	}
-	appProtocolClient := protocol.NewClient(appTransport)
-	if err := appProtocolClient.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello app client: %v", err)
-	}
-	t.Cleanup(func() { _ = appProtocolClient.Close() })
+	appProtocolClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	ptmx, tty, err := creackpty.Open()
 	if err != nil {
@@ -192,32 +157,10 @@ func TestDebugNvimInsertTrace(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-debug-nvim-insert.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-debug-nvim-insert.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := waitTestSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	ctrlTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial control client: %v", err)
-	}
-	ctrlClient := protocol.NewClient(ctrlTransport)
-	if err := ctrlClient.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello control client: %v", err)
-	}
-	t.Cleanup(func() { _ = ctrlClient.Close() })
+	ctrlClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	tmpFile := filepath.Join(t.TempDir(), "nvim-insert.txt")
 	var lines []string
@@ -243,15 +186,7 @@ func TestDebugNvimInsertTrace(t *testing.T) {
 		t.Fatalf("create terminal: %v", err)
 	}
 
-	appTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial app client: %v", err)
-	}
-	appProtocolClient := protocol.NewClient(appTransport)
-	if err := appProtocolClient.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello app client: %v", err)
-	}
-	t.Cleanup(func() { _ = appProtocolClient.Close() })
+	appProtocolClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	ptmx, tty, err := creackpty.Open()
 	if err != nil {
@@ -340,32 +275,10 @@ func TestDebugNvimScrollThenInsertScreenPosition(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-debug-nvim-screen.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-debug-nvim-screen.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := waitTestSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	ctrlTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial control client: %v", err)
-	}
-	ctrlClient := protocol.NewClient(ctrlTransport)
-	if err := ctrlClient.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello control client: %v", err)
-	}
-	t.Cleanup(func() { _ = ctrlClient.Close() })
+	ctrlClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	tmpFile := filepath.Join(t.TempDir(), "nvim-screen.txt")
 	var lines []string
@@ -391,15 +304,7 @@ func TestDebugNvimScrollThenInsertScreenPosition(t *testing.T) {
 		t.Fatalf("create terminal: %v", err)
 	}
 
-	appTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial app client: %v", err)
-	}
-	appProtocolClient := protocol.NewClient(appTransport)
-	if err := appProtocolClient.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello app client: %v", err)
-	}
-	t.Cleanup(func() { _ = appProtocolClient.Close() })
+	appProtocolClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	ptmx, tty, err := creackpty.Open()
 	if err != nil {

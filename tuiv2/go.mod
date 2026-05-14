@@ -12,7 +12,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/clipperhouse/displaywidth v0.11.0
 	github.com/creack/pty v1.1.24
-	github.com/lozzow/termx/termx-core v0.0.0
+	github.com/lozzow/termx/termx-core v0.0.0 // indirect
 	github.com/muesli/cancelreader v0.2.2
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/term v0.41.0
@@ -33,6 +33,7 @@ require (
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/lozzow/termx/internal v0.0.0
 	github.com/lozzow/termx/termx-shared v0.0.0
+	github.com/lozzow/termx/termx-testkit v0.0.0
 	github.com/lozzow/termx/termx-vterm v0.0.0
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -58,3 +59,5 @@ replace github.com/lozzow/termx/termx-shared => ../termx-shared
 replace github.com/lozzow/termx/termx-proto => ../termx-proto
 
 replace github.com/lozzow/termx/internal => ../internal
+
+replace github.com/lozzow/termx/termx-testkit => ../termx-testkit

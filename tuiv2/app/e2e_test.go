@@ -4,21 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
-	"sync"
-	"testing"
-	"time"
-
-	"github.com/lozzow/termx/termx-proto/wire"
-
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/termx-core"
-	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -28,6 +16,13 @@ import (
 	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"sync"
+	"testing"
+	"time"
 )
 
 // TestE2ECreateShellAndInteract is a full end-to-end test of the MVP flow:
@@ -49,32 +44,11 @@ func TestE2ECreateShellAndInteract(t *testing.T) {
 	defer cancel()
 
 	// ── 1. Start server ──────────────────────────────────────────────────────
-	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
+	daemon := startAppTestDaemon(t, ctx, "termx-e2e.sock")
+	socketPath := daemon.SocketPath()
 
 	// ── 2. Connect bridge client ─────────────────────────────────────────────
-	tr, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
-	t.Cleanup(func() { _ = pc.Close() })
+	pc := dialAppTestProtocolClient(t, ctx, socketPath)
 	adapted := bridge.NewProtocolClient(pc)
 
 	// ── 3. Build model ───────────────────────────────────────────────────────
@@ -173,32 +147,10 @@ func TestE2EInitialAttachResizesAfterFirstWindowSize(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-e2e.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	tr, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
-	t.Cleanup(func() { _ = pc.Close() })
+	pc := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	created, err := pc.Create(ctx, protocol.CreateParams{
 		Command: []string{"sh", "-c", "printf 'ready\\n'; while IFS= read -r line; do if [ \"$line\" = size ]; then stty size; printf 'window_size_ok\\n'; fi; done"},
@@ -284,32 +236,10 @@ func TestE2EExitedPaneRestartReusesSameTerminal(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-e2e.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	tr, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
-	t.Cleanup(func() { _ = pc.Close() })
+	pc := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	flagPath := filepath.Join(t.TempDir(), "restart-flag")
 	command := fmt.Sprintf("if [ -f %q ]; then printf 'restart_pass_2\\n'; cat; else touch %q; printf 'restart_pass_1\\n'; sleep 1; exit 0; fi", flagPath, flagPath)
@@ -396,32 +326,10 @@ func TestE2ECreateAfterExitedPaneDoesNotDropBufferedInput(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-e2e.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	tr, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
-	t.Cleanup(func() { _ = pc.Close() })
+	pc := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	first, err := pc.Create(ctx, protocol.CreateParams{
 		Command: []string{"bash", "-lc", "sleep 1; exit 0"},
@@ -521,32 +429,10 @@ func TestE2EAttachAfterExitedPaneKeepsFastEchoWhenChannelIsReused(t *testing.T) 
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-e2e.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	tr, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
-	t.Cleanup(func() { _ = pc.Close() })
+	pc := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	first, err := pc.Create(ctx, protocol.CreateParams{
 		Command: []string{"bash", "-lc", "printf 'first_exit\\n'; exit 0"},
@@ -618,32 +504,10 @@ func TestE2EAttachAfterExitedPaneRestoresCursorHighlight(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-e2e.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	tr, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
-	t.Cleanup(func() { _ = pc.Close() })
+	pc := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	first, err := pc.Create(ctx, protocol.CreateParams{
 		Command: []string{"bash", "-lc", "exit 0"},
@@ -705,32 +569,10 @@ func TestE2EInteractiveShellPromptTitleSurvivesRepeatedLS(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-e2e.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	tr, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
-	t.Cleanup(func() { _ = pc.Close() })
+	pc := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	created, err := pc.Create(ctx, protocol.CreateParams{
 		Command: []string{"bash", "--noprofile", "--norc", "-i"},
@@ -788,32 +630,10 @@ func TestE2EKeyEnterExecutesCommandInAttachedShell(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-e2e.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	tr, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
-	t.Cleanup(func() { _ = pc.Close() })
+	pc := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	created, err := pc.Create(ctx, protocol.CreateParams{
 		Command: []string{"bash", "--noprofile", "--norc", "-i"},
@@ -867,32 +687,10 @@ func TestE2EDetachAndReattachThroughPaneMode(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-e2e.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	tr, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
-	t.Cleanup(func() { _ = pc.Close() })
+	pc := dialAppTestProtocolClient(t, ctx, socketPath)
 	adapted := bridge.NewProtocolClient(pc)
 
 	model := New(shared.Config{}, nil, runtime.New(adapted))
@@ -984,32 +782,10 @@ func TestE2EClosePaneLeavesTerminalAttachable(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-e2e.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	tr, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
-	t.Cleanup(func() { _ = pc.Close() })
+	pc := dialAppTestProtocolClient(t, ctx, socketPath)
 	adapted := bridge.NewProtocolClient(pc)
 
 	model := New(shared.Config{}, nil, runtime.New(adapted))
@@ -1815,32 +1591,11 @@ type sharedSessionClient struct {
 func newRealMouseE2EEnv(t *testing.T) realMouseE2EEnv {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
+	ctx, _ := context.WithTimeout(context.Background(), 20*time.Second)
+	daemon := startAppTestDaemon(t, ctx, "termx-e2e.sock")
+	socketPath := daemon.SocketPath()
 
-	tr, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
-	t.Cleanup(func() { _ = pc.Close() })
+	pc := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	model := New(shared.Config{}, nil, runtime.New(bridge.NewProtocolClient(pc)))
 	model.width = 120
@@ -1867,32 +1622,11 @@ func newRealMouseE2EEnv(t *testing.T) realMouseE2EEnv {
 func newRealRestoreE2EEnv(t *testing.T, file persist.WorkspaceStateFileV2) realMouseE2EEnv {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
+	ctx, _ := context.WithTimeout(context.Background(), 20*time.Second)
+	daemon := startAppTestDaemon(t, ctx, "termx-e2e.sock")
+	socketPath := daemon.SocketPath()
 
-	tr, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
-	t.Cleanup(func() { _ = pc.Close() })
+	pc := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	statePath := filepath.Join(t.TempDir(), "workspace-state.json")
 	data, err := json.Marshal(file)
@@ -1928,22 +1662,9 @@ func newRealRestoreE2EEnv(t *testing.T, file persist.WorkspaceStateFileV2) realM
 func newSharedSessionE2EHarness(t *testing.T) sharedSessionE2EHarness {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	socketPath := filepath.Join(t.TempDir(), "termx-shared-e2e.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
+	ctx, _ := context.WithTimeout(context.Background(), 20*time.Second)
+	daemon := startAppTestDaemon(t, ctx, "termx-shared-e2e.sock")
+	socketPath := daemon.SocketPath()
 	control := e2eDialProtocolClient(t, ctx, socketPath)
 	return sharedSessionE2EHarness{
 		ctx:        ctx,
@@ -1954,15 +1675,7 @@ func newSharedSessionE2EHarness(t *testing.T) sharedSessionE2EHarness {
 
 func e2eDialProtocolClient(t *testing.T, ctx context.Context, socketPath string) *protocol.Client {
 	t.Helper()
-	tr, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
-	t.Cleanup(func() { _ = pc.Close() })
+	pc := dialAppTestProtocolClient(t, ctx, socketPath)
 	return pc
 }
 
@@ -2729,21 +2442,6 @@ func e2eShareTerminalInSplitPane(t *testing.T, env realMouseE2EEnv, sourcePaneID
 	}
 	model.render.Invalidate()
 	return newPaneID
-}
-
-// e2eWaitSocket dials the unix socket in a loop until it succeeds or the
-// deadline passes.
-func e2eWaitSocket(path string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		conn, err := unixtransport.Dial(path)
-		if err == nil {
-			_ = conn.Close()
-			return nil
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	return fmt.Errorf("socket %s did not appear within %s", path, timeout)
 }
 
 func e2eRegistrySummary(rt *runtime.Runtime) string {

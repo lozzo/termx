@@ -12,15 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-proto/wire"
-
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
 	creackpty "github.com/creack/pty"
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/termx-core"
 	"github.com/lozzow/termx/termx-shared/perftrace"
-	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
@@ -239,31 +235,10 @@ func startNvimPerfHarness(t *testing.T, name string) *nvimPerfHarness {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	socketPath := filepath.Join(t.TempDir(), name+".sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := waitTestSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
+	daemon := startAppTestDaemon(t, ctx, name+".sock")
+	socketPath := daemon.SocketPath()
 
-	ctrlTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial control client: %v", err)
-	}
-	ctrlClient := protocol.NewClient(ctrlTransport)
-	if err := ctrlClient.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello control client: %v", err)
-	}
-	t.Cleanup(func() { _ = ctrlClient.Close() })
+	ctrlClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	tmpFile := filepath.Join(t.TempDir(), name+".txt")
 	var lines []string
@@ -289,15 +264,7 @@ func startNvimPerfHarness(t *testing.T, name string) *nvimPerfHarness {
 		t.Fatalf("create terminal: %v", err)
 	}
 
-	appTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial app client: %v", err)
-	}
-	appClient := protocol.NewClient(appTransport)
-	if err := appClient.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello app client: %v", err)
-	}
-	t.Cleanup(func() { _ = appClient.Close() })
+	appClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	ptmx, tty, err := creackpty.Open()
 	if err != nil {

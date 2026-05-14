@@ -8,6 +8,7 @@ use (
 	./termx-proto
 	./termx-remote
 	./termx-shared
+	./termx-testkit
 	./termx-vterm
 	./tuiv2
 )

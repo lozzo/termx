@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"image/color"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -16,9 +15,8 @@ import (
 	"github.com/lozzow/termx/termx-proto/wire"
 
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/termx-core"
 	"github.com/lozzow/termx/termx-shared/terminalmeta"
-	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
+	"github.com/lozzow/termx/termx-testkit"
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/sessionstore"
@@ -30,43 +28,8 @@ func newTestRuntime(t *testing.T) (*Runtime, context.Context) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	socketPath := filepath.Join(t.TempDir(), "termx.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	done := make(chan error, 1)
-	go func() {
-		done <- srv.ListenAndServe(ctx)
-	}()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			t.Fatal("server did not stop in time")
-		}
-	})
-
-	var transport *unixtransport.Transport
-	var err error
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		transport, err = unixtransport.Dial(socketPath)
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("dial: %v", err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	client := protocol.NewClient(transport)
-	t.Cleanup(func() { _ = client.Close() })
-
-	helloCtx, helloCancel := context.WithTimeout(ctx, 2*time.Second)
-	defer helloCancel()
-	if err := client.Hello(helloCtx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
+	daemon := testkit.StartDaemon(t, ctx, "termx.sock")
+	client := daemon.NewClient(t, ctx)
 
 	return New(bridge.NewProtocolClient(client)), ctx
 }

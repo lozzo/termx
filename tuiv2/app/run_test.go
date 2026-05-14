@@ -5,28 +5,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os/exec"
-	"path/filepath"
-	"strconv"
-	"strings"
-	"sync"
-	"testing"
-	"time"
-
-	"github.com/lozzow/termx/termx-proto/wire"
-
 	tea "github.com/charmbracelet/bubbletea"
 	uv "github.com/charmbracelet/ultraviolet"
 	xansi "github.com/charmbracelet/x/ansi"
 	creackpty "github.com/creack/pty"
 	"github.com/lozzow/termx/internal/protocol"
-	"github.com/lozzow/termx/termx-core"
-	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/muesli/cancelreader"
+	"io"
+	"os/exec"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
 )
 
 func TestUVMouseEventToTeaMouseMsg(t *testing.T) {
@@ -565,32 +559,10 @@ func TestE2ERunWithClientAttachShellAcceptsRepeatedCommandsOnPTY(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-run-pty.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-run-pty.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := waitTestSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	ctrlTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial control client: %v", err)
-	}
-	ctrlClient := protocol.NewClient(ctrlTransport)
-	if err := ctrlClient.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello control client: %v", err)
-	}
-	t.Cleanup(func() { _ = ctrlClient.Close() })
+	ctrlClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	created, err := ctrlClient.Create(ctx, protocol.CreateParams{
 		Command: []string{"sh", "-c", "printf 'pty-ready\\n'; exec sh"},
@@ -601,15 +573,7 @@ func TestE2ERunWithClientAttachShellAcceptsRepeatedCommandsOnPTY(t *testing.T) {
 		t.Fatalf("create terminal: %v", err)
 	}
 
-	appTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial app client: %v", err)
-	}
-	appProtocolClient := protocol.NewClient(appTransport)
-	if err := appProtocolClient.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello app client: %v", err)
-	}
-	t.Cleanup(func() { _ = appProtocolClient.Close() })
+	appProtocolClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	ptmx, tty, err := creackpty.Open()
 	if err != nil {
@@ -680,32 +644,10 @@ func TestE2ERunWithClientAttachHtopCanQuitOnPTY(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-run-htop.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-run-htop.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := waitTestSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	ctrlTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial control client: %v", err)
-	}
-	ctrlClient := protocol.NewClient(ctrlTransport)
-	if err := ctrlClient.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello control client: %v", err)
-	}
-	t.Cleanup(func() { _ = ctrlClient.Close() })
+	ctrlClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	created, err := ctrlClient.Create(ctx, protocol.CreateParams{
 		Command: []string{"htop"},
@@ -716,15 +658,7 @@ func TestE2ERunWithClientAttachHtopCanQuitOnPTY(t *testing.T) {
 		t.Fatalf("create terminal: %v", err)
 	}
 
-	appTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial app client: %v", err)
-	}
-	appProtocolClient := protocol.NewClient(appTransport)
-	if err := appProtocolClient.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
-		t.Fatalf("hello app client: %v", err)
-	}
-	t.Cleanup(func() { _ = appProtocolClient.Close() })
+	appProtocolClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	ptmx, tty, err := creackpty.Open()
 	if err != nil {
@@ -769,7 +703,7 @@ func TestE2ERunWithClientAttachHtopCanQuitOnPTY(t *testing.T) {
 	if _, err := ptmx.Write([]byte("q")); err != nil {
 		t.Fatalf("write htop quit key: %v", err)
 	}
-	waitForTerminalState(t, ctx, srv, created.TerminalID, termx.StateExited)
+	waitForTerminalState(t, ctx, daemon, created.TerminalID, appTestStateExited)
 
 	cancel()
 	select {
@@ -880,37 +814,6 @@ func waitForPTYSubstringCount(t *testing.T, ctx context.Context, recorder *ptyOu
 		}
 	}
 	t.Fatalf("timeout waiting for %d occurrences of %q\nlatest output:\n%s", want, target, recorder.Text())
-}
-
-func waitForTerminalState(t *testing.T, ctx context.Context, srv *termx.Server, terminalID string, want termx.TerminalState) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		info, err := srv.Get(ctx, terminalID)
-		if err == nil && info != nil && info.State == want {
-			return
-		}
-		select {
-		case <-ctx.Done():
-			t.Fatalf("context expired waiting for terminal %s state %s", terminalID, want)
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
-	info, err := srv.Get(context.Background(), terminalID)
-	t.Fatalf("timeout waiting for terminal %s state %s; latest info=%#v err=%v", terminalID, want, info, err)
-}
-
-func waitTestSocket(path string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		conn, err := unixtransport.Dial(path)
-		if err == nil {
-			_ = conn.Close()
-			return nil
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	return errors.New("socket did not appear in time")
 }
 
 type keyCaptureModel struct {
