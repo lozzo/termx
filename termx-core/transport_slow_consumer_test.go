@@ -9,8 +9,8 @@ import (
 
 	"github.com/lozzow/termx/termx-proto/wire"
 
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-core/fanout"
-	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/transport"
 	"github.com/lozzow/termx/termx-shared/transport/memory"

@@ -19,8 +19,8 @@ func TestTermxRemoteModuleSkeleton(t *testing.T) {
 	goMod := string(readFile(t, filepath.Join(remoteRoot, "go.mod")))
 	for _, want := range []string{
 		"module github.com/lozzow/termx/termx-remote",
-		"github.com/lozzow/termx/termx-core v0.0.0",
-		"replace github.com/lozzow/termx/termx-core => ../termx-core",
+		"github.com/lozzow/termx/internal v0.0.0",
+		"replace github.com/lozzow/termx/internal => ../internal",
 	} {
 		if !strings.Contains(goMod, want) {
 			t.Fatalf("termx-remote/go.mod missing %q:\n%s", want, goMod)
@@ -28,6 +28,7 @@ func TestTermxRemoteModuleSkeleton(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		"github.com/lozzow/termx/termx-cli",
+		"github.com/lozzow/termx/termx-core",
 		"github.com/lozzow/termx/termx-hub",
 		"remote-ui",
 	} {

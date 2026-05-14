@@ -4,7 +4,7 @@ import (
 	"maps"
 	"sort"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
 )

@@ -5,7 +5,6 @@ go 1.26.0
 toolchain go1.26.1
 
 require (
-	github.com/lozzow/termx/termx-core v0.0.0
 	github.com/pion/ice/v4 v4.2.1
 	github.com/pion/stun/v3 v3.1.1
 	github.com/pion/turn/v4 v4.1.4
@@ -19,6 +18,7 @@ require github.com/lozzow/termx/termx-proto v0.0.0 // indirect
 
 require (
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/lozzow/termx/internal v0.0.0
 	github.com/lozzow/termx/termx-shared v0.0.0
 	github.com/pion/datachannel v1.6.0 // indirect
 	github.com/pion/dtls/v3 v3.1.2 // indirect
@@ -41,12 +41,8 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240318140521-94a12d6c2237 // indirect
 )
 
-replace github.com/lozzow/termx/termx-core => ../termx-core
-
-replace github.com/lozzow/termx/termx-vterm => ../termx-vterm
-
-replace github.com/charmbracelet/x/vt => ../termx-vterm/third_party/github.com/charmbracelet/x/vt
-
 replace github.com/lozzow/termx/termx-shared => ../termx-shared
 
 replace github.com/lozzow/termx/termx-proto => ../termx-proto
+
+replace github.com/lozzow/termx/internal => ../internal

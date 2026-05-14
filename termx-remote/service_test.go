@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-remote/pairing"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 	"github.com/lozzow/termx/termx-remote/protocol/runtimepb"

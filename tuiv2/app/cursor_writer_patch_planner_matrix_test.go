@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"

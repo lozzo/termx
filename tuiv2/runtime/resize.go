@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-shared/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/shared"
 )

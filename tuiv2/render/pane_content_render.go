@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"

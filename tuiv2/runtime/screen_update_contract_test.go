@@ -3,7 +3,7 @@ package runtime
 import (
 	"testing"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 )
 
 func TestDecodeScreenUpdateContractPayloadSummarizesChangedRowsFromOps(t *testing.T) {

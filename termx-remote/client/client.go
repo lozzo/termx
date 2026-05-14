@@ -3,7 +3,7 @@ package client
 import (
 	"context"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 )
 
 // Daemon is the shell-neutral core boundary used by remote product code.

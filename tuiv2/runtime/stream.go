@@ -7,7 +7,7 @@ import (
 
 	"github.com/lozzow/termx/termx-proto/wire"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/shared"

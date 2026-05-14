@@ -27,6 +27,7 @@ require (
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/lozzow/termx/internal v0.0.0
 	github.com/lozzow/termx/termx-proto v0.0.0
 	github.com/lozzow/termx/termx-shared v0.0.0
 	github.com/lozzow/termx/termx-vterm v0.0.0
@@ -45,3 +46,5 @@ replace github.com/lozzow/termx/termx-vterm => ../termx-vterm
 replace github.com/lozzow/termx/termx-shared => ../termx-shared
 
 replace github.com/lozzow/termx/termx-proto => ../termx-proto
+
+replace github.com/lozzow/termx/internal => ../internal

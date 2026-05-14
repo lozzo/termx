@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 )
 
 func TestDaemonBoundaryIsMinimalShellNeutralCapability(t *testing.T) {

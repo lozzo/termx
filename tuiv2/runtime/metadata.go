@@ -1,6 +1,6 @@
 package runtime
 
-import "github.com/lozzow/termx/termx-core/protocol"
+import "github.com/lozzow/termx/internal/protocol"
 
 const externalResizeOwnerPaneID = "external"
 

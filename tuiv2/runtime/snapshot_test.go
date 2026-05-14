@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 )
 
 func TestApplyScreenUpdateSnapshotWriteSpanDoesNotMutatePreviousSnapshot(t *testing.T) {

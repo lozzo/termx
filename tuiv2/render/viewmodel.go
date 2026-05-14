@@ -1,7 +1,7 @@
 package render
 
 import (
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
@@ -49,11 +49,11 @@ type RenderStatusToken struct {
 }
 
 type RenderBodyVM struct {
-	OwnerConfirmPaneID string
-	EmptySelection     RenderPaneSelectionVM
-	ExitedSelection    RenderPaneSelectionVM
-	SnapshotOverride   RenderSnapshotOverrideVM
-	CopyMode           RenderCopyModeVM
+	OwnerConfirmPaneID  string
+	EmptySelection      RenderPaneSelectionVM
+	ExitedSelection     RenderPaneSelectionVM
+	SnapshotOverride    RenderSnapshotOverrideVM
+	CopyMode            RenderCopyModeVM
 	FloatingDragPreview RenderFloatingDragPreviewVM
 }
 

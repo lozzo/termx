@@ -2,7 +2,7 @@ package app
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 )
 
 type copyModeBuffer struct {

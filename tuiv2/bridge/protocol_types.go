@@ -1,6 +1,6 @@
 package bridge
 
-import "github.com/lozzow/termx/termx-core/protocol"
+import "github.com/lozzow/termx/internal/protocol"
 
 type TerminalInfoRef = protocol.TerminalInfo
 type EventRef = protocol.Event

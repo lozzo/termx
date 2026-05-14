@@ -3,7 +3,7 @@ package runtime
 import (
 	"time"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/shared"
 )

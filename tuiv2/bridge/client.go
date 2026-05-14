@@ -3,7 +3,7 @@ package bridge
 import (
 	"context"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 )
 
 type Client interface {

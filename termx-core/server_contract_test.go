@@ -15,7 +15,7 @@ import (
 
 	"github.com/lozzow/termx/termx-proto/wire"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-shared/transport/memory"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 	"github.com/lozzow/termx/termx-vterm/vterm"

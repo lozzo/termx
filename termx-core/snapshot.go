@@ -3,7 +3,7 @@ package termx
 import (
 	"time"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 )
 
 func trimSnapshotBinaryResultToFrameBudget(snapshot *Snapshot, encoded []byte, budget int) (*Snapshot, []byte) {

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-core/fanout"
-	"github.com/lozzow/termx/termx-core/protocol"
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 

@@ -31,6 +31,7 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
+	github.com/lozzow/termx/internal v0.0.0
 	github.com/lozzow/termx/termx-shared v0.0.0
 	github.com/lozzow/termx/termx-vterm v0.0.0
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
@@ -55,3 +56,5 @@ replace github.com/charmbracelet/x/vt => ../termx-vterm/third_party/github.com/c
 replace github.com/lozzow/termx/termx-shared => ../termx-shared
 
 replace github.com/lozzow/termx/termx-proto => ../termx-proto
+
+replace github.com/lozzow/termx/internal => ../internal

@@ -9,7 +9,7 @@ import (
 
 	"github.com/lozzow/termx/termx-proto/wire"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 )
 
 func TestAttachmentStreamPumpReadyGatesScreenUpdatesToLatestFrame(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-remote/bridge"
 	remoteconfig "github.com/lozzow/termx/termx-remote/config"
 	"github.com/lozzow/termx/termx-remote/discovery"

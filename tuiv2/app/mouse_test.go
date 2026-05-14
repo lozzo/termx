@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/input"

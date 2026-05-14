@@ -3,7 +3,7 @@ package render
 import (
 	"testing"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 )
 
 func TestTerminalExtentProfileForSourceSeparatesVisibleAndOverflowMetrics(t *testing.T) {

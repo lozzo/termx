@@ -10,8 +10,8 @@ import (
 
 	"github.com/lozzow/termx/termx-proto/wire"
 
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-core"
-	"github.com/lozzow/termx/termx-core/protocol"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 )
 

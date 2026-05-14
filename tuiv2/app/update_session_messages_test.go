@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/sessiondoc"
 	"github.com/lozzow/termx/tuiv2/sessionstate"
 	"github.com/lozzow/termx/tuiv2/sessionstore"

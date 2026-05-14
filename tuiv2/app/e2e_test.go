@@ -16,8 +16,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-core"
-	"github.com/lozzow/termx/termx-core/protocol"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/input"

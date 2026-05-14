@@ -3,7 +3,7 @@ package render
 import (
 	"sort"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/shared"
 )

@@ -13,8 +13,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-core/fanout"
-	"github.com/lozzow/termx/termx-core/protocol"
 	ptymgr "github.com/lozzow/termx/termx-core/pty"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/terminalmeta"
