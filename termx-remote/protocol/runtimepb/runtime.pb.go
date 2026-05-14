@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v6.33.1
-// source: termx-remote/protocol/runtimepb/runtime.proto
+// source: protocol/runtimepb/runtime.proto
 
 package runtimepb
 
@@ -29,7 +29,7 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[0]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -41,7 +41,7 @@ func (x *Empty) String() string {
 func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[0]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -54,7 +54,7 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{0}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{0}
 }
 
 type APIRequest struct {
@@ -69,7 +69,7 @@ type APIRequest struct {
 
 func (x *APIRequest) Reset() {
 	*x = APIRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[1]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -81,7 +81,7 @@ func (x *APIRequest) String() string {
 func (*APIRequest) ProtoMessage() {}
 
 func (x *APIRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[1]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -94,7 +94,7 @@ func (x *APIRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use APIRequest.ProtoReflect.Descriptor instead.
 func (*APIRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{1}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *APIRequest) GetId() string {
@@ -137,7 +137,7 @@ type APIResponse struct {
 
 func (x *APIResponse) Reset() {
 	*x = APIResponse{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[2]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -149,7 +149,7 @@ func (x *APIResponse) String() string {
 func (*APIResponse) ProtoMessage() {}
 
 func (x *APIResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[2]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -162,7 +162,7 @@ func (x *APIResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use APIResponse.ProtoReflect.Descriptor instead.
 func (*APIResponse) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{2}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *APIResponse) GetId() string {
@@ -202,7 +202,7 @@ type StatusResponse struct {
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[3]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -214,7 +214,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[3]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -227,7 +227,7 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{3}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *StatusResponse) GetOk() bool {
@@ -241,7 +241,6 @@ type EventSubscribeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
 	TerminalId    string                 `protobuf:"bytes,2,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	SessionId     string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Types         []int32                `protobuf:"varint,4,rep,packed,name=types,proto3" json:"types,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -249,7 +248,7 @@ type EventSubscribeRequest struct {
 
 func (x *EventSubscribeRequest) Reset() {
 	*x = EventSubscribeRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[4]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -261,7 +260,7 @@ func (x *EventSubscribeRequest) String() string {
 func (*EventSubscribeRequest) ProtoMessage() {}
 
 func (x *EventSubscribeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[4]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -274,7 +273,7 @@ func (x *EventSubscribeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventSubscribeRequest.ProtoReflect.Descriptor instead.
 func (*EventSubscribeRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{4}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *EventSubscribeRequest) GetType() string {
@@ -287,13 +286,6 @@ func (x *EventSubscribeRequest) GetType() string {
 func (x *EventSubscribeRequest) GetTerminalId() string {
 	if x != nil {
 		return x.TerminalId
-	}
-	return ""
-}
-
-func (x *EventSubscribeRequest) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
 	}
 	return ""
 }
@@ -319,7 +311,7 @@ type EventEnvelope struct {
 
 func (x *EventEnvelope) Reset() {
 	*x = EventEnvelope{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[5]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -331,7 +323,7 @@ func (x *EventEnvelope) String() string {
 func (*EventEnvelope) ProtoMessage() {}
 
 func (x *EventEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[5]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -344,7 +336,7 @@ func (x *EventEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventEnvelope.ProtoReflect.Descriptor instead.
 func (*EventEnvelope) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{5}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *EventEnvelope) GetType() string {
@@ -409,7 +401,7 @@ type TerminalInventoryItem struct {
 
 func (x *TerminalInventoryItem) Reset() {
 	*x = TerminalInventoryItem{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[6]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -421,7 +413,7 @@ func (x *TerminalInventoryItem) String() string {
 func (*TerminalInventoryItem) ProtoMessage() {}
 
 func (x *TerminalInventoryItem) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[6]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -434,7 +426,7 @@ func (x *TerminalInventoryItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalInventoryItem.ProtoReflect.Descriptor instead.
 func (*TerminalInventoryItem) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{6}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *TerminalInventoryItem) GetTerminalId() string {
@@ -531,7 +523,7 @@ type Size struct {
 
 func (x *Size) Reset() {
 	*x = Size{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[7]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -543,7 +535,7 @@ func (x *Size) String() string {
 func (*Size) ProtoMessage() {}
 
 func (x *Size) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[7]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -556,7 +548,7 @@ func (x *Size) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Size.ProtoReflect.Descriptor instead.
 func (*Size) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{7}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Size) GetCols() uint32 {
@@ -588,7 +580,7 @@ type ResizeOwnership struct {
 
 func (x *ResizeOwnership) Reset() {
 	*x = ResizeOwnership{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[8]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -600,7 +592,7 @@ func (x *ResizeOwnership) String() string {
 func (*ResizeOwnership) ProtoMessage() {}
 
 func (x *ResizeOwnership) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[8]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -613,7 +605,7 @@ func (x *ResizeOwnership) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResizeOwnership.ProtoReflect.Descriptor instead.
 func (*ResizeOwnership) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{8}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ResizeOwnership) GetOwnerAttachmentId() string {
@@ -674,7 +666,7 @@ type TerminalListResponse struct {
 
 func (x *TerminalListResponse) Reset() {
 	*x = TerminalListResponse{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[9]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -686,7 +678,7 @@ func (x *TerminalListResponse) String() string {
 func (*TerminalListResponse) ProtoMessage() {}
 
 func (x *TerminalListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[9]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -699,7 +691,7 @@ func (x *TerminalListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalListResponse.ProtoReflect.Descriptor instead.
 func (*TerminalListResponse) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{9}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *TerminalListResponse) GetTerminals() []*TerminalInventoryItem {
@@ -718,7 +710,7 @@ type TerminalDirectoryRequest struct {
 
 func (x *TerminalDirectoryRequest) Reset() {
 	*x = TerminalDirectoryRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[10]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -730,7 +722,7 @@ func (x *TerminalDirectoryRequest) String() string {
 func (*TerminalDirectoryRequest) ProtoMessage() {}
 
 func (x *TerminalDirectoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[10]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -743,7 +735,7 @@ func (x *TerminalDirectoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalDirectoryRequest.ProtoReflect.Descriptor instead.
 func (*TerminalDirectoryRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{10}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *TerminalDirectoryRequest) GetTerminalId() string {
@@ -764,7 +756,7 @@ type TerminalDirectoryResponse struct {
 
 func (x *TerminalDirectoryResponse) Reset() {
 	*x = TerminalDirectoryResponse{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[11]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -776,7 +768,7 @@ func (x *TerminalDirectoryResponse) String() string {
 func (*TerminalDirectoryResponse) ProtoMessage() {}
 
 func (x *TerminalDirectoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[11]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -789,7 +781,7 @@ func (x *TerminalDirectoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalDirectoryResponse.ProtoReflect.Descriptor instead.
 func (*TerminalDirectoryResponse) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{11}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *TerminalDirectoryResponse) GetTerminalId() string {
@@ -826,7 +818,7 @@ type TerminalCreateRequest struct {
 
 func (x *TerminalCreateRequest) Reset() {
 	*x = TerminalCreateRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[12]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -838,7 +830,7 @@ func (x *TerminalCreateRequest) String() string {
 func (*TerminalCreateRequest) ProtoMessage() {}
 
 func (x *TerminalCreateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[12]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -851,7 +843,7 @@ func (x *TerminalCreateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalCreateRequest.ProtoReflect.Descriptor instead.
 func (*TerminalCreateRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{12}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *TerminalCreateRequest) GetName() string {
@@ -900,7 +892,7 @@ type TerminalSetMetadataRequest struct {
 
 func (x *TerminalSetMetadataRequest) Reset() {
 	*x = TerminalSetMetadataRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[13]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -912,7 +904,7 @@ func (x *TerminalSetMetadataRequest) String() string {
 func (*TerminalSetMetadataRequest) ProtoMessage() {}
 
 func (x *TerminalSetMetadataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[13]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -925,7 +917,7 @@ func (x *TerminalSetMetadataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalSetMetadataRequest.ProtoReflect.Descriptor instead.
 func (*TerminalSetMetadataRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{13}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *TerminalSetMetadataRequest) GetTerminalId() string {
@@ -958,7 +950,7 @@ type TerminalIDRequest struct {
 
 func (x *TerminalIDRequest) Reset() {
 	*x = TerminalIDRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[14]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -970,7 +962,7 @@ func (x *TerminalIDRequest) String() string {
 func (*TerminalIDRequest) ProtoMessage() {}
 
 func (x *TerminalIDRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[14]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -983,7 +975,7 @@ func (x *TerminalIDRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalIDRequest.ProtoReflect.Descriptor instead.
 func (*TerminalIDRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{14}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *TerminalIDRequest) GetTerminalId() string {
@@ -1002,7 +994,7 @@ type FilePathRequest struct {
 
 func (x *FilePathRequest) Reset() {
 	*x = FilePathRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[15]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1014,7 +1006,7 @@ func (x *FilePathRequest) String() string {
 func (*FilePathRequest) ProtoMessage() {}
 
 func (x *FilePathRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[15]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1027,7 +1019,7 @@ func (x *FilePathRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilePathRequest.ProtoReflect.Descriptor instead.
 func (*FilePathRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{15}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *FilePathRequest) GetPath() string {
@@ -1048,7 +1040,7 @@ type FileListRequest struct {
 
 func (x *FileListRequest) Reset() {
 	*x = FileListRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[16]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1060,7 +1052,7 @@ func (x *FileListRequest) String() string {
 func (*FileListRequest) ProtoMessage() {}
 
 func (x *FileListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[16]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1073,7 +1065,7 @@ func (x *FileListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileListRequest.ProtoReflect.Descriptor instead.
 func (*FileListRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{16}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *FileListRequest) GetPath() string {
@@ -1115,7 +1107,7 @@ type FileEntry struct {
 
 func (x *FileEntry) Reset() {
 	*x = FileEntry{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[17]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1127,7 +1119,7 @@ func (x *FileEntry) String() string {
 func (*FileEntry) ProtoMessage() {}
 
 func (x *FileEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[17]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1140,7 +1132,7 @@ func (x *FileEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileEntry.ProtoReflect.Descriptor instead.
 func (*FileEntry) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{17}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *FileEntry) GetName() string {
@@ -1225,7 +1217,7 @@ type FileListResponse struct {
 
 func (x *FileListResponse) Reset() {
 	*x = FileListResponse{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[18]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1237,7 +1229,7 @@ func (x *FileListResponse) String() string {
 func (*FileListResponse) ProtoMessage() {}
 
 func (x *FileListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[18]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1250,7 +1242,7 @@ func (x *FileListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileListResponse.ProtoReflect.Descriptor instead.
 func (*FileListResponse) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{18}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *FileListResponse) GetPath() string {
@@ -1290,7 +1282,7 @@ type FilePathResponse struct {
 
 func (x *FilePathResponse) Reset() {
 	*x = FilePathResponse{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[19]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1302,7 +1294,7 @@ func (x *FilePathResponse) String() string {
 func (*FilePathResponse) ProtoMessage() {}
 
 func (x *FilePathResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[19]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1315,7 +1307,7 @@ func (x *FilePathResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilePathResponse.ProtoReflect.Descriptor instead.
 func (*FilePathResponse) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{19}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *FilePathResponse) GetPath() string {
@@ -1335,7 +1327,7 @@ type FileRenameRequest struct {
 
 func (x *FileRenameRequest) Reset() {
 	*x = FileRenameRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[20]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1347,7 +1339,7 @@ func (x *FileRenameRequest) String() string {
 func (*FileRenameRequest) ProtoMessage() {}
 
 func (x *FileRenameRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[20]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1360,7 +1352,7 @@ func (x *FileRenameRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileRenameRequest.ProtoReflect.Descriptor instead.
 func (*FileRenameRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{20}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *FileRenameRequest) GetPath() string {
@@ -1386,7 +1378,7 @@ type FileMultiPathRequest struct {
 
 func (x *FileMultiPathRequest) Reset() {
 	*x = FileMultiPathRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[21]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1398,7 +1390,7 @@ func (x *FileMultiPathRequest) String() string {
 func (*FileMultiPathRequest) ProtoMessage() {}
 
 func (x *FileMultiPathRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[21]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1411,7 +1403,7 @@ func (x *FileMultiPathRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileMultiPathRequest.ProtoReflect.Descriptor instead.
 func (*FileMultiPathRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{21}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *FileMultiPathRequest) GetPaths() []string {
@@ -1431,7 +1423,7 @@ type FileCopyMoveRequest struct {
 
 func (x *FileCopyMoveRequest) Reset() {
 	*x = FileCopyMoveRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[22]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1443,7 +1435,7 @@ func (x *FileCopyMoveRequest) String() string {
 func (*FileCopyMoveRequest) ProtoMessage() {}
 
 func (x *FileCopyMoveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[22]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1456,7 +1448,7 @@ func (x *FileCopyMoveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileCopyMoveRequest.ProtoReflect.Descriptor instead.
 func (*FileCopyMoveRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{22}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *FileCopyMoveRequest) GetPaths() []string {
@@ -1484,7 +1476,7 @@ type FileOperationResult struct {
 
 func (x *FileOperationResult) Reset() {
 	*x = FileOperationResult{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[23]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1496,7 +1488,7 @@ func (x *FileOperationResult) String() string {
 func (*FileOperationResult) ProtoMessage() {}
 
 func (x *FileOperationResult) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[23]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1509,7 +1501,7 @@ func (x *FileOperationResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileOperationResult.ProtoReflect.Descriptor instead.
 func (*FileOperationResult) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{23}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *FileOperationResult) GetSource() string {
@@ -1543,7 +1535,7 @@ type FileCopyMoveResponse struct {
 
 func (x *FileCopyMoveResponse) Reset() {
 	*x = FileCopyMoveResponse{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[24]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1555,7 +1547,7 @@ func (x *FileCopyMoveResponse) String() string {
 func (*FileCopyMoveResponse) ProtoMessage() {}
 
 func (x *FileCopyMoveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[24]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1568,7 +1560,7 @@ func (x *FileCopyMoveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileCopyMoveResponse.ProtoReflect.Descriptor instead.
 func (*FileCopyMoveResponse) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{24}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *FileCopyMoveResponse) GetAffected() int32 {
@@ -1595,7 +1587,7 @@ type FileDeleteError struct {
 
 func (x *FileDeleteError) Reset() {
 	*x = FileDeleteError{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[25]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1607,7 +1599,7 @@ func (x *FileDeleteError) String() string {
 func (*FileDeleteError) ProtoMessage() {}
 
 func (x *FileDeleteError) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[25]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1620,7 +1612,7 @@ func (x *FileDeleteError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileDeleteError.ProtoReflect.Descriptor instead.
 func (*FileDeleteError) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{25}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *FileDeleteError) GetPath() string {
@@ -1647,7 +1639,7 @@ type FileBatchDeleteResponse struct {
 
 func (x *FileBatchDeleteResponse) Reset() {
 	*x = FileBatchDeleteResponse{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[26]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1659,7 +1651,7 @@ func (x *FileBatchDeleteResponse) String() string {
 func (*FileBatchDeleteResponse) ProtoMessage() {}
 
 func (x *FileBatchDeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[26]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1672,7 +1664,7 @@ func (x *FileBatchDeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileBatchDeleteResponse.ProtoReflect.Descriptor instead.
 func (*FileBatchDeleteResponse) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{26}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *FileBatchDeleteResponse) GetDeleted() int32 {
@@ -1699,7 +1691,7 @@ type FilePreviewRequest struct {
 
 func (x *FilePreviewRequest) Reset() {
 	*x = FilePreviewRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[27]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1711,7 +1703,7 @@ func (x *FilePreviewRequest) String() string {
 func (*FilePreviewRequest) ProtoMessage() {}
 
 func (x *FilePreviewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[27]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1724,7 +1716,7 @@ func (x *FilePreviewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilePreviewRequest.ProtoReflect.Descriptor instead.
 func (*FilePreviewRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{27}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *FilePreviewRequest) GetPath() string {
@@ -1758,7 +1750,7 @@ type FilePreviewResponse struct {
 
 func (x *FilePreviewResponse) Reset() {
 	*x = FilePreviewResponse{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[28]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1770,7 +1762,7 @@ func (x *FilePreviewResponse) String() string {
 func (*FilePreviewResponse) ProtoMessage() {}
 
 func (x *FilePreviewResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[28]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1783,7 +1775,7 @@ func (x *FilePreviewResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilePreviewResponse.ProtoReflect.Descriptor instead.
 func (*FilePreviewResponse) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{28}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *FilePreviewResponse) GetPath() string {
@@ -1861,7 +1853,7 @@ type FileDownloadInitRequest struct {
 
 func (x *FileDownloadInitRequest) Reset() {
 	*x = FileDownloadInitRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[29]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1873,7 +1865,7 @@ func (x *FileDownloadInitRequest) String() string {
 func (*FileDownloadInitRequest) ProtoMessage() {}
 
 func (x *FileDownloadInitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[29]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1886,7 +1878,7 @@ func (x *FileDownloadInitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileDownloadInitRequest.ProtoReflect.Descriptor instead.
 func (*FileDownloadInitRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{29}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *FileDownloadInitRequest) GetPath() string {
@@ -1931,7 +1923,7 @@ type FileDownloadInitResponse struct {
 
 func (x *FileDownloadInitResponse) Reset() {
 	*x = FileDownloadInitResponse{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[30]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1943,7 +1935,7 @@ func (x *FileDownloadInitResponse) String() string {
 func (*FileDownloadInitResponse) ProtoMessage() {}
 
 func (x *FileDownloadInitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[30]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1956,7 +1948,7 @@ func (x *FileDownloadInitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileDownloadInitResponse.ProtoReflect.Descriptor instead.
 func (*FileDownloadInitResponse) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{30}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *FileDownloadInitResponse) GetTransferId() string {
@@ -2012,7 +2004,7 @@ type FileUploadInitRequest struct {
 
 func (x *FileUploadInitRequest) Reset() {
 	*x = FileUploadInitRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[31]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2024,7 +2016,7 @@ func (x *FileUploadInitRequest) String() string {
 func (*FileUploadInitRequest) ProtoMessage() {}
 
 func (x *FileUploadInitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[31]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2037,7 +2029,7 @@ func (x *FileUploadInitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileUploadInitRequest.ProtoReflect.Descriptor instead.
 func (*FileUploadInitRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{31}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *FileUploadInitRequest) GetPath() string {
@@ -2072,7 +2064,7 @@ type FileUploadInitResponse struct {
 
 func (x *FileUploadInitResponse) Reset() {
 	*x = FileUploadInitResponse{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[32]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2084,7 +2076,7 @@ func (x *FileUploadInitResponse) String() string {
 func (*FileUploadInitResponse) ProtoMessage() {}
 
 func (x *FileUploadInitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[32]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2097,7 +2089,7 @@ func (x *FileUploadInitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileUploadInitResponse.ProtoReflect.Descriptor instead.
 func (*FileUploadInitResponse) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{32}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *FileUploadInitResponse) GetTransferId() string {
@@ -2130,7 +2122,7 @@ type FileUploadCompleteRequest struct {
 
 func (x *FileUploadCompleteRequest) Reset() {
 	*x = FileUploadCompleteRequest{}
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[33]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2142,7 +2134,7 @@ func (x *FileUploadCompleteRequest) String() string {
 func (*FileUploadCompleteRequest) ProtoMessage() {}
 
 func (x *FileUploadCompleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[33]
+	mi := &file_protocol_runtimepb_runtime_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2155,7 +2147,7 @@ func (x *FileUploadCompleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileUploadCompleteRequest.ProtoReflect.Descriptor instead.
 func (*FileUploadCompleteRequest) Descriptor() ([]byte, []int) {
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{33}
+	return file_protocol_runtimepb_runtime_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *FileUploadCompleteRequest) GetTransferId() string {
@@ -2165,11 +2157,11 @@ func (x *FileUploadCompleteRequest) GetTransferId() string {
 	return ""
 }
 
-var File_termx_remote_protocol_runtimepb_runtime_proto protoreflect.FileDescriptor
+var File_protocol_runtimepb_runtime_proto protoreflect.FileDescriptor
 
-const file_termx_remote_protocol_runtimepb_runtime_proto_rawDesc = "" +
+const file_protocol_runtimepb_runtime_proto_rawDesc = "" +
 	"\n" +
-	"-termx-remote/protocol/runtimepb/runtime.proto\x12\x16termx.remote.runtimepb\"\a\n" +
+	" protocol/runtimepb/runtime.proto\x12\x16termx.remote.runtimepb\"\a\n" +
 	"\x05Empty\"\\\n" +
 	"\n" +
 	"APIRequest\x12\x0e\n" +
@@ -2183,13 +2175,11 @@ const file_termx_remote_protocol_runtimepb_runtime_proto_rawDesc = "" +
 	"\x04body\x18\x03 \x01(\fR\x04body\x12\x14\n" +
 	"\x05error\x18\x04 \x01(\tR\x05error\" \n" +
 	"\x0eStatusResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok\"\x81\x01\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"b\n" +
 	"\x15EventSubscribeRequest\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1f\n" +
 	"\vterminal_id\x18\x02 \x01(\tR\n" +
-	"terminalId\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x03 \x01(\tR\tsessionId\x12\x14\n" +
+	"terminalId\x12\x14\n" +
 	"\x05types\x18\x04 \x03(\x05R\x05types\"\xfa\x01\n" +
 	"\rEventEnvelope\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12#\n" +
@@ -2350,19 +2340,19 @@ const file_termx_remote_protocol_runtimepb_runtime_proto_rawDesc = "" +
 	"transferIdB9Z7github.com/lozzow/termx/termx-remote/protocol/runtimepbb\x06proto3"
 
 var (
-	file_termx_remote_protocol_runtimepb_runtime_proto_rawDescOnce sync.Once
-	file_termx_remote_protocol_runtimepb_runtime_proto_rawDescData []byte
+	file_protocol_runtimepb_runtime_proto_rawDescOnce sync.Once
+	file_protocol_runtimepb_runtime_proto_rawDescData []byte
 )
 
-func file_termx_remote_protocol_runtimepb_runtime_proto_rawDescGZIP() []byte {
-	file_termx_remote_protocol_runtimepb_runtime_proto_rawDescOnce.Do(func() {
-		file_termx_remote_protocol_runtimepb_runtime_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_termx_remote_protocol_runtimepb_runtime_proto_rawDesc), len(file_termx_remote_protocol_runtimepb_runtime_proto_rawDesc)))
+func file_protocol_runtimepb_runtime_proto_rawDescGZIP() []byte {
+	file_protocol_runtimepb_runtime_proto_rawDescOnce.Do(func() {
+		file_protocol_runtimepb_runtime_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_protocol_runtimepb_runtime_proto_rawDesc), len(file_protocol_runtimepb_runtime_proto_rawDesc)))
 	})
-	return file_termx_remote_protocol_runtimepb_runtime_proto_rawDescData
+	return file_protocol_runtimepb_runtime_proto_rawDescData
 }
 
-var file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
-var file_termx_remote_protocol_runtimepb_runtime_proto_goTypes = []any{
+var file_protocol_runtimepb_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
+var file_protocol_runtimepb_runtime_proto_goTypes = []any{
 	(*Empty)(nil),                      // 0: termx.remote.runtimepb.Empty
 	(*APIRequest)(nil),                 // 1: termx.remote.runtimepb.APIRequest
 	(*APIResponse)(nil),                // 2: termx.remote.runtimepb.APIResponse
@@ -2400,7 +2390,7 @@ var file_termx_remote_protocol_runtimepb_runtime_proto_goTypes = []any{
 	nil,                                // 34: termx.remote.runtimepb.TerminalCreateRequest.TagsEntry
 	nil,                                // 35: termx.remote.runtimepb.TerminalSetMetadataRequest.TagsEntry
 }
-var file_termx_remote_protocol_runtimepb_runtime_proto_depIdxs = []int32{
+var file_protocol_runtimepb_runtime_proto_depIdxs = []int32{
 	6,  // 0: termx.remote.runtimepb.EventEnvelope.terminal:type_name -> termx.remote.runtimepb.TerminalInventoryItem
 	8,  // 1: termx.remote.runtimepb.TerminalInventoryItem.resize_ownership:type_name -> termx.remote.runtimepb.ResizeOwnership
 	7,  // 2: termx.remote.runtimepb.ResizeOwnership.size:type_name -> termx.remote.runtimepb.Size
@@ -2417,27 +2407,27 @@ var file_termx_remote_protocol_runtimepb_runtime_proto_depIdxs = []int32{
 	0,  // [0:9] is the sub-list for field type_name
 }
 
-func init() { file_termx_remote_protocol_runtimepb_runtime_proto_init() }
-func file_termx_remote_protocol_runtimepb_runtime_proto_init() {
-	if File_termx_remote_protocol_runtimepb_runtime_proto != nil {
+func init() { file_protocol_runtimepb_runtime_proto_init() }
+func file_protocol_runtimepb_runtime_proto_init() {
+	if File_protocol_runtimepb_runtime_proto != nil {
 		return
 	}
-	file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes[17].OneofWrappers = []any{}
+	file_protocol_runtimepb_runtime_proto_msgTypes[17].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_termx_remote_protocol_runtimepb_runtime_proto_rawDesc), len(file_termx_remote_protocol_runtimepb_runtime_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protocol_runtimepb_runtime_proto_rawDesc), len(file_protocol_runtimepb_runtime_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_termx_remote_protocol_runtimepb_runtime_proto_goTypes,
-		DependencyIndexes: file_termx_remote_protocol_runtimepb_runtime_proto_depIdxs,
-		MessageInfos:      file_termx_remote_protocol_runtimepb_runtime_proto_msgTypes,
+		GoTypes:           file_protocol_runtimepb_runtime_proto_goTypes,
+		DependencyIndexes: file_protocol_runtimepb_runtime_proto_depIdxs,
+		MessageInfos:      file_protocol_runtimepb_runtime_proto_msgTypes,
 	}.Build()
-	File_termx_remote_protocol_runtimepb_runtime_proto = out.File
-	file_termx_remote_protocol_runtimepb_runtime_proto_goTypes = nil
-	file_termx_remote_protocol_runtimepb_runtime_proto_depIdxs = nil
+	File_protocol_runtimepb_runtime_proto = out.File
+	file_protocol_runtimepb_runtime_proto_goTypes = nil
+	file_protocol_runtimepb_runtime_proto_depIdxs = nil
 }

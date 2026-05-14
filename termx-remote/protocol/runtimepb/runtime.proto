@@ -27,7 +27,6 @@ message StatusResponse {
 message EventSubscribeRequest {
   string type = 1;
   string terminal_id = 2;
-  string session_id = 3;
   repeated int32 types = 4;
 }
 

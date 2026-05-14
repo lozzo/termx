@@ -21,9 +21,9 @@ func buildCompactASCIIStrings() [128]string {
 }
 
 type Hello struct {
-	Version int    `json:"version"`
-	Client  string `json:"client,omitempty"`
-	Server  string `json:"server,omitempty"`
+	Version int
+	Client  string
+	Server  string
 }
 
 type Request struct {
@@ -38,110 +38,110 @@ type Response struct {
 }
 
 type ProtocolError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int
+	Message string
 }
 
 type ErrorMessage struct {
-	ID    uint64        `json:"id"`
-	Error ProtocolError `json:"error"`
+	ID    uint64
+	Error ProtocolError
 }
 
 type Size struct {
-	Cols uint16 `json:"cols"`
-	Rows uint16 `json:"rows"`
+	Cols uint16
+	Rows uint16
 }
 
 type TerminalInfo struct {
-	ID                         string            `json:"id"`
-	Name                       string            `json:"name"`
-	Command                    []string          `json:"command"`
-	Tags                       map[string]string `json:"tags,omitempty"`
-	Size                       Size              `json:"size"`
-	State                      string            `json:"state"`
-	CWD                        string            `json:"cwd,omitempty"`
-	LiveCWD                    string            `json:"live_cwd,omitempty"`
-	CreatedAt                  time.Time         `json:"created_at"`
-	ExitCode                   *int              `json:"exit_code,omitempty"`
-	ResizeOwnership            *ResizeOwnership  `json:"resize_ownership,omitempty"`
-	ResizeOwnerAttachmentCount int               `json:"resize_owner_attachment_count,omitempty"`
+	ID                         string
+	Name                       string
+	Command                    []string
+	Tags                       map[string]string
+	Size                       Size
+	State                      string
+	CWD                        string
+	LiveCWD                    string
+	CreatedAt                  time.Time
+	ExitCode                   *int
+	ResizeOwnership            *ResizeOwnership
+	ResizeOwnerAttachmentCount int
 }
 
 type CreateParams struct {
-	Command        []string          `json:"command"`
-	ID             string            `json:"id,omitempty"`
-	Name           string            `json:"name,omitempty"`
-	Tags           map[string]string `json:"tags,omitempty"`
-	Size           Size              `json:"size,omitempty"`
-	Dir            string            `json:"dir,omitempty"`
-	Env            []string          `json:"env,omitempty"`
-	ScrollbackSize int               `json:"scrollback_size,omitempty"`
+	Command        []string
+	ID             string
+	Name           string
+	Tags           map[string]string
+	Size           Size
+	Dir            string
+	Env            []string
+	ScrollbackSize int
 }
 
 type CreateResult struct {
-	TerminalID string `json:"terminal_id"`
-	State      string `json:"state"`
+	TerminalID string
+	State      string
 }
 
 type GetParams struct {
-	TerminalID string `json:"terminal_id"`
+	TerminalID string
 }
 
 type ResizeParams struct {
-	TerminalID string `json:"terminal_id"`
-	Cols       uint16 `json:"cols"`
-	Rows       uint16 `json:"rows"`
+	TerminalID string
+	Cols       uint16
+	Rows       uint16
 }
 
 type EnsureResizeParams struct {
-	TerminalID   string `json:"terminal_id"`
-	Channel      uint16 `json:"channel"`
-	Cols         uint16 `json:"cols"`
-	Rows         uint16 `json:"rows"`
-	ResizePolicy string `json:"resize_policy,omitempty"`
-	SurfaceID    string `json:"surface_id,omitempty"`
-	ViewID       string `json:"view_id,omitempty"`
+	TerminalID   string
+	Channel      uint16
+	Cols         uint16
+	Rows         uint16
+	ResizePolicy string
+	SurfaceID    string
+	ViewID       string
 }
 
 type EnsureResizeResult struct {
-	ResizeControl *ResizeControl `json:"resize_control,omitempty"`
-	Size          Size           `json:"size"`
-	Resized       bool           `json:"resized,omitempty"`
+	ResizeControl *ResizeControl
+	Size          Size
+	Resized       bool
 }
 
 type SetTagsParams struct {
-	TerminalID string            `json:"terminal_id"`
-	Tags       map[string]string `json:"tags"`
+	TerminalID string
+	Tags       map[string]string
 }
 
 type SetMetadataParams struct {
-	TerminalID string            `json:"terminal_id"`
-	Name       string            `json:"name,omitempty"`
-	Tags       map[string]string `json:"tags,omitempty"`
+	TerminalID string
+	Name       string
+	Tags       map[string]string
 }
 
 type AttachParams struct {
-	TerminalID   string `json:"terminal_id"`
-	Mode         string `json:"mode"`
-	ResizePolicy string `json:"resize_policy,omitempty"`
-	SurfaceID    string `json:"surface_id,omitempty"`
-	ViewID       string `json:"view_id,omitempty"`
+	TerminalID   string
+	Mode         string
+	ResizePolicy string
+	SurfaceID    string
+	ViewID       string
 }
 
 type AttachResult struct {
-	Mode          string         `json:"mode"`
-	Channel       uint16         `json:"channel"`
-	ResizeControl *ResizeControl `json:"resize_control,omitempty"`
+	Mode          string
+	Channel       uint16
+	ResizeControl *ResizeControl
 }
 
 type ResizeOwnership struct {
-	OwnerAttachmentID string `json:"owner_attachment_id,omitempty"`
-	OwnerSurfaceID    string `json:"owner_surface_id,omitempty"`
-	OwnerViewID       string `json:"owner_view_id,omitempty"`
-	OwnerRemoteAddr   string `json:"owner_remote_addr,omitempty"`
-	Size              Size   `json:"size,omitempty"`
-	SizeLocked        bool   `json:"size_locked,omitempty"`
-	Epoch             uint64 `json:"epoch,omitempty"`
+	OwnerAttachmentID string
+	OwnerSurfaceID    string
+	OwnerViewID       string
+	OwnerRemoteAddr   string
+	Size              Size
+	SizeLocked        bool
+	Epoch             uint64
 }
 
 const (
@@ -157,13 +157,13 @@ const (
 )
 
 type ResizeControl struct {
-	CanResize       bool             `json:"can_resize"`
-	Reason          string           `json:"reason,omitempty"`
-	SizeLocked      bool             `json:"size_locked,omitempty"`
-	SurfaceID       string           `json:"surface_id,omitempty"`
-	OwnerSurfaceID  string           `json:"owner_surface_id,omitempty"`
-	OwnerViewID     string           `json:"owner_view_id,omitempty"`
-	ResizeOwnership *ResizeOwnership `json:"resize_ownership,omitempty"`
+	CanResize       bool
+	Reason          string
+	SizeLocked      bool
+	SurfaceID       string
+	OwnerSurfaceID  string
+	OwnerViewID     string
+	ResizeOwnership *ResizeOwnership
 }
 
 type EventType int
@@ -180,30 +180,30 @@ const (
 )
 
 type TerminalCreatedData struct {
-	Name    string   `json:"name"`
-	Command []string `json:"command"`
-	Size    Size     `json:"size"`
+	Name    string
+	Command []string
+	Size    Size
 }
 
 type TerminalStateChangedData struct {
-	OldState string `json:"old_state"`
-	NewState string `json:"new_state"`
-	ExitCode *int   `json:"exit_code,omitempty"`
+	OldState string
+	NewState string
+	ExitCode *int
 }
 
 type TerminalResizedData struct {
-	OldSize Size `json:"old_size"`
-	NewSize Size `json:"new_size"`
+	OldSize Size
+	NewSize Size
 }
 
 type TerminalRemovedData struct {
-	Reason string `json:"reason"`
+	Reason string
 }
 
 type CollaboratorsRevokedData struct{}
 
 type TerminalReadErrorData struct {
-	Error string `json:"error"`
+	Error string
 }
 
 type StorageScope string
@@ -214,114 +214,114 @@ const (
 )
 
 type StorageEntry struct {
-	AppID     string       `json:"app_id"`
-	Scope     StorageScope `json:"scope"`
-	OwnerID   string       `json:"owner_id,omitempty"`
-	Key       string       `json:"key"`
-	Value     []byte       `json:"value,omitempty"`
-	Version   uint64       `json:"version,omitempty"`
-	UpdatedAt time.Time    `json:"updated_at,omitempty"`
+	AppID     string
+	Scope     StorageScope
+	OwnerID   string
+	Key       string
+	Value     []byte
+	Version   uint64
+	UpdatedAt time.Time
 }
 
 type StorageGetParams struct {
-	AppID   string       `json:"app_id"`
-	Scope   StorageScope `json:"scope"`
-	OwnerID string       `json:"owner_id,omitempty"`
-	Key     string       `json:"key"`
+	AppID   string
+	Scope   StorageScope
+	OwnerID string
+	Key     string
 }
 
 type StoragePutParams struct {
-	AppID           string       `json:"app_id"`
-	Scope           StorageScope `json:"scope"`
-	OwnerID         string       `json:"owner_id,omitempty"`
-	Key             string       `json:"key"`
-	Value           []byte       `json:"value,omitempty"`
-	CheckVersion    bool         `json:"check_version,omitempty"`
-	ExpectedVersion uint64       `json:"expected_version,omitempty"`
+	AppID           string
+	Scope           StorageScope
+	OwnerID         string
+	Key             string
+	Value           []byte
+	CheckVersion    bool
+	ExpectedVersion uint64
 }
 
 type StorageDeleteParams struct {
-	AppID           string       `json:"app_id"`
-	Scope           StorageScope `json:"scope"`
-	OwnerID         string       `json:"owner_id,omitempty"`
-	Key             string       `json:"key"`
-	CheckVersion    bool         `json:"check_version,omitempty"`
-	ExpectedVersion uint64       `json:"expected_version,omitempty"`
+	AppID           string
+	Scope           StorageScope
+	OwnerID         string
+	Key             string
+	CheckVersion    bool
+	ExpectedVersion uint64
 }
 
 type StorageDeleteResult struct {
-	AppID   string       `json:"app_id"`
-	Scope   StorageScope `json:"scope"`
-	OwnerID string       `json:"owner_id,omitempty"`
-	Key     string       `json:"key"`
-	Deleted bool         `json:"deleted,omitempty"`
-	Version uint64       `json:"version,omitempty"`
+	AppID   string
+	Scope   StorageScope
+	OwnerID string
+	Key     string
+	Deleted bool
+	Version uint64
 }
 
 type StorageListParams struct {
-	AppID   string       `json:"app_id"`
-	Scope   StorageScope `json:"scope"`
-	OwnerID string       `json:"owner_id,omitempty"`
-	Prefix  string       `json:"prefix,omitempty"`
+	AppID   string
+	Scope   StorageScope
+	OwnerID string
+	Prefix  string
 }
 
 type StorageListResult struct {
-	Entries []StorageEntry `json:"entries,omitempty"`
+	Entries []StorageEntry
 }
 
 type StorageChangedData struct {
-	AppID   string       `json:"app_id"`
-	Scope   StorageScope `json:"scope"`
-	OwnerID string       `json:"owner_id,omitempty"`
-	Key     string       `json:"key"`
-	Version uint64       `json:"version,omitempty"`
-	Op      string       `json:"op"`
+	AppID   string
+	Scope   StorageScope
+	OwnerID string
+	Key     string
+	Version uint64
+	Op      string
 }
 
 type Event struct {
-	Type                 EventType                 `json:"type"`
-	TerminalID           string                    `json:"terminal_id"`
-	Timestamp            time.Time                 `json:"timestamp"`
-	Created              *TerminalCreatedData      `json:"created,omitempty"`
-	StateChanged         *TerminalStateChangedData `json:"state_changed,omitempty"`
-	Resized              *TerminalResizedData      `json:"resized,omitempty"`
-	Removed              *TerminalRemovedData      `json:"removed,omitempty"`
-	CollaboratorsRevoked *CollaboratorsRevokedData `json:"collaborators_revoked,omitempty"`
-	ReadError            *TerminalReadErrorData    `json:"read_error,omitempty"`
-	Storage              *StorageChangedData       `json:"storage,omitempty"`
+	Type                 EventType
+	TerminalID           string
+	Timestamp            time.Time
+	Created              *TerminalCreatedData
+	StateChanged         *TerminalStateChangedData
+	Resized              *TerminalResizedData
+	Removed              *TerminalRemovedData
+	CollaboratorsRevoked *CollaboratorsRevokedData
+	ReadError            *TerminalReadErrorData
+	Storage              *StorageChangedData
 }
 
 type DetachParams struct {
-	TerminalID string `json:"terminal_id"`
+	TerminalID string
 }
 
 type EventsParams struct {
-	TerminalID       string       `json:"terminal_id,omitempty"`
-	Types            []EventType  `json:"types,omitempty"`
-	StorageAppID     string       `json:"storage_app_id,omitempty"`
-	StorageScope     StorageScope `json:"storage_scope,omitempty"`
-	StorageOwnerID   string       `json:"storage_owner_id,omitempty"`
-	StorageKeyPrefix string       `json:"storage_key_prefix,omitempty"`
+	TerminalID       string
+	Types            []EventType
+	StorageAppID     string
+	StorageScope     StorageScope
+	StorageOwnerID   string
+	StorageKeyPrefix string
 }
 
 type SnapshotParams struct {
-	TerminalID       string `json:"terminal_id"`
-	ScrollbackOffset int    `json:"scrollback_offset,omitempty"`
-	ScrollbackLimit  int    `json:"scrollback_limit,omitempty"`
+	TerminalID       string
+	ScrollbackOffset int
+	ScrollbackLimit  int
 }
 
 type GridViewportParams struct {
-	TerminalID       string `json:"terminal_id"`
-	ScrollbackOffset int    `json:"scrollback_offset,omitempty"`
-	ScrollbackLimit  int    `json:"scrollback_limit,omitempty"`
-	Cols             int    `json:"cols,omitempty"`
+	TerminalID       string
+	ScrollbackOffset int
+	ScrollbackLimit  int
+	Cols             int
 }
 
 type ScreenRect struct {
-	X      int `json:"x"`
-	Y      int `json:"y"`
-	Width  int `json:"width"`
-	Height int `json:"height"`
+	X      int
+	Y      int
+	Width  int
+	Height int
 }
 
 type ScreenOpCode uint8
@@ -339,49 +339,49 @@ const (
 )
 
 type ScreenOp struct {
-	Code       ScreenOpCode  `json:"code"`
-	Rect       ScreenRect    `json:"rect,omitempty"`
-	Src        ScreenRect    `json:"src,omitempty"`
-	DstX       int           `json:"dst_x,omitempty"`
-	DstY       int           `json:"dst_y,omitempty"`
-	Dx         int           `json:"dx,omitempty"`
-	Dy         int           `json:"dy,omitempty"`
-	Row        int           `json:"row,omitempty"`
-	Col        int           `json:"col,omitempty"`
-	Cells      []Cell        `json:"cells,omitempty"`
-	Cursor     CursorState   `json:"cursor,omitempty"`
-	Modes      TerminalModes `json:"modes,omitempty"`
-	Size       Size          `json:"size,omitempty"`
-	Title      string        `json:"title,omitempty"`
-	Timestamp  time.Time     `json:"timestamp,omitempty"`
-	RowKind    string        `json:"row_kind,omitempty"`
-	Wrapped    bool          `json:"wrapped"`
-	WrappedSet bool          `json:"wrapped_set,omitempty"`
+	Code       ScreenOpCode
+	Rect       ScreenRect
+	Src        ScreenRect
+	DstX       int
+	DstY       int
+	Dx         int
+	Dy         int
+	Row        int
+	Col        int
+	Cells      []Cell
+	Cursor     CursorState
+	Modes      TerminalModes
+	Size       Size
+	Title      string
+	Timestamp  time.Time
+	RowKind    string
+	Wrapped    bool
+	WrappedSet bool
 }
 
 type ScrollbackRowAppend struct {
-	Cells      []Cell    `json:"cells,omitempty"`
-	Timestamp  time.Time `json:"timestamp,omitempty"`
-	RowKind    string    `json:"row_kind,omitempty"`
-	Wrapped    bool      `json:"wrapped"`
-	WrappedSet bool      `json:"wrapped_set,omitempty"`
+	Cells      []Cell
+	Timestamp  time.Time
+	RowKind    string
+	Wrapped    bool
+	WrappedSet bool
 }
 
 type ScreenUpdate struct {
-	FullReplace      bool                  `json:"full_replace,omitempty"`
-	ResetScrollback  bool                  `json:"reset_scrollback,omitempty"`
-	Size             Size                  `json:"size,omitempty"`
-	ScreenScroll     int                   `json:"screen_scroll,omitempty"`
-	Title            string                `json:"title,omitempty"`
-	Screen           ScreenData            `json:"screen,omitempty"`
-	ScreenTimestamps []time.Time           `json:"screen_timestamps,omitempty"`
-	ScreenRowKinds   []string              `json:"screen_row_kinds,omitempty"`
-	ScreenWrapped    []bool                `json:"screen_wrapped,omitempty"`
-	Ops              []ScreenOp            `json:"ops,omitempty"`
-	ScrollbackTrim   int                   `json:"scrollback_trim,omitempty"`
-	ScrollbackAppend []ScrollbackRowAppend `json:"scrollback_append,omitempty"`
-	Cursor           CursorState           `json:"cursor"`
-	Modes            TerminalModes         `json:"modes"`
+	FullReplace      bool
+	ResetScrollback  bool
+	Size             Size
+	ScreenScroll     int
+	Title            string
+	Screen           ScreenData
+	ScreenTimestamps []time.Time
+	ScreenRowKinds   []string
+	ScreenWrapped    []bool
+	Ops              []ScreenOp
+	ScrollbackTrim   int
+	ScrollbackAppend []ScrollbackRowAppend
+	Cursor           CursorState
+	Modes            TerminalModes
 }
 
 type ScreenUpdateClassification struct {
@@ -718,7 +718,7 @@ func screenUpdateChangedRowsFromOps(ops []ScreenOp) []int {
 }
 
 type ListResult struct {
-	Terminals []TerminalInfo `json:"terminals"`
+	Terminals []TerminalInfo
 }
 
 func EncodeScreenUpdatePayload(update ScreenUpdate) ([]byte, error) {
@@ -1740,82 +1740,82 @@ func wrappedSet(wrappedSet bool, wrapped bool) bool {
 }
 
 type Cell struct {
-	Content string    `json:"r,omitempty"`
-	Width   int       `json:"w,omitempty"`
-	Style   CellStyle `json:"s,omitempty"`
+	Content string
+	Width   int
+	Style   CellStyle
 }
 
 type CellStyle struct {
-	FG            string `json:"fg,omitempty"`
-	BG            string `json:"bg,omitempty"`
-	Bold          bool   `json:"b,omitempty"`
-	Italic        bool   `json:"i,omitempty"`
-	Underline     bool   `json:"u,omitempty"`
-	Blink         bool   `json:"k,omitempty"`
-	Reverse       bool   `json:"rv,omitempty"`
-	Strikethrough bool   `json:"st,omitempty"`
+	FG            string
+	BG            string
+	Bold          bool
+	Italic        bool
+	Underline     bool
+	Blink         bool
+	Reverse       bool
+	Strikethrough bool
 }
 
 type CursorState struct {
-	Row     int    `json:"row"`
-	Col     int    `json:"col"`
-	Visible bool   `json:"visible"`
-	Shape   string `json:"shape,omitempty"`
-	Blink   bool   `json:"blink,omitempty"`
+	Row     int
+	Col     int
+	Visible bool
+	Shape   string
+	Blink   bool
 }
 
 type TerminalModes struct {
-	AlternateScreen   bool `json:"alternate_screen"`
-	AlternateScroll   bool `json:"alternate_scroll,omitempty"`
-	MouseTracking     bool `json:"mouse_tracking"`
-	MouseX10          bool `json:"mouse_x10,omitempty"`
-	MouseNormal       bool `json:"mouse_normal,omitempty"`
-	MouseButtonEvent  bool `json:"mouse_button_event,omitempty"`
-	MouseAnyEvent     bool `json:"mouse_any_event,omitempty"`
-	MouseSGR          bool `json:"mouse_sgr,omitempty"`
-	BracketedPaste    bool `json:"bracketed_paste"`
-	ApplicationCursor bool `json:"application_cursor"`
-	AutoWrap          bool `json:"auto_wrap"`
+	AlternateScreen   bool
+	AlternateScroll   bool
+	MouseTracking     bool
+	MouseX10          bool
+	MouseNormal       bool
+	MouseButtonEvent  bool
+	MouseAnyEvent     bool
+	MouseSGR          bool
+	BracketedPaste    bool
+	ApplicationCursor bool
+	AutoWrap          bool
 }
 
 type ScreenData struct {
-	Cells             [][]Cell `json:"-"`
-	IsAlternateScreen bool     `json:"-"`
+	Cells             [][]Cell
+	IsAlternateScreen bool
 }
 
 const SnapshotRowKindRestart = "restart"
 
 type Snapshot struct {
-	TerminalID           string        `json:"terminal_id"`
-	Size                 Size          `json:"size"`
-	Screen               ScreenData    `json:"screen"`
-	Scrollback           []CompactRow  `json:"scrollback,omitempty"`
-	ScrollbackOffset     int           `json:"scrollback_offset,omitempty"`
-	ScrollbackTotal      int           `json:"scrollback_total,omitempty"`
-	ScrollbackHasMore    bool          `json:"scrollback_has_more,omitempty"`
-	ScreenTimestamps     []time.Time   `json:"screen_timestamps,omitempty"`
-	ScrollbackTimestamps []time.Time   `json:"scrollback_timestamps,omitempty"`
-	ScreenRowKinds       []string      `json:"screen_row_kinds,omitempty"`
-	ScrollbackRowKinds   []string      `json:"scrollback_row_kinds,omitempty"`
-	ScreenWrapped        []bool        `json:"screen_wrapped,omitempty"`
-	ScrollbackWrapped    []bool        `json:"scrollback_wrapped,omitempty"`
-	Cursor               CursorState   `json:"cursor"`
-	Modes                TerminalModes `json:"modes"`
-	Timestamp            time.Time     `json:"timestamp"`
+	TerminalID           string
+	Size                 Size
+	Screen               ScreenData
+	Scrollback           []CompactRow
+	ScrollbackOffset     int
+	ScrollbackTotal      int
+	ScrollbackHasMore    bool
+	ScreenTimestamps     []time.Time
+	ScrollbackTimestamps []time.Time
+	ScreenRowKinds       []string
+	ScrollbackRowKinds   []string
+	ScreenWrapped        []bool
+	ScrollbackWrapped    []bool
+	Cursor               CursorState
+	Modes                TerminalModes
+	Timestamp            time.Time
 }
 
 type GridViewport struct {
-	TerminalID           string       `json:"terminal_id"`
-	Size                 Size         `json:"size"`
-	Rows                 []CompactRow `json:"rows,omitempty"`
-	ScrollbackOffset     int          `json:"scrollback_offset,omitempty"`
-	ScrollbackLimit      int          `json:"scrollback_limit,omitempty"`
-	ScrollbackTotal      int          `json:"scrollback_total,omitempty"`
-	ScrollbackHasMore    bool         `json:"scrollback_has_more,omitempty"`
-	ScrollbackTimestamps []time.Time  `json:"scrollback_timestamps,omitempty"`
-	ScrollbackRowKinds   []string     `json:"scrollback_row_kinds,omitempty"`
-	ScrollbackWrapped    []bool       `json:"scrollback_wrapped,omitempty"`
-	Timestamp            time.Time    `json:"timestamp"`
+	TerminalID           string
+	Size                 Size
+	Rows                 []CompactRow
+	ScrollbackOffset     int
+	ScrollbackLimit      int
+	ScrollbackTotal      int
+	ScrollbackHasMore    bool
+	ScrollbackTimestamps []time.Time
+	ScrollbackRowKinds   []string
+	ScrollbackWrapped    []bool
+	Timestamp            time.Time
 }
 
 func (s CellStyle) isZero() bool {
@@ -1823,31 +1823,31 @@ func (s CellStyle) isZero() bool {
 }
 
 type CompactRowStyle struct {
-	FG            string `json:"fg,omitempty"`
-	BG            string `json:"bg,omitempty"`
-	Bold          bool   `json:"b,omitempty"`
-	Italic        bool   `json:"i,omitempty"`
-	Underline     bool   `json:"u,omitempty"`
-	Blink         bool   `json:"k,omitempty"`
-	Reverse       bool   `json:"rv,omitempty"`
-	Strikethrough bool   `json:"st,omitempty"`
+	FG            string
+	BG            string
+	Bold          bool
+	Italic        bool
+	Underline     bool
+	Blink         bool
+	Reverse       bool
+	Strikethrough bool
 }
 
 type CompactRowCell struct {
-	Content string           `json:"r,omitempty"`
-	Width   int              `json:"w,omitempty"`
-	Style   *CompactRowStyle `json:"s,omitempty"`
+	Content string
+	Width   int
+	Style   *CompactRowStyle
 }
 
 type CompactRowRun struct {
-	Text  string           `json:"t,omitempty"`
-	Style *CompactRowStyle `json:"s,omitempty"`
+	Text  string
+	Style *CompactRowStyle
 }
 
 type CompactRow struct {
-	Text  string           `json:"t,omitempty"`
-	Runs  []CompactRowRun  `json:"runs,omitempty"`
-	Cells []CompactRowCell `json:"cells,omitempty"`
+	Text  string
+	Runs  []CompactRowRun
+	Cells []CompactRowCell
 }
 
 func (r CompactRow) DecodeCells() []Cell {

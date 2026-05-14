@@ -4,7 +4,6 @@ import (
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,7 +14,9 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core/perftrace"
+	"github.com/lozzow/termx/termx-core/protocol/wirepb"
 	"github.com/lozzow/termx/termx-core/vterm"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -27,7 +28,7 @@ const (
 	terminalGridStoreVersion = 4
 	terminalGridRowCodec     = "compact-line-v1"
 	terminalGridIndexCodec   = "fixed20-le-v1"
-	terminalGridMetadataName = "grid.meta.json"
+	terminalGridMetadataName = "grid.meta.pb"
 	terminalGridIndexName    = "grid.index"
 	terminalGridIndexRecord  = 20
 )
@@ -56,15 +57,15 @@ type terminalGridRowRef struct {
 const terminalGridRowFlagWrapped uint32 = 1 << 0
 
 type terminalGridMetadata struct {
-	StoreVersion  int    `json:"store_version"`
-	TerminalID    string `json:"terminal_id"`
-	RowCodec      string `json:"row_codec"`
-	IndexCodec    string `json:"index_codec"`
-	PageMaxBytes  int64  `json:"page_max_bytes"`
-	RowCount      int    `json:"row_count,omitempty"`
-	PageCount     int    `json:"page_count,omitempty"`
-	CreatedAtUnix int64  `json:"created_at_unix"`
-	UpdatedAtUnix int64  `json:"updated_at_unix"`
+	StoreVersion  int
+	TerminalID    string
+	RowCodec      string
+	IndexCodec    string
+	PageMaxBytes  int64
+	RowCount      int
+	PageCount     int
+	CreatedAtUnix int64
+	UpdatedAtUnix int64
 }
 
 func newTerminalGridStore(gridRoot, terminalID string) (*terminalGridStore, error) {
@@ -896,9 +897,11 @@ func readTerminalGridMetadata(dir string) (terminalGridMetadata, error) {
 		return terminalGridMetadata{}, err
 	}
 	var metadata terminalGridMetadata
-	if err := json.Unmarshal(data, &metadata); err != nil {
+	var msg wirepb.TerminalGridMetadata
+	if err := proto.Unmarshal(data, &msg); err != nil {
 		return terminalGridMetadata{}, err
 	}
+	metadata = terminalGridMetadataFromProto(&msg)
 	if metadata.StoreVersion != 0 && metadata.StoreVersion != terminalGridStoreVersion {
 		return terminalGridMetadata{}, fmt.Errorf("unsupported terminal grid store version %d", metadata.StoreVersion)
 	}
@@ -932,12 +935,42 @@ func writeTerminalGridMetadata(dir string, metadata terminalGridMetadata) error 
 		metadata.CreatedAtUnix = now
 	}
 	metadata.UpdatedAtUnix = now
-	data, err := json.MarshalIndent(metadata, "", "  ")
+	data, err := proto.Marshal(terminalGridMetadataToProto(metadata))
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
 	return os.WriteFile(filepath.Join(dir, terminalGridMetadataName), data, 0o600)
+}
+
+func terminalGridMetadataToProto(metadata terminalGridMetadata) *wirepb.TerminalGridMetadata {
+	return &wirepb.TerminalGridMetadata{
+		StoreVersion:  int32(metadata.StoreVersion),
+		TerminalId:    metadata.TerminalID,
+		RowCodec:      metadata.RowCodec,
+		IndexCodec:    metadata.IndexCodec,
+		PageMaxBytes:  metadata.PageMaxBytes,
+		RowCount:      int64(metadata.RowCount),
+		PageCount:     int64(metadata.PageCount),
+		CreatedAtUnix: metadata.CreatedAtUnix,
+		UpdatedAtUnix: metadata.UpdatedAtUnix,
+	}
+}
+
+func terminalGridMetadataFromProto(msg *wirepb.TerminalGridMetadata) terminalGridMetadata {
+	if msg == nil {
+		return terminalGridMetadata{}
+	}
+	return terminalGridMetadata{
+		StoreVersion:  int(msg.GetStoreVersion()),
+		TerminalID:    msg.GetTerminalId(),
+		RowCodec:      msg.GetRowCodec(),
+		IndexCodec:    msg.GetIndexCodec(),
+		PageMaxBytes:  msg.GetPageMaxBytes(),
+		RowCount:      int(msg.GetRowCount()),
+		PageCount:     int(msg.GetPageCount()),
+		CreatedAtUnix: msg.GetCreatedAtUnix(),
+		UpdatedAtUnix: msg.GetUpdatedAtUnix(),
+	}
 }
 
 type terminalGridIndexState struct {

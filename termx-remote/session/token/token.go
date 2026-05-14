@@ -7,12 +7,14 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/lozzow/termx/termx-remote/session/token/tokenpb"
+	"google.golang.org/protobuf/proto"
 )
 
 const tokenVersion = "termx-session-v1:"
@@ -20,15 +22,15 @@ const answerProofKeyVersion = "termx-answer-proof-key-v1:"
 const answerProofVersion = "termx-answer-proof-v1:"
 
 type Claims struct {
-	SessionID      string   `json:"sid"`
-	MachineID      string   `json:"mid"`
-	AppDeviceID    string   `json:"app_device_id,omitempty"`
-	AppName        string   `json:"app_name,omitempty"`
-	AnswerProofKey string   `json:"apk,omitempty"`
-	Capabilities   []string `json:"cap"`
-	Paths          []string `json:"paths,omitempty"`
-	IssuedAt       int64    `json:"iat"`
-	ExpiresAt      int64    `json:"exp"`
+	SessionID      string
+	MachineID      string
+	AppDeviceID    string
+	AppName        string
+	AnswerProofKey string
+	Capabilities   []string
+	Paths          []string
+	IssuedAt       int64
+	ExpiresAt      int64
 }
 
 func Issue(machineSecret []byte, claims Claims) (string, error) {
@@ -41,7 +43,7 @@ func Issue(machineSecret []byte, claims Claims) (string, error) {
 	paths := append([]string(nil), claims.Paths...)
 	sort.Strings(paths)
 	claims.Paths = paths
-	payload, err := json.Marshal(claims)
+	payload, err := proto.Marshal(claimsToProto(claims))
 	if err != nil {
 		return "", fmt.Errorf("marshal token claims: %w", err)
 	}
@@ -67,10 +69,11 @@ func Verify(tok string, machineSecret []byte, now time.Time) (Claims, error) {
 	if err != nil {
 		return Claims{}, fmt.Errorf("decode payload: %w", err)
 	}
-	var claims Claims
-	if err := json.Unmarshal(payload, &claims); err != nil {
+	var msg tokenpb.Claims
+	if err := proto.Unmarshal(payload, &msg); err != nil {
 		return Claims{}, fmt.Errorf("unmarshal claims: %w", err)
 	}
+	claims := claimsFromProto(&msg)
 	if now.Unix() >= claims.ExpiresAt {
 		return Claims{}, errors.New("token expired")
 	}
@@ -163,4 +166,35 @@ func computeMAC(secret []byte, msg string) []byte {
 
 func answerProofAAD(claims Claims) []byte {
 	return []byte(answerProofKeyVersion + strings.TrimSpace(claims.SessionID) + ":" + strings.TrimSpace(claims.MachineID))
+}
+
+func claimsToProto(claims Claims) *tokenpb.Claims {
+	return &tokenpb.Claims{
+		SessionId:      claims.SessionID,
+		MachineId:      claims.MachineID,
+		AppDeviceId:    claims.AppDeviceID,
+		AppName:        claims.AppName,
+		AnswerProofKey: claims.AnswerProofKey,
+		Capabilities:   append([]string(nil), claims.Capabilities...),
+		Paths:          append([]string(nil), claims.Paths...),
+		IssuedAt:       claims.IssuedAt,
+		ExpiresAt:      claims.ExpiresAt,
+	}
+}
+
+func claimsFromProto(msg *tokenpb.Claims) Claims {
+	if msg == nil {
+		return Claims{}
+	}
+	return Claims{
+		SessionID:      msg.GetSessionId(),
+		MachineID:      msg.GetMachineId(),
+		AppDeviceID:    msg.GetAppDeviceId(),
+		AppName:        msg.GetAppName(),
+		AnswerProofKey: msg.GetAnswerProofKey(),
+		Capabilities:   append([]string(nil), msg.GetCapabilities()...),
+		Paths:          append([]string(nil), msg.GetPaths()...),
+		IssuedAt:       msg.GetIssuedAt(),
+		ExpiresAt:      msg.GetExpiresAt(),
+	}
 }

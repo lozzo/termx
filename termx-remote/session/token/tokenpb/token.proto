@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package termx.remote.session.tokenpb;
+
+option go_package = "github.com/lozzow/termx/termx-remote/session/token/tokenpb";
+
+message Claims {
+  string session_id = 1;
+  string machine_id = 2;
+  string app_device_id = 3;
+  string app_name = 4;
+  string answer_proof_key = 5;
+  repeated string capabilities = 6;
+  repeated string paths = 7;
+  int64 issued_at = 8;
+  int64 expires_at = 9;
+}

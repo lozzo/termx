@@ -69,7 +69,6 @@ type TerminalManagementRequest struct {
 
 type EventFilters struct {
 	TerminalID string
-	SessionID  string
 	Types      []int
 }
 
@@ -407,7 +406,6 @@ func serveEventChannel(ctx context.Context, dc *webrtc.DataChannel, router Event
 		subCtx, subCancel := context.WithCancel(ctx)
 		events, unsubscribe, err := router.SubscribeRemoteEvents(subCtx, EventFilters{
 			TerminalID: strings.TrimSpace(req.GetTerminalId()),
-			SessionID:  strings.TrimSpace(req.GetSessionId()),
 			Types:      int32sToInts(req.GetTypes()),
 		})
 		if err != nil {

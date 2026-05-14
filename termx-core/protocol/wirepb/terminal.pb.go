@@ -3570,6 +3570,114 @@ func (x *RemoteLocalStatus) GetUpdatedAtUnixNano() int64 {
 	return 0
 }
 
+type TerminalGridMetadata struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StoreVersion  int32                  `protobuf:"varint,1,opt,name=store_version,json=storeVersion,proto3" json:"store_version,omitempty"`
+	TerminalId    string                 `protobuf:"bytes,2,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	RowCodec      string                 `protobuf:"bytes,3,opt,name=row_codec,json=rowCodec,proto3" json:"row_codec,omitempty"`
+	IndexCodec    string                 `protobuf:"bytes,4,opt,name=index_codec,json=indexCodec,proto3" json:"index_codec,omitempty"`
+	PageMaxBytes  int64                  `protobuf:"varint,5,opt,name=page_max_bytes,json=pageMaxBytes,proto3" json:"page_max_bytes,omitempty"`
+	RowCount      int64                  `protobuf:"varint,6,opt,name=row_count,json=rowCount,proto3" json:"row_count,omitempty"`
+	PageCount     int64                  `protobuf:"varint,7,opt,name=page_count,json=pageCount,proto3" json:"page_count,omitempty"`
+	CreatedAtUnix int64                  `protobuf:"varint,8,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
+	UpdatedAtUnix int64                  `protobuf:"varint,9,opt,name=updated_at_unix,json=updatedAtUnix,proto3" json:"updated_at_unix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerminalGridMetadata) Reset() {
+	*x = TerminalGridMetadata{}
+	mi := &file_protocol_wirepb_terminal_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerminalGridMetadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerminalGridMetadata) ProtoMessage() {}
+
+func (x *TerminalGridMetadata) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_wirepb_terminal_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerminalGridMetadata.ProtoReflect.Descriptor instead.
+func (*TerminalGridMetadata) Descriptor() ([]byte, []int) {
+	return file_protocol_wirepb_terminal_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *TerminalGridMetadata) GetStoreVersion() int32 {
+	if x != nil {
+		return x.StoreVersion
+	}
+	return 0
+}
+
+func (x *TerminalGridMetadata) GetTerminalId() string {
+	if x != nil {
+		return x.TerminalId
+	}
+	return ""
+}
+
+func (x *TerminalGridMetadata) GetRowCodec() string {
+	if x != nil {
+		return x.RowCodec
+	}
+	return ""
+}
+
+func (x *TerminalGridMetadata) GetIndexCodec() string {
+	if x != nil {
+		return x.IndexCodec
+	}
+	return ""
+}
+
+func (x *TerminalGridMetadata) GetPageMaxBytes() int64 {
+	if x != nil {
+		return x.PageMaxBytes
+	}
+	return 0
+}
+
+func (x *TerminalGridMetadata) GetRowCount() int64 {
+	if x != nil {
+		return x.RowCount
+	}
+	return 0
+}
+
+func (x *TerminalGridMetadata) GetPageCount() int64 {
+	if x != nil {
+		return x.PageCount
+	}
+	return 0
+}
+
+func (x *TerminalGridMetadata) GetCreatedAtUnix() int64 {
+	if x != nil {
+		return x.CreatedAtUnix
+	}
+	return 0
+}
+
+func (x *TerminalGridMetadata) GetUpdatedAtUnix() int64 {
+	if x != nil {
+		return x.UpdatedAtUnix
+	}
+	return 0
+}
+
 var File_protocol_wirepb_terminal_proto protoreflect.FileDescriptor
 
 const file_protocol_wirepb_terminal_proto_rawDesc = "" +
@@ -3892,7 +4000,20 @@ const file_protocol_wirepb_terminal_proto_rawDesc = "" +
 	"iceTcpAddr\x12 \n" +
 	"\fice_tcp_port\x18\a \x01(\x05R\n" +
 	"iceTcpPort\x12/\n" +
-	"\x14updated_at_unix_nano\x18\b \x01(\x03R\x11updatedAtUnixNano*b\n" +
+	"\x14updated_at_unix_nano\x18\b \x01(\x03R\x11updatedAtUnixNano\"\xcc\x02\n" +
+	"\x14TerminalGridMetadata\x12#\n" +
+	"\rstore_version\x18\x01 \x01(\x05R\fstoreVersion\x12\x1f\n" +
+	"\vterminal_id\x18\x02 \x01(\tR\n" +
+	"terminalId\x12\x1b\n" +
+	"\trow_codec\x18\x03 \x01(\tR\browCodec\x12\x1f\n" +
+	"\vindex_codec\x18\x04 \x01(\tR\n" +
+	"indexCodec\x12$\n" +
+	"\x0epage_max_bytes\x18\x05 \x01(\x03R\fpageMaxBytes\x12\x1b\n" +
+	"\trow_count\x18\x06 \x01(\x03R\browCount\x12\x1d\n" +
+	"\n" +
+	"page_count\x18\a \x01(\x03R\tpageCount\x12&\n" +
+	"\x0fcreated_at_unix\x18\b \x01(\x03R\rcreatedAtUnix\x12&\n" +
+	"\x0fupdated_at_unix\x18\t \x01(\x03R\rupdatedAtUnix*b\n" +
 	"\fStorageScope\x12\x1d\n" +
 	"\x19STORAGE_SCOPE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14STORAGE_SCOPE_PUBLIC\x10\x01\x12\x19\n" +
@@ -3911,7 +4032,7 @@ func file_protocol_wirepb_terminal_proto_rawDescGZIP() []byte {
 }
 
 var file_protocol_wirepb_terminal_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_protocol_wirepb_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
+var file_protocol_wirepb_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 54)
 var file_protocol_wirepb_terminal_proto_goTypes = []any{
 	(StorageScope)(0),                // 0: termx.protocol.wirepb.StorageScope
 	(*Empty)(nil),                    // 1: termx.protocol.wirepb.Empty
@@ -3963,22 +4084,23 @@ var file_protocol_wirepb_terminal_proto_goTypes = []any{
 	(*RemotePairStartResult)(nil),    // 47: termx.protocol.wirepb.RemotePairStartResult
 	(*RemoteLocalEnableParams)(nil),  // 48: termx.protocol.wirepb.RemoteLocalEnableParams
 	(*RemoteLocalStatus)(nil),        // 49: termx.protocol.wirepb.RemoteLocalStatus
-	nil,                              // 50: termx.protocol.wirepb.TerminalInfo.TagsEntry
-	nil,                              // 51: termx.protocol.wirepb.CreateParams.TagsEntry
-	nil,                              // 52: termx.protocol.wirepb.SetTagsParams.TagsEntry
-	nil,                              // 53: termx.protocol.wirepb.SetMetadataParams.TagsEntry
+	(*TerminalGridMetadata)(nil),     // 50: termx.protocol.wirepb.TerminalGridMetadata
+	nil,                              // 51: termx.protocol.wirepb.TerminalInfo.TagsEntry
+	nil,                              // 52: termx.protocol.wirepb.CreateParams.TagsEntry
+	nil,                              // 53: termx.protocol.wirepb.SetTagsParams.TagsEntry
+	nil,                              // 54: termx.protocol.wirepb.SetMetadataParams.TagsEntry
 }
 var file_protocol_wirepb_terminal_proto_depIdxs = []int32{
 	5,  // 0: termx.protocol.wirepb.ErrorEnvelope.error:type_name -> termx.protocol.wirepb.ProtocolError
-	50, // 1: termx.protocol.wirepb.TerminalInfo.tags:type_name -> termx.protocol.wirepb.TerminalInfo.TagsEntry
+	51, // 1: termx.protocol.wirepb.TerminalInfo.tags:type_name -> termx.protocol.wirepb.TerminalInfo.TagsEntry
 	7,  // 2: termx.protocol.wirepb.TerminalInfo.size:type_name -> termx.protocol.wirepb.Size
 	19, // 3: termx.protocol.wirepb.TerminalInfo.resize_ownership:type_name -> termx.protocol.wirepb.ResizeOwnership
-	51, // 4: termx.protocol.wirepb.CreateParams.tags:type_name -> termx.protocol.wirepb.CreateParams.TagsEntry
+	52, // 4: termx.protocol.wirepb.CreateParams.tags:type_name -> termx.protocol.wirepb.CreateParams.TagsEntry
 	7,  // 5: termx.protocol.wirepb.CreateParams.size:type_name -> termx.protocol.wirepb.Size
 	20, // 6: termx.protocol.wirepb.EnsureResizeResult.resize_control:type_name -> termx.protocol.wirepb.ResizeControl
 	7,  // 7: termx.protocol.wirepb.EnsureResizeResult.size:type_name -> termx.protocol.wirepb.Size
-	52, // 8: termx.protocol.wirepb.SetTagsParams.tags:type_name -> termx.protocol.wirepb.SetTagsParams.TagsEntry
-	53, // 9: termx.protocol.wirepb.SetMetadataParams.tags:type_name -> termx.protocol.wirepb.SetMetadataParams.TagsEntry
+	53, // 8: termx.protocol.wirepb.SetTagsParams.tags:type_name -> termx.protocol.wirepb.SetTagsParams.TagsEntry
+	54, // 9: termx.protocol.wirepb.SetMetadataParams.tags:type_name -> termx.protocol.wirepb.SetMetadataParams.TagsEntry
 	20, // 10: termx.protocol.wirepb.AttachResult.resize_control:type_name -> termx.protocol.wirepb.ResizeControl
 	7,  // 11: termx.protocol.wirepb.ResizeOwnership.size:type_name -> termx.protocol.wirepb.Size
 	19, // 12: termx.protocol.wirepb.ResizeControl.resize_ownership:type_name -> termx.protocol.wirepb.ResizeOwnership
@@ -4029,7 +4151,7 @@ func file_protocol_wirepb_terminal_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protocol_wirepb_terminal_proto_rawDesc), len(file_protocol_wirepb_terminal_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   53,
+			NumMessages:   54,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

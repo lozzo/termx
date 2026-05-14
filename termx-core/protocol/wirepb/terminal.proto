@@ -371,3 +371,15 @@ message RemoteLocalStatus {
   int32 ice_tcp_port = 7;
   int64 updated_at_unix_nano = 8;
 }
+
+message TerminalGridMetadata {
+  int32 store_version = 1;
+  string terminal_id = 2;
+  string row_codec = 3;
+  string index_codec = 4;
+  int64 page_max_bytes = 5;
+  int64 row_count = 6;
+  int64 page_count = 7;
+  int64 created_at_unix = 8;
+  int64 updated_at_unix = 9;
+}

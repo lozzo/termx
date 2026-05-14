@@ -23,52 +23,52 @@ const (
 )
 
 type TerminalCreatedData struct {
-	Name    string   `json:"name"`
-	Command []string `json:"command"`
-	Size    Size     `json:"size"`
+	Name    string
+	Command []string
+	Size    Size
 }
 
 type TerminalStateChangedData struct {
-	OldState TerminalState `json:"old_state"`
-	NewState TerminalState `json:"new_state"`
-	ExitCode *int          `json:"exit_code,omitempty"`
+	OldState TerminalState
+	NewState TerminalState
+	ExitCode *int
 }
 
 type TerminalResizedData struct {
-	OldSize Size `json:"old_size"`
-	NewSize Size `json:"new_size"`
+	OldSize Size
+	NewSize Size
 }
 
 type TerminalRemovedData struct {
-	Reason string `json:"reason"`
+	Reason string
 }
 
 type CollaboratorsRevokedData struct{}
 
 type TerminalReadErrorData struct {
-	Error string `json:"error"`
+	Error string
 }
 
 type StorageChangedData struct {
-	AppID   string       `json:"app_id"`
-	Scope   StorageScope `json:"scope"`
-	OwnerID string       `json:"owner_id,omitempty"`
-	Key     string       `json:"key"`
-	Version uint64       `json:"version,omitempty"`
-	Op      string       `json:"op"`
+	AppID   string
+	Scope   StorageScope
+	OwnerID string
+	Key     string
+	Version uint64
+	Op      string
 }
 
 type Event struct {
-	Type                 EventType                 `json:"type"`
-	TerminalID           string                    `json:"terminal_id"`
-	Timestamp            time.Time                 `json:"timestamp"`
-	Created              *TerminalCreatedData      `json:"created,omitempty"`
-	StateChanged         *TerminalStateChangedData `json:"state_changed,omitempty"`
-	Resized              *TerminalResizedData      `json:"resized,omitempty"`
-	Removed              *TerminalRemovedData      `json:"removed,omitempty"`
-	CollaboratorsRevoked *CollaboratorsRevokedData `json:"collaborators_revoked,omitempty"`
-	ReadError            *TerminalReadErrorData    `json:"read_error,omitempty"`
-	Storage              *StorageChangedData       `json:"storage,omitempty"`
+	Type                 EventType
+	TerminalID           string
+	Timestamp            time.Time
+	Created              *TerminalCreatedData
+	StateChanged         *TerminalStateChangedData
+	Resized              *TerminalResizedData
+	Removed              *TerminalRemovedData
+	CollaboratorsRevoked *CollaboratorsRevokedData
+	ReadError            *TerminalReadErrorData
+	Storage              *StorageChangedData
 }
 
 type EventsOption func(*eventsConfig)
