@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/lozzow/termx/termx-core/vterm"
+	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 type terminalGridAppender struct {

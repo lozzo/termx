@@ -16,7 +16,7 @@ import (
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/transport/memory"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
-	"github.com/lozzow/termx/termx-core/vterm"
+	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 func TestServerCreateRejectsInvalidCommandAndDuplicateID(t *testing.T) {

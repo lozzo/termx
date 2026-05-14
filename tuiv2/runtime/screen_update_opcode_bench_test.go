@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core/protocol"
-	localvterm "github.com/lozzow/termx/termx-core/vterm"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 func BenchmarkScreenUpdateOpcodeScenarios(b *testing.B) {
@@ -86,7 +86,7 @@ func BenchmarkScreenUpdateOpcodeScenarios(b *testing.B) {
 					if next == nil {
 						b.Fatal("expected snapshot update result")
 					}
-					if !applier.ApplyScreenUpdate(decoded) {
+					if !applier.ApplyScreenUpdate(vtermScreenUpdateFromProtocol(decoded)) {
 						b.Fatal("expected partial apply success")
 					}
 				}

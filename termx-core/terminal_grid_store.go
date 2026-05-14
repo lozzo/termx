@@ -15,7 +15,7 @@ import (
 
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol/wirepb"
-	"github.com/lozzow/termx/termx-core/vterm"
+	"github.com/lozzow/termx/termx-vterm/vterm"
 	"google.golang.org/protobuf/proto"
 )
 

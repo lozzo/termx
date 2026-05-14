@@ -6,7 +6,7 @@ import (
 
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
-	localvterm "github.com/lozzow/termx/termx-core/vterm"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 type streamScreenState struct {
@@ -264,7 +264,7 @@ func screenUpdateFromDamageState(damage localvterm.WriteDamage, title string) pr
 	}
 	for _, op := range damage.Ops {
 		update.Ops = append(update.Ops, protocol.ScreenOp{
-			Code:       op.Code,
+			Code:       protocolScreenOpCodeFromVTerm(op.Code),
 			Rect:       protocol.ScreenRect{X: op.Rect.X, Y: op.Rect.Y, Width: op.Rect.Width, Height: op.Rect.Height},
 			Src:        protocol.ScreenRect{X: op.Src.X, Y: op.Src.Y, Width: op.Src.Width, Height: op.Src.Height},
 			DstX:       op.DstX,

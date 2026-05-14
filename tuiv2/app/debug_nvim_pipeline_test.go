@@ -17,11 +17,11 @@ import (
 	"github.com/lozzow/termx/termx-core"
 	"github.com/lozzow/termx/termx-core/protocol"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
-	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 func TestDebugSinglePaneNvimScrollPipelineLocatesFirstDivergence(t *testing.T) {

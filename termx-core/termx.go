@@ -19,7 +19,7 @@ import (
 	"github.com/lozzow/termx/termx-core/terminalmeta"
 	"github.com/lozzow/termx/termx-core/transport"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
-	"github.com/lozzow/termx/termx-core/vterm"
+	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 const snapshotResponseFrameBudget = protocol.MaxFrameSize - 64*1024

@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/lozzow/termx/termx-core/vterm"
+	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 const (

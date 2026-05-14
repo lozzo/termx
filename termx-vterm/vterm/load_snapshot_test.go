@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/lozzow/termx/termx-core/protocol"
 )
 
 func TestLoadSnapshotRestoresScreenAndCursor(t *testing.T) {
@@ -369,7 +367,7 @@ func TestVTermWriteWithDamageUsesClearToEOLForTailClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clear to eol: %v", err)
 	}
-	op := firstOpWithCode(t, damage, protocol.ScreenOpClearToEOL)
+	op := firstOpWithCode(t, damage, ScreenOpClearToEOL)
 	if op.Row != 0 || op.Col != 6 {
 		t.Fatalf("unexpected clear-to-eol op: %#v", op)
 	}
@@ -568,7 +566,7 @@ func TestVTermWriteAltScreenScrollDoesNotInvalidateWholeScreen(t *testing.T) {
 	cols, rows := vt.Size()
 	foundScroll := false
 	for _, op := range damage.Ops {
-		if op.Code != protocol.ScreenOpScrollRect {
+		if op.Code != ScreenOpScrollRect {
 			continue
 		}
 		foundScroll = true
@@ -592,7 +590,7 @@ func TestVTermWriteWithDamageUsesDirectSpanOps(t *testing.T) {
 		t.Fatalf("expected direct span ops, got %#v", damage)
 	}
 	span := damage.Ops[0]
-	if span.Code != protocol.ScreenOpWriteSpan || span.Row != 0 || span.Col != 0 {
+	if span.Code != ScreenOpWriteSpan || span.Row != 0 || span.Col != 0 {
 		t.Fatalf("unexpected first direct op: %#v", span)
 	}
 	if got := span.Cells[0].Content + span.Cells[1].Content + span.Cells[2].Content; got != "abc" {
@@ -753,13 +751,13 @@ func TestApplyScreenUpdateAppliesWriteSpanInPlace(t *testing.T) {
 	}, []time.Time{now, now}, []string{"old-0", "old-1"}, CursorState{Row: 1, Col: 3, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
 
 	oldEmu := vt.emu
-	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
-		Size: protocol.Size{Cols: 4, Rows: 2},
-		Ops: []protocol.ScreenOp{{
-			Code: protocol.ScreenOpWriteSpan,
+	if !vt.ApplyScreenUpdate(ScreenUpdate{
+		Size: Size{Cols: 4, Rows: 2},
+		Ops: []DamageOp{{
+			Code: ScreenOpWriteSpan,
 			Row:  1,
 			Col:  0,
-			Cells: []protocol.Cell{
+			Cells: []Cell{
 				{Content: "n", Width: 1},
 				{Content: "e", Width: 1},
 				{Content: "w", Width: 1},
@@ -768,8 +766,8 @@ func TestApplyScreenUpdateAppliesWriteSpanInPlace(t *testing.T) {
 			Timestamp: now.Add(time.Second),
 			RowKind:   "new-1",
 		}},
-		Cursor: protocol.CursorState{Row: 1, Col: 4, Visible: true, Shape: "bar"},
-		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+		Cursor: CursorState{Row: 1, Col: 4, Visible: true, Shape: "bar"},
+		Modes:  TerminalModes{AlternateScreen: true, AutoWrap: true},
 	}) {
 		t.Fatal("expected incremental screen update to apply")
 	}
@@ -808,15 +806,15 @@ func TestApplyScreenUpdateAppliesClearToEOLOp(t *testing.T) {
 		IsAlternateScreen: true,
 	}, CursorState{Row: 0, Col: 8, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
 
-	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
-		Size: protocol.Size{Cols: 8, Rows: 1},
-		Ops: []protocol.ScreenOp{{
-			Code: protocol.ScreenOpClearToEOL,
+	if !vt.ApplyScreenUpdate(ScreenUpdate{
+		Size: Size{Cols: 8, Rows: 1},
+		Ops: []DamageOp{{
+			Code: ScreenOpClearToEOL,
 			Row:  0,
 			Col:  6,
 		}},
-		Cursor: protocol.CursorState{Row: 0, Col: 6, Visible: true},
-		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+		Cursor: CursorState{Row: 0, Col: 6, Visible: true},
+		Modes:  TerminalModes{AlternateScreen: true, AutoWrap: true},
 	}) {
 		t.Fatal("expected clear-to-eol span to apply incrementally")
 	}
@@ -841,22 +839,22 @@ func TestApplyScreenUpdateAppliesStyleOnlyWriteOp(t *testing.T) {
 		IsAlternateScreen: true,
 	}, CursorState{Row: 0, Col: 6, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
 
-	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
-		Size: protocol.Size{Cols: 8, Rows: 1},
-		Ops: []protocol.ScreenOp{{
-			Code: protocol.ScreenOpWriteSpan,
+	if !vt.ApplyScreenUpdate(ScreenUpdate{
+		Size: Size{Cols: 8, Rows: 1},
+		Ops: []DamageOp{{
+			Code: ScreenOpWriteSpan,
 			Row:  0,
 			Col:  5,
-			Cells: []protocol.Cell{{
+			Cells: []Cell{{
 				Content: "x",
 				Width:   1,
-				Style:   protocol.CellStyle{Bold: true},
+				Style:   CellStyle{Bold: true},
 			}},
 			Timestamp: time.Date(2026, 4, 18, 8, 0, 2, 0, time.UTC),
 			RowKind:   "style-only",
 		}},
-		Cursor: protocol.CursorState{Row: 0, Col: 6, Visible: true},
-		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+		Cursor: CursorState{Row: 0, Col: 6, Visible: true},
+		Modes:  TerminalModes{AlternateScreen: true, AutoWrap: true},
 	}) {
 		t.Fatal("expected style-only span to apply incrementally")
 	}
@@ -881,19 +879,19 @@ func TestApplyScreenUpdateAppliesWideCharBoundaryWriteOp(t *testing.T) {
 		IsAlternateScreen: true,
 	}, CursorState{Row: 0, Col: 3, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
 
-	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
-		Size: protocol.Size{Cols: 8, Rows: 1},
-		Ops: []protocol.ScreenOp{{
-			Code: protocol.ScreenOpWriteSpan,
+	if !vt.ApplyScreenUpdate(ScreenUpdate{
+		Size: Size{Cols: 8, Rows: 1},
+		Ops: []DamageOp{{
+			Code: ScreenOpWriteSpan,
 			Row:  0,
 			Col:  0,
-			Cells: []protocol.Cell{
+			Cells: []Cell{
 				{Content: "界", Width: 2},
 				{Content: "", Width: 0},
 			},
 		}},
-		Cursor: protocol.CursorState{Row: 0, Col: 3, Visible: true},
-		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+		Cursor: CursorState{Row: 0, Col: 3, Visible: true},
+		Modes:  TerminalModes{AlternateScreen: true, AutoWrap: true},
 	}) {
 		t.Fatal("expected wide-boundary span to apply incrementally")
 	}
@@ -921,15 +919,15 @@ func TestApplyScreenUpdateAppliesOpcodeScrollRect(t *testing.T) {
 	}, []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second), now.Add(3 * time.Second)}, []string{"a", "b", "c", "d"}, CursorState{Row: 3, Col: 0, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
 
 	oldEmu := vt.emu
-	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
-		Size:         protocol.Size{Cols: 4, Rows: 4},
+	if !vt.ApplyScreenUpdate(ScreenUpdate{
+		Size:         Size{Cols: 4, Rows: 4},
 		ScreenScroll: 1,
-		Ops: []protocol.ScreenOp{
-			{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 4, Height: 4}, Dy: -1},
-			{Code: protocol.ScreenOpWriteSpan, Row: 3, Col: 0, Cells: []protocol.Cell{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "5", Width: 1}}, Timestamp: now.Add(4 * time.Second), RowKind: "e"},
+		Ops: []DamageOp{
+			{Code: ScreenOpScrollRect, Rect: DamageRect{X: 0, Y: 0, Width: 4, Height: 4}, Dy: -1},
+			{Code: ScreenOpWriteSpan, Row: 3, Col: 0, Cells: []Cell{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "5", Width: 1}}, Timestamp: now.Add(4 * time.Second), RowKind: "e"},
 		},
-		Cursor: protocol.CursorState{Row: 3, Col: 0, Visible: true},
-		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+		Cursor: CursorState{Row: 3, Col: 0, Visible: true},
+		Modes:  TerminalModes{AlternateScreen: true, AutoWrap: true},
 	}) {
 		t.Fatal("expected opcode scrollrect update to apply incrementally")
 	}
@@ -966,13 +964,13 @@ func TestApplyScreenUpdateAppliesOpcodeCopyRect(t *testing.T) {
 		IsAlternateScreen: true,
 	}, []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second)}, []string{"a", "b", "c"}, CursorState{Row: 2, Col: 0, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
 
-	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
-		Size: protocol.Size{Cols: 4, Rows: 3},
-		Ops: []protocol.ScreenOp{
-			{Code: protocol.ScreenOpCopyRect, Src: protocol.ScreenRect{X: 0, Y: 0, Width: 4, Height: 1}, DstX: 0, DstY: 2},
+	if !vt.ApplyScreenUpdate(ScreenUpdate{
+		Size: Size{Cols: 4, Rows: 3},
+		Ops: []DamageOp{
+			{Code: ScreenOpCopyRect, Src: DamageRect{X: 0, Y: 0, Width: 4, Height: 1}, DstX: 0, DstY: 2},
 		},
-		Cursor: protocol.CursorState{Row: 2, Col: 0, Visible: true},
-		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+		Cursor: CursorState{Row: 2, Col: 0, Visible: true},
+		Modes:  TerminalModes{AlternateScreen: true, AutoWrap: true},
 	}) {
 		t.Fatal("expected opcode copyrect update to apply incrementally")
 	}
@@ -1005,19 +1003,19 @@ func TestApplyScreenUpdateAppliesResizeThenSparseWriteOp(t *testing.T) {
 		IsAlternateScreen: true,
 	}, CursorState{Row: 0, Col: 4, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
 
-	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
-		Size: protocol.Size{Cols: 8, Rows: 3},
-		Ops: []protocol.ScreenOp{{
-			Code: protocol.ScreenOpWriteSpan,
+	if !vt.ApplyScreenUpdate(ScreenUpdate{
+		Size: Size{Cols: 8, Rows: 3},
+		Ops: []DamageOp{{
+			Code: ScreenOpWriteSpan,
 			Row:  2,
 			Col:  5,
-			Cells: []protocol.Cell{
+			Cells: []Cell{
 				{Content: "o", Width: 1},
 				{Content: "k", Width: 1},
 			},
 		}},
-		Cursor: protocol.CursorState{Row: 2, Col: 7, Visible: true},
-		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+		Cursor: CursorState{Row: 2, Col: 7, Visible: true},
+		Modes:  TerminalModes{AlternateScreen: true, AutoWrap: true},
 	}) {
 		t.Fatal("expected resize + sparse span update to apply incrementally")
 	}
@@ -1040,11 +1038,11 @@ func TestApplyScreenUpdateRejectsUnsupportedResetScrollback(t *testing.T) {
 	}, CursorState{Row: 0, Col: 1, Visible: true}, TerminalModes{AutoWrap: true})
 
 	oldEmu := vt.emu
-	if vt.ApplyScreenUpdate(protocol.ScreenUpdate{
-		Size:            protocol.Size{Cols: 1, Rows: 1},
+	if vt.ApplyScreenUpdate(ScreenUpdate{
+		Size:            Size{Cols: 1, Rows: 1},
 		ResetScrollback: true,
-		Cursor:          protocol.CursorState{Row: 0, Col: 1, Visible: true},
-		Modes:           protocol.TerminalModes{AutoWrap: true},
+		Cursor:          CursorState{Row: 0, Col: 1, Visible: true},
+		Modes:           TerminalModes{AutoWrap: true},
 	}) {
 		t.Fatal("expected reset scrollback to fall back instead of partial apply")
 	}
@@ -1075,20 +1073,20 @@ func TestApplyScreenUpdateAllowsSafeResizeWithoutRecreatingEmulator(t *testing.T
 	}, CursorState{Row: 1, Col: 3, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
 
 	oldEmu := vt.emu
-	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
-		Size: protocol.Size{Cols: 6, Rows: 3},
-		Ops: []protocol.ScreenOp{{
-			Code: protocol.ScreenOpWriteSpan,
+	if !vt.ApplyScreenUpdate(ScreenUpdate{
+		Size: Size{Cols: 6, Rows: 3},
+		Ops: []DamageOp{{
+			Code: ScreenOpWriteSpan,
 			Row:  2,
 			Col:  0,
-			Cells: []protocol.Cell{
+			Cells: []Cell{
 				{Content: "x", Width: 1},
 				{Content: "y", Width: 1},
 			},
 			Timestamp: now,
 		}},
-		Cursor: protocol.CursorState{Row: 2, Col: 2, Visible: true},
-		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+		Cursor: CursorState{Row: 2, Col: 2, Visible: true},
+		Modes:  TerminalModes{AlternateScreen: true, AutoWrap: true},
 	}) {
 		t.Fatal("expected resize + changed rows update to apply incrementally")
 	}
@@ -1124,16 +1122,16 @@ func TestApplyScreenUpdateUpdatesScrollbackWithoutRecreatingEmulator(t *testing.
 	}, []time.Time{now}, []string{"screen"}, CursorState{Row: 0, Col: 2, Visible: true}, TerminalModes{AutoWrap: true})
 
 	oldEmu := vt.emu
-	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
-		Size:           protocol.Size{Cols: 2, Rows: 1},
+	if !vt.ApplyScreenUpdate(ScreenUpdate{
+		Size:           Size{Cols: 2, Rows: 1},
 		ScrollbackTrim: 1,
-		ScrollbackAppend: []protocol.ScrollbackRowAppend{{
-			Cells:     []protocol.Cell{{Content: "d", Width: 1}},
+		ScrollbackAppend: []ScrollbackRowAppend{{
+			Cells:     []Cell{{Content: "d", Width: 1}},
 			Timestamp: now.Add(3 * time.Second),
 			RowKind:   "d",
 		}},
-		Cursor: protocol.CursorState{Row: 0, Col: 2, Visible: true},
-		Modes:  protocol.TerminalModes{AutoWrap: true},
+		Cursor: CursorState{Row: 0, Col: 2, Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
 	}) {
 		t.Fatal("expected scrollback update to apply incrementally")
 	}
@@ -1166,15 +1164,15 @@ func TestApplyScreenUpdateScrollbackAppendKeepsMetadataTailWhenCapped(t *testing
 		Cells: [][]Cell{{{Content: "x", Width: 1}}},
 	}, []time.Time{now}, []string{"screen"}, CursorState{Row: 0, Col: 1, Visible: true}, TerminalModes{AutoWrap: true})
 
-	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
-		Size: protocol.Size{Cols: 1, Rows: 1},
-		ScrollbackAppend: []protocol.ScrollbackRowAppend{{
-			Cells:     []protocol.Cell{{Content: "d", Width: 1}},
+	if !vt.ApplyScreenUpdate(ScreenUpdate{
+		Size: Size{Cols: 1, Rows: 1},
+		ScrollbackAppend: []ScrollbackRowAppend{{
+			Cells:     []Cell{{Content: "d", Width: 1}},
 			Timestamp: now.Add(3 * time.Second),
 			RowKind:   "d",
 		}},
-		Cursor: protocol.CursorState{Row: 0, Col: 1, Visible: true},
-		Modes:  protocol.TerminalModes{AutoWrap: true},
+		Cursor: CursorState{Row: 0, Col: 1, Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
 	}) {
 		t.Fatal("expected capped scrollback append to apply incrementally")
 	}
@@ -1199,10 +1197,10 @@ func TestApplyScreenUpdateScrollbackAppendKeepsMetadataTailWhenCapped(t *testing
 
 func firstWriteSpanOp(t *testing.T, damage WriteDamage) DamageOp {
 	t.Helper()
-	return firstOpWithCode(t, damage, protocol.ScreenOpWriteSpan)
+	return firstOpWithCode(t, damage, ScreenOpWriteSpan)
 }
 
-func firstOpWithCode(t *testing.T, damage WriteDamage, code protocol.ScreenOpCode) DamageOp {
+func firstOpWithCode(t *testing.T, damage WriteDamage, code ScreenOpCode) DamageOp {
 	t.Helper()
 	for _, op := range damage.Ops {
 		if op.Code == code {

@@ -123,7 +123,7 @@ func (r *Runtime) applyScreenUpdateContract(terminal *TerminalRuntime, terminalI
 		if !update.FullReplace {
 			if applier, ok := vt.(screenUpdateApplier); ok {
 				loadFinish := perftrace.Measure("runtime.stream.screen_update.load_vterm_partial")
-				appliedPartial = applier.ApplyScreenUpdate(update)
+				appliedPartial = applier.ApplyScreenUpdate(vtermScreenUpdateFromProtocol(update))
 				loadFinish(0)
 			}
 		}

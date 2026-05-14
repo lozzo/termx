@@ -18,7 +18,7 @@ import (
 	"github.com/lozzow/termx/termx-core/protocol"
 	ptymgr "github.com/lozzow/termx/termx-core/pty"
 	"github.com/lozzow/termx/termx-core/terminalmeta"
-	"github.com/lozzow/termx/termx-core/vterm"
+	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 var terminalIDCounter atomic.Uint64

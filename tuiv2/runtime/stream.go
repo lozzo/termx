@@ -7,11 +7,12 @@ import (
 
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
 type screenUpdateApplier interface {
-	ApplyScreenUpdate(update protocol.ScreenUpdate) bool
+	ApplyScreenUpdate(update localvterm.ScreenUpdate) bool
 }
 
 func recordScreenUpdateMetrics(update protocol.ScreenUpdate) {

@@ -12,9 +12,12 @@ require (
 )
 
 require (
+	github.com/lozzow/termx/termx-vterm v0.0.0 // indirect
 	github.com/pion/transport/v4 v4.0.1 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
 	golang.org/x/time v0.10.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240318140521-94a12d6c2237 // indirect
+	google.golang.org/grpc v1.64.0 // indirect
 )
 
 require (
@@ -77,6 +80,8 @@ replace github.com/lozzow/termx/termx-core => ../termx-core
 
 replace github.com/lozzow/termx/tuiv2 => ../tuiv2
 
-replace github.com/charmbracelet/x/vt => ../termx-core/third_party/github.com/charmbracelet/x/vt
+replace github.com/charmbracelet/x/vt => ../termx-vterm/third_party/github.com/charmbracelet/x/vt
 
 replace github.com/lozzow/termx/termx-remote => ../termx-remote
+
+replace github.com/lozzow/termx/termx-vterm => ../termx-vterm

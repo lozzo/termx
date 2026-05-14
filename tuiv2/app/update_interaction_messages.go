@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/termx-core/perftrace"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/input"
-	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {

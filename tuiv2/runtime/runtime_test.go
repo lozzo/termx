@@ -17,7 +17,7 @@ import (
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/terminalmeta"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
-	localvterm "github.com/lozzow/termx/termx-core/vterm"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
@@ -1836,7 +1836,7 @@ type incrementalCountingVTerm struct {
 	fullLoadCalls atomic.Int32
 }
 
-func (v *incrementalCountingVTerm) ApplyScreenUpdate(update protocol.ScreenUpdate) bool {
+func (v *incrementalCountingVTerm) ApplyScreenUpdate(update localvterm.ScreenUpdate) bool {
 	if v == nil || v.VTerm == nil {
 		return false
 	}

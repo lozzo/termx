@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/lozzow/termx/termx-core/protocol"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/shared"
-	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 type protocolRowANSIOptions struct {

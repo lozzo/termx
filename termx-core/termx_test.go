@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core/protocol"
-	vterm "github.com/lozzow/termx/termx-core/vterm"
+	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 func TestServerCreateListTagsSubscribeSnapshotAndRemoval(t *testing.T) {

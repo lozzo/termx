@@ -3,7 +3,7 @@ package app
 import (
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/termx-core/protocol"
-	localvterm "github.com/lozzow/termx/termx-core/vterm"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 

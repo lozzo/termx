@@ -12,7 +12,7 @@ import (
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/transport"
 	"github.com/lozzow/termx/termx-core/transport/memory"
-	"github.com/lozzow/termx/termx-core/vterm"
+	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 type slowSendTransport struct {

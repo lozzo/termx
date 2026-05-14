@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core/protocol"
-	"github.com/lozzow/termx/termx-core/vterm"
+	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 func BenchmarkEventBusPublish64Subscribers(b *testing.B) {
@@ -706,7 +706,7 @@ func benchmarkEncodeDamagePayload(damage vterm.WriteDamage) ([]byte, error) {
 	}
 	for _, op := range damage.Ops {
 		update.Ops = append(update.Ops, protocol.ScreenOp{
-			Code:      op.Code,
+			Code:      protocolScreenOpCodeFromVTerm(op.Code),
 			Rect:      protocol.ScreenRect{X: op.Rect.X, Y: op.Rect.Y, Width: op.Rect.Width, Height: op.Rect.Height},
 			Src:       protocol.ScreenRect{X: op.Src.X, Y: op.Src.Y, Width: op.Src.Width, Height: op.Src.Height},
 			DstX:      op.DstX,
