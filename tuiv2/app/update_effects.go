@@ -63,7 +63,7 @@ func (m *Model) effectCmdWithOptions(effect orchestrator.Effect, options effectA
 			}
 		}
 		m.render.Invalidate()
-		return tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+		return tea.Batch(m.resizeVisiblePanesCmd(), m.saveWorkbenchStateCmd())
 	case orchestrator.DetachPaneEffect:
 		if service := m.paneBindingLifecycleService(); service != nil {
 			if _, err := service.detach(typed.PaneID); err != nil {
@@ -119,7 +119,7 @@ func (m *Model) effectCmdWithOptions(effect orchestrator.Effect, options effectA
 	case orchestrator.CreateTabEffect:
 		m.clampFloatingPanesToViewport()
 		m.render.Invalidate()
-		return m.saveStateCmd()
+		return m.saveWorkbenchStateCmd()
 	case orchestrator.SwitchTabEffect:
 		m.clampFloatingPanesToViewport()
 		m.render.Invalidate()

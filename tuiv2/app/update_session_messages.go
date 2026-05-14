@@ -42,6 +42,9 @@ func (m *Model) handleSessionMessage(msg tea.Msg) (tea.Cmd, bool) {
 			m.sessionViewID = typed.View.ViewID
 		}
 		if typed.Err != nil {
+			if isRevisionConflict(typed.Err) {
+				return nil, true
+			}
 			return m.showError(typed.Err), true
 		}
 		return nil, true

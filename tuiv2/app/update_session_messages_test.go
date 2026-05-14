@@ -95,6 +95,23 @@ func TestHandleSessionMessageSessionViewUpdatedAppliesViewIDAndError(t *testing.
 	}
 }
 
+func TestHandleSessionMessageSessionViewConflictIsSuppressed(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+
+	cmd, handled := model.handleSessionMessage(sessionViewUpdatedMsg{
+		Err: sessionstore.ErrConflict,
+	})
+	if !handled {
+		t.Fatal("expected sessionViewUpdatedMsg handled")
+	}
+	if cmd != nil {
+		t.Fatalf("expected recoverable view conflict to be suppressed, got %#v", cmd)
+	}
+	if model.err != nil {
+		t.Fatalf("expected no user-visible error, got %v", model.err)
+	}
+}
+
 func TestHandleSessionMessageUnknownMessageFallsThrough(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 	cmd, handled := model.handleSessionMessage(tea.WindowSizeMsg{Width: 80, Height: 24})

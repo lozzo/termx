@@ -472,6 +472,23 @@ func (m *Model) saveStateCmd() tea.Cmd {
 	if m.sessionID != "" {
 		return batchCmds(m.replaceSessionCmd(), m.updateSessionViewCmd())
 	}
+	return m.saveLocalStateCmd()
+}
+
+func (m *Model) saveWorkbenchStateCmd() tea.Cmd {
+	if m == nil || m.workbench == nil {
+		return nil
+	}
+	if m.sessionID != "" {
+		return m.replaceSessionCmd()
+	}
+	return m.saveLocalStateCmd()
+}
+
+func (m *Model) saveLocalStateCmd() tea.Cmd {
+	if m == nil || m.workbench == nil {
+		return nil
+	}
 	if m.statePath == "" {
 		return nil
 	}

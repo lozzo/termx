@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -133,7 +134,17 @@ func (m *Model) currentSessionViewParams() sessionstore.UpdateViewParams {
 }
 
 func isRevisionConflict(err error) bool {
-	return err != nil && (strings.Contains(err.Error(), "revision conflict") || strings.Contains(err.Error(), "sessionstore: revision conflict"))
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, sessionstore.ErrConflict) {
+		return true
+	}
+	text := err.Error()
+	return strings.Contains(text, "revision conflict") ||
+		strings.Contains(text, "sessionstore: revision conflict") ||
+		strings.Contains(text, "protocol error 409") ||
+		strings.Contains(text, "storage version mismatch")
 }
 
 func (m *Model) exportSessionWorkbench() *sessiondoc.Doc {

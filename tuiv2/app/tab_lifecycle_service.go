@@ -31,7 +31,7 @@ func (s *tabLifecycleService) closeAndSaveCmd(tabID string, kill bool) tea.Cmd {
 		if err := s.close(tabID, bindings, terminalIDs, kill); err != nil {
 			return err
 		}
-		if cmd := s.model.saveStateCmd(); cmd != nil {
+		if cmd := s.model.saveWorkbenchStateCmd(); cmd != nil {
 			return cmd()
 		}
 		return nil

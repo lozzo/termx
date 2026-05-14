@@ -99,7 +99,7 @@ func (p *semanticActionPolicy) saveCmd(action input.SemanticAction) tea.Cmd {
 		input.ActionResizePaneLargeDown,
 		input.ActionBalancePanes,
 		input.ActionCycleLayout:
-		return p.model.saveStateCmd()
+		return p.model.saveWorkbenchStateCmd()
 	default:
 		return nil
 	}

@@ -172,7 +172,7 @@ func (s *Store) Replace(ctx context.Context, params ReplaceParams) (*Snapshot, e
 	})
 	if err != nil {
 		if isProtocolConflict(err) {
-			return nil, fmt.Errorf("%w: expected %d, got %d", ErrConflict, params.BaseRevision, params.BaseRevision+1)
+			return nil, fmt.Errorf("%w: %v", ErrConflict, err)
 		}
 		return nil, err
 	}
@@ -188,6 +188,18 @@ func (s *Store) UpdateView(ctx context.Context, params UpdateViewParams) (*ViewI
 	if err != nil {
 		return nil, err
 	}
+	updated, err := s.updateViewEntry(ctx, params, view, entry.Version)
+	if !errors.Is(err, ErrConflict) {
+		return updated, err
+	}
+	view, entry, latestErr := s.getViewEntry(ctx, params.SessionID, params.ViewID)
+	if latestErr != nil {
+		return nil, err
+	}
+	return s.updateViewEntry(ctx, params, view, entry.Version)
+}
+
+func (s *Store) updateViewEntry(ctx context.Context, params UpdateViewParams, view ViewInfo, expectedVersion uint64) (*ViewInfo, error) {
 	if params.View.ActiveWorkspaceName != "" {
 		view.ActiveWorkspaceName = params.View.ActiveWorkspaceName
 	}
@@ -214,9 +226,12 @@ func (s *Store) UpdateView(ctx context.Context, params UpdateViewParams) (*ViewI
 		Key:             viewKey(params.SessionID, params.ViewID),
 		Value:           value,
 		CheckVersion:    true,
-		ExpectedVersion: entry.Version,
+		ExpectedVersion: expectedVersion,
 	})
 	if err != nil {
+		if isProtocolConflict(err) {
+			return nil, fmt.Errorf("%w: %v", ErrConflict, err)
+		}
 		return nil, err
 	}
 	return &view, nil
