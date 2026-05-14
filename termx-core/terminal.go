@@ -23,6 +23,14 @@ import (
 
 var terminalIDCounter atomic.Uint64
 
+const (
+	terminalPTYReadBufferBytes     = 512 * 1024
+	terminalPTYParserQueueBytes    = 2 * 1024 * 1024
+	terminalPTYParserChunkMaxBytes = 1024 * 1024
+	terminalPTYParserFlushDelay    = 2 * time.Millisecond
+	terminalPTYParserCloseWait     = 10 * time.Second
+)
+
 type terminalConfig struct {
 	ID             string
 	Name           string
@@ -40,12 +48,13 @@ type terminalConfig struct {
 }
 
 type Terminal struct {
-	events *EventBus
-	pty    *ptymgr.PTY
-	vterm  *vterm.VTerm
-	stream *fanout.Fanout
-	grid   *terminalGridStore
-	logger *slog.Logger
+	events       *EventBus
+	pty          *ptymgr.PTY
+	vterm        *vterm.VTerm
+	stream       *fanout.Fanout
+	grid         *terminalGridStore
+	gridAppender *terminalGridAppender
+	logger       *slog.Logger
 
 	mu             sync.RWMutex
 	id             string
@@ -102,6 +111,7 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 		vterm:          vt,
 		stream:         fanout.New(),
 		grid:           grid,
+		gridAppender:   newTerminalGridAppender(grid, cfg.ID, cfg.Logger),
 		logger:         cfg.Logger,
 		id:             cfg.ID,
 		name:           cfg.Name,
@@ -144,6 +154,7 @@ func spawnTerminalProcess(cfg terminalConfig) (*ptymgr.PTY, *vterm.VTerm, error)
 		// so the child process receives them.
 		_, _ = p.Write(data)
 	})
+	vt.DisableEmulatorScrollback()
 	return p, vt, nil
 }
 
@@ -499,6 +510,9 @@ func (t *Terminal) Close() error {
 	if t.pty != nil {
 		err = t.pty.Close()
 	}
+	if t.gridAppender != nil {
+		t.gridAppender.close()
+	}
 	if gridErr := closeTerminalGridStore(t.grid); gridErr != nil && err == nil {
 		err = gridErr
 	}
@@ -513,6 +527,7 @@ func (t *Terminal) Restart() error {
 	}
 	preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped := restartPreservedRows(t.vterm)
 	grid := t.grid
+	gridAppender := t.gridAppender
 	cfg := terminalConfig{
 		ID:             t.id,
 		Command:        append([]string(nil), t.command...),
@@ -524,6 +539,9 @@ func (t *Terminal) Restart() error {
 	currentEpoch := t.processEpoch
 	t.mu.Unlock()
 
+	if gridAppender != nil {
+		gridAppender.flush()
+	}
 	if grid != nil {
 		if err := grid.appendRows(terminalGridRowsFromPreserved(preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped)); err != nil {
 			return err
@@ -680,45 +698,30 @@ func (t *Terminal) MarkRemoved() {
 }
 
 func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
-	scrollback := t.vterm.ScrollbackContent()
+	t.flushGridAppender()
 	if offset < 0 {
 		offset = 0
-	}
-	gridOffset := offset
-	liveOffset := offset
-	if liveOffset > len(scrollback) {
-		liveOffset = len(scrollback)
-	}
-	end := len(scrollback) - liveOffset
-	if end < 0 {
-		end = 0
-	}
-	start := end
-	if limit > 0 {
-		start = end - limit
-		if start < 0 {
-			start = 0
-		}
 	}
 
 	t.mu.RLock()
 	size := t.size
 	id := t.id
 	t.mu.RUnlock()
-	scrollbackTimestamps := t.vterm.ScrollbackTimestamps()
 	screenTimestamps := t.vterm.ScreenTimestamps()
-	scrollbackRowKinds := t.vterm.ScrollbackRowKinds()
 	screenRowKinds := t.vterm.ScreenRowKinds()
-	scrollbackWrapped := t.vterm.ScrollbackWrapped()
 	screenWrapped := t.vterm.ScreenWrapped()
-	outScrollback := convertRows(scrollback[start:end])
-	outScrollbackTimestamps := sliceTimeRange(scrollbackTimestamps, start, end)
-	outScrollbackRowKinds := sliceStringRange(scrollbackRowKinds, start, end)
-	outScrollbackWrapped := sliceBoolRange(scrollbackWrapped, start, end)
-	scrollbackTotal := len(scrollback)
-	scrollbackHasMore := start > 0
+
+	var (
+		outScrollback           [][]Cell
+		outScrollbackTimestamps []time.Time
+		outScrollbackRowKinds   []string
+		outScrollbackWrapped    []bool
+		scrollbackTotal         int
+		scrollbackHasMore       bool
+		usedGrid                bool
+	)
 	if t.grid != nil && limit > 0 {
-		gridViewport, err := t.grid.Viewport(gridOffset, limit, int(size.Cols))
+		gridViewport, err := t.grid.Viewport(offset, limit, int(size.Cols))
 		if err != nil {
 			if t.logger != nil {
 				t.logger.Warn("termx terminal grid snapshot failed", "terminal_id", id, "error", err)
@@ -730,10 +733,39 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 			outScrollbackWrapped = cloneBoolSlice(gridViewport.Wrapped)
 			scrollbackTotal = gridViewport.TotalRows
 			scrollbackHasMore = gridViewport.HasMore
+			usedGrid = true
 		}
 	} else if t.grid != nil {
 		scrollbackTotal = t.grid.RowCount()
 		scrollbackHasMore = offset < scrollbackTotal
+		usedGrid = true
+	}
+	if !usedGrid {
+		scrollback := t.vterm.ScrollbackContent()
+		liveOffset := offset
+		if liveOffset > len(scrollback) {
+			liveOffset = len(scrollback)
+		}
+		end := len(scrollback) - liveOffset
+		if end < 0 {
+			end = 0
+		}
+		start := end
+		if limit > 0 {
+			start = end - limit
+			if start < 0 {
+				start = 0
+			}
+		}
+		scrollbackTimestamps := t.vterm.ScrollbackTimestamps()
+		scrollbackRowKinds := t.vterm.ScrollbackRowKinds()
+		scrollbackWrapped := t.vterm.ScrollbackWrapped()
+		outScrollback = convertRows(scrollback[start:end])
+		outScrollbackTimestamps = sliceTimeRange(scrollbackTimestamps, start, end)
+		outScrollbackRowKinds = sliceStringRange(scrollbackRowKinds, start, end)
+		outScrollbackWrapped = sliceBoolRange(scrollbackWrapped, start, end)
+		scrollbackTotal = len(scrollback)
+		scrollbackHasMore = start > 0
 	}
 
 	return &Snapshot{
@@ -760,6 +792,7 @@ func (t *Terminal) GridViewport(offset, limit, cols int) *GridViewport {
 	if t == nil || t.vterm == nil {
 		return nil
 	}
+	t.flushGridAppender()
 	if limit <= 0 {
 		limit = 500
 	}
@@ -829,6 +862,7 @@ func (t *Terminal) HistoryReplay(opts HistoryReplayOptions) HistoryReplayResult 
 	if t == nil || t.vterm == nil {
 		return HistoryReplayResult{}
 	}
+	t.flushGridAppender()
 	beforeOffset, limit := sanitizeGridReplayWindow(opts.BeforeOffset, opts.Limit)
 	var (
 		replay  []byte
@@ -1087,8 +1121,11 @@ func (t *Terminal) startProcessLoops() {
 	readDone := t.readDone
 	done := t.done
 	t.mu.RUnlock()
-	go t.readLoop(epoch, p, stream, readDone)
-	go t.waitLoop(epoch, p, stream, readDone, done)
+	parserDone := make(chan struct{})
+	parserInput := make(chan []byte, terminalPTYParserQueueBytes/terminalPTYReadBufferBytes)
+	go t.parseLoop(epoch, stream, parserInput, parserDone)
+	go t.readLoop(epoch, p, parserInput, readDone)
+	go t.waitLoop(epoch, p, stream, readDone, parserDone, done)
 }
 
 func (t *Terminal) broadcastResizeLocked(stream *fanout.Fanout, cols, rows uint16) {
@@ -1109,8 +1146,8 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 	if t == nil || stream == nil || t.vterm == nil || len(chunk) == 0 {
 		return
 	}
-	writeFinish := perftrace.Measure("terminal.screen_update.write_vterm")
-	n, err, damage := t.vterm.WriteWithDamage(chunk)
+	writeFinish := perftrace.Measure("terminal.screen_update.write_vterm_latest")
+	n, err, damage := t.vterm.WriteForLatestFrame(chunk)
 	writeFinish(len(chunk))
 	if err != nil || n != len(chunk) {
 		dropped := len(chunk) - maxInt(0, n)
@@ -1128,9 +1165,20 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 	if t == nil || t.grid == nil || len(damage.ScrollbackAppend) == 0 {
 		return
 	}
+	if t.gridAppender != nil {
+		t.gridAppender.append(damage.ScrollbackAppend)
+		return
+	}
 	if err := t.grid.AppendDamageRows(damage.ScrollbackAppend); err != nil && t.logger != nil {
 		t.logger.Warn("termx terminal grid append failed", "terminal_id", t.id, "error", err)
 	}
+}
+
+func (t *Terminal) flushGridAppender() {
+	if t == nil || t.gridAppender == nil {
+		return
+	}
+	t.gridAppender.flush()
 }
 
 func (t *Terminal) screenInvalidationMessage() StreamMessage {
@@ -1140,9 +1188,10 @@ func (t *Terminal) screenInvalidationMessage() StreamMessage {
 	}
 }
 
-func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, readDone chan struct{}) {
+func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, parserInput chan<- []byte, readDone chan struct{}) {
 	defer close(readDone)
-	buf := make([]byte, 32*1024)
+	defer close(parserInput)
+	buf := make([]byte, terminalPTYReadBufferBytes)
 	var (
 		lastStatsLog = time.Now()
 		readCount    int
@@ -1173,7 +1222,7 @@ func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, 
 	}
 	defer flushStats("closed")
 	for {
-		n, err := p.Read(buf)
+		n, err := p.ReadBatch(buf)
 		if n > 0 {
 			readCount++
 			readBytes += n
@@ -1183,9 +1232,9 @@ func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, 
 			if n >= coreDiagnosticsLargePayloadBytes && t.logger != nil {
 				t.logger.Warn("termx terminal pty large read", "terminal_id", t.id, "epoch", epoch, "bytes", n)
 			}
-			t.streamMu.Lock()
-			t.writeAuthoritativeScreenUpdateLocked(stream, buf[:n])
-			t.streamMu.Unlock()
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
+			parserInput <- chunk
 			if time.Since(lastStatsLog) >= coreDiagnosticsInterval {
 				flushStats("interval")
 			}
@@ -1218,13 +1267,95 @@ func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, 
 	}
 }
 
-func (t *Terminal) waitLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, readDone <-chan struct{}, done chan struct{}) {
+func (t *Terminal) parseLoop(epoch uint64, stream *fanout.Fanout, parserInput <-chan []byte, parserDone chan struct{}) {
+	defer close(parserDone)
+	var pending []byte
+	timer := time.NewTimer(time.Hour)
+	if !timer.Stop() {
+		<-timer.C
+	}
+	timerActive := false
+	flush := func() {
+		if len(pending) == 0 {
+			return
+		}
+		t.streamMu.Lock()
+		t.writeAuthoritativeScreenUpdateLocked(stream, pending)
+		t.streamMu.Unlock()
+		pending = nil
+	}
+	stopTimer := func() {
+		if !timerActive {
+			return
+		}
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timerActive = false
+	}
+	startTimer := func() {
+		if terminalPTYParserFlushDelay <= 0 || timerActive {
+			return
+		}
+		timer.Reset(terminalPTYParserFlushDelay)
+		timerActive = true
+	}
+	for {
+		select {
+		case chunk, ok := <-parserInput:
+			if !ok {
+				stopTimer()
+				flush()
+				return
+			}
+			if len(pending) == 0 {
+				pending = chunk
+			} else {
+				pending = append(pending, chunk...)
+			}
+			if len(pending) >= terminalPTYParserChunkMaxBytes {
+				stopTimer()
+				flush()
+				continue
+			}
+			startTimer()
+		case <-timer.C:
+			timerActive = false
+			flush()
+		}
+		if t == nil {
+			return
+		}
+		t.mu.RLock()
+		currentEpoch := t.processEpoch
+		t.mu.RUnlock()
+		if currentEpoch != epoch {
+			stopTimer()
+			return
+		}
+	}
+}
+
+func (t *Terminal) waitLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, readDone <-chan struct{}, parserDone <-chan struct{}, done chan struct{}) {
 	<-p.Wait()
 	code := p.ExitCode()
 
 	select {
 	case <-readDone:
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(terminalPTYParserCloseWait):
+		if t.logger != nil {
+			t.logger.Warn("termx terminal reader did not drain before close", "terminal_id", t.id, "epoch", epoch)
+		}
+	}
+	select {
+	case <-parserDone:
+	case <-time.After(terminalPTYParserCloseWait):
+		if t.logger != nil {
+			t.logger.Warn("termx terminal parser did not drain before close", "terminal_id", t.id, "epoch", epoch)
+		}
 	}
 
 	t.mu.Lock()
@@ -1290,6 +1421,9 @@ func (t *Terminal) removeIfEpoch(epoch uint64, reason string) {
 
 	if removeFunc != nil {
 		removeFunc(id, reason)
+	}
+	if t.gridAppender != nil {
+		t.gridAppender.close()
 	}
 	_ = closeTerminalGridStore(t.grid)
 }
@@ -1380,7 +1514,7 @@ func (t *Terminal) bootstrapMessagesLocked() []StreamMessage {
 	if size.Cols > 0 && size.Rows > 0 {
 		msgs = append(msgs, StreamMessage{Type: StreamResize, Cols: size.Cols, Rows: size.Rows})
 	}
-	if payload, ok := t.screenSnapshotPayloadLocked(true); ok {
+	if payload, ok := t.screenSnapshotPayloadLocked(); ok {
 		msgs = append(msgs, StreamMessage{Type: StreamScreenUpdate, Payload: payload})
 	}
 	msgs = append(msgs, StreamMessage{Type: StreamBootstrapDone})
@@ -1391,28 +1525,20 @@ func (t *Terminal) screenSnapshotFallbackMessage() StreamMessage {
 	if t == nil {
 		return StreamMessage{Type: StreamSyncLost}
 	}
-	t.streamMu.Lock()
-	defer t.streamMu.Unlock()
-	payload, ok := t.screenSnapshotPayloadLocked(true)
+	payload, ok := t.screenSnapshotPayloadLocked()
 	if !ok {
 		return StreamMessage{Type: StreamSyncLost}
 	}
 	return StreamMessage{Type: StreamScreenUpdate, Payload: payload}
 }
 
-func (t *Terminal) screenSnapshotPayloadLocked(resetScrollback bool) ([]byte, bool) {
+func (t *Terminal) screenSnapshotPayloadLocked() ([]byte, bool) {
 	finish := perftrace.Measure("terminal.screen_update.snapshot_payload")
 	defer finish(0)
 	if t == nil || t.vterm == nil {
 		return nil, false
 	}
-	state := t.currentStreamScreenStateLocked()
-	if state == nil || state.snapshot == nil {
-		return nil, false
-	}
-	state = streamScreenStateWithoutScrollback(state)
-	update := fullReplaceUpdateForStateDelta(nil, state, resetScrollback)
-	update = screenOnlyUpdate(update)
+	update := screenFullReplaceUpdateFromVTerm(t.vterm, t.currentTitleLocked())
 	encodeFinish := perftrace.Measure("terminal.screen_update.encode")
 	payload, err := protocol.EncodeScreenUpdatePayload(update)
 	encodeFinish(len(payload))
@@ -1432,12 +1558,7 @@ func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage)
 	deltaUpdate := screenUpdateFromDamageState(damage, t.currentTitleLocked())
 	if damage.RequiresFullReplace {
 		perftrace.Count("terminal.screen_update.requires_full_replace_damage", 0)
-		state := t.currentStreamScreenStateLocked()
-		if state == nil || state.snapshot == nil {
-			return nil, false
-		}
-		state = streamScreenStateWithoutScrollback(state)
-		fullUpdate := screenOnlyUpdate(fullReplaceUpdateForStateDelta(nil, state, false))
+		fullUpdate := screenFullReplaceUpdateFromVTerm(t.vterm, t.currentTitleLocked())
 		encodeFinish := perftrace.Measure("terminal.screen_update.encode")
 		payload, err := protocol.EncodeScreenUpdatePayload(fullUpdate)
 		encodeFinish(len(payload))
@@ -1459,13 +1580,8 @@ func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage)
 		perftrace.Count("terminal.screen_update.delta_only_encode_error", 0)
 	}
 	perftrace.Count("terminal.screen_update.requires_full_snapshot", 0)
-	state := t.currentStreamScreenStateLocked()
-	if state == nil || state.snapshot == nil {
-		return nil, false
-	}
-	state = streamScreenStateWithoutScrollback(state)
-	fullUpdate := screenOnlyUpdate(fullReplaceUpdateForStateDelta(nil, state, false))
-	payload, _, ok := encodeScreenUpdatePayloadByStrategy(deltaUpdate, fullUpdate, state.snapshot.Modes.AlternateScreen)
+	fullUpdate := screenFullReplaceUpdateFromVTerm(t.vterm, t.currentTitleLocked())
+	payload, _, ok := encodeScreenUpdatePayloadByStrategy(deltaUpdate, fullUpdate, fullUpdate.Modes.AlternateScreen)
 	if !ok {
 		return nil, false
 	}
@@ -1480,6 +1596,18 @@ func (t *Terminal) currentStreamScreenStateLocked() *streamScreenState {
 	}
 	return &streamScreenState{
 		snapshot: snapshotFromVTerm(t.vterm),
+		title:    t.currentTitleLocked(),
+	}
+}
+
+func (t *Terminal) currentScreenStreamStateLocked() *streamScreenState {
+	finish := perftrace.Measure("terminal.screen_update.screen_snapshot")
+	defer finish(0)
+	if t == nil || t.vterm == nil {
+		return nil
+	}
+	return &streamScreenState{
+		snapshot: screenSnapshotFromVTerm(t.vterm),
 		title:    t.currentTitleLocked(),
 	}
 }
@@ -1851,6 +1979,17 @@ func protocolRowsFromCore(rows [][]Cell) [][]protocol.Cell {
 	return out
 }
 
+func protocolCompactRowsFromCore(rows [][]Cell) []protocol.CompactRow {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]protocol.CompactRow, len(rows))
+	for i, row := range rows {
+		out[i] = protocol.CompactRowFromCells(protocolCellsFromCoreRow(row))
+	}
+	return out
+}
+
 func protocolCellsFromCoreRow(row []Cell) []protocol.Cell {
 	if len(row) == 0 {
 		return nil
@@ -1882,7 +2021,7 @@ func protocolGridViewportFromCore(viewport *GridViewport) *protocol.GridViewport
 	return &protocol.GridViewport{
 		TerminalID:           viewport.TerminalID,
 		Size:                 protocol.Size{Cols: viewport.Size.Cols, Rows: viewport.Size.Rows},
-		Rows:                 protocolRowsFromCore(viewport.Rows),
+		Rows:                 protocolCompactRowsFromCore(viewport.Rows),
 		ScrollbackOffset:     viewport.ScrollbackOffset,
 		ScrollbackLimit:      viewport.ScrollbackLimit,
 		ScrollbackTotal:      viewport.ScrollbackTotal,

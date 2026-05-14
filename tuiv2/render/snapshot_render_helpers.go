@@ -14,7 +14,9 @@ func applyScrollbackOffset(snapshot *protocol.Snapshot, offset int, height int) 
 		return snapshot
 	}
 	rows := make([][]protocol.Cell, 0, len(snapshot.Scrollback)+len(snapshot.Screen.Cells))
-	rows = append(rows, snapshot.Scrollback...)
+	for _, row := range snapshot.Scrollback {
+		rows = append(rows, row.DecodeCells())
+	}
 	rows = append(rows, snapshot.Screen.Cells...)
 	if len(rows) == 0 {
 		return snapshot

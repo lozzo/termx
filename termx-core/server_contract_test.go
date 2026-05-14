@@ -2821,9 +2821,9 @@ func waitForSnapshotContains(t *testing.T, srv *Server, terminalID, needle strin
 	})
 }
 
-func protocolRowsContain(rows [][]protocol.Cell, needle string) bool {
+func protocolRowsContain(rows []protocol.CompactRow, needle string) bool {
 	for _, row := range rows {
-		if strings.Contains(protocolGridRowString(row), needle) {
+		if strings.Contains(protocolGridRowString(row.DecodeCells()), needle) {
 			return true
 		}
 	}

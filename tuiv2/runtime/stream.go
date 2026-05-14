@@ -46,10 +46,12 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 	}
 	terminal.Stream.Generation++
 	generation := terminal.Stream.Generation
+	channel := terminal.Channel
 	terminal.BootstrapPending = true
-	stream, stop := r.client.Stream(terminal.Channel)
+	stream, stop := r.client.Stream(channel)
 	terminal.Stream.Active = true
 	terminal.Stream.Stop = stop
+	r.markTerminalStreamReady(ctx, terminalID, channel)
 	go func(generation uint64) {
 		defer func() {
 			if terminal.Stream.Generation != generation {
@@ -87,9 +89,10 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 			if terminal.Stream.Generation != generation {
 				return false
 			}
-			stream, stop = r.client.Stream(terminal.Channel)
+			stream, stop = r.client.Stream(channel)
 			terminal.Stream.Active = true
 			terminal.Stream.Stop = stop
+			r.markTerminalStreamReady(ctx, terminalID, channel)
 			return true
 		}
 		for {
@@ -105,6 +108,9 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 			}
 			terminal.Stream.RetryCount = 0
 			r.handleStreamFrame(terminalID, frame)
+			if frame.Type == protocol.TypeScreenUpdate {
+				r.deferTerminalStreamReady(terminalID, channel)
+			}
 			if frame.Type == protocol.TypeClosed {
 				return
 			}
@@ -116,6 +122,53 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 		}
 	}(generation)
 	return nil
+}
+
+func (r *Runtime) markTerminalStreamReady(ctx context.Context, terminalID string, channel uint16) {
+	if r == nil || r.client == nil || channel == 0 {
+		return
+	}
+	r.clearPendingTerminalStreamReady(terminalID, channel)
+	_ = r.client.StreamReady(ctx, channel)
+}
+
+func (r *Runtime) deferTerminalStreamReady(terminalID string, channel uint16) {
+	if r == nil || terminalID == "" || channel == 0 {
+		return
+	}
+	terminal := r.registry.Get(terminalID)
+	if terminal == nil {
+		return
+	}
+	terminal.Stream.PendingReadyChannel = channel
+	perftrace.Count("runtime.stream.ready.deferred", 0)
+}
+
+func (r *Runtime) clearPendingTerminalStreamReady(terminalID string, channel uint16) {
+	if r == nil || terminalID == "" || channel == 0 {
+		return
+	}
+	terminal := r.registry.Get(terminalID)
+	if terminal == nil || terminal.Stream.PendingReadyChannel != channel {
+		return
+	}
+	terminal.Stream.PendingReadyChannel = 0
+}
+
+func (r *Runtime) MarkRenderedStreamUpdates(ctx context.Context) {
+	if r == nil || r.registry == nil || r.client == nil {
+		return
+	}
+	for _, terminalID := range r.registry.IDs() {
+		terminal := r.registry.Get(terminalID)
+		if terminal == nil || terminal.Stream.PendingReadyChannel == 0 {
+			continue
+		}
+		channel := terminal.Stream.PendingReadyChannel
+		terminal.Stream.PendingReadyChannel = 0
+		perftrace.Count("runtime.stream.ready.rendered", 0)
+		_ = r.client.StreamReady(ctx, channel)
+	}
 }
 
 func nextClientStreamFrame(ctx context.Context, stream <-chan protocol.StreamFrame) (protocol.StreamFrame, bool) {

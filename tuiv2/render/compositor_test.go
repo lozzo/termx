@@ -28,7 +28,7 @@ func TestComposedCanvasDrawSnapshot(t *testing.T) {
 func TestDrawSnapshotWithOffsetShowsRestartMarker(t *testing.T) {
 	snapshot := &protocol.Snapshot{
 		Size:                 protocol.Size{Cols: 30, Rows: 1},
-		Scrollback:           [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}}, {}},
+		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}}, {}}),
 		ScrollbackTimestamps: []time.Time{time.Date(2026, 4, 7, 12, 34, 55, 0, time.UTC), time.Date(2026, 4, 7, 12, 34, 56, 0, time.UTC)},
 		ScrollbackRowKinds:   []string{"", protocol.SnapshotRowKindRestart},
 		Screen:               protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}}},
@@ -1214,12 +1214,12 @@ func TestDrawSnapshotWithScrollbackPlacementMovesSelectedWindow(t *testing.T) {
 	rect := workbench.Rect{X: 1, Y: 1, W: 1, H: 3}
 	snapshot := &protocol.Snapshot{
 		Size: protocol.Size{Cols: 1, Rows: 5},
-		Scrollback: [][]protocol.Cell{
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
 			{{Content: "a", Width: 1}},
 			{{Content: "b", Width: 1}},
 			{{Content: "c", Width: 1}},
 			{{Content: "d", Width: 1}},
-		},
+		}),
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
 			{{Content: "e", Width: 1}},
 		}},
@@ -1238,11 +1238,11 @@ func TestDrawSnapshotWithScrollbackNegativePlacementStaysInsideRect(t *testing.T
 	rect := workbench.Rect{X: 1, Y: 2, W: 1, H: 2}
 	snapshot := &protocol.Snapshot{
 		Size: protocol.Size{Cols: 1, Rows: 5},
-		Scrollback: [][]protocol.Cell{
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
 			{{Content: "a", Width: 1}},
 			{{Content: "b", Width: 1}},
 			{{Content: "c", Width: 1}},
-		},
+		}),
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
 			{{Content: "d", Width: 1}},
 			{{Content: "e", Width: 1}},

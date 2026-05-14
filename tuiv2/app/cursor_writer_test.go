@@ -3373,7 +3373,7 @@ func TestDebugOutputCursorWriterLocalScrollbackAudit(t *testing.T) {
 		return &protocol.Snapshot{
 			TerminalID: terminalID,
 			Size:       protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
-			Scrollback: scrollback,
+			Scrollback: protocol.CompactRowsFromCells(scrollback),
 			Screen:     protocol.ScreenData{Cells: screen},
 			Cursor:     protocol.CursorState{Row: rows - 1, Col: 0, Visible: true},
 			Modes:      protocol.TerminalModes{AutoWrap: true},
@@ -6037,7 +6037,7 @@ func TestOutputCursorWriterFrameLinesPathCopyModeScrollbackThenFocusSwitchClears
 			}
 			scrollback[i] = row
 		}
-		nvimSnap.Scrollback = scrollback
+		nvimSnap.Scrollback = protocol.CompactRowsFromCells(scrollback)
 		nvimTerm.Snapshot = nvimSnap
 		nvimBinding := rt.BindPane("pane-1")
 		nvimBinding.Channel = 1

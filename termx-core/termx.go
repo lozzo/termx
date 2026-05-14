@@ -964,6 +964,7 @@ type sessionAttachment struct {
 	viewID        string
 	mu            sync.RWMutex
 	resizeControl protocol.ResizeControl
+	streamPump    *attachmentStreamPump
 	cleanup       func()
 }
 
@@ -1178,6 +1179,10 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 					return err
 				}
 			}
+			continue
+		}
+		if typ == protocol.TypeStreamReady {
+			attachment.streamReady()
 			continue
 		}
 		if attachment.mode() != ModeCollaborator {
@@ -1634,9 +1639,11 @@ func (s *Server) handleRequest(
 		attachment.setResizeControl(resizeControl)
 		s.cfg.logger.Info("server attached terminal", "terminal_id", params.TerminalID, "remote", remote, "channel", ch, "mode", params.Mode, "surface_id", surfaceID, "resize_owner", resizeControl.CanResize)
 		stream := term.SubscribeLatest(subCtx)
+		pump := newAttachmentStreamPump(subCtx, cancel, params.TerminalID, ch, remote, stream, term.screenSnapshotFallbackMessage, sendFrame, s.cfg.logger)
+		attachment.setStreamPump(pump)
 		go func() {
 			defer attachment.cleanup()
-			pump := newAttachmentStreamPump(subCtx, cancel, params.TerminalID, ch, remote, stream, term.screenSnapshotFallbackMessage, sendFrame, s.cfg.logger)
+			defer attachment.setStreamPump(nil)
 			if err := pump.run(); err != nil {
 				s.cfg.logger.Warn("transport attachment stream send failed", "terminal_id", params.TerminalID, "remote", remote, "channel", ch, "error", err)
 			}
@@ -1836,6 +1843,27 @@ func (a *sessionAttachment) setResizeControl(control protocol.ResizeControl) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.resizeControl = control
+}
+
+func (a *sessionAttachment) setStreamPump(pump *attachmentStreamPump) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.streamPump = pump
+}
+
+func (a *sessionAttachment) streamReady() {
+	if a == nil {
+		return
+	}
+	a.mu.RLock()
+	pump := a.streamPump
+	a.mu.RUnlock()
+	if pump != nil {
+		pump.screenReady()
+	}
 }
 
 func (a *sessionAttachment) setResizeSurface(surfaceID, viewID string) {

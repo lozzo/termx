@@ -1,6 +1,10 @@
 package app
 
-import "github.com/lozzow/termx/termx-core/perftrace"
+import (
+	"context"
+
+	"github.com/lozzow/termx/termx-core/perftrace"
+)
 
 func (m *Model) View() string {
 	finish := perftrace.Measure("app.view")
@@ -15,6 +19,11 @@ func (m *Model) View() string {
 	if m == nil || m.render == nil {
 		return ""
 	}
+	defer func() {
+		if m != nil && m.runtime != nil {
+			m.runtime.MarkRenderedStreamUpdates(context.Background())
+		}
+	}()
 	if m.visibleAltScreenGeometryChanged() {
 		m.forceFullRedraw()
 	}

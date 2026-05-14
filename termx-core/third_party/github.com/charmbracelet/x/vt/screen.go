@@ -24,6 +24,12 @@ type Screen struct {
 	wrapped []bool
 }
 
+type pendingScrollbackDamage struct {
+	y       int
+	line    uv.Line
+	wrapped bool
+}
+
 // NewScreen creates a new screen.
 func NewScreen(w, h int) *Screen {
 	s := Screen{
@@ -84,6 +90,49 @@ func (s *Screen) SetCell(x, y int, c *uv.Cell) {
 	}
 	s.buf.SetCell(x, y, c)
 	s.recordCellDamage(x, y, c)
+}
+
+func (s *Screen) SetASCIICells(x, y int, data []byte, style uv.Style, link uv.Link) {
+	if s == nil || s.buf == nil || len(data) == 0 || y < 0 || y >= s.buf.Height() || x >= s.buf.Width() {
+		return
+	}
+	if x < 0 {
+		skip := min(len(data), -x)
+		data = data[skip:]
+		x = 0
+	}
+	if len(data) == 0 {
+		return
+	}
+	if maxCells := s.buf.Width() - x; len(data) > maxCells {
+		data = data[:maxCells]
+	}
+	line := s.buf.Line(y)
+	if line == nil {
+		for i, b := range data {
+			s.SetCell(x+i, y, &uv.Cell{
+				Content: printableASCIIStrings[b],
+				Width:   1,
+				Style:   style,
+				Link:    link,
+			})
+		}
+		return
+	}
+	for i, b := range data {
+		line[x+i] = uv.Cell{
+			Content: printableASCIIStrings[b],
+			Width:   1,
+			Style:   style,
+			Link:    link,
+		}
+	}
+	s.buf.TouchLine(x, y, len(data))
+	if s.damage != nil {
+		cells := make([]uv.Cell, len(data))
+		copy(cells, line[x:x+len(data)])
+		s.damage.record(SpanDamage{X: x, Y: y, Cells: cells})
+	}
 }
 
 // Height returns the height of the screen.
@@ -433,21 +482,6 @@ func (s *Screen) DeleteLine(n int) bool {
 		return false
 	}
 
-	// Save lines to scrollback if we're at the top of the scroll region
-	// and the scroll region uses the full width (typical terminal scroll).
-	// This captures lines that would be lost during scroll up operations.
-	if s.scrollback != nil && y == scroll.Min.Y &&
-		scroll.Min.X == 0 && scroll.Max.X == s.buf.Width() {
-		// Save lines that will be deleted
-		linesToSave := min(n, scroll.Max.Y-y)
-		for i := range min(linesToSave, s.buf.Height()-y) {
-			if line := s.buf.Line(y + i); line != nil {
-				s.recordScrollbackLine(y+i, line, boolAt(s.wrapped, y+i))
-			}
-		}
-		s.scrollback.PushN(s.buf, s.wrapped, y, linesToSave)
-	}
-
 	fill := s.blankCell()
 	if n > scroll.Max.Y-y {
 		n = scroll.Max.Y - y
@@ -455,13 +489,99 @@ func (s *Screen) DeleteLine(n int) bool {
 	if n <= 0 {
 		return false
 	}
-	s.buf.DeleteLineArea(y, n, fill, scroll)
+	var pendingScrollback []pendingScrollbackDamage
+	// Save lines to scrollback if we're at the top of the scroll region
+	// and the scroll region uses the full width (typical terminal scroll).
+	// This captures lines that would be lost during scroll up operations.
+	if s.scrollback != nil && y == scroll.Min.Y &&
+		scroll.Min.X == 0 && scroll.Max.X == s.buf.Width() {
+		// Save lines that will be deleted
+		linesToSave := min(n, scroll.Max.Y-y)
+		if s.damage != nil && s.damage.scrollbackOnly {
+			for i := range min(linesToSave, s.buf.Height()-y) {
+				if line := s.buf.Line(y + i); line != nil {
+					s.recordScrollbackLine(y+i, line, boolAt(s.wrapped, y+i))
+				}
+			}
+		} else if s.damage != nil {
+			pendingScrollback = make([]pendingScrollbackDamage, 0, min(linesToSave, s.buf.Height()-y))
+			for i := range min(linesToSave, s.buf.Height()-y) {
+				if line := s.buf.Line(y + i); line != nil {
+					pendingScrollback = append(pendingScrollback, pendingScrollbackDamage{
+						y:       y + i,
+						line:    append(uv.Line(nil), line...),
+						wrapped: boolAt(s.wrapped, y+i),
+					})
+				}
+			}
+		}
+		s.scrollback.PushN(s.buf, s.wrapped, y, linesToSave)
+	}
+	if scroll.Min.X == 0 && scroll.Max.X == s.buf.Width() {
+		deleteFullWidthLines(s.buf, y, n, scroll, fill)
+	} else {
+		s.buf.DeleteLineArea(y, n, fill, scroll)
+	}
 	s.deleteWrappedLines(y, n)
 	rect := uv.Rect(scroll.Min.X, y, scroll.Dx(), scroll.Max.Y-y)
 	s.recordDamage(ScrollDamage{Rectangle: rect, Dy: -n})
 	s.recordFillDamage(fill, uv.Rect(scroll.Min.X, scroll.Max.Y-n, scroll.Dx(), n))
+	if len(pendingScrollback) > 0 {
+		for _, row := range pendingScrollback {
+			s.recordScrollbackLine(row.y, row.line, row.wrapped)
+		}
+	}
 
 	return true
+}
+
+func deleteFullWidthLines(buf *uv.RenderBuffer, y, n int, scroll uv.Rectangle, fill *uv.Cell) {
+	if buf == nil || n <= 0 || y < scroll.Min.Y || y >= scroll.Max.Y {
+		return
+	}
+	if n > scroll.Max.Y-y {
+		n = scroll.Max.Y - y
+	}
+	if n <= 0 {
+		return
+	}
+	lines := buf.Lines
+	if len(lines) == 0 {
+		return
+	}
+	width := buf.Width()
+	reuseStart := scroll.Max.Y - n
+	var reuse []uv.Line
+	if n == 1 {
+		reuse = []uv.Line{lines[y]}
+	} else {
+		reuse = append([]uv.Line(nil), lines[y:y+n]...)
+	}
+	copy(lines[y:reuseStart], lines[y+n:scroll.Max.Y])
+	for i := 0; i < n; i++ {
+		line := reuse[i]
+		if len(line) != width {
+			line = uv.NewLine(width)
+		} else {
+			fillLine(line, fill)
+		}
+		lines[reuseStart+i] = line
+	}
+	for row := y; row < scroll.Max.Y; row++ {
+		buf.TouchLine(scroll.Min.X, row, scroll.Dx())
+	}
+}
+
+func fillLine(line uv.Line, cell *uv.Cell) {
+	if cell == nil {
+		for i := range line {
+			line[i] = uv.EmptyCell
+		}
+		return
+	}
+	for i := range line {
+		line[i] = *cell
+	}
 }
 
 // blankCell returns the cursor blank cell with the background color set to the

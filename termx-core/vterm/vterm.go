@@ -39,6 +39,18 @@ var safeEmulatorWriteWithDamage = func(emu *charmvt.SafeEmulator, data []byte) (
 	return n, err, nil, false
 }
 
+var safeEmulatorWriteWithScrollbackDamage = func(emu *charmvt.SafeEmulator, data []byte) (int, error, []charmvt.Damage, bool) {
+	type scrollbackDamageWriter interface {
+		WriteWithScrollbackDamage([]byte) (int, error, []charmvt.Damage)
+	}
+	if writer, ok := any(emu).(scrollbackDamageWriter); ok {
+		n, err, damages := writer.WriteWithScrollbackDamage(data)
+		return n, err, damages, true
+	}
+	n, err := emu.Write(data)
+	return n, err, nil, false
+}
+
 type Cell struct {
 	Content string
 	Width   int
@@ -172,10 +184,16 @@ type DamageOp struct {
 	Row        int
 	Col        int
 	Cells      []Cell
+	Runs       []CellRun
 	Timestamp  time.Time
 	RowKind    string
 	Wrapped    bool
 	WrappedSet bool
+}
+
+type CellRun struct {
+	Style CellStyle
+	Text  string
 }
 
 type WriteDamage struct {
@@ -213,9 +231,19 @@ func New(cols, rows int, scrollbackSize int, onResponse ResponseHandler) *VTerm 
 	return v
 }
 
+func (v *VTerm) DisableEmulatorScrollback() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.disableEmulatorScrollbackLocked()
+}
+
 func (v *VTerm) resetEmulator(cols, rows int) {
 	emu := charmvt.NewSafeEmulator(cols, rows)
-	emu.SetScrollbackSize(v.sbSize)
+	if v.sbSize <= 0 {
+		emu.DisableScrollback()
+	} else {
+		emu.SetScrollbackSize(v.sbSize)
+	}
 	v.applyDefaultColorsToEmulator(emu)
 	v.emu = emu
 	v.scrollbackTimestamps = nil
@@ -380,6 +408,10 @@ func (v *VTerm) WriteWithDamage(data []byte) (n int, err error, damage WriteDama
 	return v.write(data, true)
 }
 
+func (v *VTerm) WriteForLatestFrame(data []byte) (n int, err error, damage WriteDamage) {
+	return v.writeLatest(data)
+}
+
 func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage WriteDamage) {
 	finish := perftrace.Measure("vterm.write")
 	defer func() {
@@ -499,6 +531,108 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 		perftrace.Count("vterm.write.changed_cells", damageChangedCellCount(damage))
 		perftrace.Count("vterm.write.diff_cpu_ns", int(damage.DiffCPUNanos))
 	}
+	reconcileFinish(0)
+	return n, err, damage
+}
+
+func (v *VTerm) writeLatest(data []byte) (n int, err error, damage WriteDamage) {
+	finish := perftrace.Measure("vterm.write_latest")
+	defer func() {
+		finish(len(data))
+	}()
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.ensureScreenFingerprintCacheLocked()
+	beforeWidth := 0
+	beforeHeight := 0
+	beforeAltScreen := false
+	if v.emu != nil {
+		beforeWidth = v.emu.Width()
+		beforeHeight = v.emu.Height()
+		beforeAltScreen = v.emu.IsAltScreen()
+	}
+	snapshotFinish := perftrace.Measure("vterm.write_latest.before_snapshot")
+	beforeScreen := reuseRowFingerprintSlice(v.screenFingerprintScratch, v.screenFingerprintCache)
+	v.screenFingerprintScratch = beforeScreen
+	beforeScrollbackLen := v.scrollbackRowCountLocked()
+	beforeScreenTimestamps := v.screenTimestamps
+	beforeScreenRowKinds := v.screenRowKinds
+	snapshotFinish(0)
+	defer func() {
+		if r := recover(); r != nil {
+			n = 0
+			err = fmt.Errorf("vterm write panic: %v", r)
+			damage = WriteDamage{}
+		}
+	}()
+	normalizeFinish := perftrace.Measure("vterm.write_latest.normalize")
+	normalized := normalizeRenderableUTF8(data)
+	normalizeFinish(len(normalized))
+	clearTouchedFinish := perftrace.Measure("vterm.write_latest.clear_touched")
+	v.clearTouchedRowsLocked()
+	clearTouchedFinish(0)
+	emulatorFinish := perftrace.Measure("vterm.write_latest.emulator")
+	directN, directErr, directDamages, _ := safeEmulatorWriteWithScrollbackDamage(v.emu, normalized)
+	n, err = directN, directErr
+	emulatorFinish(len(normalized))
+	pos := v.emu.CursorPosition()
+	v.cursor.Row = pos.Y
+	v.cursor.Col = pos.X
+	v.modes.AlternateScreen = v.emu.IsAltScreen()
+	diffStart := time.Now()
+	reconcileFinish := perftrace.Measure("vterm.write_latest.reconcile")
+	afterWidth := 0
+	afterHeight := 0
+	afterAltScreen := false
+	if v.emu != nil {
+		afterWidth = v.emu.Width()
+		afterHeight = v.emu.Height()
+		afterAltScreen = v.emu.IsAltScreen()
+	}
+	dirtyRows, dirtyReliable := v.consumeTouchedRowsLocked()
+	now := time.Now().UTC()
+	var afterScreen []rowFingerprint
+	fingerprintFinish := perftrace.Measure("vterm.write_latest.reconcile.fingerprint")
+	switch {
+	case !dirtyReliable,
+		beforeWidth != afterWidth,
+		beforeHeight != afterHeight,
+		beforeAltScreen != afterAltScreen:
+		afterScreen = v.screenRowFingerprintsLocked()
+		v.screenFingerprintCache = afterScreen
+	default:
+		v.ensureScreenFingerprintCacheLocked()
+		for _, row := range dirtyRows {
+			if row < 0 || row >= len(v.screenFingerprintCache) {
+				continue
+			}
+			v.screenFingerprintCache[row] = v.screenRowFingerprintLocked(row)
+		}
+		afterScreen = v.screenFingerprintCache
+	}
+	fingerprintFinish(0)
+	metadataFinish := perftrace.Measure("vterm.write_latest.reconcile.metadata")
+	cachePlan := v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, afterScreen, now)
+	metadataFinish(0)
+	rowCacheFinish := perftrace.Measure("vterm.write_latest.reconcile.row_cache")
+	v.reconcileRowCachesLocked(beforeScreen, cachePlan)
+	rowCacheFinish(0)
+	damage = v.writeDamageHeaderLocked(cachePlan)
+	damage.RequiresFullReplace = true
+	if len(directDamages) > 0 && !afterAltScreen && beforeWidth == afterWidth && beforeHeight == afterHeight && beforeAltScreen == afterAltScreen {
+		if historyOps := v.scrollbackAppendOpsFromCharmVTDamages(directDamages, beforeScreenTimestamps, beforeScreenRowKinds); len(historyOps) > 0 {
+			damage.ScrollbackAppend = historyOps
+			damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
+		} else {
+			v.appendScrollbackDamageLocked(&damage, cachePlan)
+		}
+	} else {
+		v.appendScrollbackDamageLocked(&damage, cachePlan)
+	}
+	damage.DiffCPUNanos = time.Since(diffStart).Nanoseconds()
+	perftrace.Count("vterm.write_latest.changed_rows", damageChangedRowCount(damage))
+	perftrace.Count("vterm.write_latest.changed_cells", damageChangedCellCount(damage))
+	perftrace.Count("vterm.write_latest.diff_cpu_ns", int(damage.DiffCPUNanos))
 	reconcileFinish(0)
 	return n, err, damage
 }
@@ -1492,6 +1626,16 @@ func uvCellFromProtocol(cell protocol.Cell) *uv.Cell {
 	})
 }
 
+func (v *VTerm) disableEmulatorScrollbackLocked() {
+	v.sbSize = 0
+	if v.emu != nil {
+		v.emu.DisableScrollback()
+	}
+	v.scrollbackTimestamps = nil
+	v.scrollbackRowKinds = nil
+	v.scrollbackRowCache = nil
+}
+
 func uvBlankCell() *uv.Cell {
 	return &uv.Cell{Content: " ", Width: 1}
 }
@@ -1804,24 +1948,28 @@ func (v *VTerm) convertCell(cell *uv.Cell) Cell {
 	if cell == nil {
 		return Cell{}
 	}
-	style := CellStyle{}
-	if cell.Style.Fg != nil {
-		style.FG = v.resolveColorString(cell.Style.Fg)
-	}
-	if cell.Style.Bg != nil {
-		style.BG = v.resolveColorString(cell.Style.Bg)
-	}
-	style.Bold = cell.Style.Attrs&uv.AttrBold != 0
-	style.Italic = cell.Style.Attrs&uv.AttrItalic != 0
-	style.Underline = cell.Style.Underline != 0
-	style.Blink = cell.Style.Attrs&uv.AttrBlink != 0
-	style.Reverse = cell.Style.Attrs&uv.AttrReverse != 0
-	style.Strikethrough = cell.Style.Attrs&uv.AttrStrikethrough != 0
 	return Cell{
 		Content: cell.Content,
 		Width:   cell.Width,
-		Style:   style,
+		Style:   v.convertStyle(cell.Style),
 	}
+}
+
+func (v *VTerm) convertStyle(style uv.Style) CellStyle {
+	out := CellStyle{}
+	if style.Fg != nil {
+		out.FG = v.resolveColorString(style.Fg)
+	}
+	if style.Bg != nil {
+		out.BG = v.resolveColorString(style.Bg)
+	}
+	out.Bold = style.Attrs&uv.AttrBold != 0
+	out.Italic = style.Attrs&uv.AttrItalic != 0
+	out.Underline = style.Underline != 0
+	out.Blink = style.Attrs&uv.AttrBlink != 0
+	out.Reverse = style.Attrs&uv.AttrReverse != 0
+	out.Strikethrough = style.Attrs&uv.AttrStrikethrough != 0
+	return out
 }
 
 func (v *VTerm) resolveColorString(c color.Color) string {
@@ -2483,17 +2631,49 @@ func (v *VTerm) scrollbackAppendOpsFromCharmVTDamages(damages []charmvt.Damage, 
 	out := make([]DamageOp, 0, 1)
 	for _, raw := range damages {
 		row, ok := raw.(charmvt.ScrollbackDamage)
-		if !ok || len(row.Cells) == 0 {
+		if !ok || (!row.ASCII && len(row.Runs) == 0 && len(row.Cells) == 0) {
 			continue
+		}
+		cells := uvCellsToVTermDamageCells(v, row.Cells)
+		runs := []CellRun(nil)
+		switch {
+		case len(row.Runs) > 0:
+			cells = nil
+			runs = scrollbackRunsToVTermRuns(v, row.Runs)
+		case row.ASCII:
+			cells = nil
+			runs = asciiTextToVTermRuns(row.Text)
 		}
 		out = append(out, DamageOp{
 			Row:        row.Y,
-			Cells:      uvCellsToVTermDamageCells(v, row.Cells),
+			Cells:      cells,
+			Runs:       runs,
 			Timestamp:  timeAt(timestamps, row.Y),
 			RowKind:    stringAt(rowKinds, row.Y),
 			Wrapped:    row.Wrapped,
 			WrappedSet: true,
 		})
+	}
+	return out
+}
+
+func asciiTextToVTermRuns(text string) []CellRun {
+	if text == "" {
+		return nil
+	}
+	return []CellRun{{Text: text}}
+}
+
+func scrollbackRunsToVTermRuns(v *VTerm, runs []charmvt.ScrollbackRun) []CellRun {
+	if len(runs) == 0 {
+		return nil
+	}
+	out := make([]CellRun, 0, len(runs))
+	for _, run := range runs {
+		if run.Text == "" {
+			continue
+		}
+		out = append(out, CellRun{Style: v.convertStyle(run.Style), Text: run.Text})
 	}
 	return out
 }
@@ -2587,6 +2767,12 @@ func damageChangedCellCount(damage WriteDamage) int {
 		}
 	}
 	for _, row := range damage.ScrollbackAppend {
+		if len(row.Runs) > 0 {
+			for _, run := range row.Runs {
+				count += len(run.Text)
+			}
+			continue
+		}
 		count += len(row.Cells)
 	}
 	return count

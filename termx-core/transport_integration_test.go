@@ -65,7 +65,7 @@ func TestProtocolClientOverMemoryTransport(t *testing.T) {
 
 func protocolSnapshotContains(s *protocol.Snapshot, needle string) bool {
 	for _, row := range s.Scrollback {
-		if protocolRowString(row) == needle {
+		if protocolRowString(row.DecodeCells()) == needle {
 			return true
 		}
 	}

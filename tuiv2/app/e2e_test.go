@@ -366,7 +366,7 @@ func e2eSnapshotContains(snapshot *protocol.Snapshot, needle string) bool {
 		return false
 	}
 	for _, row := range snapshot.Scrollback {
-		if strings.Contains(e2eSnapshotRowString(row), needle) {
+		if strings.Contains(e2eSnapshotRowString(row.DecodeCells()), needle) {
 			return true
 		}
 	}

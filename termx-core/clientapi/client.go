@@ -19,6 +19,7 @@ type Client interface {
 	GridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*protocol.GridViewport, error)
 	Input(ctx context.Context, channel uint16, data []byte) error
 	Resize(ctx context.Context, channel uint16, cols, rows uint16) error
+	StreamReady(ctx context.Context, channel uint16) error
 	Stream(channel uint16) (<-chan protocol.StreamFrame, func())
 	Kill(ctx context.Context, terminalID string) error
 	Remove(ctx context.Context, terminalID string) error
@@ -87,6 +88,10 @@ func (c *ProtocolClient) Input(ctx context.Context, channel uint16, data []byte)
 
 func (c *ProtocolClient) Resize(ctx context.Context, channel uint16, cols, rows uint16) error {
 	return c.inner.Resize(ctx, channel, cols, rows)
+}
+
+func (c *ProtocolClient) StreamReady(ctx context.Context, channel uint16) error {
+	return c.inner.StreamReady(ctx, channel)
 }
 
 func (c *ProtocolClient) Stream(channel uint16) (<-chan protocol.StreamFrame, func()) {

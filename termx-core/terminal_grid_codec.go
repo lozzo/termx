@@ -40,7 +40,10 @@ const (
 
 func encodeTerminalGridRow(row terminalGridRow) ([]byte, error) {
 	cells := trimTerminalGridCells(row.cells)
-	runs := terminalGridRuns(cells)
+	runs := terminalGridRunsFromCellRuns(row.runs)
+	if len(runs) == 0 {
+		runs = terminalGridRuns(cells)
+	}
 	size := 8
 	if !row.timestamp.IsZero() {
 		size += binary.MaxVarintLen64
@@ -75,6 +78,35 @@ func encodeTerminalGridRow(row terminalGridRow) ([]byte, error) {
 		out = appendTerminalGridRun(out, run)
 	}
 	return out, nil
+}
+
+func terminalGridRunsFromCellRuns(cellRuns []vterm.CellRun) []terminalGridRun {
+	if len(cellRuns) == 0 {
+		return nil
+	}
+	runs := make([]terminalGridRun, 0, len(cellRuns))
+	for _, run := range cellRuns {
+		if run.Text == "" {
+			continue
+		}
+		ascii := true
+		for i := 0; i < len(run.Text); i++ {
+			if run.Text[i] >= utf8.RuneSelf {
+				ascii = false
+				break
+			}
+		}
+		if ascii {
+			runs = append(runs, terminalGridRun{style: run.Style, ascii: true, text: run.Text})
+			continue
+		}
+		cells := make([]vterm.Cell, 0, len(run.Text))
+		for _, r := range run.Text {
+			cells = append(cells, vterm.Cell{Content: string(r), Width: 1, Style: run.Style})
+		}
+		runs = append(runs, terminalGridRun{style: run.Style, cells: cells})
+	}
+	return runs
 }
 
 func decodeTerminalGridRow(data []byte) (terminalGridRow, error) {

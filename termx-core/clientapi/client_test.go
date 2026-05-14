@@ -40,6 +40,7 @@ func TestClientAPIBoundaryDoesNotExposeRemoteCapabilities(t *testing.T) {
 		"SetTags",
 		"Snapshot",
 		"Stream",
+		"StreamReady",
 		"UpdateSessionView",
 	}
 	assertMethodSet(t, reflect.TypeOf((*Client)(nil)).Elem(), want)

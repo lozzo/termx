@@ -69,7 +69,7 @@ func copyModeTestSnapshot(scrollback, screen []string) *protocol.Snapshot {
 	return &protocol.Snapshot{
 		TerminalID: "term-1",
 		Size:       protocol.Size{Cols: uint16(maxCols), Rows: uint16(len(screenRows))},
-		Scrollback: sbRows,
+		Scrollback: protocol.CompactRowsFromCells(sbRows),
 		Screen:     protocol.ScreenData{Cells: screenRows},
 		Cursor:     protocol.CursorState{Row: maxInt(0, len(screenRows)-1), Col: 0, Visible: true},
 		Modes:      protocol.TerminalModes{AutoWrap: true},
@@ -94,6 +94,10 @@ func rowTextFromProtocolCells(row []protocol.Cell) string {
 		b.WriteString(cell.Content)
 	}
 	return strings.TrimRight(b.String(), " ")
+}
+
+func rowTextFromCompactRow(row protocol.CompactRow) string {
+	return rowTextFromProtocolCells(row.DecodeCells())
 }
 
 func seedCopyModeSnapshot(t *testing.T, m *Model, scrollback, screen []string) {
@@ -138,7 +142,7 @@ func snapshotWindow(snapshot *protocol.Snapshot, offset int, limit int) *protoco
 	if start < 0 {
 		start = 0
 	}
-	cloned.Scrollback = cloneProtocolRows(snapshot.Scrollback[start:end])
+	cloned.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[start:end])
 	if len(snapshot.ScrollbackTimestamps) >= end {
 		cloned.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps[start:end]...)
 	} else {
@@ -456,7 +460,7 @@ func TestCopyModeExtendsFrozenScrollbackWhenSnapshotLoads(t *testing.T) {
 	if got := copyModeSnapshotScreenText(model.copyMode.Snapshot); got != beforeScreen {
 		t.Fatalf("expected frozen screen to stay unchanged, before=%q after=%q", beforeScreen, got)
 	}
-	if got := rowTextFromProtocolCells(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old0") {
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old0") {
 		t.Fatalf("expected loaded older scrollback to be prepended, got %q", got)
 	}
 	if got := model.copyMode.Cursor.Row; got != beforeRow+2 {
@@ -498,7 +502,7 @@ func TestCopyModeTopLoadsOlderScrollbackIntoFrozenBuffer(t *testing.T) {
 	if got, want := len(model.copyMode.Snapshot.Scrollback), 4; got != want {
 		t.Fatalf("expected older scrollback to be loaded into frozen buffer, got %d want %d", got, want)
 	}
-	if got := rowTextFromProtocolCells(model.copyMode.Snapshot.Scrollback[0]); got != "old0" {
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "old0" {
 		t.Fatalf("expected oldest loaded row at top, got %q", got)
 	}
 	if got := model.copyMode.Cursor.Row; got != 4 {
@@ -543,10 +547,10 @@ func TestCopyModeLoadsOlderScrollbackByOffsetPage(t *testing.T) {
 	if got, want := len(model.copyMode.Snapshot.Scrollback), 1000; got != want {
 		t.Fatalf("expected paged history to be prepended, got %d rows want %d", got, want)
 	}
-	if got := rowTextFromProtocolCells(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old") {
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old") {
 		t.Fatalf("expected older page at top of frozen scrollback, got %q", got)
 	}
-	if got := rowTextFromProtocolCells(model.runtime.Registry().Get("term-1").Snapshot.Scrollback[0]); !strings.Contains(got, "hist") {
+	if got := rowTextFromCompactRow(model.runtime.Registry().Get("term-1").Snapshot.Scrollback[0]); !strings.Contains(got, "hist") {
 		t.Fatalf("expected live runtime snapshot to stay on latest page, got %q", got)
 	}
 }
@@ -585,7 +589,7 @@ func TestCopyModeLoadsOlderScrollbackBeyondFullSnapshotCap(t *testing.T) {
 	if got, want := len(model.copyMode.Snapshot.Scrollback), 10500; got != want {
 		t.Fatalf("expected paged history beyond full snapshot cap to be prepended, got %d rows want %d", got, want)
 	}
-	if got := rowTextFromProtocolCells(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old") {
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old") {
 		t.Fatalf("expected older page at top of frozen scrollback, got %q", got)
 	}
 }
@@ -861,7 +865,7 @@ func TestActiveLiveCopyModeBufferRefreshesStaleVTermSnapshot(t *testing.T) {
 	}
 	var snapshotText strings.Builder
 	for _, row := range buffer.snapshot.Scrollback {
-		for _, cell := range row {
+		for _, cell := range row.DecodeCells() {
 			snapshotText.WriteString(cell.Content)
 		}
 		snapshotText.WriteByte('\n')

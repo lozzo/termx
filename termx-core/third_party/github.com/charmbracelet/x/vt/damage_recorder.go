@@ -1,18 +1,30 @@
 package vt
 
-import uv "github.com/charmbracelet/ultraviolet"
+import (
+	"image/color"
+	"strings"
+
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
+)
 
 type screenDamageRecorder struct {
-	damages       []Damage
-	spanCells     []uv.Cell
-	tailSpan      *SpanDamage
-	tailSpanStart int
-	tailSpanEnd   int
+	scrollbackOnly bool
+	damages        []Damage
+	spanCells      []uv.Cell
+	tailSpan       *SpanDamage
+	tailSpanStart  int
+	tailSpanEnd    int
 }
 
 func (r *screenDamageRecorder) record(d Damage) {
 	if r == nil || d == nil {
 		return
+	}
+	if r.scrollbackOnly {
+		if _, ok := d.(ScrollbackDamage); !ok {
+			return
+		}
 	}
 	if span, ok := d.(SpanDamage); ok {
 		r.recordSpan(span)
@@ -23,7 +35,7 @@ func (r *screenDamageRecorder) record(d Damage) {
 }
 
 func (r *screenDamageRecorder) recordSpanCell(x, y int, cell uv.Cell) {
-	if r == nil {
+	if r == nil || r.scrollbackOnly {
 		return
 	}
 	if r.tailSpan != nil && y == r.tailSpan.Y && x == r.tailSpanEnd {
@@ -42,7 +54,7 @@ func (r *screenDamageRecorder) recordSpanCell(x, y int, cell uv.Cell) {
 }
 
 func (r *screenDamageRecorder) recordRepeatedSpan(x, y, count int, cell uv.Cell) {
-	if r == nil || count <= 0 {
+	if r == nil || r.scrollbackOnly || count <= 0 {
 		return
 	}
 	start := len(r.spanCells)
@@ -61,13 +73,21 @@ func (r *screenDamageRecorder) recordScrollbackLine(y int, line uv.Line, wrapped
 		return
 	}
 	r.tailSpan = nil
+	if text, ok := compactASCIIPlainLine(line); ok {
+		r.damages = append(r.damages, ScrollbackDamage{Y: y, ASCII: true, Text: text, Wrapped: wrapped})
+		return
+	}
+	if runs, ok := compactASCIIStyleRuns(line); ok {
+		r.damages = append(r.damages, ScrollbackDamage{Y: y, Runs: runs, Wrapped: wrapped})
+		return
+	}
 	cells := make([]uv.Cell, len(line))
 	copy(cells, line)
 	r.damages = append(r.damages, ScrollbackDamage{Y: y, Cells: cells, Wrapped: wrapped})
 }
 
 func (r *screenDamageRecorder) recordSpan(span SpanDamage) {
-	if r == nil || len(span.Cells) == 0 {
+	if r == nil || r.scrollbackOnly || len(span.Cells) == 0 {
 		return
 	}
 	if r.mergeTrailingSpan(span) {
@@ -168,4 +188,110 @@ func isClearDamageCell(cell *uv.Cell) bool {
 		return false
 	}
 	return true
+}
+
+func compactASCIIPlainLine(line uv.Line) (string, bool) {
+	if len(line) == 0 {
+		return "", true
+	}
+	last := compactASCIILineLastCell(line)
+	if last == 0 {
+		return "", true
+	}
+	out := make([]byte, last)
+	for i := 0; i < last; i++ {
+		cell := line[i]
+		if !cell.Style.IsZero() || !cell.Link.IsZero() || cell.Width != 1 || len(cell.Content) != 1 || cell.Content[0] >= 0x80 {
+			return "", false
+		}
+		out[i] = cell.Content[0]
+	}
+	return string(out), true
+}
+
+func compactASCIIStyleRuns(line uv.Line) ([]ScrollbackRun, bool) {
+	last := compactASCIILineLastCell(line)
+	if last == 0 {
+		return nil, true
+	}
+	runs := make([]ScrollbackRun, 0, 4)
+	var current ScrollbackRun
+	var currentText strings.Builder
+	currentStyleSet := false
+	for i := 0; i < last; i++ {
+		cell := line[i]
+		if !cell.Link.IsZero() || cell.Width != 1 || len(cell.Content) != 1 || cell.Content[0] >= 0x80 {
+			return nil, false
+		}
+		if currentStyleSet && compactASCIIStyleEqual(current.Style, cell.Style) {
+			currentText.WriteString(cell.Content)
+			continue
+		}
+		if currentStyleSet && currentText.Len() > 0 {
+			current.Text = currentText.String()
+			runs = append(runs, current)
+			currentText.Reset()
+		}
+		current = ScrollbackRun{Style: cell.Style}
+		currentStyleSet = true
+		currentText.WriteString(cell.Content)
+	}
+	if currentStyleSet && currentText.Len() > 0 {
+		current.Text = currentText.String()
+		runs = append(runs, current)
+	}
+	return runs, true
+}
+
+func compactASCIIStyleEqual(a, b uv.Style) bool {
+	return a.Attrs == b.Attrs &&
+		a.Underline == b.Underline &&
+		compactASCIIColorEqual(a.Fg, b.Fg) &&
+		compactASCIIColorEqual(a.Bg, b.Bg) &&
+		compactASCIIColorEqual(a.UnderlineColor, b.UnderlineColor)
+}
+
+func compactASCIIColorEqual(a, b color.Color) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	switch av := a.(type) {
+	case ansi.BasicColor:
+		bv, ok := b.(ansi.BasicColor)
+		return ok && av == bv
+	case ansi.IndexedColor:
+		bv, ok := b.(ansi.IndexedColor)
+		return ok && av == bv
+	case ansi.TrueColor:
+		bv, ok := b.(ansi.TrueColor)
+		return ok && av == bv
+	case ansi.RGBColor:
+		bv, ok := b.(ansi.RGBColor)
+		return ok && av == bv
+	case color.RGBA:
+		bv, ok := b.(color.RGBA)
+		return ok && av == bv
+	case color.NRGBA:
+		bv, ok := b.(color.NRGBA)
+		return ok && av == bv
+	}
+	ar, ag, ab, aa := a.RGBA()
+	br, bg, bb, ba := b.RGBA()
+	return ar == br && ag == bg && ab == bb && aa == ba
+}
+
+func compactASCIILineLastCell(line uv.Line) int {
+	last := len(line)
+	for last > 0 {
+		cell := line[last-1]
+		if cell.Style.IsZero() && cell.Link.IsZero() && cell.Width == 1 && (cell.Content == "" || cell.Content == " ") {
+			last--
+			continue
+		}
+		break
+	}
+	return last
 }

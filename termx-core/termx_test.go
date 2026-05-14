@@ -210,7 +210,7 @@ func TestServerHistorySurvivesServerRestart(t *testing.T) {
 	if viewport.ScrollbackTotal != 12 || !viewport.ScrollbackHasMore {
 		t.Fatalf("unexpected viewport metadata after restart: %#v", viewport)
 	}
-	if len(viewport.Rows) == 0 || !strings.Contains(protocolTestRowToString(viewport.Rows[0]), "disk-02") {
+	if len(viewport.Rows) == 0 || !strings.Contains(protocolTestRowToString(viewport.Rows[0].DecodeCells()), "disk-02") {
 		t.Fatalf("expected older persisted rows from viewport, got %#v", viewport.Rows)
 	}
 }

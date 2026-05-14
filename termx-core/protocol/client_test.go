@@ -52,6 +52,7 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"SetTags",
 		"Snapshot",
 		"Stream",
+		"StreamReady",
 		"UpdateSessionView",
 	}
 	clientType := reflect.TypeOf((*Client)(nil))

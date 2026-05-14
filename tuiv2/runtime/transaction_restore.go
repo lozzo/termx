@@ -224,7 +224,7 @@ func cloneRuntimeSnapshot(snapshot *bridge.SnapshotRef) *bridge.SnapshotRef {
 		Cells:             cloneProtocolCells2D(snapshot.Screen.Cells),
 		IsAlternateScreen: snapshot.Screen.IsAlternateScreen,
 	}
-	cloned.Scrollback = cloneProtocolCells2D(snapshot.Scrollback)
+	cloned.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback)
 	cloned.ScreenTimestamps = append([]time.Time(nil), snapshot.ScreenTimestamps...)
 	cloned.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps...)
 	cloned.ScreenRowKinds = append([]string(nil), snapshot.ScreenRowKinds...)

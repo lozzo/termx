@@ -37,6 +37,14 @@ func (se *SafeEmulator) WriteWithDamage(data []byte) (int, error, []Damage) {
 	return se.Emulator.WriteWithDamage(data)
 }
 
+// WriteWithScrollbackDamage writes data and records only rows that enter
+// scrollback in a concurrency-safe manner.
+func (se *SafeEmulator) WriteWithScrollbackDamage(data []byte) (int, error, []Damage) {
+	se.mu.Lock()
+	defer se.mu.Unlock()
+	return se.Emulator.WriteWithScrollbackDamage(data)
+}
+
 // Read reads data from the emulator in a concurrency-safe manner.
 func (se *SafeEmulator) Read(p []byte) (int, error) {
 	return se.Emulator.Read(p)
@@ -247,6 +255,14 @@ func (se *SafeEmulator) SetScrollbackSize(maxLines int) {
 	se.mu.Lock()
 	defer se.mu.Unlock()
 	se.Emulator.SetScrollbackSize(maxLines)
+}
+
+// DisableScrollback disables storage of main-screen scrollback rows while
+// keeping scrollback damage recording available.
+func (se *SafeEmulator) DisableScrollback() {
+	se.mu.Lock()
+	defer se.mu.Unlock()
+	se.Emulator.DisableScrollback()
 }
 
 // ClearScrollback clears the scrollback buffer in a concurrency-safe manner.

@@ -3,6 +3,7 @@ package pty
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	creackpty "github.com/creack/pty"
+	"golang.org/x/sys/unix"
 )
 
 type Size struct {
@@ -42,6 +44,10 @@ type PTY struct {
 	killRequested atomic.Bool
 }
 
+const maxDrainReadBytes = 8 * 1024 * 1024
+const maxDrainReadWindow = 8 * time.Millisecond
+const drainPollInterval = 250 * time.Microsecond
+
 func Spawn(opts SpawnOptions) (*PTY, error) {
 	cmd := exec.Command(opts.Command[0], opts.Command[1:]...)
 	cmd.Dir = opts.Dir
@@ -68,8 +74,70 @@ func (p *PTY) Read(buf []byte) (int, error) {
 	return p.file.Read(buf)
 }
 
+func (p *PTY) ReadBatch(buf []byte) (int, error) {
+	if p == nil || p.file == nil || len(buf) == 0 {
+		return 0, io.ErrClosedPipe
+	}
+	n, err := p.file.Read(buf)
+	if n <= 0 || err != nil {
+		return n, err
+	}
+	fd := int(p.file.Fd())
+	deadline := time.Now().Add(maxDrainReadWindow)
+	for n < len(buf) && n < maxDrainReadBytes {
+		if !waitReadable(fd, time.Until(deadline)) {
+			break
+		}
+		m, readErr := p.file.Read(buf[n:minInt(len(buf), maxDrainReadBytes)])
+		if m > 0 {
+			n += m
+			continue
+		}
+		if readErr == nil {
+			break
+		}
+		if errors.Is(readErr, unix.EAGAIN) || errors.Is(readErr, unix.EWOULDBLOCK) {
+			continue
+		}
+		return n, readErr
+	}
+	return n, nil
+}
+
 func (p *PTY) Write(data []byte) (int, error) {
 	return p.file.Write(data)
+}
+
+func waitReadable(fd int, timeout time.Duration) bool {
+	if timeout <= 0 {
+		return false
+	}
+	if timeout > drainPollInterval {
+		timeout = drainPollInterval
+	}
+	tv := unix.NsecToTimeval(timeout.Nanoseconds())
+	for {
+		var fds unix.FdSet
+		fds.Set(fd)
+		n, err := unix.Select(fd+1, &fds, nil, nil, &tv)
+		if err != nil {
+			if errors.Is(err, unix.EINTR) {
+				continue
+			}
+			return false
+		}
+		if n <= 0 {
+			return false
+		}
+		return fds.IsSet(fd)
+	}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (p *PTY) Resize(cols, rows uint16) error {

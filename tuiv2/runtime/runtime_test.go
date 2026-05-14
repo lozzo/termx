@@ -217,11 +217,11 @@ func TestRuntimeLoadGridViewportDoesNotReplaceLiveSnapshot(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
 	live := snapshotWithLines("term-1", 6, 3, []string{"live"})
-	live.Scrollback = [][]protocol.Cell{
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
 		protocolRowFromString("new0"),
 		protocolRowFromString("new1"),
 		protocolRowFromString("new2"),
-	}
+	})
 	client.snapshotByTerminal["term-1"] = live
 
 	rt := New(client)
@@ -242,7 +242,7 @@ func TestRuntimeLoadGridViewportDoesNotReplaceLiveSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load grid viewport: %v", err)
 	}
-	if page == nil || len(page.Scrollback) != 1 || rowText(page.Scrollback[0]) != "new0" {
+	if page == nil || len(page.Scrollback) != 1 || compactRowText(page.Scrollback[0]) != "new0" {
 		t.Fatalf("unexpected grid viewport page: %#v", page)
 	}
 	if stored.Snapshot != before {
@@ -254,10 +254,10 @@ func TestRuntimeApplyGridViewportPagePrependsHistory(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
 	live := snapshotWithLines("term-1", 6, 3, []string{"live"})
-	live.Scrollback = [][]protocol.Cell{
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
 		protocolRowFromString("new0"),
 		protocolRowFromString("new1"),
-	}
+	})
 	client.snapshotByTerminal["term-1"] = live
 
 	rt := New(client)
@@ -271,7 +271,7 @@ func TestRuntimeApplyGridViewportPagePrependsHistory(t *testing.T) {
 	page := &protocol.Snapshot{
 		TerminalID:           "term-1",
 		Size:                 protocol.Size{Cols: 6, Rows: 3},
-		Scrollback:           [][]protocol.Cell{protocolRowFromString("old0")},
+		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("old0")}),
 		ScrollbackOffset:     2,
 		ScrollbackTotal:      3,
 		ScrollbackHasMore:    false,
@@ -281,7 +281,7 @@ func TestRuntimeApplyGridViewportPagePrependsHistory(t *testing.T) {
 		t.Fatal("expected viewport page to apply")
 	}
 	got := rt.Registry().Get("term-1").Snapshot
-	if len(got.Scrollback) != 3 || rowText(got.Scrollback[0]) != "old0" || rowText(got.Scrollback[1]) != "new0" {
+	if len(got.Scrollback) != 3 || compactRowText(got.Scrollback[0]) != "old0" || compactRowText(got.Scrollback[1]) != "new0" {
 		t.Fatalf("expected older page prepended, got %#v", got.Scrollback)
 	}
 	if !stored.ScrollbackExhausted {
@@ -305,7 +305,7 @@ func TestRuntimeApplyGridViewportPageReplacesLatestWindow(t *testing.T) {
 	page := &protocol.Snapshot{
 		TerminalID:         "term-1",
 		Size:               protocol.Size{Cols: 6, Rows: 3},
-		Scrollback:         [][]protocol.Cell{protocolRowFromString("new0"), protocolRowFromString("new1")},
+		Scrollback:         protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("new0"), protocolRowFromString("new1")}),
 		ScrollbackOffset:   0,
 		ScrollbackTotal:    2,
 		ScrollbackHasMore:  false,
@@ -320,7 +320,7 @@ func TestRuntimeApplyGridViewportPageReplacesLatestWindow(t *testing.T) {
 		t.Fatal("expected latest viewport page to apply")
 	}
 	got := rt.Registry().Get("term-1").Snapshot
-	if len(got.Scrollback) != 2 || rowText(got.Scrollback[0]) != "new0" || rowText(got.Scrollback[1]) != "new1" {
+	if len(got.Scrollback) != 2 || compactRowText(got.Scrollback[0]) != "new0" || compactRowText(got.Scrollback[1]) != "new1" {
 		t.Fatalf("expected latest page to replace loaded scrollback, got %#v", got.Scrollback)
 	}
 }
@@ -416,6 +416,9 @@ func TestRuntimeStartStreamUpdatesSurfaceAndInvalidates(t *testing.T) {
 	if err := rt.StartStream(ctx, "term-1"); err != nil {
 		t.Fatalf("start stream: %v", err)
 	}
+	if got := client.streamReadyCount(9); got != 1 {
+		t.Fatalf("expected initial stream ready, got %d", got)
+	}
 
 	client.sendFrame(9, screenUpdateFrameForLines(t, 80, 24, "hi"))
 
@@ -423,9 +426,16 @@ func TestRuntimeStartStreamUpdatesSurfaceAndInvalidates(t *testing.T) {
 		stored := rt.Registry().Get("term-1")
 		return stored != nil && vtermContains(stored.VTerm, "hi")
 	})
+	if got := client.streamReadyCount(9); got != 1 {
+		t.Fatalf("expected screen update ready to wait for render, got %d ready calls", got)
+	}
 
 	if invalidateCount.Load() == 0 {
 		t.Fatal("expected stream refresh to invalidate rendering")
+	}
+	rt.MarkRenderedStreamUpdates(ctx)
+	if got := client.streamReadyCount(9); got != 2 {
+		t.Fatalf("expected rendered screen update ack, got %d ready calls", got)
 	}
 	if !vtermContains(rt.Registry().Get("term-1").VTerm, "hi") {
 		t.Fatal("expected live surface to contain streamed output")
@@ -1814,6 +1824,7 @@ type fakeBridgeClient struct {
 	streams             map[uint16]chan protocol.StreamFrame
 	streamSubscriptions map[uint16]int
 	streamStops         map[uint16]int
+	streamReadyCalls    map[uint16]int
 	inputCalls          []inputCall
 	resizeCalls         []resizeCall
 }
@@ -1874,6 +1885,7 @@ func newFakeBridgeClient() *fakeBridgeClient {
 		streams:             make(map[uint16]chan protocol.StreamFrame),
 		streamSubscriptions: make(map[uint16]int),
 		streamStops:         make(map[uint16]int),
+		streamReadyCalls:    make(map[uint16]int),
 	}
 }
 
@@ -1950,7 +1962,7 @@ func (f *fakeBridgeClient) GridViewport(_ context.Context, terminalID string, of
 	return &protocol.GridViewport{
 		TerminalID:           terminalID,
 		Size:                 window.Size,
-		Rows:                 testCloneProtocolRows(window.Scrollback),
+		Rows:                 protocol.CloneCompactRows(window.Scrollback),
 		ScrollbackOffset:     window.ScrollbackOffset,
 		ScrollbackLimit:      limit,
 		ScrollbackTotal:      window.ScrollbackTotal,
@@ -1973,6 +1985,13 @@ func (f *fakeBridgeClient) Resize(_ context.Context, channel uint16, cols, rows 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.resizeCalls = append(f.resizeCalls, resizeCall{channel: channel, cols: cols, rows: rows})
+	return nil
+}
+
+func (f *fakeBridgeClient) StreamReady(_ context.Context, channel uint16) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.streamReadyCalls[channel]++
 	return nil
 }
 
@@ -2070,6 +2089,12 @@ func (f *fakeBridgeClient) stopCount(channel uint16) int {
 	return f.streamStops[channel]
 }
 
+func (f *fakeBridgeClient) streamReadyCount(channel uint16) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.streamReadyCalls[channel]
+}
+
 func snapshotWithLines(terminalID string, cols, rows uint16, lines []string) *protocol.Snapshot {
 	grid := make([][]protocol.Cell, rows)
 	for y := range rows {
@@ -2120,10 +2145,7 @@ func cloneSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {
 	for y, row := range snapshot.Screen.Cells {
 		cloned.Screen.Cells[y] = append([]protocol.Cell(nil), row...)
 	}
-	cloned.Scrollback = make([][]protocol.Cell, len(snapshot.Scrollback))
-	for y, row := range snapshot.Scrollback {
-		cloned.Scrollback[y] = append([]protocol.Cell(nil), row...)
-	}
+	cloned.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback)
 	return &cloned
 }
 
@@ -2150,7 +2172,7 @@ func testSnapshotWindow(snapshot *protocol.Snapshot, offset int, limit int) *pro
 	if start < 0 {
 		start = 0
 	}
-	cloned.Scrollback = testCloneProtocolRows(snapshot.Scrollback[start:end])
+	cloned.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[start:end])
 	if len(snapshot.ScrollbackTimestamps) >= end {
 		cloned.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps[start:end]...)
 	} else {
@@ -2197,6 +2219,10 @@ func rowText(row []protocol.Cell) string {
 		buf.WriteString(cell.Content)
 	}
 	return strings.TrimRight(buf.String(), " ")
+}
+
+func compactRowText(row protocol.CompactRow) string {
+	return rowText(row.DecodeCells())
 }
 
 func snapshotContains(snapshot *protocol.Snapshot, want string) bool {

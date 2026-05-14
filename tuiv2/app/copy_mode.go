@@ -66,7 +66,7 @@ func cloneSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {
 		Cells:             cloneProtocolRows(snapshot.Screen.Cells),
 		IsAlternateScreen: snapshot.Screen.IsAlternateScreen,
 	}
-	cloned.Scrollback = cloneProtocolRows(snapshot.Scrollback)
+	cloned.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback)
 	cloned.ScreenTimestamps = append([]time.Time(nil), snapshot.ScreenTimestamps...)
 	cloned.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps...)
 	cloned.ScreenRowKinds = append([]string(nil), snapshot.ScreenRowKinds...)
@@ -307,7 +307,7 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 		if delta == 0 {
 			return
 		}
-		next.Scrollback = append(cloneProtocolRows(loaded.Scrollback), next.Scrollback...)
+		next.Scrollback = append(protocol.CloneCompactRows(loaded.Scrollback), next.Scrollback...)
 		next.ScrollbackTimestamps = append(append([]time.Time(nil), loaded.ScrollbackTimestamps...), next.ScrollbackTimestamps...)
 		next.ScrollbackRowKinds = append(append([]string(nil), loaded.ScrollbackRowKinds...), next.ScrollbackRowKinds...)
 		next.ScrollbackWrapped = append(append([]bool(nil), loaded.ScrollbackWrapped...), next.ScrollbackWrapped...)
@@ -316,7 +316,7 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 			return
 		}
 		delta = len(loaded.Scrollback) - len(next.Scrollback)
-		next.Scrollback = cloneProtocolRows(loaded.Scrollback)
+		next.Scrollback = protocol.CloneCompactRows(loaded.Scrollback)
 		next.ScrollbackTimestamps = append([]time.Time(nil), loaded.ScrollbackTimestamps...)
 		next.ScrollbackRowKinds = append([]string(nil), loaded.ScrollbackRowKinds...)
 		next.ScrollbackWrapped = append([]bool(nil), loaded.ScrollbackWrapped...)

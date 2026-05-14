@@ -21,6 +21,7 @@ const (
 	TypeResize         uint8 = 0x12
 	TypeBootstrapDone  uint8 = 0x13
 	TypeScreenUpdate   uint8 = 0x14
+	TypeStreamReady    uint8 = 0x15
 	TypeSyncLost       uint8 = 0x16
 	TypeClosed         uint8 = 0x17
 	TypeHistoryRequest uint8 = 0x18

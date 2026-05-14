@@ -135,7 +135,15 @@ func (d ScrollDamage) Bounds() uv.Rectangle {
 type ScrollbackDamage struct {
 	Y       int
 	Cells   []uv.Cell
+	Runs    []ScrollbackRun
 	Wrapped bool
+	ASCII   bool
+	Text    string
+}
+
+type ScrollbackRun struct {
+	Style uv.Style
+	Text  string
 }
 
 // Bounds returns the original row bounds.

@@ -7,22 +7,29 @@ import (
 	"os/exec"
 	goruntime "runtime"
 	rtdebug "runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/termx-core/transport/memory"
 	"github.com/lozzow/termx/termx-core/workbenchsvc"
 )
 
 type daemonResidencySnapshot struct {
-	Label       string
-	RSSKB       uint64
-	HeapAlloc   uint64
-	HeapObjects uint64
-	NumGC       uint32
-	Goroutines  int
+	Label        string
+	RSSKB        uint64
+	HeapAlloc    uint64
+	HeapSys      uint64
+	HeapIdle     uint64
+	HeapReleased uint64
+	HeapObjects  uint64
+	Sys          uint64
+	NumGC        uint32
+	Goroutines   int
 }
 
 func TestPerfResidencyDaemon(t *testing.T) {
@@ -37,8 +44,7 @@ func TestPerfResidencyDaemon(t *testing.T) {
 	}()
 
 	idle := takeDaemonResidencySnapshot(t, "daemon_idle_startup")
-	t.Logf("%s rss_kb=%d heap_alloc=%d heap_objects=%d num_gc=%d goroutines=%d",
-		idle.Label, idle.RSSKB, idle.HeapAlloc, idle.HeapObjects, idle.NumGC, idle.Goroutines)
+	logDaemonResidencySnapshot(t, idle)
 
 	info, err := srv.Create(ctx, CreateOptions{
 		Command: []string{"/bin/sh", "-lc", "cat"},
@@ -88,8 +94,7 @@ func TestPerfResidencyDaemon(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	after := takeDaemonResidencySnapshot(t, "daemon_one_terminal_one_session")
-	t.Logf("%s rss_kb=%d heap_alloc=%d heap_objects=%d num_gc=%d goroutines=%d",
-		after.Label, after.RSSKB, after.HeapAlloc, after.HeapObjects, after.NumGC, after.Goroutines)
+	logDaemonResidencySnapshot(t, after)
 }
 
 func TestPerfTerminalStressScreenUpdates(t *testing.T) {
@@ -165,10 +170,8 @@ done:
 		t.Fatalf("snapshot terminal: %v", err)
 	}
 	after := takeDaemonResidencySnapshot(t, "terminal_stress_after")
-	t.Logf("%s rss_kb=%d heap_alloc=%d heap_objects=%d num_gc=%d goroutines=%d",
-		before.Label, before.RSSKB, before.HeapAlloc, before.HeapObjects, before.NumGC, before.Goroutines)
-	t.Logf("%s rss_kb=%d heap_alloc=%d heap_objects=%d num_gc=%d goroutines=%d",
-		after.Label, after.RSSKB, after.HeapAlloc, after.HeapObjects, after.NumGC, after.Goroutines)
+	logDaemonResidencySnapshot(t, before)
+	logDaemonResidencySnapshot(t, after)
 	t.Logf("terminal_stress lines=%d elapsed=%s frames=%d screen_updates=%d screen_bytes=%d bootstrap=%d resizes=%d sync_lost=%d decoded_ops=%d scrollback_appends=%d snapshot_scrollback=%d screen_rows=%d",
 		lines,
 		elapsed,
@@ -185,6 +188,123 @@ done:
 	)
 }
 
+func TestPerfTerminalStressAttachLatest(t *testing.T) {
+	if os.Getenv("TERMX_RUN_TERMINAL_STRESS_ATTACH") != "1" {
+		t.Skip("set TERMX_RUN_TERMINAL_STRESS_ATTACH=1 to run terminal attach stress harness")
+	}
+
+	script := "../scripts/generate_terminal_stress.py"
+	if _, err := os.Stat(script); err != nil {
+		t.Skipf("stress script unavailable: %v", err)
+	}
+
+	lines := envInt("TERMX_STRESS_LINES", 100000)
+	timeout := time.Duration(envInt("TERMX_STRESS_TIMEOUT_SECONDS", 120)) * time.Second
+
+	recorder := perftrace.Enable()
+	defer perftrace.Disable()
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	srv := NewServer(WithDefaultScrollback(2000), WithDefaultKeepAfterExit(time.Second))
+	defer func() {
+		_ = srv.Shutdown(context.Background())
+	}()
+
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+	go func() {
+		_ = srv.handleTransport(ctx, serverTransport, "stress-attach")
+	}()
+
+	client := protocol.NewClient(clientTransport)
+	defer client.Close()
+	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "stress-attach"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	before := takeDaemonResidencySnapshot(t, "terminal_stress_attach_before")
+	created, err := client.Create(ctx, protocol.CreateParams{
+		Command: []string{
+			"python3",
+			script,
+			"--lines", strconv.Itoa(lines),
+			"--seed", "1",
+			"--width-hint", "120",
+		},
+		Name:           "perf-terminal-stress-attach",
+		Size:           protocol.Size{Cols: 120, Rows: 40},
+		ScrollbackSize: 2000,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create terminal: %v", err)
+	}
+
+	attach, err := client.Attach(ctx, created.TerminalID, string(ModeCollaborator))
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	stream, stop := client.Stream(attach.Channel)
+	defer stop()
+	if err := client.StreamReady(ctx, attach.Channel); err != nil {
+		t.Fatalf("stream ready: %v", err)
+	}
+
+	start := time.Now()
+	var stats terminalStressProtocolStreamStats
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("timed out after %s waiting for stress attach; stats=%+v: %v", timeout, stats, ctx.Err())
+		case frame, ok := <-stream:
+			if !ok {
+				t.Fatalf("stream closed before terminal closed; stats=%+v", stats)
+			}
+			stats.observe(t, frame)
+			if frame.Type == protocol.TypeScreenUpdate {
+				if err := client.StreamReady(ctx, attach.Channel); err != nil {
+					t.Fatalf("stream ready: %v", err)
+				}
+			}
+			if frame.Type == protocol.TypeClosed {
+				goto done
+			}
+		}
+	}
+
+done:
+	elapsed := time.Since(start)
+	afterStream := takeDaemonResidencySnapshot(t, "terminal_stress_attach_after_stream")
+	snap, err := client.Snapshot(context.Background(), created.TerminalID, 0, 2000)
+	if err != nil {
+		t.Fatalf("snapshot terminal: %v", err)
+	}
+	afterSnapshot := takeDaemonResidencySnapshot(t, "terminal_stress_attach_after_snapshot")
+	logDaemonResidencySnapshot(t, before)
+	logDaemonResidencySnapshot(t, afterStream)
+	logDaemonResidencySnapshot(t, afterSnapshot)
+	t.Logf("terminal_stress_attach lines=%d elapsed=%s frames=%d screen_updates=%d screen_bytes=%d bootstrap=%d resizes=%d sync_lost=%d decoded_ops=%d scrollback_appends=%d snapshot_scrollback=%d screen_rows=%d",
+		lines,
+		elapsed,
+		stats.frames,
+		stats.screenUpdates,
+		stats.screenUpdateBytes,
+		stats.bootstrapDone,
+		stats.resizes,
+		stats.syncLost,
+		stats.decodedOps,
+		stats.scrollbackAppends,
+		len(snap.Scrollback),
+		len(snap.Screen.Cells),
+	)
+	logPerfTraceTop(t, recorder.Snapshot(), 24)
+}
+
 func takeDaemonResidencySnapshot(t *testing.T, label string) daemonResidencySnapshot {
 	t.Helper()
 	goruntime.GC()
@@ -192,13 +312,33 @@ func takeDaemonResidencySnapshot(t *testing.T, label string) daemonResidencySnap
 	var mem goruntime.MemStats
 	goruntime.ReadMemStats(&mem)
 	return daemonResidencySnapshot{
-		Label:       label,
-		RSSKB:       currentDaemonRSSKB(t),
-		HeapAlloc:   mem.HeapAlloc,
-		HeapObjects: mem.HeapObjects,
-		NumGC:       mem.NumGC,
-		Goroutines:  goruntime.NumGoroutine(),
+		Label:        label,
+		RSSKB:        currentDaemonRSSKB(t),
+		HeapAlloc:    mem.HeapAlloc,
+		HeapSys:      mem.HeapSys,
+		HeapIdle:     mem.HeapIdle,
+		HeapReleased: mem.HeapReleased,
+		HeapObjects:  mem.HeapObjects,
+		Sys:          mem.Sys,
+		NumGC:        mem.NumGC,
+		Goroutines:   goruntime.NumGoroutine(),
 	}
+}
+
+func logDaemonResidencySnapshot(t *testing.T, snap daemonResidencySnapshot) {
+	t.Helper()
+	t.Logf("%s rss_kb=%d heap_alloc=%d heap_sys=%d heap_idle=%d heap_released=%d heap_objects=%d sys=%d num_gc=%d goroutines=%d",
+		snap.Label,
+		snap.RSSKB,
+		snap.HeapAlloc,
+		snap.HeapSys,
+		snap.HeapIdle,
+		snap.HeapReleased,
+		snap.HeapObjects,
+		snap.Sys,
+		snap.NumGC,
+		snap.Goroutines,
+	)
 }
 
 type terminalStressStreamStats struct {
@@ -210,6 +350,67 @@ type terminalStressStreamStats struct {
 	syncLost          int
 	decodedOps        int
 	scrollbackAppends int
+}
+
+type terminalStressProtocolStreamStats struct {
+	frames            int
+	screenUpdates     int
+	screenUpdateBytes int
+	bootstrapDone     int
+	resizes           int
+	syncLost          int
+	closed            int
+	decodedOps        int
+	scrollbackAppends int
+}
+
+func (s *terminalStressProtocolStreamStats) observe(t *testing.T, frame protocol.StreamFrame) {
+	t.Helper()
+	s.frames++
+	switch frame.Type {
+	case protocol.TypeScreenUpdate:
+		s.screenUpdates++
+		s.screenUpdateBytes += len(frame.Payload)
+		update, err := protocol.DecodeScreenUpdatePayload(frame.Payload)
+		if err != nil {
+			t.Fatalf("decode screen update: %v", err)
+		}
+		s.decodedOps += len(update.Ops)
+		s.scrollbackAppends += len(update.ScrollbackAppend)
+	case protocol.TypeBootstrapDone:
+		s.bootstrapDone++
+	case protocol.TypeResize:
+		s.resizes++
+	case protocol.TypeSyncLost:
+		s.syncLost++
+	case protocol.TypeClosed:
+		s.closed++
+	}
+}
+
+func logPerfTraceTop(t *testing.T, snapshot perftrace.Snapshot, limit int) {
+	t.Helper()
+	if limit <= 0 {
+		limit = len(snapshot.Events)
+	}
+	events := append([]perftrace.EventSnapshot(nil), snapshot.Events...)
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].TotalMs > events[j].TotalMs
+	})
+	for i, event := range events {
+		if i >= limit {
+			return
+		}
+		t.Logf("perftrace[%02d] name=%s count=%d bytes=%d total_ms=%.2f avg_ms=%.4f max_ms=%.2f",
+			i,
+			event.Name,
+			event.Count,
+			event.Bytes,
+			event.TotalMs,
+			event.AverageMs,
+			event.MaxMs,
+		)
+	}
 }
 
 func (s *terminalStressStreamStats) observe(t *testing.T, msg StreamMessage) {

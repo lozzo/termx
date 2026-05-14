@@ -276,7 +276,21 @@ func (e *Emulator) Write(p []byte) (n int, err error) {
 		return 0, io.ErrClosedPipe
 	}
 
-	for i := range p {
+	if e.tryFastSGRText(p) {
+		return len(p), nil
+	}
+
+	for i := 0; i < len(p); {
+		if e.canFastPrintASCII() && isPrintableASCII(p[i]) {
+			start := i
+			i++
+			for i < len(p) && isPrintableASCII(p[i]) {
+				i++
+			}
+			e.handleASCIIPrintRun(p[start:i])
+			e.lastState = parser.GroundState
+			continue
+		}
 		e.parser.Advance(p[i])
 		state := e.parser.State()
 		// flush grapheme if we transitioned to a non-utf8 state or we have
@@ -287,8 +301,21 @@ func (e *Emulator) Write(p []byte) (n int, err error) {
 			}
 		}
 		e.lastState = state
+		i++
 	}
 	return len(p), nil
+}
+
+func (e *Emulator) canFastPrintASCII() bool {
+	return e != nil &&
+		e.parser.State() == parser.GroundState &&
+		len(e.grapheme) == 0 &&
+		e.gsingle == 0 &&
+		e.charsets[e.gl] == nil
+}
+
+func isPrintableASCII(b byte) bool {
+	return b >= ansi.SP && b < ansi.DEL
 }
 
 // WriteWithDamage writes data to the terminal output buffer and returns the
@@ -298,6 +325,23 @@ func (e *Emulator) WriteWithDamage(p []byte) (n int, err error, damages []Damage
 		return 0, io.ErrClosedPipe, nil
 	}
 	recorder := &screenDamageRecorder{}
+	e.scrs[0].damage = recorder
+	e.scrs[1].damage = recorder
+	defer func() {
+		e.scrs[0].damage = nil
+		e.scrs[1].damage = nil
+	}()
+	n, err = e.Write(p)
+	return n, err, recorder.snapshot()
+}
+
+// WriteWithScrollbackDamage writes data to the terminal output buffer and only
+// records rows that leave the visible screen and enter scrollback.
+func (e *Emulator) WriteWithScrollbackDamage(p []byte) (n int, err error, damages []Damage) {
+	if e.closed {
+		return 0, io.ErrClosedPipe, nil
+	}
+	recorder := &screenDamageRecorder{scrollbackOnly: true}
 	e.scrs[0].damage = recorder
 	e.scrs[1].damage = recorder
 	defer func() {
@@ -535,6 +579,12 @@ func (e *Emulator) SetScreenLineWrapped(y int, wrapped bool) {
 // SetScrollbackSize sets the maximum number of lines in the scrollback buffer.
 func (e *Emulator) SetScrollbackSize(maxLines int) {
 	e.scrs[0].SetScrollbackSize(maxLines)
+}
+
+// DisableScrollback disables storage of main-screen scrollback rows. Damage
+// recording can still observe rows as they leave the visible screen.
+func (e *Emulator) DisableScrollback() {
+	e.scrs[0].SetScrollback(nil)
 }
 
 // ClearScrollback clears the scrollback buffer.

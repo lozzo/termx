@@ -480,6 +480,19 @@ func (c *Client) Resize(ctx context.Context, channel uint16, cols, rows uint16) 
 	return c.send(frame)
 }
 
+func (c *Client) StreamReady(ctx context.Context, channel uint16) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	frame, err := EncodeFrame(channel, TypeStreamReady, nil)
+	if err != nil {
+		return err
+	}
+	return c.send(frame)
+}
+
 func (c *Client) ResizeRequest(ctx context.Context, terminalID string, cols, rows uint16) error {
 	return c.doRequest(ctx, "resize", ResizeParams{
 		TerminalID: terminalID,

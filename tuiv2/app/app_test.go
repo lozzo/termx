@@ -4357,7 +4357,7 @@ func (c *recordingBridgeClient) GridViewport(_ context.Context, terminalID strin
 	return &protocol.GridViewport{
 		TerminalID:           terminalID,
 		Size:                 snapshot.Size,
-		Rows:                 cloneProtocolRows(snapshot.Scrollback),
+		Rows:                 protocol.CloneCompactRows(snapshot.Scrollback),
 		ScrollbackOffset:     snapshot.ScrollbackOffset,
 		ScrollbackLimit:      limit,
 		ScrollbackTotal:      snapshot.ScrollbackTotal,
@@ -4388,6 +4388,8 @@ func (c *recordingBridgeClient) Resize(_ context.Context, channel uint16, cols, 
 	c.resizes = append(c.resizes, resizeCall{channel: channel, cols: cols, rows: rows})
 	return nil
 }
+
+func (c *recordingBridgeClient) StreamReady(context.Context, uint16) error { return nil }
 
 func (c *recordingBridgeClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 	ch := make(chan protocol.StreamFrame)

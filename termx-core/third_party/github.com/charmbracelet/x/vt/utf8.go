@@ -71,6 +71,48 @@ func (e *Emulator) handleASCIIPrint(b byte) {
 	e.scr.setCursor(x, y, false)
 }
 
+func (e *Emulator) handleASCIIPrintRun(data []byte) {
+	if len(data) == 0 {
+		return
+	}
+	awm := e.isModeSet(ansi.ModeAutoWrap)
+	style := e.scr.cursorPen()
+	link := e.scr.cursorLink()
+	for len(data) > 0 {
+		x, y := e.scr.CursorPosition()
+		if e.atPhantom && awm {
+			e.scr.SetLineWrapped(y, true)
+			e.index()
+			_, y = e.scr.CursorPosition()
+			x = 0
+		}
+
+		width := e.scr.Width()
+		if width <= 0 {
+			return
+		}
+		available := width - x
+		if available <= 0 {
+			e.atPhantom = awm
+			if !awm {
+				e.scr.setCursor(max(0, width-1), y, false)
+			}
+			continue
+		}
+		count := min(len(data), available)
+		e.scr.SetASCIICells(x, y, data[:count], style, link)
+		e.lastChar = rune(data[count-1])
+		data = data[count:]
+		e.atPhantom = awm && x+count >= width
+		if e.atPhantom {
+			x = width - 1
+		} else {
+			x += count
+		}
+		e.scr.setCursor(x, y, false)
+	}
+}
+
 // flushGrapheme flushes the current grapheme buffer, if any, and handles the
 // grapheme as a single unit.
 func (e *Emulator) flushGrapheme() {

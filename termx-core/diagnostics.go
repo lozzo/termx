@@ -144,6 +144,8 @@ func protocolFrameTypeName(typ uint8) string {
 		return "bootstrap_done"
 	case protocol.TypeScreenUpdate:
 		return "screen_update"
+	case protocol.TypeStreamReady:
+		return "stream_ready"
 	case protocol.TypeSyncLost:
 		return "sync_lost"
 	case protocol.TypeClosed:

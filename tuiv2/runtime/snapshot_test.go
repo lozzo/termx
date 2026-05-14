@@ -55,11 +55,11 @@ func TestApplyScreenUpdateSnapshotScrollbackTrimAppendDoesNotMutatePreviousSnaps
 	current := &protocol.Snapshot{
 		TerminalID: "term-1",
 		Size:       protocol.Size{Cols: 5, Rows: 2},
-		Scrollback: [][]protocol.Cell{
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
 			snapshotTestRow("hist1"),
 			snapshotTestRow("hist2"),
 			snapshotTestRow("hist3"),
-		},
+		}),
 		ScrollbackTimestamps: []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second)},
 		ScrollbackRowKinds:   []string{"a", "b", "c"},
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
@@ -87,16 +87,16 @@ func TestApplyScreenUpdateSnapshotScrollbackTrimAppendDoesNotMutatePreviousSnaps
 		t.Fatalf("expected previous scrollback snapshot to remain unchanged, got %#v want %#v", current, previous)
 	}
 	if got := []string{
-		rowToString(next.Scrollback[0]),
-		rowToString(next.Scrollback[1]),
-		rowToString(next.Scrollback[2]),
+		compactRowToString(next.Scrollback[0]),
+		compactRowToString(next.Scrollback[1]),
+		compactRowToString(next.Scrollback[2]),
 	}; !reflect.DeepEqual(got, []string{"hist2", "hist3", "hist4"}) {
 		t.Fatalf("unexpected next scrollback rows: %#v", got)
 	}
 	if got := []string{
-		rowToString(current.Scrollback[0]),
-		rowToString(current.Scrollback[1]),
-		rowToString(current.Scrollback[2]),
+		compactRowToString(current.Scrollback[0]),
+		compactRowToString(current.Scrollback[1]),
+		compactRowToString(current.Scrollback[2]),
 	}; !reflect.DeepEqual(got, []string{"hist1", "hist2", "hist3"}) {
 		t.Fatalf("expected previous scrollback rows to remain unchanged, got %#v", got)
 	}
@@ -195,9 +195,9 @@ func TestApplyScreenUpdateSnapshotFullReplaceBehaviorUnchanged(t *testing.T) {
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
 			snapshotTestRow("stale"),
 		}},
-		Scrollback: [][]protocol.Cell{
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
 			snapshotTestRow("old"),
-		},
+		}),
 		Cursor: protocol.CursorState{Visible: false},
 		Modes:  protocol.TerminalModes{AutoWrap: true},
 	}
@@ -226,7 +226,7 @@ func TestApplyScreenUpdateSnapshotFullReplaceBehaviorUnchanged(t *testing.T) {
 	if got := rowToString(next.Screen.Cells[0]); got != "fresh1" {
 		t.Fatalf("expected full replace screen to deep clone update rows, got %q", got)
 	}
-	if got := rowToString(next.Scrollback[0]); got != "tail1" {
+	if got := compactRowToString(next.Scrollback[0]); got != "tail1" {
 		t.Fatalf("expected full replace scrollback append to clone rows, got %q", got)
 	}
 	if len(next.Scrollback) != 1 {
@@ -462,4 +462,8 @@ func rowToString(row []protocol.Cell) string {
 		out = append(out, []rune(cell.Content)...)
 	}
 	return string(out)
+}
+
+func compactRowToString(row protocol.CompactRow) string {
+	return rowToString(row.DecodeCells())
 }

@@ -183,7 +183,7 @@ func snapshotRow(snapshot *protocol.Snapshot, rowIndex int) []protocol.Cell {
 		return nil
 	}
 	if rowIndex < len(snapshot.Scrollback) {
-		return snapshot.Scrollback[rowIndex]
+		return snapshot.Scrollback[rowIndex].DecodeCells()
 	}
 	rowIndex -= len(snapshot.Scrollback)
 	if rowIndex < 0 || rowIndex >= len(snapshot.Screen.Cells) {

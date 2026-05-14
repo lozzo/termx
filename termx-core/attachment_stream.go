@@ -21,15 +21,16 @@ type attachmentStreamPump struct {
 	sendFrame  func(uint16, uint8, []byte) error
 	logger     *slog.Logger
 
-	mu          sync.Mutex
-	cond        *sync.Cond
-	queue       []StreamMessage
-	queueBytes  int
-	inputClosed bool
-	suffixStart int
-	sentState   *streamScreenState
-	queueState  *streamScreenState
-	stats       attachmentPumpStats
+	mu             sync.Mutex
+	cond           *sync.Cond
+	queue          []StreamMessage
+	queueBytes     int
+	inputClosed    bool
+	readyMode      bool
+	screenCredit   bool
+	screenInFlight bool
+	screenDirty    bool
+	stats          attachmentPumpStats
 }
 
 func newAttachmentStreamPump(
@@ -44,20 +45,35 @@ func newAttachmentStreamPump(
 	logger *slog.Logger,
 ) *attachmentStreamPump {
 	pump := &attachmentStreamPump{
-		ctx:         ctx,
-		cancel:      cancel,
-		terminalID:  terminalID,
-		channel:     channel,
-		remote:      remote,
-		src:         src,
-		latest:      latest,
-		sendFrame:   sendFrame,
-		logger:      logger,
-		suffixStart: -1,
+		ctx:        ctx,
+		cancel:     cancel,
+		terminalID: terminalID,
+		channel:    channel,
+		remote:     remote,
+		src:        src,
+		latest:     latest,
+		sendFrame:  sendFrame,
+		logger:     logger,
 	}
 	pump.stats.lastLog = time.Now()
 	pump.cond = sync.NewCond(&pump.mu)
 	return pump
+}
+
+func (p *attachmentStreamPump) screenReady() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.readyMode = true
+	p.screenCredit = true
+	p.screenInFlight = false
+	if p.screenDirty && !p.hasQueuedScreenUpdateLocked() {
+		p.appendQueueMessageLocked(StreamMessage{Type: StreamScreenUpdate})
+	}
+	p.screenDirty = false
+	p.cond.Signal()
+	p.mu.Unlock()
 }
 
 type attachmentPumpStats struct {
@@ -180,105 +196,66 @@ func (p *attachmentStreamPump) enqueue(msg StreamMessage) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	nextState := p.applyMessageToQueueStateLocked(msg)
 	msgCountBefore := len(p.queue)
 	if msg.Type == StreamScreenUpdate {
-		if p.suffixStart < 0 || p.suffixStart > len(p.queue) {
-			p.suffixStart = len(p.queue)
+		if p.readyMode && len(msg.Payload) == 0 {
+			if p.screenInFlight || !p.screenCredit || p.hasQueuedScreenUpdateLocked() {
+				p.screenDirty = true
+				p.stats.coalescedFrames++
+				perftrace.Count("transport.stream.ready.coalesced_frames", 1)
+				return
+			}
 		}
-		if len(msg.Payload) == 0 && len(p.queue) > p.suffixStart {
-			perftrace.Count("transport.stream.backlog.coalesced_frames", len(p.queue)-p.suffixStart)
-			p.queue = p.queue[:p.suffixStart]
+		if len(msg.Payload) == 0 {
+			if removed := p.dropQueuedLatestScreenUpdatesLocked(); removed > 0 {
+				p.stats.coalescedFrames += removed
+				perftrace.Count("transport.stream.backlog.coalesced_frames", removed)
+			}
 		}
-		p.queue = append(p.queue, msg)
-		p.queueState = nextState
-		if p.shouldCollapseSuffixLocked() {
-			p.collapseSuffixLocked()
-		}
+		p.appendQueueMessageLocked(msg)
 	} else {
-		p.queue = append(p.queue, msg)
-		p.queueState = nextState
-		p.suffixStart = -1
+		p.appendQueueMessageLocked(msg)
 	}
 	p.queueBytes = estimateStreamQueueWireBytes(p.queue)
 	if len(p.queue) > msgCountBefore {
 		perftrace.Count("transport.stream.backlog.enqueued_frames", len(p.queue)-msgCountBefore)
 	}
-	p.recordEnqueuedLocked(msg)
 	p.cond.Signal()
 }
 
-func (p *attachmentStreamPump) applyMessageToQueueStateLocked(msg StreamMessage) *streamScreenState {
-	base := p.queueState
-	switch msg.Type {
-	case StreamScreenUpdate:
-		if len(msg.Payload) == 0 {
-			return base
-		}
-		update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
-		if err != nil {
-			return nil
-		}
-		return applyStreamScreenUpdateState(base, p.terminalID, update)
-	case StreamResize:
-		return resizeStreamScreenState(base, p.terminalID, msg.Cols, msg.Rows)
-	case StreamSyncLost:
-		return nil
-	default:
-		return base
-	}
+func (p *attachmentStreamPump) appendQueueMessageLocked(msg StreamMessage) {
+	p.queue = append(p.queue, msg)
+	p.queueBytes = estimateStreamQueueWireBytes(p.queue)
+	p.recordEnqueuedLocked(msg)
 }
 
-func (p *attachmentStreamPump) shouldCollapseSuffixLocked() bool {
-	if p.suffixStart < 0 || p.suffixStart >= len(p.queue) {
-		return false
+func (p *attachmentStreamPump) hasQueuedScreenUpdateLocked() bool {
+	for _, msg := range p.queue {
+		if msg.Type == StreamScreenUpdate {
+			return true
+		}
 	}
-	suffixLen := len(p.queue) - p.suffixStart
-	if suffixLen < 2 || p.queueState == nil || p.queueState.snapshot == nil {
-		return false
-	}
-	return true
+	return false
 }
 
-func (p *attachmentStreamPump) collapseSuffixLocked() {
-	if p.suffixStart < 0 || p.suffixStart >= len(p.queue) || p.queueState == nil || p.queueState.snapshot == nil {
-		return
+func (p *attachmentStreamPump) dropQueuedLatestScreenUpdatesLocked() int {
+	if p == nil || len(p.queue) == 0 {
+		return 0
 	}
-	suffixLen := len(p.queue) - p.suffixStart
-	if suffixLen < 2 {
-		return
+	removed := 0
+	dst := p.queue[:0]
+	for _, msg := range p.queue {
+		if msg.Type == StreamScreenUpdate && len(msg.Payload) == 0 {
+			removed++
+			continue
+		}
+		dst = append(dst, msg)
 	}
-	payload, ok := encodeCollapsedScreenStatePayload(p.queueState)
-	if !ok {
-		return
+	for i := len(dst); i < len(p.queue); i++ {
+		p.queue[i] = StreamMessage{}
 	}
-	merged := StreamMessage{Type: StreamScreenUpdate, Payload: payload}
-	beforeBytes := estimateStreamQueueWireBytes(p.queue[p.suffixStart:])
-	p.queue = append(append([]StreamMessage(nil), p.queue[:p.suffixStart]...), merged)
-	afterBytes := estimateStreamQueueWireBytes(p.queue[p.suffixStart:])
-	perftrace.Count("transport.stream.backlog.coalesced_frames", suffixLen-1)
-	if p.queueState.snapshot.Modes.AlternateScreen {
-		perftrace.Count("transport.stream.backlog.collapse.alternate", suffixLen)
-	} else {
-		perftrace.Count("transport.stream.backlog.collapse.normal", suffixLen)
-	}
-	if beforeBytes > afterBytes {
-		perftrace.Count("transport.stream.backlog.saved_bytes", beforeBytes-afterBytes)
-	}
-	p.stats.coalescedFrames += suffixLen - 1
-	if p.logger != nil {
-		p.logger.Warn(
-			"termx attachment stream backlog collapsed",
-			"terminal_id", p.terminalID,
-			"remote", p.remote,
-			"channel", p.channel,
-			"suffix_frames", suffixLen,
-			"before_bytes", beforeBytes,
-			"after_bytes", afterBytes,
-			"alternate_screen", p.queueState.snapshot.Modes.AlternateScreen,
-		)
-	}
-	p.suffixStart = len(p.queue) - 1
+	p.queue = dst
+	return removed
 }
 
 func (p *attachmentStreamPump) recordEnqueuedLocked(msg StreamMessage) {
@@ -398,23 +375,18 @@ func (p *attachmentStreamPump) next() (StreamMessage, bool) {
 	defer p.mu.Unlock()
 	for {
 		if len(p.queue) > 0 {
-			msg := p.queue[0]
-			p.queue = append([]StreamMessage(nil), p.queue[1:]...)
-			p.advanceSentStateLocked(msg)
-			if p.suffixStart >= 0 {
-				switch {
-				case p.suffixStart > 0:
-					p.suffixStart--
-				case p.suffixStart == 0:
-					if len(p.queue) > 0 && p.queue[0].Type == StreamScreenUpdate {
-						p.suffixStart = 0
-					} else {
-						p.suffixStart = -1
-					}
+			index := p.sendableQueueIndexLocked()
+			if index < 0 {
+				if p.inputClosed || p.ctx.Err() != nil {
+					return StreamMessage{}, false
 				}
+				p.cond.Wait()
+				continue
 			}
-			if len(p.queue) == 0 {
-				p.queueState = cloneStreamScreenState(p.sentState)
+			msg := p.removeQueueMessageLocked(index)
+			if p.readyMode && msg.Type == StreamScreenUpdate {
+				p.screenCredit = false
+				p.screenInFlight = true
 			}
 			p.queueBytes = estimateStreamQueueWireBytes(p.queue)
 			return msg, true
@@ -426,23 +398,28 @@ func (p *attachmentStreamPump) next() (StreamMessage, bool) {
 	}
 }
 
-func (p *attachmentStreamPump) advanceSentStateLocked(msg StreamMessage) {
-	switch msg.Type {
-	case StreamScreenUpdate:
-		if len(msg.Payload) == 0 {
-			return
-		}
-		update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
-		if err != nil {
-			p.sentState = nil
-			return
-		}
-		p.sentState = applyStreamScreenUpdateState(p.sentState, p.terminalID, update)
-	case StreamResize:
-		p.sentState = resizeStreamScreenState(p.sentState, p.terminalID, msg.Cols, msg.Rows)
-	case StreamSyncLost:
-		p.sentState = nil
+func (p *attachmentStreamPump) sendableQueueIndexLocked() int {
+	if len(p.queue) == 0 {
+		return -1
 	}
+	if !p.readyMode || p.queue[0].Type != StreamScreenUpdate || p.screenCredit {
+		return 0
+	}
+	for i := 1; i < len(p.queue); i++ {
+		if p.queue[i].Type != StreamScreenUpdate {
+			return i
+		}
+	}
+	return -1
+}
+
+func (p *attachmentStreamPump) removeQueueMessageLocked(index int) StreamMessage {
+	msg := p.queue[index]
+	copy(p.queue[index:], p.queue[index+1:])
+	last := len(p.queue) - 1
+	p.queue[last] = StreamMessage{}
+	p.queue = p.queue[:last]
+	return msg
 }
 
 func estimateStreamQueueWireBytes(queue []StreamMessage) int {

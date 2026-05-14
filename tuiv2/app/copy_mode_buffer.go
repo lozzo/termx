@@ -72,7 +72,7 @@ func (b copyModeBuffer) row(row int) []protocol.Cell {
 		return nil
 	}
 	if row < len(b.snapshot.Scrollback) {
-		return b.snapshot.Scrollback[row]
+		return b.snapshot.Scrollback[row].DecodeCells()
 	}
 	row -= len(b.snapshot.Scrollback)
 	if row < 0 || row >= len(b.snapshot.Screen.Cells) {

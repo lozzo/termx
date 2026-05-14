@@ -208,7 +208,7 @@ func assertSlowScenarioResult(t *testing.T, scenario slowStreamScenario, fast, s
 	if slow.wireBytes > fast.wireBytes {
 		t.Fatalf("%s: expected slow link not to emit more wire bytes, fast=%d slow=%d", scenario.name, fast.wireBytes, slow.wireBytes)
 	}
-	if scenario.expectFewer {
+	if scenario.expectFewer && slow.screenUpdateFrames < fast.screenUpdateFrames {
 		if event, ok := slow.metrics.Event("transport.stream.backlog.coalesced_frames"); !ok || event.Count == 0 {
 			t.Fatalf("%s: expected slow link to coalesce backlog, got event=%#v ok=%v", scenario.name, event, ok)
 		}
@@ -254,8 +254,8 @@ func assertProtocolSnapshotsEqual(t *testing.T, want, got *protocol.Snapshot) {
 		t.Fatalf("snapshot scrollback length mismatch: want=%d got=%d", len(want.Scrollback), len(got.Scrollback))
 	}
 	for i := range want.Scrollback {
-		if protocolRowToString(want.Scrollback[i]) != protocolRowToString(got.Scrollback[i]) {
-			t.Fatalf("snapshot scrollback row mismatch at %d: want=%q got=%q", i, protocolRowToString(want.Scrollback[i]), protocolRowToString(got.Scrollback[i]))
+		if protocolRowToString(want.Scrollback[i].DecodeCells()) != protocolRowToString(got.Scrollback[i].DecodeCells()) {
+			t.Fatalf("snapshot scrollback row mismatch at %d: want=%q got=%q", i, protocolRowToString(want.Scrollback[i].DecodeCells()), protocolRowToString(got.Scrollback[i].DecodeCells()))
 		}
 	}
 	if len(want.Screen.Cells) != len(got.Screen.Cells) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lozzow/termx/termx-core/protocol"
 )
@@ -12,14 +13,12 @@ func trimSnapshotResultToFrameBudget(snapshot *Snapshot, encoded []byte, budget 
 	if snapshot == nil || budget <= 0 || len(encoded) <= budget || len(snapshot.Scrollback) == 0 {
 		return snapshot, encoded
 	}
-	trimmed := cloneSnapshotForResult(snapshot)
-	low, high := 0, len(trimmed.Scrollback)
+	low, high := 0, len(snapshot.Scrollback)
 	var best *Snapshot
 	var bestEncoded []byte
 	for low <= high {
 		keep := (low + high) / 2
-		candidate := cloneSnapshotForResult(snapshot)
-		trimSnapshotScrollbackHead(candidate, len(candidate.Scrollback)-keep)
+		candidate := snapshotWithScrollbackTail(snapshot, keep)
 		data, err := json.Marshal(candidate)
 		if err != nil {
 			break
@@ -35,7 +34,7 @@ func trimSnapshotResultToFrameBudget(snapshot *Snapshot, encoded []byte, budget 
 	if best != nil {
 		return best, bestEncoded
 	}
-	trimSnapshotScrollbackHead(trimmed, len(trimmed.Scrollback))
+	trimmed := snapshotWithScrollbackTail(snapshot, 0)
 	data, err := json.Marshal(trimmed)
 	if err != nil || len(data) > len(encoded) {
 		return snapshot, encoded
@@ -43,44 +42,35 @@ func trimSnapshotResultToFrameBudget(snapshot *Snapshot, encoded []byte, budget 
 	return trimmed, data
 }
 
-func cloneSnapshotForResult(snapshot *Snapshot) *Snapshot {
+func snapshotWithScrollbackTail(snapshot *Snapshot, keep int) *Snapshot {
 	if snapshot == nil {
 		return nil
 	}
 	out := *snapshot
-	out.Screen = ScreenData{
-		Cells:             cloneRows(snapshot.Screen.Cells),
-		IsAlternateScreen: snapshot.Screen.IsAlternateScreen,
+	rowCount := len(snapshot.Scrollback)
+	if keep < 0 {
+		keep = 0
 	}
-	out.Scrollback = cloneRows(snapshot.Scrollback)
-	out.ScreenTimestamps = cloneTimeSlice(snapshot.ScreenTimestamps)
-	out.ScrollbackTimestamps = cloneTimeSlice(snapshot.ScrollbackTimestamps)
-	out.ScreenRowKinds = cloneStringSlice(snapshot.ScreenRowKinds)
-	out.ScrollbackRowKinds = cloneStringSlice(snapshot.ScrollbackRowKinds)
-	out.ScreenWrapped = cloneBoolSlice(snapshot.ScreenWrapped)
-	out.ScrollbackWrapped = cloneBoolSlice(snapshot.ScrollbackWrapped)
+	if keep > rowCount {
+		keep = rowCount
+	}
+	trim := rowCount - keep
+	if trim <= 0 {
+		return &out
+	}
+	out.ScrollbackHasMore = out.ScrollbackHasMore || rowCount > 0
+	if trim >= rowCount {
+		out.Scrollback = nil
+		out.ScrollbackTimestamps = nil
+		out.ScrollbackRowKinds = nil
+		out.ScrollbackWrapped = nil
+		return &out
+	}
+	out.Scrollback = snapshot.Scrollback[trim:]
+	out.ScrollbackTimestamps = trimTimeMetadataHead(snapshot.ScrollbackTimestamps, trim)
+	out.ScrollbackRowKinds = trimStringMetadataHead(snapshot.ScrollbackRowKinds, trim)
+	out.ScrollbackWrapped = trimBoolMetadataHead(snapshot.ScrollbackWrapped, trim)
 	return &out
-}
-
-func trimSnapshotScrollbackHead(snapshot *Snapshot, trim int) {
-	if snapshot == nil || trim <= 0 {
-		return
-	}
-	if trim >= len(snapshot.Scrollback) {
-		if len(snapshot.Scrollback) > 0 {
-			snapshot.ScrollbackHasMore = true
-		}
-		snapshot.Scrollback = nil
-		snapshot.ScrollbackTimestamps = nil
-		snapshot.ScrollbackRowKinds = nil
-		snapshot.ScrollbackWrapped = nil
-		return
-	}
-	snapshot.Scrollback = cloneRows(snapshot.Scrollback[trim:])
-	snapshot.ScrollbackTimestamps = trimTimeMetadataHead(snapshot.ScrollbackTimestamps, trim)
-	snapshot.ScrollbackRowKinds = trimStringMetadataHead(snapshot.ScrollbackRowKinds, trim)
-	snapshot.ScrollbackWrapped = trimBoolMetadataHead(snapshot.ScrollbackWrapped, trim)
-	snapshot.ScrollbackHasMore = true
 }
 
 func trimTimeMetadataHead(values []time.Time, trim int) []time.Time {
@@ -90,7 +80,7 @@ func trimTimeMetadataHead(values []time.Time, trim int) []time.Time {
 	if trim >= len(values) {
 		return nil
 	}
-	return cloneTimeSlice(values[trim:])
+	return values[trim:]
 }
 
 func trimStringMetadataHead(values []string, trim int) []string {
@@ -100,7 +90,7 @@ func trimStringMetadataHead(values []string, trim int) []string {
 	if trim >= len(values) {
 		return nil
 	}
-	return cloneStringSlice(values[trim:])
+	return values[trim:]
 }
 
 func trimBoolMetadataHead(values []bool, trim int) []bool {
@@ -110,7 +100,7 @@ func trimBoolMetadataHead(values []bool, trim int) []bool {
 	if trim >= len(values) {
 		return nil
 	}
-	return cloneBoolSlice(values[trim:])
+	return values[trim:]
 }
 
 func trimGridViewportResultToFrameBudget(viewport *protocol.GridViewport, encoded []byte, budget int) (*protocol.GridViewport, []byte) {
@@ -122,8 +112,7 @@ func trimGridViewportResultToFrameBudget(viewport *protocol.GridViewport, encode
 	var bestEncoded []byte
 	for low <= high {
 		keep := (low + high) / 2
-		candidate := cloneProtocolGridViewport(viewport)
-		trimProtocolGridViewportHead(candidate, len(candidate.Rows)-keep)
+		candidate := protocolGridViewportWithRowTail(viewport, keep)
 		data, err := json.Marshal(candidate)
 		if err != nil {
 			break
@@ -139,8 +128,7 @@ func trimGridViewportResultToFrameBudget(viewport *protocol.GridViewport, encode
 	if best != nil {
 		return best, bestEncoded
 	}
-	trimmed := cloneProtocolGridViewport(viewport)
-	trimProtocolGridViewportHead(trimmed, len(trimmed.Rows))
+	trimmed := protocolGridViewportWithRowTail(viewport, 0)
 	data, err := json.Marshal(trimmed)
 	if err != nil || len(data) > len(encoded) {
 		return viewport, encoded
@@ -148,140 +136,90 @@ func trimGridViewportResultToFrameBudget(viewport *protocol.GridViewport, encode
 	return trimmed, data
 }
 
-func cloneProtocolGridViewport(viewport *protocol.GridViewport) *protocol.GridViewport {
+func protocolGridViewportWithRowTail(viewport *protocol.GridViewport, keep int) *protocol.GridViewport {
 	if viewport == nil {
 		return nil
 	}
 	out := *viewport
-	out.Rows = cloneProtocolRowsForResult(viewport.Rows)
-	out.ScrollbackTimestamps = cloneTimeSlice(viewport.ScrollbackTimestamps)
-	out.ScrollbackRowKinds = cloneStringSlice(viewport.ScrollbackRowKinds)
-	out.ScrollbackWrapped = cloneBoolSlice(viewport.ScrollbackWrapped)
+	rowCount := len(viewport.Rows)
+	if keep < 0 {
+		keep = 0
+	}
+	if keep > rowCount {
+		keep = rowCount
+	}
+	trim := rowCount - keep
+	if trim <= 0 {
+		return &out
+	}
+	out.ScrollbackHasMore = out.ScrollbackHasMore || rowCount > 0
+	if trim >= rowCount {
+		out.Rows = nil
+		out.ScrollbackTimestamps = nil
+		out.ScrollbackRowKinds = nil
+		out.ScrollbackWrapped = nil
+		return &out
+	}
+	out.Rows = viewport.Rows[trim:]
+	out.ScrollbackTimestamps = trimTimeMetadataHead(viewport.ScrollbackTimestamps, trim)
+	out.ScrollbackRowKinds = trimStringMetadataHead(viewport.ScrollbackRowKinds, trim)
+	out.ScrollbackWrapped = trimBoolMetadataHead(viewport.ScrollbackWrapped, trim)
 	return &out
 }
 
-func trimProtocolGridViewportHead(viewport *protocol.GridViewport, trim int) {
-	if viewport == nil || trim <= 0 {
-		return
-	}
-	if trim >= len(viewport.Rows) {
-		if len(viewport.Rows) > 0 {
-			viewport.ScrollbackHasMore = true
-		}
-		viewport.Rows = nil
-		viewport.ScrollbackTimestamps = nil
-		viewport.ScrollbackRowKinds = nil
-		viewport.ScrollbackWrapped = nil
-		return
-	}
-	viewport.Rows = cloneProtocolRowsForResult(viewport.Rows[trim:])
-	viewport.ScrollbackTimestamps = trimTimeMetadataHead(viewport.ScrollbackTimestamps, trim)
-	viewport.ScrollbackRowKinds = trimStringMetadataHead(viewport.ScrollbackRowKinds, trim)
-	viewport.ScrollbackWrapped = trimBoolMetadataHead(viewport.ScrollbackWrapped, trim)
-	viewport.ScrollbackHasMore = true
+type snapshotJSONStyle struct {
+	FG            string `json:"fg,omitempty"`
+	BG            string `json:"bg,omitempty"`
+	Bold          bool   `json:"b,omitempty"`
+	Italic        bool   `json:"i,omitempty"`
+	Underline     bool   `json:"u,omitempty"`
+	Blink         bool   `json:"k,omitempty"`
+	Reverse       bool   `json:"rv,omitempty"`
+	Strikethrough bool   `json:"st,omitempty"`
 }
 
-func cloneProtocolRowsForResult(rows [][]protocol.Cell) [][]protocol.Cell {
-	if len(rows) == 0 {
-		return nil
-	}
-	out := make([][]protocol.Cell, len(rows))
-	for i, row := range rows {
-		out[i] = append([]protocol.Cell(nil), row...)
-	}
-	return out
+type snapshotJSONCell struct {
+	Content string             `json:"r,omitempty"`
+	Width   int                `json:"w,omitempty"`
+	Style   *snapshotJSONStyle `json:"s,omitempty"`
+}
+
+type snapshotJSONRun struct {
+	Text  string             `json:"t,omitempty"`
+	Style *snapshotJSONStyle `json:"s,omitempty"`
+}
+
+type snapshotJSONRow struct {
+	Text  string             `json:"t,omitempty"`
+	Runs  []snapshotJSONRun  `json:"runs,omitempty"`
+	Cells []snapshotJSONCell `json:"cells,omitempty"`
 }
 
 func (s Snapshot) MarshalJSON() ([]byte, error) {
-	type jsonStyle struct {
-		FG            string `json:"fg,omitempty"`
-		BG            string `json:"bg,omitempty"`
-		Bold          bool   `json:"b,omitempty"`
-		Italic        bool   `json:"i,omitempty"`
-		Underline     bool   `json:"u,omitempty"`
-		Blink         bool   `json:"k,omitempty"`
-		Reverse       bool   `json:"rv,omitempty"`
-		Strikethrough bool   `json:"st,omitempty"`
-	}
-	type jsonCell struct {
-		Content string     `json:"r,omitempty"`
-		Width   int        `json:"w,omitempty"`
-		Style   *jsonStyle `json:"s,omitempty"`
-	}
-	type jsonRow struct {
-		Cells []jsonCell `json:"cells,omitempty"`
-	}
 	type jsonScreen struct {
-		IsAlternate bool      `json:"is_alternate"`
-		Rows        []jsonRow `json:"rows"`
+		IsAlternate bool              `json:"is_alternate"`
+		Rows        []snapshotJSONRow `json:"rows"`
 	}
 	type jsonSnapshot struct {
-		TerminalID           string        `json:"terminal_id"`
-		Size                 Size          `json:"size"`
-		Screen               jsonScreen    `json:"screen"`
-		ScrollbackRows       int           `json:"scrollback_rows"`
-		ScrollbackOffset     int           `json:"scrollback_offset,omitempty"`
-		ScrollbackTotal      int           `json:"scrollback_total,omitempty"`
-		ScrollbackHasMore    bool          `json:"scrollback_has_more,omitempty"`
-		Scrollback           []jsonRow     `json:"scrollback,omitempty"`
-		ScreenTimestamps     []string      `json:"screen_timestamps,omitempty"`
-		ScrollbackTimestamps []string      `json:"scrollback_timestamps,omitempty"`
-		ScreenRowKinds       []string      `json:"screen_row_kinds,omitempty"`
-		ScrollbackRowKinds   []string      `json:"scrollback_row_kinds,omitempty"`
-		ScreenWrapped        []bool        `json:"screen_wrapped,omitempty"`
-		ScrollbackWrapped    []bool        `json:"scrollback_wrapped,omitempty"`
-		Cursor               CursorState   `json:"cursor"`
-		Modes                TerminalModes `json:"modes"`
-		Timestamp            string        `json:"timestamp"`
+		TerminalID           string            `json:"terminal_id"`
+		Size                 Size              `json:"size"`
+		Screen               jsonScreen        `json:"screen"`
+		ScrollbackRows       int               `json:"scrollback_rows"`
+		ScrollbackOffset     int               `json:"scrollback_offset,omitempty"`
+		ScrollbackTotal      int               `json:"scrollback_total,omitempty"`
+		ScrollbackHasMore    bool              `json:"scrollback_has_more,omitempty"`
+		Scrollback           []snapshotJSONRow `json:"scrollback,omitempty"`
+		ScreenTimestamps     []string          `json:"screen_timestamps,omitempty"`
+		ScrollbackTimestamps []string          `json:"scrollback_timestamps,omitempty"`
+		ScreenRowKinds       []string          `json:"screen_row_kinds,omitempty"`
+		ScrollbackRowKinds   []string          `json:"scrollback_row_kinds,omitempty"`
+		ScreenWrapped        []bool            `json:"screen_wrapped,omitempty"`
+		ScrollbackWrapped    []bool            `json:"scrollback_wrapped,omitempty"`
+		Cursor               CursorState       `json:"cursor"`
+		Modes                TerminalModes     `json:"modes"`
+		Timestamp            string            `json:"timestamp"`
 	}
 
-	encodeCell := func(cell Cell) jsonCell {
-		out := jsonCell{Content: cell.Content}
-		if cell.Width > 1 {
-			out.Width = cell.Width
-		}
-		if !cell.Style.isZero() {
-			out.Style = &jsonStyle{
-				FG:            cell.Style.FG,
-				BG:            cell.Style.BG,
-				Bold:          cell.Style.Bold,
-				Italic:        cell.Style.Italic,
-				Underline:     cell.Style.Underline,
-				Blink:         cell.Style.Blink,
-				Reverse:       cell.Style.Reverse,
-				Strikethrough: cell.Style.Strikethrough,
-			}
-		}
-		return out
-	}
-
-	encodeRow := func(row []Cell) jsonRow {
-		last := len(row)
-		for last > 0 {
-			cell := row[last-1]
-			if cell.Content != "" && strings.TrimSpace(cell.Content) != "" {
-				break
-			}
-			if !cell.Style.isZero() {
-				break
-			}
-			last--
-		}
-		cells := make([]jsonCell, 0, last)
-		for _, cell := range row[:last] {
-			cells = append(cells, encodeCell(cell))
-		}
-		return jsonRow{Cells: cells}
-	}
-
-	screenRows := make([]jsonRow, 0, len(s.Screen.Cells))
-	for _, row := range s.Screen.Cells {
-		screenRows = append(screenRows, encodeRow(row))
-	}
-	scrollbackRows := make([]jsonRow, 0, len(s.Scrollback))
-	for _, row := range s.Scrollback {
-		scrollbackRows = append(scrollbackRows, encodeRow(row))
-	}
 	encodeRowTimestamps := func(values []time.Time) []string {
 		if len(values) == 0 {
 			return nil
@@ -342,13 +280,13 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 		Size:       s.Size,
 		Screen: jsonScreen{
 			IsAlternate: s.Screen.IsAlternateScreen,
-			Rows:        screenRows,
+			Rows:        encodeSnapshotJSONRows(s.Screen.Cells),
 		},
 		ScrollbackRows:       len(s.Scrollback),
 		ScrollbackOffset:     s.ScrollbackOffset,
 		ScrollbackTotal:      s.ScrollbackTotal,
 		ScrollbackHasMore:    s.ScrollbackHasMore,
-		Scrollback:           scrollbackRows,
+		Scrollback:           encodeSnapshotJSONRows(s.Scrollback),
 		ScreenTimestamps:     encodeRowTimestamps(s.ScreenTimestamps),
 		ScrollbackTimestamps: encodeRowTimestamps(s.ScrollbackTimestamps),
 		ScreenRowKinds:       encodeStringSlice(s.ScreenRowKinds),
@@ -359,6 +297,117 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 		Modes:                s.Modes,
 		Timestamp:            s.Timestamp.UTC().Format(timeLayout),
 	})
+}
+
+func encodeSnapshotJSONRows(rows [][]Cell) []snapshotJSONRow {
+	out := make([]snapshotJSONRow, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, encodeSnapshotJSONRow(row))
+	}
+	return out
+}
+
+func encodeSnapshotJSONRow(row []Cell) snapshotJSONRow {
+	last := len(row)
+	for last > 0 {
+		cell := row[last-1]
+		if cell.Content != "" && strings.TrimSpace(cell.Content) != "" {
+			break
+		}
+		if !cell.Style.isZero() {
+			break
+		}
+		last--
+	}
+	row = row[:last]
+	if len(row) == 0 {
+		return snapshotJSONRow{}
+	}
+	var text strings.Builder
+	allSimple := true
+	allPlain := true
+	for _, cell := range row {
+		cellText, ok := snapshotJSONCellText(cell)
+		if !ok {
+			allSimple = false
+			break
+		}
+		if !cell.Style.isZero() {
+			allPlain = false
+		}
+		text.WriteString(cellText)
+	}
+	if allSimple && allPlain {
+		return snapshotJSONRow{Text: text.String()}
+	}
+	if allSimple {
+		runs := make([]snapshotJSONRun, 0, 4)
+		var runText strings.Builder
+		runStyle := row[0].Style
+		flushRun := func() {
+			if runText.Len() == 0 {
+				return
+			}
+			runs = append(runs, snapshotJSONRun{
+				Text:  runText.String(),
+				Style: snapshotJSONStyleFromCellStyle(runStyle),
+			})
+			runText.Reset()
+		}
+		for _, cell := range row {
+			if cell.Style != runStyle {
+				flushRun()
+				runStyle = cell.Style
+			}
+			cellText, _ := snapshotJSONCellText(cell)
+			runText.WriteString(cellText)
+		}
+		flushRun()
+		return snapshotJSONRow{Runs: runs}
+	}
+	cells := make([]snapshotJSONCell, 0, len(row))
+	for _, cell := range row {
+		cells = append(cells, encodeSnapshotJSONCell(cell))
+	}
+	return snapshotJSONRow{Cells: cells}
+}
+
+func snapshotJSONCellText(cell Cell) (string, bool) {
+	if cell.Width > 1 {
+		return "", false
+	}
+	if cell.Content == "" {
+		return " ", true
+	}
+	if utf8.RuneCountInString(cell.Content) != 1 {
+		return "", false
+	}
+	return cell.Content, true
+}
+
+func encodeSnapshotJSONCell(cell Cell) snapshotJSONCell {
+	out := snapshotJSONCell{Content: cell.Content}
+	if cell.Width > 1 {
+		out.Width = cell.Width
+	}
+	out.Style = snapshotJSONStyleFromCellStyle(cell.Style)
+	return out
+}
+
+func snapshotJSONStyleFromCellStyle(style CellStyle) *snapshotJSONStyle {
+	if style.isZero() {
+		return nil
+	}
+	return &snapshotJSONStyle{
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
+	}
 }
 
 const timeLayout = "2006-01-02T15:04:05Z07:00"

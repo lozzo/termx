@@ -1,7 +1,6 @@
 package termx
 
 import (
-	"bytes"
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
@@ -180,59 +179,46 @@ func (s *terminalGridStore) AppendDamageRows(rows []vterm.DamageOp) error {
 	if s == nil || len(rows) == 0 {
 		return nil
 	}
-	replayRows := make([]terminalGridRow, 0, len(rows))
-	for _, row := range rows {
-		replayRows = append(replayRows, terminalGridRow{
+	return s.appendRowSequence(len(rows), func(i int) terminalGridRow {
+		row := rows[i]
+		return terminalGridRow{
 			cells:     row.Cells,
+			runs:      row.Runs,
 			timestamp: row.Timestamp,
 			rowKind:   row.RowKind,
 			wrapped:   row.WrappedSet && row.Wrapped,
-		})
-	}
-	return s.appendRows(replayRows)
+		}
+	})
 }
 
 func (s *terminalGridStore) AppendRows(rows [][]vterm.Cell) error {
 	if len(rows) == 0 {
 		return nil
 	}
-	gridRows := make([]terminalGridRow, 0, len(rows))
-	for _, row := range rows {
-		gridRows = append(gridRows, terminalGridRow{cells: row})
-	}
-	return s.appendRows(gridRows)
+	return s.appendRowSequence(len(rows), func(i int) terminalGridRow {
+		return terminalGridRow{cells: rows[i]}
+	})
 }
 
 type terminalGridRow struct {
 	cells     []vterm.Cell
+	runs      []vterm.CellRun
 	timestamp time.Time
 	rowKind   string
 	wrapped   bool
 }
 
 func (s *terminalGridStore) appendRows(rows []terminalGridRow) error {
-	if s == nil || len(rows) == 0 {
+	return s.appendRowSequence(len(rows), func(i int) terminalGridRow {
+		return rows[i]
+	})
+}
+
+func (s *terminalGridStore) appendRowSequence(count int, rowAt func(int) terminalGridRow) error {
+	if s == nil || count == 0 || rowAt == nil {
 		return nil
 	}
 	finish := perftrace.Measure("terminal.grid.append")
-
-	encoded := make([][]byte, 0, len(rows))
-	flags := make([]uint32, 0, len(rows))
-	totalBytes := 0
-	for _, row := range rows {
-		payload, err := encodeTerminalGridRow(row)
-		if err != nil {
-			finish(0)
-			return err
-		}
-		encoded = append(encoded, payload)
-		var rowFlags uint32
-		if row.wrapped {
-			rowFlags |= terminalGridRowFlagWrapped
-		}
-		flags = append(flags, rowFlags)
-		totalBytes += len(payload)
-	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -240,12 +226,90 @@ func (s *terminalGridStore) appendRows(rows []terminalGridRow) error {
 		finish(0)
 		return nil
 	}
-	if err := s.appendEncodedRowsLocked(encoded, flags); err != nil {
+	batch := make([]byte, 0, minInt(int(s.pageMaxBytes), 64*1024))
+	refs := make([]terminalGridRowRef, 0, minInt(count, 1024))
+	totalBytes := 0
+	appendedRows := 0
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		if s.current == nil {
+			if err := s.openCurrentPageLocked(); err != nil {
+				return err
+			}
+		}
+		n, err := s.current.Write(batch)
+		if err != nil {
+			return err
+		}
+		if n != len(batch) {
+			return io.ErrShortWrite
+		}
+		if err := s.appendIndexRowsLocked(refs); err != nil {
+			return err
+		}
+		s.rowCount += len(refs)
+		s.currentBytes += int64(n)
+		appendedRows += len(refs)
+		clear(refs)
+		refs = refs[:0]
+		clear(batch)
+		batch = batch[:0]
+		return nil
+	}
+
+	for i := 0; i < count; i++ {
+		row := rowAt(i)
+		payload, err := encodeTerminalGridRow(row)
+		if err != nil {
+			finish(0)
+			return err
+		}
+		totalBytes += len(payload)
+		if s.current == nil {
+			if err := s.openCurrentPageLocked(); err != nil {
+				finish(0)
+				return err
+			}
+		}
+		if len(batch) > 0 && s.currentBytes+int64(len(batch)+len(payload)) > s.pageMaxBytes {
+			if err := flush(); err != nil {
+				finish(0)
+				return err
+			}
+		}
+		if s.currentBytes > 0 && s.currentBytes+int64(len(payload)) > s.pageMaxBytes {
+			if err := s.rotateLocked(); err != nil {
+				finish(0)
+				return err
+			}
+		}
+		var rowFlags uint32
+		if row.wrapped {
+			rowFlags |= terminalGridRowFlagWrapped
+		}
+		refs = append(refs, terminalGridRowRef{
+			seq:    s.currentSeq,
+			offset: s.currentBytes + int64(len(batch)),
+			length: int64(len(payload)),
+			flags:  rowFlags,
+		})
+		batch = append(batch, payload...)
+		if int64(len(batch)) >= s.pageMaxBytes {
+			if err := flush(); err != nil {
+				finish(0)
+				return err
+			}
+		}
+	}
+	if err := flush(); err != nil {
 		finish(0)
 		return err
 	}
+
 	finish(totalBytes)
-	perftrace.Count("terminal.grid.rows", len(encoded))
+	perftrace.Count("terminal.grid.rows", appendedRows)
 	perftrace.Count("terminal.grid.bytes", totalBytes)
 	return nil
 }
@@ -477,65 +541,6 @@ func (s *terminalGridStore) Close() error {
 	return err
 }
 
-func (s *terminalGridStore) appendEncodedRowsLocked(payloads [][]byte, flags []uint32) error {
-	if s == nil || len(payloads) == 0 {
-		return nil
-	}
-	for index := 0; index < len(payloads); {
-		if s.current == nil {
-			if err := s.openCurrentPageLocked(); err != nil {
-				return err
-			}
-		}
-		next := payloads[index]
-		if s.currentBytes > 0 && s.currentBytes+int64(len(next)) > s.pageMaxBytes {
-			if err := s.rotateLocked(); err != nil {
-				return err
-			}
-			continue
-		}
-
-		seq := s.currentSeq
-		offset := s.currentBytes
-		var batch bytes.Buffer
-		refs := make([]terminalGridRowRef, 0, len(payloads)-index)
-		for index < len(payloads) {
-			payload := payloads[index]
-			projected := s.currentBytes + int64(batch.Len()) + int64(len(payload))
-			if batch.Len() > 0 && projected > s.pageMaxBytes {
-				break
-			}
-			refs = append(refs, terminalGridRowRef{
-				seq:    seq,
-				offset: offset + int64(batch.Len()),
-				length: int64(len(payload)),
-				flags:  uint32At(flags, index),
-			})
-			batch.Write(payload)
-			index++
-			if projected >= s.pageMaxBytes {
-				break
-			}
-		}
-		if batch.Len() == 0 {
-			continue
-		}
-		n, err := s.current.Write(batch.Bytes())
-		if err != nil {
-			return err
-		}
-		if n != batch.Len() {
-			return io.ErrShortWrite
-		}
-		if err := s.appendIndexRowsLocked(refs); err != nil {
-			return err
-		}
-		s.rowCount += len(refs)
-		s.currentBytes += int64(n)
-	}
-	return nil
-}
-
 func (s *terminalGridStore) openCurrentPageLocked() error {
 	if s == nil {
 		return nil
@@ -644,13 +649,6 @@ func readTerminalGridRows(dir string, refs []terminalGridRowRef) ([]terminalGrid
 	return out, nil
 }
 
-func uint32At(values []uint32, index int) uint32 {
-	if index < 0 || index >= len(values) {
-		return 0
-	}
-	return values[index]
-}
-
 func encodeGridRowsReplay(rows []terminalGridRow) []byte {
 	if len(rows) == 0 {
 		return nil
@@ -671,68 +669,101 @@ func reflowTerminalGridRows(rows []terminalGridRow, cols int) ([][]vterm.Cell, [
 	if cols <= 0 {
 		cols = 80
 	}
-	scrollback, timestamps, rowKinds, wrapped := terminalGridRowSlices(rows)
-	vt := vterm.New(vtInitialWidth(cols, scrollback), 1, gridReflowScrollbackSize(scrollback, cols), nil)
-	vt.LoadSnapshotWithExtendedMetadata(scrollback, timestamps, rowKinds, wrapped, vterm.ScreenData{Cells: [][]vterm.Cell{make([]vterm.Cell, vtInitialWidth(cols, scrollback))}}, nil, nil, nil, vterm.CursorState{Visible: true}, vterm.TerminalModes{AutoWrap: true})
-	vt.Resize(cols, 1)
-	out := vt.ScrollbackContent()
-	outTimestamps := vt.ScrollbackTimestamps()
-	outRowKinds := vt.ScrollbackRowKinds()
-	outWrapped := vt.ScrollbackWrapped()
-	screen := vt.ScreenContent()
-	if len(screen.Cells) > 0 && !isBlankGridRow(screen.Cells[0]) {
-		out = append(out, screen.Cells[0])
-		outTimestamps = append(outTimestamps, timeAt(vt.ScreenTimestamps(), 0))
-		outRowKinds = append(outRowKinds, stringAt(vt.ScreenRowKinds(), 0))
-		outWrapped = append(outWrapped, boolAt(vt.ScreenWrapped(), 0))
+	reflow := terminalGridReflowState{
+		cols:       cols,
+		rows:       make([][]vterm.Cell, 0, minInt(len(rows), 1024)),
+		timestamps: make([]time.Time, 0, minInt(len(rows), 1024)),
+		rowKinds:   make([]string, 0, minInt(len(rows), 1024)),
+		wrapped:    make([]bool, 0, minInt(len(rows), 1024)),
 	}
-	if len(out) == 0 {
-		out = [][]vterm.Cell{make([]vterm.Cell, cols)}
-	}
-	return out, alignGridTimes(outTimestamps, len(out)), alignGridStrings(outRowKinds, len(out)), alignGridBools(outWrapped, len(out))
-}
-
-func terminalGridRowSlices(rows []terminalGridRow) ([][]vterm.Cell, []time.Time, []string, []bool) {
-	cells := make([][]vterm.Cell, 0, len(rows))
-	timestamps := make([]time.Time, 0, len(rows))
-	rowKinds := make([]string, 0, len(rows))
-	wrapped := make([]bool, 0, len(rows))
+	var logical []terminalGridReflowCell
+	var emptyMeta terminalGridReflowMeta
 	for _, row := range rows {
-		cells = append(cells, row.cells)
-		timestamps = append(timestamps, row.timestamp)
-		rowKinds = append(rowKinds, row.rowKind)
-		wrapped = append(wrapped, row.wrapped)
-	}
-	return cells, timestamps, rowKinds, wrapped
-}
-
-func vtInitialWidth(cols int, rows [][]vterm.Cell) int {
-	return maxGridCellRowDisplayWidth(rows)
-}
-
-func gridReflowScrollbackSize(rows [][]vterm.Cell, cols int) int {
-	if cols <= 0 {
-		cols = 80
-	}
-	needed := len(rows) + 2
-	for _, row := range rows {
-		width := gridCellRowDisplayWidth(row)
-		if width <= cols {
+		meta := terminalGridReflowMeta{timestamp: row.timestamp, rowKind: row.rowKind}
+		if len(logical) == 0 {
+			emptyMeta = meta
+		}
+		for _, cell := range row.cells {
+			logical = append(logical, terminalGridReflowCell{cell: cell, meta: meta})
+		}
+		if row.wrapped {
 			continue
 		}
-		needed += (width + cols - 1) / cols
+		reflow.emitLogicalLine(logical, emptyMeta)
+		clear(logical)
+		logical = logical[:0]
+		emptyMeta = terminalGridReflowMeta{}
 	}
-	return maxInt(needed, 32)
+	if len(logical) > 0 {
+		reflow.emitLogicalLine(logical, emptyMeta)
+	}
+	if len(reflow.rows) == 0 {
+		reflow.rows = [][]vterm.Cell{make([]vterm.Cell, cols)}
+	}
+	return reflow.rows, alignGridTimes(reflow.timestamps, len(reflow.rows)), alignGridStrings(reflow.rowKinds, len(reflow.rows)), alignGridBools(reflow.wrapped, len(reflow.rows))
 }
 
-func maxGridCellRowDisplayWidth(rows [][]vterm.Cell) int {
-	width := 1
-	for _, row := range rows {
-		if rowWidth := gridCellRowDisplayWidth(row); rowWidth > width {
-			width = rowWidth
-		}
+type terminalGridReflowMeta struct {
+	timestamp time.Time
+	rowKind   string
+}
+
+type terminalGridReflowCell struct {
+	cell vterm.Cell
+	meta terminalGridReflowMeta
+}
+
+type terminalGridReflowState struct {
+	cols       int
+	rows       [][]vterm.Cell
+	timestamps []time.Time
+	rowKinds   []string
+	wrapped    []bool
+}
+
+func (r *terminalGridReflowState) emitLogicalLine(cells []terminalGridReflowCell, emptyMeta terminalGridReflowMeta) {
+	if r == nil {
+		return
 	}
-	return width
+	if len(cells) == 0 {
+		r.emitSegment(nil, emptyMeta, false, false)
+		return
+	}
+	start := 0
+	width := 0
+	segmentIndex := 0
+	for i, cell := range cells {
+		cellWidth := cell.cell.Width
+		if cellWidth <= 0 {
+			continue
+		}
+		if width > 0 && width+cellWidth > r.cols {
+			r.emitSegment(cells[start:i], cells[start].meta, true, segmentIndex > 0)
+			segmentIndex++
+			start = i
+			width = 0
+		}
+		width += cellWidth
+	}
+	r.emitSegment(cells[start:], cells[start].meta, false, segmentIndex > 0)
+}
+
+func (r *terminalGridReflowState) emitSegment(segment []terminalGridReflowCell, meta terminalGridReflowMeta, wrapped bool, suppressRowKind bool) {
+	if r == nil {
+		return
+	}
+	row := make([]vterm.Cell, len(segment))
+	for i, cell := range segment {
+		row[i] = cell.cell
+	}
+	r.rows = append(r.rows, row)
+	r.timestamps = append(r.timestamps, meta.timestamp)
+	if suppressRowKind {
+		r.rowKinds = append(r.rowKinds, "")
+	} else {
+		r.rowKinds = append(r.rowKinds, meta.rowKind)
+	}
+	r.wrapped = append(r.wrapped, wrapped)
 }
 
 func gridCellRowDisplayWidth(row []vterm.Cell) int {
