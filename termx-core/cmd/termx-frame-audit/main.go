@@ -7,7 +7,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/lozzow/termx/termx-core/frameaudit"
+	"github.com/lozzow/termx/internal/frameaudit"
 )
 
 func main() {
