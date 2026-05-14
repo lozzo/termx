@@ -2,6 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBrowserRtcSession } from './browserRtcSession'
 import type { ConnectionLogEvent } from '../connection/connectionLogger'
 import { TERMX_FRAME_TYPES, encodeTermxFrame } from '../terminal/termxProtocol'
+import {
+  decodeRuntimeAPIRequest,
+  decodeRuntimeEventSubscribeRequest,
+  decodeRuntimeRequestBody,
+  encodeRuntimeAPIResponse,
+  encodeRuntimeEventEnvelope,
+  encodeRuntimeResponseBody,
+} from './runtimeProtocol'
 
 describe('BrowserRtcSession', () => {
   afterEach(() => {
@@ -43,13 +51,12 @@ describe('BrowserRtcSession', () => {
     const apiChannel = factory.channel('api')
     const apiPromise = api.request('POST', { path: '/files/list', params: { path: '/' } })
     apiChannel.emitMessage(apiResponseChunk('req_1', {
-      id: 'req_1',
       status: 200,
       body: { path: '/', parent: '', total: 0, entries: [] },
     }))
 
     await expect(apiPromise).resolves.toEqual({ path: '/', parent: '', total: 0, entries: [] })
-    expect(JSON.parse(apiChannel.sentText()[0] ?? '{}')).toEqual({
+    expect(decodeAPIRequest(apiChannel.sentBytes()[0])).toEqual({
       id: 'req_1',
       method: 'POST',
       path: '/files/list',
@@ -75,13 +82,12 @@ describe('BrowserRtcSession', () => {
       name: 'ops shell',
     })
     apiChannel.emitMessage(apiResponseChunk('req_1', {
-      id: 'req_1',
       status: 200,
       body: { terminal_id: 'terminal-3' },
     }))
 
     await expect(request).resolves.toEqual({ terminal_id: 'terminal-3' })
-    expect(JSON.parse(apiChannel.sentText()[0] ?? '{}')).toEqual({
+    expect(decodeAPIRequest(apiChannel.sentBytes()[0])).toEqual({
       id: 'req_1',
       method: 'create',
       path: 'create',
@@ -309,7 +315,6 @@ describe('BrowserRtcSession', () => {
     const apiChannel = factory.channel('api')
     const request = api.request('list', {})
     apiChannel.emitMessage(apiResponseChunk('req_1', {
-      id: 'req_1',
       status: 200,
       body: { terminals: [] },
     }))
@@ -412,14 +417,13 @@ describe('BrowserRtcSession', () => {
       await flushMicrotasks()
 
       const apiChannel = factory.channel('api')
-      const heartbeatRequest = JSON.parse(apiChannel.sentText().at(-1) ?? '{}')
+      const heartbeatRequest = decodeAPIRequest(apiChannel.sentBytes().at(-1))
       expect(heartbeatRequest).toMatchObject({
         id: 'req_1',
         method: 'GET',
         path: '/status',
       })
       apiChannel.emitMessage(apiResponseChunk('req_1', {
-        id: 'req_1',
         status: 200,
         body: { ok: true },
       }))
@@ -480,21 +484,19 @@ describe('BrowserRtcSession', () => {
     const subscription = session.subscribeEvents((event) => events.push(event))
     const eventsChannel = factory.channel('events')
     await flushMicrotasks()
-    expect(JSON.parse(eventsChannel.sentText()[0] ?? '{}')).toEqual({
+    expect(decodeRuntimeEventSubscribeRequest(eventsChannel.sentBytes()[0] ?? new Uint8Array())).toEqual(expect.objectContaining({
       type: 'subscribe',
       types: [1, 2, 3, 4, 10],
-    })
-    eventsChannel.emitMessage(encodeJSON({
+    }))
+    eventsChannel.emitMessage(encodeRuntimeEventEnvelope({
       type: 'terminal_changed',
-      payload: { terminal_id: 'terminal-1' },
     }))
 
     expect(events).toEqual([{
       type: 'terminal_changed',
-      payload: { terminal_id: 'terminal-1' },
     }])
     subscription.close()
-    eventsChannel.emitMessage(encodeJSON({ type: 'ignored_after_unsubscribe' }))
+    eventsChannel.emitMessage(encodeRuntimeEventEnvelope({ type: 'ignored_after_unsubscribe' }))
     expect(events).toHaveLength(1)
   })
 
@@ -946,17 +948,24 @@ describe('BrowserRtcSession', () => {
     expect(factory.labelsAtCreateOffer()).toEqual(['api'])
     expect(factory.createdLabels()).toContain('events')
     const eventsChannel = factory.channel('events')
-    const subscribeRequest = JSON.parse(eventsChannel.sentText()[0] ?? '{}')
-    expect(subscribeRequest).toEqual({
+    const subscribeRequest = decodeRuntimeEventSubscribeRequest(eventsChannel.sentBytes()[0] ?? new Uint8Array())
+    expect(subscribeRequest).toEqual(expect.objectContaining({
       type: 'subscribe',
       types: [1, 2, 3, 4, 10],
-    })
-    eventsChannel.emitMessage(encodeJSON({
-      type: 'inventory_changed',
-      payload: { terminalId: 'terminal-2' },
+    }))
+    eventsChannel.emitMessage(encodeRuntimeEventEnvelope({
+      protocolType: 1,
+      terminalId: 'terminal-2',
     }))
 
-    expect(events).toContainEqual({ type: 'inventory_changed', payload: { terminalId: 'terminal-2' } })
+    expect(events).toContainEqual({
+      type: 'inventory_changed',
+      payload: {
+        eventType: 'terminal_created',
+        protocolType: 1,
+        terminalId: 'terminal-2',
+      },
+    })
     subscription.close()
   })
 
@@ -973,10 +982,11 @@ describe('BrowserRtcSession', () => {
     await connectBrowserSession(session)
     const subscription = session.subscribeEvents((event) => events.push(event))
     await flushMicrotasks()
-    factory.channel('events').emitMessage(encodeJSON({
-      type: 1,
-      terminal_id: 'terminal-3',
-      timestamp: '2026-05-08T10:00:00Z',
+    factory.channel('events').emitMessage(encodeRuntimeEventEnvelope({
+      type: 'terminal_created',
+      protocolType: 1,
+      terminalId: 'terminal-3',
+      timestampUnixNano: BigInt(Date.parse('2026-05-08T10:00:00Z')) * 1_000_000n,
     }))
 
     expect(events).toContainEqual({
@@ -997,13 +1007,26 @@ async function connectBrowserSession(session: ReturnType<typeof createBrowserRtc
   await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
 }
 
-function encodeJSON(value: unknown): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify(value))
+function decodeAPIRequest(bytes: Uint8Array | undefined): Record<string, unknown> {
+  const request = decodeRuntimeAPIRequest(bytes ?? new Uint8Array())
+  return {
+    id: request.id,
+    method: request.method,
+    path: request.path,
+    body: decodeRuntimeRequestBody(request.path, request.method, request.body),
+  }
 }
 
-function apiResponseChunk(id: string, payload: unknown, options: { last?: boolean } = {}): Uint8Array {
+function apiResponseChunk(id: string, payload: { status: number; body?: unknown; error?: string }, options: { last?: boolean } = {}): Uint8Array {
   const idBytes = new TextEncoder().encode(id)
-  const body = new TextEncoder().encode(JSON.stringify(payload))
+  const request = inferAPIRequestForResponse(id, payload.body)
+  const response = encodeRuntimeAPIResponse({
+    id,
+    status: payload.status,
+    body: encodeRuntimeResponseBody(request.path, request.method, payload.body ?? {}),
+    error: payload.error ?? '',
+  })
+  const body = response
   const out = new Uint8Array(3 + idBytes.length + body.length)
   out[0] = 0xc0
   out[1] = 0x01 | (options.last === false ? 0 : 0x02)
@@ -1011,6 +1034,14 @@ function apiResponseChunk(id: string, payload: unknown, options: { last?: boolea
   out.set(idBytes, 3)
   out.set(body, 3 + idBytes.length)
   return out
+}
+
+function inferAPIRequestForResponse(id: string, body: unknown): { path: string; method: string } {
+  const record = body && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {}
+  if (id === 'req_1' && Object.hasOwn(record, 'terminals')) return { method: 'list', path: 'list' }
+  if (id === 'req_1' && Object.hasOwn(record, 'ok')) return { method: 'GET', path: '/status' }
+  if (id === 'req_1' && Object.hasOwn(record, 'terminal_id')) return { method: 'create', path: 'create' }
+  return { method: 'POST', path: '/files/list' }
 }
 
 async function flushMicrotasks(): Promise<void> {
@@ -1219,6 +1250,15 @@ class MockRTCDataChannel extends EventTarget {
 
   emitMessage(data: unknown): void {
     this.dispatchEvent(new MessageEvent('message', { data }))
+  }
+
+  sentBytes(): Uint8Array[] {
+    return this.sent.map((item) => {
+      if (item instanceof Uint8Array) return item
+      if (item instanceof ArrayBuffer) return new Uint8Array(item)
+      if (ArrayBuffer.isView(item)) return new Uint8Array(item.buffer, item.byteOffset, item.byteLength)
+      return new TextEncoder().encode(String(item))
+    })
   }
 
   sentText(): string[] {

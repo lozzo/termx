@@ -25,6 +25,14 @@ import {
   type TermxFrame,
 } from './termxProtocol'
 import { logTerminalDiagnostic, terminalNow } from './terminalDiagnostics'
+import {
+  decodeTerminalErrorPayload,
+  decodeTerminalHelloPayload,
+  decodeTerminalMethodResult,
+  decodeTerminalResponsePayload,
+  encodeTerminalHelloPayload,
+  encodeTerminalRequestPayload,
+} from './terminalWireProtocol'
 import type { ConnectionInfo, RtcBinaryChannel } from '../core/transport'
 
 export interface TerminalProtocolClientOptions {
@@ -39,6 +47,7 @@ export interface TerminalProtocolClientOptions {
 }
 
 interface PendingRequest {
+  method: string
   resolve: (value: unknown) => void
   reject: (err: Error) => void
 }
@@ -257,17 +266,17 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       this.helloDone = new Promise<void>((resolve, reject) => {
         this.log('hello_send')
         this.pending.set(0, {
+          method: 'hello',
           resolve: () => {
             this.log('hello_ack')
             resolve()
           },
           reject,
         })
-        void this.sendFrame(0, TERMX_FRAME_TYPES.hello, {
+        void this.sendFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({
           version: TERMX_PROTOCOL_VERSION,
           client: 'termx-local-web',
-          capabilities: ['terminal'],
-        }).catch(reject)
+        })).catch(reject)
       })
     }
     return this.helloDone
@@ -324,6 +333,7 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     return new Promise((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout> | undefined
       this.pending.set(id, {
+        method,
         resolve: (value) => {
           if (timer) clearTimeout(timer)
           this.log('request_resolve', {
@@ -331,7 +341,7 @@ class TerminalProtocolClient implements TerminalProtocolSession {
               id,
               method,
               elapsedMs: Math.round(terminalNow() - startedAt),
-              resultBytes: estimateJSONBytes(value),
+              resultBytes: estimateResultBytes(value),
             },
           })
           resolve(value)
@@ -366,11 +376,7 @@ class TerminalProtocolClient implements TerminalProtocolSession {
           reject(err)
         }, timeoutMs)
       }
-      void this.sendFrame(0, TERMX_FRAME_TYPES.request, {
-        id,
-        method,
-        params,
-      }).catch((err: unknown) => {
+      void this.sendFrame(0, TERMX_FRAME_TYPES.request, encodeTerminalRequestPayload(id, method, params)).catch((err: unknown) => {
         this.pending.delete(id)
         if (timer) clearTimeout(timer)
         reject(err instanceof Error ? err : new Error(String(err)))
@@ -484,24 +490,25 @@ class TerminalProtocolClient implements TerminalProtocolSession {
 
   private handleControlFrame(type: number, payload: Uint8Array): void {
     if (type === TERMX_FRAME_TYPES.hello) {
+      decodeTerminalHelloPayload(payload)
       this.pending.get(0)?.resolve(undefined)
       this.pending.delete(0)
       return
     }
-    if (type === TERMX_FRAME_TYPES.response) {
-      const response = JSON.parse(new TextDecoder().decode(payload)) as { id: number; result?: unknown }
+    if (type === TERMX_FRAME_TYPES.response || type === TERMX_FRAME_TYPES.responseBinary) {
+      const response = decodeTerminalResponsePayload(payload)
       const pending = this.pending.get(response.id)
       if (!pending) return
       this.pending.delete(response.id)
-      pending.resolve(parseProtocolResult(response.result))
+      pending.resolve(decodeTerminalMethodResult(pending.method, response.result))
       return
     }
     if (type === TERMX_FRAME_TYPES.error) {
-      const response = JSON.parse(new TextDecoder().decode(payload)) as { id: number; error?: { message?: string } }
+      const response = decodeTerminalErrorPayload(payload)
       const pending = this.pending.get(response.id)
       if (!pending) return
       this.pending.delete(response.id)
-      pending.reject(new Error(response.error?.message ?? 'termx protocol error'))
+      pending.reject(new Error(response.message))
     }
   }
 
@@ -705,11 +712,8 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     return Math.min(streamSnapshotRefreshMaxIntervalMs, interval)
   }
 
-  private sendFrame(channel: number, type: number, payload: unknown): Promise<void> {
-    const bytes = payload instanceof Uint8Array
-      ? payload
-      : new TextEncoder().encode(JSON.stringify(payload))
-    const frame = encodeTermxFrame(channel, type, bytes)
+  private sendFrame(channel: number, type: number, payload: Uint8Array): Promise<void> {
+    const frame = encodeTermxFrame(channel, type, payload)
     if (this.options.channel.readyState === 'open') {
       try {
         this.options.channel.send(frame)
@@ -884,8 +888,9 @@ class TerminalProtocolClient implements TerminalProtocolSession {
   }
 }
 
-function estimateJSONBytes(value: unknown): number {
+function estimateResultBytes(value: unknown): number {
   try {
+    if (value instanceof Uint8Array) return value.byteLength
     return new TextEncoder().encode(JSON.stringify(value)).byteLength
   } catch {
     return 0
@@ -899,14 +904,6 @@ function errorMessage(err: unknown): string {
 function isRecoverableSnapshotRefreshFailure(message: string): boolean {
   return /timed out|not open|closed|native bridge|send failed/i.test(message)
 }
-
-function parseProtocolResult(value: unknown): unknown {
-  if (typeof value === 'string') {
-    return JSON.parse(value) as unknown
-  }
-  return value
-}
-
 
 function attachChannel(value: unknown): number {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return 0
@@ -997,8 +994,7 @@ function closedReason(payload: Uint8Array): string | undefined {
 
 function streamErrorMessage(payload: Uint8Array): string {
   try {
-    const message = JSON.parse(new TextDecoder().decode(payload)) as { error?: { message?: string } }
-    return message.error?.message || 'terminal stream error'
+    return decodeTerminalErrorPayload(payload).message
   } catch {
     return 'terminal stream error'
   }

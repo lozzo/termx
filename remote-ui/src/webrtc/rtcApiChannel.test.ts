@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { LocalApiChannel } from './rtcApiChannel'
 import type { RTCDataChannelLike } from './browserRtcSession'
+import { decodeRuntimeAPIRequest, decodeRuntimeRequestBody } from './runtimeProtocol'
 
 describe('LocalApiChannel', () => {
   it('rejects a request on a closed channel before calling RTCDataChannel.send', async () => {
@@ -21,11 +22,15 @@ describe('LocalApiChannel', () => {
     const pending = api.request('POST', { path: '/files/preview', params: { path: '/README.md', max_size: 1024 } })
       .catch(() => undefined)
 
-    expect(channel.sentJSON[0]).toEqual(expect.objectContaining({
+    const request = decodeRuntimeAPIRequest(channel.sentBytes[0] ?? new Uint8Array())
+    expect(request).toEqual(expect.objectContaining({
       method: 'POST',
       path: '/files/preview',
-      body: { path: '/README.md', max_size: 1024 },
     }))
+    expect(decodeRuntimeRequestBody(request.path, request.method, request.body)).toEqual({
+      path: '/README.md',
+      max_size: 1024,
+    })
     api.close()
     await pending
   })
@@ -35,7 +40,7 @@ class MockRTCDataChannel extends EventTarget implements RTCDataChannelLike {
   readyState: RTCDataChannelState = 'open'
   binaryType?: BinaryType
   sendCalls = 0
-  sentJSON: unknown[] = []
+  sentBytes: Uint8Array[] = []
 
   constructor(readonly label: string) {
     super()
@@ -43,8 +48,8 @@ class MockRTCDataChannel extends EventTarget implements RTCDataChannelLike {
 
   send(data?: string | ArrayBuffer | Blob | ArrayBufferView): void {
     this.sendCalls += 1
-    if (this.readyState === 'open' && typeof data === 'string') {
-      this.sentJSON.push(JSON.parse(data))
+    if (this.readyState === 'open' && data && ArrayBuffer.isView(data)) {
+      this.sentBytes.push(new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
       return
     }
     throw new Error("Failed to execute 'send' on 'RTCDataChannel': RTCDataChannel.readyState is not 'open'")

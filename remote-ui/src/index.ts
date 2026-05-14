@@ -196,6 +196,27 @@ export type { TerminalInventoryInput, TerminalInventorySnapshot } from './termin
 export * from './core/transport'
 export { createManagedHubApi } from './api/managedHubApi'
 export { createManagedHubRtcConnector } from './webrtc/managedHubRtcConnector'
+export {
+  decodeRuntimeAPIRequest,
+  decodeRuntimeAPIResponse,
+  decodeRuntimeEventEnvelope,
+  decodeRuntimeEventSubscribeRequest,
+  decodeRuntimeRequestBody,
+  decodeRuntimeResponseBody,
+  encodeRuntimeAPIRequest,
+  encodeRuntimeAPIResponse,
+  encodeRuntimeEventEnvelope,
+  encodeRuntimeEventSubscribeRequest,
+  encodeRuntimeRequestBody,
+  encodeRuntimeResponseBody,
+  runtimeEventEnvelopeToRtcEvent,
+} from './webrtc/runtimeProtocol'
+export type {
+  RuntimeAPIRequest,
+  RuntimeAPIResponse,
+  RuntimeEventEnvelope,
+  RuntimeEventSubscribeRequest,
+} from './webrtc/runtimeProtocol'
 export type {
   CreateManagedHubSessionInput,
   ManagedIceServer,

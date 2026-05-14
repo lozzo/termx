@@ -3,6 +3,7 @@ package com.termx.app.transport
 import android.util.Log
 import com.termx.app.network.BridgeServer
 import com.termx.app.transfer.FileTransferManager
+import org.json.JSONObject
 import org.webrtc.DataChannel
 import org.webrtc.PeerConnection
 import java.nio.ByteBuffer
@@ -63,7 +64,15 @@ class ChannelManager(
         val latch = CountDownLatch(1)
         var result: String? = null
         var error: Exception? = null
+        var path: String = ""
     }
+
+    private data class ApiResponse(
+        val id: String,
+        val status: Int,
+        val body: ByteArray,
+        val error: String,
+    )
 
     private data class ChannelStats(
         var rxFrames: Long = 0,
@@ -184,20 +193,11 @@ class ChannelManager(
         }
         val id = UUID.randomUUID().toString()
         val pending = PendingApiRequest()
+        pending.path = path
         pendingApiRequests[id] = pending
         val startedAt = System.currentTimeMillis()
 
-        val payload = buildString {
-            append("""{"id":""")
-            append('"'); append(id); append('"')
-            append(""","method":""")
-            append('"'); append(method); append('"')
-            append(""","path":""")
-            append('"'); append(path); append('"')
-            if (body != null) { append(""","body":"""); append(body) }
-            append('}')
-        }
-        val bytes = payload.toByteArray(StandardCharsets.UTF_8)
+        val bytes = encodeApiRequest(id, method, path, encodeApiRequestBody(path, body))
         Log.i(TAG, "native api request send id=$id method=$method path=$path bytes=${bytes.size} [$machineId]")
         noteChannelFrame("api", "tx", bytes.size, dc.bufferedAmount())
         dc.send(DataChannel.Buffer(ByteBuffer.wrap(bytes), false))
@@ -280,12 +280,280 @@ class ChannelManager(
 
             if (isLast) {
                 pendingApiChunks.remove(id)
-                val body = chunks.joinToString("") { String(it, StandardCharsets.UTF_8) }
                 val pending = pendingApiRequests.remove(id) ?: return
-                pending.result = body
+                val response = decodeApiResponse(concatByteArrays(chunks))
+                if (response.status >= 400 && pending.path == "/status") {
+                    pending.error = RuntimeException(response.error.ifBlank { "api request failed: ${response.status}" })
+                } else {
+                    pending.result = apiResponseJson(response, pending.path).toString()
+                }
                 pending.latch.countDown()
             }
         } catch (_: Exception) {}
+    }
+
+    private fun encodeApiRequest(id: String, method: String, path: String, body: ByteArray): ByteArray {
+        return buildProto {
+            writeString(1, id)
+            writeString(2, method)
+            writeString(3, path)
+            if (body.isNotEmpty()) writeBytes(4, body)
+        }
+    }
+
+    private fun decodeApiResponse(data: ByteArray): ApiResponse {
+        val reader = ProtoReader(data)
+        var id = ""
+        var status = 0
+        var body = ByteArray(0)
+        var error = ""
+        while (!reader.done()) {
+            val tag = reader.readTag()
+            when (tag.field) {
+                1 -> id = reader.readString(tag.wire)
+                2 -> status = reader.readInt32(tag.wire)
+                3 -> body = reader.readBytes(tag.wire)
+                4 -> error = reader.readString(tag.wire)
+                else -> reader.skip(tag.wire)
+            }
+        }
+        return ApiResponse(id, status, body, error)
+    }
+
+    private fun encodeApiRequestBody(path: String, body: String?): ByteArray {
+        if (body.isNullOrBlank()) return ByteArray(0)
+        val json = JSONObject(body)
+        return when (path) {
+            "/files/upload/init" -> buildProto {
+                writeString(1, json.optString("path"))
+                writeInt64(2, json.optLong("size", 0L))
+                writeString(3, json.optString("resume_id"))
+            }
+            "/files/upload/complete" -> buildProto {
+                writeString(1, json.optString("transfer_id"))
+            }
+            "/files/download/init" -> buildProto {
+                writeString(1, json.optString("path"))
+                writeInt64(2, json.optLong("offset", 0L))
+                writeInt64(3, json.optLong("length", 0L))
+                writeString(4, json.optString("transfer_id"))
+            }
+            else -> body.toByteArray(StandardCharsets.UTF_8)
+        }
+    }
+
+    private fun apiResponseJson(response: ApiResponse, path: String): JSONObject {
+        val body = if (response.status >= 400) {
+            JSONObject().put("error", response.error.ifBlank { "api request failed: ${response.status}" })
+        } else {
+            decodeApiResponseBody(path, response.body)
+        }
+        return JSONObject()
+            .put("id", response.id)
+            .put("status", response.status)
+            .put("body", body)
+    }
+
+    private fun decodeApiResponseBody(path: String, data: ByteArray): JSONObject {
+        if (data.isEmpty()) return JSONObject()
+        val reader = ProtoReader(data)
+        return when (path) {
+            "/status" -> decodeStatusResponse(reader)
+            "/files/upload/init" -> decodeFileUploadInitResponse(reader)
+            "/files/upload/complete" -> decodeFilePathResponse(reader)
+            "/files/download/init" -> decodeFileDownloadInitResponse(reader)
+            else -> JSONObject()
+        }
+    }
+
+    private fun decodeStatusResponse(reader: ProtoReader): JSONObject {
+        val out = JSONObject()
+        while (!reader.done()) {
+            val tag = reader.readTag()
+            when (tag.field) {
+                1 -> out.put("ok", reader.readBool(tag.wire))
+                else -> reader.skip(tag.wire)
+            }
+        }
+        return out
+    }
+
+    private fun decodeFileUploadInitResponse(reader: ProtoReader): JSONObject {
+        val out = JSONObject()
+        while (!reader.done()) {
+            val tag = reader.readTag()
+            when (tag.field) {
+                1 -> out.put("transfer_id", reader.readString(tag.wire))
+                2 -> out.put("chunk_size", reader.readInt32(tag.wire))
+                3 -> out.put("uploaded_offset", reader.readInt64(tag.wire))
+                else -> reader.skip(tag.wire)
+            }
+        }
+        return out
+    }
+
+    private fun decodeFilePathResponse(reader: ProtoReader): JSONObject {
+        val out = JSONObject()
+        while (!reader.done()) {
+            val tag = reader.readTag()
+            when (tag.field) {
+                1 -> out.put("path", reader.readString(tag.wire))
+                else -> reader.skip(tag.wire)
+            }
+        }
+        return out
+    }
+
+    private fun decodeFileDownloadInitResponse(reader: ProtoReader): JSONObject {
+        val out = JSONObject()
+        while (!reader.done()) {
+            val tag = reader.readTag()
+            when (tag.field) {
+                1 -> out.put("transfer_id", reader.readString(tag.wire))
+                2 -> out.put("name", reader.readString(tag.wire))
+                3 -> out.put("size", reader.readInt64(tag.wire))
+                4 -> out.put("chunk_size", reader.readInt32(tag.wire))
+                5 -> out.put("offset", reader.readInt64(tag.wire))
+                6 -> out.put("length", reader.readInt64(tag.wire))
+                else -> reader.skip(tag.wire)
+            }
+        }
+        return out
+    }
+
+    private fun concatByteArrays(chunks: List<ByteArray>): ByteArray {
+        val total = chunks.sumOf { it.size }
+        val out = ByteArray(total)
+        var offset = 0
+        for (chunk in chunks) {
+            System.arraycopy(chunk, 0, out, offset, chunk.size)
+            offset += chunk.size
+        }
+        return out
+    }
+
+    private fun buildProto(block: ProtoWriter.() -> Unit): ByteArray {
+        val writer = ProtoWriter()
+        writer.block()
+        return writer.toByteArray()
+    }
+
+    private class ProtoWriter {
+        private val out = ArrayList<Byte>()
+
+        fun writeString(field: Int, value: String) {
+            if (value.isEmpty()) return
+            writeBytes(field, value.toByteArray(StandardCharsets.UTF_8))
+        }
+
+        fun writeBytes(field: Int, value: ByteArray) {
+            writeTag(field, 2)
+            writeVarint(value.size.toLong())
+            for (byte in value) out.add(byte)
+        }
+
+        fun writeInt64(field: Int, value: Long) {
+            if (value == 0L) return
+            writeTag(field, 0)
+            writeVarint(value)
+        }
+
+        fun toByteArray(): ByteArray {
+            return ByteArray(out.size) { index -> out[index] }
+        }
+
+        private fun writeTag(field: Int, wire: Int) {
+            writeVarint(((field shl 3) or wire).toLong())
+        }
+
+        private fun writeVarint(input: Long) {
+            var value = input
+            while ((value and 0x7FL.inv()) != 0L) {
+                out.add((((value and 0x7F) or 0x80).toInt()).toByte())
+                value = value ushr 7
+            }
+            out.add(value.toByte())
+        }
+    }
+
+    private class ProtoReader(private val data: ByteArray) {
+        private var offset = 0
+
+        data class Tag(val field: Int, val wire: Int)
+
+        fun done(): Boolean = offset >= data.size
+
+        fun readTag(): Tag {
+            val tag = readVarint().toInt()
+            return Tag(tag ushr 3, tag and 0x07)
+        }
+
+        fun readString(wire: Int): String = String(readBytes(wire), StandardCharsets.UTF_8)
+
+        fun readBytes(wire: Int): ByteArray {
+            requireWire(wire, 2)
+            val length = readVarint().toInt()
+            if (length < 0 || offset + length > data.size) throw IllegalArgumentException("protobuf length out of bounds")
+            val out = data.copyOfRange(offset, offset + length)
+            offset += length
+            return out
+        }
+
+        fun readInt32(wire: Int): Int {
+            requireWire(wire, 0)
+            return readVarint().toInt()
+        }
+
+        fun readInt64(wire: Int): Long {
+            requireWire(wire, 0)
+            return readVarint()
+        }
+
+        fun readBool(wire: Int): Boolean {
+            requireWire(wire, 0)
+            return readVarint() != 0L
+        }
+
+        fun skip(wire: Int) {
+            when (wire) {
+                0 -> readVarint()
+                1 -> {
+                    offset += 8
+                    checkBounds()
+                }
+                2 -> {
+                    val length = readVarint().toInt()
+                    offset += length
+                    checkBounds()
+                }
+                5 -> {
+                    offset += 4
+                    checkBounds()
+                }
+                else -> throw IllegalArgumentException("unsupported protobuf wire type $wire")
+            }
+        }
+
+        private fun readVarint(): Long {
+            var shift = 0
+            var result = 0L
+            while (true) {
+                if (offset >= data.size) throw IllegalArgumentException("unexpected EOF in protobuf varint")
+                val byte = data[offset++].toInt() and 0xFF
+                result = result or ((byte and 0x7F).toLong() shl shift)
+                if ((byte and 0x80) == 0) return result
+                shift += 7
+                if (shift > 70) throw IllegalArgumentException("protobuf varint too long")
+            }
+        }
+
+        private fun requireWire(actual: Int, expected: Int) {
+            if (actual != expected) throw IllegalArgumentException("protobuf wire type $actual != $expected")
+        }
+
+        private fun checkBounds() {
+            if (offset < 0 || offset > data.size) throw IllegalArgumentException("protobuf skip out of bounds")
+        }
     }
 
     private fun setupEventsChannel(dc: DataChannel) {

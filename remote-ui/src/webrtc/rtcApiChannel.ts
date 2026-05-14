@@ -1,5 +1,11 @@
 import type { RtcJsonRpcChannel } from '../core/transport'
 import type { RTCDataChannelLike } from './browserRtcSession'
+import {
+  decodeRuntimeAPIResponse,
+  decodeRuntimeResponseBody,
+  encodeRuntimeAPIRequest,
+  encodeRuntimeRequestBody,
+} from './runtimeProtocol'
 
 export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, createError: () => Error): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -191,6 +197,13 @@ export class LocalApiChannel implements RtcJsonRpcChannel {
       }
       const sendRequest = () => {
         try {
+          const body = encodeRuntimeRequestBody(payload.path, payload.method, payload.body)
+          const request = encodeRuntimeAPIRequest({
+            id,
+            method: payload.method,
+            path: payload.path,
+            body,
+          })
           this.startResponseTimeout(id)
           this.logAPI('request', {
             id,
@@ -199,13 +212,9 @@ export class LocalApiChannel implements RtcJsonRpcChannel {
             method: payload.method,
             path: payload.path,
             body: summarizeAPIValue(payload.body, payload.path),
+            requestBytes: request.byteLength,
           })
-          this.channel.send(JSON.stringify({
-            id,
-            method: payload.method,
-            path: payload.path,
-            body: payload.body,
-          }))
+          this.channel.send(request)
         } catch (err) {
           rejectAndDelete(normalizeChannelSendError(this.channel, err))
         }
@@ -254,15 +263,11 @@ export class LocalApiChannel implements RtcJsonRpcChannel {
     if (!waiter) return
     waiter.chunks.push(frame.payload)
     if (!frame.last) return
-    let response: {
-      status: number
-      body: unknown
-    }
+    let response: ReturnType<typeof decodeRuntimeAPIResponse>
+    let body: unknown
     try {
-      response = JSON.parse(new TextDecoder().decode(concatChunks(waiter.chunks))) as {
-        status: number
-        body: unknown
-      }
+      response = decodeRuntimeAPIResponse(concatChunks(waiter.chunks))
+      body = decodeRuntimeResponseBody(waiter.path, waiter.method, response.body)
     } catch (err) {
       this.rejectWaiter(frame.id, err instanceof Error ? err : new Error(String(err)))
       return
@@ -274,14 +279,14 @@ export class LocalApiChannel implements RtcJsonRpcChannel {
       path: waiter.path,
       status: response.status,
       durationMs: Date.now() - waiter.startedAt,
-      body: summarizeAPIValue(response.body, waiter.path),
+      body: summarizeAPIValue(body, waiter.path),
     }, response.status >= 400 ? 'error' : 'info')
     if (response.status >= 400) {
-      const error = response.body as { error?: string; message?: string }
-      this.rejectWaiter(frame.id, new Error(error.error ?? error.message ?? `local api failed: ${response.status}`))
+      const error = body as { error?: string; message?: string }
+      this.rejectWaiter(frame.id, new Error(response.error || error.error || error.message || `local api failed: ${response.status}`))
       return
     }
-    this.resolveWaiter(frame.id, response.body)
+    this.resolveWaiter(frame.id, body)
   }
 
   private rejectPending(err: Error): void {

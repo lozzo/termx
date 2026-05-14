@@ -4,6 +4,13 @@ import {
   decodeTermxFrame,
   encodeTermxFrame,
 } from '../terminal/termxProtocol'
+import {
+  decodeTerminalMethodParams,
+  decodeTerminalRequestPayload,
+  encodeTerminalErrorPayload,
+  encodeTerminalHelloPayload,
+  encodeTerminalResponsePayload,
+} from '../terminal/terminalWireProtocol'
 import type {
   TerminalInfoPayload,
   TerminalResizeControl,
@@ -181,10 +188,7 @@ export class MockRtcTerminalSession implements RtcSession {
   }
 
   emitTerminalInfo(terminalId: string, info: TerminalInfoPayload): void {
-    this.channels.get(terminalId)?.emitFrame(TERMX_FRAME_TYPES.response, new TextEncoder().encode(JSON.stringify({
-      id: 9999,
-      result: JSON.stringify(info),
-    })), 0)
+    this.channels.get(terminalId)?.emitFrame(TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(9999, 'get', info), 0)
   }
 
   emitResizeControl(terminalId: string, control: TerminalResizeControl): void {
@@ -337,23 +341,17 @@ class MockBinaryChannel implements RtcBinaryChannel {
   respondToNextSnapshot(snapshot: TerminalSnapshotPayload, requestId = 2): void {
     const raw = snapshot.raw
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-      this.emitFrame(TERMX_FRAME_TYPES.response, new TextEncoder().encode(JSON.stringify({
-        id: requestId,
-        result: JSON.stringify(raw),
-      })), 0)
+      this.emitFrame(TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(requestId, 'snapshot', raw), 0)
       return
     }
-    this.emitFrame(TERMX_FRAME_TYPES.response, new TextEncoder().encode(JSON.stringify({
-      id: requestId,
-      result: JSON.stringify({
+    this.emitFrame(TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(requestId, 'snapshot', {
         size: { cols: snapshot.cols, rows: snapshot.rows },
         screen: {
           rows: snapshot.text.split('\n').map((row) => ({
             cells: Array.from(row).map((char) => ({ r: char })),
           })),
         },
-      }),
-    })), 0)
+      }), 0)
   }
 
   emitFrame(type: number, payload: Uint8Array, channel = this.streamChannel): void {
@@ -363,21 +361,20 @@ class MockBinaryChannel implements RtcBinaryChannel {
   private handleControlFrame(frame: ReturnType<typeof decodeTermxFrame>): void {
     if (frame.type !== TERMX_FRAME_TYPES.hello && frame.type !== TERMX_FRAME_TYPES.request) return
     if (frame.type === TERMX_FRAME_TYPES.hello) {
-      this.messageHandler?.(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, new TextEncoder().encode(JSON.stringify({
+      this.messageHandler?.(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeTerminalHelloPayload({
         version: 1,
         server: 'termx-test',
-      }))))
+      })))
       return
     }
-    const request = JSON.parse(new TextDecoder().decode(frame.payload)) as {
-      id: number
-      method: string
-      params?: { scrollback_offset?: number; scrollback_limit?: number }
+    const requestEnvelope = decodeTerminalRequestPayload(frame.payload)
+    const request = {
+      id: requestEnvelope.id,
+      method: requestEnvelope.method,
+      params: decodeTerminalMethodParams(requestEnvelope.method, requestEnvelope.params) as { scrollback_offset?: number; scrollback_limit?: number },
     }
     if (request.method === 'attach') {
-      this.messageHandler?.(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, new TextEncoder().encode(JSON.stringify({
-        id: request.id,
-        result: JSON.stringify({
+      this.messageHandler?.(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(request.id, request.method, {
           mode: 'collaborator',
           channel: this.streamChannel,
           resize_control: {
@@ -385,8 +382,7 @@ class MockBinaryChannel implements RtcBinaryChannel {
             reason: this.attachResizeControl.reason,
             ...(this.attachResizeControl.sizeLocked ? { size_locked: true } : {}),
           },
-        }),
-      }))))
+        })))
       return
     }
     if (request.method === 'snapshot') {
@@ -419,24 +415,18 @@ class MockBinaryChannel implements RtcBinaryChannel {
       if (this.failEnsureResizeOnce) {
         const message = this.failEnsureResizeOnce
         this.failEnsureResizeOnce = undefined
-        this.messageHandler?.(encodeTermxFrame(0, TERMX_FRAME_TYPES.error, new TextEncoder().encode(JSON.stringify({
-          id: request.id,
-          error: { code: 403, message },
-        }))))
+        this.messageHandler?.(encodeTermxFrame(0, TERMX_FRAME_TYPES.error, encodeTerminalErrorPayload(request.id, 403, message)))
         return
       }
       const control = this.ensureResizeControl ?? this.attachResizeControl
-      this.messageHandler?.(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, new TextEncoder().encode(JSON.stringify({
-        id: request.id,
-        result: JSON.stringify({
+      this.messageHandler?.(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeTerminalResponsePayload(request.id, request.method, {
           resize_control: {
             can_resize: control.canResize,
             reason: control.reason,
             ...(control.sizeLocked ? { size_locked: true } : {}),
           },
           size: { cols: 80, rows: 24 },
-        }),
-      }))))
+        })))
     }
   }
 

@@ -21,6 +21,15 @@ import type {
   RtcSession,
   RtcSubscription,
 } from '@termx/remote-ui'
+import {
+  decodeRuntimeAPIResponse,
+  decodeRuntimeEventEnvelope,
+  decodeRuntimeResponseBody,
+  encodeRuntimeAPIRequest,
+  encodeRuntimeEventSubscribeRequest,
+  encodeRuntimeRequestBody,
+  runtimeEventEnvelopeToRtcEvent,
+} from '@termx/remote-ui'
 import { NativeConnection, type NativeConnectOpts, type NativeConnectionInfo, type NativeConnectionSnapshot, type NativeStateChangeEvent } from './plugins/nativeConnection'
 import { writeNativeDebugLog } from './nativeDebugLog'
 
@@ -1018,18 +1027,20 @@ export class NativeRtcSession implements RtcSession {
       request.bytes += chunk.payload.byteLength
       request.chunksSeen += 1
       if (!chunk.last) return
-      let response: { status: number; body: unknown }
+      let response: ReturnType<typeof decodeRuntimeAPIResponse>
+      let body: unknown
       try {
-        response = JSON.parse(new TextDecoder().decode(concatChunks(request.chunks))) as { status: number; body: unknown }
+        response = decodeRuntimeAPIResponse(concatChunks(request.chunks))
+        body = decodeRuntimeResponseBody(request.path, request.method, response.body)
       } catch (error) {
         rejectRequest(chunk.id, error instanceof Error ? error : new Error(String(error)))
         return
       }
       if (response.status >= 400) {
-        rejectRequest(chunk.id, new Error(apiResponseErrorMessage(response.body, response.status)))
+        rejectRequest(chunk.id, new Error(response.error || apiResponseErrorMessage(body, response.status)))
         return
       }
-      resolveRequest(chunk.id, response.body)
+      resolveRequest(chunk.id, body)
     }
 
     dataSubscription = binaryChannel.onMessage((data) => {
@@ -1061,13 +1072,12 @@ export class NativeRtcSession implements RtcSession {
             resolve: resolve as (value: unknown) => void,
             reject,
           })
-          const request = {
+          const requestBytes = encodeRuntimeAPIRequest({
             id,
             method: payload.method,
             path: payload.path,
-            ...(payload.body !== undefined ? { body: payload.body } : {}),
-          }
-          const requestBytes = new TextEncoder().encode(JSON.stringify(request))
+            body: encodeRuntimeRequestBody(payload.path, payload.method, payload.body),
+          })
           nativeBridgeLog('api_request_send', {
             id,
             method: payload.method,
@@ -1171,10 +1181,10 @@ export class NativeRtcSession implements RtcSession {
 
   private sendEventsSubscribe(label: string): void {
     if (this.eventsSubscribed) return
-    const payload = new TextEncoder().encode(JSON.stringify({
+    const payload = encodeRuntimeEventSubscribeRequest({
       type: 'subscribe',
       types: [1, 2, 3, 4, 10],
-    }))
+    })
     if (this.bridge.sendData(label, payload)) {
       this.eventsSubscribed = true
     }
@@ -1189,35 +1199,7 @@ export class NativeRtcSession implements RtcSession {
   }
 
   private parseRtcEvent(payload: Uint8Array): RtcEvent {
-    const value = JSON.parse(new TextDecoder().decode(payload)) as unknown
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-      throw new Error('rtc event must be an object')
-    }
-    const record = value as Record<string, unknown>
-    if (typeof record.type === 'number') {
-      const eventType = terminalInventoryProtocolEventNames.get(record.type)
-      if (eventType) {
-        const eventPayload: Record<string, unknown> = {
-          eventType,
-          protocolType: record.type,
-        }
-        if (typeof record.terminal_id === 'string' && record.terminal_id.trim()) {
-          eventPayload.terminalId = record.terminal_id.trim()
-        }
-        if (typeof record.timestamp === 'string' && record.timestamp.trim()) {
-          eventPayload.timestamp = record.timestamp.trim()
-        }
-        return { type: 'inventory_changed', payload: eventPayload }
-      }
-      return { type: `protocol_event_${record.type}`, payload: record }
-    }
-    if (typeof record.type !== 'string' || record.type.length === 0) {
-      throw new Error('rtc event type is required')
-    }
-    return {
-      type: record.type,
-      ...(Object.hasOwn(record, 'payload') ? { payload: record.payload } : {}),
-    }
+    return runtimeEventEnvelopeToRtcEvent(decodeRuntimeEventEnvelope(payload))
   }
 
   async getConnectionInfo(): Promise<ConnectionInfo> {
@@ -1652,14 +1634,6 @@ function estimateJSONBytes(value: unknown): number {
     return 0
   }
 }
-
-const terminalInventoryProtocolEventNames = new Map<number, string>([
-  [1, 'terminal_created'],
-  [2, 'terminal_state_changed'],
-  [3, 'terminal_resized'],
-  [4, 'terminal_removed'],
-  [10, 'terminal_metadata_changed'],
-])
 
 function parseApiChunk(bytes: Uint8Array): { id: string; payload: Uint8Array; last: boolean } {
   if (bytes.length < 3 || bytes[0] !== API_CHUNK_MAGIC) {
