@@ -3,7 +3,7 @@ package render
 import (
 	"strings"
 
-	"github.com/lozzow/termx/termx-core/perftrace"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 )
 
 func renderResultWithCoordinator(coordinator *Coordinator, vm RenderVM) RenderResult {

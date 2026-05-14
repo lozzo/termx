@@ -16,9 +16,9 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	creackpty "github.com/creack/pty"
 	"github.com/lozzow/termx/termx-core"
-	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
 )

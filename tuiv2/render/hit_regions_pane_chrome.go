@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/termx-core/terminalmeta"
+	"github.com/lozzow/termx/termx-shared/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -243,4 +243,3 @@ func PaneChromeHitRegions(pane workbench.VisiblePane, runtimeState *VisibleRunti
 	}
 	return regions
 }
-

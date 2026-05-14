@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core/fanout"
-	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/transport"
 	"github.com/lozzow/termx/termx-core/transport/memory"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 

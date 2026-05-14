@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	runtimestate "github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"

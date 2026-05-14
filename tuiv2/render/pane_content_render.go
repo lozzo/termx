@@ -4,24 +4,24 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 type resolvedPaneContent struct {
-	terminalKnown bool
-	terminalName  string
-	terminalState string
-	snapshot      *protocol.Snapshot
-	surface       runtime.TerminalSurface
-	screenUpdate  terminalScreenUpdateHint
-	source        terminalRenderSource
-	metrics       renderTerminalMetrics
-	contentRect   workbench.Rect
-	renderOffset  int
+	terminalKnown  bool
+	terminalName   string
+	terminalState  string
+	snapshot       *protocol.Snapshot
+	surface        runtime.TerminalSurface
+	screenUpdate   terminalScreenUpdateHint
+	source         terminalRenderSource
+	metrics        renderTerminalMetrics
+	contentRect    workbench.Rect
+	renderOffset   int
 	contentOffsetX int
 	contentOffsetY int
 }

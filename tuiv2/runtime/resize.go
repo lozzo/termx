@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core/protocol"
-	"github.com/lozzow/termx/termx-core/terminalmeta"
+	"github.com/lozzow/termx/termx-shared/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 

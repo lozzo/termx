@@ -5,7 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/lozzow/termx/termx-core/perftrace"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 )
 
 type StreamMessageType int

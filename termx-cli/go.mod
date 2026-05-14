@@ -41,6 +41,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/lozzow/termx/termx-remote v0.0.0
+	github.com/lozzow/termx/termx-shared v0.0.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
@@ -85,3 +86,5 @@ replace github.com/charmbracelet/x/vt => ../termx-vterm/third_party/github.com/c
 replace github.com/lozzow/termx/termx-remote => ../termx-remote
 
 replace github.com/lozzow/termx/termx-vterm => ../termx-vterm
+
+replace github.com/lozzow/termx/termx-shared => ../termx-shared

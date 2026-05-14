@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 )
 
 type attachmentStreamPump struct {

@@ -1,7 +1,7 @@
 package termx
 
 import (
-	"github.com/lozzow/termx/termx-core/perftrace"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 

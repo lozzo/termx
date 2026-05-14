@@ -5,6 +5,7 @@ use (
 	./termx-core
 	./termx-hub
 	./termx-remote
+	./termx-shared
 	./termx-vterm
 	./tuiv2
 )

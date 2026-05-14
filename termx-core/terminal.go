@@ -14,10 +14,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/lozzow/termx/termx-core/fanout"
-	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
 	ptymgr "github.com/lozzow/termx/termx-core/pty"
-	"github.com/lozzow/termx/termx-core/terminalmeta"
+	"github.com/lozzow/termx/termx-shared/perftrace"
+	"github.com/lozzow/termx/termx-shared/terminalmeta"
 	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 

@@ -17,6 +17,7 @@ require (
 
 require (
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/lozzow/termx/termx-shared v0.0.0
 	github.com/pion/datachannel v1.6.0 // indirect
 	github.com/pion/dtls/v3 v3.1.2 // indirect
 	github.com/pion/interceptor v0.1.44 // indirect
@@ -43,3 +44,5 @@ replace github.com/lozzow/termx/termx-core => ../termx-core
 replace github.com/lozzow/termx/termx-vterm => ../termx-vterm
 
 replace github.com/charmbracelet/x/vt => ../termx-vterm/third_party/github.com/charmbracelet/x/vt
+
+replace github.com/lozzow/termx/termx-shared => ../termx-shared

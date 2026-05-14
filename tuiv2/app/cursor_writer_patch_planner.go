@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/termx-core/perftrace"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 )
 
 type framePatchCandidateMode uint8

@@ -15,8 +15,8 @@ import (
 
 	"github.com/lozzow/termx/termx-core"
 	"github.com/lozzow/termx/termx-core/protocol"
-	"github.com/lozzow/termx/termx-core/terminalmeta"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
+	"github.com/lozzow/termx/termx-shared/terminalmeta"
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/sessionstore"

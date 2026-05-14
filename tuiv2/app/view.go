@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/lozzow/termx/termx-core/perftrace"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 )
 
 func (m *Model) View() string {
