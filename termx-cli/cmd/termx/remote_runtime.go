@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -58,7 +57,7 @@ func (h *remoteRuntimeHost) TerminalInventoryChanged() {
 	h.service.TriggerSync()
 }
 
-func (h *remoteRuntimeHost) HandleProtocolMethod(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, int, bool, error) {
+func (h *remoteRuntimeHost) HandleProtocolMethod(ctx context.Context, method string, params []byte) ([]byte, int, bool, error) {
 	if h == nil || h.service == nil || !strings.HasPrefix(method, "remote.") {
 		return nil, 0, false, nil
 	}
@@ -71,15 +70,15 @@ func (h *remoteRuntimeHost) HandleProtocolMethod(ctx context.Context, method str
 		status := h.service.Status()
 		result = &status
 	case "remote.pair.start":
-		var in remoteprotocol.PairStartParams
-		if err := json.Unmarshal(params, &in); err != nil {
+		in, err := decodeRemotePairStartParams(params)
+		if err != nil {
 			return nil, 400, true, err
 		}
 		resultValue, callErr := h.service.PairStart(in)
 		result, err = &resultValue, callErr
 	case "remote.local.enable":
-		var in remoteprotocol.LocalEnableParams
-		if err := json.Unmarshal(params, &in); err != nil {
+		in, err := decodeRemoteLocalEnableParams(params)
+		if err != nil {
 			return nil, 400, true, err
 		}
 		resultValue, callErr := h.service.LocalEnable(ctx, in)
@@ -96,7 +95,7 @@ func (h *remoteRuntimeHost) HandleProtocolMethod(ctx context.Context, method str
 	if err != nil {
 		return nil, 500, true, err
 	}
-	data, err := json.Marshal(result)
+	data, err := encodeRemoteResult(method, result)
 	if err != nil {
 		return nil, 500, true, err
 	}
@@ -173,9 +172,6 @@ func (h *remoteRuntimeHost) Events(ctx context.Context, params protocol.EventsPa
 	if strings.TrimSpace(params.TerminalID) != "" {
 		opts = append(opts, termx.WithTerminalFilter(strings.TrimSpace(params.TerminalID)))
 	}
-	if strings.TrimSpace(params.SessionID) != "" {
-		opts = append(opts, termx.WithSessionFilter(strings.TrimSpace(params.SessionID)))
-	}
 	if len(params.Types) > 0 {
 		types := make([]termx.EventType, 0, len(params.Types))
 		for _, typ := range params.Types {
@@ -245,7 +241,6 @@ func protocolEventFromCore(evt termx.Event) protocol.Event {
 	out := protocol.Event{
 		Type:       protocol.EventType(evt.Type),
 		TerminalID: evt.TerminalID,
-		SessionID:  evt.SessionID,
 		Timestamp:  evt.Timestamp,
 	}
 	if evt.Created != nil {
@@ -277,8 +272,15 @@ func protocolEventFromCore(evt termx.Event) protocol.Event {
 	if evt.ReadError != nil {
 		out.ReadError = &protocol.TerminalReadErrorData{Error: evt.ReadError.Error}
 	}
-	if evt.Session != nil {
-		out.Session = &protocol.SessionEventData{Revision: evt.Session.Revision, ViewID: evt.Session.ViewID}
+	if evt.Storage != nil {
+		out.Storage = &protocol.StorageChangedData{
+			AppID:   evt.Storage.AppID,
+			Scope:   protocol.StorageScope(evt.Storage.Scope),
+			OwnerID: evt.Storage.OwnerID,
+			Key:     evt.Storage.Key,
+			Version: evt.Storage.Version,
+			Op:      evt.Storage.Op,
+		}
 	}
 	return out
 }

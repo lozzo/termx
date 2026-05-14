@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,7 +17,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lozzow/termx/termx-remote/protocol/runtimepb"
 	"github.com/pion/webrtc/v4"
+	"google.golang.org/protobuf/proto"
 )
 
 type Manager struct {
@@ -172,14 +173,14 @@ func validatePath(p string) (string, error) {
 }
 
 func (m *Manager) handleListDir(body []byte) (int32, []byte, string) {
-	var req struct {
-		Path   string `json:"path"`
-		Offset int    `json:"offset"`
-		Limit  int    `json:"limit"`
+	var req runtimepb.FileListRequest
+	if len(body) > 0 {
+		if err := proto.Unmarshal(body, &req); err != nil {
+			return http.StatusBadRequest, nil, "invalid list request"
+		}
 	}
-	_ = json.Unmarshal(body, &req)
 
-	dirPath, err := validatePath(req.Path)
+	dirPath, err := validatePath(req.GetPath())
 	if err != nil {
 		return http.StatusBadRequest, nil, err.Error()
 	}
@@ -189,14 +190,14 @@ func (m *Manager) handleListDir(body []byte) (int32, []byte, string) {
 	}
 
 	total := len(entries)
-	limit := req.Limit
+	limit := int(req.GetLimit())
 	if limit <= 0 {
 		limit = 500
 	}
 	if limit > 2000 {
 		limit = 2000
 	}
-	offset := req.Offset
+	offset := int(req.GetOffset())
 	if offset < 0 {
 		offset = 0
 	}
@@ -208,38 +209,39 @@ func (m *Manager) handleListDir(body []byte) (int32, []byte, string) {
 		offset = total
 	}
 
-	fileEntries := make([]FileEntry, 0, end-offset)
+	fileEntries := make([]*runtimepb.FileEntry, 0, end-offset)
 	for _, entry := range entries[offset:end] {
 		fullPath := filepath.Join(dirPath, entry.Name())
 		fileEntry, ok := describeFileEntry(fullPath, entry.Name())
 		if !ok {
 			continue
 		}
-		fileEntries = append(fileEntries, fileEntry)
+		fileEntries = append(fileEntries, fileEntryToProto(fileEntry))
 	}
 
 	parent := ""
 	if dirPath != "/" {
 		parent = filepath.Dir(dirPath)
 	}
-	data, _ := json.Marshal(DirListResponse{
+	data, err := proto.Marshal(&runtimepb.FileListResponse{
 		Path:    dirPath,
 		Entries: fileEntries,
 		Parent:  parent,
-		Total:   total,
+		Total:   int32(total),
 	})
+	if err != nil {
+		return http.StatusInternalServerError, nil, err.Error()
+	}
 	return http.StatusOK, data, ""
 }
 
 func (m *Manager) handleStat(body []byte) (int32, []byte, string) {
-	var req struct {
-		Path string `json:"path"`
-	}
-	if json.Unmarshal(body, &req) != nil || req.Path == "" {
+	var req runtimepb.FilePathRequest
+	if proto.Unmarshal(body, &req) != nil || req.GetPath() == "" {
 		return http.StatusBadRequest, nil, "path required"
 	}
 
-	p, err := validatePath(req.Path)
+	p, err := validatePath(req.GetPath())
 	if err != nil {
 		return http.StatusBadRequest, nil, err.Error()
 	}
@@ -251,7 +253,10 @@ func (m *Manager) handleStat(body []byte) (int32, []byte, string) {
 	if !ok {
 		return http.StatusNotFound, nil, "file metadata unavailable"
 	}
-	data, _ := json.Marshal(fileEntry)
+	data, err := proto.Marshal(fileEntryToProto(fileEntry))
+	if err != nil {
+		return http.StatusInternalServerError, nil, err.Error()
+	}
 	return http.StatusOK, data, ""
 }
 
@@ -295,6 +300,33 @@ func describeFileEntry(fullPath string, displayName string) (FileEntry, bool) {
 		LinkCount:  linkCount,
 		Inode:      inode,
 	}, true
+}
+
+func fileEntryToProto(entry FileEntry) *runtimepb.FileEntry {
+	out := &runtimepb.FileEntry{
+		Name:       entry.Name,
+		Type:       entry.Type,
+		Size:       entry.Size,
+		Mode:       entry.Mode,
+		ModTime:    entry.ModTime,
+		LinkTarget: entry.LinkTarget,
+		HardLink:   entry.HardLink,
+		LinkCount:  entry.LinkCount,
+		Inode:      entry.Inode,
+	}
+	if entry.ChildCount != nil {
+		value := int32(*entry.ChildCount)
+		out.ChildCount = &value
+	}
+	return out
+}
+
+func marshalProtoResponse(msg proto.Message) (int32, []byte, string) {
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		return http.StatusInternalServerError, nil, err.Error()
+	}
+	return http.StatusOK, data, ""
 }
 
 func directoryChildCount(fullPath string, entryType string) *int {
@@ -348,31 +380,30 @@ func reflectUint(value reflect.Value) uint64 {
 }
 
 func (m *Manager) handleMkdir(body []byte) (int32, []byte, string) {
-	var req struct {
-		Path string `json:"path"`
-	}
-	if json.Unmarshal(body, &req) != nil || req.Path == "" {
+	var req runtimepb.FilePathRequest
+	if proto.Unmarshal(body, &req) != nil || req.GetPath() == "" {
 		return http.StatusBadRequest, nil, "path required"
 	}
-	p, err := validatePath(req.Path)
+	p, err := validatePath(req.GetPath())
 	if err != nil {
 		return http.StatusBadRequest, nil, err.Error()
 	}
 	if err := os.MkdirAll(p, 0o755); err != nil {
 		return http.StatusInternalServerError, nil, err.Error()
 	}
-	data, _ := json.Marshal(map[string]string{"path": p})
+	data, err := proto.Marshal(&runtimepb.FilePathResponse{Path: p})
+	if err != nil {
+		return http.StatusInternalServerError, nil, err.Error()
+	}
 	return http.StatusOK, data, ""
 }
 
 func (m *Manager) handleDelete(body []byte) (int32, []byte, string) {
-	var req struct {
-		Path string `json:"path"`
-	}
-	if json.Unmarshal(body, &req) != nil || req.Path == "" {
+	var req runtimepb.FilePathRequest
+	if proto.Unmarshal(body, &req) != nil || req.GetPath() == "" {
 		return http.StatusBadRequest, nil, "path required"
 	}
-	p, err := validatePath(req.Path)
+	p, err := validatePath(req.GetPath())
 	if err != nil {
 		return http.StatusBadRequest, nil, err.Error()
 	}
@@ -382,42 +413,42 @@ func (m *Manager) handleDelete(body []byte) (int32, []byte, string) {
 	if err := os.RemoveAll(p); err != nil {
 		return http.StatusInternalServerError, nil, err.Error()
 	}
-	data, _ := json.Marshal(map[string]string{"path": p})
+	data, err := proto.Marshal(&runtimepb.FilePathResponse{Path: p})
+	if err != nil {
+		return http.StatusInternalServerError, nil, err.Error()
+	}
 	return http.StatusOK, data, ""
 }
 
 func (m *Manager) handleRename(body []byte) (int32, []byte, string) {
-	var req struct {
-		Path    string `json:"path"`
-		NewPath string `json:"new_path"`
-	}
-	if json.Unmarshal(body, &req) != nil || req.Path == "" || req.NewPath == "" {
+	var req runtimepb.FileRenameRequest
+	if proto.Unmarshal(body, &req) != nil || req.GetPath() == "" || req.GetNewPath() == "" {
 		return http.StatusBadRequest, nil, "path and new_path required"
 	}
-	oldPath, err := validatePath(req.Path)
+	oldPath, err := validatePath(req.GetPath())
 	if err != nil {
 		return http.StatusBadRequest, nil, err.Error()
 	}
-	newPath, err := validatePath(req.NewPath)
+	newPath, err := validatePath(req.GetNewPath())
 	if err != nil {
 		return http.StatusBadRequest, nil, err.Error()
 	}
 	if err := os.Rename(oldPath, newPath); err != nil {
 		return http.StatusInternalServerError, nil, err.Error()
 	}
-	data, _ := json.Marshal(map[string]string{"path": newPath})
+	data, err := proto.Marshal(&runtimepb.FilePathResponse{Path: newPath})
+	if err != nil {
+		return http.StatusInternalServerError, nil, err.Error()
+	}
 	return http.StatusOK, data, ""
 }
 
 func (m *Manager) handleCopy(body []byte) (int32, []byte, string) {
-	var req struct {
-		Paths []string `json:"paths"`
-		Dest  string   `json:"dest"`
-	}
-	if json.Unmarshal(body, &req) != nil || len(req.Paths) == 0 || req.Dest == "" {
+	var req runtimepb.FileCopyMoveRequest
+	if proto.Unmarshal(body, &req) != nil || len(req.GetPaths()) == 0 || req.GetDest() == "" {
 		return http.StatusBadRequest, nil, "paths and dest required"
 	}
-	destDir, err := validatePath(req.Dest)
+	destDir, err := validatePath(req.GetDest())
 	if err != nil {
 		return http.StatusBadRequest, nil, err.Error()
 	}
@@ -426,40 +457,35 @@ func (m *Manager) handleCopy(body []byte) (int32, []byte, string) {
 		return http.StatusBadRequest, nil, "dest is not a directory"
 	}
 
-	type result struct {
-		Source string `json:"source"`
-		Dest   string `json:"dest,omitempty"`
-		Error  string `json:"error,omitempty"`
-	}
-	results := make([]result, 0, len(req.Paths))
+	results := make([]*runtimepb.FileOperationResult, 0, len(req.GetPaths()))
 	copied := 0
-	for _, p := range req.Paths {
+	for _, p := range req.GetPaths() {
 		srcPath, err := validatePath(p)
 		if err != nil {
-			results = append(results, result{Source: p, Error: err.Error()})
+			results = append(results, &runtimepb.FileOperationResult{Source: p, Error: err.Error()})
 			continue
 		}
 		destPath := resolveConflict(filepath.Join(destDir, filepath.Base(srcPath)))
 		if err := copyFileOrDir(srcPath, destPath); err != nil {
-			results = append(results, result{Source: srcPath, Error: err.Error()})
+			results = append(results, &runtimepb.FileOperationResult{Source: srcPath, Error: err.Error()})
 			continue
 		}
-		results = append(results, result{Source: srcPath, Dest: destPath})
+		results = append(results, &runtimepb.FileOperationResult{Source: srcPath, Dest: destPath})
 		copied++
 	}
-	data, _ := json.Marshal(map[string]any{"copied": copied, "results": results})
+	data, err := proto.Marshal(&runtimepb.FileCopyMoveResponse{Affected: int32(copied), Results: results})
+	if err != nil {
+		return http.StatusInternalServerError, nil, err.Error()
+	}
 	return http.StatusOK, data, ""
 }
 
 func (m *Manager) handleMove(body []byte) (int32, []byte, string) {
-	var req struct {
-		Paths []string `json:"paths"`
-		Dest  string   `json:"dest"`
-	}
-	if json.Unmarshal(body, &req) != nil || len(req.Paths) == 0 || req.Dest == "" {
+	var req runtimepb.FileCopyMoveRequest
+	if proto.Unmarshal(body, &req) != nil || len(req.GetPaths()) == 0 || req.GetDest() == "" {
 		return http.StatusBadRequest, nil, "paths and dest required"
 	}
-	destDir, err := validatePath(req.Dest)
+	destDir, err := validatePath(req.GetDest())
 	if err != nil {
 		return http.StatusBadRequest, nil, err.Error()
 	}
@@ -468,74 +494,66 @@ func (m *Manager) handleMove(body []byte) (int32, []byte, string) {
 		return http.StatusBadRequest, nil, "dest is not a directory"
 	}
 
-	type result struct {
-		Source string `json:"source"`
-		Dest   string `json:"dest,omitempty"`
-		Error  string `json:"error,omitempty"`
-	}
-	results := make([]result, 0, len(req.Paths))
+	results := make([]*runtimepb.FileOperationResult, 0, len(req.GetPaths()))
 	moved := 0
-	for _, p := range req.Paths {
+	for _, p := range req.GetPaths() {
 		srcPath, err := validatePath(p)
 		if err != nil {
-			results = append(results, result{Source: p, Error: err.Error()})
+			results = append(results, &runtimepb.FileOperationResult{Source: p, Error: err.Error()})
 			continue
 		}
 		destPath := resolveConflict(filepath.Join(destDir, filepath.Base(srcPath)))
 		if err := os.Rename(srcPath, destPath); err != nil {
-			results = append(results, result{Source: srcPath, Error: err.Error()})
+			results = append(results, &runtimepb.FileOperationResult{Source: srcPath, Error: err.Error()})
 			continue
 		}
-		results = append(results, result{Source: srcPath, Dest: destPath})
+		results = append(results, &runtimepb.FileOperationResult{Source: srcPath, Dest: destPath})
 		moved++
 	}
-	data, _ := json.Marshal(map[string]any{"moved": moved, "results": results})
+	data, err := proto.Marshal(&runtimepb.FileCopyMoveResponse{Affected: int32(moved), Results: results})
+	if err != nil {
+		return http.StatusInternalServerError, nil, err.Error()
+	}
 	return http.StatusOK, data, ""
 }
 
 func (m *Manager) handleBatchDelete(body []byte) (int32, []byte, string) {
-	var req struct {
-		Paths []string `json:"paths"`
-	}
-	if json.Unmarshal(body, &req) != nil || len(req.Paths) == 0 {
+	var req runtimepb.FileMultiPathRequest
+	if proto.Unmarshal(body, &req) != nil || len(req.GetPaths()) == 0 {
 		return http.StatusBadRequest, nil, "paths required"
 	}
-	type errResult struct {
-		Path  string `json:"path"`
-		Error string `json:"error"`
-	}
-	errorsOut := make([]errResult, 0)
+	errorsOut := make([]*runtimepb.FileDeleteError, 0)
 	deleted := 0
-	for _, p := range req.Paths {
+	for _, p := range req.GetPaths() {
 		path, err := validatePath(p)
 		if err != nil {
-			errorsOut = append(errorsOut, errResult{Path: p, Error: err.Error()})
+			errorsOut = append(errorsOut, &runtimepb.FileDeleteError{Path: p, Error: err.Error()})
 			continue
 		}
 		if path == "/" {
-			errorsOut = append(errorsOut, errResult{Path: p, Error: "cannot delete root directory"})
+			errorsOut = append(errorsOut, &runtimepb.FileDeleteError{Path: p, Error: "cannot delete root directory"})
 			continue
 		}
 		if err := os.RemoveAll(path); err != nil {
-			errorsOut = append(errorsOut, errResult{Path: path, Error: err.Error()})
+			errorsOut = append(errorsOut, &runtimepb.FileDeleteError{Path: path, Error: err.Error()})
 			continue
 		}
 		deleted++
 	}
-	data, _ := json.Marshal(map[string]any{"deleted": deleted, "errors": errorsOut})
+	data, err := proto.Marshal(&runtimepb.FileBatchDeleteResponse{Deleted: int32(deleted), Errors: errorsOut})
+	if err != nil {
+		return http.StatusInternalServerError, nil, err.Error()
+	}
 	return http.StatusOK, data, ""
 }
 
 func (m *Manager) handlePreview(body []byte) (int32, []byte, string) {
-	var req struct {
-		Path    string `json:"path"`
-		MaxSize int64  `json:"max_size"`
-	}
-	if json.Unmarshal(body, &req) != nil || req.Path == "" {
+	var req runtimepb.FilePreviewRequest
+	if proto.Unmarshal(body, &req) != nil || req.GetPath() == "" {
 		return http.StatusBadRequest, nil, "path required"
 	}
 
-	p, err := validatePath(req.Path)
+	p, err := validatePath(req.GetPath())
 	if err != nil {
 		return http.StatusBadRequest, nil, err.Error()
 	}
@@ -547,33 +565,30 @@ func (m *Manager) handlePreview(body []byte) (int32, []byte, string) {
 		return http.StatusBadRequest, nil, "cannot preview a directory"
 	}
 	category, mimeType := detectFileCategory(info.Name())
-	resp := map[string]any{
-		"path":      p,
-		"name":      info.Name(),
-		"size":      info.Size(),
-		"mime_type": mimeType,
-		"category":  category,
-		"is_text":   category == "text",
+	resp := &runtimepb.FilePreviewResponse{
+		Path:     p,
+		Name:     info.Name(),
+		Size:     info.Size(),
+		MimeType: mimeType,
+		Category: category,
+		IsText:   category == "text",
 	}
 	if category == "unsupported" {
-		data, _ := json.Marshal(resp)
-		return http.StatusOK, data, ""
+		return marshalProtoResponse(resp)
 	}
 
 	maxText := int64(5 << 20)
-	if req.MaxSize > 0 {
-		if category == "text" && req.MaxSize < maxText {
-			maxText = req.MaxSize
+	if req.GetMaxSize() > 0 {
+		if category == "text" && req.GetMaxSize() < maxText {
+			maxText = req.GetMaxSize()
 		}
 	}
 	if category == "text" && info.Size() > maxText {
-		resp["preview_limit"] = maxText
-		data, _ := json.Marshal(resp)
-		return http.StatusOK, data, ""
+		resp.PreviewLimit = maxText
+		return marshalProtoResponse(resp)
 	}
 	if category == "video" || category == "model" {
-		data, _ := json.Marshal(resp)
-		return http.StatusOK, data, ""
+		return marshalProtoResponse(resp)
 	}
 
 	content, err := os.ReadFile(p)
@@ -581,25 +596,19 @@ func (m *Manager) handlePreview(body []byte) (int32, []byte, string) {
 		return http.StatusInternalServerError, nil, err.Error()
 	}
 	if category == "text" {
-		resp["content"] = string(content)
+		resp.Content = string(content)
 	} else {
-		resp["content_base64"] = base64.StdEncoding.EncodeToString(content)
+		resp.ContentBase64 = base64.StdEncoding.EncodeToString(content)
 	}
-	data, _ := json.Marshal(resp)
-	return http.StatusOK, data, ""
+	return marshalProtoResponse(resp)
 }
 
 func (m *Manager) handleDownloadInit(body []byte) (int32, []byte, string) {
-	var req struct {
-		Path       string `json:"path"`
-		Offset     int64  `json:"offset"`
-		Length     int64  `json:"length"`
-		TransferID string `json:"transfer_id"`
-	}
-	if json.Unmarshal(body, &req) != nil || req.Path == "" {
+	var req runtimepb.FileDownloadInitRequest
+	if proto.Unmarshal(body, &req) != nil || req.GetPath() == "" {
 		return http.StatusBadRequest, nil, "path required"
 	}
-	p, err := validatePath(req.Path)
+	p, err := validatePath(req.GetPath())
 	if err != nil {
 		return http.StatusBadRequest, nil, err.Error()
 	}
@@ -611,16 +620,16 @@ func (m *Manager) handleDownloadInit(body []byte) (int32, []byte, string) {
 		return http.StatusBadRequest, nil, "cannot download a directory"
 	}
 
-	offset := req.Offset
+	offset := req.GetOffset()
 	if offset < 0 || offset > info.Size() {
 		offset = 0
 	}
-	length := req.Length
+	length := req.GetLength()
 	available := info.Size() - offset
 	if length <= 0 || length > available {
 		length = available
 	}
-	transferID := strings.TrimSpace(req.TransferID)
+	transferID := strings.TrimSpace(req.GetTransferId())
 	if transferID == "" {
 		transferID = fmt.Sprintf("dl-%d", time.Now().UnixNano())
 	} else if !validTransferID(transferID) {
@@ -639,15 +648,14 @@ func (m *Manager) handleDownloadInit(body []byte) (int32, []byte, string) {
 	}
 	m.mu.Unlock()
 
-	data, _ := json.Marshal(map[string]any{
-		"transfer_id": transferID,
-		"name":        info.Name(),
-		"size":        info.Size(),
-		"chunk_size":  chunkSize,
-		"offset":      offset,
-		"length":      length,
+	return marshalProtoResponse(&runtimepb.FileDownloadInitResponse{
+		TransferId: transferID,
+		Name:       info.Name(),
+		Size:       info.Size(),
+		ChunkSize:  chunkSize,
+		Offset:     offset,
+		Length:     length,
 	})
-	return http.StatusOK, data, ""
 }
 
 func validTransferID(id string) bool {
@@ -664,19 +672,15 @@ func validTransferID(id string) bool {
 }
 
 func (m *Manager) handleUploadInit(body []byte) (int32, []byte, string) {
-	var req struct {
-		Path     string `json:"path"`
-		Size     int64  `json:"size"`
-		ResumeID string `json:"resume_id"`
-	}
-	if json.Unmarshal(body, &req) != nil || req.Path == "" {
+	var req runtimepb.FileUploadInitRequest
+	if proto.Unmarshal(body, &req) != nil || req.GetPath() == "" {
 		return http.StatusBadRequest, nil, "path required"
 	}
-	if req.Size < 0 {
+	if req.GetSize() < 0 {
 		return http.StatusBadRequest, nil, "size must be non-negative"
 	}
 
-	p, err := validatePath(req.Path)
+	p, err := validatePath(req.GetPath())
 	if err != nil {
 		return http.StatusBadRequest, nil, err.Error()
 	}
@@ -685,9 +689,9 @@ func (m *Manager) handleUploadInit(body []byte) (int32, []byte, string) {
 		return http.StatusInternalServerError, nil, err.Error()
 	}
 
-	if req.ResumeID != "" {
+	if req.GetResumeId() != "" {
 		m.mu.Lock()
-		existing, ok := m.transfers[req.ResumeID]
+		existing, ok := m.transfers[req.GetResumeId()]
 		m.mu.Unlock()
 		if ok && existing.Direction == "upload" && existing.TempPath != "" {
 			offset := existing.Offset
@@ -697,24 +701,23 @@ func (m *Manager) handleUploadInit(body []byte) (int32, []byte, string) {
 				}
 			}
 			existing.Offset = offset
-			data, _ := json.Marshal(map[string]any{
-				"transfer_id":     req.ResumeID,
-				"chunk_size":      chunkSize,
-				"uploaded_offset": offset,
+			return marshalProtoResponse(&runtimepb.FileUploadInitResponse{
+				TransferId:     req.GetResumeId(),
+				ChunkSize:      chunkSize,
+				UploadedOffset: offset,
 			})
-			return http.StatusOK, data, ""
 		}
 	}
 
 	transferID := fmt.Sprintf("ul-%d", time.Now().UnixNano())
 	tempPath := ""
 	offset := int64(0)
-	if req.ResumeID != "" {
-		transferID = req.ResumeID
-		tempPath = uploadResumeTempPath(p, req.ResumeID)
+	if req.GetResumeId() != "" {
+		transferID = req.GetResumeId()
+		tempPath = uploadResumeTempPath(p, req.GetResumeId())
 		if info, err := os.Stat(tempPath); err == nil {
 			offset = info.Size()
-			if offset > req.Size {
+			if offset > req.GetSize() {
 				_ = os.Remove(tempPath)
 				offset = 0
 			}
@@ -732,7 +735,7 @@ func (m *Manager) handleUploadInit(body []byte) (int32, []byte, string) {
 	m.transfers[transferID] = &FileTransfer{
 		ID:        transferID,
 		Path:      p,
-		Size:      req.Size,
+		Size:      req.GetSize(),
 		ChunkSize: chunkSize,
 		Direction: "upload",
 		TempPath:  tempPath,
@@ -741,26 +744,23 @@ func (m *Manager) handleUploadInit(body []byte) (int32, []byte, string) {
 	}
 	m.mu.Unlock()
 
-	data, _ := json.Marshal(map[string]any{
-		"transfer_id":     transferID,
-		"chunk_size":      chunkSize,
-		"uploaded_offset": offset,
+	return marshalProtoResponse(&runtimepb.FileUploadInitResponse{
+		TransferId:     transferID,
+		ChunkSize:      chunkSize,
+		UploadedOffset: offset,
 	})
-	return http.StatusOK, data, ""
 }
 
 func (m *Manager) handleUploadComplete(body []byte) (int32, []byte, string) {
-	var req struct {
-		TransferID string `json:"transfer_id"`
-	}
-	if json.Unmarshal(body, &req) != nil || req.TransferID == "" {
+	var req runtimepb.FileUploadCompleteRequest
+	if proto.Unmarshal(body, &req) != nil || req.GetTransferId() == "" {
 		return http.StatusBadRequest, nil, "transfer_id required"
 	}
 
 	m.mu.Lock()
-	transfer, ok := m.transfers[req.TransferID]
+	transfer, ok := m.transfers[req.GetTransferId()]
 	if ok {
-		delete(m.transfers, req.TransferID)
+		delete(m.transfers, req.GetTransferId())
 	}
 	m.mu.Unlock()
 	if !ok {
@@ -773,8 +773,7 @@ func (m *Manager) handleUploadComplete(body []byte) (int32, []byte, string) {
 		_ = os.Remove(transfer.TempPath)
 		return http.StatusInternalServerError, nil, err.Error()
 	}
-	data, _ := json.Marshal(map[string]string{"path": transfer.Path})
-	return http.StatusOK, data, ""
+	return marshalProtoResponse(&runtimepb.FilePathResponse{Path: transfer.Path})
 }
 
 func (m *Manager) HandleFileChannel(dc *webrtc.DataChannel, transferID string) {

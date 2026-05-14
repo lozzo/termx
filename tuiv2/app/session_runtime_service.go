@@ -4,8 +4,8 @@ import (
 	"context"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/tuiv2/sessionruntime"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 )
 
 type sessionRuntimeService struct {
@@ -59,12 +59,12 @@ func (s *sessionRuntimeService) reconcileRuntime(ctx context.Context, oldBinding
 	return manager.Reconcile(ctx, oldBindings, nextBindings)
 }
 
-func (s *sessionRuntimeService) storeLease(lease protocol.LeaseInfo) {
+func (s *sessionRuntimeService) storeLease(lease sessionstore.LeaseInfo) {
 	if s == nil || s.model == nil || lease.TerminalID == "" {
 		return
 	}
 	if s.model.sessionLeases == nil {
-		s.model.sessionLeases = make(map[string]protocol.LeaseInfo)
+		s.model.sessionLeases = make(map[string]sessionstore.LeaseInfo)
 	}
 	s.model.sessionLeases[lease.TerminalID] = lease
 }

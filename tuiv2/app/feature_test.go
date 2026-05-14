@@ -14,6 +14,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -671,7 +672,7 @@ func TestFeatureSessionBecomeOwnerAcquiresLeaseExplicitly(t *testing.T) {
 	})
 	model.sessionID = "main"
 	model.sessionViewID = "view-local"
-	model.sessionLeases = map[string]protocol.LeaseInfo{
+	model.sessionLeases = map[string]sessionstore.LeaseInfo{
 		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-x"},
 	}
 
@@ -1098,7 +1099,7 @@ func TestFeatureSessionTabSwitchDoesNotImplicitlyAcquireLease(t *testing.T) {
 	})
 	model.sessionID = "main"
 	model.sessionViewID = "view-local"
-	model.sessionLeases = map[string]protocol.LeaseInfo{
+	model.sessionLeases = map[string]sessionstore.LeaseInfo{
 		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-remote"},
 	}
 
@@ -3806,7 +3807,7 @@ func TestFeatureSessionTerminalInputDoesNotAcquireLeaseImplicitly(t *testing.T) 
 	})
 	model.sessionID = "main"
 	model.sessionViewID = "view-local"
-	model.sessionLeases = map[string]protocol.LeaseInfo{
+	model.sessionLeases = map[string]sessionstore.LeaseInfo{
 		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-remote"},
 	}
 
@@ -3863,7 +3864,7 @@ func TestFeatureSessionTerminalInputReacquiresLeaseForSameOwnerPane(t *testing.T
 	})
 	model.sessionID = "main"
 	model.sessionViewID = "view-local"
-	model.sessionLeases = map[string]protocol.LeaseInfo{
+	model.sessionLeases = map[string]sessionstore.LeaseInfo{
 		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-1"},
 	}
 
@@ -3927,7 +3928,7 @@ func TestFeatureSessionTerminalInputKeepsFollowerStateWhenSizeMatches(t *testing
 	})
 	model.sessionID = "main"
 	model.sessionViewID = "view-local"
-	model.sessionLeases = map[string]protocol.LeaseInfo{
+	model.sessionLeases = map[string]sessionstore.LeaseInfo{
 		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-remote"},
 	}
 
@@ -4016,7 +4017,7 @@ func TestFeatureSessionTerminalInputReclaimsSamePaneLeaseAndResizesActivePane(t 
 	})
 	model.sessionID = "main"
 	model.sessionViewID = "view-local"
-	model.sessionLeases = map[string]protocol.LeaseInfo{
+	model.sessionLeases = map[string]sessionstore.LeaseInfo{
 		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-2"},
 	}
 
@@ -4083,7 +4084,7 @@ func TestFeatureSessionTerminalInputReclaimsSamePaneLeaseForcesResizeWhenSizeMat
 	})
 	model.sessionID = "main"
 	model.sessionViewID = "view-local"
-	model.sessionLeases = map[string]protocol.LeaseInfo{
+	model.sessionLeases = map[string]sessionstore.LeaseInfo{
 		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-2"},
 	}
 
@@ -4172,7 +4173,7 @@ func TestFeatureWindowResizeReclaimsSamePaneSessionLeaseForActivePane(t *testing
 	})
 	model.sessionID = "main"
 	model.sessionViewID = "view-local"
-	model.sessionLeases = map[string]protocol.LeaseInfo{
+	model.sessionLeases = map[string]sessionstore.LeaseInfo{
 		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-2"},
 	}
 

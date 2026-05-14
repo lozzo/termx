@@ -1,7 +1,7 @@
 package app
 
 import (
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/terminalcontrol"
 )
 
@@ -9,11 +9,11 @@ func (m *Model) terminalControlManager() *terminalcontrol.Manager {
 	if m == nil || m.runtime == nil {
 		return nil
 	}
-	return terminalcontrol.NewManager(m.runtime, terminalcontrol.SessionLeaseHooks{
+	hooks := terminalcontrol.SessionLeaseHooks{
 		SessionID:    m.sessionID,
 		ViewID:       m.sessionViewID,
 		NeedsAcquire: m.implicitSessionLeaseNeedsAcquire,
-		Store: func(lease protocol.LeaseInfo) {
+		Store: func(lease sessionstore.LeaseInfo) {
 			if service := m.sessionRuntimeService(); service != nil {
 				service.storeLease(lease)
 			}
@@ -28,5 +28,10 @@ func (m *Model) terminalControlManager() *terminalcontrol.Manager {
 				service.applyCurrentLeases()
 			}
 		},
-	})
+	}
+	if m.sessionStore != nil {
+		hooks.Acquire = m.sessionStore.AcquireSessionLease
+		hooks.Release = m.sessionStore.ReleaseSessionLease
+	}
+	return terminalcontrol.NewManager(m.runtime, hooks)
 }

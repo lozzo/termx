@@ -6,6 +6,7 @@ var (
 	ErrNotFound          = errors.New("termx: terminal not found")
 	ErrDuplicateID       = errors.New("termx: terminal ID already exists")
 	ErrDuplicateName     = errors.New("termx: terminal name already exists")
+	ErrConflict          = errors.New("termx: conflict")
 	ErrInvalidCommand    = errors.New("termx: command is required")
 	ErrTerminalExited    = errors.New("termx: terminal has exited")
 	ErrTerminalNotExited = errors.New("termx: terminal is not exited")

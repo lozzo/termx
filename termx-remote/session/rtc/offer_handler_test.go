@@ -2,7 +2,6 @@ package rtc
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"os"
 	"strings"
@@ -13,79 +12,41 @@ import (
 	"github.com/lozzow/termx/termx-core/transport"
 	"github.com/lozzow/termx/termx-remote/fileapi"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
+	"github.com/lozzow/termx/termx-remote/protocol/runtimepb"
 	"github.com/pion/webrtc/v4"
+	"google.golang.org/protobuf/proto"
 )
 
-func TestRuntimeEventPayloadForClientMapsTerminalInventoryEvents(t *testing.T) {
-	payload := runtimeEventPayloadForClient([]byte(`{"type":1,"terminal_id":"terminal-2","timestamp":"2026-05-08T10:00:00Z"}`))
-	var got struct {
-		Type    string `json:"type"`
-		Payload struct {
-			TerminalID   string `json:"terminalId"`
-			EventType    string `json:"eventType"`
-			ProtocolType int    `json:"protocolType"`
-			Timestamp    string `json:"timestamp"`
-		} `json:"payload"`
+func TestRuntimeEventEnvelopeCarriesTerminalInventoryData(t *testing.T) {
+	payload := mustMarshalRuntimeProto(t, &runtimepb.EventEnvelope{
+		Type:         "terminal_created",
+		ProtocolType: protocolEventTerminalCreated,
+		TerminalId:   "terminal-2",
+		Terminal: &runtimepb.TerminalInventoryItem{
+			TerminalId: "terminal-2",
+			Name:       "shell",
+			State:      "running",
+		},
+	})
+	var got runtimepb.EventEnvelope
+	if err := proto.Unmarshal(payload, &got); err != nil {
+		t.Fatalf("unmarshal runtime event envelope: %v", err)
 	}
-	if err := json.Unmarshal(payload, &got); err != nil {
-		t.Fatalf("unmarshal mapped payload: %v; body=%s", err, string(payload))
-	}
-	if got.Type != "terminal_created" ||
-		got.Payload.TerminalID != "terminal-2" ||
-		got.Payload.EventType != "terminal_created" ||
-		got.Payload.ProtocolType != protocolEventTerminalCreated ||
-		got.Payload.Timestamp != "2026-05-08T10:00:00Z" {
-		t.Fatalf("unexpected mapped event payload: %+v", got)
-	}
-}
-
-func TestRuntimeEventPayloadForClientIncludesTerminalSnapshot(t *testing.T) {
-	payload := runtimeEventPayloadForClient([]byte(`{
-		"type":10,
-		"terminal_id":"terminal-2",
-		"timestamp":"2026-05-08T10:00:00Z",
-		"terminal":{
-			"terminal_id":"terminal-2",
-			"machine_id":"machine-local",
-			"name":"shell",
-			"state":"running",
-			"resize_ownership":{
-				"owner_surface_id":"app:machine-local:terminal:terminal-2"
-			},
-			"resize_owner_attachment_count":1
-		}
-	}`))
-	var got struct {
-		Type    string `json:"type"`
-		Payload struct {
-			Terminal map[string]any `json:"terminal"`
-		} `json:"payload"`
-	}
-	if err := json.Unmarshal(payload, &got); err != nil {
-		t.Fatalf("unmarshal terminal snapshot payload: %v; body=%s", err, string(payload))
-	}
-	if got.Type != "terminal_metadata_changed" {
-		t.Fatalf("unexpected event type %q", got.Type)
-	}
-	if got.Payload.Terminal["machine_id"] != "machine-local" {
-		t.Fatalf("expected machine_id in terminal payload, got %#v", got.Payload.Terminal)
-	}
-}
-
-func TestRuntimeEventPayloadForClientLeavesStringEventsUntouched(t *testing.T) {
-	raw := []byte(`{"type":"heartbeat","payload":{"ok":true}}`)
-	if got := runtimeEventPayloadForClient(raw); string(got) != string(raw) {
-		t.Fatalf("expected string event to pass through, got %s", string(got))
+	if got.GetType() != "terminal_created" ||
+		got.GetTerminalId() != "terminal-2" ||
+		got.GetProtocolType() != protocolEventTerminalCreated ||
+		got.GetTerminal().GetName() != "shell" {
+		t.Fatalf("unexpected runtime event envelope: %#v", &got)
 	}
 }
 
 func TestRuntimeAPIChannelRouterHandlesTerminalManagement(t *testing.T) {
 	manager := &terminalAPIRouterStub{}
-	statusCode, statusBody, statusErr := routeRuntimeAPIRequest(nil, nil, apiRequest{
-		ID:     "req_status",
+	statusCode, statusBody, statusErr := routeRuntimeAPIRequest(nil, nil, &runtimepb.APIRequest{
+		Id:     "req_status",
 		Method: "GET",
 		Path:   "/status",
-		Body:   json.RawMessage(`{}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.Empty{}),
 	})
 	if statusErr != "" {
 		t.Fatalf("expected status request to succeed, got %q", statusErr)
@@ -93,19 +54,19 @@ func TestRuntimeAPIChannelRouterHandlesTerminalManagement(t *testing.T) {
 	if statusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", statusCode)
 	}
-	var statusPayload map[string]any
-	if err := json.Unmarshal(statusBody, &statusPayload); err != nil {
+	var statusPayload runtimepb.StatusResponse
+	if err := proto.Unmarshal(statusBody, &statusPayload); err != nil {
 		t.Fatalf("unmarshal status body: %v", err)
 	}
-	if statusPayload["ok"] != true {
+	if !statusPayload.GetOk() {
 		t.Fatalf("expected status ok payload, got %#v", statusPayload)
 	}
 
-	listStatus, listBody, listErr := routeRuntimeAPIRequest(fileapi.NewManager(), manager, apiRequest{
-		ID:     "req_list",
+	listStatus, listBody, listErr := routeRuntimeAPIRequest(fileapi.NewManager(), manager, &runtimepb.APIRequest{
+		Id:     "req_list",
 		Method: "list",
 		Path:   "list",
-		Body:   json.RawMessage(`{}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.Empty{}),
 	})
 	if listErr != "" {
 		t.Fatalf("expected terminal list request to succeed, got %q", listErr)
@@ -113,19 +74,19 @@ func TestRuntimeAPIChannelRouterHandlesTerminalManagement(t *testing.T) {
 	if listStatus != http.StatusOK {
 		t.Fatalf("expected terminal list status 200, got %d", listStatus)
 	}
-	var listPayload map[string]any
-	if err := json.Unmarshal(listBody, &listPayload); err != nil {
+	var listPayload runtimepb.TerminalListResponse
+	if err := proto.Unmarshal(listBody, &listPayload); err != nil {
 		t.Fatalf("unmarshal list body: %v", err)
 	}
-	if terminals, ok := listPayload["terminals"].([]any); !ok || len(terminals) != 1 {
+	if len(listPayload.GetTerminals()) != 1 {
 		t.Fatalf("expected terminal list payload, got %#v", listPayload)
 	}
 
-	status, body, errMsg := routeRuntimeAPIRequest(fileapi.NewManager(), manager, apiRequest{
-		ID:     "req_1",
+	status, body, errMsg := routeRuntimeAPIRequest(fileapi.NewManager(), manager, &runtimepb.APIRequest{
+		Id:     "req_1",
 		Method: "create",
 		Path:   "create",
-		Body:   json.RawMessage(`{"command":["/bin/zsh","-l"],"name":"ops shell"}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.TerminalCreateRequest{Command: []string{"/bin/zsh", "-l"}, Name: "ops shell"}),
 	})
 	if errMsg != "" {
 		t.Fatalf("expected terminal management request to succeed, got %q", errMsg)
@@ -133,22 +94,22 @@ func TestRuntimeAPIChannelRouterHandlesTerminalManagement(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", status)
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
+	var payload runtimepb.TerminalInventoryItem
+	if err := proto.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
-	if payload["terminal_id"] != "terminal-3" {
+	if payload.GetTerminalId() != "terminal-3" {
 		t.Fatalf("expected created terminal id, got %#v", payload)
 	}
 	if manager.createName != "ops shell" {
 		t.Fatalf("expected create routed to terminal manager, got %#v", manager)
 	}
 
-	status, body, errMsg = routeRuntimeAPIRequest(fileapi.NewManager(), manager, apiRequest{
-		ID:     "req_directory",
+	status, body, errMsg = routeRuntimeAPIRequest(fileapi.NewManager(), manager, &runtimepb.APIRequest{
+		Id:     "req_directory",
 		Method: "get_directory",
 		Path:   "get_directory",
-		Body:   json.RawMessage(`{"terminal_id":"terminal-1"}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.TerminalDirectoryRequest{TerminalId: "terminal-1"}),
 	})
 	if errMsg != "" {
 		t.Fatalf("expected terminal directory request to succeed, got %q", errMsg)
@@ -156,15 +117,19 @@ func TestRuntimeAPIChannelRouterHandlesTerminalManagement(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", status)
 	}
-	if string(body) != `{"path":"/srv/app"}` {
-		t.Fatalf("expected terminal directory payload, got %s", string(body))
+	var directory runtimepb.TerminalDirectoryResponse
+	if err := proto.Unmarshal(body, &directory); err != nil {
+		t.Fatalf("unmarshal directory body: %v", err)
+	}
+	if directory.GetPath() != "/srv/app" {
+		t.Fatalf("expected terminal directory payload, got %#v", &directory)
 	}
 
-	fileStatus, _, fileErr := routeRuntimeAPIRequest(fileapi.NewManager(), manager, apiRequest{
-		ID:     "req_2",
+	fileStatus, _, fileErr := routeRuntimeAPIRequest(fileapi.NewManager(), manager, &runtimepb.APIRequest{
+		Id:     "req_2",
 		Method: "POST",
 		Path:   "/files/stat",
-		Body:   json.RawMessage(`{"path":"/definitely-missing-termx-file"}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.FilePathRequest{Path: "/definitely-missing-termx-file"}),
 	})
 	if fileStatus == http.StatusNotFound && fileErr == "unknown file route: POST /files/stat" {
 		t.Fatalf("file routes must still be routed through file manager")
@@ -174,11 +139,11 @@ func TestRuntimeAPIChannelRouterHandlesTerminalManagement(t *testing.T) {
 func TestRuntimeAPIChannelIgnoresManagementMutationContext(t *testing.T) {
 	manager := &terminalAPIRouterStub{}
 	ctx := context.Background()
-	listStatus, listBody, listErr := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), manager, apiRequest{
-		ID:     "req_list",
+	listStatus, listBody, listErr := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), manager, &runtimepb.APIRequest{
+		Id:     "req_list",
 		Method: "list",
 		Path:   "list",
-		Body:   json.RawMessage(`{}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.Empty{}),
 	})
 	if listErr != "" {
 		t.Fatalf("expected terminal inventory request to succeed, got %q", listErr)
@@ -186,19 +151,19 @@ func TestRuntimeAPIChannelIgnoresManagementMutationContext(t *testing.T) {
 	if listStatus != http.StatusOK {
 		t.Fatalf("expected terminal inventory status 200, got %d", listStatus)
 	}
-	var listPayload map[string]any
-	if err := json.Unmarshal(listBody, &listPayload); err != nil {
+	var listPayload runtimepb.TerminalListResponse
+	if err := proto.Unmarshal(listBody, &listPayload); err != nil {
 		t.Fatalf("unmarshal list body: %v", err)
 	}
-	if terminals, ok := listPayload["terminals"].([]any); !ok || len(terminals) != 1 {
+	if len(listPayload.GetTerminals()) != 1 {
 		t.Fatalf("expected terminal list payload, got %#v", listPayload)
 	}
 
-	createStatus, _, createErr := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), manager, apiRequest{
-		ID:     "req_create",
+	createStatus, _, createErr := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), manager, &runtimepb.APIRequest{
+		Id:     "req_create",
 		Method: "create",
 		Path:   "create",
-		Body:   json.RawMessage(`{"name":"allowed"}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.TerminalCreateRequest{Name: "allowed"}),
 	})
 	if createErr != "" {
 		t.Fatalf("expected terminal create to be routed, got %q", createErr)
@@ -734,17 +699,34 @@ func (f *fakePeerConnectionState) set(state webrtc.PeerConnectionState) {
 func (s *terminalAPIRouterStub) RouteTerminalManagementRequest(_ context.Context, req TerminalManagementRequest) (int32, []byte, string) {
 	switch req.Method {
 	case "list":
-		return http.StatusOK, []byte(`{"terminals":[{"terminal_id":"terminal-1","machine_id":"machine-1","name":"zsh","state":"running"}]}`), ""
+		return http.StatusOK, marshalRuntimeProtoForStub(&runtimepb.TerminalListResponse{
+			Terminals: []*runtimepb.TerminalInventoryItem{{TerminalId: "terminal-1", Name: "zsh", State: "running"}},
+		}), ""
 	case "create":
-		var body struct {
-			Name string `json:"name"`
-		}
-		_ = json.Unmarshal(req.Body, &body)
-		s.createName = body.Name
-		return http.StatusOK, []byte(`{"terminal_id":"terminal-3"}`), ""
+		var body runtimepb.TerminalCreateRequest
+		_ = proto.Unmarshal(req.Body, &body)
+		s.createName = body.GetName()
+		return http.StatusOK, marshalRuntimeProtoForStub(&runtimepb.TerminalInventoryItem{TerminalId: "terminal-3"}), ""
 	case "get_directory":
-		return http.StatusOK, []byte(`{"path":"/srv/app"}`), ""
+		return http.StatusOK, marshalRuntimeProtoForStub(&runtimepb.TerminalDirectoryResponse{Path: "/srv/app"}), ""
 	default:
 		return http.StatusNotFound, nil, "unknown terminal management route"
 	}
+}
+
+func mustMarshalRuntimeProto(t *testing.T, msg proto.Message) []byte {
+	t.Helper()
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal runtime proto: %v", err)
+	}
+	return data
+}
+
+func marshalRuntimeProtoForStub(msg proto.Message) []byte {
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

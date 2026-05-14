@@ -1,12 +1,12 @@
 package runtime
 
-import "github.com/lozzow/termx/termx-core/protocol"
+import "github.com/lozzow/termx/tuiv2/sessionstore"
 
-func (r *Runtime) ApplySessionLeases(viewID string, leases []protocol.LeaseInfo) {
+func (r *Runtime) ApplySessionLeases(viewID string, leases []sessionstore.LeaseInfo) {
 	if r == nil || r.registry == nil {
 		return
 	}
-	index := make(map[string]protocol.LeaseInfo, len(leases))
+	index := make(map[string]sessionstore.LeaseInfo, len(leases))
 	for _, lease := range leases {
 		if lease.TerminalID == "" {
 			continue

@@ -1,10 +1,12 @@
 package fileapi
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/lozzow/termx/termx-remote/protocol/runtimepb"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestRouteRequestListAndPreview(t *testing.T) {
@@ -16,31 +18,31 @@ func TestRouteRequestListAndPreview(t *testing.T) {
 
 	manager := NewManager()
 
-	status, body, errMsg := manager.RouteRequest("POST", "/files/list", []byte(`{"path":"`+dir+`"}`))
+	status, body, errMsg := manager.RouteRequest("POST", "/files/list", mustMarshalProto(t, &runtimepb.FileListRequest{Path: dir}))
 	if status != 200 || errMsg != "" {
 		t.Fatalf("list returned status=%d err=%q", status, errMsg)
 	}
-	var listResp DirListResponse
-	if err := json.Unmarshal(body, &listResp); err != nil {
+	var listResp runtimepb.FileListResponse
+	if err := proto.Unmarshal(body, &listResp); err != nil {
 		t.Fatalf("unmarshal list response: %v", err)
 	}
-	if len(listResp.Entries) != 1 || listResp.Entries[0].Name != "hello.txt" {
+	if len(listResp.GetEntries()) != 1 || listResp.GetEntries()[0].GetName() != "hello.txt" {
 		t.Fatalf("unexpected list response: %#v", listResp)
 	}
-	if listResp.Entries[0].ModTime == "" {
-		t.Fatalf("expected mod time in list response: %#v", listResp.Entries[0])
+	if listResp.GetEntries()[0].GetModTime() == "" {
+		t.Fatalf("expected mod time in list response: %#v", listResp.GetEntries()[0])
 	}
 
-	status, body, errMsg = manager.RouteRequest("POST", "/files/preview", []byte(`{"path":"`+filePath+`"}`))
+	status, body, errMsg = manager.RouteRequest("POST", "/files/preview", mustMarshalProto(t, &runtimepb.FilePreviewRequest{Path: filePath}))
 	if status != 200 || errMsg != "" {
 		t.Fatalf("preview returned status=%d err=%q", status, errMsg)
 	}
-	var preview map[string]any
-	if err := json.Unmarshal(body, &preview); err != nil {
+	var preview runtimepb.FilePreviewResponse
+	if err := proto.Unmarshal(body, &preview); err != nil {
 		t.Fatalf("unmarshal preview response: %v", err)
 	}
-	if preview["content"] != "hello world\n" {
-		t.Fatalf("unexpected preview content: %#v", preview["content"])
+	if preview.GetContent() != "hello world\n" {
+		t.Fatalf("unexpected preview content: %#v", preview.GetContent())
 	}
 }
 
@@ -61,28 +63,28 @@ func TestRouteRequestListIncludesDirectoryChildCountAndSymlinkTarget(t *testing.
 	manager := NewManager()
 	t.Cleanup(manager.Close)
 
-	status, body, errMsg := manager.RouteRequest("POST", "/files/list", []byte(`{"path":"`+dir+`"}`))
+	status, body, errMsg := manager.RouteRequest("POST", "/files/list", mustMarshalProto(t, &runtimepb.FileListRequest{Path: dir}))
 	if status != 200 || errMsg != "" {
 		t.Fatalf("list returned status=%d err=%q", status, errMsg)
 	}
-	var listResp DirListResponse
-	if err := json.Unmarshal(body, &listResp); err != nil {
+	var listResp runtimepb.FileListResponse
+	if err := proto.Unmarshal(body, &listResp); err != nil {
 		t.Fatalf("unmarshal list response: %v", err)
 	}
-	var docsEntry *FileEntry
-	var linkEntry *FileEntry
-	for i := range listResp.Entries {
-		switch listResp.Entries[i].Name {
+	var docsEntry *runtimepb.FileEntry
+	var linkEntry *runtimepb.FileEntry
+	for _, entry := range listResp.GetEntries() {
+		switch entry.GetName() {
 		case "docs":
-			docsEntry = &listResp.Entries[i]
+			docsEntry = entry
 		case "docs-link":
-			linkEntry = &listResp.Entries[i]
+			linkEntry = entry
 		}
 	}
-	if docsEntry == nil || docsEntry.ChildCount == nil || *docsEntry.ChildCount != 1 {
+	if docsEntry == nil || docsEntry.ChildCount == nil || docsEntry.GetChildCount() != 1 {
 		t.Fatalf("expected docs child count, got %#v", docsEntry)
 	}
-	if linkEntry == nil || linkEntry.LinkTarget == "" || linkEntry.Type != "symlink-dir" {
+	if linkEntry == nil || linkEntry.GetLinkTarget() == "" || linkEntry.GetType() != "symlink-dir" {
 		t.Fatalf("expected symlink target, got %#v", linkEntry)
 	}
 }
@@ -97,25 +99,25 @@ func TestPreviewReportsVideoCategoryWithoutInlineContent(t *testing.T) {
 	manager := NewManager()
 	t.Cleanup(manager.Close)
 
-	status, body, errMsg := manager.RouteRequest("POST", "/files/preview", []byte(`{"path":"`+filePath+`","max_size":4}`))
+	status, body, errMsg := manager.RouteRequest("POST", "/files/preview", mustMarshalProto(t, &runtimepb.FilePreviewRequest{Path: filePath, MaxSize: 4}))
 	if status != 200 || errMsg != "" {
 		t.Fatalf("preview returned status=%d err=%q", status, errMsg)
 	}
-	var preview map[string]any
-	if err := json.Unmarshal(body, &preview); err != nil {
+	var preview runtimepb.FilePreviewResponse
+	if err := proto.Unmarshal(body, &preview); err != nil {
 		t.Fatalf("unmarshal preview response: %v", err)
 	}
-	if preview["category"] != "video" {
-		t.Fatalf("expected video category, got %#v", preview["category"])
+	if preview.GetCategory() != "video" {
+		t.Fatalf("expected video category, got %#v", preview.GetCategory())
 	}
-	if preview["mime_type"] != "video/mp4" {
-		t.Fatalf("expected video/mp4 mime, got %#v", preview["mime_type"])
+	if preview.GetMimeType() != "video/mp4" {
+		t.Fatalf("expected video/mp4 mime, got %#v", preview.GetMimeType())
 	}
-	if preview["content_base64"] != nil {
-		t.Fatalf("expected video preview to omit inline content, got %#v", preview["content_base64"])
+	if preview.GetContentBase64() != "" {
+		t.Fatalf("expected video preview to omit inline content, got %#v", preview.GetContentBase64())
 	}
-	if preview["preview_limit"] != nil {
-		t.Fatalf("expected video preview to avoid size limit, got %#v", preview["preview_limit"])
+	if preview.GetPreviewLimit() != 0 {
+		t.Fatalf("expected video preview to avoid size limit, got %#v", preview.GetPreviewLimit())
 	}
 }
 
@@ -141,25 +143,25 @@ func TestPreviewReportsModelCategoryWithoutInlineContent(t *testing.T) {
 			manager := NewManager()
 			t.Cleanup(manager.Close)
 
-			status, body, errMsg := manager.RouteRequest("POST", "/files/preview", []byte(`{"path":"`+filePath+`","max_size":4}`))
+			status, body, errMsg := manager.RouteRequest("POST", "/files/preview", mustMarshalProto(t, &runtimepb.FilePreviewRequest{Path: filePath, MaxSize: 4}))
 			if status != 200 || errMsg != "" {
 				t.Fatalf("preview returned status=%d err=%q", status, errMsg)
 			}
-			var preview map[string]any
-			if err := json.Unmarshal(body, &preview); err != nil {
+			var preview runtimepb.FilePreviewResponse
+			if err := proto.Unmarshal(body, &preview); err != nil {
 				t.Fatalf("unmarshal preview response: %v", err)
 			}
-			if preview["category"] != "model" {
-				t.Fatalf("expected model category, got %#v", preview["category"])
+			if preview.GetCategory() != "model" {
+				t.Fatalf("expected model category, got %#v", preview.GetCategory())
 			}
-			if preview["mime_type"] != tc.mimeType {
-				t.Fatalf("expected %s mime, got %#v", tc.mimeType, preview["mime_type"])
+			if preview.GetMimeType() != tc.mimeType {
+				t.Fatalf("expected %s mime, got %#v", tc.mimeType, preview.GetMimeType())
 			}
-			if preview["content_base64"] != nil {
-				t.Fatalf("expected model preview to omit inline content, got %#v", preview["content_base64"])
+			if preview.GetContentBase64() != "" {
+				t.Fatalf("expected model preview to omit inline content, got %#v", preview.GetContentBase64())
 			}
-			if preview["preview_limit"] != nil {
-				t.Fatalf("expected model preview to avoid size limit, got %#v", preview["preview_limit"])
+			if preview.GetPreviewLimit() != 0 {
+				t.Fatalf("expected model preview to avoid size limit, got %#v", preview.GetPreviewLimit())
 			}
 		})
 	}
@@ -175,22 +177,22 @@ func TestPreviewAllowsImageBeyondRequestedMaxSize(t *testing.T) {
 	manager := NewManager()
 	t.Cleanup(manager.Close)
 
-	status, body, errMsg := manager.RouteRequest("POST", "/files/preview", []byte(`{"path":"`+filePath+`","max_size":4}`))
+	status, body, errMsg := manager.RouteRequest("POST", "/files/preview", mustMarshalProto(t, &runtimepb.FilePreviewRequest{Path: filePath, MaxSize: 4}))
 	if status != 200 || errMsg != "" {
 		t.Fatalf("preview returned status=%d err=%q", status, errMsg)
 	}
-	var preview map[string]any
-	if err := json.Unmarshal(body, &preview); err != nil {
+	var preview runtimepb.FilePreviewResponse
+	if err := proto.Unmarshal(body, &preview); err != nil {
 		t.Fatalf("unmarshal preview response: %v", err)
 	}
-	if preview["category"] != "image" {
-		t.Fatalf("expected image category, got %#v", preview["category"])
+	if preview.GetCategory() != "image" {
+		t.Fatalf("expected image category, got %#v", preview.GetCategory())
 	}
-	if preview["content_base64"] == nil {
+	if preview.GetContentBase64() == "" {
 		t.Fatalf("expected image preview content, got %#v", preview)
 	}
-	if preview["preview_limit"] != nil {
-		t.Fatalf("expected image preview to avoid size limit, got %#v", preview["preview_limit"])
+	if preview.GetPreviewLimit() != 0 {
+		t.Fatalf("expected image preview to avoid size limit, got %#v", preview.GetPreviewLimit())
 	}
 }
 
@@ -204,16 +206,16 @@ func TestDownloadInitAcceptsStableTransferIDForResume(t *testing.T) {
 	manager := NewManager()
 	t.Cleanup(manager.Close)
 
-	status, body, errMsg := manager.RouteRequest("POST", "/files/download/init", []byte(`{"path":"`+filePath+`","offset":4,"transfer_id":"dl-resume-1"}`))
+	status, body, errMsg := manager.RouteRequest("POST", "/files/download/init", mustMarshalProto(t, &runtimepb.FileDownloadInitRequest{Path: filePath, Offset: 4, TransferId: "dl-resume-1"}))
 	if status != 200 || errMsg != "" {
 		t.Fatalf("download init returned status=%d err=%q", status, errMsg)
 	}
-	var resp map[string]any
-	if err := json.Unmarshal(body, &resp); err != nil {
+	var resp runtimepb.FileDownloadInitResponse
+	if err := proto.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("unmarshal download init response: %v", err)
 	}
-	if resp["transfer_id"] != "dl-resume-1" {
-		t.Fatalf("expected stable transfer id, got %#v", resp["transfer_id"])
+	if resp.GetTransferId() != "dl-resume-1" {
+		t.Fatalf("expected stable transfer id, got %#v", resp.GetTransferId())
 	}
 
 	manager.mu.Lock()
@@ -237,19 +239,19 @@ func TestDownloadInitAcceptsByteRangeLength(t *testing.T) {
 	manager := NewManager()
 	t.Cleanup(manager.Close)
 
-	status, body, errMsg := manager.RouteRequest("POST", "/files/download/init", []byte(`{"path":"`+filePath+`","offset":4,"length":3,"transfer_id":"preview-range-1"}`))
+	status, body, errMsg := manager.RouteRequest("POST", "/files/download/init", mustMarshalProto(t, &runtimepb.FileDownloadInitRequest{Path: filePath, Offset: 4, Length: 3, TransferId: "preview-range-1"}))
 	if status != 200 || errMsg != "" {
 		t.Fatalf("download init returned status=%d err=%q", status, errMsg)
 	}
-	var resp map[string]any
-	if err := json.Unmarshal(body, &resp); err != nil {
+	var resp runtimepb.FileDownloadInitResponse
+	if err := proto.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("unmarshal download init response: %v", err)
 	}
-	if resp["offset"] != float64(4) {
-		t.Fatalf("expected response offset 4, got %#v", resp["offset"])
+	if resp.GetOffset() != 4 {
+		t.Fatalf("expected response offset 4, got %#v", resp.GetOffset())
 	}
-	if resp["length"] != float64(3) {
-		t.Fatalf("expected response length 3, got %#v", resp["length"])
+	if resp.GetLength() != 3 {
+		t.Fatalf("expected response length 3, got %#v", resp.GetLength())
 	}
 
 	manager.mu.Lock()
@@ -273,16 +275,16 @@ func TestDownloadInitClampsRangeLengthToFileRemainder(t *testing.T) {
 	manager := NewManager()
 	t.Cleanup(manager.Close)
 
-	status, body, errMsg := manager.RouteRequest("POST", "/files/download/init", []byte(`{"path":"`+filePath+`","offset":7,"length":99,"transfer_id":"preview-range-2"}`))
+	status, body, errMsg := manager.RouteRequest("POST", "/files/download/init", mustMarshalProto(t, &runtimepb.FileDownloadInitRequest{Path: filePath, Offset: 7, Length: 99, TransferId: "preview-range-2"}))
 	if status != 200 || errMsg != "" {
 		t.Fatalf("download init returned status=%d err=%q", status, errMsg)
 	}
-	var resp map[string]any
-	if err := json.Unmarshal(body, &resp); err != nil {
+	var resp runtimepb.FileDownloadInitResponse
+	if err := proto.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("unmarshal download init response: %v", err)
 	}
-	if resp["length"] != float64(3) {
-		t.Fatalf("expected clamped response length 3, got %#v", resp["length"])
+	if resp.GetLength() != 3 {
+		t.Fatalf("expected clamped response length 3, got %#v", resp.GetLength())
 	}
 
 	manager.mu.Lock()
@@ -306,8 +308,17 @@ func TestDownloadInitRejectsInvalidStableTransferID(t *testing.T) {
 	manager := NewManager()
 	t.Cleanup(manager.Close)
 
-	status, _, errMsg := manager.RouteRequest("POST", "/files/download/init", []byte(`{"path":"`+filePath+`","transfer_id":"../bad"}`))
+	status, _, errMsg := manager.RouteRequest("POST", "/files/download/init", mustMarshalProto(t, &runtimepb.FileDownloadInitRequest{Path: filePath, TransferId: "../bad"}))
 	if status != 400 || errMsg != "invalid transfer_id" {
 		t.Fatalf("download init returned status=%d err=%q", status, errMsg)
 	}
+}
+
+func mustMarshalProto(t *testing.T, msg proto.Message) []byte {
+	t.Helper()
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal proto: %v", err)
+	}
+	return data
 }

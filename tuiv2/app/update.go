@@ -5,9 +5,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/termx-core/perftrace"
-	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -80,7 +80,7 @@ func hostEmojiProbeModeFromReportedColumn(x int) (shared.AmbiguousEmojiVariation
 	}
 }
 
-func shouldApplySessionSnapshot(snapshot *protocol.SessionSnapshot) bool {
+func shouldApplySessionSnapshot(snapshot *sessionstore.Snapshot) bool {
 	if snapshot == nil {
 		return false
 	}

@@ -2,16 +2,12 @@ package protocol
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
-
-	"github.com/lozzow/termx/termx-core/workbenchdoc"
-	"github.com/lozzow/termx/termx-core/workbenchops"
 )
 
 var compactASCIIStrings = buildCompactASCIIStrings()
@@ -31,14 +27,14 @@ type Hello struct {
 }
 
 type Request struct {
-	ID     uint64          `json:"id"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params,omitempty"`
+	ID     uint64
+	Method string
+	Params []byte
 }
 
 type Response struct {
-	ID     uint64          `json:"id"`
-	Result json.RawMessage `json:"result,omitempty"`
+	ID     uint64
+	Result []byte
 }
 
 type ProtocolError struct {
@@ -173,16 +169,14 @@ type ResizeControl struct {
 type EventType int
 
 const (
-	EventTerminalCreated EventType = iota + 1
-	EventTerminalStateChanged
-	EventTerminalResized
-	EventTerminalRemoved
-	EventCollaboratorsRevoked
-	EventTerminalReadError
-	EventSessionCreated
-	EventSessionUpdated
-	EventSessionDeleted
-	EventTerminalMetadataChanged
+	EventTerminalCreated         EventType = 1
+	EventTerminalStateChanged    EventType = 2
+	EventTerminalResized         EventType = 3
+	EventTerminalRemoved         EventType = 4
+	EventCollaboratorsRevoked    EventType = 5
+	EventTerminalReadError       EventType = 6
+	EventTerminalMetadataChanged EventType = 10
+	EventStorageChanged          EventType = 11
 )
 
 type TerminalCreatedData struct {
@@ -212,15 +206,81 @@ type TerminalReadErrorData struct {
 	Error string `json:"error"`
 }
 
-type SessionEventData struct {
-	Revision uint64 `json:"revision,omitempty"`
-	ViewID   string `json:"view_id,omitempty"`
+type StorageScope string
+
+const (
+	StorageScopePublic  StorageScope = "public"
+	StorageScopePrivate StorageScope = "private"
+)
+
+type StorageEntry struct {
+	AppID     string       `json:"app_id"`
+	Scope     StorageScope `json:"scope"`
+	OwnerID   string       `json:"owner_id,omitempty"`
+	Key       string       `json:"key"`
+	Value     []byte       `json:"value,omitempty"`
+	Version   uint64       `json:"version,omitempty"`
+	UpdatedAt time.Time    `json:"updated_at,omitempty"`
+}
+
+type StorageGetParams struct {
+	AppID   string       `json:"app_id"`
+	Scope   StorageScope `json:"scope"`
+	OwnerID string       `json:"owner_id,omitempty"`
+	Key     string       `json:"key"`
+}
+
+type StoragePutParams struct {
+	AppID           string       `json:"app_id"`
+	Scope           StorageScope `json:"scope"`
+	OwnerID         string       `json:"owner_id,omitempty"`
+	Key             string       `json:"key"`
+	Value           []byte       `json:"value,omitempty"`
+	CheckVersion    bool         `json:"check_version,omitempty"`
+	ExpectedVersion uint64       `json:"expected_version,omitempty"`
+}
+
+type StorageDeleteParams struct {
+	AppID           string       `json:"app_id"`
+	Scope           StorageScope `json:"scope"`
+	OwnerID         string       `json:"owner_id,omitempty"`
+	Key             string       `json:"key"`
+	CheckVersion    bool         `json:"check_version,omitempty"`
+	ExpectedVersion uint64       `json:"expected_version,omitempty"`
+}
+
+type StorageDeleteResult struct {
+	AppID   string       `json:"app_id"`
+	Scope   StorageScope `json:"scope"`
+	OwnerID string       `json:"owner_id,omitempty"`
+	Key     string       `json:"key"`
+	Deleted bool         `json:"deleted,omitempty"`
+	Version uint64       `json:"version,omitempty"`
+}
+
+type StorageListParams struct {
+	AppID   string       `json:"app_id"`
+	Scope   StorageScope `json:"scope"`
+	OwnerID string       `json:"owner_id,omitempty"`
+	Prefix  string       `json:"prefix,omitempty"`
+}
+
+type StorageListResult struct {
+	Entries []StorageEntry `json:"entries,omitempty"`
+}
+
+type StorageChangedData struct {
+	AppID   string       `json:"app_id"`
+	Scope   StorageScope `json:"scope"`
+	OwnerID string       `json:"owner_id,omitempty"`
+	Key     string       `json:"key"`
+	Version uint64       `json:"version,omitempty"`
+	Op      string       `json:"op"`
 }
 
 type Event struct {
 	Type                 EventType                 `json:"type"`
 	TerminalID           string                    `json:"terminal_id"`
-	SessionID            string                    `json:"session_id,omitempty"`
 	Timestamp            time.Time                 `json:"timestamp"`
 	Created              *TerminalCreatedData      `json:"created,omitempty"`
 	StateChanged         *TerminalStateChangedData `json:"state_changed,omitempty"`
@@ -228,7 +288,7 @@ type Event struct {
 	Removed              *TerminalRemovedData      `json:"removed,omitempty"`
 	CollaboratorsRevoked *CollaboratorsRevokedData `json:"collaborators_revoked,omitempty"`
 	ReadError            *TerminalReadErrorData    `json:"read_error,omitempty"`
-	Session              *SessionEventData         `json:"session,omitempty"`
+	Storage              *StorageChangedData       `json:"storage,omitempty"`
 }
 
 type DetachParams struct {
@@ -236,9 +296,12 @@ type DetachParams struct {
 }
 
 type EventsParams struct {
-	TerminalID string      `json:"terminal_id,omitempty"`
-	SessionID  string      `json:"session_id,omitempty"`
-	Types      []EventType `json:"types,omitempty"`
+	TerminalID       string       `json:"terminal_id,omitempty"`
+	Types            []EventType  `json:"types,omitempty"`
+	StorageAppID     string       `json:"storage_app_id,omitempty"`
+	StorageScope     StorageScope `json:"storage_scope,omitempty"`
+	StorageOwnerID   string       `json:"storage_owner_id,omitempty"`
+	StorageKeyPrefix string       `json:"storage_key_prefix,omitempty"`
 }
 
 type SnapshotParams struct {
@@ -1753,110 +1816,6 @@ type GridViewport struct {
 	ScrollbackRowKinds   []string     `json:"scrollback_row_kinds,omitempty"`
 	ScrollbackWrapped    []bool       `json:"scrollback_wrapped,omitempty"`
 	Timestamp            time.Time    `json:"timestamp"`
-}
-
-type SessionOp = workbenchops.Op
-
-type SessionInfo struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Revision  uint64    `json:"revision"`
-}
-
-type ViewInfo struct {
-	ViewID              string    `json:"view_id"`
-	SessionID           string    `json:"session_id"`
-	ClientID            string    `json:"client_id"`
-	ActiveWorkspaceName string    `json:"active_workspace_name,omitempty"`
-	ActiveTabID         string    `json:"active_tab_id,omitempty"`
-	FocusedPaneID       string    `json:"focused_pane_id,omitempty"`
-	WindowCols          uint16    `json:"window_cols,omitempty"`
-	WindowRows          uint16    `json:"window_rows,omitempty"`
-	AttachedAt          time.Time `json:"attached_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
-}
-
-type LeaseInfo struct {
-	TerminalID string    `json:"terminal_id"`
-	SessionID  string    `json:"session_id"`
-	ViewID     string    `json:"view_id"`
-	PaneID     string    `json:"pane_id"`
-	AcquiredAt time.Time `json:"acquired_at"`
-}
-
-type SessionSnapshot struct {
-	Session   SessionInfo       `json:"session"`
-	Workbench *workbenchdoc.Doc `json:"workbench,omitempty"`
-	View      *ViewInfo         `json:"view,omitempty"`
-	Leases    []LeaseInfo       `json:"leases,omitempty"`
-}
-
-type CreateSessionParams struct {
-	SessionID string `json:"session_id,omitempty"`
-	Name      string `json:"name,omitempty"`
-}
-
-type ListSessionsResult struct {
-	Sessions []SessionInfo `json:"sessions"`
-}
-
-type GetSessionParams struct {
-	SessionID string `json:"session_id"`
-}
-
-type AttachSessionParams struct {
-	SessionID  string `json:"session_id"`
-	ClientID   string `json:"client_id,omitempty"`
-	WindowCols uint16 `json:"window_cols,omitempty"`
-	WindowRows uint16 `json:"window_rows,omitempty"`
-}
-
-type DetachSessionParams struct {
-	SessionID string `json:"session_id"`
-	ViewID    string `json:"view_id"`
-}
-
-type ApplySessionParams struct {
-	SessionID    string      `json:"session_id"`
-	ViewID       string      `json:"view_id,omitempty"`
-	BaseRevision uint64      `json:"base_revision"`
-	Ops          []SessionOp `json:"ops"`
-}
-
-type ReplaceSessionParams struct {
-	SessionID    string            `json:"session_id"`
-	ViewID       string            `json:"view_id,omitempty"`
-	BaseRevision uint64            `json:"base_revision"`
-	Workbench    *workbenchdoc.Doc `json:"workbench,omitempty"`
-}
-
-type UpdateSessionViewPatch struct {
-	ActiveWorkspaceName string `json:"active_workspace_name,omitempty"`
-	ActiveTabID         string `json:"active_tab_id,omitempty"`
-	FocusedPaneID       string `json:"focused_pane_id,omitempty"`
-	WindowCols          uint16 `json:"window_cols,omitempty"`
-	WindowRows          uint16 `json:"window_rows,omitempty"`
-}
-
-type UpdateSessionViewParams struct {
-	SessionID string                 `json:"session_id"`
-	ViewID    string                 `json:"view_id"`
-	View      UpdateSessionViewPatch `json:"view"`
-}
-
-type AcquireSessionLeaseParams struct {
-	SessionID  string `json:"session_id"`
-	ViewID     string `json:"view_id"`
-	PaneID     string `json:"pane_id"`
-	TerminalID string `json:"terminal_id"`
-}
-
-type ReleaseSessionLeaseParams struct {
-	SessionID  string `json:"session_id"`
-	ViewID     string `json:"view_id"`
-	TerminalID string `json:"terminal_id"`
 }
 
 func (s CellStyle) isZero() bool {

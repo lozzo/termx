@@ -6,20 +6,21 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/tuiv2/sessiondoc"
 	"github.com/lozzow/termx/tuiv2/sessionstate"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	"github.com/lozzow/termx/termx-core/workbenchdoc"
 )
 
 func TestHandleSessionMessageSnapshotAppliesStateAndError(t *testing.T) {
 	model := setupModel(t, modelOpts{})
-	snapshot := &protocol.SessionSnapshot{
-		Session: protocol.SessionInfo{ID: "session-main", Revision: 7},
-		View:    &protocol.ViewInfo{ViewID: "view-1"},
-		Workbench: &workbenchdoc.Doc{
+	snapshot := &sessionstore.Snapshot{
+		Session: sessionstore.SessionInfo{ID: "session-main", Revision: 7},
+		View:    &sessionstore.ViewInfo{ViewID: "view-1"},
+		Workbench: &sessiondoc.Doc{
 			CurrentWorkspace: "main",
 			WorkspaceOrder:   []string{"main"},
-			Workspaces:       map[string]*workbenchdoc.Workspace{"main": {Name: "main"}},
+			Workspaces:       map[string]*sessiondoc.Workspace{"main": {Name: "main"}},
 		},
 	}
 
@@ -37,7 +38,7 @@ func TestHandleSessionMessageSnapshotAppliesStateAndError(t *testing.T) {
 
 func TestHandleSessionMessageSessionUpdatePullsWhenViewChanges(t *testing.T) {
 	client := &recordingBridgeClient{
-		sessionSnapshot: &protocol.SessionSnapshot{Session: protocol.SessionInfo{ID: "session-main", Revision: 9}},
+		sessionSnapshot: &sessionstore.Snapshot{Session: sessionstore.SessionInfo{ID: "session-main", Revision: 9}},
 	}
 	model := setupModel(t, modelOpts{client: client})
 	model.sessionID = "session-main"
@@ -45,11 +46,7 @@ func TestHandleSessionMessageSessionUpdatePullsWhenViewChanges(t *testing.T) {
 	model.sessionRevision = 3
 
 	cmd, handled := model.handleSessionMessage(sessionEventMsg{
-		Event: protocol.Event{
-			Type:      protocol.EventSessionUpdated,
-			SessionID: "session-main",
-			Session:   &protocol.SessionEventData{Revision: 4, ViewID: "view-remote"},
-		},
+		Event: sessionstore.EventData{SessionID: "session-main", Revision: 4, ViewID: "view-remote"},
 	})
 	if !handled || cmd == nil {
 		t.Fatalf("expected session update to trigger pull cmd, got handled=%v cmd=%#v", handled, cmd)
@@ -69,7 +66,7 @@ func TestHandleSessionMessageSessionDeleteShowsError(t *testing.T) {
 	model.sessionID = "session-main"
 
 	cmd, handled := model.handleSessionMessage(sessionEventMsg{
-		Event: protocol.Event{Type: protocol.EventSessionDeleted, SessionID: "session-main"},
+		Event: sessionstore.EventData{SessionID: "session-main", Deleted: true},
 	})
 	if !handled || cmd == nil {
 		t.Fatalf("expected session delete to return error cmd, got handled=%v cmd=%#v", handled, cmd)
@@ -84,7 +81,7 @@ func TestHandleSessionMessageSessionViewUpdatedAppliesViewIDAndError(t *testing.
 	model := setupModel(t, modelOpts{})
 
 	cmd, handled := model.handleSessionMessage(sessionViewUpdatedMsg{
-		View: &protocol.ViewInfo{ViewID: "view-next"},
+		View: &sessionstore.ViewInfo{ViewID: "view-next"},
 		Err:  errors.New("view update failed"),
 	})
 	if !handled || cmd == nil {
@@ -126,9 +123,9 @@ func TestHandleSessionMessageSnapshotDowngradesFailedRuntimeBindings(t *testing.
 			Root: workbench.NewLeaf("pane-1"),
 		}},
 	})
-	snapshot := &protocol.SessionSnapshot{
-		Session:   protocol.SessionInfo{ID: "session-main", Revision: 7},
-		View:      &protocol.ViewInfo{ViewID: "view-1", ActiveWorkspaceName: "main", ActiveTabID: "tab-1", FocusedPaneID: "pane-1"},
+	snapshot := &sessionstore.Snapshot{
+		Session:   sessionstore.SessionInfo{ID: "session-main", Revision: 7},
+		View:      &sessionstore.ViewInfo{ViewID: "view-1", ActiveWorkspaceName: "main", ActiveTabID: "tab-1", FocusedPaneID: "pane-1"},
 		Workbench: sessionstate.ExportWorkbench(wb),
 	}
 

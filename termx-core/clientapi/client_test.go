@@ -15,25 +15,16 @@ import (
 
 func TestClientAPIBoundaryDoesNotExposeRemoteCapabilities(t *testing.T) {
 	want := []string{
-		"AcquireSessionLease",
-		"ApplySession",
 		"Attach",
-		"AttachSession",
 		"Close",
 		"Create",
-		"CreateSession",
-		"DetachSession",
 		"EnsureResize",
 		"Events",
-		"GetSession",
 		"GridViewport",
 		"Input",
 		"Kill",
 		"List",
-		"ListSessions",
-		"ReleaseSessionLease",
 		"Remove",
-		"ReplaceSession",
 		"Resize",
 		"Restart",
 		"SetMetadata",
@@ -41,10 +32,14 @@ func TestClientAPIBoundaryDoesNotExposeRemoteCapabilities(t *testing.T) {
 		"Snapshot",
 		"Stream",
 		"StreamReady",
-		"UpdateSessionView",
 	}
 	assertMethodSet(t, reflect.TypeOf((*Client)(nil)).Elem(), want)
-	assertMethodSet(t, reflect.TypeOf((*ProtocolClient)(nil)), want)
+	protocolWant := append(slices.Clone(want), "StorageDelete", "StorageGet", "StorageList", "StoragePut")
+	slices.Sort(protocolWant)
+	assertMethodSet(t, reflect.TypeOf((*ProtocolClient)(nil)), protocolWant)
+
+	storageWant := []string{"StorageDelete", "StorageGet", "StorageList", "StoragePut"}
+	assertMethodSet(t, reflect.TypeOf((*StorageClient)(nil)).Elem(), storageWant)
 }
 
 func assertMethodSet(t *testing.T, typ reflect.Type, want []string) {

@@ -2,18 +2,18 @@ package terminalcontrol
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 )
 
 func TestManagerReleaseLeaseRemovesLeaseAndReappliesLocalOwner(t *testing.T) {
 	client := &fakeClient{}
 	rt := runtime.New(client)
-	leases := map[string]protocol.LeaseInfo{
+	leases := map[string]sessionstore.LeaseInfo{
 		"term-1": {TerminalID: "term-1", SessionID: "session-main", ViewID: "view-remote", PaneID: "pane-remote"},
 	}
 	terminal := rt.Registry().GetOrCreate("term-1")
@@ -26,6 +26,7 @@ func TestManagerReleaseLeaseRemovesLeaseAndReappliesLocalOwner(t *testing.T) {
 	manager := NewManager(rt, SessionLeaseHooks{
 		SessionID: "session-main",
 		ViewID:    "view-local",
+		Release:   client.ReleaseLease,
 		Remove: func(terminalID string) {
 			delete(leases, terminalID)
 		},
@@ -47,38 +48,10 @@ func TestManagerReleaseLeaseRemovesLeaseAndReappliesLocalOwner(t *testing.T) {
 	}
 }
 
-func TestManagerReleaseLeaseMapsUnsupportedDaemonError(t *testing.T) {
-	client := &fakeClient{releaseLeaseErr: errors.New("unknown session method: session.acquire_lease")}
-	rt := runtime.New(client)
-	removed := false
-	applied := false
-
-	manager := NewManager(rt, SessionLeaseHooks{
-		SessionID: "session-main",
-		ViewID:    "view-local",
-		Remove: func(string) {
-			removed = true
-		},
-		Apply: func() {
-			applied = true
-		},
-	})
-	err := manager.ReleaseLease(context.Background(), "term-1")
-	if err == nil {
-		t.Fatal("expected unsupported daemon error")
-	}
-	if got := err.Error(); got != "connected termx daemon is too old for shared resize control; restart the daemon and reconnect" {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if removed || applied {
-		t.Fatalf("expected unsupported release not to mutate lease store, removed=%v applied=%v", removed, applied)
-	}
-}
-
 func TestManagerSyncExplicitSessionTakeoverAcquiresLeaseAndResizes(t *testing.T) {
 	client := &fakeClient{}
 	rt := runtime.New(client)
-	leases := map[string]protocol.LeaseInfo{
+	leases := map[string]sessionstore.LeaseInfo{
 		"term-1": {TerminalID: "term-1", SessionID: "session-main", ViewID: "view-remote", PaneID: "pane-remote"},
 	}
 
@@ -102,10 +75,11 @@ func TestManagerSyncExplicitSessionTakeoverAcquiresLeaseAndResizes(t *testing.T)
 	manager := NewManager(rt, SessionLeaseHooks{
 		SessionID: "session-main",
 		ViewID:    "view-local",
+		Acquire:   client.AcquireLease,
 		NeedsAcquire: func(terminalID, paneID string) bool {
 			return false
 		},
-		Store: func(lease protocol.LeaseInfo) {
+		Store: func(lease sessionstore.LeaseInfo) {
 			leases[lease.TerminalID] = lease
 		},
 		Apply: func() {
@@ -213,8 +187,8 @@ func TestManagerSyncResizeIfNeededForcesPendingOwnerResize(t *testing.T) {
 }
 
 type fakeClient struct {
-	acquireLeaseCalls []protocol.AcquireSessionLeaseParams
-	releaseLeaseCalls []protocol.ReleaseSessionLeaseParams
+	acquireLeaseCalls []sessionstore.AcquireLeaseParams
+	releaseLeaseCalls []sessionstore.ReleaseLeaseParams
 	releaseLeaseErr   error
 	resizes           []resizeCall
 }
@@ -276,47 +250,25 @@ func (c *fakeClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 func (c *fakeClient) Kill(context.Context, string) error    { return nil }
 func (c *fakeClient) Remove(context.Context, string) error  { return nil }
 func (c *fakeClient) Restart(context.Context, string) error { return nil }
-func (c *fakeClient) CreateSession(context.Context, protocol.CreateSessionParams) (*protocol.SessionSnapshot, error) {
-	return &protocol.SessionSnapshot{}, nil
-}
-func (c *fakeClient) ListSessions(context.Context) (*protocol.ListSessionsResult, error) {
-	return &protocol.ListSessionsResult{}, nil
-}
-func (c *fakeClient) GetSession(context.Context, string) (*protocol.SessionSnapshot, error) {
-	return &protocol.SessionSnapshot{}, nil
-}
-func (c *fakeClient) AttachSession(context.Context, protocol.AttachSessionParams) (*protocol.SessionSnapshot, error) {
-	return &protocol.SessionSnapshot{}, nil
-}
-func (c *fakeClient) DetachSession(context.Context, string, string) error { return nil }
-func (c *fakeClient) ApplySession(context.Context, protocol.ApplySessionParams) (*protocol.SessionSnapshot, error) {
-	return &protocol.SessionSnapshot{}, nil
-}
-func (c *fakeClient) ReplaceSession(context.Context, protocol.ReplaceSessionParams) (*protocol.SessionSnapshot, error) {
-	return &protocol.SessionSnapshot{}, nil
-}
-func (c *fakeClient) UpdateSessionView(context.Context, protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error) {
-	return &protocol.ViewInfo{}, nil
-}
-func (c *fakeClient) AcquireSessionLease(_ context.Context, params protocol.AcquireSessionLeaseParams) (*protocol.LeaseInfo, error) {
+func (c *fakeClient) AcquireLease(_ context.Context, params sessionstore.AcquireLeaseParams) (*sessionstore.LeaseInfo, error) {
 	c.acquireLeaseCalls = append(c.acquireLeaseCalls, params)
-	return &protocol.LeaseInfo{
+	return &sessionstore.LeaseInfo{
 		TerminalID: params.TerminalID,
 		SessionID:  params.SessionID,
 		ViewID:     params.ViewID,
 		PaneID:     params.PaneID,
 	}, nil
 }
-func (c *fakeClient) ReleaseSessionLease(_ context.Context, params protocol.ReleaseSessionLeaseParams) error {
+func (c *fakeClient) ReleaseLease(_ context.Context, params sessionstore.ReleaseLeaseParams) error {
 	c.releaseLeaseCalls = append(c.releaseLeaseCalls, params)
 	return c.releaseLeaseErr
 }
 
-func currentLeases(leases map[string]protocol.LeaseInfo) []protocol.LeaseInfo {
+func currentLeases(leases map[string]sessionstore.LeaseInfo) []sessionstore.LeaseInfo {
 	if len(leases) == 0 {
 		return nil
 	}
-	result := make([]protocol.LeaseInfo, 0, len(leases))
+	result := make([]sessionstore.LeaseInfo, 0, len(leases))
 	for _, lease := range leases {
 		result = append(result, lease)
 	}

@@ -1,9 +1,7 @@
 package termx
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,7 +20,6 @@ import (
 	"github.com/lozzow/termx/termx-core/transport"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
 	"github.com/lozzow/termx/termx-core/vterm"
-	"github.com/lozzow/termx/termx-core/workbenchsvc"
 )
 
 const snapshotResponseFrameBudget = protocol.MaxFrameSize - 64*1024
@@ -41,18 +38,17 @@ type serverConfig struct {
 }
 
 type Server struct {
-	cfg            serverConfig
-	events         *EventBus
-	mu             sync.RWMutex
-	terminals      map[string]*Terminal
-	workbench      *workbenchsvc.Service
-	sessionHandler sessionRequestHandler
-	closed         atomic.Bool
-	listeners      []transport.Listener
+	cfg       serverConfig
+	events    *EventBus
+	mu        sync.RWMutex
+	terminals map[string]*Terminal
+	storage   *Storage
+	closed    atomic.Bool
+	listeners []transport.Listener
 
-	// protocolListCache stores the marshaled response for the wire-level
+	// protocolListCache stores the encoded response for the wire-level
 	// unfiltered "list" request. The Go API still returns fresh copies.
-	protocolListCache        json.RawMessage
+	protocolListCache        []byte
 	protocolListCacheVersion uint64
 }
 
@@ -71,18 +67,17 @@ func NewServer(opts ...ServerOption) *Server {
 	srv := &Server{
 		cfg:       cfg,
 		terminals: make(map[string]*Terminal),
-		workbench: workbenchsvc.New(),
+		storage:   NewStorage(),
 	}
 	srv.events = NewEventBus(cfg.logger)
-	srv.sessionHandler = newSessionHandler(srv)
 	return srv
 }
 
-func (s *Server) Workbench() *workbenchsvc.Service {
+func (s *Server) Storage() *Storage {
 	if s == nil {
 		return nil
 	}
-	return s.workbench
+	return s.storage
 }
 
 func WithSocketPath(path string) ServerOption {
@@ -673,6 +668,74 @@ func (s *Server) Events(ctx context.Context, opts ...EventsOption) <-chan Event 
 	return s.events.Subscribe(ctx, opts...)
 }
 
+func (s *Server) StorageGet(ctx context.Context, req StorageGetRequest) (StorageEntry, error) {
+	_ = ctx
+	if s == nil || s.storage == nil {
+		return StorageEntry{}, ErrServerClosed
+	}
+	return s.storage.Get(req)
+}
+
+func (s *Server) StoragePut(ctx context.Context, req StoragePutRequest) (StorageEntry, error) {
+	_ = ctx
+	if s == nil || s.storage == nil {
+		return StorageEntry{}, ErrServerClosed
+	}
+	entry, err := s.storage.Put(req)
+	if err != nil {
+		return StorageEntry{}, err
+	}
+	s.publishStorageEvent(entry, StorageOpPut)
+	return entry, nil
+}
+
+func (s *Server) StorageDelete(ctx context.Context, req StorageDeleteRequest) (StorageDeleteResult, error) {
+	_ = ctx
+	if s == nil || s.storage == nil {
+		return StorageDeleteResult{}, ErrServerClosed
+	}
+	result, err := s.storage.Delete(req)
+	if err != nil {
+		return StorageDeleteResult{}, err
+	}
+	if result.Deleted {
+		s.publishStorageEvent(StorageEntry{
+			AppID:   result.AppID,
+			Scope:   result.Scope,
+			OwnerID: result.OwnerID,
+			Key:     result.Key,
+			Version: result.Version,
+		}, StorageOpDelete)
+	}
+	return result, nil
+}
+
+func (s *Server) StorageList(ctx context.Context, req StorageListRequest) ([]StorageEntry, error) {
+	_ = ctx
+	if s == nil || s.storage == nil {
+		return nil, ErrServerClosed
+	}
+	return s.storage.List(req)
+}
+
+func (s *Server) publishStorageEvent(entry StorageEntry, op string) {
+	if s == nil || s.events == nil {
+		return
+	}
+	s.events.Publish(Event{
+		Type:      EventStorageChanged,
+		Timestamp: time.Now().UTC(),
+		Storage: &StorageChangedData{
+			AppID:   entry.AppID,
+			Scope:   entry.Scope,
+			OwnerID: entry.OwnerID,
+			Key:     entry.Key,
+			Version: entry.Version,
+			Op:      op,
+		},
+	})
+}
+
 func (s *Server) RevokeCollaborators(ctx context.Context, id string) error {
 	_ = ctx
 	term, err := s.getTerminal(id)
@@ -828,7 +891,7 @@ func (t *Terminal) listInfo(filter ListOptions) (*TerminalInfo, bool) {
 	return &snapshot, true
 }
 
-func (s *Server) protocolListResponse() (json.RawMessage, error) {
+func (s *Server) protocolListResponse() ([]byte, error) {
 	s.mu.RLock()
 	if cached := s.protocolListCache; cached != nil {
 		s.mu.RUnlock()
@@ -844,32 +907,29 @@ func (s *Server) protocolListResponse() (json.RawMessage, error) {
 		return lessNumericString(terms[i].ID(), terms[j].ID())
 	})
 
-	var buf bytes.Buffer
-	buf.WriteString(`{"terminals":[`)
-	for i, term := range terms {
-		if i > 0 {
-			buf.WriteByte(',')
+	result := protocol.ListResult{Terminals: make([]protocol.TerminalInfo, 0, len(terms))}
+	for _, term := range terms {
+		item := term.protocolInfo()
+		if item != nil {
+			result.Terminals = append(result.Terminals, *item)
 		}
-		item, err := term.protocolInfoJSON()
-		if err != nil {
-			return nil, err
-		}
-		buf.Write(item)
 	}
-	buf.WriteString(`]}`)
-	result := json.RawMessage(append([]byte(nil), buf.Bytes()...))
+	payload, err := protocol.EncodeMethodResult("list", result)
+	if err != nil {
+		return nil, err
+	}
 
 	s.mu.Lock()
-	// Only publish the freshly marshaled payload if the terminal set stayed
+	// Only publish the freshly encoded payload if the terminal set stayed
 	// stable while we were building it; otherwise another request will rebuild.
 	if s.protocolListCacheVersion == version && s.protocolListCache == nil {
-		s.protocolListCache = result
+		s.protocolListCache = payload
 	}
 	if cached := s.protocolListCache; cached != nil {
-		result = cached
+		payload = cached
 	}
 	s.mu.Unlock()
-	return result, nil
+	return payload, nil
 }
 
 func (s *Server) nextGeneratedTerminalID() (string, error) {
@@ -1066,21 +1126,24 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 		if channel == 0 {
 			switch typ {
 			case protocol.TypeHello:
-				var hello protocol.Hello
-				if err := json.Unmarshal(payload, &hello); err != nil {
+				hello, err := protocol.DecodeHelloPayload(payload)
+				if err != nil {
 					return sendProtocolError(sendFrame, 0, 0, 400, err.Error())
 				}
 				s.cfg.logger.Debug("transport hello", "remote", remote, "client", hello.Client, "version", hello.Version)
-				resp, _ := json.Marshal(protocol.Hello{
+				resp, err := protocol.EncodeHelloPayload(protocol.Hello{
 					Version: protocol.Version,
 					Server:  "termx",
 				})
+				if err != nil {
+					return err
+				}
 				if err := sendFrame(0, protocol.TypeHello, resp); err != nil {
 					return err
 				}
 			case protocol.TypeRequest:
-				var req protocol.Request
-				if err := json.Unmarshal(payload, &req); err != nil {
+				req, err := protocol.DecodeRequestPayload(payload)
+				if err != nil {
 					if err := sendProtocolError(sendFrame, 0, 0, 400, err.Error()); err != nil {
 						return err
 					}
@@ -1095,7 +1158,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 					continue
 				}
 				var (
-					result json.RawMessage
+					result []byte
 					code   int
 				)
 				requestStarted := time.Now()
@@ -1103,7 +1166,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 					s.cfg.logger.Info("termx protocol request started", "remote", remote, "id", req.ID, "method", req.Method, "params_bytes", len(req.Params))
 				}
 				if req.Method == "events" {
-					result, code, err = s.handleEventsRequest(sessionCtx, req, cancel, &eventsCancelMu, &eventsCancel, sendFrame)
+					result, code, err = s.handleEventsRequest(sessionCtx, remote, req, cancel, &eventsCancelMu, &eventsCancel, sendFrame)
 				} else {
 					result, code, err = s.handleRequest(sessionCtx, remote, nil, allocator, attachments, &attachmentsMu, scope, req, sendFrame)
 				}
@@ -1139,7 +1202,11 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 					responseType = protocol.TypeResponseBinary
 					perftrace.Count("protocol.response.binary.bytes", len(respPayload))
 				} else {
-					respPayload, _ = json.Marshal(protocol.Response{ID: req.ID, Result: result})
+					var err error
+					respPayload, err = protocol.EncodeResponsePayload(protocol.Response{ID: req.ID, Result: result})
+					if err != nil {
+						return sendProtocolError(sendFrame, req.ID, 0, 500, err.Error())
+					}
 				}
 				if s.cfg.logger != nil {
 					elapsed := time.Since(requestStarted)
@@ -1285,14 +1352,13 @@ func (s transportScope) authorizeRequest(req protocol.Request) error {
 		if req.Method != "events" {
 			return fmt.Errorf("%w: method %q is not authorized for machine inventory events", ErrPermissionDenied, req.Method)
 		}
-		var params protocol.EventsParams
-		if len(req.Params) > 0 {
-			if err := json.Unmarshal(req.Params, &params); err != nil {
-				return err
-			}
+		decoded, err := protocol.DecodeMethodParams(req.Method, req.Params)
+		if err != nil {
+			return err
 		}
-		if strings.TrimSpace(params.TerminalID) != "" || strings.TrimSpace(params.SessionID) != "" {
-			return fmt.Errorf("%w: machine inventory events must not set terminal_id or session_id", ErrPermissionDenied)
+		params := decoded.(protocol.EventsParams)
+		if strings.TrimSpace(params.TerminalID) != "" {
+			return fmt.Errorf("%w: machine inventory events must not set terminal_id", ErrPermissionDenied)
 		}
 		if len(params.Types) == 0 {
 			return fmt.Errorf("%w: machine inventory events require an explicit terminal inventory type filter", ErrPermissionDenied)
@@ -1309,52 +1375,50 @@ func (s transportScope) authorizeRequest(req protocol.Request) error {
 	if terminalID == "" {
 		return nil
 	}
-	if strings.HasPrefix(req.Method, "session.") {
+	if strings.HasPrefix(req.Method, "storage.") {
 		return scopedTransportDenied(req.Method, terminalID)
 	}
 	switch req.Method {
 	case "get":
-		var params protocol.GetParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.GetParams](req)
+		if err != nil {
 			return err
 		}
 		return authorizeScopedTerminal(req.Method, params.TerminalID, terminalID)
 	case "resize":
-		var params protocol.ResizeParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.ResizeParams](req)
+		if err != nil {
 			return err
 		}
 		return authorizeScopedTerminal(req.Method, params.TerminalID, terminalID)
 	case "ensure_resize":
-		var params protocol.EnsureResizeParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.EnsureResizeParams](req)
+		if err != nil {
 			return err
 		}
 		return authorizeScopedTerminal(req.Method, params.TerminalID, terminalID)
 	case "snapshot":
-		var params protocol.SnapshotParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.SnapshotParams](req)
+		if err != nil {
 			return err
 		}
 		return authorizeScopedTerminal(req.Method, params.TerminalID, terminalID)
 	case "attach":
-		var params protocol.AttachParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.AttachParams](req)
+		if err != nil {
 			return err
 		}
 		return authorizeScopedTerminal(req.Method, params.TerminalID, terminalID)
 	case "detach":
-		var params protocol.DetachParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.DetachParams](req)
+		if err != nil {
 			return err
 		}
 		return authorizeScopedTerminal(req.Method, params.TerminalID, terminalID)
 	case "events":
-		var params protocol.EventsParams
-		if len(req.Params) > 0 {
-			if err := json.Unmarshal(req.Params, &params); err != nil {
-				return err
-			}
+		params, err := decodeProtocolParams[protocol.EventsParams](req)
+		if err != nil {
+			return err
 		}
 		return authorizeScopedTerminal(req.Method, params.TerminalID, terminalID)
 	default:
@@ -1373,6 +1437,159 @@ func authorizeScopedTerminal(method string, requested string, allowed string) er
 
 func scopedTransportDenied(method string, terminalID string) error {
 	return fmt.Errorf("%w: method %q is not authorized for terminal %q", ErrPermissionDenied, method, terminalID)
+}
+
+func decodeProtocolParams[T any](req protocol.Request) (T, error) {
+	var zero T
+	decoded, err := protocol.DecodeMethodParams(req.Method, req.Params)
+	if err != nil {
+		return zero, err
+	}
+	params, ok := decoded.(T)
+	if !ok {
+		return zero, fmt.Errorf("protocol params for method %q decoded as %T", req.Method, decoded)
+	}
+	return params, nil
+}
+
+func emptyProtocolResult() []byte {
+	payload, _ := protocol.EncodeMethodResult("", nil)
+	return payload
+}
+
+func protocolEventFromEvent(evt Event) protocol.Event {
+	out := protocol.Event{
+		Type:       protocol.EventType(evt.Type),
+		TerminalID: evt.TerminalID,
+		Timestamp:  evt.Timestamp,
+	}
+	if evt.Created != nil {
+		out.Created = &protocol.TerminalCreatedData{
+			Name:    evt.Created.Name,
+			Command: append([]string(nil), evt.Created.Command...),
+			Size:    protocol.Size{Cols: evt.Created.Size.Cols, Rows: evt.Created.Size.Rows},
+		}
+	}
+	if evt.StateChanged != nil {
+		out.StateChanged = &protocol.TerminalStateChangedData{
+			OldState: string(evt.StateChanged.OldState),
+			NewState: string(evt.StateChanged.NewState),
+			ExitCode: copyIntPtr(evt.StateChanged.ExitCode),
+		}
+	}
+	if evt.Resized != nil {
+		out.Resized = &protocol.TerminalResizedData{
+			OldSize: protocol.Size{Cols: evt.Resized.OldSize.Cols, Rows: evt.Resized.OldSize.Rows},
+			NewSize: protocol.Size{Cols: evt.Resized.NewSize.Cols, Rows: evt.Resized.NewSize.Rows},
+		}
+	}
+	if evt.Removed != nil {
+		out.Removed = &protocol.TerminalRemovedData{Reason: evt.Removed.Reason}
+	}
+	if evt.CollaboratorsRevoked != nil {
+		out.CollaboratorsRevoked = &protocol.CollaboratorsRevokedData{}
+	}
+	if evt.ReadError != nil {
+		out.ReadError = &protocol.TerminalReadErrorData{Error: evt.ReadError.Error}
+	}
+	if evt.Storage != nil {
+		out.Storage = &protocol.StorageChangedData{
+			AppID:   evt.Storage.AppID,
+			Scope:   protocol.StorageScope(evt.Storage.Scope),
+			OwnerID: evt.Storage.OwnerID,
+			Key:     evt.Storage.Key,
+			Version: evt.Storage.Version,
+			Op:      evt.Storage.Op,
+		}
+	}
+	return out
+}
+
+func storageOwnerID(scope protocol.StorageScope, ownerID string, remote string) string {
+	return storageOwnerIDForScope(StorageScope(scope), ownerID, remote)
+}
+
+func storageOwnerIDForScope(scope StorageScope, ownerID string, remote string) string {
+	if scope != StorageScopePrivate {
+		return ""
+	}
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID != "" {
+		return ownerID
+	}
+	return strings.TrimSpace(remote)
+}
+
+func storageGetRequestFromProtocol(params protocol.StorageGetParams, remote string) StorageGetRequest {
+	return StorageGetRequest{
+		AppID:   params.AppID,
+		Scope:   StorageScope(params.Scope),
+		OwnerID: storageOwnerID(params.Scope, params.OwnerID, remote),
+		Key:     params.Key,
+	}
+}
+
+func storagePutRequestFromProtocol(params protocol.StoragePutParams, remote string) StoragePutRequest {
+	return StoragePutRequest{
+		AppID:           params.AppID,
+		Scope:           StorageScope(params.Scope),
+		OwnerID:         storageOwnerID(params.Scope, params.OwnerID, remote),
+		Key:             params.Key,
+		Value:           append([]byte(nil), params.Value...),
+		CheckVersion:    params.CheckVersion,
+		ExpectedVersion: params.ExpectedVersion,
+	}
+}
+
+func storageDeleteRequestFromProtocol(params protocol.StorageDeleteParams, remote string) StorageDeleteRequest {
+	return StorageDeleteRequest{
+		AppID:           params.AppID,
+		Scope:           StorageScope(params.Scope),
+		OwnerID:         storageOwnerID(params.Scope, params.OwnerID, remote),
+		Key:             params.Key,
+		CheckVersion:    params.CheckVersion,
+		ExpectedVersion: params.ExpectedVersion,
+	}
+}
+
+func storageListRequestFromProtocol(params protocol.StorageListParams, remote string) StorageListRequest {
+	return StorageListRequest{
+		AppID:   params.AppID,
+		Scope:   StorageScope(params.Scope),
+		OwnerID: storageOwnerID(params.Scope, params.OwnerID, remote),
+		Prefix:  params.Prefix,
+	}
+}
+
+func protocolStorageEntryFromCore(entry StorageEntry) protocol.StorageEntry {
+	return protocol.StorageEntry{
+		AppID:     entry.AppID,
+		Scope:     protocol.StorageScope(entry.Scope),
+		OwnerID:   entry.OwnerID,
+		Key:       entry.Key,
+		Value:     append([]byte(nil), entry.Value...),
+		Version:   entry.Version,
+		UpdatedAt: entry.UpdatedAt,
+	}
+}
+
+func protocolStorageEntriesFromCore(entries []StorageEntry) []protocol.StorageEntry {
+	out := make([]protocol.StorageEntry, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, protocolStorageEntryFromCore(entry))
+	}
+	return out
+}
+
+func protocolStorageDeleteResultFromCore(result StorageDeleteResult) protocol.StorageDeleteResult {
+	return protocol.StorageDeleteResult{
+		AppID:   result.AppID,
+		Scope:   protocol.StorageScope(result.Scope),
+		OwnerID: result.OwnerID,
+		Key:     result.Key,
+		Deleted: result.Deleted,
+		Version: result.Version,
+	}
 }
 
 func protocolResponseResultIsBinary(method string) bool {
@@ -1394,7 +1611,7 @@ func (s *Server) handleRequest(
 	scope transportScope,
 	req protocol.Request,
 	sendFrame func(uint16, uint8, []byte) error,
-) (json.RawMessage, int, error) {
+) ([]byte, int, error) {
 	started := time.Now()
 	if s.cfg.logger != nil {
 		defer func() {
@@ -1404,18 +1621,75 @@ func (s *Server) handleRequest(
 			}
 		}()
 	}
-	if strings.HasPrefix(req.Method, "session.") {
-		return s.handleSessionRequest(ctx, remote, req)
-	}
 	if s.cfg.methodHandler != nil {
 		if result, code, handled, err := s.cfg.methodHandler.HandleProtocolMethod(ctx, req.Method, req.Params); handled {
 			return result, code, err
 		}
 	}
 	switch req.Method {
+	case "storage.get":
+		params, err := decodeProtocolParams[protocol.StorageGetParams](req)
+		if err != nil {
+			return nil, 400, err
+		}
+		entry, err := s.StorageGet(ctx, storageGetRequestFromProtocol(params, remote))
+		if err != nil {
+			return nil, protocolErrorCode(err), err
+		}
+		result, err := protocol.EncodeMethodResult(req.Method, protocolStorageEntryFromCore(entry))
+		if err != nil {
+			return nil, 500, err
+		}
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "app_id", entry.AppID, "scope", entry.Scope, "owner_id", entry.OwnerID, "key", entry.Key, "version", entry.Version)
+		return result, 0, nil
+	case "storage.put":
+		params, err := decodeProtocolParams[protocol.StoragePutParams](req)
+		if err != nil {
+			return nil, 400, err
+		}
+		entry, err := s.StoragePut(ctx, storagePutRequestFromProtocol(params, remote))
+		if err != nil {
+			return nil, protocolErrorCode(err), err
+		}
+		result, err := protocol.EncodeMethodResult(req.Method, protocolStorageEntryFromCore(entry))
+		if err != nil {
+			return nil, 500, err
+		}
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "app_id", entry.AppID, "scope", entry.Scope, "owner_id", entry.OwnerID, "key", entry.Key, "version", entry.Version, "value_bytes", len(entry.Value))
+		return result, 0, nil
+	case "storage.delete":
+		params, err := decodeProtocolParams[protocol.StorageDeleteParams](req)
+		if err != nil {
+			return nil, 400, err
+		}
+		deleted, err := s.StorageDelete(ctx, storageDeleteRequestFromProtocol(params, remote))
+		if err != nil {
+			return nil, protocolErrorCode(err), err
+		}
+		result, err := protocol.EncodeMethodResult(req.Method, protocolStorageDeleteResultFromCore(deleted))
+		if err != nil {
+			return nil, 500, err
+		}
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "app_id", deleted.AppID, "scope", deleted.Scope, "owner_id", deleted.OwnerID, "key", deleted.Key, "deleted", deleted.Deleted, "version", deleted.Version)
+		return result, 0, nil
+	case "storage.list":
+		params, err := decodeProtocolParams[protocol.StorageListParams](req)
+		if err != nil {
+			return nil, 400, err
+		}
+		entries, err := s.StorageList(ctx, storageListRequestFromProtocol(params, remote))
+		if err != nil {
+			return nil, protocolErrorCode(err), err
+		}
+		result, err := protocol.EncodeMethodResult(req.Method, protocol.StorageListResult{Entries: protocolStorageEntriesFromCore(entries)})
+		if err != nil {
+			return nil, 500, err
+		}
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "app_id", params.AppID, "scope", params.Scope, "owner_id", storageOwnerID(params.Scope, params.OwnerID, remote), "prefix", params.Prefix, "entries", len(entries))
+		return result, 0, nil
 	case "create":
-		var params protocol.CreateParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.CreateParams](req)
+		if err != nil {
 			return nil, 400, err
 		}
 		info, err := s.Create(ctx, CreateOptions{
@@ -1431,7 +1705,10 @@ func (s *Server) handleRequest(
 		if err != nil {
 			return nil, protocolErrorCode(err), err
 		}
-		result, _ := json.Marshal(protocol.CreateResult{TerminalID: info.ID, State: string(info.State)})
+		result, err := protocol.EncodeMethodResult(req.Method, protocol.CreateResult{TerminalID: info.ID, State: string(info.State)})
+		if err != nil {
+			return nil, 500, err
+		}
 		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", info.ID)
 		return result, 0, nil
 	case "list":
@@ -1442,23 +1719,23 @@ func (s *Server) handleRequest(
 		s.logProtocolMethodResult(ctx, remote, req, result, started)
 		return result, 0, nil
 	case "get":
-		var params protocol.GetParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.GetParams](req)
+		if err != nil {
 			return nil, 400, err
 		}
 		term, err := s.getTerminal(params.TerminalID)
 		if err != nil {
 			return nil, protocolErrorCode(err), err
 		}
-		result, err := term.protocolInfoJSON()
+		result, err := protocol.EncodeMethodResult(req.Method, term.protocolInfo())
 		if err != nil {
 			return nil, 500, err
 		}
 		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", params.TerminalID)
 		return result, 0, nil
 	case "kill":
-		var params protocol.GetParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.GetParams](req)
+		if err != nil {
 			return nil, 400, err
 		}
 		if err := requireControlPermission(attachments, attachmentsMu, params.TerminalID); err != nil {
@@ -1467,11 +1744,12 @@ func (s *Server) handleRequest(
 		if err := s.Kill(ctx, params.TerminalID); err != nil {
 			return nil, protocolErrorCode(err), err
 		}
-		s.logProtocolMethodResult(ctx, remote, req, json.RawMessage(`{}`), started, "terminal_id", params.TerminalID)
-		return json.RawMessage(`{}`), 0, nil
+		result := emptyProtocolResult()
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", params.TerminalID)
+		return result, 0, nil
 	case "restart":
-		var params protocol.GetParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.GetParams](req)
+		if err != nil {
 			return nil, 400, err
 		}
 		if err := requireControlPermission(attachments, attachmentsMu, params.TerminalID); err != nil {
@@ -1480,11 +1758,12 @@ func (s *Server) handleRequest(
 		if err := s.Restart(ctx, params.TerminalID); err != nil {
 			return nil, protocolErrorCode(err), err
 		}
-		s.logProtocolMethodResult(ctx, remote, req, json.RawMessage(`{}`), started, "terminal_id", params.TerminalID)
-		return json.RawMessage(`{}`), 0, nil
+		result := emptyProtocolResult()
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", params.TerminalID)
+		return result, 0, nil
 	case "remove":
-		var params protocol.GetParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.GetParams](req)
+		if err != nil {
 			return nil, 400, err
 		}
 		if err := requireControlPermission(attachments, attachmentsMu, params.TerminalID); err != nil {
@@ -1511,11 +1790,12 @@ func (s *Server) handleRequest(
 			return nil, 500, err
 		}
 		s.removeTerminal(params.TerminalID, "removed")
-		s.logProtocolMethodResult(ctx, remote, req, json.RawMessage(`{}`), started, "terminal_id", params.TerminalID, "cleaned_attachments", len(toCleanup))
-		return json.RawMessage(`{}`), 0, nil
+		result := emptyProtocolResult()
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", params.TerminalID, "cleaned_attachments", len(toCleanup))
+		return result, 0, nil
 	case "resize":
-		var params protocol.ResizeParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.ResizeParams](req)
+		if err != nil {
 			return nil, 400, err
 		}
 		if err := requireResizePermission(attachments, attachmentsMu, params.TerminalID, scope); err != nil {
@@ -1524,43 +1804,49 @@ func (s *Server) handleRequest(
 		if err := s.Resize(ctx, params.TerminalID, params.Cols, params.Rows); err != nil {
 			return nil, protocolErrorCode(err), err
 		}
-		s.logProtocolMethodResult(ctx, remote, req, json.RawMessage(`{}`), started, "terminal_id", params.TerminalID, "cols", params.Cols, "rows", params.Rows)
-		return json.RawMessage(`{}`), 0, nil
+		result := emptyProtocolResult()
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", params.TerminalID, "cols", params.Cols, "rows", params.Rows)
+		return result, 0, nil
 	case "ensure_resize":
-		var params protocol.EnsureResizeParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.EnsureResizeParams](req)
+		if err != nil {
 			return nil, 400, err
 		}
-		result, err := s.ensureResize(ctx, attachments, attachmentsMu, scope, params)
+		resizeResult, err := s.ensureResize(ctx, attachments, attachmentsMu, scope, params)
 		if err != nil {
 			return nil, protocolErrorCode(err), err
 		}
-		data, _ := json.Marshal(result)
-		s.logProtocolMethodResult(ctx, remote, req, data, started, "terminal_id", params.TerminalID, "channel", params.Channel, "cols", params.Cols, "rows", params.Rows)
-		return data, 0, nil
+		result, err := protocol.EncodeMethodResult(req.Method, resizeResult)
+		if err != nil {
+			return nil, 500, err
+		}
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", params.TerminalID, "channel", params.Channel, "cols", params.Cols, "rows", params.Rows)
+		return result, 0, nil
 	case "set_tags":
-		var params protocol.SetTagsParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.SetTagsParams](req)
+		if err != nil {
 			return nil, 400, err
 		}
 		if err := s.SetTags(ctx, params.TerminalID, params.Tags); err != nil {
 			return nil, protocolErrorCode(err), err
 		}
-		s.logProtocolMethodResult(ctx, remote, req, json.RawMessage(`{}`), started, "terminal_id", params.TerminalID)
-		return json.RawMessage(`{}`), 0, nil
+		result := emptyProtocolResult()
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", params.TerminalID)
+		return result, 0, nil
 	case "set_metadata":
-		var params protocol.SetMetadataParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.SetMetadataParams](req)
+		if err != nil {
 			return nil, 400, err
 		}
 		if err := s.SetMetadata(ctx, params.TerminalID, params.Name, params.Tags); err != nil {
 			return nil, protocolErrorCode(err), err
 		}
-		s.logProtocolMethodResult(ctx, remote, req, json.RawMessage(`{}`), started, "terminal_id", params.TerminalID)
-		return json.RawMessage(`{}`), 0, nil
+		result := emptyProtocolResult()
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", params.TerminalID)
+		return result, 0, nil
 	case "snapshot":
-		var params protocol.SnapshotParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.SnapshotParams](req)
+		if err != nil {
 			return nil, 400, err
 		}
 		snap, err := s.Snapshot(ctx, params.TerminalID, SnapshotOptions{
@@ -1591,8 +1877,8 @@ func (s *Server) handleRequest(
 		)
 		return result, 0, nil
 	case "grid.viewport":
-		var params protocol.GridViewportParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.GridViewportParams](req)
+		if err != nil {
 			return nil, 400, err
 		}
 		viewport, err := s.GridViewport(ctx, params.TerminalID, GridViewportOptions{
@@ -1624,8 +1910,8 @@ func (s *Server) handleRequest(
 		)
 		return result, 0, nil
 	case "attach":
-		var params protocol.AttachParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.AttachParams](req)
+		if err != nil {
 			return nil, 400, err
 		}
 		term, err := s.getTerminal(params.TerminalID)
@@ -1681,12 +1967,15 @@ func (s *Server) handleRequest(
 				s.cfg.logger.Warn("transport attachment stream send failed", "terminal_id", params.TerminalID, "remote", remote, "channel", ch, "error", err)
 			}
 		}()
-		result, _ := json.Marshal(protocol.AttachResult{Mode: params.Mode, Channel: ch, ResizeControl: &resizeControl})
+		result, err := protocol.EncodeMethodResult(req.Method, protocol.AttachResult{Mode: params.Mode, Channel: ch, ResizeControl: &resizeControl})
+		if err != nil {
+			return nil, 500, err
+		}
 		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", params.TerminalID, "channel", ch, "resize_owner", resizeControl.CanResize)
 		return result, 0, nil
 	case "detach":
-		var params protocol.DetachParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
+		params, err := decodeProtocolParams[protocol.DetachParams](req)
+		if err != nil {
 			return nil, 400, err
 		}
 		attachmentsMu.RLock()
@@ -1700,14 +1989,15 @@ func (s *Server) handleRequest(
 		for _, attachment := range toCleanup {
 			attachment.cleanup()
 		}
-		s.logProtocolMethodResult(ctx, remote, req, json.RawMessage(`{}`), started, "terminal_id", params.TerminalID, "detached_attachments", len(toCleanup))
-		return json.RawMessage(`{}`), 0, nil
+		result := emptyProtocolResult()
+		s.logProtocolMethodResult(ctx, remote, req, result, started, "terminal_id", params.TerminalID, "detached_attachments", len(toCleanup))
+		return result, 0, nil
 	default:
 		return nil, 400, fmt.Errorf("unsupported method: %s", req.Method)
 	}
 }
 
-func (s *Server) logProtocolMethodResult(ctx context.Context, remote string, req protocol.Request, result json.RawMessage, started time.Time, attrs ...any) {
+func (s *Server) logProtocolMethodResult(ctx context.Context, remote string, req protocol.Request, result []byte, started time.Time, attrs ...any) {
 	if s == nil || s.cfg.logger == nil {
 		return
 	}
@@ -1779,25 +2069,21 @@ func (s *Server) ensureResize(
 
 func (s *Server) handleEventsRequest(
 	ctx context.Context,
+	remote string,
 	req protocol.Request,
 	cancelSession context.CancelFunc,
 	eventsCancelMu *sync.Mutex,
 	eventsCancel *context.CancelFunc,
 	sendFrame func(uint16, uint8, []byte) error,
-) (json.RawMessage, int, error) {
-	var params protocol.EventsParams
-	if len(req.Params) > 0 {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return nil, 400, err
-		}
+) ([]byte, int, error) {
+	params, err := decodeProtocolParams[protocol.EventsParams](req)
+	if err != nil {
+		return nil, 400, err
 	}
 
-	opts := make([]EventsOption, 0, 2)
+	opts := []EventsOption{WithStorageVisibility(remote)}
 	if params.TerminalID != "" {
 		opts = append(opts, WithTerminalFilter(params.TerminalID))
-	}
-	if params.SessionID != "" {
-		opts = append(opts, WithSessionFilter(params.SessionID))
 	}
 	if len(params.Types) > 0 {
 		types := make([]EventType, len(params.Types))
@@ -1805,6 +2091,14 @@ func (s *Server) handleEventsRequest(
 			types[i] = EventType(typ)
 		}
 		opts = append(opts, WithTypeFilter(types...))
+	}
+	if params.StorageAppID != "" || params.StorageScope != "" || params.StorageOwnerID != "" || params.StorageKeyPrefix != "" {
+		opts = append(opts, WithStorageFilter(
+			params.StorageAppID,
+			StorageScope(params.StorageScope),
+			storageOwnerIDForScope(StorageScope(params.StorageScope), params.StorageOwnerID, remote),
+			params.StorageKeyPrefix,
+		))
 	}
 
 	subCtx, subCancel := context.WithCancel(ctx)
@@ -1827,7 +2121,7 @@ func (s *Server) handleEventsRequest(
 
 	go func() {
 		for evt := range events {
-			payload, err := json.Marshal(evt)
+			payload, err := protocol.EncodeEventPayload(protocolEventFromEvent(evt))
 			if err != nil {
 				cancelSession()
 				return
@@ -1839,7 +2133,7 @@ func (s *Server) handleEventsRequest(
 		}
 	}()
 
-	return json.RawMessage(`{}`), 0, nil
+	return emptyProtocolResult(), 0, nil
 }
 
 func (a *sessionAttachment) mode() AttachMode {
@@ -2094,7 +2388,7 @@ func sendRawFrame(sendFrame func(uint16, uint8, []byte) error, frame []byte) err
 }
 
 func sendProtocolError(sendFrame func(uint16, uint8, []byte) error, id uint64, channel uint16, code int, msg string) error {
-	payload, _ := json.Marshal(protocol.ErrorMessage{
+	payload, _ := protocol.EncodeErrorPayload(protocol.ErrorMessage{
 		ID: id,
 		Error: protocol.ProtocolError{
 			Code:    code,
@@ -2108,7 +2402,7 @@ func protocolErrorCode(err error) int {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return 404
-	case errors.Is(err, ErrDuplicateID), errors.Is(err, ErrDuplicateName):
+	case errors.Is(err, ErrDuplicateID), errors.Is(err, ErrDuplicateName), isStorageConflict(err):
 		return 409
 	case errors.Is(err, ErrPermissionDenied):
 		return 403

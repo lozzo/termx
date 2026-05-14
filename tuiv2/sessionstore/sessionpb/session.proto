@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package termx.tuiv2.sessionpb;
+
+option go_package = "github.com/lozzow/termx/tuiv2/sessionstore/sessionpb";
+
+message SessionInfo {
+  string id = 1;
+  string name = 2;
+  int64 created_at_unix_nano = 3;
+  int64 updated_at_unix_nano = 4;
+  uint64 revision = 5;
+}
+
+message ViewInfo {
+  string view_id = 1;
+  string session_id = 2;
+  string client_id = 3;
+  string active_workspace_name = 4;
+  string active_tab_id = 5;
+  string focused_pane_id = 6;
+  uint32 window_cols = 7;
+  uint32 window_rows = 8;
+  int64 attached_at_unix_nano = 9;
+  int64 updated_at_unix_nano = 10;
+}
+
+message LeaseInfo {
+  string terminal_id = 1;
+  string session_id = 2;
+  string view_id = 3;
+  string pane_id = 4;
+  int64 acquired_at_unix_nano = 5;
+}
+
+message Rect {
+  int32 x = 1;
+  int32 y = 2;
+  int32 w = 3;
+  int32 h = 4;
+}
+
+message LayoutNode {
+  string pane_id = 1;
+  string direction = 2;
+  double ratio = 3;
+  LayoutNode first = 4;
+  LayoutNode second = 5;
+}
+
+message Pane {
+  string id = 1;
+  string title = 2;
+  string terminal_id = 3;
+}
+
+message FloatingPane {
+  string pane_id = 1;
+  Rect rect = 2;
+  int32 z = 3;
+  string display = 4;
+  string fit_mode = 5;
+  Rect restore_rect = 6;
+  int32 auto_fit_cols = 7;
+  int32 auto_fit_rows = 8;
+}
+
+message Tab {
+  string id = 1;
+  string name = 2;
+  LayoutNode root = 3;
+  map<string, Pane> panes = 4;
+  repeated FloatingPane floating = 5;
+  bool floating_visible = 6;
+  string active_pane_id = 7;
+  string zoomed_pane_id = 8;
+  int32 scroll_offset = 9;
+  int32 layout_preset = 10;
+}
+
+message Workspace {
+  string name = 1;
+  repeated Tab tabs = 2;
+  int32 active_tab = 3;
+}
+
+message Doc {
+  string current_workspace = 1;
+  repeated string workspace_order = 2;
+  map<string, Workspace> workspaces = 3;
+}
+
+message SessionRecord {
+  SessionInfo session = 1;
+  Doc workbench = 2;
+}

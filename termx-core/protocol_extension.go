@@ -2,11 +2,10 @@ package termx
 
 import (
 	"context"
-	"encoding/json"
 )
 
 type ProtocolMethodHandler interface {
-	HandleProtocolMethod(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, int, bool, error)
+	HandleProtocolMethod(ctx context.Context, method string, params []byte) ([]byte, int, bool, error)
 }
 
 func WithProtocolMethodHandler(handler ProtocolMethodHandler) ServerOption {

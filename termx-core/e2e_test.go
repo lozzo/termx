@@ -2,7 +2,6 @@ package termx
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -174,18 +173,6 @@ func protocolCellsText(row []protocol.Cell) string {
 		b.WriteString(cell.Content)
 	}
 	return strings.TrimRight(b.String(), " ")
-}
-
-// doRawRequest sends a raw JSON-RPC request to the server via the protocol client.
-// This is used for methods not yet exposed as convenience methods on protocol.Client
-// (e.g. get, set_tags, detach, resize-by-id).
-func doRawRequest(t *testing.T, ct *protocol.Client, method string, params any) json.RawMessage {
-	t.Helper()
-	// We don't have access to doRequest, so we use the existing client methods
-	// or construct the request manually. Since the protocol.Client.doRequest is
-	// unexported, we work around by calling the available methods.
-	// For methods that need a workaround, we'll use the server directly.
-	return nil
 }
 
 // =============================================================================

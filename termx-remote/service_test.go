@@ -2,7 +2,6 @@ package remote
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"os"
 	"testing"
@@ -12,7 +11,9 @@ import (
 	"github.com/lozzow/termx/termx-core/transport"
 	"github.com/lozzow/termx/termx-remote/pairing"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
+	"github.com/lozzow/termx/termx-remote/protocol/runtimepb"
 	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestLocalStatusDisabledByDefault(t *testing.T) {
@@ -55,7 +56,7 @@ func TestTerminalManagementCreateMarshalsProtocolTerminalID(t *testing.T) {
 	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
 		Method: "create",
 		Path:   "create",
-		Body:   json.RawMessage(`{"command":["/bin/zsh","-l"],"name":"ops shell"}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.TerminalCreateRequest{Command: []string{"/bin/zsh", "-l"}, Name: "ops shell"}),
 	})
 	if errMsg != "" {
 		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
@@ -63,15 +64,12 @@ func TestTerminalManagementCreateMarshalsProtocolTerminalID(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("RouteTerminalManagementRequest status = %d, body = %s", status, string(body))
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
+	var payload runtimepb.TerminalInventoryItem
+	if err := proto.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("decode terminal management response: %v", err)
 	}
-	if payload["terminal_id"] != "terminal-created" {
+	if payload.GetTerminalId() != "terminal-created" {
 		t.Fatalf("expected terminal_id in create response, got %s", string(body))
-	}
-	if _, ok := payload["ID"]; ok {
-		t.Fatalf("create response must not use Go field name ID: %s", string(body))
 	}
 	if daemon.createName != "ops shell" {
 		t.Fatalf("create request did not reach daemon, got name %q", daemon.createName)
@@ -93,7 +91,7 @@ func TestTerminalManagementCreateDefaultsCommandAndDir(t *testing.T) {
 	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
 		Method: "create",
 		Path:   "create",
-		Body:   json.RawMessage(`{"name":"default shell"}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.TerminalCreateRequest{Name: "default shell"}),
 	})
 	if errMsg != "" {
 		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
@@ -121,7 +119,7 @@ func TestTerminalManagementListPreservesDistinctTerminalIDs(t *testing.T) {
 	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
 		Method: "list",
 		Path:   "list",
-		Body:   json.RawMessage(`{}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.Empty{}),
 	})
 	if errMsg != "" {
 		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
@@ -129,45 +127,40 @@ func TestTerminalManagementListPreservesDistinctTerminalIDs(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("RouteTerminalManagementRequest status = %d, body = %s", status, string(body))
 	}
-	var payload struct {
-		Terminals []struct {
-			TerminalID string `json:"terminal_id"`
-			Name       string `json:"name"`
-		} `json:"terminals"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	var payload runtimepb.TerminalListResponse
+	if err := proto.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("decode terminal management list response: %v", err)
 	}
-	if len(payload.Terminals) != 2 || payload.Terminals[0].TerminalID != "1" || payload.Terminals[1].TerminalID != "3" {
-		t.Fatalf("expected distinct terminal IDs [1 3], got %#v body=%s", payload.Terminals, string(body))
+	if len(payload.GetTerminals()) != 2 || payload.GetTerminals()[0].GetTerminalId() != "1" || payload.GetTerminals()[1].GetTerminalId() != "3" {
+		t.Fatalf("expected distinct terminal IDs [1 3], got %#v body=%s", payload.GetTerminals(), string(body))
 	}
 }
 
 func TestTerminalManagementListIncludesTerminalMetadataTags(t *testing.T) {
-		daemon := &terminalManagementDaemonStub{
-			list: []protocol.TerminalInfo{{
-				ID:      "1",
-				Name:    "one",
-				Command: []string{"/bin/bash"},
-				State:   "running",
-				Size:    protocol.Size{Cols: 80, Rows: 24},
-				Tags: map[string]string{
-					"termx.cwd":         "/srv/app",
-					"termx.environment": "prod",
-					"termx.size_lock":   "lock",
-				},
-				ResizeOwnership: &protocol.ResizeOwnership{
-					OwnerSurfaceID: "app:machine-local:terminal:1",
-				},
-				ResizeOwnerAttachmentCount: 1,
-			}},
-		}
+	daemon := &terminalManagementDaemonStub{
+		list: []protocol.TerminalInfo{{
+			ID:      "1",
+			Name:    "one",
+			Command: []string{"/bin/bash"},
+			State:   "running",
+			Size:    protocol.Size{Cols: 80, Rows: 24},
+			Tags: map[string]string{
+				"termx.cwd":         "/srv/app",
+				"termx.environment": "prod",
+				"termx.size_lock":   "lock",
+			},
+			ResizeOwnership: &protocol.ResizeOwnership{
+				OwnerSurfaceID: "app:machine-local:terminal:1",
+			},
+			ResizeOwnerAttachmentCount: 1,
+		}},
+	}
 	router := terminalManagementRouter{daemon: daemon}
 
 	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
 		Method: "list",
 		Path:   "list",
-		Body:   json.RawMessage(`{}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.Empty{}),
 	})
 	if errMsg != "" {
 		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
@@ -175,31 +168,21 @@ func TestTerminalManagementListIncludesTerminalMetadataTags(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("RouteTerminalManagementRequest status = %d, body = %s", status, string(body))
 	}
-		var payload struct {
-			Terminals []struct {
-				CWD          string `json:"cwd"`
-				Environment  string `json:"environment"`
-				SizeLocked   bool   `json:"size_locked"`
-				SizeLockMode string `json:"size_lock_mode"`
-				ResizeOwnership struct {
-					OwnerSurfaceID string `json:"owner_surface_id"`
-				} `json:"resize_ownership"`
-				ResizeOwnerAttachmentCount int `json:"resize_owner_attachment_count"`
-			} `json:"terminals"`
-		}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	var payload runtimepb.TerminalListResponse
+	if err := proto.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("decode terminal management list response: %v", err)
 	}
-		if len(payload.Terminals) != 1 ||
-			payload.Terminals[0].CWD != "/srv/app" ||
-			payload.Terminals[0].Environment != "prod" ||
-			!payload.Terminals[0].SizeLocked ||
-			payload.Terminals[0].SizeLockMode != "lock" ||
-			payload.Terminals[0].ResizeOwnership.OwnerSurfaceID != "app:machine-local:terminal:1" ||
-			payload.Terminals[0].ResizeOwnerAttachmentCount != 1 {
-			t.Fatalf("expected terminal metadata in list response, got %#v body=%s", payload.Terminals, string(body))
-		}
+	terms := payload.GetTerminals()
+	if len(terms) != 1 ||
+		terms[0].GetCwd() != "/srv/app" ||
+		terms[0].GetEnvironment() != "prod" ||
+		!terms[0].GetSizeLocked() ||
+		terms[0].GetSizeLockMode() != "lock" ||
+		terms[0].GetResizeOwnership().GetOwnerSurfaceId() != "app:machine-local:terminal:1" ||
+		terms[0].GetResizeOwnerAttachmentCount() != 1 {
+		t.Fatalf("expected terminal metadata in list response, got %#v body=%s", terms, string(body))
 	}
+}
 
 func TestTerminalManagementGetDirectoryPrefersProcessCWD(t *testing.T) {
 	daemon := &terminalManagementDaemonStub{
@@ -216,7 +199,7 @@ func TestTerminalManagementGetDirectoryPrefersProcessCWD(t *testing.T) {
 	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
 		Method: "get_directory",
 		Path:   "get_directory",
-		Body:   json.RawMessage(`{"terminal_id":"terminal-1"}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.TerminalDirectoryRequest{TerminalId: "terminal-1"}),
 	})
 	if errMsg != "" {
 		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
@@ -224,14 +207,11 @@ func TestTerminalManagementGetDirectoryPrefersProcessCWD(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("RouteTerminalManagementRequest status = %d, body = %s", status, string(body))
 	}
-	var payload struct {
-		Path   string `json:"path"`
-		Source string `json:"source"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	var payload runtimepb.TerminalDirectoryResponse
+	if err := proto.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("decode terminal directory response: %v", err)
 	}
-	if payload.Path != "/srv/process" || payload.Source != "process" {
+	if payload.GetPath() != "/srv/process" || payload.GetSource() != "process" {
 		t.Fatalf("expected process cwd, got %#v body=%s", payload, string(body))
 	}
 }
@@ -250,7 +230,7 @@ func TestTerminalManagementGetDirectoryFallsBackToReportedCWD(t *testing.T) {
 	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
 		Method: "get_directory",
 		Path:   "get_directory",
-		Body:   json.RawMessage(`{"terminal_id":"terminal-1"}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.TerminalDirectoryRequest{TerminalId: "terminal-1"}),
 	})
 	if errMsg != "" {
 		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
@@ -258,14 +238,11 @@ func TestTerminalManagementGetDirectoryFallsBackToReportedCWD(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("RouteTerminalManagementRequest status = %d, body = %s", status, string(body))
 	}
-	var payload struct {
-		Path   string `json:"path"`
-		Source string `json:"source"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	var payload runtimepb.TerminalDirectoryResponse
+	if err := proto.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("decode terminal directory response: %v", err)
 	}
-	if payload.Path != "/srv/reported" || payload.Source != "reported" {
+	if payload.GetPath() != "/srv/reported" || payload.GetSource() != "reported" {
 		t.Fatalf("expected reported cwd, got %#v body=%s", payload, string(body))
 	}
 }
@@ -283,7 +260,7 @@ func TestTerminalManagementGetDirectoryFallsBackToMetadataCWD(t *testing.T) {
 	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
 		Method: "get_directory",
 		Path:   "get_directory",
-		Body:   json.RawMessage(`{"terminal_id":"terminal-1"}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.TerminalDirectoryRequest{TerminalId: "terminal-1"}),
 	})
 	if errMsg != "" {
 		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
@@ -291,16 +268,22 @@ func TestTerminalManagementGetDirectoryFallsBackToMetadataCWD(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("RouteTerminalManagementRequest status = %d, body = %s", status, string(body))
 	}
-	var payload struct {
-		Path   string `json:"path"`
-		Source string `json:"source"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	var payload runtimepb.TerminalDirectoryResponse
+	if err := proto.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("decode terminal directory response: %v", err)
 	}
-	if payload.Path != "/srv/metadata" || payload.Source != "metadata" {
+	if payload.GetPath() != "/srv/metadata" || payload.GetSource() != "metadata" {
 		t.Fatalf("expected metadata cwd, got %#v body=%s", payload, string(body))
 	}
+}
+
+func mustMarshalRuntimeProto(t *testing.T, msg proto.Message) []byte {
+	t.Helper()
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal runtime proto: %v", err)
+	}
+	return data
 }
 
 func pairClaimRequestForTest(session remoteprotocol.PairStartResult) pairing.ClaimRequest {

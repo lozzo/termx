@@ -11,7 +11,7 @@
 - protocol / transport
 - pty / vterm / snapshot
 - events
-- shared session / workbench service
+- generic app storage
 - shell-neutral Go API
 
 它不是：

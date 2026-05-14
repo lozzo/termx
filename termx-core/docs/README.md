@@ -14,12 +14,6 @@
 - [spec-pty-manager.md](spec-pty-manager.md)
 - [spec-vterm.md](spec-vterm.md)
 
-## Session / Workbench
-
-- [shared-workspace-session-design.md](shared-workspace-session-design.md)
-- [workbench-session-phase1-design.md](workbench-session-phase1-design.md)
-- [workbench-session-service-proposal.md](workbench-session-service-proposal.md)
-
 ## Implementation Notes
 
 - [screen-update-opcode-prototype.md](screen-update-opcode-prototype.md)

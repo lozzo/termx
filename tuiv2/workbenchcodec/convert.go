@@ -1,13 +1,13 @@
 package workbenchcodec
 
 import (
+	"github.com/lozzow/termx/tuiv2/sessiondoc"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	"github.com/lozzow/termx/termx-core/workbenchdoc"
 )
 
-func ExportWorkbench(wb *workbench.Workbench) *workbenchdoc.Doc {
-	doc := workbenchdoc.New()
+func ExportWorkbench(wb *workbench.Workbench) *sessiondoc.Doc {
+	doc := sessiondoc.New()
 	if wb == nil {
 		return doc
 	}
@@ -23,7 +23,7 @@ func ExportWorkbench(wb *workbench.Workbench) *workbenchdoc.Doc {
 	return doc
 }
 
-func ImportDoc(doc *workbenchdoc.Doc) *workbench.Workbench {
+func ImportDoc(doc *sessiondoc.Doc) *workbench.Workbench {
 	wb := workbench.NewWorkbench()
 	if doc == nil {
 		return wb
@@ -49,7 +49,7 @@ func ImportDoc(doc *workbenchdoc.Doc) *workbench.Workbench {
 	return wb
 }
 
-func PaneTerminalBindings(doc *workbenchdoc.Doc) map[string]string {
+func PaneTerminalBindings(doc *sessiondoc.Doc) map[string]string {
 	out := make(map[string]string)
 	if doc == nil {
 		return out
@@ -73,14 +73,14 @@ func PaneTerminalBindings(doc *workbenchdoc.Doc) map[string]string {
 	return out
 }
 
-func exportWorkspace(ws *workbench.WorkspaceState) *workbenchdoc.Workspace {
+func exportWorkspace(ws *workbench.WorkspaceState) *sessiondoc.Workspace {
 	if ws == nil {
 		return nil
 	}
-	out := &workbenchdoc.Workspace{
+	out := &sessiondoc.Workspace{
 		Name:      ws.Name,
 		ActiveTab: ws.ActiveTab,
-		Tabs:      make([]*workbenchdoc.Tab, 0, len(ws.Tabs)),
+		Tabs:      make([]*sessiondoc.Tab, 0, len(ws.Tabs)),
 	}
 	for _, tab := range ws.Tabs {
 		if tab == nil {
@@ -91,16 +91,16 @@ func exportWorkspace(ws *workbench.WorkspaceState) *workbenchdoc.Workspace {
 	return out
 }
 
-func exportTab(tab *workbench.TabState) *workbenchdoc.Tab {
+func exportTab(tab *workbench.TabState) *sessiondoc.Tab {
 	if tab == nil {
 		return nil
 	}
-	out := &workbenchdoc.Tab{
+	out := &sessiondoc.Tab{
 		ID:              tab.ID,
 		Name:            tab.Name,
 		Root:            exportLayout(tab.Root),
-		Panes:           make(map[string]*workbenchdoc.Pane, len(tab.Panes)),
-		Floating:        make([]*workbenchdoc.FloatingPane, 0, len(tab.Floating)),
+		Panes:           make(map[string]*sessiondoc.Pane, len(tab.Panes)),
+		Floating:        make([]*sessiondoc.FloatingPane, 0, len(tab.Floating)),
 		FloatingVisible: tab.FloatingVisible,
 		ActivePaneID:    tab.ActivePaneID,
 		ZoomedPaneID:    tab.ZoomedPaneID,
@@ -111,7 +111,7 @@ func exportTab(tab *workbench.TabState) *workbenchdoc.Tab {
 		if pane == nil {
 			continue
 		}
-		out.Panes[paneID] = &workbenchdoc.Pane{
+		out.Panes[paneID] = &sessiondoc.Pane{
 			ID:         pane.ID,
 			Title:      pane.Title,
 			TerminalID: pane.TerminalID,
@@ -121,9 +121,9 @@ func exportTab(tab *workbench.TabState) *workbenchdoc.Tab {
 		if floating == nil {
 			continue
 		}
-		out.Floating = append(out.Floating, &workbenchdoc.FloatingPane{
+		out.Floating = append(out.Floating, &sessiondoc.FloatingPane{
 			PaneID: floating.PaneID,
-			Rect: workbenchdoc.Rect{
+			Rect: sessiondoc.Rect{
 				X: floating.Rect.X,
 				Y: floating.Rect.Y,
 				W: floating.Rect.W,
@@ -132,7 +132,7 @@ func exportTab(tab *workbench.TabState) *workbenchdoc.Tab {
 			Z:       floating.Z,
 			Display: string(floating.Display),
 			FitMode: string(floating.FitMode),
-			RestoreRect: workbenchdoc.Rect{
+			RestoreRect: sessiondoc.Rect{
 				X: floating.RestoreRect.X,
 				Y: floating.RestoreRect.Y,
 				W: floating.RestoreRect.W,
@@ -145,20 +145,20 @@ func exportTab(tab *workbench.TabState) *workbenchdoc.Tab {
 	return out
 }
 
-func exportLayout(node *workbench.LayoutNode) *workbenchdoc.LayoutNode {
+func exportLayout(node *workbench.LayoutNode) *sessiondoc.LayoutNode {
 	if node == nil {
 		return nil
 	}
-	return &workbenchdoc.LayoutNode{
+	return &sessiondoc.LayoutNode{
 		PaneID:    node.PaneID,
-		Direction: workbenchdoc.SplitDirection(node.Direction),
+		Direction: sessiondoc.SplitDirection(node.Direction),
 		Ratio:     node.Ratio,
 		First:     exportLayout(node.First),
 		Second:    exportLayout(node.Second),
 	}
 }
 
-func importWorkspaceInto(wb *workbench.Workbench, name string, ws *workbenchdoc.Workspace) {
+func importWorkspaceInto(wb *workbench.Workbench, name string, ws *sessiondoc.Workspace) {
 	if wb == nil || ws == nil {
 		return
 	}
@@ -166,7 +166,7 @@ func importWorkspaceInto(wb *workbench.Workbench, name string, ws *workbenchdoc.
 	wb.AddWorkspace(name, importWorkspace(ws))
 }
 
-func importWorkspace(ws *workbenchdoc.Workspace) *workbench.WorkspaceState {
+func importWorkspace(ws *sessiondoc.Workspace) *workbench.WorkspaceState {
 	out := &workbench.WorkspaceState{
 		Name:      ws.Name,
 		ActiveTab: ws.ActiveTab,
@@ -181,7 +181,7 @@ func importWorkspace(ws *workbenchdoc.Workspace) *workbench.WorkspaceState {
 	return out
 }
 
-func importTab(tab *workbenchdoc.Tab) *workbench.TabState {
+func importTab(tab *sessiondoc.Tab) *workbench.TabState {
 	shared.ObserveTabID(tab.ID)
 	out := &workbench.TabState{
 		ID:              tab.ID,
@@ -234,7 +234,7 @@ func importTab(tab *workbenchdoc.Tab) *workbench.TabState {
 	return out
 }
 
-func importLayout(node *workbenchdoc.LayoutNode) *workbench.LayoutNode {
+func importLayout(node *sessiondoc.LayoutNode) *workbench.LayoutNode {
 	if node == nil {
 		return nil
 	}

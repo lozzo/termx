@@ -23,6 +23,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/persist"
 	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -1806,7 +1807,7 @@ type sharedSessionClient struct {
 	model       *Model
 	invalidated chan struct{}
 	raw         *protocol.Client
-	events      chan protocol.Event
+	events      chan sessionstore.EventData
 }
 
 func newRealMouseE2EEnv(t *testing.T) realMouseE2EEnv {
@@ -1971,7 +1972,7 @@ func (h sharedSessionE2EHarness) newClient(t *testing.T, width, height int, atta
 	model.height = height
 
 	invalidated := make(chan struct{}, 128)
-	eventLog := make(chan protocol.Event, 32)
+	eventLog := make(chan sessionstore.EventData, 32)
 	model.SetSendFunc(func(msg tea.Msg) {
 		if _, ok := msg.(InvalidateMsg); ok {
 			select {
@@ -1991,12 +1992,10 @@ func (h sharedSessionE2EHarness) newClient(t *testing.T, width, height int, atta
 	}
 
 	events, err := pc.Events(h.ctx, protocol.EventsParams{
-		SessionID: "main",
-		Types: []protocol.EventType{
-			protocol.EventSessionCreated,
-			protocol.EventSessionUpdated,
-			protocol.EventSessionDeleted,
-		},
+		Types:            []protocol.EventType{protocol.EventStorageChanged},
+		StorageAppID:     sessionstore.AppID,
+		StorageScope:     protocol.StorageScopePublic,
+		StorageKeyPrefix: "sessions/main/",
 	})
 	if err != nil {
 		t.Fatalf("subscribe session events: %v", err)
@@ -2012,15 +2011,19 @@ func (h sharedSessionE2EHarness) newClient(t *testing.T, width, height int, atta
 	}
 	go func() {
 		for evt := range events {
+			data, ok := sessionstore.EventFromProtocol(evt)
+			if !ok || data.SessionID != "main" {
+				continue
+			}
 			select {
 			case invalidated <- struct{}{}:
 			default:
 			}
 			select {
-			case eventLog <- evt:
+			case eventLog <- data:
 			default:
 			}
-			_, cmd := model.Update(sessionEventMsg{Event: evt})
+			_, cmd := model.Update(sessionEventMsg{Event: data})
 			e2eDrainSkippingPrefixTimeout(t, model, cmd)
 		}
 	}()
@@ -2138,11 +2141,12 @@ func e2eWaitForCurrentTabID(t *testing.T, ctx context.Context, client sharedSess
 	t.Fatalf("timeout waiting for current tab %q: got %q", tabID, tab.ID)
 }
 
-func e2eWaitForSessionRevision(t *testing.T, ctx context.Context, client *protocol.Client, revision uint64) *protocol.SessionSnapshot {
+func e2eWaitForSessionRevision(t *testing.T, ctx context.Context, client *protocol.Client, revision uint64) *sessionstore.Snapshot {
 	t.Helper()
+	store := sessionstore.New(client)
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		snapshot, err := client.GetSession(ctx, "main")
+		snapshot, err := store.Get(ctx, "main")
 		if err == nil && snapshot != nil && snapshot.Session.Revision >= revision {
 			return snapshot
 		}
@@ -2156,13 +2160,13 @@ func e2eWaitForSessionRevision(t *testing.T, ctx context.Context, client *protoc
 	return nil
 }
 
-func e2eWaitForSessionEvent(t *testing.T, ctx context.Context, client sharedSessionClient, minRevision uint64) protocol.Event {
+func e2eWaitForSessionEvent(t *testing.T, ctx context.Context, client sharedSessionClient, minRevision uint64) sessionstore.EventData {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case evt := <-client.events:
-			if evt.Session != nil && evt.Session.Revision >= minRevision {
+			if evt.Revision >= minRevision {
 				return evt
 			}
 		case <-time.After(100 * time.Millisecond):
@@ -2171,7 +2175,7 @@ func e2eWaitForSessionEvent(t *testing.T, ctx context.Context, client sharedSess
 		}
 	}
 	t.Fatalf("timeout waiting for session event revision %d", minRevision)
-	return protocol.Event{}
+	return sessionstore.EventData{}
 }
 
 func e2eCreateTerminalViaMouse(t *testing.T, env realMouseE2EEnv, name, readyMarker string) (string, string) {

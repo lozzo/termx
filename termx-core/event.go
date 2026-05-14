@@ -3,6 +3,7 @@ package termx
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,16 +12,14 @@ import (
 type EventType int
 
 const (
-	EventTerminalCreated EventType = iota + 1
-	EventTerminalStateChanged
-	EventTerminalResized
-	EventTerminalRemoved
-	EventCollaboratorsRevoked
-	EventTerminalReadError
-	EventSessionCreated
-	EventSessionUpdated
-	EventSessionDeleted
-	EventTerminalMetadataChanged
+	EventTerminalCreated         EventType = 1
+	EventTerminalStateChanged    EventType = 2
+	EventTerminalResized         EventType = 3
+	EventTerminalRemoved         EventType = 4
+	EventCollaboratorsRevoked    EventType = 5
+	EventTerminalReadError       EventType = 6
+	EventTerminalMetadataChanged EventType = 10
+	EventStorageChanged          EventType = 11
 )
 
 type TerminalCreatedData struct {
@@ -50,15 +49,18 @@ type TerminalReadErrorData struct {
 	Error string `json:"error"`
 }
 
-type SessionEventData struct {
-	Revision uint64 `json:"revision,omitempty"`
-	ViewID   string `json:"view_id,omitempty"`
+type StorageChangedData struct {
+	AppID   string       `json:"app_id"`
+	Scope   StorageScope `json:"scope"`
+	OwnerID string       `json:"owner_id,omitempty"`
+	Key     string       `json:"key"`
+	Version uint64       `json:"version,omitempty"`
+	Op      string       `json:"op"`
 }
 
 type Event struct {
 	Type                 EventType                 `json:"type"`
 	TerminalID           string                    `json:"terminal_id"`
-	SessionID            string                    `json:"session_id,omitempty"`
 	Timestamp            time.Time                 `json:"timestamp"`
 	Created              *TerminalCreatedData      `json:"created,omitempty"`
 	StateChanged         *TerminalStateChangedData `json:"state_changed,omitempty"`
@@ -66,15 +68,20 @@ type Event struct {
 	Removed              *TerminalRemovedData      `json:"removed,omitempty"`
 	CollaboratorsRevoked *CollaboratorsRevokedData `json:"collaborators_revoked,omitempty"`
 	ReadError            *TerminalReadErrorData    `json:"read_error,omitempty"`
-	Session              *SessionEventData         `json:"session,omitempty"`
+	Storage              *StorageChangedData       `json:"storage,omitempty"`
 }
 
 type EventsOption func(*eventsConfig)
 
 type eventsConfig struct {
-	terminalID string
-	sessionID  string
-	types      map[EventType]struct{}
+	terminalID            string
+	types                 map[EventType]struct{}
+	storageVisibleOwnerID string
+	storageFilter         bool
+	storageAppID          string
+	storageScope          StorageScope
+	storageOwnerID        string
+	storageKeyPrefix      string
 }
 
 func WithTerminalFilter(id string) EventsOption {
@@ -94,9 +101,19 @@ func WithTypeFilter(types ...EventType) EventsOption {
 	}
 }
 
-func WithSessionFilter(id string) EventsOption {
+func WithStorageFilter(appID string, scope StorageScope, ownerID string, keyPrefix string) EventsOption {
 	return func(cfg *eventsConfig) {
-		cfg.sessionID = id
+		cfg.storageFilter = true
+		cfg.storageAppID = appID
+		cfg.storageScope = scope
+		cfg.storageOwnerID = ownerID
+		cfg.storageKeyPrefix = keyPrefix
+	}
+}
+
+func WithStorageVisibility(ownerID string) EventsOption {
+	return func(cfg *eventsConfig) {
+		cfg.storageVisibleOwnerID = strings.TrimSpace(ownerID)
 	}
 }
 
@@ -197,7 +214,7 @@ func (s *eventSubscriber) matches(evt Event) bool {
 	if s.cfg.terminalID != "" && s.cfg.terminalID != evt.TerminalID {
 		return false
 	}
-	if s.cfg.sessionID != "" && s.cfg.sessionID != evt.SessionID {
+	if !s.matchesStorage(evt) {
 		return false
 	}
 	if len(s.cfg.types) == 0 {
@@ -205,6 +222,33 @@ func (s *eventSubscriber) matches(evt Event) bool {
 	}
 	_, ok := s.cfg.types[evt.Type]
 	return ok
+}
+
+func (s *eventSubscriber) matchesStorage(evt Event) bool {
+	if evt.Storage == nil {
+		return !s.cfg.storageFilter
+	}
+	if evt.Storage.Scope == StorageScopePrivate &&
+		s.cfg.storageVisibleOwnerID != "" &&
+		evt.Storage.OwnerID != s.cfg.storageVisibleOwnerID {
+		return false
+	}
+	if !s.cfg.storageFilter {
+		return true
+	}
+	if s.cfg.storageAppID != "" && s.cfg.storageAppID != evt.Storage.AppID {
+		return false
+	}
+	if s.cfg.storageScope != "" && s.cfg.storageScope != evt.Storage.Scope {
+		return false
+	}
+	if s.cfg.storageOwnerID != "" && s.cfg.storageOwnerID != evt.Storage.OwnerID {
+		return false
+	}
+	if s.cfg.storageKeyPrefix != "" && !strings.HasPrefix(evt.Storage.Key, s.cfg.storageKeyPrefix) {
+		return false
+	}
+	return true
 }
 
 func (s *eventSubscriber) close() {

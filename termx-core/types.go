@@ -50,6 +50,23 @@ type TerminalInfo struct {
 	ResizeOwnerAttachmentCount int               `json:"resize_owner_attachment_count,omitempty"`
 }
 
+type StorageScope string
+
+const (
+	StorageScopePublic  StorageScope = "public"
+	StorageScopePrivate StorageScope = "private"
+)
+
+type StorageEntry struct {
+	AppID     string       `json:"app_id"`
+	Scope     StorageScope `json:"scope"`
+	OwnerID   string       `json:"owner_id,omitempty"`
+	Key       string       `json:"key"`
+	Value     []byte       `json:"value,omitempty"`
+	Version   uint64       `json:"version,omitempty"`
+	UpdatedAt time.Time    `json:"updated_at,omitempty"`
+}
+
 type ResizeOwnership struct {
 	OwnerAttachmentID string `json:"owner_attachment_id,omitempty"`
 	OwnerSurfaceID    string `json:"owner_surface_id,omitempty"`

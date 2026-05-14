@@ -193,31 +193,3 @@ func (c *fakeClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 func (c *fakeClient) Kill(context.Context, string) error    { return nil }
 func (c *fakeClient) Remove(context.Context, string) error  { return nil }
 func (c *fakeClient) Restart(context.Context, string) error { return nil }
-func (c *fakeClient) CreateSession(context.Context, protocol.CreateSessionParams) (*protocol.SessionSnapshot, error) {
-	return &protocol.SessionSnapshot{}, nil
-}
-func (c *fakeClient) ListSessions(context.Context) (*protocol.ListSessionsResult, error) {
-	return &protocol.ListSessionsResult{}, nil
-}
-func (c *fakeClient) GetSession(context.Context, string) (*protocol.SessionSnapshot, error) {
-	return &protocol.SessionSnapshot{}, nil
-}
-func (c *fakeClient) AttachSession(context.Context, protocol.AttachSessionParams) (*protocol.SessionSnapshot, error) {
-	return &protocol.SessionSnapshot{}, nil
-}
-func (c *fakeClient) DetachSession(context.Context, string, string) error { return nil }
-func (c *fakeClient) ApplySession(context.Context, protocol.ApplySessionParams) (*protocol.SessionSnapshot, error) {
-	return &protocol.SessionSnapshot{}, nil
-}
-func (c *fakeClient) ReplaceSession(context.Context, protocol.ReplaceSessionParams) (*protocol.SessionSnapshot, error) {
-	return &protocol.SessionSnapshot{}, nil
-}
-func (c *fakeClient) UpdateSessionView(context.Context, protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error) {
-	return &protocol.ViewInfo{}, nil
-}
-func (c *fakeClient) AcquireSessionLease(context.Context, protocol.AcquireSessionLeaseParams) (*protocol.LeaseInfo, error) {
-	return nil, nil
-}
-func (c *fakeClient) ReleaseSessionLease(context.Context, protocol.ReleaseSessionLeaseParams) error {
-	return nil
-}

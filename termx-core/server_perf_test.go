@@ -2,7 +2,6 @@ package termx
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -50,7 +49,7 @@ func BenchmarkServerHandleRequestList(b *testing.B) {
 	req := protocol.Request{
 		ID:     1,
 		Method: "list",
-		Params: json.RawMessage(`{}`),
+		Params: protocol.MustEncodeMethodParams("list", struct{}{}),
 	}
 	allocator := protocol.NewChannelAllocator()
 	attachments := make(map[uint16]*sessionAttachment)

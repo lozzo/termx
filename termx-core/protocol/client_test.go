@@ -3,7 +3,6 @@ package protocol
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,38 +21,32 @@ var errConcurrentSend = errors.New("concurrent send")
 
 func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 	want := []string{
-		"AcquireSessionLease",
-		"ApplySession",
 		"Attach",
-		"AttachSession",
 		"AttachWithOptions",
 		"Call",
 		"Close",
 		"Create",
-		"CreateSession",
-		"DetachSession",
 		"EnsureResize",
 		"Events",
-		"GetSession",
 		"GridViewport",
 		"Hello",
 		"HistoryReplay",
 		"Input",
 		"Kill",
 		"List",
-		"ListSessions",
-		"ReleaseSessionLease",
 		"Remove",
-		"ReplaceSession",
 		"Resize",
 		"ResizeRequest",
 		"Restart",
 		"SetMetadata",
 		"SetTags",
 		"Snapshot",
+		"StorageDelete",
+		"StorageGet",
+		"StorageList",
+		"StoragePut",
 		"Stream",
 		"StreamReady",
-		"UpdateSessionView",
 	}
 	clientType := reflect.TypeOf((*Client)(nil))
 	got := make([]string, 0, clientType.NumMethod())
@@ -555,8 +548,7 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	createResult, _ := json.Marshal(CreateResult{TerminalID: "term-1", State: "running"})
-	if err := sendResponse(tr, req.ID, createResult); err != nil {
+	if err := sendMethodResponse(tr, req, CreateResult{TerminalID: "term-1", State: "running"}); err != nil {
 		return err
 	}
 
@@ -564,14 +556,13 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	listResult, _ := json.Marshal(ListResult{
+	if err := sendMethodResponse(tr, req, ListResult{
 		Terminals: []TerminalInfo{{
 			ID:    "term-1",
 			Name:  "demo",
 			State: "running",
 		}},
-	})
-	if err := sendResponse(tr, req.ID, listResult); err != nil {
+	}); err != nil {
 		return err
 	}
 
@@ -579,14 +570,14 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	var setTags SetTagsParams
-	if err := json.Unmarshal(req.Params, &setTags); err != nil {
+	setTags, err := requestParams[SetTagsParams](req)
+	if err != nil {
 		return err
 	}
 	if setTags.TerminalID != "term-1" || setTags.Tags["role"] != "shell" {
 		return fmt.Errorf("unexpected set_tags params: %#v", setTags)
 	}
-	if err := sendResponse(tr, req.ID, json.RawMessage(`{}`)); err != nil {
+	if err := sendMethodResponse(tr, req, nil); err != nil {
 		return err
 	}
 
@@ -594,14 +585,14 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	var setMetadata SetMetadataParams
-	if err := json.Unmarshal(req.Params, &setMetadata); err != nil {
+	setMetadata, err := requestParams[SetMetadataParams](req)
+	if err != nil {
 		return err
 	}
 	if setMetadata.TerminalID != "term-1" || setMetadata.Name != "dev-shell" || setMetadata.Tags["team"] != "infra" {
 		return fmt.Errorf("unexpected set_metadata params: %#v", setMetadata)
 	}
-	if err := sendResponse(tr, req.ID, json.RawMessage(`{}`)); err != nil {
+	if err := sendMethodResponse(tr, req, nil); err != nil {
 		return err
 	}
 
@@ -609,8 +600,7 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	attachResult, _ := json.Marshal(AttachResult{Mode: "collaborator", Channel: 7})
-	if err := sendResponse(tr, req.ID, attachResult); err != nil {
+	if err := sendMethodResponse(tr, req, AttachResult{Mode: "collaborator", Channel: 7}); err != nil {
 		return err
 	}
 
@@ -666,8 +656,8 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	var viewportParams GridViewportParams
-	if err := json.Unmarshal(req.Params, &viewportParams); err != nil {
+	viewportParams, err := requestParams[GridViewportParams](req)
+	if err != nil {
 		return err
 	}
 	if viewportParams.TerminalID != "term-1" || viewportParams.ScrollbackOffset != 1 || viewportParams.ScrollbackLimit != 2 || viewportParams.Cols != 80 {
@@ -777,7 +767,7 @@ func (t *concurrentUnsafeTransport) Send(frame []byte) error {
 
 	switch typ {
 	case TypeHello:
-		resp, err := json.Marshal(Hello{Version: Version, Server: "test"})
+		resp, err := EncodeHelloPayload(Hello{Version: Version, Server: "test"})
 		if err != nil {
 			return err
 		}
@@ -788,18 +778,18 @@ func (t *concurrentUnsafeTransport) Send(frame []byte) error {
 		t.recvCh <- reply
 		return nil
 	case TypeRequest:
-		var req Request
-		if err := json.Unmarshal(payload, &req); err != nil {
+		req, err := DecodeRequestPayload(payload)
+		if err != nil {
 			return err
 		}
 		if req.Method != "list" {
 			return fmt.Errorf("unexpected method %q", req.Method)
 		}
-		result, err := json.Marshal(ListResult{})
+		result, err := EncodeMethodResult(req.Method, ListResult{})
 		if err != nil {
 			return err
 		}
-		replyPayload, err := json.Marshal(Response{ID: req.ID, Result: result})
+		replyPayload, err := EncodeResponsePayload(Response{ID: req.ID, Result: result})
 		if err != nil {
 			return err
 		}
@@ -850,24 +840,27 @@ func runFakeEventServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	var params EventsParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	params, err := requestParams[EventsParams](req)
+	if err != nil {
 		return err
 	}
 	if params.TerminalID != "term-1" || len(params.Types) != 1 || params.Types[0] != EventTerminalRemoved {
 		return fmt.Errorf("unexpected events params: %#v", params)
 	}
 
-	if err := sendResponse(tr, req.ID, json.RawMessage(`{}`)); err != nil {
+	if err := sendMethodResponse(tr, req, nil); err != nil {
 		return err
 	}
 
-	payload, _ := json.Marshal(Event{
+	payload, err := EncodeEventPayload(Event{
 		Type:       EventTerminalRemoved,
 		TerminalID: "term-1",
 		Timestamp:  time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC),
 		Removed:    &TerminalRemovedData{Reason: "expired"},
 	})
+	if err != nil {
+		return err
+	}
 	if err := sendFrame(tr, 0, TypeEvent, payload); err != nil {
 		return err
 	}
@@ -892,8 +885,7 @@ func runBufferedAttachServer(tr *memory.Transport) error {
 	if err := sendFrame(tr, 7, TypeClosed, EncodeClosedPayload(0)); err != nil {
 		return err
 	}
-	attachResult, _ := json.Marshal(AttachResult{Mode: "collaborator", Channel: 7})
-	return sendResponse(tr, req.ID, attachResult)
+	return sendMethodResponse(tr, req, AttachResult{Mode: "collaborator", Channel: 7})
 }
 
 func runLateFrameAfterCancelServer(tr *memory.Transport) error {
@@ -908,8 +900,7 @@ func runLateFrameAfterCancelServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	attachResult, _ := json.Marshal(AttachResult{Mode: "observer", Channel: 7})
-	if err := sendResponse(tr, req.ID, attachResult); err != nil {
+	if err := sendMethodResponse(tr, req, AttachResult{Mode: "observer", Channel: 7}); err != nil {
 		return err
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -921,10 +912,9 @@ func runLateFrameAfterCancelServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	listResult, _ := json.Marshal(ListResult{
+	if err := sendMethodResponse(tr, req, ListResult{
 		Terminals: []TerminalInfo{{ID: "term-1", Name: "demo", State: "running"}},
-	})
-	if err := sendResponse(tr, req.ID, listResult); err != nil {
+	}); err != nil {
 		return err
 	}
 	return nil
@@ -942,8 +932,7 @@ func runReusedChannelAttachServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	firstResult, _ := json.Marshal(AttachResult{Mode: "observer", Channel: 7})
-	if err := sendResponse(tr, req.ID, firstResult); err != nil {
+	if err := sendMethodResponse(tr, req, AttachResult{Mode: "observer", Channel: 7}); err != nil {
 		return err
 	}
 
@@ -954,8 +943,7 @@ func runReusedChannelAttachServer(tr *memory.Transport) error {
 	if err := sendFrame(tr, 7, TypeScreenUpdate, []byte("replayed-after-reattach")); err != nil {
 		return err
 	}
-	secondResult, _ := json.Marshal(AttachResult{Mode: "observer", Channel: 7})
-	return sendResponse(tr, req.ID, secondResult)
+	return sendMethodResponse(tr, req, AttachResult{Mode: "observer", Channel: 7})
 }
 
 func expectHello(tr *memory.Transport) error {
@@ -966,12 +954,12 @@ func expectHello(tr *memory.Transport) error {
 	if channel != 0 || typ != TypeHello {
 		return fmt.Errorf("unexpected hello frame: channel=%d type=%d", channel, typ)
 	}
-	var msg Hello
-	return json.Unmarshal(payload, &msg)
+	_, err = DecodeHelloPayload(payload)
+	return err
 }
 
 func respondHello(tr *memory.Transport) error {
-	payload, _ := json.Marshal(Hello{Version: Version, Server: "fake"})
+	payload, _ := EncodeHelloPayload(Hello{Version: Version, Server: "fake"})
 	return sendFrame(tr, 0, TypeHello, payload)
 }
 
@@ -983,8 +971,8 @@ func expectRequest(tr *memory.Transport, method string) (Request, error) {
 	if channel != 0 || typ != TypeRequest {
 		return Request{}, fmt.Errorf("unexpected request frame: channel=%d type=%d", channel, typ)
 	}
-	var req Request
-	if err := json.Unmarshal(payload, &req); err != nil {
+	req, err := DecodeRequestPayload(payload)
+	if err != nil {
 		return Request{}, err
 	}
 	if req.Method != method {
@@ -993,9 +981,30 @@ func expectRequest(tr *memory.Transport, method string) (Request, error) {
 	return req, nil
 }
 
-func sendResponse(tr *memory.Transport, id uint64, result json.RawMessage) error {
-	payload, _ := json.Marshal(Response{ID: id, Result: result})
+func sendResponse(tr *memory.Transport, id uint64, result []byte) error {
+	payload, _ := EncodeResponsePayload(Response{ID: id, Result: result})
 	return sendFrame(tr, 0, TypeResponse, payload)
+}
+
+func sendMethodResponse(tr *memory.Transport, req Request, result any) error {
+	payload, err := EncodeMethodResult(req.Method, result)
+	if err != nil {
+		return err
+	}
+	return sendResponse(tr, req.ID, payload)
+}
+
+func requestParams[T any](req Request) (T, error) {
+	var zero T
+	decoded, err := DecodeMethodParams(req.Method, req.Params)
+	if err != nil {
+		return zero, err
+	}
+	params, ok := decoded.(T)
+	if !ok {
+		return zero, fmt.Errorf("decoded params for %s as %T", req.Method, decoded)
+	}
+	return params, nil
 }
 
 func sendBinaryResponse(tr *memory.Transport, id uint64, result []byte) error {
@@ -1007,7 +1016,7 @@ func sendBinaryResponse(tr *memory.Transport, id uint64, result []byte) error {
 }
 
 func sendError(tr *memory.Transport, id uint64, code int, message string) error {
-	payload, _ := json.Marshal(ErrorMessage{
+	payload, _ := EncodeErrorPayload(ErrorMessage{
 		ID: id,
 		Error: ProtocolError{
 			Code:    code,

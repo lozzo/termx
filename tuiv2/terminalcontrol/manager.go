@@ -2,11 +2,9 @@ package terminalcontrol
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
-	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 )
 
 type SessionLeaseHooks struct {
@@ -14,9 +12,11 @@ type SessionLeaseHooks struct {
 	ViewID    string
 
 	NeedsAcquire func(terminalID, paneID string) bool
-	Store        func(lease protocol.LeaseInfo)
+	Store        func(lease sessionstore.LeaseInfo)
 	Remove       func(terminalID string)
 	Apply        func()
+	Acquire      func(ctx context.Context, params sessionstore.AcquireLeaseParams) (*sessionstore.LeaseInfo, error)
+	Release      func(ctx context.Context, params sessionstore.ReleaseLeaseParams) error
 }
 
 type SyncRequest struct {
@@ -60,18 +60,15 @@ func (m *Manager) Sync(ctx context.Context, req SyncRequest) error {
 }
 
 func (m *Manager) ReleaseLease(ctx context.Context, terminalID string) error {
-	if m == nil || m.runtime == nil || m.runtime.Client() == nil || terminalID == "" || m.lease.SessionID == "" || m.lease.ViewID == "" {
+	if m == nil || terminalID == "" || m.lease.SessionID == "" || m.lease.ViewID == "" || m.lease.Release == nil {
 		return nil
 	}
-	params := protocol.ReleaseSessionLeaseParams{
+	params := sessionstore.ReleaseLeaseParams{
 		SessionID:  m.lease.SessionID,
 		ViewID:     m.lease.ViewID,
 		TerminalID: terminalID,
 	}
-	if err := m.runtime.Client().ReleaseSessionLease(ctx, params); err != nil {
-		if isSessionLeaseUnsupported(err) {
-			return fmt.Errorf("connected termx daemon is too old for shared resize control; restart the daemon and reconnect")
-		}
+	if err := m.lease.Release(ctx, params); err != nil {
 		return err
 	}
 	if m.lease.Remove != nil {
@@ -84,7 +81,7 @@ func (m *Manager) ReleaseLease(ctx context.Context, terminalID string) error {
 }
 
 func (m *Manager) shouldAcquireSessionLease(req SyncRequest) bool {
-	if m == nil || m.runtime == nil || m.runtime.Client() == nil || m.lease.SessionID == "" || m.lease.ViewID == "" {
+	if m == nil || m.lease.Acquire == nil || m.lease.SessionID == "" || m.lease.ViewID == "" {
 		return false
 	}
 	switch {
@@ -109,19 +106,16 @@ func (m *Manager) shouldAcquireLocalOwnership(req SyncRequest) bool {
 }
 
 func (m *Manager) acquireSessionLease(ctx context.Context, paneID, terminalID string) error {
-	if m == nil || m.runtime == nil || m.runtime.Client() == nil || m.lease.SessionID == "" || m.lease.ViewID == "" {
+	if m == nil || m.lease.Acquire == nil || m.lease.SessionID == "" || m.lease.ViewID == "" {
 		return nil
 	}
-	lease, err := m.runtime.Client().AcquireSessionLease(ctx, protocol.AcquireSessionLeaseParams{
+	lease, err := m.lease.Acquire(ctx, sessionstore.AcquireLeaseParams{
 		SessionID:  m.lease.SessionID,
 		ViewID:     m.lease.ViewID,
 		PaneID:     paneID,
 		TerminalID: terminalID,
 	})
 	if err != nil {
-		if isSessionLeaseUnsupported(err) {
-			return fmt.Errorf("shared input lease unsupported")
-		}
 		return err
 	}
 	if lease != nil && m.lease.Store != nil {
@@ -153,8 +147,4 @@ func (m *Manager) terminalAlreadySized(terminalID string, cols, rows uint16) boo
 		return false
 	}
 	return terminal.Snapshot.Size.Cols == cols && terminal.Snapshot.Size.Rows == rows
-}
-
-func isSessionLeaseUnsupported(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "unknown session method: session.acquire_lease")
 }

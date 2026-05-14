@@ -16,7 +16,6 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
-	"github.com/lozzow/termx/termx-core/workbenchdoc"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/input"
@@ -24,6 +23,8 @@ import (
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/persist"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/sessiondoc"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -553,20 +554,20 @@ func TestModelHostEmojiProbeRetriesUntilGiveUp(t *testing.T) {
 func TestModelInitBootstrapsFromSessionSnapshot(t *testing.T) {
 	client := &recordingBridgeClient{
 		getSessionErr: errors.New("session not found"),
-		sessionSnapshot: &protocol.SessionSnapshot{
-			Session: protocol.SessionInfo{ID: "main", Revision: 1},
-			View:    &protocol.ViewInfo{ViewID: "view-1", SessionID: "main"},
-			Workbench: &workbenchdoc.Doc{
+		sessionSnapshot: &sessionstore.Snapshot{
+			Session: sessionstore.SessionInfo{ID: "main", Revision: 1},
+			View:    &sessionstore.ViewInfo{ViewID: "view-1", SessionID: "main"},
+			Workbench: &sessiondoc.Doc{
 				CurrentWorkspace: "main",
 				WorkspaceOrder:   []string{"main"},
-				Workspaces: map[string]*workbenchdoc.Workspace{
+				Workspaces: map[string]*sessiondoc.Workspace{
 					"main": {
 						Name: "main",
-						Tabs: []*workbenchdoc.Tab{{
+						Tabs: []*sessiondoc.Tab{{
 							ID:           "1",
 							Name:         "1",
-							Root:         workbenchdoc.NewLeaf("1"),
-							Panes:        map[string]*workbenchdoc.Pane{"1": {ID: "1"}},
+							Root:         sessiondoc.NewLeaf("1"),
+							Panes:        map[string]*sessiondoc.Pane{"1": {ID: "1"}},
 							ActivePaneID: "1",
 						}},
 						ActiveTab: 0,
@@ -596,9 +597,9 @@ func TestModelInitBootstrapsFromSessionSnapshot(t *testing.T) {
 
 func TestSaveStateCmdReplacesSessionWhenSessionAttached(t *testing.T) {
 	client := &recordingBridgeClient{
-		sessionSnapshot: &protocol.SessionSnapshot{
-			Session: protocol.SessionInfo{ID: "main", Revision: 2},
-			View:    &protocol.ViewInfo{ViewID: "view-1", SessionID: "main"},
+		sessionSnapshot: &sessionstore.Snapshot{
+			Session: sessionstore.SessionInfo{ID: "main", Revision: 2},
+			View:    &sessionstore.ViewInfo{ViewID: "view-1", SessionID: "main"},
 		},
 	}
 	wb := workbench.NewWorkbench()
@@ -639,11 +640,11 @@ func TestSaveStateCmdReplacesSessionWhenSessionAttached(t *testing.T) {
 
 func TestSaveStateCmdSuppressesRecoverableSessionRevisionConflict(t *testing.T) {
 	client := &recordingBridgeClient{
-		sessionSnapshot: &protocol.SessionSnapshot{
-			Session: protocol.SessionInfo{ID: "main", Revision: 10},
-			View:    &protocol.ViewInfo{ViewID: "view-1", SessionID: "main"},
+		sessionSnapshot: &sessionstore.Snapshot{
+			Session: sessionstore.SessionInfo{ID: "main", Revision: 10},
+			View:    &sessionstore.ViewInfo{ViewID: "view-1", SessionID: "main"},
 		},
-		replaceSessionErr: fmt.Errorf("protocol error 409: workbenchsvc: session revision conflict: expected 9, got 10"),
+		replaceSessionErr: fmt.Errorf("sessionstore: revision conflict: expected 9, got 10"),
 	}
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
@@ -709,35 +710,35 @@ func TestApplySessionSnapshotKeepsLocalProjectionForCurrentView(t *testing.T) {
 	model.sessionID = "main"
 	model.sessionViewID = "view-local"
 
-	model.applySessionSnapshot(&protocol.SessionSnapshot{
-		Session: protocol.SessionInfo{ID: "main", Revision: 2},
-		View: &protocol.ViewInfo{
+	model.applySessionSnapshot(&sessionstore.Snapshot{
+		Session: sessionstore.SessionInfo{ID: "main", Revision: 2},
+		View: &sessionstore.ViewInfo{
 			ViewID:              "view-local",
 			SessionID:           "main",
 			ActiveWorkspaceName: "main",
 			ActiveTabID:         "tab-1",
 			FocusedPaneID:       "float-1",
 		},
-		Workbench: &workbenchdoc.Doc{
+		Workbench: &sessiondoc.Doc{
 			CurrentWorkspace: "main",
 			WorkspaceOrder:   []string{"main"},
-			Workspaces: map[string]*workbenchdoc.Workspace{
+			Workspaces: map[string]*sessiondoc.Workspace{
 				"main": {
 					Name:      "main",
 					ActiveTab: 0,
-					Tabs: []*workbenchdoc.Tab{{
+					Tabs: []*sessiondoc.Tab{{
 						ID:              "tab-1",
 						Name:            "tab 1",
 						ActivePaneID:    "float-1",
 						FloatingVisible: true,
-						Root:            workbenchdoc.NewLeaf("pane-1"),
-						Panes: map[string]*workbenchdoc.Pane{
+						Root:            sessiondoc.NewLeaf("pane-1"),
+						Panes: map[string]*sessiondoc.Pane{
 							"pane-1":  {ID: "pane-1", Title: "tiled"},
 							"float-1": {ID: "float-1", Title: "float"},
 						},
-						Floating: []*workbenchdoc.FloatingPane{{
+						Floating: []*sessiondoc.FloatingPane{{
 							PaneID: "float-1",
-							Rect:   workbenchdoc.Rect{X: 10, Y: 5, W: 20, H: 8},
+							Rect:   sessiondoc.Rect{X: 10, Y: 5, W: 20, H: 8},
 							Z:      0,
 						}},
 					}},
@@ -4216,17 +4217,17 @@ type recordingBridgeClient struct {
 	removeCalls        []string
 	restartCalls       []string
 	eventsCalls        []protocol.EventsParams
-	sessionSnapshot    *protocol.SessionSnapshot
-	sessionView        *protocol.ViewInfo
+	sessionSnapshot    *sessionstore.Snapshot
+	sessionView        *sessionstore.ViewInfo
 	getSessionErr      error
 	replaceSessionErr  error
-	createSessionCalls []protocol.CreateSessionParams
+	createSessionCalls []sessionstore.CreateParams
 	getSessionCalls    []string
-	attachSessionCalls []protocol.AttachSessionParams
-	replaceCalls       []protocol.ReplaceSessionParams
-	viewUpdateCalls    []protocol.UpdateSessionViewParams
-	acquireLeaseCalls  []protocol.AcquireSessionLeaseParams
-	releaseLeaseCalls  []protocol.ReleaseSessionLeaseParams
+	attachSessionCalls []sessionstore.AttachParams
+	replaceCalls       []sessionstore.ReplaceParams
+	viewUpdateCalls    []sessionstore.UpdateViewParams
+	acquireLeaseCalls  []sessionstore.AcquireLeaseParams
+	releaseLeaseCalls  []sessionstore.ReleaseLeaseParams
 	releaseLeaseErr    error
 }
 
@@ -4412,70 +4413,55 @@ func (c *recordingBridgeClient) Restart(_ context.Context, terminalID string) er
 	return nil
 }
 
-func (c *recordingBridgeClient) CreateSession(_ context.Context, params protocol.CreateSessionParams) (*protocol.SessionSnapshot, error) {
+func (c *recordingBridgeClient) CreateSession(_ context.Context, params sessionstore.CreateParams) (*sessionstore.Snapshot, error) {
 	c.createSessionCalls = append(c.createSessionCalls, params)
 	if c.sessionSnapshot == nil {
-		return &protocol.SessionSnapshot{}, nil
+		return &sessionstore.Snapshot{}, nil
 	}
 	return c.sessionSnapshot, nil
 }
 
-func (c *recordingBridgeClient) ListSessions(context.Context) (*protocol.ListSessionsResult, error) {
-	return &protocol.ListSessionsResult{}, nil
-}
-
-func (c *recordingBridgeClient) GetSession(_ context.Context, sessionID string) (*protocol.SessionSnapshot, error) {
+func (c *recordingBridgeClient) GetSession(_ context.Context, sessionID string) (*sessionstore.Snapshot, error) {
 	c.getSessionCalls = append(c.getSessionCalls, sessionID)
 	if c.getSessionErr != nil {
 		return nil, c.getSessionErr
 	}
 	if c.sessionSnapshot == nil {
-		return &protocol.SessionSnapshot{}, nil
+		return &sessionstore.Snapshot{}, nil
 	}
 	return c.sessionSnapshot, nil
 }
 
-func (c *recordingBridgeClient) AttachSession(_ context.Context, params protocol.AttachSessionParams) (*protocol.SessionSnapshot, error) {
+func (c *recordingBridgeClient) AttachSession(_ context.Context, params sessionstore.AttachParams) (*sessionstore.Snapshot, error) {
 	c.attachSessionCalls = append(c.attachSessionCalls, params)
 	if c.sessionSnapshot == nil {
-		return &protocol.SessionSnapshot{}, nil
+		return &sessionstore.Snapshot{}, nil
 	}
 	return c.sessionSnapshot, nil
 }
 
-func (c *recordingBridgeClient) DetachSession(context.Context, string, string) error {
-	return nil
-}
-
-func (c *recordingBridgeClient) ApplySession(context.Context, protocol.ApplySessionParams) (*protocol.SessionSnapshot, error) {
-	if c.sessionSnapshot == nil {
-		return &protocol.SessionSnapshot{}, nil
-	}
-	return c.sessionSnapshot, nil
-}
-
-func (c *recordingBridgeClient) ReplaceSession(_ context.Context, params protocol.ReplaceSessionParams) (*protocol.SessionSnapshot, error) {
+func (c *recordingBridgeClient) ReplaceSession(_ context.Context, params sessionstore.ReplaceParams) (*sessionstore.Snapshot, error) {
 	c.replaceCalls = append(c.replaceCalls, params)
 	if c.replaceSessionErr != nil {
 		return nil, c.replaceSessionErr
 	}
 	if c.sessionSnapshot == nil {
-		return &protocol.SessionSnapshot{}, nil
+		return &sessionstore.Snapshot{}, nil
 	}
 	return c.sessionSnapshot, nil
 }
 
-func (c *recordingBridgeClient) UpdateSessionView(_ context.Context, params protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error) {
+func (c *recordingBridgeClient) UpdateSessionView(_ context.Context, params sessionstore.UpdateViewParams) (*sessionstore.ViewInfo, error) {
 	c.viewUpdateCalls = append(c.viewUpdateCalls, params)
 	if c.sessionView == nil {
-		return &protocol.ViewInfo{ViewID: params.ViewID, SessionID: params.SessionID}, nil
+		return &sessionstore.ViewInfo{ViewID: params.ViewID, SessionID: params.SessionID}, nil
 	}
 	return c.sessionView, nil
 }
 
-func (c *recordingBridgeClient) AcquireSessionLease(_ context.Context, params protocol.AcquireSessionLeaseParams) (*protocol.LeaseInfo, error) {
+func (c *recordingBridgeClient) AcquireSessionLease(_ context.Context, params sessionstore.AcquireLeaseParams) (*sessionstore.LeaseInfo, error) {
 	c.acquireLeaseCalls = append(c.acquireLeaseCalls, params)
-	return &protocol.LeaseInfo{
+	return &sessionstore.LeaseInfo{
 		TerminalID: params.TerminalID,
 		SessionID:  params.SessionID,
 		ViewID:     params.ViewID,
@@ -4483,7 +4469,7 @@ func (c *recordingBridgeClient) AcquireSessionLease(_ context.Context, params pr
 	}, nil
 }
 
-func (c *recordingBridgeClient) ReleaseSessionLease(_ context.Context, params protocol.ReleaseSessionLeaseParams) error {
+func (c *recordingBridgeClient) ReleaseSessionLease(_ context.Context, params sessionstore.ReleaseLeaseParams) error {
 	c.releaseLeaseCalls = append(c.releaseLeaseCalls, params)
 	return c.releaseLeaseErr
 }

@@ -2,11 +2,11 @@ package rtc
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"testing"
 
 	"github.com/lozzow/termx/termx-remote/fileapi"
+	"github.com/lozzow/termx/termx-remote/protocol/runtimepb"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -107,11 +107,11 @@ func TestIsRelayConnectionIgnoresNonSelectedSucceededRelayPair(t *testing.T) {
 
 func TestFileTransferRoutedOnRelayWithoutAppPermission(t *testing.T) {
 	ctx := withRelayConnection(context.Background(), true)
-	status, _, errMsg := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), nil, apiRequest{
-		ID:     "req_file",
+	status, _, errMsg := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), nil, &runtimepb.APIRequest{
+		Id:     "req_file",
 		Method: http.MethodPost,
 		Path:   "/files/stat",
-		Body:   json.RawMessage(`{"path":"/tmp"}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.FilePathRequest{Path: "/tmp"}),
 	})
 	if status != http.StatusForbidden {
 		return
@@ -123,11 +123,11 @@ func TestFileTransferRoutedOnRelayWithoutAppPermission(t *testing.T) {
 
 func TestFileTransferAllowedOnRelayWithPermission(t *testing.T) {
 	ctx := withRelayTransferAllowed(withRelayConnection(context.Background(), true), true)
-	status, _, errMsg := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), nil, apiRequest{
-		ID:     "req_file",
+	status, _, errMsg := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), nil, &runtimepb.APIRequest{
+		Id:     "req_file",
 		Method: http.MethodPost,
 		Path:   "/files/stat",
-		Body:   json.RawMessage(`{"path":"/definitely-missing-termx-file"}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.FilePathRequest{Path: "/definitely-missing-termx-file"}),
 	})
 	if status == http.StatusForbidden {
 		t.Fatalf("file API should be routed when relay transfer is allowed, status=%d err=%q", status, errMsg)

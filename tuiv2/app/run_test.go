@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"github.com/lozzow/termx/termx-core/protocol"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
 	"github.com/lozzow/termx/tuiv2/bridge"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/muesli/cancelreader"
 )
@@ -1175,10 +1177,11 @@ func TestStartInputForwarderParsesExtendedCursorPositionReport(t *testing.T) {
 
 type fakeSessionEventsClient struct {
 	events           chan protocol.Event
-	session          *protocol.SessionSnapshot
+	session          *sessionstore.Snapshot
 	getCalls         []string
 	eventParams      []protocol.EventsParams
 	eventsSubscribed chan protocol.EventsParams
+	storageVersion   uint64
 }
 
 func (f *fakeSessionEventsClient) Close() error { return nil }
@@ -1194,12 +1197,73 @@ func (f *fakeSessionEventsClient) Events(_ context.Context, params protocol.Even
 	return f.events, nil
 }
 
-func (f *fakeSessionEventsClient) GetSession(_ context.Context, sessionID string) (*protocol.SessionSnapshot, error) {
+func (f *fakeSessionEventsClient) StorageGet(_ context.Context, params protocol.StorageGetParams) (*protocol.StorageEntry, error) {
+	if params.AppID != sessionstore.AppID || params.Key != sessionstore.SessionStateKey("main") {
+		return nil, fmt.Errorf("protocol error 404: not found")
+	}
+	f.getCalls = append(f.getCalls, "main")
+	if f.session == nil {
+		f.session = &sessionstore.Snapshot{Session: sessionstore.SessionInfo{ID: "main"}}
+	}
+	value, err := sessionstore.EncodeSessionRecord(f.session.Session, f.session.Workbench)
+	if err != nil {
+		return nil, err
+	}
+	return &protocol.StorageEntry{
+		AppID:   params.AppID,
+		Scope:   params.Scope,
+		Key:     params.Key,
+		Value:   value,
+		Version: maxStorageVersion(1, f.storageVersion),
+	}, nil
+}
+
+func maxStorageVersion(a, b uint64) uint64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (f *fakeSessionEventsClient) StoragePut(context.Context, protocol.StoragePutParams) (*protocol.StorageEntry, error) {
+	return nil, fmt.Errorf("unexpected storage put")
+}
+
+func (f *fakeSessionEventsClient) StorageDelete(context.Context, protocol.StorageDeleteParams) (*protocol.StorageDeleteResult, error) {
+	return nil, fmt.Errorf("unexpected storage delete")
+}
+
+func (f *fakeSessionEventsClient) StorageList(context.Context, protocol.StorageListParams) (*protocol.StorageListResult, error) {
+	return &protocol.StorageListResult{}, nil
+}
+
+func (f *fakeSessionEventsClient) GetSession(_ context.Context, sessionID string) (*sessionstore.Snapshot, error) {
 	f.getCalls = append(f.getCalls, sessionID)
 	if f.session == nil {
-		return &protocol.SessionSnapshot{}, nil
+		return &sessionstore.Snapshot{}, nil
 	}
 	return f.session, nil
+}
+
+func sessionStorageEvent(sessionID string, revision uint64, viewID string, deleted bool) protocol.Event {
+	key := sessionstore.SessionStateKey(sessionID)
+	op := "put"
+	if viewID != "" {
+		key = "sessions/" + sessionID + "/views/" + viewID
+	}
+	if deleted {
+		op = "delete"
+	}
+	return protocol.Event{
+		Type: protocol.EventStorageChanged,
+		Storage: &protocol.StorageChangedData{
+			AppID:   sessionstore.AppID,
+			Scope:   protocol.StorageScopePublic,
+			Key:     key,
+			Version: revision,
+			Op:      op,
+		},
+	}
 }
 
 func TestStartSessionEventsForwarderReconnectsAndRequestsResync(t *testing.T) {
@@ -1213,9 +1277,10 @@ func TestStartSessionEventsForwarderReconnectsAndRequestsResync(t *testing.T) {
 	first := &fakeSessionEventsClient{events: make(chan protocol.Event, 4)}
 	second := &fakeSessionEventsClient{
 		events: make(chan protocol.Event, 4),
-		session: &protocol.SessionSnapshot{
-			Session: protocol.SessionInfo{ID: "main", Revision: 7},
+		session: &sessionstore.Snapshot{
+			Session: sessionstore.SessionInfo{ID: "main", Revision: 7},
 		},
+		storageVersion: 7,
 	}
 	clients := []*fakeSessionEventsClient{first, second}
 	var mu sync.Mutex
@@ -1238,14 +1303,14 @@ func TestStartSessionEventsForwarderReconnectsAndRequestsResync(t *testing.T) {
 	}, shared.Config{SessionID: "main", SocketPath: "/tmp/termx.sock"}, nil)
 	defer stop()
 
-	first.events <- protocol.Event{Type: protocol.EventSessionUpdated, SessionID: "main"}
+	first.events <- sessionStorageEvent("main", 4, "view-remote", false)
 	select {
 	case msg := <-msgs:
 		typed, ok := msg.(sessionEventMsg)
 		if !ok {
 			t.Fatalf("expected sessionEventMsg, got %T", msg)
 		}
-		if typed.Event.Type != protocol.EventSessionUpdated || typed.Event.SessionID != "main" {
+		if typed.Event.SessionID != "main" || typed.Event.Revision != 4 || typed.Event.ViewID != "view-remote" || typed.Event.Deleted {
 			t.Fatalf("unexpected event %#v", typed.Event)
 		}
 	case <-time.After(2 * time.Second):
@@ -1270,14 +1335,14 @@ func TestStartSessionEventsForwarderReconnectsAndRequestsResync(t *testing.T) {
 		t.Fatal("timed out waiting for session resync snapshot")
 	}
 
-	second.events <- protocol.Event{Type: protocol.EventSessionDeleted, SessionID: "main"}
+	second.events <- sessionStorageEvent("main", 8, "", true)
 	select {
 	case msg := <-msgs:
 		typed, ok := msg.(sessionEventMsg)
 		if !ok {
 			t.Fatalf("expected sessionEventMsg after reconnect, got %T", msg)
 		}
-		if typed.Event.Type != protocol.EventSessionDeleted || typed.Event.SessionID != "main" {
+		if typed.Event.SessionID != "main" || !typed.Event.Deleted {
 			t.Fatalf("unexpected reconnected event %#v", typed.Event)
 		}
 	case <-time.After(2 * time.Second):

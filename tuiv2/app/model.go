@@ -11,7 +11,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
-	"github.com/lozzow/termx/termx-core/workbenchdoc"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -19,6 +18,8 @@ import (
 	"github.com/lozzow/termx/tuiv2/persist"
 	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/sessiondoc"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -42,8 +43,8 @@ type Model struct {
 	sessionID        string
 	sessionViewID    string
 	sessionRevision  uint64
-	sessionSharedDoc *workbenchdoc.Doc
-	sessionLeases    map[string]protocol.LeaseInfo
+	sessionSharedDoc *sessiondoc.Doc
+	sessionLeases    map[string]sessionstore.LeaseInfo
 
 	startup bootstrap.StartupResult
 
@@ -65,6 +66,7 @@ type Model struct {
 	// 业务编排走 orchestrator，不直接通过这两个字段。
 	workbench            *workbench.Workbench
 	runtime              *runtime.Runtime
+	sessionStore         sessionStore
 	cursorOut            cursorSequenceWriter
 	frameOut             frameSequenceWriter
 	lastViewFrame        string
@@ -178,6 +180,7 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 	// Default invalidate: no-op until SetSendFunc is called by run.go.
 	if model.runtime != nil {
 		model.runtime.SetInvalidate(func() { model.queueInvalidate() })
+		model.sessionStore = newSessionStoreFromClient(model.runtime.Client())
 		model.runtime.SetTitleChange(func(terminalID, title string) {
 			model.sendAsync(terminalTitleMsg{TerminalID: terminalID, Title: title})
 		})
@@ -429,20 +432,24 @@ func (m *Model) bootstrapSessionStartup(ctx context.Context) error {
 	if m == nil || m.runtime == nil || m.workbench == nil || m.cfg.SessionID == "" {
 		return nil
 	}
-	client := m.runtime.Client()
-	if client == nil {
+	store := m.sessionStore
+	if store == nil {
+		store = newSessionStoreFromClient(m.runtime.Client())
+		m.sessionStore = store
+	}
+	if store == nil {
 		return nil
 	}
 	sessionID := m.cfg.SessionID
-	if _, err := client.GetSession(ctx, sessionID); err != nil {
-		if _, createErr := client.CreateSession(ctx, protocol.CreateSessionParams{
+	if _, err := store.GetSession(ctx, sessionID); err != nil {
+		if _, createErr := store.CreateSession(ctx, sessionstore.CreateParams{
 			SessionID: sessionID,
 			Name:      sessionID,
 		}); createErr != nil {
 			return createErr
 		}
 	}
-	snapshot, err := client.AttachSession(ctx, protocol.AttachSessionParams{
+	snapshot, err := store.AttachSession(ctx, sessionstore.AttachParams{
 		SessionID:  sessionID,
 		WindowCols: uint16(maxInt(0, m.width)),
 		WindowRows: uint16(maxInt(0, m.height)),
@@ -479,7 +486,7 @@ func (m *Model) saveStateCmd() tea.Cmd {
 	}
 }
 
-func (m *Model) applySessionSnapshot(snapshot *protocol.SessionSnapshot) error {
+func (m *Model) applySessionSnapshot(snapshot *sessionstore.Snapshot) error {
 	service := m.sessionSnapshotApplyService()
 	if service == nil {
 		return nil

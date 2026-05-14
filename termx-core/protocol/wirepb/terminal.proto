@@ -4,14 +4,221 @@ package termx.protocol.wirepb;
 
 option go_package = "github.com/lozzow/termx/termx-core/protocol/wirepb";
 
+message Empty {}
+
+message Hello {
+  uint32 version = 1;
+  string client = 2;
+  string server = 3;
+}
+
+message RequestEnvelope {
+  uint64 id = 1;
+  string method = 2;
+  bytes params = 3;
+}
+
 message ResponseEnvelope {
   uint64 id = 1;
   bytes result = 2;
 }
 
+message ProtocolError {
+  int32 code = 1;
+  string message = 2;
+}
+
+message ErrorEnvelope {
+  uint64 id = 1;
+  ProtocolError error = 2;
+}
+
 message Size {
   uint32 cols = 1;
   uint32 rows = 2;
+}
+
+message TerminalInfo {
+  string id = 1;
+  string name = 2;
+  repeated string command = 3;
+  map<string, string> tags = 4;
+  Size size = 5;
+  string state = 6;
+  string cwd = 7;
+  string live_cwd = 8;
+  int64 created_at_unix_nano = 9;
+  optional int32 exit_code = 10;
+  ResizeOwnership resize_ownership = 11;
+  int32 resize_owner_attachment_count = 12;
+}
+
+message CreateParams {
+  repeated string command = 1;
+  string id = 2;
+  string name = 3;
+  map<string, string> tags = 4;
+  Size size = 5;
+  string dir = 6;
+  repeated string env = 7;
+  int32 scrollback_size = 8;
+}
+
+message CreateResult {
+  string terminal_id = 1;
+  string state = 2;
+}
+
+message GetParams {
+  string terminal_id = 1;
+}
+
+message ResizeParams {
+  string terminal_id = 1;
+  uint32 cols = 2;
+  uint32 rows = 3;
+}
+
+message EnsureResizeParams {
+  string terminal_id = 1;
+  uint32 channel = 2;
+  uint32 cols = 3;
+  uint32 rows = 4;
+  string resize_policy = 5;
+  string surface_id = 6;
+  string view_id = 7;
+}
+
+message EnsureResizeResult {
+  ResizeControl resize_control = 1;
+  Size size = 2;
+  bool resized = 3;
+}
+
+message SetTagsParams {
+  string terminal_id = 1;
+  map<string, string> tags = 2;
+}
+
+message SetMetadataParams {
+  string terminal_id = 1;
+  string name = 2;
+  map<string, string> tags = 3;
+}
+
+message AttachParams {
+  string terminal_id = 1;
+  string mode = 2;
+  string resize_policy = 3;
+  string surface_id = 4;
+  string view_id = 5;
+}
+
+message AttachResult {
+  string mode = 1;
+  uint32 channel = 2;
+  ResizeControl resize_control = 3;
+}
+
+message ResizeOwnership {
+  string owner_attachment_id = 1;
+  string owner_surface_id = 2;
+  string owner_view_id = 3;
+  string owner_remote_addr = 4;
+  Size size = 5;
+  bool size_locked = 6;
+  uint64 epoch = 7;
+}
+
+message ResizeControl {
+  bool can_resize = 1;
+  string reason = 2;
+  bool size_locked = 3;
+  string surface_id = 4;
+  string owner_surface_id = 5;
+  string owner_view_id = 6;
+  ResizeOwnership resize_ownership = 7;
+}
+
+message TerminalCreatedData {
+  string name = 1;
+  repeated string command = 2;
+  Size size = 3;
+}
+
+message TerminalStateChangedData {
+  string old_state = 1;
+  string new_state = 2;
+  optional int32 exit_code = 3;
+}
+
+message TerminalResizedData {
+  Size old_size = 1;
+  Size new_size = 2;
+}
+
+message TerminalRemovedData {
+  string reason = 1;
+}
+
+message CollaboratorsRevokedData {}
+
+message TerminalReadErrorData {
+  string error = 1;
+}
+
+enum StorageScope {
+  STORAGE_SCOPE_UNSPECIFIED = 0;
+  STORAGE_SCOPE_PUBLIC = 1;
+  STORAGE_SCOPE_PRIVATE = 2;
+}
+
+message StorageChangedData {
+  string app_id = 1;
+  StorageScope scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  uint64 version = 5;
+  string op = 6;
+}
+
+message Event {
+  uint32 type = 1;
+  string terminal_id = 2;
+  int64 timestamp_unix_nano = 4;
+  TerminalCreatedData created = 5;
+  TerminalStateChangedData state_changed = 6;
+  TerminalResizedData resized = 7;
+  TerminalRemovedData removed = 8;
+  CollaboratorsRevokedData collaborators_revoked = 9;
+  TerminalReadErrorData read_error = 10;
+  StorageChangedData storage = 12;
+}
+
+message EventsParams {
+  string terminal_id = 1;
+  repeated uint32 types = 3;
+  string storage_app_id = 4;
+  StorageScope storage_scope = 5;
+  string storage_owner_id = 6;
+  string storage_key_prefix = 7;
+}
+
+message SnapshotParams {
+  string terminal_id = 1;
+  int32 scrollback_offset = 2;
+  int32 scrollback_limit = 3;
+}
+
+message GridViewportParams {
+  string terminal_id = 1;
+  int32 scrollback_offset = 2;
+  int32 scrollback_limit = 3;
+  int32 cols = 4;
+}
+
+message ListResult {
+  repeated TerminalInfo terminals = 1;
 }
 
 message CursorState {
@@ -56,4 +263,111 @@ message GridViewport {
   int64 scrollback_total = 6;
   bool scrollback_has_more = 7;
   int64 timestamp_unix_nano = 8;
+}
+
+message StorageEntry {
+  string app_id = 1;
+  StorageScope scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bytes value = 5;
+  uint64 version = 6;
+  int64 updated_at_unix_nano = 7;
+}
+
+message StorageGetParams {
+  string app_id = 1;
+  StorageScope scope = 2;
+  string owner_id = 3;
+  string key = 4;
+}
+
+message StoragePutParams {
+  string app_id = 1;
+  StorageScope scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bytes value = 5;
+  bool check_version = 6;
+  uint64 expected_version = 7;
+}
+
+message StorageDeleteParams {
+  string app_id = 1;
+  StorageScope scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bool check_version = 5;
+  uint64 expected_version = 6;
+}
+
+message StorageDeleteResult {
+  string app_id = 1;
+  StorageScope scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bool deleted = 5;
+  uint64 version = 6;
+}
+
+message StorageListParams {
+  string app_id = 1;
+  StorageScope scope = 2;
+  string owner_id = 3;
+  string prefix = 4;
+}
+
+message StorageListResult {
+  repeated StorageEntry entries = 1;
+}
+
+message RemoteStatus {
+  string state = 1;
+  string detail = 2;
+  string device_id = 3;
+  string device_name = 4;
+  string control_url = 5;
+  string hub_url = 6;
+  repeated string hub_urls = 7;
+  string data_dir = 8;
+  string mode = 9;
+  bool allow_lan = 10;
+  int32 terminal_count = 11;
+  int64 updated_at_unix_nano = 12;
+}
+
+message RemotePairStartParams {
+  string local_pair_url = 1;
+  int32 ttl_seconds = 2;
+}
+
+message RemotePairStartResult {
+  string type = 1;
+  string machine_id = 2;
+  string machine_name = 3;
+  string local_pair_url = 4;
+  string pair_session_id = 5;
+  string pair_secret = 6;
+  string answer_proof_secret = 7;
+  int64 expires_at_unix_nano = 8;
+}
+
+message RemoteLocalEnableParams {
+  string local_web_addr = 1;
+  string ice_tcp_addr = 2;
+  repeated string hub_urls = 3;
+  string control_url = 4;
+  string access_token = 5;
+  string region = 6;
+}
+
+message RemoteLocalStatus {
+  bool enabled = 1;
+  string http_url = 2;
+  string local_web_addr = 3;
+  string local_pair_url = 4;
+  bool ice_tcp_enabled = 5;
+  string ice_tcp_addr = 6;
+  int32 ice_tcp_port = 7;
+  int64 updated_at_unix_nano = 8;
 }

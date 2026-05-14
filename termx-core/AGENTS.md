@@ -12,7 +12,7 @@
 
 - shell-neutral daemon client contract：`clientapi/`
 - wire contract：`protocol/`、`transport/`
-- shared session/workbench contract：`workbenchdoc/`、`workbenchops/`、`workbenchsvc/`
+- generic client state contract：core storage APIs
 
 ## Rules
 

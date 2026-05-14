@@ -9,6 +9,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 )
 
 type RenderTickMsg struct{}
@@ -155,17 +156,17 @@ type reattachFailedMsg struct {
 type prefixTimeoutMsg struct{ seq int }
 
 type sessionSnapshotMsg struct {
-	Snapshot *protocol.SessionSnapshot
+	Snapshot *sessionstore.Snapshot
 	Err      error
 }
 
 type sessionViewUpdatedMsg struct {
-	View *protocol.ViewInfo
+	View *sessionstore.ViewInfo
 	Err  error
 }
 
 type sessionEventMsg struct {
-	Event protocol.Event
+	Event sessionstore.EventData
 }
 
 type terminalEventMsg struct {

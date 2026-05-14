@@ -2,7 +2,6 @@ package termx
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -46,9 +45,9 @@ func TestServerCreateRejectsInvalidCommandAndDuplicateID(t *testing.T) {
 	}
 }
 
-type protocolMethodHandlerFunc func(context.Context, string, json.RawMessage) (json.RawMessage, int, bool, error)
+type protocolMethodHandlerFunc func(context.Context, string, []byte) ([]byte, int, bool, error)
 
-func (f protocolMethodHandlerFunc) HandleProtocolMethod(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, int, bool, error) {
+func (f protocolMethodHandlerFunc) HandleProtocolMethod(ctx context.Context, method string, params []byte) ([]byte, int, bool, error) {
 	return f(ctx, method, params)
 }
 
@@ -56,12 +55,12 @@ func TestProtocolOversizedResponseReturnsErrorAndKeepsTransportOpen(t *testing.T
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	srv := NewServer(WithProtocolMethodHandler(protocolMethodHandlerFunc(func(_ context.Context, method string, _ json.RawMessage) (json.RawMessage, int, bool, error) {
+	srv := NewServer(WithProtocolMethodHandler(protocolMethodHandlerFunc(func(_ context.Context, method string, _ []byte) ([]byte, int, bool, error) {
 		switch method {
 		case "oversized":
-			return json.RawMessage(`"` + strings.Repeat("x", protocol.MaxFrameSize) + `"`), 0, true, nil
+			return []byte(strings.Repeat("x", protocol.MaxFrameSize+1)), 0, true, nil
 		case "small":
-			return json.RawMessage(`{"ok":true}`), 0, true, nil
+			return nil, 0, true, nil
 		default:
 			return nil, 0, false, nil
 		}
@@ -79,18 +78,11 @@ func TestProtocolOversizedResponseReturnsErrorAndKeepsTransportOpen(t *testing.T
 	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
-	var oversized map[string]bool
-	if err := client.Call(ctx, "oversized", map[string]any{}, &oversized); err == nil || !strings.Contains(err.Error(), "protocol error 413") {
+	if err := client.Call(ctx, "oversized", nil, nil); err == nil || !strings.Contains(err.Error(), "protocol error 413") {
 		t.Fatalf("expected oversized response protocol error, got %v", err)
 	}
-	var small struct {
-		OK bool `json:"ok"`
-	}
-	if err := client.Call(ctx, "small", map[string]any{}, &small); err != nil {
+	if err := client.Call(ctx, "small", nil, nil); err != nil {
 		t.Fatalf("expected transport to remain usable after oversized response, got %v", err)
-	}
-	if !small.OK {
-		t.Fatalf("unexpected small response: %#v", small)
 	}
 }
 
@@ -384,68 +376,6 @@ func TestHandleTransportEventsSubscriptionDeliversFilteredEvents(t *testing.T) {
 	}
 }
 
-func TestHandleTransportEventsSubscriptionDeliversSessionEvents(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	srv := NewServer()
-	clientTransport, serverTransport := memory.NewPair()
-	defer clientTransport.Close()
-	defer serverTransport.Close()
-
-	done := make(chan error, 1)
-	go func() {
-		done <- srv.handleTransport(ctx, serverTransport, "memory")
-	}()
-
-	client := protocol.NewClient(clientTransport)
-	defer client.Close()
-
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
-		t.Fatalf("hello failed: %v", err)
-	}
-
-	events, err := client.Events(ctx, protocol.EventsParams{
-		SessionID: "main",
-		Types:     []protocol.EventType{protocol.EventSessionUpdated},
-	})
-	if err != nil {
-		t.Fatalf("events subscribe failed: %v", err)
-	}
-
-	srv.events.Publish(Event{
-		Type:      EventSessionUpdated,
-		SessionID: "main",
-		Timestamp: time.Now().UTC(),
-		Session: &SessionEventData{
-			Revision: 2,
-			ViewID:   "view-1",
-		},
-	})
-
-	select {
-	case evt := <-events:
-		if evt.Type != protocol.EventSessionUpdated || evt.SessionID != "main" {
-			t.Fatalf("unexpected event: %#v", evt)
-		}
-		if evt.Session == nil || evt.Session.Revision != 2 || evt.Session.ViewID != "view-1" {
-			t.Fatalf("unexpected session payload: %#v", evt)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for session event")
-	}
-
-	_ = client.Close()
-	select {
-	case err := <-done:
-		if err != nil && !errors.Is(err, io.EOF) {
-			t.Fatalf("handleTransport failed: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for transport shutdown")
-	}
-}
-
 func TestSetMetadataAndTagsPublishTerminalStateChangedEvent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -645,24 +575,24 @@ func TestHandleTransportSendsProtocolErrors(t *testing.T) {
 		if typ != protocol.TypeError {
 			t.Fatalf("expected error frame, got type %d", typ)
 		}
-		var msg protocol.ErrorMessage
-		if err := json.Unmarshal(payload, &msg); err != nil {
-			t.Fatalf("unmarshal error payload failed: %v", err)
+		msg, err := protocol.DecodeErrorPayload(payload)
+		if err != nil {
+			t.Fatalf("decode error payload failed: %v", err)
 		}
 		if msg.ID != wantID || msg.Error.Code != wantCode {
 			t.Fatalf("unexpected protocol error: %#v", msg)
 		}
 	}
 
-	helloPayload, _ := json.Marshal(protocol.Hello{Version: protocol.Version, Client: "test"})
+	helloPayload, _ := protocol.EncodeHelloPayload(protocol.Hello{Version: protocol.Version, Client: "test"})
 	sendControlFrame(protocol.TypeHello, helloPayload)
 	_, typ, payload := recvDecodedFrame(t, clientTransport)
 	if typ != protocol.TypeHello {
 		t.Fatalf("expected hello response, got type %d", typ)
 	}
-	var hello protocol.Hello
-	if err := json.Unmarshal(payload, &hello); err != nil {
-		t.Fatalf("unmarshal hello failed: %v", err)
+	hello, err := protocol.DecodeHelloPayload(payload)
+	if err != nil {
+		t.Fatalf("decode hello failed: %v", err)
 	}
 	if hello.Server != "termx" || hello.Version != protocol.Version {
 		t.Fatalf("unexpected hello response: %#v", hello)
@@ -671,18 +601,18 @@ func TestHandleTransportSendsProtocolErrors(t *testing.T) {
 	sendControlFrame(protocol.TypeRequest, []byte("{"))
 	expectProtocolError(0, 400)
 
-	reqPayload, _ := json.Marshal(protocol.Request{
+	reqPayload, _ := protocol.EncodeRequestPayload(protocol.Request{
 		ID:     1,
 		Method: "unsupported",
-		Params: json.RawMessage(`{}`),
+		Params: mustProtoParams(t, struct{}{}),
 	})
 	sendControlFrame(protocol.TypeRequest, reqPayload)
 	expectProtocolError(1, 400)
 
-	reqPayload, _ = json.Marshal(protocol.Request{
+	reqPayload, _ = protocol.EncodeRequestPayload(protocol.Request{
 		ID:     2,
 		Method: "kill",
-		Params: json.RawMessage(`{"terminal_id":"missing"}`),
+		Params: mustProtoParams(t, protocol.GetParams{TerminalID: "missing"}),
 	})
 	sendControlFrame(protocol.TypeRequest, reqPayload)
 	expectProtocolError(2, 404)
@@ -831,7 +761,7 @@ func TestHandleRequestDetachReleasesChannelOnce(t *testing.T) {
 	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     2,
 		Method: "detach",
-		Params: json.RawMessage(`{"terminal_id":"attach01"}`),
+		Params: mustProtoParams(t, protocol.DetachParams{TerminalID: "attach01"}),
 	}, sendFrame); err != nil {
 		t.Fatalf("detach failed: %v", err)
 	}
@@ -1134,7 +1064,7 @@ func TestAttachResizeControlPolicyAndSizeLock(t *testing.T) {
 			result, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 				ID:     uint64(i + 1),
 				Method: "attach",
-				Params: mustJSON(t, protocol.AttachParams{
+				Params: mustProtoParams(t, protocol.AttachParams{
 					TerminalID:   tt.terminalID,
 					Mode:         tt.mode,
 					ResizePolicy: tt.policy,
@@ -1144,8 +1074,8 @@ func TestAttachResizeControlPolicyAndSizeLock(t *testing.T) {
 				t.Fatalf("attach failed: %v", err)
 			}
 			var attach protocol.AttachResult
-			if err := json.Unmarshal(result, &attach); err != nil {
-				t.Fatalf("unmarshal attach result failed: %v", err)
+			if err := decodeProtocolResult(t, "attach", result, &attach); err != nil {
+				t.Fatalf("decode attach result failed: %v", err)
 			}
 			if attach.ResizeControl == nil ||
 				attach.ResizeControl.CanResize != tt.want.CanResize ||
@@ -1174,7 +1104,7 @@ func TestAttachResizeControlPolicyAndSizeLock(t *testing.T) {
 	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     100,
 		Method: "attach",
-		Params: mustJSON(t, protocol.AttachParams{
+		Params: mustProtoParams(t, protocol.AttachParams{
 			TerminalID:   normal.ID,
 			Mode:         string(ModeCollaborator),
 			ResizePolicy: "unexpected",
@@ -1223,14 +1153,14 @@ func TestTerminalInfoTracksResizeOwnerAttachments(t *testing.T) {
 	result, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "list",
-		Params: mustJSON(t, struct{}{}),
+		Params: mustProtoParams(t, struct{}{}),
 	}, sendFrame)
 	if err != nil {
 		t.Fatalf("list request failed: %v", err)
 	}
 	var listed protocol.ListResult
-	if err := json.Unmarshal(result, &listed); err != nil {
-		t.Fatalf("unmarshal list failed: %v", err)
+	if err := decodeProtocolResult(t, "list", result, &listed); err != nil {
+		t.Fatalf("decode list failed: %v", err)
 	}
 	if len(listed.Terminals) != 1 || listed.Terminals[0].ResizeOwnerAttachmentCount != 1 {
 		t.Fatalf("unexpected resize owner attachment count with follower attached: %#v", listed.Terminals)
@@ -1254,14 +1184,14 @@ func TestTerminalInfoTracksResizeOwnerAttachments(t *testing.T) {
 	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     2,
 		Method: "list",
-		Params: mustJSON(t, struct{}{}),
+		Params: mustProtoParams(t, struct{}{}),
 	}, sendFrame)
 	if err != nil {
 		t.Fatalf("list after owner detach failed: %v", err)
 	}
 	listed = protocol.ListResult{}
-	if err := json.Unmarshal(result, &listed); err != nil {
-		t.Fatalf("unmarshal updated list failed: %v", err)
+	if err := decodeProtocolResult(t, "list", result, &listed); err != nil {
+		t.Fatalf("decode updated list failed: %v", err)
 	}
 	direct, err := termProtocolInfo(t, srv, info.ID)
 	if err != nil {
@@ -1339,7 +1269,7 @@ func TestResizeRequestRequiresResizeOwnerAttachment(t *testing.T) {
 	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "attach",
-		Params: mustJSON(t, protocol.AttachParams{
+		Params: mustProtoParams(t, protocol.AttachParams{
 			TerminalID:   info.ID,
 			Mode:         string(ModeCollaborator),
 			ResizePolicy: protocol.ResizePolicyFollower,
@@ -1351,7 +1281,7 @@ func TestResizeRequestRequiresResizeOwnerAttachment(t *testing.T) {
 	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     2,
 		Method: "resize",
-		Params: mustJSON(t, protocol.ResizeParams{TerminalID: info.ID, Cols: 120, Rows: 50}),
+		Params: mustProtoParams(t, protocol.ResizeParams{TerminalID: info.ID, Cols: 120, Rows: 50}),
 	}, func(uint16, uint8, []byte) error { return nil })
 	if err == nil || code != 403 {
 		t.Fatalf("expected follower resize request to fail with 403, got code=%d err=%v", code, err)
@@ -1369,7 +1299,7 @@ func TestResizeRequestRequiresResizeOwnerAttachment(t *testing.T) {
 	if _, _, err := srv.handleRequest(ctx, "memory", nil, protocol.NewChannelAllocator(), ownerAttachments, &ownerAttachmentsMu, transportScope{}, protocol.Request{
 		ID:     3,
 		Method: "attach",
-		Params: mustJSON(t, protocol.AttachParams{
+		Params: mustProtoParams(t, protocol.AttachParams{
 			TerminalID:   info.ID,
 			Mode:         string(ModeCollaborator),
 			ResizePolicy: protocol.ResizePolicyOwner,
@@ -1380,7 +1310,7 @@ func TestResizeRequestRequiresResizeOwnerAttachment(t *testing.T) {
 	if _, _, err := srv.handleRequest(ctx, "memory", nil, protocol.NewChannelAllocator(), ownerAttachments, &ownerAttachmentsMu, transportScope{}, protocol.Request{
 		ID:     4,
 		Method: "resize",
-		Params: mustJSON(t, protocol.ResizeParams{TerminalID: info.ID, Cols: 100, Rows: 40}),
+		Params: mustProtoParams(t, protocol.ResizeParams{TerminalID: info.ID, Cols: 100, Rows: 40}),
 	}, func(uint16, uint8, []byte) error { return nil }); err != nil {
 		t.Fatalf("owner resize request failed: %v", err)
 	}
@@ -1409,7 +1339,7 @@ func TestEnsureResizeRefreshesControlAndResizesOnlyWhenNeeded(t *testing.T) {
 	attachRaw, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "attach",
-		Params: mustJSON(t, protocol.AttachParams{
+		Params: mustProtoParams(t, protocol.AttachParams{
 			TerminalID:   info.ID,
 			Mode:         string(ModeCollaborator),
 			ResizePolicy: protocol.ResizePolicyOwner,
@@ -1419,14 +1349,14 @@ func TestEnsureResizeRefreshesControlAndResizesOnlyWhenNeeded(t *testing.T) {
 		t.Fatalf("attach owner failed: %v", err)
 	}
 	var attach protocol.AttachResult
-	if err := json.Unmarshal(attachRaw, &attach); err != nil {
-		t.Fatalf("unmarshal attach: %v", err)
+	if err := decodeProtocolResult(t, "attach", attachRaw, &attach); err != nil {
+		t.Fatalf("decode attach: %v", err)
 	}
 
 	sameRaw, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     2,
 		Method: "ensure_resize",
-		Params: mustJSON(t, protocol.EnsureResizeParams{
+		Params: mustProtoParams(t, protocol.EnsureResizeParams{
 			TerminalID:   info.ID,
 			Channel:      attach.Channel,
 			Cols:         80,
@@ -1438,8 +1368,8 @@ func TestEnsureResizeRefreshesControlAndResizesOnlyWhenNeeded(t *testing.T) {
 		t.Fatalf("same-size ensure_resize failed: %v", err)
 	}
 	var same protocol.EnsureResizeResult
-	if err := json.Unmarshal(sameRaw, &same); err != nil {
-		t.Fatalf("unmarshal same ensure_resize: %v", err)
+	if err := decodeProtocolResult(t, "ensure_resize", sameRaw, &same); err != nil {
+		t.Fatalf("decode same ensure_resize: %v", err)
 	}
 	if same.Resized || same.Size != (protocol.Size{Cols: 80, Rows: 24}) || same.ResizeControl == nil || !same.ResizeControl.CanResize {
 		t.Fatalf("unexpected same-size ensure_resize result: %#v", same)
@@ -1448,7 +1378,7 @@ func TestEnsureResizeRefreshesControlAndResizesOnlyWhenNeeded(t *testing.T) {
 	resizedRaw, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     3,
 		Method: "ensure_resize",
-		Params: mustJSON(t, protocol.EnsureResizeParams{
+		Params: mustProtoParams(t, protocol.EnsureResizeParams{
 			TerminalID:   info.ID,
 			Channel:      attach.Channel,
 			Cols:         120,
@@ -1460,8 +1390,8 @@ func TestEnsureResizeRefreshesControlAndResizesOnlyWhenNeeded(t *testing.T) {
 		t.Fatalf("resize ensure_resize failed: %v", err)
 	}
 	var resized protocol.EnsureResizeResult
-	if err := json.Unmarshal(resizedRaw, &resized); err != nil {
-		t.Fatalf("unmarshal resized ensure_resize: %v", err)
+	if err := decodeProtocolResult(t, "ensure_resize", resizedRaw, &resized); err != nil {
+		t.Fatalf("decode resized ensure_resize: %v", err)
 	}
 	if !resized.Resized || resized.Size != (protocol.Size{Cols: 120, Rows: 40}) {
 		t.Fatalf("unexpected resized ensure_resize result: %#v", resized)
@@ -1473,7 +1403,7 @@ func TestEnsureResizeRefreshesControlAndResizesOnlyWhenNeeded(t *testing.T) {
 	lockedRaw, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     4,
 		Method: "ensure_resize",
-		Params: mustJSON(t, protocol.EnsureResizeParams{
+		Params: mustProtoParams(t, protocol.EnsureResizeParams{
 			TerminalID:   info.ID,
 			Channel:      attach.Channel,
 			Cols:         100,
@@ -1485,8 +1415,8 @@ func TestEnsureResizeRefreshesControlAndResizesOnlyWhenNeeded(t *testing.T) {
 		t.Fatalf("locked ensure_resize failed: %v", err)
 	}
 	var locked protocol.EnsureResizeResult
-	if err := json.Unmarshal(lockedRaw, &locked); err != nil {
-		t.Fatalf("unmarshal locked ensure_resize: %v", err)
+	if err := decodeProtocolResult(t, "ensure_resize", lockedRaw, &locked); err != nil {
+		t.Fatalf("decode locked ensure_resize: %v", err)
 	}
 	if locked.Resized || locked.Size != (protocol.Size{Cols: 120, Rows: 40}) ||
 		locked.ResizeControl == nil || locked.ResizeControl.CanResize ||
@@ -1581,7 +1511,7 @@ func TestHandleRequestKillDeniedForObserverAttachment(t *testing.T) {
 	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "kill",
-		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
+		Params: mustProtoParams(t, protocol.GetParams{TerminalID: info.ID}),
 	}, sendFrame)
 	if !errors.Is(err, ErrPermissionDenied) {
 		t.Fatalf("expected ErrPermissionDenied, got %v", err)
@@ -1616,7 +1546,7 @@ func TestHandleRequestKillAllowedForCollaboratorAttachment(t *testing.T) {
 	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "kill",
-		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
+		Params: mustProtoParams(t, protocol.GetParams{TerminalID: info.ID}),
 	}, sendFrame)
 	if err != nil {
 		t.Fatalf("expected collaborator kill to succeed, got %v", err)
@@ -1816,7 +1746,7 @@ func TestServerRemoveCleansAttachmentsAndClosesTerminal(t *testing.T) {
 	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "remove",
-		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
+		Params: mustProtoParams(t, protocol.GetParams{TerminalID: info.ID}),
 	}, sendFrame)
 	if err != nil {
 		t.Fatalf("expected remove to succeed, got %v", err)
@@ -1873,7 +1803,7 @@ func TestServerRemovePublishesSingleRemovedEventWithoutExitedPollution(t *testin
 	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "remove",
-		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
+		Params: mustProtoParams(t, protocol.GetParams{TerminalID: info.ID}),
 	}, sendFrame)
 	if err != nil {
 		t.Fatalf("expected remove to succeed, got %v", err)
@@ -2136,14 +2066,14 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	result, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "get",
-		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
+		Params: mustProtoParams(t, protocol.GetParams{TerminalID: info.ID}),
 	}, sendFrame)
 	if err != nil {
 		t.Fatalf("get request failed: %v", err)
 	}
 	var got protocol.TerminalInfo
-	if err := json.Unmarshal(result, &got); err != nil {
-		t.Fatalf("unmarshal get result failed: %v", err)
+	if err := decodeProtocolResult(t, "get", result, &got); err != nil {
+		t.Fatalf("decode get result failed: %v", err)
 	}
 	if got.ID != info.ID || got.Tags["group"] != "dev" {
 		t.Fatalf("unexpected get result: %#v", got)
@@ -2152,7 +2082,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     2,
 		Method: "resize",
-		Params: mustJSON(t, protocol.ResizeParams{TerminalID: info.ID, Cols: 100, Rows: 40}),
+		Params: mustProtoParams(t, protocol.ResizeParams{TerminalID: info.ID, Cols: 100, Rows: 40}),
 	}, sendFrame)
 	if err == nil || code != 403 {
 		t.Fatalf("expected unowned resize request to fail with 403, got code=%d err=%v", code, err)
@@ -2162,7 +2092,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     20,
 		Method: "resize",
-		Params: mustJSON(t, protocol.ResizeParams{TerminalID: info.ID, Cols: 100, Rows: 40}),
+		Params: mustProtoParams(t, protocol.ResizeParams{TerminalID: info.ID, Cols: 100, Rows: 40}),
 	}, sendFrame); err != nil {
 		t.Fatalf("owned resize request failed: %v", err)
 	}
@@ -2170,7 +2100,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     3,
 		Method: "set_tags",
-		Params: mustJSON(t, protocol.SetTagsParams{TerminalID: info.ID, Tags: map[string]string{"status": "idle"}}),
+		Params: mustProtoParams(t, protocol.SetTagsParams{TerminalID: info.ID, Tags: map[string]string{"status": "idle"}}),
 	}, sendFrame); err != nil {
 		t.Fatalf("set_tags request failed: %v", err)
 	}
@@ -2178,7 +2108,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     4,
 		Method: "set_metadata",
-		Params: mustJSON(t, protocol.SetMetadataParams{TerminalID: info.ID, Name: "dev-shell", Tags: map[string]string{"status": "idle", "team": "infra"}}),
+		Params: mustProtoParams(t, protocol.SetMetadataParams{TerminalID: info.ID, Name: "dev-shell", Tags: map[string]string{"status": "idle", "team": "infra"}}),
 	}, sendFrame); err != nil {
 		t.Fatalf("set_metadata request failed: %v", err)
 	}
@@ -2186,14 +2116,14 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     30,
 		Method: "get",
-		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
+		Params: mustProtoParams(t, protocol.GetParams{TerminalID: info.ID}),
 	}, sendFrame)
 	if err != nil {
 		t.Fatalf("get after update failed: %v", err)
 	}
 	got = protocol.TerminalInfo{}
-	if err := json.Unmarshal(result, &got); err != nil {
-		t.Fatalf("unmarshal updated get result failed: %v", err)
+	if err := decodeProtocolResult(t, "get", result, &got); err != nil {
+		t.Fatalf("decode updated get result failed: %v", err)
 	}
 	if got.Size != (protocol.Size{Cols: 100, Rows: 40}) || got.Tags["status"] != "idle" || got.Tags["team"] != "infra" || got.Tags["group"] != "" || got.Name != "dev-shell" {
 		t.Fatalf("stale get result after updates: %#v", got)
@@ -2207,7 +2137,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     4,
 		Method: "snapshot",
-		Params: mustJSON(t, protocol.SnapshotParams{TerminalID: info.ID, ScrollbackLimit: 50}),
+		Params: mustProtoParams(t, protocol.SnapshotParams{TerminalID: info.ID, ScrollbackLimit: 50}),
 	}, sendFrame)
 	if err != nil {
 		t.Fatalf("snapshot request failed: %v", err)
@@ -2234,7 +2164,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     41,
 		Method: "grid.viewport",
-		Params: mustJSON(t, protocol.GridViewportParams{TerminalID: info.ID, ScrollbackLimit: 50, Cols: 100}),
+		Params: mustProtoParams(t, protocol.GridViewportParams{TerminalID: info.ID, ScrollbackLimit: 50, Cols: 100}),
 	}, sendFrame)
 	if err != nil {
 		t.Fatalf("grid viewport request failed: %v", err)
@@ -2323,15 +2253,15 @@ func TestHandleRequestListCacheInvalidatesOnSetTags(t *testing.T) {
 	result, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "list",
-		Params: mustJSON(t, struct{}{}),
+		Params: mustProtoParams(t, struct{}{}),
 	}, sendFrame)
 	if err != nil {
 		t.Fatalf("initial list request failed: %v", err)
 	}
 
 	var before protocol.ListResult
-	if err := json.Unmarshal(result, &before); err != nil {
-		t.Fatalf("unmarshal initial list failed: %v", err)
+	if err := decodeProtocolResult(t, "list", result, &before); err != nil {
+		t.Fatalf("decode initial list failed: %v", err)
 	}
 	if len(before.Terminals) != 1 || before.Terminals[0].Tags["group"] != "dev" {
 		t.Fatalf("unexpected initial list result: %#v", before)
@@ -2344,15 +2274,15 @@ func TestHandleRequestListCacheInvalidatesOnSetTags(t *testing.T) {
 	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     2,
 		Method: "list",
-		Params: mustJSON(t, struct{}{}),
+		Params: mustProtoParams(t, struct{}{}),
 	}, sendFrame)
 	if err != nil {
 		t.Fatalf("updated list request failed: %v", err)
 	}
 
 	var after protocol.ListResult
-	if err := json.Unmarshal(result, &after); err != nil {
-		t.Fatalf("unmarshal updated list failed: %v", err)
+	if err := decodeProtocolResult(t, "list", result, &after); err != nil {
+		t.Fatalf("decode updated list failed: %v", err)
 	}
 	if len(after.Terminals) != 1 {
 		t.Fatalf("unexpected updated list size: %#v", after)
@@ -2406,7 +2336,7 @@ func TestHandleRequestRejectsMalformedParams(t *testing.T) {
 			_, code, err := srv.handleRequest(context.Background(), "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 				ID:     1,
 				Method: method,
-				Params: json.RawMessage(`{`),
+				Params: []byte{0xff},
 			}, sendFrame)
 			if err == nil || code != 400 {
 				t.Fatalf("expected 400 for method %q, got code=%d err=%v", method, code, err)
@@ -2441,9 +2371,9 @@ func TestHandleTransportMalformedHelloReturnsProtocolError(t *testing.T) {
 	if typ != protocol.TypeError {
 		t.Fatalf("expected protocol error frame, got %d", typ)
 	}
-	var msg protocol.ErrorMessage
-	if err := json.Unmarshal(payload, &msg); err != nil {
-		t.Fatalf("unmarshal protocol error failed: %v", err)
+	msg, err := protocol.DecodeErrorPayload(payload)
+	if err != nil {
+		t.Fatalf("decode protocol error failed: %v", err)
 	}
 	if msg.Error.Code != 400 {
 		t.Fatalf("unexpected protocol error: %#v", msg)
@@ -2473,9 +2403,9 @@ func TestHandleTransportRejectsInputForUnknownStreamChannel(t *testing.T) {
 		done <- srv.handleTransport(ctx, serverTransport, "memory")
 	}()
 
-	helloPayload, err := json.Marshal(protocol.Hello{Version: protocol.Version, Client: "test"})
+	helloPayload, err := protocol.EncodeHelloPayload(protocol.Hello{Version: protocol.Version, Client: "test"})
 	if err != nil {
-		t.Fatalf("marshal hello failed: %v", err)
+		t.Fatalf("encode hello failed: %v", err)
 	}
 	helloFrame, err := protocol.EncodeFrame(0, protocol.TypeHello, helloPayload)
 	if err != nil {
@@ -2500,9 +2430,9 @@ func TestHandleTransportRejectsInputForUnknownStreamChannel(t *testing.T) {
 	if channel != 77 || typ != protocol.TypeError {
 		t.Fatalf("expected stream error on channel 77, got channel=%d type=%d", channel, typ)
 	}
-	var msg protocol.ErrorMessage
-	if err := json.Unmarshal(payload, &msg); err != nil {
-		t.Fatalf("unmarshal stream error failed: %v", err)
+	msg, err := protocol.DecodeErrorPayload(payload)
+	if err != nil {
+		t.Fatalf("decode stream error failed: %v", err)
 	}
 	if msg.Error.Code != 404 || !strings.Contains(msg.Error.Message, "not attached") {
 		t.Fatalf("unexpected stream error: %#v", msg)
@@ -2699,14 +2629,14 @@ func mustAttachChannel(
 	result, _, err := srv.handleRequest(ctx, remote, nil, allocator, attachments, attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "attach",
-		Params: mustJSON(t, protocol.AttachParams{TerminalID: terminalID, Mode: mode}),
+		Params: mustProtoParams(t, protocol.AttachParams{TerminalID: terminalID, Mode: mode}),
 	}, sendFrame)
 	if err != nil {
 		t.Fatalf("attach failed: %v", err)
 	}
 	var attach protocol.AttachResult
-	if err := json.Unmarshal(result, &attach); err != nil {
-		t.Fatalf("unmarshal attach result failed: %v", err)
+	if err := decodeProtocolResult(t, "attach", result, &attach); err != nil {
+		t.Fatalf("decode attach result failed: %v", err)
 	}
 	return attach.Channel
 }
@@ -2728,14 +2658,14 @@ func mustAttachChannelWithPolicy(
 	result, _, err := srv.handleRequest(ctx, remote, nil, allocator, attachments, attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "attach",
-		Params: mustJSON(t, protocol.AttachParams{TerminalID: terminalID, Mode: mode, ResizePolicy: resizePolicy}),
+		Params: mustProtoParams(t, protocol.AttachParams{TerminalID: terminalID, Mode: mode, ResizePolicy: resizePolicy}),
 	}, sendFrame)
 	if err != nil {
 		t.Fatalf("attach failed: %v", err)
 	}
 	var attach protocol.AttachResult
-	if err := json.Unmarshal(result, &attach); err != nil {
-		t.Fatalf("unmarshal attach result failed: %v", err)
+	if err := decodeProtocolResult(t, "attach", result, &attach); err != nil {
+		t.Fatalf("decode attach result failed: %v", err)
 	}
 	return attach.Channel
 }
@@ -2756,24 +2686,54 @@ func termProtocolInfo(t *testing.T, srv *Server, terminalID string) (protocol.Te
 	if err != nil {
 		return protocol.TerminalInfo{}, err
 	}
-	raw, err := term.protocolInfoJSON()
-	if err != nil {
-		return protocol.TerminalInfo{}, err
+	info := term.protocolInfo()
+	if info == nil {
+		return protocol.TerminalInfo{}, fmt.Errorf("terminal protocol info missing")
 	}
-	var info protocol.TerminalInfo
-	if err := json.Unmarshal(raw, &info); err != nil {
-		return protocol.TerminalInfo{}, err
-	}
-	return info, nil
+	return *info, nil
 }
 
-func mustJSON(t *testing.T, v any) json.RawMessage {
+func mustProtoParams(t *testing.T, v any) []byte {
 	t.Helper()
-	data, err := json.Marshal(v)
+	method := ""
+	switch v.(type) {
+	case protocol.CreateParams, *protocol.CreateParams:
+		method = "create"
+	case protocol.GetParams, *protocol.GetParams:
+		method = "get"
+	case protocol.ResizeParams, *protocol.ResizeParams:
+		method = "resize"
+	case protocol.EnsureResizeParams, *protocol.EnsureResizeParams:
+		method = "ensure_resize"
+	case protocol.SetTagsParams, *protocol.SetTagsParams:
+		method = "set_tags"
+	case protocol.SetMetadataParams, *protocol.SetMetadataParams:
+		method = "set_metadata"
+	case protocol.AttachParams, *protocol.AttachParams:
+		method = "attach"
+	case protocol.DetachParams, *protocol.DetachParams:
+		method = "detach"
+	case protocol.EventsParams, *protocol.EventsParams:
+		method = "events"
+	case protocol.SnapshotParams, *protocol.SnapshotParams:
+		method = "snapshot"
+	case protocol.GridViewportParams, *protocol.GridViewportParams:
+		method = "grid.viewport"
+	case struct{}:
+		method = "list"
+	default:
+		t.Fatalf("no protobuf params helper for %T", v)
+	}
+	data, err := protocol.EncodeMethodParams(method, v)
 	if err != nil {
-		t.Fatalf("marshal failed: %v", err)
+		t.Fatalf("encode protobuf params failed: %v", err)
 	}
 	return data
+}
+
+func decodeProtocolResult(t *testing.T, method string, payload []byte, out any) error {
+	t.Helper()
+	return protocol.DecodeMethodResult(method, payload, out)
 }
 
 func waitFor(t *testing.T, timeout time.Duration, fn func() bool) {

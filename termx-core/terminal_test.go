@@ -121,12 +121,12 @@ func TestTerminalTracksReportedWorkingDirectory(t *testing.T) {
 	if got := reported.CWD; got != "/srv/app" {
 		t.Fatalf("expected reported cwd, got %q", got)
 	}
-	data, err := term.protocolInfoJSON()
-	if err != nil {
-		t.Fatalf("protocol info failed: %v", err)
+	info := term.protocolInfo()
+	if info == nil {
+		t.Fatal("protocol info failed")
 	}
-	if !strings.Contains(string(data), `"cwd":"/srv/app"`) {
-		t.Fatalf("expected protocol cwd in %s", string(data))
+	if info.CWD != "/srv/app" {
+		t.Fatalf("expected protocol cwd, got %#v", info)
 	}
 }
 

@@ -3,7 +3,6 @@ package remote
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -20,7 +19,9 @@ import (
 	"github.com/lozzow/termx/termx-remote/identity"
 	"github.com/lozzow/termx/termx-remote/pairing"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
+	"github.com/lozzow/termx/termx-remote/protocol/runtimepb"
 	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
+	"google.golang.org/protobuf/proto"
 )
 
 type Daemon interface {
@@ -304,7 +305,6 @@ func (p daemonRuntimeAdapter) SubscribeRemoteEvents(ctx context.Context, filters
 	}
 	params := protocol.EventsParams{
 		TerminalID: strings.TrimSpace(filters.TerminalID),
-		SessionID:  strings.TrimSpace(filters.SessionID),
 	}
 	if len(filters.Types) > 0 {
 		params.Types = make([]protocol.EventType, 0, len(filters.Types))
@@ -323,15 +323,15 @@ func (p daemonRuntimeAdapter) SubscribeRemoteEvents(ctx context.Context, filters
 			select {
 			case <-ctx.Done():
 				return
-				case evt, ok := <-events:
-					if !ok {
-						return
-					}
-					payload, err := p.marshalRemoteEvent(ctx, evt)
-					if err != nil {
-						return
-					}
-					select {
+			case evt, ok := <-events:
+				if !ok {
+					return
+				}
+				payload, err := p.marshalRemoteEvent(ctx, evt)
+				if err != nil {
+					return
+				}
+				select {
 				case <-ctx.Done():
 					return
 				case out <- payload:
@@ -343,35 +343,17 @@ func (p daemonRuntimeAdapter) SubscribeRemoteEvents(ctx context.Context, filters
 }
 
 func (p daemonRuntimeAdapter) marshalRemoteEvent(ctx context.Context, evt protocol.Event) ([]byte, error) {
-	if p.daemon == nil {
-		return json.Marshal(evt)
-	}
-	record, err := eventRecord(evt)
-	if err != nil {
-		return json.Marshal(evt)
-	}
-	if evt.Type == protocol.EventTerminalMetadataChanged || evt.Type == protocol.EventTerminalResized {
+	event := runtimeEventFromProtocol(evt)
+	if p.daemon != nil && (evt.Type == protocol.EventTerminalMetadataChanged || evt.Type == protocol.EventTerminalResized) {
 		terminalID := strings.TrimSpace(evt.TerminalID)
 		if terminalID != "" {
 			info, getErr := p.daemon.Get(ctx, terminalID)
 			if getErr == nil && info != nil {
-				record["terminal"] = terminalInventoryFromProtocol(*info)
+				event.Terminal = terminalInventoryToProto(terminalInventoryFromProtocol(*info))
 			}
 		}
 	}
-	return json.Marshal(record)
-}
-
-func eventRecord(evt protocol.Event) (map[string]any, error) {
-	payload, err := json.Marshal(evt)
-	if err != nil {
-		return nil, err
-	}
-	var record map[string]any
-	if err := json.Unmarshal(payload, &record); err != nil {
-		return nil, err
-	}
-	return record, nil
+	return proto.Marshal(event)
 }
 
 type terminalManagementRouter struct {
@@ -385,72 +367,58 @@ func (r terminalManagementRouter) RouteTerminalManagementRequest(ctx context.Con
 		if err != nil {
 			return http.StatusInternalServerError, nil, err.Error()
 		}
-		return marshalRuntimeAPIResponse(map[string]any{"terminals": terminals})
+		return marshalRuntimeAPIResponse(&runtimepb.TerminalListResponse{Terminals: terminalInventoryListToProto(terminals)})
 	case "get_directory":
-		var body struct {
-			TerminalID string `json:"terminal_id"`
-		}
-		if err := json.Unmarshal(req.Body, &body); err != nil {
+		var body runtimepb.TerminalDirectoryRequest
+		if err := proto.Unmarshal(req.Body, &body); err != nil {
 			return http.StatusBadRequest, nil, "invalid get_directory request"
 		}
-		directory, source, err := r.getTerminalDirectory(ctx, body.TerminalID)
+		directory, source, err := r.getTerminalDirectory(ctx, body.GetTerminalId())
 		if err != nil {
 			return http.StatusBadRequest, nil, err.Error()
 		}
-		return marshalRuntimeAPIResponse(map[string]string{
-			"terminal_id": strings.TrimSpace(body.TerminalID),
-			"path":        directory,
-			"source":      source,
+		return marshalRuntimeAPIResponse(&runtimepb.TerminalDirectoryResponse{
+			TerminalId: strings.TrimSpace(body.GetTerminalId()),
+			Path:       directory,
+			Source:     source,
 		})
 	case "create":
-		var body struct {
-			Name    string            `json:"name"`
-			Command []string          `json:"command"`
-			Dir     string            `json:"dir"`
-			Env     []string          `json:"env"`
-			Tags    map[string]string `json:"tags"`
-		}
-		if err := json.Unmarshal(req.Body, &body); err != nil {
+		var body runtimepb.TerminalCreateRequest
+		if err := proto.Unmarshal(req.Body, &body); err != nil {
 			return http.StatusBadRequest, nil, "invalid create request"
 		}
-		terminal, err := r.createTerminal(ctx, body.Name, body.Command, body.Dir, firstNonEmpty(body.Env), body.Tags[terminalmeta.SizeLockTag])
+		terminal, err := r.createTerminal(ctx, body.GetName(), body.GetCommand(), body.GetDir(), firstNonEmpty(body.GetEnv()), body.GetTags()[terminalmeta.SizeLockTag])
 		if err != nil {
 			return http.StatusBadRequest, nil, err.Error()
 		}
-		return marshalRuntimeAPIResponse(terminal)
+		return marshalRuntimeAPIResponse(terminalInventoryToProto(terminal))
 	case "set_metadata":
-		var body struct {
-			TerminalID string            `json:"terminal_id"`
-			Name       string            `json:"name"`
-			Tags       map[string]string `json:"tags"`
-		}
-		if err := json.Unmarshal(req.Body, &body); err != nil {
+		var body runtimepb.TerminalSetMetadataRequest
+		if err := proto.Unmarshal(req.Body, &body); err != nil {
 			return http.StatusBadRequest, nil, "invalid set_metadata request"
 		}
-		terminalID := strings.TrimSpace(body.TerminalID)
+		terminalID := strings.TrimSpace(body.GetTerminalId())
 		if terminalID == "" {
 			return http.StatusBadRequest, nil, "terminal_id is required"
 		}
-		terminal, err := r.updateTerminal(ctx, terminalID, body.Name, body.Tags["cwd"], body.Tags["environment"], body.Tags[terminalmeta.SizeLockTag])
+		terminal, err := r.updateTerminal(ctx, terminalID, body.GetName(), body.GetTags()["cwd"], body.GetTags()["environment"], body.GetTags()[terminalmeta.SizeLockTag])
 		if err != nil {
 			return http.StatusBadRequest, nil, err.Error()
 		}
-		return marshalRuntimeAPIResponse(terminal)
+		return marshalRuntimeAPIResponse(terminalInventoryToProto(terminal))
 	case "remove":
-		var body struct {
-			TerminalID string `json:"terminal_id"`
-		}
-		if err := json.Unmarshal(req.Body, &body); err != nil {
+		var body runtimepb.TerminalIDRequest
+		if err := proto.Unmarshal(req.Body, &body); err != nil {
 			return http.StatusBadRequest, nil, "invalid remove request"
 		}
-		terminalID := strings.TrimSpace(body.TerminalID)
+		terminalID := strings.TrimSpace(body.GetTerminalId())
 		if terminalID == "" {
 			return http.StatusBadRequest, nil, "terminal_id is required"
 		}
 		if err := r.removeTerminal(ctx, terminalID); err != nil {
 			return http.StatusBadRequest, nil, err.Error()
 		}
-		return http.StatusOK, []byte(`{}`), ""
+		return marshalRuntimeAPIResponse(&runtimepb.Empty{})
 	default:
 		return http.StatusNotFound, nil, "unknown terminal management route"
 	}
@@ -722,18 +690,85 @@ func terminalInventoryFromProtocol(item protocol.TerminalInfo) runtime.TerminalI
 		cwd = item.Tags["termx.cwd"]
 	}
 	return runtime.TerminalInventoryItem{
-		ID:           item.ID,
-		Name:         item.Name,
-		State:        item.State,
-		Command:      append([]string(nil), item.Command...),
-		Cols:         int(item.Size.Cols),
-		Rows:         int(item.Size.Rows),
-		CWD:          cwd,
-		Environment:  item.Tags["termx.environment"],
-		SizeLocked:   terminalmeta.SizeLocked(item.Tags),
-		SizeLockMode: sizeLockMode,
+		ID:                         item.ID,
+		Name:                       item.Name,
+		State:                      item.State,
+		Command:                    append([]string(nil), item.Command...),
+		Cols:                       int(item.Size.Cols),
+		Rows:                       int(item.Size.Rows),
+		CWD:                        cwd,
+		Environment:                item.Tags["termx.environment"],
+		SizeLocked:                 terminalmeta.SizeLocked(item.Tags),
+		SizeLockMode:               sizeLockMode,
 		ResizeOwnership:            cloneProtocolResizeOwnership(item.ResizeOwnership),
 		ResizeOwnerAttachmentCount: item.ResizeOwnerAttachmentCount,
+	}
+}
+
+func terminalInventoryListToProto(items []runtime.TerminalInventoryItem) []*runtimepb.TerminalInventoryItem {
+	out := make([]*runtimepb.TerminalInventoryItem, 0, len(items))
+	for _, item := range items {
+		out = append(out, terminalInventoryToProto(item))
+	}
+	return out
+}
+
+func terminalInventoryToProto(item runtime.TerminalInventoryItem) *runtimepb.TerminalInventoryItem {
+	return &runtimepb.TerminalInventoryItem{
+		TerminalId:                 item.ID,
+		Name:                       item.Name,
+		State:                      item.State,
+		Command:                    append([]string(nil), item.Command...),
+		Cols:                       int32(item.Cols),
+		Rows:                       int32(item.Rows),
+		Cwd:                        item.CWD,
+		Environment:                item.Environment,
+		SizeLocked:                 item.SizeLocked,
+		SizeLockMode:               item.SizeLockMode,
+		ResizeOwnership:            resizeOwnershipToRuntimeProto(item.ResizeOwnership),
+		ResizeOwnerAttachmentCount: int32(item.ResizeOwnerAttachmentCount),
+	}
+}
+
+func resizeOwnershipToRuntimeProto(in *protocol.ResizeOwnership) *runtimepb.ResizeOwnership {
+	if in == nil {
+		return nil
+	}
+	return &runtimepb.ResizeOwnership{
+		OwnerAttachmentId: in.OwnerAttachmentID,
+		OwnerSurfaceId:    in.OwnerSurfaceID,
+		OwnerViewId:       in.OwnerViewID,
+		OwnerRemoteAddr:   in.OwnerRemoteAddr,
+		Size:              &runtimepb.Size{Cols: uint32(in.Size.Cols), Rows: uint32(in.Size.Rows)},
+		SizeLocked:        in.SizeLocked,
+		Epoch:             in.Epoch,
+	}
+}
+
+func runtimeEventFromProtocol(evt protocol.Event) *runtimepb.EventEnvelope {
+	protocolType := int32(evt.Type)
+	return &runtimepb.EventEnvelope{
+		Type:              runtimeEventTypeName(protocolType),
+		ProtocolType:      protocolType,
+		TerminalId:        strings.TrimSpace(evt.TerminalID),
+		TimestampUnixNano: evt.Timestamp.UnixNano(),
+	}
+}
+
+func runtimeEventTypeName(protocolType int32) string {
+	switch protocol.EventType(protocolType) {
+	case protocol.EventTerminalCreated:
+		return "terminal_created"
+	case protocol.EventTerminalStateChanged:
+		return "terminal_state_changed"
+	case protocol.EventTerminalResized:
+		return "terminal_resized"
+	case protocol.EventTerminalRemoved:
+		return "terminal_removed"
+	case protocol.EventTerminalMetadataChanged:
+		return "terminal_metadata_changed"
+	default:
+		return "event"
 	}
 }
 
@@ -775,8 +810,8 @@ func hasCapability(capabilities []string, want string) bool {
 	return false
 }
 
-func marshalRuntimeAPIResponse(value any) (int32, []byte, string) {
-	data, err := json.Marshal(value)
+func marshalRuntimeAPIResponse(value proto.Message) (int32, []byte, string) {
+	data, err := proto.Marshal(value)
 	if err != nil {
 		return http.StatusInternalServerError, nil, err.Error()
 	}

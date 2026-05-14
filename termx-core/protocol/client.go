@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"sync"
@@ -30,7 +29,7 @@ type Client struct {
 }
 
 type result struct {
-	payload json.RawMessage
+	payload []byte
 	err     error
 }
 
@@ -242,7 +241,7 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) Hello(ctx context.Context, hello Hello) error {
-	payload, err := json.Marshal(hello)
+	payload, err := EncodeHelloPayload(hello)
 	if err != nil {
 		return err
 	}
@@ -371,79 +370,36 @@ func (c *Client) GridViewport(ctx context.Context, terminalID string, offset, li
 	return DecodeGridViewportPayload(payload)
 }
 
-func (c *Client) CreateSession(ctx context.Context, params CreateSessionParams) (*SessionSnapshot, error) {
-	var out SessionSnapshot
-	if err := c.doRequest(ctx, "session.create", params, &out); err != nil {
+func (c *Client) StorageGet(ctx context.Context, params StorageGetParams) (*StorageEntry, error) {
+	var out StorageEntry
+	if err := c.doRequest(ctx, "storage.get", params, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
-func (c *Client) ListSessions(ctx context.Context) (*ListSessionsResult, error) {
-	var out ListSessionsResult
-	if err := c.doRequest(ctx, "session.list", map[string]any{}, &out); err != nil {
+func (c *Client) StoragePut(ctx context.Context, params StoragePutParams) (*StorageEntry, error) {
+	var out StorageEntry
+	if err := c.doRequest(ctx, "storage.put", params, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
-func (c *Client) GetSession(ctx context.Context, sessionID string) (*SessionSnapshot, error) {
-	var out SessionSnapshot
-	if err := c.doRequest(ctx, "session.get", GetSessionParams{SessionID: sessionID}, &out); err != nil {
+func (c *Client) StorageDelete(ctx context.Context, params StorageDeleteParams) (*StorageDeleteResult, error) {
+	var out StorageDeleteResult
+	if err := c.doRequest(ctx, "storage.delete", params, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
-func (c *Client) AttachSession(ctx context.Context, params AttachSessionParams) (*SessionSnapshot, error) {
-	var out SessionSnapshot
-	if err := c.doRequest(ctx, "session.attach", params, &out); err != nil {
+func (c *Client) StorageList(ctx context.Context, params StorageListParams) (*StorageListResult, error) {
+	var out StorageListResult
+	if err := c.doRequest(ctx, "storage.list", params, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
-}
-
-func (c *Client) DetachSession(ctx context.Context, sessionID, viewID string) error {
-	return c.doRequest(ctx, "session.detach", DetachSessionParams{
-		SessionID: sessionID,
-		ViewID:    viewID,
-	}, nil)
-}
-
-func (c *Client) ApplySession(ctx context.Context, params ApplySessionParams) (*SessionSnapshot, error) {
-	var out SessionSnapshot
-	if err := c.doRequest(ctx, "session.apply", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) ReplaceSession(ctx context.Context, params ReplaceSessionParams) (*SessionSnapshot, error) {
-	var out SessionSnapshot
-	if err := c.doRequest(ctx, "session.replace", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) UpdateSessionView(ctx context.Context, params UpdateSessionViewParams) (*ViewInfo, error) {
-	var out ViewInfo
-	if err := c.doRequest(ctx, "session.view_update", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) AcquireSessionLease(ctx context.Context, params AcquireSessionLeaseParams) (*LeaseInfo, error) {
-	var out LeaseInfo
-	if err := c.doRequest(ctx, "session.acquire_lease", params, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *Client) ReleaseSessionLease(ctx context.Context, params ReleaseSessionLeaseParams) error {
-	return c.doRequest(ctx, "session.release_lease", params, nil)
 }
 
 func (c *Client) Events(ctx context.Context, params EventsParams) (<-chan Event, error) {
@@ -566,8 +522,8 @@ func (c *Client) HistoryReplay(ctx context.Context, channel uint16, beforeOffset
 					Replay:       string(replay),
 				}, nil
 			case TypeError:
-				var msgErr ErrorMessage
-				if err := json.Unmarshal(msg.Payload, &msgErr); err != nil {
+				msgErr, err := DecodeErrorPayload(msg.Payload)
+				if err != nil {
 					return nil, err
 				}
 				return nil, fmt.Errorf("protocol error %d: %s", msgErr.Error.Code, msgErr.Error.Message)
@@ -586,18 +542,18 @@ func (c *Client) doRequest(ctx context.Context, method string, params any, out a
 	if out == nil {
 		return nil
 	}
-	return json.Unmarshal(payload, out)
+	return DecodeMethodResult(method, payload, out)
 }
 
 func (c *Client) doRequestPayload(ctx context.Context, method string, params any) ([]byte, error) {
 	finish := perftrace.Measure("protocol.request." + method)
-	payload, err := json.Marshal(params)
+	payload, err := EncodeMethodParams(method, params)
 	if err != nil {
 		finish(0)
 		return nil, err
 	}
 	id := c.nextID.Add(1)
-	reqPayload, err := json.Marshal(Request{
+	reqPayload, err := EncodeRequestPayload(Request{
 		ID:     id,
 		Method: method,
 		Params: payload,
@@ -665,8 +621,8 @@ func (c *Client) readLoop() {
 			case TypeHello:
 				c.helloCh <- result{}
 			case TypeEvent:
-				var evt Event
-				if err := json.Unmarshal(payload, &evt); err != nil {
+				evt, err := DecodeEventPayload(payload)
+				if err != nil {
 					c.failAll(err)
 					return
 				}
@@ -680,8 +636,8 @@ func (c *Client) readLoop() {
 					}
 				}
 			case TypeResponse:
-				var resp Response
-				if err := json.Unmarshal(payload, &resp); err != nil {
+				resp, err := DecodeResponsePayload(payload)
+				if err != nil {
 					c.failAll(err)
 					return
 				}
@@ -704,8 +660,8 @@ func (c *Client) readLoop() {
 					ch <- result{payload: resultPayload}
 				}
 			case TypeError:
-				var msg ErrorMessage
-				if err := json.Unmarshal(payload, &msg); err != nil {
+				msg, err := DecodeErrorPayload(payload)
+				if err != nil {
 					c.failAll(err)
 					return
 				}

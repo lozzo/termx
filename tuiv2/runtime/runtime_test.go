@@ -19,6 +19,7 @@ import (
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
 	localvterm "github.com/lozzow/termx/termx-core/vterm"
 	"github.com/lozzow/termx/tuiv2/bridge"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -1546,7 +1547,7 @@ func TestRuntimeApplySessionLeasesDemotesForeignLeaseAndPromotesLocalLease(t *te
 		t.Fatalf("attach follower: %v", err)
 	}
 
-	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+	rt.ApplySessionLeases("view-local", []sessionstore.LeaseInfo{{
 		TerminalID: "term-1",
 		ViewID:     "view-remote",
 		PaneID:     "pane-9",
@@ -1559,7 +1560,7 @@ func TestRuntimeApplySessionLeasesDemotesForeignLeaseAndPromotesLocalLease(t *te
 		t.Fatalf("expected pane-1 follower under foreign lease, got %#v", binding)
 	}
 
-	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+	rt.ApplySessionLeases("view-local", []sessionstore.LeaseInfo{{
 		TerminalID: "term-1",
 		ViewID:     "view-local",
 		PaneID:     "pane-2",
@@ -1587,7 +1588,7 @@ func TestRuntimeApplySessionLeasesDemotesLocalPaneWhenForeignLeaseReusesSamePane
 		t.Fatalf("attach owner: %v", err)
 	}
 
-	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+	rt.ApplySessionLeases("view-local", []sessionstore.LeaseInfo{{
 		TerminalID: "term-1",
 		ViewID:     "view-remote",
 		PaneID:     "pane-1",
@@ -1612,7 +1613,7 @@ func TestRuntimeApplySessionLeasesRefreshesVisibleOwnerWhenForeignLeaseOwnerChan
 		t.Fatalf("attach owner: %v", err)
 	}
 
-	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+	rt.ApplySessionLeases("view-local", []sessionstore.LeaseInfo{{
 		TerminalID: "term-1",
 		ViewID:     "view-remote",
 		PaneID:     "pane-9",
@@ -1622,7 +1623,7 @@ func TestRuntimeApplySessionLeasesRefreshesVisibleOwnerWhenForeignLeaseOwnerChan
 		t.Fatalf("expected visible runtime owner pane-9 after first foreign lease, got %#v", visible.Terminals)
 	}
 
-	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+	rt.ApplySessionLeases("view-local", []sessionstore.LeaseInfo{{
 		TerminalID: "term-1",
 		ViewID:     "view-remote",
 		PaneID:     "pane-10",
@@ -2016,46 +2017,6 @@ func (f *fakeBridgeClient) Kill(context.Context, string) error { return nil }
 func (f *fakeBridgeClient) Remove(context.Context, string) error { return nil }
 
 func (f *fakeBridgeClient) Restart(context.Context, string) error { return nil }
-
-func (f *fakeBridgeClient) CreateSession(context.Context, protocol.CreateSessionParams) (*protocol.SessionSnapshot, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) ListSessions(context.Context) (*protocol.ListSessionsResult, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) GetSession(context.Context, string) (*protocol.SessionSnapshot, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) AttachSession(context.Context, protocol.AttachSessionParams) (*protocol.SessionSnapshot, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) DetachSession(context.Context, string, string) error {
-	return fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) ApplySession(context.Context, protocol.ApplySessionParams) (*protocol.SessionSnapshot, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) ReplaceSession(context.Context, protocol.ReplaceSessionParams) (*protocol.SessionSnapshot, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) UpdateSessionView(context.Context, protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) AcquireSessionLease(context.Context, protocol.AcquireSessionLeaseParams) (*protocol.LeaseInfo, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) ReleaseSessionLease(context.Context, protocol.ReleaseSessionLeaseParams) error {
-	return fmt.Errorf("not implemented")
-}
 
 func (f *fakeBridgeClient) sendFrame(channel uint16, frame protocol.StreamFrame) {
 	f.mu.Lock()

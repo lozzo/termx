@@ -16,7 +16,6 @@ import (
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/transport/memory"
-	"github.com/lozzow/termx/termx-core/workbenchsvc"
 )
 
 type daemonResidencySnapshot struct {
@@ -64,21 +63,6 @@ func TestPerfResidencyDaemon(t *testing.T) {
 		t.Fatalf("subscribe terminal: %v", err)
 	}
 
-	session, err := srv.workbench.CreateSession(workbenchsvc.CreateSessionOptions{
-		ID:   "perf-daemon-session",
-		Name: "perf-daemon-session",
-	})
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	if _, err := srv.workbench.AttachSession(session.ID, workbenchsvc.AttachSessionOptions{
-		ClientID:   "perf-daemon-client",
-		WindowCols: 120,
-		WindowRows: 40,
-	}); err != nil {
-		t.Fatalf("attach session: %v", err)
-	}
-
 	for i := 0; i < 64; i++ {
 		name := fmt.Sprintf("perf-daemon-%03d", i)
 		if err := srv.SetMetadata(ctx, info.ID, name, map[string]string{
@@ -93,7 +77,7 @@ func TestPerfResidencyDaemon(t *testing.T) {
 	}
 	time.Sleep(200 * time.Millisecond)
 
-	after := takeDaemonResidencySnapshot(t, "daemon_one_terminal_one_session")
+	after := takeDaemonResidencySnapshot(t, "daemon_one_terminal")
 	logDaemonResidencySnapshot(t, after)
 }
 

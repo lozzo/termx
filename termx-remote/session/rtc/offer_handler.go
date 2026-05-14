@@ -2,7 +2,6 @@ package rtc
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,7 +13,9 @@ import (
 	"github.com/lozzow/termx/termx-remote/bridge"
 	"github.com/lozzow/termx/termx-remote/fileapi"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
+	"github.com/lozzow/termx/termx-remote/protocol/runtimepb"
 	"github.com/pion/webrtc/v4"
+	"google.golang.org/protobuf/proto"
 )
 
 func AnswerOffer(
@@ -63,7 +64,7 @@ type EventRouter interface {
 type TerminalManagementRequest struct {
 	Method string
 	Path   string
-	Body   json.RawMessage
+	Body   []byte
 }
 
 type EventFilters struct {
@@ -160,7 +161,7 @@ func AnswerOfferWithOptions(
 		case label == "events":
 			if opts.Events == nil {
 				dc.OnOpen(func() {
-					_ = dc.SendText(`{"type":"runtime_ready","payload":{"channel":"events"}}`)
+					_ = sendRuntimeEvent(dc, &runtimepb.EventEnvelope{Type: "runtime_ready"})
 				})
 				return
 			}
@@ -275,19 +276,6 @@ func (m *disconnectedGraceMonitor) stop() {
 	m.timer = nil
 }
 
-type apiRequest struct {
-	ID     string          `json:"id"`
-	Method string          `json:"method"`
-	Path   string          `json:"path"`
-	Body   json.RawMessage `json:"body"`
-}
-
-type apiResponse struct {
-	ID     string      `json:"id"`
-	Status int         `json:"status"`
-	Body   interface{} `json:"body"`
-}
-
 const (
 	apiChunkMagic      = 0xC0
 	apiChunkFirst      = 0x01
@@ -307,8 +295,8 @@ func handleAPIChannel(ctx context.Context, dc *webrtc.DataChannel, manager *file
 		}
 	})
 	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-		var req apiRequest
-		if err := json.Unmarshal(msg.Data, &req); err != nil {
+		var req runtimepb.APIRequest
+		if err := proto.Unmarshal(msg.Data, &req); err != nil {
 			log.Printf("termx remote api invalid request bytes=%d err=%v", len(msg.Data), err)
 			return
 		}
@@ -318,71 +306,65 @@ func handleAPIChannel(ctx context.Context, dc *webrtc.DataChannel, manager *file
 			if len(contextHook) > 0 && contextHook[0] != nil {
 				reqCtx = contextHook[0](reqCtx)
 			}
-			log.Printf("termx remote api request id=%s method=%s path=%s body_bytes=%d buffered=%d", req.ID, req.Method, req.Path, len(req.Body), dc.BufferedAmount())
-			statusCode, respBody, errMsg := routeRuntimeAPIRequestWithContext(reqCtx, manager, terminalManagement, req)
-			var body interface{}
-			if errMsg != "" {
-				body = map[string]string{"error": errMsg}
-			} else if len(respBody) > 0 {
-				if json.Unmarshal(respBody, &body) != nil {
-					body = string(respBody)
-				}
-			}
-			payload, _ := json.Marshal(apiResponse{
-				ID:     req.ID,
-				Status: int(statusCode),
-				Body:   body,
+			log.Printf("termx remote api request id=%s method=%s path=%s body_bytes=%d buffered=%d", req.GetId(), req.GetMethod(), req.GetPath(), len(req.GetBody()), dc.BufferedAmount())
+			statusCode, respBody, errMsg := routeRuntimeAPIRequestWithContext(reqCtx, manager, terminalManagement, &req)
+			payload, err := proto.Marshal(&runtimepb.APIResponse{
+				Id:     req.GetId(),
+				Status: statusCode,
+				Body:   respBody,
+				Error:  errMsg,
 			})
-			log.Printf("termx remote api response id=%s method=%s path=%s status=%d body_bytes=%d payload_bytes=%d elapsed_ms=%d err=%q", req.ID, req.Method, req.Path, statusCode, len(respBody), len(payload), time.Since(started).Milliseconds(), errMsg)
-			sendAPIResponse(reqCtx, dc, req.ID, payload, drainCh)
+			if err != nil {
+				log.Printf("termx remote api response encode failed id=%s err=%v", req.GetId(), err)
+				return
+			}
+			log.Printf("termx remote api response id=%s method=%s path=%s status=%d body_bytes=%d payload_bytes=%d elapsed_ms=%d err=%q", req.GetId(), req.GetMethod(), req.GetPath(), statusCode, len(respBody), len(payload), time.Since(started).Milliseconds(), errMsg)
+			sendAPIResponse(reqCtx, dc, req.GetId(), payload, drainCh)
 		}()
 	})
 }
 
-func routeRuntimeAPIRequest(manager *fileapi.Manager, terminalManagement TerminalManagementRouter, req apiRequest) (int32, []byte, string) {
+func routeRuntimeAPIRequest(manager *fileapi.Manager, terminalManagement TerminalManagementRouter, req *runtimepb.APIRequest) (int32, []byte, string) {
 	return routeRuntimeAPIRequestWithContext(context.Background(), manager, terminalManagement, req)
 }
 
-func routeRuntimeAPIRequestWithContext(ctx context.Context, manager *fileapi.Manager, terminalManagement TerminalManagementRouter, req apiRequest) (int32, []byte, string) {
-	if strings.HasPrefix(req.Path, "/files/") {
+func routeRuntimeAPIRequestWithContext(ctx context.Context, manager *fileapi.Manager, terminalManagement TerminalManagementRouter, req *runtimepb.APIRequest) (int32, []byte, string) {
+	if req == nil {
+		return http.StatusBadRequest, nil, "request is nil"
+	}
+	if strings.HasPrefix(req.GetPath(), "/files/") {
 		if manager == nil {
 			return http.StatusServiceUnavailable, nil, "file api is not available"
 		}
-		return manager.RouteRequest(req.Method, req.Path, req.Body)
+		return manager.RouteRequest(req.GetMethod(), req.GetPath(), req.GetBody())
 	}
-	switch req.Path {
+	switch req.GetPath() {
 	case "status", "/status":
-		return jsonResponseBody(map[string]any{"ok": true})
+		return protoResponseBody(&runtimepb.StatusResponse{Ok: true})
 	case "list":
 		if terminalManagement == nil {
 			return http.StatusServiceUnavailable, nil, "terminal inventory is not available"
 		}
 		return terminalManagement.RouteTerminalManagementRequest(ctx, TerminalManagementRequest{
-			Method: req.Method,
-			Path:   req.Path,
-			Body:   req.Body,
+			Method: req.GetMethod(),
+			Path:   req.GetPath(),
+			Body:   req.GetBody(),
 		})
 	case "create", "set_metadata", "remove", "get_directory":
 		if terminalManagement == nil {
 			return http.StatusServiceUnavailable, nil, "terminal management is not available"
 		}
 		return terminalManagement.RouteTerminalManagementRequest(ctx, TerminalManagementRequest{
-			Method: req.Method,
-			Path:   req.Path,
-			Body:   req.Body,
+			Method: req.GetMethod(),
+			Path:   req.GetPath(),
+			Body:   req.GetBody(),
 		})
 	default:
-		return http.StatusNotFound, nil, fmt.Sprintf("unknown api route: %s %s", req.Method, req.Path)
+		return http.StatusNotFound, nil, fmt.Sprintf("unknown api route: %s %s", req.GetMethod(), req.GetPath())
 	}
 }
 
 func serveEventChannel(ctx context.Context, dc *webrtc.DataChannel, router EventRouter) {
-	type subscribeRequest struct {
-		Type       string `json:"type"`
-		TerminalID string `json:"terminal_id"`
-		SessionID  string `json:"session_id"`
-		Types      []int  `json:"types"`
-	}
 	closed := make(chan struct{})
 	var cancel func()
 	defer func() {
@@ -409,13 +391,13 @@ func serveEventChannel(ctx context.Context, dc *webrtc.DataChannel, router Event
 		}
 	}()
 	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-		var req subscribeRequest
-		if err := json.Unmarshal(msg.Data, &req); err != nil {
-			_ = dc.SendText(`{"type":"error","payload":{"message":"invalid event subscription"}}`)
+		var req runtimepb.EventSubscribeRequest
+		if err := proto.Unmarshal(msg.Data, &req); err != nil {
+			_ = sendRuntimeEvent(dc, &runtimepb.EventEnvelope{Type: "error", Error: "invalid event subscription"})
 			return
 		}
-		if strings.TrimSpace(req.Type) != "subscribe" {
-			_ = dc.SendText(`{"type":"error","payload":{"message":"unknown event request"}}`)
+		if strings.TrimSpace(req.GetType()) != "subscribe" {
+			_ = sendRuntimeEvent(dc, &runtimepb.EventEnvelope{Type: "error", Error: "unknown event request"})
 			return
 		}
 		if cancel != nil {
@@ -424,13 +406,13 @@ func serveEventChannel(ctx context.Context, dc *webrtc.DataChannel, router Event
 		}
 		subCtx, subCancel := context.WithCancel(ctx)
 		events, unsubscribe, err := router.SubscribeRemoteEvents(subCtx, EventFilters{
-			TerminalID: strings.TrimSpace(req.TerminalID),
-			SessionID:  strings.TrimSpace(req.SessionID),
-			Types:      append([]int(nil), req.Types...),
+			TerminalID: strings.TrimSpace(req.GetTerminalId()),
+			SessionID:  strings.TrimSpace(req.GetSessionId()),
+			Types:      int32sToInts(req.GetTypes()),
 		})
 		if err != nil {
 			subCancel()
-			_ = dc.SendText(`{"type":"error","payload":{"message":"event subscription failed"}}`)
+			_ = sendRuntimeEvent(dc, &runtimepb.EventEnvelope{Type: "error", Error: "event subscription failed"})
 			return
 		}
 		cancel = func() {
@@ -446,7 +428,7 @@ func serveEventChannel(ctx context.Context, dc *webrtc.DataChannel, router Event
 					if !ok {
 						return
 					}
-					if err := dc.SendText(string(runtimeEventPayloadForClient(payload))); err != nil {
+					if err := dc.Send(payload); err != nil {
 						subCancel()
 						return
 					}
@@ -476,55 +458,31 @@ var terminalInventoryProtocolEvents = map[int]string{
 	protocolEventTerminalMetadataChanged: "terminal_metadata_changed",
 }
 
-func runtimeEventPayloadForClient(payload []byte) []byte {
-	var record map[string]any
-	if err := json.Unmarshal(payload, &record); err != nil {
-		return payload
-	}
-	rawType, ok := record["type"]
-	if !ok {
-		return payload
-	}
-	var protocolType int
-	switch typed := rawType.(type) {
-	case float64:
-		protocolType = int(typed)
-	default:
-		return payload
-	}
-	eventType, ok := terminalInventoryProtocolEvents[protocolType]
-	if !ok {
-		return payload
-	}
-	clientPayload := map[string]any{
-		"eventType":    eventType,
-		"protocolType": protocolType,
-	}
-	if terminalID, ok := record["terminal_id"].(string); ok && strings.TrimSpace(terminalID) != "" {
-		clientPayload["terminalId"] = strings.TrimSpace(terminalID)
-	}
-	if timestamp, ok := record["timestamp"].(string); ok && strings.TrimSpace(timestamp) != "" {
-		clientPayload["timestamp"] = strings.TrimSpace(timestamp)
-	}
-	if terminal, ok := record["terminal"]; ok {
-		clientPayload["terminal"] = terminal
-	}
-	out, err := json.Marshal(map[string]any{
-		"type":    eventType,
-		"payload": clientPayload,
-	})
-	if err != nil {
-		return payload
-	}
-	return out
-}
-
-func jsonResponseBody(value any) (int32, []byte, string) {
-	body, err := json.Marshal(value)
+func protoResponseBody(value proto.Message) (int32, []byte, string) {
+	body, err := proto.Marshal(value)
 	if err != nil {
 		return http.StatusInternalServerError, nil, err.Error()
 	}
 	return http.StatusOK, body, ""
+}
+
+func sendRuntimeEvent(dc *webrtc.DataChannel, event *runtimepb.EventEnvelope) error {
+	payload, err := proto.Marshal(event)
+	if err != nil {
+		return err
+	}
+	return dc.Send(payload)
+}
+
+func int32sToInts(values []int32) []int {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]int, 0, len(values))
+	for _, value := range values {
+		out = append(out, int(value))
+	}
+	return out
 }
 
 func sendAPIResponse(ctx context.Context, dc *webrtc.DataChannel, id string, data []byte, drainCh <-chan struct{}) {

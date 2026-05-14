@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/lozzow/termx/tuiv2/sessiondoc"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	"github.com/lozzow/termx/termx-core/workbenchdoc"
 )
 
 func TestExportImportRoundTrip(t *testing.T) {
@@ -21,16 +21,16 @@ func TestExportImportRoundTrip(t *testing.T) {
 }
 
 func TestPaneTerminalBindings(t *testing.T) {
-	doc := &workbenchdoc.Doc{
+	doc := &sessiondoc.Doc{
 		CurrentWorkspace: "main",
 		WorkspaceOrder:   []string{"main"},
-		Workspaces: map[string]*workbenchdoc.Workspace{
+		Workspaces: map[string]*sessiondoc.Workspace{
 			"main": {
 				Name: "main",
-				Tabs: []*workbenchdoc.Tab{
+				Tabs: []*sessiondoc.Tab{
 					{
 						ID: "tab-1",
-						Panes: map[string]*workbenchdoc.Pane{
+						Panes: map[string]*sessiondoc.Pane{
 							"pane-1": {ID: "pane-1", TerminalID: "term-1"},
 							"pane-2": {ID: "pane-2"},
 							"pane-3": nil,

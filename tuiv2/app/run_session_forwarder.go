@@ -8,6 +8,7 @@ import (
 	"github.com/lozzow/termx/termx-core/protocol"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
 	"github.com/lozzow/termx/tuiv2/bridge"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -16,7 +17,10 @@ var sessionEventsReconnectDelay = 500 * time.Millisecond
 type sessionEventsClient interface {
 	Close() error
 	Events(ctx context.Context, params protocol.EventsParams) (<-chan protocol.Event, error)
-	GetSession(ctx context.Context, sessionID string) (*protocol.SessionSnapshot, error)
+	StorageGet(ctx context.Context, params protocol.StorageGetParams) (*protocol.StorageEntry, error)
+	StoragePut(ctx context.Context, params protocol.StoragePutParams) (*protocol.StorageEntry, error)
+	StorageDelete(ctx context.Context, params protocol.StorageDeleteParams) (*protocol.StorageDeleteResult, error)
+	StorageList(ctx context.Context, params protocol.StorageListParams) (*protocol.StorageListResult, error)
 }
 
 var newSessionEventsClient = func(ctx context.Context, socketPath string) (sessionEventsClient, error) {
@@ -67,14 +71,8 @@ func runSessionEventsForwarder(ctx context.Context, send func(tea.Msg), cfg shar
 			continue
 		}
 		eventsCtx, eventsCancel := context.WithCancel(ctx)
-		events, err := client.Events(eventsCtx, protocol.EventsParams{
-			SessionID: cfg.SessionID,
-			Types: []protocol.EventType{
-				protocol.EventSessionCreated,
-				protocol.EventSessionUpdated,
-				protocol.EventSessionDeleted,
-			},
-		})
+		store := sessionstore.New(client)
+		events, err := store.Watch(eventsCtx, cfg.SessionID)
 		if err != nil {
 			eventsCancel()
 			_ = client.Close()
@@ -84,7 +82,7 @@ func runSessionEventsForwarder(ctx context.Context, send func(tea.Msg), cfg shar
 			continue
 		}
 		if connectedOnce {
-			snapshot, err := client.GetSession(eventsCtx, cfg.SessionID)
+			snapshot, err := store.Get(eventsCtx, cfg.SessionID)
 			send(sessionSnapshotMsg{Snapshot: snapshot, Err: err})
 		}
 		connectedOnce = true
@@ -114,14 +112,12 @@ func runFallbackSessionEventsForwarder(ctx context.Context, send func(tea.Msg), 
 	if ctx == nil || send == nil || sessionID == "" || client == nil {
 		return
 	}
-	events, err := client.Events(ctx, protocol.EventsParams{
-		SessionID: sessionID,
-		Types: []protocol.EventType{
-			protocol.EventSessionCreated,
-			protocol.EventSessionUpdated,
-			protocol.EventSessionDeleted,
-		},
-	})
+	storageClient, ok := client.(sessionstore.Client)
+	if !ok {
+		return
+	}
+	store := sessionstore.New(storageClient)
+	events, err := store.Watch(ctx, sessionID)
 	if err != nil {
 		return
 	}

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/workbenchcodec"
 )
 
@@ -20,7 +20,7 @@ func (m *Model) sessionSnapshotApplyService() *sessionSnapshotApplyService {
 	return &sessionSnapshotApplyService{model: m}
 }
 
-func (s *sessionSnapshotApplyService) apply(snapshot *protocol.SessionSnapshot) error {
+func (s *sessionSnapshotApplyService) apply(snapshot *sessionstore.Snapshot) error {
 	if s == nil || s.model == nil || snapshot == nil {
 		return nil
 	}
@@ -43,7 +43,7 @@ func (s *sessionSnapshotApplyService) apply(snapshot *protocol.SessionSnapshot) 
 		m.sessionSharedDoc = snapshot.Workbench.Clone()
 	}
 	if len(snapshot.Leases) > 0 {
-		m.sessionLeases = make(map[string]protocol.LeaseInfo, len(snapshot.Leases))
+		m.sessionLeases = make(map[string]sessionstore.LeaseInfo, len(snapshot.Leases))
 		for _, lease := range snapshot.Leases {
 			if lease.TerminalID != "" {
 				m.sessionLeases[lease.TerminalID] = lease

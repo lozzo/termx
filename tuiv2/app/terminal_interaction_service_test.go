@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -66,7 +67,7 @@ func TestTerminalInteractionServiceSyncExplicitSessionTakeoverAcquiresLeaseAndRe
 	})
 	model.sessionID = "session-main"
 	model.sessionViewID = "view-local"
-	model.sessionLeases = map[string]protocol.LeaseInfo{
+	model.sessionLeases = map[string]sessionstore.LeaseInfo{
 		"term-1": {TerminalID: "term-1", SessionID: "session-main", ViewID: "view-remote", PaneID: "pane-remote"},
 	}
 

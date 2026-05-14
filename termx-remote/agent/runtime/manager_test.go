@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"reflect"
 	"strings"
@@ -17,9 +16,11 @@ import (
 	"github.com/lozzow/termx/termx-remote/pairing"
 	pb "github.com/lozzow/termx/termx-remote/protocol/hubgrpc"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
+	"github.com/lozzow/termx/termx-remote/protocol/runtimepb"
 	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
 	"github.com/lozzow/termx/termx-remote/session/token"
 	"github.com/pion/webrtc/v4"
+	"google.golang.org/protobuf/proto"
 )
 
 type inventoryProviderStub struct {
@@ -185,7 +186,7 @@ func TestManagerProvidesTerminalManagementRouterForCloudRTC(t *testing.T) {
 	status, _, errMsg := manager.terminalManagementRouter().RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
 		Method: "create",
 		Path:   "create",
-		Body:   json.RawMessage(`{"command":["/bin/sh"],"name":"cloud shell"}`),
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.TerminalCreateRequest{Command: []string{"/bin/sh"}, Name: "cloud shell"}),
 	})
 	if status == http.StatusForbidden || errMsg == "terminal management is not allowed by connection policy" {
 		t.Fatalf("cloud terminal management router must not be nil or forbidden, got status=%d err=%q", status, errMsg)
@@ -457,14 +458,31 @@ func (s managementProviderStub) RouteTerminalManagementRequest(_ context.Context
 	if req.Path != "create" {
 		return http.StatusNotFound, nil, "unknown terminal management route"
 	}
-	return http.StatusOK, []byte(`{"terminal_id":"cloud-terminal-1"}`), ""
+	return http.StatusOK, marshalRuntimeProtoForStub(&runtimepb.TerminalInventoryItem{TerminalId: "cloud-terminal-1"}), ""
 }
 
 func (s managementProviderStub) SubscribeRemoteEvents(ctx context.Context, _ remotertc.EventFilters) (<-chan []byte, func(), error) {
 	ch := make(chan []byte, 1)
-	ch <- []byte(`{"type":"event"}`)
+	ch <- marshalRuntimeProtoForStub(&runtimepb.EventEnvelope{Type: "event"})
 	close(ch)
 	return ch, func() { _ = ctx }, nil
+}
+
+func mustMarshalRuntimeProto(t *testing.T, msg proto.Message) []byte {
+	t.Helper()
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal runtime proto: %v", err)
+	}
+	return data
+}
+
+func marshalRuntimeProtoForStub(msg proto.Message) []byte {
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }
 
 type cloudAnswererStub struct {

@@ -1,4 +1,4 @@
-package workbenchdoc
+package sessiondoc
 
 func (d *Doc) Clone() *Doc {
 	if d == nil {

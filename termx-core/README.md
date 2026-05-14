@@ -8,7 +8,7 @@
 - protocol / transport
 - pty / vterm / snapshot
 - events
-- shared session / workbench service
+- generic app storage for shell-neutral shared state
 - 可嵌入的 Go API
 
 它不直接提供：
@@ -33,7 +33,7 @@ go test ./...
 - `clientapi/`：shell-neutral client contract
 - `protocol/`：线协议
 - `transport/`：传输抽象与实现
-- `workbenchdoc/` / `workbenchops/` / `workbenchsvc/`：共享 session / workbench contract
+- `storage.go`：公共/私有 app storage，供客户端保存自己的状态
 
 ## 文档
 

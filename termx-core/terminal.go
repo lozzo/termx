@@ -2,7 +2,6 @@ package termx
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -82,11 +81,10 @@ type Terminal struct {
 	// state before switching to live frames.
 	streamMu sync.Mutex
 
-	// These caches hold deep-copied metadata snapshots so hot read paths do not
+	// This cache holds deep-copied metadata snapshots so hot read paths do not
 	// have to rebuild command/tag payloads for every request.
-	protocolInfoCache json.RawMessage
-	listInfoCache     *TerminalInfo
-	metadataVersion   uint64
+	listInfoCache   *TerminalInfo
+	metadataVersion uint64
 
 	attachMu         sync.Mutex
 	attachments      map[string]AttachInfo
@@ -1654,22 +1652,16 @@ func snapshotRowString(row []Cell) string {
 }
 
 func (t *Terminal) invalidateProtocolInfoCacheLocked() {
-	t.protocolInfoCache = nil
 	t.listInfoCache = nil
 	t.metadataVersion++
 }
 
-func (t *Terminal) protocolInfoJSON() (json.RawMessage, error) {
+func (t *Terminal) protocolInfo() *protocol.TerminalInfo {
 	t.attachMu.Lock()
 	resizeOwnerAttachmentCount := t.resizeOwnerAttachmentCountLocked()
 	resizeOwnership := t.resizeOwnershipSnapshotLocked()
 	t.mu.RLock()
 	t.attachMu.Unlock()
-	if cached := t.protocolInfoCache; cached != nil {
-		t.mu.RUnlock()
-		return cached, nil
-	}
-	version := t.metadataVersion
 	resizeOwnership.Size = Size{Cols: t.size.Cols, Rows: t.size.Rows}
 	resizeOwnership.SizeLocked = terminalmeta.SizeLocked(t.tags)
 	if terminalmeta.SizeLocked(t.tags) {
@@ -1680,37 +1672,22 @@ func (t *Terminal) protocolInfoJSON() (json.RawMessage, error) {
 		resizeOwnership.OwnerRemoteAddr = ""
 	}
 
-	// Marshal under the read lock so command/tags/state stay consistent and we
-	// can safely reuse internal metadata without allocating fresh copies.
-	data, err := json.Marshal(protocol.TerminalInfo{
+	info := &protocol.TerminalInfo{
 		ID:                         t.id,
 		Name:                       t.name,
-		Command:                    t.command,
-		Tags:                       t.tags,
+		Command:                    append([]string(nil), t.command...),
+		Tags:                       copyTags(t.tags),
 		Size:                       protocol.Size{Cols: t.size.Cols, Rows: t.size.Rows},
 		State:                      string(t.state),
 		CWD:                        t.cwd,
 		LiveCWD:                    t.cwd,
 		CreatedAt:                  t.createdAt,
-		ExitCode:                   t.exitCode,
+		ExitCode:                   copyIntPtr(t.exitCode),
 		ResizeOwnership:            protocolResizeOwnership(resizeOwnership),
 		ResizeOwnerAttachmentCount: resizeOwnerAttachmentCount,
-	})
+	}
 	t.mu.RUnlock()
-	if err != nil {
-		return nil, err
-	}
-
-	t.mu.Lock()
-	if t.metadataVersion == version && t.protocolInfoCache == nil {
-		t.protocolInfoCache = data
-	}
-	cached := t.protocolInfoCache
-	t.mu.Unlock()
-	if cached == nil {
-		return data, nil
-	}
-	return cached, nil
+	return info
 }
 
 func (t *Terminal) listInfoSnapshot(filter ListOptions) (*TerminalInfo, bool) {
