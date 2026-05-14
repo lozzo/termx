@@ -644,16 +644,21 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	if err != nil {
 		return err
 	}
-	snapshotResult := json.RawMessage(`{
-		"terminal_id":"term-1",
-		"size":{"cols":80,"rows":24},
-		"screen":{"is_alternate":false,"rows":[{"cells":[{"r":"h"},{"r":"i"}]}]},
-		"scrollback":[{"cells":[{"r":"o"},{"r":"k"}]}],
-		"cursor":{"row":0,"col":2,"visible":true,"shape":"block"},
-		"modes":{"alternate_screen":false,"mouse_tracking":false,"bracketed_paste":false,"application_cursor":false,"auto_wrap":true},
-		"timestamp":"2026-03-18T00:00:00Z"
-	}`)
-	if err := sendResponse(tr, req.ID, snapshotResult); err != nil {
+	snapshotResult, err := EncodeSnapshotPayload(&Snapshot{
+		TerminalID: "term-1",
+		Size:       Size{Cols: 80, Rows: 24},
+		Screen: ScreenData{Cells: [][]Cell{
+			{{Content: "h", Width: 1}, {Content: "i", Width: 1}},
+		}},
+		Scrollback: []CompactRow{CompactRowFromCells([]Cell{{Content: "o", Width: 1}, {Content: "k", Width: 1}})},
+		Cursor:     CursorState{Row: 0, Col: 2, Visible: true, Shape: "block"},
+		Modes:      TerminalModes{AutoWrap: true},
+		Timestamp:  time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		return err
+	}
+	if err := sendBinaryResponse(tr, req.ID, snapshotResult); err != nil {
 		return err
 	}
 
@@ -668,17 +673,20 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	if viewportParams.TerminalID != "term-1" || viewportParams.ScrollbackOffset != 1 || viewportParams.ScrollbackLimit != 2 || viewportParams.Cols != 80 {
 		return fmt.Errorf("unexpected grid viewport params: %#v", viewportParams)
 	}
-	viewportResult := json.RawMessage(`{
-		"terminal_id":"term-1",
-		"size":{"cols":80,"rows":24},
-		"rows":[{"cells":[{"r":"o"},{"r":"l"},{"r":"d"}]}],
-		"scrollback_offset":1,
-		"scrollback_limit":2,
-		"scrollback_total":3,
-		"scrollback_has_more":true,
-		"timestamp":"2026-03-18T00:00:00Z"
-	}`)
-	if err := sendResponse(tr, req.ID, viewportResult); err != nil {
+	viewportResult, err := EncodeGridViewportPayload(&GridViewport{
+		TerminalID:        "term-1",
+		Size:              Size{Cols: 80, Rows: 24},
+		Rows:              []CompactRow{CompactRowFromCells([]Cell{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}})},
+		ScrollbackOffset:  1,
+		ScrollbackLimit:   2,
+		ScrollbackTotal:   3,
+		ScrollbackHasMore: true,
+		Timestamp:         time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		return err
+	}
+	if err := sendBinaryResponse(tr, req.ID, viewportResult); err != nil {
 		return err
 	}
 
@@ -988,6 +996,14 @@ func expectRequest(tr *memory.Transport, method string) (Request, error) {
 func sendResponse(tr *memory.Transport, id uint64, result json.RawMessage) error {
 	payload, _ := json.Marshal(Response{ID: id, Result: result})
 	return sendFrame(tr, 0, TypeResponse, payload)
+}
+
+func sendBinaryResponse(tr *memory.Transport, id uint64, result []byte) error {
+	payload, err := EncodeBinaryResponsePayload(id, result)
+	if err != nil {
+		return err
+	}
+	return sendFrame(tr, 0, TypeResponseBinary, payload)
 }
 
 func sendError(tr *memory.Transport, id uint64, code int, message string) error {

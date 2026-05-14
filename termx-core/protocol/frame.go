@@ -11,11 +11,12 @@ const (
 	Version      = 1
 	MaxFrameSize = 4 << 20
 
-	TypeHello    uint8 = 0x00
-	TypeRequest  uint8 = 0x01
-	TypeResponse uint8 = 0x02
-	TypeEvent    uint8 = 0x03
-	TypeError    uint8 = 0x04
+	TypeHello          uint8 = 0x00
+	TypeRequest        uint8 = 0x01
+	TypeResponse       uint8 = 0x02
+	TypeEvent          uint8 = 0x03
+	TypeError          uint8 = 0x04
+	TypeResponseBinary uint8 = 0x05
 
 	TypeInput          uint8 = 0x11
 	TypeResize         uint8 = 0x12

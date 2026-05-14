@@ -244,8 +244,7 @@ func TestServerDoesNotSpecialCaseRemoteRPCMethods(t *testing.T) {
 				attachments,
 				&attachmentsMu,
 				transportScope{},
-				protocol.Request{ID: 1, Method: method, Params: json.RawMessage(`{}`)},
-				func(uint16, uint8, []byte) error { return nil },
+				protocol.Request{ID: 1, Method: method, Params: json.RawMessage(`{}`)}, func(uint16, uint8, []byte) error { return nil },
 			)
 			if err == nil {
 				t.Fatalf("expected %s to be rejected, got code=%d result=%s", method, code, string(result))

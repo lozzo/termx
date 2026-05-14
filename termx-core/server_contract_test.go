@@ -2212,11 +2212,11 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("snapshot request failed: %v", err)
 	}
-	var snap protocol.Snapshot
-	if err := json.Unmarshal(result, &snap); err != nil {
-		t.Fatalf("unmarshal snapshot result failed: %v", err)
+	snap, err := protocol.DecodeSnapshotPayload(result)
+	if err != nil {
+		t.Fatalf("decode snapshot result failed: %v", err)
 	}
-	if snap.TerminalID != info.ID || !protocolSnapshotContains(&snap, "request-path") {
+	if snap.TerminalID != info.ID || !protocolSnapshotContains(snap, "request-path") {
 		t.Fatalf("unexpected snapshot result: %#v", snap)
 	}
 
@@ -2239,9 +2239,9 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("grid viewport request failed: %v", err)
 	}
-	var viewport protocol.GridViewport
-	if err := json.Unmarshal(result, &viewport); err != nil {
-		t.Fatalf("unmarshal grid viewport result failed: %v", err)
+	viewport, err := protocol.DecodeGridViewportPayload(result)
+	if err != nil {
+		t.Fatalf("decode grid viewport result failed: %v", err)
 	}
 	if viewport.TerminalID != info.ID || !protocolRowsContain(viewport.Rows, "history-viewport-grid") {
 		t.Fatalf("unexpected grid viewport result: %#v", viewport)
@@ -2256,7 +2256,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	}
 }
 
-func TestTrimSnapshotResultToFrameBudgetKeepsResponseBelowFrameCap(t *testing.T) {
+func TestTrimSnapshotBinaryResultToFrameBudgetKeepsResponseBelowFrameCap(t *testing.T) {
 	snapshot := &Snapshot{
 		TerminalID:        "large-snapshot-1",
 		Size:              Size{Cols: 120, Rows: 24},
@@ -2270,21 +2270,24 @@ func TestTrimSnapshotResultToFrameBudgetKeepsResponseBelowFrameCap(t *testing.T)
 	for i := 0; i < 500; i++ {
 		snapshot.Scrollback = append(snapshot.Scrollback, []Cell{{Content: fmt.Sprintf("%03d-%s", i, strings.Repeat("x", 12000)), Width: 1}})
 	}
-	encoded, err := json.Marshal(snapshot)
+	encoded, err := protocol.EncodeSnapshotPayload(protocolSnapshotFromCore(snapshot))
 	if err != nil {
 		t.Fatalf("marshal snapshot: %v", err)
 	}
 	if len(encoded) <= snapshotResponseFrameBudget {
 		t.Fatalf("test fixture did not exceed budget: encoded=%d budget=%d", len(encoded), snapshotResponseFrameBudget)
 	}
-	trimmed, result := trimSnapshotResultToFrameBudget(snapshot, encoded, snapshotResponseFrameBudget)
-	responsePayload, err := json.Marshal(protocol.Response{ID: 1, Result: json.RawMessage(result)})
+	trimmed, result := trimSnapshotBinaryResultToFrameBudget(snapshot, encoded, snapshotResponseFrameBudget)
+	responsePayload, err := protocol.EncodeBinaryResponsePayload(1, result)
+	if err != nil {
+		t.Fatalf("encode binary response: %v", err)
+	}
 	if len(responsePayload) > protocol.MaxFrameSize {
 		t.Fatalf("expected trimmed snapshot response under frame cap, got %d > %d", len(responsePayload), protocol.MaxFrameSize)
 	}
-	var snap protocol.Snapshot
-	if err := json.Unmarshal(result, &snap); err != nil {
-		t.Fatalf("unmarshal snapshot: %v", err)
+	snap, err := protocol.DecodeSnapshotPayload(result)
+	if err != nil {
+		t.Fatalf("decode snapshot: %v", err)
 	}
 	if len(snap.Scrollback) >= 500 {
 		t.Fatalf("expected oversized snapshot to be trimmed, got %d rows", len(snap.Scrollback))

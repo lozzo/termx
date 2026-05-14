@@ -1072,9 +1072,8 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 				}
 				s.cfg.logger.Debug("transport hello", "remote", remote, "client", hello.Client, "version", hello.Version)
 				resp, _ := json.Marshal(protocol.Hello{
-					Version:      protocol.Version,
-					Server:       "termx",
-					Capabilities: []string{},
+					Version: protocol.Version,
+					Server:  "termx",
 				})
 				if err := sendFrame(0, protocol.TypeHello, resp); err != nil {
 					return err
@@ -1108,6 +1107,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 				} else {
 					result, code, err = s.handleRequest(sessionCtx, remote, nil, allocator, attachments, &attachmentsMu, scope, req, sendFrame)
 				}
+				perftrace.Count("protocol.request."+req.Method+".result_bytes", len(result))
 				if err != nil {
 					if s.cfg.logger != nil {
 						s.cfg.logger.Warn(
@@ -1126,7 +1126,21 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 					}
 					continue
 				}
-				respPayload, _ := json.Marshal(protocol.Response{ID: req.ID, Result: result})
+				responseType := protocol.TypeResponse
+				var respPayload []byte
+				if protocolResponseResultIsBinary(req.Method) {
+					binaryEncodeFinish := perftrace.Measure("protocol.response.binary.encode." + req.Method)
+					binaryPayload, err := protocol.EncodeBinaryResponsePayload(req.ID, result)
+					binaryEncodeFinish(len(binaryPayload))
+					if err != nil {
+						return sendProtocolError(sendFrame, req.ID, 0, 500, err.Error())
+					}
+					respPayload = binaryPayload
+					responseType = protocol.TypeResponseBinary
+					perftrace.Count("protocol.response.binary.bytes", len(respPayload))
+				} else {
+					respPayload, _ = json.Marshal(protocol.Response{ID: req.ID, Result: result})
+				}
 				if s.cfg.logger != nil {
 					elapsed := time.Since(requestStarted)
 					level := slog.LevelInfo
@@ -1162,7 +1176,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 					}
 					continue
 				}
-				if err := sendFrame(0, protocol.TypeResponse, respPayload); err != nil {
+				if err := sendFrame(0, responseType, respPayload); err != nil {
 					return err
 				}
 			}
@@ -1361,6 +1375,15 @@ func scopedTransportDenied(method string, terminalID string) error {
 	return fmt.Errorf("%w: method %q is not authorized for terminal %q", ErrPermissionDenied, method, terminalID)
 }
 
+func protocolResponseResultIsBinary(method string) bool {
+	switch method {
+	case "snapshot", "grid.viewport":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Server) handleRequest(
 	ctx context.Context,
 	remote string,
@@ -1547,8 +1570,13 @@ func (s *Server) handleRequest(
 		if err != nil {
 			return nil, protocolErrorCode(err), err
 		}
-		result, _ := json.Marshal(snap)
-		snap, result = trimSnapshotResultToFrameBudget(snap, result, snapshotResponseFrameBudget)
+		encodeFinish := perftrace.Measure("protocol.snapshot.encode_binary")
+		result, resultErr := protocol.EncodeSnapshotPayload(protocolSnapshotFromCore(snap))
+		encodeFinish(len(result))
+		snap, result = trimSnapshotBinaryResultToFrameBudget(snap, result, snapshotResponseFrameBudget)
+		if resultErr != nil {
+			return nil, 500, resultErr
+		}
 		s.logProtocolMethodResult(
 			ctx,
 			remote,
@@ -1575,8 +1603,13 @@ func (s *Server) handleRequest(
 		if err != nil {
 			return nil, protocolErrorCode(err), err
 		}
-		result, _ := json.Marshal(viewport)
-		viewport, result = trimGridViewportResultToFrameBudget(viewport, result, snapshotResponseFrameBudget)
+		encodeFinish := perftrace.Measure("protocol.grid_viewport.encode_binary")
+		result, resultErr := protocol.EncodeGridViewportPayload(viewport)
+		encodeFinish(len(result))
+		viewport, result = trimGridViewportBinaryResultToFrameBudget(viewport, result, snapshotResponseFrameBudget)
+		if resultErr != nil {
+			return nil, 500, resultErr
+		}
 		s.logProtocolMethodResult(
 			ctx,
 			remote,

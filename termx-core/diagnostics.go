@@ -132,6 +132,8 @@ func protocolFrameTypeName(typ uint8) string {
 		return "request"
 	case protocol.TypeResponse:
 		return "response"
+	case protocol.TypeResponseBinary:
+		return "response_binary"
 	case protocol.TypeEvent:
 		return "event"
 	case protocol.TypeError:

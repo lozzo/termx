@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package termx.protocol.wirepb;
+
+option go_package = "github.com/lozzow/termx/termx-core/protocol/wirepb";
+
+message ResponseEnvelope {
+  uint64 id = 1;
+  bytes result = 2;
+}
+
+message Size {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+message CursorState {
+  int32 row = 1;
+  int32 col = 2;
+  bool visible = 3;
+  uint32 shape = 4;
+  bool blink = 5;
+}
+
+message TerminalModes {
+  uint32 mask = 1;
+}
+
+message RowSet {
+  bytes rows_blob = 1;
+  repeated int64 timestamps_unix_nano = 2;
+  repeated string row_kinds = 3;
+  repeated bool wrapped = 4;
+}
+
+message Snapshot {
+  string terminal_id = 1;
+  Size size = 2;
+  bool screen_is_alternate = 3;
+  RowSet screen = 4;
+  RowSet scrollback = 5;
+  int64 scrollback_offset = 6;
+  int64 scrollback_total = 7;
+  bool scrollback_has_more = 8;
+  CursorState cursor = 9;
+  TerminalModes modes = 10;
+  int64 timestamp_unix_nano = 11;
+}
+
+message GridViewport {
+  string terminal_id = 1;
+  Size size = 2;
+  RowSet rows = 3;
+  int64 scrollback_offset = 4;
+  int64 scrollback_limit = 5;
+  int64 scrollback_total = 6;
+  bool scrollback_has_more = 7;
+  int64 timestamp_unix_nano = 8;
+}

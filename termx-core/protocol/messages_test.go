@@ -2,163 +2,109 @@ package protocol
 
 import (
 	"bytes"
-	"encoding/json"
 	"testing"
 	"time"
 	"unsafe"
 )
 
-func TestSnapshotUnmarshalJSON(t *testing.T) {
-	raw := []byte(`{
-		"terminal_id": "term-1",
-		"size": {"cols": 80, "rows": 24},
-		"screen": {
-			"is_alternate": false,
-			"rows": [
-				{"cells": [{"r": "h"}, {"r": "i", "s": {"fg": "#ff0000", "b": true}}]}
-			]
+func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
+	snap := &Snapshot{
+		TerminalID: "term-binary",
+		Size:       Size{Cols: 80, Rows: 24},
+		Screen: ScreenData{
+			Cells: [][]Cell{
+				{{Content: "o", Width: 1}, {Content: "k", Width: 1}},
+				{{Content: "重", Width: 2}, {Content: "", Width: 0}},
+			},
+			IsAlternateScreen: true,
 		},
-		"scrollback": [
-			{"cells": [{"r": "o"}, {"r": "k"}]}
-		],
-		"screen_timestamps": ["2026-03-18T00:00:02Z"],
-		"scrollback_timestamps": ["2026-03-18T00:00:01Z"],
-		"screen_row_kinds": ["restart"],
-		"scrollback_row_kinds": ["restart"],
-		"cursor": {"row": 1, "col": 2, "visible": true, "shape": "block"},
-		"modes": {"alternate_screen": false, "alternate_scroll": true, "mouse_tracking": false, "bracketed_paste": true, "application_cursor": false, "auto_wrap": true},
-		"timestamp": "2026-03-18T00:00:00Z"
-	}`)
-
-	var snap Snapshot
-	if err := json.Unmarshal(raw, &snap); err != nil {
-		t.Fatalf("unmarshal snapshot failed: %v", err)
+		Scrollback: []CompactRow{
+			CompactRowFromCells([]Cell{{Content: "h", Width: 1, Style: CellStyle{FG: "#ff0000"}}, {Content: "i", Width: 1, Style: CellStyle{FG: "#ff0000"}}}),
+		},
+		ScreenTimestamps:     []time.Time{time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)},
+		ScrollbackTimestamps: []time.Time{time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC)},
+		ScreenRowKinds:       []string{SnapshotRowKindRestart},
+		ScrollbackRowKinds:   []string{"log"},
+		ScreenWrapped:        []bool{false, true},
+		ScrollbackWrapped:    []bool{true},
+		Cursor:               CursorState{Row: 1, Col: 2, Visible: true, Shape: "bar", Blink: true},
+		Modes:                TerminalModes{AlternateScreen: true, AlternateScroll: true, BracketedPaste: true, ApplicationCursor: true, AutoWrap: true},
+		Timestamp:            time.Date(2026, 3, 18, 2, 0, 0, 0, time.UTC),
 	}
-
-	if snap.TerminalID != "term-1" || snap.Size.Cols != 80 || snap.Size.Rows != 24 {
-		t.Fatalf("unexpected snapshot header: %#v", snap)
+	payload, err := EncodeSnapshotPayload(snap)
+	if err != nil {
+		t.Fatalf("encode snapshot payload failed: %v", err)
 	}
-	if len(snap.Screen.Cells) != 1 || len(snap.Screen.Cells[0]) != 2 {
-		t.Fatalf("unexpected screen cells: %#v", snap.Screen.Cells)
+	if bytes.Contains(payload, []byte(`"terminal_id"`)) || bytes.Contains(payload, []byte(`"cells"`)) {
+		t.Fatalf("expected binary protobuf payload, got %q", payload)
 	}
-	if snap.Screen.Cells[0][1].Style.FG != "#ff0000" || !snap.Screen.Cells[0][1].Style.Bold {
-		t.Fatalf("unexpected styled cell: %#v", snap.Screen.Cells[0][1])
+	decoded, err := DecodeSnapshotPayload(payload)
+	if err != nil {
+		t.Fatalf("decode snapshot payload failed: %v", err)
 	}
-	if row := snap.Scrollback[0].DecodeCells(); len(snap.Scrollback) != 1 || len(row) == 0 || row[0].Content != "o" {
-		t.Fatalf("unexpected scrollback: %#v", snap.Scrollback)
+	if decoded.TerminalID != snap.TerminalID || decoded.Size != snap.Size || !decoded.Screen.IsAlternateScreen {
+		t.Fatalf("unexpected decoded header: %#v", decoded)
 	}
-	if len(snap.ScreenTimestamps) != 1 || !snap.ScreenTimestamps[0].Equal(time.Date(2026, 3, 18, 0, 0, 2, 0, time.UTC)) {
-		t.Fatalf("unexpected screen timestamps: %#v", snap.ScreenTimestamps)
+	if got := rowToStringForTest(decoded.Screen.Cells[0]); got != "ok" {
+		t.Fatalf("unexpected decoded screen row: %q", got)
 	}
-	if len(snap.ScrollbackTimestamps) != 1 || !snap.ScrollbackTimestamps[0].Equal(time.Date(2026, 3, 18, 0, 0, 1, 0, time.UTC)) {
-		t.Fatalf("unexpected scrollback timestamps: %#v", snap.ScrollbackTimestamps)
+	if got := rowToStringForTest(decoded.Screen.Cells[1]); got != "重" {
+		t.Fatalf("unexpected decoded wide row: %q %#v", got, decoded.Screen.Cells[1])
 	}
-	if len(snap.ScreenRowKinds) != 1 || snap.ScreenRowKinds[0] != SnapshotRowKindRestart {
-		t.Fatalf("unexpected screen row kinds: %#v", snap.ScreenRowKinds)
+	if row := decoded.Scrollback[0].DecodeCells(); rowToStringForTest(row) != "hi" || row[0].Style.FG != "#ff0000" {
+		t.Fatalf("unexpected decoded scrollback: %#v", row)
 	}
-	if len(snap.ScrollbackRowKinds) != 1 || snap.ScrollbackRowKinds[0] != SnapshotRowKindRestart {
-		t.Fatalf("unexpected scrollback row kinds: %#v", snap.ScrollbackRowKinds)
+	if len(decoded.ScreenWrapped) != 2 || !decoded.ScreenWrapped[1] || len(decoded.ScrollbackWrapped) != 1 || !decoded.ScrollbackWrapped[0] {
+		t.Fatalf("unexpected decoded wrapped metadata: %#v %#v", decoded.ScreenWrapped, decoded.ScrollbackWrapped)
 	}
-	if !snap.Modes.BracketedPaste || !snap.Modes.AlternateScroll || !snap.Cursor.Visible || snap.Cursor.Shape != "block" {
-		t.Fatalf("unexpected cursor or modes: %#v %#v", snap.Cursor, snap.Modes)
+	if decoded.Cursor.Shape != "bar" || !decoded.Modes.BracketedPaste || !decoded.Modes.AutoWrap {
+		t.Fatalf("unexpected decoded cursor/modes: %#v %#v", decoded.Cursor, decoded.Modes)
 	}
 }
 
-func TestSnapshotUnmarshalCompactRows(t *testing.T) {
-	raw := []byte(`{
-		"terminal_id": "term-compact",
-		"size": {"cols": 80, "rows": 24},
-		"screen": {
-			"is_alternate": false,
-			"rows": [
-				{"t": "plain"},
-				{"runs": [{"t": "red", "s": {"fg": "#ff0000"}}, {"t": "bold", "s": {"b": true}}]}
-			]
-		},
-		"scrollback": [
-			{"t": "history"}
-		],
-		"cursor": {"row": 1, "col": 2, "visible": true, "shape": "block"},
-		"modes": {"auto_wrap": true},
-		"timestamp": "2026-03-18T00:00:00Z"
-	}`)
-
-	var snap Snapshot
-	if err := json.Unmarshal(raw, &snap); err != nil {
-		t.Fatalf("unmarshal compact snapshot failed: %v", err)
+func TestGridViewportPayloadRoundTripUsesBinaryRows(t *testing.T) {
+	viewport := &GridViewport{
+		TerminalID:        "term-grid",
+		Size:              Size{Cols: 120, Rows: 40},
+		Rows:              []CompactRow{CompactRowFromCells([]Cell{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}})},
+		ScrollbackOffset:  10,
+		ScrollbackLimit:   20,
+		ScrollbackTotal:   100,
+		ScrollbackHasMore: true,
+		Timestamp:         time.Date(2026, 3, 18, 3, 0, 0, 0, time.UTC),
 	}
-	if got := rowToStringForTest(snap.Screen.Cells[0]); got != "plain" {
-		t.Fatalf("unexpected compact text row: %q", got)
+	payload, err := EncodeGridViewportPayload(viewport)
+	if err != nil {
+		t.Fatalf("encode viewport payload failed: %v", err)
 	}
-	if got := rowToStringForTest(snap.Screen.Cells[1]); got != "redbold" {
-		t.Fatalf("unexpected compact run row: %q", got)
+	decoded, err := DecodeGridViewportPayload(payload)
+	if err != nil {
+		t.Fatalf("decode viewport payload failed: %v", err)
 	}
-	if snap.Screen.Cells[1][0].Style.FG != "#ff0000" || !snap.Screen.Cells[1][3].Style.Bold {
-		t.Fatalf("unexpected run styles: %#v", snap.Screen.Cells[1])
+	if decoded.TerminalID != viewport.TerminalID || decoded.Size != viewport.Size || decoded.ScrollbackTotal != 100 || !decoded.ScrollbackHasMore {
+		t.Fatalf("unexpected decoded viewport header: %#v", decoded)
 	}
-	if got := compactRowToStringForTest(snap.Scrollback[0]); got != "history" {
-		t.Fatalf("unexpected compact scrollback row: %q", got)
+	if got := compactRowToStringForTest(decoded.Rows[0]); got != "row" {
+		t.Fatalf("unexpected decoded viewport row: %q", got)
 	}
 }
 
-func TestSnapshotUnmarshalCompactRowsReusesASCIIStrings(t *testing.T) {
-	raw := []byte(`{
-		"terminal_id": "term-compact-ascii",
-		"size": {"cols": 80, "rows": 24},
-		"screen": {"rows": [{"t": "aaaa"}]},
-		"scrollback": [{"t": "aaaa"}],
-		"cursor": {"visible": true},
-		"modes": {"auto_wrap": true},
-		"timestamp": "2026-03-18T00:00:00Z"
-	}`)
-	var snap Snapshot
-	if err := json.Unmarshal(raw, &snap); err != nil {
-		t.Fatalf("unmarshal compact snapshot failed: %v", err)
+func TestCompactRowsReuseASCIIStrings(t *testing.T) {
+	rows := CompactRowsFromCells([][]Cell{
+		{{Content: "a", Width: 1}, {Content: "a", Width: 1}, {Content: "a", Width: 1}, {Content: "a", Width: 1}},
+	})
+	decoded := rows[0].DecodeCells()
+	if len(decoded) != 4 {
+		t.Fatalf("unexpected compact row: %#v", decoded)
 	}
-	if len(snap.Screen.Cells) != 1 || len(snap.Screen.Cells[0]) != 4 {
-		t.Fatalf("unexpected compact row: %#v", snap.Screen.Cells)
-	}
-	first := snap.Screen.Cells[0][0].Content
-	for i, cell := range snap.Screen.Cells[0] {
+	first := decoded[0].Content
+	for i, cell := range decoded {
 		if cell.Content != first {
 			t.Fatalf("unexpected content at %d: %q want %q", i, cell.Content, first)
 		}
 		if unsafe.StringData(cell.Content) != unsafe.StringData(first) {
 			t.Fatalf("expected ASCII cell content to reuse backing string at %d", i)
 		}
-	}
-}
-
-func TestGridViewportMarshalUsesCompactRows(t *testing.T) {
-	viewport := GridViewport{
-		TerminalID: "term-compact",
-		Size:       Size{Cols: 80, Rows: 24},
-		Rows: CompactRowsFromCells([][]Cell{
-			{{Content: "o", Width: 1}, {Content: "k", Width: 1}},
-			{{Content: "r", Width: 1, Style: CellStyle{Bold: true}}, {Content: "u", Width: 1, Style: CellStyle{Bold: true}}},
-		}),
-		Timestamp: time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC),
-	}
-	data, err := json.Marshal(viewport)
-	if err != nil {
-		t.Fatalf("marshal compact viewport failed: %v", err)
-	}
-	if bytes.Contains(data, []byte(`"cells"`)) {
-		t.Fatalf("expected compact viewport rows without cells fallback, got %s", data)
-	}
-	if !bytes.Contains(data, []byte(`"t":"ok"`)) || !bytes.Contains(data, []byte(`"runs"`)) {
-		t.Fatalf("expected compact text and runs in viewport JSON, got %s", data)
-	}
-	var decoded GridViewport
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("unmarshal compact viewport failed: %v", err)
-	}
-	if got := compactRowToStringForTest(decoded.Rows[0]); got != "ok" {
-		t.Fatalf("unexpected decoded compact text row: %q", got)
-	}
-	decodedRun := decoded.Rows[1].DecodeCells()
-	if got := rowToStringForTest(decodedRun); got != "ru" || len(decodedRun) == 0 || !decodedRun[0].Style.Bold {
-		t.Fatalf("unexpected decoded compact run row: %q %#v", got, decoded.Rows[1])
 	}
 }
 

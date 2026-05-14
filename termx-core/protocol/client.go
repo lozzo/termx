@@ -347,28 +347,28 @@ func (c *Client) EnsureResize(ctx context.Context, params EnsureResizeParams) (*
 }
 
 func (c *Client) Snapshot(ctx context.Context, terminalID string, offset, limit int) (*Snapshot, error) {
-	var out Snapshot
-	if err := c.doRequest(ctx, "snapshot", SnapshotParams{
+	payload, err := c.doRequestPayload(ctx, "snapshot", SnapshotParams{
 		TerminalID:       terminalID,
 		ScrollbackOffset: offset,
 		ScrollbackLimit:  limit,
-	}, &out); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
-	return &out, nil
+	return DecodeSnapshotPayload(payload)
 }
 
 func (c *Client) GridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*GridViewport, error) {
-	var out GridViewport
-	if err := c.doRequest(ctx, "grid.viewport", GridViewportParams{
+	payload, err := c.doRequestPayload(ctx, "grid.viewport", GridViewportParams{
 		TerminalID:       terminalID,
 		ScrollbackOffset: offset,
 		ScrollbackLimit:  limit,
 		Cols:             cols,
-	}, &out); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
-	return &out, nil
+	return DecodeGridViewportPayload(payload)
 }
 
 func (c *Client) CreateSession(ctx context.Context, params CreateSessionParams) (*SessionSnapshot, error) {
@@ -579,9 +579,22 @@ func (c *Client) HistoryReplay(ctx context.Context, channel uint16, beforeOffset
 }
 
 func (c *Client) doRequest(ctx context.Context, method string, params any, out any) error {
-	payload, err := json.Marshal(params)
+	payload, err := c.doRequestPayload(ctx, method, params)
 	if err != nil {
 		return err
+	}
+	if out == nil {
+		return nil
+	}
+	return json.Unmarshal(payload, out)
+}
+
+func (c *Client) doRequestPayload(ctx context.Context, method string, params any) ([]byte, error) {
+	finish := perftrace.Measure("protocol.request." + method)
+	payload, err := json.Marshal(params)
+	if err != nil {
+		finish(0)
+		return nil, err
 	}
 	id := c.nextID.Add(1)
 	reqPayload, err := json.Marshal(Request{
@@ -590,11 +603,13 @@ func (c *Client) doRequest(ctx context.Context, method string, params any, out a
 		Params: payload,
 	})
 	if err != nil {
-		return err
+		finish(len(payload))
+		return nil, err
 	}
 	frame, err := EncodeFrame(0, TypeRequest, reqPayload)
 	if err != nil {
-		return err
+		finish(len(payload))
+		return nil, err
 	}
 
 	resCh := make(chan result, 1)
@@ -608,20 +623,21 @@ func (c *Client) doRequest(ctx context.Context, method string, params any, out a
 	}()
 
 	if err := c.send(frame); err != nil {
-		return err
+		finish(len(frame))
+		return nil, err
 	}
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		finish(len(frame))
+		return nil, ctx.Err()
 	case res := <-resCh:
 		if res.err != nil {
-			return res.err
+			finish(len(frame))
+			return nil, res.err
 		}
-		if out == nil {
-			return nil
-		}
-		return json.Unmarshal(res.payload, out)
+		finish(len(res.payload))
+		return res.payload, nil
 	}
 }
 
@@ -674,6 +690,18 @@ func (c *Client) readLoop() {
 				c.mu.Unlock()
 				if ch != nil {
 					ch <- result{payload: resp.Result}
+				}
+			case TypeResponseBinary:
+				id, resultPayload, err := DecodeBinaryResponsePayload(payload)
+				if err != nil {
+					c.failAll(err)
+					return
+				}
+				c.mu.Lock()
+				ch := c.waiters[id]
+				c.mu.Unlock()
+				if ch != nil {
+					ch <- result{payload: resultPayload}
 				}
 			case TypeError:
 				var msg ErrorMessage

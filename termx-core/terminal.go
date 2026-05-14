@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lozzow/termx/termx-core/fanout"
 	"github.com/lozzow/termx/termx-core/perftrace"
@@ -1985,9 +1986,114 @@ func protocolCompactRowsFromCore(rows [][]Cell) []protocol.CompactRow {
 	}
 	out := make([]protocol.CompactRow, len(rows))
 	for i, row := range rows {
-		out[i] = protocol.CompactRowFromCells(protocolCellsFromCoreRow(row))
+		out[i] = protocolCompactRowFromCore(row)
 	}
 	return out
+}
+
+func protocolCompactRowFromCore(row []Cell) protocol.CompactRow {
+	last := len(row)
+	for last > 0 {
+		cell := row[last-1]
+		if cell.Content != "" && strings.TrimSpace(cell.Content) != "" {
+			break
+		}
+		if cell.Style != (CellStyle{}) {
+			break
+		}
+		last--
+	}
+	row = row[:last]
+	if len(row) == 0 {
+		return protocol.CompactRow{}
+	}
+	var text strings.Builder
+	allSimple := true
+	allPlain := true
+	for _, cell := range row {
+		cellText, ok := protocolCompactCoreCellText(cell)
+		if !ok {
+			allSimple = false
+			break
+		}
+		if cell.Style != (CellStyle{}) {
+			allPlain = false
+		}
+		text.WriteString(cellText)
+	}
+	if allSimple && allPlain {
+		return protocol.CompactRow{Text: text.String()}
+	}
+	if allSimple {
+		runs := make([]protocol.CompactRowRun, 0, 4)
+		var runText strings.Builder
+		runStyle := row[0].Style
+		flushRun := func() {
+			if runText.Len() == 0 {
+				return
+			}
+			runs = append(runs, protocol.CompactRowRun{
+				Text:  runText.String(),
+				Style: protocolCompactRowStyleFromCore(runStyle),
+			})
+			runText.Reset()
+		}
+		for _, cell := range row {
+			if cell.Style != runStyle {
+				flushRun()
+				runStyle = cell.Style
+			}
+			cellText, _ := protocolCompactCoreCellText(cell)
+			runText.WriteString(cellText)
+		}
+		flushRun()
+		return protocol.CompactRow{Runs: runs}
+	}
+	cells := make([]protocol.CompactRowCell, 0, len(row))
+	for _, cell := range row {
+		cells = append(cells, protocol.CompactRowCell{
+			Content: cell.Content,
+			Width:   protocolCompactCoreCellWidth(cell),
+			Style:   protocolCompactRowStyleFromCore(cell.Style),
+		})
+	}
+	return protocol.CompactRow{Cells: cells}
+}
+
+func protocolCompactCoreCellText(cell Cell) (string, bool) {
+	if cell.Width > 1 {
+		return "", false
+	}
+	if cell.Content == "" {
+		return " ", true
+	}
+	if utf8.RuneCountInString(cell.Content) != 1 {
+		return "", false
+	}
+	return cell.Content, true
+}
+
+func protocolCompactCoreCellWidth(cell Cell) int {
+	if cell.Width > 1 {
+		return cell.Width
+	}
+	return 0
+}
+
+func protocolCompactRowStyleFromCore(style CellStyle) *protocol.CompactRowStyle {
+	if style == (CellStyle{}) {
+		return nil
+	}
+	return &protocol.CompactRowStyle{
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
+	}
 }
 
 func protocolCellsFromCoreRow(row []Cell) []protocol.Cell {
@@ -2030,6 +2136,43 @@ func protocolGridViewportFromCore(viewport *GridViewport) *protocol.GridViewport
 		ScrollbackRowKinds:   cloneStringSlice(viewport.ScrollbackRowKinds),
 		ScrollbackWrapped:    cloneBoolSlice(viewport.ScrollbackWrapped),
 		Timestamp:            viewport.Timestamp,
+	}
+}
+
+func protocolSnapshotFromCore(snapshot *Snapshot) *protocol.Snapshot {
+	if snapshot == nil {
+		return nil
+	}
+	return &protocol.Snapshot{
+		TerminalID:           snapshot.TerminalID,
+		Size:                 protocol.Size{Cols: snapshot.Size.Cols, Rows: snapshot.Size.Rows},
+		Screen:               protocol.ScreenData{Cells: protocolRowsFromCore(snapshot.Screen.Cells), IsAlternateScreen: snapshot.Screen.IsAlternateScreen},
+		Scrollback:           protocolCompactRowsFromCore(snapshot.Scrollback),
+		ScrollbackOffset:     snapshot.ScrollbackOffset,
+		ScrollbackTotal:      snapshot.ScrollbackTotal,
+		ScrollbackHasMore:    snapshot.ScrollbackHasMore,
+		ScreenTimestamps:     cloneTimeSlice(snapshot.ScreenTimestamps),
+		ScrollbackTimestamps: cloneTimeSlice(snapshot.ScrollbackTimestamps),
+		ScreenRowKinds:       cloneStringSlice(snapshot.ScreenRowKinds),
+		ScrollbackRowKinds:   cloneStringSlice(snapshot.ScrollbackRowKinds),
+		ScreenWrapped:        cloneBoolSlice(snapshot.ScreenWrapped),
+		ScrollbackWrapped:    cloneBoolSlice(snapshot.ScrollbackWrapped),
+		Cursor: protocol.CursorState{
+			Row:     snapshot.Cursor.Row,
+			Col:     snapshot.Cursor.Col,
+			Visible: snapshot.Cursor.Visible,
+			Shape:   string(snapshot.Cursor.Shape),
+			Blink:   snapshot.Cursor.Blink,
+		},
+		Modes: protocol.TerminalModes{
+			AlternateScreen:   snapshot.Modes.AlternateScreen,
+			AlternateScroll:   snapshot.Modes.AlternateScroll,
+			MouseTracking:     snapshot.Modes.MouseTracking,
+			BracketedPaste:    snapshot.Modes.BracketedPaste,
+			ApplicationCursor: snapshot.Modes.ApplicationCursor,
+			AutoWrap:          snapshot.Modes.AutoWrap,
+		},
+		Timestamp: snapshot.Timestamp,
 	}
 }
 

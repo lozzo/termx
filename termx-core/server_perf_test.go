@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/vterm"
@@ -96,6 +97,66 @@ func BenchmarkServerListParallel(b *testing.B) {
 	})
 }
 
+var benchmarkProtocolPayloadSink []byte
+
+func TestProtocolPayloadBinaryEncodingSize(t *testing.T) {
+	snapshot := benchmarkProtocolPayloadSnapshot(2000, 160, 40)
+	binarySnapshot, err := protocol.EncodeSnapshotPayload(protocolSnapshotFromCore(snapshot))
+	if err != nil {
+		t.Fatalf("marshal snapshot binary: %v", err)
+	}
+
+	viewport := protocolGridViewportFromCore(benchmarkProtocolPayloadGridViewport(2000, 160))
+	binaryViewport, err := protocol.EncodeGridViewportPayload(viewport)
+	if err != nil {
+		t.Fatalf("marshal grid viewport binary: %v", err)
+	}
+
+	t.Logf("snapshot rows=%d cols=%d screen_rows=%d binary_bytes=%d",
+		len(snapshot.Scrollback),
+		snapshot.Size.Cols,
+		len(snapshot.Screen.Cells),
+		len(binarySnapshot),
+	)
+	t.Logf("grid_viewport rows=%d cols=%d binary_bytes=%d",
+		len(viewport.Rows),
+		viewport.Size.Cols,
+		len(binaryViewport),
+	)
+}
+
+func BenchmarkProtocolSnapshotPayloadBinary(b *testing.B) {
+	snapshot := benchmarkProtocolPayloadSnapshot(2000, 160, 40)
+	b.ReportAllocs()
+	b.ResetTimer()
+	var totalBytes int64
+	for i := 0; i < b.N; i++ {
+		payload, err := protocol.EncodeSnapshotPayload(protocolSnapshotFromCore(snapshot))
+		if err != nil {
+			b.Fatalf("marshal snapshot binary: %v", err)
+		}
+		totalBytes += int64(len(payload))
+		benchmarkProtocolPayloadSink = payload
+	}
+	b.ReportMetric(float64(totalBytes)/float64(b.N), "payload_bytes")
+}
+
+func BenchmarkProtocolGridViewportPayloadBinary(b *testing.B) {
+	viewport := protocolGridViewportFromCore(benchmarkProtocolPayloadGridViewport(2000, 160))
+	b.ReportAllocs()
+	b.ResetTimer()
+	var totalBytes int64
+	for i := 0; i < b.N; i++ {
+		payload, err := protocol.EncodeGridViewportPayload(viewport)
+		if err != nil {
+			b.Fatalf("marshal grid viewport binary: %v", err)
+		}
+		totalBytes += int64(len(payload))
+		benchmarkProtocolPayloadSink = payload
+	}
+	b.ReportMetric(float64(totalBytes)/float64(b.N), "payload_bytes")
+}
+
 func BenchmarkTerminalScreenUpdatePayloadFromDamageLocked(b *testing.B) {
 	scenarios := []struct {
 		name  string
@@ -130,6 +191,107 @@ func BenchmarkTerminalScreenUpdatePayloadFromDamageLocked(b *testing.B) {
 			b.ReportMetric(float64(totalBytes)/float64(b.N), "payload_bytes")
 		})
 	}
+}
+
+func benchmarkProtocolPayloadSnapshot(scrollbackRows, cols, screenRows int) *Snapshot {
+	base := time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC)
+	screen := make([][]Cell, screenRows)
+	screenTimestamps := make([]time.Time, screenRows)
+	screenWrapped := make([]bool, screenRows)
+	for i := 0; i < screenRows; i++ {
+		screen[i] = benchmarkProtocolPayloadCells(100000+i, cols)
+		if i%16 == 0 {
+			screenTimestamps[i] = base.Add(time.Duration(i) * time.Millisecond)
+		}
+		screenWrapped[i] = i%3 == 0
+	}
+
+	scrollback := make([][]Cell, scrollbackRows)
+	scrollbackTimestamps := make([]time.Time, scrollbackRows)
+	scrollbackRowKinds := make([]string, scrollbackRows)
+	scrollbackWrapped := make([]bool, scrollbackRows)
+	for i := 0; i < scrollbackRows; i++ {
+		scrollback[i] = benchmarkProtocolPayloadCells(i, cols)
+		if i%32 == 0 {
+			scrollbackTimestamps[i] = base.Add(time.Duration(i) * time.Millisecond)
+		}
+		if i%251 == 0 {
+			scrollbackRowKinds[i] = SnapshotRowKindRestart
+		}
+		scrollbackWrapped[i] = i%3 == 0
+	}
+
+	return &Snapshot{
+		TerminalID:           "bench-terminal",
+		Size:                 Size{Cols: uint16(cols), Rows: uint16(screenRows)},
+		Screen:               ScreenData{Cells: screen},
+		Scrollback:           scrollback,
+		ScrollbackTotal:      scrollbackRows,
+		ScreenTimestamps:     screenTimestamps,
+		ScrollbackTimestamps: scrollbackTimestamps,
+		ScrollbackRowKinds:   scrollbackRowKinds,
+		ScreenWrapped:        screenWrapped,
+		ScrollbackWrapped:    scrollbackWrapped,
+		Cursor:               CursorState{Row: screenRows - 1, Col: cols / 2, Visible: true, Shape: CursorBlock},
+		Modes:                TerminalModes{BracketedPaste: true, AutoWrap: true},
+		Timestamp:            base.Add(time.Second),
+	}
+}
+
+func benchmarkProtocolPayloadGridViewport(rows, cols int) *GridViewport {
+	base := time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC)
+	gridRows := make([][]Cell, rows)
+	timestamps := make([]time.Time, rows)
+	rowKinds := make([]string, rows)
+	wrapped := make([]bool, rows)
+	for i := 0; i < rows; i++ {
+		gridRows[i] = benchmarkProtocolPayloadCells(i, cols)
+		if i%32 == 0 {
+			timestamps[i] = base.Add(time.Duration(i) * time.Millisecond)
+		}
+		if i%251 == 0 {
+			rowKinds[i] = SnapshotRowKindRestart
+		}
+		wrapped[i] = i%3 == 0
+	}
+	return &GridViewport{
+		TerminalID:           "bench-terminal",
+		Size:                 Size{Cols: uint16(cols), Rows: 40},
+		Rows:                 gridRows,
+		ScrollbackLimit:      rows,
+		ScrollbackTotal:      rows,
+		ScrollbackTimestamps: timestamps,
+		ScrollbackRowKinds:   rowKinds,
+		ScrollbackWrapped:    wrapped,
+		Timestamp:            base.Add(time.Second),
+	}
+}
+
+func benchmarkProtocolPayloadCells(rowIndex, cols int) []Cell {
+	line := benchmarkProtocolPayloadLine(rowIndex)
+	row := make([]Cell, cols)
+	lineIndex := 0
+	for col := 0; col < cols; col++ {
+		style := CellStyle{}
+		if rowIndex%11 == 0 && col >= cols/3 && col < (cols*2)/3 {
+			style = CellStyle{FG: "#f97316", Bold: true}
+		}
+		if rowIndex%37 == 0 && col == cols/2 {
+			row[col] = Cell{Content: "\u754c", Width: 2, Style: style}
+			if col+1 < cols {
+				col++
+				row[col] = Cell{Width: 0, Style: style}
+			}
+			continue
+		}
+		row[col] = Cell{Content: string(line[lineIndex%len(line)]), Width: 1, Style: style}
+		lineIndex++
+	}
+	return row
+}
+
+func benchmarkProtocolPayloadLine(rowIndex int) string {
+	return fmt.Sprintf("%06d alpha beta gamma delta epsilon zeta eta theta iota kappa lambda ", rowIndex)
 }
 
 func BenchmarkScreenUpdateEncodeStages(b *testing.B) {

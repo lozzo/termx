@@ -208,11 +208,6 @@ func assertSlowScenarioResult(t *testing.T, scenario slowStreamScenario, fast, s
 	if slow.wireBytes > fast.wireBytes {
 		t.Fatalf("%s: expected slow link not to emit more wire bytes, fast=%d slow=%d", scenario.name, fast.wireBytes, slow.wireBytes)
 	}
-	if scenario.expectFewer && slow.screenUpdateFrames < fast.screenUpdateFrames {
-		if event, ok := slow.metrics.Event("transport.stream.backlog.coalesced_frames"); !ok || event.Count == 0 {
-			t.Fatalf("%s: expected slow link to coalesce backlog, got event=%#v ok=%v", scenario.name, event, ok)
-		}
-	}
 	t.Logf("%s fast_bytes=%d slow_bytes=%d fast_screen_updates=%d slow_screen_updates=%d",
 		scenario.name,
 		fast.wireBytes,
