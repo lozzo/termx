@@ -10,13 +10,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-remote/bridge"
 	remoteconfig "github.com/lozzow/termx/termx-remote/config"
 	"github.com/lozzow/termx/termx-remote/discovery"
 	"github.com/lozzow/termx/termx-remote/fileapi"
 	"github.com/lozzow/termx/termx-remote/identity"
 	"github.com/lozzow/termx/termx-remote/pairing"
-	"github.com/lozzow/termx/termx-core/protocol"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
 	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
 )
@@ -34,18 +34,18 @@ const (
 var errHubForcedOffline = errors.New("hub forced offline")
 
 type TerminalInventoryItem struct {
-	ID           string   `json:"terminal_id"`
-	Name         string   `json:"name,omitempty"`
-	State        string   `json:"state,omitempty"`
-	Command      []string `json:"command,omitempty"`
-	Cols         int      `json:"cols,omitempty"`
-	Rows         int      `json:"rows,omitempty"`
-	CWD          string   `json:"cwd,omitempty"`
-	Environment  string   `json:"environment,omitempty"`
-	SizeLocked   bool     `json:"size_locked,omitempty"`
-	SizeLockMode string   `json:"size_lock_mode,omitempty"`
-	ResizeOwnership            *protocol.ResizeOwnership `json:"resize_ownership,omitempty"`
-	ResizeOwnerAttachmentCount int                       `json:"resize_owner_attachment_count,omitempty"`
+	ID                         string
+	Name                       string
+	State                      string
+	Command                    []string
+	Cols                       int
+	Rows                       int
+	CWD                        string
+	Environment                string
+	SizeLocked                 bool
+	SizeLockMode               string
+	ResizeOwnership            *protocol.ResizeOwnership
+	ResizeOwnerAttachmentCount int
 }
 
 type InventoryProvider interface {
@@ -53,19 +53,19 @@ type InventoryProvider interface {
 }
 
 type Status struct {
-	State         State       `json:"state"`
-	Detail        string      `json:"detail,omitempty"`
-	DeviceID      string      `json:"device_id,omitempty"`
-	DeviceName    string      `json:"device_name,omitempty"`
-	ControlURL    string      `json:"control_url,omitempty"`
-	HubURL        string      `json:"hub_url,omitempty"`
-	HubURLs       []string    `json:"hub_urls,omitempty"`
-	Hubs          []HubStatus `json:"hubs,omitempty"`
-	DataDir       string      `json:"data_dir,omitempty"`
-	Mode          string      `json:"mode,omitempty"`
-	AllowLAN      bool        `json:"allow_lan"`
-	TerminalCount int         `json:"terminal_count"`
-	UpdatedAt     time.Time   `json:"updated_at"`
+	State         State
+	Detail        string
+	DeviceID      string
+	DeviceName    string
+	ControlURL    string
+	HubURL        string
+	HubURLs       []string
+	Hubs          []HubStatus
+	DataDir       string
+	Mode          string
+	AllowLAN      bool
+	TerminalCount int
+	UpdatedAt     time.Time
 }
 
 type HubKind string
@@ -101,17 +101,17 @@ const (
 )
 
 type HubStatus struct {
-	URL                string             `json:"url"`
-	Kind               HubKind            `json:"kind"`
-	Source             HubSource          `json:"source"`
-	Transport          HubTransport       `json:"transport"`
-	State              HubConnectionState `json:"state"`
-	ConnectedAt        time.Time          `json:"connected_at,omitempty"`
-	LastAckAt          time.Time          `json:"last_ack_at,omitempty"`
-	LastError          string             `json:"last_error,omitempty"`
-	ForcedReason       string             `json:"forced_reason,omitempty"`
-	AllowRelay         bool               `json:"allow_relay,omitempty"`
-	AllowRelayTransfer bool               `json:"allow_relay_transfer,omitempty"`
+	URL                string
+	Kind               HubKind
+	Source             HubSource
+	Transport          HubTransport
+	State              HubConnectionState
+	ConnectedAt        time.Time
+	LastAckAt          time.Time
+	LastError          string
+	ForcedReason       string
+	AllowRelay         bool
+	AllowRelayTransfer bool
 }
 
 type Manager struct {

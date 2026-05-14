@@ -3,8 +3,8 @@ package termx
 import "time"
 
 type Size struct {
-	Cols uint16 `json:"cols"`
-	Rows uint16 `json:"rows"`
+	Cols uint16
+	Rows uint16
 }
 
 type TerminalState string
@@ -36,18 +36,18 @@ type StreamMessage struct {
 }
 
 type TerminalInfo struct {
-	ID                         string            `json:"id"`
-	Name                       string            `json:"name"`
-	Command                    []string          `json:"command"`
-	Tags                       map[string]string `json:"tags,omitempty"`
-	Size                       Size              `json:"size"`
-	State                      TerminalState     `json:"state"`
-	CWD                        string            `json:"cwd,omitempty"`
-	LiveCWD                    string            `json:"live_cwd,omitempty"`
-	CreatedAt                  time.Time         `json:"created_at"`
-	ExitCode                   *int              `json:"exit_code,omitempty"`
-	ResizeOwnership            *ResizeOwnership  `json:"resize_ownership,omitempty"`
-	ResizeOwnerAttachmentCount int               `json:"resize_owner_attachment_count,omitempty"`
+	ID                         string
+	Name                       string
+	Command                    []string
+	Tags                       map[string]string
+	Size                       Size
+	State                      TerminalState
+	CWD                        string
+	LiveCWD                    string
+	CreatedAt                  time.Time
+	ExitCode                   *int
+	ResizeOwnership            *ResizeOwnership
+	ResizeOwnerAttachmentCount int
 }
 
 type StorageScope string
@@ -58,40 +58,40 @@ const (
 )
 
 type StorageEntry struct {
-	AppID     string       `json:"app_id"`
-	Scope     StorageScope `json:"scope"`
-	OwnerID   string       `json:"owner_id,omitempty"`
-	Key       string       `json:"key"`
-	Value     []byte       `json:"value,omitempty"`
-	Version   uint64       `json:"version,omitempty"`
-	UpdatedAt time.Time    `json:"updated_at,omitempty"`
+	AppID     string
+	Scope     StorageScope
+	OwnerID   string
+	Key       string
+	Value     []byte
+	Version   uint64
+	UpdatedAt time.Time
 }
 
 type ResizeOwnership struct {
-	OwnerAttachmentID string `json:"owner_attachment_id,omitempty"`
-	OwnerSurfaceID    string `json:"owner_surface_id,omitempty"`
-	OwnerViewID       string `json:"owner_view_id,omitempty"`
-	OwnerRemoteAddr   string `json:"owner_remote_addr,omitempty"`
-	Size              Size   `json:"size,omitempty"`
-	SizeLocked        bool   `json:"size_locked,omitempty"`
-	Epoch             uint64 `json:"epoch,omitempty"`
+	OwnerAttachmentID string
+	OwnerSurfaceID    string
+	OwnerViewID       string
+	OwnerRemoteAddr   string
+	Size              Size
+	SizeLocked        bool
+	Epoch             uint64
 }
 
 type Cell struct {
-	Content string    `json:"r,omitempty"`
-	Width   int       `json:"w,omitempty"`
-	Style   CellStyle `json:"s,omitempty"`
+	Content string
+	Width   int
+	Style   CellStyle
 }
 
 type CellStyle struct {
-	FG            string `json:"fg,omitempty"`
-	BG            string `json:"bg,omitempty"`
-	Bold          bool   `json:"b,omitempty"`
-	Italic        bool   `json:"i,omitempty"`
-	Underline     bool   `json:"u,omitempty"`
-	Blink         bool   `json:"k,omitempty"`
-	Reverse       bool   `json:"rv,omitempty"`
-	Strikethrough bool   `json:"st,omitempty"`
+	FG            string
+	BG            string
+	Bold          bool
+	Italic        bool
+	Underline     bool
+	Blink         bool
+	Reverse       bool
+	Strikethrough bool
 }
 
 type CursorShape string
@@ -103,46 +103,46 @@ const (
 )
 
 type CursorState struct {
-	Row     int         `json:"row"`
-	Col     int         `json:"col"`
-	Visible bool        `json:"visible"`
-	Shape   CursorShape `json:"shape,omitempty"`
-	Blink   bool        `json:"blink,omitempty"`
+	Row     int
+	Col     int
+	Visible bool
+	Shape   CursorShape
+	Blink   bool
 }
 
 type TerminalModes struct {
-	AlternateScreen   bool `json:"alternate_screen"`
-	AlternateScroll   bool `json:"alternate_scroll,omitempty"`
-	MouseTracking     bool `json:"mouse_tracking"`
-	BracketedPaste    bool `json:"bracketed_paste"`
-	ApplicationCursor bool `json:"application_cursor"`
-	AutoWrap          bool `json:"auto_wrap"`
+	AlternateScreen   bool
+	AlternateScroll   bool
+	MouseTracking     bool
+	BracketedPaste    bool
+	ApplicationCursor bool
+	AutoWrap          bool
 }
 
 type ScreenData struct {
-	Cells             [][]Cell `json:"rows"`
-	IsAlternateScreen bool     `json:"is_alternate"`
+	Cells             [][]Cell
+	IsAlternateScreen bool
 }
 
 const SnapshotRowKindRestart = "restart"
 
 type Snapshot struct {
-	TerminalID           string        `json:"terminal_id"`
-	Size                 Size          `json:"size"`
-	Screen               ScreenData    `json:"screen"`
-	Scrollback           [][]Cell      `json:"scrollback,omitempty"`
-	ScrollbackOffset     int           `json:"scrollback_offset,omitempty"`
-	ScrollbackTotal      int           `json:"scrollback_total,omitempty"`
-	ScrollbackHasMore    bool          `json:"scrollback_has_more,omitempty"`
-	ScreenTimestamps     []time.Time   `json:"screen_timestamps,omitempty"`
-	ScrollbackTimestamps []time.Time   `json:"scrollback_timestamps,omitempty"`
-	ScreenRowKinds       []string      `json:"screen_row_kinds,omitempty"`
-	ScrollbackRowKinds   []string      `json:"scrollback_row_kinds,omitempty"`
-	ScreenWrapped        []bool        `json:"screen_wrapped,omitempty"`
-	ScrollbackWrapped    []bool        `json:"scrollback_wrapped,omitempty"`
-	Cursor               CursorState   `json:"cursor"`
-	Modes                TerminalModes `json:"modes"`
-	Timestamp            time.Time     `json:"timestamp"`
+	TerminalID           string
+	Size                 Size
+	Screen               ScreenData
+	Scrollback           [][]Cell
+	ScrollbackOffset     int
+	ScrollbackTotal      int
+	ScrollbackHasMore    bool
+	ScreenTimestamps     []time.Time
+	ScrollbackTimestamps []time.Time
+	ScreenRowKinds       []string
+	ScrollbackRowKinds   []string
+	ScreenWrapped        []bool
+	ScrollbackWrapped    []bool
+	Cursor               CursorState
+	Modes                TerminalModes
+	Timestamp            time.Time
 }
 
 type SnapshotOptions struct {
@@ -157,17 +157,17 @@ type GridViewportOptions struct {
 }
 
 type GridViewport struct {
-	TerminalID           string      `json:"terminal_id"`
-	Size                 Size        `json:"size"`
-	Rows                 [][]Cell    `json:"rows,omitempty"`
-	ScrollbackOffset     int         `json:"scrollback_offset,omitempty"`
-	ScrollbackLimit      int         `json:"scrollback_limit,omitempty"`
-	ScrollbackTotal      int         `json:"scrollback_total,omitempty"`
-	ScrollbackHasMore    bool        `json:"scrollback_has_more,omitempty"`
-	ScrollbackTimestamps []time.Time `json:"scrollback_timestamps,omitempty"`
-	ScrollbackRowKinds   []string    `json:"scrollback_row_kinds,omitempty"`
-	ScrollbackWrapped    []bool      `json:"scrollback_wrapped,omitempty"`
-	Timestamp            time.Time   `json:"timestamp"`
+	TerminalID           string
+	Size                 Size
+	Rows                 [][]Cell
+	ScrollbackOffset     int
+	ScrollbackLimit      int
+	ScrollbackTotal      int
+	ScrollbackHasMore    bool
+	ScrollbackTimestamps []time.Time
+	ScrollbackRowKinds   []string
+	ScrollbackWrapped    []bool
+	Timestamp            time.Time
 }
 
 type HistoryReplayOptions struct {
@@ -209,10 +209,10 @@ const (
 )
 
 type AttachInfo struct {
-	RemoteAddr  string    `json:"remote_addr"`
-	Mode        string    `json:"mode"`
-	SurfaceID   string    `json:"surface_id,omitempty"`
-	ViewID      string    `json:"view_id,omitempty"`
-	ResizeOwner bool      `json:"resize_owner,omitempty"`
-	AttachedAt  time.Time `json:"attached_at"`
+	RemoteAddr  string
+	Mode        string
+	SurfaceID   string
+	ViewID      string
+	ResizeOwner bool
+	AttachedAt  time.Time
 }
