@@ -40,6 +40,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
+	github.com/lozzow/termx/termx-proto v0.0.0
 	github.com/lozzow/termx/termx-remote v0.0.0
 	github.com/lozzow/termx/termx-shared v0.0.0
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
@@ -88,3 +89,5 @@ replace github.com/lozzow/termx/termx-remote => ../termx-remote
 replace github.com/lozzow/termx/termx-vterm => ../termx-vterm
 
 replace github.com/lozzow/termx/termx-shared => ../termx-shared
+
+replace github.com/lozzow/termx/termx-proto => ../termx-proto

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/protocol/wirepb"
+	"github.com/lozzow/termx/termx-proto/wirepb"
 	"google.golang.org/protobuf/proto"
 )
 

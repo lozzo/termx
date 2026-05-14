@@ -18,6 +18,8 @@ require (
 	golang.org/x/term v0.41.0
 )
 
+require github.com/lozzow/termx/termx-proto v0.0.0 // indirect
+
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.4.2 // indirect
@@ -51,3 +53,5 @@ replace github.com/lozzow/termx/termx-vterm => ../termx-vterm
 replace github.com/charmbracelet/x/vt => ../termx-vterm/third_party/github.com/charmbracelet/x/vt
 
 replace github.com/lozzow/termx/termx-shared => ../termx-shared
+
+replace github.com/lozzow/termx/termx-proto => ../termx-proto

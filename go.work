@@ -4,6 +4,7 @@ use (
 	./termx-cli
 	./termx-core
 	./termx-hub
+	./termx-proto
 	./termx-remote
 	./termx-shared
 	./termx-vterm

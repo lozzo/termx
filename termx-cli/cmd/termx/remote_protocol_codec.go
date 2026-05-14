@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/protocol/wirepb"
+	"github.com/lozzow/termx/termx-proto/wirepb"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 	"google.golang.org/protobuf/proto"
 )

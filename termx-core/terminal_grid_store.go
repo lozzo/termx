@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/protocol/wirepb"
+	"github.com/lozzow/termx/termx-proto/wirepb"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-vterm/vterm"
 	"google.golang.org/protobuf/proto"

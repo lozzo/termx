@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package termx.protocol.wirepb;
 
-option go_package = "github.com/lozzow/termx/termx-core/protocol/wirepb";
+option go_package = "github.com/lozzow/termx/termx-proto/wirepb";
 
 message Empty {}
 

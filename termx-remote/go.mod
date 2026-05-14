@@ -15,6 +15,8 @@ require (
 	google.golang.org/protobuf v1.36.11
 )
 
+require github.com/lozzow/termx/termx-proto v0.0.0 // indirect
+
 require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/lozzow/termx/termx-shared v0.0.0
@@ -46,3 +48,5 @@ replace github.com/lozzow/termx/termx-vterm => ../termx-vterm
 replace github.com/charmbracelet/x/vt => ../termx-vterm/third_party/github.com/charmbracelet/x/vt
 
 replace github.com/lozzow/termx/termx-shared => ../termx-shared
+
+replace github.com/lozzow/termx/termx-proto => ../termx-proto
