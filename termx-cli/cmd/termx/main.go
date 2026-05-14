@@ -17,11 +17,11 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core"
-	"github.com/lozzow/termx/termx-core/clientapi"
 	"github.com/lozzow/termx/termx-core/protocol"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 	tuiv2app "github.com/lozzow/termx/tuiv2/app"
+	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared" //nolint:typecheck
 	qrcode "github.com/skip2/go-qrcode"
 	"github.com/spf13/cobra"
@@ -47,7 +47,7 @@ var (
 			return err
 		}
 		defer client.Close()
-		return tuiv2app.RunWithClient(cfg, clientapi.NewProtocolClient(client), stdin, stdout)
+		return tuiv2app.RunWithClient(cfg, bridge.NewProtocolClient(client), stdin, stdout)
 	}
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
