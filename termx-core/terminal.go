@@ -29,6 +29,7 @@ const (
 	terminalPTYParserChunkMaxBytes = 1024 * 1024
 	terminalPTYParserFlushDelay    = 2 * time.Millisecond
 	terminalPTYParserCloseWait     = 10 * time.Second
+	terminalInlineDamageMaxBytes   = 32 * 1024
 )
 
 type terminalConfig struct {
@@ -1147,6 +1148,23 @@ func (t *Terminal) closeStreamLocked(stream *fanout.Fanout, exitCode *int) {
 
 func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, chunk []byte) {
 	if t == nil || stream == nil || t.vterm == nil || len(chunk) == 0 {
+		return
+	}
+	if len(chunk) > terminalInlineDamageMaxBytes {
+		writeFinish := perftrace.Measure("terminal.screen_update.write_vterm_latest")
+		n, err, damage := t.vterm.WriteForLatestFrame(chunk)
+		writeFinish(len(chunk))
+		if err != nil || n != len(chunk) {
+			dropped := len(chunk) - maxInt(0, n)
+			stream.BroadcastMessage(fanout.StreamMessage{
+				Type:         fanout.StreamSyncLost,
+				DroppedBytes: uint64(dropped),
+			})
+			return
+		}
+		perftrace.Count("terminal.screen_update.latest_frame_fast_path", len(chunk))
+		t.appendGridFromDamageLocked(damage)
+		stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate})
 		return
 	}
 	writeFinish := perftrace.Measure("terminal.screen_update.write_vterm")

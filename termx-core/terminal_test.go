@@ -355,6 +355,54 @@ func TestWriteAuthoritativeScreenUpdateBroadcastsLiveDeltaPayload(t *testing.T) 
 	}
 }
 
+func TestWriteAuthoritativeScreenUpdateLargeChunkUsesLatestFrameAndKeepsScrollback(t *testing.T) {
+	width := 80
+	rows := 24
+	vt := localvterm.New(width, rows, 256, nil)
+	term := &Terminal{
+		id:     "term-large",
+		size:   Size{Cols: uint16(width), Rows: uint16(rows)},
+		state:  StateRunning,
+		vterm:  vt,
+		stream: fanout.New(),
+		grid:   newMemoryTerminalGridStoreForTest(t),
+	}
+	defer term.grid.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := term.stream.Subscribe(ctx)
+
+	var b strings.Builder
+	for i := 0; b.Len() <= terminalInlineDamageMaxBytes; i++ {
+		fmt.Fprintf(&b, "large-row-%04d payload payload payload payload payload payload\r\n", i)
+	}
+
+	term.streamMu.Lock()
+	term.writeAuthoritativeScreenUpdateLocked(term.stream, []byte(b.String()))
+	term.streamMu.Unlock()
+
+	select {
+	case msg := <-stream:
+		if msg.Type != fanout.StreamScreenUpdate {
+			t.Fatalf("expected screen update, got %#v", msg)
+		}
+		if len(msg.Payload) != 0 {
+			t.Fatalf("expected large output to use latest-frame invalidation, got payload bytes=%d", len(msg.Payload))
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for large output update")
+	}
+
+	snap := term.Snapshot(0, 10)
+	if snap.ScrollbackTotal == 0 || len(snap.Scrollback) == 0 {
+		t.Fatalf("expected latest-frame path to persist scrollback, got total=%d rows=%d", snap.ScrollbackTotal, len(snap.Scrollback))
+	}
+	if !snapshotContains(snap, "large-row-") {
+		t.Fatalf("expected snapshot to include large output rows, got %#v", snap)
+	}
+}
+
 func TestSubscribeBootstrapSendsScreenOnlyAndHistoryReplayStaysAvailable(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
