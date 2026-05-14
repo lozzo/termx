@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	"github.com/lozzow/termx/termx-core"
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-shared/terminalmeta"
@@ -62,7 +64,7 @@ func newTestRuntime(t *testing.T) (*Runtime, context.Context) {
 
 	helloCtx, helloCancel := context.WithTimeout(ctx, 2*time.Second)
 	defer helloCancel()
-	if err := client.Hello(helloCtx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := client.Hello(helloCtx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 
@@ -494,7 +496,7 @@ func TestRuntimeScreenUpdateAlsoRefreshesLocalVTermSurface(t *testing.T) {
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	if terminal.PreferSnapshot {
 		t.Fatalf("expected structured screen update to refresh local vterm surface, got %#v", terminal)
@@ -549,7 +551,7 @@ func TestRuntimeScrollbackChangeInvalidatesExhaustedSnapshotState(t *testing.T) 
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: payload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload})
 
 	if terminal.ScrollbackExhausted {
 		t.Fatalf("expected live scrollback change to clear exhausted state, got %#v", terminal)
@@ -599,7 +601,7 @@ func TestRuntimeScreenUpdateUsesIncrementalVTermApplyWhenSupported(t *testing.T)
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	if got := counted.partialCalls.Load(); got == 0 {
 		t.Fatalf("expected incremental apply path, got partialCalls=%d", got)
@@ -643,7 +645,7 @@ func TestRuntimeScreenUpdateAppliesScreenScrollShiftToLocalVTerm(t *testing.T) {
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	screen := terminal.VTerm.ScreenContent()
 	got := []string{
@@ -689,7 +691,7 @@ func TestRuntimeScreenUpdateAppliesOpcodeScrollRectToLocalVTerm(t *testing.T) {
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	screen := terminal.VTerm.ScreenContent()
 	got := []string{
@@ -729,7 +731,7 @@ func TestRuntimeScreenUpdateTitleOnlyKeepsBootstrapPending(t *testing.T) {
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	if !terminal.BootstrapPending {
 		t.Fatalf("expected title-only screen update to keep bootstrap pending, got %#v", terminal)
@@ -768,7 +770,7 @@ func TestRuntimeScreenUpdateTitleOnlyKeepsRecoveryState(t *testing.T) {
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	if terminal.Recovery != (RecoveryState{SyncLost: true, DroppedBytes: 9}) {
 		t.Fatalf("expected title-only screen update to preserve recovery state, got %#v", terminal.Recovery)
@@ -808,7 +810,7 @@ func TestRuntimeScreenUpdateFullReplaceClearsRecoveryState(t *testing.T) {
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	if terminal.Recovery != (RecoveryState{}) {
 		t.Fatalf("expected full-replace screen update to clear recovery, got %#v", terminal.Recovery)
@@ -947,7 +949,7 @@ func TestRuntimeScreenUpdatePreservesWideSnapshotCellsAfterReattach(t *testing.T
 	if err != nil {
 		t.Fatalf("encode screen update: %v", err)
 	}
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	client.sendFrame(9, protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	waitFor(t, func() bool {
 		current := rt.Registry().Get("term-1")
@@ -1394,8 +1396,8 @@ func TestRuntimeResizeFrameDoesNotExposeLocalShrinkMidStateBeforeOutput(t *testi
 		t.Fatalf("resize pane shrink: %v", err)
 	}
 	rt.handleStreamFrame("term-1", protocol.StreamFrame{
-		Type:    protocol.TypeResize,
-		Payload: protocol.EncodeResizePayload(57, 20),
+		Type:    wire.TypeResize,
+		Payload: wire.EncodeResizePayload(57, 20),
 	})
 
 	if !terminal.PreferSnapshot {
@@ -2094,7 +2096,7 @@ func screenUpdateFrameForLines(t *testing.T, cols, rows uint16, lines ...string)
 	if err != nil {
 		t.Fatalf("encode screen update: %v", err)
 	}
-	return protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: payload}
+	return protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload}
 }
 
 func cloneSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {
@@ -2361,8 +2363,8 @@ func TestRuntimeStreamResizeFrameRefreshesSnapshotGeometryDuringBootstrap(t *tes
 
 	// Simulate server sending a resize frame (as if the owner resized the PTY)
 	client.sendFrame(9, protocol.StreamFrame{
-		Type:    protocol.TypeResize,
-		Payload: protocol.EncodeResizePayload(120, 40),
+		Type:    wire.TypeResize,
+		Payload: wire.EncodeResizePayload(120, 40),
 	})
 
 	waitFor(t, func() bool {
@@ -2382,7 +2384,7 @@ func TestRuntimeStreamResizeFrameRefreshesSnapshotGeometryDuringBootstrap(t *tes
 		t.Fatalf("expected bootstrap resize to preserve provisional snapshot content, got %#v", terminal.Snapshot)
 	}
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeBootstrapDone})
+	client.sendFrame(9, protocol.StreamFrame{Type: wire.TypeBootstrapDone})
 	waitFor(t, func() bool {
 		return terminal.Snapshot != nil && terminal.Snapshot.Size.Cols == 120 && terminal.Snapshot.Size.Rows == 40
 	})
@@ -2409,7 +2411,7 @@ func TestRuntimeClosedStreamStopsImmediately(t *testing.T) {
 		t.Fatalf("start stream: %v", err)
 	}
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeClosed, Payload: protocol.EncodeClosedPayload(0)})
+	client.sendFrame(9, protocol.StreamFrame{Type: wire.TypeClosed, Payload: wire.EncodeClosedPayload(0)})
 
 	waitFor(t, func() bool {
 		terminal := rt.Registry().Get("term-1")

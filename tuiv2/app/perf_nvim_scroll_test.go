@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
 	creackpty "github.com/creack/pty"
@@ -258,7 +260,7 @@ func startNvimPerfHarness(t *testing.T, name string) *nvimPerfHarness {
 		t.Fatalf("dial control client: %v", err)
 	}
 	ctrlClient := protocol.NewClient(ctrlTransport)
-	if err := ctrlClient.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := ctrlClient.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello control client: %v", err)
 	}
 	t.Cleanup(func() { _ = ctrlClient.Close() })
@@ -292,7 +294,7 @@ func startNvimPerfHarness(t *testing.T, name string) *nvimPerfHarness {
 		t.Fatalf("dial app client: %v", err)
 	}
 	appClient := protocol.NewClient(appTransport)
-	if err := appClient.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := appClient.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello app client: %v", err)
 	}
 	t.Cleanup(func() { _ = appClient.Close() })

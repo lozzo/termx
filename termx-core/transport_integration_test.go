@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-shared/transport/memory"
 )
@@ -24,7 +26,7 @@ func TestProtocolClientOverMemoryTransport(t *testing.T) {
 	}()
 
 	client := protocol.NewClient(clientTransport)
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 
@@ -96,7 +98,7 @@ func waitProtocolStreamContains(t *testing.T, stream <-chan protocol.StreamFrame
 }
 
 func protocolStreamFrameContainsText(frame protocol.StreamFrame, needle string) bool {
-	if frame.Type != protocol.TypeScreenUpdate {
+	if frame.Type != wire.TypeScreenUpdate {
 		return false
 	}
 	update, err := protocol.DecodeScreenUpdatePayload(frame.Payload)

@@ -18,7 +18,7 @@ require (
 	golang.org/x/term v0.41.0
 )
 
-require github.com/lozzow/termx/termx-proto v0.0.0 // indirect
+require github.com/lozzow/termx/termx-proto v0.0.0
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect

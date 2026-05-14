@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	"github.com/lozzow/termx/termx-core/protocol"
 )
 
@@ -137,7 +139,7 @@ func TestServerStorageEventsDoNotLeakOtherPrivateOwners(t *testing.T) {
 			Types: []protocol.EventType{protocol.EventStorageChanged},
 		}),
 	}, func() {}, &sync.Mutex{}, new(context.CancelFunc), func(_ uint16, typ uint8, payload []byte) error {
-		if typ != protocol.TypeEvent {
+		if typ != wire.TypeEvent {
 			return nil
 		}
 		evt, err := protocol.DecodeEventPayload(payload)

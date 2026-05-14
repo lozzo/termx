@@ -1,4 +1,4 @@
-package protocol
+package wire
 
 import (
 	"encoding/binary"
@@ -30,8 +30,8 @@ const (
 )
 
 var (
-	ErrFrameTooLarge = errors.New("protocol: frame too large")
-	ErrShortPayload  = errors.New("protocol: short payload")
+	ErrFrameTooLarge = errors.New("wire: frame too large")
+	ErrShortPayload  = errors.New("wire: short payload")
 )
 
 type Encoder struct {
@@ -100,7 +100,7 @@ func DecodeFrame(frame []byte) (uint16, uint8, []byte, error) {
 		return 0, 0, nil, ErrFrameTooLarge
 	}
 	if int(length) != len(frame[7:]) {
-		return 0, 0, nil, fmt.Errorf("protocol: malformed frame length")
+		return 0, 0, nil, fmt.Errorf("wire: malformed frame length")
 	}
 	// The payload aliases frame storage so hot paths like transport dispatch
 	// can decode without paying for an extra copy per frame.

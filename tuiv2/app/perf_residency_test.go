@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/termx-core"
 	"github.com/lozzow/termx/termx-core/protocol"
@@ -326,7 +328,7 @@ func dialPerfProtocolClient(t *testing.T, ctx context.Context, socketPath string
 		transport, err := unixtransport.Dial(socketPath)
 		if err == nil {
 			client := protocol.NewClient(transport)
-			if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+			if err := client.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 				lastErr = err
 				_ = client.Close()
 			} else {

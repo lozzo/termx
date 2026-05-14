@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-shared/transport/memory"
 )
@@ -29,7 +31,7 @@ func newE2EClient(t *testing.T, opts ...ServerOption) (*Server, *protocol.Client
 	}()
 
 	client := protocol.NewClient(clientTransport)
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "e2e-test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "e2e-test"}); err != nil {
 		cancel()
 		clientTransport.Close()
 		serverTransport.Close()
@@ -56,7 +58,7 @@ func newE2EProtocolClient(t *testing.T, srv *Server) (*protocol.Client, func()) 
 	}()
 
 	client := protocol.NewClient(clientTransport)
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "e2e-test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "e2e-test"}); err != nil {
 		cancel()
 		clientTransport.Close()
 		serverTransport.Close()
@@ -134,7 +136,7 @@ func waitStreamClosed(t *testing.T, stream <-chan protocol.StreamFrame, timeout 
 			if !ok {
 				return // channel closed
 			}
-			if msg.Type == protocol.TypeClosed {
+			if msg.Type == wire.TypeClosed {
 				return
 			}
 		}
@@ -143,7 +145,7 @@ func waitStreamClosed(t *testing.T, stream <-chan protocol.StreamFrame, timeout 
 
 func streamFrameContainsText(frame protocol.StreamFrame, needle string) bool {
 	switch frame.Type {
-	case protocol.TypeScreenUpdate:
+	case wire.TypeScreenUpdate:
 		update, err := protocol.DecodeScreenUpdatePayload(frame.Payload)
 		if err != nil {
 			return false
@@ -538,8 +540,8 @@ func TestE2E_NaturalExit(t *testing.T) {
 			if !ok {
 				return // closed
 			}
-			if msg.Type == protocol.TypeClosed {
-				code, err := protocol.DecodeClosedPayload(msg.Payload)
+			if msg.Type == wire.TypeClosed {
+				code, err := wire.DecodeClosedPayload(msg.Payload)
 				if err != nil {
 					t.Fatalf("decode closed payload failed: %v", err)
 				}
@@ -569,7 +571,7 @@ func TestE2E_MultiClientAttach(t *testing.T) {
 	ct1, st1 := memory.NewPair()
 	go func() { _ = srv.handleTransport(ctx, st1, "client-1") }()
 	client1 := protocol.NewClient(ct1)
-	if err := client1.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "client-1"}); err != nil {
+	if err := client1.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "client-1"}); err != nil {
 		t.Fatalf("hello client-1 failed: %v", err)
 	}
 	defer client1.Close()
@@ -580,7 +582,7 @@ func TestE2E_MultiClientAttach(t *testing.T) {
 	ct2, st2 := memory.NewPair()
 	go func() { _ = srv.handleTransport(ctx, st2, "client-2") }()
 	client2 := protocol.NewClient(ct2)
-	if err := client2.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "client-2"}); err != nil {
+	if err := client2.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "client-2"}); err != nil {
 		t.Fatalf("hello client-2 failed: %v", err)
 	}
 	defer client2.Close()

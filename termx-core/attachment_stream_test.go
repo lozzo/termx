@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	"github.com/lozzow/termx/termx-core/protocol"
 )
 
@@ -55,7 +57,7 @@ func TestAttachmentStreamPumpReadyGatesScreenUpdatesToLatestFrame(t *testing.T) 
 	pump.screenReady()
 	src <- StreamMessage{Type: StreamScreenUpdate}
 	first := waitSentFrame(t, sent)
-	if first.Type != protocol.TypeScreenUpdate || string(first.Payload) != "frame-1" {
+	if first.Type != wire.TypeScreenUpdate || string(first.Payload) != "frame-1" {
 		t.Fatalf("unexpected first frame: %#v", first)
 	}
 
@@ -66,7 +68,7 @@ func TestAttachmentStreamPumpReadyGatesScreenUpdatesToLatestFrame(t *testing.T) 
 
 	pump.screenReady()
 	second := waitSentFrame(t, sent)
-	if second.Type != protocol.TypeScreenUpdate || string(second.Payload) != "frame-2" {
+	if second.Type != wire.TypeScreenUpdate || string(second.Payload) != "frame-2" {
 		t.Fatalf("unexpected second frame: %#v", second)
 	}
 	assertNoSentFrame(t, sent, 75*time.Millisecond)
@@ -96,7 +98,7 @@ func TestAttachmentStreamPumpCoalescesReadyUpdatesWhileFrameInFlight(t *testing.
 			return StreamMessage{Type: StreamScreenUpdate, Payload: []byte(fmt.Sprintf("frame-%d", latestSeq))}
 		},
 		func(channel uint16, typ uint8, payload []byte) error {
-			if typ == protocol.TypeScreenUpdate {
+			if typ == wire.TypeScreenUpdate {
 				select {
 				case sendStarted <- struct{}{}:
 				default:
@@ -138,7 +140,7 @@ func TestAttachmentStreamPumpCoalescesReadyUpdatesWhileFrameInFlight(t *testing.
 
 	releaseSend <- struct{}{}
 	first := waitSentFrame(t, sent)
-	if first.Type != protocol.TypeScreenUpdate || string(first.Payload) != "frame-1" {
+	if first.Type != wire.TypeScreenUpdate || string(first.Payload) != "frame-1" {
 		t.Fatalf("unexpected first frame: %#v", first)
 	}
 	assertNoSentFrame(t, sent, 75*time.Millisecond)
@@ -146,7 +148,7 @@ func TestAttachmentStreamPumpCoalescesReadyUpdatesWhileFrameInFlight(t *testing.
 	pump.screenReady()
 	releaseSend <- struct{}{}
 	second := waitSentFrame(t, sent)
-	if second.Type != protocol.TypeScreenUpdate || string(second.Payload) != "frame-2" {
+	if second.Type != wire.TypeScreenUpdate || string(second.Payload) != "frame-2" {
 		t.Fatalf("unexpected second frame: %#v", second)
 	}
 	assertNoSentFrame(t, sent, 75*time.Millisecond)

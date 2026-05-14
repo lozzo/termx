@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	"github.com/lozzow/termx/termx-core"
 	"github.com/lozzow/termx/termx-core/protocol"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
@@ -1026,7 +1028,7 @@ func dialClient(path string) (*protocol.Client, error) {
 	}
 	client := protocol.NewClient(conn)
 	if err := client.Hello(context.Background(), protocol.Hello{
-		Version: protocol.Version,
+		Version: wire.Version,
 		Client:  "termx-cli",
 	}); err != nil {
 		return nil, err

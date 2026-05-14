@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	"github.com/lozzow/termx/termx-core/fanout"
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
@@ -145,7 +147,7 @@ func runSlowStreamScenario(t *testing.T, scenario slowStreamScenario, sendDelay 
 	client := protocol.NewClient(clientTransport)
 	defer client.Close()
 
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "slow-test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "slow-test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 	attach, err := client.Attach(ctx, term.id, string(ModeCollaborator))
@@ -176,20 +178,20 @@ func runSlowStreamScenario(t *testing.T, scenario slowStreamScenario, sendDelay 
 				t.Fatal("stream closed before closed frame")
 			}
 			switch frame.Type {
-			case protocol.TypeScreenUpdate:
+			case wire.TypeScreenUpdate:
 				result.screenUpdateFrames++
 				update, err := protocol.DecodeScreenUpdatePayload(frame.Payload)
 				if err != nil {
 					t.Fatalf("decode screen update: %v", err)
 				}
 				result.state = applyStreamScreenUpdateState(result.state, term.id, update)
-			case protocol.TypeResize:
-				cols, rows, err := protocol.DecodeResizePayload(frame.Payload)
+			case wire.TypeResize:
+				cols, rows, err := wire.DecodeResizePayload(frame.Payload)
 				if err != nil {
 					t.Fatalf("decode resize: %v", err)
 				}
 				result.state = resizeStreamScreenState(result.state, term.id, cols, rows)
-			case protocol.TypeClosed:
+			case wire.TypeClosed:
 				result.metrics = perftrace.SnapshotCurrent()
 				assertStreamStateMatchesExpected(t, expected, result.state)
 				assertWireMetricsPresent(t, result.metrics)

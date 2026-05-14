@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	"github.com/lozzow/termx/termx-core"
 	"github.com/lozzow/termx/termx-core/protocol"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
@@ -90,7 +92,7 @@ func TestProtocolClientList(t *testing.T) {
 	client := protocol.NewClient(transport)
 	defer client.Close()
 
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 

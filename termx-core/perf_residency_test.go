@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/transport/memory"
@@ -205,7 +207,7 @@ func TestPerfTerminalStressAttachLatest(t *testing.T) {
 
 	client := protocol.NewClient(clientTransport)
 	defer client.Close()
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "stress-attach"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "stress-attach"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 
@@ -250,12 +252,12 @@ func TestPerfTerminalStressAttachLatest(t *testing.T) {
 				t.Fatalf("stream closed before terminal closed; stats=%+v", stats)
 			}
 			stats.observe(t, frame)
-			if frame.Type == protocol.TypeScreenUpdate {
+			if frame.Type == wire.TypeScreenUpdate {
 				if err := client.StreamReady(ctx, attach.Channel); err != nil {
 					t.Fatalf("stream ready: %v", err)
 				}
 			}
-			if frame.Type == protocol.TypeClosed {
+			if frame.Type == wire.TypeClosed {
 				goto done
 			}
 		}
@@ -352,7 +354,7 @@ func (s *terminalStressProtocolStreamStats) observe(t *testing.T, frame protocol
 	t.Helper()
 	s.frames++
 	switch frame.Type {
-	case protocol.TypeScreenUpdate:
+	case wire.TypeScreenUpdate:
 		s.screenUpdates++
 		s.screenUpdateBytes += len(frame.Payload)
 		update, err := protocol.DecodeScreenUpdatePayload(frame.Payload)
@@ -361,13 +363,13 @@ func (s *terminalStressProtocolStreamStats) observe(t *testing.T, frame protocol
 		}
 		s.decodedOps += len(update.Ops)
 		s.scrollbackAppends += len(update.ScrollbackAppend)
-	case protocol.TypeBootstrapDone:
+	case wire.TypeBootstrapDone:
 		s.bootstrapDone++
-	case protocol.TypeResize:
+	case wire.TypeResize:
 		s.resizes++
-	case protocol.TypeSyncLost:
+	case wire.TypeSyncLost:
 		s.syncLost++
-	case protocol.TypeClosed:
+	case wire.TypeClosed:
 		s.closed++
 	}
 }

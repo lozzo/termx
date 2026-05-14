@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/termx-proto/wire"
 )
 
 const (
@@ -54,13 +54,13 @@ func (s *transportFrameStats) record(channel uint16, typ uint8, payloadBytes int
 		s.streamFrames++
 	}
 	switch typ {
-	case protocol.TypeScreenUpdate:
+	case wire.TypeScreenUpdate:
 		s.screenUpdateFrames++
-	case protocol.TypeInput:
+	case wire.TypeInput:
 		s.inputFrames++
-	case protocol.TypeResize:
+	case wire.TypeResize:
 		s.resizeFrames++
-	case protocol.TypeError:
+	case wire.TypeError:
 		s.errorFrames++
 	}
 	if payloadBytes > s.maxPayloadBytes {
@@ -126,31 +126,31 @@ func (s *transportFrameStats) flush(message string) {
 
 func protocolFrameTypeName(typ uint8) string {
 	switch typ {
-	case protocol.TypeHello:
+	case wire.TypeHello:
 		return "hello"
-	case protocol.TypeRequest:
+	case wire.TypeRequest:
 		return "request"
-	case protocol.TypeResponse:
+	case wire.TypeResponse:
 		return "response"
-	case protocol.TypeResponseBinary:
+	case wire.TypeResponseBinary:
 		return "response_binary"
-	case protocol.TypeEvent:
+	case wire.TypeEvent:
 		return "event"
-	case protocol.TypeError:
+	case wire.TypeError:
 		return "error"
-	case protocol.TypeInput:
+	case wire.TypeInput:
 		return "input"
-	case protocol.TypeResize:
+	case wire.TypeResize:
 		return "resize"
-	case protocol.TypeBootstrapDone:
+	case wire.TypeBootstrapDone:
 		return "bootstrap_done"
-	case protocol.TypeScreenUpdate:
+	case wire.TypeScreenUpdate:
 		return "screen_update"
-	case protocol.TypeStreamReady:
+	case wire.TypeStreamReady:
 		return "stream_ready"
-	case protocol.TypeSyncLost:
+	case wire.TypeSyncLost:
 		return "sync_lost"
-	case protocol.TypeClosed:
+	case wire.TypeClosed:
 		return "closed"
 	default:
 		return "unknown"

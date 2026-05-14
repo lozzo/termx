@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/terminalmeta"
@@ -22,7 +24,7 @@ import (
 	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 
-const snapshotResponseFrameBudget = protocol.MaxFrameSize - 64*1024
+const snapshotResponseFrameBudget = wire.MaxFrameSize - 64*1024
 
 type ServerOption func(*serverConfig)
 
@@ -1073,7 +1075,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 
 	var sendMu sync.Mutex
 	sendFrame := func(channel uint16, typ uint8, payload []byte) error {
-		frame, err := protocol.EncodeFrame(channel, typ, payload)
+		frame, err := wire.EncodeFrame(channel, typ, payload)
 		if err != nil {
 			return err
 		}
@@ -1116,7 +1118,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 			s.cfg.logger.Warn("transport recv failed", "remote", remote, "error", err)
 			return err
 		}
-		channel, typ, payload, err := protocol.DecodeFrame(raw)
+		channel, typ, payload, err := wire.DecodeFrame(raw)
 		if err != nil {
 			s.cfg.logger.Warn("transport decode failed", "remote", remote, "error", err)
 			return err
@@ -1125,23 +1127,23 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 
 		if channel == 0 {
 			switch typ {
-			case protocol.TypeHello:
+			case wire.TypeHello:
 				hello, err := protocol.DecodeHelloPayload(payload)
 				if err != nil {
 					return sendProtocolError(sendFrame, 0, 0, 400, err.Error())
 				}
 				s.cfg.logger.Debug("transport hello", "remote", remote, "client", hello.Client, "version", hello.Version)
 				resp, err := protocol.EncodeHelloPayload(protocol.Hello{
-					Version: protocol.Version,
+					Version: wire.Version,
 					Server:  "termx",
 				})
 				if err != nil {
 					return err
 				}
-				if err := sendFrame(0, protocol.TypeHello, resp); err != nil {
+				if err := sendFrame(0, wire.TypeHello, resp); err != nil {
 					return err
 				}
-			case protocol.TypeRequest:
+			case wire.TypeRequest:
 				req, err := protocol.DecodeRequestPayload(payload)
 				if err != nil {
 					if err := sendProtocolError(sendFrame, 0, 0, 400, err.Error()); err != nil {
@@ -1189,7 +1191,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 					}
 					continue
 				}
-				responseType := protocol.TypeResponse
+				responseType := wire.TypeResponse
 				var respPayload []byte
 				if protocolResponseResultIsBinary(req.Method) {
 					binaryEncodeFinish := perftrace.Measure("protocol.response.binary.encode." + req.Method)
@@ -1199,7 +1201,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 						return sendProtocolError(sendFrame, req.ID, 0, 500, err.Error())
 					}
 					respPayload = binaryPayload
-					responseType = protocol.TypeResponseBinary
+					responseType = wire.TypeResponseBinary
 					perftrace.Count("protocol.response.binary.bytes", len(respPayload))
 				} else {
 					var err error
@@ -1227,7 +1229,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 						"elapsed_ms", diagnosticDurationMillis(elapsed),
 					)
 				}
-				if len(respPayload) > protocol.MaxFrameSize {
+				if len(respPayload) > wire.MaxFrameSize {
 					if s.cfg.logger != nil {
 						s.cfg.logger.Warn(
 							"termx protocol response too large",
@@ -1235,7 +1237,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 							"id", req.ID,
 							"method", req.Method,
 							"response_bytes", len(respPayload),
-							"max_frame_bytes", protocol.MaxFrameSize,
+							"max_frame_bytes", wire.MaxFrameSize,
 						)
 					}
 					if err := sendProtocolError(sendFrame, req.ID, 0, 413, "protocol response too large"); err != nil {
@@ -1255,20 +1257,20 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 		attachmentsMu.RUnlock()
 		if !ok {
 			s.cfg.logger.Warn("transport stream frame for unknown attachment", "remote", remote, "channel", channel, "type", typ)
-			if typ == protocol.TypeInput || typ == protocol.TypeResize {
+			if typ == wire.TypeInput || typ == wire.TypeResize {
 				if err := sendProtocolError(sendFrame, 0, channel, 404, fmt.Sprintf("terminal attachment channel %d is not attached", channel)); err != nil {
 					return err
 				}
 			}
 			continue
 		}
-		if typ == protocol.TypeStreamReady {
+		if typ == wire.TypeStreamReady {
 			attachment.streamReady()
 			continue
 		}
 		if attachment.mode() != ModeCollaborator {
 			s.cfg.logger.Warn("transport stream frame rejected for readonly attachment", "remote", remote, "terminal_id", attachment.terminalID, "channel", channel, "type", typ, "mode", attachment.mode())
-			if typ == protocol.TypeInput || typ == protocol.TypeResize {
+			if typ == wire.TypeInput || typ == wire.TypeResize {
 				if err := sendProtocolError(sendFrame, 0, channel, 403, fmt.Sprintf("terminal attachment channel %d is readonly", channel)); err != nil {
 					return err
 				}
@@ -1276,7 +1278,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 			continue
 		}
 		switch typ {
-		case protocol.TypeInput:
+		case wire.TypeInput:
 			if len(payload) >= coreDiagnosticsLargePayloadBytes && s.cfg.logger != nil {
 				s.cfg.logger.Warn("termx transport large input frame", "remote", remote, "terminal_id", attachment.terminalID, "channel", channel, "bytes", len(payload))
 			}
@@ -1284,14 +1286,14 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 				s.cfg.logger.Warn("transport input failed", "remote", remote, "terminal_id", attachment.terminalID, "error", err)
 				return err
 			}
-		case protocol.TypeResize:
+		case wire.TypeResize:
 			if !attachment.canResize() {
 				continue
 			}
 			if len(payload) != 4 {
 				continue
 			}
-			cols, rows, err := protocol.DecodeResizePayload(payload)
+			cols, rows, err := wire.DecodeResizePayload(payload)
 			if err != nil {
 				continue
 			}
@@ -1304,8 +1306,8 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 				s.cfg.logger.Warn("transport resize failed", "remote", remote, "terminal_id", attachment.terminalID, "error", err)
 				return err
 			}
-		case protocol.TypeHistoryRequest:
-			beforeOffset, limit, err := protocol.DecodeHistoryRequestPayload(payload)
+		case wire.TypeHistoryRequest:
+			beforeOffset, limit, err := wire.DecodeHistoryRequestPayload(payload)
 			if err != nil {
 				if err := sendProtocolError(sendFrame, 0, channel, 400, err.Error()); err != nil {
 					return err
@@ -1322,7 +1324,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 				}
 				continue
 			}
-			replayPayload, err := protocol.EncodeHistoryReplayPayload(replay.Rows, replay.HasMore, []byte(replay.Replay))
+			replayPayload, err := wire.EncodeHistoryReplayPayload(replay.Rows, replay.HasMore, []byte(replay.Replay))
 			if err != nil {
 				return err
 			}
@@ -1339,7 +1341,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 					"replay_bytes", len(replay.Replay),
 				)
 			}
-			if err := sendFrame(channel, protocol.TypeHistoryReplay, replayPayload); err != nil {
+			if err := sendFrame(channel, wire.TypeHistoryReplay, replayPayload); err != nil {
 				return err
 			}
 		}
@@ -2126,7 +2128,7 @@ func (s *Server) handleEventsRequest(
 				cancelSession()
 				return
 			}
-			if err := sendFrame(0, protocol.TypeEvent, payload); err != nil {
+			if err := sendFrame(0, wire.TypeEvent, payload); err != nil {
 				cancelSession()
 				return
 			}
@@ -2380,7 +2382,7 @@ func requireResizePermission(attachments map[uint16]*sessionAttachment, attachme
 }
 
 func sendRawFrame(sendFrame func(uint16, uint8, []byte) error, frame []byte) error {
-	ch, typ, payload, err := protocol.DecodeFrame(frame)
+	ch, typ, payload, err := wire.DecodeFrame(frame)
 	if err != nil {
 		return err
 	}
@@ -2395,7 +2397,7 @@ func sendProtocolError(sendFrame func(uint16, uint8, []byte) error, id uint64, c
 			Message: msg,
 		},
 	})
-	return sendFrame(channel, protocol.TypeError, payload)
+	return sendFrame(channel, wire.TypeError, payload)
 }
 
 func protocolErrorCode(err error) int {

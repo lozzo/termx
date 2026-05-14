@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-shared/transport/memory"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
@@ -58,7 +60,7 @@ func TestProtocolOversizedResponseReturnsErrorAndKeepsTransportOpen(t *testing.T
 	srv := NewServer(WithProtocolMethodHandler(protocolMethodHandlerFunc(func(_ context.Context, method string, _ []byte) ([]byte, int, bool, error) {
 		switch method {
 		case "oversized":
-			return []byte(strings.Repeat("x", protocol.MaxFrameSize+1)), 0, true, nil
+			return []byte(strings.Repeat("x", wire.MaxFrameSize+1)), 0, true, nil
 		case "small":
 			return nil, 0, true, nil
 		default:
@@ -75,7 +77,7 @@ func TestProtocolOversizedResponseReturnsErrorAndKeepsTransportOpen(t *testing.T
 
 	client := protocol.NewClient(clientTransport)
 	defer client.Close()
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 	if err := client.Call(ctx, "oversized", nil, nil); err == nil || !strings.Contains(err.Error(), "protocol error 413") {
@@ -318,7 +320,7 @@ func TestHandleTransportEventsSubscriptionDeliversFilteredEvents(t *testing.T) {
 	client := protocol.NewClient(clientTransport)
 	defer client.Close()
 
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 
@@ -438,7 +440,7 @@ func TestMachineEventsOnlyTransportRejectsUnfilteredEventsSubscription(t *testin
 
 	client := protocol.NewClient(clientTransport)
 	defer client.Close()
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 	if _, err := client.Events(ctx, protocol.EventsParams{}); err == nil {
@@ -463,7 +465,7 @@ func TestHandleTransportEventsSubscriptionReplacesPreviousFilter(t *testing.T) {
 	client := protocol.NewClient(clientTransport)
 	defer client.Close()
 
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 
@@ -560,7 +562,7 @@ func TestHandleTransportSendsProtocolErrors(t *testing.T) {
 
 	sendControlFrame := func(typ uint8, payload []byte) {
 		t.Helper()
-		frame, err := protocol.EncodeFrame(0, typ, payload)
+		frame, err := wire.EncodeFrame(0, typ, payload)
 		if err != nil {
 			t.Fatalf("encode frame failed: %v", err)
 		}
@@ -572,7 +574,7 @@ func TestHandleTransportSendsProtocolErrors(t *testing.T) {
 	expectProtocolError := func(wantID uint64, wantCode int) {
 		t.Helper()
 		_, typ, payload := recvDecodedFrame(t, clientTransport)
-		if typ != protocol.TypeError {
+		if typ != wire.TypeError {
 			t.Fatalf("expected error frame, got type %d", typ)
 		}
 		msg, err := protocol.DecodeErrorPayload(payload)
@@ -584,21 +586,21 @@ func TestHandleTransportSendsProtocolErrors(t *testing.T) {
 		}
 	}
 
-	helloPayload, _ := protocol.EncodeHelloPayload(protocol.Hello{Version: protocol.Version, Client: "test"})
-	sendControlFrame(protocol.TypeHello, helloPayload)
+	helloPayload, _ := protocol.EncodeHelloPayload(protocol.Hello{Version: wire.Version, Client: "test"})
+	sendControlFrame(wire.TypeHello, helloPayload)
 	_, typ, payload := recvDecodedFrame(t, clientTransport)
-	if typ != protocol.TypeHello {
+	if typ != wire.TypeHello {
 		t.Fatalf("expected hello response, got type %d", typ)
 	}
 	hello, err := protocol.DecodeHelloPayload(payload)
 	if err != nil {
 		t.Fatalf("decode hello failed: %v", err)
 	}
-	if hello.Server != "termx" || hello.Version != protocol.Version {
+	if hello.Server != "termx" || hello.Version != wire.Version {
 		t.Fatalf("unexpected hello response: %#v", hello)
 	}
 
-	sendControlFrame(protocol.TypeRequest, []byte("{"))
+	sendControlFrame(wire.TypeRequest, []byte("{"))
 	expectProtocolError(0, 400)
 
 	reqPayload, _ := protocol.EncodeRequestPayload(protocol.Request{
@@ -606,7 +608,7 @@ func TestHandleTransportSendsProtocolErrors(t *testing.T) {
 		Method: "unsupported",
 		Params: mustProtoParams(t, struct{}{}),
 	})
-	sendControlFrame(protocol.TypeRequest, reqPayload)
+	sendControlFrame(wire.TypeRequest, reqPayload)
 	expectProtocolError(1, 400)
 
 	reqPayload, _ = protocol.EncodeRequestPayload(protocol.Request{
@@ -614,7 +616,7 @@ func TestHandleTransportSendsProtocolErrors(t *testing.T) {
 		Method: "kill",
 		Params: mustProtoParams(t, protocol.GetParams{TerminalID: "missing"}),
 	})
-	sendControlFrame(protocol.TypeRequest, reqPayload)
+	sendControlFrame(wire.TypeRequest, reqPayload)
 	expectProtocolError(2, 404)
 
 	_ = clientTransport.Close()
@@ -655,7 +657,7 @@ func TestServerListenAndServeOverUnixSocket(t *testing.T) {
 	client := protocol.NewClient(conn)
 	defer client.Close()
 
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 	list, err := client.List(ctx)
@@ -712,7 +714,7 @@ func TestServerListenAndServeShutdownDoesNotHangWithIdleClient(t *testing.T) {
 
 	clientCtx, cancelClient := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancelClient()
-	if err := client.Hello(clientCtx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+	if err := client.Hello(clientCtx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 
@@ -799,7 +801,7 @@ func TestObserverAttachCannotWriteOrResize(t *testing.T) {
 	client := protocol.NewClient(clientTransport)
 	defer client.Close()
 
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 
@@ -868,7 +870,7 @@ func TestFollowerCollaboratorAttachCanInputButCannotResize(t *testing.T) {
 	client := protocol.NewClient(clientTransport)
 	defer client.Close()
 
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 
@@ -943,7 +945,7 @@ func TestCollaboratorResizeLockedTerminalIsIgnored(t *testing.T) {
 	client := protocol.NewClient(clientTransport)
 	defer client.Close()
 
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 
@@ -1459,7 +1461,7 @@ func TestScopedResizeRequestRequiresAttachmentOwner(t *testing.T) {
 
 	client := protocol.NewClient(clientTransport)
 	defer client.Close()
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 
@@ -1573,7 +1575,7 @@ func TestRevokeCollaboratorsTurnsCollaboratorChannelReadOnly(t *testing.T) {
 	client := protocol.NewClient(clientTransport)
 	defer client.Close()
 
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 
@@ -2212,8 +2214,8 @@ func TestTrimSnapshotBinaryResultToFrameBudgetKeepsResponseBelowFrameCap(t *test
 	if err != nil {
 		t.Fatalf("encode binary response: %v", err)
 	}
-	if len(responsePayload) > protocol.MaxFrameSize {
-		t.Fatalf("expected trimmed snapshot response under frame cap, got %d > %d", len(responsePayload), protocol.MaxFrameSize)
+	if len(responsePayload) > wire.MaxFrameSize {
+		t.Fatalf("expected trimmed snapshot response under frame cap, got %d > %d", len(responsePayload), wire.MaxFrameSize)
 	}
 	snap, err := protocol.DecodeSnapshotPayload(result)
 	if err != nil {
@@ -2359,7 +2361,7 @@ func TestHandleTransportMalformedHelloReturnsProtocolError(t *testing.T) {
 		done <- srv.handleTransport(ctx, serverTransport, "memory")
 	}()
 
-	frame, err := protocol.EncodeFrame(0, protocol.TypeHello, []byte("{"))
+	frame, err := wire.EncodeFrame(0, wire.TypeHello, []byte("{"))
 	if err != nil {
 		t.Fatalf("encode frame failed: %v", err)
 	}
@@ -2368,7 +2370,7 @@ func TestHandleTransportMalformedHelloReturnsProtocolError(t *testing.T) {
 	}
 
 	_, typ, payload := recvDecodedFrame(t, clientTransport)
-	if typ != protocol.TypeError {
+	if typ != wire.TypeError {
 		t.Fatalf("expected protocol error frame, got %d", typ)
 	}
 	msg, err := protocol.DecodeErrorPayload(payload)
@@ -2403,11 +2405,11 @@ func TestHandleTransportRejectsInputForUnknownStreamChannel(t *testing.T) {
 		done <- srv.handleTransport(ctx, serverTransport, "memory")
 	}()
 
-	helloPayload, err := protocol.EncodeHelloPayload(protocol.Hello{Version: protocol.Version, Client: "test"})
+	helloPayload, err := protocol.EncodeHelloPayload(protocol.Hello{Version: wire.Version, Client: "test"})
 	if err != nil {
 		t.Fatalf("encode hello failed: %v", err)
 	}
-	helloFrame, err := protocol.EncodeFrame(0, protocol.TypeHello, helloPayload)
+	helloFrame, err := wire.EncodeFrame(0, wire.TypeHello, helloPayload)
 	if err != nil {
 		t.Fatalf("encode hello frame failed: %v", err)
 	}
@@ -2415,11 +2417,11 @@ func TestHandleTransportRejectsInputForUnknownStreamChannel(t *testing.T) {
 		t.Fatalf("send hello frame failed: %v", err)
 	}
 	channel, typ, _ := recvDecodedFrame(t, clientTransport)
-	if channel != 0 || typ != protocol.TypeHello {
+	if channel != 0 || typ != wire.TypeHello {
 		t.Fatalf("expected hello response, got channel=%d type=%d", channel, typ)
 	}
 
-	inputFrame, err := protocol.EncodeFrame(77, protocol.TypeInput, []byte("echo lost\n"))
+	inputFrame, err := wire.EncodeFrame(77, wire.TypeInput, []byte("echo lost\n"))
 	if err != nil {
 		t.Fatalf("encode input frame failed: %v", err)
 	}
@@ -2427,7 +2429,7 @@ func TestHandleTransportRejectsInputForUnknownStreamChannel(t *testing.T) {
 		t.Fatalf("send input frame failed: %v", err)
 	}
 	channel, typ, payload := recvDecodedFrame(t, clientTransport)
-	if channel != 77 || typ != protocol.TypeError {
+	if channel != 77 || typ != wire.TypeError {
 		t.Fatalf("expected stream error on channel 77, got channel=%d type=%d", channel, typ)
 	}
 	msg, err := protocol.DecodeErrorPayload(payload)
@@ -2463,7 +2465,7 @@ func TestHandleTransportBadResizePayloadIgnoredThenValidResizeWorks(t *testing.T
 	client := protocol.NewClient(clientTransport)
 	defer client.Close()
 
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 
@@ -2484,7 +2486,7 @@ func TestHandleTransportBadResizePayloadIgnoredThenValidResizeWorks(t *testing.T
 		t.Fatalf("attach failed: %v", err)
 	}
 
-	raw, err := protocol.EncodeFrame(attach.Channel, protocol.TypeResize, []byte{1, 2, 3})
+	raw, err := wire.EncodeFrame(attach.Channel, wire.TypeResize, []byte{1, 2, 3})
 	if err != nil {
 		t.Fatalf("encode bad resize frame failed: %v", err)
 	}
@@ -2537,7 +2539,7 @@ func TestHandleTransportSendsClosedFrameOnTerminalExit(t *testing.T) {
 	client := protocol.NewClient(clientTransport)
 	defer client.Close()
 
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
 		t.Fatalf("hello failed: %v", err)
 	}
 
@@ -2568,8 +2570,8 @@ func TestHandleTransportSendsClosedFrameOnTerminalExit(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		msg := <-stream
-		if msg.Type == protocol.TypeClosed {
-			code, err := protocol.DecodeClosedPayload(msg.Payload)
+		if msg.Type == wire.TypeClosed {
+			code, err := wire.DecodeClosedPayload(msg.Payload)
 			if err != nil {
 				t.Fatalf("decode closed payload failed: %v", err)
 			}
@@ -2606,7 +2608,7 @@ func recvDecodedFrame(t *testing.T, tr *memory.Transport) (uint16, uint8, []byte
 	if err != nil {
 		t.Fatalf("recv failed: %v", err)
 	}
-	channel, typ, payload, err := protocol.DecodeFrame(frame)
+	channel, typ, payload, err := wire.DecodeFrame(frame)
 	if err != nil {
 		t.Fatalf("decode frame failed: %v", err)
 	}

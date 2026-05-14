@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/termx-core"
@@ -69,7 +71,7 @@ func TestE2ECreateShellAndInteract(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 	t.Cleanup(func() { _ = pc.Close() })
@@ -193,7 +195,7 @@ func TestE2EInitialAttachResizesAfterFirstWindowSize(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 	t.Cleanup(func() { _ = pc.Close() })
@@ -304,7 +306,7 @@ func TestE2EExitedPaneRestartReusesSameTerminal(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 	t.Cleanup(func() { _ = pc.Close() })
@@ -416,7 +418,7 @@ func TestE2ECreateAfterExitedPaneDoesNotDropBufferedInput(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 	t.Cleanup(func() { _ = pc.Close() })
@@ -541,7 +543,7 @@ func TestE2EAttachAfterExitedPaneKeepsFastEchoWhenChannelIsReused(t *testing.T) 
 		t.Fatalf("dial: %v", err)
 	}
 	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 	t.Cleanup(func() { _ = pc.Close() })
@@ -638,7 +640,7 @@ func TestE2EAttachAfterExitedPaneRestoresCursorHighlight(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 	t.Cleanup(func() { _ = pc.Close() })
@@ -725,7 +727,7 @@ func TestE2EInteractiveShellPromptTitleSurvivesRepeatedLS(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 	t.Cleanup(func() { _ = pc.Close() })
@@ -808,7 +810,7 @@ func TestE2EKeyEnterExecutesCommandInAttachedShell(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 	t.Cleanup(func() { _ = pc.Close() })
@@ -887,7 +889,7 @@ func TestE2EDetachAndReattachThroughPaneMode(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 	t.Cleanup(func() { _ = pc.Close() })
@@ -1004,7 +1006,7 @@ func TestE2EClosePaneLeavesTerminalAttachable(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 	t.Cleanup(func() { _ = pc.Close() })
@@ -1835,7 +1837,7 @@ func newRealMouseE2EEnv(t *testing.T) realMouseE2EEnv {
 		t.Fatalf("dial: %v", err)
 	}
 	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 	t.Cleanup(func() { _ = pc.Close() })
@@ -1887,7 +1889,7 @@ func newRealRestoreE2EEnv(t *testing.T, file persist.WorkspaceStateFileV2) realM
 		t.Fatalf("dial: %v", err)
 	}
 	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 	t.Cleanup(func() { _ = pc.Close() })
@@ -1957,7 +1959,7 @@ func e2eDialProtocolClient(t *testing.T, ctx context.Context, socketPath string)
 		t.Fatalf("dial: %v", err)
 	}
 	pc := protocol.NewClient(tr)
-	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := pc.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		t.Fatalf("hello: %v", err)
 	}
 	t.Cleanup(func() { _ = pc.Close() })

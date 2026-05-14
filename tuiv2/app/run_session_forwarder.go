@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/termx-core/protocol"
 	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
@@ -29,7 +31,7 @@ var newSessionEventsClient = func(ctx context.Context, socketPath string) (sessi
 		return nil, err
 	}
 	client := protocol.NewClient(transport)
-	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version}); err != nil {
 		_ = client.Close()
 		return nil, err
 	}

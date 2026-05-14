@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/transport"
 )
@@ -89,8 +91,8 @@ func (s *clientStream) send(frame StreamFrame) {
 	if s.closed {
 		return
 	}
-	if frame.Type == TypeSyncLost {
-		dropped, err := DecodeSyncLostPayload(frame.Payload)
+	if frame.Type == wire.TypeSyncLost {
+		dropped, err := wire.DecodeSyncLostPayload(frame.Payload)
 		if err != nil {
 			return
 		}
@@ -154,11 +156,11 @@ func (s *clientStream) nextFrame() (StreamFrame, bool) {
 }
 
 func (s *clientStream) enqueueFrameLocked(frame StreamFrame) {
-	if frame.Type == TypeScreenUpdate && s.coalesceQueuedScreenUpdateLocked(frame) {
+	if frame.Type == wire.TypeScreenUpdate && s.coalesceQueuedScreenUpdateLocked(frame) {
 		return
 	}
 	if len(s.queue) >= s.queueLimit {
-		if frame.Type == TypeScreenUpdate {
+		if frame.Type == wire.TypeScreenUpdate {
 			s.noteDroppedOutputLocked(uint64(len(frame.Payload)))
 		}
 		return
@@ -178,7 +180,7 @@ func (s *clientStream) coalesceQueuedScreenUpdateLocked(frame StreamFrame) bool 
 		return false
 	}
 	last := &s.queue[len(s.queue)-1]
-	if last.Type != TypeScreenUpdate {
+	if last.Type != wire.TypeScreenUpdate {
 		return false
 	}
 	payload := frame.Payload
@@ -203,18 +205,18 @@ func (s *clientStream) flushPendingSyncLostLocked() {
 	}
 	if len(s.queue) > 0 {
 		last := &s.queue[len(s.queue)-1]
-		if last.Type == TypeSyncLost {
-			current, err := DecodeSyncLostPayload(last.Payload)
+		if last.Type == wire.TypeSyncLost {
+			current, err := wire.DecodeSyncLostPayload(last.Payload)
 			if err == nil {
-				last.Payload = EncodeSyncLostPayload(current + s.pendingDroppedBytes)
+				last.Payload = wire.EncodeSyncLostPayload(current + s.pendingDroppedBytes)
 				s.pendingDroppedBytes = 0
 				return
 			}
 		}
 	}
 	s.queue = append(s.queue, StreamFrame{
-		Type:    TypeSyncLost,
-		Payload: EncodeSyncLostPayload(s.pendingDroppedBytes),
+		Type:    wire.TypeSyncLost,
+		Payload: wire.EncodeSyncLostPayload(s.pendingDroppedBytes),
 	})
 	s.pendingDroppedBytes = 0
 }
@@ -245,7 +247,7 @@ func (c *Client) Hello(ctx context.Context, hello Hello) error {
 	if err != nil {
 		return err
 	}
-	frame, err := EncodeFrame(0, TypeHello, payload)
+	frame, err := wire.EncodeFrame(0, wire.TypeHello, payload)
 	if err != nil {
 		return err
 	}
@@ -421,7 +423,7 @@ func (c *Client) Input(ctx context.Context, channel uint16, data []byte) error {
 	defer func() {
 		finish(len(data))
 	}()
-	frame, err := EncodeFrame(channel, TypeInput, data)
+	frame, err := wire.EncodeFrame(channel, wire.TypeInput, data)
 	if err != nil {
 		return err
 	}
@@ -429,7 +431,7 @@ func (c *Client) Input(ctx context.Context, channel uint16, data []byte) error {
 }
 
 func (c *Client) Resize(ctx context.Context, channel uint16, cols, rows uint16) error {
-	frame, err := EncodeFrame(channel, TypeResize, EncodeResizePayload(cols, rows))
+	frame, err := wire.EncodeFrame(channel, wire.TypeResize, wire.EncodeResizePayload(cols, rows))
 	if err != nil {
 		return err
 	}
@@ -442,7 +444,7 @@ func (c *Client) StreamReady(ctx context.Context, channel uint16) error {
 		return ctx.Err()
 	default:
 	}
-	frame, err := EncodeFrame(channel, TypeStreamReady, nil)
+	frame, err := wire.EncodeFrame(channel, wire.TypeStreamReady, nil)
 	if err != nil {
 		return err
 	}
@@ -492,7 +494,7 @@ func (c *Client) HistoryReplay(ctx context.Context, channel uint16, beforeOffset
 	stream, stop := c.Stream(channel)
 	defer stop()
 
-	frame, err := EncodeFrame(channel, TypeHistoryRequest, EncodeHistoryRequestPayload(beforeOffset, limit))
+	frame, err := wire.EncodeFrame(channel, wire.TypeHistoryRequest, wire.EncodeHistoryRequestPayload(beforeOffset, limit))
 	if err != nil {
 		return nil, err
 	}
@@ -509,8 +511,8 @@ func (c *Client) HistoryReplay(ctx context.Context, channel uint16, beforeOffset
 				return nil, io.EOF
 			}
 			switch msg.Type {
-			case TypeHistoryReplay:
-				rows, hasMore, replay, err := DecodeHistoryReplayPayload(msg.Payload)
+			case wire.TypeHistoryReplay:
+				rows, hasMore, replay, err := wire.DecodeHistoryReplayPayload(msg.Payload)
 				if err != nil {
 					return nil, err
 				}
@@ -521,13 +523,13 @@ func (c *Client) HistoryReplay(ctx context.Context, channel uint16, beforeOffset
 					HasMore:      hasMore,
 					Replay:       string(replay),
 				}, nil
-			case TypeError:
+			case wire.TypeError:
 				msgErr, err := DecodeErrorPayload(msg.Payload)
 				if err != nil {
 					return nil, err
 				}
 				return nil, fmt.Errorf("protocol error %d: %s", msgErr.Error.Code, msgErr.Error.Message)
-			case TypeClosed:
+			case wire.TypeClosed:
 				return nil, io.EOF
 			}
 		}
@@ -562,7 +564,7 @@ func (c *Client) doRequestPayload(ctx context.Context, method string, params any
 		finish(len(payload))
 		return nil, err
 	}
-	frame, err := EncodeFrame(0, TypeRequest, reqPayload)
+	frame, err := wire.EncodeFrame(0, wire.TypeRequest, reqPayload)
 	if err != nil {
 		finish(len(payload))
 		return nil, err
@@ -611,16 +613,16 @@ func (c *Client) readLoop() {
 			c.failAll(err)
 			return
 		}
-		channel, typ, payload, err := DecodeFrame(frame)
+		channel, typ, payload, err := wire.DecodeFrame(frame)
 		if err != nil {
 			c.failAll(err)
 			return
 		}
 		if channel == 0 {
 			switch typ {
-			case TypeHello:
+			case wire.TypeHello:
 				c.helloCh <- result{}
-			case TypeEvent:
+			case wire.TypeEvent:
 				evt, err := DecodeEventPayload(payload)
 				if err != nil {
 					c.failAll(err)
@@ -635,7 +637,7 @@ func (c *Client) readLoop() {
 					default:
 					}
 				}
-			case TypeResponse:
+			case wire.TypeResponse:
 				resp, err := DecodeResponsePayload(payload)
 				if err != nil {
 					c.failAll(err)
@@ -647,7 +649,7 @@ func (c *Client) readLoop() {
 				if ch != nil {
 					ch <- result{payload: resp.Result}
 				}
-			case TypeResponseBinary:
+			case wire.TypeResponseBinary:
 				id, resultPayload, err := DecodeBinaryResponsePayload(payload)
 				if err != nil {
 					c.failAll(err)
@@ -659,7 +661,7 @@ func (c *Client) readLoop() {
 				if ch != nil {
 					ch <- result{payload: resultPayload}
 				}
-			case TypeError:
+			case wire.TypeError:
 				msg, err := DecodeErrorPayload(payload)
 				if err != nil {
 					c.failAll(err)

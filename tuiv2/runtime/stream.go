@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lozzow/termx/termx-proto/wire"
+
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
@@ -109,10 +111,10 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 			}
 			terminal.Stream.RetryCount = 0
 			r.handleStreamFrame(terminalID, frame)
-			if frame.Type == protocol.TypeScreenUpdate {
+			if frame.Type == wire.TypeScreenUpdate {
 				r.deferTerminalStreamReady(terminalID, channel)
 			}
-			if frame.Type == protocol.TypeClosed {
+			if frame.Type == wire.TypeClosed {
 				return
 			}
 			if !ok {
@@ -191,15 +193,15 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 		return
 	}
 	switch frame.Type {
-	case protocol.TypeScreenUpdate:
+	case wire.TypeScreenUpdate:
 		r.handleStructuredScreenUpdateFrame(terminal, terminalID, frame)
-	case protocol.TypeResize:
+	case wire.TypeResize:
 		r.handleResizeFrame(terminal, terminalID, frame)
-	case protocol.TypeBootstrapDone:
+	case wire.TypeBootstrapDone:
 		r.handleBootstrapDoneFrame(terminal, terminalID)
-	case protocol.TypeSyncLost:
+	case wire.TypeSyncLost:
 		r.handleSyncLostFrame(terminal, terminalID, frame)
-	case protocol.TypeClosed:
+	case wire.TypeClosed:
 		r.handleClosedFrame(terminal, frame)
 	}
 }
@@ -215,7 +217,7 @@ func (r *Runtime) handleStructuredScreenUpdateFrame(terminal *TerminalRuntime, t
 }
 
 func (r *Runtime) handleResizeFrame(terminal *TerminalRuntime, terminalID string, frame protocol.StreamFrame) {
-	cols, rows, err := protocol.DecodeResizePayload(frame.Payload)
+	cols, rows, err := wire.DecodeResizePayload(frame.Payload)
 	if err != nil || cols == 0 || rows == 0 {
 		return
 	}
@@ -276,7 +278,7 @@ func (r *Runtime) handleSyncLostFrame(terminal *TerminalRuntime, terminalID stri
 	}
 	terminal.BootstrapPending = false
 	terminal.Recovery.SyncLost = true
-	dropped, err := protocol.DecodeSyncLostPayload(frame.Payload)
+	dropped, err := wire.DecodeSyncLostPayload(frame.Payload)
 	if err == nil {
 		terminal.Recovery.DroppedBytes += dropped
 	}
@@ -286,7 +288,7 @@ func (r *Runtime) handleSyncLostFrame(terminal *TerminalRuntime, terminalID stri
 func (r *Runtime) handleClosedFrame(terminal *TerminalRuntime, frame protocol.StreamFrame) {
 	terminal.Stream.Active = false
 	terminal.BootstrapPending = false
-	code, err := protocol.DecodeClosedPayload(frame.Payload)
+	code, err := wire.DecodeClosedPayload(frame.Payload)
 	if err == nil {
 		exitCode := int(code)
 		terminal.ExitCode = &exitCode
@@ -298,15 +300,15 @@ func (r *Runtime) handleClosedFrame(terminal *TerminalRuntime, frame protocol.St
 
 func streamFrameMetric(frameType uint8) string {
 	switch frameType {
-	case protocol.TypeResize:
+	case wire.TypeResize:
 		return "runtime.stream.resize"
-	case protocol.TypeScreenUpdate:
+	case wire.TypeScreenUpdate:
 		return "runtime.stream.screen_update"
-	case protocol.TypeBootstrapDone:
+	case wire.TypeBootstrapDone:
 		return "runtime.stream.bootstrap_done"
-	case protocol.TypeSyncLost:
+	case wire.TypeSyncLost:
 		return "runtime.stream.sync_lost"
-	case protocol.TypeClosed:
+	case wire.TypeClosed:
 		return "runtime.stream.closed"
 	default:
 		return "runtime.stream.unknown"

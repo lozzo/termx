@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/termx-proto/wire"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 )
 
@@ -159,8 +159,8 @@ func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) error {
 	if !ok {
 		return nil
 	}
-	if len(payload) > protocol.MaxFrameSize {
-		syncLostPayload := protocol.EncodeSyncLostPayload(uint64(len(payload)))
+	if len(payload) > wire.MaxFrameSize {
+		syncLostPayload := wire.EncodeSyncLostPayload(uint64(len(payload)))
 		if p.logger != nil {
 			p.logger.Warn(
 				"termx attachment stream payload exceeded frame cap",
@@ -169,13 +169,13 @@ func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) error {
 				"channel", p.channel,
 				"type", streamMessageTypeName(msg.Type),
 				"payload_bytes", len(payload),
-				"max_frame_bytes", protocol.MaxFrameSize,
+				"max_frame_bytes", wire.MaxFrameSize,
 			)
 		}
-		if err := p.sendFrame(p.channel, protocol.TypeSyncLost, syncLostPayload); err != nil {
+		if err := p.sendFrame(p.channel, wire.TypeSyncLost, syncLostPayload); err != nil {
 			return err
 		}
-		p.recordSentFrame(protocol.TypeSyncLost, len(syncLostPayload))
+		p.recordSentFrame(wire.TypeSyncLost, len(syncLostPayload))
 		return nil
 	}
 	if err := p.sendFrame(p.channel, typ, payload); err != nil {
@@ -449,19 +449,19 @@ func streamMessagePayloadBytes(msg StreamMessage) int {
 func streamMessageFramePayload(msg StreamMessage) (uint8, []byte, bool) {
 	switch msg.Type {
 	case StreamSyncLost:
-		return protocol.TypeSyncLost, protocol.EncodeSyncLostPayload(msg.DroppedBytes), true
+		return wire.TypeSyncLost, wire.EncodeSyncLostPayload(msg.DroppedBytes), true
 	case StreamResize:
-		return protocol.TypeResize, protocol.EncodeResizePayload(msg.Cols, msg.Rows), true
+		return wire.TypeResize, wire.EncodeResizePayload(msg.Cols, msg.Rows), true
 	case StreamBootstrapDone:
-		return protocol.TypeBootstrapDone, nil, true
+		return wire.TypeBootstrapDone, nil, true
 	case StreamScreenUpdate:
-		return protocol.TypeScreenUpdate, msg.Payload, true
+		return wire.TypeScreenUpdate, msg.Payload, true
 	case StreamClosed:
 		code := 0
 		if msg.ExitCode != nil {
 			code = *msg.ExitCode
 		}
-		return protocol.TypeClosed, protocol.EncodeClosedPayload(code), true
+		return wire.TypeClosed, wire.EncodeClosedPayload(code), true
 	default:
 		return 0, nil, false
 	}
