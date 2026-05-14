@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/transport"
+	"github.com/lozzow/termx/termx-shared/transport"
 )
 
 func TestListenerDialAcceptRoundTrip(t *testing.T) {

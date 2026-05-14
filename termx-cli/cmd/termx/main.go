@@ -19,8 +19,8 @@ import (
 	"github.com/lozzow/termx/termx-core"
 	"github.com/lozzow/termx/termx-core/clientapi"
 	"github.com/lozzow/termx/termx-core/protocol"
-	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
+	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 	tuiv2app "github.com/lozzow/termx/tuiv2/app"
 	"github.com/lozzow/termx/tuiv2/shared" //nolint:typecheck
 	qrcode "github.com/skip2/go-qrcode"

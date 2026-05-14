@@ -6,7 +6,6 @@ toolchain go1.26.1
 
 require (
 	github.com/creack/pty v1.1.24
-	github.com/klauspost/compress v1.18.5
 	golang.org/x/sys v0.42.0
 	golang.org/x/term v0.41.0
 	google.golang.org/protobuf v1.36.11
@@ -16,6 +15,7 @@ require (
 	github.com/charmbracelet/ultraviolet v0.0.0-20260303162955-0b88c25f3fff // indirect
 	github.com/charmbracelet/x/ansi v0.11.6 // indirect
 	github.com/charmbracelet/x/vt v0.0.0-20260316093931-f2fb44ab3145 // indirect
+	github.com/klauspost/compress v1.18.5 // indirect
 	golang.org/x/text v0.22.0 // indirect
 )
 

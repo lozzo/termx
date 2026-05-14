@@ -13,10 +13,10 @@ import (
 	"time"
 
 	termx "github.com/lozzow/termx/termx-core"
-	"github.com/lozzow/termx/termx-core/transport"
 	"github.com/lozzow/termx/termx-remote/discovery"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 	pb "github.com/lozzow/termx/termx-remote/protocol/hubgrpc"
+	"github.com/lozzow/termx/termx-shared/transport"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/spf13/cobra"
 )

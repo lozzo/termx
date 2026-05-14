@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core/protocol"
-	"github.com/lozzow/termx/termx-core/transport"
-	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/terminalmeta"
+	"github.com/lozzow/termx/termx-shared/transport"
+	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 

@@ -5,7 +5,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/lozzow/termx/termx-core/transport"
+	"github.com/lozzow/termx/termx-shared/transport"
 )
 
 type Transport struct {

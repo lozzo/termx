@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core/protocol"
-	"github.com/lozzow/termx/termx-core/transport"
 	"github.com/lozzow/termx/termx-remote/agent/runtime"
 	remoteconfig "github.com/lozzow/termx/termx-remote/config"
 	"github.com/lozzow/termx/termx-remote/fileapi"
@@ -21,6 +20,7 @@ import (
 	"github.com/lozzow/termx/termx-remote/protocol/runtimepb"
 	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
 	"github.com/lozzow/termx/termx-shared/terminalmeta"
+	"github.com/lozzow/termx/termx-shared/transport"
 	"google.golang.org/protobuf/proto"
 )
 

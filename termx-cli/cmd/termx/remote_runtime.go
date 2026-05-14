@@ -7,9 +7,9 @@ import (
 
 	termx "github.com/lozzow/termx/termx-core"
 	"github.com/lozzow/termx/termx-core/protocol"
-	"github.com/lozzow/termx/termx-core/transport"
 	termxremote "github.com/lozzow/termx/termx-remote"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
+	"github.com/lozzow/termx/termx-shared/transport"
 )
 
 type remoteRuntimeHost struct {

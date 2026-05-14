@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/transport/memory"
+	"github.com/lozzow/termx/termx-shared/transport/memory"
 )
 
 var errConcurrentSend = errors.New("concurrent send")

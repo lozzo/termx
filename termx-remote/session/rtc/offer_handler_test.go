@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/transport"
 	"github.com/lozzow/termx/termx-remote/fileapi"
 	hubv1 "github.com/lozzow/termx/termx-remote/protocol/hubv1"
 	"github.com/lozzow/termx/termx-remote/protocol/runtimepb"
+	"github.com/lozzow/termx/termx-shared/transport"
 	"github.com/pion/webrtc/v4"
 	"google.golang.org/protobuf/proto"
 )

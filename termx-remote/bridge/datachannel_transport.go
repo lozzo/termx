@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/transport"
+	"github.com/lozzow/termx/termx-shared/transport"
 	"github.com/pion/webrtc/v4"
 )
 

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core/protocol"
-	"github.com/lozzow/termx/termx-core/transport/memory"
+	"github.com/lozzow/termx/termx-shared/transport/memory"
 )
 
 func TestProtocolClientOverMemoryTransport(t *testing.T) {

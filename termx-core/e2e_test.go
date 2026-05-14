@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core/protocol"
-	"github.com/lozzow/termx/termx-core/transport/memory"
+	"github.com/lozzow/termx/termx-shared/transport/memory"
 )
 
 // newE2EClient creates a Server, a memory transport pair, and a protocol Client

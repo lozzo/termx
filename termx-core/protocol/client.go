@@ -7,8 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/lozzow/termx/termx-core/transport"
 	"github.com/lozzow/termx/termx-shared/perftrace"
+	"github.com/lozzow/termx/termx-shared/transport"
 )
 
 type Client struct {

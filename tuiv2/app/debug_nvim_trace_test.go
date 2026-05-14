@@ -17,7 +17,7 @@ import (
 	creackpty "github.com/creack/pty"
 	"github.com/lozzow/termx/termx-core"
 	"github.com/lozzow/termx/termx-core/protocol"
-	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
+	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"

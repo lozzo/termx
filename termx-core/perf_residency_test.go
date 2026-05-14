@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core/protocol"
-	"github.com/lozzow/termx/termx-core/transport/memory"
 	"github.com/lozzow/termx/termx-shared/perftrace"
+	"github.com/lozzow/termx/termx-shared/transport/memory"
 )
 
 type daemonResidencySnapshot struct {

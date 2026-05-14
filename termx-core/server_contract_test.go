@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core/protocol"
-	"github.com/lozzow/termx/termx-core/transport/memory"
-	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
+	"github.com/lozzow/termx/termx-shared/transport/memory"
+	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
 	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 

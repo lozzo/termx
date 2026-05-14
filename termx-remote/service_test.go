@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/termx-core/protocol"
-	"github.com/lozzow/termx/termx-core/transport"
 	"github.com/lozzow/termx/termx-remote/pairing"
 	remoteprotocol "github.com/lozzow/termx/termx-remote/protocol"
 	"github.com/lozzow/termx/termx-remote/protocol/runtimepb"
 	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
+	"github.com/lozzow/termx/termx-shared/transport"
 	"google.golang.org/protobuf/proto"
 )
 

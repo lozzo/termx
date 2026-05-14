@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/transport"
 	"github.com/lozzow/termx/termx-remote/bridge"
 	remoteconfig "github.com/lozzow/termx/termx-remote/config"
 	"github.com/lozzow/termx/termx-remote/fileapi"
@@ -19,6 +18,7 @@ import (
 	"github.com/lozzow/termx/termx-remote/protocol/runtimepb"
 	remotertc "github.com/lozzow/termx/termx-remote/session/rtc"
 	"github.com/lozzow/termx/termx-remote/session/token"
+	"github.com/lozzow/termx/termx-shared/transport"
 	"github.com/pion/webrtc/v4"
 	"google.golang.org/protobuf/proto"
 )
