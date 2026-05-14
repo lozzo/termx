@@ -12,7 +12,7 @@ import (
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
-	charmvt "github.com/charmbracelet/x/vt"
+	charmvt "github.com/lozzow/termx/termx-vterm/internal/vt"
 	"golang.org/x/text/unicode/norm"
 )
 

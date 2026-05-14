@@ -1,7 +1,7 @@
 package vterm
 
 import (
-	charmvt "github.com/charmbracelet/x/vt"
+	charmvt "github.com/lozzow/termx/termx-vterm/internal/vt"
 	"strings"
 	"sync"
 	"testing"

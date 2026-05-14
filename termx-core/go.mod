@@ -14,7 +14,6 @@ require (
 require (
 	github.com/charmbracelet/ultraviolet v0.0.0-20260303162955-0b88c25f3fff // indirect
 	github.com/charmbracelet/x/ansi v0.11.6 // indirect
-	github.com/charmbracelet/x/vt v0.0.0-20260316093931-f2fb44ab3145 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	golang.org/x/text v0.22.0 // indirect
 )
@@ -38,8 +37,6 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sync v0.19.0 // indirect
 )
-
-replace github.com/charmbracelet/x/vt => ../termx-vterm/third_party/github.com/charmbracelet/x/vt
 
 replace github.com/lozzow/termx/termx-vterm => ../termx-vterm
 

@@ -30,8 +30,6 @@ replace github.com/lozzow/termx/termx-remote => ../termx-remote
 
 replace github.com/lozzow/termx/termx-vterm => ../termx-vterm
 
-replace github.com/charmbracelet/x/vt => ../termx-vterm/third_party/github.com/charmbracelet/x/vt
-
 replace github.com/lozzow/termx/termx-shared => ../termx-shared
 
 replace github.com/lozzow/termx/termx-proto => ../termx-proto
