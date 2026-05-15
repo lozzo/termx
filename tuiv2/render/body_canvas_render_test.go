@@ -266,6 +266,66 @@ func TestRenderBodyCanvasNonOverlappingContentChangeUsesIncrementalPath(t *testi
 	}
 }
 
+func TestRenderBodyCanvasIgnoresIncompleteChangedRowsHint(t *testing.T) {
+	now := time.Date(2026, 5, 15, 15, 0, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 18, Rows: 6},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("row-01............"),
+			protocolRowFromText("row-02............"),
+			protocolRowFromText("row-03............"),
+			protocolRowFromText("row-04............"),
+			protocolRowFromText("row-05............"),
+			protocolRowFromText("row-06............"),
+		},
+		screenTimestamps: []time.Time{now, now, now, now, now, now},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-main",
+			Name:           "main",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	theme := defaultUITheme()
+	entries1 := []paneRenderEntry{testPaneRenderEntry("pane-main", "term-main", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 1)}
+
+	coordinator := &Coordinator{}
+	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, nil, 40, 8)
+
+	surface.screen[2] = protocolRowFromText("row-03--changed--")
+	surface.screen[5] = protocolRowFromText("time result tail")
+	surface.screenTimestamps[2] = now.Add(time.Second)
+	surface.screenTimestamps[5] = now.Add(time.Second)
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	runtimeState.Terminals[0].ScreenUpdate = runtimestate.VisibleScreenUpdateSummary{
+		SurfaceVersion: 2,
+		ChangedRows:    []int{2},
+	}
+	entries2 := []paneRenderEntry{testPaneRenderEntry("pane-main", "term-main", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 2)}
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, nil, 40, 8)
+	want := rebuildBodyCanvas(nil, entries2, 40, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
+
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("render.body.canvas.path.incremental"); !ok || event.Count == 0 {
+		t.Fatalf("expected incremental body path, got events=%#v", snapshot.Events)
+	}
+	if event, ok := snapshot.Event("render.body.canvas.path.full_compose"); ok && event.Count > 0 {
+		t.Fatalf("expected incomplete changed-row hint to avoid full compose, got events=%#v", snapshot.Events)
+	}
+	if gotRaw, wantRaw := strings.TrimRight(got.rawString(), "\n"), strings.TrimRight(want.rawString(), "\n"); gotRaw != wantRaw {
+		t.Fatalf("expected incremental canvas to match full rebuild despite incomplete hint,\n got: %q\nwant: %q\nevents=%#v", gotRaw, wantRaw, snapshot.Events)
+	}
+}
+
 func TestRenderBodyCanvasNonOverlappingScrollUsesIncrementalPath(t *testing.T) {
 	now := time.Date(2026, 4, 22, 13, 0, 0, 0, time.UTC)
 	leftSurface := &spriteTestSurface{

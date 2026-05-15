@@ -454,7 +454,7 @@ func TestClientSerializesConcurrentSends(t *testing.T) {
 	}
 }
 
-func TestClientStreamCoalescesQueuedScreenUpdateFrames(t *testing.T) {
+func TestClientStreamPreservesQueuedFullReplaceScreenUpdates(t *testing.T) {
 	stream := newClientStreamWithConfig(4, 0)
 	defer stream.close()
 
@@ -468,11 +468,11 @@ func TestClientStreamCoalescesQueuedScreenUpdateFrames(t *testing.T) {
 
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
-	if len(stream.queue) != 1 {
-		t.Fatalf("expected one coalesced screen update frame, got %d", len(stream.queue))
+	if len(stream.queue) != 2 {
+		t.Fatalf("expected full-replace screen updates to remain sequence-addressable, got %d", len(stream.queue))
 	}
-	if stream.queue[0].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, stream.queue[0].Payload, "c") {
-		t.Fatalf("unexpected coalesced frame: %#v", stream.queue[0])
+	if !testScreenUpdatePayloadContainsText(t, stream.queue[0].Payload, "b") || !testScreenUpdatePayloadContainsText(t, stream.queue[1].Payload, "c") {
+		t.Fatalf("unexpected queued frames: %#v", stream.queue)
 	}
 }
 
@@ -509,8 +509,8 @@ func TestClientStreamKeepsControlFrameBetweenScreenUpdates(t *testing.T) {
 
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
-	if len(stream.queue) != 3 {
-		t.Fatalf("expected control frame to split coalescing window, got %d queued frames", len(stream.queue))
+	if len(stream.queue) != 4 {
+		t.Fatalf("expected control frame and screen updates to be preserved, got %d queued frames", len(stream.queue))
 	}
 	if stream.queue[0].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, stream.queue[0].Payload, "a") {
 		t.Fatalf("unexpected first queued frame: %#v", stream.queue[0])
@@ -518,8 +518,11 @@ func TestClientStreamKeepsControlFrameBetweenScreenUpdates(t *testing.T) {
 	if stream.queue[1].Type != wire.TypeResize {
 		t.Fatalf("unexpected control frame: %#v", stream.queue[1])
 	}
-	if stream.queue[2].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, stream.queue[2].Payload, "c") {
-		t.Fatalf("unexpected final coalesced frame: %#v", stream.queue[2])
+	if stream.queue[2].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, stream.queue[2].Payload, "b") {
+		t.Fatalf("unexpected second screen frame: %#v", stream.queue[2])
+	}
+	if stream.queue[3].Type != wire.TypeScreenUpdate || !testScreenUpdatePayloadContainsText(t, stream.queue[3].Payload, "c") {
+		t.Fatalf("unexpected final screen frame: %#v", stream.queue[3])
 	}
 }
 

@@ -8,16 +8,15 @@ type bodyRenderCacheCursor struct {
 }
 
 type bodyRenderCacheEntry struct {
-	PaneID       string
-	OwnerID      uint32
-	Theme        uiTheme
-	FrameKey     paneFrameKey
-	ContentKey   paneContentKey
-	ContentRect  workbench.Rect
-	Metrics      renderTerminalMetrics
-	ScreenUpdate terminalScreenUpdateHint
-	Window       terminalSourceWindowState
-	HasWindow    bool
+	PaneID      string
+	OwnerID     uint32
+	Theme       uiTheme
+	FrameKey    paneFrameKey
+	ContentKey  paneContentKey
+	ContentRect workbench.Rect
+	Metrics     renderTerminalMetrics
+	Window      terminalSourceWindowState
+	HasWindow   bool
 }
 
 type capturedBodyRenderCacheEntry struct {
@@ -55,14 +54,13 @@ func captureBodyRenderCacheEntry(entry paneRenderEntry, runtimeState *VisibleRun
 	resolved := resolvePaneContent(entry, runtimeState, false)
 	captured := capturedBodyRenderCacheEntry{
 		cache: bodyRenderCacheEntry{
-			PaneID:       entry.PaneID,
-			OwnerID:      entry.OwnerID,
-			Theme:        entry.Theme,
-			FrameKey:     entry.FrameKey,
-			ContentKey:   entry.ContentKey,
-			ContentRect:  resolved.contentRect,
-			Metrics:      resolved.metrics,
-			ScreenUpdate: effectiveTerminalScreenUpdateHint(resolved.screenUpdate, resolved.surface != nil, entry.SurfaceVersion),
+			PaneID:      entry.PaneID,
+			OwnerID:     entry.OwnerID,
+			Theme:       entry.Theme,
+			FrameKey:    entry.FrameKey,
+			ContentKey:  entry.ContentKey,
+			ContentRect: resolved.contentRect,
+			Metrics:     resolved.metrics,
 		},
 		resolved: resolved,
 	}

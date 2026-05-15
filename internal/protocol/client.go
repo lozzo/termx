@@ -162,9 +162,6 @@ func (s *clientStream) nextFrame() (StreamFrame, bool) {
 }
 
 func (s *clientStream) enqueueFrameLocked(frame StreamFrame) {
-	if frame.Type == wire.TypeScreenUpdate && s.coalesceQueuedScreenUpdateLocked(frame) {
-		return
-	}
 	if len(s.queue) >= s.queueLimit {
 		if frame.Type == wire.TypeScreenUpdate {
 			s.noteDroppedOutputLocked(uint64(len(frame.Payload)))
@@ -180,35 +177,6 @@ func (s *clientStream) enqueueFrameLocked(frame StreamFrame) {
 		Payload:        payload,
 		ScreenSequence: frame.ScreenSequence,
 	})
-}
-
-func (s *clientStream) coalesceQueuedScreenUpdateLocked(frame StreamFrame) bool {
-	if len(s.queue) == 0 {
-		return false
-	}
-	last := &s.queue[len(s.queue)-1]
-	if last.Type != wire.TypeScreenUpdate {
-		return false
-	}
-	if !screenUpdateFrameCanReplaceQueued(frame) {
-		return false
-	}
-	payload := frame.Payload
-	if len(payload) > 0 {
-		payload = append([]byte(nil), payload...)
-	}
-	last.Payload = payload
-	last.ScreenSequence = frame.ScreenSequence
-	perftrace.Count("protocol.client.stream.screen_update.coalesced", 1)
-	return true
-}
-
-func screenUpdateFrameCanReplaceQueued(frame StreamFrame) bool {
-	if frame.Type != wire.TypeScreenUpdate || len(frame.Payload) == 0 {
-		return false
-	}
-	update, err := DecodeScreenUpdatePayload(frame.Payload)
-	return err == nil && update.FullReplace
 }
 
 func (s *clientStream) noteDroppedOutputLocked(dropped uint64) {

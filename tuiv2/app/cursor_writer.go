@@ -1092,6 +1092,16 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	}
 	if payload == "" && len(afterWrite) == 0 && cursor == w.lastDirectCursor {
 		perftrace.Count("cursor_writer.direct_skip", 0)
+		if w.debugLogEnabled() {
+			w.debugLog(
+				"cursor_writer.frame_skip",
+				"mode", "frame",
+				"input_bytes", len(frame),
+				"payload_bytes", len(payload),
+				"present_ms", float64(presentElapsed.Microseconds())/1000.0,
+				"total_ms", float64(time.Since(totalStart).Microseconds())/1000.0,
+			)
+		}
 		return nil
 	}
 
@@ -1228,6 +1238,23 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 	}
 	if payload == "" && len(afterWrite) == 0 && cursor == w.lastDirectCursor {
 		perftrace.Count("cursor_writer.direct_skip", 0)
+		if w.debugLogEnabled() {
+			w.debugLog(
+				"cursor_writer.frame_skip",
+				"mode", presentMode,
+				"rows", len(lines),
+				"input_bytes", joinedLinesLen(lines),
+				"payload_bytes", len(payload),
+				"present_ms", float64(presentElapsed.Microseconds())/1000.0,
+				"plan_mode", planLog.Mode,
+				"plan_rows", planLog.Rows,
+				"plan_changed_rows", planLog.ChangedRows,
+				"plan_updated_rows", planLog.UpdatedRows,
+				"plan_baseline_changed_rows", planLog.BaselineChangedRows,
+				"tail", debugFrameTail(lines),
+				"total_ms", float64(time.Since(totalStart).Microseconds())/1000.0,
+			)
+		}
 		return nil
 	}
 	estLen := normalizedLinesLen(lines) + len(cursor) + 64
@@ -1273,46 +1300,49 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 			w.perfSampleHook("writer_flush")
 		}
 	}
-	w.debugLog(
-		"cursor_writer.frame_write",
-		"mode", presentMode,
-		"rows", len(lines),
-		"input_bytes", joinedLinesLen(lines),
-		"payload_bytes", len(payload),
-		"output_bytes", writtenBytes,
-		"after_write", len(afterWrite),
-		"present_ms", float64(presentElapsed.Microseconds())/1000.0,
-		"uv_attempt_ms", float64(uvAttemptElapsed.Microseconds())/1000.0,
-		"fallback_present_ms", float64(fallbackPresentElapsed.Microseconds())/1000.0,
-		"uv_fallback_reason", uvFallbackReason,
-		"uv_host_width_fallbacks", w.uvHostWidthFallbacks,
-		"uv_host_width_backoff", w.uvHostWidthBackoff,
-		"uv_slow_frames", w.uvSlowFrames,
-		"uv_slow_backoff", w.uvSlowBackoff,
-		"plan_mode", planLog.Mode,
-		"plan_rows", planLog.Rows,
-		"plan_changed_rows", planLog.ChangedRows,
-		"plan_updated_rows", planLog.UpdatedRows,
-		"plan_baseline_changed_rows", planLog.BaselineChangedRows,
-		"plan_payload_bytes", planLog.PayloadBytes,
-		"plan_full_wire_bytes", planLog.FullWireBytes,
-		"plan_quick_rows_ms", planLog.QuickRowsMs,
-		"plan_diff_ms", planLog.DiffMs,
-		"plan_render_changed_rows_ms", planLog.RenderChangedRowsMs,
-		"plan_owner_aware_ms", planLog.OwnerAwareMs,
-		"plan_vertical_scroll_ms", planLog.VerticalScrollMs,
-		"plan_total_ms", planLog.PlanMs,
-		"plan_owner_aware_attempted", planLog.OwnerAwareAttempted,
-		"plan_vertical_attempted", planLog.VerticalAttempted,
-		"plan_quick_used", planLog.QuickCandidateUsed,
-		"plan_quick_valid", planLog.QuickCandidateValid,
-		"plan_owner_aware_valid", planLog.OwnerAwareValid,
-		"plan_vertical_valid", planLog.VerticalValid,
-		"plan_full_repaint_candidate", planLog.FullRepaintCandidate,
-		"io_ms", float64(ioElapsed.Microseconds())/1000.0,
-		"total_ms", float64(time.Since(totalStart).Microseconds())/1000.0,
-		"err", err,
-	)
+	if w.debugLogEnabled() {
+		w.debugLog(
+			"cursor_writer.frame_write",
+			"mode", presentMode,
+			"rows", len(lines),
+			"input_bytes", joinedLinesLen(lines),
+			"payload_bytes", len(payload),
+			"output_bytes", writtenBytes,
+			"after_write", len(afterWrite),
+			"present_ms", float64(presentElapsed.Microseconds())/1000.0,
+			"uv_attempt_ms", float64(uvAttemptElapsed.Microseconds())/1000.0,
+			"fallback_present_ms", float64(fallbackPresentElapsed.Microseconds())/1000.0,
+			"uv_fallback_reason", uvFallbackReason,
+			"uv_host_width_fallbacks", w.uvHostWidthFallbacks,
+			"uv_host_width_backoff", w.uvHostWidthBackoff,
+			"uv_slow_frames", w.uvSlowFrames,
+			"uv_slow_backoff", w.uvSlowBackoff,
+			"plan_mode", planLog.Mode,
+			"plan_rows", planLog.Rows,
+			"plan_changed_rows", planLog.ChangedRows,
+			"plan_updated_rows", planLog.UpdatedRows,
+			"plan_baseline_changed_rows", planLog.BaselineChangedRows,
+			"plan_payload_bytes", planLog.PayloadBytes,
+			"plan_full_wire_bytes", planLog.FullWireBytes,
+			"plan_quick_rows_ms", planLog.QuickRowsMs,
+			"plan_diff_ms", planLog.DiffMs,
+			"plan_render_changed_rows_ms", planLog.RenderChangedRowsMs,
+			"plan_owner_aware_ms", planLog.OwnerAwareMs,
+			"plan_vertical_scroll_ms", planLog.VerticalScrollMs,
+			"plan_total_ms", planLog.PlanMs,
+			"plan_owner_aware_attempted", planLog.OwnerAwareAttempted,
+			"plan_vertical_attempted", planLog.VerticalAttempted,
+			"plan_quick_used", planLog.QuickCandidateUsed,
+			"plan_quick_valid", planLog.QuickCandidateValid,
+			"plan_owner_aware_valid", planLog.OwnerAwareValid,
+			"plan_vertical_valid", planLog.VerticalValid,
+			"plan_full_repaint_candidate", planLog.FullRepaintCandidate,
+			"tail", debugFrameTail(lines),
+			"io_ms", float64(ioElapsed.Microseconds())/1000.0,
+			"total_ms", float64(time.Since(totalStart).Microseconds())/1000.0,
+			"err", err,
+		)
+	}
 	return err
 }
 
@@ -1370,6 +1400,29 @@ func (w *outputCursorWriter) debugLog(event string, kv ...any) {
 		return
 	}
 	appendDebugLogLine(w.debugLogPath, event, kv...)
+}
+
+func (w *outputCursorWriter) debugLogEnabled() bool {
+	return w != nil && w.debugLogPath != ""
+}
+
+func debugFrameTail(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	start := len(lines) - 4
+	if start < 0 {
+		start = 0
+	}
+	out := make([]string, 0, len(lines)-start)
+	for _, line := range lines[start:] {
+		plain := strings.TrimRight(xansi.Strip(line), " ")
+		if xansi.StringWidth(plain) > 180 {
+			plain = xansi.Truncate(plain, 180, "")
+		}
+		out = append(out, plain)
+	}
+	return strings.Join(out, "\\n")
 }
 
 func (w *outputCursorWriter) SetVerticalScrollEnabled(enabled bool) {

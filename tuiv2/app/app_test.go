@@ -305,6 +305,35 @@ func TestModelViewSkipsRenderWhenDirectFrameIsUnchanged(t *testing.T) {
 	}
 }
 
+func TestModelViewDoesNotAckStreamReadyWhenDirectFrameIsCached(t *testing.T) {
+	client := &recordingBridgeClient{}
+	rt := runtime.New(client)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.Stream.PendingReadyChannel = 7
+	terminal.Stream.PendingReadyScreenSequence = 42
+
+	model := New(shared.Config{}, nil, rt)
+	model.SetFrameWriter(&recordingFrameWriter{})
+
+	model.View()
+	if got := client.streamReadySequences(7); len(got) != 1 || got[0] != 42 {
+		t.Fatalf("expected first rendered frame to ack sequence 42, got %#v", got)
+	}
+
+	terminal.Stream.PendingReadyChannel = 7
+	terminal.Stream.PendingReadyScreenSequence = 43
+	model.View()
+	if got := client.streamReadySequences(7); len(got) != 1 {
+		t.Fatalf("expected cached view to avoid acking unseen sequence, got %#v", got)
+	}
+
+	model.render.Invalidate()
+	model.View()
+	if got := client.streamReadySequences(7); len(got) != 2 || got[1] != 43 {
+		t.Fatalf("expected invalidated render to ack sequence 43, got %#v", got)
+	}
+}
+
 func TestModelInitBootstrapsDefaultWorkspace(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 	if model.workbench.CurrentWorkspace() != nil {

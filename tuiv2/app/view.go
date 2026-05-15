@@ -19,9 +19,6 @@ func (m *Model) View() string {
 	if m == nil || m.render == nil {
 		return ""
 	}
-	defer func() {
-		m.markRenderedStreamUpdatesAfterFrame()
-	}()
 	if m.visibleAltScreenGeometryChanged() {
 		m.forceFullRedraw()
 	}
@@ -44,6 +41,7 @@ func (m *Model) View() string {
 			_ = directWriter.WriteFrameLinesWithMeta(result.Lines, cursor, presentMetaFromRender(result.Meta))
 			m.lastViewFrame = ""
 			m.lastViewCursor = cursor
+			m.markRenderedStreamUpdatesAfterFrame()
 			return ""
 		}
 		if lines, cursor, ok := m.render.CachedFrameLinesAndCursorRef(); ok {
@@ -57,6 +55,7 @@ func (m *Model) View() string {
 		_ = rowsWriter.WriteFrameLines(lines, cursor)
 		m.lastViewFrame = ""
 		m.lastViewCursor = cursor
+		m.markRenderedStreamUpdatesAfterFrame()
 		return ""
 	}
 	if frame, cursor, ok := m.render.CachedFrameAndCursor(); ok {
@@ -81,6 +80,7 @@ func (m *Model) View() string {
 		_ = m.frameOut.WriteFrame(frame, cursor)
 		m.lastViewFrame = frame
 		m.lastViewCursor = cursor
+		m.markRenderedStreamUpdatesAfterFrame()
 		return ""
 	}
 	if m.cursorOut != nil {
@@ -99,10 +99,12 @@ func (m *Model) View() string {
 		m.cursorOut.SetCursorSequence(cursor)
 		m.lastViewFrame = frame
 		m.lastViewCursor = cursor
+		m.markRenderedStreamUpdatesAfterFrame()
 		return frame + cursor
 	}
 	m.lastViewFrame = frame
 	m.lastViewCursor = cursor
+	m.markRenderedStreamUpdatesAfterFrame()
 	return frame + cursor
 }
 

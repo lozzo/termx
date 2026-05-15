@@ -17,7 +17,6 @@ type resolvedPaneContent struct {
 	terminalState  string
 	snapshot       *protocol.Snapshot
 	surface        runtime.TerminalSurface
-	screenUpdate   terminalScreenUpdateHint
 	source         terminalRenderSource
 	metrics        renderTerminalMetrics
 	contentRect    workbench.Rect
@@ -181,9 +180,6 @@ func resolvePaneContent(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 	resolved.terminalState = entry.ContentKey.State
 	resolved.snapshot = entry.Snapshot
 	resolved.surface = entry.Surface
-	if terminal := findVisibleTerminal(runtimeState, entry.TerminalID); terminal != nil {
-		resolved.screenUpdate = terminalScreenUpdateHintFromVisible(terminal.ScreenUpdate)
-	}
 	if resolved.terminalKnown && (resolved.snapshot == nil && resolved.surface == nil || resolved.terminalName == "" || resolved.terminalState == "") {
 		if terminal := findVisibleTerminal(runtimeState, entry.TerminalID); terminal != nil {
 			if resolved.snapshot == nil && resolved.surface == nil {
