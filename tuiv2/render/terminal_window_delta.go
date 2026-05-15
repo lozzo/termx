@@ -313,3 +313,23 @@ func (p terminalWindowScrollPlan) sourceLineFor(line int) (int, bool) {
 		return 0, false
 	}
 }
+
+func (p terminalWindowScrollPlan) destinationLineFor(line int) (int, bool) {
+	if p.direction == terminalWindowScrollNone || line < 0 {
+		return 0, false
+	}
+	switch p.direction {
+	case terminalWindowScrollUp:
+		if line < p.start+p.shift || line > p.end {
+			return 0, false
+		}
+		return line - p.shift, true
+	case terminalWindowScrollDown:
+		if line < p.start || line > p.end-p.shift {
+			return 0, false
+		}
+		return line + p.shift, true
+	default:
+		return 0, false
+	}
+}

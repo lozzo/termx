@@ -95,6 +95,9 @@ func buildBodyCanvasIncrementalUpdates(cache *bodyRenderCache, entries []paneRen
 		if !addIncrementalCursorRow(updates, cache.activeCursor) {
 			return nil, false
 		}
+		if !addIncrementalScrolledCursorRow(updates, cache.activeCursor) {
+			return nil, false
+		}
 	}
 	if currentCursor, ok := captureBodyRenderCacheActiveCursor(entries, runtimeState); ok {
 		if !addIncrementalCursorRow(updates, currentCursor) {
@@ -136,6 +139,38 @@ func addIncrementalCursorRow(updates []bodyCanvasIncrementalUpdate, cursor bodyR
 		}
 		updates[i].mode = bodyCanvasUpdateRows
 		updates[i].rows = append(updates[i].rows, cursor.Line)
+		return true
+	}
+	return false
+}
+
+func addIncrementalScrolledCursorRow(updates []bodyCanvasIncrementalUpdate, cursor bodyRenderCacheCursor) bool {
+	if cursor.PaneID == "" || cursor.Line < 0 {
+		return true
+	}
+	for i := range updates {
+		if updates[i].entry.PaneID != cursor.PaneID {
+			continue
+		}
+		if updates[i].mode == bodyCanvasUpdateFullPane {
+			return true
+		}
+		height := updates[i].captured.cache.ContentRect.H
+		if !updates[i].scrollPlan.valid(height) {
+			return true
+		}
+		line, ok := updates[i].scrollPlan.destinationLineFor(cursor.Line)
+		if !ok {
+			return true
+		}
+		if !updates[i].captured.cache.HasWindow || updates[i].captured.resolved.source == nil || line >= height {
+			updates[i].mode = bodyCanvasUpdateFullPane
+			updates[i].rows = nil
+			updates[i].scrollPlan = terminalWindowScrollPlan{}
+			return true
+		}
+		updates[i].mode = bodyCanvasUpdateRows
+		updates[i].rows = append(updates[i].rows, line)
 		return true
 	}
 	return false
