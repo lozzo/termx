@@ -1167,6 +1167,7 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 		perftrace.Count("terminal.screen_update.latest_frame_fast_path", len(chunk))
 		t.appendGridFromDamageLocked(damage)
 		revision := t.bumpScreenRevisionLocked()
+		t.debugLogScreenBroadcastLocked("large_latest_placeholder", revision, len(chunk), 0, true, damage)
 		// Large PTY bursts are consumed into the daemon vterm with the latest-frame
 		// path, but the live payload still has to be derived from each attachment's
 		// last acknowledged screen state. A scroll-only delta guessed from the burst
@@ -1190,9 +1191,11 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 	revision := t.bumpScreenRevisionLocked()
 	payload, ok := t.screenUpdatePayloadFromDamageLocked(damage)
 	if !ok {
+		t.debugLogScreenBroadcastLocked("encode_failed_placeholder", revision, len(chunk), 0, true, damage)
 		stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Revision: revision})
 		return
 	}
+	t.debugLogScreenBroadcastLocked("payload", revision, len(chunk), len(payload), false, damage)
 	stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Payload: payload, Revision: revision})
 }
 
@@ -1700,11 +1703,12 @@ func (t *Terminal) logScreenUpdatePayloadDiagnosticsLocked(damage vterm.WriteDam
 	if t == nil || t.logger == nil || len(result.Payload) == 0 {
 		return
 	}
+	debug := coreScreenUpdateDebugEnabled()
 	stats := screenUpdateDamageStats(damage)
-	if len(result.Payload) < coreDiagnosticsScreenUpdateBytes && !result.Compared {
+	if len(result.Payload) < coreDiagnosticsScreenUpdateBytes && !result.Compared && !debug {
 		return
 	}
-	t.logger.Info(
+	fields := []any{
 		"termx screen update payload detail",
 		"terminal_id", t.id,
 		"mode", string(result.Mode),
@@ -1735,8 +1739,79 @@ func (t *Terminal) logScreenUpdatePayloadDiagnosticsLocked(damage vterm.WriteDam
 		"scrollback_append_cells", stats.ScrollbackAppendCell,
 		"changed_rows", stats.ChangedRows,
 		"changed_cells", stats.ChangedCells,
-		"diff_cpu_ms", float64(damage.DiffCPUNanos)/1_000_000.0,
+		"diff_cpu_ms", float64(damage.DiffCPUNanos) / 1_000_000.0,
+	}
+	if debug {
+		fields = append(fields, "screen_tail", t.debugScreenTailLocked(6))
+	}
+	t.logger.Info(fields[0].(string), fields[1:]...)
+}
+
+func (t *Terminal) debugLogScreenBroadcastLocked(reason string, revision uint64, chunkBytes int, payloadBytes int, placeholder bool, damage vterm.WriteDamage) {
+	if t == nil || t.logger == nil || !coreScreenUpdateDebugEnabled() {
+		return
+	}
+	stats := screenUpdateDamageStats(damage)
+	cursor := vterm.CursorState{}
+	if t.vterm != nil {
+		cursor = t.vterm.CursorState()
+	}
+	t.logger.Debug(
+		"termx screen update broadcast",
+		"terminal_id", t.id,
+		"revision", revision,
+		"reason", reason,
+		"chunk_bytes", chunkBytes,
+		"payload_bytes", payloadBytes,
+		"placeholder", placeholder,
+		"alternate_screen", damage.Modes.AlternateScreen,
+		"cols", damage.SizeCols,
+		"rows", damage.SizeRows,
+		"screen_scroll", damage.ScreenScroll,
+		"ops", stats.Ops,
+		"write_span_ops", stats.WriteSpanOps,
+		"scroll_rect_ops", stats.ScrollRectOps,
+		"copy_rect_ops", stats.CopyRectOps,
+		"clear_rect_ops", stats.ClearRectOps,
+		"clear_to_eol_ops", stats.ClearToEOLOps,
+		"scrollback_append_rows", stats.ScrollbackAppendRows,
+		"changed_rows", stats.ChangedRows,
+		"changed_cells", stats.ChangedCells,
+		"cursor_row", cursor.Row,
+		"cursor_col", cursor.Col,
+		"screen_tail", t.debugScreenTailLocked(6),
 	)
+}
+
+func (t *Terminal) debugScreenTailLocked(limit int) string {
+	if t == nil || t.vterm == nil || limit <= 0 {
+		return ""
+	}
+	screen := t.vterm.ScreenContent()
+	rows := screen.Cells
+	if len(rows) == 0 {
+		return ""
+	}
+	start := len(rows) - limit
+	if start < 0 {
+		start = 0
+	}
+	out := make([]string, 0, len(rows)-start)
+	for _, row := range rows[start:] {
+		out = append(out, debugVTermRowString(row))
+	}
+	return strings.Join(out, "\\n")
+}
+
+func debugVTermRowString(row []vterm.Cell) string {
+	if len(row) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, cell := range row {
+		b.WriteString(cell.Content)
+	}
+	return strings.TrimRight(b.String(), " ")
 }
 
 func screenUpdateDamageStats(damage vterm.WriteDamage) screenUpdateDamageDiagnostics {

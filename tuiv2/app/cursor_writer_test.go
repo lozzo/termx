@@ -1522,6 +1522,10 @@ func TestFramePresenterPromotesNearFullBroadRawRowsToFullRepaint(t *testing.T) {
 	next := make([]string, 12)
 	for row := range base {
 		base[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("a", 511))
+		if row == 0 || row == 6 {
+			next[row] = base[row]
+			continue
+		}
 		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("b", 511))
 	}
 
@@ -1539,6 +1543,38 @@ func TestFramePresenterPromotesNearFullBroadRawRowsToFullRepaint(t *testing.T) {
 
 	if planLog.Mode != "full_repaint" {
 		t.Fatalf("expected near-full broad raw rows to promote to full repaint, got log %#v payload %q", planLog, got)
+	}
+	if !strings.HasPrefix(got, xansi.EraseEntireDisplay) {
+		t.Fatalf("expected full repaint payload to clear display, got %q", got[:minInt(len(got), 16)])
+	}
+}
+
+func TestFramePresenterPromotesNearlyAllChangedRowsToFullRepaint(t *testing.T) {
+	base := make([]string, 20)
+	next := make([]string, 20)
+	for row := range base {
+		base[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("a", 96))
+		if row%10 == 0 {
+			next[row] = base[row]
+			continue
+		}
+		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("b", 96))
+	}
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	if got := presenter.PresentLines(base); got == "" {
+		t.Fatal("expected initial full frame")
+	}
+
+	var planLog presentPlanLog
+	presenter.planLogHook = func(log presentPlanLog) {
+		planLog = log
+	}
+	got := presenter.PresentLines(next)
+
+	if planLog.Mode != "full_repaint" {
+		t.Fatalf("expected nearly-all changed rows to promote to full repaint, got log %#v payload %q", planLog, got)
 	}
 	if !strings.HasPrefix(got, xansi.EraseEntireDisplay) {
 		t.Fatalf("expected full repaint payload to clear display, got %q", got[:minInt(len(got), 16)])

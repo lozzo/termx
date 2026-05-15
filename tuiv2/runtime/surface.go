@@ -35,8 +35,16 @@ type rowSurfaceSource interface {
 	ScrollbackRowKindAt(row int) string
 }
 
+type surfaceSnapshotSource interface {
+	SurfaceSnapshot() localvterm.SurfaceSnapshot
+}
+
 type vtermSurface struct {
 	source rowSurfaceSource
+}
+
+type snapshotTerminalSurface struct {
+	snapshot localvterm.SurfaceSnapshot
 }
 
 func surfaceFromVTerm(vt VTermLike) TerminalSurface {
@@ -50,11 +58,21 @@ func surfaceFromVTerm(vt VTermLike) TerminalSurface {
 	return vtermSurface{source: source}
 }
 
+func stableSurfaceFromVTerm(vt VTermLike) TerminalSurface {
+	if vt == nil {
+		return nil
+	}
+	if source, ok := vt.(surfaceSnapshotSource); ok {
+		return &snapshotTerminalSurface{snapshot: source.SurfaceSnapshot()}
+	}
+	return surfaceFromVTerm(vt)
+}
+
 func visibleSurface(terminal *TerminalRuntime) TerminalSurface {
 	if terminal == nil || terminal.SurfaceVersion == 0 || terminal.PreferSnapshot {
 		return nil
 	}
-	return surfaceFromVTerm(terminal.VTerm)
+	return stableSurfaceFromVTerm(terminal.VTerm)
 }
 
 func (r *Runtime) LiveSurface(terminalID string) TerminalSurface {
@@ -65,7 +83,7 @@ func (r *Runtime) LiveSurface(terminalID string) TerminalSurface {
 	if terminal == nil || terminal.SurfaceVersion == 0 || terminal.VTerm == nil {
 		return nil
 	}
-	return surfaceFromVTerm(terminal.VTerm)
+	return stableSurfaceFromVTerm(terminal.VTerm)
 }
 
 func (s vtermSurface) Size() protocol.Size {
@@ -267,6 +285,134 @@ func (s vtermSurface) RowVisualHash(rowIndex int) uint64 {
 	return hash
 }
 
+func (s *snapshotTerminalSurface) Size() protocol.Size {
+	if s == nil {
+		return protocol.Size{}
+	}
+	return protocol.Size{Cols: uint16(s.snapshot.Cols), Rows: uint16(s.snapshot.Rows)}
+}
+
+func (s *snapshotTerminalSurface) Cursor() protocol.CursorState {
+	if s == nil {
+		return protocol.CursorState{}
+	}
+	return protocolCursorFromVTerm(s.snapshot.Cursor)
+}
+
+func (s *snapshotTerminalSurface) Modes() protocol.TerminalModes {
+	if s == nil {
+		return protocol.TerminalModes{}
+	}
+	return protocolModesFromVTerm(s.snapshot.Modes)
+}
+
+func (s *snapshotTerminalSurface) IsAlternateScreen() bool {
+	return s != nil && s.snapshot.Screen.IsAlternateScreen
+}
+
+func (s *snapshotTerminalSurface) ScreenRows() int {
+	if s == nil {
+		return 0
+	}
+	return len(s.snapshot.Screen.Cells)
+}
+
+func (s *snapshotTerminalSurface) ScrollbackRows() int {
+	if s == nil {
+		return 0
+	}
+	return len(s.snapshot.Scrollback)
+}
+
+func (s *snapshotTerminalSurface) TotalRows() int {
+	return s.ScrollbackRows() + s.ScreenRows()
+}
+
+func (s *snapshotTerminalSurface) Row(rowIndex int) []protocol.Cell {
+	return protocolCellsFromVTermRow(s.RowView(rowIndex))
+}
+
+func (s *snapshotTerminalSurface) RowView(rowIndex int) []localvterm.Cell {
+	if s == nil || rowIndex < 0 {
+		return nil
+	}
+	if rowIndex < len(s.snapshot.Scrollback) {
+		return s.snapshot.Scrollback[rowIndex]
+	}
+	rowIndex -= len(s.snapshot.Scrollback)
+	if rowIndex < 0 || rowIndex >= len(s.snapshot.Screen.Cells) {
+		return nil
+	}
+	return s.snapshot.Screen.Cells[rowIndex]
+}
+
+func (s *snapshotTerminalSurface) RowTimestamp(rowIndex int) time.Time {
+	if s == nil || rowIndex < 0 {
+		return time.Time{}
+	}
+	if rowIndex < len(s.snapshot.Scrollback) {
+		return surfaceTimeAt(s.snapshot.ScrollbackTimestamps, rowIndex)
+	}
+	rowIndex -= len(s.snapshot.Scrollback)
+	if rowIndex < 0 || rowIndex >= len(s.snapshot.Screen.Cells) {
+		return time.Time{}
+	}
+	return surfaceTimeAt(s.snapshot.ScreenTimestamps, rowIndex)
+}
+
+func (s *snapshotTerminalSurface) RowKind(rowIndex int) string {
+	if s == nil || rowIndex < 0 {
+		return ""
+	}
+	if rowIndex < len(s.snapshot.Scrollback) {
+		return surfaceStringAt(s.snapshot.ScrollbackRowKinds, rowIndex)
+	}
+	rowIndex -= len(s.snapshot.Scrollback)
+	if rowIndex < 0 || rowIndex >= len(s.snapshot.Screen.Cells) {
+		return ""
+	}
+	return surfaceStringAt(s.snapshot.ScreenRowKinds, rowIndex)
+}
+
+func (s *snapshotTerminalSurface) RowHash(rowIndex int) uint64 {
+	hash := surfaceRowHashOffset64
+	hash = surfaceRowHashMixUint64(hash, uint64(rowIndex+1))
+	if s == nil || rowIndex < 0 {
+		return hash
+	}
+	kind := s.RowKind(rowIndex)
+	hash = surfaceRowHashMixString(hash, kind)
+	if kind != "" {
+		ts := s.RowTimestamp(rowIndex)
+		hash = surfaceRowHashMixInt64(hash, ts.UnixNano())
+		return hash
+	}
+	return surfaceHashVTermRow(hash, s.RowView(rowIndex))
+}
+
+func (s *snapshotTerminalSurface) RowContentHash(rowIndex int) uint64 {
+	hash := surfaceRowHashOffset64
+	if s == nil || rowIndex < 0 {
+		return surfaceRowHashMixUint64(hash, 0)
+	}
+	kind := s.RowKind(rowIndex)
+	hash = surfaceRowHashMixString(hash, kind)
+	ts := s.RowTimestamp(rowIndex)
+	hash = surfaceRowHashMixInt64(hash, ts.UnixNano())
+	return surfaceHashVTermRow(hash, s.RowView(rowIndex))
+}
+
+func (s *snapshotTerminalSurface) RowIdentityHash(rowIndex int) uint64 {
+	return s.RowContentHash(rowIndex)
+}
+
+func (s *snapshotTerminalSurface) RowVisualHash(rowIndex int) uint64 {
+	if s == nil || rowIndex < 0 {
+		return surfaceRowHashMixUint64(surfaceRowHashOffset64, 0)
+	}
+	return surfaceHashVTermRow(surfaceRowHashOffset64, s.RowView(rowIndex))
+}
+
 func protocolCellsFromVTermRow(row []localvterm.Cell) []protocol.Cell {
 	if len(row) == 0 {
 		return nil
@@ -276,6 +422,37 @@ func protocolCellsFromVTermRow(row []localvterm.Cell) []protocol.Cell {
 		out[i] = protocolCellFromVTermCell(cell)
 	}
 	return out
+}
+
+func surfaceHashVTermRow(hash uint64, row []localvterm.Cell) uint64 {
+	hash = surfaceRowHashMixUint64(hash, uint64(len(row)))
+	for _, cell := range row {
+		hash = surfaceRowHashMixString(hash, cell.Content)
+		hash = surfaceRowHashMixInt64(hash, int64(cell.Width))
+		hash = surfaceRowHashMixString(hash, cell.Style.FG)
+		hash = surfaceRowHashMixString(hash, cell.Style.BG)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Bold)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Italic)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Underline)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Blink)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Reverse)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Strikethrough)
+	}
+	return hash
+}
+
+func surfaceStringAt(values []string, idx int) string {
+	if idx < 0 || idx >= len(values) {
+		return ""
+	}
+	return values[idx]
+}
+
+func surfaceTimeAt(values []time.Time, idx int) time.Time {
+	if idx < 0 || idx >= len(values) {
+		return time.Time{}
+	}
+	return values[idx]
 }
 
 const (

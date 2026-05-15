@@ -1275,6 +1275,7 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 				"plan_updated_rows", planLog.UpdatedRows,
 				"plan_baseline_changed_rows", planLog.BaselineChangedRows,
 				"tail", debugFrameTail(lines),
+				"payload_preview", debugPayloadPreviewIfEnabled(payload),
 				"total_ms", float64(time.Since(totalStart).Microseconds())/1000.0,
 			)
 		}
@@ -1361,6 +1362,8 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 			"plan_vertical_valid", planLog.VerticalValid,
 			"plan_full_repaint_candidate", planLog.FullRepaintCandidate,
 			"tail", debugFrameTail(lines),
+			"payload_preview", debugPayloadPreviewIfEnabled(payload),
+			"output_preview", debugPayloadPreviewIfEnabled(output),
 			"io_ms", float64(ioElapsed.Microseconds())/1000.0,
 			"total_ms", float64(time.Since(totalStart).Microseconds())/1000.0,
 			"err", err,
@@ -1446,6 +1449,30 @@ func debugFrameTail(lines []string) string {
 		out = append(out, plain)
 	}
 	return strings.Join(out, "\\n")
+}
+
+func debugPayloadPreviewIfEnabled(payload string) string {
+	if !debugEnvEnabled("TERMX_RENDERER_DEBUG_PAYLOAD") {
+		return ""
+	}
+	return debugPayloadPreview(payload, 360)
+}
+
+func debugPayloadPreview(payload string, limit int) string {
+	if payload == "" || limit <= 0 {
+		return ""
+	}
+	preview := payload
+	if len(preview) > limit {
+		preview = preview[:limit] + "..."
+	}
+	replacer := strings.NewReplacer(
+		"\x1b", "\\x1b",
+		"\r", "\\r",
+		"\n", "\\n",
+		"\t", "\\t",
+	)
+	return replacer.Replace(preview)
 }
 
 func (w *outputCursorWriter) SetVerticalScrollEnabled(enabled bool) {

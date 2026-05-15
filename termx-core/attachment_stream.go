@@ -106,13 +106,45 @@ func (p *attachmentStreamPump) screenReady(screenSequence uint64) {
 		p.pruneScreenSequenceRevisionsLocked(screenSequence)
 	}
 	ackedRevision := p.latestAckedRevision
+	wasDirty := p.screenDirty
 	needsFreshScreen := p.screenDirty
 	p.screenDirty = false
+	queueFrames := len(p.queue)
+	queueBytes := p.queueBytes
+	readyMode := p.readyMode
+	screenCredit := p.screenCredit
+	screenInFlight := p.screenInFlight
+	currentScreenSequence := p.screenSequence
+	lastAckedScreenSequence := p.lastAckedScreenSequence
 	p.cond.Signal()
 	p.mu.Unlock()
 
-	if !needsFreshScreen && screenSequence > 0 && p.currentRevision() > ackedRevision {
+	currentRevision := uint64(0)
+	if screenSequence > 0 {
+		currentRevision = p.currentRevision()
+	}
+	if !needsFreshScreen && screenSequence > 0 && currentRevision > ackedRevision {
 		needsFreshScreen = true
+	}
+	if coreScreenUpdateDebugEnabled() && p.logger != nil {
+		p.logger.Debug(
+			"termx attachment stream ready",
+			"terminal_id", p.terminalID,
+			"remote", p.remote,
+			"channel", p.channel,
+			"acked_screen_sequence", screenSequence,
+			"pump_screen_sequence", currentScreenSequence,
+			"last_acked_screen_sequence", lastAckedScreenSequence,
+			"acked_revision", ackedRevision,
+			"current_revision", currentRevision,
+			"needs_fresh_screen", needsFreshScreen,
+			"was_dirty", wasDirty,
+			"ready_mode", readyMode,
+			"screen_credit", screenCredit,
+			"screen_in_flight", screenInFlight,
+			"queue_frames", queueFrames,
+			"queue_bytes", queueBytes,
+		)
 	}
 	if !needsFreshScreen {
 		return
@@ -126,7 +158,9 @@ func (p *attachmentStreamPump) screenReady(screenSequence uint64) {
 		}
 	}
 	if !p.hasQueuedScreenUpdateLocked() {
-		p.appendQueueMessageLocked(StreamMessage{Type: StreamScreenUpdate})
+		msg := StreamMessage{Type: StreamScreenUpdate}
+		p.appendQueueMessageLocked(msg)
+		p.debugLogScreenQueueLocked("ready_enqueue_latest_placeholder", msg)
 	}
 	p.cond.Signal()
 	p.mu.Unlock()
@@ -244,8 +278,10 @@ func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) (bool, error)
 		p.recordSentFrame(wire.TypeSyncLost, len(syncLostPayload))
 		return false, nil
 	}
+	screenSequence := uint64(0)
 	if typ == wire.TypeScreenUpdate {
-		p.recordSentScreenFrameAckState(p.nextScreenSequence(), msg.Revision)
+		screenSequence = p.nextScreenSequence()
+		p.recordSentScreenFrameAckState(screenSequence, msg.Revision)
 		if resolvedLatest {
 			p.markLatestScreenFrameStarted()
 		}
@@ -260,6 +296,36 @@ func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) (bool, error)
 		p.recordSentScreenStateRevision(0)
 	}
 	p.recordSentFrame(typ, len(payload))
+	if typ == wire.TypeScreenUpdate && coreScreenUpdateDebugEnabled() && p.logger != nil {
+		p.mu.Lock()
+		readyMode := p.readyMode
+		screenCredit := p.screenCredit
+		screenInFlight := p.screenInFlight
+		screenDirty := p.screenDirty
+		forceLatestScreen := p.forceLatestScreen
+		queueFrames := len(p.queue)
+		queueBytes := p.queueBytes
+		stateRevision := p.screenStateRevision
+		p.mu.Unlock()
+		p.logger.Debug(
+			"termx attachment stream send screen",
+			"terminal_id", p.terminalID,
+			"remote", p.remote,
+			"channel", p.channel,
+			"screen_sequence", screenSequence,
+			"revision", msg.Revision,
+			"payload_bytes", len(payload),
+			"resolved_latest", resolvedLatest,
+			"ready_mode", readyMode,
+			"screen_credit", screenCredit,
+			"screen_in_flight", screenInFlight,
+			"screen_dirty", screenDirty,
+			"force_latest_screen", forceLatestScreen,
+			"screen_state_revision", stateRevision,
+			"queue_frames", queueFrames,
+			"queue_bytes", queueBytes,
+		)
+	}
 	return typ == wire.TypeScreenUpdate, nil
 }
 
@@ -402,6 +468,7 @@ func (p *attachmentStreamPump) enqueue(msg StreamMessage) {
 			p.forceLatestScreen = true
 			p.stats.coalescedFrames++
 			perftrace.Count("transport.stream.ready.coalesced_frames", 1)
+			p.debugLogScreenQueueLocked("coalesce_ready_wait", msg)
 			return
 		}
 		if p.forceLatestScreen {
@@ -414,6 +481,7 @@ func (p *attachmentStreamPump) enqueue(msg StreamMessage) {
 			msg = StreamMessage{Type: StreamScreenUpdate}
 		}
 		p.appendQueueMessageLocked(msg)
+		p.debugLogScreenQueueLocked("enqueue", msg)
 	} else {
 		p.appendQueueMessageLocked(msg)
 	}
@@ -428,6 +496,34 @@ func (p *attachmentStreamPump) appendQueueMessageLocked(msg StreamMessage) {
 	p.queue = append(p.queue, msg)
 	p.queueBytes = estimateStreamQueueWireBytes(p.queue)
 	p.recordEnqueuedLocked(msg)
+}
+
+func (p *attachmentStreamPump) debugLogScreenQueueLocked(action string, msg StreamMessage, extra ...any) {
+	if p == nil || p.logger == nil || !coreScreenUpdateDebugEnabled() || msg.Type != StreamScreenUpdate {
+		return
+	}
+	fields := []any{
+		"terminal_id", p.terminalID,
+		"remote", p.remote,
+		"channel", p.channel,
+		"action", action,
+		"revision", msg.Revision,
+		"payload_bytes", len(msg.Payload),
+		"placeholder", len(msg.Payload) == 0,
+		"ready_mode", p.readyMode,
+		"screen_credit", p.screenCredit,
+		"screen_in_flight", p.screenInFlight,
+		"screen_dirty", p.screenDirty,
+		"force_latest_screen", p.forceLatestScreen,
+		"screen_sequence", p.screenSequence,
+		"last_acked_screen_sequence", p.lastAckedScreenSequence,
+		"latest_acked_revision", p.latestAckedRevision,
+		"screen_state_revision", p.screenStateRevision,
+		"queue_frames", len(p.queue),
+		"queue_bytes", p.queueBytes,
+	}
+	fields = append(fields, extra...)
+	p.logger.Debug("termx attachment stream screen queue", fields...)
 }
 
 func (p *attachmentStreamPump) hasQueuedScreenUpdateLocked() bool {

@@ -101,6 +101,21 @@ type ScreenData struct {
 	IsAlternateScreen bool
 }
 
+type SurfaceSnapshot struct {
+	Cols                 int
+	Rows                 int
+	Scrollback           [][]Cell
+	ScrollbackTimestamps []time.Time
+	ScrollbackRowKinds   []string
+	ScrollbackWrapped    []bool
+	Screen               ScreenData
+	ScreenTimestamps     []time.Time
+	ScreenRowKinds       []string
+	ScreenWrapped        []bool
+	Cursor               CursorState
+	Modes                TerminalModes
+}
+
 // ResponseHandler is called when the emulator produces a response (e.g. DSR
 // cursor position report). The data should be written to the PTY's stdin so
 // the child process receives it.
@@ -1475,6 +1490,50 @@ func (v *VTerm) ScrollbackContent() [][]Cell {
 		out[i] = cloneCellSlice(row)
 	}
 	return out
+}
+
+func (v *VTerm) SurfaceSnapshot() SurfaceSnapshot {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	if v.emu == nil {
+		return SurfaceSnapshot{}
+	}
+	cols := v.emu.Width()
+	rows := v.emu.Height()
+	scrollbackCount := v.scrollbackRowCountLocked()
+	scrollback := make([][]Cell, scrollbackCount)
+	for y := 0; y < scrollbackCount; y++ {
+		scrollback[y] = cloneCellSlice(v.scrollbackRowViewLocked(y))
+	}
+	screen := make([][]Cell, rows)
+	for y := 0; y < rows; y++ {
+		screen[y] = cloneCellSlice(v.screenRowViewLocked(y))
+	}
+	scrollbackWrapped := make([]bool, scrollbackCount)
+	for y := 0; y < scrollbackCount; y++ {
+		scrollbackWrapped[y] = v.scrollbackRowWrappedAtLocked(y)
+	}
+	screenWrapped := make([]bool, rows)
+	for y := 0; y < rows; y++ {
+		screenWrapped[y] = v.screenRowWrappedAtLocked(y)
+	}
+	return SurfaceSnapshot{
+		Cols:                 cols,
+		Rows:                 rows,
+		Scrollback:           scrollback,
+		ScrollbackTimestamps: normalizeTimeSlice(v.scrollbackTimestamps, scrollbackCount),
+		ScrollbackRowKinds:   normalizeStringSlice(v.scrollbackRowKinds, scrollbackCount),
+		ScrollbackWrapped:    scrollbackWrapped,
+		Screen: ScreenData{
+			Cells:             screen,
+			IsAlternateScreen: v.emu.IsAltScreen(),
+		},
+		ScreenTimestamps: normalizeTimeSlice(v.screenTimestamps, rows),
+		ScreenRowKinds:   normalizeStringSlice(v.screenRowKinds, rows),
+		ScreenWrapped:    screenWrapped,
+		Cursor:           v.cursor,
+		Modes:            v.modes,
+	}
 }
 
 func (v *VTerm) ScrollbackRowCount() int {

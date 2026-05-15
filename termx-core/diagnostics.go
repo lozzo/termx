@@ -2,6 +2,8 @@ package termx
 
 import (
 	"log/slog"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/lozzow/termx/termx-proto/wire"
@@ -185,4 +187,17 @@ func diagnosticDurationMillis(d time.Duration) int64 {
 		return 0
 	}
 	return d.Milliseconds()
+}
+
+func coreDebugEnvEnabled(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on", "debug":
+		return true
+	default:
+		return false
+	}
+}
+
+func coreScreenUpdateDebugEnabled() bool {
+	return coreDebugEnvEnabled("TERMX_CORE_SCREEN_UPDATE_DEBUG")
 }

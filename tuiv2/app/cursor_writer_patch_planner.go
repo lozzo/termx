@@ -25,6 +25,7 @@ const (
 	broadRawRowPatchMinChangedRows         = 8
 	broadRawRowPatchChangedRowsNumerator   = 2
 	broadRawRowPatchChangedRowsDenominator = 3
+	broadRawRowPatchFullRepaintRowsPercent = 85
 	broadRawRowPatchMinPayloadBytes        = 4096
 	verticalScrollProbeMinChangedRows      = 4
 	verticalScrollProbeMinPayloadBytes     = 20000
@@ -203,7 +204,17 @@ func shouldPromoteBroadRawRowsToFullRepaint(rawBytes, fullWireLen, rows, changed
 	if changedRows*broadRawRowPatchChangedRowsDenominator < rows*broadRawRowPatchChangedRowsNumerator {
 		return false
 	}
+	if shouldForceFullRepaintForBroadDamage(rows, changedRows) {
+		return true
+	}
 	return rawBytes*100 >= fullWireLen*80
+}
+
+func shouldForceFullRepaintForBroadDamage(rows, changedRows int) bool {
+	if rows <= 6 || changedRows <= 0 {
+		return false
+	}
+	return changedRows*100 >= rows*broadRawRowPatchFullRepaintRowsPercent
 }
 
 func broadRawRowPatchCandidate(lines []string, payload string, changedRows int) framePatchCandidate {
@@ -285,7 +296,7 @@ func (p *framePresenter) planFramePatch(lines []string, meta *presentMeta) frame
 				{name: "cursor_writer.present.mode.full_repaint_threshold", count: fullWireLen},
 			},
 		}
-		if betterFramePatchCandidate(full, best) {
+		if shouldForceFullRepaintForBroadDamage(len(lines), diff.changedCount) || betterFramePatchCandidate(full, best) {
 			best = full
 		}
 	}

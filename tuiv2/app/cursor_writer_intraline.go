@@ -200,6 +200,9 @@ func shouldFallbackToFullRepaint(payload string, fullLen, totalRows, changedRows
 	if !fragmented {
 		return false
 	}
+	if shouldForceFullRepaintForBroadDamage(totalRows, changedRows) {
+		return true
+	}
 	if len(payload)*100 >= fullLen*95 {
 		return true
 	}

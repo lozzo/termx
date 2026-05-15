@@ -32,7 +32,7 @@ func tuiDebugLogPath(defaultPath string) string {
 	if value == "" {
 		return ""
 	}
-	if value == "1" || strings.EqualFold(value, "true") {
+	if debugEnvTruthy(value) {
 		return strings.TrimSpace(defaultPath)
 	}
 	return value
@@ -41,7 +41,7 @@ func tuiDebugLogPath(defaultPath string) string {
 func rendererDebugLogPath(defaultPath string, defaultEnabled bool) string {
 	value := strings.TrimSpace(os.Getenv("TERMX_RENDERER_DEBUG_LOG"))
 	if value != "" {
-		if value == "1" || strings.EqualFold(value, "true") {
+		if debugEnvTruthy(value) {
 			return strings.TrimSpace(defaultPath)
 		}
 		return value
@@ -53,6 +53,19 @@ func rendererDebugLogPath(defaultPath string, defaultEnabled bool) string {
 		return strings.TrimSpace(defaultPath)
 	}
 	return ""
+}
+
+func debugEnvEnabled(key string) bool {
+	return debugEnvTruthy(os.Getenv(key))
+}
+
+func debugEnvTruthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on", "debug":
+		return true
+	default:
+		return false
+	}
 }
 
 func appendDebugLogLine(path, event string, kv ...any) {

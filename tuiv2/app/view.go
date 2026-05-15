@@ -32,6 +32,16 @@ func (m *Model) View() string {
 			directWriter.SetForceFullFrameLines(false)
 			if lines, cursor, ok := m.render.CachedFrameLinesAndCursorRef(); ok {
 				viewBytes = joinedLinesLen(lines) + len(cursor)
+				if len(m.pendingStreamReadiesForRenderedFrame()) > 0 {
+					m.debugLog(
+						"view.direct_cached_with_pending_readies",
+						"readies", debugPendingReadies(m.pendingStreamReadiesForRenderedFrame()),
+						"lines", len(lines),
+						"bytes", viewBytes,
+						"tail", debugFrameTail(lines),
+						"surface", m.debugRuntimeSurfaceSummary(),
+					)
+				}
 				m.lastViewFrame = ""
 				m.lastViewCursor = cursor
 				return ""
@@ -40,6 +50,14 @@ func (m *Model) View() string {
 			result := m.render.Render()
 			cursor := result.CursorSequence()
 			viewBytes = joinedLinesLen(result.Lines) + len(cursor)
+			m.debugLog(
+				"view.direct_render",
+				"readies", debugPendingReadies(readies),
+				"lines", len(result.Lines),
+				"bytes", viewBytes,
+				"tail", debugFrameTail(result.Lines),
+				"surface", m.debugRuntimeSurfaceSummary(),
+			)
 			m.setNextFrameStreamReadies(readies)
 			_ = directWriter.WriteFrameLinesWithMeta(result.Lines, cursor, presentMetaFromRender(result.Meta))
 			m.lastViewFrame = ""
@@ -49,6 +67,16 @@ func (m *Model) View() string {
 		}
 		if lines, cursor, ok := m.render.CachedFrameLinesAndCursorRef(); ok {
 			viewBytes = joinedLinesLen(lines) + len(cursor)
+			if len(m.pendingStreamReadiesForRenderedFrame()) > 0 {
+				m.debugLog(
+					"view.rows_cached_with_pending_readies",
+					"readies", debugPendingReadies(m.pendingStreamReadiesForRenderedFrame()),
+					"lines", len(lines),
+					"bytes", viewBytes,
+					"tail", debugFrameTail(lines),
+					"surface", m.debugRuntimeSurfaceSummary(),
+				)
+			}
 			m.lastViewFrame = ""
 			m.lastViewCursor = cursor
 			return ""
@@ -131,9 +159,19 @@ func (m *Model) markRenderedStreamReadiesAfterFrame(readies []runtime.PendingStr
 		return
 	}
 	if m.frameWriterHasBacklog() {
+		m.debugLog(
+			"stream_ready.render_deferred_backlog",
+			"readies", debugPendingReadies(readies),
+			"surface", m.debugRuntimeSurfaceSummary(),
+		)
 		return
 	}
 	m.clearPendingRenderedStreamReadies()
+	m.debugLog(
+		"stream_ready.rendered_after_frame",
+		"readies", debugPendingReadies(readies),
+		"surface", m.debugRuntimeSurfaceSummary(),
+	)
 	m.runtime.MarkRenderedStreamReadies(context.Background(), readies)
 }
 
