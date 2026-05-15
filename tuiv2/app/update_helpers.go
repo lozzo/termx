@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -82,6 +83,9 @@ func (m *Model) verticalScrollOptimizationMode() (verticalScrollMode, string) {
 }
 
 func verticalScrollOptimizationModeForVisible(body workbench.Rect, surfaceKind render.VisibleSurfaceKind, overlayKind render.VisibleOverlayKind, visible *workbench.VisibleWorkbench) (verticalScrollMode, string) {
+	if os.Getenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL") != "1" {
+		return verticalScrollModeNone, "host_vertical_scroll_disabled"
+	}
 	if surfaceKind != render.VisibleSurfaceWorkbench || overlayKind != render.VisibleOverlayNone || visible == nil {
 		if surfaceKind != render.VisibleSurfaceWorkbench {
 			return verticalScrollModeNone, "non_workbench_surface"

@@ -33,8 +33,24 @@ func TestDebugTerminalStressTUITrace(t *testing.T) {
 		t.Skip("python3 not installed")
 	}
 
+	previousHostScroll, hadHostScroll := os.LookupEnv("TERMX_ENABLE_HOST_VERTICAL_SCROLL")
+	defer func(previous string, had bool) {
+		if had {
+			_ = os.Setenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL", previous)
+			return
+		}
+		_ = os.Unsetenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL")
+	}(previousHostScroll, hadHostScroll)
+	if os.Getenv("TERMX_TUI_STRESS_ENABLE_HOST_VERTICAL_SCROLL") == "1" {
+		_ = os.Setenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL", "1")
+	} else {
+		_ = os.Unsetenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
+	cols := envIntForDebugTrace("TERMX_TUI_STRESS_COLS", 120)
+	rows := envIntForDebugTrace("TERMX_TUI_STRESS_ROWS", 40)
 	daemon := startAppTestDaemon(t, ctx, "termx-debug-terminal-stress.sock")
 	socketPath := daemon.SocketPath()
 
@@ -42,7 +58,7 @@ func TestDebugTerminalStressTUITrace(t *testing.T) {
 	created, err := ctrlClient.Create(ctx, protocol.CreateParams{
 		Command: []string{"bash", "--noprofile", "--norc"},
 		Name:    "debug-terminal-stress",
-		Size:    protocol.Size{Cols: 120, Rows: 40},
+		Size:    protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
 		Dir:     repoRootForDebugTrace(t),
 		Env:     []string{"PS1=termx-stress$ "},
 	})
@@ -61,7 +77,7 @@ func TestDebugTerminalStressTUITrace(t *testing.T) {
 	defer ptmx.Close()
 	defer tty.Close()
 
-	if err := creackpty.Setsize(ptmx, &creackpty.Winsize{Cols: 120, Rows: 40}); err != nil {
+	if err := creackpty.Setsize(ptmx, &creackpty.Winsize{Cols: uint16(cols), Rows: uint16(rows)}); err != nil {
 		t.Fatalf("set pty size: %v", err)
 	}
 
@@ -94,7 +110,7 @@ func TestDebugTerminalStressTUITrace(t *testing.T) {
 	waitForPTYQuiet(t, ctx, recorder, 200*time.Millisecond)
 
 	lines := envIntForDebugTrace("TERMX_TUI_STRESS_LINES", 100000)
-	command := fmt.Sprintf("python3 scripts/generate_terminal_stress.py --lines %d --seed 1 --width-hint 120\n", lines)
+	command := fmt.Sprintf("TIMEFORMAT='TERMTAIL_TIME real=%%R user=%%U sys=%%S'; time python3 scripts/generate_terminal_stress.py --lines %d --seed 1 --width-hint %d\n", lines, cols)
 	before := len(recorder.Text())
 	traceStart := time.Now()
 	trace := perftrace.Enable()
@@ -107,6 +123,7 @@ func TestDebugTerminalStressTUITrace(t *testing.T) {
 	elapsed := time.Since(traceStart)
 	delta := recorder.Text()[before:]
 	snapshot := trace.Snapshot()
+	assertTerminalStressTailVisible(t, recorder.Text(), cols, rows, lines)
 
 	logTerminalStressTraceSummary(t, lines, elapsed, len(delta), snapshot)
 	if outPath := strings.TrimSpace(os.Getenv("TERMX_TUI_STRESS_TRACE_OUT")); outPath != "" {
@@ -140,6 +157,26 @@ func TestDebugTerminalStressTUITrace(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
+}
+
+func assertTerminalStressTailVisible(t *testing.T, output string, cols, rows, lines int) {
+	t.Helper()
+	hostVT := localvterm.New(cols, rows, 0, nil)
+	if _, err := hostVT.Write([]byte(output)); err != nil {
+		t.Fatalf("replay terminal stress PTY output: %v", err)
+	}
+	screenLines := vtermScreenLines(hostVT.ScreenContent())
+	screen := strings.Join(screenLines, "\n")
+	timeMarker := "TERMTAIL_TIME"
+	lineMarker := fmt.Sprintf("%06d", lines)
+	if strings.Contains(screen, timeMarker) && strings.Contains(screen, lineMarker) {
+		return
+	}
+	trimmed := make([]string, len(screenLines))
+	for i := range screenLines {
+		trimmed[i] = strings.TrimRight(screenLines[i], " ")
+	}
+	t.Fatalf("terminal stress tail is not visible; want %q and %q\nfinal screen:\n%s", timeMarker, lineMarker, strings.Join(trimmed, "\n"))
 }
 
 func TestDebugNvimScrollTrace(t *testing.T) {

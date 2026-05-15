@@ -2110,6 +2110,7 @@ func TestViewKeepsGlobalDiffActiveAfterActivePaneLeavesAltScreen(t *testing.T) {
 }
 
 func TestViewKeepsVerticalScrollOptimizationForSinglePaneAltScreen(t *testing.T) {
+	t.Setenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL", "1")
 	model := setupModel(t, modelOpts{width: 80, height: 24})
 	sink := &cursorWriterProbeTTY{}
 	writer := newOutputCursorWriter(sink)

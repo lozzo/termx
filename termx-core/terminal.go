@@ -1559,6 +1559,15 @@ func (t *Terminal) screenSnapshotFallbackMessage() StreamMessage {
 	if t == nil {
 		return StreamMessage{Type: StreamSyncLost}
 	}
+	t.streamMu.Lock()
+	defer t.streamMu.Unlock()
+	return t.screenSnapshotFallbackMessageLocked()
+}
+
+func (t *Terminal) screenSnapshotFallbackMessageLocked() StreamMessage {
+	if t == nil {
+		return StreamMessage{Type: StreamSyncLost}
+	}
 	payload, ok := t.screenSnapshotPayloadLocked()
 	if !ok {
 		return StreamMessage{Type: StreamSyncLost}
@@ -1570,9 +1579,18 @@ func (t *Terminal) screenLatestDeltaFallbackMessage(before *streamScreenState) S
 	if t == nil {
 		return StreamMessage{Type: StreamSyncLost}
 	}
+	t.streamMu.Lock()
+	defer t.streamMu.Unlock()
+	return t.screenLatestDeltaFallbackMessageLocked(before)
+}
+
+func (t *Terminal) screenLatestDeltaFallbackMessageLocked(before *streamScreenState) StreamMessage {
+	if t == nil {
+		return StreamMessage{Type: StreamSyncLost}
+	}
 	payload, ok := t.screenLatestDeltaPayloadLocked(before)
 	if !ok {
-		return t.screenSnapshotFallbackMessage()
+		return t.screenSnapshotFallbackMessageLocked()
 	}
 	return StreamMessage{Type: StreamScreenUpdate, Payload: payload}
 }

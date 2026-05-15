@@ -111,6 +111,7 @@ func TestOutputCursorWriterPatchPlannerScenarioMatrixPreservesFinalFrames(t *tes
 }
 
 func TestOutputCursorWriterPatchPlannerPolicyBeatsDiffOnlyForSinglePaneScrollScenarios(t *testing.T) {
+	t.Setenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL", "1")
 	scenarios := cursorWriterPatchPlannerScenarioMatrix(t)
 	diffOnly := cursorWriterPatchPlannerVariantByName(t, "diff_only")
 	policyLocal := cursorWriterPatchPlannerVariantByName(t, "policy_local")
