@@ -255,10 +255,7 @@ func (m *Model) queueInvalidate() {
 			m.queueInvalidateImmediate()
 			return
 		}
-		perftrace.Count("app.invalidate.backlog_blocked", 0)
-		m.invalidateBlockedByFrameOut.Store(true)
-		now := time.Now().UnixNano()
-		m.invalidateBacklogBlockedAt.CompareAndSwap(0, now)
+		m.deferInvalidateUntilFrameWriterDrain()
 		return
 	}
 	m.invalidateBacklogBlockedAt.Store(0)
@@ -285,6 +282,27 @@ func (m *Model) queueInvalidate() {
 		m.invalidateScheduled.Store(false)
 		m.queueInvalidateImmediate()
 	})
+}
+
+func (m *Model) deferInvalidateUntilFrameWriterDrain() {
+	if m == nil {
+		return
+	}
+	perftrace.Count("app.invalidate.backlog_blocked", 0)
+	m.invalidateBlockedByFrameOut.Store(true)
+	now := time.Now().UnixNano()
+	m.invalidateBacklogBlockedAt.CompareAndSwap(0, now)
+	if m.frameWriterHasBacklog() {
+		return
+	}
+	if blockedAt := m.invalidateBacklogBlockedAt.Swap(0); blockedAt > 0 {
+		m.observeFrameWriterDrainDuration(time.Since(time.Unix(0, blockedAt)))
+	}
+	if !m.invalidateBlockedByFrameOut.Swap(false) {
+		return
+	}
+	perftrace.Count("app.invalidate.backlog_race_bypass", 0)
+	m.queueInvalidateImmediate()
 }
 
 func (m *Model) queueInvalidateImmediate() {

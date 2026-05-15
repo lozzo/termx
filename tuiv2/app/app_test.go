@@ -90,6 +90,20 @@ func (w *backlogProbeFrameWriter) Drain() {
 	}
 }
 
+type drainingDuringBacklogCheckFrameWriter struct {
+	calls atomic.Int32
+}
+
+func (w *drainingDuringBacklogCheckFrameWriter) WriteFrame(string, string) error {
+	return nil
+}
+
+func (w *drainingDuringBacklogCheckFrameWriter) HasPendingFrame() bool {
+	return w.calls.Add(1) == 1
+}
+
+func (w *drainingDuringBacklogCheckFrameWriter) SetDrainHook(func()) {}
+
 type resetProbeFrameWriter struct {
 	recordingFrameWriter
 	resetCalls int
@@ -1937,6 +1951,37 @@ func TestQueueInvalidateWaitsForFrameWriterDrainBeforeSending(t *testing.T) {
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("timed out waiting for invalidate after frame-writer drain")
+	}
+}
+
+func TestQueueInvalidateSendsWhenFrameWriterDrainsDuringBacklogRegistration(t *testing.T) {
+	originalDelay := invalidateBatchDelay
+	invalidateBatchDelay = 0
+	defer func() { invalidateBatchDelay = originalDelay }()
+
+	model := New(shared.Config{}, nil, runtime.New(nil))
+	writer := &drainingDuringBacklogCheckFrameWriter{}
+	model.SetFrameWriter(writer)
+	sent := make(chan tea.Msg, 4)
+	model.SetSendFunc(func(msg tea.Msg) {
+		sent <- msg
+	})
+
+	model.queueInvalidate()
+
+	select {
+	case msg := <-sent:
+		if _, ok := msg.(InvalidateMsg); !ok {
+			t.Fatalf("expected invalidate after frame-writer drain race, got %#v", msg)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for invalidate after frame-writer drain race")
+	}
+	if model.invalidateBlockedByFrameOut.Load() {
+		t.Fatal("expected frame-writer backlog block to be cleared")
+	}
+	if got := writer.calls.Load(); got != 2 {
+		t.Fatalf("expected backlog recheck, got %d calls", got)
 	}
 }
 
