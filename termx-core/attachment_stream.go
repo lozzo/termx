@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-proto/wire"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 )
@@ -18,7 +17,7 @@ type attachmentStreamPump struct {
 	channel    uint16
 	remote     string
 	src        <-chan StreamMessage
-	latest     func(*streamScreenState) StreamMessage
+	latest     func() StreamMessage
 	revision   func() uint64
 	sendFrame  func(uint16, uint8, []byte) error
 	logger     *slog.Logger
@@ -32,10 +31,12 @@ type attachmentStreamPump struct {
 	screenCredit            bool
 	screenInFlight          bool
 	screenDirty             bool
+	forceLatestScreen       bool
 	screenSequence          uint64
+	lastAckedScreenSequence uint64
 	latestAckedRevision     uint64
+	screenStateRevision     uint64
 	screenSequenceRevisions map[uint64]uint64
-	screenState             *streamScreenState
 	stats                   attachmentPumpStats
 }
 
@@ -48,7 +49,7 @@ func newAttachmentStreamPump(
 	channel uint16,
 	remote string,
 	src <-chan StreamMessage,
-	latest func(*streamScreenState) StreamMessage,
+	latest func() StreamMessage,
 	revision func() uint64,
 	sendFrame func(uint16, uint8, []byte) error,
 	logger *slog.Logger,
@@ -76,9 +77,28 @@ func (p *attachmentStreamPump) screenReady(screenSequence uint64) {
 		return
 	}
 	p.mu.Lock()
+	if screenSequence == 0 && p.readyMode && p.screenInFlight {
+		p.cond.Signal()
+		p.mu.Unlock()
+		return
+	}
+	if screenSequence > p.screenSequence {
+		p.cond.Signal()
+		p.mu.Unlock()
+		return
+	}
+	if screenSequence > 0 && screenSequence <= p.lastAckedScreenSequence {
+		p.readyMode = true
+		p.cond.Signal()
+		p.mu.Unlock()
+		return
+	}
 	p.readyMode = true
 	p.screenCredit = true
 	p.screenInFlight = false
+	if screenSequence > p.lastAckedScreenSequence {
+		p.lastAckedScreenSequence = screenSequence
+	}
 	if ackRevision, ok := p.screenSequenceRevisions[screenSequence]; ok {
 		if ackRevision > p.latestAckedRevision {
 			p.latestAckedRevision = ackRevision
@@ -98,6 +118,13 @@ func (p *attachmentStreamPump) screenReady(screenSequence uint64) {
 		return
 	}
 	p.mu.Lock()
+	if needsFreshScreen {
+		p.forceLatestScreen = true
+		if removed := p.dropQueuedScreenUpdatesLocked(); removed > 0 {
+			p.stats.coalescedFrames += removed
+			perftrace.Count("transport.stream.ready.replaced_queued_screen_frames", removed)
+		}
+	}
 	if !p.hasQueuedScreenUpdateLocked() {
 		p.appendQueueMessageLocked(StreamMessage{Type: StreamScreenUpdate})
 	}
@@ -175,12 +202,18 @@ func (p *attachmentStreamPump) sendLoop() error {
 }
 
 func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) (bool, error) {
+	resolvedLatest := false
+	if msg.Type == StreamScreenUpdate && len(msg.Payload) > 0 && p.shouldSendLatestScreenFrame(msg) {
+		msg = StreamMessage{Type: StreamScreenUpdate, Revision: msg.Revision}
+	}
 	if msg.Type == StreamScreenUpdate && len(msg.Payload) == 0 {
 		switch {
 		case p.latest != nil:
-			msg = p.latest(cloneStreamScreenState(p.screenState))
+			msg = p.latest()
+			resolvedLatest = true
 		case msg.Latest != nil:
 			msg = msg.Latest()
+			resolvedLatest = true
 		default:
 			return false, nil
 		}
@@ -213,18 +246,52 @@ func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) (bool, error)
 	}
 	if typ == wire.TypeScreenUpdate {
 		p.recordSentScreenFrameAckState(p.nextScreenSequence(), msg.Revision)
+		if resolvedLatest {
+			p.markLatestScreenFrameStarted()
+		}
 	}
 	if err := p.sendFrame(p.channel, typ, payload); err != nil {
 		return false, err
 	}
 	switch typ {
 	case wire.TypeScreenUpdate:
-		p.recordSentScreenUpdateState(payload)
+		p.recordSentScreenStateRevision(msg.Revision)
 	case wire.TypeSyncLost:
-		p.screenState = nil
+		p.recordSentScreenStateRevision(0)
 	}
 	p.recordSentFrame(typ, len(payload))
 	return typ == wire.TypeScreenUpdate, nil
+}
+
+func (p *attachmentStreamPump) shouldSendLatestScreenFrame(msg StreamMessage) bool {
+	if p == nil || msg.Type != StreamScreenUpdate {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.forceLatestScreen {
+		return true
+	}
+	if !p.readyMode || msg.Revision == 0 {
+		return false
+	}
+	expectedRevision := p.screenStateRevision + 1
+	if msg.Revision <= expectedRevision {
+		return false
+	}
+	p.forceLatestScreen = true
+	p.stats.coalescedFrames++
+	perftrace.Count("transport.stream.ready.revision_gap_frames", 1)
+	return true
+}
+
+func (p *attachmentStreamPump) markLatestScreenFrameStarted() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.forceLatestScreen = false
+	p.mu.Unlock()
 }
 
 func (p *attachmentStreamPump) releaseUnsentScreenFrame() {
@@ -300,16 +367,21 @@ func (p *attachmentStreamPump) pruneScreenSequenceRevisionsLocked(ackedSequence 
 	}
 }
 
-func (p *attachmentStreamPump) recordSentScreenUpdateState(payload []byte) {
-	if p == nil || len(payload) == 0 {
+func (p *attachmentStreamPump) recordSentScreenStateRevision(revision uint64) {
+	if p == nil {
 		return
 	}
-	update, err := protocol.DecodeScreenUpdatePayload(payload)
-	if err != nil {
+	if revision == 0 {
+		p.mu.Lock()
+		p.screenStateRevision = 0
+		p.mu.Unlock()
 		return
 	}
-	next := applyStreamScreenUpdateState(p.screenState, p.terminalID, update)
-	p.screenState = streamScreenStateWithoutScrollback(next)
+	p.mu.Lock()
+	if revision > 0 {
+		p.screenStateRevision = revision
+	}
+	p.mu.Unlock()
 }
 
 func (p *attachmentStreamPump) closeInput() {
@@ -327,13 +399,18 @@ func (p *attachmentStreamPump) enqueue(msg StreamMessage) {
 	if msg.Type == StreamScreenUpdate {
 		if p.readyMode && (p.screenInFlight || !p.screenCredit || p.hasQueuedScreenUpdateLocked()) {
 			p.screenDirty = true
+			p.forceLatestScreen = true
 			p.stats.coalescedFrames++
 			perftrace.Count("transport.stream.ready.coalesced_frames", 1)
 			return
 		}
+		if p.forceLatestScreen {
+			msg = StreamMessage{Type: StreamScreenUpdate}
+		}
 		if removed := p.dropQueuedScreenUpdatesLocked(); removed > 0 {
 			p.stats.coalescedFrames += removed
 			perftrace.Count("transport.stream.backlog.coalesced_frames", removed)
+			p.forceLatestScreen = true
 			msg = StreamMessage{Type: StreamScreenUpdate}
 		}
 		p.appendQueueMessageLocked(msg)

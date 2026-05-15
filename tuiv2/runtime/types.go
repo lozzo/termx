@@ -18,6 +18,12 @@ type StreamState struct {
 	PendingReadyScreenSequence uint64
 }
 
+type PendingStreamReady struct {
+	TerminalID     string
+	Channel        uint16
+	ScreenSequence uint64
+}
+
 type RecoveryState struct {
 	SyncLost     bool
 	DroppedBytes uint64

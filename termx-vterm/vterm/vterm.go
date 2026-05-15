@@ -911,6 +911,10 @@ func (v *VTerm) LoadSnapshotWithMetadata(scrollback [][]Cell, scrollbackTimestam
 }
 
 func (v *VTerm) LoadSnapshotWithExtendedMetadata(scrollback [][]Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, scrollbackWrapped []bool, screen ScreenData, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool, cursor CursorState, modes TerminalModes) {
+	v.LoadSizedSnapshotWithExtendedMetadata(0, 0, scrollback, scrollbackTimestamps, scrollbackRowKinds, scrollbackWrapped, screen, screenTimestamps, screenRowKinds, screenWrapped, cursor, modes)
+}
+
+func (v *VTerm) LoadSizedSnapshotWithExtendedMetadata(cols, rows int, scrollback [][]Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, scrollbackWrapped []bool, screen ScreenData, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool, cursor CursorState, modes TerminalModes) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
@@ -919,8 +923,8 @@ func (v *VTerm) LoadSnapshotWithExtendedMetadata(scrollback [][]Cell, scrollback
 		<-v.done
 	}
 
-	height := len(screen.Cells)
-	width := 1
+	height := maxInt(rows, len(screen.Cells))
+	width := maxInt(cols, 1)
 	for _, row := range screen.Cells {
 		if len(row) > width {
 			width = len(row)

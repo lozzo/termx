@@ -127,6 +127,9 @@ func copyIntPtr(v *int) *int {
 func messagePayloadLen(msg StreamMessage) int {
 	switch msg.Type {
 	case StreamScreenUpdate:
+		if len(msg.Payload) == 0 {
+			return 1
+		}
 		return len(msg.Payload)
 	default:
 		return 0

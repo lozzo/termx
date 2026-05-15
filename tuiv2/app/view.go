@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/lozzow/termx/termx-shared/perftrace"
+	"github.com/lozzow/termx/tuiv2/runtime"
 )
 
 func (m *Model) View() string {
@@ -35,13 +36,15 @@ func (m *Model) View() string {
 				m.lastViewCursor = cursor
 				return ""
 			}
+			readies := m.pendingStreamReadiesForRenderedFrame()
 			result := m.render.Render()
 			cursor := result.CursorSequence()
 			viewBytes = joinedLinesLen(result.Lines) + len(cursor)
+			m.setNextFrameStreamReadies(readies)
 			_ = directWriter.WriteFrameLinesWithMeta(result.Lines, cursor, presentMetaFromRender(result.Meta))
 			m.lastViewFrame = ""
 			m.lastViewCursor = cursor
-			m.markRenderedStreamUpdatesAfterFrame()
+			m.markRenderedStreamReadiesAfterFrame(readies)
 			return ""
 		}
 		if lines, cursor, ok := m.render.CachedFrameLinesAndCursorRef(); ok {
@@ -50,12 +53,14 @@ func (m *Model) View() string {
 			m.lastViewCursor = cursor
 			return ""
 		}
+		readies := m.pendingStreamReadiesForRenderedFrame()
 		lines, cursor := m.render.RenderFrameLinesRef()
 		viewBytes = joinedLinesLen(lines) + len(cursor)
+		m.setNextFrameStreamReadies(readies)
 		_ = rowsWriter.WriteFrameLines(lines, cursor)
 		m.lastViewFrame = ""
 		m.lastViewCursor = cursor
-		m.markRenderedStreamUpdatesAfterFrame()
+		m.markRenderedStreamReadiesAfterFrame(readies)
 		return ""
 	}
 	if frame, cursor, ok := m.render.CachedFrameAndCursor(); ok {
@@ -73,14 +78,16 @@ func (m *Model) View() string {
 		m.lastViewCursor = cursor
 		return frame + cursor
 	}
+	readies := m.pendingStreamReadiesForRenderedFrame()
 	frame := m.render.RenderFrame()
 	cursor := m.render.CursorSequence()
 	viewBytes = len(frame) + len(cursor)
 	if m.frameOut != nil {
+		m.setNextFrameStreamReadies(readies)
 		_ = m.frameOut.WriteFrame(frame, cursor)
 		m.lastViewFrame = frame
 		m.lastViewCursor = cursor
-		m.markRenderedStreamUpdatesAfterFrame()
+		m.markRenderedStreamReadiesAfterFrame(readies)
 		return ""
 	}
 	if m.cursorOut != nil {
@@ -99,21 +106,42 @@ func (m *Model) View() string {
 		m.cursorOut.SetCursorSequence(cursor)
 		m.lastViewFrame = frame
 		m.lastViewCursor = cursor
-		m.markRenderedStreamUpdatesAfterFrame()
+		m.markRenderedStreamReadiesAfterFrame(readies)
 		return frame + cursor
 	}
 	m.lastViewFrame = frame
 	m.lastViewCursor = cursor
-	m.markRenderedStreamUpdatesAfterFrame()
+	m.markRenderedStreamReadiesAfterFrame(readies)
 	return frame + cursor
 }
 
+func (m *Model) pendingStreamReadiesForRenderedFrame() []runtime.PendingStreamReady {
+	if m == nil || m.runtime == nil {
+		return nil
+	}
+	return m.runtime.PendingStreamReadies()
+}
+
 func (m *Model) markRenderedStreamUpdatesAfterFrame() {
+	m.markRenderedStreamReadiesAfterFrame(m.pendingStreamReadiesForRenderedFrame())
+}
+
+func (m *Model) markRenderedStreamReadiesAfterFrame(readies []runtime.PendingStreamReady) {
 	if m == nil || m.runtime == nil {
 		return
 	}
 	if m.frameWriterHasBacklog() {
 		return
 	}
-	m.runtime.MarkRenderedStreamUpdates(context.Background())
+	m.clearPendingRenderedStreamReadies()
+	m.runtime.MarkRenderedStreamReadies(context.Background(), readies)
+}
+
+func (m *Model) setNextFrameStreamReadies(readies []runtime.PendingStreamReady) {
+	if m == nil {
+		return
+	}
+	if writer, ok := m.frameOut.(frameStreamReadyWriter); ok {
+		writer.SetNextFrameStreamReadies(readies)
+	}
 }

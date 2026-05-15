@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 func TestApplyScreenUpdateSnapshotWriteSpanDoesNotMutatePreviousSnapshot(t *testing.T) {
@@ -237,6 +238,34 @@ func TestApplyScreenUpdateSnapshotFullReplaceBehaviorUnchanged(t *testing.T) {
 	}
 	if !next.Screen.IsAlternateScreen || !next.Modes.AlternateScreen {
 		t.Fatalf("expected full replace alternate-screen state to follow modes, got screen=%v modes=%#v", next.Screen.IsAlternateScreen, next.Modes)
+	}
+}
+
+func TestLoadSnapshotIntoVTermKeepsSparseScreenRowsAtProtocolGeometry(t *testing.T) {
+	snapshot := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 5},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			snapshotTestRow("100000"),
+			snapshotTestRow("python total"),
+			snapshotTestRow("# prompt"),
+			snapshotTestRow("termx remote"),
+		}},
+		Cursor: protocol.CursorState{Row: 3, Col: 12, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	}
+	vt := localvterm.New(20, 5, 100, nil)
+
+	loadSnapshotIntoVTerm(vt, snapshot)
+
+	surface := surfaceFromVTerm(vt)
+	if surface == nil {
+		t.Fatal("expected loaded vterm surface")
+	}
+	got := []string{rowText(surface.Row(0)), rowText(surface.Row(1)), rowText(surface.Row(2)), rowText(surface.Row(3))}
+	want := []string{"100000", "python total", "# prompt", "termx remote"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected sparse screen rows %q, got %q", want, got)
 	}
 }
 

@@ -50,15 +50,16 @@ type HistoryReplayPage struct {
 }
 
 type clientStream struct {
-	mu                  sync.Mutex
-	cond                *sync.Cond
-	ch                  chan StreamFrame
-	done                chan struct{}
-	queue               []StreamFrame
-	queueLimit          int
-	screenSequence      uint64
-	pendingDroppedBytes uint64
-	closed              bool
+	mu                            sync.Mutex
+	cond                          *sync.Cond
+	ch                            chan StreamFrame
+	done                          chan struct{}
+	queue                         []StreamFrame
+	queueLimit                    int
+	screenSequence                uint64
+	pendingDroppedBytes           uint64
+	pendingSyncLostScreenSequence uint64
+	closed                        bool
 }
 
 func newClientStream() *clientStream {
@@ -98,7 +99,7 @@ func (s *clientStream) send(frame StreamFrame) {
 		if err != nil {
 			return
 		}
-		s.noteDroppedOutputLocked(dropped)
+		s.noteDroppedOutputLocked(dropped, frame.ScreenSequence)
 		s.flushPendingSyncLostLocked()
 		s.cond.Signal()
 		return
@@ -122,6 +123,7 @@ func (s *clientStream) close() {
 	close(s.done)
 	s.queue = nil
 	s.pendingDroppedBytes = 0
+	s.pendingSyncLostScreenSequence = 0
 	s.cond.Broadcast()
 }
 
@@ -164,7 +166,11 @@ func (s *clientStream) nextFrame() (StreamFrame, bool) {
 func (s *clientStream) enqueueFrameLocked(frame StreamFrame) {
 	if len(s.queue) >= s.queueLimit {
 		if frame.Type == wire.TypeScreenUpdate {
-			s.noteDroppedOutputLocked(uint64(len(frame.Payload)))
+			s.noteDroppedOutputLocked(uint64(len(frame.Payload)), frame.ScreenSequence)
+			// A dropped screen frame invalidates all later deltas. Queue the
+			// recovery marker immediately; otherwise a ready-gated producer can
+			// stall before another frame arrives to flush the pending loss.
+			s.flushPendingSyncLostLocked()
 		}
 		return
 	}
@@ -179,11 +185,14 @@ func (s *clientStream) enqueueFrameLocked(frame StreamFrame) {
 	})
 }
 
-func (s *clientStream) noteDroppedOutputLocked(dropped uint64) {
+func (s *clientStream) noteDroppedOutputLocked(dropped uint64, screenSequence uint64) {
 	if dropped == 0 {
 		return
 	}
 	s.pendingDroppedBytes += dropped
+	if screenSequence > 0 && screenSequence > s.pendingSyncLostScreenSequence {
+		s.pendingSyncLostScreenSequence = screenSequence
+	}
 }
 
 func (s *clientStream) flushPendingSyncLostLocked() {
@@ -196,14 +205,21 @@ func (s *clientStream) flushPendingSyncLostLocked() {
 			current, err := wire.DecodeSyncLostPayload(last.Payload)
 			if err == nil {
 				last.Payload = wire.EncodeSyncLostPayload(current + s.pendingDroppedBytes)
+				if s.pendingSyncLostScreenSequence > last.ScreenSequence {
+					last.ScreenSequence = s.pendingSyncLostScreenSequence
+				}
+				s.pendingSyncLostScreenSequence = 0
 				s.pendingDroppedBytes = 0
 				return
 			}
 		}
 	}
 	s.queue = append(s.queue, StreamFrame{
-		Type: wire.TypeSyncLost, Payload: wire.EncodeSyncLostPayload(s.pendingDroppedBytes),
+		Type:           wire.TypeSyncLost,
+		Payload:        wire.EncodeSyncLostPayload(s.pendingDroppedBytes),
+		ScreenSequence: s.pendingSyncLostScreenSequence,
 	})
+	s.pendingSyncLostScreenSequence = 0
 	s.pendingDroppedBytes = 0
 }
 

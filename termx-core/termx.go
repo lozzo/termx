@@ -1965,7 +1965,7 @@ func (s *Server) handleRequest(
 		attachment.setResizeControl(resizeControl)
 		s.cfg.logger.Info("server attached terminal", "terminal_id", params.TerminalID, "remote", remote, "channel", ch, "mode", params.Mode, "surface_id", surfaceID, "resize_owner", resizeControl.CanResize)
 		stream := term.SubscribeLatest(subCtx)
-		pump := newAttachmentStreamPump(subCtx, cancel, params.TerminalID, ch, remote, stream, term.screenLatestDeltaFallbackMessage, term.currentScreenRevision, sendFrame, s.cfg.logger)
+		pump := newAttachmentStreamPump(subCtx, cancel, params.TerminalID, ch, remote, stream, term.screenSnapshotFallbackMessage, term.currentScreenRevision, sendFrame, s.cfg.logger)
 		attachment.setStreamPump(pump)
 		go func() {
 			defer attachment.cleanup()

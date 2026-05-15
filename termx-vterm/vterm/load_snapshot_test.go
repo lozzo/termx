@@ -132,6 +132,31 @@ func TestLoadSnapshotWithExtendedMetadataRestoresWrappedRows(t *testing.T) {
 	}
 }
 
+func TestLoadSizedSnapshotWithExtendedMetadataPreservesSparseScreenGeometry(t *testing.T) {
+	vt := New(10, 4, 100, nil)
+	screen := ScreenData{Cells: [][]Cell{
+		cellsFromString("100000"),
+		cellsFromString("python total"),
+		cellsFromString("# prompt"),
+	}}
+
+	vt.LoadSizedSnapshotWithExtendedMetadata(20, 5, nil, nil, nil, nil, screen, nil, nil, nil, CursorState{Row: 2, Col: 8, Visible: true}, TerminalModes{AutoWrap: true})
+
+	cols, rows := vt.Size()
+	if cols != 20 || rows != 5 {
+		t.Fatalf("expected sized snapshot geometry 20x5, got %dx%d", cols, rows)
+	}
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(1), 20)); got != "python total" {
+		t.Fatalf("expected sparse row to stay at row 1 without replay reflow, got %q", got)
+	}
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(2), 20)); got != "# prompt" {
+		t.Fatalf("expected prompt row to stay at row 2, got %q", got)
+	}
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(3), 20)); got != "" {
+		t.Fatalf("expected padded row 3 blank, got %q", got)
+	}
+}
+
 func cellsFromString(value string) []Cell {
 	cells := make([]Cell, 0, len(value))
 	for _, r := range value {

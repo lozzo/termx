@@ -110,10 +110,10 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 				return
 			}
 			terminal.Stream.RetryCount = 0
-			r.handleStreamFrame(terminalID, frame)
-			if frame.Type == wire.TypeScreenUpdate {
+			if frame.Type == wire.TypeScreenUpdate || frame.Type == wire.TypeSyncLost {
 				r.deferTerminalStreamReady(terminalID, channel, frame.ScreenSequence)
 			}
+			r.handleStreamFrame(terminalID, frame)
 			if frame.Type == wire.TypeClosed {
 				return
 			}
@@ -161,12 +161,41 @@ func (r *Runtime) clearPendingTerminalStreamReady(terminalID string, channel uin
 }
 
 func (r *Runtime) MarkRenderedStreamUpdates(ctx context.Context) {
+	r.MarkRenderedStreamReadies(ctx, r.PendingStreamReadies())
+}
+
+func (r *Runtime) PendingStreamReadies() []PendingStreamReady {
 	if r == nil || r.registry == nil || r.client == nil {
-		return
+		return nil
 	}
+	ready := make([]PendingStreamReady, 0, len(r.registry.IDs()))
 	for _, terminalID := range r.registry.IDs() {
 		terminal := r.registry.Get(terminalID)
 		if terminal == nil || terminal.Stream.PendingReadyChannel == 0 {
+			continue
+		}
+		ready = append(ready, PendingStreamReady{
+			TerminalID:     terminalID,
+			Channel:        terminal.Stream.PendingReadyChannel,
+			ScreenSequence: terminal.Stream.PendingReadyScreenSequence,
+		})
+	}
+	return ready
+}
+
+func (r *Runtime) MarkRenderedStreamReadies(ctx context.Context, readies []PendingStreamReady) {
+	if r == nil || r.registry == nil || r.client == nil || len(readies) == 0 {
+		return
+	}
+	for _, ready := range readies {
+		if ready.Channel == 0 || ready.TerminalID == "" {
+			continue
+		}
+		terminal := r.registry.Get(ready.TerminalID)
+		if terminal == nil || terminal.Stream.PendingReadyChannel != ready.Channel {
+			continue
+		}
+		if terminal.Stream.PendingReadyScreenSequence != ready.ScreenSequence {
 			continue
 		}
 		channel := terminal.Stream.PendingReadyChannel

@@ -28,6 +28,10 @@ type extendedMetadataSnapshotLoader interface {
 	LoadSnapshotWithExtendedMetadata(scrollback [][]localvterm.Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, scrollbackWrapped []bool, screen localvterm.ScreenData, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool, cursor localvterm.CursorState, modes localvterm.TerminalModes)
 }
 
+type sizedExtendedMetadataSnapshotLoader interface {
+	LoadSizedSnapshotWithExtendedMetadata(cols, rows int, scrollback [][]localvterm.Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, scrollbackWrapped []bool, screen localvterm.ScreenData, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool, cursor localvterm.CursorState, modes localvterm.TerminalModes)
+}
+
 type metadataSnapshotSource interface {
 	ScreenRowKinds() []string
 	ScrollbackRowKinds() []string
@@ -219,7 +223,22 @@ func loadSnapshotIntoVTerm(vt VTermLike, snap *protocol.Snapshot) {
 	if snap.Size.Rows > 0 {
 		rows = int(snap.Size.Rows)
 	}
-	if loader, ok := vt.(extendedMetadataSnapshotLoader); ok {
+	if loader, ok := vt.(sizedExtendedMetadataSnapshotLoader); ok {
+		loader.LoadSizedSnapshotWithExtendedMetadata(
+			cols,
+			rows,
+			protocolCompactRowsToVTerm(snap.Scrollback),
+			append([]time.Time(nil), snap.ScrollbackTimestamps...),
+			append([]string(nil), snap.ScrollbackRowKinds...),
+			append([]bool(nil), snap.ScrollbackWrapped...),
+			protocolScreenToVTerm(snap.Screen),
+			append([]time.Time(nil), snap.ScreenTimestamps...),
+			append([]string(nil), snap.ScreenRowKinds...),
+			append([]bool(nil), snap.ScreenWrapped...),
+			protocolCursorToVTerm(snap.Cursor),
+			protocolModesToVTerm(snap.Modes),
+		)
+	} else if loader, ok := vt.(extendedMetadataSnapshotLoader); ok {
 		loader.LoadSnapshotWithExtendedMetadata(
 			protocolCompactRowsToVTerm(snap.Scrollback),
 			append([]time.Time(nil), snap.ScrollbackTimestamps...),

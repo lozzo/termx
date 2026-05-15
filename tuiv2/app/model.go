@@ -210,8 +210,8 @@ func (m *Model) SetFrameWriter(writer frameSequenceWriter) {
 		aware.SetTTYWidth(m.width)
 	}
 	if aware, ok := writer.(frameBackpressureWriter); ok {
-		aware.SetDrainHook(func() {
-			m.onFrameWriterDrained()
+		aware.SetDrainHook(func(readies []runtime.PendingStreamReady) {
+			m.onFrameWriterDrained(readies)
 		})
 	}
 }
@@ -326,12 +326,15 @@ func (m *Model) frameWriterHasBacklog() bool {
 	return ok && writer.HasPendingFrame()
 }
 
-func (m *Model) onFrameWriterDrained() {
+func (m *Model) onFrameWriterDrained(readies []runtime.PendingStreamReady) {
 	if m == nil {
 		return
 	}
 	if blockedAt := m.invalidateBacklogBlockedAt.Swap(0); blockedAt > 0 {
 		m.observeFrameWriterDrainDuration(time.Since(time.Unix(0, blockedAt)))
+	}
+	if len(readies) > 0 && m.runtime != nil {
+		m.runtime.MarkRenderedStreamReadies(context.Background(), readies)
 	}
 	if m.invalidateBlockedByFrameOut.Swap(false) {
 		if m.send == nil {
@@ -339,9 +342,10 @@ func (m *Model) onFrameWriterDrained() {
 		}
 		perftrace.Count("app.invalidate.frame_writer_drained", 0)
 		m.queueInvalidateImmediate()
-		return
 	}
-	m.markRenderedStreamUpdatesAfterFrame()
+}
+
+func (m *Model) clearPendingRenderedStreamReadies() {
 }
 
 func (m *Model) effectiveInvalidateBatchDelay() time.Duration {

@@ -63,7 +63,8 @@ func (w *recordingLinesWriter) WriteFrameLines(lines []string, cursor string) er
 type backlogProbeFrameWriter struct {
 	mu        sync.Mutex
 	pending   atomic.Bool
-	drainHook func()
+	drainHook func([]runtime.PendingStreamReady)
+	readies   []runtime.PendingStreamReady
 }
 
 func (w *backlogProbeFrameWriter) WriteFrame(string, string) error {
@@ -74,9 +75,15 @@ func (w *backlogProbeFrameWriter) HasPendingFrame() bool {
 	return w.pending.Load()
 }
 
-func (w *backlogProbeFrameWriter) SetDrainHook(hook func()) {
+func (w *backlogProbeFrameWriter) SetDrainHook(hook func([]runtime.PendingStreamReady)) {
 	w.mu.Lock()
 	w.drainHook = hook
+	w.mu.Unlock()
+}
+
+func (w *backlogProbeFrameWriter) SetNextFrameStreamReadies(readies []runtime.PendingStreamReady) {
+	w.mu.Lock()
+	w.readies = append(w.readies[:0], readies...)
 	w.mu.Unlock()
 }
 
@@ -84,9 +91,11 @@ func (w *backlogProbeFrameWriter) Drain() {
 	w.pending.Store(false)
 	w.mu.Lock()
 	hook := w.drainHook
+	readies := append([]runtime.PendingStreamReady(nil), w.readies...)
+	w.readies = nil
 	w.mu.Unlock()
 	if hook != nil {
-		hook()
+		hook(readies)
 	}
 }
 
@@ -102,7 +111,7 @@ func (w *drainingDuringBacklogCheckFrameWriter) HasPendingFrame() bool {
 	return w.calls.Add(1) == 1
 }
 
-func (w *drainingDuringBacklogCheckFrameWriter) SetDrainHook(func()) {}
+func (w *drainingDuringBacklogCheckFrameWriter) SetDrainHook(func([]runtime.PendingStreamReady)) {}
 
 type resetProbeFrameWriter struct {
 	recordingFrameWriter
@@ -331,6 +340,40 @@ func TestModelViewDoesNotAckStreamReadyWhenDirectFrameIsCached(t *testing.T) {
 	model.View()
 	if got := client.streamReadySequences(7); len(got) != 2 || got[1] != 43 {
 		t.Fatalf("expected invalidated render to ack sequence 43, got %#v", got)
+	}
+}
+
+func TestFrameWriterDrainAcksOnlyRenderedStreamReadySequence(t *testing.T) {
+	client := &recordingBridgeClient{}
+	rt := runtime.New(client)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.Stream.PendingReadyChannel = 7
+	terminal.Stream.PendingReadyScreenSequence = 42
+
+	model := New(shared.Config{}, nil, rt)
+	writer := &backlogProbeFrameWriter{}
+	writer.pending.Store(true)
+	model.SetFrameWriter(writer)
+
+	model.View()
+	if got := client.streamReadySequences(7); len(got) != 0 {
+		t.Fatalf("expected pending writer to delay ack, got %#v", got)
+	}
+
+	terminal.Stream.PendingReadyScreenSequence = 43
+	writer.Drain()
+	if got := client.streamReadySequences(7); len(got) != 0 {
+		t.Fatalf("expected stale drain to avoid acking newer sequence, got %#v", got)
+	}
+	if terminal.Stream.PendingReadyChannel != 7 || terminal.Stream.PendingReadyScreenSequence != 43 {
+		t.Fatalf("expected newer pending ready to remain, got %#v", terminal.Stream)
+	}
+
+	model.render.Invalidate()
+	model.View()
+	writer.Drain()
+	if got := client.streamReadySequences(7); len(got) != 1 || got[0] != 43 {
+		t.Fatalf("expected later rendered frame to ack sequence 43, got %#v", got)
 	}
 }
 
@@ -1995,6 +2038,7 @@ func TestRenderedStreamReadyWaitsForFrameWriterDrain(t *testing.T) {
 	writer.pending.Store(true)
 	model.SetFrameWriter(writer)
 
+	model.setNextFrameStreamReadies(rt.PendingStreamReadies())
 	model.markRenderedStreamUpdatesAfterFrame()
 	if got := client.streamReadySequences(7); len(got) != 0 {
 		t.Fatalf("expected pending frame writer to delay stream ready, got %#v", got)
@@ -2047,6 +2091,7 @@ func TestRenderedStreamReadyWaitsForDeferredInvalidateAfterFrameDrain(t *testing
 	if _, handled := model.handleLifecycleMessage(InvalidateMsg{}); !handled {
 		t.Fatal("expected invalidate message to be handled")
 	}
+	model.setNextFrameStreamReadies(rt.PendingStreamReadies())
 	model.markRenderedStreamUpdatesAfterFrame()
 	if got := client.streamReadySequences(7); len(got) != 1 || got[0] != 42 {
 		t.Fatalf("expected stream ready sequence 42 after deferred invalidate render, got %#v", got)

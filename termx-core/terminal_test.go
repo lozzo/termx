@@ -14,6 +14,7 @@ import (
 
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-core/fanout"
+	"github.com/lozzow/termx/termx-proto/wire"
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
@@ -355,11 +356,10 @@ func TestWriteAuthoritativeScreenUpdateBroadcastsLiveDeltaPayload(t *testing.T) 
 	}
 }
 
-func TestWriteAuthoritativeScreenUpdateLargeChunkUsesLatestFrameDeltaWhenScrollable(t *testing.T) {
-	width := 120
-	rows := 400
+func TestWriteAuthoritativeScreenUpdateLargeChunkBroadcastsLatestInvalidation(t *testing.T) {
+	width := 80
+	rows := 24
 	vt := localvterm.New(width, rows, 256, nil)
-	vt.DisableEmulatorScrollback()
 	vt.LoadSnapshot(
 		benchmarkFilledScreen(width, rows, "seed"),
 		localvterm.CursorState{Row: rows - 1, Col: 0, Visible: true},
@@ -380,8 +380,10 @@ func TestWriteAuthoritativeScreenUpdateLargeChunkUsesLatestFrameDeltaWhenScrolla
 	stream := term.stream.Subscribe(ctx)
 
 	var b strings.Builder
+	lastNeedle := ""
 	for i := 0; b.Len() <= terminalInlineDamageMaxBytes; i++ {
-		fmt.Fprintf(&b, "large-row-%04d %s\r\n", i, strings.Repeat("x", width-18))
+		lastNeedle = fmt.Sprintf("large-row-%04d", i)
+		fmt.Fprintf(&b, "%s %s\r\n", lastNeedle, strings.Repeat("x", width-len(lastNeedle)-2))
 	}
 
 	term.streamMu.Lock()
@@ -393,34 +395,33 @@ func TestWriteAuthoritativeScreenUpdateLargeChunkUsesLatestFrameDeltaWhenScrolla
 		if msg.Type != fanout.StreamScreenUpdate {
 			t.Fatalf("expected screen update, got %#v", msg)
 		}
-		if len(msg.Payload) == 0 {
-			t.Fatal("expected scrollable large output to carry latest-frame delta payload, got empty invalidation")
+		if len(msg.Payload) != 0 {
+			t.Fatalf("expected large output to broadcast latest invalidation, got payload bytes=%d", len(msg.Payload))
 		}
-		update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
+		if msg.Revision == 0 {
+			t.Fatal("expected latest invalidation to carry a screen revision")
+		}
+		term.streamMu.Lock()
+		latest := term.screenSnapshotFallbackMessageLocked()
+		term.streamMu.Unlock()
+		if latest.Type != StreamScreenUpdate || len(latest.Payload) == 0 {
+			t.Fatalf("expected snapshot fallback payload, got %#v", latest)
+		}
+		if latest.Revision != msg.Revision {
+			t.Fatalf("snapshot fallback revision mismatch: got=%d want=%d", latest.Revision, msg.Revision)
+		}
+		update, err := protocol.DecodeScreenUpdatePayload(latest.Payload)
 		if err != nil {
-			t.Fatalf("decode payload: %v", err)
+			t.Fatalf("decode snapshot payload: %v", err)
 		}
-		if update.FullReplace {
-			t.Fatalf("expected latest-frame delta payload, got full replace %#v", update)
+		if !update.FullReplace {
+			t.Fatalf("expected latest recovery to use authoritative full screen snapshot, got %#v", update)
 		}
-		hasScrollRect := false
-		hasBottomWrite := false
-		bottomStart := rows
-		for _, op := range update.Ops {
-			switch op.Code {
-			case protocol.ScreenOpScrollRect:
-				if op.Rect.Width == width && op.Rect.Height == rows && op.Dy < 0 {
-					hasScrollRect = true
-					bottomStart = rows + op.Dy
-				}
-			case protocol.ScreenOpWriteSpan:
-				if op.Row >= bottomStart && len(op.Cells) > 0 {
-					hasBottomWrite = true
-				}
-			}
+		if len(update.ScrollbackAppend) != 0 || update.ScrollbackTrim != 0 {
+			t.Fatalf("expected snapshot fallback to be screen-only, got %#v", update)
 		}
-		if !hasScrollRect || !hasBottomWrite {
-			t.Fatalf("expected scroll rect plus bottom row writes, got %#v", update.Ops)
+		if !screenUpdateContainsText(update, lastNeedle) {
+			t.Fatalf("expected snapshot fallback to contain final visible row %q, got %#v", lastNeedle, update)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for large output update")
@@ -435,7 +436,7 @@ func TestWriteAuthoritativeScreenUpdateLargeChunkUsesLatestFrameDeltaWhenScrolla
 	}
 }
 
-func TestWriteAuthoritativeScreenUpdateLargeChunkUsesScrollbackAppendAsVisibleLatestFrameDelta(t *testing.T) {
+func TestWriteAuthoritativeScreenUpdateLargeChunkAttachmentPumpSendsFinalTail(t *testing.T) {
 	width := 80
 	rows := 24
 	vt := localvterm.New(width, rows, 512, nil)
@@ -456,105 +457,80 @@ func TestWriteAuthoritativeScreenUpdateLargeChunkUsesScrollbackAppendAsVisibleLa
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stream := term.stream.Subscribe(ctx)
+	src := term.SubscribeLatest(ctx)
+	sent := make(chan protocol.StreamFrame, 64)
+	pump := newAttachmentStreamPump(
+		ctx,
+		cancel,
+		term.id,
+		7,
+		"test",
+		src,
+		term.screenSnapshotFallbackMessage,
+		term.currentScreenRevision,
+		func(channel uint16, typ uint8, payload []byte) error {
+			sent <- protocol.StreamFrame{Type: typ, Payload: append([]byte(nil), payload...)}
+			return nil
+		},
+		nil,
+	)
+	done := make(chan error, 1)
+	go func() { done <- pump.run() }()
+	defer func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("pump returned error: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for pump shutdown")
+		}
+	}()
+	pump.screenReady(0)
+	for {
+		frame := waitSentFrame(t, sent)
+		if frame.Type == wire.TypeScreenUpdate {
+			pump.screenReady(1)
+		}
+		if frame.Type == wire.TypeBootstrapDone {
+			break
+		}
+	}
 
 	var b strings.Builder
+	lastNeedle := ""
 	for i := 0; b.Len() <= terminalInlineDamageMaxBytes; i++ {
-		fmt.Fprintf(&b, "scrollback-row-%04d %s\r\n", i, strings.Repeat("x", width-24))
+		lastNeedle = fmt.Sprintf("scrollback-row-%04d", i)
+		fmt.Fprintf(&b, "%s %s\r\n", lastNeedle, strings.Repeat("x", width-len(lastNeedle)-2))
 	}
 
 	term.streamMu.Lock()
 	term.writeAuthoritativeScreenUpdateLocked(term.stream, []byte(b.String()))
 	term.streamMu.Unlock()
 
-	select {
-	case msg := <-stream:
-		if msg.Type != fanout.StreamScreenUpdate {
-			t.Fatalf("expected screen update, got %#v", msg)
-		}
-		if len(msg.Payload) == 0 {
-			t.Fatal("expected latest-frame delta payload, got empty invalidation")
-		}
-		update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
-		if err != nil {
-			t.Fatalf("decode payload: %v", err)
-		}
-		if update.FullReplace {
-			t.Fatalf("expected latest-frame delta payload, got full replace %#v", update)
-		}
-		if len(update.ScrollbackAppend) != 0 || update.ScrollbackTrim != 0 {
-			t.Fatalf("expected visible-only latest-frame delta without scrollback payload, got %#v", update)
-		}
-		hasScrollRect := false
-		hasBottomWrite := false
-		for _, op := range update.Ops {
-			switch op.Code {
-			case protocol.ScreenOpScrollRect:
-				hasScrollRect = op.Rect.Width == width && op.Rect.Height == rows && op.Dy < 0
-			case protocol.ScreenOpWriteSpan:
-				hasBottomWrite = hasBottomWrite || strings.Contains(protocolRowToString(op.Cells), "scrollback-row-")
-			}
-		}
-		if !hasScrollRect || !hasBottomWrite {
-			t.Fatalf("expected scroll rect plus bottom row writes, got %#v", update.Ops)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for large output update")
+	frame := waitSentFrame(t, sent)
+	if frame.Type != wire.TypeScreenUpdate {
+		t.Fatalf("expected screen update, got %#v", frame)
 	}
-}
-
-func TestScreenUpdateFromStateDeltaClearsShorterRows(t *testing.T) {
-	before := &streamScreenState{
-		title: "demo",
-		snapshot: &protocol.Snapshot{
-			Size: protocol.Size{Cols: 8, Rows: 1},
-			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{
-				{Content: "l", Width: 1},
-				{Content: "o", Width: 1},
-				{Content: "n", Width: 1},
-				{Content: "g", Width: 1},
-				{Content: "t", Width: 1},
-				{Content: "a", Width: 1},
-				{Content: "i", Width: 1},
-				{Content: "l", Width: 1},
-			}}},
-			Cursor: protocol.CursorState{Visible: true},
-			Modes:  protocol.TerminalModes{AutoWrap: true},
-		},
+	update, err := protocol.DecodeScreenUpdatePayload(frame.Payload)
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
 	}
-	after := &streamScreenState{
-		title: "demo",
-		snapshot: &protocol.Snapshot{
-			Size: protocol.Size{Cols: 8, Rows: 1},
-			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{
-				{Content: "o", Width: 1},
-				{Content: "k", Width: 1},
-			}}},
-			Cursor: protocol.CursorState{Visible: true},
-			Modes:  protocol.TerminalModes{AutoWrap: true},
-		},
+	if !update.FullReplace {
+		t.Fatalf("expected latest recovery to use authoritative full screen snapshot, got %#v", update)
 	}
-
-	update, ok := screenUpdateFromStateDelta(before, after)
-	if !ok {
-		t.Fatal("expected delta update")
+	if len(update.ScrollbackAppend) != 0 || update.ScrollbackTrim != 0 {
+		t.Fatalf("expected visible-only latest payload without scrollback payload, got %#v", update)
 	}
-	got := applyStreamScreenUpdateState(before, "term-1", update)
-	if got == nil || got.snapshot == nil {
-		t.Fatal("expected applied snapshot")
+	if !screenUpdateContainsText(update, lastNeedle) {
+		t.Fatalf("expected attachment latest payload to contain final visible row %q, got %#v", lastNeedle, update)
 	}
-	if text := protocolRowToString(got.snapshot.Screen.Cells[0]); text != "ok" {
-		t.Fatalf("expected shorter row to clear tail, got %q update=%#v", text, update)
+	if snapshot := term.Snapshot(0, 10); !snapshotContains(snapshot, lastNeedle) {
+		t.Fatalf("expected terminal snapshot to contain final output row %q, got %#v", lastNeedle, snapshot)
 	}
-	foundClear := false
-	for _, op := range update.Ops {
-		if op.Code == protocol.ScreenOpClearToEOL && op.Row == 0 && op.Col == 2 {
-			foundClear = true
-		}
-	}
-	if !foundClear {
-		t.Fatalf("expected clear-to-eol after shorter row write, got %#v", update.Ops)
-	}
+	pump.screenReady(0)
+	assertNoSentFrame(t, sent, 75*time.Millisecond)
 }
 
 func TestSubscribeBootstrapSendsScreenOnlyAndHistoryReplayStaysAvailable(t *testing.T) {

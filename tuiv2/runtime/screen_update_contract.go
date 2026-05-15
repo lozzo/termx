@@ -3,6 +3,7 @@ package runtime
 import (
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 type ScreenUpdateContract struct {
@@ -125,6 +126,10 @@ func (r *Runtime) applyScreenUpdateContract(terminal *TerminalRuntime, terminalI
 				loadFinish := perftrace.Measure("runtime.stream.screen_update.load_vterm_partial")
 				appliedPartial = applier.ApplyScreenUpdate(vtermScreenUpdateFromProtocol(update))
 				loadFinish(0)
+				if appliedPartial && !vtermMatchesSnapshotScreen(vt, terminal.Snapshot) {
+					perftrace.Count("runtime.stream.screen_update.partial_mismatch_reload", 1)
+					appliedPartial = false
+				}
 			}
 		}
 		if !appliedPartial {
@@ -230,4 +235,84 @@ func screenUpdateLifecycleFromClassification(classification protocol.ScreenUpdat
 
 func hasScreenUpdateRecovery(recovery RecoveryState) bool {
 	return recovery.SyncLost || recovery.DroppedBytes > 0
+}
+
+func vtermMatchesSnapshotScreen(vt VTermLike, snapshot *protocol.Snapshot) bool {
+	if vt == nil || snapshot == nil {
+		return true
+	}
+	cols, rows := vt.Size()
+	if cols != int(snapshot.Size.Cols) || rows != int(snapshot.Size.Rows) {
+		return false
+	}
+	screen := vt.ScreenContent()
+	if screen.IsAlternateScreen != snapshot.Screen.IsAlternateScreen {
+		return false
+	}
+	for row := 0; row < rows; row++ {
+		if !vtermRowMatchesProtocolRow(rowAtVTermScreen(screen.Cells, row), rowAtProtocolScreen(snapshot.Screen.Cells, row), cols) {
+			return false
+		}
+	}
+	return true
+}
+
+func vtermRowMatchesProtocolRow(left []localvterm.Cell, right []protocol.Cell, cols int) bool {
+	for col := 0; col < cols; col++ {
+		if !vtermCellMatchesProtocolCell(vtermCellAt(left, col), protocolCellAt(right, col)) {
+			return false
+		}
+	}
+	return true
+}
+
+func vtermCellMatchesProtocolCell(left localvterm.Cell, right protocol.Cell) bool {
+	return left.Content == right.Content &&
+		left.Width == right.Width &&
+		left.Style.FG == right.Style.FG &&
+		left.Style.BG == right.Style.BG &&
+		left.Style.Bold == right.Style.Bold &&
+		left.Style.Italic == right.Style.Italic &&
+		left.Style.Underline == right.Style.Underline &&
+		left.Style.Blink == right.Style.Blink &&
+		left.Style.Reverse == right.Style.Reverse &&
+		left.Style.Strikethrough == right.Style.Strikethrough
+}
+
+func rowAtVTermScreen(rows [][]localvterm.Cell, index int) []localvterm.Cell {
+	if index < 0 || index >= len(rows) {
+		return nil
+	}
+	return rows[index]
+}
+
+func rowAtProtocolScreen(rows [][]protocol.Cell, index int) []protocol.Cell {
+	if index < 0 || index >= len(rows) {
+		return nil
+	}
+	return rows[index]
+}
+
+func vtermCellAt(row []localvterm.Cell, col int) localvterm.Cell {
+	if col < 0 || col >= len(row) {
+		return localvterm.Cell{Content: " ", Width: 1}
+	}
+	cell := row[col]
+	if cell.Content == "" && cell.Width == 0 {
+		cell.Content = " "
+		cell.Width = 1
+	}
+	return cell
+}
+
+func protocolCellAt(row []protocol.Cell, col int) protocol.Cell {
+	if col < 0 || col >= len(row) {
+		return protocol.Cell{Content: " ", Width: 1}
+	}
+	cell := row[col]
+	if cell.Content == "" && cell.Width == 0 {
+		cell.Content = " "
+		cell.Width = 1
+	}
+	return cell
 }

@@ -563,6 +563,59 @@ func TestClientStreamOverflowQueuesSyncLostInsteadOfSilentDrop(t *testing.T) {
 	stream.mu.Unlock()
 }
 
+func TestClientStreamOverflowFlushesSyncLostWithoutWaitingForNextFrame(t *testing.T) {
+	stream := newClientStreamWithConfig(1, 0)
+	defer stream.close()
+
+	payload := bytes.Repeat([]byte("x"), 128)
+	stream.send(StreamFrame{Type: wire.TypeResize, Payload: wire.EncodeResizePayload(80, 24)})
+	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload})
+
+	waitForClientStreamState(t, stream, func() bool {
+		return len(stream.queue) == 2 && stream.pendingDroppedBytes == 0
+	})
+
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	if len(stream.queue) != 2 {
+		t.Fatalf("expected resize plus sync-lost after dropped screen frame, got %d frames", len(stream.queue))
+	}
+	if stream.queue[0].Type != wire.TypeResize {
+		t.Fatalf("expected first frame to remain resize, got %#v", stream.queue[0])
+	}
+	if stream.queue[1].Type != wire.TypeSyncLost {
+		t.Fatalf("expected dropped screen frame to queue sync-lost immediately, got %#v", stream.queue[1])
+	}
+	dropped, err := wire.DecodeSyncLostPayload(stream.queue[1].Payload)
+	if err != nil {
+		t.Fatalf("decode sync-lost payload: %v", err)
+	}
+	if dropped != uint64(len(payload)) {
+		t.Fatalf("expected dropped byte count %d, got %d", len(payload), dropped)
+	}
+}
+
+func TestClientStreamOverflowSyncLostAcksDroppedScreenSequence(t *testing.T) {
+	stream := newClientStreamWithConfig(1, 1)
+	defer stream.close()
+
+	payload := bytes.Repeat([]byte("x"), 128)
+	stream.send(StreamFrame{Type: wire.TypeResize, Payload: wire.EncodeResizePayload(80, 24)})
+	stream.send(StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload})
+
+	frame := waitClientStreamFrame(t, stream)
+	if frame.Type != wire.TypeResize {
+		t.Fatalf("expected first delivered frame to remain resize, got %#v", frame)
+	}
+	frame = waitClientStreamFrame(t, stream)
+	if frame.Type != wire.TypeSyncLost {
+		t.Fatalf("expected sync-lost after dropped screen frame, got %#v", frame)
+	}
+	if frame.ScreenSequence != 1 {
+		t.Fatalf("expected sync-lost to carry dropped screen sequence 1, got %d", frame.ScreenSequence)
+	}
+}
+
 func testFullReplaceScreenUpdatePayload(t *testing.T, text string) []byte {
 	t.Helper()
 	payload, err := EncodeScreenUpdatePayload(ScreenUpdate{
@@ -814,6 +867,20 @@ func waitForClientStreamState(t *testing.T, stream *clientStream, cond func() bo
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
 	t.Fatalf("timed out waiting for client stream state: queued=%d dropped=%d", len(stream.queue), stream.pendingDroppedBytes)
+}
+
+func waitClientStreamFrame(t *testing.T, stream *clientStream) StreamFrame {
+	t.Helper()
+	select {
+	case frame, ok := <-stream.channel():
+		if !ok {
+			t.Fatal("client stream closed before frame")
+		}
+		return frame
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for client stream frame")
+	}
+	return StreamFrame{}
 }
 
 type concurrentUnsafeTransport struct {

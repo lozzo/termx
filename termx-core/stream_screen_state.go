@@ -301,134 +301,6 @@ func screenOnlyUpdate(update protocol.ScreenUpdate) protocol.ScreenUpdate {
 	return update
 }
 
-func screenUpdateFromStateDelta(before, after *streamScreenState) (protocol.ScreenUpdate, bool) {
-	if after == nil || after.snapshot == nil {
-		return protocol.ScreenUpdate{}, false
-	}
-	if before == nil || before.snapshot == nil || before.snapshot.Size != after.snapshot.Size || before.snapshot.Modes.AlternateScreen != after.snapshot.Modes.AlternateScreen {
-		return screenOnlyUpdate(fullReplaceUpdateForStateDelta(nil, after, false)), true
-	}
-	rows := int(after.snapshot.Size.Rows)
-	cols := int(after.snapshot.Size.Cols)
-	if rows <= 0 || cols <= 0 {
-		return screenOnlyUpdate(fullReplaceUpdateForStateDelta(nil, after, false)), true
-	}
-	scroll := detectProtocolScreenScroll(before.snapshot, after.snapshot)
-	update := protocol.ScreenUpdate{
-		Size:   after.snapshot.Size,
-		Title:  after.title,
-		Ops:    make([]protocol.ScreenOp, 0, rows+1),
-		Cursor: after.snapshot.Cursor,
-		Modes:  after.snapshot.Modes,
-	}
-	if scroll > 0 {
-		update.Ops = append(update.Ops, protocol.ScreenOp{
-			Code: protocol.ScreenOpScrollRect,
-			Rect: protocol.ScreenRect{X: 0, Y: 0, Width: cols, Height: rows},
-			Dy:   -scroll,
-		})
-		for row := rows - scroll; row < rows; row++ {
-			appendProtocolScreenRowReplace(&update, after.snapshot, row, cols)
-		}
-		return update, true
-	}
-	for row := 0; row < rows; row++ {
-		if protocolScreenRowsAndMetaEqual(before.snapshot, after.snapshot, row) {
-			continue
-		}
-		appendProtocolScreenRowReplace(&update, after.snapshot, row, cols)
-	}
-	if len(update.Ops) == 0 && before.title == after.title && before.snapshot.Cursor == after.snapshot.Cursor && before.snapshot.Modes == after.snapshot.Modes {
-		return protocol.ScreenUpdate{}, false
-	}
-	return update, true
-}
-
-func detectProtocolScreenScroll(before, after *protocol.Snapshot) int {
-	if before == nil || after == nil || before.Size != after.Size {
-		return 0
-	}
-	rows := int(after.Size.Rows)
-	if rows <= 1 {
-		return 0
-	}
-	for shift := 1; shift < rows; shift++ {
-		ok := true
-		for row := 0; row+shift < rows; row++ {
-			if !protocolScreenRowsAndMetaEqualAt(before, row+shift, after, row) {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			return shift
-		}
-	}
-	return 0
-}
-
-func protocolScreenRowsAndMetaEqual(snapshot *protocol.Snapshot, other *protocol.Snapshot, row int) bool {
-	return protocolScreenRowsAndMetaEqualAt(snapshot, row, other, row)
-}
-
-func protocolScreenRowsAndMetaEqualAt(left *protocol.Snapshot, leftRow int, right *protocol.Snapshot, rightRow int) bool {
-	if left == nil || right == nil {
-		return false
-	}
-	return protocolRowsAndMetaEqual(
-		rowAtProtocol(left.Screen.Cells, leftRow),
-		timeAtProtocol(left.ScreenTimestamps, leftRow),
-		stringAtProtocol(left.ScreenRowKinds, leftRow),
-		boolAtProtocol(left.ScreenWrapped, leftRow),
-		rowAtProtocol(right.Screen.Cells, rightRow),
-		timeAtProtocol(right.ScreenTimestamps, rightRow),
-		stringAtProtocol(right.ScreenRowKinds, rightRow),
-		boolAtProtocol(right.ScreenWrapped, rightRow),
-	)
-}
-
-func appendProtocolScreenRowReplace(update *protocol.ScreenUpdate, snapshot *protocol.Snapshot, row int, cols int) {
-	if update == nil || snapshot == nil || row < 0 {
-		return
-	}
-	timestamp := timeAtProtocol(snapshot.ScreenTimestamps, row)
-	rowKind := stringAtProtocol(snapshot.ScreenRowKinds, row)
-	wrapped := boolAtProtocol(snapshot.ScreenWrapped, row)
-	cells := cloneProtocolCellRow(rowAtProtocol(snapshot.Screen.Cells, row))
-	if len(cells) == 0 {
-		update.Ops = append(update.Ops, protocol.ScreenOp{
-			Code:       protocol.ScreenOpClearRect,
-			Rect:       protocol.ScreenRect{X: 0, Y: row, Width: cols, Height: 1},
-			Timestamp:  timestamp,
-			RowKind:    rowKind,
-			Wrapped:    wrapped,
-			WrappedSet: true,
-		})
-		return
-	}
-	update.Ops = append(update.Ops, protocol.ScreenOp{
-		Code:       protocol.ScreenOpWriteSpan,
-		Row:        row,
-		Col:        0,
-		Cells:      cells,
-		Timestamp:  timestamp,
-		RowKind:    rowKind,
-		Wrapped:    wrapped,
-		WrappedSet: true,
-	})
-	if len(cells) < cols {
-		update.Ops = append(update.Ops, protocol.ScreenOp{
-			Code:       protocol.ScreenOpClearToEOL,
-			Row:        row,
-			Col:        len(cells),
-			Timestamp:  timestamp,
-			RowKind:    rowKind,
-			Wrapped:    wrapped,
-			WrappedSet: true,
-		})
-	}
-}
-
 func screenUpdateFromDamageState(damage localvterm.WriteDamage, title string) protocol.ScreenUpdate {
 	finish := perftrace.Measure("terminal.screen_update.from_damage_state")
 	defer finish(0)
@@ -459,77 +331,6 @@ func screenUpdateFromDamageState(damage localvterm.WriteDamage, title string) pr
 		})
 	}
 	return update
-}
-
-func screenUpdateFromLatestFrameDamage(source *localvterm.VTerm, damage localvterm.WriteDamage, title string) (protocol.ScreenUpdate, bool) {
-	finish := perftrace.Measure("terminal.screen_update.from_latest_frame_damage")
-	defer finish(0)
-	if source == nil {
-		return protocol.ScreenUpdate{}, false
-	}
-	cols, rows := source.Size()
-	if cols <= 0 || rows <= 0 {
-		return protocol.ScreenUpdate{}, false
-	}
-	screen := source.ScreenContent()
-	timestamps := source.ScreenTimestamps()
-	rowKinds := source.ScreenRowKinds()
-	wrapped := source.ScreenWrapped()
-	scroll := latestFrameScrollAmount(damage, rows)
-	if scroll <= 0 {
-		return protocol.ScreenUpdate{}, false
-	}
-	update := protocol.ScreenUpdate{
-		Size:   protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
-		Title:  title,
-		Ops:    make([]protocol.ScreenOp, 0, scroll+1),
-		Cursor: protocolCursorStateFromVTerm(source.CursorState()),
-		Modes:  protocolModesFromVTerm(source.Modes()),
-	}
-	update.Ops = append(update.Ops, protocol.ScreenOp{
-		Code: protocol.ScreenOpScrollRect,
-		Rect: protocol.ScreenRect{X: 0, Y: 0, Width: cols, Height: rows},
-		Dy:   -scroll,
-	})
-	for row := rows - scroll; row < rows; row++ {
-		timestamp := timeAtProtocol(timestamps, row)
-		rowKind := stringAtProtocol(rowKinds, row)
-		rowWrapped := boolAtProtocol(wrapped, row)
-		cells := protocolCellsFromVTermRow(rowAtVTermScreen(screen.Cells, row))
-		if len(cells) == 0 {
-			update.Ops = append(update.Ops, protocol.ScreenOp{
-				Code:       protocol.ScreenOpClearRect,
-				Rect:       protocol.ScreenRect{X: 0, Y: row, Width: cols, Height: 1},
-				Timestamp:  timestamp,
-				RowKind:    rowKind,
-				Wrapped:    rowWrapped,
-				WrappedSet: true,
-			})
-			continue
-		}
-		update.Ops = append(update.Ops, protocol.ScreenOp{
-			Code:       protocol.ScreenOpWriteSpan,
-			Row:        row,
-			Col:        0,
-			Cells:      cells,
-			Timestamp:  timestamp,
-			RowKind:    rowKind,
-			Wrapped:    rowWrapped,
-			WrappedSet: true,
-		})
-	}
-	return update, true
-}
-
-func latestFrameScrollAmount(damage localvterm.WriteDamage, rows int) int {
-	if rows <= 0 {
-		return 0
-	}
-	scroll := damage.ScreenScroll
-	if appendRows := len(damage.ScrollbackAppend); appendRows > scroll {
-		scroll = appendRows
-	}
-	return minInt(scroll, rows)
 }
 
 func snapshotScrollbackRows(snapshot *protocol.Snapshot) []protocol.ScrollbackRowAppend {
@@ -767,7 +568,9 @@ func resizeProtocolSnapshot(snapshot *protocol.Snapshot, cols, rows uint16) *pro
 	height := maxInt(1, int(maxUint16Local(snapshot.Size.Rows, rows)))
 	scrollbackSize := maxInt(len(snapshot.Scrollback)+height+1, 32)
 	vt := localvterm.New(width, height, scrollbackSize, nil)
-	vt.LoadSnapshotWithExtendedMetadata(
+	vt.LoadSizedSnapshotWithExtendedMetadata(
+		width,
+		height,
 		protocolCompactRowsToVTermRows(snapshot.Scrollback),
 		append([]time.Time(nil), snapshot.ScrollbackTimestamps...),
 		append([]string(nil), snapshot.ScrollbackRowKinds...),

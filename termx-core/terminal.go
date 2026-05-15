@@ -663,7 +663,8 @@ func seedRestartScrollback(vt *vterm.VTerm, scrollback [][]vterm.Cell, scrollbac
 		return
 	}
 	screen := vt.ScreenContent()
-	vt.LoadSnapshotWithExtendedMetadata(scrollback, scrollbackTimestamps, scrollbackRowKinds, scrollbackWrapped, screen, nil, nil, nil, vt.CursorState(), vt.Modes())
+	cols, rows := vt.Size()
+	vt.LoadSizedSnapshotWithExtendedMetadata(cols, rows, scrollback, scrollbackTimestamps, scrollbackRowKinds, scrollbackWrapped, screen, nil, nil, nil, vt.CursorState(), vt.Modes())
 }
 
 func trimBoolSlice(values []bool, size int) []bool {
@@ -1166,10 +1167,11 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 		perftrace.Count("terminal.screen_update.latest_frame_fast_path", len(chunk))
 		t.appendGridFromDamageLocked(damage)
 		revision := t.bumpScreenRevisionLocked()
-		if payload, ok := t.latestFrameScreenUpdatePayloadLocked(damage); ok {
-			stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Payload: payload, Revision: revision})
-			return
-		}
+		// Large PTY bursts are consumed into the daemon vterm with the latest-frame
+		// path, but the live payload still has to be derived from each attachment's
+		// last acknowledged screen state. A scroll-only delta guessed from the burst
+		// damage can leave old rows on the client when wrapped output scrolls more
+		// than the captured direct damage describes.
 		stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Revision: revision})
 		return
 	}
@@ -1596,26 +1598,6 @@ func (t *Terminal) screenSnapshotFallbackMessageLocked() StreamMessage {
 	return StreamMessage{Type: StreamScreenUpdate, Payload: payload, Revision: t.screenRevision}
 }
 
-func (t *Terminal) screenLatestDeltaFallbackMessage(before *streamScreenState) StreamMessage {
-	if t == nil {
-		return StreamMessage{Type: StreamSyncLost}
-	}
-	t.streamMu.Lock()
-	defer t.streamMu.Unlock()
-	return t.screenLatestDeltaFallbackMessageLocked(before)
-}
-
-func (t *Terminal) screenLatestDeltaFallbackMessageLocked(before *streamScreenState) StreamMessage {
-	if t == nil {
-		return StreamMessage{Type: StreamSyncLost}
-	}
-	payload, ok := t.screenLatestDeltaPayloadLocked(before)
-	if !ok {
-		return t.screenSnapshotFallbackMessageLocked()
-	}
-	return StreamMessage{Type: StreamScreenUpdate, Payload: payload, Revision: t.screenRevision}
-}
-
 func (t *Terminal) screenSnapshotPayloadLocked() ([]byte, bool) {
 	finish := perftrace.Measure("terminal.screen_update.snapshot_payload")
 	defer finish(0)
@@ -1630,48 +1612,6 @@ func (t *Terminal) screenSnapshotPayloadLocked() ([]byte, bool) {
 		return nil, false
 	}
 	recordEncodedScreenUpdatePayload(screenUpdateEncodeModeFullReplace, payload)
-	return payload, true
-}
-
-func (t *Terminal) screenLatestDeltaPayloadLocked(before *streamScreenState) ([]byte, bool) {
-	finish := perftrace.Measure("terminal.screen_update.latest_delta_payload")
-	defer finish(0)
-	if t == nil || t.vterm == nil {
-		return nil, false
-	}
-	after := t.currentScreenStreamStateLocked()
-	if after == nil || after.snapshot == nil {
-		return nil, false
-	}
-	update, ok := screenUpdateFromStateDelta(before, after)
-	if !ok {
-		return nil, false
-	}
-	full := screenOnlyUpdate(fullReplaceUpdateForStateDelta(nil, after, false))
-	result, ok := encodeScreenUpdatePayloadByStrategyWithDiagnostics(update, full, after.snapshot.Modes.AlternateScreen)
-	if !ok {
-		return nil, false
-	}
-	return result.Payload, true
-}
-
-func (t *Terminal) latestFrameScreenUpdatePayloadLocked(damage vterm.WriteDamage) ([]byte, bool) {
-	finish := perftrace.Measure("terminal.screen_update.from_latest_frame")
-	defer finish(0)
-	if t == nil || t.vterm == nil {
-		return nil, false
-	}
-	update, ok := screenUpdateFromLatestFrameDamage(t.vterm, damage, t.currentTitleLocked())
-	if !ok {
-		return nil, false
-	}
-	encodeFinish := perftrace.Measure("terminal.screen_update.encode")
-	payload, err := protocol.EncodeScreenUpdatePayload(update)
-	encodeFinish(len(payload))
-	if err != nil {
-		return nil, false
-	}
-	recordEncodedScreenUpdatePayload(screenUpdateEncodeModeDelta, payload)
 	return payload, true
 }
 

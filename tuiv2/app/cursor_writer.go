@@ -13,6 +13,7 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/lozzow/termx/termx-shared/perftrace"
+	tuiruntime "github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -36,7 +37,11 @@ type frameLinesWriter interface {
 type frameBackpressureWriter interface {
 	frameSequenceWriter
 	HasPendingFrame() bool
-	SetDrainHook(func())
+	SetDrainHook(func([]tuiruntime.PendingStreamReady))
+}
+
+type frameStreamReadyWriter interface {
+	SetNextFrameStreamReadies([]tuiruntime.PendingStreamReady)
 }
 
 type frameResetWriter interface {
@@ -76,7 +81,8 @@ type outputCursorWriter struct {
 	uvSlowBackoff           int
 	debugLogPath            string
 	verticalScrollMode      verticalScrollMode
-	drainHook               func()
+	drainHook               func([]tuiruntime.PendingStreamReady)
+	nextStreamReadies       []tuiruntime.PendingStreamReady
 	interactiveFlushHint    func() bool
 	backlogActive           atomic.Bool
 	adaptiveBatchLevel      uint8
@@ -120,6 +126,7 @@ type pendingDirectFrame struct {
 	meta       *presentMeta
 	cursor     string
 	afterWrite []string
+	readies    []tuiruntime.PendingStreamReady
 }
 
 type framePresenter struct {
@@ -766,6 +773,8 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 	w.pending.meta = nil
 	w.pending.cursor = cursor
 	w.pending.afterWrite = append(w.pending.afterWrite, w.afterWrite...)
+	w.pending.readies = append([]tuiruntime.PendingStreamReady(nil), w.nextStreamReadies...)
+	w.nextStreamReadies = nil
 	w.afterWrite = nil
 	w.backlogActive.Store(true)
 	if w.forceImmediateNextFrame {
@@ -829,6 +838,8 @@ func (w *outputCursorWriter) WriteFrameLinesWithMeta(lines []string, cursor stri
 	w.pending.meta = clonePresentMeta(meta)
 	w.pending.cursor = cursor
 	w.pending.afterWrite = append(w.pending.afterWrite, w.afterWrite...)
+	w.pending.readies = append([]tuiruntime.PendingStreamReady(nil), w.nextStreamReadies...)
+	w.nextStreamReadies = nil
 	w.afterWrite = nil
 	w.backlogActive.Store(true)
 	w.debugLog(
@@ -903,12 +914,13 @@ func (w *outputCursorWriter) flushPendingFrameLocked() (func(), error) {
 	meta := w.pending.meta
 	cursor := w.pending.cursor
 	afterWrite := append([]string(nil), w.pending.afterWrite...)
+	readies := append([]tuiruntime.PendingStreamReady(nil), w.pending.readies...)
 	w.pending = pendingDirectFrame{}
 	if frame == "" && len(lines) == 0 && len(afterWrite) == 0 {
 		perftrace.Count("cursor_writer.direct_flush.empty", 0)
 		w.backlogActive.Store(false)
 		w.debugLog("cursor_writer.flush_empty")
-		return w.drainHook, nil
+		return w.frameDrainHookLocked(nil), nil
 	}
 	err := error(nil)
 	flushStart := time.Now()
@@ -933,7 +945,18 @@ func (w *outputCursorWriter) flushPendingFrameLocked() (func(), error) {
 		"after_write", len(afterWrite),
 		"adaptive_level", w.adaptiveBatchLevel,
 	)
-	return w.drainHook, nil
+	return w.frameDrainHookLocked(readies), nil
+}
+
+func (w *outputCursorWriter) frameDrainHookLocked(readies []tuiruntime.PendingStreamReady) func() {
+	if w == nil || w.drainHook == nil {
+		return nil
+	}
+	hook := w.drainHook
+	captured := append([]tuiruntime.PendingStreamReady(nil), readies...)
+	return func() {
+		hook(captured)
+	}
 }
 
 func (w *outputCursorWriter) SetInteractiveFlushHint(hint func() bool) {
@@ -1532,12 +1555,21 @@ func (w *outputCursorWriter) HasPendingFrame() bool {
 	return w.backlogActive.Load()
 }
 
-func (w *outputCursorWriter) SetDrainHook(hook func()) {
+func (w *outputCursorWriter) SetDrainHook(hook func([]tuiruntime.PendingStreamReady)) {
 	if w == nil {
 		return
 	}
 	w.mu.Lock()
 	w.drainHook = hook
+	w.mu.Unlock()
+}
+
+func (w *outputCursorWriter) SetNextFrameStreamReadies(readies []tuiruntime.PendingStreamReady) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	w.nextStreamReadies = append(w.nextStreamReadies[:0], readies...)
 	w.mu.Unlock()
 }
 

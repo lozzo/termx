@@ -445,6 +445,75 @@ func TestRuntimeStreamReadyAcksRenderedScreenSequence(t *testing.T) {
 	}
 }
 
+func TestRuntimeStreamReadyCanAckDuringSynchronousInvalidate(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+	var rt *Runtime
+	rt = New(client, WithInvalidate(func() {
+		if rt != nil {
+			rt.MarkRenderedStreamUpdates(ctx)
+		}
+	}))
+
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start stream: %v", err)
+	}
+
+	client.sendFrame(9, protocol.StreamFrame{
+		Type:           wire.TypeScreenUpdate,
+		Payload:        screenUpdatePayloadForLines(t, 80, 24, "sync-render"),
+		ScreenSequence: 13,
+	})
+
+	waitFor(t, func() bool {
+		return client.lastStreamReadySequence(9) == 13
+	})
+	if !vtermContains(rt.Registry().Get("term-1").VTerm, "sync-render") {
+		t.Fatal("expected streamed output to be applied")
+	}
+}
+
+func TestRuntimeSyncLostAcksRecoveredScreenSequenceAfterRender(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 80, 24, []string{"truth"})
+	rt := New(client)
+
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start stream: %v", err)
+	}
+
+	client.sendFrame(9, protocol.StreamFrame{
+		Type:           wire.TypeSyncLost,
+		Payload:        wire.EncodeSyncLostPayload(128),
+		ScreenSequence: 11,
+	})
+
+	waitFor(t, func() bool {
+		stored := rt.Registry().Get("term-1")
+		return stored != nil && vtermContains(stored.VTerm, "truth")
+	})
+	if got := client.lastStreamReadySequence(9); got != 0 {
+		t.Fatalf("expected sync-lost recovery ack to wait for render, got %d", got)
+	}
+	rt.MarkRenderedStreamUpdates(ctx)
+	if got := client.lastStreamReadySequence(9); got != 11 {
+		t.Fatalf("expected recovered sync-lost ack sequence 11, got %d", got)
+	}
+}
+
 func TestSnapshotFromVTermPrefersRowViewsOverWholeContentCopies(t *testing.T) {
 	vt := &countingSnapshotVTerm{VTerm: localvterm.New(8, 2, 16, nil)}
 	if _, err := vt.Write([]byte("hello\r\nworld")); err != nil {

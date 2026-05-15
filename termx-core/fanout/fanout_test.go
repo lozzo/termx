@@ -155,3 +155,42 @@ func TestFanoutScreenUpdatePreemptsBufferedScreenUpdateWhenSubscriberBackedUp(t 
 		}
 	}
 }
+
+func TestFanoutPayloadlessScreenUpdateDropTriggersSyncLost(t *testing.T) {
+	f := New()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch := f.Subscribe(ctx)
+	for i := 0; i < 256; i++ {
+		f.BroadcastMessage(StreamMessage{Type: StreamScreenUpdate, Payload: []byte("x")})
+	}
+
+	f.BroadcastMessage(StreamMessage{Type: StreamScreenUpdate})
+
+	for i := 0; i < 256; i++ {
+		<-ch
+	}
+	f.BroadcastMessage(StreamMessage{Type: StreamScreenUpdate, Payload: []byte("after-drop")})
+
+	select {
+	case msg := <-ch:
+		if msg.Type != StreamSyncLost {
+			t.Fatalf("expected payloadless drop to emit sync lost, got %#v", msg)
+		}
+		if msg.DroppedBytes == 0 {
+			t.Fatal("expected non-zero dropped bytes for payloadless screen invalidation")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for sync lost")
+	}
+
+	select {
+	case msg := <-ch:
+		if msg.Type != StreamScreenUpdate || string(msg.Payload) != "after-drop" {
+			t.Fatalf("unexpected frame after sync lost: %#v", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for recovery frame")
+	}
+}

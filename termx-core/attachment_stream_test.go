@@ -25,7 +25,7 @@ func TestAttachmentStreamPumpReadyGatesScreenUpdatesToLatestFrame(t *testing.T) 
 		7,
 		"test",
 		src,
-		func(*streamScreenState) StreamMessage {
+		func() StreamMessage {
 			latestSeq++
 			return StreamMessage{Type: StreamScreenUpdate, Payload: testAttachmentScreenUpdatePayload(t, fmt.Sprintf("frame-%d", latestSeq))}
 		},
@@ -63,7 +63,7 @@ func TestAttachmentStreamPumpReadyGatesScreenUpdatesToLatestFrame(t *testing.T) 
 	}
 	assertNoSentFrame(t, sent, 75*time.Millisecond)
 
-	pump.screenReady(0)
+	pump.screenReady(1)
 	second := waitSentFrame(t, sent)
 	if second.Type != wire.TypeScreenUpdate || !testAttachmentScreenUpdateContains(t, second.Payload, "frame-2") {
 		t.Fatalf("unexpected second frame: %#v", second)
@@ -87,7 +87,7 @@ func TestAttachmentStreamPumpCoalescesReadyUpdatesWhileFrameInFlight(t *testing.
 		7,
 		"test",
 		src,
-		func(*streamScreenState) StreamMessage {
+		func() StreamMessage {
 			latestSeq++
 			return StreamMessage{Type: StreamScreenUpdate, Payload: testAttachmentScreenUpdatePayload(t, fmt.Sprintf("frame-%d", latestSeq))}
 		},
@@ -140,7 +140,7 @@ func TestAttachmentStreamPumpCoalescesReadyUpdatesWhileFrameInFlight(t *testing.
 	}
 	assertNoSentFrame(t, sent, 75*time.Millisecond)
 
-	pump.screenReady(0)
+	pump.screenReady(1)
 	releaseSend <- struct{}{}
 	second := waitSentFrame(t, sent)
 	if second.Type != wire.TypeScreenUpdate || !testAttachmentScreenUpdateContains(t, second.Payload, "frame-2") {
@@ -165,7 +165,7 @@ func TestAttachmentStreamPumpCoalescesPayloadDeltasWhileFrameInFlight(t *testing
 		7,
 		"test",
 		src,
-		func(*streamScreenState) StreamMessage {
+		func() StreamMessage {
 			latestSeq++
 			return StreamMessage{Type: StreamScreenUpdate, Payload: testAttachmentScreenUpdatePayload(t, fmt.Sprintf("latest-%d", latestSeq))}
 		},
@@ -218,7 +218,7 @@ func TestAttachmentStreamPumpCoalescesPayloadDeltasWhileFrameInFlight(t *testing
 	}
 	assertNoSentFrame(t, sent, 75*time.Millisecond)
 
-	pump.screenReady(0)
+	pump.screenReady(1)
 	releaseSend <- struct{}{}
 	second := waitSentFrame(t, sent)
 	if second.Type != wire.TypeScreenUpdate || !testAttachmentScreenUpdateContains(t, second.Payload, "latest-1") {
@@ -241,7 +241,7 @@ func TestAttachmentStreamPumpReleasesCreditWhenLatestPlaceholderSendsNoFrame(t *
 		7,
 		"test",
 		src,
-		func(*streamScreenState) StreamMessage {
+		func() StreamMessage {
 			latestCalls++
 			if latestCalls == 1 {
 				return StreamMessage{Type: StreamScreenUpdate}
@@ -310,67 +310,6 @@ func testAttachmentScreenUpdateContains(t *testing.T, payload []byte, needle str
 	return screenUpdateContainsText(update, needle)
 }
 
-func TestAttachmentStreamPumpLatestDeltaReceivesSentScreenState(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	src := make(chan StreamMessage, 16)
-	sent := make(chan protocol.StreamFrame, 16)
-	var baselineRows int
-	pump := newAttachmentStreamPump(
-		ctx,
-		cancel,
-		"term-1",
-		7,
-		"test",
-		src,
-		func(before *streamScreenState) StreamMessage {
-			if before != nil && before.snapshot != nil {
-				baselineRows = len(before.snapshot.Screen.Cells)
-			}
-			return StreamMessage{Type: StreamScreenUpdate, Payload: testAttachmentScreenUpdatePayload(t, "latest")}
-		},
-		nil,
-		func(channel uint16, typ uint8, payload []byte) error {
-			sent <- protocol.StreamFrame{Type: typ, Payload: append([]byte(nil), payload...)}
-			return nil
-		},
-		nil,
-	)
-
-	done := make(chan error, 1)
-	go func() { done <- pump.run() }()
-	defer func() {
-		cancel()
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Fatalf("pump returned error: %v", err)
-			}
-		case <-time.After(time.Second):
-			t.Fatal("timed out waiting for pump shutdown")
-		}
-	}()
-
-	pump.screenReady(0)
-	src <- StreamMessage{Type: StreamScreenUpdate, Payload: testAttachmentScreenUpdatePayload(t, "seed")}
-	first := waitSentFrame(t, sent)
-	if first.Type != wire.TypeScreenUpdate || !testAttachmentScreenUpdateContains(t, first.Payload, "seed") {
-		t.Fatalf("unexpected first frame: %#v", first)
-	}
-
-	src <- StreamMessage{Type: StreamScreenUpdate}
-	assertNoSentFrame(t, sent, 75*time.Millisecond)
-	pump.screenReady(0)
-	second := waitSentFrame(t, sent)
-	if second.Type != wire.TypeScreenUpdate || !testAttachmentScreenUpdateContains(t, second.Payload, "latest") {
-		t.Fatalf("unexpected latest frame: %#v", second)
-	}
-	if baselineRows != 1 {
-		t.Fatalf("expected latest fallback to receive sent baseline state, got rows=%d", baselineRows)
-	}
-}
-
 func TestAttachmentStreamPumpReadyRepushesWhenAckedScreenLagsTruth(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -386,7 +325,7 @@ func TestAttachmentStreamPumpReadyRepushesWhenAckedScreenLagsTruth(t *testing.T)
 		7,
 		"test",
 		src,
-		func(*streamScreenState) StreamMessage {
+		func() StreamMessage {
 			latestCalls++
 			return StreamMessage{
 				Type:     StreamScreenUpdate,
@@ -431,6 +370,129 @@ func TestAttachmentStreamPumpReadyRepushesWhenAckedScreenLagsTruth(t *testing.T)
 	}
 	if latestCalls != 1 {
 		t.Fatalf("expected one latest fallback call, got %d", latestCalls)
+	}
+}
+
+func TestAttachmentStreamPumpConvertsRevisionGapPayloadToLatest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	src := make(chan StreamMessage, 16)
+	sent := make(chan protocol.StreamFrame, 16)
+	currentRevision := uint64(1)
+	latestCalls := 0
+	pump := newAttachmentStreamPump(
+		ctx,
+		cancel,
+		"term-1",
+		7,
+		"test",
+		src,
+		func() StreamMessage {
+			latestCalls++
+			return StreamMessage{
+				Type:     StreamScreenUpdate,
+				Payload:  testAttachmentScreenUpdatePayload(t, fmt.Sprintf("truth-%d", currentRevision)),
+				Revision: currentRevision,
+			}
+		},
+		func() uint64 { return currentRevision },
+		func(channel uint16, typ uint8, payload []byte) error {
+			sent <- protocol.StreamFrame{Type: typ, Payload: append([]byte(nil), payload...)}
+			return nil
+		},
+		nil,
+	)
+
+	done := make(chan error, 1)
+	go func() { done <- pump.run() }()
+	defer func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("pump returned error: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for pump shutdown")
+		}
+	}()
+
+	pump.screenReady(0)
+	src <- StreamMessage{Type: StreamScreenUpdate, Payload: testAttachmentScreenUpdatePayload(t, "seed"), Revision: 1}
+	first := waitSentFrame(t, sent)
+	if first.Type != wire.TypeScreenUpdate || !testAttachmentScreenUpdateContains(t, first.Payload, "seed") {
+		t.Fatalf("unexpected first frame: %#v", first)
+	}
+
+	pump.screenReady(1)
+	assertNoSentFrame(t, sent, 75*time.Millisecond)
+
+	currentRevision = 3
+	src <- StreamMessage{Type: StreamScreenUpdate, Payload: testAttachmentScreenUpdatePayload(t, "prompt-only"), Revision: 3}
+	second := waitSentFrame(t, sent)
+	if second.Type != wire.TypeScreenUpdate || !testAttachmentScreenUpdateContains(t, second.Payload, "truth-3") {
+		t.Fatalf("expected revision gap payload to be replaced with latest truth, got %#v", second)
+	}
+	if testAttachmentScreenUpdateContains(t, second.Payload, "prompt-only") {
+		t.Fatalf("expected prompt-only payload to be discarded after revision gap")
+	}
+	if latestCalls != 1 {
+		t.Fatalf("expected one latest fallback call, got %d", latestCalls)
+	}
+}
+
+func TestAttachmentStreamPumpIgnoresStaleReady(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	src := make(chan StreamMessage, 8)
+	sent := make(chan protocol.StreamFrame, 8)
+	pump := newAttachmentStreamPump(
+		ctx,
+		cancel,
+		"term-1",
+		4,
+		"test",
+		src,
+		func() StreamMessage {
+			return StreamMessage{Type: StreamScreenUpdate, Payload: testAttachmentScreenUpdatePayload(t, "latest")}
+		},
+		func() uint64 { return 1 },
+		func(channel uint16, typ uint8, payload []byte) error {
+			sent <- protocol.StreamFrame{Type: typ, Payload: append([]byte(nil), payload...)}
+			return nil
+		},
+		nil,
+	)
+
+	done := make(chan error, 1)
+	go func() { done <- pump.run() }()
+	defer func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("pump returned error: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for pump shutdown")
+		}
+	}()
+
+	pump.screenReady(0)
+	src <- StreamMessage{Type: StreamScreenUpdate, Payload: testAttachmentScreenUpdatePayload(t, "first"), Revision: 1}
+	first := waitSentFrame(t, sent)
+	if first.Type != wire.TypeScreenUpdate || !testAttachmentScreenUpdateContains(t, first.Payload, "first") {
+		t.Fatalf("unexpected first frame: %#v", first)
+	}
+
+	src <- StreamMessage{Type: StreamScreenUpdate, Payload: testAttachmentScreenUpdatePayload(t, "second"), Revision: 2}
+	pump.screenReady(0)
+	assertNoSentFrame(t, sent, 75*time.Millisecond)
+	pump.screenReady(1)
+	second := waitSentFrame(t, sent)
+	if second.Type != wire.TypeScreenUpdate || !testAttachmentScreenUpdateContains(t, second.Payload, "latest") {
+		t.Fatalf("expected valid ack to release latest screen, got %#v", second)
 	}
 }
 

@@ -525,7 +525,7 @@ func TestOutputCursorWriterDrainHookFiresAfterPendingFrameFlush(t *testing.T) {
 	writer.lastFlushAt = time.Now()
 	writer.mu.Unlock()
 	drained := make(chan struct{}, 1)
-	writer.SetDrainHook(func() {
+	writer.SetDrainHook(func([]runtime.PendingStreamReady) {
 		select {
 		case drained <- struct{}{}:
 		default:
