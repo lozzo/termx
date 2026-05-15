@@ -1487,6 +1487,10 @@ func TestFramePresenterBroadFrameLineDamageUsesRawRowsWithoutParsingCells(t *tes
 	next := make([]string, 12)
 	for row := range base {
 		base[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("a", 511))
+		if row%3 == 0 {
+			next[row] = base[row]
+			continue
+		}
 		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("b", 511))
 	}
 
@@ -1508,8 +1512,36 @@ func TestFramePresenterBroadFrameLineDamageUsesRawRowsWithoutParsingCells(t *tes
 	if planLog.RenderChangedRowsMs != 0 || planLog.DiffMs != 0 {
 		t.Fatalf("expected broad raw rows to skip cell diff, got log %#v", planLog)
 	}
-	if !strings.Contains(got, "row-00 "+strings.Repeat("b", 511)) || !strings.Contains(got, "row-11 "+strings.Repeat("b", 511)) {
+	if !strings.Contains(got, "row-01 "+strings.Repeat("b", 511)) || !strings.Contains(got, "row-11 "+strings.Repeat("b", 511)) {
 		t.Fatalf("expected raw row payload to include changed rows, got length %d", len(got))
+	}
+}
+
+func TestFramePresenterPromotesNearFullBroadRawRowsToFullRepaint(t *testing.T) {
+	base := make([]string, 12)
+	next := make([]string, 12)
+	for row := range base {
+		base[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("a", 511))
+		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("b", 511))
+	}
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	if got := presenter.PresentLines(base); got == "" {
+		t.Fatal("expected initial full frame")
+	}
+
+	var planLog presentPlanLog
+	presenter.planLogHook = func(log presentPlanLog) {
+		planLog = log
+	}
+	got := presenter.PresentLines(next)
+
+	if planLog.Mode != "full_repaint" {
+		t.Fatalf("expected near-full broad raw rows to promote to full repaint, got log %#v payload %q", planLog, got)
+	}
+	if !strings.HasPrefix(got, xansi.EraseEntireDisplay) {
+		t.Fatalf("expected full repaint payload to clear display, got %q", got[:minInt(len(got), 16)])
 	}
 }
 
@@ -1522,6 +1554,10 @@ func TestOutputCursorWriterFrameLinesBroadRawRowsReplaysToTarget(t *testing.T) {
 	next := make([]string, 12)
 	for row := range base {
 		base[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("x", 73))
+		if row%3 == 0 {
+			next[row] = base[row]
+			continue
+		}
 		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("y", 73))
 	}
 
