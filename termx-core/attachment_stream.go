@@ -137,13 +137,17 @@ func (p *attachmentStreamPump) sendLoop() error {
 		if !ok {
 			return nil
 		}
-		if err := p.sendMessageFrame(msg); err != nil {
+		sentScreenFrame, err := p.sendMessageFrame(msg)
+		if err != nil {
 			return err
+		}
+		if p.readyMode && msg.Type == StreamScreenUpdate && !sentScreenFrame {
+			p.releaseUnsentScreenFrame()
 		}
 	}
 }
 
-func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) error {
+func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) (bool, error) {
 	if msg.Type == StreamScreenUpdate && len(msg.Payload) == 0 {
 		switch {
 		case p.latest != nil:
@@ -151,15 +155,15 @@ func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) error {
 		case msg.Latest != nil:
 			msg = msg.Latest()
 		default:
-			return nil
+			return false, nil
 		}
 		if msg.Type != StreamScreenUpdate || len(msg.Payload) == 0 {
-			return nil
+			return false, nil
 		}
 	}
 	typ, payload, ok := streamMessageFramePayload(msg)
 	if !ok {
-		return nil
+		return false, nil
 	}
 	if len(payload) > wire.MaxFrameSize {
 		syncLostPayload := wire.EncodeSyncLostPayload(uint64(len(payload)))
@@ -175,13 +179,13 @@ func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) error {
 			)
 		}
 		if err := p.sendFrame(p.channel, wire.TypeSyncLost, syncLostPayload); err != nil {
-			return err
+			return false, err
 		}
 		p.recordSentFrame(wire.TypeSyncLost, len(syncLostPayload))
-		return nil
+		return false, nil
 	}
 	if err := p.sendFrame(p.channel, typ, payload); err != nil {
-		return err
+		return false, err
 	}
 	switch typ {
 	case wire.TypeScreenUpdate:
@@ -190,7 +194,24 @@ func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) error {
 		p.screenState = nil
 	}
 	p.recordSentFrame(typ, len(payload))
-	return nil
+	return typ == wire.TypeScreenUpdate, nil
+}
+
+func (p *attachmentStreamPump) releaseUnsentScreenFrame() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	if p.screenInFlight {
+		p.screenInFlight = false
+		p.screenCredit = true
+		if p.screenDirty && !p.hasQueuedScreenUpdateLocked() {
+			p.appendQueueMessageLocked(StreamMessage{Type: StreamScreenUpdate})
+		}
+	}
+	p.screenDirty = false
+	p.cond.Signal()
+	p.mu.Unlock()
 }
 
 func (p *attachmentStreamPump) recordSentScreenUpdateState(payload []byte) {
