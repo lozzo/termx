@@ -90,6 +90,7 @@ type Model struct {
 	invalidateAdaptiveLevel      atomic.Uint32
 	invalidateDrainSlowStreak    atomic.Uint32
 	invalidateDrainFastStreak    atomic.Uint32
+	terminalStreamSettleSeq      atomic.Uint64
 	hostEmojiProbePending        bool
 	hostThemeFlushPending        bool
 	hostThemeBootstrapPending    bool
@@ -137,6 +138,7 @@ type floatingDragPreviewState struct {
 
 var invalidateBatchDelay = 4 * time.Millisecond
 var remoteInvalidateBatchDelay = time.Millisecond
+var terminalStreamSettleRefreshDelay = 80 * time.Millisecond
 
 const (
 	invalidateDrainSlowThreshold  = 16 * time.Millisecond
@@ -179,7 +181,7 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 	model.render = render.NewCoordinatorWithVM(func() render.RenderVM { return model.renderVM() })
 	// Default invalidate: no-op until SetSendFunc is called by run.go.
 	if model.runtime != nil {
-		model.runtime.SetInvalidate(func() { model.queueInvalidate() })
+		model.runtime.SetInvalidate(func() { model.onRuntimeInvalidate() })
 		model.sessionStore = newSessionStoreFromClient(model.runtime.Client())
 		model.runtime.SetTitleChange(func(terminalID, title string) {
 			model.sendAsync(terminalTitleMsg{TerminalID: terminalID, Title: title})
@@ -224,8 +226,35 @@ func (m *Model) SetSendFunc(send func(tea.Msg)) {
 	}
 	m.send = send
 	if m.runtime != nil {
-		m.runtime.SetInvalidate(func() { m.queueInvalidate() })
+		m.runtime.SetInvalidate(func() { m.onRuntimeInvalidate() })
 	}
+}
+
+func (m *Model) onRuntimeInvalidate() {
+	if m == nil {
+		return
+	}
+	m.queueInvalidate()
+	m.scheduleTerminalStreamSettleRefresh()
+}
+
+func (m *Model) scheduleTerminalStreamSettleRefresh() {
+	if m == nil || m.send == nil {
+		return
+	}
+	delay := m.effectiveTerminalStreamSettleRefreshDelay()
+	if delay <= 0 {
+		return
+	}
+	seq := m.terminalStreamSettleSeq.Add(1)
+	perftrace.Count("app.stream_settle_refresh.scheduled", 0)
+	time.AfterFunc(delay, func() {
+		if m == nil || m.terminalStreamSettleSeq.Load() != seq {
+			return
+		}
+		perftrace.Count("app.stream_settle_refresh.sent", 0)
+		m.sendAsync(terminalStreamSettleRefreshMsg{seq: seq})
+	})
 }
 
 func (m *Model) queueInvalidate() {
@@ -327,17 +356,21 @@ func (m *Model) frameWriterHasBacklog() bool {
 }
 
 func (m *Model) onFrameWriterDrained() {
-	if m == nil || m.send == nil {
+	if m == nil {
 		return
 	}
 	if blockedAt := m.invalidateBacklogBlockedAt.Swap(0); blockedAt > 0 {
 		m.observeFrameWriterDrainDuration(time.Since(time.Unix(0, blockedAt)))
 	}
-	if !m.invalidateBlockedByFrameOut.Swap(false) {
+	if m.invalidateBlockedByFrameOut.Swap(false) {
+		if m.send == nil {
+			return
+		}
+		perftrace.Count("app.invalidate.frame_writer_drained", 0)
+		m.queueInvalidateImmediate()
 		return
 	}
-	perftrace.Count("app.invalidate.frame_writer_drained", 0)
-	m.queueInvalidateImmediate()
+	m.markRenderedStreamUpdatesAfterFrame()
 }
 
 func (m *Model) effectiveInvalidateBatchDelay() time.Duration {
@@ -361,6 +394,14 @@ func (m *Model) effectiveInvalidateBatchDelay() time.Duration {
 		return invalidateAdaptiveMaxDelay
 	}
 	return delay
+}
+
+func (m *Model) effectiveTerminalStreamSettleRefreshDelay() time.Duration {
+	base := terminalStreamSettleRefreshDelay
+	if m == nil || base <= 0 {
+		return base
+	}
+	return shared.DurationOverride("TERMX_TERMINAL_STREAM_SETTLE_REFRESH_DELAY", base)
 }
 
 func (m *Model) observeFrameWriterDrainDuration(drain time.Duration) {

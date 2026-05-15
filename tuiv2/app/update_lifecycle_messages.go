@@ -21,6 +21,17 @@ func (m *Model) handleLifecycleMessage(msg tea.Msg) (tea.Cmd, bool) {
 	case renderRefreshMsg:
 		m.forceFullRedraw()
 		return nil, true
+	case terminalStreamSettleRefreshMsg:
+		if typed.seq == 0 || typed.seq != m.terminalStreamSettleSeq.Load() {
+			return nil, true
+		}
+		if m.frameWriterHasBacklog() {
+			m.scheduleTerminalStreamSettleRefresh()
+			m.queueInvalidate()
+			return nil, true
+		}
+		m.forceFullRedraw()
+		return nil, true
 	case tea.WindowSizeMsg:
 		if service := m.layoutResizeService(); service != nil {
 			return service.applyWindowSizeMsg(typed), true

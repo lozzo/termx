@@ -1954,6 +1954,123 @@ func TestQueueInvalidateWaitsForFrameWriterDrainBeforeSending(t *testing.T) {
 	}
 }
 
+func TestRenderedStreamReadyWaitsForFrameWriterDrain(t *testing.T) {
+	client := &recordingBridgeClient{}
+	rt := runtime.New(client)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.Stream.PendingReadyChannel = 7
+	terminal.Stream.PendingReadyScreenSequence = 42
+
+	model := New(shared.Config{}, nil, rt)
+	writer := &backlogProbeFrameWriter{}
+	writer.pending.Store(true)
+	model.SetFrameWriter(writer)
+
+	model.markRenderedStreamUpdatesAfterFrame()
+	if got := client.streamReadySequences(7); len(got) != 0 {
+		t.Fatalf("expected pending frame writer to delay stream ready, got %#v", got)
+	}
+
+	writer.Drain()
+	if got := client.streamReadySequences(7); len(got) != 1 || got[0] != 42 {
+		t.Fatalf("expected stream ready sequence 42 after frame writer drain, got %#v", got)
+	}
+	if terminal.Stream.PendingReadyChannel != 0 {
+		t.Fatalf("expected pending stream ready to be cleared, got channel %d", terminal.Stream.PendingReadyChannel)
+	}
+}
+
+func TestRenderedStreamReadyWaitsForDeferredInvalidateAfterFrameDrain(t *testing.T) {
+	originalDelay := invalidateBatchDelay
+	invalidateBatchDelay = 0
+	defer func() { invalidateBatchDelay = originalDelay }()
+
+	client := &recordingBridgeClient{}
+	rt := runtime.New(client)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.Stream.PendingReadyChannel = 7
+	terminal.Stream.PendingReadyScreenSequence = 42
+
+	model := New(shared.Config{}, nil, rt)
+	writer := &backlogProbeFrameWriter{}
+	writer.pending.Store(true)
+	model.SetFrameWriter(writer)
+	sent := make(chan tea.Msg, 4)
+	model.SetSendFunc(func(msg tea.Msg) {
+		sent <- msg
+	})
+
+	model.queueInvalidate()
+	writer.Drain()
+
+	select {
+	case msg := <-sent:
+		if _, ok := msg.(InvalidateMsg); !ok {
+			t.Fatalf("expected invalidate after frame drain, got %#v", msg)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for deferred invalidate")
+	}
+	if got := client.streamReadySequences(7); len(got) != 0 {
+		t.Fatalf("expected deferred invalidate to delay stream ready ack, got %#v", got)
+	}
+
+	if _, handled := model.handleLifecycleMessage(InvalidateMsg{}); !handled {
+		t.Fatal("expected invalidate message to be handled")
+	}
+	model.markRenderedStreamUpdatesAfterFrame()
+	if got := client.streamReadySequences(7); len(got) != 1 || got[0] != 42 {
+		t.Fatalf("expected stream ready sequence 42 after deferred invalidate render, got %#v", got)
+	}
+}
+
+func TestRuntimeInvalidateSchedulesSettleFullRedraw(t *testing.T) {
+	originalInvalidateDelay := invalidateBatchDelay
+	originalSettleDelay := terminalStreamSettleRefreshDelay
+	invalidateBatchDelay = 0
+	terminalStreamSettleRefreshDelay = time.Millisecond
+	defer func() {
+		invalidateBatchDelay = originalInvalidateDelay
+		terminalStreamSettleRefreshDelay = originalSettleDelay
+	}()
+
+	model := New(shared.Config{}, nil, runtime.New(nil))
+	writer := &resetProbeFrameWriter{}
+	model.SetFrameWriter(writer)
+	sent := make(chan tea.Msg, 4)
+	model.SetSendFunc(func(msg tea.Msg) {
+		sent <- msg
+	})
+
+	model.runtime.SetTerminalMetadata("term-1", "updated", nil)
+
+	var settle terminalStreamSettleRefreshMsg
+	gotInvalidate := false
+	deadline := time.After(200 * time.Millisecond)
+	for settle.seq == 0 || !gotInvalidate {
+		select {
+		case msg := <-sent:
+			switch typed := msg.(type) {
+			case InvalidateMsg:
+				gotInvalidate = true
+			case terminalStreamSettleRefreshMsg:
+				settle = typed
+			default:
+				t.Fatalf("unexpected message %#v", msg)
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for invalidate and settle refresh; gotInvalidate=%v settleSeq=%d", gotInvalidate, settle.seq)
+		}
+	}
+
+	if _, handled := model.handleLifecycleMessage(settle); !handled {
+		t.Fatal("expected settle refresh to be handled")
+	}
+	if writer.resetCalls != 1 {
+		t.Fatalf("expected settle refresh to force one full redraw, got %d resets", writer.resetCalls)
+	}
+}
+
 func TestQueueInvalidateSendsWhenFrameWriterDrainsDuringBacklogRegistration(t *testing.T) {
 	originalDelay := invalidateBatchDelay
 	invalidateBatchDelay = 0
@@ -4275,6 +4392,7 @@ type recordingBridgeClient struct {
 	acquireLeaseCalls  []sessionstore.AcquireLeaseParams
 	releaseLeaseCalls  []sessionstore.ReleaseLeaseParams
 	releaseLeaseErr    error
+	streamReadyCalls   map[uint16][]uint64
 }
 
 type resizeCall struct {
@@ -4436,7 +4554,20 @@ func (c *recordingBridgeClient) Resize(_ context.Context, channel uint16, cols, 
 	return nil
 }
 
-func (c *recordingBridgeClient) StreamReady(context.Context, uint16, uint64) error { return nil }
+func (c *recordingBridgeClient) StreamReady(_ context.Context, channel uint16, screenSequence uint64) error {
+	if c.streamReadyCalls == nil {
+		c.streamReadyCalls = make(map[uint16][]uint64)
+	}
+	c.streamReadyCalls[channel] = append(c.streamReadyCalls[channel], screenSequence)
+	return nil
+}
+
+func (c *recordingBridgeClient) streamReadySequences(channel uint16) []uint64 {
+	if c == nil || c.streamReadyCalls == nil {
+		return nil
+	}
+	return append([]uint64(nil), c.streamReadyCalls[channel]...)
+}
 
 func (c *recordingBridgeClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 	ch := make(chan protocol.StreamFrame)

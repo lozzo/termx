@@ -20,9 +20,7 @@ func (m *Model) View() string {
 		return ""
 	}
 	defer func() {
-		if m != nil && m.runtime != nil {
-			m.runtime.MarkRenderedStreamUpdates(context.Background())
-		}
+		m.markRenderedStreamUpdatesAfterFrame()
 	}()
 	if m.visibleAltScreenGeometryChanged() {
 		m.forceFullRedraw()
@@ -106,4 +104,14 @@ func (m *Model) View() string {
 	m.lastViewFrame = frame
 	m.lastViewCursor = cursor
 	return frame + cursor
+}
+
+func (m *Model) markRenderedStreamUpdatesAfterFrame() {
+	if m == nil || m.runtime == nil {
+		return
+	}
+	if m.frameWriterHasBacklog() {
+		return
+	}
+	m.runtime.MarkRenderedStreamUpdates(context.Background())
 }
