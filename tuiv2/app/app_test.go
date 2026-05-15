@@ -2024,53 +2024,6 @@ func TestRenderedStreamReadyWaitsForDeferredInvalidateAfterFrameDrain(t *testing
 	}
 }
 
-func TestRuntimeInvalidateSchedulesSettleFullRedraw(t *testing.T) {
-	originalInvalidateDelay := invalidateBatchDelay
-	originalSettleDelay := terminalStreamSettleRefreshDelay
-	invalidateBatchDelay = 0
-	terminalStreamSettleRefreshDelay = time.Millisecond
-	defer func() {
-		invalidateBatchDelay = originalInvalidateDelay
-		terminalStreamSettleRefreshDelay = originalSettleDelay
-	}()
-
-	model := New(shared.Config{}, nil, runtime.New(nil))
-	writer := &resetProbeFrameWriter{}
-	model.SetFrameWriter(writer)
-	sent := make(chan tea.Msg, 4)
-	model.SetSendFunc(func(msg tea.Msg) {
-		sent <- msg
-	})
-
-	model.runtime.SetTerminalMetadata("term-1", "updated", nil)
-
-	var settle terminalStreamSettleRefreshMsg
-	gotInvalidate := false
-	deadline := time.After(200 * time.Millisecond)
-	for settle.seq == 0 || !gotInvalidate {
-		select {
-		case msg := <-sent:
-			switch typed := msg.(type) {
-			case InvalidateMsg:
-				gotInvalidate = true
-			case terminalStreamSettleRefreshMsg:
-				settle = typed
-			default:
-				t.Fatalf("unexpected message %#v", msg)
-			}
-		case <-deadline:
-			t.Fatalf("timed out waiting for invalidate and settle refresh; gotInvalidate=%v settleSeq=%d", gotInvalidate, settle.seq)
-		}
-	}
-
-	if _, handled := model.handleLifecycleMessage(settle); !handled {
-		t.Fatal("expected settle refresh to be handled")
-	}
-	if writer.resetCalls != 1 {
-		t.Fatalf("expected settle refresh to force one full redraw, got %d resets", writer.resetCalls)
-	}
-}
-
 func TestQueueInvalidateSendsWhenFrameWriterDrainsDuringBacklogRegistration(t *testing.T) {
 	originalDelay := invalidateBatchDelay
 	invalidateBatchDelay = 0

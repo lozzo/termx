@@ -19,10 +19,6 @@ type InvalidateMsg struct{}
 
 type renderRefreshMsg struct{}
 
-type terminalStreamSettleRefreshMsg struct {
-	seq uint64
-}
-
 type SemanticActionMsg struct {
 	Action input.SemanticAction
 }
