@@ -1164,6 +1164,10 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 		}
 		perftrace.Count("terminal.screen_update.latest_frame_fast_path", len(chunk))
 		t.appendGridFromDamageLocked(damage)
+		if payload, ok := t.latestFrameScreenUpdatePayloadLocked(damage); ok {
+			stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Payload: payload})
+			return
+		}
 		stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate})
 		return
 	}
@@ -1572,6 +1576,26 @@ func (t *Terminal) screenSnapshotPayloadLocked() ([]byte, bool) {
 		return nil, false
 	}
 	recordEncodedScreenUpdatePayload(screenUpdateEncodeModeFullReplace, payload)
+	return payload, true
+}
+
+func (t *Terminal) latestFrameScreenUpdatePayloadLocked(damage vterm.WriteDamage) ([]byte, bool) {
+	finish := perftrace.Measure("terminal.screen_update.from_latest_frame")
+	defer finish(0)
+	if t == nil || t.vterm == nil {
+		return nil, false
+	}
+	update, ok := screenUpdateFromLatestFrameDamage(t.vterm, damage, t.currentTitleLocked())
+	if !ok {
+		return nil, false
+	}
+	encodeFinish := perftrace.Measure("terminal.screen_update.encode")
+	payload, err := protocol.EncodeScreenUpdatePayload(update)
+	encodeFinish(len(payload))
+	if err != nil {
+		return nil, false
+	}
+	recordEncodedScreenUpdatePayload(screenUpdateEncodeModeDelta, payload)
 	return payload, true
 }
 

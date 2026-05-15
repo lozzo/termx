@@ -355,10 +355,16 @@ func TestWriteAuthoritativeScreenUpdateBroadcastsLiveDeltaPayload(t *testing.T) 
 	}
 }
 
-func TestWriteAuthoritativeScreenUpdateLargeChunkUsesLatestFrameAndKeepsScrollback(t *testing.T) {
-	width := 80
-	rows := 24
+func TestWriteAuthoritativeScreenUpdateLargeChunkUsesLatestFrameDeltaWhenScrollable(t *testing.T) {
+	width := 120
+	rows := 400
 	vt := localvterm.New(width, rows, 256, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(
+		benchmarkFilledScreen(width, rows, "seed"),
+		localvterm.CursorState{Row: rows - 1, Col: 0, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
 	term := &Terminal{
 		id:     "term-large",
 		size:   Size{Cols: uint16(width), Rows: uint16(rows)},
@@ -375,7 +381,7 @@ func TestWriteAuthoritativeScreenUpdateLargeChunkUsesLatestFrameAndKeepsScrollba
 
 	var b strings.Builder
 	for i := 0; b.Len() <= terminalInlineDamageMaxBytes; i++ {
-		fmt.Fprintf(&b, "large-row-%04d payload payload payload payload payload payload\r\n", i)
+		fmt.Fprintf(&b, "large-row-%04d %s\r\n", i, strings.Repeat("x", width-18))
 	}
 
 	term.streamMu.Lock()
@@ -387,8 +393,34 @@ func TestWriteAuthoritativeScreenUpdateLargeChunkUsesLatestFrameAndKeepsScrollba
 		if msg.Type != fanout.StreamScreenUpdate {
 			t.Fatalf("expected screen update, got %#v", msg)
 		}
-		if len(msg.Payload) != 0 {
-			t.Fatalf("expected large output to use latest-frame invalidation, got payload bytes=%d", len(msg.Payload))
+		if len(msg.Payload) == 0 {
+			t.Fatal("expected scrollable large output to carry latest-frame delta payload, got empty invalidation")
+		}
+		update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
+		if err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		if update.FullReplace {
+			t.Fatalf("expected latest-frame delta payload, got full replace %#v", update)
+		}
+		hasScrollRect := false
+		hasBottomWrite := false
+		bottomStart := rows
+		for _, op := range update.Ops {
+			switch op.Code {
+			case protocol.ScreenOpScrollRect:
+				if op.Rect.Width == width && op.Rect.Height == rows && op.Dy < 0 {
+					hasScrollRect = true
+					bottomStart = rows + op.Dy
+				}
+			case protocol.ScreenOpWriteSpan:
+				if op.Row >= bottomStart && len(op.Cells) > 0 {
+					hasBottomWrite = true
+				}
+			}
+		}
+		if !hasScrollRect || !hasBottomWrite {
+			t.Fatalf("expected scroll rect plus bottom row writes, got %#v", update.Ops)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for large output update")

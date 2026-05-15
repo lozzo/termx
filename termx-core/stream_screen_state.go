@@ -333,6 +333,66 @@ func screenUpdateFromDamageState(damage localvterm.WriteDamage, title string) pr
 	return update
 }
 
+func screenUpdateFromLatestFrameDamage(source *localvterm.VTerm, damage localvterm.WriteDamage, title string) (protocol.ScreenUpdate, bool) {
+	finish := perftrace.Measure("terminal.screen_update.from_latest_frame_damage")
+	defer finish(0)
+	if source == nil || damage.ScreenScroll <= 0 {
+		return protocol.ScreenUpdate{}, false
+	}
+	cols, rows := source.Size()
+	if cols <= 0 || rows <= 0 {
+		return protocol.ScreenUpdate{}, false
+	}
+	screen := source.ScreenContent()
+	timestamps := source.ScreenTimestamps()
+	rowKinds := source.ScreenRowKinds()
+	wrapped := source.ScreenWrapped()
+	scroll := minInt(damage.ScreenScroll, rows)
+	if scroll <= 0 {
+		return protocol.ScreenUpdate{}, false
+	}
+	update := protocol.ScreenUpdate{
+		Size:   protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
+		Title:  title,
+		Ops:    make([]protocol.ScreenOp, 0, scroll+1),
+		Cursor: protocolCursorStateFromVTerm(source.CursorState()),
+		Modes:  protocolModesFromVTerm(source.Modes()),
+	}
+	update.Ops = append(update.Ops, protocol.ScreenOp{
+		Code: protocol.ScreenOpScrollRect,
+		Rect: protocol.ScreenRect{X: 0, Y: 0, Width: cols, Height: rows},
+		Dy:   -scroll,
+	})
+	for row := rows - scroll; row < rows; row++ {
+		timestamp := timeAtProtocol(timestamps, row)
+		rowKind := stringAtProtocol(rowKinds, row)
+		rowWrapped := boolAtProtocol(wrapped, row)
+		cells := protocolCellsFromVTermRow(rowAtVTermScreen(screen.Cells, row))
+		if len(cells) == 0 {
+			update.Ops = append(update.Ops, protocol.ScreenOp{
+				Code:       protocol.ScreenOpClearRect,
+				Rect:       protocol.ScreenRect{X: 0, Y: row, Width: cols, Height: 1},
+				Timestamp:  timestamp,
+				RowKind:    rowKind,
+				Wrapped:    rowWrapped,
+				WrappedSet: true,
+			})
+			continue
+		}
+		update.Ops = append(update.Ops, protocol.ScreenOp{
+			Code:       protocol.ScreenOpWriteSpan,
+			Row:        row,
+			Col:        0,
+			Cells:      cells,
+			Timestamp:  timestamp,
+			RowKind:    rowKind,
+			Wrapped:    rowWrapped,
+			WrappedSet: true,
+		})
+	}
+	return update, true
+}
+
 func snapshotScrollbackRows(snapshot *protocol.Snapshot) []protocol.ScrollbackRowAppend {
 	if snapshot == nil || len(snapshot.Scrollback) == 0 {
 		return nil
@@ -529,6 +589,13 @@ func protocolCellNeedsSnapshotRow(cell protocol.Cell) bool {
 }
 
 func rowAtProtocol(rows [][]protocol.Cell, index int) []protocol.Cell {
+	if index < 0 || index >= len(rows) {
+		return nil
+	}
+	return rows[index]
+}
+
+func rowAtVTermScreen(rows [][]localvterm.Cell, index int) []localvterm.Cell {
 	if index < 0 || index >= len(rows) {
 		return nil
 	}
