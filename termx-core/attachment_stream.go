@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-proto/wire"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 )
@@ -17,7 +18,7 @@ type attachmentStreamPump struct {
 	channel    uint16
 	remote     string
 	src        <-chan StreamMessage
-	latest     func() StreamMessage
+	latest     func(*streamScreenState) StreamMessage
 	sendFrame  func(uint16, uint8, []byte) error
 	logger     *slog.Logger
 
@@ -30,6 +31,7 @@ type attachmentStreamPump struct {
 	screenCredit   bool
 	screenInFlight bool
 	screenDirty    bool
+	screenState    *streamScreenState
 	stats          attachmentPumpStats
 }
 
@@ -40,7 +42,7 @@ func newAttachmentStreamPump(
 	channel uint16,
 	remote string,
 	src <-chan StreamMessage,
-	latest func() StreamMessage,
+	latest func(*streamScreenState) StreamMessage,
 	sendFrame func(uint16, uint8, []byte) error,
 	logger *slog.Logger,
 ) *attachmentStreamPump {
@@ -143,14 +145,14 @@ func (p *attachmentStreamPump) sendLoop() error {
 
 func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) error {
 	if msg.Type == StreamScreenUpdate && len(msg.Payload) == 0 {
-		latest := msg.Latest
-		if latest == nil {
-			latest = p.latest
-		}
-		if latest == nil {
+		switch {
+		case p.latest != nil:
+			msg = p.latest(cloneStreamScreenState(p.screenState))
+		case msg.Latest != nil:
+			msg = msg.Latest()
+		default:
 			return nil
 		}
-		msg = latest()
 		if msg.Type != StreamScreenUpdate || len(msg.Payload) == 0 {
 			return nil
 		}
@@ -181,8 +183,26 @@ func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) error {
 	if err := p.sendFrame(p.channel, typ, payload); err != nil {
 		return err
 	}
+	switch typ {
+	case wire.TypeScreenUpdate:
+		p.recordSentScreenUpdateState(payload)
+	case wire.TypeSyncLost:
+		p.screenState = nil
+	}
 	p.recordSentFrame(typ, len(payload))
 	return nil
+}
+
+func (p *attachmentStreamPump) recordSentScreenUpdateState(payload []byte) {
+	if p == nil || len(payload) == 0 {
+		return
+	}
+	update, err := protocol.DecodeScreenUpdatePayload(payload)
+	if err != nil {
+		return
+	}
+	next := applyStreamScreenUpdateState(p.screenState, p.terminalID, update)
+	p.screenState = streamScreenStateWithoutScrollback(next)
 }
 
 func (p *attachmentStreamPump) closeInput() {

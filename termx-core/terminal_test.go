@@ -435,6 +435,128 @@ func TestWriteAuthoritativeScreenUpdateLargeChunkUsesLatestFrameDeltaWhenScrolla
 	}
 }
 
+func TestWriteAuthoritativeScreenUpdateLargeChunkUsesScrollbackAppendAsVisibleLatestFrameDelta(t *testing.T) {
+	width := 80
+	rows := 24
+	vt := localvterm.New(width, rows, 512, nil)
+	vt.LoadSnapshot(
+		benchmarkFilledScreen(width, rows, "seed"),
+		localvterm.CursorState{Row: rows - 1, Col: 0, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	term := &Terminal{
+		id:     "term-large-scrollback",
+		size:   Size{Cols: uint16(width), Rows: uint16(rows)},
+		state:  StateRunning,
+		vterm:  vt,
+		stream: fanout.New(),
+		grid:   newMemoryTerminalGridStoreForTest(t),
+	}
+	defer term.grid.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := term.stream.Subscribe(ctx)
+
+	var b strings.Builder
+	for i := 0; b.Len() <= terminalInlineDamageMaxBytes; i++ {
+		fmt.Fprintf(&b, "scrollback-row-%04d %s\r\n", i, strings.Repeat("x", width-24))
+	}
+
+	term.streamMu.Lock()
+	term.writeAuthoritativeScreenUpdateLocked(term.stream, []byte(b.String()))
+	term.streamMu.Unlock()
+
+	select {
+	case msg := <-stream:
+		if msg.Type != fanout.StreamScreenUpdate {
+			t.Fatalf("expected screen update, got %#v", msg)
+		}
+		if len(msg.Payload) == 0 {
+			t.Fatal("expected latest-frame delta payload, got empty invalidation")
+		}
+		update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
+		if err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		if update.FullReplace {
+			t.Fatalf("expected latest-frame delta payload, got full replace %#v", update)
+		}
+		if len(update.ScrollbackAppend) != 0 || update.ScrollbackTrim != 0 {
+			t.Fatalf("expected visible-only latest-frame delta without scrollback payload, got %#v", update)
+		}
+		hasScrollRect := false
+		hasBottomWrite := false
+		for _, op := range update.Ops {
+			switch op.Code {
+			case protocol.ScreenOpScrollRect:
+				hasScrollRect = op.Rect.Width == width && op.Rect.Height == rows && op.Dy < 0
+			case protocol.ScreenOpWriteSpan:
+				hasBottomWrite = hasBottomWrite || strings.Contains(protocolRowToString(op.Cells), "scrollback-row-")
+			}
+		}
+		if !hasScrollRect || !hasBottomWrite {
+			t.Fatalf("expected scroll rect plus bottom row writes, got %#v", update.Ops)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for large output update")
+	}
+}
+
+func TestScreenUpdateFromStateDeltaClearsShorterRows(t *testing.T) {
+	before := &streamScreenState{
+		title: "demo",
+		snapshot: &protocol.Snapshot{
+			Size: protocol.Size{Cols: 8, Rows: 1},
+			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{
+				{Content: "l", Width: 1},
+				{Content: "o", Width: 1},
+				{Content: "n", Width: 1},
+				{Content: "g", Width: 1},
+				{Content: "t", Width: 1},
+				{Content: "a", Width: 1},
+				{Content: "i", Width: 1},
+				{Content: "l", Width: 1},
+			}}},
+			Cursor: protocol.CursorState{Visible: true},
+			Modes:  protocol.TerminalModes{AutoWrap: true},
+		},
+	}
+	after := &streamScreenState{
+		title: "demo",
+		snapshot: &protocol.Snapshot{
+			Size: protocol.Size{Cols: 8, Rows: 1},
+			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{
+				{Content: "o", Width: 1},
+				{Content: "k", Width: 1},
+			}}},
+			Cursor: protocol.CursorState{Visible: true},
+			Modes:  protocol.TerminalModes{AutoWrap: true},
+		},
+	}
+
+	update, ok := screenUpdateFromStateDelta(before, after)
+	if !ok {
+		t.Fatal("expected delta update")
+	}
+	got := applyStreamScreenUpdateState(before, "term-1", update)
+	if got == nil || got.snapshot == nil {
+		t.Fatal("expected applied snapshot")
+	}
+	if text := protocolRowToString(got.snapshot.Screen.Cells[0]); text != "ok" {
+		t.Fatalf("expected shorter row to clear tail, got %q update=%#v", text, update)
+	}
+	foundClear := false
+	for _, op := range update.Ops {
+		if op.Code == protocol.ScreenOpClearToEOL && op.Row == 0 && op.Col == 2 {
+			foundClear = true
+		}
+	}
+	if !foundClear {
+		t.Fatalf("expected clear-to-eol after shorter row write, got %#v", update.Ops)
+	}
+}
+
 func TestSubscribeBootstrapSendsScreenOnlyAndHistoryReplayStaysAvailable(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -80,17 +80,11 @@ func buildBodyCanvasIncrementalUpdates(cache *bodyRenderCache, entries []paneRen
 			case next.resolved.source == nil:
 				update.mode = bodyCanvasUpdateFullPane
 			default:
-				if next.cache.ScreenUpdate.ScreenScroll == 0 {
-					update.mode = bodyCanvasUpdateFullPane
-					break
-				}
 				plan := planTerminalWindowDelta(prev.Window, next.cache.Window, next.cache.ScreenUpdate)
 				update.scrollPlan = plan.scrollPlan
 				update.rows = append(update.rows, plan.changedRows...)
-				if update.scrollPlan.valid(next.cache.ContentRect.H) {
+				if update.scrollPlan.valid(next.cache.ContentRect.H) || len(update.rows) > 0 {
 					update.mode = bodyCanvasUpdateRows
-				} else {
-					update.mode = bodyCanvasUpdateFullPane
 				}
 			}
 		}

@@ -1309,7 +1309,11 @@ func (t *Terminal) parseLoop(epoch uint64, stream *fanout.Fanout, parserInput <-
 		if len(pending) == 0 {
 			return
 		}
+		pendingBytes := len(pending)
+		perftrace.Count("terminal.parser.flush", pendingBytes)
+		lockWaitFinish := perftrace.Measure("terminal.parser.stream_lock_wait")
 		t.streamMu.Lock()
+		lockWaitFinish(pendingBytes)
 		t.writeAuthoritativeScreenUpdateLocked(stream, pending)
 		t.streamMu.Unlock()
 		pending = nil
@@ -1562,6 +1566,17 @@ func (t *Terminal) screenSnapshotFallbackMessage() StreamMessage {
 	return StreamMessage{Type: StreamScreenUpdate, Payload: payload}
 }
 
+func (t *Terminal) screenLatestDeltaFallbackMessage(before *streamScreenState) StreamMessage {
+	if t == nil {
+		return StreamMessage{Type: StreamSyncLost}
+	}
+	payload, ok := t.screenLatestDeltaPayloadLocked(before)
+	if !ok {
+		return t.screenSnapshotFallbackMessage()
+	}
+	return StreamMessage{Type: StreamScreenUpdate, Payload: payload}
+}
+
 func (t *Terminal) screenSnapshotPayloadLocked() ([]byte, bool) {
 	finish := perftrace.Measure("terminal.screen_update.snapshot_payload")
 	defer finish(0)
@@ -1577,6 +1592,28 @@ func (t *Terminal) screenSnapshotPayloadLocked() ([]byte, bool) {
 	}
 	recordEncodedScreenUpdatePayload(screenUpdateEncodeModeFullReplace, payload)
 	return payload, true
+}
+
+func (t *Terminal) screenLatestDeltaPayloadLocked(before *streamScreenState) ([]byte, bool) {
+	finish := perftrace.Measure("terminal.screen_update.latest_delta_payload")
+	defer finish(0)
+	if t == nil || t.vterm == nil {
+		return nil, false
+	}
+	after := t.currentScreenStreamStateLocked()
+	if after == nil || after.snapshot == nil {
+		return nil, false
+	}
+	update, ok := screenUpdateFromStateDelta(before, after)
+	if !ok {
+		return nil, false
+	}
+	full := screenOnlyUpdate(fullReplaceUpdateForStateDelta(nil, after, false))
+	result, ok := encodeScreenUpdatePayloadByStrategyWithDiagnostics(update, full, after.snapshot.Modes.AlternateScreen)
+	if !ok {
+		return nil, false
+	}
+	return result.Payload, true
 }
 
 func (t *Terminal) latestFrameScreenUpdatePayloadLocked(damage vterm.WriteDamage) ([]byte, bool) {
