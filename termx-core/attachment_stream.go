@@ -19,21 +19,27 @@ type attachmentStreamPump struct {
 	remote     string
 	src        <-chan StreamMessage
 	latest     func(*streamScreenState) StreamMessage
+	revision   func() uint64
 	sendFrame  func(uint16, uint8, []byte) error
 	logger     *slog.Logger
 
-	mu             sync.Mutex
-	cond           *sync.Cond
-	queue          []StreamMessage
-	queueBytes     int
-	inputClosed    bool
-	readyMode      bool
-	screenCredit   bool
-	screenInFlight bool
-	screenDirty    bool
-	screenState    *streamScreenState
-	stats          attachmentPumpStats
+	mu                      sync.Mutex
+	cond                    *sync.Cond
+	queue                   []StreamMessage
+	queueBytes              int
+	inputClosed             bool
+	readyMode               bool
+	screenCredit            bool
+	screenInFlight          bool
+	screenDirty             bool
+	screenSequence          uint64
+	latestAckedRevision     uint64
+	screenSequenceRevisions map[uint64]uint64
+	screenState             *streamScreenState
+	stats                   attachmentPumpStats
 }
+
+const attachmentStreamAckRevisionWindow = 4096
 
 func newAttachmentStreamPump(
 	ctx context.Context,
@@ -43,26 +49,29 @@ func newAttachmentStreamPump(
 	remote string,
 	src <-chan StreamMessage,
 	latest func(*streamScreenState) StreamMessage,
+	revision func() uint64,
 	sendFrame func(uint16, uint8, []byte) error,
 	logger *slog.Logger,
 ) *attachmentStreamPump {
 	pump := &attachmentStreamPump{
-		ctx:        ctx,
-		cancel:     cancel,
-		terminalID: terminalID,
-		channel:    channel,
-		remote:     remote,
-		src:        src,
-		latest:     latest,
-		sendFrame:  sendFrame,
-		logger:     logger,
+		ctx:                     ctx,
+		cancel:                  cancel,
+		terminalID:              terminalID,
+		channel:                 channel,
+		remote:                  remote,
+		src:                     src,
+		latest:                  latest,
+		revision:                revision,
+		sendFrame:               sendFrame,
+		logger:                  logger,
+		screenSequenceRevisions: make(map[uint64]uint64),
 	}
 	pump.stats.lastLog = time.Now()
 	pump.cond = sync.NewCond(&pump.mu)
 	return pump
 }
 
-func (p *attachmentStreamPump) screenReady() {
+func (p *attachmentStreamPump) screenReady(screenSequence uint64) {
 	if p == nil {
 		return
 	}
@@ -70,10 +79,28 @@ func (p *attachmentStreamPump) screenReady() {
 	p.readyMode = true
 	p.screenCredit = true
 	p.screenInFlight = false
-	if p.screenDirty && !p.hasQueuedScreenUpdateLocked() {
+	if ackRevision, ok := p.screenSequenceRevisions[screenSequence]; ok {
+		if ackRevision > p.latestAckedRevision {
+			p.latestAckedRevision = ackRevision
+		}
+		p.pruneScreenSequenceRevisionsLocked(screenSequence)
+	}
+	ackedRevision := p.latestAckedRevision
+	needsFreshScreen := p.screenDirty
+	p.screenDirty = false
+	p.cond.Signal()
+	p.mu.Unlock()
+
+	if !needsFreshScreen && screenSequence > 0 && p.currentRevision() > ackedRevision {
+		needsFreshScreen = true
+	}
+	if !needsFreshScreen {
+		return
+	}
+	p.mu.Lock()
+	if !p.hasQueuedScreenUpdateLocked() {
 		p.appendQueueMessageLocked(StreamMessage{Type: StreamScreenUpdate})
 	}
-	p.screenDirty = false
 	p.cond.Signal()
 	p.mu.Unlock()
 }
@@ -184,6 +211,9 @@ func (p *attachmentStreamPump) sendMessageFrame(msg StreamMessage) (bool, error)
 		p.recordSentFrame(wire.TypeSyncLost, len(syncLostPayload))
 		return false, nil
 	}
+	if typ == wire.TypeScreenUpdate {
+		p.recordSentScreenFrameAckState(p.nextScreenSequence(), msg.Revision)
+	}
 	if err := p.sendFrame(p.channel, typ, payload); err != nil {
 		return false, err
 	}
@@ -212,6 +242,62 @@ func (p *attachmentStreamPump) releaseUnsentScreenFrame() {
 	p.screenDirty = false
 	p.cond.Signal()
 	p.mu.Unlock()
+}
+
+func (p *attachmentStreamPump) currentRevision() uint64 {
+	if p == nil || p.revision == nil {
+		return 0
+	}
+	return p.revision()
+}
+
+func (p *attachmentStreamPump) nextScreenSequence() uint64 {
+	if p == nil {
+		return 0
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.screenSequence++
+	return p.screenSequence
+}
+
+func (p *attachmentStreamPump) recordSentScreenFrameAckState(screenSequence, screenRevision uint64) {
+	if p == nil || screenSequence == 0 {
+		return
+	}
+	p.mu.Lock()
+	if p.screenSequenceRevisions == nil {
+		p.screenSequenceRevisions = make(map[uint64]uint64)
+	}
+	p.screenSequenceRevisions[screenSequence] = screenRevision
+	p.pruneOldScreenSequenceRevisionsLocked()
+	p.mu.Unlock()
+}
+
+func (p *attachmentStreamPump) pruneOldScreenSequenceRevisionsLocked() {
+	if p == nil || attachmentStreamAckRevisionWindow <= 0 || len(p.screenSequenceRevisions) <= attachmentStreamAckRevisionWindow {
+		return
+	}
+	minSequence := uint64(0)
+	if p.screenSequence > attachmentStreamAckRevisionWindow {
+		minSequence = p.screenSequence - attachmentStreamAckRevisionWindow
+	}
+	for sequence := range p.screenSequenceRevisions {
+		if sequence < minSequence {
+			delete(p.screenSequenceRevisions, sequence)
+		}
+	}
+}
+
+func (p *attachmentStreamPump) pruneScreenSequenceRevisionsLocked(ackedSequence uint64) {
+	if p == nil || ackedSequence == 0 {
+		return
+	}
+	for sequence := range p.screenSequenceRevisions {
+		if sequence <= ackedSequence {
+			delete(p.screenSequenceRevisions, sequence)
+		}
+	}
 }
 
 func (p *attachmentStreamPump) recordSentScreenUpdateState(payload []byte) {

@@ -4436,7 +4436,7 @@ func (c *recordingBridgeClient) Resize(_ context.Context, channel uint16, cols, 
 	return nil
 }
 
-func (c *recordingBridgeClient) StreamReady(context.Context, uint16) error { return nil }
+func (c *recordingBridgeClient) StreamReady(context.Context, uint16, uint64) error { return nil }
 
 func (c *recordingBridgeClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 	ch := make(chan protocol.StreamFrame)

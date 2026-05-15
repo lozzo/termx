@@ -21,6 +21,7 @@ const (
 type StreamMessage struct {
 	Type         StreamMessageType
 	Payload      []byte
+	Revision     uint64
 	DroppedBytes uint64
 	ExitCode     *int
 	Cols         uint16

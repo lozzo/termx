@@ -121,6 +121,22 @@ func DecodeResizePayload(payload []byte) (uint16, uint16, error) {
 	return binary.BigEndian.Uint16(payload[:2]), binary.BigEndian.Uint16(payload[2:]), nil
 }
 
+func EncodeStreamReadyPayload(screenSequence uint64) []byte {
+	payload := make([]byte, 8)
+	binary.BigEndian.PutUint64(payload, screenSequence)
+	return payload
+}
+
+func DecodeStreamReadyPayload(payload []byte) (uint64, error) {
+	if len(payload) == 0 {
+		return 0, nil
+	}
+	if len(payload) != 8 {
+		return 0, ErrShortPayload
+	}
+	return binary.BigEndian.Uint64(payload), nil
+}
+
 func EncodeSyncLostPayload(dropped uint64) []byte {
 	payload := make([]byte, 4)
 	binary.BigEndian.PutUint32(payload, uint32(dropped))

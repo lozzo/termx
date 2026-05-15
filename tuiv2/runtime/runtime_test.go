@@ -403,11 +403,45 @@ func TestRuntimeStartStreamUpdatesSurfaceAndInvalidates(t *testing.T) {
 	if got := client.streamReadyCount(9); got != 2 {
 		t.Fatalf("expected rendered screen update ack, got %d ready calls", got)
 	}
+	if got := client.lastStreamReadySequence(9); got != 0 {
+		t.Fatalf("expected direct fake stream frame to ack sequence 0, got %d", got)
+	}
 	if !vtermContains(rt.Registry().Get("term-1").VTerm, "hi") {
 		t.Fatal("expected live surface to contain streamed output")
 	}
 	if rt.Registry().Get("term-1").SurfaceVersion == 0 {
 		t.Fatal("expected surface version to advance after stream output")
+	}
+}
+
+func TestRuntimeStreamReadyAcksRenderedScreenSequence(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+	rt := New(client)
+
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start stream: %v", err)
+	}
+
+	client.sendFrame(9, protocol.StreamFrame{
+		Type:           wire.TypeScreenUpdate,
+		Payload:        screenUpdatePayloadForLines(t, 80, 24, "seq-one"),
+		ScreenSequence: 7,
+	})
+
+	waitFor(t, func() bool {
+		stored := rt.Registry().Get("term-1")
+		return stored != nil && vtermContains(stored.VTerm, "seq-one")
+	})
+	rt.MarkRenderedStreamUpdates(ctx)
+	if got := client.lastStreamReadySequence(9); got != 7 {
+		t.Fatalf("expected rendered ack sequence 7, got %d", got)
 	}
 }
 
@@ -1790,7 +1824,7 @@ type fakeBridgeClient struct {
 	streams             map[uint16]chan protocol.StreamFrame
 	streamSubscriptions map[uint16]int
 	streamStops         map[uint16]int
-	streamReadyCalls    map[uint16]int
+	streamReadyCalls    map[uint16][]uint64
 	inputCalls          []inputCall
 	resizeCalls         []resizeCall
 }
@@ -1851,7 +1885,7 @@ func newFakeBridgeClient() *fakeBridgeClient {
 		streams:             make(map[uint16]chan protocol.StreamFrame),
 		streamSubscriptions: make(map[uint16]int),
 		streamStops:         make(map[uint16]int),
-		streamReadyCalls:    make(map[uint16]int),
+		streamReadyCalls:    make(map[uint16][]uint64),
 	}
 }
 
@@ -1954,10 +1988,10 @@ func (f *fakeBridgeClient) Resize(_ context.Context, channel uint16, cols, rows 
 	return nil
 }
 
-func (f *fakeBridgeClient) StreamReady(_ context.Context, channel uint16) error {
+func (f *fakeBridgeClient) StreamReady(_ context.Context, channel uint16, screenSequence uint64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.streamReadyCalls[channel]++
+	f.streamReadyCalls[channel] = append(f.streamReadyCalls[channel], screenSequence)
 	return nil
 }
 
@@ -2018,7 +2052,17 @@ func (f *fakeBridgeClient) stopCount(channel uint16) int {
 func (f *fakeBridgeClient) streamReadyCount(channel uint16) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.streamReadyCalls[channel]
+	return len(f.streamReadyCalls[channel])
+}
+
+func (f *fakeBridgeClient) lastStreamReadySequence(channel uint16) uint64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	calls := f.streamReadyCalls[channel]
+	if len(calls) == 0 {
+		return 0
+	}
+	return calls[len(calls)-1]
 }
 
 func snapshotWithLines(terminalID string, cols, rows uint16, lines []string) *protocol.Snapshot {
@@ -2049,6 +2093,11 @@ func snapshotWithLines(terminalID string, cols, rows uint16, lines []string) *pr
 
 func screenUpdateFrameForLines(t *testing.T, cols, rows uint16, lines ...string) protocol.StreamFrame {
 	t.Helper()
+	return protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: screenUpdatePayloadForLines(t, cols, rows, lines...)}
+}
+
+func screenUpdatePayloadForLines(t *testing.T, cols, rows uint16, lines ...string) []byte {
+	t.Helper()
 	payload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
 		FullReplace: true,
 		Size:        protocol.Size{Cols: cols, Rows: rows},
@@ -2059,7 +2108,7 @@ func screenUpdateFrameForLines(t *testing.T, cols, rows uint16, lines ...string)
 	if err != nil {
 		t.Fatalf("encode screen update: %v", err)
 	}
-	return protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload}
+	return payload
 }
 
 func cloneSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {

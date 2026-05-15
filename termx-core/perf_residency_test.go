@@ -237,7 +237,7 @@ func TestPerfTerminalStressAttachLatest(t *testing.T) {
 	}
 	stream, stop := client.Stream(attach.Channel)
 	defer stop()
-	if err := client.StreamReady(ctx, attach.Channel); err != nil {
+	if err := client.StreamReady(ctx, attach.Channel, 0); err != nil {
 		t.Fatalf("stream ready: %v", err)
 	}
 
@@ -253,7 +253,7 @@ func TestPerfTerminalStressAttachLatest(t *testing.T) {
 			}
 			stats.observe(t, frame)
 			if frame.Type == wire.TypeScreenUpdate {
-				if err := client.StreamReady(ctx, attach.Channel); err != nil {
+				if err := client.StreamReady(ctx, attach.Channel, 0); err != nil {
 					t.Fatalf("stream ready: %v", err)
 				}
 			}

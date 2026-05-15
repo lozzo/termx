@@ -10,11 +10,12 @@ const (
 )
 
 type StreamState struct {
-	Active              bool
-	Stop                func()
-	RetryCount          int
-	Generation          uint64
-	PendingReadyChannel uint16
+	Active                     bool
+	Stop                       func()
+	RetryCount                 int
+	Generation                 uint64
+	PendingReadyChannel        uint16
+	PendingReadyScreenSequence uint64
 }
 
 type RecoveryState struct {

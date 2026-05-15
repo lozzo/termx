@@ -80,7 +80,8 @@ type Terminal struct {
 	// streamMu serializes VTerm updates, bootstrap capture, broadcasts and
 	// resize/close notifications so subscribers can replay a consistent screen
 	// state before switching to live frames.
-	streamMu sync.Mutex
+	streamMu       sync.Mutex
+	screenRevision uint64
 
 	// This cache holds deep-copied metadata snapshots so hot read paths do not
 	// have to rebuild command/tag payloads for every request.
@@ -386,7 +387,7 @@ func forwardTerminalStreamMessagesImmediate(ctx context.Context, src <-chan fano
 			var collapsed int
 			msg, pending, collapsed = collapseTerminalStreamScreenUpdates(src, msg)
 			if collapsed > 0 && fallback != nil {
-				msg = fanout.StreamMessage{Type: fanout.StreamScreenUpdate}
+				msg = fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Revision: msg.Revision}
 			}
 		}
 		if !sendFanoutStreamMessage(ctx, dst, msg, fallback) {
@@ -1164,11 +1165,12 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 		}
 		perftrace.Count("terminal.screen_update.latest_frame_fast_path", len(chunk))
 		t.appendGridFromDamageLocked(damage)
+		revision := t.bumpScreenRevisionLocked()
 		if payload, ok := t.latestFrameScreenUpdatePayloadLocked(damage); ok {
-			stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Payload: payload})
+			stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Payload: payload, Revision: revision})
 			return
 		}
-		stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate})
+		stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Revision: revision})
 		return
 	}
 	writeFinish := perftrace.Measure("terminal.screen_update.write_vterm")
@@ -1183,12 +1185,30 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 		return
 	}
 	t.appendGridFromDamageLocked(damage)
+	revision := t.bumpScreenRevisionLocked()
 	payload, ok := t.screenUpdatePayloadFromDamageLocked(damage)
 	if !ok {
-		stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate})
+		stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Revision: revision})
 		return
 	}
-	stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Payload: payload})
+	stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Payload: payload, Revision: revision})
+}
+
+func (t *Terminal) bumpScreenRevisionLocked() uint64 {
+	if t == nil {
+		return 0
+	}
+	t.screenRevision++
+	return t.screenRevision
+}
+
+func (t *Terminal) currentScreenRevision() uint64 {
+	if t == nil {
+		return 0
+	}
+	t.streamMu.Lock()
+	defer t.streamMu.Unlock()
+	return t.screenRevision
 }
 
 func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
@@ -1213,8 +1233,9 @@ func (t *Terminal) flushGridAppender() {
 
 func (t *Terminal) screenInvalidationMessage() StreamMessage {
 	return StreamMessage{
-		Type:   StreamScreenUpdate,
-		Latest: t.screenSnapshotFallbackMessage,
+		Type:     StreamScreenUpdate,
+		Revision: t.currentScreenRevision(),
+		Latest:   t.screenSnapshotFallbackMessage,
 	}
 }
 
@@ -1549,7 +1570,7 @@ func (t *Terminal) bootstrapMessagesLocked() []StreamMessage {
 		msgs = append(msgs, StreamMessage{Type: StreamResize, Cols: size.Cols, Rows: size.Rows})
 	}
 	if payload, ok := t.screenSnapshotPayloadLocked(); ok {
-		msgs = append(msgs, StreamMessage{Type: StreamScreenUpdate, Payload: payload})
+		msgs = append(msgs, StreamMessage{Type: StreamScreenUpdate, Payload: payload, Revision: t.screenRevision})
 	}
 	msgs = append(msgs, StreamMessage{Type: StreamBootstrapDone})
 	return msgs
@@ -1572,7 +1593,7 @@ func (t *Terminal) screenSnapshotFallbackMessageLocked() StreamMessage {
 	if !ok {
 		return StreamMessage{Type: StreamSyncLost}
 	}
-	return StreamMessage{Type: StreamScreenUpdate, Payload: payload}
+	return StreamMessage{Type: StreamScreenUpdate, Payload: payload, Revision: t.screenRevision}
 }
 
 func (t *Terminal) screenLatestDeltaFallbackMessage(before *streamScreenState) StreamMessage {
@@ -1592,7 +1613,7 @@ func (t *Terminal) screenLatestDeltaFallbackMessageLocked(before *streamScreenSt
 	if !ok {
 		return t.screenSnapshotFallbackMessageLocked()
 	}
-	return StreamMessage{Type: StreamScreenUpdate, Payload: payload}
+	return StreamMessage{Type: StreamScreenUpdate, Payload: payload, Revision: t.screenRevision}
 }
 
 func (t *Terminal) screenSnapshotPayloadLocked() ([]byte, bool) {
@@ -1858,6 +1879,7 @@ func cloneTerminalStreamMessage(msg StreamMessage) StreamMessage {
 	return StreamMessage{
 		Type:         msg.Type,
 		Payload:      append([]byte(nil), msg.Payload...),
+		Revision:     msg.Revision,
 		DroppedBytes: msg.DroppedBytes,
 		ExitCode:     copyIntPtr(msg.ExitCode),
 		Cols:         msg.Cols,
@@ -1870,6 +1892,7 @@ func cloneFanoutStreamMessage(msg fanout.StreamMessage) StreamMessage {
 	return StreamMessage{
 		Type:         StreamMessageType(msg.Type),
 		Payload:      append([]byte(nil), msg.Payload...),
+		Revision:     msg.Revision,
 		DroppedBytes: msg.DroppedBytes,
 		ExitCode:     copyIntPtr(msg.ExitCode),
 		Cols:         msg.Cols,

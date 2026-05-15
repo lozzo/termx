@@ -241,7 +241,7 @@ func (c *fakeClient) Resize(_ context.Context, channel uint16, cols, rows uint16
 	c.resizes = append(c.resizes, resizeCall{channel: channel, cols: cols, rows: rows})
 	return nil
 }
-func (c *fakeClient) StreamReady(context.Context, uint16) error { return nil }
+func (c *fakeClient) StreamReady(context.Context, uint16, uint64) error { return nil }
 func (c *fakeClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 	ch := make(chan protocol.StreamFrame)
 	close(ch)

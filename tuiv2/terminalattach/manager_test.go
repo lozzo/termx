@@ -338,7 +338,7 @@ func (c *fakeClient) Input(context.Context, uint16, []byte) error { return nil }
 
 func (c *fakeClient) Resize(context.Context, uint16, uint16, uint16) error { return nil }
 
-func (c *fakeClient) StreamReady(context.Context, uint16) error { return nil }
+func (c *fakeClient) StreamReady(context.Context, uint16, uint64) error { return nil }
 
 func (c *fakeClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 	ch := make(chan protocol.StreamFrame)

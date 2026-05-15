@@ -36,8 +36,9 @@ type result struct {
 }
 
 type StreamFrame struct {
-	Type    uint8
-	Payload []byte
+	Type           uint8
+	Payload        []byte
+	ScreenSequence uint64
 }
 
 type HistoryReplayPage struct {
@@ -55,6 +56,7 @@ type clientStream struct {
 	done                chan struct{}
 	queue               []StreamFrame
 	queueLimit          int
+	screenSequence      uint64
 	pendingDroppedBytes uint64
 	closed              bool
 }
@@ -100,6 +102,10 @@ func (s *clientStream) send(frame StreamFrame) {
 		s.flushPendingSyncLostLocked()
 		s.cond.Signal()
 		return
+	}
+	if frame.Type == wire.TypeScreenUpdate {
+		s.screenSequence++
+		frame.ScreenSequence = s.screenSequence
 	}
 	s.flushPendingSyncLostLocked()
 	s.enqueueFrameLocked(frame)
@@ -170,8 +176,9 @@ func (s *clientStream) enqueueFrameLocked(frame StreamFrame) {
 		payload = append([]byte(nil), payload...)
 	}
 	s.queue = append(s.queue, StreamFrame{
-		Type:    frame.Type,
-		Payload: payload,
+		Type:           frame.Type,
+		Payload:        payload,
+		ScreenSequence: frame.ScreenSequence,
 	})
 }
 
@@ -191,6 +198,7 @@ func (s *clientStream) coalesceQueuedScreenUpdateLocked(frame StreamFrame) bool 
 		payload = append([]byte(nil), payload...)
 	}
 	last.Payload = payload
+	last.ScreenSequence = frame.ScreenSequence
 	perftrace.Count("protocol.client.stream.screen_update.coalesced", 1)
 	return true
 }
@@ -226,8 +234,7 @@ func (s *clientStream) flushPendingSyncLostLocked() {
 		}
 	}
 	s.queue = append(s.queue, StreamFrame{
-		Type:    wire.TypeSyncLost,
-		Payload: wire.EncodeSyncLostPayload(s.pendingDroppedBytes),
+		Type: wire.TypeSyncLost, Payload: wire.EncodeSyncLostPayload(s.pendingDroppedBytes),
 	})
 	s.pendingDroppedBytes = 0
 }
@@ -449,13 +456,13 @@ func (c *Client) Resize(ctx context.Context, channel uint16, cols, rows uint16) 
 	return c.send(frame)
 }
 
-func (c *Client) StreamReady(ctx context.Context, channel uint16) error {
+func (c *Client) StreamReady(ctx context.Context, channel uint16, screenSequence uint64) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
 	}
-	frame, err := wire.EncodeFrame(channel, wire.TypeStreamReady, nil)
+	frame, err := wire.EncodeFrame(channel, wire.TypeStreamReady, wire.EncodeStreamReadyPayload(screenSequence))
 	if err != nil {
 		return err
 	}
@@ -688,26 +695,27 @@ func (c *Client) readLoop() {
 			continue
 		}
 
+		streamFrame := StreamFrame{Type: typ, Payload: append([]byte(nil), payload...)}
 		c.mu.Lock()
 		stream := c.streams[channel]
 		if stream == nil {
 			if _, dropped := c.dropped[channel]; dropped {
 				queue := c.reused[channel]
 				if len(queue) < 256 {
-					c.reused[channel] = append(queue, StreamFrame{Type: typ, Payload: append([]byte(nil), payload...)})
+					c.reused[channel] = append(queue, streamFrame)
 				}
 				c.mu.Unlock()
 				continue
 			}
 			queue := c.pending[channel]
 			if len(queue) < 256 {
-				c.pending[channel] = append(queue, StreamFrame{Type: typ, Payload: append([]byte(nil), payload...)})
+				c.pending[channel] = append(queue, streamFrame)
 			}
 			c.mu.Unlock()
 			continue
 		}
 		c.mu.Unlock()
-		stream.send(StreamFrame{Type: typ, Payload: append([]byte(nil), payload...)})
+		stream.send(streamFrame)
 	}
 }
 

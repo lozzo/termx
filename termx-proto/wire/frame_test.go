@@ -62,6 +62,14 @@ func TestPayloadHelpersRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected dropped bytes: %d", dropped)
 	}
 
+	readySeq, err := DecodeStreamReadyPayload(EncodeStreamReadyPayload(99))
+	if err != nil {
+		t.Fatalf("decode stream-ready payload failed: %v", err)
+	}
+	if readySeq != 99 {
+		t.Fatalf("unexpected stream-ready sequence: %d", readySeq)
+	}
+
 	code, err := DecodeClosedPayload(EncodeClosedPayload(-1))
 	if err != nil {
 		t.Fatalf("decode closed payload failed: %v", err)
@@ -75,6 +83,9 @@ func TestPayloadHelpersRoundTrip(t *testing.T) {
 	}
 	if _, err := DecodeSyncLostPayload([]byte{1, 2, 3}); !errors.Is(err, ErrShortPayload) {
 		t.Fatalf("expected ErrShortPayload for sync-lost payload, got %v", err)
+	}
+	if _, err := DecodeStreamReadyPayload([]byte{1, 2, 3}); !errors.Is(err, ErrShortPayload) {
+		t.Fatalf("expected ErrShortPayload for stream-ready payload, got %v", err)
 	}
 	if _, err := DecodeClosedPayload([]byte{1, 2, 3}); !errors.Is(err, ErrShortPayload) {
 		t.Fatalf("expected ErrShortPayload for closed payload, got %v", err)

@@ -54,7 +54,7 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 	stream, stop := r.client.Stream(channel)
 	terminal.Stream.Active = true
 	terminal.Stream.Stop = stop
-	r.markTerminalStreamReady(ctx, terminalID, channel)
+	r.markTerminalStreamReady(ctx, terminalID, channel, 0)
 	go func(generation uint64) {
 		defer func() {
 			if terminal.Stream.Generation != generation {
@@ -95,7 +95,7 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 			stream, stop = r.client.Stream(channel)
 			terminal.Stream.Active = true
 			terminal.Stream.Stop = stop
-			r.markTerminalStreamReady(ctx, terminalID, channel)
+			r.markTerminalStreamReady(ctx, terminalID, channel, 0)
 			return true
 		}
 		for {
@@ -112,7 +112,7 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 			terminal.Stream.RetryCount = 0
 			r.handleStreamFrame(terminalID, frame)
 			if frame.Type == wire.TypeScreenUpdate {
-				r.deferTerminalStreamReady(terminalID, channel)
+				r.deferTerminalStreamReady(terminalID, channel, frame.ScreenSequence)
 			}
 			if frame.Type == wire.TypeClosed {
 				return
@@ -127,15 +127,15 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 	return nil
 }
 
-func (r *Runtime) markTerminalStreamReady(ctx context.Context, terminalID string, channel uint16) {
+func (r *Runtime) markTerminalStreamReady(ctx context.Context, terminalID string, channel uint16, screenSequence uint64) {
 	if r == nil || r.client == nil || channel == 0 {
 		return
 	}
 	r.clearPendingTerminalStreamReady(terminalID, channel)
-	_ = r.client.StreamReady(ctx, channel)
+	_ = r.client.StreamReady(ctx, channel, screenSequence)
 }
 
-func (r *Runtime) deferTerminalStreamReady(terminalID string, channel uint16) {
+func (r *Runtime) deferTerminalStreamReady(terminalID string, channel uint16, screenSequence uint64) {
 	if r == nil || terminalID == "" || channel == 0 {
 		return
 	}
@@ -144,6 +144,7 @@ func (r *Runtime) deferTerminalStreamReady(terminalID string, channel uint16) {
 		return
 	}
 	terminal.Stream.PendingReadyChannel = channel
+	terminal.Stream.PendingReadyScreenSequence = screenSequence
 	perftrace.Count("runtime.stream.ready.deferred", 0)
 }
 
@@ -156,6 +157,7 @@ func (r *Runtime) clearPendingTerminalStreamReady(terminalID string, channel uin
 		return
 	}
 	terminal.Stream.PendingReadyChannel = 0
+	terminal.Stream.PendingReadyScreenSequence = 0
 }
 
 func (r *Runtime) MarkRenderedStreamUpdates(ctx context.Context) {
@@ -168,9 +170,11 @@ func (r *Runtime) MarkRenderedStreamUpdates(ctx context.Context) {
 			continue
 		}
 		channel := terminal.Stream.PendingReadyChannel
+		screenSequence := terminal.Stream.PendingReadyScreenSequence
 		terminal.Stream.PendingReadyChannel = 0
+		terminal.Stream.PendingReadyScreenSequence = 0
 		perftrace.Count("runtime.stream.ready.rendered", 0)
-		_ = r.client.StreamReady(ctx, channel)
+		_ = r.client.StreamReady(ctx, channel, screenSequence)
 	}
 }
 

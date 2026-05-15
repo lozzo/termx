@@ -1265,7 +1265,12 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 			continue
 		}
 		if typ == wire.TypeStreamReady {
-			attachment.streamReady()
+			screenSequence, err := wire.DecodeStreamReadyPayload(payload)
+			if err != nil {
+				s.cfg.logger.Warn("transport stream ready rejected for malformed payload", "remote", remote, "terminal_id", attachment.terminalID, "channel", channel, "error", err)
+				continue
+			}
+			attachment.streamReady(screenSequence)
 			continue
 		}
 		if attachment.mode() != ModeCollaborator {
@@ -1960,7 +1965,7 @@ func (s *Server) handleRequest(
 		attachment.setResizeControl(resizeControl)
 		s.cfg.logger.Info("server attached terminal", "terminal_id", params.TerminalID, "remote", remote, "channel", ch, "mode", params.Mode, "surface_id", surfaceID, "resize_owner", resizeControl.CanResize)
 		stream := term.SubscribeLatest(subCtx)
-		pump := newAttachmentStreamPump(subCtx, cancel, params.TerminalID, ch, remote, stream, term.screenLatestDeltaFallbackMessage, sendFrame, s.cfg.logger)
+		pump := newAttachmentStreamPump(subCtx, cancel, params.TerminalID, ch, remote, stream, term.screenLatestDeltaFallbackMessage, term.currentScreenRevision, sendFrame, s.cfg.logger)
 		attachment.setStreamPump(pump)
 		go func() {
 			defer attachment.cleanup()
@@ -2183,7 +2188,7 @@ func (a *sessionAttachment) setStreamPump(pump *attachmentStreamPump) {
 	a.streamPump = pump
 }
 
-func (a *sessionAttachment) streamReady() {
+func (a *sessionAttachment) streamReady(screenSequence uint64) {
 	if a == nil {
 		return
 	}
@@ -2191,7 +2196,7 @@ func (a *sessionAttachment) streamReady() {
 	pump := a.streamPump
 	a.mu.RUnlock()
 	if pump != nil {
-		pump.screenReady()
+		pump.screenReady(screenSequence)
 	}
 }
 
