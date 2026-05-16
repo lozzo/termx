@@ -499,7 +499,9 @@ describe('MachineWorkspace', () => {
     await userEvent.click(screen.getByRole('button', { name: /back to terminal list/i }))
 
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
-    expect(screen.queryByTestId('termx-machine-network-overlay')).toBeNull()
+    const overlays = screen.getAllByTestId('termx-machine-network-overlay')
+    expect(overlays).toHaveLength(1)
+    expect(overlays[0]?.textContent).toContain('Reconnecting')
   })
 
   it('reacquires and reattaches a terminal lease when the app-level connection reconnects', async () => {

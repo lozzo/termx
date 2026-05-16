@@ -1148,7 +1148,7 @@ describe('Terminal', () => {
     const shownAt = performance.now()
     const loading = screen.getByTestId('termx-history-loading')
     expect(loading.className).toContain('top-3')
-    expect(loading.className).toContain('bg-[var(--termx-surface)]/95')
+    expect(loading.className).toContain('bg-[var(--termx-surface)]/40')
     await waitFor(() => expect(term.scrollToLine).toHaveBeenCalledWith(262))
     expect(screen.queryByTestId('termx-history-loading')).not.toBeNull()
     await waitFor(() => expect(screen.queryByTestId('termx-history-loading')).toBeNull(), { timeout: 1200 })

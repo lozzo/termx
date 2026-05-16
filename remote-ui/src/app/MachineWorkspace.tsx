@@ -2497,7 +2497,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-            {showMachineNetworkOverlay ? null : filesOpen ? 'Connecting...' : 'File access is not ready'}
+            {showMachineNetworkOverlay ? null : filesOpen ? (
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Connecting...</span>
+              </div>
+            ) : 'File access is not ready'}
           </div>
         )}
       </div>
@@ -2519,7 +2524,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           onToggleMode={toggleConnectionMode}
         />
       ) : null}
-      {showMachineNetworkOverlay && page === 'terminal' ? (
+      {showMachineNetworkOverlay ? (
         <MachineNetworkStatusOverlay
           phase={connectionPhase}
           status={connectionStatus}
