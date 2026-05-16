@@ -16,12 +16,14 @@ import (
 const rowDirtyChunkWidth = 32
 
 type drawStyle struct {
-	FG        string
-	BG        string
-	Bold      bool
-	Italic    bool
-	Underline bool
-	Reverse   bool
+	FG         string
+	BG         string
+	Bold       bool
+	Italic     bool
+	Underline  bool
+	Reverse    bool
+	LinkURL    string
+	LinkParams string
 }
 
 type drawCell struct {
@@ -575,12 +577,14 @@ func (c *composedCanvas) materializeRawAmbiguousContinuation(x, y int, cell draw
 
 func cellStyleFromSnapshot(cell protocol.Cell) drawStyle {
 	return drawStyle{
-		FG:        cell.Style.FG,
-		BG:        cell.Style.BG,
-		Bold:      cell.Style.Bold,
-		Italic:    cell.Style.Italic,
-		Underline: cell.Style.Underline,
-		Reverse:   cell.Style.Reverse,
+		FG:         cell.Style.FG,
+		BG:         cell.Style.BG,
+		Bold:       cell.Style.Bold,
+		Italic:     cell.Style.Italic,
+		Underline:  cell.Style.Underline,
+		Reverse:    cell.Style.Reverse,
+		LinkURL:    cell.LinkURL,
+		LinkParams: cell.LinkParams,
 	}
 }
 
@@ -619,12 +623,14 @@ func drawCellFromVTermCell(cell localvterm.Cell) drawCell {
 		Content: cell.Content,
 		Width:   width,
 		Style: drawStyle{
-			FG:        cell.Style.FG,
-			BG:        cell.Style.BG,
-			Bold:      cell.Style.Bold,
-			Italic:    cell.Style.Italic,
-			Underline: cell.Style.Underline,
-			Reverse:   cell.Style.Reverse,
+			FG:         cell.Style.FG,
+			BG:         cell.Style.BG,
+			Bold:       cell.Style.Bold,
+			Italic:     cell.Style.Italic,
+			Underline:  cell.Style.Underline,
+			Reverse:    cell.Style.Reverse,
+			LinkURL:    cell.LinkURL,
+			LinkParams: cell.LinkParams,
 		},
 		Owner:               0,
 		Continuation:        continuation,
@@ -779,7 +785,7 @@ func (c *composedCanvas) embeddedContentLines() []string {
 			row.WriteString(serializeCellContentForDisplay(content, cell.Width, c.hostEmojiVS16Mode, 0))
 		}
 		if current != (drawStyle{}) {
-			row.WriteString(styleANSI(drawStyle{}))
+			row.WriteString(styleDiffANSI(current, drawStyle{}))
 		}
 		lines[y] = row.String()
 	}
@@ -1048,7 +1054,7 @@ func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, com
 		}
 	}
 	if current != (drawStyle{}) {
-		row.WriteString(styleANSI(drawStyle{}))
+		row.WriteString(styleDiffANSI(current, drawStyle{}))
 	}
 	return row.String()
 }

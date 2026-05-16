@@ -16,6 +16,55 @@ func rowOwnsLineEnd(row presentedRow) bool {
 	return strings.Contains(row.raw, "\x1b[K")
 }
 
+const presentedStyledBlankECHThreshold = 5
+
+func joinFrameLinesForHost(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	var out strings.Builder
+	out.Grow(joinedLinesLen(lines))
+	for i, line := range lines {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		out.WriteString(normalizeFrameLineForHost(line))
+	}
+	return out.String()
+}
+
+func normalizeFrameLineForHost(line string) string {
+	if line == "" || !strings.Contains(line, "\x1b[") || !strings.Contains(line, " ") {
+		return line
+	}
+	original := line
+	line = strings.TrimSuffix(line, xansi.EraseLineRight)
+	row := parsePresentedRow(line)
+	defer releasePresentedCells(row.cells)
+	if row.hasHiddenEmojiCompensation || row.hasHostWidthStabilizer || !presentedCellsHaveStyledBlankRun(row.cells) {
+		return original
+	}
+	var out strings.Builder
+	out.Grow(len(line))
+	writePresentedCells(&out, row.cells, 1)
+	return out.String()
+}
+
+func presentedCellsHaveStyledBlankRun(cells []presentedCell) bool {
+	for i := 0; i < len(cells); {
+		run := presentedStyledBlankRun(cells, i)
+		if run >= presentedStyledBlankECHThreshold {
+			return true
+		}
+		if run > 0 {
+			i += run
+			continue
+		}
+		i++
+	}
+	return false
+}
+
 func writeOwnedLineEndClear(out *strings.Builder, style presentedStyle) {
 	if out == nil {
 		return
@@ -256,7 +305,8 @@ func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol i
 	first := true
 	cursorCol := maxInt(1, startCol)
 	needsReanchor := false
-	for _, cell := range cells {
+	for i := 0; i < len(cells); {
+		cell := cells[i]
 		if needsReanchor || cell.ReanchorBefore {
 			writeCHA(out, cursorCol)
 			needsReanchor = false
@@ -270,15 +320,49 @@ func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol i
 			writeECH(out, maxInt(1, cell.Width))
 			cursorCol += maxInt(1, cell.Width)
 			needsReanchor = true
+			i++
+			continue
+		}
+		if blankRun := presentedStyledBlankRun(cells, i); blankRun >= presentedStyledBlankECHThreshold {
+			writeECH(out, blankRun)
+			cursorCol += blankRun
+			needsReanchor = true
+			i += blankRun
 			continue
 		}
 		out.WriteString(cell.Content)
 		cursorCol += maxInt(1, cell.Width)
+		i++
+	}
+	if needsReanchor {
+		writeCHA(out, cursorCol)
 	}
 	if current != (presentedStyle{}) {
 		out.WriteString(presentedResetStyleSequence)
 	}
 	return current
+}
+
+func presentedStyledBlankRun(cells []presentedCell, start int) int {
+	if start < 0 || start >= len(cells) {
+		return 0
+	}
+	style := cells[start].Style
+	if style == (presentedStyle{}) {
+		return 0
+	}
+	run := 0
+	for i := start; i < len(cells); i++ {
+		cell := cells[i]
+		if i > start && cell.ReanchorBefore {
+			break
+		}
+		if cell.Erase || cell.Style != style || cell.Width != 1 || (cell.Content != "" && cell.Content != " ") {
+			break
+		}
+		run++
+	}
+	return run
 }
 
 func writeCUP(out *strings.Builder, col, row int) {

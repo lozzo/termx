@@ -49,6 +49,8 @@ interface CompactCell {
   content: string
   width: number
   style: CompactStyle
+  linkUrl: string
+  linkParams: string
 }
 
 interface CompactStyle {
@@ -60,6 +62,8 @@ interface CompactStyle {
   blink: boolean
   reverse: boolean
   strikethrough: boolean
+  linkUrl: string
+  linkParams: string
 }
 
 const emptyStyle: CompactStyle = {
@@ -71,13 +75,16 @@ const emptyStyle: CompactStyle = {
   blink: false,
   reverse: false,
   strikethrough: false,
+  linkUrl: '',
+  linkParams: '',
 }
 
-const compactRowsMagic = 'TXRS'
-const compactRowMagic = 'TXRB'
+const compactRowsMagic = 'TXS2'
+const compactRowMagic = 'TXR2'
 const compactRowFlagRuns = 1 << 0
 const compactRowFlagCells = 1 << 1
 const compactRowStyleFlag = 1 << 0
+const compactRowLinkFlag = 1 << 1
 
 export function encodeTerminalHelloPayload(init: { version: number; client?: string; server?: string }): Uint8Array {
   return encodeMessage(HelloSchema, {
@@ -351,16 +358,22 @@ function decodeCompactRowBlob(blob: Uint8Array): CompactCell[] {
     for (let index = 0; index < count; index += 1) {
       const text = dec.readString()
       const style = dec.readStyle(compactRowStyleFlag)
-      cells.push(...textToCells(text, style))
+      const link = dec.readLink(compactRowLinkFlag)
+      cells.push(...textToCells(text, style, link))
     }
   } else if ((flags & compactRowFlagCells) !== 0) {
     const count = dec.readUvarint()
     cells = []
     for (let index = 0; index < count; index += 1) {
+      const content = dec.readString()
+      const width = dec.readUvarint()
+      const style = dec.readStyle(compactRowStyleFlag)
+      const link = dec.readLink(compactRowLinkFlag)
       cells.push({
-        content: dec.readString(),
-        width: dec.readUvarint(),
-        style: dec.readStyle(compactRowStyleFlag),
+        content,
+        width,
+        style,
+        ...link,
       })
     }
   } else {
@@ -370,12 +383,13 @@ function decodeCompactRowBlob(blob: Uint8Array): CompactCell[] {
   return cells
 }
 
-function textToCells(text: string, style: CompactStyle): CompactCell[] {
+function textToCells(text: string, style: CompactStyle, link: { linkUrl: string; linkParams: string } = { linkUrl: '', linkParams: '' }): CompactCell[] {
   if (!text) return []
   return Array.from(text).map((content) => ({
     content,
     width: 1,
     style,
+    ...link,
   }))
 }
 
@@ -552,6 +566,7 @@ function encodeCompactRowBlob(cells: CompactCell[]): Uint8Array {
     enc.appendString(cell.content)
     enc.appendUvarint(cell.width)
     enc.appendStyle(cell.style, compactRowStyleFlag)
+    enc.appendLink(cell.linkUrl, cell.linkParams, compactRowLinkFlag)
   }
   return enc.bytes()
 }
@@ -578,6 +593,8 @@ function cellFrom(value: unknown): CompactCell {
     content,
     width,
     style: styleFrom(field(record, 's', 'style')),
+    linkUrl: stringField(record, 'link_url', 'linkUrl'),
+    linkParams: stringField(record, 'link_params', 'linkParams'),
   }
 }
 
@@ -593,6 +610,8 @@ function styleFrom(value: unknown): CompactStyle {
     blink: booleanValue(field(record, 'k', 'blink')),
     reverse: booleanValue(field(record, 'rv', 'reverse')),
     strikethrough: booleanValue(field(record, 'st', 'strikethrough')),
+    linkUrl: stringField(record, 'link_url', 'linkUrl'),
+    linkParams: stringField(record, 'link_params', 'linkParams'),
   }
 }
 
@@ -725,6 +744,17 @@ class TerminalBinaryDecoder {
       blink: (mask & (1 << 3)) !== 0,
       reverse: (mask & (1 << 4)) !== 0,
       strikethrough: (mask & (1 << 5)) !== 0,
+      linkUrl: '',
+      linkParams: '',
+    }
+  }
+
+  readLink(linkFlag: number): { linkUrl: string; linkParams: string } {
+    const flags = this.readByte()
+    if ((flags & linkFlag) === 0) return { linkUrl: '', linkParams: '' }
+    return {
+      linkUrl: this.readString(),
+      linkParams: this.readString(),
     }
   }
 
@@ -786,6 +816,16 @@ class TerminalBinaryEncoder {
     this.appendByte(mask)
   }
 
+  appendLink(linkUrl: string, linkParams: string, linkFlag: number): void {
+    if (!linkUrl && !linkParams) {
+      this.appendByte(0)
+      return
+    }
+    this.appendByte(linkFlag)
+    this.appendString(linkUrl)
+    this.appendString(linkParams)
+  }
+
   bytes(): Uint8Array {
     return new Uint8Array(this.chunks)
   }
@@ -799,5 +839,7 @@ function isEmptyStyle(style: CompactStyle): boolean {
     !style.underline &&
     !style.blink &&
     !style.reverse &&
-    !style.strikethrough
+    !style.strikethrough &&
+    !style.linkUrl &&
+    !style.linkParams
 }

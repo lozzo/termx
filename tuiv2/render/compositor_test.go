@@ -446,6 +446,26 @@ func TestStyleDiffANSIUsesMinimalTransition(t *testing.T) {
 	}
 }
 
+func TestStyleDiffANSIHyperlinkOnlyTransitionDoesNotEmitDanglingCSI(t *testing.T) {
+	got := styleDiffANSI(drawStyle{LinkURL: "https://example.test/old"}, drawStyle{LinkURL: "https://example.test/new", LinkParams: "id=new"})
+	if strings.Contains(got, "\x1b[") {
+		t.Fatalf("expected hyperlink-only transition to avoid SGR CSI, got %q", got)
+	}
+	if !strings.Contains(got, "\x1b]8;;\x07") {
+		t.Fatalf("expected old hyperlink reset, got %q", got)
+	}
+	if !strings.Contains(got, "\x1b]8;id=new;https://example.test/new\x07") {
+		t.Fatalf("expected new hyperlink set, got %q", got)
+	}
+}
+
+func TestStyleDiffANSIResetsHyperlinkAtRowEnd(t *testing.T) {
+	got := styleDiffANSI(drawStyle{LinkURL: "https://example.test"}, drawStyle{})
+	if got != "\x1b]8;;\x07\x1b[0m" {
+		t.Fatalf("expected hyperlink reset before SGR reset, got %q", got)
+	}
+}
+
 func TestContentLinesCompressLongBlankRunsWithECH(t *testing.T) {
 	canvas := newComposedCanvas(12, 1)
 	for x := 0; x < 12; x++ {

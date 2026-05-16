@@ -1065,6 +1065,88 @@ func TestApplyScreenUpdateAppliesStyleOnlyWriteOp(t *testing.T) {
 	}
 }
 
+func TestVTermPreservesHyperlinkAcrossSnapshotAndScreenUpdate(t *testing.T) {
+	vt := New(8, 1, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{{
+			{Content: "l", Width: 1, LinkURL: "https://example.test/snapshot", LinkParams: "id=snapshot"},
+			{Content: "i", Width: 1, LinkURL: "https://example.test/snapshot", LinkParams: "id=snapshot"},
+			{Content: "n", Width: 1},
+		}},
+	}, CursorState{Row: 0, Col: 3, Visible: true}, TerminalModes{AutoWrap: true})
+
+	if got := vt.ScreenRowView(0)[0]; got.LinkURL != "https://example.test/snapshot" || got.LinkParams != "id=snapshot" {
+		t.Fatalf("expected snapshot hyperlink restored, got %#v", got)
+	}
+
+	if !vt.ApplyScreenUpdate(ScreenUpdate{
+		Size: Size{Cols: 8, Rows: 1},
+		Ops: []DamageOp{{
+			Code: ScreenOpWriteSpan,
+			Row:  0,
+			Col:  2,
+			Cells: []Cell{{
+				Content:    "k",
+				Width:      1,
+				LinkURL:    "https://example.test/update",
+				LinkParams: "id=update",
+			}},
+		}},
+		Cursor: CursorState{Row: 0, Col: 3, Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
+	}) {
+		t.Fatal("expected hyperlink span to apply incrementally")
+	}
+
+	cell := vt.ScreenRowView(0)[2]
+	if cell.Content != "k" || cell.LinkURL != "https://example.test/update" || cell.LinkParams != "id=update" {
+		t.Fatalf("expected updated hyperlink cell, got %#v", cell)
+	}
+}
+
+func TestVTermReplayResetsHyperlinkBeforePlainText(t *testing.T) {
+	var b strings.Builder
+	writeSequentialRows(&b, [][]Cell{{
+		{Content: "l", Width: 1, LinkURL: "https://example.test"},
+		{Content: "p", Width: 1},
+	}})
+
+	got := b.String()
+	if !strings.Contains(got, "\x1b]8;;https://example.test\x07") {
+		t.Fatalf("expected replay to set hyperlink, got %q", got)
+	}
+	plainIndex := strings.Index(got, "p")
+	resetIndex := strings.LastIndex(got[:plainIndex], "\x1b]8;;\x07")
+	if resetIndex < 0 {
+		t.Fatalf("expected hyperlink reset before plain cell, got %q", got)
+	}
+
+	b.Reset()
+	writeSequentialRows(&b, [][]Cell{{
+		{Content: "l", Width: 1, LinkURL: "https://example.test"},
+	}})
+	got = b.String()
+	if !strings.HasSuffix(got, "\x1b]8;;\x07\x1b[0m") {
+		t.Fatalf("expected final replay reset to close hyperlink state, got %q", got)
+	}
+}
+
+func TestVTermReplayPreservesTrailingStyledAndLinkedBlanks(t *testing.T) {
+	var b strings.Builder
+	writeSequentialRows(&b, [][]Cell{{
+		{Content: " ", Width: 1, Style: CellStyle{BG: "#222222"}},
+		{Content: " ", Width: 1, LinkURL: "https://example.test/tail"},
+	}})
+
+	got := b.String()
+	if !strings.Contains(got, "48;2;34;34;34") {
+		t.Fatalf("expected trailing styled blank to be replayed, got %q", got)
+	}
+	if !strings.Contains(got, "\x1b]8;;https://example.test/tail\x07") {
+		t.Fatalf("expected trailing linked blank to be replayed, got %q", got)
+	}
+}
+
 func TestApplyScreenUpdateAppliesWideCharBoundaryWriteOp(t *testing.T) {
 	vt := New(8, 1, 100, nil)
 	vt.LoadSnapshot(ScreenData{

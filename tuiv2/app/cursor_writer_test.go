@@ -1007,6 +1007,81 @@ func TestOutputCursorWriterFrameLinesUsesECHForInteriorErase(t *testing.T) {
 	assertScreenEqual(t, screen, want)
 }
 
+func TestFramePresenterInitialFullFrameCompressesStyledBlankRuns(t *testing.T) {
+	line := "\x1b[48;2;34;34;34m" + strings.Repeat(" ", 12) + "\x1b[0m"
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	got := presenter.PresentLines([]string{line})
+
+	if !strings.Contains(got, xansi.ECH(12)) {
+		t.Fatalf("expected initial full frame to use styled ECH, got %q", got)
+	}
+	if strings.Contains(got, strings.Repeat(" ", 12)) {
+		t.Fatalf("expected styled blank run not to be serialized as raw spaces, got %q", got)
+	}
+	vt := localvterm.New(12, 1, 0, nil)
+	if _, err := vt.Write([]byte(got)); err != nil {
+		t.Fatalf("replay initial full frame: %v", err)
+	}
+	screen := vt.ScreenContent()
+	for x, cell := range screen.Cells[0] {
+		if cell.Content != " " || cell.Style.BG == "" {
+			t.Fatalf("expected styled blank at col %d, got %#v", x, cell)
+		}
+	}
+}
+
+func TestFramePresenterResizeFullRepaintCompressesStyledBlankRuns(t *testing.T) {
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	if got := presenter.PresentLines([]string{"ready"}); got == "" {
+		t.Fatal("expected initial frame")
+	}
+
+	line := "\x1b[48;5;238m" + strings.Repeat(" ", 10) + "\x1b[0m"
+	got := presenter.PresentLines([]string{"ready", line})
+
+	if !strings.HasPrefix(got, xansi.EraseEntireDisplay) {
+		t.Fatalf("expected resize full repaint, got %q", got)
+	}
+	if !strings.Contains(got, xansi.ECH(10)) {
+		t.Fatalf("expected resize full repaint to use styled ECH, got %q", got)
+	}
+}
+
+func TestFramePresenterFullRepaintFallbackCompressesStyledBlankRuns(t *testing.T) {
+	base := make([]string, 20)
+	next := make([]string, 20)
+	styledBlank := "\x1b[48;5;238m" + strings.Repeat(" ", 12) + "\x1b[0m"
+	for row := range base {
+		base[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("a", 96))
+		if row == 0 || row == 10 {
+			next[row] = base[row]
+			continue
+		}
+		if row == 1 {
+			next[row] = styledBlank
+			continue
+		}
+		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("b", 96))
+	}
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	if got := presenter.PresentLines(base); got == "" {
+		t.Fatal("expected initial full frame")
+	}
+	got := presenter.PresentLines(next)
+
+	if !strings.HasPrefix(got, xansi.EraseEntireDisplay) {
+		t.Fatalf("expected broad damage to use full repaint, got %q", got[:minInt(len(got), 32)])
+	}
+	if !strings.Contains(got, xansi.ECH(12)) {
+		t.Fatalf("expected full repaint fallback to use styled ECH, got %q", got)
+	}
+}
+
 func TestOutputCursorWriterFrameLinesUsesELForTrailingErase(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
@@ -1072,6 +1147,47 @@ func TestOutputCursorWriterFrameLinesWideRowSkipsIntralineEditSequences(t *testi
 	}
 	screen := replayCursorWriterLineScreen(t, 11, 1, [][]string{previous, next})
 	want := replayCursorWriterLineScreen(t, 11, 1, [][]string{next})
+	assertScreenEqual(t, screen, want)
+}
+
+func TestOutputCursorWriterFrameLinesEmojiFE0FRowSkipsUnsafeEraseEdits(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	previous := []string{xansi.CHA(1) + "AAA❄️" + xansi.ECH(1) + xansi.CHA(6) + "BB    "}
+	next := []string{xansi.CHA(1) + "AAA❄️" + xansi.ECH(1) + xansi.CHA(6) + "BC    "}
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	if err := writer.WriteFrameLines(previous, ""); err != nil {
+		t.Fatalf("write initial unsafe emoji frame lines: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLines(next, ""); err != nil {
+		t.Fatalf("write unsafe emoji diff frame lines: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if len(got) == 0 {
+		t.Fatal("expected unsafe emoji row to produce a conservative row rewrite")
+	}
+	for _, seq := range []string{xansi.DCH(1), xansi.ICH(1), xansi.EL(0)} {
+		if strings.Contains(got, seq) {
+			t.Fatalf("expected unsafe emoji row to avoid shift/line erase edits, got %q", got)
+		}
+	}
+	if strings.Count(got, xansi.ECH(1)) != 1 {
+		t.Fatalf("expected only the source row's FE0F compensation ECH, got %q", got)
+	}
+	screen := replayCursorWriterLineScreen(t, 16, 1, [][]string{previous, next})
+	want := replayCursorWriterLineScreen(t, 16, 1, [][]string{next})
 	assertScreenEqual(t, screen, want)
 }
 
@@ -2984,7 +3100,7 @@ func TestWritePresentedCellsEmitsStyledEraseAndReset(t *testing.T) {
 	if finalStyle != style {
 		t.Fatalf("expected final style %#v, got %#v", style, finalStyle)
 	}
-	want := presentedStyleDiffANSI(presentedStyle{}, style) + "A" + "\x1b[1X" + presentedResetStyleSequence
+	want := presentedStyleDiffANSI(presentedStyle{}, style) + "A" + "\x1b[1X" + xansi.CHA(3) + presentedResetStyleSequence
 	if got := out.String(); got != want {
 		t.Fatalf("unexpected presented cell payload %q want %q", got, want)
 	}

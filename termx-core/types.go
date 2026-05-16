@@ -79,9 +79,11 @@ type ResizeOwnership struct {
 }
 
 type Cell struct {
-	Content string
-	Width   int
-	Style   CellStyle
+	Content    string
+	Width      int
+	Style      CellStyle
+	LinkURL    string
+	LinkParams string
 }
 
 type CellStyle struct {

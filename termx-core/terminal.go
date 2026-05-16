@@ -695,6 +695,9 @@ func isBlankVTermRow(row []vterm.Cell) bool {
 		if cell.Style != (vterm.CellStyle{}) {
 			return false
 		}
+		if cell.LinkURL != "" || cell.LinkParams != "" {
+			return false
+		}
 	}
 	return true
 }
@@ -2250,8 +2253,10 @@ func convertRows(rows [][]vterm.Cell) [][]Cell {
 		out[i] = make([]Cell, len(row))
 		for j, cell := range row {
 			out[i][j] = Cell{
-				Content: cell.Content,
-				Width:   cell.Width,
+				Content:    cell.Content,
+				Width:      cell.Width,
+				LinkURL:    cell.LinkURL,
+				LinkParams: cell.LinkParams,
 				Style: CellStyle{
 					FG:            cell.Style.FG,
 					BG:            cell.Style.BG,
@@ -2440,8 +2445,10 @@ func protocolCellsFromCoreRow(row []Cell) []protocol.Cell {
 	out := make([]protocol.Cell, len(row))
 	for i, cell := range row {
 		out[i] = protocol.Cell{
-			Content: cell.Content,
-			Width:   cell.Width,
+			Content:    cell.Content,
+			Width:      cell.Width,
+			LinkURL:    cell.LinkURL,
+			LinkParams: cell.LinkParams,
 			Style: protocol.CellStyle{
 				FG:            cell.Style.FG,
 				BG:            cell.Style.BG,
@@ -2520,8 +2527,10 @@ func protocolCellsFromVTermRow(row []vterm.Cell) []protocol.Cell {
 	out := make([]protocol.Cell, len(row))
 	for i, cell := range row {
 		out[i] = protocol.Cell{
-			Content: cell.Content,
-			Width:   cell.Width,
+			Content:    cell.Content,
+			Width:      cell.Width,
+			LinkURL:    cell.LinkURL,
+			LinkParams: cell.LinkParams,
 			Style: protocol.CellStyle{
 				FG:            cell.Style.FG,
 				BG:            cell.Style.BG,

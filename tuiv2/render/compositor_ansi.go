@@ -26,35 +26,54 @@ func styleDiffANSI(from, to drawStyle) string {
 	}
 	var b strings.Builder
 	if to == (drawStyle{}) {
+		if from.LinkURL != "" || from.LinkParams != "" {
+			b.WriteString(resetHyperlinkANSI())
+		}
 		b.WriteString("\x1b[0m")
 		ansi := b.String()
 		styleDiffANSICache.Store(cacheKey, ansi)
 		return ansi
 	}
-	b.WriteString("\x1b[")
+	if (from.LinkURL != "" || from.LinkParams != "") && (to.LinkURL != from.LinkURL || to.LinkParams != from.LinkParams) {
+		b.WriteString(resetHyperlinkANSI())
+	}
+	var sgr strings.Builder
+	sgr.WriteString("\x1b[")
 	first := true
-	appendStyleToggle(&b, &first, from.Bold, to.Bold, "1", "22")
-	appendStyleToggle(&b, &first, from.Italic, to.Italic, "3", "23")
-	appendStyleToggle(&b, &first, from.Underline, to.Underline, "4", "24")
-	appendStyleToggle(&b, &first, from.Reverse, to.Reverse, "7", "27")
+	appendStyleToggle(&sgr, &first, from.Bold, to.Bold, "1", "22")
+	appendStyleToggle(&sgr, &first, from.Italic, to.Italic, "3", "23")
+	appendStyleToggle(&sgr, &first, from.Underline, to.Underline, "4", "24")
+	appendStyleToggle(&sgr, &first, from.Reverse, to.Reverse, "7", "27")
 	if from.FG != to.FG {
 		if to.FG == "" {
-			appendStyleCode(&b, &first, "39")
+			appendStyleCode(&sgr, &first, "39")
 		} else {
-			appendStyleColorCode(&b, &first, true, to.FG)
+			appendStyleColorCode(&sgr, &first, true, to.FG)
 		}
 	}
 	if from.BG != to.BG {
 		if to.BG == "" {
-			appendStyleCode(&b, &first, "49")
+			appendStyleCode(&sgr, &first, "49")
 		} else {
-			appendStyleColorCode(&b, &first, false, to.BG)
+			appendStyleColorCode(&sgr, &first, false, to.BG)
 		}
 	}
 	if first {
-		return ""
+		if to.LinkURL != "" || to.LinkParams != "" {
+			b.WriteString(setHyperlinkANSI(to.LinkURL, to.LinkParams))
+			ansi := b.String()
+			styleDiffANSICache.Store(cacheKey, ansi)
+			return ansi
+		}
+		ansi := b.String()
+		styleDiffANSICache.Store(cacheKey, ansi)
+		return ansi
 	}
-	b.WriteByte('m')
+	sgr.WriteByte('m')
+	b.WriteString(sgr.String())
+	if to.LinkURL != "" || to.LinkParams != "" {
+		b.WriteString(setHyperlinkANSI(to.LinkURL, to.LinkParams))
+	}
 	ansi := b.String()
 	styleDiffANSICache.Store(cacheKey, ansi)
 	return ansi
@@ -118,9 +137,32 @@ func styleANSI(s drawStyle) string {
 		b.WriteString(";7")
 	}
 	b.WriteByte('m')
+	if s.LinkURL != "" || s.LinkParams != "" {
+		b.WriteString(setHyperlinkANSI(s.LinkURL, s.LinkParams))
+	}
 	ansi := b.String()
 	styleANSICache.Store(s, ansi)
 	return ansi
+}
+
+func setHyperlinkANSI(linkURL, linkParams string) string {
+	return "\x1b]8;" + sanitizeHyperlinkANSI(linkParams) + ";" + sanitizeHyperlinkANSI(linkURL) + "\x07"
+}
+
+func resetHyperlinkANSI() string {
+	return "\x1b]8;;\x07"
+}
+
+func sanitizeHyperlinkANSI(value string) string {
+	if value == "" {
+		return ""
+	}
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, value)
 }
 
 func appendStyleToggle(b *strings.Builder, first *bool, from, to bool, onCode, offCode string) {

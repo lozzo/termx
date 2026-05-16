@@ -1,7 +1,6 @@
 package app
 
 import (
-	"strings"
 	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
@@ -222,7 +221,7 @@ func broadRawRowPatchCandidate(lines []string, payload string, changedRows int) 
 	if shouldPromoteBroadRawRowsToFullRepaint(normalizedFrameLen(payload), fullWireLen, len(lines), changedRows) {
 		return framePatchCandidate{
 			mode:                 framePatchCandidateFullRepaint,
-			payload:              xansi.EraseEntireDisplay + strings.Join(lines, "\n"),
+			payload:              xansi.EraseEntireDisplay + joinFrameLinesForHost(lines),
 			changedCount:         changedRows,
 			updatedCount:         changedRows,
 			baselineChangedCount: changedRows,
@@ -289,7 +288,7 @@ func (p *framePresenter) planFramePatch(lines []string, meta *presentMeta) frame
 		log.FullRepaintCandidate = true
 		full := framePatchCandidate{
 			mode:         framePatchCandidateFullRepaint,
-			payload:      xansi.EraseEntireDisplay + strings.Join(lines, "\n"),
+			payload:      xansi.EraseEntireDisplay + joinFrameLinesForHost(lines),
 			updatedCount: diff.updatedCount,
 			metrics: []framePatchMetric{
 				{name: "cursor_writer.diff_full_repaint_fallback", count: fullWireLen},

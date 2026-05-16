@@ -84,11 +84,44 @@ describe('termxProtocol', () => {
     expect(replay).toContain('\x1b[H\x1b[2J\x1b[H')
     expect(replay).toContain('\x1b[?1049l')
     expect(replay).toContain('\x1b[0;38;5;208mo')
-    expect(replay).toContain('\x1b[1;1H\x1b[0;1;31mh')
-    expect(replay).toContain('\x1b[1;2H\x1b[0;38;2;0;255;0mi')
+    expect(replay).toContain('\x1b[1;1H\x1b]8;;\x07\x1b[0;1;31mh')
+    expect(replay).toContain('\x1b[1;2H\x1b]8;;\x07\x1b[0;38;2;0;255;0mi')
     expect(replay).toContain('\x1b[5 q')
     expect(replay).toContain('\x1b[1;2H')
     expect(replay).toContain('\x1b[?25h')
+  })
+
+  it('preserves snapshot hyperlinks in replay text', () => {
+    const replay = snapshotToReplay({
+      screen: {
+        rows: [{
+          cells: [
+            { r: 'l', link_url: 'https://example.test/snapshot', link_params: 'id=snapshot' },
+            { r: 'i', link_url: 'https://example.test/snapshot', link_params: 'id=snapshot' },
+          ],
+        }],
+      },
+    })
+
+    expect(replay).toContain('\x1b]8;id=snapshot;https://example.test/snapshot\x07')
+    expect(replay).toContain('\x1b]8;;\x07\x1b[0m')
+    expect(replay).toContain('l')
+    expect(replay).toContain('i')
+  })
+
+  it('preserves trailing styled and linked blanks in sequential replay text', () => {
+    const replay = snapshotToReplay({
+      screen: { rows: [] },
+      scrollback: [{
+        cells: [
+          { r: ' ', s: { bg: '#222222' } },
+          { r: ' ', link_url: 'https://example.test/tail' },
+        ],
+      }],
+    })
+
+    expect(replay).toContain('\x1b[0;48;2;34;34;34m ')
+    expect(replay).toContain('\x1b]8;;https://example.test/tail\x07 ')
   })
 
   it('preserves soft-wrapped snapshot rows when generating replay text', () => {
@@ -145,5 +178,18 @@ describe('termxProtocol', () => {
     expect(replay).toContain('\x1b[1;1H')
     expect(replay).toContain('stream-data')
     expect(replay).toContain('\x1b[?25h')
+  })
+
+  it('decodes TSU7 screen update hyperlinks into replay text', () => {
+    const replay = screenUpdatePayloadToReplay(encodeMockScreenUpdatePayload(
+      'link',
+      80,
+      24,
+      { url: 'https://example.test/update', params: 'id=update' },
+    ))
+
+    expect(replay).toContain('link')
+    expect(replay).toContain('\x1b]8;id=update;https://example.test/update\x07')
+    expect(replay).toContain('\x1b]8;;\x07\x1b[0m')
   })
 })

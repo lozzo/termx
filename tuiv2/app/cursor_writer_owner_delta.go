@@ -621,9 +621,11 @@ func writeHostCells(out *strings.Builder, cells []hostCell, startCol int) {
 	first := true
 	cursorCol := startCol
 	needsReanchor := false
-	for _, cell := range cells {
+	for i := 0; i < len(cells); {
+		cell := cells[i]
 		if cell.Continuation {
 			cursorCol++
+			i++
 			continue
 		}
 		if needsReanchor {
@@ -639,6 +641,14 @@ func writeHostCells(out *strings.Builder, cells []hostCell, startCol int) {
 			writeECH(out, maxInt(1, cell.Width))
 			cursorCol += maxInt(1, cell.Width)
 			needsReanchor = true
+			i++
+			continue
+		}
+		if blankRun := hostStyledBlankRun(cells, i); blankRun >= presentedStyledBlankECHThreshold {
+			writeECH(out, blankRun)
+			cursorCol += blankRun
+			needsReanchor = true
+			i += blankRun
 			continue
 		}
 		content := cell.Content
@@ -647,10 +657,33 @@ func writeHostCells(out *strings.Builder, cells []hostCell, startCol int) {
 		}
 		out.WriteString(content)
 		cursorCol += maxInt(1, cell.Width)
+		i++
+	}
+	if needsReanchor {
+		writeCHA(out, cursorCol)
 	}
 	if current != (presentedStyle{}) {
 		out.WriteString(presentedResetStyleSequence)
 	}
+}
+
+func hostStyledBlankRun(cells []hostCell, start int) int {
+	if start < 0 || start >= len(cells) {
+		return 0
+	}
+	style := cells[start].Style
+	if style == (presentedStyle{}) {
+		return 0
+	}
+	run := 0
+	for i := start; i < len(cells); i++ {
+		cell := cells[i]
+		if cell.Continuation || cell.Erase || cell.Style != style || cell.Width != 1 || (cell.Content != "" && cell.Content != " ") {
+			break
+		}
+		run++
+	}
+	return run
 }
 
 func hostCellsVisualEqual(previous, next hostCell) bool {

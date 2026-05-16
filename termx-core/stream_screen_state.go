@@ -662,8 +662,10 @@ func protocolRowsToVTermRows(rows [][]protocol.Cell) [][]localvterm.Cell {
 		out[y] = make([]localvterm.Cell, len(row))
 		for x, cell := range row {
 			out[y][x] = localvterm.Cell{
-				Content: cell.Content,
-				Width:   cell.Width,
+				Content:    cell.Content,
+				Width:      cell.Width,
+				LinkURL:    cell.LinkURL,
+				LinkParams: cell.LinkParams,
 				Style: localvterm.CellStyle{
 					FG:            cell.Style.FG,
 					BG:            cell.Style.BG,
@@ -698,8 +700,10 @@ func protocolCellRowToVTermRow(row []protocol.Cell) []localvterm.Cell {
 	out := make([]localvterm.Cell, len(row))
 	for x, cell := range row {
 		out[x] = localvterm.Cell{
-			Content: cell.Content,
-			Width:   cell.Width,
+			Content:    cell.Content,
+			Width:      cell.Width,
+			LinkURL:    cell.LinkURL,
+			LinkParams: cell.LinkParams,
 			Style: localvterm.CellStyle{
 				FG:            cell.Style.FG,
 				BG:            cell.Style.BG,

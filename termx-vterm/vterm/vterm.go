@@ -50,9 +50,11 @@ var safeEmulatorWriteWithScrollbackDamage = func(emu *charmvt.SafeEmulator, data
 }
 
 type Cell struct {
-	Content string
-	Width   int
-	Style   CellStyle
+	Content    string
+	Width      int
+	Style      CellStyle
+	LinkURL    string
+	LinkParams string
 }
 
 type CellStyle struct {
@@ -64,6 +66,8 @@ type CellStyle struct {
 	Blink         bool
 	Reverse       bool
 	Strikethrough bool
+	LinkURL       string
+	LinkParams    string
 }
 
 type CursorShape string
@@ -1857,6 +1861,7 @@ func uvCell(cell Cell) *uv.Cell {
 	c := &uv.Cell{
 		Content: cell.Content,
 		Width:   cell.Width,
+		Link:    uv.Link{URL: cell.LinkURL, Params: cell.LinkParams},
 	}
 	if c.Content == "" {
 		c.Content = " "
@@ -1937,14 +1942,14 @@ func encodeScreenSnapshot(rows [][]Cell) []byte {
 				content = " "
 			}
 			b.WriteString(fmt.Sprintf("\x1b[%d;%dH", y+1, x+1))
-			b.WriteString(cellStyleANSI(cell.Style))
+			b.WriteString(cellANSI(cell))
 			b.WriteString(content)
 		}
 	}
 	if b.Len() == 0 {
 		return nil
 	}
-	b.WriteString("\x1b[0m")
+	b.WriteString(resetCellStyleANSI())
 	return []byte(b.String())
 }
 
@@ -1961,7 +1966,7 @@ func encodeTerminalReplay(scrollback, screen [][]Cell, cursor CursorState, modes
 		for i := 0; i < visibleRows-1; i++ {
 			b.WriteByte('\n')
 		}
-		b.WriteString("\x1b[0m")
+		b.WriteString(resetCellStyleANSI())
 	}
 
 	if modes.AlternateScreen {
@@ -1999,7 +2004,7 @@ func writeSequentialRowsWithWrapped(b *strings.Builder, rows [][]Cell, wrapped [
 		}
 	}
 	if style != (CellStyle{}) {
-		b.WriteString("\x1b[0m")
+		b.WriteString(resetCellStyleANSI())
 	}
 }
 
@@ -2010,7 +2015,7 @@ func writeSequentialRow(b *strings.Builder, row []Cell, currentStyle CellStyle) 
 	last := len(row) - 1
 	for last >= 0 {
 		cell := row[last]
-		if cell.Content == "" || strings.TrimSpace(cell.Content) == "" {
+		if !vtermCellNeedsReplay(cell) {
 			last--
 			continue
 		}
@@ -2025,13 +2030,24 @@ func writeSequentialRow(b *strings.Builder, row []Cell, currentStyle CellStyle) 
 		if content == "" {
 			content = " "
 		}
-		if cell.Style != currentStyle {
-			b.WriteString(cellStyleANSI(cell.Style))
-			currentStyle = cell.Style
+		style := cell.Style
+		style.LinkURL = cell.LinkURL
+		style.LinkParams = cell.LinkParams
+		if style != currentStyle {
+			b.WriteString(cellStyleANSI(style))
+			currentStyle = style
 		}
 		b.WriteString(content)
 	}
 	return currentStyle
+}
+
+func vtermCellNeedsReplay(cell Cell) bool {
+	return strings.TrimSpace(cell.Content) != "" ||
+		cell.Style != (CellStyle{}) ||
+		cell.LinkURL != "" ||
+		cell.LinkParams != "" ||
+		cell.Width > 1
 }
 
 func writeTerminalModesANSI(b *strings.Builder, modes TerminalModes) {
@@ -2098,6 +2114,7 @@ func writePrivateModeANSI(b *strings.Builder, mode int, enabled bool) {
 
 func cellStyleANSI(style CellStyle) string {
 	var b strings.Builder
+	b.WriteString(resetHyperlinkANSI())
 	b.WriteString("\x1b[0")
 	if style.Bold {
 		b.WriteString(";1")
@@ -2120,7 +2137,41 @@ func cellStyleANSI(style CellStyle) string {
 	writeCellStyleColor(&b, style.FG, true)
 	writeCellStyleColor(&b, style.BG, false)
 	b.WriteByte('m')
+	if style.LinkURL != "" || style.LinkParams != "" {
+		b.WriteString(setHyperlinkANSI(style.LinkURL, style.LinkParams))
+	}
 	return b.String()
+}
+
+func resetCellStyleANSI() string {
+	return resetHyperlinkANSI() + "\x1b[0m"
+}
+
+func cellANSI(cell Cell) string {
+	style := cell.Style
+	style.LinkURL = cell.LinkURL
+	style.LinkParams = cell.LinkParams
+	return cellStyleANSI(style)
+}
+
+func setHyperlinkANSI(linkURL, linkParams string) string {
+	return "\x1b]8;" + sanitizeHyperlinkANSI(linkParams) + ";" + sanitizeHyperlinkANSI(linkURL) + "\x07"
+}
+
+func resetHyperlinkANSI() string {
+	return "\x1b]8;;\x07"
+}
+
+func sanitizeHyperlinkANSI(value string) string {
+	if value == "" {
+		return ""
+	}
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, value)
 }
 
 func writeCellStyleColor(b *strings.Builder, value string, foreground bool) {
@@ -2233,9 +2284,11 @@ func (v *VTerm) convertCell(cell *uv.Cell) Cell {
 		return Cell{}
 	}
 	return Cell{
-		Content: cell.Content,
-		Width:   cell.Width,
-		Style:   v.convertStyle(cell.Style),
+		Content:    cell.Content,
+		Width:      cell.Width,
+		Style:      v.convertStyle(cell.Style),
+		LinkURL:    cell.Link.URL,
+		LinkParams: cell.Link.Params,
 	}
 }
 
@@ -2660,9 +2713,13 @@ func hashVTermCellFingerprint(hash *uint64, cell Cell) bool {
 	hashBool(hash, cell.Style.Blink)
 	hashBool(hash, cell.Style.Reverse)
 	hashBool(hash, cell.Style.Strikethrough)
+	hashString(hash, cell.LinkURL)
+	hashString(hash, cell.LinkParams)
 
 	return strings.TrimSpace(cell.Content) == "" &&
 		cell.Style == (CellStyle{}) &&
+		cell.LinkURL == "" &&
+		cell.LinkParams == "" &&
 		cell.Width <= 1
 }
 
@@ -3438,6 +3495,9 @@ func isClearEquivalentCell(cell Cell) bool {
 	if cell.Style != (CellStyle{}) {
 		return false
 	}
+	if cell.LinkURL != "" || cell.LinkParams != "" {
+		return false
+	}
 	if cell.Width != 1 {
 		return false
 	}
@@ -3446,6 +3506,9 @@ func isClearEquivalentCell(cell Cell) bool {
 
 func vtermCellNeedsWire(cell Cell) bool {
 	if cell.Style != (CellStyle{}) {
+		return true
+	}
+	if cell.LinkURL != "" || cell.LinkParams != "" {
 		return true
 	}
 	if cell.Width > 1 {
@@ -3464,6 +3527,7 @@ func hashCellFingerprint(hash *uint64, cell *uv.Cell) bool {
 	var bg color.Color
 	var attrs uint8
 	var underline uv.UnderlineStyle
+	link := uv.Link{}
 	if cell != nil {
 		content = cell.Content
 		width = cell.Width
@@ -3471,6 +3535,7 @@ func hashCellFingerprint(hash *uint64, cell *uv.Cell) bool {
 		bg = cell.Style.Bg
 		attrs = cell.Style.Attrs
 		underline = cell.Style.Underline
+		link = cell.Link
 	}
 
 	bold := attrs&uv.AttrBold != 0
@@ -3490,8 +3555,11 @@ func hashCellFingerprint(hash *uint64, cell *uv.Cell) bool {
 	hashBool(hash, strikethrough)
 	hashColorFingerprint(hash, fg)
 	hashColorFingerprint(hash, bg)
+	hashString(hash, link.URL)
+	hashString(hash, link.Params)
 
 	return strings.TrimSpace(content) == "" &&
+		link.IsZero() &&
 		fg == nil &&
 		bg == nil &&
 		!bold &&

@@ -99,12 +99,16 @@ interface CellStyleLike {
   blink: boolean
   reverse: boolean
   strikethrough: boolean
+  linkUrl: string
+  linkParams: string
 }
 
 interface DecodedCell {
   content: string
   width: number
   style: CellStyleLike
+  linkUrl: string
+  linkParams: string
 }
 
 interface DecodedCursor {
@@ -172,7 +176,7 @@ interface DecodedScrollbackRow {
   wrapped: boolean
 }
 
-const screenUpdatePayloadMagic = 'TSU6'
+const screenUpdatePayloadMagic = 'TSU7'
 
 const screenUpdateFlagFullReplace = 1 << 0
 const screenUpdateFlagResetScrollback = 1 << 1
@@ -198,6 +202,8 @@ const emptyStyle: CellStyleLike = {
   blink: false,
   reverse: false,
   strikethrough: false,
+  linkUrl: '',
+  linkParams: '',
 }
 
 const emptyCursor: DecodedCursor = {
@@ -329,6 +335,8 @@ class ScreenUpdateDecoder {
         blink: (mask & (1 << 3)) !== 0,
         reverse: (mask & (1 << 4)) !== 0,
         strikethrough: (mask & (1 << 5)) !== 0,
+        linkUrl: '',
+        linkParams: '',
       })
     }
     return styles
@@ -433,6 +441,8 @@ class ScreenUpdateDecoder {
         style,
         width: this.readUvarint(),
         content: this.readString(),
+        linkUrl: this.readString(),
+        linkParams: this.readString(),
       })
     }
     return cells
@@ -656,15 +666,15 @@ function writeDecodedRowsAbsolute(rows: DecodedCell[][]): string {
     for (let col = 0; col < cells.length; col += 1) {
       const cell = cells[col]
       if (!cell) continue
-      if (cell.width === 0 || (cell.content === '' && isEmptyStyle(cell.style))) {
+      if (cell.width === 0 || (cell.content === '' && isEmptyStyle(cellStyleWithCellLink(cell)))) {
         continue
       }
       parts.push(moveCursorANSI(row, col))
-      parts.push(cellStyleANSI(cell.style))
+      parts.push(cellStyleANSI(cellStyleWithCellLink(cell)))
       parts.push(cell.content || ' ')
     }
   }
-  if (parts.length > 0) parts.push('\x1b[0m')
+  if (parts.length > 0) parts.push(resetCellStyleANSI())
   return parts.join('')
 }
 
@@ -672,10 +682,10 @@ function writeDecodedCells(cells: DecodedCell[]): string {
   const parts: string[] = []
   for (const cell of cells) {
     if (cell.width === 0) continue
-    parts.push(cellStyleANSI(cell.style))
+    parts.push(cellStyleANSI(cellStyleWithCellLink(cell)))
     parts.push(cell.content || ' ')
   }
-  if (parts.length > 0) parts.push('\x1b[0m')
+  if (parts.length > 0) parts.push(resetCellStyleANSI())
   return parts.join('')
 }
 
@@ -699,7 +709,7 @@ function writeSequentialDecodedRow(row: DecodedCell[]): string {
       last -= 1
       continue
     }
-    if (cell.width > 0 && cell.content.trim() !== '') break
+    if (cell.width > 0 && cellNeedsReplay(cell)) break
     last -= 1
   }
   const parts: string[] = []
@@ -707,10 +717,10 @@ function writeSequentialDecodedRow(row: DecodedCell[]): string {
     const cell = row[index]
     if (!cell) continue
     if (cell.width === 0) continue
-    parts.push(cellStyleANSI(cell.style))
+    parts.push(cellStyleANSI(cellStyleWithCellLink(cell)))
     parts.push(cell.content || ' ')
   }
-  parts.push('\x1b[0m')
+  parts.push(resetCellStyleANSI())
   return parts.join('')
 }
 
@@ -753,7 +763,9 @@ function isEmptyStyle(style: CellStyleLike): boolean {
     !style.underline &&
     !style.blink &&
     !style.reverse &&
-    !style.strikethrough
+    !style.strikethrough &&
+    !style.linkUrl &&
+    !style.linkParams
 }
 
 export function rowsToText(snapshot: unknown): string {
@@ -888,14 +900,14 @@ function encodeScreenSnapshot(rows: unknown[]): string {
       }
       hasContent = true
       parts.push(`\x1b[${rowIndex + 1};${colIndex + 1}H`)
-      parts.push(cellStyleANSI(cell.style))
+      parts.push(cellStyleANSI(cellStyleWithCellLink(cell)))
       parts.push(cell.content || ' ')
     }
   }
   if (!hasContent) {
     return ''
   }
-  parts.push('\x1b[0m')
+  parts.push(resetCellStyleANSI())
   return parts.join('')
 }
 
@@ -916,7 +928,7 @@ function writeSequentialRow(row: unknown): string {
   let last = cells.length - 1
   while (last >= 0) {
     const cell = cellFrom(cells[last])
-    if (cell.content !== '' && cell.content.trim() !== '') {
+    if (cellNeedsReplay(cell)) {
       break
     }
     last -= 1
@@ -928,14 +940,15 @@ function writeSequentialRow(row: unknown): string {
     if (cell.content === '' && cell.width === 0) {
       continue
     }
-    if (!stylesEqual(cell.style, currentStyle)) {
-      parts.push(cellStyleANSI(cell.style))
-      currentStyle = cell.style
+    const style = cellStyleWithCellLink(cell)
+    if (!stylesEqual(style, currentStyle)) {
+      parts.push(cellStyleANSI(style))
+      currentStyle = style
     }
     parts.push(cell.content || ' ')
   }
   if (!stylesEqual(currentStyle, emptyStyle)) {
-    parts.push('\x1b[0m')
+    parts.push(resetCellStyleANSI())
   }
   return parts.join('')
 }
@@ -986,7 +999,7 @@ function writePrivateModeANSI(mode: number, enabled: boolean): string {
 }
 
 function cellStyleANSI(style: ReturnType<typeof styleFrom>): string {
-  let ansi = '\x1b[0'
+  let ansi = `${resetHyperlinkANSI()}\x1b[0`
   if (style.bold) ansi += ';1'
   if (style.italic) ansi += ';3'
   if (style.underline) ansi += ';4'
@@ -995,7 +1008,22 @@ function cellStyleANSI(style: ReturnType<typeof styleFrom>): string {
   if (style.strikethrough) ansi += ';9'
   ansi += colorANSI(style.fg, true)
   ansi += colorANSI(style.bg, false)
-  return `${ansi}m`
+  return `${ansi}m${setHyperlinkANSI(style.linkUrl, style.linkParams)}`
+}
+
+function resetCellStyleANSI(): string {
+  return `${resetHyperlinkANSI()}\x1b[0m`
+}
+
+function cellStyleWithCellLink(cell: DecodedCell): CellStyleLike {
+  if (!cell.linkUrl && !cell.linkParams) return cell.style
+  return { ...cell.style, linkUrl: cell.linkUrl, linkParams: cell.linkParams }
+}
+
+function cellNeedsReplay(cell: DecodedCell): boolean {
+  return cell.content.trim() !== '' ||
+    !isEmptyStyle(cellStyleWithCellLink(cell)) ||
+    cell.width > 1
 }
 
 function stylesEqual(a: CellStyleLike, b: CellStyleLike): boolean {
@@ -1006,7 +1034,22 @@ function stylesEqual(a: CellStyleLike, b: CellStyleLike): boolean {
     a.underline === b.underline &&
     a.blink === b.blink &&
     a.reverse === b.reverse &&
-    a.strikethrough === b.strikethrough
+    a.strikethrough === b.strikethrough &&
+    a.linkUrl === b.linkUrl &&
+    a.linkParams === b.linkParams
+}
+
+function setHyperlinkANSI(linkUrl: string, linkParams: string): string {
+  if (!linkUrl && !linkParams) return ''
+  return `\x1b]8;${sanitizeHyperlinkANSI(linkParams)};${sanitizeHyperlinkANSI(linkUrl)}\x07`
+}
+
+function resetHyperlinkANSI(): string {
+  return '\x1b]8;;\x07'
+}
+
+function sanitizeHyperlinkANSI(value: string): string {
+  return value.replace(/[\x00-\x1f\x7f]/g, '')
 }
 
 function colorANSI(value: string, foreground: boolean): string {
@@ -1065,9 +1108,11 @@ function cellFrom(value: unknown): {
   content: string
   width: number
   style: ReturnType<typeof styleFrom>
+  linkUrl: string
+  linkParams: string
 } {
   if (!isRecord(value)) {
-    return { content: '', width: 0, style: styleFrom(undefined) }
+    return { content: '', width: 0, style: styleFrom(undefined), linkUrl: '', linkParams: '' }
   }
   return {
     content: typeof value.r === 'string'
@@ -1081,6 +1126,16 @@ function cellFrom(value: unknown): {
         ? value.width
         : 0,
     style: styleFrom(value.s ?? value.style),
+    linkUrl: typeof value.link_url === 'string'
+      ? value.link_url
+      : typeof value.linkUrl === 'string'
+        ? value.linkUrl
+        : '',
+    linkParams: typeof value.link_params === 'string'
+      ? value.link_params
+      : typeof value.linkParams === 'string'
+        ? value.linkParams
+        : '',
   }
 }
 
@@ -1095,6 +1150,8 @@ function styleFrom(value: unknown) {
       blink: false,
       reverse: false,
       strikethrough: false,
+      linkUrl: '',
+      linkParams: '',
     }
   }
   return {
@@ -1106,6 +1163,16 @@ function styleFrom(value: unknown) {
     blink: value.k === true || value.blink === true,
     reverse: value.rv === true || value.reverse === true,
     strikethrough: value.st === true || value.strikethrough === true,
+    linkUrl: typeof value.link_url === 'string'
+      ? value.link_url
+      : typeof value.linkUrl === 'string'
+        ? value.linkUrl
+        : '',
+    linkParams: typeof value.link_params === 'string'
+      ? value.link_params
+      : typeof value.linkParams === 'string'
+        ? value.linkParams
+        : '',
   }
 }
 

@@ -828,7 +828,7 @@ func TestTerminalGridStoreUsesCompactBinaryRows(t *testing.T) {
 	row := terminalGridRow{
 		cells: []localvterm.Cell{
 			{Content: "A", Width: 1},
-			{Content: "界", Width: 2, Style: localvterm.CellStyle{FG: "ansi:2", BG: "idx:17", Bold: true, Underline: true}},
+			{Content: "界", Width: 2, Style: localvterm.CellStyle{FG: "ansi:2", BG: "idx:17", Bold: true, Underline: true}, LinkURL: "https://example.test", LinkParams: "id=grid"},
 		},
 		timestamp: time.Unix(12, 345).UTC(),
 		rowKind:   SnapshotRowKindRestart,
@@ -901,6 +901,9 @@ func TestTerminalGridStoreUsesCompactBinaryRows(t *testing.T) {
 	}
 	if got := decoded.Rows[0][1].Style; got != row.cells[1].Style {
 		t.Fatalf("expected style round trip, got %#v want %#v", got, row.cells[1].Style)
+	}
+	if got := decoded.Rows[0][1]; got.LinkURL != row.cells[1].LinkURL || got.LinkParams != row.cells[1].LinkParams {
+		t.Fatalf("expected link round trip, got %#v want %#v", got, row.cells[1])
 	}
 }
 
@@ -1268,6 +1271,28 @@ func TestScreenUpdatePayloadFromDamagePreservesStyledErase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
+	if !update.FullReplace {
+		t.Fatalf("expected broad styled erase to encode as full replace, got %#v", update)
+	}
+	if len(update.Screen.Cells) == 0 || len(update.Screen.Cells[0]) != 12 {
+		t.Fatalf("expected full-row styled erase in full screen payload, got %#v", update.Screen.Cells)
+	}
+	for i, cell := range update.Screen.Cells[0] {
+		if cell.Content != " " || cell.Width != 1 || cell.Style.BG != bg {
+			t.Fatalf("expected styled blank cell %d with bg %q, got %#v", i, bg, cell)
+		}
+	}
+}
+
+func TestScreenUpdateFromDamageStatePreservesStyledEraseSpan(t *testing.T) {
+	const bg = "#222222"
+	vt := localvterm.New(12, 2, 32, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[48;2;34;34;34m\x1b[1;1H\x1b[K"))
+	if err != nil {
+		t.Fatalf("WriteWithDamage failed: %v", err)
+	}
+	update := screenUpdateFromDamageState(damage, "")
 	for _, op := range update.Ops {
 		if op.Code != protocol.ScreenOpWriteSpan || op.Row != 0 {
 			continue

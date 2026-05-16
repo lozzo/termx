@@ -752,6 +752,9 @@ func trimCellsForScreenUpdateWire(row []Cell) []Cell {
 }
 
 func cellNeedsWireEncoding(cell Cell) bool {
+	if cell.LinkURL != "" || cell.LinkParams != "" {
+		return true
+	}
 	if cell.Style != (CellStyle{}) {
 		return true
 	}
@@ -796,7 +799,7 @@ func DecodeScreenUpdatePayload(payload []byte) (ScreenUpdate, error) {
 }
 
 const (
-	screenUpdatePayloadMagic = "TSU6"
+	screenUpdatePayloadMagic = "TSU7"
 )
 
 const (
@@ -1388,6 +1391,8 @@ func (e *screenUpdateEncoder) appendCells(cells []Cell, styleIndex map[CellStyle
 		e.appendUvarint(styleIndex[cell.Style])
 		e.appendUvarint(uint64(cell.Width))
 		e.appendString(cell.Content)
+		e.appendString(cell.LinkURL)
+		e.appendString(cell.LinkParams)
 	}
 }
 
@@ -1639,10 +1644,20 @@ func (d *screenUpdateDecoder) readCells(styles []CellStyle) ([]Cell, error) {
 		if err != nil {
 			return nil, err
 		}
+		linkURL, err := d.readString()
+		if err != nil {
+			return nil, err
+		}
+		linkParams, err := d.readString()
+		if err != nil {
+			return nil, err
+		}
 		out[i] = Cell{
-			Content: content,
-			Width:   int(width),
-			Style:   styles[styleID],
+			Content:    content,
+			Width:      int(width),
+			Style:      styles[styleID],
+			LinkURL:    linkURL,
+			LinkParams: linkParams,
 		}
 	}
 	return out, nil
@@ -1740,9 +1755,11 @@ func wrappedSet(wrappedSet bool, wrapped bool) bool {
 }
 
 type Cell struct {
-	Content string
-	Width   int
-	Style   CellStyle
+	Content    string
+	Width      int
+	Style      CellStyle
+	LinkURL    string
+	LinkParams string
 }
 
 type CellStyle struct {
@@ -1834,14 +1851,18 @@ type CompactRowStyle struct {
 }
 
 type CompactRowCell struct {
-	Content string
-	Width   int
-	Style   *CompactRowStyle
+	Content    string
+	Width      int
+	Style      *CompactRowStyle
+	LinkURL    string
+	LinkParams string
 }
 
 type CompactRowRun struct {
-	Text  string
-	Style *CompactRowStyle
+	Text       string
+	Style      *CompactRowStyle
+	LinkURL    string
+	LinkParams string
 }
 
 type CompactRow struct {
@@ -1886,6 +1907,9 @@ func CompactRowFromCells(row []Cell) CompactRow {
 		if !cell.Style.isZero() {
 			break
 		}
+		if cell.LinkURL != "" || cell.LinkParams != "" {
+			break
+		}
 		last--
 	}
 	row = row[:last]
@@ -1904,6 +1928,9 @@ func CompactRowFromCells(row []Cell) CompactRow {
 		if !cell.Style.isZero() {
 			allPlain = false
 		}
+		if cell.LinkURL != "" || cell.LinkParams != "" {
+			allPlain = false
+		}
 		text.WriteString(cellText)
 	}
 	if allSimple && allPlain {
@@ -1913,20 +1940,26 @@ func CompactRowFromCells(row []Cell) CompactRow {
 		runs := make([]CompactRowRun, 0, 4)
 		var runText strings.Builder
 		runStyle := row[0].Style
+		runLinkURL := row[0].LinkURL
+		runLinkParams := row[0].LinkParams
 		flushRun := func() {
 			if runText.Len() == 0 {
 				return
 			}
 			runs = append(runs, CompactRowRun{
-				Text:  runText.String(),
-				Style: compactRowStyleFromCellStyle(runStyle),
+				Text:       runText.String(),
+				Style:      compactRowStyleFromCellStyle(runStyle),
+				LinkURL:    runLinkURL,
+				LinkParams: runLinkParams,
 			})
 			runText.Reset()
 		}
 		for _, cell := range row {
-			if cell.Style != runStyle {
+			if cell.Style != runStyle || cell.LinkURL != runLinkURL || cell.LinkParams != runLinkParams {
 				flushRun()
 				runStyle = cell.Style
+				runLinkURL = cell.LinkURL
+				runLinkParams = cell.LinkParams
 			}
 			cellText, _ := compactCellText(cell)
 			runText.WriteString(cellText)
@@ -1937,9 +1970,11 @@ func CompactRowFromCells(row []Cell) CompactRow {
 	cells := make([]CompactRowCell, 0, len(row))
 	for _, cell := range row {
 		cells = append(cells, CompactRowCell{
-			Content: cell.Content,
-			Width:   compactCellWidth(cell),
-			Style:   compactRowStyleFromCellStyle(cell.Style),
+			Content:    cell.Content,
+			Width:      compactCellWidth(cell),
+			Style:      compactRowStyleFromCellStyle(cell.Style),
+			LinkURL:    cell.LinkURL,
+			LinkParams: cell.LinkParams,
 		})
 	}
 	return CompactRow{Cells: cells}
@@ -1961,13 +1996,13 @@ func CloneCompactRow(row CompactRow) CompactRow {
 	if len(row.Runs) > 0 {
 		cloned.Runs = make([]CompactRowRun, len(row.Runs))
 		for i, run := range row.Runs {
-			cloned.Runs[i] = CompactRowRun{Text: run.Text, Style: cloneCompactRowStyle(run.Style)}
+			cloned.Runs[i] = CompactRowRun{Text: run.Text, Style: cloneCompactRowStyle(run.Style), LinkURL: run.LinkURL, LinkParams: run.LinkParams}
 		}
 	}
 	if len(row.Cells) > 0 {
 		cloned.Cells = make([]CompactRowCell, len(row.Cells))
 		for i, cell := range row.Cells {
-			cloned.Cells[i] = CompactRowCell{Content: cell.Content, Width: cell.Width, Style: cloneCompactRowStyle(cell.Style)}
+			cloned.Cells[i] = CompactRowCell{Content: cell.Content, Width: cell.Width, Style: cloneCompactRowStyle(cell.Style), LinkURL: cell.LinkURL, LinkParams: cell.LinkParams}
 		}
 	}
 	return cloned
@@ -1978,12 +2013,12 @@ func CompactRowEqual(left, right CompactRow) bool {
 		return false
 	}
 	for i := range left.Runs {
-		if left.Runs[i].Text != right.Runs[i].Text || !compactRowStyleEqual(left.Runs[i].Style, right.Runs[i].Style) {
+		if left.Runs[i].Text != right.Runs[i].Text || left.Runs[i].LinkURL != right.Runs[i].LinkURL || left.Runs[i].LinkParams != right.Runs[i].LinkParams || !compactRowStyleEqual(left.Runs[i].Style, right.Runs[i].Style) {
 			return false
 		}
 	}
 	for i := range left.Cells {
-		if left.Cells[i].Content != right.Cells[i].Content || left.Cells[i].Width != right.Cells[i].Width || !compactRowStyleEqual(left.Cells[i].Style, right.Cells[i].Style) {
+		if left.Cells[i].Content != right.Cells[i].Content || left.Cells[i].Width != right.Cells[i].Width || left.Cells[i].LinkURL != right.Cells[i].LinkURL || left.Cells[i].LinkParams != right.Cells[i].LinkParams || !compactRowStyleEqual(left.Cells[i].Style, right.Cells[i].Style) {
 			return false
 		}
 	}
@@ -2048,13 +2083,13 @@ func decodeCompactRow(text string, runs []CompactRowRun, cells []CompactRowCell)
 	if len(runs) > 0 {
 		out := make([]Cell, 0, compactRowRunCellCount(runs))
 		for _, run := range runs {
-			out = append(out, decodeCompactRowText(run.Text, compactRowCellStyle(run.Style))...)
+			out = append(out, decodeCompactRowTextWithLink(run.Text, compactRowCellStyle(run.Style), run.LinkURL, run.LinkParams)...)
 		}
 		return out
 	}
 	out := make([]Cell, len(cells))
 	for i, cell := range cells {
-		out[i] = Cell{Content: cell.Content, Width: cell.Width, Style: compactRowCellStyle(cell.Style)}
+		out[i] = Cell{Content: cell.Content, Width: cell.Width, Style: compactRowCellStyle(cell.Style), LinkURL: cell.LinkURL, LinkParams: cell.LinkParams}
 	}
 	return out
 }
@@ -2068,6 +2103,10 @@ func compactRowRunCellCount(runs []CompactRowRun) int {
 }
 
 func decodeCompactRowText(text string, style CellStyle) []Cell {
+	return decodeCompactRowTextWithLink(text, style, "", "")
+}
+
+func decodeCompactRowTextWithLink(text string, style CellStyle, linkURL string, linkParams string) []Cell {
 	if text == "" {
 		return nil
 	}
@@ -2075,9 +2114,9 @@ func decodeCompactRowText(text string, style CellStyle) []Cell {
 	for len(text) > 0 {
 		r, size := utf8.DecodeRuneInString(text)
 		if r < utf8.RuneSelf {
-			out = append(out, Cell{Content: compactASCIIStrings[byte(r)], Width: 1, Style: style})
+			out = append(out, Cell{Content: compactASCIIStrings[byte(r)], Width: 1, Style: style, LinkURL: linkURL, LinkParams: linkParams})
 		} else {
-			out = append(out, Cell{Content: text[:size], Width: 1, Style: style})
+			out = append(out, Cell{Content: text[:size], Width: 1, Style: style, LinkURL: linkURL, LinkParams: linkParams})
 		}
 		text = text[size:]
 	}

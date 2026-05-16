@@ -71,3 +71,42 @@ func TestVTermWorkingDirectoryCallback(t *testing.T) {
 		t.Fatalf("expected working directory callback, got %q", captured)
 	}
 }
+
+func TestVTermOSC8HyperlinkDoesNotLeakControlBytes(t *testing.T) {
+	vt := New(80, 24, 1000, nil)
+
+	if _, err := vt.Write([]byte("\x1b]8;id=termx;https://example.test\x1b\\linked\x1b]8;;\x1b\\ tail")); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	row := vt.ScreenRowView(0)
+	if got := rowToString(row); !strings.Contains(got, "linked tail") {
+		t.Fatalf("expected hyperlink text to remain visible, got %q", got)
+	}
+	for i := 0; i < len("linked"); i++ {
+		if row[i].LinkURL != "https://example.test" || row[i].LinkParams != "id=termx" {
+			t.Fatalf("expected linked cell %d to keep hyperlink, got %#v", i, row[i])
+		}
+	}
+	if row[len("linked")+1].LinkURL != "" || row[len("linked")+1].LinkParams != "" {
+		t.Fatalf("expected trailing text to reset hyperlink, got %#v", row[len("linked")+1])
+	}
+}
+
+func TestVTermUnsupportedPrivateModeDoesNotLeakControlBytes(t *testing.T) {
+	vt := New(80, 24, 1000, nil)
+
+	if _, err := vt.Write([]byte("\x1b[?9999hprompt\x1b[?9999l")); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	rendered := strings.Join(vt.RenderLines(), "\n")
+	if !strings.Contains(rendered, "prompt") {
+		t.Fatalf("expected text after unsupported private mode to remain visible, got %q", rendered)
+	}
+	for _, leaked := range []string{"[?9999h", "[?9999l"} {
+		if strings.Contains(rendered, leaked) {
+			t.Fatalf("expected unsupported private mode bytes not to render, got %q", rendered)
+		}
+	}
+}

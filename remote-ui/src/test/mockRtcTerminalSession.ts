@@ -25,7 +25,12 @@ export function createMockRtcTerminalSession(
   return new MockRtcTerminalSession(machineId, path)
 }
 
-export function encodeMockScreenUpdatePayload(text: string, cols = 80, rows = 24): Uint8Array {
+export function encodeMockScreenUpdatePayload(
+  text: string,
+  cols = 80,
+  rows = 24,
+  link?: { url: string; params?: string },
+): Uint8Array {
   const bytes: number[] = []
   const textEncoder = new TextEncoder()
   const appendBytes = (value: Uint8Array) => {
@@ -55,7 +60,7 @@ export function encodeMockScreenUpdatePayload(text: string, cols = 80, rows = 24
     appendBytes(raw)
   }
 
-  appendBytes(textEncoder.encode('TSU6'))
+  appendBytes(textEncoder.encode('TSU7'))
   appendByte(0)
   appendUint16(cols)
   appendUint16(rows)
@@ -77,6 +82,8 @@ export function encodeMockScreenUpdatePayload(text: string, cols = 80, rows = 24
   appendUvarint(0)
   appendUvarint(1)
   appendString(text)
+  appendString(link?.url ?? '')
+  appendString(link?.params ?? '')
   appendUvarint(0)
   appendUvarint(0)
   return new Uint8Array(bytes)

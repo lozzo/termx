@@ -25,8 +25,8 @@ const (
 	maxGridReplayRows                 = 250
 	defaultGridPageMaxBytes           = 4 * 1024 * 1024
 
-	terminalGridStoreVersion = 4
-	terminalGridRowCodec     = "compact-line-v1"
+	terminalGridStoreVersion = 5
+	terminalGridRowCodec     = "compact-line-v2"
 	terminalGridIndexCodec   = "fixed20-le-v1"
 	terminalGridMetadataName = "grid.meta.pb"
 	terminalGridIndexName    = "grid.index"
@@ -879,6 +879,9 @@ func isBlankGridRow(row []vterm.Cell) bool {
 			return false
 		}
 		if cell.Style != (vterm.CellStyle{}) {
+			return false
+		}
+		if cell.LinkURL != "" || cell.LinkParams != "" {
 			return false
 		}
 	}

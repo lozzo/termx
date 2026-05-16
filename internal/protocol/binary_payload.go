@@ -11,13 +11,16 @@ import (
 )
 
 const (
-	rowBlobMagic = "TXRB"
+	rowsBlobMagic = "TXS2"
+	rowBlobMagic  = "TXR2"
 
 	rowBlobFlagRuns  uint8 = 1 << 0
 	rowBlobFlagCells uint8 = 1 << 1
 
 	rowBlobRunFlagStyle  uint8 = 1 << 0
+	rowBlobRunFlagLink   uint8 = 1 << 1
 	rowBlobCellFlagStyle uint8 = 1 << 0
+	rowBlobCellFlagLink  uint8 = 1 << 1
 )
 
 func EncodeBinaryResponsePayload(id uint64, result []byte) ([]byte, error) {
@@ -175,7 +178,7 @@ func encodeCompactRowsBlob(rows []CompactRow) []byte {
 		return nil
 	}
 	enc := binaryEncoder{buf: make([]byte, 0, compactRowsBlobSize(rows))}
-	enc.appendBytes([]byte("TXRS"))
+	enc.appendBytes([]byte(rowsBlobMagic))
 	enc.appendUvarint(uint64(len(rows)))
 	for _, row := range rows {
 		rowSize := compactRowBlobSize(row)
@@ -190,7 +193,7 @@ func decodeCompactRowsBlob(blob []byte) ([]CompactRow, error) {
 		return nil, nil
 	}
 	dec := binaryDecoder{data: blob}
-	if !dec.consumeMagic("TXRS") {
+	if !dec.consumeMagic(rowsBlobMagic) {
 		return nil, fmt.Errorf("invalid compact rows blob magic")
 	}
 	count, err := dec.readUvarint()
@@ -223,7 +226,7 @@ func decodeCompactRowsBlob(blob []byte) ([]CompactRow, error) {
 }
 
 func compactRowsBlobSize(rows []CompactRow) int {
-	size := len("TXRS") + uvarintSize(uint64(len(rows)))
+	size := len(rowsBlobMagic) + uvarintSize(uint64(len(rows)))
 	for _, row := range rows {
 		rowSize := compactRowBlobSize(row)
 		size += uvarintSize(uint64(rowSize)) + rowSize
@@ -253,6 +256,7 @@ func encodeCompactRowBlobInto(enc *binaryEncoder, row CompactRow) {
 		for _, run := range row.Runs {
 			enc.appendString(run.Text)
 			enc.appendCompactRowStyle(run.Style, rowBlobRunFlagStyle)
+			enc.appendCompactRowLink(run.LinkURL, run.LinkParams, rowBlobRunFlagLink)
 		}
 	case flags&rowBlobFlagCells != 0:
 		enc.appendUvarint(uint64(len(row.Cells)))
@@ -260,6 +264,7 @@ func encodeCompactRowBlobInto(enc *binaryEncoder, row CompactRow) {
 			enc.appendString(cell.Content)
 			enc.appendUvarint(uint64(maxInt(0, cell.Width)))
 			enc.appendCompactRowStyle(cell.Style, rowBlobCellFlagStyle)
+			enc.appendCompactRowLink(cell.LinkURL, cell.LinkParams, rowBlobCellFlagLink)
 		}
 	default:
 		enc.appendString(row.Text)
@@ -292,7 +297,11 @@ func decodeCompactRowBlob(blob []byte) (CompactRow, error) {
 			if err != nil {
 				return CompactRow{}, err
 			}
-			row.Runs = append(row.Runs, CompactRowRun{Text: text, Style: style})
+			linkURL, linkParams, err := dec.readCompactRowLink(rowBlobRunFlagLink)
+			if err != nil {
+				return CompactRow{}, err
+			}
+			row.Runs = append(row.Runs, CompactRowRun{Text: text, Style: style, LinkURL: linkURL, LinkParams: linkParams})
 		}
 	case flags&rowBlobFlagCells != 0:
 		count, err := dec.readUvarint()
@@ -313,7 +322,11 @@ func decodeCompactRowBlob(blob []byte) (CompactRow, error) {
 			if err != nil {
 				return CompactRow{}, err
 			}
-			row.Cells = append(row.Cells, CompactRowCell{Content: content, Width: int(width), Style: style})
+			linkURL, linkParams, err := dec.readCompactRowLink(rowBlobCellFlagLink)
+			if err != nil {
+				return CompactRow{}, err
+			}
+			row.Cells = append(row.Cells, CompactRowCell{Content: content, Width: int(width), Style: style, LinkURL: linkURL, LinkParams: linkParams})
 		}
 	default:
 		row.Text, err = dec.readString()
@@ -333,12 +346,12 @@ func compactRowBlobSize(row CompactRow) int {
 	case len(row.Runs) > 0:
 		size += uvarintSize(uint64(len(row.Runs)))
 		for _, run := range row.Runs {
-			size += stringBlobSize(run.Text) + compactRowStyleBlobSize(run.Style)
+			size += stringBlobSize(run.Text) + compactRowStyleBlobSize(run.Style) + compactRowLinkBlobSize(run.LinkURL, run.LinkParams)
 		}
 	case len(row.Cells) > 0:
 		size += uvarintSize(uint64(len(row.Cells)))
 		for _, cell := range row.Cells {
-			size += stringBlobSize(cell.Content) + uvarintSize(uint64(maxInt(0, cell.Width))) + compactRowStyleBlobSize(cell.Style)
+			size += stringBlobSize(cell.Content) + uvarintSize(uint64(maxInt(0, cell.Width))) + compactRowStyleBlobSize(cell.Style) + compactRowLinkBlobSize(cell.LinkURL, cell.LinkParams)
 		}
 	default:
 		size += stringBlobSize(row.Text)
@@ -351,6 +364,13 @@ func compactRowStyleBlobSize(style *CompactRowStyle) int {
 		return 1
 	}
 	return 1 + stringBlobSize(style.FG) + stringBlobSize(style.BG) + 1
+}
+
+func compactRowLinkBlobSize(linkURL, linkParams string) int {
+	if linkURL == "" && linkParams == "" {
+		return 1
+	}
+	return 1 + stringBlobSize(linkURL) + stringBlobSize(linkParams)
 }
 
 func stringBlobSize(value string) int {
@@ -532,6 +552,19 @@ func (e *binaryEncoder) appendCompactRowStyle(style *CompactRowStyle, styleFlag 
 	e.appendByte(compactRowStyleMask(style))
 }
 
+func (e *binaryEncoder) appendCompactRowLink(linkURL, linkParams string, linkFlag uint8) {
+	flags := uint8(0)
+	if linkURL != "" || linkParams != "" {
+		flags |= linkFlag
+	}
+	e.appendByte(flags)
+	if flags&linkFlag == 0 {
+		return
+	}
+	e.appendString(linkURL)
+	e.appendString(linkParams)
+}
+
 func compactRowStyleMask(style *CompactRowStyle) uint8 {
 	var mask uint8
 	if style.Bold {
@@ -632,4 +665,23 @@ func (d *binaryDecoder) readCompactRowStyle(styleFlag uint8) (*CompactRowStyle, 
 		Reverse:       mask&(1<<4) != 0,
 		Strikethrough: mask&(1<<5) != 0,
 	}, nil
+}
+
+func (d *binaryDecoder) readCompactRowLink(linkFlag uint8) (string, string, error) {
+	flags, err := d.readByte()
+	if err != nil {
+		return "", "", err
+	}
+	if flags&linkFlag == 0 {
+		return "", "", nil
+	}
+	linkURL, err := d.readString()
+	if err != nil {
+		return "", "", err
+	}
+	linkParams, err := d.readString()
+	if err != nil {
+		return "", "", err
+	}
+	return linkURL, linkParams, nil
 }

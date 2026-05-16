@@ -226,13 +226,20 @@ func TestScreenUpdatePayloadFullReplaceTrimsTrailingBlankCells(t *testing.T) {
 
 func TestScreenUpdatePayloadCurrentRoundTrip(t *testing.T) {
 	now := time.Date(2026, 5, 12, 1, 2, 3, 0, time.UTC)
+	screenRows := [][]Cell{rowWithTextAt(10, 0, "abc"), rowWithTextAt(10, 0, "def")}
+	screenRows[0][1].LinkURL = "https://example.test/screen"
+	screenRows[0][1].LinkParams = "id=screen"
+	writeCells := []Cell{{Content: "n", Width: 1}, {Content: "e", Width: 1, LinkURL: "https://example.test/op", LinkParams: "id=op"}, {Content: "w", Width: 1}}
+	scrollbackRow := rowWithTextAt(10, 0, "old")
+	scrollbackRow[0].LinkURL = "https://example.test/scrollback"
+	scrollbackRow[0].LinkParams = "id=scrollback"
 	update := ScreenUpdate{
 		FullReplace:     true,
 		ResetScrollback: true,
 		Size:            protocolSize(10, 4),
 		Title:           "ops-demo",
 		Screen: ScreenData{
-			Cells:             [][]Cell{rowWithTextAt(10, 0, "abc"), rowWithTextAt(10, 0, "def")},
+			Cells:             screenRows,
 			IsAlternateScreen: true,
 		},
 		ScreenTimestamps: []time.Time{now, now.Add(time.Second)},
@@ -241,7 +248,7 @@ func TestScreenUpdatePayloadCurrentRoundTrip(t *testing.T) {
 		ScreenScroll:     1,
 		Ops: []ScreenOp{
 			{Code: ScreenOpScrollRect, Rect: ScreenRect{X: 0, Y: 0, Width: 10, Height: 4}, Dy: -1},
-			{Code: ScreenOpWriteSpan, Row: 3, Col: 0, Cells: []Cell{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}, Timestamp: now.Add(2 * time.Second), RowKind: "tail", Wrapped: true, WrappedSet: true},
+			{Code: ScreenOpWriteSpan, Row: 3, Col: 0, Cells: writeCells, Timestamp: now.Add(2 * time.Second), RowKind: "tail", Wrapped: true, WrappedSet: true},
 			{Code: ScreenOpCopyRect, Src: ScreenRect{X: 0, Y: 0, Width: 4, Height: 1}, DstX: 5, DstY: 1},
 			{Code: ScreenOpClearRect, Rect: ScreenRect{X: 7, Y: 0, Width: 3, Height: 2}, Timestamp: now.Add(3 * time.Second), RowKind: "clear", WrappedSet: true},
 			{Code: ScreenOpClearToEOL, Row: 2, Col: 4, Timestamp: now.Add(4 * time.Second), RowKind: "eol", Wrapped: true, WrappedSet: true},
@@ -252,7 +259,7 @@ func TestScreenUpdatePayloadCurrentRoundTrip(t *testing.T) {
 		},
 		ScrollbackTrim: 2,
 		ScrollbackAppend: []ScrollbackRowAppend{{
-			Cells:      rowWithTextAt(10, 0, "old"),
+			Cells:      scrollbackRow,
 			Timestamp:  now.Add(5 * time.Second),
 			RowKind:    "old",
 			Wrapped:    true,
@@ -279,11 +286,17 @@ func TestScreenUpdatePayloadCurrentRoundTrip(t *testing.T) {
 	if len(decoded.ScreenWrapped) != 2 || !decoded.ScreenWrapped[0] || decoded.ScreenWrapped[1] {
 		t.Fatalf("unexpected decoded screen wrapped: %#v", decoded.ScreenWrapped)
 	}
+	if got := decoded.Screen.Cells[0][1]; got.LinkURL != "https://example.test/screen" || got.LinkParams != "id=screen" {
+		t.Fatalf("expected screen hyperlink round-trip, got %#v", got)
+	}
 	if len(decoded.Ops) != len(update.Ops) {
 		t.Fatalf("expected %d decoded ops, got %#v", len(update.Ops), decoded.Ops)
 	}
 	if decoded.Ops[1].Code != ScreenOpWriteSpan || !decoded.Ops[1].WrappedSet || !decoded.Ops[1].Wrapped {
 		t.Fatalf("unexpected write op wrapped metadata: %#v", decoded.Ops[1])
+	}
+	if got := decoded.Ops[1].Cells[1]; got.LinkURL != "https://example.test/op" || got.LinkParams != "id=op" {
+		t.Fatalf("expected write-span hyperlink round-trip, got %#v", got)
 	}
 	if decoded.Ops[2].Code != ScreenOpCopyRect || decoded.Ops[2].DstX != 5 || decoded.Ops[2].DstY != 1 {
 		t.Fatalf("unexpected copyrect op: %#v", decoded.Ops[2])
@@ -294,6 +307,9 @@ func TestScreenUpdatePayloadCurrentRoundTrip(t *testing.T) {
 	if len(decoded.ScrollbackAppend) != 1 || !decoded.ScrollbackAppend[0].WrappedSet || !decoded.ScrollbackAppend[0].Wrapped {
 		t.Fatalf("unexpected scrollback wrapped metadata: %#v", decoded.ScrollbackAppend)
 	}
+	if got := decoded.ScrollbackAppend[0].Cells[0]; got.LinkURL != "https://example.test/scrollback" || got.LinkParams != "id=scrollback" {
+		t.Fatalf("expected scrollback hyperlink round-trip, got %#v", got)
+	}
 }
 
 func TestDecodeScreenUpdatePayloadRejectsLegacyPayloads(t *testing.T) {
@@ -303,6 +319,7 @@ func TestDecodeScreenUpdatePayloadRejectsLegacyPayloads(t *testing.T) {
 		[]byte("TSU3\x00"),
 		[]byte("TSU4\x00"),
 		[]byte("TSU5\x00"),
+		[]byte("TSU6\x00"),
 	} {
 		if _, err := DecodeScreenUpdatePayload(payload); err == nil {
 			t.Fatalf("expected legacy payload %q to be rejected", payload[:minInt(len(payload), 4)])

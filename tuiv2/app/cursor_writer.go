@@ -241,14 +241,14 @@ func (p *framePresenter) Present(frame string) string {
 
 func (p *framePresenter) PresentLines(lines []string) string {
 	if p == nil {
-		return strings.Join(lines, "\n")
+		return joinFrameLinesForHost(lines)
 	}
 	return p.presentLines(lines, nil)
 }
 
 func (p *framePresenter) PresentLinesWithMeta(lines []string, meta *presentMeta) string {
 	if p == nil {
-		return strings.Join(lines, "\n")
+		return joinFrameLinesForHost(lines)
 	}
 	return p.presentLines(lines, meta)
 }
@@ -259,14 +259,14 @@ func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string 
 		p.setLines(lines, true)
 		p.ready = true
 		p.meta = clonePresentMeta(meta)
-		return strings.Join(lines, "\n")
+		return joinFrameLinesForHost(lines)
 	}
 	if len(lines) != len(p.lines) {
 		perftrace.Count("cursor_writer.present.mode.full_repaint_resize", len(lines))
 		releasePresentedRows(p.parsed)
 		p.setLines(lines, true)
 		p.meta = clonePresentMeta(meta)
-		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
+		return xansi.EraseEntireDisplay + joinFrameLinesForHost(lines)
 	}
 	plan := p.planFramePatch(lines, meta)
 	if plan.updatedCount == 0 {

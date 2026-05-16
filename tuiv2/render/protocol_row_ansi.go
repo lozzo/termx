@@ -96,7 +96,7 @@ func protocolRowANSIWithOptions(row []protocol.Cell, width int, options protocol
 		cols++
 	}
 	if current != (drawStyle{}) {
-		builder.WriteString(styleANSI(drawStyle{}))
+		builder.WriteString(styleDiffANSI(current, drawStyle{}))
 	}
 	if options.tight {
 		return builder.String()
@@ -180,7 +180,7 @@ func vtermRowANSIWithOptions(row []localvterm.Cell, width int, options protocolR
 		cols++
 	}
 	if current != (drawStyle{}) {
-		builder.WriteString(styleANSI(drawStyle{}))
+		builder.WriteString(styleDiffANSI(current, drawStyle{}))
 	}
 	if usedECH {
 		return builder.String()

@@ -17,16 +17,18 @@ const (
 	terminalGridRowMagic2 byte = 'G'
 	terminalGridRowMagic3 byte = 'R'
 
-	terminalGridRowCodecVersion byte = 1
+	terminalGridRowCodecVersion byte = 2
 
 	terminalGridRowFlagTimestamp uint16 = 1 << 0
 	terminalGridRowFlagRowKind   uint16 = 1 << 1
 
 	terminalGridRunFlagStyle uint8 = 1 << 0
 	terminalGridRunFlagASCII uint8 = 1 << 1
+	terminalGridRunFlagLink  uint8 = 1 << 2
 
 	terminalGridCellFlagContent byte = 1 << 0
 	terminalGridCellFlagWidth   byte = 1 << 1
+	terminalGridCellFlagLink    byte = 1 << 2
 
 	terminalGridStyleFlagFG            uint16 = 1 << 0
 	terminalGridStyleFlagBG            uint16 = 1 << 1
@@ -178,6 +180,9 @@ func trimTerminalGridCells(cells []vterm.Cell) []vterm.Cell {
 		if cell.Content != "" && strings.TrimSpace(cell.Content) != "" {
 			break
 		}
+		if cell.LinkURL != "" || cell.LinkParams != "" {
+			break
+		}
 		if cell.Style != (vterm.CellStyle{}) || cell.Width > 1 {
 			break
 		}
@@ -187,10 +192,12 @@ func trimTerminalGridCells(cells []vterm.Cell) []vterm.Cell {
 }
 
 type terminalGridRun struct {
-	style vterm.CellStyle
-	ascii bool
-	cells []vterm.Cell
-	text  string
+	style      vterm.CellStyle
+	linkURL    string
+	linkParams string
+	ascii      bool
+	cells      []vterm.Cell
+	text       string
 }
 
 func terminalGridRuns(cells []vterm.Cell) []terminalGridRun {
@@ -200,14 +207,16 @@ func terminalGridRuns(cells []vterm.Cell) []terminalGridRun {
 	runs := make([]terminalGridRun, 0, 4)
 	for i := 0; i < len(cells); {
 		style := cells[i].Style
+		linkURL := cells[i].LinkURL
+		linkParams := cells[i].LinkParams
 		ascii := terminalGridASCIICompactCell(cells[i])
 		start := i
 		i++
-		for i < len(cells) && cells[i].Style == style && terminalGridASCIICompactCell(cells[i]) == ascii {
+		for i < len(cells) && cells[i].Style == style && cells[i].LinkURL == linkURL && cells[i].LinkParams == linkParams && terminalGridASCIICompactCell(cells[i]) == ascii {
 			i++
 		}
 		runCells := cells[start:i]
-		run := terminalGridRun{style: style, ascii: ascii, cells: runCells}
+		run := terminalGridRun{style: style, linkURL: linkURL, linkParams: linkParams, ascii: ascii, cells: runCells}
 		if ascii {
 			var b strings.Builder
 			b.Grow(len(runCells))
@@ -230,6 +239,9 @@ func terminalGridEncodedRunSize(run terminalGridRun) int {
 	if run.style != (vterm.CellStyle{}) {
 		size += terminalGridEncodedStyleSize(run.style)
 	}
+	if run.linkURL != "" || run.linkParams != "" {
+		size += binary.MaxVarintLen64 + len(run.linkURL) + binary.MaxVarintLen64 + len(run.linkParams)
+	}
 	if run.ascii {
 		return size + binary.MaxVarintLen64 + len(run.text)
 	}
@@ -241,6 +253,9 @@ func terminalGridEncodedRunSize(run terminalGridRun) int {
 		}
 		if cell.Width != 1 {
 			size += binary.MaxVarintLen64
+		}
+		if cell.LinkURL != "" || cell.LinkParams != "" {
+			size += binary.MaxVarintLen64 + len(cell.LinkURL) + binary.MaxVarintLen64 + len(cell.LinkParams)
 		}
 	}
 	return size
@@ -254,9 +269,16 @@ func appendTerminalGridRun(out []byte, run terminalGridRun) []byte {
 	if run.ascii {
 		flags |= terminalGridRunFlagASCII
 	}
+	if run.linkURL != "" || run.linkParams != "" {
+		flags |= terminalGridRunFlagLink
+	}
 	out = append(out, flags)
 	if flags&terminalGridRunFlagStyle != 0 {
 		out = appendTerminalGridStyle(out, run.style)
+	}
+	if flags&terminalGridRunFlagLink != 0 {
+		out = appendString(out, run.linkURL)
+		out = appendString(out, run.linkParams)
 	}
 	if flags&terminalGridRunFlagASCII != 0 {
 		return appendString(out, run.text)
@@ -277,12 +299,19 @@ func appendTerminalGridCell(out []byte, cell vterm.Cell) []byte {
 	if cell.Width != 1 {
 		flags |= terminalGridCellFlagWidth
 	}
+	if cell.LinkURL != "" || cell.LinkParams != "" {
+		flags |= terminalGridCellFlagLink
+	}
 	out = append(out, flags)
 	if flags&terminalGridCellFlagContent != 0 {
 		out = appendString(out, content)
 	}
 	if flags&terminalGridCellFlagWidth != 0 {
 		out = appendVarint(out, int64(cell.Width))
+	}
+	if flags&terminalGridCellFlagLink != 0 {
+		out = appendString(out, cell.LinkURL)
+		out = appendString(out, cell.LinkParams)
 	}
 	return out
 }
@@ -417,6 +446,18 @@ func (r *terminalGridReader) readRun() ([]vterm.Cell, error) {
 			return nil, err
 		}
 	}
+	linkURL := ""
+	linkParams := ""
+	if flags&terminalGridRunFlagLink != 0 {
+		linkURL, err = r.readString()
+		if err != nil {
+			return nil, err
+		}
+		linkParams, err = r.readString()
+		if err != nil {
+			return nil, err
+		}
+	}
 	if flags&terminalGridRunFlagASCII != 0 {
 		text, err := r.readString()
 		if err != nil {
@@ -427,7 +468,7 @@ func (r *terminalGridReader) readRun() ([]vterm.Cell, error) {
 			if text[i] >= utf8.RuneSelf {
 				return nil, fmt.Errorf("terminal grid ascii run contains non-ascii byte")
 			}
-			cells = append(cells, vterm.Cell{Content: string(text[i]), Width: 1, Style: style})
+			cells = append(cells, vterm.Cell{Content: string(text[i]), Width: 1, Style: style, LinkURL: linkURL, LinkParams: linkParams})
 		}
 		return cells, nil
 	}
@@ -443,6 +484,10 @@ func (r *terminalGridReader) readRun() ([]vterm.Cell, error) {
 		cell, err := r.readCell(style)
 		if err != nil {
 			return nil, err
+		}
+		if cell.LinkURL == "" && cell.LinkParams == "" {
+			cell.LinkURL = linkURL
+			cell.LinkParams = linkParams
 		}
 		cells[i] = cell
 	}
@@ -468,6 +513,18 @@ func (r *terminalGridReader) readCell(style vterm.CellStyle) (vterm.Cell, error)
 			return vterm.Cell{}, err
 		}
 		cell.Width = int(width)
+	}
+	if flags&terminalGridCellFlagLink != 0 {
+		linkURL, err := r.readString()
+		if err != nil {
+			return vterm.Cell{}, err
+		}
+		linkParams, err := r.readString()
+		if err != nil {
+			return vterm.Cell{}, err
+		}
+		cell.LinkURL = linkURL
+		cell.LinkParams = linkParams
 	}
 	return cell, nil
 }
