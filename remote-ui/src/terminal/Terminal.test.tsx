@@ -1113,6 +1113,99 @@ describe('Terminal', () => {
     expect(term.scrollToBottom).not.toHaveBeenCalled()
   })
 
+  it('shows a visible top history loading indicator for at least 0.5 seconds', async () => {
+    const session = createMockRtcTerminalSession()
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'current',
+      cols: 80,
+      rows: 24,
+      pages: [
+        { offset: 0, rows: Array.from({ length: 250 }, (_value, index) => `loading-${index}`) },
+      ],
+    })
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const term = xtermMocks.FakeXTerm.instances[0]!
+    await waitFor(() => expect(term.scrollToBottom).toHaveBeenCalled())
+    term.scrollToBottom.mockClear()
+    term.buffer.active.viewportY = 12
+    const terminalOutput = screen.getByLabelText('Terminal output')
+    const screenElement = terminalOutput.querySelector('.xterm-screen') as HTMLElement
+
+    act(() => {
+      screenElement.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }))
+    })
+
+    await waitFor(() => expect(screen.queryByTestId('termx-history-loading')).not.toBeNull())
+    const shownAt = performance.now()
+    const loading = screen.getByTestId('termx-history-loading')
+    expect(loading.className).toContain('top-0')
+    expect(loading.className).toContain('bg-[var(--termx-surface)]/95')
+    await waitFor(() => expect(term.scrollToLine).toHaveBeenCalledWith(262))
+    expect(screen.queryByTestId('termx-history-loading')).not.toBeNull()
+    await waitFor(() => expect(screen.queryByTestId('termx-history-loading')).toBeNull(), { timeout: 1200 })
+    expect(performance.now() - shownAt).toBeGreaterThanOrEqual(450)
+  })
+
+  it('continues explicit history loading past the configured scrollback window with a bounded buffer', async () => {
+    const session = createMockRtcTerminalSession()
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'current',
+      cols: 80,
+      rows: 24,
+      pages: [
+        { offset: 0, rows: Array.from({ length: 250 }, (_value, index) => `cap-a-${index}`) },
+        { offset: 250, rows: Array.from({ length: 250 }, (_value, index) => `cap-b-${index}`) },
+        { offset: 500, rows: Array.from({ length: 250 }, (_value, index) => `cap-c-${index}`) },
+      ],
+    })
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+        settings={{
+          ...DEFAULT_TERMINAL_SETTINGS,
+          scrollback: 500,
+          scrollbackPrefetchThresholdRows: 1000,
+        }}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const term = xtermMocks.FakeXTerm.instances[0]!
+    term.buffer.active.viewportY = 0
+    const terminalOutput = screen.getByLabelText('Terminal output')
+    const screenElement = terminalOutput.querySelector('.xterm-screen') as HTMLElement
+
+    act(() => {
+      screenElement.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }))
+    })
+
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 0,
+      limit: 250,
+    }))
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 250,
+      limit: 250,
+    }))
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 500,
+      limit: 250,
+    }))
+    await waitFor(() => expect(term.options.scrollback).toBe(750))
+  })
+
   it('keeps live output that arrives while scrollback history rendering is queued', async () => {
     const session = createMockRtcTerminalSession()
     session.setTerminalSnapshot('terminal-1', {
@@ -1134,6 +1227,7 @@ describe('Terminal', () => {
 
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
     const term = xtermMocks.FakeXTerm.instances[0]!
+    await waitFor(() => expect(term.scrollToBottom).toHaveBeenCalled())
     term.buffer.active.viewportY = 12
     const terminalOutput = screen.getByLabelText('Terminal output')
     const screenElement = terminalOutput.querySelector('.xterm-screen') as HTMLElement
