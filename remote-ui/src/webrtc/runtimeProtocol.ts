@@ -30,6 +30,13 @@ import {
   FileUploadInitRequestSchema,
   FileUploadInitResponseSchema,
   StatusResponseSchema,
+  StorageDeleteRequestSchema,
+  StorageDeleteResponseSchema,
+  StorageEntrySchema,
+  StorageGetRequestSchema,
+  StorageListRequestSchema,
+  StorageListResponseSchema,
+  StoragePutRequestSchema,
   TerminalCreateRequestSchema,
   TerminalDirectoryRequestSchema,
   TerminalDirectoryResponseSchema,
@@ -42,6 +49,9 @@ import {
   type EventEnvelope,
   type EventSubscribeRequest,
   type FileEntry,
+  type StorageDeleteResponse,
+  type StorageEntry,
+  type StorageListResponse,
   type TerminalInventoryItem,
 } from '../generated/runtimepb/runtime_pb'
 
@@ -106,6 +116,14 @@ export function encodeRuntimeRequestBody(path: string, method: string, body: unk
       return encodeMessage(FileUploadInitRequestSchema, fileUploadInitRequestInit(body))
     case '/files/upload/complete':
       return encodeMessage(FileUploadCompleteRequestSchema, fileUploadCompleteRequestInit(body))
+    case '/storage/get':
+      return encodeMessage(StorageGetRequestSchema, storageGetRequestInit(body))
+    case '/storage/put':
+      return encodeMessage(StoragePutRequestSchema, storagePutRequestInit(body))
+    case '/storage/delete':
+      return encodeMessage(StorageDeleteRequestSchema, storageDeleteRequestInit(body))
+    case '/storage/list':
+      return encodeMessage(StorageListRequestSchema, storageListRequestInit(body))
     default:
       return encodeTerminalManagementRequest(method, body)
   }
@@ -135,6 +153,14 @@ export function decodeRuntimeRequestBody(path: string, method: string, body: Uin
       return fileUploadInitRequestToAPI(decodeMessage(FileUploadInitRequestSchema, body))
     case '/files/upload/complete':
       return fileUploadCompleteRequestToAPI(decodeMessage(FileUploadCompleteRequestSchema, body))
+    case '/storage/get':
+      return storageGetRequestToAPI(decodeMessage(StorageGetRequestSchema, body))
+    case '/storage/put':
+      return storagePutRequestToAPI(decodeMessage(StoragePutRequestSchema, body))
+    case '/storage/delete':
+      return storageDeleteRequestToAPI(decodeMessage(StorageDeleteRequestSchema, body))
+    case '/storage/list':
+      return storageListRequestToAPI(decodeMessage(StorageListRequestSchema, body))
     default:
       return decodeTerminalManagementRequest(method, body)
   }
@@ -182,6 +208,13 @@ export function encodeRuntimeResponseBody(path: string, method: string, body: un
       return encodeMessage(FileDownloadInitResponseSchema, fileDownloadInitResponseInit(body))
     case '/files/upload/init':
       return encodeMessage(FileUploadInitResponseSchema, fileUploadInitResponseInit(body))
+    case '/storage/get':
+    case '/storage/put':
+      return encodeMessage(StorageEntrySchema, storageEntryInit(body))
+    case '/storage/delete':
+      return encodeMessage(StorageDeleteResponseSchema, storageDeleteResponseInit(body))
+    case '/storage/list':
+      return encodeMessage(StorageListResponseSchema, storageListResponseInit(body))
     default:
       return new Uint8Array()
   }
@@ -223,6 +256,13 @@ export function decodeRuntimeResponseBody(path: string, method: string, body: Ui
       return fileDownloadInitResponseToAPI(decodeMessage(FileDownloadInitResponseSchema, body))
     case '/files/upload/init':
       return fileUploadInitResponseToAPI(decodeMessage(FileUploadInitResponseSchema, body))
+    case '/storage/get':
+    case '/storage/put':
+      return storageEntryToAPI(decodeMessage(StorageEntrySchema, body))
+    case '/storage/delete':
+      return storageDeleteResponseToAPI(decodeMessage(StorageDeleteResponseSchema, body))
+    case '/storage/list':
+      return storageListResponseToAPI(decodeMessage(StorageListResponseSchema, body))
     default:
       if (body.byteLength === 0) return {}
       return { bytes: body, method }
@@ -529,6 +569,148 @@ function fileUploadCompleteRequestToAPI(value: MessageShape<typeof FileUploadCom
   return cleanRecord({ transfer_id: value.transferId })
 }
 
+function storageGetRequestInit(value: unknown): MessageInitShape<typeof StorageGetRequestSchema> {
+  const record = asRecord(value)
+  return {
+    appId: stringValue(record.app_id ?? record.appId),
+    scope: stringValue(record.scope),
+    ownerId: stringValue(record.owner_id ?? record.ownerId),
+    key: stringValue(record.key),
+  }
+}
+
+function storageGetRequestToAPI(value: MessageShape<typeof StorageGetRequestSchema>): Record<string, unknown> {
+  return cleanRecord({
+    app_id: value.appId,
+    scope: value.scope,
+    owner_id: value.ownerId,
+    key: value.key,
+  })
+}
+
+function storagePutRequestInit(value: unknown): MessageInitShape<typeof StoragePutRequestSchema> {
+  const record = asRecord(value)
+  return {
+    appId: stringValue(record.app_id ?? record.appId),
+    scope: stringValue(record.scope),
+    ownerId: stringValue(record.owner_id ?? record.ownerId),
+    key: stringValue(record.key),
+    value: bytesValue(record.value),
+    checkVersion: booleanValue(record.check_version ?? record.checkVersion),
+    expectedVersion: bigintValue(record.expected_version ?? record.expectedVersion),
+  }
+}
+
+function storagePutRequestToAPI(value: MessageShape<typeof StoragePutRequestSchema>): Record<string, unknown> {
+  return cleanRecord({
+    app_id: value.appId,
+    scope: value.scope,
+    owner_id: value.ownerId,
+    key: value.key,
+    value: value.value,
+    check_version: value.checkVersion,
+    expected_version: numberFromBigInt(value.expectedVersion),
+  })
+}
+
+function storageDeleteRequestInit(value: unknown): MessageInitShape<typeof StorageDeleteRequestSchema> {
+  const record = asRecord(value)
+  return {
+    appId: stringValue(record.app_id ?? record.appId),
+    scope: stringValue(record.scope),
+    ownerId: stringValue(record.owner_id ?? record.ownerId),
+    key: stringValue(record.key),
+    checkVersion: booleanValue(record.check_version ?? record.checkVersion),
+    expectedVersion: bigintValue(record.expected_version ?? record.expectedVersion),
+  }
+}
+
+function storageDeleteRequestToAPI(value: MessageShape<typeof StorageDeleteRequestSchema>): Record<string, unknown> {
+  return cleanRecord({
+    app_id: value.appId,
+    scope: value.scope,
+    owner_id: value.ownerId,
+    key: value.key,
+    check_version: value.checkVersion,
+    expected_version: numberFromBigInt(value.expectedVersion),
+  })
+}
+
+function storageListRequestInit(value: unknown): MessageInitShape<typeof StorageListRequestSchema> {
+  const record = asRecord(value)
+  return {
+    appId: stringValue(record.app_id ?? record.appId),
+    scope: stringValue(record.scope),
+    ownerId: stringValue(record.owner_id ?? record.ownerId),
+    prefix: stringValue(record.prefix),
+  }
+}
+
+function storageListRequestToAPI(value: MessageShape<typeof StorageListRequestSchema>): Record<string, unknown> {
+  return cleanRecord({
+    app_id: value.appId,
+    scope: value.scope,
+    owner_id: value.ownerId,
+    prefix: value.prefix,
+  })
+}
+
+function storageEntryInit(value: unknown): MessageInitShape<typeof StorageEntrySchema> {
+  const record = asRecord(value)
+  return {
+    appId: stringValue(record.app_id ?? record.appId),
+    scope: stringValue(record.scope),
+    ownerId: stringValue(record.owner_id ?? record.ownerId),
+    key: stringValue(record.key),
+    value: bytesValue(record.value),
+    version: bigintValue(record.version),
+    updatedAt: stringValue(record.updated_at ?? record.updatedAt),
+  }
+}
+
+function storageEntryToAPI(value: StorageEntry): Record<string, unknown> {
+  return cleanRecord({
+    app_id: value.appId,
+    scope: value.scope,
+    owner_id: value.ownerId,
+    key: value.key,
+    value: value.value,
+    version: numberFromBigInt(value.version),
+    updated_at: value.updatedAt,
+  })
+}
+
+function storageDeleteResponseInit(value: unknown): MessageInitShape<typeof StorageDeleteResponseSchema> {
+  const record = asRecord(value)
+  return {
+    appId: stringValue(record.app_id ?? record.appId),
+    scope: stringValue(record.scope),
+    ownerId: stringValue(record.owner_id ?? record.ownerId),
+    key: stringValue(record.key),
+    deleted: booleanValue(record.deleted),
+    version: bigintValue(record.version),
+  }
+}
+
+function storageDeleteResponseToAPI(value: StorageDeleteResponse): Record<string, unknown> {
+  return cleanRecord({
+    app_id: value.appId,
+    scope: value.scope,
+    owner_id: value.ownerId,
+    key: value.key,
+    deleted: value.deleted,
+    version: numberFromBigInt(value.version),
+  })
+}
+
+function storageListResponseInit(value: unknown): MessageInitShape<typeof StorageListResponseSchema> {
+  return { entries: recordArray(asRecord(value).entries).map(storageEntryInit) }
+}
+
+function storageListResponseToAPI(value: StorageListResponse): Record<string, unknown> {
+  return { entries: value.entries.map(storageEntryToAPI) }
+}
+
 function fileEntryInit(value: unknown): MessageInitShape<typeof FileEntrySchema> {
   const record = asRecord(value)
   return cleanRecord({
@@ -752,6 +934,14 @@ function stringMap(value: unknown): Record<string, string> {
     if (typeof item === 'string') out[key] = item
   }
   return out
+}
+
+function bytesValue(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) return value
+  if (value instanceof ArrayBuffer) return new Uint8Array(value)
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+  if (typeof value === 'string') return new TextEncoder().encode(value)
+  return new Uint8Array()
 }
 
 function numberFromBigInt(value: bigint): number {

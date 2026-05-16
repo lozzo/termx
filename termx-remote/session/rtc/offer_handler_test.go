@@ -139,7 +139,7 @@ func TestRuntimeAPIChannelRouterHandlesTerminalManagement(t *testing.T) {
 func TestRuntimeAPIChannelIgnoresManagementMutationContext(t *testing.T) {
 	manager := &terminalAPIRouterStub{}
 	ctx := context.Background()
-	listStatus, listBody, listErr := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), manager, &runtimepb.APIRequest{
+	listStatus, listBody, listErr := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), manager, nil, &runtimepb.APIRequest{
 		Id:     "req_list",
 		Method: "list",
 		Path:   "list",
@@ -159,7 +159,7 @@ func TestRuntimeAPIChannelIgnoresManagementMutationContext(t *testing.T) {
 		t.Fatalf("expected terminal list payload, got %#v", listPayload)
 	}
 
-	createStatus, _, createErr := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), manager, &runtimepb.APIRequest{
+	createStatus, _, createErr := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), manager, nil, &runtimepb.APIRequest{
 		Id:     "req_create",
 		Method: "create",
 		Path:   "create",

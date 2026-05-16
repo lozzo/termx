@@ -36,6 +36,7 @@ type AnswerOptions struct {
 	SettingEngine      SettingEngineApplier
 	ChannelPolicy      ChannelPolicy
 	TerminalManagement TerminalManagementRouter
+	Storage            StorageRouter
 	Events             EventRouter
 	SessionContext     context.Context
 	OnSessionClose     func()
@@ -57,11 +58,21 @@ type TerminalManagementRouter interface {
 	RouteTerminalManagementRequest(ctx context.Context, req TerminalManagementRequest) (int32, []byte, string)
 }
 
+type StorageRouter interface {
+	RouteStorageRequest(ctx context.Context, req StorageRequest) (int32, []byte, string)
+}
+
 type EventRouter interface {
 	SubscribeRemoteEvents(ctx context.Context, filters EventFilters) (<-chan []byte, func(), error)
 }
 
 type TerminalManagementRequest struct {
+	Method string
+	Path   string
+	Body   []byte
+}
+
+type StorageRequest struct {
 	Method string
 	Path   string
 	Body   []byte
@@ -150,7 +161,7 @@ func AnswerOfferWithOptions(
 				}()
 			})
 		case label == "api":
-			handleAPIChannel(sessionCtx, dc, fileManager, opts.TerminalManagement, func(ctx context.Context) context.Context {
+			handleAPIChannel(sessionCtx, dc, fileManager, opts.TerminalManagement, opts.Storage, func(ctx context.Context) context.Context {
 				return withRelayConnection(ctx, IsRelayConnection(pc))
 			})
 		case strings.HasPrefix(label, "file:"):
@@ -284,7 +295,7 @@ const (
 	apiSendBufferLow   = 32 * 1024
 )
 
-func handleAPIChannel(ctx context.Context, dc *webrtc.DataChannel, manager *fileapi.Manager, terminalManagement TerminalManagementRouter, contextHook ...func(context.Context) context.Context) {
+func handleAPIChannel(ctx context.Context, dc *webrtc.DataChannel, manager *fileapi.Manager, terminalManagement TerminalManagementRouter, storage StorageRouter, contextHook ...func(context.Context) context.Context) {
 	drainCh := make(chan struct{}, 1)
 	dc.SetBufferedAmountLowThreshold(apiSendBufferLow)
 	dc.OnBufferedAmountLow(func() {
@@ -306,7 +317,7 @@ func handleAPIChannel(ctx context.Context, dc *webrtc.DataChannel, manager *file
 				reqCtx = contextHook[0](reqCtx)
 			}
 			log.Printf("termx remote api request id=%s method=%s path=%s body_bytes=%d buffered=%d", req.GetId(), req.GetMethod(), req.GetPath(), len(req.GetBody()), dc.BufferedAmount())
-			statusCode, respBody, errMsg := routeRuntimeAPIRequestWithContext(reqCtx, manager, terminalManagement, &req)
+			statusCode, respBody, errMsg := routeRuntimeAPIRequestWithContext(reqCtx, manager, terminalManagement, storage, &req)
 			payload, err := proto.Marshal(&runtimepb.APIResponse{
 				Id:     req.GetId(),
 				Status: statusCode,
@@ -324,10 +335,10 @@ func handleAPIChannel(ctx context.Context, dc *webrtc.DataChannel, manager *file
 }
 
 func routeRuntimeAPIRequest(manager *fileapi.Manager, terminalManagement TerminalManagementRouter, req *runtimepb.APIRequest) (int32, []byte, string) {
-	return routeRuntimeAPIRequestWithContext(context.Background(), manager, terminalManagement, req)
+	return routeRuntimeAPIRequestWithContext(context.Background(), manager, terminalManagement, nil, req)
 }
 
-func routeRuntimeAPIRequestWithContext(ctx context.Context, manager *fileapi.Manager, terminalManagement TerminalManagementRouter, req *runtimepb.APIRequest) (int32, []byte, string) {
+func routeRuntimeAPIRequestWithContext(ctx context.Context, manager *fileapi.Manager, terminalManagement TerminalManagementRouter, storage StorageRouter, req *runtimepb.APIRequest) (int32, []byte, string) {
 	if req == nil {
 		return http.StatusBadRequest, nil, "request is nil"
 	}
@@ -336,6 +347,16 @@ func routeRuntimeAPIRequestWithContext(ctx context.Context, manager *fileapi.Man
 			return http.StatusServiceUnavailable, nil, "file api is not available"
 		}
 		return manager.RouteRequest(req.GetMethod(), req.GetPath(), req.GetBody())
+	}
+	if strings.HasPrefix(req.GetPath(), "/storage/") {
+		if storage == nil {
+			return http.StatusServiceUnavailable, nil, "storage api is not available"
+		}
+		return storage.RouteStorageRequest(ctx, StorageRequest{
+			Method: req.GetMethod(),
+			Path:   req.GetPath(),
+			Body:   req.GetBody(),
+		})
 	}
 	switch req.GetPath() {
 	case "status", "/status":

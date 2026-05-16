@@ -107,7 +107,7 @@ func TestIsRelayConnectionIgnoresNonSelectedSucceededRelayPair(t *testing.T) {
 
 func TestFileTransferRoutedOnRelayWithoutAppPermission(t *testing.T) {
 	ctx := withRelayConnection(context.Background(), true)
-	status, _, errMsg := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), nil, &runtimepb.APIRequest{
+	status, _, errMsg := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), nil, nil, &runtimepb.APIRequest{
 		Id:     "req_file",
 		Method: http.MethodPost,
 		Path:   "/files/stat",
@@ -123,7 +123,7 @@ func TestFileTransferRoutedOnRelayWithoutAppPermission(t *testing.T) {
 
 func TestFileTransferAllowedOnRelayWithPermission(t *testing.T) {
 	ctx := withRelayTransferAllowed(withRelayConnection(context.Background(), true), true)
-	status, _, errMsg := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), nil, &runtimepb.APIRequest{
+	status, _, errMsg := routeRuntimeAPIRequestWithContext(ctx, fileapi.NewManager(), nil, nil, &runtimepb.APIRequest{
 		Id:     "req_file",
 		Method: http.MethodPost,
 		Path:   "/files/stat",

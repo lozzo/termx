@@ -101,6 +101,62 @@ message TerminalIDRequest {
   string terminal_id = 1;
 }
 
+message StorageEntry {
+  string app_id = 1;
+  string scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bytes value = 5;
+  uint64 version = 6;
+  string updated_at = 7;
+}
+
+message StorageGetRequest {
+  string app_id = 1;
+  string scope = 2;
+  string owner_id = 3;
+  string key = 4;
+}
+
+message StoragePutRequest {
+  string app_id = 1;
+  string scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bytes value = 5;
+  bool check_version = 6;
+  uint64 expected_version = 7;
+}
+
+message StorageDeleteRequest {
+  string app_id = 1;
+  string scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bool check_version = 5;
+  uint64 expected_version = 6;
+}
+
+message StorageDeleteResponse {
+  string app_id = 1;
+  string scope = 2;
+  string owner_id = 3;
+  string key = 4;
+  bool deleted = 5;
+  uint64 version = 6;
+}
+
+message StorageListRequest {
+  string app_id = 1;
+  string scope = 2;
+  string owner_id = 3;
+  string prefix = 4;
+}
+
+message StorageListResponse {
+  repeated StorageEntry entries = 1;
+}
+
 message FilePathRequest {
   string path = 1;
 }

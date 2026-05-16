@@ -571,6 +571,7 @@ func (m *Manager) answerCloudOfferWithOptions(ctx context.Context, offer hubv1.S
 	offerICEServers := cloneHubICEServers(iceServers)
 	answerOptions.ChannelPolicy = policy
 	answerOptions.TerminalManagement = terminalManagement
+	answerOptions.Storage = m.storageRouter()
 	answerOptions.Events = m.eventRouter()
 	answer, err := answerer.AnswerOffer(ctx, offer, offerICEServers, m.host, m.files, answerOptions)
 	if err != nil {
@@ -725,6 +726,19 @@ func (m *Manager) terminalManagementRouter() remotertc.TerminalManagementRouter 
 		return router
 	}
 	if router, ok := m.provider.(remotertc.TerminalManagementRouter); ok {
+		return router
+	}
+	return nil
+}
+
+func (m *Manager) storageRouter() remotertc.StorageRouter {
+	if m == nil {
+		return nil
+	}
+	if router, ok := m.host.(remotertc.StorageRouter); ok {
+		return router
+	}
+	if router, ok := m.provider.(remotertc.StorageRouter); ok {
 		return router
 	}
 	return nil

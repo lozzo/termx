@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -277,6 +278,58 @@ func TestTerminalManagementGetDirectoryFallsBackToMetadataCWD(t *testing.T) {
 	}
 }
 
+func TestStorageRouterRoundTripsDaemonStorage(t *testing.T) {
+	daemon := &storageDaemonStub{}
+	router := storageRouter{storage: daemon}
+
+	status, body, errMsg := router.RouteStorageRequest(context.Background(), remotertc.StorageRequest{
+		Method: "POST",
+		Path:   "/storage/put",
+		Body: mustMarshalRuntimeProto(t, &runtimepb.StoragePutRequest{
+			AppId: "termx.clipboard",
+			Scope: string(protocol.StorageScopePublic),
+			Key:   "history/clip-1",
+			Value: []byte(`{"text":"hello"}`),
+		}),
+	})
+	if errMsg != "" {
+		t.Fatalf("RouteStorageRequest returned error: %s", errMsg)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("RouteStorageRequest status = %d, body = %s", status, string(body))
+	}
+	var put runtimepb.StorageEntry
+	if err := proto.Unmarshal(body, &put); err != nil {
+		t.Fatalf("decode storage put response: %v", err)
+	}
+	if put.GetAppId() != "termx.clipboard" || put.GetKey() != "history/clip-1" || string(put.GetValue()) != `{"text":"hello"}` || put.GetVersion() != 1 {
+		t.Fatalf("unexpected storage put response: %#v", &put)
+	}
+
+	status, body, errMsg = router.RouteStorageRequest(context.Background(), remotertc.StorageRequest{
+		Method: "POST",
+		Path:   "/storage/list",
+		Body: mustMarshalRuntimeProto(t, &runtimepb.StorageListRequest{
+			AppId:  "termx.clipboard",
+			Scope:  string(protocol.StorageScopePublic),
+			Prefix: "history/",
+		}),
+	})
+	if errMsg != "" {
+		t.Fatalf("RouteStorageRequest list returned error: %s", errMsg)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("RouteStorageRequest list status = %d, body = %s", status, string(body))
+	}
+	var list runtimepb.StorageListResponse
+	if err := proto.Unmarshal(body, &list); err != nil {
+		t.Fatalf("decode storage list response: %v", err)
+	}
+	if len(list.GetEntries()) != 1 || list.GetEntries()[0].GetKey() != "history/clip-1" {
+		t.Fatalf("unexpected storage list response: %#v", &list)
+	}
+}
+
 func mustMarshalRuntimeProto(t *testing.T, msg proto.Message) []byte {
 	t.Helper()
 	data, err := proto.Marshal(msg)
@@ -346,4 +399,83 @@ func (d *terminalManagementDaemonStub) Events(context.Context, protocol.EventsPa
 
 func (d *terminalManagementDaemonStub) ServeTransport(context.Context, transport.Transport, string) error {
 	return nil
+}
+
+type storageDaemonStub struct {
+	entries []protocol.StorageEntry
+	version uint64
+}
+
+func (d *storageDaemonStub) StorageGet(_ context.Context, params protocol.StorageGetParams) (*protocol.StorageEntry, error) {
+	for _, entry := range d.entries {
+		if entry.AppID == params.AppID && entry.Scope == params.Scope && entry.OwnerID == params.OwnerID && entry.Key == params.Key {
+			out := entry
+			out.Value = append([]byte(nil), entry.Value...)
+			return &out, nil
+		}
+	}
+	return nil, os.ErrNotExist
+}
+
+func (d *storageDaemonStub) StoragePut(_ context.Context, params protocol.StoragePutParams) (*protocol.StorageEntry, error) {
+	d.version++
+	entry := protocol.StorageEntry{
+		AppID:     params.AppID,
+		Scope:     params.Scope,
+		OwnerID:   params.OwnerID,
+		Key:       params.Key,
+		Value:     append([]byte(nil), params.Value...),
+		Version:   d.version,
+		UpdatedAt: time.Now().UTC(),
+	}
+	for i := range d.entries {
+		if d.entries[i].AppID == entry.AppID && d.entries[i].Scope == entry.Scope && d.entries[i].OwnerID == entry.OwnerID && d.entries[i].Key == entry.Key {
+			d.entries[i] = entry
+			out := entry
+			return &out, nil
+		}
+	}
+	d.entries = append(d.entries, entry)
+	out := entry
+	return &out, nil
+}
+
+func (d *storageDaemonStub) StorageDelete(_ context.Context, params protocol.StorageDeleteParams) (*protocol.StorageDeleteResult, error) {
+	d.version++
+	deleted := false
+	for i := range d.entries {
+		entry := d.entries[i]
+		if entry.AppID == params.AppID && entry.Scope == params.Scope && entry.OwnerID == params.OwnerID && entry.Key == params.Key {
+			d.entries = append(d.entries[:i], d.entries[i+1:]...)
+			deleted = true
+			break
+		}
+	}
+	return &protocol.StorageDeleteResult{
+		AppID:   params.AppID,
+		Scope:   params.Scope,
+		OwnerID: params.OwnerID,
+		Key:     params.Key,
+		Deleted: deleted,
+		Version: d.version,
+	}, nil
+}
+
+func (d *storageDaemonStub) StorageList(_ context.Context, params protocol.StorageListParams) (*protocol.StorageListResult, error) {
+	var entries []protocol.StorageEntry
+	for _, entry := range d.entries {
+		if entry.AppID != params.AppID || entry.Scope != params.Scope {
+			continue
+		}
+		if params.OwnerID != "" && entry.OwnerID != params.OwnerID {
+			continue
+		}
+		if params.Prefix != "" && !strings.HasPrefix(entry.Key, params.Prefix) {
+			continue
+		}
+		out := entry
+		out.Value = append([]byte(nil), entry.Value...)
+		entries = append(entries, out)
+	}
+	return &protocol.StorageListResult{Entries: entries}, nil
 }

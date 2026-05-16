@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { LocalApiChannel } from './rtcApiChannel'
 import type { RTCDataChannelLike } from './browserRtcSession'
-import { decodeRuntimeAPIRequest, decodeRuntimeRequestBody } from './runtimeProtocol'
+import { decodeRuntimeAPIRequest, decodeRuntimeRequestBody, decodeRuntimeResponseBody, encodeRuntimeResponseBody } from './runtimeProtocol'
 
 describe('LocalApiChannel', () => {
   it('rejects a request on a closed channel before calling RTCDataChannel.send', async () => {
@@ -33,6 +33,68 @@ describe('LocalApiChannel', () => {
     })
     api.close()
     await pending
+  })
+
+  it('encodes storage api request bodies over the runtime api channel', async () => {
+    const channel = new MockRTCDataChannel('api')
+    const api = new LocalApiChannel(channel)
+
+    const value = new TextEncoder().encode('hello')
+    const pending = api.request('POST', {
+      path: '/storage/put',
+      params: {
+        app_id: 'termx.clipboard',
+        scope: 'public',
+        owner_id: 'owner-a',
+        key: 'history/clip-1',
+        value,
+        check_version: true,
+        expected_version: 2,
+      },
+    }).catch(() => undefined)
+
+    const request = decodeRuntimeAPIRequest(channel.sentBytes[0] ?? new Uint8Array())
+    expect(request).toEqual(expect.objectContaining({
+      method: 'POST',
+      path: '/storage/put',
+    }))
+    const decoded = decodeRuntimeRequestBody(request.path, request.method, request.body) as Record<string, unknown>
+    expect(decoded).toEqual(expect.objectContaining({
+      app_id: 'termx.clipboard',
+      scope: 'public',
+      owner_id: 'owner-a',
+      key: 'history/clip-1',
+      check_version: true,
+      expected_version: 2,
+    }))
+    expect(Array.from(decoded.value as Uint8Array)).toEqual(Array.from(value))
+    api.close()
+    await pending
+  })
+
+  it('decodes storage api response bodies from runtime protobuf messages', () => {
+    const body = encodeRuntimeResponseBody('/storage/list', 'POST', {
+      entries: [{
+        app_id: 'termx.clipboard',
+        scope: 'public',
+        key: 'history/clip-1',
+        value: new TextEncoder().encode('hello'),
+        version: 7,
+        updated_at: '2026-05-16T08:00:00Z',
+      }],
+    })
+
+    const decoded = decodeRuntimeResponseBody('/storage/list', 'POST', body) as { entries?: Array<Record<string, unknown>> }
+
+    expect(decoded.entries).toHaveLength(1)
+    expect(decoded.entries?.[0]).toEqual(expect.objectContaining({
+      app_id: 'termx.clipboard',
+      scope: 'public',
+      key: 'history/clip-1',
+      version: 7,
+      updated_at: '2026-05-16T08:00:00Z',
+    }))
+    expect(Array.from(decoded.entries?.[0]?.value as Uint8Array)).toEqual(Array.from(new TextEncoder().encode('hello')))
   })
 })
 

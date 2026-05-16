@@ -24,6 +24,10 @@ type remoteRuntimeCore interface {
 	SetMetadata(context.Context, string, string, map[string]string) error
 	Remove(context.Context, string) error
 	Events(context.Context, ...termx.EventsOption) <-chan termx.Event
+	StorageGet(context.Context, termx.StorageGetRequest) (termx.StorageEntry, error)
+	StoragePut(context.Context, termx.StoragePutRequest) (termx.StorageEntry, error)
+	StorageDelete(context.Context, termx.StorageDeleteRequest) (termx.StorageDeleteResult, error)
+	StorageList(context.Context, termx.StorageListRequest) ([]termx.StorageEntry, error)
 	ServeTransport(context.Context, transport.Transport, string) error
 	ServeScopedTransport(context.Context, transport.Transport, string, termx.TransportScope) error
 }
@@ -219,6 +223,89 @@ func (h *remoteRuntimeHost) ServeScopedTransport(ctx context.Context, t transpor
 	})
 }
 
+func (h *remoteRuntimeHost) StorageGet(ctx context.Context, params protocol.StorageGetParams) (*protocol.StorageEntry, error) {
+	if h == nil || h.core == nil {
+		return nil, fmt.Errorf("core daemon is nil")
+	}
+	entry, err := h.core.StorageGet(ctx, termx.StorageGetRequest{
+		AppID:   params.AppID,
+		Scope:   termx.StorageScope(params.Scope),
+		OwnerID: params.OwnerID,
+		Key:     params.Key,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return protocolStorageEntryFromCore(entry), nil
+}
+
+func (h *remoteRuntimeHost) StoragePut(ctx context.Context, params protocol.StoragePutParams) (*protocol.StorageEntry, error) {
+	if h == nil || h.core == nil {
+		return nil, fmt.Errorf("core daemon is nil")
+	}
+	entry, err := h.core.StoragePut(ctx, termx.StoragePutRequest{
+		AppID:           params.AppID,
+		Scope:           termx.StorageScope(params.Scope),
+		OwnerID:         params.OwnerID,
+		Key:             params.Key,
+		Value:           append([]byte(nil), params.Value...),
+		CheckVersion:    params.CheckVersion,
+		ExpectedVersion: params.ExpectedVersion,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return protocolStorageEntryFromCore(entry), nil
+}
+
+func (h *remoteRuntimeHost) StorageDelete(ctx context.Context, params protocol.StorageDeleteParams) (*protocol.StorageDeleteResult, error) {
+	if h == nil || h.core == nil {
+		return nil, fmt.Errorf("core daemon is nil")
+	}
+	result, err := h.core.StorageDelete(ctx, termx.StorageDeleteRequest{
+		AppID:           params.AppID,
+		Scope:           termx.StorageScope(params.Scope),
+		OwnerID:         params.OwnerID,
+		Key:             params.Key,
+		CheckVersion:    params.CheckVersion,
+		ExpectedVersion: params.ExpectedVersion,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &protocol.StorageDeleteResult{
+		AppID:   result.AppID,
+		Scope:   protocol.StorageScope(result.Scope),
+		OwnerID: result.OwnerID,
+		Key:     result.Key,
+		Deleted: result.Deleted,
+		Version: result.Version,
+	}, nil
+}
+
+func (h *remoteRuntimeHost) StorageList(ctx context.Context, params protocol.StorageListParams) (*protocol.StorageListResult, error) {
+	if h == nil || h.core == nil {
+		return nil, fmt.Errorf("core daemon is nil")
+	}
+	entries, err := h.core.StorageList(ctx, termx.StorageListRequest{
+		AppID:   params.AppID,
+		Scope:   termx.StorageScope(params.Scope),
+		OwnerID: params.OwnerID,
+		Prefix:  params.Prefix,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]protocol.StorageEntry, 0, len(entries))
+	for _, entry := range entries {
+		converted := protocolStorageEntryFromCore(entry)
+		if converted != nil {
+			out = append(out, *converted)
+		}
+	}
+	return &protocol.StorageListResult{Entries: out}, nil
+}
+
 func protocolInfoFromCore(info *termx.TerminalInfo) *protocol.TerminalInfo {
 	if info == nil {
 		return nil
@@ -234,6 +321,18 @@ func protocolInfoFromCore(info *termx.TerminalInfo) *protocol.TerminalInfo {
 		LiveCWD:   info.LiveCWD,
 		CreatedAt: info.CreatedAt,
 		ExitCode:  copyIntPtr(info.ExitCode),
+	}
+}
+
+func protocolStorageEntryFromCore(entry termx.StorageEntry) *protocol.StorageEntry {
+	return &protocol.StorageEntry{
+		AppID:     entry.AppID,
+		Scope:     protocol.StorageScope(entry.Scope),
+		OwnerID:   entry.OwnerID,
+		Key:       entry.Key,
+		Value:     append([]byte(nil), entry.Value...),
+		Version:   entry.Version,
+		UpdatedAt: entry.UpdatedAt,
 	}
 }
 

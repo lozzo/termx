@@ -409,6 +409,9 @@ func TestManagerAllowsCloudTerminalManagementWhenRouterExists(t *testing.T) {
 	if answerer.gotOptions.Events == nil {
 		t.Fatal("cloud runtime should provide machine event router when provider supports it")
 	}
+	if answerer.gotOptions.Storage == nil {
+		t.Fatal("cloud runtime should provide storage router when provider supports it")
+	}
 }
 
 func TestManagerUsesHubScopedAnswerOptions(t *testing.T) {
@@ -459,6 +462,13 @@ func (s managementProviderStub) RouteTerminalManagementRequest(_ context.Context
 		return http.StatusNotFound, nil, "unknown terminal management route"
 	}
 	return http.StatusOK, marshalRuntimeProtoForStub(&runtimepb.TerminalInventoryItem{TerminalId: "cloud-terminal-1"}), ""
+}
+
+func (s managementProviderStub) RouteStorageRequest(_ context.Context, req remotertc.StorageRequest) (int32, []byte, string) {
+	if req.Path != "/storage/list" {
+		return http.StatusNotFound, nil, "unknown storage route"
+	}
+	return http.StatusOK, marshalRuntimeProtoForStub(&runtimepb.StorageListResponse{}), ""
 }
 
 func (s managementProviderStub) SubscribeRemoteEvents(ctx context.Context, _ remotertc.EventFilters) (<-chan []byte, func(), error) {

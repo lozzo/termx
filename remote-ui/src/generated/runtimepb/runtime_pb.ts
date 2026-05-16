@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file runtime.proto.
  */
 export const file_runtime: GenFile = /*@__PURE__*/
-  fileDesc("Cg1ydW50aW1lLnByb3RvEhZ0ZXJteC5yZW1vdGUucnVudGltZXBiIgcKBUVtcHR5IkQKCkFQSVJlcXVlc3QSCgoCaWQYASABKAkSDgoGbWV0aG9kGAIgASgJEgwKBHBhdGgYAyABKAkSDAoEYm9keRgEIAEoDCJGCgtBUElSZXNwb25zZRIKCgJpZBgBIAEoCRIOCgZzdGF0dXMYAiABKAUSDAoEYm9keRgDIAEoDBINCgVlcnJvchgEIAEoCSIcCg5TdGF0dXNSZXNwb25zZRIKCgJvaxgBIAEoCCJJChVFdmVudFN1YnNjcmliZVJlcXVlc3QSDAoEdHlwZRgBIAEoCRITCgt0ZXJtaW5hbF9pZBgCIAEoCRINCgV0eXBlcxgEIAMoBSK2AQoNRXZlbnRFbnZlbG9wZRIMCgR0eXBlGAEgASgJEhUKDXByb3RvY29sX3R5cGUYAiABKAUSEwoLdGVybWluYWxfaWQYAyABKAkSGwoTdGltZXN0YW1wX3VuaXhfbmFubxgEIAEoAxI/Cgh0ZXJtaW5hbBgFIAEoCzItLnRlcm14LnJlbW90ZS5ydW50aW1lcGIuVGVybWluYWxJbnZlbnRvcnlJdGVtEg0KBWVycm9yGAYgASgJIq8CChVUZXJtaW5hbEludmVudG9yeUl0ZW0SEwoLdGVybWluYWxfaWQYASABKAkSDAoEbmFtZRgCIAEoCRINCgVzdGF0ZRgDIAEoCRIPCgdjb21tYW5kGAQgAygJEgwKBGNvbHMYBSABKAUSDAoEcm93cxgGIAEoBRILCgNjd2QYByABKAkSEwoLZW52aXJvbm1lbnQYCCABKAkSEwoLc2l6ZV9sb2NrZWQYCSABKAgSFgoOc2l6ZV9sb2NrX21vZGUYCiABKAkSQQoQcmVzaXplX293bmVyc2hpcBgLIAEoCzInLnRlcm14LnJlbW90ZS5ydW50aW1lcGIuUmVzaXplT3duZXJzaGlwEiUKHXJlc2l6ZV9vd25lcl9hdHRhY2htZW50X2NvdW50GAwgASgFIiIKBFNpemUSDAoEY29scxgBIAEoDRIMCgRyb3dzGAIgASgNIsoBCg9SZXNpemVPd25lcnNoaXASGwoTb3duZXJfYXR0YWNobWVudF9pZBgBIAEoCRIYChBvd25lcl9zdXJmYWNlX2lkGAIgASgJEhUKDW93bmVyX3ZpZXdfaWQYAyABKAkSGQoRb3duZXJfcmVtb3RlX2FkZHIYBCABKAkSKgoEc2l6ZRgFIAEoCzIcLnRlcm14LnJlbW90ZS5ydW50aW1lcGIuU2l6ZRITCgtzaXplX2xvY2tlZBgGIAEoCBINCgVlcG9jaBgHIAEoBCJYChRUZXJtaW5hbExpc3RSZXNwb25zZRJACgl0ZXJtaW5hbHMYASADKAsyLS50ZXJteC5yZW1vdGUucnVudGltZXBiLlRlcm1pbmFsSW52ZW50b3J5SXRlbSIvChhUZXJtaW5hbERpcmVjdG9yeVJlcXVlc3QSEwoLdGVybWluYWxfaWQYASABKAkiTgoZVGVybWluYWxEaXJlY3RvcnlSZXNwb25zZRITCgt0ZXJtaW5hbF9pZBgBIAEoCRIMCgRwYXRoGAIgASgJEg4KBnNvdXJjZRgDIAEoCSLEAQoVVGVybWluYWxDcmVhdGVSZXF1ZXN0EgwKBG5hbWUYASABKAkSDwoHY29tbWFuZBgCIAMoCRILCgNkaXIYAyABKAkSCwoDZW52GAQgAygJEkUKBHRhZ3MYBSADKAsyNy50ZXJteC5yZW1vdGUucnVudGltZXBiLlRlcm1pbmFsQ3JlYXRlUmVxdWVzdC5UYWdzRW50cnkaKwoJVGFnc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiuAEKGlRlcm1pbmFsU2V0TWV0YWRhdGFSZXF1ZXN0EhMKC3Rlcm1pbmFsX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSSgoEdGFncxgDIAMoCzI8LnRlcm14LnJlbW90ZS5ydW50aW1lcGIuVGVybWluYWxTZXRNZXRhZGF0YVJlcXVlc3QuVGFnc0VudHJ5GisKCVRhZ3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIigKEVRlcm1pbmFsSURSZXF1ZXN0EhMKC3Rlcm1pbmFsX2lkGAEgASgJIh8KD0ZpbGVQYXRoUmVxdWVzdBIMCgRwYXRoGAEgASgJIj4KD0ZpbGVMaXN0UmVxdWVzdBIMCgRwYXRoGAEgASgJEg4KBm9mZnNldBgCIAEoBRINCgVsaW1pdBgDIAEoBSLKAQoJRmlsZUVudHJ5EgwKBG5hbWUYASABKAkSDAoEdHlwZRgCIAEoCRIMCgRzaXplGAMgASgDEgwKBG1vZGUYBCABKAkSEAoIbW9kX3RpbWUYBSABKAkSEwoLbGlua190YXJnZXQYBiABKAkSGAoLY2hpbGRfY291bnQYByABKAVIAIgBARIRCgloYXJkX2xpbmsYCCABKAgSEgoKbGlua19jb3VudBgJIAEoBBINCgVpbm9kZRgKIAEoBEIOCgxfY2hpbGRfY291bnQicwoQRmlsZUxpc3RSZXNwb25zZRIMCgRwYXRoGAEgASgJEjIKB2VudHJpZXMYAiADKAsyIS50ZXJteC5yZW1vdGUucnVudGltZXBiLkZpbGVFbnRyeRIOCgZwYXJlbnQYAyABKAkSDQoFdG90YWwYBCABKAUiIAoQRmlsZVBhdGhSZXNwb25zZRIMCgRwYXRoGAEgASgJIjMKEUZpbGVSZW5hbWVSZXF1ZXN0EgwKBHBhdGgYASABKAkSEAoIbmV3X3BhdGgYAiABKAkiJQoURmlsZU11bHRpUGF0aFJlcXVlc3QSDQoFcGF0aHMYASADKAkiMgoTRmlsZUNvcHlNb3ZlUmVxdWVzdBINCgVwYXRocxgBIAMoCRIMCgRkZXN0GAIgASgJIkIKE0ZpbGVPcGVyYXRpb25SZXN1bHQSDgoGc291cmNlGAEgASgJEgwKBGRlc3QYAiABKAkSDQoFZXJyb3IYAyABKAkiZgoURmlsZUNvcHlNb3ZlUmVzcG9uc2USEAoIYWZmZWN0ZWQYASABKAUSPAoHcmVzdWx0cxgCIAMoCzIrLnRlcm14LnJlbW90ZS5ydW50aW1lcGIuRmlsZU9wZXJhdGlvblJlc3VsdCIuCg9GaWxlRGVsZXRlRXJyb3ISDAoEcGF0aBgBIAEoCRINCgVlcnJvchgCIAEoCSJjChdGaWxlQmF0Y2hEZWxldGVSZXNwb25zZRIPCgdkZWxldGVkGAEgASgFEjcKBmVycm9ycxgCIAMoCzInLnRlcm14LnJlbW90ZS5ydW50aW1lcGIuRmlsZURlbGV0ZUVycm9yIjQKEkZpbGVQcmV2aWV3UmVxdWVzdBIMCgRwYXRoGAEgASgJEhAKCG1heF9zaXplGAIgASgDIrUBChNGaWxlUHJldmlld1Jlc3BvbnNlEgwKBHBhdGgYASABKAkSDAoEbmFtZRgCIAEoCRIMCgRzaXplGAMgASgDEhEKCW1pbWVfdHlwZRgEIAEoCRIQCghjYXRlZ29yeRgFIAEoCRIPCgdpc190ZXh0GAYgASgIEhUKDXByZXZpZXdfbGltaXQYByABKAMSDwoHY29udGVudBgIIAEoCRIWCg5jb250ZW50X2Jhc2U2NBgJIAEoCSJcChdGaWxlRG93bmxvYWRJbml0UmVxdWVzdBIMCgRwYXRoGAEgASgJEg4KBm9mZnNldBgCIAEoAxIOCgZsZW5ndGgYAyABKAMSEwoLdHJhbnNmZXJfaWQYBCABKAkifwoYRmlsZURvd25sb2FkSW5pdFJlc3BvbnNlEhMKC3RyYW5zZmVyX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSDAoEc2l6ZRgDIAEoAxISCgpjaHVua19zaXplGAQgASgFEg4KBm9mZnNldBgFIAEoAxIOCgZsZW5ndGgYBiABKAMiRgoVRmlsZVVwbG9hZEluaXRSZXF1ZXN0EgwKBHBhdGgYASABKAkSDAoEc2l6ZRgCIAEoAxIRCglyZXN1bWVfaWQYAyABKAkiWgoWRmlsZVVwbG9hZEluaXRSZXNwb25zZRITCgt0cmFuc2Zlcl9pZBgBIAEoCRISCgpjaHVua19zaXplGAIgASgFEhcKD3VwbG9hZGVkX29mZnNldBgDIAEoAyIwChlGaWxlVXBsb2FkQ29tcGxldGVSZXF1ZXN0EhMKC3RyYW5zZmVyX2lkGAEgASgJQjlaN2dpdGh1Yi5jb20vbG96em93L3Rlcm14L3Rlcm14LXJlbW90ZS9wcm90b2NvbC9ydW50aW1lcGJiBnByb3RvMw");
+  fileDesc("Cg1ydW50aW1lLnByb3RvEhZ0ZXJteC5yZW1vdGUucnVudGltZXBiIgcKBUVtcHR5IkQKCkFQSVJlcXVlc3QSCgoCaWQYASABKAkSDgoGbWV0aG9kGAIgASgJEgwKBHBhdGgYAyABKAkSDAoEYm9keRgEIAEoDCJGCgtBUElSZXNwb25zZRIKCgJpZBgBIAEoCRIOCgZzdGF0dXMYAiABKAUSDAoEYm9keRgDIAEoDBINCgVlcnJvchgEIAEoCSIcCg5TdGF0dXNSZXNwb25zZRIKCgJvaxgBIAEoCCJJChVFdmVudFN1YnNjcmliZVJlcXVlc3QSDAoEdHlwZRgBIAEoCRITCgt0ZXJtaW5hbF9pZBgCIAEoCRINCgV0eXBlcxgEIAMoBSK2AQoNRXZlbnRFbnZlbG9wZRIMCgR0eXBlGAEgASgJEhUKDXByb3RvY29sX3R5cGUYAiABKAUSEwoLdGVybWluYWxfaWQYAyABKAkSGwoTdGltZXN0YW1wX3VuaXhfbmFubxgEIAEoAxI/Cgh0ZXJtaW5hbBgFIAEoCzItLnRlcm14LnJlbW90ZS5ydW50aW1lcGIuVGVybWluYWxJbnZlbnRvcnlJdGVtEg0KBWVycm9yGAYgASgJIq8CChVUZXJtaW5hbEludmVudG9yeUl0ZW0SEwoLdGVybWluYWxfaWQYASABKAkSDAoEbmFtZRgCIAEoCRINCgVzdGF0ZRgDIAEoCRIPCgdjb21tYW5kGAQgAygJEgwKBGNvbHMYBSABKAUSDAoEcm93cxgGIAEoBRILCgNjd2QYByABKAkSEwoLZW52aXJvbm1lbnQYCCABKAkSEwoLc2l6ZV9sb2NrZWQYCSABKAgSFgoOc2l6ZV9sb2NrX21vZGUYCiABKAkSQQoQcmVzaXplX293bmVyc2hpcBgLIAEoCzInLnRlcm14LnJlbW90ZS5ydW50aW1lcGIuUmVzaXplT3duZXJzaGlwEiUKHXJlc2l6ZV9vd25lcl9hdHRhY2htZW50X2NvdW50GAwgASgFIiIKBFNpemUSDAoEY29scxgBIAEoDRIMCgRyb3dzGAIgASgNIsoBCg9SZXNpemVPd25lcnNoaXASGwoTb3duZXJfYXR0YWNobWVudF9pZBgBIAEoCRIYChBvd25lcl9zdXJmYWNlX2lkGAIgASgJEhUKDW93bmVyX3ZpZXdfaWQYAyABKAkSGQoRb3duZXJfcmVtb3RlX2FkZHIYBCABKAkSKgoEc2l6ZRgFIAEoCzIcLnRlcm14LnJlbW90ZS5ydW50aW1lcGIuU2l6ZRITCgtzaXplX2xvY2tlZBgGIAEoCBINCgVlcG9jaBgHIAEoBCJYChRUZXJtaW5hbExpc3RSZXNwb25zZRJACgl0ZXJtaW5hbHMYASADKAsyLS50ZXJteC5yZW1vdGUucnVudGltZXBiLlRlcm1pbmFsSW52ZW50b3J5SXRlbSIvChhUZXJtaW5hbERpcmVjdG9yeVJlcXVlc3QSEwoLdGVybWluYWxfaWQYASABKAkiTgoZVGVybWluYWxEaXJlY3RvcnlSZXNwb25zZRITCgt0ZXJtaW5hbF9pZBgBIAEoCRIMCgRwYXRoGAIgASgJEg4KBnNvdXJjZRgDIAEoCSLEAQoVVGVybWluYWxDcmVhdGVSZXF1ZXN0EgwKBG5hbWUYASABKAkSDwoHY29tbWFuZBgCIAMoCRILCgNkaXIYAyABKAkSCwoDZW52GAQgAygJEkUKBHRhZ3MYBSADKAsyNy50ZXJteC5yZW1vdGUucnVudGltZXBiLlRlcm1pbmFsQ3JlYXRlUmVxdWVzdC5UYWdzRW50cnkaKwoJVGFnc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiuAEKGlRlcm1pbmFsU2V0TWV0YWRhdGFSZXF1ZXN0EhMKC3Rlcm1pbmFsX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSSgoEdGFncxgDIAMoCzI8LnRlcm14LnJlbW90ZS5ydW50aW1lcGIuVGVybWluYWxTZXRNZXRhZGF0YVJlcXVlc3QuVGFnc0VudHJ5GisKCVRhZ3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIigKEVRlcm1pbmFsSURSZXF1ZXN0EhMKC3Rlcm1pbmFsX2lkGAEgASgJIoABCgxTdG9yYWdlRW50cnkSDgoGYXBwX2lkGAEgASgJEg0KBXNjb3BlGAIgASgJEhAKCG93bmVyX2lkGAMgASgJEgsKA2tleRgEIAEoCRINCgV2YWx1ZRgFIAEoDBIPCgd2ZXJzaW9uGAYgASgEEhIKCnVwZGF0ZWRfYXQYByABKAkiUQoRU3RvcmFnZUdldFJlcXVlc3QSDgoGYXBwX2lkGAEgASgJEg0KBXNjb3BlGAIgASgJEhAKCG93bmVyX2lkGAMgASgJEgsKA2tleRgEIAEoCSKRAQoRU3RvcmFnZVB1dFJlcXVlc3QSDgoGYXBwX2lkGAEgASgJEg0KBXNjb3BlGAIgASgJEhAKCG93bmVyX2lkGAMgASgJEgsKA2tleRgEIAEoCRINCgV2YWx1ZRgFIAEoDBIVCg1jaGVja192ZXJzaW9uGAYgASgIEhgKEGV4cGVjdGVkX3ZlcnNpb24YByABKAQihQEKFFN0b3JhZ2VEZWxldGVSZXF1ZXN0Eg4KBmFwcF9pZBgBIAEoCRINCgVzY29wZRgCIAEoCRIQCghvd25lcl9pZBgDIAEoCRILCgNrZXkYBCABKAkSFQoNY2hlY2tfdmVyc2lvbhgFIAEoCBIYChBleHBlY3RlZF92ZXJzaW9uGAYgASgEIncKFVN0b3JhZ2VEZWxldGVSZXNwb25zZRIOCgZhcHBfaWQYASABKAkSDQoFc2NvcGUYAiABKAkSEAoIb3duZXJfaWQYAyABKAkSCwoDa2V5GAQgASgJEg8KB2RlbGV0ZWQYBSABKAgSDwoHdmVyc2lvbhgGIAEoBCJVChJTdG9yYWdlTGlzdFJlcXVlc3QSDgoGYXBwX2lkGAEgASgJEg0KBXNjb3BlGAIgASgJEhAKCG93bmVyX2lkGAMgASgJEg4KBnByZWZpeBgEIAEoCSJMChNTdG9yYWdlTGlzdFJlc3BvbnNlEjUKB2VudHJpZXMYASADKAsyJC50ZXJteC5yZW1vdGUucnVudGltZXBiLlN0b3JhZ2VFbnRyeSIfCg9GaWxlUGF0aFJlcXVlc3QSDAoEcGF0aBgBIAEoCSI+Cg9GaWxlTGlzdFJlcXVlc3QSDAoEcGF0aBgBIAEoCRIOCgZvZmZzZXQYAiABKAUSDQoFbGltaXQYAyABKAUiygEKCUZpbGVFbnRyeRIMCgRuYW1lGAEgASgJEgwKBHR5cGUYAiABKAkSDAoEc2l6ZRgDIAEoAxIMCgRtb2RlGAQgASgJEhAKCG1vZF90aW1lGAUgASgJEhMKC2xpbmtfdGFyZ2V0GAYgASgJEhgKC2NoaWxkX2NvdW50GAcgASgFSACIAQESEQoJaGFyZF9saW5rGAggASgIEhIKCmxpbmtfY291bnQYCSABKAQSDQoFaW5vZGUYCiABKARCDgoMX2NoaWxkX2NvdW50InMKEEZpbGVMaXN0UmVzcG9uc2USDAoEcGF0aBgBIAEoCRIyCgdlbnRyaWVzGAIgAygLMiEudGVybXgucmVtb3RlLnJ1bnRpbWVwYi5GaWxlRW50cnkSDgoGcGFyZW50GAMgASgJEg0KBXRvdGFsGAQgASgFIiAKEEZpbGVQYXRoUmVzcG9uc2USDAoEcGF0aBgBIAEoCSIzChFGaWxlUmVuYW1lUmVxdWVzdBIMCgRwYXRoGAEgASgJEhAKCG5ld19wYXRoGAIgASgJIiUKFEZpbGVNdWx0aVBhdGhSZXF1ZXN0Eg0KBXBhdGhzGAEgAygJIjIKE0ZpbGVDb3B5TW92ZVJlcXVlc3QSDQoFcGF0aHMYASADKAkSDAoEZGVzdBgCIAEoCSJCChNGaWxlT3BlcmF0aW9uUmVzdWx0Eg4KBnNvdXJjZRgBIAEoCRIMCgRkZXN0GAIgASgJEg0KBWVycm9yGAMgASgJImYKFEZpbGVDb3B5TW92ZVJlc3BvbnNlEhAKCGFmZmVjdGVkGAEgASgFEjwKB3Jlc3VsdHMYAiADKAsyKy50ZXJteC5yZW1vdGUucnVudGltZXBiLkZpbGVPcGVyYXRpb25SZXN1bHQiLgoPRmlsZURlbGV0ZUVycm9yEgwKBHBhdGgYASABKAkSDQoFZXJyb3IYAiABKAkiYwoXRmlsZUJhdGNoRGVsZXRlUmVzcG9uc2USDwoHZGVsZXRlZBgBIAEoBRI3CgZlcnJvcnMYAiADKAsyJy50ZXJteC5yZW1vdGUucnVudGltZXBiLkZpbGVEZWxldGVFcnJvciI0ChJGaWxlUHJldmlld1JlcXVlc3QSDAoEcGF0aBgBIAEoCRIQCghtYXhfc2l6ZRgCIAEoAyK1AQoTRmlsZVByZXZpZXdSZXNwb25zZRIMCgRwYXRoGAEgASgJEgwKBG5hbWUYAiABKAkSDAoEc2l6ZRgDIAEoAxIRCgltaW1lX3R5cGUYBCABKAkSEAoIY2F0ZWdvcnkYBSABKAkSDwoHaXNfdGV4dBgGIAEoCBIVCg1wcmV2aWV3X2xpbWl0GAcgASgDEg8KB2NvbnRlbnQYCCABKAkSFgoOY29udGVudF9iYXNlNjQYCSABKAkiXAoXRmlsZURvd25sb2FkSW5pdFJlcXVlc3QSDAoEcGF0aBgBIAEoCRIOCgZvZmZzZXQYAiABKAMSDgoGbGVuZ3RoGAMgASgDEhMKC3RyYW5zZmVyX2lkGAQgASgJIn8KGEZpbGVEb3dubG9hZEluaXRSZXNwb25zZRITCgt0cmFuc2Zlcl9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEgwKBHNpemUYAyABKAMSEgoKY2h1bmtfc2l6ZRgEIAEoBRIOCgZvZmZzZXQYBSABKAMSDgoGbGVuZ3RoGAYgASgDIkYKFUZpbGVVcGxvYWRJbml0UmVxdWVzdBIMCgRwYXRoGAEgASgJEgwKBHNpemUYAiABKAMSEQoJcmVzdW1lX2lkGAMgASgJIloKFkZpbGVVcGxvYWRJbml0UmVzcG9uc2USEwoLdHJhbnNmZXJfaWQYASABKAkSEgoKY2h1bmtfc2l6ZRgCIAEoBRIXCg91cGxvYWRlZF9vZmZzZXQYAyABKAMiMAoZRmlsZVVwbG9hZENvbXBsZXRlUmVxdWVzdBITCgt0cmFuc2Zlcl9pZBgBIAEoCUI5WjdnaXRodWIuY29tL2xvenpvdy90ZXJteC90ZXJteC1yZW1vdGUvcHJvdG9jb2wvcnVudGltZXBiYgZwcm90bzM");
 
 /**
  * @generated from message termx.remote.runtimepb.Empty
@@ -459,6 +459,265 @@ export const TerminalIDRequestSchema: GenMessage<TerminalIDRequest> = /*@__PURE_
   messageDesc(file_runtime, 14);
 
 /**
+ * @generated from message termx.remote.runtimepb.StorageEntry
+ */
+export type StorageEntry = Message<"termx.remote.runtimepb.StorageEntry"> & {
+  /**
+   * @generated from field: string app_id = 1;
+   */
+  appId: string;
+
+  /**
+   * @generated from field: string scope = 2;
+   */
+  scope: string;
+
+  /**
+   * @generated from field: string owner_id = 3;
+   */
+  ownerId: string;
+
+  /**
+   * @generated from field: string key = 4;
+   */
+  key: string;
+
+  /**
+   * @generated from field: bytes value = 5;
+   */
+  value: Uint8Array;
+
+  /**
+   * @generated from field: uint64 version = 6;
+   */
+  version: bigint;
+
+  /**
+   * @generated from field: string updated_at = 7;
+   */
+  updatedAt: string;
+};
+
+/**
+ * Describes the message termx.remote.runtimepb.StorageEntry.
+ * Use `create(StorageEntrySchema)` to create a new message.
+ */
+export const StorageEntrySchema: GenMessage<StorageEntry> = /*@__PURE__*/
+  messageDesc(file_runtime, 15);
+
+/**
+ * @generated from message termx.remote.runtimepb.StorageGetRequest
+ */
+export type StorageGetRequest = Message<"termx.remote.runtimepb.StorageGetRequest"> & {
+  /**
+   * @generated from field: string app_id = 1;
+   */
+  appId: string;
+
+  /**
+   * @generated from field: string scope = 2;
+   */
+  scope: string;
+
+  /**
+   * @generated from field: string owner_id = 3;
+   */
+  ownerId: string;
+
+  /**
+   * @generated from field: string key = 4;
+   */
+  key: string;
+};
+
+/**
+ * Describes the message termx.remote.runtimepb.StorageGetRequest.
+ * Use `create(StorageGetRequestSchema)` to create a new message.
+ */
+export const StorageGetRequestSchema: GenMessage<StorageGetRequest> = /*@__PURE__*/
+  messageDesc(file_runtime, 16);
+
+/**
+ * @generated from message termx.remote.runtimepb.StoragePutRequest
+ */
+export type StoragePutRequest = Message<"termx.remote.runtimepb.StoragePutRequest"> & {
+  /**
+   * @generated from field: string app_id = 1;
+   */
+  appId: string;
+
+  /**
+   * @generated from field: string scope = 2;
+   */
+  scope: string;
+
+  /**
+   * @generated from field: string owner_id = 3;
+   */
+  ownerId: string;
+
+  /**
+   * @generated from field: string key = 4;
+   */
+  key: string;
+
+  /**
+   * @generated from field: bytes value = 5;
+   */
+  value: Uint8Array;
+
+  /**
+   * @generated from field: bool check_version = 6;
+   */
+  checkVersion: boolean;
+
+  /**
+   * @generated from field: uint64 expected_version = 7;
+   */
+  expectedVersion: bigint;
+};
+
+/**
+ * Describes the message termx.remote.runtimepb.StoragePutRequest.
+ * Use `create(StoragePutRequestSchema)` to create a new message.
+ */
+export const StoragePutRequestSchema: GenMessage<StoragePutRequest> = /*@__PURE__*/
+  messageDesc(file_runtime, 17);
+
+/**
+ * @generated from message termx.remote.runtimepb.StorageDeleteRequest
+ */
+export type StorageDeleteRequest = Message<"termx.remote.runtimepb.StorageDeleteRequest"> & {
+  /**
+   * @generated from field: string app_id = 1;
+   */
+  appId: string;
+
+  /**
+   * @generated from field: string scope = 2;
+   */
+  scope: string;
+
+  /**
+   * @generated from field: string owner_id = 3;
+   */
+  ownerId: string;
+
+  /**
+   * @generated from field: string key = 4;
+   */
+  key: string;
+
+  /**
+   * @generated from field: bool check_version = 5;
+   */
+  checkVersion: boolean;
+
+  /**
+   * @generated from field: uint64 expected_version = 6;
+   */
+  expectedVersion: bigint;
+};
+
+/**
+ * Describes the message termx.remote.runtimepb.StorageDeleteRequest.
+ * Use `create(StorageDeleteRequestSchema)` to create a new message.
+ */
+export const StorageDeleteRequestSchema: GenMessage<StorageDeleteRequest> = /*@__PURE__*/
+  messageDesc(file_runtime, 18);
+
+/**
+ * @generated from message termx.remote.runtimepb.StorageDeleteResponse
+ */
+export type StorageDeleteResponse = Message<"termx.remote.runtimepb.StorageDeleteResponse"> & {
+  /**
+   * @generated from field: string app_id = 1;
+   */
+  appId: string;
+
+  /**
+   * @generated from field: string scope = 2;
+   */
+  scope: string;
+
+  /**
+   * @generated from field: string owner_id = 3;
+   */
+  ownerId: string;
+
+  /**
+   * @generated from field: string key = 4;
+   */
+  key: string;
+
+  /**
+   * @generated from field: bool deleted = 5;
+   */
+  deleted: boolean;
+
+  /**
+   * @generated from field: uint64 version = 6;
+   */
+  version: bigint;
+};
+
+/**
+ * Describes the message termx.remote.runtimepb.StorageDeleteResponse.
+ * Use `create(StorageDeleteResponseSchema)` to create a new message.
+ */
+export const StorageDeleteResponseSchema: GenMessage<StorageDeleteResponse> = /*@__PURE__*/
+  messageDesc(file_runtime, 19);
+
+/**
+ * @generated from message termx.remote.runtimepb.StorageListRequest
+ */
+export type StorageListRequest = Message<"termx.remote.runtimepb.StorageListRequest"> & {
+  /**
+   * @generated from field: string app_id = 1;
+   */
+  appId: string;
+
+  /**
+   * @generated from field: string scope = 2;
+   */
+  scope: string;
+
+  /**
+   * @generated from field: string owner_id = 3;
+   */
+  ownerId: string;
+
+  /**
+   * @generated from field: string prefix = 4;
+   */
+  prefix: string;
+};
+
+/**
+ * Describes the message termx.remote.runtimepb.StorageListRequest.
+ * Use `create(StorageListRequestSchema)` to create a new message.
+ */
+export const StorageListRequestSchema: GenMessage<StorageListRequest> = /*@__PURE__*/
+  messageDesc(file_runtime, 20);
+
+/**
+ * @generated from message termx.remote.runtimepb.StorageListResponse
+ */
+export type StorageListResponse = Message<"termx.remote.runtimepb.StorageListResponse"> & {
+  /**
+   * @generated from field: repeated termx.remote.runtimepb.StorageEntry entries = 1;
+   */
+  entries: StorageEntry[];
+};
+
+/**
+ * Describes the message termx.remote.runtimepb.StorageListResponse.
+ * Use `create(StorageListResponseSchema)` to create a new message.
+ */
+export const StorageListResponseSchema: GenMessage<StorageListResponse> = /*@__PURE__*/
+  messageDesc(file_runtime, 21);
+
+/**
  * @generated from message termx.remote.runtimepb.FilePathRequest
  */
 export type FilePathRequest = Message<"termx.remote.runtimepb.FilePathRequest"> & {
@@ -473,7 +732,7 @@ export type FilePathRequest = Message<"termx.remote.runtimepb.FilePathRequest"> 
  * Use `create(FilePathRequestSchema)` to create a new message.
  */
 export const FilePathRequestSchema: GenMessage<FilePathRequest> = /*@__PURE__*/
-  messageDesc(file_runtime, 15);
+  messageDesc(file_runtime, 22);
 
 /**
  * @generated from message termx.remote.runtimepb.FileListRequest
@@ -500,7 +759,7 @@ export type FileListRequest = Message<"termx.remote.runtimepb.FileListRequest"> 
  * Use `create(FileListRequestSchema)` to create a new message.
  */
 export const FileListRequestSchema: GenMessage<FileListRequest> = /*@__PURE__*/
-  messageDesc(file_runtime, 16);
+  messageDesc(file_runtime, 23);
 
 /**
  * @generated from message termx.remote.runtimepb.FileEntry
@@ -562,7 +821,7 @@ export type FileEntry = Message<"termx.remote.runtimepb.FileEntry"> & {
  * Use `create(FileEntrySchema)` to create a new message.
  */
 export const FileEntrySchema: GenMessage<FileEntry> = /*@__PURE__*/
-  messageDesc(file_runtime, 17);
+  messageDesc(file_runtime, 24);
 
 /**
  * @generated from message termx.remote.runtimepb.FileListResponse
@@ -594,7 +853,7 @@ export type FileListResponse = Message<"termx.remote.runtimepb.FileListResponse"
  * Use `create(FileListResponseSchema)` to create a new message.
  */
 export const FileListResponseSchema: GenMessage<FileListResponse> = /*@__PURE__*/
-  messageDesc(file_runtime, 18);
+  messageDesc(file_runtime, 25);
 
 /**
  * @generated from message termx.remote.runtimepb.FilePathResponse
@@ -611,7 +870,7 @@ export type FilePathResponse = Message<"termx.remote.runtimepb.FilePathResponse"
  * Use `create(FilePathResponseSchema)` to create a new message.
  */
 export const FilePathResponseSchema: GenMessage<FilePathResponse> = /*@__PURE__*/
-  messageDesc(file_runtime, 19);
+  messageDesc(file_runtime, 26);
 
 /**
  * @generated from message termx.remote.runtimepb.FileRenameRequest
@@ -633,7 +892,7 @@ export type FileRenameRequest = Message<"termx.remote.runtimepb.FileRenameReques
  * Use `create(FileRenameRequestSchema)` to create a new message.
  */
 export const FileRenameRequestSchema: GenMessage<FileRenameRequest> = /*@__PURE__*/
-  messageDesc(file_runtime, 20);
+  messageDesc(file_runtime, 27);
 
 /**
  * @generated from message termx.remote.runtimepb.FileMultiPathRequest
@@ -650,7 +909,7 @@ export type FileMultiPathRequest = Message<"termx.remote.runtimepb.FileMultiPath
  * Use `create(FileMultiPathRequestSchema)` to create a new message.
  */
 export const FileMultiPathRequestSchema: GenMessage<FileMultiPathRequest> = /*@__PURE__*/
-  messageDesc(file_runtime, 21);
+  messageDesc(file_runtime, 28);
 
 /**
  * @generated from message termx.remote.runtimepb.FileCopyMoveRequest
@@ -672,7 +931,7 @@ export type FileCopyMoveRequest = Message<"termx.remote.runtimepb.FileCopyMoveRe
  * Use `create(FileCopyMoveRequestSchema)` to create a new message.
  */
 export const FileCopyMoveRequestSchema: GenMessage<FileCopyMoveRequest> = /*@__PURE__*/
-  messageDesc(file_runtime, 22);
+  messageDesc(file_runtime, 29);
 
 /**
  * @generated from message termx.remote.runtimepb.FileOperationResult
@@ -699,7 +958,7 @@ export type FileOperationResult = Message<"termx.remote.runtimepb.FileOperationR
  * Use `create(FileOperationResultSchema)` to create a new message.
  */
 export const FileOperationResultSchema: GenMessage<FileOperationResult> = /*@__PURE__*/
-  messageDesc(file_runtime, 23);
+  messageDesc(file_runtime, 30);
 
 /**
  * @generated from message termx.remote.runtimepb.FileCopyMoveResponse
@@ -721,7 +980,7 @@ export type FileCopyMoveResponse = Message<"termx.remote.runtimepb.FileCopyMoveR
  * Use `create(FileCopyMoveResponseSchema)` to create a new message.
  */
 export const FileCopyMoveResponseSchema: GenMessage<FileCopyMoveResponse> = /*@__PURE__*/
-  messageDesc(file_runtime, 24);
+  messageDesc(file_runtime, 31);
 
 /**
  * @generated from message termx.remote.runtimepb.FileDeleteError
@@ -743,7 +1002,7 @@ export type FileDeleteError = Message<"termx.remote.runtimepb.FileDeleteError"> 
  * Use `create(FileDeleteErrorSchema)` to create a new message.
  */
 export const FileDeleteErrorSchema: GenMessage<FileDeleteError> = /*@__PURE__*/
-  messageDesc(file_runtime, 25);
+  messageDesc(file_runtime, 32);
 
 /**
  * @generated from message termx.remote.runtimepb.FileBatchDeleteResponse
@@ -765,7 +1024,7 @@ export type FileBatchDeleteResponse = Message<"termx.remote.runtimepb.FileBatchD
  * Use `create(FileBatchDeleteResponseSchema)` to create a new message.
  */
 export const FileBatchDeleteResponseSchema: GenMessage<FileBatchDeleteResponse> = /*@__PURE__*/
-  messageDesc(file_runtime, 26);
+  messageDesc(file_runtime, 33);
 
 /**
  * @generated from message termx.remote.runtimepb.FilePreviewRequest
@@ -787,7 +1046,7 @@ export type FilePreviewRequest = Message<"termx.remote.runtimepb.FilePreviewRequ
  * Use `create(FilePreviewRequestSchema)` to create a new message.
  */
 export const FilePreviewRequestSchema: GenMessage<FilePreviewRequest> = /*@__PURE__*/
-  messageDesc(file_runtime, 27);
+  messageDesc(file_runtime, 34);
 
 /**
  * @generated from message termx.remote.runtimepb.FilePreviewResponse
@@ -844,7 +1103,7 @@ export type FilePreviewResponse = Message<"termx.remote.runtimepb.FilePreviewRes
  * Use `create(FilePreviewResponseSchema)` to create a new message.
  */
 export const FilePreviewResponseSchema: GenMessage<FilePreviewResponse> = /*@__PURE__*/
-  messageDesc(file_runtime, 28);
+  messageDesc(file_runtime, 35);
 
 /**
  * @generated from message termx.remote.runtimepb.FileDownloadInitRequest
@@ -876,7 +1135,7 @@ export type FileDownloadInitRequest = Message<"termx.remote.runtimepb.FileDownlo
  * Use `create(FileDownloadInitRequestSchema)` to create a new message.
  */
 export const FileDownloadInitRequestSchema: GenMessage<FileDownloadInitRequest> = /*@__PURE__*/
-  messageDesc(file_runtime, 29);
+  messageDesc(file_runtime, 36);
 
 /**
  * @generated from message termx.remote.runtimepb.FileDownloadInitResponse
@@ -918,7 +1177,7 @@ export type FileDownloadInitResponse = Message<"termx.remote.runtimepb.FileDownl
  * Use `create(FileDownloadInitResponseSchema)` to create a new message.
  */
 export const FileDownloadInitResponseSchema: GenMessage<FileDownloadInitResponse> = /*@__PURE__*/
-  messageDesc(file_runtime, 30);
+  messageDesc(file_runtime, 37);
 
 /**
  * @generated from message termx.remote.runtimepb.FileUploadInitRequest
@@ -945,7 +1204,7 @@ export type FileUploadInitRequest = Message<"termx.remote.runtimepb.FileUploadIn
  * Use `create(FileUploadInitRequestSchema)` to create a new message.
  */
 export const FileUploadInitRequestSchema: GenMessage<FileUploadInitRequest> = /*@__PURE__*/
-  messageDesc(file_runtime, 31);
+  messageDesc(file_runtime, 38);
 
 /**
  * @generated from message termx.remote.runtimepb.FileUploadInitResponse
@@ -972,7 +1231,7 @@ export type FileUploadInitResponse = Message<"termx.remote.runtimepb.FileUploadI
  * Use `create(FileUploadInitResponseSchema)` to create a new message.
  */
 export const FileUploadInitResponseSchema: GenMessage<FileUploadInitResponse> = /*@__PURE__*/
-  messageDesc(file_runtime, 32);
+  messageDesc(file_runtime, 39);
 
 /**
  * @generated from message termx.remote.runtimepb.FileUploadCompleteRequest
@@ -989,5 +1248,5 @@ export type FileUploadCompleteRequest = Message<"termx.remote.runtimepb.FileUplo
  * Use `create(FileUploadCompleteRequestSchema)` to create a new message.
  */
 export const FileUploadCompleteRequestSchema: GenMessage<FileUploadCompleteRequest> = /*@__PURE__*/
-  messageDesc(file_runtime, 33);
+  messageDesc(file_runtime, 40);
 

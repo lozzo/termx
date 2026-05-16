@@ -104,6 +104,7 @@ func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableP
 		_ = listener.Close()
 		return nil, err
 	}
+	localHubURL := "http://" + net.JoinHostPort(advertisedHost, strconv.Itoa(port))
 
 	reg := registry.New(registry.Config{AgentTTL: localHubAgentTTL})
 	cloudSvc := cloud.NewService(cloud.Config{Registry: reg})
@@ -175,9 +176,9 @@ func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableP
 	rt := &localRuntime{
 		localWebAddr:  listenAddr,
 		iceTCPAddr:    net.JoinHostPort(advertisedHost, strconv.Itoa(port)),
-		httpURL:       "http://" + net.JoinHostPort(advertisedHost, strconv.Itoa(port)),
+		httpURL:       localHubURL,
 		actualWebAddr: actualAddr,
-		localPairURL:  "http://" + net.JoinHostPort(advertisedHost, strconv.Itoa(port)) + "/api/v1/pairing/claims",
+		localPairURL:  localHubURL,
 		iceTCPPort:    port,
 		iceTCPMux:     iceMux,
 		listener:      listener,
@@ -219,7 +220,13 @@ func (s *Service) attachManagerToLocalHub(ctx context.Context, local *localRunti
 	if s == nil || s.manager == nil || local == nil {
 		return
 	}
-	s.manager.AddHubURLWithAnswerOptions(local.httpURL, remotertc.AnswerOptions{SettingEngine: local.iceTCPMux})
+	runtimeAdapter := daemonRuntimeAdapter{daemon: s.daemon}
+	s.manager.AddHubURLWithAnswerOptions(local.httpURL, remotertc.AnswerOptions{
+		SettingEngine:      local.iceTCPMux,
+		TerminalManagement: runtimeAdapter,
+		Storage:            runtimeAdapter,
+		Events:             runtimeAdapter,
+	})
 	if status := s.manager.Status(); status.State == runtime.StateDisabled {
 		_ = s.manager.Start(ctx)
 	}

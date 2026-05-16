@@ -34,6 +34,13 @@ type Daemon interface {
 	ServeTransport(ctx context.Context, t transport.Transport, remote string) error
 }
 
+type StorageDaemon interface {
+	StorageGet(ctx context.Context, params protocol.StorageGetParams) (*protocol.StorageEntry, error)
+	StoragePut(ctx context.Context, params protocol.StoragePutParams) (*protocol.StorageEntry, error)
+	StorageDelete(ctx context.Context, params protocol.StorageDeleteParams) (*protocol.StorageDeleteResult, error)
+	StorageList(ctx context.Context, params protocol.StorageListParams) (*protocol.StorageListResult, error)
+}
+
 type ScopedDaemon interface {
 	ServeScopedTransport(ctx context.Context, t transport.Transport, remote string, scope TransportScope) error
 }
@@ -297,6 +304,14 @@ func (p daemonRuntimeAdapter) RouteTerminalManagementRequest(ctx context.Context
 	return terminalManagementRouter{daemon: p.daemon}.RouteTerminalManagementRequest(ctx, req)
 }
 
+func (p daemonRuntimeAdapter) RouteStorageRequest(ctx context.Context, req remotertc.StorageRequest) (int32, []byte, string) {
+	storage, ok := p.daemon.(StorageDaemon)
+	if !ok || storage == nil {
+		return http.StatusServiceUnavailable, nil, "storage api is not available"
+	}
+	return storageRouter{storage: storage}.RouteStorageRequest(ctx, req)
+}
+
 func (p daemonRuntimeAdapter) SubscribeRemoteEvents(ctx context.Context, filters remotertc.EventFilters) (<-chan []byte, func(), error) {
 	if p.daemon == nil {
 		ch := make(chan []byte)
@@ -358,6 +373,97 @@ func (p daemonRuntimeAdapter) marshalRemoteEvent(ctx context.Context, evt protoc
 
 type terminalManagementRouter struct {
 	daemon Daemon
+}
+
+type storageRouter struct {
+	storage StorageDaemon
+}
+
+func (r storageRouter) RouteStorageRequest(ctx context.Context, req remotertc.StorageRequest) (int32, []byte, string) {
+	if r.storage == nil {
+		return http.StatusServiceUnavailable, nil, "storage api is not available"
+	}
+	switch req.Path {
+	case "/storage/get":
+		var body runtimepb.StorageGetRequest
+		if err := proto.Unmarshal(req.Body, &body); err != nil {
+			return http.StatusBadRequest, nil, "invalid storage get request"
+		}
+		entry, err := r.storage.StorageGet(ctx, protocol.StorageGetParams{
+			AppID:   strings.TrimSpace(body.GetAppId()),
+			Scope:   protocol.StorageScope(strings.TrimSpace(body.GetScope())),
+			OwnerID: strings.TrimSpace(body.GetOwnerId()),
+			Key:     strings.TrimSpace(body.GetKey()),
+		})
+		if err != nil {
+			return storageErrorStatus(err), nil, err.Error()
+		}
+		return marshalRuntimeAPIResponse(storageEntryToProto(entry))
+	case "/storage/put":
+		var body runtimepb.StoragePutRequest
+		if err := proto.Unmarshal(req.Body, &body); err != nil {
+			return http.StatusBadRequest, nil, "invalid storage put request"
+		}
+		entry, err := r.storage.StoragePut(ctx, protocol.StoragePutParams{
+			AppID:           strings.TrimSpace(body.GetAppId()),
+			Scope:           protocol.StorageScope(strings.TrimSpace(body.GetScope())),
+			OwnerID:         strings.TrimSpace(body.GetOwnerId()),
+			Key:             strings.TrimSpace(body.GetKey()),
+			Value:           append([]byte(nil), body.GetValue()...),
+			CheckVersion:    body.GetCheckVersion(),
+			ExpectedVersion: body.GetExpectedVersion(),
+		})
+		if err != nil {
+			return storageErrorStatus(err), nil, err.Error()
+		}
+		return marshalRuntimeAPIResponse(storageEntryToProto(entry))
+	case "/storage/delete":
+		var body runtimepb.StorageDeleteRequest
+		if err := proto.Unmarshal(req.Body, &body); err != nil {
+			return http.StatusBadRequest, nil, "invalid storage delete request"
+		}
+		result, err := r.storage.StorageDelete(ctx, protocol.StorageDeleteParams{
+			AppID:           strings.TrimSpace(body.GetAppId()),
+			Scope:           protocol.StorageScope(strings.TrimSpace(body.GetScope())),
+			OwnerID:         strings.TrimSpace(body.GetOwnerId()),
+			Key:             strings.TrimSpace(body.GetKey()),
+			CheckVersion:    body.GetCheckVersion(),
+			ExpectedVersion: body.GetExpectedVersion(),
+		})
+		if err != nil {
+			return storageErrorStatus(err), nil, err.Error()
+		}
+		return marshalRuntimeAPIResponse(&runtimepb.StorageDeleteResponse{
+			AppId:   result.AppID,
+			Scope:   string(result.Scope),
+			OwnerId: result.OwnerID,
+			Key:     result.Key,
+			Deleted: result.Deleted,
+			Version: result.Version,
+		})
+	case "/storage/list":
+		var body runtimepb.StorageListRequest
+		if err := proto.Unmarshal(req.Body, &body); err != nil {
+			return http.StatusBadRequest, nil, "invalid storage list request"
+		}
+		result, err := r.storage.StorageList(ctx, protocol.StorageListParams{
+			AppID:   strings.TrimSpace(body.GetAppId()),
+			Scope:   protocol.StorageScope(strings.TrimSpace(body.GetScope())),
+			OwnerID: strings.TrimSpace(body.GetOwnerId()),
+			Prefix:  strings.TrimSpace(body.GetPrefix()),
+		})
+		if err != nil {
+			return storageErrorStatus(err), nil, err.Error()
+		}
+		entries := make([]*runtimepb.StorageEntry, 0, len(result.Entries))
+		for _, entry := range result.Entries {
+			item := entry
+			entries = append(entries, storageEntryToProto(&item))
+		}
+		return marshalRuntimeAPIResponse(&runtimepb.StorageListResponse{Entries: entries})
+	default:
+		return http.StatusNotFound, nil, "unknown storage route"
+	}
 }
 
 func (r terminalManagementRouter) RouteTerminalManagementRequest(ctx context.Context, req remotertc.TerminalManagementRequest) (int32, []byte, string) {
@@ -816,6 +922,46 @@ func marshalRuntimeAPIResponse(value proto.Message) (int32, []byte, string) {
 		return http.StatusInternalServerError, nil, err.Error()
 	}
 	return http.StatusOK, data, ""
+}
+
+func storageEntryToProto(entry *protocol.StorageEntry) *runtimepb.StorageEntry {
+	if entry == nil {
+		return &runtimepb.StorageEntry{}
+	}
+	updatedAt := ""
+	if !entry.UpdatedAt.IsZero() {
+		updatedAt = entry.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	}
+	return &runtimepb.StorageEntry{
+		AppId:     entry.AppID,
+		Scope:     string(entry.Scope),
+		OwnerId:   entry.OwnerID,
+		Key:       entry.Key,
+		Value:     append([]byte(nil), entry.Value...),
+		Version:   entry.Version,
+		UpdatedAt: updatedAt,
+	}
+}
+
+func storageErrorStatus(err error) int32 {
+	if err == nil {
+		return http.StatusOK
+	}
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "not found"):
+		return http.StatusNotFound
+	case strings.Contains(message, "does not exist"):
+		return http.StatusNotFound
+	case strings.Contains(message, "permission"):
+		return http.StatusForbidden
+	case strings.Contains(message, "conflict"):
+		return http.StatusConflict
+	case strings.Contains(message, "invalid"):
+		return http.StatusBadRequest
+	default:
+		return http.StatusInternalServerError
+	}
 }
 
 func firstNonEmpty(values []string) string {
