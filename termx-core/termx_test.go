@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-proto/wire"
+	"github.com/lozzow/termx/termx-shared/transport/memory"
 	vterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
@@ -211,6 +213,123 @@ func TestServerHistorySurvivesServerRestart(t *testing.T) {
 	}
 	if len(viewport.Rows) == 0 || !strings.Contains(protocolTestRowToString(viewport.Rows[0].DecodeCells()), "disk-02") {
 		t.Fatalf("expected older persisted rows from viewport, got %#v", viewport.Rows)
+	}
+}
+
+func TestServerHistoryFrameUsesStructuredGridViewport(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	root := t.TempDir()
+	srv := NewServer(WithGridRoot(root), WithDefaultSize(2, 2), WithDefaultScrollback(100))
+	created, err := srv.Create(ctx, CreateOptions{
+		ID:      "history-frame-1",
+		Command: []string{"sleep", "60"},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create terminal failed: %v", err)
+	}
+	term, err := srv.getTerminal(created.ID)
+	if err != nil {
+		t.Fatalf("get terminal failed: %v", err)
+	}
+	if term.grid == nil {
+		t.Fatal("expected terminal grid store")
+	}
+	if err := term.grid.appendRows([]terminalGridRow{
+		{cells: []vterm.Cell{{Content: "A", Width: 1}}, wrapped: true},
+		{cells: []vterm.Cell{{Content: "B", Width: 1}}},
+		{cells: []vterm.Cell{{Content: "C", Width: 1}}},
+	}); err != nil {
+		t.Fatalf("append grid rows: %v", err)
+	}
+
+	serverConn, clientConn := memory.NewPair()
+	defer clientConn.Close()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- srv.handleTransportScoped(ctx, serverConn, "memory", transportScope{})
+	}()
+
+	sendClientFrame := func(channel uint16, typ uint8, payload []byte) {
+		t.Helper()
+		frame, err := wire.EncodeFrame(channel, typ, payload)
+		if err != nil {
+			t.Fatalf("encode frame failed: %v", err)
+		}
+		if err := clientConn.Send(frame); err != nil {
+			t.Fatalf("send frame failed: %v", err)
+		}
+	}
+	helloPayload, err := protocol.EncodeHelloPayload(protocol.Hello{Version: wire.Version, Client: "test"})
+	if err != nil {
+		t.Fatalf("encode hello payload failed: %v", err)
+	}
+	sendClientFrame(0, wire.TypeHello, helloPayload)
+	ch, typ, payload := recvDecodedFrame(t, clientConn)
+	if ch != 0 || typ != wire.TypeHello {
+		t.Fatalf("unexpected hello response channel=%d type=%d", ch, typ)
+	}
+	req := protocol.Request{
+		ID:     1,
+		Method: "attach",
+		Params: mustProtoParams(t, protocol.AttachParams{TerminalID: "history-frame-1", Mode: string(ModeCollaborator)}),
+	}
+	requestPayload, err := protocol.EncodeRequestPayload(req)
+	if err != nil {
+		t.Fatalf("encode attach request failed: %v", err)
+	}
+	sendClientFrame(0, wire.TypeRequest, requestPayload)
+	ch, typ, payload = recvDecodedFrame(t, clientConn)
+	if ch != 0 || typ != wire.TypeResponse {
+		t.Fatalf("unexpected attach response channel=%d type=%d", ch, typ)
+	}
+	responseID, _, err := protocol.DecodeBinaryResponsePayload(payload)
+	if err != nil {
+		t.Fatalf("decode attach response failed: %v", err)
+	}
+	if responseID != 1 {
+		t.Fatalf("unexpected attach response id %d", responseID)
+	}
+
+	sendClientFrame(1, wire.TypeHistoryRequest, wire.EncodeHistoryRequestPayload(0, 2))
+	for {
+		ch, typ, payload = recvDecodedFrame(t, clientConn)
+		if ch == 1 && typ == wire.TypeHistoryReplay {
+			break
+		}
+	}
+	rows, hasMore, viewportPayload, err := wire.DecodeHistoryReplayPayload(payload)
+	if err != nil {
+		t.Fatalf("decode history payload failed: %v", err)
+	}
+	if rows != 3 || hasMore {
+		t.Fatalf("unexpected history metadata rows=%d has_more=%v", rows, hasMore)
+	}
+	viewport, err := protocol.DecodeGridViewportPayload(viewportPayload)
+	if err != nil {
+		t.Fatalf("decode history grid viewport failed: %v", err)
+	}
+	if len(viewport.Rows) != 2 {
+		t.Fatalf("expected structured wrapped rows, got %#v", viewport)
+	}
+	if got := protocolTestRowToString(viewport.Rows[0].DecodeCells()) + protocolTestRowToString(viewport.Rows[1].DecodeCells()); got != "ABC" {
+		t.Fatalf("unexpected structured history rows %q", got)
+	}
+
+	cancel()
+	if err := clientConn.Close(); err != nil {
+		t.Fatalf("close client conn failed: %v", err)
+	}
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("server transport failed: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for server transport")
 	}
 }
 

@@ -15,6 +15,7 @@ import {
   encodeHistoryRequestPayload,
   encodeResizePayload,
   encodeTermxFrame,
+  rowsToReplay,
   rowsToText,
   screenRowsToPlainText,
   screenRowsToReplay,
@@ -30,6 +31,7 @@ import {
   decodeTerminalHelloPayload,
   decodeTerminalMethodResult,
   decodeTerminalResponsePayload,
+  decodeGridViewportPayload,
   encodeTerminalHelloPayload,
   encodeTerminalRequestPayload,
 } from './terminalWireProtocol'
@@ -475,13 +477,15 @@ class TerminalProtocolClient implements TerminalProtocolSession {
         this.pendingHistoryReplay = null
         try {
           const { rows, hasMore, replay } = decodeHistoryReplayPayload(frame.payload)
+          const viewport = decodeGridViewportPayload(replay)
+          const viewportRows = historyViewportRows(viewport)
           pending.resolve({
             beforeOffset: pending.beforeOffset,
             limit: pending.limit,
             rows,
             hasMore,
             alternate: pending.alternate,
-            replay: new TextDecoder().decode(replay),
+            replay: rowsToReplay(viewportRows),
           })
         } catch (error) {
           pending.reject(error instanceof Error ? error : new Error(String(error)))
@@ -988,6 +992,13 @@ function normalizeSnapshot(value: unknown): TerminalSnapshotPayload {
   }
 }
 
+function historyViewportRows(value: unknown): unknown[] {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return []
+  }
+  const rows = (value as Record<string, unknown>).rows
+  return Array.isArray(rows) ? rows : []
+}
 
 function closedReason(payload: Uint8Array): string | undefined {
   if (payload.length === 0) return undefined

@@ -414,7 +414,7 @@ func (s *Server) GridViewport(ctx context.Context, id string, opts ...GridViewpo
 		}
 		return s.gridViewportFromStore(id, opt)
 	}
-	return protocolGridViewportFromCore(term.GridViewport(opt.ScrollbackOffset, opt.ScrollbackLimit, opt.Cols)), nil
+	return protocolGridViewportFromCore(term.GridViewportWithOptions(opt)), nil
 }
 
 func (s *Server) HistoryReplay(ctx context.Context, id string, opts ...HistoryReplayOptions) (*HistoryReplayResult, error) {
@@ -460,6 +460,14 @@ func (s *Server) gridReplayFromStore(id string, opt HistoryReplayOptions) (*Hist
 }
 
 func (s *Server) gridViewportFromStore(id string, opt GridViewportOptions) (*protocol.GridViewport, error) {
+	viewport, err := s.gridViewportCoreFromStore(id, opt)
+	if err != nil {
+		return nil, err
+	}
+	return protocolGridViewportFromCore(viewport), nil
+}
+
+func (s *Server) gridViewportCoreFromStore(id string, opt GridViewportOptions) (*GridViewport, error) {
 	store, err := openTerminalGridStoreForReplay(s.cfg.gridRoot, id)
 	if err != nil {
 		return nil, err
@@ -477,7 +485,7 @@ func (s *Server) gridViewportFromStore(id string, opt GridViewportOptions) (*pro
 	if err != nil {
 		return nil, err
 	}
-	return protocolGridViewportFromCore(&GridViewport{
+	return &GridViewport{
 		TerminalID:           id,
 		Size:                 Size{Cols: uint16(cols), Rows: s.cfg.defaultSize.Rows},
 		Rows:                 convertRows(result.Rows),
@@ -485,11 +493,24 @@ func (s *Server) gridViewportFromStore(id string, opt GridViewportOptions) (*pro
 		ScrollbackLimit:      limit,
 		ScrollbackTotal:      result.TotalRows,
 		ScrollbackHasMore:    result.HasMore,
+		LoadedRows:           result.LoadedRows,
 		ScrollbackTimestamps: cloneTimeSlice(result.Timestamps),
 		ScrollbackRowKinds:   cloneStringSlice(result.RowKinds),
 		ScrollbackWrapped:    cloneBoolSlice(result.Wrapped),
 		Timestamp:            time.Now().UTC(),
-	}), nil
+	}, nil
+}
+
+func (s *Server) historyGridViewport(ctx context.Context, id string, opt GridViewportOptions) (*GridViewport, error) {
+	_ = ctx
+	term, err := s.getTerminal(id)
+	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+		return s.gridViewportCoreFromStore(id, opt)
+	}
+	return term.GridViewportWithOptions(opt), nil
 }
 
 func (s *Server) gridSnapshotFromStore(id string, opt SnapshotOptions) (*Snapshot, error) {
@@ -1319,10 +1340,10 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 				}
 				continue
 			}
-			replay, err := s.HistoryReplay(sessionCtx, attachment.terminalID, HistoryReplayOptions{
-				BeforeOffset: beforeOffset,
-				Limit:        limit,
-				Alternate:    len(payload) >= 9 && payload[8] == 1,
+			viewport, err := s.historyGridViewport(sessionCtx, attachment.terminalID, GridViewportOptions{
+				ScrollbackOffset: beforeOffset,
+				ScrollbackLimit:  limit,
+				Alternate:        len(payload) >= 9 && payload[8] == 1,
 			})
 			if err != nil {
 				if err := sendProtocolError(sendFrame, 0, channel, protocolErrorCode(err), err.Error()); err != nil {
@@ -1330,21 +1351,34 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 				}
 				continue
 			}
-			replayPayload, err := wire.EncodeHistoryReplayPayload(replay.Rows, replay.HasMore, []byte(replay.Replay))
+			viewportPayload, err := protocol.EncodeGridViewportPayload(protocolGridViewportFromCore(viewport))
+			if err != nil {
+				return err
+			}
+			loadedRows := 0
+			hasMore := false
+			if viewport != nil {
+				loadedRows = viewport.LoadedRows
+				if loadedRows <= 0 {
+					loadedRows = len(viewport.Rows)
+				}
+				hasMore = viewport.ScrollbackHasMore
+			}
+			replayPayload, err := wire.EncodeHistoryReplayPayload(loadedRows, hasMore, viewportPayload)
 			if err != nil {
 				return err
 			}
 			if s.cfg.logger != nil {
 				s.cfg.logger.Info(
-					"termx grid replay served",
+					"termx grid history viewport served",
 					"remote", remote,
 					"terminal_id", attachment.terminalID,
 					"channel", channel,
 					"before_offset", beforeOffset,
 					"limit", limit,
-					"rows", replay.Rows,
-					"has_more", replay.HasMore,
-					"replay_bytes", len(replay.Replay),
+					"rows", loadedRows,
+					"has_more", hasMore,
+					"viewport_bytes", len(viewportPayload),
 				)
 			}
 			if err := sendFrame(channel, wire.TypeHistoryReplay, replayPayload); err != nil {

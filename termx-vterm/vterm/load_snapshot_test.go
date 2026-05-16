@@ -115,27 +115,6 @@ func TestVTermResizeDoesNotJoinHardNewlineRows(t *testing.T) {
 	}
 }
 
-func TestVTermHistoryReplayPreservesSoftWrappedRows(t *testing.T) {
-	vt := New(5, 3, 100, nil)
-	if _, err := vt.Write([]byte("abcdefgh\r\nhard\r\nnext\r\nlast\r\n")); err != nil {
-		t.Fatalf("write history seed: %v", err)
-	}
-
-	replay, rows, hasMore := vt.EncodeHistoryReplay(0, 2)
-	if rows != 3 {
-		t.Fatalf("expected replay window to include complete soft-wrapped row group, got %d", rows)
-	}
-	if hasMore {
-		t.Fatalf("expected complete history to fit in the replay window")
-	}
-	if strings.Contains(string(replay), "abcde\r\nfgh") {
-		t.Fatalf("expected soft-wrapped row replay without hard newline, got %q", replay)
-	}
-	if !strings.Contains(string(replay), "abcdefgh\r\nhard") {
-		t.Fatalf("expected replay to keep soft wrap joined and hard newline separated, got %q", replay)
-	}
-}
-
 func TestLoadSnapshotWithExtendedMetadataRestoresWrappedRows(t *testing.T) {
 	vt := New(5, 3, 100, nil)
 	screen := ScreenData{Cells: [][]Cell{

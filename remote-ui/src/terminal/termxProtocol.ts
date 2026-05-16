@@ -922,15 +922,21 @@ function writeSequentialRow(row: unknown): string {
     last -= 1
   }
   const parts: string[] = []
+  let currentStyle = emptyStyle
   for (let index = 0; index <= last; index += 1) {
     const cell = cellFrom(cells[index])
     if (cell.content === '' && cell.width === 0) {
       continue
     }
-    parts.push(cellStyleANSI(cell.style))
+    if (!stylesEqual(cell.style, currentStyle)) {
+      parts.push(cellStyleANSI(cell.style))
+      currentStyle = cell.style
+    }
     parts.push(cell.content || ' ')
   }
-  parts.push('\x1b[0m')
+  if (!stylesEqual(currentStyle, emptyStyle)) {
+    parts.push('\x1b[0m')
+  }
   return parts.join('')
 }
 
@@ -990,6 +996,17 @@ function cellStyleANSI(style: ReturnType<typeof styleFrom>): string {
   ansi += colorANSI(style.fg, true)
   ansi += colorANSI(style.bg, false)
   return `${ansi}m`
+}
+
+function stylesEqual(a: CellStyleLike, b: CellStyleLike): boolean {
+  return a.fg === b.fg &&
+    a.bg === b.bg &&
+    a.bold === b.bold &&
+    a.italic === b.italic &&
+    a.underline === b.underline &&
+    a.blink === b.blink &&
+    a.reverse === b.reverse &&
+    a.strikethrough === b.strikethrough
 }
 
 function colorANSI(value: string, foreground: boolean): string {

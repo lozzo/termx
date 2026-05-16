@@ -1179,7 +1179,13 @@ describe('Terminal', () => {
       cols: 80,
       rows: 24,
       pages: [
-        { offset: 0, rows: Array.from({ length: 250 }, (_value, index) => `wrapped-${index}`) },
+        {
+          offset: 0,
+          rows: [
+            { text: 'wrapped-head-', wrapped: true },
+            ...Array.from({ length: 249 }, (_value, index) => `wrapped-${index}`),
+          ],
+        },
       ],
     })
 

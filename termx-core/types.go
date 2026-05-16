@@ -155,6 +155,7 @@ type GridViewportOptions struct {
 	ScrollbackOffset int
 	ScrollbackLimit  int
 	Cols             int
+	Alternate        bool
 }
 
 type GridViewport struct {
@@ -165,6 +166,7 @@ type GridViewport struct {
 	ScrollbackLimit      int
 	ScrollbackTotal      int
 	ScrollbackHasMore    bool
+	LoadedRows           int
 	ScrollbackTimestamps []time.Time
 	ScrollbackRowKinds   []string
 	ScrollbackWrapped    []bool

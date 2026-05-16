@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createTerminalProtocolClient } from './terminalProtocolClient'
-import { TERMX_FRAME_TYPES, decodeHistoryReplayPayload, decodeTermxFrame, encodeTermxFrame } from './termxProtocol'
+import { TERMX_FRAME_TYPES, decodeTermxFrame, encodeTermxFrame } from './termxProtocol'
 import {
   decodeTerminalHelloPayload,
   decodeTerminalMethodParams,
   decodeTerminalRequestPayload,
+  encodeGridViewportPayload,
   encodeTerminalErrorPayload,
   encodeTerminalHelloPayload,
   encodeTerminalResponsePayload,
@@ -582,11 +583,22 @@ describe('TerminalProtocolClient', () => {
     const requestView = new DataView(pageRequestFrame.payload.buffer, pageRequestFrame.payload.byteOffset, pageRequestFrame.payload.byteLength)
     expect(requestView.getUint32(0)).toBe(100)
     expect(requestView.getUint32(4)).toBe(50)
-    const replayPayload = new Uint8Array(5 + 3)
+    const viewportPayload = encodeGridViewportPayload({
+      terminal_id: 'terminal-1',
+      size: { cols: 80, rows: 24 },
+      rows: [{
+        cells: Array.from('old').map((char) => ({ r: char })),
+      }],
+      scrollback_offset: 100,
+      scrollback_limit: 50,
+      scrollback_total: 101,
+      scrollback_has_more: false,
+    })
+    const replayPayload = new Uint8Array(5 + viewportPayload.length)
     const replayView = new DataView(replayPayload.buffer)
     replayView.setUint32(0, 1)
     replayView.setUint8(4, 0)
-    replayPayload.set(new TextEncoder().encode('old'), 5)
+    replayPayload.set(viewportPayload, 5)
     channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.historyReplay, replayPayload))
 
     await expect(pagePromise).resolves.toMatchObject({

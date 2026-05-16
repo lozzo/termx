@@ -7,6 +7,7 @@ import {
 import {
   decodeTerminalMethodParams,
   decodeTerminalRequestPayload,
+  encodeGridViewportPayload,
   encodeTerminalErrorPayload,
   encodeTerminalHelloPayload,
   encodeTerminalResponsePayload,
@@ -250,7 +251,7 @@ export class MockRtcTerminalSession implements RtcSession {
 
 export interface MockSnapshotPage {
   offset: number
-  rows: string[]
+  rows: Array<string | { text?: string; cells?: Array<Record<string, unknown>>; wrapped?: boolean }>
 }
 
 class MockBinaryChannel implements RtcBinaryChannel {
@@ -398,9 +399,7 @@ class MockBinaryChannel implements RtcBinaryChannel {
           raw: {
             size: { cols: 80, rows: 24 },
             screen: { rows: [] },
-            scrollback: page.rows.map((row) => ({
-              cells: Array.from(row).map((char) => ({ r: char })),
-            })),
+            scrollback: page.rows.map(mockHistoryRowToProtocolRow),
           },
         }, request.id)
         return
@@ -442,14 +441,37 @@ class MockBinaryChannel implements RtcBinaryChannel {
     this.historyReplayRequests.push({ beforeOffset, limit, ...(alternate ? { alternate } : {}) })
     const page = this.owner.snapshotPageFor(this.terminalId, beforeOffset)
     const rows = page?.rows ?? []
-    const replay = new TextEncoder().encode(rows.join('\r\n'))
     const nextOffset = beforeOffset + rows.length
     const hasMore = rows.length > 0 && this.owner.snapshotPageFor(this.terminalId, nextOffset) !== undefined
-    const payload = new Uint8Array(5 + replay.length)
+    const viewport = encodeGridViewportPayload({
+      terminal_id: this.terminalId,
+      size: { cols: 80, rows: 24 },
+      rows: rows.map(mockHistoryRowToProtocolRow),
+      scrollback_offset: beforeOffset,
+      scrollback_limit: limit,
+      scrollback_total: nextOffset + (hasMore ? 1 : 0),
+      scrollback_has_more: hasMore,
+    })
+    const payload = new Uint8Array(5 + viewport.length)
     const payloadView = new DataView(payload.buffer)
     payloadView.setUint32(0, rows.length)
     payloadView.setUint8(4, hasMore ? 1 : 0)
-    payload.set(replay, 5)
+    payload.set(viewport, 5)
     this.emitFrame(TERMX_FRAME_TYPES.historyReplay, payload)
+  }
+}
+
+function mockHistoryRowToProtocolRow(row: MockSnapshotPage['rows'][number]): Record<string, unknown> {
+  if (typeof row === 'string') {
+    return {
+      cells: Array.from(row).map((char) => ({ r: char })),
+    }
+  }
+  const cells = Array.isArray(row.cells)
+    ? row.cells
+    : Array.from(row.text ?? '').map((char) => ({ r: char }))
+  return {
+    cells,
+    ...(row.wrapped ? { wrapped: true } : {}),
   }
 }

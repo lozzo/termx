@@ -148,7 +148,7 @@ I/O 通道传输终端输入和服务端权威屏幕更新。消息体使用**�
 | 0x16 | SyncLost | S->C | 数据丢失通知 |
 | 0x17 | Closed | S->C | 终端已关闭 |
 | 0x18 | HistoryRequest | C->S | 请求滚动回看页 |
-| 0x19 | HistoryReplay | S->C | 滚动回看页 replay |
+| 0x19 | HistoryReplay | S->C | 滚动回看页结构化 GridViewport |
 
 ### ScreenUpdate（0x14）
 
@@ -160,6 +160,15 @@ Payload: binary screen update (TSU6)
 - 客户端消费 screen update，不再各自解析 PTY 原始输出
 - 增量 payload 只使用 `ScreenOp` 序列；旧的 changed_rows / changed_spans payload 已删除
 - 慢消费者队列会折叠连续 screen update，只保留可恢复到最新状态的一帧
+
+### HistoryReplay（0x19）
+
+```
+Payload: uint32 loaded_raw_rows + uint8 has_more + binary GridViewport
+```
+
+- `loaded_raw_rows` 是下一次 `HistoryRequest` 应增加的 scrollback offset
+- `GridViewport` 保留行结构和 wrapped 元数据，客户端再生成 xterm replay
 
 ### Input（0x11）
 

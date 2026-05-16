@@ -13,12 +13,14 @@ import {
   EnsureResizeParamsSchema,
   EnsureResizeResultSchema,
   ErrorEnvelopeSchema,
+  GridViewportSchema,
   HelloSchema,
   RequestEnvelopeSchema,
   ResponseEnvelopeSchema,
   SnapshotParamsSchema,
   SnapshotSchema,
   type CursorState,
+  type GridViewport,
   type ResizeControl,
   type ResizeOwnership,
   type RowSet,
@@ -251,6 +253,14 @@ export function decodeTerminalMethodResult(method: string, payload: Uint8Array):
   }
 }
 
+export function encodeGridViewportPayload(viewport: unknown): Uint8Array {
+  return encodeMessage(GridViewportSchema, gridViewportInit(asRecord(viewport)))
+}
+
+export function decodeGridViewportPayload(payload: Uint8Array): unknown {
+  return gridViewportToAPI(decodeMessage(GridViewportSchema, payload))
+}
+
 function attachResultToAPI(result: MessageShape<typeof AttachResultSchema>): unknown {
   return cleanRecord({
     mode: result.mode,
@@ -285,6 +295,19 @@ function snapshotToAPI(snapshot: Snapshot): unknown {
     cursor: cursorToAPI(snapshot.cursor),
     modes: modesToAPI(snapshot.modes, snapshot.screenIsAlternate),
     timestamp_unix_nano: Number(snapshot.timestampUnixNano),
+  })
+}
+
+function gridViewportToAPI(viewport: GridViewport): unknown {
+  return cleanRecord({
+    terminal_id: viewport.terminalId,
+    size: sizeToAPI(viewport.size),
+    rows: rowSetToRows(viewport.rows),
+    scrollback_offset: Number(viewport.scrollbackOffset),
+    scrollback_limit: Number(viewport.scrollbackLimit),
+    scrollback_total: Number(viewport.scrollbackTotal),
+    scrollback_has_more: viewport.scrollbackHasMore,
+    timestamp_unix_nano: Number(viewport.timestampUnixNano),
   })
 }
 
@@ -447,6 +470,19 @@ function snapshotInit(record: Record<string, unknown>): MessageInitShape<typeof 
   }
 }
 
+function gridViewportInit(record: Record<string, unknown>): MessageInitShape<typeof GridViewportSchema> {
+  return {
+    terminalId: stringField(record, 'terminal_id', 'terminalId'),
+    size: sizeInit(field(record, 'size')),
+    rows: rowSetInit(field(record, 'rows')),
+    scrollbackOffset: BigInt(int32Value(field(record, 'scrollback_offset', 'scrollbackOffset'))),
+    scrollbackLimit: BigInt(int32Value(field(record, 'scrollback_limit', 'scrollbackLimit'))),
+    scrollbackTotal: BigInt(int32Value(field(record, 'scrollback_total', 'scrollbackTotal'))),
+    scrollbackHasMore: booleanValue(field(record, 'scrollback_has_more', 'scrollbackHasMore')),
+    timestampUnixNano: BigInt(0),
+  }
+}
+
 function modesMask(modes: Record<string, unknown>, screenIsAlternate: boolean): number {
   let mask = screenIsAlternate ? 1 << 0 : 0
   if (booleanValue(field(modes, 'alternateScroll', 'alternate_scroll'))) mask |= 1 << 1
@@ -463,9 +499,17 @@ function modesMask(modes: Record<string, unknown>, screenIsAlternate: boolean): 
 }
 
 function rowSetInit(value: unknown): MessageInitShape<typeof SnapshotSchema>['screen'] {
-  return {
-    rowsBlob: encodeCompactRowsBlob(rowSetRows(value)),
+  const rows = Array.isArray(value) ? value : []
+  const out: MessageInitShape<typeof SnapshotSchema>['screen'] = {
+    rowsBlob: encodeCompactRowsBlob(rowSetRows(rows)),
   }
+  const timestamps = rows.map((row) => BigInt(int32Value(field(asRecord(row), 'timestamp_unix_nano', 'timestampUnixNano'))))
+  const rowKinds = rows.map((row) => stringField(asRecord(row), 'kind'))
+  const wrapped = rows.map((row) => booleanValue(field(asRecord(row), 'wrapped')))
+  if (timestamps.some((timestamp) => timestamp !== BigInt(0))) out.timestampsUnixNano = timestamps
+  if (rowKinds.some(Boolean)) out.rowKinds = rowKinds
+  if (wrapped.some(Boolean)) out.wrapped = wrapped
+  return out
 }
 
 function resizeControlInit(value: unknown): MessageInitShape<typeof EnsureResizeResultSchema>['resizeControl'] {
@@ -539,7 +583,7 @@ function cellFrom(value: unknown): CompactCell {
 
 function styleFrom(value: unknown): CompactStyle {
   const record = asRecord(value)
-  if (Object.keys(record).length === 0) return emptyStyle
+  if (Object.keys(record).length === 0) return { ...emptyStyle }
   return {
     fg: stringField(record, 'fg'),
     bg: stringField(record, 'bg'),

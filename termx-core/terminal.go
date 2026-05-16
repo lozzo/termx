@@ -820,12 +820,26 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 }
 
 func (t *Terminal) GridViewport(offset, limit, cols int) *GridViewport {
+	return t.GridViewportWithOptions(GridViewportOptions{
+		ScrollbackOffset: offset,
+		ScrollbackLimit:  limit,
+		Cols:             cols,
+	})
+}
+
+func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewport {
 	if t == nil || t.vterm == nil {
 		return nil
 	}
 	t.flushGridAppender()
+	offset := opt.ScrollbackOffset
+	limit := opt.ScrollbackLimit
+	cols := opt.Cols
 	if limit <= 0 {
-		limit = 500
+		limit = defaultGridReplayRows
+	}
+	if limit > maxGridReplayRows {
+		limit = maxGridReplayRows
 	}
 	if offset < 0 {
 		offset = 0
@@ -842,7 +856,7 @@ func (t *Terminal) GridViewport(offset, limit, cols int) *GridViewport {
 	}
 	screenContent := t.vterm.ScreenContent()
 	modes := t.vterm.Modes()
-	if modes.AlternateScreen || screenContent.IsAlternateScreen {
+	if opt.Alternate || modes.AlternateScreen || screenContent.IsAlternateScreen {
 		rows, timestamps, rowKinds, wrapped, total, hasMore := t.alternateGrid.viewport(offset, limit)
 		return &GridViewport{
 			TerminalID:           id,
@@ -852,6 +866,7 @@ func (t *Terminal) GridViewport(offset, limit, cols int) *GridViewport {
 			ScrollbackLimit:      limit,
 			ScrollbackTotal:      total,
 			ScrollbackHasMore:    hasMore,
+			LoadedRows:           len(rows),
 			ScrollbackTimestamps: timestamps,
 			ScrollbackRowKinds:   rowKinds,
 			ScrollbackWrapped:    wrapped,
@@ -873,6 +888,7 @@ func (t *Terminal) GridViewport(offset, limit, cols int) *GridViewport {
 				ScrollbackLimit:      limit,
 				ScrollbackTotal:      gridViewport.TotalRows,
 				ScrollbackHasMore:    gridViewport.HasMore,
+				LoadedRows:           gridViewport.LoadedRows,
 				ScrollbackTimestamps: cloneTimeSlice(gridViewport.Timestamps),
 				ScrollbackRowKinds:   cloneStringSlice(gridViewport.RowKinds),
 				ScrollbackWrapped:    cloneBoolSlice(gridViewport.Wrapped),
@@ -892,6 +908,10 @@ func (t *Terminal) GridViewport(offset, limit, cols int) *GridViewport {
 	if start < 0 {
 		start = 0
 	}
+	scrollbackWrapped := t.vterm.ScrollbackWrapped()
+	for start > 0 && boolAt(scrollbackWrapped, start-1) {
+		start--
+	}
 	return &GridViewport{
 		TerminalID:           id,
 		Size:                 Size{Cols: uint16(cols), Rows: size.Rows},
@@ -900,9 +920,10 @@ func (t *Terminal) GridViewport(offset, limit, cols int) *GridViewport {
 		ScrollbackLimit:      limit,
 		ScrollbackTotal:      len(scrollback),
 		ScrollbackHasMore:    start > 0,
+		LoadedRows:           len(scrollback[start:end]),
 		ScrollbackTimestamps: sliceTimeRange(t.vterm.ScrollbackTimestamps(), start, end),
 		ScrollbackRowKinds:   sliceStringRange(t.vterm.ScrollbackRowKinds(), start, end),
-		ScrollbackWrapped:    sliceBoolRange(t.vterm.ScrollbackWrapped(), start, end),
+		ScrollbackWrapped:    sliceBoolRange(scrollbackWrapped, start, end),
 		Timestamp:            time.Now().UTC(),
 	}
 }
