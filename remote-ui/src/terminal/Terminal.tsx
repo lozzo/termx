@@ -2055,14 +2055,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         <div
           aria-label="Loading terminal history"
           aria-live="polite"
-          className="pointer-events-none absolute left-1/2 top-0 z-[60] -translate-x-1/2 rounded-b-full border-x border-b border-[var(--termx-accent)]/70 bg-[var(--termx-surface)]/95 px-3 py-1.5 shadow-[0_6px_18px_rgba(0,0,0,0.35)] backdrop-blur-md"
+          className="pointer-events-none absolute left-1/2 top-3 z-[60] -translate-x-1/2 rounded-full bg-[var(--termx-surface)]/95 px-3 py-1.5 shadow-[0_4px_12px_rgba(0,0,0,0.15)] ring-1 ring-[var(--termx-border)]/50 backdrop-blur-md"
           data-testid="termx-history-loading"
           role="status"
         >
           <div className="flex h-4 items-center gap-1.5">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--termx-accent)]" />
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--termx-accent)] [animation-delay:120ms]" />
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--termx-accent)] [animation-delay:240ms]" />
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--termx-text)]/60" />
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--termx-text)]/60 [animation-delay:150ms]" />
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--termx-text)]/60 [animation-delay:300ms]" />
           </div>
         </div>
       ) : null}
