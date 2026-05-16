@@ -203,6 +203,10 @@ func (m *Model) restorePromptReturnMode(prompt *modal.PromptState) {
 		m.setMode(input.ModeState{Kind: input.ModeWorkspacePicker, RequestID: requestID})
 		return
 	}
+	if mode == input.ModePicker && requestID == clipboardHistoryRequestID() {
+		_ = m.showClipboardHistoryPicker()
+		return
+	}
 	next := input.ModeState{Kind: mode}
 	if mode == input.ModeTerminalManager {
 		next.RequestID = terminalPoolPageModeToken

@@ -286,6 +286,7 @@ func (m *Model) cancelCopyModeContinuous() {
 	m.copyMode.MouseSelecting = false
 	m.copyMode.AutoScrollDir = 0
 	m.copyMode.AutoScrollSeq = m.noteCopyModeMouseActivity()
+	m.saveCurrentCopyModeState()
 	if m.render != nil {
 		m.render.Invalidate()
 	}

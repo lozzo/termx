@@ -23,6 +23,9 @@ type statusHintContext struct {
 }
 
 func (m *Model) buildStatusHints(vm render.RenderVM) []string {
+	if m != nil && m.isClipboardHistoryPickerActive() {
+		return clipboardHistoryStatusHints()
+	}
 	mode := input.ModeKind(strings.TrimSpace(vm.Status.InputMode))
 	if mode == "" {
 		mode = input.ModeNormal
@@ -44,6 +47,25 @@ func (m *Model) buildStatusHints(vm render.RenderVM) []string {
 		out = append(out, doc.StatusText)
 	}
 	return out
+}
+
+func (m *Model) isClipboardHistoryPickerActive() bool {
+	return m != nil &&
+		m.modalHost != nil &&
+		m.modalHost.Session != nil &&
+		m.modalHost.Session.Kind == input.ModePicker &&
+		m.modalHost.Session.RequestID == clipboardHistoryRequestID()
+}
+
+func clipboardHistoryStatusHints() []string {
+	return []string{
+		"UP/DOWN MOVE",
+		"TYPE FILTER",
+		"Enter PASTE/NEW",
+		"Ctrl-E EDIT",
+		"Ctrl-X DELETE",
+		"Esc BACK",
+	}
 }
 
 func (m *Model) buildStatusBarRightTokens(vm render.RenderVM) []render.RenderStatusToken {

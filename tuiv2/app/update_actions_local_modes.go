@@ -48,10 +48,11 @@ func (m *Model) handleModeAndFloatingLocalAction(action input.SemanticAction) (b
 			return false, nil
 		}
 		if m.modalHost == nil || m.modalHost.Session == nil {
-			if m.mode().Kind == input.ModeDisplay {
+			if m.effectiveInputMode() == input.ModeDisplay {
 				m.prepareCopyModeExit()
-			} else {
-				m.resetCopyMode()
+				if m.mode().Kind != input.ModeDisplay {
+					m.leaveCopyMode()
+				}
 			}
 			m.setMode(input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()

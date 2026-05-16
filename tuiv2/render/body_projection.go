@@ -8,11 +8,21 @@ type bodyProjectionOptions struct {
 	ExitedSelectionPulse bool
 	SnapshotOverride     RenderSnapshotOverrideVM
 	CopyMode             RenderCopyModeVM
+	CopyModes            map[string]RenderCopyModeVM
 	FloatingDragPreview  RenderFloatingDragPreviewVM
 	ImmersiveZoom        bool
 }
 
 func bodyProjectionOptionsForVM(vm RenderVM, exitedSelectionPulse bool) bodyProjectionOptions {
+	copyModes := make(map[string]RenderCopyModeVM)
+	for _, copyMode := range vm.Body.CopyModes {
+		if copyMode.PaneID != "" {
+			copyModes[copyMode.PaneID] = copyMode
+		}
+	}
+	if vm.Body.CopyMode.PaneID != "" {
+		copyModes[vm.Body.CopyMode.PaneID] = vm.Body.CopyMode
+	}
 	return bodyProjectionOptions{
 		ConfirmPaneID:        vm.Body.OwnerConfirmPaneID,
 		Chrome:               normalizeUIChromeConfig(vm.Chrome),
@@ -21,7 +31,23 @@ func bodyProjectionOptionsForVM(vm RenderVM, exitedSelectionPulse bool) bodyProj
 		ExitedSelectionPulse: exitedSelectionPulse,
 		SnapshotOverride:     vm.Body.SnapshotOverride,
 		CopyMode:             vm.Body.CopyMode,
+		CopyModes:            copyModes,
 		FloatingDragPreview:  vm.Body.FloatingDragPreview,
 		ImmersiveZoom:        immersiveZoomActiveVM(vm),
 	}
+}
+
+func (o bodyProjectionOptions) copyModeForPane(paneID string) (RenderCopyModeVM, bool) {
+	if paneID == "" {
+		return RenderCopyModeVM{}, false
+	}
+	if o.CopyModes != nil {
+		if copyMode, ok := o.CopyModes[paneID]; ok && copyMode.PaneID != "" {
+			return copyMode, true
+		}
+	}
+	if o.CopyMode.PaneID == paneID {
+		return o.CopyMode, true
+	}
+	return RenderCopyModeVM{}, false
 }

@@ -4420,6 +4420,11 @@ type recordingBridgeClient struct {
 	releaseLeaseCalls  []sessionstore.ReleaseLeaseParams
 	releaseLeaseErr    error
 	streamReadyCalls   map[uint16][]uint64
+	storageEntries     map[string]protocol.StorageEntry
+	storageGetCalls    []protocol.StorageGetParams
+	storagePutCalls    []protocol.StoragePutParams
+	storageListCalls   []protocol.StorageListParams
+	storageDeleteCalls []protocol.StorageDeleteParams
 }
 
 type resizeCall struct {
@@ -4467,6 +4472,7 @@ type attachCall struct {
 }
 
 var _ bridge.Client = (*recordingBridgeClient)(nil)
+var _ bridge.StorageClient = (*recordingBridgeClient)(nil)
 
 func (c *recordingBridgeClient) Close() error { return nil }
 
@@ -4676,6 +4682,94 @@ func (c *recordingBridgeClient) AcquireSessionLease(_ context.Context, params se
 func (c *recordingBridgeClient) ReleaseSessionLease(_ context.Context, params sessionstore.ReleaseLeaseParams) error {
 	c.releaseLeaseCalls = append(c.releaseLeaseCalls, params)
 	return c.releaseLeaseErr
+}
+
+func (c *recordingBridgeClient) StorageGet(_ context.Context, params protocol.StorageGetParams) (*protocol.StorageEntry, error) {
+	c.storageGetCalls = append(c.storageGetCalls, params)
+	if c.storageEntries == nil {
+		return nil, fmt.Errorf("protocol error 404: not found")
+	}
+	entry, ok := c.storageEntries[params.Key]
+	if !ok {
+		return nil, fmt.Errorf("protocol error 404: not found")
+	}
+	if entry.AppID != params.AppID || entry.Scope != params.Scope || entry.OwnerID != params.OwnerID {
+		return nil, fmt.Errorf("protocol error 404: not found")
+	}
+	cloned := cloneStorageEntry(entry)
+	return &cloned, nil
+}
+
+func (c *recordingBridgeClient) StoragePut(_ context.Context, params protocol.StoragePutParams) (*protocol.StorageEntry, error) {
+	c.storagePutCalls = append(c.storagePutCalls, cloneStoragePutParams(params))
+	if c.storageEntries == nil {
+		c.storageEntries = make(map[string]protocol.StorageEntry)
+	}
+	current := c.storageEntries[params.Key]
+	entry := protocol.StorageEntry{
+		AppID:     params.AppID,
+		Scope:     params.Scope,
+		OwnerID:   params.OwnerID,
+		Key:       params.Key,
+		Value:     append([]byte(nil), params.Value...),
+		Version:   current.Version + 1,
+		UpdatedAt: time.Now().UTC(),
+	}
+	if entry.Version == 0 {
+		entry.Version = 1
+	}
+	c.storageEntries[params.Key] = entry
+	cloned := cloneStorageEntry(entry)
+	return &cloned, nil
+}
+
+func (c *recordingBridgeClient) StorageDelete(_ context.Context, params protocol.StorageDeleteParams) (*protocol.StorageDeleteResult, error) {
+	c.storageDeleteCalls = append(c.storageDeleteCalls, params)
+	deleted := false
+	version := uint64(0)
+	if c.storageEntries != nil {
+		current, ok := c.storageEntries[params.Key]
+		if ok {
+			deleted = true
+			version = current.Version + 1
+			delete(c.storageEntries, params.Key)
+		}
+	}
+	return &protocol.StorageDeleteResult{
+		AppID:   params.AppID,
+		Scope:   params.Scope,
+		OwnerID: params.OwnerID,
+		Key:     params.Key,
+		Deleted: deleted,
+		Version: version,
+	}, nil
+}
+
+func (c *recordingBridgeClient) StorageList(_ context.Context, params protocol.StorageListParams) (*protocol.StorageListResult, error) {
+	c.storageListCalls = append(c.storageListCalls, params)
+	result := &protocol.StorageListResult{}
+	for _, entry := range c.storageEntries {
+		if entry.AppID != params.AppID || entry.Scope != params.Scope || entry.OwnerID != params.OwnerID {
+			continue
+		}
+		if params.Prefix != "" && !strings.HasPrefix(entry.Key, params.Prefix) {
+			continue
+		}
+		result.Entries = append(result.Entries, cloneStorageEntry(entry))
+	}
+	return result, nil
+}
+
+func cloneStoragePutParams(params protocol.StoragePutParams) protocol.StoragePutParams {
+	cloned := params
+	cloned.Value = append([]byte(nil), params.Value...)
+	return cloned
+}
+
+func cloneStorageEntry(entry protocol.StorageEntry) protocol.StorageEntry {
+	cloned := entry
+	cloned.Value = append([]byte(nil), entry.Value...)
+	return cloned
 }
 
 func applyTestMsg(t *testing.T, model *Model, msg tea.Msg, label string) {

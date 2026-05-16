@@ -108,7 +108,7 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) tea.Cmd {
 	if handled, cmd := m.handleBottomChromeMouseClick(vm, x, y); handled {
 		return cmd
 	}
-	if m.mode().Kind == input.ModeDisplay && m.startMouseCopySelection(x, y) {
+	if m.effectiveInputMode() == input.ModeDisplay && m.startMouseCopySelection(x, y) {
 		return nil
 	}
 	if cmd := m.forwardTerminalMouseInputCmd(msg); cmd != nil {

@@ -2,12 +2,14 @@ package app
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 type copyModePoint struct {
@@ -32,6 +34,18 @@ type copyModeResumeState struct {
 	TerminalID      string
 	Snapshot        *protocol.Snapshot
 	BaselineVersion uint64
+}
+
+func (m *Model) activePaneInCopyMode() bool {
+	if m == nil || m.workbench == nil {
+		return false
+	}
+	pane := m.workbench.ActivePane()
+	if pane == nil || pane.ID == "" {
+		return false
+	}
+	_, ok := m.copyModeStateForPane(pane.ID)
+	return ok
 }
 
 func clearNoticeCmd(seq uint64) tea.Cmd {
@@ -93,7 +107,120 @@ func (m *Model) resetCopyMode() {
 	if m == nil {
 		return
 	}
+	if m.copyMode.PaneID != "" && m.copyModes != nil {
+		delete(m.copyModes, m.copyMode.PaneID)
+	}
 	m.copyMode = copyModeState{}
+}
+
+func (m *Model) copyModeStateForPane(paneID string) (copyModeState, bool) {
+	if m == nil || paneID == "" {
+		return copyModeState{}, false
+	}
+	if m.copyMode.PaneID == paneID {
+		return m.copyMode, true
+	}
+	if m.copyModes == nil {
+		return copyModeState{}, false
+	}
+	state, ok := m.copyModes[paneID]
+	if !ok || state.PaneID == "" {
+		return copyModeState{}, false
+	}
+	return state, true
+}
+
+func (m *Model) saveCopyModeState(state copyModeState) {
+	if m == nil || state.PaneID == "" {
+		return
+	}
+	if m.copyModes == nil {
+		m.copyModes = make(map[string]copyModeState)
+	}
+	m.copyModes[state.PaneID] = state
+	if pane := m.workbenchActivePane(); pane != nil && pane.ID == state.PaneID {
+		m.copyMode = state
+		return
+	}
+	if m.copyMode.PaneID == state.PaneID {
+		m.copyMode = state
+	}
+}
+
+func (m *Model) saveCurrentCopyModeState() {
+	if m == nil || m.copyMode.PaneID == "" {
+		return
+	}
+	m.saveCopyModeState(m.copyMode)
+}
+
+func (m *Model) loadCopyModeStateForPane(paneID string) bool {
+	state, ok := m.copyModeStateForPane(paneID)
+	if !ok {
+		return false
+	}
+	m.copyMode = state
+	return true
+}
+
+func (m *Model) loadActiveCopyModeState() bool {
+	pane := m.workbenchActivePane()
+	if pane == nil {
+		return false
+	}
+	return m.loadCopyModeStateForPane(pane.ID)
+}
+
+func (m *Model) deleteCopyModeStateForPane(paneID string) {
+	if m == nil || paneID == "" {
+		return
+	}
+	if m.copyModes != nil {
+		delete(m.copyModes, paneID)
+	}
+	if m.copyMode.PaneID == paneID {
+		m.copyMode = copyModeState{}
+		if pane := m.workbenchActivePane(); pane != nil && pane.ID != paneID {
+			_ = m.loadCopyModeStateForPane(pane.ID)
+		}
+	}
+}
+
+func (m *Model) workbenchActivePane() *workbench.PaneState {
+	if m == nil || m.workbench == nil {
+		return nil
+	}
+	return m.workbench.ActivePane()
+}
+
+func (m *Model) allCopyModeStates() []copyModeState {
+	if m == nil {
+		return nil
+	}
+	statesByPane := make(map[string]copyModeState)
+	if m.copyModes != nil {
+		for paneID, state := range m.copyModes {
+			if paneID != "" && state.PaneID != "" {
+				statesByPane[paneID] = state
+			}
+		}
+	}
+	if m.copyMode.PaneID != "" {
+		statesByPane[m.copyMode.PaneID] = m.copyMode
+	}
+	if len(statesByPane) == 0 {
+		return nil
+	}
+	paneIDs := make([]string, 0, len(statesByPane))
+	for paneID := range statesByPane {
+		paneIDs = append(paneIDs, paneID)
+	}
+	sort.Strings(paneIDs)
+	out := make([]copyModeState, 0, len(paneIDs))
+	for _, paneID := range paneIDs {
+		out = append(out, statesByPane[paneID])
+	}
+	return out
 }
 
 func (m *Model) clearCopySelection() {
@@ -102,24 +229,32 @@ func (m *Model) clearCopySelection() {
 	}
 	m.copyMode.Mark = nil
 	m.stopMouseCopySelection()
+	m.saveCurrentCopyModeState()
 }
 
 func (m *Model) reconcileCopyModeContext() {
-	if m == nil || m.workbench == nil || m.copyMode.PaneID == "" {
+	if m == nil || m.workbench == nil {
 		return
 	}
-	pane := m.workbench.ActivePane()
-	if pane != nil && pane.ID == m.copyMode.PaneID {
-		return
+	changed := false
+	for _, state := range m.allCopyModeStates() {
+		tabID, err := m.workbench.ResolvePaneTab("", state.PaneID)
+		if err == nil && tabID != "" {
+			continue
+		}
+		m.resetPaneViewport(state.PaneID)
+		m.deleteCopyModeStateForPane(state.PaneID)
+		changed = true
 	}
-	m.resetPaneViewport(m.copyMode.PaneID)
-	m.clearCopySelection()
-	m.resetCopyMode()
-	m.copyModeResume = copyModeResumeState{}
-	if m.mode().Kind == input.ModeDisplay {
+	if m.copyMode.PaneID == "" {
+		m.copyModeResume = copyModeResumeState{}
+	}
+	if changed && m.mode().Kind == input.ModeDisplay && !m.activePaneInCopyMode() {
 		m.setMode(input.ModeState{Kind: input.ModeNormal})
 	}
-	m.render.Invalidate()
+	if changed {
+		m.render.Invalidate()
+	}
 }
 
 func (m *Model) prepareCopyModeExit() {
@@ -181,8 +316,18 @@ func (m *Model) leaveCopyMode() {
 	if m == nil {
 		return
 	}
-	m.resetPaneViewport(m.copyMode.PaneID)
-	m.resetCopyMode()
+	if m.copyMode.PaneID == "" {
+		_ = m.loadActiveCopyModeState()
+	}
+	paneID := m.copyMode.PaneID
+	if active := m.workbenchActivePane(); active != nil {
+		if state, ok := m.copyModeStateForPane(active.ID); ok {
+			m.copyMode = state
+			paneID = state.PaneID
+		}
+	}
+	m.resetPaneViewport(paneID)
+	m.deleteCopyModeStateForPane(paneID)
 	m.render.Invalidate()
 }
 
@@ -196,8 +341,9 @@ func (m *Model) ensureCopyMode() bool {
 		return false
 	}
 	if m.copyMode.PaneID != "" && m.copyMode.PaneID != pane.ID {
-		return false
+		m.saveCurrentCopyModeState()
 	}
+	_ = m.loadCopyModeStateForPane(pane.ID)
 	if m.copyMode.PaneID == pane.ID {
 		buffer, ok := m.activeCopyModeBuffer()
 		if !ok || buffer.totalRows() == 0 {
@@ -219,9 +365,10 @@ func (m *Model) ensureCopyMode() bool {
 			m.copyMode.Mark = &point
 		}
 		m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
+		m.saveCurrentCopyModeState()
 		return true
 	}
-	liveBuffer, ok := m.activeLiveCopyModeBuffer()
+	liveBuffer, ok := m.liveCopyModeBufferForPane(pane.ID)
 	if !ok || liveBuffer.totalRows() == 0 {
 		return false
 	}
@@ -243,6 +390,7 @@ func (m *Model) ensureCopyMode() bool {
 		Cursor:     start,
 	}
 	m.syncCopyModeViewport(buffer, start)
+	m.saveCurrentCopyModeState()
 	return true
 }
 
@@ -251,42 +399,62 @@ func (m *Model) adjustCopyModeAfterSnapshotLoaded(terminalID string, snapshot *p
 }
 
 func (m *Model) snapshotPageTargetsActiveCopyMode(terminalID string) bool {
-	if m == nil || terminalID == "" || m.copyMode.PaneID == "" || m.workbench == nil || m.copyMode.Snapshot == nil {
+	return m.snapshotPageTargetsAnyCopyMode(terminalID)
+}
+
+func (m *Model) snapshotPageTargetsAnyCopyMode(terminalID string) bool {
+	if m == nil || terminalID == "" || m.workbench == nil {
 		return false
 	}
-	pane := m.workbench.ActivePane()
-	return pane != nil && pane.ID == m.copyMode.PaneID && pane.TerminalID == terminalID
+	for _, state := range m.allCopyModeStates() {
+		if state.Snapshot == nil {
+			continue
+		}
+		pane, _, ok := m.copyModePaneAndContentRect(state.PaneID)
+		if ok && pane != nil && pane.TerminalID == terminalID {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Model) adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID string, snapshot *protocol.Snapshot, offset int) {
-	if m == nil || terminalID == "" || m.copyMode.PaneID == "" || m.workbench == nil {
+	if m == nil || terminalID == "" || m.workbench == nil {
 		return
 	}
-	pane := m.workbench.ActivePane()
-	if pane == nil || pane.ID != m.copyMode.PaneID || pane.TerminalID != terminalID {
-		return
-	}
-	if m.copyMode.Snapshot != nil {
-		m.extendFrozenCopyModeSnapshot(snapshot, offset)
-		return
-	}
-	buffer, ok := m.activeCopyModeBuffer()
-	if !ok {
-		return
-	}
-	if delta := len(buffer.snapshot.Scrollback) - m.copyMode.LoadedRows; delta > 0 {
-		m.copyMode.ViewTopRow += delta
-		m.copyMode.Cursor.Row += delta
-		m.copyMode.Cursor = buffer.clampPoint(m.copyMode.Cursor)
-		if m.copyMode.Mark != nil {
-			point := *m.copyMode.Mark
-			point.Row += delta
-			point = buffer.clampPoint(point)
-			m.copyMode.Mark = &point
+	originalPaneID := m.copyMode.PaneID
+	for _, state := range m.allCopyModeStates() {
+		pane, _, ok := m.copyModePaneAndContentRect(state.PaneID)
+		if !ok || pane == nil || pane.ID != state.PaneID || pane.TerminalID != terminalID {
+			continue
 		}
+		m.copyMode = state
+		if m.copyMode.Snapshot != nil {
+			m.extendFrozenCopyModeSnapshot(snapshot, offset)
+			continue
+		}
+		buffer, ok := m.activeCopyModeBuffer()
+		if !ok {
+			continue
+		}
+		if delta := len(buffer.snapshot.Scrollback) - m.copyMode.LoadedRows; delta > 0 {
+			m.copyMode.ViewTopRow += delta
+			m.copyMode.Cursor.Row += delta
+			m.copyMode.Cursor = buffer.clampPoint(m.copyMode.Cursor)
+			if m.copyMode.Mark != nil {
+				point := *m.copyMode.Mark
+				point.Row += delta
+				point = buffer.clampPoint(point)
+				m.copyMode.Mark = &point
+			}
+		}
+		m.copyMode.LoadedRows = len(buffer.snapshot.Scrollback)
+		m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
+		m.saveCurrentCopyModeState()
 	}
-	m.copyMode.LoadedRows = len(buffer.snapshot.Scrollback)
-	m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
+	if originalPaneID != "" {
+		_ = m.loadCopyModeStateForPane(originalPaneID)
+	}
 }
 
 func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset int) {
@@ -341,6 +509,7 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 		m.copyMode.Mark = &point
 	}
 	m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
+	m.saveCurrentCopyModeState()
 }
 
 func (m *Model) pasteBufferToActiveCmd() tea.Cmd {

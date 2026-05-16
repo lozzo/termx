@@ -54,6 +54,7 @@ type RenderBodyVM struct {
 	ExitedSelection     RenderPaneSelectionVM
 	SnapshotOverride    RenderSnapshotOverrideVM
 	CopyMode            RenderCopyModeVM
+	CopyModes           []RenderCopyModeVM
 	FloatingDragPreview RenderFloatingDragPreviewVM
 }
 
@@ -160,6 +161,22 @@ func WithRenderPaneSnapshotOverride(vm RenderVM, paneID string, snapshot *protoc
 
 func WithRenderCopyMode(vm RenderVM, copyMode RenderCopyModeVM) RenderVM {
 	vm.Body.CopyMode = copyMode
+	if copyMode.PaneID == "" {
+		vm.Body.CopyModes = nil
+	} else {
+		vm.Body.CopyModes = []RenderCopyModeVM{copyMode}
+	}
+	return vm
+}
+
+func WithRenderCopyModes(vm RenderVM, copyModes []RenderCopyModeVM) RenderVM {
+	if len(copyModes) == 0 {
+		vm.Body.CopyMode = RenderCopyModeVM{}
+		vm.Body.CopyModes = nil
+		return vm
+	}
+	vm.Body.CopyModes = append([]RenderCopyModeVM(nil), copyModes...)
+	vm.Body.CopyMode = vm.Body.CopyModes[0]
 	return vm
 }
 
@@ -294,10 +311,17 @@ func RenderVMFromVisibleState(state VisibleRenderState) RenderVM {
 			},
 		},
 	}
+	if vm.Body.CopyMode.PaneID != "" {
+		vm.Body.CopyModes = []RenderCopyModeVM{vm.Body.CopyMode}
+	}
 	return vm
 }
 
 func VisibleStateFromRenderVM(vm RenderVM) VisibleRenderState {
+	copyMode := vm.Body.CopyMode
+	if copyMode.PaneID == "" && len(vm.Body.CopyModes) > 0 {
+		copyMode = vm.Body.CopyModes[0]
+	}
 	return VisibleRenderState{
 		Workbench: vm.Workbench,
 		Runtime:   vm.Runtime,
@@ -327,13 +351,13 @@ func VisibleStateFromRenderVM(vm RenderVM) VisibleRenderState {
 		ExitedPaneSelectionIndex:   vm.Body.ExitedSelection.Index,
 		PaneSnapshotOverridePaneID: vm.Body.SnapshotOverride.PaneID,
 		PaneSnapshotOverride:       vm.Body.SnapshotOverride.Snapshot,
-		CopyModePaneID:             vm.Body.CopyMode.PaneID,
-		CopyModeCursorRow:          vm.Body.CopyMode.CursorRow,
-		CopyModeCursorCol:          vm.Body.CopyMode.CursorCol,
-		CopyModeViewTopRow:         vm.Body.CopyMode.ViewTopRow,
-		CopyModeMarkSet:            vm.Body.CopyMode.MarkSet,
-		CopyModeMarkRow:            vm.Body.CopyMode.MarkRow,
-		CopyModeMarkCol:            vm.Body.CopyMode.MarkCol,
-		CopyModeSnapshot:           vm.Body.CopyMode.Snapshot,
+		CopyModePaneID:             copyMode.PaneID,
+		CopyModeCursorRow:          copyMode.CursorRow,
+		CopyModeCursorCol:          copyMode.CursorCol,
+		CopyModeViewTopRow:         copyMode.ViewTopRow,
+		CopyModeMarkSet:            copyMode.MarkSet,
+		CopyModeMarkRow:            copyMode.MarkRow,
+		CopyModeMarkCol:            copyMode.MarkCol,
+		CopyModeSnapshot:           copyMode.Snapshot,
 	}
 }

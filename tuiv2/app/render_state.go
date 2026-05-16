@@ -13,7 +13,7 @@ func (m *Model) renderVM() render.RenderVM {
 	vm = render.WithRenderTermSize(vm, m.width, m.height)
 	vm = render.WithRenderChromeConfig(vm, m.chromeConfig())
 	vm = render.WithRenderThemeConfig(vm, m.theme)
-	vm = render.WithRenderStatus(vm, m.notice, renderErrorText(m.err), string(m.visibleInputMode()))
+	vm = render.WithRenderStatus(vm, m.notice, renderErrorText(m.err), string(m.effectiveInputMode()))
 	vm.Body.OwnerConfirmPaneID = m.ownerConfirmPaneID
 	if paneID, selected, ok := m.currentEmptyPaneSelection(); ok {
 		vm = render.WithRenderEmptyPaneSelection(vm, paneID, selected)
@@ -24,20 +24,8 @@ func (m *Model) renderVM() render.RenderVM {
 	if paneID, snapshot, ok := m.activeCopyModeResumeSnapshot(); ok {
 		vm = render.WithRenderPaneSnapshotOverride(vm, paneID, snapshot)
 	}
-	if m.copyMode.PaneID != "" {
-		copyMode := render.RenderCopyModeVM{
-			PaneID:     m.copyMode.PaneID,
-			CursorRow:  m.copyMode.Cursor.Row,
-			CursorCol:  m.copyMode.Cursor.Col,
-			ViewTopRow: m.copyMode.ViewTopRow,
-			Snapshot:   m.copyMode.Snapshot,
-		}
-		if m.copyMode.Mark != nil {
-			copyMode.MarkSet = true
-			copyMode.MarkRow = m.copyMode.Mark.Row
-			copyMode.MarkCol = m.copyMode.Mark.Col
-		}
-		vm = render.WithRenderCopyMode(vm, copyMode)
+	if copyModes := m.renderCopyModeVMs(); len(copyModes) > 0 {
+		vm = render.WithRenderCopyModes(vm, copyModes)
 	}
 	vm = render.AttachRenderTerminalPool(vm, m.terminalPage)
 	vm = render.AttachRenderModalHost(vm, m.modalHost)
@@ -45,11 +33,38 @@ func (m *Model) renderVM() render.RenderVM {
 	return render.WithRenderStatusRightTokens(vm, m.buildStatusBarRightTokens(vm))
 }
 
+func (m *Model) renderCopyModeVMs() []render.RenderCopyModeVM {
+	if m == nil {
+		return nil
+	}
+	states := m.allCopyModeStates()
+	if len(states) == 0 {
+		return nil
+	}
+	out := make([]render.RenderCopyModeVM, 0, len(states))
+	for _, state := range states {
+		copyMode := render.RenderCopyModeVM{
+			PaneID:     state.PaneID,
+			CursorRow:  state.Cursor.Row,
+			CursorCol:  state.Cursor.Col,
+			ViewTopRow: state.ViewTopRow,
+			Snapshot:   state.Snapshot,
+		}
+		if state.Mark != nil {
+			copyMode.MarkSet = true
+			copyMode.MarkRow = state.Mark.Row
+			copyMode.MarkCol = state.Mark.Col
+		}
+		out = append(out, copyMode)
+	}
+	return out
+}
+
 func (m *Model) visibleInputMode() string {
 	if m == nil || m.ui == nil {
 		return ""
 	}
-	return string(m.ui.VisibleInputMode())
+	return string(m.effectiveInputMode())
 }
 
 func (m *Model) withLiveSurfaceForSplitDragPreview(vm render.RenderVM) render.RenderVM {

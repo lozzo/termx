@@ -64,7 +64,7 @@ func (m *Model) handleDisplayAndViewportLocalAction(action input.SemanticAction)
 		}
 		return true, nil
 	case input.ActionPasteBuffer:
-		if m.mode().Kind != input.ModeDisplay {
+		if m.effectiveInputMode() != input.ModeDisplay {
 			return false, nil
 		}
 		m.leaveCopyMode()
@@ -72,7 +72,7 @@ func (m *Model) handleDisplayAndViewportLocalAction(action input.SemanticAction)
 		m.render.Invalidate()
 		return true, m.pasteBufferToActiveCmd()
 	case input.ActionPasteClipboard:
-		if m.mode().Kind != input.ModeDisplay {
+		if m.effectiveInputMode() != input.ModeDisplay {
 			return false, nil
 		}
 		m.leaveCopyMode()
@@ -80,7 +80,7 @@ func (m *Model) handleDisplayAndViewportLocalAction(action input.SemanticAction)
 		m.render.Invalidate()
 		return true, m.pasteClipboardToActiveCmd()
 	case input.ActionOpenClipboardHistory:
-		if m.mode().Kind != input.ModeDisplay {
+		if m.effectiveInputMode() != input.ModeDisplay {
 			return false, nil
 		}
 		return true, m.openClipboardHistory()

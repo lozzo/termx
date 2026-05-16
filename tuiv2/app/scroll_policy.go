@@ -33,7 +33,7 @@ func (m *Model) resolveMouseWheelPolicy(msg tea.MouseMsg, repeat int) scrollPoli
 		decision.Cmd = cmd
 		return decision
 	}
-	if m.mode().Kind == input.ModeDisplay {
+	if m.effectiveInputMode() == input.ModeDisplay {
 		decision.Kind = scrollPolicyCopyModeMove
 		decision.Cmd = m.moveCopyCursorVertical(-delta)
 		return decision

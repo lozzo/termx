@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -248,7 +249,7 @@ func TestCopyModeKeyboardSelectionCopiesOSC52(t *testing.T) {
 	}
 }
 
-func TestCopyModeMouseSwitchPaneClearsDisplayState(t *testing.T) {
+func TestCopyModeMouseSwitchPanePreservesHistoryPaneAndUpdatesActiveShortcuts(t *testing.T) {
 	model := setupSplitCopyModeModel(t)
 	seedCopyModeSnapshotForTerminal(t, model, "term-1", []string{"hist-left"}, []string{"live-left"})
 	seedCopyModeSnapshotForTerminal(t, model, "term-2", []string{"hist-right"}, []string{"live-right"})
@@ -289,14 +290,110 @@ func TestCopyModeMouseSwitchPaneClearsDisplayState(t *testing.T) {
 	if pane := model.workbench.ActivePane(); pane == nil || pane.ID != "pane-2" {
 		t.Fatalf("expected pane-2 focused after click, got %#v", pane)
 	}
-	if got := model.input.Mode().Kind; got != input.ModeNormal {
-		t.Fatalf("expected pane switch to leave display mode, got %q", got)
+	if got := model.effectiveInputMode(); got != input.ModeNormal {
+		t.Fatalf("expected active pane shortcuts to return to normal mode, got %q", got)
 	}
-	if got := model.copyMode.PaneID; got != "" {
-		t.Fatalf("expected pane switch to clear copy mode binding, got %q", got)
+	vm := model.renderVM()
+	if got := vm.Status.InputMode; got != string(input.ModeNormal) {
+		t.Fatalf("expected rendered status mode to follow active pane, got %q", got)
 	}
-	if model.copyMode.Mark != nil {
-		t.Fatalf("expected pane switch to clear copy mode selection, got %#v", model.copyMode.Mark)
+	hints := strings.Join(vm.Status.Hints, " ")
+	if !strings.Contains(hints, "P PANE") {
+		t.Fatalf("expected normal-mode shortcuts for active pane, got %#v", vm.Status.Hints)
+	}
+	if strings.Contains(hints, "MOVE CURSOR") {
+		t.Fatalf("expected inactive history pane not to drive copy-mode shortcuts, got %#v", vm.Status.Hints)
+	}
+	if got := model.copyMode.PaneID; got != "pane-1" {
+		t.Fatalf("expected inactive pane to keep copy mode binding, got %q", got)
+	}
+	if model.copyMode.Mark == nil {
+		t.Fatal("expected inactive pane to keep copy-mode selection")
+	}
+	view := xansi.Strip(model.View())
+	if !strings.Contains(view, "hist-left") {
+		t.Fatalf("expected inactive history pane to stay rendered, got:\n%s", view)
+	}
+
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlP))
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyEsc})
+	if got := model.copyMode.PaneID; got != "pane-1" {
+		t.Fatalf("expected transient active-pane modes to preserve inactive copy mode, got %q", got)
+	}
+	if got := model.effectiveInputMode(); got != input.ModeNormal {
+		t.Fatalf("expected inactive history pane not to affect shortcuts after mode exit, got %q", got)
+	}
+
+	client := model.runtime.Client().(*recordingBridgeClient)
+	dispatchKey(t, model, runeKeyMsg('x'))
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected active pane key input to be forwarded, got %#v", client.inputCalls)
+	}
+	if client.inputCalls[0].channel != 2 || string(client.inputCalls[0].data) != "x" {
+		t.Fatalf("expected key input on pane-2 channel, got %#v", client.inputCalls[0])
+	}
+
+	if err := model.workbench.FocusPane("tab-1", "pane-1"); err != nil {
+		t.Fatalf("refocus pane-1: %v", err)
+	}
+	if got := model.effectiveInputMode(); got != input.ModeDisplay {
+		t.Fatalf("expected refocused history pane to restore copy shortcuts, got %q", got)
+	}
+	vm = model.renderVM()
+	if got := vm.Status.InputMode; got != string(input.ModeDisplay) {
+		t.Fatalf("expected status mode to restore display for history pane, got %q", got)
+	}
+	hints = strings.Join(vm.Status.Hints, " ")
+	if !strings.Contains(hints, "MOVE CURSOR") {
+		t.Fatalf("expected copy-mode shortcuts after refocus, got %#v", vm.Status.Hints)
+	}
+}
+
+func TestCopyModeSupportsTwoPanesAndScrollsActivePaneWithoutBlankingEither(t *testing.T) {
+	model := setupSplitCopyModeModel(t)
+	seedCopyModeSnapshotForTerminal(t, model, "term-1", []string{"hist-left-0", "hist-left-1", "hist-left-2"}, []string{"live-left"})
+	seedCopyModeSnapshotForTerminal(t, model, "term-2", []string{"hist-right-0", "hist-right-1", "hist-right-2"}, []string{"live-right"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+	if _, ok := model.copyModeStateForPane("pane-1"); !ok {
+		t.Fatal("expected pane-1 copy mode")
+	}
+
+	if err := model.workbench.FocusPane("tab-1", "pane-2"); err != nil {
+		t.Fatalf("focus pane-2: %v", err)
+	}
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+	if _, ok := model.copyModeStateForPane("pane-2"); !ok {
+		t.Fatal("expected pane-2 copy mode")
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeCursorDown})
+
+	pane1, ok := model.copyModeStateForPane("pane-1")
+	if !ok || pane1.Snapshot == nil {
+		t.Fatalf("expected pane-1 copy mode to keep frozen snapshot, got %#v ok=%v", pane1, ok)
+	}
+	pane2, ok := model.copyModeStateForPane("pane-2")
+	if !ok || pane2.Snapshot == nil {
+		t.Fatalf("expected pane-2 copy mode to keep frozen snapshot, got %#v ok=%v", pane2, ok)
+	}
+	if pane2.Cursor.Row <= 0 {
+		t.Fatalf("expected pane-2 scroll action to move its copy cursor, got %#v", pane2.Cursor)
+	}
+	vm := model.renderVM()
+	if got := len(vm.Body.CopyModes); got != 2 {
+		t.Fatalf("expected render vm to carry both copy modes, got %d (%#v)", got, vm.Body.CopyModes)
+	}
+	view := xansi.Strip(model.View())
+	for _, want := range []string{"hist-left", "hist-right"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected view to keep %q visible after active copy scroll:\n%s", want, view)
+		}
+	}
+	if got := model.effectiveInputMode(); got != input.ModeDisplay {
+		t.Fatalf("expected active copy pane shortcuts, got %q", got)
 	}
 }
 
@@ -973,7 +1070,7 @@ func TestClipboardHistoryPickerPastesSelectedEntry(t *testing.T) {
 	if model.modalHost == nil || model.modalHost.Picker == nil {
 		t.Fatal("expected clipboard history picker")
 	}
-	model.modalHost.Picker.Selected = 1
+	model.modalHost.Picker.Selected = 2
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
 
@@ -986,6 +1083,306 @@ func TestClipboardHistoryPickerPastesSelectedEntry(t *testing.T) {
 	}
 	if got := model.input.Mode().Kind; got != input.ModeNormal {
 		t.Fatalf("expected history paste to return to normal mode, got %q", got)
+	}
+}
+
+func TestClipboardHistoryCopyPersistsToDaemonPublicStorage(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{client: client, width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"alpha"}, []string{"live0"})
+	writer := &recordingControlWriter{}
+	model.SetCursorWriter(writer)
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeBeginSelection})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeCursorRight})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeCopySelectionExit})
+
+	if len(client.storagePutCalls) != 1 {
+		t.Fatalf("expected one clipboard storage put, got %#v", client.storagePutCalls)
+	}
+	put := client.storagePutCalls[0]
+	if put.AppID != clipboardHistoryStorageAppID || put.Scope != protocol.StorageScopePublic || put.OwnerID != "" {
+		t.Fatalf("expected public clipboard storage put, got %#v", put)
+	}
+	if !strings.HasPrefix(put.Key, clipboardHistoryStoragePrefix) {
+		t.Fatalf("expected clipboard history key prefix, got %q", put.Key)
+	}
+	var record clipboardHistoryRecord
+	if err := json.Unmarshal(put.Value, &record); err != nil {
+		t.Fatalf("decode stored clipboard record: %v", err)
+	}
+	if record.SchemaVersion != clipboardHistoryRecordVersion || record.Text != "al" || record.PaneID != "pane-1" || record.SourceApp != "tuiv2" {
+		t.Fatalf("unexpected stored clipboard record: %#v", record)
+	}
+	if len(client.storageListCalls) == 0 || client.storageListCalls[0].AppID != clipboardHistoryStorageAppID || client.storageListCalls[0].Prefix != clipboardHistoryStoragePrefix {
+		t.Fatalf("expected prune to list clipboard history, got %#v", client.storageListCalls)
+	}
+}
+
+func TestClipboardHistoryPickerLoadsDaemonPublicStorage(t *testing.T) {
+	createdAt := time.Date(2026, 5, 16, 10, 30, 0, 0, time.UTC)
+	value, err := json.Marshal(clipboardHistoryRecord{
+		SchemaVersion: clipboardHistoryRecordVersion,
+		ID:            "shared-1",
+		Text:          "from daemon",
+		PaneID:        "remote-app",
+		CreatedAt:     createdAt,
+	})
+	if err != nil {
+		t.Fatalf("encode clipboard record: %v", err)
+	}
+	key := clipboardHistoryStorageKey("shared-1")
+	client := &recordingBridgeClient{
+		storageEntries: map[string]protocol.StorageEntry{
+			key: {
+				AppID:     clipboardHistoryStorageAppID,
+				Scope:     protocol.StorageScopePublic,
+				Key:       key,
+				Value:     value,
+				UpdatedAt: createdAt,
+			},
+		},
+	}
+	model := setupModel(t, modelOpts{client: client, width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenClipboardHistory})
+
+	if got := model.input.Mode().Kind; got != input.ModePicker {
+		t.Fatalf("expected clipboard history picker mode, got %q", got)
+	}
+	if got := model.yankBuffer; got != "from daemon" {
+		t.Fatalf("expected loaded storage entry to become paste buffer, got %q", got)
+	}
+	view := xansi.Strip(model.View())
+	if !strings.Contains(view, "from daemon") {
+		t.Fatalf("expected storage-backed history in picker:\n%s", view)
+	}
+	if len(client.storageListCalls) == 0 || client.storageListCalls[0].AppID != clipboardHistoryStorageAppID || client.storageListCalls[0].Scope != protocol.StorageScopePublic {
+		t.Fatalf("expected public storage list, got %#v", client.storageListCalls)
+	}
+}
+
+func TestClipboardHistoryStoreSupportsCRUDOnDaemonPublicStorage(t *testing.T) {
+	client := &recordingBridgeClient{}
+	store := newClipboardHistoryStoreFromClient(client)
+	if store == nil {
+		t.Fatal("expected storage-backed clipboard history store")
+	}
+	entry := clipboardHistoryEntry{
+		ID:        "crud-1",
+		Text:      "shared value",
+		PaneID:    "pane-a",
+		CreatedAt: time.Date(2026, 5, 16, 11, 0, 0, 0, time.UTC),
+	}
+	if err := store.Put(context.Background(), entry); err != nil {
+		t.Fatalf("put clipboard entry: %v", err)
+	}
+	got, err := store.Get(context.Background(), entry.ID)
+	if err != nil {
+		t.Fatalf("get clipboard entry: %v", err)
+	}
+	if got.ID != entry.ID || got.Text != entry.Text || got.PaneID != entry.PaneID {
+		t.Fatalf("unexpected get result: %#v", got)
+	}
+	listed, err := store.List(context.Background())
+	if err != nil {
+		t.Fatalf("list clipboard entries: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != entry.ID {
+		t.Fatalf("unexpected list result: %#v", listed)
+	}
+	if err := store.Delete(context.Background(), entry.ID); err != nil {
+		t.Fatalf("delete clipboard entry: %v", err)
+	}
+	listed, err = store.List(context.Background())
+	if err != nil {
+		t.Fatalf("list after delete: %v", err)
+	}
+	if len(listed) != 0 {
+		t.Fatalf("expected deleted entry to disappear, got %#v", listed)
+	}
+	if len(client.storageGetCalls) != 1 || client.storageGetCalls[0].Scope != protocol.StorageScopePublic {
+		t.Fatalf("expected public storage get, got %#v", client.storageGetCalls)
+	}
+	if len(client.storageDeleteCalls) != 1 || client.storageDeleteCalls[0].Key != clipboardHistoryStorageKey(entry.ID) {
+		t.Fatalf("expected storage delete by clipboard key, got %#v", client.storageDeleteCalls)
+	}
+}
+
+func TestClipboardHistoryPickerCreatesEntryInPublicStorage(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{client: client, width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenClipboardHistory})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
+
+	if model.modalHost == nil || model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModePrompt {
+		t.Fatalf("expected create clipboard prompt, got %#v", model.modalHost)
+	}
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-clipboard-entry" {
+		t.Fatalf("expected create-clipboard-entry prompt, got %#v", model.modalHost.Prompt)
+	}
+	model.modalHost.Prompt.Value = "manual clip"
+	model.modalHost.Prompt.Cursor = len([]rune(model.modalHost.Prompt.Value))
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
+
+	if got := model.input.Mode().Kind; got != input.ModePicker {
+		t.Fatalf("expected create submit to return to clipboard picker, got %q", got)
+	}
+	if len(client.storagePutCalls) != 1 {
+		t.Fatalf("expected created clipboard entry to be stored, got %#v", client.storagePutCalls)
+	}
+	var record clipboardHistoryRecord
+	if err := json.Unmarshal(client.storagePutCalls[0].Value, &record); err != nil {
+		t.Fatalf("decode stored clipboard record: %v", err)
+	}
+	if record.Text != "manual clip" || record.SourceApp != "tuiv2" || client.storagePutCalls[0].Scope != protocol.StorageScopePublic {
+		t.Fatalf("unexpected stored clipboard entry: put=%#v record=%#v", client.storagePutCalls[0], record)
+	}
+	view := xansi.Strip(model.View())
+	for _, want := range []string{"Clipboard History", "manual clip", "New clipboard entry"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected clipboard picker to contain %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestClipboardHistoryPickerEditsEntryInPublicStorage(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{client: client, width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+	model.clipboardHistory = []clipboardHistoryEntry{normalizeClipboardHistoryEntry(clipboardHistoryEntry{
+		ID:        "clip-edit",
+		Text:      "old value",
+		PaneID:    "pane-1",
+		CreatedAt: time.Date(2026, 5, 16, 11, 5, 0, 0, time.UTC),
+	})}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenClipboardHistory})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEditTerminal})
+
+	if model.modalHost == nil || model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModePrompt {
+		t.Fatalf("expected edit clipboard prompt, got %#v", model.modalHost)
+	}
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "edit-clipboard-entry" || model.modalHost.Prompt.TerminalID != "clip-edit" {
+		t.Fatalf("unexpected edit prompt: %#v", model.modalHost.Prompt)
+	}
+	model.modalHost.Prompt.Value = "updated value"
+	model.modalHost.Prompt.Cursor = len([]rune(model.modalHost.Prompt.Value))
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
+
+	if got := model.input.Mode().Kind; got != input.ModePicker {
+		t.Fatalf("expected edit submit to return to clipboard picker, got %q", got)
+	}
+	if len(client.storagePutCalls) != 1 || client.storagePutCalls[0].Key != clipboardHistoryStorageKey("clip-edit") {
+		t.Fatalf("expected edited clipboard entry to be stored at same key, got %#v", client.storagePutCalls)
+	}
+	entry := model.clipboardHistoryEntryByID("clip-edit")
+	if entry == nil || entry.Text != "updated value" {
+		t.Fatalf("expected in-memory clipboard entry to update, got %#v", entry)
+	}
+	view := xansi.Strip(model.View())
+	if !strings.Contains(view, "updated value") || strings.Contains(view, "old value") {
+		t.Fatalf("expected updated clipboard picker view:\n%s", view)
+	}
+}
+
+func TestClipboardHistoryPickerDeletesEntryFromPublicStorage(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{client: client, width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+	model.clipboardHistory = []clipboardHistoryEntry{normalizeClipboardHistoryEntry(clipboardHistoryEntry{
+		ID:        "clip-delete",
+		Text:      "delete me",
+		PaneID:    "pane-1",
+		CreatedAt: time.Date(2026, 5, 16, 11, 10, 0, 0, time.UTC),
+	})}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenClipboardHistory})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionRemoveTerminal})
+
+	if got := model.input.Mode().Kind; got != input.ModePicker {
+		t.Fatalf("expected delete to keep clipboard picker open, got %q", got)
+	}
+	if len(client.storageDeleteCalls) != 1 || client.storageDeleteCalls[0].Key != clipboardHistoryStorageKey("clip-delete") {
+		t.Fatalf("expected clipboard storage delete, got %#v", client.storageDeleteCalls)
+	}
+	if entry := model.clipboardHistoryEntryByID("clip-delete"); entry != nil {
+		t.Fatalf("expected deleted entry to leave memory, got %#v", entry)
+	}
+	view := xansi.Strip(model.View())
+	for _, want := range []string{"Clipboard history is empty", "New clipboard entry"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected clipboard picker to contain %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "delete me") {
+		t.Fatalf("expected deleted text to disappear:\n%s", view)
+	}
+}
+
+func TestClipboardHistoryPickerIgnoresEmptyStateSubmit(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenClipboardHistory})
+	model.modalHost.Picker.Selected = 1
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
+
+	if got := model.input.Mode().Kind; got != input.ModePicker {
+		t.Fatalf("expected empty state submit to keep picker open, got %q", got)
+	}
+	if model.err != nil {
+		t.Fatalf("expected empty state submit not to set error, got %v", model.err)
+	}
+}
+
+func TestClipboardHistoryPromptCancelReturnsToPicker(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenClipboardHistory})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCancelMode})
+
+	if got := model.input.Mode().Kind; got != input.ModePicker {
+		t.Fatalf("expected cancel to return to clipboard picker, got %q", got)
+	}
+	if model.modalHost == nil || model.modalHost.Session == nil || model.modalHost.Session.RequestID != clipboardHistoryRequestID() || model.modalHost.Picker == nil {
+		t.Fatalf("expected clipboard picker restored, got %#v", model.modalHost)
+	}
+}
+
+func TestClipboardHistoryPickerStatusHintsUseClipboardActions(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+	model.pushClipboardHistory("first entry", "pane-1")
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenClipboardHistory})
+
+	hints := strings.Join(model.renderVM().Status.Hints, " ")
+	for _, want := range []string{"Enter PASTE/NEW", "Ctrl-E EDIT", "Ctrl-X DELETE"} {
+		if !strings.Contains(hints, want) {
+			t.Fatalf("expected clipboard status hint %q in %#v", want, model.renderVM().Status.Hints)
+		}
+	}
+	for _, forbidden := range []string{"Tab SPLIT", "Ctrl-K KILL", "Enter HERE"} {
+		if strings.Contains(hints, forbidden) {
+			t.Fatalf("clipboard picker should not show terminal hint %q in %#v", forbidden, model.renderVM().Status.Hints)
+		}
 	}
 }
 
@@ -1019,7 +1416,7 @@ func TestClipboardHistoryPickerShowsEmptyState(t *testing.T) {
 		t.Fatalf("expected clipboard history picker mode, got %q", got)
 	}
 	view := xansi.Strip(model.View())
-	for _, want := range []string{"Clipboard History", "Clipboard history is empty", "copy text first"} {
+	for _, want := range []string{"Clipboard History", "New clipboard entry", "Clipboard history is empty", "copy text first"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected empty clipboard history overlay to contain %q:\n%s", want, view)
 		}

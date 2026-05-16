@@ -84,7 +84,7 @@ func (m *Model) localScrollbackWheelCmd(paneID string, delta int) tea.Cmd {
 	if m == nil || m.workbench == nil || paneID == "" || delta == 0 {
 		return nil
 	}
-	if m.mode().Kind == input.ModeDisplay {
+	if m.effectiveInputMode() == input.ModeDisplay {
 		return m.moveCopyCursorVertical(-delta)
 	}
 	if delta > 0 && m.ensureCopyMode() {
@@ -103,7 +103,7 @@ func (m *Model) terminalWheelInputForMouseMsg(msg tea.MouseMsg, delta, repeat in
 	if m == nil || m.workbench == nil {
 		return input.TerminalInput{}, false
 	}
-	if m.mode().Kind == input.ModeDisplay {
+	if m.effectiveInputMode() == input.ModeDisplay {
 		return input.TerminalInput{}, false
 	}
 	vm := m.renderVM()

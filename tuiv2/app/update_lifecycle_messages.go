@@ -52,6 +52,28 @@ func (m *Model) handleLifecycleMessage(msg tea.Msg) (tea.Cmd, bool) {
 	case terminalTitleMsg:
 		m.render.Invalidate()
 		return nil, true
+	case clipboardHistoryLoadedMsg:
+		if typed.Err == nil {
+			m.applyLoadedClipboardHistory(typed.Entries)
+		}
+		if typed.OpenPicker {
+			_ = m.showClipboardHistoryPicker()
+		}
+		if typed.Err != nil {
+			return m.showError(typed.Err), true
+		}
+		m.render.Invalidate()
+		return nil, true
+	case clipboardHistoryStoredMsg:
+		if typed.Err != nil {
+			return m.showError(typed.Err), true
+		}
+		return nil, true
+	case clipboardHistoryDeletedMsg:
+		if typed.Err != nil {
+			return m.showError(typed.Err), true
+		}
+		return nil, true
 	case error:
 		return m.showError(typed), true
 	default:

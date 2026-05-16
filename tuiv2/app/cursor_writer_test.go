@@ -6512,7 +6512,7 @@ func screenDiffError(got, want localvterm.ScreenData) error {
 	return nil
 }
 
-func TestOutputCursorWriterFrameLinesPathCopyModeScrollbackThenFocusSwitchClearsStaleState(t *testing.T) {
+func TestOutputCursorWriterFrameLinesPathCopyModeScrollbackThenFocusSwitchPreservesInactiveHistory(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
 	defer func() { directFrameBatchDelay = originalDelay }()
@@ -6624,8 +6624,12 @@ func TestOutputCursorWriterFrameLinesPathCopyModeScrollbackThenFocusSwitchClears
 	}
 	got := vt.ScreenContent()
 
-	// Build the expected screen: codex focused, no copy mode, fresh render
+	// Build the expected screen: codex focused, nvim still frozen in copy mode.
 	wantModel := buildModel()
+	dispatchAction(t, wantModel, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	for i := 0; i < 40; i++ {
+		wantModel.moveCopyCursorVertical(1)
+	}
 	if err := wantModel.workbench.FocusPane("tab-1", "pane-2"); err != nil {
 		t.Fatalf("FocusPane want: %v", err)
 	}

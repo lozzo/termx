@@ -1,9 +1,12 @@
 package render
 
 import (
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
@@ -95,6 +98,7 @@ type renderBodyKey struct {
 	ExitedSelection    RenderPaneSelectionVM
 	SnapshotOverride   RenderSnapshotOverrideVM
 	CopyMode           renderCopyModeKey
+	CopyModesSig       string
 }
 
 type renderCopyModeKey struct {
@@ -333,6 +337,10 @@ func (c *Coordinator) syntheticCursorVisible(_ protocol.CursorState) bool {
 
 func renderVMKeyForVM(vm RenderVM) renderVMKey {
 	chromeSig := normalizeUIChromeConfig(vm.Chrome).signature()
+	copyMode := vm.Body.CopyMode
+	if copyMode.PaneID == "" && len(vm.Body.CopyModes) > 0 {
+		copyMode = vm.Body.CopyModes[0]
+	}
 	return renderVMKey{
 		Workbench: vm.Workbench,
 		Runtime:   vm.Runtime,
@@ -355,17 +363,49 @@ func renderVMKeyForVM(vm RenderVM) renderVMKey {
 			ExitedSelection:    vm.Body.ExitedSelection,
 			SnapshotOverride:   vm.Body.SnapshotOverride,
 			CopyMode: renderCopyModeKey{
-				PaneID:     vm.Body.CopyMode.PaneID,
-				CursorRow:  vm.Body.CopyMode.CursorRow,
-				CursorCol:  vm.Body.CopyMode.CursorCol,
-				ViewTopRow: vm.Body.CopyMode.ViewTopRow,
-				MarkSet:    vm.Body.CopyMode.MarkSet,
-				MarkRow:    vm.Body.CopyMode.MarkRow,
-				MarkCol:    vm.Body.CopyMode.MarkCol,
-				Snapshot:   vm.Body.CopyMode.Snapshot,
+				PaneID:     copyMode.PaneID,
+				CursorRow:  copyMode.CursorRow,
+				CursorCol:  copyMode.CursorCol,
+				ViewTopRow: copyMode.ViewTopRow,
+				MarkSet:    copyMode.MarkSet,
+				MarkRow:    copyMode.MarkRow,
+				MarkCol:    copyMode.MarkCol,
+				Snapshot:   copyMode.Snapshot,
 			},
+			CopyModesSig: renderCopyModesSignature(vm.Body.CopyModes),
 		},
 	}
+}
+
+func renderCopyModesSignature(copyModes []RenderCopyModeVM) string {
+	if len(copyModes) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(copyModes))
+	for _, copyMode := range copyModes {
+		if copyMode.PaneID == "" {
+			continue
+		}
+		parts = append(parts, strings.Join([]string{
+			copyMode.PaneID,
+			strconv.Itoa(copyMode.CursorRow),
+			strconv.Itoa(copyMode.CursorCol),
+			strconv.Itoa(copyMode.ViewTopRow),
+			strconv.FormatBool(copyMode.MarkSet),
+			strconv.Itoa(copyMode.MarkRow),
+			strconv.Itoa(copyMode.MarkCol),
+			strconv.FormatUint(uint64(copyModeSnapshotKey(copyMode.Snapshot)), 16),
+		}, "\x1e"))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "\x1f")
+}
+
+func copyModeSnapshotKey(snapshot *protocol.Snapshot) uintptr {
+	if snapshot == nil {
+		return 0
+	}
+	return uintptr(unsafe.Pointer(snapshot))
 }
 
 func (c *Coordinator) renderResult() (RenderResult, bool) {

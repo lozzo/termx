@@ -24,7 +24,7 @@ func (m *Model) Init() tea.Cmd {
 		// If startup opened a picker, immediately load the terminal list.
 		initCmd = m.applyEffects([]orchestrator.Effect{orchestrator.LoadPickerItemsEffect{}})
 	}
-	return batchCmds(initCmd, m.hostEmojiProbeCmd(1, hostEmojiProbeRetryDelay))
+	return batchCmds(initCmd, m.loadClipboardHistoryCmd(false), m.hostEmojiProbeCmd(1, hostEmojiProbeRetryDelay))
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -174,7 +174,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	if action, ok := m.restartActionForKeyMsg(msg); ok {
 		return func() tea.Msg { return action }
 	}
-	result := m.input.RouteKeyMsg(msg)
+	result := m.input.RouteKeyMsgInMode(msg, m.effectiveInputMode())
 	if result.Action != nil {
 		action := *result.Action
 		if m.modalHost != nil && m.modalHost.Session != nil && m.modalHost.Session.Kind == input.ModePicker && m.modalHost.Picker != nil {

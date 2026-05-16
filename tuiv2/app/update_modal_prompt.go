@@ -14,6 +14,10 @@ func (m *Model) submitPromptCmd(paneID string) tea.Cmd {
 		return m.submitRenameTabPrompt(prompt)
 	case "rename-workspace":
 		return m.submitRenameWorkspacePrompt(prompt)
+	case "create-clipboard-entry":
+		return m.submitCreateClipboardEntryPrompt(prompt)
+	case "edit-clipboard-entry":
+		return m.submitEditClipboardEntryPrompt(prompt)
 	case "create-terminal-form":
 		return m.submitCreateTerminalFormPrompt(prompt, paneID)
 	case "create-terminal-name":

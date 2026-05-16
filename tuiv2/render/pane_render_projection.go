@@ -174,7 +174,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	chrome := normalizeUIChromeConfig(options.Chrome)
 	terminal := lookup.terminal(pane.TerminalID)
 	overflow := paneOverflowHintsForRender(originalRect, rect, nil, nil)
-	copyModeActive := pane.ID == options.CopyMode.PaneID
+	copyMode, copyModeActive := options.copyModeForPane(pane.ID)
 	snapshot := (*protocol.Snapshot)(nil)
 	surface := runtime.TerminalSurface(nil)
 	surfaceVersion := uint64(0)
@@ -188,14 +188,14 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		surface = nil
 		surfaceVersion = 0
 	}
-	if copyModeActive && options.CopyMode.Snapshot != nil {
-		snapshot = options.CopyMode.Snapshot
+	if copyModeActive && copyMode.Snapshot != nil {
+		snapshot = copyMode.Snapshot
 		surface = nil
 		surfaceVersion = 0
 	}
 	if copyModeActive {
-		border.CopyTimeLabel = copyModeTimestampLabel(snapshot, options.CopyMode.CursorRow)
-		border.CopyRowLabel = copyModeRowPositionLabel(snapshot, options.CopyMode.CursorRow)
+		border.CopyTimeLabel = copyModeTimestampLabel(snapshot, copyMode.CursorRow)
+		border.CopyRowLabel = copyModeRowPositionLabel(snapshot, copyMode.CursorRow)
 	}
 	contentRect := rect
 	if !frameless {
@@ -204,7 +204,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	renderOffset := lookup.paneViewportOffset(pane.ID, legacyScrollOffset)
 	contentOffsetX, contentOffsetY := lookup.paneContentOffset(pane.ID)
 	if copyModeActive {
-		renderOffset = scrollOffsetForViewportTop(snapshot, contentRect.H, options.CopyMode.ViewTopRow)
+		renderOffset = scrollOffsetForViewportTop(snapshot, contentRect.H, copyMode.ViewTopRow)
 		contentOffsetX = 0
 		contentOffsetY = 0
 	}
@@ -244,12 +244,12 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		ExitedActionSelected: exitedActionSelected,
 		ExitedActionPulse:    options.ExitedSelectionPulse,
 		CopyModeActive:       copyModeActive,
-		CopyModeCursorRow:    options.CopyMode.CursorRow,
-		CopyModeCursorCol:    options.CopyMode.CursorCol,
-		CopyModeViewTopRow:   options.CopyMode.ViewTopRow,
-		CopyModeMarkSet:      options.CopyMode.MarkSet,
-		CopyModeMarkRow:      options.CopyMode.MarkRow,
-		CopyModeMarkCol:      options.CopyMode.MarkCol,
+		CopyModeCursorRow:    copyMode.CursorRow,
+		CopyModeCursorCol:    copyMode.CursorCol,
+		CopyModeViewTopRow:   copyMode.ViewTopRow,
+		CopyModeMarkSet:      copyMode.MarkSet,
+		CopyModeMarkRow:      copyMode.MarkRow,
+		CopyModeMarkCol:      copyMode.MarkCol,
 	}
 	if terminal != nil {
 		if snapshot != nil && surface == nil {
@@ -300,12 +300,12 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		ExitedActionSelected: exitedActionSelected,
 		ExitedActionPulse:    options.ExitedSelectionPulse,
 		CopyModeActive:       copyModeActive,
-		CopyModeCursorRow:    options.CopyMode.CursorRow,
-		CopyModeCursorCol:    options.CopyMode.CursorCol,
-		CopyModeViewTopRow:   options.CopyMode.ViewTopRow,
-		CopyModeMarkSet:      options.CopyMode.MarkSet,
-		CopyModeMarkRow:      options.CopyMode.MarkRow,
-		CopyModeMarkCol:      options.CopyMode.MarkCol,
+		CopyModeCursorRow:    copyMode.CursorRow,
+		CopyModeCursorCol:    copyMode.CursorCol,
+		CopyModeViewTopRow:   copyMode.ViewTopRow,
+		CopyModeMarkSet:      copyMode.MarkSet,
+		CopyModeMarkRow:      copyMode.MarkRow,
+		CopyModeMarkCol:      copyMode.MarkCol,
 	}
 }
 

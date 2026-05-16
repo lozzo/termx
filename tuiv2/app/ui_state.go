@@ -140,6 +140,20 @@ func (u *UIState) VisibleInputMode() input.ModeKind {
 	return u.Mode().Kind
 }
 
+func (m *Model) effectiveInputMode() input.ModeKind {
+	if m == nil || m.ui == nil {
+		return input.ModeNormal
+	}
+	mode := m.ui.VisibleInputMode()
+	if mode == input.ModeDisplay && len(m.allCopyModeStates()) > 0 && !m.activePaneInCopyMode() {
+		return input.ModeNormal
+	}
+	if mode == input.ModeNormal && m.activePaneInCopyMode() {
+		return input.ModeDisplay
+	}
+	return mode
+}
+
 func (m *Model) syncUIAliases() {
 	if m == nil || m.ui == nil {
 		return
@@ -160,7 +174,7 @@ func (m *Model) setMode(mode input.ModeState) {
 	if m == nil || m.ui == nil {
 		return
 	}
-	if m.ui.Mode().Kind == input.ModeDisplay && mode.Kind != input.ModeDisplay {
+	if m.ui.Mode().Kind == input.ModeDisplay && mode.Kind != input.ModeDisplay && m.activePaneInCopyMode() {
 		m.leaveCopyMode()
 	}
 	m.ui.SetMode(mode)

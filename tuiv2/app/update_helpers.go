@@ -273,10 +273,11 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 	if terminal.VTerm == nil && terminal.Snapshot != nil && terminal.Snapshot.Modes.AlternateScreen {
 		return nil
 	}
-	copyModeActive := m.copyMode.PaneID == pane.ID && m.copyMode.Snapshot != nil
+	copyModeState, copyModeActive := m.copyModeStateForPane(pane.ID)
+	copyModeActive = copyModeActive && copyModeState.Snapshot != nil
 	loaded := 0
 	if copyModeActive {
-		loaded = len(m.copyMode.Snapshot.Scrollback)
+		loaded = len(copyModeState.Snapshot.Scrollback)
 	} else if terminal.Snapshot != nil {
 		loaded = len(terminal.Snapshot.Scrollback)
 	} else {
@@ -304,8 +305,8 @@ func (m *Model) ensureCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
 	if m == nil || m.workbench == nil || m.runtime == nil || m.copyMode.PaneID == "" || buffer.snapshot == nil {
 		return nil
 	}
-	pane := m.workbench.ActivePane()
-	if pane == nil || pane.ID != m.copyMode.PaneID || pane.TerminalID == "" {
+	pane, _, ok := m.copyModePaneAndContentRect(m.copyMode.PaneID)
+	if !ok || pane == nil || pane.ID != m.copyMode.PaneID || pane.TerminalID == "" {
 		return nil
 	}
 	if m.copyMode.Cursor.Row > terminalScrollbackPrefetchMargin && m.copyMode.ViewTopRow > terminalScrollbackPrefetchMargin {

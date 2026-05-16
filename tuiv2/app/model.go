@@ -39,6 +39,7 @@ type Model struct {
 	yankBuffer        string
 	clipboardHistory  []clipboardHistoryEntry
 	clipboardSeq      uint64
+	clipboardStore    clipboardHistoryStore
 
 	sessionID        string
 	sessionViewID    string
@@ -123,6 +124,7 @@ type Model struct {
 	exitedPaneSelectionIndex  int
 
 	copyMode       copyModeState
+	copyModes      map[string]copyModeState
 	copyModeResume copyModeResumeState
 }
 
@@ -174,6 +176,7 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 		theme:               themeConfigFromShared(cfg.Theme),
 		pendingPaneAttaches: make(map[string]string),
 		pendingPaneResizes:  make(map[string]pendingPaneResize),
+		copyModes:           make(map[string]copyModeState),
 	}
 	model.orchestrator = orchestrator.New(model.workbench)
 	model.render = render.NewCoordinatorWithVM(func() render.RenderVM { return model.renderVM() })
@@ -181,6 +184,7 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 	if model.runtime != nil {
 		model.runtime.SetInvalidate(func() { model.queueInvalidate() })
 		model.sessionStore = newSessionStoreFromClient(model.runtime.Client())
+		model.clipboardStore = newClipboardHistoryStoreFromClient(model.runtime.Client())
 		model.runtime.SetTitleChange(func(terminalID, title string) {
 			model.sendAsync(terminalTitleMsg{TerminalID: terminalID, Title: title})
 		})

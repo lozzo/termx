@@ -41,7 +41,7 @@ func (m *Model) forwardTerminalMouseInputCmd(msg tea.MouseMsg) tea.Cmd {
 	if m == nil || m.workbench == nil {
 		return nil
 	}
-	if m.mode().Kind == input.ModeDisplay {
+	if m.effectiveInputMode() == input.ModeDisplay {
 		return nil
 	}
 	vm := m.renderVM()

@@ -107,6 +107,20 @@ type terminalTitleMsg struct {
 	Title      string
 }
 
+type clipboardHistoryLoadedMsg struct {
+	Entries    []clipboardHistoryEntry
+	OpenPicker bool
+	Err        error
+}
+
+type clipboardHistoryStoredMsg struct {
+	Err error
+}
+
+type clipboardHistoryDeletedMsg struct {
+	Err error
+}
+
 type pickerItemsLoadedMsg struct {
 	Items []modal.PickerItem
 }
