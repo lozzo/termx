@@ -11,6 +11,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/render"
+	appruntime "github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -283,6 +284,12 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 	} else {
 		loaded = terminal.ScrollbackLoadedLimit
 	}
+	if terminal.ScrollbackExhausted {
+		if !terminalHasKnownScrollbackBeyond(terminal, loaded) {
+			return nil
+		}
+		terminal.ScrollbackExhausted = false
+	}
 	want := viewportOffset + contentRect.H + terminalScrollbackPrefetchMargin
 	if want <= loaded {
 		return nil
@@ -302,6 +309,14 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 }
 
 func (m *Model) ensureCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
+	return m.copyModeScrollbackCmd(buffer, false)
+}
+
+func (m *Model) prefetchCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
+	return m.copyModeScrollbackCmd(buffer, true)
+}
+
+func (m *Model) copyModeScrollbackCmd(buffer copyModeBuffer, force bool) tea.Cmd {
 	if m == nil || m.workbench == nil || m.runtime == nil || m.copyMode.PaneID == "" || buffer.snapshot == nil {
 		return nil
 	}
@@ -309,20 +324,20 @@ func (m *Model) ensureCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
 	if !ok || pane == nil || pane.ID != m.copyMode.PaneID || pane.TerminalID == "" {
 		return nil
 	}
-	if m.copyMode.Cursor.Row > terminalScrollbackPrefetchMargin && m.copyMode.ViewTopRow > terminalScrollbackPrefetchMargin {
-		return nil
-	}
-	if buffer.snapshot.Modes.AlternateScreen || buffer.snapshot.Screen.IsAlternateScreen {
+	if !force && m.copyMode.Cursor.Row > terminalScrollbackPrefetchMargin && m.copyMode.ViewTopRow > terminalScrollbackPrefetchMargin {
 		return nil
 	}
 	terminal := m.runtime.Registry().Get(pane.TerminalID)
-	if terminal == nil || terminal.ScrollbackExhausted {
-		return nil
-	}
-	if terminal.VTerm != nil && terminal.VTerm.Modes().AlternateScreen {
+	if terminal == nil {
 		return nil
 	}
 	loaded := len(buffer.snapshot.Scrollback)
+	if terminal.ScrollbackExhausted {
+		if !terminalHasKnownScrollbackBeyond(terminal, loaded) {
+			return nil
+		}
+		terminal.ScrollbackExhausted = false
+	}
 	nextLimit := loaded + terminalScrollbackPageLimit
 	if nextLimit < terminalHistoryInitialPageLimit {
 		nextLimit = terminalHistoryInitialPageLimit
@@ -336,6 +351,25 @@ func (m *Model) ensureCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
 		cols = len(buffer.row(0))
 	}
 	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, cols)
+}
+
+func terminalHasKnownScrollbackBeyond(terminal *appruntime.TerminalRuntime, loaded int) bool {
+	if terminal == nil {
+		return false
+	}
+	known := terminal.ScrollbackLoadedLimit
+	if snapshot := terminal.Snapshot; snapshot != nil {
+		if rows := len(snapshot.Scrollback); rows > known {
+			known = rows
+		}
+		if snapshot.ScrollbackTotal > known {
+			known = snapshot.ScrollbackTotal
+		}
+		if snapshot.ScrollbackHasMore && known <= len(snapshot.Scrollback) {
+			known = len(snapshot.Scrollback) + 1
+		}
+	}
+	return known > loaded
 }
 
 func (m *Model) loadTerminalHistoryViewportCmd(terminalID string, offset int, limit int, cols int) tea.Cmd {

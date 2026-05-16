@@ -110,7 +110,7 @@ func (r *Runtime) applyScreenUpdateContract(terminal *TerminalRuntime, terminalI
 	}
 	update := classified.Contract.Update
 	summary := classified.Contract.Summary
-	if classified.Contract.Classification.HasScrollbackChange {
+	if classified.Contract.Classification.HasScrollbackChange || classified.Contract.Classification.HasScreenScroll {
 		terminal.ScrollbackExhausted = false
 	}
 

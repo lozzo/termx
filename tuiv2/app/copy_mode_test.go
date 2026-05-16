@@ -607,6 +607,74 @@ func TestCopyModeTopLoadsOlderScrollbackIntoFrozenBuffer(t *testing.T) {
 	}
 }
 
+func TestCopyModeEnterPrefetchesHistoryWhenFrozenBufferHasNoScrollback(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot([]string{"old0", "old1", "old2"}, []string{"live0", "live1", "live2"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+
+	if got := len(client.viewportRequests); got != 1 {
+		t.Fatalf("expected copy-mode enter to request initial history viewport, got %#v", client.viewportRequests)
+	}
+	request := client.viewportRequests[0]
+	if request.terminalID != "term-1" || request.offset != 0 || request.limit != terminalHistoryInitialPageLimit || request.cols <= 0 {
+		t.Fatalf("expected initial copy-mode history viewport request, got %#v", request)
+	}
+	if model.copyMode.Snapshot == nil {
+		t.Fatal("expected copy-mode snapshot")
+	}
+	if got, want := len(model.copyMode.Snapshot.Scrollback), 3; got != want {
+		t.Fatalf("expected initial history to be loaded into frozen buffer, got %d want %d", got, want)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "old0" {
+		t.Fatalf("expected loaded history at top, got %q", got)
+	}
+}
+
+func TestCopyModeEnterPrefetchesWhenExhaustedFlagIsStale(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.ScrollbackExhausted = true
+	terminal.Snapshot.ScrollbackTotal = 3
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot([]string{"old0", "old1", "old2"}, []string{"live0", "live1", "live2"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+
+	if got := len(client.viewportRequests); got != 1 {
+		t.Fatalf("expected stale exhausted flag not to suppress copy-mode history load, got %#v", client.viewportRequests)
+	}
+	if got, want := len(model.copyMode.Snapshot.Scrollback), 3; got != want {
+		t.Fatalf("expected stale-exhausted history to load into frozen buffer, got %d want %d", got, want)
+	}
+}
+
+func TestCopyModeTopLoadsHistoryWhileAlternateScreenActive(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, nil, []string{"alt0", "alt1", "alt2", "alt3"})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot.Modes.AlternateScreen = true
+	terminal.Snapshot.Screen.IsAlternateScreen = true
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot([]string{"old0", "old1"}, []string{"live0", "live1"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+
+	if got := len(client.viewportRequests); got == 0 {
+		t.Fatal("expected alternate-screen copy mode to request history viewport")
+	}
+	if got, want := len(model.copyMode.Snapshot.Scrollback), 2; got != want {
+		t.Fatalf("expected alternate-screen copy mode to load history, got %d want %d", got, want)
+	}
+	if !model.copyMode.Snapshot.Modes.AlternateScreen || !model.copyMode.Snapshot.Screen.IsAlternateScreen {
+		t.Fatalf("expected frozen alternate screen to remain marked alternate, got modes=%#v screen=%v", model.copyMode.Snapshot.Modes, model.copyMode.Snapshot.Screen.IsAlternateScreen)
+	}
+}
+
 func TestCopyModeLoadsOlderScrollbackByOffsetPage(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	latest := make([]string, 500)

@@ -38,6 +38,9 @@ func (m *Model) handleModeAndFloatingLocalAction(action input.SemanticAction) (b
 		m.setMode(input.ModeState{Kind: input.ModeDisplay})
 		_ = m.ensureCopyMode()
 		m.render.Invalidate()
+		if buffer, ok := m.activeCopyModeBuffer(); ok && len(buffer.snapshot.Scrollback) == 0 {
+			return true, batchCmds(m.ensureActivePaneScrollbackCmd(), m.prefetchCopyModeScrollbackCmd(buffer))
+		}
 		return true, m.ensureActivePaneScrollbackCmd()
 	case input.ActionEnterGlobalMode:
 		m.setMode(input.ModeState{Kind: input.ModeGlobal})
