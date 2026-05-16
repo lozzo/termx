@@ -1251,6 +1251,40 @@ func TestScreenUpdatePayloadFromDamageOmitsRedundantControlOps(t *testing.T) {
 	}
 }
 
+func TestScreenUpdatePayloadFromDamagePreservesStyledErase(t *testing.T) {
+	const bg = "#222222"
+	vt := localvterm.New(12, 2, 32, nil)
+	term := &Terminal{vterm: vt}
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[48;2;34;34;34m\x1b[1;1H\x1b[K"))
+	if err != nil {
+		t.Fatalf("WriteWithDamage failed: %v", err)
+	}
+	payload, ok := term.screenUpdatePayloadFromDamageLocked(damage)
+	if !ok {
+		t.Fatal("expected payload")
+	}
+	update, err := protocol.DecodeScreenUpdatePayload(payload)
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	for _, op := range update.Ops {
+		if op.Code != protocol.ScreenOpWriteSpan || op.Row != 0 {
+			continue
+		}
+		if len(op.Cells) != 12 {
+			t.Fatalf("expected full-row styled erase span, got %#v", op)
+		}
+		for i, cell := range op.Cells {
+			if cell.Content != " " || cell.Width != 1 || cell.Style.BG != bg {
+				t.Fatalf("expected styled blank cell %d with bg %q, got %#v", i, bg, cell)
+			}
+		}
+		return
+	}
+	t.Fatalf("expected styled erase write span, got %#v", update.Ops)
+}
+
 func TestScreenUpdateShouldEncodeDeltaOnly(t *testing.T) {
 	fullRows := make([]protocol.ScreenOp, 0, 24)
 	for row := 0; row < 24; row++ {

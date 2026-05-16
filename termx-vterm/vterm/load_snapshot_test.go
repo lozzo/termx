@@ -62,6 +62,42 @@ func TestLoadSnapshotWithScrollbackRestoresHistory(t *testing.T) {
 	}
 }
 
+func TestLoadSnapshotRestoresStyledBlankRows(t *testing.T) {
+	const bg = "#222222"
+	vt := New(12, 3, 100, nil)
+
+	styledBlanks := make([]Cell, 12)
+	for i := range styledBlanks {
+		styledBlanks[i] = Cell{Content: " ", Width: 1, Style: CellStyle{BG: bg}}
+	}
+	promptRow := append([]Cell(nil), styledBlanks...)
+	for i, r := range "> prompt" {
+		promptRow[i] = Cell{Content: string(r), Width: 1, Style: CellStyle{BG: bg}}
+	}
+
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{
+			styledBlanks,
+			promptRow,
+		},
+		IsAlternateScreen: true,
+	}, CursorState{Row: 1, Col: 8, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
+
+	screen := vt.ScreenContent()
+	if got := screen.Cells[0][0].Style.BG; got != bg {
+		t.Fatalf("expected pure styled blank row to restore bg %q, got %#v", bg, screen.Cells[0][0])
+	}
+	if got := screen.Cells[0][11].Style.BG; got != bg {
+		t.Fatalf("expected pure styled blank row tail to restore bg %q, got %#v", bg, screen.Cells[0][11])
+	}
+	if got := screen.Cells[1][0].Style.BG; got != bg {
+		t.Fatalf("expected prompt row bg %q, got %#v", bg, screen.Cells[1][0])
+	}
+	if got := rowText(screen.Cells[1], 8); got != "> prompt" {
+		t.Fatalf("expected prompt content restored, got %q", got)
+	}
+}
+
 func TestVTermResizeReflowsSoftWrappedRows(t *testing.T) {
 	vt := New(10, 4, 100, nil)
 	if _, err := vt.Write([]byte("abcdefghijk")); err != nil {
@@ -398,6 +434,28 @@ func TestVTermWriteWithDamageUsesClearToEOLForTailClear(t *testing.T) {
 	op := firstOpWithCode(t, damage, ScreenOpClearToEOL)
 	if op.Row != 0 || op.Col != 6 {
 		t.Fatalf("unexpected clear-to-eol op: %#v", op)
+	}
+}
+
+func TestVTermWriteWithDamagePreservesStyledEraseAsSpan(t *testing.T) {
+	const bg = "#222222"
+	vt := New(12, 2, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[48;2;34;34;34m\x1b[1;1H\x1b[K"))
+	if err != nil {
+		t.Fatalf("styled erase: %v", err)
+	}
+	op := firstWriteSpanOp(t, damage)
+	if op.Row != 0 || op.Col != 0 || len(op.Cells) != 12 {
+		t.Fatalf("expected full-row styled erase span, got %#v", op)
+	}
+	for i, cell := range op.Cells {
+		if cell.Content != " " || cell.Width != 1 || cell.Style.BG != bg {
+			t.Fatalf("expected styled blank cell %d with bg %q, got %#v", i, bg, cell)
+		}
+	}
+	if got := vt.ScreenRowView(0)[11].Style.BG; got != bg {
+		t.Fatalf("expected screen tail bg %q, got %#v", bg, vt.ScreenRowView(0)[11])
 	}
 }
 

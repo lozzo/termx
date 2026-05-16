@@ -950,14 +950,14 @@ func (c *composedCanvas) buildRowFromChunks(y int) string {
 }
 
 func (c *composedCanvas) serializeRowRange(y, startX, endX int) string {
-	return c.serializeRowRangeWithBlankMode(y, startX, endX, false)
+	return c.serializeRowRangeWithBlankMode(y, startX, endX, true, true)
 }
 
 func (c *composedCanvas) serializeRowRangeCompressed(y, startX, endX int) string {
-	return c.serializeRowRangeWithBlankMode(y, startX, endX, true)
+	return c.serializeRowRangeWithBlankMode(y, startX, endX, true, false)
 }
 
-func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, compressBlanks bool) string {
+func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, compressBlanks bool, terminalStyledOnly bool) string {
 	if c == nil || y < 0 || y >= c.height || startX < 0 || endX < startX || startX >= c.width {
 		return ""
 	}
@@ -992,7 +992,7 @@ func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, com
 				row.WriteString(styleDiffANSI(current, cell.Style))
 				current = cell.Style
 			}
-			if compressBlanks {
+			if compressBlanks && c.blankRunShouldUseECH(y, x, blankRun, terminalStyledOnly) {
 				writeECHANSI(&row, blankRun)
 				needsReanchor = true
 			} else {
@@ -1051,6 +1051,25 @@ func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, com
 		row.WriteString(styleANSI(drawStyle{}))
 	}
 	return row.String()
+}
+
+func (c *composedCanvas) blankRunShouldUseECH(y, startX, run int, terminalStyledOnly bool) bool {
+	if !terminalStyledOnly {
+		return true
+	}
+	if c == nil || y < 0 || y >= c.height || startX < 0 || run <= 0 || startX+run > c.width {
+		return false
+	}
+	first := c.cells[y][startX]
+	if !first.TerminalContent || first.Style == (drawStyle{}) {
+		return false
+	}
+	for x := startX; x < startX+run; x++ {
+		if !c.cells[y][x].TerminalContent {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *composedCanvas) cursorANSI() string {

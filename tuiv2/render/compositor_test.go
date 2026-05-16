@@ -460,6 +460,37 @@ func TestContentLinesCompressLongBlankRunsWithECH(t *testing.T) {
 	}
 }
 
+func TestCachedContentLinesCompressLongBlankRunsWithECH(t *testing.T) {
+	canvas := newComposedCanvas(12, 1)
+	for x := 0; x < 12; x++ {
+		canvas.set(x, 0, drawCell{Content: " ", Width: 1, Style: drawStyle{BG: "#222222"}, TerminalContent: true})
+	}
+	lines := canvas.cachedContentLines()
+	if len(lines) != 1 {
+		t.Fatalf("expected one line, got %#v", lines)
+	}
+	if !strings.Contains(lines[0], "48;2;34;34;34") {
+		t.Fatalf("expected cached line to apply the styled blank bg, got %q", lines[0])
+	}
+	if !strings.Contains(lines[0], "\x1b[12X") {
+		t.Fatalf("expected cached long blank run to use ECH compression, got %q", lines[0])
+	}
+}
+
+func TestCachedContentLinesKeepsUIBlankRunsAsSpaces(t *testing.T) {
+	canvas := newComposedCanvas(12, 1)
+	for x := 0; x < 12; x++ {
+		canvas.set(x, 0, drawCell{Content: " ", Width: 1, Style: drawStyle{BG: "#222222"}})
+	}
+	line := canvas.cachedContentLines()[0]
+	if strings.Contains(line, "\x1b[12X") {
+		t.Fatalf("expected non-terminal UI blanks to stay as spaces, got %q", line)
+	}
+	if got := xansi.StringWidth(xansi.Strip(line)); got != 12 {
+		t.Fatalf("expected stripped UI row width 12, got %d from %q", got, line)
+	}
+}
+
 func TestWriteFGColorAndBGColorSupportAnsiIdxAndRGB(t *testing.T) {
 	tests := []struct {
 		name string

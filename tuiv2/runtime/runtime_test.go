@@ -717,6 +717,51 @@ func TestRuntimeScreenUpdateUsesIncrementalVTermApplyWhenSupported(t *testing.T)
 	}
 }
 
+func TestRuntimeScreenUpdatePreservesStyledBlankSpan(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+
+	rt := New(client)
+	terminal, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if terminal == nil {
+		t.Fatal("expected terminal")
+	}
+
+	const bg = "#222222"
+	cells := make([]protocol.Cell, 12)
+	for i := range cells {
+		cells[i] = protocol.Cell{Content: " ", Width: 1, Style: protocol.CellStyle{BG: bg}}
+	}
+	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 12, Rows: 2},
+		Ops: []protocol.ScreenOp{{
+			Code:  protocol.ScreenOpWriteSpan,
+			Row:   0,
+			Col:   0,
+			Cells: cells,
+		}},
+		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
+
+	if got := terminal.Snapshot.Screen.Cells[0][11].Style.BG; got != bg {
+		t.Fatalf("expected snapshot styled blank bg %q, got %#v", bg, terminal.Snapshot.Screen.Cells[0][11])
+	}
+	screen := terminal.VTerm.ScreenContent()
+	if got := screen.Cells[0][11].Style.BG; got != bg {
+		t.Fatalf("expected vterm styled blank bg %q, got %#v", bg, screen.Cells[0][11])
+	}
+}
+
 func TestRuntimeScreenUpdateAppliesScreenScrollShiftToLocalVTerm(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()

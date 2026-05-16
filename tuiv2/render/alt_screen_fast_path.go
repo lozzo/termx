@@ -329,10 +329,11 @@ func renderAltScreenBorderedContentLine(entry paneRenderEntry, content string) s
 
 func protocolViewportRowANSI(row []protocol.Cell, width int, emojiMode shared.AmbiguousEmojiVariationSelectorMode, cursorCol int, cursorVisible bool, cursorShape string) string {
 	return protocolRowANSIWithOptions(row, width, protocolRowANSIOptions{
-		emojiMode:     emojiMode,
-		cursorCol:     cursorCol,
-		cursorVisible: cursorVisible,
-		cursorShape:   cursorShape,
+		compressStyledBlanks: true,
+		emojiMode:            emojiMode,
+		cursorCol:            cursorCol,
+		cursorVisible:        cursorVisible,
+		cursorShape:          cursorShape,
 	})
 }
 
@@ -350,10 +351,11 @@ func terminalSourceViewportRowANSI(source terminalRenderSource, rowIndex, width 
 
 func vtermViewportRowANSI(row []localvterm.Cell, width int, emojiMode shared.AmbiguousEmojiVariationSelectorMode, cursorCol int, cursorVisible bool, cursorShape string) string {
 	return vtermRowANSIWithOptions(row, width, protocolRowANSIOptions{
-		emojiMode:     emojiMode,
-		cursorCol:     cursorCol,
-		cursorVisible: cursorVisible,
-		cursorShape:   cursorShape,
+		compressStyledBlanks: true,
+		emojiMode:            emojiMode,
+		cursorCol:            cursorCol,
+		cursorVisible:        cursorVisible,
+		cursorShape:          cursorShape,
 	})
 }
 
