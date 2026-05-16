@@ -1147,7 +1147,7 @@ describe('Terminal', () => {
     await waitFor(() => expect(screen.queryByTestId('termx-history-loading')).not.toBeNull())
     const shownAt = performance.now()
     const loading = screen.getByTestId('termx-history-loading')
-    expect(loading.className).toContain('top-0')
+    expect(loading.className).toContain('top-3')
     expect(loading.className).toContain('bg-[var(--termx-surface)]/95')
     await waitFor(() => expect(term.scrollToLine).toHaveBeenCalledWith(262))
     expect(screen.queryByTestId('termx-history-loading')).not.toBeNull()
