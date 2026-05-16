@@ -1393,6 +1393,54 @@ describe('Terminal', () => {
     await waitFor(() => expect(term.writes.join('')).toMatch(/o[\s\S]*l[\s\S]*d[\s\S]*e[\s\S]*r[\s\S]*-[\s\S]*f[\s\S]*r[\s\S]*o[\s\S]*m[\s\S]*-[\s\S]*w[\s\S]*h[\s\S]*e[\s\S]*e[\s\S]*l/))
   })
 
+  it('does not chain mobile pull-down history loads while the first page is still being applied', async () => {
+    const session = createMockRtcTerminalSession()
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'current',
+      cols: 80,
+      rows: 24,
+      pages: [
+        { offset: 0, rows: Array.from({ length: 250 }, (_value, index) => `mobile-${index}`) },
+        { offset: 250, rows: ['mobile-should-wait'] },
+      ],
+    })
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+        settings={{
+          ...DEFAULT_TERMINAL_SETTINGS,
+          scrollbackPrefetchThresholdRows: 0,
+        }}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const term = xtermMocks.FakeXTerm.instances[0]!
+    term.buffer.active.viewportY = 0
+    const terminalOutput = screen.getByLabelText('Terminal output')
+    const screenElement = terminalOutput.querySelector('.xterm-screen') as HTMLElement
+    act(() => {
+      screenElement.dispatchEvent(touchEvent('touchstart', screenElement, 120))
+      screenElement.dispatchEvent(touchEvent('touchmove', screenElement, 180))
+    })
+
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 0,
+      limit: 250,
+    }))
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 700))
+    })
+
+    expect(session.historyReplayRequests('terminal-1')).toEqual([
+      { beforeOffset: 0, limit: 250 },
+    ])
+    expect(term.writes.join('')).not.toMatch(/m[\s\S]*o[\s\S]*b[\s\S]*i[\s\S]*l[\s\S]*e[\s\S]*-[\s\S]*s[\s\S]*h[\s\S]*o[\s\S]*u[\s\S]*l[\s\S]*d[\s\S]*-[\s\S]*w[\s\S]*a[\s\S]*i[\s\S]*t/)
+  })
+
   it('coalesces scrollback page rendering while the user is actively scrolling', async () => {
     const session = createMockRtcTerminalSession()
     const firstPageRows = Array.from({ length: 250 }, (_value, index) => `coalesced-${index}`)

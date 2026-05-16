@@ -1002,6 +1002,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const scrollbackLoadBlockedReason = () => {
       if (historyLoadingRef.current) return 'loading'
       if (historyApplyingRef.current) return 'applying'
+      if (pendingHistoryApplyRef.current) return 'pending_apply'
       if (suppressHistoryLoad) return 'suppressed'
       if (!historyHasMoreRef.current) return 'no_more'
       if (historyLoadedRowsRequestedRef.current >= historyLoadedRowsLimit()) return 'soft_limit'
@@ -1970,11 +1971,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (!term) return
 
     const snapshot = terminalSession.terminalSnapshot
+    const history = snapshot?.history
     if (snapshot) {
       hasTerminalSnapshotRef.current = true
       snapshotAlternateScreenRef.current = snapshot.alternateScreen === true
-      if (historyLoadArmedByUserRef.current) {
-        void loadScrollbackRef.current(historyScrollbackPageRows, snapshot.alternateScreen === true)
+      if (historyLoadArmedByUserRef.current && (!history || history.revision <= historyRevisionAppliedRef.current)) {
+        maybePrefetchScrollbackRef.current()
       }
     }
     const snapshotText = snapshot ? (snapshot.replay ?? snapshot.text) : ''
@@ -2009,7 +2011,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
     lastSnapshotTextRef.current = snapshotText
 
-    const history = terminalSession.terminalSnapshot?.history
     if (history && history.revision > historyRevisionAppliedRef.current) {
       historyRevisionAppliedRef.current = history.revision
       const restoreViewportY = pendingHistoryViewportRef.current
