@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { RefreshCw, X } from 'lucide-react'
+import { hapticSelection } from '../../platform/haptics'
 import type { FilePreviewResponse, FilePreviewStreamOptions, FilePreviewStreamResult } from '../fileApi'
 import { basename, formatBytes, isMarkdownFile } from '../fileUtils'
 import { BinaryVideoPreview, StreamedVideoPreview } from './VideoPreview'
@@ -49,7 +50,7 @@ export function FilePreviewSheet({ path, preview, loading, error, streamPreview,
           type="button"
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors active:scale-95 hover:bg-zinc-50 active:bg-zinc-100"
           aria-label="Close preview"
-          onClick={onClose}
+          onClick={() => { hapticSelection(); onClose() }}
         >
           <X className="h-5 w-5" />
         </button>

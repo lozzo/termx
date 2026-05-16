@@ -263,7 +263,7 @@ describe('FileManager', () => {
     expect(await screen.findByText('Copied path')).toBeTruthy()
   })
 
-  it('shows path bookmarks as single rows with inline remove actions', async () => {
+  it('shows path bookmarks as single rows with inline edit actions', async () => {
     const session = createMockFileSession({
       '/files/list': ({ path }: { path?: string } = {}) => ({
         path: path || '/srv/app',
@@ -275,10 +275,10 @@ describe('FileManager', () => {
         entries: [{
           app_id: 'termx.paths',
           scope: 'public',
-          key: 'bookmarks/~2Fsrv~2Fapp',
+          key: 'bookmarks/~2Fsrv~2Fapp~aaa',
           value: new TextEncoder().encode(JSON.stringify({
             schema_version: 1,
-            id: '~2Fsrv~2Fapp',
+            id: '~2Fsrv~2Fapp~aaa',
             path: '/srv/app',
             label: 'app',
             created_at: '2026-05-16T08:00:00Z',
@@ -287,6 +287,27 @@ describe('FileManager', () => {
           version: 3,
         }],
       },
+      '/storage/get': {
+        app_id: 'termx.paths',
+        scope: 'public',
+        key: 'bookmarks/~2Fsrv~2Fapp~aaa',
+        value: new TextEncoder().encode(JSON.stringify({
+          schema_version: 1,
+          id: '~2Fsrv~2Fapp~aaa',
+          path: '/srv/app',
+          label: 'app',
+          created_at: '2026-05-16T08:00:00Z',
+          updated_at: '2026-05-16T08:00:00Z',
+        })),
+        version: 3,
+      },
+      '/storage/put': ({ key, value }: { key?: string; value?: Uint8Array } = {}) => ({
+        app_id: 'termx.paths',
+        scope: 'public',
+        key,
+        value,
+        version: 5,
+      }),
       '/storage/delete': { deleted: true, version: 4 },
     }, {}, { terminalId: 'terminal-1' })
 
@@ -305,7 +326,23 @@ describe('FileManager', () => {
     const bookmarkRow = await screen.findByRole('button', { name: /open bookmark app/i })
     expect(bookmarkRow.textContent).toContain('/srv/app')
     expect(screen.queryByRole('button', { name: /^remove app$/i })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: /remove bookmark app/i }))
+    await userEvent.click(screen.getByRole('button', { name: /edit bookmark app/i }))
+    await userEvent.clear(screen.getByLabelText('Bookmark alias'))
+    await userEvent.type(screen.getByLabelText('Bookmark alias'), 'production')
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    await waitFor(() => expect(session.requests).toContainEqual(expect.objectContaining({
+      method: 'POST',
+      path: '/storage/put',
+      params: expect.objectContaining({
+        app_id: 'termx.paths',
+        scope: 'public',
+        key: 'bookmarks/~2Fsrv~2Fapp~aaa',
+      }),
+    })))
+
+    await userEvent.click(screen.getByRole('button', { name: /path bookmarks/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /edit bookmark app/i }))
+    await userEvent.click(screen.getByRole('button', { name: /remove bookmark/i }))
 
     await waitFor(() => expect(session.requests).toContainEqual({
       method: 'POST',
@@ -313,7 +350,7 @@ describe('FileManager', () => {
       params: {
         app_id: 'termx.paths',
         scope: 'public',
-        key: 'bookmarks/~2Fsrv~2Fapp',
+        key: 'bookmarks/~2Fsrv~2Fapp~aaa',
       },
     }))
     expect(screen.getByRole('button', { name: /open bookmark app/i })).toBeTruthy()

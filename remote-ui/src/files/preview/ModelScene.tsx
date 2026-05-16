@@ -168,7 +168,10 @@ export function ModelScene({ object, name, label, three }: { object: ModelObject
               aria-label={`Zoom out ${name}`}
               title="Zoom out"
               className="flex h-8 w-8 items-center justify-center text-zinc-200 transition-colors active:scale-95 hover:bg-white/5 active:bg-white/10"
-              onClick={() => commitView({ ...view, distance: view.distance * 1.2 })}
+              onClick={() => {
+                hapticSelection()
+                commitView({ ...view, distance: view.distance * 1.2 })
+              }}
             >
               <ZoomOut className="h-4 w-4" />
             </button>
@@ -177,7 +180,10 @@ export function ModelScene({ object, name, label, three }: { object: ModelObject
               aria-label={`Zoom in ${name}`}
               title="Zoom in"
               className="flex h-8 w-8 items-center justify-center border-l border-white/10 text-zinc-200 transition-colors active:scale-95 hover:bg-white/5 active:bg-white/10"
-              onClick={() => commitView({ ...view, distance: view.distance / 1.2 })}
+              onClick={() => {
+                hapticSelection()
+                commitView({ ...view, distance: view.distance / 1.2 })
+              }}
             >
               <ZoomIn className="h-4 w-4" />
             </button>

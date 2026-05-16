@@ -5,6 +5,7 @@ import { isModelPreviewFile } from './modelFileTypes'
 import { FilePreviewSheet } from './preview/FilePreviewSheet'
 import type { RtcSession } from '../core/transport'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { PathBookmark } from './pathBookmarks'
 import 'highlight.js/styles/github.css'
 import { addNativeBackHandler } from '../platform/nativeBack'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
@@ -40,7 +41,10 @@ export function FileManager({
   const [deletePath, setDeletePath] = useState<string | null>(null)
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const [bookmarksOpen, setBookmarksOpen] = useState(false)
+  const [editingBookmarkId, setEditingBookmarkId] = useState<string | null>(null)
+  const [bookmarkAlias, setBookmarkAlias] = useState('')
   const [transferError, setTransferError] = useState<string | null>(null)
+  const pathBarRef = useRef<HTMLDivElement>(null)
   const webUploadRef = useRef<HTMLInputElement>(null)
 
   const pathSegments = manager.currentPath ? manager.currentPath.split('/').filter(Boolean) : []
@@ -163,6 +167,8 @@ export function FileManager({
     }
     if (bookmarksOpen) {
       setBookmarksOpen(false)
+      setEditingBookmarkId(null)
+      setBookmarkAlias('')
       return true
     }
     if (renamePath) {
@@ -205,6 +211,36 @@ export function FileManager({
     bookmarksOpen,
   ])
 
+  const editingBookmark = useMemo(() => (
+    editingBookmarkId ? manager.pathBookmarks.find((bookmark) => bookmark.id === editingBookmarkId) ?? null : null
+  ), [editingBookmarkId, manager.pathBookmarks])
+
+  const openBookmarkEditor = (bookmark: PathBookmark) => {
+    setEditingBookmarkId(bookmark.id)
+    setBookmarkAlias(bookmark.label)
+  }
+
+  const closeBookmarkEditor = () => {
+    setEditingBookmarkId(null)
+    setBookmarkAlias('')
+  }
+
+  const saveBookmarkAlias = () => {
+    if (!editingBookmark) return
+    const label = bookmarkAlias.trim()
+    hapticImpact()
+    void manager.updatePathBookmark(editingBookmark.id, { label }).then(closeBookmarkEditor)
+  }
+
+  useEffect(() => {
+    const pathBar = pathBarRef.current
+    if (!pathBar) return undefined
+    const frame = window.requestAnimationFrame(() => {
+      pathBar.scrollLeft = pathBar.scrollWidth
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [manager.currentPath])
+
   return (
     <div
       className={`relative flex min-h-0 flex-col bg-white ${className || ''}`}
@@ -216,7 +252,7 @@ export function FileManager({
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200/70 bg-white px-4">
           <button
             className="text-[15px] font-medium text-zinc-500 hover:text-zinc-700 active:text-zinc-800"
-            onClick={() => manager.setSelectionMode(false)}
+            onClick={() => { hapticSelection(); manager.setSelectionMode(false) }}
           >
             Cancel
           </button>
@@ -238,6 +274,7 @@ export function FileManager({
         <header className="shrink-0 border-b border-zinc-200/70 bg-white">
           <div className="flex h-11 min-w-0 items-center px-3">
             <div
+              ref={pathBarRef}
               data-testid="termx-file-pathbar"
               className="flex h-9 min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-lg bg-zinc-50 px-2 text-[14px] font-medium text-zinc-600 no-scrollbar"
             >
@@ -247,7 +284,7 @@ export function FileManager({
               ) : (
                 <>
                   <button
-                    onClick={() => void manager.navigate('/')}
+                    onClick={() => { hapticSelection(); void manager.navigate('/') }}
                     className="shrink-0 rounded-md px-1.5 py-1 text-zinc-500 transition-colors hover:bg-zinc-100 active:bg-zinc-200"
                   >
                     /
@@ -262,7 +299,7 @@ export function FileManager({
                           <span className="px-1.5 py-1 font-semibold text-zinc-900">{segment}</span>
                         ) : (
                           <button
-                            onClick={() => void manager.navigate(path)}
+                            onClick={() => { hapticSelection(); void manager.navigate(path) }}
                             className="rounded-md px-1.5 py-1 text-zinc-500 transition-colors hover:bg-zinc-100 active:bg-zinc-200"
                           >
                             {segment}
@@ -286,15 +323,6 @@ export function FileManager({
               }}
             >
               <FolderBookmark className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              aria-label="Bookmark current directory"
-              title="Bookmark current directory"
-              className="ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-50 active:bg-zinc-100"
-              onClick={() => { hapticImpact(); void manager.addCurrentPathBookmark() }}
-            >
-              <BookmarkPlus className="h-4 w-4" />
             </button>
             <button
               type="button"
@@ -405,6 +433,7 @@ export function FileManager({
                   hapticSelection()
                   manager.toggleSelect(entryPath)
                 } else {
+                  hapticSelection()
                   if (isDirectory) void manager.navigate(entryPath)
                   else void manager.openPreview(entryPath)
                 }
@@ -478,6 +507,7 @@ export function FileManager({
                             className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-50 active:bg-zinc-100"
                             onClick={(event) => {
                               event.stopPropagation()
+                              hapticSelection()
                               setEntryMenuPath((current) => current === entryPath ? null : entryPath)
                             }}
                           >
@@ -495,12 +525,12 @@ export function FileManager({
         )}
       </div>
       {deletePath ? (
-        <div className="absolute inset-0 z-50 flex items-end bg-black/40 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-file-delete-confirm" onClick={() => setDeletePath(null)}>
+        <div className="absolute inset-0 z-50 flex items-end bg-black/40 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-file-delete-confirm" onClick={() => { hapticSelection(); setDeletePath(null) }}>
           <section className="w-full rounded-2xl bg-white p-4 shadow-2xl md:max-w-sm" onClick={(event) => event.stopPropagation()}>
             <h2 className="text-[17px] font-bold text-zinc-950">Delete entry?</h2>
             <p className="mt-2 break-all text-sm text-zinc-500">{deletePath}</p>
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <button type="button" className="h-11 rounded-xl bg-zinc-100 text-sm font-semibold text-zinc-700" onClick={() => setDeletePath(null)}>
+              <button type="button" className="h-11 rounded-xl bg-zinc-100 text-sm font-semibold text-zinc-700" onClick={() => { hapticSelection(); setDeletePath(null) }}>
                 Cancel
               </button>
               <button
@@ -558,7 +588,7 @@ export function FileManager({
             <button
               className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
               type="button"
-              onClick={() => setSortMenuOpen(true)}
+              onClick={() => { hapticSelection(); setSortMenuOpen(true) }}
               aria-label={`Sort files: ${sortLabel}`}
               title={`Sort files: ${sortLabel}`}
             >
@@ -568,7 +598,7 @@ export function FileManager({
             <button
               className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
               type="button"
-              onClick={() => setNewDirOpen((current) => !current)}
+              onClick={() => { hapticSelection(); setNewDirOpen((current) => !current) }}
               aria-label="New directory"
             >
               <Folder className="h-5 w-5" />
@@ -618,7 +648,7 @@ export function FileManager({
             <button
               className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg disabled:opacity-50"
               type="button"
-              onClick={() => { void manager.refresh() }}
+              onClick={() => { hapticImpact(); void manager.refresh() }}
               disabled={manager.loading}
               aria-label="Refresh files"
             >
@@ -685,7 +715,7 @@ export function FileManager({
             </span>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => manager.setClipboard(null)}
+                onClick={() => { hapticSelection(); manager.setClipboard(null) }}
                 className="rounded-lg px-3 py-1.5 text-sm font-semibold text-zinc-400 hover:bg-zinc-800"
               >
                 Cancel
@@ -716,35 +746,114 @@ export function FileManager({
         actions={sortActions}
       />
       <ActionSheet
-        isOpen={bookmarksOpen}
-        onClose={() => setBookmarksOpen(false)}
+        isOpen={bookmarksOpen && !editingBookmark}
+        onClose={() => {
+          setBookmarksOpen(false)
+          closeBookmarkEditor()
+        }}
         title="Path bookmarks"
         subtitle={manager.pathBookmarksLoading ? 'Loading...' : `${manager.pathBookmarks.length} saved`}
-        actions={[
-          {
-            label: 'Save current directory',
-            icon: <BookmarkPlus className="h-5 w-5" />,
-            onClick: () => { hapticImpact(); void manager.addCurrentPathBookmark() },
-            closeOnClick: false,
-          },
-          ...manager.pathBookmarks.map((bookmark) => ({
-            label: bookmark.label,
-            ariaLabel: `Open bookmark ${bookmark.label}`,
-            subtitle: bookmark.path,
-            icon: <Bookmark className="h-5 w-5" />,
-            onClick: () => { hapticSelection(); void manager.navigate(bookmark.path) },
-            secondaryAction: {
-              label: `Remove bookmark ${bookmark.label}`,
-              icon: <BookmarkMinus className="h-5 w-5" />,
-              onClick: () => { hapticImpact(); void manager.removePathBookmark(bookmark.id) },
-              danger: true,
-              closeOnClick: false,
-            },
-          })),
-        ]}
+        actions={bookmarkActions({
+          bookmarks: manager.pathBookmarks,
+          onAddCurrent: () => { hapticImpact(); void manager.addCurrentPathBookmark() },
+          onEdit: openBookmarkEditor,
+          onOpen: (bookmark) => { hapticSelection(); void manager.navigate(bookmark.path) },
+        })}
       />
+      {bookmarksOpen && editingBookmark ? (
+        <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40 backdrop-blur-[2px] md:items-center" onClick={closeBookmarkEditor}>
+          <section
+            className="w-full max-w-xl animate-slide-up rounded-t-[20px] bg-white pb-[calc(env(safe-area-inset-bottom)+1rem)] shadow-2xl md:rounded-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mx-auto mt-3 h-1.5 w-12 rounded-full bg-zinc-200 md:hidden" />
+            <div className="px-5 pb-2 pt-4">
+              <h3 className="text-[17px] font-bold text-zinc-900">Edit bookmark</h3>
+              <p className="mt-1 break-all text-[13px] font-medium text-zinc-500">{editingBookmark.path}</p>
+            </div>
+            <div className="px-5 py-3">
+              <label className="flex flex-col gap-2 text-[13px] font-semibold text-zinc-600">
+                Alias
+                <input
+                  aria-label="Bookmark alias"
+                  className="h-12 rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-[16px] font-semibold text-zinc-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  value={bookmarkAlias}
+                  onChange={(event) => setBookmarkAlias(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') saveBookmarkAlias()
+                    if (event.key === 'Escape') closeBookmarkEditor()
+                  }}
+                  autoFocus
+                />
+              </label>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  className="h-11 rounded-xl bg-zinc-100 text-sm font-semibold text-zinc-700 active:bg-zinc-200"
+                  onClick={() => { hapticSelection(); closeBookmarkEditor() }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="h-11 rounded-xl bg-zinc-900 text-sm font-semibold text-white active:bg-zinc-800"
+                  onClick={saveBookmarkAlias}
+                >
+                  Save
+                </button>
+              </div>
+              <button
+                type="button"
+                className="mt-3 h-11 w-full rounded-xl bg-red-50 text-sm font-semibold text-red-600 active:bg-red-100"
+                onClick={() => {
+                  hapticImpact()
+                  const id = editingBookmark.id
+                  closeBookmarkEditor()
+                  void manager.removePathBookmark(id)
+                }}
+              >
+                Remove Bookmark
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   )
+}
+
+function bookmarkActions({
+  bookmarks,
+  onAddCurrent,
+  onEdit,
+  onOpen,
+}: {
+  bookmarks: PathBookmark[]
+  onAddCurrent: () => void
+  onEdit: (bookmark: PathBookmark) => void
+  onOpen: (bookmark: PathBookmark) => void
+}): ActionSheetItem[] {
+  return [
+    {
+      label: 'Save current directory',
+      icon: <BookmarkPlus className="h-5 w-5" />,
+      onClick: onAddCurrent,
+      closeOnClick: false,
+    },
+    ...bookmarks.map((bookmark) => ({
+      label: bookmark.label,
+      ariaLabel: `Open bookmark ${bookmark.label}`,
+      subtitle: bookmark.path,
+      icon: <Bookmark className="h-5 w-5" />,
+      onClick: () => onOpen(bookmark),
+      secondaryAction: {
+        label: `Edit bookmark ${bookmark.label}`,
+        icon: <SquarePen className="h-5 w-5" />,
+        onClick: () => onEdit(bookmark),
+        closeOnClick: false,
+      },
+    })),
+  ]
 }
 
 interface FileSortOption extends FileSortState {

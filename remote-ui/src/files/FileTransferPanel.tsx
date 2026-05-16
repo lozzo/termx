@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowDownToLine, ArrowUpFromLine, CheckSquare, Download, Pause, Play, RotateCw, Square, Trash2, X } from 'lucide-react'
-import { hapticImpact } from '../platform/haptics'
+import { hapticImpact, hapticSelection } from '../platform/haptics'
 import type { TransferInfo } from './fileApi'
 
 interface Props {
@@ -97,7 +97,7 @@ export function FileTransferPanel({
   return (
     <div className={rootClass}>
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => { hapticSelection(); setOpen(true) }}
         aria-label={`Open transfer center, ${summary}`}
         className={variant === 'inline'
           ? 'flex w-full items-center justify-between px-4 py-2 text-left'
@@ -165,6 +165,7 @@ function TransferCenterDialog({
   onClose: () => void
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [selectionMode, setSelectionMode] = useState(false)
 
   useEffect(() => {
     setSelectedIds((current) => {
@@ -183,6 +184,11 @@ function TransferCenterDialog({
     })
   }, [transfers])
 
+  useEffect(() => {
+    if (transfers.length > 0 || !selectionMode) return
+    setSelectionMode(false)
+  }, [selectionMode, transfers.length])
+
   const resumableCount = transfers.filter((t) => isResumable(t.status)).length
   const selectedTransfers = transfers.filter((transfer) => selectedIds.has(transfer.id))
   const selectedPausableCount = selectedTransfers.filter((transfer) => isPausable(transfer.status)).length
@@ -190,6 +196,15 @@ function TransferCenterDialog({
   const completedCount = transfers.filter((transfer) => transfer.status === 'completed').length
   const failedCount = transfers.filter((transfer) => isFailedClearable(transfer.status)).length
   const allSelected = transfers.length > 0 && selectedIds.size === transfers.length
+  const enterSelectionMode = () => {
+    hapticImpact()
+    setSelectionMode(true)
+  }
+  const exitSelectionMode = () => {
+    hapticSelection()
+    setSelectionMode(false)
+    setSelectedIds(new Set())
+  }
   const toggleSelectAll = () => {
     setSelectedIds((current) => {
       if (transfers.length > 0 && current.size === transfers.length) return new Set()
@@ -197,6 +212,7 @@ function TransferCenterDialog({
     })
   }
   const toggleSelected = (transferId: string) => {
+    if (!selectionMode) return
     setSelectedIds((current) => {
       const next = new Set(current)
       if (next.has(transferId)) next.delete(transferId)
@@ -234,84 +250,58 @@ function TransferCenterDialog({
   return (
     <div className="fixed inset-0 z-50 flex bg-white" role="dialog" aria-modal="true">
       <section className="flex h-full min-h-0 w-full flex-col bg-white">
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
-          <div className="min-w-0">
-            <h2 className="text-[18px] font-semibold text-zinc-950">Data Transfer Center</h2>
-            <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{summary}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {onResumeAll && resumableCount > 0 ? (
-              <button
-                type="button"
-                aria-label="Resume all transfers"
-                className="flex h-9 items-center gap-1.5 rounded-md bg-zinc-900 px-3 text-[12px] font-semibold text-white hover:bg-zinc-800 active:bg-zinc-800"
-                onClick={() => { hapticImpact(); onResumeAll() }}
-              >
-                <RotateCw className="h-4 w-4" />
-                Resume All
-              </button>
-            ) : null}
-            <button type="button" aria-label="Close data transfer center" className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-50 active:bg-zinc-100" onClick={onClose}>
-              <X className="h-5 w-5" />
+        {selectionMode ? (
+          <header className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+            <button
+              type="button"
+              className="text-[15px] font-medium text-zinc-500 hover:text-zinc-700 active:text-zinc-800"
+              onClick={exitSelectionMode}
+            >
+              Cancel
             </button>
-          </div>
-        </header>
-        {transfers.length > 0 ? (
-          <div className="shrink-0 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2">
-            <div className="flex items-center gap-2 overflow-x-auto">
+            <div className="min-w-0 text-center">
+              <h2 className="truncate text-[17px] font-semibold text-zinc-950">{selectedIds.size} selected</h2>
+              <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{summary}</p>
+            </div>
+            <button
+              type="button"
+              aria-label={allSelected ? 'Clear transfer selection' : 'Select all transfers'}
+              className="text-[15px] font-medium text-blue-600 hover:text-blue-700 active:text-blue-800"
+              onClick={() => { hapticSelection(); toggleSelectAll() }}
+            >
+              {allSelected ? 'Deselect All' : 'Select All'}
+            </button>
+          </header>
+        ) : (
+          <header className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+            <div className="min-w-0">
+              <h2 className="text-[18px] font-semibold text-zinc-950">Data Transfer Center</h2>
+              <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{summary}</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {onResumeAll && resumableCount > 0 ? (
+                <button
+                  type="button"
+                  aria-label="Resume all transfers"
+                  className="flex h-9 items-center gap-1.5 rounded-md bg-zinc-900 px-3 text-[12px] font-semibold text-white hover:bg-zinc-800 active:bg-zinc-800"
+                  onClick={() => { hapticImpact(); onResumeAll() }}
+                >
+                  <RotateCw className="h-4 w-4" />
+                  Resume All
+                </button>
+              ) : null}
               <button
                 type="button"
-                aria-label={allSelected ? 'Clear transfer selection' : 'Select all transfers'}
-                className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
-                onClick={toggleSelectAll}
+                aria-label="Close data transfer center"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-50 active:bg-zinc-100"
+                onClick={() => { hapticSelection(); onClose() }}
               >
-                {allSelected ? <CheckSquare className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
-                {selectedIds.size > 0 ? `${selectedIds.size} Selected` : 'Select'}
-              </button>
-              <button
-                type="button"
-                aria-label="Pause selected transfers"
-                disabled={!onPause || selectedPausableCount === 0}
-                className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-zinc-50 active:bg-zinc-100"
-                onClick={pauseSelected}
-              >
-                <Pause className="h-3.5 w-3.5" />
-                Pause Selected
-              </button>
-              <button
-                type="button"
-                aria-label="Start selected transfers"
-                disabled={!onResume || selectedStartableCount === 0}
-                className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-zinc-50 active:bg-zinc-100"
-                onClick={startSelected}
-              >
-                <Play className="h-3.5 w-3.5" />
-                Start Selected
-              </button>
-              <button
-                type="button"
-                aria-label="Delete all completed transfers"
-                disabled={completedCount === 0}
-                className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-zinc-50 active:bg-zinc-100"
-                onClick={clearCompleted}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Done
-              </button>
-              <button
-                type="button"
-                aria-label="Delete all failed transfers"
-                disabled={failedCount === 0}
-                className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-zinc-50 active:bg-zinc-100"
-                onClick={clearFailed}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Failed
+                <X className="h-5 w-5" />
               </button>
             </div>
-          </div>
-        ) : null}
-        <div className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)]" role="list">
+          </header>
+        )}
+        <div className="min-h-0 flex-1 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+5rem)]" role="list">
           {transfers.length === 0 ? (
             <div className="flex h-48 items-center justify-center px-6 text-center text-[14px] font-medium text-zinc-500">
               No transfer tasks.
@@ -330,14 +320,16 @@ function TransferCenterDialog({
             return (
               <div key={t.id} role="listitem" className="border-b border-zinc-100 px-4 py-3 last:border-b-0">
                 <div className="flex items-start gap-3">
-                  <button
-                    type="button"
-                    aria-label={`${selected ? 'Deselect' : 'Select'} ${t.name}`}
-                    className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-50 active:bg-zinc-100 hover:text-zinc-700 active:text-zinc-800"
-                    onClick={() => toggleSelected(t.id)}
-                  >
-                    {selected ? <CheckSquare className="h-4 w-4 text-zinc-900" /> : <Square className="h-4 w-4" />}
-                  </button>
+                  {selectionMode ? (
+                    <button
+                      type="button"
+                      aria-label={`${selected ? 'Deselect' : 'Select'} ${t.name}`}
+                      className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-50 active:bg-zinc-100 hover:text-zinc-700 active:text-zinc-800"
+                      onClick={() => { hapticSelection(); toggleSelected(t.id) }}
+                    >
+                      {selected ? <CheckSquare className="h-4 w-4 text-zinc-900" /> : <Square className="h-4 w-4" />}
+                    </button>
+                  ) : null}
                   <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${t.direction === 'download' ? 'bg-blue-50 text-blue-600' : 'bg-violet-50 text-violet-600'}`}>
                     {t.direction === 'download' ? <ArrowDownToLine className="h-4 w-4" /> : <ArrowUpFromLine className="h-4 w-4" />}
                   </div>
@@ -361,7 +353,7 @@ function TransferCenterDialog({
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
-                        {isActive && onPause ? (
+                        {!selectionMode && isActive && onPause ? (
                           <button
                             type="button"
                             aria-label={`Pause ${t.name}`}
@@ -371,7 +363,7 @@ function TransferCenterDialog({
                             <Pause className="h-3.5 w-3.5" />
                           </button>
                         ) : null}
-                        {isPaused && onResume ? (
+                        {!selectionMode && isPaused && onResume ? (
                           <button
                             type="button"
                             aria-label={`${isMissing ? 'Retry' : 'Resume'} ${t.name}`}
@@ -381,17 +373,20 @@ function TransferCenterDialog({
                             <Play className="h-3.5 w-3.5" />
                           </button>
                         ) : null}
-                        <button
-                          aria-label={`${isActive || t.status === 'paused' ? 'Cancel' : 'Clear'} ${t.name}`}
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-50 active:bg-zinc-100 hover:text-zinc-700 active:text-zinc-800"
-                          onClick={() => {
-                            if (isActive || t.status === 'paused') hapticImpact()
-                            if (isActive || t.status === 'paused') onCancel(t.id)
-                            else onDismiss(t.id)
-                          }}
-                        >
-                          {isActive || t.status === 'paused' ? <X className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
-                        </button>
+                        {!selectionMode ? (
+                          <button
+                            aria-label={`${isActive || t.status === 'paused' ? 'Cancel' : 'Clear'} ${t.name}`}
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-50 active:bg-zinc-100 hover:text-zinc-700 active:text-zinc-800"
+                            onClick={() => {
+                              if (isActive || t.status === 'paused') hapticImpact()
+                              else hapticSelection()
+                              if (isActive || t.status === 'paused') onCancel(t.id)
+                              else onDismiss(t.id)
+                            }}
+                          >
+                            {isActive || t.status === 'paused' ? <X className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                     <div className={`mt-2 h-1.5 overflow-hidden rounded-full ${isFailed || isMissing ? 'bg-red-100' : 'bg-zinc-100'}`}>
@@ -406,6 +401,66 @@ function TransferCenterDialog({
             )
           })}
         </div>
+        {transfers.length > 0 ? (
+          <div className="absolute bottom-0 left-0 right-0 z-40 border-t border-zinc-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
+            {selectionMode ? (
+              <div className="flex h-[60px] items-stretch justify-around px-2">
+                <button
+                  type="button"
+                  aria-label="Pause selected transfers"
+                  disabled={!onPause || selectedPausableCount === 0}
+                  className="flex flex-col items-center justify-center gap-1 rounded-lg px-3 text-zinc-600 disabled:opacity-40 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
+                  onClick={pauseSelected}
+                >
+                  <Pause className="h-5 w-5" />
+                  <span className="text-[11px] font-medium">Pause</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label="Start selected transfers"
+                  disabled={!onResume || selectedStartableCount === 0}
+                  className="flex flex-col items-center justify-center gap-1 rounded-lg px-3 text-zinc-600 disabled:opacity-40 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
+                  onClick={startSelected}
+                >
+                  <Play className="h-5 w-5" />
+                  <span className="text-[11px] font-medium">Start</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex h-[60px] items-center justify-around px-2">
+                <button
+                  type="button"
+                  aria-label="Select transfers"
+                  className="flex flex-col items-center justify-center gap-1 rounded-lg px-3 text-zinc-600 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
+                  onClick={enterSelectionMode}
+                >
+                  <CheckSquare className="h-5 w-5" />
+                  <span className="text-[11px] font-medium">Select</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label="Delete all completed transfers"
+                  disabled={completedCount === 0}
+                  className="flex flex-col items-center justify-center gap-1 rounded-lg px-3 text-zinc-600 disabled:opacity-40 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
+                  onClick={clearCompleted}
+                >
+                  <Trash2 className="h-5 w-5" />
+                  <span className="text-[11px] font-medium">Done</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label="Delete all failed transfers"
+                  disabled={failedCount === 0}
+                  className="flex flex-col items-center justify-center gap-1 rounded-lg px-3 text-zinc-600 disabled:opacity-40 hover:bg-zinc-50 hover:text-blue-600 active:bg-zinc-100"
+                  onClick={clearFailed}
+                >
+                  <Trash2 className="h-5 w-5" />
+                  <span className="text-[11px] font-medium">Failed</span>
+                </button>
+              </div>
+            )}
+          </div>
+        ) : null}
       </section>
     </div>
   )

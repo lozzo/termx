@@ -13,6 +13,7 @@ export interface PathBookmark {
 export interface PathBookmarkApi {
   list(): Promise<PathBookmark[]>
   add(path: string, label?: string): Promise<PathBookmark>
+  update(id: string, input: { label?: string | undefined; path?: string | undefined }): Promise<PathBookmark>
   remove(id: string): Promise<void>
 }
 
@@ -37,7 +38,7 @@ export function createPathBookmarkApi(session: Pick<RtcSession, 'openApi'>): Pat
     },
     async add(path, label) {
       const normalizedPath = normalizeBookmarkedPath(path)
-      const id = bookmarkIdForPath(normalizedPath)
+      const id = createBookmarkId(normalizedPath)
       const now = new Date().toISOString()
       const record = {
         schema_version: pathBookmarkRecordVersion,
@@ -58,6 +59,42 @@ export function createPathBookmarkApi(session: Pick<RtcSession, 'openApi'>): Pat
         path: normalizedPath,
         label: record.label,
         createdAt: now,
+        updatedAt: now,
+        version: entry.version,
+      }
+    },
+    async update(id, input) {
+      const trimmed = id.trim()
+      if (!trimmed) throw new Error('Bookmark id is required')
+      const existing = await storage.get({
+        appId: pathBookmarkStorageAppId,
+        scope: 'public',
+        key: pathBookmarkPrefix + trimmed,
+      })
+      const current = decodePathBookmark(existing.key, storageText(existing), existing.version, existing.updatedAt)
+      if (!current) throw new Error('Bookmark not found')
+      const path = input.path !== undefined ? normalizeBookmarkedPath(input.path) : current.path
+      const label = input.label?.trim() || bookmarkLabel(path)
+      const now = new Date().toISOString()
+      const record = {
+        schema_version: pathBookmarkRecordVersion,
+        id: current.id,
+        path,
+        label,
+        created_at: current.createdAt,
+        updated_at: now,
+      }
+      const entry = await storage.put({
+        appId: pathBookmarkStorageAppId,
+        scope: 'public',
+        key: pathBookmarkPrefix + current.id,
+        value: JSON.stringify(record),
+      })
+      return decodePathBookmark(entry.key, storageText(entry), entry.version, entry.updatedAt) ?? {
+        id: current.id,
+        path,
+        label,
+        createdAt: current.createdAt,
         updatedAt: now,
         version: entry.version,
       }
@@ -86,7 +123,7 @@ function decodePathBookmark(key: string, raw: string, version: number, updatedAt
     const record = JSON.parse(raw) as Record<string, unknown>
     const path = normalizeBookmarkedPath(stringValue(record.path))
     if (!path) return null
-    const id = stringValue(record.id) || (key.startsWith(pathBookmarkPrefix) ? key.slice(pathBookmarkPrefix.length) : key) || bookmarkIdForPath(path)
+    const id = stringValue(record.id) || (key.startsWith(pathBookmarkPrefix) ? key.slice(pathBookmarkPrefix.length) : key) || pathIdPrefix(path)
     return {
       id,
       path,
@@ -100,9 +137,21 @@ function decodePathBookmark(key: string, raw: string, version: number, updatedAt
   }
 }
 
-function bookmarkIdForPath(path: string): string {
+function createBookmarkId(path: string): string {
+  return `${pathIdPrefix(path)}~${randomIdPart()}`
+}
+
+function pathIdPrefix(path: string): string {
   const encoded = encodeURIComponent(normalizeBookmarkedPath(path))
   return encoded.replace(/%/g, '~')
+}
+
+function randomIdPart(): string {
+  const cryptoApi = globalThis.crypto
+  if (cryptoApi && 'randomUUID' in cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+    return cryptoApi.randomUUID().replace(/-/g, '').slice(0, 12)
+  }
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 }
 
 function normalizeBookmarkedPath(path: string): string {

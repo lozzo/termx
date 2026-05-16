@@ -52,7 +52,13 @@ public class NativeHapticPlugin extends Plugin {
         } else if (isSelectionPattern(pattern)) {
             constant = HapticFeedbackConstants.CLOCK_TICK;
         }
-        view.performHapticFeedback(constant);
+        boolean handled = view.performHapticFeedback(
+                constant,
+                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+        );
+        if (!handled) {
+            vibratePattern(pattern);
+        }
     }
 
     private boolean vibratePattern(Object pattern) {

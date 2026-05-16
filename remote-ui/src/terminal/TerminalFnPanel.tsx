@@ -1,6 +1,6 @@
 import { Settings } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { hapticImpact } from '../platform/haptics'
+import { hapticImpact, hapticSelection } from '../platform/haptics'
 import { matchTerminalFnPreset, SYSTEM_FN_GROUPS, type TerminalFnGroup } from './terminalFnPresets'
 
 export interface TerminalFnPanelProps {
@@ -22,7 +22,7 @@ export function TerminalFnPanel({ command, onSend }: TerminalFnPanelProps) {
             <button
               type="button"
               className={`h-7 rounded-md px-2 text-[10px] font-semibold ${selectedTab === 'program' ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'bg-[var(--termx-surface-raised)] text-[var(--termx-text)]'}`}
-              onClick={() => setActiveTab('program')}
+              onClick={() => { hapticSelection(); setActiveTab('program') }}
             >
               {programPreset.name}
             </button>
@@ -30,7 +30,7 @@ export function TerminalFnPanel({ command, onSend }: TerminalFnPanelProps) {
           <button
             type="button"
             className={`h-7 rounded-md px-2 text-[10px] font-semibold ${selectedTab === 'system' ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'bg-[var(--termx-surface-raised)] text-[var(--termx-text)]'}`}
-            onClick={() => setActiveTab('system')}
+            onClick={() => { hapticSelection(); setActiveTab('system') }}
           >
             System
           </button>

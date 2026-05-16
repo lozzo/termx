@@ -6,7 +6,7 @@ import { FileManager } from '../files/FileManager'
 import { createFileApi, type FileEntry } from '../files/fileApi'
 import { joinPath, normalizeFilePath, parentPath } from '../files/fileUtils'
 import { createPathBookmarkApi, type PathBookmark } from '../files/pathBookmarks'
-import { hapticImpact } from '../platform/haptics'
+import { hapticImpact, hapticSelection } from '../platform/haptics'
 import { PairDevicePanel } from '../pairing/PairDevicePanel'
 import type { MachineSessionStore } from '../state/localAppIdentity'
 import { MachineNetworkStatusOverlay } from '../machine-runtime/MachineNetworkStatusOverlay'
@@ -1848,7 +1848,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     const showTerminalListLoader = loadingTerminals && !hasLoadedTerminals
 
     return (
-      <aside className={`relative min-h-0 flex-1 flex-col bg-zinc-50 md:flex md:w-72 md:flex-none md:border-r md:border-zinc-200 md:bg-zinc-100 ${page === 'terminal' ? 'hidden' : 'flex'}`} data-testid="termx-terminal-list-page">
+      <aside
+        className={`relative min-h-0 flex-1 flex-col bg-zinc-50 md:flex md:w-72 md:flex-none md:border-r md:border-zinc-200 md:bg-zinc-100 ${page === 'terminal' ? 'hidden' : 'flex'}`}
+        data-testid={page === 'terminal' ? undefined : 'termx-terminal-list-page'}
+      >
         <header className="flex min-h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white md:bg-transparent px-4 pt-[env(safe-area-inset-top)] md:pt-0">
           <div className="flex min-w-0 items-center gap-2">
             {onBack ? (
@@ -1856,7 +1859,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 type="button"
                 aria-label="Back to machines"
                 className="mr-1 flex h-8 w-8 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100"
-                onClick={onBack}
+                onClick={() => { hapticSelection(); onBack() }}
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
@@ -1870,17 +1873,21 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
+              aria-hidden={page === 'terminal' ? 'true' : undefined}
               aria-label="Connection info"
               className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100"
-              onClick={openConnectionInfo}
+              tabIndex={page === 'terminal' ? -1 : undefined}
+              onClick={() => { hapticSelection(); openConnectionInfo() }}
             >
               <Info className="h-5 w-5" />
             </button>
             <button
               type="button"
+              aria-hidden={page === 'terminal' ? 'true' : undefined}
               aria-label="Open files"
               className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100"
-              onClick={openFiles}
+              tabIndex={page === 'terminal' ? -1 : undefined}
+              onClick={() => { hapticSelection(); openFiles() }}
             >
               <Folder className="h-5 w-5" />
             </button>
@@ -1889,7 +1896,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 type="button"
                 aria-label="Create terminal"
                 className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100"
-                onClick={openCreateTerminal}
+                onClick={() => { hapticImpact(); openCreateTerminal() }}
               >
                 <Plus className="h-5 w-5" />
               </button>
@@ -1923,7 +1930,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             <button
               type="button"
               className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 text-[15px] font-semibold text-white shadow-md transition-all active:scale-[0.98] hover:bg-zinc-800 active:bg-zinc-800"
-              onClick={() => setMobileSheet('pair')}
+              onClick={() => { hapticImpact(); setMobileSheet('pair') }}
             >
               <KeyRound className="h-4 w-4" />
               Verify device
@@ -1961,7 +1968,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <button
                 type="button"
                 className="flex min-h-12 w-full items-center justify-between rounded-xl border border-zinc-200 bg-white px-4 text-left text-[15px] font-medium text-zinc-900 shadow-sm"
-                onClick={openEditTerminal}
+                onClick={() => { hapticImpact(); openEditTerminal() }}
               >
                 <span>Edit terminal</span>
                 <SquarePen className="h-4 w-4 text-zinc-500" />
@@ -2099,7 +2106,6 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             />
           </MobileSheetPanel>
         ) : null}
-        {renderClipboardHistorySheet()}
         {renderTerminalPathPickerSheet()}
         {renderTerminalPathBookmarksSheet()}
       </aside>
@@ -2163,9 +2169,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <button
               type="button"
-              aria-label="Back to terminal list"
+              aria-label="Back to terminal list / Show terminal list"
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--termx-muted)] transition-colors active:bg-[var(--termx-surface-raised)]"
-              onClick={showTerminalListPage}
+              onClick={() => { hapticSelection(); showTerminalListPage() }}
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
@@ -2173,7 +2179,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               type="button"
               aria-label="Switch terminal"
               className="flex min-w-0 flex-1 flex-col items-start justify-center rounded-md px-1.5 py-0.5 text-left transition-colors active:bg-[var(--termx-surface-raised)]"
-              onClick={() => setMobileSheet('terminals')}
+              onClick={() => { hapticSelection(); setMobileSheet('terminals') }}
             >
               <span className="max-w-full truncate text-[9px] font-bold uppercase tracking-wider text-[var(--termx-muted)]">{machine.name}</span>
               <span className="max-w-full truncate text-[12px] font-semibold leading-tight text-[var(--termx-text)]" data-testid="termx-terminal-title">{terminalHeaderTitle}</span>
@@ -2207,7 +2213,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 <button
                   type="button"
                   aria-label="Close split terminal"
-                  onClick={closeSplitTerminal}
+                  onClick={() => { hapticImpact(); closeSplitTerminal() }}
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--termx-muted)] transition-colors active:scale-95 active:bg-[var(--termx-surface-raised)]"
                 >
                   <PanelBottomClose className="h-4 w-4" />
@@ -2236,6 +2242,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               type="button"
               aria-label="Terminal tools"
               onClick={() => {
+                hapticSelection()
                 setTerminalToolbarOpen((current) => {
                   const next = !current
                   if (next) setTerminalFnOpen(false)
@@ -2250,7 +2257,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             <button
               type="button"
               aria-label="Connection info"
-              onClick={openConnectionInfo}
+              onClick={() => { hapticSelection(); openConnectionInfo() }}
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-95 ${connectionInfoOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
             >
               <Info className="h-4 w-4" />
@@ -2258,7 +2265,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             <button
               type="button"
               aria-label="Open files"
-              onClick={openFiles}
+              onClick={() => { hapticSelection(); openFiles() }}
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-95 ${filesOpen ? 'bg-[var(--termx-accent)] text-[var(--termx-accent-text)]' : 'text-[var(--termx-muted)] active:bg-[var(--termx-surface-raised)]'}`}
             >
               <Folder className="h-4 w-4" />
@@ -2333,7 +2340,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               className={`relative min-h-0 flex-1 bg-[var(--termx-terminal-bg)] ${splitTerminalId ? `border-b border-[var(--termx-border-subtle)] md:rounded-xl md:border md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 0 ? 'ring-1 ring-inset ring-[var(--termx-accent)]' : ''}` : 'md:m-3 md:rounded-2xl md:border md:border-[var(--termx-border-subtle)] md:shadow-2xl md:overflow-hidden'}`}
               data-active-slot={activeTerminalSlot === 0 ? 'true' : 'false'}
               data-testid="termx-terminal-panel"
-              onPointerDown={() => { setActiveTerminalSlot(0); activeTerminalSlotRef.current = 0 }}
+              onPointerDown={() => {
+                if (activeTerminalSlot !== 0) hapticSelection()
+                setActiveTerminalSlot(0)
+                activeTerminalSlotRef.current = 0
+              }}
             >
               {activeTerminalId && connectedSession && connectedTerminalId === activeTerminalId ? (
                 <Terminal
@@ -2377,7 +2388,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 className={`relative min-h-0 flex-1 bg-[var(--termx-terminal-bg)] md:rounded-xl md:border md:border-[var(--termx-border-subtle)] md:shadow-2xl md:overflow-hidden ${activeTerminalSlot === 1 ? 'ring-1 ring-inset ring-[var(--termx-accent)]' : ''}`}
                 data-active-slot={activeTerminalSlot === 1 ? 'true' : 'false'}
                 data-testid="termx-split-terminal-panel"
-                onPointerDown={() => { setActiveTerminalSlot(1); activeTerminalSlotRef.current = 1 }}
+                onPointerDown={() => {
+                  if (activeTerminalSlot !== 1) hapticSelection()
+                  setActiveTerminalSlot(1)
+                  activeTerminalSlotRef.current = 1
+                }}
               >
                 {connectedSession ? (
                   <Terminal
@@ -2494,7 +2509,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             type="button"
             aria-label="Close files"
             className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition-colors active:scale-95 hover:bg-zinc-50 active:bg-zinc-100"
-            onClick={openTerminalPanel}
+            onClick={() => { hapticSelection(); openTerminalPanel() }}
           >
             <X className="h-5 w-5" />
           </button>
@@ -2578,7 +2593,7 @@ function MobileSheetPanel({
   title: string
 }) {
   return (
-    <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm transition-opacity md:items-center md:justify-center" data-testid={testId} onClick={onClose}>
+    <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm transition-opacity md:items-center md:justify-center" data-testid={testId} onClick={() => { hapticSelection(); onClose() }}>
       <section
         className="relative max-h-[85vh] w-full overflow-hidden rounded-t-[2rem] bg-zinc-50/95 backdrop-blur-xl shadow-[0_-8px_30px_rgba(0,0,0,0.12)] md:max-w-md md:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -2591,7 +2606,7 @@ function MobileSheetPanel({
             type="button"
             aria-label={`Close ${title}`}
             className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-200/50 text-zinc-500 transition-colors active:scale-95 active:bg-zinc-300"
-            onClick={onClose}
+            onClick={() => { hapticSelection(); onClose() }}
           >
             <X className="h-5 w-5" />
           </button>
@@ -2628,14 +2643,14 @@ function ConnectionInfoDialog({
   const canToggleMode = forceRelayActive || isP2P
   const modeActionLabel = forceRelayActive ? 'Try P2P' : 'Use relay'
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" onClick={onClose}>
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" onClick={() => { hapticSelection(); onClose() }}>
       <section className="w-full max-w-md overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
         <header className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
           <div className="min-w-0">
             <h2 className="text-[15px] font-semibold text-zinc-950">Connection Info</h2>
             <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{connectionTypeLabel(type)}</p>
           </div>
-          <button type="button" aria-label="Close connection info" className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-50 active:bg-zinc-100" onClick={onClose}>
+          <button type="button" aria-label="Close connection info" className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-50 active:bg-zinc-100" onClick={() => { hapticSelection(); onClose() }}>
             <X className="h-5 w-5" />
           </button>
         </header>
@@ -2656,17 +2671,17 @@ function ConnectionInfoDialog({
         </div>
 
         <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-3">
-          <button type="button" className="flex min-h-9 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100" onClick={onRefresh}>
+          <button type="button" className="flex min-h-9 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100" onClick={() => { hapticImpact(); onRefresh() }}>
             Refresh
           </button>
-          <button type="button" className="flex min-h-9 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100" onClick={onReconnect}>
+          <button type="button" className="flex min-h-9 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100" onClick={() => { hapticImpact(); onReconnect() }}>
             Reconnect
           </button>
           <button
             type="button"
             className="flex min-h-9 items-center justify-center rounded-md bg-zinc-900 px-3 text-[13px] font-semibold text-white disabled:bg-zinc-300 disabled:text-zinc-500"
             disabled={loading || !canToggleMode}
-            onClick={onToggleMode}
+            onClick={() => { hapticImpact(); onToggleMode() }}
           >
             {modeActionLabel}
           </button>

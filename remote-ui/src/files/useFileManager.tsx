@@ -82,6 +82,7 @@ export interface UseFileManagerResult {
   navigate(path: string): Promise<void>
   refresh(): Promise<void>
   addCurrentPathBookmark(): Promise<void>
+  updatePathBookmark(id: string, input: { label?: string | undefined; path?: string | undefined }): Promise<void>
   removePathBookmark(id: string): Promise<void>
   refreshPathBookmarks(): Promise<void>
 }
@@ -312,6 +313,19 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     }
   }, [bookmarkApi, refreshPathBookmarks, showActionMessage])
 
+  const updatePathBookmark = useCallback(async (id: string, input: { label?: string | undefined; path?: string | undefined }) => {
+    setPathBookmarkError(null)
+    try {
+      await bookmarkApi.update(id, input)
+      showActionMessage('Updated bookmark')
+      await refreshPathBookmarks()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setPathBookmarkError(message)
+      setError({ message, surface: 'toast', recoverable: true })
+    }
+  }, [bookmarkApi, refreshPathBookmarks, showActionMessage])
+
   const removePathBookmark = useCallback(async (id: string) => {
     setPathBookmarkError(null)
     try {
@@ -472,6 +486,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     navigate,
     refresh,
     addCurrentPathBookmark,
+    updatePathBookmark,
     removePathBookmark,
     refreshPathBookmarks,
   }

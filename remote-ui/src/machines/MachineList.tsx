@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { ChevronRight, LaptopMinimal, LogIn, Plus, QrCode, Server, X } from 'lucide-react'
-import { hapticImpact } from '../platform/haptics'
+import { hapticImpact, hapticSelection } from '../platform/haptics'
 import type { AppMachineRecord } from '../state/appMachine'
 import {
   formatLastSeen,
@@ -47,7 +47,7 @@ export function MachineList({
             aria-label="Scan pairing QR"
             className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             type="button"
-            onClick={onScanMachine}
+            onClick={() => { hapticImpact(); onScanMachine() }}
           >
             <QrCode className="h-5 w-5" />
           </button>
@@ -55,7 +55,7 @@ export function MachineList({
             aria-label="Add machine"
             className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-900 text-white shadow-sm transition-colors hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             type="button"
-            onClick={onAddMachine}
+            onClick={() => { hapticImpact(); onAddMachine() }}
           >
             <Plus className="h-5 w-5" />
           </button>
@@ -79,7 +79,7 @@ export function MachineList({
               <button
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 type="button"
-                onClick={onScanMachine}
+                onClick={() => { hapticImpact(); onScanMachine() }}
               >
                 <QrCode className="h-4 w-4" />
                 Scan
@@ -87,7 +87,7 @@ export function MachineList({
               <button
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 type="button"
-                onClick={onAddMachine}
+                onClick={() => { hapticImpact(); onAddMachine() }}
               >
                 <Plus className="h-4 w-4" />
                 Add
@@ -97,7 +97,7 @@ export function MachineList({
               <button
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 type="button"
-                onClick={onSignIn}
+                onClick={() => { hapticSelection(); onSignIn?.() }}
               >
                 <LogIn className="h-4 w-4" />
                 Sign in
@@ -200,6 +200,7 @@ function MachineRow({
           longPressTriggeredRef.current = false
           return
         }
+        hapticImpact()
         onSelectMachine(machine)
       }}
       onContextMenu={(event) => {
@@ -270,7 +271,7 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
   ] as const
 
   return (
-    <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-machine-detail-sheet" onClick={onClose}>
+    <div className="absolute inset-0 z-40 flex items-end bg-black/40 backdrop-blur-sm md:items-center md:justify-center" data-testid="termx-machine-detail-sheet" onClick={() => { hapticSelection(); onClose() }}>
       <section
         className="w-full max-h-[85vh] overflow-hidden rounded-t-2xl bg-white shadow-2xl md:max-w-md md:rounded-2xl"
         onClick={(event) => event.stopPropagation()}
@@ -285,7 +286,7 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
             type="button"
             aria-label="Close machine details"
             className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 hover:bg-zinc-100 active:bg-zinc-200"
-            onClick={onClose}
+            onClick={() => { hapticSelection(); onClose() }}
           >
             <X className="h-5 w-5" />
           </button>

@@ -11,7 +11,7 @@ import { createManagedHubApi } from '../api/managedHubApi'
 import { MachineConnectionStore } from '../connection/machineConnectionStore'
 import { RemoteNetworkStateManager } from '../connection/remoteNetworkState'
 import { FileTransferPanel } from '../files/FileTransferPanel'
-import { hapticError, hapticImpact, hapticSuccess } from '../platform/haptics'
+import { hapticError, hapticImpact, hapticSelection, hapticSuccess } from '../platform/haptics'
 import { addNativeBackHandler } from '../platform/nativeBack'
 import { parsePairingPayload, type PairingPayload } from '../state/pairingPayload'
 import type { FileTransferContext, TransferInfo } from '../files/fileApi'
@@ -351,6 +351,7 @@ export function RemoteControlApp({
   }, [storage])
 
   const openAddLocalSheet = useCallback(() => {
+    hapticImpact()
     setSelectedMachineId(null)
     setPairIntent('add-local')
     setManualScanValue('')
@@ -362,6 +363,7 @@ export function RemoteControlApp({
   }, [])
 
   const openPairSheet = useCallback((machineId: string) => {
+    hapticImpact()
     setSelectedMachineId(machineId)
     setPairIntent('authorize-machine')
     setManualScanValue('')
@@ -380,6 +382,7 @@ export function RemoteControlApp({
   }, [openPairSheet, pairedMachineIds])
 
   const selectMachine = useCallback((machine: WebControlMachine) => {
+    hapticImpact()
     setSelectedMachineId(machine.id)
     if (!pairedMachineIds.has(machine.id)) {
       openMachinePairSheet(machine)
@@ -488,6 +491,7 @@ export function RemoteControlApp({
 
   const scanWithCamera = useCallback(async () => {
     if (!scanPairingCode) return
+    hapticImpact()
     setManualEntryOpen(false)
     setCameraScanning(true)
     setError(null)
@@ -546,12 +550,12 @@ export function RemoteControlApp({
           signedIn={signedIn}
           terminalSettings={terminalSettings}
           user={user}
-          onBack={() => setView('home')}
+          onBack={() => { hapticSelection(); setView('home') }}
           onLoginChange={setLogin}
           onPasswordChange={setPassword}
-          onRefresh={() => { void refreshMachines() }}
+          onRefresh={() => { hapticImpact(); void refreshMachines() }}
           onSignIn={() => { hapticImpact(); void submitLogin() }}
-          onSignOut={signOut}
+          onSignOut={() => { hapticImpact(); signOut() }}
           onTerminalSettingsChange={updateTerminalSettings}
           onExportDebugLogs={exportDebugLogs}
         />
@@ -562,6 +566,7 @@ export function RemoteControlApp({
           terminalSettings={terminalSettings}
           runtime={getMachineRuntime(selectedMachine)}
           onBack={() => {
+            hapticSelection()
             setView('home')
             setError(null)
           }}
@@ -577,12 +582,12 @@ export function RemoteControlApp({
           signedIn={signedIn}
           user={user}
           onAddLocalDevice={openAddLocalSheet}
-          onOpenSettings={() => setView('settings')}
-          onOpenTransferCenter={() => setTransferCenterOpen(true)}
+          onOpenSettings={() => { hapticSelection(); setView('settings') }}
+          onOpenTransferCenter={() => { hapticSelection(); setTransferCenterOpen(true) }}
           onPairMachine={openMachinePairSheet}
-          onRefresh={() => { void refreshMachines() }}
+          onRefresh={() => { hapticImpact(); void refreshMachines() }}
           onSelectMachine={selectMachine}
-          onSignIn={() => setView('settings')}
+          onSignIn={() => { hapticSelection(); setView('settings') }}
         />
       )}
 
@@ -598,9 +603,9 @@ export function RemoteControlApp({
           selectedMachine={selectedMachine}
           signedIn={signedIn}
           canScanWithCamera={Boolean(scanPairingCode)}
-          onClose={() => setScanOpen(false)}
+          onClose={() => { hapticSelection(); setScanOpen(false) }}
           onImport={() => void importManualScan()}
-          onManualEntryOpen={() => setManualEntryOpen(true)}
+          onManualEntryOpen={() => { hapticSelection(); setManualEntryOpen(true) }}
           onManualScanValueChange={setManualScanValue}
           onScanWithCamera={() => void scanWithCamera()}
         />
@@ -609,7 +614,7 @@ export function RemoteControlApp({
         <GlobalTransferCenter
           fileTransfer={globalFileTransfer}
           resolveMachineLabel={(machineId) => displayMachines.find((machine) => machine.id === machineId)?.name ?? machineId}
-          onClose={() => setTransferCenterOpen(false)}
+          onClose={() => { hapticSelection(); setTransferCenterOpen(false) }}
           onResumeTransfer={resumeGlobalTransfer}
           onResumeAllTransfers={resumeAllGlobalTransfers}
         />
@@ -710,7 +715,7 @@ function MachineRuntimeHeader({ machine, onBack }: { machine: WebControlMachine;
         aria-label="Back to machines"
         className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         type="button"
-        onClick={onBack}
+        onClick={() => { hapticSelection(); onBack() }}
       >
         <ArrowLeft className="h-5 w-5" />
       </button>
@@ -951,7 +956,7 @@ function SettingsView({
                   aria-label="Decrease terminal font size"
                   className="h-9 w-9 text-lg font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                   type="button"
-                  onClick={() => onTerminalSettingsChange({ fontSize: Math.max(8, terminalSettings.fontSize - 1) })}
+                  onClick={() => { hapticSelection(); onTerminalSettingsChange({ fontSize: Math.max(8, terminalSettings.fontSize - 1) }) }}
                 >
                   -
                 </button>
@@ -969,7 +974,7 @@ function SettingsView({
                   aria-label="Increase terminal font size"
                   className="h-9 w-9 text-lg font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                   type="button"
-                  onClick={() => onTerminalSettingsChange({ fontSize: Math.min(32, terminalSettings.fontSize + 1) })}
+                  onClick={() => { hapticSelection(); onTerminalSettingsChange({ fontSize: Math.min(32, terminalSettings.fontSize + 1) }) }}
                 >
                   +
                 </button>
@@ -992,7 +997,7 @@ function SettingsView({
               <SettingsSelect
                 ariaLabel="Terminal renderer"
                 value={terminalSettings.renderer}
-                onChange={(value) => onTerminalSettingsChange({ renderer: value as TerminalRenderer })}
+                onChange={(value) => { hapticSelection(); onTerminalSettingsChange({ renderer: value as TerminalRenderer }) }}
               >
                 <option value="auto">Auto</option>
                 <option value="webgl">WebGL</option>
@@ -1004,7 +1009,7 @@ function SettingsView({
               <SettingsSelect
                 ariaLabel="Terminal keyboard mode"
                 value={terminalSettings.keyboardMode}
-                onChange={(value) => onTerminalSettingsChange({ keyboardMode: value as TerminalKeyboardMode })}
+                onChange={(value) => { hapticSelection(); onTerminalSettingsChange({ keyboardMode: value as TerminalKeyboardMode }) }}
               >
                 <option value="auto">Auto</option>
                 <option value="resize">Resize</option>
@@ -1177,7 +1182,10 @@ function SettingsSelect({
       aria-label={ariaLabel}
       className="h-9 max-w-[54vw] rounded-lg border border-zinc-200 bg-white px-3 text-right text-sm font-semibold text-zinc-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 sm:max-w-xs"
       value={value}
-      onChange={(event) => onChange(event.currentTarget.value)}
+      onChange={(event) => {
+        hapticSelection()
+        onChange(event.currentTarget.value)
+      }}
     >
       {children}
     </select>
@@ -1197,7 +1205,10 @@ function FontPicker({
         aria-label="Terminal font"
         className="sr-only"
         value={value}
-        onChange={(event) => onChange(event.currentTarget.value)}
+        onChange={(event) => {
+          hapticSelection()
+          onChange(event.currentTarget.value)
+        }}
       >
         {TERMINAL_FONT_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
@@ -1242,7 +1253,10 @@ function FontPreviewButton({
       role="radio"
       style={{ fontFamily: option.value }}
       type="button"
-      onClick={onSelect}
+      onClick={() => {
+        hapticSelection()
+        onSelect()
+      }}
     >
       <div className="flex min-w-0 items-center gap-2">
         <span className="truncate text-sm font-semibold leading-5 text-zinc-950">{option.label}</span>
@@ -1271,7 +1285,10 @@ function ThemePicker({
         aria-label="Terminal theme"
         className="sr-only"
         value={value}
-        onChange={(event) => onChange(event.currentTarget.value as TerminalSettings['themeId'])}
+        onChange={(event) => {
+          hapticSelection()
+          onChange(event.currentTarget.value as TerminalSettings['themeId'])
+        }}
       >
         <optgroup label="Dark">
           {groups.dark.map((option) => (
@@ -1328,7 +1345,10 @@ function ThemePreviewButton({
         boxShadow: selected ? `0 0 0 1px ${ui.accent}` : 'none',
       }}
       type="button"
-      onClick={onSelect}
+      onClick={() => {
+        hapticSelection()
+        onSelect()
+      }}
     >
       <div className="rounded-md p-2" style={{ backgroundColor: ui.terminalBackground }}>
         <div className="mb-2 flex gap-1">
@@ -1367,7 +1387,10 @@ function Switch({
       aria-pressed={checked}
       className={`relative h-8 w-12 rounded-full transition-colors ${checked ? 'bg-[var(--termx-accent)]' : 'bg-[var(--termx-border)]'}`}
       type="button"
-      onClick={() => onChange(!checked)}
+      onClick={() => {
+        hapticSelection()
+        onChange(!checked)
+      }}
     >
       <span className={`absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
     </button>
@@ -1609,7 +1632,7 @@ function EmptyState({
         <button
           className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           type="button"
-          onClick={onAction}
+          onClick={() => { hapticImpact(); onAction() }}
         >
           {icon === 'login' ? <LogIn className="h-4 w-4" /> : <QrCode className="h-4 w-4" />}
           {actionLabel}

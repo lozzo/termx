@@ -96,9 +96,13 @@ describe('FileTransferPanel', () => {
       />,
     )
 
+    expect(screen.queryByRole('button', { name: /select all transfers/i })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: /select transfers/i }))
     await userEvent.click(screen.getByRole('button', { name: /select all transfers/i }))
     await userEvent.click(screen.getByRole('button', { name: /pause selected transfers/i }))
     await userEvent.click(screen.getByRole('button', { name: /start selected transfers/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
     await userEvent.click(screen.getByRole('button', { name: /delete all completed transfers/i }))
     await userEvent.click(screen.getByRole('button', { name: /delete all failed transfers/i }))
 

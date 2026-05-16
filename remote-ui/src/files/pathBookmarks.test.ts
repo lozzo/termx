@@ -61,8 +61,62 @@ describe('createPathBookmarkApi', () => {
     expect(session.requests[0]?.params).toEqual(expect.objectContaining({
       app_id: 'termx.paths',
       scope: 'public',
-      key: 'bookmarks/~2FUsers~2Flozzow~2Fproject',
     }))
+    expect(String(session.requests[0]?.params?.key)).toMatch(/^bookmarks\/~2FUsers~2Flozzow~2Fproject~/)
+  })
+
+  it('allows multiple aliases for the same path and updates labels in place', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-16T09:00:00Z'))
+    vi.spyOn(globalThis.crypto, 'randomUUID')
+      .mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
+      .mockReturnValueOnce('22222222-2222-4222-8222-222222222222')
+    const stored = new Map<string, Uint8Array>()
+    const session = createMockFileSession({
+      '/storage/put': ({ key, value }: { key?: string; value?: Uint8Array } = {}) => {
+        if (key && value) stored.set(key, value)
+        return {
+          app_id: 'termx.paths',
+          scope: 'public',
+          key,
+          value,
+          version: 9,
+        }
+      },
+      '/storage/get': ({ key }: { key?: string } = {}) => ({
+        app_id: 'termx.paths',
+        scope: 'public',
+        key,
+        value: stored.get(key ?? '') ?? new Uint8Array(),
+        version: 9,
+      }),
+      '/storage/list': () => ({
+        entries: Array.from(stored.entries()).map(([key, value]) => ({
+          app_id: 'termx.paths',
+          scope: 'public',
+          key,
+          value,
+          version: 9,
+        })),
+      }),
+    })
+    const api = createPathBookmarkApi(session)
+
+    const first = await api.add('/srv/app', 'prod')
+    const second = await api.add('/srv/app', 'staging')
+    expect(first.id).not.toBe(second.id)
+    expect(first.path).toBe('/srv/app')
+    expect(second.path).toBe('/srv/app')
+
+    await expect(api.list()).resolves.toMatchObject([
+      { label: 'prod', path: '/srv/app' },
+      { label: 'staging', path: '/srv/app' },
+    ])
+    await expect(api.update(first.id, { label: 'production' })).resolves.toMatchObject({
+      id: first.id,
+      label: 'production',
+      path: '/srv/app',
+    })
   })
 
   it('derives compact labels from absolute paths', () => {

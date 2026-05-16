@@ -218,7 +218,7 @@ function ToolbarIconButton({
       aria-label={label}
       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-500/15 text-red-300 transition-colors active:scale-[0.98] hover:bg-red-50/80 active:bg-red-500/25"
       onPointerDown={(event) => event.preventDefault()}
-      onClick={onClick}
+      onClick={() => { hapticSelection(); onClick() }}
     >
       {children}
     </button>

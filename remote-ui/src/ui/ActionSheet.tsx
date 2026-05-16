@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { X } from 'lucide-react'
-import { hapticImpact } from '../platform/haptics'
+import { hapticImpact, hapticSelection } from '../platform/haptics'
 
 export interface ActionSheetItem {
   label: string
@@ -31,11 +31,15 @@ export interface ActionSheetProps {
 
 export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: ActionSheetProps) {
   if (!isOpen) return null
+  const closeWithHaptic = () => {
+    hapticSelection()
+    onClose()
+  }
 
   return (
     <div
       className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 backdrop-blur-[2px] md:items-center"
-      onClick={onClose}
+      onClick={closeWithHaptic}
       data-testid="action-sheet-backdrop"
     >
       <div
@@ -54,7 +58,7 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
             <button
               type="button"
               className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 active:bg-zinc-200"
-              onClick={onClose}
+              onClick={closeWithHaptic}
             >
               <X className="h-4 w-4" />
             </button>
@@ -131,6 +135,7 @@ function runSheetAction(
   onClose: () => void,
 ) {
   if (action.danger) hapticImpact()
+  else hapticSelection()
   action.onClick()
   if (action.closeOnClick !== false) onClose()
 }

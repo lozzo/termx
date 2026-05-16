@@ -34,6 +34,8 @@ import { NativeConnection, type NativeConnectOpts, type NativeConnectionSnapshot
 import { NativeRtcConnector, recoverNativeBridgeAfterResume, type NativeRtcSession } from './NativeConnectionProxy'
 import { NativeFileTransferStore } from './NativeFileTransferStore'
 import NativeFilePicker from './plugins/nativeFilePicker'
+import NativeHaptic from './plugins/nativeHaptic'
+import { useNativeStatusBarSync } from './nativeStatusBar'
 
 const defaultControlUrl = import.meta.env.VITE_CONTROL_URL || 'http://114.66.58.243:12306'
 const qrScannerRootId = 'termx-camera-qr-scanner'
@@ -57,6 +59,7 @@ export function TermxApp() {
   useAndroidBackButton()
   useAppResumeSync()
   useNativeKeyboardEvents()
+  useNativeStatusBarSync()
 
   const networkRuntime = useMemo(() => createNativeNetworkRuntime(), [])
   const nativeAppRuntime = useMemo(() => createNativeAppRuntime(), [])
@@ -267,20 +270,25 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
         })
     }
 
-    cancelButton.onclick = () => {
+  cancelButton.onclick = () => {
+      void NativeHaptic.impact({ pattern: 8 }).catch(() => {})
       options?.onCancel?.()
       finish(null)
     }
     manualSubmit.onclick = () => {
       const value = manualInput.value.trim()
       if (!value) return
+      void NativeHaptic.impact({ pattern: 10 }).catch(() => {})
       options?.onManualEntry?.()
       finish(value)
     }
     scanner.start(
       { facingMode: 'environment' },
       { fps: 10, qrbox: { width: qrboxSize, height: qrboxSize }, aspectRatio: 1.0 },
-      (decodedText) => finish(decodedText),
+      (decodedText) => {
+        void NativeHaptic.impact({ pattern: 25 }).catch(() => {})
+        finish(decodedText)
+      },
       () => {},
     ).catch((error) => finish(null, error))
   })

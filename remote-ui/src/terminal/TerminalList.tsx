@@ -99,7 +99,10 @@ export function TerminalList({
                     type="button"
                     aria-label={`Open ${terminal.title}`}
                     aria-current={isActive ? 'true' : 'false'}
-                    onClick={() => onOpenTerminal({ machineId, terminalId: terminal.terminalId })}
+                    onClick={() => {
+                      hapticImpact()
+                      onOpenTerminal({ machineId, terminalId: terminal.terminalId })
+                    }}
                   >
                     <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors ${isActive ? 'bg-zinc-800' : 'bg-zinc-100 group-hover:bg-zinc-200'}`}>
                       <TerminalIcon className={`h-5 w-5 ${isActive ? 'text-zinc-200' : 'text-zinc-500'}`} />
@@ -147,7 +150,10 @@ export function TerminalList({
                       type="button"
                       className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isActive ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700'}`}
                       aria-label={`Manage ${terminal.title}`}
-                      onClick={() => onManageTerminal({ machineId, terminalId: terminal.terminalId })}
+                      onClick={() => {
+                        hapticImpact()
+                        onManageTerminal({ machineId, terminalId: terminal.terminalId })
+                      }}
                     >
                       <MoreVertical className="h-4 w-4" />
                     </button>
