@@ -10,6 +10,7 @@ import {
   type FilePreviewStreamResult,
 } from './fileApi'
 import type { ConnectionInfo, RtcSession } from '../core/transport'
+import { createPathBookmarkApi, type PathBookmark } from './pathBookmarks'
 
 export type FileSortField = 'name' | 'modified' | 'size' | 'type'
 export type FileSortDirection = 'asc' | 'desc'
@@ -56,6 +57,9 @@ export interface UseFileManagerResult {
   selectionMode: boolean
   selectedPaths: Set<string>
   clipboard: { mode: 'copy' | 'cut'; paths: string[] } | null
+  pathBookmarks: PathBookmark[]
+  pathBookmarksLoading: boolean
+  pathBookmarkError: string | null
   setSelectionMode(mode: boolean): void
   toggleSelect(path: string): void
   selectAll(): void
@@ -77,6 +81,9 @@ export interface UseFileManagerResult {
   renameEntry(path: string, newName: string): Promise<void>
   navigate(path: string): Promise<void>
   refresh(): Promise<void>
+  addCurrentPathBookmark(): Promise<void>
+  removePathBookmark(id: string): Promise<void>
+  refreshPathBookmarks(): Promise<void>
 }
 
 export function useFileManager(options: UseFileManagerOptions): UseFileManagerResult {
@@ -102,10 +109,14 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
 
   const fileApi = useMemo(() => createFileApi(options.session), [options.session])
   const previewSource = useMemo(() => createFilePreviewSource(options.session), [options.session])
+  const bookmarkApi = useMemo(() => createPathBookmarkApi(options.session), [options.session])
 
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [clipboard, setClipboard] = useState<{ mode: 'copy' | 'cut'; paths: string[] } | null>(null)
+  const [pathBookmarks, setPathBookmarks] = useState<PathBookmark[]>([])
+  const [pathBookmarksLoading, setPathBookmarksLoading] = useState(false)
+  const [pathBookmarkError, setPathBookmarkError] = useState<string | null>(null)
 
   useEffect(() => {
     hasLoadedEntriesRef.current = hasLoadedEntries
@@ -275,6 +286,45 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     setShowHidden((current) => !current)
   }, [])
 
+  const refreshPathBookmarks = useCallback(async () => {
+    setPathBookmarksLoading(true)
+    setPathBookmarkError(null)
+    try {
+      setPathBookmarks(await bookmarkApi.list())
+    } catch (err) {
+      setPathBookmarkError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPathBookmarksLoading(false)
+    }
+  }, [bookmarkApi])
+
+  const addCurrentPathBookmark = useCallback(async () => {
+    const path = normalizeAbsolutePath(currentPathRef.current || '/')
+    setPathBookmarkError(null)
+    try {
+      await bookmarkApi.add(path)
+      showActionMessage(`Bookmarked ${path}`)
+      await refreshPathBookmarks()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setPathBookmarkError(message)
+      setError({ message, surface: 'toast', recoverable: true })
+    }
+  }, [bookmarkApi, refreshPathBookmarks, showActionMessage])
+
+  const removePathBookmark = useCallback(async (id: string) => {
+    setPathBookmarkError(null)
+    try {
+      await bookmarkApi.remove(id)
+      showActionMessage('Removed bookmark')
+      await refreshPathBookmarks()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setPathBookmarkError(message)
+      setError({ message, surface: 'toast', recoverable: true })
+    }
+  }, [bookmarkApi, refreshPathBookmarks, showActionMessage])
+
   const setSort = useCallback((sort: FileSortState) => {
     setSortState(sort)
   }, [])
@@ -397,6 +447,9 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     selectionMode,
     selectedPaths,
     clipboard,
+    pathBookmarks,
+    pathBookmarksLoading,
+    pathBookmarkError,
     setSelectionMode,
     toggleSelect,
     selectAll,
@@ -418,6 +471,9 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     renameEntry,
     navigate,
     refresh,
+    addCurrentPathBookmark,
+    removePathBookmark,
+    refreshPathBookmarks,
   }
 }
 

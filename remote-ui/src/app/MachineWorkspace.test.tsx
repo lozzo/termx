@@ -762,6 +762,96 @@ describe('MachineWorkspace', () => {
     expect(keyboardButton.getAttribute('aria-pressed')).toBe('false')
   })
 
+  it('pastes the latest daemon clipboard history entry from terminal tools', async () => {
+    vi.stubGlobal('innerWidth', 390)
+    const api = createMockLocalAgentApi()
+    const session = createMockMachineWorkspaceSession({
+      '/storage/list': {
+        entries: [{
+          app_id: 'termx.clipboard',
+          scope: 'public',
+          key: 'history/clip-1',
+          value: new TextEncoder().encode(JSON.stringify({
+            schema_version: 1,
+            id: 'clip-1',
+            text: 'daemon clipboard',
+            preview: 'daemon clipboard',
+            created_at: '2026-05-16T08:00:00Z',
+          })),
+          version: 1,
+        }],
+      },
+    }, 'machine-local')
+    const connect = vi.fn(async () => session)
+
+    render(<MachineWorkspace api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /terminal tools/i }))
+    await userEvent.click(screen.getByRole('button', { name: '粘贴' }))
+
+    await waitFor(() => expect(
+      terminalHandleMocks.allHandles.flatMap((handle) => handle.pasteText.mock.calls.map(([text]) => text)),
+    ).toContain('daemon clipboard'))
+    expect(session.requests).toContainEqual({
+      method: 'POST',
+      path: '/storage/list',
+      params: {
+        app_id: 'termx.clipboard',
+        scope: 'public',
+        prefix: 'history/',
+      },
+    })
+  })
+
+  it('opens daemon clipboard history and deletes an entry', async () => {
+    vi.stubGlobal('innerWidth', 390)
+    const api = createMockLocalAgentApi()
+    const session = createMockMachineWorkspaceSession({
+      '/storage/list': {
+        entries: [{
+          app_id: 'termx.clipboard',
+          scope: 'public',
+          key: 'history/clip-1',
+          value: new TextEncoder().encode(JSON.stringify({
+            schema_version: 1,
+            id: 'clip-1',
+            text: 'history text',
+            preview: 'history text',
+            created_at: '2026-05-16T08:00:00Z',
+          })),
+          version: 1,
+        }],
+      },
+      '/storage/delete': { deleted: true, version: 2 },
+    }, 'machine-local')
+    const connect = vi.fn(async () => session)
+
+    render(<MachineWorkspace api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /terminal tools/i }))
+    await userEvent.click(screen.getByRole('button', { name: '剪贴板' }))
+
+    const sheet = await screen.findByTestId('termx-clipboard-history-sheet')
+    await waitFor(() => expect(within(sheet).getByText('history text')).toBeTruthy())
+    await userEvent.click(within(sheet).getByRole('button', { name: /delete/i }))
+
+    await waitFor(() => expect(session.requests).toContainEqual({
+      method: 'POST',
+      path: '/storage/delete',
+      params: {
+        app_id: 'termx.clipboard',
+        scope: 'public',
+        key: 'history/clip-1',
+      },
+    }))
+  })
+
   it('reconnects from connection info without changing the current transport mode', async () => {
     const api = createMockLocalAgentApi()
     const sessions: ReturnType<typeof createMockMachineWorkspaceSession>[] = []
@@ -1221,6 +1311,64 @@ describe('MachineWorkspace', () => {
       method: 'remove',
       path: 'remove',
       params: { terminal_id: 'terminal-1' },
+    }))
+  })
+
+  it('chooses a new terminal working directory from the visual picker', async () => {
+    const api = createMockLocalAgentApi()
+    const managementSession = createMockMachineWorkspaceSession({
+      '/files/list': ({ path }: { path?: string } = {}) => {
+        if (path === '/Users/lozzow/project/app') {
+          return {
+            path: '/Users/lozzow/project/app',
+            parent: '/Users/lozzow/project',
+            total: 0,
+            entries: [],
+          }
+        }
+        return {
+          path: '/Users/lozzow/project',
+          parent: '/Users/lozzow',
+          total: 2,
+          entries: [
+            { name: 'app', type: 'dir', size: 0 },
+            { name: 'README.md', type: 'file', size: 42 },
+          ],
+        }
+      },
+      create: { terminal_id: 'terminal-3', state: 'running' },
+    }, 'machine-local')
+    const connect = vi.fn(async () => managementSession)
+
+    render(<MachineWorkspace api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /create terminal/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /create terminal/i }))
+    const editor = await screen.findByTestId('termx-terminal-editor-sheet')
+    await userEvent.click(within(editor).getByRole('button', { name: /browse/i }))
+
+    const picker = await screen.findByTestId('termx-terminal-path-picker-sheet')
+    await waitFor(() => expect(within(picker).getByRole('button', { name: /^app$/i })).toBeTruthy())
+    await userEvent.click(within(picker).getByRole('button', { name: /^app$/i }))
+    await waitFor(() => expect(within(picker).getByText('/Users/lozzow/project/app')).toBeTruthy())
+    expect(within(picker).getByTestId('termx-terminal-path-picker-list').className).toContain('h-80')
+    expect(within(picker).getByText('Empty')).toBeTruthy()
+    await userEvent.click(within(picker).getByRole('button', { name: /use this path/i }))
+
+    const reopenedEditor = await screen.findByTestId('termx-terminal-editor-sheet')
+    expect((within(reopenedEditor).getByLabelText('Working directory') as HTMLInputElement).value).toBe('/Users/lozzow/project/app')
+    await userEvent.click(within(reopenedEditor).getByRole('button', { name: /create terminal/i }))
+
+    await waitFor(() => expect(managementSession.requests).toContainEqual({
+      method: 'create',
+      path: 'create',
+      params: {
+        dir: '/Users/lozzow/project/app',
+        tags: {
+          'termx.size_lock': 'off',
+          cwd: '/Users/lozzow/project/app',
+        },
+      },
     }))
   })
 

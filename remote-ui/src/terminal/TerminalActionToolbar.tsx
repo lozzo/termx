@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useRef } from 'react'
-import { Clipboard, Copy, Cpu, MousePointer2, PanelTopOpen, X, Minus, Plus } from 'lucide-react'
+import { Clipboard, ClipboardList, Copy, Cpu, MousePointer2, PanelTopOpen, X, Minus, Plus } from 'lucide-react'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
 import type { TerminalRenderer } from './Terminal'
 import type { TerminalResizeControl } from './terminalClient'
@@ -17,6 +17,7 @@ export interface TerminalActionToolbarProps {
   onSelectVisible: () => void
   onCopy: () => void
   onPaste: () => void
+  onOpenClipboardHistory?: (() => void) | undefined
   onOpenSnippets: () => void
   onRendererChange?: ((renderer: TerminalRenderer) => void) | undefined
   onFontSizeChange?: ((size: number) => void) | undefined
@@ -44,6 +45,7 @@ export function TerminalActionToolbar({
   onSelectVisible,
   onCopy,
   onPaste,
+  onOpenClipboardHistory,
   onOpenSnippets,
   onRendererChange,
   onFontSizeChange,
@@ -154,13 +156,14 @@ export function TerminalActionToolbar({
         </div>
 
         {/* Tools Row */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-4 gap-2">
           <ToolbarButton
             label="选择"
             icon={<MousePointer2 className="h-3 w-3" />}
             onClick={() => onModeChange('selection')}
           />
           <ToolbarButton label="粘贴" icon={<Clipboard className="h-3 w-3" />} onClick={onPaste} />
+          <ToolbarButton label="剪贴板" icon={<ClipboardList className="h-3 w-3" />} onClick={() => onOpenClipboardHistory?.()} />
           <ToolbarButton label="快捷短语" icon={<PanelTopOpen className="h-3 w-3" />} onClick={onOpenSnippets} />
         </div>
       </div>

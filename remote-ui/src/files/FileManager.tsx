@@ -9,7 +9,7 @@ import 'highlight.js/styles/github.css'
 import { addNativeBackHandler } from '../platform/nativeBack'
 import { hapticImpact, hapticSelection } from '../platform/haptics'
 import { ActionSheet, type ActionSheetItem } from '../ui/ActionSheet'
-import { AlertCircle, ArrowDownAZ, ArrowDownToLine, ArrowUpAZ, ArrowUpFromLine, Box, Check, ChevronRight, ClipboardCopy, Clock, Code2, Eye, EyeOff, File, FileText, FileType, Folder, HardDrive, Image, ListChecks, ListFilter, MoreVertical, PlaySquare, RefreshCw, SquarePen, Trash2, X } from 'lucide-react'
+import { AlertCircle, ArrowDownAZ, ArrowDownToLine, ArrowUpAZ, ArrowUpFromLine, Bookmark, BookmarkMinus, BookmarkPlus, Box, Check, ChevronRight, ClipboardCopy, Clock, Code2, Eye, EyeOff, File, FileText, FileType, Folder, FolderBookmark, HardDrive, Image, ListChecks, ListFilter, MoreVertical, PlaySquare, RefreshCw, SquarePen, Trash2, X } from 'lucide-react'
 
 export interface FileManagerProps {
   machineId: string
@@ -39,6 +39,7 @@ export function FileManager({
   const [renameName, setRenameName] = useState('')
   const [deletePath, setDeletePath] = useState<string | null>(null)
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
+  const [bookmarksOpen, setBookmarksOpen] = useState(false)
   const [transferError, setTransferError] = useState<string | null>(null)
   const webUploadRef = useRef<HTMLInputElement>(null)
 
@@ -160,6 +161,10 @@ export function FileManager({
       setSortMenuOpen(false)
       return true
     }
+    if (bookmarksOpen) {
+      setBookmarksOpen(false)
+      return true
+    }
     if (renamePath) {
       setRenamePath(null)
       setRenameName('')
@@ -197,6 +202,7 @@ export function FileManager({
     newDirOpen,
     renamePath,
     sortMenuOpen,
+    bookmarksOpen,
   ])
 
   return (
@@ -270,9 +276,31 @@ export function FileManager({
             </div>
             <button
               type="button"
+              aria-label="Path bookmarks"
+              title="Path bookmarks"
+              className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors active:bg-zinc-100"
+              onClick={() => {
+                hapticSelection()
+                setBookmarksOpen(true)
+                void manager.refreshPathBookmarks()
+              }}
+            >
+              <FolderBookmark className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="Bookmark current directory"
+              title="Bookmark current directory"
+              className="ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors active:bg-zinc-100"
+              onClick={() => { hapticImpact(); void manager.addCurrentPathBookmark() }}
+            >
+              <BookmarkPlus className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
               aria-label="Copy current directory path"
               title="Copy current directory path"
-              className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors active:bg-zinc-100"
+              className="ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors active:bg-zinc-100"
               onClick={() => { hapticImpact(); void manager.copyFilePaths([manager.currentPath || '/']) }}
             >
               <ClipboardCopy className="h-4 w-4" />
@@ -320,6 +348,12 @@ export function FileManager({
             >
               <X className="h-4 w-4" />
             </button>
+          </div>
+        ) : null}
+
+        {manager.pathBookmarkError ? (
+          <div className="m-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-[13px] font-medium text-amber-800" role="alert">
+            {manager.pathBookmarkError}
           </div>
         ) : null}
 
@@ -680,6 +714,34 @@ export function FileManager({
         title="Sort files"
         subtitle={`${sortLabel} · Folders first`}
         actions={sortActions}
+      />
+      <ActionSheet
+        isOpen={bookmarksOpen}
+        onClose={() => setBookmarksOpen(false)}
+        title="Path bookmarks"
+        subtitle={manager.pathBookmarksLoading ? 'Loading...' : `${manager.pathBookmarks.length} saved`}
+        actions={[
+          {
+            label: 'Save current directory',
+            icon: <BookmarkPlus className="h-5 w-5" />,
+            onClick: () => { hapticImpact(); void manager.addCurrentPathBookmark() },
+            closeOnClick: false,
+          },
+          ...manager.pathBookmarks.map((bookmark) => ({
+            label: bookmark.label,
+            ariaLabel: `Open bookmark ${bookmark.label}`,
+            subtitle: bookmark.path,
+            icon: <Bookmark className="h-5 w-5" />,
+            onClick: () => { hapticSelection(); void manager.navigate(bookmark.path) },
+            secondaryAction: {
+              label: `Remove bookmark ${bookmark.label}`,
+              icon: <BookmarkMinus className="h-5 w-5" />,
+              onClick: () => { hapticImpact(); void manager.removePathBookmark(bookmark.id) },
+              danger: true,
+              closeOnClick: false,
+            },
+          })),
+        ]}
       />
     </div>
   )

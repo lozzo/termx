@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
-import { ChevronLeft, Folder, Info, KeyRound, Link2, Link2Off, Loader2, Monitor, PanelBottomClose, Plus, Rows2, SlidersHorizontal, SquarePen, Trash2, Unlock, X } from 'lucide-react'
+import { Bookmark, BookmarkMinus, BookmarkPlus, ChevronLeft, ClipboardList, Folder, FolderOpen, Info, KeyRound, Link2, Link2Off, Loader2, Monitor, PanelBottomClose, Plus, RefreshCw, Rows2, SlidersHorizontal, SquarePen, Trash2, Unlock, X } from 'lucide-react'
 import { connectionPhaseLabel, connectionSnapshotFromStatus } from '../connection/connectionState'
 import { FileTransferPanel } from '../files/FileTransferPanel'
 import { FileManager } from '../files/FileManager'
+import { createFileApi, type FileEntry } from '../files/fileApi'
+import { joinPath, normalizeFilePath, parentPath } from '../files/fileUtils'
+import { createPathBookmarkApi, type PathBookmark } from '../files/pathBookmarks'
 import { hapticImpact } from '../platform/haptics'
 import { PairDevicePanel } from '../pairing/PairDevicePanel'
 import type { MachineSessionStore } from '../state/localAppIdentity'
 import { MachineNetworkStatusOverlay } from '../machine-runtime/MachineNetworkStatusOverlay'
 import { useMachineNetworkStatus } from '../machine-runtime/useMachineNetworkStatus'
+import { createRemoteClipboardApi, type RemoteClipboardEntry } from '../clipboard/clipboardApi'
 import { MobileTerminalKeybar } from '../terminal/MobileTerminalKeybar'
 import type { TerminalModifierState } from '../terminal/mobileTerminalInput'
 import { PasteConfirmDialog } from '../terminal/PasteConfirmDialog'
@@ -54,7 +58,8 @@ export interface MachineWorkspaceProps {
   onTerminalSettingsChange?: ((patch: Partial<TerminalSettings>) => void) | undefined
 }
 
-type MobileSheet = 'terminals' | 'split-terminal' | 'pair' | 'manage-terminal' | 'edit-terminal' | 'create-terminal' | null
+type TerminalEditorSheet = 'create-terminal' | 'edit-terminal'
+type MobileSheet = 'terminals' | 'split-terminal' | 'pair' | 'manage-terminal' | TerminalEditorSheet | 'terminal-path-picker' | 'terminal-path-bookmarks' | 'clipboard-history' | null
 type AppPage = 'terminal-list' | 'terminal'
 type TerminalSlot = 0 | 1
 const TERMINAL_CONNECTION_PROGRESS_DELAY_MS = 450
@@ -128,6 +133,19 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     environment: '',
     sizeLockMode: 'off',
   })
+  const [terminalPathReturnSheet, setTerminalPathReturnSheet] = useState<TerminalEditorSheet>('create-terminal')
+  const [terminalPathPickerPath, setTerminalPathPickerPath] = useState('/')
+  const [terminalPathPickerEntries, setTerminalPathPickerEntries] = useState<FileEntry[]>([])
+  const [terminalPathPickerLoading, setTerminalPathPickerLoading] = useState(false)
+  const [terminalPathPickerError, setTerminalPathPickerError] = useState<string | null>(null)
+  const [terminalPathBookmarks, setTerminalPathBookmarks] = useState<PathBookmark[]>([])
+  const [terminalPathBookmarksLoading, setTerminalPathBookmarksLoading] = useState(false)
+  const [terminalPathBookmarksError, setTerminalPathBookmarksError] = useState<string | null>(null)
+  const [clipboardEntries, setClipboardEntries] = useState<RemoteClipboardEntry[]>([])
+  const [clipboardLoading, setClipboardLoading] = useState(false)
+  const [clipboardError, setClipboardError] = useState<string | null>(null)
+  const [clipboardDraft, setClipboardDraft] = useState('')
+  const [editingClipboardId, setEditingClipboardId] = useState<string | null>(null)
   const [modifierState, setModifierState] = useState<TerminalModifierState>({ ctrl: 'off', alt: 'off' })
   const [terminalToolbarOpen, setTerminalToolbarOpen] = useState(false)
   const [terminalToolbarMode, setTerminalToolbarMode] = useState<TerminalToolbarMode>('default')
@@ -487,6 +505,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       session,
       api: createTerminalManagementApi(session, machine.machineId),
     }
+  }, [ensureMachineSession, forceRelayConnection, machine])
+
+  const withMachineSession = useCallback(async () => {
+    if (!machine) throw new Error('machine is required before using runtime storage')
+    return await ensureMachineSession(machine.machineId, { forceRelay: forceRelayConnection })
   }, [ensureMachineSession, forceRelayConnection, machine])
 
   const refreshTerminals = useCallback(async () => {
@@ -1137,6 +1160,81 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     setMobileSheet('edit-terminal')
   }, [managedTerminal])
 
+  const selectTerminalWorkingDirectory = useCallback((path: string) => {
+    setTerminalForm((current) => ({ ...current, cwd: normalizeFilePath(path) }))
+    setMobileSheet(terminalPathReturnSheet)
+  }, [terminalPathReturnSheet])
+
+  const loadTerminalPathPicker = useCallback(async (path: string) => {
+    const normalizedPath = normalizeDirectoryPickerPath(path)
+    setTerminalPathPickerPath(normalizedPath)
+    setTerminalPathPickerLoading(true)
+    setTerminalPathPickerError(null)
+    try {
+      const session = await withMachineSession()
+      const response = await createFileApi(session).listDir(normalizedPath)
+      setTerminalPathPickerPath(response.path || normalizedPath)
+      setTerminalPathPickerEntries(response.entries.filter(isDirectoryEntry))
+    } catch (err) {
+      setTerminalPathPickerEntries([])
+      setTerminalPathPickerError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setTerminalPathPickerLoading(false)
+    }
+  }, [withMachineSession])
+
+  const openTerminalPathPicker = useCallback(() => {
+    const returnSheet: TerminalEditorSheet = mobileSheet === 'edit-terminal' ? 'edit-terminal' : 'create-terminal'
+    const startPath = normalizeTerminalDirectory(terminalForm.cwd) || normalizeTerminalDirectory(activeToolTerminal?.cwd) || '/'
+    setTerminalPathReturnSheet(returnSheet)
+    setMobileSheet('terminal-path-picker')
+    void loadTerminalPathPicker(startPath)
+  }, [activeToolTerminal?.cwd, loadTerminalPathPicker, mobileSheet, terminalForm.cwd])
+
+  const loadTerminalPathBookmarks = useCallback(async () => {
+    setTerminalPathBookmarksLoading(true)
+    setTerminalPathBookmarksError(null)
+    try {
+      const session = await withMachineSession()
+      setTerminalPathBookmarks(await createPathBookmarkApi(session).list())
+    } catch (err) {
+      setTerminalPathBookmarksError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setTerminalPathBookmarksLoading(false)
+    }
+  }, [withMachineSession])
+
+  const openTerminalPathBookmarks = useCallback(() => {
+    const returnSheet: TerminalEditorSheet = mobileSheet === 'edit-terminal' ? 'edit-terminal' : 'create-terminal'
+    setTerminalPathReturnSheet(returnSheet)
+    setMobileSheet('terminal-path-bookmarks')
+    void loadTerminalPathBookmarks()
+  }, [loadTerminalPathBookmarks, mobileSheet])
+
+  const addTerminalPathBookmark = useCallback(async () => {
+    const path = normalizeTerminalDirectory(terminalForm.cwd) || normalizeTerminalDirectory(activeToolTerminal?.cwd) || '/'
+    setTerminalPathBookmarksError(null)
+    try {
+      const session = await withMachineSession()
+      await createPathBookmarkApi(session).add(path)
+      setPairStatus(`Bookmarked ${path}`)
+      await loadTerminalPathBookmarks()
+    } catch (err) {
+      setTerminalPathBookmarksError(err instanceof Error ? err.message : String(err))
+    }
+  }, [activeToolTerminal?.cwd, loadTerminalPathBookmarks, terminalForm.cwd, withMachineSession])
+
+  const removeTerminalPathBookmark = useCallback(async (id: string) => {
+    setTerminalPathBookmarksError(null)
+    try {
+      const session = await withMachineSession()
+      await createPathBookmarkApi(session).remove(id)
+      await loadTerminalPathBookmarks()
+    } catch (err) {
+      setTerminalPathBookmarksError(err instanceof Error ? err.message : String(err))
+    }
+  }, [loadTerminalPathBookmarks, withMachineSession])
+
   const submitCreateTerminal = useCallback(async () => {
     if (!canManageTerminals) return
     const command = terminalForm.command.trim().split(/\s+/).filter(Boolean)
@@ -1315,24 +1413,357 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     return () => window.clearInterval(timer)
   }, [activeTerminalHandle, terminalToolbarMode, terminalToolbarOpen])
 
-  const handleTerminalPaste = useCallback(async () => {
+  const pasteTerminalTextWithConfirm = useCallback((text: string): boolean => {
+    if (!text) {
+      setPairStatus('Clipboard is empty')
+      return false
+    }
+    const needsConfirm = text.length > 200 || text.includes('\n') || text.includes('\r')
+    if (needsConfirm) {
+      setPasteConfirmText(text)
+      setMobileSheet(null)
+      return true
+    }
+    pasteTerminalText(text)
+    setTerminalToolbarOpen(false)
+    setTerminalToolbarModeAndReset('default')
+    setMobileSheet(null)
+    return true
+  }, [pasteTerminalText, setTerminalToolbarModeAndReset])
+
+  const refreshClipboardEntries = useCallback(async () => {
+    setClipboardLoading(true)
+    setClipboardError(null)
+    try {
+      const session = await withMachineSession()
+      setClipboardEntries(await createRemoteClipboardApi(session).list())
+    } catch (err) {
+      setClipboardEntries([])
+      setClipboardError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setClipboardLoading(false)
+    }
+  }, [withMachineSession])
+
+  const openClipboardHistory = useCallback(() => {
+    setTerminalToolbarOpen(false)
+    setTerminalToolbarModeAndReset('default')
+    setMobileSheet('clipboard-history')
+    void refreshClipboardEntries()
+  }, [refreshClipboardEntries, setTerminalToolbarModeAndReset])
+
+  const saveClipboardDraft = useCallback(async () => {
+    const text = clipboardDraft
+    if (!text) {
+      setClipboardError('Clipboard text is empty')
+      return
+    }
+    setClipboardLoading(true)
+    setClipboardError(null)
+    try {
+      const session = await withMachineSession()
+      const api = createRemoteClipboardApi(session)
+      if (editingClipboardId) {
+        await api.updateText(editingClipboardId, text)
+      } else {
+        await api.putText(text)
+      }
+      setClipboardDraft('')
+      setEditingClipboardId(null)
+      setClipboardEntries(await api.list())
+      setPairStatus(editingClipboardId ? 'Clipboard entry updated' : 'Clipboard entry saved')
+    } catch (err) {
+      setClipboardError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setClipboardLoading(false)
+    }
+  }, [clipboardDraft, editingClipboardId, withMachineSession])
+
+  const deleteClipboardEntry = useCallback(async (id: string) => {
+    setClipboardLoading(true)
+    setClipboardError(null)
+    try {
+      const session = await withMachineSession()
+      const api = createRemoteClipboardApi(session)
+      await api.delete(id)
+      if (editingClipboardId === id) {
+        setEditingClipboardId(null)
+        setClipboardDraft('')
+      }
+      setClipboardEntries(await api.list())
+    } catch (err) {
+      setClipboardError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setClipboardLoading(false)
+    }
+  }, [editingClipboardId, withMachineSession])
+
+  const loadBrowserClipboardDraft = useCallback(async () => {
+    setClipboardError(null)
     try {
       const text = await navigator.clipboard.readText()
-      if (!text) {
-        setPairStatus('Clipboard is empty')
-        return
-      }
-      const needsConfirm = text.length > 200 || text.includes('\n') || text.includes('\r')
-      if (needsConfirm) {
-        setPasteConfirmText(text)
-        return
-      }
-      pasteTerminalText(text)
-      setTerminalToolbarOpen(false)
+      setClipboardDraft(text)
+      setEditingClipboardId(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to read clipboard')
+      setClipboardError(err instanceof Error ? err.message : 'Unable to read browser clipboard')
     }
-  }, [pasteTerminalText])
+  }, [])
+
+  const handleTerminalPaste = useCallback(async () => {
+    let remoteClipboardError: unknown
+    try {
+      const session = await withMachineSession()
+      const [latest] = await createRemoteClipboardApi(session).list()
+      if (latest?.text && pasteTerminalTextWithConfirm(latest.text)) return
+    } catch (err) {
+      remoteClipboardError = err
+    }
+
+    try {
+      const text = await navigator.clipboard.readText()
+      pasteTerminalTextWithConfirm(text)
+    } catch (err) {
+      const fallbackMessage = err instanceof Error ? err.message : 'Unable to read clipboard'
+      setError(remoteClipboardError instanceof Error ? remoteClipboardError.message : fallbackMessage)
+    }
+  }, [pasteTerminalTextWithConfirm, withMachineSession])
+
+  const renderTerminalPathPickerSheet = () => {
+    if (mobileSheet !== 'terminal-path-picker') return null
+    const normalizedPath = normalizeFilePath(terminalPathPickerPath)
+    const directories = [...terminalPathPickerEntries]
+      .filter(isDirectoryEntry)
+      .sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }))
+    return (
+      <MobileSheetPanel title="Choose directory" testId="termx-terminal-path-picker-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
+        <div className="flex flex-col gap-3">
+          <div className="rounded-xl border border-zinc-200 bg-white p-3">
+            <div className="break-all font-mono text-[12px] font-semibold text-zinc-800">{normalizedPath}</div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 disabled:text-zinc-300"
+                disabled={normalizedPath === '/'}
+                onClick={() => { hapticImpact(); void loadTerminalPathPicker(parentPath(normalizedPath)) }}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Parent
+              </button>
+              <button
+                type="button"
+                className="flex min-h-10 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-3 text-[13px] font-semibold text-white"
+                onClick={() => { hapticImpact(); selectTerminalWorkingDirectory(normalizedPath) }}
+              >
+                <FolderOpen className="h-4 w-4" />
+                Use this path
+              </button>
+            </div>
+          </div>
+
+          {terminalPathPickerError ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800" role="alert">
+              {terminalPathPickerError}
+            </div>
+          ) : null}
+
+          <div
+            className="flex h-80 max-h-[45vh] min-h-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white"
+            data-testid="termx-terminal-path-picker-list"
+          >
+            {terminalPathPickerLoading ? (
+              <div className="flex h-full items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading...
+              </div>
+            ) : directories.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-[13px] font-medium text-zinc-500">
+                Empty
+              </div>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {directories.map((entry) => {
+                  const path = joinPath(normalizedPath, entry.name)
+                  return (
+                    <button
+                      key={path}
+                      type="button"
+                      className="flex min-h-12 w-full items-center gap-3 border-b border-zinc-100 px-3 text-left last:border-b-0 active:bg-zinc-50"
+                      onClick={() => { hapticImpact(); void loadTerminalPathPicker(path) }}
+                    >
+                      <Folder className="h-4 w-4 shrink-0 text-zinc-500" />
+                      <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-zinc-900">{entry.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </MobileSheetPanel>
+    )
+  }
+
+  const renderTerminalPathBookmarksSheet = () => {
+    if (mobileSheet !== 'terminal-path-bookmarks') return null
+    return (
+      <MobileSheetPanel title="Path bookmarks" testId="termx-terminal-path-bookmarks-sheet" onClose={() => setMobileSheet(terminalPathReturnSheet)}>
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 active:bg-zinc-100"
+              onClick={() => { hapticImpact(); void addTerminalPathBookmark() }}
+            >
+              <BookmarkPlus className="h-4 w-4" />
+              Save path
+            </button>
+            <button
+              type="button"
+              className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 active:bg-zinc-100"
+              onClick={() => { hapticImpact(); void loadTerminalPathBookmarks() }}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </button>
+          </div>
+
+          {terminalPathBookmarksError ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800" role="alert">
+              {terminalPathBookmarksError}
+            </div>
+          ) : null}
+
+          <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+            {terminalPathBookmarksLoading ? (
+              <div className="flex min-h-20 items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading...
+              </div>
+            ) : terminalPathBookmarks.length === 0 ? (
+              <div className="flex min-h-20 items-center justify-center px-3 text-center text-[13px] font-medium text-zinc-500">
+                No saved paths
+              </div>
+            ) : (
+              terminalPathBookmarks.map((bookmark) => (
+                <div key={bookmark.id} className="flex min-h-14 items-center gap-2 border-b border-zinc-100 px-3 last:border-b-0">
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left active:opacity-70"
+                    onClick={() => { hapticImpact(); selectTerminalWorkingDirectory(bookmark.path) }}
+                  >
+                    <span className="block truncate text-[14px] font-semibold text-zinc-900">{bookmark.label}</span>
+                    <span className="mt-0.5 block truncate font-mono text-[11px] font-medium text-zinc-500">{bookmark.path}</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${bookmark.label}`}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-red-500 active:bg-red-50"
+                    onClick={() => { hapticImpact(); void removeTerminalPathBookmark(bookmark.id) }}
+                  >
+                    <BookmarkMinus className="h-4 w-4" />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </MobileSheetPanel>
+    )
+  }
+
+  const renderClipboardHistorySheet = () => {
+    if (mobileSheet !== 'clipboard-history') return null
+    return (
+      <MobileSheetPanel title="Clipboard" testId="termx-clipboard-history-sheet" onClose={() => setMobileSheet(null)}>
+        <div className="flex flex-col gap-3">
+          <div className="rounded-xl border border-zinc-200 bg-white p-3">
+            <textarea
+              aria-label="Clipboard text"
+              className="min-h-24 w-full resize-none rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-[13px] font-medium text-zinc-900 outline-none"
+              value={clipboardDraft}
+              onChange={(event) => setClipboardDraft(event.currentTarget.value)}
+            />
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 text-[12px] font-semibold text-zinc-700 active:bg-zinc-100"
+                onClick={() => { hapticImpact(); void loadBrowserClipboardDraft() }}
+              >
+                <ClipboardList className="h-4 w-4" />
+                Browser
+              </button>
+              <button
+                type="button"
+                className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 text-[12px] font-semibold text-zinc-700 active:bg-zinc-100"
+                onClick={() => { hapticImpact(); void refreshClipboardEntries() }}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </button>
+              <button
+                type="button"
+                className="flex min-h-10 items-center justify-center rounded-lg bg-zinc-900 px-2 text-[12px] font-semibold text-white disabled:bg-zinc-300 disabled:text-zinc-500"
+                disabled={!clipboardDraft || clipboardLoading}
+                onClick={() => { hapticImpact(); void saveClipboardDraft() }}
+              >
+                {editingClipboardId ? 'Update' : 'Save'}
+              </button>
+            </div>
+          </div>
+
+          {clipboardError ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800" role="alert">
+              {clipboardError}
+            </div>
+          ) : null}
+
+          <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+            {clipboardLoading && clipboardEntries.length === 0 ? (
+              <div className="flex min-h-20 items-center justify-center gap-2 text-[13px] font-medium text-zinc-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading...
+              </div>
+            ) : clipboardEntries.length === 0 ? (
+              <div className="flex min-h-20 items-center justify-center px-3 text-center text-[13px] font-medium text-zinc-500">
+                No clipboard history
+              </div>
+            ) : (
+              clipboardEntries.map((entry) => (
+                <div key={entry.id} className="border-b border-zinc-100 p-3 last:border-b-0">
+                  <button
+                    type="button"
+                    className="block w-full text-left active:opacity-70"
+                    onClick={() => { hapticImpact(); pasteTerminalTextWithConfirm(entry.text) }}
+                  >
+                    <span className="block max-h-10 overflow-hidden text-[14px] font-semibold text-zinc-900">{entry.preview}</span>
+                    <span className="mt-1 block text-[11px] font-medium text-zinc-500">{formatClipboardTimestamp(entry.createdAt)}</span>
+                  </button>
+                  <div className="mt-2 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      className="flex min-h-8 items-center gap-1.5 rounded-lg border border-zinc-200 px-2 text-[12px] font-semibold text-zinc-700 active:bg-zinc-100"
+                      onClick={() => { hapticImpact(); setEditingClipboardId(entry.id); setClipboardDraft(entry.text) }}
+                    >
+                      <SquarePen className="h-3.5 w-3.5" />
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="flex min-h-8 items-center gap-1.5 rounded-lg border border-zinc-200 px-2 text-[12px] font-semibold text-red-600 active:bg-red-50"
+                      onClick={() => { hapticImpact(); void deleteClipboardEntry(entry.id) }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </MobileSheetPanel>
+    )
+  }
 
   useEffect(() => addNativeBackHandler(() => {
     if (pasteConfirmText) {
@@ -1550,6 +1981,30 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                     setTerminalForm((current) => ({ ...current, cwd: value }))
                   }}
                 />
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 active:bg-zinc-100"
+                    onClick={() => {
+                      hapticImpact()
+                      openTerminalPathPicker()
+                    }}
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                    Browse
+                  </button>
+                  <button
+                    type="button"
+                    className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 active:bg-zinc-100"
+                    onClick={() => {
+                      hapticImpact()
+                      openTerminalPathBookmarks()
+                    }}
+                  >
+                    <Bookmark className="h-4 w-4" />
+                    Bookmarks
+                  </button>
+                </div>
               </label>
               <label className="flex flex-col gap-2 text-[14px] font-semibold text-zinc-700">
                 Environment
@@ -1606,6 +2061,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             />
           </MobileSheetPanel>
         ) : null}
+        {renderClipboardHistorySheet()}
+        {renderTerminalPathPickerSheet()}
+        {renderTerminalPathBookmarksSheet()}
       </main>
     )
   }
@@ -1827,6 +2285,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 })
               }}
               onPaste={() => { void handleTerminalPaste() }}
+              onOpenClipboardHistory={openClipboardHistory}
               onOpenSnippets={() => {
                 setTerminalFnOpen((current) => !current)
                 setTerminalToolbarOpen(false)
@@ -2002,6 +2461,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             />
           </MobileSheetPanel>
         ) : null}
+        {renderClipboardHistorySheet()}
       </main>
       )}
 
@@ -2222,8 +2682,27 @@ function isRtcSessionAlive(session: RtcSession): boolean {
   return candidate.isAlive()
 }
 
+function isDirectoryEntry(entry: FileEntry): boolean {
+  return entry.type === 'dir' || entry.type === 'symlink-dir'
+}
+
+function formatClipboardTimestamp(value: string): string {
+  const timestamp = Date.parse(value)
+  if (!Number.isFinite(timestamp)) return value
+  return new Date(timestamp).toLocaleString(undefined, {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function isTransientConnectionPhase(phase: RtcConnectionStateSnapshot['phase']): boolean {
   return phase === 'probing' || phase === 'connecting'
+}
+
+function normalizeDirectoryPickerPath(path: string): string {
+  return normalizeTerminalDirectory(path) || '/'
 }
 
 function normalizeTerminalDirectory(path: string | undefined): string {
@@ -2237,7 +2716,8 @@ function normalizeTerminalDirectory(path: string | undefined): string {
       return ''
     }
   }
-  return trimmed.startsWith('/') ? trimmed : ''
+  if (!trimmed.startsWith('/')) return ''
+  return normalizeFilePath(trimmed)
 }
 
 function forceRelayStorageKey(machineId: string): string {

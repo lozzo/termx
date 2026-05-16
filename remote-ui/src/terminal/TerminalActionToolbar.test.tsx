@@ -23,6 +23,7 @@ describe('TerminalActionToolbar', () => {
           onSelectVisible={vi.fn()}
           onCopy={vi.fn()}
           onPaste={vi.fn()}
+          onOpenClipboardHistory={vi.fn()}
           onOpenSnippets={vi.fn()}
           onAcquireResizeOwner={onAcquireResizeOwner}
         />

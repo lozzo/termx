@@ -263,6 +263,62 @@ describe('FileManager', () => {
     expect(await screen.findByText('Copied path')).toBeTruthy()
   })
 
+  it('shows path bookmarks as single rows with inline remove actions', async () => {
+    const session = createMockFileSession({
+      '/files/list': ({ path }: { path?: string } = {}) => ({
+        path: path || '/srv/app',
+        parent: '/srv',
+        total: 0,
+        entries: [],
+      }),
+      '/storage/list': {
+        entries: [{
+          app_id: 'termx.paths',
+          scope: 'public',
+          key: 'bookmarks/~2Fsrv~2Fapp',
+          value: new TextEncoder().encode(JSON.stringify({
+            schema_version: 1,
+            id: '~2Fsrv~2Fapp',
+            path: '/srv/app',
+            label: 'app',
+            created_at: '2026-05-16T08:00:00Z',
+            updated_at: '2026-05-16T08:00:00Z',
+          })),
+          version: 3,
+        }],
+      },
+      '/storage/delete': { deleted: true, version: 4 },
+    }, {}, { terminalId: 'terminal-1' })
+
+    render(
+      <FileManager
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+        initialPath="/srv/app"
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('termx-file-pathbar').textContent).toContain('app'))
+    await userEvent.click(screen.getByRole('button', { name: /path bookmarks/i }))
+
+    const bookmarkRow = await screen.findByRole('button', { name: /open bookmark app/i })
+    expect(bookmarkRow.textContent).toContain('/srv/app')
+    expect(screen.queryByRole('button', { name: /^remove app$/i })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /remove bookmark app/i }))
+
+    await waitFor(() => expect(session.requests).toContainEqual({
+      method: 'POST',
+      path: '/storage/delete',
+      params: {
+        app_id: 'termx.paths',
+        scope: 'public',
+        key: 'bookmarks/~2Fsrv~2Fapp',
+      },
+    }))
+    expect(screen.getByRole('button', { name: /open bookmark app/i })).toBeTruthy()
+  })
+
   it('copies a file path from the entry action sheet', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {
