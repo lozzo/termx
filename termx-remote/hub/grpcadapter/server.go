@@ -225,6 +225,7 @@ func (a *hubRegistryAdapter) WaitForOffer(ctx context.Context, sessionID string)
 		SessionID:            publicID,
 		MachineID:            offer.MachineID,
 		TerminalID:           offer.TerminalID,
+		Path:                 offer.Path,
 		SDP:                  offer.SDP,
 		SessionToken:         offer.SessionToken,
 		AnswerProofChallenge: challenge,

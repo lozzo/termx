@@ -1785,6 +1785,10 @@ func (s *fakeTermxServer) SetMetadata(context.Context, string, string, map[strin
 	return nil
 }
 
+func (s *fakeTermxServer) Restart(context.Context, string) error {
+	return nil
+}
+
 func (s *fakeTermxServer) Remove(context.Context, string) error {
 	return nil
 }

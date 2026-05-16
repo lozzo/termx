@@ -25,6 +25,7 @@ type PickerItem struct {
 	CreateNew     bool
 	Description   string
 	CreatedAt     time.Time
+	SourceApp     string
 
 	lineBody   string
 	lineWidth  int
@@ -32,12 +33,20 @@ type PickerItem struct {
 	lineActive string
 }
 
+type PickerLayoutKind string
+
+const (
+	PickerLayoutDefault          PickerLayoutKind = ""
+	PickerLayoutClipboardHistory PickerLayoutKind = "clipboard-history"
+)
+
 // PickerState 保存 picker modal 的全部 UI 状态。
 type PickerState struct {
 	Title      string
 	Items      []PickerItem
 	Filtered   []PickerItem
 	Selected   int
+	Layout     PickerLayoutKind
 	Query      string
 	Cursor     int
 	CursorSet  bool

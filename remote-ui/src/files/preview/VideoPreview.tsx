@@ -112,7 +112,7 @@ function VideoPreviewPlayer({
         <div className="sticky top-0 z-20 flex min-h-11 items-center justify-end gap-2 border-b border-white/10 bg-black/85 px-4 py-2 text-zinc-200 backdrop-blur">
           <button
             type="button"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-200 transition-colors active:scale-95 active:bg-white/10"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-200 transition-colors active:scale-95 hover:bg-white/5 active:bg-white/10"
             aria-label={`Fullscreen ${preview.name}`}
             title="Fullscreen"
             onClick={requestFullscreen}

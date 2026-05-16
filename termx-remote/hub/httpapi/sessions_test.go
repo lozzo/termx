@@ -355,6 +355,99 @@ func TestCloudSessionHTTPPreflightICEServersBeforeOffer(t *testing.T) {
 	}
 }
 
+func TestLocalSessionHTTPUsesLocalPathAndNoRelay(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clock := fixedClock(time.Date(2026, 5, 16, 10, 25, 0, 0, time.UTC))
+	reg := registry.New(registry.Config{Clock: clock})
+	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	svc := cloud.NewService(cloud.Config{
+		Registry:                    reg,
+		Clock:                       clock,
+		AllowRelayByDefault:         true,
+		AllowRelayTransferByDefault: true,
+	})
+	router := httpapi.NewHandler(httpapi.Config{
+		Cloud:          svc,
+		LocalDiscovery: true,
+		ICE: ice.NewService(ice.Config{
+			Clock:        clock,
+			SharedSecret: "turn-secret",
+			STUNURLs:     []string{"stun:hub.termx.test:3478"},
+			TURNURLs:     []string{"turn:hub.termx.test:3478?transport=udp"},
+		}),
+	})
+
+	iceResp := postJSON(t, router, "/api/v1/sessions/ice", map[string]any{
+		"machine_id":    "mach_1",
+		"terminal_id":   "term_1",
+		"session_token": "session-token-1",
+	})
+	if iceResp.Code != http.StatusOK {
+		t.Fatalf("local preflight status = %d body=%s", iceResp.Code, iceResp.Body.String())
+	}
+	var iceGot struct {
+		Path        string `json:"path"`
+		ICEServers  []any  `json:"ice_servers"`
+		RelayPolicy struct {
+			AllowRelay         bool `json:"allow_relay"`
+			AllowRelayTransfer bool `json:"allow_relay_transfer"`
+		} `json:"relay_policy"`
+	}
+	decodeJSON(t, iceResp, &iceGot)
+	if iceGot.Path != "local" || len(iceGot.ICEServers) != 0 || iceGot.RelayPolicy.AllowRelay || iceGot.RelayPolicy.AllowRelayTransfer {
+		t.Fatalf("local preflight response = %+v", iceGot)
+	}
+
+	responseCh := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		responseCh <- postJSON(t, router, "/api/v1/sessions", validCloudSessionRequest())
+	}()
+	polled, err := svc.PollAgentOffer(ctx, cloud.PollAgentOfferInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("poll local offer: %v", err)
+	}
+	if polled.Path != "local" || polled.AllowRelay {
+		t.Fatalf("polled local offer = %+v", polled)
+	}
+	if err := svc.SubmitAnswer(ctx, cloud.SubmitAnswerInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		OfferID:   polled.ID,
+		SDP:       minimalSDP("local-answer"),
+	}); err != nil {
+		t.Fatalf("submit local answer: %v", err)
+	}
+	var sessionResp *httptest.ResponseRecorder
+	select {
+	case sessionResp = <-responseCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("local session request did not return")
+	}
+	if sessionResp.Code != http.StatusOK {
+		t.Fatalf("local session status = %d body=%s", sessionResp.Code, sessionResp.Body.String())
+	}
+	var sessionGot struct {
+		Path        string `json:"path"`
+		ICEServers  []any  `json:"ice_servers"`
+		RelayPolicy struct {
+			AllowRelay         bool `json:"allow_relay"`
+			AllowRelayTransfer bool `json:"allow_relay_transfer"`
+		} `json:"relay_policy"`
+	}
+	decodeJSON(t, sessionResp, &sessionGot)
+	if sessionGot.Path != "local" || len(sessionGot.ICEServers) != 0 || sessionGot.RelayPolicy.AllowRelay || sessionGot.RelayPolicy.AllowRelayTransfer {
+		t.Fatalf("local session response = %+v", sessionGot)
+	}
+}
+
 func TestCloudSessionHTTPPreflightICERejectsMissingSessionToken(t *testing.T) {
 	t.Parallel()
 

@@ -114,6 +114,8 @@ func (r *Runtime) applyScreenUpdateContract(terminal *TerminalRuntime, terminalI
 		terminal.ScrollbackExhausted = false
 	}
 
+	r.captureAlternateScrollback(terminal, update)
+
 	snapshotApplyFinish := perftrace.Measure("runtime.stream.screen_update.snapshot_apply")
 	terminal.Snapshot = applyScreenUpdateSnapshot(terminal.Snapshot, terminalID, update)
 	snapshotApplyFinish(0)

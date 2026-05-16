@@ -22,6 +22,7 @@ type remoteRuntimeCore interface {
 	Get(context.Context, string) (*termx.TerminalInfo, error)
 	List(context.Context, ...termx.ListOptions) ([]*termx.TerminalInfo, error)
 	SetMetadata(context.Context, string, string, map[string]string) error
+	Restart(context.Context, string) error
 	Remove(context.Context, string) error
 	Events(context.Context, ...termx.EventsOption) <-chan termx.Event
 	StorageGet(context.Context, termx.StorageGetRequest) (termx.StorageEntry, error)
@@ -159,6 +160,13 @@ func (h *remoteRuntimeHost) SetMetadata(ctx context.Context, terminalID string, 
 		return fmt.Errorf("core daemon is nil")
 	}
 	return h.core.SetMetadata(ctx, terminalID, name, tags)
+}
+
+func (h *remoteRuntimeHost) Restart(ctx context.Context, terminalID string) error {
+	if h == nil || h.core == nil {
+		return fmt.Errorf("core daemon is nil")
+	}
+	return h.core.Restart(ctx, terminalID)
 }
 
 func (h *remoteRuntimeHost) Remove(ctx context.Context, terminalID string) error {

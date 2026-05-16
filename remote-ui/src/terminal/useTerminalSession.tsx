@@ -54,7 +54,7 @@ export interface UseTerminalSessionResult {
   sendResize(cols: number, rows: number): boolean
   requestResizeOwner(size?: { cols: number; rows: number }): Promise<TerminalResizeControl>
   releaseResizeOwner(): Promise<TerminalResizeControl>
-  loadScrollback(limit?: number): Promise<TerminalScrollbackLoadResult>
+  loadScrollback(limit?: number, alternate?: boolean): Promise<TerminalScrollbackLoadResult>
   markSyncLost(reason?: string): void
   handleAppResume(resumeKind: 'quick' | 'cold' | 'frozen'): void
   reattach(session: RtcSession, options?: { forceTerminalChannel?: boolean }): void
@@ -76,6 +76,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
   const historyRevisionRef = useRef(0)
   const loadingScrollbackRef = useRef(false)
   const hasMoreScrollbackRef = useRef(true)
+  const activeScrollbackModeRef = useRef<'normal' | 'alternate'>('normal')
   const recoveringInputRef = useRef(false)
   const terminalRecoveryPromiseRef = useRef<Promise<boolean> | null>(null)
   const terminalRecoverySeqRef = useRef(0)
@@ -338,7 +339,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       scheduleTerminalTextPublish()
     },
     onSnapshot: (nextSnapshot) => {
-      const canPreserveHistory = !nextSnapshot.alternateScreen && scrollbackPrefixTextRef.current !== ''
+      const canPreserveHistory = !nextSnapshot.alternateScreen && activeScrollbackModeRef.current === 'normal' && scrollbackPrefixTextRef.current !== ''
       const nextText = nextSnapshot.replay ?? nextSnapshot.text
       const screenText = nextSnapshot.replay ?? nextSnapshot.screenReplay ?? nextSnapshot.screenText
       setTerminalSnapshot(nextSnapshot)
@@ -355,10 +356,11 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         },
       })
       if (!canPreserveHistory) {
-        loadedScrollbackRowsRef.current = nextSnapshot.scrollbackRows?.length ?? 0
+        loadedScrollbackRowsRef.current = nextSnapshot.alternateScreen ? 0 : nextSnapshot.scrollbackRows?.length ?? 0
         scrollbackPrefixTextRef.current = ''
+        activeScrollbackModeRef.current = nextSnapshot.alternateScreen ? 'alternate' : 'normal'
       }
-      hasMoreScrollbackRef.current = !nextSnapshot.alternateScreen
+      hasMoreScrollbackRef.current = true
       terminalTextRef.current = canPreserveHistory && screenText !== undefined
         ? joinHistoryAndSnapshotText(scrollbackPrefixTextRef.current, screenText, nextSnapshot.rows)
         : nextText
@@ -412,6 +414,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     historyRevisionRef.current = 0
     loadingScrollbackRef.current = false
     hasMoreScrollbackRef.current = true
+    activeScrollbackModeRef.current = 'normal'
     recoveringInputRef.current = false
     terminalRecoveryPromiseRef.current = null
     terminalRecoverySeqRef.current += 1
@@ -531,12 +534,20 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     clientRef.current?.markSyncLost(reason)
   }, [])
 
-  const loadScrollback = useCallback(async (limit = 100): Promise<TerminalScrollbackLoadResult> => {
+  const loadScrollback = useCallback(async (limit = 100, alternate = false): Promise<TerminalScrollbackLoadResult> => {
+    const mode: 'normal' | 'alternate' = alternate ? 'alternate' : 'normal'
+    if (activeScrollbackModeRef.current !== mode) {
+      activeScrollbackModeRef.current = mode
+      loadedScrollbackRowsRef.current = 0
+      scrollbackPrefixTextRef.current = ''
+      hasMoreScrollbackRef.current = true
+    }
     if (loadingScrollbackRef.current || !hasMoreScrollbackRef.current) {
       return {
         loadedRows: 0,
         totalRows: loadedScrollbackRowsRef.current,
         hasMore: hasMoreScrollbackRef.current,
+        alternate,
       }
     }
     const client = clientRef.current
@@ -545,6 +556,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         loadedRows: 0,
         totalRows: loadedScrollbackRowsRef.current,
         hasMore: false,
+        alternate,
       }
     }
     loadingScrollbackRef.current = true
@@ -556,7 +568,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       },
     })
     try {
-      const page = await client.loadScrollback(loadedScrollbackRowsRef.current, limit)
+      const page = await client.loadScrollback(loadedScrollbackRowsRef.current, limit, alternate)
       const loadedRows = page.rows
       if (loadedRows === 0) {
         hasMoreScrollbackRef.current = false
@@ -571,6 +583,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
           loadedRows: 0,
           totalRows: loadedScrollbackRowsRef.current,
           hasMore: false,
+          alternate: page.alternate,
         }
       }
       loadedScrollbackRowsRef.current += loadedRows
@@ -586,6 +599,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
           prependedRows: loadedRows,
           loadedRows: loadedScrollbackRowsRef.current,
           hasMore: page.hasMore,
+          alternate: page.alternate,
         },
       } : current)
       terminalTextRef.current = prependTerminalText(prefix, terminalTextRef.current)
@@ -603,6 +617,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
         loadedRows,
         totalRows: loadedScrollbackRowsRef.current,
         hasMore: page.hasMore,
+        alternate: page.alternate,
       }
     } finally {
       loadingScrollbackRef.current = false
@@ -756,9 +771,9 @@ function createProtocolSession(
         handlers?.delete(handler)
       }
     },
-    async loadScrollback(id, offset, limit) {
+    async loadScrollback(id, offset, limit, alternate) {
       const current = await ensureProtocol(id)
-      return current.loadScrollback(id, offset, limit)
+      return current.loadScrollback(id, offset, limit, alternate)
     },
     closeTerminalChannel(id) {
       closed = true
@@ -845,6 +860,7 @@ function createClosedProtocolSession(
         rows: 0,
         replay: '',
         hasMore: false,
+        alternate: false,
       }
     },
     closeTerminalChannel() {},

@@ -1316,6 +1316,53 @@ describe('MachineWorkspace', () => {
     }))
   })
 
+  it('restarts and deletes an exited terminal from management controls', async () => {
+    const api = createMockLocalAgentApi({
+      terminals: [
+        terminalFixture({
+          terminalId: 'terminal-1',
+          title: 'finished job',
+          state: 'exited',
+          command: '/bin/zsh',
+          cwd: '/Users/lozzow/project',
+        }),
+      ],
+    })
+    const managementSession = createMockMachineWorkspaceSession({
+      restart: {},
+      remove: {},
+    }, 'machine-local')
+    const closeTerminalDataChannel = vi.fn()
+    Object.assign(managementSession, { closeTerminalDataChannel })
+    const connect = vi.fn(async () => managementSession)
+
+    render(<MachineWorkspace api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /manage finished job/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /manage finished job/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-actions-sheet')).toBeTruthy())
+
+    const sheet = screen.getByTestId('termx-terminal-actions-sheet')
+    await userEvent.click(within(sheet).getByRole('button', { name: /restart terminal/i }))
+
+    await waitFor(() => expect(managementSession.requests).toContainEqual({
+      method: 'restart',
+      path: 'restart',
+      params: { terminal_id: 'terminal-1' },
+    }))
+    expect(closeTerminalDataChannel).toHaveBeenCalledWith('terminal-1')
+
+    await userEvent.click(screen.getByRole('button', { name: /manage finished job/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-actions-sheet')).toBeTruthy())
+    await userEvent.click(within(screen.getByTestId('termx-terminal-actions-sheet')).getByRole('button', { name: /delete terminal/i }))
+
+    await waitFor(() => expect(managementSession.requests).toContainEqual({
+      method: 'remove',
+      path: 'remove',
+      params: { terminal_id: 'terminal-1' },
+    }))
+  })
+
   it('chooses a new terminal working directory from the visual picker', async () => {
     const api = createMockLocalAgentApi()
     const managementSession = createMockMachineWorkspaceSession({

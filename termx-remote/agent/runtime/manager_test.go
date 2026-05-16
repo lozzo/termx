@@ -308,6 +308,20 @@ func TestManagerRejectsCloudOfferWithLocalOnlySessionTokenBeforeAnswering(t *tes
 	}
 }
 
+func TestManagerAcceptsLocalOfferWithLocalOnlySessionToken(t *testing.T) {
+	manager, answerer, offer := newCloudOfferFixtureWithPaths(t, []string{"local"})
+	offer.Path = "local"
+
+	answer := manager.answerCloudOffer(context.Background(), offer, nil)
+
+	if answer.Error != "" {
+		t.Fatalf("local token offer returned error: %#v", answer)
+	}
+	if answerer.calls != 1 {
+		t.Fatalf("answerer calls = %d, want 1", answerer.calls)
+	}
+}
+
 func TestManagerRejectsCloudOfferForUnknownTerminalBeforeAnswering(t *testing.T) {
 	manager, answerer, offer := newCloudOfferFixture(t)
 	offer.TerminalID = "term-missing"

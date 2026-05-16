@@ -72,6 +72,24 @@ describe('LocalApiChannel', () => {
     await pending
   })
 
+  it('encodes terminal restart over the runtime api channel', async () => {
+    const channel = new MockRTCDataChannel('api')
+    const api = new LocalApiChannel(channel)
+
+    const pending = api.request('restart', { terminal_id: 'terminal-1' }).catch(() => undefined)
+
+    const request = decodeRuntimeAPIRequest(channel.sentBytes[0] ?? new Uint8Array())
+    expect(request).toEqual(expect.objectContaining({
+      method: 'restart',
+      path: 'restart',
+    }))
+    expect(decodeRuntimeRequestBody(request.path, request.method, request.body)).toEqual({
+      terminal_id: 'terminal-1',
+    })
+    api.close()
+    await pending
+  })
+
   it('decodes storage api response bodies from runtime protobuf messages', () => {
     const body = encodeRuntimeResponseBody('/storage/list', 'POST', {
       entries: [{

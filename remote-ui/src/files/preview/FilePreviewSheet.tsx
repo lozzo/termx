@@ -47,7 +47,7 @@ export function FilePreviewSheet({ path, preview, loading, error, streamPreview,
         </div>
         <button
           type="button"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors active:scale-95 active:bg-zinc-100"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors active:scale-95 hover:bg-zinc-50 active:bg-zinc-100"
           aria-label="Close preview"
           onClick={onClose}
         >

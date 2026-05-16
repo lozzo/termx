@@ -130,6 +130,7 @@ type OfferInput struct {
 	SessionID            string
 	MachineID            string
 	TerminalID           string
+	Path                 string
 	SDP                  string
 	ICECandidates        []string
 	SessionToken         string

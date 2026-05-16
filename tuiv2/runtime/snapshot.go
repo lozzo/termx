@@ -11,6 +11,8 @@ import (
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
+const alternateScrollbackLimit = 10000
+
 type timestampedSnapshotLoader interface {
 	LoadSnapshotWithTimestamps(scrollback [][]localvterm.Cell, scrollbackTimestamps []time.Time, screen localvterm.ScreenData, screenTimestamps []time.Time, cursor localvterm.CursorState, modes localvterm.TerminalModes)
 }
@@ -73,6 +75,9 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 	terminal := r.registry.GetOrCreate(terminalID)
 	if terminal != nil {
 		terminal.Snapshot = snapshot
+		if snapshot == nil || !snapshotUsesAlternateScreen(snapshot) {
+			terminal.AlternateScrollback = nil
+		}
 		terminal.PreferSnapshot = false
 		if offset == 0 && snapshot != nil {
 			if loaded := len(snapshot.Scrollback); loaded > terminal.ScrollbackLoadedLimit {
@@ -187,6 +192,9 @@ func (r *Runtime) refreshSnapshot(terminalID string) {
 		return
 	}
 	terminal.Snapshot = snapshotFromVTerm(terminalID, terminal.VTerm)
+	if terminal.Snapshot == nil || !snapshotUsesAlternateScreen(terminal.Snapshot) {
+		terminal.AlternateScrollback = nil
+	}
 	terminal.PreferSnapshot = false
 	terminal.SnapshotVersion = terminal.SurfaceVersion
 	if terminal.Snapshot != nil {
@@ -353,6 +361,116 @@ func snapshotFromVTerm(terminalID string, vt VTermLike) *protocol.Snapshot {
 		Modes:                protocolModesFromVTerm(vt.Modes()),
 		Timestamp:            time.Now(),
 	}
+}
+
+func snapshotUsesAlternateScreen(snapshot *protocol.Snapshot) bool {
+	return snapshot != nil && (snapshot.Modes.AlternateScreen || snapshot.Screen.IsAlternateScreen)
+}
+
+func (r *Runtime) AlternateScrollbackSnapshot(terminalID string, snapshot *protocol.Snapshot) *protocol.Snapshot {
+	if snapshot == nil {
+		return nil
+	}
+	if !snapshotUsesAlternateScreen(snapshot) {
+		return cloneProtocolSnapshot(snapshot)
+	}
+	cloned := cloneProtocolSnapshot(snapshot)
+	var scrollback []protocol.CompactRow
+	if r == nil || r.registry == nil || terminalID == "" {
+		clearSnapshotScrollback(cloned)
+		return cloned
+	}
+	terminal := r.registry.Get(terminalID)
+	if terminal != nil {
+		scrollback = terminal.AlternateScrollback
+	}
+	cloned.Scrollback = protocol.CloneCompactRows(scrollback)
+	cloned.ScrollbackTimestamps = nil
+	cloned.ScrollbackRowKinds = nil
+	cloned.ScrollbackWrapped = nil
+	cloned.ScrollbackOffset = 0
+	cloned.ScrollbackTotal = len(cloned.Scrollback)
+	cloned.ScrollbackHasMore = len(scrollback) >= alternateScrollbackLimit
+	return cloned
+}
+
+func clearSnapshotScrollback(snapshot *protocol.Snapshot) {
+	if snapshot == nil {
+		return
+	}
+	snapshot.Scrollback = nil
+	snapshot.ScrollbackTimestamps = nil
+	snapshot.ScrollbackRowKinds = nil
+	snapshot.ScrollbackWrapped = nil
+	snapshot.ScrollbackOffset = 0
+	snapshot.ScrollbackTotal = 0
+	snapshot.ScrollbackHasMore = false
+}
+
+func (r *Runtime) captureAlternateScrollback(terminal *TerminalRuntime, update protocol.ScreenUpdate) {
+	if terminal == nil {
+		return
+	}
+	previous := terminal.Snapshot
+	if previous == nil || !snapshotUsesAlternateScreen(previous) {
+		if update.Modes.AlternateScreen {
+			terminal.AlternateScrollback = nil
+		}
+		return
+	}
+	if !update.Modes.AlternateScreen {
+		terminal.AlternateScrollback = nil
+		return
+	}
+	if update.FullReplace {
+		terminal.AlternateScrollback = nil
+		return
+	}
+	rows := alternateRowsScrolledOut(previous, update)
+	if len(rows) == 0 {
+		return
+	}
+	terminal.AlternateScrollback = append(terminal.AlternateScrollback, rows...)
+	if overflow := len(terminal.AlternateScrollback) - alternateScrollbackLimit; overflow > 0 {
+		terminal.AlternateScrollback = protocol.CloneCompactRows(terminal.AlternateScrollback[overflow:])
+	}
+}
+
+func alternateRowsScrolledOut(previous *protocol.Snapshot, update protocol.ScreenUpdate) []protocol.CompactRow {
+	if previous == nil {
+		return nil
+	}
+	rows := make([]protocol.CompactRow, 0)
+	for _, op := range update.Ops {
+		if op.Code != protocol.ScreenOpScrollRect || op.Dx != 0 || op.Dy >= 0 {
+			continue
+		}
+		if op.Rect.X != 0 || int(update.Size.Cols) > 0 && op.Rect.Width < int(update.Size.Cols) {
+			continue
+		}
+		rows = append(rows, snapshotScreenRows(previous, op.Rect.Y, -op.Dy)...)
+	}
+	if len(rows) > 0 {
+		return rows
+	}
+	if update.ScreenScroll > 0 {
+		return snapshotScreenRows(previous, 0, update.ScreenScroll)
+	}
+	return nil
+}
+
+func snapshotScreenRows(snapshot *protocol.Snapshot, start int, count int) []protocol.CompactRow {
+	if snapshot == nil || count <= 0 {
+		return nil
+	}
+	rows := make([]protocol.CompactRow, 0, count)
+	for row := start; row < start+count; row++ {
+		if row < 0 || row >= len(snapshot.Screen.Cells) {
+			continue
+		}
+		rows = append(rows, protocol.CompactRowFromCells(snapshot.Screen.Cells[row]))
+	}
+	return rows
 }
 
 func snapshotFromRowSource(terminalID string, source rowSnapshotSource) *protocol.Snapshot {

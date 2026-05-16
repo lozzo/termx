@@ -278,6 +278,26 @@ func TestTerminalManagementGetDirectoryFallsBackToMetadataCWD(t *testing.T) {
 	}
 }
 
+func TestTerminalManagementRestartRoutesToDaemon(t *testing.T) {
+	daemon := &terminalManagementDaemonStub{}
+	router := terminalManagementRouter{daemon: daemon}
+
+	status, body, errMsg := router.RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
+		Method: "restart",
+		Path:   "restart",
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.TerminalIDRequest{TerminalId: "terminal-1"}),
+	})
+	if errMsg != "" {
+		t.Fatalf("RouteTerminalManagementRequest returned error: %s", errMsg)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("RouteTerminalManagementRequest status = %d, body = %s", status, string(body))
+	}
+	if daemon.restartID != "terminal-1" {
+		t.Fatalf("expected restart terminal-1, got %q", daemon.restartID)
+	}
+}
+
 func TestStorageRouterRoundTripsDaemonStorage(t *testing.T) {
 	daemon := &storageDaemonStub{}
 	router := storageRouter{storage: daemon}
@@ -351,6 +371,7 @@ type terminalManagementDaemonStub struct {
 	createName    string
 	createCommand []string
 	createDir     string
+	restartID     string
 	list          []protocol.TerminalInfo
 	get           *protocol.TerminalInfo
 }
@@ -388,6 +409,11 @@ func (d *terminalManagementDaemonStub) SetMetadata(context.Context, string, stri
 }
 
 func (d *terminalManagementDaemonStub) Remove(context.Context, string) error {
+	return nil
+}
+
+func (d *terminalManagementDaemonStub) Restart(_ context.Context, terminalID string) error {
+	d.restartID = terminalID
 	return nil
 }
 

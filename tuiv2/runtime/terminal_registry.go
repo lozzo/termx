@@ -37,6 +37,8 @@ type TerminalRuntime struct {
 	ScreenUpdate    VisibleScreenUpdateSummary
 	VTerm           VTermLike
 
+	AlternateScrollback []protocol.CompactRow
+
 	ScrollbackLoadedLimit  int
 	ScrollbackLoadingLimit int
 	ScrollbackExhausted    bool

@@ -24,12 +24,13 @@ import (
 var terminalIDCounter atomic.Uint64
 
 const (
-	terminalPTYReadBufferBytes     = 512 * 1024
-	terminalPTYParserQueueBytes    = 2 * 1024 * 1024
-	terminalPTYParserChunkMaxBytes = 1024 * 1024
-	terminalPTYParserFlushDelay    = 2 * time.Millisecond
-	terminalPTYParserCloseWait     = 10 * time.Second
-	terminalInlineDamageMaxBytes   = 32 * 1024
+	terminalPTYReadBufferBytes      = 512 * 1024
+	terminalPTYParserQueueBytes     = 2 * 1024 * 1024
+	terminalPTYParserChunkMaxBytes  = 1024 * 1024
+	terminalPTYParserFlushDelay     = 2 * time.Millisecond
+	terminalPTYParserCloseWait      = 10 * time.Second
+	terminalInlineDamageMaxBytes    = 32 * 1024
+	terminalAlternateScrollbackRows = 10000
 )
 
 type terminalConfig struct {
@@ -82,6 +83,7 @@ type Terminal struct {
 	// state before switching to live frames.
 	streamMu       sync.Mutex
 	screenRevision uint64
+	alternateGrid  terminalAlternateGrid
 
 	// This cache holds deep-copied metadata snapshots so hot read paths do not
 	// have to rebuild command/tag payloads for every request.
@@ -716,6 +718,29 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	screenTimestamps := t.vterm.ScreenTimestamps()
 	screenRowKinds := t.vterm.ScreenRowKinds()
 	screenWrapped := t.vterm.ScreenWrapped()
+	screenContent := t.vterm.ScreenContent()
+	modes := t.vterm.Modes()
+	if modes.AlternateScreen || screenContent.IsAlternateScreen {
+		outScrollback, outScrollbackTimestamps, outScrollbackRowKinds, outScrollbackWrapped, scrollbackTotal, scrollbackHasMore := t.alternateGrid.viewport(offset, limit)
+		return &Snapshot{
+			TerminalID:           id,
+			Size:                 size,
+			Screen:               convertScreenData(screenContent),
+			Scrollback:           outScrollback,
+			ScrollbackOffset:     offset,
+			ScrollbackTotal:      scrollbackTotal,
+			ScrollbackHasMore:    scrollbackHasMore,
+			ScreenTimestamps:     cloneTimeSlice(screenTimestamps),
+			ScrollbackTimestamps: outScrollbackTimestamps,
+			ScreenRowKinds:       cloneStringSlice(screenRowKinds),
+			ScrollbackRowKinds:   outScrollbackRowKinds,
+			ScreenWrapped:        cloneBoolSlice(screenWrapped),
+			ScrollbackWrapped:    outScrollbackWrapped,
+			Cursor:               convertCursorState(t.vterm.CursorState()),
+			Modes:                convertModes(modes),
+			Timestamp:            time.Now().UTC(),
+		}
+	}
 
 	var (
 		outScrollback           [][]Cell
@@ -777,7 +802,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	return &Snapshot{
 		TerminalID:           id,
 		Size:                 size,
-		Screen:               convertScreenData(t.vterm.ScreenContent()),
+		Screen:               convertScreenData(screenContent),
 		Scrollback:           outScrollback,
 		ScrollbackOffset:     offset,
 		ScrollbackTotal:      scrollbackTotal,
@@ -789,7 +814,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		ScreenWrapped:        cloneBoolSlice(screenWrapped),
 		ScrollbackWrapped:    outScrollbackWrapped,
 		Cursor:               convertCursorState(t.vterm.CursorState()),
-		Modes:                convertModes(t.vterm.Modes()),
+		Modes:                convertModes(modes),
 		Timestamp:            time.Now().UTC(),
 	}
 }
@@ -814,6 +839,24 @@ func (t *Terminal) GridViewport(offset, limit, cols int) *GridViewport {
 	}
 	if cols <= 0 {
 		cols = 80
+	}
+	screenContent := t.vterm.ScreenContent()
+	modes := t.vterm.Modes()
+	if modes.AlternateScreen || screenContent.IsAlternateScreen {
+		rows, timestamps, rowKinds, wrapped, total, hasMore := t.alternateGrid.viewport(offset, limit)
+		return &GridViewport{
+			TerminalID:           id,
+			Size:                 Size{Cols: uint16(cols), Rows: size.Rows},
+			Rows:                 rows,
+			ScrollbackOffset:     offset,
+			ScrollbackLimit:      limit,
+			ScrollbackTotal:      total,
+			ScrollbackHasMore:    hasMore,
+			ScrollbackTimestamps: timestamps,
+			ScrollbackRowKinds:   rowKinds,
+			ScrollbackWrapped:    wrapped,
+			Timestamp:            time.Now().UTC(),
+		}
 	}
 	if t.grid != nil {
 		gridViewport, err := t.grid.Viewport(offset, limit, cols)
@@ -870,6 +913,20 @@ func (t *Terminal) HistoryReplay(opts HistoryReplayOptions) HistoryReplayResult 
 	}
 	t.flushGridAppender()
 	beforeOffset, limit := sanitizeGridReplayWindow(opts.BeforeOffset, opts.Limit)
+	t.mu.RLock()
+	id := t.id
+	t.mu.RUnlock()
+	if opts.Alternate {
+		replay, rows, hasMore := t.alternateGrid.replay(beforeOffset, limit)
+		return HistoryReplayResult{
+			TerminalID:   id,
+			BeforeOffset: beforeOffset,
+			Limit:        limit,
+			Rows:         rows,
+			HasMore:      hasMore,
+			Replay:       string(replay),
+		}
+	}
 	var (
 		replay  []byte
 		rows    int
@@ -885,9 +942,6 @@ func (t *Terminal) HistoryReplay(opts HistoryReplayOptions) HistoryReplayResult 
 	if t.grid == nil || (rows == 0 && beforeOffset == 0) {
 		replay, rows, hasMore = t.vterm.EncodeHistoryReplay(beforeOffset, limit)
 	}
-	t.mu.RLock()
-	id := t.id
-	t.mu.RUnlock()
 	return HistoryReplayResult{
 		TerminalID:   id,
 		BeforeOffset: beforeOffset,
@@ -1165,6 +1219,7 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 			return
 		}
 		perftrace.Count("terminal.screen_update.latest_frame_fast_path", len(chunk))
+		t.captureAlternateDamageLocked(damage)
 		t.appendGridFromDamageLocked(damage)
 		revision := t.bumpScreenRevisionLocked()
 		t.debugLogScreenBroadcastLocked("large_latest_placeholder", revision, len(chunk), 0, true, damage)
@@ -1187,6 +1242,7 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 		})
 		return
 	}
+	t.captureAlternateDamageLocked(damage)
 	t.appendGridFromDamageLocked(damage)
 	revision := t.bumpScreenRevisionLocked()
 	payload, ok := t.screenUpdatePayloadFromDamageLocked(damage)
@@ -1227,6 +1283,17 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 	if err := t.grid.AppendDamageRows(damage.ScrollbackAppend); err != nil && t.logger != nil {
 		t.logger.Warn("termx terminal grid append failed", "terminal_id", t.id, "error", err)
 	}
+}
+
+func (t *Terminal) captureAlternateDamageLocked(damage vterm.WriteDamage) {
+	if t == nil {
+		return
+	}
+	if !damage.Modes.AlternateScreen {
+		t.alternateGrid.reset()
+		return
+	}
+	t.alternateGrid.appendDamageRows(damage.AlternateAppend)
 }
 
 func (t *Terminal) flushGridAppender() {

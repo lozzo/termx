@@ -407,6 +407,7 @@ type CellRun struct {
 type WriteDamage struct {
 	Ops                 []DamageOp
 	ScrollbackAppend    []DamageOp
+	AlternateAppend     []DamageOp
 	ScrollbackTrim      int
 	ScreenScroll        int
 	RequiresFullReplace bool
@@ -753,9 +754,11 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 			beforeWidth == afterWidth &&
 			beforeHeight == afterHeight &&
 			beforeAltScreen == afterAltScreen {
-			var historyOps []DamageOp
-			if !afterAltScreen {
-				historyOps = v.scrollbackAppendOpsFromCharmVTDamages(directDamages, beforeScreenTimestamps, beforeScreenRowKinds)
+			historyOps := v.scrollbackAppendOpsFromCharmVTDamages(directDamages, beforeScreenTimestamps, beforeScreenRowKinds)
+			alternateOps := []DamageOp(nil)
+			if afterAltScreen {
+				alternateOps = historyOps
+				historyOps = nil
 			}
 			directStats := directDamageStats(directDamages, afterWidth, afterHeight)
 			if reason, broad := directStats.fullReplaceReason(); broad {
@@ -777,6 +780,9 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 					damage.ScrollbackAppend = historyOps
 					damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())
 				}
+			}
+			if len(alternateOps) > 0 {
+				damage.AlternateAppend = alternateOps
 			}
 			damage.DirectDamageItems = directStats.Items
 			damage.DirectDamageRows = directStats.Rows
@@ -877,7 +883,10 @@ func (v *VTerm) writeLatest(data []byte) (n int, err error, damage WriteDamage) 
 	rowCacheFinish(0)
 	damage = v.writeDamageHeaderLocked(cachePlan)
 	damage.RequiresFullReplace = true
-	if len(directDamages) > 0 && !afterAltScreen && beforeWidth == afterWidth && beforeHeight == afterHeight && beforeAltScreen == afterAltScreen {
+	if len(directDamages) > 0 && afterAltScreen && beforeWidth == afterWidth && beforeHeight == afterHeight && beforeAltScreen == afterAltScreen {
+		damage.AlternateAppend = v.scrollbackAppendOpsFromCharmVTDamages(directDamages, beforeScreenTimestamps, beforeScreenRowKinds)
+		v.appendScrollbackDamageLocked(&damage, cachePlan)
+	} else if len(directDamages) > 0 && !afterAltScreen && beforeWidth == afterWidth && beforeHeight == afterHeight && beforeAltScreen == afterAltScreen {
 		if historyOps := v.scrollbackAppendOpsFromCharmVTDamages(directDamages, beforeScreenTimestamps, beforeScreenRowKinds); len(historyOps) > 0 {
 			damage.ScrollbackAppend = historyOps
 			damage.ScrollbackTrim = maxInt(0, cachePlan.beforeScrollbackLen+len(historyOps)-v.scrollbackRowCountLocked())

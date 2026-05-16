@@ -114,7 +114,7 @@ function LocalWebShell({
           />
         </label>
         <button
-          className="h-8 rounded bg-zinc-900 px-3 text-xs font-semibold text-white active:bg-zinc-700"
+          className="h-8 rounded bg-zinc-900 px-3 text-xs font-semibold text-white hover:bg-zinc-800 active:bg-zinc-700"
           type="submit"
         >
           Use

@@ -90,6 +90,35 @@ func cloneSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {
 	return &cloned
 }
 
+func snapshotUsesAlternateScreen(snapshot *protocol.Snapshot) bool {
+	return snapshot != nil && (snapshot.Modes.AlternateScreen || snapshot.Screen.IsAlternateScreen)
+}
+
+func clearSnapshotScrollback(snapshot *protocol.Snapshot) {
+	if snapshot == nil {
+		return
+	}
+	snapshot.Scrollback = nil
+	snapshot.ScrollbackTimestamps = nil
+	snapshot.ScrollbackRowKinds = nil
+	snapshot.ScrollbackWrapped = nil
+	snapshot.ScrollbackOffset = 0
+	snapshot.ScrollbackTotal = 0
+	snapshot.ScrollbackHasMore = false
+}
+
+func (m *Model) copyModeSnapshot(terminalID string, snapshot *protocol.Snapshot) *protocol.Snapshot {
+	cloned := cloneSnapshot(snapshot)
+	if snapshotUsesAlternateScreen(cloned) {
+		if m != nil && m.runtime != nil {
+			cloned = m.runtime.AlternateScrollbackSnapshot(terminalID, cloned)
+		} else {
+			clearSnapshotScrollback(cloned)
+		}
+	}
+	return cloned
+}
+
 func (m *Model) showNotice(text string) tea.Cmd {
 	if m == nil {
 		return nil
@@ -372,7 +401,7 @@ func (m *Model) ensureCopyMode() bool {
 	if !ok || liveBuffer.totalRows() == 0 {
 		return false
 	}
-	frozenSnapshot := cloneSnapshot(liveBuffer.snapshot)
+	frozenSnapshot := m.copyModeSnapshot(pane.TerminalID, liveBuffer.snapshot)
 	if frozenSnapshot == nil {
 		return false
 	}
@@ -459,6 +488,9 @@ func (m *Model) adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID string, s
 
 func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset int) {
 	if m == nil || m.copyMode.Snapshot == nil || loaded == nil {
+		return
+	}
+	if snapshotUsesAlternateScreen(m.copyMode.Snapshot) || snapshotUsesAlternateScreen(loaded) {
 		return
 	}
 	next := cloneSnapshot(m.copyMode.Snapshot)

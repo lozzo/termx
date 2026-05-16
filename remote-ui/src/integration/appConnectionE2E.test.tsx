@@ -54,7 +54,7 @@ describe('APP connection e2e harness', () => {
       preferred_path: 'local',
     })))
     const machines = store.listMachines()
-    const managedSession = new ManagedE2ESession('machine-public')
+    const managedSession = new ManagedE2ESession('machine-public', 'local')
     const hubConnector = new RecordingManagedHubConnector(managedSession)
     const orchestrator = createConnectionOrchestrator({
       managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
@@ -83,7 +83,13 @@ describe('APP connection e2e harness', () => {
             machineId: machine.machineId,
             terminalId: 'terminal-1',
             sessionToken: 'session-token-1',
-            hubUrls: stored.addresses.public,
+            policy: 'app_local_preferred',
+            endpoints: stored.addresses.public.map((url) => ({
+              url,
+              kind: 'local' as const,
+              scope: 'public_mapping' as const,
+              source: 'pair_qr' as const,
+            })),
             onSnapshot: (snapshot) => snapshots.push(snapshot),
           }).then((result) => ({
             stage: 'connected',
@@ -100,15 +106,15 @@ describe('APP connection e2e harness', () => {
 
     await waitFor(() => expect(screen.getByText('Connected')).toBeTruthy())
     expect(screen.getByText('Connected to terminal runtime.')).toBeTruthy()
-    expect(screen.getByText('Relay active')).toBeTruthy()
+    expect(screen.queryByText('Relay active')).toBeNull()
     expect(hubConnector.calls).toEqual([{
       machineId: 'machine-public',
       terminalId: 'terminal-1',
       sessionToken: 'session-token-1',
-      path: 'managed',
+      path: 'local',
     }])
     expect(snapshots.map((snapshot) => snapshot.stage)).toEqual([
-      'trying_managed',
+      'trying_local',
       'connected',
     ])
 
@@ -221,17 +227,17 @@ class ManagedE2ESession extends MockRtcTerminalSession {
   subscribedEvents = 0
   private readonly eventHandlers = new Set<(event: RtcEvent) => void>()
 
-  constructor(machineId: string) {
-    super(machineId, 'managed')
+  constructor(machineId: string, private readonly connectionPath: ConnectionInfo['path'] = 'managed') {
+    super(machineId, connectionPath)
   }
 
   override async getConnectionInfo(): Promise<ConnectionInfo> {
     return {
-      path: 'managed',
-      connectionId: 'managed-rtc-1',
+      path: this.connectionPath,
+      connectionId: `${this.connectionPath}-rtc-1`,
       machineId: 'machine-public',
       terminalId: 'terminal-1',
-      relayInUse: true,
+      relayInUse: this.connectionPath === 'managed',
     }
   }
 
@@ -272,7 +278,7 @@ class ManagedE2ESession extends MockRtcTerminalSession {
       eventsAllowed: true,
       fileTransferAllowed: true,
       terminalManagementAllowed: true,
-      relayInUse: true,
+      relayInUse: this.connectionPath === 'managed',
     }
   }
 }

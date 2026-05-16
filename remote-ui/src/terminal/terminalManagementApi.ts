@@ -3,6 +3,7 @@ import type { LocalCreateTerminalInput, LocalUpdateTerminalInput, RtcSession } f
 export interface TerminalManagementApi {
   createTerminal(input: LocalCreateTerminalInput): Promise<{ terminalId: string }>
   updateTerminal(input: LocalUpdateTerminalInput): Promise<void>
+  restartTerminal(terminalId: string): Promise<void>
   deleteTerminal(terminalId: string): Promise<void>
   getTerminalDirectory(terminalId: string): Promise<{ path: string; source?: string | undefined }>
 }
@@ -48,6 +49,10 @@ export function createTerminalManagementApi(
           sizeLockMode: input.sizeLockMode,
         }),
       })
+    },
+    async restartTerminal(terminalId) {
+      const channel = await api()
+      await channel.request('restart', { terminal_id: terminalId })
     },
     async deleteTerminal(terminalId) {
       const channel = await api()

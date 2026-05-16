@@ -15,6 +15,7 @@ type SignalingOffer struct {
 	SessionID            string   `json:"session_id"`
 	MachineID            string   `json:"machine_id"`
 	TerminalID           string   `json:"terminal_id,omitempty"`
+	Path                 string   `json:"path,omitempty"`
 	SDP                  string   `json:"sdp"`
 	Candidates           []string `json:"ice_candidates,omitempty"`
 	SessionToken         string   `json:"session_token"`

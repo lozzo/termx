@@ -65,6 +65,56 @@ describe('ManagedHubApi', () => {
     }])
   })
 
+  it('accepts local session path responses from embedded local hubs', async () => {
+    const fetch = new RecordingFetch([
+      jsonResponse(200, {
+        path: 'local',
+        machine_id: 'machine-1',
+        ice_servers: [],
+        relay_policy: {
+          allow_relay: false,
+          allow_relay_transfer: false,
+        },
+      }),
+      jsonResponse(200, {
+        session_id: 'rtc-managed-1',
+        path: 'local',
+        machine_id: 'machine-1',
+        answer: {
+          sdp: 'answer-sdp',
+          ice_candidates: [],
+        },
+        ice_servers: [],
+        relay_policy: {
+          allow_relay: false,
+          allow_relay_transfer: false,
+        },
+        relay_in_use: false,
+      }),
+    ])
+    const api = createManagedHubApi({
+      baseUrl: 'http://127.0.0.1:18888',
+      fetch: fetch.fetch,
+    })
+
+    await expect(api.getSessionIce({
+      machineId: 'machine-1',
+      sessionToken: 'session-token-1',
+    })).resolves.toMatchObject({
+      path: 'local',
+      iceServers: [],
+      relayPolicy: {
+        allowRelay: false,
+        allowRelayTransfer: false,
+      },
+    })
+    await expect(api.createSession(validSessionInput())).resolves.toMatchObject({
+      sessionId: 'rtc-managed-1',
+      path: 'local',
+      relayInUse: false,
+    })
+  })
+
   it('submits a managed WebRTC offer to the Hub session endpoint and returns the answer', async () => {
     const fetch = new RecordingFetch([
       jsonResponse(200, {
@@ -192,7 +242,7 @@ describe('ManagedHubApi', () => {
       fetch: fetch.fetch,
     })
 
-    await expect(api.createSession(validSessionInput())).rejects.toThrow(/path.*managed/i)
+    await expect(api.createSession(validSessionInput())).rejects.toThrow(/path.*managed.*cloud.*local/i)
   })
 
   it('returns a recoverable pending result when Hub accepted the offer but answer is not ready', async () => {

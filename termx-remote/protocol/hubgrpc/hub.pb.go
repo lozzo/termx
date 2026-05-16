@@ -650,6 +650,7 @@ type SignalingOffer struct {
 	IceCandidates        []string               `protobuf:"bytes,5,rep,name=ice_candidates,json=iceCandidates,proto3" json:"ice_candidates,omitempty"`
 	SessionToken         string                 `protobuf:"bytes,6,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
 	AnswerProofChallenge string                 `protobuf:"bytes,7,opt,name=answer_proof_challenge,json=answerProofChallenge,proto3" json:"answer_proof_challenge,omitempty"`
+	Path                 string                 `protobuf:"bytes,8,opt,name=path,proto3" json:"path,omitempty"`
 	Nonce                string                 `protobuf:"bytes,20,opt,name=nonce,proto3" json:"nonce,omitempty"`
 	IssuedAt             int64                  `protobuf:"varint,21,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
 	unknownFields        protoimpl.UnknownFields
@@ -731,6 +732,13 @@ func (x *SignalingOffer) GetSessionToken() string {
 func (x *SignalingOffer) GetAnswerProofChallenge() string {
 	if x != nil {
 		return x.AnswerProofChallenge
+	}
+	return ""
+}
+
+func (x *SignalingOffer) GetPath() string {
+	if x != nil {
+		return x.Path
 	}
 	return ""
 }
@@ -1097,7 +1105,7 @@ const file_termx_remote_protocol_hubgrpc_hub_proto_rawDesc = "" +
 	"\x14allow_relay_transfer\x18\x02 \x01(\bR\x12allowRelayTransfer\"q\n" +
 	"\x10HeartbeatRequest\x12(\n" +
 	"\x10agent_session_id\x18\x01 \x01(\tR\x0eagentSessionId\x123\n" +
-	"\tterminals\x18\x02 \x03(\v2\x15.termxhub.v1.TerminalR\tterminals\"\xb6\x02\n" +
+	"\tterminals\x18\x02 \x03(\v2\x15.termxhub.v1.TerminalR\tterminals\"\xca\x02\n" +
 	"\x0eSignalingOffer\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
@@ -1108,7 +1116,8 @@ const file_termx_remote_protocol_hubgrpc_hub_proto_rawDesc = "" +
 	"\x03sdp\x18\x04 \x01(\tR\x03sdp\x12%\n" +
 	"\x0eice_candidates\x18\x05 \x03(\tR\riceCandidates\x12#\n" +
 	"\rsession_token\x18\x06 \x01(\tR\fsessionToken\x124\n" +
-	"\x16answer_proof_challenge\x18\a \x01(\tR\x14answerProofChallenge\x12\x14\n" +
+	"\x16answer_proof_challenge\x18\a \x01(\tR\x14answerProofChallenge\x12\x12\n" +
+	"\x04path\x18\b \x01(\tR\x04path\x12\x14\n" +
 	"\x05nonce\x18\x14 \x01(\tR\x05nonce\x12\x1b\n" +
 	"\tissued_at\x18\x15 \x01(\x03R\bissuedAt\"\xa2\x01\n" +
 	"\x0fSignalingAnswer\x12\x1d\n" +

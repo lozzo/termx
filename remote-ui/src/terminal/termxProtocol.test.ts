@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   TERMX_FRAME_TYPES,
   decodeTermxFrame,
+  encodeHistoryRequestPayload,
   encodeResizePayload,
   encodeTermxFrame,
   rowsToText,
   screenUpdatePayloadToReplay,
+  snapshotUsesAlternateScreen,
   snapshotToReplay,
 } from './termxProtocol'
 import { encodeMockScreenUpdatePayload } from '../test/mockRtcTerminalSession'
@@ -27,6 +29,15 @@ describe('termxProtocol', () => {
 
   it('encodes resize payloads as Go big-endian uint16 cols and rows', () => {
     expect(Array.from(encodeResizePayload(100, 40))).toEqual([0x00, 0x64, 0x00, 0x28])
+  })
+
+  it('encodes alternate history requests with a trailing mode byte', () => {
+    const payload = new DataView(encodeHistoryRequestPayload(100, 50, true).buffer)
+
+    expect(payload.byteLength).toBe(9)
+    expect(payload.getUint32(0)).toBe(100)
+    expect(payload.getUint32(4)).toBe(50)
+    expect(payload.getUint8(8)).toBe(1)
   })
 
   it('flattens snapshot screen and scrollback rows into terminal text without pane/session concepts', () => {
@@ -84,6 +95,26 @@ describe('termxProtocol', () => {
     expect(snapshotToReplay({ modes: { alternate_screen: true }, screen: { rows: [] } })).toContain('\x1b[?1049h')
     expect(snapshotToReplay({ modes: { alternate_screen: false }, screen: { rows: [] } })).toContain('\x1b[?1049l')
     expect(snapshotToReplay({ screen: { rows: [] } })).toContain('\x1b[?1049l')
+  })
+
+  it('recognizes alternate screen snapshots from screen fields', () => {
+    const snapshot = {
+      screen_is_alternate: true,
+      modes: { alternate_screen: false },
+      scrollback: [
+        { cells: [{ r: 'o' }, { r: 'l' }, { r: 'd' }] },
+      ],
+      screen: {
+        rows: [
+          { cells: [{ r: 't' }, { r: 'u' }, { r: 'i' }] },
+        ],
+      },
+    }
+
+    expect(snapshotUsesAlternateScreen(snapshot)).toBe(true)
+    const replay = snapshotToReplay(snapshot)
+    expect(replay).toContain('\x1b[?1049h')
+    expect(replay).not.toContain('old')
   })
 
   it('decodes screen update payloads into replayable terminal output', () => {

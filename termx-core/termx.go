@@ -1322,6 +1322,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 			replay, err := s.HistoryReplay(sessionCtx, attachment.terminalID, HistoryReplayOptions{
 				BeforeOffset: beforeOffset,
 				Limit:        limit,
+				Alternate:    len(payload) >= 9 && payload[8] == 1,
 			})
 			if err != nil {
 				if err := sendProtocolError(sendFrame, 0, channel, protocolErrorCode(err), err.Error()); err != nil {

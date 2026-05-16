@@ -193,7 +193,7 @@ function MachineRow({
   return (
     <button
       aria-label={`Connect to ${machine.name}`}
-      className="grid w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left transition-colors active:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+      className="grid w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left transition-colors hover:bg-zinc-50 active:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
       type="button"
       onClick={() => {
         if (longPressTriggeredRef.current) {
@@ -284,7 +284,7 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
           <button
             type="button"
             aria-label="Close machine details"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 active:bg-zinc-200"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 hover:bg-zinc-100 active:bg-zinc-200"
             onClick={onClose}
           >
             <X className="h-5 w-5" />

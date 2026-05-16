@@ -652,26 +652,53 @@ func TestCopyModeEnterPrefetchesWhenExhaustedFlagIsStale(t *testing.T) {
 	}
 }
 
-func TestCopyModeTopLoadsHistoryWhileAlternateScreenActive(t *testing.T) {
+func TestCopyModeTopDoesNotLoadNormalHistoryWhileAlternateScreenActive(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, nil, []string{"alt0", "alt1", "alt2", "alt3"})
 	terminal := model.runtime.Registry().Get("term-1")
 	terminal.Snapshot.Modes.AlternateScreen = true
 	terminal.Snapshot.Screen.IsAlternateScreen = true
+	terminal.Snapshot.Scrollback = []protocol.CompactRow{
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "old-normal", Width: 1}}),
+	}
 	client := model.runtime.Client().(*recordingBridgeClient)
 	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot([]string{"old0", "old1"}, []string{"live0", "live1"})
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
 
-	if got := len(client.viewportRequests); got == 0 {
-		t.Fatal("expected alternate-screen copy mode to request history viewport")
+	if got := len(client.viewportRequests); got != 0 {
+		t.Fatalf("expected alternate-screen copy mode not to request normal history, got %#v", client.viewportRequests)
 	}
-	if got, want := len(model.copyMode.Snapshot.Scrollback), 2; got != want {
-		t.Fatalf("expected alternate-screen copy mode to load history, got %d want %d", got, want)
+	if got := len(model.copyMode.Snapshot.Scrollback); got != 0 {
+		t.Fatalf("expected frozen alternate screen to omit normal scrollback, got %d rows", got)
 	}
 	if !model.copyMode.Snapshot.Modes.AlternateScreen || !model.copyMode.Snapshot.Screen.IsAlternateScreen {
 		t.Fatalf("expected frozen alternate screen to remain marked alternate, got modes=%#v screen=%v", model.copyMode.Snapshot.Modes, model.copyMode.Snapshot.Screen.IsAlternateScreen)
+	}
+}
+
+func TestCopyModeUsesAlternateScreenVisualHistory(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, nil, []string{"alt1", "alt2", "alt3", "alt4"})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot.Modes.AlternateScreen = true
+	terminal.Snapshot.Screen.IsAlternateScreen = true
+	terminal.AlternateScrollback = []protocol.CompactRow{
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "c", Width: 1}, {Content: "o", Width: 1}, {Content: "d", Width: 1}, {Content: "e", Width: 1}, {Content: "x", Width: 1}, {Content: "-", Width: 1}, {Content: "0", Width: 1}}),
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+
+	if got, want := len(model.copyMode.Snapshot.Scrollback), 1; got != want {
+		t.Fatalf("expected alternate visual history in frozen copy buffer, got %d want %d", got, want)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "codex-0" {
+		t.Fatalf("expected alternate visual history row, got %q", got)
+	}
+	if got := model.copyMode.Cursor.Row; got != 0 {
+		t.Fatalf("expected copy-mode top to reach alternate visual history, got row %d", got)
 	}
 }
 
@@ -1196,6 +1223,7 @@ func TestClipboardHistoryPickerLoadsDaemonPublicStorage(t *testing.T) {
 		ID:            "shared-1",
 		Text:          "from daemon",
 		PaneID:        "remote-app",
+		SourceApp:     "remote-ui",
 		CreatedAt:     createdAt,
 	})
 	if err != nil {
@@ -1226,8 +1254,13 @@ func TestClipboardHistoryPickerLoadsDaemonPublicStorage(t *testing.T) {
 		t.Fatalf("expected loaded storage entry to become paste buffer, got %q", got)
 	}
 	view := xansi.Strip(model.View())
-	if !strings.Contains(view, "from daemon") {
-		t.Fatalf("expected storage-backed history in picker:\n%s", view)
+	for _, want := range []string{"history", "preview", "from daemon", "time: 2026-05-16", "source: remote-ui", "from: remote-app"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected storage-backed history to contain %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "shared-1") {
+		t.Fatalf("clipboard history picker should not show internal storage id:\n%s", view)
 	}
 	if len(client.storageListCalls) == 0 || client.storageListCalls[0].AppID != clipboardHistoryStorageAppID || client.storageListCalls[0].Scope != protocol.StorageScopePublic {
 		t.Fatalf("expected public storage list, got %#v", client.storageListCalls)
@@ -1315,7 +1348,7 @@ func TestClipboardHistoryPickerCreatesEntryInPublicStorage(t *testing.T) {
 		t.Fatalf("unexpected stored clipboard entry: put=%#v record=%#v", client.storagePutCalls[0], record)
 	}
 	view := xansi.Strip(model.View())
-	for _, want := range []string{"Clipboard History", "manual clip", "New clipboard entry"} {
+	for _, want := range []string{"Clipboard History", "manual clip", "New clipboard entry", "source: tuiv2", "from: pane-1"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected clipboard picker to contain %q:\n%s", want, view)
 		}
@@ -1389,7 +1422,7 @@ func TestClipboardHistoryPickerDeletesEntryFromPublicStorage(t *testing.T) {
 		t.Fatalf("expected deleted entry to leave memory, got %#v", entry)
 	}
 	view := xansi.Strip(model.View())
-	for _, want := range []string{"Clipboard history is empty", "New clipboard entry"} {
+	for _, want := range []string{"Clipboard", "copy text first", "New clipboard entry"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected clipboard picker to contain %q:\n%s", want, view)
 		}
@@ -1466,7 +1499,7 @@ func TestClipboardHistoryPickerOpensFromKeysAndRendersOverlay(t *testing.T) {
 		t.Fatalf("expected clipboard history picker mode, got %q", got)
 	}
 	view := xansi.Strip(model.View())
-	for _, want := range []string{"Clipboard History", "first entry"} {
+	for _, want := range []string{"Clipboard History", "history", "preview", "first entry", "source: tuiv2", "from: pane-1"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected clipboard history overlay to contain %q:\n%s", want, view)
 		}
@@ -1484,7 +1517,7 @@ func TestClipboardHistoryPickerShowsEmptyState(t *testing.T) {
 		t.Fatalf("expected clipboard history picker mode, got %q", got)
 	}
 	view := xansi.Strip(model.View())
-	for _, want := range []string{"Clipboard History", "New clipboard entry", "Clipboard history is empty", "copy text first"} {
+	for _, want := range []string{"Clipboard History", "history", "preview", "New clipboard entry", "Clipboard", "copy text first"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected empty clipboard history overlay to contain %q:\n%s", want, view)
 		}

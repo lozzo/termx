@@ -24,7 +24,7 @@ import { TerminalList } from '../terminal/TerminalList'
 import { createTerminalManagementApi } from '../terminal/terminalManagementApi'
 import { readTerminalSettings, terminalThemeCssVariables, writeTerminalSettings, type TerminalSettings } from '../terminal/terminalSettings'
 import type { Machine, Terminal as RemoteTerminal } from '../core/model'
-import type { ConnectionInfo, LocalAgentApi, LocalCreateTerminalInput, LocalPairingApi, LocalUpdateTerminalInput, MachineConnectionStateEvents, RtcConnectOptions, RtcConnectionStateSnapshot, RtcConnector, RtcEvent, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSubscription, TerminalInventoryEvents } from '../core/transport'
+import type { ConnectionInfo, LocalAgentApi, LocalCreateTerminalInput, LocalPairingApi, LocalUpdateTerminalInput, MachineConnectionStateEvents, RtcConnectOptions, RtcConnectionStateSnapshot, RtcConnector, RtcEvent, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSubscription, RtcTerminalDataChannelController, TerminalInventoryEvents } from '../core/transport'
 import { useTerminalKeyboard } from '../terminal/useTerminalKeyboard'
 
 export interface MachineWorkspaceInventoryApi extends Pick<LocalAgentApi, 'getStatus'> {
@@ -1347,6 +1347,34 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     setMobileSheet(null)
   }, [activeTerminalId, canManageTerminals, fileTerminalId, managedTerminal, managedTerminalId, refreshTerminals, splitTerminalId, withManagementApi])
 
+  const restartManagedTerminal = useCallback(async () => {
+    if (!canManageTerminals || !managedTerminalId) return
+    const restartedTerminalId = managedTerminalId
+    const restartedTitle = managedTerminal?.title ?? managedTerminalId
+    const management = await withManagementApi()
+    closeTerminalDataChannel(management.session, restartedTerminalId)
+    await management.api.restartTerminal(restartedTerminalId)
+    await refreshTerminals()
+    if (activeTerminalId === restartedTerminalId) {
+      setConnectedSession(management.session)
+      setConnectedTerminalId(restartedTerminalId)
+      setConnectingTerminalId(null)
+      terminalRef.current?.reattach(management.session, { forceTerminalChannel: true })
+      window.setTimeout(() => {
+        terminalRef.current?.fit()
+        terminalRef.current?.focus()
+      }, 0)
+    }
+    if (splitTerminalId === restartedTerminalId) {
+      splitTerminalRef.current?.reattach(management.session, { forceTerminalChannel: true })
+      window.setTimeout(() => {
+        splitTerminalRef.current?.fit()
+      }, 0)
+    }
+    setPairStatus(`Restarted ${restartedTitle}`)
+    setMobileSheet(null)
+  }, [activeTerminalId, canManageTerminals, managedTerminal, managedTerminalId, refreshTerminals, splitTerminalId, withManagementApi])
+
   const openTerminalPanel = useCallback(() => {
     setFilesOpen(false)
     window.setTimeout(() => {
@@ -1587,7 +1615,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                     <button
                       key={path}
                       type="button"
-                      className="flex min-h-12 w-full items-center gap-3 border-b border-zinc-100 px-3 text-left last:border-b-0 active:bg-zinc-50"
+                      className="flex min-h-12 w-full items-center gap-3 border-b border-zinc-100 px-3 text-left last:border-b-0 hover:bg-zinc-50 active:bg-zinc-50"
                       onClick={() => { hapticImpact(); void loadTerminalPathPicker(path) }}
                     >
                       <Folder className="h-4 w-4 shrink-0 text-zinc-500" />
@@ -1611,7 +1639,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 active:bg-zinc-100"
+              className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
               onClick={() => { hapticImpact(); void addTerminalPathBookmark() }}
             >
               <BookmarkPlus className="h-4 w-4" />
@@ -1619,7 +1647,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </button>
             <button
               type="button"
-              className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 active:bg-zinc-100"
+              className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
               onClick={() => { hapticImpact(); void loadTerminalPathBookmarks() }}
             >
               <RefreshCw className="h-4 w-4" />
@@ -1657,7 +1685,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   <button
                     type="button"
                     aria-label={`Remove ${bookmark.label}`}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-red-500 active:bg-red-50"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50/80 active:bg-red-50"
                     onClick={() => { hapticImpact(); void removeTerminalPathBookmark(bookmark.id) }}
                   >
                     <BookmarkMinus className="h-4 w-4" />
@@ -1686,7 +1714,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             <div className="mt-2 grid grid-cols-3 gap-2">
               <button
                 type="button"
-                className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 text-[12px] font-semibold text-zinc-700 active:bg-zinc-100"
+                className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                 onClick={() => { hapticImpact(); void loadBrowserClipboardDraft() }}
               >
                 <ClipboardList className="h-4 w-4" />
@@ -1694,7 +1722,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </button>
               <button
                 type="button"
-                className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 text-[12px] font-semibold text-zinc-700 active:bg-zinc-100"
+                className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                 onClick={() => { hapticImpact(); void refreshClipboardEntries() }}
               >
                 <RefreshCw className="h-4 w-4" />
@@ -1741,7 +1769,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   <div className="mt-2 flex items-center justify-end gap-2">
                     <button
                       type="button"
-                      className="flex min-h-8 items-center gap-1.5 rounded-lg border border-zinc-200 px-2 text-[12px] font-semibold text-zinc-700 active:bg-zinc-100"
+                      className="flex min-h-8 items-center gap-1.5 rounded-lg border border-zinc-200 px-2 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                       onClick={() => { hapticImpact(); setEditingClipboardId(entry.id); setClipboardDraft(entry.text) }}
                     >
                       <SquarePen className="h-3.5 w-3.5" />
@@ -1749,7 +1777,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                     </button>
                     <button
                       type="button"
-                      className="flex min-h-8 items-center gap-1.5 rounded-lg border border-zinc-200 px-2 text-[12px] font-semibold text-red-600 active:bg-red-50"
+                      className="flex min-h-8 items-center gap-1.5 rounded-lg border border-zinc-200 px-2 text-[12px] font-semibold text-red-600 hover:bg-red-50/80 active:bg-red-50"
                       onClick={() => { hapticImpact(); void deleteClipboardEntry(entry.id) }}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -1820,14 +1848,14 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     const showTerminalListLoader = loadingTerminals && !hasLoadedTerminals
 
     return (
-      <main className="relative flex min-h-0 flex-1 flex-col bg-zinc-50" data-testid="termx-terminal-list-page">
-        <header className="flex min-h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-4 pt-[env(safe-area-inset-top)]">
+      <aside className={`relative min-h-0 flex-1 flex-col bg-zinc-50 md:flex md:w-72 md:flex-none md:border-r md:border-zinc-200 md:bg-zinc-100 ${page === 'terminal' ? 'hidden' : 'flex'}`} data-testid="termx-terminal-list-page">
+        <header className="flex min-h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white md:bg-transparent px-4 pt-[env(safe-area-inset-top)] md:pt-0">
           <div className="flex min-w-0 items-center gap-2">
             {onBack ? (
               <button
                 type="button"
                 aria-label="Back to machines"
-                className="mr-1 flex h-8 w-8 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
+                className="mr-1 flex h-8 w-8 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100"
                 onClick={onBack}
               >
                 <ChevronLeft className="h-5 w-5" />
@@ -1843,7 +1871,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             <button
               type="button"
               aria-label="Connection info"
-              className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
+              className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100"
               onClick={openConnectionInfo}
             >
               <Info className="h-5 w-5" />
@@ -1851,7 +1879,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             <button
               type="button"
               aria-label="Open files"
-              className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
+              className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100"
               onClick={openFiles}
             >
               <Folder className="h-5 w-5" />
@@ -1860,7 +1888,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               <button
                 type="button"
                 aria-label="Create terminal"
-                className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100"
                 onClick={openCreateTerminal}
               >
                 <Plus className="h-5 w-5" />
@@ -1894,7 +1922,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             </div>
             <button
               type="button"
-              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 text-[15px] font-semibold text-white shadow-md transition-all active:scale-[0.98] active:bg-zinc-800"
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 text-[15px] font-semibold text-white shadow-md transition-all active:scale-[0.98] hover:bg-zinc-800 active:bg-zinc-800"
               onClick={() => setMobileSheet('pair')}
             >
               <KeyRound className="h-4 w-4" />
@@ -1920,6 +1948,16 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         {mobileSheet === 'manage-terminal' && managedTerminal ? (
           <MobileSheetPanel title={managedTerminal.title || 'Terminal'} testId="termx-terminal-actions-sheet" onClose={() => setMobileSheet(null)}>
             <div className="flex flex-col gap-3">
+              {managedTerminal.state === 'exited' ? (
+                <button
+                  type="button"
+                  className="flex min-h-12 w-full items-center justify-between rounded-xl border border-zinc-200 bg-white px-4 text-left text-[15px] font-medium text-zinc-900 shadow-sm"
+                  onClick={() => { hapticImpact(); void restartManagedTerminal() }}
+                >
+                  <span>Restart terminal</span>
+                  <RefreshCw className="h-4 w-4 text-zinc-500" />
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="flex min-h-12 w-full items-center justify-between rounded-xl border border-zinc-200 bg-white px-4 text-left text-[15px] font-medium text-zinc-900 shadow-sm"
@@ -1984,7 +2022,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 active:bg-zinc-100"
+                    className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                     onClick={() => {
                       hapticImpact()
                       openTerminalPathPicker()
@@ -1995,7 +2033,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
                   </button>
                   <button
                     type="button"
-                    className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 active:bg-zinc-100"
+                    className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                     onClick={() => {
                       hapticImpact()
                       openTerminalPathBookmarks()
@@ -2034,7 +2072,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
               </label>
               <button
                 type="button"
-                className="mt-2 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 text-[15px] font-semibold text-white shadow-md transition-all active:scale-[0.98] active:bg-zinc-800"
+                className="mt-2 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 text-[15px] font-semibold text-white shadow-md transition-all active:scale-[0.98] hover:bg-zinc-800 active:bg-zinc-800"
                 onClick={() => {
                   hapticImpact()
                   if (mobileSheet === 'create-terminal') {
@@ -2064,7 +2102,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         {renderClipboardHistorySheet()}
         {renderTerminalPathPickerSheet()}
         {renderTerminalPathBookmarksSheet()}
-      </main>
+      </aside>
     )
   }
 
@@ -2105,42 +2143,19 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       data-machine-id={machine.machineId}
       style={terminalThemeStyle}
     >
-      {page === 'terminal' ? (
-      <aside className="hidden w-72 shrink-0 flex-col border-r border-zinc-200 bg-zinc-100 md:flex">
-        <div className="flex h-12 shrink-0 items-center border-b border-zinc-200 px-4">
-          <Monitor className="mr-2 h-4 w-4 text-zinc-500" />
-          <h1 className="text-sm font-semibold text-zinc-800 truncate">{machine.machineId}</h1>
-        </div>
-        <div className="shrink-0 border-b border-zinc-200 bg-zinc-50 p-3">
-          <button
-            type="button"
-            aria-label="Show terminal list"
-            className="flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm active:bg-zinc-100"
-            onClick={showTerminalListPage}
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Terminal list
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-3">
-          <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Terminals</h2>
-          <TerminalList
-            machineId={machine.machineId}
-            terminals={terminals}
-            onOpenTerminal={openTerminal}
-            onManageTerminal={openManageTerminal}
-            activeTerminalId={activeTerminalId ?? undefined}
-            loading={loadingTerminals && !hasLoadedTerminals}
-          />
-        </div>
-      </aside>
-      ) : null}
+      {renderTerminalListPage()}
 
-      {page === 'terminal-list' ? renderTerminalListPage() : (
       <main
-        className="relative grid min-h-0 min-w-0 max-w-full flex-1 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[var(--termx-terminal-bg)]"
+        className={`relative min-h-0 min-w-0 max-w-full flex-1 overflow-hidden bg-[var(--termx-terminal-bg)] ${page === 'terminal-list' ? 'hidden md:flex md:items-center md:justify-center md:bg-zinc-50/50' : 'grid grid-rows-[auto_minmax(0,1fr)_auto]'}`}
         data-testid="termx-terminal-page"
       >
+        {page === 'terminal-list' ? (
+          <div className="flex flex-col items-center gap-3 text-zinc-400">
+            <Monitor className="h-12 w-12 opacity-20" />
+            <p className="text-sm font-medium">Select a terminal to start</p>
+          </div>
+        ) : (
+          <>
         <header
           className="relative z-30 flex min-h-10 min-w-0 max-w-full shrink-0 items-center justify-between gap-1 overflow-hidden border-b border-[var(--termx-border-subtle)] bg-[var(--termx-surface)] px-1.5 pt-[env(safe-area-inset-top)] md:hidden"
           data-testid="termx-terminal-header"
@@ -2462,11 +2477,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           </MobileSheetPanel>
         ) : null}
         {renderClipboardHistorySheet()}
+          </>
+        )}
       </main>
-      )}
 
       <div
-        className={`absolute inset-0 z-30 flex flex-col bg-white shadow-[0_-20px_40px_rgba(0,0,0,0.15)] transition-all duration-300 md:m-6 md:rounded-2xl md:border md:border-zinc-200/60 ${filesOpen ? 'translate-y-0 visible' : 'translate-y-full invisible'}`}
+        className={`absolute inset-0 z-30 flex flex-col bg-white shadow-[0_-20px_40px_rgba(0,0,0,0.15)] transition-all duration-300 md:left-auto md:right-0 md:w-[450px] md:border-l md:border-zinc-200/60 ${filesOpen ? 'translate-y-0 md:translate-x-0 visible' : 'translate-y-full md:translate-y-0 md:translate-x-full invisible'}`}
         data-testid="termx-machine-files-overlay"
       >
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200/70 bg-white px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:h-14 md:pb-0 md:pt-0">
@@ -2477,7 +2493,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           <button
             type="button"
             aria-label="Close files"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition-colors active:scale-95 active:bg-zinc-100"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition-colors active:scale-95 hover:bg-zinc-50 active:bg-zinc-100"
             onClick={openTerminalPanel}
           >
             <X className="h-5 w-5" />
@@ -2568,7 +2584,7 @@ function MobileSheetPanel({
         onClick={(e) => e.stopPropagation()}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="absolute left-1/2 top-3 h-1.5 w-12 -translate-x-1/2 rounded-full bg-zinc-300/80" />
+        <div className="absolute left-1/2 top-3 h-1.5 w-12 -translate-x-1/2 rounded-full bg-zinc-300/80 md:hidden" />
         <header className="flex h-16 items-center justify-between border-b border-zinc-200/50 px-5 pt-3">
           <h2 className="text-[17px] font-bold tracking-tight text-zinc-900">{title}</h2>
           <button
@@ -2619,7 +2635,7 @@ function ConnectionInfoDialog({
             <h2 className="text-[15px] font-semibold text-zinc-950">Connection Info</h2>
             <p className="mt-0.5 text-[12px] font-medium text-zinc-500">{connectionTypeLabel(type)}</p>
           </div>
-          <button type="button" aria-label="Close connection info" className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 active:bg-zinc-100" onClick={onClose}>
+          <button type="button" aria-label="Close connection info" className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-50 active:bg-zinc-100" onClick={onClose}>
             <X className="h-5 w-5" />
           </button>
         </header>
@@ -2640,10 +2656,10 @@ function ConnectionInfoDialog({
         </div>
 
         <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-3">
-          <button type="button" className="flex min-h-9 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 active:bg-zinc-100" onClick={onRefresh}>
+          <button type="button" className="flex min-h-9 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100" onClick={onRefresh}>
             Refresh
           </button>
-          <button type="button" className="flex min-h-9 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 active:bg-zinc-100" onClick={onReconnect}>
+          <button type="button" className="flex min-h-9 items-center justify-center rounded-md border border-zinc-200 bg-white px-3 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100" onClick={onReconnect}>
             Reconnect
           </button>
           <button
@@ -2685,6 +2701,13 @@ function isRtcSessionAlive(session: RtcSession): boolean {
   const candidate = session as RtcSession & Partial<RtcSessionLiveness>
   if (typeof candidate.isAlive !== 'function') return true
   return candidate.isAlive()
+}
+
+function closeTerminalDataChannel(session: RtcSession, terminalId: string): void {
+  const controller = session as RtcSession & Partial<RtcTerminalDataChannelController>
+  if (typeof controller.closeTerminalDataChannel === 'function') {
+    controller.closeTerminalDataChannel(terminalId)
+  }
 }
 
 function isDirectoryEntry(entry: FileEntry): boolean {

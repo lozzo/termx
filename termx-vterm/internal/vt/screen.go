@@ -493,8 +493,7 @@ func (s *Screen) DeleteLine(n int) bool {
 	// Save lines to scrollback if we're at the top of the scroll region
 	// and the scroll region uses the full width (typical terminal scroll).
 	// This captures lines that would be lost during scroll up operations.
-	if s.scrollback != nil && y == scroll.Min.Y &&
-		scroll.Min.X == 0 && scroll.Max.X == s.buf.Width() {
+	if y == scroll.Min.Y && scroll.Min.X == 0 && scroll.Max.X == s.buf.Width() {
 		// Save lines that will be deleted
 		linesToSave := min(n, scroll.Max.Y-y)
 		if s.damage != nil && s.damage.scrollbackOnly {
@@ -515,7 +514,9 @@ func (s *Screen) DeleteLine(n int) bool {
 				}
 			}
 		}
-		s.scrollback.PushN(s.buf, s.wrapped, y, linesToSave)
+		if s.scrollback != nil {
+			s.scrollback.PushN(s.buf, s.wrapped, y, linesToSave)
+		}
 	}
 	if scroll.Min.X == 0 && scroll.Max.X == s.buf.Width() {
 		deleteFullWidthLines(s.buf, y, n, scroll, fill)

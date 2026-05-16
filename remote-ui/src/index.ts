@@ -111,10 +111,15 @@ export type {
   ConnectionAttemptError,
   ConnectionAttemptSnapshot,
   ConnectionAttemptStage,
+  ConnectionPolicy,
   ConnectionOrchestrator,
   ConnectionOrchestratorInput,
   ConnectionOrchestratorOptions,
   ConnectionOrchestratorResult,
+  HubEndpoint,
+  HubEndpointKind,
+  HubEndpointScope,
+  HubEndpointSource,
 } from './connection/connectionOrchestrator'
 export { PairDevicePanel } from './pairing/PairDevicePanel'
 export type { PairDevicePanelProps } from './pairing/PairDevicePanel'
@@ -228,6 +233,7 @@ export type {
   ManagedHubSession,
   ManagedHubSessionIceConfig,
   ManagedHubSessionIceInput,
+  ManagedHubSessionPath,
   ManagedRelayPolicy,
   PollManagedHubSessionAnswerInput,
 } from './api/managedHubApi'

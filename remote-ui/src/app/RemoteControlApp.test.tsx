@@ -759,7 +759,7 @@ describe('RemoteControlApp', () => {
     })
   })
 
-  it('prefers saved inner local addresses before Web Control hubs for signed-in machines', async () => {
+  it('races saved local addresses with Web Control hubs and prefers local for signed-in machines', async () => {
     const storage = new MemoryStorage()
     storage.setItem('termx.remote.accessToken', 'access-token-1')
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
@@ -808,13 +808,13 @@ describe('RemoteControlApp', () => {
       'http://114.66.58.243:12306/api/v1/machines',
       'http://127.0.0.1:18888/api/v1/sessions/ice',
       'http://192.168.1.20:18888/api/v1/sessions/ice',
+      'https://hub-1.termx.test/api/v1/sessions/ice',
       'http://192.168.1.20:18888/api/v1/sessions',
     ])
-    expect(fetch.requests.map((request) => request.url).join('\n')).not.toContain('https://hub-1.termx.test/api/v1/sessions')
     expect(sessions.some((session) => session.lastPath() === 'local')).toBe(true)
   })
 
-  it('tries saved public local mappings before Web Control hubs for signed-in machines', async () => {
+  it('races saved public local mappings with Web Control hubs and prefers local for signed-in machines', async () => {
     const storage = new MemoryStorage()
     storage.setItem('termx.remote.accessToken', 'access-token-1')
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
@@ -864,13 +864,13 @@ describe('RemoteControlApp', () => {
       'http://127.0.0.1:18888/api/v1/sessions/ice',
       'http://192.168.1.20:18888/api/v1/sessions/ice',
       'https://frp.termx.test/api/v1/sessions/ice',
+      'https://hub-1.termx.test/api/v1/sessions/ice',
       'https://frp.termx.test/api/v1/sessions',
     ])
-    expect(fetch.requests.map((request) => request.url).join('\n')).not.toContain('https://hub-1.termx.test/api/v1/sessions')
     expect(sessions.some((session) => session.lastPath() === 'local')).toBe(true)
   })
 
-  it('opens local machines by racing inner local addresses before public mappings and without managed cloud fallback', async () => {
+  it('opens local machines by racing all local endpoints without managed cloud fallback', async () => {
     const storage = new MemoryStorage()
     createMachineStore({ storage }).saveFromPairingPayload(parsePairingPayload(JSON.stringify(pairPayload({
       machineId: 'device-1',
@@ -906,10 +906,11 @@ describe('RemoteControlApp', () => {
     expect(fetch.requests.map((request) => request.url)).toEqual([
       'http://127.0.0.1:18888/api/v1/sessions/ice',
       'http://192.168.1.20:18888/api/v1/sessions/ice',
+      'http://114.66.58.243:8447/api/v1/sessions/ice',
+      'https://frp.termx.test/api/v1/sessions/ice',
       'http://192.168.1.20:18888/api/v1/sessions',
     ])
-    expect(fetch.requests.map((request) => request.url).join('\n')).not.toContain('http://114.66.58.243:8447')
-    expect(fetch.requests.map((request) => request.url).join('\n')).not.toContain('https://frp.termx.test')
+    expect(fetch.requests.map((request) => request.url).join('\n')).not.toContain('https://hub-1.termx.test')
     expect(sessions.some((session) => session.lastPath() === 'local')).toBe(true)
   })
 

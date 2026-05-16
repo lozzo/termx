@@ -196,6 +196,7 @@ func decodeClipboardHistoryEntry(stored protocol.StorageEntry) (clipboardHistory
 		Text:      record.Text,
 		Preview:   record.Preview,
 		PaneID:    record.PaneID,
+		SourceApp: record.SourceApp,
 		CreatedAt: createdAt,
 	})
 	return entry, entry.ID != "" && entry.Text != ""

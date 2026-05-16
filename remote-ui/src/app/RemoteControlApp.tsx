@@ -3,7 +3,7 @@ import { ArrowLeft, Camera, Download, Keyboard, LaptopMinimal, Loader2, LogIn, M
 import { createMachineSessionStore, type MachineSessionStore } from '../state/localAppIdentity'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
-import { createConnectionOrchestrator, type ConnectionAttemptSnapshot } from '../connection/connectionOrchestrator'
+import { createConnectionOrchestrator, type ConnectionAttemptSnapshot, type HubEndpoint } from '../connection/connectionOrchestrator'
 import { connectionStateFromAttempt, createConnectionStatePublisher } from '../connection/connectionState'
 import { createManagedHubRtcConnector } from '../webrtc/managedHubRtcConnector'
 import { consoleConnectionLogger } from '../connection/connectionLogger'
@@ -930,7 +930,7 @@ function SettingsView({
             <SettingsSection title="Diagnostics">
               <div className="px-4 py-3">
                 <button
-                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-zinc-900 px-3 text-sm font-semibold text-white active:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 active:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
                   type="button"
                   onClick={() => {
                     hapticImpact()
@@ -949,7 +949,7 @@ function SettingsView({
               <div className="inline-flex h-9 items-center overflow-hidden rounded-lg border border-zinc-200 bg-white">
                 <button
                   aria-label="Decrease terminal font size"
-                  className="h-9 w-9 text-lg font-semibold text-zinc-700 active:bg-zinc-100"
+                  className="h-9 w-9 text-lg font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                   type="button"
                   onClick={() => onTerminalSettingsChange({ fontSize: Math.max(8, terminalSettings.fontSize - 1) })}
                 >
@@ -967,7 +967,7 @@ function SettingsView({
                 />
                 <button
                   aria-label="Increase terminal font size"
-                  className="h-9 w-9 text-lg font-semibold text-zinc-700 active:bg-zinc-100"
+                  className="h-9 w-9 text-lg font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                   type="button"
                   onClick={() => onTerminalSettingsChange({ fontSize: Math.min(32, terminalSettings.fontSize + 1) })}
                 >
@@ -1052,7 +1052,7 @@ function SettingsView({
                 <SettingsRow label="Signed in" value={user?.email ?? 'Account'} />
                 <div className="grid grid-cols-2 gap-2 px-4 py-3">
                   <button
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-700 active:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 active:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
                     type="button"
                     onClick={onRefresh}
                     disabled={loading}
@@ -1096,7 +1096,7 @@ function SettingsView({
                 </div>
                 <div className="border-t border-zinc-200 px-4 py-3">
                   <button
-                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white active:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-600/90 active:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                     type="button"
                     onClick={onSignIn}
                     disabled={loading}
@@ -1237,7 +1237,7 @@ function FontPreviewButton({
       className={`min-w-0 rounded-lg border p-3 text-left transition active:scale-[0.99] ${
         selected
           ? 'border-blue-500 bg-blue-50 shadow-[0_0_0_1px_rgba(59,130,246,0.65)]'
-          : 'border-zinc-200 bg-white active:bg-zinc-50'
+          : 'border-zinc-200 bg-white hover:bg-zinc-50 active:bg-zinc-50'
       }`}
       role="radio"
       style={{ fontFamily: option.value }}
@@ -1420,7 +1420,7 @@ function PairSheet({
           </div>
           <button
             aria-label="Close pairing"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 active:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-accent)]"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-50 active:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--termx-accent)]"
             type="button"
             onClick={onClose}
           >
@@ -1449,7 +1449,7 @@ function PairSheet({
 
         {!showManualEntry ? (
           <button
-            className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-950 active:bg-zinc-50"
+            className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-950 hover:bg-zinc-50 active:bg-zinc-50"
             type="button"
             onClick={onManualEntryOpen}
           >
@@ -1473,7 +1473,7 @@ function PairSheet({
 
         {showManualEntry ? (
           <button
-            className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-950 active:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-950 hover:bg-zinc-50 active:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
             type="button"
             onClick={onImport}
             disabled={pairing || cameraScanning || manualScanValue.trim() === ''}
@@ -1531,7 +1531,7 @@ function MachineRow({
     <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
       <button
         aria-label={`${actionLabel} ${machine.name}`}
-        className="grid min-w-0 w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left active:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        className="grid min-w-0 w-full grid-cols-[auto_minmax(0,1fr)] gap-3 px-4 py-3.5 text-left hover:bg-zinc-50 active:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
         type="button"
         onClick={() => onSelectMachine(machine)}
       >
@@ -1564,7 +1564,7 @@ function MachineRow({
         <div className="border-t border-zinc-100 px-4 py-2.5">
           <button
             aria-label={`Scan to ${authorizationState === 'needs-session' ? 're-authorize' : 'pair'} ${machine.name}`}
-            className="inline-flex h-9 items-center gap-2 rounded-full bg-zinc-100 px-3 text-[12px] font-semibold text-zinc-700 active:bg-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="inline-flex h-9 items-center gap-2 rounded-full bg-zinc-100 px-3 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             type="button"
             onClick={() => onPairMachine(machine)}
           >
@@ -1835,10 +1835,8 @@ function createManagedMachineSessionManager(input: {
     if (options?.signal?.aborted) {
       throw options.signal.reason instanceof Error ? options.signal.reason : new Error('connection aborted')
     }
-    const localHubUrls = localHubUrlsFromMachine(input.machine)
-    const localFallbackHubUrls = localFallbackHubUrlsFromMachine(input.machine)
-    const hubUrls = managedHubUrlsFromMachine(input.machine)
-    if (localHubUrls.length === 0 && localFallbackHubUrls.length === 0 && hubUrls.length === 0) {
+    const endpoints = endpointsFromMachine(input.machine)
+    if (endpoints.length === 0) {
       throw new Error('Hub endpoint is required before opening this machine runtime')
     }
     const sessionToken = input.sessionStore.getSessionToken(input.machine.id)
@@ -1860,9 +1858,8 @@ function createManagedMachineSessionManager(input: {
       machineId: input.machine.id,
       sessionToken,
       answerProofSecret,
-      localHubUrls,
-      localFallbackHubUrls,
-      hubUrls,
+      policy: 'app_local_preferred',
+      endpoints,
       onSnapshot: (snapshot) => {
         publishAttempt(snapshot)
         options?.onSnapshot?.(snapshot)
@@ -2070,16 +2067,52 @@ function nonEmptyHubUrls(machine: WebControlMachine): string[] {
   return compactHubUrls(machine.hubUrls)
 }
 
-function managedHubUrlsFromMachine(machine: WebControlMachine): string[] {
-  return machine.source === 'local' ? [] : nonEmptyHubUrls(machine)
+function endpointsFromMachine(machine: WebControlMachine): HubEndpoint[] {
+  return compactHubEndpoints([
+    ...compactHubUrls(machine.localHubUrls ?? []).map((url) => ({
+      url,
+      kind: 'local' as const,
+      scope: localHubScope(url),
+      source: 'stored_machine' as const,
+    })),
+    ...compactHubUrls(machine.localFallbackHubUrls ?? []).map((url) => ({
+      url,
+      kind: 'local' as const,
+      scope: 'public_mapping' as const,
+      source: 'stored_machine' as const,
+    })),
+    ...(machine.source === 'local'
+      ? []
+      : nonEmptyHubUrls(machine).map((url) => ({
+        url,
+        kind: 'managed' as const,
+        scope: 'cloud' as const,
+        source: 'web_control' as const,
+      }))),
+  ])
 }
 
-function localHubUrlsFromMachine(machine: WebControlMachine): string[] {
-  return compactHubUrls(machine.localHubUrls ?? [])
+function compactHubEndpoints(endpoints: readonly HubEndpoint[]): HubEndpoint[] {
+  const out: HubEndpoint[] = []
+  const seen = new Set<string>()
+  for (const endpoint of endpoints) {
+    const url = normalizeHubBaseUrlCandidate(endpoint.url)
+    if (!url) continue
+    const key = `${endpoint.kind}:${url}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ ...endpoint, url })
+  }
+  return out
 }
 
-function localFallbackHubUrlsFromMachine(machine: WebControlMachine): string[] {
-  return compactHubUrls(machine.localFallbackHubUrls ?? [])
+function localHubScope(url: string): HubEndpoint['scope'] {
+  try {
+    const host = new URL(url).hostname
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' ? 'loopback' : 'lan'
+  } catch {
+    return 'lan'
+  }
 }
 
 function compactHubUrls(values: readonly (string | undefined)[]): string[] {

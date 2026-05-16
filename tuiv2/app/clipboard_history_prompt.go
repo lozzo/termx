@@ -68,6 +68,7 @@ func (m *Model) submitCreateClipboardEntryPrompt(prompt *modal.PromptState) tea.
 		ID:        fmt.Sprintf("clip-%d-%d", now.UnixNano(), m.clipboardSeq),
 		Text:      text,
 		PaneID:    clipboardPromptPaneID(prompt),
+		SourceApp: "tuiv2",
 		CreatedAt: now,
 	}
 	requestID := ""
@@ -101,6 +102,7 @@ func (m *Model) submitEditClipboardEntryPrompt(prompt *modal.PromptState) tea.Cm
 		ID:        id,
 		Text:      text,
 		PaneID:    clipboardPromptPaneID(prompt),
+		SourceApp: "tuiv2",
 		CreatedAt: time.Now().UTC(),
 	}
 	requestID := ""

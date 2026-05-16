@@ -29,6 +29,7 @@ type Daemon interface {
 	Get(ctx context.Context, terminalID string) (*protocol.TerminalInfo, error)
 	List(ctx context.Context) (*protocol.ListResult, error)
 	SetMetadata(ctx context.Context, terminalID string, name string, tags map[string]string) error
+	Restart(ctx context.Context, terminalID string) error
 	Remove(ctx context.Context, terminalID string) error
 	Events(ctx context.Context, params protocol.EventsParams) (<-chan protocol.Event, error)
 	ServeTransport(ctx context.Context, t transport.Transport, remote string) error
@@ -512,6 +513,19 @@ func (r terminalManagementRouter) RouteTerminalManagementRequest(ctx context.Con
 			return http.StatusBadRequest, nil, err.Error()
 		}
 		return marshalRuntimeAPIResponse(terminalInventoryToProto(terminal))
+	case "restart":
+		var body runtimepb.TerminalIDRequest
+		if err := proto.Unmarshal(req.Body, &body); err != nil {
+			return http.StatusBadRequest, nil, "invalid restart request"
+		}
+		terminalID := strings.TrimSpace(body.GetTerminalId())
+		if terminalID == "" {
+			return http.StatusBadRequest, nil, "terminal_id is required"
+		}
+		if err := r.restartTerminal(ctx, terminalID); err != nil {
+			return http.StatusBadRequest, nil, err.Error()
+		}
+		return marshalRuntimeAPIResponse(&runtimepb.Empty{})
 	case "remove":
 		var body runtimepb.TerminalIDRequest
 		if err := proto.Unmarshal(req.Body, &body); err != nil {
@@ -631,6 +645,13 @@ func (r terminalManagementRouter) removeTerminal(ctx context.Context, terminalID
 		return nil
 	}
 	return r.daemon.Remove(ctx, terminalID)
+}
+
+func (r terminalManagementRouter) restartTerminal(ctx context.Context, terminalID string) error {
+	if r.daemon == nil {
+		return nil
+	}
+	return r.daemon.Restart(ctx, terminalID)
 }
 
 func (r terminalManagementRouter) getTerminalDirectory(ctx context.Context, terminalID string) (string, string, error) {

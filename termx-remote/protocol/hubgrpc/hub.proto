@@ -74,6 +74,7 @@ message SignalingOffer {
   repeated string ice_candidates = 5;
   string session_token = 6;
   string answer_proof_challenge = 7;
+  string path = 8;
   string nonce = 20;
   int64 issued_at = 21;
 }

@@ -808,6 +808,49 @@ func TestRuntimeScreenUpdateAppliesOpcodeScrollRectToLocalVTerm(t *testing.T) {
 	}
 }
 
+func TestRuntimeCapturesAlternateScreenVisualHistoryFromScrollRect(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+
+	rt := New(client)
+	terminal, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	terminal.Snapshot = snapshotWithLines("term-1", 4, 3, []string{"old1", "old2", "old3"})
+	terminal.Snapshot.Modes.AlternateScreen = true
+	terminal.Snapshot.Screen.IsAlternateScreen = true
+	loadSnapshotIntoVTerm(terminal.VTerm, terminal.Snapshot)
+
+	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		Size:         protocol.Size{Cols: 4, Rows: 3},
+		ScreenScroll: 1,
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 4, Height: 3}, Dy: -1},
+			{Code: protocol.ScreenOpWriteSpan, Row: 2, Col: 0, Cells: []protocol.Cell{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}, {Content: "4", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 2, Col: 0, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true, AlternateScreen: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
+
+	history := rt.AlternateScrollbackSnapshot("term-1", terminal.Snapshot)
+	if history == nil || len(history.Scrollback) != 1 {
+		t.Fatalf("expected one alternate history row, got %#v", history)
+	}
+	if got := compactRowText(history.Scrollback[0]); got != "old1" {
+		t.Fatalf("expected scrolled-out row in alternate history, got %q", got)
+	}
+	if !history.Modes.AlternateScreen || !history.Screen.IsAlternateScreen {
+		t.Fatalf("expected alternate flags preserved, got modes=%#v screen=%v", history.Modes, history.Screen.IsAlternateScreen)
+	}
+}
+
 func TestRuntimeScreenUpdateTitleOnlyKeepsBootstrapPending(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()

@@ -55,6 +55,7 @@ interface PendingRequest {
 interface PendingHistoryReplay {
   beforeOffset: number
   limit: number
+  alternate: boolean
   resolve: (page: TerminalScrollbackPage) => void
   reject: (err: Error) => void
 }
@@ -186,7 +187,7 @@ class TerminalProtocolClient implements TerminalProtocolSession {
     }
   }
 
-  async loadScrollback(terminalId: string, offset: number, limit: number): Promise<TerminalScrollbackPage> {
+  async loadScrollback(terminalId: string, offset: number, limit: number, alternate = false): Promise<TerminalScrollbackPage> {
     this.assertTerminal(terminalId)
     await this.withHandshakeTimeout(this.hello(), 'hello')
     await this.withHandshakeTimeout(this.attach(), 'attach')
@@ -204,6 +205,7 @@ class TerminalProtocolClient implements TerminalProtocolSession {
       this.pendingHistoryReplay = {
         beforeOffset: normalizedOffset,
         limit: normalizedLimit,
+        alternate,
         resolve: (page) => {
           clearTimeout(timer)
           resolve(page)
@@ -213,7 +215,7 @@ class TerminalProtocolClient implements TerminalProtocolSession {
           reject(err)
         },
       }
-      const payload = encodeHistoryRequestPayload(normalizedOffset, normalizedLimit)
+      const payload = encodeHistoryRequestPayload(normalizedOffset, normalizedLimit, alternate)
       this.sendFrame(this.streamChannel, TERMX_FRAME_TYPES.historyRequest, payload).catch((err: unknown) => {
         if (this.pendingHistoryReplay?.resolve !== resolve) return
         this.pendingHistoryReplay = null
@@ -478,6 +480,7 @@ class TerminalProtocolClient implements TerminalProtocolSession {
             limit: pending.limit,
             rows,
             hasMore,
+            alternate: pending.alternate,
             replay: new TextDecoder().decode(replay),
           })
         } catch (error) {

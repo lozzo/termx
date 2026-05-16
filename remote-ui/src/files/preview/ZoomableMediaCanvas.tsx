@@ -194,7 +194,7 @@ export function ZoomableMediaCanvas({
             type="button"
             aria-label={`Zoom out ${zoomLabel}`}
             title="Zoom out"
-            className="flex h-9 w-9 items-center justify-center text-zinc-200 transition-colors active:scale-95 active:bg-white/10"
+            className="flex h-9 w-9 items-center justify-center text-zinc-200 transition-colors active:scale-95 hover:bg-white/5 active:bg-white/10"
             onClick={() => zoomBy(0.8)}
           >
             <ZoomOut className="h-4 w-4" />
@@ -206,7 +206,7 @@ export function ZoomableMediaCanvas({
             type="button"
             aria-label={`Zoom in ${zoomLabel}`}
             title="Zoom in"
-            className="flex h-9 w-9 items-center justify-center text-zinc-200 transition-colors active:scale-95 active:bg-white/10"
+            className="flex h-9 w-9 items-center justify-center text-zinc-200 transition-colors active:scale-95 hover:bg-white/5 active:bg-white/10"
             onClick={() => zoomBy(1.25)}
           >
             <ZoomIn className="h-4 w-4" />
@@ -215,7 +215,7 @@ export function ZoomableMediaCanvas({
             type="button"
             aria-label={`Reset zoom ${zoomLabel}`}
             title="Reset zoom"
-            className="flex h-9 w-9 items-center justify-center border-l border-white/10 text-zinc-200 transition-colors active:scale-95 active:bg-white/10"
+            className="flex h-9 w-9 items-center justify-center border-l border-white/10 text-zinc-200 transition-colors active:scale-95 hover:bg-white/5 active:bg-white/10"
             onClick={resetZoom}
           >
             <RotateCcw className="h-4 w-4" />
@@ -224,7 +224,7 @@ export function ZoomableMediaCanvas({
             type="button"
             aria-label={`Rotate ${zoomLabel}`}
             title="Rotate"
-            className="flex h-9 w-9 items-center justify-center border-l border-white/10 text-zinc-200 transition-colors active:scale-95 active:bg-white/10"
+            className="flex h-9 w-9 items-center justify-center border-l border-white/10 text-zinc-200 transition-colors active:scale-95 hover:bg-white/5 active:bg-white/10"
             onClick={() => rotateBy(90)}
           >
             <RotateCw className="h-4 w-4" />

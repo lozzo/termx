@@ -215,7 +215,7 @@ export function FileManager({
       {manager.selectionMode ? (
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200/70 bg-white px-4">
           <button
-            className="text-[15px] font-medium text-zinc-500 active:text-zinc-800"
+            className="text-[15px] font-medium text-zinc-500 hover:text-zinc-700 active:text-zinc-800"
             onClick={() => manager.setSelectionMode(false)}
           >
             Cancel
@@ -224,7 +224,7 @@ export function FileManager({
             {manager.selectedPaths.size} selected
           </div>
           <button
-            className="text-[15px] font-medium text-blue-600 active:text-blue-800"
+            className="text-[15px] font-medium text-blue-600 hover:text-blue-700 active:text-blue-800"
             onClick={() => {
               hapticSelection()
               if (manager.selectedPaths.size === manager.visibleEntries.length) manager.deselectAll()
@@ -248,7 +248,7 @@ export function FileManager({
                 <>
                   <button
                     onClick={() => void manager.navigate('/')}
-                    className="shrink-0 rounded-md px-1.5 py-1 text-zinc-500 transition-colors active:bg-zinc-200"
+                    className="shrink-0 rounded-md px-1.5 py-1 text-zinc-500 transition-colors hover:bg-zinc-100 active:bg-zinc-200"
                   >
                     /
                   </button>
@@ -263,7 +263,7 @@ export function FileManager({
                         ) : (
                           <button
                             onClick={() => void manager.navigate(path)}
-                            className="rounded-md px-1.5 py-1 text-zinc-500 transition-colors active:bg-zinc-200"
+                            className="rounded-md px-1.5 py-1 text-zinc-500 transition-colors hover:bg-zinc-100 active:bg-zinc-200"
                           >
                             {segment}
                           </button>
@@ -278,7 +278,7 @@ export function FileManager({
               type="button"
               aria-label="Path bookmarks"
               title="Path bookmarks"
-              className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors active:bg-zinc-100"
+              className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-50 active:bg-zinc-100"
               onClick={() => {
                 hapticSelection()
                 setBookmarksOpen(true)
@@ -291,7 +291,7 @@ export function FileManager({
               type="button"
               aria-label="Bookmark current directory"
               title="Bookmark current directory"
-              className="ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors active:bg-zinc-100"
+              className="ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-50 active:bg-zinc-100"
               onClick={() => { hapticImpact(); void manager.addCurrentPathBookmark() }}
             >
               <BookmarkPlus className="h-4 w-4" />
@@ -300,7 +300,7 @@ export function FileManager({
               type="button"
               aria-label="Copy current directory path"
               title="Copy current directory path"
-              className="ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors active:bg-zinc-100"
+              className="ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-50 active:bg-zinc-100"
               onClick={() => { hapticImpact(); void manager.copyFilePaths([manager.currentPath || '/']) }}
             >
               <ClipboardCopy className="h-4 w-4" />
@@ -413,7 +413,7 @@ export function FileManager({
               return (
                 <li key={itemKey}>
                   <div
-                    className={`group relative flex min-h-[3.25rem] w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors focus-within:ring-2 focus-within:ring-blue-500 active:bg-zinc-50 ${isSelected ? 'bg-blue-50/70' : ''}`}
+                    className={`group relative flex min-h-[3.25rem] w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors focus-within:ring-2 focus-within:ring-blue-500 hover:bg-zinc-50 active:bg-zinc-50 ${isSelected ? 'bg-blue-50/70' : ''}`}
                   >
                     {manager.selectionMode ? (
                       <div className="shrink-0 pr-1">
@@ -424,7 +424,7 @@ export function FileManager({
                         </div>
                       </div>
                     ) : null}
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors ${isDirectory ? 'bg-blue-50 group-active:bg-blue-100' : 'bg-zinc-50'}`}>
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors ${isDirectory ? 'bg-blue-50 group-hover:bg-blue-50/80 group-active:bg-blue-100' : 'bg-zinc-50'}`}>
                       <Icon className={`h-5 w-5 ${isDirectory ? 'fill-blue-50 text-blue-500' : 'text-zinc-400'}`} />
                     </div>
                     <button
@@ -475,7 +475,7 @@ export function FileManager({
                           <button
                             type="button"
                             aria-label={`More actions for ${entry.name}`}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 active:bg-zinc-100"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-50 active:bg-zinc-100"
                             onClick={(event) => {
                               event.stopPropagation()
                               setEntryMenuPath((current) => current === entryPath ? null : entryPath)
@@ -538,7 +538,7 @@ export function FileManager({
         >
           <div className="flex h-[60px] items-center justify-around px-2">
             <button
-              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 active:bg-zinc-100 rounded-lg"
+              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
               type="button"
               onClick={() => { hapticImpact(); manager.setSelectionMode(true) }}
               aria-label="Select files"
@@ -547,7 +547,7 @@ export function FileManager({
               <span className="text-[11px] font-medium">Select</span>
             </button>
             <button
-              className={`flex flex-col items-center justify-center gap-1 px-3 rounded-lg ${manager.showHidden ? 'text-blue-600 bg-blue-50' : 'text-zinc-600 hover:text-blue-600 active:bg-zinc-100'}`}
+              className={`flex flex-col items-center justify-center gap-1 px-3 rounded-lg ${manager.showHidden ? 'text-blue-600 bg-blue-50' : 'text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100'}`}
               type="button"
               onClick={() => { hapticSelection(); manager.toggleShowHidden() }}
               aria-label={manager.showHidden ? 'Hide hidden files' : 'Show hidden files'}
@@ -556,7 +556,7 @@ export function FileManager({
               <span className="text-[11px] font-medium">Hidden</span>
             </button>
             <button
-              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 active:bg-zinc-100 rounded-lg"
+              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
               type="button"
               onClick={() => setSortMenuOpen(true)}
               aria-label={`Sort files: ${sortLabel}`}
@@ -566,7 +566,7 @@ export function FileManager({
               <span className="text-[11px] font-medium">Sort</span>
             </button>
             <button
-              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 active:bg-zinc-100 rounded-lg"
+              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
               type="button"
               onClick={() => setNewDirOpen((current) => !current)}
               aria-label="New directory"
@@ -577,7 +577,7 @@ export function FileManager({
             {fileTransfer ? (
               <>
                 <button
-                  className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 active:bg-zinc-100 rounded-lg"
+                  className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
                   type="button"
                   aria-label="Upload files"
                   onClick={() => {
@@ -616,7 +616,7 @@ export function FileManager({
               </>
             ) : null}
             <button
-              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 active:bg-zinc-100 rounded-lg disabled:opacity-50"
+              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg disabled:opacity-50"
               type="button"
               onClick={() => { void manager.refresh() }}
               disabled={manager.loading}
@@ -639,7 +639,7 @@ export function FileManager({
                 manager.copy(Array.from(manager.selectedPaths))
                 manager.setSelectionMode(false)
               }}
-              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 active:bg-zinc-100 rounded-lg"
+              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
             >
               <File className="h-5 w-5" />
               <span className="text-[11px] font-medium">Copy</span>
@@ -649,7 +649,7 @@ export function FileManager({
                 hapticImpact()
                 void manager.copyFilePaths(Array.from(manager.selectedPaths)).then(() => manager.setSelectionMode(false))
               }}
-              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 active:bg-zinc-100 rounded-lg"
+              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
             >
               <ClipboardCopy className="h-5 w-5" />
               <span className="text-[11px] font-medium">Path</span>
@@ -660,14 +660,14 @@ export function FileManager({
                 manager.cut(Array.from(manager.selectedPaths))
                 manager.setSelectionMode(false)
               }}
-              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 active:bg-zinc-100 rounded-lg"
+              className="flex flex-col items-center justify-center gap-1 px-3 text-zinc-600 hover:text-blue-600 hover:bg-zinc-50 active:bg-zinc-100 rounded-lg"
             >
               <Folder className="h-5 w-5" />
               <span className="text-[11px] font-medium">Cut</span>
             </button>
             <button
               onClick={() => { hapticImpact(); void manager.batchDelete(Array.from(manager.selectedPaths)) }}
-              className="flex flex-col items-center justify-center gap-1 px-3 text-red-500 hover:text-red-700 active:bg-red-50 rounded-lg"
+              className="flex flex-col items-center justify-center gap-1 px-3 text-red-500 hover:text-red-700 hover:bg-red-50/80 active:bg-red-50 rounded-lg"
             >
               <Trash2 className="h-5 w-5" />
               <span className="text-[11px] font-medium">Delete</span>

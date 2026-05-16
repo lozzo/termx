@@ -48,7 +48,8 @@ describe('local connection over Hub API', () => {
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       sessionToken: 'session-token-local',
-      hubUrls: ['http://192.168.1.100:18888'],
+      policy: 'local_web',
+      endpoints: [{ url: 'http://192.168.1.100:18888', kind: 'local', scope: 'lan', source: 'manual' }],
     })
 
     expect(result.path).toBe('local')

@@ -177,7 +177,7 @@ func EncodeHistoryRequestPayload(beforeOffset int, limit int) []byte {
 }
 
 func DecodeHistoryRequestPayload(payload []byte) (int, int, error) {
-	if len(payload) != 8 {
+	if len(payload) != 8 && len(payload) != 9 {
 		return 0, 0, ErrShortPayload
 	}
 	beforeOffset := int(binary.BigEndian.Uint32(payload[:4]))

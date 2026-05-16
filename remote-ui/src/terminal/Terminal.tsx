@@ -32,6 +32,10 @@ const liveOutputWatchdogMs = 4000
 const eventLoopProbeIntervalMs = 1000
 const eventLoopLagWarnMs = 250
 
+function terminalHistoryLoadedRowsLimit(settings: TerminalSettings): number {
+  return Math.max(historyLoadedRowsSoftLimit, settings.scrollback)
+}
+
 function isNativeAndroidWebView(): boolean {
   if (typeof navigator === 'undefined') return false
   const userAgent = navigator.userAgent || ''
@@ -152,10 +156,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const historyApplyTimerRef = useRef<number | null>(null)
   const historyLoadArmedByUserRef = useRef(false)
   const lastHistoryScrollActivityAtRef = useRef(0)
-  const loadScrollbackRef = useRef<(limit?: number) => Promise<TerminalScrollbackLoadResult>>(async () => ({
+  const loadScrollbackRef = useRef<(limit?: number, alternate?: boolean) => Promise<TerminalScrollbackLoadResult>>(async () => ({
     loadedRows: 0,
     totalRows: 0,
     hasMore: false,
+    alternate: false,
   }))
   const maybePrefetchScrollbackRef = useRef<() => void>(() => {})
   const scheduleHistoryApplyRef = useRef<() => void>(() => {})
@@ -915,6 +920,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     const armHistoryScrollbackLoad = () => {
       historyLoadArmedByUserRef.current = true
+      if (snapshotAlternateScreenRef.current && term.buffer.active.type === 'alternate') {
+        term.reset()
+      }
       noteUserScrollActivity()
     }
 
@@ -989,7 +997,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       scrollbarThumb.style.transform = `translateY(${thumbTop}px)`
     }
 
-    const historyLoadedRowsLimit = () => Math.max(historyLoadedRowsSoftLimit, settingsRef.current.scrollback)
+    const historyLoadedRowsLimit = () => terminalHistoryLoadedRowsLimit(settingsRef.current)
 
     const scrollbackLoadBlockedReason = () => {
       if (historyLoadingRef.current) return 'loading'
@@ -997,14 +1005,17 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (suppressHistoryLoad) return 'suppressed'
       if (!historyHasMoreRef.current) return 'no_more'
       if (historyLoadedRowsRequestedRef.current >= historyLoadedRowsLimit()) return 'soft_limit'
-      if (term.buffer.active.type !== 'normal') return 'alternate_buffer'
-      if (!hasTerminalSnapshotRef.current) return 'no_snapshot'
-      if (snapshotAlternateScreenRef.current) return 'alternate_snapshot'
+      if (!hasTerminalSnapshotRef.current && !snapshotAlternateScreenRef.current && term.buffer.active.type !== 'alternate') return 'no_snapshot'
+      if (term.buffer.active.type !== 'normal' && !snapshotAlternateScreenRef.current) return 'alternate_buffer'
       return null
     }
 
     const loadScrollbackPage = async (restoreViewport: boolean): Promise<TerminalScrollbackLoadResult> => {
-      const emptyResult = { loadedRows: 0, totalRows: 0, hasMore: false }
+      const alternate = snapshotAlternateScreenRef.current || term.buffer.active.type === 'alternate'
+      const emptyResult = { loadedRows: 0, totalRows: 0, hasMore: false, alternate }
+      if (alternate && term.buffer.active.type === 'alternate') {
+        term.reset()
+      }
       const blockedReason = scrollbackLoadBlockedReason()
       if (blockedReason) {
         const now = terminalNow()
@@ -1037,7 +1048,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       pendingHistoryViewportRef.current = restoreViewport ? term.buffer.active.viewportY : null
       let keepVisibleForApply = false
       try {
-        const result = await loadScrollbackRef.current(requestRows)
+        const result = await loadScrollbackRef.current(requestRows, alternate)
         historyLoadedRowsRequestedRef.current = Math.max(historyLoadedRowsRequestedRef.current, result.totalRows)
         historyHasMoreRef.current = result.hasMore
         if (result.hasMore && historyLoadedRowsRequestedRef.current >= historyLoadedRowsLimit()) {
@@ -1571,7 +1582,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       lastTouchTime = now
       touchLastY = y
 
-      if (isMouseModeActive() || isAlternateBuffer()) {
+      if (isMouseModeActive() || (isAlternateBuffer() && dy > 0)) {
         if (smoothActive) smoothEnd()
         touchAccum += dy
         const lines = Math.trunc(touchAccum / lineHeightPx)
@@ -1647,7 +1658,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
               return
             }
             const pixelDelta = velocityY * frameDt
-            if (isMouseModeActive() || isAlternateBuffer()) {
+            if (isMouseModeActive() || (isAlternateBuffer() && pixelDelta > 0)) {
               if (smoothActive) smoothEnd()
               touchAccum += pixelDelta
               const lines = Math.trunc(touchAccum / lineHeightPx)
@@ -1959,6 +1970,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     if (!term) return
 
     const snapshot = terminalSession.terminalSnapshot
+    if (snapshot) {
+      hasTerminalSnapshotRef.current = true
+      snapshotAlternateScreenRef.current = snapshot.alternateScreen === true
+      if (historyLoadArmedByUserRef.current) {
+        void loadScrollbackRef.current(historyScrollbackPageRows, snapshot.alternateScreen === true)
+      }
+    }
     const snapshotText = snapshot ? (snapshot.replay ?? snapshot.text) : ''
     const recoveryRevision = snapshot?.recovery?.revision ?? 0
     const shouldReplaySnapshot = Boolean(
@@ -1999,6 +2017,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       const previousPending = pendingHistoryApplyRef.current
       const previousPendingRows = previousPending?.loadedRows ?? historyLoadedRowsAppliedRef.current
       const pendingPrependedRows = Math.max(0, history.loadedRows - previousPendingRows)
+      if (history.alternate) {
+        term.options.scrollback = Math.max(
+          typeof term.options.scrollback === 'number' ? term.options.scrollback : 0,
+          Math.min(history.loadedRows + term.rows, terminalHistoryLoadedRowsLimit(settingsRef.current)),
+        )
+        term.reset()
+      }
       pendingHistoryApplyRef.current = {
         revision: history.revision,
         loadedRows: history.loadedRows,

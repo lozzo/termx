@@ -14,11 +14,11 @@ var (
 )
 
 type Config struct {
-	Registry                   *registry.Registry
-	Clock                      Clock
-	OfferTTL                   time.Duration
-	MaxOffers                  int
-	AllowRelayByDefault        bool
+	Registry                    *registry.Registry
+	Clock                       Clock
+	OfferTTL                    time.Duration
+	MaxOffers                   int
+	AllowRelayByDefault         bool
 	AllowRelayTransferByDefault bool
 }
 
@@ -58,9 +58,13 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 	if s == nil || s.registry == nil {
 		return Offer{}, errors.New("cloud service is not configured")
 	}
+	path := normalizeSessionPath(in.Path)
+	allowRelay := s.allowRelay && path == PathCloud
+	allowRelayTransfer := s.allowRelayTransfer && path == PathCloud
 	preflight := registry.OfferInput{
 		MachineID:            strings.TrimSpace(in.MachineID),
 		TerminalID:           strings.TrimSpace(in.TerminalID),
+		Path:                 path,
 		SDP:                  in.SDP,
 		SessionID:            strings.TrimSpace(in.SessionID),
 		ICECandidates:        cloneStrings(in.ICECandidates),
@@ -76,13 +80,14 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 	offer, err := s.registry.SubmitOffer(ctx, registry.OfferInput{
 		MachineID:            preflight.MachineID,
 		TerminalID:           preflight.TerminalID,
+		Path:                 path,
 		SDP:                  in.SDP,
 		SessionID:            strings.TrimSpace(in.SessionID),
 		ICECandidates:        cloneStrings(in.ICECandidates),
 		SessionToken:         in.SessionToken,
 		AnswerProofChallenge: preflight.AnswerProofChallenge,
-		AllowRelay:           s.allowRelay,
-		AllowRelayTransfer:   s.allowRelayTransfer,
+		AllowRelay:           allowRelay,
+		AllowRelayTransfer:   allowRelayTransfer,
 		ExpiresAt:            now.Add(s.offerTTL),
 	})
 	if err != nil {
@@ -91,9 +96,9 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 	policy := OfferPolicy{
 		MachineID:          offer.MachineID,
 		TerminalID:         offer.TerminalID,
-		Path:               PathCloud,
-		AllowRelay:         s.allowRelay,
-		AllowRelayTransfer: s.allowRelayTransfer,
+		Path:               path,
+		AllowRelay:         allowRelay,
+		AllowRelayTransfer: allowRelayTransfer,
 		ExpiresAt:          offer.ExpiresAt,
 		CreatedAt:          offer.CreatedAt,
 	}
@@ -106,7 +111,7 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 		ICECandidates:        cloneStrings(offer.ICECandidates),
 		SessionToken:         offer.SessionToken,
 		AnswerProofChallenge: offer.AnswerProofChallenge,
-		Path:                 PathCloud,
+		Path:                 path,
 		AllowRelay:           policy.AllowRelay,
 		AllowRelayTransfer:   policy.AllowRelayTransfer,
 		RelayInUse:           offer.RelayInUse,
@@ -124,12 +129,15 @@ func (s *Service) PreflightSession(ctx context.Context, in PreflightSessionInput
 	if err := s.registry.PreflightMachine(ctx, machineID); err != nil {
 		return PreflightSession{}, err
 	}
+	path := normalizeSessionPath(in.Path)
+	allowRelay := s.allowRelay && path == PathCloud
+	allowRelayTransfer := s.allowRelayTransfer && path == PathCloud
 	return PreflightSession{
 		MachineID:          machineID,
 		TerminalID:         strings.TrimSpace(in.TerminalID),
-		Path:               PathCloud,
-		AllowRelay:         s.allowRelay,
-		AllowRelayTransfer: s.allowRelayTransfer,
+		Path:               path,
+		AllowRelay:         allowRelay,
+		AllowRelayTransfer: allowRelayTransfer,
 	}, nil
 }
 
@@ -154,7 +162,7 @@ func (s *Service) PollAgentOffer(ctx context.Context, in PollAgentOfferInput) (O
 		ICECandidates:        cloneStrings(offer.ICECandidates),
 		SessionToken:         offer.SessionToken,
 		AnswerProofChallenge: offer.AnswerProofChallenge,
-		Path:                 PathCloud,
+		Path:                 normalizeSessionPath(offer.Path),
 		AllowRelay:           offer.AllowRelay,
 		RelayInUse:           offer.RelayInUse,
 	}
@@ -252,10 +260,19 @@ func offerPolicyFromRegistry(offer registry.Offer) OfferPolicy {
 	return OfferPolicy{
 		MachineID:          offer.MachineID,
 		TerminalID:         offer.TerminalID,
-		Path:               PathCloud,
+		Path:               normalizeSessionPath(offer.Path),
 		AllowRelay:         offer.AllowRelay,
 		AllowRelayTransfer: offer.AllowRelayTransfer,
 		ExpiresAt:          offer.ExpiresAt,
 		CreatedAt:          offer.CreatedAt,
+	}
+}
+
+func normalizeSessionPath(path string) string {
+	switch strings.TrimSpace(path) {
+	case PathLocal:
+		return PathLocal
+	default:
+		return PathCloud
 	}
 }

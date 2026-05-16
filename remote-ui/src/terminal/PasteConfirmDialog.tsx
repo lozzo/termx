@@ -28,14 +28,14 @@ export function PasteConfirmDialog({ text, onCancel, onConfirm }: PasteConfirmDi
         <div className="grid grid-cols-2 gap-3 border-t border-zinc-800 p-3">
           <button
             type="button"
-            className="h-11 rounded-xl bg-zinc-800 text-[14px] font-semibold text-zinc-200 active:bg-zinc-700"
+            className="h-11 rounded-xl bg-zinc-800 text-[14px] font-semibold text-zinc-200 hover:bg-zinc-700/80 active:bg-zinc-700"
             onClick={onCancel}
           >
             Cancel
           </button>
           <button
             type="button"
-            className="h-11 rounded-xl bg-blue-600 text-[14px] font-semibold text-white active:bg-blue-500"
+            className="h-11 rounded-xl bg-blue-600 text-[14px] font-semibold text-white hover:bg-blue-600/90 active:bg-blue-500"
             onClick={() => { hapticImpact(); onConfirm() }}
           >
             Paste

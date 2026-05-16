@@ -320,6 +320,9 @@ func (m *Model) copyModeScrollbackCmd(buffer copyModeBuffer, force bool) tea.Cmd
 	if m == nil || m.workbench == nil || m.runtime == nil || m.copyMode.PaneID == "" || buffer.snapshot == nil {
 		return nil
 	}
+	if snapshotUsesAlternateScreen(buffer.snapshot) {
+		return nil
+	}
 	pane, _, ok := m.copyModePaneAndContentRect(m.copyMode.PaneID)
 	if !ok || pane == nil || pane.ID != m.copyMode.PaneID || pane.TerminalID == "" {
 		return nil

@@ -25,6 +25,21 @@ type pickerCardLayout struct {
 	firstItemY    int
 }
 
+type clipboardHistoryPickerLayout struct {
+	width         int
+	height        int
+	contentHeight int
+	innerWidth    int
+	listHeight    int
+	cardX         int
+	cardY         int
+	cardWidth     int
+	cardHeight    int
+	queryRect     workbench.Rect
+	leftRect      workbench.Rect
+	rightRect     workbench.Rect
+}
+
 func overlayViewport(termSize TermSize) (int, int) {
 	return maxInt(termSize.Width, 80), maxInt(termSize.Height, 24)
 }
@@ -58,6 +73,39 @@ func buildPickerCardLayout(width, height, itemCount int, hasFooter bool) pickerC
 	}
 }
 
+func buildClipboardHistoryPickerLayout(width, height, itemCount int) clipboardHistoryPickerLayout {
+	contentHeight := maxInt(1, height)
+	cardWidth := minInt(maxInt(76, width-8), 132)
+	cardWidth = minInt(cardWidth, maxInt(30, width-2))
+	innerWidth := maxInt(24, cardWidth-2)
+	maxListHeight := maxInt(6, minInt(18, contentHeight-7))
+	listHeight := minInt(maxInt(8, itemCount), maxListHeight)
+	cardHeight := listHeight + 6
+	cardX := maxInt(0, (width-cardWidth)/2)
+	cardY := maxInt(0, (contentHeight-cardHeight)/2)
+	leftWidth := clampInt(innerWidth*42/100, 28, maxInt(28, innerWidth-34))
+	gap := 2
+	rightWidth := maxInt(18, innerWidth-leftWidth-gap)
+	if leftWidth+gap+rightWidth > innerWidth {
+		rightWidth = maxInt(8, innerWidth-leftWidth-gap)
+	}
+	bodyY := cardY + 4
+	return clipboardHistoryPickerLayout{
+		width:         width,
+		height:        height,
+		contentHeight: contentHeight,
+		innerWidth:    innerWidth,
+		listHeight:    listHeight,
+		cardX:         cardX,
+		cardY:         cardY,
+		cardWidth:     cardWidth,
+		cardHeight:    cardHeight,
+		queryRect:     overlayQueryInputRectFor(cardX+1, cardY+2, innerWidth, uiinput.PromptWidth(overlaySearchPrompt())),
+		leftRect:      workbench.Rect{X: cardX + 1, Y: bodyY, W: leftWidth, H: listHeight},
+		rightRect:     workbench.Rect{X: cardX + 1 + leftWidth + gap, Y: bodyY, W: rightWidth, H: listHeight},
+	}
+}
+
 func pickerFooterRowY(layout pickerCardLayout) int {
 	return layout.firstItemY + layout.listHeight + 1
 }
@@ -67,11 +115,15 @@ func pickerQueryRowRect(layout pickerCardLayout) workbench.Rect {
 }
 
 func overlayQueryInputRect(layout pickerCardLayout, prefixWidth int) workbench.Rect {
-	editableX := layout.cardX + 1 + maxInt(0, prefixWidth)
-	editableW := maxInt(1, layout.innerWidth-maxInt(0, prefixWidth))
+	return overlayQueryInputRectFor(layout.cardX+1, layout.cardY+2, layout.innerWidth, prefixWidth)
+}
+
+func overlayQueryInputRectFor(contentX, rowY, innerWidth, prefixWidth int) workbench.Rect {
+	editableX := contentX + maxInt(0, prefixWidth)
+	editableW := maxInt(1, innerWidth-maxInt(0, prefixWidth))
 	return workbench.Rect{
 		X: editableX,
-		Y: layout.cardY + 2,
+		Y: rowY,
 		W: editableW,
 		H: 1,
 	}
@@ -317,6 +369,11 @@ func pickerOverlayCursorTarget(picker *modal.PickerState, termSize TermSize) (in
 		return 0, 0, false
 	}
 	width, height := overlayViewport(termSize)
+	if picker.Layout == modal.PickerLayoutClipboardHistory {
+		layout := buildClipboardHistoryPickerLayout(width, height, len(picker.VisibleItems()))
+		rect := layout.queryRect
+		return rect.X + picker.QueryState().CursorCellOffset(uiinput.RenderConfig{Width: rect.W}), rect.Y, true
+	}
 	layout := buildPickerCardLayout(width, height, len(picker.VisibleItems()), false)
 	rect := pickerQueryRowRect(layout)
 	return rect.X + picker.QueryState().CursorCellOffset(uiinput.RenderConfig{Width: rect.W}), rect.Y, true

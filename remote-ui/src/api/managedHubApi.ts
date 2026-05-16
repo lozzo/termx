@@ -14,6 +14,7 @@ export interface ManagedIceServer {
 }
 
 export type ManagedHubFetch = RemoteRuntimeFetch
+export type ManagedHubSessionPath = 'managed' | 'local'
 
 export interface ManagedHubApiOptions {
   baseUrl: string
@@ -35,7 +36,7 @@ export interface ManagedHubSessionIceInput {
 }
 
 export interface ManagedHubSessionIceConfig {
-  path: 'managed'
+  path: ManagedHubSessionPath
   machineId: string
   terminalId?: string | undefined
   iceServers: ManagedIceServer[]
@@ -56,7 +57,7 @@ export interface CreateManagedHubSessionInput {
 
 export interface ManagedHubSession {
   sessionId: string
-  path: 'managed'
+  path: ManagedHubSessionPath
   machineId: string
   terminalId?: string | undefined
   answer: RtcSessionDescription
@@ -69,7 +70,7 @@ export interface ManagedHubSession {
 
 export interface ManagedHubPendingSession {
   sessionId: string
-  path: 'managed'
+  path: ManagedHubSessionPath
   machineId: string
   terminalId?: string | undefined
   pending: true
@@ -131,9 +132,9 @@ class ManagedHubHttpApi implements ManagedHubApi {
         session_token: requiredString(input.sessionToken, 'session_token'),
       },
     })
-    assertManagedPath(response)
+    const path = hubSessionPath(response)
     return {
-      path: 'managed',
+      path,
       machineId: stringField(response, 'machine_id'),
       ...(optionalStringField(response, 'terminal_id') ? { terminalId: optionalStringField(response, 'terminal_id') } : {}),
       iceServers: iceServersField(response, 'ice_servers'),
@@ -161,11 +162,11 @@ class ManagedHubHttpApi implements ManagedHubApi {
         },
       },
     })
-    assertManagedPath(response)
+    const path = hubSessionPath(response)
     if (optionalBooleanField(response, 'pending') === true) {
       return {
         sessionId: stringField(response, 'session_id'),
-        path: 'managed',
+        path,
         machineId: stringField(response, 'machine_id'),
         ...(optionalStringField(response, 'terminal_id') ? { terminalId: optionalStringField(response, 'terminal_id') } : {}),
         pending: true,
@@ -255,14 +256,14 @@ class ManagedHubHttpApi implements ManagedHubApi {
 }
 
 function managedSessionFromResponse(response: Record<string, unknown>): ManagedHubSession {
-  assertManagedPath(response)
+  const path = hubSessionPath(response)
   if (optionalBooleanField(response, 'pending') === true) {
     throw new Error('Managed Hub answer response is still pending')
   }
   const answer = record(response.answer, 'Managed Hub session answer')
   return {
     sessionId: stringField(response, 'session_id'),
-    path: 'managed',
+    path,
     machineId: stringField(response, 'machine_id'),
     ...(optionalStringField(response, 'terminal_id') ? { terminalId: optionalStringField(response, 'terminal_id') } : {}),
     answer: {
@@ -277,11 +278,12 @@ function managedSessionFromResponse(response: Record<string, unknown>): ManagedH
   }
 }
 
-function assertManagedPath(response: Record<string, unknown>): void {
+function hubSessionPath(response: Record<string, unknown>): ManagedHubSessionPath {
   const path = stringField(response, 'path')
-  if (path !== 'managed' && path !== 'cloud') {
-    throw new Error(`managed Hub session path must be managed or cloud, got ${path}`)
+  if (path !== 'managed' && path !== 'cloud' && path !== 'local') {
+    throw new Error(`managed Hub session path must be managed, cloud, or local, got ${path}`)
   }
+  return path === 'local' ? 'local' : 'managed'
 }
 
 async function errorMessage(response: Response): Promise<string> {

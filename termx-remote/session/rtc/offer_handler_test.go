@@ -125,6 +125,22 @@ func TestRuntimeAPIChannelRouterHandlesTerminalManagement(t *testing.T) {
 		t.Fatalf("expected terminal directory payload, got %#v", &directory)
 	}
 
+	status, _, errMsg = routeRuntimeAPIRequest(fileapi.NewManager(), manager, &runtimepb.APIRequest{
+		Id:     "req_restart",
+		Method: "restart",
+		Path:   "restart",
+		Body:   mustMarshalRuntimeProto(t, &runtimepb.TerminalIDRequest{TerminalId: "terminal-1"}),
+	})
+	if errMsg != "" {
+		t.Fatalf("expected terminal restart request to succeed, got %q", errMsg)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("expected restart status 200, got %d", status)
+	}
+	if manager.restartID != "terminal-1" {
+		t.Fatalf("expected restart routed to terminal manager, got %#v", manager)
+	}
+
 	fileStatus, _, fileErr := routeRuntimeAPIRequest(fileapi.NewManager(), manager, &runtimepb.APIRequest{
 		Id:     "req_2",
 		Method: "POST",
@@ -671,6 +687,7 @@ func waitTestPeerICE(t *testing.T, pc *webrtc.PeerConnection, timeout time.Durat
 
 type terminalAPIRouterStub struct {
 	createName string
+	restartID  string
 }
 
 type transportSinkFunc func(context.Context, transport.Transport, string) error
@@ -709,6 +726,11 @@ func (s *terminalAPIRouterStub) RouteTerminalManagementRequest(_ context.Context
 		return http.StatusOK, marshalRuntimeProtoForStub(&runtimepb.TerminalInventoryItem{TerminalId: "terminal-3"}), ""
 	case "get_directory":
 		return http.StatusOK, marshalRuntimeProtoForStub(&runtimepb.TerminalDirectoryResponse{Path: "/srv/app"}), ""
+	case "restart":
+		var body runtimepb.TerminalIDRequest
+		_ = proto.Unmarshal(req.Body, &body)
+		s.restartID = body.GetTerminalId()
+		return http.StatusOK, marshalRuntimeProtoForStub(&runtimepb.Empty{}), ""
 	default:
 		return http.StatusNotFound, nil, "unknown terminal management route"
 	}

@@ -66,6 +66,64 @@ func TestCloudSignalingOfferAndAnswerFlow(t *testing.T) {
 	}
 }
 
+func TestCloudLocalSessionPathDisablesRelayAndPropagatesToAgentOffer(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clock := fixedClock(time.Date(2026, 5, 16, 10, 15, 0, 0, time.UTC))
+	reg := registry.New(registry.Config{Clock: clock})
+	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_1", AgentID: "agent_1"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	svc := cloud.NewService(cloud.Config{
+		Registry:                    reg,
+		Clock:                       clock,
+		AllowRelayByDefault:         true,
+		AllowRelayTransferByDefault: true,
+	})
+	preflight, err := svc.PreflightSession(ctx, cloud.PreflightSessionInput{
+		MachineID:    "mach_1",
+		TerminalID:   "term_1",
+		Path:         cloud.PathLocal,
+		SessionToken: "session-token-1",
+	})
+	if err != nil {
+		t.Fatalf("preflight local: %v", err)
+	}
+	if preflight.Path != cloud.PathLocal || preflight.AllowRelay || preflight.AllowRelayTransfer {
+		t.Fatalf("local preflight policy = %+v", preflight)
+	}
+	offer, err := svc.SubmitOffer(ctx, cloud.SubmitOfferInput{
+		MachineID:     "mach_1",
+		TerminalID:    "term_1",
+		Path:          cloud.PathLocal,
+		SessionToken:  "session-token-1",
+		SDP:           minimalSDP("offer"),
+		ICECandidates: []string{"candidate:local 1 udp 1 127.0.0.1 1 typ host"},
+	})
+	if err != nil {
+		t.Fatalf("submit local offer: %v", err)
+	}
+	if offer.Path != cloud.PathLocal || offer.AllowRelay || offer.AllowRelayTransfer {
+		t.Fatalf("local offer policy = %+v", offer)
+	}
+	polled, err := svc.PollAgentOffer(ctx, cloud.PollAgentOfferInput{
+		AgentID:   "agent_1",
+		MachineID: "mach_1",
+		Timeout:   time.Second,
+	})
+	if err != nil {
+		t.Fatalf("poll local offer: %v", err)
+	}
+	if polled.Path != cloud.PathLocal || polled.AllowRelay {
+		t.Fatalf("polled local offer = %+v", polled)
+	}
+	policy, ok := svc.OfferPolicy(offer.ID)
+	if !ok || policy.Path != cloud.PathLocal || policy.AllowRelay || policy.AllowRelayTransfer {
+		t.Fatalf("local offer policy lookup = %+v ok=%v", policy, ok)
+	}
+}
+
 func TestCloudServiceDefaultRelayAllowancePropagatesToOfferPolicy(t *testing.T) {
 	t.Parallel()
 

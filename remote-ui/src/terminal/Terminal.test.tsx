@@ -1073,6 +1073,60 @@ describe('Terminal', () => {
     expect(term.scrollToBottom).toHaveBeenCalled()
   })
 
+  it('loads alternate-screen visual history without mixing normal scrollback', async () => {
+    const session = createMockRtcTerminalSession()
+    session.setTerminalSnapshot('terminal-1', {
+      text: '',
+      cols: 80,
+      rows: 24,
+      raw: {
+        size: { cols: 80, rows: 24 },
+        screen_is_alternate: true,
+        modes: { alternate_screen: false },
+        scrollback: [
+          { cells: Array.from('normal-history').map((char) => ({ r: char })) },
+        ],
+        screen: {
+          rows: [
+            { cells: Array.from('tui-screen').map((char) => ({ r: char })) },
+          ],
+        },
+      },
+      pages: [
+        { offset: 0, rows: ['codex-visual-history'] },
+      ],
+    })
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const term = xtermMocks.FakeXTerm.instances[0]!
+    term.buffer.active.viewportY = 0
+    const terminalOutput = screen.getByLabelText('Terminal output')
+    const screenElement = terminalOutput.querySelector('.xterm-screen') as HTMLElement
+    act(() => {
+      screenElement.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }))
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 600))
+    })
+
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 0,
+      limit: 250,
+      alternate: true,
+    }))
+    await waitFor(() => expect(term.writes.join('')).toMatch(/c[\s\S]*o[\s\S]*d[\s\S]*e[\s\S]*x[\s\S]*-[\s\S]*v[\s\S]*i[\s\S]*s[\s\S]*u[\s\S]*a[\s\S]*l[\s\S]*-[\s\S]*h[\s\S]*i[\s\S]*s[\s\S]*t[\s\S]*o[\s\S]*r[\s\S]*y/))
+    expect(term.writes.join('')).not.toMatch(/n[\s\S]*o[\s\S]*r[\s\S]*m[\s\S]*a[\s\S]*l[\s\S]*-[\s\S]*h[\s\S]*i[\s\S]*s[\s\S]*t[\s\S]*o[\s\S]*r[\s\S]*y/)
+  })
+
   it('preserves the user viewport when older scrollback is loaded from an explicit upward scroll', async () => {
     const session = createMockRtcTerminalSession()
     session.setTerminalSnapshot('terminal-1', {

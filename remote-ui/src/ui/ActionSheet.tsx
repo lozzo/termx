@@ -34,17 +34,17 @@ export function ActionSheet({ isOpen, onClose, title, subtitle, actions }: Actio
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 backdrop-blur-[2px] md:items-center"
       onClick={onClose}
       data-testid="action-sheet-backdrop"
     >
       <div
-        className="w-full max-w-xl animate-slide-up rounded-t-[20px] bg-white pb-[env(safe-area-inset-bottom,20px)] shadow-2xl"
+        className="w-full max-w-xl animate-slide-up rounded-t-[20px] bg-white pb-[env(safe-area-inset-bottom,20px)] shadow-2xl md:rounded-2xl md:pb-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex flex-col">
           {/* Handle for dragging feel */}
-          <div className="mx-auto mt-3 h-1.5 w-12 rounded-full bg-zinc-200" />
+          <div className="mx-auto mt-3 h-1.5 w-12 rounded-full bg-zinc-200 md:hidden" />
 
           <div className="flex items-center justify-between px-5 pt-4 pb-2">
             <div className="flex flex-col">

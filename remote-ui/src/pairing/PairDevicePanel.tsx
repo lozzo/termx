@@ -83,7 +83,7 @@ export function PairDevicePanel({ api, sessionStore, appName, machineId, onPaire
           />
         </label>
         <button
-          className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 text-[15px] font-semibold text-white shadow-md transition-all active:scale-[0.98] active:bg-zinc-800 disabled:pointer-events-none disabled:opacity-50"
+          className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 text-[15px] font-semibold text-white shadow-md transition-all active:scale-[0.98] hover:bg-zinc-800 active:bg-zinc-800 disabled:pointer-events-none disabled:opacity-50"
           type="submit"
           disabled={submitting || !pairSessionId.trim() || !pairSecret.trim()}
         >

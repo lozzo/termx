@@ -270,6 +270,7 @@ func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error
 	if err := r.PreflightOffer(ctx, OfferInput{
 		MachineID:            machineID,
 		TerminalID:           terminalID,
+		Path:                 in.Path,
 		SDP:                  in.SDP,
 		SessionID:            strings.TrimSpace(in.SessionID),
 		ICECandidates:        cloneStrings(in.ICECandidates),
@@ -284,6 +285,7 @@ func (r *Registry) SubmitOffer(ctx context.Context, in OfferInput) (Offer, error
 	return r.submitVerifiedOffer(ctx, OfferInput{
 		MachineID:            machineID,
 		TerminalID:           terminalID,
+		Path:                 in.Path,
 		SDP:                  in.SDP,
 		SessionID:            strings.TrimSpace(in.SessionID),
 		ICECandidates:        cloneStrings(in.ICECandidates),
@@ -344,7 +346,7 @@ func (r *Registry) submitVerifiedOffer(ctx context.Context, in OfferInput) (Offe
 		ICECandidates:        cloneStrings(in.ICECandidates),
 		SessionToken:         strings.TrimSpace(in.SessionToken),
 		AnswerProofChallenge: strings.TrimSpace(in.AnswerProofChallenge),
-		Path:                 PathCloud,
+		Path:                 normalizeOfferPath(in.Path),
 		AllowRelay:           in.AllowRelay,
 		AllowRelayTransfer:   in.AllowRelayTransfer,
 		CreatedAt:            r.clock.Now().UTC(),
@@ -361,6 +363,15 @@ func (r *Registry) submitVerifiedOffer(ctx context.Context, in OfferInput) (Offe
 	r.offerQueue.enqueue(offer.MachineID, offer)
 	r.offerQueue.notify(offer.MachineID)
 	return cloneOffer(offer), nil
+}
+
+func normalizeOfferPath(path string) string {
+	switch strings.TrimSpace(path) {
+	case PathLocal:
+		return PathLocal
+	default:
+		return PathCloud
+	}
 }
 
 func (r *Registry) Poll(ctx context.Context, in PollInput) (Offer, error) {

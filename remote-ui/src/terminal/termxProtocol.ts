@@ -69,11 +69,12 @@ export function encodeResizePayload(cols: number, rows: number): Uint8Array {
   return payload
 }
 
-export function encodeHistoryRequestPayload(beforeOffset: number, limit: number): Uint8Array {
-  const payload = new Uint8Array(8)
+export function encodeHistoryRequestPayload(beforeOffset: number, limit: number, alternate = false): Uint8Array {
+  const payload = new Uint8Array(9)
   const view = new DataView(payload.buffer)
   view.setUint32(0, Math.max(0, beforeOffset))
   view.setUint32(4, Math.max(0, limit))
+  view.setUint8(8, alternate ? 1 : 0)
   return payload
 }
 
@@ -758,10 +759,7 @@ export function snapshotScrollbackRows(snapshot: unknown): unknown[] {
 }
 
 export function snapshotUsesAlternateScreen(snapshot: unknown): boolean {
-  if (!isRecord(snapshot)) {
-    return false
-  }
-  return modesFrom(snapshot.modes).alternateScreen
+  return snapshotAlternateScreen(snapshot)
 }
 
 export function rowsToPlainText(rows: unknown[]): string {
@@ -815,7 +813,10 @@ export function snapshotToReplay(snapshot: unknown): string {
   const screenRows = rowsFrom(screenRecord?.rows)
   const scrollbackRows = rowsFrom(snapshot.scrollback)
   const cursor = cursorFrom(snapshot.cursor)
-  const modes = modesFrom(snapshot.modes)
+  const modes = {
+    ...modesFrom(snapshot.modes),
+    alternateScreen: snapshotAlternateScreen(snapshot),
+  }
   const parts: string[] = []
 
   parts.push(writePrivateModeANSI(1049, modes.alternateScreen))
@@ -1097,6 +1098,17 @@ function modesFrom(value: unknown) {
     applicationCursor: value.application_cursor === true || value.applicationCursor === true,
     autoWrap: value.auto_wrap === true || value.autoWrap === true,
   }
+}
+
+function snapshotAlternateScreen(snapshot: unknown): boolean {
+  if (!isRecord(snapshot)) {
+    return false
+  }
+  const screen = snapshot.screen
+  return snapshot.screen_is_alternate === true ||
+    snapshot.screenIsAlternate === true ||
+    (isRecord(screen) && (screen.alternateScreen === true || screen.alternate_screen === true)) ||
+    modesFrom(snapshot.modes).alternateScreen
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

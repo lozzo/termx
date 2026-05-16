@@ -4,7 +4,10 @@ import (
 	"time"
 )
 
-const PathCloud = "cloud"
+const (
+	PathCloud = "cloud"
+	PathLocal = "local"
+)
 
 const (
 	defaultOfferTTL  = 5 * time.Minute
@@ -60,6 +63,7 @@ type SubmitOfferInput struct {
 	SessionID            string
 	MachineID            string
 	TerminalID           string
+	Path                 string
 	SDP                  string
 	ICECandidates        []string
 	SessionToken         string
@@ -69,6 +73,7 @@ type SubmitOfferInput struct {
 type PreflightSessionInput struct {
 	MachineID    string
 	TerminalID   string
+	Path         string
 	SessionToken string
 }
 

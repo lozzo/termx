@@ -174,6 +174,7 @@ type GridViewport struct {
 type HistoryReplayOptions struct {
 	BeforeOffset int
 	Limit        int
+	Alternate    bool
 }
 
 type HistoryReplayResult struct {

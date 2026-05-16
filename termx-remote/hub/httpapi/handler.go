@@ -205,6 +205,7 @@ func NewHandler(cfg Config) http.Handler {
 		preflight, err := cfg.Cloud.PreflightSession(r.Context(), cloud.PreflightSessionInput{
 			MachineID:    req.MachineID,
 			TerminalID:   req.TerminalID,
+			Path:         sessionPathForPublicAPI(cfg),
 			SessionToken: req.SessionToken,
 		})
 		if err != nil {
@@ -212,7 +213,7 @@ func NewHandler(cfg Config) http.Handler {
 			return
 		}
 		leaseID := preflightICELeaseID(preflight.MachineID)
-		iceServers, err := iceServersForLease(r.Context(), cfg, leaseID, preflight.AllowRelay)
+		iceServers, err := iceServersForLease(r.Context(), cfg, leaseID, preflight.Path, preflight.AllowRelay)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
 			return
@@ -260,6 +261,7 @@ func NewHandler(cfg Config) http.Handler {
 			SessionID:            req.Offer.SessionID,
 			MachineID:            req.MachineID,
 			TerminalID:           req.TerminalID,
+			Path:                 sessionPathForPublicAPI(cfg),
 			SDP:                  req.Offer.SDP,
 			ICECandidates:        req.Offer.Candidates,
 			SessionToken:         req.SessionToken,
@@ -274,7 +276,7 @@ func NewHandler(cfg Config) http.Handler {
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 				writeJSON(w, http.StatusAccepted, map[string]any{
 					"session_id":   publicSessionID(offer),
-					"path":         cloud.PathCloud,
+					"path":         offer.Path,
 					"machine_id":   offer.MachineID,
 					"terminal_id":  offer.TerminalID,
 					"pending":      true,
@@ -285,11 +287,11 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, statusForAnswerError(err), "get_cloud_answer_failed", err.Error())
 			return
 		}
-		if _, err := iceServersForLease(r.Context(), cfg, offer.ID, offer.AllowRelay); err != nil {
+		if _, err := iceServersForLease(r.Context(), cfg, offer.ID, offer.Path, offer.AllowRelay); err != nil {
 			writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
 			return
 		}
-		writeSessionAnswer(w, r.Context(), cfg, publicSessionID(offer), offer.MachineID, offer.TerminalID, offer.AllowRelay, offer.AllowRelayTransfer, offer.ID, answer)
+		writeSessionAnswer(w, r.Context(), cfg, publicSessionID(offer), offer.Path, offer.MachineID, offer.TerminalID, offer.AllowRelay, offer.AllowRelayTransfer, offer.ID, answer)
 	})
 	mux.HandleFunc("POST /api/v1/sessions/{session_id}/answer", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -316,7 +318,7 @@ func NewHandler(cfg Config) http.Handler {
 				if hasPolicy {
 					writeJSON(w, http.StatusAccepted, map[string]any{
 						"session_id":   strings.TrimSpace(r.PathValue("session_id")),
-						"path":         cloud.PathCloud,
+						"path":         policy.Path,
 						"machine_id":   policy.MachineID,
 						"terminal_id":  policy.TerminalID,
 						"pending":      true,
@@ -330,7 +332,11 @@ func NewHandler(cfg Config) http.Handler {
 		}
 		allowRelay := hasPolicy && policy.AllowRelay
 		allowRelayTransfer := hasPolicy && policy.AllowRelayTransfer
-		if _, err := iceServersForLease(r.Context(), cfg, r.PathValue("session_id"), allowRelay); err != nil {
+		path := cloud.PathCloud
+		if hasPolicy {
+			path = policy.Path
+		}
+		if _, err := iceServersForLease(r.Context(), cfg, r.PathValue("session_id"), path, allowRelay); err != nil {
 			writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
 			return
 		}
@@ -338,7 +344,7 @@ func NewHandler(cfg Config) http.Handler {
 		if hasPolicy {
 			terminalID = policy.TerminalID
 		}
-		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), answer.MachineID, terminalID, allowRelay, allowRelayTransfer, r.PathValue("session_id"), answer)
+		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), path, answer.MachineID, terminalID, allowRelay, allowRelayTransfer, r.PathValue("session_id"), answer)
 	})
 	mux.HandleFunc("POST /api/v1/pairing/claims", func(w http.ResponseWriter, r *http.Request) {
 		if managedPairingRequiresWebControl(cfg) {
@@ -499,19 +505,20 @@ func preflightICELeaseID(machineID string) string {
 	return "browser-" + replacer.Replace(machineID)
 }
 
-func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, sessionID string, machineID string, terminalID string, allowRelay bool, allowRelayTransfer bool, leaseID string, answer cloud.Answer) {
+func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, sessionID string, path string, machineID string, terminalID string, allowRelay bool, allowRelayTransfer bool, leaseID string, answer cloud.Answer) {
 	if strings.TrimSpace(answer.Error) != "" {
 		writeError(w, http.StatusForbidden, "cloud_answer_error", answer.Error)
 		return
 	}
-	iceServers, err := iceServersForLease(ctx, cfg, leaseID, allowRelay)
+	path = normalizeSessionPath(path)
+	iceServers, err := iceServersForLease(ctx, cfg, leaseID, path, allowRelay)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "cloud_ice_config_failed", err.Error())
 		return
 	}
 	response := map[string]any{
 		"session_id": sessionID,
-		"path":       cloud.PathCloud,
+		"path":       path,
 		"machine_id": machineID,
 		"answer": map[string]any{
 			"sdp":            answer.SDP,
@@ -528,7 +535,11 @@ func writeSessionAnswer(w http.ResponseWriter, ctx context.Context, cfg Config, 
 	writeJSON(w, http.StatusOK, response)
 }
 
-func iceServersForLease(ctx context.Context, cfg Config, leaseID string, allowRelay bool) ([]hubv1.RTCIceServerConfig, error) {
+func iceServersForLease(ctx context.Context, cfg Config, leaseID string, path string, allowRelay bool) ([]hubv1.RTCIceServerConfig, error) {
+	path = normalizeSessionPath(path)
+	if path == cloud.PathLocal {
+		return cloneICEServers(cfg.ICEServers), nil
+	}
 	if cfg.ICE == nil {
 		return cloneICEServers(cfg.ICEServers), nil
 	}
@@ -541,6 +552,22 @@ func iceServersForLease(ctx context.Context, cfg Config, leaseID string, allowRe
 		return nil, err
 	}
 	return hubIceServers(rtc.ICEServers), nil
+}
+
+func sessionPathForPublicAPI(cfg Config) string {
+	if cfg.LocalDiscovery {
+		return cloud.PathLocal
+	}
+	return cloud.PathCloud
+}
+
+func normalizeSessionPath(path string) string {
+	switch strings.TrimSpace(path) {
+	case cloud.PathLocal:
+		return cloud.PathLocal
+	default:
+		return cloud.PathCloud
+	}
 }
 
 func hubIceServers(in []ice.ICEServer) []hubv1.RTCIceServerConfig {

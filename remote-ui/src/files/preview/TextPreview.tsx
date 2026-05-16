@@ -97,7 +97,7 @@ export function TextPreview({ text, name, mimeType }: { text: string; name: stri
           type="button"
           aria-label={wrapLabel}
           title={wrapLabel}
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors active:scale-95 ${softWrap ? 'bg-blue-50 text-blue-600' : 'text-zinc-600 active:bg-zinc-100'}`}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors active:scale-95 ${softWrap ? 'bg-blue-50 text-blue-600' : 'text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100'}`}
           onClick={() => { hapticSelection(); setSoftWrap((current) => !current) }}
         >
           <WrapText className="h-4 w-4" />

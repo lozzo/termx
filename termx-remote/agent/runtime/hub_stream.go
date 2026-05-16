@@ -23,6 +23,7 @@ import (
 const (
 	offerReplayWindow     = 60 * time.Second
 	sessionTokenPathCloud = "cloud"
+	sessionTokenPathLocal = "local"
 )
 
 func randomAgentID() string {
@@ -379,6 +380,7 @@ func (m *Manager) handleGRPCOffer(ctx context.Context, hubURL string, pbOffer *p
 		SessionID:            pbOffer.GetSessionId(),
 		MachineID:            pbOffer.GetMachineId(),
 		TerminalID:           pbOffer.GetTerminalId(),
+		Path:                 m.offerSessionPath(hubURL, pbOffer.GetPath()),
 		SDP:                  pbOffer.GetSdp(),
 		Candidates:           append([]string(nil), pbOffer.GetIceCandidates()...),
 		SessionToken:         pbOffer.GetSessionToken(),
@@ -401,6 +403,22 @@ func (m *Manager) handleGRPCOffer(ctx context.Context, hubURL string, pbOffer *p
 			AnswerProof:   answer.AnswerProof,
 		},
 	}})
+}
+
+func (m *Manager) offerSessionPath(hubURL string, explicit string) string {
+	switch strings.TrimSpace(explicit) {
+	case sessionTokenPathLocal:
+		return sessionTokenPathLocal
+	case sessionTokenPathCloud:
+		return sessionTokenPathCloud
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	state := m.hubStates[strings.TrimSpace(hubURL)]
+	if state != nil && state.Kind == HubKindLocal {
+		return sessionTokenPathLocal
+	}
+	return sessionTokenPathCloud
 }
 
 func (m *Manager) handleGRPCPairingClaim(ctx context.Context, claim *pb.PairingClaim, sender interface{ Send(*pb.AgentToHub) error }) {
@@ -604,8 +622,9 @@ func (m *Manager) verifyOfferSession(ctx context.Context, offer hubv1.SignalingO
 	if err != nil {
 		return token.Claims{}, err
 	}
-	if !sessionTokenAllowsPath(claims, sessionTokenPathCloud) {
-		return token.Claims{}, fmt.Errorf("session token is not authorized for cloud connections")
+	path := normalizeOfferSessionPath(offer.Path)
+	if !sessionTokenAllowsPath(claims, path) {
+		return token.Claims{}, fmt.Errorf("session token is not authorized for %s connections", path)
 	}
 	terminalID := strings.TrimSpace(offer.TerminalID)
 	if terminalID != "" {
@@ -614,6 +633,15 @@ func (m *Manager) verifyOfferSession(ctx context.Context, offer hubv1.SignalingO
 		}
 	}
 	return claims, nil
+}
+
+func normalizeOfferSessionPath(path string) string {
+	switch strings.TrimSpace(path) {
+	case sessionTokenPathLocal:
+		return sessionTokenPathLocal
+	default:
+		return sessionTokenPathCloud
+	}
 }
 
 func sessionTokenAllowsPath(claims token.Claims, path string) bool {

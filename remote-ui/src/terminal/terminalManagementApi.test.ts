@@ -3,7 +3,7 @@ import { createTerminalManagementApi } from './terminalManagementApi'
 import type { RtcJsonRpcChannel, RtcSession } from '../core/transport'
 
 describe('terminal management API over RtcSession', () => {
-  it('creates, updates, and deletes terminals through the unified session api channel', async () => {
+  it('creates, updates, restarts, and deletes terminals through the unified session api channel', async () => {
     const session = new MockManagementSession()
     const api = createTerminalManagementApi(session, 'machine-local')
 
@@ -21,6 +21,7 @@ describe('terminal management API over RtcSession', () => {
       environment: 'staging',
       sizeLockMode: 'warn',
     })
+    await api.restartTerminal('terminal-1')
     await api.deleteTerminal('terminal-1')
     await api.getTerminalDirectory('terminal-1')
 
@@ -37,6 +38,7 @@ describe('terminal management API over RtcSession', () => {
         name: 'renamed shell',
         tags: { 'termx.size_lock': 'warn', cwd: '/srv/app-next', environment: 'staging' },
       }],
+      ['restart', { terminal_id: 'terminal-1' }],
       ['remove', { terminal_id: 'terminal-1' }],
       ['get_directory', { terminal_id: 'terminal-1' }],
     ])

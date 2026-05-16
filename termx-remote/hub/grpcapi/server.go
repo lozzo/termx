@@ -70,6 +70,7 @@ type PendingOffer struct {
 	SessionID            string
 	MachineID            string
 	TerminalID           string
+	Path                 string
 	SDP                  string
 	SessionToken         string
 	AnswerProofChallenge string
@@ -262,6 +263,7 @@ func (s *Server) pushOffersWithStop(ctx context.Context, sender interface{ Send(
 				SessionId:            offer.SessionID,
 				MachineId:            offer.MachineID,
 				TerminalId:           offer.TerminalID,
+				Path:                 offer.Path,
 				Sdp:                  offer.SDP,
 				IceCandidates:        offer.Candidates,
 				SessionToken:         offer.SessionToken,

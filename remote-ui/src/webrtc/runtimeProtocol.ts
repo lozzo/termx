@@ -181,6 +181,7 @@ export function encodeRuntimeResponseBody(path: string, method: string, body: un
     case 'get_directory':
       return encodeMessage(TerminalDirectoryResponseSchema, terminalDirectoryResponseInit(body))
     case 'set_metadata':
+    case 'restart':
     case 'remove':
       return encodeMessage(EmptySchema, {})
     case '/files/list':
@@ -234,6 +235,7 @@ export function decodeRuntimeResponseBody(path: string, method: string, body: Ui
     case 'get_directory':
       return terminalDirectoryResponseToAPI(decodeMessage(TerminalDirectoryResponseSchema, body))
     case 'set_metadata':
+    case 'restart':
     case 'remove':
       return {}
     case '/files/list':
@@ -304,6 +306,7 @@ function encodeTerminalManagementRequest(method: string, body: unknown): Uint8Ar
       return encodeMessage(TerminalCreateRequestSchema, terminalCreateRequestInit(body))
     case 'set_metadata':
       return encodeMessage(TerminalSetMetadataRequestSchema, terminalSetMetadataRequestInit(body))
+    case 'restart':
     case 'remove':
       return encodeMessage(TerminalIDRequestSchema, terminalIDRequestInit(body))
     case 'get_directory':
@@ -322,6 +325,7 @@ function decodeTerminalManagementRequest(method: string, body: Uint8Array): unkn
       return terminalCreateRequestToAPI(decodeMessage(TerminalCreateRequestSchema, body))
     case 'set_metadata':
       return terminalSetMetadataRequestToAPI(decodeMessage(TerminalSetMetadataRequestSchema, body))
+    case 'restart':
     case 'remove':
       return terminalIDRequestToAPI(decodeMessage(TerminalIDRequestSchema, body))
     case 'get_directory':

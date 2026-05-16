@@ -243,7 +243,7 @@ export class MockRtcTerminalSession implements RtcSession {
     return this.channels.get(terminalId)?.snapshotRequests ?? []
   }
 
-  historyReplayRequests(terminalId: string): Array<{ beforeOffset: number; limit: number }> {
+  historyReplayRequests(terminalId: string): Array<{ beforeOffset: number; limit: number; alternate?: boolean }> {
     return this.channels.get(terminalId)?.historyReplayRequests ?? []
   }
 }
@@ -258,7 +258,7 @@ class MockBinaryChannel implements RtcBinaryChannel {
   sentText = ''
   lastResize: { cols: number; rows: number } | undefined
   readonly snapshotRequests: Array<{ offset: number; limit: number }> = []
-  readonly historyReplayRequests: Array<{ beforeOffset: number; limit: number }> = []
+  readonly historyReplayRequests: Array<{ beforeOffset: number; limit: number; alternate?: boolean }> = []
   private messageHandler: ((data: Uint8Array) => void) | undefined
   private closeHandler: (() => void) | undefined
   private streamChannel = 7
@@ -438,7 +438,8 @@ class MockBinaryChannel implements RtcBinaryChannel {
     const view = new DataView(frame.payload.buffer, frame.payload.byteOffset, frame.payload.byteLength)
     const beforeOffset = view.getUint32(0)
     const limit = view.getUint32(4)
-    this.historyReplayRequests.push({ beforeOffset, limit })
+    const alternate = frame.payload.byteLength >= 9 && view.getUint8(8) === 1
+    this.historyReplayRequests.push({ beforeOffset, limit, ...(alternate ? { alternate } : {}) })
     const page = this.owner.snapshotPageFor(this.terminalId, beforeOffset)
     const rows = page?.rows ?? []
     const replay = new TextEncoder().encode(rows.join('\r\n'))

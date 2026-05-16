@@ -103,6 +103,7 @@ describe('TerminalClient', () => {
       rows: 1,
       replay: 'older',
       hasMore: false,
+      alternate: false,
     })
   })
 
@@ -202,6 +203,7 @@ class MockTerminalProtocolSession implements TerminalProtocolSession {
       rows: 1,
       replay: 'older',
       hasMore: false,
+      alternate: false,
     }
   }
 
@@ -286,6 +288,7 @@ class DeferredTerminalProtocolSession implements TerminalProtocolSession {
       rows: 0,
       replay: '',
       hasMore: false,
+      alternate: false,
     }
   }
 

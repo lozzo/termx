@@ -17,6 +17,18 @@ export type ConnectionAttemptStage =
   | 'connected'
   | 'failed'
 
+export type HubEndpointKind = 'local' | 'managed'
+export type HubEndpointScope = 'loopback' | 'lan' | 'public_mapping' | 'cloud'
+export type HubEndpointSource = 'pair_qr' | 'stored_machine' | 'web_control' | 'native_discovery' | 'manual'
+export type ConnectionPolicy = 'local_web' | 'app_local_preferred' | 'managed_only'
+
+export interface HubEndpoint {
+  url: string
+  kind: HubEndpointKind
+  scope: HubEndpointScope
+  source?: HubEndpointSource | undefined
+}
+
 export interface ConnectionAttemptError {
   path: ConnectionPath
   message: string
@@ -36,9 +48,11 @@ export interface ConnectionOrchestratorInput {
   terminalId?: string | undefined
   sessionToken?: string | undefined
   answerProofSecret?: string | undefined
+  policy?: ConnectionPolicy | undefined
+  endpoints?: HubEndpoint[] | undefined
   localHubUrls?: string[] | undefined
   localFallbackHubUrls?: string[] | undefined
-  hubUrls: string[]
+  hubUrls?: string[] | undefined
   onSnapshot?: ((snapshot: ConnectionAttemptSnapshot) => void) | undefined
 }
 
@@ -58,14 +72,31 @@ export interface ConnectionOrchestratorOptions {
   managedHubRtcConnectorFactory?: ((options: { hubUrl: string; api: ManagedHubApi }) => {
     connect(input: ManagedHubRtcConnectInput, options?: RtcConnectOptions): Promise<RtcSession>
   }) | undefined
+  localConnectTimeoutMs?: number | undefined
+  managedConnectTimeoutMs?: number | undefined
+  localPreferenceWindowMs?: number | undefined
   logger?: ConnectionLogger | undefined
 }
 
-export function createConnectionOrchestrator(options: ConnectionOrchestratorOptions): ConnectionOrchestrator {
-  return new OrderedConnectionOrchestrator(options)
+interface PreparedEndpoint extends HubEndpoint {
+  path: 'local' | 'managed'
 }
 
-class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
+interface EndpointGroups {
+  local: PreparedEndpoint[]
+  managed: PreparedEndpoint[]
+}
+
+interface RaceOutcome {
+  result: ConnectionOrchestratorResult | null
+  completed: boolean
+}
+
+export function createConnectionOrchestrator(options: ConnectionOrchestratorOptions): ConnectionOrchestrator {
+  return new EndpointConnectionOrchestrator(options)
+}
+
+class EndpointConnectionOrchestrator implements ConnectionOrchestrator {
   constructor(private readonly options: ConnectionOrchestratorOptions) {}
 
   async connect(input: ConnectionOrchestratorInput, options: RtcConnectOptions = {}): Promise<ConnectionOrchestratorResult> {
@@ -73,96 +104,40 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
     const ac = new AbortController()
     const signal = combineSignals(options.signal, ac.signal)
     const connectOptions = { ...options, signal }
-    const localHubUrls = input.localHubUrls?.length ? input.localHubUrls : []
-    const localFallbackHubUrls = input.localFallbackHubUrls?.length ? input.localFallbackHubUrls : []
-    const hubUrls = input.hubUrls.length > 0 ? input.hubUrls : []
+    const policy = input.policy ?? 'app_local_preferred'
+    const endpoints = this.prepareEndpoints(input, policy)
     this.log('connect_start', {
       level: 'info',
       machineId: input.machineId,
       terminalId: input.terminalId,
       details: {
-        localHubCount: localHubUrls.length,
-        localFallbackHubCount: localFallbackHubUrls.length,
-        managedHubCount: hubUrls.length,
+        policy,
+        localEndpointCount: endpoints.local.length,
+        managedEndpointCount: endpoints.managed.length,
         hasSessionToken: Boolean(input.sessionToken),
         hasAnswerProofSecret: Boolean(input.answerProofSecret),
       },
     })
     try {
-      const local = options.forceRelay ? null : await this.tryLocalWithTimeout(input, connectOptions, failures, 2000)
-      if (local) {
+      let result: ConnectionOrchestratorResult | null
+      if (policy === 'local_web') {
+        result = await this.connectLocalOnly(input, connectOptions, failures, endpoints.local)
+      } else if (policy === 'managed_only' || options.forceRelay === true) {
+        result = await this.connectManagedOnly(input, connectOptions, failures, endpoints.managed, options.forceRelay === true)
+      } else {
+        result = await this.connectAppLocalPreferred(input, connectOptions, failures, endpoints)
+      }
+      if (result) {
         ac.abort()
+        this.emitConnected(input, options, result)
         this.log('connect_success', {
           level: 'info',
           machineId: input.machineId,
           terminalId: input.terminalId,
-          path: local.path,
-          details: { relayInUse: local.relayInUse },
+          path: result.path,
+          details: { relayInUse: result.relayInUse },
         })
-        return local
-      }
-      const localFallback = options.forceRelay ? null : await this.tryLocalFallbackWithTimeout(input, connectOptions, failures, 3000)
-      if (localFallback) {
-        ac.abort()
-        this.log('connect_success', {
-          level: 'info',
-          machineId: input.machineId,
-          terminalId: input.terminalId,
-          path: localFallback.path,
-          details: { relayInUse: localFallback.relayInUse },
-        })
-        return localFallback
-      }
-
-      if (hubUrls.length === 0) {
-        if (localHubUrls.length > 0 || localFallbackHubUrls.length > 0) {
-          return this.failAllPaths(input, options, failures)
-        }
-        this.log('connect_no_hubs', {
-          level: 'warn',
-          machineId: input.machineId,
-          terminalId: input.terminalId,
-          details: { failures },
-        })
-        throw new Error('no hub URLs configured')
-      }
-      input.onSnapshot?.({
-        stage: 'trying_managed',
-        path: 'managed',
-        message: options.forceRelay ? `Connecting through relay on ${hubUrls.length} hub(s)` : `Racing ${hubUrls.length} hub(s)`,
-      })
-      emitConnectionState(input, options, {
-        stage: 'trying_managed',
-        path: 'managed',
-        message: options.forceRelay ? `Connecting through relay on ${hubUrls.length} hub(s)` : `Racing ${hubUrls.length} hub(s)`,
-      })
-      options.onStatus?.(options.forceRelay ? `Connecting through relay on ${hubUrls.length} hub(s)` : `Racing ${hubUrls.length} hub(s)`)
-      const winner = await raceConnections(
-        hubUrls.map((hubUrl, index) => () => this.connectManagedHub(input, hubUrl, connectOptions, failures, index)),
-        signal,
-      )
-      if (winner) {
-        ac.abort()
-        input.onSnapshot?.({
-          stage: 'connected',
-          path: winner.path,
-          relayInUse: winner.relayInUse,
-          message: 'Connected',
-        })
-        emitConnectionState(input, options, {
-          stage: 'connected',
-          path: winner.path,
-          relayInUse: winner.relayInUse,
-          message: 'Connected',
-        })
-        this.log('connect_success', {
-          level: 'info',
-          machineId: input.machineId,
-          terminalId: input.terminalId,
-          path: winner.path,
-          details: { relayInUse: winner.relayInUse },
-        })
-        return winner
+        return result
       }
     } catch (error) {
       if (!isAbortError(error, signal)) {
@@ -178,8 +153,450 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
     } finally {
       ac.abort()
     }
-
     return this.failAllPaths(input, options, failures)
+  }
+
+  private prepareEndpoints(input: ConnectionOrchestratorInput, policy: ConnectionPolicy): EndpointGroups {
+    const explicit = input.endpoints ?? []
+    const legacy = input.endpoints ? [] : legacyEndpoints(input)
+    const endpoints = compactEndpoints([...explicit, ...legacy])
+    if (policy === 'local_web') {
+      return {
+        local: endpoints.filter((endpoint) => endpoint.kind === 'local').map((endpoint) => ({ ...endpoint, path: 'local' })),
+        managed: [],
+      }
+    }
+    if (policy === 'managed_only') {
+      return {
+        local: [],
+        managed: endpoints.filter((endpoint) => endpoint.kind === 'managed').map((endpoint) => ({ ...endpoint, path: 'managed' })),
+      }
+    }
+    return {
+      local: endpoints.filter((endpoint) => endpoint.kind === 'local').map((endpoint) => ({ ...endpoint, path: 'local' })),
+      managed: endpoints.filter((endpoint) => endpoint.kind === 'managed').map((endpoint) => ({ ...endpoint, path: 'managed' })),
+    }
+  }
+
+  private async connectLocalOnly(
+    input: ConnectionOrchestratorInput,
+    options: RtcConnectOptions,
+    failures: ConnectionAttemptError[],
+    endpoints: PreparedEndpoint[],
+  ): Promise<ConnectionOrchestratorResult | null> {
+    const resolved = await this.localEndpointsWithProvider(input, endpoints)
+    if (resolved.length === 0) {
+      throw new Error('local Hub endpoint is required for local web connections')
+    }
+    const outcome = await this.raceEndpointGroup({
+      input,
+      options,
+      failures,
+      endpoints: resolved,
+      timeoutMs: this.options.localConnectTimeoutMs,
+      stage: 'trying_local',
+      path: 'local',
+      message: localRaceMessage(resolved),
+      event: 'local_hub_race',
+    })
+    return outcome.result
+  }
+
+  private async connectManagedOnly(
+    input: ConnectionOrchestratorInput,
+    options: RtcConnectOptions,
+    failures: ConnectionAttemptError[],
+    endpoints: PreparedEndpoint[],
+    forceRelay: boolean,
+  ): Promise<ConnectionOrchestratorResult | null> {
+    if (endpoints.length === 0) {
+      throw new Error('managed Hub endpoint is required before opening this machine runtime')
+    }
+    const outcome = await this.raceEndpointGroup({
+      input,
+      options,
+      failures,
+      endpoints,
+      timeoutMs: this.options.managedConnectTimeoutMs,
+      stage: 'trying_managed',
+      path: 'managed',
+      message: forceRelay ? `Connecting through relay on ${endpoints.length} managed hub(s)` : `Racing ${endpoints.length} managed hub(s)`,
+      event: 'managed_hub_race',
+    })
+    return outcome.result
+  }
+
+  private async connectAppLocalPreferred(
+    input: ConnectionOrchestratorInput,
+    options: RtcConnectOptions,
+    failures: ConnectionAttemptError[],
+    endpoints: EndpointGroups,
+  ): Promise<ConnectionOrchestratorResult | null> {
+    const localEndpoints = await this.localEndpointsWithProvider(input, endpoints.local)
+    const managedEndpoints = endpoints.managed
+    if (localEndpoints.length === 0 && managedEndpoints.length === 0) {
+      throw new Error('Hub endpoint is required before opening this machine runtime')
+    }
+    if (localEndpoints.length === 0) {
+      return this.connectManagedOnly(input, options, failures, managedEndpoints, false)
+    }
+    if (managedEndpoints.length === 0) {
+      return this.connectLocalOnly(input, options, failures, localEndpoints)
+    }
+
+    const localRace = this.raceEndpointGroup({
+      input,
+      options,
+      failures,
+      endpoints: localEndpoints,
+      timeoutMs: this.options.localConnectTimeoutMs,
+      stage: 'trying_local',
+      path: 'local',
+      message: localRaceMessage(localEndpoints),
+      event: 'local_hub_race',
+    })
+    const managedRace = this.raceEndpointGroup({
+      input,
+      options,
+      failures,
+      endpoints: managedEndpoints,
+      timeoutMs: this.options.managedConnectTimeoutMs,
+      stage: 'trying_managed',
+      path: 'managed',
+      message: `Racing ${managedEndpoints.length} managed hub(s)`,
+      event: 'managed_hub_race',
+    })
+
+    const first = await Promise.race([
+      localRace.then((outcome) => ({ group: 'local' as const, outcome })),
+      managedRace.then((outcome) => ({ group: 'managed' as const, outcome })),
+    ])
+    if (first.group === 'local' && first.outcome.result) {
+      return first.outcome.result
+    }
+    if (first.group === 'local' && !first.outcome.result) {
+      const managed = await managedRace
+      return managed.result
+    }
+    if (!first.outcome.result) {
+      const local = await localRace
+      return local.result
+    }
+
+    const local = await waitForLocalPreference(localRace, this.options.localPreferenceWindowMs ?? 500, options.signal)
+    if (local.result) {
+      await first.outcome.result.session.disconnect().catch(() => {})
+      return local.result
+    }
+    if (local.completed) {
+      return first.outcome.result
+    }
+    void localRace.then((lateLocal) => {
+      if (lateLocal.result) void lateLocal.result.session.disconnect().catch(() => {})
+    })
+    return first.outcome.result
+  }
+
+  private async localEndpointsWithProvider(
+    input: ConnectionOrchestratorInput,
+    endpoints: PreparedEndpoint[],
+  ): Promise<PreparedEndpoint[]> {
+    if (endpoints.length > 0 || !this.options.localHubUrlProvider) return endpoints
+    const url = await this.options.localHubUrlProvider.getLocalHubUrl()
+    if (!url) return endpoints
+    return compactEndpoints([
+      ...endpoints,
+      { url, kind: 'local', scope: 'loopback', source: 'manual' },
+    ]).map((endpoint) => ({ ...endpoint, path: 'local' }))
+  }
+
+  private async raceEndpointGroup(input: {
+    input: ConnectionOrchestratorInput
+    options: RtcConnectOptions
+    failures: ConnectionAttemptError[]
+    endpoints: PreparedEndpoint[]
+    timeoutMs?: number | undefined
+    stage: ConnectionAttemptStage
+    path: 'local' | 'managed'
+    message: string
+    event: string
+  }): Promise<RaceOutcome> {
+    if (input.endpoints.length === 0) return { result: null, completed: true }
+    throwIfAborted(input.options.signal)
+    this.log(`${input.event}_start`, {
+      level: 'info',
+      machineId: input.input.machineId,
+      terminalId: input.input.terminalId,
+      path: input.path,
+      message: input.message,
+      details: { endpointCount: input.endpoints.length },
+    })
+    input.input.onSnapshot?.({
+      stage: input.stage,
+      path: input.path,
+      message: input.message,
+    })
+    emitConnectionState(input.input, input.options, {
+      stage: input.stage,
+      path: input.path,
+      message: input.message,
+    })
+    input.options.onStatus?.(input.message)
+    const race = raceConnections(
+      input.endpoints.map((endpoint, index) => () => this.connectEndpoint(input.input, endpoint, input.options, input.failures, index)),
+      input.options.signal,
+    ).then((result) => ({ type: 'result' as const, result }))
+    const timeout = input.timeoutMs && input.timeoutMs > 0
+      ? delay(input.timeoutMs, input.options.signal).then(() => ({ type: 'timeout' as const }))
+      : null
+    const outcome = timeout ? await Promise.race([race, timeout]) : await race
+    if (outcome.type === 'timeout') {
+      input.failures.push({
+        path: input.path,
+        message: `${input.path} connection timed out after ${input.timeoutMs}ms`,
+      })
+      this.log(`${input.event}_timeout`, {
+        level: 'warn',
+        machineId: input.input.machineId,
+        terminalId: input.input.terminalId,
+        path: input.path,
+        message: `${input.path} connection timed out after ${input.timeoutMs}ms`,
+        details: { endpointCount: input.endpoints.length },
+      })
+      return { result: null, completed: false }
+    }
+    if (!outcome.result) {
+      this.log(`${input.event}_failed`, {
+        level: 'warn',
+        machineId: input.input.machineId,
+        terminalId: input.input.terminalId,
+        path: input.path,
+        message: `all ${input.path} endpoint attempts failed`,
+        details: { endpointCount: input.endpoints.length },
+      })
+      return { result: null, completed: true }
+    }
+    return { result: outcome.result, completed: true }
+  }
+
+  private async connectEndpoint(
+    input: ConnectionOrchestratorInput,
+    endpoint: PreparedEndpoint,
+    options: RtcConnectOptions,
+    failures: ConnectionAttemptError[],
+    index: number,
+  ): Promise<ConnectionOrchestratorResult> {
+    if (endpoint.path === 'local') {
+      return this.connectLocalHub(input, endpoint, options, failures, index)
+    }
+    return this.connectManagedHub(input, endpoint, options, failures, index)
+  }
+
+  private async connectLocalHub(
+    input: ConnectionOrchestratorInput,
+    endpoint: PreparedEndpoint,
+    options: RtcConnectOptions,
+    failures: ConnectionAttemptError[],
+    index: number,
+  ): Promise<ConnectionOrchestratorResult> {
+    if (!this.options.managedHubApiFactory || !this.options.managedHubRtcConnectorFactory) {
+      throw new Error('local Hub connector is not configured')
+    }
+    if (!input.sessionToken) {
+      throw new Error('session token is required before opening a local Hub connection')
+    }
+    this.log('local_hub_attempt_start', {
+      level: 'info',
+      machineId: input.machineId,
+      terminalId: input.terminalId,
+      path: 'local',
+      hubUrl: endpoint.url,
+      details: { index, scope: endpoint.scope, source: endpoint.source },
+    })
+    const api = this.options.managedHubApiFactory(endpoint.url)
+    const connector = this.options.managedHubRtcConnectorFactory({ hubUrl: endpoint.url, api })
+    let session: RtcSession
+    try {
+      session = await connector.connect({
+        machineId: input.machineId,
+        ...(input.terminalId ? { terminalId: input.terminalId } : {}),
+        sessionToken: input.sessionToken,
+        ...(input.answerProofSecret ? { answerProofSecret: input.answerProofSecret } : {}),
+        path: 'local',
+      }, options)
+    } catch (error) {
+      if (isAbortError(error, options.signal)) {
+        this.log('local_hub_attempt_cancelled', {
+          level: 'debug',
+          machineId: input.machineId,
+          terminalId: input.terminalId,
+          path: 'local',
+          hubUrl: endpoint.url,
+          message: errorMessage(error),
+          details: { index },
+        })
+        throw error
+      }
+      this.recordLocalHubFailure(failures, endpoint.url, error)
+      this.log('local_hub_attempt_failed', {
+        level: 'warn',
+        machineId: input.machineId,
+        terminalId: input.terminalId,
+        path: 'local',
+        hubUrl: endpoint.url,
+        message: errorMessage(error),
+        details: { index },
+      })
+      throw error
+    }
+    try {
+      const info = await session.getConnectionInfo()
+      if (info.path !== 'local') {
+        throw new Error(`connection path mismatch: ${info.path} != local`)
+      }
+      if (info.relayInUse === true) {
+        throw new Error('local connection must not report relay usage')
+      }
+      this.log('local_hub_attempt_success', {
+        level: 'info',
+        machineId: input.machineId,
+        terminalId: input.terminalId,
+        path: info.path,
+        hubUrl: endpoint.url,
+        details: { index, relayInUse: info.relayInUse },
+      })
+      return {
+        path: info.path,
+        session,
+        relayInUse: false,
+      }
+    } catch (error) {
+      await session.disconnect().catch(() => {})
+      if (isAbortError(error, options.signal)) throw error
+      this.recordLocalHubFailure(failures, endpoint.url, error)
+      this.log('local_hub_attempt_failed', {
+        level: 'warn',
+        machineId: input.machineId,
+        terminalId: input.terminalId,
+        path: 'local',
+        hubUrl: endpoint.url,
+        message: errorMessage(error),
+        details: { index },
+      })
+      throw error
+    }
+  }
+
+  private async connectManagedHub(
+    input: ConnectionOrchestratorInput,
+    endpoint: PreparedEndpoint,
+    options: RtcConnectOptions,
+    failures: ConnectionAttemptError[],
+    index: number,
+  ): Promise<ConnectionOrchestratorResult> {
+    if (!this.options.managedHubApiFactory || !this.options.managedHubRtcConnectorFactory) {
+      throw new Error('managed Hub connector is not configured')
+    }
+    if (!input.sessionToken) {
+      throw new Error('session token is required before opening a managed Hub connection')
+    }
+    this.log('managed_hub_attempt_start', {
+      level: 'info',
+      machineId: input.machineId,
+      terminalId: input.terminalId,
+      path: 'managed',
+      hubUrl: endpoint.url,
+      details: { index, scope: endpoint.scope, source: endpoint.source },
+    })
+    const api = this.options.managedHubApiFactory(endpoint.url)
+    const connector = this.options.managedHubRtcConnectorFactory({ hubUrl: endpoint.url, api })
+    let session: RtcSession
+    try {
+      session = await connector.connect({
+        machineId: input.machineId,
+        ...(input.terminalId ? { terminalId: input.terminalId } : {}),
+        sessionToken: input.sessionToken,
+        ...(input.answerProofSecret ? { answerProofSecret: input.answerProofSecret } : {}),
+        path: 'managed',
+      }, options)
+    } catch (error) {
+      if (isAbortError(error, options.signal)) {
+        this.log('managed_hub_attempt_cancelled', {
+          level: 'debug',
+          machineId: input.machineId,
+          terminalId: input.terminalId,
+          path: 'managed',
+          hubUrl: endpoint.url,
+          message: errorMessage(error),
+          details: { index },
+        })
+        throw error
+      }
+      this.recordManagedHubFailure(failures, endpoint.url, error)
+      this.log('managed_hub_attempt_failed', {
+        level: 'warn',
+        machineId: input.machineId,
+        terminalId: input.terminalId,
+        path: 'managed',
+        hubUrl: endpoint.url,
+        message: errorMessage(error),
+        details: { index },
+      })
+      throw error
+    }
+    try {
+      const info = await session.getConnectionInfo()
+      if (info.path !== 'managed') {
+        throw new Error(`connection path mismatch: ${info.path} != managed`)
+      }
+      this.log('managed_hub_attempt_success', {
+        level: 'info',
+        machineId: input.machineId,
+        terminalId: input.terminalId,
+        path: info.path,
+        hubUrl: endpoint.url,
+        details: { index, relayInUse: info.relayInUse },
+      })
+      return {
+        path: info.path,
+        session,
+        relayInUse: info.relayInUse === true,
+      }
+    } catch (error) {
+      await session.disconnect().catch(() => {})
+      if (isAbortError(error, options.signal)) throw error
+      this.recordManagedHubFailure(failures, endpoint.url, error)
+      this.log('managed_hub_attempt_failed', {
+        level: 'warn',
+        machineId: input.machineId,
+        terminalId: input.terminalId,
+        path: 'managed',
+        hubUrl: endpoint.url,
+        message: errorMessage(error),
+        details: { index },
+      })
+      throw error
+    }
+  }
+
+  private emitConnected(
+    input: ConnectionOrchestratorInput,
+    options: RtcConnectOptions,
+    result: ConnectionOrchestratorResult,
+  ): void {
+    input.onSnapshot?.({
+      stage: 'connected',
+      path: result.path,
+      relayInUse: result.relayInUse,
+      message: 'Connected',
+    })
+    emitConnectionState(input, options, {
+      stage: 'connected',
+      path: result.path,
+      relayInUse: result.relayInUse,
+      message: 'Connected',
+    })
+    options.onStatus?.('Connected')
   }
 
   private failAllPaths(
@@ -206,324 +623,6 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
     throw new Error(`all connection paths failed: ${failures.map((failure) => `${failure.path}: ${failure.message}`).join('; ')}`)
   }
 
-  private async tryPath(input: {
-    path: ConnectionPath
-    stage: ConnectionAttemptStage
-    message: string
-    input: ConnectionOrchestratorInput
-    failures: ConnectionAttemptError[]
-    options: RtcConnectOptions
-    connect: () => Promise<RtcSession>
-  }): Promise<ConnectionOrchestratorResult | null> {
-    throwIfAborted(input.options.signal)
-    this.log('path_attempt_start', {
-      level: 'info',
-      machineId: input.input.machineId,
-      terminalId: input.input.terminalId,
-      path: input.path,
-      message: input.message,
-    })
-    input.input.onSnapshot?.({
-      stage: input.stage,
-      path: input.path,
-      message: input.message,
-    })
-    emitConnectionState(input.input, input.options, {
-      stage: input.stage,
-      path: input.path,
-      message: input.message,
-    })
-    input.options.onStatus?.(input.message)
-    try {
-      const session = await input.connect()
-      try {
-        throwIfAborted(input.options.signal)
-        const info = await session.getConnectionInfo()
-        if (info.path !== input.path) {
-          throw new Error(`connection path mismatch: ${info.path} != ${input.path}`)
-        }
-        if (info.path !== 'managed' && info.relayInUse === true) {
-          throw new Error(`${info.path} connection must not report relay usage`)
-        }
-        const result = {
-          path: info.path,
-          session,
-          relayInUse: info.relayInUse === true,
-        }
-        input.input.onSnapshot?.({
-          stage: 'connected',
-          path: result.path,
-          relayInUse: result.relayInUse,
-          message: 'Connected',
-        })
-        emitConnectionState(input.input, input.options, {
-          stage: 'connected',
-          path: result.path,
-          relayInUse: result.relayInUse,
-          message: 'Connected',
-        })
-        input.options.onStatus?.('Connected')
-        this.log('path_attempt_success', {
-          level: 'info',
-          machineId: input.input.machineId,
-          terminalId: input.input.terminalId,
-          path: result.path,
-          details: { relayInUse: result.relayInUse },
-        })
-        return result
-      } catch (error) {
-        await session.disconnect().catch(() => {})
-        if (isAbortError(error, input.options.signal)) throw error
-        throw error
-      }
-    } catch (error) {
-      if (isAbortError(error, input.options.signal)) throw error
-      input.failures.push({
-        path: input.path,
-        message: errorMessage(error),
-      })
-      this.log('path_attempt_failed', {
-        level: 'warn',
-        machineId: input.input.machineId,
-        terminalId: input.input.terminalId,
-        path: input.path,
-        message: errorMessage(error),
-      })
-      return null
-    }
-  }
-
-  private async connectLocal(input: ConnectionOrchestratorInput, options: RtcConnectOptions): Promise<RtcSession> {
-    if (this.options.localHubUrlProvider && this.options.managedHubApiFactory && this.options.managedHubRtcConnectorFactory) {
-      const localHubUrl = await this.options.localHubUrlProvider.getLocalHubUrl()
-      if (!localHubUrl) {
-        throw new Error('local Hub URL is required before opening a local connection')
-      }
-      if (!input.sessionToken) {
-        throw new Error('session token is required before opening a local Hub connection')
-      }
-      const api = this.options.managedHubApiFactory(localHubUrl)
-      const connector = this.options.managedHubRtcConnectorFactory({ hubUrl: localHubUrl, api })
-      return connector.connect({
-        machineId: input.machineId,
-        ...(input.terminalId ? { terminalId: input.terminalId } : {}),
-        sessionToken: input.sessionToken,
-        ...(input.answerProofSecret ? { answerProofSecret: input.answerProofSecret } : {}),
-        path: 'local',
-      }, options)
-    }
-    throw new Error('local Hub connector is not configured')
-  }
-
-  private async connectLocalHub(
-    input: ConnectionOrchestratorInput,
-    hubUrl: string,
-    options: RtcConnectOptions,
-    failures: ConnectionAttemptError[],
-    index = 0,
-  ): Promise<ConnectionOrchestratorResult> {
-    if (!this.options.managedHubApiFactory || !this.options.managedHubRtcConnectorFactory) {
-      throw new Error('local Hub connector is not configured')
-    }
-    if (!input.sessionToken) {
-      throw new Error('session token is required before opening a local Hub connection')
-    }
-    this.log('local_hub_attempt_start', {
-      level: 'info',
-      machineId: input.machineId,
-      terminalId: input.terminalId,
-      path: 'local',
-      hubUrl,
-      details: { index },
-    })
-    const api = this.options.managedHubApiFactory(hubUrl)
-    const connector = this.options.managedHubRtcConnectorFactory({ hubUrl, api })
-    let session: RtcSession
-    try {
-      session = await connector.connect({
-        machineId: input.machineId,
-        ...(input.terminalId ? { terminalId: input.terminalId } : {}),
-        sessionToken: input.sessionToken,
-        ...(input.answerProofSecret ? { answerProofSecret: input.answerProofSecret } : {}),
-        path: 'local',
-      }, options)
-    } catch (error) {
-      if (isAbortError(error, options.signal)) {
-        this.log('local_hub_attempt_cancelled', {
-          level: 'debug',
-          machineId: input.machineId,
-          terminalId: input.terminalId,
-          path: 'local',
-          hubUrl,
-          message: errorMessage(error),
-          details: { index },
-        })
-        throw error
-      }
-      this.log('local_hub_attempt_failed', {
-        level: 'warn',
-        machineId: input.machineId,
-        terminalId: input.terminalId,
-        path: 'local',
-        hubUrl,
-        message: errorMessage(error),
-        details: { index },
-      })
-      this.recordLocalHubFailure(failures, hubUrl, error)
-      throw error
-    }
-    try {
-      const info = await session.getConnectionInfo()
-      if (info.path !== 'local') {
-        throw new Error(`connection path mismatch: ${info.path} != local`)
-      }
-      if (info.relayInUse === true) {
-        throw new Error('local connection must not report relay usage')
-      }
-      this.log('local_hub_attempt_success', {
-        level: 'info',
-        machineId: input.machineId,
-        terminalId: input.terminalId,
-        path: info.path,
-        hubUrl,
-        details: { index, relayInUse: info.relayInUse },
-      })
-      return {
-        path: info.path,
-        session,
-        relayInUse: false,
-      }
-    } catch (error) {
-      await session.disconnect().catch(() => {})
-      if (isAbortError(error, options.signal)) {
-        this.log('local_hub_attempt_cancelled', {
-          level: 'debug',
-          machineId: input.machineId,
-          terminalId: input.terminalId,
-          path: 'local',
-          hubUrl,
-          message: errorMessage(error),
-          details: { index },
-        })
-        throw error
-      }
-      this.log('local_hub_attempt_failed', {
-        level: 'warn',
-        machineId: input.machineId,
-        terminalId: input.terminalId,
-        path: 'local',
-        hubUrl,
-        message: errorMessage(error),
-        details: { index },
-      })
-      this.recordLocalHubFailure(failures, hubUrl, error)
-      throw error
-    }
-  }
-
-  private async connectManagedHub(
-    input: ConnectionOrchestratorInput,
-    hubUrl: string,
-    options: RtcConnectOptions,
-    failures: ConnectionAttemptError[],
-    index = 0,
-  ): Promise<ConnectionOrchestratorResult> {
-    if (!this.options.managedHubApiFactory || !this.options.managedHubRtcConnectorFactory) {
-      throw new Error('managed Hub connector is not configured')
-    }
-    if (!input.sessionToken) {
-      throw new Error('session token is required before opening a managed Hub connection')
-    }
-    this.log('managed_hub_attempt_start', {
-      level: 'info',
-      machineId: input.machineId,
-      terminalId: input.terminalId,
-      path: 'managed',
-      hubUrl,
-      details: { index },
-    })
-    const api = this.options.managedHubApiFactory(hubUrl)
-    const connector = this.options.managedHubRtcConnectorFactory({ hubUrl, api })
-    let session: RtcSession
-    try {
-      session = await connector.connect({
-        machineId: input.machineId,
-        ...(input.terminalId ? { terminalId: input.terminalId } : {}),
-        sessionToken: input.sessionToken,
-        ...(input.answerProofSecret ? { answerProofSecret: input.answerProofSecret } : {}),
-        path: 'managed',
-      }, options)
-    } catch (error) {
-      if (isAbortError(error, options.signal)) {
-        this.log('managed_hub_attempt_cancelled', {
-          level: 'debug',
-          machineId: input.machineId,
-          terminalId: input.terminalId,
-          path: 'managed',
-          hubUrl,
-          message: errorMessage(error),
-          details: { index },
-        })
-        throw error
-      }
-      this.log('managed_hub_attempt_failed', {
-        level: 'warn',
-        machineId: input.machineId,
-        terminalId: input.terminalId,
-        path: 'managed',
-        hubUrl,
-        message: errorMessage(error),
-        details: { index },
-      })
-      this.recordManagedHubFailure(failures, hubUrl, error)
-      throw error
-    }
-    try {
-      const info = await session.getConnectionInfo()
-      if (info.path !== 'managed') {
-        throw new Error(`connection path mismatch: ${info.path} != managed`)
-      }
-      this.log('managed_hub_attempt_success', {
-        level: 'info',
-        machineId: input.machineId,
-        terminalId: input.terminalId,
-        path: info.path,
-        hubUrl,
-        details: { index, relayInUse: info.relayInUse },
-      })
-      return {
-        path: info.path,
-        session,
-        relayInUse: info.relayInUse === true,
-      }
-    } catch (error) {
-      await session.disconnect().catch(() => {})
-      if (isAbortError(error, options.signal)) {
-        this.log('managed_hub_attempt_cancelled', {
-          level: 'debug',
-          machineId: input.machineId,
-          terminalId: input.terminalId,
-          path: 'managed',
-          hubUrl,
-          message: errorMessage(error),
-          details: { index },
-        })
-        throw error
-      }
-      this.log('managed_hub_attempt_failed', {
-        level: 'warn',
-        machineId: input.machineId,
-        terminalId: input.terminalId,
-        path: 'managed',
-        hubUrl,
-        message: errorMessage(error),
-        details: { index },
-      })
-      this.recordManagedHubFailure(failures, hubUrl, error)
-      throw error
-    }
-  }
-
   private recordManagedHubFailure(failures: ConnectionAttemptError[], hubUrl: string, error: unknown): void {
     failures.push({
       path: 'managed',
@@ -540,139 +639,6 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
     })
   }
 
-  private async tryLocalWithTimeout(
-    input: ConnectionOrchestratorInput,
-    options: RtcConnectOptions,
-    failures: ConnectionAttemptError[],
-    timeoutMs: number,
-  ): Promise<ConnectionOrchestratorResult | null> {
-    if (input.localHubUrls?.length) {
-      return this.tryLocalHubUrlsWithTimeout({
-        input,
-        options,
-        failures,
-        hubUrls: input.localHubUrls,
-        timeoutMs,
-        message: `Racing ${input.localHubUrls.length} local address(es)`,
-      })
-    }
-    if (!this.options.localHubUrlProvider || !this.options.managedHubApiFactory || !this.options.managedHubRtcConnectorFactory) {
-      return null
-    }
-    return this.tryPath({
-      path: 'local',
-      stage: 'trying_local',
-      message: 'Trying local connection',
-      input,
-      failures,
-      options,
-      connect: () => Promise.race([
-        this.connectLocal(input, options),
-        delay(timeoutMs, options.signal).then(() => {
-          throw new Error('local connection timed out')
-        }),
-      ]),
-    })
-  }
-
-  private async tryLocalFallbackWithTimeout(
-    input: ConnectionOrchestratorInput,
-    options: RtcConnectOptions,
-    failures: ConnectionAttemptError[],
-    timeoutMs: number,
-  ): Promise<ConnectionOrchestratorResult | null> {
-    if (!input.localFallbackHubUrls?.length) return null
-    return this.tryLocalHubUrlsWithTimeout({
-      input,
-      options,
-      failures,
-      hubUrls: input.localFallbackHubUrls,
-      timeoutMs,
-      message: `Racing ${input.localFallbackHubUrls.length} public local address(es)`,
-    })
-  }
-
-  private async tryLocalHubUrlsWithTimeout(input: {
-    input: ConnectionOrchestratorInput
-    options: RtcConnectOptions
-    failures: ConnectionAttemptError[]
-    hubUrls: string[]
-    timeoutMs: number
-    message: string
-  }): Promise<ConnectionOrchestratorResult | null> {
-    if (!this.options.managedHubApiFactory || !this.options.managedHubRtcConnectorFactory) {
-      return null
-    }
-    throwIfAborted(input.options.signal)
-    this.log('local_hub_race_start', {
-      level: 'info',
-      machineId: input.input.machineId,
-      terminalId: input.input.terminalId,
-      path: 'local',
-      message: input.message,
-      details: { hubCount: input.hubUrls.length },
-    })
-    input.input.onSnapshot?.({
-      stage: 'trying_local',
-      path: 'local',
-      message: input.message,
-    })
-    emitConnectionState(input.input, input.options, {
-      stage: 'trying_local',
-      path: 'local',
-      message: input.message,
-    })
-    input.options.onStatus?.(input.message)
-    const raceResult = await Promise.race([
-      raceConnections(
-        input.hubUrls.map((hubUrl, index) => () => this.connectLocalHub(input.input, hubUrl, input.options, input.failures, index)),
-        input.options.signal,
-      ).then((result) => ({ type: 'result' as const, result })),
-      delay(input.timeoutMs, input.options.signal).then(() => ({ type: 'timeout' as const })),
-    ])
-    if (raceResult.type === 'timeout') {
-      input.failures.push({
-        path: 'local',
-        message: `local connection timed out after ${input.timeoutMs}ms`,
-      })
-      this.log('local_hub_race_timeout', {
-        level: 'warn',
-        machineId: input.input.machineId,
-        terminalId: input.input.terminalId,
-        path: 'local',
-        message: `local connection timed out after ${input.timeoutMs}ms`,
-        details: { hubCount: input.hubUrls.length },
-      })
-      return null
-    }
-    const winner = raceResult.result
-    if (!winner) {
-      this.log('local_hub_race_failed', {
-        level: 'warn',
-        machineId: input.input.machineId,
-        terminalId: input.input.terminalId,
-        path: 'local',
-        message: 'all local address attempts failed',
-        details: { hubCount: input.hubUrls.length },
-      })
-      return null
-    }
-    input.input.onSnapshot?.({
-      stage: 'connected',
-      path: winner.path,
-      relayInUse: winner.relayInUse,
-      message: 'Connected',
-    })
-    emitConnectionState(input.input, input.options, {
-      stage: 'connected',
-      path: winner.path,
-      relayInUse: winner.relayInUse,
-      message: 'Connected',
-    })
-    input.options.onStatus?.('Connected')
-    return winner
-  }
-
   private log(event: string, input: {
     level?: 'debug' | 'info' | 'warn' | 'error'
     machineId?: string | undefined
@@ -687,6 +653,80 @@ class OrderedConnectionOrchestrator implements ConnectionOrchestrator {
       event,
       ...input,
     })
+  }
+}
+
+function legacyEndpoints(input: ConnectionOrchestratorInput): HubEndpoint[] {
+  return [
+    ...(input.localHubUrls ?? []).map((url) => ({
+      url,
+      kind: 'local' as const,
+      scope: inferLocalScope(url, 'lan'),
+      source: 'stored_machine' as const,
+    })),
+    ...(input.localFallbackHubUrls ?? []).map((url) => ({
+      url,
+      kind: 'local' as const,
+      scope: 'public_mapping' as const,
+      source: 'stored_machine' as const,
+    })),
+    ...(input.hubUrls ?? []).map((url) => ({
+      url,
+      kind: 'managed' as const,
+      scope: 'cloud' as const,
+      source: 'web_control' as const,
+    })),
+  ]
+}
+
+function compactEndpoints(endpoints: readonly HubEndpoint[]): HubEndpoint[] {
+  const out: HubEndpoint[] = []
+  const seen = new Set<string>()
+  for (const endpoint of endpoints) {
+    const url = endpoint.url.trim().replace(/\/+$/, '')
+    if (!url) continue
+    const key = `${endpoint.kind}:${url}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({
+      ...endpoint,
+      url,
+    })
+  }
+  return out
+}
+
+function inferLocalScope(url: string, fallback: HubEndpointScope): HubEndpointScope {
+  try {
+    const host = new URL(url).hostname
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return 'loopback'
+    return fallback
+  } catch {
+    return fallback
+  }
+}
+
+function localRaceMessage(endpoints: readonly PreparedEndpoint[]): string {
+  const publicCount = endpoints.filter((endpoint) => endpoint.scope === 'public_mapping').length
+  if (publicCount > 0 && publicCount === endpoints.length) {
+    return `Racing ${endpoints.length} public local address(es)`
+  }
+  return `Racing ${endpoints.length} local address(es)`
+}
+
+async function waitForLocalPreference(
+  localRace: Promise<RaceOutcome>,
+  timeoutMs: number,
+  signal: AbortSignal | undefined,
+): Promise<RaceOutcome> {
+  try {
+    return await Promise.race([
+      localRace,
+      delay(timeoutMs, signal).then(() => ({ result: null, completed: false })),
+    ])
+  } catch (error) {
+    if (isAbortError(error, signal)) throw error
+    return { result: null, completed: true }
   }
 }
 

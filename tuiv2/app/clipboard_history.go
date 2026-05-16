@@ -21,6 +21,7 @@ type clipboardHistoryEntry struct {
 	Text      string
 	Preview   string
 	PaneID    string
+	SourceApp string
 	CreatedAt time.Time
 }
 
@@ -45,6 +46,7 @@ func (m *Model) pushClipboardHistory(text, paneID string) tea.Cmd {
 		ID:        fmt.Sprintf("clip-%d-%d", now.UnixNano(), m.clipboardSeq),
 		Text:      text,
 		PaneID:    paneID,
+		SourceApp: "tuiv2",
 		CreatedAt: now,
 	})
 	m.clipboardHistory = append([]clipboardHistoryEntry{entry}, m.clipboardHistory...)
@@ -58,6 +60,7 @@ func (m *Model) pushClipboardHistory(text, paneID string) tea.Cmd {
 func normalizeClipboardHistoryEntry(entry clipboardHistoryEntry) clipboardHistoryEntry {
 	entry.ID = strings.TrimSpace(entry.ID)
 	entry.PaneID = strings.TrimSpace(entry.PaneID)
+	entry.SourceApp = strings.TrimSpace(entry.SourceApp)
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = time.Now().UTC()
 	} else {
@@ -65,6 +68,9 @@ func normalizeClipboardHistoryEntry(entry clipboardHistoryEntry) clipboardHistor
 	}
 	if strings.TrimSpace(entry.Preview) == "" {
 		entry.Preview = clipboardPreview(entry.Text)
+	}
+	if entry.SourceApp == "" {
+		entry.SourceApp = "tuiv2"
 	}
 	return entry
 }
@@ -105,16 +111,18 @@ func (m *Model) showClipboardHistoryPicker() tea.Cmd {
 		Name:        "New clipboard entry",
 		State:       "new",
 		Description: "Add shared clipboard text.",
+		SourceApp:   "tuiv2",
 		CreateNew:   true,
 	})
 	for _, entry := range m.clipboardHistory {
 		items = append(items, modal.PickerItem{
 			TerminalID:  entry.ID,
 			Name:        entry.Preview,
-			State:       entry.CreatedAt.Format("15:04:05"),
+			State:       clipboardHistoryTimeLabel(entry.CreatedAt),
 			Location:    entry.PaneID,
 			Description: entry.Text,
 			CreatedAt:   entry.CreatedAt,
+			SourceApp:   entry.SourceApp,
 		})
 	}
 	if len(m.clipboardHistory) == 0 {
@@ -128,10 +136,26 @@ func (m *Model) showClipboardHistoryPicker() tea.Cmd {
 		Title:    "Clipboard History",
 		Items:    items,
 		Selected: clipboardHistoryInitialSelection(m.clipboardHistory),
+		Layout:   modal.PickerLayoutClipboardHistory,
 	}
 	m.modalHost.Picker.ApplyFilter()
 	m.render.Invalidate()
 	return nil
+}
+
+func clipboardHistoryTimeLabel(createdAt time.Time) string {
+	if createdAt.IsZero() {
+		return ""
+	}
+	now := time.Now()
+	local := createdAt.Local()
+	if now.Year() == local.Year() && now.YearDay() == local.YearDay() {
+		return local.Format("15:04:05")
+	}
+	if now.Year() == local.Year() {
+		return local.Format("01-02 15:04")
+	}
+	return local.Format("2006-01-02 15:04")
 }
 
 func clipboardHistoryInitialSelection(entries []clipboardHistoryEntry) int {
