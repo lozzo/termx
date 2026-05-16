@@ -52,6 +52,99 @@ describe('ConnectionOrchestrator', () => {
     expect(snapshots.map((snapshot) => snapshot.stage)).toEqual(['trying_local', 'connected'])
   })
 
+  it('races configured local Hub URLs and uses the fastest local address before online hubs', async () => {
+    const slowLocal = new RecordingManagedHubConnector(async (_input, options) => {
+      await neverUntilAbort(options?.signal)
+      return new MockRtcSession({
+        path: 'local',
+        connectionId: 'local-rtc-slow',
+        machineId: 'machine-1',
+        relayInUse: false,
+      })
+    })
+    const fastLocalSession = new MockRtcSession({
+      path: 'local',
+      connectionId: 'local-rtc-fast',
+      machineId: 'machine-1',
+      relayInUse: false,
+    })
+    const fastLocal = new RecordingManagedHubConnector(fastLocalSession)
+    const onlineConnector = new RecordingManagedHubConnector(new Error('online should not run'))
+    const snapshots: ConnectionAttemptSnapshot[] = []
+    const orchestrator = createConnectionOrchestrator({
+      managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
+      managedHubRtcConnectorFactory: ({ hubUrl }) => {
+        if (hubUrl.includes('192.168.1.20')) return fastLocal
+        if (hubUrl.includes('127.0.0.1')) return slowLocal
+        return onlineConnector
+      },
+    })
+
+    const result = await orchestrator.connect({
+      machineId: 'machine-1',
+      terminalId: 'terminal-1',
+      sessionToken: 'session-token-1',
+      localHubUrls: ['http://127.0.0.1:18888', 'http://192.168.1.20:18888'],
+      hubUrls: ['https://hub-1.termx.test'],
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+    })
+
+    expect(result.session).toBe(fastLocalSession)
+    expect(result.path).toBe('local')
+    expect(fastLocal.calls).toEqual([{
+      machineId: 'machine-1',
+      terminalId: 'terminal-1',
+      sessionToken: 'session-token-1',
+      path: 'local',
+    }])
+    expect(slowLocal.calls).toHaveLength(1)
+    expect(onlineConnector.calls).toEqual([])
+    expect(snapshots).toEqual([
+      { stage: 'trying_local', path: 'local', message: 'Racing 2 local address(es)' },
+      { stage: 'connected', path: 'local', relayInUse: false, message: 'Connected' },
+    ])
+  })
+
+  it('tries public local addresses before managed hubs when inner local addresses fail', async () => {
+    const innerLocal = new RecordingManagedHubConnector(new Error('inner LAN unreachable'))
+    const publicLocalSession = new MockRtcSession({
+      path: 'local',
+      connectionId: 'local-rtc-frp',
+      machineId: 'machine-1',
+      relayInUse: false,
+    })
+    const publicLocal = new RecordingManagedHubConnector(publicLocalSession)
+    const onlineConnector = new RecordingManagedHubConnector(new Error('online should not run'))
+    const snapshots: ConnectionAttemptSnapshot[] = []
+    const orchestrator = createConnectionOrchestrator({
+      managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
+      managedHubRtcConnectorFactory: ({ hubUrl }) => {
+        if (hubUrl.includes('192.168.1.20')) return innerLocal
+        if (hubUrl.includes('frp.termx.test')) return publicLocal
+        return onlineConnector
+      },
+    })
+
+    const result = await orchestrator.connect({
+      machineId: 'machine-1',
+      terminalId: 'terminal-1',
+      sessionToken: 'session-token-1',
+      localHubUrls: ['http://192.168.1.20:18888'],
+      localFallbackHubUrls: ['https://frp.termx.test'],
+      hubUrls: ['https://hub-1.termx.test'],
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+    })
+
+    expect(result.session).toBe(publicLocalSession)
+    expect(result.path).toBe('local')
+    expect(onlineConnector.calls).toEqual([])
+    expect(snapshots.map((snapshot) => snapshot.message)).toEqual([
+      'Racing 1 local address(es)',
+      'Racing 1 public local address(es)',
+      'Connected',
+    ])
+  })
+
   it('races all configured hub URLs after local fails and returns the first managed success', async () => {
     const slowFailure = new RecordingManagedHubConnector(new Error('hub 1 unavailable'))
     const winnerSession = new MockRtcSession({
@@ -174,7 +267,7 @@ describe('ConnectionOrchestrator', () => {
     ]))
   })
 
-  it('fails when no hub URLs are configured after local is unavailable', async () => {
+  it('fails when no managed hub URLs are configured after provider local is unavailable', async () => {
     const orchestrator = createConnectionOrchestrator({
       localHubUrlProvider: new ManualLocalHubUrlProvider('http://127.0.0.1:18888'),
       managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
@@ -187,6 +280,41 @@ describe('ConnectionOrchestrator', () => {
       sessionToken: 'session-token-1',
       hubUrls: [],
     })).rejects.toThrow(/no hub URLs configured/i)
+  })
+
+  it('reports local candidate failures when no online hub is configured', async () => {
+    const snapshots: ConnectionAttemptSnapshot[] = []
+    const orchestrator = createConnectionOrchestrator({
+      managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
+      managedHubRtcConnectorFactory: ({ hubUrl }) => new RecordingManagedHubConnector(new Error(`${hubUrl} unreachable`)),
+    })
+
+    await expect(orchestrator.connect({
+      machineId: 'machine-1',
+      terminalId: 'terminal-1',
+      sessionToken: 'session-token-1',
+      localHubUrls: ['http://192.168.1.20:18888'],
+      localFallbackHubUrls: ['https://frp.termx.test'],
+      hubUrls: [],
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+    })).rejects.toThrow(/all connection paths failed/i)
+
+    expect(snapshots.at(-1)).toEqual({
+      stage: 'failed',
+      message: 'All connection paths failed',
+      errors: [
+        {
+          path: 'local',
+          hubUrl: 'http://192.168.1.20:18888',
+          message: 'http://192.168.1.20:18888 unreachable',
+        },
+        {
+          path: 'local',
+          hubUrl: 'https://frp.termx.test',
+          message: 'https://frp.termx.test unreachable',
+        },
+      ],
+    })
   })
 
   it('stops on abort instead of continuing to hub racing', async () => {

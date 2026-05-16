@@ -29,6 +29,9 @@ func TestLocalEnableStartsHub(t *testing.T) {
 	if !status.Enabled || status.HTTPURL == "" || status.ICETCPPort == 0 {
 		t.Fatalf("unexpected local status: %+v", status)
 	}
+	if status.LocalPairURL != status.HTTPURL {
+		t.Fatalf("local pair URL should advertise the hub base URL, got %q want %q", status.LocalPairURL, status.HTTPURL)
+	}
 
 	resp, body, err := localHubRequest(context.Background(), http.MethodGet, status.HTTPURL+"/api/health", nil)
 	if err != nil {

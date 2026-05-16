@@ -1,5 +1,6 @@
 import type { RemoteRuntimeFetch, RtcConnectOptions, RtcSessionDescription } from '../core/transport'
 import { serviceFetchError } from './networkErrors'
+import { normalizeHubBaseUrlCandidate } from './hubUrl'
 
 export interface ManagedRelayPolicy {
   allowRelay: boolean
@@ -300,11 +301,11 @@ async function errorMessage(response: Response): Promise<string> {
 }
 
 function normalizeBaseUrl(raw: string): string {
-  const trimmed = raw.trim()
-  if (trimmed === '') {
+  const normalized = normalizeHubBaseUrlCandidate(raw)
+  if (!normalized) {
     throw new Error('Managed Hub baseUrl is required')
   }
-  return trimmed.endsWith('/') ? trimmed : `${trimmed}/`
+  return `${normalized}/`
 }
 
 function requiredString(value: unknown, label: string): string {

@@ -18,6 +18,7 @@ describe('pairing payload parser', () => {
       },
       endpoints: {
         web_control: 'https://control.termx.test',
+        hub: 'https://hub.termx.test',
       },
       pairing: {
         session_id: 'pair-1',
@@ -42,6 +43,7 @@ describe('pairing payload parser', () => {
       },
       endpoints: {
         webControl: 'https://control.termx.test',
+        hub: 'https://hub.termx.test',
       },
       pairing: {
         sessionId: 'pair-1',

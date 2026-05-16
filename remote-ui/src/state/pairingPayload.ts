@@ -24,6 +24,7 @@ export interface PairingPayloadAddresses {
 
 export interface PairingPayloadEndpoints {
   webControl?: string | undefined
+  hub?: string | undefined
 }
 
 export interface PairingPayloadPairing {
@@ -104,6 +105,7 @@ function normalizeV3Payload(data: Record<string, unknown>): PairingPayload {
 function endpointsFromRecord(data: Record<string, unknown>): PairingPayloadEndpoints {
   return {
     ...(optionalString(data.web_control) ? { webControl: optionalString(data.web_control) } : {}),
+    ...(optionalString(data.hub) ? { hub: optionalString(data.hub) } : {}),
   }
 }
 

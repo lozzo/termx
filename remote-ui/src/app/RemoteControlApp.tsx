@@ -18,6 +18,7 @@ import type { FileTransferContext, TransferInfo } from '../files/fileApi'
 import type { ConnectionInfo, LocalPairingApi, LocalStatus, MachineConnectionStateEvents, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSessionNegotiator, RtcSubscription, RtcTerminalDataChannelController, TerminalInventoryEvents } from '../core/transport'
 import { normalizeTerminalInventory } from '../terminal/terminalInventory'
 import { createWebControlApi, type WebControlApi, type WebControlMachine, type WebControlUser } from '../api/webControlApi'
+import { normalizeHubBaseUrlCandidate } from '../api/hubUrl'
 import {
   TERMINAL_FONT_OPTIONS,
   TERMINAL_THEME_OPTIONS,
@@ -208,6 +209,7 @@ export function RemoteControlApp({
 
   const displayMachines = useMemo(() => {
     const map = new Map<string, WebControlMachine>()
+    const localById = new Map(localMachines.map((machine) => [machine.machineId, machine]))
     for (const local of localMachines) {
       map.set(local.machineId, {
         id: local.machineId,
@@ -217,10 +219,19 @@ export function RemoteControlApp({
         paired: true,
         source: local.source === 'cloud' ? 'cloud' : 'local',
         hubUrls: hubUrlsFromStoredMachine(local),
+        localHubUrls: localHubUrlsFromStoredMachine(local),
+        localFallbackHubUrls: localFallbackHubUrlsFromStoredMachine(local),
       })
     }
     for (const cloud of machines) {
-      map.set(cloud.id, cloud)
+      const local = localById.get(cloud.id)
+      map.set(cloud.id, {
+        ...cloud,
+        ...(local ? {
+          localHubUrls: localHubUrlsFromStoredMachine(local),
+          localFallbackHubUrls: localFallbackHubUrlsFromStoredMachine(local, cloud.hubUrls),
+        } : {}),
+      })
     }
     return Array.from(map.values())
   }, [localMachines, machines])
@@ -422,6 +433,8 @@ export function RemoteControlApp({
           paired: false,
           source: 'local',
           hubUrls: hubUrlsFromPairingPayload(payload),
+          localHubUrls: localHubUrlsFromPairingPayload(payload),
+          localFallbackHubUrls: localFallbackHubUrlsFromPairingPayload(payload),
         }
       }
 
@@ -1822,8 +1835,12 @@ function createManagedMachineSessionManager(input: {
     if (options?.signal?.aborted) {
       throw options.signal.reason instanceof Error ? options.signal.reason : new Error('connection aborted')
     }
-    const hubUrls = nonEmptyHubUrls(input.machine)
-    if (hubUrls.length === 0) throw new Error('Hub endpoint is required before opening this machine runtime')
+    const localHubUrls = localHubUrlsFromMachine(input.machine)
+    const localFallbackHubUrls = localFallbackHubUrlsFromMachine(input.machine)
+    const hubUrls = managedHubUrlsFromMachine(input.machine)
+    if (localHubUrls.length === 0 && localFallbackHubUrls.length === 0 && hubUrls.length === 0) {
+      throw new Error('Hub endpoint is required before opening this machine runtime')
+    }
     const sessionToken = input.sessionStore.getSessionToken(input.machine.id)
     if (!sessionToken) {
       throw new Error('Pair this machine before opening the runtime channel')
@@ -1843,6 +1860,8 @@ function createManagedMachineSessionManager(input: {
       machineId: input.machine.id,
       sessionToken,
       answerProofSecret,
+      localHubUrls,
+      localFallbackHubUrls,
       hubUrls,
       onSnapshot: (snapshot) => {
         publishAttempt(snapshot)
@@ -2015,22 +2034,59 @@ function mergeCloudMachine(saved: StoredMachineRecord, machine: WebControlMachin
 }
 
 function hubUrlsFromStoredMachine(machine: StoredMachineRecord): string[] {
-  return compactHubUrls([machine.endpoints.hub, ...machine.addresses.local, ...machine.addresses.lan, ...machine.addresses.public])
+  if (machine.source === 'cloud' || machine.preferredPath === 'managed') {
+    return compactHubUrls([machine.endpoints.hub, ...machine.addresses.public])
+  }
+  return compactHubUrls([...machine.addresses.local, ...machine.addresses.lan, ...machine.addresses.public])
+}
+
+function localHubUrlsFromStoredMachine(machine: StoredMachineRecord): string[] {
+  return compactHubUrls([...machine.addresses.local, ...machine.addresses.lan])
+}
+
+function localFallbackHubUrlsFromStoredMachine(
+  machine: StoredMachineRecord,
+  managedHubUrls: readonly (string | undefined)[] = [],
+): string[] {
+  const publicHubUrls = compactHubUrls(machine.addresses.public)
+  if (machine.source !== 'cloud' && machine.preferredPath !== 'managed') return publicHubUrls
+  const managed = new Set(compactHubUrls([machine.endpoints.hub, ...managedHubUrls]))
+  return publicHubUrls.filter((hubUrl) => !managed.has(hubUrl))
 }
 
 function hubUrlsFromPairingPayload(payload: PairingPayload): string[] {
   return compactHubUrls([...payload.addresses.local, ...payload.addresses.lan, ...payload.addresses.public])
 }
 
+function localHubUrlsFromPairingPayload(payload: PairingPayload): string[] {
+  return compactHubUrls([...payload.addresses.local, ...payload.addresses.lan])
+}
+
+function localFallbackHubUrlsFromPairingPayload(payload: PairingPayload): string[] {
+  return compactHubUrls(payload.addresses.public)
+}
+
 function nonEmptyHubUrls(machine: WebControlMachine): string[] {
   return compactHubUrls(machine.hubUrls)
+}
+
+function managedHubUrlsFromMachine(machine: WebControlMachine): string[] {
+  return machine.source === 'local' ? [] : nonEmptyHubUrls(machine)
+}
+
+function localHubUrlsFromMachine(machine: WebControlMachine): string[] {
+  return compactHubUrls(machine.localHubUrls ?? [])
+}
+
+function localFallbackHubUrlsFromMachine(machine: WebControlMachine): string[] {
+  return compactHubUrls(machine.localFallbackHubUrls ?? [])
 }
 
 function compactHubUrls(values: readonly (string | undefined)[]): string[] {
   const out: string[] = []
   const seen = new Set<string>()
   for (const raw of values) {
-    const value = raw?.trim()
+    const value = normalizeHubBaseUrlCandidate(raw)
     if (!value || seen.has(value)) continue
     seen.add(value)
     out.push(value)

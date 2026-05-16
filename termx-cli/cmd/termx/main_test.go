@@ -1074,7 +1074,7 @@ func TestRemotePairEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
 		return &remoteprotocol.LocalStatus{
 			Enabled:      true,
-			LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
+			LocalPairURL: "http://127.0.0.1:18888/api/v1/pairing/claims",
 		}, nil
 	}
 	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
@@ -1111,7 +1111,7 @@ func TestRemotePairEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	if gotParams.LocalPairURL != "http://127.0.0.1:18888/api/local/pair" || gotParams.TTLSeconds != 120 {
+	if gotParams.LocalPairURL != "http://127.0.0.1:18888/api/v1/pairing/claims" || gotParams.TTLSeconds != 120 {
 		t.Fatalf("unexpected pair params: %#v", gotParams)
 	}
 	var decoded struct {
@@ -1127,13 +1127,27 @@ func TestRemotePairEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 	if decoded.Payload["schema_version"].(float64) != 3 {
 		t.Fatalf("expected schema version 3 payload, got %#v", decoded.Payload)
 	}
+	if decoded.Payload["preferred_path"] != "local" {
+		t.Fatalf("expected local preferred path, got %#v", decoded.Payload["preferred_path"])
+	}
 	addresses, ok := decoded.Payload["addresses"].(map[string]any)
 	if !ok {
 		t.Fatalf("unexpected addresses: %#v", decoded.Payload["addresses"])
 	}
+	lan, ok := addresses["lan"].([]any)
+	if !ok || len(lan) != 1 || lan[0] != "http://127.0.0.1:18888" {
+		t.Fatalf("unexpected local hub urls: %#v", addresses["lan"])
+	}
 	public, ok := addresses["public"].([]any)
-	if !ok || len(public) != 2 || public[0] != "http://114.66.58.243:8447" || public[1] != "http://114.66.58.244:8447" {
-		t.Fatalf("unexpected public hub urls: %#v", addresses["public"])
+	if !ok || len(public) != 0 {
+		t.Fatalf("cloud hub urls must not be exposed as local public addresses: %#v", addresses["public"])
+	}
+	endpoints, ok := decoded.Payload["endpoints"].(map[string]any)
+	if !ok || endpoints["hub"] != "http://114.66.58.243:8447" {
+		t.Fatalf("unexpected endpoints: %#v", decoded.Payload["endpoints"])
+	}
+	if _, ok := endpoints["web_control"]; ok {
+		t.Fatalf("local QR should not require Web Control when a local hub URL exists: %#v", endpoints)
 	}
 	pairing, ok := decoded.Payload["pairing"].(map[string]any)
 	if !ok || pairing["session_id"] != "pair_test" || pairing["secret"] != "secret" || pairing["answer_proof_secret"] != "proof-secret" {
@@ -1237,8 +1251,19 @@ func TestRemotePairFallsBackToSingleHubURL(t *testing.T) {
 	}
 	addresses := decoded.Payload["addresses"].(map[string]any)
 	public := addresses["public"].([]any)
-	if len(public) != 1 || public[0] != "https://hub-single.example.test" {
-		t.Fatalf("unexpected public hub urls: %#v", public)
+	if len(public) != 0 {
+		t.Fatalf("hub URL must not be exposed as a local public address: %#v", public)
+	}
+	lan := addresses["lan"].([]any)
+	if len(lan) != 0 {
+		t.Fatalf("expected no local hub URLs, got %#v", lan)
+	}
+	endpoints := decoded.Payload["endpoints"].(map[string]any)
+	if endpoints["hub"] != "https://hub-single.example.test" {
+		t.Fatalf("unexpected endpoint hub URL: %#v", endpoints)
+	}
+	if decoded.Payload["preferred_path"] != "managed" {
+		t.Fatalf("expected managed preferred path, got %#v", decoded.Payload["preferred_path"])
 	}
 }
 
@@ -1768,6 +1793,36 @@ func (s *fakeTermxServer) Events(context.Context, ...termx.EventsOption) <-chan 
 	ch := make(chan termx.Event)
 	close(ch)
 	return ch
+}
+
+func (s *fakeTermxServer) StorageGet(context.Context, termx.StorageGetRequest) (termx.StorageEntry, error) {
+	return termx.StorageEntry{}, termx.ErrNotFound
+}
+
+func (s *fakeTermxServer) StoragePut(_ context.Context, req termx.StoragePutRequest) (termx.StorageEntry, error) {
+	return termx.StorageEntry{
+		AppID:   req.AppID,
+		Scope:   req.Scope,
+		OwnerID: req.OwnerID,
+		Key:     req.Key,
+		Value:   append([]byte(nil), req.Value...),
+		Version: 1,
+	}, nil
+}
+
+func (s *fakeTermxServer) StorageDelete(_ context.Context, req termx.StorageDeleteRequest) (termx.StorageDeleteResult, error) {
+	return termx.StorageDeleteResult{
+		AppID:   req.AppID,
+		Scope:   req.Scope,
+		OwnerID: req.OwnerID,
+		Key:     req.Key,
+		Deleted: true,
+		Version: 1,
+	}, nil
+}
+
+func (s *fakeTermxServer) StorageList(context.Context, termx.StorageListRequest) ([]termx.StorageEntry, error) {
+	return nil, nil
 }
 
 func (s *fakeTermxServer) ServeTransport(context.Context, transport.Transport, string) error {

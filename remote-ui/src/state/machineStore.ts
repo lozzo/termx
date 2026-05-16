@@ -1,6 +1,7 @@
 import type { AppMachineRecord, AppMachineState, AppMachineSource } from './appMachine'
 import type { PairingPayload } from './pairingPayload'
 import type { ConnectionPath } from '../core/transport'
+import { normalizeHubBaseUrlCandidate } from '../api/hubUrl'
 
 export interface StoredMachineRecord extends AppMachineRecord {
   addresses: StoredMachineAddresses
@@ -173,9 +174,10 @@ function addressesField(value: unknown): StoredMachineAddresses {
 
 function endpointsField(value: unknown): StoredMachineEndpoints {
   const record = recordValue(value, 'stored machine endpoints')
+  const hub = normalizeHubBaseUrlCandidate(optionalString(record.hub))
   return {
     ...(optionalString(record.webControl) ? { webControl: optionalString(record.webControl) } : {}),
-    ...(optionalString(record.hub) ? { hub: optionalString(record.hub) } : {}),
+    ...(hub ? { hub } : {}),
   }
 }
 
@@ -286,6 +288,7 @@ function optionalString(value: unknown): string | undefined {
 
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  return value.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
-    .map((item) => item.trim())
+  return value
+    .map((item) => typeof item === 'string' ? normalizeHubBaseUrlCandidate(item) : undefined)
+    .filter((item): item is string => typeof item === 'string' && item !== '')
 }

@@ -107,6 +107,34 @@ describe('machine store', () => {
     })
   })
 
+  it('normalizes embedded Hub endpoint URLs before storing and reading machines', () => {
+    const storage = new MemoryStorage()
+    const store = createMachineStore({ storage, now: () => new Date('2026-05-03T16:00:00Z') })
+
+    const saved = store.saveFromPairingPayload(parsePairingPayload(JSON.stringify({
+      type: 'termx_pair',
+      schema_version: 3,
+      machine: { id: 'machine-1', name: 'Dev MacBook' },
+      addresses: {
+        local: [' http://127.0.0.1:18888/api/v1/pairing/claims '],
+        lan: ['http://192.168.1.20:18888/api/v1/sessions/ice'],
+        public: ['https://frp.termx.test/api/v1/sessions'],
+      },
+      endpoints: {
+        hub: 'https://cloud-hub.termx.test/api/v1/pairing/claims',
+      },
+      pairing: { session_id: 'pair-1', secret: 'pair-secret-1' },
+    })))
+
+    expect(saved.addresses).toEqual({
+      local: ['http://127.0.0.1:18888'],
+      lan: ['http://192.168.1.20:18888'],
+      public: ['https://frp.termx.test'],
+    })
+    expect(saved.endpoints.hub).toBe('https://cloud-hub.termx.test')
+    expect(store.listMachines()[0]?.addresses).toEqual(saved.addresses)
+  })
+
   it('rejects machine private keys before persistence', () => {
     const storage = new MemoryStorage()
     const store = createMachineStore({ storage })

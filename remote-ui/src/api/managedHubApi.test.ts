@@ -387,6 +387,32 @@ describe('ManagedHubApi', () => {
     }])
   })
 
+  it('normalizes a pairing claim endpoint base URL without duplicating the path', async () => {
+    const fetch = new RecordingFetch([
+      jsonResponse(200, {
+        claim_id: 'claim-1',
+        machine_id: 'machine-1',
+        session_token: 'session-token-pair',
+        expires_at: '2027-05-04T10:30:00Z',
+      }),
+    ])
+    const api = createManagedHubApi({
+      baseUrl: 'http://127.0.0.1:18888/api/v1/pairing/claims',
+      fetch: fetch.fetch,
+    })
+
+    await api.pair({
+      machineId: 'machine-1',
+      pairSessionId: 'pair-session-1',
+      pairSecret: 'pair-secret-1',
+      appDeviceId: 'appweb-1',
+      appName: 'TermX Remote App',
+      requestedCapabilities: ['terminal'],
+    })
+
+    expect(fetch.requests[0]?.url).toBe('http://127.0.0.1:18888/api/v1/pairing/claims')
+  })
+
   it('surfaces pending pairing claims as an actionable agent-not-ready error', async () => {
     const fetch = new RecordingFetch([
       jsonResponse(202, {

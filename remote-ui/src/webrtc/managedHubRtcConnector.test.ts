@@ -66,6 +66,26 @@ describe('ManagedHubRtcConnector', () => {
     })
   })
 
+  it('can negotiate through an embedded Hub while marking the runtime path as local', async () => {
+    const api = new MockManagedHubApi()
+    const session = new MockOffererSession()
+    const connector = createManagedHubRtcConnector({
+      api,
+      createSession: () => session,
+    })
+
+    await connector.connect({
+      machineId: 'machine-1',
+      sessionToken: 'session-token-1',
+      path: 'local',
+    })
+
+    expect(session.createdOffers[0]).toMatchObject({
+      machineId: 'machine-1',
+      path: 'local',
+    })
+  })
+
   it('polls accepted pending Hub sessions until an answer is available', async () => {
     const api = new MockManagedHubApi({ pending: true })
     const session = new MockOffererSession()

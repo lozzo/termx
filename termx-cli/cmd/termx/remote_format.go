@@ -49,6 +49,52 @@ func compactStringListOrEmpty(values []string) []string {
 	return out
 }
 
+var hubBaseURLSuffixes = []string{
+	"/api/v1/pairing/claims",
+	"/api/v1/sessions/ice",
+	"/api/v1/sessions",
+	"/api/local/pair",
+}
+
+func normalizeHubBaseURLCandidate(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+	value = strings.TrimRight(value, "/")
+	for _, suffix := range hubBaseURLSuffixes {
+		if strings.HasSuffix(strings.ToLower(value), suffix) {
+			value = strings.TrimRight(value[:len(value)-len(suffix)], "/")
+		}
+	}
+	return value
+}
+
+func compactHubBaseURLList(values []string) []string {
+	var out []string
+	seen := map[string]struct{}{}
+	for _, raw := range values {
+		value := normalizeHubBaseURLCandidate(raw)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func compactHubBaseURLListOrEmpty(values []string) []string {
+	out := compactHubBaseURLList(values)
+	if out == nil {
+		return []string{}
+	}
+	return out
+}
+
 func printRemoteStatus(w io.Writer, status *remoteprotocol.Status) {
 	if status == nil {
 		return
@@ -82,18 +128,34 @@ func printRemoteLocalStatus(w io.Writer, status *remoteprotocol.LocalStatus) {
 	fmt.Fprintf(w, "updated_at:\t%s\n", status.UpdatedAt.Format(time.RFC3339))
 }
 
-func buildRemotePairPayload(result *remoteprotocol.PairStartResult, _ *remoteprotocol.Status, hubURLs []string) map[string]any {
+func buildRemotePairPayload(result *remoteprotocol.PairStartResult, status *remoteprotocol.Status, hubURLs []string) map[string]any {
+	localHubURLs := compactHubBaseURLListOrEmpty([]string{result.LocalPairURL})
+	managedHubURLs := compactHubBaseURLList(hubURLs)
+	endpoints := map[string]any{}
+	if len(managedHubURLs) > 0 {
+		endpoints["hub"] = managedHubURLs[0]
+	}
+	if len(localHubURLs) == 0 && status != nil {
+		if controlURL := strings.TrimSpace(status.ControlURL); controlURL != "" {
+			endpoints["web_control"] = controlURL
+		}
+	}
+	preferredPath := "local"
+	if len(localHubURLs) == 0 && len(managedHubURLs) > 0 {
+		preferredPath = "managed"
+	}
 	payload := map[string]any{
 		"type":           "termx_pair",
 		"schema_version": 3,
+		"preferred_path": preferredPath,
 		"machine": map[string]any{
 			"id":   result.MachineID,
 			"name": firstNonEmpty(result.MachineName, result.MachineID),
 		},
 		"addresses": map[string]any{
 			"local":  []string{},
-			"lan":    compactStringSlice(result.LocalPairURL),
-			"public": compactStringListOrEmpty(hubURLs),
+			"lan":    localHubURLs,
+			"public": []string{},
 		},
 		"pairing": map[string]any{
 			"session_id":          result.PairSessionID,
@@ -101,6 +163,9 @@ func buildRemotePairPayload(result *remoteprotocol.PairStartResult, _ *remotepro
 			"answer_proof_secret": result.AnswerProofSecret,
 			"expires_at":          result.ExpiresAt.Format(time.RFC3339),
 		},
+	}
+	if len(endpoints) > 0 {
+		payload["endpoints"] = endpoints
 	}
 	cleanEmptyStrings(payload)
 	return payload

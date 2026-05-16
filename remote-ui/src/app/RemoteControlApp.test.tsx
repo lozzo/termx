@@ -759,6 +759,160 @@ describe('RemoteControlApp', () => {
     })
   })
 
+  it('prefers saved inner local addresses before Web Control hubs for signed-in machines', async () => {
+    const storage = new MemoryStorage()
+    storage.setItem('termx.remote.accessToken', 'access-token-1')
+    storage.setItem('termx.session.device-1.token', 'session-token-device-1')
+    storage.setItem('termx.app.machines.v1', JSON.stringify([{
+      machineId: 'device-1',
+      name: 'RedmiBook',
+      hostname: 'redmibook',
+      state: 'online',
+      terminalCount: 0,
+      source: 'cloud',
+      preferredPath: 'managed',
+      addresses: {
+        local: ['http://127.0.0.1:18888'],
+        lan: ['http://192.168.1.20:18888'],
+        public: [],
+      },
+      endpoints: {
+        webControl: 'http://114.66.58.243:12306',
+        hub: 'https://hub-1.termx.test',
+      },
+      addedAt: '2026-05-05T10:00:00.000Z',
+      updatedAt: '2026-05-05T10:00:00.000Z',
+    }]))
+    const fetch = new SignedInLocalFirstFetch()
+    const sessions: Array<ReturnType<typeof managedTestRtcSession>> = []
+
+    render(
+      <RemoteControlApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        managedRtcSessionFactory={({ machineId }) => {
+          const session = managedTestRtcSession(machineId)
+          sessions.push(session)
+          return session
+        }}
+        networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
+        storage={storage}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
+    await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
+    await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
+
+    expect(fetch.requests.map((request) => request.url)).toEqual([
+      'http://114.66.58.243:12306/api/v1/auth/me',
+      'http://114.66.58.243:12306/api/v1/machines',
+      'http://127.0.0.1:18888/api/v1/sessions/ice',
+      'http://192.168.1.20:18888/api/v1/sessions/ice',
+      'http://192.168.1.20:18888/api/v1/sessions',
+    ])
+    expect(fetch.requests.map((request) => request.url).join('\n')).not.toContain('https://hub-1.termx.test/api/v1/sessions')
+    expect(sessions.some((session) => session.lastPath() === 'local')).toBe(true)
+  })
+
+  it('tries saved public local mappings before Web Control hubs for signed-in machines', async () => {
+    const storage = new MemoryStorage()
+    storage.setItem('termx.remote.accessToken', 'access-token-1')
+    storage.setItem('termx.session.device-1.token', 'session-token-device-1')
+    storage.setItem('termx.app.machines.v1', JSON.stringify([{
+      machineId: 'device-1',
+      name: 'RedmiBook',
+      hostname: 'redmibook',
+      state: 'online',
+      terminalCount: 0,
+      source: 'cloud',
+      preferredPath: 'managed',
+      addresses: {
+        local: ['http://127.0.0.1:18888'],
+        lan: ['http://192.168.1.20:18888'],
+        public: ['https://frp.termx.test', 'https://hub-1.termx.test'],
+      },
+      endpoints: {
+        webControl: 'http://114.66.58.243:12306',
+        hub: 'https://hub-1.termx.test',
+      },
+      addedAt: '2026-05-05T10:00:00.000Z',
+      updatedAt: '2026-05-05T10:00:00.000Z',
+    }]))
+    const fetch = new SignedInPublicLocalFallbackFetch()
+    const sessions: Array<ReturnType<typeof managedTestRtcSession>> = []
+
+    render(
+      <RemoteControlApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        managedRtcSessionFactory={({ machineId }) => {
+          const session = managedTestRtcSession(machineId)
+          sessions.push(session)
+          return session
+        }}
+        networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
+        storage={storage}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
+    await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
+    await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
+
+    expect(fetch.requests.map((request) => request.url)).toEqual([
+      'http://114.66.58.243:12306/api/v1/auth/me',
+      'http://114.66.58.243:12306/api/v1/machines',
+      'http://127.0.0.1:18888/api/v1/sessions/ice',
+      'http://192.168.1.20:18888/api/v1/sessions/ice',
+      'https://frp.termx.test/api/v1/sessions/ice',
+      'https://frp.termx.test/api/v1/sessions',
+    ])
+    expect(fetch.requests.map((request) => request.url).join('\n')).not.toContain('https://hub-1.termx.test/api/v1/sessions')
+    expect(sessions.some((session) => session.lastPath() === 'local')).toBe(true)
+  })
+
+  it('opens local machines by racing inner local addresses before public mappings and without managed cloud fallback', async () => {
+    const storage = new MemoryStorage()
+    createMachineStore({ storage }).saveFromPairingPayload(parsePairingPayload(JSON.stringify(pairPayload({
+      machineId: 'device-1',
+      name: 'RedmiBook',
+      addresses: {
+        local: ['http://127.0.0.1:18888/api/v1/pairing/claims'],
+        lan: ['http://192.168.1.20:18888'],
+        public: ['http://114.66.58.243:8447', 'https://frp.termx.test'],
+      },
+      endpoints: {},
+    }))))
+    storage.setItem('termx.session.device-1.token', 'session-token-device-1')
+    const fetch = new LocalRuntimeFetch()
+    const sessions: Array<ReturnType<typeof managedTestRtcSession>> = []
+
+    render(
+      <RemoteControlApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        managedRtcSessionFactory={({ machineId }) => {
+          const session = managedTestRtcSession(machineId)
+          sessions.push(session)
+          return session
+        }}
+        networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
+        storage={storage}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
+    await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
+    await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
+
+    expect(fetch.requests.map((request) => request.url)).toEqual([
+      'http://127.0.0.1:18888/api/v1/sessions/ice',
+      'http://192.168.1.20:18888/api/v1/sessions/ice',
+      'http://192.168.1.20:18888/api/v1/sessions',
+    ])
+    expect(fetch.requests.map((request) => request.url).join('\n')).not.toContain('http://114.66.58.243:8447')
+    expect(fetch.requests.map((request) => request.url).join('\n')).not.toContain('https://frp.termx.test')
+    expect(sessions.some((session) => session.lastPath() === 'local')).toBe(true)
+  })
+
   it('keeps a machine runtime alive when returning to the machine list', async () => {
     const storage = new MemoryStorage()
     createMachineStore({ storage }).saveFromPairingPayload(parsePairingPayload(JSON.stringify(pairPayload({
@@ -1114,12 +1268,16 @@ function managedTestRtcSession(machineId: string) {
     async disconnect() {
       this.disconnectCalls += 1
     },
+    lastPath() {
+      return path
+    },
   } satisfies RtcSession & {
     disconnectCalls: number
     createOffer(input: RtcSessionNegotiationTarget): Promise<{ sessionId: string; description: { type: 'offer'; sdp: string } }>
     acceptAnswer(): Promise<void>
     subscribeConnectionState(handler: (snapshot: RtcConnectionStateSnapshot) => void): RtcSubscription
     isAlive(): boolean
+    lastPath(): RtcSessionNegotiationTarget['path'] | undefined
   }
 }
 
@@ -1240,6 +1398,145 @@ class WebControlHubFallbackFetch {
   }
 }
 
+class SignedInLocalFirstFetch {
+  readonly requests: RecordedRequest[] = []
+
+  readonly fetch: WebControlFetch = async (input, init = {}) => {
+    const url = String(input)
+    const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined
+    this.requests.push({
+      url,
+      method: init.method ?? 'GET',
+      headers: recordHeaders(init.headers),
+      ...(body !== undefined ? { body } : {}),
+    })
+    if (url === 'http://114.66.58.243:12306/api/v1/auth/me') {
+      return jsonResponse(200, {
+        user: {
+          id: 'user-1',
+          username: 'lozzow',
+          email: 'lozzow@example.test',
+        },
+      })
+    }
+    if (url === 'http://114.66.58.243:12306/api/v1/machines') {
+      return jsonResponse(200, {
+        machines: [{
+          id: 'device-1',
+          name: 'RedmiBook',
+          hostname: 'redmibook',
+          online: true,
+          paired: true,
+          source: 'cloud',
+          control_url: 'http://114.66.58.243:12306',
+          current_hub_url: 'https://hub-1.termx.test',
+          hub_urls: ['https://hub-1.termx.test'],
+          hub_status: 'online',
+        }],
+      })
+    }
+    if (url === 'http://127.0.0.1:18888/api/v1/sessions/ice') {
+      throw new TypeError('Failed to fetch')
+    }
+    if (url === 'http://192.168.1.20:18888/api/v1/sessions/ice') {
+      return jsonResponse(200, {
+        path: 'managed',
+        machine_id: 'device-1',
+        ice_servers: [],
+        relay_policy: { allow_relay: false, allow_relay_transfer: false },
+      })
+    }
+    if (url === 'http://192.168.1.20:18888/api/v1/sessions') {
+      const request = body as {
+        machine_id: string
+        offer: { session_id: string }
+      }
+      return jsonResponse(200, {
+        session_id: request.offer.session_id,
+        path: 'managed',
+        machine_id: request.machine_id,
+        answer: { type: 'answer', sdp: 'answer-sdp' },
+        ice_candidates: [],
+        ice_servers: [],
+        relay_policy: { allow_relay: false, allow_relay_transfer: false },
+        relay_in_use: false,
+      })
+    }
+    throw new Error(`unexpected request to ${url}`)
+  }
+}
+
+class SignedInPublicLocalFallbackFetch {
+  readonly requests: RecordedRequest[] = []
+
+  readonly fetch: WebControlFetch = async (input, init = {}) => {
+    const url = String(input)
+    const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined
+    this.requests.push({
+      url,
+      method: init.method ?? 'GET',
+      headers: recordHeaders(init.headers),
+      ...(body !== undefined ? { body } : {}),
+    })
+    if (url === 'http://114.66.58.243:12306/api/v1/auth/me') {
+      return jsonResponse(200, {
+        user: {
+          id: 'user-1',
+          username: 'lozzow',
+          email: 'lozzow@example.test',
+        },
+      })
+    }
+    if (url === 'http://114.66.58.243:12306/api/v1/machines') {
+      return jsonResponse(200, {
+        machines: [{
+          id: 'device-1',
+          name: 'RedmiBook',
+          hostname: 'redmibook',
+          online: true,
+          paired: true,
+          source: 'cloud',
+          control_url: 'http://114.66.58.243:12306',
+          current_hub_url: 'https://hub-1.termx.test',
+          hub_urls: ['https://hub-1.termx.test'],
+          hub_status: 'online',
+        }],
+      })
+    }
+    if (url === 'http://127.0.0.1:18888/api/v1/sessions/ice') {
+      throw new TypeError('Failed to fetch')
+    }
+    if (url === 'http://192.168.1.20:18888/api/v1/sessions/ice') {
+      throw new TypeError('Failed to fetch')
+    }
+    if (url === 'https://frp.termx.test/api/v1/sessions/ice') {
+      return jsonResponse(200, {
+        path: 'managed',
+        machine_id: 'device-1',
+        ice_servers: [],
+        relay_policy: { allow_relay: false, allow_relay_transfer: false },
+      })
+    }
+    if (url === 'https://frp.termx.test/api/v1/sessions') {
+      const request = body as {
+        machine_id: string
+        offer: { session_id: string }
+      }
+      return jsonResponse(200, {
+        session_id: request.offer.session_id,
+        path: 'managed',
+        machine_id: request.machine_id,
+        answer: { type: 'answer', sdp: 'answer-sdp' },
+        ice_candidates: [],
+        ice_servers: [],
+        relay_policy: { allow_relay: false, allow_relay_transfer: false },
+        relay_in_use: false,
+      })
+    }
+    throw new Error(`unexpected request to ${url}`)
+  }
+}
+
 class ManagedRuntimeFetch {
   readonly requests: RecordedRequest[] = []
 
@@ -1273,6 +1570,49 @@ class ManagedRuntimeFetch {
         ice_candidates: [],
         ice_servers: [],
         relay_policy: { allow_relay: true, allow_relay_transfer: false },
+        relay_in_use: false,
+      })
+    }
+    throw new Error(`unexpected request to ${url}`)
+  }
+}
+
+class LocalRuntimeFetch {
+  readonly requests: RecordedRequest[] = []
+
+  readonly fetch: WebControlFetch = async (input, init = {}) => {
+    const url = String(input)
+    const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined
+    this.requests.push({
+      url,
+      method: init.method ?? 'GET',
+      headers: recordHeaders(init.headers),
+      ...(body !== undefined ? { body } : {}),
+    })
+    if (url === 'http://127.0.0.1:18888/api/v1/sessions/ice') {
+      throw new TypeError('Failed to fetch')
+    }
+    if (url === 'http://192.168.1.20:18888/api/v1/sessions/ice') {
+      return jsonResponse(200, {
+        path: 'managed',
+        machine_id: 'device-1',
+        ice_servers: [],
+        relay_policy: { allow_relay: false, allow_relay_transfer: false },
+      })
+    }
+    if (url === 'http://192.168.1.20:18888/api/v1/sessions') {
+      const request = body as {
+        machine_id: string
+        offer: { session_id: string }
+      }
+      return jsonResponse(200, {
+        session_id: request.offer.session_id,
+        path: 'managed',
+        machine_id: request.machine_id,
+        answer: { type: 'answer', sdp: 'answer-sdp' },
+        ice_candidates: [],
+        ice_servers: [],
+        relay_policy: { allow_relay: false, allow_relay_transfer: false },
         relay_in_use: false,
       })
     }

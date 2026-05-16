@@ -47,6 +47,8 @@ export interface WebControlMachine {
   hubId?: string | undefined
   currentHubUrl?: string | undefined
   hubUrls: string[]
+  localHubUrls?: string[] | undefined
+  localFallbackHubUrls?: string[] | undefined
   hubStatus?: string | undefined
   lastSeen?: string | undefined
   createdAt?: string | undefined
