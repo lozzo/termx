@@ -91,6 +91,28 @@ describe('termxProtocol', () => {
     expect(replay).toContain('\x1b[?25h')
   })
 
+  it('preserves soft-wrapped snapshot rows when generating replay text', () => {
+    const replay = snapshotToReplay({
+      screen: { rows: [] },
+      scrollback: [
+        { wrapped: true, cells: Array.from('abcde').map((char) => ({ r: char })) },
+        { cells: Array.from('fgh').map((char) => ({ r: char })) },
+        { cells: Array.from('hard').map((char) => ({ r: char })) },
+      ],
+    })
+
+    const plainReplay = replay.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
+    expect(plainReplay).toContain('abcdefgh')
+    expect(plainReplay).not.toContain('abcde\r\nfgh')
+    expect(plainReplay).toContain('fgh\r\nhard')
+    expect(rowsToText({
+      scrollback: [
+        { wrapped: true, cells: Array.from('abcde').map((char) => ({ r: char })) },
+        { cells: Array.from('fgh').map((char) => ({ r: char })) },
+      ],
+    })).toBe('abcdefgh')
+  })
+
   it('emits alternate screen enter and exit sequences from snapshot modes', () => {
     expect(snapshotToReplay({ modes: { alternate_screen: true }, screen: { rows: [] } })).toContain('\x1b[?1049h')
     expect(snapshotToReplay({ modes: { alternate_screen: false }, screen: { rows: [] } })).toContain('\x1b[?1049l')

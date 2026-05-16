@@ -1708,10 +1708,15 @@ func (v *VTerm) EncodeReplay(scrollbackLimit int) []byte {
 	defer v.mu.RUnlock()
 
 	scrollback := v.scrollbackRowsLocked()
+	scrollbackWrapped := make([]bool, len(scrollback))
+	for row := range scrollback {
+		scrollbackWrapped[row] = v.scrollbackRowWrappedAtLocked(row)
+	}
 	if scrollbackLimit > 0 && len(scrollback) > scrollbackLimit {
+		scrollbackWrapped = scrollbackWrapped[len(scrollback)-scrollbackLimit:]
 		scrollback = scrollback[len(scrollback)-scrollbackLimit:]
 	}
-	return encodeTerminalReplay(scrollback, v.screenRowsLocked(), v.cursor, v.modes)
+	return encodeTerminalReplayWithWrapped(scrollback, scrollbackWrapped, v.screenRowsLocked(), v.cursor, v.modes)
 }
 
 func (v *VTerm) EncodeHistoryReplay(beforeOffset int, limit int) ([]byte, int, bool) {
@@ -1740,12 +1745,19 @@ func (v *VTerm) EncodeHistoryReplay(beforeOffset int, limit int) ([]byte, int, b
 	if start < 0 {
 		start = 0
 	}
+	for start > 0 && v.scrollbackRowWrappedAtLocked(start-1) {
+		start--
+	}
 	rows := scrollback[start:end]
 	if len(rows) == 0 {
 		return nil, 0, false
 	}
+	wrapped := make([]bool, len(rows))
+	for row := range rows {
+		wrapped[row] = v.scrollbackRowWrappedAtLocked(start + row)
+	}
 	var b strings.Builder
-	writeSequentialRows(&b, rows)
+	writeSequentialRowsWithWrapped(&b, rows, wrapped)
 	return []byte(b.String()), len(rows), start > 0
 }
 
@@ -1949,10 +1961,14 @@ func encodeScreenSnapshot(rows [][]Cell) []byte {
 }
 
 func encodeTerminalReplay(scrollback, screen [][]Cell, cursor CursorState, modes TerminalModes) []byte {
+	return encodeTerminalReplayWithWrapped(scrollback, nil, screen, cursor, modes)
+}
+
+func encodeTerminalReplayWithWrapped(scrollback [][]Cell, scrollbackWrapped []bool, screen [][]Cell, cursor CursorState, modes TerminalModes) []byte {
 	var b strings.Builder
 
 	if !modes.AlternateScreen && len(scrollback) > 0 {
-		writeSequentialRows(&b, scrollback)
+		writeSequentialRowsWithWrapped(&b, scrollback, scrollbackWrapped)
 		b.WriteString("\r\n")
 		visibleRows := len(screen)
 		if visibleRows < 1 {

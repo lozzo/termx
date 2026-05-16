@@ -1143,17 +1143,32 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         }
         const latestText = latestTerminalTextRef.current
         const textToApply = latestText.startsWith(pending.text) ? latestText : pending.text
+        const bufferLengthBeforeApply = term.buffer.active.length
         term.reset()
         writeToXterm(term, textToApply, 'history_apply', () => {
           markSurfaceReady()
+          const bufferLengthAfterApply = term.buffer.active.length
+          const actualPrependedRows = Math.max(0, bufferLengthAfterApply - bufferLengthBeforeApply)
+          const viewportOffsetRows = actualPrependedRows > 0 ? actualPrependedRows : pending.prependedRows
+          if (actualPrependedRows > 0 && Math.abs(actualPrependedRows - pending.prependedRows) > 1) {
+            logTerminal('history_apply_row_delta_mismatch', {
+              level: 'debug',
+              details: {
+                requestedPrependedRows: pending.prependedRows,
+                actualPrependedRows,
+                beforeBufferLength: bufferLengthBeforeApply,
+                afterBufferLength: bufferLengthAfterApply,
+              },
+            })
+          }
           if (pending.restoreViewportY !== null || pullingHistoryRef.current) {
             cancelBottomAnchor()
-            term.scrollToLine((pending.restoreViewportY ?? currentViewportY) + pending.prependedRows)
+            term.scrollToLine((pending.restoreViewportY ?? currentViewportY) + viewportOffsetRows)
           } else if (shouldKeepBottom) {
             keepBottomAnchored()
           } else {
             cancelBottomAnchor()
-            term.scrollToLine(currentViewportY + pending.prependedRows)
+            term.scrollToLine(currentViewportY + viewportOffsetRows)
           }
           pullingHistoryRef.current = false
           finishHistoryApply()

@@ -162,9 +162,14 @@ interface DecodedScreenUpdate {
   screen: { rows: DecodedCell[][]; alternateScreen: boolean }
   ops: DecodedScreenOp[]
   scrollbackTrim: number
-  scrollbackAppend: DecodedCell[][]
+  scrollbackAppend: DecodedScrollbackRow[]
   cursor: DecodedCursor
   modes: DecodedModes
+}
+
+interface DecodedScrollbackRow {
+  cells: DecodedCell[]
+  wrapped: boolean
 }
 
 const screenUpdatePayloadMagic = 'TSU6'
@@ -251,8 +256,8 @@ function decodeScreenUpdatePayloadCurrent(payload: Uint8Array): DecodedScreenUpd
   for (let index = 0; index < appendCount; index += 1) {
     dec.skipTime()
     dec.skipString()
-    dec.skipWrapped()
-    update.scrollbackAppend.push(dec.readCells(styles))
+    const wrapped = dec.readWrapped()
+    update.scrollbackAppend.push({ cells: dec.readCells(styles), wrapped })
   }
   dec.assertEOF()
   return update
@@ -519,8 +524,12 @@ class ScreenUpdateDecoder {
   }
 
   skipWrapped(): void {
+    void this.readWrapped()
+  }
+
+  readWrapped(): boolean {
     const hasWrapped = this.readByte() !== 0
-    if (hasWrapped) this.readByte()
+    return hasWrapped ? this.readByte() !== 0 : false
   }
 
   assertEOF(): void {
@@ -670,8 +679,16 @@ function writeDecodedCells(cells: DecodedCell[]): string {
   return parts.join('')
 }
 
-function writeSequentialDecodedRows(rows: DecodedCell[][]): string {
-  return rows.map((row) => writeSequentialDecodedRow(row)).join('\r\n')
+function writeSequentialDecodedRows(rows: DecodedScrollbackRow[]): string {
+  const parts: string[] = []
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]
+    parts.push(writeSequentialDecodedRow(row?.cells ?? []))
+    if (index < rows.length - 1 && !row?.wrapped) {
+      parts.push('\r\n')
+    }
+  }
+  return parts.join('')
 }
 
 function writeSequentialDecodedRow(row: DecodedCell[]): string {
@@ -748,7 +765,7 @@ export function rowsToText(snapshot: unknown): string {
     ...rowsFrom(record.scrollback),
     ...rowsFrom(record.screen && isRecord(record.screen) ? record.screen.rows : undefined),
   ]
-  return chunks.map(rowText).join('\n')
+  return rowsText(chunks)
 }
 
 export function snapshotScrollbackRows(snapshot: unknown): unknown[] {
@@ -763,7 +780,7 @@ export function snapshotUsesAlternateScreen(snapshot: unknown): boolean {
 }
 
 export function rowsToPlainText(rows: unknown[]): string {
-  return rows.map(rowText).join('\n')
+  return rowsText(rows)
 }
 
 export function rowsToReplay(rows: unknown[]): string {
@@ -775,7 +792,7 @@ export function screenRowsToPlainText(snapshot: unknown): string {
     return ''
   }
   const screenRecord = snapshot.screen && isRecord(snapshot.screen) ? snapshot.screen : null
-  return rowsFrom(screenRecord?.rows).map(rowText).join('\n')
+  return rowsText(rowsFrom(screenRecord?.rows))
 }
 
 export function screenRowsToReplay(snapshot: unknown): string {
@@ -790,6 +807,18 @@ function rowsFrom(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
+function rowsText(rows: unknown[]): string {
+  const parts: string[] = []
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]
+    parts.push(rowText(row))
+    if (index < rows.length - 1 && !rowWrapped(row)) {
+      parts.push('\n')
+    }
+  }
+  return parts.join('')
+}
+
 function rowText(value: unknown): string {
   const cells = rowCells(value)
   if (!Array.isArray(cells)) return ''
@@ -802,6 +831,11 @@ function rowText(value: unknown): string {
         : ''
     return content
   }).join('')
+}
+
+function rowWrapped(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  return value.wrapped === true
 }
 
 export function snapshotToReplay(snapshot: unknown): string {
@@ -866,7 +900,15 @@ function encodeScreenSnapshot(rows: unknown[]): string {
 }
 
 function writeSequentialRows(rows: unknown[]): string {
-  return rows.map((row) => writeSequentialRow(row)).join('\r\n')
+  const parts: string[] = []
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]
+    parts.push(writeSequentialRow(row))
+    if (index < rows.length - 1 && !rowWrapped(row)) {
+      parts.push('\r\n')
+    }
+  }
+  return parts.join('')
 }
 
 function writeSequentialRow(row: unknown): string {

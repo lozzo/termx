@@ -58,6 +58,7 @@ const xtermMocks = vi.hoisted(() => {
     })
     skipNextWriteCallback = false
     deferWriteCallbacks = false
+    bufferLengthDeltaOnNextWrite: number | null = null
 
     constructor(options: Record<string, unknown> = {}) {
       this.options = options
@@ -89,6 +90,10 @@ const xtermMocks = vi.hoisted(() => {
       this.writes.push(text)
       const textLayer = this.element?.querySelector('.xterm-text-layer')
       if (textLayer) textLayer.textContent = `${textLayer.textContent ?? ''}${text}`
+      if (this.bufferLengthDeltaOnNextWrite !== null) {
+        this.buffer.active.length += this.bufferLengthDeltaOnNextWrite
+        this.bufferLengthDeltaOnNextWrite = null
+      }
       if (this.skipNextWriteCallback) {
         this.skipNextWriteCallback = false
         return
@@ -1164,6 +1169,49 @@ describe('Terminal', () => {
       limit: 250,
     }))
     await waitFor(() => expect(term.scrollToLine).toHaveBeenCalledWith(restoreViewportY + 250))
+    expect(term.scrollToBottom).not.toHaveBeenCalled()
+  })
+
+  it('preserves the viewport using actual xterm line growth when history rows reflow', async () => {
+    const session = createMockRtcTerminalSession()
+    session.setTerminalSnapshot('terminal-1', {
+      text: 'current',
+      cols: 80,
+      rows: 24,
+      pages: [
+        { offset: 0, rows: Array.from({ length: 250 }, (_value, index) => `wrapped-${index}`) },
+      ],
+    })
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        session={session}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    const term = xtermMocks.FakeXTerm.instances[0]!
+    await waitFor(() => expect(term.scrollToBottom).toHaveBeenCalled())
+
+    term.scrollToBottom.mockClear()
+    const restoreViewportY = 12
+    term.buffer.active.length = 200
+    term.buffer.active.viewportY = restoreViewportY
+    term.bufferLengthDeltaOnNextWrite = 7
+    const terminalOutput = screen.getByLabelText('Terminal output')
+    const screenElement = terminalOutput.querySelector('.xterm-screen') as HTMLElement
+    act(() => {
+      screenElement.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }))
+    })
+
+    await waitFor(() => expect(session.historyReplayRequests('terminal-1')).toContainEqual({
+      beforeOffset: 0,
+      limit: 250,
+    }))
+    await waitFor(() => expect(term.scrollToLine).toHaveBeenCalledWith(restoreViewportY + 7))
+    expect(term.scrollToLine).not.toHaveBeenCalledWith(restoreViewportY + 250)
     expect(term.scrollToBottom).not.toHaveBeenCalled()
   })
 
