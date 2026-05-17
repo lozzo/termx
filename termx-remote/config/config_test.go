@@ -7,8 +7,8 @@ func TestNormalizeDefaultsRemoteMode(t *testing.T) {
 	if cfg.Mode != "both" {
 		t.Fatalf("expected default mode both, got %q", cfg.Mode)
 	}
-	if !ModeIncludesLocal(cfg.Mode) || !ModeIncludesOnline(cfg.Mode) {
-		t.Fatalf("default mode should include local and online: %q", cfg.Mode)
+	if !ModeIncludesLocal(cfg.Mode) || !ModeIncludesHub(cfg.Mode) {
+		t.Fatalf("default mode should include local and hub: %q", cfg.Mode)
 	}
 }
 
@@ -18,7 +18,7 @@ func TestNormalizeAcceptsRemoteModes(t *testing.T) {
 		want  string
 	}{
 		{input: " local ", want: "local"},
-		{input: "ONLINE", want: "online"},
+		{input: "HUB", want: "hub"},
 		{input: "both", want: "both"},
 	} {
 		cfg := Normalize(Config{Mode: tc.input})

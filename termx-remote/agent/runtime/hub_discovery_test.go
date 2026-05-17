@@ -65,7 +65,7 @@ func TestManagerDiscoversAndSelectsHubAfterControlRegistration(t *testing.T) {
 		t.Fatalf("expected selected hub URL %q, got %q", hub.URL, status.HubURL)
 	}
 	if len(status.Hubs) != 1 ||
-		status.Hubs[0].Kind != HubKindOnline ||
+		status.Hubs[0].Kind != HubKindHub ||
 		status.Hubs[0].Source != HubSourceWebControl ||
 		status.Hubs[0].State != HubConnectionConnecting {
 		t.Fatalf("unexpected discovered hub status: %+v", status.Hubs)

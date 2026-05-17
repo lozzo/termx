@@ -71,8 +71,8 @@ type Status struct {
 type HubKind string
 
 const (
-	HubKindLocal  HubKind = "local"
-	HubKindOnline HubKind = "online"
+	HubKindLocal HubKind = "local"
+	HubKindHub   HubKind = "hub"
 )
 
 type HubSource string
@@ -247,7 +247,7 @@ func (m *Manager) AddHubURL(hubURL string) {
 }
 
 func (m *Manager) AddExplicitHubURL(hubURL string) {
-	m.addHubURL(hubURL, remotertc.AnswerOptions{}, false, HubSourceExplicit, HubKindOnline)
+	m.addHubURL(hubURL, remotertc.AnswerOptions{}, false, HubSourceExplicit, HubKindHub)
 }
 
 func (m *Manager) AddHubURLWithAnswerOptions(hubURL string, opts remotertc.AnswerOptions) {
@@ -599,14 +599,14 @@ func removeString(values []string, target string) []string {
 }
 
 func hubKindForMode(mode string, explicit bool) HubKind {
-	if remoteconfig.ModeIncludesOnline(mode) && (explicit || !remoteconfig.ModeIncludesLocal(mode)) {
-		return HubKindOnline
+	if remoteconfig.ModeIncludesHub(mode) && (explicit || !remoteconfig.ModeIncludesLocal(mode)) {
+		return HubKindHub
 	}
 	if remoteconfig.ModeIncludesLocal(mode) {
 		return HubKindLocal
 	}
-	if remoteconfig.ModeIncludesOnline(mode) {
-		return HubKindOnline
+	if remoteconfig.ModeIncludesHub(mode) {
+		return HubKindHub
 	}
 	return HubKindLocal
 }
@@ -693,7 +693,7 @@ func (m *Manager) syncHubPresences(ctx context.Context, hubURLs []string) (int, 
 			var err error
 			started := false
 			switch kind := m.hubKind(hubURL); kind {
-			case HubKindOnline, HubKindLocal:
+			case HubKindHub, HubKindLocal:
 				err = m.ensureGRPCHubLoop(ctx, hubURL)
 				started = err == nil
 			default:

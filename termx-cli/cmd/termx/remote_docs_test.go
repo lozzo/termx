@@ -52,7 +52,7 @@ func TestTermxCLIBothModeDocsAndSmokeScript(t *testing.T) {
 			t.Fatalf("smoke script missing %q", want)
 		}
 	}
-	if strings.Contains(smoke, "cloud-secret") || strings.Contains(smoke, "termx-development-hub-secret-change-me") {
+	if strings.Contains(smoke, "hub-secret") || strings.Contains(smoke, "termx-development-hub-secret-change-me") {
 		t.Fatal("smoke script must not embed development secrets")
 	}
 	if strings.Contains(smoke, "skipped Web Control") || strings.Contains(smoke, `!= "online" &&`) {

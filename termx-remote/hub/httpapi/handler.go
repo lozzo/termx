@@ -332,7 +332,7 @@ func NewHandler(cfg Config) http.Handler {
 		}
 		allowRelay := hasPolicy && policy.AllowRelay
 		allowRelayTransfer := hasPolicy && policy.AllowRelayTransfer
-		path := cloud.PathCloud
+		path := cloud.PathHub
 		if hasPolicy {
 			path = policy.Path
 		}
@@ -347,8 +347,8 @@ func NewHandler(cfg Config) http.Handler {
 		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), path, answer.MachineID, terminalID, allowRelay, allowRelayTransfer, r.PathValue("session_id"), answer)
 	})
 	mux.HandleFunc("POST /api/v1/pairing/claims", func(w http.ResponseWriter, r *http.Request) {
-		if managedPairingRequiresWebControl(cfg) {
-			writeError(w, http.StatusForbidden, "web_control_required", "managed pairing claims must be submitted through Web Control")
+		if hubPairingRequiresWebControl(cfg) {
+			writeError(w, http.StatusForbidden, "web_control_required", "Hub pairing claims must be submitted through Web Control")
 			return
 		}
 		handlePairingClaim(w, r, cfg, maxBodyBytes, []string{registry.PathLocal})
@@ -358,7 +358,7 @@ func NewHandler(cfg Config) http.Handler {
 			writeError(w, http.StatusForbidden, "internal_unauthorized", "valid hub secret is required")
 			return
 		}
-		handlePairingClaim(w, r, cfg, maxBodyBytes, []string{registry.PathCloud})
+		handlePairingClaim(w, r, cfg, maxBodyBytes, []string{registry.PathHub})
 	})
 	return &Handler{
 		router:   corsMiddleware(mux, cfg.AllowedOrigins),
@@ -368,7 +368,7 @@ func NewHandler(cfg Config) http.Handler {
 	}
 }
 
-func managedPairingRequiresWebControl(cfg Config) bool {
+func hubPairingRequiresWebControl(cfg Config) bool {
 	return strings.TrimSpace(cfg.InternalSecret) != "" && !cfg.LocalDiscovery
 }
 
@@ -545,7 +545,7 @@ func iceServersForLease(ctx context.Context, cfg Config, leaseID string, path st
 	}
 	rtc, err := cfg.ICE.ConfigForLease(ctx, ice.Lease{
 		ID:         leaseID,
-		Path:       ice.PathCloud,
+		Path:       ice.PathHub,
 		AllowRelay: allowRelay,
 	})
 	if err != nil {
@@ -558,7 +558,7 @@ func sessionPathForPublicAPI(cfg Config) string {
 	if cfg.LocalDiscovery {
 		return cloud.PathLocal
 	}
-	return cloud.PathCloud
+	return cloud.PathHub
 }
 
 func normalizeSessionPath(path string) string {
@@ -566,7 +566,7 @@ func normalizeSessionPath(path string) string {
 	case cloud.PathLocal:
 		return cloud.PathLocal
 	default:
-		return cloud.PathCloud
+		return cloud.PathHub
 	}
 }
 

@@ -36,7 +36,7 @@ func Normalize(cfg Config) Config {
 	cfg.DeviceName = strings.TrimSpace(cfg.DeviceName)
 	cfg.Region = strings.TrimSpace(cfg.Region)
 	switch strings.ToLower(strings.TrimSpace(cfg.Mode)) {
-	case "local", "online", "both":
+	case "local", "hub", "both":
 		cfg.Mode = strings.ToLower(strings.TrimSpace(cfg.Mode))
 		cfg.modeValid = true
 	case "":
@@ -113,7 +113,7 @@ func (c Config) Validate() error {
 		return errors.New("remote access token is required when control URL is configured")
 	}
 	if !c.modeValid {
-		return errors.New("remote mode must be one of local, online, or both")
+		return errors.New("remote mode must be one of local, hub, or both")
 	}
 	if c.TokenTTL < 0 {
 		return errors.New("remote token ttl must not be negative")
@@ -125,6 +125,6 @@ func ModeIncludesLocal(mode string) bool {
 	return mode == "local" || mode == "both"
 }
 
-func ModeIncludesOnline(mode string) bool {
-	return mode == "online" || mode == "both"
+func ModeIncludesHub(mode string) bool {
+	return mode == "hub" || mode == "both"
 }

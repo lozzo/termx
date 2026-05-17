@@ -40,7 +40,7 @@ export async function GET(request: Request) {
       os_info: agent.osInfo,
       online: agent.online,
       paired: agent.paired,
-      source: "cloud",
+      source: "hub",
       control_url: controlUrl,
       hub_id: agent.hubId,
       current_hub_url: agent.hub?.httpUrl ?? null,

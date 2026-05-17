@@ -130,42 +130,37 @@ func printRemoteLocalStatus(w io.Writer, status *remoteprotocol.LocalStatus) {
 
 func buildRemotePairPayload(result *remoteprotocol.PairStartResult, status *remoteprotocol.Status, hubURLs []string) map[string]any {
 	localHubURLs := compactHubBaseURLListOrEmpty([]string{result.LocalPairURL})
-	managedHubURLs := compactHubBaseURLList(hubURLs)
-	endpoints := map[string]any{}
-	if len(managedHubURLs) > 0 {
-		endpoints["hub"] = managedHubURLs[0]
-	}
-	if len(localHubURLs) == 0 && status != nil {
-		if controlURL := strings.TrimSpace(status.ControlURL); controlURL != "" {
-			endpoints["web_control"] = controlURL
-		}
-	}
+	hubHubURLs := compactHubBaseURLListOrEmpty(hubURLs)
 	preferredPath := "local"
-	if len(localHubURLs) == 0 && len(managedHubURLs) > 0 {
-		preferredPath = "managed"
+	if len(localHubURLs) == 0 && len(hubHubURLs) > 0 {
+		preferredPath = "hub"
+	}
+	hub := map[string]any{
+		"hub_urls": hubHubURLs,
+	}
+	if status != nil {
+		if controlURL := strings.TrimSpace(status.ControlURL); controlURL != "" {
+			hub["web_control"] = controlURL
+		}
 	}
 	payload := map[string]any{
 		"type":           "termx_pair",
-		"schema_version": 3,
+		"schema_version": 4,
 		"preferred_path": preferredPath,
 		"machine": map[string]any{
 			"id":   result.MachineID,
 			"name": firstNonEmpty(result.MachineName, result.MachineID),
 		},
-		"addresses": map[string]any{
-			"local":  []string{},
-			"lan":    localHubURLs,
-			"public": []string{},
+		"local": map[string]any{
+			"hub_urls": localHubURLs,
 		},
+		"hub": hub,
 		"pairing": map[string]any{
 			"session_id":          result.PairSessionID,
 			"secret":              result.PairSecret,
 			"answer_proof_secret": result.AnswerProofSecret,
 			"expires_at":          result.ExpiresAt.Format(time.RFC3339),
 		},
-	}
-	if len(endpoints) > 0 {
-		payload["endpoints"] = endpoints
 	}
 	cleanEmptyStrings(payload)
 	return payload

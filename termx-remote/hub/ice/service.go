@@ -59,10 +59,10 @@ func (s *Service) ConfigForLease(ctx context.Context, lease Lease) (RTCConfig, e
 	_ = ctx
 	path := strings.TrimSpace(lease.Path)
 	if path == "" {
-		path = PathCloud
+		path = PathHub
 	}
 	switch path {
-	case PathCloud, PathPublicP2P:
+	case PathHub:
 	default:
 		return RTCConfig{}, ErrInvalidPath
 	}
@@ -76,7 +76,7 @@ func (s *Service) ConfigForLease(ctx context.Context, lease Lease) (RTCConfig, e
 	if !onlyAllowedSchemes(s.stunURLs, "stun:", "stuns:") {
 		return RTCConfig{}, ErrInvalidICEURL
 	}
-	if path != PathCloud || !lease.AllowRelay {
+	if path != PathHub || !lease.AllowRelay {
 		return cfg, nil
 	}
 	if s.turnServer != nil {

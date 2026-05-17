@@ -27,7 +27,7 @@ func TestAgentRegisterHeartbeatExpiryAndCleanup(t *testing.T) {
 	if agent.Status != registry.AgentOnline {
 		t.Fatalf("status = %q", agent.Status)
 	}
-	if agent.Path != registry.PathCloud {
+	if agent.Path != registry.PathHub {
 		t.Fatalf("path = %q", agent.Path)
 	}
 	if agent.RelayInUse {
@@ -206,7 +206,7 @@ func TestPollTimeoutOfferDeliveryAndAnswerCorrelation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("submit offer: %v", err)
 	}
-	if offer.Path != registry.PathCloud || offer.RelayInUse {
+	if offer.Path != registry.PathHub || offer.RelayInUse {
 		t.Fatalf("offer path/relay = %q/%v", offer.Path, offer.RelayInUse)
 	}
 	if offer.ContainsRuntimePayload() {

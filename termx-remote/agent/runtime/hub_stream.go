@@ -22,7 +22,7 @@ import (
 
 const (
 	offerReplayWindow     = 60 * time.Second
-	sessionTokenPathCloud = "cloud"
+	sessionTokenPathHub   = "hub"
 	sessionTokenPathLocal = "local"
 )
 
@@ -409,8 +409,8 @@ func (m *Manager) offerSessionPath(hubURL string, explicit string) string {
 	switch strings.TrimSpace(explicit) {
 	case sessionTokenPathLocal:
 		return sessionTokenPathLocal
-	case sessionTokenPathCloud:
-		return sessionTokenPathCloud
+	case sessionTokenPathHub:
+		return sessionTokenPathHub
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -418,7 +418,7 @@ func (m *Manager) offerSessionPath(hubURL string, explicit string) string {
 	if state != nil && state.Kind == HubKindLocal {
 		return sessionTokenPathLocal
 	}
-	return sessionTokenPathCloud
+	return sessionTokenPathHub
 }
 
 func (m *Manager) handleGRPCPairingClaim(ctx context.Context, claim *pb.PairingClaim, sender interface{ Send(*pb.AgentToHub) error }) {
@@ -640,7 +640,7 @@ func normalizeOfferSessionPath(path string) string {
 	case sessionTokenPathLocal:
 		return sessionTokenPathLocal
 	default:
-		return sessionTokenPathCloud
+		return sessionTokenPathHub
 	}
 }
 

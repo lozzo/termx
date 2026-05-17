@@ -43,6 +43,32 @@ func TestLocalEnableStartsHub(t *testing.T) {
 	}
 }
 
+func TestLocalEnableServesEmbeddedLocalWebUI(t *testing.T) {
+	service := NewService(remoteprotocol.Config{}, nil)
+	t.Cleanup(func() { _, _ = service.LocalDisable(context.Background()) })
+
+	status, err := service.LocalEnable(context.Background(), remoteprotocol.LocalEnableParams{
+		LocalWebAddr: "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatalf("LocalEnable returned error: %v", err)
+	}
+
+	for _, path := range []string{"/", "/localweb.html"} {
+		resp, body, err := localHubRequest(context.Background(), http.MethodGet, status.HTTPURL+path, nil)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s status = %d, body = %s", path, resp.StatusCode, string(body))
+		}
+		if !strings.Contains(string(body), "TermX Local Remote") {
+			t.Fatalf("GET %s did not return local UI HTML: %s", path, string(body))
+		}
+	}
+}
+
 func TestLocalHubAcceptsGRPCAgentRegistration(t *testing.T) {
 	service := NewService(remoteprotocol.Config{}, nil)
 	t.Cleanup(func() { _, _ = service.LocalDisable(context.Background()) })

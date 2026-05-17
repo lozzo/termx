@@ -107,7 +107,7 @@ func TestVerifyWrongSecret(t *testing.T) {
 func TestCapabilitiesSorted(t *testing.T) {
 	c := baseClaims()
 	c.Capabilities = []string{"terminal_management", "file_manager", "terminal"}
-	c.Paths = []string{"local", "cloud"}
+	c.Paths = []string{"local", "hub"}
 	tok, err := token.Issue(secret, c)
 	if err != nil {
 		t.Fatal(err)

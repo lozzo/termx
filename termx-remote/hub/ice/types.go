@@ -7,8 +7,7 @@ import (
 )
 
 const (
-	PathCloud     = "cloud"
-	PathPublicP2P = "public_p2p"
+	PathHub = "hub"
 )
 
 type Clock interface {

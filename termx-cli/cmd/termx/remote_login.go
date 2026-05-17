@@ -271,7 +271,7 @@ func persistRemoteLogin(cmd *cobra.Command, configPath string, record remoteAuth
 	if err := saveRemoteAuthRecord(path, record); err != nil {
 		return err
 	}
-	if err := ensureRemoteConfigBootstrap(configPath, record.ControlURL, record.HubURL, path, "online", "", ""); err != nil {
+	if err := ensureRemoteConfigBootstrap(configPath, record.ControlURL, record.HubURL, path, "hub", "", ""); err != nil {
 		return err
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "remote login saved")

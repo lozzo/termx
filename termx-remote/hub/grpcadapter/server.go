@@ -152,7 +152,7 @@ func (a *hubRegistryAdapter) registerAgentICEServers(ctx context.Context, machin
 	}
 	rtc, err := a.ice.ConfigForLease(ctx, hubice.Lease{
 		ID:         strings.TrimSpace(machineID),
-		Path:       hubice.PathCloud,
+		Path:       hubice.PathHub,
 		AllowRelay: a.allowRelay,
 	})
 	if err != nil {

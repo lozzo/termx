@@ -104,7 +104,7 @@ func (r *Registry) Register(ctx context.Context, in RegisterInput) (Agent, error
 		ID:         agentID,
 		MachineID:  machineID,
 		Status:     AgentOnline,
-		Path:       PathCloud,
+		Path:       PathHub,
 		Terminals:  cloneTerminals(in.Terminals),
 		LastSeenAt: now,
 		ExpiresAt:  now.Add(r.agentTTL),
@@ -370,7 +370,7 @@ func normalizeOfferPath(path string) string {
 	case PathLocal:
 		return PathLocal
 	default:
-		return PathCloud
+		return PathHub
 	}
 }
 

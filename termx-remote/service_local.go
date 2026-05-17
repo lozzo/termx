@@ -121,7 +121,7 @@ func newEmbeddedLocalHub(ctx context.Context, params remoteprotocol.LocalEnableP
 		return nil, fmt.Errorf("parse lan_ips: %w", err)
 	}
 	lanFilter := httpapi.NewLANFilter(cfg.AllowLAN, allowedNets)
-	httpServer := &http.Server{Handler: lanFilter(hubHandler)}
+	httpServer := &http.Server{Handler: lanFilter(newLocalHubHTTPHandler(hubHandler))}
 	grpcServer := grpcadapter.NewServer(reg, cloudSvc, nil)
 	mux := cmux.New(listener)
 	grpcListener := mux.Match(cmux.HTTP2())

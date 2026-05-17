@@ -59,7 +59,7 @@ func TestCloudSessionHTTPContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("poll offer: %v", err)
 	}
-	if polled.SDP != minimalSDP("offer") || polled.Path != cloud.PathCloud {
+	if polled.SDP != minimalSDP("offer") || polled.Path != cloud.PathHub {
 		t.Fatalf("polled offer = %+v", polled)
 	}
 	if polled.SessionID != "rtc_cloud_1" {
@@ -107,7 +107,7 @@ func TestCloudSessionHTTPContract(t *testing.T) {
 		} `json:"relay_policy"`
 	}
 	decodeJSON(t, answer, &got)
-	if got.SessionID != "rtc_cloud_1" || got.Path != "cloud" || got.MachineID != "mach_1" || got.Answer.SDP != minimalSDP("answer") {
+	if got.SessionID != "rtc_cloud_1" || got.Path != "hub" || got.MachineID != "mach_1" || got.Answer.SDP != minimalSDP("answer") {
 		t.Fatalf("answer response = %+v", got)
 	}
 	if got.RelayPolicy.AllowRelay || got.RelayPolicy.AllowRelayTransfer {
@@ -335,7 +335,7 @@ func TestCloudSessionHTTPPreflightICEServersBeforeOffer(t *testing.T) {
 		} `json:"relay_policy"`
 	}
 	decodeJSON(t, resp, &got)
-	if got.Path != "cloud" || got.MachineID != "mach_1" || got.TerminalID != "term_1" {
+	if got.Path != "hub" || got.MachineID != "mach_1" || got.TerminalID != "term_1" {
 		t.Fatalf("preflight identity = %+v", got)
 	}
 	if !got.RelayPolicy.AllowRelay || got.RelayPolicy.AllowRelayTransfer {
@@ -497,7 +497,7 @@ func TestCloudSessionHTTPTimeoutReturnsRecoverableSession(t *testing.T) {
 		Pending   bool   `json:"pending"`
 	}
 	decodeJSON(t, resp, &got)
-	if got.SessionID != "rtc_cloud_1" || got.Path != "cloud" || got.MachineID != "mach_1" || !got.Pending {
+	if got.SessionID != "rtc_cloud_1" || got.Path != "hub" || got.MachineID != "mach_1" || !got.Pending {
 		t.Fatalf("timeout response = %+v", got)
 	}
 
@@ -575,7 +575,7 @@ func TestCloudSessionHTTPPendingAnswerPollReturnsRecoverableSession(t *testing.T
 		Pending    bool   `json:"pending"`
 	}
 	decodeJSON(t, answer, &got)
-	if got.SessionID != pending.SessionID || got.Path != "cloud" || got.MachineID != "mach_1" || got.TerminalID != "term_1" || !got.Pending {
+	if got.SessionID != pending.SessionID || got.Path != "hub" || got.MachineID != "mach_1" || got.TerminalID != "term_1" || !got.Pending {
 		t.Fatalf("pending answer response = %+v", got)
 	}
 }

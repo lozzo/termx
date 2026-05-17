@@ -45,7 +45,7 @@ func (m *Manager) discoverHub(ctx context.Context) error {
 		}
 		m.cfg.HubURLs = hubURLs
 		m.discoveredHubURL = selectedURL
-		m.configureHubEndpointLocked(selectedURL, HubKindOnline, HubSourceWebControl, remotertc.AnswerOptions{}, false)
+		m.configureHubEndpointLocked(selectedURL, HubKindHub, HubSourceWebControl, remotertc.AnswerOptions{}, false)
 		m.mu.Unlock()
 	}
 	return nil

@@ -351,7 +351,7 @@ func TestRemoteConfigFromEnvAutoEnablesWhenRemoteFieldsExist(t *testing.T) {
 	}
 }
 
-func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
+func TestRemoteConfigFromFileLoadsHubBootstrapWithoutRawToken(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
 	content := `remote:
   enabled: true
@@ -363,7 +363,7 @@ func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
   data_dir: /tmp/termx-remote-file
   device_name: file-device
   region: fra
-  mode: online
+  mode: hub
   local_web_addr: 127.0.0.1:19998
   ice_tcp_addr: 127.0.0.1:19999
   token_ttl: 2h
@@ -406,7 +406,7 @@ func TestRemoteConfigFromFileLoadsCloudBootstrapWithoutRawToken(t *testing.T) {
 	if cfg.Region != "fra" {
 		t.Fatalf("unexpected region: %q", cfg.Region)
 	}
-	if cfg.Mode != "online" || !cfg.AllowLAN || len(cfg.LANIPs) != 2 || cfg.LANIPs[1] != "10.0.0.5" {
+	if cfg.Mode != "hub" || !cfg.AllowLAN || len(cfg.LANIPs) != 2 || cfg.LANIPs[1] != "10.0.0.5" {
 		t.Fatalf("unexpected mode/LAN config: %#v", cfg)
 	}
 	if cfg.LocalWebAddr != "127.0.0.1:19998" || cfg.ICETCPAddr != "127.0.0.1:19999" {
@@ -439,7 +439,7 @@ func TestRemoteConfigEnvOverridesFile(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_DATA_DIR", "/tmp/termx-remote-env")
 	t.Setenv("TERMX_REMOTE_DEVICE_NAME", "env-device")
 	t.Setenv("TERMX_REMOTE_REGION", "sin")
-	t.Setenv("TERMX_REMOTE_MODE", "online")
+	t.Setenv("TERMX_REMOTE_MODE", "hub")
 	t.Setenv("TERMX_REMOTE_LOCAL_WEB_ADDR", "127.0.0.1:18880")
 	t.Setenv("TERMX_REMOTE_LOCAL_ICE_TCP_ADDR", "127.0.0.1:18881")
 	t.Setenv("TERMX_REMOTE_TOKEN_TTL", "3600")
@@ -467,7 +467,7 @@ func TestRemoteConfigEnvOverridesFile(t *testing.T) {
 	if cfg.Region != "sin" {
 		t.Fatalf("expected env region override, got %q", cfg.Region)
 	}
-	if cfg.Mode != "online" || cfg.AllowLAN {
+	if cfg.Mode != "hub" || cfg.AllowLAN {
 		t.Fatalf("expected env mode/allow_lan override, got %#v", cfg)
 	}
 	if cfg.LocalWebAddr != "127.0.0.1:18880" || cfg.ICETCPAddr != "127.0.0.1:18881" {
@@ -629,7 +629,7 @@ func TestDaemonCommandUsesRootConfigForRemoteBootstrap(t *testing.T) {
 			AccessToken: "loader-secret",
 			DataDir:     t.TempDir(),
 			DeviceName:  "config-device",
-			Mode:        "online",
+			Mode:        "hub",
 		}, nil
 	}
 	newRemoteRuntimeHostFn = func(core remoteRuntimeCore, cfg remoteprotocol.Config) *remoteRuntimeHost {
@@ -738,12 +738,12 @@ func TestDaemonLocalAddrUsesConfigAndEnvOverride(t *testing.T) {
 }
 
 func TestDaemonLocalAddrDisabledForOnlineMode(t *testing.T) {
-	cfg := remoteprotocol.Config{Enabled: true, Mode: "online"}
+	cfg := remoteprotocol.Config{Enabled: true, Mode: "hub"}
 	if got := daemonLocalWebAddr(cfg); got != "" {
-		t.Fatalf("expected no local web addr for online mode, got %q", got)
+		t.Fatalf("expected no local web addr for hub mode, got %q", got)
 	}
 	if got := daemonLocalICETCPAddr(cfg); got != "" {
-		t.Fatalf("expected no ICE TCP addr for online mode, got %q", got)
+		t.Fatalf("expected no ICE TCP addr for hub mode, got %q", got)
 	}
 }
 
@@ -1061,7 +1061,7 @@ func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
 	}
 }
 
-func TestRemotePairEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
+func TestRemotePairEmitsTermxPairURIWithHubMetadata(t *testing.T) {
 	oldStatus := remoteLocalStatusClient
 	oldRemoteStatus := remoteStatusClient
 	oldPair := pairStartClient
@@ -1124,30 +1124,30 @@ func TestRemotePairEmitsTermxPairURIWithCloudMetadata(t *testing.T) {
 	if !strings.HasPrefix(decoded.URI, "termx://pair?payload=") {
 		t.Fatalf("unexpected URI: %s", decoded.URI)
 	}
-	if decoded.Payload["schema_version"].(float64) != 3 {
-		t.Fatalf("expected schema version 3 payload, got %#v", decoded.Payload)
+	if decoded.Payload["schema_version"].(float64) != 4 {
+		t.Fatalf("expected schema version 4 payload, got %#v", decoded.Payload)
 	}
 	if decoded.Payload["preferred_path"] != "local" {
 		t.Fatalf("expected local preferred path, got %#v", decoded.Payload["preferred_path"])
 	}
-	addresses, ok := decoded.Payload["addresses"].(map[string]any)
+	local, ok := decoded.Payload["local"].(map[string]any)
 	if !ok {
-		t.Fatalf("unexpected addresses: %#v", decoded.Payload["addresses"])
+		t.Fatalf("unexpected local block: %#v", decoded.Payload["local"])
 	}
-	lan, ok := addresses["lan"].([]any)
-	if !ok || len(lan) != 1 || lan[0] != "http://127.0.0.1:18888" {
-		t.Fatalf("unexpected local hub urls: %#v", addresses["lan"])
+	localHubURLs, ok := local["hub_urls"].([]any)
+	if !ok || len(localHubURLs) != 1 || localHubURLs[0] != "http://127.0.0.1:18888" {
+		t.Fatalf("unexpected local hub urls: %#v", local["hub_urls"])
 	}
-	public, ok := addresses["public"].([]any)
-	if !ok || len(public) != 0 {
-		t.Fatalf("cloud hub urls must not be exposed as local public addresses: %#v", addresses["public"])
+	hub, ok := decoded.Payload["hub"].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected hub block: %#v", decoded.Payload["hub"])
 	}
-	endpoints, ok := decoded.Payload["endpoints"].(map[string]any)
-	if !ok || endpoints["hub"] != "http://114.66.58.243:8447" {
-		t.Fatalf("unexpected endpoints: %#v", decoded.Payload["endpoints"])
+	hubURLs, ok := hub["hub_urls"].([]any)
+	if !ok || len(hubURLs) != 2 || hubURLs[0] != "http://114.66.58.243:8447" || hubURLs[1] != "http://114.66.58.244:8447" {
+		t.Fatalf("unexpected hub urls: %#v", hub["hub_urls"])
 	}
-	if _, ok := endpoints["web_control"]; ok {
-		t.Fatalf("local QR should not require Web Control when a local hub URL exists: %#v", endpoints)
+	if hub["web_control"] != "http://114.66.58.243:12306" {
+		t.Fatalf("unexpected web control URL: %#v", hub)
 	}
 	pairing, ok := decoded.Payload["pairing"].(map[string]any)
 	if !ok || pairing["session_id"] != "pair_test" || pairing["secret"] != "secret" || pairing["answer_proof_secret"] != "proof-secret" {
@@ -1249,21 +1249,18 @@ func TestRemotePairFallsBackToSingleHubURL(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatalf("pair output is not JSON: %v\n%s", err, out.String())
 	}
-	addresses := decoded.Payload["addresses"].(map[string]any)
-	public := addresses["public"].([]any)
-	if len(public) != 0 {
-		t.Fatalf("hub URL must not be exposed as a local public address: %#v", public)
+	local := decoded.Payload["local"].(map[string]any)
+	localHubURLs := local["hub_urls"].([]any)
+	if len(localHubURLs) != 0 {
+		t.Fatalf("expected no local hub URLs, got %#v", localHubURLs)
 	}
-	lan := addresses["lan"].([]any)
-	if len(lan) != 0 {
-		t.Fatalf("expected no local hub URLs, got %#v", lan)
+	hub := decoded.Payload["hub"].(map[string]any)
+	hubURLs := hub["hub_urls"].([]any)
+	if len(hubURLs) != 1 || hubURLs[0] != "https://hub-single.example.test" {
+		t.Fatalf("unexpected hub URLs: %#v", hubURLs)
 	}
-	endpoints := decoded.Payload["endpoints"].(map[string]any)
-	if endpoints["hub"] != "https://hub-single.example.test" {
-		t.Fatalf("unexpected endpoint hub URL: %#v", endpoints)
-	}
-	if decoded.Payload["preferred_path"] != "managed" {
-		t.Fatalf("expected managed preferred path, got %#v", decoded.Payload["preferred_path"])
+	if decoded.Payload["preferred_path"] != "hub" {
+		t.Fatalf("expected hub preferred path, got %#v", decoded.Payload["preferred_path"])
 	}
 }
 
@@ -1458,7 +1455,7 @@ func TestRemoteOpenRequiresEnabledLocalRuntime(t *testing.T) {
 	}
 }
 
-func TestRemoteEnableCloudPersistsBootstrapOutsideConfigFile(t *testing.T) {
+func TestRemoteEnableHubPersistsBootstrapOutsideConfigFile(t *testing.T) {
 	oldEnable := remoteLocalEnableClient
 	oldLogin := remoteLoginHTTPClient
 	oldStore := remoteAuthStorePath
@@ -1468,7 +1465,7 @@ func TestRemoteEnableCloudPersistsBootstrapOutsideConfigFile(t *testing.T) {
 		remoteAuthStorePath = oldStore
 	})
 	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
-		t.Fatal("remote local enable client must not be called for cloud enable")
+		t.Fatal("remote local enable client must not be called for Hub enable")
 		return nil, nil
 	}
 	remoteAuthStorePath = func(configPath string) (string, error) {
@@ -1478,7 +1475,7 @@ func TestRemoteEnableCloudPersistsBootstrapOutsideConfigFile(t *testing.T) {
 	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{
 		meFunc: func(ctx context.Context, controlURL string, token string) (remoteLoginUser, error) {
 			validatedToken = token
-			return remoteLoginUser{Email: "cloud@example.com"}, nil
+			return remoteLoginUser{Email: "hub@example.com"}, nil
 		},
 	}
 
@@ -1486,16 +1483,16 @@ func TestRemoteEnableCloudPersistsBootstrapOutsideConfigFile(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control.example.test")
 	cmd := newRootCmd()
 	var out bytes.Buffer
-	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "online", "--token", "cloud-secret", "--json"})
+	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "hub", "--token", "hub-secret", "--json"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cloud enable returned error: %v", err)
+		t.Fatalf("Hub enable returned error: %v", err)
 	}
-	if validatedToken != "cloud-secret" {
+	if validatedToken != "hub-secret" {
 		t.Fatalf("expected token validation, got %q", validatedToken)
 	}
-	if data, err := os.ReadFile(configPath); err == nil && strings.Contains(string(data), "cloud-secret") {
+	if data, err := os.ReadFile(configPath); err == nil && strings.Contains(string(data), "hub-secret") {
 		t.Fatal("raw connection key was written to termx config")
 	}
 	var decoded struct {
@@ -1505,21 +1502,21 @@ func TestRemoteEnableCloudPersistsBootstrapOutsideConfigFile(t *testing.T) {
 		AuthStore  string `json:"auth_store"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
-		t.Fatalf("cloud enable output is not JSON: %v\n%s", err, out.String())
+		t.Fatalf("Hub enable output is not JSON: %v\n%s", err, out.String())
 	}
-	if !decoded.Enabled || decoded.ControlURL != "https://control.example.test" || decoded.Mode != "online" || decoded.AuthStore == "" {
-		t.Fatalf("unexpected cloud enable JSON: %#v", decoded)
+	if !decoded.Enabled || decoded.ControlURL != "https://control.example.test" || decoded.Mode != "hub" || decoded.AuthStore == "" {
+		t.Fatalf("unexpected Hub enable JSON: %#v", decoded)
 	}
 	cfg, err := remoteConfigFromFileAndEnv(configPath)
 	if err != nil {
-		t.Fatalf("load cloud config: %v", err)
+		t.Fatalf("load Hub config: %v", err)
 	}
-	if !cfg.Enabled || cfg.ControlURL != "https://control.example.test" || cfg.AccessToken != "cloud-secret" {
-		t.Fatalf("unexpected cloud remote config: %#v", cfg)
+	if !cfg.Enabled || cfg.ControlURL != "https://control.example.test" || cfg.AccessToken != "hub-secret" {
+		t.Fatalf("unexpected Hub remote config: %#v", cfg)
 	}
 }
 
-func TestRemoteEnableBothPassesCloudHubToRunningLocalDaemon(t *testing.T) {
+func TestRemoteEnableBothPassesHubHubToRunningLocalDaemon(t *testing.T) {
 	oldEnable := remoteLocalEnableClient
 	oldLogin := remoteLoginHTTPClient
 	oldStore := remoteAuthStorePath
@@ -1533,7 +1530,7 @@ func TestRemoteEnableBothPassesCloudHubToRunningLocalDaemon(t *testing.T) {
 	}
 	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{
 		meFunc: func(ctx context.Context, controlURL string, token string) (remoteLoginUser, error) {
-			return remoteLoginUser{Email: "cloud@example.com"}, nil
+			return remoteLoginUser{Email: "hub@example.com"}, nil
 		},
 	}
 	var gotParams remoteprotocol.LocalEnableParams
@@ -1555,7 +1552,7 @@ func TestRemoteEnableBothPassesCloudHubToRunningLocalDaemon(t *testing.T) {
 		"remote", "enable",
 		"--mode", "both",
 		"--hub-url", "https://hub.example.test",
-		"--token", "cloud-secret",
+		"--token", "hub-secret",
 	})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -1563,11 +1560,11 @@ func TestRemoteEnableBothPassesCloudHubToRunningLocalDaemon(t *testing.T) {
 		t.Fatalf("both enable returned error: %v", err)
 	}
 	if gotParams.HubURLs == nil || len(gotParams.HubURLs) != 1 || gotParams.HubURLs[0] != "https://hub.example.test" {
-		t.Fatalf("running local daemon did not receive cloud hub URL: %#v", gotParams)
+		t.Fatalf("running local daemon did not receive Hub hub URL: %#v", gotParams)
 	}
 }
 
-func TestRemoteEnableBothPassesCloudDiscoveryToRunningLocalDaemon(t *testing.T) {
+func TestRemoteEnableBothPassesHubDiscoveryToRunningLocalDaemon(t *testing.T) {
 	oldEnable := remoteLocalEnableClient
 	oldLogin := remoteLoginHTTPClient
 	oldStore := remoteAuthStorePath
@@ -1581,7 +1578,7 @@ func TestRemoteEnableBothPassesCloudDiscoveryToRunningLocalDaemon(t *testing.T) 
 	}
 	remoteLoginHTTPClient = remoteLoginHTTPClientFunc{
 		meFunc: func(ctx context.Context, controlURL string, token string) (remoteLoginUser, error) {
-			return remoteLoginUser{Email: "cloud@example.com"}, nil
+			return remoteLoginUser{Email: "hub@example.com"}, nil
 		},
 	}
 	var gotParams remoteprotocol.LocalEnableParams
@@ -1602,15 +1599,15 @@ func TestRemoteEnableBothPassesCloudDiscoveryToRunningLocalDaemon(t *testing.T) 
 		"--config", configPath,
 		"remote", "enable",
 		"--mode", "both",
-		"--token", "cloud-secret",
+		"--token", "hub-secret",
 	})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("both enable returned error: %v", err)
 	}
-	if gotParams.ControlURL != "https://control.example.test" || gotParams.AccessToken != "cloud-secret" {
-		t.Fatalf("running local daemon did not receive cloud discovery config: %#v", gotParams)
+	if gotParams.ControlURL != "https://control.example.test" || gotParams.AccessToken != "hub-secret" {
+		t.Fatalf("running local daemon did not receive Hub discovery config: %#v", gotParams)
 	}
 	if len(gotParams.HubURLs) != 0 {
 		t.Fatalf("expected discovery path without explicit hub URLs, got %#v", gotParams.HubURLs)
@@ -1629,7 +1626,7 @@ func TestRemoteEnableOnlineUsesBrowserLoginWhenTokenMissing(t *testing.T) {
 		openBrowser = oldOpen
 	})
 	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.LocalEnableParams) (*remoteprotocol.LocalStatus, error) {
-		t.Fatal("remote local enable client must not be called for cloud enable")
+		t.Fatal("remote local enable client must not be called for Hub enable")
 		return nil, nil
 	}
 	authStore := filepath.Join(t.TempDir(), "remote-auth.json")
@@ -1668,12 +1665,12 @@ func TestRemoteEnableOnlineUsesBrowserLoginWhenTokenMissing(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
 	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control.example.test")
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "online", "--no-browser", "--timeout", "100ms", "--json"})
+	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "hub", "--no-browser", "--timeout", "100ms", "--json"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("online enable returned error: %v", err)
+		t.Fatalf("hub enable returned error: %v", err)
 	}
 	if createdForControl != "https://control.example.test" {
 		t.Fatalf("expected browser login to use control URL, got %q", createdForControl)
@@ -1686,7 +1683,7 @@ func TestRemoteEnableOnlineUsesBrowserLoginWhenTokenMissing(t *testing.T) {
 		t.Fatalf("load browser enable config: %v", err)
 	}
 	if !cfg.Enabled || cfg.ControlURL != "https://control.example.test" || cfg.AccessToken != "browser-secret" {
-		t.Fatalf("unexpected online config after browser enable: %#v", cfg)
+		t.Fatalf("unexpected hub config after browser enable: %#v", cfg)
 	}
 }
 
@@ -1708,7 +1705,7 @@ func TestRemoteEnableBrowserForcesFreshTokenOverSavedAuth(t *testing.T) {
 		t.Fatalf("save old auth record: %v", err)
 	}
 	configPath := filepath.Join(t.TempDir(), "termx.yaml")
-	if err := ensureRemoteConfigBootstrap(configPath, "https://control.example.test", "", authStore, "online", "", ""); err != nil {
+	if err := ensureRemoteConfigBootstrap(configPath, "https://control.example.test", "", authStore, "hub", "", ""); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	var validatedToken string
@@ -1735,7 +1732,7 @@ func TestRemoteEnableBrowserForcesFreshTokenOverSavedAuth(t *testing.T) {
 	}
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "online", "--browser", "--no-browser", "--timeout", "100ms"})
+	cmd.SetArgs([]string{"--config", configPath, "remote", "enable", "--mode", "hub", "--browser", "--no-browser", "--timeout", "100ms"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {

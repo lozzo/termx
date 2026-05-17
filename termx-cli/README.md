@@ -11,7 +11,7 @@
 ## Remote Both Mode Smoke Flow
 
 Use both mode when the same local daemon should expose a LAN local hub and also
-register through Web Control for managed access.
+register through Web Control for Hub access.
 
 1. Start the daemon:
 
@@ -21,7 +21,7 @@ register through Web Control for managed access.
 
    Or run `termx daemon` in a separate terminal; it stays in the foreground.
 
-2. Enable both local and cloud remote paths:
+2. Enable both local and Hub remote paths:
 
    ```bash
    termx remote enable --mode both
@@ -43,7 +43,7 @@ register through Web Control for managed access.
    ```
 
    Expected text output includes `local_enabled: true`, `local_web_url`, and
-   cloud fields such as `control_url` / `hub_url`. In Web Control, the machine
+   Hub fields such as `control_url` / `hub_url`. In Web Control, the machine
    should become agent online after hub heartbeat.
 
 4. Run the local smoke checks after `termx remote status` shows `state: online`:
@@ -63,7 +63,7 @@ register through Web Control for managed access.
    ```
 
    Local path: open `http://localhost:5173/localweb.html`.
-   Managed path: open `http://localhost:5173/`, sign in, confirm the machine is
+   Hub path: open `http://localhost:5173/`, sign in, confirm the machine is
    online, then connect. A usable PTY should accept input in both paths.
 
 开发入口：

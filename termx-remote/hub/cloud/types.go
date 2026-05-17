@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	PathCloud = "cloud"
+	PathHub   = "hub"
 	PathLocal = "local"
 )
 

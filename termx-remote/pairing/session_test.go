@@ -110,7 +110,7 @@ func TestClaimSessionStoresAllowedPaths(t *testing.T) {
 		AppDeviceID:           "appdev_management",
 		AppName:               "TermX Management App",
 		RequestedCapabilities: []string{"terminal_management", "file_manager", "terminal"},
-		AllowedPaths:          []string{"cloud"},
+		AllowedPaths:          []string{"hub"},
 	})
 	if err != nil {
 		t.Fatalf("ClaimSession returned error: %v", err)
@@ -122,7 +122,7 @@ func TestClaimSessionStoresAllowedPaths(t *testing.T) {
 	if len(claims.Capabilities) != 0 {
 		t.Fatalf("session token should not carry requested capabilities, got %#v", claims.Capabilities)
 	}
-	if strings.Join(claims.Paths, ",") != "cloud" {
+	if strings.Join(claims.Paths, ",") != "hub" {
 		t.Fatalf("paths = %#v", claims.Paths)
 	}
 }

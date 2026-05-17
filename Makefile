@@ -1,4 +1,4 @@
-.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-cloud-both remote-pair test-remote-ui test-termx-cli
+.PHONY: help localweb-build termx-build remote-daemon remote-dev remote-open remote-status remote-clean remote-hub-both remote-pair test-remote-ui test-termx-cli
 
 BIN_DIR := $(CURDIR)/bin
 TERMX_BIN := $(BIN_DIR)/termx
@@ -21,7 +21,7 @@ help:
 		'  make remote-daemon   Rebuild local web + termx, then run a foreground daemon with local remote env' \
 		'  make remote-dev      Build ./bin/termx, ensure local remote is enabled, then start vite dev server' \
 		'  make remote-clean    Stop local temp daemons/dev servers and remove known temp sockets' \
-		'  make remote-cloud-both  Build ./bin/termx and print the command to start one clean both-mode daemon' \
+		'  make remote-hub-both  Build ./bin/termx and print the command to start one clean both-mode daemon' \
 		'  make remote-pair     Build ./bin/termx and generate a termx:// pairing URI from one socket' \
 		'  make remote-open     Ensure local remote is enabled, then print the local remote URL' \
 		'  make remote-status   Show local remote status through ./bin/termx' \
@@ -69,7 +69,7 @@ remote-clean:
 	@rm -f /tmp/termx-wf505.sock /var/folders/_k/rv9v4pv16b96_ss090ljksn80000gn/T/termx-501.sock
 	@printf '%s\n' 'cleaned known local temp daemons, vite servers, headless chrome, and temp sockets'
 
-remote-cloud-both: termx-build
+remote-hub-both: termx-build
 	@printf '%s\n' \
 		'Run this in one terminal:' \
 		'' \

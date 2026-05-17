@@ -11,7 +11,7 @@ import (
 	"github.com/lozzow/termx/termx-remote/hub/registry"
 )
 
-func TestManagedPairingRequiresWebControlProxy(t *testing.T) {
+func TestHubPairingRequiresWebControlProxy(t *testing.T) {
 	t.Parallel()
 
 	router := httpapi.NewHandler(httpapi.Config{
@@ -22,14 +22,14 @@ func TestManagedPairingRequiresWebControlProxy(t *testing.T) {
 	resp := postJSON(t, router, "/api/v1/pairing/claims", validPairingClaimRequest("mach_1"))
 
 	if resp.Code != http.StatusForbidden {
-		t.Fatalf("public managed pairing status = %d body=%s", resp.Code, resp.Body.String())
+		t.Fatalf("public Hub pairing status = %d body=%s", resp.Code, resp.Body.String())
 	}
 	if !strings.Contains(resp.Body.String(), "web_control_required") {
-		t.Fatalf("public managed pairing error = %s", resp.Body.String())
+		t.Fatalf("public Hub pairing error = %s", resp.Body.String())
 	}
 }
 
-func TestInternalPairingClaimIsCloudScoped(t *testing.T) {
+func TestInternalPairingClaimIsHubScoped(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -58,7 +58,7 @@ func TestInternalPairingClaimIsCloudScoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("poll internal pairing claim: %v", err)
 	}
-	if strings.Join(claim.AllowedPaths, ",") != registry.PathCloud {
+	if strings.Join(claim.AllowedPaths, ",") != registry.PathHub {
 		t.Fatalf("internal pairing paths = %#v", claim.AllowedPaths)
 	}
 	if _, err := reg.SubmitPairingResult(ctx, registry.PairingResultInput{

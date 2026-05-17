@@ -110,11 +110,11 @@ func remoteEnableCommand(socket *string, logFile *string, configPath *string) *c
 		Short: "Enable remote access features",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mode := strings.ToLower(strings.TrimSpace(enableMode))
-			if mode != "local" && mode != "online" && mode != "both" {
-				return fmt.Errorf("--mode must be local, online, or both")
+			if mode != "local" && mode != "hub" && mode != "both" {
+				return fmt.Errorf("--mode must be local, hub, or both")
 			}
 			if mode == "local" && browser {
-				return fmt.Errorf("--browser is only valid for online or both mode")
+				return fmt.Errorf("--browser is only valid for hub or both mode")
 			}
 			hasTokenSource := strings.TrimSpace(token) != "" || strings.TrimSpace(tokenEnv) != "" || strings.TrimSpace(tokenFile) != ""
 			resolvedToken, err := resolveSecretFlag(token, tokenEnv, tokenFile)
@@ -127,25 +127,25 @@ func remoteEnableCommand(socket *string, logFile *string, configPath *string) *c
 			}
 			switch mode {
 			case "both":
-				onlineRuntime, err := runRemoteOnlineEnable(cmd, configPath, "", hubURL, token, browser, noBrowser, browserTimeout, outputJSON, mode, addr, iceTCPAddr)
+				hubRuntime, err := runRemoteHubEnable(cmd, configPath, "", hubURL, token, browser, noBrowser, browserTimeout, outputJSON, mode, addr, iceTCPAddr)
 				if err != nil {
 					return err
 				}
-				return runRemoteLocalEnable(cmd, socket, logFile, addr, iceTCPAddr, onlineRuntime, outputJSON)
+				return runRemoteLocalEnable(cmd, socket, logFile, addr, iceTCPAddr, hubRuntime, outputJSON)
 			case "local":
 				if err := ensureRemoteConfigBootstrap(*configPath, "", "", "", mode, addr, iceTCPAddr); err != nil {
 					return err
 				}
 				return runRemoteLocalEnable(cmd, socket, logFile, addr, iceTCPAddr, remoteprotocol.Config{Enabled: true, Mode: mode}, outputJSON)
-			case "online":
-				_, err := runRemoteOnlineEnable(cmd, configPath, "", hubURL, token, browser, noBrowser, browserTimeout, outputJSON, mode, "", "")
+			case "hub":
+				_, err := runRemoteHubEnable(cmd, configPath, "", hubURL, token, browser, noBrowser, browserTimeout, outputJSON, mode, "", "")
 				return err
 			default:
-				return fmt.Errorf("--mode must be local, online, or both")
+				return fmt.Errorf("--mode must be local, hub, or both")
 			}
 		},
 	}
-	cmd.Flags().StringVar(&enableMode, "mode", "both", "connection mode: local, online, or both")
+	cmd.Flags().StringVar(&enableMode, "mode", "both", "connection mode: local, hub, or both")
 	cmd.Flags().StringVar(&addr, "addr", defaultRemoteLocalWebAddr, "local web listen address")
 	cmd.Flags().StringVar(&iceTCPAddr, "ice-tcp-addr", defaultRemoteLocalICEAddr, "local ICE TCP listen address")
 	cmd.Flags().StringVar(&hubURL, "hub-url", "", "optional explicit Hub URL; normally discovered from Web Control")
@@ -293,14 +293,14 @@ func remoteOpenCommand(socket *string, logFile *string) *cobra.Command {
 	return cmd
 }
 
-func runRemoteLocalEnable(cmd *cobra.Command, socket *string, logFile *string, addr string, iceTCPAddr string, cloud remoteprotocol.Config, outputJSON bool) error {
+func runRemoteLocalEnable(cmd *cobra.Command, socket *string, logFile *string, addr string, iceTCPAddr string, hub remoteprotocol.Config, outputJSON bool) error {
 	status, err := remoteLocalEnableClient(context.Background(), *socket, *logFile, remoteprotocol.LocalEnableParams{
 		LocalWebAddr: addr,
 		ICETCPAddr:   iceTCPAddr,
-		HubURLs:      compactStringList(cloud.HubURLs),
-		ControlURL:   cloud.ControlURL,
-		AccessToken:  cloud.AccessToken,
-		Region:       cloud.Region,
+		HubURLs:      compactStringList(hub.HubURLs),
+		ControlURL:   hub.ControlURL,
+		AccessToken:  hub.AccessToken,
+		Region:       hub.Region,
 	})
 	if err != nil {
 		return err
@@ -314,25 +314,17 @@ func runRemoteLocalEnable(cmd *cobra.Command, socket *string, logFile *string, a
 	return nil
 }
 
-func runRemoteOnlineEnable(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, forceBrowser bool, noBrowser bool, browserTimeout time.Duration, outputJSON bool, mode string, localWebAddr string, iceTCPAddr string) (remoteprotocol.Config, error) {
-	return runRemoteCloudEnableWithToken(cmd, configPath, controlURL, hubURL, token, forceBrowser, noBrowser, browserTimeout, outputJSON, mode, localWebAddr, iceTCPAddr)
+func runRemoteHubEnable(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, forceBrowser bool, noBrowser bool, browserTimeout time.Duration, outputJSON bool, mode string, localWebAddr string, iceTCPAddr string) (remoteprotocol.Config, error) {
+	return runRemoteHubEnableWithToken(cmd, configPath, controlURL, hubURL, token, forceBrowser, noBrowser, browserTimeout, outputJSON, mode, localWebAddr, iceTCPAddr)
 }
 
-func runRemoteCloudEnable(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, tokenEnv string, tokenFile string, noBrowser bool, outputJSON bool) (remoteprotocol.Config, error) {
-	resolvedToken, err := resolveSecretFlag(token, tokenEnv, tokenFile)
-	if err != nil {
-		return remoteprotocol.Config{}, err
-	}
-	return runRemoteCloudEnableWithToken(cmd, configPath, controlURL, hubURL, resolvedToken, false, noBrowser, 5*time.Minute, outputJSON, "online", "", "")
-}
-
-func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, forceBrowser bool, noBrowser bool, browserTimeout time.Duration, outputJSON bool, mode string, localWebAddr string, iceTCPAddr string) (remoteprotocol.Config, error) {
+func runRemoteHubEnableWithToken(cmd *cobra.Command, configPath *string, controlURL string, hubURL string, token string, forceBrowser bool, noBrowser bool, browserTimeout time.Duration, outputJSON bool, mode string, localWebAddr string, iceTCPAddr string) (remoteprotocol.Config, error) {
 	controlURL = strings.TrimSpace(controlURL)
 	hubURL = strings.TrimSpace(hubURL)
 	token = strings.TrimSpace(token)
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode == "" {
-		mode = "online"
+		mode = "hub"
 	}
 	if controlURL == "" || hubURL == "" || (!forceBrowser && token == "") {
 		cfg, cfgErr := remoteConfigFromFileAndEnv(*configPath)
@@ -397,7 +389,7 @@ func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, contr
 	if hubURL == "" {
 		hubURLs = nil
 	}
-	cloud := remoteprotocol.Config{
+	hub := remoteprotocol.Config{
 		Enabled:      true,
 		ControlURL:   controlURL,
 		HubURL:       hubURL,
@@ -410,7 +402,7 @@ func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, contr
 	if outputJSON {
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")
-		return cloud, enc.Encode(struct {
+		return hub, enc.Encode(struct {
 			Enabled    bool   `json:"enabled"`
 			ControlURL string `json:"control_url"`
 			HubURL     string `json:"hub_url,omitempty"`
@@ -424,13 +416,13 @@ func runRemoteCloudEnableWithToken(cmd *cobra.Command, configPath *string, contr
 			AuthStore:  authStorePath,
 		})
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "online_enabled:\ttrue")
+	fmt.Fprintln(cmd.OutOrStdout(), "hub_enabled:\ttrue")
 	fmt.Fprintf(cmd.OutOrStdout(), "control_url:\t%s\n", controlURL)
 	if hubURL != "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "hub_url:\t%s\n", hubURL)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "mode:\t%s\n", mode)
 	fmt.Fprintf(cmd.OutOrStdout(), "auth_store:\t%s\n", authStorePath)
-	fmt.Fprintln(cmd.OutOrStdout(), "next:\trun `termx daemon` to keep online remote connected")
-	return cloud, nil
+	fmt.Fprintln(cmd.OutOrStdout(), "next:\trun `termx daemon` to keep hub remote connected")
+	return hub, nil
 }

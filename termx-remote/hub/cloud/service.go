@@ -59,8 +59,8 @@ func (s *Service) SubmitOffer(ctx context.Context, in SubmitOfferInput) (Offer, 
 		return Offer{}, errors.New("cloud service is not configured")
 	}
 	path := normalizeSessionPath(in.Path)
-	allowRelay := s.allowRelay && path == PathCloud
-	allowRelayTransfer := s.allowRelayTransfer && path == PathCloud
+	allowRelay := s.allowRelay && path == PathHub
+	allowRelayTransfer := s.allowRelayTransfer && path == PathHub
 	preflight := registry.OfferInput{
 		MachineID:            strings.TrimSpace(in.MachineID),
 		TerminalID:           strings.TrimSpace(in.TerminalID),
@@ -130,8 +130,8 @@ func (s *Service) PreflightSession(ctx context.Context, in PreflightSessionInput
 		return PreflightSession{}, err
 	}
 	path := normalizeSessionPath(in.Path)
-	allowRelay := s.allowRelay && path == PathCloud
-	allowRelayTransfer := s.allowRelayTransfer && path == PathCloud
+	allowRelay := s.allowRelay && path == PathHub
+	allowRelayTransfer := s.allowRelayTransfer && path == PathHub
 	return PreflightSession{
 		MachineID:          machineID,
 		TerminalID:         strings.TrimSpace(in.TerminalID),
@@ -273,6 +273,6 @@ func normalizeSessionPath(path string) string {
 	case PathLocal:
 		return PathLocal
 	default:
-		return PathCloud
+		return PathHub
 	}
 }

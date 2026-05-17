@@ -29,7 +29,7 @@ func TestCloudSignalingOfferAndAnswerFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("submit offer: %v", err)
 	}
-	if offer.Path != cloud.PathCloud || offer.RelayInUse || offer.AllowRelay {
+	if offer.Path != cloud.PathHub || offer.RelayInUse || offer.AllowRelay {
 		t.Fatalf("offer path/relay = %+v", offer)
 	}
 	if offer.MachineID != "mach_1" || offer.TerminalID != "term_1" || offer.SessionToken != "session-token-1" {

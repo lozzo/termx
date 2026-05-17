@@ -41,7 +41,7 @@ export async function POST(
     return NextResponse.json(asError("machine_not_found", "machine is not owned by this account"), { status: 404 });
   }
   if (!agent.online || !agent.hub?.httpUrl) {
-    return NextResponse.json(asError("machine_offline", "machine is not connected to a managed Hub"), { status: 409 });
+    return NextResponse.json(asError("machine_offline", "machine is not connected to a Hub"), { status: 409 });
   }
 
   const hubResponse = await fetchHubPairingClaim(agent.hub.httpUrl, {

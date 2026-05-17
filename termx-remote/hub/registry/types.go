@@ -7,7 +7,7 @@ import (
 
 const (
 	AgentOnline = "online"
-	PathCloud   = "cloud"
+	PathHub     = "hub"
 	PathLocal   = "local"
 )
 
