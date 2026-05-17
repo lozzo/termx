@@ -40,7 +40,8 @@ const allowedPaths: readonly ConnectionPath[] = ['local', 'hub']
 export function parsePairingPayload(input: string): PairingPayload {
   const raw = parsePairingInput(input)
   rejectPrivateKeyMaterial(raw)
-  const data = record(raw, 'pairing payload')
+  const data = record(unwrapPairingPayload(raw), 'pairing payload')
+  rejectPrivateKeyMaterial(data)
   const type = optionalString(data.type)
   if (type !== 'termx_pair') {
     throw new Error(`unsupported pairing payload type ${type}`)
@@ -60,7 +61,49 @@ function parsePairingInput(input: string): unknown {
   if (trimmed.startsWith('{')) {
     return JSON.parse(trimmed)
   }
-  const url = new URL(trimmed)
+  const payloadParam = trimmed.match(/^payload=([A-Za-z0-9_-]+)$/i)
+  if (payloadParam?.[1]) {
+    return JSON.parse(decodeBase64url(payloadParam[1]))
+  }
+  return parsePairingURI(extractPairingURI(trimmed) ?? trimmed)
+}
+
+function unwrapPairingPayload(value: unknown): unknown {
+  const data = record(value, 'pairing payload')
+  if (optionalString(data.type) === 'termx_pair') return data
+
+  const payload = data.payload
+  if (typeof payload === 'string') return parsePairingInput(payload)
+  if (payload !== undefined && payload !== null) return payload
+
+  const uri = optionalString(data.uri)
+  if (uri) return parsePairingInput(uri)
+
+  return data
+}
+
+function extractPairingURI(input: string): string | undefined {
+  const start = input.search(/termx:\/\/pair\?payload=/i)
+  if (start === -1) return undefined
+  const lines = input.slice(start).split(/\r?\n/)
+  const firstLine = lines[0] ?? ''
+  const firstMatch = firstLine.match(/^termx:\/\/pair\?payload=([A-Za-z0-9_-]+)/i)
+  if (!firstMatch?.[1]) return undefined
+
+  let encoded = firstMatch[1]
+  for (const line of lines.slice(1)) {
+    const trimmed = line.trim()
+    if (trimmed === '') break
+    if (/^[A-Za-z_][A-Za-z0-9_-]*:\s*/.test(trimmed)) break
+    const chunk = trimmed.replace(/[ \t]/g, '')
+    if (!/^[A-Za-z0-9_-]+$/.test(chunk)) break
+    encoded += chunk
+  }
+  return `termx://pair?payload=${encoded}`
+}
+
+function parsePairingURI(input: string): unknown {
+  const url = new URL(input)
   if (url.protocol !== 'termx:' || url.hostname !== 'pair') {
     throw new Error('pairing QR must use termx://pair')
   }

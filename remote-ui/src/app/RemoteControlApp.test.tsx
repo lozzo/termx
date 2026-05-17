@@ -284,6 +284,57 @@ describe('RemoteControlApp', () => {
     expect(screen.queryByText('Local app identity storage is required before opening this machine')).toBeNull()
   })
 
+  it('claims copied termx remote pair JSON output as a v4 pairing payload', async () => {
+    const storage = new MemoryStorage()
+    const payload = pairPayload({
+      machineId: 'copied-json-1',
+      name: 'Copied JSON Box',
+      addresses: {
+        local: [],
+        lan: [],
+        public: ['https://copied-json-hub.termx.test'],
+      },
+      endpoints: {},
+    })
+    const pairUri = termxPairUri(payload)
+    const fetch = new RecordingFetch([
+      jsonResponse(200, {
+        claim_id: 'claim-copied-json-1',
+        machine_id: 'copied-json-1',
+        machine_name: 'Copied JSON Box',
+        session_token: 'session-token-copied-json',
+        expires_at: '2099-05-05T10:30:00Z',
+      }),
+    ])
+
+    render(
+      <RemoteControlApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
+        networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
+        storage={storage}
+      />,
+    )
+
+    await userEvent.click(headerAddLocalDeviceButton())
+    fireEvent.change(screen.getByLabelText(/termx qr content/i), {
+      target: { value: JSON.stringify({ uri: pairUri, payload }, null, 2) },
+    })
+    await userEvent.click(screen.getByRole('button', { name: /^add device$/i }))
+
+    await waitFor(() => expect(screen.getByTestId('termx-machine-terminal-list')).toBeTruthy())
+    expect(fetch.requests[0]).toMatchObject({
+      method: 'POST',
+      url: 'https://copied-json-hub.termx.test/api/v1/pairing/claims',
+      body: expect.objectContaining({
+        machine_id: 'copied-json-1',
+        pair_session_id: 'pair-session-1',
+        pair_secret: 'pair-secret-1',
+      }),
+    })
+    expect(storage.getItem('termx.session.copied-json-1.token')).toBe('session-token-copied-json')
+  })
+
   it('keeps the pairing sheet on the app light surface when the terminal theme is dark', async () => {
     const storage = new MemoryStorage()
 

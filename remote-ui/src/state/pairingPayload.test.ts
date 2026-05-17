@@ -51,6 +51,27 @@ describe('pairing payload parser', () => {
     })
   })
 
+  it('parses copied v4 pairing output wrappers without accepting older schemas', () => {
+    const rawPayload = v4Payload()
+    const uri = `termx://pair?payload=${base64url(JSON.stringify(rawPayload))}`
+    const wrappedURI = `${uri.slice(0, 80)}\n  ${uri.slice(80)}`
+
+    expect(parsePairingPayload(`uri:\t${uri}\nexpires_at:\t2026-05-03T12:30:00Z`).pairing.sessionId).toBe('pair-1')
+    expect(parsePairingPayload(`uri:\t${wrappedURI}\nexpires_at:\t2026-05-03T12:30:00Z`).pairing.sessionId).toBe('pair-1')
+    expect(parsePairingPayload(JSON.stringify({ uri, payload: rawPayload })).pairing.sessionId).toBe('pair-1')
+    expect(parsePairingPayload(JSON.stringify({ payload: rawPayload })).pairing.sessionId).toBe('pair-1')
+    expect(parsePairingPayload(`payload=${base64url(JSON.stringify(rawPayload))}`).pairing.sessionId).toBe('pair-1')
+
+    expect(() => parsePairingPayload(JSON.stringify({
+      payload: {
+        type: 'termx_pair',
+        schema_version: 2,
+        machine: { id: 'machine-old', name: 'Old Machine' },
+        pairing: { session_id: 'pair-old', secret: 'old-secret' },
+      },
+    }))).toThrow(/schema_version 2/i)
+  })
+
   it('rejects old pairing payload schemas instead of normalizing them', () => {
     expect(() => parsePairingPayload(JSON.stringify({
       type: 'termx_pair_v1',
@@ -117,6 +138,32 @@ describe('pairing payload parser', () => {
     }))).toThrow(/connection path/i)
   })
 })
+
+function v4Payload(): Record<string, unknown> {
+  return {
+    type: 'termx_pair',
+    schema_version: 4,
+    machine: {
+      id: 'machine-1',
+      name: '开发 MacBook',
+      hostname: 'dev-mac.local',
+    },
+    local: {
+      hub_urls: ['http://127.0.0.1:7788', 'http://192.168.1.40:7788'],
+    },
+    hub: {
+      hub_urls: ['https://hub.termx.test'],
+      web_control: 'https://control.termx.test',
+    },
+    pairing: {
+      session_id: 'pair-1',
+      secret: 'pair-secret-1',
+      expires_at: '2026-05-03T12:30:00Z',
+    },
+    bootstrap: {},
+    preferred_path: 'local',
+  }
+}
 
 function base64url(value: string): string {
   const bytes = new TextEncoder().encode(value)
