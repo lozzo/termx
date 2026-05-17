@@ -990,9 +990,18 @@ func (v *VTerm) LoadSizedSnapshotWithExtendedMetadata(cols, rows int, scrollback
 		_, _ = v.emu.Write([]byte("\x1b[?1049h"))
 	}
 	if len(screen.Cells) > 0 {
-		// 中文说明：不要逐格 SetCell。直接回放整屏 ANSI 可以把内容、样式和
-		// 宽字符续位一次性恢复进 emulator，避免宽字符在后续刷新时被打散。
-		_, _ = safeEmulatorWrite(v.emu, encodeScreenSnapshot(screen.Cells))
+		for y, row := range screen.Cells {
+			if y >= height {
+				break
+			}
+			for x, cell := range row {
+				if x >= width || isWideContinuationCell(cell) {
+					continue
+				}
+				v.emu.Emulator.SetCell(x, y, uvCell(cell))
+			}
+			v.emu.Emulator.SetScreenLineUsed(y, snapshotRowUsedWidth(row, width))
+		}
 	}
 	for y, wrapped := range normalizeBoolSlice(screenWrapped, height) {
 		v.emu.SetScreenLineWrapped(y, wrapped)
@@ -1090,6 +1099,7 @@ func (v *VTerm) applyScreenScrollLocked(delta int) {
 				v.emu.Emulator.SetCell(x, y, uvBlankCell())
 			}
 			v.emu.Emulator.SetScreenLineWrapped(y, false)
+			v.emu.Emulator.SetScreenLineUsed(y, 0)
 		}
 		zeroTime := make([]time.Time, height)
 		zeroKinds := make([]string, height)
@@ -1146,6 +1156,7 @@ func (v *VTerm) applyScreenScrollLocked(delta int) {
 			v.emu.Emulator.SetCell(x, y, uvBlankCell())
 		}
 		v.emu.Emulator.SetScreenLineWrapped(y, wrapped[y])
+		v.emu.Emulator.SetScreenLineUsed(y, len(row))
 	}
 	v.screenTimestamps = nextTimes
 	v.screenRowKinds = nextKinds
@@ -1160,12 +1171,24 @@ func (v *VTerm) applyScreenUpdateOpsLocked(update ScreenUpdate, targetCols, targ
 	nextTimes := normalizeTimeSlice(v.screenTimestamps, targetRows)
 	nextKinds := normalizeStringSlice(v.screenRowKinds, targetRows)
 	changedRows := make(map[int]struct{}, targetRows)
+	changedRowUsed := make(map[int]int)
 	markRowRange := func(start, end int) {
 		for row := start; row < end; row++ {
 			if row < 0 || row >= targetRows {
 				continue
 			}
 			changedRows[row] = struct{}{}
+		}
+	}
+	extendChangedRowUsed := func(row, used int) {
+		if row < 0 || row >= targetRows || used <= 0 {
+			return
+		}
+		if used > targetCols {
+			used = targetCols
+		}
+		if used > changedRowUsed[row] {
+			changedRowUsed[row] = used
 		}
 	}
 	for _, op := range update.Ops {
@@ -1187,6 +1210,7 @@ func (v *VTerm) applyScreenUpdateOpsLocked(update ScreenUpdate, targetCols, targ
 			if op.WrappedSet {
 				nextWrapped[op.Row] = op.Wrapped
 			}
+			extendChangedRowUsed(op.Row, op.Col+len(localCells))
 			markRowRange(op.Row, op.Row+1)
 		case ScreenOpClearToEOL:
 			if op.Row < 0 || op.Row >= targetRows {
@@ -1288,13 +1312,19 @@ func (v *VTerm) applyScreenUpdateOpsLocked(update ScreenUpdate, targetCols, targ
 		if row < 0 || row >= targetRows {
 			continue
 		}
+		used := 0
 		for col := 0; col < targetCols; col++ {
+			if col < len(screen[row]) && !cellIsBlank(screen[row][col]) {
+				used = col + 1
+			}
 			if isWideContinuationCell(screen[row][col]) {
 				continue
 			}
 			v.emu.Emulator.SetCell(col, row, uvCell(screen[row][col]))
 		}
+		used = maxInt(used, changedRowUsed[row])
 		v.emu.Emulator.SetScreenLineWrapped(row, boolAt(nextWrapped, row))
+		v.emu.Emulator.SetScreenLineUsed(row, used)
 	}
 
 	modes := update.Modes
@@ -1465,6 +1495,20 @@ func (v *VTerm) ScreenContent() ScreenData {
 	}
 }
 
+func (v *VTerm) UsedScreenContent() ScreenData {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	height := v.emu.Height()
+	rows := make([][]Cell, height)
+	for y := 0; y < height; y++ {
+		rows[y] = cloneCellSlice(v.screenRowUsedViewLocked(y))
+	}
+	return ScreenData{
+		Cells:             rows,
+		IsAlternateScreen: v.emu.IsAltScreen(),
+	}
+}
+
 func (v *VTerm) ScreenRowCount() int {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
@@ -1486,6 +1530,12 @@ func (v *VTerm) ScreenRowView(y int) []Cell {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return v.screenRowViewLocked(y)
+}
+
+func (v *VTerm) UsedScreenRow(y int) []Cell {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return cloneCellSlice(v.screenRowUsedViewLocked(y))
 }
 
 func (v *VTerm) Size() (int, int) {
@@ -1715,7 +1765,7 @@ func (v *VTerm) EncodeReplay(scrollbackLimit int) []byte {
 	if scrollbackLimit > 0 && len(scrollback) > scrollbackLimit {
 		scrollback = scrollback[len(scrollback)-scrollbackLimit:]
 	}
-	return encodeTerminalReplay(scrollback, v.screenRowsLocked(), v.cursor, v.modes)
+	return encodeTerminalReplay(scrollback, v.usedScreenRowsLocked(), v.cursor, v.modes)
 }
 
 func (v *VTerm) EncodeHistoryReplay(beforeOffset int, limit int) ([]byte, int, bool) {
@@ -1915,6 +1965,24 @@ func uvCellsToVTermCells(v *VTerm, row []uv.Cell) []Cell {
 	return out
 }
 
+func cellIsBlank(cell Cell) bool {
+	return strings.TrimSpace(cell.Content) == "" &&
+		cell.Style == (CellStyle{}) &&
+		cell.LinkURL == "" &&
+		cell.LinkParams == "" &&
+		cell.Width <= 1
+}
+
+func snapshotRowUsedWidth(row []Cell, width int) int {
+	limit := minInt(len(row), width)
+	for i := 0; i < limit; i++ {
+		if !cellIsBlank(row[i]) {
+			return limit
+		}
+	}
+	return 0
+}
+
 func (v *VTerm) disableEmulatorScrollbackLocked() {
 	v.sbSize = 0
 	if v.emu != nil {
@@ -2012,16 +2080,7 @@ func writeSequentialRow(b *strings.Builder, row []Cell, currentStyle CellStyle) 
 	if b == nil {
 		return currentStyle
 	}
-	last := len(row) - 1
-	for last >= 0 {
-		cell := row[last]
-		if !vtermCellNeedsReplay(cell) {
-			last--
-			continue
-		}
-		break
-	}
-	for i := 0; i <= last; i++ {
+	for i := 0; i < len(row); i++ {
 		cell := row[i]
 		if cell.Content == "" && cell.Width == 0 {
 			continue
@@ -2040,14 +2099,6 @@ func writeSequentialRow(b *strings.Builder, row []Cell, currentStyle CellStyle) 
 		b.WriteString(content)
 	}
 	return currentStyle
-}
-
-func vtermCellNeedsReplay(cell Cell) bool {
-	return strings.TrimSpace(cell.Content) != "" ||
-		cell.Style != (CellStyle{}) ||
-		cell.LinkURL != "" ||
-		cell.LinkParams != "" ||
-		cell.Width > 1
 }
 
 func writeTerminalModesANSI(b *strings.Builder, modes TerminalModes) {
@@ -2398,6 +2449,15 @@ func (v *VTerm) screenRowsLocked() [][]Cell {
 	return rows
 }
 
+func (v *VTerm) usedScreenRowsLocked() [][]Cell {
+	height := v.screenRowCountLocked()
+	rows := make([][]Cell, height)
+	for y := 0; y < height; y++ {
+		rows[y] = v.screenRowUsedViewLocked(y)
+	}
+	return rows
+}
+
 func (v *VTerm) screenWrappedLocked(height int) []bool {
 	if height <= 0 {
 		return nil
@@ -2440,6 +2500,21 @@ func (v *VTerm) screenRowViewLocked(y int) []Cell {
 	}
 	v.screenRowCache[y] = row
 	return row
+}
+
+func (v *VTerm) screenRowUsedViewLocked(y int) []Cell {
+	if v.emu == nil || y < 0 || y >= v.emu.Height() {
+		return nil
+	}
+	used := v.emu.ScreenLineUsed(y)
+	if used <= 0 {
+		return v.screenRowViewLocked(y)
+	}
+	row := v.screenRowViewLocked(y)
+	if used > len(row) {
+		used = len(row)
+	}
+	return row[:used]
 }
 
 func (v *VTerm) screenRowSpanLocked(y, start, end int) []Cell {
@@ -2520,15 +2595,10 @@ func (v *VTerm) scrollbackRowViewLocked(y int) []Cell {
 	if cached := v.scrollbackRowCache[y]; cached != nil {
 		return cached
 	}
-	width := v.emu.Width()
-	row := make([]Cell, 0, width)
-	for x := 0; x < width; x++ {
-		cell := v.emu.ScrollbackCellAt(x, y)
-		if cell == nil && x >= len(row) {
-			row = append(row, Cell{})
-			continue
-		}
-		row = append(row, v.convertCell(cell))
+	line := v.emu.ScrollbackLine(y)
+	row := make([]Cell, len(line))
+	for x := 0; x < len(line); x++ {
+		row[x] = v.convertCell(&line[x])
 	}
 	v.scrollbackRowCache[y] = row
 	return row
@@ -2626,7 +2696,10 @@ func (v *VTerm) screenRowFingerprintLocked(y int) rowFingerprint {
 	if v.emu == nil || y < 0 || y >= v.emu.Height() {
 		return rowFingerprint{}
 	}
-	width := v.emu.Width()
+	width := v.emu.ScreenLineUsed(y)
+	if width <= 0 {
+		width = v.emu.Width()
+	}
 	return v.rowFingerprintLocked(width, v.screenRowWrappedAtLocked(y), func(x int) *uv.Cell {
 		return v.emu.CellAt(x, y)
 	})
@@ -2652,9 +2725,13 @@ func (v *VTerm) scrollbackRowFingerprintLocked(y int) rowFingerprint {
 	if v.emu == nil || y < 0 || y >= v.emu.ScrollbackLen() {
 		return rowFingerprint{}
 	}
-	width := v.emu.Width()
+	line := v.emu.ScrollbackLine(y)
+	width := len(line)
 	return v.rowFingerprintLocked(width, v.scrollbackRowWrappedAtLocked(y), func(x int) *uv.Cell {
-		return v.emu.ScrollbackCellAt(x, y)
+		if x < 0 || x >= len(line) {
+			return nil
+		}
+		return &line[x]
 	})
 }
 

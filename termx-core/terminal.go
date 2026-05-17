@@ -2323,27 +2323,44 @@ func protocolRowsFromCore(rows [][]Cell) [][]protocol.Cell {
 }
 
 func protocolCompactRowsFromCore(rows [][]Cell) []protocol.CompactRow {
+	return protocolCompactRowsFromCoreWithOptions(rows, false)
+}
+
+func protocolCompactRowsFromCorePreserveTrailingBlankCells(rows [][]Cell) []protocol.CompactRow {
+	return protocolCompactRowsFromCoreWithOptions(rows, true)
+}
+
+func protocolCompactRowsFromCoreWithOptions(rows [][]Cell, preserveTrailingBlankCells bool) []protocol.CompactRow {
 	if len(rows) == 0 {
 		return nil
 	}
 	out := make([]protocol.CompactRow, len(rows))
 	for i, row := range rows {
-		out[i] = protocolCompactRowFromCore(row)
+		out[i] = protocolCompactRowFromCoreWithOptions(row, preserveTrailingBlankCells)
 	}
 	return out
 }
 
 func protocolCompactRowFromCore(row []Cell) protocol.CompactRow {
+	return protocolCompactRowFromCoreWithOptions(row, false)
+}
+
+func protocolCompactRowFromCoreWithOptions(row []Cell, preserveTrailingBlankCells bool) protocol.CompactRow {
 	last := len(row)
-	for last > 0 {
-		cell := row[last-1]
-		if cell.Content != "" && strings.TrimSpace(cell.Content) != "" {
-			break
+	if !preserveTrailingBlankCells {
+		for last > 0 {
+			cell := row[last-1]
+			if cell.Content != "" && strings.TrimSpace(cell.Content) != "" {
+				break
+			}
+			if cell.Style != (CellStyle{}) {
+				break
+			}
+			if cell.LinkURL != "" || cell.LinkParams != "" {
+				break
+			}
+			last--
 		}
-		if cell.Style != (CellStyle{}) {
-			break
-		}
-		last--
 	}
 	row = row[:last]
 	if len(row) == 0 {
@@ -2471,7 +2488,7 @@ func protocolGridViewportFromCore(viewport *GridViewport) *protocol.GridViewport
 	return &protocol.GridViewport{
 		TerminalID:           viewport.TerminalID,
 		Size:                 protocol.Size{Cols: viewport.Size.Cols, Rows: viewport.Size.Rows},
-		Rows:                 protocolCompactRowsFromCore(viewport.Rows),
+		Rows:                 protocolCompactRowsFromCorePreserveTrailingBlankCells(viewport.Rows),
 		ScrollbackOffset:     viewport.ScrollbackOffset,
 		ScrollbackLimit:      viewport.ScrollbackLimit,
 		ScrollbackTotal:      viewport.ScrollbackTotal,
@@ -2491,7 +2508,7 @@ func protocolSnapshotFromCore(snapshot *Snapshot) *protocol.Snapshot {
 		TerminalID:           snapshot.TerminalID,
 		Size:                 protocol.Size{Cols: snapshot.Size.Cols, Rows: snapshot.Size.Rows},
 		Screen:               protocol.ScreenData{Cells: protocolRowsFromCore(snapshot.Screen.Cells), IsAlternateScreen: snapshot.Screen.IsAlternateScreen},
-		Scrollback:           protocolCompactRowsFromCore(snapshot.Scrollback),
+		Scrollback:           protocolCompactRowsFromCorePreserveTrailingBlankCells(snapshot.Scrollback),
 		ScrollbackOffset:     snapshot.ScrollbackOffset,
 		ScrollbackTotal:      snapshot.ScrollbackTotal,
 		ScrollbackHasMore:    snapshot.ScrollbackHasMore,

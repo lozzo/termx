@@ -121,15 +121,15 @@ func provisionalSnapshotForLocalShrink(snapshot *protocol.Snapshot, cols, rows u
 	cloned := *snapshot
 	cloned.Size = protocol.Size{Cols: cols, Rows: rows}
 	cloned.Screen = protocol.ScreenData{
-		Cells:             cloneProtocolCells2D(snapshot.Screen.Cells),
+		Cells:             cloneProtocolCells2D(tailProtocolRows(snapshot.Screen.Cells, int(rows))),
 		IsAlternateScreen: snapshot.Screen.IsAlternateScreen,
 	}
 	cloned.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback)
-	cloned.ScreenTimestamps = append([]time.Time(nil), snapshot.ScreenTimestamps...)
+	cloned.ScreenTimestamps = tailTimeSlice(snapshot.ScreenTimestamps, int(rows))
 	cloned.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps...)
-	cloned.ScreenRowKinds = append([]string(nil), snapshot.ScreenRowKinds...)
+	cloned.ScreenRowKinds = tailStringSlice(snapshot.ScreenRowKinds, int(rows))
 	cloned.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds...)
-	cloned.ScreenWrapped = append([]bool(nil), snapshot.ScreenWrapped...)
+	cloned.ScreenWrapped = tailBoolSlice(snapshot.ScreenWrapped, int(rows))
 	cloned.ScrollbackWrapped = append([]bool(nil), snapshot.ScrollbackWrapped...)
 	if cloned.Cursor.Row >= int(rows) || cloned.Cursor.Col >= int(cols) {
 		cloned.Cursor.Visible = false
@@ -137,6 +137,50 @@ func provisionalSnapshotForLocalShrink(snapshot *protocol.Snapshot, cols, rows u
 		cloned.Cursor.Col = runtimeMinInt(cloned.Cursor.Col, int(cols)-1)
 	}
 	return &cloned
+}
+
+func tailProtocolRows(rows [][]protocol.Cell, limit int) [][]protocol.Cell {
+	if len(rows) == 0 || limit <= 0 {
+		return nil
+	}
+	start := len(rows) - limit
+	if start < 0 {
+		start = 0
+	}
+	return cloneProtocolCells2D(rows[start:])
+}
+
+func tailTimeSlice(values []time.Time, limit int) []time.Time {
+	if len(values) == 0 || limit <= 0 {
+		return nil
+	}
+	start := len(values) - limit
+	if start < 0 {
+		start = 0
+	}
+	return append([]time.Time(nil), values[start:]...)
+}
+
+func tailStringSlice(values []string, limit int) []string {
+	if len(values) == 0 || limit <= 0 {
+		return nil
+	}
+	start := len(values) - limit
+	if start < 0 {
+		start = 0
+	}
+	return append([]string(nil), values[start:]...)
+}
+
+func tailBoolSlice(values []bool, limit int) []bool {
+	if len(values) == 0 || limit <= 0 {
+		return nil
+	}
+	start := len(values) - limit
+	if start < 0 {
+		start = 0
+	}
+	return append([]bool(nil), values[start:]...)
 }
 
 func cloneProtocolCells2D(rows [][]protocol.Cell) [][]protocol.Cell {

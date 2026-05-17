@@ -855,7 +855,7 @@ func encodeScreenUpdatePayloadBinaryCurrent(update ScreenUpdate) ([]byte, error)
 	}
 	if update.FullReplace {
 		enc.appendByte(boolByte(update.Screen.IsAlternateScreen))
-		enc.appendRows(update.Screen.Cells, styleIndex)
+		enc.appendRowsPreserveTrailingBlankCells(update.Screen.Cells, styleIndex)
 		enc.appendTimeSlice(update.ScreenTimestamps)
 		enc.appendStringSlice(update.ScreenRowKinds)
 		enc.appendBoolSlice(update.ScreenWrapped)
@@ -928,7 +928,7 @@ func encodeScreenUpdatePayloadBinaryCurrent(update ScreenUpdate) ([]byte, error)
 		if row.WrappedSet {
 			enc.appendByte(boolByte(row.Wrapped))
 		}
-		enc.appendRow(row.Cells, styleIndex)
+		enc.appendCells(row.Cells, styleIndex)
 	}
 	return enc.buf, nil
 }
@@ -945,11 +945,8 @@ func collectScreenUpdateStyles(update ScreenUpdate) ([]CellStyle, map[CellStyle]
 			styles = append(styles, cell.Style)
 		}
 	}
-	addRow := func(row []Cell) {
-		addCells(trimCellsForScreenUpdateWire(row))
-	}
 	for _, row := range update.Screen.Cells {
-		addRow(row)
+		addCells(row)
 	}
 	for _, op := range update.Ops {
 		if op.Code != ScreenOpWriteSpan {
@@ -958,7 +955,7 @@ func collectScreenUpdateStyles(update ScreenUpdate) ([]CellStyle, map[CellStyle]
 		addCells(op.Cells)
 	}
 	for _, row := range update.ScrollbackAppend {
-		addRow(row.Cells)
+		addCells(row.Cells)
 	}
 	return styles, index
 }
@@ -1382,6 +1379,13 @@ func (e *screenUpdateEncoder) appendRows(rows [][]Cell, styleIndex map[CellStyle
 	e.appendUvarint(uint64(len(rows)))
 	for _, row := range rows {
 		e.appendRow(row, styleIndex)
+	}
+}
+
+func (e *screenUpdateEncoder) appendRowsPreserveTrailingBlankCells(rows [][]Cell, styleIndex map[CellStyle]uint64) {
+	e.appendUvarint(uint64(len(rows)))
+	for _, row := range rows {
+		e.appendCells(row, styleIndex)
 	}
 }
 
@@ -1897,20 +1901,37 @@ func CompactRowsFromCells(rows [][]Cell) []CompactRow {
 	return out
 }
 
+func CompactRowsFromCellsPreserveTrailingBlankRows(rows [][]Cell) []CompactRow {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]CompactRow, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, CompactRowFromCellsPreserveTrailingBlankCells(row, true))
+	}
+	return out
+}
+
 func CompactRowFromCells(row []Cell) CompactRow {
+	return CompactRowFromCellsPreserveTrailingBlankCells(row, false)
+}
+
+func CompactRowFromCellsPreserveTrailingBlankCells(row []Cell, preserveTrailingBlankCells bool) CompactRow {
 	last := len(row)
-	for last > 0 {
-		cell := row[last-1]
-		if cell.Content != "" && strings.TrimSpace(cell.Content) != "" {
-			break
+	if !preserveTrailingBlankCells {
+		for last > 0 {
+			cell := row[last-1]
+			if cell.Content != "" && strings.TrimSpace(cell.Content) != "" {
+				break
+			}
+			if !cell.Style.isZero() {
+				break
+			}
+			if cell.LinkURL != "" || cell.LinkParams != "" {
+				break
+			}
+			last--
 		}
-		if !cell.Style.isZero() {
-			break
-		}
-		if cell.LinkURL != "" || cell.LinkParams != "" {
-			break
-		}
-		last--
 	}
 	row = row[:last]
 	if len(row) == 0 {

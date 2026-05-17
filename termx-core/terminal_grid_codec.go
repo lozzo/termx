@@ -41,7 +41,7 @@ const (
 )
 
 func encodeTerminalGridRow(row terminalGridRow) ([]byte, error) {
-	cells := trimTerminalGridCells(row.cells)
+	cells := row.cells
 	runs := terminalGridRunsFromCellRuns(row.runs)
 	if len(runs) == 0 {
 		runs = terminalGridRuns(cells)
@@ -171,24 +171,6 @@ func decodeTerminalGridRow(data []byte) (terminalGridRow, error) {
 		return terminalGridRow{}, fmt.Errorf("terminal grid row has %d trailing bytes", len(reader.data)-reader.pos)
 	}
 	return row, nil
-}
-
-func trimTerminalGridCells(cells []vterm.Cell) []vterm.Cell {
-	last := len(cells)
-	for last > 0 {
-		cell := cells[last-1]
-		if cell.Content != "" && strings.TrimSpace(cell.Content) != "" {
-			break
-		}
-		if cell.LinkURL != "" || cell.LinkParams != "" {
-			break
-		}
-		if cell.Style != (vterm.CellStyle{}) || cell.Width > 1 {
-			break
-		}
-		last--
-	}
-	return cells[:last]
 }
 
 type terminalGridRun struct {

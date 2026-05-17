@@ -70,7 +70,7 @@ func snapshotToWirePB(snapshot *Snapshot) *wirepb.Snapshot {
 		TerminalId:        snapshot.TerminalID,
 		Size:              sizeToWirePB(snapshot.Size),
 		ScreenIsAlternate: snapshot.Screen.IsAlternateScreen,
-		Screen:            rowSetToWirePB(CompactRowsFromCells(snapshot.Screen.Cells), snapshot.ScreenTimestamps, snapshot.ScreenRowKinds, snapshot.ScreenWrapped),
+		Screen:            rowSetToWirePB(CompactRowsFromCellsPreserveTrailingBlankRows(snapshot.Screen.Cells), snapshot.ScreenTimestamps, snapshot.ScreenRowKinds, snapshot.ScreenWrapped),
 		Scrollback:        rowSetToWirePB(snapshot.Scrollback, snapshot.ScrollbackTimestamps, snapshot.ScrollbackRowKinds, snapshot.ScrollbackWrapped),
 		ScrollbackOffset:  int64(snapshot.ScrollbackOffset),
 		ScrollbackTotal:   int64(snapshot.ScrollbackTotal),

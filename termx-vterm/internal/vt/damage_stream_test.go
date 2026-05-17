@@ -24,6 +24,27 @@ func TestEmulatorWriteWithDamageCoalescesPrintableRun(t *testing.T) {
 	}
 }
 
+func TestEmulatorFastSGRTextTreatsExactWidthNewlineAsHardBreak(t *testing.T) {
+	emu := NewEmulator(4, 3)
+	if _, err := emu.Write([]byte("ABCD\r\nWXYZ")); err != nil {
+		t.Fatalf("write fast text: %v", err)
+	}
+	if emu.ScreenLineWrapped(0) {
+		t.Fatalf("exact-width CRLF row must not be marked as wrapped")
+	}
+
+	emu.Resize(8, 3)
+	if got := termText(emu)[0]; got != "ABCD    " {
+		t.Fatalf("expected first hard-break row preserved after resize, got %q", got)
+	}
+	if got := termText(emu)[1]; got != "WXYZ    " {
+		t.Fatalf("expected second hard-break row preserved after resize, got %q", got)
+	}
+	if emu.ScreenLineWrapped(0) {
+		t.Fatalf("exact-width CRLF row must remain unwrapped after resize")
+	}
+}
+
 func TestEmulatorWriteWithDamageCapturesScrollUp(t *testing.T) {
 	emu := NewEmulator(4, 3)
 	if _, err := emu.Write([]byte("1111\r\n2222\r\n3333")); err != nil {

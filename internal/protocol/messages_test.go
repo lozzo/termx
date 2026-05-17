@@ -15,6 +15,7 @@ func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
 			Cells: [][]Cell{
 				{{Content: "o", Width: 1}, {Content: "k", Width: 1}},
 				{{Content: "重", Width: 2}, {Content: "", Width: 0}},
+				{{Content: "A", Width: 1}, {Content: " ", Width: 1}, {Content: " ", Width: 1}},
 			},
 			IsAlternateScreen: true,
 		},
@@ -25,7 +26,7 @@ func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
 		ScrollbackTimestamps: []time.Time{time.Date(2026, 3, 18, 0, 0, 0, 0, time.UTC)},
 		ScreenRowKinds:       []string{SnapshotRowKindRestart},
 		ScrollbackRowKinds:   []string{"log"},
-		ScreenWrapped:        []bool{false, true},
+		ScreenWrapped:        []bool{false, true, false},
 		ScrollbackWrapped:    []bool{true},
 		Cursor:               CursorState{Row: 1, Col: 2, Visible: true, Shape: "bar", Blink: true},
 		Modes:                TerminalModes{AlternateScreen: true, AlternateScroll: true, BracketedPaste: true, ApplicationCursor: true, AutoWrap: true},
@@ -51,10 +52,13 @@ func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
 	if got := rowToStringForTest(decoded.Screen.Cells[1]); got != "重" {
 		t.Fatalf("unexpected decoded wide row: %q %#v", got, decoded.Screen.Cells[1])
 	}
+	if got := rowToStringForTest(decoded.Screen.Cells[2]); got != "A  " {
+		t.Fatalf("expected decoded screen row to preserve trailing spaces, got %q %#v", got, decoded.Screen.Cells[2])
+	}
 	if row := decoded.Scrollback[0].DecodeCells(); rowToStringForTest(row) != "hi" || row[0].Style.FG != "#ff0000" {
 		t.Fatalf("unexpected decoded scrollback: %#v", row)
 	}
-	if len(decoded.ScreenWrapped) != 2 || !decoded.ScreenWrapped[1] || len(decoded.ScrollbackWrapped) != 1 || !decoded.ScrollbackWrapped[0] {
+	if len(decoded.ScreenWrapped) != 3 || !decoded.ScreenWrapped[1] || len(decoded.ScrollbackWrapped) != 1 || !decoded.ScrollbackWrapped[0] {
 		t.Fatalf("unexpected decoded wrapped metadata: %#v %#v", decoded.ScreenWrapped, decoded.ScrollbackWrapped)
 	}
 	if decoded.Cursor.Shape != "bar" || !decoded.Modes.BracketedPaste || !decoded.Modes.AutoWrap {
@@ -194,7 +198,7 @@ func TestScreenUpdatePayloadTrimsTrailingBlankCellsButKeepsWideContinuation(t *t
 	}
 }
 
-func TestScreenUpdatePayloadFullReplaceTrimsTrailingBlankCells(t *testing.T) {
+func TestScreenUpdatePayloadFullReplacePreservesTrailingBlankCells(t *testing.T) {
 	update := ScreenUpdate{
 		FullReplace: true,
 		Size:        protocolSize(4, 1),
@@ -216,11 +220,36 @@ func TestScreenUpdatePayloadFullReplaceTrimsTrailingBlankCells(t *testing.T) {
 		t.Fatalf("decode payload: %v", err)
 	}
 	row := decoded.Screen.Cells[0]
-	if len(row) != 2 {
-		t.Fatalf("expected full replace trailing plain blank to be trimmed, got %#v", row)
+	if len(row) != 3 {
+		t.Fatalf("expected full replace trailing plain blank to preserve row geometry, got %#v", row)
 	}
 	if got := row[1].Style.BG; got != "#112233" {
 		t.Fatalf("expected styled trailing blank cell preserved, got %#v", row[1])
+	}
+	if row[2].Content != " " || row[2].Width != 1 || row[2].Style != (CellStyle{}) {
+		t.Fatalf("expected plain trailing blank cell preserved, got %#v", row[2])
+	}
+}
+
+func TestCompactRowFromCellsCanPreserveTrailingBlankCells(t *testing.T) {
+	row := []Cell{
+		{Content: "A", Width: 1},
+		{Content: "A", Width: 1},
+		{Content: " ", Width: 1},
+		{Content: " ", Width: 1},
+	}
+
+	trimmed := CompactRowFromCells(row).DecodeCells()
+	if got := len(trimmed); got != 2 {
+		t.Fatalf("expected default compact row to trim trailing blanks, got len=%d row=%#v", got, trimmed)
+	}
+
+	preserved := CompactRowFromCellsPreserveTrailingBlankCells(row, true).DecodeCells()
+	if got := len(preserved); got != 4 {
+		t.Fatalf("expected preserving compact row to keep trailing blanks, got len=%d row=%#v", got, preserved)
+	}
+	if preserved[2].Content != " " || preserved[3].Content != " " {
+		t.Fatalf("expected trailing blanks preserved, got %#v", preserved)
 	}
 }
 

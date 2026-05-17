@@ -907,6 +907,44 @@ func TestTerminalGridStoreUsesCompactBinaryRows(t *testing.T) {
 	}
 }
 
+func TestTerminalGridStorePreservesTrailingBlankCells(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	row := terminalGridRow{
+		cells: []localvterm.Cell{
+			{Content: "A", Width: 1},
+			{Content: " ", Width: 1},
+			{Content: " ", Width: 1},
+		},
+	}
+	if err := store.appendRows([]terminalGridRow{row}); err != nil {
+		t.Fatalf("append row with trailing blanks: %v", err)
+	}
+
+	decoded, err := store.Viewport(0, 1, 10)
+	if err != nil {
+		t.Fatalf("decode rows: %v", err)
+	}
+	if decoded.LoadedRows != 1 || len(decoded.Rows) != 1 {
+		t.Fatalf("expected one decoded row, got loaded=%d rows=%d", decoded.LoadedRows, len(decoded.Rows))
+	}
+	if got := vtermRowToRawString(decoded.Rows[0]); got != "A  " {
+		t.Fatalf("expected grid row to preserve trailing blanks, got %q row=%#v", got, decoded.Rows[0])
+	}
+
+	viewport := protocolGridViewportFromCore(&GridViewport{
+		Rows: [][]Cell{{
+			{Content: "A", Width: 1},
+			{Content: " ", Width: 1},
+			{Content: " ", Width: 1},
+		}},
+	})
+	if got := protocolRowToRawString(viewport.Rows[0].DecodeCells()); got != "A  " {
+		t.Fatalf("expected protocol viewport row to preserve trailing blanks, got %q row=%#v", got, viewport.Rows[0].DecodeCells())
+	}
+}
+
 func TestTerminalGridStoreRowsReflowSoftWrappedColdBuffer(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
@@ -1271,17 +1309,32 @@ func TestScreenUpdatePayloadFromDamagePreservesStyledErase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	if !update.FullReplace {
-		t.Fatalf("expected broad styled erase to encode as full replace, got %#v", update)
-	}
-	if len(update.Screen.Cells) == 0 || len(update.Screen.Cells[0]) != 12 {
-		t.Fatalf("expected full-row styled erase in full screen payload, got %#v", update.Screen.Cells)
-	}
-	for i, cell := range update.Screen.Cells[0] {
-		if cell.Content != " " || cell.Width != 1 || cell.Style.BG != bg {
-			t.Fatalf("expected styled blank cell %d with bg %q, got %#v", i, bg, cell)
+	if update.FullReplace {
+		if len(update.Screen.Cells) == 0 || len(update.Screen.Cells[0]) != 12 {
+			t.Fatalf("expected full-row styled erase in full screen payload, got %#v", update.Screen.Cells)
 		}
+		for i, cell := range update.Screen.Cells[0] {
+			if cell.Content != " " || cell.Width != 1 || cell.Style.BG != bg {
+				t.Fatalf("expected styled blank cell %d with bg %q, got %#v", i, bg, cell)
+			}
+		}
+		return
 	}
+	for _, op := range update.Ops {
+		if op.Code != protocol.ScreenOpWriteSpan || op.Row != 0 {
+			continue
+		}
+		if len(op.Cells) != 12 {
+			t.Fatalf("expected full-row styled erase span, got %#v", op)
+		}
+		for i, cell := range op.Cells {
+			if cell.Content != " " || cell.Width != 1 || cell.Style.BG != bg {
+				t.Fatalf("expected styled blank cell %d with bg %q, got %#v", i, bg, cell)
+			}
+		}
+		return
+	}
+	t.Fatalf("expected styled erase payload, got %#v", update)
 }
 
 func TestScreenUpdateFromDamageStatePreservesStyledEraseSpan(t *testing.T) {
@@ -1308,6 +1361,87 @@ func TestScreenUpdateFromDamageStatePreservesStyledEraseSpan(t *testing.T) {
 		return
 	}
 	t.Fatalf("expected styled erase write span, got %#v", update.Ops)
+}
+
+func TestSnapshotFromVTermPreservesWrappedScrollbackTrailingSpaces(t *testing.T) {
+	vt := localvterm.New(4, 2, 32, nil)
+	if _, err := vt.Write([]byte("AA  BB")); err != nil {
+		t.Fatalf("seed wrapped row: %v", err)
+	}
+	if !vt.ScreenRowWrappedAt(0) {
+		t.Fatalf("expected first row to be wrapped before scroll")
+	}
+	if _, err := vt.Write([]byte("\nnext\nlast")); err != nil {
+		t.Fatalf("scroll wrapped row: %v", err)
+	}
+
+	snapshot := snapshotFromVTerm(vt)
+	if snapshot == nil || len(snapshot.Scrollback) == 0 {
+		t.Fatalf("expected scrollback snapshot, got %#v", snapshot)
+	}
+	if !snapshot.ScrollbackWrapped[0] {
+		t.Fatalf("expected wrapped scrollback metadata, got %#v", snapshot.ScrollbackWrapped)
+	}
+	row := snapshot.Scrollback[0].DecodeCells()
+	if got := len(row); got != 4 {
+		t.Fatalf("expected wrapped scrollback row to retain trailing blanks, got len=%d row=%#v", got, row)
+	}
+	if row[2].Content != " " || row[3].Content != " " {
+		t.Fatalf("expected trailing blanks preserved, got %#v", row)
+	}
+}
+
+func TestSnapshotFromVTermPreservesScreenTrailingSpaceColumnsAfterResize(t *testing.T) {
+	vt := localvterm.New(4, 6, 32, nil)
+	if _, err := vt.Write([]byte("AA  \r\nBB")); err != nil {
+		t.Fatalf("seed hard-newline trailing spaces: %v", err)
+	}
+
+	vt.Resize(2, 6)
+	snapshot := snapshotFromVTerm(vt)
+	if snapshot == nil {
+		t.Fatal("expected snapshot")
+	}
+	if got := coreProtocolRowText(snapshot.Screen.Cells[0]); got != "AA" {
+		t.Fatalf("expected first split row AA, got %q", got)
+	}
+	if got := coreProtocolRowText(snapshot.Screen.Cells[1]); got != "  " {
+		t.Fatalf("expected trailing-space split row to survive snapshot, got %q row=%#v", got, snapshot.Screen.Cells[1])
+	}
+	if got := coreProtocolRowText(snapshot.Screen.Cells[2]); got != "BB" {
+		t.Fatalf("expected following row BB, got %q", got)
+	}
+	if len(snapshot.ScreenWrapped) < 2 || !snapshot.ScreenWrapped[0] || snapshot.ScreenWrapped[1] {
+		t.Fatalf("unexpected wrapped metadata: %#v", snapshot.ScreenWrapped)
+	}
+}
+
+func TestScreenFullReplaceUpdatePreservesTrailingSpaceColumnsAfterResize(t *testing.T) {
+	vt := localvterm.New(4, 6, 32, nil)
+	if _, err := vt.Write([]byte("AA  \r\nBB")); err != nil {
+		t.Fatalf("seed hard-newline trailing spaces: %v", err)
+	}
+	vt.Resize(2, 6)
+
+	update := screenFullReplaceUpdateFromVTerm(vt, "demo")
+	payload, err := protocol.EncodeScreenUpdatePayload(update)
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+	decoded, err := protocol.DecodeScreenUpdatePayload(payload)
+	if err != nil {
+		t.Fatalf("decode update: %v", err)
+	}
+
+	if got := coreProtocolRowText(decoded.Screen.Cells[0]); got != "AA" {
+		t.Fatalf("expected first split row AA, got %q", got)
+	}
+	if got := coreProtocolRowText(decoded.Screen.Cells[1]); got != "  " {
+		t.Fatalf("expected trailing-space split row to survive full replace wire payload, got %q row=%#v", got, decoded.Screen.Cells[1])
+	}
+	if got := coreProtocolRowText(decoded.Screen.Cells[2]); got != "BB" {
+		t.Fatalf("expected following row BB, got %q", got)
+	}
 }
 
 func TestScreenUpdateShouldEncodeDeltaOnly(t *testing.T) {
@@ -1480,6 +1614,14 @@ func protocolRowToString(row []protocol.Cell) string {
 	return strings.TrimRight(b.String(), " ")
 }
 
+func coreProtocolRowText(row []protocol.Cell) string {
+	var b strings.Builder
+	for _, cell := range row {
+		b.WriteString(cell.Content)
+	}
+	return b.String()
+}
+
 func snapshotTimestampForRowKind(s *Snapshot, kind string) (time.Time, bool) {
 	if s == nil || kind == "" {
 		return time.Time{}, false
@@ -1519,6 +1661,22 @@ func vtermRowToString(row []localvterm.Cell) string {
 		b.WriteString(cell.Content)
 	}
 	return strings.TrimRight(b.String(), " ")
+}
+
+func vtermRowToRawString(row []localvterm.Cell) string {
+	var b strings.Builder
+	for _, cell := range row {
+		b.WriteString(cell.Content)
+	}
+	return b.String()
+}
+
+func protocolRowToRawString(row []protocol.Cell) string {
+	var b strings.Builder
+	for _, cell := range row {
+		b.WriteString(cell.Content)
+	}
+	return b.String()
 }
 
 func localVTermRowForTest(text string, cols int) []localvterm.Cell {

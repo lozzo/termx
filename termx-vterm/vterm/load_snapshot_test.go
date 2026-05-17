@@ -151,6 +151,163 @@ func TestVTermResizeDoesNotJoinHardNewlineRows(t *testing.T) {
 	}
 }
 
+func TestVTermResizeDoesNotJoinExactWidthHardNewlineRows(t *testing.T) {
+	vt := New(4, 4, 100, nil)
+	if _, err := vt.Write([]byte("ABCD\r\nWXYZ")); err != nil {
+		t.Fatalf("write exact-width hard newline content: %v", err)
+	}
+	if vt.ScreenRowWrappedAt(0) {
+		t.Fatalf("exact-width newline row must not be marked as wrapped before resize")
+	}
+
+	vt.Resize(8, 4)
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(0), 8)); got != "ABCD" {
+		t.Fatalf("expected exact-width hard-newline row 0 preserved after resize, got %q", got)
+	}
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(1), 8)); got != "WXYZ" {
+		t.Fatalf("expected exact-width hard-newline row 1 preserved after resize, got %q", got)
+	}
+	if vt.ScreenRowWrappedAt(0) {
+		t.Fatalf("exact-width hard newline row must not be marked as wrapped after resize")
+	}
+}
+
+func TestVTermResizeSplitsAndRejoinsHardNewlineArtRows(t *testing.T) {
+	vt := New(8, 6, 100, nil)
+	if _, err := vt.Write([]byte("AA  BB  \r\nCCDDCCDD\r\nuri: ok")); err != nil {
+		t.Fatalf("write art content: %v", err)
+	}
+
+	vt.Resize(4, 6)
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(0), 4)); got != "AA" {
+		t.Fatalf("expected hard-newline art row 0 split after shrink, got %q", got)
+	}
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(1), 4)); got != "BB" {
+		t.Fatalf("expected hard-newline art row 1 split after shrink, got %q", got)
+	}
+	if got := rowText(vt.ScreenRowView(2), 4); got != "CCDD" {
+		t.Fatalf("expected hard-newline art row 2 split after shrink, got %q", got)
+	}
+	if got := rowText(vt.ScreenRowView(3), 4); got != "CCDD" {
+		t.Fatalf("expected hard-newline art row 3 split after shrink, got %q", got)
+	}
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(4), 4)); got != "uri:" {
+		t.Fatalf("expected following text row to stay after split rows, got %q", got)
+	}
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(5), 4)); got != "ok" {
+		t.Fatalf("expected final text row to stay after split rows, got %q", got)
+	}
+	if wrapped := vt.ScreenWrapped(); !wrapped[0] || wrapped[1] || !wrapped[2] || wrapped[3] || !wrapped[4] || wrapped[5] {
+		t.Fatalf("unexpected wrapped markers after shrink: %#v", wrapped)
+	}
+
+	vt.Resize(8, 6)
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(0), 8)); got != "AA  BB" {
+		t.Fatalf("expected hard-newline art row 0 rejoined after grow, got %q", got)
+	}
+	if got := rowText(vt.ScreenRowView(1), 8); got != "CCDDCCDD" {
+		t.Fatalf("expected hard-newline art row 1 rejoined after grow, got %q", got)
+	}
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(2), 8)); got != "uri: ok" {
+		t.Fatalf("expected following text row rejoined after grow, got %q", got)
+	}
+	if wrapped := vt.ScreenWrapped(); wrapped[0] || wrapped[1] || wrapped[2] {
+		t.Fatalf("expected rejoined hard-newline rows to clear visible wrap markers, got %#v", wrapped)
+	}
+}
+
+func TestVTermResizePreservesHardNewlineTrailingSpaceColumns(t *testing.T) {
+	vt := New(4, 6, 100, nil)
+	if _, err := vt.Write([]byte("AA  \r\nBB")); err != nil {
+		t.Fatalf("write hard-newline trailing spaces: %v", err)
+	}
+
+	vt.Resize(2, 6)
+
+	if got := rowText(vt.ScreenRowView(0), 2); got != "AA" {
+		t.Fatalf("expected first split row to contain AA, got %q", got)
+	}
+	if !vt.ScreenRowWrappedAt(0) {
+		t.Fatalf("expected trailing hard-newline spaces to keep row 0 wrapped after shrink")
+	}
+	if got := rowText(vt.ScreenRowView(1), 2); got != "  " {
+		t.Fatalf("expected second split row to preserve trailing spaces, got %q", got)
+	}
+	if vt.ScreenRowWrappedAt(1) {
+		t.Fatalf("expected trailing-space split row to terminate the hard-newline row")
+	}
+	if got := rowText(vt.ScreenRowView(2), 2); got != "BB" {
+		t.Fatalf("expected following hard-newline row to stay below trailing spaces, got %q", got)
+	}
+}
+
+func TestVTermScrollbackUsesStoredLineLengthAfterResize(t *testing.T) {
+	vt := New(4, 2, 100, nil)
+	if _, err := vt.Write([]byte("AA  \r\nBB\r\nCC")); err != nil {
+		t.Fatalf("write scrollback trailing spaces: %v", err)
+	}
+
+	scrollback := vt.ScrollbackContent()
+	if len(scrollback) == 0 {
+		t.Fatal("expected scrollback row before resize")
+	}
+	if got := rowText(scrollback[0], 4); got != "AA  " {
+		t.Fatalf("expected scrollback to preserve trailing spaces before resize, got %q row=%#v", got, scrollback[0])
+	}
+
+	vt.Resize(2, 2)
+	scrollback = vt.ScrollbackContent()
+	if len(scrollback) < 2 {
+		t.Fatalf("expected resize to reflow scrollback rows, got %d", len(scrollback))
+	}
+	if got := rowText(scrollback[0], 2); got != "AA" {
+		t.Fatalf("expected reflowed scrollback row 0, got %q row=%#v", got, scrollback[0])
+	}
+	if got := rowText(scrollback[1], 2); got != "  " {
+		t.Fatalf("expected trailing-space scrollback segment after resize, got %q row=%#v", got, scrollback[1])
+	}
+}
+
+func TestLoadSnapshotDefaultBlankRowsDoNotBecomeUsedRows(t *testing.T) {
+	vt := New(4, 3, 100, nil)
+	blank := []Cell{
+		{Content: " ", Width: 1},
+		{Content: " ", Width: 1},
+		{Content: " ", Width: 1},
+		{Content: " ", Width: 1},
+	}
+
+	vt.LoadSizedSnapshotWithExtendedMetadata(
+		4,
+		3,
+		nil,
+		nil,
+		nil,
+		nil,
+		ScreenData{Cells: [][]Cell{blank}},
+		nil,
+		nil,
+		nil,
+		CursorState{Row: 0, Col: 0, Visible: true},
+		TerminalModes{AutoWrap: true},
+	)
+
+	if got := len(vt.ScreenRowView(0)); got != 4 {
+		t.Fatalf("expected public screen row to remain full width, got %d", got)
+	}
+	if got := len(vt.UsedScreenRow(0)); got != 4 {
+		t.Fatalf("expected used screen row to keep blank row indexable for snapshots, got %d", got)
+	}
+
+	vt.Resize(2, 3)
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(0), 2)); got != "" {
+		t.Fatalf("expected blank row to stay blank after resize, got %q", got)
+	}
+	if got := strings.TrimSpace(rowText(vt.ScreenRowView(1), 2)); got != "" {
+		t.Fatalf("expected blank row not to reflow into extra used row, got %q", got)
+	}
+}
+
 func TestLoadSnapshotWithExtendedMetadataRestoresWrappedRows(t *testing.T) {
 	vt := New(5, 3, 100, nil)
 	screen := ScreenData{Cells: [][]Cell{
@@ -1471,6 +1628,36 @@ func TestApplyScreenUpdateScrollbackAppendKeepsMetadataTailWhenCapped(t *testing
 	}
 	if got := vt.ScrollbackRowKindAt(2); got != "d" {
 		t.Fatalf("expected appended metadata kind d, got %q", got)
+	}
+}
+
+func TestApplyScreenUpdateWriteSpanPreservesTrailingBlankUsedWidthAfterResize(t *testing.T) {
+	vt := New(4, 3, 100, nil)
+	if !vt.ApplyScreenUpdate(ScreenUpdate{
+		Size: Size{Cols: 4, Rows: 3},
+		Ops: []DamageOp{{
+			Code: ScreenOpWriteSpan,
+			Row:  0,
+			Col:  0,
+			Cells: []Cell{
+				{Content: "A", Width: 1},
+				{Content: "A", Width: 1},
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+			},
+		}},
+		Cursor: CursorState{Row: 0, Col: 4, Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
+	}) {
+		t.Fatal("expected trailing-space write span to apply incrementally")
+	}
+
+	vt.Resize(2, 3)
+	if got := rowText(vt.ScreenRowView(0), 2); got != "AA" {
+		t.Fatalf("expected first resized row from write span, got %q", got)
+	}
+	if got := rowText(vt.ScreenRowView(1), 2); got != "  " {
+		t.Fatalf("expected trailing blank cells from write span to survive resize, got %q row=%#v", got, vt.ScreenRowView(1))
 	}
 }
 

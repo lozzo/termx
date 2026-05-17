@@ -24,6 +24,7 @@ type Terminal interface {
 	IndexedColor(i int) color.Color
 	InputPipe() io.Writer
 	IsAltScreen() bool
+	Line(y int) uv.Line
 	Paste(text string)
 	Read(p []byte) (n int, err error)
 	RegisterApcHandler(handler ApcHandler)
@@ -37,6 +38,7 @@ type Terminal interface {
 	Resize(width int, height int)
 	Scrollback() *Scrollback
 	ScrollbackCellAt(x, y int) *uv.Cell
+	ScrollbackLine(y int) uv.Line
 	ScreenLineWrapped(y int) bool
 	ScrollbackLineWrapped(y int) bool
 	ScrollbackLen() int
@@ -55,8 +57,10 @@ type Terminal interface {
 	SetIndexedColor(i int, c color.Color)
 	SetLogger(l Logger)
 	SetScreenLineWrapped(y int, wrapped bool)
+	SetScreenLineUsed(y int, used int)
 	SetScrollbackSize(maxLines int)
 	SetScrollbackLineWrapped(y int, wrapped bool)
+	ScreenLineUsed(y int) int
 	String() string
 	Touched() []*uv.LineData
 	Width() int

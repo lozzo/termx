@@ -1488,6 +1488,52 @@ func TestRuntimeResizePaneShrinkKeepsRenderOnSnapshotUntilOutput(t *testing.T) {
 	}
 }
 
+func TestRuntimeResizePaneShrinkPreviewKeepsBottomRowsVisible(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 12, 6, []string{
+		"qr-row-0",
+		"qr-row-1",
+		"qr-row-2",
+		"uri: termx",
+		"expires",
+		"prompt>",
+	})
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil {
+		t.Fatalf("expected hydrated terminal runtime, got %#v", terminal)
+	}
+
+	if err := rt.ResizePane(ctx, "pane-1", "term-1", 8, 3); err != nil {
+		t.Fatalf("resize pane shrink: %v", err)
+	}
+
+	if !terminal.PreferSnapshot {
+		t.Fatalf("expected shrink preview to prefer snapshot, got %#v", terminal)
+	}
+	if terminal.Snapshot == nil || terminal.Snapshot.Size.Cols != 8 || terminal.Snapshot.Size.Rows != 3 {
+		t.Fatalf("expected provisional shrink snapshot size 8x3, got %#v", terminal.Snapshot)
+	}
+	got := []string{
+		rowText(terminal.Snapshot.Screen.Cells[0]),
+		rowText(terminal.Snapshot.Screen.Cells[1]),
+		rowText(terminal.Snapshot.Screen.Cells[2]),
+	}
+	want := []string{"uri: termx", "expires", "prompt>"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected shrink preview to retain bottom rows, got %#v want %#v", got, want)
+	}
+}
+
 func TestRuntimeResizePaneHeightGrowDoesNotExtendNonBlankBottomRowBackground(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
@@ -1597,6 +1643,120 @@ func TestRuntimeResizeFrameDoesNotExposeLocalShrinkMidStateBeforeOutput(t *testi
 	visible := rt.Visible()
 	if len(visible.Terminals) != 1 || visible.Terminals[0].Surface != nil {
 		t.Fatalf("expected resize echo not to expose provisional shrink surface, got %#v", visible.Terminals)
+	}
+}
+
+func TestRuntimeResizeFramePreservesExactWidthHardBreakRows(t *testing.T) {
+	rt := New(nil)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.VTerm = localvterm.New(4, 4, 100, nil)
+	if _, err := terminal.VTerm.Write([]byte("ABCD\r\nWXYZ")); err != nil {
+		t.Fatalf("seed terminal: %v", err)
+	}
+
+	rt.handleResizeFrame(terminal, "term-1", protocol.StreamFrame{
+		Type:    wire.TypeResize,
+		Payload: wire.EncodeResizePayload(8, 4),
+	})
+
+	if terminal.Snapshot == nil {
+		t.Fatal("expected resize frame to refresh snapshot")
+	}
+	if got := rowText(terminal.Snapshot.Screen.Cells[0]); got != "ABCD" {
+		t.Fatalf("expected row 0 hard break preserved after resize frame, got %q", got)
+	}
+	if got := rowText(terminal.Snapshot.Screen.Cells[1]); got != "WXYZ" {
+		t.Fatalf("expected row 1 hard break preserved after resize frame, got %q", got)
+	}
+	if len(terminal.Snapshot.ScreenWrapped) > 0 && terminal.Snapshot.ScreenWrapped[0] {
+		t.Fatalf("expected exact-width hard break row to remain unwrapped, got %#v", terminal.Snapshot.ScreenWrapped)
+	}
+}
+
+func TestRuntimeResizeFrameRejoinsSplitHardBreakRows(t *testing.T) {
+	rt := New(nil)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.VTerm = localvterm.New(8, 6, 100, nil)
+	if _, err := terminal.VTerm.Write([]byte("AA  BB  \r\nCCDDCCDD\r\nuri: ok")); err != nil {
+		t.Fatalf("seed terminal: %v", err)
+	}
+
+	rt.handleResizeFrame(terminal, "term-1", protocol.StreamFrame{
+		Type:    wire.TypeResize,
+		Payload: wire.EncodeResizePayload(4, 6),
+	})
+	if terminal.Snapshot == nil {
+		t.Fatal("expected shrink resize frame to refresh snapshot")
+	}
+	gotShrink := []string{
+		strings.TrimSpace(rowText(terminal.Snapshot.Screen.Cells[0])),
+		strings.TrimSpace(rowText(terminal.Snapshot.Screen.Cells[1])),
+		rowText(terminal.Snapshot.Screen.Cells[2]),
+		rowText(terminal.Snapshot.Screen.Cells[3]),
+		strings.TrimSpace(rowText(terminal.Snapshot.Screen.Cells[4])),
+		strings.TrimSpace(rowText(terminal.Snapshot.Screen.Cells[5])),
+	}
+	wantShrink := []string{"AA", "BB", "CCDD", "CCDD", "uri:", "ok"}
+	if !reflect.DeepEqual(gotShrink, wantShrink) {
+		t.Fatalf("expected shrink resize to split hard-break rows, got %#v want %#v", gotShrink, wantShrink)
+	}
+	if wrapped := terminal.Snapshot.ScreenWrapped; len(wrapped) < 6 || !wrapped[0] || wrapped[1] || !wrapped[2] || wrapped[3] || !wrapped[4] || wrapped[5] {
+		t.Fatalf("unexpected shrink wrapped markers: %#v", wrapped)
+	}
+
+	rt.handleResizeFrame(terminal, "term-1", protocol.StreamFrame{
+		Type:    wire.TypeResize,
+		Payload: wire.EncodeResizePayload(8, 6),
+	})
+	gotGrow := []string{
+		strings.TrimSpace(rowText(terminal.Snapshot.Screen.Cells[0])),
+		rowText(terminal.Snapshot.Screen.Cells[1]),
+		strings.TrimSpace(rowText(terminal.Snapshot.Screen.Cells[2])),
+	}
+	wantGrow := []string{"AA  BB", "CCDDCCDD", "uri: ok"}
+	if !reflect.DeepEqual(gotGrow, wantGrow) {
+		t.Fatalf("expected grow resize to rejoin hard-break rows, got %#v want %#v", gotGrow, wantGrow)
+	}
+	if wrapped := terminal.Snapshot.ScreenWrapped; len(wrapped) >= 3 && (wrapped[0] || wrapped[1] || wrapped[2]) {
+		t.Fatalf("expected visible wrapped markers clear after grow, got %#v", wrapped)
+	}
+}
+
+func TestRuntimeSnapshotLoadPreservesTrailingSpaceColumnsAfterResize(t *testing.T) {
+	client := newFakeBridgeClient()
+	rt := New(client)
+	ctx := context.Background()
+	client.attachResult = &protocol.AttachResult{Mode: "stream", Channel: 1}
+
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	source := localvterm.New(4, 6, 32, nil)
+	if _, err := source.Write([]byte("AA  \r\nBB")); err != nil {
+		t.Fatalf("seed source vterm: %v", err)
+	}
+	source.Resize(2, 6)
+	client.snapshotByTerminal["term-1"] = snapshotFromVTerm("term-1", source)
+
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil || terminal.VTerm == nil {
+		t.Fatal("expected runtime snapshot and vterm")
+	}
+
+	got := []string{
+		rowTextRaw(terminal.Snapshot.Screen.Cells[0]),
+		rowTextRaw(terminal.Snapshot.Screen.Cells[1]),
+		rowTextRaw(terminal.Snapshot.Screen.Cells[2]),
+		vtermScreenRowTextRaw(terminal.VTerm, 0),
+		vtermScreenRowTextRaw(terminal.VTerm, 1),
+		vtermScreenRowTextRaw(terminal.VTerm, 2),
+	}
+	want := []string{"AA", "  ", "BB", "AA", "  ", "BB"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected snapshot and TUI vterm rows %#v, got %#v", want, got)
 	}
 }
 
@@ -2388,6 +2548,35 @@ func rowText(row []protocol.Cell) string {
 		buf.WriteString(cell.Content)
 	}
 	return strings.TrimRight(buf.String(), " ")
+}
+
+func rowTextRaw(row []protocol.Cell) string {
+	var buf bytes.Buffer
+	for _, cell := range row {
+		buf.WriteString(cell.Content)
+	}
+	return buf.String()
+}
+
+func vtermRowTextRaw(row []localvterm.Cell) string {
+	var buf bytes.Buffer
+	for _, cell := range row {
+		buf.WriteString(cell.Content)
+	}
+	return buf.String()
+}
+
+func vtermScreenRowTextRaw(vt VTermLike, row int) string {
+	if source, ok := vt.(interface {
+		ScreenRowView(int) []localvterm.Cell
+	}); ok {
+		return vtermRowTextRaw(source.ScreenRowView(row))
+	}
+	screen := vt.ScreenContent()
+	if row < 0 || row >= len(screen.Cells) {
+		return ""
+	}
+	return vtermRowTextRaw(screen.Cells[row])
 }
 
 func compactRowText(row protocol.CompactRow) string {

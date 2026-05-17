@@ -78,6 +78,14 @@ func (se *SafeEmulator) CellAt(x, y int) *uv.Cell {
 	return se.Emulator.CellAt(x, y)
 }
 
+// Line returns a visible row truncated to its logical used width in a
+// concurrency-safe manner.
+func (se *SafeEmulator) Line(y int) uv.Line {
+	se.mu.RLock()
+	defer se.mu.RUnlock()
+	return se.Emulator.Line(y)
+}
+
 // SendKey sends a key event to the emulator in a concurrency-safe manner.
 func (se *SafeEmulator) SendKey(key uv.KeyEvent) {
 	se.mu.Lock()
@@ -218,6 +226,18 @@ func (se *SafeEmulator) ScrollbackCellAt(x, y int) *uv.Cell {
 	return se.Emulator.ScrollbackCellAt(x, y)
 }
 
+// ScrollbackLine returns a copy of a scrollback row at its stored logical width
+// in a concurrency-safe manner.
+func (se *SafeEmulator) ScrollbackLine(y int) uv.Line {
+	se.mu.RLock()
+	defer se.mu.RUnlock()
+	line := se.Emulator.ScrollbackLine(y)
+	if len(line) == 0 {
+		return nil
+	}
+	return append(uv.Line(nil), line...)
+}
+
 // ScrollbackLineWrapped returns whether a scrollback row visually continues
 // onto the next row in a concurrency-safe manner.
 func (se *SafeEmulator) ScrollbackLineWrapped(y int) bool {
@@ -248,6 +268,22 @@ func (se *SafeEmulator) SetScreenLineWrapped(y int, wrapped bool) {
 	se.mu.Lock()
 	defer se.mu.Unlock()
 	se.Emulator.SetScreenLineWrapped(y, wrapped)
+}
+
+// ScreenLineUsed returns the logical used column count for a visible row in a
+// concurrency-safe manner.
+func (se *SafeEmulator) ScreenLineUsed(y int) int {
+	se.mu.RLock()
+	defer se.mu.RUnlock()
+	return se.Emulator.ScreenLineUsed(y)
+}
+
+// SetScreenLineUsed updates the logical used column count for a visible row in
+// a concurrency-safe manner.
+func (se *SafeEmulator) SetScreenLineUsed(y int, used int) {
+	se.mu.Lock()
+	defer se.mu.Unlock()
+	se.Emulator.SetScreenLineUsed(y, used)
 }
 
 // SetScrollbackSize sets the scrollback buffer size in a concurrency-safe manner.

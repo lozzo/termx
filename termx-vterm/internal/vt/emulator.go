@@ -154,6 +154,20 @@ func (e *Emulator) CellAt(x, y int) *uv.Cell {
 	return e.scr.CellAt(x, y)
 }
 
+// Line returns the current focused screen row truncated to its logical used
+// width. The returned slice aliases emulator storage.
+func (e *Emulator) Line(y int) uv.Line {
+	return e.scr.Line(y)
+}
+
+// ScreenLineUsed returns the logical used column count for a visible row.
+func (e *Emulator) ScreenLineUsed(y int) int {
+	if e.scr == nil {
+		return 0
+	}
+	return e.scr.LineUsed(y)
+}
+
 // SetCell sets the current focused screen cell at the given x, y position.
 func (e *Emulator) SetCell(x, y int, c *uv.Cell) {
 	e.scr.SetCell(x, y, c)
@@ -538,6 +552,16 @@ func (e *Emulator) ScrollbackCellAt(x, y int) *uv.Cell {
 	return sb.CellAt(x, y)
 }
 
+// ScrollbackLine returns a scrollback row at its stored logical width.
+// The returned slice aliases emulator storage.
+func (e *Emulator) ScrollbackLine(y int) uv.Line {
+	sb := e.Scrollback()
+	if sb == nil {
+		return nil
+	}
+	return sb.Line(y)
+}
+
 // ScrollbackLineWrapped returns whether the scrollback row visually continues
 // onto the next row.
 func (e *Emulator) ScrollbackLineWrapped(y int) bool {
@@ -556,6 +580,14 @@ func (e *Emulator) SetScrollbackLineWrapped(y int, wrapped bool) {
 		return
 	}
 	sb.SetLineWrapped(y, wrapped)
+}
+
+// SetScreenLineUsed updates the logical used column count for a visible row.
+func (e *Emulator) SetScreenLineUsed(y int, used int) {
+	if e.scr == nil {
+		return
+	}
+	e.scr.SetLineUsed(y, used)
 }
 
 // ScreenLineWrapped returns whether the visible row visually continues onto

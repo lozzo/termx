@@ -148,6 +148,20 @@ var cases = []struct {
 		pos: uv.Pos(1, 0),
 	},
 	{
+		name: "CRLF Pending Wrap is Unset",
+		w:    4, h: 2,
+		input: []string{
+			"ABCD",
+			"\r\n",
+			"WXYZ",
+		},
+		want: []string{
+			"ABCD",
+			"WXYZ",
+		},
+		pos: uv.Pos(3, 1),
+	},
+	{
 		name: "CR Left Margin",
 		w:    10, h: 1,
 		input: []string{

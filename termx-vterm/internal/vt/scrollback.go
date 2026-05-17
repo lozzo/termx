@@ -1,10 +1,6 @@
 package vt
 
-import (
-	"slices"
-
-	uv "github.com/charmbracelet/ultraviolet"
-)
+import uv "github.com/charmbracelet/ultraviolet"
 
 // DefaultScrollbackSize is the default maximum number of lines in the scrollback buffer.
 const DefaultScrollbackSize = 2000
@@ -42,19 +38,7 @@ func (s *Scrollback) PushWrapped(line uv.Line, wrapped bool) {
 		return
 	}
 
-	// Find last non-empty cell to trim trailing empty cells.
-	// This helps with wrapping and window resizing.
-	lastNonEmpty := -1
-	for i := len(line) - 1; i >= 0; i-- {
-		c := &line[i]
-		if !c.IsZero() && !c.Equal(&uv.EmptyCell) {
-			lastNonEmpty = i
-			break
-		}
-	}
-
-	// Clone the line content up to and including the last non-empty cell
-	cloned := slices.Clone(line[:lastNonEmpty+1])
+	cloned := cloneScrollbackLine(line, wrapped)
 
 	s.normalizeStorage()
 	if s.size >= s.maxLines {
@@ -83,15 +67,20 @@ func (s *Scrollback) PushWrapped(line uv.Line, wrapped bool) {
 	s.size++
 }
 
+func cloneScrollbackLine(line uv.Line, wrapped bool) uv.Line {
+	return cloneUVLineWithTrailingSpaces(line)
+}
+
 // PushN adds n lines from the buffer starting at line y to the scrollback.
-func (s *Scrollback) PushN(buf *uv.RenderBuffer, wrapped []bool, y, n int) {
+func (s *Scrollback) PushN(buf *uv.RenderBuffer, wrapped []bool, used []int, y, n int) {
 	if s == nil || buf == nil || n <= 0 {
 		return
 	}
 
 	for i := range min(n, buf.Height()-y) {
 		if line := buf.Line(y + i); line != nil {
-			s.PushWrapped(line, boolAt(wrapped, y+i))
+			lineUsed := clampLocalInt(intAt(used, y+i), 0, len(line))
+			s.PushWrapped(line[:lineUsed], boolAt(wrapped, y+i))
 		}
 	}
 }
@@ -236,7 +225,6 @@ func (s *Scrollback) normalizeWrapped() {
 	s.normalizeStorage()
 	switch {
 	case len(s.wrapped) == len(s.lines):
-		return
 	case len(s.wrapped) > len(s.lines):
 		s.wrapped = s.wrapped[:len(s.lines)]
 	default:
@@ -340,4 +328,11 @@ func (s *Scrollback) compact() {
 
 func boolAt(values []bool, index int) bool {
 	return index >= 0 && index < len(values) && values[index]
+}
+
+func intAt(values []int, index int) int {
+	if index < 0 || index >= len(values) {
+		return 0
+	}
+	return values[index]
 }

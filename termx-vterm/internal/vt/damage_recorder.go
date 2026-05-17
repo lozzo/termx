@@ -194,12 +194,8 @@ func compactASCIIPlainLine(line uv.Line) (string, bool) {
 	if len(line) == 0 {
 		return "", true
 	}
-	last := compactASCIILineLastCell(line)
-	if last == 0 {
-		return "", true
-	}
-	out := make([]byte, last)
-	for i := 0; i < last; i++ {
+	out := make([]byte, len(line))
+	for i := 0; i < len(line); i++ {
 		cell := line[i]
 		if !cell.Style.IsZero() || !cell.Link.IsZero() || cell.Width != 1 || len(cell.Content) != 1 || cell.Content[0] >= 0x80 {
 			return "", false
@@ -210,15 +206,14 @@ func compactASCIIPlainLine(line uv.Line) (string, bool) {
 }
 
 func compactASCIIStyleRuns(line uv.Line) ([]ScrollbackRun, bool) {
-	last := compactASCIILineLastCell(line)
-	if last == 0 {
+	if len(line) == 0 {
 		return nil, true
 	}
 	runs := make([]ScrollbackRun, 0, 4)
 	var current ScrollbackRun
 	var currentText strings.Builder
 	currentStyleSet := false
-	for i := 0; i < last; i++ {
+	for i := 0; i < len(line); i++ {
 		cell := line[i]
 		if !cell.Link.IsZero() || cell.Width != 1 || len(cell.Content) != 1 || cell.Content[0] >= 0x80 {
 			return nil, false
@@ -281,17 +276,4 @@ func compactASCIIColorEqual(a, b color.Color) bool {
 	ar, ag, ab, aa := a.RGBA()
 	br, bg, bb, ba := b.RGBA()
 	return ar == br && ag == bg && ab == bb && aa == ba
-}
-
-func compactASCIILineLastCell(line uv.Line) int {
-	last := len(line)
-	for last > 0 {
-		cell := line[last-1]
-		if cell.Style.IsZero() && cell.Link.IsZero() && cell.Width == 1 && (cell.Content == "" || cell.Content == " ") {
-			last--
-			continue
-		}
-		break
-	}
-	return last
 }

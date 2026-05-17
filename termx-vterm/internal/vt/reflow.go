@@ -38,20 +38,20 @@ func (s *Screen) Reflow(width, height, cursorX, cursorY int) (int, int) {
 	if sb != nil {
 		sb.compact()
 		for i, row := range sb.Lines() {
+			wrapped := sb.LineWrapped(i)
 			allRows = append(allRows, reflowLine{
-				cells:   cloneUVLineTrimmed(row),
-				wrapped: sb.LineWrapped(i),
+				cells:   cloneUVLineWithTrailingSpaces(row),
+				wrapped: wrapped,
 			})
 		}
 	}
 	for y := 0; y < oldHeight; y++ {
 		row := uv.Line(nil)
-		if s.buf != nil {
-			row = s.buf.Line(y)
-		}
+		row = s.Line(y)
+		wrapped := s.LineWrapped(y)
 		allRows = append(allRows, reflowLine{
-			cells:   cloneUVLineTrimmed(row),
-			wrapped: s.LineWrapped(y),
+			cells:   cloneUVLineWithTrailingSpaces(row),
+			wrapped: wrapped,
 		})
 	}
 
@@ -78,7 +78,7 @@ func (s *Screen) Reflow(width, height, cursorX, cursorY int) (int, int) {
 		sb.lines = make([]uv.Line, visibleStart)
 		sb.wrapped = make([]bool, visibleStart)
 		for i := 0; i < visibleStart; i++ {
-			sb.lines[i] = cloneUVLineTrimmed(reflowed[i].cells)
+			sb.lines[i] = cloneUVLineWithTrailingSpaces(reflowed[i].cells)
 			sb.wrapped[i] = reflowed[i].wrapped
 		}
 		sb.offset = 0
@@ -93,6 +93,7 @@ func (s *Screen) Reflow(width, height, cursorX, cursorY int) (int, int) {
 	cursor := s.cur
 	s.buf = uv.NewRenderBuffer(width, height)
 	s.wrapped = make([]bool, height)
+	s.used = make([]int, height)
 	for y := 0; y < height; y++ {
 		src := visibleStart + y
 		if src >= len(reflowed) {
@@ -100,6 +101,7 @@ func (s *Screen) Reflow(width, height, cursorX, cursorY int) (int, int) {
 		}
 		writeLineToBuffer(s.buf, y, reflowed[src].cells)
 		s.wrapped[y] = reflowed[src].wrapped
+		s.used[y] = min(lineCellWidth(reflowed[src].cells), width)
 	}
 	s.scroll = s.buf.Bounds()
 	s.cur = cursor
@@ -151,7 +153,7 @@ func splitLogicalLine(cells uv.Line, width int) []reflowLine {
 	var current uv.Line
 	currentWidth := 0
 	flush := func(wrapped bool) {
-		out = append(out, reflowLine{cells: cloneUVLineTrimmed(current), wrapped: wrapped})
+		out = append(out, reflowLine{cells: cloneUVLineWithTrailingSpaces(current), wrapped: wrapped})
 		current = nil
 		currentWidth = 0
 	}
@@ -276,6 +278,20 @@ func cloneUVLineTrimmed(line uv.Line) uv.Line {
 		return nil
 	}
 	return append(uv.Line(nil), line[:last]...)
+}
+
+func cloneUVLineForReflow(line uv.Line, preserveTrailingSpaces bool) uv.Line {
+	if preserveTrailingSpaces {
+		return cloneUVLineWithTrailingSpaces(line)
+	}
+	return cloneUVLineTrimmed(line)
+}
+
+func cloneUVLineWithTrailingSpaces(line uv.Line) uv.Line {
+	if len(line) == 0 {
+		return nil
+	}
+	return append(uv.Line(nil), line...)
 }
 
 func lineCellWidth(line uv.Line) int {

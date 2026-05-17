@@ -30,9 +30,11 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 	}
 	rows := make([]uv.Line, height)
 	wrapped := make([]bool, height)
+	used := make([]int, height)
 	for y := 0; y < height; y++ {
 		rows[y] = cloneFastSGRLine(e.scr.buf.Line(y), width)
 		wrapped[y] = e.scr.LineWrapped(y)
+		used[y] = e.scr.LineUsed(y)
 	}
 	x, cursorY := e.scr.CursorPosition()
 	if x < 0 {
@@ -84,11 +86,14 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 		if cursorY == height-1 {
 			scrolled := rows[0]
 			scrolledWrapped := wrapped[0]
-			flushScrollbackRow(scrolled, scrolledWrapped)
+			scrolledUsed := clampLocalInt(used[0], 0, len(scrolled))
+			flushScrollbackRow(scrolled[:scrolledUsed], scrolledWrapped)
 			copy(rows, rows[1:])
 			copy(wrapped, wrapped[1:])
+			copy(used, used[1:])
 			rows[height-1] = fastSGRBlankLine(width, style)
 			wrapped[height-1] = false
+			used[height-1] = 0
 			return
 		}
 		cursorY++
@@ -116,6 +121,7 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 					Link:    link,
 				}
 			}
+			used[cursorY] = max(used[cursorY], x+count)
 			lastChar = rune(run[count-1])
 			run = run[count:]
 			if x+count >= width {
@@ -143,9 +149,6 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 			atPhantom = false
 			i++
 		case '\n':
-			if atPhantom && cursorY >= 0 && cursorY < len(wrapped) {
-				wrapped[cursorY] = true
-			}
 			linefeed()
 			atPhantom = false
 			i++
@@ -179,6 +182,7 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 			copy(line, row)
 		}
 		e.scr.wrapped[y] = wrapped[y]
+		e.scr.used[y] = used[y]
 		e.scr.buf.TouchLine(0, y, width)
 	}
 	if scrollback != nil {

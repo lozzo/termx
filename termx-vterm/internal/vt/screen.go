@@ -22,6 +22,10 @@ type Screen struct {
 	// wrapped marks rows that visually continue onto the next row due to
 	// automatic terminal wrapping.
 	wrapped []bool
+	// used stores the logical cell count that has actually been written for
+	// each row. This is separate from the fixed render-buffer width so trailing
+	// spaces printed by a program survive later reflow.
+	used []int
 }
 
 type pendingScrollbackDamage struct {
@@ -36,6 +40,7 @@ func NewScreen(w, h int) *Screen {
 		buf:        uv.NewRenderBuffer(w, h),
 		scrollback: NewScrollback(DefaultScrollbackSize),
 		wrapped:    make([]bool, h),
+		used:       make([]int, h),
 	}
 	s.scroll = s.buf.Bounds()
 	return &s
@@ -50,6 +55,7 @@ func (s *Screen) Reset() {
 	s.saved = Cursor{}
 	s.scroll = s.buf.Bounds()
 	s.wrapped = make([]bool, s.buf.Height())
+	s.used = make([]int, s.buf.Height())
 	s.buf.Touched = nil
 	s.recordDamage(ScreenDamage{Width: s.buf.Width(), Height: s.buf.Height()})
 }
@@ -74,8 +80,26 @@ func (s *Screen) CellAt(x int, y int) *uv.Cell {
 	return s.buf.CellAt(x, y)
 }
 
+// Line returns the current row truncated to its logical used width. The
+// returned slice aliases the render buffer and is invalidated by mutation.
+func (s *Screen) Line(y int) uv.Line {
+	if s == nil || s.buf == nil || y < 0 || y >= s.buf.Height() {
+		return nil
+	}
+	line := s.buf.Line(y)
+	if line == nil {
+		return nil
+	}
+	used := s.LineUsed(y)
+	if used > len(line) {
+		used = len(line)
+	}
+	return line[:used]
+}
+
 // SetCell sets the cell at the given x, y position.
 func (s *Screen) SetCell(x, y int, c *uv.Cell) {
+	s.markUsed(y, x+cellColumnWidth(c))
 	// On the common write path we only need row-level dirtiness. Bypass the
 	// RenderBuffer equality check so high-volume redraws don't pay a
 	// cell-by-cell compare before every mutation.
@@ -107,6 +131,7 @@ func (s *Screen) SetASCIICells(x, y int, data []byte, style uv.Style, link uv.Li
 	if maxCells := s.buf.Width() - x; len(data) > maxCells {
 		data = data[:maxCells]
 	}
+	s.markUsed(y, x+len(data))
 	line := s.buf.Line(y)
 	if line == nil {
 		for i, b := range data {
@@ -149,6 +174,7 @@ func (s *Screen) Resize(width int, height int) {
 		s.buf.Touched = nil
 	}
 	s.wrapped = resizeBoolSlice(s.wrapped, height)
+	s.used = resizeIntSlice(s.used, height)
 	s.scroll = s.buf.Bounds()
 	s.recordDamage(ScreenDamage{Width: width, Height: height})
 }
@@ -161,6 +187,7 @@ func (s *Screen) Width() int {
 // Clear clears the screen with blank cells.
 func (s *Screen) Clear() {
 	s.ClearArea(s.Bounds())
+	clear(s.used)
 }
 
 // ClearWithScrollback saves all non-empty lines to scrollback before clearing.
@@ -175,12 +202,13 @@ func (s *Screen) ClearWithScrollback(blank *uv.Cell) {
 			line := s.buf.Line(y)
 			if line != nil && !s.isLineEmpty(line) {
 				s.recordScrollbackLine(y, line, s.LineWrapped(y))
-				s.scrollback.PushWrapped(line, s.LineWrapped(y))
+				s.scrollback.PushWrapped(line[:min(len(line), s.LineUsed(y))], s.LineWrapped(y))
 			}
 		}
 	}
 	s.FillArea(blank, s.Bounds())
 	clear(s.wrapped)
+	clear(s.used)
 }
 
 // isLineEmpty returns true if the line contains only empty/space cells.
@@ -199,6 +227,7 @@ func (s *Screen) ClearArea(area uv.Rectangle) {
 	if area.Min.X <= 0 && area.Max.X >= s.buf.Width() {
 		for y := max(0, area.Min.Y); y < min(area.Max.Y, len(s.wrapped)); y++ {
 			s.wrapped[y] = false
+			s.setLineUsed(y, 0)
 		}
 	}
 	s.touchArea(area)
@@ -213,6 +242,19 @@ func (s *Screen) Fill(c *uv.Cell) {
 // FillArea fills the given area with the given cell.
 func (s *Screen) FillArea(c *uv.Cell, area uv.Rectangle) {
 	s.buf.FillArea(c, area)
+	if area.Min.X <= 0 && area.Max.X >= s.buf.Width() {
+		for y := max(0, area.Min.Y); y < min(area.Max.Y, len(s.used)); y++ {
+			if c == nil {
+				s.setLineUsed(y, 0)
+			} else {
+				s.setLineUsed(y, s.buf.Width())
+			}
+		}
+	} else if c != nil {
+		for y := max(0, area.Min.Y); y < min(area.Max.Y, len(s.used)); y++ {
+			s.markUsed(y, area.Max.X)
+		}
+	}
 	s.touchArea(area)
 	s.recordFillDamage(c, area)
 }
@@ -372,6 +414,7 @@ func (s *Screen) InsertCell(n int) {
 		return
 	}
 	s.buf.InsertCellArea(x, y, n, fill, s.scroll)
+	s.markUsed(y, min(limit, s.LineUsed(y)+n))
 	rectWidth := limit - x
 	if rectWidth > 0 {
 		s.recordDamage(ScrollDamage{
@@ -399,6 +442,10 @@ func (s *Screen) DeleteCell(n int) {
 		return
 	}
 	s.buf.DeleteCellArea(x, y, n, fill, s.scroll)
+	used := s.LineUsed(y)
+	if x < used {
+		s.setLineUsed(y, max(x, used-n))
+	}
 	rectWidth := limit - x
 	if rectWidth > 0 {
 		s.recordDamage(ScrollDamage{
@@ -455,6 +502,7 @@ func (s *Screen) InsertLine(n int) bool {
 	}
 	s.buf.InsertLineArea(y, n, fill, s.scroll)
 	s.insertWrappedLines(y, n)
+	s.insertUsedLines(y, n)
 	rect := uv.Rect(s.scroll.Min.X, y, s.scroll.Dx(), s.scroll.Max.Y-y)
 	s.recordDamage(ScrollDamage{Rectangle: rect, Dy: n})
 	s.recordFillDamage(fill, uv.Rect(s.scroll.Min.X, y, s.scroll.Dx(), n))
@@ -499,23 +547,24 @@ func (s *Screen) DeleteLine(n int) bool {
 		if s.damage != nil && s.damage.scrollbackOnly {
 			for i := range min(linesToSave, s.buf.Height()-y) {
 				if line := s.buf.Line(y + i); line != nil {
-					s.recordScrollbackLine(y+i, line, boolAt(s.wrapped, y+i))
+					s.recordScrollbackLine(y+i, line[:min(len(line), s.LineUsed(y+i))], boolAt(s.wrapped, y+i))
 				}
 			}
 		} else if s.damage != nil {
 			pendingScrollback = make([]pendingScrollbackDamage, 0, min(linesToSave, s.buf.Height()-y))
 			for i := range min(linesToSave, s.buf.Height()-y) {
 				if line := s.buf.Line(y + i); line != nil {
+					used := min(len(line), s.LineUsed(y+i))
 					pendingScrollback = append(pendingScrollback, pendingScrollbackDamage{
 						y:       y + i,
-						line:    append(uv.Line(nil), line...),
+						line:    append(uv.Line(nil), line[:used]...),
 						wrapped: boolAt(s.wrapped, y+i),
 					})
 				}
 			}
 		}
 		if s.scrollback != nil {
-			s.scrollback.PushN(s.buf, s.wrapped, y, linesToSave)
+			s.scrollback.PushN(s.buf, s.wrapped, s.used, y, linesToSave)
 		}
 	}
 	if scroll.Min.X == 0 && scroll.Max.X == s.buf.Width() {
@@ -524,6 +573,7 @@ func (s *Screen) DeleteLine(n int) bool {
 		s.buf.DeleteLineArea(y, n, fill, scroll)
 	}
 	s.deleteWrappedLines(y, n)
+	s.deleteUsedLines(y, n)
 	rect := uv.Rect(scroll.Min.X, y, scroll.Dx(), scroll.Max.Y-y)
 	s.recordDamage(ScrollDamage{Rectangle: rect, Dy: -n})
 	s.recordFillDamage(fill, uv.Rect(scroll.Min.X, scroll.Max.Y-n, scroll.Dx(), n))
@@ -639,6 +689,23 @@ func (s *Screen) SetLineWrapped(y int, wrapped bool) {
 	s.wrapped[y] = wrapped
 }
 
+// LineUsed returns the logical used column count for a row.
+func (s *Screen) LineUsed(y int) int {
+	if s == nil || s.buf == nil || y < 0 || y >= s.buf.Height() {
+		return 0
+	}
+	s.ensureUsedHeight()
+	if y >= len(s.used) {
+		return 0
+	}
+	return clampLocalInt(s.used[y], 0, s.buf.Width())
+}
+
+// SetLineUsed sets the logical used column count for a row.
+func (s *Screen) SetLineUsed(y int, used int) {
+	s.setLineUsed(y, used)
+}
+
 // WrappedLines returns the current screen soft-wrap markers.
 func (s *Screen) WrappedLines() []bool {
 	s.ensureWrappedHeight()
@@ -657,6 +724,32 @@ func (s *Screen) ensureWrappedHeight() {
 		height = s.buf.Height()
 	}
 	s.wrapped = resizeBoolSlice(s.wrapped, height)
+}
+
+func (s *Screen) ensureUsedHeight() {
+	height := 0
+	if s != nil && s.buf != nil {
+		height = s.buf.Height()
+	}
+	s.used = resizeIntSlice(s.used, height)
+}
+
+func (s *Screen) markUsed(y int, used int) {
+	if s == nil || s.buf == nil || y < 0 || y >= s.buf.Height() {
+		return
+	}
+	s.ensureUsedHeight()
+	if used > s.used[y] {
+		s.used[y] = clampLocalInt(used, 0, s.buf.Width())
+	}
+}
+
+func (s *Screen) setLineUsed(y int, used int) {
+	if s == nil || s.buf == nil || y < 0 || y >= s.buf.Height() {
+		return
+	}
+	s.ensureUsedHeight()
+	s.used[y] = clampLocalInt(used, 0, s.buf.Width())
 }
 
 func (s *Screen) insertWrappedLines(y, n int) {
@@ -681,6 +774,28 @@ func (s *Screen) deleteWrappedLines(y, n int) {
 	clear(s.wrapped[len(s.wrapped)-n:])
 }
 
+func (s *Screen) insertUsedLines(y, n int) {
+	if n <= 0 || y < 0 || y >= len(s.used) {
+		return
+	}
+	if y+n > len(s.used) {
+		n = len(s.used) - y
+	}
+	copy(s.used[y+n:], s.used[y:len(s.used)-n])
+	clear(s.used[y : y+n])
+}
+
+func (s *Screen) deleteUsedLines(y, n int) {
+	if n <= 0 || y < 0 || y >= len(s.used) {
+		return
+	}
+	if y+n > len(s.used) {
+		n = len(s.used) - y
+	}
+	copy(s.used[y:], s.used[y+n:])
+	clear(s.used[len(s.used)-n:])
+}
+
 func resizeBoolSlice(values []bool, size int) []bool {
 	if size <= 0 {
 		return nil
@@ -696,6 +811,46 @@ func resizeBoolSlice(values []bool, size int) []bool {
 		clear(values[previous:])
 	}
 	return values
+}
+
+func resizeIntSlice(values []int, size int) []int {
+	if size <= 0 {
+		return nil
+	}
+	previous := len(values)
+	if cap(values) < size {
+		next := make([]int, size)
+		copy(next, values)
+		return next
+	}
+	values = values[:size]
+	if size > previous {
+		clear(values[previous:])
+	}
+	return values
+}
+
+func cellColumnWidth(c *uv.Cell) int {
+	if c == nil {
+		return 1
+	}
+	if c.Width > 0 {
+		return c.Width
+	}
+	return 1
+}
+
+func clampLocalInt(value, low, high int) int {
+	if high < low {
+		return low
+	}
+	if value < low {
+		return low
+	}
+	if value > high {
+		return high
+	}
+	return value
 }
 
 func (s *Screen) recordCellDamage(x, y int, c *uv.Cell) {
