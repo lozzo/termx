@@ -32,7 +32,6 @@ func (m *Model) buildStatusHints(vm render.RenderVM) []string {
 	}
 	ctx := buildStatusHintContext(vm)
 	out := make([]string, 0, 8)
-	seen := make(map[string]struct{})
 	for _, doc := range input.DefaultBindingCatalog() {
 		if doc.Mode != mode || strings.TrimSpace(doc.StatusText) == "" {
 			continue
@@ -40,13 +39,21 @@ func (m *Model) buildStatusHints(vm render.RenderVM) []string {
 		if !statusDocVisible(doc, mode, ctx) {
 			continue
 		}
-		if _, ok := seen[doc.StatusText]; ok {
+		if statusHintAlreadyAdded(out, doc.StatusText) {
 			continue
 		}
-		seen[doc.StatusText] = struct{}{}
 		out = append(out, doc.StatusText)
 	}
 	return out
+}
+
+func statusHintAlreadyAdded(hints []string, candidate string) bool {
+	for _, hint := range hints {
+		if hint == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Model) isClipboardHistoryPickerActive() bool {

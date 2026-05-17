@@ -87,6 +87,19 @@ func releaseDiscardedPresentedRowUpdates(updates []presentedRowUpdate) {
 	}
 }
 
+func (p *framePresenter) releaseDiscardedPresentedRowUpdates(updates []presentedRowUpdate) {
+	if p == nil {
+		releaseDiscardedPresentedRowUpdates(updates)
+		return
+	}
+	for _, update := range updates {
+		if !update.replace {
+			continue
+		}
+		p.releasePresentedCells(update.parsed.cells)
+	}
+}
+
 func (p *framePresenter) selectedFramePatchPayload(candidate framePatchCandidate) string {
 	if p == nil || candidate.mode != framePatchCandidateVerticalScrollRows {
 		return candidate.payload
@@ -302,7 +315,12 @@ func (p *framePresenter) planFramePatch(lines []string, meta *presentMeta) frame
 	if p.ownerAwareDeltaEnabled && p.fullWidthLines && meta != nil && p.meta != nil && (shouldUseOwnerAwareDelta(meta) || shouldUseOwnerAwareDelta(p.meta)) && !presentedLinesHaveWidthSafetyState(p.lines) && !presentedLinesHaveWidthSafetyState(lines) {
 		log.OwnerAwareAttempted = true
 		ownerStart := time.Now()
-		candidate := p.ownerAwareDeltaCandidate(lines, meta)
+		candidate := framePatchCandidate{}
+		if previousRows, nextRows, ok := p.ownerAwareRowsFromDiff(lines, diff.updates); ok {
+			candidate = p.ownerAwareDeltaCandidateFromRows(lines, meta, previousRows, nextRows)
+		} else {
+			candidate = p.ownerAwareDeltaCandidate(lines, meta)
+		}
 		log.OwnerAwareMs = float64(time.Since(ownerStart).Microseconds()) / 1000.0
 		log.OwnerAwareValid = candidate.valid()
 		if betterFramePatchCandidate(candidate, best) {
@@ -331,6 +349,31 @@ func (p *framePresenter) planFramePatch(lines []string, meta *presentMeta) frame
 	log.BaselineChangedRows = best.baselineChangedCount
 	log.PayloadBytes = len(best.payload)
 	return best
+}
+
+func (p *framePresenter) ownerAwareRowsFromDiff(lines []string, updates []presentedRowUpdate) ([]presentedRow, []presentedRow, bool) {
+	if p == nil || len(lines) != len(p.lines) || len(p.parsed) != len(p.lines) {
+		return nil, nil, false
+	}
+	previousRows := make([]presentedRow, len(p.lines))
+	nextRows := make([]presentedRow, len(lines))
+	updateIndex := 0
+	for row := range lines {
+		previousRows[row] = p.presentedRow(row)
+		if updateIndex < len(updates) && updates[updateIndex].row == row {
+			nextRows[row] = updates[updateIndex].parsed
+			updateIndex++
+			continue
+		}
+		if p.lines[row] != lines[row] {
+			return nil, nil, false
+		}
+		nextRows[row] = previousRows[row]
+	}
+	if updateIndex != len(updates) {
+		return nil, nil, false
+	}
+	return previousRows, nextRows, true
 }
 
 func (m framePatchCandidateMode) String() string {

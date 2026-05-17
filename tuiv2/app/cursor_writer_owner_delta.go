@@ -60,9 +60,19 @@ func (p *framePresenter) ownerAwareDeltaCandidate(lines []string, meta *presentM
 		previousRows[i] = p.presentedRow(i)
 	}
 	for i := range lines {
-		nextRows[i] = parsePresentedRow(lines[i])
+		nextRows[i] = p.parsePresentedRow(lines[i])
 	}
-	defer releasePresentedRows(nextRows)
+	defer p.releasePresentedRows(nextRows)
+	return p.ownerAwareDeltaCandidateFromRows(lines, meta, previousRows, nextRows)
+}
+
+func (p *framePresenter) ownerAwareDeltaCandidateFromRows(lines []string, meta *presentMeta, previousRows, nextRows []presentedRow) framePatchCandidate {
+	if p == nil || !p.fullWidthLines || meta == nil || p.meta == nil {
+		return framePatchCandidate{}
+	}
+	if len(previousRows) != len(p.lines) || len(nextRows) != len(lines) {
+		return framePatchCandidate{}
+	}
 	if presentedRowsHaveWidthSafety(previousRows) || presentedRowsHaveWidthSafety(nextRows) {
 		return framePatchCandidate{}
 	}

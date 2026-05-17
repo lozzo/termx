@@ -3037,6 +3037,20 @@ func TestParsePresentedRowASCIICapturesStyledEraseCells(t *testing.T) {
 	}
 }
 
+func TestParsePresentedRowASCIIRejectsUnicodeBeforeAllocatingCells(t *testing.T) {
+	allocated := false
+	row, ok := parsePresentedRowASCIIWith("│\x1b[31mA\x1b[0m", func(capHint int) []presentedCell {
+		allocated = true
+		return make([]presentedCell, 0, capHint)
+	})
+	if ok {
+		t.Fatalf("expected unicode row to fall back to generic parser, got %#v", row)
+	}
+	if allocated {
+		t.Fatal("expected ascii fast-path rejection before acquiring cell storage")
+	}
+}
+
 func TestParsePresentedRowGenericMarksWideCells(t *testing.T) {
 	row := parsePresentedRow("界")
 	if !row.hasWide {

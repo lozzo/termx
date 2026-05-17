@@ -136,6 +136,7 @@ type framePresenter struct {
 	scratchLines                       []string
 	reclaim                            [][]presentedCell
 	updates                            []presentedRowUpdate
+	cellPool                           [][]presentedCell
 	ready                              bool
 	verticalScrollMode                 verticalScrollMode
 	ownerAwareDeltaEnabled             bool
@@ -218,11 +219,13 @@ func (p *framePresenter) Reset() {
 		return
 	}
 	releasePresentedRows(p.parsed)
+	releasePresentedCellSlices(p.cellPool)
 	p.lines = nil
 	p.parsed = nil
 	p.scratchLines = nil
 	p.reclaim = nil
 	p.updates = nil
+	p.cellPool = nil
 	p.ready = false
 	p.verticalScrollMode = verticalScrollModeRowsAndRects
 	p.ownerAwareDeltaEnabled = true
@@ -263,7 +266,7 @@ func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string 
 	}
 	if len(lines) != len(p.lines) {
 		perftrace.Count("cursor_writer.present.mode.full_repaint_resize", len(lines))
-		releasePresentedRows(p.parsed)
+		p.releasePresentedRows(p.parsed)
 		p.setLines(lines, true)
 		p.meta = clonePresentMeta(meta)
 		return xansi.EraseEntireDisplay + joinFrameLinesForHost(lines)
@@ -276,7 +279,6 @@ func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string 
 		return ""
 	}
 	if plan.mode != framePatchCandidateDiff {
-		releaseDiscardedPresentedRowUpdates(plan.baselineUpdates)
 		p.updates = plan.baselineUpdates[:0]
 		p.reclaim = plan.baselineReclaim[:0]
 		selectedPayload := p.selectedFramePatchPayload(plan)
@@ -285,21 +287,13 @@ func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string 
 			perftrace.Count("cursor_writer.present.mode.full_repaint_avoided", fullLen)
 		}
 		emitFramePatchMetrics(plan.metrics)
-		releasePresentedRows(p.parsed)
-		p.setLines(lines, true)
+		p.acceptFramePatchBaseline(lines, plan.baselineUpdates, plan.baselineReclaim)
 		p.meta = clonePresentMeta(meta)
 		return selectedPayload
 	}
-	p.lines = append(p.lines[:0], lines...)
-	if p.scratchLines != nil {
-		p.scratchLines = p.scratchLines[:0]
-	}
-	for _, update := range plan.updates {
-		p.parsed[update.row] = update.parsed
-	}
+	p.acceptFramePatchBaseline(lines, plan.updates, plan.reclaim)
 	p.updates = plan.updates[:0]
 	p.reclaim = plan.reclaim[:0]
-	releasePresentedCellSlices(plan.reclaim)
 	if plan.changedCount == 0 {
 		perftrace.Count("cursor_writer.present.mode.no_change", 0)
 		p.meta = clonePresentMeta(meta)
@@ -312,6 +306,58 @@ func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string 
 	p.meta = clonePresentMeta(meta)
 	perftrace.Count("cursor_writer.present.mode.diff", plan.changedCount)
 	return plan.payload
+}
+
+func (p *framePresenter) acceptFramePatchBaseline(lines []string, updates []presentedRowUpdate, reclaim [][]presentedCell) {
+	if p == nil {
+		releaseDiscardedPresentedRowUpdates(updates)
+		releasePresentedCellSlices(reclaim)
+		return
+	}
+	if len(lines) != len(p.lines) {
+		p.releaseDiscardedPresentedRowUpdates(updates)
+		p.releasePresentedCellSlices(reclaim)
+		p.releasePresentedRows(p.parsed)
+		p.setLines(lines, true)
+		return
+	}
+	if cap(p.parsed) < len(lines) {
+		p.releaseDiscardedPresentedRowUpdates(updates)
+		p.releasePresentedCellSlices(reclaim)
+		p.releasePresentedRows(p.parsed)
+		p.setLines(lines, true)
+		return
+	}
+	if len(p.parsed) != len(lines) {
+		p.parsed = p.parsed[:len(lines)]
+	}
+	nextUpdate := 0
+	clearStaleParsedRows := func(start, end int) {
+		for row := start; row < end; row++ {
+			if row < 0 || row >= len(lines) || p.lines[row] == lines[row] {
+				continue
+			}
+			p.releasePresentedCells(p.parsed[row].cells)
+			p.parsed[row] = presentedRow{}
+		}
+	}
+	for _, update := range updates {
+		if update.row < 0 || update.row >= len(lines) {
+			if update.replace {
+				p.releasePresentedCells(update.parsed.cells)
+			}
+			continue
+		}
+		clearStaleParsedRows(nextUpdate, update.row)
+		p.parsed[update.row] = update.parsed
+		nextUpdate = update.row + 1
+	}
+	clearStaleParsedRows(nextUpdate, len(lines))
+	p.lines = append(p.lines[:0], lines...)
+	if p.scratchLines != nil {
+		p.scratchLines = p.scratchLines[:0]
+	}
+	p.releasePresentedCellSlices(reclaim)
 }
 
 func joinedLinesLen(lines []string) int {
@@ -426,9 +472,9 @@ func (p *framePresenter) verticalScrollRectCandidate(lines []string) framePatchC
 	if p.verticalScrollMode.RectsAllowed() && p.fullWidthLines && shared.ExperimentalLRScrollEnabled() {
 		nextRows := make([]presentedRow, len(lines))
 		for i := range lines {
-			nextRows[i] = parsePresentedRow(lines[i])
+			nextRows[i] = p.parsePresentedRow(lines[i])
 		}
-		defer releasePresentedRows(nextRows)
+		defer p.releasePresentedRows(nextRows)
 		previousRows := make([]presentedRow, len(p.lines))
 		for i := range p.lines {
 			previousRows[i] = p.presentedRow(i)
@@ -506,10 +552,10 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, int, []p
 			continue
 		}
 		prevRow := p.presentedRow(row)
-		nextRow := parsePresentedRow(next[row])
+		nextRow := p.parsePresentedRow(next[row])
 		if presentedRowsEquivalent(prevRow, nextRow, p.fullWidthLines) {
 			updated++
-			releasePresentedCells(nextRow.cells)
+			p.releasePresentedCells(nextRow.cells)
 			prevRow.raw = next[row]
 			updates = append(updates, presentedRowUpdate{row: row, parsed: prevRow})
 			continue
@@ -565,7 +611,8 @@ func (p *framePresenter) presentedRow(index int) presentedRow {
 	if p.parsed[index].raw == p.lines[index] {
 		return p.parsed[index]
 	}
-	row := parsePresentedRow(p.lines[index])
+	row := p.parsePresentedRow(p.lines[index])
+	p.releasePresentedCells(p.parsed[index].cells)
 	p.parsed[index] = row
 	return row
 }

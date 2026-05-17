@@ -17,6 +17,9 @@ func rowOwnsLineEnd(row presentedRow) bool {
 }
 
 const presentedStyledBlankECHThreshold = 5
+const framePresenterCellPoolMaxSlices = 256
+
+type presentedCellAcquirer func(int) []presentedCell
 
 func joinFrameLinesForHost(lines []string) string {
 	if len(lines) == 0 {
@@ -79,18 +82,37 @@ func writeOwnedLineEndClear(out *strings.Builder, style presentedStyle) {
 }
 
 func parsePresentedRow(row string) presentedRow {
+	return parsePresentedRowWith(row, acquirePresentedCells)
+}
+
+func (p *framePresenter) parsePresentedRow(row string) presentedRow {
+	if p == nil {
+		return parsePresentedRow(row)
+	}
+	return parsePresentedRowWith(row, p.acquirePresentedCells)
+}
+
+func parsePresentedRowWith(row string, acquire presentedCellAcquirer) presentedRow {
 	if row == "" {
 		return presentedRow{raw: row}
 	}
-	if fast, ok := parsePresentedRowASCII(row); ok {
+	if fast, ok := parsePresentedRowASCIIWith(row, acquire); ok {
 		return fast
 	}
-	return parsePresentedRowGeneric(row)
+	return parsePresentedRowGenericWith(row, acquire)
 }
 
 func parsePresentedRowASCII(row string) (presentedRow, bool) {
+	return parsePresentedRowASCIIWith(row, acquirePresentedCells)
+}
+
+func parsePresentedRowASCIIWith(row string, acquire presentedCellAcquirer) (presentedRow, bool) {
+	capHint, ok := presentedRowASCIICellCapacity(row)
+	if !ok {
+		return presentedRow{}, false
+	}
 	style := presentedStyle{}
-	cells := acquirePresentedCells(len(row))
+	cells := acquire(capHint)
 	hasStyled := false
 	hasErase := false
 	fail := func() (presentedRow, bool) {
@@ -150,13 +172,54 @@ func parsePresentedRowASCII(row string) (presentedRow, bool) {
 	return presentedRow{raw: row, cells: cells, hasStyled: hasStyled, hasErase: hasErase}, true
 }
 
+func presentedRowASCIICellCapacity(row string) (int, bool) {
+	cells := 0
+	for i := 0; i < len(row); {
+		b := row[i]
+		if b == '\x1b' {
+			if i+1 >= len(row) || row[i+1] != '[' {
+				return 0, false
+			}
+			j := i + 2
+			for j < len(row) && (row[j] < '@' || row[j] > '~') {
+				if row[j] >= utf8.RuneSelf {
+					return 0, false
+				}
+				j++
+			}
+			if j >= len(row) {
+				return 0, false
+			}
+			if row[j] == 'X' {
+				count, ok := parseCSIIntASCII(row[i+2:j], 1)
+				if !ok {
+					return 0, false
+				}
+				cells += count
+			}
+			i = j + 1
+			continue
+		}
+		if b >= utf8.RuneSelf || b < 0x20 || b == 0x7f {
+			return 0, false
+		}
+		cells++
+		i++
+	}
+	return cells, true
+}
+
 func parsePresentedRowGeneric(row string) presentedRow {
+	return parsePresentedRowGenericWith(row, acquirePresentedCells)
+}
+
+func parsePresentedRowGenericWith(row string, acquire presentedCellAcquirer) presentedRow {
 	parser := xansi.GetParser()
 	defer xansi.PutParser(parser)
 	state := byte(0)
 	rest := row
 	style := presentedStyle{}
-	cells := acquirePresentedCells(xansi.StringWidth(row))
+	cells := acquire(xansi.StringWidth(row))
 	hasStyled := false
 	hasWide := false
 	hasErase := false
@@ -234,9 +297,47 @@ func acquirePresentedCells(capHint int) []presentedCell {
 	return make([]presentedCell, 0, capHint)
 }
 
+func (p *framePresenter) acquirePresentedCells(capHint int) []presentedCell {
+	if p == nil {
+		return acquirePresentedCells(capHint)
+	}
+	if capHint < 0 {
+		capHint = 0
+	}
+	best := -1
+	for i, cells := range p.cellPool {
+		if cap(cells) < capHint {
+			continue
+		}
+		if best < 0 || cap(cells) < cap(p.cellPool[best]) {
+			best = i
+		}
+	}
+	if best >= 0 {
+		cells := p.cellPool[best]
+		last := len(p.cellPool) - 1
+		p.cellPool[best] = p.cellPool[last]
+		p.cellPool[last] = nil
+		p.cellPool = p.cellPool[:last]
+		return cells[:0]
+	}
+	return acquirePresentedCells(capHint)
+}
+
 func releasePresentedRows(rows []presentedRow) {
 	for i := range rows {
 		releasePresentedCells(rows[i].cells)
+		rows[i] = presentedRow{}
+	}
+}
+
+func (p *framePresenter) releasePresentedRows(rows []presentedRow) {
+	if p == nil {
+		releasePresentedRows(rows)
+		return
+	}
+	for i := range rows {
+		p.releasePresentedCells(rows[i].cells)
 		rows[i] = presentedRow{}
 	}
 }
@@ -247,12 +348,34 @@ func releasePresentedCellSlices(cells [][]presentedCell) {
 	}
 }
 
+func (p *framePresenter) releasePresentedCellSlices(cells [][]presentedCell) {
+	if p == nil {
+		releasePresentedCellSlices(cells)
+		return
+	}
+	for _, cellSlice := range cells {
+		p.releasePresentedCells(cellSlice)
+	}
+}
+
 func releasePresentedCells(cells []presentedCell) {
 	if len(cells) == 0 || cap(cells) > maxPooledPresentedCellCapacity {
 		return
 	}
 	clear(cells)
 	presentedCellPool.Put(cells[:0])
+}
+
+func (p *framePresenter) releasePresentedCells(cells []presentedCell) {
+	if len(cells) == 0 {
+		return
+	}
+	if p == nil || cap(cells) > maxPooledPresentedCellCapacity || len(p.cellPool) >= framePresenterCellPoolMaxSlices {
+		releasePresentedCells(cells)
+		return
+	}
+	clear(cells)
+	p.cellPool = append(p.cellPool, cells[:0])
 }
 
 func parseCSIIntASCII(raw string, def int) (int, bool) {
