@@ -134,7 +134,7 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) tea.Cmd {
 		bodyRect := m.bodyRect()
 		visible := m.workbench.VisibleWithSize(bodyRect)
 		if visible != nil {
-			for _, pane := range visible.FloatingPanes {
+			for _, pane := range m.visibleFloatingPanesForInput(visible) {
 				if pane.ID != paneID {
 					continue
 				}

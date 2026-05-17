@@ -207,7 +207,7 @@ func (m *Model) activePaneContentRect() (workbench.Rect, bool) {
 	if visible == nil {
 		return workbench.Rect{}, false
 	}
-	for _, pane := range visible.FloatingPanes {
+	for _, pane := range m.visibleFloatingPanesForInput(visible) {
 		if pane.ID != tab.ActivePaneID {
 			continue
 		}
@@ -233,7 +233,7 @@ func (m *Model) visiblePaneProjection(paneID string) (workbench.VisiblePane, boo
 	if visible == nil {
 		return workbench.VisiblePane{}, false
 	}
-	for _, pane := range visible.FloatingPanes {
+	for _, pane := range m.visibleFloatingPanesForInput(visible) {
 		if pane.ID == paneID {
 			return pane, true
 		}

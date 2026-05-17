@@ -97,8 +97,15 @@ type renderBodyKey struct {
 	EmptySelection     RenderPaneSelectionVM
 	ExitedSelection    RenderPaneSelectionVM
 	SnapshotOverride   RenderSnapshotOverrideVM
+	FloatingPreview    renderFloatingDragPreviewKey
 	CopyMode           renderCopyModeKey
 	CopyModesSig       string
+}
+
+type renderFloatingDragPreviewKey struct {
+	PaneID   string
+	Rect     workbench.Rect
+	Snapshot *protocol.Snapshot
 }
 
 type renderCopyModeKey struct {
@@ -362,6 +369,11 @@ func renderVMKeyForVM(vm RenderVM) renderVMKey {
 			EmptySelection:     vm.Body.EmptySelection,
 			ExitedSelection:    vm.Body.ExitedSelection,
 			SnapshotOverride:   vm.Body.SnapshotOverride,
+			FloatingPreview: renderFloatingDragPreviewKey{
+				PaneID:   vm.Body.FloatingDragPreview.PaneID,
+				Rect:     vm.Body.FloatingDragPreview.Rect,
+				Snapshot: vm.Body.FloatingDragPreview.Snapshot,
+			},
 			CopyMode: renderCopyModeKey{
 				PaneID:     copyMode.PaneID,
 				CursorRow:  copyMode.CursorRow,

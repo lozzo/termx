@@ -68,7 +68,7 @@ func (m *Model) visiblePaneForInput(paneID string) (*workbench.PaneState, workbe
 	if visible == nil {
 		return pane, workbench.Rect{}, false
 	}
-	for _, floating := range visible.FloatingPanes {
+	for _, floating := range m.visibleFloatingPanesForInput(visible) {
 		if floating.ID == paneID {
 			return pane, floating.Rect, true
 		}

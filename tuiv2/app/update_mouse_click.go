@@ -19,8 +19,9 @@ func (m *Model) visiblePaneAt(x, contentY int) (*workbench.VisiblePane, *workben
 	if visible == nil {
 		return nil, nil, false
 	}
-	for i := len(visible.FloatingPanes) - 1; i >= 0; i-- {
-		pane := &visible.FloatingPanes[i]
+	floatingPanes := m.visibleFloatingPanesForInput(visible)
+	for i := len(floatingPanes) - 1; i >= 0; i-- {
+		pane := &floatingPanes[i]
 		if x >= pane.Rect.X && x < pane.Rect.X+pane.Rect.W && contentY >= pane.Rect.Y && contentY < pane.Rect.Y+pane.Rect.H {
 			return nil, pane, true
 		}
