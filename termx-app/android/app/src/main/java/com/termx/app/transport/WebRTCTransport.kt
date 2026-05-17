@@ -83,7 +83,7 @@ class WebRTCTransport(
 
     // ─── Connect ─────────────────────────────────────────────────────────────
 
-    /** Hub 连接（local or public_p2p，都走同一套信令协议，只是 hubUrl 不同） */
+    /** Hub 连接（local or hub，都走同一套信令协议，只是 hubUrl 不同） */
     fun connectHub(
         hubUrl: String,
         sessionToken: String,

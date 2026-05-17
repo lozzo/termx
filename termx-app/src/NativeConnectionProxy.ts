@@ -78,7 +78,7 @@ export interface TransferSyncItem {
   storeKey?: string
 }
 
-type NativeRuntimePath = Extract<ConnectionPath, 'local' | 'public_p2p' | 'managed'>
+type NativeRuntimePath = ConnectionPath
 
 export interface TransferSyncPayload {
   transfers: TransferSyncItem[]
@@ -1565,7 +1565,7 @@ function waitForConnected(
 }
 
 function normalizeNativePath(path: string | null | undefined): NativeRuntimePath {
-  if (path === 'public_p2p' || path === 'managed') return path
+  if (path === 'hub' || path === 'public_p2p' || path === 'managed') return 'hub'
   return 'local'
 }
 

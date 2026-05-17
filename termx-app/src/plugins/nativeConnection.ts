@@ -7,14 +7,14 @@ export interface NativeConnectOpts {
   hubUrls: string[]
   sessionToken: string
   answerProofSecret?: string
-  preferredPath: 'local' | 'public_p2p' | 'managed'
+  preferredPath: 'local' | 'hub'
   forceRelay?: boolean
 }
 
 export interface NativeConnectionSnapshot {
   machineId: string
   phase: 'idle' | 'probing' | 'connecting' | 'connected' | 'verifying' | 'reconnecting' | 'waiting_network' | 'failed'
-  path: 'local' | 'public_p2p' | 'managed' | null
+  path: 'local' | 'hub' | null
   statusText: string
   relayInUse: boolean
   forceRelay?: boolean

@@ -51,7 +51,7 @@ object RaceConnector {
             try {
                 val r = HubConnector.connect(machineId, hubUrls, sessionToken, bridge, forceRelay, onProgress)
                 if (r is HubConnector.Result.Success) {
-                    winner.complete(Result.Success(r.transport, if (r.relayInUse) "managed" else "public_p2p", r.relayInUse))
+                    winner.complete(Result.Success(r.transport, "hub", r.relayInUse))
                 }
                 r
             } catch (e: CancellationException) { throw e }

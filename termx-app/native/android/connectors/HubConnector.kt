@@ -10,7 +10,7 @@ import org.json.JSONObject
 import kotlin.coroutines.coroutineContext
 
 /**
- * HubConnector — 通过托管 Hub 建立 WebRTC 连接（public_p2p 路径）
+ * HubConnector — 通过托管 Hub 建立 WebRTC 连接（hub 路径）
  *
  * 流程：
  *  1. POST /api/v1/sessions/ice    → ICE 服务器列表

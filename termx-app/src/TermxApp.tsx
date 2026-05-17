@@ -706,7 +706,7 @@ function nativeConnectionPhase(phase: string): RtcConnectionStateSnapshot['phase
 }
 
 function nativeConnectionPath(path: string): RtcConnectionStateSnapshot['path'] {
-  if (path === 'public_p2p' || path === 'managed') return path
+  if (path === 'hub' || path === 'public_p2p' || path === 'managed') return 'hub'
   return 'local'
 }
 
@@ -836,10 +836,10 @@ function preferredNativePath(
 ): NativeConnectOpts['preferredPath'] {
   const storedPreference = storedMachine?.preferredPath
   if (storedPreference === 'local' && localAddresses.length > 0) return 'local'
-  if ((storedPreference === 'public_p2p' || storedPreference === 'managed') && hubUrls.length > 0) return storedPreference
-  if (machine.source === 'cloud' && hubUrls.length > 0) return 'managed'
+  if (storedPreference === 'hub' && hubUrls.length > 0) return 'hub'
+  if (machine.source === 'hub' && hubUrls.length > 0) return 'hub'
   if (localAddresses.length > 0) return 'local'
-  return 'managed'
+  return 'hub'
 }
 
 function firstNonEmpty(values: readonly (string | undefined)[]): string | undefined {
