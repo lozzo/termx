@@ -3416,6 +3416,164 @@ func TestOutputCursorWriterFrameLinesPathMovingFloatingDragPreviewMatchesFinalPr
 	assertScreenEqual(t, got, want)
 }
 
+func TestOutputCursorWriterFrameLinesPathMovingFloatingDragPreviewMatchesEachPreviewFrame(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	buildModel := func(rect workbench.Rect) *Model {
+		t.Helper()
+		model := setupModel(t, modelOpts{width: 120, height: 36})
+		base := model.runtime.Registry().GetOrCreate("term-1")
+		base.Snapshot = cursorWriterNvimLikeSnapshot("term-1", 118, 30, "#444444")
+
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", rect); err != nil {
+			t.Fatalf("create floating pane: %v", err)
+		}
+		if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+			t.Fatalf("bind floating pane terminal: %v", err)
+		}
+		floatTerminal := model.runtime.Registry().GetOrCreate("term-float")
+		floatTerminal.Name = "float"
+		floatTerminal.State = "running"
+		floatTerminal.Snapshot = cursorWriterStyledSnapshot("term-float", 51, 14)
+		model.runtime.BindPane("float-1").Connected = true
+		return model
+	}
+
+	model := buildModel(workbench.Rect{X: 18, Y: 7, W: 54, H: 16})
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	vt := localvterm.New(120, 36, 0, nil)
+	writeFrame := func(frame renderFrameLines) {
+		t.Helper()
+		if err := writer.WriteFrameLinesWithMeta(frame.lines, "", frame.meta); err != nil {
+			t.Fatalf("write render frame lines with meta: %v", err)
+		}
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.writes = nil
+		sink.mu.Unlock()
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay incremental preview frame: %v", err)
+		}
+		want := replayCursorWriterRenderFrames(t, 120, 36, []renderFrameLines{frame})
+		assertScreenEqual(t, vt.ScreenContent(), want)
+	}
+
+	writeFrame(captureRenderFrameLines(t, model))
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	start := model.workbench.FloatingState(tab.ID, "float-1")
+	if start == nil {
+		t.Fatal("expected floating pane state")
+	}
+	model.beginFloatingDragPreview("float-1", start.Rect)
+	for _, rect := range []workbench.Rect{
+		{X: 19, Y: 7, W: 54, H: 16},
+		{X: 20, Y: 7, W: 54, H: 16},
+		{X: 21, Y: 7, W: 54, H: 16},
+		{X: 22, Y: 8, W: 54, H: 16},
+		{X: 23, Y: 9, W: 54, H: 16},
+		{X: 24, Y: 10, W: 54, H: 16},
+	} {
+		model.floatingDragPreview.Rect = rect
+		model.render.Invalidate()
+		writeFrame(captureRenderFrameLines(t, model))
+	}
+}
+
+func TestOutputCursorWriterFrameLinesPathFloatingDragPreviewReleaseMatchesCommittedFrame(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	buildModel := func(rect workbench.Rect) *Model {
+		t.Helper()
+		model := setupModel(t, modelOpts{width: 120, height: 36})
+		base := model.runtime.Registry().GetOrCreate("term-1")
+		base.Snapshot = cursorWriterNvimLikeSnapshot("term-1", 118, 30, "#444444")
+
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", rect); err != nil {
+			t.Fatalf("create floating pane: %v", err)
+		}
+		if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+			t.Fatalf("bind floating pane terminal: %v", err)
+		}
+		floatTerminal := model.runtime.Registry().GetOrCreate("term-float")
+		floatTerminal.Name = "float"
+		floatTerminal.State = "running"
+		floatTerminal.Snapshot = cursorWriterStyledSnapshot("term-float", 51, 14)
+		model.runtime.BindPane("float-1").Connected = true
+		return model
+	}
+
+	captureDragRelease := func(model *Model, positions []workbench.Rect) localvterm.ScreenData {
+		t.Helper()
+		frames := make([]renderFrameLines, 0, len(positions)+2)
+		frames = append(frames, captureRenderFrameLines(t, model))
+
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		start := model.workbench.FloatingState(tab.ID, "float-1")
+		if start == nil {
+			t.Fatal("expected floating pane state")
+		}
+		model.beginFloatingDragPreview("float-1", start.Rect)
+		for _, rect := range positions {
+			model.floatingDragPreview.Rect = rect
+			model.render.Invalidate()
+			frames = append(frames, captureRenderFrameLines(t, model))
+		}
+		final := positions[len(positions)-1]
+		model.floatingDragPreview = floatingDragPreviewState{}
+		if !model.workbench.MoveFloatingPane(tab.ID, "float-1", final.X, final.Y) {
+			t.Fatalf("expected commit move to %#v to change pane", final)
+		}
+		model.render.Invalidate()
+		frames = append(frames, captureRenderFrameLines(t, model))
+		return replayCursorWriterRenderFrames(t, 120, 36, frames)
+	}
+
+	captureCommitted := func(model *Model, rect workbench.Rect) localvterm.ScreenData {
+		t.Helper()
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		if !model.workbench.MoveFloatingPane(tab.ID, "float-1", rect.X, rect.Y) {
+			t.Fatalf("expected committed move to %#v to change pane", rect)
+		}
+		return replayCursorWriterRenderFrames(t, 120, 36, []renderFrameLines{captureRenderFrameLines(t, model)})
+	}
+
+	start := workbench.Rect{X: 18, Y: 7, W: 54, H: 16}
+	path := []workbench.Rect{
+		{X: 23, Y: 7, W: 54, H: 16},
+		{X: 28, Y: 7, W: 54, H: 16},
+		{X: 33, Y: 7, W: 54, H: 16},
+		{X: 38, Y: 7, W: 54, H: 16},
+		{X: 43, Y: 7, W: 54, H: 16},
+	}
+
+	got := captureDragRelease(buildModel(start), path)
+	want := captureCommitted(buildModel(start), path[len(path)-1])
+	assertScreenEqual(t, got, want)
+}
+
 func TestOutputCursorWriterFrameLinesPathMovingOverlappingFloatingPanesPreservesStyles(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
