@@ -214,7 +214,7 @@ func (c *Coordinator) RenderFrame() string {
 	if c == nil || c.vmFn == nil {
 		return ""
 	}
-	result, cached := c.renderResult()
+	result, cached := c.renderResultRef()
 	if cached {
 		cacheMetric = "render.frame.cache_hit"
 	}
@@ -226,7 +226,7 @@ func (c *Coordinator) RenderFrameLines() ([]string, string) {
 	if c == nil || c.vmFn == nil {
 		return nil, hideCursorANSI()
 	}
-	result, _ := c.renderResult()
+	result, _ := c.renderResultRef()
 	return append([]string(nil), result.Lines...), result.CursorSequence()
 }
 
@@ -234,7 +234,7 @@ func (c *Coordinator) RenderFrameLinesRef() ([]string, string) {
 	if c == nil || c.vmFn == nil {
 		return nil, hideCursorANSI()
 	}
-	result, _ := c.renderResult()
+	result, _ := c.renderResultRef()
 	return result.Lines, result.CursorSequence()
 }
 
@@ -307,7 +307,12 @@ func (c *Coordinator) CachedRenderResult() (RenderResult, bool) {
 }
 
 func (c *Coordinator) Render() RenderResult {
-	result, _ := c.renderResult()
+	result, _ := c.renderResultRef()
+	return cloneRenderResult(result)
+}
+
+func (c *Coordinator) RenderRef() RenderResult {
+	result, _ := c.renderResultRef()
 	return result
 }
 
@@ -421,6 +426,11 @@ func copyModeSnapshotKey(snapshot *protocol.Snapshot) uintptr {
 }
 
 func (c *Coordinator) renderResult() (RenderResult, bool) {
+	result, cached := c.renderResultRef()
+	return cloneRenderResult(result), cached
+}
+
+func (c *Coordinator) renderResultRef() (RenderResult, bool) {
 	if c == nil || c.vmFn == nil {
 		return RenderResult{}, false
 	}
@@ -428,14 +438,14 @@ func (c *Coordinator) renderResult() (RenderResult, bool) {
 	key := renderVMKeyForVM(vm)
 	c.mu.Lock()
 	if !c.dirty && c.hasLastResult && c.lastKey == key {
-		result := cloneRenderResult(c.lastResult)
+		result := c.lastResult
 		c.mu.Unlock()
 		return result, true
 	}
 	c.mu.Unlock()
 	result := renderResultWithCoordinator(c, vm)
 	c.mu.Lock()
-	c.lastResult = cloneRenderResult(result)
+	c.lastResult = result
 	c.lastFrame = ""
 	c.lastKey = key
 	c.hasLastResult = true

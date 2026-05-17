@@ -1383,7 +1383,7 @@ func TestFramePresenterOwnerAwareDeltaFallsBackForHostWidthSafetyRows(t *testing
 	var presenter framePresenter
 	presenter.fullWidthLines = true
 	presenter.setLines(previous, true)
-	presenter.meta = clonePresentMeta(meta)
+	presenter.meta = retainPresentMeta(meta)
 
 	if payload := presenter.presentOwnerAwareDelta(next, meta); payload != "" {
 		t.Fatalf("expected owner-aware delta to bail out on width-unsafe rows, got %q", payload)
@@ -1412,7 +1412,7 @@ func TestFramePresenterPlanSkipsOwnerAwareProbeForHostWidthSafetyRows(t *testing
 	presenter.ownerAwareDeltaEnabled = true
 	presenter.setLines(previous, true)
 	presenter.ready = true
-	presenter.meta = clonePresentMeta(meta)
+	presenter.meta = retainPresentMeta(meta)
 
 	var planLog presentPlanLog
 	presenter.planLogHook = func(log presentPlanLog) {
@@ -3015,6 +3015,17 @@ func TestPresentedStyleWithSGRASCIIParsesSimpleAttributes(t *testing.T) {
 	}
 	if style.FGCode != "31" || style.BGCode != "44" || !style.Bold {
 		t.Fatalf("unexpected parsed style %#v", style)
+	}
+}
+
+func TestParsePresentedRowGenericFallsBackForNonASCIISGRParams(t *testing.T) {
+	row := parsePresentedRowGeneric("\x1b[38:2::220:40:30m界\x1b[0m")
+	defer releasePresentedCells(row.cells)
+	if len(row.cells) != 1 {
+		t.Fatalf("expected one wide cell, got %#v", row.cells)
+	}
+	if row.cells[0].Style.FGCode != "38;2;220;40;30" {
+		t.Fatalf("expected colon SGR params to preserve truecolor style, got %#v", row.cells[0].Style)
 	}
 }
 
@@ -6579,6 +6590,27 @@ func ownerAwareTestMeta(rows ...[]hostOwnerID) *presentMeta {
 	}
 	meta.VisibleRects = visibleRectsFromOwnerMap(meta.OwnerMap)
 	return meta
+}
+
+func TestVisibleRectsFromOwnerMapKeepsSplitSameOwnerSpans(t *testing.T) {
+	const owner hostOwnerID = 7
+	got := visibleRectsFromOwnerMap([][]hostOwnerID{
+		{owner, owner, 0, owner, owner},
+		{owner, owner, 0, owner, owner},
+	})
+	rects := got[owner]
+	want := []rect{
+		{Left: 0, Top: 0, Right: 1, Bottom: 1},
+		{Left: 3, Top: 0, Right: 4, Bottom: 1},
+	}
+	if len(rects) != len(want) {
+		t.Fatalf("expected %d visible rects, got %#v", len(want), rects)
+	}
+	for i := range want {
+		if rects[i] != want[i] {
+			t.Fatalf("unexpected rect %d: got %#v want %#v; all=%#v", i, rects[i], want[i], rects)
+		}
+	}
 }
 
 type cursorWriterFakeHost struct {

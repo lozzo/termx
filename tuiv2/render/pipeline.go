@@ -174,26 +174,38 @@ func composeRenderMetadata(width, height int, immersiveZoom bool, bodyMeta *Pres
 	}
 	meta := &PresentMetadata{
 		OwnerMap: make([][]uint32, height),
-	}
-	for y := 0; y < height; y++ {
-		meta.OwnerMap[y] = make([]uint32, width)
+		Width:    width,
 	}
 	offsetY := 0
 	if !immersiveZoom {
 		offsetY = 1
-		for x := 0; x < width; x++ {
-			meta.OwnerMap[0][x] = renderOwnerTopChrome
-			meta.OwnerMap[height-1][x] = renderOwnerBottomChrome
-		}
+		meta.OwnerMap[0] = filledOwnerRow(width, renderOwnerTopChrome)
+		meta.OwnerMap[height-1] = filledOwnerRow(width, renderOwnerBottomChrome)
 	}
 	for y := range bodyMeta.OwnerMap {
 		targetY := offsetY + y
 		if targetY < 0 || targetY >= height {
 			continue
 		}
+		if len(bodyMeta.OwnerMap[y]) == width {
+			meta.OwnerMap[targetY] = bodyMeta.OwnerMap[y]
+			continue
+		}
+		meta.OwnerMap[targetY] = make([]uint32, width)
 		copy(meta.OwnerMap[targetY], bodyMeta.OwnerMap[y])
 	}
 	return meta
+}
+
+func filledOwnerRow(width int, owner uint32) []uint32 {
+	if width <= 0 {
+		return nil
+	}
+	row := make([]uint32, width)
+	for x := range row {
+		row[x] = owner
+	}
+	return row
 }
 
 func renderVMNeedsCursorBlink(vm RenderVM) bool {

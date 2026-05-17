@@ -139,7 +139,7 @@ func parsePresentedRowASCIIWith(row string, acquire presentedCellAcquirer) (pres
 			params := row[i+2 : j]
 			switch final {
 			case 'm':
-				next, ok := style.withSGRASCII(params)
+				next, ok := presentedStyleWithSGRRaw(style, params)
 				if !ok {
 					return fail()
 				}
@@ -219,7 +219,7 @@ func parsePresentedRowGenericWith(row string, acquire presentedCellAcquirer) pre
 	state := byte(0)
 	rest := row
 	style := presentedStyle{}
-	cells := acquire(xansi.StringWidth(row))
+	cells := acquire(0)
 	hasStyled := false
 	hasWide := false
 	hasErase := false
@@ -246,7 +246,7 @@ func parsePresentedRowGenericWith(row string, acquire presentedCellAcquirer) pre
 		} else if len(token) > 0 && token[0] == '\x1b' {
 			switch xansi.Cmd(parser.Command()).Final() {
 			case 'm':
-				style = style.withSGR(parser.Params())
+				style = style.withSGRRaw(token, parser.Params())
 			case 'G':
 				transition := widthSafety.ObserveReanchorBeforeNextCluster()
 				if transition.HostWidthStabilizer {
@@ -396,28 +396,105 @@ func parseCSIIntASCII(raw string, def int) (int, bool) {
 }
 
 func (s presentedStyle) withSGRASCII(raw string) (presentedStyle, bool) {
-	var local [8]int
-	params := local[:0]
-	value := 0
-	hasValue := false
-	for i := 0; i <= len(raw); i++ {
-		if i == len(raw) || raw[i] == ';' {
-			if hasValue {
-				params = append(params, value)
-			} else {
-				params = append(params, 0)
-			}
-			value = 0
-			hasValue = false
-			continue
-		}
-		if raw[i] < '0' || raw[i] > '9' {
-			return presentedStyle{}, false
-		}
-		value = value*10 + int(raw[i]-'0')
-		hasValue = true
+	var local [16]int
+	params, ok := parseSGRRawParams(raw, local[:0])
+	if !ok {
+		return presentedStyle{}, false
 	}
 	return s.withSGRInts(params), true
+}
+
+func parseSGRRawParams(raw string, dst []int) ([]int, bool) {
+	if raw == "" {
+		return append(dst, 0), true
+	}
+	for start := 0; start <= len(raw); {
+		end := start
+		for end < len(raw) && raw[end] != ';' {
+			end++
+		}
+		group := raw[start:end]
+		var ok bool
+		if strings.Contains(group, ":") {
+			dst, ok = appendColonSGRGroup(dst, group)
+		} else {
+			dst, ok = appendSGRIntParam(dst, group)
+		}
+		if !ok {
+			return nil, false
+		}
+		if end == len(raw) {
+			break
+		}
+		start = end + 1
+	}
+	return dst, true
+}
+
+func appendSGRIntParam(dst []int, raw string) ([]int, bool) {
+	if raw == "" {
+		return append(dst, 0), true
+	}
+	value := 0
+	for i := 0; i < len(raw); i++ {
+		if raw[i] < '0' || raw[i] > '9' {
+			return nil, false
+		}
+		value = value*10 + int(raw[i]-'0')
+	}
+	return append(dst, value), true
+}
+
+func appendColonSGRGroup(dst []int, raw string) ([]int, bool) {
+	var local [8]int
+	values := local[:0]
+	for start := 0; start <= len(raw); {
+		end := start
+		for end < len(raw) && raw[end] != ':' {
+			end++
+		}
+		if end == start {
+			values = append(values, -1)
+		} else {
+			value := 0
+			for i := start; i < end; i++ {
+				if raw[i] < '0' || raw[i] > '9' {
+					return nil, false
+				}
+				value = value*10 + int(raw[i]-'0')
+			}
+			values = append(values, value)
+		}
+		if end == len(raw) {
+			break
+		}
+		start = end + 1
+	}
+	if len(values) == 0 || values[0] < 0 {
+		return append(dst, 0), true
+	}
+	if (values[0] == 38 || values[0] == 48) && len(values) >= 3 {
+		switch values[1] {
+		case 5:
+			if values[2] < 0 {
+				return nil, false
+			}
+			return append(dst, values[0], 5, values[2]), true
+		case 2:
+			start := 2
+			if len(values) >= 6 {
+				start = 3
+			}
+			if start < len(values) && values[start] < 0 {
+				start++
+			}
+			if start+2 >= len(values) || values[start] < 0 || values[start+1] < 0 || values[start+2] < 0 {
+				return nil, false
+			}
+			return append(dst, values[0], 2, values[start], values[start+1], values[start+2]), true
+		}
+	}
+	return append(dst, values[0]), true
 }
 
 func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol int) presentedStyle {
@@ -541,6 +618,29 @@ type presentedStyleTransitionKey struct {
 	To   presentedStyle
 }
 
+type presentedStyleSGRKey struct {
+	From presentedStyle
+	Raw  string
+}
+
+func presentedStyleWithSGRRaw(s presentedStyle, raw string) (presentedStyle, bool) {
+	key := presentedStyleSGRKey{From: s, Raw: raw}
+	presentedSGRCache.mu.RLock()
+	cached, ok := presentedSGRCache.m[key]
+	presentedSGRCache.mu.RUnlock()
+	if ok {
+		return cached, true
+	}
+	next, ok := s.withSGRASCII(raw)
+	if !ok {
+		return presentedStyle{}, false
+	}
+	presentedSGRCache.mu.Lock()
+	presentedSGRCache.m[presentedStyleSGRKey{From: s, Raw: strings.Clone(raw)}] = next
+	presentedSGRCache.mu.Unlock()
+	return next, true
+}
+
 func presentedStyleDiffANSI(from, to presentedStyle) string {
 	if from == to {
 		return ""
@@ -618,95 +718,31 @@ func appendPresentedStyleCode(b *strings.Builder, first *bool, code string) {
 	*first = false
 }
 
-func (s presentedStyle) withSGR(params xansi.Params) presentedStyle {
+func (s presentedStyle) withSGRRaw(token string, params xansi.Params) presentedStyle {
+	if len(token) < 3 || token[0] != '\x1b' || token[1] != '[' || token[len(token)-1] != 'm' {
+		return s.withSGRParams(params)
+	}
+	next, ok := presentedStyleWithSGRRaw(s, token[2:len(token)-1])
+	if !ok {
+		return s.withSGRParams(params)
+	}
+	return next
+}
+
+func (s presentedStyle) withSGRParams(params xansi.Params) presentedStyle {
 	if len(params) == 0 {
 		return presentedStyle{}
 	}
-	next := s
+	var local [16]int
+	values := local[:0]
 	for i := 0; i < len(params); i++ {
 		param, _, ok := params.Param(i, 0)
 		if !ok {
 			continue
 		}
-		switch param {
-		case 0:
-			next = presentedStyle{}
-		case 1:
-			next.Bold = true
-		case 3:
-			next.Italic = true
-		case 4:
-			next.Underline = true
-		case 5:
-			next.Blink = true
-		case 7:
-			next.Reverse = true
-		case 9:
-			next.Strikethrough = true
-		case 22:
-			next.Bold = false
-		case 23:
-			next.Italic = false
-		case 24:
-			next.Underline = false
-		case 25:
-			next.Blink = false
-		case 27:
-			next.Reverse = false
-		case 29:
-			next.Strikethrough = false
-		case 39:
-			next.FGCode = ""
-		case 49:
-			next.BGCode = ""
-		case 38, 48:
-			modeIndex := i + 1
-			mode, _, ok := params.Param(modeIndex, 0)
-			if !ok {
-				continue
-			}
-			switch mode {
-			case 5:
-				value, _, ok := params.Param(i+2, 0)
-				if !ok {
-					continue
-				}
-				code := strconv.Itoa(param) + ";5;" + strconv.Itoa(value)
-				if param == 38 {
-					next.FGCode = code
-				} else {
-					next.BGCode = code
-				}
-				i += 2
-			case 2:
-				r, _, okR := params.Param(i+2, 0)
-				g, _, okG := params.Param(i+3, 0)
-				b, _, okB := params.Param(i+4, 0)
-				if !okR || !okG || !okB {
-					continue
-				}
-				code := strconv.Itoa(param) + ";2;" + strconv.Itoa(r) + ";" + strconv.Itoa(g) + ";" + strconv.Itoa(b)
-				if param == 38 {
-					next.FGCode = code
-				} else {
-					next.BGCode = code
-				}
-				i += 4
-			}
-		default:
-			switch {
-			case 30 <= param && param <= 37:
-				next.FGCode = ansiSimpleColorCode(param)
-			case 90 <= param && param <= 97:
-				next.FGCode = ansiSimpleColorCode(param)
-			case 40 <= param && param <= 47:
-				next.BGCode = ansiSimpleColorCode(param)
-			case 100 <= param && param <= 107:
-				next.BGCode = ansiSimpleColorCode(param)
-			}
-		}
+		values = append(values, param)
 	}
-	return next
+	return s.withSGRInts(values)
 }
 
 func (s presentedStyle) withSGRInts(params []int) presentedStyle {

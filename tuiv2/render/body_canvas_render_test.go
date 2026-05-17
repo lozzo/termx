@@ -697,16 +697,39 @@ func TestRenderBodyCanvasMovingFloatingPreviewOverlayClearsPreviousPreviewFootpr
 
 	firstPreview := previewAt(10)
 	_ = renderBodyCanvas(coordinator, runtimeState, false, entries, &firstPreview, 40, 8)
+	firstSprite := coordinator.bodyCache.preview.sprite
+	if firstSprite == nil {
+		t.Fatalf("expected first preview render to cache a sprite")
+	}
+	if got := coordinator.bodyCache.preview.entry.FrameKey.Rect; got != (workbench.Rect{X: 0, Y: 0, W: 10, H: 5}) {
+		t.Fatalf("expected cached preview sprite key to be local, got %#v", got)
+	}
 
 	secondPreview := previewAt(14)
 	got := renderBodyCanvas(coordinator, runtimeState, false, entries, &secondPreview, 40, 8)
 	want := rebuildBodyCanvas(nil, append(append([]paneRenderEntry(nil), entries...), secondPreview), 40, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
+	if coordinator.bodyCache.preview.sprite != firstSprite {
+		t.Fatalf("expected moving preview to reuse cached sprite")
+	}
+	if gotRect := coordinator.bodyCache.preview.rect; gotRect != secondPreview.Rect {
+		t.Fatalf("expected cached preview rect to track latest visual rect, got %#v want %#v", gotRect, secondPreview.Rect)
+	}
 
 	if gotRaw, wantRaw := strings.TrimRight(got.rawString(), "\n"), strings.TrimRight(want.rawString(), "\n"); gotRaw != wantRaw {
 		t.Fatalf("expected moving preview overlay canvas to match full rebuild raw output,\n got: %q\nwant: %q", gotRaw, wantRaw)
 	}
 	if gotANSI, wantANSI := got.String(), want.String(); gotANSI != wantANSI {
 		t.Fatalf("expected moving preview overlay canvas to match full rebuild styled output")
+	}
+
+	thirdPreview := previewAt(18)
+	got = renderBodyCanvas(coordinator, runtimeState, false, entries, &thirdPreview, 40, 8)
+	want = rebuildBodyCanvas(nil, append(append([]paneRenderEntry(nil), entries...), thirdPreview), 40, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
+	if coordinator.bodyCache.preview.sprite != firstSprite {
+		t.Fatalf("expected third moving preview to reuse cached sprite")
+	}
+	if gotRaw, wantRaw := strings.TrimRight(got.rawString(), "\n"), strings.TrimRight(want.rawString(), "\n"); gotRaw != wantRaw {
+		t.Fatalf("expected third moving preview overlay canvas to clear intermediate footprint,\n got: %q\nwant: %q", gotRaw, wantRaw)
 	}
 }
 

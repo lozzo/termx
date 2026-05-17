@@ -196,6 +196,13 @@ var presentedStyleDiffCache = struct {
 	m: make(map[presentedStyleTransitionKey]string),
 }
 
+var presentedSGRCache = struct {
+	mu sync.RWMutex
+	m  map[presentedStyleSGRKey]presentedStyle
+}{
+	m: make(map[presentedStyleSGRKey]presentedStyle),
+}
+
 const hideHostCursorSequence = "\x1b[?25l"
 const presentedResetStyleSequence = "\x1b[0m"
 const maxPooledPresentedCellCapacity = 2048
@@ -261,21 +268,21 @@ func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string 
 		perftrace.Count("cursor_writer.present.mode.initial_full", len(lines))
 		p.setLines(lines, true)
 		p.ready = true
-		p.meta = clonePresentMeta(meta)
+		p.meta = retainPresentMeta(meta)
 		return joinFrameLinesForHost(lines)
 	}
 	if len(lines) != len(p.lines) {
 		perftrace.Count("cursor_writer.present.mode.full_repaint_resize", len(lines))
 		p.releasePresentedRows(p.parsed)
 		p.setLines(lines, true)
-		p.meta = clonePresentMeta(meta)
+		p.meta = retainPresentMeta(meta)
 		return xansi.EraseEntireDisplay + joinFrameLinesForHost(lines)
 	}
 	plan := p.planFramePatch(lines, meta)
 	if plan.updatedCount == 0 {
 		p.updates = plan.updates[:0]
 		p.reclaim = plan.reclaim[:0]
-		p.meta = clonePresentMeta(meta)
+		p.meta = retainPresentMeta(meta)
 		return ""
 	}
 	if plan.mode != framePatchCandidateDiff {
@@ -288,7 +295,7 @@ func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string 
 		}
 		emitFramePatchMetrics(plan.metrics)
 		p.acceptFramePatchBaseline(lines, plan.baselineUpdates, plan.baselineReclaim)
-		p.meta = clonePresentMeta(meta)
+		p.meta = retainPresentMeta(meta)
 		return selectedPayload
 	}
 	p.acceptFramePatchBaseline(lines, plan.updates, plan.reclaim)
@@ -296,14 +303,14 @@ func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string 
 	p.reclaim = plan.reclaim[:0]
 	if plan.changedCount == 0 {
 		perftrace.Count("cursor_writer.present.mode.no_change", 0)
-		p.meta = clonePresentMeta(meta)
+		p.meta = retainPresentMeta(meta)
 		return ""
 	}
 	fullLen := normalizedJoinedLinesWireLen(lines)
 	if shouldCountFullRepaintAvoided(plan.payload, fullLen, len(lines)) {
 		perftrace.Count("cursor_writer.present.mode.full_repaint_avoided", fullLen)
 	}
-	p.meta = clonePresentMeta(meta)
+	p.meta = retainPresentMeta(meta)
 	perftrace.Count("cursor_writer.present.mode.diff", plan.changedCount)
 	return plan.payload
 }
@@ -882,7 +889,7 @@ func (w *outputCursorWriter) WriteFrameLinesWithMeta(lines []string, cursor stri
 	defer w.mu.Unlock()
 	w.pending.frame = ""
 	w.pending.lines = w.fitLinesToTTY(stripLeadingCHA1(lines))
-	w.pending.meta = clonePresentMeta(meta)
+	w.pending.meta = retainPresentMeta(meta)
 	w.pending.cursor = cursor
 	w.pending.afterWrite = append(w.pending.afterWrite, w.afterWrite...)
 	w.pending.readies = append([]tuiruntime.PendingStreamReady(nil), w.nextStreamReadies...)

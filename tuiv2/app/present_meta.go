@@ -2,7 +2,7 @@ package app
 
 import "github.com/lozzow/termx/tuiv2/render"
 
-type hostOwnerID uint32
+type hostOwnerID = uint32
 
 type rect struct {
 	Left   int
@@ -18,6 +18,11 @@ type presentMeta struct {
 	VisibleRects map[hostOwnerID][]rect
 }
 
+type activeRect struct {
+	rect rect
+	seen bool
+}
+
 func presentMetaFromRender(meta *render.PresentMetadata) *presentMeta {
 	if meta == nil {
 		return nil
@@ -26,21 +31,9 @@ func presentMetaFromRender(meta *render.PresentMetadata) *presentMeta {
 		return nil
 	}
 	out := &presentMeta{
-		OwnerMap:  make([][]hostOwnerID, len(meta.OwnerMap)),
-		RowOwners: make([]hostOwnerID, len(meta.RowOwners)),
+		OwnerMap:  meta.OwnerMap,
+		RowOwners: meta.RowOwners,
 		Width:     meta.Width,
-	}
-	for y := range meta.OwnerMap {
-		if len(meta.OwnerMap[y]) == 0 {
-			continue
-		}
-		out.OwnerMap[y] = make([]hostOwnerID, len(meta.OwnerMap[y]))
-		for x := range meta.OwnerMap[y] {
-			out.OwnerMap[y][x] = hostOwnerID(meta.OwnerMap[y][x])
-		}
-	}
-	for y, owner := range meta.RowOwners {
-		out.RowOwners[y] = hostOwnerID(owner)
 	}
 	if len(out.OwnerMap) > 0 {
 		out.VisibleRects = visibleRectsFromOwnerMap(out.OwnerMap)
@@ -48,6 +41,10 @@ func presentMetaFromRender(meta *render.PresentMetadata) *presentMeta {
 		out.VisibleRects = visibleRectsFromRowOwners(out.RowOwners, out.Width)
 	}
 	return out
+}
+
+func retainPresentMeta(meta *presentMeta) *presentMeta {
+	return meta
 }
 
 func clonePresentMeta(meta *presentMeta) *presentMeta {
@@ -104,31 +101,29 @@ func visibleRectsFromOwnerMap(ownerMap [][]hostOwnerID) map[hostOwnerID][]rect {
 	if len(ownerMap) == 0 {
 		return nil
 	}
-	type span struct {
-		left  int
-		right int
-	}
-	active := make(map[hostOwnerID]map[span]int)
 	result := make(map[hostOwnerID][]rect)
-	flushMissing := func(owner hostOwnerID, keep map[span]struct{}, row int) {
-		for sp, top := range active[owner] {
-			if _, ok := keep[sp]; ok {
+	active := make(map[hostOwnerID][]activeRect)
+	flushUnseen := func(row int) {
+		for owner, rects := range active {
+			kept := rects[:0]
+			for _, item := range rects {
+				if item.seen {
+					item.seen = false
+					kept = append(kept, item)
+					continue
+				}
+				closed := item.rect
+				closed.Bottom = row - 1
+				result[owner] = append(result[owner], closed)
+			}
+			if len(kept) == 0 {
+				delete(active, owner)
 				continue
 			}
-			result[owner] = append(result[owner], rect{
-				Left:   sp.left,
-				Top:    top,
-				Right:  sp.right,
-				Bottom: row - 1,
-			})
-			delete(active[owner], sp)
-		}
-		if len(active[owner]) == 0 {
-			delete(active, owner)
+			active[owner] = kept
 		}
 	}
 	for y, row := range ownerMap {
-		rowSpans := make(map[hostOwnerID][]span)
 		for x := 0; x < len(row); {
 			owner := row[x]
 			start := x
@@ -136,43 +131,40 @@ func visibleRectsFromOwnerMap(ownerMap [][]hostOwnerID) map[hostOwnerID][]rect {
 				x++
 			}
 			if owner != 0 {
-				rowSpans[owner] = append(rowSpans[owner], span{left: start, right: x})
+				active[owner] = observeActiveOwnerSpan(active[owner], start, x, y)
 			}
 			x++
 		}
-		for owner, spans := range rowSpans {
-			if active[owner] == nil {
-				active[owner] = make(map[span]int)
-			}
-			keep := make(map[span]struct{}, len(spans))
-			for _, sp := range spans {
-				keep[sp] = struct{}{}
-				if _, ok := active[owner][sp]; !ok {
-					active[owner][sp] = y
-				}
-			}
-			flushMissing(owner, keep, y)
-		}
-		for owner := range active {
-			if _, ok := rowSpans[owner]; ok {
-				continue
-			}
-			flushMissing(owner, nil, y)
-		}
+		flushUnseen(y)
 	}
-	lastRow := len(ownerMap) - 1
-	for owner, spans := range active {
-		for sp, top := range spans {
-			result[owner] = append(result[owner], rect{
-				Left:   sp.left,
-				Top:    top,
-				Right:  sp.right,
-				Bottom: lastRow,
-			})
+	flushUnseen(len(ownerMap))
+	for owner, rects := range active {
+		for _, item := range rects {
+			result[owner] = append(result[owner], item.rect)
 		}
 	}
 	if len(result) == 0 {
 		return nil
 	}
 	return result
+}
+
+func observeActiveOwnerSpan(active []activeRect, left, right, row int) []activeRect {
+	for i := range active {
+		current := &active[i]
+		if current.rect.Left == left && current.rect.Right == right && current.rect.Bottom+1 == row {
+			current.rect.Bottom = row
+			current.seen = true
+			return active
+		}
+	}
+	return append(active, activeRect{
+		rect: rect{
+			Left:   left,
+			Top:    row,
+			Right:  right,
+			Bottom: row,
+		},
+		seen: true,
+	})
 }

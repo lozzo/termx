@@ -26,6 +26,7 @@ type capturedBodyRenderCacheEntry struct {
 
 type bodyRenderCachePreview struct {
 	entry  bodyRenderCacheEntry
+	rect   workbench.Rect
 	sprite *composedCanvas
 	valid  bool
 }

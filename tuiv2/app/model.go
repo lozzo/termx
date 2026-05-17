@@ -256,7 +256,9 @@ func (m *Model) queueInvalidate() {
 		if interactiveInput {
 			perftrace.Count("app.invalidate.interactive_backlog_bypass", 0)
 			m.invalidateBacklogBlockedAt.Store(0)
-			m.debugLog("invalidate.backlog_bypass_interactive", "surface", m.debugRuntimeSurfaceSummary())
+			if m.debugLogEnabled() {
+				m.debugLog("invalidate.backlog_bypass_interactive", "surface", m.debugRuntimeSurfaceSummary())
+			}
 			m.queueInvalidateImmediate()
 			return
 		}
@@ -295,7 +297,9 @@ func (m *Model) deferInvalidateUntilFrameWriterDrain() {
 	}
 	perftrace.Count("app.invalidate.backlog_blocked", 0)
 	m.invalidateBlockedByFrameOut.Store(true)
-	m.debugLog("invalidate.backlog_deferred", "surface", m.debugRuntimeSurfaceSummary())
+	if m.debugLogEnabled() {
+		m.debugLog("invalidate.backlog_deferred", "surface", m.debugRuntimeSurfaceSummary())
+	}
 	now := time.Now().UnixNano()
 	m.invalidateBacklogBlockedAt.CompareAndSwap(0, now)
 	if m.frameWriterHasBacklog() {
@@ -340,11 +344,13 @@ func (m *Model) onFrameWriterDrained(readies []runtime.PendingStreamReady) {
 		m.observeFrameWriterDrainDuration(time.Since(time.Unix(0, blockedAt)))
 	}
 	if len(readies) > 0 && m.runtime != nil {
-		m.debugLog(
-			"stream_ready.frame_writer_drained",
-			"readies", debugPendingReadies(readies),
-			"surface", m.debugRuntimeSurfaceSummary(),
-		)
+		if m.debugLogEnabled() {
+			m.debugLog(
+				"stream_ready.frame_writer_drained",
+				"readies", debugPendingReadies(readies),
+				"surface", m.debugRuntimeSurfaceSummary(),
+			)
+		}
 		m.runtime.MarkRenderedStreamReadies(context.Background(), readies)
 	}
 	if m.invalidateBlockedByFrameOut.Swap(false) {
@@ -352,7 +358,9 @@ func (m *Model) onFrameWriterDrained(readies []runtime.PendingStreamReady) {
 			return
 		}
 		perftrace.Count("app.invalidate.frame_writer_drained", 0)
-		m.debugLog("invalidate.frame_writer_drained", "surface", m.debugRuntimeSurfaceSummary())
+		if m.debugLogEnabled() {
+			m.debugLog("invalidate.frame_writer_drained", "surface", m.debugRuntimeSurfaceSummary())
+		}
 		m.queueInvalidateImmediate()
 	}
 }

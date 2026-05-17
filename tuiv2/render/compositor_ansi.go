@@ -6,8 +6,24 @@ import (
 	"sync"
 )
 
-var styleANSICache sync.Map
-var styleDiffANSICache sync.Map
+var styleANSICache = struct {
+	mu sync.RWMutex
+	m  map[drawStyle]string
+}{
+	m: make(map[drawStyle]string),
+}
+
+type styleDiffANSIKey struct {
+	from drawStyle
+	to   drawStyle
+}
+
+var styleDiffANSICache = struct {
+	mu sync.RWMutex
+	m  map[styleDiffANSIKey]string
+}{
+	m: make(map[styleDiffANSIKey]string),
+}
 
 func styleDiffANSI(from, to drawStyle) string {
 	if from == to {
@@ -16,13 +32,12 @@ func styleDiffANSI(from, to drawStyle) string {
 	if from == (drawStyle{}) && to != (drawStyle{}) {
 		return styleANSI(to)
 	}
-	type key struct {
-		from drawStyle
-		to   drawStyle
-	}
-	cacheKey := key{from: from, to: to}
-	if cached, ok := styleDiffANSICache.Load(cacheKey); ok {
-		return cached.(string)
+	cacheKey := styleDiffANSIKey{from: from, to: to}
+	styleDiffANSICache.mu.RLock()
+	cached, ok := styleDiffANSICache.m[cacheKey]
+	styleDiffANSICache.mu.RUnlock()
+	if ok {
+		return cached
 	}
 	var b strings.Builder
 	if to == (drawStyle{}) {
@@ -31,7 +46,7 @@ func styleDiffANSI(from, to drawStyle) string {
 		}
 		b.WriteString("\x1b[0m")
 		ansi := b.String()
-		styleDiffANSICache.Store(cacheKey, ansi)
+		storeStyleDiffANSI(cacheKey, ansi)
 		return ansi
 	}
 	if (from.LinkURL != "" || from.LinkParams != "") && (to.LinkURL != from.LinkURL || to.LinkParams != from.LinkParams) {
@@ -62,11 +77,11 @@ func styleDiffANSI(from, to drawStyle) string {
 		if to.LinkURL != "" || to.LinkParams != "" {
 			b.WriteString(setHyperlinkANSI(to.LinkURL, to.LinkParams))
 			ansi := b.String()
-			styleDiffANSICache.Store(cacheKey, ansi)
+			storeStyleDiffANSI(cacheKey, ansi)
 			return ansi
 		}
 		ansi := b.String()
-		styleDiffANSICache.Store(cacheKey, ansi)
+		storeStyleDiffANSI(cacheKey, ansi)
 		return ansi
 	}
 	sgr.WriteByte('m')
@@ -75,8 +90,14 @@ func styleDiffANSI(from, to drawStyle) string {
 		b.WriteString(setHyperlinkANSI(to.LinkURL, to.LinkParams))
 	}
 	ansi := b.String()
-	styleDiffANSICache.Store(cacheKey, ansi)
+	storeStyleDiffANSI(cacheKey, ansi)
 	return ansi
+}
+
+func storeStyleDiffANSI(key styleDiffANSIKey, value string) {
+	styleDiffANSICache.mu.Lock()
+	styleDiffANSICache.m[key] = value
+	styleDiffANSICache.mu.Unlock()
 }
 
 func writeCHAANSI(out *strings.Builder, col int) {
@@ -107,15 +128,18 @@ func writeANSIInt(out *strings.Builder, value int) {
 }
 
 func styleANSI(s drawStyle) string {
-	if cached, ok := styleANSICache.Load(s); ok {
-		return cached.(string)
+	styleANSICache.mu.RLock()
+	cached, ok := styleANSICache.m[s]
+	styleANSICache.mu.RUnlock()
+	if ok {
+		return cached
 	}
 	var b strings.Builder
 	b.WriteString("\x1b[0")
 	if s == (drawStyle{}) {
 		b.WriteByte('m')
 		ansi := b.String()
-		styleANSICache.Store(s, ansi)
+		storeStyleANSI(s, ansi)
 		return ansi
 	}
 	if s.FG != "" {
@@ -141,8 +165,14 @@ func styleANSI(s drawStyle) string {
 		b.WriteString(setHyperlinkANSI(s.LinkURL, s.LinkParams))
 	}
 	ansi := b.String()
-	styleANSICache.Store(s, ansi)
+	storeStyleANSI(s, ansi)
 	return ansi
+}
+
+func storeStyleANSI(style drawStyle, value string) {
+	styleANSICache.mu.Lock()
+	styleANSICache.m[style] = value
+	styleANSICache.mu.Unlock()
 }
 
 func setHyperlinkANSI(linkURL, linkParams string) string {

@@ -27,6 +27,13 @@ func (m *Model) debugLog(event string, kv ...any) {
 	appendDebugLogLine(path, event, kv...)
 }
 
+func (m *Model) debugLogEnabled() bool {
+	if m == nil {
+		return false
+	}
+	return tuiDebugLogPath(m.cfg.LogFilePath) != ""
+}
+
 func tuiDebugLogPath(defaultPath string) string {
 	value := strings.TrimSpace(os.Getenv("TERMX_TUI_DEBUG_LOG"))
 	if value == "" {
