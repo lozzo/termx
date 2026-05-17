@@ -515,6 +515,49 @@ func renderChangedRows(previous, next []string) (string, int) {
 	if len(previous) != len(next) {
 		return "", 0
 	}
+	changed, _ := changedRowsPatchStats(previous, next)
+	if changed == 0 {
+		return "", 0
+	}
+	return mustRenderChangedRowsPatch(previous, next, changed), changed
+}
+
+func changedRowsPatchStats(previous, next []string) (int, int) {
+	if len(previous) != len(next) {
+		return 0, 0
+	}
+	changed := 0
+	bytes := 0
+	inRun := false
+	for i := range next {
+		if next[i] == previous[i] {
+			inRun = false
+			continue
+		}
+		if !inRun {
+			bytes += cupLen(1, i+1)
+			inRun = true
+		} else {
+			bytes += len("\r\n")
+		}
+		bytes += normalizedFrameLen(next[i])
+		changed++
+	}
+	return changed, bytes
+}
+
+func mustRenderChangedRowsPatch(previous, next []string, changedCount int) string {
+	payload, got := renderChangedRowsPatch(previous, next)
+	if got != changedCount {
+		return payload
+	}
+	return payload
+}
+
+func renderChangedRowsPatch(previous, next []string) (string, int) {
+	if len(previous) != len(next) {
+		return "", 0
+	}
 	changed := make([]int, 0, len(next))
 	for i := range next {
 		if next[i] != previous[i] {
@@ -525,6 +568,8 @@ func renderChangedRows(previous, next []string) (string, int) {
 		return "", 0
 	}
 	var out strings.Builder
+	_, normalizedLen := changedRowsPatchStats(previous, next)
+	out.Grow(normalizedLen)
 	for i := 0; i < len(changed); {
 		start := changed[i]
 		end := start
@@ -542,6 +587,25 @@ func renderChangedRows(previous, next []string) (string, int) {
 		i++
 	}
 	return out.String(), len(changed)
+}
+
+func cupLen(col, row int) int {
+	return len("\x1b[") + decimalLen(row) + 1 + decimalLen(col) + 1
+}
+
+func decimalLen(value int) int {
+	if value < 0 {
+		return 1 + decimalLen(-value)
+	}
+	if value < 10 {
+		return 1
+	}
+	digits := 0
+	for value > 0 {
+		digits++
+		value /= 10
+	}
+	return digits
 }
 
 func (p *framePresenter) renderChangedRows(next []string) (string, int, int, []presentedRowUpdate, [][]presentedCell) {

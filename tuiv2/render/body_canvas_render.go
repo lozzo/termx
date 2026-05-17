@@ -28,7 +28,7 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 		captured []capturedBodyRenderCacheEntry
 	)
 	if canIncrementallyUpdateBodyCanvas(cache, entries, width, height) {
-		captured = captureBodyRenderCacheEntries(entries, runtimeState)
+		captured = captureBodyRenderCacheEntries(cache, entries, runtimeState)
 		if next, ok := updateBodyCanvasIncrementally(cache, entries, captured, runtimeState, hostEmojiMode, cursorOffsetY, cursorVisibleFn); ok {
 			canvas = next
 			perftrace.Count("render.body.canvas.path.incremental", maxInt(1, width*height))
@@ -48,7 +48,7 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 	}
 	if coordinator != nil {
 		if captured == nil {
-			captured = captureBodyRenderCacheEntries(entries, runtimeState)
+			captured = captureBodyRenderCacheEntries(cache, entries, runtimeState)
 		}
 		nextCache := newBodyRenderCache(canvas, captured, entries, runtimeState, width, height)
 		if cache != nil {

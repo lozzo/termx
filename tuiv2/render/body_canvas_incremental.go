@@ -105,7 +105,6 @@ func buildBodyCanvasIncrementalUpdates(cache *bodyRenderCache, entries []paneRen
 		}
 	}
 
-	changed := false
 	for i := range updates {
 		if updates[i].mode == bodyCanvasUpdateRows {
 			updates[i].rows = compactSortedRows(updates[i].rows, updates[i].captured.cache.ContentRect.H)
@@ -113,11 +112,8 @@ func buildBodyCanvasIncrementalUpdates(cache *bodyRenderCache, entries []paneRen
 				updates[i].mode = bodyCanvasUpdateNone
 			}
 		}
-		if updates[i].mode != bodyCanvasUpdateNone {
-			changed = true
-		}
 	}
-	return updates, changed
+	return updates, true
 }
 
 func addIncrementalCursorRow(updates []bodyCanvasIncrementalUpdate, cursor bodyRenderCacheCursor) bool {

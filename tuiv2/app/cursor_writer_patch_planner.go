@@ -136,22 +136,21 @@ func (p *framePresenter) quickFramePatchCandidate(lines []string) framePatchCand
 	if p == nil || len(lines) != len(p.lines) {
 		return framePatchCandidate{}
 	}
-	rowDiffPayload, rowChanged := renderChangedRows(p.lines, lines)
+	rowChanged, rowDiffBytes := changedRowsPatchStats(p.lines, lines)
 	if rowChanged == 0 {
 		return framePatchCandidate{
 			mode: framePatchCandidateDiff,
 		}
 	}
-	rowDiffBytes := normalizedFrameLen(rowDiffPayload)
 	if !p.verticalScrollMode.Enabled() {
 		if shouldUseBroadRawRowPatch(len(lines), rowChanged, rowDiffBytes) {
-			return broadRawRowPatchCandidate(lines, rowDiffPayload, rowChanged)
+			return broadRawRowPatchCandidate(p.lines, lines, rowChanged, rowDiffBytes)
 		}
 		return framePatchCandidate{}
 	}
 	if !shouldProbeVerticalScroll(len(lines), rowChanged, rowDiffBytes) {
 		if shouldUseBroadRawRowPatch(len(lines), rowChanged, rowDiffBytes) {
-			return broadRawRowPatchCandidate(lines, rowDiffPayload, rowChanged)
+			return broadRawRowPatchCandidate(p.lines, lines, rowChanged, rowDiffBytes)
 		}
 		return framePatchCandidate{}
 	}
@@ -166,12 +165,12 @@ func (p *framePresenter) quickFramePatchCandidate(lines []string) framePatchCand
 			return candidate
 		}
 		if shouldUseBroadRawRowPatch(len(lines), rowChanged, rowDiffBytes) {
-			return broadRawRowPatchCandidate(lines, rowDiffPayload, rowChanged)
+			return broadRawRowPatchCandidate(p.lines, lines, rowChanged, rowDiffBytes)
 		}
 		return framePatchCandidate{}
 	}
 	if shouldUseBroadRawRowPatch(len(lines), rowChanged, rowDiffBytes) {
-		return broadRawRowPatchCandidate(lines, rowDiffPayload, rowChanged)
+		return broadRawRowPatchCandidate(p.lines, lines, rowChanged, rowDiffBytes)
 	}
 	candidate = p.verticalScrollRectCandidate(lines)
 	if !candidate.valid() {
@@ -229,9 +228,9 @@ func shouldForceFullRepaintForBroadDamage(rows, changedRows int) bool {
 	return changedRows*100 >= rows*broadRawRowPatchFullRepaintRowsPercent
 }
 
-func broadRawRowPatchCandidate(lines []string, payload string, changedRows int) framePatchCandidate {
+func broadRawRowPatchCandidate(previous, lines []string, changedRows, rowDiffBytes int) framePatchCandidate {
 	fullWireLen := normalizedJoinedLinesWireLen(lines)
-	if shouldPromoteBroadRawRowsToFullRepaint(normalizedFrameLen(payload), fullWireLen, len(lines), changedRows) {
+	if shouldPromoteBroadRawRowsToFullRepaint(rowDiffBytes, fullWireLen, len(lines), changedRows) {
 		return framePatchCandidate{
 			mode:                 framePatchCandidateFullRepaint,
 			payload:              xansi.EraseEntireDisplay + joinFrameLinesForHost(lines),
@@ -245,7 +244,7 @@ func broadRawRowPatchCandidate(lines []string, payload string, changedRows int) 
 	}
 	return framePatchCandidate{
 		mode:                 framePatchCandidateRawRows,
-		payload:              payload,
+		payload:              mustRenderChangedRowsPatch(previous, lines, changedRows),
 		changedCount:         changedRows,
 		updatedCount:         changedRows,
 		baselineChangedCount: changedRows,
