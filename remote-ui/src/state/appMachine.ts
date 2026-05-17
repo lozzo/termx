@@ -1,7 +1,7 @@
 import type { ConnectionPath } from '../core/transport'
 
 export type AppMachineState = 'online' | 'offline' | 'stale' | 'unknown' | 'connecting'
-export type AppMachineSource = 'local' | 'cloud' | 'manual'
+export type AppMachineSource = 'local' | 'hub' | 'manual'
 
 export interface AppMachineRecord {
   machineId: string
@@ -19,8 +19,7 @@ export interface AppMachineRecord {
 export type ConnectionFlowStage =
   | 'idle'
   | 'trying_local'
-  | 'trying_public_p2p'
-  | 'trying_managed'
+  | 'trying_hub'
   | 'connected'
   | 'failed'
 
@@ -40,15 +39,13 @@ export function formatMachineState(state: AppMachineState): string {
 }
 
 export function formatConnectionPath(path: ConnectionPath): string {
-  if (path === 'public_p2p') return 'Public P2P'
-  if (path === 'managed') return 'Managed'
+  if (path === 'hub') return 'Hub'
   return 'Local'
 }
 
 export function formatConnectionStage(stage: ConnectionFlowStage): string {
   if (stage === 'trying_local') return 'Trying local'
-  if (stage === 'trying_public_p2p') return 'Trying public P2P'
-  if (stage === 'trying_managed') return 'Trying managed'
+  if (stage === 'trying_hub') return 'Trying hub'
   if (stage === 'connected') return 'Connected'
   if (stage === 'failed') return 'Failed'
   return 'Idle'

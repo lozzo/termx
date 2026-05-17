@@ -1,4 +1,4 @@
-import type { ManagedHubApi, ManagedHubSession } from '../api/managedHubApi'
+import type { HubApi, HubSession } from '../api/hubApi'
 import type {
   ConnectionCapabilities,
   ConnectionPath,
@@ -12,14 +12,14 @@ import type {
 import type { ConnectionLogger } from '../connection/connectionLogger'
 import { logConnectionEvent } from '../connection/connectionLogger'
 
-export interface ManagedHubRtcConnectInput extends RtcConnectionTarget {
+export interface HubRtcConnectInput extends RtcConnectionTarget {
   sessionToken: string
   answerProofSecret?: string | undefined
   path?: ConnectionPath | undefined
 }
 
-export interface ManagedHubRtcConnectorOptions<TSession extends RtcSession & RtcSessionNegotiator = RtcSession & RtcSessionNegotiator> {
-  api: Pick<ManagedHubApi, 'getSessionIce' | 'createSession' | 'pollSessionAnswer'>
+export interface HubRtcConnectorOptions<TSession extends RtcSession & RtcSessionNegotiator = RtcSession & RtcSessionNegotiator> {
+  api: Pick<HubApi, 'getSessionIce' | 'createSession' | 'pollSessionAnswer'>
   createSession(input: RtcConnectionTarget): TSession
   maxAnswerPolls?: number | undefined
   answerPollDelayMs?: number | undefined
@@ -27,20 +27,20 @@ export interface ManagedHubRtcConnectorOptions<TSession extends RtcSession & Rtc
   logger?: ConnectionLogger | undefined
 }
 
-export function createManagedHubRtcConnector(options: ManagedHubRtcConnectorOptions) {
-  return new ManagedHubRtcConnector(options)
+export function createHubRtcConnector(options: HubRtcConnectorOptions) {
+  return new HubRtcConnector(options)
 }
 
-class ManagedHubRtcConnector {
-  constructor(private readonly options: ManagedHubRtcConnectorOptions) {}
+class HubRtcConnector {
+  constructor(private readonly options: HubRtcConnectorOptions) {}
 
-  async connect(input: ManagedHubRtcConnectInput, options: RtcConnectOptions = {}): Promise<RtcSession> {
+  async connect(input: HubRtcConnectInput, options: RtcConnectOptions = {}): Promise<RtcSession> {
     const terminalId = input.terminalId?.trim() ?? ''
     const session = this.options.createSession({
       machineId: input.machineId,
       ...(terminalId ? { terminalId } : {}),
     })
-    const path = input.path ?? 'managed'
+    const path = input.path ?? 'hub'
     try {
       this.log('connect_start', {
         level: 'info',
@@ -85,7 +85,7 @@ class ManagedHubRtcConnector {
         },
       })
       const sdp = offer.description.sdp
-      if (!sdp) throw new Error('managed Hub WebRTC offer SDP is required')
+      if (!sdp) throw new Error('Hub WebRTC offer SDP is required')
       throwIfAborted(options.signal)
       const answerProofChallenge = input.answerProofSecret ? randomProofChallenge() : undefined
       emitConnectionState(options, input, 'connecting', 'Exchanging signals with hub...', path)
@@ -115,16 +115,16 @@ class ManagedHubRtcConnector {
           pending: 'pending' in result && result.pending === true,
         },
       })
-      const answer: ManagedHubSession = 'pending' in result && result.pending
+      const answer: HubSession = 'pending' in result && result.pending
         ? await this.pollAnswer({
           sessionId: result.sessionId,
           machineId: input.machineId,
           terminalId,
           path,
         }, options)
-        : result as ManagedHubSession
+        : result as HubSession
       if (answer.sessionId !== offer.sessionId) {
-        throw new Error(`managed Hub RTC answer session mismatch: ${answer.sessionId} != ${offer.sessionId}`)
+        throw new Error(`Hub RTC answer session mismatch: ${answer.sessionId} != ${offer.sessionId}`)
       }
       this.log('answer_received', {
         machineId: input.machineId,
@@ -202,7 +202,7 @@ class ManagedHubRtcConnector {
     machineId: string
     terminalId: string
     path: ConnectionPath
-  }, options: RtcConnectOptions): Promise<ManagedHubSession> {
+  }, options: RtcConnectOptions): Promise<HubSession> {
     const maxPolls = this.options.maxAnswerPolls ?? 20
     const delayMs = this.options.answerPollDelayMs ?? 500
     let lastError: unknown
@@ -238,7 +238,7 @@ class ManagedHubRtcConnector {
         if (!isPendingAnswerError(err)) throw err
       }
     }
-    throw lastError instanceof Error ? lastError : new Error('managed Hub answer did not become ready')
+    throw lastError instanceof Error ? lastError : new Error('Hub answer did not become ready')
   }
 
   private log(event: string, input: {
@@ -251,7 +251,7 @@ class ManagedHubRtcConnector {
     details?: Record<string, unknown> | undefined
   }): void {
     logConnectionEvent(this.options.logger, {
-      scope: 'managed_hub',
+      scope: 'hub',
       event,
       hubUrl: this.options.hubUrl,
       ...input,
@@ -260,7 +260,7 @@ class ManagedHubRtcConnector {
 }
 
 async function verifyAnswerProof(input: {
-  answer: ManagedHubSession
+  answer: HubSession
   offerSessionId: string
   pairSessionToken: string
   answerProofSecret?: string | undefined
@@ -273,12 +273,12 @@ async function verifyAnswerProof(input: {
     return
   }
   if (!input.answer.answerProof) {
-    throw new Error('managed Hub answer proof is required')
+    throw new Error('Hub answer proof is required')
   }
   const pairSessionId = sessionIDFromToken(input.pairSessionToken)
   const expected = await answerProofHMAC(input.answerProofSecret, pairSessionId, input.offerSessionId, input.answerProofChallenge)
   if (input.answer.answerProof !== expected) {
-    throw new Error('managed Hub answer proof mismatch')
+    throw new Error('Hub answer proof mismatch')
   }
 }
 
@@ -469,13 +469,13 @@ const sha256Constants = new Uint32Array([
   0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ])
 
-function applySessionCapabilities(session: RtcSession, answer: ManagedHubSession): void {
+function applySessionCapabilities(session: RtcSession, answer: HubSession): void {
   const updater = session as RtcSession & Partial<RtcSessionCapabilityUpdater>
   if (typeof updater.updateConnectionCapabilities !== 'function') return
-  updater.updateConnectionCapabilities(capabilitiesFromManagedSession(answer))
+  updater.updateConnectionCapabilities(capabilitiesFromHubSession(answer))
 }
 
-function capabilitiesFromManagedSession(answer: ManagedHubSession): ConnectionCapabilities {
+function capabilitiesFromHubSession(answer: HubSession): ConnectionCapabilities {
   const relayInUse = answer.relayInUse === true
   return {
     terminalAllowed: true,
@@ -516,7 +516,7 @@ function errorMessage(err: unknown): string {
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (!signal?.aborted) return
-  throw signal.reason instanceof Error ? signal.reason : new Error('managed Hub RTC connection aborted')
+  throw signal.reason instanceof Error ? signal.reason : new Error('Hub RTC connection aborted')
 }
 
 function isAbortError(err: unknown, signal: AbortSignal | undefined): boolean {
@@ -532,7 +532,7 @@ function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {
     }, ms)
     const onAbort = () => {
       cleanup()
-      reject(signal.reason instanceof Error ? signal.reason : new Error('managed Hub RTC connection aborted'))
+      reject(signal.reason instanceof Error ? signal.reason : new Error('hub Hub RTC connection aborted'))
     }
     const cleanup = () => {
       clearTimeout(timer)

@@ -68,6 +68,7 @@ export function createMachineStore(options: MachineStoreOptions): MachineStore {
       const machines = readMachines(options.storage)
       const existing = machines.find((record) => record.machineId === payload.machine.id)
       const timestamp = now()
+      const addresses = addressesFromLocalHubUrls(payload.local.hubUrls)
       const next: StoredMachineRecord = normalizeStoredMachine({
         machineId: payload.machine.id,
         name: payload.machine.name,
@@ -79,12 +80,11 @@ export function createMachineStore(options: MachineStoreOptions): MachineStore {
         preferredPath: payload.preferredPath,
         ...(existing?.relayInUse !== undefined ? { relayInUse: existing.relayInUse } : {}),
         source: existing?.source ?? 'local',
-        addresses: {
-          local: payload.addresses.local,
-          lan: payload.addresses.lan,
-          public: payload.addresses.public,
+        addresses,
+        endpoints: {
+          ...(payload.hub.webControl ? { webControl: payload.hub.webControl } : {}),
+          ...(payload.hub.hubUrls[0] ? { hub: payload.hub.hubUrls[0] } : {}),
         },
-        endpoints: payload.endpoints,
         pairing: payload.pairing,
         ...(isEmptyBootstrap(payload.bootstrap) ? {} : { appBootstrap: payload.bootstrap }),
         addedAt: existing?.addedAt ?? timestamp,
@@ -247,13 +247,13 @@ function machineState(value: unknown): AppMachineState {
 }
 
 function machineSource(value: unknown): AppMachineSource {
-  if (value === 'local' || value === 'cloud' || value === 'manual') return value
+  if (value === 'local' || value === 'hub' || value === 'manual') return value
   throw new Error(`invalid machine source ${String(value)}`)
 }
 
 function connectionPathOrUndefined(value: unknown): ConnectionPath | undefined {
   if (value === undefined || value === null) return undefined
-  if (value === 'local' || value === 'public_p2p' || value === 'managed') return value
+  if (value === 'local' || value === 'hub') return value
   throw new Error(`invalid connection path ${String(value)}`)
 }
 
@@ -291,4 +291,39 @@ function stringArray(value: unknown): string[] {
   return value
     .map((item) => typeof item === 'string' ? normalizeHubBaseUrlCandidate(item) : undefined)
     .filter((item): item is string => typeof item === 'string' && item !== '')
+}
+
+function addressesFromLocalHubUrls(values: string[]): StoredMachineAddresses {
+  const out: StoredMachineAddresses = { local: [], lan: [], public: [] }
+  for (const value of values) {
+    const normalized = normalizeHubBaseUrlCandidate(value)
+    if (!normalized) continue
+    const scope = hubURLScope(normalized)
+    out[scope].push(normalized)
+  }
+  return out
+}
+
+function hubURLScope(value: string): keyof StoredMachineAddresses {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase()
+    if (hostname === 'localhost' || hostname === '::1' || hostname.startsWith('127.')) return 'local'
+    if (isPrivateIPv4(hostname) || hostname.endsWith('.local')) return 'lan'
+    return 'public'
+  } catch {
+    return 'lan'
+  }
+}
+
+function isPrivateIPv4(hostname: string): boolean {
+  const parts = hostname.split('.').map((part) => Number.parseInt(part, 10))
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false
+  const a = parts[0]
+  const b = parts[1]
+  if (a === undefined || b === undefined) return false
+  if (a === 10) return true
+  if (a === 172 && b >= 16 && b <= 31) return true
+  if (a === 192 && b === 168) return true
+  if (a === 169 && b === 254) return true
+  return false
 }

@@ -5,8 +5,8 @@ import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorksp
 import { createMachineSessionStore } from '../state/localAppIdentity'
 import { createBrowserRtcSession } from '../webrtc/browserRtcSession'
 import { consoleConnectionLogger } from '../connection/connectionLogger'
-import { createManagedHubApi } from '../api/managedHubApi'
-import { createManagedHubRtcConnector } from '../webrtc/managedHubRtcConnector'
+import { createHubApi } from '../api/hubApi'
+import { createHubRtcConnector } from '../webrtc/hubRtcConnector'
 import { normalizeTerminalInventory } from '../terminal/terminalInventory'
 import type { Terminal } from '../core/model'
 import type { LocalPairingApi, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcConnectOptions, RtcConnector, RtcSession, TerminalInventoryEvents } from '../core/transport'
@@ -63,7 +63,7 @@ function LocalWebShell({
     [connector, hubUrl, networkRuntime.fetch, networkRuntime.storage, options.api],
   )
   const pairApi = useMemo(
-    () => options.pairApi ?? createManagedHubApi({ baseUrl: hubUrl, fetch: networkRuntime.fetch }),
+    () => options.pairApi ?? createHubApi({ baseUrl: hubUrl, fetch: networkRuntime.fetch }),
     [hubUrl, networkRuntime.fetch, options.pairApi],
   )
   const pair = useMemo(
@@ -137,8 +137,8 @@ function createBrowserPairOptions(api: LocalPairingApi, storage: RemoteRuntimeSt
 }
 
 function createBrowserLocalConnector(networkRuntime: RemoteNetworkRuntime, hubUrl: string): MachineWorkspaceConnector {
-  const api = createManagedHubApi({ baseUrl: hubUrl, fetch: networkRuntime.fetch })
-  const connector = createManagedHubRtcConnector({
+  const api = createHubApi({ baseUrl: hubUrl, fetch: networkRuntime.fetch })
+  const connector = createHubRtcConnector({
     api,
     hubUrl,
     logger: consoleConnectionLogger,
@@ -154,13 +154,16 @@ function createBrowserLocalConnector(networkRuntime: RemoteNetworkRuntime, hubUr
       if (!storage) {
         throw new Error('local app storage is required before opening a terminal')
       }
-      const sessionToken = createMachineSessionStore(storage).getSessionToken(input.machineId)
+      const sessionStore = createMachineSessionStore(storage)
+      const sessionToken = sessionStore.getSessionToken(input.machineId)
       if (!sessionToken) {
         throw new Error('session token is required before opening a terminal')
       }
+      const answerProofSecret = sessionStore.getAnswerProofSecret(input.machineId) ?? undefined
       return connector.connect({
         machineId: input.machineId,
         sessionToken,
+        ...(answerProofSecret ? { answerProofSecret } : {}),
         path: 'local',
       }, options)
     },

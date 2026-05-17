@@ -1,7 +1,7 @@
 export type ConnectionLogLevel = 'debug' | 'info' | 'warn' | 'error'
 
 export interface ConnectionLogEvent {
-  scope: 'orchestrator' | 'managed_hub' | 'browser_webrtc'
+  scope: 'orchestrator' | 'hub' | 'browser_webrtc'
   event: string
   level?: ConnectionLogLevel | undefined
   machineId?: string | undefined

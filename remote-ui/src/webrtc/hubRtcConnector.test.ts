@@ -1,20 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createManagedHubRtcConnector } from './managedHubRtcConnector'
+import { createHubRtcConnector } from './hubRtcConnector'
 import type { ConnectionLogEvent } from '../connection/connectionLogger'
-import source from './managedHubRtcConnector.ts?raw'
-import type { ManagedHubApi } from '../api/managedHubApi'
+import source from './hubRtcConnector.ts?raw'
+import type { HubApi } from '../api/hubApi'
 import type { ConnectionCapabilities, RtcBinaryChannel, RtcJsonRpcChannel, RtcSession } from '../core/transport'
 
-describe('ManagedHubRtcConnector', () => {
+describe('HubRtcConnector', () => {
   beforeEach(() => {
     vi.stubGlobal('crypto', fixedCrypto())
   })
 
   it('creates a browser offer, posts it with the session token to Hub, and accepts the answer', async () => {
-    const api = new MockManagedHubApi()
+    const api = new MockHubApi()
     const session = new MockOffererSession()
     const states: unknown[] = []
-    const connector = createManagedHubRtcConnector({
+    const connector = createHubRtcConnector({
       api,
       createSession: () => session,
     })
@@ -29,7 +29,7 @@ describe('ManagedHubRtcConnector', () => {
     expect(connected).toBe(session)
     expect(session.createdOffers).toEqual([{
       machineId: 'machine-1',
-      path: 'managed',
+      path: 'hub',
       iceServers: [
         { urls: ['stun:hub.termx.test:3478'] },
         { urls: ['turn:hub.termx.test:3478?transport=udp'], username: 'turn-user', credential: 'turn-pass' },
@@ -45,18 +45,18 @@ describe('ManagedHubRtcConnector', () => {
       terminalId: '',
       sessionToken: 'session-token-1',
       offer: {
-        sessionId: 'rtc-managed-1',
+        sessionId: 'rtc-hub-1',
         sdp: 'offer-sdp',
         iceCandidates: [],
       },
     }])
     expect(session.acceptedAnswers).toEqual([{ type: 'answer', sdp: 'answer-sdp' }])
     expect(states).toEqual([
-      expect.objectContaining({ machineId: 'machine-1', phase: 'probing', path: 'managed', statusText: 'Fetching ICE servers...' }),
-      expect.objectContaining({ machineId: 'machine-1', phase: 'probing', path: 'managed', statusText: 'Creating WebRTC offer...' }),
-      expect.objectContaining({ machineId: 'machine-1', phase: 'connecting', path: 'managed', statusText: 'Exchanging signals with hub...' }),
-      expect.objectContaining({ machineId: 'machine-1', phase: 'connecting', path: 'managed', statusText: 'Opening data channels...' }),
-      expect.objectContaining({ machineId: 'machine-1', phase: 'connected', path: 'managed', statusText: 'Connected', relayInUse: false }),
+      expect.objectContaining({ machineId: 'machine-1', phase: 'probing', path: 'hub', statusText: 'Fetching ICE servers...' }),
+      expect.objectContaining({ machineId: 'machine-1', phase: 'probing', path: 'hub', statusText: 'Creating WebRTC offer...' }),
+      expect.objectContaining({ machineId: 'machine-1', phase: 'connecting', path: 'hub', statusText: 'Exchanging signals with hub...' }),
+      expect.objectContaining({ machineId: 'machine-1', phase: 'connecting', path: 'hub', statusText: 'Opening data channels...' }),
+      expect.objectContaining({ machineId: 'machine-1', phase: 'connected', path: 'hub', statusText: 'Connected', relayInUse: false }),
     ])
     await expect(session.getCapabilities()).resolves.toMatchObject({
       terminalAllowed: true,
@@ -67,9 +67,9 @@ describe('ManagedHubRtcConnector', () => {
   })
 
   it('can negotiate through an embedded Hub while marking the runtime path as local', async () => {
-    const api = new MockManagedHubApi()
+    const api = new MockHubApi()
     const session = new MockOffererSession()
-    const connector = createManagedHubRtcConnector({
+    const connector = createHubRtcConnector({
       api,
       createSession: () => session,
     })
@@ -87,10 +87,10 @@ describe('ManagedHubRtcConnector', () => {
   })
 
   it('polls accepted pending Hub sessions until an answer is available', async () => {
-    const api = new MockManagedHubApi({ pending: true })
+    const api = new MockHubApi({ pending: true })
     const session = new MockOffererSession()
     const statuses: string[] = []
-    const connector = createManagedHubRtcConnector({
+    const connector = createHubRtcConnector({
       api,
       createSession: () => session,
       answerPollDelayMs: 0,
@@ -105,7 +105,7 @@ describe('ManagedHubRtcConnector', () => {
     })
 
     expect(api.polledAnswers).toEqual([{
-      sessionId: 'rtc-managed-1',
+      sessionId: 'rtc-hub-1',
       machineId: 'machine-1',
     }])
     expect(session.acceptedAnswers).toEqual([{ type: 'answer', sdp: 'answer-after-pending' }])
@@ -119,9 +119,9 @@ describe('ManagedHubRtcConnector', () => {
   })
 
   it('can run the same Hub signaling flow for a local embedded Hub path', async () => {
-    const api = new MockManagedHubApi()
+    const api = new MockHubApi()
     const session = new MockOffererSession()
-    const connector = createManagedHubRtcConnector({
+    const connector = createHubRtcConnector({
       api,
       createSession: () => session,
     })
@@ -149,10 +149,10 @@ describe('ManagedHubRtcConnector', () => {
   })
 
   it('logs Hub signaling and answer stages with the hub URL and session id', async () => {
-    const api = new MockManagedHubApi({ pending: true })
+    const api = new MockHubApi({ pending: true })
     const session = new MockOffererSession()
     const logs: ConnectionLogEvent[] = []
-    const connector = createManagedHubRtcConnector({
+    const connector = createHubRtcConnector({
       api,
       createSession: () => session,
       answerPollDelayMs: 0,
@@ -167,21 +167,21 @@ describe('ManagedHubRtcConnector', () => {
     })
 
     expect(logs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ scope: 'managed_hub', event: 'offer_created', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-managed-1' }),
-      expect.objectContaining({ scope: 'managed_hub', event: 'hub_session_create_result', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-managed-1' }),
-      expect.objectContaining({ scope: 'managed_hub', event: 'answer_poll_start', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-managed-1' }),
-      expect.objectContaining({ scope: 'managed_hub', event: 'answer_received', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-managed-1' }),
-      expect.objectContaining({ scope: 'managed_hub', event: 'connect_success', level: 'info', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-managed-1' }),
+      expect.objectContaining({ scope: 'hub', event: 'offer_created', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-hub-1' }),
+      expect.objectContaining({ scope: 'hub', event: 'hub_session_create_result', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-hub-1' }),
+      expect.objectContaining({ scope: 'hub', event: 'answer_poll_start', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-hub-1' }),
+      expect.objectContaining({ scope: 'hub', event: 'answer_received', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-hub-1' }),
+      expect.objectContaining({ scope: 'hub', event: 'connect_success', level: 'info', hubUrl: 'https://hub-1.termx.test', sessionId: 'rtc-hub-1' }),
     ]))
   })
 
   it('disconnects the browser session if Hub signaling fails', async () => {
     const session = new MockOffererSession()
-    const connector = createManagedHubRtcConnector({
+    const connector = createHubRtcConnector({
       api: {
         async getSessionIce() {
           return {
-            path: 'managed' as const,
+            path: 'hub' as const,
             machineId: 'machine-1',
             iceServers: [],
             relayPolicy: { allowRelay: false, allowRelayTransfer: false },
@@ -205,9 +205,9 @@ describe('ManagedHubRtcConnector', () => {
   })
 
   it('requires a valid agent answer proof when an answer proof secret is provided', async () => {
-    const api = new MockManagedHubApi({ answerProofSecret: 'proof-secret', pairSessionId: 'pair-1' })
+    const api = new MockHubApi({ answerProofSecret: 'proof-secret', pairSessionId: 'pair-1' })
     const session = new MockOffererSession()
-    const connector = createManagedHubRtcConnector({
+    const connector = createHubRtcConnector({
       api,
       createSession: () => session,
     })
@@ -231,9 +231,9 @@ describe('ManagedHubRtcConnector', () => {
         return array
       },
     })
-    const api = new MockManagedHubApi({ answerProofSecret: 'proof-secret', pairSessionId: 'pair-1' })
+    const api = new MockHubApi({ answerProofSecret: 'proof-secret', pairSessionId: 'pair-1' })
     const session = new MockOffererSession()
-    const connector = createManagedHubRtcConnector({
+    const connector = createHubRtcConnector({
       api,
       createSession: () => session,
     })
@@ -254,11 +254,11 @@ describe('ManagedHubRtcConnector', () => {
         return array
       },
     })
-    const api = new MockManagedHubApi({
-      answerProof: 'M9ll7Zw26PQINgjHyoQxowGFMRj_3MNOSeBPUdo6yI4',
+    const api = new MockHubApi({
+      answerProof: 'Js5aInKVHRKULU-YzCG_6oktMrcSM4VW2Siwc9JMQJk',
     })
     const session = new MockOffererSession()
-    const connector = createManagedHubRtcConnector({
+    const connector = createHubRtcConnector({
       api,
       createSession: () => session,
     })
@@ -273,9 +273,9 @@ describe('ManagedHubRtcConnector', () => {
   })
 
   it('rejects forged agent answers when the proof does not match the local pairing secret', async () => {
-    const api = new MockManagedHubApi({ answerProof: 'forged-proof' })
+    const api = new MockHubApi({ answerProof: 'forged-proof' })
     const session = new MockOffererSession()
-    const connector = createManagedHubRtcConnector({
+    const connector = createHubRtcConnector({
       api,
       createSession: () => session,
     })
@@ -288,12 +288,12 @@ describe('ManagedHubRtcConnector', () => {
     expect(session.disconnectCalls).toBe(1)
   })
 
-  it('keeps managed Hub signaling separate from runtime transport taxonomy', () => {
+  it('keeps hub Hub signaling separate from runtime transport taxonomy', () => {
     expect(source).not.toMatch(/WebSocket|paid_relay|managed_p2p|anonymous_p2p|relayTransport|path:\s*['"]relay['"]/)
   })
 })
 
-class MockManagedHubApi implements ManagedHubApi {
+class MockHubApi implements HubApi {
   readonly preflightSessions: unknown[] = []
   readonly createdSessions: unknown[] = []
   readonly polledAnswers: unknown[] = []
@@ -304,10 +304,10 @@ class MockManagedHubApi implements ManagedHubApi {
     pairSessionId?: string
   } = {}) {}
 
-  async getSessionIce(input: Parameters<ManagedHubApi['getSessionIce']>[0]) {
+  async getSessionIce(input: Parameters<HubApi['getSessionIce']>[0]) {
     this.preflightSessions.push(input)
     return {
-      path: 'managed' as const,
+      path: 'hub' as const,
       machineId: input.machineId,
       terminalId: input.terminalId || undefined,
       iceServers: [
@@ -318,20 +318,20 @@ class MockManagedHubApi implements ManagedHubApi {
     }
   }
 
-  async createSession(input: Parameters<ManagedHubApi['createSession']>[0]) {
+  async createSession(input: Parameters<HubApi['createSession']>[0]) {
     this.createdSessions.push(input)
     if (this.options.pending) {
       return {
-        sessionId: 'rtc-managed-1',
-        path: 'managed' as const,
+        sessionId: 'rtc-hub-1',
+        path: 'hub' as const,
         machineId: 'machine-1',
         terminalId: input.terminalId || undefined,
         pending: true as const,
       }
     }
     return {
-      sessionId: 'rtc-managed-1',
-      path: 'managed' as const,
+      sessionId: 'rtc-hub-1',
+      path: 'hub' as const,
       machineId: 'machine-1',
       terminalId: input.terminalId || undefined,
       answer: { type: 'answer' as const, sdp: 'answer-sdp' },
@@ -343,11 +343,11 @@ class MockManagedHubApi implements ManagedHubApi {
     }
   }
 
-  async pollSessionAnswer(input: Parameters<ManagedHubApi['pollSessionAnswer']>[0]) {
+  async pollSessionAnswer(input: Parameters<HubApi['pollSessionAnswer']>[0]) {
     this.polledAnswers.push(input)
     return {
-      sessionId: 'rtc-managed-1',
-      path: 'managed' as const,
+      sessionId: 'rtc-hub-1',
+      path: 'hub' as const,
       machineId: 'machine-1',
       terminalId: 'terminal-1',
       answer: { type: 'answer' as const, sdp: 'answer-after-pending' },
@@ -359,14 +359,14 @@ class MockManagedHubApi implements ManagedHubApi {
     }
   }
 
-  async pair(): ReturnType<ManagedHubApi['pair']> {
+  async pair(): ReturnType<HubApi['pair']> {
     throw new Error('not used')
   }
 
   private answerProofFor(input: { sessionId?: string | undefined; answerProofChallenge?: string | undefined }): string | undefined {
     if (this.options.answerProof !== undefined) return this.options.answerProof
     if (!this.options.answerProofSecret || !this.options.pairSessionId || !input.answerProofChallenge) return undefined
-    return expectedAnswerProof(this.options.answerProofSecret, this.options.pairSessionId, input.sessionId ?? 'rtc-managed-1', input.answerProofChallenge)
+    return expectedAnswerProof(this.options.answerProofSecret, this.options.pairSessionId, input.sessionId ?? 'rtc-hub-1', input.answerProofChallenge)
   }
 }
 
@@ -386,7 +386,7 @@ class MockOffererSession implements RtcSession {
   async createOffer(input: unknown) {
     this.createdOffers.push(input)
     return {
-      sessionId: 'rtc-managed-1',
+      sessionId: 'rtc-hub-1',
       description: { type: 'offer' as const, sdp: 'offer-sdp' },
     }
   }
@@ -417,8 +417,8 @@ class MockOffererSession implements RtcSession {
 
   async getConnectionInfo() {
     return {
-      path: 'managed' as const,
-      connectionId: 'rtc-managed-1',
+      path: 'hub' as const,
+      connectionId: 'rtc-hub-1',
       machineId: 'machine-1',
       relayInUse: this.capabilities.relayInUse,
     }

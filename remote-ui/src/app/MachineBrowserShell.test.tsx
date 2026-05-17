@@ -29,8 +29,8 @@ describe('MachineBrowserShell', () => {
 
   it('enters a connection flow when a machine is clicked and does not open terminal immediately', async () => {
     const onStartConnection = vi.fn(async () => ({
-      stage: 'trying_public_p2p' as const,
-      message: 'Local unavailable. Trying public P2P.',
+      stage: 'trying_hub' as const,
+      message: 'Local unavailable. Trying Hub.',
     }))
 
     render(
@@ -54,21 +54,21 @@ describe('MachineBrowserShell', () => {
     expect(screen.queryByTestId('termx-terminal')).toBeNull()
     expect(screen.queryByTestId('termx-terminal-list')).toBeNull()
 
-    await waitFor(() => expect(screen.getByText('Trying public P2P')).toBeTruthy())
-    expect(screen.getByText('Local unavailable. Trying public P2P.')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('Trying hub')).toBeTruthy())
+    expect(screen.getByText('Local unavailable. Trying Hub.')).toBeTruthy()
   })
 
-  it('surfaces managed relay as connection info without exposing relay as a path', async () => {
+  it('surfaces hub relay as connection info without exposing relay as a path', async () => {
     const onStartConnection = vi.fn(async () => ({
-      stage: 'trying_managed' as const,
-      path: 'managed' as const,
+      stage: 'trying_hub' as const,
+      path: 'hub' as const,
       relayInUse: true,
-      message: 'Using managed connection.',
+      message: 'Using hub connection.',
     }))
 
     render(
       <MachineBrowserShell
-        machines={[machine({ machineId: 'machine-managed', name: 'Office Linux', preferredPath: 'managed' })]}
+        machines={[machine({ machineId: 'machine-hub', name: 'Office Linux', preferredPath: 'hub' })]}
         onAddMachine={vi.fn()}
         onScanMachine={vi.fn()}
         onStartConnection={onStartConnection}
@@ -77,9 +77,9 @@ describe('MachineBrowserShell', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /connect to office linux/i }))
 
-    await waitFor(() => expect(screen.getByText('Trying managed')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Trying hub')).toBeTruthy())
     expect(screen.getByText('Relay active')).toBeTruthy()
-    expect(screen.getByTestId('termx-connection-flow').textContent).not.toMatch(/\brelay path\b|\bpaid relay\b|\banonymous p2p\b|\bmanaged p2p\b/i)
+    expect(screen.getByTestId('termx-connection-flow').textContent).not.toMatch(/\brelay path\b|\bpaid relay\b|\banonymous p2p\b/i)
   })
 })
 

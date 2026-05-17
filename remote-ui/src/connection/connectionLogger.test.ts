@@ -14,7 +14,7 @@ describe('consoleConnectionLogger', () => {
       event: 'data_channel_open_timeout',
       level: 'error',
       machineId: 'machine-1',
-      path: 'managed',
+      path: 'hub',
       sessionId: 'rtc-1',
       message: 'timed out opening data channel api',
       details: {
@@ -32,14 +32,14 @@ describe('consoleConnectionLogger', () => {
       '[termx:browser_webrtc] data_channel_open_timeout timed out opening data channel api',
       expect.objectContaining({
         machineId: 'machine-1',
-        path: 'managed',
+        path: 'hub',
         sessionId: 'rtc-1',
         label: 'api',
       }),
     ])
     expect(error.mock.calls[1]?.[0]).toBe([
       '[termx:browser_webrtc] data_channel_open_timeout_json',
-      '{"machineId":"machine-1","path":"managed","sessionId":"rtc-1","label":"api","channelReadyState":"connecting","selectedCandidatePair":{"state":"succeeded","local":{"candidateType":"host"}}}',
+      '{"machineId":"machine-1","path":"hub","sessionId":"rtc-1","label":"api","channelReadyState":"connecting","selectedCandidatePair":{"state":"succeeded","local":{"candidateType":"host"}}}',
     ].join(' '))
   })
 })

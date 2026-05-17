@@ -6,7 +6,7 @@ import {
 import type { ConnectionLogEvent } from './connectionLogger'
 import source from './connectionOrchestrator.ts?raw'
 import { ManualLocalHubUrlProvider } from './localHubUrlProvider'
-import type { ManagedHubApi } from '../api/managedHubApi'
+import type { HubApi } from '../api/hubApi'
 import type {
   ConnectionCapabilities,
   ConnectionInfo,
@@ -23,13 +23,13 @@ describe('ConnectionOrchestrator', () => {
       machineId: 'machine-1',
       relayInUse: false,
     })
-    const localConnector = new RecordingManagedHubConnector(localSession)
-    const managedConnector = new RecordingManagedHubConnector(new Error('managed should not run for local web'))
+    const localConnector = new RecordingHubConnector(localSession)
+    const hubConnector = new RecordingHubConnector(new Error('hub should not run for local web'))
     const snapshots: ConnectionAttemptSnapshot[] = []
     const orchestrator = createConnectionOrchestrator({
       localHubUrlProvider: new ManualLocalHubUrlProvider('http://127.0.0.1:18888'),
-      managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
-      managedHubRtcConnectorFactory: ({ hubUrl }) => hubUrl.includes('127.0.0.1') ? localConnector : managedConnector,
+      hubApiFactory: (hubUrl) => new MockHubApi(hubUrl),
+      hubRtcConnectorFactory: ({ hubUrl }) => hubUrl.includes('127.0.0.1') ? localConnector : hubConnector,
     })
 
     const result = await orchestrator.connect({
@@ -38,7 +38,7 @@ describe('ConnectionOrchestrator', () => {
       sessionToken: 'session-token-1',
       policy: 'local_web',
       endpoints: [
-        { url: 'https://hub-1.termx.test', kind: 'managed', scope: 'cloud', source: 'web_control' },
+        { url: 'https://hub-1.termx.test', kind: 'hub', scope: 'hub', source: 'web_control' },
       ],
       onSnapshot: (snapshot) => snapshots.push(snapshot),
     })
@@ -51,14 +51,14 @@ describe('ConnectionOrchestrator', () => {
       sessionToken: 'session-token-1',
       path: 'local',
     }])
-    expect(managedConnector.calls).toEqual([])
+    expect(hubConnector.calls).toEqual([])
     expect(snapshots).toEqual([
       { stage: 'trying_local', path: 'local', message: 'Racing 1 local address(es)' },
       { stage: 'connected', path: 'local', relayInUse: false, message: 'Connected' },
     ])
   })
 
-  it('starts app local and managed races together but chooses local when it wins inside the preference window', async () => {
+  it('starts app local and hub races together but chooses local when it wins inside the preference window', async () => {
     vi.useFakeTimers()
     try {
       const localSession = new MockRtcSession({
@@ -67,24 +67,24 @@ describe('ConnectionOrchestrator', () => {
         machineId: 'machine-1',
         relayInUse: false,
       })
-      const managedSession = new MockRtcSession({
-        path: 'managed',
-        connectionId: 'managed-rtc',
+      const hubSession = new MockRtcSession({
+        path: 'hub',
+        connectionId: 'hub-rtc',
         machineId: 'machine-1',
         relayInUse: true,
       })
-      const localConnector = new RecordingManagedHubConnector(async () => {
+      const localConnector = new RecordingHubConnector(async () => {
         await delayForTest(40)
         return localSession
       })
-      const managedConnector = new RecordingManagedHubConnector(async () => {
+      const hubConnector = new RecordingHubConnector(async () => {
         await delayForTest(10)
-        return managedSession
+        return hubSession
       })
       const snapshots: ConnectionAttemptSnapshot[] = []
       const orchestrator = createConnectionOrchestrator({
-        managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
-        managedHubRtcConnectorFactory: ({ hubUrl }) => hubUrl.includes('192.168.1.20') ? localConnector : managedConnector,
+        hubApiFactory: (hubUrl) => new MockHubApi(hubUrl),
+        hubRtcConnectorFactory: ({ hubUrl }) => hubUrl.includes('192.168.1.20') ? localConnector : hubConnector,
         localPreferenceWindowMs: 100,
       })
 
@@ -95,22 +95,22 @@ describe('ConnectionOrchestrator', () => {
         policy: 'app_local_preferred',
         endpoints: [
           { url: 'http://192.168.1.20:18888', kind: 'local', scope: 'lan', source: 'pair_qr' },
-          { url: 'https://hub-1.termx.test', kind: 'managed', scope: 'cloud', source: 'web_control' },
+          { url: 'https://hub-1.termx.test', kind: 'hub', scope: 'hub', source: 'web_control' },
         ],
         onSnapshot: (snapshot) => snapshots.push(snapshot),
       })
       await vi.advanceTimersByTimeAsync(10)
       expect(localConnector.calls).toHaveLength(1)
-      expect(managedConnector.calls).toHaveLength(1)
+      expect(hubConnector.calls).toHaveLength(1)
       await vi.advanceTimersByTimeAsync(30)
       const result = await promise
 
       expect(result.session).toBe(localSession)
       expect(result.path).toBe('local')
-      expect(managedSession.disconnectCalls).toBe(1)
+      expect(hubSession.disconnectCalls).toBe(1)
       expect(snapshots).toEqual([
         { stage: 'trying_local', path: 'local', message: 'Racing 1 local address(es)' },
-        { stage: 'trying_managed', path: 'managed', message: 'Racing 1 managed hub(s)' },
+        { stage: 'trying_hub', path: 'hub', message: 'Racing 1 hub endpoint(s)' },
         { stage: 'connected', path: 'local', relayInUse: false, message: 'Connected' },
       ])
     } finally {
@@ -118,7 +118,7 @@ describe('ConnectionOrchestrator', () => {
     }
   })
 
-  it('uses managed when local is still not connected after the local preference window', async () => {
+  it('uses hub when local is still not connected after the local preference window', async () => {
     vi.useFakeTimers()
     try {
       const localSession = new MockRtcSession({
@@ -127,23 +127,23 @@ describe('ConnectionOrchestrator', () => {
         machineId: 'machine-1',
         relayInUse: false,
       })
-      const managedSession = new MockRtcSession({
-        path: 'managed',
-        connectionId: 'managed-rtc',
+      const hubSession = new MockRtcSession({
+        path: 'hub',
+        connectionId: 'hub-rtc',
         machineId: 'machine-1',
         relayInUse: true,
       })
-      const localConnector = new RecordingManagedHubConnector(async () => {
+      const localConnector = new RecordingHubConnector(async () => {
         await delayForTest(200)
         return localSession
       })
-      const managedConnector = new RecordingManagedHubConnector(async () => {
+      const hubConnector = new RecordingHubConnector(async () => {
         await delayForTest(10)
-        return managedSession
+        return hubSession
       })
       const orchestrator = createConnectionOrchestrator({
-        managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
-        managedHubRtcConnectorFactory: ({ hubUrl }) => hubUrl.includes('frp.termx.test') ? localConnector : managedConnector,
+        hubApiFactory: (hubUrl) => new MockHubApi(hubUrl),
+        hubRtcConnectorFactory: ({ hubUrl }) => hubUrl.includes('frp.termx.test') ? localConnector : hubConnector,
         localPreferenceWindowMs: 50,
       })
 
@@ -154,33 +154,33 @@ describe('ConnectionOrchestrator', () => {
         policy: 'app_local_preferred',
         endpoints: [
           { url: 'https://frp.termx.test', kind: 'local', scope: 'public_mapping', source: 'pair_qr' },
-          { url: 'https://hub-1.termx.test', kind: 'managed', scope: 'cloud', source: 'web_control' },
+          { url: 'https://hub-1.termx.test', kind: 'hub', scope: 'hub', source: 'web_control' },
         ],
       })
       await vi.advanceTimersByTimeAsync(60)
       const result = await promise
 
-      expect(result.session).toBe(managedSession)
-      expect(result.path).toBe('managed')
+      expect(result.session).toBe(hubSession)
+      expect(result.path).toBe('hub')
       expect(localConnector.calls).toEqual([expect.objectContaining({ path: 'local' })])
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('treats FRP/public mappings as local endpoints, not managed hubs', async () => {
+  it('treats FRP/public mappings as local endpoints, not hub hubs', async () => {
     const localSession = new MockRtcSession({
       path: 'local',
       connectionId: 'local-rtc-frp',
       machineId: 'machine-1',
       relayInUse: false,
     })
-    const localConnector = new RecordingManagedHubConnector(localSession)
-    const managedConnector = new RecordingManagedHubConnector(new Error('managed should not run'))
+    const localConnector = new RecordingHubConnector(localSession)
+    const hubConnector = new RecordingHubConnector(new Error('hub should not run'))
     const snapshots: ConnectionAttemptSnapshot[] = []
     const orchestrator = createConnectionOrchestrator({
-      managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
-      managedHubRtcConnectorFactory: ({ hubUrl }) => hubUrl.includes('frp.termx.test') ? localConnector : managedConnector,
+      hubApiFactory: (hubUrl) => new MockHubApi(hubUrl),
+      hubRtcConnectorFactory: ({ hubUrl }) => hubUrl.includes('frp.termx.test') ? localConnector : hubConnector,
     })
 
     const result = await orchestrator.connect({
@@ -197,7 +197,7 @@ describe('ConnectionOrchestrator', () => {
     expect(result.session).toBe(localSession)
     expect(result.path).toBe('local')
     expect(localConnector.calls).toEqual([expect.objectContaining({ path: 'local' })])
-    expect(managedConnector.calls).toEqual([])
+    expect(hubConnector.calls).toEqual([])
     expect(snapshots[0]).toEqual({ stage: 'trying_local', path: 'local', message: 'Racing 1 public local address(es)' })
   })
 
@@ -205,8 +205,8 @@ describe('ConnectionOrchestrator', () => {
     const logs: ConnectionLogEvent[] = []
     const snapshots: ConnectionAttemptSnapshot[] = []
     const orchestrator = createConnectionOrchestrator({
-      managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
-      managedHubRtcConnectorFactory: ({ hubUrl }) => new RecordingManagedHubConnector(new Error(`${hubUrl} rejected offer`)),
+      hubApiFactory: (hubUrl) => new MockHubApi(hubUrl),
+      hubRtcConnectorFactory: ({ hubUrl }) => new RecordingHubConnector(new Error(`${hubUrl} rejected offer`)),
       logger: { log: (event) => logs.push(event) },
     })
 
@@ -217,8 +217,8 @@ describe('ConnectionOrchestrator', () => {
       policy: 'app_local_preferred',
       endpoints: [
         { url: 'http://192.168.1.20:18888', kind: 'local', scope: 'lan', source: 'pair_qr' },
-        { url: 'https://hub-1.termx.test', kind: 'managed', scope: 'cloud', source: 'web_control' },
-        { url: 'https://hub-2.termx.test', kind: 'managed', scope: 'cloud', source: 'web_control' },
+        { url: 'https://hub-1.termx.test', kind: 'hub', scope: 'hub', source: 'web_control' },
+        { url: 'https://hub-2.termx.test', kind: 'hub', scope: 'hub', source: 'web_control' },
       ],
       onSnapshot: (snapshot) => snapshots.push(snapshot),
     })).rejects.toThrow(/all connection paths failed/i)
@@ -231,20 +231,20 @@ describe('ConnectionOrchestrator', () => {
         message: 'http://192.168.1.20:18888 rejected offer',
       },
       {
-        path: 'managed',
+        path: 'hub',
         hubUrl: 'https://hub-1.termx.test',
         message: 'https://hub-1.termx.test rejected offer',
       },
       {
-        path: 'managed',
+        path: 'hub',
         hubUrl: 'https://hub-2.termx.test',
         message: 'https://hub-2.termx.test rejected offer',
       },
     ]))
     expect(logs).toEqual(expect.arrayContaining([
       expect.objectContaining({ scope: 'orchestrator', event: 'local_hub_attempt_failed', path: 'local', hubUrl: 'http://192.168.1.20:18888' }),
-      expect.objectContaining({ scope: 'orchestrator', event: 'managed_hub_attempt_failed', path: 'managed', hubUrl: 'https://hub-1.termx.test' }),
-      expect.objectContaining({ scope: 'orchestrator', event: 'managed_hub_attempt_failed', path: 'managed', hubUrl: 'https://hub-2.termx.test' }),
+      expect.objectContaining({ scope: 'orchestrator', event: 'hub_attempt_failed', path: 'hub', hubUrl: 'https://hub-1.termx.test' }),
+      expect.objectContaining({ scope: 'orchestrator', event: 'hub_attempt_failed', path: 'hub', hubUrl: 'https://hub-2.termx.test' }),
       expect.objectContaining({ scope: 'orchestrator', event: 'connect_failed_all_paths', level: 'error' }),
     ]))
   })
@@ -257,7 +257,7 @@ describe('ConnectionOrchestrator', () => {
   })
 })
 
-class RecordingManagedHubConnector {
+class RecordingHubConnector {
   readonly calls: unknown[] = []
 
   constructor(private readonly result: RtcSession | Error | ((input: unknown, options?: { signal?: AbortSignal }) => Promise<RtcSession>)) {}
@@ -270,22 +270,22 @@ class RecordingManagedHubConnector {
   }
 }
 
-class MockManagedHubApi implements ManagedHubApi {
+class MockHubApi implements HubApi {
   constructor(readonly hubUrl: string) {}
 
-  async getSessionIce(): ReturnType<ManagedHubApi['getSessionIce']> {
+  async getSessionIce(): ReturnType<HubApi['getSessionIce']> {
     throw new Error('getSessionIce is not used by orchestrator tests')
   }
 
-  async createSession(): ReturnType<ManagedHubApi['createSession']> {
+  async createSession(): ReturnType<HubApi['createSession']> {
     throw new Error('createSession is not used by orchestrator tests')
   }
 
-  async pollSessionAnswer(): ReturnType<ManagedHubApi['pollSessionAnswer']> {
+  async pollSessionAnswer(): ReturnType<HubApi['pollSessionAnswer']> {
     throw new Error('pollSessionAnswer is not used by orchestrator tests')
   }
 
-  async pair(): ReturnType<ManagedHubApi['pair']> {
+  async pair(): ReturnType<HubApi['pair']> {
     throw new Error('pair is not used by orchestrator tests')
   }
 }

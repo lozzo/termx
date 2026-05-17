@@ -68,7 +68,7 @@ export function MachineBrowserShell({
           if (attemptSeqRef.current !== attemptSeq) return
           setConnection({
             stage: 'failed',
-            path: 'managed',
+            path: 'hub',
             relayInUse: false,
             message: err instanceof Error ? err.message : String(err),
           })
@@ -146,7 +146,7 @@ function ConnectionFlowView({
           <div className="mt-4 flex flex-wrap gap-2">
             {connection.path ? (
               <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-600">
-                {connection.path === 'public_p2p' ? 'Public P2P' : connection.path === 'managed' ? 'Managed' : 'Local'}
+                {connection.path === 'hub' ? 'Hub' : 'Local'}
               </span>
             ) : null}
             {connection.relayInUse ? (

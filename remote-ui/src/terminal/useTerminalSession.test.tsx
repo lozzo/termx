@@ -56,7 +56,7 @@ describe('useTerminalSession', () => {
   })
 
   it('derives connection path from the injected session instead of assuming local', async () => {
-    const session = createMockRtcTerminalSession('machine-remote', 'public_p2p')
+    const session = createMockRtcTerminalSession('machine-remote', 'hub')
     const { result } = renderHook(() =>
       useTerminalSession({
         machineId: 'machine-remote',
@@ -66,7 +66,7 @@ describe('useTerminalSession', () => {
     )
 
     await waitFor(() => expect(result.current.snapshot.terminalChannels['terminal-1']?.state).toBe('open'))
-    expect(result.current.snapshot.path).toBe('public_p2p')
+    expect(result.current.snapshot.path).toBe('hub')
   })
 
   it('preserves close reasons as failed channel state', async () => {

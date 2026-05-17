@@ -16,8 +16,8 @@ import type {
 import transportSource from './transport.ts?raw'
 
 describe('RtcSession public interfaces', () => {
-  it('keeps exactly three client-visible connection paths', () => {
-    expect(CONNECTION_PATHS).toEqual(['local', 'public_p2p', 'managed'])
+  it('keeps exactly two client-visible connection paths', () => {
+    expect(CONNECTION_PATHS).toEqual(['local', 'hub'])
     expectTypeOf<(typeof CONNECTION_PATHS)[number]>().toEqualTypeOf<ConnectionPath>()
     expect(transportSource).not.toMatch(/anonymous_p2p|managed_p2p|paid_relay/)
   })

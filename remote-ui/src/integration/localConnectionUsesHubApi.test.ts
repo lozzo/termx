@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createConnectionOrchestrator } from '../connection/connectionOrchestrator'
 import { ManualLocalHubUrlProvider } from '../connection/localHubUrlProvider'
-import { createManagedHubApi } from '../api/managedHubApi'
+import { createHubApi } from '../api/hubApi'
 import type { ConnectionInfo, RtcBinaryChannel, RtcJsonRpcChannel, RtcSession } from '../core/transport'
 
 describe('local connection over Hub API', () => {
@@ -11,7 +11,7 @@ describe('local connection over Hub API', () => {
       calls.push({ url: String(input), init })
       return jsonResponse({
         session_id: 'rtc-local-1',
-        path: 'managed',
+        path: 'hub',
         machine_id: 'machine-local',
         terminal_id: 'terminal-1',
         answer: { sdp: 'answer-sdp', ice_candidates: [] },
@@ -24,8 +24,8 @@ describe('local connection over Hub API', () => {
     const connectorInputs: unknown[] = []
     const orchestrator = createConnectionOrchestrator({
       localHubUrlProvider: new ManualLocalHubUrlProvider('http://192.168.1.100:18888'),
-      managedHubApiFactory: (hubUrl) => createManagedHubApi({ baseUrl: hubUrl, fetch }),
-      managedHubRtcConnectorFactory: ({ api }) => ({
+      hubApiFactory: (hubUrl) => createHubApi({ baseUrl: hubUrl, fetch }),
+      hubRtcConnectorFactory: ({ api }) => ({
         connect(input) {
           connectorInputs.push(input)
           return api.getSessionIce({
@@ -75,7 +75,7 @@ describe('local connection over Hub API', () => {
         expires_at: '2099-05-06T00:00:00Z',
       })
     })
-    const api = createManagedHubApi({ baseUrl: 'http://192.168.1.100:18888', fetch })
+    const api = createHubApi({ baseUrl: 'http://192.168.1.100:18888', fetch })
 
     await expect(api.pair({
       machineId: 'machine-local',

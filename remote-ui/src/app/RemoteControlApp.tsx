@@ -5,9 +5,9 @@ import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorksp
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
 import { createConnectionOrchestrator, type ConnectionAttemptSnapshot, type HubEndpoint } from '../connection/connectionOrchestrator'
 import { connectionStateFromAttempt, createConnectionStatePublisher } from '../connection/connectionState'
-import { createManagedHubRtcConnector } from '../webrtc/managedHubRtcConnector'
+import { createHubRtcConnector } from '../webrtc/hubRtcConnector'
 import { consoleConnectionLogger } from '../connection/connectionLogger'
-import { createManagedHubApi } from '../api/managedHubApi'
+import { createHubApi } from '../api/hubApi'
 import { MachineConnectionStore } from '../connection/machineConnectionStore'
 import { RemoteNetworkStateManager } from '../connection/remoteNetworkState'
 import { FileTransferPanel } from '../files/FileTransferPanel'
@@ -45,7 +45,7 @@ type AppView = 'home' | 'settings' | 'machine'
 type PairIntent = 'add-local' | 'authorize-machine'
 type PairApi = LocalPairingApi
 type PairMethod = 'local-hub' | 'web-control'
-type ManagedRtcSessionFactory = (input: { machineId: string }) => RtcSession & RtcSessionNegotiator
+type HubRtcSessionFactory = (input: { machineId: string }) => RtcSession & RtcSessionNegotiator
 type MachineAuthorizationState = 'ready' | 'needs-session' | 'unpaired'
 export interface ScanPairingCodeOptions {
   onCancel?: (() => void) | undefined
@@ -57,7 +57,7 @@ type MachineRuntimeFactory = (input: {
   api: WebControlApi
   networkRuntime: RemoteNetworkRuntime
   networkStateManager: RemoteNetworkStateManager
-  createSession?: ManagedRtcSessionFactory | undefined
+  createSession?: HubRtcSessionFactory | undefined
 }) => MachineRuntime
 
 interface MachineRuntime {
@@ -73,7 +73,7 @@ export interface RemoteControlAppProps {
   defaultControlUrl?: string | undefined
   storage?: RemoteRuntimeStorage | undefined
   networkRuntime?: RemoteNetworkRuntime | undefined
-  managedRtcSessionFactory?: ManagedRtcSessionFactory | undefined
+  hubRtcSessionFactory?: HubRtcSessionFactory | undefined
   pairApiFactory?: ((payload: PairingPayload, machine: WebControlMachine) => PairApi) | undefined
   machineRuntimeFactory?: MachineRuntimeFactory | undefined
   globalFileTransfer?: FileTransferContext | undefined
@@ -85,9 +85,9 @@ export function RemoteControlApp({
   defaultControlUrl,
   storage: storageProp,
   networkRuntime: networkRuntimeProp,
-  managedRtcSessionFactory,
+  hubRtcSessionFactory,
   pairApiFactory,
-  machineRuntimeFactory = createManagedMachineRuntime,
+  machineRuntimeFactory = createHubMachineRuntime,
   globalFileTransfer,
   scanPairingCode,
   exportDebugLogs,
@@ -129,7 +129,7 @@ export function RemoteControlApp({
   const autoStartedScanTokenRef = useRef(0)
   const runtimeCacheRef = useRef<{
     api: WebControlApi
-    createSession: ManagedRtcSessionFactory | undefined
+    createSession: HubRtcSessionFactory | undefined
     networkRuntime: RemoteNetworkRuntime
     runtimeFactory: MachineRuntimeFactory
     storage: RemoteRuntimeStorage
@@ -151,7 +151,7 @@ export function RemoteControlApp({
     const cache = runtimeCacheRef.current
     const cacheMatches = cache &&
       cache.api === api &&
-      cache.createSession === managedRtcSessionFactory &&
+      cache.createSession === hubRtcSessionFactory &&
       cache.networkRuntime === networkRuntime &&
       cache.runtimeFactory === machineRuntimeFactory &&
       cache.storage === storage
@@ -161,7 +161,7 @@ export function RemoteControlApp({
       }
       runtimeCacheRef.current = {
         api,
-        createSession: managedRtcSessionFactory,
+        createSession: hubRtcSessionFactory,
         networkRuntime,
         runtimeFactory: machineRuntimeFactory,
         storage,
@@ -181,11 +181,11 @@ export function RemoteControlApp({
       api,
       networkRuntime,
       networkStateManager,
-      createSession: managedRtcSessionFactory,
+      createSession: hubRtcSessionFactory,
     })
     cache.set(machine.id, created)
     return created
-  }, [api, machineRuntimeFactory, managedRtcSessionFactory, networkRuntime, networkStateManager, storage])
+  }, [api, machineRuntimeFactory, hubRtcSessionFactory, networkRuntime, networkStateManager, storage])
 
   useEffect(() => {
     networkStateManager.init()
@@ -217,19 +217,19 @@ export function RemoteControlApp({
         hostname: local.hostname,
         online: local.state === 'online',
         paired: true,
-        source: local.source === 'cloud' ? 'cloud' : 'local',
+        source: local.source === 'hub' ? 'hub' : 'local',
         hubUrls: hubUrlsFromStoredMachine(local),
         localHubUrls: localHubUrlsFromStoredMachine(local),
         localFallbackHubUrls: localFallbackHubUrlsFromStoredMachine(local),
       })
     }
-    for (const cloud of machines) {
-      const local = localById.get(cloud.id)
-      map.set(cloud.id, {
-        ...cloud,
+    for (const hub of machines) {
+      const local = localById.get(hub.id)
+      map.set(hub.id, {
+        ...hub,
         ...(local ? {
           localHubUrls: localHubUrlsFromStoredMachine(local),
-          localFallbackHubUrls: localFallbackHubUrlsFromStoredMachine(local, cloud.hubUrls),
+          localFallbackHubUrls: localFallbackHubUrlsFromStoredMachine(local, hub.hubUrls),
         } : {}),
       })
     }
@@ -248,21 +248,21 @@ export function RemoteControlApp({
     setLoading(true)
     try {
       let localMachineList = storage ? createMachineStore({ storage }).listMachines() : []
-      const [profile, cloudMachines] = await Promise.all([
+      const [profile, hubMachines] = await Promise.all([
         api.me(),
         api.listMachines(),
       ])
       setUser(profile)
-      setMachines(cloudMachines)
+      setMachines(hubMachines)
       if (storage) {
-        mergeSignedInCloudMachines(storage, cloudMachines)
+        mergeSignedInHubMachines(storage, hubMachines)
         localMachineList = createMachineStore({ storage }).listMachines()
       }
       setLocalMachines(localMachineList)
       setSelectedMachineId((current) => {
         if (
           current &&
-          (cloudMachines.some((machine) => machine.id === current) ||
+          (hubMachines.some((machine) => machine.id === current) ||
             localMachineList.some((machine) => machine.machineId === current))
         ) {
           return current
@@ -401,9 +401,9 @@ export function RemoteControlApp({
     setError(null)
     try {
       const payload = parsePairingPayload(rawValue)
-      const cloudMachine = machines.find((machine) => machine.id === payload.machine.id)
-      const isCloud = pairIntent === 'authorize-machine' && cloudMachine !== undefined
-      const requiresWebControl = payload.endpoints.webControl !== undefined
+      const hubMachine = machines.find((machine) => machine.id === payload.machine.id)
+      const isHub = pairIntent === 'authorize-machine' && hubMachine !== undefined
+      const requiresWebControl = payload.local.hubUrls.length === 0 && payload.hub.webControl !== undefined
       if (pairIntent === 'add-local' && requiresWebControl) {
         throw new Error('This QR belongs to an online Web Control device. Sign in and re-authorize it from your machine list.')
       }
@@ -421,11 +421,11 @@ export function RemoteControlApp({
         throw new Error('Choose a machine before re-authorizing it')
       }
 
-      if (isCloud) {
-        if (!user) throw new Error('Account profile is required before pairing a cloud device')
-        targetMachine = cloudMachine
+      if (isHub) {
+        if (!user) throw new Error('Account profile is required before pairing a Hub device')
+        targetMachine = hubMachine
       } else if (requiresWebControl) {
-        if (!user) throw new Error('Account profile is required before pairing a cloud device')
+        if (!user) throw new Error('Account profile is required before pairing a Hub device')
         throw new Error('This pairing code does not match a Web Control device in this account')
       } else {
         targetMachine = {
@@ -452,7 +452,7 @@ export function RemoteControlApp({
         appName,
         requestedCapabilities: ['terminal', 'file_manager', 'terminal_management'],
       }
-      const pairMethod: PairMethod = isCloud ? 'web-control' : 'local-hub'
+      const pairMethod: PairMethod = isHub ? 'web-control' : 'local-hub'
       const pairResult = pairApiFactory
         ? await pairApiFactory(payload, targetMachine).pair(pairInput)
         : pairMethod === 'web-control'
@@ -464,8 +464,8 @@ export function RemoteControlApp({
       createMachineSessionStore(storage).saveSessionToken(pairResult.machineId, pairResult.sessionToken, pairResult.expiresAt, payload.pairing.answerProofSecret)
       const store = createMachineStore({ storage })
       const saved = store.saveFromPairingPayload(payload)
-      if (isCloud) {
-        store.saveMachine(mergeCloudMachine(saved, targetMachine))
+      if (isHub) {
+        store.saveMachine(mergeHubMachine(saved, targetMachine))
       }
       setSelectedMachineId(targetMachine.id)
       setPairedMachineIds(readPairedMachineIds(storage, user?.id))
@@ -833,7 +833,7 @@ function HomeView({
         <EmptyState
           actionLabel="Scan QR"
           icon="scan"
-          message="No devices found. Add a local device, or sign in to sync your cloud devices."
+          message="No devices found. Add a local device, or sign in to sync your Hub devices."
           onAction={onAddLocalDevice}
           title="No machines yet"
         />
@@ -1548,8 +1548,8 @@ function MachineRow({
     : authorizationState === 'needs-session'
       ? 'Needs this phone to re-authorize'
       : 'Pair this phone to open it'
-  const sourcePill = machine.source === 'cloud' ? 'Cloud' : 'Local'
-  const DeviceIcon = machine.source === 'cloud' ? Server : LaptopMinimal
+  const sourcePill = machine.source === 'hub' ? 'Hub' : 'Local'
+  const DeviceIcon = machine.source === 'hub' ? Server : LaptopMinimal
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
       <button
@@ -1703,9 +1703,9 @@ function pruneMachinesForSignOut(storage: RemoteRuntimeStorage | undefined): Sto
   const store = createMachineStore({ storage })
   const sessionStore = createMachineSessionStore(storage)
   for (const machine of store.listMachines()) {
-    if (machine.source !== 'cloud') continue
+    if (machine.source !== 'hub') continue
     if (hasLocalAddresses(machine)) {
-      store.saveMachine(downgradeCloudMachineToLocal(machine))
+      store.saveMachine(downgradeHubMachineToLocal(machine))
     } else {
       store.forgetMachine(machine.machineId)
       sessionStore.clearSessionToken(machine.machineId)
@@ -1714,13 +1714,13 @@ function pruneMachinesForSignOut(storage: RemoteRuntimeStorage | undefined): Sto
   return store.listMachines()
 }
 
-function mergeSignedInCloudMachines(storage: RemoteRuntimeStorage, cloudMachines: WebControlMachine[]): void {
+function mergeSignedInHubMachines(storage: RemoteRuntimeStorage, hubMachines: WebControlMachine[]): void {
   const store = createMachineStore({ storage })
-  for (const cloud of cloudMachines) {
-    const stored = store.getMachine(cloud.id)
+  for (const hub of hubMachines) {
+    const stored = store.getMachine(hub.id)
     if (!stored) continue
     if (stored.source !== 'local' && stored.source !== 'manual') continue
-    store.saveMachine(mergeCloudMachine(stored, cloud))
+    store.saveMachine(mergeHubMachine(stored, hub))
   }
 }
 
@@ -1728,7 +1728,7 @@ function hasLocalAddresses(machine: StoredMachineRecord): boolean {
   return machine.addresses.local.length > 0 || machine.addresses.lan.length > 0
 }
 
-function downgradeCloudMachineToLocal(machine: StoredMachineRecord): StoredMachineRecord {
+function downgradeHubMachineToLocal(machine: StoredMachineRecord): StoredMachineRecord {
   return {
     ...machine,
     state: machine.state === 'online' ? 'unknown' : machine.state,
@@ -1745,29 +1745,40 @@ function downgradeCloudMachineToLocal(machine: StoredMachineRecord): StoredMachi
 }
 
 function createPairApiFromMachine(machine: WebControlMachine, networkRuntime: RemoteNetworkRuntime): PairApi {
-  const [hubUrl] = nonEmptyHubUrls(machine)
+  const [hubUrl] = pairingHubUrlsFromMachine(machine)
   if (!hubUrl) {
     throw new Error('Hub endpoint is required before pairing this device')
   }
-  return createManagedHubApi({ baseUrl: hubUrl, fetch: networkRuntime.fetch })
+  return createHubApi({ baseUrl: hubUrl, fetch: networkRuntime.fetch })
 }
 
-function createManagedMachineRuntime(input: {
+function pairingHubUrlsFromMachine(machine: WebControlMachine): string[] {
+  if (machine.source === 'local') {
+    return compactHubUrls([
+      ...(machine.localHubUrls ?? []),
+      ...(machine.localFallbackHubUrls ?? []),
+      ...machine.hubUrls,
+    ])
+  }
+  return nonEmptyHubUrls(machine)
+}
+
+function createHubMachineRuntime(input: {
   machine: WebControlMachine
   storage: RemoteRuntimeStorage
   api: WebControlApi
   networkRuntime: RemoteNetworkRuntime
   networkStateManager: RemoteNetworkStateManager
-  createSession?: ManagedRtcSessionFactory | undefined
+  createSession?: HubRtcSessionFactory | undefined
 }): MachineRuntime {
   const sessionStore = createMachineSessionStore(input.storage)
   const [summaryHubUrl] = nonEmptyHubUrls(input.machine)
-  const machineSession = createManagedMachineSessionManager({
+  const machineSession = createHubMachineSessionManager({
     machine: input.machine,
     sessionStore,
     networkRuntime: input.networkRuntime,
     networkStateManager: input.networkStateManager,
-    createSession: requiredManagedRtcSessionFactory(input.createSession),
+    createSession: requiredHubRtcSessionFactory(input.createSession),
   })
   const machineStatus: LocalStatus = {
     machine: {
@@ -1826,12 +1837,12 @@ function createManagedMachineRuntime(input: {
   }
 }
 
-function createManagedMachineSessionManager(input: {
+function createHubMachineSessionManager(input: {
   machine: WebControlMachine
   sessionStore: MachineSessionStore
   networkRuntime: RemoteNetworkRuntime
   networkStateManager: RemoteNetworkStateManager
-  createSession: ManagedRtcSessionFactory
+  createSession: HubRtcSessionFactory
 }) {
   const connectionState = createConnectionStatePublisher()
   const publishAttempt = (snapshot: ConnectionAttemptSnapshot) => {
@@ -1846,7 +1857,7 @@ function createManagedMachineSessionManager(input: {
   const connectionStore = new MachineConnectionStore({
     machineId: input.machine.id,
     networkStateManager: input.networkStateManager,
-    createLease: createManagedMachineSessionLease,
+    createLease: createHubMachineSessionLease,
     connect: (options = {}) => connect(options),
   })
   const subscribeInventoryEvents = (handler: (event: { type: 'inventory_changed'; payload?: unknown }) => void): RtcSubscription => {
@@ -1868,8 +1879,8 @@ function createManagedMachineSessionManager(input: {
     }
     const answerProofSecret = input.sessionStore.getAnswerProofSecret(input.machine.id) ?? undefined
     const orchestrator = createConnectionOrchestrator({
-      managedHubApiFactory: (hubUrl) => createManagedHubApi({ baseUrl: hubUrl, fetch: input.networkRuntime.fetch }),
-      managedHubRtcConnectorFactory: ({ hubUrl, api }) => createManagedHubRtcConnector({
+      hubApiFactory: (hubUrl) => createHubApi({ baseUrl: hubUrl, fetch: input.networkRuntime.fetch }),
+      hubRtcConnectorFactory: ({ hubUrl, api }) => createHubRtcConnector({
         api,
         createSession: input.createSession,
         hubUrl,
@@ -1917,9 +1928,9 @@ const unavailableNetworkRuntime: RemoteNetworkRuntime = {
   },
 }
 
-function requiredManagedRtcSessionFactory(factory: ManagedRtcSessionFactory | undefined): ManagedRtcSessionFactory {
+function requiredHubRtcSessionFactory(factory: HubRtcSessionFactory | undefined): HubRtcSessionFactory {
   if (!factory) {
-    throw new Error('managed RTC session factory is required')
+    throw new Error('hub RTC session factory is required')
   }
   return factory
 }
@@ -1934,7 +1945,7 @@ function isTerminalInventoryRuntimeEvent(event: RtcEvent): boolean {
     event.type === 'terminal_metadata_changed'
 }
 
-function createManagedMachineSessionLease(session: RtcSession): RtcSession & RtcTerminalDataChannelController & RtcSessionLiveness {
+function createHubMachineSessionLease(session: RtcSession): RtcSession & RtcTerminalDataChannelController & RtcSessionLiveness {
   const openedTerminals = new Map<string, RtcBinaryChannel>()
   const openedFiles = new Map<string, RtcBinaryChannel>()
   const subscriptions = new Set<RtcSubscription>()
@@ -2027,7 +2038,7 @@ function normalizeTerminalsForMachine(machineId: string, terminals: Record<strin
   }).terminals
 }
 
-function mergeCloudMachine(saved: StoredMachineRecord, machine: WebControlMachine): StoredMachineRecord {
+function mergeHubMachine(saved: StoredMachineRecord, machine: WebControlMachine): StoredMachineRecord {
   const [summaryHubUrl] = nonEmptyHubUrls(machine)
   return {
     machineId: saved.machineId,
@@ -2037,9 +2048,9 @@ function mergeCloudMachine(saved: StoredMachineRecord, machine: WebControlMachin
     terminalCount: saved.terminalCount,
     ...(machine.lastSeen || saved.lastSeenAt ? { lastSeenAt: machine.lastSeen ?? saved.lastSeenAt } : {}),
     ...(saved.lastConnectionPath ? { lastConnectionPath: saved.lastConnectionPath } : {}),
-    preferredPath: 'managed',
+    preferredPath: 'hub',
     ...(saved.relayInUse !== undefined ? { relayInUse: saved.relayInUse } : {}),
-    source: 'cloud',
+    source: 'hub',
     addresses: saved.addresses,
     endpoints: {
       ...saved.endpoints,
@@ -2054,7 +2065,7 @@ function mergeCloudMachine(saved: StoredMachineRecord, machine: WebControlMachin
 }
 
 function hubUrlsFromStoredMachine(machine: StoredMachineRecord): string[] {
-  if (machine.source === 'cloud' || machine.preferredPath === 'managed') {
+  if (machine.source === 'hub' || machine.preferredPath === 'hub') {
     return compactHubUrls([machine.endpoints.hub, ...machine.addresses.public])
   }
   return compactHubUrls([...machine.addresses.local, ...machine.addresses.lan, ...machine.addresses.public])
@@ -2066,24 +2077,24 @@ function localHubUrlsFromStoredMachine(machine: StoredMachineRecord): string[] {
 
 function localFallbackHubUrlsFromStoredMachine(
   machine: StoredMachineRecord,
-  managedHubUrls: readonly (string | undefined)[] = [],
+  hubUrls: readonly (string | undefined)[] = [],
 ): string[] {
   const publicHubUrls = compactHubUrls(machine.addresses.public)
-  if (machine.source !== 'cloud' && machine.preferredPath !== 'managed') return publicHubUrls
-  const managed = new Set(compactHubUrls([machine.endpoints.hub, ...managedHubUrls]))
-  return publicHubUrls.filter((hubUrl) => !managed.has(hubUrl))
+  if (machine.source !== 'hub' && machine.preferredPath !== 'hub') return publicHubUrls
+  const hub = new Set(compactHubUrls([machine.endpoints.hub, ...hubUrls]))
+  return publicHubUrls.filter((hubUrl) => !hub.has(hubUrl))
 }
 
 function hubUrlsFromPairingPayload(payload: PairingPayload): string[] {
-  return compactHubUrls([...payload.addresses.local, ...payload.addresses.lan, ...payload.addresses.public])
+  return compactHubUrls(payload.hub.hubUrls)
 }
 
 function localHubUrlsFromPairingPayload(payload: PairingPayload): string[] {
-  return compactHubUrls([...payload.addresses.local, ...payload.addresses.lan])
+  return compactHubUrls(payload.local.hubUrls)
 }
 
 function localFallbackHubUrlsFromPairingPayload(payload: PairingPayload): string[] {
-  return compactHubUrls(payload.addresses.public)
+  return []
 }
 
 function nonEmptyHubUrls(machine: WebControlMachine): string[] {
@@ -2108,8 +2119,8 @@ function endpointsFromMachine(machine: WebControlMachine): HubEndpoint[] {
       ? []
       : nonEmptyHubUrls(machine).map((url) => ({
         url,
-        kind: 'managed' as const,
-        scope: 'cloud' as const,
+        kind: 'hub' as const,
+        scope: 'hub' as const,
         source: 'web_control' as const,
       }))),
   ])

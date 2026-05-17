@@ -176,12 +176,12 @@ function MachineRow({
     : machine.state === 'connecting'
       ? 'Connecting...'
       : `Last online ${formatLastSeen(machine.lastSeenAt)}`
-  const sourceLabel = machine.source === 'cloud'
-    ? 'Cloud'
+  const sourceLabel = machine.source === 'hub'
+    ? 'Hub'
     : machine.source === 'manual'
       ? 'Manual'
       : 'Local'
-  const DeviceIcon = machine.source === 'cloud' ? Server : LaptopMinimal
+  const DeviceIcon = machine.source === 'hub' ? Server : LaptopMinimal
 
   const clearLongPress = () => {
     if (longPressTimerRef.current !== null) {
@@ -263,7 +263,7 @@ function MachineDetailSheet({ machine, onClose }: { machine: AppMachineRecord; o
     ['Machine ID', machine.machineId],
     ['Hostname', machine.hostname ?? '-'],
     ['State', formatMachineState(machine.state)],
-    ['Source', machine.source === 'cloud' ? 'Cloud' : machine.source === 'manual' ? 'Manual' : 'Local'],
+    ['Source', machine.source === 'hub' ? 'Hub' : machine.source === 'manual' ? 'Manual' : 'Local'],
     ['Terminal count', String(machine.terminalCount)],
     ['Recent path', machine.lastConnectionPath ?? machine.preferredPath ?? '-'],
     ['Relay', machine.relayInUse ? 'In use' : 'No'],

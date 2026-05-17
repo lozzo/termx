@@ -119,7 +119,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const [filesOpen, setFilesOpen] = useState(false)
   const [transferCenterOpen, setTransferCenterOpen] = useState(false)
   const [mobileSheet, setMobileSheet] = useState<MobileSheet>(null)
-  const [managedTerminalId, setManagedTerminalId] = useState<string | null>(null)
+  const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null)
   const [terminalForm, setTerminalForm] = useState<{
     name: string
     command: string
@@ -203,7 +203,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   const activeTerminal = terminals.find((terminal) => terminal.terminalId === activeTerminalId)
   const splitTerminal = terminals.find((terminal) => terminal.terminalId === splitTerminalId)
   const activeToolTerminal = activeTerminalSlot === 1 && splitTerminal ? splitTerminal : activeTerminal
-  const managedTerminal = terminals.find((terminal) => terminal.terminalId === managedTerminalId)
+  const selectedTerminal = terminals.find((terminal) => terminal.terminalId === selectedTerminalId)
   const activeTerminalTitle = activeTerminal?.title || activeTerminal?.command || activeTerminalId || 'Terminal'
   const splitTerminalTitle = splitTerminal?.title || splitTerminal?.command || splitTerminalId || 'Terminal'
   const terminalHeaderTitle = splitTerminalId ? `${activeTerminalTitle} / ${splitTerminalTitle}` : activeTerminalTitle
@@ -1127,7 +1127,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       setError(`terminal machine mismatch: ${intent.machineId} != ${machine.machineId}`)
       return
     }
-    setManagedTerminalId(intent.terminalId)
+    setSelectedTerminalId(intent.terminalId)
     setMobileSheet('manage-terminal')
   }, [canManageTerminals, machine, requireVerification])
 
@@ -1137,7 +1137,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       return
     }
     if (!canManageTerminals) return
-    setManagedTerminalId(null)
+    setSelectedTerminalId(null)
     setTerminalForm({
       name: '',
       command: '',
@@ -1149,16 +1149,16 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   }, [canManageTerminals, requireVerification])
 
   const openEditTerminal = useCallback(() => {
-    if (!managedTerminal) return
+    if (!selectedTerminal) return
     setTerminalForm({
-      name: managedTerminal.title,
-      command: managedTerminal.command ?? '',
-      cwd: managedTerminal.cwd ?? '',
-      environment: managedTerminal.environment ?? '',
-      sizeLockMode: managedTerminal.sizeLockMode ?? 'off',
+      name: selectedTerminal.title,
+      command: selectedTerminal.command ?? '',
+      cwd: selectedTerminal.cwd ?? '',
+      environment: selectedTerminal.environment ?? '',
+      sizeLockMode: selectedTerminal.sizeLockMode ?? 'off',
     })
     setMobileSheet('edit-terminal')
-  }, [managedTerminal])
+  }, [selectedTerminal])
 
   const selectTerminalWorkingDirectory = useCallback((path: string) => {
     setTerminalForm((current) => ({ ...current, cwd: normalizeFilePath(path) }))
@@ -1253,9 +1253,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   }, [canManageTerminals, refreshTerminals, terminalForm, withManagementApi])
 
   const submitUpdateTerminal = useCallback(async () => {
-    if (!canManageTerminals || !managedTerminalId) return
+    if (!canManageTerminals || !selectedTerminalId) return
     const input: LocalUpdateTerminalInput = {
-      terminalId: managedTerminalId,
+      terminalId: selectedTerminalId,
       name: terminalForm.name.trim() || undefined,
       cwd: terminalForm.cwd.trim() || undefined,
       environment: terminalForm.environment.trim() || undefined,
@@ -1264,9 +1264,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     const management = await withManagementApi()
     await management.api.updateTerminal(input)
     await refreshTerminals()
-    setPairStatus(`Updated ${input.name || managedTerminal?.title || managedTerminalId}`)
+    setPairStatus(`Updated ${input.name || selectedTerminal?.title || selectedTerminalId}`)
     setMobileSheet(null)
-  }, [canManageTerminals, managedTerminal, managedTerminalId, refreshTerminals, terminalForm, withManagementApi])
+  }, [canManageTerminals, selectedTerminal, selectedTerminalId, refreshTerminals, terminalForm, withManagementApi])
 
   const unlockTerminalResize = useCallback(async () => {
     if (!canManageTerminals || !activeTerminalId) return
@@ -1321,9 +1321,9 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
   }, [activeTerminalHandle, updateConnectionStatus])
 
   const deleteManagedTerminal = useCallback(async () => {
-    if (!canManageTerminals || !managedTerminalId) return
-    const deletedTerminalId = managedTerminalId
-    const deletedTitle = managedTerminal?.title ?? managedTerminalId
+    if (!canManageTerminals || !selectedTerminalId) return
+    const deletedTerminalId = selectedTerminalId
+    const deletedTitle = selectedTerminal?.title ?? selectedTerminalId
     const management = await withManagementApi()
     await management.api.deleteTerminal(deletedTerminalId)
     if (activeTerminalId === deletedTerminalId) {
@@ -1345,12 +1345,12 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     await refreshTerminals()
     setPairStatus(`Deleted ${deletedTitle}`)
     setMobileSheet(null)
-  }, [activeTerminalId, canManageTerminals, fileTerminalId, managedTerminal, managedTerminalId, refreshTerminals, splitTerminalId, withManagementApi])
+  }, [activeTerminalId, canManageTerminals, fileTerminalId, selectedTerminal, selectedTerminalId, refreshTerminals, splitTerminalId, withManagementApi])
 
   const restartManagedTerminal = useCallback(async () => {
-    if (!canManageTerminals || !managedTerminalId) return
-    const restartedTerminalId = managedTerminalId
-    const restartedTitle = managedTerminal?.title ?? managedTerminalId
+    if (!canManageTerminals || !selectedTerminalId) return
+    const restartedTerminalId = selectedTerminalId
+    const restartedTitle = selectedTerminal?.title ?? selectedTerminalId
     const management = await withManagementApi()
     closeTerminalDataChannel(management.session, restartedTerminalId)
     await management.api.restartTerminal(restartedTerminalId)
@@ -1373,7 +1373,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }
     setPairStatus(`Restarted ${restartedTitle}`)
     setMobileSheet(null)
-  }, [activeTerminalId, canManageTerminals, managedTerminal, managedTerminalId, refreshTerminals, splitTerminalId, withManagementApi])
+  }, [activeTerminalId, canManageTerminals, selectedTerminal, selectedTerminalId, refreshTerminals, splitTerminalId, withManagementApi])
 
   const openTerminalPanel = useCallback(() => {
     setFilesOpen(false)
@@ -1952,10 +1952,10 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
           />
         </div>
 
-        {mobileSheet === 'manage-terminal' && managedTerminal ? (
-          <MobileSheetPanel title={managedTerminal.title || 'Terminal'} testId="termx-terminal-actions-sheet" onClose={() => setMobileSheet(null)}>
+        {mobileSheet === 'manage-terminal' && selectedTerminal ? (
+          <MobileSheetPanel title={selectedTerminal.title || 'Terminal'} testId="termx-terminal-actions-sheet" onClose={() => setMobileSheet(null)}>
             <div className="flex flex-col gap-3">
-              {managedTerminal.state === 'exited' ? (
+              {selectedTerminal.state === 'exited' ? (
                 <button
                   type="button"
                   className="flex min-h-12 w-full items-center justify-between rounded-xl border border-zinc-200 bg-white px-4 text-left text-[15px] font-medium text-zinc-900 shadow-sm"

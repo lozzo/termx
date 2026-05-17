@@ -305,6 +305,79 @@ describe('local web entry shell', () => {
     expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:18888/api/v1/agents/online', expect.any(Object))
   })
 
+  it('passes saved answer proof secrets into browser local RTC connections', async () => {
+    const entry = await import('./localMachineEntry')
+    document.body.innerHTML = '<div id="root"></div>'
+    const storage = new MemoryStorage()
+    storage.setItem('termx.session.device-real-local.token', sessionTokenWithID('pair-session-local'))
+    storage.setItem('termx.session.device-real-local.exp', '2099-05-09T00:00:00.000Z')
+    storage.setItem('termx.session.device-real-local.answerProofSecret', 'answer-proof-secret')
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/agents/online')) {
+        return jsonResponse({
+          agents: [{
+            machine_id: 'device-real-local',
+            machine_name: 'Local Mac',
+            status: 'online',
+            terminals: [{
+              terminal_id: 'terminal-1',
+              title: 'zsh',
+              state: 'running',
+            }],
+          }],
+        })
+      }
+      if (url.endsWith('/api/v1/sessions/ice')) {
+        return jsonResponse({
+          path: 'local',
+          machine_id: 'device-real-local',
+          ice_servers: [],
+          relay_policy: { allow_relay: false, allow_relay_transfer: false },
+        })
+      }
+      if (url.endsWith('/api/v1/sessions')) {
+        const request = JSON.parse(String(init?.body ?? '{}')) as { offer?: { session_id?: string }; answer_proof_challenge?: string }
+        return jsonResponse({
+          session_id: request.offer?.session_id ?? 'rtc-local-1',
+          path: 'local',
+          machine_id: 'device-real-local',
+          answer: {
+            type: 'answer',
+            sdp: minimalAnswerSDP(),
+          },
+          ice_candidates: [],
+          ice_servers: [],
+          relay_policy: { allow_relay: false, allow_relay_transfer: false },
+          relay_in_use: false,
+          answer_proof: await answerProofForTest(
+            'answer-proof-secret',
+            'pair-session-local',
+            request.offer?.session_id ?? 'rtc-local-1',
+            request.answer_proof_challenge ?? '',
+          ),
+        })
+      }
+      return jsonResponse({})
+    })
+    vi.stubGlobal('RTCPeerConnection', FakePeerConnection)
+
+    entry.mountLocalWebApp({
+      networkRuntime: {
+        fetch,
+        storage,
+        queryParam: () => null,
+      },
+    })
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:18888/api/v1/sessions', expect.any(Object)))
+    const sessionRequest = fetch.mock.calls.find(([input]) => String(input).endsWith('/api/v1/sessions'))?.[1] as RequestInit | undefined
+    const body = JSON.parse(String(sessionRequest?.body ?? '{}')) as { answer_proof_challenge?: string }
+    expect(body.answer_proof_challenge).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list')).toBeTruthy())
+    expect(screen.queryByText(/server sent answerProof/i)).toBeNull()
+  })
+
   it('does not require browser crypto or local storage until a terminal session is created', async () => {
     const entry = await import('./localMachineEntry')
     document.body.innerHTML = '<div id="root"></div>'
@@ -373,6 +446,91 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function sessionTokenWithID(sessionId: string): string {
+  return `${base64url(new TextEncoder().encode(JSON.stringify({ sid: sessionId })))}.mac`
+}
+
+async function answerProofForTest(secret: string, pairSessionId: string, offerSessionId: string, challenge: string): Promise<string> {
+  const data = new TextEncoder().encode(`termx-answer-proof-v1:${pairSessionId}:${offerSessionId}:${challenge}`)
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  return base64url(new Uint8Array(await crypto.subtle.sign('HMAC', key, data)))
+}
+
+function base64url(bytes: Uint8Array): string {
+  let binary = ''
+  for (const value of bytes) binary += String.fromCharCode(value)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+function minimalAnswerSDP(): string {
+  return [
+    'v=0',
+    'o=- 0 0 IN IP4 127.0.0.1',
+    's=-',
+    't=0 0',
+    'm=application 9 UDP/DTLS/SCTP webrtc-datachannel',
+    'c=IN IP4 0.0.0.0',
+    'a=ice-ufrag:test',
+    'a=ice-pwd:testtesttesttesttesttest',
+    'a=fingerprint:sha-256 00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00',
+    'a=setup:active',
+    'a=mid:0',
+    'a=sctp-port:5000',
+    '',
+  ].join('\r\n')
+}
+
+class FakePeerConnection extends EventTarget {
+  localDescription: RTCSessionDescriptionInit | null = null
+  remoteDescription: RTCSessionDescriptionInit | null = null
+  iceGatheringState: RTCIceGatheringState = 'complete'
+  connectionState: RTCPeerConnectionState = 'connected'
+
+  constructor(_configuration?: RTCConfiguration) {
+    super()
+  }
+
+  createDataChannel(label: string): RTCDataChannel {
+    return new FakeRTCDataChannel(label) as unknown as RTCDataChannel
+  }
+
+  async createOffer(): Promise<RTCSessionDescriptionInit> {
+    return { type: 'offer', sdp: minimalAnswerSDP() }
+  }
+
+  async setLocalDescription(description: RTCSessionDescriptionInit): Promise<void> {
+    this.localDescription = description
+  }
+
+  async setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void> {
+    this.remoteDescription = description
+  }
+
+  async getStats(): Promise<RTCStatsReport> {
+    return new Map() as unknown as RTCStatsReport
+  }
+
+  close(): void {
+    this.connectionState = 'closed'
+  }
+}
+
+class FakeRTCDataChannel extends EventTarget {
+  readyState: RTCDataChannelState = 'open'
+  binaryType: BinaryType = 'arraybuffer'
+
+  constructor(readonly label: string) {
+    super()
+  }
+
+  send(_data: string | Blob | ArrayBuffer | ArrayBufferView): void {}
+
+  close(): void {
+    this.readyState = 'closed'
+    this.dispatchEvent(new Event('close'))
+  }
 }
 
 class MemoryStorage implements Storage {

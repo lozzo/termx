@@ -41,7 +41,7 @@ import {
 export interface BrowserRtcSessionOptions {
   machineId: string
   terminalId?: string | undefined
-  path?: 'local' | 'public_p2p' | 'managed' | undefined
+  path?: 'local' | 'hub' | undefined
   peerConnectionFactory?: ((configuration?: RTCConfiguration) => RTCPeerConnectionLike) | undefined
   sessionIdGenerator?: (() => string) | undefined
   iceGatheringTimeoutMs?: number | undefined

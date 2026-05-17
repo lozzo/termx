@@ -445,7 +445,7 @@ describe('MachineWorkspace', () => {
     expect(p2pSession).toBeTruthy()
     if (!p2pSession) throw new Error('p2p session was not created')
     p2pSession.getConnectionInfo = vi.fn(async () => ({
-      path: 'public_p2p' as const,
+      path: 'hub' as const,
       connectionId: 'p2p-connection',
       machineId: 'machine-local',
       relayInUse: false,
@@ -461,7 +461,7 @@ describe('MachineWorkspace', () => {
     expect(relaySession).toBeTruthy()
     if (!relaySession) throw new Error('relay session was not created')
     relaySession.getConnectionInfo = vi.fn(async () => ({
-      path: 'managed' as const,
+      path: 'hub' as const,
       connectionId: 'relay-connection',
       machineId: 'machine-local',
       relayInUse: true,
@@ -535,7 +535,7 @@ describe('MachineWorkspace', () => {
     emitConnectionState({
       machineId: 'machine-local',
       phase: 'connected',
-      path: 'managed',
+      path: 'hub',
       statusText: 'Connected',
       relayInUse: false,
     })
@@ -575,7 +575,7 @@ describe('MachineWorkspace', () => {
     emitConnectionState({
       machineId: 'machine-local',
       phase: 'verifying',
-      path: 'managed',
+      path: 'hub',
       statusText: 'App resumed, verifying connection...',
       relayInUse: false,
     })
@@ -584,7 +584,7 @@ describe('MachineWorkspace', () => {
     emitConnectionState({
       machineId: 'machine-local',
       phase: 'connected',
-      path: 'managed',
+      path: 'hub',
       statusText: 'Connected',
       relayInUse: false,
     })
@@ -1555,6 +1555,44 @@ describe('MachineWorkspace', () => {
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane|session/i)
   })
 
+  it('pairs local devices from a termx QR payload without manually splitting credentials', async () => {
+    const sessionStore = createMachineSessionStore(new MemoryStorage())
+    const pairApi = createMockPairApi()
+    pairApi.pair = vi.fn(async () => ({
+      machineId: 'machine-local',
+      sessionToken: 'session-token-local',
+      expiresAt: '2099-05-01T07:00:00Z',
+    }))
+
+    render(
+      <MachineWorkspace
+        api={createMockLocalAgentApi()}
+        connector={{ connect: vi.fn(async () => { throw new Error('unexpected connect') }) }}
+        pair={{
+          api: pairApi,
+          sessionStore,
+          appName: 'TermX Local Web',
+        }}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /verify device/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-local-pair-panel')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText(/termx qr content/i), {
+      target: { value: termxPairUri(localPairPayload()) },
+    })
+    await userEvent.click(within(screen.getByTestId('termx-pair-sheet')).getByRole('button', { name: /^pair device$/i }))
+
+    await waitFor(() => expect(screen.getByText('Paired with machine-local')).toBeTruthy())
+    expect(pairApi.pair).toHaveBeenCalledWith(expect.objectContaining({
+      machineId: 'machine-local',
+      pairSessionId: 'pair-session-local',
+      pairSecret: 'pair-secret-local',
+    }))
+    expect(sessionStore.getSessionToken('machine-local')).toBe('session-token-local')
+  })
+
   it('keeps pair reachable when first-run terminal connect needs a token and retries after pairing', async () => {
     const sessionStore = createMachineSessionStore(new MemoryStorage())
     let paired = false
@@ -1744,6 +1782,38 @@ function createMockPairApi(): LocalPairingApi {
       throw new Error('pair is not used by this test')
     },
   }
+}
+
+function localPairPayload(): Record<string, unknown> {
+  return {
+    type: 'termx_pair',
+    schema_version: 4,
+    preferred_path: 'local',
+    machine: {
+      id: 'machine-local',
+      name: 'Local Mac',
+    },
+    local: {
+      hub_urls: ['http://127.0.0.1:18888'],
+    },
+    hub: {
+      hub_urls: [],
+    },
+    pairing: {
+      session_id: 'pair-session-local',
+      secret: 'pair-secret-local',
+    },
+    bootstrap: {},
+  }
+}
+
+function termxPairUri(payload: Record<string, unknown>): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(payload))
+  let binary = ''
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte)
+  }
+  return `termx://pair?payload=${btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')}`
 }
 
 class MemoryStorage implements Storage {

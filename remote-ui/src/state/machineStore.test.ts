@@ -3,23 +3,22 @@ import { parsePairingPayload } from './pairingPayload'
 import { createMachineStore } from './machineStore'
 
 describe('machine store', () => {
-  it('saves QR pairing metadata needed for local, managed, control, and pairing flows', () => {
+  it('saves QR pairing metadata needed for local, hub, control, and pairing flows', () => {
     const storage = new MemoryStorage()
     const store = createMachineStore({ storage, now: () => new Date('2026-05-03T16:00:00Z') })
     const payload = parsePairingPayload(JSON.stringify({
       type: 'termx_pair',
-      schema_version: 3,
+      schema_version: 4,
       machine: {
         id: 'machine-1',
         name: 'Dev MacBook',
         hostname: 'dev-mac.local',
       },
-      addresses: {
-        local: ['http://127.0.0.1:7788'],
-        lan: ['http://192.168.1.40:7788'],
-        public: ['https://machine-1.public.termx.test'],
+      local: {
+        hub_urls: ['http://127.0.0.1:7788', 'http://192.168.1.40:7788', 'https://machine-1.public.termx.test'],
       },
-      endpoints: {
+      hub: {
+        hub_urls: [],
         web_control: 'https://control.termx.test',
       },
       pairing: {
@@ -72,8 +71,8 @@ describe('machine store', () => {
       state: 'online',
       terminalCount: 3,
       lastSeenAt: '2026-05-03T15:55:00Z',
-      lastConnectionPath: 'managed',
-      source: 'cloud',
+      lastConnectionPath: 'hub',
+      source: 'hub',
       addresses: { local: [], lan: [], public: [] },
       endpoints: {},
       addedAt: '2026-05-03T15:00:00.000Z',
@@ -82,11 +81,10 @@ describe('machine store', () => {
 
     const saved = store.saveFromPairingPayload(parsePairingPayload(JSON.stringify({
       type: 'termx_pair',
-      schema_version: 3,
+      schema_version: 4,
       machine: { id: 'machine-1', name: 'New Name' },
-      addresses: {
-        lan: ['http://192.168.1.41:7788'],
-        public: ['https://hub.termx.test'],
+      local: {
+        hub_urls: ['http://192.168.1.41:7788', 'https://hub.termx.test'],
       },
       pairing: { session_id: 'pair-2', secret: 'pair-secret-2' },
     })))
@@ -97,8 +95,8 @@ describe('machine store', () => {
       state: 'online',
       terminalCount: 3,
       lastSeenAt: '2026-05-03T15:55:00Z',
-      lastConnectionPath: 'managed',
-      source: 'cloud',
+      lastConnectionPath: 'hub',
+      source: 'hub',
       addresses: { local: [], lan: ['http://192.168.1.41:7788'], public: ['https://hub.termx.test'] },
       endpoints: {},
       pairing: { sessionId: 'pair-2', secret: 'pair-secret-2' },
@@ -113,15 +111,17 @@ describe('machine store', () => {
 
     const saved = store.saveFromPairingPayload(parsePairingPayload(JSON.stringify({
       type: 'termx_pair',
-      schema_version: 3,
+      schema_version: 4,
       machine: { id: 'machine-1', name: 'Dev MacBook' },
-      addresses: {
-        local: [' http://127.0.0.1:18888/api/v1/pairing/claims '],
-        lan: ['http://192.168.1.20:18888/api/v1/sessions/ice'],
-        public: ['https://frp.termx.test/api/v1/sessions'],
+      local: {
+        hub_urls: [
+          ' http://127.0.0.1:18888/api/v1/pairing/claims ',
+          'http://192.168.1.20:18888/api/v1/sessions/ice',
+          'https://frp.termx.test/api/v1/sessions',
+        ],
       },
-      endpoints: {
-        hub: 'https://cloud-hub.termx.test/api/v1/pairing/claims',
+      hub: {
+        hub_urls: ['https://hub-main.termx.test/api/v1/pairing/claims'],
       },
       pairing: { session_id: 'pair-1', secret: 'pair-secret-1' },
     })))
@@ -131,7 +131,7 @@ describe('machine store', () => {
       lan: ['http://192.168.1.20:18888'],
       public: ['https://frp.termx.test'],
     })
-    expect(saved.endpoints.hub).toBe('https://cloud-hub.termx.test')
+    expect(saved.endpoints.hub).toBe('https://hub-main.termx.test')
     expect(store.listMachines()[0]?.addresses).toEqual(saved.addresses)
   })
 

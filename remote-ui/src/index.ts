@@ -90,9 +90,9 @@ export type {
 export { parsePairingPayload } from './state/pairingPayload'
 export type {
   PairingPayload,
-  PairingPayloadAddresses,
   PairingPayloadBootstrap,
-  PairingPayloadEndpoints,
+  PairingPayloadHub,
+  PairingPayloadLocal,
   PairingPayloadMachine,
   PairingPayloadPairing,
 } from './state/pairingPayload'
@@ -199,8 +199,8 @@ export {
 } from './terminal/terminalInventory'
 export type { TerminalInventoryInput, TerminalInventorySnapshot } from './terminal/terminalInventory'
 export * from './core/transport'
-export { createManagedHubApi } from './api/managedHubApi'
-export { createManagedHubRtcConnector } from './webrtc/managedHubRtcConnector'
+export { createHubApi } from './api/hubApi'
+export { createHubRtcConnector } from './webrtc/hubRtcConnector'
 export {
   decodeRuntimeAPIRequest,
   decodeRuntimeAPIResponse,
@@ -223,24 +223,24 @@ export type {
   RuntimeEventSubscribeRequest,
 } from './webrtc/runtimeProtocol'
 export type {
-  CreateManagedHubSessionInput,
-  ManagedIceServer,
-  ManagedHubApi,
-  ManagedHubApiOptions,
-  ManagedHubCreateSessionResult,
-  ManagedHubFetch,
-  ManagedHubPendingSession,
-  ManagedHubSession,
-  ManagedHubSessionIceConfig,
-  ManagedHubSessionIceInput,
-  ManagedHubSessionPath,
-  ManagedRelayPolicy,
-  PollManagedHubSessionAnswerInput,
-} from './api/managedHubApi'
+  CreateHubSessionInput,
+  HubIceServer,
+  HubApi,
+  HubApiOptions,
+  HubCreateSessionResult,
+  HubFetch,
+  HubPendingSession,
+  HubSession,
+  HubSessionIceConfig,
+  HubSessionIceInput,
+  HubSessionPath,
+  HubRelayPolicy,
+  PollHubSessionAnswerInput,
+} from './api/hubApi'
 export type {
-  ManagedHubRtcConnectInput,
-  ManagedHubRtcConnectorOptions,
-} from './webrtc/managedHubRtcConnector'
+  HubRtcConnectInput,
+  HubRtcConnectorOptions,
+} from './webrtc/hubRtcConnector'
 export { createWebControlApi } from './api/webControlApi'
 export type {
   WebControlApi,

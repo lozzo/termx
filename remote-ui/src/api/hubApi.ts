@@ -2,48 +2,48 @@ import type { RemoteRuntimeFetch, RtcConnectOptions, RtcSessionDescription } fro
 import { serviceFetchError } from './networkErrors'
 import { normalizeHubBaseUrlCandidate } from './hubUrl'
 
-export interface ManagedRelayPolicy {
+export interface HubRelayPolicy {
   allowRelay: boolean
   allowRelayTransfer: boolean
 }
 
-export interface ManagedIceServer {
+export interface HubIceServer {
   urls: string[]
   username?: string | undefined
   credential?: string | undefined
 }
 
-export type ManagedHubFetch = RemoteRuntimeFetch
-export type ManagedHubSessionPath = 'managed' | 'local'
+export type HubFetch = RemoteRuntimeFetch
+export type HubSessionPath = 'hub' | 'local'
 
-export interface ManagedHubApiOptions {
+export interface HubApiOptions {
   baseUrl: string
   accessToken?: string | undefined
-  fetch: ManagedHubFetch
+  fetch: HubFetch
 }
 
-export interface ManagedHubApi {
-  getSessionIce(input: ManagedHubSessionIceInput, options?: RtcConnectOptions): Promise<ManagedHubSessionIceConfig>
-  createSession(input: CreateManagedHubSessionInput, options?: RtcConnectOptions): Promise<ManagedHubCreateSessionResult>
-  pollSessionAnswer(input: PollManagedHubSessionAnswerInput, options?: RtcConnectOptions): Promise<ManagedHubSession>
-  pair(input: ManagedHubPairInput, options?: RtcConnectOptions): Promise<ManagedHubPairResult>
+export interface HubApi {
+  getSessionIce(input: HubSessionIceInput, options?: RtcConnectOptions): Promise<HubSessionIceConfig>
+  createSession(input: CreateHubSessionInput, options?: RtcConnectOptions): Promise<HubCreateSessionResult>
+  pollSessionAnswer(input: PollHubSessionAnswerInput, options?: RtcConnectOptions): Promise<HubSession>
+  pair(input: HubPairInput, options?: RtcConnectOptions): Promise<HubPairResult>
 }
 
-export interface ManagedHubSessionIceInput {
+export interface HubSessionIceInput {
   machineId: string
   terminalId?: string | undefined
   sessionToken: string
 }
 
-export interface ManagedHubSessionIceConfig {
-  path: ManagedHubSessionPath
+export interface HubSessionIceConfig {
+  path: HubSessionPath
   machineId: string
   terminalId?: string | undefined
-  iceServers: ManagedIceServer[]
-  relayPolicy: ManagedRelayPolicy
+  iceServers: HubIceServer[]
+  relayPolicy: HubRelayPolicy
 }
 
-export interface CreateManagedHubSessionInput {
+export interface CreateHubSessionInput {
   machineId: string
   terminalId?: string | undefined
   sessionToken: string
@@ -55,35 +55,35 @@ export interface CreateManagedHubSessionInput {
   }
 }
 
-export interface ManagedHubSession {
+export interface HubSession {
   sessionId: string
-  path: ManagedHubSessionPath
+  path: HubSessionPath
   machineId: string
   terminalId?: string | undefined
   answer: RtcSessionDescription
   iceCandidates: string[]
-  iceServers: ManagedIceServer[]
-  relayPolicy: ManagedRelayPolicy
+  iceServers: HubIceServer[]
+  relayPolicy: HubRelayPolicy
   relayInUse: boolean
   answerProof?: string | undefined
 }
 
-export interface ManagedHubPendingSession {
+export interface HubPendingSession {
   sessionId: string
-  path: ManagedHubSessionPath
+  path: HubSessionPath
   machineId: string
   terminalId?: string | undefined
   pending: true
 }
 
-export type ManagedHubCreateSessionResult = ManagedHubSession | ManagedHubPendingSession
+export type HubCreateSessionResult = HubSession | HubPendingSession
 
-export interface PollManagedHubSessionAnswerInput {
+export interface PollHubSessionAnswerInput {
   sessionId: string
   machineId: string
 }
 
-export interface ManagedHubPairInput {
+export interface HubPairInput {
   machineId: string
   pairSessionId: string
   pairSecret: string
@@ -92,7 +92,7 @@ export interface ManagedHubPairInput {
   requestedCapabilities: string[]
 }
 
-export interface ManagedHubPairResult {
+export interface HubPairResult {
   claimId: string
   machineId: string
   machineName?: string | undefined
@@ -100,28 +100,28 @@ export interface ManagedHubPairResult {
   expiresAt: string
 }
 
-export function createManagedHubApi(options: ManagedHubApiOptions): ManagedHubApi {
-  return new ManagedHubHttpApi(options)
+export function createHubApi(options: HubApiOptions): HubApi {
+  return new HubHttpApi(options)
 }
 
-class ManagedHubHttpApi implements ManagedHubApi {
+class HubHttpApi implements HubApi {
   private readonly baseUrl: string
   private readonly accessToken: string | undefined
-  private readonly fetchImpl: ManagedHubFetch
+  private readonly fetchImpl: HubFetch
 
-  constructor(options: ManagedHubApiOptions) {
+  constructor(options: HubApiOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl)
     if (options.accessToken !== undefined) {
       const token = options.accessToken.trim()
       if (token === '') {
-        throw new Error('Managed Hub access token must be non-empty when provided')
+        throw new Error('Hub access token must be non-empty when provided')
       }
       this.accessToken = token
     }
     this.fetchImpl = options.fetch
   }
 
-  async getSessionIce(input: ManagedHubSessionIceInput, options: RtcConnectOptions = {}): Promise<ManagedHubSessionIceConfig> {
+  async getSessionIce(input: HubSessionIceInput, options: RtcConnectOptions = {}): Promise<HubSessionIceConfig> {
     const machineId = requiredString(input.machineId, 'machine_id')
     const terminalId = optionalTrimmedString(input.terminalId)
     const response = await this.requestJSON('POST', '/api/v1/sessions/ice', {
@@ -142,7 +142,7 @@ class ManagedHubHttpApi implements ManagedHubApi {
     }
   }
 
-  async createSession(input: CreateManagedHubSessionInput, options: RtcConnectOptions = {}): Promise<ManagedHubCreateSessionResult> {
+  async createSession(input: CreateHubSessionInput, options: RtcConnectOptions = {}): Promise<HubCreateSessionResult> {
     const machineId = requiredString(input.machineId, 'machine_id')
     const terminalId = optionalTrimmedString(input.terminalId)
     const sessionToken = requiredString(input.sessionToken, 'session_token')
@@ -172,10 +172,10 @@ class ManagedHubHttpApi implements ManagedHubApi {
         pending: true,
       }
     }
-    return managedSessionFromResponse(response)
+    return hubSessionFromResponse(response)
   }
 
-  async pollSessionAnswer(input: PollManagedHubSessionAnswerInput, options: RtcConnectOptions = {}): Promise<ManagedHubSession> {
+  async pollSessionAnswer(input: PollHubSessionAnswerInput, options: RtcConnectOptions = {}): Promise<HubSession> {
     const sessionId = requiredString(input.sessionId, 'session_id')
     const machineId = requiredString(input.machineId, 'machine_id')
     const response = await this.requestJSON('POST', `/api/v1/sessions/${encodeURIComponent(sessionId)}/answer`, {
@@ -184,10 +184,10 @@ class ManagedHubHttpApi implements ManagedHubApi {
         machine_id: machineId,
       },
     })
-    return managedSessionFromResponse(response)
+    return hubSessionFromResponse(response)
   }
 
-  async pair(input: ManagedHubPairInput, options: RtcConnectOptions = {}): Promise<ManagedHubPairResult> {
+  async pair(input: HubPairInput, options: RtcConnectOptions = {}): Promise<HubPairResult> {
     const machineId = requiredString(input.machineId, 'machine_id')
     const response = await this.requestJSON('POST', '/api/v1/pairing/claims', {
       signal: options.signal,
@@ -201,7 +201,7 @@ class ManagedHubHttpApi implements ManagedHubApi {
       },
     })
     if (optionalBooleanField(response, 'pending') === true) {
-      throw new Error('Managed Hub pairing is pending; make sure the TermX agent is online, connected to this Hub, and then try Pair Device again')
+      throw new Error('Hub pairing is pending; make sure the TermX agent is online, connected to this hub, and then try Pair Device again')
     }
     const sessionToken = requiredString(response.session_token, 'session_token')
     return {
@@ -238,7 +238,7 @@ class ManagedHubHttpApi implements ManagedHubApi {
     try {
       response = await this.fetchImpl(url, init)
     } catch (err) {
-      throw serviceFetchError('Managed Hub', url, err)
+      throw serviceFetchError('Hub', url, err)
     }
     if (!response.ok) {
       throw new Error(await errorMessage(response))
@@ -247,7 +247,7 @@ class ManagedHubHttpApi implements ManagedHubApi {
     if (text.trim() === '') {
       return {}
     }
-    return record(JSON.parse(text), 'Managed Hub response')
+    return record(JSON.parse(text), 'Hub response')
   }
 
   private url(path: string): string {
@@ -255,12 +255,12 @@ class ManagedHubHttpApi implements ManagedHubApi {
   }
 }
 
-function managedSessionFromResponse(response: Record<string, unknown>): ManagedHubSession {
+function hubSessionFromResponse(response: Record<string, unknown>): HubSession {
   const path = hubSessionPath(response)
   if (optionalBooleanField(response, 'pending') === true) {
-    throw new Error('Managed Hub answer response is still pending')
+    throw new Error('Hub answer response is still pending')
   }
-  const answer = record(response.answer, 'Managed Hub session answer')
+  const answer = record(response.answer, 'Hub session answer')
   return {
     sessionId: stringField(response, 'session_id'),
     path,
@@ -278,34 +278,34 @@ function managedSessionFromResponse(response: Record<string, unknown>): ManagedH
   }
 }
 
-function hubSessionPath(response: Record<string, unknown>): ManagedHubSessionPath {
+function hubSessionPath(response: Record<string, unknown>): HubSessionPath {
   const path = stringField(response, 'path')
-  if (path !== 'managed' && path !== 'cloud' && path !== 'local') {
-    throw new Error(`managed Hub session path must be managed, cloud, or local, got ${path}`)
+  if (path !== 'hub' && path !== 'local') {
+    throw new Error(`Hub session path must be hub or local, got ${path}`)
   }
-  return path === 'local' ? 'local' : 'managed'
+  return path
 }
 
 async function errorMessage(response: Response): Promise<string> {
   const text = await response.text()
   if (text.trim() === '') {
-    return `Managed Hub request failed with HTTP ${response.status}`
+    return `Hub request failed with HTTP ${response.status}`
   }
   try {
-    const data = record(JSON.parse(text), 'Managed Hub error response')
-    const err = record(data.error, 'Managed Hub error')
+    const data = record(JSON.parse(text), 'Hub error response')
+    const err = record(data.error, 'Hub error')
     const code = optionalStringField(err, 'code') ?? `http_${response.status}`
     const message = optionalStringField(err, 'message') ?? response.statusText
     return `${code}: ${message}`
   } catch {
-    return `Managed Hub request failed with HTTP ${response.status}: ${text}`
+    return `Hub request failed with HTTP ${response.status}: ${text}`
   }
 }
 
 function normalizeBaseUrl(raw: string): string {
   const normalized = normalizeHubBaseUrlCandidate(raw)
   if (!normalized) {
-    throw new Error('Managed Hub baseUrl is required')
+    throw new Error('Hub baseUrl is required')
   }
   return `${normalized}/`
 }
@@ -313,14 +313,14 @@ function normalizeBaseUrl(raw: string): string {
 function requiredString(value: unknown, label: string): string {
   const trimmed = typeof value === 'string' ? value.trim() : ''
   if (trimmed === '') {
-    throw new Error(`Managed Hub ${label} is required`)
+    throw new Error(`Hub ${label} is required`)
   }
   return trimmed
 }
 
 function requiredPayloadString(value: unknown, label: string): string {
   if (typeof value !== 'string' || value.trim() === '') {
-    throw new Error(`Managed Hub ${label} is required`)
+    throw new Error(`Hub ${label} is required`)
   }
   return value
 }
@@ -328,7 +328,7 @@ function requiredPayloadString(value: unknown, label: string): string {
 function optionalTrimmedString(value: unknown): string {
   if (value === undefined || value === null) return ''
   if (typeof value !== 'string') {
-    throw new Error('Managed Hub terminal_id must be a string')
+    throw new Error('Hub terminal_id must be a string')
   }
   return value.trim()
 }
@@ -343,7 +343,7 @@ function record(value: unknown, label: string): Record<string, unknown> {
 function stringField(value: Record<string, unknown>, key: string): string {
   const field = value[key]
   if (typeof field !== 'string' || field.trim() === '') {
-    throw new Error(`Managed Hub response ${key} is required`)
+    throw new Error(`Hub response ${key} is required`)
   }
   return field
 }
@@ -352,7 +352,7 @@ function optionalStringField(value: Record<string, unknown>, key: string): strin
   const field = value[key]
   if (field === undefined || field === null) return undefined
   if (typeof field !== 'string' || field.trim() === '') {
-    throw new Error(`Managed Hub response ${key} must be a string`)
+    throw new Error(`Hub response ${key} must be a string`)
   }
   return field
 }
@@ -361,7 +361,7 @@ function optionalStringArrayField(value: Record<string, unknown>, key: string): 
   const field = value[key]
   if (field === undefined || field === null) return undefined
   if (!Array.isArray(field) || field.some((item) => typeof item !== 'string' || item.trim() === '')) {
-    throw new Error(`Managed Hub response ${key} must be a string array`)
+    throw new Error(`Hub response ${key} must be a string array`)
   }
   return field
 }
@@ -369,7 +369,7 @@ function optionalStringArrayField(value: Record<string, unknown>, key: string): 
 function booleanField(value: Record<string, unknown>, key: string): boolean {
   const field = value[key]
   if (typeof field !== 'boolean') {
-    throw new Error(`Managed Hub response ${key} must be a boolean`)
+    throw new Error(`Hub response ${key} must be a boolean`)
   }
   return field
 }
@@ -378,29 +378,29 @@ function optionalBooleanField(value: Record<string, unknown>, key: string): bool
   const field = value[key]
   if (field === undefined || field === null) return undefined
   if (typeof field !== 'boolean') {
-    throw new Error(`Managed Hub response ${key} must be a boolean`)
+    throw new Error(`Hub response ${key} must be a boolean`)
   }
   return field
 }
 
-function relayPolicy(response: Record<string, unknown>): ManagedRelayPolicy {
+function relayPolicy(response: Record<string, unknown>): HubRelayPolicy {
   const nested = response.relay_policy === undefined || response.relay_policy === null
     ? response
-    : record(response.relay_policy, 'Managed Hub relay_policy')
+    : record(response.relay_policy, 'Hub relay_policy')
   return {
     allowRelay: booleanField(nested, 'allow_relay'),
     allowRelayTransfer: booleanField(nested, 'allow_relay_transfer'),
   }
 }
 
-function iceServersField(value: Record<string, unknown>, key: string): ManagedIceServer[] {
+function iceServersField(value: Record<string, unknown>, key: string): HubIceServer[] {
   const field = value[key]
   if (field === undefined || field === null) return []
   if (!Array.isArray(field)) {
-    throw new Error(`Managed Hub response ${key} must be an array`)
+    throw new Error(`Hub response ${key} must be an array`)
   }
   return field.map((item) => {
-    const server = record(item, 'Managed Hub ICE server')
+    const server = record(item, 'Hub ICE server')
     return {
       urls: requiredStringArrayField(server, 'urls'),
       ...(optionalStringField(server, 'username') ? { username: optionalStringField(server, 'username') } : {}),
@@ -412,7 +412,7 @@ function iceServersField(value: Record<string, unknown>, key: string): ManagedIc
 function requiredStringArrayField(value: Record<string, unknown>, key: string): string[] {
   const field = optionalStringArrayField(value, key)
   if (!field) {
-    throw new Error(`Managed Hub response ${key} is required`)
+    throw new Error(`Hub response ${key} is required`)
   }
   return field
 }

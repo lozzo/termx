@@ -39,8 +39,7 @@ export function connectionPhaseLabel(phase: RtcConnectionPhase | null | undefine
 }
 
 export function connectionPathLabel(path: ConnectionPath | undefined): string {
-  if (path === 'public_p2p') return 'P2P'
-  if (path === 'managed') return 'Managed'
+  if (path === 'hub') return 'Hub'
   if (path === 'local') return 'Local'
   return 'Runtime'
 }
@@ -92,6 +91,6 @@ export function connectionStateFromAttempt(input: {
 function phaseFromAttemptStage(stage: string): RtcConnectionPhase {
   if (stage === 'connected') return 'connected'
   if (stage === 'failed') return 'failed'
-  if (stage === 'trying_local' || stage === 'trying_public_p2p' || stage === 'trying_managed') return 'probing'
+  if (stage === 'trying_local' || stage === 'trying_hub') return 'probing'
   return 'connecting'
 }

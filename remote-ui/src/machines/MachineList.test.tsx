@@ -36,9 +36,9 @@ describe('MachineList', () => {
             state: 'stale',
             terminalCount: 1,
             lastSeenAt: '2026-05-02T11:00:00Z',
-            lastConnectionPath: 'managed',
+            lastConnectionPath: 'hub',
             relayInUse: true,
-            source: 'cloud',
+            source: 'hub',
           }),
         ]}
         onAddMachine={onAddMachine}

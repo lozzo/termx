@@ -2,23 +2,21 @@ import { describe, expect, it } from 'vitest'
 import { parsePairingPayload } from './pairingPayload'
 
 describe('pairing payload parser', () => {
-  it('parses termx:// QR payloads with the single v3 schema', () => {
+  it('parses termx:// QR payloads with the single v4 schema', () => {
     const payload = parsePairingPayload(`termx://pair?payload=${base64url(JSON.stringify({
       type: 'termx_pair',
-      schema_version: 3,
+      schema_version: 4,
       machine: {
         id: 'machine-1',
         name: '开发 MacBook',
         hostname: 'dev-mac.local',
       },
-      addresses: {
-        local: ['http://127.0.0.1:7788'],
-        lan: ['http://192.168.1.40:7788'],
-        public: ['https://machine-1.public.termx.test'],
+      local: {
+        hub_urls: ['http://127.0.0.1:7788', 'http://192.168.1.40:7788'],
       },
-      endpoints: {
+      hub: {
+        hub_urls: ['https://hub.termx.test'],
         web_control: 'https://control.termx.test',
-        hub: 'https://hub.termx.test',
       },
       pairing: {
         session_id: 'pair-1',
@@ -30,20 +28,18 @@ describe('pairing payload parser', () => {
     }))}`)
 
     expect(payload).toEqual({
-      schemaVersion: 3,
+      schemaVersion: 4,
       machine: {
         id: 'machine-1',
         name: '开发 MacBook',
         hostname: 'dev-mac.local',
       },
-      addresses: {
-        local: ['http://127.0.0.1:7788'],
-        lan: ['http://192.168.1.40:7788'],
-        public: ['https://machine-1.public.termx.test'],
+      local: {
+        hubUrls: ['http://127.0.0.1:7788', 'http://192.168.1.40:7788'],
       },
-      endpoints: {
+      hub: {
+        hubUrls: ['https://hub.termx.test'],
         webControl: 'https://control.termx.test',
-        hub: 'https://hub.termx.test',
       },
       pairing: {
         sessionId: 'pair-1',
@@ -81,7 +77,7 @@ describe('pairing payload parser', () => {
   it('rejects machine private-key material even when nested inside bootstrap metadata', () => {
     expect(() => parsePairingPayload(JSON.stringify({
       type: 'termx_pair',
-      schema_version: 3,
+      schema_version: 4,
       machine: { id: 'machine-1', name: 'Dev MacBook' },
       pairing: { session_id: 'pair-1', secret: 'pair-secret-1' },
       bootstrap: {
@@ -91,7 +87,7 @@ describe('pairing payload parser', () => {
 
     expect(() => parsePairingPayload(JSON.stringify({
       type: 'termx_pair',
-      schema_version: 3,
+      schema_version: 4,
       machine: {
         id: 'machine-1',
         name: 'Dev MacBook',
@@ -102,7 +98,7 @@ describe('pairing payload parser', () => {
 
     expect(() => parsePairingPayload(JSON.stringify({
       type: 'termx_pair',
-      schema_version: 3,
+      schema_version: 4,
       machine: { id: 'machine-1', name: 'Dev MacBook' },
       pairing: { session_id: 'pair-1', secret: 'pair-secret-1' },
       bootstrap: {
@@ -114,7 +110,7 @@ describe('pairing payload parser', () => {
   it('rejects relay as a client-visible connection path', () => {
     expect(() => parsePairingPayload(JSON.stringify({
       type: 'termx_pair',
-      schema_version: 3,
+      schema_version: 4,
       machine: { id: 'machine-1', name: 'Dev MacBook' },
       pairing: { session_id: 'pair-1', secret: 'pair-secret-1' },
       preferred_path: 'relay',

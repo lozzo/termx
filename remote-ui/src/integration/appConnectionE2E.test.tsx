@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createConnectionOrchestrator, type ConnectionAttemptSnapshot } from '../connection/connectionOrchestrator'
 import { createMachineStore } from '../state/machineStore'
-import type { ManagedHubApi } from '../api/managedHubApi'
+import type { HubApi } from '../api/hubApi'
 import { parsePairingPayload } from '../state/pairingPayload'
 import { MachineBrowserShell } from '../app/MachineBrowserShell'
 import { useFileManager } from '../files/useFileManager'
@@ -32,18 +32,17 @@ describe('APP connection e2e harness', () => {
     })
     store.saveFromPairingPayload(parsePairingPayload(JSON.stringify({
       type: 'termx_pair',
-      schema_version: 3,
+      schema_version: 4,
       machine: {
         id: 'machine-public',
         name: 'Public Host',
         hostname: 'public-host-agent',
       },
-      addresses: {
-        local: ['http://127.0.0.1:18988'],
-        lan: ['http://192.168.1.30:18988'],
-        public: ['http://114.66.58.243:18988'],
+      local: {
+        hub_urls: ['http://127.0.0.1:18988', 'http://192.168.1.30:18988', 'http://114.66.58.243:18988'],
       },
-      endpoints: {
+      hub: {
+        hub_urls: [],
         web_control: 'http://114.66.58.243:12306',
       },
       pairing: {
@@ -54,11 +53,11 @@ describe('APP connection e2e harness', () => {
       preferred_path: 'local',
     })))
     const machines = store.listMachines()
-    const managedSession = new ManagedE2ESession('machine-public', 'local')
-    const hubConnector = new RecordingManagedHubConnector(managedSession)
+    const hubSession = new HubE2ESession('machine-public', 'local')
+    const hubConnector = new RecordingHubConnector(hubSession)
     const orchestrator = createConnectionOrchestrator({
-      managedHubApiFactory: (hubUrl) => new MockManagedHubApi(hubUrl),
-      managedHubRtcConnectorFactory: () => hubConnector,
+      hubApiFactory: (hubUrl) => new MockHubApi(hubUrl),
+      hubRtcConnectorFactory: () => hubConnector,
     })
     const snapshots: ConnectionAttemptSnapshot[] = []
 
@@ -122,25 +121,25 @@ describe('APP connection e2e harness', () => {
       <RuntimeConsumer
         machineId="machine-public"
         terminalId="terminal-1"
-        session={managedSession}
+        session={hubSession}
       />,
     )
 
-    await waitFor(() => expect(managedSession.openedLabels).toContain('terminal:terminal-1'))
-    await waitFor(() => expect(managedSession.subscribedEvents).toBe(1))
-    managedSession.emitTerminalScreenUpdate('terminal-1', 'hello from managed')
-    managedSession.emitEvent({ type: 'heartbeat', payload: { ok: true } })
-    await waitFor(() => expect(screen.getByTestId('runtime-terminal').textContent).toContain('hello from managed'))
+    await waitFor(() => expect(hubSession.openedLabels).toContain('terminal:terminal-1'))
+    await waitFor(() => expect(hubSession.subscribedEvents).toBe(1))
+    hubSession.emitTerminalScreenUpdate('terminal-1', 'hello from hub')
+    hubSession.emitEvent({ type: 'heartbeat', payload: { ok: true } })
+    await waitFor(() => expect(screen.getByTestId('runtime-terminal').textContent).toContain('hello from hub'))
     await waitFor(() => expect(screen.getByTestId('runtime-files').textContent).toContain('remote.log'))
     await waitFor(() => expect(screen.getByTestId('runtime-events').textContent).toContain('heartbeat'))
-    expect(managedSession.openedLabels).toContain('terminal:terminal-1')
-    expect(managedSession.openApiCount).toBeGreaterThan(0)
-    expect(managedSession.subscribedEvents).toBe(1)
-    expect(document.body.textContent).not.toMatch(/\brelay path\b|paid relay|managed p2p|anonymous p2p|workspace|pane|tmux/i)
+    expect(hubSession.openedLabels).toContain('terminal:terminal-1')
+    expect(hubSession.openApiCount).toBeGreaterThan(0)
+    expect(hubSession.subscribedEvents).toBe(1)
+    expect(document.body.textContent).not.toMatch(/\brelay path\b|paid relay|hub p2p|anonymous p2p|workspace|pane|tmux/i)
   })
 })
 
-class RecordingManagedHubConnector {
+class RecordingHubConnector {
   readonly calls: unknown[] = []
 
   constructor(private readonly result: RtcSession | Error) {}
@@ -152,22 +151,22 @@ class RecordingManagedHubConnector {
   }
 }
 
-class MockManagedHubApi implements ManagedHubApi {
+class MockHubApi implements HubApi {
   constructor(readonly hubUrl: string) {}
 
-  async getSessionIce(): ReturnType<ManagedHubApi['getSessionIce']> {
+  async getSessionIce(): ReturnType<HubApi['getSessionIce']> {
     throw new Error('getSessionIce is not used by e2e orchestrator harness')
   }
 
-  async createSession(): ReturnType<ManagedHubApi['createSession']> {
+  async createSession(): ReturnType<HubApi['createSession']> {
     throw new Error('createSession is not used by e2e orchestrator harness')
   }
 
-  async pollSessionAnswer(): ReturnType<ManagedHubApi['pollSessionAnswer']> {
+  async pollSessionAnswer(): ReturnType<HubApi['pollSessionAnswer']> {
     throw new Error('pollSessionAnswer is not used by e2e orchestrator harness')
   }
 
-  async pair(): ReturnType<ManagedHubApi['pair']> {
+  async pair(): ReturnType<HubApi['pair']> {
     throw new Error('pair is not used by e2e orchestrator harness')
   }
 }
@@ -222,12 +221,12 @@ function RuntimeConsumer({
   )
 }
 
-class ManagedE2ESession extends MockRtcTerminalSession {
+class HubE2ESession extends MockRtcTerminalSession {
   openApiCount = 0
   subscribedEvents = 0
   private readonly eventHandlers = new Set<(event: RtcEvent) => void>()
 
-  constructor(machineId: string, private readonly connectionPath: ConnectionInfo['path'] = 'managed') {
+  constructor(machineId: string, private readonly connectionPath: ConnectionInfo['path'] = 'hub') {
     super(machineId, connectionPath)
   }
 
@@ -237,7 +236,7 @@ class ManagedE2ESession extends MockRtcTerminalSession {
       connectionId: `${this.connectionPath}-rtc-1`,
       machineId: 'machine-public',
       terminalId: 'terminal-1',
-      relayInUse: this.connectionPath === 'managed',
+      relayInUse: this.connectionPath === 'hub',
     }
   }
 
@@ -278,7 +277,7 @@ class ManagedE2ESession extends MockRtcTerminalSession {
       eventsAllowed: true,
       fileTransferAllowed: true,
       terminalManagementAllowed: true,
-      relayInUse: this.connectionPath === 'managed',
+      relayInUse: this.connectionPath === 'hub',
     }
   }
 }

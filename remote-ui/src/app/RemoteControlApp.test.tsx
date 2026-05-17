@@ -17,7 +17,7 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
         storage={storage}
       />,
@@ -58,7 +58,7 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
         storage={storage}
       />,
@@ -121,7 +121,7 @@ describe('RemoteControlApp', () => {
           hostname: 'redmibook',
           online: true,
           paired: false,
-          source: 'cloud',
+          source: 'hub',
           control_url: 'http://114.66.58.243:12306',
           current_hub_url: 'http://114.66.58.243:8447',
           hub_urls: ['http://114.66.58.243:8447'],
@@ -180,7 +180,7 @@ describe('RemoteControlApp', () => {
 
     await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
     expect(screen.getAllByText('Scan QR').length).toBeGreaterThan(0)
-    expect(screen.getByText('Cloud')).toBeTruthy()
+    expect(screen.getByText('Hub')).toBeTruthy()
     expect(screen.queryByText('Ready')).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: /scan to pair redmibook/i }))
@@ -212,8 +212,8 @@ describe('RemoteControlApp', () => {
     const stored = JSON.parse(storage.getItem('termx.app.machines.v1') ?? '[]') as Array<Record<string, unknown>>
     expect(stored).toHaveLength(1)
     expect(stored[0]?.machineId).toBe('device-1')
-    expect(stored[0]?.source).toBe('cloud')
-    expect(stored[0]?.preferredPath).toBe('managed')
+    expect(stored[0]?.source).toBe('hub')
+    expect(stored[0]?.preferredPath).toBe('hub')
     expect(stored[0]?.addresses).toMatchObject({
       public: ['https://stale-payload-hub.termx.test'],
     })
@@ -229,7 +229,7 @@ describe('RemoteControlApp', () => {
     const pairUri = termxPairUri(pairPayload({
       machineId: 'self-hosted-1',
       name: 'Self Hosted Box',
-      schemaVersion: 3,
+      schemaVersion: 4,
       addresses: {
         local: [],
         lan: [],
@@ -250,7 +250,7 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -290,7 +290,7 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
         storage={storage}
       />,
@@ -330,7 +330,7 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         scanPairingCode={scanPairingCode}
         storage={storage}
@@ -358,7 +358,7 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
         scanPairingCode={scanPairingCode}
         storage={storage}
@@ -390,7 +390,7 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch, storage)}
         storage={storage}
       />,
@@ -400,13 +400,17 @@ describe('RemoteControlApp', () => {
     fireEvent.change(screen.getByLabelText(/termx qr content/i), { target: { value: pairUri } })
     await userEvent.click(screen.getByRole('button', { name: /^add device$/i }))
 
-    await waitFor(() => expect(screen.getByText(/Cannot reach Managed Hub at https:\/\/blocked-hub\.termx\.test/i)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/Cannot reach Hub at https:\/\/blocked-hub\.termx\.test/i)).toBeTruthy())
     expect(screen.queryByText(/^Failed to fetch$/)).toBeNull()
   })
 
   it('rejects pairing codes that do not match a Web Control machine in the signed-in account', async () => {
     const storage = new MemoryStorage()
-    const pairUri = termxPairUri(pairPayload({ machineId: 'local-machine-1', name: 'Local Debug Machine' }))
+    const pairUri = termxPairUri(pairPayload({
+      machineId: 'local-machine-1',
+      name: 'Local Debug Machine',
+      addresses: { local: [], lan: [], public: [] },
+    }))
     const fetch = new RecordingFetch([
       jsonResponse(200, {
         token_type: 'Bearer',
@@ -431,7 +435,7 @@ describe('RemoteControlApp', () => {
           name: 'RedmiBook',
           online: true,
           paired: false,
-          source: 'cloud',
+          source: 'hub',
           hub_status: 'online',
         }],
       }),
@@ -439,7 +443,7 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -460,7 +464,7 @@ describe('RemoteControlApp', () => {
     expect(storage.getItem('termx.app.machines.v1')).toBeNull()
   })
 
-  it('labels cloud-paired machines without a local session as needing phone re-authorization', async () => {
+  it('labels hub-paired machines without a local session as needing phone re-authorization', async () => {
     const storage = new MemoryStorage()
     storage.setItem('termx.remote.accessToken', 'access-token-1')
     createMachineStore({ storage }).saveFromPairingPayload(parsePairingPayload(JSON.stringify(pairPayload({
@@ -486,7 +490,7 @@ describe('RemoteControlApp', () => {
           hostname: 'redmibook',
           online: true,
           paired: true,
-          source: 'cloud',
+          source: 'hub',
           current_hub_url: 'https://hub-1.termx.test',
           hub_urls: ['https://hub-1.termx.test'],
           hub_status: 'online',
@@ -497,7 +501,7 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -514,7 +518,7 @@ describe('RemoteControlApp', () => {
     expect(screen.queryByRole('button', { name: /open redmibook/i })).toBeNull()
   })
 
-  it('removes cloud-only machines and sessions when signing out', async () => {
+  it('removes hub-only machines and sessions when signing out', async () => {
     const storage = new MemoryStorage()
     storage.setItem('termx.remote.accessToken', 'access-token-1')
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
@@ -525,7 +529,7 @@ describe('RemoteControlApp', () => {
       hostname: 'redmibook',
       state: 'online',
       terminalCount: 0,
-      source: 'cloud',
+      source: 'hub',
       addresses: {
         local: [],
         lan: [],
@@ -553,7 +557,7 @@ describe('RemoteControlApp', () => {
           hostname: 'redmibook',
           online: true,
           paired: true,
-          source: 'cloud',
+          source: 'hub',
           current_hub_url: 'https://hub-1.termx.test',
           hub_urls: ['https://hub-1.termx.test'],
           hub_status: 'online',
@@ -564,7 +568,7 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -581,7 +585,7 @@ describe('RemoteControlApp', () => {
     expect(screen.queryByText('RedmiBook')).toBeNull()
   })
 
-  it('downgrades dual-mode cloud machines to local on sign out and merges them again after sign in', async () => {
+  it('downgrades dual-mode Hub machines to local on sign out and merges them again after sign in', async () => {
     const storage = new MemoryStorage()
     storage.setItem('termx.remote.accessToken', 'access-token-1')
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
@@ -592,8 +596,8 @@ describe('RemoteControlApp', () => {
       hostname: 'redmibook',
       state: 'online',
       terminalCount: 0,
-      preferredPath: 'managed',
-      source: 'cloud',
+      preferredPath: 'hub',
+      source: 'hub',
       addresses: {
         local: ['http://127.0.0.1:18888'],
         lan: ['http://192.168.1.20:18888'],
@@ -621,7 +625,7 @@ describe('RemoteControlApp', () => {
           hostname: 'redmibook',
           online: true,
           paired: true,
-          source: 'cloud',
+          source: 'hub',
           control_url: 'http://114.66.58.243:12306',
           current_hub_url: 'https://hub-new.termx.test',
           hub_urls: ['https://hub-new.termx.test'],
@@ -652,7 +656,7 @@ describe('RemoteControlApp', () => {
           hostname: 'redmibook',
           online: true,
           paired: true,
-          source: 'cloud',
+          source: 'hub',
           control_url: 'http://114.66.58.243:12306',
           current_hub_url: 'https://hub-new.termx.test',
           hub_urls: ['https://hub-new.termx.test'],
@@ -664,7 +668,7 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -692,13 +696,13 @@ describe('RemoteControlApp', () => {
     await userEvent.type(screen.getByLabelText(/email or username/i), 'lozzow@example.test')
     await userEvent.type(screen.getByLabelText(/password/i), 'secret')
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
-    await waitFor(() => expect(screen.getAllByText('Cloud').length).toBeGreaterThan(0))
+    await waitFor(() => expect(screen.getAllByText('Hub').length).toBeGreaterThan(0))
 
     stored = JSON.parse(storage.getItem('termx.app.machines.v1') ?? '[]') as Array<Record<string, unknown>>
     expect(stored[0]).toMatchObject({
       machineId: 'device-1',
-      source: 'cloud',
-      preferredPath: 'managed',
+      source: 'hub',
+      preferredPath: 'hub',
       addresses: {
         local: ['http://127.0.0.1:18888'],
         lan: ['http://192.168.1.20:18888'],
@@ -720,7 +724,7 @@ describe('RemoteControlApp', () => {
       hostname: 'redmibook',
       state: 'online',
       terminalCount: 0,
-      source: 'cloud',
+      source: 'hub',
       addresses: {
         local: [],
         lan: [],
@@ -738,7 +742,7 @@ describe('RemoteControlApp', () => {
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={fakeManagedRtcSessionFactory}
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
         networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
         storage={storage}
       />,
@@ -769,8 +773,8 @@ describe('RemoteControlApp', () => {
       hostname: 'redmibook',
       state: 'online',
       terminalCount: 0,
-      source: 'cloud',
-      preferredPath: 'managed',
+      source: 'hub',
+      preferredPath: 'hub',
       addresses: {
         local: ['http://127.0.0.1:18888'],
         lan: ['http://192.168.1.20:18888'],
@@ -784,13 +788,13 @@ describe('RemoteControlApp', () => {
       updatedAt: '2026-05-05T10:00:00.000Z',
     }]))
     const fetch = new SignedInLocalFirstFetch()
-    const sessions: Array<ReturnType<typeof managedTestRtcSession>> = []
+    const sessions: Array<ReturnType<typeof hubTestRtcSession>> = []
 
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={({ machineId }) => {
-          const session = managedTestRtcSession(machineId)
+        hubRtcSessionFactory={({ machineId }) => {
+          const session = hubTestRtcSession(machineId)
           sessions.push(session)
           return session
         }}
@@ -824,8 +828,8 @@ describe('RemoteControlApp', () => {
       hostname: 'redmibook',
       state: 'online',
       terminalCount: 0,
-      source: 'cloud',
-      preferredPath: 'managed',
+      source: 'hub',
+      preferredPath: 'hub',
       addresses: {
         local: ['http://127.0.0.1:18888'],
         lan: ['http://192.168.1.20:18888'],
@@ -839,13 +843,13 @@ describe('RemoteControlApp', () => {
       updatedAt: '2026-05-05T10:00:00.000Z',
     }]))
     const fetch = new SignedInPublicLocalFallbackFetch()
-    const sessions: Array<ReturnType<typeof managedTestRtcSession>> = []
+    const sessions: Array<ReturnType<typeof hubTestRtcSession>> = []
 
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={({ machineId }) => {
-          const session = managedTestRtcSession(machineId)
+        hubRtcSessionFactory={({ machineId }) => {
+          const session = hubTestRtcSession(machineId)
           sessions.push(session)
           return session
         }}
@@ -870,7 +874,7 @@ describe('RemoteControlApp', () => {
     expect(sessions.some((session) => session.lastPath() === 'local')).toBe(true)
   })
 
-  it('opens local machines by racing all local endpoints without managed cloud fallback', async () => {
+  it('opens local machines by racing all local endpoints without hub hub fallback', async () => {
     const storage = new MemoryStorage()
     createMachineStore({ storage }).saveFromPairingPayload(parsePairingPayload(JSON.stringify(pairPayload({
       machineId: 'device-1',
@@ -884,13 +888,13 @@ describe('RemoteControlApp', () => {
     }))))
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
     const fetch = new LocalRuntimeFetch()
-    const sessions: Array<ReturnType<typeof managedTestRtcSession>> = []
+    const sessions: Array<ReturnType<typeof hubTestRtcSession>> = []
 
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={({ machineId }) => {
-          const session = managedTestRtcSession(machineId)
+        hubRtcSessionFactory={({ machineId }) => {
+          const session = hubTestRtcSession(machineId)
           sessions.push(session)
           return session
         }}
@@ -978,7 +982,7 @@ describe('RemoteControlApp', () => {
     expect(dispose).not.toHaveBeenCalled()
   })
 
-  it('keeps the default managed WebRTC session alive when returning to the machine list', async () => {
+  it('keeps the default hub WebRTC session alive when returning to the machine list', async () => {
     const storage = new MemoryStorage()
     createMachineStore({ storage }).saveFromPairingPayload(parsePairingPayload(JSON.stringify(pairPayload({
       machineId: 'device-1',
@@ -988,13 +992,13 @@ describe('RemoteControlApp', () => {
     }))))
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
     const fetch = new ManagedRuntimeFetch()
-    const sessions: Array<ReturnType<typeof managedTestRtcSession>> = []
+    const sessions: Array<ReturnType<typeof hubTestRtcSession>> = []
 
     render(
       <RemoteControlApp
         defaultControlUrl="http://114.66.58.243:12306"
-        managedRtcSessionFactory={({ machineId }) => {
-          const session = managedTestRtcSession(machineId)
+        hubRtcSessionFactory={({ machineId }) => {
+          const session = hubTestRtcSession(machineId)
           sessions.push(session)
           return session
         }}
@@ -1097,7 +1101,7 @@ function fakeRtcSession(): RtcSession {
     },
     async getConnectionInfo() {
       return {
-        path: 'managed',
+        path: 'hub',
         connectionId: 'test-session',
         machineId: 'device-1',
         relayInUse: false,
@@ -1119,7 +1123,7 @@ function fakeRtcSession(): RtcSession {
 
 let nextFakeManagedSessionId = 0
 
-const fakeManagedRtcSessionFactory = (target?: { machineId?: string | undefined }) => ({
+const fakeHubRtcSessionFactory = (target?: { machineId?: string | undefined }) => ({
   async createOffer() {
     nextFakeManagedSessionId += 1
     return {
@@ -1157,7 +1161,7 @@ const fakeManagedRtcSessionFactory = (target?: { machineId?: string | undefined 
   },
   async getConnectionInfo() {
     return {
-      path: 'managed' as const,
+      path: 'hub' as const,
       connectionId: 'test-session',
       machineId: target?.machineId ?? 'device-1',
       relayInUse: false,
@@ -1179,7 +1183,7 @@ const fakeManagedRtcSessionFactory = (target?: { machineId?: string | undefined 
   acceptAnswer(): Promise<void>
 }
 
-function managedTestRtcSession(machineId: string) {
+function hubTestRtcSession(machineId: string) {
   let path: RtcSessionNegotiationTarget['path'] | undefined
   let connectionId = ''
   const connectionStateHandlers = new Set<(snapshot: RtcConnectionStateSnapshot) => void>()
@@ -1188,7 +1192,7 @@ function managedTestRtcSession(machineId: string) {
     async createOffer(input: RtcSessionNegotiationTarget) {
       path = input.path
       nextFakeManagedSessionId += 1
-      connectionId = `rtc-managed-test-${nextFakeManagedSessionId}`
+      connectionId = `rtc-hub-test-${nextFakeManagedSessionId}`
       return {
         sessionId: connectionId,
         description: { type: 'offer' as const, sdp: `offer-sdp-${nextFakeManagedSessionId}` },
@@ -1199,7 +1203,7 @@ function managedTestRtcSession(machineId: string) {
         handler({
           machineId,
           phase: 'connected',
-          path: 'managed',
+          path: 'hub',
           statusText: 'Connected',
           relayInUse: false,
         })
@@ -1250,8 +1254,8 @@ function managedTestRtcSession(machineId: string) {
     },
     async getConnectionInfo() {
       return {
-        path: path ?? 'managed',
-        connectionId: connectionId || 'rtc-managed-test',
+        path: path ?? 'hub',
+        connectionId: connectionId || 'rtc-hub-test',
         machineId,
         relayInUse: false,
       }
@@ -1341,7 +1345,7 @@ class WebControlHubFallbackFetch {
           hostname: 'redmibook',
           online: true,
           paired: true,
-          source: 'cloud',
+          source: 'hub',
           control_url: 'http://114.66.58.243:12306',
           current_hub_url: 'https://hub-2.termx.test',
           hub_urls: ['https://hub-1.termx.test', 'https://hub-2.termx.test'],
@@ -1351,7 +1355,7 @@ class WebControlHubFallbackFetch {
     }
     if (url === 'https://hub-1.termx.test/api/v1/sessions/ice') {
       return jsonResponse(200, {
-        path: 'managed',
+        path: 'hub',
         machine_id: 'device-1',
         ice_servers: [],
         relay_policy: { allow_relay: true, allow_relay_transfer: false },
@@ -1371,7 +1375,7 @@ class WebControlHubFallbackFetch {
         terminal_id?: string | undefined
       }
       return jsonResponse(200, {
-        path: 'managed',
+        path: 'hub',
         machine_id: request.machine_id,
         ...(request.terminal_id ? { terminal_id: request.terminal_id } : {}),
         ice_servers: [],
@@ -1386,7 +1390,7 @@ class WebControlHubFallbackFetch {
       }
       return jsonResponse(200, {
         session_id: request.offer.session_id,
-        path: 'managed',
+        path: 'hub',
         machine_id: request.machine_id,
         ...(request.terminal_id ? { terminal_id: request.terminal_id } : {}),
         answer: { sdp: 'answer-sdp', ice_candidates: [] },
@@ -1428,7 +1432,7 @@ class SignedInLocalFirstFetch {
           hostname: 'redmibook',
           online: true,
           paired: true,
-          source: 'cloud',
+          source: 'hub',
           control_url: 'http://114.66.58.243:12306',
           current_hub_url: 'https://hub-1.termx.test',
           hub_urls: ['https://hub-1.termx.test'],
@@ -1441,7 +1445,7 @@ class SignedInLocalFirstFetch {
     }
     if (url === 'http://192.168.1.20:18888/api/v1/sessions/ice') {
       return jsonResponse(200, {
-        path: 'managed',
+        path: 'hub',
         machine_id: 'device-1',
         ice_servers: [],
         relay_policy: { allow_relay: false, allow_relay_transfer: false },
@@ -1454,7 +1458,7 @@ class SignedInLocalFirstFetch {
       }
       return jsonResponse(200, {
         session_id: request.offer.session_id,
-        path: 'managed',
+        path: 'hub',
         machine_id: request.machine_id,
         answer: { type: 'answer', sdp: 'answer-sdp' },
         ice_candidates: [],
@@ -1496,7 +1500,7 @@ class SignedInPublicLocalFallbackFetch {
           hostname: 'redmibook',
           online: true,
           paired: true,
-          source: 'cloud',
+          source: 'hub',
           control_url: 'http://114.66.58.243:12306',
           current_hub_url: 'https://hub-1.termx.test',
           hub_urls: ['https://hub-1.termx.test'],
@@ -1512,7 +1516,7 @@ class SignedInPublicLocalFallbackFetch {
     }
     if (url === 'https://frp.termx.test/api/v1/sessions/ice') {
       return jsonResponse(200, {
-        path: 'managed',
+        path: 'hub',
         machine_id: 'device-1',
         ice_servers: [],
         relay_policy: { allow_relay: false, allow_relay_transfer: false },
@@ -1525,7 +1529,7 @@ class SignedInPublicLocalFallbackFetch {
       }
       return jsonResponse(200, {
         session_id: request.offer.session_id,
-        path: 'managed',
+        path: 'hub',
         machine_id: request.machine_id,
         answer: { type: 'answer', sdp: 'answer-sdp' },
         ice_candidates: [],
@@ -1552,7 +1556,7 @@ class ManagedRuntimeFetch {
     })
     if (url === 'https://hub-1.termx.test/api/v1/sessions/ice') {
       return jsonResponse(200, {
-        path: 'managed',
+        path: 'hub',
         machine_id: 'device-1',
         ice_servers: [],
         relay_policy: { allow_relay: true, allow_relay_transfer: false },
@@ -1565,7 +1569,7 @@ class ManagedRuntimeFetch {
       }
       return jsonResponse(200, {
         session_id: request.offer.session_id,
-        path: 'managed',
+        path: 'hub',
         machine_id: request.machine_id,
         answer: { type: 'answer', sdp: 'answer-sdp' },
         ice_candidates: [],
@@ -1595,7 +1599,7 @@ class LocalRuntimeFetch {
     }
     if (url === 'http://192.168.1.20:18888/api/v1/sessions/ice') {
       return jsonResponse(200, {
-        path: 'managed',
+        path: 'hub',
         machine_id: 'device-1',
         ice_servers: [],
         relay_policy: { allow_relay: false, allow_relay_transfer: false },
@@ -1608,7 +1612,7 @@ class LocalRuntimeFetch {
       }
       return jsonResponse(200, {
         session_id: request.offer.session_id,
-        path: 'managed',
+        path: 'hub',
         machine_id: request.machine_id,
         answer: { type: 'answer', sdp: 'answer-sdp' },
         ice_candidates: [],
@@ -1674,13 +1678,13 @@ function recordHeaders(headers: HeadersInit | undefined): Record<string, string>
 function pairPayload({
   machineId,
   name,
-  schemaVersion = 3,
+  schemaVersion = 4,
   addresses,
   endpoints,
 }: {
   machineId: string
   name: string
-  schemaVersion?: 3 | undefined
+  schemaVersion?: 4 | undefined
   addresses?: {
     local?: string[] | undefined
     lan?: string[] | undefined
@@ -1698,20 +1702,25 @@ function pairPayload({
       name,
       hostname: 'redmibook',
     },
-    addresses: {
-      local: addresses?.local ?? ['http://127.0.0.1:18888'],
-      lan: addresses?.lan ?? [],
-      public: addresses?.public ?? ['http://114.66.58.243:8447'],
+    local: {
+      hub_urls: [
+        ...(addresses?.local ?? ['http://127.0.0.1:18888']),
+        ...(addresses?.lan ?? []),
+        ...(addresses?.public ?? ['http://114.66.58.243:8447']),
+      ],
     },
-    endpoints: endpoints ?? {
-      web_control: 'http://114.66.58.243:12306',
+    hub: {
+      hub_urls: [],
+      ...(endpoints ?? {
+        web_control: 'http://114.66.58.243:12306',
+      }),
     },
     pairing: {
       session_id: 'pair-session-1',
       secret: 'pair-secret-1',
     },
     bootstrap: {},
-    preferred_path: 'public_p2p',
+    preferred_path: 'hub',
   }
 }
 

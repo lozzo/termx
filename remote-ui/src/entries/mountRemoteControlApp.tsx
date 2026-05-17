@@ -26,7 +26,7 @@ export function mountRemoteControlApp(options: RemoteControlEntryOptions = {}): 
       >
         <RemoteControlApp
           defaultControlUrl={import.meta.env.VITE_CONTROL_URL || undefined}
-          managedRtcSessionFactory={({ machineId }) => createBrowserRtcSession({
+          hubRtcSessionFactory={({ machineId }) => createBrowserRtcSession({
             machineId,
             logger: consoleConnectionLogger,
           })}

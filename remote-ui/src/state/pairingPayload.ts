@@ -1,10 +1,10 @@
 import type { ConnectionPath } from '../core/transport'
 
 export interface PairingPayload {
-  schemaVersion: 3
+  schemaVersion: 4
   machine: PairingPayloadMachine
-  addresses: PairingPayloadAddresses
-  endpoints: PairingPayloadEndpoints
+  local: PairingPayloadLocal
+  hub: PairingPayloadHub
   pairing: PairingPayloadPairing
   bootstrap: PairingPayloadBootstrap
   preferredPath: ConnectionPath
@@ -16,15 +16,13 @@ export interface PairingPayloadMachine {
   hostname?: string | undefined
 }
 
-export interface PairingPayloadAddresses {
-  local: string[]
-  lan: string[]
-  public: string[]
+export interface PairingPayloadLocal {
+  hubUrls: string[]
 }
 
-export interface PairingPayloadEndpoints {
+export interface PairingPayloadHub {
+  hubUrls: string[]
   webControl?: string | undefined
-  hub?: string | undefined
 }
 
 export interface PairingPayloadPairing {
@@ -37,7 +35,7 @@ export interface PairingPayloadPairing {
 export interface PairingPayloadBootstrap {
 }
 
-const allowedPaths: readonly ConnectionPath[] = ['local', 'public_p2p', 'managed']
+const allowedPaths: readonly ConnectionPath[] = ['local', 'hub']
 
 export function parsePairingPayload(input: string): PairingPayload {
   const raw = parsePairingInput(input)
@@ -48,10 +46,10 @@ export function parsePairingPayload(input: string): PairingPayload {
     throw new Error(`unsupported pairing payload type ${type}`)
   }
   const version = numberField(data, 'schema_version')
-  if (version !== 3) {
+  if (version !== 4) {
     throw new Error(`unsupported pairing payload schema_version ${version}`)
   }
-  return normalizeV3Payload(data)
+  return normalizeV4Payload(data)
 }
 
 function parsePairingInput(input: string): unknown {
@@ -73,24 +71,25 @@ function parsePairingInput(input: string): unknown {
   return JSON.parse(decodeBase64url(encoded))
 }
 
-function normalizeV3Payload(data: Record<string, unknown>): PairingPayload {
+function normalizeV4Payload(data: Record<string, unknown>): PairingPayload {
   const machine = record(data.machine, 'pairing payload machine')
-  const addresses = optionalRecord(data.addresses)
-  const endpoints = optionalRecord(data.endpoints)
+  const local = optionalRecord(data.local)
+  const hub = optionalRecord(data.hub)
   const pairing = record(data.pairing, 'pairing payload pairing')
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     machine: {
       id: stringField(machine, 'id'),
       name: stringField(machine, 'name'),
       ...(optionalString(machine.hostname) ? { hostname: optionalString(machine.hostname) } : {}),
     },
-    addresses: {
-      local: stringArrayField(addresses, 'local'),
-      lan: stringArrayField(addresses, 'lan'),
-      public: stringArrayField(addresses, 'public'),
+    local: {
+      hubUrls: stringArrayField(local, 'hub_urls'),
     },
-    endpoints: endpointsFromRecord(endpoints),
+    hub: {
+      hubUrls: stringArrayField(hub, 'hub_urls'),
+      ...(optionalString(hub.web_control) ? { webControl: optionalString(hub.web_control) } : {}),
+    },
     pairing: {
       sessionId: stringField(pairing, 'session_id'),
       secret: stringField(pairing, 'secret'),
@@ -99,13 +98,6 @@ function normalizeV3Payload(data: Record<string, unknown>): PairingPayload {
     },
     bootstrap: {},
     preferredPath: connectionPath(optionalString(data.preferred_path) ?? 'local'),
-  }
-}
-
-function endpointsFromRecord(data: Record<string, unknown>): PairingPayloadEndpoints {
-  return {
-    ...(optionalString(data.web_control) ? { webControl: optionalString(data.web_control) } : {}),
-    ...(optionalString(data.hub) ? { hub: optionalString(data.hub) } : {}),
   }
 }
 

@@ -1,8 +1,8 @@
 import type { Machine, Terminal } from './model'
 
-export type ConnectionPath = 'local' | 'public_p2p' | 'managed'
+export type ConnectionPath = 'local' | 'hub'
 
-export const CONNECTION_PATHS = ['local', 'public_p2p', 'managed'] as const satisfies readonly ConnectionPath[]
+export const CONNECTION_PATHS = ['local', 'hub'] as const satisfies readonly ConnectionPath[]
 
 export type RemoteRuntimeFetch = (input: string, init?: RequestInit) => Promise<Response>
 

@@ -1,20 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBrowserRemoteNetworkRuntime } from '../connection/browserNetworkRuntime'
 import {
-  createManagedHubApi,
-  type ManagedHubFetch,
-} from './managedHubApi'
-import source from './managedHubApi.ts?raw'
+  createHubApi,
+  type HubFetch,
+} from './hubApi'
+import source from './hubApi.ts?raw'
 
-describe('ManagedHubApi', () => {
+describe('HubApi', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('fetches ICE servers before creating a managed WebRTC offer', async () => {
+  it('fetches ICE servers before creating a hub WebRTC offer', async () => {
     const fetch = new RecordingFetch([
       jsonResponse(200, {
-        path: 'cloud',
+        path: 'hub',
         machine_id: 'machine-1',
         terminal_id: 'terminal-1',
         ice_servers: [
@@ -27,7 +27,7 @@ describe('ManagedHubApi', () => {
         },
       }),
     ])
-    const api = createManagedHubApi({
+    const api = createHubApi({
       baseUrl: 'https://hub.termx.test/root/',
       accessToken: 'hub-access-token',
       fetch: fetch.fetch,
@@ -38,7 +38,7 @@ describe('ManagedHubApi', () => {
       terminalId: 'terminal-1',
       sessionToken: 'session-token-1',
     })).resolves.toEqual({
-      path: 'managed',
+      path: 'hub',
       machineId: 'machine-1',
       terminalId: 'terminal-1',
       iceServers: [
@@ -77,7 +77,7 @@ describe('ManagedHubApi', () => {
         },
       }),
       jsonResponse(200, {
-        session_id: 'rtc-managed-1',
+        session_id: 'rtc-hub-1',
         path: 'local',
         machine_id: 'machine-1',
         answer: {
@@ -92,7 +92,7 @@ describe('ManagedHubApi', () => {
         relay_in_use: false,
       }),
     ])
-    const api = createManagedHubApi({
+    const api = createHubApi({
       baseUrl: 'http://127.0.0.1:18888',
       fetch: fetch.fetch,
     })
@@ -109,17 +109,17 @@ describe('ManagedHubApi', () => {
       },
     })
     await expect(api.createSession(validSessionInput())).resolves.toMatchObject({
-      sessionId: 'rtc-managed-1',
+      sessionId: 'rtc-hub-1',
       path: 'local',
       relayInUse: false,
     })
   })
 
-  it('submits a managed WebRTC offer to the Hub session endpoint and returns the answer', async () => {
+  it('submits a hub WebRTC offer to the Hub session endpoint and returns the answer', async () => {
     const fetch = new RecordingFetch([
       jsonResponse(200, {
-        session_id: 'rtc-managed-1',
-        path: 'managed',
+        session_id: 'rtc-hub-1',
+        path: 'hub',
         machine_id: 'machine-1',
         terminal_id: 'terminal-1',
         answer: {
@@ -137,7 +137,7 @@ describe('ManagedHubApi', () => {
         relay_in_use: true,
       }),
     ])
-    const api = createManagedHubApi({
+    const api = createHubApi({
       baseUrl: 'https://hub.termx.test/root/',
       accessToken: 'hub-access-token',
       fetch: fetch.fetch,
@@ -148,15 +148,15 @@ describe('ManagedHubApi', () => {
       terminalId: 'terminal-1',
       sessionToken: 'session-token-1',
       offer: {
-        sessionId: 'rtc-managed-1',
+        sessionId: 'rtc-hub-1',
         sdp: 'offer-sdp',
         iceCandidates: ['candidate:offer 1 udp 1 192.0.2.1 1 typ host'],
       },
     })
 
     expect(session).toEqual({
-      sessionId: 'rtc-managed-1',
-      path: 'managed',
+      sessionId: 'rtc-hub-1',
+      path: 'hub',
       machineId: 'machine-1',
       terminalId: 'terminal-1',
       answer: {
@@ -186,7 +186,7 @@ describe('ManagedHubApi', () => {
         terminal_id: 'terminal-1',
         session_token: 'session-token-1',
         offer: {
-          session_id: 'rtc-managed-1',
+          session_id: 'rtc-hub-1',
           sdp: 'offer-sdp',
           ice_candidates: ['candidate:offer 1 udp 1 192.0.2.1 1 typ host'],
         },
@@ -197,14 +197,14 @@ describe('ManagedHubApi', () => {
   it('preserves offer SDP exactly while sending the session token separately', async () => {
     const fetch = new RecordingFetch([
       jsonResponse(202, {
-        session_id: 'rtc-managed-1',
-        path: 'cloud',
+        session_id: 'rtc-hub-1',
+        path: 'hub',
         machine_id: 'machine-1',
         pending: true,
         relay_policy: { allow_relay: false, allow_relay_transfer: false },
       }),
     ])
-    const api = createManagedHubApi({
+    const api = createHubApi({
       baseUrl: 'https://hub.termx.test',
       fetch: fetch.fetch,
     })
@@ -214,7 +214,7 @@ describe('ManagedHubApi', () => {
       machineId: 'machine-1',
       sessionToken: 'session-token-1',
       offer: {
-        sessionId: 'rtc-managed-1',
+        sessionId: 'rtc-hub-1',
         sdp: signedSDP,
         iceCandidates: [],
       },
@@ -231,32 +231,32 @@ describe('ManagedHubApi', () => {
   it('fails closed when Hub returns relay as a client path', async () => {
     const fetch = new RecordingFetch([
       jsonResponse(200, {
-        session_id: 'rtc-managed-1',
+        session_id: 'rtc-hub-1',
         path: 'relay',
         machine_id: 'machine-1',
         answer: { sdp: 'answer-sdp' },
       }),
     ])
-    const api = createManagedHubApi({
+    const api = createHubApi({
       baseUrl: 'https://hub.termx.test',
       fetch: fetch.fetch,
     })
 
-    await expect(api.createSession(validSessionInput())).rejects.toThrow(/path.*managed.*cloud.*local/i)
+    await expect(api.createSession(validSessionInput())).rejects.toThrow(/path.*hub.*local/i)
   })
 
   it('returns a recoverable pending result when Hub accepted the offer but answer is not ready', async () => {
     const fetch = new RecordingFetch([
       jsonResponse(202, {
-        session_id: 'rtc-managed-1',
-        path: 'managed',
+        session_id: 'rtc-hub-1',
+        path: 'hub',
         machine_id: 'machine-1',
         terminal_id: 'terminal-1',
         pending: true,
       }),
       jsonResponse(200, {
-        session_id: 'rtc-managed-1',
-        path: 'managed',
+        session_id: 'rtc-hub-1',
+        path: 'hub',
         machine_id: 'machine-1',
         terminal_id: 'terminal-1',
         answer: {
@@ -270,24 +270,24 @@ describe('ManagedHubApi', () => {
         relay_in_use: false,
       }),
     ])
-    const api = createManagedHubApi({
+    const api = createHubApi({
       baseUrl: 'https://hub.termx.test',
       fetch: fetch.fetch,
     })
 
     await expect(api.createSession(validSessionInput())).resolves.toEqual({
-      sessionId: 'rtc-managed-1',
-      path: 'managed',
+      sessionId: 'rtc-hub-1',
+      path: 'hub',
       machineId: 'machine-1',
       terminalId: 'terminal-1',
       pending: true,
     })
     await expect(api.pollSessionAnswer({
-      sessionId: 'rtc-managed-1',
+      sessionId: 'rtc-hub-1',
       machineId: 'machine-1',
     })).resolves.toMatchObject({
-      sessionId: 'rtc-managed-1',
-      path: 'managed',
+      sessionId: 'rtc-hub-1',
+      path: 'hub',
       machineId: 'machine-1',
       answer: { type: 'answer', sdp: 'answer-after-pending' },
       relayPolicy: { allowRelay: false, allowRelayTransfer: false },
@@ -295,18 +295,18 @@ describe('ManagedHubApi', () => {
     })
     expect(fetch.requests[1]).toMatchObject({
       method: 'POST',
-      url: 'https://hub.termx.test/api/v1/sessions/rtc-managed-1/answer',
+      url: 'https://hub.termx.test/api/v1/sessions/rtc-hub-1/answer',
       body: {
         machine_id: 'machine-1',
       },
     })
   })
 
-  it('accepts cloud path and empty terminal id for machine-scoped runtime API sessions', async () => {
+  it('accepts hub path and empty terminal id for machine-scoped runtime API sessions', async () => {
     const fetch = new RecordingFetch([
       jsonResponse(200, {
-        session_id: 'rtc-managed-list-1',
-        path: 'cloud',
+        session_id: 'rtc-hub-list-1',
+        path: 'hub',
         machine_id: 'machine-1',
         answer: {
           sdp: 'machine-answer-sdp',
@@ -319,7 +319,7 @@ describe('ManagedHubApi', () => {
         relay_in_use: false,
       }),
     ])
-    const api = createManagedHubApi({
+    const api = createHubApi({
       baseUrl: 'https://hub.termx.test',
       fetch: fetch.fetch,
     })
@@ -328,13 +328,13 @@ describe('ManagedHubApi', () => {
       ...validSessionInput(),
       terminalId: '',
       offer: {
-        sessionId: 'rtc-managed-list-1',
+        sessionId: 'rtc-hub-list-1',
         sdp: 'offer-sdp',
         iceCandidates: [],
       },
     })).resolves.toMatchObject({
-      sessionId: 'rtc-managed-list-1',
-      path: 'managed',
+      sessionId: 'rtc-hub-list-1',
+      path: 'hub',
       machineId: 'machine-1',
       answer: {
         type: 'answer',
@@ -349,7 +349,7 @@ describe('ManagedHubApi', () => {
 
   it('requires a session token before making a Hub request', async () => {
     const fetch = new RecordingFetch([])
-    const api = createManagedHubApi({
+    const api = createHubApi({
       baseUrl: 'https://hub.termx.test',
       fetch: fetch.fetch,
     })
@@ -365,29 +365,29 @@ describe('ManagedHubApi', () => {
     const fetch = new RecordingFetch([
       jsonResponse(403, {
         error: {
-          code: 'managed_session_rejected',
-          message: 'managed session expired',
+          code: 'hub_session_rejected',
+          message: 'hub session expired',
         },
       }),
     ])
-    const api = createManagedHubApi({
+    const api = createHubApi({
       baseUrl: 'https://hub.termx.test',
       fetch: fetch.fetch,
     })
 
-    await expect(api.createSession(validSessionInput())).rejects.toThrow(/managed_session_rejected.*expired/i)
+    await expect(api.createSession(validSessionInput())).rejects.toThrow(/hub_session_rejected.*expired/i)
   })
 
   it('translates browser fetch failures into actionable Hub reachability errors', async () => {
-    const fetch: ManagedHubFetch = async () => {
+    const fetch: HubFetch = async () => {
       throw new TypeError('Failed to fetch')
     }
-    const api = createManagedHubApi({
+    const api = createHubApi({
       baseUrl: 'https://hub.termx.test',
       fetch,
     })
 
-    await expect(api.createSession(validSessionInput())).rejects.toThrow(/Cannot reach Managed Hub at https:\/\/hub\.termx\.test.*CORS/i)
+    await expect(api.createSession(validSessionInput())).rejects.toThrow(/Cannot reach Hub at https:\/\/hub\.termx\.test.*CORS/i)
     await expect(api.createSession(validSessionInput())).rejects.not.toThrow(/^Failed to fetch$/)
   })
 
@@ -401,7 +401,7 @@ describe('ManagedHubApi', () => {
         expires_at: '2027-05-04T10:30:00Z',
       }),
     ])
-    const api = createManagedHubApi({
+    const api = createHubApi({
       baseUrl: 'https://hub.termx.test',
       fetch: fetch.fetch,
     })
@@ -446,7 +446,7 @@ describe('ManagedHubApi', () => {
         expires_at: '2027-05-04T10:30:00Z',
       }),
     ])
-    const api = createManagedHubApi({
+    const api = createHubApi({
       baseUrl: 'http://127.0.0.1:18888/api/v1/pairing/claims',
       fetch: fetch.fetch,
     })
@@ -471,7 +471,7 @@ describe('ManagedHubApi', () => {
         pending: true,
       }),
     ])
-    const api = createManagedHubApi({
+    const api = createHubApi({
       baseUrl: 'https://hub.termx.test',
       fetch: fetch.fetch,
     })
@@ -494,8 +494,8 @@ describe('ManagedHubApi', () => {
         throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation")
       }
       return Promise.resolve(jsonResponse(202, {
-        session_id: 'rtc-managed-1',
-        path: 'managed',
+        session_id: 'rtc-hub-1',
+        path: 'hub',
         machine_id: 'machine-1',
         terminal_id: 'terminal-1',
         pending: true,
@@ -503,10 +503,10 @@ describe('ManagedHubApi', () => {
     }
     vi.stubGlobal('fetch', boundFetch)
     const runtime = createBrowserRemoteNetworkRuntime()
-    const api = createManagedHubApi({ baseUrl: 'https://hub.termx.test', fetch: runtime.fetch })
+    const api = createHubApi({ baseUrl: 'https://hub.termx.test', fetch: runtime.fetch })
 
     await expect(api.createSession(validSessionInput())).resolves.toMatchObject({
-      sessionId: 'rtc-managed-1',
+      sessionId: 'rtc-hub-1',
       pending: true,
     })
     expect(calls).toEqual([{
@@ -515,7 +515,7 @@ describe('ManagedHubApi', () => {
     }])
   })
 
-  it('keeps managed Hub API as signaling/control, not runtime transport', () => {
+  it('keeps hub Hub API as signaling/control, not runtime transport', () => {
     expect(source).not.toMatch(/RTCPeerConnection|RTCDataChannel|WebSocket/)
     expect(source).not.toMatch(/openTerminal\(|openApi\(|openFileTransfer\(|subscribeEvents\(/)
     expect(source).not.toMatch(/paid_relay|anonymous_p2p|managed_p2p|relayTransport|path:\s*['"]relay['"]/)
@@ -528,7 +528,7 @@ function validSessionInput() {
     terminalId: 'terminal-1',
     sessionToken: 'session-token-1',
     offer: {
-      sessionId: 'rtc-managed-1',
+      sessionId: 'rtc-hub-1',
       sdp: 'offer-sdp',
       iceCandidates: [],
     },
@@ -550,7 +550,7 @@ class RecordingFetch {
     this.responses = [...responses]
   }
 
-  readonly fetch: ManagedHubFetch = async (input, init = {}) => {
+  readonly fetch: HubFetch = async (input, init = {}) => {
     const headers = lowerHeaders(init.headers)
     this.requests.push({
       url: String(input),

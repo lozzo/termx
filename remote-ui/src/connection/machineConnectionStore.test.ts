@@ -167,7 +167,7 @@ describe('MachineConnectionStore', () => {
 
     expect(states.some((state) => state.phase === 'connecting' && state.relayInUse)).toBe(true)
     session.connectionInfoDelay.resolve({
-      path: 'managed',
+      path: 'hub',
       connectionId: 'conn-machine-1',
       machineId: 'machine-1',
       relayInUse: true,
@@ -364,7 +364,7 @@ class StoreTestSession implements RtcSession {
   async getConnectionInfo(): Promise<ConnectionInfo> {
     if (this.connectionInfoDelay) return this.connectionInfoDelay.promise
     return {
-      path: 'managed',
+      path: 'hub',
       connectionId: `conn-${this.machineId}`,
       machineId: this.machineId,
       relayInUse: false,

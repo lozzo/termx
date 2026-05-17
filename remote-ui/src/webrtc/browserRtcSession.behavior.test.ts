@@ -107,10 +107,10 @@ describe('BrowserRtcSession', () => {
       sessionIdGenerator: () => 'rtc-p2p-1',
     })
 
-    await session.createOffer({ machineId: 'machine-remote', terminalId: 'terminal-1', path: 'public_p2p' })
+    await session.createOffer({ machineId: 'machine-remote', terminalId: 'terminal-1', path: 'hub' })
 
     await expect(session.getConnectionInfo()).resolves.toMatchObject({
-      path: 'public_p2p',
+      path: 'hub',
       connectionId: 'rtc-p2p-1',
     })
   })
@@ -193,13 +193,13 @@ describe('BrowserRtcSession', () => {
       peerConnectionFactory: factory,
     })
 
-    const offer = await session.createOffer({ machineId: 'machine-remote', terminalId: 'terminal-1', path: 'managed' })
+    const offer = await session.createOffer({ machineId: 'machine-remote', terminalId: 'terminal-1', path: 'hub' })
 
     expect(offer.sessionId).toMatch(/^rtc_/)
     expect(offer.sessionId).not.toContain('undefined')
     await expect(session.getConnectionInfo()).resolves.toMatchObject({
       connectionId: offer.sessionId,
-      path: 'managed',
+      path: 'hub',
     })
   })
 
@@ -215,7 +215,7 @@ describe('BrowserRtcSession', () => {
     await session.createOffer({
       machineId: 'machine-remote',
       terminalId: 'terminal-1',
-      path: 'public_p2p',
+      path: 'hub',
       iceServers: [{ urls: ['stun:one.example:3478'] }],
     })
 
@@ -230,28 +230,28 @@ describe('BrowserRtcSession', () => {
     const session = createBrowserRtcSession({
       machineId: 'machine-remote',
       terminalId: 'terminal-1',
-      path: 'managed',
+      path: 'hub',
       peerConnectionFactory: factory,
-      sessionIdGenerator: () => 'rtc-managed-logs',
+      sessionIdGenerator: () => 'rtc-hub-logs',
       logger: { log: (event) => logs.push(event) },
     })
 
     await session.createOffer({
       machineId: 'machine-remote',
       terminalId: 'terminal-1',
-      path: 'managed',
+      path: 'hub',
       iceServers: [{ urls: ['stun:one.example:3478'] }],
     })
     await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
     factory.lastConnection()?.setConnectionState('connected')
 
     expect(logs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ scope: 'browser_webrtc', event: 'offer_start', path: 'managed' }),
-      expect.objectContaining({ scope: 'browser_webrtc', event: 'local_offer_created', path: 'managed', sessionId: 'rtc-managed-logs' }),
-      expect.objectContaining({ scope: 'browser_webrtc', event: 'ice_gathering_complete', path: 'managed', sessionId: 'rtc-managed-logs' }),
-      expect.objectContaining({ scope: 'browser_webrtc', event: 'answer_accept_start', path: 'managed', sessionId: 'rtc-managed-logs' }),
-      expect.objectContaining({ scope: 'browser_webrtc', event: 'api_channel_open', path: 'managed', sessionId: 'rtc-managed-logs' }),
-      expect.objectContaining({ scope: 'browser_webrtc', event: 'peer_connection_state', path: 'managed', sessionId: 'rtc-managed-logs', details: { state: 'connected' } }),
+      expect.objectContaining({ scope: 'browser_webrtc', event: 'offer_start', path: 'hub' }),
+      expect.objectContaining({ scope: 'browser_webrtc', event: 'local_offer_created', path: 'hub', sessionId: 'rtc-hub-logs' }),
+      expect.objectContaining({ scope: 'browser_webrtc', event: 'ice_gathering_complete', path: 'hub', sessionId: 'rtc-hub-logs' }),
+      expect.objectContaining({ scope: 'browser_webrtc', event: 'answer_accept_start', path: 'hub', sessionId: 'rtc-hub-logs' }),
+      expect.objectContaining({ scope: 'browser_webrtc', event: 'api_channel_open', path: 'hub', sessionId: 'rtc-hub-logs' }),
+      expect.objectContaining({ scope: 'browser_webrtc', event: 'peer_connection_state', path: 'hub', sessionId: 'rtc-hub-logs', details: { state: 'connected' } }),
     ]))
   })
 
@@ -286,13 +286,13 @@ describe('BrowserRtcSession', () => {
     const factory = createMockPeerConnectionFactory()
     const session = createBrowserRtcSession({
       machineId: 'machine-local',
-      path: 'managed',
+      path: 'hub',
       peerConnectionFactory: factory,
       sessionIdGenerator: () => 'rtc-machine-1',
       heartbeatIntervalMs: 60000,
     })
 
-    await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+    await session.createOffer({ machineId: 'machine-local', path: 'hub' })
     await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
     const terminalOne = await session.openTerminal('terminal-1')
     const terminalTwo = await session.openTerminal('terminal-2')
@@ -305,7 +305,7 @@ describe('BrowserRtcSession', () => {
     expect(terminalTwo.label).toBe('terminal:terminal-2')
     expect(file.label).toBe('file:transfer-1')
     await expect(session.getConnectionInfo()).resolves.toEqual({
-      path: 'managed',
+      path: 'hub',
       connectionId: 'rtc-machine-1',
       machineId: 'machine-local',
       relayInUse: false,
@@ -325,13 +325,13 @@ describe('BrowserRtcSession', () => {
     const factory = createMockPeerConnectionFactory()
     const session = createBrowserRtcSession({
       machineId: 'machine-local',
-      path: 'managed',
+      path: 'hub',
       peerConnectionFactory: factory,
       sessionIdGenerator: () => 'rtc-machine-1',
       heartbeatIntervalMs: 60000,
     })
 
-    await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+    await session.createOffer({ machineId: 'machine-local', path: 'hub' })
     await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
     await session.openTerminal('terminal-1')
     const firstRawChannel = factory.channel('terminal:terminal-1')
@@ -348,13 +348,13 @@ describe('BrowserRtcSession', () => {
       const factory = createMockPeerConnectionFactory({ closeEventDelayMs: 25 })
       const session = createBrowserRtcSession({
         machineId: 'machine-local',
-        path: 'managed',
+        path: 'hub',
         peerConnectionFactory: factory,
         sessionIdGenerator: () => 'rtc-machine-1',
         heartbeatIntervalMs: 60000,
       })
 
-      await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+      await session.createOffer({ machineId: 'machine-local', path: 'hub' })
       await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
       const first = await session.openTerminal('terminal-1')
       const firstRawChannel = factory.channel('terminal:terminal-1')
@@ -378,13 +378,13 @@ describe('BrowserRtcSession', () => {
     const factory = createMockPeerConnectionFactory()
     const session = createBrowserRtcSession({
       machineId: 'machine-local',
-      path: 'managed',
+      path: 'hub',
       peerConnectionFactory: factory,
       sessionIdGenerator: () => 'rtc-machine-1',
       heartbeatIntervalMs: 60000,
     })
 
-    await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+    await session.createOffer({ machineId: 'machine-local', path: 'hub' })
     await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
     const first = await session.openTerminal('terminal-1')
     const firstRawChannel = factory.channel('terminal:terminal-1')
@@ -405,12 +405,12 @@ describe('BrowserRtcSession', () => {
       const factory = createMockPeerConnectionFactory()
       const session = createBrowserRtcSession({
         machineId: 'machine-local',
-        path: 'managed',
+        path: 'hub',
         peerConnectionFactory: factory,
         sessionIdGenerator: () => 'rtc-machine-1',
         heartbeatIntervalMs: 20,
       })
-      await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+      await session.createOffer({ machineId: 'machine-local', path: 'hub' })
       await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
       factory.lastConnection()?.setConnectionState('connected')
       vi.advanceTimersByTime(20)
@@ -437,14 +437,14 @@ describe('BrowserRtcSession', () => {
     const factory = createMockPeerConnectionFactory()
     const session = createBrowserRtcSession({
       machineId: 'machine-local',
-      path: 'managed',
+      path: 'hub',
       peerConnectionFactory: factory,
       sessionIdGenerator: () => 'rtc-machine-1',
     })
     const onDisconnect = vi.fn()
     session.onDisconnect(onDisconnect)
 
-    await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+    await session.createOffer({ machineId: 'machine-local', path: 'hub' })
     await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
     factory.channel('api').close()
     await flushMicrotasks()
@@ -453,17 +453,17 @@ describe('BrowserRtcSession', () => {
     expect(session.isAlive()).toBe(false)
   })
 
-  it('does not infer incoming channel ownership from managed path when the browser created the offer', async () => {
+  it('does not infer incoming channel ownership from hub path when the browser created the offer', async () => {
     const factory = createMockPeerConnectionFactory()
     const session = createBrowserRtcSession({
-      machineId: 'machine-managed',
+      machineId: 'machine-hub',
       terminalId: 'terminal-1',
       peerConnectionFactory: factory,
-      sessionIdGenerator: () => 'managed-offerer-1',
+      sessionIdGenerator: () => 'hub-offerer-1',
     })
 
-    await session.createOffer({ machineId: 'machine-managed', terminalId: 'terminal-1', path: 'managed' })
-    await session.acceptAnswer({ type: 'answer', sdp: 'managed-answer-sdp' })
+    await session.createOffer({ machineId: 'machine-hub', terminalId: 'terminal-1', path: 'hub' })
+    await session.acceptAnswer({ type: 'answer', sdp: 'hub-answer-sdp' })
     const terminal = await session.openTerminal('terminal-1')
 
     expect(terminal.label).toBe('terminal:terminal-1')
@@ -617,7 +617,7 @@ describe('BrowserRtcSession', () => {
       const logs: ConnectionLogEvent[] = []
       const session = createBrowserRtcSession({
         machineId: 'machine-local',
-        path: 'managed',
+        path: 'hub',
         peerConnectionFactory: factory,
         sessionIdGenerator: () => 'rtc-timeout-1',
         dataChannelOpenTimeoutMs: 50,
@@ -626,7 +626,7 @@ describe('BrowserRtcSession', () => {
 
       await session.createOffer({
         machineId: 'machine-local',
-        path: 'managed',
+        path: 'hub',
         iceServers: [{
           urls: ['turn:114.66.58.243:3478?transport=udp'],
           username: 'user',
@@ -723,13 +723,13 @@ describe('BrowserRtcSession', () => {
       const logs: ConnectionLogEvent[] = []
       const session = createBrowserRtcSession({
         machineId: 'machine-local',
-        path: 'managed',
+        path: 'hub',
         peerConnectionFactory: factory,
         sessionIdGenerator: () => 'rtc-slow-stats-1',
         dataChannelOpenTimeoutMs: 50,
         logger: { log: (event) => logs.push(event) },
       })
-      await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+      await session.createOffer({ machineId: 'machine-local', path: 'hub' })
       const acceptPromise = session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
       const rejection = expect(acceptPromise).rejects.toThrow(/timed out opening data channel api/)
 
@@ -761,12 +761,12 @@ describe('BrowserRtcSession', () => {
       const logs: ConnectionLogEvent[] = []
       const session = createBrowserRtcSession({
         machineId: 'machine-local',
-        path: 'managed',
+        path: 'hub',
         peerConnectionFactory: factory,
         sessionIdGenerator: () => 'rtc-disconnect-1',
         logger: { log: (event) => logs.push(event) },
       })
-      await session.createOffer({ machineId: 'machine-local', path: 'managed' })
+      await session.createOffer({ machineId: 'machine-local', path: 'hub' })
       await session.acceptAnswer({ type: 'answer', sdp: 'answer-sdp' })
 
       await session.disconnect()

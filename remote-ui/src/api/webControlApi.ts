@@ -42,7 +42,7 @@ export interface WebControlMachine {
   osInfo?: string | undefined
   online: boolean
   paired: boolean
-  source: 'cloud' | 'local'
+  source: 'hub' | 'local'
   controlUrl?: string | undefined
   hubId?: string | undefined
   currentHubUrl?: string | undefined
@@ -232,9 +232,9 @@ function userRecord(response: Record<string, unknown>): WebControlUser {
 
 function machineRecord(value: unknown): WebControlMachine {
   const response = record(value, 'Web Control machine')
-  const source = optionalStringField(response, 'source') ?? 'cloud'
-  if (source !== 'cloud') {
-    throw new Error(`Web Control machine source must be cloud, got ${source}`)
+  const source = optionalStringField(response, 'source') ?? 'hub'
+  if (source !== 'hub') {
+    throw new Error(`Web Control machine source must be hub, got ${source}`)
   }
   const currentHubUrl = currentHubUrlField(response)
   return {
@@ -244,7 +244,7 @@ function machineRecord(value: unknown): WebControlMachine {
     ...(optionalStringField(response, 'os_info') ? { osInfo: optionalStringField(response, 'os_info') } : {}),
     online: booleanField(response, 'online'),
     paired: booleanField(response, 'paired'),
-    source: 'cloud',
+    source: 'hub',
     ...(optionalStringField(response, 'control_url') ? { controlUrl: optionalStringField(response, 'control_url') } : {}),
     ...(optionalStringField(response, 'hub_id') ? { hubId: optionalStringField(response, 'hub_id') } : {}),
     ...(currentHubUrl ? { currentHubUrl } : {}),
