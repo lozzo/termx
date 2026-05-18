@@ -57,7 +57,9 @@ object LocalConnector {
             }
             coroutineContext.ensureActive()
             if (ok) { transport = null; return Result.Success(t) }
+            val reason = t.lastFailureReason ?: "connect_failed"
             t.disconnect()
+            return Result.Failure(reason)
         } catch (e: CancellationException) {
             transport?.disconnect()
             throw e

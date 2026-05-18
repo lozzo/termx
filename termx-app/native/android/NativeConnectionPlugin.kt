@@ -52,8 +52,6 @@ class NativeConnectionPlugin : Plugin() {
         val sessionToken = call.getString("sessionToken") ?: run {
             call.reject("sessionToken required"); return
         }
-        val preferredPath = call.getString("preferredPath") ?: "local"
-
         val localAddresses = call.getArray("localAddresses")?.let { arr ->
             (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }
         } ?: emptyList()
@@ -75,7 +73,6 @@ class NativeConnectionPlugin : Plugin() {
             hubUrls = hubUrls,
             sessionToken = sessionToken,
             answerProofSecret = answerProofSecret,
-            preferredPath = preferredPath,
             forceRelay = forceRelay,
         )
         call.resolve()

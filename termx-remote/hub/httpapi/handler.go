@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lozzow/termx/termx-remote/hub/cloud"
@@ -19,18 +21,25 @@ import (
 )
 
 type Config struct {
-	Cloud          *cloud.Service
-	Registry       *registry.Registry
-	ICE            *ice.Service
-	ICEServers     []hubv1.RTCIceServerConfig
-	InternalSecret string
-	Clock          Clock
-	AnswerTimeout  time.Duration
-	PollInterval   time.Duration
-	MaxBodyBytes   int64
-	KickTTL        time.Duration
-	AllowedOrigins []string
-	LocalDiscovery bool
+	Cloud            *cloud.Service
+	Registry         *registry.Registry
+	ICE              *ice.Service
+	ICEServers       []hubv1.RTCIceServerConfig
+	InternalSecret   string
+	Clock            Clock
+	AnswerTimeout    time.Duration
+	PollInterval     time.Duration
+	MaxBodyBytes     int64
+	KickTTL          time.Duration
+	AllowedOrigins   []string
+	LocalDiscovery   bool
+	PairingRateLimit PairingRateLimitConfig
+}
+
+type PairingRateLimitConfig struct {
+	Window     time.Duration
+	PerIP      int
+	PerMachine int
 }
 
 type Clock interface {
@@ -78,6 +87,79 @@ func (h *Handler) StartCleanup(ctx context.Context, ticks <-chan time.Time) {
 	}
 }
 
+type pairingRateLimiter struct {
+	mu         sync.Mutex
+	clock      Clock
+	window     time.Duration
+	perIP      int
+	perMachine int
+	buckets    map[string]rateBucket
+}
+
+type rateBucket struct {
+	count   int
+	resetAt time.Time
+}
+
+func newPairingRateLimiter(cfg PairingRateLimitConfig, clock Clock) *pairingRateLimiter {
+	window := cfg.Window
+	if window <= 0 {
+		window = time.Minute
+	}
+	perIP := cfg.PerIP
+	if perIP <= 0 {
+		perIP = 60
+	}
+	perMachine := cfg.PerMachine
+	if perMachine <= 0 {
+		perMachine = 20
+	}
+	if clock == nil {
+		clock = systemClock{}
+	}
+	return &pairingRateLimiter{
+		clock:      clock,
+		window:     window,
+		perIP:      perIP,
+		perMachine: perMachine,
+		buckets:    map[string]rateBucket{},
+	}
+}
+
+func (l *pairingRateLimiter) Allow(ip, machineID string) bool {
+	if l == nil {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.clock.Now()
+	if ip = strings.TrimSpace(ip); ip != "" {
+		if !l.allowKeyLocked(now, "ip:"+ip, l.perIP) {
+			return false
+		}
+	}
+	if machineID = strings.TrimSpace(machineID); machineID != "" {
+		if !l.allowKeyLocked(now, "machine:"+machineID, l.perMachine) {
+			return false
+		}
+	}
+	return true
+}
+
+func (l *pairingRateLimiter) allowKeyLocked(now time.Time, key string, limit int) bool {
+	bucket := l.buckets[key]
+	if bucket.resetAt.IsZero() || !now.Before(bucket.resetAt) {
+		bucket = rateBucket{resetAt: now.Add(l.window)}
+	}
+	if bucket.count >= limit {
+		l.buckets[key] = bucket
+		return false
+	}
+	bucket.count++
+	l.buckets[key] = bucket
+	return true
+}
+
 func NewHandler(cfg Config) http.Handler {
 	clock := cfg.Clock
 	if clock == nil {
@@ -91,6 +173,7 @@ func NewHandler(cfg Config) http.Handler {
 	if maxBodyBytes <= 0 {
 		maxBodyBytes = 64 * 1024
 	}
+	pairingRateLimiter := newPairingRateLimiter(cfg.PairingRateLimit, clock)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -347,18 +430,7 @@ func NewHandler(cfg Config) http.Handler {
 		writeSessionAnswer(w, r.Context(), cfg, r.PathValue("session_id"), path, answer.MachineID, terminalID, allowRelay, allowRelayTransfer, r.PathValue("session_id"), answer)
 	})
 	mux.HandleFunc("POST /api/v1/pairing/claims", func(w http.ResponseWriter, r *http.Request) {
-		if hubPairingRequiresWebControl(cfg) {
-			writeError(w, http.StatusForbidden, "web_control_required", "Hub pairing claims must be submitted through Web Control")
-			return
-		}
-		handlePairingClaim(w, r, cfg, maxBodyBytes, []string{registry.PathLocal})
-	})
-	mux.HandleFunc("POST /api/internal/pairing/claims", func(w http.ResponseWriter, r *http.Request) {
-		if !authorizedInternalRequest(r, cfg.InternalSecret) {
-			writeError(w, http.StatusForbidden, "internal_unauthorized", "valid hub secret is required")
-			return
-		}
-		handlePairingClaim(w, r, cfg, maxBodyBytes, []string{registry.PathHub})
+		handlePairingClaim(w, r, cfg, maxBodyBytes, pairingRateLimiter)
 	})
 	return &Handler{
 		router:   corsMiddleware(mux, cfg.AllowedOrigins),
@@ -368,11 +440,7 @@ func NewHandler(cfg Config) http.Handler {
 	}
 }
 
-func hubPairingRequiresWebControl(cfg Config) bool {
-	return strings.TrimSpace(cfg.InternalSecret) != "" && !cfg.LocalDiscovery
-}
-
-func handlePairingClaim(w http.ResponseWriter, r *http.Request, cfg Config, maxBodyBytes int64, allowedPaths []string) {
+func handlePairingClaim(w http.ResponseWriter, r *http.Request, cfg Config, maxBodyBytes int64, limiter *pairingRateLimiter) {
 	var req struct {
 		MachineID             string   `json:"machine_id"`
 		PairSessionID         string   `json:"pair_session_id"`
@@ -389,6 +457,10 @@ func handlePairingClaim(w http.ResponseWriter, r *http.Request, cfg Config, maxB
 		writeError(w, http.StatusServiceUnavailable, "registry_unavailable", "agent registry is not configured")
 		return
 	}
+	if limiter != nil && !limiter.Allow(clientIP(r), req.MachineID) {
+		writeError(w, http.StatusTooManyRequests, "pairing_rate_limited", "too many pairing attempts; try again later")
+		return
+	}
 	claim, err := cfg.Registry.SubmitPairingClaim(r.Context(), registry.PairingClaimInput{
 		MachineID:             req.MachineID,
 		PairSessionID:         req.PairSessionID,
@@ -396,7 +468,6 @@ func handlePairingClaim(w http.ResponseWriter, r *http.Request, cfg Config, maxB
 		AppDeviceID:           req.AppDeviceID,
 		AppName:               req.AppName,
 		RequestedCapabilities: req.RequestedCapabilities,
-		AllowedPaths:          append([]string(nil), allowedPaths...),
 	})
 	if err != nil {
 		writeError(w, http.StatusForbidden, "submit_pairing_claim_failed", err.Error())
@@ -426,6 +497,23 @@ func handlePairingClaim(w http.ResponseWriter, r *http.Request, cfg Config, maxB
 		"session_token": result.SessionToken,
 		"expires_at":    result.ExpiresAt,
 	})
+}
+
+func clientIP(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+		if comma := strings.IndexByte(forwarded, ','); comma >= 0 {
+			forwarded = forwarded[:comma]
+		}
+		return strings.TrimSpace(forwarded)
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil {
+		return host
+	}
+	return strings.TrimSpace(r.RemoteAddr)
 }
 
 func pollUntilReady[T any](ctx context.Context, timeout, interval time.Duration, fetch func(context.Context) (T, error), notFoundErr error) (T, error) {

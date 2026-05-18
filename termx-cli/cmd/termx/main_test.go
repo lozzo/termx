@@ -1044,14 +1044,14 @@ func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
 
 	var out bytes.Buffer
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"remote", "pair", "--uri", "--ttl", "2m"})
+	cmd.SetArgs([]string{"remote", "pair", "--uri", "--ttl", "2m", "--auth-ttl", "168h"})
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	if gotParams.LocalPairURL != "http://127.0.0.1:19999/api/local/pair" || gotParams.TTLSeconds != 120 {
+	if gotParams.LocalPairURL != "http://127.0.0.1:19999/api/local/pair" || gotParams.TTLSeconds != 120 || gotParams.AuthTTLSeconds != int((7*24*time.Hour).Seconds()) {
 		t.Fatalf("unexpected pair params: %#v", gotParams)
 	}
 	if !strings.HasPrefix(strings.TrimSpace(out.String()), "termx://pair?payload=") ||
@@ -1061,7 +1061,7 @@ func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
 	}
 }
 
-func TestRemotePairEmitsTermxPairURIWithHubMetadata(t *testing.T) {
+func TestRemotePairEmitsMinimalTermxPairURI(t *testing.T) {
 	oldStatus := remoteLocalStatusClient
 	oldRemoteStatus := remoteStatusClient
 	oldPair := pairStartClient
@@ -1078,14 +1078,8 @@ func TestRemotePairEmitsTermxPairURIWithHubMetadata(t *testing.T) {
 		}, nil
 	}
 	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
-		return &remoteprotocol.Status{
-			DeviceID:   "mach_test",
-			DeviceName: "MacBook Pro",
-			ControlURL: "http://114.66.58.243:12306",
-			HubURL:     "http://114.66.58.243:8447",
-			HubURLs:    []string{"http://114.66.58.243:8447", "http://114.66.58.244:8447"},
-			UpdatedAt:  time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
-		}, nil
+		t.Fatalf("remote pair must not read Hub/Web Control status for QR payload")
+		return nil, nil
 	}
 	var gotParams remoteprotocol.PairStartParams
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
@@ -1111,7 +1105,7 @@ func TestRemotePairEmitsTermxPairURIWithHubMetadata(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	if gotParams.LocalPairURL != "http://127.0.0.1:18888/api/v1/pairing/claims" || gotParams.TTLSeconds != 120 {
+	if gotParams.LocalPairURL != "http://127.0.0.1:18888/api/v1/pairing/claims" || gotParams.TTLSeconds != 120 || gotParams.AuthTTLSeconds != 0 {
 		t.Fatalf("unexpected pair params: %#v", gotParams)
 	}
 	var decoded struct {
@@ -1127,8 +1121,8 @@ func TestRemotePairEmitsTermxPairURIWithHubMetadata(t *testing.T) {
 	if decoded.Payload["schema_version"].(float64) != 4 {
 		t.Fatalf("expected schema version 4 payload, got %#v", decoded.Payload)
 	}
-	if decoded.Payload["preferred_path"] != "local" {
-		t.Fatalf("expected local preferred path, got %#v", decoded.Payload["preferred_path"])
+	if _, ok := decoded.Payload["preferred_path"]; ok {
+		t.Fatalf("QR payload must not contain preferred_path: %#v", decoded.Payload)
 	}
 	local, ok := decoded.Payload["local"].(map[string]any)
 	if !ok {
@@ -1138,16 +1132,8 @@ func TestRemotePairEmitsTermxPairURIWithHubMetadata(t *testing.T) {
 	if !ok || len(localHubURLs) != 1 || localHubURLs[0] != "http://127.0.0.1:18888" {
 		t.Fatalf("unexpected local hub urls: %#v", local["hub_urls"])
 	}
-	hub, ok := decoded.Payload["hub"].(map[string]any)
-	if !ok {
-		t.Fatalf("unexpected hub block: %#v", decoded.Payload["hub"])
-	}
-	hubURLs, ok := hub["hub_urls"].([]any)
-	if !ok || len(hubURLs) != 2 || hubURLs[0] != "http://114.66.58.243:8447" || hubURLs[1] != "http://114.66.58.244:8447" {
-		t.Fatalf("unexpected hub urls: %#v", hub["hub_urls"])
-	}
-	if hub["web_control"] != "http://114.66.58.243:12306" {
-		t.Fatalf("unexpected web control URL: %#v", hub)
+	if _, ok := decoded.Payload["hub"]; ok {
+		t.Fatalf("QR payload must not contain Hub URLs: %#v", decoded.Payload["hub"])
 	}
 	pairing, ok := decoded.Payload["pairing"].(map[string]any)
 	if !ok || pairing["session_id"] != "pair_test" || pairing["secret"] != "secret" || pairing["answer_proof_secret"] != "proof-secret" {
@@ -1170,13 +1156,8 @@ func TestRemotePairDoesNotStartLocalWebWhenLocalPairURLMissing(t *testing.T) {
 	}
 	var gotParams remoteprotocol.PairStartParams
 	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
-		return &remoteprotocol.Status{
-			DeviceID:   "mach_test",
-			DeviceName: "MacBook Pro",
-			ControlURL: "http://114.66.58.243:12306",
-			HubURL:     "http://114.66.58.243:8447",
-			UpdatedAt:  time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
-		}, nil
+		t.Fatalf("remote pair must not read Hub/Web Control status for QR payload")
+		return nil, nil
 	}
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		gotParams = params
@@ -1205,7 +1186,18 @@ func TestRemotePairDoesNotStartLocalWebWhenLocalPairURLMissing(t *testing.T) {
 	}
 }
 
-func TestRemotePairFallsBackToSingleHubURL(t *testing.T) {
+func TestRemotePairRejectsInvalidAuthTTL(t *testing.T) {
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"remote", "pair", "--uri", "--auth-ttl", "0s"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "--auth-ttl must be greater than zero") {
+		t.Fatalf("expected invalid auth ttl error, got %v", err)
+	}
+}
+
+func TestRemotePairOmitsLocalBlockWhenLocalPairURLMissing(t *testing.T) {
 	oldStatus := remoteLocalStatusClient
 	oldRemoteStatus := remoteStatusClient
 	oldPair := pairStartClient
@@ -1219,10 +1211,8 @@ func TestRemotePairFallsBackToSingleHubURL(t *testing.T) {
 		return &remoteprotocol.LocalStatus{}, nil
 	}
 	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
-		return &remoteprotocol.Status{
-			HubURL:    "https://hub-single.example.test",
-			UpdatedAt: time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
-		}, nil
+		t.Fatalf("remote pair must not read Hub/Web Control status for QR payload")
+		return nil, nil
 	}
 	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
 		return &remoteprotocol.PairStartResult{
@@ -1249,18 +1239,70 @@ func TestRemotePairFallsBackToSingleHubURL(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatalf("pair output is not JSON: %v\n%s", err, out.String())
 	}
+	if _, ok := decoded.Payload["local"]; ok {
+		t.Fatalf("hub-only QR payload must not contain local block: %#v", decoded.Payload["local"])
+	}
+	if _, ok := decoded.Payload["hub"]; ok {
+		t.Fatalf("QR payload must not contain Hub URLs: %#v", decoded.Payload["hub"])
+	}
+	if _, ok := decoded.Payload["preferred_path"]; ok {
+		t.Fatalf("QR payload must not contain preferred_path: %#v", decoded.Payload["preferred_path"])
+	}
+}
+
+func TestRemotePairDoesNotExposeRegisteredHubURLs(t *testing.T) {
+	oldStatus := remoteLocalStatusClient
+	oldRemoteStatus := remoteStatusClient
+	oldPair := pairStartClient
+	t.Cleanup(func() {
+		remoteLocalStatusClient = oldStatus
+		remoteStatusClient = oldRemoteStatus
+		pairStartClient = oldPair
+	})
+
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.LocalStatus, error) {
+		return &remoteprotocol.LocalStatus{
+			Enabled:      true,
+			LocalPairURL: "http://127.0.0.1:18888/api/v1/pairing/claims",
+		}, nil
+	}
+	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*remoteprotocol.Status, error) {
+		t.Fatalf("remote pair must not read Hub/Web Control status for QR payload")
+		return nil, nil
+	}
+	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params remoteprotocol.PairStartParams) (*remoteprotocol.PairStartResult, error) {
+		return &remoteprotocol.PairStartResult{
+			MachineID:         "mach_test",
+			LocalPairURL:      params.LocalPairURL,
+			PairSessionID:     "pair_test",
+			PairSecret:        "secret",
+			AnswerProofSecret: "proof-secret",
+			ExpiresAt:         time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"remote", "pair", "--json"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	var decoded struct {
+		Payload map[string]any `json:"payload"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatalf("pair output is not JSON: %v\n%s", err, out.String())
+	}
 	local := decoded.Payload["local"].(map[string]any)
 	localHubURLs := local["hub_urls"].([]any)
-	if len(localHubURLs) != 0 {
-		t.Fatalf("expected no local hub URLs, got %#v", localHubURLs)
+	if len(localHubURLs) != 1 || localHubURLs[0] != "http://127.0.0.1:18888" {
+		t.Fatalf("unexpected local hub URLs: %#v", localHubURLs)
 	}
-	hub := decoded.Payload["hub"].(map[string]any)
-	hubURLs := hub["hub_urls"].([]any)
-	if len(hubURLs) != 1 || hubURLs[0] != "https://hub-single.example.test" {
-		t.Fatalf("unexpected hub URLs: %#v", hubURLs)
-	}
-	if decoded.Payload["preferred_path"] != "hub" {
-		t.Fatalf("expected hub preferred path, got %#v", decoded.Payload["preferred_path"])
+	if _, ok := decoded.Payload["hub"]; ok {
+		t.Fatalf("QR payload must not contain Hub URLs: %#v", decoded.Payload["hub"])
 	}
 }
 

@@ -51,7 +51,6 @@ type ClaimRequest struct {
 	AppDeviceID           string   `json:"app_device_id"`
 	AppName               string   `json:"app_name"`
 	RequestedCapabilities []string `json:"requested_capabilities"`
-	AllowedPaths          []string `json:"allowed_paths,omitempty"`
 }
 
 type ClaimResponse struct {
@@ -127,6 +126,7 @@ func (m *Manager) CreateSession(ttl time.Duration) (Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cleanupExpiredLocked(now)
+	m.deleteUnusedSessionsForMachineLocked(session.MachineID)
 	m.sessions[session.PairSessionID] = &sessionState{session: session, cfg: cfg}
 	return session, nil
 }
@@ -182,7 +182,6 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 		MachineID:   strings.TrimSpace(cfg.MachineID),
 		AppDeviceID: strings.TrimSpace(req.AppDeviceID),
 		AppName:     strings.TrimSpace(req.AppName),
-		Paths:       normalizeTokenList(req.AllowedPaths),
 		IssuedAt:    now.Unix(),
 		ExpiresAt:   expiresAt.Unix(),
 	}
@@ -245,6 +244,23 @@ func (m *Manager) cleanupExpiredLocked(now time.Time) int {
 	return removed
 }
 
+func (m *Manager) deleteUnusedSessionsForMachineLocked(machineID string) int {
+	removed := 0
+	machineID = strings.TrimSpace(machineID)
+	for sessionID, state := range m.sessions {
+		if state == nil {
+			delete(m.sessions, sessionID)
+			removed++
+			continue
+		}
+		if !state.consumed && strings.TrimSpace(state.session.MachineID) == machineID {
+			delete(m.sessions, sessionID)
+			removed++
+		}
+	}
+	return removed
+}
+
 func nowFromConfig(cfg Config) time.Time {
 	if cfg.Now != nil {
 		if now := cfg.Now().UTC(); !now.IsZero() {
@@ -265,26 +281,6 @@ func validateConfig(cfg Config) error {
 		return errors.New("machine secret is required")
 	}
 	return nil
-}
-
-func normalizeTokenList(values []string) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	seen := make(map[string]struct{}, len(values))
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	return out
 }
 
 func randomToken(prefix string, byteLen int) (string, error) {

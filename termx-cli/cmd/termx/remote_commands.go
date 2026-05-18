@@ -190,7 +190,8 @@ func remotePairCommand(socket *string, logFile *string) *cobra.Command {
 	var uriOnly bool
 	var localURL string
 	var ttl time.Duration
-	var hubURL string
+	var authTTL time.Duration
+	var authTTLSet bool
 	cmd := &cobra.Command{
 		Use:   "pair",
 		Short: "Create a TermX remote pairing QR",
@@ -200,6 +201,13 @@ func remotePairCommand(socket *string, logFile *string) *cobra.Command {
 			}
 			if ttl <= 0 {
 				ttl = 5 * time.Minute
+			}
+			if authTTL <= 0 {
+				return fmt.Errorf("--auth-ttl must be greater than zero")
+			}
+			authTTLSeconds := 0
+			if authTTLSet {
+				authTTLSeconds = int(authTTL.Seconds())
 			}
 			localURL = strings.TrimSpace(localURL)
 			if localURL == "" {
@@ -213,19 +221,15 @@ func remotePairCommand(socket *string, logFile *string) *cobra.Command {
 					localURL = localStatus.LocalPairURL
 				}
 			}
-			remoteStatus, err := remoteStatusClient(context.Background(), *socket, *logFile)
-			if err != nil {
-				return err
-			}
 			result, err := pairStartClient(context.Background(), *socket, *logFile, remoteprotocol.PairStartParams{
-				LocalPairURL: localURL,
-				TTLSeconds:   int(ttl.Seconds()),
+				LocalPairURL:   localURL,
+				TTLSeconds:     int(ttl.Seconds()),
+				AuthTTLSeconds: authTTLSeconds,
 			})
 			if err != nil {
 				return err
 			}
-			hubURLs := hubURLsForPairPayload(remoteStatus, hubURL)
-			payload := buildRemotePairPayload(result, remoteStatus, hubURLs)
+			payload := buildRemotePairPayload(result)
 			uri, err := termxPairURI(payload)
 			if err != nil {
 				return err
@@ -252,6 +256,9 @@ func remotePairCommand(socket *string, logFile *string) *cobra.Command {
 			fmt.Fprint(cmd.OutOrStdout(), qr.ToSmallString(false))
 			fmt.Fprintf(cmd.OutOrStdout(), "uri:\t%s\n", uri)
 			fmt.Fprintf(cmd.OutOrStdout(), "expires_at:\t%s\n", result.ExpiresAt.Format(time.RFC3339))
+			if authTTLSet {
+				fmt.Fprintf(cmd.OutOrStdout(), "authorization_ttl:\t%s\n", authTTL.String())
+			}
 			return nil
 		},
 	}
@@ -259,9 +266,11 @@ func remotePairCommand(socket *string, logFile *string) *cobra.Command {
 	cmd.Flags().BoolVar(&uriOnly, "uri", false, "print only the termx://pair URI")
 	cmd.Flags().StringVar(&localURL, "local-url", "", "local pair URL; defaults to running local remote")
 	cmd.Flags().DurationVar(&ttl, "ttl", 5*time.Minute, "pair session TTL")
-	cmd.Flags().StringVar(&hubURL, "hub-url", "", "Hub URL override")
+	cmd.Flags().DurationVar(&authTTL, "auth-ttl", 24*time.Hour, "authorization session token TTL")
+	cmd.PreRun = func(cmd *cobra.Command, args []string) {
+		authTTLSet = cmd.Flags().Changed("auth-ttl")
+	}
 	_ = cmd.Flags().MarkHidden("local-url")
-	_ = cmd.Flags().MarkHidden("hub-url")
 	return cmd
 }
 

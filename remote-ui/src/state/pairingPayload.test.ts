@@ -14,17 +14,11 @@ describe('pairing payload parser', () => {
       local: {
         hub_urls: ['http://127.0.0.1:7788', 'http://192.168.1.40:7788'],
       },
-      hub: {
-        hub_urls: ['https://hub.termx.test'],
-        web_control: 'https://control.termx.test',
-      },
       pairing: {
         session_id: 'pair-1',
         secret: 'pair-secret-1',
         expires_at: '2026-05-03T12:30:00Z',
       },
-      bootstrap: {},
-      preferred_path: 'local',
     }))}`)
 
     expect(payload).toEqual({
@@ -37,17 +31,11 @@ describe('pairing payload parser', () => {
       local: {
         hubUrls: ['http://127.0.0.1:7788', 'http://192.168.1.40:7788'],
       },
-      hub: {
-        hubUrls: ['https://hub.termx.test'],
-        webControl: 'https://control.termx.test',
-      },
       pairing: {
         sessionId: 'pair-1',
         secret: 'pair-secret-1',
         expiresAt: '2026-05-03T12:30:00Z',
       },
-      bootstrap: {},
-      preferredPath: 'local',
     })
   })
 
@@ -128,14 +116,22 @@ describe('pairing payload parser', () => {
     }))).toThrow(/private key/i)
   })
 
-  it('rejects relay as a client-visible connection path', () => {
+  it('rejects removed QR metadata fields', () => {
     expect(() => parsePairingPayload(JSON.stringify({
       type: 'termx_pair',
       schema_version: 4,
       machine: { id: 'machine-1', name: 'Dev MacBook' },
       pairing: { session_id: 'pair-1', secret: 'pair-secret-1' },
-      preferred_path: 'relay',
-    }))).toThrow(/connection path/i)
+      preferred_path: 'local',
+    }))).toThrow(/unsupported field preferred_path/i)
+
+    expect(() => parsePairingPayload(JSON.stringify({
+      type: 'termx_pair',
+      schema_version: 4,
+      machine: { id: 'machine-1', name: 'Dev MacBook' },
+      hub: { hub_urls: ['https://hub.termx.test'] },
+      pairing: { session_id: 'pair-1', secret: 'pair-secret-1' },
+    }))).toThrow(/unsupported field hub/i)
   })
 })
 
@@ -148,21 +144,15 @@ function v4Payload(): Record<string, unknown> {
       name: '开发 MacBook',
       hostname: 'dev-mac.local',
     },
-    local: {
-      hub_urls: ['http://127.0.0.1:7788', 'http://192.168.1.40:7788'],
-    },
-    hub: {
-      hub_urls: ['https://hub.termx.test'],
-      web_control: 'https://control.termx.test',
-    },
-    pairing: {
-      session_id: 'pair-1',
-      secret: 'pair-secret-1',
-      expires_at: '2026-05-03T12:30:00Z',
-    },
-    bootstrap: {},
-    preferred_path: 'local',
-  }
+  local: {
+    hub_urls: ['http://127.0.0.1:7788', 'http://192.168.1.40:7788'],
+  },
+  pairing: {
+    session_id: 'pair-1',
+    secret: 'pair-secret-1',
+    expires_at: '2026-05-03T12:30:00Z',
+  },
+}
 }
 
 function base64url(value: string): string {

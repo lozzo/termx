@@ -339,6 +339,7 @@ message RemoteStatus {
 message RemotePairStartParams {
   string local_pair_url = 1;
   int32 ttl_seconds = 2;
+  int32 auth_ttl_seconds = 3;
 }
 
 message RemotePairStartResult {

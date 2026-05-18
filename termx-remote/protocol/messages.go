@@ -45,8 +45,9 @@ type Status struct {
 }
 
 type PairStartParams struct {
-	LocalPairURL string `json:"local_pair_url"`
-	TTLSeconds   int    `json:"ttl_seconds,omitempty"`
+	LocalPairURL   string `json:"local_pair_url"`
+	TTLSeconds     int    `json:"ttl_seconds,omitempty"`
+	AuthTTLSeconds int    `json:"auth_ttl_seconds,omitempty"`
 }
 
 type PairStartResult struct {

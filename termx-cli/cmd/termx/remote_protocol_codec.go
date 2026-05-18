@@ -78,8 +78,9 @@ func decodeRemotePairStartParams(payload []byte) (remoteprotocol.PairStartParams
 		return remoteprotocol.PairStartParams{}, err
 	}
 	return remoteprotocol.PairStartParams{
-		LocalPairURL: msg.GetLocalPairUrl(),
-		TTLSeconds:   int(msg.GetTtlSeconds()),
+		LocalPairURL:   msg.GetLocalPairUrl(),
+		TTLSeconds:     int(msg.GetTtlSeconds()),
+		AuthTTLSeconds: int(msg.GetAuthTtlSeconds()),
 	}, nil
 }
 

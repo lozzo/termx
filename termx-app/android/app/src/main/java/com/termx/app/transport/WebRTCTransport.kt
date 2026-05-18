@@ -135,7 +135,8 @@ class WebRTCTransport(
             val resp = HttpHelper.post("$hubUrl/api/v1/sessions", headers, body, SIGNALING_TIMEOUT)
             Log.i(TAG, "createSession response: ${resp.statusCode}")
             if (!resp.isOk) {
-                markFailure(if (resp.statusCode == 401) "auth" else "signal")
+                Log.w(TAG, "createSession failed: ${resp.statusCode} ${resp.bodyString().take(300)}")
+                markFailure(if (isAuthStatus(resp.statusCode)) "auth" else "signal")
                 disconnect()
                 return false
             }
@@ -189,7 +190,8 @@ class WebRTCTransport(
                 )
                 if (resp.statusCode == 202) continue // still pending
                 if (!resp.isOk) {
-                    markFailure(if (resp.statusCode == 401) "auth" else "signal")
+                    Log.w(TAG, "pollAnswer failed: ${resp.statusCode} ${resp.bodyString().take(300)}")
+                    markFailure(if (isAuthStatus(resp.statusCode)) "auth" else "signal")
                     disconnect()
                     return null
                 }
@@ -202,6 +204,8 @@ class WebRTCTransport(
         disconnect()
         return null
     }
+
+    private fun isAuthStatus(statusCode: Int): Boolean = statusCode == 401 || statusCode == 403
 
     private fun processAnswer(answer: JSONObject): Boolean {
         val sdpObj = answer.optJSONObject("answer")

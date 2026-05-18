@@ -19,7 +19,7 @@ export type ConnectionAttemptStage =
 export type HubEndpointKind = 'local' | 'hub'
 export type HubEndpointScope = 'loopback' | 'lan' | 'public_mapping' | 'hub'
 export type HubEndpointSource = 'pair_qr' | 'stored_machine' | 'web_control' | 'native_discovery' | 'manual'
-export type ConnectionPolicy = 'local_web' | 'app_local_preferred' | 'hub_only'
+export type ConnectionPolicy = 'local_web' | 'app_fastest' | 'hub_only'
 
 export interface HubEndpoint {
   url: string
@@ -73,7 +73,6 @@ export interface ConnectionOrchestratorOptions {
   }) | undefined
   localConnectTimeoutMs?: number | undefined
   hubConnectTimeoutMs?: number | undefined
-  localPreferenceWindowMs?: number | undefined
   logger?: ConnectionLogger | undefined
 }
 
@@ -88,7 +87,6 @@ interface EndpointGroups {
 
 interface RaceOutcome {
   result: ConnectionOrchestratorResult | null
-  completed: boolean
 }
 
 export function createConnectionOrchestrator(options: ConnectionOrchestratorOptions): ConnectionOrchestrator {
@@ -103,7 +101,7 @@ class EndpointConnectionOrchestrator implements ConnectionOrchestrator {
     const ac = new AbortController()
     const signal = combineSignals(options.signal, ac.signal)
     const connectOptions = { ...options, signal }
-    const policy = input.policy ?? 'app_local_preferred'
+    const policy = input.policy ?? 'app_fastest'
     const endpoints = this.prepareEndpoints(input, policy)
     this.log('connect_start', {
       level: 'info',
@@ -124,7 +122,7 @@ class EndpointConnectionOrchestrator implements ConnectionOrchestrator {
       } else if (policy === 'hub_only' || options.forceRelay === true) {
         result = await this.connectHubOnly(input, connectOptions, failures, endpoints.hub, options.forceRelay === true)
       } else {
-        result = await this.connectAppLocalPreferred(input, connectOptions, failures, endpoints)
+        result = await this.connectAppFastest(input, connectOptions, failures, endpoints)
       }
       if (result) {
         ac.abort()
@@ -225,7 +223,7 @@ class EndpointConnectionOrchestrator implements ConnectionOrchestrator {
     return outcome.result
   }
 
-  private async connectAppLocalPreferred(
+  private async connectAppFastest(
     input: ConnectionOrchestratorInput,
     options: RtcConnectOptions,
     failures: ConnectionAttemptError[],
@@ -270,30 +268,15 @@ class EndpointConnectionOrchestrator implements ConnectionOrchestrator {
       localRace.then((outcome) => ({ group: 'local' as const, outcome })),
       hubRace.then((outcome) => ({ group: 'hub' as const, outcome })),
     ])
-    if (first.group === 'local' && first.outcome.result) {
+    if (first.outcome.result) {
+      const loserRace = first.group === 'local' ? hubRace : localRace
+      void loserRace.then((late) => {
+        if (late.result) void late.result.session.disconnect().catch(() => {})
+      })
       return first.outcome.result
     }
-    if (first.group === 'local' && !first.outcome.result) {
-      const hub = await hubRace
-      return hub.result
-    }
-    if (!first.outcome.result) {
-      const local = await localRace
-      return local.result
-    }
-
-    const local = await waitForLocalPreference(localRace, this.options.localPreferenceWindowMs ?? 500, options.signal)
-    if (local.result) {
-      await first.outcome.result.session.disconnect().catch(() => {})
-      return local.result
-    }
-    if (local.completed) {
-      return first.outcome.result
-    }
-    void localRace.then((lateLocal) => {
-      if (lateLocal.result) void lateLocal.result.session.disconnect().catch(() => {})
-    })
-    return first.outcome.result
+    const other = await (first.group === 'local' ? hubRace : localRace)
+    return other.result
   }
 
   private async localEndpointsWithProvider(
@@ -320,7 +303,7 @@ class EndpointConnectionOrchestrator implements ConnectionOrchestrator {
     message: string
     event: string
   }): Promise<RaceOutcome> {
-    if (input.endpoints.length === 0) return { result: null, completed: true }
+    if (input.endpoints.length === 0) return { result: null }
     throwIfAborted(input.options.signal)
     this.log(`${input.event}_start`, {
       level: 'info',
@@ -362,7 +345,7 @@ class EndpointConnectionOrchestrator implements ConnectionOrchestrator {
         message: `${input.path} connection timed out after ${input.timeoutMs}ms`,
         details: { endpointCount: input.endpoints.length },
       })
-      return { result: null, completed: false }
+      return { result: null }
     }
     if (!outcome.result) {
       this.log(`${input.event}_failed`, {
@@ -373,9 +356,9 @@ class EndpointConnectionOrchestrator implements ConnectionOrchestrator {
         message: `all ${input.path} endpoint attempts failed`,
         details: { endpointCount: input.endpoints.length },
       })
-      return { result: null, completed: true }
+      return { result: null }
     }
-    return { result: outcome.result, completed: true }
+    return { result: outcome.result }
   }
 
   private async connectEndpoint(
@@ -713,22 +696,6 @@ function localRaceMessage(endpoints: readonly PreparedEndpoint[]): string {
   return `Racing ${endpoints.length} local address(es)`
 }
 
-async function waitForLocalPreference(
-  localRace: Promise<RaceOutcome>,
-  timeoutMs: number,
-  signal: AbortSignal | undefined,
-): Promise<RaceOutcome> {
-  try {
-    return await Promise.race([
-      localRace,
-      delay(timeoutMs, signal).then(() => ({ result: null, completed: false })),
-    ])
-  } catch (error) {
-    if (isAbortError(error, signal)) throw error
-    return { result: null, completed: true }
-  }
-}
-
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (!signal?.aborted) return
   throw signal.reason instanceof Error ? signal.reason : new Error('connection orchestration aborted')
@@ -770,7 +737,9 @@ async function raceConnections(
           if (!settled) {
             settled = true
             resolve(result)
+            return
           }
+          void result.session.disconnect().catch(() => {})
         },
         () => {
           remaining -= 1

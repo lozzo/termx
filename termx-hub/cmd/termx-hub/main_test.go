@@ -40,7 +40,7 @@ func TestNewHubHandlerFromEnvBuildsRunnableDumbRelayWithoutControlConfiguration(
 	}
 }
 
-func TestHubHandlerFromEnvUsesControlSecretForInternalPairing(t *testing.T) {
+func TestHubHandlerFromEnvUsesControlSecretForInternalKick(t *testing.T) {
 	t.Setenv("TERMX_HUB_CONTROL_SECRET", "control-secret")
 	handler, _, cleanup, err := newHubHandlerFromEnv()
 	if err != nil {
@@ -48,19 +48,18 @@ func TestHubHandlerFromEnvUsesControlSecretForInternalPairing(t *testing.T) {
 	}
 	defer cleanup()
 
-	req, err := http.NewRequest(http.MethodPost, "/api/internal/pairing/claims", strings.NewReader(`{}`))
+	req, err := http.NewRequest(http.MethodPost, "/api/internal/kick", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-TermX-Hub-Secret", "wrong-secret")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
-		t.Fatalf("internal pairing with wrong secret status = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("internal kick with wrong secret status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "internal_unauthorized") {
-		t.Fatalf("internal pairing error = %s", rec.Body.String())
+		t.Fatalf("internal kick error = %s", rec.Body.String())
 	}
 }
 

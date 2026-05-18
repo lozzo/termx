@@ -123,15 +123,10 @@ function v4PairPayload(): Record<string, unknown> {
     local: {
       hub_urls: ['http://127.0.0.1:18888'],
     },
-    hub: {
-      hub_urls: [],
-    },
     pairing: {
       session_id: 'pair-copied',
       secret: 'secret-copied',
     },
-    bootstrap: {},
-    preferred_path: 'local',
   }
 }
 

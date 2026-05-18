@@ -30,11 +30,15 @@ class ConnectionStoreManager(
         hubUrls: List<String>,
         sessionToken: String,
         answerProofSecret: String?,
-        preferredPath: String,
         forceRelay: Boolean?,
     ) {
         Log.i(TAG, "connect: $machineId addresses=${localAddresses.size} hubs=${hubUrls.size} forceRelay=$forceRelay")
         var store = stores[machineId]
+        if (store != null && !store.matchesConnectionInput(localAddresses, hubUrls, sessionToken, answerProofSecret)) {
+            Log.i(TAG, "recreating store after connection input changed: $machineId")
+            stores.remove(machineId)?.release()
+            store = null
+        }
         if (store == null) {
             store = ConnectionStore(
                 context = context,
@@ -43,7 +47,6 @@ class ConnectionStoreManager(
                 hubUrls = hubUrls,
                 sessionToken = sessionToken,
                 answerProofSecret = answerProofSecret,
-                preferredPath = preferredPath,
                 forceRelay = forceRelay == true,
                 bridge = bridge,
             ).apply {

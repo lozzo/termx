@@ -90,8 +90,6 @@ export type {
 export { parsePairingPayload } from './state/pairingPayload'
 export type {
   PairingPayload,
-  PairingPayloadBootstrap,
-  PairingPayloadHub,
   PairingPayloadLocal,
   PairingPayloadMachine,
   PairingPayloadPairing,
@@ -100,7 +98,6 @@ export { createMachineStore } from './state/machineStore'
 export type {
   MachineStore,
   MachineStoreOptions,
-  StoredAppBootstrap,
   StoredMachineAddresses,
   StoredMachineEndpoints,
   StoredMachinePairing,

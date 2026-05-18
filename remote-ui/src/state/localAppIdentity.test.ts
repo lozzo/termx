@@ -10,6 +10,7 @@ describe('MachineSessionStore', () => {
 
     expect(store.getSessionToken('machine-1')).toBe('session-token-1')
     expect(store.getAnswerProofSecret('machine-1')).toBe('answer-proof-secret')
+    expect(store.getSessionExpiry('machine-1')).toBe('2099-01-01T00:00:00Z')
     expect(storage.dump()).toEqual({
       'termx.session.machine-1.answerProofSecret': 'answer-proof-secret',
       'termx.session.machine-1.token': 'session-token-1',
@@ -30,17 +31,21 @@ describe('MachineSessionStore', () => {
     expect(storage.dump()).toEqual({})
   })
 
-  it('returns null and clears storage when session token is expired', () => {
+  it('returns null, clears token material, and keeps expiry metadata when session token is expired', () => {
     const storage = new MemoryStorage()
     const store = createMachineSessionStore(storage)
 
     store.saveSessionToken('machine-1', 'session-token-1', '2020-01-01T00:00:00Z', 'answer-proof-secret')
 
     expect(store.getSessionToken('machine-1')).toBeNull()
-    expect(storage.dump()).toEqual({})
+    expect(store.getAnswerProofSecret('machine-1')).toBeNull()
+    expect(store.getSessionExpiry('machine-1')).toBe('2020-01-01T00:00:00Z')
+    expect(storage.dump()).toEqual({
+      'termx.session.machine-1.exp': '2020-01-01T00:00:00Z',
+    })
   })
 
-  it('returns null and clears storage when exp is exactly now (boundary)', () => {
+  it('returns null but keeps expiry metadata when exp is exactly now (boundary)', () => {
     const storage = new MemoryStorage()
     const store = createMachineSessionStore(storage)
     const pastMs = Date.now() - 1
@@ -48,7 +53,22 @@ describe('MachineSessionStore', () => {
     store.saveSessionToken('machine-1', 'session-token-1', new Date(pastMs).toISOString(), 'secret')
 
     expect(store.getSessionToken('machine-1')).toBeNull()
-    expect(storage.dump()).toEqual({})
+    expect(store.getSessionExpiry('machine-1')).toBe(new Date(pastMs).toISOString())
+    expect(storage.dump()).toEqual({
+      'termx.session.machine-1.exp': new Date(pastMs).toISOString(),
+    })
+  })
+
+  it('replaces answer proof secret when a machine is re-authorized without one', () => {
+    const storage = new MemoryStorage()
+    const store = createMachineSessionStore(storage)
+
+    store.saveSessionToken('machine-1', 'session-token-1', '2099-01-01T00:00:00Z', 'old-proof')
+    store.saveSessionToken('machine-1', 'session-token-2', '2099-01-02T00:00:00Z')
+
+    expect(store.getSessionToken('machine-1')).toBe('session-token-2')
+    expect(store.getAnswerProofSecret('machine-1')).toBeNull()
+    expect(store.getSessionExpiry('machine-1')).toBe('2099-01-02T00:00:00Z')
   })
 
   it('returns token when exp is missing (no expiry enforcement)', () => {

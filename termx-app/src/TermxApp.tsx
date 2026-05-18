@@ -34,16 +34,25 @@ import { NativeConnection, type NativeConnectOpts, type NativeConnectionSnapshot
 import { NativeRtcConnector, recoverNativeBridgeAfterResume, type NativeRtcSession } from './NativeConnectionProxy'
 import { NativeFileTransferStore } from './NativeFileTransferStore'
 import NativeFilePicker from './plugins/nativeFilePicker'
-import NativeHaptic from './plugins/nativeHaptic'
 import { useNativeStatusBarSync } from './nativeStatusBar'
 
 const defaultControlUrl = import.meta.env.VITE_CONTROL_URL || 'http://114.66.58.243:12306'
 const qrScannerRootId = 'termx-camera-qr-scanner'
 const qrScannerReaderId = 'termx-camera-qr-reader'
+const nativeHttpConnectTimeoutMs = 8_000
+const nativeHttpReadTimeoutMs = 15_000
 
 type MachineRuntimeFactory = NonNullable<RemoteControlAppProps['machineRuntimeFactory']>
 type MachineRuntime = ReturnType<MachineRuntimeFactory>
 type NativeSessionManager = ReturnType<typeof createNativeSessionManager>
+type NativeConnector = Pick<NativeRtcConnector, 'connect'> & {
+  release?(machineId: string): Promise<void>
+}
+type NativeSessionEntry = {
+  sessionToken: string | null
+  connector: NativeConnector
+  manager: NativeSessionManager
+}
 type NativeSessionLease = RtcSession & {
   isAlive(): boolean
   waitUntilConnected(signal?: AbortSignal): Promise<void>
@@ -163,6 +172,7 @@ function createNativeNetworkRuntime(): RemoteNetworkRuntime {
 }
 
 async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?: () => void }): Promise<string | null> {
+  console.info('[termx:scan] camera scan requested')
   const existing = document.getElementById(qrScannerRootId)
   existing?.remove()
   const scannerSize = scannerSquareSize()
@@ -250,35 +260,46 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
 
   const scanner = new Html5Qrcode(qrScannerReaderId)
   let settled = false
+  let started = false
 
   return new Promise((resolve, reject) => {
     const finish = (value: string | null, error?: unknown) => {
       if (settled) return
       settled = true
       cancelButton.disabled = true
-      void scanner.stop()
-        .catch(() => {})
-        .then(() => scanner.clear())
-        .catch(() => {})
-        .finally(() => {
-          root.remove()
-          if (error) {
-            reject(error instanceof Error ? error : new Error(String(error)))
-            return
-          }
-          resolve(value)
-        })
+      manualSubmit.disabled = true
+      root.remove()
+
+      if (started) {
+        void scanner.stop()
+          .catch(() => {})
+          .then(() => {
+            scanner.clear()
+          })
+          .catch(() => {})
+      } else {
+        try {
+          scanner.clear()
+        } catch {}
+      }
+      if (error) {
+        console.warn('[termx:scan] camera scan failed', error instanceof Error ? error.message : String(error))
+        reject(error instanceof Error ? error : new Error(String(error)))
+        return
+      }
+      console.info(value ? '[termx:scan] QR decoded' : '[termx:scan] scan cancelled')
+      resolve(value)
     }
 
   cancelButton.onclick = () => {
-      void NativeHaptic.impact({ pattern: 8 }).catch(() => {})
+      if (settled) return
       options?.onCancel?.()
       finish(null)
     }
     manualSubmit.onclick = () => {
+      if (settled) return
       const value = manualInput.value.trim()
       if (!value) return
-      void NativeHaptic.impact({ pattern: 10 }).catch(() => {})
       options?.onManualEntry?.()
       finish(value)
     }
@@ -286,11 +307,17 @@ async function scanPairingCode(options?: { onCancel?: () => void; onManualEntry?
       { facingMode: 'environment' },
       { fps: 10, qrbox: { width: qrboxSize, height: qrboxSize }, aspectRatio: 1.0 },
       (decodedText) => {
-        void NativeHaptic.impact({ pattern: 25 }).catch(() => {})
+        if (!settled) {
+          try {
+            scanner.pause(true)
+          } catch {}
+        }
         finish(decodedText)
       },
       () => {},
-    ).catch((error) => finish(null, error))
+    ).then(() => {
+      started = true
+    }).catch((error) => finish(null, error))
   })
 }
 
@@ -316,6 +343,8 @@ const nativeFetch: RemoteRuntimeFetch = async (input, init = {}) => {
     headers,
     ...(data !== undefined ? { data } : {}),
     responseType: 'text',
+    connectTimeout: nativeHttpConnectTimeoutMs,
+    readTimeout: nativeHttpReadTimeoutMs,
   })
 
   return new Response(responseText(response.data), {
@@ -342,9 +371,9 @@ function createNativeAppRuntime(): {
   fileTransfer: FileTransferContext
 } {
   const transferStore = new NativeFileTransferStore()
-  const sessionManagers = new Map<string, NativeSessionManager>()
+  const sessionManagers = new Map<string, NativeSessionEntry>()
   transferStore.setSessionResolver(async (machineId) => {
-    const session = await sessionManagers.get(machineId)?.get()
+    const session = await sessionManagers.get(machineId)?.manager.get()
     const nativeSession = session as RtcSession & Partial<NativeRtcSession>
     return typeof nativeSession.onTransferSync === 'function'
       ? nativeSession as NativeRtcSession
@@ -366,19 +395,28 @@ function createNativeMachineRuntime(
   machine: WebControlMachine,
   storage: RemoteRuntimeStorage,
   shared: {
-    sessionManagers: Map<string, NativeSessionManager>
+    sessionManagers: Map<string, NativeSessionEntry>
     transferStore: NativeFileTransferStore
   },
 ): MachineRuntime {
   const sessionStore = createMachineSessionStore(storage)
   const machineStore = createMachineStore({ storage })
   const storedMachine = machineStore.getMachine(machine.id)
-  let sessionManager = shared.sessionManagers.get(machine.id)
-  if (!sessionManager) {
+  const sessionToken = sessionStore.getSessionToken(machine.id)
+  let entry = shared.sessionManagers.get(machine.id)
+  if (!entry || entry.sessionToken !== sessionToken) {
+    void entry?.manager.reset().catch(() => {})
+    void entry?.connector.release?.(machine.id).catch(() => {})
     const connector = createNativeConnector(machine, storedMachine, storage)
-    sessionManager = createNativeSessionManager(machine.id, connector)
-    shared.sessionManagers.set(machine.id, sessionManager)
+    entry = {
+      sessionToken,
+      connector,
+      manager: createNativeSessionManager(machine.id, connector),
+    }
+    shared.sessionManagers.set(machine.id, entry)
   }
+  const sessionManager = entry.manager
+  const connector = entry.connector
   const transferStore = shared.transferStore
 
   const api: MachineWorkspaceProps['api'] = {
@@ -446,7 +484,12 @@ function createNativeMachineRuntime(
     connectionStateEvents: createNativeConnectionStateEvents(machine.id),
     inventoryEvents: createNativeInventoryEvents(machine.id, sessionManager),
     fileTransfer: createFileTransferContext(machine.id, transferStore),
-    dispose: () => {},
+    dispose: () => {
+      if (shared.sessionManagers.get(machine.id)?.manager === sessionManager) {
+        shared.sessionManagers.delete(machine.id)
+      }
+      return sessionManager.reset().finally(() => connector.release?.(machine.id))
+    },
   }
 }
 
@@ -485,35 +528,41 @@ function createNativeConnector(
   machine: WebControlMachine,
   storedMachine: StoredMachineRecord | null,
   storage: RemoteRuntimeStorage,
-): NativeRtcConnector {
+): NativeConnector {
   const sessionStore = createMachineSessionStore(storage)
   const sessionToken = sessionStore.getSessionToken(machine.id)
   if (!sessionToken) {
-    throw new Error('Pair this machine before opening the runtime channel')
+    return {
+      async connect() {
+        throw new Error('auth')
+      },
+    }
   }
 
   const localAddresses = compactStrings([
     ...(storedMachine?.addresses.local ?? []),
     ...(storedMachine?.addresses.lan ?? []),
+    ...(storedMachine?.addresses.public ?? []),
   ])
   const hubUrls = compactStrings([
     machine.currentHubUrl,
     ...machine.hubUrls,
     storedMachine?.endpoints.hub,
-    ...(storedMachine?.addresses.public ?? []),
   ])
-  const preferredPath = preferredNativePath(storedMachine, machine, localAddresses, hubUrls)
   const connectOpts: Omit<NativeConnectOpts, 'machineId'> = {
     localAddresses,
     hubUrls,
     sessionToken,
     answerProofSecret: sessionStore.getAnswerProofSecret(machine.id) ?? undefined,
-    preferredPath,
   }
-  return new NativeRtcConnector(connectOpts)
+  const connector = new NativeRtcConnector(connectOpts)
+  return {
+    connect: (target, options) => connector.connect(target, options),
+    release: (machineId) => NativeConnection.release({ machineId }),
+  }
 }
 
-function createNativeSessionManager(machineId: string, connector: NativeRtcConnector) {
+function createNativeSessionManager(machineId: string, connector: NativeConnector) {
   let sessionPromise: Promise<RtcSession> | null = null
   let currentSession: RtcSession | null = null
   let currentForceRelay = false
@@ -655,8 +704,11 @@ function createNativeConnectionStateEvents(machineId: string) {
       if (targetMachineId !== machineId) return { close() {} }
       let closed = false
       let listenerHandle: { remove(): void } | null = null
+      let sawLiveEvent = false
       NativeConnection.addListener('stateChange', (event: NativeStateChangeEvent) => {
-        if (!closed && event.machineId === machineId) handler(nativeConnectionStateSnapshot(event))
+        if (closed || event.machineId !== machineId) return
+        sawLiveEvent = true
+        handler(nativeConnectionStateSnapshot(event))
       }).then((handle) => {
         if (closed) {
           void handle.remove()
@@ -665,7 +717,8 @@ function createNativeConnectionStateEvents(machineId: string) {
         listenerHandle = handle
       }).catch(() => {})
       NativeConnection.getSnapshot({ machineId }).then((snapshot) => {
-        if (!closed) handler(nativeConnectionStateSnapshot(snapshot))
+        if (closed || sawLiveEvent || snapshot.phase === 'failed') return
+        handler(nativeConnectionStateSnapshot(snapshot))
       }).catch(() => {})
       return {
         close() {
@@ -706,7 +759,7 @@ function nativeConnectionPhase(phase: string): RtcConnectionStateSnapshot['phase
 }
 
 function nativeConnectionPath(path: string): RtcConnectionStateSnapshot['path'] {
-  if (path === 'hub' || path === 'public_p2p' || path === 'managed') return 'hub'
+  if (path === 'hub') return 'hub'
   return 'local'
 }
 
@@ -826,20 +879,6 @@ function createSessionLease(session: RtcSession): NativeSessionLease {
       nativeSession.closeTerminalDataChannel?.(terminalId)
     },
   }
-}
-
-function preferredNativePath(
-  storedMachine: StoredMachineRecord | null,
-  machine: WebControlMachine,
-  localAddresses: string[],
-  hubUrls: string[],
-): NativeConnectOpts['preferredPath'] {
-  const storedPreference = storedMachine?.preferredPath
-  if (storedPreference === 'local' && localAddresses.length > 0) return 'local'
-  if (storedPreference === 'hub' && hubUrls.length > 0) return 'hub'
-  if (machine.source === 'hub' && hubUrls.length > 0) return 'hub'
-  if (localAddresses.length > 0) return 'local'
-  return 'hub'
 }
 
 function firstNonEmpty(values: readonly (string | undefined)[]): string | undefined {

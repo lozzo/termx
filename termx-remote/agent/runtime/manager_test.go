@@ -222,7 +222,6 @@ func TestClaimHubPairingClaimsThroughPairingManager(t *testing.T) {
 		AppDeviceID:           "app-device-pair",
 		AppName:               "TermX Pair App",
 		RequestedCapabilities: []string{"terminal", "terminal_management"},
-		AllowedPaths:          []string{"hub"},
 	})
 	if result.ClaimID != "claim-1" || result.MachineID != "device-pair" || result.MachineName != "Pair Device" || result.Error != "" {
 		t.Fatalf("pairing result = %+v", result)
@@ -231,7 +230,7 @@ func TestClaimHubPairingClaimsThroughPairingManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("session token did not verify: %v", err)
 	}
-	if claims.MachineID != "device-pair" || len(claims.Capabilities) != 0 || strings.Join(claims.Paths, ",") != "hub" {
+	if claims.MachineID != "device-pair" || len(claims.Capabilities) != 0 || len(claims.Paths) != 0 {
 		t.Fatalf("claims = %+v", claims)
 	}
 	if claims.AppDeviceID != "app-device-pair" || claims.AppName != "TermX Pair App" {
@@ -295,16 +294,16 @@ func TestManagerRejectsCloudOfferWithoutSessionTokenBeforeAnswering(t *testing.T
 	}
 }
 
-func TestManagerRejectsCloudOfferWithLocalOnlySessionTokenBeforeAnswering(t *testing.T) {
+func TestManagerAcceptsCloudOfferWithMachineScopedSessionToken(t *testing.T) {
 	manager, answerer, offer := newCloudOfferFixtureWithPaths(t, []string{"local"})
 
 	answer := manager.answerCloudOffer(context.Background(), offer, nil)
 
-	if answer.Error == "" || !strings.Contains(answer.Error, "not authorized for hub") {
-		t.Fatalf("expected hub path rejection, got %#v", answer)
+	if answer.Error != "" {
+		t.Fatalf("machine-scoped token offer returned error: %#v", answer)
 	}
-	if answerer.calls != 0 {
-		t.Fatalf("answerer called %d times for unauthorized offer", answerer.calls)
+	if answerer.calls != 1 {
+		t.Fatalf("answerer calls = %d, want 1", answerer.calls)
 	}
 }
 

@@ -7,7 +7,6 @@ export interface NativeConnectOpts {
   hubUrls: string[]
   sessionToken: string
   answerProofSecret?: string
-  preferredPath: 'local' | 'hub'
   forceRelay?: boolean
 }
 

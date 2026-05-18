@@ -24,7 +24,6 @@ class ConnectionStore(
     private val hubUrls: List<String>,
     private val sessionToken: String,
     private val answerProofSecret: String?,
-    private val preferredPath: String,
     private var forceRelay: Boolean,
     private val bridge: BridgeServer?,
 ) {
@@ -93,6 +92,18 @@ class ConnectionStore(
 
     private val workerThread = HandlerThread("TermxStore-$machineId").apply { start() }
     private val workerHandler = Handler(workerThread.looper)
+
+    fun matchesConnectionInput(
+        newLocalAddresses: List<String>,
+        newHubUrls: List<String>,
+        newSessionToken: String,
+        newAnswerProofSecret: String?,
+    ): Boolean {
+        return localAddresses == newLocalAddresses &&
+            hubUrls == newHubUrls &&
+            sessionToken == newSessionToken &&
+            answerProofSecret == newAnswerProofSecret
+    }
 
     fun setForceRelay(value: Boolean) {
         forceRelay = value
@@ -223,7 +234,6 @@ class ConnectionStore(
                     hubUrls = hubUrls,
                     sessionToken = sessionToken,
                     bridge = bridge,
-                    preferredPath = preferredPath,
                     forceRelay = forceRelay,
                     onProgress = { msg ->
                         if (isCurrentConnect(generation)) setStatus(msg)
@@ -325,6 +335,8 @@ class ConnectionStore(
             val p = phase
             if (p is Phase.WaitingNetwork && transport != null) {
                 verifyExistingTransport("Network recovered")
+            } else if (isAuthFailed(p)) {
+                return
             } else if (p is Phase.WaitingNetwork || p is Phase.Failed || p is Phase.Reconnecting) {
                 reconnectFromResume()
             }
@@ -389,10 +401,14 @@ class ConnectionStore(
             return
         }
 
+        if (isAuthFailed(p)) return
+
         if (p is Phase.WaitingNetwork || p is Phase.Failed || p is Phase.Reconnecting) {
             reconnectFromResume()
         }
     }
+
+    private fun isAuthFailed(p: Phase): Boolean = p is Phase.Failed && p.reason == "auth"
 
     private fun verifyExistingTransport(status: String) {
         val p = phase
@@ -404,7 +420,7 @@ class ConnectionStore(
         val path = when (p) {
             is Phase.Connected -> p.path
             is Phase.Verifying -> p.path
-            else -> preferredPath
+            else -> if (hubUrls.isNotEmpty() && localAddresses.isEmpty()) "hub" else "local"
         }
         val relayInUse = when (p) {
             is Phase.Connected -> p.relayInUse

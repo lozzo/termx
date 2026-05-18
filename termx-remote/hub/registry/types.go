@@ -85,7 +85,6 @@ type PairingClaim struct {
 	AppDeviceID           string
 	AppName               string
 	RequestedCapabilities []string
-	AllowedPaths          []string
 	AssignedAgentID       string
 	DeliveredAt           time.Time
 	CreatedAt             time.Time
@@ -161,7 +160,6 @@ type PairingClaimInput struct {
 	AppDeviceID           string
 	AppName               string
 	RequestedCapabilities []string
-	AllowedPaths          []string
 }
 
 type PairingPollInput struct {

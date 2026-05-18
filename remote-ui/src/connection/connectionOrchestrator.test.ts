@@ -58,7 +58,7 @@ describe('ConnectionOrchestrator', () => {
     ])
   })
 
-  it('starts app local and hub races together but chooses local when it wins inside the preference window', async () => {
+  it('starts app local and hub races together and uses the first successful path', async () => {
     vi.useFakeTimers()
     try {
       const localSession = new MockRtcSession({
@@ -85,14 +85,13 @@ describe('ConnectionOrchestrator', () => {
       const orchestrator = createConnectionOrchestrator({
         hubApiFactory: (hubUrl) => new MockHubApi(hubUrl),
         hubRtcConnectorFactory: ({ hubUrl }) => hubUrl.includes('192.168.1.20') ? localConnector : hubConnector,
-        localPreferenceWindowMs: 100,
       })
 
       const promise = orchestrator.connect({
         machineId: 'machine-1',
         terminalId: 'terminal-1',
         sessionToken: 'session-token-1',
-        policy: 'app_local_preferred',
+        policy: 'app_fastest',
         endpoints: [
           { url: 'http://192.168.1.20:18888', kind: 'local', scope: 'lan', source: 'pair_qr' },
           { url: 'https://hub-1.termx.test', kind: 'hub', scope: 'hub', source: 'web_control' },
@@ -102,23 +101,23 @@ describe('ConnectionOrchestrator', () => {
       await vi.advanceTimersByTimeAsync(10)
       expect(localConnector.calls).toHaveLength(1)
       expect(hubConnector.calls).toHaveLength(1)
-      await vi.advanceTimersByTimeAsync(30)
       const result = await promise
 
-      expect(result.session).toBe(localSession)
-      expect(result.path).toBe('local')
-      expect(hubSession.disconnectCalls).toBe(1)
+      expect(result.session).toBe(hubSession)
+      expect(result.path).toBe('hub')
+      await vi.advanceTimersByTimeAsync(30)
+      expect(localSession.disconnectCalls).toBe(1)
       expect(snapshots).toEqual([
         { stage: 'trying_local', path: 'local', message: 'Racing 1 local address(es)' },
         { stage: 'trying_hub', path: 'hub', message: 'Racing 1 hub endpoint(s)' },
-        { stage: 'connected', path: 'local', relayInUse: false, message: 'Connected' },
+        { stage: 'connected', path: 'hub', relayInUse: true, message: 'Connected' },
       ])
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('uses hub when local is still not connected after the local preference window', async () => {
+  it('does not wait for a slower local connection once hub has connected', async () => {
     vi.useFakeTimers()
     try {
       const localSession = new MockRtcSession({
@@ -144,20 +143,19 @@ describe('ConnectionOrchestrator', () => {
       const orchestrator = createConnectionOrchestrator({
         hubApiFactory: (hubUrl) => new MockHubApi(hubUrl),
         hubRtcConnectorFactory: ({ hubUrl }) => hubUrl.includes('frp.termx.test') ? localConnector : hubConnector,
-        localPreferenceWindowMs: 50,
       })
 
       const promise = orchestrator.connect({
         machineId: 'machine-1',
         terminalId: 'terminal-1',
         sessionToken: 'session-token-1',
-        policy: 'app_local_preferred',
+        policy: 'app_fastest',
         endpoints: [
           { url: 'https://frp.termx.test', kind: 'local', scope: 'public_mapping', source: 'pair_qr' },
           { url: 'https://hub-1.termx.test', kind: 'hub', scope: 'hub', source: 'web_control' },
         ],
       })
-      await vi.advanceTimersByTimeAsync(60)
+      await vi.advanceTimersByTimeAsync(10)
       const result = await promise
 
       expect(result.session).toBe(hubSession)
@@ -187,7 +185,7 @@ describe('ConnectionOrchestrator', () => {
       machineId: 'machine-1',
       terminalId: 'terminal-1',
       sessionToken: 'session-token-1',
-      policy: 'app_local_preferred',
+      policy: 'app_fastest',
       endpoints: [
         { url: 'https://frp.termx.test', kind: 'local', scope: 'public_mapping', source: 'pair_qr' },
       ],
@@ -214,7 +212,7 @@ describe('ConnectionOrchestrator', () => {
       machineId: 'machine-1',
       terminalId: 'terminal-1',
       sessionToken: 'session-token-1',
-      policy: 'app_local_preferred',
+      policy: 'app_fastest',
       endpoints: [
         { url: 'http://192.168.1.20:18888', kind: 'local', scope: 'lan', source: 'pair_qr' },
         { url: 'https://hub-1.termx.test', kind: 'hub', scope: 'hub', source: 'web_control' },

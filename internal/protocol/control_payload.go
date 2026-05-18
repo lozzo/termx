@@ -307,14 +307,23 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 		case interface {
 			GetLocalPairURL() string
 			GetTTLSeconds() int
+			GetAuthTTLSeconds() int
 		}:
-			return proto.Marshal(&wirepb.RemotePairStartParams{LocalPairUrl: value.GetLocalPairURL(), TtlSeconds: int32(value.GetTTLSeconds())})
+			return proto.Marshal(&wirepb.RemotePairStartParams{
+				LocalPairUrl:   value.GetLocalPairURL(),
+				TtlSeconds:     int32(value.GetTTLSeconds()),
+				AuthTtlSeconds: int32(value.GetAuthTTLSeconds()),
+			})
 		default:
-			localPairURL, ttlSeconds, ok := remotePairStartFields(params)
+			localPairURL, ttlSeconds, authTTLSeconds, ok := remotePairStartFields(params)
 			if !ok {
 				return nil, methodParamsTypeError(method, "remote pair start params", params)
 			}
-			return proto.Marshal(&wirepb.RemotePairStartParams{LocalPairUrl: localPairURL, TtlSeconds: int32(ttlSeconds)})
+			return proto.Marshal(&wirepb.RemotePairStartParams{
+				LocalPairUrl:   localPairURL,
+				TtlSeconds:     int32(ttlSeconds),
+				AuthTtlSeconds: int32(authTTLSeconds),
+			})
 		}
 	case "remote.local.enable":
 		localWebAddr, iceTCPAddr, hubURLs, controlURL, accessToken, region, ok := remoteLocalEnableFields(params)
@@ -724,14 +733,15 @@ func methodOutTypeError(method, want string, got any) error {
 	return fmt.Errorf("protocol: method %q decode target must be %s, got %T", method, want, got)
 }
 
-func remotePairStartFields(params any) (string, int, bool) {
+func remotePairStartFields(params any) (string, int, int, bool) {
 	value := reflect.Indirect(reflect.ValueOf(params))
 	if !value.IsValid() || value.Kind() != reflect.Struct {
-		return "", 0, false
+		return "", 0, 0, false
 	}
 	localPairURL := stringField(value, "LocalPairURL")
 	ttlSeconds := intField(value, "TTLSeconds")
-	return localPairURL, ttlSeconds, true
+	authTTLSeconds := intField(value, "AuthTTLSeconds")
+	return localPairURL, ttlSeconds, authTTLSeconds, true
 }
 
 func remoteLocalEnableFields(params any) (string, string, []string, string, string, string, bool) {

@@ -309,7 +309,6 @@ func (a *hubRegistryAdapter) WaitForPairingClaim(ctx context.Context, sessionID 
 		AppDeviceID:           claim.AppDeviceID,
 		AppName:               claim.AppName,
 		RequestedCapabilities: append([]string(nil), claim.RequestedCapabilities...),
-		AllowedPaths:          append([]string(nil), claim.AllowedPaths...),
 	}, nil
 }
 

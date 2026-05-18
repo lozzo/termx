@@ -3,6 +3,7 @@ import type { RemoteRuntimeStorage } from '../core/transport'
 export interface MachineSessionStore {
   getSessionToken(machineId: string): string | null
   getAnswerProofSecret(machineId: string): string | null
+  getSessionExpiry(machineId: string): string | null
   saveSessionToken(machineId: string, token: string, expiresAt: string, answerProofSecret?: string | undefined): void
   clearSessionToken(machineId: string): void
 }
@@ -19,9 +20,7 @@ export function createMachineSessionStore(
         try {
           const expiresAt = new Date(exp)
           if (!Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= Date.now()) {
-            // token 已过期，清理存储
             storage.removeItem(`termx.session.${machineId}.token`)
-            storage.removeItem(`termx.session.${machineId}.exp`)
             storage.removeItem(`termx.session.${machineId}.answerProofSecret`)
             return null
           }
@@ -31,13 +30,27 @@ export function createMachineSessionStore(
       }
       return token
     },
-    getAnswerProofSecret: (machineId) =>
-      storage.getItem(`termx.session.${machineId}.answerProofSecret`),
+    getAnswerProofSecret: (machineId) => {
+      const exp = storage.getItem(`termx.session.${machineId}.exp`)
+      if (exp) {
+        const expiresAt = new Date(exp)
+        if (!Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= Date.now()) {
+          storage.removeItem(`termx.session.${machineId}.token`)
+          storage.removeItem(`termx.session.${machineId}.answerProofSecret`)
+          return null
+        }
+      }
+      return storage.getItem(`termx.session.${machineId}.answerProofSecret`)
+    },
+    getSessionExpiry: (machineId) =>
+      storage.getItem(`termx.session.${machineId}.exp`),
     saveSessionToken: (machineId, token, expiresAt, answerProofSecret) => {
       storage.setItem(`termx.session.${machineId}.token`, token)
       storage.setItem(`termx.session.${machineId}.exp`, expiresAt)
       if (answerProofSecret?.trim()) {
         storage.setItem(`termx.session.${machineId}.answerProofSecret`, answerProofSecret.trim())
+      } else {
+        storage.removeItem(`termx.session.${machineId}.answerProofSecret`)
       }
     },
     clearSessionToken: (machineId) => {

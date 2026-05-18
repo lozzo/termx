@@ -37,6 +37,7 @@ object HubConnector {
             val result = tryHub(machineId, hubUrl, sessionToken, bridge, forceRelay, onProgress)
             coroutineContext.ensureActive()
             if (result is Result.Success) return result
+            if (result is Result.Failure && result.reason == "auth") return result
         }
         return Result.Failure("all_hubs_failed")
     }

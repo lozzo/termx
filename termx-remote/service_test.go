@@ -50,6 +50,30 @@ func TestPairStartUsesConfiguredTokenTTL(t *testing.T) {
 	}
 }
 
+func TestPairStartAuthTTLOverridesConfiguredTokenTTL(t *testing.T) {
+	service := NewService(remoteprotocol.Config{
+		Enabled:         true,
+		DataDir:         t.TempDir(),
+		DeviceName:      "auth-ttl-device",
+		TokenTTLSeconds: int((2 * time.Hour).Seconds()),
+	}, nil)
+
+	session, err := service.PairStart(remoteprotocol.PairStartParams{
+		TTLSeconds:     int(time.Minute.Seconds()),
+		AuthTTLSeconds: int((7 * time.Hour).Seconds()),
+	})
+	if err != nil {
+		t.Fatalf("PairStart returned error: %v", err)
+	}
+	resp, err := service.pairClaim(t.Context(), pairClaimRequestForTest(session))
+	if err != nil {
+		t.Fatalf("pairClaim returned error: %v", err)
+	}
+	if got := resp.ExpiresAt.Sub(time.Now().UTC()); got < 6*time.Hour || got > 8*time.Hour {
+		t.Fatalf("expected token ttl around seven hours, got expiry %s", resp.ExpiresAt)
+	}
+}
+
 func TestTerminalManagementCreateMarshalsProtocolTerminalID(t *testing.T) {
 	daemon := &terminalManagementDaemonStub{}
 	router := terminalManagementRouter{daemon: daemon}

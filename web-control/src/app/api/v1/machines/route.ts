@@ -39,7 +39,6 @@ export async function GET(request: Request) {
       hostname: agent.hostname,
       os_info: agent.osInfo,
       online: agent.online,
-      paired: agent.paired,
       source: "hub",
       control_url: controlUrl,
       hub_id: agent.hubId,

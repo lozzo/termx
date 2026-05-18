@@ -3235,11 +3235,12 @@ func (x *RemoteStatus) GetUpdatedAtUnixNano() int64 {
 }
 
 type RemotePairStartParams struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	LocalPairUrl  string                 `protobuf:"bytes,1,opt,name=local_pair_url,json=localPairUrl,proto3" json:"local_pair_url,omitempty"`
-	TtlSeconds    int32                  `protobuf:"varint,2,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	LocalPairUrl   string                 `protobuf:"bytes,1,opt,name=local_pair_url,json=localPairUrl,proto3" json:"local_pair_url,omitempty"`
+	TtlSeconds     int32                  `protobuf:"varint,2,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	AuthTtlSeconds int32                  `protobuf:"varint,3,opt,name=auth_ttl_seconds,json=authTtlSeconds,proto3" json:"auth_ttl_seconds,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RemotePairStartParams) Reset() {
@@ -3282,6 +3283,13 @@ func (x *RemotePairStartParams) GetLocalPairUrl() string {
 func (x *RemotePairStartParams) GetTtlSeconds() int32 {
 	if x != nil {
 		return x.TtlSeconds
+	}
+	return 0
+}
+
+func (x *RemotePairStartParams) GetAuthTtlSeconds() int32 {
+	if x != nil {
+		return x.AuthTtlSeconds
 	}
 	return 0
 }
@@ -3965,11 +3973,12 @@ const file_wirepb_terminal_proto_rawDesc = "" +
 	"\tallow_lan\x18\n" +
 	" \x01(\bR\ballowLan\x12%\n" +
 	"\x0eterminal_count\x18\v \x01(\x05R\rterminalCount\x12/\n" +
-	"\x14updated_at_unix_nano\x18\f \x01(\x03R\x11updatedAtUnixNano\"^\n" +
+	"\x14updated_at_unix_nano\x18\f \x01(\x03R\x11updatedAtUnixNano\"\x88\x01\n" +
 	"\x15RemotePairStartParams\x12$\n" +
 	"\x0elocal_pair_url\x18\x01 \x01(\tR\flocalPairUrl\x12\x1f\n" +
 	"\vttl_seconds\x18\x02 \x01(\x05R\n" +
-	"ttlSeconds\"\xbd\x02\n" +
+	"ttlSeconds\x12(\n" +
+	"\x10auth_ttl_seconds\x18\x03 \x01(\x05R\x0eauthTtlSeconds\"\xbd\x02\n" +
 	"\x15RemotePairStartResult\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1d\n" +
 	"\n" +

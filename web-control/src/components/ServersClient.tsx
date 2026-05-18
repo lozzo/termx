@@ -41,7 +41,6 @@ interface AgentInfo {
   osInfo: string | null;
   labels: string | null;
   online: boolean;
-  paired: boolean;
   hubHttpUrl: string | null;
   tokenId: string;
   tokenName: string | null;
@@ -49,7 +48,7 @@ interface AgentInfo {
   createdAt: string;
 }
 
-type StatusFilter = "all" | "online" | "offline" | "unpaired";
+type StatusFilter = "all" | "online" | "offline";
 
 interface ToastItem {
   id: number;
@@ -201,9 +200,8 @@ export default function ServersClient({ initialAgents, hasSubscription: initialH
   const stats = useMemo(() => {
     const total = agents.length;
     const online = agents.filter((a) => a.online).length;
-    const offline = agents.filter((a) => !a.online && a.paired).length;
-    const unpaired = agents.filter((a) => !a.paired).length;
-    return { total, online, offline, unpaired };
+    const offline = agents.filter((a) => !a.online).length;
+    return { total, online, offline };
   }, [agents]);
 
   // --- Filtered nodes ---
@@ -212,8 +210,7 @@ export default function ServersClient({ initialAgents, hasSubscription: initialH
     let result = agents;
 
     if (statusFilter === "online") result = result.filter((a) => a.online);
-    else if (statusFilter === "offline") result = result.filter((a) => !a.online && a.paired);
-    else if (statusFilter === "unpaired") result = result.filter((a) => !a.paired);
+    else if (statusFilter === "offline") result = result.filter((a) => !a.online);
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -304,7 +301,6 @@ export default function ServersClient({ initialAgents, hasSubscription: initialH
     { label: "全部", value: "all" },
     { label: "在线", value: "online" },
     { label: "离线", value: "offline" },
-    { label: "未配对", value: "unpaired" },
   ];
 
   // --- Render ---
@@ -327,7 +323,7 @@ export default function ServersClient({ initialAgents, hasSubscription: initialH
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
         <StatsCard
           title="节点总数"
           value={String(stats.total)}
@@ -344,13 +340,7 @@ export default function ServersClient({ initialAgents, hasSubscription: initialH
           title="离线"
           value={String(stats.offline)}
           icon={<Clock className="w-4 h-4 text-zinc-500" />}
-          description="已配对但断开"
-        />
-        <StatsCard
-          title="未配对"
-          value={String(stats.unpaired)}
-          icon={<QrCode className="w-4 h-4 text-amber-400" />}
-          description="等待扫码配对"
+          description="当前未连接"
         />
       </div>
 
@@ -443,9 +433,7 @@ export default function ServersClient({ initialAgents, hasSubscription: initialH
                     <div className="flex items-center gap-3 min-w-0">
                       <div
                         className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                          !agent.paired
-                            ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]"
-                            : agent.online
+                          agent.online
                             ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"
                             : "bg-zinc-600"
                         }`}
@@ -479,25 +467,16 @@ export default function ServersClient({ initialAgents, hasSubscription: initialH
                         </div>
                       )}
 
-                      {!agent.paired ? (
-                        <Badge
-                          variant="outline"
-                          className="text-xs border-amber-500/50 text-amber-400 shrink-0"
-                        >
-                          未配对
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant={agent.online ? "default" : "secondary"}
-                          className={`text-xs shrink-0 ${
-                            agent.online
-                              ? "bg-green-500/10 text-green-400 border-green-500/30"
-                              : ""
-                          }`}
-                        >
-                          {agent.online ? "在线" : "离线"}
-                        </Badge>
-                      )}
+                      <Badge
+                        variant={agent.online ? "default" : "secondary"}
+                        className={`text-xs shrink-0 ${
+                          agent.online
+                            ? "bg-green-500/10 text-green-400 border-green-500/30"
+                            : ""
+                        }`}
+                      >
+                        {agent.online ? "在线" : "离线"}
+                      </Badge>
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">

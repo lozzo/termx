@@ -295,7 +295,7 @@ describe('MachineWorkspace', () => {
     expect(connect).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: /verify device/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy())
+    await waitFor(() => expect(screen.getAllByTestId('termx-pair-sheet').length).toBeGreaterThan(0))
     await userEvent.type(screen.getByLabelText('Pair ID'), 'pair-1')
     await userEvent.type(screen.getByLabelText('Pair secret'), 'secret-1')
     await userEvent.click(within(screen.getByTestId('termx-pair-sheet')).getByRole('button', { name: /^pair device$/i }))
@@ -1626,7 +1626,7 @@ describe('MachineWorkspace', () => {
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
     expect(connect).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy())
+    await waitFor(() => expect(screen.getAllByTestId('termx-pair-sheet').length).toBeGreaterThan(0))
     expect(screen.getByTestId('termx-local-pair-panel')).toBeTruthy()
 
     await userEvent.type(screen.getByLabelText('Pair ID'), 'pair-1')
@@ -1638,6 +1638,31 @@ describe('MachineWorkspace', () => {
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
     expect(connect).toHaveBeenCalledTimes(1)
     expect(sessionStore.getSessionToken('machine-local')).toBe('session-token-local')
+  })
+
+  it('clears stale pair tokens and opens pairing on native auth failure', async () => {
+    const sessionStore = createMachineSessionStore(new MemoryStorage())
+    sessionStore.saveSessionToken('machine-local', 'stale-token', '2099-05-01T07:00:00Z')
+    const connect = vi.fn(() => Promise.reject(new Error('auth')))
+
+    render(
+      <MachineWorkspace
+        api={createMockLocalAgentApi()}
+        connector={{ connect }}
+        pair={{
+          api: createMockPairApi(),
+          sessionStore,
+          appName: 'TermX Local Web',
+        }}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+
+    await waitFor(() => expect(screen.getAllByTestId('termx-pair-sheet').length).toBeGreaterThan(0))
+    expect(screen.getByTestId('termx-machine-network-overlay').textContent).toContain('re-authorize')
+    expect(sessionStore.getSessionToken('machine-local')).toBeNull()
   })
 })
 
@@ -1788,7 +1813,6 @@ function localPairPayload(): Record<string, unknown> {
   return {
     type: 'termx_pair',
     schema_version: 4,
-    preferred_path: 'local',
     machine: {
       id: 'machine-local',
       name: 'Local Mac',
@@ -1796,14 +1820,10 @@ function localPairPayload(): Record<string, unknown> {
     local: {
       hub_urls: ['http://127.0.0.1:18888'],
     },
-    hub: {
-      hub_urls: [],
-    },
     pairing: {
       session_id: 'pair-session-local',
       secret: 'pair-secret-local',
     },
-    bootstrap: {},
   }
 }
 

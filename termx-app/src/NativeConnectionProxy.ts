@@ -1565,7 +1565,7 @@ function waitForConnected(
 }
 
 function normalizeNativePath(path: string | null | undefined): NativeRuntimePath {
-  if (path === 'hub' || path === 'public_p2p' || path === 'managed') return 'hub'
+  if (path === 'hub') return 'hub'
   return 'local'
 }
 

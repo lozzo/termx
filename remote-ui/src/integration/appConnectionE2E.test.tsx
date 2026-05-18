@@ -41,16 +41,10 @@ describe('APP connection e2e harness', () => {
       local: {
         hub_urls: ['http://127.0.0.1:18988', 'http://192.168.1.30:18988', 'http://114.66.58.243:18988'],
       },
-      hub: {
-        hub_urls: [],
-        web_control: 'http://114.66.58.243:12306',
-      },
       pairing: {
         session_id: 'pair-session-1',
         secret: 'pair-secret-1',
       },
-      bootstrap: {},
-      preferred_path: 'local',
     })))
     const machines = store.listMachines()
     const hubSession = new HubE2ESession('machine-public', 'local')
@@ -76,13 +70,13 @@ describe('APP connection e2e harness', () => {
           const stored = requireStoredMachine(store, machine.machineId)
           expect(stored.addresses.local).toContain('http://127.0.0.1:18988')
           expect(stored.addresses.public).toContain('http://114.66.58.243:18988')
-          expect(stored.endpoints.webControl).toBe('http://114.66.58.243:12306')
+          expect(stored.endpoints).toEqual({})
           expect(stored.pairing?.sessionId).toBe('pair-session-1')
           return orchestrator.connect({
             machineId: machine.machineId,
             terminalId: 'terminal-1',
             sessionToken: 'session-token-1',
-            policy: 'app_local_preferred',
+            policy: 'app_fastest',
             endpoints: stored.addresses.public.map((url) => ({
               url,
               kind: 'local' as const,

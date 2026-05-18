@@ -13,7 +13,6 @@ export interface WebControlApi {
   login(input: WebControlLoginInput, options?: RtcConnectOptions): Promise<WebControlAuthResult>
   me(options?: RtcConnectOptions): Promise<WebControlUser>
   listMachines(options?: RtcConnectOptions): Promise<WebControlMachine[]>
-  pairMachine(input: WebControlPairMachineInput, options?: RtcConnectOptions): Promise<WebControlPairMachineResult>
 }
 
 export interface WebControlLoginInput {
@@ -41,7 +40,6 @@ export interface WebControlMachine {
   hostname?: string | undefined
   osInfo?: string | undefined
   online: boolean
-  paired: boolean
   source: 'hub' | 'local'
   controlUrl?: string | undefined
   hubId?: string | undefined
@@ -52,23 +50,6 @@ export interface WebControlMachine {
   hubStatus?: string | undefined
   lastSeen?: string | undefined
   createdAt?: string | undefined
-}
-
-export interface WebControlPairMachineInput {
-  machineId: string
-  pairSessionId: string
-  pairSecret: string
-  appDeviceId: string
-  appName: string
-  requestedCapabilities: string[]
-}
-
-export interface WebControlPairMachineResult {
-  claimId: string
-  machineId: string
-  machineName?: string | undefined
-  sessionToken: string
-  expiresAt: string
 }
 
 export function createWebControlApi(options: WebControlApiOptions): WebControlApi {
@@ -128,31 +109,6 @@ class WebControlHttpApi implements WebControlApi {
       throw new Error('Web Control machines response machines is required')
     }
     return machines.map((machine) => machineRecord(machine))
-  }
-
-  async pairMachine(input: WebControlPairMachineInput, options: RtcConnectOptions = {}): Promise<WebControlPairMachineResult> {
-    const machineId = requiredString(input.machineId, 'machine_id')
-    const response = await this.requestJSON('POST', `/api/v1/machines/${encodeURIComponent(machineId)}/pairing/claims`, {
-      auth: 'bearer',
-      signal: options.signal,
-      body: {
-        pair_session_id: requiredString(input.pairSessionId, 'pair_session_id'),
-        pair_secret: requiredString(input.pairSecret, 'pair_secret'),
-        app_device_id: requiredString(input.appDeviceId, 'app_device_id'),
-        app_name: requiredString(input.appName, 'app_name'),
-        requested_capabilities: input.requestedCapabilities,
-      },
-    })
-    if (optionalBooleanField(response, 'pending') === true) {
-      throw new Error('Web Control pairing is pending; make sure the TermX agent is online and try Pair Device again')
-    }
-    return {
-      claimId: stringField(response, 'claim_id'),
-      machineId: stringField(response, 'machine_id'),
-      ...(optionalStringField(response, 'machine_name') ? { machineName: optionalStringField(response, 'machine_name') } : {}),
-      sessionToken: stringField(response, 'session_token'),
-      expiresAt: stringField(response, 'expires_at'),
-    }
   }
 
   private async requestJSON(
@@ -243,7 +199,6 @@ function machineRecord(value: unknown): WebControlMachine {
     ...(optionalStringField(response, 'hostname') ? { hostname: optionalStringField(response, 'hostname') } : {}),
     ...(optionalStringField(response, 'os_info') ? { osInfo: optionalStringField(response, 'os_info') } : {}),
     online: booleanField(response, 'online'),
-    paired: booleanField(response, 'paired'),
     source: 'hub',
     ...(optionalStringField(response, 'control_url') ? { controlUrl: optionalStringField(response, 'control_url') } : {}),
     ...(optionalStringField(response, 'hub_id') ? { hubId: optionalStringField(response, 'hub_id') } : {}),
@@ -260,13 +215,13 @@ function currentHubUrlField(response: Record<string, unknown>): string | undefin
 }
 
 function hubUrlsField(response: Record<string, unknown>): string[] {
+  const hubUrls: string[] = []
   const currentHubUrl = currentHubUrlField(response)
-  if (currentHubUrl) return [currentHubUrl]
+  if (currentHubUrl) hubUrls.push(currentHubUrl)
   if (Array.isArray(response.hub_urls)) {
-    return response.hub_urls.filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+    hubUrls.push(...response.hub_urls.filter((value): value is string => typeof value === 'string' && value.trim() !== ''))
   }
-  const legacy = optionalStringField(response, 'hub_http_url')
-  return legacy ? [legacy] : []
+  return compactStrings(hubUrls)
 }
 
 async function errorMessage(response: Response): Promise<string> {
@@ -327,26 +282,22 @@ function optionalTrimmedStringField(value: Record<string, unknown>, key: string)
   return trimmed === '' ? undefined : trimmed
 }
 
+function compactStrings(values: readonly string[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of values) {
+    const value = raw.trim()
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    out.push(value)
+  }
+  return out
+}
+
 function booleanField(value: Record<string, unknown>, key: string): boolean {
   const field = value[key]
   if (typeof field !== 'boolean') {
     throw new Error(`Web Control response ${key} must be a boolean`)
   }
   return field
-}
-
-function optionalBooleanField(value: Record<string, unknown>, key: string): boolean | undefined {
-  const field = value[key]
-  if (field === undefined || field === null) return undefined
-  if (typeof field !== 'boolean') {
-    throw new Error(`Web Control response ${key} must be a boolean`)
-  }
-  return field
-}
-
-function requiredString(value: unknown, label: string): string {
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new Error(`Web Control ${label} is required`)
-  }
-  return value.trim()
 }

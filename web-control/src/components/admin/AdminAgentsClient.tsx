@@ -15,7 +15,6 @@ interface AgentItem {
   online: boolean;
   hubId: string | null;
   hubName: string | null;
-  paired: boolean;
   pendingKick: boolean;
   sessionBytesIn: number | null;
   sessionBytesOut: number | null;
@@ -102,7 +101,6 @@ export default function AdminAgentsClient({ initialAgents }: { initialAgents: Ag
                     <th className="text-left py-3 px-2 font-medium">Hub</th>
                     <th className="text-left py-3 px-2 font-medium">本次流量</th>
                     <th className="text-left py-3 px-2 font-medium">在线时长</th>
-                    <th className="text-left py-3 px-2 font-medium">配对</th>
                     <th className="text-left py-3 px-2 font-medium">活跃时间</th>
                     <th className="text-right py-3 px-2 font-medium">操作</th>
                   </tr>
@@ -130,13 +128,6 @@ export default function AdminAgentsClient({ initialAgents }: { initialAgents: Ag
                       </td>
                       <td className="py-3 px-2 text-zinc-400 text-xs">
                         {a.online && a.sessionStartedAt ? formatDuration(a.sessionStartedAt) : "-"}
-                      </td>
-                      <td className="py-3 px-2">
-                        {a.paired ? (
-                          <Badge variant="outline" className="border-primary text-primary">已配对</Badge>
-                        ) : (
-                          <span className="text-zinc-600">未配对</span>
-                        )}
                       </td>
                       <td className="py-3 px-2 text-zinc-400 text-xs">
                         {a.lastSeen ? new Date(a.lastSeen).toLocaleString() : "-"}

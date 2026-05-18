@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ChangeEvent, type ReactNode } from 'react'
-import { ArrowLeft, Camera, Download, Keyboard, LaptopMinimal, Loader2, LogIn, Monitor, QrCode, RefreshCw, Server, Settings, ShieldCheck, X } from 'lucide-react'
+import { ArrowLeft, Camera, Download, Keyboard, LaptopMinimal, Loader2, LogIn, Monitor, QrCode, RefreshCw, Server, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
 import { createMachineSessionStore, type MachineSessionStore } from '../state/localAppIdentity'
 import { MachineWorkspace, type MachineWorkspaceInventoryApi, type MachineWorkspaceConnector } from './MachineWorkspace'
 import { createMachineStore, type StoredMachineRecord } from '../state/machineStore'
@@ -7,7 +7,7 @@ import { createConnectionOrchestrator, type ConnectionAttemptSnapshot, type HubE
 import { connectionStateFromAttempt, createConnectionStatePublisher } from '../connection/connectionState'
 import { createHubRtcConnector } from '../webrtc/hubRtcConnector'
 import { consoleConnectionLogger } from '../connection/connectionLogger'
-import { createHubApi } from '../api/hubApi'
+import { createHubApi, type HubPairInput, type HubPairResult } from '../api/hubApi'
 import { MachineConnectionStore } from '../connection/machineConnectionStore'
 import { RemoteNetworkStateManager } from '../connection/remoteNetworkState'
 import { FileTransferPanel } from '../files/FileTransferPanel'
@@ -15,7 +15,7 @@ import { hapticError, hapticImpact, hapticSelection, hapticSuccess } from '../pl
 import { addNativeBackHandler } from '../platform/nativeBack'
 import { parsePairingPayload, type PairingPayload } from '../state/pairingPayload'
 import type { FileTransferContext, TransferInfo } from '../files/fileApi'
-import type { ConnectionInfo, LocalPairingApi, LocalStatus, MachineConnectionStateEvents, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSessionNegotiator, RtcSubscription, RtcTerminalDataChannelController, TerminalInventoryEvents } from '../core/transport'
+import type { ConnectionInfo, LocalStatus, MachineConnectionStateEvents, RemoteNetworkRuntime, RemoteRuntimeStorage, RtcBinaryChannel, RtcConnectOptions, RtcConnectionStateSnapshot, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSessionConnectionStateEvents, RtcSessionLiveness, RtcSessionNegotiator, RtcSubscription, RtcTerminalDataChannelController, TerminalInventoryEvents } from '../core/transport'
 import { normalizeTerminalInventory } from '../terminal/terminalInventory'
 import { createWebControlApi, type WebControlApi, type WebControlMachine, type WebControlUser } from '../api/webControlApi'
 import { normalizeHubBaseUrlCandidate } from '../api/hubUrl'
@@ -43,10 +43,15 @@ function noopSubscribe(_listener: () => void): () => void { return () => {} }
 
 type AppView = 'home' | 'settings' | 'machine'
 type PairIntent = 'add-local' | 'authorize-machine'
-type PairApi = LocalPairingApi
-type PairMethod = 'local-hub' | 'web-control'
+type ScanFlowState = 'idle' | 'scanning' | 'pairing'
+interface PairApi {
+  pair(input: PairInput, options?: RtcConnectOptions): Promise<PairResult>
+}
+type PairInput = HubPairInput
+type PairResult = HubPairResult
 type HubRtcSessionFactory = (input: { machineId: string }) => RtcSession & RtcSessionNegotiator
-type MachineAuthorizationState = 'ready' | 'needs-session' | 'unpaired'
+type MachineAuthorizationState = 'ready' | 'expired' | 'unauthorized'
+const pairingClaimTimeoutMs = 15_000
 export interface ScanPairingCodeOptions {
   onCancel?: (() => void) | undefined
   onManualEntry?: (() => void) | undefined
@@ -117,16 +122,19 @@ export function RemoteControlApp({
   const [manualScanValue, setManualScanValue] = useState('')
   const [manualEntryOpen, setManualEntryOpen] = useState(false)
   const [lastImported, setLastImported] = useState<PairingPayload | null>(null)
-  const [pairedMachineIds, setPairedMachineIds] = useState(() => readPairedMachineIds(storage, undefined))
+  const [authorizedMachineIds, setAuthorizedMachineIds] = useState(() => readAuthorizedMachineIds(storage, undefined))
+  const [authorizationExpiries, setAuthorizationExpiries] = useState(() => readAuthorizationExpiries(storage))
   const [pairVersion, setPairVersion] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [pairing, setPairing] = useState(false)
   const [cameraScanning, setCameraScanning] = useState(false)
+  const [scanFlowState, setScanFlowState] = useState<ScanFlowState>('idle')
   const [scanAutoStartToken, setScanAutoStartToken] = useState(0)
   const signedIn = accessToken.trim() !== ''
   const appThemeStyle = useMemo(() => terminalThemeCssVariables(terminalSettings.themeId) as CSSProperties, [terminalSettings.themeId])
   const autoStartedScanTokenRef = useRef(0)
+  const cameraScanInFlightRef = useRef(false)
   const runtimeCacheRef = useRef<{
     api: WebControlApi
     createSession: HubRtcSessionFactory | undefined
@@ -169,6 +177,13 @@ export function RemoteControlApp({
       }
     }
   }
+
+  const dropMachineRuntime = useCallback((machineId: string) => {
+    const runtime = runtimeCacheRef.current?.runtimes.get(machineId)
+    if (!runtime) return
+    runtimeCacheRef.current?.runtimes.delete(machineId)
+    void runtime.dispose?.()
+  }, [])
 
   const getMachineRuntime = useCallback((machine: WebControlMachine): MachineRuntime | null => {
     if (!storage || !runtimeCacheRef.current) return null
@@ -216,7 +231,6 @@ export function RemoteControlApp({
         name: local.name,
         hostname: local.hostname,
         online: local.state === 'online',
-        paired: true,
         source: local.source === 'hub' ? 'hub' : 'local',
         hubUrls: hubUrlsFromStoredMachine(local),
         localHubUrls: localHubUrlsFromStoredMachine(local),
@@ -255,10 +269,12 @@ export function RemoteControlApp({
       setUser(profile)
       setMachines(hubMachines)
       if (storage) {
-        mergeSignedInHubMachines(storage, hubMachines)
+        syncSignedInHubMachines(storage, hubMachines)
         localMachineList = createMachineStore({ storage }).listMachines()
       }
       setLocalMachines(localMachineList)
+      setAuthorizedMachineIds(readAuthorizedMachineIds(storage, profile.id))
+      setAuthorizationExpiries(readAuthorizationExpiries(storage))
       setSelectedMachineId((current) => {
         if (
           current &&
@@ -312,7 +328,8 @@ export function RemoteControlApp({
   }, [refreshMachines])
 
   useEffect(() => {
-    setPairedMachineIds(readPairedMachineIds(storage, user?.id))
+    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id))
+    setAuthorizationExpiries(readAuthorizationExpiries(storage))
   }, [pairVersion, storage, user?.id])
 
   const submitLogin = useCallback(async () => {
@@ -339,7 +356,8 @@ export function RemoteControlApp({
     setUser(null)
     setMachines([])
     setLocalMachines(signedOutMachines)
-    setPairedMachineIds(readPairedMachineIds(storage, undefined))
+    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, undefined))
+    setAuthorizationExpiries(readAuthorizationExpiries(storage))
     setPairVersion((current) => current + 1)
     setSelectedMachineId(null)
     setError(null)
@@ -376,21 +394,18 @@ export function RemoteControlApp({
 
   const openMachinePairSheet = useCallback((machine: WebControlMachine) => {
     openPairSheet(machine.id)
-    if (machine.paired && !pairedMachineIds.has(machine.id)) {
-      setError('This machine is already paired with your account, but this phone needs a fresh local session. Scan the machine QR again to re-authorize this phone.')
-    }
-  }, [openPairSheet, pairedMachineIds])
+  }, [openPairSheet])
 
   const selectMachine = useCallback((machine: WebControlMachine) => {
     hapticImpact()
     setSelectedMachineId(machine.id)
-    if (!pairedMachineIds.has(machine.id)) {
+    if (!authorizedMachineIds.has(machine.id)) {
       openMachinePairSheet(machine)
       return
     }
     setView('machine')
     setError(null)
-  }, [openMachinePairSheet, pairedMachineIds])
+  }, [openMachinePairSheet, authorizedMachineIds])
 
   const pairScannedValue = useCallback(async (rawValue: string) => {
     if (!storage) {
@@ -398,52 +413,48 @@ export function RemoteControlApp({
       return
     }
     setPairing(true)
+    setScanFlowState('pairing')
     setError(null)
     try {
       const payload = parsePairingPayload(rawValue)
+      console.info('[termx:pairing] QR parsed', {
+        machineId: payload.machine.id,
+        localHubUrlCount: payload.local.hubUrls.length,
+      })
       const hubMachine = machines.find((machine) => machine.id === payload.machine.id)
-      const isHub = pairIntent === 'authorize-machine' && hubMachine !== undefined
-      const requiresWebControl = payload.local.hubUrls.length === 0 && payload.hub.webControl !== undefined
-      if (pairIntent === 'add-local' && requiresWebControl) {
-        throw new Error('This QR belongs to an online Web Control device. Sign in and re-authorize it from your machine list.')
-      }
-
-      if (requiresWebControl && !signedIn) {
-        setScanOpen(false)
-        setView('settings')
-        setError('The scanned agent is online. Please sign in to your account first to fetch this agent.')
-        return
-      }
+      const localHubUrls = localHubUrlsFromPairingPayload(payload)
 
       let targetMachine: WebControlMachine
 
       if (pairIntent === 'authorize-machine' && !selectedMachine) {
         throw new Error('Choose a machine before re-authorizing it')
       }
+      if (selectedMachine && selectedMachine.id !== payload.machine.id) {
+        throw new Error(`This pairing code belongs to ${payload.machine.name}, not ${selectedMachine.name}`)
+      }
 
-      if (isHub) {
-        if (!user) throw new Error('Account profile is required before pairing a Hub device')
-        targetMachine = hubMachine
-      } else if (requiresWebControl) {
-        if (!user) throw new Error('Account profile is required before pairing a Hub device')
-        throw new Error('This pairing code does not match a Web Control device in this account')
+      if (hubMachine) {
+        targetMachine = {
+          ...hubMachine,
+          localHubUrls,
+          localFallbackHubUrls: [],
+        }
       } else {
+        if (localHubUrls.length === 0) {
+          throw new Error('This pairing code does not include local addresses. Sign in and pair the machine from your Web Control list.')
+        }
         targetMachine = {
           id: payload.machine.id,
           name: payload.machine.name,
           hostname: payload.machine.hostname,
           online: true,
-          paired: false,
           source: 'local',
-          hubUrls: hubUrlsFromPairingPayload(payload),
-          localHubUrls: localHubUrlsFromPairingPayload(payload),
-          localFallbackHubUrls: localFallbackHubUrlsFromPairingPayload(payload),
+          hubUrls: [],
+          localHubUrls,
+          localFallbackHubUrls: [],
         }
       }
 
-      if (selectedMachine && selectedMachine.id !== targetMachine.id) {
-        throw new Error(`This pairing code belongs to ${targetMachine.name}, not ${selectedMachine.name}`)
-      }
       const pairInput = {
         machineId: targetMachine.id,
         pairSessionId: payload.pairing.sessionId,
@@ -452,23 +463,35 @@ export function RemoteControlApp({
         appName,
         requestedCapabilities: ['terminal', 'file_manager', 'terminal_management'],
       }
-      const pairMethod: PairMethod = isHub ? 'web-control' : 'local-hub'
-      const pairResult = pairApiFactory
-        ? await pairApiFactory(payload, targetMachine).pair(pairInput)
-        : pairMethod === 'web-control'
-          ? await api.pairMachine(pairInput)
-          : await createPairApiFromMachine(targetMachine, networkRuntime).pair(pairInput)
+      const pairApi = pairApiFactory
+        ? pairApiFactory(payload, targetMachine)
+        : createPairApiForScan({
+          candidateHubUrls: candidatePairingHubUrls(targetMachine, localHubUrls),
+          machine: targetMachine,
+          networkRuntime,
+        })
+      const pairResult = await runWithTimeout(
+        (signal) => pairApi.pair(pairInput, { signal }),
+        pairingClaimTimeoutMs,
+        'Pairing timed out. Make sure this phone can reach the QR code address and that the TermX agent is still online.',
+      )
+      console.info('[termx:pairing] pair claim succeeded', {
+        machineId: pairResult.machineId,
+        hubEndpointCount: candidatePairingHubUrls(targetMachine, localHubUrls).length,
+      })
       if (pairResult.machineId !== targetMachine.id) {
         throw new Error(`pairing response machine mismatch: ${pairResult.machineId} != ${targetMachine.id}`)
       }
       createMachineSessionStore(storage).saveSessionToken(pairResult.machineId, pairResult.sessionToken, pairResult.expiresAt, payload.pairing.answerProofSecret)
+      dropMachineRuntime(pairResult.machineId)
       const store = createMachineStore({ storage })
       const saved = store.saveFromPairingPayload(payload)
-      if (isHub) {
+      if (hubMachine) {
         store.saveMachine(mergeHubMachine(saved, targetMachine))
       }
       setSelectedMachineId(targetMachine.id)
-      setPairedMachineIds(readPairedMachineIds(storage, user?.id))
+      setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id))
+      setAuthorizationExpiries(readAuthorizationExpiries(storage))
       setPairVersion((current) => current + 1)
       setLastImported(payload)
       setError(null)
@@ -478,11 +501,14 @@ export function RemoteControlApp({
       hapticSuccess()
     } catch (err) {
       hapticError()
+      console.warn('[termx:pairing] pair claim failed', err instanceof Error ? err.message : String(err))
       setError(err instanceof Error ? err.message : String(err))
+      setManualEntryOpen(true)
     } finally {
       setPairing(false)
+      setScanFlowState('idle')
     }
-  }, [machines, networkRuntime, pairApiFactory, pairIntent, selectedMachine, signedIn, storage, user])
+  }, [dropMachineRuntime, machines, networkRuntime, pairApiFactory, pairIntent, selectedMachine, storage, user?.id])
 
   const importManualScan = useCallback(async () => {
     hapticImpact()
@@ -491,9 +517,13 @@ export function RemoteControlApp({
 
   const scanWithCamera = useCallback(async () => {
     if (!scanPairingCode) return
+    if (cameraScanInFlightRef.current) return
+    cameraScanInFlightRef.current = true
+    setScanAutoStartToken(0)
     hapticImpact()
     setManualEntryOpen(false)
     setCameraScanning(true)
+    setScanFlowState('scanning')
     setError(null)
     try {
       const value = await scanPairingCode({
@@ -506,16 +536,54 @@ export function RemoteControlApp({
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
+      cameraScanInFlightRef.current = false
       setCameraScanning(false)
+      setScanFlowState((current) => current === 'scanning' ? 'idle' : current)
     }
   }, [pairScannedValue, scanPairingCode])
 
   useEffect(() => {
-    if (!scanOpen || !scanPairingCode || manualEntryOpen || scanAutoStartToken === 0) return
+    if (!scanOpen || !scanPairingCode || manualEntryOpen || cameraScanning || scanAutoStartToken === 0) return
     if (autoStartedScanTokenRef.current === scanAutoStartToken) return
     autoStartedScanTokenRef.current = scanAutoStartToken
     void scanWithCamera()
-  }, [manualEntryOpen, scanAutoStartToken, scanOpen, scanPairingCode, scanWithCamera])
+  }, [cameraScanning, manualEntryOpen, scanAutoStartToken, scanOpen, scanPairingCode, scanWithCamera])
+
+  const handleMachineNeedsReauthorization = useCallback((machineId: string) => {
+    if (!storage) return
+    createMachineSessionStore(storage).clearSessionToken(machineId)
+    dropMachineRuntime(machineId)
+    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id))
+    setAuthorizationExpiries(readAuthorizationExpiries(storage))
+    setPairVersion((current) => current + 1)
+    setSelectedMachineId(machineId)
+    setPairIntent('authorize-machine')
+    setManualScanValue('')
+    setManualEntryOpen(false)
+    setLastImported(null)
+    setError('This phone needs a fresh machine authorization. Scan the machine QR again.')
+    setScanOpen(true)
+    setScanAutoStartToken((current) => current + 1)
+  }, [dropMachineRuntime, storage, user?.id])
+
+  const forgetMachineAuthorization = useCallback((machine: WebControlMachine) => {
+    if (!storage) return
+    const store = createMachineStore({ storage })
+    const sessionStore = createMachineSessionStore(storage)
+    sessionStore.clearSessionToken(machine.id)
+    dropMachineRuntime(machine.id)
+    const stillVisibleFromHub = machines.some((hubMachine) => hubMachine.id === machine.id)
+    if (!stillVisibleFromHub) {
+      store.forgetMachine(machine.id)
+    }
+    setLocalMachines(store.listMachines())
+    setAuthorizedMachineIds(readAuthorizedMachineIds(storage, user?.id))
+    setAuthorizationExpiries(readAuthorizationExpiries(storage))
+    setPairVersion((current) => current + 1)
+    setSelectedMachineId((current) => current === machine.id ? null : current)
+    setView((current) => current === 'machine' && selectedMachineId === machine.id ? 'home' : current)
+    setError(null)
+  }, [dropMachineRuntime, machines, selectedMachineId, storage, user?.id])
 
   useEffect(() => addNativeBackHandler(() => {
     if (scanOpen) {
@@ -570,6 +638,7 @@ export function RemoteControlApp({
             setView('home')
             setError(null)
           }}
+          onNeedsReauthorization={handleMachineNeedsReauthorization}
           onTerminalSettingsChange={updateTerminalSettings}
         />
       ) : (
@@ -578,12 +647,14 @@ export function RemoteControlApp({
           transferState={globalTransferState as { transfers: TransferInfo[]; hasActiveTransfers: boolean }}
           loading={loading}
           machines={displayMachines}
-          pairedMachineIds={pairedMachineIds}
+          authorizedMachineIds={authorizedMachineIds}
+          authorizationExpiries={authorizationExpiries}
           signedIn={signedIn}
           user={user}
           onAddLocalDevice={openAddLocalSheet}
           onOpenSettings={() => { hapticSelection(); setView('settings') }}
           onOpenTransferCenter={() => { hapticSelection(); setTransferCenterOpen(true) }}
+          onForgetMachineAuthorization={forgetMachineAuthorization}
           onPairMachine={openMachinePairSheet}
           onRefresh={() => { hapticImpact(); void refreshMachines() }}
           onSelectMachine={selectMachine}
@@ -597,6 +668,7 @@ export function RemoteControlApp({
           manualEntryOpen={manualEntryOpen}
           manualScanValue={manualScanValue}
           pairError={error}
+          scanFlowState={scanFlowState}
           pairing={pairing}
           cameraScanning={cameraScanning}
           pairIntent={pairIntent}
@@ -668,6 +740,7 @@ function MachineTerminalListView({
   terminalSettings,
   runtime,
   onBack,
+  onNeedsReauthorization,
   onTerminalSettingsChange,
 }: {
   machine: WebControlMachine
@@ -675,6 +748,7 @@ function MachineTerminalListView({
   terminalSettings: TerminalSettings
   runtime: MachineRuntime | null
   onBack: () => void
+  onNeedsReauthorization: (machineId: string) => void
   onTerminalSettingsChange: (patch: Partial<TerminalSettings>) => void
 }) {
   if (!storage || !runtime) {
@@ -701,6 +775,7 @@ function MachineTerminalListView({
         inventoryEvents={runtime.inventoryEvents}
         fileTransfer={runtime.fileTransfer}
         terminalSettings={terminalSettings}
+        onNeedsReauthorization={onNeedsReauthorization}
         onTerminalSettingsChange={onTerminalSettingsChange}
         onBack={onBack}
       />
@@ -752,10 +827,12 @@ function HomeView({
   transferState,
   loading,
   machines,
-  pairedMachineIds,
+  authorizedMachineIds,
+  authorizationExpiries,
   signedIn,
   user,
   onAddLocalDevice,
+  onForgetMachineAuthorization,
   onOpenSettings,
   onOpenTransferCenter,
   onPairMachine,
@@ -767,10 +844,12 @@ function HomeView({
   transferState: { transfers: TransferInfo[]; hasActiveTransfers: boolean }
   loading: boolean
   machines: WebControlMachine[]
-  pairedMachineIds: Set<string>
+  authorizedMachineIds: Set<string>
+  authorizationExpiries: Map<string, string>
   signedIn: boolean
   user: WebControlUser | null
   onAddLocalDevice: () => void
+  onForgetMachineAuthorization: (machine: WebControlMachine) => void
   onOpenSettings: () => void
   onOpenTransferCenter: () => void
   onPairMachine: (machine: WebControlMachine) => void
@@ -842,8 +921,10 @@ function HomeView({
           {machines.map((machine) => (
             <li key={machine.id} className="mb-2 last:mb-0">
               <MachineRow
-                authorizationState={machineAuthorizationState(machine, pairedMachineIds)}
+                authorizationExpiresAt={authorizationExpiries.get(machine.id)}
+                authorizationState={machineAuthorizationState(machine, authorizedMachineIds, authorizationExpiries)}
                 machine={machine}
+                onForgetMachineAuthorization={onForgetMachineAuthorization}
                 onPairMachine={onPairMachine}
                 onSelectMachine={onSelectMachine}
               />
@@ -1404,6 +1485,7 @@ function PairSheet({
   manualEntryOpen,
   manualScanValue,
   pairError,
+  scanFlowState,
   pairIntent,
   pairing,
   selectedMachine,
@@ -1420,6 +1502,7 @@ function PairSheet({
   manualEntryOpen: boolean
   manualScanValue: string
   pairError: string | null
+  scanFlowState: ScanFlowState
   pairIntent: PairIntent
   pairing: boolean
   selectedMachine: WebControlMachine | null
@@ -1430,13 +1513,18 @@ function PairSheet({
   onManualScanValueChange: (value: string) => void
   onScanWithCamera: () => void
 }) {
-  const title = pairIntent === 'add-local' ? 'Add Local Device' : 'Re-authorize Device'
+  const title = pairIntent === 'add-local' ? 'Add Local Device' : 'Authorize Device'
   const primaryLabel = pairIntent === 'add-local' ? 'Add Device' : 'Pair Device'
   const showManualEntry = manualEntryOpen || !canScanWithCamera
+  const statusMessage = scanFlowState === 'pairing'
+    ? 'QR code scanned. Pairing this phone with the machine...'
+    : scanFlowState === 'scanning'
+      ? 'Camera is scanning for a TermX QR code...'
+      : null
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/45 backdrop-blur-[2px] sm:items-center sm:justify-center" role="dialog" aria-modal="true">
-      <section className="max-h-[88dvh] w-full overflow-y-auto rounded-t-lg border border-zinc-200 bg-white p-4 text-zinc-950 shadow-xl sm:max-w-md sm:rounded-lg" data-testid="termx-pair-sheet">
-        <div className="flex items-center justify-between gap-3">
+    <div className="fixed inset-0 z-50 bg-white text-zinc-950" role="dialog" aria-modal="true">
+      <section className="flex h-full min-h-0 flex-col bg-white" data-testid="termx-pair-sheet">
+        <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-zinc-200 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
           <div className="flex min-w-0 items-center gap-2">
             <QrCode className="h-5 w-5 shrink-0 text-[var(--termx-accent)]" />
             <h2 className="truncate text-base font-semibold">{title}</h2>
@@ -1449,107 +1537,114 @@ function PairSheet({
           >
             <X className="h-5 w-5" />
           </button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
+          <div className="mx-auto w-full max-w-md">
+            {selectedMachine ? (
+              <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
+                <div className="truncate text-sm font-semibold text-zinc-950">{selectedMachine.name}</div>
+                <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{selectedMachine.hostname || selectedMachine.id}</div>
+              </div>
+            ) : null}
+
+            {canScanWithCamera && !showManualEntry ? (
+              <button
+                className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--termx-accent)] px-3 text-sm font-semibold text-[var(--termx-accent-text)] active:opacity-85 disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+                onClick={onScanWithCamera}
+                disabled={pairing || cameraScanning}
+              >
+                {cameraScanning || pairing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                {pairing ? 'Pairing device...' : cameraScanning ? 'Scanning QR...' : 'Scan QR with camera'}
+              </button>
+            ) : null}
+
+            {!showManualEntry ? (
+              <button
+                className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-950 hover:bg-zinc-50 active:bg-zinc-50"
+                type="button"
+                onClick={onManualEntryOpen}
+              >
+                <Keyboard className="h-4 w-4" />
+                Enter content manually
+              </button>
+            ) : (
+              <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
+                <label className="block text-xs font-semibold text-zinc-500">
+                  TermX QR content
+                  <textarea
+                    className="mt-1 h-44 w-full resize-none rounded-md border border-zinc-200 bg-white p-2 font-mono text-xs leading-5 text-zinc-950 placeholder:text-zinc-400 outline-none focus:border-[var(--termx-accent)] focus:ring-2 focus:ring-[var(--termx-accent)]/25"
+                    value={manualScanValue}
+                    onChange={(event) => onManualScanValueChange(event.target.value)}
+                    placeholder="termx://pair?payload=..."
+                    spellCheck={false}
+                  />
+                </label>
+              </div>
+            )}
+
+            {showManualEntry ? (
+              <button
+                className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-950 hover:bg-zinc-50 active:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                onClick={onImport}
+                disabled={pairing || cameraScanning || manualScanValue.trim() === ''}
+              >
+                {pairing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                {primaryLabel}
+              </button>
+            ) : null}
+
+            {statusMessage ? (
+              <p className="mt-3 rounded-md bg-blue-500/10 px-3 py-2 text-sm font-medium text-blue-700">{statusMessage}</p>
+            ) : null}
+
+            {pairError ? (
+              <p className="mt-3 rounded-md bg-red-500/10 px-3 py-2 text-sm font-medium text-red-500">{pairError}</p>
+            ) : null}
+
+            {lastImported ? (
+              <div className="mt-3 rounded-md bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500">
+                <div className="truncate font-semibold">{lastImported.machine.name}</div>
+                <div className="truncate">{lastImported.machine.id}</div>
+              </div>
+            ) : null}
+          </div>
         </div>
-
-        {selectedMachine ? (
-          <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
-            <div className="truncate text-sm font-semibold text-zinc-950">{selectedMachine.name}</div>
-            <div className="mt-0.5 truncate text-xs font-medium text-zinc-500">{selectedMachine.hostname || selectedMachine.id}</div>
-          </div>
-        ) : null}
-
-        {canScanWithCamera && !showManualEntry ? (
-          <button
-            className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[var(--termx-accent)] px-3 text-sm font-semibold text-[var(--termx-accent-text)] active:opacity-85 disabled:cursor-not-allowed disabled:opacity-60"
-            type="button"
-            onClick={onScanWithCamera}
-            disabled={pairing || cameraScanning}
-          >
-            {cameraScanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-            Scan QR with camera
-          </button>
-        ) : null}
-
-        {!showManualEntry ? (
-          <button
-            className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-950 hover:bg-zinc-50 active:bg-zinc-50"
-            type="button"
-            onClick={onManualEntryOpen}
-          >
-            <Keyboard className="h-4 w-4" />
-            Enter content manually
-          </button>
-        ) : (
-          <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
-            <label className="block text-xs font-semibold text-zinc-500">
-              TermX QR content
-              <textarea
-                className="mt-1 h-36 w-full resize-none rounded-md border border-zinc-200 bg-white p-2 font-mono text-xs leading-5 text-zinc-950 placeholder:text-zinc-400 outline-none focus:border-[var(--termx-accent)] focus:ring-2 focus:ring-[var(--termx-accent)]/25"
-                value={manualScanValue}
-                onChange={(event) => onManualScanValueChange(event.target.value)}
-                placeholder="termx://pair?payload=..."
-                spellCheck={false}
-              />
-            </label>
-          </div>
-        )}
-
-        {showManualEntry ? (
-          <button
-            className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-950 hover:bg-zinc-50 active:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
-            type="button"
-            onClick={onImport}
-            disabled={pairing || cameraScanning || manualScanValue.trim() === ''}
-          >
-            {pairing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-            {primaryLabel}
-          </button>
-        ) : null}
-
-        {pairError ? (
-          <p className="mt-3 rounded-md bg-red-500/10 px-3 py-2 text-sm font-medium text-red-500">{pairError}</p>
-        ) : null}
-
-        {lastImported ? (
-          <div className="mt-3 rounded-md bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500">
-            <div className="truncate font-semibold">{lastImported.machine.name}</div>
-            <div className="truncate">{lastImported.machine.id}</div>
-          </div>
-        ) : null}
       </section>
     </div>
   )
 }
 
 function MachineRow({
+  authorizationExpiresAt,
   authorizationState,
   machine,
+  onForgetMachineAuthorization,
   onPairMachine,
   onSelectMachine,
 }: {
+  authorizationExpiresAt?: string | undefined
   authorizationState: MachineAuthorizationState
   machine: WebControlMachine
+  onForgetMachineAuthorization: (machine: WebControlMachine) => void
   onPairMachine: (machine: WebControlMachine) => void
   onSelectMachine: (machine: WebControlMachine) => void
 }) {
   const actionLabel = authorizationState === 'ready'
     ? 'Open'
-    : authorizationState === 'needs-session'
-      ? 'Re-authorize'
-      : 'Pair'
+    : 'Pair'
   const authPill = authorizationState === 'ready'
     ? 'Ready'
-    : authorizationState === 'needs-session'
-      ? 'Re-authorize'
-      : 'Scan QR'
+    : authorizationState === 'expired'
+      ? 'Expired'
+    : 'Scan QR'
   const subtitle = machine.hostname || shortenMachineId(machine.id)
-  const availability = authorizationState === 'ready'
-    ? (machine.online ? 'Tap to connect' : machine.lastSeen ? `Last online ${formatLastSeen(machine.lastSeen)}` : 'Offline')
-    : authorizationState === 'needs-session'
-      ? 'Needs this phone to re-authorize'
-      : 'Pair this phone to open it'
+  const availability = authorizationAvailabilityText(machine, authorizationState, authorizationExpiresAt)
   const sourcePill = machine.source === 'hub' ? 'Hub' : 'Local'
   const DeviceIcon = machine.source === 'hub' ? Server : LaptopMinimal
+  const canForget = Boolean(authorizationExpiresAt || authorizationState === 'ready')
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
       <button
@@ -1583,27 +1678,75 @@ function MachineRow({
           </div>
         </div>
       </button>
-      {authorizationState !== 'ready' ? (
-        <div className="border-t border-zinc-100 px-4 py-2.5">
+      <div className="flex items-center gap-2 border-t border-zinc-100 px-4 py-2.5">
+        {authorizationState !== 'ready' ? (
           <button
-            aria-label={`Scan to ${authorizationState === 'needs-session' ? 're-authorize' : 'pair'} ${machine.name}`}
+            aria-label={`Scan to pair ${machine.name}`}
             className="inline-flex h-9 items-center gap-2 rounded-full bg-zinc-100 px-3 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-100 active:bg-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             type="button"
             onClick={() => onPairMachine(machine)}
           >
             <QrCode className="h-4 w-4" />
-            {authorizationState === 'needs-session' ? 'Scan to re-authorize' : 'Scan to pair'}
+            Scan to pair
           </button>
-        </div>
-      ) : null}
+        ) : null}
+        {canForget ? (
+          <button
+            aria-label={`Remove authorization for ${machine.name}`}
+            className="ml-auto inline-flex h-9 items-center gap-2 rounded-full border border-red-200 bg-white px-3 text-[12px] font-semibold text-red-600 hover:bg-red-50 active:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+            type="button"
+            onClick={() => onForgetMachineAuthorization(machine)}
+          >
+            <Trash2 className="h-4 w-4" />
+            Remove
+          </button>
+        ) : null}
+        {authorizationState === 'ready' ? <span className="min-h-9 flex-1" aria-hidden="true" /> : null}
+      </div>
     </div>
   )
 }
 
-function machineAuthorizationState(machine: WebControlMachine, pairedMachineIds: Set<string>): MachineAuthorizationState {
-  if (pairedMachineIds.has(machine.id)) return 'ready'
-  if (machine.paired) return 'needs-session'
-  return 'unpaired'
+function authorizationAvailabilityText(
+  machine: WebControlMachine,
+  authorizationState: MachineAuthorizationState,
+  expiresAt: string | undefined,
+): string {
+  if (authorizationState === 'ready') {
+    return expiresAt ? `Authorized until ${formatAuthorizationExpiry(expiresAt)}` : machine.online ? 'Tap to connect' : 'Authorized'
+  }
+  if (authorizationState === 'expired') {
+    return expiresAt ? `Authorization expired ${formatAuthorizationExpiry(expiresAt)}` : 'Authorization expired'
+  }
+  return 'Pair this phone to open it'
+}
+
+function formatAuthorizationExpiry(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  if (date.getFullYear() >= 2099) return value
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function machineAuthorizationState(
+  machine: WebControlMachine,
+  authorizedMachineIds: Set<string>,
+  authorizationExpiries: Map<string, string>,
+): MachineAuthorizationState {
+  if (authorizedMachineIds.has(machine.id)) return 'ready'
+  const expiresAt = authorizationExpiries.get(machine.id)
+  if (expiresAt && isExpiredAuthorization(expiresAt)) return 'expired'
+  return 'unauthorized'
+}
+
+function isExpiredAuthorization(value: string): boolean {
+  const date = new Date(value)
+  return !Number.isNaN(date.getTime()) && date.getTime() <= Date.now()
 }
 
 function EmptyState({
@@ -1669,7 +1812,6 @@ function createUnavailableWebControlApi(message: string): WebControlApi {
     login: fail,
     me: fail,
     listMachines: fail,
-    pairMachine: fail,
   }
 }
 
@@ -1686,7 +1828,7 @@ function createBrowserAppDeviceId(): string {
   return `appweb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
 }
 
-function readPairedMachineIds(storage: RemoteRuntimeStorage | undefined, userId: string | undefined): Set<string> {
+function readAuthorizedMachineIds(storage: RemoteRuntimeStorage | undefined, userId: string | undefined): Set<string> {
   if (!storage) return new Set()
   try {
     const sessionStore = createMachineSessionStore(storage)
@@ -1695,6 +1837,21 @@ function readPairedMachineIds(storage: RemoteRuntimeStorage | undefined, userId:
       .map((machine) => machine.machineId))
   } catch {
     return new Set()
+  }
+}
+
+function readAuthorizationExpiries(storage: RemoteRuntimeStorage | undefined): Map<string, string> {
+  if (!storage) return new Map()
+  try {
+    const sessionStore = createMachineSessionStore(storage)
+    const expiries = new Map<string, string>()
+    for (const machine of createMachineStore({ storage }).listMachines()) {
+      const expiresAt = sessionStore.getSessionExpiry(machine.machineId)
+      if (expiresAt) expiries.set(machine.machineId, expiresAt)
+    }
+    return expiries
+  } catch {
+    return new Map()
   }
 }
 
@@ -1714,18 +1871,32 @@ function pruneMachinesForSignOut(storage: RemoteRuntimeStorage | undefined): Sto
   return store.listMachines()
 }
 
-function mergeSignedInHubMachines(storage: RemoteRuntimeStorage, hubMachines: WebControlMachine[]): void {
+function syncSignedInHubMachines(storage: RemoteRuntimeStorage, hubMachines: WebControlMachine[]): void {
   const store = createMachineStore({ storage })
   for (const hub of hubMachines) {
     const stored = store.getMachine(hub.id)
-    if (!stored) continue
-    if (stored.source !== 'local' && stored.source !== 'manual') continue
-    store.saveMachine(mergeHubMachine(stored, hub))
+    if (stored) {
+      store.saveMachine(mergeHubMachine(stored, hub))
+      continue
+    }
+    const timestamp = new Date().toISOString()
+    store.saveMachine(mergeHubMachine({
+      machineId: hub.id,
+      name: hub.name,
+      ...(hub.hostname ? { hostname: hub.hostname } : {}),
+      state: hub.online ? 'online' : 'offline',
+      terminalCount: 0,
+      source: 'hub',
+      addresses: { local: [], lan: [], public: [] },
+      endpoints: {},
+      addedAt: timestamp,
+      updatedAt: timestamp,
+    }, hub))
   }
 }
 
 function hasLocalAddresses(machine: StoredMachineRecord): boolean {
-  return machine.addresses.local.length > 0 || machine.addresses.lan.length > 0
+  return machine.addresses.local.length > 0 || machine.addresses.lan.length > 0 || machine.addresses.public.length > 0
 }
 
 function downgradeHubMachineToLocal(machine: StoredMachineRecord): StoredMachineRecord {
@@ -1737,30 +1908,125 @@ function downgradeHubMachineToLocal(machine: StoredMachineRecord): StoredMachine
     addresses: {
       local: machine.addresses.local,
       lan: machine.addresses.lan,
-      public: [],
+      public: machine.addresses.public,
     },
     endpoints: {},
     updatedAt: new Date().toISOString(),
   }
 }
 
-function createPairApiFromMachine(machine: WebControlMachine, networkRuntime: RemoteNetworkRuntime): PairApi {
-  const [hubUrl] = pairingHubUrlsFromMachine(machine)
-  if (!hubUrl) {
-    throw new Error('Hub endpoint is required before pairing this device')
+function createPairApiForScan(input: {
+  candidateHubUrls: string[]
+  machine: WebControlMachine
+  networkRuntime: RemoteNetworkRuntime
+}): PairApi {
+  const contenders: Array<(pairInput: PairInput, options?: RtcConnectOptions) => Promise<PairResult>> = []
+  for (const hubUrl of compactHubUrls(input.candidateHubUrls)) {
+    contenders.push((pairInput, options) => createHubApi({ baseUrl: hubUrl, fetch: input.networkRuntime.fetch }).pair(pairInputWithMachineId(pairInput, input.machine.id), options))
   }
-  return createHubApi({ baseUrl: hubUrl, fetch: networkRuntime.fetch })
+  return {
+    pair(pairInput, options) {
+      return racePairClaims(contenders.map((claim) => (claimOptions?: RtcConnectOptions) => claim(pairInput, claimOptions)), options)
+    },
+  }
 }
 
-function pairingHubUrlsFromMachine(machine: WebControlMachine): string[] {
-  if (machine.source === 'local') {
-    return compactHubUrls([
-      ...(machine.localHubUrls ?? []),
-      ...(machine.localFallbackHubUrls ?? []),
-      ...machine.hubUrls,
-    ])
+function candidatePairingHubUrls(machine: WebControlMachine, localHubUrls: string[]): string[] {
+  return compactHubUrls([
+    ...localHubUrls,
+    ...nonEmptyHubUrls(machine),
+    ...(machine.localFallbackHubUrls ?? []),
+  ])
+}
+
+function pairInputWithMachineId(input: PairInput, fallbackMachineId: string | undefined): PairInput & { machineId: string } {
+  const machineId = input.machineId ?? fallbackMachineId
+  if (!machineId) throw new Error('machine id is required before pairing this device')
+  return {
+    ...input,
+    machineId,
   }
-  return nonEmptyHubUrls(machine)
+}
+
+async function racePairClaims(
+  claims: Array<(options?: RtcConnectOptions) => Promise<PairResult>>,
+  options: RtcConnectOptions = {},
+): Promise<PairResult> {
+  if (claims.length === 0) throw new Error('Pairing endpoint is required before pairing this device')
+  if (claims.length === 1) return claims[0]!(options)
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let remaining = claims.length
+    let lastError: unknown
+    const controllers = claims.map(() => new AbortController())
+    const abortLosers = (reason: Error) => {
+      for (const controller of controllers) {
+        if (!controller.signal.aborted) controller.abort(reason)
+      }
+      options.signal?.removeEventListener('abort', abortFromParent)
+    }
+    const abortFromParent = () => {
+      const reason = options.signal?.reason instanceof Error ? options.signal.reason : new Error('pairing request cancelled')
+      if (!settled) {
+        settled = true
+        abortLosers(reason)
+        reject(reason)
+      }
+    }
+    if (options.signal?.aborted) {
+      abortFromParent()
+      return
+    }
+    options.signal?.addEventListener('abort', abortFromParent, { once: true })
+    for (const claim of claims) {
+      const index = claims.indexOf(claim)
+      const controller = controllers[index]!
+      claim({ ...options, signal: controller.signal }).then(
+        (result) => {
+          if (settled) return
+          settled = true
+          abortLosers(new Error('pairing endpoint race finished'))
+          resolve(result)
+        },
+        (error) => {
+          if (settled) return
+          lastError = error
+          remaining -= 1
+          if (remaining === 0 && !settled) {
+            settled = true
+            options.signal?.removeEventListener('abort', abortFromParent)
+            reject(errorFromUnknown(lastError, 'Pairing failed on every endpoint'))
+          }
+        },
+      )
+    }
+  })
+}
+
+function errorFromUnknown(error: unknown, fallback: string): Error {
+  if (error instanceof Error) return error
+  if (error === undefined || error === null) return new Error(fallback)
+  return new Error(String(error))
+}
+
+function runWithTimeout<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error(timeoutMessage)
+      controller.abort(error)
+      reject(error)
+    }, timeoutMs)
+  })
+  return Promise.race([run(controller.signal), timeout]).finally(() => {
+    if (timer) clearTimeout(timer)
+    if (!controller.signal.aborted) controller.abort(new Error('pairing request finished'))
+  })
 }
 
 function createHubMachineRuntime(input: {
@@ -1892,7 +2158,7 @@ function createHubMachineSessionManager(input: {
       machineId: input.machine.id,
       sessionToken,
       answerProofSecret,
-      policy: 'app_local_preferred',
+      policy: 'app_fastest',
       endpoints,
       onSnapshot: (snapshot) => {
         publishAttempt(snapshot)
@@ -2058,17 +2324,13 @@ function mergeHubMachine(saved: StoredMachineRecord, machine: WebControlMachine)
       ...(summaryHubUrl ? { hub: summaryHubUrl } : {}),
     },
     ...(saved.pairing ? { pairing: saved.pairing } : {}),
-    ...(saved.appBootstrap ? { appBootstrap: saved.appBootstrap } : {}),
     addedAt: saved.addedAt,
     updatedAt: saved.updatedAt,
   }
 }
 
 function hubUrlsFromStoredMachine(machine: StoredMachineRecord): string[] {
-  if (machine.source === 'hub' || machine.preferredPath === 'hub') {
-    return compactHubUrls([machine.endpoints.hub, ...machine.addresses.public])
-  }
-  return compactHubUrls([...machine.addresses.local, ...machine.addresses.lan, ...machine.addresses.public])
+  return compactHubUrls([machine.endpoints.hub])
 }
 
 function localHubUrlsFromStoredMachine(machine: StoredMachineRecord): string[] {
@@ -2080,21 +2342,13 @@ function localFallbackHubUrlsFromStoredMachine(
   hubUrls: readonly (string | undefined)[] = [],
 ): string[] {
   const publicHubUrls = compactHubUrls(machine.addresses.public)
-  if (machine.source !== 'hub' && machine.preferredPath !== 'hub') return publicHubUrls
+  if (machine.source !== 'hub') return publicHubUrls
   const hub = new Set(compactHubUrls([machine.endpoints.hub, ...hubUrls]))
   return publicHubUrls.filter((hubUrl) => !hub.has(hubUrl))
 }
 
-function hubUrlsFromPairingPayload(payload: PairingPayload): string[] {
-  return compactHubUrls(payload.hub.hubUrls)
-}
-
 function localHubUrlsFromPairingPayload(payload: PairingPayload): string[] {
   return compactHubUrls(payload.local.hubUrls)
-}
-
-function localFallbackHubUrlsFromPairingPayload(payload: PairingPayload): string[] {
-  return []
 }
 
 function nonEmptyHubUrls(machine: WebControlMachine): string[] {

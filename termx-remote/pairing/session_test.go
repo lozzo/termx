@@ -96,7 +96,35 @@ func TestClaimSessionIssuesSessionTokenAndConsumesSecret(t *testing.T) {
 	}
 }
 
-func TestClaimSessionStoresAllowedPaths(t *testing.T) {
+func TestCreateSessionInvalidatesOlderUnusedSessionsForMachine(t *testing.T) {
+	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	manager, _, _ := testManager(&now)
+	first, err := manager.CreateSession(5 * time.Minute)
+	if err != nil {
+		t.Fatalf("CreateSession first returned error: %v", err)
+	}
+	second, err := manager.CreateSession(5 * time.Minute)
+	if err != nil {
+		t.Fatalf("CreateSession second returned error: %v", err)
+	}
+
+	if _, err := manager.ClaimSession(ClaimRequest{
+		PairSessionID: first.PairSessionID,
+		PairSecret:    first.PairSecret,
+		AppDeviceID:   "appdev_test",
+	}); err == nil || !strings.Contains(err.Error(), "pair session not found") {
+		t.Fatalf("expected first unused session to be invalidated, got %v", err)
+	}
+	if _, err := manager.ClaimSession(ClaimRequest{
+		PairSessionID: second.PairSessionID,
+		PairSecret:    second.PairSecret,
+		AppDeviceID:   "appdev_test",
+	}); err != nil {
+		t.Fatalf("expected latest session to remain claimable: %v", err)
+	}
+}
+
+func TestClaimSessionTokenIsMachineScoped(t *testing.T) {
 	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	manager, _, machineSecret := testManager(&now)
 	session, err := manager.CreateSession(5 * time.Minute)
@@ -110,7 +138,6 @@ func TestClaimSessionStoresAllowedPaths(t *testing.T) {
 		AppDeviceID:           "appdev_management",
 		AppName:               "TermX Management App",
 		RequestedCapabilities: []string{"terminal_management", "file_manager", "terminal"},
-		AllowedPaths:          []string{"hub"},
 	})
 	if err != nil {
 		t.Fatalf("ClaimSession returned error: %v", err)
@@ -122,7 +149,7 @@ func TestClaimSessionStoresAllowedPaths(t *testing.T) {
 	if len(claims.Capabilities) != 0 {
 		t.Fatalf("session token should not carry requested capabilities, got %#v", claims.Capabilities)
 	}
-	if strings.Join(claims.Paths, ",") != "hub" {
+	if len(claims.Paths) != 0 {
 		t.Fatalf("paths = %#v", claims.Paths)
 	}
 }

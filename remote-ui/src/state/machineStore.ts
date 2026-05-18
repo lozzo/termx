@@ -7,7 +7,6 @@ export interface StoredMachineRecord extends AppMachineRecord {
   addresses: StoredMachineAddresses
   endpoints: StoredMachineEndpoints
   pairing?: StoredMachinePairing | undefined
-  appBootstrap?: StoredAppBootstrap | undefined
   addedAt: string
   updatedAt: string
 }
@@ -29,9 +28,6 @@ export interface StoredMachinePairing {
   expiresAt?: string | undefined
 }
 
-export interface StoredAppBootstrap {
-}
-
 export interface MachineStore {
   listMachines(): StoredMachineRecord[]
   getMachine(machineId: string): StoredMachineRecord | null
@@ -45,7 +41,7 @@ export interface MachineStoreOptions {
   now?: (() => Date) | undefined
 }
 
-const storeKey = 'termx.app.machines.v1'
+const storeKey = 'termx.app.machines.v2'
 
 export function createMachineStore(options: MachineStoreOptions): MachineStore {
   const now = () => (options.now?.() ?? new Date()).toISOString()
@@ -77,16 +73,12 @@ export function createMachineStore(options: MachineStoreOptions): MachineStore {
         terminalCount: existing?.terminalCount ?? 0,
         ...(existing?.lastSeenAt ? { lastSeenAt: existing.lastSeenAt } : {}),
         ...(existing?.lastConnectionPath ? { lastConnectionPath: existing.lastConnectionPath } : {}),
-        preferredPath: payload.preferredPath,
+        ...(existing?.preferredPath ? { preferredPath: existing.preferredPath } : {}),
         ...(existing?.relayInUse !== undefined ? { relayInUse: existing.relayInUse } : {}),
         source: existing?.source ?? 'local',
         addresses,
-        endpoints: {
-          ...(payload.hub.webControl ? { webControl: payload.hub.webControl } : {}),
-          ...(payload.hub.hubUrls[0] ? { hub: payload.hub.hubUrls[0] } : {}),
-        },
+        endpoints: existing?.endpoints ?? {},
         pairing: payload.pairing,
-        ...(isEmptyBootstrap(payload.bootstrap) ? {} : { appBootstrap: payload.bootstrap }),
         addedAt: existing?.addedAt ?? timestamp,
         updatedAt: timestamp,
       })
@@ -157,7 +149,6 @@ function normalizeStoredMachine(value: Record<string, unknown> | StoredMachineRe
     addresses,
     endpoints,
     ...(record.pairing !== undefined ? { pairing: pairingField(record.pairing) } : {}),
-    ...(record.appBootstrap !== undefined ? { appBootstrap: appBootstrapField(record.appBootstrap) } : {}),
     addedAt: stringField(record, 'addedAt'),
     updatedAt: stringField(record, 'updatedAt'),
   }
@@ -188,11 +179,6 @@ function pairingField(value: unknown): StoredMachinePairing {
     secret: stringField(record, 'secret'),
     ...(optionalString(record.expiresAt) ? { expiresAt: optionalString(record.expiresAt) } : {}),
   }
-}
-
-function appBootstrapField(value: unknown): StoredAppBootstrap {
-  recordValue(value, 'stored app bootstrap')
-  return {}
 }
 
 function rejectPrivateKeyMaterial(value: unknown): void {
@@ -233,10 +219,6 @@ function looksLikePrivateJwk(value: object): boolean {
     typeof record.crv === 'string' ||
     typeof record.x === 'string' ||
     typeof record.n === 'string'
-}
-
-function isEmptyBootstrap(value: StoredAppBootstrap): boolean {
-  return Object.keys(value).length === 0
 }
 
 function machineState(value: unknown): AppMachineState {

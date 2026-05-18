@@ -169,7 +169,7 @@ export interface LocalPairResult {
 }
 
 export interface LocalPairingApi {
-  pair(input: LocalPairInput): Promise<LocalPairResult>
+  pair(input: LocalPairInput, options?: RtcConnectOptions): Promise<LocalPairResult>
 }
 
 export interface TerminalInventorySubscription {

@@ -128,33 +128,15 @@ func printRemoteLocalStatus(w io.Writer, status *remoteprotocol.LocalStatus) {
 	fmt.Fprintf(w, "updated_at:\t%s\n", status.UpdatedAt.Format(time.RFC3339))
 }
 
-func buildRemotePairPayload(result *remoteprotocol.PairStartResult, status *remoteprotocol.Status, hubURLs []string) map[string]any {
+func buildRemotePairPayload(result *remoteprotocol.PairStartResult) map[string]any {
 	localHubURLs := compactHubBaseURLListOrEmpty([]string{result.LocalPairURL})
-	hubHubURLs := compactHubBaseURLListOrEmpty(hubURLs)
-	preferredPath := "local"
-	if len(localHubURLs) == 0 && len(hubHubURLs) > 0 {
-		preferredPath = "hub"
-	}
-	hub := map[string]any{
-		"hub_urls": hubHubURLs,
-	}
-	if status != nil {
-		if controlURL := strings.TrimSpace(status.ControlURL); controlURL != "" {
-			hub["web_control"] = controlURL
-		}
-	}
 	payload := map[string]any{
 		"type":           "termx_pair",
 		"schema_version": 4,
-		"preferred_path": preferredPath,
 		"machine": map[string]any{
 			"id":   result.MachineID,
 			"name": firstNonEmpty(result.MachineName, result.MachineID),
 		},
-		"local": map[string]any{
-			"hub_urls": localHubURLs,
-		},
-		"hub": hub,
 		"pairing": map[string]any{
 			"session_id":          result.PairSessionID,
 			"secret":              result.PairSecret,
@@ -162,22 +144,13 @@ func buildRemotePairPayload(result *remoteprotocol.PairStartResult, status *remo
 			"expires_at":          result.ExpiresAt.Format(time.RFC3339),
 		},
 	}
+	if len(localHubURLs) > 0 {
+		payload["local"] = map[string]any{
+			"hub_urls": localHubURLs,
+		}
+	}
 	cleanEmptyStrings(payload)
 	return payload
-}
-
-func hubURLsForPairPayload(status *remoteprotocol.Status, override string) []string {
-	if strings.TrimSpace(override) != "" {
-		return compactStringList([]string{override})
-	}
-	if status == nil {
-		return nil
-	}
-	hubURLs := compactStringList(status.HubURLs)
-	if len(hubURLs) == 0 && strings.TrimSpace(status.HubURL) != "" {
-		hubURLs = []string{strings.TrimSpace(status.HubURL)}
-	}
-	return hubURLs
 }
 
 func termxPairURI(payload map[string]any) (string, error) {

@@ -4,6 +4,7 @@ import android.util.Log
 import com.termx.app.network.BridgeServer
 import com.termx.app.transport.WebRTCTransport
 import kotlinx.coroutines.*
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * RaceConnector — 并发启动 LocalConnector 和 HubConnector，取先成功者
@@ -23,11 +24,11 @@ object RaceConnector {
         hubUrls: List<String>,
         sessionToken: String,
         bridge: BridgeServer?,
-        preferredPath: String = "local",
         forceRelay: Boolean = false,
         onProgress: ((String) -> Unit)? = null,
     ): Result = coroutineScope {
         val winner = CompletableDeferred<Result>()
+        val authFailed = AtomicBoolean(false)
 
         val localJob = async(Dispatchers.IO) {
             if (forceRelay) return@async null
@@ -36,6 +37,8 @@ object RaceConnector {
                 val r = LocalConnector.connect(machineId, localAddresses, sessionToken, bridge, onProgress)
                 if (r is LocalConnector.Result.Success) {
                     winner.complete(Result.Success(r.transport, "local", false))
+                } else if (r is LocalConnector.Result.Failure && r.reason == "auth") {
+                    authFailed.set(true)
                 }
                 r
             } catch (e: CancellationException) { throw e }
@@ -44,14 +47,12 @@ object RaceConnector {
 
         val hubJob = async(Dispatchers.IO) {
             if (hubUrls.isEmpty()) return@async null
-            // For preferred local, delay hub start slightly
-            if (!forceRelay && preferredPath == "local" && localAddresses.isNotEmpty()) {
-                delay(500)
-            }
             try {
                 val r = HubConnector.connect(machineId, hubUrls, sessionToken, bridge, forceRelay, onProgress)
                 if (r is HubConnector.Result.Success) {
                     winner.complete(Result.Success(r.transport, "hub", r.relayInUse))
+                } else if (r is HubConnector.Result.Failure && r.reason == "auth") {
+                    authFailed.set(true)
                 }
                 r
             } catch (e: CancellationException) { throw e }
@@ -60,7 +61,7 @@ object RaceConnector {
 
         launch {
             localJob.join(); hubJob.join()
-            winner.complete(Result.Failure("all_failed"))
+            winner.complete(Result.Failure(if (authFailed.get()) "auth" else "all_failed"))
         }
 
         val result = winner.await()

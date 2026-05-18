@@ -1,13 +1,8 @@
-import type { ConnectionPath } from '../core/transport'
-
 export interface PairingPayload {
   schemaVersion: 4
   machine: PairingPayloadMachine
   local: PairingPayloadLocal
-  hub: PairingPayloadHub
   pairing: PairingPayloadPairing
-  bootstrap: PairingPayloadBootstrap
-  preferredPath: ConnectionPath
 }
 
 export interface PairingPayloadMachine {
@@ -20,22 +15,12 @@ export interface PairingPayloadLocal {
   hubUrls: string[]
 }
 
-export interface PairingPayloadHub {
-  hubUrls: string[]
-  webControl?: string | undefined
-}
-
 export interface PairingPayloadPairing {
   sessionId: string
   secret: string
   answerProofSecret?: string | undefined
   expiresAt?: string | undefined
 }
-
-export interface PairingPayloadBootstrap {
-}
-
-const allowedPaths: readonly ConnectionPath[] = ['local', 'hub']
 
 export function parsePairingPayload(input: string): PairingPayload {
   const raw = parsePairingInput(input)
@@ -115,10 +100,13 @@ function parsePairingURI(input: string): unknown {
 }
 
 function normalizeV4Payload(data: Record<string, unknown>): PairingPayload {
+  rejectUnknownFields(data, ['type', 'schema_version', 'machine', 'local', 'pairing'], 'pairing payload')
   const machine = record(data.machine, 'pairing payload machine')
+  rejectUnknownFields(machine, ['id', 'name', 'hostname'], 'pairing payload machine')
   const local = optionalRecord(data.local)
-  const hub = optionalRecord(data.hub)
+  rejectUnknownFields(local, ['hub_urls'], 'pairing payload local')
   const pairing = record(data.pairing, 'pairing payload pairing')
+  rejectUnknownFields(pairing, ['session_id', 'secret', 'answer_proof_secret', 'expires_at'], 'pairing payload pairing')
   return {
     schemaVersion: 4,
     machine: {
@@ -129,18 +117,12 @@ function normalizeV4Payload(data: Record<string, unknown>): PairingPayload {
     local: {
       hubUrls: stringArrayField(local, 'hub_urls'),
     },
-    hub: {
-      hubUrls: stringArrayField(hub, 'hub_urls'),
-      ...(optionalString(hub.web_control) ? { webControl: optionalString(hub.web_control) } : {}),
-    },
     pairing: {
       sessionId: stringField(pairing, 'session_id'),
       secret: stringField(pairing, 'secret'),
       ...(optionalString(pairing.answer_proof_secret) ? { answerProofSecret: optionalString(pairing.answer_proof_secret) } : {}),
       ...(optionalString(pairing.expires_at) ? { expiresAt: optionalString(pairing.expires_at) } : {}),
     },
-    bootstrap: {},
-    preferredPath: connectionPath(optionalString(data.preferred_path) ?? 'local'),
   }
 }
 
@@ -184,11 +166,6 @@ function looksLikePrivateJwk(value: object): boolean {
     typeof record.n === 'string'
 }
 
-function connectionPath(value: string): ConnectionPath {
-  if ((allowedPaths as readonly string[]).includes(value)) return value as ConnectionPath
-  throw new Error(`unsupported client-visible connection path ${value}`)
-}
-
 function decodeBase64url(value: string): string {
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
   const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=')
@@ -210,6 +187,14 @@ function record(value: unknown, label: string): Record<string, unknown> {
 function optionalRecord(value: unknown): Record<string, unknown> {
   if (value === undefined || value === null) return {}
   return record(value, 'pairing payload field')
+}
+
+function rejectUnknownFields(data: Record<string, unknown>, allowed: readonly string[], label: string): void {
+  const allowedSet = new Set(allowed)
+  const unknown = Object.keys(data).filter((key) => !allowedSet.has(key))
+  if (unknown.length > 0) {
+    throw new Error(`${label} contains unsupported field ${unknown[0]}`)
+  }
 }
 
 function stringField(data: Record<string, unknown>, key: string): string {

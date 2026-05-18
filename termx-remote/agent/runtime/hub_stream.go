@@ -433,7 +433,6 @@ func (m *Manager) handleGRPCPairingClaim(ctx context.Context, claim *pb.PairingC
 		AppDeviceID:           claim.GetAppDeviceId(),
 		AppName:               claim.GetAppName(),
 		RequestedCapabilities: append([]string(nil), claim.GetRequestedCapabilities()...),
-		AllowedPaths:          append([]string(nil), claim.GetAllowedPaths()...),
 	})
 	_ = sender.Send(&pb.AgentToHub{Payload: &pb.AgentToHub_PairingResult{
 		PairingResult: &pb.PairingResult{
@@ -561,7 +560,6 @@ func pairingpkgClaimRequest(claim hubv1.PairingClaim) pairing.ClaimRequest {
 		AppDeviceID:           claim.AppDeviceID,
 		AppName:               claim.AppName,
 		RequestedCapabilities: append([]string(nil), claim.RequestedCapabilities...),
-		AllowedPaths:          append([]string(nil), claim.AllowedPaths...),
 	}
 }
 
@@ -622,10 +620,6 @@ func (m *Manager) verifyOfferSession(ctx context.Context, offer hubv1.SignalingO
 	if err != nil {
 		return token.Claims{}, err
 	}
-	path := normalizeOfferSessionPath(offer.Path)
-	if !sessionTokenAllowsPath(claims, path) {
-		return token.Claims{}, fmt.Errorf("session token is not authorized for %s connections", path)
-	}
 	terminalID := strings.TrimSpace(offer.TerminalID)
 	if terminalID != "" {
 		if !m.hasTerminal(ctx, terminalID) {
@@ -633,31 +627,6 @@ func (m *Manager) verifyOfferSession(ctx context.Context, offer hubv1.SignalingO
 		}
 	}
 	return claims, nil
-}
-
-func normalizeOfferSessionPath(path string) string {
-	switch strings.TrimSpace(path) {
-	case sessionTokenPathLocal:
-		return sessionTokenPathLocal
-	default:
-		return sessionTokenPathHub
-	}
-}
-
-func sessionTokenAllowsPath(claims token.Claims, path string) bool {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return false
-	}
-	if len(claims.Paths) == 0 {
-		return true
-	}
-	for _, allowed := range claims.Paths {
-		if strings.TrimSpace(allowed) == path {
-			return true
-		}
-	}
-	return false
 }
 
 func (m *Manager) answerProof(offer hubv1.SignalingOffer, claims token.Claims) string {

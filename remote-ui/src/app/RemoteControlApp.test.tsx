@@ -86,15 +86,14 @@ describe('RemoteControlApp', () => {
     })
   })
 
-  it('logs into Web Control, lists account machines, and claims a TermX pairing code through Web Control', async () => {
+  it('logs into Web Control, lists account machines, and claims a TermX pairing code through the machine Hub', async () => {
     const storage = new MemoryStorage()
     const pairUri = termxPairUri(pairPayload({
       machineId: 'device-1',
       name: 'RedmiBook',
       addresses: {
-        public: ['https://stale-payload-hub.termx.test'],
+        public: [],
       },
-      endpoints: {},
     }))
     const fetch = new RecordingFetch([
       jsonResponse(200, {
@@ -120,7 +119,6 @@ describe('RemoteControlApp', () => {
           name: 'RedmiBook',
           hostname: 'redmibook',
           online: true,
-          paired: false,
           source: 'hub',
           control_url: 'http://114.66.58.243:12306',
           current_hub_url: 'http://114.66.58.243:8447',
@@ -199,29 +197,206 @@ describe('RemoteControlApp', () => {
     await userEvent.click(screen.getByRole('button', { name: /open redmibook/i }))
     expect(screen.getByTestId('termx-machine-terminal-list')).toBeTruthy()
     await waitFor(() => expect(listTerminals.mock.calls.length).toBeGreaterThanOrEqual(2))
-    const webControlPairRequest = fetch.requests.find((request) => request.url === 'http://114.66.58.243:12306/api/v1/machines/device-1/pairing/claims')
-    expect(webControlPairRequest?.method).toBe('POST')
-    expect(webControlPairRequest?.headers).toMatchObject({ authorization: 'Bearer access-token-1' })
-    expect(webControlPairRequest?.body).toMatchObject({
+    const hubPairRequest = fetch.requests.find((request) => request.url === 'http://114.66.58.243:8447/api/v1/pairing/claims')
+    expect(hubPairRequest?.method).toBe('POST')
+    expect(hubPairRequest?.body).toMatchObject({
+      machine_id: 'device-1',
       pair_session_id: 'pair-session-1',
       pair_secret: 'pair-secret-1',
       app_device_id: expect.stringMatching(/^appweb_/),
       app_name: 'TermX Remote App',
       requested_capabilities: ['terminal', 'file_manager', 'terminal_management'],
     })
-    const stored = JSON.parse(storage.getItem('termx.app.machines.v1') ?? '[]') as Array<Record<string, unknown>>
+    expect(fetch.requests.some((request) => request.url.includes('/api/v1/machines/device-1/pairing/claims'))).toBe(false)
+    const stored = JSON.parse(storage.getItem('termx.app.machines.v2') ?? '[]') as Array<Record<string, unknown>>
     expect(stored).toHaveLength(1)
     expect(stored[0]?.machineId).toBe('device-1')
     expect(stored[0]?.source).toBe('hub')
     expect(stored[0]?.preferredPath).toBe('hub')
     expect(stored[0]?.addresses).toMatchObject({
-      public: ['https://stale-payload-hub.termx.test'],
+      public: [],
     })
     expect(stored[0]?.endpoints).toMatchObject({
       hub: 'http://114.66.58.243:8447',
     })
-    expect(fetch.requests.some((request) => request.url === 'https://stale-payload-hub.termx.test/api/v1/pairing/claims')).toBe(false)
     expect(storage.getItem('termx.session.device-1.token')).toBe('session-token-device-1')
+  })
+
+  it('races a global scan through local QR addresses and Hub URLs when the QR matches an account machine', async () => {
+    const storage = new MemoryStorage()
+    const pairUri = termxPairUri(pairPayload({
+      machineId: 'device-1',
+      name: 'RedmiBook',
+      addresses: {
+        local: ['http://127.0.0.1:18888'],
+        lan: [],
+        public: [],
+      },
+    }))
+    const fetch = new RecordingFetch([
+      jsonResponse(200, {
+        token_type: 'Bearer',
+        access_token: 'access-token-1',
+        refresh_token: '',
+        user: {
+          id: 'user-1',
+          username: 'lozzow',
+          email: 'lozzow@example.test',
+        },
+      }),
+      jsonResponse(200, {
+        user: {
+          id: 'user-1',
+          username: 'lozzow',
+          email: 'lozzow@example.test',
+        },
+      }),
+      jsonResponse(200, {
+        machines: [{
+          id: 'device-1',
+          name: 'RedmiBook',
+          hostname: 'redmibook',
+          online: true,
+          source: 'hub',
+          control_url: 'http://114.66.58.243:12306',
+          current_hub_url: 'http://114.66.58.243:8447',
+          hub_urls: ['http://114.66.58.243:8447'],
+          hub_status: 'online',
+        }],
+      }),
+      jsonResponse(200, {
+        claim_id: 'claim-1',
+        machine_id: 'device-1',
+        machine_name: 'RedmiBook',
+        session_token: 'session-token-device-1',
+        expires_at: '2099-05-05T10:30:00Z',
+      }),
+    ])
+
+    render(
+      <RemoteControlApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        machineRuntimeFactory={({ machine }) => ({
+          api: {
+            async getStatus() {
+              return {
+                machine: {
+                  machineId: machine.id,
+                  name: machine.name,
+                  state: 'online',
+                },
+                localWeb: {
+                  httpUrl: '',
+                  rtcOfferUrl: machine.hubUrls[0] ?? '',
+                },
+              }
+            },
+            async listTerminals() {
+              return [{
+                terminalId: 'terminal-1',
+                machineId: 'device-1',
+                title: 'zsh',
+                state: 'running' as const,
+                command: '/bin/zsh -l',
+                cols: 100,
+                rows: 30,
+              }]
+            },
+          },
+          connector: { connect: vi.fn(async () => fakeRtcSession()) },
+        })}
+        networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
+        storage={storage}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /open settings/i }))
+    await userEvent.type(screen.getByLabelText(/email or username/i), 'lozzow@example.test')
+    await userEvent.type(screen.getByLabelText(/password/i), 'secret')
+    await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
+    await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
+
+    await userEvent.click(headerAddLocalDeviceButton())
+    fireEvent.change(screen.getByLabelText(/termx qr content/i), { target: { value: pairUri } })
+    await userEvent.click(screen.getByRole('button', { name: /^add device$/i }))
+
+    await waitFor(() => expect(screen.getByTestId('termx-machine-terminal-list')).toBeTruthy())
+    expect(fetch.requests.some((request) => request.url === 'http://127.0.0.1:18888/api/v1/pairing/claims')).toBe(true)
+    expect(fetch.requests.some((request) => request.url === 'http://114.66.58.243:8447/api/v1/pairing/claims')).toBe(true)
+    expect(fetch.requests.some((request) => request.url.includes('/api/v1/machines/device-1/pairing/claims'))).toBe(false)
+    expect(storage.getItem('termx.session.device-1.token')).toBe('session-token-device-1')
+    const stored = JSON.parse(storage.getItem('termx.app.machines.v2') ?? '[]') as Array<Record<string, unknown>>
+    expect(stored[0]).toMatchObject({
+      machineId: 'device-1',
+      source: 'hub',
+      addresses: {
+        local: ['http://127.0.0.1:18888'],
+        lan: [],
+        public: [],
+      },
+      endpoints: {
+        hub: 'http://114.66.58.243:8447',
+      },
+    })
+  })
+
+  it('uses the first successful local QR pairing claim instead of waiting for Web Control', async () => {
+    const storage = new MemoryStorage()
+    const pairUri = termxPairUri(pairPayload({
+      machineId: 'device-1',
+      name: 'RedmiBook',
+      addresses: {
+        local: ['http://127.0.0.1:18888'],
+        lan: ['http://192.168.1.20:18888'],
+        public: [],
+      },
+    }))
+    const fetch = new LocalPairRaceFetch()
+
+    render(
+      <RemoteControlApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        machineRuntimeFactory={({ machine }) => ({
+          api: {
+            async getStatus() {
+              return {
+                machine: {
+                  machineId: machine.id,
+                  name: machine.name,
+                  state: 'online',
+                },
+                localWeb: {
+                  httpUrl: '',
+                  rtcOfferUrl: machine.hubUrls[0] ?? '',
+                },
+              }
+            },
+            async listTerminals() {
+              return []
+            },
+          },
+          connector: { connect: vi.fn(async () => fakeRtcSession()) },
+        })}
+        networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
+        storage={storage}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /open settings/i }))
+    await userEvent.type(screen.getByLabelText(/email or username/i), 'lozzow@example.test')
+    await userEvent.type(screen.getByLabelText(/password/i), 'secret')
+    await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
+    await waitFor(() => expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0))
+
+    await userEvent.click(headerAddLocalDeviceButton())
+    fireEvent.change(screen.getByLabelText(/termx qr content/i), { target: { value: pairUri } })
+    await userEvent.click(screen.getByRole('button', { name: /^add device$/i }))
+
+    await waitFor(() => expect(storage.getItem('termx.session.device-1.token')).toBe('session-token-local-lan'))
+    expect(fetch.requests.some((request) => request.url === 'http://127.0.0.1:18888/api/v1/pairing/claims')).toBe(true)
+    expect(fetch.requests.some((request) => request.url === 'http://192.168.1.20:18888/api/v1/pairing/claims')).toBe(true)
+    expect(fetch.requests.some((request) => request.url === 'http://114.66.58.243:8447/api/v1/pairing/claims')).toBe(true)
+    expect(fetch.requests.some((request) => request.url.includes('/api/v1/machines/device-1/pairing/claims'))).toBe(false)
   })
 
   it('claims a self-hosted local pairing code through payload public hub URLs', async () => {
@@ -235,7 +410,6 @@ describe('RemoteControlApp', () => {
         lan: [],
         public: ['https://self-hub-1.termx.test', 'https://self-hub-2.termx.test'],
       },
-      endpoints: {},
     }))
     const fetch = new RecordingFetch([
       jsonResponse(200, {
@@ -271,7 +445,7 @@ describe('RemoteControlApp', () => {
         pair_secret: 'pair-secret-1',
       }),
     })
-    const stored = JSON.parse(storage.getItem('termx.app.machines.v1') ?? '[]') as Array<Record<string, unknown>>
+    const stored = JSON.parse(storage.getItem('termx.app.machines.v2') ?? '[]') as Array<Record<string, unknown>>
     expect(stored[0]).toMatchObject({
       machineId: 'self-hosted-1',
       source: 'local',
@@ -284,6 +458,39 @@ describe('RemoteControlApp', () => {
     expect(screen.queryByText('Local app identity storage is required before opening this machine')).toBeNull()
   })
 
+  it('rejects removed QR Hub URLs instead of using them for local pairing fallback', async () => {
+    const storage = new MemoryStorage()
+    const payload = pairPayload({
+      machineId: 'dual-mode-1',
+      name: 'Dual Mode Box',
+      addresses: {
+        local: ['http://127.0.0.1:18888'],
+        lan: [],
+        public: [],
+      },
+    })
+    payload.hub = {
+      hub_urls: ['http://114.66.58.243:8447'],
+    }
+    const pairUri = termxPairUri(payload)
+
+    render(
+      <RemoteControlApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
+        networkRuntime={testNetworkRuntime(fetchNoRequests, storage)}
+        storage={storage}
+      />,
+    )
+
+    await userEvent.click(headerAddLocalDeviceButton())
+    fireEvent.change(screen.getByLabelText(/termx qr content/i), { target: { value: pairUri } })
+    await userEvent.click(screen.getByRole('button', { name: /^add device$/i }))
+
+    await waitFor(() => expect(screen.getByText(/unsupported field hub/i)).toBeTruthy())
+    expect(storage.getItem('termx.session.dual-mode-1.token')).toBeNull()
+  })
+
   it('claims copied termx remote pair JSON output as a v4 pairing payload', async () => {
     const storage = new MemoryStorage()
     const payload = pairPayload({
@@ -294,7 +501,6 @@ describe('RemoteControlApp', () => {
         lan: [],
         public: ['https://copied-json-hub.termx.test'],
       },
-      endpoints: {},
     })
     const pairUri = termxPairUri(payload)
     const fetch = new RecordingFetch([
@@ -350,6 +556,7 @@ describe('RemoteControlApp', () => {
     await userEvent.click(headerAddLocalDeviceButton())
 
     const sheet = screen.getByTestId('termx-pair-sheet')
+    expect(sheet.className).toContain('h-full')
     expect(sheet.className).toContain('bg-white')
     expect(sheet.className).not.toContain('bg-[var(--termx-surface)]')
     expect(screen.getByLabelText(/termx qr content/i).className).toContain('bg-white')
@@ -365,7 +572,6 @@ describe('RemoteControlApp', () => {
         lan: [],
         public: [],
       },
-      endpoints: {},
     }))
     const fetch = new RecordingFetch([
       jsonResponse(200, {
@@ -399,6 +605,48 @@ describe('RemoteControlApp', () => {
     expect(storage.getItem('termx.session.camera-local-1.token')).toBe('session-token-camera-local')
   })
 
+  it('shows a pairing state after the camera scanner returns a QR code', async () => {
+    const storage = new MemoryStorage()
+    const pairUri = termxPairUri(pairPayload({
+      machineId: 'camera-pending-1',
+      name: 'Camera Pending Box',
+      addresses: {
+        local: ['http://192.168.10.8:18888'],
+        lan: [],
+        public: [],
+      },
+    }))
+    let resolvePair!: (response: Response) => void
+    const fetch: WebControlFetch = async () => new Promise<Response>((resolve) => {
+      resolvePair = resolve
+    })
+    const scanPairingCode = vi.fn(async () => pairUri)
+
+    render(
+      <RemoteControlApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
+        networkRuntime={testNetworkRuntime(fetch, storage)}
+        scanPairingCode={scanPairingCode}
+        storage={storage}
+      />,
+    )
+
+    await userEvent.click(headerAddLocalDeviceButton())
+
+    await waitFor(() => expect(screen.getByText(/QR code scanned. Pairing this phone/i)).toBeTruthy())
+    expect(screen.getByRole('button', { name: /pairing device/i })).toBeTruthy()
+
+    resolvePair(jsonResponse(200, {
+      claim_id: 'claim-camera-pending-1',
+      machine_id: 'camera-pending-1',
+      machine_name: 'Camera Pending Box',
+      session_token: 'session-token-camera-pending',
+      expires_at: '2099-05-05T10:30:00Z',
+    }))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-terminal-list')).toBeTruthy())
+  })
+
   it('closes the pairing sheet when the camera scanner is cancelled', async () => {
     const storage = new MemoryStorage()
     const scanPairingCode = vi.fn<NonNullable<RemoteControlAppProps['scanPairingCode']>>(async (options) => {
@@ -422,6 +670,39 @@ describe('RemoteControlApp', () => {
     await waitFor(() => expect(screen.queryByTestId('termx-pair-sheet')).toBeNull())
   })
 
+  it('keeps the scanned QR content visible when camera pairing fails', async () => {
+    const storage = new MemoryStorage()
+    const pairUri = termxPairUri(pairPayload({
+      machineId: 'camera-fail-1',
+      name: 'Camera Fail Box',
+      addresses: {
+        local: ['http://192.168.10.9:18888'],
+        lan: [],
+        public: [],
+      },
+    }))
+    const scanPairingCode = vi.fn(async () => pairUri)
+    const fetch: WebControlFetch = async () => {
+      throw new TypeError('Failed to fetch')
+    }
+
+    render(
+      <RemoteControlApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
+        networkRuntime={testNetworkRuntime(fetch, storage)}
+        scanPairingCode={scanPairingCode}
+        storage={storage}
+      />,
+    )
+
+    await userEvent.click(headerAddLocalDeviceButton())
+
+    await waitFor(() => expect(screen.getByText(/Cannot reach Hub at http:\/\/192\.168\.10\.9:18888/i)).toBeTruthy())
+    expect((screen.getByLabelText(/termx qr content/i) as HTMLTextAreaElement).value).toBe(pairUri)
+    expect(screen.getByRole('button', { name: /^add device$/i })).toBeTruthy()
+  })
+
   it('shows an actionable error when the browser cannot reach the scanned Hub', async () => {
     const storage = new MemoryStorage()
     const pairUri = termxPairUri(pairPayload({
@@ -432,7 +713,6 @@ describe('RemoteControlApp', () => {
         lan: [],
         public: ['https://blocked-hub.termx.test'],
       },
-      endpoints: {},
     }))
     const fetch: WebControlFetch = async () => {
       throw new TypeError('Failed to fetch')
@@ -455,7 +735,7 @@ describe('RemoteControlApp', () => {
     expect(screen.queryByText(/^Failed to fetch$/)).toBeNull()
   })
 
-  it('rejects pairing codes that do not match a Web Control machine in the signed-in account', async () => {
+  it('rejects hub-only QR codes when adding a local machine', async () => {
     const storage = new MemoryStorage()
     const pairUri = termxPairUri(pairPayload({
       machineId: 'local-machine-1',
@@ -485,7 +765,6 @@ describe('RemoteControlApp', () => {
           id: 'device-1',
           name: 'RedmiBook',
           online: true,
-          paired: false,
           source: 'hub',
           hub_status: 'online',
         }],
@@ -510,19 +789,20 @@ describe('RemoteControlApp', () => {
     fireEvent.change(screen.getByLabelText(/termx qr content/i), { target: { value: pairUri } })
     await userEvent.click(screen.getByRole('button', { name: /^add device$/i }))
 
-    await waitFor(() => expect(screen.getByText('This QR belongs to an online Web Control device. Sign in and re-authorize it from your machine list.')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/does not include local addresses/i)).toBeTruthy())
     expect(fetch.requests.some((request) => request.url.includes('/api/v1/pairing/claims'))).toBe(false)
-    expect(storage.getItem('termx.app.machines.v1')).toBeNull()
+    expect(storage.getItem('termx.session.local-machine-1.token')).toBeNull()
+    const stored = JSON.parse(storage.getItem('termx.app.machines.v2') ?? '[]') as Array<Record<string, unknown>>
+    expect(stored.some((machine) => machine.machineId === 'local-machine-1')).toBe(false)
   })
 
-  it('labels hub-paired machines without a local session as needing phone re-authorization', async () => {
+  it('shows Hub machines without a local session as needing QR authorization', async () => {
     const storage = new MemoryStorage()
     storage.setItem('termx.remote.accessToken', 'access-token-1')
     createMachineStore({ storage }).saveFromPairingPayload(parsePairingPayload(JSON.stringify(pairPayload({
       machineId: 'device-1',
       name: 'RedmiBook',
       addresses: { local: [], lan: [], public: ['https://hub-1.termx.test'] },
-      endpoints: {},
     }))))
     storage.setItem('termx.session.device-1.token', 'expired-session-token')
     storage.setItem('termx.session.device-1.exp', '2020-01-01T00:00:00Z')
@@ -540,7 +820,6 @@ describe('RemoteControlApp', () => {
           name: 'RedmiBook',
           hostname: 'redmibook',
           online: true,
-          paired: true,
           source: 'hub',
           current_hub_url: 'https://hub-1.termx.test',
           hub_urls: ['https://hub-1.termx.test'],
@@ -558,15 +837,79 @@ describe('RemoteControlApp', () => {
       />,
     )
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /^re-authorize redmibook$/i })).toBeTruthy())
-    expect(screen.getAllByText('Re-authorize').length).toBeGreaterThan(0)
+    await waitFor(() => expect(screen.getByRole('button', { name: /^pair redmibook$/i })).toBeTruthy())
+    expect(screen.getAllByText('Expired').length).toBeGreaterThan(0)
+    expect(screen.getByText(/authorization expired/i)).toBeTruthy()
     expect(storage.getItem('termx.session.device-1.token')).toBeNull()
+    expect(storage.getItem('termx.session.device-1.exp')).toBe('2020-01-01T00:00:00Z')
 
-    await userEvent.click(screen.getByRole('button', { name: /scan to re-authorize redmibook/i }))
+    await userEvent.click(screen.getByRole('button', { name: /scan to pair redmibook/i }))
 
     expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy()
-    expect(screen.getByText(/already paired with your account/i)).toBeTruthy()
+    expect(screen.getByText(/Authorize Device/i)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /open redmibook/i })).toBeNull()
+  })
+
+  it('removes local authorization for a Hub machine without deleting the Hub list record', async () => {
+    const storage = new MemoryStorage()
+    storage.setItem('termx.remote.accessToken', 'access-token-1')
+    storage.setItem('termx.session.device-1.token', 'session-token-device-1')
+    storage.setItem('termx.session.device-1.exp', '2099-05-05T10:30:00Z')
+    storage.setItem('termx.session.device-1.answerProofSecret', 'proof-secret-1')
+    storage.setItem('termx.app.machines.v2', JSON.stringify([{
+      machineId: 'device-1',
+      name: 'RedmiBook',
+      hostname: 'redmibook',
+      state: 'online',
+      terminalCount: 0,
+      source: 'hub',
+      addresses: { local: [], lan: [], public: [] },
+      endpoints: { hub: 'https://hub-1.termx.test' },
+      addedAt: '2026-05-05T10:00:00.000Z',
+      updatedAt: '2026-05-05T10:00:00.000Z',
+    }]))
+    const fetch = new RecordingFetch([
+      jsonResponse(200, {
+        user: {
+          id: 'user-1',
+          username: 'lozzow',
+          email: 'lozzow@example.test',
+        },
+      }),
+      jsonResponse(200, {
+        machines: [{
+          id: 'device-1',
+          name: 'RedmiBook',
+          hostname: 'redmibook',
+          online: true,
+          source: 'hub',
+          current_hub_url: 'https://hub-1.termx.test',
+          hub_urls: ['https://hub-1.termx.test'],
+          hub_status: 'online',
+        }],
+      }),
+    ])
+
+    render(
+      <RemoteControlApp
+        defaultControlUrl="http://114.66.58.243:12306"
+        hubRtcSessionFactory={fakeHubRtcSessionFactory}
+        networkRuntime={testNetworkRuntime(fetch.fetch, storage)}
+        storage={storage}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open redmibook/i })).toBeTruthy())
+    expect(screen.getByText(/authorized until/i)).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: /remove authorization for redmibook/i }))
+
+    expect(storage.getItem('termx.session.device-1.token')).toBeNull()
+    expect(storage.getItem('termx.session.device-1.exp')).toBeNull()
+    expect(storage.getItem('termx.session.device-1.answerProofSecret')).toBeNull()
+    expect(screen.getByRole('button', { name: /^pair redmibook$/i })).toBeTruthy()
+    expect(screen.getAllByText('Scan QR').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('RedmiBook').length).toBeGreaterThan(0)
   })
 
   it('removes hub-only machines and sessions when signing out', async () => {
@@ -574,7 +917,7 @@ describe('RemoteControlApp', () => {
     storage.setItem('termx.remote.accessToken', 'access-token-1')
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
     storage.setItem('termx.session.device-1.exp', '2099-05-05T10:30:00Z')
-    storage.setItem('termx.app.machines.v1', JSON.stringify([{
+    storage.setItem('termx.app.machines.v2', JSON.stringify([{
       machineId: 'device-1',
       name: 'RedmiBook',
       hostname: 'redmibook',
@@ -584,7 +927,7 @@ describe('RemoteControlApp', () => {
       addresses: {
         local: [],
         lan: [],
-        public: ['https://hub-1.termx.test'],
+        public: [],
       },
       endpoints: {
         webControl: 'http://114.66.58.243:12306',
@@ -607,7 +950,6 @@ describe('RemoteControlApp', () => {
           name: 'RedmiBook',
           hostname: 'redmibook',
           online: true,
-          paired: true,
           source: 'hub',
           current_hub_url: 'https://hub-1.termx.test',
           hub_urls: ['https://hub-1.termx.test'],
@@ -631,7 +973,7 @@ describe('RemoteControlApp', () => {
 
     expect(storage.getItem('termx.remote.accessToken')).toBeNull()
     expect(storage.getItem('termx.session.device-1.token')).toBeNull()
-    expect(storage.getItem('termx.app.machines.v1')).toBeNull()
+    expect(storage.getItem('termx.app.machines.v2')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: /back to machines/i }))
     expect(screen.queryByText('RedmiBook')).toBeNull()
   })
@@ -641,7 +983,7 @@ describe('RemoteControlApp', () => {
     storage.setItem('termx.remote.accessToken', 'access-token-1')
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
     storage.setItem('termx.session.device-1.exp', '2099-05-05T10:30:00Z')
-    storage.setItem('termx.app.machines.v1', JSON.stringify([{
+    storage.setItem('termx.app.machines.v2', JSON.stringify([{
       machineId: 'device-1',
       name: 'RedmiBook',
       hostname: 'redmibook',
@@ -652,7 +994,7 @@ describe('RemoteControlApp', () => {
       addresses: {
         local: ['http://127.0.0.1:18888'],
         lan: ['http://192.168.1.20:18888'],
-        public: ['https://hub-old.termx.test'],
+        public: ['https://frp-old.termx.test'],
       },
       endpoints: {
         webControl: 'http://114.66.58.243:12306',
@@ -675,7 +1017,6 @@ describe('RemoteControlApp', () => {
           name: 'RedmiBook',
           hostname: 'redmibook',
           online: true,
-          paired: true,
           source: 'hub',
           control_url: 'http://114.66.58.243:12306',
           current_hub_url: 'https://hub-new.termx.test',
@@ -706,7 +1047,6 @@ describe('RemoteControlApp', () => {
           name: 'RedmiBook',
           hostname: 'redmibook',
           online: true,
-          paired: true,
           source: 'hub',
           control_url: 'http://114.66.58.243:12306',
           current_hub_url: 'https://hub-new.termx.test',
@@ -729,7 +1069,7 @@ describe('RemoteControlApp', () => {
     await userEvent.click(screen.getByRole('button', { name: /open settings/i }))
     await userEvent.click(screen.getByRole('button', { name: /sign out/i }))
 
-    let stored = JSON.parse(storage.getItem('termx.app.machines.v1') ?? '[]') as Array<Record<string, unknown>>
+    let stored = JSON.parse(storage.getItem('termx.app.machines.v2') ?? '[]') as Array<Record<string, unknown>>
     expect(stored).toHaveLength(1)
     expect(stored[0]).toMatchObject({
       machineId: 'device-1',
@@ -738,9 +1078,8 @@ describe('RemoteControlApp', () => {
       addresses: {
         local: ['http://127.0.0.1:18888'],
         lan: ['http://192.168.1.20:18888'],
-        public: [],
+        public: ['https://frp-old.termx.test'],
       },
-      endpoints: {},
     })
     expect(storage.getItem('termx.session.device-1.token')).toBe('session-token-device-1')
 
@@ -749,7 +1088,7 @@ describe('RemoteControlApp', () => {
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }))
     await waitFor(() => expect(screen.getAllByText('Hub').length).toBeGreaterThan(0))
 
-    stored = JSON.parse(storage.getItem('termx.app.machines.v1') ?? '[]') as Array<Record<string, unknown>>
+    stored = JSON.parse(storage.getItem('termx.app.machines.v2') ?? '[]') as Array<Record<string, unknown>>
     expect(stored[0]).toMatchObject({
       machineId: 'device-1',
       source: 'hub',
@@ -757,6 +1096,7 @@ describe('RemoteControlApp', () => {
       addresses: {
         local: ['http://127.0.0.1:18888'],
         lan: ['http://192.168.1.20:18888'],
+        public: ['https://frp-old.termx.test'],
       },
       endpoints: {
         webControl: 'http://114.66.58.243:12306',
@@ -765,11 +1105,11 @@ describe('RemoteControlApp', () => {
     })
   })
 
-  it('opens paired Web Control machines through the current registered hub from Web Control', async () => {
+  it('opens authorized Web Control machines by racing the registered hubs from Web Control', async () => {
     const storage = new MemoryStorage()
     storage.setItem('termx.remote.accessToken', 'access-token-1')
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
-    storage.setItem('termx.app.machines.v1', JSON.stringify([{
+    storage.setItem('termx.app.machines.v2', JSON.stringify([{
       machineId: 'device-1',
       name: 'RedmiBook',
       hostname: 'redmibook',
@@ -779,7 +1119,7 @@ describe('RemoteControlApp', () => {
       addresses: {
         local: [],
         lan: [],
-        public: ['https://hub-1.termx.test', 'https://hub-2.termx.test'],
+        public: [],
       },
       endpoints: {
         webControl: 'http://114.66.58.243:12306',
@@ -804,8 +1144,11 @@ describe('RemoteControlApp', () => {
     await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
 
     const sessionRequests = fetch.requests.filter((request) => request.url.endsWith('/api/v1/sessions'))
-    expect(sessionRequests).toHaveLength(1)
-    expect(sessionRequests[0]).toMatchObject({
+    expect(sessionRequests.map((request) => request.url)).toEqual([
+      'https://hub-2.termx.test/api/v1/sessions',
+      'https://hub-1.termx.test/api/v1/sessions',
+    ])
+    expect(sessionRequests.find((request) => request.url === 'https://hub-2.termx.test/api/v1/sessions')).toMatchObject({
       url: 'https://hub-2.termx.test/api/v1/sessions',
       body: expect.objectContaining({
         machine_id: 'device-1',
@@ -818,7 +1161,7 @@ describe('RemoteControlApp', () => {
     const storage = new MemoryStorage()
     storage.setItem('termx.remote.accessToken', 'access-token-1')
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
-    storage.setItem('termx.app.machines.v1', JSON.stringify([{
+    storage.setItem('termx.app.machines.v2', JSON.stringify([{
       machineId: 'device-1',
       name: 'RedmiBook',
       hostname: 'redmibook',
@@ -873,7 +1216,7 @@ describe('RemoteControlApp', () => {
     const storage = new MemoryStorage()
     storage.setItem('termx.remote.accessToken', 'access-token-1')
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
-    storage.setItem('termx.app.machines.v1', JSON.stringify([{
+    storage.setItem('termx.app.machines.v2', JSON.stringify([{
       machineId: 'device-1',
       name: 'RedmiBook',
       hostname: 'redmibook',
@@ -935,7 +1278,6 @@ describe('RemoteControlApp', () => {
         lan: ['http://192.168.1.20:18888'],
         public: ['http://114.66.58.243:8447', 'https://frp.termx.test'],
       },
-      endpoints: {},
     }))))
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
     const fetch = new LocalRuntimeFetch()
@@ -975,7 +1317,6 @@ describe('RemoteControlApp', () => {
       machineId: 'device-1',
       name: 'RedmiBook',
       addresses: { local: [], lan: [], public: ['https://hub-1.termx.test'] },
-      endpoints: {},
     }))))
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
     const dispose = vi.fn()
@@ -1039,7 +1380,6 @@ describe('RemoteControlApp', () => {
       machineId: 'device-1',
       name: 'RedmiBook',
       addresses: { local: [], lan: [], public: ['https://hub-1.termx.test'] },
-      endpoints: {},
     }))))
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
     const fetch = new ManagedRuntimeFetch()
@@ -1079,7 +1419,6 @@ describe('RemoteControlApp', () => {
       machineId: 'device-1',
       name: 'RedmiBook',
       addresses: { local: [], lan: [], public: ['https://hub-1.termx.test'] },
-      endpoints: {},
     }))))
     storage.setItem('termx.session.device-1.token', 'session-token-device-1')
     const fetch = new ManagedRuntimeFetch()
@@ -1367,6 +1706,83 @@ class RecordingFetch {
   }
 }
 
+class LocalPairRaceFetch {
+  readonly requests: RecordedRequest[] = []
+
+  readonly fetch: WebControlFetch = async (input, init = {}) => {
+    const url = String(input)
+    const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined
+    this.requests.push({
+      url,
+      method: init.method ?? 'GET',
+      headers: recordHeaders(init.headers),
+      ...(body !== undefined ? { body } : {}),
+    })
+    if (url === 'http://114.66.58.243:12306/api/v1/auth/login') {
+      return jsonResponse(200, {
+        token_type: 'Bearer',
+        access_token: 'access-token-1',
+        refresh_token: '',
+        user: {
+          id: 'user-1',
+          username: 'lozzow',
+          email: 'lozzow@example.test',
+        },
+      })
+    }
+    if (url === 'http://114.66.58.243:12306/api/v1/auth/me') {
+      return jsonResponse(200, {
+        user: {
+          id: 'user-1',
+          username: 'lozzow',
+          email: 'lozzow@example.test',
+        },
+      })
+    }
+    if (url === 'http://114.66.58.243:12306/api/v1/machines') {
+      return jsonResponse(200, {
+        machines: [{
+          id: 'device-1',
+          name: 'RedmiBook',
+          hostname: 'redmibook',
+          online: true,
+          source: 'hub',
+          control_url: 'http://114.66.58.243:12306',
+          current_hub_url: 'http://114.66.58.243:8447',
+          hub_urls: ['http://114.66.58.243:8447'],
+          hub_status: 'online',
+        }],
+      })
+    }
+    if (url === 'http://127.0.0.1:18888/api/v1/pairing/claims') {
+      throw new TypeError('Failed to fetch')
+    }
+    if (url === 'http://192.168.1.20:18888/api/v1/pairing/claims') {
+      return jsonResponse(200, {
+        claim_id: 'claim-local-lan',
+        machine_id: 'device-1',
+        machine_name: 'RedmiBook',
+        session_token: 'session-token-local-lan',
+        expires_at: '2099-05-05T10:30:00Z',
+      })
+    }
+    if (url === 'http://114.66.58.243:8447/api/v1/pairing/claims') {
+      return new Promise<Response>((resolve) => {
+        setTimeout(() => {
+          resolve(jsonResponse(200, {
+            claim_id: 'claim-hub',
+            machine_id: 'device-1',
+            machine_name: 'RedmiBook',
+            session_token: 'session-token-hub',
+            expires_at: '2099-05-05T10:30:00Z',
+          }))
+        }, 50)
+      })
+    }
+    throw new Error(`unexpected request to ${url}`)
+  }
+}
+
 class WebControlHubFallbackFetch {
   readonly requests: RecordedRequest[] = []
 
@@ -1395,7 +1811,6 @@ class WebControlHubFallbackFetch {
           name: 'RedmiBook',
           hostname: 'redmibook',
           online: true,
-          paired: true,
           source: 'hub',
           control_url: 'http://114.66.58.243:12306',
           current_hub_url: 'https://hub-2.termx.test',
@@ -1482,7 +1897,6 @@ class SignedInLocalFirstFetch {
           name: 'RedmiBook',
           hostname: 'redmibook',
           online: true,
-          paired: true,
           source: 'hub',
           control_url: 'http://114.66.58.243:12306',
           current_hub_url: 'https://hub-1.termx.test',
@@ -1550,7 +1964,6 @@ class SignedInPublicLocalFallbackFetch {
           name: 'RedmiBook',
           hostname: 'redmibook',
           online: true,
-          paired: true,
           source: 'hub',
           control_url: 'http://114.66.58.243:12306',
           current_hub_url: 'https://hub-1.termx.test',
@@ -1731,7 +2144,6 @@ function pairPayload({
   name,
   schemaVersion = 4,
   addresses,
-  endpoints,
 }: {
   machineId: string
   name: string
@@ -1740,9 +2152,6 @@ function pairPayload({
     local?: string[] | undefined
     lan?: string[] | undefined
     public?: string[] | undefined
-  } | undefined
-  endpoints?: {
-    web_control?: string | undefined
   } | undefined
 }): Record<string, unknown> {
   return {
@@ -1760,18 +2169,10 @@ function pairPayload({
         ...(addresses?.public ?? ['http://114.66.58.243:8447']),
       ],
     },
-    hub: {
-      hub_urls: [],
-      ...(endpoints ?? {
-        web_control: 'http://114.66.58.243:12306',
-      }),
-    },
     pairing: {
       session_id: 'pair-session-1',
       secret: 'pair-secret-1',
     },
-    bootstrap: {},
-    preferred_path: 'hub',
   }
 }
 

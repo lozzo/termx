@@ -161,7 +161,6 @@ export const agents = sqliteTable(
     labels: text("labels").notNull().default(""),
     online: bool("online").notNull().default(false),
     hubId: fkId("hub_id").references(() => hubs.id),
-    paired: bool("paired").notNull().default(false),
     pendingKick: bool("pending_kick").notNull().default(false),
     allowRelayTransfer: bool("allow_relay_transfer").notNull().default(false),
     sessionBytesIn: integer("session_bytes_in"),

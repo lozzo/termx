@@ -3,7 +3,7 @@ import { parsePairingPayload } from './pairingPayload'
 import { createMachineStore } from './machineStore'
 
 describe('machine store', () => {
-  it('saves QR pairing metadata needed for local, hub, control, and pairing flows', () => {
+  it('saves QR pairing metadata needed for local candidates and pairing flows', () => {
     const storage = new MemoryStorage()
     const store = createMachineStore({ storage, now: () => new Date('2026-05-03T16:00:00Z') })
     const payload = parsePairingPayload(JSON.stringify({
@@ -17,17 +17,11 @@ describe('machine store', () => {
       local: {
         hub_urls: ['http://127.0.0.1:7788', 'http://192.168.1.40:7788', 'https://machine-1.public.termx.test'],
       },
-      hub: {
-        hub_urls: [],
-        web_control: 'https://control.termx.test',
-      },
       pairing: {
         session_id: 'pair-1',
         secret: 'pair-secret-1',
         expires_at: '2026-05-03T20:00:00Z',
       },
-      bootstrap: {},
-      preferred_path: 'local',
     }))
 
     const saved = store.saveFromPairingPayload(payload)
@@ -39,15 +33,12 @@ describe('machine store', () => {
       state: 'unknown',
       terminalCount: 0,
       source: 'local',
-      preferredPath: 'local',
       addresses: {
         local: ['http://127.0.0.1:7788'],
         lan: ['http://192.168.1.40:7788'],
         public: ['https://machine-1.public.termx.test'],
       },
-      endpoints: {
-        webControl: 'https://control.termx.test',
-      },
+      endpoints: {},
       pairing: {
         sessionId: 'pair-1',
         secret: 'pair-secret-1',
@@ -58,7 +49,7 @@ describe('machine store', () => {
     })
     expect(store.listMachines()).toEqual([saved])
     expect(store.getMachine('machine-1')).toEqual(saved)
-    expect(JSON.parse(storage.getItem('termx.app.machines.v1') ?? '[]')).toHaveLength(1)
+    expect(JSON.parse(storage.getItem('termx.app.machines.v2') ?? '[]')).toHaveLength(1)
   })
 
   it('merges rescanned metadata without dropping runtime status fields', () => {
@@ -105,7 +96,7 @@ describe('machine store', () => {
     })
   })
 
-  it('normalizes embedded Hub endpoint URLs before storing and reading machines', () => {
+  it('normalizes local candidate URLs before storing and reading machines', () => {
     const storage = new MemoryStorage()
     const store = createMachineStore({ storage, now: () => new Date('2026-05-03T16:00:00Z') })
 
@@ -120,9 +111,6 @@ describe('machine store', () => {
           'https://frp.termx.test/api/v1/sessions',
         ],
       },
-      hub: {
-        hub_urls: ['https://hub-main.termx.test/api/v1/pairing/claims'],
-      },
       pairing: { session_id: 'pair-1', secret: 'pair-secret-1' },
     })))
 
@@ -131,8 +119,46 @@ describe('machine store', () => {
       lan: ['http://192.168.1.20:18888'],
       public: ['https://frp.termx.test'],
     })
-    expect(saved.endpoints.hub).toBe('https://hub-main.termx.test')
+    expect(saved.endpoints).toEqual({})
     expect(store.listMachines()[0]?.addresses).toEqual(saved.addresses)
+  })
+
+  it('does not read the previous development store version', () => {
+    const storage = new MemoryStorage()
+    storage.setItem('termx.app.machines.v1', JSON.stringify([{
+      machineId: 'machine-1',
+      name: 'Dev MacBook',
+      state: 'unknown',
+      terminalCount: 0,
+      source: 'cloud',
+      addresses: { local: [], lan: [], public: [] },
+      endpoints: {},
+      addedAt: '2026-05-03T16:00:00.000Z',
+      updatedAt: '2026-05-03T16:00:00.000Z',
+    }]))
+    const store = createMachineStore({ storage })
+
+    expect(store.listMachines()).toEqual([])
+  })
+
+  it('rejects removed connection path names in the current store version', () => {
+    const storage = new MemoryStorage()
+    storage.setItem('termx.app.machines.v2', JSON.stringify([{
+      machineId: 'machine-1',
+      name: 'Dev MacBook',
+      state: 'unknown',
+      terminalCount: 0,
+      source: 'hub',
+      lastConnectionPath: 'managed',
+      preferredPath: 'managed',
+      addresses: { local: [], lan: [], public: [] },
+      endpoints: {},
+      addedAt: '2026-05-03T16:00:00.000Z',
+      updatedAt: '2026-05-03T16:00:00.000Z',
+    }]))
+    const store = createMachineStore({ storage })
+
+    expect(() => store.listMachines()).toThrow(/invalid connection path managed/i)
   })
 
   it('rejects machine private keys before persistence', () => {
@@ -151,10 +177,10 @@ describe('machine store', () => {
       updatedAt: '2026-05-03T16:00:00.000Z',
       machinePrivateKey: 'not-allowed',
     } as never)).toThrow(/machine private key/i)
-    expect(storage.getItem('termx.app.machines.v1')).toBeNull()
+    expect(storage.getItem('termx.app.machines.v2')).toBeNull()
   })
 
-  it('rejects app private keys in legacy bootstrap metadata', () => {
+  it('rejects app private keys in unknown metadata', () => {
     const storage = new MemoryStorage()
     const store = createMachineStore({ storage })
 
@@ -178,7 +204,7 @@ describe('machine store', () => {
 
   it('rejects contaminated persisted records before returning machines', () => {
     const storage = new MemoryStorage()
-    storage.setItem('termx.app.machines.v1', JSON.stringify([{
+    storage.setItem('termx.app.machines.v2', JSON.stringify([{
       machineId: 'machine-1',
       name: 'Dev MacBook',
       state: 'unknown',
@@ -195,7 +221,7 @@ describe('machine store', () => {
     const store = createMachineStore({ storage })
 
     expect(() => store.listMachines()).toThrow(/private key/i)
-    expect(storage.getItem('termx.app.machines.v1')).toMatch(/private_key/)
+    expect(storage.getItem('termx.app.machines.v2')).toMatch(/private_key/)
   })
 })
 

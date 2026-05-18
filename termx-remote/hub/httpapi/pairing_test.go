@@ -11,25 +11,7 @@ import (
 	"github.com/lozzow/termx/termx-remote/hub/registry"
 )
 
-func TestHubPairingRequiresWebControlProxy(t *testing.T) {
-	t.Parallel()
-
-	router := httpapi.NewHandler(httpapi.Config{
-		Registry:       registry.New(registry.Config{}),
-		InternalSecret: "hub-secret",
-	})
-
-	resp := postJSON(t, router, "/api/v1/pairing/claims", validPairingClaimRequest("mach_1"))
-
-	if resp.Code != http.StatusForbidden {
-		t.Fatalf("public Hub pairing status = %d body=%s", resp.Code, resp.Body.String())
-	}
-	if !strings.Contains(resp.Body.String(), "web_control_required") {
-		t.Fatalf("public Hub pairing error = %s", resp.Body.String())
-	}
-}
-
-func TestInternalPairingClaimIsHubScoped(t *testing.T) {
+func TestPublicPairingClaimIsMachineScoped(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -46,7 +28,7 @@ func TestInternalPairingClaimIsHubScoped(t *testing.T) {
 
 	responseCh := make(chan responseRecord, 1)
 	go func() {
-		resp := postJSONWithSecret(t, router, "/api/internal/pairing/claims", "hub-secret", validPairingClaimRequest("mach_1"))
+		resp := postJSON(t, router, "/api/v1/pairing/claims", validPairingClaimRequest("mach_1"))
 		responseCh <- responseRecord{code: resp.Code, body: resp.Body.String()}
 	}()
 
@@ -56,10 +38,7 @@ func TestInternalPairingClaimIsHubScoped(t *testing.T) {
 		Timeout:   time.Second,
 	})
 	if err != nil {
-		t.Fatalf("poll internal pairing claim: %v", err)
-	}
-	if strings.Join(claim.AllowedPaths, ",") != registry.PathHub {
-		t.Fatalf("internal pairing paths = %#v", claim.AllowedPaths)
+		t.Fatalf("poll public pairing claim: %v", err)
 	}
 	if _, err := reg.SubmitPairingResult(ctx, registry.PairingResultInput{
 		AgentID:      "agent_1",
@@ -74,62 +53,35 @@ func TestInternalPairingClaimIsHubScoped(t *testing.T) {
 	select {
 	case resp := <-responseCh:
 		if resp.code != http.StatusOK {
-			t.Fatalf("internal pairing status = %d body=%s", resp.code, resp.body)
+			t.Fatalf("public pairing status = %d body=%s", resp.code, resp.body)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("internal pairing response did not return")
+		t.Fatal("public pairing response did not return")
 	}
 }
 
-func TestLocalPairingClaimIsLocalScoped(t *testing.T) {
+func TestPairingClaimRateLimit(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	reg := registry.New(registry.Config{AgentTTL: time.Minute})
-	if _, err := reg.Register(ctx, registry.RegisterInput{MachineID: "mach_local", AgentID: "agent_local"}); err != nil {
-		t.Fatalf("register agent: %v", err)
-	}
 	router := httpapi.NewHandler(httpapi.Config{
-		Registry:       reg,
-		LocalDiscovery: true,
-		AnswerTimeout:  500 * time.Millisecond,
-		PollInterval:   time.Millisecond,
+		Registry: registry.New(registry.Config{}),
+		PairingRateLimit: httpapi.PairingRateLimitConfig{
+			Window:     time.Minute,
+			PerIP:      1,
+			PerMachine: 10,
+		},
 	})
 
-	responseCh := make(chan responseRecord, 1)
-	go func() {
-		resp := postJSON(t, router, "/api/v1/pairing/claims", validPairingClaimRequest("mach_local"))
-		responseCh <- responseRecord{code: resp.Code, body: resp.Body.String()}
-	}()
-
-	claim, err := reg.PollPairingClaim(ctx, registry.PairingPollInput{
-		AgentID:   "agent_local",
-		MachineID: "mach_local",
-		Timeout:   time.Second,
-	})
-	if err != nil {
-		t.Fatalf("poll local pairing claim: %v", err)
+	first := postJSON(t, router, "/api/v1/pairing/claims", validPairingClaimRequest("mach_1"))
+	if first.Code == http.StatusTooManyRequests {
+		t.Fatalf("first public pairing claim was rate limited: %s", first.Body.String())
 	}
-	if strings.Join(claim.AllowedPaths, ",") != registry.PathLocal {
-		t.Fatalf("local pairing paths = %#v", claim.AllowedPaths)
+	second := postJSON(t, router, "/api/v1/pairing/claims", validPairingClaimRequest("mach_2"))
+	if second.Code != http.StatusTooManyRequests {
+		t.Fatalf("second public pairing status = %d body=%s", second.Code, second.Body.String())
 	}
-	if _, err := reg.SubmitPairingResult(ctx, registry.PairingResultInput{
-		AgentID:      "agent_local",
-		MachineID:    "mach_local",
-		ClaimID:      claim.ID,
-		SessionToken: "session-token-local",
-		ExpiresAt:    "2099-05-06T00:00:00Z",
-	}); err != nil {
-		t.Fatalf("submit pairing result: %v", err)
-	}
-
-	select {
-	case resp := <-responseCh:
-		if resp.code != http.StatusOK {
-			t.Fatalf("local pairing status = %d body=%s", resp.code, resp.body)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("local pairing response did not return")
+	if !strings.Contains(second.Body.String(), "pairing_rate_limited") {
+		t.Fatalf("rate limit error = %s", second.Body.String())
 	}
 }
 

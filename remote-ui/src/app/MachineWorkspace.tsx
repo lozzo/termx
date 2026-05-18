@@ -55,6 +55,7 @@ export interface MachineWorkspaceProps {
   onBack?: (() => void) | undefined
   fileTransfer?: import('../files/fileApi').FileTransferContext | undefined
   terminalSettings?: TerminalSettings | undefined
+  onNeedsReauthorization?: ((machineId: string) => void) | undefined
   onTerminalSettingsChange?: ((patch: Partial<TerminalSettings>) => void) | undefined
 }
 
@@ -63,6 +64,7 @@ type MobileSheet = 'terminals' | 'split-terminal' | 'pair' | 'manage-terminal' |
 type AppPage = 'terminal-list' | 'terminal'
 type TerminalSlot = 0 | 1
 const TERMINAL_CONNECTION_PROGRESS_DELAY_MS = 450
+const AUTH_CONNECTION_MESSAGE = 'This phone needs to re-authorize this machine. Scan the machine QR again.'
 const machineWorkspaceInventoryCache = new WeakMap<MachineWorkspaceConnector, Map<string, {
   machine: Machine
   terminals: RemoteTerminal[]
@@ -84,7 +86,7 @@ function inventoryCacheForConnector(connector: MachineWorkspaceConnector): Map<s
   return created
 }
 
-export function MachineWorkspace({ api, connector, className, initialMachine, inventoryEvents, connectionStateEvents, subscribeRuntimeInventoryEvents = false, pair, onBack, fileTransfer, terminalSettings: terminalSettingsProp, onTerminalSettingsChange }: MachineWorkspaceProps) {
+export function MachineWorkspace({ api, connector, className, initialMachine, inventoryEvents, connectionStateEvents, subscribeRuntimeInventoryEvents = false, pair, onBack, fileTransfer, terminalSettings: terminalSettingsProp, onNeedsReauthorization, onTerminalSettingsChange }: MachineWorkspaceProps) {
   const initialInventory = initialMachine ? inventoryCacheForConnector(connector).get(initialMachine.machineId) : undefined
   const [machine, setMachine] = useState<Machine | null>(() => initialInventory?.machine ?? initialMachine ?? null)
   const [terminals, setTerminals] = useState<RemoteTerminal[]>(() => initialInventory?.terminals ?? [])
@@ -353,6 +355,19 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     setTerminalSettings((current) => writeTerminalSettings({ ...current, ...patch }))
   }, [onTerminalSettingsChange])
 
+  const handleConnectionAuthFailure = useCallback((machineId?: string | null) => {
+    const targetMachineId = machineId ?? initialMachine?.machineId
+    if (!targetMachineId) return
+    pair?.sessionStore.clearSessionToken(targetMachineId)
+    setVerifiedDevice(false)
+    if (onNeedsReauthorization) {
+      onNeedsReauthorization(targetMachineId)
+      return
+    }
+    if (!pair) return
+    setMobileSheet('pair')
+  }, [initialMachine?.machineId, onNeedsReauthorization, pair])
+
   const updateFromConnectionState = useCallback((snapshot: RtcConnectionStateSnapshot, session?: RtcSession) => {
     if (snapshot.phase === 'connected') {
       setError(null)
@@ -373,9 +388,15 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       return
     }
     if (snapshot.phase === 'reconnecting' || snapshot.phase === 'waiting_network') setError(null)
+    if (snapshot.phase === 'failed') {
+      const message = connectionErrorDisplayMessage(snapshot.failReason || snapshot.statusText || 'Connection failed')
+      if (isAuthConnectionError(snapshot.failReason || snapshot.statusText)) handleConnectionAuthFailure(snapshot.machineId)
+      setError(message)
+      updateConnectionStatus(message, 'failed')
+      return
+    }
     updateConnectionStatus(snapshot.statusText || connectionPhaseLabel(snapshot.phase), snapshot.phase)
-    if (snapshot.phase === 'failed') setError(snapshot.failReason || snapshot.statusText || 'Connection failed')
-  }, [clearConnectionStatus, clearConnectionStatusSoon, updateConnectionStatus])
+  }, [clearConnectionStatus, clearConnectionStatusSoon, handleConnectionAuthFailure, updateConnectionStatus])
 
   const updateFromPassiveConnectionState = useCallback((snapshot: RtcConnectionStateSnapshot, session?: RtcSession) => {
     if (isTransientConnectionPhase(snapshot.phase)) return
@@ -516,9 +537,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     const seq = terminalRefreshSeqRef.current + 1
     terminalRefreshSeqRef.current = seq
     if (!hasLoadedTerminalsRef.current) setLoadingTerminals(true)
+    let refreshMachineId = initialMachine?.machineId ?? null
     try {
       const status = await api.getStatus()
       if (terminalRefreshSeqRef.current !== seq) return
+      refreshMachineId = status.machine.machineId
       setMachineNetworkMachineId(status.machine.machineId)
       setMachine(status.machine)
       if (pair) setVerifiedDevice(Boolean(pair.sessionStore.getSessionToken(status.machine.machineId)))
@@ -531,7 +554,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       setError(null)
     } catch (err) {
       if (terminalRefreshSeqRef.current === seq) {
-        const message = err instanceof Error ? err.message : String(err)
+        const message = connectionErrorDisplayMessage(err)
+        if (isAuthConnectionError(err)) handleConnectionAuthFailure(refreshMachineId)
         setError(message)
         updateConnectionStatus(message, 'failed')
       }
@@ -540,7 +564,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         setLoadingTerminals(false)
       }
     }
-  }, [api, pair, setMachineNetworkMachineId, updateConnectionStatus])
+  }, [api, handleConnectionAuthFailure, initialMachine?.machineId, pair, setMachineNetworkMachineId, updateConnectionStatus])
 
   const applyRuntimeTerminalEvent = useCallback((event: RtcEvent | { payload?: unknown }): boolean => {
     const payload = event.payload
@@ -570,9 +594,11 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     async function load() {
       if (!hasLoadedTerminalsRef.current) setLoadingTerminals(true)
       let failed = false
+      let loadMachineId = initialMachine?.machineId ?? null
       try {
         const status = await api.getStatus()
         if (cancelled || terminalRefreshSeqRef.current !== seq) return
+        loadMachineId = status.machine.machineId
         setMachineNetworkMachineId(status.machine.machineId)
         setMachine(status.machine)
         if (pair) setVerifiedDevice(Boolean(pair.sessionStore.getSessionToken(status.machine.machineId)))
@@ -596,7 +622,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       } catch (err) {
         if (!cancelled && terminalRefreshSeqRef.current === seq) {
           failed = true
-          const message = err instanceof Error ? err.message : String(err)
+          const message = connectionErrorDisplayMessage(err)
+          if (isAuthConnectionError(err)) handleConnectionAuthFailure(loadMachineId)
           setError(message)
           updateConnectionStatus(message, 'failed')
         }
@@ -611,7 +638,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     return () => {
       cancelled = true
     }
-  }, [api, clearConnectionStatus, connector, pair, setMachineNetworkMachineId, updateConnectionStatus])
+  }, [api, clearConnectionStatus, connector, handleConnectionAuthFailure, initialMachine?.machineId, pair, setMachineNetworkMachineId, updateConnectionStatus])
 
   useEffect(() => {
     if (!machine || !hasLoadedTerminals) return
@@ -652,7 +679,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
             updateFromPassiveConnectionState(snapshot, session)
           })
           .catch((err: unknown) => {
-            const message = err instanceof Error ? err.message : String(err)
+            const message = connectionErrorDisplayMessage(err)
+            if (isAuthConnectionError(err)) handleConnectionAuthFailure(machine.machineId)
             updateConnectionStatus(message, 'failed')
           })
         return
@@ -662,7 +690,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     return () => {
       subscription.close()
     }
-  }, [activeTerminalId, connectionStateEvents, ensureMachineSession, forceRelayConnection, machine, reattachActiveTerminals, updateConnectionStatus, updateFromPassiveConnectionState])
+  }, [activeTerminalId, connectionStateEvents, ensureMachineSession, forceRelayConnection, handleConnectionAuthFailure, machine, reattachActiveTerminals, updateConnectionStatus, updateFromPassiveConnectionState])
 
   useEffect(() => {
     const machineId = machine?.machineId
@@ -808,7 +836,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     }).catch((err: unknown) => {
       window.clearTimeout(progressTimer)
       if (!cancelled && machineSessionConnectSeqRef.current === connectSeq) {
-        const message = err instanceof Error ? err.message : String(err)
+        const message = connectionErrorDisplayMessage(err)
+        if (isAuthConnectionError(err)) handleConnectionAuthFailure(machineId)
         setConnectedSession(null)
         setConnectedTerminalId(null)
         setConnectingTerminalId(null)
@@ -820,7 +849,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       cancelled = true
       window.clearTimeout(progressTimer)
     }
-  }, [activeTerminalId, clearConnectionStatus, clearConnectionStatusSoon, connector, connectionRetryToken, ensureMachineSession, forceRelayConnection, machine?.machineId, manualReconnectNonce, page, pair, releaseMachineSession, updateConnectionStatus, updateFromConnectionState])
+  }, [activeTerminalId, clearConnectionStatus, clearConnectionStatusSoon, connector, connectionRetryToken, ensureMachineSession, forceRelayConnection, handleConnectionAuthFailure, machine?.machineId, manualReconnectNonce, page, pair, releaseMachineSession, updateConnectionStatus, updateFromConnectionState])
 
   useEffect(() => {
     if (manualReconnectNonce === 0 || handledManualReconnectNonceRef.current === manualReconnectNonce) return
@@ -846,7 +875,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       clearConnectionStatusSoon()
     }).catch((err: unknown) => {
       if (cancelled) return
-      const message = err instanceof Error ? err.message : String(err)
+      const message = connectionErrorDisplayMessage(err)
+      if (isAuthConnectionError(err)) handleConnectionAuthFailure(machineId)
       setConnectedSession(null)
       setConnectedTerminalId(null)
       setConnectingTerminalId(null)
@@ -855,7 +885,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
     return () => {
       cancelled = true
     }
-  }, [activeTerminalId, clearConnectionStatusSoon, ensureMachineSession, forceRelayConnection, machine?.machineId, manualReconnectNonce, page, reattachActiveTerminals, requireVerification, updateConnectionStatus, updateFromConnectionState])
+  }, [activeTerminalId, clearConnectionStatusSoon, ensureMachineSession, forceRelayConnection, handleConnectionAuthFailure, machine?.machineId, manualReconnectNonce, page, reattachActiveTerminals, requireVerification, updateConnectionStatus, updateFromConnectionState])
 
   useEffect(() => {
     const handleResume = () => {
@@ -1107,7 +1137,8 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         }
       })
       .catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err)
+        const message = connectionErrorDisplayMessage(err)
+        if (isAuthConnectionError(err)) handleConnectionAuthFailure(machine.machineId)
         updateConnectionStatus(message, 'failed')
         setFilesOpen(false)
         setFileTerminalId(null)
@@ -1115,7 +1146,7 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       })
     setFilesOpen(true)
     setMobileSheet(null)
-  }, [activeToolTerminal, ensureMachineSession, fileContextKey, filesOpen, forceRelayConnection, machine, page, pair, requireVerification, terminals, updateConnectionStatus, updateFromConnectionState])
+  }, [activeToolTerminal, ensureMachineSession, fileContextKey, filesOpen, forceRelayConnection, handleConnectionAuthFailure, machine, page, pair, requireVerification, terminals, updateConnectionStatus, updateFromConnectionState])
 
   const openManageTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {
@@ -1286,12 +1317,13 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
       }, 0)
       setPairStatus('Resize unlocked')
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = connectionErrorDisplayMessage(err)
+      if (isAuthConnectionError(err)) handleConnectionAuthFailure(machine?.machineId)
       updateConnectionStatus(message, 'failed')
     } finally {
       setUnlockingResize(false)
     }
-  }, [activeTerminalId, canManageTerminals, refreshTerminals, updateConnectionStatus, withManagementApi])
+  }, [activeTerminalId, canManageTerminals, handleConnectionAuthFailure, machine?.machineId, refreshTerminals, updateConnectionStatus, withManagementApi])
 
   const acquireActiveResizeOwner = useCallback(async () => {
     try {
@@ -1307,18 +1339,22 @@ export function MachineWorkspace({ api, connector, className, initialMachine, in
         setPairStatus('Resize control unavailable')
       }
     } catch (err) {
-      updateConnectionStatus(err instanceof Error ? err.message : String(err), 'failed')
+      const message = connectionErrorDisplayMessage(err)
+      if (isAuthConnectionError(err)) handleConnectionAuthFailure(machine?.machineId)
+      updateConnectionStatus(message, 'failed')
     }
-  }, [activeTerminalHandle, updateConnectionStatus])
+  }, [activeTerminalHandle, handleConnectionAuthFailure, machine?.machineId, updateConnectionStatus])
 
   const releaseActiveResizeOwner = useCallback(async () => {
     try {
       await activeTerminalHandle()?.releaseResizeOwner()
       setPairStatus('Resize control released')
     } catch (err) {
-      updateConnectionStatus(err instanceof Error ? err.message : String(err), 'failed')
+      const message = connectionErrorDisplayMessage(err)
+      if (isAuthConnectionError(err)) handleConnectionAuthFailure(machine?.machineId)
+      updateConnectionStatus(message, 'failed')
     }
-  }, [activeTerminalHandle, updateConnectionStatus])
+  }, [activeTerminalHandle, handleConnectionAuthFailure, machine?.machineId, updateConnectionStatus])
 
   const deleteManagedTerminal = useCallback(async () => {
     if (!canManageTerminals || !selectedTerminalId) return
@@ -2742,6 +2778,25 @@ function formatClipboardTimestamp(value: string): string {
 
 function isTransientConnectionPhase(phase: RtcConnectionStateSnapshot['phase']): boolean {
   return phase === 'probing' || phase === 'connecting'
+}
+
+function connectionErrorDisplayMessage(error: unknown): string {
+  if (isAuthConnectionError(error)) return AUTH_CONNECTION_MESSAGE
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
+function isAuthConnectionError(error: unknown): boolean {
+  const message = typeof error === 'string'
+    ? error
+    : error instanceof Error
+      ? error.message
+      : ''
+  const normalized = message.trim().toLowerCase()
+  return normalized === 'auth' ||
+    normalized === 'authentication failed' ||
+    normalized.includes('unauthorized') ||
+    normalized.includes('forbidden')
 }
 
 function normalizeDirectoryPickerPath(path: string): string {

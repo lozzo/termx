@@ -71,7 +71,6 @@ export async function POST(request: NextRequest) {
     hostname: body.hostname?.trim() || existing?.hostname || "",
     osInfo: body.platform?.trim() || existing?.osInfo || "",
     labels: encodeAgentLabels({ labels: body.labels }),
-    paired: existing?.paired ?? false,
     hubId: body.hubId?.trim() || existing?.hubId || null,
     lastSeen: new Date(),
   };

@@ -171,11 +171,15 @@ func (s *Service) PairStart(params remoteprotocol.PairStartParams) (remoteprotoc
 	if err != nil {
 		return remoteprotocol.PairStartResult{}, err
 	}
+	tokenTTLSeconds := s.cfg.TokenTTLSeconds
+	if params.AuthTTLSeconds > 0 {
+		tokenTTLSeconds = params.AuthTTLSeconds
+	}
 	pairCfg := pairing.Config{
 		MachineID:       machineID,
 		MachineName:     machineName,
 		MachineSecret:   machineSecret,
-		DefaultTokenTTL: time.Duration(s.cfg.TokenTTLSeconds) * time.Second,
+		DefaultTokenTTL: time.Duration(tokenTTLSeconds) * time.Second,
 		LocalPairURL:    strings.TrimSpace(params.LocalPairURL),
 	}
 	manager, err := s.pairing.managerForConfig(pairCfg)

@@ -86,7 +86,6 @@ CREATE TABLE IF NOT EXISTS agents (
   labels TEXT NOT NULL DEFAULT '',
   online INTEGER NOT NULL DEFAULT 0,
   hub_id TEXT REFERENCES hubs(id),
-  paired INTEGER NOT NULL DEFAULT 0,
   pending_kick INTEGER NOT NULL DEFAULT 0,
   allow_relay_transfer INTEGER NOT NULL DEFAULT 0,
   session_bytes_in INTEGER,
@@ -335,6 +334,13 @@ export function ensureSqliteSchema(sqlite: Database.Database) {
   if (initialized) return;
 
   sqlite.exec(schemaSql);
+  dropColumnIfExists(sqlite, "agents", "paired");
   sqlite.exec(seedSql);
   initialized = true;
+}
+
+function dropColumnIfExists(sqlite: Database.Database, table: string, column: string) {
+  const rows = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name?: string }>;
+  if (!rows.some((row) => row.name === column)) return;
+  sqlite.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
 }
