@@ -491,6 +491,29 @@ go test ./tuiv2/runtime/... ./tuiv2/app/...
 - PASS: `go test ./termx-vterm/... ./termx-core/...`
 - PASS: `go test ./tuiv2/runtime/... ./tuiv2/app/...`
 
+## tmux Reference Follow-Up Phase 3: Wrapped Logical Lines
+
+- Centralized copy-mode soft-wrap semantics behind `copyModeLogicalLines`, mirroring tmux's consistent use of wrapped-line flags for logical line boundaries.
+- Selection text extraction now uses the helper to decide whether a newline belongs between two visual rows.
+- Grid viewport window selection now uses a named helper to expand starts to logical-line boundaries instead of embedding wrapped-flag loops at the call site.
+- Added focused tests for copy-mode logical line start/end behavior and grid-store page starts that land inside wrapped continuations.
+
+### Phase 3 Commands
+
+```sh
+go test ./tuiv2/app -run 'TestCopyModeSelectedTextPreservesSoftWrappedLines|TestCopyModeLogicalLinesUseWrappedBoundaries' -count=1 -v
+go test ./termx-core -run 'TestTerminalGridStoreWindowStartExpandsToLogicalLine|TestTerminalGridStoreRowsLoadsEnoughRawRowsForVisualLimit' -count=1 -v
+go test ./termx-core/...
+go test ./tuiv2/app/...
+```
+
+### Phase 3 Test Results
+
+- PASS: `go test ./tuiv2/app -run 'TestCopyModeSelectedTextPreservesSoftWrappedLines|TestCopyModeLogicalLinesUseWrappedBoundaries' -count=1 -v`
+- PASS: `go test ./termx-core -run 'TestTerminalGridStoreWindowStartExpandsToLogicalLine|TestTerminalGridStoreRowsLoadsEnoughRawRowsForVisualLimit' -count=1 -v`
+- PASS: `go test ./termx-core/...`
+- PASS: `go test ./tuiv2/app/...`
+
 ## Unresolved Risks
 
 - Persistent grid retention is now row-count bounded via `ScrollbackSize`; no time-based retention or disk-byte cap is implemented yet.

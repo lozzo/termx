@@ -35,6 +35,7 @@ func (m *Model) copyModeSelectedText() (string, bool) {
 		return "", false
 	}
 	start, end := normalizeCopySelection(buffer.clampPoint(*m.copyMode.Mark), buffer.clampPoint(m.copyMode.Cursor))
+	logicalLines := newCopyModeLogicalLines(buffer)
 	var out strings.Builder
 	for row := start.Row; row <= end.Row; row++ {
 		cells := buffer.row(row)
@@ -61,7 +62,7 @@ func (m *Model) copyModeSelectedText() (string, bool) {
 			}
 			out.WriteByte(' ')
 		}
-		if row < end.Row && !buffer.rowWrapped(row) {
+		if row < end.Row && !logicalLines.rowContinues(row) {
 			out.WriteByte('\n')
 		}
 	}

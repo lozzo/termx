@@ -1083,6 +1083,25 @@ func TestCopyModeSelectedTextPreservesSoftWrappedLines(t *testing.T) {
 	}
 }
 
+func TestCopyModeLogicalLinesUseWrappedBoundaries(t *testing.T) {
+	buffer := copyModeBuffer{
+		snapshot: copyModeTestSnapshot([]string{"hist0", "hist1", "hist2", "hist3"}, nil),
+		height:   2,
+	}
+	buffer.snapshot.ScrollbackWrapped = []bool{true, true, false, false}
+
+	logicalLines := newCopyModeLogicalLines(buffer)
+	if got := logicalLines.lineStart(2); got != 0 {
+		t.Fatalf("expected logical line start to walk through wrapped predecessors, got %d", got)
+	}
+	if got := logicalLines.lineEnd(0); got != 2 {
+		t.Fatalf("expected logical line end to walk wrapped successors, got %d", got)
+	}
+	if logicalLines.rowContinues(2) {
+		t.Fatal("expected hard line boundary after unwrapped row")
+	}
+}
+
 func TestCopyModePointAtMouseMapsScreenPositionToBufferedRow(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, []string{"hist0", "hist1", "hist2"}, []string{"live0", "live1", "live2"})

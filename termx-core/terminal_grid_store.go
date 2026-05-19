@@ -506,15 +506,9 @@ func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalG
 		return nil, 0, false, err
 	}
 	defer file.Close()
-	for start > 0 {
-		ref, err := readTerminalGridIndexRecordFromFile(file, start-1)
-		if err != nil {
-			return nil, 0, false, err
-		}
-		if ref.flags&terminalGridRowFlagWrapped == 0 {
-			break
-		}
-		start--
+	start, err = expandTerminalGridWindowStartToLogicalLine(file, start)
+	if err != nil {
+		return nil, 0, false, err
 	}
 	refs, err := readTerminalGridIndexWindowFromFile(file, start, end-start)
 	if err != nil {
@@ -525,6 +519,24 @@ func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalG
 		return nil, 0, false, nil
 	}
 	return refs, len(refs), start > 0, nil
+}
+
+func expandTerminalGridWindowStartToLogicalLine(file *os.File, start int) (int, error) {
+	for start > 0 {
+		ref, err := readTerminalGridIndexRecordFromFile(file, start-1)
+		if err != nil {
+			return start, err
+		}
+		if !terminalGridRowContinuesLogicalLine(ref) {
+			break
+		}
+		start--
+	}
+	return start, nil
+}
+
+func terminalGridRowContinuesLogicalLine(ref terminalGridRowRef) bool {
+	return ref.flags&terminalGridRowFlagWrapped != 0
 }
 
 func (s *terminalGridStore) rowWindowCoordinates(beforeOffset int, loadedRows int) (generation uint64, firstRowID uint64, lastRowID uint64, totalRows int) {

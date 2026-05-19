@@ -1078,6 +1078,30 @@ func TestTerminalGridStoreRowsLoadsEnoughRawRowsForVisualLimit(t *testing.T) {
 	}
 }
 
+func TestTerminalGridStoreWindowStartExpandsToLogicalLine(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	if err := store.appendRows([]terminalGridRow{
+		{cells: []localvterm.Cell{{Content: "A", Width: 1}}, wrapped: true},
+		{cells: []localvterm.Cell{{Content: "B", Width: 1}}, wrapped: true},
+		{cells: []localvterm.Cell{{Content: "C", Width: 1}}},
+		{cells: []localvterm.Cell{{Content: "D", Width: 1}}},
+	}); err != nil {
+		t.Fatalf("append structured rows: %v", err)
+	}
+	viewport, err := store.Viewport(1, 1, 10)
+	if err != nil {
+		t.Fatalf("read viewport: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"ABC"}) {
+		t.Fatalf("expected viewport start to expand to logical line start, got %#v", got)
+	}
+	if viewport.LoadedRows != 3 {
+		t.Fatalf("expected loaded raw rows to include complete logical line, got %d", viewport.LoadedRows)
+	}
+}
+
 func TestTerminalGridResizeDamagePreservesStressTailRows(t *testing.T) {
 	for _, lineCount := range []int{100, 1000} {
 		t.Run(fmt.Sprintf("lines_%d", lineCount), func(t *testing.T) {
