@@ -67,9 +67,11 @@ func (e *Emulator) tryFastSGRText(data []byte) bool {
 			}
 			if runs, ok := compactASCIIStyleRuns(row); ok && len(runs) > 0 {
 				damage.Runs = runs
-			} else {
+			} else if text, ok := compactASCIIPlainLine(row); ok {
 				damage.ASCII = true
-				damage.Text = lineASCIIText(row)
+				damage.Text = text
+			} else {
+				damage.Cells = cloneFastSGRLine(row, len(row))
 			}
 			scrollbackDamages = append(scrollbackDamages, damage)
 			if scrollback != nil {

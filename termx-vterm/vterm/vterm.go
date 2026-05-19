@@ -3583,7 +3583,7 @@ func (v *VTerm) scrollbackAppendOpsFromCharmVTDamages(damages []charmvt.Damage, 
 	out := make([]DamageOp, 0, 1)
 	for _, raw := range damages {
 		row, ok := raw.(charmvt.ScrollbackDamage)
-		if !ok || (!row.ASCII && len(row.Runs) == 0 && len(row.Cells) == 0) {
+		if !ok || (row.Text == "" && len(row.Runs) == 0 && len(row.Cells) == 0) {
 			continue
 		}
 		cells := uvCellsToVTermDamageCells(v, row.Cells)
@@ -3592,7 +3592,7 @@ func (v *VTerm) scrollbackAppendOpsFromCharmVTDamages(damages []charmvt.Damage, 
 		case len(row.Runs) > 0:
 			cells = nil
 			runs = scrollbackRunsToVTermRuns(v, row.Runs)
-		case row.ASCII:
+		case row.Text != "":
 			cells = nil
 			runs = asciiTextToVTermRuns(row.Text)
 		}

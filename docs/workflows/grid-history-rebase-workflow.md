@@ -737,3 +737,44 @@ pkill -f 'termx .* daemon' 2>/dev/null || true
 - Persistent grid retention is now row-count bounded via `ScrollbackSize`; no time-based retention or disk-byte cap is implemented yet.
 - Resize no longer stores visible suffix duplicates for the covered wrapped split cases. The remaining architectural gap versus tmux is that TermX still bridges `vterm` screen and file-backed history through resize damage rather than a single in-memory/file-backed grid mutation with row identity.
 - `TERMX_GRID_HISTORY_TRACE` is intentionally verbose. It should stay opt-in and be used for targeted history/replay debugging, not normal daemon operation.
+
+## tmux Debug Follow-Up Phase 8: Screen To History QR Replay
+
+- User clarified the remaining bug is not "live QR directly blank". The real failure path is:
+  - `remote pair` QR is visible on the live screen;
+  - later output scrolls the QR and prompt into history;
+  - copy mode / history replay shows the URI and prompt, but the QR block rows become blank.
+- Reproduced with real tmux and isolated daemon/runtime:
+  - root TUI -> picker attach terminal `1`
+  - shell prompt set to green `ZPROMPT`
+  - run `termx remote pair --ttl 45s --auth-ttl 1m`
+  - run `python3 scripts/generate_terminal_stress.py --lines 100 --seed 100 --width-hint 120`
+  - enter copy mode with `Ctrl-V`, jump to top with `g`, capture top/history view
+- Trace result:
+  - live render path still had full QR block rows (`render.draw_protocol_row`, `render.canvas.row_cache`, `app.frame.lines.input.row`)
+  - history path had URI and prompt rows but zero QR block rows from:
+    - `core.append_grid.damage`
+    - `terminalGridAppender`
+    - `terminalGridStore.AppendDamageRows`
+    - `terminalGridStore.Viewport`
+    - core `GridViewport`
+    - protocol compact rows
+    - runtime `LoadGridViewport`
+  - therefore the loss happened before grid store append, at screen-to-scrollback damage generation.
+- Root cause:
+  - internal vt fast-SGR scrollback capture encoded non-ASCII scrolled rows through `lineASCIIText(row)`.
+  - QR block glyph rows are non-ASCII, so that fallback replaced the QR glyphs with plain spaces before `ScrollbackDamage` reached outer vterm/core history.
+  - outer `scrollbackAppendOpsFromCharmVTDamages` also rejected non-ASCII text-only `ScrollbackDamage` rows unless `ASCII=true`, which made that path even less robust.
+- Fix:
+  - internal vt fast scrollback capture now keeps non-ASCII rows as explicit `Cells` instead of degrading them to ASCII text-with-spaces.
+  - outer vterm `scrollbackAppendOpsFromCharmVTDamages` now accepts text-bearing `ScrollbackDamage` rows regardless of the `ASCII` flag.
+  - canonical-width padding for hard-newline rows remains unchanged.
+- Focused regression coverage added:
+  - `TestVTermWriteWithDamagePreservesNonASCIITextScrollbackDamage`
+  - `TestVTermWriteWithDamagePreservesFastSGRNonASCIIScrollbackCells`
+- tmux verification after fix:
+  - Temp dir: `/tmp/termx-history-scenario3.3MYRVc`
+  - `live-after-qr.txt`: `blocks=3224`, `uri=1`, `expires_at=1`, `ZPROMPT=1`
+  - `copy-top.txt`: `blocks=3224`, `uri=1`, `expires_at=1`, `ZPROMPT=1`
+  - `copy-halfdown.txt`: `blocks=3224`, `uri=1`, `expires_at=1`, `ZPROMPT=1`
+  - trace now keeps QR rows through history replay instead of turning them into blank rows before `core.append_grid.damage`.

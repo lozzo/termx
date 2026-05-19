@@ -1168,6 +1168,61 @@ func TestVTermWriteWithDamageKeepsScrollDirectDamageIncremental(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamagePreservesNonASCIITextScrollbackDamage(t *testing.T) {
+	vt := New(12, 2, 100, nil)
+	prevWithDamage := safeEmulatorWriteWithDamage
+	safeEmulatorWriteWithDamage = func(emu *charmvt.SafeEmulator, data []byte) (int, error, []charmvt.Damage, bool) {
+		n, err := emu.Write(data)
+		damages := []charmvt.Damage{
+			charmvt.ScrollbackDamage{
+				Y:       0,
+				Text:    "█▀█",
+				ASCII:   false,
+				Wrapped: false,
+			},
+		}
+		return n, err, damages, true
+	}
+	t.Cleanup(func() {
+		safeEmulatorWriteWithDamage = prevWithDamage
+	})
+
+	_, err, damage := vt.WriteWithDamage([]byte("x"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if len(damage.ScrollbackAppend) != 1 {
+		t.Fatalf("expected one scrollback append row, got %#v", damage.ScrollbackAppend)
+	}
+	row := damage.ScrollbackAppend[0]
+	got := ""
+	for _, run := range row.Runs {
+		got += run.Text
+	}
+	if got != "█▀█         " {
+		t.Fatalf("expected non-ASCII text scrollback row preserved, got %q row=%#v", got, row)
+	}
+}
+
+func TestVTermWriteWithDamagePreservesFastSGRNonASCIIScrollbackCells(t *testing.T) {
+	vt := New(12, 2, 100, nil)
+	_, err, damage := vt.WriteWithDamage([]byte("████\r\nnext\r\nlast"))
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	for _, op := range damage.ScrollbackAppend {
+		if got := rowText(op.Cells, len(op.Cells)); got != "████        " {
+			continue
+		}
+		if len(op.Cells) != 12 {
+			t.Fatalf("expected canonical-width QR-like cells, got len=%d row=%#v", len(op.Cells), op.Cells)
+		}
+		return
+	}
+	t.Fatalf("expected QR-like non-ASCII scrollback cells, got %#v", damage.ScrollbackAppend)
+}
+
 func TestVTermWriteAltScreenSwitchKeepsDamageCorrect(t *testing.T) {
 	vt := New(5, 3, 100, nil)
 	vt.LoadSnapshot(ScreenData{
