@@ -55,7 +55,6 @@ type rowSnapshotSource interface {
 	ScreenRowCount() int
 	ScrollbackRowCount() int
 	ScreenRowView(row int) []localvterm.Cell
-	UsedScreenRow(row int) []localvterm.Cell
 	ScrollbackRowView(row int) []localvterm.Cell
 	ScreenRowTimestampAt(row int) time.Time
 	ScrollbackRowTimestampAt(row int) time.Time
@@ -73,6 +72,7 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 	if err != nil {
 		return nil, shared.UserVisibleError{Op: "snapshot terminal", Err: err}
 	}
+	traceRuntimeSnapshot("runtime.load_snapshot.received", snapshot, "requested_offset", offset, "requested_limit", limit)
 	if offset > 0 {
 		return snapshot, nil
 	}
@@ -93,6 +93,10 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 		}
 		r.ensureVTerm(terminal)
 		loadSnapshotIntoVTerm(terminal.VTerm, snapshot)
+		if terminal.VTerm != nil {
+			traceRuntimeVTermRows("runtime.load_snapshot.vterm_scrollback_after_load", terminalID, terminal.VTerm.ScrollbackContent())
+			traceRuntimeVTermRows("runtime.load_snapshot.vterm_screen_after_load", terminalID, terminal.VTerm.ScreenContent().Cells)
+		}
 		r.bumpSurfaceVersion(terminal)
 		terminal.SnapshotVersion = terminal.SurfaceVersion
 		terminal.ScrollbackLoadingLimit = 0
@@ -109,7 +113,10 @@ func (r *Runtime) LoadGridViewport(ctx context.Context, terminalID string, offse
 	if err != nil {
 		return nil, shared.UserVisibleError{Op: "load terminal history", Err: err}
 	}
-	return snapshotFromGridViewport(terminalID, viewport), nil
+	traceRuntimeGridViewport("runtime.load_grid_viewport.received", terminalID, viewport, "requested_offset", offset, "requested_limit", limit, "requested_cols", cols)
+	snapshot := snapshotFromGridViewport(terminalID, viewport)
+	traceRuntimeSnapshot("runtime.load_grid_viewport.snapshot", snapshot, "requested_offset", offset, "requested_limit", limit, "requested_cols", cols)
+	return snapshot, nil
 }
 
 func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapshot, offset int) bool {
@@ -124,6 +131,8 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 	if offset < 0 || offset > len(current.Scrollback) {
 		return false
 	}
+	traceRuntimeSnapshot("runtime.apply_grid_viewport.current_before", current, "page_offset", offset)
+	traceRuntimeSnapshot("runtime.apply_grid_viewport.page", page, "page_offset", offset)
 	if page.Size.Cols > 0 && current.Size.Cols > 0 && page.Size.Cols != current.Size.Cols {
 		return false
 	}
@@ -176,6 +185,7 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 	terminal.SnapshotVersion = terminal.SurfaceVersion
 	terminal.PreferSnapshot = true
 	r.touch()
+	traceRuntimeSnapshot("runtime.apply_grid_viewport.merged_after", merged, "page_offset", offset)
 	return true
 }
 
@@ -357,6 +367,7 @@ func loadSnapshotIntoVTerm(vt VTermLike, snap *protocol.Snapshot) {
 	if vt == nil || snap == nil {
 		return
 	}
+	traceRuntimeSnapshot("runtime.load_snapshot_into_vterm.input", snap)
 	cols, rows := vt.Size()
 	if snap.Size.Cols > 0 {
 		cols = int(snap.Size.Cols)
@@ -457,10 +468,10 @@ func snapshotFromVTerm(terminalID string, vt VTermLike) *protocol.Snapshot {
 		}
 		outRows = make([][]protocol.Cell, source.ScreenRowCount())
 		for i := 0; i < len(outRows); i++ {
-			outRows[i] = protocolCellsFromVTermRow(source.UsedScreenRow(i))
+			outRows[i] = protocolCellsFromVTermRow(source.ScreenRowView(i))
 		}
 	} else {
-		screen := screenContentForSnapshot(vt)
+		screen := vt.ScreenContent()
 		isAlternateScreen = screen.IsAlternateScreen
 		outRows = make([][]protocol.Cell, 0, len(screen.Cells))
 		for _, row := range screen.Cells {
@@ -618,7 +629,7 @@ func snapshotFromRowSource(terminalID string, source rowSnapshotSource) *protoco
 	screenRowKinds := make([]string, screenRows)
 	screenWrapped := make([]bool, screenRows)
 	for row := 0; row < screenRows; row++ {
-		screen[row] = protocolCellsFromVTermRow(source.UsedScreenRow(row))
+		screen[row] = protocolCellsFromVTermRow(source.ScreenRowView(row))
 		screenTimestamps[row] = source.ScreenRowTimestampAt(row)
 		screenRowKinds[row] = source.ScreenRowKindAt(row)
 		screenWrapped[row] = source.ScreenRowWrappedAt(row)
@@ -651,16 +662,6 @@ func snapshotFromRowSource(terminalID string, source rowSnapshotSource) *protoco
 		Modes:                protocolModesFromVTerm(source.Modes()),
 		Timestamp:            time.Now(),
 	}
-}
-
-func screenContentForSnapshot(vt VTermLike) localvterm.ScreenData {
-	type usedScreenContentSource interface {
-		UsedScreenContent() localvterm.ScreenData
-	}
-	if source, ok := vt.(usedScreenContentSource); ok {
-		return source.UsedScreenContent()
-	}
-	return vt.ScreenContent()
 }
 
 func protocolCellFromVTermCell(cell localvterm.Cell) protocol.Cell {

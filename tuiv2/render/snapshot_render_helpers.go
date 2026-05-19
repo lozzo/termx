@@ -355,6 +355,7 @@ func drawProtocolRowInRectWithPlacement(canvas *composedCanvas, rect workbench.R
 	if canvas == nil || rect.W <= 0 || targetY < 0 || targetY >= canvas.height {
 		return
 	}
+	traceRenderProtocolRow("render.draw_protocol_row", rect, targetY, offsetX, row)
 	for col, index := 0, 0; index < len(row); index++ {
 		cell := drawCellFromProtocolCell(row[index])
 		if cell.Continuation {
@@ -377,6 +378,7 @@ func drawVTermRowInRectWithPlacement(canvas *composedCanvas, rect workbench.Rect
 	if canvas == nil || rect.W <= 0 || targetY < 0 || targetY >= canvas.height {
 		return
 	}
+	traceRenderVTermRow("render.draw_vterm_row", rect, targetY, offsetX, row)
 	for col, index := 0, 0; index < len(row); index++ {
 		cell := drawCellFromVTermCell(row[index])
 		if cell.Continuation {

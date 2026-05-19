@@ -593,7 +593,7 @@ func snapshotFromVTerm(source *localvterm.VTerm) *protocol.Snapshot {
 	if source == nil {
 		return nil
 	}
-	screen := source.UsedScreenContent()
+	screen := source.ScreenContent()
 	scrollback := source.ScrollbackContent()
 	scrollbackWrapped := source.ScrollbackWrapped()
 	scrollbackRows := make([]protocol.CompactRow, 0, len(scrollback))
@@ -621,7 +621,7 @@ func screenSnapshotFromVTerm(source *localvterm.VTerm) *protocol.Snapshot {
 	if source == nil {
 		return nil
 	}
-	screen := source.UsedScreenContent()
+	screen := source.ScreenContent()
 	cols, rows := source.Size()
 	return &protocol.Snapshot{
 		Size:             protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
@@ -639,7 +639,7 @@ func screenFullReplaceUpdateFromVTerm(source *localvterm.VTerm, title string) pr
 	if source == nil {
 		return protocol.ScreenUpdate{}
 	}
-	screen := source.UsedScreenContent()
+	screen := source.ScreenContent()
 	cols, rows := source.Size()
 	return protocol.ScreenUpdate{
 		FullReplace:      true,

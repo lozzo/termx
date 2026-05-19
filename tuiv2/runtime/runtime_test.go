@@ -689,6 +689,24 @@ func TestSnapshotFromVTermPrefersRowViewsOverWholeContentCopies(t *testing.T) {
 	}
 }
 
+func TestSnapshotFromVTermPreservesCanonicalTrailingBlankCells(t *testing.T) {
+	vt := localvterm.New(12, 2, 16, nil)
+	if _, err := vt.Write([]byte("████")); err != nil {
+		t.Fatalf("seed QR-like row: %v", err)
+	}
+
+	snapshot := snapshotFromVTerm("term-1", vt)
+	if snapshot == nil || len(snapshot.Screen.Cells) == 0 {
+		t.Fatalf("expected snapshot screen rows, got %#v", snapshot)
+	}
+	if got := len(snapshot.Screen.Cells[0]); got != 12 {
+		t.Fatalf("expected canonical-width screen row, got len=%d row=%#v", got, snapshot.Screen.Cells[0])
+	}
+	if got := rowTextRaw(snapshot.Screen.Cells[0]); got != "████        " {
+		t.Fatalf("expected QR-like quiet-zone blanks to survive snapshot, got %q row=%#v", got, snapshot.Screen.Cells[0])
+	}
+}
+
 func TestRuntimeScreenUpdateAlsoRefreshesLocalVTermSurface(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()

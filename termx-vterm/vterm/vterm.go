@@ -13,6 +13,7 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	charmvt "github.com/lozzow/termx/termx-vterm/internal/vt"
+	"github.com/mattn/go-runewidth"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -3045,15 +3046,68 @@ func (v *VTerm) appendScrollbackDamageLocked(damage *WriteDamage, plan rowCacheR
 		retainedFromOldScrollback = afterScrollbackLen
 	}
 	for row := retainedFromOldScrollback; row < afterScrollbackLen; row++ {
-		damage.ScrollbackAppend = append(damage.ScrollbackAppend, DamageOp{
+		op := DamageOp{
 			Row:        row,
 			Cells:      cloneCellSlice(v.scrollbackRowViewLocked(row)),
 			Timestamp:  timeAt(v.scrollbackTimestamps, row),
 			RowKind:    stringAt(v.scrollbackRowKinds, row),
 			Wrapped:    v.scrollbackRowWrappedAtLocked(row),
 			WrappedSet: true,
-		})
+		}
+		damage.ScrollbackAppend = append(damage.ScrollbackAppend, padHardNewlineDamageOpToWidth(op, v.emu.Width()))
 	}
+}
+
+func padHardNewlineDamageOpToWidth(op DamageOp, width int) DamageOp {
+	if width <= 0 || op.Wrapped {
+		return op
+	}
+	currentWidth := damageOpDisplayWidth(op)
+	if currentWidth >= width {
+		return op
+	}
+	pad := width - currentWidth
+	if len(op.Cells) > 0 {
+		op.Cells = append(op.Cells, blankCells(pad)...)
+		return op
+	}
+	if len(op.Runs) > 0 {
+		op.Runs = append(op.Runs, CellRun{Text: strings.Repeat(" ", pad)})
+	}
+	return op
+}
+
+func damageOpDisplayWidth(op DamageOp) int {
+	if len(op.Cells) > 0 {
+		return cellsDisplayWidth(op.Cells)
+	}
+	width := 0
+	for _, run := range op.Runs {
+		width += runewidth.StringWidth(run.Text)
+	}
+	return width
+}
+
+func cellsDisplayWidth(cells []Cell) int {
+	width := 0
+	for _, cell := range cells {
+		if cell.Width > 0 {
+			width += cell.Width
+			continue
+		}
+	}
+	return width
+}
+
+func blankCells(count int) []Cell {
+	if count <= 0 {
+		return nil
+	}
+	out := make([]Cell, count)
+	for i := range out {
+		out[i] = Cell{Content: " ", Width: 1}
+	}
+	return out
 }
 
 func (v *VTerm) screenRowsForResizeLocked(count int) [][]Cell {
@@ -3542,7 +3596,7 @@ func (v *VTerm) scrollbackAppendOpsFromCharmVTDamages(damages []charmvt.Damage, 
 			cells = nil
 			runs = asciiTextToVTermRuns(row.Text)
 		}
-		out = append(out, DamageOp{
+		op := DamageOp{
 			Row:        row.Y,
 			Cells:      cells,
 			Runs:       runs,
@@ -3550,7 +3604,12 @@ func (v *VTerm) scrollbackAppendOpsFromCharmVTDamages(damages []charmvt.Damage, 
 			RowKind:    stringAt(rowKinds, row.Y),
 			Wrapped:    row.Wrapped,
 			WrappedSet: true,
-		})
+		}
+		width := 0
+		if v != nil && v.emu != nil {
+			width = v.emu.Width()
+		}
+		out = append(out, padHardNewlineDamageOpToWidth(op, width))
 	}
 	return out
 }

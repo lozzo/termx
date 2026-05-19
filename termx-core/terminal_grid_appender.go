@@ -47,6 +47,7 @@ func (a *terminalGridAppender) append(rows []vterm.DamageOp) {
 	a.mu.Lock()
 	if !a.closed {
 		a.queue = append(a.queue, rows...)
+		traceGridDamageOps("core.grid_appender.enqueue", a.terminalID, rows, "queue_after", len(a.queue))
 		a.cond.Signal()
 	}
 	a.mu.Unlock()
@@ -92,6 +93,7 @@ func (a *terminalGridAppender) run() {
 		a.writing = true
 		a.mu.Unlock()
 
+		traceGridDamageOps("core.grid_appender.flush", a.terminalID, rows)
 		if err := a.store.AppendDamageRows(rows); err != nil && a.logger != nil {
 			a.logger.Warn("termx terminal grid append failed", "terminal_id", a.terminalID, "error", err)
 		}

@@ -1877,6 +1877,28 @@ func TestApplyScreenUpdateWriteSpanPreservesTrailingBlankUsedWidthAfterResize(t 
 	}
 }
 
+func TestWriteWithDamagePadsHardNewlineScrollbackRowsToScreenWidth(t *testing.T) {
+	vt := New(12, 2, 100, nil)
+	_, err, damage := vt.WriteWithDamage([]byte("████\r\nnext\r\nlast"))
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	for _, op := range damage.ScrollbackAppend {
+		if rowText(op.Cells, len(op.Cells)) != "████        " {
+			continue
+		}
+		if op.Wrapped {
+			t.Fatalf("expected hard-newline row to remain unwrapped, got %#v", op)
+		}
+		if got := len(op.Cells); got != 12 {
+			t.Fatalf("expected canonical-width scrollback cells, got len=%d row=%#v", got, op.Cells)
+		}
+		return
+	}
+	t.Fatalf("expected padded QR-like scrollback row, got %#v", damage.ScrollbackAppend)
+}
+
 func firstWriteSpanOp(t *testing.T, damage WriteDamage) DamageOp {
 	t.Helper()
 	return firstOpWithCode(t, damage, ScreenOpWriteSpan)

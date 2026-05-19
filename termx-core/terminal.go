@@ -796,6 +796,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 			scrollbackFirstRowID = gridViewport.FirstRowID
 			scrollbackLastRowID = gridViewport.LastRowID
 			usedGrid = true
+			traceGridVTermRows("core.snapshot.grid_rows", id, gridViewport.Rows, "offset", offset, "limit", limit, "cols", int(size.Cols), "total", scrollbackTotal, "has_more", scrollbackHasMore)
 		}
 	} else if t.grid != nil {
 		scrollbackTotal = t.grid.RowCount()
@@ -830,8 +831,10 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		scrollbackTotal = len(scrollback)
 		scrollbackHasMore = start > 0
 		scrollbackLoadedRows = len(scrollback[start:end])
+		traceGridVTermRows("core.snapshot.vterm_scrollback", id, scrollback[start:end], "offset", offset, "limit", limit, "total", scrollbackTotal, "has_more", scrollbackHasMore)
 	}
 	if offset == 0 {
+		beforeTrim := len(outScrollback)
 		outScrollback, outScrollbackTimestamps, outScrollbackRowKinds, outScrollbackWrapped = trimScrollbackScreenOverlap(
 			outScrollback,
 			outScrollbackTimestamps,
@@ -842,7 +845,12 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 			screenRowKinds,
 			screenWrapped,
 		)
+		if beforeTrim != len(outScrollback) {
+			traceGridTrimScreenOverlap(id, beforeTrim, len(outScrollback), scrollbackTotal)
+		}
 	}
+	traceGridCoreRows("core.snapshot.scrollback_out", id, outScrollback, "offset", offset, "limit", limit, "total", scrollbackTotal, "has_more", scrollbackHasMore, "used_grid", usedGrid)
+	traceGridCoreRows("core.snapshot.screen_out", id, screenData.Cells, "screen_rows", len(screenData.Cells), "screen_cols", int(size.Cols))
 
 	return &Snapshot{
 		TerminalID:           id,
@@ -926,10 +934,13 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 				t.logger.Warn("termx terminal grid viewport failed", "terminal_id", id, "error", err)
 			}
 		} else if gridViewport.TotalRows > 0 {
+			rows := convertRows(gridViewport.Rows)
+			traceGridVTermRows("core.grid_viewport.grid_rows", id, gridViewport.Rows, "offset", offset, "limit", limit, "cols", cols, "total", gridViewport.TotalRows, "has_more", gridViewport.HasMore, "loaded_rows", gridViewport.LoadedRows)
+			traceGridCoreRows("core.grid_viewport.out_rows", id, rows, "offset", offset, "limit", limit, "cols", cols, "total", gridViewport.TotalRows, "has_more", gridViewport.HasMore, "loaded_rows", gridViewport.LoadedRows)
 			return &GridViewport{
 				TerminalID:           id,
 				Size:                 Size{Cols: uint16(cols), Rows: size.Rows},
-				Rows:                 convertRows(gridViewport.Rows),
+				Rows:                 rows,
 				ScrollbackOffset:     offset,
 				ScrollbackLimit:      limit,
 				ScrollbackTotal:      gridViewport.TotalRows,
@@ -961,10 +972,13 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 	for start > 0 && boolAt(scrollbackWrapped, start-1) {
 		start--
 	}
+	rows := convertRows(scrollback[start:end])
+	traceGridVTermRows("core.grid_viewport.vterm_rows", id, scrollback[start:end], "offset", offset, "limit", limit, "cols", cols, "total", len(scrollback), "has_more", start > 0)
+	traceGridCoreRows("core.grid_viewport.vterm_out_rows", id, rows, "offset", offset, "limit", limit, "cols", cols, "total", len(scrollback), "has_more", start > 0)
 	return &GridViewport{
 		TerminalID:           id,
 		Size:                 Size{Cols: uint16(cols), Rows: size.Rows},
-		Rows:                 convertRows(scrollback[start:end]),
+		Rows:                 rows,
 		ScrollbackOffset:     offset,
 		ScrollbackLimit:      limit,
 		ScrollbackTotal:      len(scrollback),
@@ -1408,6 +1422,8 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 			return
 		}
 		perftrace.Count("terminal.screen_update.latest_frame_fast_path", len(chunk))
+		traceGridDamageOps("core.vterm.damage.large_latest_scrollback", t.id, damage.ScrollbackAppend, "chunk_bytes", len(chunk), "ops", len(damage.Ops), "full_replace", damage.RequiresFullReplace)
+		traceGridVTermRows("core.vterm.screen.large_latest", t.id, t.vterm.ScreenContent().Cells, "chunk_bytes", len(chunk))
 		t.captureAlternateDamageLocked(damage)
 		t.appendGridFromDamageLocked(damage)
 		revision := t.bumpScreenRevisionLocked()
@@ -1431,6 +1447,8 @@ func (t *Terminal) writeAuthoritativeScreenUpdateLocked(stream *fanout.Fanout, c
 		})
 		return
 	}
+	traceGridDamageOps("core.vterm.damage.inline_scrollback", t.id, damage.ScrollbackAppend, "chunk_bytes", len(chunk), "ops", len(damage.Ops), "full_replace", damage.RequiresFullReplace)
+	traceGridVTermRows("core.vterm.screen.inline", t.id, t.vterm.ScreenContent().Cells, "chunk_bytes", len(chunk))
 	t.captureAlternateDamageLocked(damage)
 	t.appendGridFromDamageLocked(damage)
 	revision := t.bumpScreenRevisionLocked()
@@ -1465,6 +1483,7 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 	if t == nil || t.grid == nil || len(damage.ScrollbackAppend) == 0 {
 		return
 	}
+	traceGridDamageOps("core.append_grid.damage", t.id, damage.ScrollbackAppend, "ops", len(damage.Ops), "alternate_rows", len(damage.AlternateAppend))
 	if t.gridAppender != nil {
 		t.gridAppender.append(damage.ScrollbackAppend)
 		return
@@ -2650,10 +2669,13 @@ func protocolGridViewportFromCore(viewport *GridViewport) *protocol.GridViewport
 	if viewport == nil {
 		return nil
 	}
+	rows := protocolCompactRowsFromCorePreserveTrailingBlankCells(viewport.Rows)
+	traceGridCoreRows("core.protocol.grid_viewport.input_rows", viewport.TerminalID, viewport.Rows, "offset", viewport.ScrollbackOffset, "limit", viewport.ScrollbackLimit, "total", viewport.ScrollbackTotal, "has_more", viewport.ScrollbackHasMore)
+	traceGridProtocolRows("core.protocol.grid_viewport.compact_rows", viewport.TerminalID, rows, "offset", viewport.ScrollbackOffset, "limit", viewport.ScrollbackLimit, "total", viewport.ScrollbackTotal, "has_more", viewport.ScrollbackHasMore)
 	return &protocol.GridViewport{
 		TerminalID:           viewport.TerminalID,
 		Size:                 protocol.Size{Cols: viewport.Size.Cols, Rows: viewport.Size.Rows},
-		Rows:                 protocolCompactRowsFromCorePreserveTrailingBlankCells(viewport.Rows),
+		Rows:                 rows,
 		ScrollbackOffset:     viewport.ScrollbackOffset,
 		ScrollbackLimit:      viewport.ScrollbackLimit,
 		ScrollbackTotal:      viewport.ScrollbackTotal,
@@ -2673,11 +2695,15 @@ func protocolSnapshotFromCore(snapshot *Snapshot) *protocol.Snapshot {
 	if snapshot == nil {
 		return nil
 	}
+	scrollback := protocolCompactRowsFromCorePreserveTrailingBlankCells(snapshot.Scrollback)
+	traceGridCoreRows("core.protocol.snapshot.scrollback_input", snapshot.TerminalID, snapshot.Scrollback, "offset", snapshot.ScrollbackOffset, "total", snapshot.ScrollbackTotal, "has_more", snapshot.ScrollbackHasMore)
+	traceGridProtocolRows("core.protocol.snapshot.scrollback_compact", snapshot.TerminalID, scrollback, "offset", snapshot.ScrollbackOffset, "total", snapshot.ScrollbackTotal, "has_more", snapshot.ScrollbackHasMore)
+	traceGridCoreRows("core.protocol.snapshot.screen_input", snapshot.TerminalID, snapshot.Screen.Cells, "screen_rows", len(snapshot.Screen.Cells), "screen_cols", int(snapshot.Size.Cols))
 	return &protocol.Snapshot{
 		TerminalID:           snapshot.TerminalID,
 		Size:                 protocol.Size{Cols: snapshot.Size.Cols, Rows: snapshot.Size.Rows},
 		Screen:               protocol.ScreenData{Cells: protocolRowsFromCore(snapshot.Screen.Cells), IsAlternateScreen: snapshot.Screen.IsAlternateScreen},
-		Scrollback:           protocolCompactRowsFromCorePreserveTrailingBlankCells(snapshot.Scrollback),
+		Scrollback:           scrollback,
 		ScrollbackOffset:     snapshot.ScrollbackOffset,
 		ScrollbackTotal:      snapshot.ScrollbackTotal,
 		ScrollbackHasMore:    snapshot.ScrollbackHasMore,

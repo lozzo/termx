@@ -2003,6 +2003,33 @@ func TestScreenFullReplaceUpdatePreservesTrailingSpaceColumnsAfterResize(t *test
 	}
 }
 
+func TestScreenFullReplaceUpdatePreservesCanonicalTrailingBlankCells(t *testing.T) {
+	vt := localvterm.New(12, 3, 32, nil)
+	if _, err := vt.Write([]byte("████")); err != nil {
+		t.Fatalf("seed QR-like row: %v", err)
+	}
+
+	update := screenFullReplaceUpdateFromVTerm(vt, "qr")
+	payload, err := protocol.EncodeScreenUpdatePayload(update)
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+	decoded, err := protocol.DecodeScreenUpdatePayload(payload)
+	if err != nil {
+		t.Fatalf("decode update: %v", err)
+	}
+
+	if len(decoded.Screen.Cells) == 0 {
+		t.Fatalf("expected screen rows, got %#v", decoded.Screen)
+	}
+	if got := len(decoded.Screen.Cells[0]); got != 12 {
+		t.Fatalf("expected canonical-width screen row, got len=%d row=%#v", got, decoded.Screen.Cells[0])
+	}
+	if got := coreProtocolRowText(decoded.Screen.Cells[0]); got != "████        " {
+		t.Fatalf("expected QR-like quiet-zone blanks to survive full replace, got %q row=%#v", got, decoded.Screen.Cells[0])
+	}
+}
+
 func TestScreenUpdateShouldEncodeDeltaOnly(t *testing.T) {
 	fullRows := make([]protocol.ScreenOp, 0, 24)
 	for row := 0; row < 24; row++ {

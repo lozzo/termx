@@ -583,7 +583,94 @@ go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./term
 - INFO: `go test ./...` from repository root fails with `pattern ./...: directory prefix . does not contain modules listed in go.work or their selected dependencies`; this repo is driven by the explicit `go.work` modules.
 - PASS: `go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./tuiv2/runtime/... ./tuiv2/app/... ./tuiv2/render/...`
 
+## tmux Debug Follow-Up Phase 6: Style and QR Trace
+
+- User reported the two real issues still persist after Phase 5:
+  - ordinary shell prompt colors disappear when replayed from history;
+  - QR output still misses part of its content.
+- Added an opt-in diagnostic trace controlled by `TERMX_GRID_HISTORY_TRACE`.
+- The trace records parsed grid/cell state, not raw PTY bytes, at these boundaries:
+  - core vterm write damage and visible screen after each update;
+  - `appendGridFromDamageLocked`;
+  - async `terminalGridAppender` enqueue/flush;
+  - `terminalGridStore` append commit and `Viewport` raw/reflow rows;
+  - core `Snapshot` and `GridViewport` output;
+  - protocol compact-row conversion;
+  - TUI runtime snapshot/grid-viewport load, local vterm load, and page merge;
+  - TUI renderer row draw, including row width, visible width, style counts, hashes, and clipped visible text.
+- Trace row summaries include text, hash, cell/display width, styled cell count, style samples, wide-cell count, link count, and trailing spaces. Renderer rows also include visible text/hash so clipping/projection can be distinguished from data loss.
+
+### Phase 6 Commands
+
+```sh
+git status --short --branch
+rg -n "func \\(t \\*Terminal\\) Snapshot|func \\(t \\*Terminal\\) GridViewportWithOptions|func \\(t \\*Terminal\\) appendGridFromDamageLocked|writeAuthoritativeScreenUpdateLocked|protocolGridViewportFromCore|protocolSnapshotFromCore" termx-core/terminal.go
+rg -n "func \\(s \\*terminalGridStore\\) AppendDamageRows|func \\(s \\*terminalGridStore\\) Viewport|func \\(s \\*terminalGridStore\\) appendRowSequence|func \\(a \\*terminalGridAppender\\) append|func \\(a \\*terminalGridAppender\\) run" termx-core/terminal_grid_store.go termx-core/terminal_grid_appender.go
+rg -n "func \\(r \\*Runtime\\) LoadSnapshot|func \\(r \\*Runtime\\) LoadGridViewport|func ApplyGridViewportPage|func loadSnapshotIntoVTerm|func snapshotFromGridViewport" tuiv2/runtime/snapshot.go
+gofmt -w termx-shared/gridtrace/gridtrace.go termx-core/terminal_grid_trace.go termx-core/terminal.go termx-core/terminal_grid_store.go termx-core/terminal_grid_appender.go tuiv2/runtime/grid_trace.go tuiv2/runtime/snapshot.go tuiv2/render/grid_trace.go tuiv2/render/snapshot_render_helpers.go
+```
+
+### Phase 6 Status
+
+- Completed: the trace isolated the QR loss to used-width screen/scrollback paths, then verified the fixed canonical-width path end to end.
+
+### Phase 6 Findings
+
+- Before the fix, real QR rows were present in core vterm as full PTY-width rows, but some downstream paths collapsed them to the row used width:
+  - core vterm screen row: `cells=156 cols=156 trailing_spaces=67`
+  - runtime snapshot input and later history viewport rows: previously observed as `cells=89 cols=89 trailing_spaces=0`
+- That means the QR content was not lost as raw bytes or protobuf fields. It was lost when screen snapshots and scrollback damage used `UsedScreenContent` / `UsedScreenRow` or emulator scrollback used-width rows, dropping the right-side plain blank cells that QR output uses as white modules/quiet zone.
+- Controlled SGR color and real zsh prompt color were not lost in the traced structured-history path:
+  - green `TERMXPROMPT%` survived with `styled=12 styles="fg:ansi:2,..."`
+  - green zsh `ZPROMPT` survived vterm, grid append, grid store, protocol compact row, runtime grid viewport, and renderer with `styled=7 styles="fg:ansi:2,..."`
+
+### Phase 6 Code Changes
+
+- Added env-gated trace logging with `TERMX_GRID_HISTORY_TRACE`; no logging is emitted unless the env var is set.
+- Switched core `snapshotFromVTerm`, `screenSnapshotFromVTerm`, and `screenFullReplaceUpdateFromVTerm` from used-width screen content to canonical `ScreenContent`.
+- Switched TUI runtime snapshot creation from `UsedScreenRow` / `UsedScreenContent` to canonical `ScreenRowView` / `ScreenContent`.
+- Padded non-wrapped scrollback damage rows to the current PTY width before appending them to grid history, preserving default blank cells for hard-newline rows while leaving wrapped continuation rows compact.
+- Added regression tests for:
+  - vterm scrollback damage padding of QR-like hard-newline rows;
+  - core full-replace payload preserving canonical trailing blank cells;
+  - runtime snapshots preserving canonical trailing blank cells.
+
+### Phase 6 tmux Verification
+
+- Temp dir: `/tmp/termx-grid-trace2.aOqke3`
+- Sessions:
+  - `termx-grid-trace2-color`
+  - `termx-grid-trace2-qr`
+  - `termx-grid-trace2-zsh`
+- Captures:
+  - `/tmp/termx-grid-trace2.aOqke3/color-copy-top.txt`
+  - `/tmp/termx-grid-trace2.aOqke3/qr-copy-top.txt`
+  - `/tmp/termx-grid-trace2.aOqke3/zsh-copy-top.txt`
+- QR after fix:
+  - `core.vterm.damage.inline_scrollback.row`: `cells=156 cols=156 trailing_spaces=67`
+  - `core.grid_store.append_damage_rows.row`: `cells=156 cols=156 trailing_spaces=67`
+  - `core.grid_store.viewport.reflow_rows.row`: `cells=156 cols=156 trailing_spaces=67`
+  - `runtime.load_grid_viewport.received.rows.row`: `cells=156 cols=156 trailing_spaces=67`
+  - `render.draw_protocol_row`: `cells=156 cols=156 visible_cols=156 trailing_spaces=67`
+  - No traced QR row remained at `cells=89`, `cols=89`, or `trailing_spaces=0`.
+- zsh prompt color after fix:
+  - `core.grid_store.append_damage_rows.row`: `styled=7 styles="fg:ansi:2,..."`
+  - `core.protocol.grid_viewport.compact_rows.row`: `styled=7 styles="fg:ansi:2,..."`
+  - `runtime.load_grid_viewport.received.rows.row`: `styled=7 styles="fg:ansi:2,..."`
+  - `render.draw_protocol_row`: `styled=7 visible_styled=7`
+
+### Phase 6 Test Results
+
+- PASS: `go test ./termx-shared/...`
+- PASS: `go test ./termx-vterm/...`
+- PASS: `go test ./termx-core/...`
+- PASS: `go test ./tuiv2/runtime/... ./tuiv2/render/...`
+- PASS: `go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./termx-shared/... ./tuiv2/runtime/... ./tuiv2/app/... ./tuiv2/render/...`
+- PASS: `cd remote-ui && npm run typecheck`
+- PASS: `cd remote-ui && npm run test` (58 files, 412 tests; jsdom emitted expected localStorage/canvas warnings)
+
 ## Unresolved Risks
 
 - Persistent grid retention is now row-count bounded via `ScrollbackSize`; no time-based retention or disk-byte cap is implemented yet.
 - Resize no longer stores visible suffix duplicates for the covered wrapped split cases. The remaining architectural gap versus tmux is that TermX still bridges `vterm` screen and file-backed history through resize damage rather than a single in-memory/file-backed grid mutation with row identity.
+- `TERMX_GRID_HISTORY_TRACE` is intentionally verbose. It should stay opt-in and be used for targeted history/replay debugging, not normal daemon operation.

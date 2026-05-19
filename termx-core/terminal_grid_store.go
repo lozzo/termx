@@ -224,6 +224,7 @@ func (s *terminalGridStore) AppendDamageRows(rows []vterm.DamageOp) error {
 	if s == nil || len(rows) == 0 {
 		return nil
 	}
+	traceGridDamageOps("core.grid_store.append_damage_rows", s.terminalID, rows)
 	return s.appendRowSequence(len(rows), func(i int) terminalGridRow {
 		row := rows[i]
 		return terminalGridRow{
@@ -240,6 +241,7 @@ func (s *terminalGridStore) AppendRows(rows [][]vterm.Cell) error {
 	if len(rows) == 0 {
 		return nil
 	}
+	traceGridVTermRows("core.grid_store.append_rows", s.terminalID, rows)
 	return s.appendRowSequence(len(rows), func(i int) terminalGridRow {
 		return terminalGridRow{cells: rows[i]}
 	})
@@ -264,6 +266,7 @@ func (s *terminalGridStore) appendRowSequence(count int, rowAt func(int) termina
 		return nil
 	}
 	finish := perftrace.Measure("terminal.grid.append")
+	traceRows := make([]terminalGridRow, 0, minInt(count, 16))
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -308,6 +311,9 @@ func (s *terminalGridStore) appendRowSequence(count int, rowAt func(int) termina
 
 	for i := 0; i < count; i++ {
 		row := rowAt(i)
+		if len(traceRows) < cap(traceRows) {
+			traceRows = append(traceRows, row)
+		}
 		payload, err := encodeTerminalGridRow(row)
 		if err != nil {
 			finish(0)
@@ -362,6 +368,7 @@ func (s *terminalGridStore) appendRowSequence(count int, rowAt func(int) termina
 	finish(totalBytes)
 	perftrace.Count("terminal.grid.rows", appendedRows)
 	perftrace.Count("terminal.grid.bytes", totalBytes)
+	traceGridTerminalRows("core.grid_store.append_committed_sample", s.terminalID, traceRows, "requested_rows", count, "appended_rows", appendedRows, "total_rows_after", s.rowCount, "payload_bytes", totalBytes)
 	return nil
 }
 
@@ -426,6 +433,7 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 		if err != nil {
 			return result, err
 		}
+		traceGridTerminalRows("core.grid_store.viewport.raw_rows", s.terminalID, gridRows, "offset", beforeOffset, "limit", limit, "raw_limit", rawLimit, "cols", cols, "window_rows", rows, "has_more", hasMore)
 		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped = reflowTerminalGridRows(gridRows, cols)
 		cropped := false
 		if hasMore {
@@ -436,6 +444,7 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 		result.BeforeOffset = beforeOffset
 		result.Limit = limit
 		result.Generation, result.FirstRowID, result.LastRowID, result.TotalRows = s.rowWindowCoordinates(beforeOffset, rows)
+		traceGridVTermRows("core.grid_store.viewport.reflow_rows", s.terminalID, result.Rows, "offset", beforeOffset, "limit", limit, "raw_limit", rawLimit, "cols", cols, "loaded_rows", result.LoadedRows, "total", result.TotalRows, "has_more", result.HasMore, "cropped", cropped, "generation", result.Generation, "first_row_id", result.FirstRowID, "last_row_id", result.LastRowID)
 		if len(result.Rows) >= limit || !hasMore {
 			return result, nil
 		}
