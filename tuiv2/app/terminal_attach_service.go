@@ -310,7 +310,11 @@ func (s *terminalAttachService) restoredSnapshotFallbackMsg(hint bootstrap.PaneR
 			State: "exited",
 		})
 	}
-	snapshot, err := s.model.runtime.LoadSnapshot(context.Background(), hint.TerminalID, 0, defaultTerminalSnapshotScrollbackLimit)
+	limit := defaultTerminalSnapshotScrollbackLimit
+	if terminal := s.model.runtime.Registry().Get(hint.TerminalID); terminal != nil && terminal.ScrollbackLoadedLimit > limit {
+		limit = terminal.ScrollbackLoadedLimit
+	}
+	snapshot, err := s.model.runtime.LoadSnapshot(context.Background(), hint.TerminalID, 0, limit)
 	if err != nil || snapshot == nil {
 		s.rollbackRestoredBinding(hint.TabID, hint.PaneID, hint.TerminalID)
 		return reattachFailedMsg{tabID: hint.TabID, paneID: hint.PaneID}

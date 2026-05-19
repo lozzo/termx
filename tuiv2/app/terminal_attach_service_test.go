@@ -213,6 +213,41 @@ func TestTerminalAttachServiceHandleAttachedMsgResetsLegacyTabScrollOffset(t *te
 	}
 }
 
+func TestTerminalAttachServiceRestoredSnapshotFallbackUsesKnownLoadedDepth(t *testing.T) {
+	client := &recordingBridgeClient{
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-restore": {
+				TerminalID:           "term-restore",
+				Size:                 protocol.Size{Cols: 80, Rows: 24},
+				Scrollback:           []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "seed", Width: 1}})},
+				ScrollbackTotal:      2000,
+				ScrollbackHasMore:    true,
+				ScrollbackLoadedRows: 1500,
+				Screen:               protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "x", Width: 1}}}},
+			},
+		},
+	}
+	model := setupModel(t, modelOpts{client: client})
+	terminal := model.runtime.Registry().GetOrCreate("term-restore")
+	terminal.ScrollbackLoadedLimit = 1500
+
+	service := model.terminalAttachService()
+	msg := service.restoredSnapshotFallbackMsg(bootstrap.PaneReattachHint{
+		TabID:      "tab-1",
+		PaneID:     "pane-1",
+		TerminalID: "term-restore",
+	})
+	if _, ok := msg.(orchestrator.SnapshotLoadedMsg); !ok {
+		t.Fatalf("expected snapshot loaded fallback, got %#v", msg)
+	}
+	if got := len(client.snapshotRequests); got != 1 {
+		t.Fatalf("expected one snapshot request, got %#v", client.snapshotRequests)
+	}
+	if got := client.snapshotRequests[0].limit; got != 1500 {
+		t.Fatalf("expected restored fallback to use known loaded depth 1500, got %#v", client.snapshotRequests[0])
+	}
+}
+
 func TestTerminalAttachServiceAttachCmdRollsBackRuntimeOnLateFailure(t *testing.T) {
 	client := &recordingBridgeClient{
 		attachResult: &protocol.AttachResult{Channel: 0, Mode: "collaborator"},

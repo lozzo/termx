@@ -278,10 +278,15 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 	copyModeState, copyModeActive := m.copyModeStateForPane(pane.ID)
 	copyModeActive = copyModeActive && copyModeState.Snapshot != nil
 	loaded := 0
+	materializedRows := 0
 	if copyModeActive {
 		loaded = maxInt(snapshotScrollbackLoadedDepth(copyModeState.Snapshot), copyModeState.LoadedRows)
+		if copyModeState.Snapshot != nil {
+			materializedRows = len(copyModeState.Snapshot.Scrollback)
+		}
 	} else if terminal.Snapshot != nil {
 		loaded = maxInt(snapshotScrollbackLoadedDepth(terminal.Snapshot), terminal.ScrollbackLoadedLimit)
+		materializedRows = len(terminal.Snapshot.Scrollback)
 	} else {
 		loaded = terminal.ScrollbackLoadedLimit
 	}
@@ -292,7 +297,11 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 		terminal.ScrollbackExhausted = false
 	}
 	want := viewportOffset + contentRect.H + terminalScrollbackPrefetchMargin
-	if want <= loaded {
+	visibleDepth := loaded
+	if materializedRows > 0 && loaded > materializedRows {
+		visibleDepth = materializedRows
+	}
+	if want <= visibleDepth {
 		return nil
 	}
 	nextLimit := loaded + terminalScrollbackPageLimit

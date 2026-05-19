@@ -778,3 +778,21 @@ pkill -f 'termx .* daemon' 2>/dev/null || true
   - `copy-top.txt`: `blocks=3224`, `uri=1`, `expires_at=1`, `ZPROMPT=1`
   - `copy-halfdown.txt`: `blocks=3224`, `uri=1`, `expires_at=1`, `ZPROMPT=1`
   - trace now keeps QR rows through history replay instead of turning them into blank rows before `core.append_grid.damage`.
+
+## tmux Debug Follow-Up Phase 9: Shared Floating History Paging And Reattach Depth
+
+- New user-reported regressions after Phase 8:
+  - when a floating pane is attached to the same terminal, takes owner, and history paging later requests older rows, history navigation can suddenly jump to the very top;
+  - after closing the floating pane and re-entering the TUI, only a shallow history window is visible even though the terminal retained far more rows.
+- Code-path findings:
+  - normal pane history prefetch (`ensureActivePaneScrollbackCmd`) compared the requested viewport depth only against `loaded depth`. When the snapshot window had already been bounded and trimmed, the app could wrongly conclude that enough history was materialized and skip the next `grid.viewport` request.
+  - restored snapshot fallback (`restoredSnapshotFallbackMsg`) always reloaded with `defaultTerminalSnapshotScrollbackLimit` (`0`) instead of the terminal's known `ScrollbackLoadedLimit`, discarding the already-known deeper retained-history window during TUI re-entry.
+- Fix:
+  - `ensureActivePaneScrollbackCmd` now distinguishes:
+    - logical loaded depth: `snapshotScrollbackLoadedDepth(...)` / `ScrollbackLoadedLimit`
+    - currently materialized rows: `len(snapshot.Scrollback)`
+  - paging still continues from logical loaded depth, but the "do we need another page?" check now uses the materialized visible depth when the snapshot window has been trimmed.
+  - `restoredSnapshotFallbackMsg` now reloads snapshots with the terminal's known `ScrollbackLoadedLimit` when present, matching runtime recovery semantics instead of collapsing back to the default shallow window.
+- Focused regression coverage added:
+  - `TestPaneScrollbackPrefetchUsesLoadedDepthBeyondMaterializedWindow`
+  - `TestTerminalAttachServiceRestoredSnapshotFallbackUsesKnownLoadedDepth`

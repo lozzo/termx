@@ -75,3 +75,46 @@ func TestPaneScrollbackPrefetchUsesCanonicalCols(t *testing.T) {
 		t.Fatalf("expected pane history request to use canonical cols 120, got %d", got)
 	}
 }
+
+func TestPaneScrollbackPrefetchUsesLoadedDepthBeyondMaterializedWindow(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 50, height: 12})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 120, Rows: 24},
+		Scrollback:           []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "seed", Width: 1}})},
+		ScrollbackHasMore:    true,
+		ScrollbackLoadedRows: 1500,
+		ScrollbackOffset:     1200,
+	}
+	terminal.ScrollbackLoadedLimit = 1500
+	_ = model.runtime.SetPaneViewportOffset("pane-1", 1400)
+
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 120, Rows: 24},
+		Scrollback:           []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "older", Width: 1}})},
+		ScrollbackHasMore:    true,
+		ScrollbackTotal:      2001,
+		ScrollbackOffset:     1500,
+		ScrollbackLoadedRows: 2000,
+	}
+
+	cmd := model.ensureActivePaneScrollbackCmd()
+	if cmd == nil {
+		t.Fatal("expected pane scrollback prefetch command for materialized-window gap")
+	}
+	_ = cmd()
+
+	if got := len(client.viewportRequests); got != 1 {
+		t.Fatalf("expected one pane history request, got %#v", client.viewportRequests)
+	}
+	request := client.viewportRequests[0]
+	if request.offset != 1500 {
+		t.Fatalf("expected history request to continue from loaded depth 1500, got %#v", request)
+	}
+	if request.limit != 500 {
+		t.Fatalf("expected next page size 500, got %#v", request)
+	}
+}
