@@ -21,23 +21,24 @@ TermX 的 UI 历史主路径应回到 parsed grid/cell history，而不是 raw P
 
 ## 和 tmux 是否一致
 
-结论：方向一致，但实现不完全一样。
+结论：语义上应尽量和 tmux 一致。和 tmux 不一致的地方需要被当作风险点处理，除非有明确业务需求和回归测试支撑。
 
-一致点：
+目标一致点：
 
 - 都不让客户端从 raw PTY bytes 中间开始解释历史。
 - 都先由服务端 terminal emulator 把 PTY bytes 解析成带样式的 cell/grid。
 - 历史展示读取的是已经解析好的 cell 内容、style、width、wrapped metadata。
 - 更早的历史可以按保留策略丢弃；丢弃后 UI 明确展示“更早历史已清理”，不假装能还原。
+- 历史记录对上层表现为可访问的 grid memory。TermX 可以用 file-backed store、mmap 或 page cache 实现，但这只是后端存储细节，不应改变用户可观察语义。
+- 一个 workspace/tab 内多个 panel、floating window、mobile App、remote-ui 连接同一个 terminal，可以抽象成多个 tmux client/session 观察同一个 pane/window。它们共享同一个 terminal/grid，只是各自 viewport 不同。
 
-差异点：
+实现细节：
 
-- tmux 的历史是 pane grid 的内存结构为主，按 history-limit 保留；TermX 的 `terminalGridStore` 是磁盘 page + fixed index 的 parsed row store。
-- tmux 不追求用任意新宽度重放旧 PTY bytes；TermX 的 grid viewport 允许基于 stored rows + wrapped metadata 做 reflow。
-- tmux 的 renderer 和 history grid 在同一个 core 内；TermX 还有 TUI、remote-ui、App 多个观察入口，所以必须通过 protocol/grid viewport/snapshot 传递结构化 rows。
-- TermX 需要处理 owner/follower/floating pane 的 size ownership，tmux 的 pane 模型更直接。
+- tmux 可以把 grid/history 直接放在进程内存里；TermX 可以把同样的 parsed grid 放到 `terminalGridStore` page/index 文件里，并通过 mmap/page cache 让读取路径接近“访问内存”。
+- tmux 的 client/server 在同一个协议模型内；TermX 需要通过 protobuf/WebRTC/TUI bridge 把同一份 structured grid 投影给多个观察入口。
+- 这些都是工程实现差异，不应变成终端语义差异。
 
-所以准确说：TermX 应采用 tmux-like parsed grid history，而不是完全复刻 tmux 内部结构。
+设计原则：能和 tmux 保持一致的地方就保持一致。任何“TermX 特殊规则”都要先证明 tmux 模型不能覆盖，否则优先删除特殊规则，避免没有成熟参考导致历史、resize、copy mode 行为漂移。
 
 ## 之前历史存储的演进
 
@@ -267,7 +268,7 @@ TUI runtime = 观察者缓存，不是历史存储
 - follower pane 进入 copy mode 或滚动历史时，不改变 PTY size，也不按自己的 pane/App viewport cols 重新解释历史。
 - owner size 变化时，已经打开的 copy mode/history materialized pages 需要失效重取。
 
-`GridViewport(cols)` 能支持任意 cols 是工具能力；普通 terminal workspace 不应把 follower pane width、floating window width 或 App viewport width 传进去。
+普通 terminal workspace 不提供“按观察者任意宽度解释历史”的语义。即使底层 `GridViewport(cols)` 暂时保留参数，调用方也必须传 terminal canonical cols；调试工具如需任意宽度实验，必须和正常 terminal/copy-mode 路径隔离。
 
 ## remote/protobuf 后续代码怎么合回来
 
