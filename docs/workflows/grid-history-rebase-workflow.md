@@ -467,6 +467,30 @@ cd remote-ui && npm run typecheck
 - PASS: `go test ./internal/protocol/... ./termx-proto/... ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...`
 - PASS: `cd remote-ui && npm run typecheck`
 
+## tmux Reference Follow-Up Phase 2: Resize Movement Plan
+
+- Moved the tail-screen resize path closer to tmux's "grid mutation decides what moved into history" model:
+  - `VTerm.ResizeWithDamage` now builds an explicit `resizeHistoryPlan` for width-shrink tail resize cases.
+  - The plan appends the positional prefix that left the visible screen and keeps the positional tail visible.
+  - The previous post-resize content matching remains only as fallback for non-tail resize paths.
+- Added a duplicate-content regression test where multiple identical logical lines resize into identical visual rows. The test asserts metadata order, proving the resize append path follows planned row movement rather than accidentally matching an earlier duplicate visible block.
+
+### Phase 2 Commands
+
+```sh
+go test ./termx-vterm/vterm -run 'TestVTermResizeWithDamageDoesNotAppendVisibleSuffix|TestVTermResizeWithDamageTailPlanDoesNotMatchEarlierDuplicateRows|TestVTermResizeWithDamagePreservesWrappedBoundary|TestVTermResizeWithDamagePreservesWideRows|TestVTermResizeWithDamageAppendsRowsDisplacedByShrink' -count=1 -v
+go test ./termx-core -run 'TestTerminalGridResizeDamageKeepsWrappedContinuity|TestTerminalGridResizeDamageDoesNotPersistVisibleSuffix|TestTerminalGridResizeDamagePreservesStressTailRows|TestTerminalGridResizeDamagePreservesWideAndQRLikeRows|TestTerminalSnapshotTrimsResizeGridScreenOverlap' -count=1 -v
+go test ./termx-vterm/... ./termx-core/...
+go test ./tuiv2/runtime/... ./tuiv2/app/...
+```
+
+### Phase 2 Test Results
+
+- PASS: `go test ./termx-vterm/vterm -run 'TestVTermResizeWithDamageDoesNotAppendVisibleSuffix|TestVTermResizeWithDamageTailPlanDoesNotMatchEarlierDuplicateRows|TestVTermResizeWithDamagePreservesWrappedBoundary|TestVTermResizeWithDamagePreservesWideRows|TestVTermResizeWithDamageAppendsRowsDisplacedByShrink' -count=1 -v`
+- PASS: `go test ./termx-core -run 'TestTerminalGridResizeDamageKeepsWrappedContinuity|TestTerminalGridResizeDamageDoesNotPersistVisibleSuffix|TestTerminalGridResizeDamagePreservesStressTailRows|TestTerminalGridResizeDamagePreservesWideAndQRLikeRows|TestTerminalSnapshotTrimsResizeGridScreenOverlap' -count=1 -v`
+- PASS: `go test ./termx-vterm/... ./termx-core/...`
+- PASS: `go test ./tuiv2/runtime/... ./tuiv2/app/...`
+
 ## Unresolved Risks
 
 - Persistent grid retention is now row-count bounded via `ScrollbackSize`; no time-based retention or disk-byte cap is implemented yet.

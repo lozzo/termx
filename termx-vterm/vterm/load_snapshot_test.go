@@ -330,6 +330,40 @@ func TestVTermResizeWithDamageDoesNotAppendVisibleSuffix(t *testing.T) {
 	}
 }
 
+func TestVTermResizeWithDamageTailPlanDoesNotMatchEarlierDuplicateRows(t *testing.T) {
+	vt := New(5, 3, 0, nil)
+	vt.DisableEmulatorScrollback()
+	base := time.Date(2026, 5, 19, 10, 0, 0, 0, time.UTC)
+	screenTimes := []time.Time{
+		base.Add(1 * time.Second),
+		base.Add(2 * time.Second),
+		base.Add(3 * time.Second),
+	}
+	vt.LoadSnapshotWithMetadata(nil, nil, nil, ScreenData{
+		Cells: [][]Cell{
+			cellsFromString("aaaaa"),
+			cellsFromString("aaaaa"),
+			cellsFromString("aaaaa"),
+		},
+	}, screenTimes, []string{"first", "second", "tail"}, CursorState{Row: 2, Col: 4, Visible: true}, TerminalModes{AutoWrap: true})
+
+	damage := vt.ResizeWithDamage(3, 2)
+	gotDamageRows := damageRowsText(damage.ScrollbackAppend)
+	if !reflect.DeepEqual(gotDamageRows, []string{"aaa", "aa", "aaa", "aa"}) {
+		t.Fatalf("expected resize plan to append positional prefix, got %#v screen=%#v", gotDamageRows, screenRowsText(vt.ScreenContent().Cells))
+	}
+	gotKinds := make([]string, 0, len(damage.ScrollbackAppend))
+	for _, row := range damage.ScrollbackAppend {
+		gotKinds = append(gotKinds, row.RowKind)
+	}
+	if !reflect.DeepEqual(gotKinds, []string{"first", "first", "second", "second"}) {
+		t.Fatalf("expected explicit resize plan to append the older duplicate line first, got row kinds %#v", gotKinds)
+	}
+	if gotScreenRows := trimmedScreenRowsText(vt.ScreenContent().Cells); !reflect.DeepEqual(gotScreenRows, []string{"aaa", "aa"}) {
+		t.Fatalf("expected resize plan to keep positional tail on screen, got %#v", gotScreenRows)
+	}
+}
+
 func TestVTermResizeWithDamagePreservesWideRows(t *testing.T) {
 	vt := New(8, 3, 0, nil)
 	vt.DisableEmulatorScrollback()
@@ -480,6 +514,14 @@ func screenRowsText(rows [][]Cell) []string {
 	out := make([]string, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, rowText(row, len(row)))
+	}
+	return out
+}
+
+func trimmedScreenRowsText(rows [][]Cell) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, strings.TrimRight(rowText(row, len(row)), " "))
 	}
 	return out
 }

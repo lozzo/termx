@@ -1495,12 +1495,14 @@ func (v *VTerm) resizeWithDamageLocked(cols, rows int) WriteDamage {
 	beforeScreenWrapped := v.screenWrappedLocked(len(beforeScreen))
 	var beforeResizeRows []resizeReflowLine
 	var tailResizeRows []resizeReflowLine
+	var resizePlan resizeHistoryPlan
 	beforeCols, beforeRows := v.emu.Width(), v.emu.Height()
 	if !v.emu.IsAltScreen() {
 		beforeResizeRows = resizeReflowRowsForResize(beforeScreenRows, beforeScreenWrapped, beforeScreenTimestamps, beforeScreenRowKinds, cols, rows)
 		tailResizeRows = trimTrailingBlankResizeReflowLines(beforeResizeRows)
 	}
 	if shouldTailVisibleRowsForResize(beforeCols, beforeRows, cols, rows, tailResizeRows) {
+		resizePlan = planTailResizeHistoryAppend(tailResizeRows, rows)
 		v.emu.ResizeAndTailScreen(cols, rows, resizeReflowLinesUVRows(tailResizeRows), resizeReflowLinesWrapped(tailResizeRows), resizeReflowLinesUsed(tailResizeRows))
 	} else {
 		v.emu.Resize(cols, rows)
@@ -1515,7 +1517,10 @@ func (v *VTerm) resizeWithDamageLocked(cols, rows int) WriteDamage {
 	damage := v.writeDamageRequiresFullReplaceLocked(plan, "resize")
 	afterScreenRows := v.screenRowsForResizeLocked(len(afterScreen))
 	afterScreenWrapped := v.screenWrappedLocked(len(afterScreen))
-	damage.ScrollbackAppend = resizeScrollbackAppendFromReflowedRows(beforeResizeRows, afterScreenRows, v.screenTimestamps, v.screenRowKinds, afterScreenWrapped)
+	damage.ScrollbackAppend = resizePlan.scrollbackAppend()
+	if resizePlan.isZero() {
+		damage.ScrollbackAppend = resizeScrollbackAppendFromReflowedRows(beforeResizeRows, afterScreenRows, v.screenTimestamps, v.screenRowKinds, afterScreenWrapped)
+	}
 	damage.ScrollbackTrim = 0
 	damage.SizeCols = cols
 	damage.SizeRows = rows
@@ -3136,6 +3141,46 @@ func resizeReflowLinesUsed(rows []resizeReflowLine) []int {
 	return out
 }
 
+type resizeHistoryPlan struct {
+	rows       []resizeReflowLine
+	historyEnd int
+	planned    bool
+}
+
+func planTailResizeHistoryAppend(rows []resizeReflowLine, screenRows int) resizeHistoryPlan {
+	if len(rows) == 0 || screenRows <= 0 {
+		return resizeHistoryPlan{}
+	}
+	historyEnd := len(rows) - screenRows
+	if historyEnd < 0 {
+		historyEnd = 0
+	}
+	return resizeHistoryPlan{
+		rows:       rows,
+		historyEnd: historyEnd,
+		planned:    true,
+	}
+}
+
+func (p resizeHistoryPlan) isZero() bool {
+	return !p.planned
+}
+
+func (p resizeHistoryPlan) scrollbackAppend() []DamageOp {
+	if !p.planned || p.historyEnd <= 0 {
+		return nil
+	}
+	out := make([]DamageOp, 0, p.historyEnd)
+	for i := 0; i < p.historyEnd && i < len(p.rows); i++ {
+		row := p.rows[i]
+		if resizeReflowLineIsBlank(row) && row.timestamp.IsZero() {
+			continue
+		}
+		out = append(out, resizeReflowLineDamageOp(row))
+	}
+	return out
+}
+
 func resizeScrollbackAppendFromReflowedRows(beforeRows []resizeReflowLine, afterScreenRows [][]Cell, afterScreenTimestamps []time.Time, afterScreenRowKinds []string, afterScreenWrapped []bool) []DamageOp {
 	if len(beforeRows) == 0 {
 		return nil
@@ -3152,13 +3197,7 @@ func resizeScrollbackAppendFromReflowedRows(beforeRows []resizeReflowLine, after
 		if resizeReflowLineIsBlank(row) && row.timestamp.IsZero() {
 			return
 		}
-		out = append(out, DamageOp{
-			Cells:      cloneCellSlice(row.cells),
-			Timestamp:  row.timestamp,
-			RowKind:    row.rowKind,
-			Wrapped:    row.wrapped,
-			WrappedSet: true,
-		})
+		out = append(out, resizeReflowLineDamageOp(row))
 	}
 	for start := 0; start < len(beforeRows); {
 		end := start + 1
@@ -3180,6 +3219,16 @@ func resizeScrollbackAppendFromReflowedRows(beforeRows []resizeReflowLine, after
 		start = end
 	}
 	return out
+}
+
+func resizeReflowLineDamageOp(row resizeReflowLine) DamageOp {
+	return DamageOp{
+		Cells:      cloneCellSlice(row.cells),
+		Timestamp:  row.timestamp,
+		RowKind:    row.rowKind,
+		Wrapped:    row.wrapped,
+		WrappedSet: true,
+	}
 }
 
 func resizeVisibleBlockInBeforeRows(beforeRows, visible []resizeReflowLine) (start int, count int) {
