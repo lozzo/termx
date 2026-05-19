@@ -364,6 +364,76 @@ go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./term
 - PASS: `go test ./tuiv2/runtime/... ./tuiv2/app/...`
 - PASS: `go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./tuiv2/runtime/... ./tuiv2/app/...`
 
+## tmux Structure Reference Backlog
+
+This section records the current code-read comparison with tmux. The goal is not to clone tmux as a product, but to copy the mature parts of its terminal history model where TermX still has avoidable complexity or bug risk.
+
+### Current Alignment
+
+- UI, copy mode, and remote history use core-owned parsed grid/cell rows, not raw PTY journal replay.
+- `Terminal.GridViewportWithOptions` serves history at the terminal canonical width, not at observer panel/floating/app viewport width.
+- `terminalGridStore` preserves structured cells, style runs, wrapped metadata, row timestamps, row kinds, and crash-recoverable page/index commit semantics.
+- Runtime/copy-mode materializes bounded viewport pages instead of growing a full in-memory scrollback snapshot without limit.
+- Resize damage now appends only rows that leave the visible screen in the covered wrapped/tail cases.
+
+### Gaps To Copy From tmux
+
+- Unified row identity across history and visible screen:
+  - tmux keeps history and visible screen in one `screen->grid` address space (`hsize + sy` rows).
+  - TermX currently bridges `VTerm` live screen and `terminalGridStore` history with `WriteDamage.ScrollbackAppend`.
+  - Follow-up: introduce a canonical row identity/generation at the core history boundary, even if storage remains file-backed pages. This should make page requests, resize append, retention, and overlap trimming reason about the same logical rows instead of matching visible rows by content/fingerprint.
+
+- Resize as grid mutation rather than screen-diff inference:
+  - tmux `grid_reflow` mutates one grid and moves the history/screen boundary naturally.
+  - TermX computes resize damage from before/after screen rows.
+  - Follow-up: refactor resize planning around an explicit logical-line/grid-row model before applying emulator resize. Keep the file-backed store, but make the append plan come from row movement decisions, not from post-resize screen matching.
+
+- Copy-mode backing model:
+  - tmux copy-mode has a backing `screen/grid` and a rendered view screen.
+  - TermX copy-mode has a frozen protocol snapshot plus paged viewport materialization.
+  - Follow-up: keep bounded pages, but track cursor/selection against canonical history row identity plus page generation. Avoid treating materialized snapshot length as the only coordinate truth.
+
+- Wrapped logical-line navigation:
+  - tmux consistently uses `GRID_LINE_WRAPPED` when moving by visual rows, logical lines, selections, and copy extraction.
+  - TermX has wrapped metadata in store/snapshot/copy-mode, but bugs can still appear at page boundaries, resize boundaries, and history/screen boundaries.
+  - Follow-up: add tmux-style wrapped-line helper functions in TermX for "logical line start/end", "previous/next logical line", and "selection string extraction"; make copy-mode and viewport trimming use those helpers instead of local ad hoc checks.
+
+- History coordinate semantics:
+  - tmux addresses rows in one backing grid using `screen_hsize`, `screen_size_y`, and `oy`.
+  - TermX exposes `ScrollbackOffset`, `LoadedRows`, and `ScrollbackTotal` from newest-retained rows.
+  - Follow-up: document and test the TermX coordinate contract as a tmux-inspired model: `total retained rows`, `newest-relative offset`, `loaded raw rows`, `materialized visual rows`, and `history generation`. Add protocol fields only if stale-page bugs remain.
+
+- Screen/history boundary:
+  - tmux does not need overlap trimming because there is one grid.
+  - TermX still trims possible duplicates between grid history and live screen in `Snapshot(offset=0)`.
+  - Follow-up: reduce overlap trimming to a defensive fallback by making resize/scroll append own the boundary explicitly.
+
+- Retention behavior:
+  - tmux `history-limit` drops oldest grid lines in the same backing grid.
+  - TermX now caps committed rows by `ScrollbackSize`, rewrites index records, and prunes pages.
+  - Follow-up: add tests for retention across wrapped logical lines, page boundary retention, resize after retention, and stale client requests after retention.
+
+- Extraction/replay:
+  - tmux extracts strings from grid cells (`grid_string_cells` / `grid_view_string_cells`) rather than replaying PTY bytes.
+  - TermX UI history uses structured viewport, while `HistoryReplay` still encodes rows into an ANSI-like replay payload for older paths.
+  - Follow-up: keep structured viewport as primary. Treat string replay as compatibility/debug unless a caller explicitly needs it. Add tests that copy-mode text extraction and remote viewport rendering do not depend on ANSI replay.
+
+### Intentional Differences To Keep
+
+- TermX should keep one real PTY size per terminal and many observer viewports; it should not copy tmux pane/window/session behavior wholesale.
+- TermX should keep file-backed/recoverable history storage. tmux is primarily an in-memory grid; TermX needs restart recovery.
+- TermX should keep remote/App/WebRTC structured viewport transport. Do not reintroduce raw PTY journal as UI history.
+- TermX row metadata such as timestamps and row kinds is product-specific and should stay if it does not weaken grid consistency.
+
+### Priority Order
+
+1. Add a canonical history row identity/generation contract and focused stale-page tests.
+2. Replace resize history append inference with an explicit tmux-like logical-row movement plan.
+3. Centralize wrapped logical-line helper functions and use them in viewport, copy-mode movement, selection, and text extraction.
+4. Harden retention around wrapped lines, page boundaries, resize, and stale clients.
+5. Reduce `Snapshot(offset=0)` overlap trimming to a defensive fallback after boundary ownership is explicit.
+6. Keep `HistoryReplay` compatibility, but move remaining UI/copy-mode callers toward structured rows only.
+
 ## Unresolved Risks
 
 - Persistent grid retention is now row-count bounded via `ScrollbackSize`; no time-based retention or disk-byte cap is implemented yet.
