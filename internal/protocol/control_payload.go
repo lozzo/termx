@@ -314,6 +314,14 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 				TtlSeconds:     int32(value.GetTTLSeconds()),
 				AuthTtlSeconds: int32(value.GetAuthTTLSeconds()),
 			})
+		case interface {
+			GetLocalPairURL() string
+			GetTTLSeconds() int
+		}:
+			return proto.Marshal(&wirepb.RemotePairStartParams{
+				LocalPairUrl: value.GetLocalPairURL(),
+				TtlSeconds:   int32(value.GetTTLSeconds()),
+			})
 		default:
 			localPairURL, ttlSeconds, authTTLSeconds, ok := remotePairStartFields(params)
 			if !ok {

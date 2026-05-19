@@ -21,6 +21,14 @@ import (
 
 var errConcurrentSend = errors.New("concurrent send")
 
+type legacyRemotePairStartParams struct {
+	localPairURL string
+	ttlSeconds   int
+}
+
+func (p legacyRemotePairStartParams) GetLocalPairURL() string { return p.localPairURL }
+func (p legacyRemotePairStartParams) GetTTLSeconds() int      { return p.ttlSeconds }
+
 func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 	want := []string{
 		"Attach",
@@ -58,6 +66,31 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
 		t.Fatalf("protocol.Client public methods changed:\n got: %v\nwant: %v", got, want)
+	}
+}
+
+func TestEncodeRemotePairStartAcceptsLegacyGetterParams(t *testing.T) {
+	payload, err := EncodeMethodParams("remote.pair.start", legacyRemotePairStartParams{
+		localPairURL: "http://127.0.0.1:18888/pair",
+		ttlSeconds:   120,
+	})
+	if err != nil {
+		t.Fatalf("encode remote pair start legacy params: %v", err)
+	}
+	decoded, err := DecodeMethodParams("remote.pair.start", payload)
+	if err != nil {
+		t.Fatalf("decode remote pair start params: %v", err)
+	}
+	params, ok := decoded.(interface {
+		GetLocalPairUrl() string
+		GetTtlSeconds() int32
+		GetAuthTtlSeconds() int32
+	})
+	if !ok {
+		t.Fatalf("unexpected decoded params type: %T", decoded)
+	}
+	if params.GetLocalPairUrl() != "http://127.0.0.1:18888/pair" || params.GetTtlSeconds() != 120 || params.GetAuthTtlSeconds() != 0 {
+		t.Fatalf("unexpected decoded params: %#v", params)
 	}
 }
 

@@ -20,7 +20,7 @@ This workflow tracks the terminal history rebuild from a clean parsed-grid basel
 - Phase 3: Fix middle-history continuity. Complete.
 - Phase 4: Fix history file loss/recovery. Complete.
 - Phase 5: Bound TUI/runtime materialized history memory. Complete.
-- Phase 6: Reapply remote/protobuf/app changes without raw journal UI history. Pending.
+- Phase 6: Reapply remote/protobuf/app changes without raw journal UI history. Complete.
 - Final verification and daemon cleanup. Pending.
 
 ## Decisions
@@ -71,6 +71,15 @@ go test ./tuiv2/runtime -run 'TestRuntimeApplyGridViewportPage' -count=1
 go test ./tuiv2/app -run 'TestCopyModeLoadsOlderScrollback|TestCopyModeBoundedWindowRequestsNextOlderPage|TestCopyModeTopLoadsOlderScrollbackIntoFrozenBuffer|TestCopyModeEnterPrefetchesHistoryWhenFrozenBufferHasNoScrollback|TestCopyModeHistoryRequestUsesCanonicalCols' -count=1
 go test ./tuiv2/runtime/...
 go test ./tuiv2/app/...
+git cherry-pick dd2f0e61
+git cherry-pick 57692c45
+rg -n "terminal_event_log|terminalEventLog|terminal_event|raw PTY|pty journal|EventLog|terminal_history_line|historyLine" -S termx-core termx-vterm internal termx-proto tuiv2 remote-ui termx-app termx-remote web-control docs
+go test ./internal/protocol/... ./termx-proto/... ./termx-remote/... ./termx-cli/cmd/termx ./termx-hub/cmd/termx-hub
+go test ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...
+cd remote-ui && npm run typecheck
+cd remote-ui && npm run test
+go test ./internal/protocol -run 'TestEncodeRemotePairStartAcceptsLegacyGetterParams|TestClientRequestStreamAndProtocolError' -count=1
+go test ./internal/protocol/... ./termx-proto/... ./termx-remote/... ./termx-cli/cmd/termx ./termx-hub/cmd/termx-hub
 ```
 
 Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.md` and `termx-core/docs/terminal-history-event-log-plan.md` were deleted on the `feac69ea` baseline. The resolution kept those files deleted and restored only `docs/terminal-history-grid-decision.md`.
@@ -230,6 +239,34 @@ Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.
 - PASS: `go test ./tuiv2/runtime/...`
 - PASS: `go test ./tuiv2/app/...`
 
+## Phase 6 Notes
+
+- Cherry-picked `dd2f0e61 Accept copied v4 pairing payloads`.
+- Cherry-picked `57692c45 Rewrite remote pairing flow`.
+- No active `terminal_event_log`, raw PTY journal, or terminal history line implementation was reintroduced. The only raw/journal hits after Phase 6 are documentation, generic JSON/raw naming, database WAL settings, and non-history protocol internals.
+- Remote UI terminal history remains structured: `terminalProtocolClient` requests `grid.viewport`, decodes `GridViewport`, and replays structured rows for scrollback pages.
+- Native mobile `NativeConnectionProxy` still uses an authenticated `ws://127.0.0.1:<port>` bridge between JS and the native plugin, but the reviewed data path bridges native channels to WebRTC data channels. This was treated as an app-local native bridge, not a browser-to-agent terminal/file/history shortcut.
+- Added compatibility for legacy `remote.pair.start` getter params that only expose `GetLocalPairURL()` and `GetTTLSeconds()`, defaulting `auth_ttl_seconds` to zero.
+
+## Phase 6 Test Results
+
+- PASS: `go test ./internal/protocol/... ./termx-proto/... ./termx-remote/... ./termx-cli/cmd/termx ./termx-hub/cmd/termx-hub`
+- PASS: `go test ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...`
+- PASS: `cd remote-ui && npm run typecheck`
+- PASS: `cd remote-ui && npm run test` (58 files, 411 tests; jsdom emitted expected localStorage/canvas warnings)
+- PASS: `go test ./internal/protocol -run 'TestEncodeRemotePairStartAcceptsLegacyGetterParams|TestClientRequestStreamAndProtocolError' -count=1`
+- PASS: `go test ./internal/protocol/... ./termx-proto/... ./termx-remote/... ./termx-cli/cmd/termx ./termx-hub/cmd/termx-hub`
+
+## Phase 6 Review Notes
+
+- Reviewer D finding:
+  - Medium compatibility risk in `internal/protocol/control_payload.go`: `remote.pair.start` params accepted only the new three-getter interface, so older wrappers with `GetLocalPairURL()` and `GetTTLSeconds()` fell through to struct reflection and failed. Fixed by accepting the old two-getter shape and adding `TestEncodeRemotePairStartAcceptsLegacyGetterParams`.
+- Reviewer D no-findings:
+  - Structured terminal history remains the UI path.
+  - No raw PTY journal/event-log was found in remote UI/copy-mode history.
+  - No direct agent HTTP/WebSocket/filesystem shortcut was found for browser/app terminal/file/runtime data; the localhost WebSocket is a native app bridge into WebRTC-backed channels.
+  - Go and TypeScript generated `auth_ttl_seconds` fields are present.
+
 ## tmux Verification
 
 - Not run yet.
@@ -238,13 +275,10 @@ Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.
 
 ## Sub-Agent Review Summary
 
-- No sub-agent reviews run yet.
-- Planned after Phase 2:
-  - Reviewer A: grid store / resize correctness
-  - Reviewer B: TUI/tmux behavior
-  - Reviewer C: storage recovery
-- Planned after Phase 6:
-  - Reviewer D: remote/protobuf compatibility
+- Reviewer A: grid store / resize correctness. Issues fixed or recorded in Phase 2/4 review notes.
+- Reviewer B: TUI/tmux behavior. Issues fixed in Phase 3.
+- Reviewer C: storage recovery. Issues fixed or recorded in Phase 4.
+- Reviewer D: remote/protobuf compatibility. Compatibility issue fixed in Phase 6.
 
 ## Test Results
 
@@ -252,7 +286,6 @@ Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.
 
 ## Unresolved Risks
 
-- Need Phase 6 remote/protobuf/app replay without reintroducing raw PTY journal as UI history.
 - Need tmux real-terminal validation for resize/copy-mode/history continuity and observer viewport projection.
 - Need final full-suite test pass or documented environment/runtime failures.
 - Persistent grid retention is still explicit remove/fresh generation only; no size/time retention cap is implemented yet.
