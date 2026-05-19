@@ -767,8 +767,8 @@ func TestCopyModeLoadsOlderScrollbackByOffsetPage(t *testing.T) {
 
 func TestCopyModeLoadsOlderScrollbackBeyondFullSnapshotCap(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
-	latest := make([]string, 10000)
-	allRows := make([]string, 10500)
+	latest := make([]string, terminalMaterializedScrollbackLimit)
+	allRows := make([]string, terminalMaterializedScrollbackLimit+500)
 	for i := range allRows {
 		allRows[i] = "old"
 		if i >= 500 {
@@ -793,14 +793,72 @@ func TestCopyModeLoadsOlderScrollbackBeyondFullSnapshotCap(t *testing.T) {
 		t.Fatalf("expected one paged viewport request beyond full snapshot cap, before=%d after=%d calls=%#v", beforeViewportCalls, got, client.viewportRequests)
 	}
 	request := client.viewportRequests[len(client.viewportRequests)-1]
-	if request.terminalID != "term-1" || request.offset != 10000 || request.limit != 500 || request.cols <= 0 {
+	if request.terminalID != "term-1" || request.offset != terminalMaterializedScrollbackLimit || request.limit != 500 || request.cols <= 0 {
 		t.Fatalf("expected offset viewport request beyond full snapshot cap, got %#v", request)
 	}
-	if got, want := len(model.copyMode.Snapshot.Scrollback), 10500; got != want {
-		t.Fatalf("expected paged history beyond full snapshot cap to be prepended, got %d rows want %d", got, want)
+	if got, want := len(model.copyMode.Snapshot.Scrollback), terminalMaterializedScrollbackLimit; got != want {
+		t.Fatalf("expected paged history window to stay bounded, got %d rows want %d", got, want)
 	}
 	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old") {
 		t.Fatalf("expected older page at top of frozen scrollback, got %q", got)
+	}
+	if got := model.copyMode.Snapshot.ScrollbackOffset; got != 500 {
+		t.Fatalf("expected newest materialized rows to be trimmed from copy buffer, offset=%d", got)
+	}
+	if got := model.copyMode.LoadedRows; got != len(allRows) {
+		t.Fatalf("expected loaded depth to keep logical pagination progress, got %d want %d", got, len(allRows))
+	}
+}
+
+func TestCopyModeBoundedWindowRequestsNextOlderPageByLoadedDepth(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	latest := make([]string, terminalMaterializedScrollbackLimit)
+	allRows := make([]string, terminalMaterializedScrollbackLimit+1000)
+	for i := range allRows {
+		allRows[i] = "old"
+		if i >= 1000 {
+			allRows[i] = "hist"
+		}
+	}
+	copy(latest, allRows[1000:])
+	seedCopyModeSnapshot(t, model, latest, []string{"live0", "live1", "live2", "live3"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot(allRows, []string{"next0", "next1", "next2", "next3"})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+
+	if got, want := model.copyMode.LoadedRows, terminalMaterializedScrollbackLimit+500; got != want {
+		t.Fatalf("expected first older page to advance loaded depth, got %d want %d", got, want)
+	}
+	if got, want := len(model.copyMode.Snapshot.Scrollback), terminalMaterializedScrollbackLimit; got != want {
+		t.Fatalf("expected first page to keep bounded copy buffer, got %d want %d", got, want)
+	}
+	if got := model.copyMode.Snapshot.ScrollbackOffset; got != 500 {
+		t.Fatalf("expected first page to trim newest rows, offset=%d", got)
+	}
+
+	beforeViewportCalls := len(client.viewportRequests)
+	model.copyMode.Cursor.Row = 0
+	model.copyMode.ViewTopRow = 0
+	buffer, ok := model.activeCopyModeBuffer()
+	if !ok {
+		t.Fatal("expected active copy mode buffer")
+	}
+	drainCmd(t, model, model.prefetchCopyModeScrollbackCmd(buffer), 20)
+
+	if got := len(client.viewportRequests); got != beforeViewportCalls+1 {
+		t.Fatalf("expected one follow-up viewport request, before=%d after=%d calls=%#v", beforeViewportCalls, got, client.viewportRequests)
+	}
+	request := client.viewportRequests[len(client.viewportRequests)-1]
+	if request.offset != terminalMaterializedScrollbackLimit+500 || request.limit != 500 {
+		t.Fatalf("expected next page request to use loaded depth, got %#v", request)
+	}
+	if got, want := model.copyMode.LoadedRows, len(allRows); got != want {
+		t.Fatalf("expected second page to advance loaded depth, got %d want %d", got, want)
+	}
+	if got, want := len(model.copyMode.Snapshot.Scrollback), terminalMaterializedScrollbackLimit; got != want {
+		t.Fatalf("expected second page to keep bounded copy buffer, got %d want %d", got, want)
 	}
 }
 

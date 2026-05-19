@@ -11,7 +11,10 @@ import (
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
-const alternateScrollbackLimit = 10000
+const (
+	alternateScrollbackLimit       = 10000
+	materializedScrollbackRowLimit = 12000
+)
 
 type timestampedSnapshotLoader interface {
 	LoadSnapshotWithTimestamps(scrollback [][]localvterm.Cell, scrollbackTimestamps []time.Time, screen localvterm.ScreenData, screenTimestamps []time.Time, cursor localvterm.CursorState, modes localvterm.TerminalModes)
@@ -124,10 +127,11 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 	if page.Size.Cols > 0 && current.Size.Cols > 0 && page.Size.Cols != current.Size.Cols {
 		return false
 	}
-	if offset > 0 && offset != len(current.Scrollback) {
+	if offset > 0 && offset != snapshotScrollbackLoadedDepth(current) && offset != terminal.ScrollbackLoadedLimit {
 		return false
 	}
 	merged := cloneProtocolSnapshot(current)
+	loadedDepth := page.ScrollbackOffset + len(page.Scrollback)
 	if offset == 0 {
 		if len(page.Scrollback) <= len(merged.Scrollback) {
 			return false
@@ -136,19 +140,25 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 		merged.ScrollbackTimestamps = append([]time.Time(nil), page.ScrollbackTimestamps...)
 		merged.ScrollbackRowKinds = append([]string(nil), page.ScrollbackRowKinds...)
 		merged.ScrollbackWrapped = append([]bool(nil), page.ScrollbackWrapped...)
+		merged.ScrollbackOffset = page.ScrollbackOffset
+		merged.ScrollbackTotal = page.ScrollbackTotal
+		merged.ScrollbackHasMore = page.ScrollbackHasMore
+		trimSnapshotScrollbackWindow(merged, materializedScrollbackRowLimit, false)
 	} else {
+		mergedOffset := current.ScrollbackOffset
 		merged.Scrollback = append(protocol.CloneCompactRows(page.Scrollback), merged.Scrollback...)
 		merged.ScrollbackTimestamps = append(append([]time.Time(nil), page.ScrollbackTimestamps...), merged.ScrollbackTimestamps...)
 		merged.ScrollbackRowKinds = append(append([]string(nil), page.ScrollbackRowKinds...), merged.ScrollbackRowKinds...)
 		merged.ScrollbackWrapped = append(append([]bool(nil), page.ScrollbackWrapped...), merged.ScrollbackWrapped...)
+		merged.ScrollbackOffset = mergedOffset
+		merged.ScrollbackTotal = maxInt(page.ScrollbackTotal, current.ScrollbackTotal)
+		merged.ScrollbackHasMore = page.ScrollbackHasMore
+		trimSnapshotScrollbackWindow(merged, materializedScrollbackRowLimit, true)
 	}
-	merged.ScrollbackOffset = page.ScrollbackOffset
-	merged.ScrollbackTotal = page.ScrollbackTotal
-	merged.ScrollbackHasMore = page.ScrollbackHasMore
 	merged.Timestamp = time.Now()
 	terminal.Snapshot = merged
-	if loaded := len(merged.Scrollback); loaded > terminal.ScrollbackLoadedLimit {
-		terminal.ScrollbackLoadedLimit = loaded
+	if loadedDepth > terminal.ScrollbackLoadedLimit {
+		terminal.ScrollbackLoadedLimit = loadedDepth
 	}
 	terminal.ScrollbackExhausted = !page.ScrollbackHasMore
 	r.bumpSurfaceVersion(terminal)
@@ -156,6 +166,76 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 	terminal.PreferSnapshot = true
 	r.touch()
 	return true
+}
+
+func snapshotScrollbackLoadedDepth(snapshot *protocol.Snapshot) int {
+	if snapshot == nil {
+		return 0
+	}
+	return snapshot.ScrollbackOffset + len(snapshot.Scrollback)
+}
+
+func trimSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int, trimNewest bool) {
+	if snapshot == nil || limit <= 0 || len(snapshot.Scrollback) <= limit {
+		return
+	}
+	drop := len(snapshot.Scrollback) - limit
+	if trimNewest {
+		keep := len(snapshot.Scrollback) - drop
+		snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[:keep])
+		snapshot.ScrollbackTimestamps = cloneTimePrefix(snapshot.ScrollbackTimestamps, keep)
+		snapshot.ScrollbackRowKinds = cloneStringPrefix(snapshot.ScrollbackRowKinds, keep)
+		snapshot.ScrollbackWrapped = cloneBoolPrefix(snapshot.ScrollbackWrapped, keep)
+		snapshot.ScrollbackOffset += drop
+		return
+	}
+	snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[drop:])
+	snapshot.ScrollbackTimestamps = cloneTimeSuffix(snapshot.ScrollbackTimestamps, drop)
+	snapshot.ScrollbackRowKinds = cloneStringSuffix(snapshot.ScrollbackRowKinds, drop)
+	snapshot.ScrollbackWrapped = cloneBoolSuffix(snapshot.ScrollbackWrapped, drop)
+	snapshot.ScrollbackHasMore = true
+}
+
+func cloneTimePrefix(values []time.Time, keep int) []time.Time {
+	if keep <= 0 || len(values) < keep {
+		return nil
+	}
+	return append([]time.Time(nil), values[:keep]...)
+}
+
+func cloneStringPrefix(values []string, keep int) []string {
+	if keep <= 0 || len(values) < keep {
+		return nil
+	}
+	return append([]string(nil), values[:keep]...)
+}
+
+func cloneBoolPrefix(values []bool, keep int) []bool {
+	if keep <= 0 || len(values) < keep {
+		return nil
+	}
+	return append([]bool(nil), values[:keep]...)
+}
+
+func cloneTimeSuffix(values []time.Time, drop int) []time.Time {
+	if drop < 0 || len(values) <= drop {
+		return nil
+	}
+	return append([]time.Time(nil), values[drop:]...)
+}
+
+func cloneStringSuffix(values []string, drop int) []string {
+	if drop < 0 || len(values) <= drop {
+		return nil
+	}
+	return append([]string(nil), values[drop:]...)
+}
+
+func cloneBoolSuffix(values []bool, drop int) []bool {
+	if drop < 0 || len(values) <= drop {
+		return nil
+	}
+	return append([]bool(nil), values[drop:]...)
 }
 
 func snapshotFromGridViewport(terminalID string, viewport *protocol.GridViewport) *protocol.Snapshot {

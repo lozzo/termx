@@ -25,6 +25,7 @@ const (
 	terminalHistoryInitialPageLimit        = 500
 	terminalScrollbackPageLimit            = 500
 	terminalScrollbackPrefetchMargin       = 8
+	terminalMaterializedScrollbackLimit    = 12000
 )
 
 func clearErrorCmd(seq uint64) tea.Cmd {
@@ -278,9 +279,9 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 	copyModeActive = copyModeActive && copyModeState.Snapshot != nil
 	loaded := 0
 	if copyModeActive {
-		loaded = len(copyModeState.Snapshot.Scrollback)
+		loaded = maxInt(snapshotScrollbackLoadedDepth(copyModeState.Snapshot), copyModeState.LoadedRows)
 	} else if terminal.Snapshot != nil {
-		loaded = len(terminal.Snapshot.Scrollback)
+		loaded = maxInt(snapshotScrollbackLoadedDepth(terminal.Snapshot), terminal.ScrollbackLoadedLimit)
 	} else {
 		loaded = terminal.ScrollbackLoadedLimit
 	}
@@ -334,7 +335,7 @@ func (m *Model) copyModeScrollbackCmd(buffer copyModeBuffer, force bool) tea.Cmd
 	if terminal == nil {
 		return nil
 	}
-	loaded := len(buffer.snapshot.Scrollback)
+	loaded := maxInt(snapshotScrollbackLoadedDepth(buffer.snapshot), m.copyMode.LoadedRows)
 	if terminal.ScrollbackExhausted {
 		if !terminalHasKnownScrollbackBeyond(terminal, loaded) {
 			return nil

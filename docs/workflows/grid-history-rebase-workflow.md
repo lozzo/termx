@@ -19,7 +19,7 @@ This workflow tracks the terminal history rebuild from a clean parsed-grid basel
 - Phase 2: Fix resize swallowing history. Complete.
 - Phase 3: Fix middle-history continuity. Complete.
 - Phase 4: Fix history file loss/recovery. Complete.
-- Phase 5: Bound TUI/runtime materialized history memory. Pending.
+- Phase 5: Bound TUI/runtime materialized history memory. Complete.
 - Phase 6: Reapply remote/protobuf/app changes without raw journal UI history. Pending.
 - Final verification and daemon cleanup. Pending.
 
@@ -67,6 +67,10 @@ go test ./termx-core -run 'TestTerminalGridStoreRecovery|TestServerRemoveDeletes
 go test ./termx-core/...
 go test ./termx-vterm/vterm -run 'TestVTermResizeWithDamagePreservesWrappedBoundary|TestVTermResizeWithDamageAppendsRowsDisplacedByShrink|TestVTermResizeWithDamagePreservesWideRows' -count=1
 go test ./termx-vterm/... ./termx-core/...
+go test ./tuiv2/runtime -run 'TestRuntimeApplyGridViewportPage' -count=1
+go test ./tuiv2/app -run 'TestCopyModeLoadsOlderScrollback|TestCopyModeBoundedWindowRequestsNextOlderPage|TestCopyModeTopLoadsOlderScrollbackIntoFrozenBuffer|TestCopyModeEnterPrefetchesHistoryWhenFrozenBufferHasNoScrollback|TestCopyModeHistoryRequestUsesCanonicalCols' -count=1
+go test ./tuiv2/runtime/...
+go test ./tuiv2/app/...
 ```
 
 Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.md` and `termx-core/docs/terminal-history-event-log-plan.md` were deleted on the `feac69ea` baseline. The resolution kept those files deleted and restored only `docs/terminal-history-grid-decision.md`.
@@ -211,6 +215,21 @@ Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.
   - resize reflow lines carry metadata through splitting
   - conservative complete wrapped logical group append remains for no-loss semantics and is still deduped at latest snapshot grid/screen boundary
 
+## Phase 5 Notes
+
+- Runtime materialized grid viewport pages are now bounded by `materializedScrollbackRowLimit` (`12000` rows). Loading older pages prepends rows but trims the newest materialized scrollback rows from the snapshot window instead of growing without bound.
+- Copy mode uses the same `terminalMaterializedScrollbackLimit` (`12000` rows). Frozen copy buffers continue to track logical loaded depth separately from materialized row count, so the next page request advances by `offset + len(page)` even after the visible buffer has been trimmed.
+- `ScrollbackLoadedLimit` is now used as logical loaded depth for paging progress rather than as a proxy for how many rows must remain resident in `Snapshot.Scrollback`.
+- `ensureActivePaneScrollbackCmd` and `copyModeScrollbackCmd` compute paging offsets from loaded depth (`ScrollbackOffset + len(window)`, `LoadedRows`, or `ScrollbackLoadedLimit`) rather than from the current materialized slice length.
+- The local VTerm remains on latest live content; loaded history pages stay snapshot-only and bounded.
+
+## Phase 5 Test Results
+
+- PASS: `go test ./tuiv2/runtime -run 'TestRuntimeApplyGridViewportPage' -count=1`
+- PASS: `go test ./tuiv2/app -run 'TestCopyModeLoadsOlderScrollback|TestCopyModeBoundedWindowRequestsNextOlderPage|TestCopyModeTopLoadsOlderScrollbackIntoFrozenBuffer|TestCopyModeEnterPrefetchesHistoryWhenFrozenBufferHasNoScrollback|TestCopyModeHistoryRequestUsesCanonicalCols' -count=1`
+- PASS: `go test ./tuiv2/runtime/...`
+- PASS: `go test ./tuiv2/app/...`
+
 ## tmux Verification
 
 - Not run yet.
@@ -229,11 +248,12 @@ Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.
 
 ## Test Results
 
-- Not run yet.
+- Latest focused/package results are listed in each phase section. Full `go test ./...` has not been run yet in this workflow.
 
 ## Unresolved Risks
 
-- Need to confirm how `GridViewport` currently handles wrapped continuations and canonical width.
-- Need to confirm whether resize currently loses visible rows before they reach `terminalGridStore`.
-- Need to confirm recovery semantics for `grid.index`, page payloads, metadata, and `removeOnClose`.
-- Need to confirm TUI runtime materialized scrollback behavior and copy-mode cloning behavior.
+- Need Phase 6 remote/protobuf/app replay without reintroducing raw PTY journal as UI history.
+- Need tmux real-terminal validation for resize/copy-mode/history continuity and observer viewport projection.
+- Need final full-suite test pass or documented environment/runtime failures.
+- Persistent grid retention is still explicit remove/fresh generation only; no size/time retention cap is implemented yet.
+- Resize conservative complete wrapped logical group append can still leave raw grid-store duplicate rows in edge cases where a logical line is split between history and visible screen. Latest snapshot boundary dedupes the common UI case, but a deeper grid/screen merge model is still a future hardening area.

@@ -326,6 +326,53 @@ func TestRuntimeApplyGridViewportPageRejectsStaleGeometry(t *testing.T) {
 	}
 }
 
+func TestRuntimeApplyGridViewportPageKeepsBoundedWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	allRows := make([][]protocol.Cell, 12500)
+	for i := range allRows {
+		allRows[i] = protocolRowFromString(fmt.Sprintf("hist-%05d", i))
+	}
+	live := snapshotWithLines("term-1", 12, 3, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells(allRows[500:])
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 12000); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	page := &protocol.Snapshot{
+		TerminalID:         "term-1",
+		Size:               protocol.Size{Cols: 12, Rows: 3},
+		Scrollback:         protocol.CompactRowsFromCells(allRows[:500]),
+		ScrollbackOffset:   12000,
+		ScrollbackTotal:    12500,
+		ScrollbackHasMore:  false,
+		ScrollbackRowKinds: make([]string, 500),
+		ScrollbackWrapped:  make([]bool, 500),
+	}
+	if !rt.ApplyGridViewportPage("term-1", page, 12000) {
+		t.Fatal("expected older page to apply")
+	}
+	terminal := rt.Registry().Get("term-1")
+	got := terminal.Snapshot
+	if got == nil {
+		t.Fatal("expected runtime snapshot")
+	}
+	if gotRows := len(got.Scrollback); gotRows != materializedScrollbackRowLimit {
+		t.Fatalf("expected bounded materialized rows, got %d want %d", gotRows, materializedScrollbackRowLimit)
+	}
+	if got.ScrollbackOffset != 500 {
+		t.Fatalf("expected newest rows to be trimmed from the materialized window, offset=%d", got.ScrollbackOffset)
+	}
+	if got := compactRowText(got.Scrollback[0]); got != "hist-00000" {
+		t.Fatalf("expected oldest loaded row at window start, got %q", got)
+	}
+	if terminal.ScrollbackLoadedLimit != 12500 {
+		t.Fatalf("expected loaded depth to keep full logical progress, got %d", terminal.ScrollbackLoadedLimit)
+	}
+}
+
 func TestRuntimeAttachTerminalDoesNotStartStreamBeforeSnapshotLoad(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()

@@ -107,6 +107,77 @@ func clearSnapshotScrollback(snapshot *protocol.Snapshot) {
 	snapshot.ScrollbackHasMore = false
 }
 
+func snapshotScrollbackLoadedDepth(snapshot *protocol.Snapshot) int {
+	if snapshot == nil {
+		return 0
+	}
+	return snapshot.ScrollbackOffset + len(snapshot.Scrollback)
+}
+
+func trimCopyModeSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int, trimNewest bool) int {
+	if snapshot == nil || limit <= 0 || len(snapshot.Scrollback) <= limit {
+		return 0
+	}
+	drop := len(snapshot.Scrollback) - limit
+	if trimNewest {
+		keep := len(snapshot.Scrollback) - drop
+		snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[:keep])
+		snapshot.ScrollbackTimestamps = cloneTimePrefix(snapshot.ScrollbackTimestamps, keep)
+		snapshot.ScrollbackRowKinds = cloneStringPrefix(snapshot.ScrollbackRowKinds, keep)
+		snapshot.ScrollbackWrapped = cloneBoolPrefix(snapshot.ScrollbackWrapped, keep)
+		snapshot.ScrollbackOffset += drop
+		return drop
+	}
+	snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[drop:])
+	snapshot.ScrollbackTimestamps = cloneTimeSuffix(snapshot.ScrollbackTimestamps, drop)
+	snapshot.ScrollbackRowKinds = cloneStringSuffix(snapshot.ScrollbackRowKinds, drop)
+	snapshot.ScrollbackWrapped = cloneBoolSuffix(snapshot.ScrollbackWrapped, drop)
+	snapshot.ScrollbackHasMore = true
+	return 0
+}
+
+func cloneTimePrefix(values []time.Time, keep int) []time.Time {
+	if keep <= 0 || len(values) < keep {
+		return nil
+	}
+	return append([]time.Time(nil), values[:keep]...)
+}
+
+func cloneStringPrefix(values []string, keep int) []string {
+	if keep <= 0 || len(values) < keep {
+		return nil
+	}
+	return append([]string(nil), values[:keep]...)
+}
+
+func cloneBoolPrefix(values []bool, keep int) []bool {
+	if keep <= 0 || len(values) < keep {
+		return nil
+	}
+	return append([]bool(nil), values[:keep]...)
+}
+
+func cloneTimeSuffix(values []time.Time, drop int) []time.Time {
+	if drop < 0 || len(values) <= drop {
+		return nil
+	}
+	return append([]time.Time(nil), values[drop:]...)
+}
+
+func cloneStringSuffix(values []string, drop int) []string {
+	if drop < 0 || len(values) <= drop {
+		return nil
+	}
+	return append([]string(nil), values[drop:]...)
+}
+
+func cloneBoolSuffix(values []bool, drop int) []bool {
+	if drop < 0 || len(values) <= drop {
+		return nil
+	}
+	return append([]bool(nil), values[drop:]...)
+}
+
 func (m *Model) copyModeSnapshot(terminalID string, snapshot *protocol.Snapshot) *protocol.Snapshot {
 	cloned := cloneSnapshot(snapshot)
 	if snapshotUsesAlternateScreen(cloned) {
@@ -378,7 +449,7 @@ func (m *Model) ensureCopyMode() bool {
 		if !ok || buffer.totalRows() == 0 {
 			return false
 		}
-		if delta := len(buffer.snapshot.Scrollback) - m.copyMode.LoadedRows; delta > 0 {
+		if delta := snapshotScrollbackLoadedDepth(buffer.snapshot) - m.copyMode.LoadedRows; delta > 0 {
 			m.copyMode.ViewTopRow += delta
 			m.copyMode.Cursor.Row += delta
 			if m.copyMode.Mark != nil {
@@ -387,7 +458,7 @@ func (m *Model) ensureCopyMode() bool {
 				m.copyMode.Mark = &point
 			}
 		}
-		m.copyMode.LoadedRows = len(buffer.snapshot.Scrollback)
+		m.copyMode.LoadedRows = snapshotScrollbackLoadedDepth(buffer.snapshot)
 		m.copyMode.Cursor = buffer.clampPoint(m.copyMode.Cursor)
 		if m.copyMode.Mark != nil {
 			point := buffer.clampPoint(*m.copyMode.Mark)
@@ -414,7 +485,7 @@ func (m *Model) ensureCopyMode() bool {
 	m.copyMode = copyModeState{
 		PaneID:     pane.ID,
 		Snapshot:   frozenSnapshot,
-		LoadedRows: len(buffer.snapshot.Scrollback),
+		LoadedRows: snapshotScrollbackLoadedDepth(buffer.snapshot),
 		ViewTopRow: maxInt(0, buffer.totalRows()-buffer.height),
 		Cursor:     start,
 	}
@@ -466,7 +537,7 @@ func (m *Model) adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID string, s
 		if !ok {
 			continue
 		}
-		if delta := len(buffer.snapshot.Scrollback) - m.copyMode.LoadedRows; delta > 0 {
+		if delta := snapshotScrollbackLoadedDepth(buffer.snapshot) - m.copyMode.LoadedRows; delta > 0 {
 			m.copyMode.ViewTopRow += delta
 			m.copyMode.Cursor.Row += delta
 			m.copyMode.Cursor = buffer.clampPoint(m.copyMode.Cursor)
@@ -477,7 +548,7 @@ func (m *Model) adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID string, s
 				m.copyMode.Mark = &point
 			}
 		}
-		m.copyMode.LoadedRows = len(buffer.snapshot.Scrollback)
+		m.copyMode.LoadedRows = snapshotScrollbackLoadedDepth(buffer.snapshot)
 		m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
 		m.saveCurrentCopyModeState()
 	}
@@ -498,19 +569,23 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 		return
 	}
 	delta := 0
+	trimNewest := false
 	switch {
 	case offset > 0:
-		if offset != len(next.Scrollback) {
+		if offset != snapshotScrollbackLoadedDepth(next) {
 			return
 		}
 		delta = len(loaded.Scrollback)
 		if delta == 0 {
 			return
 		}
+		previousOffset := next.ScrollbackOffset
 		next.Scrollback = append(protocol.CloneCompactRows(loaded.Scrollback), next.Scrollback...)
 		next.ScrollbackTimestamps = append(append([]time.Time(nil), loaded.ScrollbackTimestamps...), next.ScrollbackTimestamps...)
 		next.ScrollbackRowKinds = append(append([]string(nil), loaded.ScrollbackRowKinds...), next.ScrollbackRowKinds...)
 		next.ScrollbackWrapped = append(append([]bool(nil), loaded.ScrollbackWrapped...), next.ScrollbackWrapped...)
+		next.ScrollbackOffset = previousOffset
+		trimNewest = true
 	default:
 		if len(loaded.Scrollback) <= len(next.Scrollback) {
 			return
@@ -520,23 +595,24 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 		next.ScrollbackTimestamps = append([]time.Time(nil), loaded.ScrollbackTimestamps...)
 		next.ScrollbackRowKinds = append([]string(nil), loaded.ScrollbackRowKinds...)
 		next.ScrollbackWrapped = append([]bool(nil), loaded.ScrollbackWrapped...)
+		next.ScrollbackOffset = loaded.ScrollbackOffset
 	}
-	next.ScrollbackOffset = loaded.ScrollbackOffset
 	next.ScrollbackTotal = loaded.ScrollbackTotal
 	next.ScrollbackHasMore = loaded.ScrollbackHasMore
+	trimmedNewest := trimCopyModeSnapshotScrollbackWindow(next, terminalMaterializedScrollbackLimit, trimNewest)
 	m.copyMode.Snapshot = next
-	m.copyMode.LoadedRows = len(next.Scrollback)
+	m.copyMode.LoadedRows = snapshotScrollbackLoadedDepth(next)
 
 	buffer, ok := m.activeCopyModeBuffer()
 	if !ok {
 		return
 	}
-	m.copyMode.ViewTopRow += delta
-	m.copyMode.Cursor.Row += delta
+	m.copyMode.ViewTopRow += delta - trimmedNewest
+	m.copyMode.Cursor.Row += delta - trimmedNewest
 	m.copyMode.Cursor = buffer.clampPoint(m.copyMode.Cursor)
 	if m.copyMode.Mark != nil {
 		point := *m.copyMode.Mark
-		point.Row += delta
+		point.Row += delta - trimmedNewest
 		point = buffer.clampPoint(point)
 		m.copyMode.Mark = &point
 	}
