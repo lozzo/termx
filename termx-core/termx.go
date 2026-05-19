@@ -285,6 +285,9 @@ func (s *Server) Remove(ctx context.Context, id string) error {
 	if err := term.Close(); err != nil {
 		return err
 	}
+	if err := removeTerminalGridStore(s.cfg.gridRoot, id); err != nil {
+		return err
+	}
 	s.removeTerminal(id, "removed")
 	return nil
 }
@@ -1826,6 +1829,9 @@ func (s *Server) handleRequest(
 		}
 		term.MarkRemoved()
 		if err := term.Close(); err != nil {
+			return nil, 500, err
+		}
+		if err := removeTerminalGridStore(s.cfg.gridRoot, params.TerminalID); err != nil {
 			return nil, 500, err
 		}
 		s.removeTerminal(params.TerminalID, "removed")

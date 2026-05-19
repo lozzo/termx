@@ -1218,6 +1218,143 @@ func TestTerminalGridStoreIndexIsReadOnDemandAfterReopen(t *testing.T) {
 	}
 }
 
+func TestTerminalGridStoreRecoveryTruncatesShortPage(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "recover-short-page")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		if err := store.AppendRows([][]localvterm.Cell{{{Content: fmt.Sprintf("row-%d", i), Width: 1}}}); err != nil {
+			t.Fatalf("append row %d: %v", i, err)
+		}
+	}
+	dir := store.dir
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+	refs, err := readAllTerminalGridIndexRefs(dir)
+	if err != nil {
+		t.Fatalf("read refs: %v", err)
+	}
+	if len(refs) != 3 {
+		t.Fatalf("expected 3 refs, got %d", len(refs))
+	}
+	if err := os.Truncate(filepath.Join(dir, terminalGridPageName(refs[2].seq)), refs[2].offset+refs[2].length-1); err != nil {
+		t.Fatalf("truncate page: %v", err)
+	}
+
+	reopened, err := openTerminalGridStoreForReplay(root, "recover-short-page")
+	if err != nil {
+		t.Fatalf("reopen short page store: %v", err)
+	}
+	defer reopened.Close()
+	if got := reopened.RowCount(); got != 2 {
+		t.Fatalf("expected recovery to truncate to 2 committed rows, got %d", got)
+	}
+	viewport, err := reopened.Viewport(0, 10, 12)
+	if err != nil {
+		t.Fatalf("viewport after recovery: %v", err)
+	}
+	gotRows := vtermRowsToStrings(viewport.Rows)
+	if !reflect.DeepEqual(gotRows, []string{"row-0", "row-1"}) {
+		t.Fatalf("expected valid rows after short-page recovery, got %#v", gotRows)
+	}
+}
+
+func TestTerminalGridStoreRecoveryTruncatesPartialIndexTail(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "recover-partial-index")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := store.AppendRows([][]localvterm.Cell{{{Content: fmt.Sprintf("row-%d", i), Width: 1}}}); err != nil {
+			t.Fatalf("append row %d: %v", i, err)
+		}
+	}
+	dir := store.dir
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+	indexPath := filepath.Join(dir, terminalGridIndexName)
+	file, err := os.OpenFile(indexPath, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatalf("open index: %v", err)
+	}
+	if _, err := file.Write([]byte{1, 2, 3}); err != nil {
+		_ = file.Close()
+		t.Fatalf("write partial tail: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close index writer: %v", err)
+	}
+
+	reopened, err := openTerminalGridStoreDir(dir, "recover-partial-index", true, false)
+	if err != nil {
+		t.Fatalf("reopen writable store: %v", err)
+	}
+	if got := reopened.RowCount(); got != 2 {
+		t.Fatalf("expected partial index tail ignored, got row count %d", got)
+	}
+	if err := reopened.AppendRows([][]localvterm.Cell{{{Content: "row-2", Width: 1}}}); err != nil {
+		t.Fatalf("append after partial index recovery: %v", err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatalf("close reopened store: %v", err)
+	}
+	indexInfo, err := os.Stat(indexPath)
+	if err != nil {
+		t.Fatalf("stat index: %v", err)
+	}
+	if indexInfo.Size() != 3*terminalGridIndexRecord {
+		t.Fatalf("expected index tail repaired before append, size=%d", indexInfo.Size())
+	}
+	verify, err := openTerminalGridStoreForReplay(root, "recover-partial-index")
+	if err != nil {
+		t.Fatalf("verify reopen: %v", err)
+	}
+	defer verify.Close()
+	viewport, err := verify.Viewport(0, 10, 12)
+	if err != nil {
+		t.Fatalf("viewport after append: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"row-0", "row-1", "row-2"}) {
+		t.Fatalf("expected rows after repaired append, got %#v", got)
+	}
+}
+
+func TestTerminalGridStoreRecoveryIgnoresCorruptMetadata(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "recover-metadata")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	dir := store.dir
+	if err := store.AppendRows([][]localvterm.Cell{{{Content: "survives", Width: 1}}}); err != nil {
+		t.Fatalf("append row: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, terminalGridMetadataName), []byte("bad-metadata"), 0o600); err != nil {
+		t.Fatalf("corrupt metadata: %v", err)
+	}
+
+	reopened, err := openTerminalGridStoreForReplay(root, "recover-metadata")
+	if err != nil {
+		t.Fatalf("expected corrupt metadata to be advisory, got %v", err)
+	}
+	defer reopened.Close()
+	viewport, err := reopened.Viewport(0, 10, 12)
+	if err != nil {
+		t.Fatalf("viewport with corrupt metadata: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"survives"}) {
+		t.Fatalf("expected rows from index/page despite corrupt metadata, got %#v", got)
+	}
+}
+
 func TestTerminalRestartPreservesScrollbackAcrossRestart(t *testing.T) {
 	ctx := context.Background()
 	bus := NewEventBus(nil)
@@ -1851,6 +1988,20 @@ func writeVTermDamageToGrid(t *testing.T, term *Terminal, vt *localvterm.VTerm, 
 		t.Fatalf("write vterm damage %q: %v", text, err)
 	}
 	term.appendGridFromDamageLocked(damage)
+}
+
+func readAllTerminalGridIndexRefs(dir string) ([]terminalGridRowRef, error) {
+	file, err := os.Open(filepath.Join(dir, terminalGridIndexName))
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	count := int(info.Size() / terminalGridIndexRecord)
+	return readTerminalGridIndexWindowFromFile(file, 0, count)
 }
 
 func gridAndScreenRowTexts(t *testing.T, store *terminalGridStore, vt *localvterm.VTerm, cols int, limit int) []string {

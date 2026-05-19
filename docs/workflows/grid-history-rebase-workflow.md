@@ -18,7 +18,7 @@ This workflow tracks the terminal history rebuild from a clean parsed-grid basel
 - Phase 1: Restore/fix tmux-like grid history main path. Complete for the clean baseline; keep enforcing during later merges.
 - Phase 2: Fix resize swallowing history. Complete.
 - Phase 3: Fix middle-history continuity. Complete.
-- Phase 4: Fix history file loss/recovery. Pending.
+- Phase 4: Fix history file loss/recovery. Complete.
 - Phase 5: Bound TUI/runtime materialized history memory. Pending.
 - Phase 6: Reapply remote/protobuf/app changes without raw journal UI history. Pending.
 - Final verification and daemon cleanup. Pending.
@@ -63,6 +63,10 @@ go test ./tuiv2/app -run 'TestCopyModeHistoryRequestUsesCanonicalCols|TestPaneSc
 go test ./tuiv2/runtime -run 'TestRuntimeApplyGridViewportPage|TestRuntimeLoadGridViewportDoesNotReplaceLiveSnapshot' -count=1
 go test ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...
 go test ./termx-core -run 'TestTerminalSnapshotTrimsResizeGridScreenOverlap|TestTerminalGridResizeDamageKeepsWrappedContinuity' -count=1
+go test ./termx-core -run 'TestTerminalGridStoreRecovery|TestServerRemoveDeletesPersistentGridHistory|TestNewTerminalGridStoreStartsFreshGeneration|TestTerminalGridStoreReopensPersistedRows|TestServerHistorySurvivesServerRestart' -count=1
+go test ./termx-core/...
+go test ./termx-vterm/vterm -run 'TestVTermResizeWithDamagePreservesWrappedBoundary|TestVTermResizeWithDamageAppendsRowsDisplacedByShrink|TestVTermResizeWithDamagePreservesWideRows' -count=1
+go test ./termx-vterm/... ./termx-core/...
 ```
 
 Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.md` and `termx-core/docs/terminal-history-event-log-plan.md` were deleted on the `feac69ea` baseline. The resolution kept those files deleted and restored only `docs/terminal-history-grid-decision.md`.
@@ -175,6 +179,37 @@ Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.
   - Copy-mode selected text inserted hard newlines between all physical rows. Fixed by consulting wrapped metadata and adding a soft-wrap copy regression test.
 - Reviewer C (storage recovery) follow-up:
   - Reconfirmed high-priority Phase 4 risks: page/index append failure recovery, crash validation, partial index tail truncation, persistent remove/generation semantics, metadata atomicity/advisory behavior, and retention.
+
+## Phase 4 Notes
+
+- Grid store startup now validates committed index records against page payloads by reading and decoding each referenced row. `grid.index` records remain the commit source of truth; rows after the first invalid/missing/truncated page payload are truncated.
+- Partial index tails are truncated on open before any future append, so new records do not append after a misaligned tail.
+- Page files are truncated to the last valid committed row end; later-generation page files beyond the valid max sequence are removed.
+- Metadata read failures are now advisory. A corrupt or truncated `grid.meta.pb` no longer prevents replay from valid index/page rows. Read-only replay close no longer rewrites metadata.
+- Append accounting now advances `currentBytes` for page bytes actually written before index commit. If index append fails, the index writer truncates back to its pre-write size.
+- Persistent `newTerminalGridStore` starts a fresh generation by deleting any previous deterministic grid directory for the same terminal ID. `Server.Remove` and protocol `remove` also delete persistent grid history.
+- Resize reflow metadata was improved while handling reviewer A feedback: resize reflow rows now carry timestamp/kind/fingerprint through line splitting, and visible block matching avoids last-match tie breaking. The remaining wrapped-line source duplicate risk is not fully removed because writing only a visible-suffix fragment can break logical-line order; this remains a Phase 5/final risk to address with a more explicit grid/screen merge model.
+
+## Phase 4 Test Results
+
+- PASS: `go test ./termx-core -run 'TestTerminalGridStoreRecovery|TestServerRemoveDeletesPersistentGridHistory|TestNewTerminalGridStoreStartsFreshGeneration|TestTerminalGridStoreReopensPersistedRows|TestServerHistorySurvivesServerRestart' -count=1`
+- PASS: `go test ./termx-core/...`
+- PASS: `go test ./termx-vterm/vterm -run 'TestVTermResizeWithDamagePreservesWrappedBoundary|TestVTermResizeWithDamageAppendsRowsDisplacedByShrink|TestVTermResizeWithDamagePreservesWideRows' -count=1`
+- PASS: `go test ./termx-vterm/... ./termx-core/...`
+
+## Phase 4 Review Notes
+
+- Reviewer C storage findings addressed:
+  - page/index crash recovery now validates payload durability and truncates to the last valid committed row
+  - partial index tails are repaired before append
+  - corrupt metadata is advisory when index/page rows are valid
+  - explicit remove and fresh generation cleanup delete persistent grid directories
+- Remaining storage risk:
+  - There is still no retention cap/generation retention policy beyond fresh-generation/remove cleanup; persistent history can grow until explicit deletion or future retention work.
+- Reviewer A resize findings addressed in part:
+  - resize visible block tie breaking now prefers the first best match instead of the last
+  - resize reflow lines carry metadata through splitting
+  - conservative complete wrapped logical group append remains for no-loss semantics and is still deduped at latest snapshot grid/screen boundary
 
 ## tmux Verification
 

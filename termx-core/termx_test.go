@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -248,6 +249,91 @@ func TestServerGridViewportFromStoreUsesDefaultCanonicalCols(t *testing.T) {
 	}
 	if !reflect.DeepEqual(gotRows, []string{"abcde"}) {
 		t.Fatalf("expected persisted viewport to ignore caller cols and reflow at default canonical width, got %#v", gotRows)
+	}
+}
+
+func TestServerRemoveDeletesPersistentGridHistory(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	srv := NewServer(WithGridRoot(root), WithDefaultSize(12, 2), WithDefaultScrollback(32))
+	created, err := srv.Create(ctx, CreateOptions{
+		ID:      "remove-history-1",
+		Command: []string{"sleep", "60"},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create terminal: %v", err)
+	}
+	term, err := srv.getTerminal(created.ID)
+	if err != nil {
+		t.Fatalf("get terminal: %v", err)
+	}
+	if term.grid == nil {
+		t.Fatal("expected terminal grid store")
+	}
+	if err := term.grid.AppendRows([][]vterm.Cell{{{Content: "secret-history", Width: 1}}}); err != nil {
+		t.Fatalf("append grid row: %v", err)
+	}
+	gridDir := terminalGridDir(root, created.ID)
+	if _, err := os.Stat(gridDir); err != nil {
+		t.Fatalf("expected grid dir before remove: %v", err)
+	}
+
+	if err := srv.Remove(ctx, created.ID); err != nil {
+		t.Fatalf("remove terminal: %v", err)
+	}
+	if _, err := os.Stat(gridDir); !os.IsNotExist(err) {
+		t.Fatalf("expected remove to delete grid dir, got err=%v", err)
+	}
+	if _, err := srv.GridViewport(ctx, created.ID, GridViewportOptions{ScrollbackLimit: 10}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected removed history to be gone, got %v", err)
+	}
+}
+
+func TestNewTerminalGridStoreStartsFreshGeneration(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "generation-1")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	if err := store.AppendRows([][]vterm.Cell{{{Content: "old-generation", Width: 1}}}); err != nil {
+		t.Fatalf("append old row: %v", err)
+	}
+	gridDir := store.dir
+	if err := store.Close(); err != nil {
+		t.Fatalf("close old store: %v", err)
+	}
+
+	next, err := newTerminalGridStore(root, "generation-1")
+	if err != nil {
+		t.Fatalf("new generation grid store: %v", err)
+	}
+	if next.dir != gridDir {
+		t.Fatalf("expected deterministic grid dir, got %q want %q", next.dir, gridDir)
+	}
+	if got := next.RowCount(); got != 0 {
+		t.Fatalf("expected fresh generation to start empty, got %d rows", got)
+	}
+	if err := next.AppendRows([][]vterm.Cell{{{Content: "new-generation", Width: 1}}}); err != nil {
+		t.Fatalf("append new row: %v", err)
+	}
+	if err := next.Close(); err != nil {
+		t.Fatalf("close new store: %v", err)
+	}
+	reopened, err := openTerminalGridStoreForReplay(root, "generation-1")
+	if err != nil {
+		t.Fatalf("reopen new generation: %v", err)
+	}
+	defer reopened.Close()
+	viewport, err := reopened.Viewport(0, 10, 12)
+	if err != nil {
+		t.Fatalf("viewport new generation: %v", err)
+	}
+	gotRows := vtermRowsToStrings(viewport.Rows)
+	if !reflect.DeepEqual(gotRows, []string{"new-generation"}) {
+		t.Fatalf("expected only new generation rows, got %#v", gotRows)
 	}
 }
 
