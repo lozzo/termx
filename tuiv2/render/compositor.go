@@ -820,6 +820,7 @@ func (c *composedCanvas) ensureRowCache() {
 			// chunk-stitched strings caused scroll diff misses; mixing them also
 			// forced partial updates to reserialize whole rows.
 			c.rowCache[y] = c.buildRowFromChunks(y)
+			traceRenderCanvasRow("render.canvas.row_cache", y, c.rowCache[y])
 			c.clearRowDirty(y)
 			continue
 		}
@@ -840,6 +841,7 @@ func (c *composedCanvas) ensureRowCache() {
 		// representation. Mixing full-row strings with chunk-built strings broke
 		// vertical scroll detection even when the visible rows matched exactly.
 		c.rowCache[y] = c.buildRowFromChunks(y)
+		traceRenderCanvasRow("render.canvas.row_cache", y, c.rowCache[y])
 		c.clearRowDirty(y)
 	}
 }

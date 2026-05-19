@@ -185,6 +185,7 @@ func writeHostFramePayload(out *strings.Builder, frame string) {
 		return
 	}
 	out.WriteString(hostAutoWrapOff)
+	out.WriteString(xansi.ResetStyle)
 	writeNormalizedFrame(out, frame)
 	out.WriteString(hostAutoWrapOn)
 }

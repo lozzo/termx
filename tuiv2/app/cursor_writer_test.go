@@ -385,6 +385,7 @@ func TestOutputCursorWriterWritesDirectFrame(t *testing.T) {
 		hideHostCursorSequence +
 		xansi.MoveCursorOrigin +
 		hostAutoWrapOff +
+		xansi.ResetStyle +
 		"frame-1\r\nframe-2" +
 		hostAutoWrapOn +
 		"<PROBE>" +
@@ -2616,7 +2617,7 @@ func TestNormalizedLinesLenCountsLineBreakSeparators(t *testing.T) {
 func TestWriteHostFramePayloadWrapsNormalizedFrameWithAutoWrapGuard(t *testing.T) {
 	var out strings.Builder
 	writeHostFramePayload(&out, "ab\ncd")
-	if got, want := out.String(), hostAutoWrapOff+"ab\r\ncd"+hostAutoWrapOn; got != want {
+	if got, want := out.String(), hostAutoWrapOff+xansi.ResetStyle+"ab\r\ncd"+hostAutoWrapOn; got != want {
 		t.Fatalf("unexpected host frame payload %q want %q", got, want)
 	}
 }
@@ -2829,6 +2830,76 @@ func TestBuildUVRenderBufferFromLinesConvertsPresentedRows(t *testing.T) {
 	erase := buf.CellAt(1, 0)
 	if erase == nil || erase.Content != " " || erase.Style.Fg == nil || erase.Style.Bg == nil {
 		t.Fatalf("unexpected styled erase uv cell %#v", erase)
+	}
+}
+
+func TestBuildUVRenderBufferFromLinesPreservesQRBlockGlyphs(t *testing.T) {
+	qr := "██ ▄▀█"
+	buf, stats, ok := buildUVRenderBufferFromLines([]string{qr}, 8)
+	if !ok {
+		t.Fatal("expected uv render buffer build to succeed")
+	}
+	if stats.Cells < len([]rune(qr)) {
+		t.Fatalf("expected QR cells in uv buffer, stats=%#v", stats)
+	}
+	for x, want := range []string{"█", "█", " ", "▄", "▀", "█"} {
+		cell := buf.CellAt(x, 0)
+		if cell == nil || cell.Content != want {
+			t.Fatalf("expected uv cell %d content %q, got %#v", x, want, cell)
+		}
+	}
+}
+
+func TestOutputCursorWriterDefaultPresenterPreservesQRBlockGlyphs(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "0")
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetTTYWidth(32)
+	qr := "██ ▄▀█"
+	if err := writer.WriteFrameLines([]string{qr}, ""); err != nil {
+		t.Fatalf("write QR frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	if !strings.Contains(got, qr) {
+		t.Fatalf("expected default presenter output to contain QR block glyphs, got %q", got)
+	}
+	if !strings.Contains(got, hostAutoWrapOff+xansi.ResetStyle) {
+		t.Fatalf("expected default presenter output to reset host SGR before frame payload, got %q", got)
+	}
+}
+
+func TestOutputCursorWriterUVRendererPreservesQRBlockGlyphs(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "1")
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetTTYWidth(32)
+	qr := "██ ▄▀█"
+	if err := writer.WriteFrameLines([]string{qr}, ""); err != nil {
+		t.Fatalf("write QR frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	if !strings.Contains(got, qr) {
+		t.Fatalf("expected UV writer output to contain QR block glyphs, got %q", got)
+	}
+	if !strings.Contains(got, xansi.MoveCursorOrigin+xansi.ResetStyle) {
+		t.Fatalf("expected UV writer output to reset host SGR before raw payload, got %q", got)
 	}
 }
 

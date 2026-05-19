@@ -194,6 +194,7 @@ func (w *outputCursorWriter) presentFrameLinesWithUVLocked(lines []string, meta 
 		w.debugLog("cursor_writer.uv.fallback", "reason", uvFallbackReasonRenderFailed, "rows", len(lines), "width", width)
 		return "", false, uvFallbackReasonRenderFailed
 	}
+	traceAppPayload("app.frame.uv.render_payload", payload, "rows", len(lines), "width", width, "cells", stats.Cells, "touched_rows", stats.TouchedRows)
 	perftrace.Count("cursor_writer.present.mode.ultraviolet", stats.OutputBytes)
 	w.debugLogUVFrame(width, len(lines), stats)
 	return payload, true, ""

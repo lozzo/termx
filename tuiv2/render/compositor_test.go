@@ -82,6 +82,21 @@ func TestComposedCanvasDrawText(t *testing.T) {
 	}
 }
 
+func TestComposedCanvasContentStringPreservesQRBlockGlyphs(t *testing.T) {
+	canvas := newComposedCanvas(16, 2)
+	qr := "██ ▄▀█"
+	for x, r := range []rune(qr) {
+		canvas.set(x, 0, drawCell{Content: string(r), Width: 1, TerminalContent: true})
+	}
+	output := canvas.contentString()
+	if !strings.Contains(output, qr) {
+		t.Fatalf("expected QR block glyphs in serialized canvas, got %q", output)
+	}
+	if got := canvas.rawString(); !strings.Contains(got, qr) {
+		t.Fatalf("expected QR block glyphs in raw canvas, got %q", got)
+	}
+}
+
 func TestComposedCanvasDrawTextAdvancesByDisplayWidth(t *testing.T) {
 	canvas := newComposedCanvas(8, 1)
 	canvas.drawText(0, 0, "[界]X", drawStyle{FG: "#00ff00"})

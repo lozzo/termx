@@ -669,6 +669,69 @@ gofmt -w termx-shared/gridtrace/gridtrace.go termx-core/terminal_grid_trace.go t
 - PASS: `cd remote-ui && npm run typecheck`
 - PASS: `cd remote-ui && npm run test` (58 files, 412 tests; jsdom emitted expected localStorage/canvas warnings)
 
+## tmux Debug Follow-Up Phase 7: Live QR Final Render
+
+- User reported that after the canonical-width fixes the live `remote pair` QR area could become completely blank while the `uri:` and `expires_at` text remained visible.
+- Follow-up tracing showed QR block glyphs were still present through the render and final app writer layers in local tmux reproductions:
+  - `render.canvas.row_cache` logged QR rows with block glyphs and the URI rows.
+  - `app.frame.lines.input.summary` logged 45 QR block rows.
+  - `app.frame.output.summary` logged the same block count in the bytes written to the TTY.
+- This narrowed the remaining live failure away from grid history/protobuf/copy-mode data loss and toward host-terminal presentation state.
+- The final writer now resets host SGR state before every frame payload:
+  - default presenter path: `hostAutoWrapOff + SGR reset + normalized frame + hostAutoWrapOn`
+  - raw UV payload path: `MoveCursorOrigin + SGR reset + UV payload`
+- Rationale: default-style terminal content such as QR block glyphs and ordinary shell text can inherit stale host foreground/background if the previous frame ended in a styled chrome/cursor segment. Programs that emit explicit SGR can still look correct, which matches the observed "some colors survive but shell/default text is wrong" symptom.
+- Added opt-in final-layer trace under `TERMX_GRID_HISTORY_TRACE`:
+  - `render.canvas.row_cache`
+  - `app.frame.lines.input`
+  - `app.frame.uv.render_payload`
+  - `app.frame.uv.payload`
+  - `app.frame.presenter.payload`
+  - `app.frame.output`
+
+### Phase 7 Commands
+
+```sh
+go test ./tuiv2/render -run 'TestComposedCanvasContentStringPreservesQRBlockGlyphs|TestComposedCanvasDrawText|TestComposedCanvasStyleANSI' -count=1
+go test ./tuiv2/app -run 'TestOutputCursorWriterWritesDirectFrame|TestWriteHostFramePayloadWrapsNormalizedFrameWithAutoWrapGuard|TestOutputCursorWriterDefaultPresenterPreservesQRBlockGlyphs|TestOutputCursorWriterUVRendererPreservesQRBlockGlyphs|TestBuildUVRenderBufferFromLinesPreservesQRBlockGlyphs' -count=1
+go test ./termx-shared/... ./tuiv2/app/... ./tuiv2/render/... ./tuiv2/runtime/...
+go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./termx-shared/... ./tuiv2/runtime/... ./tuiv2/app/... ./tuiv2/render/...
+go build -o /tmp/termx-qr-final.S0o7bG/termx ./termx-cli/cmd/termx
+tmux new-session -d -s termx-qr-final -x 166 -y 56 'env XDG_CONFIG_HOME=/tmp/termx-qr-final.S0o7bG/config XDG_STATE_HOME=/tmp/termx-qr-final.S0o7bG/state TERMX_GRID_HISTORY_TRACE=/tmp/termx-qr-final.S0o7bG/gridtrace.log TERMX_RENDERER_DEBUG_LOG=/tmp/termx-qr-final.S0o7bG/render.log TERMX_RENDERER_DEBUG_PAYLOAD=1 TERMX_FRAME_DUMP=/tmp/termx-qr-final.S0o7bG/frame.dump TERMX_REMOTE_ENABLE=false TERMX_EXPERIMENTAL_UV_RENDERER=1 /tmp/termx-qr-final.S0o7bG/termx --socket /tmp/termx-qr-final.S0o7bG/termx.sock --log-file /tmp/termx-qr-final.S0o7bG/termx.log attach 1'
+tmux capture-pane -t termx-qr-final -epJS - > /tmp/termx-qr-final.S0o7bG/capture.txt
+go build -o /tmp/termx-qr-presenter.rKHHdp/termx ./termx-cli/cmd/termx
+tmux new-session -d -s termx-qr-presenter -x 166 -y 56 'env XDG_CONFIG_HOME=/tmp/termx-qr-presenter.rKHHdp/config XDG_STATE_HOME=/tmp/termx-qr-presenter.rKHHdp/state TERMX_GRID_HISTORY_TRACE=/tmp/termx-qr-presenter.rKHHdp/gridtrace.log TERMX_RENDERER_DEBUG_LOG=/tmp/termx-qr-presenter.rKHHdp/render.log TERMX_RENDERER_DEBUG_PAYLOAD=1 TERMX_FRAME_DUMP=/tmp/termx-qr-presenter.rKHHdp/frame.dump TERMX_REMOTE_ENABLE=false TERMX_EXPERIMENTAL_UV_RENDERER=0 /tmp/termx-qr-presenter.rKHHdp/termx --socket /tmp/termx-qr-presenter.rKHHdp/termx.sock --log-file /tmp/termx-qr-presenter.rKHHdp/termx.log attach 1'
+tmux capture-pane -t termx-qr-presenter -epJS - > /tmp/termx-qr-presenter.rKHHdp/capture.txt
+for s in termx-qr-debug termx-qr-stress termx-qr-fix-uv termx-qr-final termx-qr-presenter; do tmux kill-session -t "$s" 2>/dev/null || true; done
+pkill -f '/tmp/termx-qr-.*/termx .*--socket' 2>/dev/null || true
+pkill -f '/tmp/termx-qr-.*/termx --socket' 2>/dev/null || true
+pkill -f 'termx .* daemon' 2>/dev/null || true
+```
+
+### Phase 7 tmux Results
+
+- UV enabled with fallback/backoff:
+  - Temp dir: `/tmp/termx-qr-final.S0o7bG`
+  - Scenario: `python scripts/generate_terminal_stress.py --lines 100`, then `go run ./termx-cli/cmd/termx --socket ... remote pair --ttl 45s --auth-ttl 1m`
+  - Capture: `blocks=3186`, `uri=1`, `expires_at=1`
+  - Trace: `app.frame.lines.input.summary` reported `block_rows=45 blocks=3186 uri_rows=2`
+  - Trace: `app.frame.output.summary` reported `blocks=3186 has_uri=true`
+  - Renderer debug `output_preview` began with `\x1b[?2026h\x1b[?25l\x1b[1;1H\x1b[?7l\x1b[m...`, confirming the reset before payload.
+- Default presenter only:
+  - Temp dir: `/tmp/termx-qr-presenter.rKHHdp`
+  - Same stress plus `remote pair` scenario.
+  - Capture: `blocks=3176`, `uri=1`, `expires_at=1`
+  - Trace: `app.frame.lines.input.summary` reported `block_rows=45 blocks=3176 uri_rows=2`
+  - Trace: `app.frame.output.summary` reported `blocks=3176 has_uri=true`
+
+### Phase 7 Test Results
+
+- PASS: `go test ./tuiv2/render -run 'TestComposedCanvasContentStringPreservesQRBlockGlyphs|TestComposedCanvasDrawText|TestComposedCanvasStyleANSI' -count=1`
+- PASS: `go test ./tuiv2/app -run 'TestOutputCursorWriterWritesDirectFrame|TestWriteHostFramePayloadWrapsNormalizedFrameWithAutoWrapGuard|TestOutputCursorWriterDefaultPresenterPreservesQRBlockGlyphs|TestOutputCursorWriterUVRendererPreservesQRBlockGlyphs|TestBuildUVRenderBufferFromLinesPreservesQRBlockGlyphs' -count=1`
+- PASS: `go test ./termx-shared/... ./tuiv2/app/... ./tuiv2/render/... ./tuiv2/runtime/...`
+- PASS: `go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./termx-shared/... ./tuiv2/runtime/... ./tuiv2/app/... ./tuiv2/render/...`
+- Cleanup complete: killed `termx-qr-*` tmux sessions and local TermX daemon/test daemon processes; did not restart them.
+
 ## Unresolved Risks
 
 - Persistent grid retention is now row-count bounded via `ScrollbackSize`; no time-based retention or disk-byte cap is implemented yet.

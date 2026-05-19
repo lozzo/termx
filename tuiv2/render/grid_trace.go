@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"strings"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-shared/gridtrace"
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
@@ -66,17 +67,55 @@ func traceRenderLogSummary(event string, summary renderTraceRowSummary, kv ...an
 	gridtrace.LogLimited(event, 2000, args...)
 }
 
+func traceRenderCanvasRow(event string, rowIndex int, row string) {
+	if !gridtrace.Enabled() {
+		return
+	}
+	plain := xansi.Strip(row)
+	if !renderTraceTextShouldLog(plain) && !strings.ContainsAny(row, "█▀▄▌▐") {
+		return
+	}
+	gridtrace.LogLimited(event, 3000,
+		"row", rowIndex,
+		"bytes", len(row),
+		"plain_bytes", len(plain),
+		"plain_cols", xansi.StringWidth(plain),
+		"blocks", renderBlockGlyphCount(plain),
+		"hash", renderTraceHash(row),
+		"plain_hash", renderTraceHash(plain),
+		"raw_text", gridtrace.Short(row, 220),
+		"plain_text", gridtrace.Short(plain, 220),
+	)
+}
+
 func renderTraceShouldLog(summary renderTraceRowSummary) bool {
 	if summary.styled > 0 || summary.wide > 0 || summary.trailingSpaces > 0 || summary.cols != summary.visibleCols {
 		return true
 	}
-	return strings.ContainsAny(summary.text, "█▀▄▌▐") ||
-		strings.Contains(summary.text, "QR") ||
-		strings.Contains(summary.text, "TERMX") ||
-		strings.Contains(summary.text, "PROMPT") ||
-		strings.Contains(summary.text, "remote pair") ||
-		strings.Contains(summary.text, "000100") ||
-		strings.Contains(summary.text, "001000")
+	return renderTraceTextShouldLog(summary.text)
+}
+
+func renderTraceTextShouldLog(text string) bool {
+	return strings.ContainsAny(text, "█▀▄▌▐") ||
+		strings.Contains(text, "QR") ||
+		strings.Contains(text, "TERMX") ||
+		strings.Contains(text, "PROMPT") ||
+		strings.Contains(text, "remote pair") ||
+		strings.Contains(text, "uri:") ||
+		strings.Contains(text, "expires_at") ||
+		strings.Contains(text, "000100") ||
+		strings.Contains(text, "001000")
+}
+
+func renderBlockGlyphCount(text string) int {
+	count := 0
+	for _, r := range text {
+		switch r {
+		case '█', '▀', '▄', '▌', '▐':
+			count++
+		}
+	}
+	return count
 }
 
 func renderSummaryFromProtocolCells(row []protocol.Cell, rect workbench.Rect, offsetX int) renderTraceRowSummary {

@@ -1307,6 +1307,7 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 	presentStart := time.Now()
 	useRawPayload := false
 	renderLines := stripTrailingEraseLineRight(lines)
+	traceAppFrameLines("app.frame.lines.input", renderLines, "cursor_bytes", len(cursor))
 	payload := ""
 	presentMode := "delta"
 	uvFallbackReason := ""
@@ -1327,6 +1328,7 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 			useRawPayload = true
 			presentMode = "uv"
 			w.observeUVSuccessLocked(uvAttemptElapsed, len(renderLines), len(payload))
+			traceAppPayload("app.frame.uv.payload", payload, "rows", len(renderLines), "fallback_reason", uvFallbackReason)
 		} else {
 			perftrace.Count("cursor_writer.renderer.uv.fallback", len(lines))
 			if uvRendererWasActive || w.uvRenderer != nil {
@@ -1366,6 +1368,7 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 			perftrace.Count("cursor_writer.present.mode.full_repaint_forced", len(lines))
 		}
 		payload = w.presenter.PresentLinesWithMeta(renderLines, meta)
+		traceAppPayload("app.frame.presenter.payload", payload, "rows", len(renderLines), "mode", presentMode)
 		w.presenter.planLogHook = previousPlanLogHook
 		w.presenter.verticalScrollMode = previousVerticalScrollMode
 		w.presenter.ownerAwareDeltaEnabled = previousOwnerAwareDeltaEnabled
@@ -1411,6 +1414,7 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 	buf.WriteString(hideHostCursorSequence)
 	buf.WriteString(xansi.MoveCursorOrigin)
 	if useRawPayload {
+		buf.WriteString(xansi.ResetStyle)
 		buf.WriteString(payload)
 	} else {
 		writeHostFramePayload(&buf, payload)
@@ -1425,6 +1429,7 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 	w.bubbleTeaRestore = ""
 	w.cursorProjected = false
 	output := buf.String()
+	traceAppPayload("app.frame.output", output, "rows", len(renderLines), "mode", presentMode, "raw_payload", useRawPayload)
 	writtenBytes = len(output)
 	ioFinish := perftrace.Measure("cursor_writer.io_write")
 	ioStart := time.Now()
