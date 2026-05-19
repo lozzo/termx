@@ -3,16 +3,27 @@
 ## Deployment Targets
 
 - Hub and Web Controller are deployed on `ssh root@114.66.58.243`.
-- TermX runtime/agent side is deployed on `ssh al`.
+- TermX runtime/agent/CLI is developed and tested locally from this repository.
 - `remote-ui` is developed and tested locally from this repository.
 
 ## Deployment Workflow Reminder
 
 - Do not assume a code change is deployed just because it is committed locally.
 - After changing Hub or Web Controller code, SSH to `root@114.66.58.243`, update the checkout/artifacts there, restart the relevant service, then verify health.
-- After changing TermX runtime/agent/CLI code, SSH to `al`, update the checkout/artifacts there, restart or relaunch the relevant TermX process, then verify the runtime path.
+- Do not deploy TermX runtime/agent/CLI changes to `ssh al` during normal agent work.
+- After changing TermX runtime/agent/CLI code and finishing local builds/tests, kill any local TermX daemon or test daemon process. Do not restart it; the user will restart it manually.
 - After changing `remote-ui`, validate locally with `cd remote-ui && npm run typecheck && npm run test`; use the local dev server for browser verification.
 - Before restarting remote services, inspect the existing deploy path and service names on the target host instead of guessing.
+
+## Terminal History Direction
+
+- Terminal history semantics should stay close to tmux: UI, copy mode, and remote terminal history read parsed grid/cell rows owned by core, not raw PTY bytes.
+- Special TermX-only terminal history behavior needs a clear reason and regression coverage.
+- The real PTY size is a single global terminal state. Panels, floating windows, mobile App, and `remote-ui` are observer viewports over that terminal.
+- If an observer viewport differs from the PTY size, use projection only: crop, scroll window, overflow arrows, and blank-dot hints. Do not reinterpret normal terminal/copy-mode/history rows at observer width.
+- Raw PTY journals are not the UI history query path. They may only return later as optional debug/audit data.
+- TUI validation for terminal history changes should use real tmux-driven terminal operations when practical, not only code-level unit tests.
+- Keep `docs/workflows/` updated at each implementation stage with decisions, commands, test results, tmux verification, review notes, and remaining risks.
 
 ## Android Build Default
 
