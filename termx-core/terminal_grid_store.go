@@ -734,6 +734,10 @@ func (s *terminalGridStore) enforceMaxRowsLocked() error {
 	if drop <= 0 || drop >= len(refs) {
 		return nil
 	}
+	drop = terminalGridRetentionDropToLogicalBoundary(refs, drop)
+	if drop <= 0 || drop >= len(refs) {
+		return nil
+	}
 	refs = refs[drop:]
 	indexPath := filepath.Join(s.dir, terminalGridIndexName)
 	tmpPath := indexPath + ".tmp"
@@ -780,6 +784,16 @@ func (s *terminalGridStore) enforceMaxRowsLocked() error {
 		s.currentBytes = last.offset + last.length
 	}
 	return pruneUnreferencedTerminalGridPages(s.dir, refs)
+}
+
+func terminalGridRetentionDropToLogicalBoundary(refs []terminalGridRowRef, drop int) int {
+	if drop <= 0 || drop >= len(refs) {
+		return drop
+	}
+	for drop < len(refs) && terminalGridRowContinuesLogicalLine(refs[drop-1]) {
+		drop++
+	}
+	return drop
 }
 
 func readTerminalGridRows(dir string, refs []terminalGridRowRef) ([]terminalGridRow, error) {

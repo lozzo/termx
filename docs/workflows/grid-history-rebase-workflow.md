@@ -514,6 +514,27 @@ go test ./tuiv2/app/...
 - PASS: `go test ./termx-core/...`
 - PASS: `go test ./tuiv2/app/...`
 
+## tmux Reference Follow-Up Phase 4: Retention and Stale Pages
+
+- Retention now drops to a logical-line boundary. If the row-count cap would expose a wrapped continuation without its logical-line start, TermX drops the rest of that partial logical line instead of serving malformed history.
+- Added copy-mode regression coverage for stale non-adjacent history pages. Runtime already rejected stale generation/non-adjacent row IDs; copy-mode frozen buffers now have an explicit regression test for the same contract.
+
+### Phase 4 Commands
+
+```sh
+go test ./termx-core -run 'TestTerminalGridStoreRetentionCapsCommittedRows|TestTerminalGridStoreRetentionDropsPartialWrappedLogicalLine' -count=1 -v
+go test ./tuiv2/app -run 'TestCopyModeRejectsNonAdjacentHistoryPage|TestCopyModeBoundedWindowRequestsNextOlderPageByLoadedDepth' -count=1 -v
+go test ./tuiv2/runtime -run 'TestRuntimeApplyGridViewportPageRejectsStaleHistoryGeneration|TestRuntimeApplyGridViewportPageRejectsNonAdjacentRowIDs' -count=1 -v
+go test ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...
+```
+
+### Phase 4 Test Results
+
+- PASS: `go test ./termx-core -run 'TestTerminalGridStoreRetentionCapsCommittedRows|TestTerminalGridStoreRetentionDropsPartialWrappedLogicalLine' -count=1 -v`
+- PASS: `go test ./tuiv2/app -run 'TestCopyModeRejectsNonAdjacentHistoryPage|TestCopyModeBoundedWindowRequestsNextOlderPageByLoadedDepth' -count=1 -v`
+- PASS: `go test ./tuiv2/runtime -run 'TestRuntimeApplyGridViewportPageRejectsStaleHistoryGeneration|TestRuntimeApplyGridViewportPageRejectsNonAdjacentRowIDs' -count=1 -v`
+- PASS: `go test ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...`
+
 ## Unresolved Risks
 
 - Persistent grid retention is now row-count bounded via `ScrollbackSize`; no time-based retention or disk-byte cap is implemented yet.

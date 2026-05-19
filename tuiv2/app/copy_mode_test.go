@@ -862,6 +862,33 @@ func TestCopyModeBoundedWindowRequestsNextOlderPageByLoadedDepth(t *testing.T) {
 	}
 }
 
+func TestCopyModeRejectsNonAdjacentHistoryPage(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"new0"}, []string{"live0"})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot.ScrollbackLoadedRows = 1
+	terminal.Snapshot.HistoryGeneration = 7
+	terminal.Snapshot.ScrollbackFirstRowID = 100
+	terminal.Snapshot.ScrollbackLastRowID = 100
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	loaded := copyModeTestSnapshot([]string{"old0"}, []string{"live0"})
+	loaded.ScrollbackOffset = 1
+	loaded.ScrollbackTotal = 2
+	loaded.ScrollbackLoadedRows = 2
+	loaded.HistoryGeneration = 7
+	loaded.ScrollbackFirstRowID = 98
+	loaded.ScrollbackLastRowID = 98
+
+	model.extendFrozenCopyModeSnapshot(loaded, 1)
+	if got, want := model.copyMode.LoadedRows, 1; got != want {
+		t.Fatalf("expected stale non-adjacent page to be rejected, loaded=%d want %d", got, want)
+	}
+	if got := len(model.copyMode.Snapshot.Scrollback); got != 1 {
+		t.Fatalf("expected stale page not to alter frozen scrollback, got %d rows", got)
+	}
+}
+
 func TestCopyModeTopDoesNotReloadWhenScrollbackExhausted(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})

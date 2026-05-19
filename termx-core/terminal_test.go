@@ -864,6 +864,35 @@ func TestTerminalGridStoreRetentionCapsCommittedRows(t *testing.T) {
 	}
 }
 
+func TestTerminalGridStoreRetentionDropsPartialWrappedLogicalLine(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	store.SetMaxRows(3)
+
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("A"), wrapped: true},
+		{cells: localVTermCellsFromString("B"), wrapped: true},
+		{cells: localVTermCellsFromString("C")},
+		{cells: localVTermCellsFromString("D")},
+		{cells: localVTermCellsFromString("E")},
+	}); err != nil {
+		t.Fatalf("append wrapped rows: %v", err)
+	}
+	if got := store.RowCount(); got != 2 {
+		t.Fatalf("expected retention to drop the partial wrapped logical line, got %d rows", got)
+	}
+	viewport, err := store.Viewport(0, 10, 10)
+	if err != nil {
+		t.Fatalf("viewport after wrapped retention: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"D", "E"}) {
+		t.Fatalf("expected retained rows to begin at a logical boundary, got %#v", got)
+	}
+	if viewport.FirstRowID != 3 || viewport.LastRowID != 4 {
+		t.Fatalf("expected row IDs to reflect extra dropped wrapped rows, got first=%d last=%d", viewport.FirstRowID, viewport.LastRowID)
+	}
+}
+
 func TestTerminalGridStoreViewportLoadedRowsUseRawCommittedRows(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
