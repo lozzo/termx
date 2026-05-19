@@ -319,7 +319,52 @@ Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.
 - Root `go test ./...` does not work in this workspace: `pattern ./...: directory prefix . does not contain modules listed in go.work or their selected dependencies`.
 - PASS: `go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-hub/... ./termx-proto/... ./termx-remote/... ./termx-shared/... ./termx-testkit/... ./termx-vterm/... ./tuiv2/...`
 
+## Follow-Up Hardening: tmux-like resize boundary and retention
+
+- User follow-up after final verification: current model is close to tmux but remaining bugs still need fixing.
+- Re-audited the documented unresolved risks:
+  - raw grid-store duplicate rows when a wrapped logical line is split between history and visible screen during resize;
+  - persistent grid history has no formal history-limit/retention cap.
+- Fixed resize boundary behavior:
+  - `VTerm.ResizeWithDamage` now uses a tail-screen resize path for width-shrink cases where the reflowed visible content exceeds the new screen height.
+  - Rows that remain visible after resize are no longer appended to `damage.ScrollbackAppend`; only rows that leave the visible screen are written to `terminalGridStore`.
+  - The stored prefix keeps `Wrapped=true` when the logical line continues into the visible screen, preserving copy-mode soft-wrap continuity across the history/screen boundary.
+  - The tail-screen path resizes the emulator screen geometry directly and replaces the visible rows, instead of calling normal emulator `Resize` after pushing prefix rows. This avoids a second reflow pass that could pollute emulator scrollback when core-owned grid history is the source of truth.
+  - Normal resize behavior remains covered by existing vterm resize tests.
+- Fixed grid viewport reflow at a truncated wrapped boundary:
+  - If a store page ends with a row whose committed metadata says it continues, the viewport preserves that final `Wrapped=true` instead of forcing it to false.
+  - This prevents copy-mode/text selection from inserting a hard newline at a page boundary that is only a materialization boundary.
+- Added persistent grid retention:
+  - `terminalGridStore` now supports `maxRows`.
+  - Terminal creation wires persistent grid retention to `ScrollbackSize`, making file-backed history follow the same bounded-history intent as tmux `history-limit`.
+  - Retention rewrites the committed index to the newest rows and prunes unreferenced page files. `RowCount`/`TotalRows` report currently retained committed rows.
+- Sub-agent note:
+  - Attempted to spawn an additional focused review agent for this follow-up, but the session had reached the sub-agent limit. Work proceeded locally with focused regression tests.
+
+## Follow-Up Commands
+
+```sh
+git status --short --branch
+git log --oneline --decorate -12
+rg -n "TODO|FIXME|remaining|risk|duplicate|ResizeWithDamage|ScrollbackAppend|history-limit|retention|removeOnClose|materialized" docs/workflows/grid-history-rebase-workflow.md termx-core termx-vterm tuiv2 internal remote-ui 2>/dev/null
+go test ./termx-vterm/vterm -run 'TestVTermResizeWithDamageDoesNotAppendVisibleSuffix|TestVTermResizeWithDamagePreservesWrappedBoundary|TestVTermResizeReflowsSoftWrappedRows' -count=1 -v
+go test ./termx-core -run 'TestTerminalGridResizeDamageDoesNotPersistVisibleSuffix|TestTerminalGridStoreReflowPreservesTrailingWrappedContinuation|TestTerminalGridResizeDamageKeepsWrappedContinuity|TestTerminalSnapshotTrimsResizeGridScreenOverlap|TestTerminalGridResizeDamagePreservesStressTailRows|TestTerminalGridResizeDamagePreservesWideAndQRLikeRows' -count=1 -v
+go test ./termx-core -run 'TestTerminalGridStoreRetentionCapsCommittedRows' -count=1 -v
+go test ./termx-vterm/... ./termx-core/...
+go test ./tuiv2/runtime/... ./tuiv2/app/...
+go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./tuiv2/runtime/... ./tuiv2/app/...
+```
+
+## Follow-Up Test Results
+
+- PASS: `go test ./termx-vterm/vterm -run 'TestVTermResizeWithDamageDoesNotAppendVisibleSuffix|TestVTermResizeWithDamagePreservesWrappedBoundary|TestVTermResizeReflowsSoftWrappedRows' -count=1 -v`
+- PASS: `go test ./termx-core -run 'TestTerminalGridResizeDamageDoesNotPersistVisibleSuffix|TestTerminalGridStoreReflowPreservesTrailingWrappedContinuation|TestTerminalGridResizeDamageKeepsWrappedContinuity|TestTerminalSnapshotTrimsResizeGridScreenOverlap|TestTerminalGridResizeDamagePreservesStressTailRows|TestTerminalGridResizeDamagePreservesWideAndQRLikeRows' -count=1 -v`
+- PASS: `go test ./termx-core -run 'TestTerminalGridStoreRetentionCapsCommittedRows' -count=1 -v`
+- PASS: `go test ./termx-vterm/... ./termx-core/...`
+- PASS: `go test ./tuiv2/runtime/... ./tuiv2/app/...`
+- PASS: `go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./tuiv2/runtime/... ./tuiv2/app/...`
+
 ## Unresolved Risks
 
-- Persistent grid retention is still explicit remove/fresh generation only; no size/time retention cap is implemented yet.
-- Resize conservative complete wrapped logical group append can still leave raw grid-store duplicate rows in edge cases where a logical line is split between history and visible screen. Latest snapshot boundary dedupes the common UI case, but a deeper grid/screen merge model is still a future hardening area.
+- Persistent grid retention is now row-count bounded via `ScrollbackSize`; no time-based retention or disk-byte cap is implemented yet.
+- Resize no longer stores visible suffix duplicates for the covered wrapped split cases. The remaining architectural gap versus tmux is that TermX still bridges `vterm` screen and file-backed history through resize damage rather than a single in-memory/file-backed grid mutation with row identity.

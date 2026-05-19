@@ -2,9 +2,11 @@ package vt
 
 import (
 	"image/color"
+	"io"
 	"sync"
 
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // SafeEmulator is a wrapper around an Emulator that adds concurrency safety.
@@ -55,6 +57,56 @@ func (se *SafeEmulator) Resize(w, h int) {
 	se.mu.Lock()
 	defer se.mu.Unlock()
 	se.Emulator.Resize(w, h)
+}
+
+// ResizeAndTailScreen resizes the emulator and keeps the tail of the supplied
+// reflowed screen rows visible while holding the emulator lock.
+func (se *SafeEmulator) ResizeAndTailScreen(w, h int, rows []uv.Line, wrapped []bool, used []int) {
+	se.mu.Lock()
+	defer se.mu.Unlock()
+	e := se.Emulator
+	pos := e.CursorPosition()
+	x, y := pos.X, pos.Y
+	if e.IsAltScreen() || len(rows) <= h {
+		e.Resize(w, h)
+		return
+	}
+	scrollback := e.scr.Scrollback()
+	visibleStart := len(rows) - h
+	if scrollback != nil {
+		for i := 0; i < visibleStart; i++ {
+			scrollback.PushWrapped(rows[i], i < len(wrapped) && wrapped[i])
+		}
+	}
+	e.scrs[0].Resize(w, h)
+	e.scrs[1].Resize(w, h)
+	e.tabstops = uv.DefaultTabStops(w)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			e.SetCell(x, y, nil)
+		}
+		src := visibleStart + y
+		if src < len(rows) {
+			for x, cell := range rows[src] {
+				if x >= w {
+					break
+				}
+				e.SetCell(x, y, &cell)
+			}
+		}
+		e.SetScreenLineWrapped(y, src < len(wrapped) && wrapped[src])
+		if src < len(used) {
+			e.SetScreenLineUsed(y, used[src])
+		} else if src < len(rows) {
+			e.SetScreenLineUsed(y, len(rows[src]))
+		} else {
+			e.SetScreenLineUsed(y, 0)
+		}
+	}
+	e.setCursor(x, y)
+	if e.isModeSet(ansi.ModeInBandResize) {
+		_, _ = io.WriteString(e.pw, ansi.InBandResize(e.Height(), e.Width(), 0, 0))
+	}
 }
 
 // Render renders the emulator's current state in a concurrency-safe manner.

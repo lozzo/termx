@@ -114,7 +114,7 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 		vterm:          vt,
 		stream:         fanout.New(),
 		grid:           grid,
-		gridAppender:   newTerminalGridAppender(grid, cfg.ID, cfg.Logger),
+		gridAppender:   newTerminalGridAppender(grid, cfg.ID, persistentGridHistoryRows(cfg.ScrollbackSize), cfg.Logger),
 		logger:         cfg.Logger,
 		id:             cfg.ID,
 		name:           cfg.Name,
@@ -139,6 +139,13 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 
 	t.startProcessLoops()
 	return t, nil
+}
+
+func persistentGridHistoryRows(scrollbackSize int) int {
+	if scrollbackSize <= 0 {
+		return 0
+	}
+	return scrollbackSize
 }
 
 func spawnTerminalProcess(cfg terminalConfig) (*ptymgr.PTY, *vterm.VTerm, error) {

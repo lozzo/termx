@@ -44,6 +44,7 @@ type terminalGridStore struct {
 	currentBytes  int64
 	pageMaxBytes  int64
 	rowCount      int
+	maxRows       int
 	closed        bool
 	removeOnClose bool
 	writable      bool
@@ -195,6 +196,15 @@ func newMemoryTerminalGridStoreForTest(t testTempDirProvider) *terminalGridStore
 	return store
 }
 
+func (s *terminalGridStore) SetMaxRows(maxRows int) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.maxRows = maxRows
+	s.mu.Unlock()
+}
+
 type testTempDirProvider interface {
 	TempDir() string
 }
@@ -330,6 +340,10 @@ func (s *terminalGridStore) appendRowSequence(count int, rowAt func(int) termina
 		}
 	}
 	if err := flush(); err != nil {
+		finish(0)
+		return err
+	}
+	if err := s.enforceMaxRowsLocked(); err != nil {
 		finish(0)
 		return err
 	}
@@ -646,6 +660,61 @@ func (s *terminalGridStore) appendIndexRowsLocked(refs []terminalGridRowRef) err
 	return nil
 }
 
+func (s *terminalGridStore) enforceMaxRowsLocked() error {
+	if s == nil || s.maxRows <= 0 || s.rowCount <= s.maxRows {
+		return nil
+	}
+	drop := s.rowCount - s.maxRows
+	refs, err := readTerminalGridIndexRefsFromPath(filepath.Join(s.dir, terminalGridIndexName))
+	if err != nil {
+		return err
+	}
+	if drop <= 0 || drop >= len(refs) {
+		return nil
+	}
+	refs = refs[drop:]
+	indexPath := filepath.Join(s.dir, terminalGridIndexName)
+	tmpPath := indexPath + ".tmp"
+	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := writeTerminalGridIndexRefs(tmp, refs); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if s.index != nil {
+		if err := s.index.Close(); err != nil {
+			_ = os.Remove(tmpPath)
+			return err
+		}
+		s.index = nil
+	}
+	if err := os.Rename(tmpPath, indexPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	s.rowCount = len(refs)
+	if len(refs) > 0 {
+		last := refs[len(refs)-1]
+		s.currentSeq = last.seq
+		if s.current != nil {
+			_ = s.current.Close()
+			s.current = nil
+		}
+		if err := s.openCurrentPageLocked(); err != nil {
+			return err
+		}
+		s.currentBytes = last.offset + last.length
+	}
+	return pruneUnreferencedTerminalGridPages(s.dir, refs)
+}
+
 func readTerminalGridRows(dir string, refs []terminalGridRowRef) ([]terminalGridRow, error) {
 	out := make([]terminalGridRow, 0, len(refs))
 	var currentSeq uint32
@@ -720,8 +789,12 @@ func reflowTerminalGridRows(rows []terminalGridRow, cols int) ([][]vterm.Cell, [
 		if len(logical) == 0 {
 			emptyMeta = meta
 		}
-		for _, cell := range row.cells {
-			logical = append(logical, terminalGridReflowCell{cell: cell, meta: meta})
+		for i, cell := range row.cells {
+			logical = append(logical, terminalGridReflowCell{
+				cell:      cell,
+				meta:      meta,
+				continued: row.wrapped && i == len(row.cells)-1,
+			})
 		}
 		if row.wrapped {
 			continue
@@ -746,8 +819,9 @@ type terminalGridReflowMeta struct {
 }
 
 type terminalGridReflowCell struct {
-	cell vterm.Cell
-	meta terminalGridReflowMeta
+	cell      vterm.Cell
+	meta      terminalGridReflowMeta
+	continued bool
 }
 
 type terminalGridReflowState struct {
@@ -782,7 +856,11 @@ func (r *terminalGridReflowState) emitLogicalLine(cells []terminalGridReflowCell
 		}
 		width += cellWidth
 	}
-	r.emitSegment(cells[start:], cells[start].meta, false, segmentIndex > 0)
+	wrapped := false
+	if len(cells) > 0 {
+		wrapped = cells[len(cells)-1].continued
+	}
+	r.emitSegment(cells[start:], cells[start].meta, wrapped, segmentIndex > 0)
 }
 
 func (r *terminalGridReflowState) emitSegment(segment []terminalGridReflowCell, meta terminalGridReflowMeta, wrapped bool, suppressRowKind bool) {
@@ -1100,6 +1178,31 @@ func validateTerminalGridRowRef(dir string, ref terminalGridRowRef) error {
 	return nil
 }
 
+func writeTerminalGridIndexRefs(file *os.File, refs []terminalGridRowRef) error {
+	if file == nil || len(refs) == 0 {
+		return nil
+	}
+	buf := make([]byte, len(refs)*terminalGridIndexRecord)
+	for i, ref := range refs {
+		if ref.length <= 0 || ref.length > int64(^uint32(0)) {
+			return fmt.Errorf("termx grid row length out of range: %d", ref.length)
+		}
+		base := i * terminalGridIndexRecord
+		binary.LittleEndian.PutUint32(buf[base:base+4], ref.seq)
+		binary.LittleEndian.PutUint64(buf[base+4:base+12], uint64(ref.offset))
+		binary.LittleEndian.PutUint32(buf[base+12:base+16], uint32(ref.length))
+		binary.LittleEndian.PutUint32(buf[base+16:base+20], ref.flags)
+	}
+	n, err := file.Write(buf)
+	if err != nil {
+		return err
+	}
+	if n != len(buf) {
+		return io.ErrShortWrite
+	}
+	return nil
+}
+
 func truncateTerminalGridPages(dir string, refs []terminalGridRowRef) error {
 	keepEnd := make(map[uint32]int64)
 	var maxSeq uint32
@@ -1146,6 +1249,36 @@ func truncateTerminalGridPages(dir string, refs []terminalGridRowRef) error {
 	return nil
 }
 
+func pruneUnreferencedTerminalGridPages(dir string, refs []terminalGridRowRef) error {
+	keep := make(map[uint32]struct{})
+	for _, ref := range refs {
+		keep[ref.seq] = struct{}{}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		seq, ok := terminalGridPageSeq(entry.Name())
+		if !ok {
+			continue
+		}
+		if _, ok := keep[seq]; ok {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
 func readTerminalGridIndexRecordFromFile(file *os.File, row int) (terminalGridRowRef, error) {
 	if file == nil || row < 0 {
 		return terminalGridRowRef{}, ErrNotFound
@@ -1157,9 +1290,29 @@ func readTerminalGridIndexRecordFromFile(file *os.File, row int) (terminalGridRo
 	return decodeTerminalGridIndexRecord(rec)
 }
 
+func readTerminalGridIndexRefsFromPath(path string) ([]terminalGridRowRef, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	count := int(info.Size() / terminalGridIndexRecord)
+	if count <= 0 {
+		return nil, nil
+	}
+	return readTerminalGridIndexWindowFromFile(file, 0, count)
+}
+
 func readTerminalGridIndexWindowFromFile(file *os.File, start int, count int) ([]terminalGridRowRef, error) {
 	if file == nil || start < 0 {
 		return nil, ErrNotFound
+	}
+	if count <= 0 {
+		return nil, nil
 	}
 	buf := make([]byte, count*terminalGridIndexRecord)
 	if _, err := file.ReadAt(buf, int64(start*terminalGridIndexRecord)); err != nil {

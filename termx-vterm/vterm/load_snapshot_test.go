@@ -313,6 +313,23 @@ func TestVTermResizeWithDamagePreservesWrappedBoundary(t *testing.T) {
 	}
 }
 
+func TestVTermResizeWithDamageDoesNotAppendVisibleSuffix(t *testing.T) {
+	vt := New(5, 2, 0, nil)
+	vt.DisableEmulatorScrollback()
+	if _, err := vt.Write([]byte("abcdefghij")); err != nil {
+		t.Fatalf("write wrapped line: %v", err)
+	}
+
+	damage := vt.ResizeWithDamage(4, 2)
+	gotDamageRows := damageRowsText(damage.ScrollbackAppend)
+	if !reflect.DeepEqual(gotDamageRows, []string{"abcd"}) {
+		t.Fatalf("expected only displaced rows in damage, got %#v screen=%#v wrapped=%#v", gotDamageRows, screenRowsText(vt.ScreenContent().Cells), vt.ScreenWrapped())
+	}
+	if len(damage.ScrollbackAppend) < 1 || !damage.ScrollbackAppend[0].Wrapped {
+		t.Fatalf("expected damage prefix to remain wrapped into visible screen, got %#v", damage.ScrollbackAppend)
+	}
+}
+
 func TestVTermResizeWithDamagePreservesWideRows(t *testing.T) {
 	vt := New(8, 3, 0, nil)
 	vt.DisableEmulatorScrollback()

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -819,6 +820,47 @@ func TestTerminalGridStoreReopensPersistedRows(t *testing.T) {
 	}
 }
 
+func TestTerminalGridStoreRetentionCapsCommittedRows(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	store.pageMaxBytes = 1
+	store.SetMaxRows(3)
+
+	for i := 0; i < 6; i++ {
+		if err := store.AppendRows([][]localvterm.Cell{{{Content: fmt.Sprintf("row-%d", i), Width: 1}}}); err != nil {
+			t.Fatalf("append row %d: %v", i, err)
+		}
+	}
+	if got := store.RowCount(); got != 3 {
+		t.Fatalf("expected retained row count 3, got %d", got)
+	}
+	viewport, err := store.Viewport(0, 10, 12)
+	if err != nil {
+		t.Fatalf("viewport after retention: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"row-3", "row-4", "row-5"}) {
+		t.Fatalf("expected newest retained rows, got %#v", got)
+	}
+	if viewport.HasMore || viewport.TotalRows != 3 {
+		t.Fatalf("expected retention to expose only committed retained rows, got total=%d hasMore=%v", viewport.TotalRows, viewport.HasMore)
+	}
+
+	refs, err := readAllTerminalGridIndexRefs(store.dir)
+	if err != nil {
+		t.Fatalf("read retained refs: %v", err)
+	}
+	if len(refs) != 3 {
+		t.Fatalf("expected 3 retained refs, got %d", len(refs))
+	}
+	pages := terminalGridPageFilesForTest(t, store.dir)
+	if reflect.DeepEqual(pages, []string{"grid-000000.page", "grid-000001.page", "grid-000002.page", "grid-000003.page", "grid-000004.page", "grid-000005.page"}) {
+		t.Fatalf("expected unreferenced old pages pruned, got %#v", pages)
+	}
+	if !reflect.DeepEqual(pages, []string{"grid-000003.page", "grid-000004.page", "grid-000005.page"}) {
+		t.Fatalf("expected only retained page files, got %#v", pages)
+	}
+}
+
 func TestTerminalGridStoreUsesCompactBinaryRows(t *testing.T) {
 	root := t.TempDir()
 	store, err := newTerminalGridStore(root, "compact-1")
@@ -1049,16 +1091,91 @@ func TestTerminalGridResizeDamageKeepsWrappedContinuity(t *testing.T) {
 	writeVTermDamageToGrid(t, term, vt, "abcdefghij")
 	term.appendGridFromDamageLocked(vt.ResizeWithDamage(4, 1))
 
+	screenRows := vtermRowsToStrings(vt.ScreenContent().Cells)
+	if !reflect.DeepEqual(screenRows, []string{"ij"}) {
+		t.Fatalf("test setup expected visible suffix on screen, got %#v wrapped=%#v", screenRows, vt.ScreenWrapped())
+	}
+
 	viewport, err := store.Viewport(0, 10, 4)
 	if err != nil {
 		t.Fatalf("read resize grid viewport: %v", err)
 	}
 	gotRows := vtermRowsToStrings(viewport.Rows)
-	if !reflect.DeepEqual(gotRows, []string{"abcd", "efgh", "ij"}) {
-		t.Fatalf("expected complete wrapped logical line in grid store, got rows=%#v wrapped=%#v", gotRows, viewport.Wrapped)
+	if !reflect.DeepEqual(gotRows, []string{"abcd", "efgh"}) {
+		t.Fatalf("expected grid store to contain only wrapped prefix displaced from screen, got rows=%#v wrapped=%#v", gotRows, viewport.Wrapped)
 	}
-	if len(viewport.Wrapped) < 3 || !viewport.Wrapped[0] || !viewport.Wrapped[1] || viewport.Wrapped[2] {
+	if len(viewport.Wrapped) < 2 || !viewport.Wrapped[0] || !viewport.Wrapped[1] {
 		t.Fatalf("expected wrapped metadata to keep logical line continuity, got %#v", viewport.Wrapped)
+	}
+}
+
+func TestTerminalGridResizeDamageDoesNotPersistVisibleSuffix(t *testing.T) {
+	vt := localvterm.New(5, 2, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "resize-visible-suffix",
+		size:  Size{Cols: 4, Rows: 2},
+		vterm: vt,
+		grid:  store,
+	}
+
+	writeVTermDamageToGrid(t, term, vt, "abcdefghij")
+	term.appendGridFromDamageLocked(vt.ResizeWithDamage(4, 2))
+
+	viewport, err := store.Viewport(0, 10, 4)
+	if err != nil {
+		t.Fatalf("read resize grid viewport: %v", err)
+	}
+	gotRows := vtermRowsToStrings(viewport.Rows)
+	if !reflect.DeepEqual(gotRows, []string{"abcd"}) {
+		t.Fatalf("expected grid store to contain only rows displaced from screen, got rows=%#v wrapped=%#v", gotRows, viewport.Wrapped)
+	}
+	if len(viewport.Wrapped) < 1 || !viewport.Wrapped[0] {
+		t.Fatalf("expected stored prefix to keep wrapped continuation into screen, got %#v", viewport.Wrapped)
+	}
+
+	snapshot := term.Snapshot(0, 10)
+	if snapshot == nil {
+		t.Fatal("expected snapshot")
+	}
+	combinedRows := make([]string, 0, len(snapshot.Scrollback)+len(snapshot.Screen.Cells))
+	for _, row := range snapshot.Scrollback {
+		combinedRows = append(combinedRows, rowToString(row))
+	}
+	for _, row := range snapshot.Screen.Cells {
+		combinedRows = append(combinedRows, rowToString(row))
+	}
+	if !reflect.DeepEqual(combinedRows, []string{"abcd", "efgh", "ij"}) {
+		t.Fatalf("expected snapshot to join stored prefix with visible suffix, got %#v", combinedRows)
+	}
+	combinedWrapped := append(append([]bool(nil), snapshot.ScrollbackWrapped...), snapshot.ScreenWrapped...)
+	if len(combinedWrapped) < 3 || !combinedWrapped[0] || !combinedWrapped[1] || combinedWrapped[2] {
+		t.Fatalf("expected wrapped metadata across scrollback/screen boundary, got %#v", combinedWrapped)
+	}
+}
+
+func TestTerminalGridStoreReflowPreservesTrailingWrappedContinuation(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("abcd"), wrapped: true},
+		{cells: localVTermCellsFromString("efgh"), wrapped: true},
+	}); err != nil {
+		t.Fatalf("append grid rows: %v", err)
+	}
+
+	viewport, err := store.Viewport(0, 10, 4)
+	if err != nil {
+		t.Fatalf("read grid viewport: %v", err)
+	}
+	gotRows := vtermRowsToStrings(viewport.Rows)
+	if !reflect.DeepEqual(gotRows, []string{"abcd", "efgh"}) {
+		t.Fatalf("expected trailing wrapped continuation rows, got %#v", gotRows)
+	}
+	if len(viewport.Wrapped) < 2 || !viewport.Wrapped[0] || !viewport.Wrapped[1] {
+		t.Fatalf("expected final row to remain wrapped because it continues outside the store page, got %#v", viewport.Wrapped)
 	}
 }
 
@@ -2002,6 +2119,25 @@ func readAllTerminalGridIndexRefs(dir string) ([]terminalGridRowRef, error) {
 	}
 	count := int(info.Size() / terminalGridIndexRecord)
 	return readTerminalGridIndexWindowFromFile(file, 0, count)
+}
+
+func terminalGridPageFilesForTest(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read grid dir: %v", err)
+	}
+	var pages []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if _, ok := terminalGridPageSeq(entry.Name()); ok {
+			pages = append(pages, entry.Name())
+		}
+	}
+	sort.Strings(pages)
+	return pages
 }
 
 func gridAndScreenRowTexts(t *testing.T, store *terminalGridStore, vt *localvterm.VTerm, cols int, limit int) []string {
