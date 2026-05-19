@@ -481,8 +481,7 @@ func (t *Terminal) Resize(cols, rows uint16) error {
 		t.mu.Unlock()
 		return fmt.Errorf("%w: terminal %q size is locked", ErrPermissionDenied, t.id)
 	}
-	t.size = Size{Cols: cols, Rows: rows}
-	t.invalidateProtocolInfoCacheLocked()
+	newSize := Size{Cols: cols, Rows: rows}
 	t.mu.Unlock()
 
 	t.streamMu.Lock()
@@ -490,8 +489,21 @@ func (t *Terminal) Resize(cols, rows uint16) error {
 		t.streamMu.Unlock()
 		return err
 	}
-	t.vterm.Resize(int(cols), int(rows))
+	damage := t.vterm.ResizeWithDamage(int(cols), int(rows))
+	t.captureAlternateDamageLocked(damage)
+	t.appendGridFromDamageLocked(damage)
+	revision := t.bumpScreenRevisionLocked()
+	payload, ok := t.screenUpdatePayloadFromDamageLocked(damage)
+	t.mu.Lock()
+	t.size = newSize
+	t.invalidateProtocolInfoCacheLocked()
+	t.mu.Unlock()
 	t.broadcastResizeLocked(t.stream, cols, rows)
+	if ok {
+		t.stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Payload: payload, Revision: revision})
+	} else {
+		t.stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Revision: revision})
+	}
 	t.streamMu.Unlock()
 	t.events.Publish(Event{
 		Type:       EventTerminalResized,

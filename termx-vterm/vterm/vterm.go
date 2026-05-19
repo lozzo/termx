@@ -175,6 +175,12 @@ type rowFingerprint struct {
 	blank bool
 }
 
+type resizeReflowLine struct {
+	cells     []Cell
+	wrapped   bool
+	sourceRow int
+}
+
 type rowCacheReconcilePlan struct {
 	afterScreen               []rowFingerprint
 	preservedFromBefore       int
@@ -1455,9 +1461,19 @@ func (v *VTerm) Resize(cols, rows int) {
 	v.resizeLocked(cols, rows)
 }
 
+func (v *VTerm) ResizeWithDamage(cols, rows int) WriteDamage {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.resizeWithDamageLocked(cols, rows)
+}
+
 func (v *VTerm) resizeLocked(cols, rows int) {
+	_ = v.resizeWithDamageLocked(cols, rows)
+}
+
+func (v *VTerm) resizeWithDamageLocked(cols, rows int) WriteDamage {
 	if v == nil || v.emu == nil {
-		return
+		return WriteDamage{}
 	}
 	v.ensureScreenFingerprintCacheLocked()
 	beforeScreen := reuseRowFingerprintSlice(v.screenFingerprintScratch, v.screenFingerprintCache)
@@ -1465,14 +1481,28 @@ func (v *VTerm) resizeLocked(cols, rows int) {
 	beforeScrollbackLen := v.scrollbackRowCountLocked()
 	beforeScreenTimestamps := v.screenTimestamps
 	beforeScreenRowKinds := v.screenRowKinds
+	beforeScreenRows := v.screenRowsForResizeLocked(len(beforeScreen))
+	beforeScreenWrapped := v.screenWrappedLocked(len(beforeScreen))
+	var beforeResizeRows []resizeReflowLine
+	if !v.emu.IsAltScreen() {
+		beforeResizeRows = resizeReflowRowsForResize(beforeScreenRows, beforeScreenWrapped, cols, rows)
+	}
 	v.emu.Resize(cols, rows)
 	pos := v.emu.CursorPosition()
 	v.cursor.Row = pos.Y
 	v.cursor.Col = pos.X
 	afterScreen := v.screenRowFingerprintsLocked()
 	v.screenFingerprintCache = afterScreen
-	v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, afterScreen, time.Now().UTC())
+	plan := v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, afterScreen, time.Now().UTC())
 	v.invalidateRowCachesLocked()
+	damage := v.writeDamageRequiresFullReplaceLocked(plan, "resize")
+	afterScreenRows := v.screenRowsForResizeLocked(len(afterScreen))
+	afterScreenWrapped := v.screenWrappedLocked(len(afterScreen))
+	damage.ScrollbackAppend = resizeScrollbackAppendFromReflowedRows(beforeResizeRows, beforeScreenTimestamps, beforeScreenRowKinds, afterScreenRows, afterScreenWrapped)
+	damage.ScrollbackTrim = 0
+	damage.SizeCols = cols
+	damage.SizeRows = rows
+	return damage
 }
 
 func (v *VTerm) CellAt(x, y int) Cell {
@@ -3004,6 +3034,260 @@ func (v *VTerm) appendScrollbackDamageLocked(damage *WriteDamage, plan rowCacheR
 	}
 }
 
+func (v *VTerm) screenRowsForResizeLocked(count int) [][]Cell {
+	if v == nil || v.emu == nil || count <= 0 {
+		return nil
+	}
+	out := make([][]Cell, count)
+	for row := 0; row < count; row++ {
+		used := v.emu.ScreenLineUsed(row)
+		if used <= 0 {
+			used = v.emu.Width()
+		}
+		if used <= 0 {
+			continue
+		}
+		cells := make([]Cell, used)
+		for col := 0; col < used; col++ {
+			cells[col] = v.convertCell(v.emu.CellAt(col, row))
+		}
+		out[row] = cells
+	}
+	return out
+}
+
+func resizeReflowRowsForResize(rows [][]Cell, wrapped []bool, newCols, newRows int) []resizeReflowLine {
+	if len(rows) == 0 || newRows <= 0 {
+		return nil
+	}
+	if newCols < 1 {
+		newCols = 1
+	}
+	allRows := resizeReflowRowsFromScreen(rows, wrapped)
+	if len(allRows) == 0 {
+		return nil
+	}
+	return resizeReflowLines(allRows, newCols)
+}
+
+func resizeScrollbackAppendFromReflowedRows(beforeRows []resizeReflowLine, timestamps []time.Time, rowKinds []string, afterScreenRows [][]Cell, afterScreenWrapped []bool) []DamageOp {
+	if len(beforeRows) == 0 {
+		return nil
+	}
+	visible := resizeReflowRowsFromScreen(afterScreenRows, afterScreenWrapped)
+	visibleStart, visibleCount := resizeVisibleBlockInBeforeRows(beforeRows, visible)
+	visibleEnd := visibleStart + visibleCount
+	out := make([]DamageOp, 0, maxInt(0, len(beforeRows)-visibleCount))
+	appendRow := func(i int) {
+		row := beforeRows[i]
+		sourceRow := row.sourceRow
+		if sourceRow < 0 {
+			return
+		}
+		if resizeReflowLineIsBlank(row) && timeAt(timestamps, sourceRow).IsZero() {
+			return
+		}
+		out = append(out, DamageOp{
+			Cells:      cloneCellSlice(row.cells),
+			Timestamp:  timeAt(timestamps, sourceRow),
+			RowKind:    stringAt(rowKinds, sourceRow),
+			Wrapped:    row.wrapped,
+			WrappedSet: true,
+		})
+	}
+	for start := 0; start < len(beforeRows); {
+		end := start + 1
+		for end < len(beforeRows) && beforeRows[end-1].wrapped {
+			end++
+		}
+		if start < visibleStart || end > visibleEnd {
+			for i := start; i < end; i++ {
+				appendRow(i)
+			}
+		}
+		start = end
+	}
+	return out
+}
+
+func resizeVisibleBlockInBeforeRows(beforeRows, visible []resizeReflowLine) (start int, count int) {
+	bestStart := len(beforeRows)
+	bestCount := 0
+	for i := 0; i < len(beforeRows); i++ {
+		matched := 0
+		for matched < len(visible) && i+matched < len(beforeRows) && resizeReflowLinesEqual(beforeRows[i+matched], visible[matched]) {
+			matched++
+		}
+		if matched >= bestCount {
+			bestStart = i
+			bestCount = matched
+			if bestCount == len(visible) {
+				continue
+			}
+		}
+	}
+	if bestCount == 0 {
+		return len(beforeRows), 0
+	}
+	return bestStart, bestCount
+}
+
+func resizeReflowLinesEqual(left, right resizeReflowLine) bool {
+	if left.wrapped != right.wrapped || len(left.cells) != len(right.cells) {
+		return false
+	}
+	for i := range left.cells {
+		if left.cells[i] != right.cells[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func resizeReflowRowsFromScreen(rows [][]Cell, wrapped []bool) []resizeReflowLine {
+	out := make([]resizeReflowLine, 0, len(rows))
+	for row, cells := range rows {
+		out = append(out, resizeReflowLine{
+			cells:     cloneCellSlice(cells),
+			wrapped:   boolAt(wrapped, row),
+			sourceRow: row,
+		})
+	}
+	return out
+}
+
+func resizeReflowLines(rows []resizeReflowLine, width int) []resizeReflowLine {
+	if width < 1 {
+		width = 1
+	}
+	out := make([]resizeReflowLine, 0, len(rows))
+	for i := 0; i < len(rows); i++ {
+		cells := cloneCellSlice(rows[i].cells)
+		sourceRow := rows[i].sourceRow
+		for i < len(rows)-1 && rows[i].wrapped {
+			i++
+			cells = append(cells, rows[i].cells...)
+		}
+		out = append(out, splitResizeLogicalLine(cells, width, sourceRow)...)
+	}
+	if len(out) == 0 {
+		return []resizeReflowLine{{sourceRow: 0}}
+	}
+	return out
+}
+
+func splitResizeLogicalLine(cells []Cell, width int, sourceRow int) []resizeReflowLine {
+	if width < 1 {
+		width = 1
+	}
+	if width == 1 {
+		return splitResizeLogicalLineByColumns(cells, width, sourceRow)
+	}
+	if len(cells) == 0 {
+		return []resizeReflowLine{{sourceRow: sourceRow}}
+	}
+	out := make([]resizeReflowLine, 0, (resizeLineCellWidth(cells)+width-1)/width)
+	var current []Cell
+	currentWidth := 0
+	flush := func(wrapped bool) {
+		out = append(out, resizeReflowLine{
+			cells:     cloneCellSlice(current),
+			wrapped:   wrapped,
+			sourceRow: sourceRow,
+		})
+		current = nil
+		currentWidth = 0
+	}
+	for i := 0; i < len(cells); i++ {
+		cell := cells[i]
+		cellWidth := resizeVisibleCellWidth(cell)
+		if cellWidth <= 0 {
+			continue
+		}
+		if currentWidth > 0 && currentWidth+cellWidth > width {
+			flush(true)
+		}
+		if cellWidth > width {
+			if currentWidth > 0 {
+				flush(true)
+			}
+			out = append(out, resizeReflowLine{
+				cells:     []Cell{cell},
+				wrapped:   false,
+				sourceRow: sourceRow,
+			})
+			continue
+		}
+		current = append(current, cell)
+		for col := 1; col < cell.Width && i+1 < len(cells) && isWideContinuationCell(cells[i+1]); col++ {
+			i++
+			current = append(current, cells[i])
+		}
+		currentWidth += cellWidth
+		if currentWidth == width {
+			flush(true)
+		}
+	}
+	if current != nil || len(out) == 0 {
+		flush(false)
+	} else {
+		out[len(out)-1].wrapped = false
+	}
+	return out
+}
+
+func splitResizeLogicalLineByColumns(cells []Cell, width int, sourceRow int) []resizeReflowLine {
+	if width < 1 {
+		width = 1
+	}
+	if len(cells) == 0 {
+		return []resizeReflowLine{{sourceRow: sourceRow}}
+	}
+	out := make([]resizeReflowLine, 0, len(cells))
+	for _, cell := range cells {
+		if resizeVisibleCellWidth(cell) <= 0 {
+			continue
+		}
+		out = append(out, resizeReflowLine{
+			cells:     []Cell{cell},
+			wrapped:   true,
+			sourceRow: sourceRow,
+		})
+	}
+	if len(out) == 0 {
+		return []resizeReflowLine{{sourceRow: sourceRow}}
+	}
+	out[len(out)-1].wrapped = false
+	return out
+}
+
+func resizeLineCellWidth(cells []Cell) int {
+	width := 0
+	for _, cell := range cells {
+		width += resizeVisibleCellWidth(cell)
+	}
+	return width
+}
+
+func resizeVisibleCellWidth(cell Cell) int {
+	if cell.Content == "" && cell.Width == 0 && cell.Style == (CellStyle{}) && cell.LinkURL == "" && cell.LinkParams == "" {
+		return 0
+	}
+	if cell.Width <= 0 {
+		return 0
+	}
+	return cell.Width
+}
+
+func resizeReflowLineIsBlank(row resizeReflowLine) bool {
+	for _, cell := range row.cells {
+		if !cellIsBlank(cell) {
+			return false
+		}
+	}
+	return true
+}
+
 func (v *VTerm) scrollbackAppendOpsFromCharmVTDamages(damages []charmvt.Damage, timestamps []time.Time, rowKinds []string) []DamageOp {
 	if len(damages) == 0 {
 		return nil
@@ -3878,6 +4162,19 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func clampInt(value, low, high int) int {
+	if high < low {
+		return low
+	}
+	if value < low {
+		return low
+	}
+	if value > high {
+		return high
+	}
+	return value
 }
 
 func normalizeRenderableUTF8(data []byte) []byte {

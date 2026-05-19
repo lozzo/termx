@@ -268,6 +268,84 @@ func TestVTermScrollbackUsesStoredLineLengthAfterResize(t *testing.T) {
 	}
 }
 
+func TestVTermResizeWithDamageAppendsRowsDisplacedByShrink(t *testing.T) {
+	vt := New(12, 4, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{
+			cellsFromString("row 000098"),
+			cellsFromString("row 000099"),
+			cellsFromString("row 000100"),
+			cellsFromString("prompt-tail"),
+		},
+	}, CursorState{Row: 3, Col: 10, Visible: true}, TerminalModes{AutoWrap: true})
+
+	damage := vt.ResizeWithDamage(6, 4)
+	if !damage.RequiresFullReplace || damage.FullReplaceReason != "resize" {
+		t.Fatalf("expected resize full-replace damage, got %#v", damage)
+	}
+	gotRows := append(damageRowsText(damage.ScrollbackAppend), screenRowsText(vt.ScreenContent().Cells)...)
+	joined := strings.Join(gotRows, "")
+	for _, want := range []string{"row 000098", "row 000099", "row 000100", "prompt-tail"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("expected resize damage plus screen rows to contain %q, got %#v", want, gotRows)
+		}
+	}
+}
+
+func TestVTermResizeWithDamagePreservesWrappedBoundary(t *testing.T) {
+	vt := New(5, 2, 0, nil)
+	vt.DisableEmulatorScrollback()
+	if _, err := vt.Write([]byte("abcdefghij")); err != nil {
+		t.Fatalf("write wrapped line: %v", err)
+	}
+	if !vt.ScreenRowWrappedAt(0) {
+		t.Fatal("expected first row wrapped before resize")
+	}
+
+	damage := vt.ResizeWithDamage(4, 2)
+	gotRows := append(damageRowsText(damage.ScrollbackAppend), screenRowsText(vt.ScreenContent().Cells)...)
+	if strings.Contains(strings.Join(gotRows, "|"), "ij|ij") {
+		t.Fatalf("visible suffix duplicated in resize damage plus screen, got %#v", gotRows)
+	}
+	if len(damage.ScrollbackAppend) < 1 || !damage.ScrollbackAppend[0].Wrapped {
+		t.Fatalf("expected displaced wrapped prefix in damage, got %#v", damage.ScrollbackAppend)
+	}
+}
+
+func TestVTermResizeWithDamagePreservesWideRows(t *testing.T) {
+	vt := New(8, 3, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{
+			{
+				{Content: "你", Width: 2},
+				{Content: "", Width: 0},
+				{Content: "好", Width: 2},
+				{Content: "", Width: 0},
+				{Content: "A", Width: 1},
+			},
+			cellsFromString("qr-####"),
+			cellsFromString("tail"),
+		},
+	}, CursorState{Row: 2, Col: 4, Visible: true}, TerminalModes{AutoWrap: true})
+
+	damage := vt.ResizeWithDamage(4, 3)
+	gotRows := append(damageRowsContentText(damage.ScrollbackAppend), screenRowsContentText(vt.ScreenContent().Cells)...)
+	if !strings.Contains(strings.Join(gotRows, ""), "tail") {
+		t.Fatalf("expected tail to remain visible after resize, got %#v", gotRows)
+	}
+	if len(damage.ScrollbackAppend) == 0 || len(damage.ScrollbackAppend[0].Cells) < 4 {
+		t.Fatalf("expected wide row cells in damage, got %#v", damage.ScrollbackAppend)
+	}
+	if got := damage.ScrollbackAppend[0].Cells[0]; got.Content != "你" || got.Width != 2 {
+		t.Fatalf("expected wide anchor preserved, got %#v", got)
+	}
+	if got := damage.ScrollbackAppend[0].Cells[1]; got.Content != "" || got.Width != 0 {
+		t.Fatalf("expected wide continuation preserved, got %#v", got)
+	}
+}
+
 func TestLoadSnapshotDefaultBlankRowsDoNotBecomeUsedRows(t *testing.T) {
 	vt := New(4, 3, 100, nil)
 	blank := []Cell{
@@ -371,6 +449,46 @@ func rowText(row []Cell, limit int) string {
 		b.WriteString(cell.Content)
 	}
 	return b.String()
+}
+
+func damageRowsText(rows []DamageOp) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, rowText(row.Cells, len(row.Cells)))
+	}
+	return out
+}
+
+func screenRowsText(rows [][]Cell) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, rowText(row, len(row)))
+	}
+	return out
+}
+
+func damageRowsContentText(rows []DamageOp) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, rowContentText(row.Cells))
+	}
+	return out
+}
+
+func screenRowsContentText(rows [][]Cell) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, rowContentText(row))
+	}
+	return out
+}
+
+func rowContentText(row []Cell) string {
+	var b strings.Builder
+	for _, cell := range row {
+		b.WriteString(cell.Content)
+	}
+	return strings.TrimRight(b.String(), " ")
 }
 
 func TestLoadSnapshotPreservesWideCellContinuationsAcrossSubsequentWrites(t *testing.T) {

@@ -16,7 +16,7 @@ This workflow tracks the terminal history rebuild from a clean parsed-grid basel
 
 - Phase 0: Read baseline and sizing implementation scope. Complete.
 - Phase 1: Restore/fix tmux-like grid history main path. Complete for the clean baseline; keep enforcing during later merges.
-- Phase 2: Fix resize swallowing history. Pending.
+- Phase 2: Fix resize swallowing history. Complete.
 - Phase 3: Fix middle-history continuity. Pending.
 - Phase 4: Fix history file loss/recovery. Pending.
 - Phase 5: Bound TUI/runtime materialized history memory. Pending.
@@ -48,6 +48,15 @@ rg -n "GridViewport|appendGridFromDamage|WriteWithDamage|WriteForLatestFrame|Res
 git show c9d35322:termx-vterm/vterm/vterm.go | rg -n "ResizeWithDamage|func \\(v \\*VTerm\\) Resize|capture.*row|ScrollbackAppend|ScreenUpdate|damage" -C 8
 git show c9d35322:termx-core/terminal.go | rg -n "func \\(t \\*Terminal\\) Resize|append.*Damage|ScrollbackAppend|screenInvalidation|bootstrap|fresh|latest" -C 8
 rg -n "terminal_event_log|terminalEvent|historyLine|terminal_history_line|raw PTY|pty journal|event log|EventLog" -S .
+gofmt -w termx-vterm/vterm/vterm.go termx-core/terminal.go
+go test ./termx-vterm/... ./termx-core/...
+go test ./termx-vterm/vterm -run 'ResizeWithDamage' -v
+go test ./termx-core -run 'TerminalGridResizeDamage' -v
+gofmt -w termx-vterm/vterm/vterm.go termx-vterm/vterm/load_snapshot_test.go termx-core/terminal_test.go
+go test ./termx-vterm/... ./termx-core/...
+go test ./termx-vterm/vterm -run 'TestVTermResizeWithDamage|TestVTermResizeReflows' -count=1
+go test ./termx-core -run 'TestTerminalGridResizeDamage|TestTerminalGridStoreRowsReflow' -count=1
+go test ./termx-vterm/... ./termx-core/...
 ```
 
 Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.md` and `termx-core/docs/terminal-history-event-log-plan.md` were deleted on the `feac69ea` baseline. The resolution kept those files deleted and restored only `docs/terminal-history-grid-decision.md`.
@@ -83,6 +92,49 @@ Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.
   - TUI runtime: `LoadGridViewport`
   - TUI app copy-mode paging: `LoadGridViewport`
 - Phase 6 must preserve this shape when remote/protobuf changes are replayed.
+
+## Phase 2 Notes
+
+- Added `VTerm.ResizeWithDamage(cols, rows)`.
+- `VTerm.Resize` now delegates to the same damage-aware path and discards the returned damage.
+- Resize damage is marked full-replace with reason `resize`, carries the new size, cursor and modes, and includes `ScrollbackAppend` rows for normal-screen content that can be lost when the emulator has normal scrollback disabled.
+- The resize capture uses parsed screen cells before resize, reflows them to the new canonical width, compares against the post-resize visible screen, and appends affected logical lines as structured rows. This is deliberately conservative for wrapped groups: if part of a logical line would be split between history and screen, the complete logical line is written to grid history to avoid broken copy-mode pages.
+- Resize synthetic append rows are now treated as the resize preservation authority instead of being skipped when emulator scrollback also reports rows. This avoids partial emulator append rows leaving grid continuity dependent on emulator scrollback configuration.
+- `Terminal.Resize` now calls `vterm.ResizeWithDamage`, captures alternate damage, appends normal `ScrollbackAppend` rows via `appendGridFromDamageLocked`, bumps the screen revision, and broadcasts a fresh screen update after the resize frame.
+- `Terminal.Resize` now commits `t.size` only after `pty.Resize` succeeds, so failed resize does not corrupt canonical terminal size.
+- Added vterm tests for resize damage:
+  - shrink preserving 000098/000099/000100-style tail rows across damage plus screen
+  - wrapped boundary continuity
+  - wide-char and QR-like row preservation
+- Added core tests for grid store persistence of resize damage:
+  - 100 and 1000 stress rows after shrink
+  - wrapped logical line continuity through `terminalGridStore.Viewport`
+  - wide-char and QR-like rows through compact grid codec and viewport
+
+## Phase 2 Test Results
+
+- PASS: `go test ./termx-vterm/... ./termx-core/...`
+- PASS: `go test ./termx-vterm/vterm -run 'ResizeWithDamage' -v`
+- PASS: `go test ./termx-core -run 'TerminalGridResizeDamage' -v`
+- PASS: `go test ./termx-vterm/vterm -run 'TestVTermResizeWithDamage|TestVTermResizeReflows' -count=1`
+- PASS: `go test ./termx-core -run 'TestTerminalGridResizeDamage|TestTerminalGridStoreRowsReflow' -count=1`
+
+## Phase 2 Review Notes
+
+- Reviewer A (grid store / resize correctness) findings:
+  - Complete wrapped logical line append can duplicate a suffix that remains visible after resize. This is a real grid/screen boundary risk. Current Phase 2 keeps the conservative no-loss append for grid history because live screen-update payloads do not transmit `damage.ScrollbackAppend`; Phase 3 must make snapshot/copy-mode merge explicitly avoid duplicate screen/history boundary rows.
+  - Synthetic resize preservation was originally skipped when emulator scrollback produced any append rows. Fixed now: `ResizeWithDamage` always computes synthetic resize append rows for normal screen and uses those as the resize preservation authority, avoiding partial emulator append behavior.
+- Reviewer B (TUI/tmux behavior) findings:
+  - `tuiv2/app/update_helpers.go` currently computes history load cols from active pane viewport and passes that through `Runtime.LoadGridViewport` to core `GridViewport`, so follower/floating/App history can be reflowed at observer width instead of canonical PTY width. This must be fixed in Phase 3.
+  - `tuiv2/runtime/snapshot.go` merges grid viewport pages into `terminal.Snapshot`, then `loadSnapshotIntoVTerm` treats `snapshot.Size.Cols` as authoritative. A page loaded at observer width can locally resize the runtime vterm without owner PTY resize. This must be fixed in Phase 3/5.
+  - `tuiv2/runtime/resize.go` provisional local shrink snapshot changes declared size but does not crop row cells to new cols. This is a short-window owner-shrink rendering inconsistency to fix with TUI resize work.
+- Reviewer C (storage recovery) findings:
+  - Explicit remove currently closes persistent grid history without deletion; replay paths may still read removed-terminal history. This belongs to Phase 4 retention/generation cleanup semantics.
+  - Crash recovery trusts `grid.index` and does not validate page payload durability. Need index/page scan and truncation to last valid committed row in Phase 4.
+  - Partial index tails are floored in memory but not truncated, so future append may misalign records. Fix in Phase 4.
+  - Metadata write is non-atomic and metadata read errors can brick valid index/page history. Fix in Phase 4 by making metadata advisory/atomic.
+  - Persistent retention is unbounded. Fix through explicit retention/generation policy in Phase 4.
+  - Low-risk appender slice aliasing: fixed immediately by cloning damage rows in `terminalGridAppender.append`.
 
 ## tmux Verification
 

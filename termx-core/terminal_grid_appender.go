@@ -40,6 +40,7 @@ func (a *terminalGridAppender) append(rows []vterm.DamageOp) {
 	if a == nil || len(rows) == 0 {
 		return
 	}
+	rows = cloneGridDamageOps(rows)
 	a.mu.Lock()
 	if !a.closed {
 		a.queue = append(a.queue, rows...)

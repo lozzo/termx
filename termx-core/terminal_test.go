@@ -1010,6 +1010,98 @@ func TestTerminalGridStoreRowsLoadsEnoughRawRowsForVisualLimit(t *testing.T) {
 	}
 }
 
+func TestTerminalGridResizeDamagePreservesStressTailRows(t *testing.T) {
+	for _, lineCount := range []int{100, 1000} {
+		t.Run(fmt.Sprintf("lines_%d", lineCount), func(t *testing.T) {
+			vt := localvterm.New(32, 8, 0, nil)
+			vt.DisableEmulatorScrollback()
+			store := newMemoryTerminalGridStoreForTest(t)
+			defer store.Close()
+			term := &Terminal{id: "resize-stress", grid: store}
+
+			for i := 1; i <= lineCount; i++ {
+				suffix := "\r\n"
+				if i == lineCount {
+					suffix = ""
+				}
+				writeVTermDamageToGrid(t, term, vt, fmt.Sprintf("stress-%06d payload%s", i, suffix))
+			}
+			term.appendGridFromDamageLocked(vt.ResizeWithDamage(16, 4))
+
+			rows := gridAndScreenRowTexts(t, store, vt, 16, 250)
+			for i := lineCount - 15; i <= lineCount; i++ {
+				needle := fmt.Sprintf("stress-%06d", i)
+				if !stringRowsContain(rows, needle) {
+					t.Fatalf("expected combined grid/screen rows to contain %q after resize, rows=%#v", needle, rows)
+				}
+			}
+		})
+	}
+}
+
+func TestTerminalGridResizeDamageKeepsWrappedContinuity(t *testing.T) {
+	vt := localvterm.New(5, 2, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{id: "resize-wrapped", grid: store}
+
+	writeVTermDamageToGrid(t, term, vt, "abcdefghij")
+	term.appendGridFromDamageLocked(vt.ResizeWithDamage(4, 1))
+
+	viewport, err := store.Viewport(0, 10, 4)
+	if err != nil {
+		t.Fatalf("read resize grid viewport: %v", err)
+	}
+	gotRows := vtermRowsToStrings(viewport.Rows)
+	if !reflect.DeepEqual(gotRows, []string{"abcd", "efgh", "ij"}) {
+		t.Fatalf("expected complete wrapped logical line in grid store, got rows=%#v wrapped=%#v", gotRows, viewport.Wrapped)
+	}
+	if len(viewport.Wrapped) < 3 || !viewport.Wrapped[0] || !viewport.Wrapped[1] || viewport.Wrapped[2] {
+		t.Fatalf("expected wrapped metadata to keep logical line continuity, got %#v", viewport.Wrapped)
+	}
+}
+
+func TestTerminalGridResizeDamagePreservesWideAndQRLikeRows(t *testing.T) {
+	vt := localvterm.New(8, 3, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(localvterm.ScreenData{
+		Cells: [][]localvterm.Cell{
+			{
+				{Content: "你", Width: 2},
+				{Content: "", Width: 0},
+				{Content: "好", Width: 2},
+				{Content: "", Width: 0},
+				{Content: "A", Width: 1},
+			},
+			localVTermCellsFromString("qr-####"),
+			localVTermCellsFromString("tail"),
+		},
+	}, localvterm.CursorState{Row: 2, Col: 4, Visible: true}, localvterm.TerminalModes{AutoWrap: true})
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{id: "resize-wide", grid: store}
+
+	term.appendGridFromDamageLocked(vt.ResizeWithDamage(4, 1))
+	viewport, err := store.Viewport(0, 10, 4)
+	if err != nil {
+		t.Fatalf("read resize grid viewport: %v", err)
+	}
+	gotRows := vtermRowsToStrings(viewport.Rows)
+	if !stringRowsContain(gotRows, "你好") || !stringRowsContain(gotRows, "A") || !stringRowsContain(gotRows, "qr-#") {
+		t.Fatalf("expected wide and qr-like content in grid store, got %#v", gotRows)
+	}
+	if len(viewport.Rows) == 0 || len(viewport.Rows[0]) < 4 {
+		t.Fatalf("expected decoded wide row cells, got %#v", viewport.Rows)
+	}
+	if got := viewport.Rows[0][0]; got.Content != "你" || got.Width != 2 {
+		t.Fatalf("expected wide anchor preserved in grid store, got %#v", got)
+	}
+	if got := viewport.Rows[0][1]; got.Content != "" || got.Width != 0 {
+		t.Fatalf("expected wide continuation preserved in grid store, got %#v", got)
+	}
+}
+
 func TestTerminalGridStoreIndexIsReadOnDemandAfterReopen(t *testing.T) {
 	root := t.TempDir()
 	store, err := newTerminalGridStore(root, "ondemand-1")
@@ -1669,6 +1761,55 @@ func vtermRowToRawString(row []localvterm.Cell) string {
 		b.WriteString(cell.Content)
 	}
 	return b.String()
+}
+
+func vtermRowsToStrings(rows [][]localvterm.Cell) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, vtermRowToString(row))
+	}
+	return out
+}
+
+func localVTermCellsFromString(value string) []localvterm.Cell {
+	cells := make([]localvterm.Cell, 0, len(value))
+	for _, r := range value {
+		cells = append(cells, localvterm.Cell{Content: string(r), Width: 1})
+	}
+	return cells
+}
+
+func writeVTermDamageToGrid(t *testing.T, term *Terminal, vt *localvterm.VTerm, text string) {
+	t.Helper()
+	_, err, damage := vt.WriteWithDamage([]byte(text))
+	if err != nil {
+		t.Fatalf("write vterm damage %q: %v", text, err)
+	}
+	term.appendGridFromDamageLocked(damage)
+}
+
+func gridAndScreenRowTexts(t *testing.T, store *terminalGridStore, vt *localvterm.VTerm, cols int, limit int) []string {
+	t.Helper()
+	var rows []string
+	viewport, err := store.Viewport(0, limit, cols)
+	if err != nil {
+		t.Fatalf("read grid viewport: %v", err)
+	}
+	rows = append(rows, vtermRowsToStrings(viewport.Rows)...)
+	if vt != nil {
+		screen := vt.ScreenContent()
+		rows = append(rows, vtermRowsToStrings(screen.Cells)...)
+	}
+	return rows
+}
+
+func stringRowsContain(rows []string, needle string) bool {
+	for _, row := range rows {
+		if strings.Contains(row, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func protocolRowToRawString(row []protocol.Cell) string {
