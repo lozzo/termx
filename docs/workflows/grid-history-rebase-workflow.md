@@ -17,7 +17,7 @@ This workflow tracks the terminal history rebuild from a clean parsed-grid basel
 - Phase 0: Read baseline and sizing implementation scope. Complete.
 - Phase 1: Restore/fix tmux-like grid history main path. Complete for the clean baseline; keep enforcing during later merges.
 - Phase 2: Fix resize swallowing history. Complete.
-- Phase 3: Fix middle-history continuity. Pending.
+- Phase 3: Fix middle-history continuity. Complete.
 - Phase 4: Fix history file loss/recovery. Pending.
 - Phase 5: Bound TUI/runtime materialized history memory. Pending.
 - Phase 6: Reapply remote/protobuf/app changes without raw journal UI history. Pending.
@@ -57,6 +57,12 @@ go test ./termx-vterm/... ./termx-core/...
 go test ./termx-vterm/vterm -run 'TestVTermResizeWithDamage|TestVTermResizeReflows' -count=1
 go test ./termx-core -run 'TestTerminalGridResizeDamage|TestTerminalGridStoreRowsReflow' -count=1
 go test ./termx-vterm/... ./termx-core/...
+rg -n "GridViewportWithOptions|ApplyGridViewportPage|loadTerminalHistoryViewportCmd|copyModeScrollbackCmd|ensureTerminalScrollbackLoadedCmd|ScrollbackLoadedLimit|ResizeWithDamage" termx-core tuiv2 internal termx-vterm -S
+go test ./termx-core -run 'TestTerminalGridViewportUsesCanonicalCols|TestTerminalSnapshotTrimsResizeGridScreenOverlap|TestTerminalGridResizeDamage|TestServerGridViewportFromStoreUsesDefaultCanonicalCols|TestServerHistorySurvivesServerRestart' -count=1
+go test ./tuiv2/app -run 'TestCopyModeHistoryRequestUsesCanonicalCols|TestPaneScrollbackPrefetchUsesCanonicalCols|TestCopyModeSelectedTextPreservesSoftWrappedLines|TestCopyModeSelectedTextNormalizesReverseMultiRowSelection' -count=1
+go test ./tuiv2/runtime -run 'TestRuntimeApplyGridViewportPage|TestRuntimeLoadGridViewportDoesNotReplaceLiveSnapshot' -count=1
+go test ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...
+go test ./termx-core -run 'TestTerminalSnapshotTrimsResizeGridScreenOverlap|TestTerminalGridResizeDamageKeepsWrappedContinuity' -count=1
 ```
 
 Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.md` and `termx-core/docs/terminal-history-event-log-plan.md` were deleted on the `feac69ea` baseline. The resolution kept those files deleted and restored only `docs/terminal-history-grid-decision.md`.
@@ -135,6 +141,40 @@ Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.
   - Metadata write is non-atomic and metadata read errors can brick valid index/page history. Fix in Phase 4 by making metadata advisory/atomic.
   - Persistent retention is unbounded. Fix through explicit retention/generation policy in Phase 4.
   - Low-risk appender slice aliasing: fixed immediately by cloning damage rows in `terminalGridAppender.append`.
+
+## Phase 3 Notes
+
+- Live `Terminal.GridViewportWithOptions` now ignores caller `Cols` and always reads/reflows normal grid history at the terminal's canonical `t.size.Cols`.
+- Store-backed/offline `Server.GridViewport` now ignores caller `Cols` and uses server default canonical cols instead of observer width. This keeps exited-terminal history from being reshaped by pane/floating/mobile widths.
+- TUI history prefetch and copy-mode paging now pass `terminalCanonicalCols`, derived from snapshot, VTerm, or resize ownership size; they no longer use pane content width as the history interpretation width.
+- `Terminal.Snapshot` trims duplicate grid/screen boundary rows introduced by conservative resize preservation, but only when latest snapshot offset is zero and content, wrapped metadata, and available row metadata agree. This avoids dropping unrelated older rows that merely share the same text.
+- `Runtime.ApplyGridViewportPage` rejects stale geometry pages when page cols differ from the current snapshot cols.
+- `Runtime.ApplyGridViewportPage` now applies loaded history pages to the snapshot cache only and marks `PreferSnapshot`; it does not reload materialized history into the local VTerm. This prevents observer history paging from resizing or bloating the live local emulator.
+- Copy-mode selected text now uses `ScrollbackWrapped`/`ScreenWrapped` to avoid inserting hard newlines between soft-wrapped rows, closer to tmux copy semantics.
+- Added focused tests for:
+  - canonical cols in live core `GridViewport`
+  - canonical cols in store-backed/offline `GridViewport`
+  - resize grid/screen duplicate trimming
+  - pane prefetch and copy-mode history requests using canonical cols
+  - copy-mode selection preserving soft-wrapped lines
+  - runtime rejection of stale-geometry history pages
+  - runtime history page merge staying snapshot-only
+
+## Phase 3 Test Results
+
+- PASS: `go test ./termx-core -run 'TestTerminalGridViewportUsesCanonicalCols|TestTerminalSnapshotTrimsResizeGridScreenOverlap|TestTerminalGridResizeDamage|TestServerGridViewportFromStoreUsesDefaultCanonicalCols|TestServerHistorySurvivesServerRestart' -count=1`
+- PASS: `go test ./tuiv2/app -run 'TestCopyModeHistoryRequestUsesCanonicalCols|TestPaneScrollbackPrefetchUsesCanonicalCols|TestCopyModeSelectedTextPreservesSoftWrappedLines|TestCopyModeSelectedTextNormalizesReverseMultiRowSelection' -count=1`
+- PASS: `go test ./tuiv2/runtime -run 'TestRuntimeApplyGridViewportPage|TestRuntimeLoadGridViewportDoesNotReplaceLiveSnapshot' -count=1`
+- PASS: `go test ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...`
+- PASS: `go test ./termx-core -run 'TestTerminalSnapshotTrimsResizeGridScreenOverlap|TestTerminalGridResizeDamageKeepsWrappedContinuity' -count=1`
+
+## Phase 3 Review Notes
+
+- Reviewer B (TUI/tmux behavior) follow-up:
+  - Store-backed/offline `grid.viewport` still reflowed parsed history at caller width. Fixed by making `gridViewportCoreFromStore` use server default canonical cols and adding a regression test.
+  - Copy-mode selected text inserted hard newlines between all physical rows. Fixed by consulting wrapped metadata and adding a soft-wrap copy regression test.
+- Reviewer C (storage recovery) follow-up:
+  - Reconfirmed high-priority Phase 4 risks: page/index append failure recovery, crash validation, partial index tail truncation, persistent remove/generation semantics, metadata atomicity/advisory behavior, and retention.
 
 ## tmux Verification
 

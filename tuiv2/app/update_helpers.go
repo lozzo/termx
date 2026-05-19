@@ -305,7 +305,7 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 		return nil
 	}
 	terminal.ScrollbackLoadingLimit = nextLimit
-	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, contentRect.W)
+	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, terminalCanonicalCols(terminal))
 }
 
 func (m *Model) ensureCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
@@ -349,11 +349,26 @@ func (m *Model) copyModeScrollbackCmd(buffer copyModeBuffer, force bool) tea.Cmd
 		return nil
 	}
 	terminal.ScrollbackLoadingLimit = nextLimit
-	cols := int(buffer.snapshot.Size.Cols)
-	if cols <= 0 {
-		cols = len(buffer.row(0))
+	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, terminalCanonicalCols(terminal))
+}
+
+func terminalCanonicalCols(terminal *appruntime.TerminalRuntime) int {
+	if terminal == nil {
+		return 0
 	}
-	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, cols)
+	if terminal.Snapshot != nil && terminal.Snapshot.Size.Cols > 0 {
+		return int(terminal.Snapshot.Size.Cols)
+	}
+	if terminal.VTerm != nil {
+		cols, _ := terminal.VTerm.Size()
+		if cols > 0 {
+			return cols
+		}
+	}
+	if terminal.ResizeOwnership != nil && terminal.ResizeOwnership.Size.Cols > 0 {
+		return int(terminal.ResizeOwnership.Size.Cols)
+	}
+	return 0
 }
 
 func terminalHasKnownScrollbackBeyond(terminal *appruntime.TerminalRuntime, loaded int) bool {

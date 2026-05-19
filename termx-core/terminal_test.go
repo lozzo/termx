@@ -1102,6 +1102,71 @@ func TestTerminalGridResizeDamagePreservesWideAndQRLikeRows(t *testing.T) {
 	}
 }
 
+func TestTerminalGridViewportUsesCanonicalCols(t *testing.T) {
+	vt := localvterm.New(10, 2, 0, nil)
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "canonical-cols",
+		size:  Size{Cols: 10, Rows: 2},
+		vterm: vt,
+		grid:  store,
+	}
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("abcdefghij"), wrapped: true},
+		{cells: localVTermCellsFromString("kl")},
+	}); err != nil {
+		t.Fatalf("append grid rows: %v", err)
+	}
+
+	viewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackLimit: 10, Cols: 4})
+	if viewport == nil {
+		t.Fatal("expected viewport")
+	}
+	if viewport.Size.Cols != 10 {
+		t.Fatalf("expected viewport to report canonical cols 10, got %d", viewport.Size.Cols)
+	}
+	gotRows := make([]string, 0, len(viewport.Rows))
+	for _, row := range viewport.Rows {
+		gotRows = append(gotRows, rowToString(row))
+	}
+	if !reflect.DeepEqual(gotRows, []string{"abcdefghij", "kl"}) {
+		t.Fatalf("expected grid rows reflowed at canonical cols, got %#v", gotRows)
+	}
+}
+
+func TestTerminalSnapshotTrimsResizeGridScreenOverlap(t *testing.T) {
+	vt := localvterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "resize-overlap",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+
+	writeVTermDamageToGrid(t, term, vt, "abcdefghij")
+	term.appendGridFromDamageLocked(vt.ResizeWithDamage(4, 1))
+
+	snapshot := term.Snapshot(0, 10)
+	if snapshot == nil {
+		t.Fatal("expected snapshot")
+	}
+	var combined []string
+	for _, row := range snapshot.Scrollback {
+		combined = append(combined, rowToString(row))
+	}
+	for _, row := range snapshot.Screen.Cells {
+		combined = append(combined, rowToString(row))
+	}
+	want := []string{"abcd", "efgh", "ij"}
+	if !reflect.DeepEqual(combined, want) {
+		t.Fatalf("expected snapshot to avoid duplicated grid/screen suffix, got %#v", combined)
+	}
+}
+
 func TestTerminalGridStoreIndexIsReadOnDemandAfterReopen(t *testing.T) {
 	root := t.TempDir()
 	store, err := newTerminalGridStore(root, "ondemand-1")

@@ -61,7 +61,7 @@ func (m *Model) copyModeSelectedText() (string, bool) {
 			}
 			out.WriteByte(' ')
 		}
-		if row < end.Row {
+		if row < end.Row && !buffer.rowWrapped(row) {
 			out.WriteByte('\n')
 		}
 	}

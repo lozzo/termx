@@ -121,6 +121,9 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 	if offset < 0 || offset > len(current.Scrollback) {
 		return false
 	}
+	if page.Size.Cols > 0 && current.Size.Cols > 0 && page.Size.Cols != current.Size.Cols {
+		return false
+	}
 	if offset > 0 && offset != len(current.Scrollback) {
 		return false
 	}
@@ -148,11 +151,9 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 		terminal.ScrollbackLoadedLimit = loaded
 	}
 	terminal.ScrollbackExhausted = !page.ScrollbackHasMore
-	vt := r.ensureVTerm(terminal)
-	loadSnapshotIntoVTerm(vt, merged)
 	r.bumpSurfaceVersion(terminal)
 	terminal.SnapshotVersion = terminal.SurfaceVersion
-	terminal.PreferSnapshot = false
+	terminal.PreferSnapshot = true
 	r.touch()
 	return true
 }

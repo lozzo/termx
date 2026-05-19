@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -213,6 +214,40 @@ func TestServerHistorySurvivesServerRestart(t *testing.T) {
 	}
 	if len(viewport.Rows) == 0 || !strings.Contains(protocolTestRowToString(viewport.Rows[0].DecodeCells()), "disk-02") {
 		t.Fatalf("expected older persisted rows from viewport, got %#v", viewport.Rows)
+	}
+}
+
+func TestServerGridViewportFromStoreUsesDefaultCanonicalCols(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "persist-canonical-1")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	if err := store.appendRows([]terminalGridRow{
+		{cells: []vterm.Cell{{Content: "a", Width: 1}, {Content: "b", Width: 1}, {Content: "c", Width: 1}, {Content: "d", Width: 1}}, wrapped: true},
+		{cells: []vterm.Cell{{Content: "e", Width: 1}}},
+	}); err != nil {
+		t.Fatalf("append grid rows: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	srv := NewServer(WithGridRoot(root), WithDefaultSize(5, 2))
+	viewport, err := srv.GridViewport(ctx, "persist-canonical-1", GridViewportOptions{ScrollbackLimit: 10, Cols: 2})
+	if err != nil {
+		t.Fatalf("grid viewport after restart: %v", err)
+	}
+	if viewport.Size.Cols != 5 {
+		t.Fatalf("expected persisted viewport to report default canonical cols 5, got %d", viewport.Size.Cols)
+	}
+	gotRows := make([]string, 0, len(viewport.Rows))
+	for _, row := range viewport.Rows {
+		gotRows = append(gotRows, protocolTestRowToString(row.DecodeCells()))
+	}
+	if !reflect.DeepEqual(gotRows, []string{"abcde"}) {
+		t.Fatalf("expected persisted viewport to ignore caller cols and reflow at default canonical width, got %#v", gotRows)
 	}
 }
 

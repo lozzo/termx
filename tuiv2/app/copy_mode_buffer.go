@@ -121,6 +121,20 @@ func (b copyModeBuffer) row(row int) []protocol.Cell {
 	return b.snapshot.Screen.Cells[row]
 }
 
+func (b copyModeBuffer) rowWrapped(row int) bool {
+	if b.snapshot == nil || row < 0 {
+		return false
+	}
+	if row < len(b.snapshot.Scrollback) {
+		return boolAt(b.snapshot.ScrollbackWrapped, row)
+	}
+	row -= len(b.snapshot.Scrollback)
+	if row < 0 || row >= len(b.snapshot.Screen.Cells) {
+		return false
+	}
+	return boolAt(b.snapshot.ScreenWrapped, row)
+}
+
 func (b copyModeBuffer) cursorRow() int {
 	if b.snapshot == nil {
 		return 0
@@ -177,6 +191,10 @@ func (b copyModeBuffer) clampPoint(point copyModePoint) copyModePoint {
 	}
 	point.Col = b.normalizeCol(point.Row, point.Col)
 	return point
+}
+
+func boolAt(values []bool, index int) bool {
+	return index >= 0 && index < len(values) && values[index]
 }
 
 func (b copyModeBuffer) viewportStart(offset int) int {

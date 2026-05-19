@@ -474,10 +474,7 @@ func (s *Server) gridViewportCoreFromStore(id string, opt GridViewportOptions) (
 	}
 	defer store.Close()
 	beforeOffset, limit := sanitizeGridViewportWindow(opt.ScrollbackOffset, opt.ScrollbackLimit)
-	cols := opt.Cols
-	if cols <= 0 {
-		cols = int(s.cfg.defaultSize.Cols)
-	}
+	cols := int(s.cfg.defaultSize.Cols)
 	if cols <= 0 {
 		cols = 80
 	}

@@ -253,8 +253,11 @@ func TestRuntimeApplyGridViewportPagePrependsHistory(t *testing.T) {
 	if !stored.ScrollbackExhausted {
 		t.Fatal("expected exhausted flag from page metadata")
 	}
-	if stored.VTerm == nil || stored.VTerm.ScrollbackContent() == nil {
-		t.Fatal("expected local vterm reloaded after page apply")
+	if !stored.PreferSnapshot {
+		t.Fatal("expected history page to render from snapshot instead of reloading local vterm")
+	}
+	if stored.VTerm == nil || len(stored.VTerm.ScrollbackContent()) != 2 {
+		t.Fatalf("expected local vterm scrollback to stay on the live snapshot, got %#v", stored.VTerm)
 	}
 }
 
@@ -288,6 +291,38 @@ func TestRuntimeApplyGridViewportPageReplacesLatestWindow(t *testing.T) {
 	got := rt.Registry().Get("term-1").Snapshot
 	if len(got.Scrollback) != 2 || compactRowText(got.Scrollback[0]) != "new0" || compactRowText(got.Scrollback[1]) != "new1" {
 		t.Fatalf("expected latest page to replace loaded scrollback, got %#v", got.Scrollback)
+	}
+}
+
+func TestRuntimeApplyGridViewportPageRejectsStaleGeometry(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 80, 24, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+		protocolRowFromString("new0"),
+	})
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	page := &protocol.Snapshot{
+		TerminalID:         "term-1",
+		Size:               protocol.Size{Cols: 40, Rows: 24},
+		Scrollback:         protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("old0")}),
+		ScrollbackOffset:   1,
+		ScrollbackTotal:    2,
+		ScrollbackHasMore:  false,
+		ScrollbackRowKinds: []string{""},
+		ScrollbackWrapped:  []bool{false},
+	}
+	if rt.ApplyGridViewportPage("term-1", page, 1) {
+		t.Fatal("expected stale-geometry history page to be rejected")
+	}
+	got := rt.Registry().Get("term-1").Snapshot
+	if len(got.Scrollback) != 1 || compactRowText(got.Scrollback[0]) != "new0" {
+		t.Fatalf("expected live snapshot history to remain unchanged, got %#v", got.Scrollback)
 	}
 }
 

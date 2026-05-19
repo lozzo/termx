@@ -633,6 +633,24 @@ func TestCopyModeEnterPrefetchesHistoryWhenFrozenBufferHasNoScrollback(t *testin
 	}
 }
 
+func TestCopyModeHistoryRequestUsesCanonicalCols(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, nil, []string{"line0"})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot.Size = protocol.Size{Cols: 96, Rows: 24}
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot([]string{"old0"}, []string{"live0"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+
+	if got := len(client.viewportRequests); got != 1 {
+		t.Fatalf("expected one copy-mode history request, got %#v", client.viewportRequests)
+	}
+	if got := client.viewportRequests[0].cols; got != 96 {
+		t.Fatalf("expected copy-mode history request to use canonical cols 96, got %d", got)
+	}
+}
+
 func TestCopyModeEnterPrefetchesWhenExhaustedFlagIsStale(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})
@@ -985,6 +1003,25 @@ func TestCopyModeSelectedTextNormalizesReverseMultiRowSelection(t *testing.T) {
 	}
 	if text != "lpha\nbravo\ncha" {
 		t.Fatalf("unexpected normalized selection text %q", text)
+	}
+}
+
+func TestCopyModeSelectedTextPreservesSoftWrappedLines(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"alpha", "bravo"}, []string{"charlie"})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot.ScrollbackWrapped = []bool{true, false}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	model.copyMode.Mark = &copyModePoint{Row: 0, Col: 0}
+	model.copyMode.Cursor = copyModePoint{Row: 2, Col: 6}
+
+	text, ok := model.copyModeSelectedText()
+	if !ok {
+		t.Fatal("expected selection text")
+	}
+	if text != "alphabravo\ncharlie" {
+		t.Fatalf("expected soft-wrapped scrollback rows to copy as one line, got %q", text)
 	}
 }
 

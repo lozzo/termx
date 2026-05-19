@@ -1,6 +1,10 @@
 package app
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/lozzow/termx/internal/protocol"
+)
 
 func TestLocalViewProjectionPreservesPaneViewport(t *testing.T) {
 	model := setupModel(t, modelOpts{})
@@ -34,4 +38,40 @@ func TestLocalViewProjectionNilModelCompatibility(t *testing.T) {
 		ActiveTabID:   "tab-1",
 		FocusedPaneID: "pane-1",
 	})
+}
+
+func TestPaneScrollbackPrefetchUsesCanonicalCols(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 50, height: 12})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 120, Rows: 24},
+		Scrollback: []protocol.CompactRow{
+			protocol.CompactRowFromCells([]protocol.Cell{{Content: "seed", Width: 1}}),
+		},
+		ScrollbackHasMore: true,
+	}
+	_ = model.runtime.SetPaneViewportOffset("pane-1", 20)
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = &protocol.Snapshot{
+		TerminalID:        "term-1",
+		Size:              protocol.Size{Cols: 120, Rows: 24},
+		Scrollback:        []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "older", Width: 1}})},
+		ScrollbackHasMore: false,
+		ScrollbackTotal:   1,
+		ScrollbackOffset:  1,
+	}
+
+	cmd := model.ensureActivePaneScrollbackCmd()
+	if cmd == nil {
+		t.Fatal("expected pane scrollback prefetch command")
+	}
+	_ = cmd()
+
+	if got := len(client.viewportRequests); got != 1 {
+		t.Fatalf("expected one pane history request, got %#v", client.viewportRequests)
+	}
+	if got := client.viewportRequests[0].cols; got != 120 {
+		t.Fatalf("expected pane history request to use canonical cols 120, got %d", got)
+	}
 }

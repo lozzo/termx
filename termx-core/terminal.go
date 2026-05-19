@@ -734,13 +734,14 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	screenRowKinds := t.vterm.ScreenRowKinds()
 	screenWrapped := t.vterm.ScreenWrapped()
 	screenContent := t.vterm.ScreenContent()
+	screenData := convertScreenData(screenContent)
 	modes := t.vterm.Modes()
 	if modes.AlternateScreen || screenContent.IsAlternateScreen {
 		outScrollback, outScrollbackTimestamps, outScrollbackRowKinds, outScrollbackWrapped, scrollbackTotal, scrollbackHasMore := t.alternateGrid.viewport(offset, limit)
 		return &Snapshot{
 			TerminalID:           id,
 			Size:                 size,
-			Screen:               convertScreenData(screenContent),
+			Screen:               screenData,
 			Scrollback:           outScrollback,
 			ScrollbackOffset:     offset,
 			ScrollbackTotal:      scrollbackTotal,
@@ -813,11 +814,23 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		scrollbackTotal = len(scrollback)
 		scrollbackHasMore = start > 0
 	}
+	if offset == 0 {
+		outScrollback, outScrollbackTimestamps, outScrollbackRowKinds, outScrollbackWrapped = trimScrollbackScreenOverlap(
+			outScrollback,
+			outScrollbackTimestamps,
+			outScrollbackRowKinds,
+			outScrollbackWrapped,
+			screenData.Cells,
+			screenTimestamps,
+			screenRowKinds,
+			screenWrapped,
+		)
+	}
 
 	return &Snapshot{
 		TerminalID:           id,
 		Size:                 size,
-		Screen:               convertScreenData(screenContent),
+		Screen:               screenData,
 		Scrollback:           outScrollback,
 		ScrollbackOffset:     offset,
 		ScrollbackTotal:      scrollbackTotal,
@@ -849,7 +862,6 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 	t.flushGridAppender()
 	offset := opt.ScrollbackOffset
 	limit := opt.ScrollbackLimit
-	cols := opt.Cols
 	if limit <= 0 {
 		limit = defaultGridReplayRows
 	}
@@ -863,9 +875,7 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 	size := t.size
 	id := t.id
 	t.mu.RUnlock()
-	if cols <= 0 {
-		cols = int(size.Cols)
-	}
+	cols := int(size.Cols)
 	if cols <= 0 {
 		cols = 80
 	}
@@ -941,6 +951,125 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 		ScrollbackWrapped:    sliceBoolRange(scrollbackWrapped, start, end),
 		Timestamp:            time.Now().UTC(),
 	}
+}
+
+func trimScrollbackScreenOverlap(scrollback [][]Cell, timestamps []time.Time, rowKinds []string, wrapped []bool, screen [][]Cell, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool) ([][]Cell, []time.Time, []string, []bool) {
+	overlap := scrollbackScreenOverlap(scrollback, timestamps, rowKinds, wrapped, screen, screenTimestamps, screenRowKinds, screenWrapped)
+	if overlap <= 0 {
+		return scrollback, timestamps, rowKinds, wrapped
+	}
+	keep := len(scrollback) - overlap
+	if keep <= 0 {
+		return nil, nil, nil, nil
+	}
+	scrollback = scrollback[:keep]
+	if len(timestamps) >= keep {
+		timestamps = timestamps[:keep]
+	} else {
+		timestamps = nil
+	}
+	if len(rowKinds) >= keep {
+		rowKinds = rowKinds[:keep]
+	} else {
+		rowKinds = nil
+	}
+	if len(wrapped) >= keep {
+		wrapped = wrapped[:keep]
+	} else {
+		wrapped = nil
+	}
+	return scrollback, timestamps, rowKinds, wrapped
+}
+
+func scrollbackScreenOverlap(scrollback [][]Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, scrollbackWrapped []bool, screen [][]Cell, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool) int {
+	maxOverlap := minInt(len(scrollback), len(screen))
+	for n := maxOverlap; n > 0; n-- {
+		scrollbackStart := len(scrollback) - n
+		candidate := scrollback[scrollbackStart:]
+		if rowsContainNonDefaultCell(candidate) && rowsOverlap(
+			candidate,
+			scrollbackTimestamps,
+			scrollbackRowKinds,
+			scrollbackWrapped,
+			scrollbackStart,
+			screen[:n],
+			screenTimestamps,
+			screenRowKinds,
+			screenWrapped,
+			0,
+		) {
+			return n
+		}
+	}
+	return 0
+}
+
+func rowsOverlap(left [][]Cell, leftTimestamps []time.Time, leftRowKinds []string, leftWrapped []bool, leftStart int, right [][]Cell, rightTimestamps []time.Time, rightRowKinds []string, rightWrapped []bool, rightStart int) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if !cellRowsEqual(left[i], right[i]) {
+			return false
+		}
+		if !rowMetadataEqual(leftTimestamps, leftRowKinds, leftStart+i, rightTimestamps, rightRowKinds, rightStart+i) {
+			return false
+		}
+		if boolAt(leftWrapped, leftStart+i) != boolAt(rightWrapped, rightStart+i) {
+			return false
+		}
+	}
+	return true
+}
+
+func rowMetadataEqual(leftTimestamps []time.Time, leftRowKinds []string, leftIndex int, rightTimestamps []time.Time, rightRowKinds []string, rightIndex int) bool {
+	leftTime := timeAt(leftTimestamps, leftIndex)
+	rightTime := timeAt(rightTimestamps, rightIndex)
+	if (!leftTime.IsZero() || !rightTime.IsZero()) && !leftTime.Equal(rightTime) {
+		return false
+	}
+	leftKind := stringAt(leftRowKinds, leftIndex)
+	rightKind := stringAt(rightRowKinds, rightIndex)
+	if (leftKind != "" || rightKind != "") && leftKind != rightKind {
+		return false
+	}
+	return !leftTime.IsZero() || !rightTime.IsZero() || leftKind != "" || rightKind != ""
+}
+
+func cellRowsEqual(a []Cell, b []Cell) bool {
+	a = trimTrailingDefaultBlankCells(a)
+	b = trimTrailingDefaultBlankCells(b)
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func trimTrailingDefaultBlankCells(row []Cell) []Cell {
+	for len(row) > 0 && isDefaultBlankCell(row[len(row)-1]) {
+		row = row[:len(row)-1]
+	}
+	return row
+}
+
+func rowsContainNonDefaultCell(rows [][]Cell) bool {
+	for _, row := range rows {
+		for _, cell := range row {
+			if !isDefaultBlankCell(cell) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isDefaultBlankCell(cell Cell) bool {
+	return cell.Content == " " && cell.Width == 1 && cell.Style == (CellStyle{}) && cell.LinkURL == "" && cell.LinkParams == ""
 }
 
 func (t *Terminal) HistoryReplay(opts HistoryReplayOptions) HistoryReplayResult {
