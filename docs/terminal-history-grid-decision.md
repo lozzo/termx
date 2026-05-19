@@ -253,18 +253,21 @@ TUI runtime = 观察者缓存，不是历史存储
 
 ## owner/follower 与历史宽度规则
 
-历史 materialization 的宽度必须来自 terminal 当前真实 PTY size，也就是 owner 驱动后的 canonical terminal content size，而不是当前观察者 pane 的宽度。
+真实 PTY size 是 terminal 的全局唯一状态。panel、floating window、mobile App、remote-ui 都不是另一份 terminal size，它们只是连接到同一个 terminal 的观察视窗。
+
+历史 materialization 的宽度必须来自 terminal 当前真实 PTY size，也就是 owner 驱动后的 canonical terminal content size，而不是当前观察者 pane/App viewport 的宽度。
 
 规则：
 
 - terminal 全局只有一个真实 PTY size。
 - owner resize 成功后，core 更新 terminal size 和 geometry revision。
-- grid viewport 的普通 TUI 调用必须传 terminal canonical cols。
-- follower pane 只做裁剪、滚动窗口、overflow/blank hints。
-- follower pane 进入 copy mode 或滚动历史时，不改变 PTY size，也不按自己的 pane cols 重新解释历史。
+- grid viewport 的普通 TUI/App 调用必须传 terminal canonical cols。
+- panel、floating window、mobile App、remote-ui 如果绘制窗口和真实 PTY size 不一致，只做同一套投影：裁剪、滚动窗口、overflow arrows 和 blank-dot hints。
+- 所有观察者的处理方式应该一致；差异只来自本地 viewport 能看到 canonical terminal content 的哪一块。
+- follower pane 进入 copy mode 或滚动历史时，不改变 PTY size，也不按自己的 pane/App viewport cols 重新解释历史。
 - owner size 变化时，已经打开的 copy mode/history materialized pages 需要失效重取。
 
-`GridViewport(cols)` 能支持任意 cols 是工具能力；普通 terminal workspace 不应把 follower pane width 传进去。
+`GridViewport(cols)` 能支持任意 cols 是工具能力；普通 terminal workspace 不应把 follower pane width、floating window width 或 App viewport width 传进去。
 
 ## remote/protobuf 后续代码怎么合回来
 
