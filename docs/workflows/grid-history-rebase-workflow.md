@@ -535,6 +535,12 @@ go test ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...
 - PASS: `go test ./tuiv2/runtime -run 'TestRuntimeApplyGridViewportPageRejectsStaleHistoryGeneration|TestRuntimeApplyGridViewportPageRejectsNonAdjacentRowIDs' -count=1 -v`
 - PASS: `go test ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...`
 
+## tmux Reference Follow-Up Final Verification
+
+- PASS: `go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./tuiv2/runtime/... ./tuiv2/app/...`
+- PASS: `cd remote-ui && npm run typecheck`
+- PASS: `cd remote-ui && npm run test` (58 files, 411 tests; jsdom emitted expected localStorage/canvas warnings)
+
 ## Unresolved Risks
 
 - Persistent grid retention is now row-count bounded via `ScrollbackSize`; no time-based retention or disk-byte cap is implemented yet.
