@@ -252,6 +252,10 @@ message Snapshot {
   CursorState cursor = 9;
   TerminalModes modes = 10;
   int64 timestamp_unix_nano = 11;
+  uint64 history_generation = 12;
+  int64 scrollback_loaded_rows = 13;
+  uint64 scrollback_first_row_id = 14;
+  uint64 scrollback_last_row_id = 15;
 }
 
 message GridViewport {
@@ -263,6 +267,10 @@ message GridViewport {
   int64 scrollback_total = 6;
   bool scrollback_has_more = 7;
   int64 timestamp_unix_nano = 8;
+  int64 loaded_rows = 9;
+  uint64 history_generation = 10;
+  uint64 first_row_id = 11;
+  uint64 last_row_id = 12;
 }
 
 message StorageEntry {
@@ -383,4 +391,6 @@ message TerminalGridMetadata {
   int64 page_count = 7;
   int64 created_at_unix = 8;
   int64 updated_at_unix = 9;
+  uint64 base_row_id = 10;
+  uint64 history_generation = 11;
 }

@@ -434,6 +434,39 @@ This section records the current code-read comparison with tmux. The goal is not
 5. Reduce `Snapshot(offset=0)` overlap trimming to a defensive fallback after boundary ownership is explicit.
 6. Keep `HistoryReplay` compatibility, but move remaining UI/copy-mode callers toward structured rows only.
 
+## tmux Reference Follow-Up Phase 1: History Coordinates
+
+- Implemented a TermX equivalent of tmux backing-grid coordinates without copying tmux's in-memory grid:
+  - `terminalGridStore` now tracks `baseRowID` and `historyGeneration` in store metadata.
+  - `GridViewport` carries raw committed `LoadedRows`, `HistoryGeneration`, `FirstRowID`, and `LastRowID`.
+  - `Snapshot` carries the same history coordinate metadata for its materialized scrollback window.
+  - protobuf/binary `GridViewport` and `Snapshot` payloads now preserve these fields, and `remote-ui` generated wire bindings were refreshed.
+- Runtime and copy-mode now use raw committed `LoadedRows` as the pagination depth when available. This avoids advancing history offsets by reflowed visual row count when one committed logical row materializes into multiple viewport rows.
+- Runtime and copy-mode reject older pages when history generation differs or row IDs are not adjacent to the current materialized window.
+- Remote terminal history replay now prefers the structured viewport `loaded_rows` over the legacy history replay frame's row count.
+
+### Phase 1 Commands
+
+```sh
+protoc --go_out=termx-proto --go_opt=paths=source_relative -I termx-proto termx-proto/wirepb/terminal.proto
+cd remote-ui && npm run proto:wire
+go test ./internal/protocol -run 'TestGridViewportPayloadRoundTripUsesBinaryRows' -count=1 -v
+go test ./termx-core -run 'TestTerminalGridStoreRetentionCapsCommittedRows|TestTerminalGridStoreViewportLoadedRowsUseRawCommittedRows' -count=1 -v
+go test ./tuiv2/runtime -run 'TestRuntimeApplyGridViewportPageRejectsStaleHistoryGeneration|TestRuntimeApplyGridViewportPageRejectsNonAdjacentRowIDs|TestRuntimeApplyGridViewportPageKeepsBoundedWindow|TestRuntimeApplyGridViewportPagePrependsHistory' -count=1 -v
+cd remote-ui && npm run test -- terminalProtocolClient.behavior.test.ts
+go test ./internal/protocol/... ./termx-proto/... ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...
+cd remote-ui && npm run typecheck
+```
+
+### Phase 1 Test Results
+
+- PASS: `go test ./internal/protocol -run 'TestGridViewportPayloadRoundTripUsesBinaryRows' -count=1 -v`
+- PASS: `go test ./termx-core -run 'TestTerminalGridStoreRetentionCapsCommittedRows|TestTerminalGridStoreViewportLoadedRowsUseRawCommittedRows' -count=1 -v`
+- PASS: `go test ./tuiv2/runtime -run 'TestRuntimeApplyGridViewportPageRejectsStaleHistoryGeneration|TestRuntimeApplyGridViewportPageRejectsNonAdjacentRowIDs|TestRuntimeApplyGridViewportPageKeepsBoundedWindow|TestRuntimeApplyGridViewportPagePrependsHistory' -count=1 -v`
+- PASS: `cd remote-ui && npm run test -- terminalProtocolClient.behavior.test.ts`
+- PASS: `go test ./internal/protocol/... ./termx-proto/... ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...`
+- PASS: `cd remote-ui && npm run typecheck`
+
 ## Unresolved Risks
 
 - Persistent grid retention is now row-count bounded via `ScrollbackSize`; no time-based retention or disk-byte cap is implemented yet.

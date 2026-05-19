@@ -105,13 +105,33 @@ func clearSnapshotScrollback(snapshot *protocol.Snapshot) {
 	snapshot.ScrollbackOffset = 0
 	snapshot.ScrollbackTotal = 0
 	snapshot.ScrollbackHasMore = false
+	snapshot.ScrollbackLoadedRows = 0
+	snapshot.HistoryGeneration = 0
+	snapshot.ScrollbackFirstRowID = 0
+	snapshot.ScrollbackLastRowID = 0
 }
 
 func snapshotScrollbackLoadedDepth(snapshot *protocol.Snapshot) int {
 	if snapshot == nil {
 		return 0
 	}
+	if snapshot.ScrollbackLoadedRows > 0 {
+		return snapshot.ScrollbackLoadedRows
+	}
 	return snapshot.ScrollbackOffset + len(snapshot.Scrollback)
+}
+
+func historyPageContinuesSnapshot(current, page *protocol.Snapshot) bool {
+	if current == nil || page == nil {
+		return false
+	}
+	if current.HistoryGeneration != 0 && page.HistoryGeneration != 0 && current.HistoryGeneration != page.HistoryGeneration {
+		return false
+	}
+	if current.ScrollbackFirstRowID != 0 && page.ScrollbackLastRowID != 0 && page.ScrollbackLastRowID+1 != current.ScrollbackFirstRowID {
+		return false
+	}
+	return true
 }
 
 func trimCopyModeSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int, trimNewest bool) int {
@@ -126,12 +146,16 @@ func trimCopyModeSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int
 		snapshot.ScrollbackRowKinds = cloneStringPrefix(snapshot.ScrollbackRowKinds, keep)
 		snapshot.ScrollbackWrapped = cloneBoolPrefix(snapshot.ScrollbackWrapped, keep)
 		snapshot.ScrollbackOffset += drop
+		if snapshot.ScrollbackLastRowID >= uint64(drop) {
+			snapshot.ScrollbackLastRowID -= uint64(drop)
+		}
 		return drop
 	}
 	snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[drop:])
 	snapshot.ScrollbackTimestamps = cloneTimeSuffix(snapshot.ScrollbackTimestamps, drop)
 	snapshot.ScrollbackRowKinds = cloneStringSuffix(snapshot.ScrollbackRowKinds, drop)
 	snapshot.ScrollbackWrapped = cloneBoolSuffix(snapshot.ScrollbackWrapped, drop)
+	snapshot.ScrollbackFirstRowID += uint64(drop)
 	snapshot.ScrollbackHasMore = true
 	return 0
 }
@@ -176,6 +200,22 @@ func cloneBoolSuffix(values []bool, drop int) []bool {
 		return nil
 	}
 	return append([]bool(nil), values[drop:]...)
+}
+
+func firstNonZeroUint64(values ...uint64) uint64 {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func maxUint64(a, b uint64) uint64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (m *Model) copyModeSnapshot(terminalID string, snapshot *protocol.Snapshot) *protocol.Snapshot {
@@ -575,7 +615,10 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 		if offset != snapshotScrollbackLoadedDepth(next) {
 			return
 		}
-		delta = len(loaded.Scrollback)
+		if !historyPageContinuesSnapshot(next, loaded) {
+			return
+		}
+		delta = snapshotScrollbackLoadedDepth(loaded) - snapshotScrollbackLoadedDepth(next)
 		if delta == 0 {
 			return
 		}
@@ -599,6 +642,10 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 	}
 	next.ScrollbackTotal = loaded.ScrollbackTotal
 	next.ScrollbackHasMore = loaded.ScrollbackHasMore
+	next.ScrollbackLoadedRows = maxInt(loaded.ScrollbackLoadedRows, next.ScrollbackLoadedRows)
+	next.HistoryGeneration = loaded.HistoryGeneration
+	next.ScrollbackFirstRowID = firstNonZeroUint64(loaded.ScrollbackFirstRowID, next.ScrollbackFirstRowID)
+	next.ScrollbackLastRowID = maxUint64(loaded.ScrollbackLastRowID, next.ScrollbackLastRowID)
 	trimmedNewest := trimCopyModeSnapshotScrollbackWindow(next, terminalMaterializedScrollbackLimit, trimNewest)
 	m.copyMode.Snapshot = next
 	m.copyMode.LoadedRows = snapshotScrollbackLoadedDepth(next)

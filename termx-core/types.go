@@ -137,6 +137,10 @@ type Snapshot struct {
 	ScrollbackOffset     int
 	ScrollbackTotal      int
 	ScrollbackHasMore    bool
+	ScrollbackLoadedRows int
+	HistoryGeneration    uint64
+	ScrollbackFirstRowID uint64
+	ScrollbackLastRowID  uint64
 	ScreenTimestamps     []time.Time
 	ScrollbackTimestamps []time.Time
 	ScreenRowKinds       []string
@@ -169,6 +173,9 @@ type GridViewport struct {
 	ScrollbackTotal      int
 	ScrollbackHasMore    bool
 	LoadedRows           int
+	HistoryGeneration    uint64
+	FirstRowID           uint64
+	LastRowID            uint64
 	ScrollbackTimestamps []time.Time
 	ScrollbackRowKinds   []string
 	ScrollbackWrapped    []bool

@@ -42,6 +42,8 @@ type terminalGridStore struct {
 	index         *os.File
 	currentSeq    uint32
 	currentBytes  int64
+	baseRowID     uint64
+	generation    uint64
 	pageMaxBytes  int64
 	rowCount      int
 	maxRows       int
@@ -69,6 +71,8 @@ type terminalGridMetadata struct {
 	PageCount     int
 	CreatedAtUnix int64
 	UpdatedAtUnix int64
+	BaseRowID     uint64
+	Generation    uint64
 }
 
 func newTerminalGridStore(gridRoot, terminalID string) (*terminalGridStore, error) {
@@ -134,6 +138,7 @@ func openTerminalGridStoreDir(dir, terminalID string, create bool, removeOnClose
 				RowCodec:     terminalGridRowCodec,
 				IndexCodec:   terminalGridIndexCodec,
 				PageMaxBytes: defaultGridPageMaxBytes,
+				Generation:   terminalGridHistoryGeneration(0),
 			}
 		} else {
 			metadata = terminalGridMetadata{
@@ -143,6 +148,7 @@ func openTerminalGridStoreDir(dir, terminalID string, create bool, removeOnClose
 				IndexCodec:    terminalGridIndexCodec,
 				PageMaxBytes:  defaultGridPageMaxBytes,
 				CreatedAtUnix: time.Now().UTC().Unix(),
+				Generation:    terminalGridHistoryGeneration(0),
 			}
 			if os.IsNotExist(metadataErr) {
 				if writeErr := writeTerminalGridMetadata(dir, metadata); writeErr != nil {
@@ -154,6 +160,9 @@ func openTerminalGridStoreDir(dir, terminalID string, create bool, removeOnClose
 	if metadata.PageMaxBytes <= 0 {
 		metadata.PageMaxBytes = defaultGridPageMaxBytes
 	}
+	if metadata.Generation == 0 {
+		metadata.Generation = terminalGridHistoryGeneration(metadata.CreatedAtUnix)
+	}
 
 	indexState, err := loadTerminalGridIndexState(dir)
 	if err != nil {
@@ -163,6 +172,8 @@ func openTerminalGridStoreDir(dir, terminalID string, create bool, removeOnClose
 		dir:           dir,
 		terminalID:    terminalID,
 		currentSeq:    indexState.lastSeq,
+		baseRowID:     metadata.BaseRowID,
+		generation:    metadata.Generation,
 		pageMaxBytes:  metadata.PageMaxBytes,
 		rowCount:      indexState.rowCount,
 		removeOnClose: removeOnClose,
@@ -363,6 +374,13 @@ func (s *terminalGridStore) RowCount() int {
 	return s.rowCount
 }
 
+func (s *terminalGridStore) coordinatesLocked() (baseRowID uint64, generation uint64, rowCount int) {
+	if s == nil {
+		return 0, 0, 0
+	}
+	return s.baseRowID, s.generation, s.rowCount
+}
+
 func (s *terminalGridStore) Replay(beforeOffset int, limit int) ([]byte, int, bool, error) {
 	if s == nil {
 		return nil, 0, false, nil
@@ -417,7 +435,7 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 		result.HasMore = hasMore || cropped
 		result.BeforeOffset = beforeOffset
 		result.Limit = limit
-		result.TotalRows = s.RowCount()
+		result.Generation, result.FirstRowID, result.LastRowID, result.TotalRows = s.rowWindowCoordinates(beforeOffset, rows)
 		if len(result.Rows) >= limit || !hasMore {
 			return result, nil
 		}
@@ -446,6 +464,9 @@ type terminalGridViewport struct {
 	BeforeOffset int
 	Limit        int
 	TotalRows    int
+	Generation   uint64
+	FirstRowID   uint64
+	LastRowID    uint64
 }
 
 func trimTerminalGridViewportToTail(result *terminalGridViewport, limit int) bool {
@@ -506,6 +527,33 @@ func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalG
 	return refs, len(refs), start > 0, nil
 }
 
+func (s *terminalGridStore) rowWindowCoordinates(beforeOffset int, loadedRows int) (generation uint64, firstRowID uint64, lastRowID uint64, totalRows int) {
+	if s == nil || loadedRows <= 0 {
+		return 0, 0, 0, 0
+	}
+	s.mu.Lock()
+	baseRowID, generation, total := s.coordinatesLocked()
+	s.mu.Unlock()
+	if total <= 0 {
+		return generation, 0, 0, total
+	}
+	if beforeOffset > total {
+		beforeOffset = total
+	}
+	end := total - beforeOffset
+	if end < 0 {
+		end = 0
+	}
+	start := end - loadedRows
+	if start < 0 {
+		start = 0
+	}
+	if end <= start {
+		return generation, 0, 0, total
+	}
+	return generation, baseRowID + uint64(start), baseRowID + uint64(end-1), total
+}
+
 func sanitizeGridReplayWindow(beforeOffset int, limit int) (int, int) {
 	if beforeOffset < 0 {
 		beforeOffset = 0
@@ -556,6 +604,8 @@ func (s *terminalGridStore) Close() error {
 		PageMaxBytes: s.pageMaxBytes,
 		RowCount:     s.rowCount,
 		PageCount:    int(s.currentSeq) + 1,
+		BaseRowID:    s.baseRowID,
+		Generation:   s.generation,
 	}
 	if existing, err := readTerminalGridMetadata(dir); err == nil {
 		metadata.CreatedAtUnix = existing.CreatedAtUnix
@@ -700,6 +750,11 @@ func (s *terminalGridStore) enforceMaxRowsLocked() error {
 		return err
 	}
 	s.rowCount = len(refs)
+	s.baseRowID += uint64(drop)
+	s.generation++
+	if s.generation == 0 {
+		s.generation = 1
+	}
 	if len(refs) > 0 {
 		last := refs[len(refs)-1]
 		s.currentSeq = last.seq
@@ -1066,6 +1121,9 @@ func writeTerminalGridMetadata(dir string, metadata terminalGridMetadata) error 
 	if metadata.CreatedAtUnix == 0 {
 		metadata.CreatedAtUnix = now
 	}
+	if metadata.Generation == 0 {
+		metadata.Generation = terminalGridHistoryGeneration(metadata.CreatedAtUnix)
+	}
 	metadata.UpdatedAtUnix = now
 	data, err := proto.Marshal(terminalGridMetadataToProto(metadata))
 	if err != nil {
@@ -1076,15 +1134,17 @@ func writeTerminalGridMetadata(dir string, metadata terminalGridMetadata) error 
 
 func terminalGridMetadataToProto(metadata terminalGridMetadata) *wirepb.TerminalGridMetadata {
 	return &wirepb.TerminalGridMetadata{
-		StoreVersion:  int32(metadata.StoreVersion),
-		TerminalId:    metadata.TerminalID,
-		RowCodec:      metadata.RowCodec,
-		IndexCodec:    metadata.IndexCodec,
-		PageMaxBytes:  metadata.PageMaxBytes,
-		RowCount:      int64(metadata.RowCount),
-		PageCount:     int64(metadata.PageCount),
-		CreatedAtUnix: metadata.CreatedAtUnix,
-		UpdatedAtUnix: metadata.UpdatedAtUnix,
+		StoreVersion:      int32(metadata.StoreVersion),
+		TerminalId:        metadata.TerminalID,
+		RowCodec:          metadata.RowCodec,
+		IndexCodec:        metadata.IndexCodec,
+		PageMaxBytes:      metadata.PageMaxBytes,
+		RowCount:          int64(metadata.RowCount),
+		PageCount:         int64(metadata.PageCount),
+		CreatedAtUnix:     metadata.CreatedAtUnix,
+		UpdatedAtUnix:     metadata.UpdatedAtUnix,
+		BaseRowId:         metadata.BaseRowID,
+		HistoryGeneration: metadata.Generation,
 	}
 }
 
@@ -1102,7 +1162,16 @@ func terminalGridMetadataFromProto(msg *wirepb.TerminalGridMetadata) terminalGri
 		PageCount:     int(msg.GetPageCount()),
 		CreatedAtUnix: msg.GetCreatedAtUnix(),
 		UpdatedAtUnix: msg.GetUpdatedAtUnix(),
+		BaseRowID:     msg.GetBaseRowId(),
+		Generation:    msg.GetHistoryGeneration(),
 	}
+}
+
+func terminalGridHistoryGeneration(createdAtUnix int64) uint64 {
+	if createdAtUnix > 0 {
+		return uint64(createdAtUnix)
+	}
+	return uint64(time.Now().UTC().UnixNano())
 }
 
 type terminalGridIndexState struct {

@@ -75,6 +75,10 @@ func TestGridViewportPayloadRoundTripUsesBinaryRows(t *testing.T) {
 		ScrollbackLimit:   20,
 		ScrollbackTotal:   100,
 		ScrollbackHasMore: true,
+		LoadedRows:        7,
+		HistoryGeneration: 42,
+		FirstRowID:        1000,
+		LastRowID:         1006,
 		Timestamp:         time.Date(2026, 3, 18, 3, 0, 0, 0, time.UTC),
 	}
 	payload, err := EncodeGridViewportPayload(viewport)
@@ -87,6 +91,9 @@ func TestGridViewportPayloadRoundTripUsesBinaryRows(t *testing.T) {
 	}
 	if decoded.TerminalID != viewport.TerminalID || decoded.Size != viewport.Size || decoded.ScrollbackTotal != 100 || !decoded.ScrollbackHasMore {
 		t.Fatalf("unexpected decoded viewport header: %#v", decoded)
+	}
+	if decoded.LoadedRows != 7 || decoded.HistoryGeneration != 42 || decoded.FirstRowID != 1000 || decoded.LastRowID != 1006 {
+		t.Fatalf("unexpected decoded viewport coordinates: %#v", decoded)
 	}
 	if got := compactRowToStringForTest(decoded.Rows[0]); got != "row" {
 		t.Fatalf("unexpected decoded viewport row: %q", got)

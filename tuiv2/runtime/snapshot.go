@@ -130,8 +130,11 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 	if offset > 0 && offset != snapshotScrollbackLoadedDepth(current) && offset != terminal.ScrollbackLoadedLimit {
 		return false
 	}
+	if offset > 0 && !historyPageContinuesSnapshot(current, page) {
+		return false
+	}
 	merged := cloneProtocolSnapshot(current)
-	loadedDepth := page.ScrollbackOffset + len(page.Scrollback)
+	loadedDepth := snapshotScrollbackLoadedDepth(page)
 	if offset == 0 {
 		if len(page.Scrollback) <= len(merged.Scrollback) {
 			return false
@@ -143,6 +146,10 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 		merged.ScrollbackOffset = page.ScrollbackOffset
 		merged.ScrollbackTotal = page.ScrollbackTotal
 		merged.ScrollbackHasMore = page.ScrollbackHasMore
+		merged.ScrollbackLoadedRows = page.ScrollbackLoadedRows
+		merged.HistoryGeneration = page.HistoryGeneration
+		merged.ScrollbackFirstRowID = page.ScrollbackFirstRowID
+		merged.ScrollbackLastRowID = page.ScrollbackLastRowID
 		trimSnapshotScrollbackWindow(merged, materializedScrollbackRowLimit, false)
 	} else {
 		mergedOffset := current.ScrollbackOffset
@@ -153,6 +160,10 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 		merged.ScrollbackOffset = mergedOffset
 		merged.ScrollbackTotal = maxInt(page.ScrollbackTotal, current.ScrollbackTotal)
 		merged.ScrollbackHasMore = page.ScrollbackHasMore
+		merged.ScrollbackLoadedRows = maxInt(page.ScrollbackLoadedRows, current.ScrollbackLoadedRows)
+		merged.HistoryGeneration = page.HistoryGeneration
+		merged.ScrollbackFirstRowID = firstNonZeroUint64(page.ScrollbackFirstRowID, current.ScrollbackFirstRowID)
+		merged.ScrollbackLastRowID = maxUint64(page.ScrollbackLastRowID, current.ScrollbackLastRowID)
 		trimSnapshotScrollbackWindow(merged, materializedScrollbackRowLimit, true)
 	}
 	merged.Timestamp = time.Now()
@@ -172,7 +183,23 @@ func snapshotScrollbackLoadedDepth(snapshot *protocol.Snapshot) int {
 	if snapshot == nil {
 		return 0
 	}
+	if snapshot.ScrollbackLoadedRows > 0 {
+		return snapshot.ScrollbackLoadedRows
+	}
 	return snapshot.ScrollbackOffset + len(snapshot.Scrollback)
+}
+
+func historyPageContinuesSnapshot(current, page *protocol.Snapshot) bool {
+	if current == nil || page == nil {
+		return false
+	}
+	if current.HistoryGeneration != 0 && page.HistoryGeneration != 0 && current.HistoryGeneration != page.HistoryGeneration {
+		return false
+	}
+	if current.ScrollbackFirstRowID != 0 && page.ScrollbackLastRowID != 0 && page.ScrollbackLastRowID+1 != current.ScrollbackFirstRowID {
+		return false
+	}
+	return true
 }
 
 func trimSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int, trimNewest bool) {
@@ -187,13 +214,33 @@ func trimSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int, trimNe
 		snapshot.ScrollbackRowKinds = cloneStringPrefix(snapshot.ScrollbackRowKinds, keep)
 		snapshot.ScrollbackWrapped = cloneBoolPrefix(snapshot.ScrollbackWrapped, keep)
 		snapshot.ScrollbackOffset += drop
+		if snapshot.ScrollbackLastRowID >= uint64(drop) {
+			snapshot.ScrollbackLastRowID -= uint64(drop)
+		}
 		return
 	}
 	snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[drop:])
 	snapshot.ScrollbackTimestamps = cloneTimeSuffix(snapshot.ScrollbackTimestamps, drop)
 	snapshot.ScrollbackRowKinds = cloneStringSuffix(snapshot.ScrollbackRowKinds, drop)
 	snapshot.ScrollbackWrapped = cloneBoolSuffix(snapshot.ScrollbackWrapped, drop)
+	snapshot.ScrollbackFirstRowID += uint64(drop)
 	snapshot.ScrollbackHasMore = true
+}
+
+func firstNonZeroUint64(values ...uint64) uint64 {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func maxUint64(a, b uint64) uint64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func cloneTimePrefix(values []time.Time, keep int) []time.Time {
@@ -249,6 +296,10 @@ func snapshotFromGridViewport(terminalID string, viewport *protocol.GridViewport
 		ScrollbackOffset:     viewport.ScrollbackOffset,
 		ScrollbackTotal:      viewport.ScrollbackTotal,
 		ScrollbackHasMore:    viewport.ScrollbackHasMore,
+		ScrollbackLoadedRows: viewport.LoadedRows,
+		HistoryGeneration:    viewport.HistoryGeneration,
+		ScrollbackFirstRowID: viewport.FirstRowID,
+		ScrollbackLastRowID:  viewport.LastRowID,
 		ScrollbackTimestamps: append([]time.Time(nil), viewport.ScrollbackTimestamps...),
 		ScrollbackRowKinds:   append([]string(nil), viewport.ScrollbackRowKinds...),
 		ScrollbackWrapped:    append([]bool(nil), viewport.ScrollbackWrapped...),

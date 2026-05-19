@@ -326,6 +326,78 @@ func TestRuntimeApplyGridViewportPageRejectsStaleGeometry(t *testing.T) {
 	}
 }
 
+func TestRuntimeApplyGridViewportPageRejectsStaleHistoryGeneration(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 80, 24, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("new0")})
+	live.ScrollbackLoadedRows = 1
+	live.HistoryGeneration = 10
+	live.ScrollbackFirstRowID = 100
+	live.ScrollbackLastRowID = 100
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	page := &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 80, Rows: 24},
+		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("old0")}),
+		ScrollbackOffset:     1,
+		ScrollbackTotal:      2,
+		ScrollbackHasMore:    false,
+		ScrollbackLoadedRows: 2,
+		HistoryGeneration:    11,
+		ScrollbackFirstRowID: 99,
+		ScrollbackLastRowID:  99,
+	}
+	if rt.ApplyGridViewportPage("term-1", page, 1) {
+		t.Fatal("expected stale-generation history page to be rejected")
+	}
+	got := rt.Registry().Get("term-1").Snapshot
+	if len(got.Scrollback) != 1 || compactRowText(got.Scrollback[0]) != "new0" {
+		t.Fatalf("expected live snapshot history to remain unchanged, got %#v", got.Scrollback)
+	}
+}
+
+func TestRuntimeApplyGridViewportPageRejectsNonAdjacentRowIDs(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 80, 24, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("new0")})
+	live.ScrollbackLoadedRows = 1
+	live.HistoryGeneration = 10
+	live.ScrollbackFirstRowID = 100
+	live.ScrollbackLastRowID = 100
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	page := &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 80, Rows: 24},
+		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("old0")}),
+		ScrollbackOffset:     1,
+		ScrollbackTotal:      2,
+		ScrollbackHasMore:    false,
+		ScrollbackLoadedRows: 2,
+		HistoryGeneration:    10,
+		ScrollbackFirstRowID: 98,
+		ScrollbackLastRowID:  98,
+	}
+	if rt.ApplyGridViewportPage("term-1", page, 1) {
+		t.Fatal("expected non-adjacent history page to be rejected")
+	}
+	got := rt.Registry().Get("term-1").Snapshot
+	if len(got.Scrollback) != 1 || compactRowText(got.Scrollback[0]) != "new0" {
+		t.Fatalf("expected live snapshot history to remain unchanged, got %#v", got.Scrollback)
+	}
+}
+
 func TestRuntimeApplyGridViewportPageKeepsBoundedWindow(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()

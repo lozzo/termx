@@ -844,6 +844,9 @@ func TestTerminalGridStoreRetentionCapsCommittedRows(t *testing.T) {
 	if viewport.HasMore || viewport.TotalRows != 3 {
 		t.Fatalf("expected retention to expose only committed retained rows, got total=%d hasMore=%v", viewport.TotalRows, viewport.HasMore)
 	}
+	if viewport.FirstRowID != 3 || viewport.LastRowID != 5 || viewport.Generation == 0 {
+		t.Fatalf("expected retained row coordinates to track dropped rows, got generation=%d first=%d last=%d", viewport.Generation, viewport.FirstRowID, viewport.LastRowID)
+	}
 
 	refs, err := readAllTerminalGridIndexRefs(store.dir)
 	if err != nil {
@@ -858,6 +861,29 @@ func TestTerminalGridStoreRetentionCapsCommittedRows(t *testing.T) {
 	}
 	if !reflect.DeepEqual(pages, []string{"grid-000003.page", "grid-000004.page", "grid-000005.page"}) {
 		t.Fatalf("expected only retained page files, got %#v", pages)
+	}
+}
+
+func TestTerminalGridStoreViewportLoadedRowsUseRawCommittedRows(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("abcdefghij"), wrapped: true},
+		{cells: localVTermCellsFromString("kl")},
+	}); err != nil {
+		t.Fatalf("append wrapped rows: %v", err)
+	}
+	viewport, err := store.Viewport(0, 10, 4)
+	if err != nil {
+		t.Fatalf("viewport: %v", err)
+	}
+	gotRows := vtermRowsToStrings(viewport.Rows)
+	if len(gotRows) <= viewport.LoadedRows {
+		t.Fatalf("test setup expected reflow to materialize more visual rows than raw rows, got rows=%#v loaded=%d", gotRows, viewport.LoadedRows)
+	}
+	if viewport.LoadedRows != 2 || viewport.FirstRowID != 0 || viewport.LastRowID != 1 {
+		t.Fatalf("expected raw committed row coordinates, got loaded=%d first=%d last=%d rows=%#v", viewport.LoadedRows, viewport.FirstRowID, viewport.LastRowID, gotRows)
 	}
 }
 

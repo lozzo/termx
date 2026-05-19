@@ -2347,20 +2347,24 @@ func (x *RowSet) GetWrapped() []bool {
 }
 
 type Snapshot struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	TerminalId        string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	Size              *Size                  `protobuf:"bytes,2,opt,name=size,proto3" json:"size,omitempty"`
-	ScreenIsAlternate bool                   `protobuf:"varint,3,opt,name=screen_is_alternate,json=screenIsAlternate,proto3" json:"screen_is_alternate,omitempty"`
-	Screen            *RowSet                `protobuf:"bytes,4,opt,name=screen,proto3" json:"screen,omitempty"`
-	Scrollback        *RowSet                `protobuf:"bytes,5,opt,name=scrollback,proto3" json:"scrollback,omitempty"`
-	ScrollbackOffset  int64                  `protobuf:"varint,6,opt,name=scrollback_offset,json=scrollbackOffset,proto3" json:"scrollback_offset,omitempty"`
-	ScrollbackTotal   int64                  `protobuf:"varint,7,opt,name=scrollback_total,json=scrollbackTotal,proto3" json:"scrollback_total,omitempty"`
-	ScrollbackHasMore bool                   `protobuf:"varint,8,opt,name=scrollback_has_more,json=scrollbackHasMore,proto3" json:"scrollback_has_more,omitempty"`
-	Cursor            *CursorState           `protobuf:"bytes,9,opt,name=cursor,proto3" json:"cursor,omitempty"`
-	Modes             *TerminalModes         `protobuf:"bytes,10,opt,name=modes,proto3" json:"modes,omitempty"`
-	TimestampUnixNano int64                  `protobuf:"varint,11,opt,name=timestamp_unix_nano,json=timestampUnixNano,proto3" json:"timestamp_unix_nano,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	TerminalId           string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	Size                 *Size                  `protobuf:"bytes,2,opt,name=size,proto3" json:"size,omitempty"`
+	ScreenIsAlternate    bool                   `protobuf:"varint,3,opt,name=screen_is_alternate,json=screenIsAlternate,proto3" json:"screen_is_alternate,omitempty"`
+	Screen               *RowSet                `protobuf:"bytes,4,opt,name=screen,proto3" json:"screen,omitempty"`
+	Scrollback           *RowSet                `protobuf:"bytes,5,opt,name=scrollback,proto3" json:"scrollback,omitempty"`
+	ScrollbackOffset     int64                  `protobuf:"varint,6,opt,name=scrollback_offset,json=scrollbackOffset,proto3" json:"scrollback_offset,omitempty"`
+	ScrollbackTotal      int64                  `protobuf:"varint,7,opt,name=scrollback_total,json=scrollbackTotal,proto3" json:"scrollback_total,omitempty"`
+	ScrollbackHasMore    bool                   `protobuf:"varint,8,opt,name=scrollback_has_more,json=scrollbackHasMore,proto3" json:"scrollback_has_more,omitempty"`
+	Cursor               *CursorState           `protobuf:"bytes,9,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	Modes                *TerminalModes         `protobuf:"bytes,10,opt,name=modes,proto3" json:"modes,omitempty"`
+	TimestampUnixNano    int64                  `protobuf:"varint,11,opt,name=timestamp_unix_nano,json=timestampUnixNano,proto3" json:"timestamp_unix_nano,omitempty"`
+	HistoryGeneration    uint64                 `protobuf:"varint,12,opt,name=history_generation,json=historyGeneration,proto3" json:"history_generation,omitempty"`
+	ScrollbackLoadedRows int64                  `protobuf:"varint,13,opt,name=scrollback_loaded_rows,json=scrollbackLoadedRows,proto3" json:"scrollback_loaded_rows,omitempty"`
+	ScrollbackFirstRowId uint64                 `protobuf:"varint,14,opt,name=scrollback_first_row_id,json=scrollbackFirstRowId,proto3" json:"scrollback_first_row_id,omitempty"`
+	ScrollbackLastRowId  uint64                 `protobuf:"varint,15,opt,name=scrollback_last_row_id,json=scrollbackLastRowId,proto3" json:"scrollback_last_row_id,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *Snapshot) Reset() {
@@ -2470,6 +2474,34 @@ func (x *Snapshot) GetTimestampUnixNano() int64 {
 	return 0
 }
 
+func (x *Snapshot) GetHistoryGeneration() uint64 {
+	if x != nil {
+		return x.HistoryGeneration
+	}
+	return 0
+}
+
+func (x *Snapshot) GetScrollbackLoadedRows() int64 {
+	if x != nil {
+		return x.ScrollbackLoadedRows
+	}
+	return 0
+}
+
+func (x *Snapshot) GetScrollbackFirstRowId() uint64 {
+	if x != nil {
+		return x.ScrollbackFirstRowId
+	}
+	return 0
+}
+
+func (x *Snapshot) GetScrollbackLastRowId() uint64 {
+	if x != nil {
+		return x.ScrollbackLastRowId
+	}
+	return 0
+}
+
 type GridViewport struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	TerminalId        string                 `protobuf:"bytes,1,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
@@ -2480,6 +2512,10 @@ type GridViewport struct {
 	ScrollbackTotal   int64                  `protobuf:"varint,6,opt,name=scrollback_total,json=scrollbackTotal,proto3" json:"scrollback_total,omitempty"`
 	ScrollbackHasMore bool                   `protobuf:"varint,7,opt,name=scrollback_has_more,json=scrollbackHasMore,proto3" json:"scrollback_has_more,omitempty"`
 	TimestampUnixNano int64                  `protobuf:"varint,8,opt,name=timestamp_unix_nano,json=timestampUnixNano,proto3" json:"timestamp_unix_nano,omitempty"`
+	LoadedRows        int64                  `protobuf:"varint,9,opt,name=loaded_rows,json=loadedRows,proto3" json:"loaded_rows,omitempty"`
+	HistoryGeneration uint64                 `protobuf:"varint,10,opt,name=history_generation,json=historyGeneration,proto3" json:"history_generation,omitempty"`
+	FirstRowId        uint64                 `protobuf:"varint,11,opt,name=first_row_id,json=firstRowId,proto3" json:"first_row_id,omitempty"`
+	LastRowId         uint64                 `protobuf:"varint,12,opt,name=last_row_id,json=lastRowId,proto3" json:"last_row_id,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -2566,6 +2602,34 @@ func (x *GridViewport) GetScrollbackHasMore() bool {
 func (x *GridViewport) GetTimestampUnixNano() int64 {
 	if x != nil {
 		return x.TimestampUnixNano
+	}
+	return 0
+}
+
+func (x *GridViewport) GetLoadedRows() int64 {
+	if x != nil {
+		return x.LoadedRows
+	}
+	return 0
+}
+
+func (x *GridViewport) GetHistoryGeneration() uint64 {
+	if x != nil {
+		return x.HistoryGeneration
+	}
+	return 0
+}
+
+func (x *GridViewport) GetFirstRowId() uint64 {
+	if x != nil {
+		return x.FirstRowId
+	}
+	return 0
+}
+
+func (x *GridViewport) GetLastRowId() uint64 {
+	if x != nil {
+		return x.LastRowId
 	}
 	return 0
 }
@@ -3579,18 +3643,20 @@ func (x *RemoteLocalStatus) GetUpdatedAtUnixNano() int64 {
 }
 
 type TerminalGridMetadata struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	StoreVersion  int32                  `protobuf:"varint,1,opt,name=store_version,json=storeVersion,proto3" json:"store_version,omitempty"`
-	TerminalId    string                 `protobuf:"bytes,2,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
-	RowCodec      string                 `protobuf:"bytes,3,opt,name=row_codec,json=rowCodec,proto3" json:"row_codec,omitempty"`
-	IndexCodec    string                 `protobuf:"bytes,4,opt,name=index_codec,json=indexCodec,proto3" json:"index_codec,omitempty"`
-	PageMaxBytes  int64                  `protobuf:"varint,5,opt,name=page_max_bytes,json=pageMaxBytes,proto3" json:"page_max_bytes,omitempty"`
-	RowCount      int64                  `protobuf:"varint,6,opt,name=row_count,json=rowCount,proto3" json:"row_count,omitempty"`
-	PageCount     int64                  `protobuf:"varint,7,opt,name=page_count,json=pageCount,proto3" json:"page_count,omitempty"`
-	CreatedAtUnix int64                  `protobuf:"varint,8,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
-	UpdatedAtUnix int64                  `protobuf:"varint,9,opt,name=updated_at_unix,json=updatedAtUnix,proto3" json:"updated_at_unix,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	StoreVersion      int32                  `protobuf:"varint,1,opt,name=store_version,json=storeVersion,proto3" json:"store_version,omitempty"`
+	TerminalId        string                 `protobuf:"bytes,2,opt,name=terminal_id,json=terminalId,proto3" json:"terminal_id,omitempty"`
+	RowCodec          string                 `protobuf:"bytes,3,opt,name=row_codec,json=rowCodec,proto3" json:"row_codec,omitempty"`
+	IndexCodec        string                 `protobuf:"bytes,4,opt,name=index_codec,json=indexCodec,proto3" json:"index_codec,omitempty"`
+	PageMaxBytes      int64                  `protobuf:"varint,5,opt,name=page_max_bytes,json=pageMaxBytes,proto3" json:"page_max_bytes,omitempty"`
+	RowCount          int64                  `protobuf:"varint,6,opt,name=row_count,json=rowCount,proto3" json:"row_count,omitempty"`
+	PageCount         int64                  `protobuf:"varint,7,opt,name=page_count,json=pageCount,proto3" json:"page_count,omitempty"`
+	CreatedAtUnix     int64                  `protobuf:"varint,8,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
+	UpdatedAtUnix     int64                  `protobuf:"varint,9,opt,name=updated_at_unix,json=updatedAtUnix,proto3" json:"updated_at_unix,omitempty"`
+	BaseRowId         uint64                 `protobuf:"varint,10,opt,name=base_row_id,json=baseRowId,proto3" json:"base_row_id,omitempty"`
+	HistoryGeneration uint64                 `protobuf:"varint,11,opt,name=history_generation,json=historyGeneration,proto3" json:"history_generation,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *TerminalGridMetadata) Reset() {
@@ -3682,6 +3748,20 @@ func (x *TerminalGridMetadata) GetCreatedAtUnix() int64 {
 func (x *TerminalGridMetadata) GetUpdatedAtUnix() int64 {
 	if x != nil {
 		return x.UpdatedAtUnix
+	}
+	return 0
+}
+
+func (x *TerminalGridMetadata) GetBaseRowId() uint64 {
+	if x != nil {
+		return x.BaseRowId
+	}
+	return 0
+}
+
+func (x *TerminalGridMetadata) GetHistoryGeneration() uint64 {
+	if x != nil {
+		return x.HistoryGeneration
 	}
 	return 0
 }
@@ -3889,7 +3969,7 @@ const file_wirepb_terminal_proto_rawDesc = "" +
 	"\trows_blob\x18\x01 \x01(\fR\browsBlob\x120\n" +
 	"\x14timestamps_unix_nano\x18\x02 \x03(\x03R\x12timestampsUnixNano\x12\x1b\n" +
 	"\trow_kinds\x18\x03 \x03(\tR\browKinds\x12\x18\n" +
-	"\awrapped\x18\x04 \x03(\bR\awrapped\"\xb2\x04\n" +
+	"\awrapped\x18\x04 \x03(\bR\awrapped\"\x83\x06\n" +
 	"\bSnapshot\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
 	"terminalId\x12/\n" +
@@ -3905,7 +3985,11 @@ const file_wirepb_terminal_proto_rawDesc = "" +
 	"\x06cursor\x18\t \x01(\v2\".termx.protocol.wirepb.CursorStateR\x06cursor\x12:\n" +
 	"\x05modes\x18\n" +
 	" \x01(\v2$.termx.protocol.wirepb.TerminalModesR\x05modes\x12.\n" +
-	"\x13timestamp_unix_nano\x18\v \x01(\x03R\x11timestampUnixNano\"\xf6\x02\n" +
+	"\x13timestamp_unix_nano\x18\v \x01(\x03R\x11timestampUnixNano\x12-\n" +
+	"\x12history_generation\x18\f \x01(\x04R\x11historyGeneration\x124\n" +
+	"\x16scrollback_loaded_rows\x18\r \x01(\x03R\x14scrollbackLoadedRows\x125\n" +
+	"\x17scrollback_first_row_id\x18\x0e \x01(\x04R\x14scrollbackFirstRowId\x123\n" +
+	"\x16scrollback_last_row_id\x18\x0f \x01(\x04R\x13scrollbackLastRowId\"\x88\x04\n" +
 	"\fGridViewport\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
 	"terminalId\x12/\n" +
@@ -3915,7 +3999,14 @@ const file_wirepb_terminal_proto_rawDesc = "" +
 	"\x10scrollback_limit\x18\x05 \x01(\x03R\x0fscrollbackLimit\x12)\n" +
 	"\x10scrollback_total\x18\x06 \x01(\x03R\x0fscrollbackTotal\x12.\n" +
 	"\x13scrollback_has_more\x18\a \x01(\bR\x11scrollbackHasMore\x12.\n" +
-	"\x13timestamp_unix_nano\x18\b \x01(\x03R\x11timestampUnixNano\"\xee\x01\n" +
+	"\x13timestamp_unix_nano\x18\b \x01(\x03R\x11timestampUnixNano\x12\x1f\n" +
+	"\vloaded_rows\x18\t \x01(\x03R\n" +
+	"loadedRows\x12-\n" +
+	"\x12history_generation\x18\n" +
+	" \x01(\x04R\x11historyGeneration\x12 \n" +
+	"\ffirst_row_id\x18\v \x01(\x04R\n" +
+	"firstRowId\x12\x1e\n" +
+	"\vlast_row_id\x18\f \x01(\x04R\tlastRowId\"\xee\x01\n" +
 	"\fStorageEntry\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x129\n" +
 	"\x05scope\x18\x02 \x01(\x0e2#.termx.protocol.wirepb.StorageScopeR\x05scope\x12\x19\n" +
@@ -4009,7 +4100,7 @@ const file_wirepb_terminal_proto_rawDesc = "" +
 	"iceTcpAddr\x12 \n" +
 	"\fice_tcp_port\x18\a \x01(\x05R\n" +
 	"iceTcpPort\x12/\n" +
-	"\x14updated_at_unix_nano\x18\b \x01(\x03R\x11updatedAtUnixNano\"\xcc\x02\n" +
+	"\x14updated_at_unix_nano\x18\b \x01(\x03R\x11updatedAtUnixNano\"\x9b\x03\n" +
 	"\x14TerminalGridMetadata\x12#\n" +
 	"\rstore_version\x18\x01 \x01(\x05R\fstoreVersion\x12\x1f\n" +
 	"\vterminal_id\x18\x02 \x01(\tR\n" +
@@ -4022,7 +4113,10 @@ const file_wirepb_terminal_proto_rawDesc = "" +
 	"\n" +
 	"page_count\x18\a \x01(\x03R\tpageCount\x12&\n" +
 	"\x0fcreated_at_unix\x18\b \x01(\x03R\rcreatedAtUnix\x12&\n" +
-	"\x0fupdated_at_unix\x18\t \x01(\x03R\rupdatedAtUnix*b\n" +
+	"\x0fupdated_at_unix\x18\t \x01(\x03R\rupdatedAtUnix\x12\x1e\n" +
+	"\vbase_row_id\x18\n" +
+	" \x01(\x04R\tbaseRowId\x12-\n" +
+	"\x12history_generation\x18\v \x01(\x04R\x11historyGeneration*b\n" +
 	"\fStorageScope\x12\x1d\n" +
 	"\x19STORAGE_SCOPE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14STORAGE_SCOPE_PUBLIC\x10\x01\x12\x19\n" +

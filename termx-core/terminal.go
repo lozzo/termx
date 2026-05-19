@@ -772,6 +772,10 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		outScrollbackWrapped    []bool
 		scrollbackTotal         int
 		scrollbackHasMore       bool
+		scrollbackLoadedRows    int
+		historyGeneration       uint64
+		scrollbackFirstRowID    uint64
+		scrollbackLastRowID     uint64
 		usedGrid                bool
 	)
 	if t.grid != nil && limit > 0 {
@@ -787,11 +791,16 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 			outScrollbackWrapped = cloneBoolSlice(gridViewport.Wrapped)
 			scrollbackTotal = gridViewport.TotalRows
 			scrollbackHasMore = gridViewport.HasMore
+			scrollbackLoadedRows = gridViewport.LoadedRows
+			historyGeneration = gridViewport.Generation
+			scrollbackFirstRowID = gridViewport.FirstRowID
+			scrollbackLastRowID = gridViewport.LastRowID
 			usedGrid = true
 		}
 	} else if t.grid != nil {
 		scrollbackTotal = t.grid.RowCount()
 		scrollbackHasMore = offset < scrollbackTotal
+		historyGeneration, scrollbackFirstRowID, scrollbackLastRowID, _ = t.grid.rowWindowCoordinates(offset, 0)
 		usedGrid = true
 	}
 	if !usedGrid {
@@ -820,6 +829,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		outScrollbackWrapped = sliceBoolRange(scrollbackWrapped, start, end)
 		scrollbackTotal = len(scrollback)
 		scrollbackHasMore = start > 0
+		scrollbackLoadedRows = len(scrollback[start:end])
 	}
 	if offset == 0 {
 		outScrollback, outScrollbackTimestamps, outScrollbackRowKinds, outScrollbackWrapped = trimScrollbackScreenOverlap(
@@ -842,6 +852,10 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		ScrollbackOffset:     offset,
 		ScrollbackTotal:      scrollbackTotal,
 		ScrollbackHasMore:    scrollbackHasMore,
+		ScrollbackLoadedRows: scrollbackLoadedRows,
+		HistoryGeneration:    historyGeneration,
+		ScrollbackFirstRowID: scrollbackFirstRowID,
+		ScrollbackLastRowID:  scrollbackLastRowID,
 		ScreenTimestamps:     cloneTimeSlice(screenTimestamps),
 		ScrollbackTimestamps: outScrollbackTimestamps,
 		ScreenRowKinds:       cloneStringSlice(screenRowKinds),
@@ -921,6 +935,9 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 				ScrollbackTotal:      gridViewport.TotalRows,
 				ScrollbackHasMore:    gridViewport.HasMore,
 				LoadedRows:           gridViewport.LoadedRows,
+				HistoryGeneration:    gridViewport.Generation,
+				FirstRowID:           gridViewport.FirstRowID,
+				LastRowID:            gridViewport.LastRowID,
 				ScrollbackTimestamps: cloneTimeSlice(gridViewport.Timestamps),
 				ScrollbackRowKinds:   cloneStringSlice(gridViewport.RowKinds),
 				ScrollbackWrapped:    cloneBoolSlice(gridViewport.Wrapped),
@@ -2641,6 +2658,10 @@ func protocolGridViewportFromCore(viewport *GridViewport) *protocol.GridViewport
 		ScrollbackLimit:      viewport.ScrollbackLimit,
 		ScrollbackTotal:      viewport.ScrollbackTotal,
 		ScrollbackHasMore:    viewport.ScrollbackHasMore,
+		LoadedRows:           viewport.LoadedRows,
+		HistoryGeneration:    viewport.HistoryGeneration,
+		FirstRowID:           viewport.FirstRowID,
+		LastRowID:            viewport.LastRowID,
 		ScrollbackTimestamps: cloneTimeSlice(viewport.ScrollbackTimestamps),
 		ScrollbackRowKinds:   cloneStringSlice(viewport.ScrollbackRowKinds),
 		ScrollbackWrapped:    cloneBoolSlice(viewport.ScrollbackWrapped),
@@ -2660,6 +2681,10 @@ func protocolSnapshotFromCore(snapshot *Snapshot) *protocol.Snapshot {
 		ScrollbackOffset:     snapshot.ScrollbackOffset,
 		ScrollbackTotal:      snapshot.ScrollbackTotal,
 		ScrollbackHasMore:    snapshot.ScrollbackHasMore,
+		ScrollbackLoadedRows: snapshot.ScrollbackLoadedRows,
+		HistoryGeneration:    snapshot.HistoryGeneration,
+		ScrollbackFirstRowID: snapshot.ScrollbackFirstRowID,
+		ScrollbackLastRowID:  snapshot.ScrollbackLastRowID,
 		ScreenTimestamps:     cloneTimeSlice(snapshot.ScreenTimestamps),
 		ScrollbackTimestamps: cloneTimeSlice(snapshot.ScrollbackTimestamps),
 		ScreenRowKinds:       cloneStringSlice(snapshot.ScreenRowKinds),

@@ -479,10 +479,11 @@ class TerminalProtocolClient implements TerminalProtocolSession {
           const { rows, hasMore, replay } = decodeHistoryReplayPayload(frame.payload)
           const viewport = decodeGridViewportPayload(replay)
           const viewportRows = historyViewportRows(viewport)
+          const loadedRows = historyViewportLoadedRows(viewport, rows)
           pending.resolve({
             beforeOffset: pending.beforeOffset,
             limit: pending.limit,
-            rows,
+            rows: loadedRows,
             hasMore,
             alternate: pending.alternate,
             replay: rowsToReplay(viewportRows),
@@ -998,6 +999,17 @@ function historyViewportRows(value: unknown): unknown[] {
   }
   const rows = (value as Record<string, unknown>).rows
   return Array.isArray(rows) ? rows : []
+}
+
+function historyViewportLoadedRows(value: unknown, fallback: number): number {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return fallback
+  }
+  const loadedRows = (value as Record<string, unknown>).loaded_rows
+  if (typeof loadedRows === 'number' && Number.isFinite(loadedRows) && loadedRows > 0) {
+    return Math.floor(loadedRows)
+  }
+  return fallback
 }
 
 function closedReason(payload: Uint8Array): string | undefined {

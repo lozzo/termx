@@ -314,6 +314,10 @@ function gridViewportToAPI(viewport: GridViewport): unknown {
     scrollback_limit: Number(viewport.scrollbackLimit),
     scrollback_total: Number(viewport.scrollbackTotal),
     scrollback_has_more: viewport.scrollbackHasMore,
+    loaded_rows: Number(viewport.loadedRows),
+    history_generation: Number(viewport.historyGeneration),
+    first_row_id: Number(viewport.firstRowId),
+    last_row_id: Number(viewport.lastRowId),
     timestamp_unix_nano: Number(viewport.timestampUnixNano),
   })
 }
@@ -493,6 +497,10 @@ function gridViewportInit(record: Record<string, unknown>): MessageInitShape<typ
     scrollbackLimit: BigInt(int32Value(field(record, 'scrollback_limit', 'scrollbackLimit'))),
     scrollbackTotal: BigInt(int32Value(field(record, 'scrollback_total', 'scrollbackTotal'))),
     scrollbackHasMore: booleanValue(field(record, 'scrollback_has_more', 'scrollbackHasMore')),
+    loadedRows: BigInt(int32Value(field(record, 'loaded_rows', 'loadedRows'))),
+    historyGeneration: BigInt(int32Value(field(record, 'history_generation', 'historyGeneration'))),
+    firstRowId: BigInt(int32Value(field(record, 'first_row_id', 'firstRowId'))),
+    lastRowId: BigInt(int32Value(field(record, 'last_row_id', 'lastRowId'))),
     timestampUnixNano: BigInt(0),
   }
 }

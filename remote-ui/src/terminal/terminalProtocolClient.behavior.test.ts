@@ -593,6 +593,10 @@ describe('TerminalProtocolClient', () => {
       scrollback_limit: 50,
       scrollback_total: 101,
       scrollback_has_more: false,
+      loaded_rows: 7,
+      history_generation: 42,
+      first_row_id: 1000,
+      last_row_id: 1006,
     })
     const replayPayload = new Uint8Array(5 + viewportPayload.length)
     const replayView = new DataView(replayPayload.buffer)
@@ -605,7 +609,7 @@ describe('TerminalProtocolClient', () => {
       beforeOffset: 100,
       limit: 50,
       hasMore: false,
-      rows: 1,
+      rows: 7,
       replay: 'old',
     })
   })
