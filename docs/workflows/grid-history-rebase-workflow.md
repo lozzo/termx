@@ -21,7 +21,7 @@ This workflow tracks the terminal history rebuild from a clean parsed-grid basel
 - Phase 4: Fix history file loss/recovery. Complete.
 - Phase 5: Bound TUI/runtime materialized history memory. Complete.
 - Phase 6: Reapply remote/protobuf/app changes without raw journal UI history. Complete.
-- Final verification and daemon cleanup. Pending.
+- Final verification and daemon cleanup. Complete.
 
 ## Decisions
 
@@ -80,6 +80,15 @@ cd remote-ui && npm run typecheck
 cd remote-ui && npm run test
 go test ./internal/protocol -run 'TestEncodeRemotePairStartAcceptsLegacyGetterParams|TestClientRequestStreamAndProtocolError' -count=1
 go test ./internal/protocol/... ./termx-proto/... ./termx-remote/... ./termx-cli/cmd/termx ./termx-hub/cmd/termx-hub
+go build -o /tmp/termx-grid-e2e.zj2pYi/termx ./termx-cli/cmd/termx
+tmux new-session -d -s termx-grid-e2e -x 120 -y 36 '/tmp/termx-grid-e2e.zj2pYi/termx --socket /tmp/termx-grid-e2e.zj2pYi/termx.sock --log-file /tmp/termx-grid-e2e.zj2pYi/termx.log attach 1'
+tmux capture-pane -t termx-grid-e2e -epJS - > /tmp/termx-grid-e2e.zj2pYi/stress100-copy-top.txt
+tmux new-session -d -s termx-grid-e2e-page -x 120 -y 36 '/tmp/termx-grid-e2e.zj2pYi/termx --socket /tmp/termx-grid-e2e.zj2pYi/termx.sock --log-file /tmp/termx-grid-e2e.zj2pYi/termx.log attach 2'
+tmux capture-pane -t termx-grid-e2e-page -epJS - > /tmp/termx-grid-e2e.zj2pYi/page1000-copy-top-wait3.txt
+tmux new-session -d -s termx-grid-e2e-qr -x 120 -y 36 '/tmp/termx-grid-e2e.zj2pYi/termx --socket /tmp/termx-grid-e2e.zj2pYi/termx.sock --log-file /tmp/termx-grid-e2e.zj2pYi/termx.log attach 3'
+tmux capture-pane -t termx-grid-e2e-qr -epJS - > /tmp/termx-grid-e2e.zj2pYi/qr-copy-bottom.txt
+go test ./...
+go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-hub/... ./termx-proto/... ./termx-remote/... ./termx-shared/... ./termx-testkit/... ./termx-vterm/... ./tuiv2/...
 ```
 
 Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.md` and `termx-core/docs/terminal-history-event-log-plan.md` were deleted on the `feac69ea` baseline. The resolution kept those files deleted and restored only `docs/terminal-history-grid-decision.md`.
@@ -269,9 +278,33 @@ Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.
 
 ## tmux Verification
 
-- Not run yet.
-- Planned session name: `termx-grid-e2e`
-- Need to discover actual TUI launch, panel/split/floating/takeover/copy-mode commands before running scenario tests.
+- Built an isolated test binary at `/tmp/termx-grid-e2e.zj2pYi/termx`.
+- Used isolated `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, socket, and log under `/tmp/termx-grid-e2e.zj2pYi`.
+- Disabled remote runtime for the local test daemon with `TERMX_REMOTE_ENABLE=false` to avoid touching the user's normal daemon or remote deployment.
+- Confirmed TUI launch path:
+  - bare `termx` launches the workspace TUI
+  - `termx attach <id>` launches the TUI attached to an existing terminal
+  - copy mode enters with `Ctrl-V`, top/bottom use `g`/`G`, exit uses `Esc`
+- Stress/wrapped styled output:
+  - Ran `python scripts/generate_terminal_stress.py --lines 100 --seed 100 --width-hint 120`.
+  - Resized the tmux window from `120x36` to `90x28` and back to exercise owner resize.
+  - Copy mode loaded a structured grid viewport for the styled/wrapped history and showed the first stress rows (`000000`, `000001`) after `Ctrl-V`, `g`.
+- Tail preservation:
+  - Ran deterministic short output `SIMPLE000001` through `SIMPLE000120`.
+  - Live TUI and copy-mode bottom both showed `SIMPLE000100` and `SIMPLE000120`.
+- Pagination continuity:
+  - Created a clean terminal with `PAGE000001` through `PAGE001000`.
+  - Live TUI showed `PAGE000978` through `PAGE001000` continuously.
+  - Copy mode bottom showed `PAGE000931` through `PAGE001000` continuously.
+  - Repeated `g` at the top triggered older grid viewport pages: visible windows moved continuously through `PAGE000728-000797`, `PAGE000478-000547`, `PAGE000228-000297`, and finally `PAGE000001-000070`; no gaps or duplicates were found in captured visible windows.
+- TUI re-entry / persisted daemon history:
+  - Killed the `termx-grid-e2e-page` tmux session, reattached to terminal `2`, entered copy mode, and paged to top.
+  - The re-entered TUI still showed `PAGE000001-000070` continuously.
+- QR output:
+  - Created a terminal that ran `termx remote pair --ttl 30s --auth-ttl 1m`.
+  - Live TUI showed the QR block and `termx://pair?payload=...`.
+  - Copy mode showed the QR block at top and, at bottom, the full URI text plus `expires_at` / `authorization_ttl`.
+- Capture logs are under `/tmp/termx-grid-e2e.zj2pYi/*.txt` for this run.
 
 ## Sub-Agent Review Summary
 
@@ -282,11 +315,11 @@ Cherry-pick note: `d4527bfd` conflicted because `docs/terminal-pool-pty-journal.
 
 ## Test Results
 
-- Latest focused/package results are listed in each phase section. Full `go test ./...` has not been run yet in this workflow.
+- Latest focused/package results are listed in each phase section.
+- Root `go test ./...` does not work in this workspace: `pattern ./...: directory prefix . does not contain modules listed in go.work or their selected dependencies`.
+- PASS: `go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-hub/... ./termx-proto/... ./termx-remote/... ./termx-shared/... ./termx-testkit/... ./termx-vterm/... ./tuiv2/...`
 
 ## Unresolved Risks
 
-- Need tmux real-terminal validation for resize/copy-mode/history continuity and observer viewport projection.
-- Need final full-suite test pass or documented environment/runtime failures.
 - Persistent grid retention is still explicit remove/fresh generation only; no size/time retention cap is implemented yet.
 - Resize conservative complete wrapped logical group append can still leave raw grid-store duplicate rows in edge cases where a logical line is split between history and visible screen. Latest snapshot boundary dedupes the common UI case, but a deeper grid/screen merge model is still a future hardening area.
