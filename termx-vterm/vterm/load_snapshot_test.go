@@ -793,6 +793,45 @@ func TestVTermWriteWithDamagePreservesStyledEraseAsSpan(t *testing.T) {
 	}
 }
 
+func TestVTermClearWithScrollbackPreservesStyledBlankRows(t *testing.T) {
+	const bg = "#222222"
+	vt := New(12, 2, 100, nil)
+
+	if _, err, _ := vt.WriteWithDamage([]byte("\x1b[48;2;34;34;34m\x1b[1;1H\x1b[K")); err != nil {
+		t.Fatalf("styled erase setup: %v", err)
+	}
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[2J"))
+	if err != nil {
+		t.Fatalf("clear screen: %v", err)
+	}
+	if len(damage.ScrollbackAppend) != 1 {
+		t.Fatalf("expected one styled blank row in scrollback damage, got %#v", damage.ScrollbackAppend)
+	}
+	op := damage.ScrollbackAppend[0]
+	switch {
+	case len(op.Runs) == 1:
+		if op.Runs[0].Text != strings.Repeat(" ", 12) || op.Runs[0].Style.BG != bg {
+			t.Fatalf("expected compact styled blank run with bg %q, got %#v", bg, op.Runs)
+		}
+	case len(op.Cells) == 12:
+		for i, cell := range op.Cells {
+			if cell.Content != " " || cell.Width != 1 || cell.Style.BG != bg {
+				t.Fatalf("expected styled blank damage cell %d with bg %q, got %#v", i, bg, cell)
+			}
+		}
+	default:
+		t.Fatalf("expected full styled blank row in damage, got %#v", damage.ScrollbackAppend[0])
+	}
+
+	scrollback := vt.ScrollbackContent()
+	if len(scrollback) != 1 || len(scrollback[0]) != 12 {
+		t.Fatalf("expected one full styled blank row in scrollback, got %#v", scrollback)
+	}
+	if got := scrollback[0][11].Style.BG; got != bg {
+		t.Fatalf("expected scrollback tail bg %q, got %#v", bg, scrollback[0][11])
+	}
+}
+
 func TestVTermWriteWithDamageCapturesMidRowStyleOnlySpan(t *testing.T) {
 	vt := New(24, 1, 100, nil)
 	vt.LoadSnapshot(ScreenData{

@@ -5,6 +5,7 @@ import {
   encodeHistoryRequestPayload,
   encodeResizePayload,
   encodeTermxFrame,
+  rowsToReplay,
   rowsToText,
   screenUpdatePayloadToReplay,
   snapshotUsesAlternateScreen,
@@ -122,6 +123,27 @@ describe('termxProtocol', () => {
 
     expect(replay).toContain('\x1b[0;48;2;34;34;34m ')
     expect(replay).toContain('\x1b]8;;https://example.test/tail\x07 ')
+  })
+
+  it('preserves trailing plain blanks in sequential replay text for QR rows', () => {
+    const replay = rowsToReplay([
+      {
+        cells: [
+          { r: '█' },
+          { r: ' ' },
+          { r: ' ' },
+        ],
+      },
+      {
+        cells: [
+          { r: '▄' },
+          { r: ' ' },
+          { r: ' ' },
+        ],
+      },
+    ])
+
+    expect(replay).toBe('█  \r\n▄  ')
   })
 
   it('preserves soft-wrapped snapshot rows when generating replay text', () => {

@@ -200,9 +200,17 @@ func (s *Screen) ClearWithScrollback(blank *uv.Cell) {
 		// Save all lines that have content before clearing
 		for y := 0; y < s.buf.Height(); y++ {
 			line := s.buf.Line(y)
-			if line != nil && !s.isLineEmpty(line) {
-				s.recordScrollbackLine(y, line, s.LineWrapped(y))
-				s.scrollback.PushWrapped(line[:min(len(line), s.LineUsed(y))], s.LineWrapped(y))
+			if line == nil {
+				continue
+			}
+			used := min(len(line), s.LineUsed(y))
+			if used <= 0 {
+				continue
+			}
+			captured := line[:used]
+			if !s.isLineEmpty(captured) {
+				s.recordScrollbackLine(y, captured, s.LineWrapped(y))
+				s.scrollback.PushWrapped(captured, s.LineWrapped(y))
 			}
 		}
 	}
@@ -214,6 +222,12 @@ func (s *Screen) ClearWithScrollback(blank *uv.Cell) {
 // isLineEmpty returns true if the line contains only empty/space cells.
 func (s *Screen) isLineEmpty(line uv.Line) bool {
 	for _, cell := range line {
+		if cell.Width != 0 && cell.Width != 1 {
+			return false
+		}
+		if !cell.Style.IsZero() || !cell.Link.IsZero() {
+			return false
+		}
 		if cell.Content != "" && cell.Content != " " {
 			return false
 		}

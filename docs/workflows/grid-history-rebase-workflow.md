@@ -541,6 +541,48 @@ go test ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...
 - PASS: `cd remote-ui && npm run typecheck`
 - PASS: `cd remote-ui && npm run test` (58 files, 411 tests; jsdom emitted expected localStorage/canvas warnings)
 
+## tmux Reference Follow-Up Phase 5: Style and QR Cell Preservation
+
+- Data model finding:
+  - TermX history storage is parsed grid/cell state, not a raw ANSI string journal.
+  - In memory the terminal rows are `vterm.Cell` values: text content, display width, style fields, and hyperlink metadata.
+  - Grid history rows are either explicit cells or compact `CellRun` spans plus row metadata. The file-backed store encodes those rows into pages and commits visibility through index records.
+  - This matches the tmux direction at the semantic level: replay should read stored cells/runs and wrapped metadata, not reinterpret the original PTY byte stream.
+- Bug fixed: remote-ui sequential structured replay trimmed trailing plain blank cells. QR generators commonly use literal spaces for white modules and quiet zones, so trimming made the right side of QR rows disappear even when Go grid/protocol preserved the cells.
+- Bug fixed: vterm `ClearWithScrollback` treated style-only blank rows as empty and skipped them when ED2 moved the visible screen into scrollback. It now captures the row's used width, treats styled/linked/wide cells as real content, and records the same captured row that is pushed into scrollback.
+- Regression coverage added:
+  - QR-like rows with plain blank modules survive grid store decode and protocol viewport decode.
+  - Shell-prompt style runs such as bold green `ansi:2` survive vterm damage into grid history.
+  - Styled blank rows survive clear-screen-to-scrollback as compact runs or cells and materialize back as styled cells.
+  - remote-ui replay preserves trailing plain blanks for structured QR rows.
+
+### Phase 5 Commands
+
+```sh
+go test ./termx-vterm/vterm -run 'TestVTermClearWithScrollbackPreservesStyledBlankRows|TestVTermWriteWithDamagePreservesStyledEraseAsSpan|TestVTermReplayPreservesTrailingStyledAndLinkedBlanks' -count=1 -v
+go test ./termx-core -run 'TestTerminalGridStorePreservesQRPlainBlankModules|TestTerminalGridScrollbackPreservesShellPromptStyleRuns|TestTerminalGridStorePreservesTrailingBlankCells' -count=1 -v
+cd remote-ui && npm run test -- termxProtocol.test.ts
+go test ./termx-vterm/... ./termx-core/... ./tuiv2/render/...
+cd remote-ui && npm run typecheck
+go test ./tuiv2/runtime/... ./tuiv2/app/...
+cd remote-ui && npm run test
+go test ./...
+go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./tuiv2/runtime/... ./tuiv2/app/... ./tuiv2/render/...
+```
+
+### Phase 5 Test Results
+
+- Initial focused vterm test run failed because the new test expected expanded cells in damage; the implementation correctly emits compact styled `Runs` for ASCII style-only rows. The test was adjusted to accept either compact runs or expanded cells and to verify final materialized scrollback cells.
+- PASS: `go test ./termx-vterm/vterm -run 'TestVTermClearWithScrollbackPreservesStyledBlankRows|TestVTermWriteWithDamagePreservesStyledEraseAsSpan|TestVTermReplayPreservesTrailingStyledAndLinkedBlanks' -count=1 -v`
+- PASS: `go test ./termx-core -run 'TestTerminalGridStorePreservesQRPlainBlankModules|TestTerminalGridScrollbackPreservesShellPromptStyleRuns|TestTerminalGridStorePreservesTrailingBlankCells' -count=1 -v`
+- PASS: `cd remote-ui && npm run test -- termxProtocol.test.ts`
+- PASS: `go test ./termx-vterm/... ./termx-core/... ./tuiv2/render/...`
+- PASS: `cd remote-ui && npm run typecheck`
+- PASS: `go test ./tuiv2/runtime/... ./tuiv2/app/...`
+- PASS: `cd remote-ui && npm run test` (58 files, 412 tests; jsdom emitted expected localStorage/canvas warnings)
+- INFO: `go test ./...` from repository root fails with `pattern ./...: directory prefix . does not contain modules listed in go.work or their selected dependencies`; this repo is driven by the explicit `go.work` modules.
+- PASS: `go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./tuiv2/runtime/... ./tuiv2/app/... ./tuiv2/render/...`
+
 ## Unresolved Risks
 
 - Persistent grid retention is now row-count bounded via `ScrollbackSize`; no time-based retention or disk-byte cap is implemented yet.

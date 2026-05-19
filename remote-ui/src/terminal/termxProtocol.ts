@@ -702,18 +702,8 @@ function writeSequentialDecodedRows(rows: DecodedScrollbackRow[]): string {
 }
 
 function writeSequentialDecodedRow(row: DecodedCell[]): string {
-  let last = row.length - 1
-  while (last >= 0) {
-    const cell = row[last]
-    if (!cell) {
-      last -= 1
-      continue
-    }
-    if (cell.width > 0 && cellNeedsReplay(cell)) break
-    last -= 1
-  }
   const parts: string[] = []
-  for (let index = 0; index <= last; index += 1) {
+  for (let index = 0; index < row.length; index += 1) {
     const cell = row[index]
     if (!cell) continue
     if (cell.width === 0) continue
@@ -925,17 +915,9 @@ function writeSequentialRows(rows: unknown[]): string {
 
 function writeSequentialRow(row: unknown): string {
   const cells = rowCells(row)
-  let last = cells.length - 1
-  while (last >= 0) {
-    const cell = cellFrom(cells[last])
-    if (cellNeedsReplay(cell)) {
-      break
-    }
-    last -= 1
-  }
   const parts: string[] = []
   let currentStyle = emptyStyle
-  for (let index = 0; index <= last; index += 1) {
+  for (let index = 0; index < cells.length; index += 1) {
     const cell = cellFrom(cells[index])
     if (cell.content === '' && cell.width === 0) {
       continue
@@ -1018,12 +1000,6 @@ function resetCellStyleANSI(): string {
 function cellStyleWithCellLink(cell: DecodedCell): CellStyleLike {
   if (!cell.linkUrl && !cell.linkParams) return cell.style
   return { ...cell.style, linkUrl: cell.linkUrl, linkParams: cell.linkParams }
-}
-
-function cellNeedsReplay(cell: DecodedCell): boolean {
-  return cell.content.trim() !== '' ||
-    !isEmptyStyle(cellStyleWithCellLink(cell)) ||
-    cell.width > 1
 }
 
 function stylesEqual(a: CellStyleLike, b: CellStyleLike): boolean {

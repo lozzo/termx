@@ -1042,6 +1042,75 @@ func TestTerminalGridStorePreservesTrailingBlankCells(t *testing.T) {
 	}
 }
 
+func TestTerminalGridStorePreservesQRPlainBlankModules(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	row := terminalGridRow{
+		cells: []localvterm.Cell{
+			{Content: "█", Width: 1},
+			{Content: " ", Width: 1},
+			{Content: " ", Width: 1},
+			{Content: "▄", Width: 1},
+			{Content: " ", Width: 1},
+		},
+	}
+	if err := store.appendRows([]terminalGridRow{row}); err != nil {
+		t.Fatalf("append QR-like row with plain blank modules: %v", err)
+	}
+
+	decoded, err := store.Viewport(0, 1, 10)
+	if err != nil {
+		t.Fatalf("decode QR-like row: %v", err)
+	}
+	if got := vtermRowToRawString(decoded.Rows[0]); got != "█  ▄ " {
+		t.Fatalf("expected grid row to preserve QR plain blank modules, got %q row=%#v", got, decoded.Rows[0])
+	}
+
+	viewport := protocolGridViewportFromCore(&GridViewport{
+		Rows: [][]Cell{{
+			{Content: "█", Width: 1},
+			{Content: " ", Width: 1},
+			{Content: " ", Width: 1},
+			{Content: "▄", Width: 1},
+			{Content: " ", Width: 1},
+		}},
+	})
+	if got := protocolRowToRawString(viewport.Rows[0].DecodeCells()); got != "█  ▄ " {
+		t.Fatalf("expected protocol viewport row to preserve QR plain blank modules, got %q row=%#v", got, viewport.Rows[0].DecodeCells())
+	}
+}
+
+func TestTerminalGridScrollbackPreservesShellPromptStyleRuns(t *testing.T) {
+	vt := localvterm.New(24, 2, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{id: "prompt-style", grid: store}
+
+	writeVTermDamageToGrid(t, term, vt, "\x1b[1;32mtermx%\x1b[0m echo ok\r\nnext\r\n")
+
+	viewport, err := store.Viewport(0, 10, 24)
+	if err != nil {
+		t.Fatalf("read styled prompt grid viewport: %v", err)
+	}
+	if len(viewport.Rows) == 0 {
+		t.Fatal("expected prompt row in grid viewport")
+	}
+	row := viewport.Rows[0]
+	if got := vtermRowToString(row); got != "termx% echo ok" {
+		t.Fatalf("expected prompt text in grid, got %q row=%#v", got, row)
+	}
+	for i := 0; i < len("termx%"); i++ {
+		if got := row[i].Style; got.FG != "ansi:2" || !got.Bold {
+			t.Fatalf("expected prompt cell %d to retain bold green style, got %#v", i, row[i])
+		}
+	}
+	if got := row[len("termx%")].Style; got.FG != "" || got.Bold {
+		t.Fatalf("expected text after reset to use default style, got %#v", row[len("termx%")])
+	}
+}
+
 func TestTerminalGridStoreRowsReflowSoftWrappedColdBuffer(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
