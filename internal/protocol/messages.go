@@ -68,14 +68,16 @@ type TerminalInfo struct {
 }
 
 type CreateParams struct {
-	Command        []string
-	ID             string
-	Name           string
-	Tags           map[string]string
-	Size           Size
-	Dir            string
-	Env            []string
-	ScrollbackSize int
+	Command            []string
+	ID                 string
+	Name               string
+	Tags               map[string]string
+	Size               Size
+	Dir                string
+	Env                []string
+	ScrollbackSize     int
+	ScrollbackMaxBytes int64
+	ScrollbackMaxAge   time.Duration
 }
 
 type CreateResult struct {
@@ -1807,44 +1809,46 @@ type ScreenData struct {
 const SnapshotRowKindRestart = "restart"
 
 type Snapshot struct {
-	TerminalID           string
-	Size                 Size
-	Screen               ScreenData
-	Scrollback           []CompactRow
-	ScrollbackOffset     int
-	ScrollbackTotal      int
-	ScrollbackHasMore    bool
-	ScrollbackLoadedRows int
-	HistoryGeneration    uint64
-	ScrollbackFirstRowID uint64
-	ScrollbackLastRowID  uint64
-	ScreenTimestamps     []time.Time
-	ScrollbackTimestamps []time.Time
-	ScreenRowKinds       []string
-	ScrollbackRowKinds   []string
-	ScreenWrapped        []bool
-	ScrollbackWrapped    []bool
-	Cursor               CursorState
-	Modes                TerminalModes
-	Timestamp            time.Time
+	TerminalID             string
+	Size                   Size
+	Screen                 ScreenData
+	Scrollback             []CompactRow
+	ScrollbackOffset       int
+	ScrollbackTotal        int
+	ScrollbackLogicalTotal int
+	ScrollbackHasMore      bool
+	ScrollbackLoadedRows   int
+	HistoryGeneration      uint64
+	ScrollbackFirstRowID   uint64
+	ScrollbackLastRowID    uint64
+	ScreenTimestamps       []time.Time
+	ScrollbackTimestamps   []time.Time
+	ScreenRowKinds         []string
+	ScrollbackRowKinds     []string
+	ScreenWrapped          []bool
+	ScrollbackWrapped      []bool
+	Cursor                 CursorState
+	Modes                  TerminalModes
+	Timestamp              time.Time
 }
 
 type GridViewport struct {
-	TerminalID           string
-	Size                 Size
-	Rows                 []CompactRow
-	ScrollbackOffset     int
-	ScrollbackLimit      int
-	ScrollbackTotal      int
-	ScrollbackHasMore    bool
-	LoadedRows           int
-	HistoryGeneration    uint64
-	FirstRowID           uint64
-	LastRowID            uint64
-	ScrollbackTimestamps []time.Time
-	ScrollbackRowKinds   []string
-	ScrollbackWrapped    []bool
-	Timestamp            time.Time
+	TerminalID             string
+	Size                   Size
+	Rows                   []CompactRow
+	ScrollbackOffset       int
+	ScrollbackLimit        int
+	ScrollbackTotal        int
+	ScrollbackLogicalTotal int
+	ScrollbackHasMore      bool
+	LoadedRows             int
+	HistoryGeneration      uint64
+	FirstRowID             uint64
+	LastRowID              uint64
+	ScrollbackTimestamps   []time.Time
+	ScrollbackRowKinds     []string
+	ScrollbackWrapped      []bool
+	Timestamp              time.Time
 }
 
 func (s CellStyle) isZero() bool {

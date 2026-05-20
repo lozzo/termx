@@ -1050,6 +1050,111 @@ func TestTerminalGridStoreRetentionCountsTrailingWrappedPrefixAsLogicalLine(t *t
 	}
 }
 
+func TestTerminalGridStoreViewportReportsLogicalTotals(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("A0"), wrapped: true},
+		{cells: localVTermCellsFromString("A1")},
+		{cells: localVTermCellsFromString("B")},
+		{cells: localVTermCellsFromString("C"), wrapped: true},
+	}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+
+	viewport, err := store.Viewport(0, 10, 20)
+	if err != nil {
+		t.Fatalf("viewport: %v", err)
+	}
+	if viewport.TotalRows != 4 {
+		t.Fatalf("expected committed-row total 4, got %d", viewport.TotalRows)
+	}
+	if viewport.LogicalTotal != 3 {
+		t.Fatalf("expected logical-line total 3, got %d", viewport.LogicalTotal)
+	}
+}
+
+func TestTerminalGridStoreRetentionByteLimitKeepsNewestRowsWithinBudget(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rowA := terminalGridRow{cells: []localvterm.Cell{{Content: "aaaa", Width: 1}}}
+	rowB := terminalGridRow{cells: []localvterm.Cell{{Content: "bbbb", Width: 1}}}
+	rowC := terminalGridRow{cells: []localvterm.Cell{{Content: "cccc", Width: 1}}}
+	payloadC, err := encodeTerminalGridRow(rowC)
+	if err != nil {
+		t.Fatalf("encode rowC: %v", err)
+	}
+	store.SetRetentionPolicy(terminalGridRetentionPolicy{maxRetainedBytes: int64(len(payloadC))})
+
+	if err := store.AppendRows([][]localvterm.Cell{rowA.cells, rowB.cells, rowC.cells}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+
+	viewport, err := store.Viewport(0, 10, 20)
+	if err != nil {
+		t.Fatalf("viewport after byte retention: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"cccc"}) {
+		t.Fatalf("expected byte retention to keep only newest row within budget, got %#v", got)
+	}
+}
+
+func TestTerminalGridStoreRetentionPolicyUsesSmallestBudget(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rowA := terminalGridRow{cells: []localvterm.Cell{{Content: "aaaa", Width: 1}}}
+	rowB := terminalGridRow{cells: []localvterm.Cell{{Content: "bbbb", Width: 1}}}
+	rowC := terminalGridRow{cells: []localvterm.Cell{{Content: "cccc", Width: 1}}}
+	payloadC, err := encodeTerminalGridRow(rowC)
+	if err != nil {
+		t.Fatalf("encode rowC: %v", err)
+	}
+	store.SetRetentionPolicy(terminalGridRetentionPolicy{
+		maxLogicalLines:  2,
+		maxRetainedBytes: int64(len(payloadC)),
+	})
+
+	if err := store.AppendRows([][]localvterm.Cell{rowA.cells, rowB.cells, rowC.cells}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+
+	viewport, err := store.Viewport(0, 10, 20)
+	if err != nil {
+		t.Fatalf("viewport after combined retention: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"cccc"}) {
+		t.Fatalf("expected smallest retention budget to win, got %#v", got)
+	}
+}
+
+func TestTerminalGridStoreRetentionAgeLimitDropsOldLogicalLines(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	store.SetRetentionPolicy(terminalGridRetentionPolicy{maxAge: time.Hour})
+
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
+	old := now.Add(-2 * time.Hour)
+	fresh := now.Add(-30 * time.Minute)
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("old0"), timestamp: old},
+		{cells: localVTermCellsFromString("old1"), timestamp: old},
+		{cells: localVTermCellsFromString("fresh0"), timestamp: fresh},
+	}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+	if err := store.enforceMaxRowsLockedAt(now); err != nil {
+		t.Fatalf("enforce retention at time: %v", err)
+	}
+	viewport, err := store.Viewport(0, 10, 20)
+	if err != nil {
+		t.Fatalf("viewport after age retention: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"fresh0"}) {
+		t.Fatalf("expected age retention to drop old logical lines, got %#v", got)
+	}
+}
+
 func TestTerminalGridStoreRetentionBumpsGenerationAndRejectsOldCoordinates(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()

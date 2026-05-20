@@ -908,14 +908,16 @@ func cloneStringMap(values map[string]string) map[string]string {
 
 func createParamsToWirePB(params CreateParams) *wirepb.CreateParams {
 	return &wirepb.CreateParams{
-		Command:        append([]string(nil), params.Command...),
-		Id:             params.ID,
-		Name:           params.Name,
-		Tags:           cloneStringMap(params.Tags),
-		Size:           sizeToWirePB(params.Size),
-		Dir:            params.Dir,
-		Env:            append([]string(nil), params.Env...),
-		ScrollbackSize: int32(params.ScrollbackSize),
+		Command:                 append([]string(nil), params.Command...),
+		Id:                      params.ID,
+		Name:                    params.Name,
+		Tags:                    cloneStringMap(params.Tags),
+		Size:                    sizeToWirePB(params.Size),
+		Dir:                     params.Dir,
+		Env:                     append([]string(nil), params.Env...),
+		ScrollbackSize:          int32(params.ScrollbackSize),
+		ScrollbackMaxBytes:      params.ScrollbackMaxBytes,
+		ScrollbackMaxAgeSeconds: int64(params.ScrollbackMaxAge / time.Second),
 	}
 }
 
@@ -924,14 +926,16 @@ func createParamsFromWirePB(msg *wirepb.CreateParams) CreateParams {
 		return CreateParams{}
 	}
 	return CreateParams{
-		Command:        append([]string(nil), msg.GetCommand()...),
-		ID:             msg.GetId(),
-		Name:           msg.GetName(),
-		Tags:           cloneStringMap(msg.GetTags()),
-		Size:           sizeFromWirePB(msg.GetSize()),
-		Dir:            msg.GetDir(),
-		Env:            append([]string(nil), msg.GetEnv()...),
-		ScrollbackSize: int(msg.GetScrollbackSize()),
+		Command:            append([]string(nil), msg.GetCommand()...),
+		ID:                 msg.GetId(),
+		Name:               msg.GetName(),
+		Tags:               cloneStringMap(msg.GetTags()),
+		Size:               sizeFromWirePB(msg.GetSize()),
+		Dir:                msg.GetDir(),
+		Env:                append([]string(nil), msg.GetEnv()...),
+		ScrollbackSize:     int(msg.GetScrollbackSize()),
+		ScrollbackMaxBytes: msg.GetScrollbackMaxBytes(),
+		ScrollbackMaxAge:   time.Duration(msg.GetScrollbackMaxAgeSeconds()) * time.Second,
 	}
 }
 

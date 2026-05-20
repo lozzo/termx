@@ -46,10 +46,16 @@ type terminalGridStore struct {
 	generation      uint64
 	pageMaxBytes    int64
 	rowCount        int
-	maxLogicalLines int
+	retentionPolicy terminalGridRetentionPolicy
 	closed          bool
 	removeOnClose   bool
 	writable        bool
+}
+
+type terminalGridRetentionPolicy struct {
+	maxLogicalLines  int
+	maxRetainedBytes int64
+	maxAge           time.Duration
 }
 
 type terminalGridRowRef struct {
@@ -212,7 +218,16 @@ func (s *terminalGridStore) SetMaxRows(maxRows int) {
 		return
 	}
 	s.mu.Lock()
-	s.maxLogicalLines = maxRows
+	s.retentionPolicy.maxLogicalLines = maxRows
+	s.mu.Unlock()
+}
+
+func (s *terminalGridStore) SetRetentionPolicy(policy terminalGridRetentionPolicy) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.retentionPolicy = policy
 	s.mu.Unlock()
 }
 
@@ -381,6 +396,17 @@ func (s *terminalGridStore) RowCount() int {
 	return s.rowCount
 }
 
+func (s *terminalGridStore) LogicalLineCount() int {
+	if s == nil {
+		return 0
+	}
+	refs, err := readTerminalGridIndexRefsFromPath(filepath.Join(s.dir, terminalGridIndexName))
+	if err != nil {
+		return 0
+	}
+	return terminalGridLogicalLineCountForRefs(refs)
+}
+
 func (s *terminalGridStore) coordinatesLocked() (baseRowID uint64, generation uint64, rowCount int) {
 	if s == nil {
 		return 0, 0, 0
@@ -444,6 +470,7 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 		result.BeforeOffset = beforeOffset
 		result.Limit = limit
 		result.Generation, result.FirstRowID, result.LastRowID, result.TotalRows = s.rowWindowCoordinates(beforeOffset, rows)
+		result.LogicalTotal = s.LogicalLineCount()
 		traceGridVTermRows("core.grid_store.viewport.reflow_rows", s.terminalID, result.Rows, "offset", beforeOffset, "limit", limit, "raw_limit", rawLimit, "cols", cols, "loaded_rows", result.LoadedRows, "total", result.TotalRows, "has_more", result.HasMore, "cropped", cropped, "generation", result.Generation, "first_row_id", result.FirstRowID, "last_row_id", result.LastRowID)
 		if len(result.Rows) >= limit || !hasMore {
 			return result, nil
@@ -473,6 +500,7 @@ type terminalGridViewport struct {
 	BeforeOffset int
 	Limit        int
 	TotalRows    int
+	LogicalTotal int
 	Generation   uint64
 	FirstRowID   uint64
 	LastRowID    uint64
@@ -726,19 +754,26 @@ func (s *terminalGridStore) appendIndexRowsLocked(refs []terminalGridRowRef) err
 }
 
 func (s *terminalGridStore) enforceMaxRowsLocked() error {
-	if s == nil || s.maxLogicalLines <= 0 || s.rowCount <= s.maxLogicalLines {
+	return s.enforceMaxRowsLockedAt(time.Now().UTC())
+}
+
+func (s *terminalGridStore) enforceMaxRowsLockedAt(now time.Time) error {
+	if s == nil {
 		return nil
 	}
 	refs, err := readTerminalGridIndexRefsFromPath(filepath.Join(s.dir, terminalGridIndexName))
 	if err != nil {
 		return err
 	}
-	retainRows := terminalGridRetentionRetainedRowsForLogicalLines(refs, s.maxLogicalLines)
-	if retainRows <= 0 || retainRows >= len(refs) {
+	retainRows, err := terminalGridRetentionRetainedRows(s.dir, refs, s.retentionPolicy, now)
+	if err != nil {
+		return err
+	}
+	if retainRows >= len(refs) {
 		return nil
 	}
 	drop := len(refs) - retainRows
-	if drop <= 0 || drop >= len(refs) {
+	if drop <= 0 {
 		return nil
 	}
 	refs = refs[drop:]
@@ -785,11 +820,45 @@ func (s *terminalGridStore) enforceMaxRowsLocked() error {
 			return err
 		}
 		s.currentBytes = last.offset + last.length
+	} else {
+		s.currentSeq = 0
+		s.currentBytes = 0
+		if s.current != nil {
+			_ = s.current.Close()
+			s.current = nil
+		}
 	}
 	return pruneUnreferencedTerminalGridPages(s.dir, refs)
 }
 
-func terminalGridRetentionRetainedRowsForLogicalLines(refs []terminalGridRowRef, logicalLines int) int {
+func terminalGridRetentionRetainedRows(dir string, refs []terminalGridRowRef, policy terminalGridRetentionPolicy, now time.Time) (int, error) {
+	if len(refs) == 0 {
+		return 0, nil
+	}
+	retainRows := len(refs)
+	if policy.maxLogicalLines > 0 {
+		if rows := terminalGridRetentionRowsForLogicalLineLimit(refs, policy.maxLogicalLines); rows > 0 && rows < retainRows {
+			retainRows = rows
+		}
+	}
+	if policy.maxRetainedBytes > 0 {
+		if rows := terminalGridRetentionRowsForByteLimit(refs, policy.maxRetainedBytes); rows >= 0 && rows < retainRows {
+			retainRows = rows
+		}
+	}
+	if policy.maxAge > 0 {
+		rows, err := terminalGridRetentionRowsForAgeLimit(dir, refs, policy.maxAge, now)
+		if err != nil {
+			return 0, err
+		}
+		if rows >= 0 && rows < retainRows {
+			retainRows = rows
+		}
+	}
+	return retainRows, nil
+}
+
+func terminalGridRetentionRowsForLogicalLineLimit(refs []terminalGridRowRef, logicalLines int) int {
 	if logicalLines <= 0 || len(refs) == 0 {
 		return 0
 	}
@@ -808,6 +877,63 @@ func terminalGridRetentionRetainedRowsForLogicalLines(refs []terminalGridRowRef,
 		end = start - 1
 	}
 	return len(refs)
+}
+
+func terminalGridRetentionRowsForByteLimit(refs []terminalGridRowRef, maxBytes int64) int {
+	if maxBytes <= 0 || len(refs) == 0 {
+		return 0
+	}
+	var retainedBytes int64
+	for start := len(refs) - 1; start >= 0; start-- {
+		retainedBytes += refs[start].length
+		if retainedBytes > maxBytes {
+			return len(refs) - start - 1
+		}
+	}
+	return len(refs)
+}
+
+func terminalGridRetentionRowsForAgeLimit(dir string, refs []terminalGridRowRef, maxAge time.Duration, now time.Time) (int, error) {
+	if maxAge <= 0 || len(refs) == 0 {
+		return 0, nil
+	}
+	rows, err := readTerminalGridRows(dir, refs)
+	if err != nil {
+		return 0, err
+	}
+	cutoff := now.Add(-maxAge)
+	retainStart := len(refs)
+	for end := len(refs) - 1; end >= 0; {
+		start := end
+		for start > 0 && terminalGridRowContinuesLogicalLine(refs[start-1]) {
+			start--
+		}
+		newest := time.Time{}
+		for i := start; i <= end && i < len(rows); i++ {
+			if rows[i].timestamp.After(newest) {
+				newest = rows[i].timestamp
+			}
+		}
+		if !newest.IsZero() && newest.Before(cutoff) {
+			break
+		}
+		retainStart = start
+		end = start - 1
+	}
+	return len(refs) - retainStart, nil
+}
+
+func terminalGridLogicalLineCountForRefs(refs []terminalGridRowRef) int {
+	if len(refs) == 0 {
+		return 0
+	}
+	count := 0
+	for i, ref := range refs {
+		if !terminalGridRowContinuesLogicalLine(ref) || i == len(refs)-1 {
+			count++
+		}
+	}
+	return count
 }
 
 func readTerminalGridRows(dir string, refs []terminalGridRowRef) ([]terminalGridRow, error) {

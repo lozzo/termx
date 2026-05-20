@@ -592,6 +592,7 @@ describe('TerminalProtocolClient', () => {
       scrollback_offset: 100,
       scrollback_limit: 50,
       scrollback_total: 101,
+      scrollback_logical_total: 42,
       scrollback_has_more: false,
       loaded_rows: 7,
       history_generation: 42,

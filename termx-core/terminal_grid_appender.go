@@ -8,10 +8,10 @@ import (
 )
 
 type terminalGridAppender struct {
-	store      *terminalGridStore
-	terminalID string
-	logger     *slog.Logger
-	maxRows    int
+	store           *terminalGridStore
+	terminalID      string
+	logger          *slog.Logger
+	retentionPolicy terminalGridRetentionPolicy
 
 	mu      sync.Mutex
 	cond    *sync.Cond
@@ -22,17 +22,17 @@ type terminalGridAppender struct {
 	stop    sync.Once
 }
 
-func newTerminalGridAppender(store *terminalGridStore, terminalID string, maxRows int, logger *slog.Logger) *terminalGridAppender {
+func newTerminalGridAppender(store *terminalGridStore, terminalID string, retentionPolicy terminalGridRetentionPolicy, logger *slog.Logger) *terminalGridAppender {
 	if store == nil {
 		return nil
 	}
-	store.SetMaxRows(maxRows)
+	store.SetRetentionPolicy(retentionPolicy)
 	a := &terminalGridAppender{
-		store:      store,
-		terminalID: terminalID,
-		logger:     logger,
-		maxRows:    maxRows,
-		done:       make(chan struct{}),
+		store:           store,
+		terminalID:      terminalID,
+		logger:          logger,
+		retentionPolicy: retentionPolicy,
+		done:            make(chan struct{}),
 	}
 	a.cond = sync.NewCond(&a.mu)
 	go a.run()

@@ -32,14 +32,16 @@ const (
 type ServerOption func(*serverConfig)
 
 type serverConfig struct {
-	socketPath           string
-	defaultSize          Size
-	defaultScrollback    int
-	defaultKeepAfterExit time.Duration
-	gridRoot             string
-	logger               *slog.Logger
-	methodHandler        ProtocolMethodHandler
-	terminalObserver     TerminalInventoryObserver
+	socketPath                string
+	defaultSize               Size
+	defaultScrollback         int
+	defaultScrollbackMaxBytes int64
+	defaultScrollbackMaxAge   time.Duration
+	defaultKeepAfterExit      time.Duration
+	gridRoot                  string
+	logger                    *slog.Logger
+	methodHandler             ProtocolMethodHandler
+	terminalObserver          TerminalInventoryObserver
 }
 
 type Server struct {
@@ -103,6 +105,18 @@ func WithDefaultScrollback(lines int) ServerOption {
 	}
 }
 
+func WithDefaultScrollbackMaxBytes(bytes int64) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.defaultScrollbackMaxBytes = bytes
+	}
+}
+
+func WithDefaultScrollbackMaxAge(age time.Duration) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.defaultScrollbackMaxAge = age
+	}
+}
+
 func WithDefaultKeepAfterExit(d time.Duration) ServerOption {
 	return func(cfg *serverConfig) {
 		cfg.defaultKeepAfterExit = d
@@ -151,6 +165,14 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 	if scrollback <= 0 {
 		scrollback = s.cfg.defaultScrollback
 	}
+	scrollbackMaxBytes := opts.ScrollbackMaxBytes
+	if scrollbackMaxBytes <= 0 {
+		scrollbackMaxBytes = s.cfg.defaultScrollbackMaxBytes
+	}
+	scrollbackMaxAge := opts.ScrollbackMaxAge
+	if scrollbackMaxAge <= 0 {
+		scrollbackMaxAge = s.cfg.defaultScrollbackMaxAge
+	}
 	keepAfterExit := opts.KeepAfterExit
 	if keepAfterExit <= 0 {
 		keepAfterExit = s.cfg.defaultKeepAfterExit
@@ -174,19 +196,21 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 	s.mu.Unlock()
 
 	term, err := newTerminal(context.Background(), s.events, terminalConfig{
-		ID:             id,
-		Name:           name,
-		Command:        append([]string(nil), opts.Command...),
-		Tags:           copyTags(opts.Tags),
-		Size:           size,
-		Dir:            opts.Dir,
-		Env:            opts.Env,
-		ScrollbackSize: scrollback,
-		KeepAfterExit:  keepAfterExit,
-		GridRoot:       s.cfg.gridRoot,
-		Logger:         s.cfg.logger,
-		RemoveFunc:     s.removeTerminal,
-		UpdateFunc:     s.invalidateProtocolListCache,
+		ID:                 id,
+		Name:               name,
+		Command:            append([]string(nil), opts.Command...),
+		Tags:               copyTags(opts.Tags),
+		Size:               size,
+		Dir:                opts.Dir,
+		Env:                opts.Env,
+		ScrollbackSize:     scrollback,
+		ScrollbackMaxBytes: scrollbackMaxBytes,
+		ScrollbackMaxAge:   scrollbackMaxAge,
+		KeepAfterExit:      keepAfterExit,
+		GridRoot:           s.cfg.gridRoot,
+		Logger:             s.cfg.logger,
+		RemoveFunc:         s.removeTerminal,
+		UpdateFunc:         s.invalidateProtocolListCache,
 	})
 	if err != nil {
 		return nil, err
@@ -489,21 +513,22 @@ func (s *Server) gridViewportCoreFromStore(id string, opt GridViewportOptions) (
 		return nil, err
 	}
 	return &GridViewport{
-		TerminalID:           id,
-		Size:                 Size{Cols: uint16(cols), Rows: s.cfg.defaultSize.Rows},
-		Rows:                 convertRows(result.Rows),
-		ScrollbackOffset:     beforeOffset,
-		ScrollbackLimit:      limit,
-		ScrollbackTotal:      result.TotalRows,
-		ScrollbackHasMore:    result.HasMore,
-		LoadedRows:           result.LoadedRows,
-		HistoryGeneration:    result.Generation,
-		FirstRowID:           result.FirstRowID,
-		LastRowID:            result.LastRowID,
-		ScrollbackTimestamps: cloneTimeSlice(result.Timestamps),
-		ScrollbackRowKinds:   cloneStringSlice(result.RowKinds),
-		ScrollbackWrapped:    cloneBoolSlice(result.Wrapped),
-		Timestamp:            time.Now().UTC(),
+		TerminalID:             id,
+		Size:                   Size{Cols: uint16(cols), Rows: s.cfg.defaultSize.Rows},
+		Rows:                   convertRows(result.Rows),
+		ScrollbackOffset:       beforeOffset,
+		ScrollbackLimit:        limit,
+		ScrollbackTotal:        result.TotalRows,
+		ScrollbackLogicalTotal: result.LogicalTotal,
+		ScrollbackHasMore:      result.HasMore,
+		LoadedRows:             result.LoadedRows,
+		HistoryGeneration:      result.Generation,
+		FirstRowID:             result.FirstRowID,
+		LastRowID:              result.LastRowID,
+		ScrollbackTimestamps:   cloneTimeSlice(result.Timestamps),
+		ScrollbackRowKinds:     cloneStringSlice(result.RowKinds),
+		ScrollbackWrapped:      cloneBoolSlice(result.Wrapped),
+		Timestamp:              time.Now().UTC(),
 	}, nil
 }
 
@@ -564,23 +589,24 @@ func (s *Server) gridSnapshotFromStore(id string, opt SnapshotOptions) (*Snapsho
 			Cells:             convertRows(screenRows),
 			IsAlternateScreen: false,
 		},
-		Scrollback:           convertRows(scrollbackRows),
-		ScrollbackOffset:     beforeOffset,
-		ScrollbackTotal:      result.TotalRows,
-		ScrollbackHasMore:    result.HasMore,
-		ScrollbackLoadedRows: result.LoadedRows,
-		HistoryGeneration:    result.Generation,
-		ScrollbackFirstRowID: result.FirstRowID,
-		ScrollbackLastRowID:  result.LastRowID,
-		ScreenTimestamps:     screenTimestamps,
-		ScrollbackTimestamps: scrollbackTimestamps,
-		ScreenRowKinds:       screenRowKinds,
-		ScrollbackRowKinds:   scrollbackRowKinds,
-		ScreenWrapped:        screenWrapped,
-		ScrollbackWrapped:    scrollbackWrapped,
-		Cursor:               CursorState{Visible: true},
-		Modes:                TerminalModes{AutoWrap: true},
-		Timestamp:            time.Now().UTC(),
+		Scrollback:             convertRows(scrollbackRows),
+		ScrollbackOffset:       beforeOffset,
+		ScrollbackTotal:        result.TotalRows,
+		ScrollbackLogicalTotal: result.LogicalTotal,
+		ScrollbackHasMore:      result.HasMore,
+		ScrollbackLoadedRows:   result.LoadedRows,
+		HistoryGeneration:      result.Generation,
+		ScrollbackFirstRowID:   result.FirstRowID,
+		ScrollbackLastRowID:    result.LastRowID,
+		ScreenTimestamps:       screenTimestamps,
+		ScrollbackTimestamps:   scrollbackTimestamps,
+		ScreenRowKinds:         screenRowKinds,
+		ScrollbackRowKinds:     scrollbackRowKinds,
+		ScreenWrapped:          screenWrapped,
+		ScrollbackWrapped:      scrollbackWrapped,
+		Cursor:                 CursorState{Visible: true},
+		Modes:                  TerminalModes{AutoWrap: true},
+		Timestamp:              time.Now().UTC(),
 	}, nil
 }
 

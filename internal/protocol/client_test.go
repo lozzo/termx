@@ -115,8 +115,11 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 	}
 
 	created, err := client.Create(ctx, CreateParams{
-		Command: []string{"bash", "--noprofile", "--norc"},
-		Name:    "demo",
+		Command:            []string{"bash", "--noprofile", "--norc"},
+		Name:               "demo",
+		ScrollbackSize:     123,
+		ScrollbackMaxBytes: 4567,
+		ScrollbackMaxAge:   2 * time.Hour,
 	})
 	if err != nil {
 		t.Fatalf("create failed: %v", err)
@@ -719,6 +722,13 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	req, err := expectRequest(tr, "create")
 	if err != nil {
 		return err
+	}
+	createParams, err := requestParams[CreateParams](req)
+	if err != nil {
+		return err
+	}
+	if createParams.ScrollbackSize != 123 || createParams.ScrollbackMaxBytes != 4567 || createParams.ScrollbackMaxAge != 2*time.Hour {
+		return fmt.Errorf("unexpected create params: %#v", createParams)
 	}
 	if err := sendMethodResponse(tr, req, CreateResult{TerminalID: "term-1", State: "running"}); err != nil {
 		return err

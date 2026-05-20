@@ -62,6 +62,8 @@ message CreateParams {
   string dir = 6;
   repeated string env = 7;
   int32 scrollback_size = 8;
+  int64 scrollback_max_bytes = 9;
+  int64 scrollback_max_age_seconds = 10;
 }
 
 message CreateResult {
@@ -256,6 +258,7 @@ message Snapshot {
   int64 scrollback_loaded_rows = 13;
   uint64 scrollback_first_row_id = 14;
   uint64 scrollback_last_row_id = 15;
+  int64 scrollback_logical_total = 16;
 }
 
 message GridViewport {
@@ -271,6 +274,7 @@ message GridViewport {
   uint64 history_generation = 10;
   uint64 first_row_id = 11;
   uint64 last_row_id = 12;
+  int64 scrollback_logical_total = 13;
 }
 
 message StorageEntry {

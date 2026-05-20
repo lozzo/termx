@@ -68,18 +68,19 @@ func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
 
 func TestGridViewportPayloadRoundTripUsesBinaryRows(t *testing.T) {
 	viewport := &GridViewport{
-		TerminalID:        "term-grid",
-		Size:              Size{Cols: 120, Rows: 40},
-		Rows:              []CompactRow{CompactRowFromCells([]Cell{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}})},
-		ScrollbackOffset:  10,
-		ScrollbackLimit:   20,
-		ScrollbackTotal:   100,
-		ScrollbackHasMore: true,
-		LoadedRows:        7,
-		HistoryGeneration: 42,
-		FirstRowID:        1000,
-		LastRowID:         1006,
-		Timestamp:         time.Date(2026, 3, 18, 3, 0, 0, 0, time.UTC),
+		TerminalID:             "term-grid",
+		Size:                   Size{Cols: 120, Rows: 40},
+		Rows:                   []CompactRow{CompactRowFromCells([]Cell{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}})},
+		ScrollbackOffset:       10,
+		ScrollbackLimit:        20,
+		ScrollbackTotal:        100,
+		ScrollbackLogicalTotal: 42,
+		ScrollbackHasMore:      true,
+		LoadedRows:             7,
+		HistoryGeneration:      42,
+		FirstRowID:             1000,
+		LastRowID:              1006,
+		Timestamp:              time.Date(2026, 3, 18, 3, 0, 0, 0, time.UTC),
 	}
 	payload, err := EncodeGridViewportPayload(viewport)
 	if err != nil {
@@ -89,7 +90,7 @@ func TestGridViewportPayloadRoundTripUsesBinaryRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode viewport payload failed: %v", err)
 	}
-	if decoded.TerminalID != viewport.TerminalID || decoded.Size != viewport.Size || decoded.ScrollbackTotal != 100 || !decoded.ScrollbackHasMore {
+	if decoded.TerminalID != viewport.TerminalID || decoded.Size != viewport.Size || decoded.ScrollbackTotal != 100 || decoded.ScrollbackLogicalTotal != 42 || !decoded.ScrollbackHasMore {
 		t.Fatalf("unexpected decoded viewport header: %#v", decoded)
 	}
 	if decoded.LoadedRows != 7 || decoded.HistoryGeneration != 42 || decoded.FirstRowID != 1000 || decoded.LastRowID != 1006 {

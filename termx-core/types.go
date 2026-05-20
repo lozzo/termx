@@ -130,26 +130,27 @@ type ScreenData struct {
 const SnapshotRowKindRestart = "restart"
 
 type Snapshot struct {
-	TerminalID           string
-	Size                 Size
-	Screen               ScreenData
-	Scrollback           [][]Cell
-	ScrollbackOffset     int
-	ScrollbackTotal      int
-	ScrollbackHasMore    bool
-	ScrollbackLoadedRows int
-	HistoryGeneration    uint64
-	ScrollbackFirstRowID uint64
-	ScrollbackLastRowID  uint64
-	ScreenTimestamps     []time.Time
-	ScrollbackTimestamps []time.Time
-	ScreenRowKinds       []string
-	ScrollbackRowKinds   []string
-	ScreenWrapped        []bool
-	ScrollbackWrapped    []bool
-	Cursor               CursorState
-	Modes                TerminalModes
-	Timestamp            time.Time
+	TerminalID             string
+	Size                   Size
+	Screen                 ScreenData
+	Scrollback             [][]Cell
+	ScrollbackOffset       int
+	ScrollbackTotal        int
+	ScrollbackLogicalTotal int
+	ScrollbackHasMore      bool
+	ScrollbackLoadedRows   int
+	HistoryGeneration      uint64
+	ScrollbackFirstRowID   uint64
+	ScrollbackLastRowID    uint64
+	ScreenTimestamps       []time.Time
+	ScrollbackTimestamps   []time.Time
+	ScreenRowKinds         []string
+	ScrollbackRowKinds     []string
+	ScreenWrapped          []bool
+	ScrollbackWrapped      []bool
+	Cursor                 CursorState
+	Modes                  TerminalModes
+	Timestamp              time.Time
 }
 
 type SnapshotOptions struct {
@@ -165,21 +166,22 @@ type GridViewportOptions struct {
 }
 
 type GridViewport struct {
-	TerminalID           string
-	Size                 Size
-	Rows                 [][]Cell
-	ScrollbackOffset     int
-	ScrollbackLimit      int
-	ScrollbackTotal      int
-	ScrollbackHasMore    bool
-	LoadedRows           int
-	HistoryGeneration    uint64
-	FirstRowID           uint64
-	LastRowID            uint64
-	ScrollbackTimestamps []time.Time
-	ScrollbackRowKinds   []string
-	ScrollbackWrapped    []bool
-	Timestamp            time.Time
+	TerminalID             string
+	Size                   Size
+	Rows                   [][]Cell
+	ScrollbackOffset       int
+	ScrollbackLimit        int
+	ScrollbackTotal        int
+	ScrollbackLogicalTotal int
+	ScrollbackHasMore      bool
+	LoadedRows             int
+	HistoryGeneration      uint64
+	FirstRowID             uint64
+	LastRowID              uint64
+	ScrollbackTimestamps   []time.Time
+	ScrollbackRowKinds     []string
+	ScrollbackWrapped      []bool
+	Timestamp              time.Time
 }
 
 type HistoryReplayOptions struct {
@@ -198,15 +200,17 @@ type HistoryReplayResult struct {
 }
 
 type CreateOptions struct {
-	Command        []string
-	ID             string
-	Name           string
-	Tags           map[string]string
-	Size           Size
-	Dir            string
-	Env            []string
-	ScrollbackSize int
-	KeepAfterExit  time.Duration
+	Command            []string
+	ID                 string
+	Name               string
+	Tags               map[string]string
+	Size               Size
+	Dir                string
+	Env                []string
+	ScrollbackSize     int
+	ScrollbackMaxBytes int64
+	ScrollbackMaxAge   time.Duration
+	KeepAfterExit      time.Duration
 }
 
 type ListOptions struct {

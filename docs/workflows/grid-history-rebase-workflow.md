@@ -975,3 +975,78 @@ go test ./termx-core -run 'TestTerminalGridStoreRetentionCapsCommittedRows|TestT
 - Remaining risks after this phase:
   - the budget is now logical-line aware, but it is still count-based rather than byte/time based;
   - `RowCount` and protocol totals are still committed-row totals, not logical-line totals. This is intentional for paging correctness today, but a future UX contract may still want optional logical-line totals for display/debug.
+
+## tmux Debug Follow-Up Phase 13: Logical Totals, Retention Policy, And Resize Plan Contract
+
+- Current state before this phase:
+  - Phase 12 made retention logical-line aware, but the protocol/UI still only exposed committed-row totals;
+  - retention policy was still effectively one-dimensional at the public API boundary;
+  - resize already had a tail-plan path, but the explicit contract was not documented as the preferred authority over visible-content matching.
+
+- Judgment:
+  - to keep moving toward the final shape without a full backing-grid rewrite, this phase should:
+    - expose logical totals alongside committed-row totals, without changing the existing paging contract;
+    - turn retention into a policy object that can combine logical-line, byte, and age budgets;
+    - tighten the resize contract around the existing explicit tail-plan path, proving that plan-driven append wins over content matching when both could plausibly explain the same visible rows.
+
+- Code changes:
+  - logical totals:
+    - added `ScrollbackLogicalTotal` to core `Snapshot` / `GridViewport`
+    - added matching fields to protocol payload structs, protobuf wire schema, Go wire generation, runtime snapshot conversion, and remote-ui wire decode/encode helpers
+    - kept existing `ScrollbackTotal` / `LoadedRows` / row IDs untouched so existing paging remains committed-row based
+  - retention policy:
+    - replaced the store's single `maxLogicalLines` knob with `terminalGridRetentionPolicy`
+    - first implemented policy dimensions:
+      - `maxLogicalLines`
+      - `maxRetainedBytes`
+      - `maxAge`
+    - wired terminal creation so the default scrollback budget now becomes a combined policy:
+      - logical-line budget from `ScrollbackSize`
+      - internal byte guard derived from the same budget
+      - optional explicit byte/age limits through create/server config plumbing
+    - extended `CreateParams` / `CreateOptions` with:
+      - `scrollback_max_bytes`
+      - `scrollback_max_age_seconds`
+      while leaving existing callers compatible
+    - age-based retention now enforces by reading row timestamps from committed rows and dropping oldest logical lines whose newest row timestamp is older than the cutoff
+  - resize plan contract:
+    - kept the existing tail resize history plan as the authoritative path when available
+    - added focused regression coverage proving explicit tail-plan ordering beats any tempting visible-content match on duplicate lines
+
+- Focused regression coverage added/updated:
+  - `TestTerminalGridStoreViewportReportsLogicalTotals`
+  - `TestGridViewportPayloadRoundTripUsesBinaryRows` updated to include logical totals
+  - `TestSnapshotFromGridViewportPreservesLogicalTotals`
+  - `TestTerminalGridStoreRetentionByteLimitKeepsNewestRowsWithinBudget`
+  - `TestTerminalGridStoreRetentionPolicyUsesSmallestBudget`
+  - `TestTerminalGridStoreRetentionAgeLimitDropsOldLogicalLines`
+  - `TestVTermResizeWithDamageTailPlanWinsOverVisibleContentMatches`
+
+- Commands:
+
+```sh
+protoc --go_out=. --go_opt=paths=source_relative termx-proto/wirepb/terminal.proto
+cd remote-ui && npm run proto:wire
+go test ./termx-core -run 'TestTerminalGridStoreViewportReportsLogicalTotals|TestTerminalGridStoreRetentionByteLimitKeepsNewestRowsWithinBudget|TestTerminalGridStoreRetentionPolicyUsesSmallestBudget|TestTerminalGridStoreRetentionAgeLimitDropsOldLogicalLines' -count=1
+go test ./internal/protocol -run 'TestGridViewportPayloadRoundTripUsesBinaryRows|TestClientRoundTrip' -count=1
+go test ./tuiv2/runtime -run 'TestSnapshotFromGridViewportPreservesLogicalTotals' -count=1
+go test ./termx-vterm/vterm -run 'TestVTermResizeWithDamagePreservesWrappedBoundary|TestVTermResizeWithDamageDoesNotAppendVisibleSuffix|TestVTermResizeWithDamageTailPlanDoesNotMatchEarlierDuplicateRows|TestVTermResizeWithDamageTailPlanWinsOverVisibleContentMatches|TestVTermResizeWithDamagePreservesWideRows' -count=1
+cd remote-ui && npm run test -- terminalProtocolClient.behavior.test.ts
+```
+
+- Test results:
+  - PASS: focused core logical-total / byte-budget / age-budget tests
+  - PASS: focused protocol payload roundtrip tests
+  - PASS: focused protocol client create roundtrip including `ScrollbackMaxBytes` / `ScrollbackMaxAge`
+  - PASS: focused runtime logical-total propagation test
+  - PASS: focused vterm resize-plan tests
+  - PASS: `cd remote-ui && npm run test -- terminalProtocolClient.behavior.test.ts`
+
+- tmux verification:
+  - retained the previous `1000`-line stress / resize / same-terminal floating smokes as the no-regression baseline for this phase;
+  - no new tmux failure appeared while the protocol totals and retention policy internals were introduced.
+
+- Remaining risks after this phase:
+  - logical totals are now exposed, but no primary UI has been switched to display them yet; they currently exist as protocol/debug data rather than a product-facing metric;
+  - byte/age budgets are implemented server-side, but this phase did not yet add a full user-facing configuration flow for them;
+  - resize is more explicitly plan-first in the covered tail cases, but the broader "single backing grid mutation" end-state still remains future architecture work.

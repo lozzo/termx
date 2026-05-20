@@ -261,6 +261,27 @@ func TestRuntimeApplyGridViewportPagePrependsHistory(t *testing.T) {
 	}
 }
 
+func TestSnapshotFromGridViewportPreservesLogicalTotals(t *testing.T) {
+	viewport := &protocol.GridViewport{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 80, Rows: 24},
+		Rows:                   protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("old0")}),
+		ScrollbackOffset:       10,
+		ScrollbackTotal:        100,
+		ScrollbackLogicalTotal: 40,
+		ScrollbackHasMore:      true,
+		LoadedRows:             12,
+	}
+
+	snapshot := snapshotFromGridViewport("term-1", viewport)
+	if snapshot == nil {
+		t.Fatal("expected snapshot")
+	}
+	if snapshot.ScrollbackTotal != 100 || snapshot.ScrollbackLogicalTotal != 40 {
+		t.Fatalf("expected logical totals preserved, got total=%d logical=%d", snapshot.ScrollbackTotal, snapshot.ScrollbackLogicalTotal)
+	}
+}
+
 func TestRuntimeApplyGridViewportPageReplacesLatestWindow(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()

@@ -35,19 +35,38 @@ const (
 )
 
 type terminalConfig struct {
-	ID             string
-	Name           string
-	Command        []string
-	Tags           map[string]string
-	Size           Size
-	Dir            string
-	Env            []string
-	ScrollbackSize int
-	KeepAfterExit  time.Duration
-	GridRoot       string
-	Logger         *slog.Logger
-	RemoveFunc     func(string, string)
-	UpdateFunc     func()
+	ID                 string
+	Name               string
+	Command            []string
+	Tags               map[string]string
+	Size               Size
+	Dir                string
+	Env                []string
+	ScrollbackSize     int
+	ScrollbackMaxBytes int64
+	ScrollbackMaxAge   time.Duration
+	KeepAfterExit      time.Duration
+	GridRoot           string
+	Logger             *slog.Logger
+	RemoveFunc         func(string, string)
+	UpdateFunc         func()
+}
+
+func (cfg terminalConfig) gridRetentionPolicy() terminalGridRetentionPolicy {
+	policy := terminalGridRetentionPolicy{}
+	if cfg.ScrollbackSize > 0 {
+		policy.maxLogicalLines = cfg.ScrollbackSize
+		// Keep an internal byte guard roughly proportional to the logical-line
+		// budget so pathological huge rows cannot retain unbounded page data.
+		policy.maxRetainedBytes = int64(cfg.ScrollbackSize) * 16 * 1024
+	}
+	if cfg.ScrollbackMaxBytes > 0 {
+		policy.maxRetainedBytes = cfg.ScrollbackMaxBytes
+	}
+	if cfg.ScrollbackMaxAge > 0 {
+		policy.maxAge = cfg.ScrollbackMaxAge
+	}
+	return policy
 }
 
 type Terminal struct {
@@ -115,7 +134,7 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 		vterm:          vt,
 		stream:         fanout.New(),
 		grid:           grid,
-		gridAppender:   newTerminalGridAppender(grid, cfg.ID, persistentGridHistoryRows(cfg.ScrollbackSize), cfg.Logger),
+		gridAppender:   newTerminalGridAppender(grid, cfg.ID, cfg.gridRetentionPolicy(), cfg.Logger),
 		logger:         cfg.Logger,
 		id:             cfg.ID,
 		name:           cfg.Name,
@@ -140,13 +159,6 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 
 	t.startProcessLoops()
 	return t, nil
-}
-
-func persistentGridHistoryRows(scrollbackSize int) int {
-	if scrollbackSize <= 0 {
-		return 0
-	}
-	return scrollbackSize
 }
 
 func spawnTerminalProcess(cfg terminalConfig) (*ptymgr.PTY, *vterm.VTerm, error) {
@@ -794,6 +806,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		outScrollbackRowKinds   []string
 		outScrollbackWrapped    []bool
 		scrollbackTotal         int
+		scrollbackLogicalTotal  int
 		scrollbackHasMore       bool
 		scrollbackLoadedRows    int
 		historyGeneration       uint64
@@ -813,6 +826,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 			outScrollbackRowKinds = cloneStringSlice(gridViewport.RowKinds)
 			outScrollbackWrapped = cloneBoolSlice(gridViewport.Wrapped)
 			scrollbackTotal = gridViewport.TotalRows
+			scrollbackLogicalTotal = gridViewport.LogicalTotal
 			scrollbackHasMore = gridViewport.HasMore
 			scrollbackLoadedRows = gridViewport.LoadedRows
 			historyGeneration = gridViewport.Generation
@@ -823,6 +837,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		}
 	} else if t.grid != nil {
 		scrollbackTotal = t.grid.RowCount()
+		scrollbackLogicalTotal = t.grid.LogicalLineCount()
 		scrollbackHasMore = offset < scrollbackTotal
 		historyGeneration, scrollbackFirstRowID, scrollbackLastRowID, _ = t.grid.rowWindowCoordinates(offset, 0)
 		usedGrid = true
@@ -852,6 +867,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		outScrollbackRowKinds = sliceStringRange(scrollbackRowKinds, start, end)
 		outScrollbackWrapped = sliceBoolRange(scrollbackWrapped, start, end)
 		scrollbackTotal = len(scrollback)
+		scrollbackLogicalTotal = len(scrollback)
 		scrollbackHasMore = start > 0
 		scrollbackLoadedRows = len(scrollback[start:end])
 		traceGridVTermRows("core.snapshot.vterm_scrollback", id, scrollback[start:end], "offset", offset, "limit", limit, "total", scrollbackTotal, "has_more", scrollbackHasMore)
@@ -876,26 +892,27 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	traceGridCoreRows("core.snapshot.screen_out", id, screenData.Cells, "screen_rows", len(screenData.Cells), "screen_cols", int(size.Cols))
 
 	return &Snapshot{
-		TerminalID:           id,
-		Size:                 size,
-		Screen:               screenData,
-		Scrollback:           outScrollback,
-		ScrollbackOffset:     offset,
-		ScrollbackTotal:      scrollbackTotal,
-		ScrollbackHasMore:    scrollbackHasMore,
-		ScrollbackLoadedRows: scrollbackLoadedRows,
-		HistoryGeneration:    historyGeneration,
-		ScrollbackFirstRowID: scrollbackFirstRowID,
-		ScrollbackLastRowID:  scrollbackLastRowID,
-		ScreenTimestamps:     cloneTimeSlice(screenTimestamps),
-		ScrollbackTimestamps: outScrollbackTimestamps,
-		ScreenRowKinds:       cloneStringSlice(screenRowKinds),
-		ScrollbackRowKinds:   outScrollbackRowKinds,
-		ScreenWrapped:        cloneBoolSlice(screenWrapped),
-		ScrollbackWrapped:    outScrollbackWrapped,
-		Cursor:               convertCursorState(t.vterm.CursorState()),
-		Modes:                convertModes(modes),
-		Timestamp:            time.Now().UTC(),
+		TerminalID:             id,
+		Size:                   size,
+		Screen:                 screenData,
+		Scrollback:             outScrollback,
+		ScrollbackOffset:       offset,
+		ScrollbackTotal:        scrollbackTotal,
+		ScrollbackLogicalTotal: scrollbackLogicalTotal,
+		ScrollbackHasMore:      scrollbackHasMore,
+		ScrollbackLoadedRows:   scrollbackLoadedRows,
+		HistoryGeneration:      historyGeneration,
+		ScrollbackFirstRowID:   scrollbackFirstRowID,
+		ScrollbackLastRowID:    scrollbackLastRowID,
+		ScreenTimestamps:       cloneTimeSlice(screenTimestamps),
+		ScrollbackTimestamps:   outScrollbackTimestamps,
+		ScreenRowKinds:         cloneStringSlice(screenRowKinds),
+		ScrollbackRowKinds:     outScrollbackRowKinds,
+		ScreenWrapped:          cloneBoolSlice(screenWrapped),
+		ScrollbackWrapped:      outScrollbackWrapped,
+		Cursor:                 convertCursorState(t.vterm.CursorState()),
+		Modes:                  convertModes(modes),
+		Timestamp:              time.Now().UTC(),
 	}
 }
 
@@ -933,18 +950,19 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 	if opt.Alternate || modes.AlternateScreen || screenContent.IsAlternateScreen {
 		rows, timestamps, rowKinds, wrapped, total, hasMore := t.alternateGrid.viewport(offset, limit)
 		return &GridViewport{
-			TerminalID:           id,
-			Size:                 Size{Cols: uint16(cols), Rows: size.Rows},
-			Rows:                 rows,
-			ScrollbackOffset:     offset,
-			ScrollbackLimit:      limit,
-			ScrollbackTotal:      total,
-			ScrollbackHasMore:    hasMore,
-			LoadedRows:           offset + len(rows),
-			ScrollbackTimestamps: timestamps,
-			ScrollbackRowKinds:   rowKinds,
-			ScrollbackWrapped:    wrapped,
-			Timestamp:            time.Now().UTC(),
+			TerminalID:             id,
+			Size:                   Size{Cols: uint16(cols), Rows: size.Rows},
+			Rows:                   rows,
+			ScrollbackOffset:       offset,
+			ScrollbackLimit:        limit,
+			ScrollbackTotal:        total,
+			ScrollbackLogicalTotal: total,
+			ScrollbackHasMore:      hasMore,
+			LoadedRows:             offset + len(rows),
+			ScrollbackTimestamps:   timestamps,
+			ScrollbackRowKinds:     rowKinds,
+			ScrollbackWrapped:      wrapped,
+			Timestamp:              time.Now().UTC(),
 		}
 	}
 	if t.grid != nil {
@@ -958,21 +976,22 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 			traceGridVTermRows("core.grid_viewport.grid_rows", id, gridViewport.Rows, "offset", offset, "limit", limit, "cols", cols, "total", gridViewport.TotalRows, "has_more", gridViewport.HasMore, "loaded_rows", gridViewport.LoadedRows)
 			traceGridCoreRows("core.grid_viewport.out_rows", id, rows, "offset", offset, "limit", limit, "cols", cols, "total", gridViewport.TotalRows, "has_more", gridViewport.HasMore, "loaded_rows", gridViewport.LoadedRows)
 			return &GridViewport{
-				TerminalID:           id,
-				Size:                 Size{Cols: uint16(cols), Rows: size.Rows},
-				Rows:                 rows,
-				ScrollbackOffset:     offset,
-				ScrollbackLimit:      limit,
-				ScrollbackTotal:      gridViewport.TotalRows,
-				ScrollbackHasMore:    gridViewport.HasMore,
-				LoadedRows:           gridViewport.LoadedRows,
-				HistoryGeneration:    gridViewport.Generation,
-				FirstRowID:           gridViewport.FirstRowID,
-				LastRowID:            gridViewport.LastRowID,
-				ScrollbackTimestamps: cloneTimeSlice(gridViewport.Timestamps),
-				ScrollbackRowKinds:   cloneStringSlice(gridViewport.RowKinds),
-				ScrollbackWrapped:    cloneBoolSlice(gridViewport.Wrapped),
-				Timestamp:            time.Now().UTC(),
+				TerminalID:             id,
+				Size:                   Size{Cols: uint16(cols), Rows: size.Rows},
+				Rows:                   rows,
+				ScrollbackOffset:       offset,
+				ScrollbackLimit:        limit,
+				ScrollbackTotal:        gridViewport.TotalRows,
+				ScrollbackLogicalTotal: gridViewport.LogicalTotal,
+				ScrollbackHasMore:      gridViewport.HasMore,
+				LoadedRows:             gridViewport.LoadedRows,
+				HistoryGeneration:      gridViewport.Generation,
+				FirstRowID:             gridViewport.FirstRowID,
+				LastRowID:              gridViewport.LastRowID,
+				ScrollbackTimestamps:   cloneTimeSlice(gridViewport.Timestamps),
+				ScrollbackRowKinds:     cloneStringSlice(gridViewport.RowKinds),
+				ScrollbackWrapped:      cloneBoolSlice(gridViewport.Wrapped),
+				Timestamp:              time.Now().UTC(),
 			}
 		}
 	}
@@ -996,18 +1015,19 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 	traceGridVTermRows("core.grid_viewport.vterm_rows", id, scrollback[start:end], "offset", offset, "limit", limit, "cols", cols, "total", len(scrollback), "has_more", start > 0)
 	traceGridCoreRows("core.grid_viewport.vterm_out_rows", id, rows, "offset", offset, "limit", limit, "cols", cols, "total", len(scrollback), "has_more", start > 0)
 	return &GridViewport{
-		TerminalID:           id,
-		Size:                 Size{Cols: uint16(cols), Rows: size.Rows},
-		Rows:                 rows,
-		ScrollbackOffset:     offset,
-		ScrollbackLimit:      limit,
-		ScrollbackTotal:      len(scrollback),
-		ScrollbackHasMore:    start > 0,
-		LoadedRows:           offset + (end - start),
-		ScrollbackTimestamps: sliceTimeRange(t.vterm.ScrollbackTimestamps(), start, end),
-		ScrollbackRowKinds:   sliceStringRange(t.vterm.ScrollbackRowKinds(), start, end),
-		ScrollbackWrapped:    sliceBoolRange(scrollbackWrapped, start, end),
-		Timestamp:            time.Now().UTC(),
+		TerminalID:             id,
+		Size:                   Size{Cols: uint16(cols), Rows: size.Rows},
+		Rows:                   rows,
+		ScrollbackOffset:       offset,
+		ScrollbackLimit:        limit,
+		ScrollbackTotal:        len(scrollback),
+		ScrollbackLogicalTotal: len(scrollback),
+		ScrollbackHasMore:      start > 0,
+		LoadedRows:             offset + (end - start),
+		ScrollbackTimestamps:   sliceTimeRange(t.vterm.ScrollbackTimestamps(), start, end),
+		ScrollbackRowKinds:     sliceStringRange(t.vterm.ScrollbackRowKinds(), start, end),
+		ScrollbackWrapped:      sliceBoolRange(scrollbackWrapped, start, end),
+		Timestamp:              time.Now().UTC(),
 	}
 }
 
@@ -2693,21 +2713,22 @@ func protocolGridViewportFromCore(viewport *GridViewport) *protocol.GridViewport
 	traceGridCoreRows("core.protocol.grid_viewport.input_rows", viewport.TerminalID, viewport.Rows, "offset", viewport.ScrollbackOffset, "limit", viewport.ScrollbackLimit, "total", viewport.ScrollbackTotal, "has_more", viewport.ScrollbackHasMore)
 	traceGridProtocolRows("core.protocol.grid_viewport.compact_rows", viewport.TerminalID, rows, "offset", viewport.ScrollbackOffset, "limit", viewport.ScrollbackLimit, "total", viewport.ScrollbackTotal, "has_more", viewport.ScrollbackHasMore)
 	return &protocol.GridViewport{
-		TerminalID:           viewport.TerminalID,
-		Size:                 protocol.Size{Cols: viewport.Size.Cols, Rows: viewport.Size.Rows},
-		Rows:                 rows,
-		ScrollbackOffset:     viewport.ScrollbackOffset,
-		ScrollbackLimit:      viewport.ScrollbackLimit,
-		ScrollbackTotal:      viewport.ScrollbackTotal,
-		ScrollbackHasMore:    viewport.ScrollbackHasMore,
-		LoadedRows:           viewport.LoadedRows,
-		HistoryGeneration:    viewport.HistoryGeneration,
-		FirstRowID:           viewport.FirstRowID,
-		LastRowID:            viewport.LastRowID,
-		ScrollbackTimestamps: cloneTimeSlice(viewport.ScrollbackTimestamps),
-		ScrollbackRowKinds:   cloneStringSlice(viewport.ScrollbackRowKinds),
-		ScrollbackWrapped:    cloneBoolSlice(viewport.ScrollbackWrapped),
-		Timestamp:            viewport.Timestamp,
+		TerminalID:             viewport.TerminalID,
+		Size:                   protocol.Size{Cols: viewport.Size.Cols, Rows: viewport.Size.Rows},
+		Rows:                   rows,
+		ScrollbackOffset:       viewport.ScrollbackOffset,
+		ScrollbackLimit:        viewport.ScrollbackLimit,
+		ScrollbackTotal:        viewport.ScrollbackTotal,
+		ScrollbackLogicalTotal: viewport.ScrollbackLogicalTotal,
+		ScrollbackHasMore:      viewport.ScrollbackHasMore,
+		LoadedRows:             viewport.LoadedRows,
+		HistoryGeneration:      viewport.HistoryGeneration,
+		FirstRowID:             viewport.FirstRowID,
+		LastRowID:              viewport.LastRowID,
+		ScrollbackTimestamps:   cloneTimeSlice(viewport.ScrollbackTimestamps),
+		ScrollbackRowKinds:     cloneStringSlice(viewport.ScrollbackRowKinds),
+		ScrollbackWrapped:      cloneBoolSlice(viewport.ScrollbackWrapped),
+		Timestamp:              viewport.Timestamp,
 	}
 }
 
@@ -2720,23 +2741,24 @@ func protocolSnapshotFromCore(snapshot *Snapshot) *protocol.Snapshot {
 	traceGridProtocolRows("core.protocol.snapshot.scrollback_compact", snapshot.TerminalID, scrollback, "offset", snapshot.ScrollbackOffset, "total", snapshot.ScrollbackTotal, "has_more", snapshot.ScrollbackHasMore)
 	traceGridCoreRows("core.protocol.snapshot.screen_input", snapshot.TerminalID, snapshot.Screen.Cells, "screen_rows", len(snapshot.Screen.Cells), "screen_cols", int(snapshot.Size.Cols))
 	return &protocol.Snapshot{
-		TerminalID:           snapshot.TerminalID,
-		Size:                 protocol.Size{Cols: snapshot.Size.Cols, Rows: snapshot.Size.Rows},
-		Screen:               protocol.ScreenData{Cells: protocolRowsFromCore(snapshot.Screen.Cells), IsAlternateScreen: snapshot.Screen.IsAlternateScreen},
-		Scrollback:           scrollback,
-		ScrollbackOffset:     snapshot.ScrollbackOffset,
-		ScrollbackTotal:      snapshot.ScrollbackTotal,
-		ScrollbackHasMore:    snapshot.ScrollbackHasMore,
-		ScrollbackLoadedRows: snapshot.ScrollbackLoadedRows,
-		HistoryGeneration:    snapshot.HistoryGeneration,
-		ScrollbackFirstRowID: snapshot.ScrollbackFirstRowID,
-		ScrollbackLastRowID:  snapshot.ScrollbackLastRowID,
-		ScreenTimestamps:     cloneTimeSlice(snapshot.ScreenTimestamps),
-		ScrollbackTimestamps: cloneTimeSlice(snapshot.ScrollbackTimestamps),
-		ScreenRowKinds:       cloneStringSlice(snapshot.ScreenRowKinds),
-		ScrollbackRowKinds:   cloneStringSlice(snapshot.ScrollbackRowKinds),
-		ScreenWrapped:        cloneBoolSlice(snapshot.ScreenWrapped),
-		ScrollbackWrapped:    cloneBoolSlice(snapshot.ScrollbackWrapped),
+		TerminalID:             snapshot.TerminalID,
+		Size:                   protocol.Size{Cols: snapshot.Size.Cols, Rows: snapshot.Size.Rows},
+		Screen:                 protocol.ScreenData{Cells: protocolRowsFromCore(snapshot.Screen.Cells), IsAlternateScreen: snapshot.Screen.IsAlternateScreen},
+		Scrollback:             scrollback,
+		ScrollbackOffset:       snapshot.ScrollbackOffset,
+		ScrollbackTotal:        snapshot.ScrollbackTotal,
+		ScrollbackLogicalTotal: snapshot.ScrollbackLogicalTotal,
+		ScrollbackHasMore:      snapshot.ScrollbackHasMore,
+		ScrollbackLoadedRows:   snapshot.ScrollbackLoadedRows,
+		HistoryGeneration:      snapshot.HistoryGeneration,
+		ScrollbackFirstRowID:   snapshot.ScrollbackFirstRowID,
+		ScrollbackLastRowID:    snapshot.ScrollbackLastRowID,
+		ScreenTimestamps:       cloneTimeSlice(snapshot.ScreenTimestamps),
+		ScrollbackTimestamps:   cloneTimeSlice(snapshot.ScrollbackTimestamps),
+		ScreenRowKinds:         cloneStringSlice(snapshot.ScreenRowKinds),
+		ScrollbackRowKinds:     cloneStringSlice(snapshot.ScrollbackRowKinds),
+		ScreenWrapped:          cloneBoolSlice(snapshot.ScreenWrapped),
+		ScrollbackWrapped:      cloneBoolSlice(snapshot.ScrollbackWrapped),
 		Cursor: protocol.CursorState{
 			Row:     snapshot.Cursor.Row,
 			Col:     snapshot.Cursor.Col,

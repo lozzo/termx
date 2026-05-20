@@ -457,6 +457,7 @@ class MockBinaryChannel implements RtcBinaryChannel {
       scrollback_offset: beforeOffset,
       scrollback_limit: limit,
       scrollback_total: nextOffset + (hasMore ? 1 : 0),
+      scrollback_logical_total: nextOffset + (hasMore ? 1 : 0),
       scrollback_has_more: hasMore,
     })
     const payload = new Uint8Array(5 + viewport.length)

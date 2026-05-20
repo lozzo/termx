@@ -364,6 +364,31 @@ func TestVTermResizeWithDamageTailPlanDoesNotMatchEarlierDuplicateRows(t *testin
 	}
 }
 
+func TestVTermResizeWithDamageTailPlanWinsOverVisibleContentMatches(t *testing.T) {
+	vt := New(6, 3, 0, nil)
+	vt.DisableEmulatorScrollback()
+	base := time.Date(2026, 5, 20, 9, 0, 0, 0, time.UTC)
+	vt.LoadSnapshotWithMetadata(nil, nil, nil, ScreenData{
+		Cells: [][]Cell{
+			cellsFromString("abcabc"),
+			cellsFromString("abcabc"),
+			cellsFromString("xyzxyz"),
+		},
+	}, []time.Time{base.Add(1 * time.Second), base.Add(2 * time.Second), base.Add(3 * time.Second)}, []string{"older", "newer", "tail"}, CursorState{Row: 2, Col: 5, Visible: true}, TerminalModes{AutoWrap: true})
+
+	damage := vt.ResizeWithDamage(3, 2)
+	gotKinds := make([]string, 0, len(damage.ScrollbackAppend))
+	for _, row := range damage.ScrollbackAppend {
+		gotKinds = append(gotKinds, row.RowKind)
+	}
+	if len(gotKinds) == 0 {
+		t.Fatal("expected resize plan scrollback append")
+	}
+	if gotKinds[0] != "older" {
+		t.Fatalf("expected explicit tail plan to keep positional older rows first, got %#v", gotKinds)
+	}
+}
+
 func TestVTermResizeWithDamagePreservesWideRows(t *testing.T) {
 	vt := New(8, 3, 0, nil)
 	vt.DisableEmulatorScrollback()

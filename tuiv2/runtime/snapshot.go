@@ -300,21 +300,22 @@ func snapshotFromGridViewport(terminalID string, viewport *protocol.GridViewport
 		return nil
 	}
 	return &protocol.Snapshot{
-		TerminalID:           terminalID,
-		Size:                 viewport.Size,
-		Scrollback:           protocol.CloneCompactRows(viewport.Rows),
-		ScrollbackOffset:     viewport.ScrollbackOffset,
-		ScrollbackTotal:      viewport.ScrollbackTotal,
-		ScrollbackHasMore:    viewport.ScrollbackHasMore,
-		ScrollbackLoadedRows: viewport.LoadedRows,
-		HistoryGeneration:    viewport.HistoryGeneration,
-		ScrollbackFirstRowID: viewport.FirstRowID,
-		ScrollbackLastRowID:  viewport.LastRowID,
-		ScrollbackTimestamps: append([]time.Time(nil), viewport.ScrollbackTimestamps...),
-		ScrollbackRowKinds:   append([]string(nil), viewport.ScrollbackRowKinds...),
-		ScrollbackWrapped:    append([]bool(nil), viewport.ScrollbackWrapped...),
-		Modes:                protocol.TerminalModes{AutoWrap: true},
-		Timestamp:            viewport.Timestamp,
+		TerminalID:             terminalID,
+		Size:                   viewport.Size,
+		Scrollback:             protocol.CloneCompactRows(viewport.Rows),
+		ScrollbackOffset:       viewport.ScrollbackOffset,
+		ScrollbackTotal:        viewport.ScrollbackTotal,
+		ScrollbackLogicalTotal: viewport.ScrollbackLogicalTotal,
+		ScrollbackHasMore:      viewport.ScrollbackHasMore,
+		ScrollbackLoadedRows:   viewport.LoadedRows,
+		HistoryGeneration:      viewport.HistoryGeneration,
+		ScrollbackFirstRowID:   viewport.FirstRowID,
+		ScrollbackLastRowID:    viewport.LastRowID,
+		ScrollbackTimestamps:   append([]time.Time(nil), viewport.ScrollbackTimestamps...),
+		ScrollbackRowKinds:     append([]string(nil), viewport.ScrollbackRowKinds...),
+		ScrollbackWrapped:      append([]bool(nil), viewport.ScrollbackWrapped...),
+		Modes:                  protocol.TerminalModes{AutoWrap: true},
+		Timestamp:              viewport.Timestamp,
 	}
 }
 
