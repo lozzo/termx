@@ -81,8 +81,12 @@ func (m *Model) reloadTerminalSnapshotCmd(terminalID string) tea.Cmd {
 	if m == nil || m.runtime == nil || m.runtime.Client() == nil || terminalID == "" {
 		return nil
 	}
+	limit := defaultTerminalSnapshotScrollbackLimit
+	if terminal := m.runtime.Registry().Get(terminalID); terminal != nil && terminal.ScrollbackLoadedLimit > limit {
+		limit = terminal.ScrollbackLoadedLimit
+	}
 	return func() tea.Msg {
-		snapshot, err := m.runtime.LoadSnapshot(context.Background(), terminalID, 0, defaultTerminalSnapshotScrollbackLimit)
+		snapshot, err := m.runtime.LoadSnapshot(context.Background(), terminalID, 0, limit)
 		if err != nil {
 			return err
 		}
