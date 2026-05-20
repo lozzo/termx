@@ -422,6 +422,22 @@ func TestVTermResizeWithDamagePreservesWideRows(t *testing.T) {
 	}
 }
 
+func TestVTermResizeWithDamageDoesNotFallbackMatchOnGrowWithoutPlan(t *testing.T) {
+	vt := New(4, 2, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{
+			cellsFromString("ab"),
+			cellsFromString("cd"),
+		},
+	}, CursorState{Row: 1, Col: 2, Visible: true}, TerminalModes{AutoWrap: true})
+
+	damage := vt.ResizeWithDamage(6, 2)
+	if len(damage.ScrollbackAppend) != 0 {
+		t.Fatalf("expected grow resize without explicit plan not to run fallback matching, got %#v", damage.ScrollbackAppend)
+	}
+}
+
 func TestLoadSnapshotDefaultBlankRowsDoNotBecomeUsedRows(t *testing.T) {
 	vt := New(4, 3, 100, nil)
 	blank := []Cell{

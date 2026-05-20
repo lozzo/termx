@@ -1771,14 +1771,16 @@ func (s *Server) handleRequest(
 			return nil, 400, err
 		}
 		info, err := s.Create(ctx, CreateOptions{
-			Command:        params.Command,
-			ID:             params.ID,
-			Name:           params.Name,
-			Tags:           params.Tags,
-			Size:           Size{Cols: params.Size.Cols, Rows: params.Size.Rows},
-			Dir:            params.Dir,
-			Env:            params.Env,
-			ScrollbackSize: params.ScrollbackSize,
+			Command:            params.Command,
+			ID:                 params.ID,
+			Name:               params.Name,
+			Tags:               params.Tags,
+			Size:               Size{Cols: params.Size.Cols, Rows: params.Size.Rows},
+			Dir:                params.Dir,
+			Env:                params.Env,
+			ScrollbackSize:     params.ScrollbackSize,
+			ScrollbackMaxBytes: params.ScrollbackMaxBytes,
+			ScrollbackMaxAge:   params.ScrollbackMaxAge,
 		})
 		if err != nil {
 			return nil, protocolErrorCode(err), err

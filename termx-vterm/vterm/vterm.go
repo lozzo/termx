@@ -1520,7 +1520,7 @@ func (v *VTerm) resizeWithDamageLocked(cols, rows int) WriteDamage {
 	afterScreenRows := v.screenRowsForResizeLocked(len(afterScreen))
 	afterScreenWrapped := v.screenWrappedLocked(len(afterScreen))
 	damage.ScrollbackAppend = resizePlan.scrollbackAppend()
-	if resizePlan.isZero() {
+	if shouldFallbackResizeHistoryAppend(beforeCols, beforeRows, cols, rows, beforeResizeRows, resizePlan) {
 		damage.ScrollbackAppend = resizeScrollbackAppendFromReflowedRows(beforeResizeRows, afterScreenRows, v.screenTimestamps, v.screenRowKinds, afterScreenWrapped)
 	}
 	damage.ScrollbackTrim = 0
@@ -3248,6 +3248,22 @@ func (p resizeHistoryPlan) scrollbackAppend() []DamageOp {
 		out = append(out, resizeReflowLineDamageOp(row))
 	}
 	return out
+}
+
+func shouldFallbackResizeHistoryAppend(beforeCols, beforeRows, afterCols, afterRows int, beforeRowsReflowed []resizeReflowLine, plan resizeHistoryPlan) bool {
+	if !plan.isZero() {
+		return false
+	}
+	if beforeCols <= 0 || beforeRows <= 0 || afterCols <= 0 || afterRows <= 0 {
+		return false
+	}
+	// Keep visible-content matching as a defensive fallback only for shrink
+	// paths where reflow can legitimately displace history above the new
+	// viewport and no explicit resize history plan was available.
+	if afterCols >= beforeCols {
+		return false
+	}
+	return len(beforeRowsReflowed) > afterRows
 }
 
 func resizeScrollbackAppendFromReflowedRows(beforeRows []resizeReflowLine, afterScreenRows [][]Cell, afterScreenTimestamps []time.Time, afterScreenRowKinds []string, afterScreenWrapped []bool) []DamageOp {

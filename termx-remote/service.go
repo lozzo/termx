@@ -498,7 +498,17 @@ func (r terminalManagementRouter) RouteTerminalManagementRequest(ctx context.Con
 		if err := proto.Unmarshal(req.Body, &body); err != nil {
 			return http.StatusBadRequest, nil, "invalid create request"
 		}
-		terminal, err := r.createTerminal(ctx, body.GetName(), body.GetCommand(), body.GetDir(), firstNonEmpty(body.GetEnv()), body.GetTags()[terminalmeta.SizeLockTag])
+		terminal, err := r.createTerminal(
+			ctx,
+			body.GetName(),
+			body.GetCommand(),
+			body.GetDir(),
+			firstNonEmpty(body.GetEnv()),
+			body.GetTags()[terminalmeta.SizeLockTag],
+			int(body.GetScrollbackSize()),
+			body.GetScrollbackMaxBytes(),
+			time.Duration(body.GetScrollbackMaxAgeSeconds())*time.Second,
+		)
 		if err != nil {
 			return http.StatusBadRequest, nil, err.Error()
 		}
@@ -563,17 +573,20 @@ func (r terminalManagementRouter) listTerminals(ctx context.Context) ([]runtime.
 	return out, nil
 }
 
-func (r terminalManagementRouter) createTerminal(ctx context.Context, name string, command []string, dir string, environment string, sizeLockMode string) (runtime.TerminalInventoryItem, error) {
+func (r terminalManagementRouter) createTerminal(ctx context.Context, name string, command []string, dir string, environment string, sizeLockMode string, scrollbackSize int, scrollbackMaxBytes int64, scrollbackMaxAge time.Duration) (runtime.TerminalInventoryItem, error) {
 	if r.daemon == nil {
 		return runtime.TerminalInventoryItem{}, nil
 	}
 	resolvedCommand := defaultTerminalCommand(command)
 	resolvedDir := defaultTerminalDir(dir)
 	created, err := r.daemon.Create(ctx, protocol.CreateParams{
-		Command: append([]string(nil), resolvedCommand...),
-		Name:    strings.TrimSpace(name),
-		Tags:    localTerminalTags(resolvedDir, environment, sizeLockMode),
-		Dir:     resolvedDir,
+		Command:            append([]string(nil), resolvedCommand...),
+		Name:               strings.TrimSpace(name),
+		Tags:               localTerminalTags(resolvedDir, environment, sizeLockMode),
+		Dir:                resolvedDir,
+		ScrollbackSize:     scrollbackSize,
+		ScrollbackMaxBytes: scrollbackMaxBytes,
+		ScrollbackMaxAge:   scrollbackMaxAge,
 	})
 	if err != nil {
 		return runtime.TerminalInventoryItem{}, err

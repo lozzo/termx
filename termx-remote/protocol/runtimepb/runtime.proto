@@ -89,6 +89,9 @@ message TerminalCreateRequest {
   string dir = 3;
   repeated string env = 4;
   map<string, string> tags = 5;
+  int32 scrollback_size = 6;
+  int64 scrollback_max_bytes = 7;
+  int64 scrollback_max_age_seconds = 8;
 }
 
 message TerminalSetMetadataRequest {

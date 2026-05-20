@@ -112,14 +112,16 @@ func (h *remoteRuntimeHost) Create(ctx context.Context, params protocol.CreatePa
 		return nil, fmt.Errorf("core daemon is nil")
 	}
 	created, err := h.core.Create(ctx, termx.CreateOptions{
-		Command:        append([]string(nil), params.Command...),
-		ID:             params.ID,
-		Name:           params.Name,
-		Tags:           copyStringMap(params.Tags),
-		Size:           termx.Size{Cols: params.Size.Cols, Rows: params.Size.Rows},
-		Dir:            params.Dir,
-		Env:            append([]string(nil), params.Env...),
-		ScrollbackSize: params.ScrollbackSize,
+		Command:            append([]string(nil), params.Command...),
+		ID:                 params.ID,
+		Name:               params.Name,
+		Tags:               copyStringMap(params.Tags),
+		Size:               termx.Size{Cols: params.Size.Cols, Rows: params.Size.Rows},
+		Dir:                params.Dir,
+		Env:                append([]string(nil), params.Env...),
+		ScrollbackSize:     params.ScrollbackSize,
+		ScrollbackMaxBytes: params.ScrollbackMaxBytes,
+		ScrollbackMaxAge:   params.ScrollbackMaxAge,
 	})
 	if err != nil {
 		return nil, err

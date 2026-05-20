@@ -80,6 +80,9 @@ describe('BrowserRtcSession', () => {
     const request = api.request('create', {
       command: ['/bin/zsh', '-l'],
       name: 'ops shell',
+      scrollback_size: 234,
+      scrollback_max_bytes: 56789,
+      scrollback_max_age_seconds: 7200,
     })
     apiChannel.emitMessage(apiResponseChunk('req_1', {
       status: 200,
@@ -94,6 +97,9 @@ describe('BrowserRtcSession', () => {
       body: {
         command: ['/bin/zsh', '-l'],
         name: 'ops shell',
+        scrollback_size: 234,
+        scrollback_max_bytes: 56789,
+        scrollback_max_age_seconds: 7200,
       },
     })
   })

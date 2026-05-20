@@ -235,13 +235,14 @@ func TestRuntimeApplyGridViewportPagePrependsHistory(t *testing.T) {
 		t.Fatal("expected runtime snapshot")
 	}
 	page := &protocol.Snapshot{
-		TerminalID:           "term-1",
-		Size:                 protocol.Size{Cols: 6, Rows: 3},
-		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("old0")}),
-		ScrollbackOffset:     2,
-		ScrollbackTotal:      3,
-		ScrollbackHasMore:    false,
-		ScrollbackTimestamps: []time.Time{time.Now()},
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 6, Rows: 3},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("old0")}),
+		ScrollbackOffset:       2,
+		ScrollbackTotal:        3,
+		ScrollbackLogicalTotal: 2,
+		ScrollbackHasMore:      false,
+		ScrollbackTimestamps:   []time.Time{time.Now()},
 	}
 	if !rt.ApplyGridViewportPage("term-1", page, 2) {
 		t.Fatal("expected viewport page to apply")
@@ -249,6 +250,9 @@ func TestRuntimeApplyGridViewportPagePrependsHistory(t *testing.T) {
 	got := rt.Registry().Get("term-1").Snapshot
 	if len(got.Scrollback) != 3 || compactRowText(got.Scrollback[0]) != "old0" || compactRowText(got.Scrollback[1]) != "new0" {
 		t.Fatalf("expected older page prepended, got %#v", got.Scrollback)
+	}
+	if got.ScrollbackLogicalTotal != 2 {
+		t.Fatalf("expected logical total from prepended page, got %d", got.ScrollbackLogicalTotal)
 	}
 	if !stored.ScrollbackExhausted {
 		t.Fatal("expected exhausted flag from page metadata")
@@ -293,14 +297,15 @@ func TestRuntimeApplyGridViewportPageReplacesLatestWindow(t *testing.T) {
 		t.Fatalf("load snapshot: %v", err)
 	}
 	page := &protocol.Snapshot{
-		TerminalID:         "term-1",
-		Size:               protocol.Size{Cols: 6, Rows: 3},
-		Scrollback:         protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("new0"), protocolRowFromString("new1")}),
-		ScrollbackOffset:   0,
-		ScrollbackTotal:    2,
-		ScrollbackHasMore:  false,
-		ScrollbackRowKinds: []string{"", ""},
-		ScrollbackWrapped:  []bool{false, false},
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 6, Rows: 3},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("new0"), protocolRowFromString("new1")}),
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        2,
+		ScrollbackLogicalTotal: 1,
+		ScrollbackHasMore:      false,
+		ScrollbackRowKinds:     []string{"", ""},
+		ScrollbackWrapped:      []bool{false, false},
 		ScrollbackTimestamps: []time.Time{
 			time.Now(),
 			time.Now(),
@@ -312,6 +317,9 @@ func TestRuntimeApplyGridViewportPageReplacesLatestWindow(t *testing.T) {
 	got := rt.Registry().Get("term-1").Snapshot
 	if len(got.Scrollback) != 2 || compactRowText(got.Scrollback[0]) != "new0" || compactRowText(got.Scrollback[1]) != "new1" {
 		t.Fatalf("expected latest page to replace loaded scrollback, got %#v", got.Scrollback)
+	}
+	if got.ScrollbackLogicalTotal != 1 {
+		t.Fatalf("expected latest page logical total preserved, got %d", got.ScrollbackLogicalTotal)
 	}
 }
 

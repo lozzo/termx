@@ -569,6 +569,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     })
     try {
       const page = await client.loadScrollback(loadedScrollbackRowsRef.current, limit, alternate)
+      const historyMetadata = scrollbackResultMetadata(page)
       const loadedRows = page.rows
       if (loadedRows === 0) {
         hasMoreScrollbackRef.current = false
@@ -577,11 +578,13 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
             elapsedMs: Math.round(terminalNow() - startedAt),
             offset: loadedScrollbackRowsRef.current,
             limit,
+            ...historyMetadata,
           },
         })
         return {
           loadedRows: 0,
           totalRows: loadedScrollbackRowsRef.current,
+          ...historyMetadata,
           hasMore: false,
           alternate: page.alternate,
         }
@@ -598,6 +601,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
           revision,
           prependedRows: loadedRows,
           loadedRows: loadedScrollbackRowsRef.current,
+          ...historyMetadata,
           hasMore: page.hasMore,
           alternate: page.alternate,
         },
@@ -609,6 +613,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
           elapsedMs: Math.round(terminalNow() - startedAt),
           loadedRows,
           totalRows: loadedScrollbackRowsRef.current,
+          ...historyMetadata,
           hasMore: page.hasMore,
           prefixChars: prefix.length,
         },
@@ -616,6 +621,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       return {
         loadedRows,
         totalRows: loadedScrollbackRowsRef.current,
+        ...historyMetadata,
         hasMore: page.hasMore,
         alternate: page.alternate,
       }
@@ -694,6 +700,16 @@ function joinTerminalTextWithSeparator(prefix: string, current: string, separato
   if (!prefix) return current
   if (!current) return prefix
   return `${prefix}${separator}${current}`
+}
+
+function scrollbackResultMetadata(page: Pick<TerminalScrollbackLoadResult, 'committedTotalRows' | 'logicalTotalRows' | 'historyGeneration' | 'firstRowId' | 'lastRowId'>): Partial<TerminalScrollbackLoadResult> {
+  return {
+    ...(page.committedTotalRows !== undefined ? { committedTotalRows: page.committedTotalRows } : {}),
+    ...(page.logicalTotalRows !== undefined ? { logicalTotalRows: page.logicalTotalRows } : {}),
+    ...(page.historyGeneration !== undefined ? { historyGeneration: page.historyGeneration } : {}),
+    ...(page.firstRowId !== undefined ? { firstRowId: page.firstRowId } : {}),
+    ...(page.lastRowId !== undefined ? { lastRowId: page.lastRowId } : {}),
+  }
 }
 
 function createProtocolSession(

@@ -154,6 +154,7 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 		merged.ScrollbackWrapped = append([]bool(nil), page.ScrollbackWrapped...)
 		merged.ScrollbackOffset = page.ScrollbackOffset
 		merged.ScrollbackTotal = page.ScrollbackTotal
+		merged.ScrollbackLogicalTotal = page.ScrollbackLogicalTotal
 		merged.ScrollbackHasMore = page.ScrollbackHasMore
 		merged.ScrollbackLoadedRows = page.ScrollbackLoadedRows
 		merged.HistoryGeneration = page.HistoryGeneration
@@ -168,6 +169,7 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 		merged.ScrollbackWrapped = append(append([]bool(nil), page.ScrollbackWrapped...), merged.ScrollbackWrapped...)
 		merged.ScrollbackOffset = mergedOffset
 		merged.ScrollbackTotal = maxInt(page.ScrollbackTotal, current.ScrollbackTotal)
+		merged.ScrollbackLogicalTotal = maxInt(page.ScrollbackLogicalTotal, current.ScrollbackLogicalTotal)
 		merged.ScrollbackHasMore = page.ScrollbackHasMore
 		merged.ScrollbackLoadedRows = maxInt(page.ScrollbackLoadedRows, current.ScrollbackLoadedRows)
 		merged.HistoryGeneration = page.HistoryGeneration

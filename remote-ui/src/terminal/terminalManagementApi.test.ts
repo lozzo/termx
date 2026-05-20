@@ -12,6 +12,9 @@ describe('terminal management API over RtcSession', () => {
       command: ['/bin/zsh', '-l'],
       cwd: '/srv/app',
       environment: 'prod',
+      scrollbackSize: 234,
+      scrollbackMaxBytes: 56789,
+      scrollbackMaxAgeSeconds: 7200,
       sizeLockMode: 'lock',
     })
     await api.updateTerminal({
@@ -31,6 +34,9 @@ describe('terminal management API over RtcSession', () => {
         name: 'ops shell',
         dir: '/srv/app',
         env: ['prod'],
+        scrollback_size: 234,
+        scrollback_max_bytes: 56789,
+        scrollback_max_age_seconds: 7200,
         tags: { 'termx.size_lock': 'lock', cwd: '/srv/app', environment: 'prod' },
       }],
       ['set_metadata', {

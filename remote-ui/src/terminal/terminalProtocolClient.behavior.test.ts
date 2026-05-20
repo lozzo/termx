@@ -611,6 +611,11 @@ describe('TerminalProtocolClient', () => {
       limit: 50,
       hasMore: false,
       rows: 7,
+      committedTotalRows: 101,
+      logicalTotalRows: 42,
+      historyGeneration: 42,
+      firstRowId: 1000,
+      lastRowId: 1006,
       replay: 'old',
     })
   })

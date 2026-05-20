@@ -853,6 +853,70 @@ func TestObserverAttachCannotWriteOrResize(t *testing.T) {
 	}
 }
 
+func TestProtocolCreatePassesRetentionBudgetsToTerminal(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewServer(WithDefaultScrollback(128))
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.handleTransport(ctx, serverTransport, "memory")
+	}()
+
+	client := protocol.NewClient(clientTransport)
+	defer client.Close()
+
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "test"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	created, err := client.Create(ctx, protocol.CreateParams{
+		ID:                 "retaincfg1",
+		Command:            []string{"bash", "--noprofile", "--norc"},
+		Size:               protocol.Size{Cols: 80, Rows: 24},
+		ScrollbackSize:     234,
+		ScrollbackMaxBytes: 56789,
+		ScrollbackMaxAge:   2 * time.Hour,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+
+	term, err := srv.getTerminal(created.TerminalID)
+	if err != nil {
+		t.Fatalf("get terminal failed: %v", err)
+	}
+	if term.grid == nil {
+		t.Fatal("expected terminal grid store")
+	}
+	if got := term.grid.retentionPolicy.maxLogicalLines; got != 234 {
+		t.Fatalf("expected max logical lines 234, got %d", got)
+	}
+	if got := term.grid.retentionPolicy.maxRetainedBytes; got != 56789 {
+		t.Fatalf("expected max retained bytes 56789, got %d", got)
+	}
+	if got := term.grid.retentionPolicy.maxAge; got != 2*time.Hour {
+		t.Fatalf("expected max age 2h, got %s", got)
+	}
+
+	if err := client.Close(); err != nil {
+		t.Fatalf("client close failed: %v", err)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for handler exit")
+	}
+}
+
 func TestFollowerCollaboratorAttachCanInputButCannotResize(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

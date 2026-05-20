@@ -127,12 +127,19 @@ describe('useTerminalSession', () => {
       await expect(result.current.loadScrollback(100)).resolves.toMatchObject({
         loadedRows: 1,
         totalRows: 1,
+        committedTotalRows: 1,
+        logicalTotalRows: 1,
         hasMore: false,
       })
     })
 
     expect(session.openedTerminalIds).toEqual(['terminal-1'])
     expect(session.historyReplayRequests('terminal-1')).toContainEqual({ beforeOffset: 0, limit: 100 })
+    expect(result.current.terminalSnapshot?.history).toMatchObject({
+      loadedRows: 1,
+      committedTotalRows: 1,
+      logicalTotalRows: 1,
+    })
     expect(result.current.terminalText).toMatch(/o[\s\S]*l[\s\S]*d[\s\S]*e[\s\S]*r/)
     expect(result.current.terminalText).toMatch(/c[\s\S]*u[\s\S]*r[\s\S]*r[\s\S]*e[\s\S]*n[\s\S]*t/)
   })

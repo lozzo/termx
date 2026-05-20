@@ -920,6 +920,7 @@ func TestCopyModeRejectsNonAdjacentHistoryPage(t *testing.T) {
 	loaded := copyModeTestSnapshot([]string{"old0"}, []string{"live0"})
 	loaded.ScrollbackOffset = 1
 	loaded.ScrollbackTotal = 2
+	loaded.ScrollbackLogicalTotal = 1
 	loaded.ScrollbackLoadedRows = 2
 	loaded.HistoryGeneration = 7
 	loaded.ScrollbackFirstRowID = 98
@@ -931,6 +932,36 @@ func TestCopyModeRejectsNonAdjacentHistoryPage(t *testing.T) {
 	}
 	if got := len(model.copyMode.Snapshot.Scrollback); got != 1 {
 		t.Fatalf("expected stale page not to alter frozen scrollback, got %d rows", got)
+	}
+}
+
+func TestCopyModeExtendsFrozenSnapshotPreservesLogicalTotals(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"new0"}, []string{"live0"})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot.ScrollbackLoadedRows = 1
+	terminal.Snapshot.ScrollbackTotal = 1
+	terminal.Snapshot.ScrollbackLogicalTotal = 1
+	terminal.Snapshot.HistoryGeneration = 7
+	terminal.Snapshot.ScrollbackFirstRowID = 100
+	terminal.Snapshot.ScrollbackLastRowID = 100
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	loaded := copyModeTestSnapshot([]string{"old0"}, []string{"live0"})
+	loaded.ScrollbackOffset = 1
+	loaded.ScrollbackTotal = 2
+	loaded.ScrollbackLogicalTotal = 1
+	loaded.ScrollbackLoadedRows = 2
+	loaded.HistoryGeneration = 7
+	loaded.ScrollbackFirstRowID = 99
+	loaded.ScrollbackLastRowID = 99
+
+	model.extendFrozenCopyModeSnapshot(loaded, 1)
+	if model.copyMode.Snapshot == nil {
+		t.Fatal("expected frozen snapshot")
+	}
+	if got := model.copyMode.Snapshot.ScrollbackLogicalTotal; got != 1 {
+		t.Fatalf("expected logical total preserved after extending frozen snapshot, got %d", got)
 	}
 }
 

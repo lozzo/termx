@@ -104,6 +104,7 @@ func clearSnapshotScrollback(snapshot *protocol.Snapshot) {
 	snapshot.ScrollbackWrapped = nil
 	snapshot.ScrollbackOffset = 0
 	snapshot.ScrollbackTotal = 0
+	snapshot.ScrollbackLogicalTotal = 0
 	snapshot.ScrollbackHasMore = false
 	snapshot.ScrollbackLoadedRows = 0
 	snapshot.HistoryGeneration = 0
@@ -641,6 +642,7 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 		next.ScrollbackOffset = loaded.ScrollbackOffset
 	}
 	next.ScrollbackTotal = loaded.ScrollbackTotal
+	next.ScrollbackLogicalTotal = loaded.ScrollbackLogicalTotal
 	next.ScrollbackHasMore = loaded.ScrollbackHasMore
 	next.ScrollbackLoadedRows = maxInt(loaded.ScrollbackLoadedRows, next.ScrollbackLoadedRows)
 	next.HistoryGeneration = loaded.HistoryGeneration

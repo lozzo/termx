@@ -1050,3 +1050,138 @@ cd remote-ui && npm run test -- terminalProtocolClient.behavior.test.ts
   - logical totals are now exposed, but no primary UI has been switched to display them yet; they currently exist as protocol/debug data rather than a product-facing metric;
   - byte/age budgets are implemented server-side, but this phase did not yet add a full user-facing configuration flow for them;
   - resize is more explicitly plan-first in the covered tail cases, but the broader "single backing grid mutation" end-state still remains future architecture work.
+
+## tmux Debug Follow-Up Phase 14: Finish Logical Total Consumption, Retention API Parity, And Narrow Resize Fallback
+
+- Current state before this phase:
+  - `ScrollbackLogicalTotal` had reached core/protocol/wire/runtime/remote-ui encode/decode, but several consumers still dropped it on page merge or never surfaced it as verifiable state;
+  - retention policy internals supported logical-line / byte / age budgets, but the public create path still had API gaps:
+    - core protocol `create` handler did not pass `ScrollbackMaxBytes` / `ScrollbackMaxAge` into `CreateOptions`;
+    - `termx-cli` remote runtime host also dropped those fields;
+    - remote terminal-management runtime API schema did not yet expose retention fields, so `remote-ui` could not carry them over `RtcSession.openApi()`;
+  - resize remained plan-first for covered tail cases, but the fallback matcher still ran for every no-plan resize, including cases where no history displacement was even plausible.
+
+- Judgment:
+  - this phase should finish the remaining three items without changing the committed-row paging contract:
+    - keep `ScrollbackTotal` as committed-row total, but make `ScrollbackLogicalTotal` survive runtime/app merges and flow as debug/status metadata in remote-ui history loads;
+    - make retention policy API/transport parity complete end to end, while preserving current defaults when callers do not set the new fields;
+    - narrow resize fallback matching to genuine shrink-with-displacement cases only, so explicit plans remain the first authority and post-resize guessing shrinks further.
+
+- Code changes:
+  - logical totals:
+    - runtime `ApplyGridViewportPage` now preserves `ScrollbackLogicalTotal` for both replace-latest and prepend-older page merges;
+    - TUI copy-mode frozen snapshot extension now keeps `ScrollbackLogicalTotal` instead of dropping it during older-page merges;
+    - runtime/app grid trace logging now includes `logical_total`;
+    - remote-ui history replay now carries additional debug metadata:
+      - committed total rows
+      - logical total rows
+      - history generation
+      - first/last row ids
+    - remote-ui `useTerminalSession` stores and logs that metadata on scrollback load, but still uses committed-row `rows/loadedRows/hasMore` for behavior.
+  - retention policy API parity:
+    - core protocol `create` request path now forwards `ScrollbackMaxBytes` / `ScrollbackMaxAge` into `CreateOptions`;
+    - `termx-cli` remote runtime host now forwards the same fields when bridging protocol create into core create;
+    - remote runtime terminal-management schema `TerminalCreateRequest` now includes:
+      - `scrollback_size`
+      - `scrollback_max_bytes`
+      - `scrollback_max_age_seconds`
+    - remote service terminal-management router now converts those fields back into `protocol.CreateParams`;
+    - remote-ui terminal management API and runtime protocol encoder/decoder now pass those retention fields over `RtcSession.openApi()`;
+    - defaults remain compatible: callers that omit the fields still use the current server default policy.
+  - resize plan contract:
+    - `ResizeWithDamage` now only falls back to `resizeScrollbackAppendFromReflowedRows(...)` when:
+      - no explicit resize plan exists;
+      - the resize is a width shrink;
+      - reflowed pre-resize rows actually exceed the new visible screen height, so history displacement is plausible.
+    - grow/no-displacement cases no longer run visible-content matching defensively.
+
+- Focused regression coverage added/updated:
+  - `TestRuntimeApplyGridViewportPagePrependsHistory`
+    - now asserts prepended page logical totals survive the merge
+  - `TestRuntimeApplyGridViewportPageReplacesLatestWindow`
+    - now asserts replace-latest logical totals survive the merge
+  - `TestCopyModeExtendsFrozenSnapshotPreservesLogicalTotals`
+  - `terminalProtocolClient.behavior.test.ts`
+    - now asserts history replay returns committed/logical totals and generation/row-id metadata
+  - `useTerminalSession.test.tsx`
+    - now asserts loaded scrollback stores committed/logical totals in session snapshot history metadata
+  - `TestProtocolCreatePassesRetentionBudgetsToTerminal`
+  - `TestTerminalManagementCreatePassesRetentionBudgets`
+  - `terminalManagementApi.test.ts`
+    - now asserts remote-ui management create sends retention fields
+  - `browserRtcSession.behavior.test.ts`
+    - now asserts runtime API `create` request carries retention fields over WebRTC API channel
+  - `rtcApiChannel.test.ts`
+    - now asserts runtime protobuf request decode round-trips terminal create retention fields
+  - `TestVTermResizeWithDamageDoesNotFallbackMatchOnGrowWithoutPlan`
+
+- Commands:
+
+```sh
+protoc --go_out=. --go_opt=paths=source_relative termx-remote/protocol/runtimepb/runtime.proto
+cd remote-ui && npm run proto:runtime
+go test ./termx-core -run 'TestProtocolCreatePassesRetentionBudgetsToTerminal' -count=1
+go test ./tuiv2/runtime -run 'TestSnapshotFromGridViewportPreservesLogicalTotals|TestRuntimeApplyGridViewportPagePrependsHistory|TestRuntimeApplyGridViewportPageReplacesLatestWindow' -count=1
+go test ./tuiv2/app -run 'TestCopyModeRejectsNonAdjacentHistoryPage|TestCopyModeExtendsFrozenSnapshotPreservesLogicalTotals' -count=1
+go test ./termx-vterm/vterm -run 'TestVTermResizeWithDamageAppendsRowsDisplacedByShrink|TestVTermResizeWithDamagePreservesWrappedBoundary|TestVTermResizeWithDamageDoesNotAppendVisibleSuffix|TestVTermResizeWithDamageTailPlanDoesNotMatchEarlierDuplicateRows|TestVTermResizeWithDamageTailPlanWinsOverVisibleContentMatches|TestVTermResizeWithDamagePreservesWideRows|TestVTermResizeWithDamageDoesNotFallbackMatchOnGrowWithoutPlan' -count=1
+go test ./internal/protocol -count=1
+go test ./termx-remote -run 'TestTerminalManagementCreateMarshalsProtocolTerminalID|TestTerminalManagementCreatePassesRetentionBudgets' -count=1
+go test ./termx-remote/session/rtc -run 'TestRouteRuntimeAPIRequestRoutesTerminalManagementThroughManager' -count=1
+go test ./termx-remote/agent/runtime -run 'TestManagerProvidesTerminalManagementRouterForCloudRTC' -count=1
+cd remote-ui && npm run test -- rtcApiChannel.test.ts terminalProtocolClient.behavior.test.ts useTerminalSession.test.tsx terminalManagementApi.test.ts browserRtcSession.behavior.test.ts
+cd remote-ui && npm run typecheck
+go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./tuiv2/runtime/... ./tuiv2/app/... ./tuiv2/render/...
+cd remote-ui && npm run test
+```
+
+- Test results:
+  - PASS: focused runtime logical-total merge tests
+  - PASS: focused TUI copy-mode logical-total preservation tests
+  - PASS: focused remote-ui terminal protocol / session / management / rtc api tests
+  - PASS: `cd remote-ui && npm run typecheck`
+  - PASS: focused core protocol-create retention-budget test
+  - PASS: focused remote service retention-budget routing tests
+  - PASS: focused vterm resize fallback narrowing tests
+  - PASS: `go test ./internal/protocol -count=1`
+  - PASS: `go test ./termx-vterm/vterm -count=1`
+  - PASS: `go test ./tuiv2/runtime -count=1`
+  - PASS: `go test ./tuiv2/app -count=1`
+  - PASS: `go test ./termx-remote -count=1`
+  - PASS: `cd remote-ui && npm run test`
+  - PASS: `go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./tuiv2/runtime/... ./tuiv2/app/... ./tuiv2/render/...`
+
+- tmux verification:
+  - isolated env:
+    - root: `/tmp/termx-grid-phase14.MrSatH`
+    - binary: `/tmp/termx-grid-phase14.MrSatH/termx`
+    - socket: `/tmp/termx-grid-phase14.MrSatH/termx.sock`
+    - config/state: `/tmp/termx-grid-phase14.MrSatH/config`, `/tmp/termx-grid-phase14.MrSatH/state`
+    - `TERMX_REMOTE_ENABLE=false`
+  - created terminal `38` with:
+    - `/bin/sh -lc 'python3 scripts/generate_terminal_stress.py --lines 1000 --seed 100 --width-hint 120; exec cat'`
+  - copy-mode top smoke:
+    - attached in isolated tmux session `termx-grid-phase14`
+    - entered copy mode with `Ctrl-V`
+    - repeated `g`
+    - capture `copy-top.txt` reached title `1/3575`
+    - earliest visible content was `000000 [INFO  ] stress   boot      seed=100 lines=1000`
+  - resize smoke:
+    - resized tmux window from `120x36` to `90x28`
+    - re-entered copy mode and repeated `g`
+    - capture `copy-top-resized.txt` still showed title `1/3575`
+    - earliest visible content still started at `000000`
+  - same-terminal floating smoke:
+    - from the same attached TUI: `Ctrl-G`, `t`, `Ctrl-O` attached the same terminal into a floating pane via terminal manager
+    - `Ctrl-O`, `x` closed the floating pane
+    - re-entered copy mode and repeated `g`
+    - capture `floating-close-top.txt` still showed title `1/3575` and earliest visible content `000000`
+  - re-entry smoke:
+    - killed only the isolated tmux session, then started a new isolated tmux session with `attach 38`
+    - entered copy mode and repeated `g`
+    - capture `reattach-top.txt` showed title `1/1952`
+    - earliest visible content still started at `000000`
+
+- Remaining risks after this phase:
+  - logical totals now flow as verifiable debug/status metadata, but no primary UI surface has been promoted to display them as user-facing product state yet;
+  - remote terminal-management create now exposes retention fields over the runtime API, but this phase still did not build a dedicated settings/editor UI for them;
+  - resize fallback matching is narrower now, but it still exists for shrink/no-plan cases. That remaining fallback is still needed because TermX does not yet mutate one canonical backing grid during resize; until that architecture lands, no-plan shrink paths still need defensive matching to infer displaced history.

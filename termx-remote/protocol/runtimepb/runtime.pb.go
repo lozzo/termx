@@ -806,14 +806,17 @@ func (x *TerminalDirectoryResponse) GetSource() string {
 }
 
 type TerminalCreateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Command       []string               `protobuf:"bytes,2,rep,name=command,proto3" json:"command,omitempty"`
-	Dir           string                 `protobuf:"bytes,3,opt,name=dir,proto3" json:"dir,omitempty"`
-	Env           []string               `protobuf:"bytes,4,rep,name=env,proto3" json:"env,omitempty"`
-	Tags          map[string]string      `protobuf:"bytes,5,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	Name                    string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Command                 []string               `protobuf:"bytes,2,rep,name=command,proto3" json:"command,omitempty"`
+	Dir                     string                 `protobuf:"bytes,3,opt,name=dir,proto3" json:"dir,omitempty"`
+	Env                     []string               `protobuf:"bytes,4,rep,name=env,proto3" json:"env,omitempty"`
+	Tags                    map[string]string      `protobuf:"bytes,5,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ScrollbackSize          int32                  `protobuf:"varint,6,opt,name=scrollback_size,json=scrollbackSize,proto3" json:"scrollback_size,omitempty"`
+	ScrollbackMaxBytes      int64                  `protobuf:"varint,7,opt,name=scrollback_max_bytes,json=scrollbackMaxBytes,proto3" json:"scrollback_max_bytes,omitempty"`
+	ScrollbackMaxAgeSeconds int64                  `protobuf:"varint,8,opt,name=scrollback_max_age_seconds,json=scrollbackMaxAgeSeconds,proto3" json:"scrollback_max_age_seconds,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *TerminalCreateRequest) Reset() {
@@ -879,6 +882,27 @@ func (x *TerminalCreateRequest) GetTags() map[string]string {
 		return x.Tags
 	}
 	return nil
+}
+
+func (x *TerminalCreateRequest) GetScrollbackSize() int32 {
+	if x != nil {
+		return x.ScrollbackSize
+	}
+	return 0
+}
+
+func (x *TerminalCreateRequest) GetScrollbackMaxBytes() int64 {
+	if x != nil {
+		return x.ScrollbackMaxBytes
+	}
+	return 0
+}
+
+func (x *TerminalCreateRequest) GetScrollbackMaxAgeSeconds() int64 {
+	if x != nil {
+		return x.ScrollbackMaxAgeSeconds
+	}
+	return 0
 }
 
 type TerminalSetMetadataRequest struct {
@@ -2758,13 +2782,16 @@ const file_termx_remote_protocol_runtimepb_runtime_proto_rawDesc = "" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
 	"terminalId\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
-	"\x06source\x18\x03 \x01(\tR\x06source\"\xef\x01\n" +
+	"\x06source\x18\x03 \x01(\tR\x06source\"\x87\x03\n" +
 	"\x15TerminalCreateRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12\x10\n" +
 	"\x03dir\x18\x03 \x01(\tR\x03dir\x12\x10\n" +
 	"\x03env\x18\x04 \x03(\tR\x03env\x12K\n" +
-	"\x04tags\x18\x05 \x03(\v27.termx.remote.runtimepb.TerminalCreateRequest.TagsEntryR\x04tags\x1a7\n" +
+	"\x04tags\x18\x05 \x03(\v27.termx.remote.runtimepb.TerminalCreateRequest.TagsEntryR\x04tags\x12'\n" +
+	"\x0fscrollback_size\x18\x06 \x01(\x05R\x0escrollbackSize\x120\n" +
+	"\x14scrollback_max_bytes\x18\a \x01(\x03R\x12scrollbackMaxBytes\x12;\n" +
+	"\x1ascrollback_max_age_seconds\x18\b \x01(\x03R\x17scrollbackMaxAgeSeconds\x1a7\n" +
 	"\tTagsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xdc\x01\n" +

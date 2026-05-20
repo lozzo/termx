@@ -22,6 +22,11 @@ export interface TerminalSnapshotPayload {
     revision: number
     prependedRows: number
     loadedRows: number
+    committedTotalRows?: number
+    logicalTotalRows?: number
+    historyGeneration?: number
+    firstRowId?: number
+    lastRowId?: number
     hasMore: boolean
     alternate?: boolean
   }
@@ -32,6 +37,11 @@ export interface TerminalScrollbackPage {
   limit: number
   rows: number
   replay: string
+  committedTotalRows?: number
+  logicalTotalRows?: number
+  historyGeneration?: number
+  firstRowId?: number
+  lastRowId?: number
   hasMore: boolean
   alternate: boolean
 }
@@ -39,6 +49,11 @@ export interface TerminalScrollbackPage {
 export interface TerminalScrollbackLoadResult {
   loadedRows: number
   totalRows: number
+  committedTotalRows?: number
+  logicalTotalRows?: number
+  historyGeneration?: number
+  firstRowId?: number
+  lastRowId?: number
   hasMore: boolean
   alternate: boolean
 }

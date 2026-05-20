@@ -485,6 +485,7 @@ class TerminalProtocolClient implements TerminalProtocolSession {
             limit: pending.limit,
             rows: loadedRows,
             hasMore,
+            ...historyViewportMetadata(viewport),
             alternate: pending.alternate,
             replay: rowsToReplay(viewportRows),
           })
@@ -1010,6 +1011,64 @@ function historyViewportLoadedRows(value: unknown, fallback: number): number {
     return Math.floor(loadedRows)
   }
   return fallback
+}
+
+function historyViewportCommittedTotalRows(value: unknown): number | undefined {
+  return historyViewportPositiveIntField(value, 'scrollback_total')
+}
+
+function historyViewportLogicalTotalRows(value: unknown): number | undefined {
+  return historyViewportPositiveIntField(value, 'scrollback_logical_total')
+}
+
+function historyViewportGeneration(value: unknown): number | undefined {
+  return historyViewportPositiveIntField(value, 'history_generation')
+}
+
+function historyViewportFirstRowID(value: unknown): number | undefined {
+  return historyViewportNonNegativeIntField(value, 'first_row_id')
+}
+
+function historyViewportLastRowID(value: unknown): number | undefined {
+  return historyViewportNonNegativeIntField(value, 'last_row_id')
+}
+
+function historyViewportMetadata(value: unknown): Partial<TerminalScrollbackPage> {
+  const committedTotalRows = historyViewportCommittedTotalRows(value)
+  const logicalTotalRows = historyViewportLogicalTotalRows(value)
+  const historyGeneration = historyViewportGeneration(value)
+  const firstRowId = historyViewportFirstRowID(value)
+  const lastRowId = historyViewportLastRowID(value)
+  return {
+    ...(committedTotalRows !== undefined ? { committedTotalRows } : {}),
+    ...(logicalTotalRows !== undefined ? { logicalTotalRows } : {}),
+    ...(historyGeneration !== undefined ? { historyGeneration } : {}),
+    ...(firstRowId !== undefined ? { firstRowId } : {}),
+    ...(lastRowId !== undefined ? { lastRowId } : {}),
+  }
+}
+
+function historyViewportPositiveIntField(value: unknown, key: string): number | undefined {
+  const number = historyViewportNumberField(value, key)
+  if (number === undefined || number <= 0) return undefined
+  return number
+}
+
+function historyViewportNonNegativeIntField(value: unknown, key: string): number | undefined {
+  const number = historyViewportNumberField(value, key)
+  if (number === undefined || number < 0) return undefined
+  return number
+}
+
+function historyViewportNumberField(value: unknown, key: string): number | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined
+  }
+  const number = (value as Record<string, unknown>)[key]
+  if (typeof number !== 'number' || !Number.isFinite(number)) {
+    return undefined
+  }
+  return Math.floor(number)
 }
 
 function closedReason(payload: Uint8Array): string | undefined {

@@ -303,6 +303,7 @@ func (m *Model) syncCopyModeViewport(buffer copyModeBuffer, point copyModePoint)
 			"snapshot_scrollback_rows", len(buffer.snapshot.Scrollback),
 			"snapshot_screen_rows", len(buffer.snapshot.Screen.Cells),
 			"snapshot_total_rows", buffer.totalRows(),
+			"snapshot_logical_total", buffer.snapshot.ScrollbackLogicalTotal,
 			"snapshot_loaded_rows", snapshotScrollbackLoadedDepth(buffer.snapshot),
 			"copy_loaded_rows", m.copyMode.LoadedRows,
 			"render_offset", m.copyModeRenderOffset(buffer),
