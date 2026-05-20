@@ -26,3 +26,23 @@
 - `render` 层不要直接依赖输入绑定文档来拼 modal/footer 文案；render 只消费已经整理好的语义 view-model，快捷键说明放在 status/help。
 - `render/coordinator.go` 不要继续叠加新的业务编排、输入语义分支或状态修复逻辑；新增逻辑优先拆到独立 projection/layout/overlay/hit-testing 模块。
 - screen update / snapshot / bootstrap 相关传输协议必须保持二进制编码；不要把链路改成 JSON，也不要为兼容或调试回退到 JSON 作为线上传输格式。
+
+## Current Scope
+
+- 当前主动开发线只关注 `tuiv2` 与其直接依赖的 core history contract。
+- 这一轮 `tuiv2` 主要目标：
+  - copy-mode backing model 收敛
+  - cursor/selection 对 canonical row identity 对齐
+  - observer viewport 只做 projection，不发明新的 history truth
+  - attach / re-entry / restore / stale-page 语义与 core 保持一致
+- 当前不展开：
+  - `remote-ui`
+  - `termx-app`
+  - web/mobile 产品层交互细节
+
+## Workflow
+
+- 当前有效驱动文件是 repository-root `workflow.md`。
+- `docs/workflows/archive/*` 仅作历史参考，不再作为当前执行驱动。
+- 每完成一个 module-sized slice，必须更新根 `workflow.md`，并主动压缩旧记录，避免长流水污染后续 prompt 上下文。
+- 当 `tuiv2` 需要新的 core/tui contract 时，先在根 `workflow.md` 或 `docs/terminal-history-layered-backing-grid-design.md` 写清决定，再实现。

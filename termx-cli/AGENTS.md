@@ -41,3 +41,7 @@ CLI 输出不得泄漏 machine_secret、TURN secret 等敏感材料。
 
 - 遵守根 `AGENTS.md` 与根 `workflow.md`。
 - 每个切片 TDD 推进，切片完成后独立 subagent review。
+- 当前主线只关注 core+tui。`termx-cli` 在这轮只允许承担：
+  - tmux/local smoke 所需的最小入口维护
+  - core/tui contract 变化导致的最小 glue 修改
+- 不要借这轮开发继续扩展 remote CLI 产品行为。

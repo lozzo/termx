@@ -21,6 +21,33 @@
 - 改动 core 时，优先维护协议边界、服务模型和可复用性，不要引入 shell-specific 行为。
 - 提交代码时，commit message 必须尽可能详细，准确写清动机、范围、关键实现与行为变化。
 
+## Current Scope
+
+- 当前主动开发线只关注 `termx-core` / `termx-vterm` / `tuiv2`。
+- `termx-core` 在这轮里应优先服务：
+  - canonical row identity / generation
+  - hot grid / cold store 边界
+  - resize authority
+  - retention / paging / stale-page 语义
+- 不要在这轮把工作扩散到：
+  - `remote-ui`
+  - `termx-app`
+  - `web-control`
+  - 更宽的 remote 产品编排
+- 只有当 core/tui contract 必须变动时，才允许最小化触及 `internal/protocol`、`termx-proto`、`termx-cli` glue。
+
+## Workflow
+
+- 当前有效驱动文件是 repository-root `workflow.md`。
+- 历史文件 `docs/workflows/archive/*` 只作参考，不是当前执行驱动。
+- 每完成一个 module-sized slice，必须：
+  - 更新根 `workflow.md`
+  - 压缩掉过长的执行流水，只保留当前决策、验证证据、风险、下一步
+- core 侧设计变更必须先在：
+  - `docs/terminal-history-layered-backing-grid-design.md`
+  - 或根 `workflow.md`
+ 里留下可执行结论，再进入实现。
+
 ## Remote Migration Rules
 
 - 当前迁移目标是让 `termx-core` 不再承载任何 remote 产品域代码。

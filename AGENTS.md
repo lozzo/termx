@@ -23,7 +23,32 @@
 - If an observer viewport differs from the PTY size, use projection only: crop, scroll window, overflow arrows, and blank-dot hints. Do not reinterpret normal terminal/copy-mode/history rows at observer width.
 - Raw PTY journals are not the UI history query path. They may only return later as optional debug/audit data.
 - TUI validation for terminal history changes should use real tmux-driven terminal operations when practical, not only code-level unit tests.
-- Keep `docs/workflows/` updated at each implementation stage with decisions, commands, test results, tmux verification, review notes, and remaining risks.
+- Current autonomous development for this line is driven by repository-root `workflow.md`, not by old files under `docs/workflows/`.
+- Old workflow files under `docs/workflows/` are historical archives only. Do not use them as the active driver unless the root `workflow.md` explicitly says so.
+
+## Current Development Scope
+
+- Current branch line scope: **core + tuiv2 only**.
+- Active implementation surface:
+  - `termx-core/`
+  - `termx-vterm/`
+  - `tuiv2/`
+  - directly related `internal/protocol/`, `termx-proto/`, and `termx-cli/` glue only when required by core/tui contracts
+- Explicitly out of scope for this phase unless the root `workflow.md` reopens them:
+  - `remote-ui/`
+  - `termx-app/`
+  - `web-control/`
+  - broader remote product integration beyond required contract hygiene
+
+## Workflow Discipline
+
+- Repository-root `workflow.md` is both the active driver and the running log for this effort.
+- After finishing a module-sized slice, update `workflow.md` immediately.
+- Keep `workflow.md` compressed:
+  - preserve only current goals, current design decisions, active risks, latest validation evidence, and the next concrete steps;
+  - collapse older completed slices into short summaries instead of appending long chronological transcripts forever.
+- Do not let `workflow.md` grow into a replay log that overwhelms prompt context.
+- If a historical record is still worth keeping in full, move it under `docs/workflows/archive/` and keep only a short pointer in `workflow.md`.
 
 ## Android Build Default
 

@@ -7,7 +7,8 @@
 相关文档：
 
 - `docs/terminal-history-grid-decision.md`
-- `docs/workflows/grid-history-rebase-workflow.md`
+- `workflow.md`
+- `docs/workflows/archive/grid-history-rebase-workflow.md`
 
 ## 1. 背景
 
