@@ -582,9 +582,6 @@ func sanitizeGridReplayWindow(beforeOffset int, limit int) (int, int) {
 	if limit <= 0 {
 		limit = defaultGridReplayRows
 	}
-	if limit > maxGridReplayRows {
-		limit = maxGridReplayRows
-	}
 	return beforeOffset, limit
 }
 
@@ -594,9 +591,6 @@ func sanitizeGridViewportWindow(beforeOffset int, limit int) (int, int) {
 	}
 	if limit <= 0 {
 		limit = defaultGridReplayRows
-	}
-	if limit > maxGridReplayRows {
-		limit = maxGridReplayRows
 	}
 	return beforeOffset, limit
 }

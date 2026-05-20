@@ -40,3 +40,7 @@
 - This repository is still in active development. Do not preserve compatibility aliases, deprecated exports, wrapper files, or old module names when refactoring.
 - Prefer direct breaking changes with all call sites updated in the same change.
 - If a name or boundary is wrong, rename it and fix the imports instead of adding a compatibility layer.
+
+## Commit Message Policy
+
+- Future git commit messages created during agent work in this repository should use Chinese.

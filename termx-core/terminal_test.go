@@ -714,6 +714,7 @@ func TestTerminalHistoryReplayReturnsNewestReplayWindow(t *testing.T) {
 }
 
 func TestTerminalHistoryReplayClampsRequestWindow(t *testing.T) {
+	const legacyClamp = 250
 	vt := localvterm.New(16, 2, maxGridReplayRows+32, nil)
 	for i := 0; i < maxGridReplayRows+20; i++ {
 		if _, err := vt.Write([]byte(fmt.Sprintf("row-%03d\r\n", i))); err != nil {
@@ -731,11 +732,11 @@ func TestTerminalHistoryReplayClampsRequestWindow(t *testing.T) {
 	if replay.BeforeOffset != 0 {
 		t.Fatalf("expected negative beforeOffset to clamp to 0, got %d", replay.BeforeOffset)
 	}
-	if replay.Limit != maxGridReplayRows {
-		t.Fatalf("expected replay limit clamp to %d, got %d", maxGridReplayRows, replay.Limit)
+	if replay.Limit != maxGridReplayRows+1000 {
+		t.Fatalf("expected replay limit to preserve requested window, got %d", replay.Limit)
 	}
-	if replay.Rows != maxGridReplayRows {
-		t.Fatalf("expected replay rows clamp to %d, got %d", maxGridReplayRows, replay.Rows)
+	if replay.Rows <= legacyClamp {
+		t.Fatalf("expected replay rows to exceed legacy clamp %d, got %d", legacyClamp, replay.Rows)
 	}
 	if replay.Replay == "" {
 		t.Fatal("expected clamped replay payload")
@@ -785,6 +786,34 @@ func TestTerminalGridViewportAllowsLargeHistoryWindow(t *testing.T) {
 	}
 	if !strings.Contains(lastText, "row-0999") {
 		t.Fatalf("expected newest row in viewport, got %q", lastText)
+	}
+}
+
+func TestTerminalGridViewportWithOptionsPreservesLargeRequestedLimit(t *testing.T) {
+	const legacyClamp = 250
+	vt := localvterm.New(16, 2, 1100, nil)
+	for i := 0; i < 1000; i++ {
+		if _, err := vt.Write([]byte(fmt.Sprintf("row-%04d\r\n", i))); err != nil {
+			t.Fatalf("write scrollback seed %d failed: %v", i, err)
+		}
+	}
+	term := &Terminal{
+		id:    "grid-viewport-large-1",
+		size:  Size{Cols: 16, Rows: 2},
+		vterm: vt,
+	}
+	viewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackLimit: 1000, Cols: 16})
+	if viewport == nil {
+		t.Fatal("expected viewport")
+	}
+	if viewport.ScrollbackLimit != 1000 {
+		t.Fatalf("expected requested viewport limit 1000 preserved, got %d", viewport.ScrollbackLimit)
+	}
+	if viewport.ScrollbackTotal <= legacyClamp {
+		t.Fatalf("expected retained rows to exceed legacy clamp %d, got total=%d", legacyClamp, viewport.ScrollbackTotal)
+	}
+	if len(viewport.Rows) <= legacyClamp {
+		t.Fatalf("expected viewport row window to exceed legacy clamp %d, got %d rows", legacyClamp, len(viewport.Rows))
 	}
 }
 

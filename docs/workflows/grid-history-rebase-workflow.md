@@ -796,3 +796,26 @@ pkill -f 'termx .* daemon' 2>/dev/null || true
 - Focused regression coverage added:
   - `TestPaneScrollbackPrefetchUsesLoadedDepthBeyondMaterializedWindow`
   - `TestTerminalAttachServiceRestoredSnapshotFallbackUsesKnownLoadedDepth`
+
+## tmux Debug Follow-Up Phase 10: Remove Core Normal-History Clamp
+
+- User pushed on the architectural point directly: normal terminal history is supposed to move toward "infinite context" semantics, so a fixed core history window cap is the wrong model.
+- Code read confirmed the remaining hard clamp was still in the normal parsed-grid history path:
+  - `defaultGridReplayRows = 100`
+  - `maxGridReplayRows = 250` (later temporarily raised during debugging, but still the wrong abstraction)
+  - normal `Snapshot`, `GridViewport`, store `Replay`, and store `Viewport` sanitize paths all reused that clamp.
+- Direction change:
+  - keep `defaultGridReplayRows` only as the fallback page size when the caller does not specify a limit;
+  - remove the fixed hard cap from the normal main-screen parsed-grid history path;
+  - let retained history be governed by retention (`ScrollbackSize` / store max rows), explicit request limits, and transport frame budget trimming;
+  - leave alternate-screen local history semantics unchanged for now.
+- Fix:
+  - removed the normal-history limit clamp from:
+    - `sanitizeGridReplayWindow`
+    - `sanitizeGridViewportWindow`
+    - `Terminal.GridViewportWithOptions`
+  - normal core history requests can now ask for large windows such as 1000+ rows without being forced back to the old 250-row cap.
+- Focused regression coverage added/updated:
+  - `TestTerminalGridViewportAllowsLargeHistoryWindow`
+  - `TestTerminalGridViewportWithOptionsPreservesLargeRequestedLimit`
+  - `TestTerminalHistoryReplayClampsRequestWindow` now asserts negative offset clamp only, while verifying replay rows are no longer truncated by the legacy 250-row cap.

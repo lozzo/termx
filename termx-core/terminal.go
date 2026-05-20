@@ -894,9 +894,6 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 	if limit <= 0 {
 		limit = defaultGridReplayRows
 	}
-	if limit > maxGridReplayRows {
-		limit = maxGridReplayRows
-	}
 	if offset < 0 {
 		offset = 0
 	}
