@@ -912,3 +912,49 @@ go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./term
   - retention is still a row-count policy, not a logical-line-count or disk-byte policy. With heavy wrapping, physical rows can still grow faster than logical log entries; the new default is large enough for the verified `1000`-line wrapped stress case, but it is still not mathematically unbounded.
   - alternate-screen local history still keeps its own bounded model and was intentionally not changed in this phase.
   - shared floating owner-handoff / re-entry behavior was covered by focused tests and the existing phase-9 logic, but this phase did not add a brand-new real-tmux floating attach script. If another regression appears there, the next step should be a dedicated scripted tmux flow built on the same `/tmp/termx-grid-final-probe` harness.
+
+## tmux Debug Follow-Up Phase 12: Logical-Line-Aware Retention
+
+- Current state before this phase:
+  - after Phase 11, retention semantics were still fundamentally "row-count bounded":
+    - drop boundaries already avoided exposing a wrapped continuation without its logical-line start;
+    - but the budget itself still counted physical committed rows, not logical lines.
+  - that meant a heavily wrapped logical log entry could still consume many retained slots and push out older complete logs earlier than desired.
+
+- Judgment:
+  - the next step toward the final shape is not "raise the default again";
+  - it is to make retention aware of logical-line grouping while keeping the rest of the paging/generation contract unchanged:
+    - keep file-backed committed rows as storage truth;
+    - keep `RowCount` / `LoadedRows` / row IDs expressed in committed-row coordinates;
+    - change only the retention budget decision so `ScrollbackSize` retains N newest logical lines rather than N newest committed rows.
+
+- Code changes:
+  - `terminalGridStore.maxRows` was repurposed internally into `maxLogicalLines` while keeping the `SetMaxRows(...)` setter API unchanged for now;
+  - `enforceMaxRowsLocked` now computes how many committed rows must be retained to preserve the newest `maxLogicalLines` complete logical lines;
+  - retention still rewrites the retained index and prunes old page files exactly as before;
+  - row IDs / generation still advance in committed-row space, so stale-page detection and loaded-depth math do not change.
+
+- Focused regression coverage added/updated:
+  - `TestTerminalGridStoreRetentionCapsCommittedRows`
+    - unchanged behavior for one-row logical lines
+  - `TestTerminalGridStoreRetentionDropsPartialWrappedLogicalLine`
+    - updated expectation: budget `3` keeps the newest `3` logical lines (`C`, `D`, `E`), not just `3` physical rows
+  - `TestTerminalGridStoreRetentionCountsLogicalLinesAcrossWrappedRows`
+    - new test proving a wrapped two-row logical line counts as one retained logical line
+    - verifies the retained viewport still starts on a logical boundary and keeps the complete wrapped line
+
+- Commands:
+
+```sh
+go test ./termx-core -run 'TestTerminalGridStoreRetentionCapsCommittedRows|TestTerminalGridStoreRetentionDropsPartialWrappedLogicalLine|TestTerminalGridStoreRetentionCountsLogicalLinesAcrossWrappedRows' -count=1 -v
+```
+
+- Test results:
+  - PASS: `go test ./termx-core -run 'TestTerminalGridStoreRetentionCapsCommittedRows|TestTerminalGridStoreRetentionDropsPartialWrappedLogicalLine|TestTerminalGridStoreRetentionCountsLogicalLinesAcrossWrappedRows' -count=1 -v`
+
+- tmux verification:
+  - reran the isolated `1000`-line stress smoke after the retention change to ensure the previous `000000` result did not regress.
+
+- Remaining risks after this phase:
+  - the budget is now logical-line aware, but it is still count-based rather than byte/time based;
+  - `RowCount` and protocol totals are still committed-row totals, not logical-line totals. This is intentional for paging correctness today, but a future UX contract may still want optional logical-line totals for display/debug.

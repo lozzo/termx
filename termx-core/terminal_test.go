@@ -931,7 +931,7 @@ func TestTerminalGridStoreRetentionCapsCommittedRows(t *testing.T) {
 		}
 	}
 	if got := store.RowCount(); got != 3 {
-		t.Fatalf("expected retained row count 3, got %d", got)
+		t.Fatalf("expected retained row count 3 for 3 one-row logical lines, got %d", got)
 	}
 	viewport, err := store.Viewport(0, 10, 12)
 	if err != nil {
@@ -977,18 +977,49 @@ func TestTerminalGridStoreRetentionDropsPartialWrappedLogicalLine(t *testing.T) 
 	}); err != nil {
 		t.Fatalf("append wrapped rows: %v", err)
 	}
-	if got := store.RowCount(); got != 2 {
-		t.Fatalf("expected retention to drop the partial wrapped logical line, got %d rows", got)
+	if got := store.RowCount(); got != 3 {
+		t.Fatalf("expected retention budget of 3 logical lines to keep the newest 3 one-row logical lines here, got %d rows", got)
 	}
 	viewport, err := store.Viewport(0, 10, 10)
 	if err != nil {
 		t.Fatalf("viewport after wrapped retention: %v", err)
 	}
-	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"D", "E"}) {
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"C", "D", "E"}) {
 		t.Fatalf("expected retained rows to begin at a logical boundary, got %#v", got)
 	}
-	if viewport.FirstRowID != 3 || viewport.LastRowID != 4 {
+	if viewport.FirstRowID != 2 || viewport.LastRowID != 4 {
 		t.Fatalf("expected row IDs to reflect extra dropped wrapped rows, got first=%d last=%d", viewport.FirstRowID, viewport.LastRowID)
+	}
+}
+
+func TestTerminalGridStoreRetentionCountsLogicalLinesAcrossWrappedRows(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	store.SetMaxRows(3)
+
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("A0"), wrapped: true},
+		{cells: localVTermCellsFromString("A1")},
+		{cells: localVTermCellsFromString("B")},
+		{cells: localVTermCellsFromString("C0"), wrapped: true},
+		{cells: localVTermCellsFromString("C1")},
+		{cells: localVTermCellsFromString("D")},
+	}); err != nil {
+		t.Fatalf("append wrapped rows: %v", err)
+	}
+
+	if got := store.RowCount(); got != 4 {
+		t.Fatalf("expected logical-line retention to keep wrapped rows for the newest 3 logical lines, got %d rows", got)
+	}
+	viewport, err := store.Viewport(0, 10, 10)
+	if err != nil {
+		t.Fatalf("viewport after logical-line retention: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"B", "C0C1", "D"}) {
+		t.Fatalf("expected retention to keep complete newest logical lines, got %#v", got)
+	}
+	if viewport.FirstRowID != 2 || viewport.LastRowID != 5 {
+		t.Fatalf("expected row IDs to reflect dropping only the oldest logical line, got first=%d last=%d", viewport.FirstRowID, viewport.LastRowID)
 	}
 }
 
