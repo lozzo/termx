@@ -977,17 +977,17 @@ func TestTerminalGridStoreRetentionDropsPartialWrappedLogicalLine(t *testing.T) 
 	}); err != nil {
 		t.Fatalf("append wrapped rows: %v", err)
 	}
-	if got := store.RowCount(); got != 3 {
-		t.Fatalf("expected retention budget of 3 logical lines to keep the newest 3 one-row logical lines here, got %d rows", got)
+	if got := store.RowCount(); got != 5 {
+		t.Fatalf("expected retention budget of 3 logical lines to keep the wrapped logical line plus D and E, got %d rows", got)
 	}
 	viewport, err := store.Viewport(0, 10, 10)
 	if err != nil {
 		t.Fatalf("viewport after wrapped retention: %v", err)
 	}
-	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"C", "D", "E"}) {
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"ABC", "D", "E"}) {
 		t.Fatalf("expected retained rows to begin at a logical boundary, got %#v", got)
 	}
-	if viewport.FirstRowID != 2 || viewport.LastRowID != 4 {
+	if viewport.FirstRowID != 0 || viewport.LastRowID != 4 {
 		t.Fatalf("expected row IDs to reflect extra dropped wrapped rows, got first=%d last=%d", viewport.FirstRowID, viewport.LastRowID)
 	}
 }
@@ -1020,6 +1020,109 @@ func TestTerminalGridStoreRetentionCountsLogicalLinesAcrossWrappedRows(t *testin
 	}
 	if viewport.FirstRowID != 2 || viewport.LastRowID != 5 {
 		t.Fatalf("expected row IDs to reflect dropping only the oldest logical line, got first=%d last=%d", viewport.FirstRowID, viewport.LastRowID)
+	}
+}
+
+func TestTerminalGridStoreRetentionCountsTrailingWrappedPrefixAsLogicalLine(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	store.SetMaxRows(1)
+
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("old")},
+		{cells: localVTermCellsFromString("live-prefix"), wrapped: true},
+	}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+
+	if got := store.RowCount(); got != 1 {
+		t.Fatalf("expected trailing wrapped prefix to count as one retained logical line, got %d rows", got)
+	}
+	viewport, err := store.Viewport(0, 10, 40)
+	if err != nil {
+		t.Fatalf("viewport after trailing wrapped retention: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"live-prefix"}) {
+		t.Fatalf("expected oldest completed line dropped in favor of trailing wrapped prefix, got %#v", got)
+	}
+	if viewport.FirstRowID != 1 || viewport.LastRowID != 1 {
+		t.Fatalf("expected retained row IDs to point at wrapped prefix row, got first=%d last=%d", viewport.FirstRowID, viewport.LastRowID)
+	}
+}
+
+func TestTerminalGridStoreRetentionBumpsGenerationAndRejectsOldCoordinates(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	store.SetMaxRows(3)
+
+	for i := 0; i < 6; i++ {
+		if err := store.AppendRows([][]localvterm.Cell{{{Content: fmt.Sprintf("row-%d", i), Width: 1}}}); err != nil {
+			t.Fatalf("append row %d: %v", i, err)
+		}
+	}
+
+	viewport, err := store.Viewport(0, 10, 20)
+	if err != nil {
+		t.Fatalf("viewport after retention: %v", err)
+	}
+	if viewport.Generation == 0 {
+		t.Fatal("expected non-zero generation after retention rewrite")
+	}
+	if viewport.FirstRowID != 3 || viewport.LastRowID != 5 {
+		t.Fatalf("expected retained coordinates 3..5, got first=%d last=%d", viewport.FirstRowID, viewport.LastRowID)
+	}
+	if viewport.LoadedRows != 3 {
+		t.Fatalf("expected loaded depth to match retained committed rows, got %d", viewport.LoadedRows)
+	}
+}
+
+func TestTerminalGridResizeDamageAfterTrailingWrappedRetentionKeepsBoundary(t *testing.T) {
+	vt := localvterm.New(8, 2, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	store.SetMaxRows(1)
+	term := &Terminal{
+		id:    "retention-resize-boundary",
+		size:  Size{Cols: 8, Rows: 2},
+		vterm: vt,
+		grid:  store,
+	}
+
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("old")},
+		{cells: localVTermCellsFromString("livepref"), wrapped: true},
+	}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+	if got := store.RowCount(); got != 1 {
+		t.Fatalf("expected retention to leave only trailing wrapped prefix row, got %d", got)
+	}
+
+	vt.LoadSnapshot(localvterm.ScreenData{
+		Cells: [][]localvterm.Cell{
+			localVTermCellsFromString("ix-tail"),
+			localVTermCellsFromString("done"),
+		},
+	}, localvterm.CursorState{Row: 1, Col: 4, Visible: true}, localvterm.TerminalModes{AutoWrap: true})
+
+	term.appendGridFromDamageLocked(vt.ResizeWithDamage(4, 2))
+	snapshot := term.Snapshot(0, 10)
+	if snapshot == nil {
+		t.Fatal("expected snapshot after resize")
+	}
+	combinedRows := make([]string, 0, len(snapshot.Scrollback)+len(snapshot.Screen.Cells))
+	for _, row := range snapshot.Scrollback {
+		combinedRows = append(combinedRows, rowToString(row))
+	}
+	for _, row := range snapshot.Screen.Cells {
+		combinedRows = append(combinedRows, rowToString(row))
+	}
+	if !stringRowsContain(combinedRows, "live") || !stringRowsContain(combinedRows, "pref") {
+		t.Fatalf("expected retained wrapped prefix to survive resize boundary, got %#v", combinedRows)
+	}
+	if len(snapshot.ScrollbackWrapped) == 0 || !snapshot.ScrollbackWrapped[len(snapshot.ScrollbackWrapped)-1] {
+		t.Fatalf("expected retained wrapped prefix to continue into live screen after resize, got %#v", snapshot.ScrollbackWrapped)
 	}
 }
 

@@ -794,15 +794,18 @@ func terminalGridRetentionRetainedRowsForLogicalLines(refs []terminalGridRowRef,
 		return 0
 	}
 	retainedLines := 0
-	retainStart := len(refs)
-	for retainStart > 0 {
-		retainStart--
-		if !terminalGridRowContinuesLogicalLine(refs[retainStart]) {
-			retainedLines++
-			if retainedLines >= logicalLines {
-				return len(refs) - retainStart
-			}
+	for end := len(refs) - 1; end >= 0; {
+		start := end
+		for start > 0 && terminalGridRowContinuesLogicalLine(refs[start-1]) {
+			start--
 		}
+		if !terminalGridRowContinuesLogicalLine(refs[end]) || end == len(refs)-1 {
+			retainedLines++
+		}
+		if retainedLines >= logicalLines {
+			return len(refs) - start
+		}
+		end = start - 1
 	}
 	return len(refs)
 }

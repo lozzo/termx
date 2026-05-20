@@ -931,6 +931,7 @@ go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./term
 - Code changes:
   - `terminalGridStore.maxRows` was repurposed internally into `maxLogicalLines` while keeping the `SetMaxRows(...)` setter API unchanged for now;
   - `enforceMaxRowsLocked` now computes how many committed rows must be retained to preserve the newest `maxLogicalLines` complete logical lines;
+  - retention now also treats a trailing `wrapped=true` store tail as one retained logical-line unit when that tail is the history-side prefix of a logical line still continuing on the live screen;
   - retention still rewrites the retained index and prunes old page files exactly as before;
   - row IDs / generation still advance in committed-row space, so stale-page detection and loaded-depth math do not change.
 
@@ -938,22 +939,38 @@ go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./term
   - `TestTerminalGridStoreRetentionCapsCommittedRows`
     - unchanged behavior for one-row logical lines
   - `TestTerminalGridStoreRetentionDropsPartialWrappedLogicalLine`
-    - updated expectation: budget `3` keeps the newest `3` logical lines (`C`, `D`, `E`), not just `3` physical rows
+    - updated expectation: budget `3` keeps the newest `3` logical lines (`ABC`, `D`, `E`), not just `3` physical rows
   - `TestTerminalGridStoreRetentionCountsLogicalLinesAcrossWrappedRows`
     - new test proving a wrapped two-row logical line counts as one retained logical line
     - verifies the retained viewport still starts on a logical boundary and keeps the complete wrapped line
+  - `TestTerminalGridStoreRetentionCountsTrailingWrappedPrefixAsLogicalLine`
+    - new test proving a trailing wrapped prefix at the store tail is counted as one retained logical-line unit
+  - `TestTerminalGridStoreRetentionBumpsGenerationAndRejectsOldCoordinates`
+    - verifies retention rewrite still bumps generation and keeps committed-row coordinates monotonic
+  - `TestTerminalGridResizeDamageAfterTrailingWrappedRetentionKeepsBoundary`
+    - verifies retention + resize still preserves the wrapped history/screen boundary
 
 - Commands:
 
 ```sh
-go test ./termx-core -run 'TestTerminalGridStoreRetentionCapsCommittedRows|TestTerminalGridStoreRetentionDropsPartialWrappedLogicalLine|TestTerminalGridStoreRetentionCountsLogicalLinesAcrossWrappedRows' -count=1 -v
+go test ./termx-core -run 'TestTerminalGridStoreRetentionCapsCommittedRows|TestTerminalGridStoreRetentionDropsPartialWrappedLogicalLine|TestTerminalGridStoreRetentionCountsLogicalLinesAcrossWrappedRows|TestTerminalGridStoreRetentionCountsTrailingWrappedPrefixAsLogicalLine|TestTerminalGridStoreRetentionBumpsGenerationAndRejectsOldCoordinates|TestTerminalGridResizeDamageAfterTrailingWrappedRetentionKeepsBoundary' -count=1 -v
 ```
 
 - Test results:
-  - PASS: `go test ./termx-core -run 'TestTerminalGridStoreRetentionCapsCommittedRows|TestTerminalGridStoreRetentionDropsPartialWrappedLogicalLine|TestTerminalGridStoreRetentionCountsLogicalLinesAcrossWrappedRows' -count=1 -v`
+  - PASS: `go test ./termx-core -run 'TestTerminalGridStoreRetentionCapsCommittedRows|TestTerminalGridStoreRetentionDropsPartialWrappedLogicalLine|TestTerminalGridStoreRetentionCountsLogicalLinesAcrossWrappedRows|TestTerminalGridStoreRetentionCountsTrailingWrappedPrefixAsLogicalLine|TestTerminalGridStoreRetentionBumpsGenerationAndRejectsOldCoordinates|TestTerminalGridResizeDamageAfterTrailingWrappedRetentionKeepsBoundary' -count=1 -v`
 
 - tmux verification:
   - reran the isolated `1000`-line stress smoke after the retention change to ensure the previous `000000` result did not regress.
+  - ran a same-terminal shared floating smoke:
+    - tiled pane attached to terminal `1`
+    - generated the `1000`-line stress output
+    - attached the same terminal to a floating pane through terminal manager
+    - closed the floating pane
+    - entered copy mode and paged to top
+    - re-entered TUI with `attach 1`, entered copy mode again, paged to top
+  - results:
+    - after floating close: copy mode still reached `1/3054` with earliest visible content `000000`
+    - after TUI re-entry: copy mode still reached `1/2428` with earliest visible content `000000`
 
 - Remaining risks after this phase:
   - the budget is now logical-line aware, but it is still count-based rather than byte/time based;
