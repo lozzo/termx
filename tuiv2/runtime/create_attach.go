@@ -30,7 +30,9 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 	if terminal == nil {
 		return nil, shared.UserVisibleError{Op: "attach terminal", Err: fmt.Errorf("terminal registry unavailable")}
 	}
+	preservedLoadedDepth := terminal.ScrollbackLoadedLimit
 	r.resetTerminalLiveState(terminal)
+	terminal.ScrollbackLoadedLimit = preservedLoadedDepth
 	terminal.Channel = attached.Channel
 	terminal.AttachMode = attached.Mode
 	r.hydrateTerminalMetadata(ctx, terminalID)
@@ -78,7 +80,6 @@ func (r *Runtime) resetTerminalLiveState(terminal *TerminalRuntime) {
 	terminal.SnapshotVersion = 0
 	terminal.SurfaceVersion = 0
 	terminal.BootstrapPending = false
-	terminal.ScrollbackLoadedLimit = 0
 	terminal.ScrollbackLoadingLimit = 0
 	terminal.ScrollbackExhausted = false
 	terminal.VTerm = nil

@@ -128,7 +128,7 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 		return false
 	}
 	current := terminal.Snapshot
-	if offset < 0 || offset > len(current.Scrollback) {
+	if offset < 0 {
 		return false
 	}
 	traceRuntimeSnapshot("runtime.apply_grid_viewport.current_before", current, "page_offset", offset)

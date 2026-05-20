@@ -12,6 +12,7 @@ import (
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/termx-shared/gridtrace"
 	charmvt "github.com/lozzow/termx/termx-vterm/internal/vt"
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/text/unicode/norm"
@@ -1525,6 +1526,20 @@ func (v *VTerm) resizeWithDamageLocked(cols, rows int) WriteDamage {
 	damage.ScrollbackTrim = 0
 	damage.SizeCols = cols
 	damage.SizeRows = rows
+	if gridtrace.Enabled() {
+		gridtrace.Log(
+			"vterm.resize.summary",
+			"old_cols", beforeCols,
+			"old_rows", beforeRows,
+			"new_cols", cols,
+			"new_rows", rows,
+			"before_scrollback_len", beforeScrollbackLen,
+			"after_scrollback_len", v.scrollbackRowCountLocked(),
+			"damage_scrollback_append_rows", len(damage.ScrollbackAppend),
+			"tail_plan", !resizePlan.isZero(),
+			"before_resize_rows", len(beforeResizeRows),
+		)
+	}
 	return damage
 }
 

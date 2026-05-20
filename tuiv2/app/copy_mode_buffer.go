@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/gridtrace"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -258,7 +259,10 @@ func (m *Model) copyModeRenderOffset(buffer copyModeBuffer) int {
 	if offset < 0 {
 		offset = 0
 	}
-	if m.copyMode.ViewTopRow < len(buffer.snapshot.Scrollback) && offset == 0 && len(buffer.snapshot.Scrollback) > 0 {
+	if buffer.snapshot != nil &&
+		m.copyMode.ViewTopRow < len(buffer.snapshot.Scrollback) &&
+		offset == 0 &&
+		totalRows <= maxInt(1, buffer.height) {
 		offset = 1
 	}
 	return offset
@@ -287,6 +291,22 @@ func (m *Model) syncCopyModeViewport(buffer copyModeBuffer, point copyModePoint)
 	}
 	if m.copyMode.ViewTopRow > maxTop {
 		m.copyMode.ViewTopRow = maxTop
+	}
+	if gridtrace.Enabled() {
+		gridtrace.Log(
+			"app.copy_mode.sync_viewport",
+			"pane_id", m.copyMode.PaneID,
+			"point_row", point.Row,
+			"point_col", point.Col,
+			"view_top_row", m.copyMode.ViewTopRow,
+			"max_top", maxTop,
+			"snapshot_scrollback_rows", len(buffer.snapshot.Scrollback),
+			"snapshot_screen_rows", len(buffer.snapshot.Screen.Cells),
+			"snapshot_total_rows", buffer.totalRows(),
+			"snapshot_loaded_rows", snapshotScrollbackLoadedDepth(buffer.snapshot),
+			"copy_loaded_rows", m.copyMode.LoadedRows,
+			"render_offset", m.copyModeRenderOffset(buffer),
+		)
 	}
 	if m.copyMode.PaneID != "" {
 		_ = m.setPaneViewportOffset(m.copyMode.PaneID, m.copyModeRenderOffset(buffer))

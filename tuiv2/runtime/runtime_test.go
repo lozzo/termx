@@ -445,6 +445,69 @@ func TestRuntimeApplyGridViewportPageKeepsBoundedWindow(t *testing.T) {
 	}
 }
 
+func TestRuntimeApplyGridViewportPageAcceptsOffsetBeyondMaterializedWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	allRows := make([][]protocol.Cell, 13000)
+	for i := range allRows {
+		allRows[i] = protocolRowFromString(fmt.Sprintf("hist-%05d", i))
+	}
+	live := snapshotWithLines("term-1", 12, 3, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells(allRows[1000:])
+	live.ScrollbackLoadedRows = 13000
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 12000); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	page1 := &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 12, Rows: 3},
+		Scrollback:           protocol.CompactRowsFromCells(allRows[500:1000]),
+		ScrollbackOffset:     12000,
+		ScrollbackTotal:      13000,
+		ScrollbackHasMore:    true,
+		ScrollbackLoadedRows: 12500,
+		ScrollbackRowKinds:   make([]string, 500),
+		ScrollbackWrapped:    make([]bool, 500),
+	}
+	if !rt.ApplyGridViewportPage("term-1", page1, 12000) {
+		t.Fatal("expected first older page to apply")
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil {
+		t.Fatal("expected runtime snapshot")
+	}
+	if got := len(terminal.Snapshot.Scrollback); got != materializedScrollbackRowLimit {
+		t.Fatalf("expected bounded materialized window after first page, got %d", got)
+	}
+
+	page2 := &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 12, Rows: 3},
+		Scrollback:           protocol.CompactRowsFromCells(allRows[:500]),
+		ScrollbackOffset:     12500,
+		ScrollbackTotal:      13000,
+		ScrollbackHasMore:    false,
+		ScrollbackLoadedRows: 13000,
+		HistoryGeneration:    terminal.Snapshot.HistoryGeneration,
+		ScrollbackFirstRowID: firstNonZeroUint64(terminal.Snapshot.ScrollbackFirstRowID) - 500,
+		ScrollbackLastRowID:  firstNonZeroUint64(terminal.Snapshot.ScrollbackFirstRowID) - 1,
+		ScrollbackRowKinds:   make([]string, 500),
+		ScrollbackWrapped:    make([]bool, 500),
+	}
+	if !rt.ApplyGridViewportPage("term-1", page2, 12500) {
+		t.Fatal("expected second older page beyond materialized window to apply")
+	}
+	if got, want := terminal.ScrollbackLoadedLimit, 13000; got != want {
+		t.Fatalf("expected loaded depth 13000 after second page, got %d", got)
+	}
+	if got := compactRowText(terminal.Snapshot.Scrollback[0]); got != "hist-00000" {
+		t.Fatalf("expected oldest page to reach window start, got %q", got)
+	}
+}
+
 func TestRuntimeAttachTerminalDoesNotStartStreamBeforeSnapshotLoad(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()

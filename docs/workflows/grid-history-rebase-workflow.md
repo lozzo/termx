@@ -819,3 +819,96 @@ pkill -f 'termx .* daemon' 2>/dev/null || true
   - `TestTerminalGridViewportAllowsLargeHistoryWindow`
   - `TestTerminalGridViewportWithOptionsPreservesLargeRequestedLimit`
   - `TestTerminalHistoryReplayClampsRequestWindow` now asserts negative offset clamp only, while verifying replay rows are no longer truncated by the legacy 250-row cap.
+
+## tmux Debug Follow-Up Phase 11: Infinite Context Retention And Attach Bootstrap
+
+- Current state before this phase:
+  - real tmux repro with `python3 scripts/generate_terminal_stress.py --lines 1000 --seed 100 --width-hint 120` showed copy mode could keep paging until the title reached `1/2046`, but the oldest visible content stopped at `000297` instead of `000000`;
+  - trace proved the paging stack itself was advancing correctly:
+    - `runtime.load_grid_viewport.received.viewport`: offsets `0 -> 502 -> 1002 -> 1502`
+    - final `loaded_rows=1999`, `total=1999`
+    - `app.copy_mode.sync_viewport`: `snapshot_loaded_rows=1999`, `snapshot_scrollback_rows=1997`, `snapshot_total_rows=2046`
+  - therefore the real blocker was retained history depth, not copy-mode top paging;
+  - default retention was still `2000`, while TUI materialized window budget was `12000`, and runtime fallback VTerm scrollback was also still `2000`;
+  - `attach <id>` also still bootstrapped through the session/startup path, which risked picker-front interference if startup modal state and attach bootstrap overlapped.
+
+- Judgment:
+  - solution A and solution B had to land together:
+    - raise default retained history so common `1000+` wrapped-log sessions do not lose older rows in the first place;
+    - keep retention, page size, materialized window size, and frame budget as separate concepts;
+    - keep paging progress keyed to raw committed depth / row identity rather than materialized visual row count;
+    - preserve already-known loaded depth across attach / re-entry / resync instead of collapsing back to a shallow snapshot window.
+
+- Code changes:
+  - raised server default retained history from `2000` to `12000` via `defaultTerminalHistoryRetainRows`;
+  - renamed the normal history fallback page-size constant from `defaultGridReplayRows` to `defaultGridHistoryPageRows` so it no longer reads like a retention cap;
+  - kept transport trimming separate: `snapshotResponseFrameBudget` remains the frame-size guard and is not reused as history retention;
+  - fixed normal-history `LoadedRows` semantics:
+    - store-backed viewport already reports raw committed depth via `beforeOffset + rows`;
+    - live fallback `GridViewport` now reports `offset + (end-start)` instead of only current materialized row count;
+    - alternate-grid viewport now reports `offset + len(rows)` for the same contract;
+  - fixed runtime/app loaded-depth propagation:
+    - `loadTerminalHistoryViewportCmd` now advances `ScrollbackLoadedLimit` from `snapshotScrollbackLoadedDepth(snapshot)` instead of `offset + len(snapshot.Scrollback)`;
+    - paged `Runtime.ApplyGridViewportPage` continues to use raw loaded depth from structured viewport pages;
+    - non-paged `Runtime.LoadSnapshot` keeps its previous "materialized latest window" meaning so it does not pretend a shallow latest snapshot has already loaded older history pages;
+  - fixed attach / re-entry depth collapse:
+    - `Runtime.AttachTerminal` preserves the terminal's known `ScrollbackLoadedLimit` across `resetTerminalLiveState`;
+    - `terminalattach.Manager.Execute` now loads the attach bootstrap snapshot with `max(req.Limit, terminal.ScrollbackLoadedLimit)`;
+    - restored snapshot fallback already used known loaded depth and now matches the successful attach path;
+  - fixed direct `attach <id>` bootstrap interference without regressing shared session clients:
+    - non-session `AttachID` startup now creates a clean default workspace without first opening `startup-picker`;
+    - session clients (`SessionID != ""`) still go through session bootstrap, so shared-session attach clients keep their session state.
+  - restored the small-history copy-mode render offset safeguard with a narrower condition:
+    - only when the user is at scrollback rows, offset would otherwise be zero, and total rows fit within the pane height;
+    - this keeps small two-pane frozen copy buffers rendering history instead of dropping back to live screen, without reintroducing the large-history top paging bug.
+
+- Commands:
+
+```sh
+go build -o /tmp/termx-grid-final-probe/termx ./termx-cli/cmd/termx
+go test ./termx-core -run 'TestTerminalGridStoreViewportLoadedRowsTrackOffsetDepth|TestTerminalGridViewportWithOptionsPreservesLargeRequestedLimit|TestTerminalHistoryReplayReadsBeyondShortLiveScrollback|TestTerminalGridViewportAllowsLargeHistoryWindow' -count=1
+go test ./tuiv2/runtime -run 'TestRuntimeApplyGridViewportPageAcceptsOffsetBeyondMaterializedWindow|TestRuntimeApplyGridViewportPageKeepsBoundedWindow|TestRuntimeResizePaneSkipsFollowerBindings|TestRuntimeAttachTerminalDoesNotStartStreamBeforeSnapshotLoad' -count=1
+go test ./tuiv2/app -run 'TestCopyModeTopRepeatedlyLoadsOlderPagesWhenStillAtTop|TestCopyModeSupportsTwoPanesAndScrollsActivePaneWithoutBlankingEither|TestTerminalAttachServiceRestoredSnapshotFallbackUsesKnownLoadedDepth|TestModelInitAttachIDBootstrapsAndAttachesTerminal|TestModelInitRestoreAutoReattachKeepsBindingWhenSnapshotFallbackLoads' -count=1
+go test ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...
+go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./tuiv2/runtime/... ./tuiv2/app/... ./tuiv2/render/...
+```
+
+- Test results:
+  - PASS: focused `termx-core` history-window / loaded-depth tests
+  - PASS: focused `tuiv2/runtime` bounded-window / beyond-materialized-window / attach bootstrap tests
+  - PASS: focused `tuiv2/app` copy-mode repeated top / two-pane copy-mode / attach bootstrap / restored fallback tests
+  - PASS: `go test ./termx-core/... ./tuiv2/runtime/... ./tuiv2/app/...`
+  - PASS: `go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./tuiv2/runtime/... ./tuiv2/app/... ./tuiv2/render/...`
+
+- tmux verification:
+  - isolated env:
+    - binary: `/tmp/termx-grid-final-probe/termx`
+    - socket/log/trace under `/tmp/termx-grid-final-probe/`
+    - `TERMX_REMOTE_ENABLE=false`
+  - baseline repro before the fix:
+    - `copy mode repeated g` advanced through pages until `1/2046`
+    - earliest visible row remained `000297`
+    - trace showed `total=1999`, `loaded_rows=1999`, so retained history itself was exhausted.
+  - after the fix, same `1000`-line stress repro:
+    - viewport pages advanced `offset=0 -> 502 -> 1002 -> 1502 -> 2003 -> 2503`
+    - final trace:
+      - `runtime.load_grid_viewport.received.viewport`: `total=2842`, `loaded_rows=2842`, `first_row_id=0`
+      - `app.copy_mode.sync_viewport`: `snapshot_scrollback_rows=2839`, `snapshot_screen_rows=49`, `snapshot_total_rows=2888`, `snapshot_loaded_rows=2842`
+    - final capture reached:
+      - title `1/2888`
+      - earliest visible content `000000 [INFO  ] stress   boot      seed=100 lines=1000`
+  - resize verification:
+    - resized the attached tmux window from `120x36` to `90x28`
+    - re-entered copy mode and repeated `g`
+    - final capture reached:
+      - title `1/3031`
+      - earliest visible content still `000000`
+    - this shows retained history did not collapse across resize; row count increased as expected because the same retained logical content reflowed into more physical rows.
+  - attach bootstrap verification:
+    - direct `termx attach 1` in isolated tmux now opened directly onto the terminal surface, not the startup picker;
+    - shared-session attach clients were rechecked through tests after narrowing the non-session attach bootstrap shortcut.
+
+- Remaining risks:
+  - retention is still a row-count policy, not a logical-line-count or disk-byte policy. With heavy wrapping, physical rows can still grow faster than logical log entries; the new default is large enough for the verified `1000`-line wrapped stress case, but it is still not mathematically unbounded.
+  - alternate-screen local history still keeps its own bounded model and was intentionally not changed in this phase.
+  - shared floating owner-handoff / re-entry behavior was covered by focused tests and the existing phase-9 logic, but this phase did not add a brand-new real-tmux floating attach script. If another regression appears there, the next step should be a dedicated scripted tmux flow built on the same `/tmp/termx-grid-final-probe` harness.

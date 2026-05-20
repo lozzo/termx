@@ -72,7 +72,11 @@ func (m *Manager) Execute(ctx context.Context, req Request) (orchestrator.Termin
 	if err != nil {
 		return orchestrator.TerminalAttachedMsg{}, err
 	}
-	if _, err := m.runtime.LoadSnapshot(ctx, plan.TerminalID, req.Offset, req.Limit); err != nil {
+	snapshotLimit := req.Limit
+	if terminal.ScrollbackLoadedLimit > snapshotLimit {
+		snapshotLimit = terminal.ScrollbackLoadedLimit
+	}
+	if _, err := m.runtime.LoadSnapshot(ctx, plan.TerminalID, req.Offset, snapshotLimit); err != nil {
 		m.rollbackExecution(rollback)
 		return orchestrator.TerminalAttachedMsg{}, err
 	}

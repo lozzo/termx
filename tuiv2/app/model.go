@@ -452,6 +452,14 @@ func (m *Model) bootstrapStartup() error {
 	if m == nil || m.workbench == nil {
 		return nil
 	}
+	if m.cfg.AttachID != "" && m.cfg.SessionID == "" {
+		result, err := bootstrap.Startup(bootstrap.Config{}, m.workbench, m.runtime)
+		if err != nil {
+			return err
+		}
+		m.startup = result
+		return nil
+	}
 	if m.cfg.SessionID != "" {
 		return m.bootstrapSessionStartup(context.Background())
 	}

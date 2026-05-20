@@ -16,6 +16,7 @@ import (
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-core/fanout"
 	ptymgr "github.com/lozzow/termx/termx-core/pty"
+	"github.com/lozzow/termx/termx-shared/gridtrace"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/termx-shared/terminalmeta"
 	"github.com/lozzow/termx/termx-vterm/vterm"
@@ -492,6 +493,10 @@ func (t *Terminal) Resize(cols, rows uint16) error {
 	t.mu.Unlock()
 
 	t.streamMu.Lock()
+	gridRowsBefore := 0
+	if t.grid != nil {
+		gridRowsBefore = t.grid.RowCount()
+	}
 	if err := t.pty.Resize(cols, rows); err != nil {
 		t.streamMu.Unlock()
 		return err
@@ -499,12 +504,30 @@ func (t *Terminal) Resize(cols, rows uint16) error {
 	damage := t.vterm.ResizeWithDamage(int(cols), int(rows))
 	t.captureAlternateDamageLocked(damage)
 	t.appendGridFromDamageLocked(damage)
+	gridRowsAfterAppend := gridRowsBefore
+	if t.grid != nil {
+		gridRowsAfterAppend = t.grid.RowCount()
+	}
 	revision := t.bumpScreenRevisionLocked()
 	payload, ok := t.screenUpdatePayloadFromDamageLocked(damage)
 	t.mu.Lock()
 	t.size = newSize
 	t.invalidateProtocolInfoCacheLocked()
 	t.mu.Unlock()
+	if gridtrace.Enabled() {
+		gridtrace.Log(
+			"core.resize.summary",
+			"terminal_id", t.id,
+			"old_cols", old.Cols,
+			"old_rows", old.Rows,
+			"new_cols", cols,
+			"new_rows", rows,
+			"scrollback_append_rows", len(damage.ScrollbackAppend),
+			"grid_rows_before", gridRowsBefore,
+			"grid_rows_after_append", gridRowsAfterAppend,
+			"full_replace_reason", damage.FullReplaceReason,
+		)
+	}
 	t.broadcastResizeLocked(t.stream, cols, rows)
 	if ok {
 		t.stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Payload: payload, Revision: revision})
@@ -892,7 +915,7 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 	offset := opt.ScrollbackOffset
 	limit := opt.ScrollbackLimit
 	if limit <= 0 {
-		limit = defaultGridReplayRows
+		limit = defaultGridHistoryPageRows
 	}
 	if offset < 0 {
 		offset = 0
@@ -917,7 +940,7 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 			ScrollbackLimit:      limit,
 			ScrollbackTotal:      total,
 			ScrollbackHasMore:    hasMore,
-			LoadedRows:           len(rows),
+			LoadedRows:           offset + len(rows),
 			ScrollbackTimestamps: timestamps,
 			ScrollbackRowKinds:   rowKinds,
 			ScrollbackWrapped:    wrapped,
@@ -980,7 +1003,7 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 		ScrollbackLimit:      limit,
 		ScrollbackTotal:      len(scrollback),
 		ScrollbackHasMore:    start > 0,
-		LoadedRows:           len(scrollback[start:end]),
+		LoadedRows:           offset + (end - start),
 		ScrollbackTimestamps: sliceTimeRange(t.vterm.ScrollbackTimestamps(), start, end),
 		ScrollbackRowKinds:   sliceStringRange(t.vterm.ScrollbackRowKinds(), start, end),
 		ScrollbackWrapped:    sliceBoolRange(scrollbackWrapped, start, end),

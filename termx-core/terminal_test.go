@@ -817,6 +817,30 @@ func TestTerminalGridViewportWithOptionsPreservesLargeRequestedLimit(t *testing.
 	}
 }
 
+func TestTerminalGridStoreViewportLoadedRowsTrackOffsetDepth(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	rows := make([][]localvterm.Cell, 0, 1000)
+	for i := 0; i < 1000; i++ {
+		rows = append(rows, []localvterm.Cell{{Content: fmt.Sprintf("row-%04d", i), Width: 1}})
+	}
+	if err := store.AppendRows(rows); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+
+	viewport, err := store.Viewport(502, 500, 16)
+	if err != nil {
+		t.Fatalf("viewport: %v", err)
+	}
+	if got, want := viewport.LoadedRows, 1000; got != want {
+		t.Fatalf("expected loaded rows to report raw committed depth %d, got %d", want, got)
+	}
+	if got := len(viewport.Rows); got < 400 {
+		t.Fatalf("expected a large materialized row window after offset paging, got %d", got)
+	}
+}
+
 func TestTerminalHistoryReplayReadsBeyondShortLiveScrollback(t *testing.T) {
 	vt := localvterm.New(12, 2, 3, nil)
 	term := &Terminal{
@@ -1270,8 +1294,8 @@ func TestTerminalGridStoreWindowStartExpandsToLogicalLine(t *testing.T) {
 	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"ABC"}) {
 		t.Fatalf("expected viewport start to expand to logical line start, got %#v", got)
 	}
-	if viewport.LoadedRows != 3 {
-		t.Fatalf("expected loaded raw rows to include complete logical line, got %d", viewport.LoadedRows)
+	if viewport.LoadedRows != 4 {
+		t.Fatalf("expected loaded raw rows to include offset depth plus complete logical line, got %d", viewport.LoadedRows)
 	}
 }
 

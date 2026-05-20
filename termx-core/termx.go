@@ -24,7 +24,10 @@ import (
 	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 
-const snapshotResponseFrameBudget = wire.MaxFrameSize - 64*1024
+const (
+	snapshotResponseFrameBudget      = wire.MaxFrameSize - 64*1024
+	defaultTerminalHistoryRetainRows = 12000
+)
 
 type ServerOption func(*serverConfig)
 
@@ -58,7 +61,7 @@ func NewServer(opts ...ServerOption) *Server {
 	cfg := serverConfig{
 		socketPath:           defaultSocketPath(),
 		defaultSize:          Size{Cols: 80, Rows: 24},
-		defaultScrollback:    2000,
+		defaultScrollback:    defaultTerminalHistoryRetainRows,
 		defaultKeepAfterExit: 5 * time.Minute,
 		logger:               slog.New(slog.NewTextHandler(discardWriter{}, nil)),
 	}

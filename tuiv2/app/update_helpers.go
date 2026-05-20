@@ -415,7 +415,7 @@ func (m *Model) loadTerminalHistoryViewportCmd(terminalID string, offset int, li
 				terminal.ScrollbackLoadingLimit = 0
 			}
 			if snapshot != nil {
-				if loadedRows := offset + len(snapshot.Scrollback); loadedRows > terminal.ScrollbackLoadedLimit {
+				if loadedRows := snapshotScrollbackLoadedDepth(snapshot); loadedRows > terminal.ScrollbackLoadedLimit {
 					terminal.ScrollbackLoadedLimit = loadedRows
 				}
 				if limit > 0 {

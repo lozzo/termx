@@ -172,7 +172,7 @@ func scrollOffsetForViewportTop(snapshot *protocol.Snapshot, height, viewTopRow 
 	if offset < 0 {
 		offset = 0
 	}
-	if viewTopRow < len(snapshot.Scrollback) && offset == 0 && len(snapshot.Scrollback) > 0 {
+	if viewTopRow < len(snapshot.Scrollback) && offset == 0 && totalRows <= maxInt(1, height) {
 		offset = 1
 	}
 	return offset

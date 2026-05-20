@@ -22,7 +22,7 @@ import (
 
 const (
 	defaultTerminalLiveScrollbackRows = 32
-	defaultGridReplayRows             = 100
+	defaultGridHistoryPageRows        = 100
 	maxGridReplayRows                 = 5000
 	defaultGridPageMaxBytes           = 4 * 1024 * 1024
 
@@ -439,7 +439,7 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 		if hasMore {
 			cropped = trimTerminalGridViewportToTail(&result, limit)
 		}
-		result.LoadedRows = rows
+		result.LoadedRows = beforeOffset + rows
 		result.HasMore = hasMore || cropped
 		result.BeforeOffset = beforeOffset
 		result.Limit = limit
@@ -580,7 +580,7 @@ func sanitizeGridReplayWindow(beforeOffset int, limit int) (int, int) {
 		beforeOffset = 0
 	}
 	if limit <= 0 {
-		limit = defaultGridReplayRows
+		limit = defaultGridHistoryPageRows
 	}
 	return beforeOffset, limit
 }
@@ -590,7 +590,7 @@ func sanitizeGridViewportWindow(beforeOffset int, limit int) (int, int) {
 		beforeOffset = 0
 	}
 	if limit <= 0 {
-		limit = defaultGridReplayRows
+		limit = defaultGridHistoryPageRows
 	}
 	return beforeOffset, limit
 }

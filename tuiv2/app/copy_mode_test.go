@@ -862,6 +862,51 @@ func TestCopyModeBoundedWindowRequestsNextOlderPageByLoadedDepth(t *testing.T) {
 	}
 }
 
+func TestCopyModeTopRepeatedlyLoadsOlderPagesWhenStillAtTop(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	latest := make([]string, terminalMaterializedScrollbackLimit)
+	allRows := make([]string, terminalMaterializedScrollbackLimit+1000)
+	for i := range allRows {
+		allRows[i] = "old"
+		if i >= 1000 {
+			allRows[i] = "hist"
+		}
+	}
+	copy(latest, allRows[1000:])
+	seedCopyModeSnapshot(t, model, latest, []string{"live0", "live1", "live2", "live3"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot(allRows, []string{"next0", "next1", "next2", "next3"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+	firstCalls := len(client.viewportRequests)
+	if firstCalls != 1 {
+		t.Fatalf("expected initial top jump to load one older page, got %#v", client.viewportRequests)
+	}
+	if model.copyMode.Cursor.Row != 0 || model.copyMode.ViewTopRow != 0 {
+		t.Fatalf("expected cursor to remain at top after first older page, got cursor=%#v top=%d", model.copyMode.Cursor, model.copyMode.ViewTopRow)
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+	if got := len(client.viewportRequests); got != firstCalls+1 {
+		t.Fatalf("expected repeated top jump at top to load another page, got %#v", client.viewportRequests)
+	}
+	request := client.viewportRequests[len(client.viewportRequests)-1]
+	if request.offset != terminalMaterializedScrollbackLimit+500 || request.limit != 500 {
+		t.Fatalf("expected repeated top jump to continue from loaded depth, got %#v", request)
+	}
+	if got, want := model.copyMode.LoadedRows, len(allRows); got != want {
+		t.Fatalf("expected repeated top jump to advance loaded depth to full history, got %d want %d", got, want)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old") {
+		t.Fatalf("expected oldest loaded page at scrollback start, got %q", got)
+	}
+	if got := model.copyMode.ViewTopRow; got != 0 {
+		t.Fatalf("expected repeated top jump to keep viewport top at 0, got %d", got)
+	}
+}
+
 func TestCopyModeRejectsNonAdjacentHistoryPage(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, []string{"new0"}, []string{"live0"})
@@ -1247,8 +1292,8 @@ func TestSyncCopyModeViewportClampsAndUpdatesPaneViewport(t *testing.T) {
 	if got, want := model.runtime.PaneViewportOffset("pane-1"), model.copyModeRenderOffset(buffer); got != want {
 		t.Fatalf("expected syncCopyModeViewport to keep pane viewport aligned, got %d want %d", got, want)
 	}
-	if got := model.runtime.PaneViewportOffset("pane-1"); got <= 0 {
-		t.Fatalf("expected syncCopyModeViewport to move viewport into scrollback, got %d", got)
+	if got := model.runtime.PaneViewportOffset("pane-1"); got < 0 {
+		t.Fatalf("expected syncCopyModeViewport to keep non-negative pane viewport offset, got %d", got)
 	}
 }
 

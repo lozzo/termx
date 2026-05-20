@@ -77,7 +77,7 @@ func (g *terminalAlternateGrid) window(beforeOffset, limit int) ([]terminalGridR
 		beforeOffset = 0
 	}
 	if limit <= 0 {
-		limit = defaultGridReplayRows
+		limit = defaultGridHistoryPageRows
 	}
 	if limit > maxGridReplayRows {
 		limit = maxGridReplayRows
