@@ -5,20 +5,22 @@ import (
 	"context"
 	"fmt"
 	"image/color"
-	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx"
-	"github.com/lozzow/termx/protocol"
-	"github.com/lozzow/termx/terminalmeta"
-	unixtransport "github.com/lozzow/termx/transport/unix"
+	"github.com/lozzow/termx/termx-proto/wire"
+
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/terminalmeta"
+	"github.com/lozzow/termx/termx-testkit"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/bridge"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
-	localvterm "github.com/lozzow/termx/vterm"
 )
 
 func newTestRuntime(t *testing.T) (*Runtime, context.Context) {
@@ -26,43 +28,8 @@ func newTestRuntime(t *testing.T) (*Runtime, context.Context) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	socketPath := filepath.Join(t.TempDir(), "termx.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	done := make(chan error, 1)
-	go func() {
-		done <- srv.ListenAndServe(ctx)
-	}()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			t.Fatal("server did not stop in time")
-		}
-	})
-
-	var transport *unixtransport.Transport
-	var err error
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		transport, err = unixtransport.Dial(socketPath)
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("dial: %v", err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	client := protocol.NewClient(transport)
-	t.Cleanup(func() { _ = client.Close() })
-
-	helloCtx, helloCancel := context.WithTimeout(ctx, 2*time.Second)
-	defer helloCancel()
-	if err := client.Hello(helloCtx, protocol.Hello{Version: protocol.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
+	daemon := testkit.StartDaemon(t, ctx, "termx.sock")
+	client := daemon.NewClient(t, ctx)
 
 	return New(bridge.NewProtocolClient(client)), ctx
 }
@@ -89,6 +56,75 @@ func TestRuntimeListTerminalsDoesNotPopulateRegistry(t *testing.T) {
 	stored := rt.Registry().Get(created.TerminalID)
 	if stored != nil {
 		t.Fatalf("expected list to avoid populating registry, got %#v", stored)
+	}
+}
+
+func TestRuntimeApplyTerminalListPatchesRegistryMetadata(t *testing.T) {
+	rt := New(nil)
+	exitCode := 7
+
+	rt.ApplyTerminalList([]protocol.TerminalInfo{{
+		ID:       "term-1",
+		Name:     "renamed-shell",
+		Command:  []string{"zsh", "-l"},
+		Tags:     map[string]string{"termx.environment": "prod"},
+		State:    "exited",
+		ExitCode: &exitCode,
+	}})
+
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected terminal to be created in registry")
+	}
+	if terminal.Name != "renamed-shell" || terminal.State != "exited" {
+		t.Fatalf("unexpected terminal metadata: %#v", terminal)
+	}
+	if !reflect.DeepEqual(terminal.Command, []string{"zsh", "-l"}) {
+		t.Fatalf("unexpected command: %#v", terminal.Command)
+	}
+	if terminal.Tags["termx.environment"] != "prod" {
+		t.Fatalf("unexpected tags: %#v", terminal.Tags)
+	}
+	if terminal.ExitCode == nil || *terminal.ExitCode != exitCode {
+		t.Fatalf("unexpected exit code: %#v", terminal.ExitCode)
+	}
+}
+
+func TestRuntimeApplyTerminalListDemotesLocalOwnerForExternalResizeOwner(t *testing.T) {
+	rt := New(nil)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.BoundPaneIDs = []string{"pane-1"}
+	terminal.OwnerPaneID = "pane-1"
+	terminal.ControlPaneID = "pane-1"
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	binding.Role = BindingRoleOwner
+
+	rt.ApplyTerminalList([]protocol.TerminalInfo{{
+		ID:                         "term-1",
+		State:                      "running",
+		ResizeOwnerAttachmentCount: 2,
+	}})
+
+	if terminal.OwnerPaneID != externalResizeOwnerPaneID || terminal.ControlPaneID != "" || !terminal.RequiresExplicitOwner {
+		t.Fatalf("expected external owner to demote local control, got owner=%q control=%q explicit=%v", terminal.OwnerPaneID, terminal.ControlPaneID, terminal.RequiresExplicitOwner)
+	}
+	if binding.Role != BindingRoleFollower {
+		t.Fatalf("expected local binding to become follower, got %q", binding.Role)
+	}
+
+	rt.ApplyTerminalList([]protocol.TerminalInfo{{
+		ID:                         "term-1",
+		State:                      "running",
+		ResizeOwnerAttachmentCount: 1,
+	}})
+
+	if terminal.OwnerPaneID != "pane-1" || terminal.ControlPaneID != "pane-1" || terminal.RequiresExplicitOwner {
+		t.Fatalf("expected local owner to restore after external owner leaves, got owner=%q control=%q explicit=%v", terminal.OwnerPaneID, terminal.ControlPaneID, terminal.RequiresExplicitOwner)
+	}
+	if binding.Role != BindingRoleOwner {
+		t.Fatalf("expected local binding to become owner again, got %q", binding.Role)
 	}
 }
 
@@ -143,6 +179,364 @@ func TestRuntimeAttachAndLoadSnapshotInitializesVTermCache(t *testing.T) {
 	}
 }
 
+func TestRuntimeLoadGridViewportDoesNotReplaceLiveSnapshot(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 6, 3, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+		protocolRowFromString("new0"),
+		protocolRowFromString("new1"),
+		protocolRowFromString("new2"),
+	})
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	loaded, err := rt.LoadSnapshot(ctx, "term-1", 0, 2)
+	if err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if loaded == nil || len(loaded.Scrollback) != 3 {
+		t.Fatalf("expected initial snapshot page, got %#v", loaded)
+	}
+	stored := rt.Registry().Get("term-1")
+	if stored == nil || stored.Snapshot == nil {
+		t.Fatal("expected runtime snapshot")
+	}
+	before := stored.Snapshot
+
+	page, err := rt.LoadGridViewport(ctx, "term-1", 2, 1, 6)
+	if err != nil {
+		t.Fatalf("load grid viewport: %v", err)
+	}
+	if page == nil || len(page.Scrollback) != 1 || compactRowText(page.Scrollback[0]) != "new0" {
+		t.Fatalf("unexpected grid viewport page: %#v", page)
+	}
+	if stored.Snapshot != before {
+		t.Fatal("expected history viewport load to leave live runtime snapshot untouched")
+	}
+}
+
+func TestRuntimeApplyGridViewportPagePrependsHistory(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 6, 3, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+		protocolRowFromString("new0"),
+		protocolRowFromString("new1"),
+	})
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 2); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	stored := rt.Registry().Get("term-1")
+	if stored == nil || stored.Snapshot == nil {
+		t.Fatal("expected runtime snapshot")
+	}
+	page := &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 6, Rows: 3},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("old0")}),
+		ScrollbackOffset:       2,
+		ScrollbackTotal:        3,
+		ScrollbackLogicalTotal: 2,
+		ScrollbackHasMore:      false,
+		ScrollbackTimestamps:   []time.Time{time.Now()},
+	}
+	if !rt.ApplyGridViewportPage("term-1", page, 2) {
+		t.Fatal("expected viewport page to apply")
+	}
+	got := rt.Registry().Get("term-1").Snapshot
+	if len(got.Scrollback) != 3 || compactRowText(got.Scrollback[0]) != "old0" || compactRowText(got.Scrollback[1]) != "new0" {
+		t.Fatalf("expected older page prepended, got %#v", got.Scrollback)
+	}
+	if got.ScrollbackLogicalTotal != 2 {
+		t.Fatalf("expected logical total from prepended page, got %d", got.ScrollbackLogicalTotal)
+	}
+	if !stored.ScrollbackExhausted {
+		t.Fatal("expected exhausted flag from page metadata")
+	}
+	if !stored.PreferSnapshot {
+		t.Fatal("expected history page to render from snapshot instead of reloading local vterm")
+	}
+	if stored.VTerm == nil || len(stored.VTerm.ScrollbackContent()) != 2 {
+		t.Fatalf("expected local vterm scrollback to stay on the live snapshot, got %#v", stored.VTerm)
+	}
+}
+
+func TestSnapshotFromGridViewportPreservesLogicalTotals(t *testing.T) {
+	viewport := &protocol.GridViewport{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 80, Rows: 24},
+		Rows:                   protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("old0")}),
+		ScrollbackOffset:       10,
+		ScrollbackTotal:        100,
+		ScrollbackLogicalTotal: 40,
+		ScrollbackHasMore:      true,
+		LoadedRows:             12,
+	}
+
+	snapshot := snapshotFromGridViewport("term-1", viewport)
+	if snapshot == nil {
+		t.Fatal("expected snapshot")
+	}
+	if snapshot.ScrollbackTotal != 100 || snapshot.ScrollbackLogicalTotal != 40 {
+		t.Fatalf("expected logical totals preserved, got total=%d logical=%d", snapshot.ScrollbackTotal, snapshot.ScrollbackLogicalTotal)
+	}
+}
+
+func TestRuntimeApplyGridViewportPageReplacesLatestWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 6, 3, []string{"live"})
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	page := &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 6, Rows: 3},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("new0"), protocolRowFromString("new1")}),
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        2,
+		ScrollbackLogicalTotal: 1,
+		ScrollbackHasMore:      false,
+		ScrollbackRowKinds:     []string{"", ""},
+		ScrollbackWrapped:      []bool{false, false},
+		ScrollbackTimestamps: []time.Time{
+			time.Now(),
+			time.Now(),
+		},
+	}
+	if !rt.ApplyGridViewportPage("term-1", page, 0) {
+		t.Fatal("expected latest viewport page to apply")
+	}
+	got := rt.Registry().Get("term-1").Snapshot
+	if len(got.Scrollback) != 2 || compactRowText(got.Scrollback[0]) != "new0" || compactRowText(got.Scrollback[1]) != "new1" {
+		t.Fatalf("expected latest page to replace loaded scrollback, got %#v", got.Scrollback)
+	}
+	if got.ScrollbackLogicalTotal != 1 {
+		t.Fatalf("expected latest page logical total preserved, got %d", got.ScrollbackLogicalTotal)
+	}
+}
+
+func TestRuntimeApplyGridViewportPageRejectsStaleGeometry(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 80, 24, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+		protocolRowFromString("new0"),
+	})
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	page := &protocol.Snapshot{
+		TerminalID:         "term-1",
+		Size:               protocol.Size{Cols: 40, Rows: 24},
+		Scrollback:         protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("old0")}),
+		ScrollbackOffset:   1,
+		ScrollbackTotal:    2,
+		ScrollbackHasMore:  false,
+		ScrollbackRowKinds: []string{""},
+		ScrollbackWrapped:  []bool{false},
+	}
+	if rt.ApplyGridViewportPage("term-1", page, 1) {
+		t.Fatal("expected stale-geometry history page to be rejected")
+	}
+	got := rt.Registry().Get("term-1").Snapshot
+	if len(got.Scrollback) != 1 || compactRowText(got.Scrollback[0]) != "new0" {
+		t.Fatalf("expected live snapshot history to remain unchanged, got %#v", got.Scrollback)
+	}
+}
+
+func TestRuntimeApplyGridViewportPageRejectsStaleHistoryGeneration(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 80, 24, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("new0")})
+	live.ScrollbackLoadedRows = 1
+	live.HistoryGeneration = 10
+	live.ScrollbackFirstRowID = 100
+	live.ScrollbackLastRowID = 100
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	page := &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 80, Rows: 24},
+		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("old0")}),
+		ScrollbackOffset:     1,
+		ScrollbackTotal:      2,
+		ScrollbackHasMore:    false,
+		ScrollbackLoadedRows: 2,
+		HistoryGeneration:    11,
+		ScrollbackFirstRowID: 99,
+		ScrollbackLastRowID:  99,
+	}
+	if rt.ApplyGridViewportPage("term-1", page, 1) {
+		t.Fatal("expected stale-generation history page to be rejected")
+	}
+	got := rt.Registry().Get("term-1").Snapshot
+	if len(got.Scrollback) != 1 || compactRowText(got.Scrollback[0]) != "new0" {
+		t.Fatalf("expected live snapshot history to remain unchanged, got %#v", got.Scrollback)
+	}
+}
+
+func TestRuntimeApplyGridViewportPageRejectsNonAdjacentRowIDs(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 80, 24, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("new0")})
+	live.ScrollbackLoadedRows = 1
+	live.HistoryGeneration = 10
+	live.ScrollbackFirstRowID = 100
+	live.ScrollbackLastRowID = 100
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	page := &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 80, Rows: 24},
+		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("old0")}),
+		ScrollbackOffset:     1,
+		ScrollbackTotal:      2,
+		ScrollbackHasMore:    false,
+		ScrollbackLoadedRows: 2,
+		HistoryGeneration:    10,
+		ScrollbackFirstRowID: 98,
+		ScrollbackLastRowID:  98,
+	}
+	if rt.ApplyGridViewportPage("term-1", page, 1) {
+		t.Fatal("expected non-adjacent history page to be rejected")
+	}
+	got := rt.Registry().Get("term-1").Snapshot
+	if len(got.Scrollback) != 1 || compactRowText(got.Scrollback[0]) != "new0" {
+		t.Fatalf("expected live snapshot history to remain unchanged, got %#v", got.Scrollback)
+	}
+}
+
+func TestRuntimeApplyGridViewportPageKeepsBoundedWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	allRows := make([][]protocol.Cell, 12500)
+	for i := range allRows {
+		allRows[i] = protocolRowFromString(fmt.Sprintf("hist-%05d", i))
+	}
+	live := snapshotWithLines("term-1", 12, 3, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells(allRows[500:])
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 12000); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	page := &protocol.Snapshot{
+		TerminalID:         "term-1",
+		Size:               protocol.Size{Cols: 12, Rows: 3},
+		Scrollback:         protocol.CompactRowsFromCells(allRows[:500]),
+		ScrollbackOffset:   12000,
+		ScrollbackTotal:    12500,
+		ScrollbackHasMore:  false,
+		ScrollbackRowKinds: make([]string, 500),
+		ScrollbackWrapped:  make([]bool, 500),
+	}
+	if !rt.ApplyGridViewportPage("term-1", page, 12000) {
+		t.Fatal("expected older page to apply")
+	}
+	terminal := rt.Registry().Get("term-1")
+	got := terminal.Snapshot
+	if got == nil {
+		t.Fatal("expected runtime snapshot")
+	}
+	if gotRows := len(got.Scrollback); gotRows != materializedScrollbackRowLimit {
+		t.Fatalf("expected bounded materialized rows, got %d want %d", gotRows, materializedScrollbackRowLimit)
+	}
+	if got.ScrollbackOffset != 500 {
+		t.Fatalf("expected newest rows to be trimmed from the materialized window, offset=%d", got.ScrollbackOffset)
+	}
+	if got := compactRowText(got.Scrollback[0]); got != "hist-00000" {
+		t.Fatalf("expected oldest loaded row at window start, got %q", got)
+	}
+	if terminal.ScrollbackLoadedLimit != 12500 {
+		t.Fatalf("expected loaded depth to keep full logical progress, got %d", terminal.ScrollbackLoadedLimit)
+	}
+}
+
+func TestRuntimeApplyGridViewportPageAcceptsOffsetBeyondMaterializedWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	allRows := make([][]protocol.Cell, 13000)
+	for i := range allRows {
+		allRows[i] = protocolRowFromString(fmt.Sprintf("hist-%05d", i))
+	}
+	live := snapshotWithLines("term-1", 12, 3, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells(allRows[1000:])
+	live.ScrollbackLoadedRows = 13000
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 12000); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	page1 := &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 12, Rows: 3},
+		Scrollback:           protocol.CompactRowsFromCells(allRows[500:1000]),
+		ScrollbackOffset:     12000,
+		ScrollbackTotal:      13000,
+		ScrollbackHasMore:    true,
+		ScrollbackLoadedRows: 12500,
+		ScrollbackRowKinds:   make([]string, 500),
+		ScrollbackWrapped:    make([]bool, 500),
+	}
+	if !rt.ApplyGridViewportPage("term-1", page1, 12000) {
+		t.Fatal("expected first older page to apply")
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil {
+		t.Fatal("expected runtime snapshot")
+	}
+	if got := len(terminal.Snapshot.Scrollback); got != materializedScrollbackRowLimit {
+		t.Fatalf("expected bounded materialized window after first page, got %d", got)
+	}
+
+	page2 := &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 12, Rows: 3},
+		Scrollback:           protocol.CompactRowsFromCells(allRows[:500]),
+		ScrollbackOffset:     12500,
+		ScrollbackTotal:      13000,
+		ScrollbackHasMore:    false,
+		ScrollbackLoadedRows: 13000,
+		HistoryGeneration:    terminal.Snapshot.HistoryGeneration,
+		ScrollbackFirstRowID: firstNonZeroUint64(terminal.Snapshot.ScrollbackFirstRowID) - 500,
+		ScrollbackLastRowID:  firstNonZeroUint64(terminal.Snapshot.ScrollbackFirstRowID) - 1,
+		ScrollbackRowKinds:   make([]string, 500),
+		ScrollbackWrapped:    make([]bool, 500),
+	}
+	if !rt.ApplyGridViewportPage("term-1", page2, 12500) {
+		t.Fatal("expected second older page beyond materialized window to apply")
+	}
+	if got, want := terminal.ScrollbackLoadedLimit, 13000; got != want {
+		t.Fatalf("expected loaded depth 13000 after second page, got %d", got)
+	}
+	if got := compactRowText(terminal.Snapshot.Scrollback[0]); got != "hist-00000" {
+		t.Fatalf("expected oldest page to reach window start, got %q", got)
+	}
+}
+
 func TestRuntimeAttachTerminalDoesNotStartStreamBeforeSnapshotLoad(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
@@ -190,7 +584,7 @@ func TestRuntimeLoadSnapshotDoesNotRaceWithAlternateScreenExit(t *testing.T) {
 		t.Fatalf("start stream: %v", err)
 	}
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("\x1b[?1049l\x1b[?25h\x1b[?1002l$\x20")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 80, 24, "$ "))
 	waitFor(t, func() bool {
 		stored := rt.Registry().Get("term-1")
 		return stored != nil && vtermContains(stored.VTerm, "$ ")
@@ -234,22 +628,135 @@ func TestRuntimeStartStreamUpdatesSurfaceAndInvalidates(t *testing.T) {
 	if err := rt.StartStream(ctx, "term-1"); err != nil {
 		t.Fatalf("start stream: %v", err)
 	}
+	if got := client.streamReadyCount(9); got != 1 {
+		t.Fatalf("expected initial stream ready, got %d", got)
+	}
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("hi")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 80, 24, "hi"))
 
 	waitFor(t, func() bool {
 		stored := rt.Registry().Get("term-1")
 		return stored != nil && vtermContains(stored.VTerm, "hi")
 	})
+	if got := client.streamReadyCount(9); got != 1 {
+		t.Fatalf("expected screen update ready to wait for render, got %d ready calls", got)
+	}
 
 	if invalidateCount.Load() == 0 {
 		t.Fatal("expected stream refresh to invalidate rendering")
+	}
+	rt.MarkRenderedStreamUpdates(ctx)
+	if got := client.streamReadyCount(9); got != 2 {
+		t.Fatalf("expected rendered screen update ack, got %d ready calls", got)
+	}
+	if got := client.lastStreamReadySequence(9); got != 0 {
+		t.Fatalf("expected direct fake stream frame to ack sequence 0, got %d", got)
 	}
 	if !vtermContains(rt.Registry().Get("term-1").VTerm, "hi") {
 		t.Fatal("expected live surface to contain streamed output")
 	}
 	if rt.Registry().Get("term-1").SurfaceVersion == 0 {
 		t.Fatal("expected surface version to advance after stream output")
+	}
+}
+
+func TestRuntimeStreamReadyAcksRenderedScreenSequence(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+	rt := New(client)
+
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start stream: %v", err)
+	}
+
+	client.sendFrame(9, protocol.StreamFrame{
+		Type:           wire.TypeScreenUpdate,
+		Payload:        screenUpdatePayloadForLines(t, 80, 24, "seq-one"),
+		ScreenSequence: 7,
+	})
+
+	waitFor(t, func() bool {
+		stored := rt.Registry().Get("term-1")
+		return stored != nil && vtermContains(stored.VTerm, "seq-one")
+	})
+	rt.MarkRenderedStreamUpdates(ctx)
+	if got := client.lastStreamReadySequence(9); got != 7 {
+		t.Fatalf("expected rendered ack sequence 7, got %d", got)
+	}
+}
+
+func TestRuntimeStreamReadyCanAckDuringSynchronousInvalidate(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+	var rt *Runtime
+	rt = New(client, WithInvalidate(func() {
+		if rt != nil {
+			rt.MarkRenderedStreamUpdates(ctx)
+		}
+	}))
+
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start stream: %v", err)
+	}
+
+	client.sendFrame(9, protocol.StreamFrame{
+		Type:           wire.TypeScreenUpdate,
+		Payload:        screenUpdatePayloadForLines(t, 80, 24, "sync-render"),
+		ScreenSequence: 13,
+	})
+
+	waitFor(t, func() bool {
+		return client.lastStreamReadySequence(9) == 13
+	})
+	if !vtermContains(rt.Registry().Get("term-1").VTerm, "sync-render") {
+		t.Fatal("expected streamed output to be applied")
+	}
+}
+
+func TestRuntimeSyncLostAcksRecoveredScreenSequenceAfterRender(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 80, 24, []string{"truth"})
+	rt := New(client)
+
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start stream: %v", err)
+	}
+
+	client.sendFrame(9, protocol.StreamFrame{
+		Type:           wire.TypeSyncLost,
+		Payload:        wire.EncodeSyncLostPayload(128),
+		ScreenSequence: 11,
+	})
+
+	waitFor(t, func() bool {
+		stored := rt.Registry().Get("term-1")
+		return stored != nil && vtermContains(stored.VTerm, "truth")
+	})
+	if got := client.lastStreamReadySequence(9); got != 0 {
+		t.Fatalf("expected sync-lost recovery ack to wait for render, got %d", got)
+	}
+	rt.MarkRenderedStreamUpdates(ctx)
+	if got := client.lastStreamReadySequence(9); got != 11 {
+		t.Fatalf("expected recovered sync-lost ack sequence 11, got %d", got)
 	}
 }
 
@@ -271,6 +778,24 @@ func TestSnapshotFromVTermPrefersRowViewsOverWholeContentCopies(t *testing.T) {
 	}
 	if !snapshotContains(snapshot, "hello") || !snapshotContains(snapshot, "world") {
 		t.Fatalf("expected row-view snapshot content, got %#v", snapshot)
+	}
+}
+
+func TestSnapshotFromVTermPreservesCanonicalTrailingBlankCells(t *testing.T) {
+	vt := localvterm.New(12, 2, 16, nil)
+	if _, err := vt.Write([]byte("████")); err != nil {
+		t.Fatalf("seed QR-like row: %v", err)
+	}
+
+	snapshot := snapshotFromVTerm("term-1", vt)
+	if snapshot == nil || len(snapshot.Screen.Cells) == 0 {
+		t.Fatalf("expected snapshot screen rows, got %#v", snapshot)
+	}
+	if got := len(snapshot.Screen.Cells[0]); got != 12 {
+		t.Fatalf("expected canonical-width screen row, got len=%d row=%#v", got, snapshot.Screen.Cells[0])
+	}
+	if got := rowTextRaw(snapshot.Screen.Cells[0]); got != "████        " {
+		t.Fatalf("expected QR-like quiet-zone blanks to survive snapshot, got %q row=%#v", got, snapshot.Screen.Cells[0])
 	}
 }
 
@@ -301,7 +826,7 @@ func TestRuntimeScreenUpdateAlsoRefreshesLocalVTermSurface(t *testing.T) {
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	if terminal.PreferSnapshot {
 		t.Fatalf("expected structured screen update to refresh local vterm surface, got %#v", terminal)
@@ -314,6 +839,92 @@ func TestRuntimeScreenUpdateAlsoRefreshesLocalVTermSurface(t *testing.T) {
 	}
 	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "ok") {
 		t.Fatalf("expected snapshot to stay synchronized with structured update, got %#v", terminal.Snapshot)
+	}
+}
+
+func TestRuntimeScrollbackChangeInvalidatesExhaustedSnapshotState(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 6, 2, []string{"live"})
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 500); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected terminal")
+	}
+	if !terminal.ScrollbackExhausted {
+		t.Fatalf("expected initial no-history snapshot to mark scrollback exhausted, got %#v", terminal)
+	}
+
+	payload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 6, Rows: 2},
+		ScrollbackAppend: []protocol.ScrollbackRowAppend{{
+			Cells: []protocol.Cell{
+				{Content: "h", Width: 1},
+				{Content: "i", Width: 1},
+			},
+			Timestamp: time.Now(),
+		}},
+		Ops: []protocol.ScreenOp{{
+			Code:  protocol.ScreenOpWriteSpan,
+			Row:   1,
+			Col:   0,
+			Cells: []protocol.Cell{{Content: "x", Width: 1}},
+		}},
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload})
+
+	if terminal.ScrollbackExhausted {
+		t.Fatalf("expected live scrollback change to clear exhausted state, got %#v", terminal)
+	}
+	if terminal.ScrollbackLoadedLimit == 0 {
+		t.Fatalf("expected local scrollback state to track appended rows, got %#v", terminal)
+	}
+}
+
+func TestRuntimeScrollOpcodeInvalidatesExhaustedSnapshotState(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 6, 2, []string{"line0", "line1"})
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 500); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected terminal")
+	}
+	if !terminal.ScrollbackExhausted {
+		t.Fatalf("expected initial no-history snapshot to mark scrollback exhausted, got %#v", terminal)
+	}
+
+	payload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 6, Rows: 2},
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 6, Height: 2}, Dy: -1},
+			{Code: protocol.ScreenOpWriteSpan, Row: 1, Col: 0, Cells: []protocol.Cell{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 1, Col: 3, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload})
+
+	if terminal.ScrollbackExhausted {
+		t.Fatalf("expected screen scroll to clear exhausted state, got %#v", terminal)
 	}
 }
 
@@ -340,8 +951,10 @@ func TestRuntimeScreenUpdateUsesIncrementalVTermApplyWhenSupported(t *testing.T)
 
 	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
 		Size: protocol.Size{Cols: 80, Rows: 24},
-		ChangedRows: []protocol.ScreenRowUpdate{{
-			Row: 0,
+		Ops: []protocol.ScreenOp{{
+			Code: protocol.ScreenOpWriteSpan,
+			Row:  0,
+			Col:  0,
 			Cells: []protocol.Cell{
 				{Content: "o", Width: 1},
 				{Content: "k", Width: 1},
@@ -355,7 +968,7 @@ func TestRuntimeScreenUpdateUsesIncrementalVTermApplyWhenSupported(t *testing.T)
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	if got := counted.partialCalls.Load(); got == 0 {
 		t.Fatalf("expected incremental apply path, got partialCalls=%d", got)
@@ -365,6 +978,51 @@ func TestRuntimeScreenUpdateUsesIncrementalVTermApplyWhenSupported(t *testing.T)
 	}
 	if terminal.VTerm == nil || !vtermContains(terminal.VTerm, "ok") {
 		t.Fatalf("expected local vterm to receive incremental structured update, got %#v", terminal.VTerm)
+	}
+}
+
+func TestRuntimeScreenUpdatePreservesStyledBlankSpan(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+
+	rt := New(client)
+	terminal, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if terminal == nil {
+		t.Fatal("expected terminal")
+	}
+
+	const bg = "#222222"
+	cells := make([]protocol.Cell, 12)
+	for i := range cells {
+		cells[i] = protocol.Cell{Content: " ", Width: 1, Style: protocol.CellStyle{BG: bg}}
+	}
+	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 12, Rows: 2},
+		Ops: []protocol.ScreenOp{{
+			Code:  protocol.ScreenOpWriteSpan,
+			Row:   0,
+			Col:   0,
+			Cells: cells,
+		}},
+		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
+
+	if got := terminal.Snapshot.Screen.Cells[0][11].Style.BG; got != bg {
+		t.Fatalf("expected snapshot styled blank bg %q, got %#v", bg, terminal.Snapshot.Screen.Cells[0][11])
+	}
+	screen := terminal.VTerm.ScreenContent()
+	if got := screen.Cells[0][11].Style.BG; got != bg {
+		t.Fatalf("expected vterm styled blank bg %q, got %#v", bg, screen.Cells[0][11])
 	}
 }
 
@@ -388,10 +1046,10 @@ func TestRuntimeScreenUpdateAppliesScreenScrollShiftToLocalVTerm(t *testing.T) {
 	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
 		Size:         protocol.Size{Cols: 4, Rows: 3},
 		ScreenScroll: 1,
-		ChangedRows: []protocol.ScreenRowUpdate{{
-			Row:   2,
-			Cells: []protocol.Cell{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "4", Width: 1}},
-		}},
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 4, Height: 3}, Dy: -1},
+			{Code: protocol.ScreenOpWriteSpan, Row: 2, Col: 0, Cells: []protocol.Cell{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "4", Width: 1}}},
+		},
 		Cursor: protocol.CursorState{Row: 2, Col: 0, Visible: true},
 		Modes:  protocol.TerminalModes{AutoWrap: true},
 	})
@@ -399,7 +1057,7 @@ func TestRuntimeScreenUpdateAppliesScreenScrollShiftToLocalVTerm(t *testing.T) {
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	screen := terminal.VTerm.ScreenContent()
 	got := []string{
@@ -445,7 +1103,7 @@ func TestRuntimeScreenUpdateAppliesOpcodeScrollRectToLocalVTerm(t *testing.T) {
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	screen := terminal.VTerm.ScreenContent()
 	got := []string{
@@ -456,6 +1114,49 @@ func TestRuntimeScreenUpdateAppliesOpcodeScrollRectToLocalVTerm(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, []string{"row2", "row3", "row4", "row5"}) {
 		t.Fatalf("expected local vterm opcode scrollrect applied, got %#v", got)
+	}
+}
+
+func TestRuntimeCapturesAlternateScreenVisualHistoryFromScrollRect(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+
+	rt := New(client)
+	terminal, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	terminal.Snapshot = snapshotWithLines("term-1", 4, 3, []string{"old1", "old2", "old3"})
+	terminal.Snapshot.Modes.AlternateScreen = true
+	terminal.Snapshot.Screen.IsAlternateScreen = true
+	loadSnapshotIntoVTerm(terminal.VTerm, terminal.Snapshot)
+
+	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		Size:         protocol.Size{Cols: 4, Rows: 3},
+		ScreenScroll: 1,
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 4, Height: 3}, Dy: -1},
+			{Code: protocol.ScreenOpWriteSpan, Row: 2, Col: 0, Cells: []protocol.Cell{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}, {Content: "4", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 2, Col: 0, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true, AlternateScreen: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
+
+	history := rt.AlternateScrollbackSnapshot("term-1", terminal.Snapshot)
+	if history == nil || len(history.Scrollback) != 1 {
+		t.Fatalf("expected one alternate history row, got %#v", history)
+	}
+	if got := compactRowText(history.Scrollback[0]); got != "old1" {
+		t.Fatalf("expected scrolled-out row in alternate history, got %q", got)
+	}
+	if !history.Modes.AlternateScreen || !history.Screen.IsAlternateScreen {
+		t.Fatalf("expected alternate flags preserved, got modes=%#v screen=%v", history.Modes, history.Screen.IsAlternateScreen)
 	}
 }
 
@@ -485,7 +1186,7 @@ func TestRuntimeScreenUpdateTitleOnlyKeepsBootstrapPending(t *testing.T) {
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	if !terminal.BootstrapPending {
 		t.Fatalf("expected title-only screen update to keep bootstrap pending, got %#v", terminal)
@@ -524,7 +1225,7 @@ func TestRuntimeScreenUpdateTitleOnlyKeepsRecoveryState(t *testing.T) {
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	if terminal.Recovery != (RecoveryState{SyncLost: true, DroppedBytes: 9}) {
 		t.Fatalf("expected title-only screen update to preserve recovery state, got %#v", terminal.Recovery)
@@ -564,7 +1265,7 @@ func TestRuntimeScreenUpdateFullReplaceClearsRecoveryState(t *testing.T) {
 		t.Fatalf("encode update: %v", err)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	if terminal.Recovery != (RecoveryState{}) {
 		t.Fatalf("expected full-replace screen update to clear recovery, got %#v", terminal.Recovery)
@@ -579,190 +1280,15 @@ func TestRuntimeScreenUpdateFullReplaceClearsRecoveryState(t *testing.T) {
 
 func TestNewScreenUpdateContractDeduplicatesChangedRows(t *testing.T) {
 	contract := NewScreenUpdateContract(protocol.ScreenUpdate{
-		ChangedRows: []protocol.ScreenRowUpdate{
-			{Row: 4},
-			{Row: 4},
-			{Row: 1},
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpWriteSpan, Row: 4},
+			{Code: protocol.ScreenOpClearToEOL, Row: 4},
+			{Code: protocol.ScreenOpWriteSpan, Row: 1},
 		},
 	})
 
 	if !reflect.DeepEqual(contract.Summary.ChangedRows, []int{4, 1}) {
 		t.Fatalf("expected changed row summary to deduplicate in wire order, got %#v", contract.Summary.ChangedRows)
-	}
-}
-
-func TestRuntimeStartStreamCoalescesBurstOutputFrames(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	client := newFakeBridgeClient()
-	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
-
-	var invalidateCount atomic.Int32
-	var counted *countingVTerm
-	rt := New(
-		client,
-		WithInvalidate(func() {
-			invalidateCount.Add(1)
-		}),
-		WithVTermFactory(func(channel uint16) VTermLike {
-			counted = &countingVTerm{VTermLike: localvterm.New(80, 24, 10000, nil)}
-			return counted
-		}),
-	)
-
-	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
-		t.Fatalf("attach terminal: %v", err)
-	}
-	if counted == nil {
-		t.Fatal("expected counting vterm to be installed")
-	}
-	if err := rt.StartStream(ctx, "term-1"); err != nil {
-		t.Fatalf("start stream: %v", err)
-	}
-
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("a")})
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("b")})
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("c")})
-
-	waitFor(t, func() bool {
-		stored := rt.Registry().Get("term-1")
-		return stored != nil && vtermContains(stored.VTerm, "abc")
-	})
-
-	if got := counted.writeCalls.Load(); got != 1 {
-		t.Fatalf("expected one coalesced vterm write, got %d", got)
-	}
-	if got := invalidateCount.Load(); got != 1 {
-		t.Fatalf("expected one invalidate after coalesced output, got %d", got)
-	}
-}
-
-func TestRuntimeHandleStreamFrameDefersSnapshotRefreshDuringSynchronizedOutput(t *testing.T) {
-	var invalidateCount atomic.Int32
-	rt := New(nil, WithInvalidate(func() {
-		invalidateCount.Add(1)
-	}))
-
-	terminal := rt.Registry().GetOrCreate("term-1")
-	terminal.Snapshot = snapshotWithLines("term-1", 12, 4, []string{"old state"})
-	if vt := rt.ensureVTerm(terminal); vt == nil {
-		t.Fatal("expected vterm cache")
-	}
-
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{
-		Type:    protocol.TypeOutput,
-		Payload: []byte("\x1b[?2026h\x1b[H\x1b[J"),
-	})
-
-	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "old state") {
-		t.Fatalf("expected old snapshot to stay visible during synchronized output, got %#v", terminal.Snapshot)
-	}
-	if invalidateCount.Load() != 0 {
-		t.Fatalf("expected no redraw invalidation during synchronized output, got %d", invalidateCount.Load())
-	}
-
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{
-		Type:    protocol.TypeOutput,
-		Payload: []byte("new state\x1b[?2026l"),
-	})
-
-	if !vtermContains(terminal.VTerm, "new state") {
-		t.Fatalf("expected synchronized output flush to update live surface, got %#v", terminal.VTerm)
-	}
-	if invalidateCount.Load() != 1 {
-		t.Fatalf("expected exactly one redraw invalidation after synchronized output flush, got %d", invalidateCount.Load())
-	}
-}
-
-func TestCoalesceClientOutputFramesMergesBurstOutput(t *testing.T) {
-	stream := make(chan protocol.StreamFrame, 4)
-	stream <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("b")}
-	stream <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("c")}
-	close(stream)
-
-	merged, pending, hasPending, ok := coalesceClientOutputFrames(
-		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("a")},
-		stream,
-		clientOutputBatchDelay,
-		StreamState{},
-	)
-
-	if merged.Type != protocol.TypeOutput || string(merged.Payload) != "abc" {
-		t.Fatalf("expected merged output %q, got %#v", "abc", merged)
-	}
-	if hasPending {
-		t.Fatalf("expected no pending frame, got %#v", pending)
-	}
-	if ok {
-		t.Fatal("expected closed source stream after draining burst output")
-	}
-}
-
-func TestCoalesceClientOutputFramesPreservesNonOutputBoundary(t *testing.T) {
-	stream := make(chan protocol.StreamFrame, 4)
-	stream <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("b")}
-	stream <- protocol.StreamFrame{Type: protocol.TypeResize, Payload: protocol.EncodeResizePayload(120, 40)}
-	stream <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("c")}
-
-	merged, pending, hasPending, ok := coalesceClientOutputFrames(
-		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("a")},
-		stream,
-		clientOutputBatchDelay,
-		StreamState{},
-	)
-
-	if merged.Type != protocol.TypeOutput || string(merged.Payload) != "ab" {
-		t.Fatalf("expected merged output %q, got %#v", "ab", merged)
-	}
-	if !hasPending {
-		t.Fatal("expected resize frame to stay pending")
-	}
-	if pending.Type != protocol.TypeResize {
-		t.Fatalf("expected pending resize frame, got %#v", pending)
-	}
-	if !ok {
-		t.Fatal("expected source stream to remain open after boundary frame")
-	}
-}
-
-func TestRuntimeClientOutputBatchDelayBypassesAfterRecentInput(t *testing.T) {
-	t.Setenv("TERMX_REMOTE_LATENCY", "0")
-	t.Setenv("TERMX_CLIENT_OUTPUT_BATCH_DELAY", "")
-	t.Setenv("TERMX_INTERACTIVE_OUTPUT_BATCH_DELAY", "")
-
-	rt := New(nil)
-	if got := rt.clientOutputBatchDelay(); got != clientOutputBatchDelay {
-		t.Fatalf("expected default client output batch delay %v, got %v", clientOutputBatchDelay, got)
-	}
-
-	rt.noteLocalInput()
-	// Interactive bypass reduces delay for all batches during the latency window.
-	if got := rt.clientOutputBatchDelay(); got != interactiveOutputBatchDelay {
-		t.Fatalf("expected recent local input to shrink output batch delay to %v, got %v", interactiveOutputBatchDelay, got)
-	}
-	if got := rt.clientOutputBatchDelay(); got != interactiveOutputBatchDelay {
-		t.Fatalf("expected interactive bypass to remain active during window, got %v", got)
-	}
-}
-
-func TestRuntimeClientOutputBatchDelayUsesRemoteProfile(t *testing.T) {
-	t.Setenv("TERMX_REMOTE_LATENCY", "1")
-	t.Setenv("TERMX_CLIENT_OUTPUT_BATCH_DELAY", "")
-	t.Setenv("TERMX_INTERACTIVE_OUTPUT_BATCH_DELAY", "")
-
-	rt := New(nil)
-	if got := rt.clientOutputBatchDelay(); got != remoteClientOutputBatchDelay {
-		t.Fatalf("expected remote client output batch delay %v, got %v", remoteClientOutputBatchDelay, got)
-	}
-
-	rt.noteLocalInput()
-	// Remote interactive bypass applies to all batches during the latency window.
-	if got := rt.clientOutputBatchDelay(); got != remoteInteractiveOutputBatchDelay {
-		t.Fatalf("expected remote interactive output batch delay %v, got %v", remoteInteractiveOutputBatchDelay, got)
-	}
-	if got := rt.clientOutputBatchDelay(); got != remoteInteractiveOutputBatchDelay {
-		t.Fatalf("expected remote interactive bypass to remain active during window, got %v", got)
 	}
 }
 
@@ -774,115 +1300,7 @@ func TestEffectiveInteractiveLatencyWindowUsesRemoteProfile(t *testing.T) {
 	}
 }
 
-func TestCoalesceClientOutputFramesExitsEarlyOnSynchronizedOutputEnd(t *testing.T) {
-	// Sync begin in first frame, sync end arrives mid-batch-window. The coalesce
-	// function should merge both frames and return as soon as the group closes,
-	// without waiting for the full batch timer to expire.
-	stream := make(chan protocol.StreamFrame, 8)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		time.Sleep(2 * time.Millisecond)
-		stream <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("body\x1b[?2026l")}
-	}()
-
-	start := time.Now()
-	merged, pending, hasPending, _ := coalesceClientOutputFrames(
-		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("\x1b[?2026h")},
-		stream,
-		10*time.Millisecond, // long batch window — early exit must fire before this
-		StreamState{},
-	)
-	elapsed := time.Since(start)
-
-	<-done
-	if merged.Type != protocol.TypeOutput || string(merged.Payload) != "\x1b[?2026hbody\x1b[?2026l" {
-		t.Fatalf("expected synchronized output burst to merge, got %#v", merged)
-	}
-	if hasPending {
-		t.Fatalf("expected no pending frame, got %#v", pending)
-	}
-	// Early exit should fire within a few ms of the sync end arriving, well
-	// before the 10ms batch timer would expire.
-	if elapsed > 6*time.Millisecond {
-		t.Fatalf("expected early exit within ~3ms of sync end, took %v", elapsed)
-	}
-}
-
-func TestCoalesceClientOutputFramesEarlyExitOnCompleteGroupInFirstFrame(t *testing.T) {
-	// Complete sync group (begin + content + end) in the first frame:
-	// must return immediately without starting the batch timer.
-	stream := make(chan protocol.StreamFrame)
-	start := time.Now()
-	merged, pending, hasPending, ok := coalesceClientOutputFrames(
-		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("\x1b[?2026hcontent\x1b[?2026l")},
-		stream,
-		10*time.Millisecond,
-		StreamState{},
-	)
-	elapsed := time.Since(start)
-
-	if string(merged.Payload) != "\x1b[?2026hcontent\x1b[?2026l" {
-		t.Fatalf("expected complete sync group, got %#v", merged)
-	}
-	if hasPending {
-		t.Fatalf("unexpected pending: %#v", pending)
-	}
-	if !ok {
-		t.Fatal("expected stream still open after early exit")
-	}
-	if elapsed > 2*time.Millisecond {
-		t.Fatalf("expected immediate return for complete sync group, took %v", elapsed)
-	}
-}
-
-func TestRuntimeHandleStreamFrameTracksSynchronizedOutputAcrossFrameBoundaries(t *testing.T) {
-	var invalidateCount atomic.Int32
-	rt := New(nil, WithInvalidate(func() {
-		invalidateCount.Add(1)
-	}))
-
-	terminal := rt.Registry().GetOrCreate("term-1")
-	terminal.Snapshot = snapshotWithLines("term-1", 12, 4, []string{"steady"})
-	if vt := rt.ensureVTerm(terminal); vt == nil {
-		t.Fatal("expected vterm cache")
-	}
-
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{
-		Type:    protocol.TypeOutput,
-		Payload: []byte("\x1b[?20"),
-	})
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{
-		Type:    protocol.TypeOutput,
-		Payload: []byte("26h\x1b[H\x1b[J"),
-	})
-
-	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "steady") {
-		t.Fatalf("expected split synchronized-output begin to keep old snapshot visible, got %#v", terminal.Snapshot)
-	}
-
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{
-		Type:    protocol.TypeOutput,
-		Payload: []byte("done\x1b[?202"),
-	})
-	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "steady") {
-		t.Fatalf("expected partial synchronized-output end to keep old snapshot visible, got %#v", terminal.Snapshot)
-	}
-
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{
-		Type:    protocol.TypeOutput,
-		Payload: []byte("6l"),
-	})
-
-	if !vtermContains(terminal.VTerm, "done") {
-		t.Fatalf("expected split synchronized-output end to flush live surface, got %#v", terminal.VTerm)
-	}
-	if invalidateCount.Load() == 0 {
-		t.Fatal("expected synchronized-output flush to invalidate rendering")
-	}
-}
-
-func TestRuntimeStreamOutputPreservesAuthoritativeSnapshotSize(t *testing.T) {
+func TestRuntimeScreenUpdatePreservesAuthoritativeSnapshotSize(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -909,7 +1327,7 @@ func TestRuntimeStreamOutputPreservesAuthoritativeSnapshotSize(t *testing.T) {
 	if err := rt.StartStream(ctx, "term-1"); err != nil {
 		t.Fatalf("start stream: %v", err)
 	}
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("x")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 118, 36, "x"))
 
 	waitFor(t, func() bool {
 		current := rt.Registry().Get("term-1")
@@ -926,7 +1344,7 @@ func TestRuntimeStreamOutputPreservesAuthoritativeSnapshotSize(t *testing.T) {
 	}
 }
 
-func TestRuntimeStreamOutputPreservesWideSnapshotCellsAfterReattach(t *testing.T) {
+func TestRuntimeScreenUpdatePreservesWideSnapshotCellsAfterReattach(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -972,7 +1390,21 @@ func TestRuntimeStreamOutputPreservesWideSnapshotCellsAfterReattach(t *testing.T
 		t.Fatalf("start stream: %v", err)
 	}
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("!")})
+	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 8, Rows: 2},
+		Ops: []protocol.ScreenOp{{
+			Code:  protocol.ScreenOpWriteSpan,
+			Row:   0,
+			Col:   5,
+			Cells: []protocol.Cell{{Content: "!", Width: 1}},
+		}},
+		Cursor: protocol.CursorState{Row: 0, Col: 6, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode screen update: %v", err)
+	}
+	client.sendFrame(9, protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
 
 	waitFor(t, func() bool {
 		current := rt.Registry().Get("term-1")
@@ -1306,7 +1738,7 @@ func TestRuntimeResizePaneShrinkKeepsRenderOnSnapshotUntilOutput(t *testing.T) {
 		t.Fatalf("expected visible runtime to hide live surface during shrink preview, got %#v", visible.Terminals)
 	}
 
-	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("x")})
+	rt.handleStreamFrame("term-1", screenUpdateFrameForLines(t, 57, 20, "x"))
 
 	if terminal.PreferSnapshot {
 		t.Fatalf("expected first post-resize output to clear shrink preview flag, got %#v", terminal)
@@ -1317,6 +1749,52 @@ func TestRuntimeResizePaneShrinkKeepsRenderOnSnapshotUntilOutput(t *testing.T) {
 	}
 	if terminal.Snapshot == nil || terminal.Snapshot.Size.Cols != 57 || terminal.Snapshot.Size.Rows != 20 {
 		t.Fatalf("expected refreshed snapshot to keep resized geometry, got %#v", terminal.Snapshot)
+	}
+}
+
+func TestRuntimeResizePaneShrinkPreviewKeepsBottomRowsVisible(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 12, 6, []string{
+		"qr-row-0",
+		"qr-row-1",
+		"qr-row-2",
+		"uri: termx",
+		"expires",
+		"prompt>",
+	})
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil {
+		t.Fatalf("expected hydrated terminal runtime, got %#v", terminal)
+	}
+
+	if err := rt.ResizePane(ctx, "pane-1", "term-1", 8, 3); err != nil {
+		t.Fatalf("resize pane shrink: %v", err)
+	}
+
+	if !terminal.PreferSnapshot {
+		t.Fatalf("expected shrink preview to prefer snapshot, got %#v", terminal)
+	}
+	if terminal.Snapshot == nil || terminal.Snapshot.Size.Cols != 8 || terminal.Snapshot.Size.Rows != 3 {
+		t.Fatalf("expected provisional shrink snapshot size 8x3, got %#v", terminal.Snapshot)
+	}
+	got := []string{
+		rowText(terminal.Snapshot.Screen.Cells[0]),
+		rowText(terminal.Snapshot.Screen.Cells[1]),
+		rowText(terminal.Snapshot.Screen.Cells[2]),
+	}
+	want := []string{"uri: termx", "expires", "prompt>"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected shrink preview to retain bottom rows, got %#v want %#v", got, want)
 	}
 }
 
@@ -1419,8 +1897,8 @@ func TestRuntimeResizeFrameDoesNotExposeLocalShrinkMidStateBeforeOutput(t *testi
 		t.Fatalf("resize pane shrink: %v", err)
 	}
 	rt.handleStreamFrame("term-1", protocol.StreamFrame{
-		Type:    protocol.TypeResize,
-		Payload: protocol.EncodeResizePayload(57, 20),
+		Type:    wire.TypeResize,
+		Payload: wire.EncodeResizePayload(57, 20),
 	})
 
 	if !terminal.PreferSnapshot {
@@ -1429,6 +1907,120 @@ func TestRuntimeResizeFrameDoesNotExposeLocalShrinkMidStateBeforeOutput(t *testi
 	visible := rt.Visible()
 	if len(visible.Terminals) != 1 || visible.Terminals[0].Surface != nil {
 		t.Fatalf("expected resize echo not to expose provisional shrink surface, got %#v", visible.Terminals)
+	}
+}
+
+func TestRuntimeResizeFramePreservesExactWidthHardBreakRows(t *testing.T) {
+	rt := New(nil)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.VTerm = localvterm.New(4, 4, 100, nil)
+	if _, err := terminal.VTerm.Write([]byte("ABCD\r\nWXYZ")); err != nil {
+		t.Fatalf("seed terminal: %v", err)
+	}
+
+	rt.handleResizeFrame(terminal, "term-1", protocol.StreamFrame{
+		Type:    wire.TypeResize,
+		Payload: wire.EncodeResizePayload(8, 4),
+	})
+
+	if terminal.Snapshot == nil {
+		t.Fatal("expected resize frame to refresh snapshot")
+	}
+	if got := rowText(terminal.Snapshot.Screen.Cells[0]); got != "ABCD" {
+		t.Fatalf("expected row 0 hard break preserved after resize frame, got %q", got)
+	}
+	if got := rowText(terminal.Snapshot.Screen.Cells[1]); got != "WXYZ" {
+		t.Fatalf("expected row 1 hard break preserved after resize frame, got %q", got)
+	}
+	if len(terminal.Snapshot.ScreenWrapped) > 0 && terminal.Snapshot.ScreenWrapped[0] {
+		t.Fatalf("expected exact-width hard break row to remain unwrapped, got %#v", terminal.Snapshot.ScreenWrapped)
+	}
+}
+
+func TestRuntimeResizeFrameRejoinsSplitHardBreakRows(t *testing.T) {
+	rt := New(nil)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.VTerm = localvterm.New(8, 6, 100, nil)
+	if _, err := terminal.VTerm.Write([]byte("AA  BB  \r\nCCDDCCDD\r\nuri: ok")); err != nil {
+		t.Fatalf("seed terminal: %v", err)
+	}
+
+	rt.handleResizeFrame(terminal, "term-1", protocol.StreamFrame{
+		Type:    wire.TypeResize,
+		Payload: wire.EncodeResizePayload(4, 6),
+	})
+	if terminal.Snapshot == nil {
+		t.Fatal("expected shrink resize frame to refresh snapshot")
+	}
+	gotShrink := []string{
+		strings.TrimSpace(rowText(terminal.Snapshot.Screen.Cells[0])),
+		strings.TrimSpace(rowText(terminal.Snapshot.Screen.Cells[1])),
+		rowText(terminal.Snapshot.Screen.Cells[2]),
+		rowText(terminal.Snapshot.Screen.Cells[3]),
+		strings.TrimSpace(rowText(terminal.Snapshot.Screen.Cells[4])),
+		strings.TrimSpace(rowText(terminal.Snapshot.Screen.Cells[5])),
+	}
+	wantShrink := []string{"AA", "BB", "CCDD", "CCDD", "uri:", "ok"}
+	if !reflect.DeepEqual(gotShrink, wantShrink) {
+		t.Fatalf("expected shrink resize to split hard-break rows, got %#v want %#v", gotShrink, wantShrink)
+	}
+	if wrapped := terminal.Snapshot.ScreenWrapped; len(wrapped) < 6 || !wrapped[0] || wrapped[1] || !wrapped[2] || wrapped[3] || !wrapped[4] || wrapped[5] {
+		t.Fatalf("unexpected shrink wrapped markers: %#v", wrapped)
+	}
+
+	rt.handleResizeFrame(terminal, "term-1", protocol.StreamFrame{
+		Type:    wire.TypeResize,
+		Payload: wire.EncodeResizePayload(8, 6),
+	})
+	gotGrow := []string{
+		strings.TrimSpace(rowText(terminal.Snapshot.Screen.Cells[0])),
+		rowText(terminal.Snapshot.Screen.Cells[1]),
+		strings.TrimSpace(rowText(terminal.Snapshot.Screen.Cells[2])),
+	}
+	wantGrow := []string{"AA  BB", "CCDDCCDD", "uri: ok"}
+	if !reflect.DeepEqual(gotGrow, wantGrow) {
+		t.Fatalf("expected grow resize to rejoin hard-break rows, got %#v want %#v", gotGrow, wantGrow)
+	}
+	if wrapped := terminal.Snapshot.ScreenWrapped; len(wrapped) >= 3 && (wrapped[0] || wrapped[1] || wrapped[2]) {
+		t.Fatalf("expected visible wrapped markers clear after grow, got %#v", wrapped)
+	}
+}
+
+func TestRuntimeSnapshotLoadPreservesTrailingSpaceColumnsAfterResize(t *testing.T) {
+	client := newFakeBridgeClient()
+	rt := New(client)
+	ctx := context.Background()
+	client.attachResult = &protocol.AttachResult{Mode: "stream", Channel: 1}
+
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	source := localvterm.New(4, 6, 32, nil)
+	if _, err := source.Write([]byte("AA  \r\nBB")); err != nil {
+		t.Fatalf("seed source vterm: %v", err)
+	}
+	source.Resize(2, 6)
+	client.snapshotByTerminal["term-1"] = snapshotFromVTerm("term-1", source)
+
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil || terminal.VTerm == nil {
+		t.Fatal("expected runtime snapshot and vterm")
+	}
+
+	got := []string{
+		rowTextRaw(terminal.Snapshot.Screen.Cells[0]),
+		rowTextRaw(terminal.Snapshot.Screen.Cells[1]),
+		rowTextRaw(terminal.Snapshot.Screen.Cells[2]),
+		vtermScreenRowTextRaw(terminal.VTerm, 0),
+		vtermScreenRowTextRaw(terminal.VTerm, 1),
+		vtermScreenRowTextRaw(terminal.VTerm, 2),
+	}
+	want := []string{"AA", "  ", "BB", "AA", "  ", "BB"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected snapshot and TUI vterm rows %#v, got %#v", want, got)
 	}
 }
 
@@ -1572,7 +2164,7 @@ func TestRuntimeApplySessionLeasesDemotesForeignLeaseAndPromotesLocalLease(t *te
 		t.Fatalf("attach follower: %v", err)
 	}
 
-	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+	rt.ApplySessionLeases("view-local", []sessionstore.LeaseInfo{{
 		TerminalID: "term-1",
 		ViewID:     "view-remote",
 		PaneID:     "pane-9",
@@ -1585,7 +2177,7 @@ func TestRuntimeApplySessionLeasesDemotesForeignLeaseAndPromotesLocalLease(t *te
 		t.Fatalf("expected pane-1 follower under foreign lease, got %#v", binding)
 	}
 
-	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+	rt.ApplySessionLeases("view-local", []sessionstore.LeaseInfo{{
 		TerminalID: "term-1",
 		ViewID:     "view-local",
 		PaneID:     "pane-2",
@@ -1613,7 +2205,7 @@ func TestRuntimeApplySessionLeasesDemotesLocalPaneWhenForeignLeaseReusesSamePane
 		t.Fatalf("attach owner: %v", err)
 	}
 
-	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+	rt.ApplySessionLeases("view-local", []sessionstore.LeaseInfo{{
 		TerminalID: "term-1",
 		ViewID:     "view-remote",
 		PaneID:     "pane-1",
@@ -1638,7 +2230,7 @@ func TestRuntimeApplySessionLeasesRefreshesVisibleOwnerWhenForeignLeaseOwnerChan
 		t.Fatalf("attach owner: %v", err)
 	}
 
-	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+	rt.ApplySessionLeases("view-local", []sessionstore.LeaseInfo{{
 		TerminalID: "term-1",
 		ViewID:     "view-remote",
 		PaneID:     "pane-9",
@@ -1648,7 +2240,7 @@ func TestRuntimeApplySessionLeasesRefreshesVisibleOwnerWhenForeignLeaseOwnerChan
 		t.Fatalf("expected visible runtime owner pane-9 after first foreign lease, got %#v", visible.Terminals)
 	}
 
-	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+	rt.ApplySessionLeases("view-local", []sessionstore.LeaseInfo{{
 		TerminalID: "term-1",
 		ViewID:     "view-remote",
 		PaneID:     "pane-10",
@@ -1845,25 +2437,14 @@ type fakeBridgeClient struct {
 	attachResult        *protocol.AttachResult
 	listResult          *protocol.ListResult
 	snapshotByTerminal  map[string]*protocol.Snapshot
+	snapshotTerminalID  string
 	snapshotHook        func()
 	streams             map[uint16]chan protocol.StreamFrame
 	streamSubscriptions map[uint16]int
 	streamStops         map[uint16]int
+	streamReadyCalls    map[uint16][]uint64
 	inputCalls          []inputCall
 	resizeCalls         []resizeCall
-}
-
-type countingVTerm struct {
-	VTermLike
-	writeCalls atomic.Int32
-}
-
-func (v *countingVTerm) Write(data []byte) (int, error) {
-	if v == nil || v.VTermLike == nil {
-		return 0, nil
-	}
-	v.writeCalls.Add(1)
-	return v.VTermLike.Write(data)
 }
 
 type incrementalCountingVTerm struct {
@@ -1872,7 +2453,7 @@ type incrementalCountingVTerm struct {
 	fullLoadCalls atomic.Int32
 }
 
-func (v *incrementalCountingVTerm) ApplyScreenUpdate(update protocol.ScreenUpdate) bool {
+func (v *incrementalCountingVTerm) ApplyScreenUpdate(update localvterm.ScreenUpdate) bool {
 	if v == nil || v.VTerm == nil {
 		return false
 	}
@@ -1922,6 +2503,7 @@ func newFakeBridgeClient() *fakeBridgeClient {
 		streams:             make(map[uint16]chan protocol.StreamFrame),
 		streamSubscriptions: make(map[uint16]int),
 		streamStops:         make(map[uint16]int),
+		streamReadyCalls:    make(map[uint16][]uint64),
 	}
 }
 
@@ -1945,20 +2527,31 @@ func (f *fakeBridgeClient) Events(context.Context, protocol.EventsParams) (<-cha
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (f *fakeBridgeClient) Attach(context.Context, string, string) (*protocol.AttachResult, error) {
+func (f *fakeBridgeClient) Attach(context.Context, protocol.AttachParams) (*protocol.AttachResult, error) {
 	if f.attachResult == nil {
 		return nil, fmt.Errorf("attach result not configured")
 	}
 	return f.attachResult, nil
 }
 
-func (f *fakeBridgeClient) Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error) {
+func (f *fakeBridgeClient) EnsureResize(_ context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resizeCalls = append(f.resizeCalls, resizeCall{channel: params.Channel, cols: params.Cols, rows: params.Rows})
+	return &protocol.EnsureResizeResult{
+		ResizeControl: &protocol.ResizeControl{CanResize: true, Reason: protocol.ResizeControlReasonOwner},
+		Size:          protocol.Size{Cols: params.Cols, Rows: params.Rows},
+		Resized:       true,
+	}, nil
+}
+
+func (f *fakeBridgeClient) Snapshot(_ context.Context, terminalID string, _ int, _ int) (*protocol.Snapshot, error) {
 	f.mu.Lock()
 	var snapshot *protocol.Snapshot
+	f.snapshotTerminalID = terminalID
 	hook := f.snapshotHook
-	for _, candidate := range f.snapshotByTerminal {
+	if candidate := f.snapshotByTerminal[terminalID]; candidate != nil {
 		snapshot = cloneSnapshot(candidate)
-		break
 	}
 	f.mu.Unlock()
 	if hook != nil {
@@ -1968,6 +2561,35 @@ func (f *fakeBridgeClient) Snapshot(context.Context, string, int, int) (*protoco
 		return snapshot, nil
 	}
 	return nil, fmt.Errorf("snapshot not configured")
+}
+
+func (f *fakeBridgeClient) GridViewport(_ context.Context, terminalID string, offset int, limit int, _ int) (*protocol.GridViewport, error) {
+	f.mu.Lock()
+	var snapshot *protocol.Snapshot
+	if candidate := f.snapshotByTerminal[terminalID]; candidate != nil {
+		snapshot = cloneSnapshot(candidate)
+	}
+	f.mu.Unlock()
+	if snapshot == nil {
+		return nil, fmt.Errorf("snapshot not configured")
+	}
+	window := testSnapshotWindow(snapshot, offset, limit)
+	if window == nil {
+		return nil, nil
+	}
+	return &protocol.GridViewport{
+		TerminalID:           terminalID,
+		Size:                 window.Size,
+		Rows:                 protocol.CloneCompactRows(window.Scrollback),
+		ScrollbackOffset:     window.ScrollbackOffset,
+		ScrollbackLimit:      limit,
+		ScrollbackTotal:      window.ScrollbackTotal,
+		ScrollbackHasMore:    window.ScrollbackHasMore,
+		ScrollbackTimestamps: append([]time.Time(nil), window.ScrollbackTimestamps...),
+		ScrollbackRowKinds:   append([]string(nil), window.ScrollbackRowKinds...),
+		ScrollbackWrapped:    append([]bool(nil), window.ScrollbackWrapped...),
+		Timestamp:            window.Timestamp,
+	}, nil
 }
 
 func (f *fakeBridgeClient) Input(_ context.Context, channel uint16, data []byte) error {
@@ -1981,6 +2603,13 @@ func (f *fakeBridgeClient) Resize(_ context.Context, channel uint16, cols, rows 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.resizeCalls = append(f.resizeCalls, resizeCall{channel: channel, cols: cols, rows: rows})
+	return nil
+}
+
+func (f *fakeBridgeClient) StreamReady(_ context.Context, channel uint16, screenSequence uint64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.streamReadyCalls[channel] = append(f.streamReadyCalls[channel], screenSequence)
 	return nil
 }
 
@@ -2002,47 +2631,9 @@ func (f *fakeBridgeClient) Stream(channel uint16) (<-chan protocol.StreamFrame, 
 
 func (f *fakeBridgeClient) Kill(context.Context, string) error { return nil }
 
+func (f *fakeBridgeClient) Remove(context.Context, string) error { return nil }
+
 func (f *fakeBridgeClient) Restart(context.Context, string) error { return nil }
-
-func (f *fakeBridgeClient) CreateSession(context.Context, protocol.CreateSessionParams) (*protocol.SessionSnapshot, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) ListSessions(context.Context) (*protocol.ListSessionsResult, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) GetSession(context.Context, string) (*protocol.SessionSnapshot, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) AttachSession(context.Context, protocol.AttachSessionParams) (*protocol.SessionSnapshot, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) DetachSession(context.Context, string, string) error {
-	return fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) ApplySession(context.Context, protocol.ApplySessionParams) (*protocol.SessionSnapshot, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) ReplaceSession(context.Context, protocol.ReplaceSessionParams) (*protocol.SessionSnapshot, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) UpdateSessionView(context.Context, protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) AcquireSessionLease(context.Context, protocol.AcquireSessionLeaseParams) (*protocol.LeaseInfo, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (f *fakeBridgeClient) ReleaseSessionLease(context.Context, protocol.ReleaseSessionLeaseParams) error {
-	return fmt.Errorf("not implemented")
-}
 
 func (f *fakeBridgeClient) sendFrame(channel uint16, frame protocol.StreamFrame) {
 	f.mu.Lock()
@@ -2076,6 +2667,22 @@ func (f *fakeBridgeClient) stopCount(channel uint16) int {
 	return f.streamStops[channel]
 }
 
+func (f *fakeBridgeClient) streamReadyCount(channel uint16) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.streamReadyCalls[channel])
+}
+
+func (f *fakeBridgeClient) lastStreamReadySequence(channel uint16) uint64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	calls := f.streamReadyCalls[channel]
+	if len(calls) == 0 {
+		return 0
+	}
+	return calls[len(calls)-1]
+}
+
 func snapshotWithLines(terminalID string, cols, rows uint16, lines []string) *protocol.Snapshot {
 	grid := make([][]protocol.Cell, rows)
 	for y := range rows {
@@ -2102,6 +2709,26 @@ func snapshotWithLines(terminalID string, cols, rows uint16, lines []string) *pr
 	}
 }
 
+func screenUpdateFrameForLines(t *testing.T, cols, rows uint16, lines ...string) protocol.StreamFrame {
+	t.Helper()
+	return protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: screenUpdatePayloadForLines(t, cols, rows, lines...)}
+}
+
+func screenUpdatePayloadForLines(t *testing.T, cols, rows uint16, lines ...string) []byte {
+	t.Helper()
+	payload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		FullReplace: true,
+		Size:        protocol.Size{Cols: cols, Rows: rows},
+		Screen:      snapshotWithLines("term-1", cols, rows, lines).Screen,
+		Cursor:      protocol.CursorState{Visible: true},
+		Modes:       protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode screen update: %v", err)
+	}
+	return payload
+}
+
 func cloneSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {
 	if snapshot == nil {
 		return nil
@@ -2111,11 +2738,113 @@ func cloneSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {
 	for y, row := range snapshot.Screen.Cells {
 		cloned.Screen.Cells[y] = append([]protocol.Cell(nil), row...)
 	}
-	cloned.Scrollback = make([][]protocol.Cell, len(snapshot.Scrollback))
-	for y, row := range snapshot.Scrollback {
-		cloned.Scrollback[y] = append([]protocol.Cell(nil), row...)
-	}
+	cloned.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback)
 	return &cloned
+}
+
+func testSnapshotWindow(snapshot *protocol.Snapshot, offset int, limit int) *protocol.Snapshot {
+	if snapshot == nil {
+		return nil
+	}
+	cloned := cloneSnapshot(snapshot)
+	if cloned == nil || limit <= 0 {
+		return cloned
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	total := len(snapshot.Scrollback)
+	if offset > total {
+		offset = total
+	}
+	end := total - offset
+	if end < 0 {
+		end = 0
+	}
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+	cloned.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[start:end])
+	if len(snapshot.ScrollbackTimestamps) >= end {
+		cloned.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps[start:end]...)
+	} else {
+		cloned.ScrollbackTimestamps = nil
+	}
+	if len(snapshot.ScrollbackRowKinds) >= end {
+		cloned.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds[start:end]...)
+	} else {
+		cloned.ScrollbackRowKinds = nil
+	}
+	if len(snapshot.ScrollbackWrapped) >= end {
+		cloned.ScrollbackWrapped = append([]bool(nil), snapshot.ScrollbackWrapped[start:end]...)
+	} else {
+		cloned.ScrollbackWrapped = nil
+	}
+	cloned.ScrollbackOffset = offset
+	cloned.ScrollbackTotal = total
+	cloned.ScrollbackHasMore = start > 0
+	return cloned
+}
+
+func testCloneProtocolRows(rows [][]protocol.Cell) [][]protocol.Cell {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([][]protocol.Cell, len(rows))
+	for i, row := range rows {
+		out[i] = append([]protocol.Cell(nil), row...)
+	}
+	return out
+}
+
+func protocolRowFromString(value string) []protocol.Cell {
+	row := make([]protocol.Cell, 0, len(value))
+	for _, r := range value {
+		row = append(row, protocol.Cell{Content: string(r), Width: 1})
+	}
+	return row
+}
+
+func rowText(row []protocol.Cell) string {
+	var buf bytes.Buffer
+	for _, cell := range row {
+		buf.WriteString(cell.Content)
+	}
+	return strings.TrimRight(buf.String(), " ")
+}
+
+func rowTextRaw(row []protocol.Cell) string {
+	var buf bytes.Buffer
+	for _, cell := range row {
+		buf.WriteString(cell.Content)
+	}
+	return buf.String()
+}
+
+func vtermRowTextRaw(row []localvterm.Cell) string {
+	var buf bytes.Buffer
+	for _, cell := range row {
+		buf.WriteString(cell.Content)
+	}
+	return buf.String()
+}
+
+func vtermScreenRowTextRaw(vt VTermLike, row int) string {
+	if source, ok := vt.(interface {
+		ScreenRowView(int) []localvterm.Cell
+	}); ok {
+		return vtermRowTextRaw(source.ScreenRowView(row))
+	}
+	screen := vt.ScreenContent()
+	if row < 0 || row >= len(screen.Cells) {
+		return ""
+	}
+	return vtermRowTextRaw(screen.Cells[row])
+}
+
+func compactRowText(row protocol.CompactRow) string {
+	return rowText(row.DecodeCells())
 }
 
 func snapshotContains(snapshot *protocol.Snapshot, want string) bool {
@@ -2178,7 +2907,7 @@ func TestRuntimeStartStreamReconnectsAfterChannelClose(t *testing.T) {
 		t.Fatalf("start stream: %v", err)
 	}
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("one")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 80, 24, "one"))
 	waitFor(t, func() bool {
 		stored := rt.Registry().Get("term-1")
 		return stored != nil && vtermContains(stored.VTerm, "one")
@@ -2190,7 +2919,7 @@ func TestRuntimeStartStreamReconnectsAfterChannelClose(t *testing.T) {
 		return client.subscriptionCount(9) >= 2
 	})
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("two")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 80, 24, "two"))
 	waitFor(t, func() bool {
 		stored := rt.Registry().Get("term-1")
 		return stored != nil && vtermContains(stored.VTerm, "two")
@@ -2228,7 +2957,7 @@ func TestRuntimeReattachIgnoresLateFramesFromPreviousStreamGeneration(t *testing
 		t.Fatalf("start initial stream: %v", err)
 	}
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("seed")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 80, 24, "seed"))
 	waitFor(t, func() bool {
 		stored := rt.Registry().Get("term-1")
 		return stored != nil && vtermContains(stored.VTerm, "seed")
@@ -2245,8 +2974,8 @@ func TestRuntimeReattachIgnoresLateFramesFromPreviousStreamGeneration(t *testing
 	waitFor(t, func() bool { return client.stopCount(9) > 0 })
 	waitFor(t, func() bool { return client.subscriptionCount(10) > 0 })
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("stale")})
-	client.sendFrame(10, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("fresh")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 80, 24, "stale"))
+	client.sendFrame(10, screenUpdateFrameForLines(t, 80, 24, "fresh"))
 
 	waitFor(t, func() bool {
 		stored := rt.Registry().Get("term-1")
@@ -2293,8 +3022,8 @@ func TestRuntimeStreamResizeFrameRefreshesSnapshotGeometryDuringBootstrap(t *tes
 
 	// Simulate server sending a resize frame (as if the owner resized the PTY)
 	client.sendFrame(9, protocol.StreamFrame{
-		Type:    protocol.TypeResize,
-		Payload: protocol.EncodeResizePayload(120, 40),
+		Type:    wire.TypeResize,
+		Payload: wire.EncodeResizePayload(120, 40),
 	})
 
 	waitFor(t, func() bool {
@@ -2314,13 +3043,13 @@ func TestRuntimeStreamResizeFrameRefreshesSnapshotGeometryDuringBootstrap(t *tes
 		t.Fatalf("expected bootstrap resize to preserve provisional snapshot content, got %#v", terminal.Snapshot)
 	}
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeBootstrapDone})
+	client.sendFrame(9, protocol.StreamFrame{Type: wire.TypeBootstrapDone})
 	waitFor(t, func() bool {
 		return terminal.Snapshot != nil && terminal.Snapshot.Size.Cols == 120 && terminal.Snapshot.Size.Rows == 40
 	})
 
 	// Subsequent output should be processed correctly at the new size.
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("after-resize")})
+	client.sendFrame(9, screenUpdateFrameForLines(t, 120, 40, "after-resize"))
 	waitFor(t, func() bool {
 		return vtermContains(terminal.VTerm, "after-resize")
 	})
@@ -2341,7 +3070,7 @@ func TestRuntimeClosedStreamStopsImmediately(t *testing.T) {
 		t.Fatalf("start stream: %v", err)
 	}
 
-	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeClosed, Payload: protocol.EncodeClosedPayload(0)})
+	client.sendFrame(9, protocol.StreamFrame{Type: wire.TypeClosed, Payload: wire.EncodeClosedPayload(0)})
 
 	waitFor(t, func() bool {
 		terminal := rt.Registry().Get("term-1")

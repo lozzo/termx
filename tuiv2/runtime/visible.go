@@ -1,7 +1,7 @@
 package runtime
 
 import (
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -43,4 +43,6 @@ type VisiblePaneBinding struct {
 	Role           string
 	Connected      bool
 	ViewportOffset int
+	ContentOffsetX int
+	ContentOffsetY int
 }

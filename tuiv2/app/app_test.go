@@ -14,8 +14,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/input"
@@ -23,9 +23,10 @@ import (
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/persist"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/sessiondoc"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	"github.com/lozzow/termx/workbenchdoc"
 )
 
 type recordingFrameWriter struct {
@@ -62,7 +63,8 @@ func (w *recordingLinesWriter) WriteFrameLines(lines []string, cursor string) er
 type backlogProbeFrameWriter struct {
 	mu        sync.Mutex
 	pending   atomic.Bool
-	drainHook func()
+	drainHook func([]runtime.PendingStreamReady)
+	readies   []runtime.PendingStreamReady
 }
 
 func (w *backlogProbeFrameWriter) WriteFrame(string, string) error {
@@ -73,9 +75,15 @@ func (w *backlogProbeFrameWriter) HasPendingFrame() bool {
 	return w.pending.Load()
 }
 
-func (w *backlogProbeFrameWriter) SetDrainHook(hook func()) {
+func (w *backlogProbeFrameWriter) SetDrainHook(hook func([]runtime.PendingStreamReady)) {
 	w.mu.Lock()
 	w.drainHook = hook
+	w.mu.Unlock()
+}
+
+func (w *backlogProbeFrameWriter) SetNextFrameStreamReadies(readies []runtime.PendingStreamReady) {
+	w.mu.Lock()
+	w.readies = append(w.readies[:0], readies...)
 	w.mu.Unlock()
 }
 
@@ -83,11 +91,27 @@ func (w *backlogProbeFrameWriter) Drain() {
 	w.pending.Store(false)
 	w.mu.Lock()
 	hook := w.drainHook
+	readies := append([]runtime.PendingStreamReady(nil), w.readies...)
+	w.readies = nil
 	w.mu.Unlock()
 	if hook != nil {
-		hook()
+		hook(readies)
 	}
 }
+
+type drainingDuringBacklogCheckFrameWriter struct {
+	calls atomic.Int32
+}
+
+func (w *drainingDuringBacklogCheckFrameWriter) WriteFrame(string, string) error {
+	return nil
+}
+
+func (w *drainingDuringBacklogCheckFrameWriter) HasPendingFrame() bool {
+	return w.calls.Add(1) == 1
+}
+
+func (w *drainingDuringBacklogCheckFrameWriter) SetDrainHook(func([]runtime.PendingStreamReady)) {}
 
 type resetProbeFrameWriter struct {
 	recordingFrameWriter
@@ -287,6 +311,69 @@ func TestModelViewSkipsRenderWhenDirectFrameIsUnchanged(t *testing.T) {
 	reuseEvent, ok := second.Event("app.view.reuse")
 	if !ok || reuseEvent.Count != 1 {
 		t.Fatalf("expected cached direct view reuse metric, got %#v", second.Events)
+	}
+}
+
+func TestModelViewDoesNotAckStreamReadyWhenDirectFrameIsCached(t *testing.T) {
+	client := &recordingBridgeClient{}
+	rt := runtime.New(client)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.Stream.PendingReadyChannel = 7
+	terminal.Stream.PendingReadyScreenSequence = 42
+
+	model := New(shared.Config{}, nil, rt)
+	model.SetFrameWriter(&recordingFrameWriter{})
+
+	model.View()
+	if got := client.streamReadySequences(7); len(got) != 1 || got[0] != 42 {
+		t.Fatalf("expected first rendered frame to ack sequence 42, got %#v", got)
+	}
+
+	terminal.Stream.PendingReadyChannel = 7
+	terminal.Stream.PendingReadyScreenSequence = 43
+	model.View()
+	if got := client.streamReadySequences(7); len(got) != 1 {
+		t.Fatalf("expected cached view to avoid acking unseen sequence, got %#v", got)
+	}
+
+	model.render.Invalidate()
+	model.View()
+	if got := client.streamReadySequences(7); len(got) != 2 || got[1] != 43 {
+		t.Fatalf("expected invalidated render to ack sequence 43, got %#v", got)
+	}
+}
+
+func TestFrameWriterDrainAcksOnlyRenderedStreamReadySequence(t *testing.T) {
+	client := &recordingBridgeClient{}
+	rt := runtime.New(client)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.Stream.PendingReadyChannel = 7
+	terminal.Stream.PendingReadyScreenSequence = 42
+
+	model := New(shared.Config{}, nil, rt)
+	writer := &backlogProbeFrameWriter{}
+	writer.pending.Store(true)
+	model.SetFrameWriter(writer)
+
+	model.View()
+	if got := client.streamReadySequences(7); len(got) != 0 {
+		t.Fatalf("expected pending writer to delay ack, got %#v", got)
+	}
+
+	terminal.Stream.PendingReadyScreenSequence = 43
+	writer.Drain()
+	if got := client.streamReadySequences(7); len(got) != 0 {
+		t.Fatalf("expected stale drain to avoid acking newer sequence, got %#v", got)
+	}
+	if terminal.Stream.PendingReadyChannel != 7 || terminal.Stream.PendingReadyScreenSequence != 43 {
+		t.Fatalf("expected newer pending ready to remain, got %#v", terminal.Stream)
+	}
+
+	model.render.Invalidate()
+	model.View()
+	writer.Drain()
+	if got := client.streamReadySequences(7); len(got) != 1 || got[0] != 43 {
+		t.Fatalf("expected later rendered frame to ack sequence 43, got %#v", got)
 	}
 }
 
@@ -553,20 +640,20 @@ func TestModelHostEmojiProbeRetriesUntilGiveUp(t *testing.T) {
 func TestModelInitBootstrapsFromSessionSnapshot(t *testing.T) {
 	client := &recordingBridgeClient{
 		getSessionErr: errors.New("session not found"),
-		sessionSnapshot: &protocol.SessionSnapshot{
-			Session: protocol.SessionInfo{ID: "main", Revision: 1},
-			View:    &protocol.ViewInfo{ViewID: "view-1", SessionID: "main"},
-			Workbench: &workbenchdoc.Doc{
+		sessionSnapshot: &sessionstore.Snapshot{
+			Session: sessionstore.SessionInfo{ID: "main", Revision: 1},
+			View:    &sessionstore.ViewInfo{ViewID: "view-1", SessionID: "main"},
+			Workbench: &sessiondoc.Doc{
 				CurrentWorkspace: "main",
 				WorkspaceOrder:   []string{"main"},
-				Workspaces: map[string]*workbenchdoc.Workspace{
+				Workspaces: map[string]*sessiondoc.Workspace{
 					"main": {
 						Name: "main",
-						Tabs: []*workbenchdoc.Tab{{
+						Tabs: []*sessiondoc.Tab{{
 							ID:           "1",
 							Name:         "1",
-							Root:         workbenchdoc.NewLeaf("1"),
-							Panes:        map[string]*workbenchdoc.Pane{"1": {ID: "1"}},
+							Root:         sessiondoc.NewLeaf("1"),
+							Panes:        map[string]*sessiondoc.Pane{"1": {ID: "1"}},
 							ActivePaneID: "1",
 						}},
 						ActiveTab: 0,
@@ -596,9 +683,9 @@ func TestModelInitBootstrapsFromSessionSnapshot(t *testing.T) {
 
 func TestSaveStateCmdReplacesSessionWhenSessionAttached(t *testing.T) {
 	client := &recordingBridgeClient{
-		sessionSnapshot: &protocol.SessionSnapshot{
-			Session: protocol.SessionInfo{ID: "main", Revision: 2},
-			View:    &protocol.ViewInfo{ViewID: "view-1", SessionID: "main"},
+		sessionSnapshot: &sessionstore.Snapshot{
+			Session: sessionstore.SessionInfo{ID: "main", Revision: 2},
+			View:    &sessionstore.ViewInfo{ViewID: "view-1", SessionID: "main"},
 		},
 	}
 	wb := workbench.NewWorkbench()
@@ -639,11 +726,11 @@ func TestSaveStateCmdReplacesSessionWhenSessionAttached(t *testing.T) {
 
 func TestSaveStateCmdSuppressesRecoverableSessionRevisionConflict(t *testing.T) {
 	client := &recordingBridgeClient{
-		sessionSnapshot: &protocol.SessionSnapshot{
-			Session: protocol.SessionInfo{ID: "main", Revision: 10},
-			View:    &protocol.ViewInfo{ViewID: "view-1", SessionID: "main"},
+		sessionSnapshot: &sessionstore.Snapshot{
+			Session: sessionstore.SessionInfo{ID: "main", Revision: 10},
+			View:    &sessionstore.ViewInfo{ViewID: "view-1", SessionID: "main"},
 		},
-		replaceSessionErr: fmt.Errorf("protocol error 409: workbenchsvc: session revision conflict: expected 9, got 10"),
+		replaceSessionErr: fmt.Errorf("sessionstore: revision conflict: expected 9, got 10"),
 	}
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
@@ -709,35 +796,35 @@ func TestApplySessionSnapshotKeepsLocalProjectionForCurrentView(t *testing.T) {
 	model.sessionID = "main"
 	model.sessionViewID = "view-local"
 
-	model.applySessionSnapshot(&protocol.SessionSnapshot{
-		Session: protocol.SessionInfo{ID: "main", Revision: 2},
-		View: &protocol.ViewInfo{
+	model.applySessionSnapshot(&sessionstore.Snapshot{
+		Session: sessionstore.SessionInfo{ID: "main", Revision: 2},
+		View: &sessionstore.ViewInfo{
 			ViewID:              "view-local",
 			SessionID:           "main",
 			ActiveWorkspaceName: "main",
 			ActiveTabID:         "tab-1",
 			FocusedPaneID:       "float-1",
 		},
-		Workbench: &workbenchdoc.Doc{
+		Workbench: &sessiondoc.Doc{
 			CurrentWorkspace: "main",
 			WorkspaceOrder:   []string{"main"},
-			Workspaces: map[string]*workbenchdoc.Workspace{
+			Workspaces: map[string]*sessiondoc.Workspace{
 				"main": {
 					Name:      "main",
 					ActiveTab: 0,
-					Tabs: []*workbenchdoc.Tab{{
+					Tabs: []*sessiondoc.Tab{{
 						ID:              "tab-1",
 						Name:            "tab 1",
 						ActivePaneID:    "float-1",
 						FloatingVisible: true,
-						Root:            workbenchdoc.NewLeaf("pane-1"),
-						Panes: map[string]*workbenchdoc.Pane{
+						Root:            sessiondoc.NewLeaf("pane-1"),
+						Panes: map[string]*sessiondoc.Pane{
 							"pane-1":  {ID: "pane-1", Title: "tiled"},
 							"float-1": {ID: "float-1", Title: "float"},
 						},
-						Floating: []*workbenchdoc.FloatingPane{{
+						Floating: []*sessiondoc.FloatingPane{{
 							PaneID: "float-1",
-							Rect:   workbenchdoc.Rect{X: 10, Y: 5, W: 20, H: 8},
+							Rect:   sessiondoc.Rect{X: 10, Y: 5, W: 20, H: 8},
 							Z:      0,
 						}},
 					}},
@@ -1939,6 +2026,109 @@ func TestQueueInvalidateWaitsForFrameWriterDrainBeforeSending(t *testing.T) {
 	}
 }
 
+func TestRenderedStreamReadyWaitsForFrameWriterDrain(t *testing.T) {
+	client := &recordingBridgeClient{}
+	rt := runtime.New(client)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.Stream.PendingReadyChannel = 7
+	terminal.Stream.PendingReadyScreenSequence = 42
+
+	model := New(shared.Config{}, nil, rt)
+	writer := &backlogProbeFrameWriter{}
+	writer.pending.Store(true)
+	model.SetFrameWriter(writer)
+
+	model.setNextFrameStreamReadies(rt.PendingStreamReadies())
+	model.markRenderedStreamUpdatesAfterFrame()
+	if got := client.streamReadySequences(7); len(got) != 0 {
+		t.Fatalf("expected pending frame writer to delay stream ready, got %#v", got)
+	}
+
+	writer.Drain()
+	if got := client.streamReadySequences(7); len(got) != 1 || got[0] != 42 {
+		t.Fatalf("expected stream ready sequence 42 after frame writer drain, got %#v", got)
+	}
+	if terminal.Stream.PendingReadyChannel != 0 {
+		t.Fatalf("expected pending stream ready to be cleared, got channel %d", terminal.Stream.PendingReadyChannel)
+	}
+}
+
+func TestRenderedStreamReadyWaitsForDeferredInvalidateAfterFrameDrain(t *testing.T) {
+	originalDelay := invalidateBatchDelay
+	invalidateBatchDelay = 0
+	defer func() { invalidateBatchDelay = originalDelay }()
+
+	client := &recordingBridgeClient{}
+	rt := runtime.New(client)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.Stream.PendingReadyChannel = 7
+	terminal.Stream.PendingReadyScreenSequence = 42
+
+	model := New(shared.Config{}, nil, rt)
+	writer := &backlogProbeFrameWriter{}
+	writer.pending.Store(true)
+	model.SetFrameWriter(writer)
+	sent := make(chan tea.Msg, 4)
+	model.SetSendFunc(func(msg tea.Msg) {
+		sent <- msg
+	})
+
+	model.queueInvalidate()
+	writer.Drain()
+
+	select {
+	case msg := <-sent:
+		if _, ok := msg.(InvalidateMsg); !ok {
+			t.Fatalf("expected invalidate after frame drain, got %#v", msg)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for deferred invalidate")
+	}
+	if got := client.streamReadySequences(7); len(got) != 0 {
+		t.Fatalf("expected deferred invalidate to delay stream ready ack, got %#v", got)
+	}
+
+	if _, handled := model.handleLifecycleMessage(InvalidateMsg{}); !handled {
+		t.Fatal("expected invalidate message to be handled")
+	}
+	model.setNextFrameStreamReadies(rt.PendingStreamReadies())
+	model.markRenderedStreamUpdatesAfterFrame()
+	if got := client.streamReadySequences(7); len(got) != 1 || got[0] != 42 {
+		t.Fatalf("expected stream ready sequence 42 after deferred invalidate render, got %#v", got)
+	}
+}
+
+func TestQueueInvalidateSendsWhenFrameWriterDrainsDuringBacklogRegistration(t *testing.T) {
+	originalDelay := invalidateBatchDelay
+	invalidateBatchDelay = 0
+	defer func() { invalidateBatchDelay = originalDelay }()
+
+	model := New(shared.Config{}, nil, runtime.New(nil))
+	writer := &drainingDuringBacklogCheckFrameWriter{}
+	model.SetFrameWriter(writer)
+	sent := make(chan tea.Msg, 4)
+	model.SetSendFunc(func(msg tea.Msg) {
+		sent <- msg
+	})
+
+	model.queueInvalidate()
+
+	select {
+	case msg := <-sent:
+		if _, ok := msg.(InvalidateMsg); !ok {
+			t.Fatalf("expected invalidate after frame-writer drain race, got %#v", msg)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for invalidate after frame-writer drain race")
+	}
+	if model.invalidateBlockedByFrameOut.Load() {
+		t.Fatal("expected frame-writer backlog block to be cleared")
+	}
+	if got := writer.calls.Load(); got != 2 {
+		t.Fatalf("expected backlog recheck, got %d calls", got)
+	}
+}
+
 func TestQueueInvalidateBypassesFrameWriterDrainAfterRecentInput(t *testing.T) {
 	originalDelay := invalidateBatchDelay
 	invalidateBatchDelay = 0
@@ -2064,6 +2254,7 @@ func TestViewKeepsGlobalDiffActiveAfterActivePaneLeavesAltScreen(t *testing.T) {
 }
 
 func TestViewKeepsVerticalScrollOptimizationForSinglePaneAltScreen(t *testing.T) {
+	t.Setenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL", "1")
 	model := setupModel(t, modelOpts{width: 80, height: 24})
 	sink := &cursorWriterProbeTTY{}
 	writer := newOutputCursorWriter(sink)
@@ -3076,6 +3267,41 @@ func TestModelPickerKillTerminalRemovesSelectedItemAndInvokesBridgeClient(t *tes
 	}
 }
 
+func TestModelPickerRemoveTerminalDeletesSelectedItemAndInvokesBridgeClient(t *testing.T) {
+	client := &recordingBridgeClient{}
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(client))
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePicker, Phase: modal.ModalPhaseReady, RequestID: "picker-1"}
+	model.modalHost.Picker = &modal.PickerState{
+		Selected: 1,
+		Items: []modal.PickerItem{
+			{TerminalID: "term-1", Name: "shell"},
+			{TerminalID: "term-2", Name: "logs"},
+		},
+	}
+	model.modalHost.Picker.ApplyFilter()
+	model.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: "picker-1"})
+
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionRemoveTerminal})
+	if cmd == nil {
+		t.Fatal("expected remove terminal command")
+	}
+	if msg := cmd(); msg != nil {
+		t.Fatalf("expected nil message from remove command, got %#v", msg)
+	}
+	if len(client.removeCalls) != 1 {
+		t.Fatalf("expected one remove call, got %d", len(client.removeCalls))
+	}
+	if client.removeCalls[0] != "term-2" {
+		t.Fatalf("expected terminal term-2 to be removed, got %#v", client.removeCalls)
+	}
+	if len(model.modalHost.Picker.Items) != 1 {
+		t.Fatalf("expected 1 picker item after delete, got %d", len(model.modalHost.Picker.Items))
+	}
+	if got := model.modalHost.Picker.Items[0].TerminalID; got != "term-1" {
+		t.Fatalf("expected remaining terminal term-1, got %q", got)
+	}
+}
+
 func TestModelUpdateWindowSizeAndError(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 	_, _ = model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -3904,7 +4130,7 @@ func TestModelInitRestoreAutoReattachesPersistedPanes(t *testing.T) {
 	}
 }
 
-func TestModelInitRestoreAutoReattachClearsMissingTerminalBinding(t *testing.T) {
+func TestModelInitRestoreAutoReattachKeepsBindingWhenSnapshotFallbackLoads(t *testing.T) {
 	statePath := t.TempDir() + "/workspace-state.json"
 	source := workbench.NewWorkbench()
 	source.AddWorkspace("dev", &workbench.WorkspaceState{
@@ -3928,7 +4154,68 @@ func TestModelInitRestoreAutoReattachClearsMissingTerminalBinding(t *testing.T) 
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	client := &recordingBridgeClient{attachErr: errors.New("terminal not found")}
+	client := &recordingBridgeClient{
+		attachErr: errors.New("terminal not found"),
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-missing": {
+				TerminalID: "term-missing",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+				Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "persisted", Width: 1}}}},
+			},
+		},
+	}
+	model := New(shared.Config{WorkspaceStatePath: statePath}, workbench.NewWorkbench(), runtime.New(client))
+
+	cmd := model.Init()
+	if cmd == nil {
+		t.Fatal("expected init command for failed restore auto-reattach")
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, item := range batch {
+			_ = item()
+		}
+	}
+	pane := model.workbench.ActivePane()
+	if pane == nil {
+		t.Fatal("expected restored pane to exist")
+	}
+	if pane.ID == "" || pane.TerminalID != "term-missing" {
+		t.Fatalf("expected restored binding kept after snapshot fallback, got %#v", pane)
+	}
+	if got := len(client.snapshotCalls); got != 1 || client.snapshotCalls[0] != "term-missing" {
+		t.Fatalf("expected one snapshot fallback call for term-missing, got %#v", client.snapshotCalls)
+	}
+	if model.modalHost.Session != nil {
+		t.Fatalf("expected no startup picker during snapshot fallback, got %#v", model.modalHost.Session)
+	}
+}
+
+func TestModelInitRestoreAutoReattachClearsMissingTerminalBindingWhenSnapshotFallbackFails(t *testing.T) {
+	statePath := t.TempDir() + "/workspace-state.json"
+	source := workbench.NewWorkbench()
+	source.AddWorkspace("dev", &workbench.WorkspaceState{
+		Name:      "dev",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-dev",
+			Name:         "code",
+			ActivePaneID: "pane-dev",
+			Panes: map[string]*workbench.PaneState{
+				"pane-dev": {ID: "pane-dev", Title: "shell", TerminalID: "term-missing"},
+			},
+			Root: workbench.NewLeaf("pane-dev"),
+		}},
+	})
+	data, err := persist.Save(source)
+	if err != nil {
+		t.Fatalf("persist.Save: %v", err)
+	}
+	if err := os.WriteFile(statePath, data, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	client := &recordingBridgeClient{attachErr: errors.New("terminal not found"), snapshotErr: errors.New("history not found")}
 	model := New(shared.Config{WorkspaceStatePath: statePath}, workbench.NewWorkbench(), runtime.New(client))
 
 	cmd := model.Init()
@@ -4109,24 +4396,35 @@ type recordingBridgeClient struct {
 	listResult         *protocol.ListResult
 	snapshotByTerminal map[string]*protocol.Snapshot
 	snapshotCalls      []string
+	snapshotRequests   []snapshotCall
+	viewportRequests   []gridViewportCall
 	snapshotErr        error
 	createCalls        []createCall
 	attachCalls        []attachCall
 	setTagsCalls       []setTagsCall
 	setMetadataCalls   []setMetadataCall
 	killCalls          []string
+	removeCalls        []string
 	restartCalls       []string
-	sessionSnapshot    *protocol.SessionSnapshot
-	sessionView        *protocol.ViewInfo
+	eventsCalls        []protocol.EventsParams
+	sessionSnapshot    *sessionstore.Snapshot
+	sessionView        *sessionstore.ViewInfo
 	getSessionErr      error
 	replaceSessionErr  error
-	createSessionCalls []protocol.CreateSessionParams
+	createSessionCalls []sessionstore.CreateParams
 	getSessionCalls    []string
-	attachSessionCalls []protocol.AttachSessionParams
-	replaceCalls       []protocol.ReplaceSessionParams
-	viewUpdateCalls    []protocol.UpdateSessionViewParams
-	acquireLeaseCalls  []protocol.AcquireSessionLeaseParams
-	releaseLeaseCalls  []protocol.ReleaseSessionLeaseParams
+	attachSessionCalls []sessionstore.AttachParams
+	replaceCalls       []sessionstore.ReplaceParams
+	viewUpdateCalls    []sessionstore.UpdateViewParams
+	acquireLeaseCalls  []sessionstore.AcquireLeaseParams
+	releaseLeaseCalls  []sessionstore.ReleaseLeaseParams
+	releaseLeaseErr    error
+	streamReadyCalls   map[uint16][]uint64
+	storageEntries     map[string]protocol.StorageEntry
+	storageGetCalls    []protocol.StorageGetParams
+	storagePutCalls    []protocol.StoragePutParams
+	storageListCalls   []protocol.StorageListParams
+	storageDeleteCalls []protocol.StorageDeleteParams
 }
 
 type resizeCall struct {
@@ -4138,6 +4436,19 @@ type resizeCall struct {
 type inputCall struct {
 	channel uint16
 	data    []byte
+}
+
+type snapshotCall struct {
+	terminalID string
+	offset     int
+	limit      int
+}
+
+type gridViewportCall struct {
+	terminalID string
+	offset     int
+	limit      int
+	cols       int
 }
 
 type createCall struct {
@@ -4161,6 +4472,7 @@ type attachCall struct {
 }
 
 var _ bridge.Client = (*recordingBridgeClient)(nil)
+var _ bridge.StorageClient = (*recordingBridgeClient)(nil)
 
 func (c *recordingBridgeClient) Close() error { return nil }
 
@@ -4194,27 +4506,65 @@ func (c *recordingBridgeClient) List(context.Context) (*protocol.ListResult, err
 	return c.listResult, nil
 }
 
-func (c *recordingBridgeClient) Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error) {
+func (c *recordingBridgeClient) Events(_ context.Context, params protocol.EventsParams) (<-chan protocol.Event, error) {
+	c.eventsCalls = append(c.eventsCalls, params)
 	return nil, nil
 }
 
-func (c *recordingBridgeClient) Attach(_ context.Context, terminalID, mode string) (*protocol.AttachResult, error) {
-	c.attachCalls = append(c.attachCalls, attachCall{terminalID: terminalID, mode: mode})
+func (c *recordingBridgeClient) Attach(_ context.Context, params protocol.AttachParams) (*protocol.AttachResult, error) {
+	c.attachCalls = append(c.attachCalls, attachCall{terminalID: params.TerminalID, mode: params.Mode})
 	if c.attachErr != nil {
 		return nil, c.attachErr
 	}
 	return c.attachResult, nil
 }
 
-func (c *recordingBridgeClient) Snapshot(_ context.Context, terminalID string, _ int, _ int) (*protocol.Snapshot, error) {
+func (c *recordingBridgeClient) EnsureResize(_ context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error) {
+	c.resizes = append(c.resizes, resizeCall{channel: params.Channel, cols: params.Cols, rows: params.Rows})
+	return &protocol.EnsureResizeResult{
+		ResizeControl: &protocol.ResizeControl{CanResize: true, Reason: protocol.ResizeControlReasonOwner},
+		Size:          protocol.Size{Cols: params.Cols, Rows: params.Rows},
+		Resized:       true,
+	}, nil
+}
+
+func (c *recordingBridgeClient) Snapshot(_ context.Context, terminalID string, offset int, limit int) (*protocol.Snapshot, error) {
 	c.snapshotCalls = append(c.snapshotCalls, terminalID)
+	c.snapshotRequests = append(c.snapshotRequests, snapshotCall{terminalID: terminalID, offset: offset, limit: limit})
 	if c.snapshotErr != nil {
 		return nil, c.snapshotErr
 	}
 	if c.snapshotByTerminal == nil {
 		return nil, nil
 	}
-	return c.snapshotByTerminal[terminalID], nil
+	return snapshotWindow(c.snapshotByTerminal[terminalID], offset, limit), nil
+}
+
+func (c *recordingBridgeClient) GridViewport(_ context.Context, terminalID string, offset int, limit int, cols int) (*protocol.GridViewport, error) {
+	c.viewportRequests = append(c.viewportRequests, gridViewportCall{terminalID: terminalID, offset: offset, limit: limit, cols: cols})
+	if c.snapshotErr != nil {
+		return nil, c.snapshotErr
+	}
+	if c.snapshotByTerminal == nil {
+		return nil, nil
+	}
+	snapshot := snapshotWindow(c.snapshotByTerminal[terminalID], offset, limit)
+	if snapshot == nil {
+		return nil, nil
+	}
+	return &protocol.GridViewport{
+		TerminalID:           terminalID,
+		Size:                 snapshot.Size,
+		Rows:                 protocol.CloneCompactRows(snapshot.Scrollback),
+		ScrollbackOffset:     snapshot.ScrollbackOffset,
+		ScrollbackLimit:      limit,
+		ScrollbackTotal:      snapshot.ScrollbackTotal,
+		ScrollbackHasMore:    snapshot.ScrollbackHasMore,
+		ScrollbackTimestamps: append([]time.Time(nil), snapshot.ScrollbackTimestamps...),
+		ScrollbackRowKinds:   append([]string(nil), snapshot.ScrollbackRowKinds...),
+		ScrollbackWrapped:    append([]bool(nil), snapshot.ScrollbackWrapped...),
+		Timestamp:            snapshot.Timestamp,
+	}, nil
 }
 
 func (c *recordingBridgeClient) Input(_ context.Context, channel uint16, data []byte) error {
@@ -4237,6 +4587,21 @@ func (c *recordingBridgeClient) Resize(_ context.Context, channel uint16, cols, 
 	return nil
 }
 
+func (c *recordingBridgeClient) StreamReady(_ context.Context, channel uint16, screenSequence uint64) error {
+	if c.streamReadyCalls == nil {
+		c.streamReadyCalls = make(map[uint16][]uint64)
+	}
+	c.streamReadyCalls[channel] = append(c.streamReadyCalls[channel], screenSequence)
+	return nil
+}
+
+func (c *recordingBridgeClient) streamReadySequences(channel uint16) []uint64 {
+	if c == nil || c.streamReadyCalls == nil {
+		return nil
+	}
+	return append([]uint64(nil), c.streamReadyCalls[channel]...)
+}
+
 func (c *recordingBridgeClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 	ch := make(chan protocol.StreamFrame)
 	close(ch)
@@ -4248,75 +4613,65 @@ func (c *recordingBridgeClient) Kill(_ context.Context, terminalID string) error
 	return nil
 }
 
+func (c *recordingBridgeClient) Remove(_ context.Context, terminalID string) error {
+	c.removeCalls = append(c.removeCalls, terminalID)
+	return nil
+}
+
 func (c *recordingBridgeClient) Restart(_ context.Context, terminalID string) error {
 	c.restartCalls = append(c.restartCalls, terminalID)
 	return nil
 }
 
-func (c *recordingBridgeClient) CreateSession(_ context.Context, params protocol.CreateSessionParams) (*protocol.SessionSnapshot, error) {
+func (c *recordingBridgeClient) CreateSession(_ context.Context, params sessionstore.CreateParams) (*sessionstore.Snapshot, error) {
 	c.createSessionCalls = append(c.createSessionCalls, params)
 	if c.sessionSnapshot == nil {
-		return &protocol.SessionSnapshot{}, nil
+		return &sessionstore.Snapshot{}, nil
 	}
 	return c.sessionSnapshot, nil
 }
 
-func (c *recordingBridgeClient) ListSessions(context.Context) (*protocol.ListSessionsResult, error) {
-	return &protocol.ListSessionsResult{}, nil
-}
-
-func (c *recordingBridgeClient) GetSession(_ context.Context, sessionID string) (*protocol.SessionSnapshot, error) {
+func (c *recordingBridgeClient) GetSession(_ context.Context, sessionID string) (*sessionstore.Snapshot, error) {
 	c.getSessionCalls = append(c.getSessionCalls, sessionID)
 	if c.getSessionErr != nil {
 		return nil, c.getSessionErr
 	}
 	if c.sessionSnapshot == nil {
-		return &protocol.SessionSnapshot{}, nil
+		return &sessionstore.Snapshot{}, nil
 	}
 	return c.sessionSnapshot, nil
 }
 
-func (c *recordingBridgeClient) AttachSession(_ context.Context, params protocol.AttachSessionParams) (*protocol.SessionSnapshot, error) {
+func (c *recordingBridgeClient) AttachSession(_ context.Context, params sessionstore.AttachParams) (*sessionstore.Snapshot, error) {
 	c.attachSessionCalls = append(c.attachSessionCalls, params)
 	if c.sessionSnapshot == nil {
-		return &protocol.SessionSnapshot{}, nil
+		return &sessionstore.Snapshot{}, nil
 	}
 	return c.sessionSnapshot, nil
 }
 
-func (c *recordingBridgeClient) DetachSession(context.Context, string, string) error {
-	return nil
-}
-
-func (c *recordingBridgeClient) ApplySession(context.Context, protocol.ApplySessionParams) (*protocol.SessionSnapshot, error) {
-	if c.sessionSnapshot == nil {
-		return &protocol.SessionSnapshot{}, nil
-	}
-	return c.sessionSnapshot, nil
-}
-
-func (c *recordingBridgeClient) ReplaceSession(_ context.Context, params protocol.ReplaceSessionParams) (*protocol.SessionSnapshot, error) {
+func (c *recordingBridgeClient) ReplaceSession(_ context.Context, params sessionstore.ReplaceParams) (*sessionstore.Snapshot, error) {
 	c.replaceCalls = append(c.replaceCalls, params)
 	if c.replaceSessionErr != nil {
 		return nil, c.replaceSessionErr
 	}
 	if c.sessionSnapshot == nil {
-		return &protocol.SessionSnapshot{}, nil
+		return &sessionstore.Snapshot{}, nil
 	}
 	return c.sessionSnapshot, nil
 }
 
-func (c *recordingBridgeClient) UpdateSessionView(_ context.Context, params protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error) {
+func (c *recordingBridgeClient) UpdateSessionView(_ context.Context, params sessionstore.UpdateViewParams) (*sessionstore.ViewInfo, error) {
 	c.viewUpdateCalls = append(c.viewUpdateCalls, params)
 	if c.sessionView == nil {
-		return &protocol.ViewInfo{ViewID: params.ViewID, SessionID: params.SessionID}, nil
+		return &sessionstore.ViewInfo{ViewID: params.ViewID, SessionID: params.SessionID}, nil
 	}
 	return c.sessionView, nil
 }
 
-func (c *recordingBridgeClient) AcquireSessionLease(_ context.Context, params protocol.AcquireSessionLeaseParams) (*protocol.LeaseInfo, error) {
+func (c *recordingBridgeClient) AcquireSessionLease(_ context.Context, params sessionstore.AcquireLeaseParams) (*sessionstore.LeaseInfo, error) {
 	c.acquireLeaseCalls = append(c.acquireLeaseCalls, params)
-	return &protocol.LeaseInfo{
+	return &sessionstore.LeaseInfo{
 		TerminalID: params.TerminalID,
 		SessionID:  params.SessionID,
 		ViewID:     params.ViewID,
@@ -4324,9 +4679,97 @@ func (c *recordingBridgeClient) AcquireSessionLease(_ context.Context, params pr
 	}, nil
 }
 
-func (c *recordingBridgeClient) ReleaseSessionLease(_ context.Context, params protocol.ReleaseSessionLeaseParams) error {
+func (c *recordingBridgeClient) ReleaseSessionLease(_ context.Context, params sessionstore.ReleaseLeaseParams) error {
 	c.releaseLeaseCalls = append(c.releaseLeaseCalls, params)
-	return nil
+	return c.releaseLeaseErr
+}
+
+func (c *recordingBridgeClient) StorageGet(_ context.Context, params protocol.StorageGetParams) (*protocol.StorageEntry, error) {
+	c.storageGetCalls = append(c.storageGetCalls, params)
+	if c.storageEntries == nil {
+		return nil, fmt.Errorf("protocol error 404: not found")
+	}
+	entry, ok := c.storageEntries[params.Key]
+	if !ok {
+		return nil, fmt.Errorf("protocol error 404: not found")
+	}
+	if entry.AppID != params.AppID || entry.Scope != params.Scope || entry.OwnerID != params.OwnerID {
+		return nil, fmt.Errorf("protocol error 404: not found")
+	}
+	cloned := cloneStorageEntry(entry)
+	return &cloned, nil
+}
+
+func (c *recordingBridgeClient) StoragePut(_ context.Context, params protocol.StoragePutParams) (*protocol.StorageEntry, error) {
+	c.storagePutCalls = append(c.storagePutCalls, cloneStoragePutParams(params))
+	if c.storageEntries == nil {
+		c.storageEntries = make(map[string]protocol.StorageEntry)
+	}
+	current := c.storageEntries[params.Key]
+	entry := protocol.StorageEntry{
+		AppID:     params.AppID,
+		Scope:     params.Scope,
+		OwnerID:   params.OwnerID,
+		Key:       params.Key,
+		Value:     append([]byte(nil), params.Value...),
+		Version:   current.Version + 1,
+		UpdatedAt: time.Now().UTC(),
+	}
+	if entry.Version == 0 {
+		entry.Version = 1
+	}
+	c.storageEntries[params.Key] = entry
+	cloned := cloneStorageEntry(entry)
+	return &cloned, nil
+}
+
+func (c *recordingBridgeClient) StorageDelete(_ context.Context, params protocol.StorageDeleteParams) (*protocol.StorageDeleteResult, error) {
+	c.storageDeleteCalls = append(c.storageDeleteCalls, params)
+	deleted := false
+	version := uint64(0)
+	if c.storageEntries != nil {
+		current, ok := c.storageEntries[params.Key]
+		if ok {
+			deleted = true
+			version = current.Version + 1
+			delete(c.storageEntries, params.Key)
+		}
+	}
+	return &protocol.StorageDeleteResult{
+		AppID:   params.AppID,
+		Scope:   params.Scope,
+		OwnerID: params.OwnerID,
+		Key:     params.Key,
+		Deleted: deleted,
+		Version: version,
+	}, nil
+}
+
+func (c *recordingBridgeClient) StorageList(_ context.Context, params protocol.StorageListParams) (*protocol.StorageListResult, error) {
+	c.storageListCalls = append(c.storageListCalls, params)
+	result := &protocol.StorageListResult{}
+	for _, entry := range c.storageEntries {
+		if entry.AppID != params.AppID || entry.Scope != params.Scope || entry.OwnerID != params.OwnerID {
+			continue
+		}
+		if params.Prefix != "" && !strings.HasPrefix(entry.Key, params.Prefix) {
+			continue
+		}
+		result.Entries = append(result.Entries, cloneStorageEntry(entry))
+	}
+	return result, nil
+}
+
+func cloneStoragePutParams(params protocol.StoragePutParams) protocol.StoragePutParams {
+	cloned := params
+	cloned.Value = append([]byte(nil), params.Value...)
+	return cloned
+}
+
+func cloneStorageEntry(entry protocol.StorageEntry) protocol.StorageEntry {
+	cloned := entry
+	cloned.Value = append([]byte(nil), entry.Value...)
+	return cloned
 }
 
 func applyTestMsg(t *testing.T, model *Model, msg tea.Msg, label string) {

@@ -16,6 +16,58 @@ func rowOwnsLineEnd(row presentedRow) bool {
 	return strings.Contains(row.raw, "\x1b[K")
 }
 
+const presentedStyledBlankECHThreshold = 5
+const framePresenterCellPoolMaxSlices = 256
+
+type presentedCellAcquirer func(int) []presentedCell
+
+func joinFrameLinesForHost(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	var out strings.Builder
+	out.Grow(joinedLinesLen(lines))
+	for i, line := range lines {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		out.WriteString(normalizeFrameLineForHost(line))
+	}
+	return out.String()
+}
+
+func normalizeFrameLineForHost(line string) string {
+	if line == "" || !strings.Contains(line, "\x1b[") || !strings.Contains(line, " ") {
+		return line
+	}
+	original := line
+	line = strings.TrimSuffix(line, xansi.EraseLineRight)
+	row := parsePresentedRow(line)
+	defer releasePresentedCells(row.cells)
+	if row.hasHiddenEmojiCompensation || row.hasHostWidthStabilizer || !presentedCellsHaveStyledBlankRun(row.cells) {
+		return original
+	}
+	var out strings.Builder
+	out.Grow(len(line))
+	writePresentedCells(&out, row.cells, 1)
+	return out.String()
+}
+
+func presentedCellsHaveStyledBlankRun(cells []presentedCell) bool {
+	for i := 0; i < len(cells); {
+		run := presentedStyledBlankRun(cells, i)
+		if run >= presentedStyledBlankECHThreshold {
+			return true
+		}
+		if run > 0 {
+			i += run
+			continue
+		}
+		i++
+	}
+	return false
+}
+
 func writeOwnedLineEndClear(out *strings.Builder, style presentedStyle) {
 	if out == nil {
 		return
@@ -30,18 +82,37 @@ func writeOwnedLineEndClear(out *strings.Builder, style presentedStyle) {
 }
 
 func parsePresentedRow(row string) presentedRow {
+	return parsePresentedRowWith(row, acquirePresentedCells)
+}
+
+func (p *framePresenter) parsePresentedRow(row string) presentedRow {
+	if p == nil {
+		return parsePresentedRow(row)
+	}
+	return parsePresentedRowWith(row, p.acquirePresentedCells)
+}
+
+func parsePresentedRowWith(row string, acquire presentedCellAcquirer) presentedRow {
 	if row == "" {
 		return presentedRow{raw: row}
 	}
-	if fast, ok := parsePresentedRowASCII(row); ok {
+	if fast, ok := parsePresentedRowASCIIWith(row, acquire); ok {
 		return fast
 	}
-	return parsePresentedRowGeneric(row)
+	return parsePresentedRowGenericWith(row, acquire)
 }
 
 func parsePresentedRowASCII(row string) (presentedRow, bool) {
+	return parsePresentedRowASCIIWith(row, acquirePresentedCells)
+}
+
+func parsePresentedRowASCIIWith(row string, acquire presentedCellAcquirer) (presentedRow, bool) {
+	capHint, ok := presentedRowASCIICellCapacity(row)
+	if !ok {
+		return presentedRow{}, false
+	}
 	style := presentedStyle{}
-	cells := acquirePresentedCells(len(row))
+	cells := acquire(capHint)
 	hasStyled := false
 	hasErase := false
 	fail := func() (presentedRow, bool) {
@@ -68,7 +139,7 @@ func parsePresentedRowASCII(row string) (presentedRow, bool) {
 			params := row[i+2 : j]
 			switch final {
 			case 'm':
-				next, ok := style.withSGRASCII(params)
+				next, ok := presentedStyleWithSGRRaw(style, params)
 				if !ok {
 					return fail()
 				}
@@ -101,13 +172,54 @@ func parsePresentedRowASCII(row string) (presentedRow, bool) {
 	return presentedRow{raw: row, cells: cells, hasStyled: hasStyled, hasErase: hasErase}, true
 }
 
+func presentedRowASCIICellCapacity(row string) (int, bool) {
+	cells := 0
+	for i := 0; i < len(row); {
+		b := row[i]
+		if b == '\x1b' {
+			if i+1 >= len(row) || row[i+1] != '[' {
+				return 0, false
+			}
+			j := i + 2
+			for j < len(row) && (row[j] < '@' || row[j] > '~') {
+				if row[j] >= utf8.RuneSelf {
+					return 0, false
+				}
+				j++
+			}
+			if j >= len(row) {
+				return 0, false
+			}
+			if row[j] == 'X' {
+				count, ok := parseCSIIntASCII(row[i+2:j], 1)
+				if !ok {
+					return 0, false
+				}
+				cells += count
+			}
+			i = j + 1
+			continue
+		}
+		if b >= utf8.RuneSelf || b < 0x20 || b == 0x7f {
+			return 0, false
+		}
+		cells++
+		i++
+	}
+	return cells, true
+}
+
 func parsePresentedRowGeneric(row string) presentedRow {
+	return parsePresentedRowGenericWith(row, acquirePresentedCells)
+}
+
+func parsePresentedRowGenericWith(row string, acquire presentedCellAcquirer) presentedRow {
 	parser := xansi.GetParser()
 	defer xansi.PutParser(parser)
 	state := byte(0)
 	rest := row
 	style := presentedStyle{}
-	cells := acquirePresentedCells(xansi.StringWidth(row))
+	cells := acquire(0)
 	hasStyled := false
 	hasWide := false
 	hasErase := false
@@ -134,7 +246,7 @@ func parsePresentedRowGeneric(row string) presentedRow {
 		} else if len(token) > 0 && token[0] == '\x1b' {
 			switch xansi.Cmd(parser.Command()).Final() {
 			case 'm':
-				style = style.withSGR(parser.Params())
+				style = style.withSGRRaw(token, parser.Params())
 			case 'G':
 				transition := widthSafety.ObserveReanchorBeforeNextCluster()
 				if transition.HostWidthStabilizer {
@@ -185,9 +297,47 @@ func acquirePresentedCells(capHint int) []presentedCell {
 	return make([]presentedCell, 0, capHint)
 }
 
+func (p *framePresenter) acquirePresentedCells(capHint int) []presentedCell {
+	if p == nil {
+		return acquirePresentedCells(capHint)
+	}
+	if capHint < 0 {
+		capHint = 0
+	}
+	best := -1
+	for i, cells := range p.cellPool {
+		if cap(cells) < capHint {
+			continue
+		}
+		if best < 0 || cap(cells) < cap(p.cellPool[best]) {
+			best = i
+		}
+	}
+	if best >= 0 {
+		cells := p.cellPool[best]
+		last := len(p.cellPool) - 1
+		p.cellPool[best] = p.cellPool[last]
+		p.cellPool[last] = nil
+		p.cellPool = p.cellPool[:last]
+		return cells[:0]
+	}
+	return acquirePresentedCells(capHint)
+}
+
 func releasePresentedRows(rows []presentedRow) {
 	for i := range rows {
 		releasePresentedCells(rows[i].cells)
+		rows[i] = presentedRow{}
+	}
+}
+
+func (p *framePresenter) releasePresentedRows(rows []presentedRow) {
+	if p == nil {
+		releasePresentedRows(rows)
+		return
+	}
+	for i := range rows {
+		p.releasePresentedCells(rows[i].cells)
 		rows[i] = presentedRow{}
 	}
 }
@@ -198,12 +348,34 @@ func releasePresentedCellSlices(cells [][]presentedCell) {
 	}
 }
 
+func (p *framePresenter) releasePresentedCellSlices(cells [][]presentedCell) {
+	if p == nil {
+		releasePresentedCellSlices(cells)
+		return
+	}
+	for _, cellSlice := range cells {
+		p.releasePresentedCells(cellSlice)
+	}
+}
+
 func releasePresentedCells(cells []presentedCell) {
 	if len(cells) == 0 || cap(cells) > maxPooledPresentedCellCapacity {
 		return
 	}
 	clear(cells)
 	presentedCellPool.Put(cells[:0])
+}
+
+func (p *framePresenter) releasePresentedCells(cells []presentedCell) {
+	if len(cells) == 0 {
+		return
+	}
+	if p == nil || cap(cells) > maxPooledPresentedCellCapacity || len(p.cellPool) >= framePresenterCellPoolMaxSlices {
+		releasePresentedCells(cells)
+		return
+	}
+	clear(cells)
+	p.cellPool = append(p.cellPool, cells[:0])
 }
 
 func parseCSIIntASCII(raw string, def int) (int, bool) {
@@ -224,28 +396,105 @@ func parseCSIIntASCII(raw string, def int) (int, bool) {
 }
 
 func (s presentedStyle) withSGRASCII(raw string) (presentedStyle, bool) {
-	var local [8]int
-	params := local[:0]
-	value := 0
-	hasValue := false
-	for i := 0; i <= len(raw); i++ {
-		if i == len(raw) || raw[i] == ';' {
-			if hasValue {
-				params = append(params, value)
-			} else {
-				params = append(params, 0)
-			}
-			value = 0
-			hasValue = false
-			continue
-		}
-		if raw[i] < '0' || raw[i] > '9' {
-			return presentedStyle{}, false
-		}
-		value = value*10 + int(raw[i]-'0')
-		hasValue = true
+	var local [16]int
+	params, ok := parseSGRRawParams(raw, local[:0])
+	if !ok {
+		return presentedStyle{}, false
 	}
 	return s.withSGRInts(params), true
+}
+
+func parseSGRRawParams(raw string, dst []int) ([]int, bool) {
+	if raw == "" {
+		return append(dst, 0), true
+	}
+	for start := 0; start <= len(raw); {
+		end := start
+		for end < len(raw) && raw[end] != ';' {
+			end++
+		}
+		group := raw[start:end]
+		var ok bool
+		if strings.Contains(group, ":") {
+			dst, ok = appendColonSGRGroup(dst, group)
+		} else {
+			dst, ok = appendSGRIntParam(dst, group)
+		}
+		if !ok {
+			return nil, false
+		}
+		if end == len(raw) {
+			break
+		}
+		start = end + 1
+	}
+	return dst, true
+}
+
+func appendSGRIntParam(dst []int, raw string) ([]int, bool) {
+	if raw == "" {
+		return append(dst, 0), true
+	}
+	value := 0
+	for i := 0; i < len(raw); i++ {
+		if raw[i] < '0' || raw[i] > '9' {
+			return nil, false
+		}
+		value = value*10 + int(raw[i]-'0')
+	}
+	return append(dst, value), true
+}
+
+func appendColonSGRGroup(dst []int, raw string) ([]int, bool) {
+	var local [8]int
+	values := local[:0]
+	for start := 0; start <= len(raw); {
+		end := start
+		for end < len(raw) && raw[end] != ':' {
+			end++
+		}
+		if end == start {
+			values = append(values, -1)
+		} else {
+			value := 0
+			for i := start; i < end; i++ {
+				if raw[i] < '0' || raw[i] > '9' {
+					return nil, false
+				}
+				value = value*10 + int(raw[i]-'0')
+			}
+			values = append(values, value)
+		}
+		if end == len(raw) {
+			break
+		}
+		start = end + 1
+	}
+	if len(values) == 0 || values[0] < 0 {
+		return append(dst, 0), true
+	}
+	if (values[0] == 38 || values[0] == 48) && len(values) >= 3 {
+		switch values[1] {
+		case 5:
+			if values[2] < 0 {
+				return nil, false
+			}
+			return append(dst, values[0], 5, values[2]), true
+		case 2:
+			start := 2
+			if len(values) >= 6 {
+				start = 3
+			}
+			if start < len(values) && values[start] < 0 {
+				start++
+			}
+			if start+2 >= len(values) || values[start] < 0 || values[start+1] < 0 || values[start+2] < 0 {
+				return nil, false
+			}
+			return append(dst, values[0], 2, values[start], values[start+1], values[start+2]), true
+		}
+	}
+	return append(dst, values[0]), true
 }
 
 func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol int) presentedStyle {
@@ -256,7 +505,8 @@ func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol i
 	first := true
 	cursorCol := maxInt(1, startCol)
 	needsReanchor := false
-	for _, cell := range cells {
+	for i := 0; i < len(cells); {
+		cell := cells[i]
 		if needsReanchor || cell.ReanchorBefore {
 			writeCHA(out, cursorCol)
 			needsReanchor = false
@@ -270,15 +520,49 @@ func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol i
 			writeECH(out, maxInt(1, cell.Width))
 			cursorCol += maxInt(1, cell.Width)
 			needsReanchor = true
+			i++
+			continue
+		}
+		if blankRun := presentedStyledBlankRun(cells, i); blankRun >= presentedStyledBlankECHThreshold {
+			writeECH(out, blankRun)
+			cursorCol += blankRun
+			needsReanchor = true
+			i += blankRun
 			continue
 		}
 		out.WriteString(cell.Content)
 		cursorCol += maxInt(1, cell.Width)
+		i++
+	}
+	if needsReanchor {
+		writeCHA(out, cursorCol)
 	}
 	if current != (presentedStyle{}) {
 		out.WriteString(presentedResetStyleSequence)
 	}
 	return current
+}
+
+func presentedStyledBlankRun(cells []presentedCell, start int) int {
+	if start < 0 || start >= len(cells) {
+		return 0
+	}
+	style := cells[start].Style
+	if style == (presentedStyle{}) {
+		return 0
+	}
+	run := 0
+	for i := start; i < len(cells); i++ {
+		cell := cells[i]
+		if i > start && cell.ReanchorBefore {
+			break
+		}
+		if cell.Erase || cell.Style != style || cell.Width != 1 || (cell.Content != "" && cell.Content != " ") {
+			break
+		}
+		run++
+	}
+	return run
 }
 
 func writeCUP(out *strings.Builder, col, row int) {
@@ -332,6 +616,29 @@ func writeBuilderInt(out *strings.Builder, value int) {
 type presentedStyleTransitionKey struct {
 	From presentedStyle
 	To   presentedStyle
+}
+
+type presentedStyleSGRKey struct {
+	From presentedStyle
+	Raw  string
+}
+
+func presentedStyleWithSGRRaw(s presentedStyle, raw string) (presentedStyle, bool) {
+	key := presentedStyleSGRKey{From: s, Raw: raw}
+	presentedSGRCache.mu.RLock()
+	cached, ok := presentedSGRCache.m[key]
+	presentedSGRCache.mu.RUnlock()
+	if ok {
+		return cached, true
+	}
+	next, ok := s.withSGRASCII(raw)
+	if !ok {
+		return presentedStyle{}, false
+	}
+	presentedSGRCache.mu.Lock()
+	presentedSGRCache.m[presentedStyleSGRKey{From: s, Raw: strings.Clone(raw)}] = next
+	presentedSGRCache.mu.Unlock()
+	return next, true
 }
 
 func presentedStyleDiffANSI(from, to presentedStyle) string {
@@ -411,95 +718,31 @@ func appendPresentedStyleCode(b *strings.Builder, first *bool, code string) {
 	*first = false
 }
 
-func (s presentedStyle) withSGR(params xansi.Params) presentedStyle {
+func (s presentedStyle) withSGRRaw(token string, params xansi.Params) presentedStyle {
+	if len(token) < 3 || token[0] != '\x1b' || token[1] != '[' || token[len(token)-1] != 'm' {
+		return s.withSGRParams(params)
+	}
+	next, ok := presentedStyleWithSGRRaw(s, token[2:len(token)-1])
+	if !ok {
+		return s.withSGRParams(params)
+	}
+	return next
+}
+
+func (s presentedStyle) withSGRParams(params xansi.Params) presentedStyle {
 	if len(params) == 0 {
 		return presentedStyle{}
 	}
-	next := s
+	var local [16]int
+	values := local[:0]
 	for i := 0; i < len(params); i++ {
 		param, _, ok := params.Param(i, 0)
 		if !ok {
 			continue
 		}
-		switch param {
-		case 0:
-			next = presentedStyle{}
-		case 1:
-			next.Bold = true
-		case 3:
-			next.Italic = true
-		case 4:
-			next.Underline = true
-		case 5:
-			next.Blink = true
-		case 7:
-			next.Reverse = true
-		case 9:
-			next.Strikethrough = true
-		case 22:
-			next.Bold = false
-		case 23:
-			next.Italic = false
-		case 24:
-			next.Underline = false
-		case 25:
-			next.Blink = false
-		case 27:
-			next.Reverse = false
-		case 29:
-			next.Strikethrough = false
-		case 39:
-			next.FGCode = ""
-		case 49:
-			next.BGCode = ""
-		case 38, 48:
-			modeIndex := i + 1
-			mode, _, ok := params.Param(modeIndex, 0)
-			if !ok {
-				continue
-			}
-			switch mode {
-			case 5:
-				value, _, ok := params.Param(i+2, 0)
-				if !ok {
-					continue
-				}
-				code := strconv.Itoa(param) + ";5;" + strconv.Itoa(value)
-				if param == 38 {
-					next.FGCode = code
-				} else {
-					next.BGCode = code
-				}
-				i += 2
-			case 2:
-				r, _, okR := params.Param(i+2, 0)
-				g, _, okG := params.Param(i+3, 0)
-				b, _, okB := params.Param(i+4, 0)
-				if !okR || !okG || !okB {
-					continue
-				}
-				code := strconv.Itoa(param) + ";2;" + strconv.Itoa(r) + ";" + strconv.Itoa(g) + ";" + strconv.Itoa(b)
-				if param == 38 {
-					next.FGCode = code
-				} else {
-					next.BGCode = code
-				}
-				i += 4
-			}
-		default:
-			switch {
-			case 30 <= param && param <= 37:
-				next.FGCode = ansiSimpleColorCode(param)
-			case 90 <= param && param <= 97:
-				next.FGCode = ansiSimpleColorCode(param)
-			case 40 <= param && param <= 47:
-				next.BGCode = ansiSimpleColorCode(param)
-			case 100 <= param && param <= 107:
-				next.BGCode = ansiSimpleColorCode(param)
-			}
-		}
+		values = append(values, param)
 	}
-	return next
+	return s.withSGRInts(values)
 }
 
 func (s presentedStyle) withSGRInts(params []int) presentedStyle {

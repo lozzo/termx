@@ -3,8 +3,8 @@ package render
 import (
 	"sort"
 
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -75,20 +75,16 @@ func buildBodyCanvasIncrementalUpdates(cache *bodyRenderCache, entries []paneRen
 				update.mode = bodyCanvasUpdateFullPane
 			case prev.ContentRect != next.cache.ContentRect || prev.Metrics != next.cache.Metrics:
 				update.mode = bodyCanvasUpdateFullPane
+			case next.resolved.contentOffsetX != 0 || next.resolved.contentOffsetY != 0:
+				update.mode = bodyCanvasUpdateFullPane
 			case next.resolved.source == nil:
 				update.mode = bodyCanvasUpdateFullPane
 			default:
-				if next.cache.ScreenUpdate.ScreenScroll == 0 {
-					update.mode = bodyCanvasUpdateFullPane
-					break
-				}
-				plan := planTerminalWindowDelta(prev.Window, next.cache.Window, next.cache.ScreenUpdate)
+				plan := planTerminalWindowDelta(prev.Window, next.cache.Window)
 				update.scrollPlan = plan.scrollPlan
 				update.rows = append(update.rows, plan.changedRows...)
-				if update.scrollPlan.valid(next.cache.ContentRect.H) {
+				if update.scrollPlan.valid(next.cache.ContentRect.H) || len(update.rows) > 0 {
 					update.mode = bodyCanvasUpdateRows
-				} else {
-					update.mode = bodyCanvasUpdateFullPane
 				}
 			}
 		}
@@ -99,6 +95,9 @@ func buildBodyCanvasIncrementalUpdates(cache *bodyRenderCache, entries []paneRen
 		if !addIncrementalCursorRow(updates, cache.activeCursor) {
 			return nil, false
 		}
+		if !addIncrementalScrolledCursorRow(updates, cache.activeCursor) {
+			return nil, false
+		}
 	}
 	if currentCursor, ok := captureBodyRenderCacheActiveCursor(entries, runtimeState); ok {
 		if !addIncrementalCursorRow(updates, currentCursor) {
@@ -106,7 +105,6 @@ func buildBodyCanvasIncrementalUpdates(cache *bodyRenderCache, entries []paneRen
 		}
 	}
 
-	changed := false
 	for i := range updates {
 		if updates[i].mode == bodyCanvasUpdateRows {
 			updates[i].rows = compactSortedRows(updates[i].rows, updates[i].captured.cache.ContentRect.H)
@@ -114,11 +112,8 @@ func buildBodyCanvasIncrementalUpdates(cache *bodyRenderCache, entries []paneRen
 				updates[i].mode = bodyCanvasUpdateNone
 			}
 		}
-		if updates[i].mode != bodyCanvasUpdateNone {
-			changed = true
-		}
 	}
-	return updates, changed
+	return updates, true
 }
 
 func addIncrementalCursorRow(updates []bodyCanvasIncrementalUpdate, cursor bodyRenderCacheCursor) bool {
@@ -140,6 +135,38 @@ func addIncrementalCursorRow(updates []bodyCanvasIncrementalUpdate, cursor bodyR
 		}
 		updates[i].mode = bodyCanvasUpdateRows
 		updates[i].rows = append(updates[i].rows, cursor.Line)
+		return true
+	}
+	return false
+}
+
+func addIncrementalScrolledCursorRow(updates []bodyCanvasIncrementalUpdate, cursor bodyRenderCacheCursor) bool {
+	if cursor.PaneID == "" || cursor.Line < 0 {
+		return true
+	}
+	for i := range updates {
+		if updates[i].entry.PaneID != cursor.PaneID {
+			continue
+		}
+		if updates[i].mode == bodyCanvasUpdateFullPane {
+			return true
+		}
+		height := updates[i].captured.cache.ContentRect.H
+		if !updates[i].scrollPlan.valid(height) {
+			return true
+		}
+		line, ok := updates[i].scrollPlan.destinationLineFor(cursor.Line)
+		if !ok {
+			return true
+		}
+		if !updates[i].captured.cache.HasWindow || updates[i].captured.resolved.source == nil || line >= height {
+			updates[i].mode = bodyCanvasUpdateFullPane
+			updates[i].rows = nil
+			updates[i].scrollPlan = terminalWindowScrollPlan{}
+			return true
+		}
+		updates[i].mode = bodyCanvasUpdateRows
+		updates[i].rows = append(updates[i].rows, line)
 		return true
 	}
 	return false
@@ -203,7 +230,7 @@ func applyBodyCanvasIncrementalUpdates(canvas *composedCanvas, updates []bodyCan
 				if update.scrollPlan.valid(contentRect.H) {
 					canvas.shiftRectRowBand(contentRect, update.scrollPlan.start, update.scrollPlan.end, update.scrollPlan.shift, update.scrollPlan.direction)
 				}
-				drawTerminalSourceWindowRowsWithMetrics(canvas, contentRect, update.captured.resolved.source, update.captured.resolved.renderOffset, update.entry.Theme, update.captured.cache.Metrics, update.rows)
+				drawTerminalSourceWindowRowsWithPlacementAndMetrics(canvas, contentRect, update.captured.resolved.source, update.captured.resolved.renderOffset, update.captured.resolved.contentOffsetX, update.captured.resolved.contentOffsetY, update.entry.Theme, update.captured.cache.Metrics, update.rows)
 			})
 		}
 	}

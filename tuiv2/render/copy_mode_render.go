@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -78,7 +78,7 @@ func snapshotTotalRows(snapshot *protocol.Snapshot) int {
 	return len(snapshot.Scrollback) + len(snapshot.Screen.Cells)
 }
 
-func drawCopyModeOverlay(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, theme uiTheme, cursorRow, cursorCol, viewTopRow int, markSet bool, markRow, markCol int) {
+func drawCopyModeOverlay(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, theme uiTheme, cursorRow, cursorCol, viewTopRow int, markSet bool, markRow, markCol int, contentOffsetX, contentOffsetY int) {
 	if canvas == nil || snapshot == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
@@ -115,13 +115,13 @@ func drawCopyModeOverlay(canvas *composedCanvas, rect workbench.Rect, snapshot *
 				lastCol = selectionEndCol
 			}
 			for col := firstCol; col <= lastCol; col++ {
-				drawCopyModeCellHighlight(canvas, rect.X+col, rect.Y+visibleRow, selectionBG)
+				drawCopyModeCellHighlight(canvas, rect.X+contentOffsetX+col, rect.Y+contentOffsetY+visibleRow, selectionBG)
 			}
 		}
 	}
 	screenRow := cursorRow - start
 	if screenRow >= 0 && screenRow < rect.H {
-		drawCopyModeCellHighlight(canvas, rect.X+cursorCol, rect.Y+screenRow, cursorBG)
+		drawCopyModeCellHighlight(canvas, rect.X+contentOffsetX+cursorCol, rect.Y+contentOffsetY+screenRow, cursorBG)
 	}
 }
 
@@ -172,7 +172,7 @@ func scrollOffsetForViewportTop(snapshot *protocol.Snapshot, height, viewTopRow 
 	if offset < 0 {
 		offset = 0
 	}
-	if viewTopRow < len(snapshot.Scrollback) && offset == 0 && len(snapshot.Scrollback) > 0 {
+	if viewTopRow < len(snapshot.Scrollback) && offset == 0 && totalRows <= maxInt(1, height) {
 		offset = 1
 	}
 	return offset
@@ -183,7 +183,7 @@ func snapshotRow(snapshot *protocol.Snapshot, rowIndex int) []protocol.Cell {
 		return nil
 	}
 	if rowIndex < len(snapshot.Scrollback) {
-		return snapshot.Scrollback[rowIndex]
+		return snapshot.Scrollback[rowIndex].DecodeCells()
 	}
 	rowIndex -= len(snapshot.Scrollback)
 	if rowIndex < 0 || rowIndex >= len(snapshot.Screen.Cells) {

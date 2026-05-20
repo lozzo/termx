@@ -4,10 +4,10 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -24,7 +24,7 @@ func (m *Model) Init() tea.Cmd {
 		// If startup opened a picker, immediately load the terminal list.
 		initCmd = m.applyEffects([]orchestrator.Effect{orchestrator.LoadPickerItemsEffect{}})
 	}
-	return batchCmds(initCmd, m.hostEmojiProbeCmd(1, hostEmojiProbeRetryDelay))
+	return batchCmds(initCmd, m.loadClipboardHistoryCmd(false), m.hostEmojiProbeCmd(1, hostEmojiProbeRetryDelay))
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -80,7 +80,7 @@ func hostEmojiProbeModeFromReportedColumn(x int) (shared.AmbiguousEmojiVariation
 	}
 }
 
-func shouldApplySessionSnapshot(snapshot *protocol.SessionSnapshot) bool {
+func shouldApplySessionSnapshot(snapshot *sessionstore.Snapshot) bool {
 	if snapshot == nil {
 		return false
 	}
@@ -90,6 +90,9 @@ func shouldApplySessionSnapshot(snapshot *protocol.SessionSnapshot) bool {
 func (m *Model) dispatchSemanticActionCmd(action input.SemanticAction, allowLocal bool) tea.Cmd {
 	if allowLocal {
 		if handled, cmd := m.handleLocalAction(action); handled {
+			if m.shouldRearmStickyModeAfterLocalAction(action) {
+				cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
+			}
 			return batchCmds(cmd, m.resizePendingPaneResizesCmd(), m.updateSessionViewCmd())
 		}
 	}
@@ -104,6 +107,27 @@ func (m *Model) dispatchSemanticActionCmd(action input.SemanticAction, allowLoca
 		cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
 	}
 	return batchCmds(cmd, m.resizePendingPaneResizesCmd(), m.updateSessionViewCmd())
+}
+
+func (m *Model) shouldRearmStickyModeAfterLocalAction(action input.SemanticAction) bool {
+	if m == nil || !m.isStickyMode() {
+		return false
+	}
+	switch action.Kind {
+	case input.ActionEnterPaneMode,
+		input.ActionEnterResizeMode,
+		input.ActionEnterTabMode,
+		input.ActionEnterWorkspaceMode,
+		input.ActionEnterFloatingMode,
+		input.ActionEnterDisplayMode,
+		input.ActionEnterGlobalMode,
+		input.ActionCancelMode:
+		return false
+	case input.ActionQuit:
+		return !m.quitting
+	default:
+		return true
+	}
 }
 
 func (m *Model) semanticActionEffectsCmd(action input.SemanticAction) tea.Cmd {
@@ -150,7 +174,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	if action, ok := m.restartActionForKeyMsg(msg); ok {
 		return func() tea.Msg { return action }
 	}
-	result := m.input.RouteKeyMsg(msg)
+	result := m.input.RouteKeyMsgInMode(msg, m.effectiveInputMode())
 	if result.Action != nil {
 		action := *result.Action
 		if m.modalHost != nil && m.modalHost.Session != nil && m.modalHost.Session.Kind == input.ModePicker && m.modalHost.Picker != nil {
@@ -170,7 +194,6 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	}
 	return nil
 }
-
 
 func (m *Model) restartActionForKeyMsg(msg tea.KeyMsg) (input.SemanticAction, bool) {
 	if m == nil || m.input == nil || m.mode().Kind != input.ModeNormal {

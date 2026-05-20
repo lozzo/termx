@@ -1,6 +1,11 @@
 package app
 
-import "github.com/lozzow/termx/perftrace"
+import (
+	"context"
+
+	"github.com/lozzow/termx/termx-shared/perftrace"
+	"github.com/lozzow/termx/tuiv2/runtime"
+)
 
 func (m *Model) View() string {
 	finish := perftrace.Measure("app.view")
@@ -27,29 +32,65 @@ func (m *Model) View() string {
 			directWriter.SetForceFullFrameLines(false)
 			if lines, cursor, ok := m.render.CachedFrameLinesAndCursorRef(); ok {
 				viewBytes = joinedLinesLen(lines) + len(cursor)
+				if m.debugLogEnabled() && len(m.pendingStreamReadiesForRenderedFrame()) > 0 {
+					m.debugLog(
+						"view.direct_cached_with_pending_readies",
+						"readies", debugPendingReadies(m.pendingStreamReadiesForRenderedFrame()),
+						"lines", len(lines),
+						"bytes", viewBytes,
+						"tail", debugFrameTail(lines),
+						"surface", m.debugRuntimeSurfaceSummary(),
+					)
+				}
 				m.lastViewFrame = ""
 				m.lastViewCursor = cursor
 				return ""
 			}
-			result := m.render.Render()
+			readies := m.pendingStreamReadiesForRenderedFrame()
+			result := m.render.RenderRef()
 			cursor := result.CursorSequence()
 			viewBytes = joinedLinesLen(result.Lines) + len(cursor)
+			if m.debugLogEnabled() {
+				m.debugLog(
+					"view.direct_render",
+					"readies", debugPendingReadies(readies),
+					"lines", len(result.Lines),
+					"bytes", viewBytes,
+					"tail", debugFrameTail(result.Lines),
+					"surface", m.debugRuntimeSurfaceSummary(),
+				)
+			}
+			m.setNextFrameStreamReadies(readies)
 			_ = directWriter.WriteFrameLinesWithMeta(result.Lines, cursor, presentMetaFromRender(result.Meta))
 			m.lastViewFrame = ""
 			m.lastViewCursor = cursor
+			m.markRenderedStreamReadiesAfterFrame(readies)
 			return ""
 		}
 		if lines, cursor, ok := m.render.CachedFrameLinesAndCursorRef(); ok {
 			viewBytes = joinedLinesLen(lines) + len(cursor)
+			if m.debugLogEnabled() && len(m.pendingStreamReadiesForRenderedFrame()) > 0 {
+				m.debugLog(
+					"view.rows_cached_with_pending_readies",
+					"readies", debugPendingReadies(m.pendingStreamReadiesForRenderedFrame()),
+					"lines", len(lines),
+					"bytes", viewBytes,
+					"tail", debugFrameTail(lines),
+					"surface", m.debugRuntimeSurfaceSummary(),
+				)
+			}
 			m.lastViewFrame = ""
 			m.lastViewCursor = cursor
 			return ""
 		}
+		readies := m.pendingStreamReadiesForRenderedFrame()
 		lines, cursor := m.render.RenderFrameLinesRef()
 		viewBytes = joinedLinesLen(lines) + len(cursor)
+		m.setNextFrameStreamReadies(readies)
 		_ = rowsWriter.WriteFrameLines(lines, cursor)
 		m.lastViewFrame = ""
 		m.lastViewCursor = cursor
+		m.markRenderedStreamReadiesAfterFrame(readies)
 		return ""
 	}
 	if frame, cursor, ok := m.render.CachedFrameAndCursor(); ok {
@@ -67,13 +108,16 @@ func (m *Model) View() string {
 		m.lastViewCursor = cursor
 		return frame + cursor
 	}
+	readies := m.pendingStreamReadiesForRenderedFrame()
 	frame := m.render.RenderFrame()
 	cursor := m.render.CursorSequence()
 	viewBytes = len(frame) + len(cursor)
 	if m.frameOut != nil {
+		m.setNextFrameStreamReadies(readies)
 		_ = m.frameOut.WriteFrame(frame, cursor)
 		m.lastViewFrame = frame
 		m.lastViewCursor = cursor
+		m.markRenderedStreamReadiesAfterFrame(readies)
 		return ""
 	}
 	if m.cursorOut != nil {
@@ -92,9 +136,56 @@ func (m *Model) View() string {
 		m.cursorOut.SetCursorSequence(cursor)
 		m.lastViewFrame = frame
 		m.lastViewCursor = cursor
+		m.markRenderedStreamReadiesAfterFrame(readies)
 		return frame + cursor
 	}
 	m.lastViewFrame = frame
 	m.lastViewCursor = cursor
+	m.markRenderedStreamReadiesAfterFrame(readies)
 	return frame + cursor
+}
+
+func (m *Model) pendingStreamReadiesForRenderedFrame() []runtime.PendingStreamReady {
+	if m == nil || m.runtime == nil {
+		return nil
+	}
+	return m.runtime.PendingStreamReadies()
+}
+
+func (m *Model) markRenderedStreamUpdatesAfterFrame() {
+	m.markRenderedStreamReadiesAfterFrame(m.pendingStreamReadiesForRenderedFrame())
+}
+
+func (m *Model) markRenderedStreamReadiesAfterFrame(readies []runtime.PendingStreamReady) {
+	if m == nil || m.runtime == nil {
+		return
+	}
+	if m.frameWriterHasBacklog() {
+		if m.debugLogEnabled() {
+			m.debugLog(
+				"stream_ready.render_deferred_backlog",
+				"readies", debugPendingReadies(readies),
+				"surface", m.debugRuntimeSurfaceSummary(),
+			)
+		}
+		return
+	}
+	m.clearPendingRenderedStreamReadies()
+	if m.debugLogEnabled() {
+		m.debugLog(
+			"stream_ready.rendered_after_frame",
+			"readies", debugPendingReadies(readies),
+			"surface", m.debugRuntimeSurfaceSummary(),
+		)
+	}
+	m.runtime.MarkRenderedStreamReadies(context.Background(), readies)
+}
+
+func (m *Model) setNextFrameStreamReadies(readies []runtime.PendingStreamReady) {
+	if m == nil {
+		return
+	}
+	if writer, ok := m.frameOut.(frameStreamReadyWriter); ok {
+		writer.SetNextFrameStreamReadies(readies)
+	}
 }

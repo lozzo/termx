@@ -5,8 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -15,7 +16,7 @@ func TestSessionRuntimeServiceReleaseLeaseCmdRemovesLeaseAndReappliesLocalOwner(
 	model := setupModel(t, modelOpts{client: client})
 	model.sessionID = "session-main"
 	model.sessionViewID = "view-local"
-	model.sessionLeases = map[string]protocol.LeaseInfo{
+	model.sessionLeases = map[string]sessionstore.LeaseInfo{
 		"term-1": {TerminalID: "term-1", SessionID: "session-main", ViewID: "view-remote", PaneID: "pane-remote"},
 	}
 

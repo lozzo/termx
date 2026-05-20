@@ -7,15 +7,15 @@ import (
 	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
-	"github.com/lozzow/termx/terminalmeta"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
+	"github.com/lozzow/termx/termx-shared/terminalmeta"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	localvterm "github.com/lozzow/termx/vterm"
 )
 
 func protocolStyledWideRowFromText(text string, cols int, style protocol.CellStyle) []protocol.Cell {
@@ -328,7 +328,7 @@ func TestRenderFrameShowsCopyModeRowTimestampInPaneChrome(t *testing.T) {
 	snapshot := &protocol.Snapshot{
 		TerminalID:           "term-1",
 		Size:                 protocol.Size{Cols: 80, Rows: 2},
-		Scrollback:           [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}}},
+		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}}}),
 		ScrollbackTimestamps: []time.Time{ts},
 		Screen:               protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}}},
 		ScreenTimestamps:     []time.Time{ts.Add(time.Second)},
@@ -359,7 +359,7 @@ func TestRenderFrameShowsCopyModeTimestampForBlankRow(t *testing.T) {
 	snapshot := &protocol.Snapshot{
 		TerminalID:           "term-1",
 		Size:                 protocol.Size{Cols: 80, Rows: 1},
-		Scrollback:           [][]protocol.Cell{{}},
+		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{{}}),
 		ScrollbackTimestamps: []time.Time{ts},
 		Screen:               protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "x", Width: 1}}}},
 		ScreenTimestamps:     []time.Time{ts.Add(time.Second)},
@@ -399,7 +399,7 @@ func TestClampCopyPointSkipsWideContinuationCells(t *testing.T) {
 func TestScrollOffsetForViewportTopKeepsScrollbackVisible(t *testing.T) {
 	snapshot := &protocol.Snapshot{
 		Size:       protocol.Size{Cols: 8, Rows: 2},
-		Scrollback: [][]protocol.Cell{{{Content: "a", Width: 1}}, {{Content: "b", Width: 1}}, {{Content: "c", Width: 1}}},
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{{{Content: "a", Width: 1}}, {{Content: "b", Width: 1}}, {{Content: "c", Width: 1}}}),
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
 			{{Content: "d", Width: 1}},
 			{{Content: "e", Width: 1}},
@@ -417,11 +417,11 @@ func TestScrollOffsetForViewportTopKeepsScrollbackVisible(t *testing.T) {
 func TestApplyScrollbackOffsetProjectsWindowIntoScreenCells(t *testing.T) {
 	snapshot := &protocol.Snapshot{
 		Size: protocol.Size{Cols: 4, Rows: 2},
-		Scrollback: [][]protocol.Cell{
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
 			{{Content: "a", Width: 1}},
 			{{Content: "b", Width: 1}},
 			{{Content: "c", Width: 1}},
-		},
+		}),
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
 			{{Content: "d", Width: 1}},
 			{{Content: "e", Width: 1}},
@@ -469,11 +469,11 @@ func TestDrawTerminalSourceWithOffsetProjectsScrolledRows(t *testing.T) {
 	canvas := newComposedCanvas(1, 2)
 	snapshot := &protocol.Snapshot{
 		Size: protocol.Size{Cols: 1, Rows: 5},
-		Scrollback: [][]protocol.Cell{
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
 			{{Content: "a", Width: 1}},
 			{{Content: "b", Width: 1}},
 			{{Content: "c", Width: 1}},
-		},
+		}),
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
 			{{Content: "d", Width: 1}},
 			{{Content: "e", Width: 1}},
@@ -491,7 +491,7 @@ func TestDrawTerminalSourceRowInRectPrefersMarkerLabel(t *testing.T) {
 	ts := time.Date(2026, 4, 12, 10, 9, 8, 0, time.UTC)
 	snapshot := &protocol.Snapshot{
 		Size:       protocol.Size{Cols: 24, Rows: 1},
-		Scrollback: [][]protocol.Cell{{{Content: "x", Width: 1}}},
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{{{Content: "x", Width: 1}}}),
 		ScrollbackRowKinds: []string{
 			protocol.SnapshotRowKindRestart,
 		},
@@ -1875,7 +1875,7 @@ func TestRenderBodyScrollbackOffsetShowsOlderRows(t *testing.T) {
 	state.Runtime = &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{{
 		TerminalID: "term-1",
 		Snapshot: &protocol.Snapshot{
-			Scrollback: [][]protocol.Cell{{{Content: "A", Width: 1}}},
+			Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{{{Content: "A", Width: 1}}}),
 			Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "B", Width: 1}}, {{Content: "C", Width: 1}}}},
 		},
 	}}}

@@ -104,6 +104,17 @@ func (r *Router) RouteKeyMsg(msg tea.KeyMsg) RouteResult {
 	return result
 }
 
+// RouteKeyMsgInMode routes a key as though the router were temporarily in
+// mode, without changing the router's stored mode.
+func (r *Router) RouteKeyMsgInMode(msg tea.KeyMsg, mode ModeKind) RouteResult {
+	if result := r.TryRepeatedPassthrough(msg); result.Action != nil || result.TerminalInput != nil {
+		return result
+	}
+	result := TranslateKeyMsg(msg, mode, &r.keymap)
+	r.observeRouteResult(msg, result)
+	return result
+}
+
 func (r *Router) observeRouteResult(msg tea.KeyMsg, result RouteResult) {
 	if r == nil || result.Action == nil {
 		return

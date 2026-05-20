@@ -5,13 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	localvterm "github.com/lozzow/termx/vterm"
 )
 
 type cursorWriterPatchPlannerFrame struct {
@@ -111,6 +111,7 @@ func TestOutputCursorWriterPatchPlannerScenarioMatrixPreservesFinalFrames(t *tes
 }
 
 func TestOutputCursorWriterPatchPlannerPolicyBeatsDiffOnlyForSinglePaneScrollScenarios(t *testing.T) {
+	t.Setenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL", "1")
 	scenarios := cursorWriterPatchPlannerScenarioMatrix(t)
 	diffOnly := cursorWriterPatchPlannerVariantByName(t, "diff_only")
 	policyLocal := cursorWriterPatchPlannerVariantByName(t, "policy_local")

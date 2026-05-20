@@ -15,16 +15,17 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	uv "github.com/charmbracelet/ultraviolet"
 	xansi "github.com/charmbracelet/x/ansi"
 	creackpty "github.com/creack/pty"
-	"github.com/lozzow/termx/frameaudit"
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/frameaudit"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	localvterm "github.com/lozzow/termx/vterm"
 	"github.com/rivo/uniseg"
 )
 
@@ -383,7 +384,10 @@ func TestOutputCursorWriterWritesDirectFrame(t *testing.T) {
 	wantSingle := synchronizedOutputBegin +
 		hideHostCursorSequence +
 		xansi.MoveCursorOrigin +
+		hostAutoWrapOff +
+		xansi.ResetStyle +
 		"frame-1\r\nframe-2" +
+		hostAutoWrapOn +
 		"<PROBE>" +
 		"<CURSOR>" +
 		synchronizedOutputEnd
@@ -522,7 +526,7 @@ func TestOutputCursorWriterDrainHookFiresAfterPendingFrameFlush(t *testing.T) {
 	writer.lastFlushAt = time.Now()
 	writer.mu.Unlock()
 	drained := make(chan struct{}, 1)
-	writer.SetDrainHook(func() {
+	writer.SetDrainHook(func([]runtime.PendingStreamReady) {
 		select {
 		case drained <- struct{}{}:
 		default:
@@ -1004,6 +1008,81 @@ func TestOutputCursorWriterFrameLinesUsesECHForInteriorErase(t *testing.T) {
 	assertScreenEqual(t, screen, want)
 }
 
+func TestFramePresenterInitialFullFrameCompressesStyledBlankRuns(t *testing.T) {
+	line := "\x1b[48;2;34;34;34m" + strings.Repeat(" ", 12) + "\x1b[0m"
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	got := presenter.PresentLines([]string{line})
+
+	if !strings.Contains(got, xansi.ECH(12)) {
+		t.Fatalf("expected initial full frame to use styled ECH, got %q", got)
+	}
+	if strings.Contains(got, strings.Repeat(" ", 12)) {
+		t.Fatalf("expected styled blank run not to be serialized as raw spaces, got %q", got)
+	}
+	vt := localvterm.New(12, 1, 0, nil)
+	if _, err := vt.Write([]byte(got)); err != nil {
+		t.Fatalf("replay initial full frame: %v", err)
+	}
+	screen := vt.ScreenContent()
+	for x, cell := range screen.Cells[0] {
+		if cell.Content != " " || cell.Style.BG == "" {
+			t.Fatalf("expected styled blank at col %d, got %#v", x, cell)
+		}
+	}
+}
+
+func TestFramePresenterResizeFullRepaintCompressesStyledBlankRuns(t *testing.T) {
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	if got := presenter.PresentLines([]string{"ready"}); got == "" {
+		t.Fatal("expected initial frame")
+	}
+
+	line := "\x1b[48;5;238m" + strings.Repeat(" ", 10) + "\x1b[0m"
+	got := presenter.PresentLines([]string{"ready", line})
+
+	if !strings.HasPrefix(got, xansi.EraseEntireDisplay) {
+		t.Fatalf("expected resize full repaint, got %q", got)
+	}
+	if !strings.Contains(got, xansi.ECH(10)) {
+		t.Fatalf("expected resize full repaint to use styled ECH, got %q", got)
+	}
+}
+
+func TestFramePresenterFullRepaintFallbackCompressesStyledBlankRuns(t *testing.T) {
+	base := make([]string, 20)
+	next := make([]string, 20)
+	styledBlank := "\x1b[48;5;238m" + strings.Repeat(" ", 12) + "\x1b[0m"
+	for row := range base {
+		base[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("a", 96))
+		if row == 0 || row == 10 {
+			next[row] = base[row]
+			continue
+		}
+		if row == 1 {
+			next[row] = styledBlank
+			continue
+		}
+		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("b", 96))
+	}
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	if got := presenter.PresentLines(base); got == "" {
+		t.Fatal("expected initial full frame")
+	}
+	got := presenter.PresentLines(next)
+
+	if !strings.HasPrefix(got, xansi.EraseEntireDisplay) {
+		t.Fatalf("expected broad damage to use full repaint, got %q", got[:minInt(len(got), 32)])
+	}
+	if !strings.Contains(got, xansi.ECH(12)) {
+		t.Fatalf("expected full repaint fallback to use styled ECH, got %q", got)
+	}
+}
+
 func TestOutputCursorWriterFrameLinesUsesELForTrailingErase(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
@@ -1069,6 +1148,47 @@ func TestOutputCursorWriterFrameLinesWideRowSkipsIntralineEditSequences(t *testi
 	}
 	screen := replayCursorWriterLineScreen(t, 11, 1, [][]string{previous, next})
 	want := replayCursorWriterLineScreen(t, 11, 1, [][]string{next})
+	assertScreenEqual(t, screen, want)
+}
+
+func TestOutputCursorWriterFrameLinesEmojiFE0FRowSkipsUnsafeEraseEdits(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	previous := []string{xansi.CHA(1) + "AAA❄️" + xansi.ECH(1) + xansi.CHA(6) + "BB    "}
+	next := []string{xansi.CHA(1) + "AAA❄️" + xansi.ECH(1) + xansi.CHA(6) + "BC    "}
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	if err := writer.WriteFrameLines(previous, ""); err != nil {
+		t.Fatalf("write initial unsafe emoji frame lines: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLines(next, ""); err != nil {
+		t.Fatalf("write unsafe emoji diff frame lines: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if len(got) == 0 {
+		t.Fatal("expected unsafe emoji row to produce a conservative row rewrite")
+	}
+	for _, seq := range []string{xansi.DCH(1), xansi.ICH(1), xansi.EL(0)} {
+		if strings.Contains(got, seq) {
+			t.Fatalf("expected unsafe emoji row to avoid shift/line erase edits, got %q", got)
+		}
+	}
+	if strings.Count(got, xansi.ECH(1)) != 1 {
+		t.Fatalf("expected only the source row's FE0F compensation ECH, got %q", got)
+	}
+	screen := replayCursorWriterLineScreen(t, 16, 1, [][]string{previous, next})
+	want := replayCursorWriterLineScreen(t, 16, 1, [][]string{next})
 	assertScreenEqual(t, screen, want)
 }
 
@@ -1264,10 +1384,119 @@ func TestFramePresenterOwnerAwareDeltaFallsBackForHostWidthSafetyRows(t *testing
 	var presenter framePresenter
 	presenter.fullWidthLines = true
 	presenter.setLines(previous, true)
-	presenter.meta = clonePresentMeta(meta)
+	presenter.meta = retainPresentMeta(meta)
 
 	if payload := presenter.presentOwnerAwareDelta(next, meta); payload != "" {
 		t.Fatalf("expected owner-aware delta to bail out on width-unsafe rows, got %q", payload)
+	}
+}
+
+func TestFramePresenterPlanSkipsOwnerAwareProbeForHostWidthSafetyRows(t *testing.T) {
+	previous := []string{
+		"left RRRR",
+		"é" + xansi.CHA(2) + "X" + xansi.CHA(6) + "│",
+		"tail RRRR",
+	}
+	next := []string{
+		"left RRRR",
+		"è" + xansi.CHA(2) + "Y" + xansi.CHA(6) + "│",
+		"tail RRRR",
+	}
+	meta := ownerAwareTestMeta(
+		[]hostOwnerID{10, 10, 10, 10, 0, 20, 20, 20, 20},
+		[]hostOwnerID{10, 10, 10, 10, 0, 20, 20, 20, 20},
+		[]hostOwnerID{10, 10, 10, 10, 0, 20, 20, 20, 20},
+	)
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	presenter.ownerAwareDeltaEnabled = true
+	presenter.setLines(previous, true)
+	presenter.ready = true
+	presenter.meta = retainPresentMeta(meta)
+
+	var planLog presentPlanLog
+	presenter.planLogHook = func(log presentPlanLog) {
+		planLog = log
+	}
+	got := presenter.PresentLinesWithMeta(next, meta)
+
+	if got == "" {
+		t.Fatal("expected host-width safety diff payload")
+	}
+	if planLog.OwnerAwareAttempted {
+		t.Fatalf("expected owner-aware probe to be skipped for host-width safety rows, got log %#v", planLog)
+	}
+}
+
+func TestFramePresenterPlanSkipsVerticalScrollProbeForTinyDamage(t *testing.T) {
+	previous := []string{
+		"row0 " + strings.Repeat("a", 32),
+		"row1 " + strings.Repeat("b", 32),
+		"row2 " + strings.Repeat("c", 32),
+		"row3 " + strings.Repeat("d", 32),
+		"row4 " + strings.Repeat("e", 32),
+		"row5 " + strings.Repeat("f", 32),
+		"row6 " + strings.Repeat("g", 32),
+		"row7 " + strings.Repeat("h", 32),
+	}
+	next := append([]string(nil), previous...)
+	next[3] = "row3 " + strings.Repeat("z", 32)
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	presenter.verticalScrollMode = verticalScrollModeRowsAndRects
+	presenter.setLines(previous, true)
+	presenter.ready = true
+
+	var planLog presentPlanLog
+	presenter.planLogHook = func(log presentPlanLog) {
+		planLog = log
+	}
+	got := presenter.PresentLines(next)
+
+	if got == "" {
+		t.Fatal("expected tiny damage diff payload")
+	}
+	if planLog.VerticalAttempted {
+		t.Fatalf("expected vertical-scroll probe to be skipped for tiny damage, got log %#v", planLog)
+	}
+}
+
+func TestFramePresenterPlanSkipsVerticalScrollProbeForSmallDiffPayload(t *testing.T) {
+	previous := make([]string, 77)
+	next := make([]string, 77)
+	for row := range previous {
+		previous[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("a", 96))
+		next[row] = previous[row]
+	}
+	for row := 20; row < 42; row++ {
+		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("b", 96))
+	}
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	presenter.verticalScrollMode = verticalScrollModeRowsAndRects
+	presenter.setLines(previous, true)
+	presenter.ready = true
+
+	var planLog presentPlanLog
+	presenter.planLogHook = func(log presentPlanLog) {
+		planLog = log
+	}
+	got := presenter.PresentLines(next)
+
+	if got == "" {
+		t.Fatal("expected small diff payload")
+	}
+	if planLog.ChangedRows != 22 {
+		t.Fatalf("expected 22 changed rows, got log %#v", planLog)
+	}
+	if planLog.PayloadBytes >= verticalScrollProbeMinPayloadBytes {
+		t.Fatalf("test fixture no longer exercises small payload path, got log %#v", planLog)
+	}
+	if planLog.VerticalAttempted {
+		t.Fatalf("expected vertical-scroll probe to be skipped for small diff payload, got log %#v", planLog)
 	}
 }
 
@@ -1367,6 +1596,126 @@ func TestOutputCursorWriterFrameLinesFallsBackToFullRowForUnsafeEmojiRow(t *test
 	}
 	screen := replayCursorWriterLineScreen(t, 16, 2, [][]string{{line1}, {line2}})
 	want := replayCursorWriterLineScreen(t, 16, 2, [][]string{{line2}})
+	assertScreenEqual(t, screen, want)
+}
+
+func TestFramePresenterBroadFrameLineDamageUsesRawRowsWithoutParsingCells(t *testing.T) {
+	base := make([]string, 12)
+	next := make([]string, 12)
+	for row := range base {
+		base[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("a", 511))
+		if row%3 == 0 {
+			next[row] = base[row]
+			continue
+		}
+		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("b", 511))
+	}
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	if got := presenter.PresentLines(base); got == "" {
+		t.Fatal("expected initial full frame")
+	}
+
+	var planLog presentPlanLog
+	presenter.planLogHook = func(log presentPlanLog) {
+		planLog = log
+	}
+	got := presenter.PresentLines(next)
+
+	if planLog.Mode != "raw_rows" {
+		t.Fatalf("expected broad raw row mode, got log %#v payload %q", planLog, got)
+	}
+	if planLog.RenderChangedRowsMs != 0 || planLog.DiffMs != 0 {
+		t.Fatalf("expected broad raw rows to skip cell diff, got log %#v", planLog)
+	}
+	if !strings.Contains(got, "row-01 "+strings.Repeat("b", 511)) || !strings.Contains(got, "row-11 "+strings.Repeat("b", 511)) {
+		t.Fatalf("expected raw row payload to include changed rows, got length %d", len(got))
+	}
+}
+
+func TestFramePresenterPromotesNearFullBroadRawRowsToFullRepaint(t *testing.T) {
+	base := make([]string, 12)
+	next := make([]string, 12)
+	for row := range base {
+		base[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("a", 511))
+		if row == 0 || row == 6 {
+			next[row] = base[row]
+			continue
+		}
+		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("b", 511))
+	}
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	if got := presenter.PresentLines(base); got == "" {
+		t.Fatal("expected initial full frame")
+	}
+
+	var planLog presentPlanLog
+	presenter.planLogHook = func(log presentPlanLog) {
+		planLog = log
+	}
+	got := presenter.PresentLines(next)
+
+	if planLog.Mode != "full_repaint" {
+		t.Fatalf("expected near-full broad raw rows to promote to full repaint, got log %#v payload %q", planLog, got)
+	}
+	if !strings.HasPrefix(got, xansi.EraseEntireDisplay) {
+		t.Fatalf("expected full repaint payload to clear display, got %q", got[:minInt(len(got), 16)])
+	}
+}
+
+func TestFramePresenterPromotesNearlyAllChangedRowsToFullRepaint(t *testing.T) {
+	base := make([]string, 20)
+	next := make([]string, 20)
+	for row := range base {
+		base[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("a", 96))
+		if row%10 == 0 {
+			next[row] = base[row]
+			continue
+		}
+		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("b", 96))
+	}
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	if got := presenter.PresentLines(base); got == "" {
+		t.Fatal("expected initial full frame")
+	}
+
+	var planLog presentPlanLog
+	presenter.planLogHook = func(log presentPlanLog) {
+		planLog = log
+	}
+	got := presenter.PresentLines(next)
+
+	if planLog.Mode != "full_repaint" {
+		t.Fatalf("expected nearly-all changed rows to promote to full repaint, got log %#v payload %q", planLog, got)
+	}
+	if !strings.HasPrefix(got, xansi.EraseEntireDisplay) {
+		t.Fatalf("expected full repaint payload to clear display, got %q", got[:minInt(len(got), 16)])
+	}
+}
+
+func TestOutputCursorWriterFrameLinesBroadRawRowsReplaysToTarget(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	base := make([]string, 12)
+	next := make([]string, 12)
+	for row := range base {
+		base[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("x", 73))
+		if row%3 == 0 {
+			next[row] = base[row]
+			continue
+		}
+		next[row] = fmt.Sprintf("row-%02d %s", row, strings.Repeat("y", 73))
+	}
+
+	screen := replayCursorWriterLineScreen(t, 80, 12, [][]string{base, next})
+	want := replayCursorWriterLineScreen(t, 80, 12, [][]string{next})
 	assertScreenEqual(t, screen, want)
 }
 
@@ -2265,6 +2614,14 @@ func TestNormalizedLinesLenCountsLineBreakSeparators(t *testing.T) {
 	}
 }
 
+func TestWriteHostFramePayloadWrapsNormalizedFrameWithAutoWrapGuard(t *testing.T) {
+	var out strings.Builder
+	writeHostFramePayload(&out, "ab\ncd")
+	if got, want := out.String(), hostAutoWrapOff+xansi.ResetStyle+"ab\r\ncd"+hostAutoWrapOn; got != want {
+		t.Fatalf("unexpected host frame payload %q want %q", got, want)
+	}
+}
+
 func TestFitFrameToTTYTruncatesOnlyWhenTTYWidthChanges(t *testing.T) {
 	ptmx, tty, err := creackpty.Open()
 	if err != nil {
@@ -2331,6 +2688,373 @@ func TestStripLeadingCHA1DropsRedundantLineAnchors(t *testing.T) {
 	}
 }
 
+func TestOutputCursorWriterUVRendererFrameLinesRoundTripMatchesDefaultPresenter(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("COLORTERM", "truecolor")
+	t.Setenv("TERMX_GLOBAL_RENDERER", "")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "1")
+
+	frames := [][]string{
+		{
+			"\x1b[38;2;220;40;30mhello\x1b[0m      ",
+			"alpha beta     ",
+			"scroll-old-1   ",
+			"scroll-old-2   ",
+		},
+		{
+			"alpha beta     ",
+			"scroll-old-1   ",
+			"\x1b[48;2;0;80;50mUV\x1b[0m frame    ",
+			"界-wide row    ",
+		},
+	}
+
+	got := replayCursorWriterLineScreen(t, 16, 4, frames)
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "")
+	want := replayCursorWriterLineScreen(t, 16, 4, [][]string{frames[len(frames)-1]})
+	assertScreenEqual(t, got, want)
+}
+
+func TestOutputCursorWriterUVRendererSkipsUnchangedFrame(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERMX_GLOBAL_RENDERER", "")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "1")
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetTTYWidth(8)
+	lines := []string{"abc     ", "def     "}
+	if err := writer.WriteFrameLines(lines, ""); err != nil {
+		t.Fatalf("write initial uv frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLines(lines, ""); err != nil {
+		t.Fatalf("write unchanged uv frame: %v", err)
+	}
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	if got != "" {
+		t.Fatalf("expected unchanged uv frame to skip host write, got %q", got)
+	}
+}
+
+func TestBuildUVRenderBufferTouchedRowsFollowLineDiff(t *testing.T) {
+	buf, _, ok := buildUVRenderBufferFromLines([]string{"abc", "def", "ghi"}, 3)
+	if !ok {
+		t.Fatal("expected uv render buffer build to succeed")
+	}
+	previous := []string{"abc", "def", "ghi"}
+	next := []string{"abc", "dEf", "ghi"}
+
+	if got := markUVRenderBufferTouchedRows(buf, previous, next, false); got != 1 {
+		t.Fatalf("expected one touched row, got %d", got)
+	}
+	for row, touch := range buf.Touched {
+		if row == 1 {
+			if touch == nil || touch.FirstCell != 0 || touch.LastCell != 3 {
+				t.Fatalf("expected row 1 to be touched across width, got %#v", touch)
+			}
+			continue
+		}
+		if touch != nil {
+			t.Fatalf("expected row %d to remain untouched, got %#v", row, touch)
+		}
+	}
+}
+
+func TestOutputCursorWriterUVRendererSlowBackoff(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERMX_GLOBAL_RENDERER", "")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "1")
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetTTYWidth(16)
+	writer.uvRenderer = newUVTerminalFrameRenderer()
+	writer.uvSlowFrames = uvSlowBackoffAfter - 1
+
+	writer.observeUVSuccessLocked(uvSlowFrameThreshold+time.Millisecond, 2, 8)
+	if got := writer.uvSlowBackoff; got != uvSlowBackoffFrames {
+		t.Fatalf("expected slow uv backoff %d, got %d", uvSlowBackoffFrames, got)
+	}
+
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+	lines := []string{"abc             ", "def             "}
+	if err := writer.WriteFrameLines(lines, ""); err != nil {
+		t.Fatalf("write slow-backoff frame: %v", err)
+	}
+	if got, want := writer.uvSlowBackoff, uvSlowBackoffFrames-1; got != want {
+		t.Fatalf("expected slow backoff to decrement to %d, got %d", want, got)
+	}
+	if writer.uvRenderer != nil {
+		t.Fatalf("expected slow-backoff fallback to reset uv renderer")
+	}
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	if !strings.Contains(got, "abc") || !strings.Contains(got, "def") {
+		t.Fatalf("expected fallback presenter payload during slow backoff, got %q", got)
+	}
+}
+
+func TestBuildUVRenderBufferFromLinesConvertsPresentedRows(t *testing.T) {
+	buf, stats, ok := buildUVRenderBufferFromLines([]string{"\x1b[31;44;1mA\x1b[2X\x1b[0m"}, 3)
+	if !ok {
+		t.Fatal("expected uv render buffer build to succeed")
+	}
+	if stats.Cells != 3 || stats.StyledCells != 3 || stats.EraseCells != 2 {
+		t.Fatalf("unexpected uv build stats %#v", stats)
+	}
+	first := buf.CellAt(0, 0)
+	if first == nil || first.Content != "A" || first.Style.Fg == nil || first.Style.Bg == nil || first.Style.Attrs&uv.AttrBold == 0 {
+		t.Fatalf("unexpected first uv cell %#v", first)
+	}
+	erase := buf.CellAt(1, 0)
+	if erase == nil || erase.Content != " " || erase.Style.Fg == nil || erase.Style.Bg == nil {
+		t.Fatalf("unexpected styled erase uv cell %#v", erase)
+	}
+}
+
+func TestBuildUVRenderBufferFromLinesPreservesQRBlockGlyphs(t *testing.T) {
+	qr := "██ ▄▀█"
+	buf, stats, ok := buildUVRenderBufferFromLines([]string{qr}, 8)
+	if !ok {
+		t.Fatal("expected uv render buffer build to succeed")
+	}
+	if stats.Cells < len([]rune(qr)) {
+		t.Fatalf("expected QR cells in uv buffer, stats=%#v", stats)
+	}
+	for x, want := range []string{"█", "█", " ", "▄", "▀", "█"} {
+		cell := buf.CellAt(x, 0)
+		if cell == nil || cell.Content != want {
+			t.Fatalf("expected uv cell %d content %q, got %#v", x, want, cell)
+		}
+	}
+}
+
+func TestOutputCursorWriterDefaultPresenterPreservesQRBlockGlyphs(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "0")
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetTTYWidth(32)
+	qr := "██ ▄▀█"
+	if err := writer.WriteFrameLines([]string{qr}, ""); err != nil {
+		t.Fatalf("write QR frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	if !strings.Contains(got, qr) {
+		t.Fatalf("expected default presenter output to contain QR block glyphs, got %q", got)
+	}
+	if !strings.Contains(got, hostAutoWrapOff+xansi.ResetStyle) {
+		t.Fatalf("expected default presenter output to reset host SGR before frame payload, got %q", got)
+	}
+}
+
+func TestOutputCursorWriterUVRendererPreservesQRBlockGlyphs(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "1")
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetTTYWidth(32)
+	qr := "██ ▄▀█"
+	if err := writer.WriteFrameLines([]string{qr}, ""); err != nil {
+		t.Fatalf("write QR frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	if !strings.Contains(got, qr) {
+		t.Fatalf("expected UV writer output to contain QR block glyphs, got %q", got)
+	}
+	if !strings.Contains(got, xansi.MoveCursorOrigin+xansi.ResetStyle) {
+		t.Fatalf("expected UV writer output to reset host SGR before raw payload, got %q", got)
+	}
+}
+
+func TestOutputCursorWriterUVRendererFallsBackForHostWidthSafetyRows(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERMX_GLOBAL_RENDERER", "")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "1")
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	line := "é" + xansi.CHA(2) + "X"
+	if err := writer.WriteFrameLines([]string{line}, ""); err != nil {
+		t.Fatalf("write host-width-safe fallback frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	if strings.Contains(got, xansi.EraseEntireDisplay) {
+		t.Fatalf("expected fallback to old presenter initial payload, got unexpected erase display in %q", got)
+	}
+	if !strings.Contains(got, xansi.CHA(2)+"X") {
+		t.Fatalf("expected fallback payload to preserve host-width reanchor, got %q", got)
+	}
+}
+
+func TestOutputCursorWriterUVRendererConsecutiveFallbackKeepsDeltaBaseline(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERMX_GLOBAL_RENDERER", "")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "1")
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetTTYWidth(24)
+
+	initial := []string{
+		"alpha stable row        ",
+		"beta stable row         ",
+		"gamma stable row        ",
+	}
+	fallbackA := []string{
+		"alpha stable row        ",
+		"é" + xansi.CHA(2) + "X first fallback      ",
+		"gamma stable row        ",
+	}
+	fallbackB := []string{
+		"alpha stable row        ",
+		"é" + xansi.CHA(2) + "Y second fallback     ",
+		"gamma stable row        ",
+	}
+	if err := writer.WriteFrameLines(initial, ""); err != nil {
+		t.Fatalf("write initial uv frame: %v", err)
+	}
+	if err := writer.WriteFrameLines(fallbackA, ""); err != nil {
+		t.Fatalf("write first fallback frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLines(fallbackB, ""); err != nil {
+		t.Fatalf("write second fallback frame: %v", err)
+	}
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	if strings.Contains(got, fallbackB[0]) || strings.Contains(got, fallbackB[2]) {
+		t.Fatalf("expected consecutive fallback to emit changed-row diff, got full-row payload %q", got)
+	}
+	if !strings.Contains(got, xansi.CHA(2)+"Y") {
+		t.Fatalf("expected changed host-width row to preserve reanchor, got %q", got)
+	}
+}
+
+func TestOutputCursorWriterUVRendererHostWidthFallbackBackoff(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("TERMX_GLOBAL_RENDERER", "")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "1")
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetTTYWidth(32)
+
+	for i := 0; i < uvHostWidthFallbackBackoffAfter; i++ {
+		lines := []string{
+			"stable top                    ",
+			"é" + xansi.CHA(2) + string(rune('A'+i)) + " host width fallback       ",
+			"stable bottom                 ",
+		}
+		if err := writer.WriteFrameLines(lines, ""); err != nil {
+			t.Fatalf("write fallback frame %d: %v", i, err)
+		}
+	}
+	if writer.uvHostWidthBackoff != uvHostWidthFallbackBackoffFrames {
+		t.Fatalf("expected host-width fallback backoff %d, got %d", uvHostWidthFallbackBackoffFrames, writer.uvHostWidthBackoff)
+	}
+
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+	next := []string{
+		"stable top                    ",
+		"é" + xansi.CHA(2) + "Z backoff frame          ",
+		"stable bottom                 ",
+	}
+	if err := writer.WriteFrameLines(next, ""); err != nil {
+		t.Fatalf("write backoff frame: %v", err)
+	}
+	if got, want := writer.uvHostWidthBackoff, uvHostWidthFallbackBackoffFrames-1; got != want {
+		t.Fatalf("expected backoff to decrement to %d, got %d", want, got)
+	}
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	if strings.Contains(got, next[0]) || strings.Contains(got, next[2]) {
+		t.Fatalf("expected backoff fallback to preserve delta baseline, got %q", got)
+	}
+	if !strings.Contains(got, xansi.CHA(2)+"Z") {
+		t.Fatalf("expected changed host-width row to preserve reanchor during backoff, got %q", got)
+	}
+}
+
+func TestInspectUVFrameHostWidthSafetySamplesUnsafeRows(t *testing.T) {
+	lines := []string{
+		"safe",
+		"é" + xansi.CHA(2) + "X",
+		xansi.CHA(1) + "AAA❄️" + xansi.ECH(1) + xansi.CHA(6) + "BB",
+	}
+	got := inspectUVFrameHostWidthSafety(lines, 2)
+	if got.UnsafeRows != 2 || got.HostWidthRows != 2 || got.HiddenEmojiRows != 1 {
+		t.Fatalf("unexpected safety inspection %#v", got)
+	}
+	if len(got.Samples) != 2 {
+		t.Fatalf("expected two samples, got %#v", got.Samples)
+	}
+	if !strings.Contains(got.Samples[0], "row=1") || !strings.Contains(got.Samples[0], "host_width=true") {
+		t.Fatalf("unexpected host-width sample %q", got.Samples[0])
+	}
+	if !strings.Contains(got.Samples[1], "row=2") || !strings.Contains(got.Samples[1], "hidden_emoji=true") {
+		t.Fatalf("unexpected hidden-emoji sample %q", got.Samples[1])
+	}
+}
+
 func TestBubbleTeaRestoreSequenceExtractsTrailingCRAndCSI(t *testing.T) {
 	payload := []byte("body\x1b[12;8H\r\x1b[?25h")
 	if got, want := bubbleTeaRestoreSequence(payload), "\x1b[12;8H\r\x1b[?25h"; got != want {
@@ -2365,6 +3089,17 @@ func TestPresentedStyleWithSGRASCIIParsesSimpleAttributes(t *testing.T) {
 	}
 }
 
+func TestParsePresentedRowGenericFallsBackForNonASCIISGRParams(t *testing.T) {
+	row := parsePresentedRowGeneric("\x1b[38:2::220:40:30m界\x1b[0m")
+	defer releasePresentedCells(row.cells)
+	if len(row.cells) != 1 {
+		t.Fatalf("expected one wide cell, got %#v", row.cells)
+	}
+	if row.cells[0].Style.FGCode != "38;2;220;40;30" {
+		t.Fatalf("expected colon SGR params to preserve truecolor style, got %#v", row.cells[0].Style)
+	}
+}
+
 func TestParsePresentedRowASCIICapturesStyledEraseCells(t *testing.T) {
 	row, ok := parsePresentedRowASCII("\x1b[31mA\x1b[2X\x1b[0m")
 	if !ok {
@@ -2381,6 +3116,20 @@ func TestParsePresentedRowASCIICapturesStyledEraseCells(t *testing.T) {
 	}
 	if !row.cells[1].Erase || !row.cells[2].Erase {
 		t.Fatalf("expected trailing erase cells, got %#v", row.cells)
+	}
+}
+
+func TestParsePresentedRowASCIIRejectsUnicodeBeforeAllocatingCells(t *testing.T) {
+	allocated := false
+	row, ok := parsePresentedRowASCIIWith("│\x1b[31mA\x1b[0m", func(capHint int) []presentedCell {
+		allocated = true
+		return make([]presentedCell, 0, capHint)
+	})
+	if ok {
+		t.Fatalf("expected unicode row to fall back to generic parser, got %#v", row)
+	}
+	if allocated {
+		t.Fatal("expected ascii fast-path rejection before acquiring cell storage")
 	}
 }
 
@@ -2447,7 +3196,7 @@ func TestWritePresentedCellsEmitsStyledEraseAndReset(t *testing.T) {
 	if finalStyle != style {
 		t.Fatalf("expected final style %#v, got %#v", style, finalStyle)
 	}
-	want := presentedStyleDiffANSI(presentedStyle{}, style) + "A" + "\x1b[1X" + presentedResetStyleSequence
+	want := presentedStyleDiffANSI(presentedStyle{}, style) + "A" + "\x1b[1X" + xansi.CHA(3) + presentedResetStyleSequence
 	if got := out.String(); got != want {
 		t.Fatalf("unexpected presented cell payload %q want %q", got, want)
 	}
@@ -2760,6 +3509,164 @@ func TestOutputCursorWriterFrameLinesPathMovingFloatingDragPreviewMatchesFinalPr
 
 	got := captureScreen(buildModel(start), path)
 	want := captureScreen(buildModel(start), []workbench.Rect{path[len(path)-1]})
+	assertScreenEqual(t, got, want)
+}
+
+func TestOutputCursorWriterFrameLinesPathMovingFloatingDragPreviewMatchesEachPreviewFrame(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	buildModel := func(rect workbench.Rect) *Model {
+		t.Helper()
+		model := setupModel(t, modelOpts{width: 120, height: 36})
+		base := model.runtime.Registry().GetOrCreate("term-1")
+		base.Snapshot = cursorWriterNvimLikeSnapshot("term-1", 118, 30, "#444444")
+
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", rect); err != nil {
+			t.Fatalf("create floating pane: %v", err)
+		}
+		if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+			t.Fatalf("bind floating pane terminal: %v", err)
+		}
+		floatTerminal := model.runtime.Registry().GetOrCreate("term-float")
+		floatTerminal.Name = "float"
+		floatTerminal.State = "running"
+		floatTerminal.Snapshot = cursorWriterStyledSnapshot("term-float", 51, 14)
+		model.runtime.BindPane("float-1").Connected = true
+		return model
+	}
+
+	model := buildModel(workbench.Rect{X: 18, Y: 7, W: 54, H: 16})
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	vt := localvterm.New(120, 36, 0, nil)
+	writeFrame := func(frame renderFrameLines) {
+		t.Helper()
+		if err := writer.WriteFrameLinesWithMeta(frame.lines, "", frame.meta); err != nil {
+			t.Fatalf("write render frame lines with meta: %v", err)
+		}
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.writes = nil
+		sink.mu.Unlock()
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay incremental preview frame: %v", err)
+		}
+		want := replayCursorWriterRenderFrames(t, 120, 36, []renderFrameLines{frame})
+		assertScreenEqual(t, vt.ScreenContent(), want)
+	}
+
+	writeFrame(captureRenderFrameLines(t, model))
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	start := model.workbench.FloatingState(tab.ID, "float-1")
+	if start == nil {
+		t.Fatal("expected floating pane state")
+	}
+	model.beginFloatingDragPreview("float-1", start.Rect)
+	for _, rect := range []workbench.Rect{
+		{X: 19, Y: 7, W: 54, H: 16},
+		{X: 20, Y: 7, W: 54, H: 16},
+		{X: 21, Y: 7, W: 54, H: 16},
+		{X: 22, Y: 8, W: 54, H: 16},
+		{X: 23, Y: 9, W: 54, H: 16},
+		{X: 24, Y: 10, W: 54, H: 16},
+	} {
+		model.floatingDragPreview.Rect = rect
+		model.render.Invalidate()
+		writeFrame(captureRenderFrameLines(t, model))
+	}
+}
+
+func TestOutputCursorWriterFrameLinesPathFloatingDragPreviewReleaseMatchesCommittedFrame(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	buildModel := func(rect workbench.Rect) *Model {
+		t.Helper()
+		model := setupModel(t, modelOpts{width: 120, height: 36})
+		base := model.runtime.Registry().GetOrCreate("term-1")
+		base.Snapshot = cursorWriterNvimLikeSnapshot("term-1", 118, 30, "#444444")
+
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", rect); err != nil {
+			t.Fatalf("create floating pane: %v", err)
+		}
+		if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+			t.Fatalf("bind floating pane terminal: %v", err)
+		}
+		floatTerminal := model.runtime.Registry().GetOrCreate("term-float")
+		floatTerminal.Name = "float"
+		floatTerminal.State = "running"
+		floatTerminal.Snapshot = cursorWriterStyledSnapshot("term-float", 51, 14)
+		model.runtime.BindPane("float-1").Connected = true
+		return model
+	}
+
+	captureDragRelease := func(model *Model, positions []workbench.Rect) localvterm.ScreenData {
+		t.Helper()
+		frames := make([]renderFrameLines, 0, len(positions)+2)
+		frames = append(frames, captureRenderFrameLines(t, model))
+
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		start := model.workbench.FloatingState(tab.ID, "float-1")
+		if start == nil {
+			t.Fatal("expected floating pane state")
+		}
+		model.beginFloatingDragPreview("float-1", start.Rect)
+		for _, rect := range positions {
+			model.floatingDragPreview.Rect = rect
+			model.render.Invalidate()
+			frames = append(frames, captureRenderFrameLines(t, model))
+		}
+		final := positions[len(positions)-1]
+		model.floatingDragPreview = floatingDragPreviewState{}
+		if !model.workbench.MoveFloatingPane(tab.ID, "float-1", final.X, final.Y) {
+			t.Fatalf("expected commit move to %#v to change pane", final)
+		}
+		model.render.Invalidate()
+		frames = append(frames, captureRenderFrameLines(t, model))
+		return replayCursorWriterRenderFrames(t, 120, 36, frames)
+	}
+
+	captureCommitted := func(model *Model, rect workbench.Rect) localvterm.ScreenData {
+		t.Helper()
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		if !model.workbench.MoveFloatingPane(tab.ID, "float-1", rect.X, rect.Y) {
+			t.Fatalf("expected committed move to %#v to change pane", rect)
+		}
+		return replayCursorWriterRenderFrames(t, 120, 36, []renderFrameLines{captureRenderFrameLines(t, model)})
+	}
+
+	start := workbench.Rect{X: 18, Y: 7, W: 54, H: 16}
+	path := []workbench.Rect{
+		{X: 23, Y: 7, W: 54, H: 16},
+		{X: 28, Y: 7, W: 54, H: 16},
+		{X: 33, Y: 7, W: 54, H: 16},
+		{X: 38, Y: 7, W: 54, H: 16},
+		{X: 43, Y: 7, W: 54, H: 16},
+	}
+
+	got := captureDragRelease(buildModel(start), path)
+	want := captureCommitted(buildModel(start), path[len(path)-1])
 	assertScreenEqual(t, got, want)
 }
 
@@ -3363,7 +4270,7 @@ func TestDebugOutputCursorWriterLocalScrollbackAudit(t *testing.T) {
 		return &protocol.Snapshot{
 			TerminalID: terminalID,
 			Size:       protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
-			Scrollback: scrollback,
+			Scrollback: protocol.CompactRowsFromCells(scrollback),
 			Screen:     protocol.ScreenData{Cells: screen},
 			Cursor:     protocol.CursorState{Row: rows - 1, Col: 0, Visible: true},
 			Modes:      protocol.TerminalModes{AutoWrap: true},
@@ -5756,6 +6663,27 @@ func ownerAwareTestMeta(rows ...[]hostOwnerID) *presentMeta {
 	return meta
 }
 
+func TestVisibleRectsFromOwnerMapKeepsSplitSameOwnerSpans(t *testing.T) {
+	const owner hostOwnerID = 7
+	got := visibleRectsFromOwnerMap([][]hostOwnerID{
+		{owner, owner, 0, owner, owner},
+		{owner, owner, 0, owner, owner},
+	})
+	rects := got[owner]
+	want := []rect{
+		{Left: 0, Top: 0, Right: 1, Bottom: 1},
+		{Left: 3, Top: 0, Right: 4, Bottom: 1},
+	}
+	if len(rects) != len(want) {
+		t.Fatalf("expected %d visible rects, got %#v", len(want), rects)
+	}
+	for i := range want {
+		if rects[i] != want[i] {
+			t.Fatalf("unexpected rect %d: got %#v want %#v; all=%#v", i, rects[i], want[i], rects)
+		}
+	}
+}
+
 type cursorWriterFakeHost struct {
 	width  int
 	height int
@@ -5975,7 +6903,7 @@ func screenDiffError(got, want localvterm.ScreenData) error {
 	return nil
 }
 
-func TestOutputCursorWriterFrameLinesPathCopyModeScrollbackThenFocusSwitchClearsStaleState(t *testing.T) {
+func TestOutputCursorWriterFrameLinesPathCopyModeScrollbackThenFocusSwitchPreservesInactiveHistory(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
 	defer func() { directFrameBatchDelay = originalDelay }()
@@ -6027,7 +6955,7 @@ func TestOutputCursorWriterFrameLinesPathCopyModeScrollbackThenFocusSwitchClears
 			}
 			scrollback[i] = row
 		}
-		nvimSnap.Scrollback = scrollback
+		nvimSnap.Scrollback = protocol.CompactRowsFromCells(scrollback)
 		nvimTerm.Snapshot = nvimSnap
 		nvimBinding := rt.BindPane("pane-1")
 		nvimBinding.Channel = 1
@@ -6087,8 +7015,12 @@ func TestOutputCursorWriterFrameLinesPathCopyModeScrollbackThenFocusSwitchClears
 	}
 	got := vt.ScreenContent()
 
-	// Build the expected screen: codex focused, no copy mode, fresh render
+	// Build the expected screen: codex focused, nvim still frozen in copy mode.
 	wantModel := buildModel()
+	dispatchAction(t, wantModel, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	for i := 0; i < 40; i++ {
+		wantModel.moveCopyCursorVertical(1)
+	}
 	if err := wantModel.workbench.FocusPane("tab-1", "pane-2"); err != nil {
 		t.Fatalf("FocusPane want: %v", err)
 	}

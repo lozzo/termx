@@ -3,11 +3,11 @@ package render
 import (
 	"strings"
 
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	localvterm "github.com/lozzow/termx/vterm"
 )
 
 // altScreenRowCache caches serialized ANSI strings for alt-screen rows keyed
@@ -43,13 +43,13 @@ func renderAltScreenFastPathVM(coordinator *Coordinator, vm RenderVM, entries []
 		return renderedBody{}, false
 	}
 	entry := entries[0]
-	if !entry.Active || entry.TerminalID == "" || entry.Floating || entry.CopyModeActive || entry.ScrollOffset > 0 {
+	if !entry.Active || entry.TerminalID == "" || entry.Floating || entry.CopyModeActive || entry.ScrollOffset > 0 || entry.ContentOffsetX != 0 || entry.ContentOffsetY != 0 {
 		return renderedBody{}, false
 	}
 	if entry.EmptyActionSelected >= 0 || entry.ExitedActionSelected >= 0 {
 		return renderedBody{}, false
 	}
-	if entry.Overflow.Right || entry.Overflow.Bottom {
+	if entry.Overflow.Left || entry.Overflow.Top || entry.Overflow.Right || entry.Overflow.Bottom {
 		return renderedBody{}, false
 	}
 	resolved := resolvePaneContent(entry, vm.Runtime, false)
@@ -329,10 +329,11 @@ func renderAltScreenBorderedContentLine(entry paneRenderEntry, content string) s
 
 func protocolViewportRowANSI(row []protocol.Cell, width int, emojiMode shared.AmbiguousEmojiVariationSelectorMode, cursorCol int, cursorVisible bool, cursorShape string) string {
 	return protocolRowANSIWithOptions(row, width, protocolRowANSIOptions{
-		emojiMode:     emojiMode,
-		cursorCol:     cursorCol,
-		cursorVisible: cursorVisible,
-		cursorShape:   cursorShape,
+		compressStyledBlanks: true,
+		emojiMode:            emojiMode,
+		cursorCol:            cursorCol,
+		cursorVisible:        cursorVisible,
+		cursorShape:          cursorShape,
 	})
 }
 
@@ -350,10 +351,11 @@ func terminalSourceViewportRowANSI(source terminalRenderSource, rowIndex, width 
 
 func vtermViewportRowANSI(row []localvterm.Cell, width int, emojiMode shared.AmbiguousEmojiVariationSelectorMode, cursorCol int, cursorVisible bool, cursorShape string) string {
 	return vtermRowANSIWithOptions(row, width, protocolRowANSIOptions{
-		emojiMode:     emojiMode,
-		cursorCol:     cursorCol,
-		cursorVisible: cursorVisible,
-		cursorShape:   cursorShape,
+		compressStyledBlanks: true,
+		emojiMode:            emojiMode,
+		cursorCol:            cursorCol,
+		cursorVisible:        cursorVisible,
+		cursorShape:          cursorShape,
 	})
 }
 

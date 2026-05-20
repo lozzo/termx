@@ -1,0 +1,9 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">TermX monochrome mark</title>
+  <desc id="desc">A one-color TermX mark combining a terminal window, cursor, and single-piece X symbol.</desc>
+  <rect width="512" height="512" rx="112" fill="#09090B"/>
+  <path d="M112 136C112 109.49 133.49 88 160 88H352C378.51 88 400 109.49 400 136V376C400 402.51 378.51 424 352 424H160C133.49 424 112 402.51 112 376V136Z" stroke="#F4F4F5" stroke-width="22"/>
+  <path d="M112 154H400" stroke="#F4F4F5" stroke-width="22"/>
+  <path d="M150 181C158 169 174 166 185 176L256 228L327 176C338 166 354 169 362 181C370 193 367 210 354 219L287 256L354 293C367 302 370 319 362 331C354 343 338 346 327 336L256 284L185 336C174 346 158 343 150 331C142 319 145 302 158 293L225 256L158 219C145 210 142 193 150 181Z" fill="#F4F4F5"/>
+  <path d="M206 366H314" stroke="#F4F4F5" stroke-width="30" stroke-linecap="round"/>
+</svg>

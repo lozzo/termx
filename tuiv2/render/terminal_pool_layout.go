@@ -161,6 +161,7 @@ func terminalPoolFooterActionSpecs() []terminalPoolFooterActionSpec {
 		{label: "float", action: input.SemanticAction{Kind: input.ActionAttachFloating}},
 		{label: "edit", action: input.SemanticAction{Kind: input.ActionEditTerminal}},
 		{label: "kill", action: input.SemanticAction{Kind: input.ActionKillTerminal}},
+		{label: "delete", action: input.SemanticAction{Kind: input.ActionRemoveTerminal}},
 	}
 }
 

@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
@@ -64,7 +63,7 @@ func (m *Model) effectCmdWithOptions(effect orchestrator.Effect, options effectA
 			}
 		}
 		m.render.Invalidate()
-		return tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+		return tea.Batch(m.resizeVisiblePanesCmd(), m.saveWorkbenchStateCmd())
 	case orchestrator.DetachPaneEffect:
 		if service := m.paneBindingLifecycleService(); service != nil {
 			if _, err := service.detach(typed.PaneID); err != nil {
@@ -120,7 +119,7 @@ func (m *Model) effectCmdWithOptions(effect orchestrator.Effect, options effectA
 	case orchestrator.CreateTabEffect:
 		m.clampFloatingPanesToViewport()
 		m.render.Invalidate()
-		return m.saveStateCmd()
+		return m.saveWorkbenchStateCmd()
 	case orchestrator.SwitchTabEffect:
 		m.clampFloatingPanesToViewport()
 		m.render.Invalidate()
@@ -139,6 +138,8 @@ func (m *Model) effectCmdWithOptions(effect orchestrator.Effect, options effectA
 			_ = client.Kill(context.Background(), typed.TerminalID)
 			return nil
 		}
+	case orchestrator.RemoveTerminalEffect:
+		return m.removeTerminalCmd(typed.TerminalID, false)
 	case orchestrator.SetInputModeEffect:
 		return func() tea.Msg {
 			m.setMode(typed.Mode)
@@ -169,26 +170,7 @@ func (m *Model) effectCmdWithOptions(effect orchestrator.Effect, options effectA
 			if err != nil {
 				terminals = nil
 			}
-			items := make([]modal.PickerItem, 0, len(terminals))
-			for _, terminal := range terminals {
-				items = append(items, modal.PickerItem{
-					TerminalID:    terminal.ID,
-					Name:          terminal.Name,
-					State:         terminal.State,
-					TerminalState: terminal.State,
-					ExitCode:      cloneIntPointer(terminal.ExitCode),
-					Command:       strings.Join(terminal.Command, " "),
-					CommandArgs:   append([]string(nil), terminal.Command...),
-					Tags:          cloneStringMap(terminal.Tags),
-					CreatedAt:     terminal.CreatedAt,
-				})
-			}
-			items = append(items, modal.PickerItem{
-				CreateNew:   true,
-				Name:        "new terminal",
-				Description: "Create a new terminal",
-			})
-			return pickerItemsLoadedMsg{Items: items}
+			return pickerItemsLoadedMsg{Items: m.buildTerminalPickerItems(terminals)}
 		}
 	case orchestrator.LoadWorkspaceItemsEffect:
 		return func() tea.Msg {

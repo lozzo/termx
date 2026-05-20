@@ -41,7 +41,7 @@ func (m *Model) exitedPaneKeyboardNavigationEnabled() bool {
 	if m.modalHost != nil && m.modalHost.Session != nil {
 		return false
 	}
-	return m.mode().Kind == input.ModeNormal
+	return m.effectiveInputMode() == input.ModeNormal
 }
 
 func (m *Model) activeExitedPaneID() string {

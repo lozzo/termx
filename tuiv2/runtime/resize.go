@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lozzow/termx/protocol"
-	"github.com/lozzow/termx/terminalmeta"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -15,6 +15,10 @@ func (r *Runtime) ResizeTerminal(ctx context.Context, paneID, terminalID string,
 }
 
 func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, cols, rows uint16) error {
+	return r.ResizePaneForView(ctx, paneID, terminalID, cols, rows, "")
+}
+
+func (r *Runtime) ResizePaneForView(ctx context.Context, paneID, terminalID string, cols, rows uint16, viewID string) error {
 	if r == nil || r.client == nil {
 		return shared.UserVisibleError{Op: "resize terminal", Err: fmt.Errorf("runtime client is nil")}
 	}
@@ -33,12 +37,28 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 			return nil
 		}
 		forceResize := decision.Force
-		if !forceResize && terminalAlreadySized(terminal, cols, rows) {
+		if !forceResize && viewID == "" && terminalAlreadySized(terminal, cols, rows) {
 			return nil
 		}
 	}
-	if err := r.client.Resize(ctx, binding.Channel, cols, rows); err != nil {
+	ensure, err := r.client.EnsureResize(ctx, protocol.EnsureResizeParams{
+		TerminalID:   terminalID,
+		Channel:      binding.Channel,
+		Cols:         cols,
+		Rows:         rows,
+		ResizePolicy: protocol.ResizePolicyOwner,
+		SurfaceID:    TerminalPaneSurfaceID(paneID),
+		ViewID:       viewID,
+	})
+	if err != nil {
 		return shared.UserVisibleError{Op: "resize terminal", Err: err}
+	}
+	if terminal != nil && ensure != nil && ensure.ResizeControl != nil {
+		terminal.ResizeOwnership = cloneProtocolResizeOwnership(ensure.ResizeControl.ResizeOwnership)
+		r.applyExternalResizeOwnershipInfo(terminal, ensure.ResizeControl.ResizeOwnership, terminal.ResizeOwnerAttachmentCount)
+	}
+	if ensure == nil || ensure.ResizeControl == nil || !ensure.ResizeControl.CanResize {
+		return nil
 	}
 	if terminal != nil {
 		prevSnapshot := terminal.Snapshot
@@ -101,20 +121,66 @@ func provisionalSnapshotForLocalShrink(snapshot *protocol.Snapshot, cols, rows u
 	cloned := *snapshot
 	cloned.Size = protocol.Size{Cols: cols, Rows: rows}
 	cloned.Screen = protocol.ScreenData{
-		Cells:             cloneProtocolCells2D(snapshot.Screen.Cells),
+		Cells:             cloneProtocolCells2D(tailProtocolRows(snapshot.Screen.Cells, int(rows))),
 		IsAlternateScreen: snapshot.Screen.IsAlternateScreen,
 	}
-	cloned.Scrollback = cloneProtocolCells2D(snapshot.Scrollback)
-	cloned.ScreenTimestamps = append([]time.Time(nil), snapshot.ScreenTimestamps...)
+	cloned.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback)
+	cloned.ScreenTimestamps = tailTimeSlice(snapshot.ScreenTimestamps, int(rows))
 	cloned.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps...)
-	cloned.ScreenRowKinds = append([]string(nil), snapshot.ScreenRowKinds...)
+	cloned.ScreenRowKinds = tailStringSlice(snapshot.ScreenRowKinds, int(rows))
 	cloned.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds...)
+	cloned.ScreenWrapped = tailBoolSlice(snapshot.ScreenWrapped, int(rows))
+	cloned.ScrollbackWrapped = append([]bool(nil), snapshot.ScrollbackWrapped...)
 	if cloned.Cursor.Row >= int(rows) || cloned.Cursor.Col >= int(cols) {
 		cloned.Cursor.Visible = false
 		cloned.Cursor.Row = runtimeMinInt(cloned.Cursor.Row, int(rows)-1)
 		cloned.Cursor.Col = runtimeMinInt(cloned.Cursor.Col, int(cols)-1)
 	}
 	return &cloned
+}
+
+func tailProtocolRows(rows [][]protocol.Cell, limit int) [][]protocol.Cell {
+	if len(rows) == 0 || limit <= 0 {
+		return nil
+	}
+	start := len(rows) - limit
+	if start < 0 {
+		start = 0
+	}
+	return cloneProtocolCells2D(rows[start:])
+}
+
+func tailTimeSlice(values []time.Time, limit int) []time.Time {
+	if len(values) == 0 || limit <= 0 {
+		return nil
+	}
+	start := len(values) - limit
+	if start < 0 {
+		start = 0
+	}
+	return append([]time.Time(nil), values[start:]...)
+}
+
+func tailStringSlice(values []string, limit int) []string {
+	if len(values) == 0 || limit <= 0 {
+		return nil
+	}
+	start := len(values) - limit
+	if start < 0 {
+		start = 0
+	}
+	return append([]string(nil), values[start:]...)
+}
+
+func tailBoolSlice(values []bool, limit int) []bool {
+	if len(values) == 0 || limit <= 0 {
+		return nil
+	}
+	start := len(values) - limit
+	if start < 0 {
+		start = 0
+	}
+	return append([]bool(nil), values[start:]...)
 }
 
 func cloneProtocolCells2D(rows [][]protocol.Cell) [][]protocol.Cell {

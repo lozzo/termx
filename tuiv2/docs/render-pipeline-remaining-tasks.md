@@ -136,7 +136,7 @@ regions := render.TabBarHitRegions(vm)
 
 完成后：`m.visibleRenderState()` 在生产代码中的调用数量应降为 0。
 
-**验收**：`go test ./tuiv2/...` 全部通过，`visibleRenderState()` 无生产调用。
+**验收**：`go test ./...` 全部通过，`visibleRenderState()` 无生产调用。
 
 ---
 
@@ -167,7 +167,7 @@ return render.WithRenderStatusHints(vm, m.buildStatusHints(vm))
 
 **注意**：`statusHintContext` 内部用到哪些 `state` 字段，一一对应到 `RenderVM` 里的等价字段，不要遗漏。重点检查 `selectedTreeKind`、`activeRole`、`hasFloating` 这几个字段的来源。
 
-**验收**：`go test ./tuiv2/app/...` 全部通过，`VisibleStateFromRenderVM` 无生产调用。
+**验收**：`go test ./app/...` 全部通过，`VisibleStateFromRenderVM` 无生产调用。
 
 ---
 
@@ -187,7 +187,7 @@ return render.WithRenderStatusHints(vm, m.buildStatusHints(vm))
 
 目标：`statusBarCacheKey` 只保留直接影响 status bar **渲染输出**的字段，不保留业务统计字段。
 
-**验收**：`go test ./tuiv2/render/...` 全部通过；`statusBarCacheKey` 中无 `FloatingTotal` 等业务统计字段。
+**验收**：`go test ./render/...` 全部通过；`statusBarCacheKey` 中无 `FloatingTotal` 等业务统计字段。
 
 ---
 
@@ -208,7 +208,7 @@ return render.WithRenderStatusHints(vm, m.buildStatusHints(vm))
 
 其他大量使用 `NewCoordinator(VisibleStateFn)` 的测试可以保留，不强制全量迁移。
 
-**验收**：新增的测试直接构造 `RenderVM`，不依赖 `VisibleRenderState`；`go test ./tuiv2/render/...` 全部通过。
+**验收**：新增的测试直接构造 `RenderVM`，不依赖 `VisibleRenderState`；`go test ./render/...` 全部通过。
 
 ---
 
@@ -230,7 +230,7 @@ D 最后，结构稳定后再补测试。
 
 - `m.visibleRenderState()` 方法从生产代码中消失（可保留供测试辅助，但不应在 `update_*.go` 等路径调用）
 - `render.VisibleStateFromRenderVM()` 无生产调用方
-- `go test ./tuiv2/...` 全量通过
+- `go test ./...` 全量通过
 - `go build ./...` 无编译错误
 
 ---

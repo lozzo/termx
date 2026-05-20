@@ -337,6 +337,7 @@ func TestRouteKeyMsg_PickerMode_LegacyAlignedBindingsRestored(t *testing.T) {
 	}{
 		{msg: specialKey(tea.KeyTab), want: ActionPickerAttachSplit},
 		{msg: specialKey(tea.KeyCtrlE), want: ActionEditTerminal},
+		{msg: specialKey(tea.KeyCtrlX), want: ActionRemoveTerminal},
 	}
 	for _, testCase := range cases {
 		result := r.RouteKeyMsg(testCase.msg)
@@ -369,6 +370,7 @@ func TestRouteKeyMsg_TerminalManagerMode_UsesTerminalManagerBindings(t *testing.
 		{msg: specialKey(tea.KeyCtrlO), want: ActionAttachFloating},
 		{msg: specialKey(tea.KeyCtrlE), want: ActionEditTerminal},
 		{msg: specialKey(tea.KeyCtrlK), want: ActionKillTerminal},
+		{msg: specialKey(tea.KeyCtrlX), want: ActionRemoveTerminal},
 		{msg: specialKey(tea.KeyEsc), want: ActionCancelMode},
 	}
 	for _, testCase := range cases {
@@ -400,12 +402,76 @@ func TestRouteKeyMsg_GlobalMode_UsesLegacyAlignedBindings(t *testing.T) {
 	}
 }
 
-func TestRouteKeyMsg_DisplayMode_HOpensClipboardHistory(t *testing.T) {
+func TestRouteKeyMsg_DisplayMode_HJKLMoveCopyCursorAndShiftArrowsDoNotPanContent(t *testing.T) {
 	r := NewRouter()
 	r.SetMode(ModeState{Kind: ModeDisplay})
-	result := r.RouteKeyMsg(runeKey('h'))
+	cases := []struct {
+		msg  tea.KeyMsg
+		want ActionKind
+	}{
+		{msg: runeKey('h'), want: ActionCopyModeCursorLeft},
+		{msg: runeKey('j'), want: ActionCopyModeCursorDown},
+		{msg: runeKey('k'), want: ActionCopyModeCursorUp},
+		{msg: runeKey('l'), want: ActionCopyModeCursorRight},
+	}
+	for _, testCase := range cases {
+		result := r.RouteKeyMsg(testCase.msg)
+		if result.Action == nil || result.Action.Kind != testCase.want {
+			t.Fatalf("msg %v: expected %q, got %#v", testCase.msg, testCase.want, result.Action)
+		}
+	}
+	for _, msg := range []tea.KeyMsg{
+		specialKey(tea.KeyShiftLeft),
+		specialKey(tea.KeyShiftRight),
+		specialKey(tea.KeyShiftUp),
+		specialKey(tea.KeyShiftDown),
+		runeKey('z'),
+	} {
+		result := r.RouteKeyMsg(msg)
+		if result.Action != nil || result.TerminalInput != nil {
+			t.Fatalf("display+%v: expected non-copy key to be ignored, got %#v", msg, result)
+		}
+	}
+}
+
+func TestRouteKeyMsg_DisplayMode_CapitalHOpensClipboardHistory(t *testing.T) {
+	r := NewRouter()
+	r.SetMode(ModeState{Kind: ModeDisplay})
+	result := r.RouteKeyMsg(runeKey('H'))
 	if result.Action == nil || result.Action.Kind != ActionOpenClipboardHistory {
-		t.Fatalf("expected h to open clipboard history in display mode, got %#v", result.Action)
+		t.Fatalf("expected H to open clipboard history in display mode, got %#v", result.Action)
+	}
+}
+
+func TestRouteKeyMsg_ResizeMode_ContentPlacementBindings(t *testing.T) {
+	r := NewRouter()
+	r.SetMode(ModeState{Kind: ModeResize})
+	cases := []struct {
+		msg  tea.KeyMsg
+		want ActionKind
+	}{
+		{msg: specialKey(tea.KeyShiftLeft), want: ActionMovePaneContentLeft},
+		{msg: specialKey(tea.KeyShiftRight), want: ActionMovePaneContentRight},
+		{msg: specialKey(tea.KeyShiftUp), want: ActionMovePaneContentUp},
+		{msg: specialKey(tea.KeyShiftDown), want: ActionMovePaneContentDown},
+		{msg: runeKey('A'), want: ActionMovePaneContentLeft},
+		{msg: runeKey('D'), want: ActionMovePaneContentRight},
+		{msg: runeKey('W'), want: ActionMovePaneContentUp},
+		{msg: runeKey('S'), want: ActionMovePaneContentDown},
+		{msg: runeKey('0'), want: ActionAlignPaneContentLeft},
+		{msg: runeKey('$'), want: ActionAlignPaneContentRight},
+		{msg: runeKey('^'), want: ActionAlignPaneContentTop},
+		{msg: runeKey('B'), want: ActionAlignPaneContentBottom},
+		{msg: runeKey('m'), want: ActionCenterPaneContent},
+		{msg: runeKey('|'), want: ActionCenterPaneContentHorizontal},
+		{msg: runeKey('_'), want: ActionCenterPaneContentVertical},
+		{msg: runeKey('r'), want: ActionResetPaneContentOffset},
+	}
+	for _, testCase := range cases {
+		result := r.RouteKeyMsg(testCase.msg)
+		if result.Action == nil || result.Action.Kind != testCase.want {
+			t.Fatalf("msg %v: expected %q, got %#v", testCase.msg, testCase.want, result.Action)
+		}
 	}
 }
 

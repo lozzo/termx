@@ -24,3 +24,29 @@ func TestNormalizedJoinedLinesWireLenMatchesNormalizedFrameLenJoinedLines(t *tes
 		}
 	}
 }
+
+func TestChangedRowsPatchStatsMatchesRenderedPatch(t *testing.T) {
+	previous := []string{
+		"same",
+		"old-1",
+		"old-2",
+		"same",
+		"old\ninner",
+	}
+	next := []string{
+		"same",
+		"new-1",
+		"new-2",
+		"same",
+		"new\ninner",
+	}
+
+	payload, changed := renderChangedRows(previous, next)
+	statsChanged, statsBytes := changedRowsPatchStats(previous, next)
+	if statsChanged != changed {
+		t.Fatalf("changedRowsPatchStats changed=%d want %d", statsChanged, changed)
+	}
+	if statsBytes != normalizedFrameLen(payload) {
+		t.Fatalf("changedRowsPatchStats bytes=%d want %d payload=%q", statsBytes, normalizedFrameLen(payload), payload)
+	}
+}

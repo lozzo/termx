@@ -1,0 +1,14 @@
+go 1.26.0
+
+use (
+	./internal
+	./termx-cli
+	./termx-core
+	./termx-hub
+	./termx-proto
+	./termx-remote
+	./termx-shared
+	./termx-testkit
+	./termx-vterm
+	./tuiv2
+)

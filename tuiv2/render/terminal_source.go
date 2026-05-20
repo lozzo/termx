@@ -4,10 +4,10 @@ import (
 	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	localvterm "github.com/lozzow/termx/vterm"
 )
 
 type terminalRenderSource interface {
@@ -287,12 +287,16 @@ func hashVTermRow(hash uint64, row []localvterm.Cell) uint64 {
 }
 
 func renderSourceCursorProjectionTarget(rect workbench.Rect, source terminalRenderSource) (cursorProjectionTarget, bool) {
+	return renderSourceCursorProjectionTargetWithPlacement(rect, source, 0, 0)
+}
+
+func renderSourceCursorProjectionTargetWithPlacement(rect workbench.Rect, source terminalRenderSource, offsetX, offsetY int) (cursorProjectionTarget, bool) {
 	if source == nil {
 		return cursorProjectionTarget{}, false
 	}
 	cursor := source.Cursor()
-	cursorX := rect.X + cursor.Col
-	cursorY := rect.Y + cursor.Row
+	cursorX := rect.X + offsetX + cursor.Col
+	cursorY := rect.Y + offsetY + cursor.Row
 	if cursorX < rect.X || cursorY < rect.Y || cursorX >= rect.X+rect.W || cursorY >= rect.Y+rect.H {
 		return cursorProjectionTarget{}, false
 	}
@@ -316,6 +320,10 @@ func renderSourceLikelyOwnsVisualCursor(source terminalRenderSource) bool {
 }
 
 func visualCursorProjectionTargetForSource(rect workbench.Rect, source terminalRenderSource) (cursorProjectionTarget, bool) {
+	return visualCursorProjectionTargetForSourceWithPlacement(rect, source, 0, 0)
+}
+
+func visualCursorProjectionTargetForSourceWithPlacement(rect workbench.Rect, source terminalRenderSource, offsetX, offsetY int) (cursorProjectionTarget, bool) {
 	if source == nil || !renderSourceLikelyOwnsVisualCursor(source) {
 		return cursorProjectionTarget{}, false
 	}
@@ -326,14 +334,22 @@ func visualCursorProjectionTargetForSource(rect workbench.Rect, source terminalR
 	startRow := maxInt(0, screenRows/2)
 	base := source.ScrollbackRows()
 	for row := screenRows - 1; row >= startRow; row-- {
+		targetY := rect.Y + offsetY + row
+		if targetY < rect.Y {
+			continue
+		}
 		cells := source.Row(base + row)
-		for col := 0; col < len(cells) && col < rect.W; col++ {
+		for col := 0; col < len(cells); col++ {
+			targetX := rect.X + offsetX + col
+			if targetX < rect.X || targetX >= rect.X+rect.W {
+				continue
+			}
 			if !cellLooksLikeVisualCursor(cells, col) {
 				continue
 			}
 			return cursorProjectionTarget{
-				X:     rect.X + col,
-				Y:     rect.Y + row,
+				X:     targetX,
+				Y:     targetY,
 				Shape: "block",
 				Blink: false,
 			}, true

@@ -3,7 +3,7 @@ package bridge
 import (
 	"context"
 
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 )
 
 type Client interface {
@@ -13,23 +13,24 @@ type Client interface {
 	SetMetadata(ctx context.Context, terminalID string, name string, tags map[string]string) error
 	List(ctx context.Context) (*protocol.ListResult, error)
 	Events(ctx context.Context, params protocol.EventsParams) (<-chan protocol.Event, error)
-	Attach(ctx context.Context, terminalID string, mode string) (*protocol.AttachResult, error)
+	Attach(ctx context.Context, params protocol.AttachParams) (*protocol.AttachResult, error)
+	EnsureResize(ctx context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error)
 	Snapshot(ctx context.Context, terminalID string, offset, limit int) (*protocol.Snapshot, error)
+	GridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*protocol.GridViewport, error)
 	Input(ctx context.Context, channel uint16, data []byte) error
 	Resize(ctx context.Context, channel uint16, cols, rows uint16) error
+	StreamReady(ctx context.Context, channel uint16, screenSequence uint64) error
 	Stream(channel uint16) (<-chan protocol.StreamFrame, func())
 	Kill(ctx context.Context, terminalID string) error
+	Remove(ctx context.Context, terminalID string) error
 	Restart(ctx context.Context, terminalID string) error
-	CreateSession(ctx context.Context, params protocol.CreateSessionParams) (*protocol.SessionSnapshot, error)
-	ListSessions(ctx context.Context) (*protocol.ListSessionsResult, error)
-	GetSession(ctx context.Context, sessionID string) (*protocol.SessionSnapshot, error)
-	AttachSession(ctx context.Context, params protocol.AttachSessionParams) (*protocol.SessionSnapshot, error)
-	DetachSession(ctx context.Context, sessionID, viewID string) error
-	ApplySession(ctx context.Context, params protocol.ApplySessionParams) (*protocol.SessionSnapshot, error)
-	ReplaceSession(ctx context.Context, params protocol.ReplaceSessionParams) (*protocol.SessionSnapshot, error)
-	UpdateSessionView(ctx context.Context, params protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error)
-	AcquireSessionLease(ctx context.Context, params protocol.AcquireSessionLeaseParams) (*protocol.LeaseInfo, error)
-	ReleaseSessionLease(ctx context.Context, params protocol.ReleaseSessionLeaseParams) error
+}
+
+type StorageClient interface {
+	StorageGet(ctx context.Context, params protocol.StorageGetParams) (*protocol.StorageEntry, error)
+	StoragePut(ctx context.Context, params protocol.StoragePutParams) (*protocol.StorageEntry, error)
+	StorageDelete(ctx context.Context, params protocol.StorageDeleteParams) (*protocol.StorageDeleteResult, error)
+	StorageList(ctx context.Context, params protocol.StorageListParams) (*protocol.StorageListResult, error)
 }
 
 type ProtocolClient struct {
@@ -62,12 +63,20 @@ func (c *ProtocolClient) Events(ctx context.Context, params protocol.EventsParam
 	return c.inner.Events(ctx, params)
 }
 
-func (c *ProtocolClient) Attach(ctx context.Context, terminalID string, mode string) (*protocol.AttachResult, error) {
-	return c.inner.Attach(ctx, terminalID, mode)
+func (c *ProtocolClient) Attach(ctx context.Context, params protocol.AttachParams) (*protocol.AttachResult, error) {
+	return c.inner.AttachWithOptions(ctx, params)
+}
+
+func (c *ProtocolClient) EnsureResize(ctx context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error) {
+	return c.inner.EnsureResize(ctx, params)
 }
 
 func (c *ProtocolClient) Snapshot(ctx context.Context, terminalID string, offset, limit int) (*protocol.Snapshot, error) {
 	return c.inner.Snapshot(ctx, terminalID, offset, limit)
+}
+
+func (c *ProtocolClient) GridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*protocol.GridViewport, error) {
+	return c.inner.GridViewport(ctx, terminalID, offset, limit, cols)
 }
 
 func (c *ProtocolClient) Input(ctx context.Context, channel uint16, data []byte) error {
@@ -78,6 +87,10 @@ func (c *ProtocolClient) Resize(ctx context.Context, channel uint16, cols, rows 
 	return c.inner.Resize(ctx, channel, cols, rows)
 }
 
+func (c *ProtocolClient) StreamReady(ctx context.Context, channel uint16, screenSequence uint64) error {
+	return c.inner.StreamReady(ctx, channel, screenSequence)
+}
+
 func (c *ProtocolClient) Stream(channel uint16) (<-chan protocol.StreamFrame, func()) {
 	return c.inner.Stream(channel)
 }
@@ -86,46 +99,26 @@ func (c *ProtocolClient) Kill(ctx context.Context, terminalID string) error {
 	return c.inner.Kill(ctx, terminalID)
 }
 
+func (c *ProtocolClient) Remove(ctx context.Context, terminalID string) error {
+	return c.inner.Remove(ctx, terminalID)
+}
+
 func (c *ProtocolClient) Restart(ctx context.Context, terminalID string) error {
 	return c.inner.Restart(ctx, terminalID)
 }
 
-func (c *ProtocolClient) CreateSession(ctx context.Context, params protocol.CreateSessionParams) (*protocol.SessionSnapshot, error) {
-	return c.inner.CreateSession(ctx, params)
+func (c *ProtocolClient) StorageGet(ctx context.Context, params protocol.StorageGetParams) (*protocol.StorageEntry, error) {
+	return c.inner.StorageGet(ctx, params)
 }
 
-func (c *ProtocolClient) ListSessions(ctx context.Context) (*protocol.ListSessionsResult, error) {
-	return c.inner.ListSessions(ctx)
+func (c *ProtocolClient) StoragePut(ctx context.Context, params protocol.StoragePutParams) (*protocol.StorageEntry, error) {
+	return c.inner.StoragePut(ctx, params)
 }
 
-func (c *ProtocolClient) GetSession(ctx context.Context, sessionID string) (*protocol.SessionSnapshot, error) {
-	return c.inner.GetSession(ctx, sessionID)
+func (c *ProtocolClient) StorageDelete(ctx context.Context, params protocol.StorageDeleteParams) (*protocol.StorageDeleteResult, error) {
+	return c.inner.StorageDelete(ctx, params)
 }
 
-func (c *ProtocolClient) AttachSession(ctx context.Context, params protocol.AttachSessionParams) (*protocol.SessionSnapshot, error) {
-	return c.inner.AttachSession(ctx, params)
-}
-
-func (c *ProtocolClient) DetachSession(ctx context.Context, sessionID, viewID string) error {
-	return c.inner.DetachSession(ctx, sessionID, viewID)
-}
-
-func (c *ProtocolClient) ApplySession(ctx context.Context, params protocol.ApplySessionParams) (*protocol.SessionSnapshot, error) {
-	return c.inner.ApplySession(ctx, params)
-}
-
-func (c *ProtocolClient) ReplaceSession(ctx context.Context, params protocol.ReplaceSessionParams) (*protocol.SessionSnapshot, error) {
-	return c.inner.ReplaceSession(ctx, params)
-}
-
-func (c *ProtocolClient) UpdateSessionView(ctx context.Context, params protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error) {
-	return c.inner.UpdateSessionView(ctx, params)
-}
-
-func (c *ProtocolClient) AcquireSessionLease(ctx context.Context, params protocol.AcquireSessionLeaseParams) (*protocol.LeaseInfo, error) {
-	return c.inner.AcquireSessionLease(ctx, params)
-}
-
-func (c *ProtocolClient) ReleaseSessionLease(ctx context.Context, params protocol.ReleaseSessionLeaseParams) error {
-	return c.inner.ReleaseSessionLease(ctx, params)
+func (c *ProtocolClient) StorageList(ctx context.Context, params protocol.StorageListParams) (*protocol.StorageListResult, error) {
+	return c.inner.StorageList(ctx, params)
 }

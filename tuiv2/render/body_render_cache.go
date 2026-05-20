@@ -8,16 +8,15 @@ type bodyRenderCacheCursor struct {
 }
 
 type bodyRenderCacheEntry struct {
-	PaneID       string
-	OwnerID      uint32
-	Theme        uiTheme
-	FrameKey     paneFrameKey
-	ContentKey   paneContentKey
-	ContentRect  workbench.Rect
-	Metrics      renderTerminalMetrics
-	ScreenUpdate terminalScreenUpdateHint
-	Window       terminalSourceWindowState
-	HasWindow    bool
+	PaneID      string
+	OwnerID     uint32
+	Theme       uiTheme
+	FrameKey    paneFrameKey
+	ContentKey  paneContentKey
+	ContentRect workbench.Rect
+	Metrics     renderTerminalMetrics
+	Window      terminalSourceWindowState
+	HasWindow   bool
 }
 
 type capturedBodyRenderCacheEntry struct {
@@ -27,6 +26,7 @@ type capturedBodyRenderCacheEntry struct {
 
 type bodyRenderCachePreview struct {
 	entry  bodyRenderCacheEntry
+	rect   workbench.Rect
 	sprite *composedCanvas
 	valid  bool
 }
@@ -43,30 +43,49 @@ type bodyRenderCache struct {
 	previewCanvas   *composedCanvas
 }
 
-func captureBodyRenderCacheEntries(entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) []capturedBodyRenderCacheEntry {
+func captureBodyRenderCacheEntries(cache *bodyRenderCache, entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) []capturedBodyRenderCacheEntry {
 	captured := make([]capturedBodyRenderCacheEntry, len(entries))
 	for i, entry := range entries {
-		captured[i] = captureBodyRenderCacheEntry(entry, runtimeState)
+		var previous *bodyRenderCacheEntry
+		if cache != nil && i < len(cache.entries) {
+			previous = &cache.entries[i]
+		}
+		captured[i] = captureBodyRenderCacheEntryWithPrevious(entry, runtimeState, previous)
 	}
 	return captured
 }
 
 func captureBodyRenderCacheEntry(entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) capturedBodyRenderCacheEntry {
+	return captureBodyRenderCacheEntryWithPrevious(entry, runtimeState, nil)
+}
+
+func captureBodyRenderCacheEntryWithPrevious(entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy, previous *bodyRenderCacheEntry) capturedBodyRenderCacheEntry {
 	resolved := resolvePaneContent(entry, runtimeState, false)
 	captured := capturedBodyRenderCacheEntry{
 		cache: bodyRenderCacheEntry{
-			PaneID:       entry.PaneID,
-			OwnerID:      entry.OwnerID,
-			Theme:        entry.Theme,
-			FrameKey:     entry.FrameKey,
-			ContentKey:   entry.ContentKey,
-			ContentRect:  resolved.contentRect,
-			Metrics:      resolved.metrics,
-			ScreenUpdate: effectiveTerminalScreenUpdateHint(resolved.screenUpdate, resolved.surface != nil, entry.SurfaceVersion),
+			PaneID:      entry.PaneID,
+			OwnerID:     entry.OwnerID,
+			Theme:       entry.Theme,
+			FrameKey:    entry.FrameKey,
+			ContentKey:  entry.ContentKey,
+			ContentRect: resolved.contentRect,
+			Metrics:     resolved.metrics,
 		},
 		resolved: resolved,
 	}
 	if resolved.source != nil && resolved.contentRect.H > 0 {
+		if previous != nil &&
+			previous.PaneID == captured.cache.PaneID &&
+			previous.OwnerID == captured.cache.OwnerID &&
+			previous.FrameKey == captured.cache.FrameKey &&
+			previous.ContentKey == captured.cache.ContentKey &&
+			previous.ContentRect == captured.cache.ContentRect &&
+			previous.Metrics == captured.cache.Metrics &&
+			previous.HasWindow {
+			captured.cache.Window = previous.Window
+			captured.cache.HasWindow = true
+			return captured
+		}
 		captured.cache.Window = buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
 		captured.cache.HasWindow = true
 	}

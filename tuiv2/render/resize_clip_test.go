@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -75,11 +75,11 @@ func TestDrawSnapshotWithOffsetClipsWideCellAtPaneEdge(t *testing.T) {
 	canvas := newComposedCanvas(4, 1)
 	snapshot := &protocol.Snapshot{
 		Size: protocol.Size{Cols: 3, Rows: 1},
-		Scrollback: [][]protocol.Cell{{
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{{
 			{Content: "A", Width: 1},
 			{Content: "好", Width: 2},
 			{Content: "", Width: 0},
-		}},
+		}}),
 		Screen: protocol.ScreenData{
 			Cells: [][]protocol.Cell{{
 				{Content: "Z", Width: 1},

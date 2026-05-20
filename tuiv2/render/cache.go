@@ -68,6 +68,17 @@ func (l runtimeLookup) paneViewportOffset(paneID string, fallback int) int {
 	return binding.ViewportOffset
 }
 
+func (l runtimeLookup) paneContentOffset(paneID string) (int, int) {
+	if paneID == "" || len(l.paneBindings) == 0 {
+		return 0, 0
+	}
+	binding, ok := l.paneBindings[paneID]
+	if !ok {
+		return 0, 0
+	}
+	return binding.ContentOffsetX, binding.ContentOffsetY
+}
+
 var blankFillRowCache = struct {
 	mu   sync.RWMutex
 	rows map[int][]drawCell

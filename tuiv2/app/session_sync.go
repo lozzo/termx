@@ -2,13 +2,14 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
-	"github.com/lozzow/termx/tuiv2/sessionstate"
-	"github.com/lozzow/termx/workbenchdoc"
+	"github.com/lozzow/termx/tuiv2/sessiondoc"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
+	"github.com/lozzow/termx/tuiv2/workbenchcodec"
 )
 
 func batchCmds(cmds ...tea.Cmd) tea.Cmd {
@@ -29,34 +30,34 @@ func batchCmds(cmds ...tea.Cmd) tea.Cmd {
 }
 
 func (m *Model) pullSessionCmd() tea.Cmd {
-	if m == nil || m.sessionID == "" || m.runtime == nil || m.runtime.Client() == nil {
+	if m == nil || m.sessionID == "" || m.sessionStore == nil {
 		return nil
 	}
 	sessionID := m.sessionID
-	client := m.runtime.Client()
+	store := m.sessionStore
 	return func() tea.Msg {
-		snapshot, err := client.GetSession(context.Background(), sessionID)
+		snapshot, err := store.GetSession(context.Background(), sessionID)
 		return sessionSnapshotMsg{Snapshot: snapshot, Err: err}
 	}
 }
 
 func (m *Model) replaceSessionCmd() tea.Cmd {
-	if m == nil || m.sessionID == "" || m.runtime == nil || m.runtime.Client() == nil || m.workbench == nil {
+	if m == nil || m.sessionID == "" || m.sessionStore == nil || m.workbench == nil {
 		return nil
 	}
-	client := m.runtime.Client()
-	params := protocol.ReplaceSessionParams{
+	store := m.sessionStore
+	params := sessionstore.ReplaceParams{
 		SessionID:    m.sessionID,
 		ViewID:       m.sessionViewID,
 		BaseRevision: m.sessionRevision,
 		Workbench:    m.exportSessionWorkbench(),
 	}
 	return func() tea.Msg {
-		snapshot, err := client.ReplaceSession(context.Background(), params)
+		snapshot, err := store.ReplaceSession(context.Background(), params)
 		if err == nil {
 			return sessionSnapshotMsg{Snapshot: snapshot}
 		}
-		latest, latestErr := client.GetSession(context.Background(), params.SessionID)
+		latest, latestErr := store.GetSession(context.Background(), params.SessionID)
 		if latestErr == nil && latest != nil && isRevisionConflict(err) {
 			return sessionSnapshotMsg{Snapshot: latest}
 		}
@@ -65,13 +66,13 @@ func (m *Model) replaceSessionCmd() tea.Cmd {
 }
 
 func (m *Model) updateSessionViewCmd() tea.Cmd {
-	if m == nil || m.sessionID == "" || m.sessionViewID == "" || m.runtime == nil || m.runtime.Client() == nil {
+	if m == nil || m.sessionID == "" || m.sessionViewID == "" || m.sessionStore == nil {
 		return nil
 	}
-	client := m.runtime.Client()
+	store := m.sessionStore
 	params := m.currentSessionViewParams()
 	return func() tea.Msg {
-		view, err := client.UpdateSessionView(context.Background(), params)
+		view, err := store.UpdateSessionView(context.Background(), params)
 		return sessionViewUpdatedMsg{View: view, Err: err}
 	}
 }
@@ -80,8 +81,12 @@ func (m *Model) reloadTerminalSnapshotCmd(terminalID string) tea.Cmd {
 	if m == nil || m.runtime == nil || m.runtime.Client() == nil || terminalID == "" {
 		return nil
 	}
+	limit := defaultTerminalSnapshotScrollbackLimit
+	if terminal := m.runtime.Registry().Get(terminalID); terminal != nil && terminal.ScrollbackLoadedLimit > limit {
+		limit = terminal.ScrollbackLoadedLimit
+	}
 	return func() tea.Msg {
-		snapshot, err := m.runtime.LoadSnapshot(context.Background(), terminalID, 0, defaultTerminalSnapshotScrollbackLimit)
+		snapshot, err := m.runtime.LoadSnapshot(context.Background(), terminalID, 0, limit)
 		if err != nil {
 			return err
 		}
@@ -98,19 +103,19 @@ func (m *Model) acquireSessionLeaseAndResizeCmd(paneID, terminalID string) tea.C
 	})
 }
 
-func (m *Model) currentSessionLeases() []protocol.LeaseInfo {
+func (m *Model) currentSessionLeases() []sessionstore.LeaseInfo {
 	if m == nil || len(m.sessionLeases) == 0 {
 		return nil
 	}
-	leases := make([]protocol.LeaseInfo, 0, len(m.sessionLeases))
+	leases := make([]sessionstore.LeaseInfo, 0, len(m.sessionLeases))
 	for _, lease := range m.sessionLeases {
 		leases = append(leases, lease)
 	}
 	return leases
 }
 
-func (m *Model) currentSessionViewParams() protocol.UpdateSessionViewParams {
-	params := protocol.UpdateSessionViewParams{
+func (m *Model) currentSessionViewParams() sessionstore.UpdateViewParams {
+	params := sessionstore.UpdateViewParams{
 		SessionID: m.sessionID,
 		ViewID:    m.sessionViewID,
 	}
@@ -133,15 +138,21 @@ func (m *Model) currentSessionViewParams() protocol.UpdateSessionViewParams {
 }
 
 func isRevisionConflict(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "revision conflict")
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, sessionstore.ErrConflict) {
+		return true
+	}
+	text := err.Error()
+	return strings.Contains(text, "revision conflict") ||
+		strings.Contains(text, "sessionstore: revision conflict") ||
+		strings.Contains(text, "protocol error 409") ||
+		strings.Contains(text, "storage version mismatch")
 }
 
-func isSessionLeaseUnsupported(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "unknown session method: session.acquire_lease")
-}
-
-func (m *Model) exportSessionWorkbench() *workbenchdoc.Doc {
-	doc := sessionstate.ExportWorkbench(m.workbench)
+func (m *Model) exportSessionWorkbench() *sessiondoc.Doc {
+	doc := workbenchcodec.ExportWorkbench(m.workbench)
 	if m == nil || doc == nil || m.sessionSharedDoc == nil {
 		return doc
 	}
@@ -155,7 +166,7 @@ func (m *Model) exportSessionWorkbench() *workbenchdoc.Doc {
 			continue
 		}
 		ws.ActiveTab = baseWS.ActiveTab
-		baseTabs := make(map[string]*workbenchdoc.Tab, len(baseWS.Tabs))
+		baseTabs := make(map[string]*sessiondoc.Tab, len(baseWS.Tabs))
 		for _, tab := range baseWS.Tabs {
 			if tab != nil {
 				baseTabs[tab.ID] = tab

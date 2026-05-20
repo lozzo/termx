@@ -1,0 +1,109 @@
+---
+title: 配置说明
+description: 了解 termx 当前支持的命令行参数、环境变量和常见启动方式。
+---
+
+## 配置说明
+
+termx 现在统一使用：
+
+1. **命令行参数**
+2. **环境变量**
+
+远程云端配置会写入 TermX 配置文件，连接密钥会单独保存在受限权限的 auth store 中。
+
+## 最常见的启动方式
+
+### 本地直连
+
+```bash
+termx remote enable --mode local
+```
+
+### 云端连接
+
+```bash
+termx remote enable --mode online
+termx daemon
+termx remote pair
+```
+
+### 本地 + 云端
+
+```bash
+termx remote enable --mode both
+termx daemon
+termx remote pair
+```
+
+## 参数说明
+
+| 参数 | 说明 |
+|------|------|
+| `remote login` | 可选：提前登录 Web Control 并保存连接凭据 |
+| `remote enable --mode local` | 启用本地 Web 和本地 WebRTC 配对 |
+| `remote enable --mode online` | 启用 Web Control 云端连接 |
+| `remote enable --mode both` | 同时启用本地和云端连接 |
+| `remote pair` | 生成配对二维码和 `termx://pair` URI |
+| `daemon` | 常驻运行 TermX runtime 和远程注册循环 |
+
+## 环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `TERMX_REMOTE_ENABLE` | 设为 `1` 时启用远程 runtime |
+| `TERMX_REMOTE_CONTROL_URL` | Web Control 地址 |
+| `TERMX_REMOTE_CONNECTION_KEY` | Web Control 连接密钥 |
+| `TERMX_REMOTE_HUB_URL` | 可选的固定 Hub 地址 |
+| `TERMX_REMOTE_LOCAL_WEB_ENABLE` | 设为 `1` 时 daemon 启动本地 Web |
+
+普通用户通常只需要通过 `termx remote enable --mode both` 写入配置，不需要手写环境变量；没有已保存凭据时命令会自动打开浏览器登录。
+
+## 常见组合示例
+
+### 给节点指定名称
+
+```bash
+termx remote enable --mode online
+```
+
+### 明确告诉客户端该连哪些地址
+
+```bash
+termx remote enable --mode online --hub-url <hub_url>
+```
+
+### 在非交互环境运行 daemon
+
+```bash
+termx daemon
+```
+
+### 用环境变量提供密钥
+
+```bash
+TERMX_REMOTE_CONNECTION_KEY=<connection_key> TERMX_REMOTE_CONTROL_URL=<control_url> TERMX_REMOTE_ENABLE=1 termx daemon
+```
+
+## 守护运行建议
+
+### 后台运行
+
+```bash
+termx daemon
+```
+
+### nohup
+
+```bash
+nohup termx daemon > ~/.termx.log 2>&1 &
+```
+
+### systemd / LaunchAgent
+
+长期常驻时，建议把完整命令行参数写进服务管理器配置中，例如：
+
+- Linux：`systemd --user`
+- macOS：`LaunchAgent`
+
+核心原则是：**把最终启动命令完整写进 `ExecStart` / `ProgramArguments`**，而不是依赖外部 YAML 配置文件。

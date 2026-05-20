@@ -53,6 +53,10 @@ func configureProgramOutput(model *Model, stdout io.Writer) (io.Writer, bool) {
 		// Non-TTY hosts should keep cursor projection embedded in View() output.
 		return stdout, false
 	}
+	writer.SetUVRendererEnabled(globalUVRendererEnabled(true))
+	if model != nil {
+		writer.SetDebugLogPath(model.cfg.LogFilePath)
+	}
 	if model != nil {
 		model.SetCursorWriter(writer)
 		if !shared.BubbleTeaRendererEnabled() {

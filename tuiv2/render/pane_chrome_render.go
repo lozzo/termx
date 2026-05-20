@@ -79,8 +79,8 @@ func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, sharedLeft, shar
 		// That visually "activates" the underlying pane border at the junction.
 		// Overwrite the floating frame directly so its corners stay real corners.
 		drawDirectPaneBorder(canvas, rect, borderStyle)
-		drawPaneOverflowMarkers(canvas, rect, theme, overflow, active)
 		drawPaneTopBorderLabels(canvas, rect, chromeStyles, title, border, floating, cfg)
+		drawPaneOverflowMarkers(canvas, rect, theme, overflow, active)
 		return
 	}
 	// Framed split panes intentionally keep their own left/top borders instead
@@ -92,8 +92,8 @@ func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, sharedLeft, shar
 	drawVerticalBorder(canvas, rect.X, verticalBorderStart(rect.Y, false), rect.Y+rect.H-2, borderStyle, false)
 	drawVerticalBorder(canvas, rect.X+rect.W-1, verticalBorderStart(rect.Y, false), rect.Y+rect.H-2, borderStyle, false)
 
-	drawPaneOverflowMarkers(canvas, rect, theme, overflow, active)
 	drawPaneTopBorderLabels(canvas, rect, chromeStyles, title, border, floating, cfg)
+	drawPaneOverflowMarkers(canvas, rect, theme, overflow, active)
 }
 
 func drawDirectPaneBorder(canvas *composedCanvas, rect workbench.Rect, style drawStyle) {
@@ -118,22 +118,32 @@ func drawPaneOverflowMarkers(canvas *composedCanvas, rect workbench.Rect, theme 
 	if canvas == nil || rect.W < 3 || rect.H < 3 {
 		return
 	}
+	horizontalStyle := paneOverflowMarkerStyle(theme, active, false)
+	verticalStyle := paneOverflowMarkerStyle(theme, active, true)
+	if overflow.Left {
+		canvas.set(rect.X, rect.Y+rect.H-2, drawCell{Content: "<", Width: 1, Style: horizontalStyle})
+	}
 	if overflow.Right {
-		markerFG := theme.panelMuted
-		if active {
-			markerFG = ensureContrast(mixHex(theme.chromeAccent, theme.panelText, 0.35), theme.hostBG, 4.2)
-		}
-		markerStyle := drawStyle{FG: markerFG, Bold: active}
-		canvas.set(rect.X+rect.W-1, rect.Y+rect.H-2, drawCell{Content: ">", Width: 1, Style: markerStyle})
+		canvas.set(rect.X+rect.W-1, rect.Y+rect.H-2, drawCell{Content: ">", Width: 1, Style: horizontalStyle})
+	}
+	if overflow.Top {
+		canvas.set(rect.X+rect.W-2, rect.Y, drawCell{Content: "^", Width: 1, Style: verticalStyle})
 	}
 	if overflow.Bottom {
-		markerFG := theme.panelMuted
-		if active {
-			markerFG = ensureContrast(theme.warning, theme.hostBG, 4.2)
-		}
-		markerStyle := drawStyle{FG: markerFG, Bold: active}
-		canvas.set(rect.X+rect.W-2, rect.Y+rect.H-1, drawCell{Content: "v", Width: 1, Style: markerStyle})
+		canvas.set(rect.X+rect.W-2, rect.Y+rect.H-1, drawCell{Content: "v", Width: 1, Style: verticalStyle})
 	}
+}
+
+func paneOverflowMarkerStyle(theme uiTheme, active bool, vertical bool) drawStyle {
+	markerFG := theme.panelMuted
+	if active {
+		if vertical {
+			markerFG = ensureContrast(theme.warning, theme.hostBG, 4.2)
+		} else {
+			markerFG = ensureContrast(mixHex(theme.chromeAccent, theme.panelText, 0.35), theme.hostBG, 4.2)
+		}
+	}
+	return drawStyle{FG: markerFG, Bold: active}
 }
 
 const (

@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/perftrace"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -113,7 +113,7 @@ func (m *Model) beginFloatingDragPreview(paneID string, rect workbench.Rect) {
 	if m == nil || paneID == "" {
 		return
 	}
-	preview := floatingDragPreviewState{Active: true, PaneID: paneID, Rect: rect}
+	preview := floatingDragPreviewState{Active: true, PaneID: paneID, Rect: m.clampFloatingDragPreviewRect(rect)}
 	if pane, _, ok := m.visiblePaneForInput(paneID); ok && pane != nil && pane.TerminalID != "" && m.runtime != nil {
 		_ = m.runtime.RefreshSnapshotFromVTerm(pane.TerminalID)
 		if terminal := m.runtime.Registry().Get(pane.TerminalID); terminal != nil && terminal.Snapshot != nil {
@@ -130,12 +130,26 @@ func (m *Model) updateFloatingDragPreviewRect(x, y int) bool {
 	next := m.floatingDragPreview.Rect
 	next.X = maxInt(0, x)
 	next.Y = maxInt(0, y)
+	next = m.clampFloatingDragPreviewRect(next)
 	if next == m.floatingDragPreview.Rect {
 		return false
 	}
 	m.floatingDragPreview.Rect = next
 	m.mouseDragDirty = true
 	return true
+}
+
+func (m *Model) clampFloatingDragPreviewRect(rect workbench.Rect) workbench.Rect {
+	if m == nil {
+		return rect
+	}
+	bounds := m.bodyRect()
+	if bounds.W <= 0 || bounds.H <= 0 {
+		rect.X = maxInt(0, rect.X)
+		rect.Y = maxInt(0, rect.Y)
+		return rect
+	}
+	return workbench.ClampFloatingRectToBounds(rect, bounds)
 }
 
 func (m *Model) commitFloatingDragPreviewCmd() tea.Cmd {
@@ -163,8 +177,9 @@ func (m *Model) findFloatingPaneAt(tab *workbench.TabState, x, y int) (string, w
 	if visible == nil {
 		return "", workbench.Rect{}, false
 	}
-	for i := len(visible.FloatingPanes) - 1; i >= 0; i-- {
-		pane := visible.FloatingPanes[i]
+	floatingPanes := m.visibleFloatingPanesForInput(visible)
+	for i := len(floatingPanes) - 1; i >= 0; i-- {
+		pane := floatingPanes[i]
 		rect := pane.Rect
 		if x >= rect.X && x < rect.X+rect.W && y >= rect.Y && y < rect.Y+rect.H {
 			isResize := x >= rect.X+rect.W-2 && y >= rect.Y+rect.H-2
@@ -173,6 +188,23 @@ func (m *Model) findFloatingPaneAt(tab *workbench.TabState, x, y int) (string, w
 	}
 
 	return "", workbench.Rect{}, false
+}
+
+func (m *Model) visibleFloatingPanesForInput(visible *workbench.VisibleWorkbench) []workbench.VisiblePane {
+	if visible == nil || len(visible.FloatingPanes) == 0 {
+		return nil
+	}
+	if m == nil || !m.floatingDragPreview.Active || m.floatingDragPreview.PaneID == "" {
+		return visible.FloatingPanes
+	}
+	panes := append([]workbench.VisiblePane(nil), visible.FloatingPanes...)
+	for i := range panes {
+		if panes[i].ID == m.floatingDragPreview.PaneID {
+			panes[i].Rect = m.floatingDragPreview.Rect
+			break
+		}
+	}
+	return panes
 }
 
 func (m *Model) mouseHitsOwnerButton(pane workbench.VisiblePane, x, contentY int) bool {

@@ -545,7 +545,7 @@ func normalizeFloatingRect(rect, bounds Rect) Rect {
 	next.X = maxInt(0, next.X)
 	next.Y = maxInt(0, next.Y)
 	if bounds.W > 0 && bounds.H > 0 {
-		next = clampFloatingRectToBounds(next, bounds)
+		next = ClampFloatingRectToBounds(next, bounds)
 	}
 	return next
 }
@@ -558,7 +558,7 @@ func floatingCascadeRect(base Rect, attempt int, bounds Rect) Rect {
 	next.X += attempt * floatingCascadeStepX
 	next.Y += attempt * floatingCascadeStepY
 	if bounds.W > 0 && bounds.H > 0 {
-		next = clampFloatingRectToBounds(next, bounds)
+		next = ClampFloatingRectToBounds(next, bounds)
 	}
 	return next
 }
@@ -1181,7 +1181,7 @@ func (w *Workbench) ClampFloatingPanesToBounds(bounds Rect) bool {
 					continue
 				}
 				normalizeFloatingState(floating)
-				next := clampFloatingRectToBounds(floating.Rect, bounds)
+				next := ClampFloatingRectToBounds(floating.Rect, bounds)
 				if next != floating.Rect {
 					floating.Rect = next
 					if floatingStateVisible(floating) {
@@ -1221,7 +1221,7 @@ func reflowFloatingRect(rect, from, to Rect) Rect {
 	return Rect{X: left, Y: top, W: width, H: height}
 }
 
-func clampFloatingRectToBounds(rect, bounds Rect) Rect {
+func ClampFloatingRectToBounds(rect, bounds Rect) Rect {
 	width := clampFloatingDimension(rect.W, bounds.W, minFloatingWidth)
 	height := clampFloatingDimension(rect.H, bounds.H, minFloatingHeight)
 	left := clampFloatingOffset(rect.X, width, bounds.W)

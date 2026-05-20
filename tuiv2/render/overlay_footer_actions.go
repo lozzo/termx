@@ -29,6 +29,7 @@ func pickerFooterActionSpecs() []overlayFooterActionSpec {
 			input.ActionPickerAttachSplit,
 			input.ActionEditTerminal,
 			input.ActionKillTerminal,
+			input.ActionRemoveTerminal,
 			input.ActionCancelMode,
 		},
 		map[input.ActionKind]string{
@@ -36,6 +37,7 @@ func pickerFooterActionSpecs() []overlayFooterActionSpec {
 			input.ActionPickerAttachSplit: "split+attach",
 			input.ActionEditTerminal:      "edit",
 			input.ActionKillTerminal:      "kill",
+			input.ActionRemoveTerminal:    "delete",
 			input.ActionCancelMode:        "close",
 		},
 	)

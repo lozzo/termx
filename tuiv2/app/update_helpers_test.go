@@ -72,6 +72,12 @@ func TestVerticalScrollOptimizationModeSinglePane(t *testing.T) {
 	model.height = 36
 
 	mode, reason := model.verticalScrollOptimizationMode()
+	if mode != verticalScrollModeNone || reason != "host_vertical_scroll_disabled" {
+		t.Fatalf("expected host vertical scroll disabled by default, got mode=%q reason=%q", mode.String(), reason)
+	}
+
+	t.Setenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL", "1")
+	mode, reason = model.verticalScrollOptimizationMode()
 	if mode != verticalScrollModeRowsAndRects || reason != "single_pane" {
 		t.Fatalf("expected single pane mode rows_and_rects, got mode=%q reason=%q", mode.String(), reason)
 	}
@@ -102,6 +108,7 @@ func TestVerticalScrollOptimizationModeStackedFullWidthPanes(t *testing.T) {
 	model.width = 120
 	model.height = 36
 
+	t.Setenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL", "1")
 	mode, reason := model.verticalScrollOptimizationMode()
 	if mode != verticalScrollModeRowsAndRects || reason != "stacked_full_width" {
 		t.Fatalf("expected stacked panes mode rows_and_rects, got mode=%q reason=%q", mode.String(), reason)
@@ -133,6 +140,7 @@ func TestVerticalScrollOptimizationModeSideBySideUsesRectsOnly(t *testing.T) {
 	model.width = 120
 	model.height = 36
 
+	t.Setenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL", "1")
 	mode, reason := model.verticalScrollOptimizationMode()
 	if mode != verticalScrollModeRectsOnly || reason != "tiled_partial_width" {
 		t.Fatalf("expected side-by-side panes mode rects_only, got mode=%q reason=%q", mode.String(), reason)
@@ -173,6 +181,7 @@ func TestVerticalScrollOptimizationModeMixedTiledUsesRectsOnly(t *testing.T) {
 	model.width = 120
 	model.height = 36
 
+	t.Setenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL", "1")
 	mode, reason := model.verticalScrollOptimizationMode()
 	if mode != verticalScrollModeRectsOnly || reason != "tiled_partial_width" {
 		t.Fatalf("expected mixed tiled panes mode rects_only, got mode=%q reason=%q", mode.String(), reason)
@@ -205,6 +214,7 @@ func TestVerticalScrollOptimizationModeRejectsFloatingVisible(t *testing.T) {
 	model.width = 120
 	model.height = 36
 
+	t.Setenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL", "1")
 	mode, reason := model.verticalScrollOptimizationMode()
 	if mode != verticalScrollModeNone || reason != "floating_visible" {
 		t.Fatalf("expected floating layouts to disable vertical scroll optimization, got mode=%q reason=%q", mode.String(), reason)
@@ -223,6 +233,7 @@ func TestVerticalScrollOptimizationModeRejectsContentOverlap(t *testing.T) {
 		}},
 	}
 
+	t.Setenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL", "1")
 	mode, reason := verticalScrollOptimizationModeForVisible(
 		workbench.Rect{W: 120, H: 36},
 		render.VisibleSurfaceWorkbench,

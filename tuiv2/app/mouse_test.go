@@ -7,15 +7,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	localvterm "github.com/lozzow/termx/vterm"
 )
 
 func resetMouseQueueState() {
@@ -101,8 +101,8 @@ func TestMouseDragFloatingPane(t *testing.T) {
 		t.Fatalf("expected committed rect unchanged during drag, got %#v", floating.Rect)
 	}
 
-	expectedX := 20        // 25 - (15 - 10) = 20
-	expectedPreviewY := 10 // drag preview follows pointer during motion; bounds clamp happens on commit
+	expectedX := 20       // 25 - (15 - 10) = 20
+	expectedPreviewY := 8 // preview uses the same body bounds as commit, so release does not jump
 	if !m.floatingDragPreview.Active {
 		t.Fatalf("expected floating drag preview active, got %#v", m.floatingDragPreview)
 	}
@@ -123,10 +123,9 @@ func TestMouseDragFloatingPane(t *testing.T) {
 	m = model.(*Model)
 	drainCmd(t, m, cmd, 20)
 
-	expectedCommittedY := 8
-	if floating.Rect.X != expectedX || floating.Rect.Y != expectedCommittedY {
+	if floating.Rect.X != expectedX || floating.Rect.Y != expectedPreviewY {
 		t.Errorf("expected committed position (%d, %d), got (%d, %d)",
-			expectedX, expectedCommittedY, floating.Rect.X, floating.Rect.Y)
+			expectedX, expectedPreviewY, floating.Rect.X, floating.Rect.Y)
 	}
 
 	// 验证拖动状态已清除
@@ -1110,6 +1109,156 @@ func TestMouseDragFloatingMoveDefersRectCommitUntilRelease(t *testing.T) {
 	}
 	if m.floatingDragPreview.Active {
 		t.Fatalf("expected floating drag preview cleared after release, got %#v", m.floatingDragPreview)
+	}
+}
+
+func TestMouseDragFloatingPreviewHitTestingFollowsVisualRect(t *testing.T) {
+	m := setupModel(t, modelOpts{})
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := m.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 20, H: 8}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+
+	model, _ := m.Update(tea.MouseMsg{X: 12, Y: screenYForBodyY(m, 5), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m = model.(*Model)
+	if m.mouseDragMode != mouseDragMove {
+		t.Fatalf("expected floating move drag mode, got %v", m.mouseDragMode)
+	}
+
+	model, _ = m.Update(tea.MouseMsg{X: 32, Y: screenYForBodyY(m, 11), Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion})
+	m = model.(*Model)
+	previewRect := m.floatingDragPreview.Rect
+	if !m.floatingDragPreview.Active || previewRect == (workbench.Rect{X: 10, Y: 5, W: 20, H: 8}) {
+		t.Fatalf("expected moved floating preview, got %#v", m.floatingDragPreview)
+	}
+
+	paneID, rect, _ := m.findFloatingPaneAt(tab, previewRect.X+1, previewRect.Y)
+	if paneID != "float-1" || rect != previewRect {
+		t.Fatalf("expected hit test to use preview rect %#v, got pane=%q rect=%#v", previewRect, paneID, rect)
+	}
+	if paneID, _, _ := m.findFloatingPaneAt(tab, 11, 5); paneID != "" {
+		t.Fatalf("expected old committed rect header to stop hitting during preview, got pane=%q", paneID)
+	}
+
+	visible := m.workbench.VisibleWithSize(m.bodyRect())
+	if visible == nil || len(visible.FloatingPanes) == 0 {
+		t.Fatal("expected visible floating pane")
+	}
+	pane := m.visibleFloatingPanesForInput(visible)[0]
+	regions := render.PaneChromeHitRegions(pane, m.runtime.Visible(), "", m.chromeConfig())
+	var closeRegion render.HitRegion
+	for _, region := range regions {
+		if region.Kind == render.HitRegionPaneClose {
+			closeRegion = region
+			break
+		}
+	}
+	if closeRegion.Kind != render.HitRegionPaneClose {
+		t.Fatal("expected floating close chrome region")
+	}
+	if region, ok := m.mousePaneChromeRegion(pane, closeRegion.Rect.X, closeRegion.Rect.Y); !ok || region.Kind != render.HitRegionPaneClose {
+		t.Fatalf("expected preview chrome hit at %+v, got region=%#v ok=%v", closeRegion.Rect, region, ok)
+	}
+}
+
+func TestMouseDragFloatingPreviewClampsToCommittedBoundsDuringDrag(t *testing.T) {
+	m := setupModel(t, modelOpts{width: 64, height: 20})
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	startRect := workbench.Rect{X: 22, Y: 8, W: 30, H: 10}
+	if err := m.workbench.CreateFloatingPane(tab.ID, "float-1", startRect); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+
+	model, _ := m.Update(tea.MouseMsg{X: startRect.X + 2, Y: screenYForBodyY(m, startRect.Y), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m = model.(*Model)
+	if m.mouseDragMode != mouseDragMove {
+		t.Fatalf("expected floating move drag mode, got %v", m.mouseDragMode)
+	}
+
+	model, _ = m.Update(tea.MouseMsg{X: 120, Y: screenYForBodyY(m, 80), Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion})
+	m = model.(*Model)
+	want := workbench.ClampFloatingRectToBounds(workbench.Rect{
+		X: 120 - 2,
+		Y: 80,
+		W: startRect.W,
+		H: startRect.H,
+	}, m.bodyRect())
+	if got := m.floatingDragPreview.Rect; got != want {
+		t.Fatalf("expected drag preview clamped to committed bounds %#v, got %#v", want, got)
+	}
+
+	visible := m.workbench.VisibleWithSize(m.bodyRect())
+	if visible == nil || len(visible.FloatingPanes) == 0 {
+		t.Fatal("expected visible floating pane")
+	}
+	if got := visible.FloatingPanes[0].Rect; got != startRect {
+		t.Fatalf("expected committed rect unchanged during drag, got %#v", got)
+	}
+
+	paneID, rect, _ := m.findFloatingPaneAt(tab, want.X+1, want.Y)
+	if paneID != "float-1" || rect != want {
+		t.Fatalf("expected hit test to use clamped preview rect %#v, got pane=%q rect=%#v", want, paneID, rect)
+	}
+
+	model, cmd := m.Update(tea.MouseMsg{X: 120, Y: screenYForBodyY(m, 80), Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease})
+	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+	visible = m.workbench.VisibleWithSize(m.bodyRect())
+	if visible == nil || len(visible.FloatingPanes) == 0 {
+		t.Fatal("expected visible floating pane after release")
+	}
+	if got := visible.FloatingPanes[0].Rect; got != want {
+		t.Fatalf("expected release commit to match drag preview without a jump, got %#v want %#v", got, want)
+	}
+}
+
+func TestRenderCacheInvalidatesWhenFloatingPreviewRectChanges(t *testing.T) {
+	m := setupModel(t, modelOpts{})
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := m.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 20, H: 8}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+	if err := m.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+		t.Fatalf("bind floating pane terminal: %v", err)
+	}
+	terminal := m.runtime.Registry().GetOrCreate("term-float")
+	terminal.Name = "float"
+	terminal.State = "running"
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-float",
+		Size:       protocol.Size{Cols: 18, Rows: 6},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "f", Width: 1}},
+		}},
+	}
+
+	m.floatingDragPreview = floatingDragPreviewState{
+		Active:   true,
+		PaneID:   "float-1",
+		Rect:     workbench.Rect{X: 10, Y: 5, W: 20, H: 8},
+		Snapshot: terminal.Snapshot,
+	}
+	first := m.render.Render()
+	if len(first.Lines) == 0 {
+		t.Fatal("expected first preview frame")
+	}
+
+	m.floatingDragPreview.Rect = workbench.Rect{X: 30, Y: 5, W: 20, H: 8}
+	if _, _, ok := m.render.CachedFrameLinesAndCursorRef(); ok {
+		t.Fatal("expected floating preview rect change to invalidate render cache key")
+	}
+	second := m.render.Render()
+	if strings.Join(first.Lines, "\n") == strings.Join(second.Lines, "\n") {
+		t.Fatal("expected preview frame output to change after preview rect moved")
 	}
 }
 
@@ -2180,6 +2329,39 @@ func TestMouseClickTerminalPoolFooterKillRefreshesItemAndInvokesBridgeClient(t *
 	}
 }
 
+func TestMouseClickTerminalPoolFooterDeleteRemovesItemAndInvokesBridgeClient(t *testing.T) {
+	client := &recordingBridgeClient{listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{
+		{ID: "term-1", Name: "shell", State: "running"},
+	}}}
+	m := setupModel(t, modelOpts{client: client})
+	m.terminalPage = &modal.TerminalManagerState{
+		Title: "Terminal Pool",
+		Items: []modal.PickerItem{
+			{TerminalID: "term-1", Name: "shell", State: "running"},
+			{TerminalID: "term-2", Name: "logs", State: "exited"},
+		},
+		Selected: 1,
+	}
+	m.terminalPage.ApplyFilter()
+	m.input.SetMode(input.ModeState{Kind: input.ModeTerminalManager, RequestID: terminalPoolPageModeToken})
+
+	target := terminalPoolFooterActionRegion(t, m, input.ActionRemoveTerminal)
+	_, cmd := m.Update(tea.MouseMsg{
+		X:      target.Rect.X,
+		Y:      screenYForBodyY(m, target.Rect.Y),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	drainCmd(t, m, cmd, 20)
+
+	if len(client.removeCalls) != 1 || client.removeCalls[0] != "term-2" {
+		t.Fatalf("expected remove call for term-2, got %#v", client.removeCalls)
+	}
+	if idx := terminalManagerVisibleIndexByTerminalID(m.terminalPage.VisibleItems(), "term-2"); idx >= 0 {
+		t.Fatalf("expected removed terminal to leave terminal pool, got %#v", m.terminalPage.VisibleItems())
+	}
+}
+
 func TestMouseClickTerminalPoolQueryMovesCursorAndEditsAtPoint(t *testing.T) {
 	m := setupModel(t, modelOpts{width: 220})
 	m.terminalPage = &modal.TerminalManagerState{
@@ -2735,7 +2917,7 @@ func TestMouseForwardsZoomedTerminalTopRowsWithoutFrameOffset(t *testing.T) {
 		t.Fatal("expected recording bridge client")
 	}
 
-	m.input.SetMode(input.ModeState{Kind: input.ModeDisplay})
+	m.input.SetMode(input.ModeState{Kind: input.ModePane})
 	dispatchAction(t, m, input.SemanticAction{Kind: input.ActionZoomPane, PaneID: "pane-1"})
 	tab := m.workbench.CurrentTab()
 	if tab == nil || tab.ZoomedPaneID != "pane-1" {

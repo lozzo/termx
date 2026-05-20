@@ -15,6 +15,7 @@ func (m *Model) beginCopySelection() {
 	}
 	point := m.copyMode.Cursor
 	m.copyMode.Mark = &copyModePoint{Row: point.Row, Col: point.Col}
+	m.saveCurrentCopyModeState()
 	m.render.Invalidate()
 }
 
@@ -34,6 +35,7 @@ func (m *Model) copyModeSelectedText() (string, bool) {
 		return "", false
 	}
 	start, end := normalizeCopySelection(buffer.clampPoint(*m.copyMode.Mark), buffer.clampPoint(m.copyMode.Cursor))
+	logicalLines := newCopyModeLogicalLines(buffer)
 	var out strings.Builder
 	for row := start.Row; row <= end.Row; row++ {
 		cells := buffer.row(row)
@@ -60,7 +62,7 @@ func (m *Model) copyModeSelectedText() (string, bool) {
 			}
 			out.WriteByte(' ')
 		}
-		if row < end.Row {
+		if row < end.Row && !logicalLines.rowContinues(row) {
 			out.WriteByte('\n')
 		}
 	}
@@ -78,7 +80,8 @@ func (m *Model) copySelectionToClipboard(exit bool) tea.Cmd {
 		return m.showError(fmt.Errorf("copy mode selection is empty"))
 	}
 	m.yankBuffer = text
-	m.pushClipboardHistory(text, m.copyMode.PaneID)
+	paneID := m.copyMode.PaneID
+	storeCmd := m.pushClipboardHistory(text, paneID)
 	clipboardErr := error(nil)
 	if systemClipboardWriter != nil {
 		clipboardErr = systemClipboardWriter(text)
@@ -98,5 +101,5 @@ func (m *Model) copySelectionToClipboard(exit bool) tea.Cmd {
 	if clipboardErr != nil && m.yankBuffer == "" {
 		return m.showError(clipboardErr)
 	}
-	return m.showNotice(fmt.Sprintf("copied %d bytes", len([]byte(text))))
+	return batchCmds(storeCmd, m.showNotice(fmt.Sprintf("copied %d bytes", len([]byte(text)))))
 }

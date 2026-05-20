@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/render"
+	appruntime "github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -19,9 +21,11 @@ var ownerConfirmDelay = 400 * time.Millisecond
 var sharedTerminalSnapshotResyncDelay = 120 * time.Millisecond
 
 const (
-	defaultTerminalSnapshotScrollbackLimit = 500
-	maxTerminalSnapshotScrollbackLimit     = 10000
+	defaultTerminalSnapshotScrollbackLimit = 0
+	terminalHistoryInitialPageLimit        = 500
+	terminalScrollbackPageLimit            = 500
 	terminalScrollbackPrefetchMargin       = 8
+	terminalMaterializedScrollbackLimit    = 12000
 )
 
 func clearErrorCmd(seq uint64) tea.Cmd {
@@ -81,6 +85,9 @@ func (m *Model) verticalScrollOptimizationMode() (verticalScrollMode, string) {
 }
 
 func verticalScrollOptimizationModeForVisible(body workbench.Rect, surfaceKind render.VisibleSurfaceKind, overlayKind render.VisibleOverlayKind, visible *workbench.VisibleWorkbench) (verticalScrollMode, string) {
+	if os.Getenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL") != "1" {
+		return verticalScrollModeNone, "host_vertical_scroll_disabled"
+	}
 	if surfaceKind != render.VisibleSurfaceWorkbench || overlayKind != render.VisibleOverlayNone || visible == nil {
 		if surfaceKind != render.VisibleSurfaceWorkbench {
 			return verticalScrollModeNone, "non_workbench_surface"
@@ -201,7 +208,7 @@ func (m *Model) activePaneContentRect() (workbench.Rect, bool) {
 	if visible == nil {
 		return workbench.Rect{}, false
 	}
-	for _, pane := range visible.FloatingPanes {
+	for _, pane := range m.visibleFloatingPanesForInput(visible) {
 		if pane.ID != tab.ActivePaneID {
 			continue
 		}
@@ -227,7 +234,7 @@ func (m *Model) visiblePaneProjection(paneID string) (workbench.VisiblePane, boo
 	if visible == nil {
 		return workbench.VisiblePane{}, false
 	}
-	for _, pane := range visible.FloatingPanes {
+	for _, pane := range m.visibleFloatingPanesForInput(visible) {
 		if pane.ID == paneID {
 			return pane, true
 		}
@@ -268,32 +275,155 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 	if terminal.VTerm == nil && terminal.Snapshot != nil && terminal.Snapshot.Modes.AlternateScreen {
 		return nil
 	}
-	loaded := terminal.ScrollbackLoadedLimit
-	if terminal.Snapshot != nil && len(terminal.Snapshot.Scrollback) > loaded {
-		loaded = len(terminal.Snapshot.Scrollback)
+	copyModeState, copyModeActive := m.copyModeStateForPane(pane.ID)
+	copyModeActive = copyModeActive && copyModeState.Snapshot != nil
+	loaded := 0
+	materializedRows := 0
+	if copyModeActive {
+		loaded = maxInt(snapshotScrollbackLoadedDepth(copyModeState.Snapshot), copyModeState.LoadedRows)
+		if copyModeState.Snapshot != nil {
+			materializedRows = len(copyModeState.Snapshot.Scrollback)
+		}
+	} else if terminal.Snapshot != nil {
+		loaded = maxInt(snapshotScrollbackLoadedDepth(terminal.Snapshot), terminal.ScrollbackLoadedLimit)
+		materializedRows = len(terminal.Snapshot.Scrollback)
+	} else {
+		loaded = terminal.ScrollbackLoadedLimit
+	}
+	if terminal.ScrollbackExhausted {
+		if !terminalHasKnownScrollbackBeyond(terminal, loaded) {
+			return nil
+		}
+		terminal.ScrollbackExhausted = false
 	}
 	want := viewportOffset + contentRect.H + terminalScrollbackPrefetchMargin
-	if want <= loaded {
+	visibleDepth := loaded
+	if materializedRows > 0 && loaded > materializedRows {
+		visibleDepth = materializedRows
+	}
+	if want <= visibleDepth {
 		return nil
 	}
-	nextLimit := maxInt(defaultTerminalSnapshotScrollbackLimit, loaded)
-	for nextLimit < want && nextLimit < maxTerminalSnapshotScrollbackLimit {
-		nextLimit *= 2
+	nextLimit := loaded + terminalScrollbackPageLimit
+	if nextLimit < terminalHistoryInitialPageLimit {
+		nextLimit = terminalHistoryInitialPageLimit
 	}
-	if nextLimit > maxTerminalSnapshotScrollbackLimit {
-		nextLimit = maxTerminalSnapshotScrollbackLimit
+	if nextLimit < want {
+		nextLimit = minInt(want, loaded+terminalScrollbackPageLimit)
 	}
 	if nextLimit <= loaded || terminal.ScrollbackLoadingLimit >= nextLimit {
 		return nil
 	}
 	terminal.ScrollbackLoadingLimit = nextLimit
-	terminalID := pane.TerminalID
+	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, terminalCanonicalCols(terminal))
+}
+
+func (m *Model) ensureCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
+	return m.copyModeScrollbackCmd(buffer, false)
+}
+
+func (m *Model) prefetchCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
+	return m.copyModeScrollbackCmd(buffer, true)
+}
+
+func (m *Model) copyModeScrollbackCmd(buffer copyModeBuffer, force bool) tea.Cmd {
+	if m == nil || m.workbench == nil || m.runtime == nil || m.copyMode.PaneID == "" || buffer.snapshot == nil {
+		return nil
+	}
+	if snapshotUsesAlternateScreen(buffer.snapshot) {
+		return nil
+	}
+	pane, _, ok := m.copyModePaneAndContentRect(m.copyMode.PaneID)
+	if !ok || pane == nil || pane.ID != m.copyMode.PaneID || pane.TerminalID == "" {
+		return nil
+	}
+	if !force && m.copyMode.Cursor.Row > terminalScrollbackPrefetchMargin && m.copyMode.ViewTopRow > terminalScrollbackPrefetchMargin {
+		return nil
+	}
+	terminal := m.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil {
+		return nil
+	}
+	loaded := maxInt(snapshotScrollbackLoadedDepth(buffer.snapshot), m.copyMode.LoadedRows)
+	if terminal.ScrollbackExhausted {
+		if !terminalHasKnownScrollbackBeyond(terminal, loaded) {
+			return nil
+		}
+		terminal.ScrollbackExhausted = false
+	}
+	nextLimit := loaded + terminalScrollbackPageLimit
+	if nextLimit < terminalHistoryInitialPageLimit {
+		nextLimit = terminalHistoryInitialPageLimit
+	}
+	if nextLimit <= loaded || terminal.ScrollbackLoadingLimit >= nextLimit {
+		return nil
+	}
+	terminal.ScrollbackLoadingLimit = nextLimit
+	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, terminalCanonicalCols(terminal))
+}
+
+func terminalCanonicalCols(terminal *appruntime.TerminalRuntime) int {
+	if terminal == nil {
+		return 0
+	}
+	if terminal.Snapshot != nil && terminal.Snapshot.Size.Cols > 0 {
+		return int(terminal.Snapshot.Size.Cols)
+	}
+	if terminal.VTerm != nil {
+		cols, _ := terminal.VTerm.Size()
+		if cols > 0 {
+			return cols
+		}
+	}
+	if terminal.ResizeOwnership != nil && terminal.ResizeOwnership.Size.Cols > 0 {
+		return int(terminal.ResizeOwnership.Size.Cols)
+	}
+	return 0
+}
+
+func terminalHasKnownScrollbackBeyond(terminal *appruntime.TerminalRuntime, loaded int) bool {
+	if terminal == nil {
+		return false
+	}
+	known := terminal.ScrollbackLoadedLimit
+	if snapshot := terminal.Snapshot; snapshot != nil {
+		if rows := len(snapshot.Scrollback); rows > known {
+			known = rows
+		}
+		if snapshot.ScrollbackTotal > known {
+			known = snapshot.ScrollbackTotal
+		}
+		if snapshot.ScrollbackHasMore && known <= len(snapshot.Scrollback) {
+			known = len(snapshot.Scrollback) + 1
+		}
+	}
+	return known > loaded
+}
+
+func (m *Model) loadTerminalHistoryViewportCmd(terminalID string, offset int, limit int, cols int) tea.Cmd {
+	loadingLimit := offset + limit
 	return func() tea.Msg {
-		snapshot, err := m.runtime.LoadSnapshot(context.Background(), terminalID, 0, nextLimit)
+		snapshot, err := m.runtime.LoadGridViewport(context.Background(), terminalID, offset, limit, cols)
 		if err != nil {
+			if terminal := m.runtime.Registry().Get(terminalID); terminal != nil && terminal.ScrollbackLoadingLimit == loadingLimit {
+				terminal.ScrollbackLoadingLimit = 0
+			}
 			return err
 		}
-		return orchestrator.SnapshotLoadedMsg{TerminalID: terminalID, Snapshot: snapshot}
+		if terminal := m.runtime.Registry().Get(terminalID); terminal != nil {
+			if terminal.ScrollbackLoadingLimit == loadingLimit {
+				terminal.ScrollbackLoadingLimit = 0
+			}
+			if snapshot != nil {
+				if loadedRows := snapshotScrollbackLoadedDepth(snapshot); loadedRows > terminal.ScrollbackLoadedLimit {
+					terminal.ScrollbackLoadedLimit = loadedRows
+				}
+				if limit > 0 {
+					terminal.ScrollbackExhausted = !snapshot.ScrollbackHasMore
+				}
+			}
+		}
+		return orchestrator.SnapshotLoadedMsg{TerminalID: terminalID, Snapshot: snapshot, Offset: offset, Limit: limit, Paged: true}
 	}
 }
 

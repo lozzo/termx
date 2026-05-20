@@ -1,0 +1,82 @@
+---
+title: 命令行参考
+description: termx 当前 CLI 参数、常见环境变量与启动示例。
+---
+
+## 命令行参考
+
+### 最常见的启动命令
+
+```bash
+# 本地直连
+termx remote enable --mode local
+
+# 云端连接
+termx remote enable --mode online
+termx daemon
+termx remote pair
+
+# 本地 + 云端
+termx remote enable --mode both
+termx daemon
+termx remote pair
+```
+
+### 常用参数
+
+| 参数 | 说明 |
+|------|------|
+| `remote login` | 可选：提前登录 Web Control 并保存连接凭据 |
+| `remote enable --mode local` | 启用本地 Web 和本地配对 |
+| `remote enable --mode online` | 启用 Web Control 云端连接 |
+| `remote enable --mode both` | 同时启用本地和云端连接 |
+| `remote pair` | 生成配对二维码和 `termx://pair` URI |
+| `daemon` | 常驻运行 TermX runtime 和远程注册循环 |
+
+### 环境变量
+
+```bash
+export TERMX_REMOTE_CONTROL_URL=<control_url>
+export TERMX_REMOTE_CONNECTION_KEY=<connection_key>
+export TERMX_REMOTE_ENABLE=1
+```
+
+说明：
+
+- `TERMX_REMOTE_CONTROL_URL` 和 `TERMX_REMOTE_CONNECTION_KEY` 可以替代配置文件
+- `TERMX_REMOTE_HUB_URL` 可用于私有部署时固定 Hub 地址
+- 连接密钥不会写进普通 YAML 配置文件
+
+### 常见组合示例
+
+#### 给节点指定名称
+
+```bash
+termx remote enable --mode online
+```
+
+#### 明确告诉客户端该连哪些地址
+
+```bash
+termx --listen :8080 \
+  --connect-addr 192.168.1.10:8080 \
+  --connect-addr 10.10.0.8:8080
+```
+
+#### 在 systemd 或脚本里运行
+
+```bash
+TERMX_REMOTE_CONNECTION_KEY=<connection_key> TERMX_REMOTE_CONTROL_URL=<control_url> TERMX_REMOTE_ENABLE=1 termx daemon
+```
+
+#### 在非交互环境关闭 TUI
+
+```bash
+termx daemon
+```
+
+### 行为提示
+
+- 云端连接只用于登录、发现 Hub 和创建连接票据
+- 终端运行时数据走 WebRTC DataChannel
+- 如果需要本地浏览器配对，运行 `termx remote enable --mode local` 或 `termx remote enable --mode both`

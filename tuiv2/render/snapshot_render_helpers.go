@@ -4,7 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -13,7 +14,9 @@ func applyScrollbackOffset(snapshot *protocol.Snapshot, offset int, height int) 
 		return snapshot
 	}
 	rows := make([][]protocol.Cell, 0, len(snapshot.Scrollback)+len(snapshot.Screen.Cells))
-	rows = append(rows, snapshot.Scrollback...)
+	for _, row := range snapshot.Scrollback {
+		rows = append(rows, row.DecodeCells())
+	}
 	rows = append(rows, snapshot.Screen.Cells...)
 	if len(rows) == 0 {
 		return snapshot
@@ -48,46 +51,49 @@ func drawTerminalSourceWithOffset(canvas *composedCanvas, rect workbench.Rect, s
 }
 
 func drawTerminalSourceWithOffsetAndMetrics(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, offset int, theme uiTheme, metrics renderTerminalMetrics) {
+	drawTerminalSourceWithPlacementAndMetrics(canvas, rect, source, offset, 0, 0, theme, metrics)
+}
+
+func drawTerminalSourceWithPlacementAndMetrics(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, offset, contentOffsetX, contentOffsetY int, theme uiTheme, metrics renderTerminalMetrics) {
 	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
+	contentOffsetX = clampTerminalContentOffset(contentOffsetX, rect.W, metrics.Cols)
+	contentOffsetY = clampTerminalContentOffset(contentOffsetY, rect.H, metrics.Rows)
 	if offset <= 0 {
-		drawTerminalSourceInRect(canvas, rect, source)
-		drawTerminalExtentHintsWithMetrics(canvas, rect, source, theme, metrics)
+		drawTerminalSourceInRectWithPlacement(canvas, rect, source, contentOffsetX, contentOffsetY)
+		drawTerminalExtentHintsWithMetricsAndPlacement(canvas, rect, source, theme, metrics, contentOffsetX, contentOffsetY)
 		return
 	}
 	totalRows := source.TotalRows()
 	if totalRows == 0 {
-		drawTerminalExtentHintsWithMetrics(canvas, rect, source, theme, metrics)
+		drawTerminalExtentHintsWithMetricsAndPlacement(canvas, rect, source, theme, metrics, contentOffsetX, contentOffsetY)
 		return
 	}
-	end := totalRows - offset
-	if end < 0 {
-		end = 0
+	for line := 0; line < rect.H; line++ {
+		rowIndex := terminalSourceWindowRowIndexWithPlacement(source, rect.H, offset, line, contentOffsetY)
+		if rowIndex < 0 {
+			continue
+		}
+		drawTerminalSourceRowInRectWithPlacement(canvas, rect, source, rowIndex, rect.Y+line, contentOffsetX, theme)
 	}
-	start := end - rect.H
-	if start < 0 {
-		start = 0
-	}
-	targetY := rect.Y
-	for rowIndex := start; rowIndex < end && targetY < rect.Y+rect.H; rowIndex++ {
-		drawTerminalSourceRowInRect(canvas, rect, source, rowIndex, targetY, theme)
-		targetY++
-	}
-	hintMetrics := metrics
-	if drawnRows := targetY - rect.Y; drawnRows > hintMetrics.Rows {
-		hintMetrics.Rows = drawnRows
-	}
+	hintMetrics := terminalWindowHintMetrics(source, rect, offset, metrics)
 	if rect.W > hintMetrics.Cols {
 		hintMetrics.Cols = rect.W
 	}
-	drawTerminalExtentHintsWithMetrics(canvas, rect, terminalExtentHintsView(source, totalRows), theme, hintMetrics)
+	drawTerminalExtentHintsWithMetricsAndPlacement(canvas, rect, terminalExtentHintsView(source, totalRows), theme, hintMetrics, contentOffsetX, contentOffsetY)
 }
 
 func drawTerminalSourceWindowRowsWithMetrics(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, offset int, theme uiTheme, metrics renderTerminalMetrics, lines []int) {
+	drawTerminalSourceWindowRowsWithPlacementAndMetrics(canvas, rect, source, offset, 0, 0, theme, metrics, lines)
+}
+
+func drawTerminalSourceWindowRowsWithPlacementAndMetrics(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, offset, contentOffsetX, contentOffsetY int, theme uiTheme, metrics renderTerminalMetrics, lines []int) {
 	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 || len(lines) == 0 {
 		return
 	}
+	contentOffsetX = clampTerminalContentOffset(contentOffsetX, rect.W, metrics.Cols)
+	contentOffsetY = clampTerminalContentOffset(contentOffsetY, rect.H, metrics.Rows)
 	hintMetrics := terminalWindowHintMetrics(source, rect, offset, metrics)
 	for _, line := range lines {
 		if line < 0 || line >= rect.H {
@@ -95,10 +101,10 @@ func drawTerminalSourceWindowRowsWithMetrics(canvas *composedCanvas, rect workbe
 		}
 		targetY := rect.Y + line
 		fillRect(canvas, workbench.Rect{X: rect.X, Y: targetY, W: rect.W, H: 1}, blankDrawCell())
-		if rowIndex := terminalSourceWindowRowIndex(source, rect.H, offset, line); rowIndex >= 0 {
-			drawTerminalSourceRowInRectCleared(canvas, rect, source, rowIndex, targetY, theme)
+		if rowIndex := terminalSourceWindowRowIndexWithPlacement(source, rect.H, offset, line, contentOffsetY); rowIndex >= 0 {
+			drawTerminalSourceRowInRectWithPlacement(canvas, rect, source, rowIndex, targetY, contentOffsetX, theme)
 		}
-		drawTerminalExtentHintsRowWithMetrics(canvas, rect, source, targetY, theme, hintMetrics)
+		drawTerminalExtentHintsRowWithMetricsAndPlacement(canvas, rect, source, targetY, theme, hintMetrics, contentOffsetX, contentOffsetY)
 	}
 }
 
@@ -128,28 +134,58 @@ func terminalWindowHintMetrics(source terminalRenderSource, rect workbench.Rect,
 	return metrics
 }
 
+func terminalSourceWindowRowIndexWithPlacement(source terminalRenderSource, height, offset, line, contentOffsetY int) int {
+	if source == nil || height <= 0 || line < 0 || line >= height {
+		return -1
+	}
+	contentLine := line - contentOffsetY
+	if contentLine < 0 || contentLine >= height {
+		return -1
+	}
+	return terminalSourceWindowRowIndex(source, height, offset, contentLine)
+}
+
 func drawTerminalSourceInRect(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource) {
+	drawTerminalSourceInRectWithPlacement(canvas, rect, source, 0, 0)
+}
+
+func drawTerminalSourceInRectWithPlacement(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, offsetX, offsetY int) {
 	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
 	base := source.ScrollbackRows()
 	if cellSource, ok := source.(terminalCellRowSource); ok {
-		for y := 0; y < rect.H && y < source.ScreenRows(); y++ {
-			if row := cellSource.RowView(base + y); row != nil {
-				canvas.drawVTermRowInRectCleared(rect, rect.Y+y, row)
+		for y := 0; y < source.ScreenRows(); y++ {
+			targetY := rect.Y + offsetY + y
+			if targetY < rect.Y || targetY >= rect.Y+rect.H {
 				continue
 			}
-			canvas.drawProtocolRowInRectCleared(rect, rect.Y+y, source.Row(base+y))
+			if row := cellSource.RowView(base + y); row != nil {
+				drawVTermRowInRectWithPlacement(canvas, rect, targetY, row, offsetX)
+				continue
+			}
+			drawProtocolRowInRectWithPlacement(canvas, rect, targetY, source.Row(base+y), offsetX)
 		}
 		return
 	}
-	for y := 0; y < rect.H && y < source.ScreenRows(); y++ {
-		canvas.drawProtocolRowInRectCleared(rect, rect.Y+y, source.Row(base+y))
+	for y := 0; y < source.ScreenRows(); y++ {
+		targetY := rect.Y + offsetY + y
+		if targetY < rect.Y || targetY >= rect.Y+rect.H {
+			continue
+		}
+		drawProtocolRowInRectWithPlacement(canvas, rect, targetY, source.Row(base+y), offsetX)
 	}
 }
 
 func drawTerminalSourceRowInRect(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme) {
+	drawTerminalSourceRowInRectWithPlacement(canvas, rect, source, rowIndex, targetY, 0, theme)
+}
+
+func drawTerminalSourceRowInRectWithPlacement(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, offsetX int, theme uiTheme) {
 	if source == nil {
+		return
+	}
+	if targetY < rect.Y || targetY >= rect.Y+rect.H {
 		return
 	}
 	if kind := source.RowKind(rowIndex); kind != "" {
@@ -157,7 +193,7 @@ func drawTerminalSourceRowInRect(canvas *composedCanvas, rect workbench.Rect, so
 			return
 		}
 	}
-	canvas.drawProtocolRowInRect(rect, targetY, source.Row(rowIndex))
+	drawProtocolRowInRectWithPlacement(canvas, rect, targetY, source.Row(rowIndex), offsetX)
 }
 
 func drawTerminalSourceRowInRectCleared(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme) {
@@ -179,6 +215,10 @@ func drawTerminalSourceRowInRectCleared(canvas *composedCanvas, rect workbench.R
 }
 
 func drawTerminalExtentHintsRowWithMetrics(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, targetY int, theme uiTheme, metrics renderTerminalMetrics) {
+	drawTerminalExtentHintsRowWithMetricsAndPlacement(canvas, rect, source, targetY, theme, metrics, 0, 0)
+}
+
+func drawTerminalExtentHintsRowWithMetricsAndPlacement(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, targetY int, theme uiTheme, metrics renderTerminalMetrics, offsetX, offsetY int) {
 	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
@@ -190,19 +230,21 @@ func drawTerminalExtentHintsRowWithMetrics(canvas *composedCanvas, rect workbenc
 	}
 
 	dotStyle := drawStyle{FG: theme.panelBorder}
-	visibleCols := minInt(rect.W, metrics.Cols)
-	visibleRows := minInt(rect.H, metrics.Rows)
+	contentLeft := rect.X + offsetX
+	contentTop := rect.Y + offsetY
+	contentRight := contentLeft + metrics.Cols
+	contentBottom := contentTop + metrics.Rows
 
-	if targetY >= rect.Y+visibleRows {
+	if targetY < contentTop || targetY >= contentBottom {
 		for x := rect.X; x < rect.X+rect.W; x++ {
 			canvas.set(x, targetY, drawCell{Content: "·", Width: 1, Style: dotStyle})
 		}
 		return
 	}
-	if metrics.Cols >= rect.W {
-		return
-	}
-	for x := rect.X + visibleCols; x < rect.X+rect.W; x++ {
+	for x := rect.X; x < rect.X+rect.W; x++ {
+		if x >= contentLeft && x < contentRight {
+			continue
+		}
 		canvas.set(x, targetY, drawCell{Content: "·", Width: 1, Style: dotStyle})
 	}
 }
@@ -267,6 +309,10 @@ func drawTerminalExtentHints(canvas *composedCanvas, rect workbench.Rect, source
 }
 
 func drawTerminalExtentHintsWithMetrics(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, theme uiTheme, metrics renderTerminalMetrics) {
+	drawTerminalExtentHintsWithMetricsAndPlacement(canvas, rect, source, theme, metrics, 0, 0)
+}
+
+func drawTerminalExtentHintsWithMetricsAndPlacement(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, theme uiTheme, metrics renderTerminalMetrics, offsetX, offsetY int) {
 	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
@@ -275,26 +321,78 @@ func drawTerminalExtentHintsWithMetrics(canvas *composedCanvas, rect workbench.R
 	}
 
 	dotStyle := drawStyle{FG: theme.panelBorder}
+	contentLeft := rect.X + offsetX
+	contentTop := rect.Y + offsetY
+	contentRight := contentLeft + metrics.Cols
+	contentBottom := contentTop + metrics.Rows
 
-	visibleCols := minInt(rect.W, metrics.Cols)
-	visibleRows := minInt(rect.H, metrics.Rows)
-
-	if metrics.Cols < rect.W {
-		startX := rect.X + visibleCols
-		endX := rect.X + rect.W
-		for y := rect.Y; y < rect.Y+visibleRows; y++ {
-			for x := startX; x < endX; x++ {
-				canvas.set(x, y, drawCell{Content: "·", Width: 1, Style: dotStyle})
+	for y := rect.Y; y < rect.Y+rect.H; y++ {
+		for x := rect.X; x < rect.X+rect.W; x++ {
+			if x >= contentLeft && x < contentRight && y >= contentTop && y < contentBottom {
+				continue
 			}
+			canvas.set(x, y, drawCell{Content: "·", Width: 1, Style: dotStyle})
 		}
 	}
-	if metrics.Rows < rect.H {
-		startY := rect.Y + visibleRows
-		endY := rect.Y + rect.H
-		for y := startY; y < endY; y++ {
-			for x := rect.X; x < rect.X+rect.W; x++ {
-				canvas.set(x, y, drawCell{Content: "·", Width: 1, Style: dotStyle})
-			}
+}
+
+func clampTerminalContentOffset(offset, viewportSize, contentSize int) int {
+	if viewportSize <= 0 || contentSize <= 0 {
+		return 0
+	}
+	minOffset := minInt(0, viewportSize-contentSize)
+	maxOffset := maxInt(0, viewportSize-contentSize)
+	if offset < minOffset {
+		return minOffset
+	}
+	if offset > maxOffset {
+		return maxOffset
+	}
+	return offset
+}
+
+func drawProtocolRowInRectWithPlacement(canvas *composedCanvas, rect workbench.Rect, targetY int, row []protocol.Cell, offsetX int) {
+	if canvas == nil || rect.W <= 0 || targetY < 0 || targetY >= canvas.height {
+		return
+	}
+	traceRenderProtocolRow("render.draw_protocol_row", rect, targetY, offsetX, row)
+	for col, index := 0, 0; index < len(row); index++ {
+		cell := drawCellFromProtocolCell(row[index])
+		if cell.Continuation {
+			continue
 		}
+		if cell.Content == "" {
+			cell.Content = " "
+			cell.Width = 1
+		}
+		targetX := rect.X + offsetX + col
+		if targetX >= rect.X && targetX+cell.Width <= rect.X+rect.W {
+			canvas.set(targetX, targetY, cell)
+			canvas.materializeRawAmbiguousContinuation(targetX, targetY, cell)
+		}
+		col += maxInt(1, cell.Width)
+	}
+}
+
+func drawVTermRowInRectWithPlacement(canvas *composedCanvas, rect workbench.Rect, targetY int, row []localvterm.Cell, offsetX int) {
+	if canvas == nil || rect.W <= 0 || targetY < 0 || targetY >= canvas.height {
+		return
+	}
+	traceRenderVTermRow("render.draw_vterm_row", rect, targetY, offsetX, row)
+	for col, index := 0, 0; index < len(row); index++ {
+		cell := drawCellFromVTermCell(row[index])
+		if cell.Continuation {
+			continue
+		}
+		if cell.Content == "" {
+			cell.Content = " "
+			cell.Width = 1
+		}
+		targetX := rect.X + offsetX + col
+		if targetX >= rect.X && targetX+cell.Width <= rect.X+rect.W {
+			canvas.set(targetX, targetY, cell)
+			canvas.materializeRawAmbiguousContinuation(targetX, targetY, cell)
+		}
+		col += maxInt(1, cell.Width)
 	}
 }

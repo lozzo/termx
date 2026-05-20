@@ -2,8 +2,17 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
+	creackpty "github.com/creack/pty"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
+	"github.com/lozzow/termx/tuiv2/bridge"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,17 +20,164 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
-	xansi "github.com/charmbracelet/x/ansi"
-	creackpty "github.com/creack/pty"
-	"github.com/lozzow/termx"
-	"github.com/lozzow/termx/protocol"
-	unixtransport "github.com/lozzow/termx/transport/unix"
-	"github.com/lozzow/termx/tuiv2/bridge"
-	"github.com/lozzow/termx/tuiv2/shared"
-	localvterm "github.com/lozzow/termx/vterm"
 )
+
+func TestDebugTerminalStressTUITrace(t *testing.T) {
+	if os.Getenv("TERMX_RUN_TUI_STRESS_TRACE") != "1" {
+		t.Skip("set TERMX_RUN_TUI_STRESS_TRACE=1 to run the local TUI terminal stress trace")
+	}
+	if testing.Short() {
+		t.Skip("debug trace")
+	}
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not installed")
+	}
+
+	previousHostScroll, hadHostScroll := os.LookupEnv("TERMX_ENABLE_HOST_VERTICAL_SCROLL")
+	defer func(previous string, had bool) {
+		if had {
+			_ = os.Setenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL", previous)
+			return
+		}
+		_ = os.Unsetenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL")
+	}(previousHostScroll, hadHostScroll)
+	if os.Getenv("TERMX_TUI_STRESS_ENABLE_HOST_VERTICAL_SCROLL") == "1" {
+		_ = os.Setenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL", "1")
+	} else {
+		_ = os.Unsetenv("TERMX_ENABLE_HOST_VERTICAL_SCROLL")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	cols := envIntForDebugTrace("TERMX_TUI_STRESS_COLS", 120)
+	rows := envIntForDebugTrace("TERMX_TUI_STRESS_ROWS", 40)
+	daemon := startAppTestDaemon(t, ctx, "termx-debug-terminal-stress.sock")
+	socketPath := daemon.SocketPath()
+
+	ctrlClient := dialAppTestProtocolClient(t, ctx, socketPath)
+	created, err := ctrlClient.Create(ctx, protocol.CreateParams{
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Name:    "debug-terminal-stress",
+		Size:    protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
+		Dir:     repoRootForDebugTrace(t),
+		Env:     []string{"PS1=termx-stress$ "},
+	})
+	if err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+
+	appProtocolClient := dialAppTestProtocolClient(t, ctx, socketPath)
+	ptmx, tty, err := creackpty.Open()
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("open pty: %v", err)
+	}
+	defer ptmx.Close()
+	defer tty.Close()
+
+	if err := creackpty.Setsize(ptmx, &creackpty.Winsize{Cols: uint16(cols), Rows: uint16(rows)}); err != nil {
+		t.Fatalf("set pty size: %v", err)
+	}
+
+	errc := make(chan error, 1)
+	go func() {
+		errc <- runWithClientOptions(
+			shared.Config{AttachID: created.TerminalID},
+			bridge.NewProtocolClient(appProtocolClient),
+			tty,
+			tty,
+			tea.WithContext(ctx),
+		)
+	}()
+
+	recorder := &ptyOutputRecorder{eventc: make(chan struct{}, 8192)}
+	go func() {
+		buf := make([]byte, 8192)
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				recorder.Append(string(buf[:n]))
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	waitForPTYOutputLength(t, ctx, recorder, 80)
+	waitForPTYQuiet(t, ctx, recorder, 200*time.Millisecond)
+
+	lines := envIntForDebugTrace("TERMX_TUI_STRESS_LINES", 100000)
+	command := fmt.Sprintf("TIMEFORMAT='TERMTAIL_TIME real=%%R user=%%U sys=%%S'; time python3 scripts/generate_terminal_stress.py --lines %d --seed 1 --width-hint %d\n", lines, cols)
+	before := len(recorder.Text())
+	traceStart := time.Now()
+	trace := perftrace.Enable()
+	defer perftrace.Disable()
+	trace.Reset()
+	if _, err := ptmx.Write([]byte(command)); err != nil {
+		t.Fatalf("write stress command: %v", err)
+	}
+	waitForPTYQuiet(t, ctx, recorder, 750*time.Millisecond)
+	elapsed := time.Since(traceStart)
+	delta := recorder.Text()[before:]
+	snapshot := trace.Snapshot()
+	assertTerminalStressTailVisible(t, recorder.Text(), cols, rows, lines)
+
+	logTerminalStressTraceSummary(t, lines, elapsed, len(delta), snapshot)
+	if outPath := strings.TrimSpace(os.Getenv("TERMX_TUI_STRESS_TRACE_OUT")); outPath != "" {
+		report := struct {
+			Lines       int                `json:"lines"`
+			ElapsedMS   float64            `json:"elapsed_ms"`
+			OutputBytes int                `json:"output_bytes"`
+			Metrics     perftrace.Snapshot `json:"metrics"`
+		}{
+			Lines:       lines,
+			ElapsedMS:   float64(elapsed) / float64(time.Millisecond),
+			OutputBytes: len(delta),
+			Metrics:     snapshot,
+		}
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			t.Fatalf("marshal trace report: %v", err)
+		}
+		if err := os.WriteFile(outPath, data, 0o644); err != nil {
+			t.Fatalf("write trace report: %v", err)
+		}
+		t.Logf("trace report written to %s", outPath)
+	}
+
+	cancel()
+	select {
+	case err := <-errc:
+		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
+			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for TUI shutdown")
+	}
+}
+
+func assertTerminalStressTailVisible(t *testing.T, output string, cols, rows, lines int) {
+	t.Helper()
+	hostVT := localvterm.New(cols, rows, 0, nil)
+	if _, err := hostVT.Write([]byte(output)); err != nil {
+		t.Fatalf("replay terminal stress PTY output: %v", err)
+	}
+	screenLines := vtermScreenLines(hostVT.ScreenContent())
+	screen := strings.Join(screenLines, "\n")
+	timeMarker := "TERMTAIL_TIME"
+	lineMarker := fmt.Sprintf("%06d", lines)
+	if strings.Contains(screen, timeMarker) && strings.Contains(screen, lineMarker) {
+		return
+	}
+	trimmed := make([]string, len(screenLines))
+	for i := range screenLines {
+		trimmed[i] = strings.TrimRight(screenLines[i], " ")
+	}
+	t.Fatalf("terminal stress tail is not visible; want %q and %q\nfinal screen:\n%s", timeMarker, lineMarker, strings.Join(trimmed, "\n"))
+}
 
 func TestDebugNvimScrollTrace(t *testing.T) {
 	if os.Getenv("TERMX_RUN_NVIM_TRACE") != "1" {
@@ -36,32 +192,10 @@ func TestDebugNvimScrollTrace(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-debug-nvim.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-debug-nvim.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := waitTestSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	ctrlTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial control client: %v", err)
-	}
-	ctrlClient := protocol.NewClient(ctrlTransport)
-	if err := ctrlClient.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
-		t.Fatalf("hello control client: %v", err)
-	}
-	t.Cleanup(func() { _ = ctrlClient.Close() })
+	ctrlClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	tmpFile := filepath.Join(t.TempDir(), "nvim-scroll.txt")
 	var lines []string
@@ -87,15 +221,7 @@ func TestDebugNvimScrollTrace(t *testing.T) {
 		t.Fatalf("create terminal: %v", err)
 	}
 
-	appTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial app client: %v", err)
-	}
-	appProtocolClient := protocol.NewClient(appTransport)
-	if err := appProtocolClient.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
-		t.Fatalf("hello app client: %v", err)
-	}
-	t.Cleanup(func() { _ = appProtocolClient.Close() })
+	appProtocolClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	ptmx, tty, err := creackpty.Open()
 	if err != nil {
@@ -190,32 +316,10 @@ func TestDebugNvimInsertTrace(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-debug-nvim-insert.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-debug-nvim-insert.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := waitTestSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	ctrlTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial control client: %v", err)
-	}
-	ctrlClient := protocol.NewClient(ctrlTransport)
-	if err := ctrlClient.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
-		t.Fatalf("hello control client: %v", err)
-	}
-	t.Cleanup(func() { _ = ctrlClient.Close() })
+	ctrlClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	tmpFile := filepath.Join(t.TempDir(), "nvim-insert.txt")
 	var lines []string
@@ -241,15 +345,7 @@ func TestDebugNvimInsertTrace(t *testing.T) {
 		t.Fatalf("create terminal: %v", err)
 	}
 
-	appTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial app client: %v", err)
-	}
-	appProtocolClient := protocol.NewClient(appTransport)
-	if err := appProtocolClient.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
-		t.Fatalf("hello app client: %v", err)
-	}
-	t.Cleanup(func() { _ = appProtocolClient.Close() })
+	appProtocolClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	ptmx, tty, err := creackpty.Open()
 	if err != nil {
@@ -338,32 +434,10 @@ func TestDebugNvimScrollThenInsertScreenPosition(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-debug-nvim-screen.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-debug-nvim-screen.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := waitTestSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	ctrlTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial control client: %v", err)
-	}
-	ctrlClient := protocol.NewClient(ctrlTransport)
-	if err := ctrlClient.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
-		t.Fatalf("hello control client: %v", err)
-	}
-	t.Cleanup(func() { _ = ctrlClient.Close() })
+	ctrlClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	tmpFile := filepath.Join(t.TempDir(), "nvim-screen.txt")
 	var lines []string
@@ -389,15 +463,7 @@ func TestDebugNvimScrollThenInsertScreenPosition(t *testing.T) {
 		t.Fatalf("create terminal: %v", err)
 	}
 
-	appTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial app client: %v", err)
-	}
-	appProtocolClient := protocol.NewClient(appTransport)
-	if err := appProtocolClient.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
-		t.Fatalf("hello app client: %v", err)
-	}
-	t.Cleanup(func() { _ = appProtocolClient.Close() })
+	appProtocolClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	ptmx, tty, err := creackpty.Open()
 	if err != nil {
@@ -517,6 +583,83 @@ func waitForPTYQuiet(t *testing.T, ctx context.Context, recorder *ptyOutputRecor
 			t.Fatal("context expired waiting for PTY quiet period")
 		}
 	}
+}
+
+func logTerminalStressTraceSummary(t *testing.T, lines int, elapsed time.Duration, outputBytes int, snapshot perftrace.Snapshot) {
+	t.Helper()
+	t.Logf("terminal_stress_tui lines=%d elapsed=%s output_bytes=%d trace_ms=%.2f", lines, elapsed, outputBytes, snapshot.ElapsedMs)
+	for _, name := range []string{
+		"terminal.screen_update.write_vterm_latest",
+		"terminal.screen_update.write_vterm",
+		"terminal.screen_update.snapshot_payload",
+		"terminal.screen_update.latest_delta_payload",
+		"terminal.screen_update.screen_snapshot",
+		"terminal.screen_update.from_latest_frame",
+		"terminal.screen_update.from_latest_frame_damage",
+		"terminal.screen_update.from_damage",
+		"terminal.screen_update.encode",
+		"terminal.screen_update.encode_mode.delta",
+		"terminal.screen_update.encode_mode.full_replace",
+		"terminal.parser.flush",
+		"terminal.parser.stream_lock_wait",
+		"terminal.stream.screen_update.coalesced",
+		"runtime.stream.screen_update",
+		"runtime.stream.screen_update.decode",
+		"runtime.stream.screen_update.snapshot_apply",
+		"runtime.stream.screen_update.load_vterm_partial",
+		"runtime.stream.screen_update.load_vterm_full",
+		"runtime.stream.screen_update.full_replace",
+		"runtime.stream.screen_update.changed_rows",
+		"runtime.stream.ready.deferred",
+		"runtime.stream.ready.rendered",
+		"render.body",
+		"render.body.canvas.incremental.rows",
+		"render.body.canvas.incremental.full_pane",
+		"render.frame",
+		"cursor_writer.present",
+		"cursor_writer.present.mode.full_repaint_threshold",
+		"cursor_writer.present.mode.delta_rect_scroll_fullwidth",
+		"cursor_writer.direct_flush",
+	} {
+		event, ok := snapshot.Event(name)
+		if !ok {
+			continue
+		}
+		t.Logf("trace %-62s count=%d bytes=%d total_ms=%.2f avg_ms=%.4f max_ms=%.2f", name, event.Count, event.Bytes, event.TotalMs, event.AverageMs, event.MaxMs)
+	}
+}
+
+func repoRootForDebugTrace(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			if _, err := os.Stat(filepath.Join(dir, "scripts", "generate_terminal_stress.py")); err != nil {
+				t.Fatal("repository root is missing scripts/generate_terminal_stress.py")
+			}
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("could not locate repository root")
+		}
+		dir = parent
+	}
+}
+
+func envIntForDebugTrace(name string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }
 
 func debugEscape(s string, limit int) string {

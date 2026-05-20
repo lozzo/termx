@@ -1,8 +1,9 @@
 package runtime
 
 import (
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 type ScreenUpdateContract struct {
@@ -66,18 +67,7 @@ func screenUpdateSummaryFromProtocol(update protocol.ScreenUpdate) VisibleScreen
 			}
 		}
 	}
-	switch {
-	case len(update.ChangedSpans) > 0:
-		summary.ChangedRows = make([]int, 0, len(update.ChangedSpans))
-		seen := make(map[int]struct{}, len(update.ChangedSpans))
-		for _, span := range update.ChangedSpans {
-			if _, ok := seen[span.Row]; ok {
-				continue
-			}
-			seen[span.Row] = struct{}{}
-			summary.ChangedRows = append(summary.ChangedRows, span.Row)
-		}
-	case len(update.Ops) > 0:
+	if len(update.Ops) > 0 {
 		rows := make([]int, 0, len(update.Ops))
 		seen := make(map[int]struct{}, len(update.Ops))
 		addRow := func(row int) {
@@ -120,6 +110,11 @@ func (r *Runtime) applyScreenUpdateContract(terminal *TerminalRuntime, terminalI
 	}
 	update := classified.Contract.Update
 	summary := classified.Contract.Summary
+	if classified.Contract.Classification.HasScrollbackChange || classified.Contract.Classification.HasScreenScroll {
+		terminal.ScrollbackExhausted = false
+	}
+
+	r.captureAlternateScrollback(terminal, update)
 
 	snapshotApplyFinish := perftrace.Measure("runtime.stream.screen_update.snapshot_apply")
 	terminal.Snapshot = applyScreenUpdateSnapshot(terminal.Snapshot, terminalID, update)
@@ -131,8 +126,12 @@ func (r *Runtime) applyScreenUpdateContract(terminal *TerminalRuntime, terminalI
 		if !update.FullReplace {
 			if applier, ok := vt.(screenUpdateApplier); ok {
 				loadFinish := perftrace.Measure("runtime.stream.screen_update.load_vterm_partial")
-				appliedPartial = applier.ApplyScreenUpdate(update)
+				appliedPartial = applier.ApplyScreenUpdate(vtermScreenUpdateFromProtocol(update))
 				loadFinish(0)
+				if appliedPartial && !vtermMatchesSnapshotScreen(vt, terminal.Snapshot) {
+					perftrace.Count("runtime.stream.screen_update.partial_mismatch_reload", 1)
+					appliedPartial = false
+				}
 			}
 		}
 		if !appliedPartial {
@@ -238,4 +237,84 @@ func screenUpdateLifecycleFromClassification(classification protocol.ScreenUpdat
 
 func hasScreenUpdateRecovery(recovery RecoveryState) bool {
 	return recovery.SyncLost || recovery.DroppedBytes > 0
+}
+
+func vtermMatchesSnapshotScreen(vt VTermLike, snapshot *protocol.Snapshot) bool {
+	if vt == nil || snapshot == nil {
+		return true
+	}
+	cols, rows := vt.Size()
+	if cols != int(snapshot.Size.Cols) || rows != int(snapshot.Size.Rows) {
+		return false
+	}
+	screen := vt.ScreenContent()
+	if screen.IsAlternateScreen != snapshot.Screen.IsAlternateScreen {
+		return false
+	}
+	for row := 0; row < rows; row++ {
+		if !vtermRowMatchesProtocolRow(rowAtVTermScreen(screen.Cells, row), rowAtProtocolScreen(snapshot.Screen.Cells, row), cols) {
+			return false
+		}
+	}
+	return true
+}
+
+func vtermRowMatchesProtocolRow(left []localvterm.Cell, right []protocol.Cell, cols int) bool {
+	for col := 0; col < cols; col++ {
+		if !vtermCellMatchesProtocolCell(vtermCellAt(left, col), protocolCellAt(right, col)) {
+			return false
+		}
+	}
+	return true
+}
+
+func vtermCellMatchesProtocolCell(left localvterm.Cell, right protocol.Cell) bool {
+	return left.Content == right.Content &&
+		left.Width == right.Width &&
+		left.Style.FG == right.Style.FG &&
+		left.Style.BG == right.Style.BG &&
+		left.Style.Bold == right.Style.Bold &&
+		left.Style.Italic == right.Style.Italic &&
+		left.Style.Underline == right.Style.Underline &&
+		left.Style.Blink == right.Style.Blink &&
+		left.Style.Reverse == right.Style.Reverse &&
+		left.Style.Strikethrough == right.Style.Strikethrough
+}
+
+func rowAtVTermScreen(rows [][]localvterm.Cell, index int) []localvterm.Cell {
+	if index < 0 || index >= len(rows) {
+		return nil
+	}
+	return rows[index]
+}
+
+func rowAtProtocolScreen(rows [][]protocol.Cell, index int) []protocol.Cell {
+	if index < 0 || index >= len(rows) {
+		return nil
+	}
+	return rows[index]
+}
+
+func vtermCellAt(row []localvterm.Cell, col int) localvterm.Cell {
+	if col < 0 || col >= len(row) {
+		return localvterm.Cell{Content: " ", Width: 1}
+	}
+	cell := row[col]
+	if cell.Content == "" && cell.Width == 0 {
+		cell.Content = " "
+		cell.Width = 1
+	}
+	return cell
+}
+
+func protocolCellAt(row []protocol.Cell, col int) protocol.Cell {
+	if col < 0 || col >= len(row) {
+		return protocol.Cell{Content: " ", Width: 1}
+	}
+	cell := row[col]
+	if cell.Content == "" && cell.Width == 0 {
+		cell.Content = " "
+		cell.Width = 1
+	}
+	return cell
 }

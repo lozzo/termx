@@ -39,6 +39,9 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		m.terminalPage.ApplyFilter()
 		m.render.Invalidate()
 		return nil, true
+	case terminalInventoryLoadedMsg:
+		m.applyTerminalInventoryPatch(typed.Terminals)
+		return nil, true
 	case terminalSizeLockToggledMsg:
 		return m.showNotice(typed.Notice), true
 	case orchestrator.KillTerminalEffect:
@@ -58,7 +61,14 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 	case terminalAttachReadyMsg:
 		return m.dequeueTerminalInputCmd(), true
 	case orchestrator.SnapshotLoadedMsg:
-		m.adjustCopyModeAfterSnapshotLoaded(typed.TerminalID)
+		if typed.Paged {
+			m.adjustCopyModeAfterSnapshotLoadedWithWindow(typed.TerminalID, typed.Snapshot, typed.Offset)
+			if m.runtime != nil && !m.snapshotPageTargetsActiveCopyMode(typed.TerminalID) {
+				m.runtime.ApplyGridViewportPage(typed.TerminalID, typed.Snapshot, typed.Offset)
+			}
+		} else {
+			m.adjustCopyModeAfterSnapshotLoaded(typed.TerminalID, typed.Snapshot)
+		}
 		m.render.Invalidate()
 		return m.maybeAutoFitFloatingPanesCmd(), true
 	case hostDefaultColorsMsg:

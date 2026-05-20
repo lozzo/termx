@@ -2,7 +2,7 @@ package app
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/perftrace"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -108,7 +108,7 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) tea.Cmd {
 	if handled, cmd := m.handleBottomChromeMouseClick(vm, x, y); handled {
 		return cmd
 	}
-	if m.mode().Kind == input.ModeDisplay && m.startMouseCopySelection(x, y) {
+	if m.effectiveInputMode() == input.ModeDisplay && m.startMouseCopySelection(x, y) {
 		return nil
 	}
 	if cmd := m.forwardTerminalMouseInputCmd(msg); cmd != nil {
@@ -134,7 +134,7 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) tea.Cmd {
 		bodyRect := m.bodyRect()
 		visible := m.workbench.VisibleWithSize(bodyRect)
 		if visible != nil {
-			for _, pane := range visible.FloatingPanes {
+			for _, pane := range m.visibleFloatingPanesForInput(visible) {
 				if pane.ID != paneID {
 					continue
 				}

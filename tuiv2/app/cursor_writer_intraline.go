@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/perftrace"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 )
 
 const maxIntralineShiftCount = 12
@@ -199,6 +199,9 @@ func shouldFallbackToFullRepaint(payload string, fullLen, totalRows, changedRows
 	fragmented := changedRows*3 >= totalRows
 	if !fragmented {
 		return false
+	}
+	if shouldForceFullRepaintForBroadDamage(totalRows, changedRows) {
+		return true
 	}
 	if len(payload)*100 >= fullLen*95 {
 		return true

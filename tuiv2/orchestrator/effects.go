@@ -139,3 +139,9 @@ type KillTerminalEffect struct {
 }
 
 func (KillTerminalEffect) effectTag() {}
+
+type RemoveTerminalEffect struct {
+	TerminalID string
+}
+
+func (RemoveTerminalEffect) effectTag() {}

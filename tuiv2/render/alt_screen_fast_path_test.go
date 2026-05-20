@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -173,6 +174,21 @@ func TestRenderBodyAltScreenFastPathActivatesForSingleFramedPane(t *testing.T) {
 	}
 	if rightBorder := []rune(lines[1])[len([]rune(lines[1]))-1]; rightBorder != '│' {
 		t.Fatalf("expected framed single-pane right border in final column, got %q in %q", string(rightBorder), lines[1])
+	}
+}
+
+func TestProtocolViewportRowANSICompressesStyledBlankRunsWithECH(t *testing.T) {
+	row := make([]protocol.Cell, 12)
+	for i := range row {
+		row[i] = protocol.Cell{Content: " ", Width: 1, Style: protocol.CellStyle{BG: "#222222"}}
+	}
+
+	line := protocolViewportRowANSI(row, 12, shared.AmbiguousEmojiVariationSelectorRaw, -1, false, "")
+	if !strings.Contains(line, "48;2;34;34;34") {
+		t.Fatalf("expected viewport row to apply styled blank bg, got %q", line)
+	}
+	if !strings.Contains(line, "\x1b[12X") {
+		t.Fatalf("expected viewport row to erase styled blank run with ECH, got %q", line)
 	}
 }
 

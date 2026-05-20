@@ -4,7 +4,7 @@ import (
 	"context"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
@@ -45,7 +45,11 @@ func runTerminalEventsForwarder(ctx context.Context, send func(tea.Msg), cfg sha
 		eventsCtx, eventsCancel := context.WithCancel(ctx)
 		events, err := client.Events(eventsCtx, protocol.EventsParams{
 			Types: []protocol.EventType{
+				protocol.EventTerminalCreated,
+				protocol.EventTerminalStateChanged,
 				protocol.EventTerminalResized,
+				protocol.EventTerminalRemoved,
+				protocol.EventTerminalMetadataChanged,
 			},
 		})
 		if err != nil {
@@ -84,7 +88,11 @@ func runFallbackTerminalEventsForwarder(ctx context.Context, send func(tea.Msg),
 	}
 	events, err := client.Events(ctx, protocol.EventsParams{
 		Types: []protocol.EventType{
+			protocol.EventTerminalCreated,
+			protocol.EventTerminalStateChanged,
 			protocol.EventTerminalResized,
+			protocol.EventTerminalRemoved,
+			protocol.EventTerminalMetadataChanged,
 		},
 	})
 	if err != nil {

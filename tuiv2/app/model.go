@@ -9,8 +9,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -18,9 +18,10 @@ import (
 	"github.com/lozzow/termx/tuiv2/persist"
 	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/sessiondoc"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	"github.com/lozzow/termx/workbenchdoc"
 )
 
 type Model struct {
@@ -38,12 +39,13 @@ type Model struct {
 	yankBuffer        string
 	clipboardHistory  []clipboardHistoryEntry
 	clipboardSeq      uint64
+	clipboardStore    clipboardHistoryStore
 
 	sessionID        string
 	sessionViewID    string
 	sessionRevision  uint64
-	sessionSharedDoc *workbenchdoc.Doc
-	sessionLeases    map[string]protocol.LeaseInfo
+	sessionSharedDoc *sessiondoc.Doc
+	sessionLeases    map[string]sessionstore.LeaseInfo
 
 	startup bootstrap.StartupResult
 
@@ -65,6 +67,7 @@ type Model struct {
 	// 业务编排走 orchestrator，不直接通过这两个字段。
 	workbench            *workbench.Workbench
 	runtime              *runtime.Runtime
+	sessionStore         sessionStore
 	cursorOut            cursorSequenceWriter
 	frameOut             frameSequenceWriter
 	lastViewFrame        string
@@ -103,14 +106,14 @@ type Model struct {
 	copyModeMouseActivitySeq     uint64
 
 	// 鼠标拖动状态
-	mouseDragPaneID        string
-	mouseDragOffsetX       int
-	mouseDragOffsetY       int
-	mouseDragMode          mouseDragMode
-	mouseDragSplit         *workbench.LayoutNode
-	mouseDragBounds        workbench.Rect
-	mouseDragDirty         bool
-	floatingDragPreview    floatingDragPreviewState
+	mouseDragPaneID     string
+	mouseDragOffsetX    int
+	mouseDragOffsetY    int
+	mouseDragMode       mouseDragMode
+	mouseDragSplit      *workbench.LayoutNode
+	mouseDragBounds     workbench.Rect
+	mouseDragDirty      bool
+	floatingDragPreview floatingDragPreviewState
 
 	ownerConfirmPaneID string
 
@@ -121,16 +124,17 @@ type Model struct {
 	exitedPaneSelectionIndex  int
 
 	copyMode       copyModeState
+	copyModes      map[string]copyModeState
 	copyModeResume copyModeResumeState
 }
 
 type mouseDragMode int
 
 type floatingDragPreviewState struct {
-	Active    bool
-	PaneID    string
-	Rect      workbench.Rect
-	Snapshot  *protocol.Snapshot
+	Active   bool
+	PaneID   string
+	Rect     workbench.Rect
+	Snapshot *protocol.Snapshot
 }
 
 var invalidateBatchDelay = 4 * time.Millisecond
@@ -172,12 +176,15 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 		theme:               themeConfigFromShared(cfg.Theme),
 		pendingPaneAttaches: make(map[string]string),
 		pendingPaneResizes:  make(map[string]pendingPaneResize),
+		copyModes:           make(map[string]copyModeState),
 	}
-	model.orchestrator = orchestrator.New(model.workbench, model.runtime)
+	model.orchestrator = orchestrator.New(model.workbench)
 	model.render = render.NewCoordinatorWithVM(func() render.RenderVM { return model.renderVM() })
 	// Default invalidate: no-op until SetSendFunc is called by run.go.
 	if model.runtime != nil {
 		model.runtime.SetInvalidate(func() { model.queueInvalidate() })
+		model.sessionStore = newSessionStoreFromClient(model.runtime.Client())
+		model.clipboardStore = newClipboardHistoryStoreFromClient(model.runtime.Client())
 		model.runtime.SetTitleChange(func(terminalID, title string) {
 			model.sendAsync(terminalTitleMsg{TerminalID: terminalID, Title: title})
 		})
@@ -207,8 +214,8 @@ func (m *Model) SetFrameWriter(writer frameSequenceWriter) {
 		aware.SetTTYWidth(m.width)
 	}
 	if aware, ok := writer.(frameBackpressureWriter); ok {
-		aware.SetDrainHook(func() {
-			m.onFrameWriterDrained()
+		aware.SetDrainHook(func(readies []runtime.PendingStreamReady) {
+			m.onFrameWriterDrained(readies)
 		})
 	}
 }
@@ -249,13 +256,13 @@ func (m *Model) queueInvalidate() {
 		if interactiveInput {
 			perftrace.Count("app.invalidate.interactive_backlog_bypass", 0)
 			m.invalidateBacklogBlockedAt.Store(0)
+			if m.debugLogEnabled() {
+				m.debugLog("invalidate.backlog_bypass_interactive", "surface", m.debugRuntimeSurfaceSummary())
+			}
 			m.queueInvalidateImmediate()
 			return
 		}
-		perftrace.Count("app.invalidate.backlog_blocked", 0)
-		m.invalidateBlockedByFrameOut.Store(true)
-		now := time.Now().UnixNano()
-		m.invalidateBacklogBlockedAt.CompareAndSwap(0, now)
+		m.deferInvalidateUntilFrameWriterDrain()
 		return
 	}
 	m.invalidateBacklogBlockedAt.Store(0)
@@ -284,6 +291,30 @@ func (m *Model) queueInvalidate() {
 	})
 }
 
+func (m *Model) deferInvalidateUntilFrameWriterDrain() {
+	if m == nil {
+		return
+	}
+	perftrace.Count("app.invalidate.backlog_blocked", 0)
+	m.invalidateBlockedByFrameOut.Store(true)
+	if m.debugLogEnabled() {
+		m.debugLog("invalidate.backlog_deferred", "surface", m.debugRuntimeSurfaceSummary())
+	}
+	now := time.Now().UnixNano()
+	m.invalidateBacklogBlockedAt.CompareAndSwap(0, now)
+	if m.frameWriterHasBacklog() {
+		return
+	}
+	if blockedAt := m.invalidateBacklogBlockedAt.Swap(0); blockedAt > 0 {
+		m.observeFrameWriterDrainDuration(time.Since(time.Unix(0, blockedAt)))
+	}
+	if !m.invalidateBlockedByFrameOut.Swap(false) {
+		return
+	}
+	perftrace.Count("app.invalidate.backlog_race_bypass", 0)
+	m.queueInvalidateImmediate()
+}
+
 func (m *Model) queueInvalidateImmediate() {
 	if m == nil || m.send == nil {
 		return
@@ -305,18 +336,36 @@ func (m *Model) frameWriterHasBacklog() bool {
 	return ok && writer.HasPendingFrame()
 }
 
-func (m *Model) onFrameWriterDrained() {
-	if m == nil || m.send == nil {
+func (m *Model) onFrameWriterDrained(readies []runtime.PendingStreamReady) {
+	if m == nil {
 		return
 	}
 	if blockedAt := m.invalidateBacklogBlockedAt.Swap(0); blockedAt > 0 {
 		m.observeFrameWriterDrainDuration(time.Since(time.Unix(0, blockedAt)))
 	}
-	if !m.invalidateBlockedByFrameOut.Swap(false) {
-		return
+	if len(readies) > 0 && m.runtime != nil {
+		if m.debugLogEnabled() {
+			m.debugLog(
+				"stream_ready.frame_writer_drained",
+				"readies", debugPendingReadies(readies),
+				"surface", m.debugRuntimeSurfaceSummary(),
+			)
+		}
+		m.runtime.MarkRenderedStreamReadies(context.Background(), readies)
 	}
-	perftrace.Count("app.invalidate.frame_writer_drained", 0)
-	m.queueInvalidateImmediate()
+	if m.invalidateBlockedByFrameOut.Swap(false) {
+		if m.send == nil {
+			return
+		}
+		perftrace.Count("app.invalidate.frame_writer_drained", 0)
+		if m.debugLogEnabled() {
+			m.debugLog("invalidate.frame_writer_drained", "surface", m.debugRuntimeSurfaceSummary())
+		}
+		m.queueInvalidateImmediate()
+	}
+}
+
+func (m *Model) clearPendingRenderedStreamReadies() {
 }
 
 func (m *Model) effectiveInvalidateBatchDelay() time.Duration {
@@ -391,19 +440,24 @@ func (m *Model) sendAsync(msg tea.Msg) {
 	if m == nil || m.send == nil {
 		return
 	}
-	fields := debugMessageFields(msg)
-	m.debugLog("send_async_start", fields...)
 	// Runtime callbacks can fire from PTY/stream goroutines. Program.Send uses
 	// an unbuffered channel, so sending asynchronously avoids stalling terminal
 	// output when Bubble Tea is busy rendering or handling another message.
 	go func() {
 		m.send(msg)
-		m.debugLog("send_async_done", fields...)
 	}()
 }
 
 func (m *Model) bootstrapStartup() error {
 	if m == nil || m.workbench == nil {
+		return nil
+	}
+	if m.cfg.AttachID != "" && m.cfg.SessionID == "" {
+		result, err := bootstrap.Startup(bootstrap.Config{}, m.workbench, m.runtime)
+		if err != nil {
+			return err
+		}
+		m.startup = result
 		return nil
 	}
 	if m.cfg.SessionID != "" {
@@ -432,20 +486,24 @@ func (m *Model) bootstrapSessionStartup(ctx context.Context) error {
 	if m == nil || m.runtime == nil || m.workbench == nil || m.cfg.SessionID == "" {
 		return nil
 	}
-	client := m.runtime.Client()
-	if client == nil {
+	store := m.sessionStore
+	if store == nil {
+		store = newSessionStoreFromClient(m.runtime.Client())
+		m.sessionStore = store
+	}
+	if store == nil {
 		return nil
 	}
 	sessionID := m.cfg.SessionID
-	if _, err := client.GetSession(ctx, sessionID); err != nil {
-		if _, createErr := client.CreateSession(ctx, protocol.CreateSessionParams{
+	if _, err := store.GetSession(ctx, sessionID); err != nil {
+		if _, createErr := store.CreateSession(ctx, sessionstore.CreateParams{
 			SessionID: sessionID,
 			Name:      sessionID,
 		}); createErr != nil {
 			return createErr
 		}
 	}
-	snapshot, err := client.AttachSession(ctx, protocol.AttachSessionParams{
+	snapshot, err := store.AttachSession(ctx, sessionstore.AttachParams{
 		SessionID:  sessionID,
 		WindowCols: uint16(maxInt(0, m.width)),
 		WindowRows: uint16(maxInt(0, m.height)),
@@ -468,6 +526,23 @@ func (m *Model) saveStateCmd() tea.Cmd {
 	if m.sessionID != "" {
 		return batchCmds(m.replaceSessionCmd(), m.updateSessionViewCmd())
 	}
+	return m.saveLocalStateCmd()
+}
+
+func (m *Model) saveWorkbenchStateCmd() tea.Cmd {
+	if m == nil || m.workbench == nil {
+		return nil
+	}
+	if m.sessionID != "" {
+		return m.replaceSessionCmd()
+	}
+	return m.saveLocalStateCmd()
+}
+
+func (m *Model) saveLocalStateCmd() tea.Cmd {
+	if m == nil || m.workbench == nil {
+		return nil
+	}
 	if m.statePath == "" {
 		return nil
 	}
@@ -482,7 +557,7 @@ func (m *Model) saveStateCmd() tea.Cmd {
 	}
 }
 
-func (m *Model) applySessionSnapshot(snapshot *protocol.SessionSnapshot) error {
+func (m *Model) applySessionSnapshot(snapshot *sessionstore.Snapshot) error {
 	service := m.sessionSnapshotApplyService()
 	if service == nil {
 		return nil

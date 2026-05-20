@@ -84,6 +84,9 @@ func pickerOverlayHitRegions(picker *modal.PickerState, width, height int) []Hit
 		return nil
 	}
 	items := picker.VisibleItems()
+	if picker.Layout == modal.PickerLayoutClipboardHistory {
+		return clipboardHistoryPickerOverlayHitRegions(picker, width, height, items)
+	}
 	layout := buildPickerCardLayout(width, height, len(items), false)
 	card := pickerCardRect(layout)
 	regions := make([]HitRegion, 0, len(items)+5)
@@ -101,6 +104,31 @@ func pickerOverlayHitRegions(picker *modal.PickerState, width, height int) []Hit
 				X: card.X + 1,
 				Y: layout.firstItemY + i,
 				W: layout.innerWidth,
+				H: 1,
+			},
+		})
+	}
+	return regions
+}
+
+func clipboardHistoryPickerOverlayHitRegions(picker *modal.PickerState, width, height int, items []modal.PickerItem) []HitRegion {
+	layout := buildClipboardHistoryPickerLayout(width, height, len(items))
+	card := workbench.Rect{X: layout.cardX, Y: layout.cardY, W: layout.cardWidth, H: layout.cardHeight}
+	regions := make([]HitRegion, 0, minInt(layout.listHeight, len(items))+5)
+	regions = append(regions, dismissRegions(card, width, layout.contentHeight)...)
+	regions = append(regions, HitRegion{
+		Kind: HitRegionOverlayQueryInput,
+		Rect: layout.queryRect,
+	})
+	start, end := pickerVisibleWindow(len(items), picker.Selected, layout.listHeight)
+	for i := start; i < end; i++ {
+		regions = append(regions, HitRegion{
+			Kind:      HitRegionPickerItem,
+			ItemIndex: i,
+			Rect: workbench.Rect{
+				X: layout.leftRect.X,
+				Y: layout.leftRect.Y + (i - start),
+				W: layout.leftRect.W,
 				H: 1,
 			},
 		})

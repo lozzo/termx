@@ -1,8 +1,8 @@
 package render
 
 import (
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -28,7 +28,7 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 		captured []capturedBodyRenderCacheEntry
 	)
 	if canIncrementallyUpdateBodyCanvas(cache, entries, width, height) {
-		captured = captureBodyRenderCacheEntries(entries, runtimeState)
+		captured = captureBodyRenderCacheEntries(cache, entries, runtimeState)
 		if next, ok := updateBodyCanvasIncrementally(cache, entries, captured, runtimeState, hostEmojiMode, cursorOffsetY, cursorVisibleFn); ok {
 			canvas = next
 			perftrace.Count("render.body.canvas.path.incremental", maxInt(1, width*height))
@@ -48,7 +48,7 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 	}
 	if coordinator != nil {
 		if captured == nil {
-			captured = captureBodyRenderCacheEntries(entries, runtimeState)
+			captured = captureBodyRenderCacheEntries(cache, entries, runtimeState)
 		}
 		nextCache := newBodyRenderCache(canvas, captured, entries, runtimeState, width, height)
 		if cache != nil {
@@ -81,7 +81,7 @@ func previewCanvasFromCache(cache *bodyRenderCache, base *composedCanvas, curren
 	scratch := cache.previewCanvas
 	union := currentRect
 	if cache.preview.valid {
-		union = unionWorkbenchRects(union, cache.preview.entry.FrameKey.Rect)
+		union = unionWorkbenchRects(union, cache.preview.rect)
 	}
 	syncPreviewCanvasRows(scratch, base, union)
 	return scratch
@@ -140,6 +140,9 @@ func applyBodyCanvasPreviewOverlay(canvas *composedCanvas, cache *bodyRenderCach
 	}
 	if sprite := previewSpriteFromCache(cache, entry); sprite != nil {
 		canvas.blitRectFrom(sprite, workbenchRectForSprite(sprite), entry.Rect.X, entry.Rect.Y)
+		if cache != nil {
+			cache.preview.rect = entry.Rect
+		}
 		return
 	}
 	sprite := buildPreviewSprite(entry, runtimeState)
@@ -148,7 +151,13 @@ func applyBodyCanvasPreviewOverlay(canvas *composedCanvas, cache *bodyRenderCach
 	}
 	canvas.blitRectFrom(sprite, workbenchRectForSprite(sprite), entry.Rect.X, entry.Rect.Y)
 	if cache != nil {
-		cache.preview = bodyRenderCachePreview{entry: captureBodyRenderCacheEntry(entry, runtimeState).cache, sprite: sprite, valid: true}
+		localEntry := localPreviewSpriteEntry(entry)
+		cache.preview = bodyRenderCachePreview{
+			entry:  captureBodyRenderCacheEntry(localEntry, runtimeState).cache,
+			rect:   entry.Rect,
+			sprite: sprite,
+			valid:  true,
+		}
 	}
 }
 
@@ -223,7 +232,8 @@ func previewSpriteFromCache(cache *bodyRenderCache, entry paneRenderEntry) *comp
 	if cache == nil || !cache.preview.valid || cache.preview.sprite == nil {
 		return nil
 	}
-	captured := captureBodyRenderCacheEntry(entry, nil).cache
+	localEntry := localPreviewSpriteEntry(entry)
+	captured := captureBodyRenderCacheEntry(localEntry, nil).cache
 	if cache.preview.entry.FrameKey != captured.FrameKey || cache.preview.entry.ContentKey != captured.ContentKey || cache.preview.entry.Metrics != captured.Metrics {
 		return nil
 	}
@@ -235,9 +245,7 @@ func buildPreviewSprite(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 		return nil
 	}
 	sprite := newComposedCanvas(entry.Rect.W, entry.Rect.H)
-	localEntry := entry
-	localEntry.Rect = workbench.Rect{X: 0, Y: 0, W: entry.Rect.W, H: entry.Rect.H}
-	localEntry.FrameKey.Rect = localEntry.Rect
+	localEntry := localPreviewSpriteEntry(entry)
 	sprite.withOwner(localEntry.OwnerID, func() {
 		drawPaneFrame(sprite, localEntry.Rect, localEntry.SharedLeft, localEntry.SharedTop, localEntry.Title, localEntry.Border, localEntry.Theme, localEntry.Overflow, localEntry.Active, localEntry.Floating, localEntry.Chrome)
 	})
@@ -245,6 +253,14 @@ func buildPreviewSprite(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 		drawPaneContentWithKey(sprite, localEntry.Rect, localEntry, runtimeState)
 	})
 	return sprite
+}
+
+func localPreviewSpriteEntry(entry paneRenderEntry) paneRenderEntry {
+	localEntry := entry
+	localRect := workbench.Rect{X: 0, Y: 0, W: entry.Rect.W, H: entry.Rect.H}
+	localEntry.Rect = localRect
+	localEntry.FrameKey.Rect = localRect
+	return localEntry
 }
 
 func workbenchRectForSprite(sprite *composedCanvas) workbench.Rect {

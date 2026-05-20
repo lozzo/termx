@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
@@ -210,6 +210,41 @@ func TestTerminalAttachServiceHandleAttachedMsgResetsLegacyTabScrollOffset(t *te
 
 	if got := model.workbench.CurrentTab().ScrollOffset; got != 0 {
 		t.Fatalf("expected handleAttachedMsg to reset tab scroll offset, got %d", got)
+	}
+}
+
+func TestTerminalAttachServiceRestoredSnapshotFallbackUsesKnownLoadedDepth(t *testing.T) {
+	client := &recordingBridgeClient{
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-restore": {
+				TerminalID:           "term-restore",
+				Size:                 protocol.Size{Cols: 80, Rows: 24},
+				Scrollback:           []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "seed", Width: 1}})},
+				ScrollbackTotal:      2000,
+				ScrollbackHasMore:    true,
+				ScrollbackLoadedRows: 1500,
+				Screen:               protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "x", Width: 1}}}},
+			},
+		},
+	}
+	model := setupModel(t, modelOpts{client: client})
+	terminal := model.runtime.Registry().GetOrCreate("term-restore")
+	terminal.ScrollbackLoadedLimit = 1500
+
+	service := model.terminalAttachService()
+	msg := service.restoredSnapshotFallbackMsg(bootstrap.PaneReattachHint{
+		TabID:      "tab-1",
+		PaneID:     "pane-1",
+		TerminalID: "term-restore",
+	})
+	if _, ok := msg.(orchestrator.SnapshotLoadedMsg); !ok {
+		t.Fatalf("expected snapshot loaded fallback, got %#v", msg)
+	}
+	if got := len(client.snapshotRequests); got != 1 {
+		t.Fatalf("expected one snapshot request, got %#v", client.snapshotRequests)
+	}
+	if got := client.snapshotRequests[0].limit; got != 1500 {
+		t.Fatalf("expected restored fallback to use known loaded depth 1500, got %#v", client.snapshotRequests[0])
 	}
 }
 
@@ -419,8 +454,17 @@ func TestTerminalAttachServiceLateFailureRestoresSharedTerminalFollowerTitles(t 
 	}
 }
 
-func TestTerminalAttachServiceReattachRestoredCmdClearsBindingAndPendingOnFailure(t *testing.T) {
-	client := &recordingBridgeClient{attachErr: teaErr("terminal not found"), snapshotByTerminal: map[string]*protocol.Snapshot{}}
+func TestTerminalAttachServiceReattachRestoredCmdLoadsSnapshotFallbackWhenAttachFails(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachErr: teaErr("terminal not found"),
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-missing": {
+				TerminalID: "term-missing",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+				Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "history", Width: 1}}}},
+			},
+		},
+	}
 	model := setupModel(t, modelOpts{
 		client: client,
 		workspaces: map[string]*workbench.WorkspaceState{
@@ -450,15 +494,52 @@ func TestTerminalAttachServiceReattachRestoredCmdClearsBindingAndPendingOnFailur
 		t.Fatal("expected restore reattach cmd")
 	}
 	msg := cmd()
+	if _, ok := msg.(orchestrator.SnapshotLoadedMsg); !ok {
+		t.Fatalf("expected SnapshotLoadedMsg fallback, got %#v", msg)
+	}
+	pane := model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID != "term-missing" {
+		t.Fatalf("expected restored binding kept after snapshot fallback, got %#v", pane)
+	}
+	if model.isPaneAttachPending("pane-1") {
+		t.Fatal("expected pending attach cleared after snapshot fallback")
+	}
+}
+
+func TestTerminalAttachServiceReattachRestoredCmdClearsBindingWhenAttachAndSnapshotFail(t *testing.T) {
+	client := &recordingBridgeClient{attachErr: teaErr("terminal not found"), snapshotErr: teaErr("history not found")}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-1",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", TerminalID: "term-missing"},
+					},
+					Root: workbench.NewLeaf("pane-1"),
+				}},
+			},
+		},
+	})
+	service := model.terminalAttachService()
+
+	cmd := service.reattachRestoredCmd(bootstrap.PaneReattachHint{
+		TabID:      "tab-1",
+		PaneID:     "pane-1",
+		TerminalID: "term-missing",
+	})
+	msg := cmd()
 	if _, ok := msg.(reattachFailedMsg); !ok {
 		t.Fatalf("expected reattachFailedMsg, got %#v", msg)
 	}
 	pane := model.workbench.ActivePane()
 	if pane == nil || pane.TerminalID != "" {
-		t.Fatalf("expected restored binding cleared after failure, got %#v", pane)
-	}
-	if model.isPaneAttachPending("pane-1") {
-		t.Fatal("expected pending attach cleared after failed restore reattach")
+		t.Fatalf("expected restored binding cleared after failed snapshot fallback, got %#v", pane)
 	}
 }
 

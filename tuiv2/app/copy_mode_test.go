@@ -2,12 +2,14 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -68,11 +70,35 @@ func copyModeTestSnapshot(scrollback, screen []string) *protocol.Snapshot {
 	return &protocol.Snapshot{
 		TerminalID: "term-1",
 		Size:       protocol.Size{Cols: uint16(maxCols), Rows: uint16(len(screenRows))},
-		Scrollback: sbRows,
+		Scrollback: protocol.CompactRowsFromCells(sbRows),
 		Screen:     protocol.ScreenData{Cells: screenRows},
 		Cursor:     protocol.CursorState{Row: maxInt(0, len(screenRows)-1), Col: 0, Visible: true},
 		Modes:      protocol.TerminalModes{AutoWrap: true},
 	}
+}
+
+func copyModeSnapshotScreenText(snapshot *protocol.Snapshot) string {
+	if snapshot == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, row := range snapshot.Screen.Cells {
+		b.WriteString(rowTextFromProtocolCells(row))
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func rowTextFromProtocolCells(row []protocol.Cell) string {
+	var b strings.Builder
+	for _, cell := range row {
+		b.WriteString(cell.Content)
+	}
+	return strings.TrimRight(b.String(), " ")
+}
+
+func rowTextFromCompactRow(row protocol.CompactRow) string {
+	return rowTextFromProtocolCells(row.DecodeCells())
 }
 
 func seedCopyModeSnapshot(t *testing.T, m *Model, scrollback, screen []string) {
@@ -92,6 +118,51 @@ func seedCopyModeSnapshotForTerminal(t *testing.T, m *Model, terminalID string, 
 		}
 		client.snapshotByTerminal[terminalID] = snapshot
 	}
+}
+
+func snapshotWindow(snapshot *protocol.Snapshot, offset int, limit int) *protocol.Snapshot {
+	if snapshot == nil {
+		return nil
+	}
+	cloned := cloneSnapshot(snapshot)
+	if cloned == nil || limit <= 0 {
+		return cloned
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	total := len(snapshot.Scrollback)
+	if offset > total {
+		offset = total
+	}
+	end := total - offset
+	if end < 0 {
+		end = 0
+	}
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+	cloned.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[start:end])
+	if len(snapshot.ScrollbackTimestamps) >= end {
+		cloned.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps[start:end]...)
+	} else {
+		cloned.ScrollbackTimestamps = nil
+	}
+	if len(snapshot.ScrollbackRowKinds) >= end {
+		cloned.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds[start:end]...)
+	} else {
+		cloned.ScrollbackRowKinds = nil
+	}
+	if len(snapshot.ScrollbackWrapped) >= end {
+		cloned.ScrollbackWrapped = append([]bool(nil), snapshot.ScrollbackWrapped[start:end]...)
+	} else {
+		cloned.ScrollbackWrapped = nil
+	}
+	cloned.ScrollbackOffset = offset
+	cloned.ScrollbackTotal = total
+	cloned.ScrollbackHasMore = start > 0
+	return cloned
 }
 
 func setupSplitCopyModeModel(t *testing.T) *Model {
@@ -178,7 +249,7 @@ func TestCopyModeKeyboardSelectionCopiesOSC52(t *testing.T) {
 	}
 }
 
-func TestCopyModeMouseSwitchPaneClearsDisplayState(t *testing.T) {
+func TestCopyModeMouseSwitchPanePreservesHistoryPaneAndUpdatesActiveShortcuts(t *testing.T) {
 	model := setupSplitCopyModeModel(t)
 	seedCopyModeSnapshotForTerminal(t, model, "term-1", []string{"hist-left"}, []string{"live-left"})
 	seedCopyModeSnapshotForTerminal(t, model, "term-2", []string{"hist-right"}, []string{"live-right"})
@@ -219,14 +290,110 @@ func TestCopyModeMouseSwitchPaneClearsDisplayState(t *testing.T) {
 	if pane := model.workbench.ActivePane(); pane == nil || pane.ID != "pane-2" {
 		t.Fatalf("expected pane-2 focused after click, got %#v", pane)
 	}
-	if got := model.input.Mode().Kind; got != input.ModeNormal {
-		t.Fatalf("expected pane switch to leave display mode, got %q", got)
+	if got := model.effectiveInputMode(); got != input.ModeNormal {
+		t.Fatalf("expected active pane shortcuts to return to normal mode, got %q", got)
 	}
-	if got := model.copyMode.PaneID; got != "" {
-		t.Fatalf("expected pane switch to clear copy mode binding, got %q", got)
+	vm := model.renderVM()
+	if got := vm.Status.InputMode; got != string(input.ModeNormal) {
+		t.Fatalf("expected rendered status mode to follow active pane, got %q", got)
 	}
-	if model.copyMode.Mark != nil {
-		t.Fatalf("expected pane switch to clear copy mode selection, got %#v", model.copyMode.Mark)
+	hints := strings.Join(vm.Status.Hints, " ")
+	if !strings.Contains(hints, "P PANE") {
+		t.Fatalf("expected normal-mode shortcuts for active pane, got %#v", vm.Status.Hints)
+	}
+	if strings.Contains(hints, "MOVE CURSOR") {
+		t.Fatalf("expected inactive history pane not to drive copy-mode shortcuts, got %#v", vm.Status.Hints)
+	}
+	if got := model.copyMode.PaneID; got != "pane-1" {
+		t.Fatalf("expected inactive pane to keep copy mode binding, got %q", got)
+	}
+	if model.copyMode.Mark == nil {
+		t.Fatal("expected inactive pane to keep copy-mode selection")
+	}
+	view := xansi.Strip(model.View())
+	if !strings.Contains(view, "hist-left") {
+		t.Fatalf("expected inactive history pane to stay rendered, got:\n%s", view)
+	}
+
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlP))
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyEsc})
+	if got := model.copyMode.PaneID; got != "pane-1" {
+		t.Fatalf("expected transient active-pane modes to preserve inactive copy mode, got %q", got)
+	}
+	if got := model.effectiveInputMode(); got != input.ModeNormal {
+		t.Fatalf("expected inactive history pane not to affect shortcuts after mode exit, got %q", got)
+	}
+
+	client := model.runtime.Client().(*recordingBridgeClient)
+	dispatchKey(t, model, runeKeyMsg('x'))
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected active pane key input to be forwarded, got %#v", client.inputCalls)
+	}
+	if client.inputCalls[0].channel != 2 || string(client.inputCalls[0].data) != "x" {
+		t.Fatalf("expected key input on pane-2 channel, got %#v", client.inputCalls[0])
+	}
+
+	if err := model.workbench.FocusPane("tab-1", "pane-1"); err != nil {
+		t.Fatalf("refocus pane-1: %v", err)
+	}
+	if got := model.effectiveInputMode(); got != input.ModeDisplay {
+		t.Fatalf("expected refocused history pane to restore copy shortcuts, got %q", got)
+	}
+	vm = model.renderVM()
+	if got := vm.Status.InputMode; got != string(input.ModeDisplay) {
+		t.Fatalf("expected status mode to restore display for history pane, got %q", got)
+	}
+	hints = strings.Join(vm.Status.Hints, " ")
+	if !strings.Contains(hints, "MOVE CURSOR") {
+		t.Fatalf("expected copy-mode shortcuts after refocus, got %#v", vm.Status.Hints)
+	}
+}
+
+func TestCopyModeSupportsTwoPanesAndScrollsActivePaneWithoutBlankingEither(t *testing.T) {
+	model := setupSplitCopyModeModel(t)
+	seedCopyModeSnapshotForTerminal(t, model, "term-1", []string{"hist-left-0", "hist-left-1", "hist-left-2"}, []string{"live-left"})
+	seedCopyModeSnapshotForTerminal(t, model, "term-2", []string{"hist-right-0", "hist-right-1", "hist-right-2"}, []string{"live-right"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+	if _, ok := model.copyModeStateForPane("pane-1"); !ok {
+		t.Fatal("expected pane-1 copy mode")
+	}
+
+	if err := model.workbench.FocusPane("tab-1", "pane-2"); err != nil {
+		t.Fatalf("focus pane-2: %v", err)
+	}
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+	if _, ok := model.copyModeStateForPane("pane-2"); !ok {
+		t.Fatal("expected pane-2 copy mode")
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeCursorDown})
+
+	pane1, ok := model.copyModeStateForPane("pane-1")
+	if !ok || pane1.Snapshot == nil {
+		t.Fatalf("expected pane-1 copy mode to keep frozen snapshot, got %#v ok=%v", pane1, ok)
+	}
+	pane2, ok := model.copyModeStateForPane("pane-2")
+	if !ok || pane2.Snapshot == nil {
+		t.Fatalf("expected pane-2 copy mode to keep frozen snapshot, got %#v ok=%v", pane2, ok)
+	}
+	if pane2.Cursor.Row <= 0 {
+		t.Fatalf("expected pane-2 scroll action to move its copy cursor, got %#v", pane2.Cursor)
+	}
+	vm := model.renderVM()
+	if got := len(vm.Body.CopyModes); got != 2 {
+		t.Fatalf("expected render vm to carry both copy modes, got %d (%#v)", got, vm.Body.CopyModes)
+	}
+	view := xansi.Strip(model.View())
+	for _, want := range []string{"hist-left", "hist-right"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected view to keep %q visible after active copy scroll:\n%s", want, view)
+		}
+	}
+	if got := model.effectiveInputMode(); got != input.ModeDisplay {
+		t.Fatalf("expected active copy pane shortcuts, got %q", got)
 	}
 }
 
@@ -363,7 +530,7 @@ func TestCopyModeAutoScrollStopsAfterBoundaryCancelKey(t *testing.T) {
 	}
 }
 
-func TestCopyModeFreezesCursorAndSelectionWhenScrollbackExpands(t *testing.T) {
+func TestCopyModeExtendsFrozenScrollbackWhenSnapshotLoads(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, []string{"old2", "old3"}, []string{"line0", "line1", "line2", "line3"})
 
@@ -374,8 +541,9 @@ func TestCopyModeFreezesCursorAndSelectionWhenScrollbackExpands(t *testing.T) {
 	beforeRow := model.copyMode.Cursor.Row
 	beforeMark := *model.copyMode.Mark
 	beforeSnapshot := model.copyMode.Snapshot
+	beforeScreen := copyModeSnapshotScreenText(beforeSnapshot)
 
-	seedCopyModeSnapshot(t, model, []string{"old0", "old1", "old2", "old3"}, []string{"line0", "line1", "line2", "line3"})
+	seedCopyModeSnapshot(t, model, []string{"old0", "old1", "old2", "old3"}, []string{"live0", "live1", "live2", "live3"})
 	loaded, err := model.runtime.LoadSnapshot(context.Background(), "term-1", 0, 0)
 	if err != nil {
 		t.Fatalf("load updated snapshot: %v", err)
@@ -383,17 +551,457 @@ func TestCopyModeFreezesCursorAndSelectionWhenScrollbackExpands(t *testing.T) {
 	_, cmd := model.Update(orchestrator.SnapshotLoadedMsg{TerminalID: "term-1", Snapshot: loaded})
 	drainCmd(t, model, cmd, 20)
 
-	if got := model.copyMode.Cursor.Row; got != beforeRow {
-		t.Fatalf("expected frozen copy-mode cursor row to stay fixed, before=%d after=%d", beforeRow, got)
+	if model.copyMode.Snapshot == beforeSnapshot {
+		t.Fatal("expected copy mode to extend frozen snapshot with loaded scrollback")
+	}
+	if got := copyModeSnapshotScreenText(model.copyMode.Snapshot); got != beforeScreen {
+		t.Fatalf("expected frozen screen to stay unchanged, before=%q after=%q", beforeScreen, got)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old0") {
+		t.Fatalf("expected loaded older scrollback to be prepended, got %q", got)
+	}
+	if got := model.copyMode.Cursor.Row; got != beforeRow+2 {
+		t.Fatalf("expected copy-mode cursor row to shift with prepended history, before=%d after=%d", beforeRow, got)
 	}
 	if model.copyMode.Mark == nil {
 		t.Fatal("expected mark to remain set")
 	}
-	if got := model.copyMode.Mark.Row; got != beforeMark.Row {
-		t.Fatalf("expected frozen copy-mode mark row to stay fixed, before=%d after=%d", beforeMark.Row, got)
+	if got := model.copyMode.Mark.Row; got != beforeMark.Row+2 {
+		t.Fatalf("expected copy-mode mark row to shift with prepended history, before=%d after=%d", beforeMark.Row, got)
 	}
-	if model.copyMode.Snapshot != beforeSnapshot {
-		t.Fatal("expected copy mode to keep rendering the frozen snapshot while live scrollback changes")
+}
+
+func TestCopyModeTopLoadsOlderScrollbackIntoFrozenBuffer(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	beforeScreen := copyModeSnapshotScreenText(model.copyMode.Snapshot)
+	client := model.runtime.Client().(*recordingBridgeClient)
+	beforeSnapshotCalls := len(client.snapshotCalls)
+	beforeViewportCalls := len(client.viewportRequests)
+
+	seedCopyModeSnapshot(t, model, []string{"old0", "old1", "old2", "old3"}, []string{"live0", "live1", "live2", "live3"})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+
+	if got := len(client.snapshotCalls); got != beforeSnapshotCalls {
+		t.Fatalf("expected copy-mode top to avoid snapshot history requests, before=%d after=%d calls=%#v", beforeSnapshotCalls, got, client.snapshotCalls)
+	}
+	if got := len(client.viewportRequests); got != beforeViewportCalls+1 {
+		t.Fatalf("expected copy-mode top to request one history viewport, before=%d after=%d calls=%#v", beforeViewportCalls, got, client.viewportRequests)
+	}
+	if model.copyMode.Snapshot == nil {
+		t.Fatal("expected copy-mode snapshot")
+	}
+	if got := copyModeSnapshotScreenText(model.copyMode.Snapshot); got != beforeScreen {
+		t.Fatalf("expected frozen screen to remain unchanged after history load, before=%q after=%q", beforeScreen, got)
+	}
+	if got, want := len(model.copyMode.Snapshot.Scrollback), 4; got != want {
+		t.Fatalf("expected older scrollback to be loaded into frozen buffer, got %d want %d", got, want)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "old0" {
+		t.Fatalf("expected oldest loaded row at top, got %q", got)
+	}
+	if got := model.copyMode.Cursor.Row; got != 4 {
+		t.Fatalf("expected cursor to stay on the same logical content after prepending history, got row %d", got)
+	}
+}
+
+func TestCopyModeEnterPrefetchesHistoryWhenFrozenBufferHasNoScrollback(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot([]string{"old0", "old1", "old2"}, []string{"live0", "live1", "live2"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+
+	if got := len(client.viewportRequests); got != 1 {
+		t.Fatalf("expected copy-mode enter to request initial history viewport, got %#v", client.viewportRequests)
+	}
+	request := client.viewportRequests[0]
+	if request.terminalID != "term-1" || request.offset != 0 || request.limit != terminalHistoryInitialPageLimit || request.cols <= 0 {
+		t.Fatalf("expected initial copy-mode history viewport request, got %#v", request)
+	}
+	if model.copyMode.Snapshot == nil {
+		t.Fatal("expected copy-mode snapshot")
+	}
+	if got, want := len(model.copyMode.Snapshot.Scrollback), 3; got != want {
+		t.Fatalf("expected initial history to be loaded into frozen buffer, got %d want %d", got, want)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "old0" {
+		t.Fatalf("expected loaded history at top, got %q", got)
+	}
+}
+
+func TestCopyModeHistoryRequestUsesCanonicalCols(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, nil, []string{"line0"})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot.Size = protocol.Size{Cols: 96, Rows: 24}
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot([]string{"old0"}, []string{"live0"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+
+	if got := len(client.viewportRequests); got != 1 {
+		t.Fatalf("expected one copy-mode history request, got %#v", client.viewportRequests)
+	}
+	if got := client.viewportRequests[0].cols; got != 96 {
+		t.Fatalf("expected copy-mode history request to use canonical cols 96, got %d", got)
+	}
+}
+
+func TestCopyModeEnterPrefetchesWhenExhaustedFlagIsStale(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.ScrollbackExhausted = true
+	terminal.Snapshot.ScrollbackTotal = 3
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot([]string{"old0", "old1", "old2"}, []string{"live0", "live1", "live2"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+
+	if got := len(client.viewportRequests); got != 1 {
+		t.Fatalf("expected stale exhausted flag not to suppress copy-mode history load, got %#v", client.viewportRequests)
+	}
+	if got, want := len(model.copyMode.Snapshot.Scrollback), 3; got != want {
+		t.Fatalf("expected stale-exhausted history to load into frozen buffer, got %d want %d", got, want)
+	}
+}
+
+func TestCopyModeTopDoesNotLoadNormalHistoryWhileAlternateScreenActive(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, nil, []string{"alt0", "alt1", "alt2", "alt3"})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot.Modes.AlternateScreen = true
+	terminal.Snapshot.Screen.IsAlternateScreen = true
+	terminal.Snapshot.Scrollback = []protocol.CompactRow{
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "old-normal", Width: 1}}),
+	}
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot([]string{"old0", "old1"}, []string{"live0", "live1"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+
+	if got := len(client.viewportRequests); got != 0 {
+		t.Fatalf("expected alternate-screen copy mode not to request normal history, got %#v", client.viewportRequests)
+	}
+	if got := len(model.copyMode.Snapshot.Scrollback); got != 0 {
+		t.Fatalf("expected frozen alternate screen to omit normal scrollback, got %d rows", got)
+	}
+	if !model.copyMode.Snapshot.Modes.AlternateScreen || !model.copyMode.Snapshot.Screen.IsAlternateScreen {
+		t.Fatalf("expected frozen alternate screen to remain marked alternate, got modes=%#v screen=%v", model.copyMode.Snapshot.Modes, model.copyMode.Snapshot.Screen.IsAlternateScreen)
+	}
+}
+
+func TestCopyModeUsesAlternateScreenVisualHistory(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, nil, []string{"alt1", "alt2", "alt3", "alt4"})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot.Modes.AlternateScreen = true
+	terminal.Snapshot.Screen.IsAlternateScreen = true
+	terminal.AlternateScrollback = []protocol.CompactRow{
+		protocol.CompactRowFromCells([]protocol.Cell{{Content: "c", Width: 1}, {Content: "o", Width: 1}, {Content: "d", Width: 1}, {Content: "e", Width: 1}, {Content: "x", Width: 1}, {Content: "-", Width: 1}, {Content: "0", Width: 1}}),
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+
+	if got, want := len(model.copyMode.Snapshot.Scrollback), 1; got != want {
+		t.Fatalf("expected alternate visual history in frozen copy buffer, got %d want %d", got, want)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "codex-0" {
+		t.Fatalf("expected alternate visual history row, got %q", got)
+	}
+	if got := model.copyMode.Cursor.Row; got != 0 {
+		t.Fatalf("expected copy-mode top to reach alternate visual history, got row %d", got)
+	}
+}
+
+func TestCopyModeLoadsOlderScrollbackByOffsetPage(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	latest := make([]string, 500)
+	allRows := make([]string, 1000)
+	for i := range allRows {
+		allRows[i] = "hist"
+		if i < 500 {
+			allRows[i] = "old"
+		}
+	}
+	for i := range latest {
+		latest[i] = allRows[i+500]
+	}
+	seedCopyModeSnapshot(t, model, latest, []string{"live0", "live1", "live2", "live3"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	client := model.runtime.Client().(*recordingBridgeClient)
+	beforeSnapshotCalls := len(client.snapshotRequests)
+	beforeViewportCalls := len(client.viewportRequests)
+
+	serverSnapshot := copyModeTestSnapshot(allRows, []string{"next0", "next1", "next2", "next3"})
+	client.snapshotByTerminal["term-1"] = serverSnapshot
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+
+	if got := len(client.snapshotRequests); got != beforeSnapshotCalls {
+		t.Fatalf("expected paged history to avoid snapshot requests, before=%d after=%d calls=%#v", beforeSnapshotCalls, got, client.snapshotRequests)
+	}
+	if got := len(client.viewportRequests); got != beforeViewportCalls+1 {
+		t.Fatalf("expected one paged viewport request, before=%d after=%d calls=%#v", beforeViewportCalls, got, client.viewportRequests)
+	}
+	request := client.viewportRequests[len(client.viewportRequests)-1]
+	if request.terminalID != "term-1" || request.offset != 500 || request.limit != 500 || request.cols <= 0 {
+		t.Fatalf("expected offset viewport request for older copy-mode history, got %#v", request)
+	}
+	if got, want := len(model.copyMode.Snapshot.Scrollback), 1000; got != want {
+		t.Fatalf("expected paged history to be prepended, got %d rows want %d", got, want)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old") {
+		t.Fatalf("expected older page at top of frozen scrollback, got %q", got)
+	}
+	if got := rowTextFromCompactRow(model.runtime.Registry().Get("term-1").Snapshot.Scrollback[0]); !strings.Contains(got, "hist") {
+		t.Fatalf("expected live runtime snapshot to stay on latest page, got %q", got)
+	}
+}
+
+func TestCopyModeLoadsOlderScrollbackBeyondFullSnapshotCap(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	latest := make([]string, terminalMaterializedScrollbackLimit)
+	allRows := make([]string, terminalMaterializedScrollbackLimit+500)
+	for i := range allRows {
+		allRows[i] = "old"
+		if i >= 500 {
+			allRows[i] = "hist"
+		}
+	}
+	copy(latest, allRows[500:])
+	seedCopyModeSnapshot(t, model, latest, []string{"live0", "live1", "live2", "live3"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	client := model.runtime.Client().(*recordingBridgeClient)
+	beforeSnapshotCalls := len(client.snapshotRequests)
+	beforeViewportCalls := len(client.viewportRequests)
+
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot(allRows, []string{"next0", "next1", "next2", "next3"})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+
+	if got := len(client.snapshotRequests); got != beforeSnapshotCalls {
+		t.Fatalf("expected paged history to avoid snapshot requests beyond full snapshot cap, before=%d after=%d calls=%#v", beforeSnapshotCalls, got, client.snapshotRequests)
+	}
+	if got := len(client.viewportRequests); got != beforeViewportCalls+1 {
+		t.Fatalf("expected one paged viewport request beyond full snapshot cap, before=%d after=%d calls=%#v", beforeViewportCalls, got, client.viewportRequests)
+	}
+	request := client.viewportRequests[len(client.viewportRequests)-1]
+	if request.terminalID != "term-1" || request.offset != terminalMaterializedScrollbackLimit || request.limit != 500 || request.cols <= 0 {
+		t.Fatalf("expected offset viewport request beyond full snapshot cap, got %#v", request)
+	}
+	if got, want := len(model.copyMode.Snapshot.Scrollback), terminalMaterializedScrollbackLimit; got != want {
+		t.Fatalf("expected paged history window to stay bounded, got %d rows want %d", got, want)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old") {
+		t.Fatalf("expected older page at top of frozen scrollback, got %q", got)
+	}
+	if got := model.copyMode.Snapshot.ScrollbackOffset; got != 500 {
+		t.Fatalf("expected newest materialized rows to be trimmed from copy buffer, offset=%d", got)
+	}
+	if got := model.copyMode.LoadedRows; got != len(allRows) {
+		t.Fatalf("expected loaded depth to keep logical pagination progress, got %d want %d", got, len(allRows))
+	}
+}
+
+func TestCopyModeBoundedWindowRequestsNextOlderPageByLoadedDepth(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	latest := make([]string, terminalMaterializedScrollbackLimit)
+	allRows := make([]string, terminalMaterializedScrollbackLimit+1000)
+	for i := range allRows {
+		allRows[i] = "old"
+		if i >= 1000 {
+			allRows[i] = "hist"
+		}
+	}
+	copy(latest, allRows[1000:])
+	seedCopyModeSnapshot(t, model, latest, []string{"live0", "live1", "live2", "live3"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot(allRows, []string{"next0", "next1", "next2", "next3"})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+
+	if got, want := model.copyMode.LoadedRows, terminalMaterializedScrollbackLimit+500; got != want {
+		t.Fatalf("expected first older page to advance loaded depth, got %d want %d", got, want)
+	}
+	if got, want := len(model.copyMode.Snapshot.Scrollback), terminalMaterializedScrollbackLimit; got != want {
+		t.Fatalf("expected first page to keep bounded copy buffer, got %d want %d", got, want)
+	}
+	if got := model.copyMode.Snapshot.ScrollbackOffset; got != 500 {
+		t.Fatalf("expected first page to trim newest rows, offset=%d", got)
+	}
+
+	beforeViewportCalls := len(client.viewportRequests)
+	model.copyMode.Cursor.Row = 0
+	model.copyMode.ViewTopRow = 0
+	buffer, ok := model.activeCopyModeBuffer()
+	if !ok {
+		t.Fatal("expected active copy mode buffer")
+	}
+	drainCmd(t, model, model.prefetchCopyModeScrollbackCmd(buffer), 20)
+
+	if got := len(client.viewportRequests); got != beforeViewportCalls+1 {
+		t.Fatalf("expected one follow-up viewport request, before=%d after=%d calls=%#v", beforeViewportCalls, got, client.viewportRequests)
+	}
+	request := client.viewportRequests[len(client.viewportRequests)-1]
+	if request.offset != terminalMaterializedScrollbackLimit+500 || request.limit != 500 {
+		t.Fatalf("expected next page request to use loaded depth, got %#v", request)
+	}
+	if got, want := model.copyMode.LoadedRows, len(allRows); got != want {
+		t.Fatalf("expected second page to advance loaded depth, got %d want %d", got, want)
+	}
+	if got, want := len(model.copyMode.Snapshot.Scrollback), terminalMaterializedScrollbackLimit; got != want {
+		t.Fatalf("expected second page to keep bounded copy buffer, got %d want %d", got, want)
+	}
+}
+
+func TestCopyModeTopRepeatedlyLoadsOlderPagesWhenStillAtTop(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	latest := make([]string, terminalMaterializedScrollbackLimit)
+	allRows := make([]string, terminalMaterializedScrollbackLimit+1000)
+	for i := range allRows {
+		allRows[i] = "old"
+		if i >= 1000 {
+			allRows[i] = "hist"
+		}
+	}
+	copy(latest, allRows[1000:])
+	seedCopyModeSnapshot(t, model, latest, []string{"live0", "live1", "live2", "live3"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot(allRows, []string{"next0", "next1", "next2", "next3"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+	firstCalls := len(client.viewportRequests)
+	if firstCalls != 1 {
+		t.Fatalf("expected initial top jump to load one older page, got %#v", client.viewportRequests)
+	}
+	if model.copyMode.Cursor.Row != 0 || model.copyMode.ViewTopRow != 0 {
+		t.Fatalf("expected cursor to remain at top after first older page, got cursor=%#v top=%d", model.copyMode.Cursor, model.copyMode.ViewTopRow)
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+	if got := len(client.viewportRequests); got != firstCalls+1 {
+		t.Fatalf("expected repeated top jump at top to load another page, got %#v", client.viewportRequests)
+	}
+	request := client.viewportRequests[len(client.viewportRequests)-1]
+	if request.offset != terminalMaterializedScrollbackLimit+500 || request.limit != 500 {
+		t.Fatalf("expected repeated top jump to continue from loaded depth, got %#v", request)
+	}
+	if got, want := model.copyMode.LoadedRows, len(allRows); got != want {
+		t.Fatalf("expected repeated top jump to advance loaded depth to full history, got %d want %d", got, want)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old") {
+		t.Fatalf("expected oldest loaded page at scrollback start, got %q", got)
+	}
+	if got := model.copyMode.ViewTopRow; got != 0 {
+		t.Fatalf("expected repeated top jump to keep viewport top at 0, got %d", got)
+	}
+}
+
+func TestCopyModeRejectsNonAdjacentHistoryPage(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"new0"}, []string{"live0"})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot.ScrollbackLoadedRows = 1
+	terminal.Snapshot.HistoryGeneration = 7
+	terminal.Snapshot.ScrollbackFirstRowID = 100
+	terminal.Snapshot.ScrollbackLastRowID = 100
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	loaded := copyModeTestSnapshot([]string{"old0"}, []string{"live0"})
+	loaded.ScrollbackOffset = 1
+	loaded.ScrollbackTotal = 2
+	loaded.ScrollbackLogicalTotal = 1
+	loaded.ScrollbackLoadedRows = 2
+	loaded.HistoryGeneration = 7
+	loaded.ScrollbackFirstRowID = 98
+	loaded.ScrollbackLastRowID = 98
+
+	model.extendFrozenCopyModeSnapshot(loaded, 1)
+	if got, want := model.copyMode.LoadedRows, 1; got != want {
+		t.Fatalf("expected stale non-adjacent page to be rejected, loaded=%d want %d", got, want)
+	}
+	if got := len(model.copyMode.Snapshot.Scrollback); got != 1 {
+		t.Fatalf("expected stale page not to alter frozen scrollback, got %d rows", got)
+	}
+}
+
+func TestCopyModeExtendsFrozenSnapshotPreservesLogicalTotals(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"new0"}, []string{"live0"})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot.ScrollbackLoadedRows = 1
+	terminal.Snapshot.ScrollbackTotal = 1
+	terminal.Snapshot.ScrollbackLogicalTotal = 1
+	terminal.Snapshot.HistoryGeneration = 7
+	terminal.Snapshot.ScrollbackFirstRowID = 100
+	terminal.Snapshot.ScrollbackLastRowID = 100
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	loaded := copyModeTestSnapshot([]string{"old0"}, []string{"live0"})
+	loaded.ScrollbackOffset = 1
+	loaded.ScrollbackTotal = 2
+	loaded.ScrollbackLogicalTotal = 1
+	loaded.ScrollbackLoadedRows = 2
+	loaded.HistoryGeneration = 7
+	loaded.ScrollbackFirstRowID = 99
+	loaded.ScrollbackLastRowID = 99
+
+	model.extendFrozenCopyModeSnapshot(loaded, 1)
+	if model.copyMode.Snapshot == nil {
+		t.Fatal("expected frozen snapshot")
+	}
+	if got := model.copyMode.Snapshot.ScrollbackLogicalTotal; got != 1 {
+		t.Fatalf("expected logical total preserved after extending frozen snapshot, got %d", got)
+	}
+}
+
+func TestCopyModeTopDoesNotReloadWhenScrollbackExhausted(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})
+	model.runtime.Registry().Get("term-1").ScrollbackExhausted = true
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+
+	client := model.runtime.Client().(*recordingBridgeClient)
+	if len(client.snapshotCalls) != 0 {
+		t.Fatalf("expected exhausted copy-mode terminal not to request history, got %#v", client.snapshotCalls)
+	}
+}
+
+func TestCopyModeExitAfterHistoryLoadForwardsInput(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	seedCopyModeSnapshot(t, model, []string{"old0", "old1", "old2", "old3"}, []string{"live0", "live1", "live2", "live3"})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCancelMode})
+
+	client := model.runtime.Client().(*recordingBridgeClient)
+	dispatchKey(t, model, runeKeyMsg('x'))
+
+	if got := model.mode().Kind; got != input.ModeNormal {
+		t.Fatalf("expected copy-mode cancel to return to normal mode, got %q", got)
+	}
+	if got := model.copyMode.PaneID; got != "" {
+		t.Fatalf("expected copy mode to be cleared after cancel, got %#v", model.copyMode)
+	}
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected normal key input after leaving copy mode, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[0].data); got != "x" {
+		t.Fatalf("expected key input to be forwarded after leaving copy mode, got %q", got)
 	}
 }
 
@@ -559,6 +1167,44 @@ func TestCopyModeSelectedTextNormalizesReverseMultiRowSelection(t *testing.T) {
 	}
 }
 
+func TestCopyModeSelectedTextPreservesSoftWrappedLines(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"alpha", "bravo"}, []string{"charlie"})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot.ScrollbackWrapped = []bool{true, false}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	model.copyMode.Mark = &copyModePoint{Row: 0, Col: 0}
+	model.copyMode.Cursor = copyModePoint{Row: 2, Col: 6}
+
+	text, ok := model.copyModeSelectedText()
+	if !ok {
+		t.Fatal("expected selection text")
+	}
+	if text != "alphabravo\ncharlie" {
+		t.Fatalf("expected soft-wrapped scrollback rows to copy as one line, got %q", text)
+	}
+}
+
+func TestCopyModeLogicalLinesUseWrappedBoundaries(t *testing.T) {
+	buffer := copyModeBuffer{
+		snapshot: copyModeTestSnapshot([]string{"hist0", "hist1", "hist2", "hist3"}, nil),
+		height:   2,
+	}
+	buffer.snapshot.ScrollbackWrapped = []bool{true, true, false, false}
+
+	logicalLines := newCopyModeLogicalLines(buffer)
+	if got := logicalLines.lineStart(2); got != 0 {
+		t.Fatalf("expected logical line start to walk through wrapped predecessors, got %d", got)
+	}
+	if got := logicalLines.lineEnd(0); got != 2 {
+		t.Fatalf("expected logical line end to walk wrapped successors, got %d", got)
+	}
+	if logicalLines.rowContinues(2) {
+		t.Fatal("expected hard line boundary after unwrapped row")
+	}
+}
+
 func TestCopyModePointAtMouseMapsScreenPositionToBufferedRow(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, []string{"hist0", "hist1", "hist2"}, []string{"live0", "live1", "live2"})
@@ -628,7 +1274,7 @@ func TestActiveLiveCopyModeBufferRefreshesStaleVTermSnapshot(t *testing.T) {
 	}
 	var snapshotText strings.Builder
 	for _, row := range buffer.snapshot.Scrollback {
-		for _, cell := range row {
+		for _, cell := range row.DecodeCells() {
 			snapshotText.WriteString(cell.Content)
 		}
 		snapshotText.WriteByte('\n')
@@ -677,8 +1323,8 @@ func TestSyncCopyModeViewportClampsAndUpdatesPaneViewport(t *testing.T) {
 	if got, want := model.runtime.PaneViewportOffset("pane-1"), model.copyModeRenderOffset(buffer); got != want {
 		t.Fatalf("expected syncCopyModeViewport to keep pane viewport aligned, got %d want %d", got, want)
 	}
-	if got := model.runtime.PaneViewportOffset("pane-1"); got <= 0 {
-		t.Fatalf("expected syncCopyModeViewport to move viewport into scrollback, got %d", got)
+	if got := model.runtime.PaneViewportOffset("pane-1"); got < 0 {
+		t.Fatalf("expected syncCopyModeViewport to keep non-negative pane viewport offset, got %d", got)
 	}
 }
 
@@ -736,7 +1382,7 @@ func TestClipboardHistoryPickerPastesSelectedEntry(t *testing.T) {
 	if model.modalHost == nil || model.modalHost.Picker == nil {
 		t.Fatal("expected clipboard history picker")
 	}
-	model.modalHost.Picker.Selected = 1
+	model.modalHost.Picker.Selected = 2
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
 
@@ -752,19 +1398,325 @@ func TestClipboardHistoryPickerPastesSelectedEntry(t *testing.T) {
 	}
 }
 
+func TestClipboardHistoryCopyPersistsToDaemonPublicStorage(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{client: client, width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"alpha"}, []string{"live0"})
+	writer := &recordingControlWriter{}
+	model.SetCursorWriter(writer)
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeBeginSelection})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeCursorRight})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeCopySelectionExit})
+
+	if len(client.storagePutCalls) != 1 {
+		t.Fatalf("expected one clipboard storage put, got %#v", client.storagePutCalls)
+	}
+	put := client.storagePutCalls[0]
+	if put.AppID != clipboardHistoryStorageAppID || put.Scope != protocol.StorageScopePublic || put.OwnerID != "" {
+		t.Fatalf("expected public clipboard storage put, got %#v", put)
+	}
+	if !strings.HasPrefix(put.Key, clipboardHistoryStoragePrefix) {
+		t.Fatalf("expected clipboard history key prefix, got %q", put.Key)
+	}
+	var record clipboardHistoryRecord
+	if err := json.Unmarshal(put.Value, &record); err != nil {
+		t.Fatalf("decode stored clipboard record: %v", err)
+	}
+	if record.SchemaVersion != clipboardHistoryRecordVersion || record.Text != "al" || record.PaneID != "pane-1" || record.SourceApp != "tuiv2" {
+		t.Fatalf("unexpected stored clipboard record: %#v", record)
+	}
+	if len(client.storageListCalls) == 0 || client.storageListCalls[0].AppID != clipboardHistoryStorageAppID || client.storageListCalls[0].Prefix != clipboardHistoryStoragePrefix {
+		t.Fatalf("expected prune to list clipboard history, got %#v", client.storageListCalls)
+	}
+}
+
+func TestClipboardHistoryPickerLoadsDaemonPublicStorage(t *testing.T) {
+	createdAt := time.Date(2026, 5, 16, 10, 30, 0, 0, time.UTC)
+	value, err := json.Marshal(clipboardHistoryRecord{
+		SchemaVersion: clipboardHistoryRecordVersion,
+		ID:            "shared-1",
+		Text:          "from daemon",
+		PaneID:        "remote-app",
+		SourceApp:     "remote-ui",
+		CreatedAt:     createdAt,
+	})
+	if err != nil {
+		t.Fatalf("encode clipboard record: %v", err)
+	}
+	key := clipboardHistoryStorageKey("shared-1")
+	client := &recordingBridgeClient{
+		storageEntries: map[string]protocol.StorageEntry{
+			key: {
+				AppID:     clipboardHistoryStorageAppID,
+				Scope:     protocol.StorageScopePublic,
+				Key:       key,
+				Value:     value,
+				UpdatedAt: createdAt,
+			},
+		},
+	}
+	model := setupModel(t, modelOpts{client: client, width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenClipboardHistory})
+
+	if got := model.input.Mode().Kind; got != input.ModePicker {
+		t.Fatalf("expected clipboard history picker mode, got %q", got)
+	}
+	if got := model.yankBuffer; got != "from daemon" {
+		t.Fatalf("expected loaded storage entry to become paste buffer, got %q", got)
+	}
+	view := xansi.Strip(model.View())
+	for _, want := range []string{"history", "preview", "from daemon", "time: 2026-05-16", "source: remote-ui", "from: remote-app"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected storage-backed history to contain %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "shared-1") {
+		t.Fatalf("clipboard history picker should not show internal storage id:\n%s", view)
+	}
+	if len(client.storageListCalls) == 0 || client.storageListCalls[0].AppID != clipboardHistoryStorageAppID || client.storageListCalls[0].Scope != protocol.StorageScopePublic {
+		t.Fatalf("expected public storage list, got %#v", client.storageListCalls)
+	}
+}
+
+func TestClipboardHistoryStoreSupportsCRUDOnDaemonPublicStorage(t *testing.T) {
+	client := &recordingBridgeClient{}
+	store := newClipboardHistoryStoreFromClient(client)
+	if store == nil {
+		t.Fatal("expected storage-backed clipboard history store")
+	}
+	entry := clipboardHistoryEntry{
+		ID:        "crud-1",
+		Text:      "shared value",
+		PaneID:    "pane-a",
+		CreatedAt: time.Date(2026, 5, 16, 11, 0, 0, 0, time.UTC),
+	}
+	if err := store.Put(context.Background(), entry); err != nil {
+		t.Fatalf("put clipboard entry: %v", err)
+	}
+	got, err := store.Get(context.Background(), entry.ID)
+	if err != nil {
+		t.Fatalf("get clipboard entry: %v", err)
+	}
+	if got.ID != entry.ID || got.Text != entry.Text || got.PaneID != entry.PaneID {
+		t.Fatalf("unexpected get result: %#v", got)
+	}
+	listed, err := store.List(context.Background())
+	if err != nil {
+		t.Fatalf("list clipboard entries: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != entry.ID {
+		t.Fatalf("unexpected list result: %#v", listed)
+	}
+	if err := store.Delete(context.Background(), entry.ID); err != nil {
+		t.Fatalf("delete clipboard entry: %v", err)
+	}
+	listed, err = store.List(context.Background())
+	if err != nil {
+		t.Fatalf("list after delete: %v", err)
+	}
+	if len(listed) != 0 {
+		t.Fatalf("expected deleted entry to disappear, got %#v", listed)
+	}
+	if len(client.storageGetCalls) != 1 || client.storageGetCalls[0].Scope != protocol.StorageScopePublic {
+		t.Fatalf("expected public storage get, got %#v", client.storageGetCalls)
+	}
+	if len(client.storageDeleteCalls) != 1 || client.storageDeleteCalls[0].Key != clipboardHistoryStorageKey(entry.ID) {
+		t.Fatalf("expected storage delete by clipboard key, got %#v", client.storageDeleteCalls)
+	}
+}
+
+func TestClipboardHistoryPickerCreatesEntryInPublicStorage(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{client: client, width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenClipboardHistory})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
+
+	if model.modalHost == nil || model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModePrompt {
+		t.Fatalf("expected create clipboard prompt, got %#v", model.modalHost)
+	}
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-clipboard-entry" {
+		t.Fatalf("expected create-clipboard-entry prompt, got %#v", model.modalHost.Prompt)
+	}
+	model.modalHost.Prompt.Value = "manual clip"
+	model.modalHost.Prompt.Cursor = len([]rune(model.modalHost.Prompt.Value))
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
+
+	if got := model.input.Mode().Kind; got != input.ModePicker {
+		t.Fatalf("expected create submit to return to clipboard picker, got %q", got)
+	}
+	if len(client.storagePutCalls) != 1 {
+		t.Fatalf("expected created clipboard entry to be stored, got %#v", client.storagePutCalls)
+	}
+	var record clipboardHistoryRecord
+	if err := json.Unmarshal(client.storagePutCalls[0].Value, &record); err != nil {
+		t.Fatalf("decode stored clipboard record: %v", err)
+	}
+	if record.Text != "manual clip" || record.SourceApp != "tuiv2" || client.storagePutCalls[0].Scope != protocol.StorageScopePublic {
+		t.Fatalf("unexpected stored clipboard entry: put=%#v record=%#v", client.storagePutCalls[0], record)
+	}
+	view := xansi.Strip(model.View())
+	for _, want := range []string{"Clipboard History", "manual clip", "New clipboard entry", "source: tuiv2", "from: pane-1"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected clipboard picker to contain %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestClipboardHistoryPickerEditsEntryInPublicStorage(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{client: client, width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+	model.clipboardHistory = []clipboardHistoryEntry{normalizeClipboardHistoryEntry(clipboardHistoryEntry{
+		ID:        "clip-edit",
+		Text:      "old value",
+		PaneID:    "pane-1",
+		CreatedAt: time.Date(2026, 5, 16, 11, 5, 0, 0, time.UTC),
+	})}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenClipboardHistory})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEditTerminal})
+
+	if model.modalHost == nil || model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModePrompt {
+		t.Fatalf("expected edit clipboard prompt, got %#v", model.modalHost)
+	}
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "edit-clipboard-entry" || model.modalHost.Prompt.TerminalID != "clip-edit" {
+		t.Fatalf("unexpected edit prompt: %#v", model.modalHost.Prompt)
+	}
+	model.modalHost.Prompt.Value = "updated value"
+	model.modalHost.Prompt.Cursor = len([]rune(model.modalHost.Prompt.Value))
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
+
+	if got := model.input.Mode().Kind; got != input.ModePicker {
+		t.Fatalf("expected edit submit to return to clipboard picker, got %q", got)
+	}
+	if len(client.storagePutCalls) != 1 || client.storagePutCalls[0].Key != clipboardHistoryStorageKey("clip-edit") {
+		t.Fatalf("expected edited clipboard entry to be stored at same key, got %#v", client.storagePutCalls)
+	}
+	entry := model.clipboardHistoryEntryByID("clip-edit")
+	if entry == nil || entry.Text != "updated value" {
+		t.Fatalf("expected in-memory clipboard entry to update, got %#v", entry)
+	}
+	view := xansi.Strip(model.View())
+	if !strings.Contains(view, "updated value") || strings.Contains(view, "old value") {
+		t.Fatalf("expected updated clipboard picker view:\n%s", view)
+	}
+}
+
+func TestClipboardHistoryPickerDeletesEntryFromPublicStorage(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{client: client, width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+	model.clipboardHistory = []clipboardHistoryEntry{normalizeClipboardHistoryEntry(clipboardHistoryEntry{
+		ID:        "clip-delete",
+		Text:      "delete me",
+		PaneID:    "pane-1",
+		CreatedAt: time.Date(2026, 5, 16, 11, 10, 0, 0, time.UTC),
+	})}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenClipboardHistory})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionRemoveTerminal})
+
+	if got := model.input.Mode().Kind; got != input.ModePicker {
+		t.Fatalf("expected delete to keep clipboard picker open, got %q", got)
+	}
+	if len(client.storageDeleteCalls) != 1 || client.storageDeleteCalls[0].Key != clipboardHistoryStorageKey("clip-delete") {
+		t.Fatalf("expected clipboard storage delete, got %#v", client.storageDeleteCalls)
+	}
+	if entry := model.clipboardHistoryEntryByID("clip-delete"); entry != nil {
+		t.Fatalf("expected deleted entry to leave memory, got %#v", entry)
+	}
+	view := xansi.Strip(model.View())
+	for _, want := range []string{"Clipboard", "copy text first", "New clipboard entry"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected clipboard picker to contain %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "delete me") {
+		t.Fatalf("expected deleted text to disappear:\n%s", view)
+	}
+}
+
+func TestClipboardHistoryPickerIgnoresEmptyStateSubmit(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenClipboardHistory})
+	model.modalHost.Picker.Selected = 1
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
+
+	if got := model.input.Mode().Kind; got != input.ModePicker {
+		t.Fatalf("expected empty state submit to keep picker open, got %q", got)
+	}
+	if model.err != nil {
+		t.Fatalf("expected empty state submit not to set error, got %v", model.err)
+	}
+}
+
+func TestClipboardHistoryPromptCancelReturnsToPicker(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenClipboardHistory})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCancelMode})
+
+	if got := model.input.Mode().Kind; got != input.ModePicker {
+		t.Fatalf("expected cancel to return to clipboard picker, got %q", got)
+	}
+	if model.modalHost == nil || model.modalHost.Session == nil || model.modalHost.Session.RequestID != clipboardHistoryRequestID() || model.modalHost.Picker == nil {
+		t.Fatalf("expected clipboard picker restored, got %#v", model.modalHost)
+	}
+}
+
+func TestClipboardHistoryPickerStatusHintsUseClipboardActions(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+	model.pushClipboardHistory("first entry", "pane-1")
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenClipboardHistory})
+
+	hints := strings.Join(model.renderVM().Status.Hints, " ")
+	for _, want := range []string{"Enter PASTE/NEW", "Ctrl-E EDIT", "Ctrl-X DELETE"} {
+		if !strings.Contains(hints, want) {
+			t.Fatalf("expected clipboard status hint %q in %#v", want, model.renderVM().Status.Hints)
+		}
+	}
+	for _, forbidden := range []string{"Tab SPLIT", "Ctrl-K KILL", "Enter HERE"} {
+		if strings.Contains(hints, forbidden) {
+			t.Fatalf("clipboard picker should not show terminal hint %q in %#v", forbidden, model.renderVM().Status.Hints)
+		}
+	}
+}
+
 func TestClipboardHistoryPickerOpensFromKeysAndRendersOverlay(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 14})
 	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
 	model.pushClipboardHistory("first entry", "pane-1")
 
 	dispatchKey(t, model, ctrlKey(tea.KeyCtrlV))
-	dispatchKey(t, model, runeKeyMsg('h'))
+	dispatchKey(t, model, runeKeyMsg('H'))
 
 	if got := model.input.Mode().Kind; got != input.ModePicker {
 		t.Fatalf("expected clipboard history picker mode, got %q", got)
 	}
 	view := xansi.Strip(model.View())
-	for _, want := range []string{"Clipboard History", "first entry"} {
+	for _, want := range []string{"Clipboard History", "history", "preview", "first entry", "source: tuiv2", "from: pane-1"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected clipboard history overlay to contain %q:\n%s", want, view)
 		}
@@ -776,13 +1728,13 @@ func TestClipboardHistoryPickerShowsEmptyState(t *testing.T) {
 	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
 
 	dispatchKey(t, model, ctrlKey(tea.KeyCtrlV))
-	dispatchKey(t, model, runeKeyMsg('h'))
+	dispatchKey(t, model, runeKeyMsg('H'))
 
 	if got := model.input.Mode().Kind; got != input.ModePicker {
 		t.Fatalf("expected clipboard history picker mode, got %q", got)
 	}
 	view := xansi.Strip(model.View())
-	for _, want := range []string{"Clipboard History", "Clipboard history is empty", "copy text first"} {
+	for _, want := range []string{"Clipboard History", "history", "preview", "New clipboard entry", "Clipboard", "copy text first"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected empty clipboard history overlay to contain %q:\n%s", want, view)
 		}

@@ -131,6 +131,8 @@ func promptValueWithCursorVisible(prompt *modal.PromptState, cursorVisible bool)
 
 func promptFieldLabel(kind string) string {
 	switch kind {
+	case "create-clipboard-entry", "edit-clipboard-entry":
+		return "text"
 	case "create-terminal-name", "edit-terminal-name":
 		return "name"
 	case "create-terminal-tags", "edit-terminal-tags":

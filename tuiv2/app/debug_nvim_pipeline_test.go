@@ -2,8 +2,15 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/internal/protocol"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
+	"github.com/lozzow/termx/tuiv2/bridge"
+	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,17 +18,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
-	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx"
-	"github.com/lozzow/termx/protocol"
-	unixtransport "github.com/lozzow/termx/transport/unix"
-	"github.com/lozzow/termx/tuiv2/bridge"
-	"github.com/lozzow/termx/tuiv2/input"
-	"github.com/lozzow/termx/tuiv2/runtime"
-	"github.com/lozzow/termx/tuiv2/shared"
-	localvterm "github.com/lozzow/termx/vterm"
 )
 
 func TestDebugSinglePaneNvimScrollPipelineLocatesFirstDivergence(t *testing.T) {
@@ -304,8 +300,7 @@ type nvimPipelineHarness struct {
 	model      *Model
 	asyncMsgs  chan tea.Msg
 	control    *protocol.Client
-	server     *termx.Server
-	serverDone chan error
+	daemon     *appTestDaemon
 	terminalID string
 	width      int
 	height     int
@@ -315,31 +310,10 @@ func startNvimPipelineHarness(t *testing.T, name string) *nvimPipelineHarness {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	socketPath := filepath.Join(t.TempDir(), name+".sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	serverDone := make(chan error, 1)
-	go func() { serverDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-serverDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := waitTestSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
+	daemon := startAppTestDaemon(t, ctx, name+".sock")
+	socketPath := daemon.SocketPath()
 
-	controlTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial control client: %v", err)
-	}
-	controlClient := protocol.NewClient(controlTransport)
-	if err := controlClient.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
-		t.Fatalf("hello control client: %v", err)
-	}
-	t.Cleanup(func() { _ = controlClient.Close() })
+	controlClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	tmpFile := filepath.Join(t.TempDir(), name+".txt")
 	var lines []string
@@ -365,15 +339,7 @@ func startNvimPipelineHarness(t *testing.T, name string) *nvimPipelineHarness {
 		t.Fatalf("create terminal: %v", err)
 	}
 
-	appTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial app client: %v", err)
-	}
-	appClient := protocol.NewClient(appTransport)
-	if err := appClient.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
-		t.Fatalf("hello app client: %v", err)
-	}
-	t.Cleanup(func() { _ = appClient.Close() })
+	appClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	model := New(shared.Config{AttachID: created.TerminalID}, nil, runtime.New(bridge.NewProtocolClient(appClient)))
 	model.width = 120
@@ -398,8 +364,7 @@ func startNvimPipelineHarness(t *testing.T, name string) *nvimPipelineHarness {
 		model:      model,
 		asyncMsgs:  asyncMsgs,
 		control:    controlClient,
-		server:     srv,
-		serverDone: serverDone,
+		daemon:     daemon,
 		terminalID: created.TerminalID,
 		width:      120,
 		height:     40,
@@ -412,15 +377,7 @@ func (h *nvimPipelineHarness) Close(t *testing.T) {
 		return
 	}
 	h.cancel()
-	_ = h.server.Shutdown(context.Background())
-	select {
-	case err := <-h.serverDone:
-		if err != nil && !errors.Is(err, context.Canceled) {
-			t.Fatalf("server shutdown: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for pipeline server shutdown")
-	}
+	h.daemon.Shutdown(t, 3*time.Second)
 }
 
 func (h *nvimPipelineHarness) waitForInitialScreen(t *testing.T) {

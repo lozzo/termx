@@ -5,10 +5,11 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
 )
 
 type RenderTickMsg struct{}
@@ -38,8 +39,8 @@ type keyBurstMsg struct {
 type mouseWheelBurstMsg struct {
 	Seq      uint64
 	QueuedAt time.Time
-	Msg    tea.MouseMsg
-	Repeat int
+	Msg      tea.MouseMsg
+	Repeat   int
 }
 
 type queuedMouseMsg struct {
@@ -106,12 +107,30 @@ type terminalTitleMsg struct {
 	Title      string
 }
 
+type clipboardHistoryLoadedMsg struct {
+	Entries    []clipboardHistoryEntry
+	OpenPicker bool
+	Err        error
+}
+
+type clipboardHistoryStoredMsg struct {
+	Err error
+}
+
+type clipboardHistoryDeletedMsg struct {
+	Err error
+}
+
 type pickerItemsLoadedMsg struct {
 	Items []modal.PickerItem
 }
 
 type terminalManagerItemsLoadedMsg struct {
 	Items []modal.PickerItem
+}
+
+type terminalInventoryLoadedMsg struct {
+	Terminals []protocol.TerminalInfo
 }
 
 type terminalSizeLockToggledMsg struct {
@@ -142,8 +161,7 @@ type hostEmojiProbeMsg struct {
 type hostEmojiProbeGiveUpMsg struct{}
 
 // reattachFailedMsg is sent when a pane's terminal could not be re-attached on
-// startup. The handler opens the terminal picker for that pane if it is still
-// the active pane and has no terminal bound.
+// startup and no persisted snapshot could be loaded for that terminal.
 type reattachFailedMsg struct {
 	tabID  string
 	paneID string
@@ -152,17 +170,17 @@ type reattachFailedMsg struct {
 type prefixTimeoutMsg struct{ seq int }
 
 type sessionSnapshotMsg struct {
-	Snapshot *protocol.SessionSnapshot
+	Snapshot *sessionstore.Snapshot
 	Err      error
 }
 
 type sessionViewUpdatedMsg struct {
-	View *protocol.ViewInfo
+	View *sessionstore.ViewInfo
 	Err  error
 }
 
 type sessionEventMsg struct {
-	Event protocol.Event
+	Event sessionstore.EventData
 }
 
 type terminalEventMsg struct {

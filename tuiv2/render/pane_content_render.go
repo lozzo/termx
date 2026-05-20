@@ -4,24 +4,25 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 type resolvedPaneContent struct {
-	terminalKnown bool
-	terminalName  string
-	terminalState string
-	snapshot      *protocol.Snapshot
-	surface       runtime.TerminalSurface
-	screenUpdate  terminalScreenUpdateHint
-	source        terminalRenderSource
-	metrics       renderTerminalMetrics
-	contentRect   workbench.Rect
-	renderOffset  int
+	terminalKnown  bool
+	terminalName   string
+	terminalState  string
+	snapshot       *protocol.Snapshot
+	surface        runtime.TerminalSurface
+	source         terminalRenderSource
+	metrics        renderTerminalMetrics
+	contentRect    workbench.Rect
+	renderOffset   int
+	contentOffsetX int
+	contentOffsetY int
 }
 
 type terminalSourceWindowState struct {
@@ -54,9 +55,9 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 		}
 		return
 	}
-	drawTerminalSourceWithOffsetAndMetrics(canvas, contentRect, resolved.source, resolved.renderOffset, entry.Theme, resolved.metrics)
+	drawTerminalSourceWithPlacementAndMetrics(canvas, contentRect, resolved.source, resolved.renderOffset, resolved.contentOffsetX, resolved.contentOffsetY, entry.Theme, resolved.metrics)
 	if entry.CopyModeActive {
-		drawCopyModeOverlay(canvas, contentRect, resolved.snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol)
+		drawCopyModeOverlay(canvas, contentRect, resolved.snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol, resolved.contentOffsetX, resolved.contentOffsetY)
 	}
 	if resolved.terminalState == "exited" {
 		drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
@@ -179,9 +180,6 @@ func resolvePaneContent(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 	resolved.terminalState = entry.ContentKey.State
 	resolved.snapshot = entry.Snapshot
 	resolved.surface = entry.Surface
-	if terminal := findVisibleTerminal(runtimeState, entry.TerminalID); terminal != nil {
-		resolved.screenUpdate = terminalScreenUpdateHintFromVisible(terminal.ScreenUpdate)
-	}
 	if resolved.terminalKnown && (resolved.snapshot == nil && resolved.surface == nil || resolved.terminalName == "" || resolved.terminalState == "") {
 		if terminal := findVisibleTerminal(runtimeState, entry.TerminalID); terminal != nil {
 			if resolved.snapshot == nil && resolved.surface == nil {
@@ -204,8 +202,12 @@ func resolvePaneContent(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 		resolved.metrics = terminalExtentProfileCached(resolved.snapshot, resolved.surface, entry.SurfaceVersion).Metrics
 	}
 	resolved.renderOffset = entry.ScrollOffset
+	resolved.contentOffsetX = clampTerminalContentOffset(entry.ContentOffsetX, resolved.contentRect.W, resolved.metrics.Cols)
+	resolved.contentOffsetY = clampTerminalContentOffset(entry.ContentOffsetY, resolved.contentRect.H, resolved.metrics.Rows)
 	if entry.CopyModeActive {
 		resolved.renderOffset = scrollOffsetForViewportTop(resolved.snapshot, resolved.contentRect.H, entry.CopyModeViewTopRow)
+		resolved.contentOffsetX = 0
+		resolved.contentOffsetY = 0
 	}
 	return resolved
 }

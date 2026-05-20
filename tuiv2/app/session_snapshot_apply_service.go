@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
-	"github.com/lozzow/termx/tuiv2/sessionstate"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
+	"github.com/lozzow/termx/tuiv2/workbenchcodec"
 )
 
 type sessionSnapshotApplyService struct {
@@ -20,7 +20,7 @@ func (m *Model) sessionSnapshotApplyService() *sessionSnapshotApplyService {
 	return &sessionSnapshotApplyService{model: m}
 }
 
-func (s *sessionSnapshotApplyService) apply(snapshot *protocol.SessionSnapshot) error {
+func (s *sessionSnapshotApplyService) apply(snapshot *sessionstore.Snapshot) error {
 	if s == nil || s.model == nil || snapshot == nil {
 		return nil
 	}
@@ -43,7 +43,7 @@ func (s *sessionSnapshotApplyService) apply(snapshot *protocol.SessionSnapshot) 
 		m.sessionSharedDoc = snapshot.Workbench.Clone()
 	}
 	if len(snapshot.Leases) > 0 {
-		m.sessionLeases = make(map[string]protocol.LeaseInfo, len(snapshot.Leases))
+		m.sessionLeases = make(map[string]sessionstore.LeaseInfo, len(snapshot.Leases))
 		for _, lease := range snapshot.Leases {
 			if lease.TerminalID != "" {
 				m.sessionLeases[lease.TerminalID] = lease
@@ -60,25 +60,25 @@ func (s *sessionSnapshotApplyService) apply(snapshot *protocol.SessionSnapshot) 
 		return nil
 	}
 
-	oldBindings := sessionstate.PaneTerminalBindings(sessionstate.ExportWorkbench(m.workbench))
-	nextBindings := sessionstate.PaneTerminalBindings(snapshot.Workbench)
-	nextWorkbench := sessionstate.ImportDoc(snapshot.Workbench)
+	oldBindings := workbenchcodec.PaneTerminalBindings(workbenchcodec.ExportWorkbench(m.workbench))
+	nextBindings := workbenchcodec.PaneTerminalBindings(snapshot.Workbench)
+	nextWorkbench := workbenchcodec.ImportDoc(snapshot.Workbench)
 
 	var applyErr error
 	if m.runtime != nil {
 		result := m.reconcileSessionRuntime(context.Background(), oldBindings, nextBindings)
-		clearFailedSessionPaneBindings(nextWorkbench, result.failedBindings)
+		clearFailedSessionPaneBindings(nextWorkbench, result.FailedBindings)
 		if service := m.sessionRuntimeService(); service != nil {
 			service.applyCurrentLeases()
 		}
-		if len(result.failedBindings) > 0 {
-			applyErr = fmt.Errorf("session snapshot applied with %d unattached pane(s)", len(result.failedBindings))
+		if len(result.FailedBindings) > 0 {
+			applyErr = fmt.Errorf("session snapshot applied with %d unattached pane(s)", len(result.FailedBindings))
 		}
 	}
 
 	m.workbench = nextWorkbench
 	m.applyLocalViewProjection(projection)
-	m.orchestrator = orchestrator.New(m.workbench, m.runtime)
+	m.orchestrator = orchestrator.New(m.workbench)
 	m.render.Invalidate()
 	return applyErr
 }

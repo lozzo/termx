@@ -1,11 +1,8 @@
 package render
 
-import "sort"
-
 type terminalWindowDeltaPlan struct {
-	scrollPlan   terminalWindowScrollPlan
-	changedRows  []int
-	explicitHint bool
+	scrollPlan  terminalWindowScrollPlan
+	changedRows []int
 }
 
 type terminalWindowScrollDirection uint8
@@ -24,7 +21,7 @@ type terminalWindowScrollPlan struct {
 	reused    int
 }
 
-func planTerminalWindowDelta(previous, next terminalSourceWindowState, hint terminalScreenUpdateHint) terminalWindowDeltaPlan {
+func planTerminalWindowDelta(previous, next terminalSourceWindowState) terminalWindowDeltaPlan {
 	if plan, ok := detectTerminalWindowScroll(previous, next); ok {
 		return terminalWindowDeltaPlan{
 			scrollPlan:  plan,
@@ -42,40 +39,7 @@ func planTerminalWindowDelta(previous, next terminalSourceWindowState, hint term
 			changedRows: terminalWindowChangedRows(previous, next, plan),
 		}
 	}
-	if hintedRows, ok := explicitTerminalWindowChangedRowsHint(previous, next, hint); ok && len(hintedRows) > 0 && len(hintedRows) < len(baseChangedRows) {
-		return terminalWindowDeltaPlan{
-			changedRows:  append([]int(nil), hintedRows...),
-			explicitHint: true,
-		}
-	}
 	return terminalWindowDeltaPlan{changedRows: append([]int(nil), baseChangedRows...)}
-}
-
-func explicitTerminalWindowChangedRowsHint(previous, next terminalSourceWindowState, hint terminalScreenUpdateHint) ([]int, bool) {
-	if !compatibleTerminalWindowStates(previous, next) || !previous.screenWindow || !next.screenWindow {
-		return nil, false
-	}
-	if hint.FullReplace || hint.ScreenScroll != 0 || len(hint.ChangedRows) == 0 {
-		return nil, false
-	}
-	height := len(next.exactRowHashes)
-	changedRows := make([]int, 0, len(hint.ChangedRows))
-	seen := make(map[int]struct{}, len(hint.ChangedRows))
-	for _, line := range hint.ChangedRows {
-		if line < 0 || line >= height {
-			return nil, false
-		}
-		if _, ok := seen[line]; ok {
-			continue
-		}
-		seen[line] = struct{}{}
-		changedRows = append(changedRows, line)
-	}
-	if len(changedRows) == 0 {
-		return nil, false
-	}
-	sort.Ints(changedRows)
-	return changedRows, true
 }
 
 func detectTerminalWindowScroll(previous, next terminalSourceWindowState) (terminalWindowScrollPlan, bool) {
@@ -309,6 +273,26 @@ func (p terminalWindowScrollPlan) sourceLineFor(line int) (int, bool) {
 			return 0, false
 		}
 		return line - p.shift, true
+	default:
+		return 0, false
+	}
+}
+
+func (p terminalWindowScrollPlan) destinationLineFor(line int) (int, bool) {
+	if p.direction == terminalWindowScrollNone || line < 0 {
+		return 0, false
+	}
+	switch p.direction {
+	case terminalWindowScrollUp:
+		if line < p.start+p.shift || line > p.end {
+			return 0, false
+		}
+		return line - p.shift, true
+	case terminalWindowScrollDown:
+		if line < p.start || line > p.end-p.shift {
+			return 0, false
+		}
+		return line + p.shift, true
 	default:
 		return 0, false
 	}

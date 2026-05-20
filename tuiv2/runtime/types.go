@@ -1,6 +1,6 @@
 package runtime
 
-import localvterm "github.com/lozzow/termx/vterm"
+import localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 
 type BindingRole string
 
@@ -10,13 +10,18 @@ const (
 )
 
 type StreamState struct {
-	Active     bool
-	Stop       func()
-	RetryCount int
-	Generation uint64
+	Active                     bool
+	Stop                       func()
+	RetryCount                 int
+	Generation                 uint64
+	PendingReadyChannel        uint16
+	PendingReadyScreenSequence uint64
+}
 
-	synchronizedOutputActive bool
-	synchronizedOutputTail   string
+type PendingStreamReady struct {
+	TerminalID     string
+	Channel        uint16
+	ScreenSequence uint64
 }
 
 type RecoveryState struct {

@@ -5,23 +5,25 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	localvterm "github.com/lozzow/termx/vterm"
 	"github.com/rivo/uniseg"
 )
 
 const rowDirtyChunkWidth = 32
 
 type drawStyle struct {
-	FG        string
-	BG        string
-	Bold      bool
-	Italic    bool
-	Underline bool
-	Reverse   bool
+	FG         string
+	BG         string
+	Bold       bool
+	Italic     bool
+	Underline  bool
+	Reverse    bool
+	LinkURL    string
+	LinkParams string
 }
 
 type drawCell struct {
@@ -370,7 +372,8 @@ func (c *composedCanvas) drawText(x, y int, text string, style drawStyle) {
 		if cursorX+width > c.width {
 			break
 		}
-		cell := drawCell{Content: content, Width: width, Style: style}
+		widthSafety := shared.WidthSafetyForDisplayedCluster(content, width)
+		cell := drawCell{Content: content, Width: width, Style: style, HostWidthStabilizer: widthSafety.HostWidthStabilizer}
 		c.set(cursorX, y, cell)
 		c.materializeRawAmbiguousContinuation(cursorX, y, cell)
 		cursorX += width
@@ -574,12 +577,14 @@ func (c *composedCanvas) materializeRawAmbiguousContinuation(x, y int, cell draw
 
 func cellStyleFromSnapshot(cell protocol.Cell) drawStyle {
 	return drawStyle{
-		FG:        cell.Style.FG,
-		BG:        cell.Style.BG,
-		Bold:      cell.Style.Bold,
-		Italic:    cell.Style.Italic,
-		Underline: cell.Style.Underline,
-		Reverse:   cell.Style.Reverse,
+		FG:         cell.Style.FG,
+		BG:         cell.Style.BG,
+		Bold:       cell.Style.Bold,
+		Italic:     cell.Style.Italic,
+		Underline:  cell.Style.Underline,
+		Reverse:    cell.Style.Reverse,
+		LinkURL:    cell.LinkURL,
+		LinkParams: cell.LinkParams,
 	}
 }
 
@@ -618,12 +623,14 @@ func drawCellFromVTermCell(cell localvterm.Cell) drawCell {
 		Content: cell.Content,
 		Width:   width,
 		Style: drawStyle{
-			FG:        cell.Style.FG,
-			BG:        cell.Style.BG,
-			Bold:      cell.Style.Bold,
-			Italic:    cell.Style.Italic,
-			Underline: cell.Style.Underline,
-			Reverse:   cell.Style.Reverse,
+			FG:         cell.Style.FG,
+			BG:         cell.Style.BG,
+			Bold:       cell.Style.Bold,
+			Italic:     cell.Style.Italic,
+			Underline:  cell.Style.Underline,
+			Reverse:    cell.Style.Reverse,
+			LinkURL:    cell.LinkURL,
+			LinkParams: cell.LinkParams,
 		},
 		Owner:               0,
 		Continuation:        continuation,
@@ -633,7 +640,7 @@ func drawCellFromVTermCell(cell localvterm.Cell) drawCell {
 }
 
 func shouldReanchorAfterTerminalAmbiguousWidthCell(cell drawCell) bool {
-	return cell.TerminalContent && cell.HostWidthStabilizer
+	return cell.HostWidthStabilizer
 }
 
 // 中文说明：这里只保留“原样输出 cell 内容”这个最小职责。FE0F 歧义 emoji
@@ -778,7 +785,7 @@ func (c *composedCanvas) embeddedContentLines() []string {
 			row.WriteString(serializeCellContentForDisplay(content, cell.Width, c.hostEmojiVS16Mode, 0))
 		}
 		if current != (drawStyle{}) {
-			row.WriteString(styleANSI(drawStyle{}))
+			row.WriteString(styleDiffANSI(current, drawStyle{}))
 		}
 		lines[y] = row.String()
 	}
@@ -813,6 +820,7 @@ func (c *composedCanvas) ensureRowCache() {
 			// chunk-stitched strings caused scroll diff misses; mixing them also
 			// forced partial updates to reserialize whole rows.
 			c.rowCache[y] = c.buildRowFromChunks(y)
+			traceRenderCanvasRow("render.canvas.row_cache", y, c.rowCache[y])
 			c.clearRowDirty(y)
 			continue
 		}
@@ -833,6 +841,7 @@ func (c *composedCanvas) ensureRowCache() {
 		// representation. Mixing full-row strings with chunk-built strings broke
 		// vertical scroll detection even when the visible rows matched exactly.
 		c.rowCache[y] = c.buildRowFromChunks(y)
+		traceRenderCanvasRow("render.canvas.row_cache", y, c.rowCache[y])
 		c.clearRowDirty(y)
 	}
 }
@@ -949,14 +958,14 @@ func (c *composedCanvas) buildRowFromChunks(y int) string {
 }
 
 func (c *composedCanvas) serializeRowRange(y, startX, endX int) string {
-	return c.serializeRowRangeWithBlankMode(y, startX, endX, false)
+	return c.serializeRowRangeWithBlankMode(y, startX, endX, true, true)
 }
 
 func (c *composedCanvas) serializeRowRangeCompressed(y, startX, endX int) string {
-	return c.serializeRowRangeWithBlankMode(y, startX, endX, true)
+	return c.serializeRowRangeWithBlankMode(y, startX, endX, true, false)
 }
 
-func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, compressBlanks bool) string {
+func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, compressBlanks bool, terminalStyledOnly bool) string {
 	if c == nil || y < 0 || y >= c.height || startX < 0 || endX < startX || startX >= c.width {
 		return ""
 	}
@@ -991,7 +1000,7 @@ func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, com
 				row.WriteString(styleDiffANSI(current, cell.Style))
 				current = cell.Style
 			}
-			if compressBlanks {
+			if compressBlanks && c.blankRunShouldUseECH(y, x, blankRun, terminalStyledOnly) {
 				writeECHANSI(&row, blankRun)
 				needsReanchor = true
 			} else {
@@ -1047,9 +1056,28 @@ func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, com
 		}
 	}
 	if current != (drawStyle{}) {
-		row.WriteString(styleANSI(drawStyle{}))
+		row.WriteString(styleDiffANSI(current, drawStyle{}))
 	}
 	return row.String()
+}
+
+func (c *composedCanvas) blankRunShouldUseECH(y, startX, run int, terminalStyledOnly bool) bool {
+	if !terminalStyledOnly {
+		return true
+	}
+	if c == nil || y < 0 || y >= c.height || startX < 0 || run <= 0 || startX+run > c.width {
+		return false
+	}
+	first := c.cells[y][startX]
+	if !first.TerminalContent || first.Style == (drawStyle{}) {
+		return false
+	}
+	for x := startX; x < startX+run; x++ {
+		if !c.cells[y][x].TerminalContent {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *composedCanvas) cursorANSI() string {

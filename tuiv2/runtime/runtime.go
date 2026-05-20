@@ -10,12 +10,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
-	"github.com/lozzow/termx/terminalmeta"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
+	"github.com/lozzow/termx/termx-shared/terminalmeta"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
-	localvterm "github.com/lozzow/termx/vterm"
 )
 
 type Runtime struct {
@@ -30,14 +30,15 @@ type Runtime struct {
 	hostPalette   map[int]string
 	hostEmojiVS16 shared.AmbiguousEmojiVariationSelectorMode
 
-	version          uint64
-	visibleVersion   uint64
-	visibleCache     *VisibleRuntime
-	recentInputAt atomic.Int64
+	version        uint64
+	visibleVersion uint64
+	visibleCache   *VisibleRuntime
+	recentInputAt  atomic.Int64
 }
 
 const interactiveLatencyWindow = 24 * time.Millisecond
 const remoteInteractiveLatencyWindow = 150 * time.Millisecond
+const defaultRuntimeHistoryWindowRows = 12000
 
 func New(client bridge.Client, opts ...Option) *Runtime {
 	r := &Runtime{
@@ -101,6 +102,21 @@ func (r *Runtime) UnbindPane(paneID, terminalID string) {
 	r.touch()
 }
 
+func (r *Runtime) RemoveTerminal(terminalID string) {
+	if r == nil || r.registry == nil || terminalID == "" {
+		return
+	}
+	var boundPaneIDs []string
+	if terminal := r.registry.Get(terminalID); terminal != nil {
+		boundPaneIDs = append(boundPaneIDs, terminal.BoundPaneIDs...)
+	}
+	r.registry.Remove(terminalID)
+	for _, paneID := range boundPaneIDs {
+		delete(r.bindings, paneID)
+	}
+	r.touch()
+}
+
 func (r *Runtime) unbindPaneFromTerminalCache(paneID, terminalID string) {
 	if r == nil || r.registry == nil || paneID == "" {
 		return
@@ -152,7 +168,7 @@ func WithVTermFactory(factory VTermFactory) Option {
 }
 
 func (r *Runtime) defaultVTermFactory(channel uint16) VTermLike {
-	return localvterm.New(80, 24, 10000, func(data []byte) {
+	return localvterm.New(80, 24, defaultRuntimeHistoryWindowRows, func(data []byte) {
 		if r == nil || r.client == nil || channel == 0 || len(data) == 0 {
 			return
 		}
@@ -402,6 +418,8 @@ func (r *Runtime) Visible() *VisibleRuntime {
 			Role:           string(binding.Role),
 			Connected:      binding.Connected,
 			ViewportOffset: binding.Viewport.Offset,
+			ContentOffsetX: binding.ContentOffset.X,
+			ContentOffsetY: binding.ContentOffset.Y,
 		})
 	}
 	r.visibleCache = visible

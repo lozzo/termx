@@ -4,25 +4,23 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	tea "github.com/charmbracelet/bubbletea"
+	uv "github.com/charmbracelet/ultraviolet"
+	xansi "github.com/charmbracelet/x/ansi"
+	creackpty "github.com/creack/pty"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/tuiv2/bridge"
+	"github.com/lozzow/termx/tuiv2/sessionstore"
+	"github.com/lozzow/termx/tuiv2/shared"
+	"github.com/muesli/cancelreader"
 	"io"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
-	uv "github.com/charmbracelet/ultraviolet"
-	xansi "github.com/charmbracelet/x/ansi"
-	creackpty "github.com/creack/pty"
-	"github.com/lozzow/termx"
-	"github.com/lozzow/termx/protocol"
-	unixtransport "github.com/lozzow/termx/transport/unix"
-	"github.com/lozzow/termx/tuiv2/bridge"
-	"github.com/lozzow/termx/tuiv2/shared"
-	"github.com/muesli/cancelreader"
 )
 
 func TestUVMouseEventToTeaMouseMsg(t *testing.T) {
@@ -295,6 +293,26 @@ func TestConfigureProgramOutputUsesCursorWriterForTTY(t *testing.T) {
 	if model.cursorOut != writer {
 		t.Fatalf("expected model cursor writer to match configured output writer, got %#v want %#v", model.cursorOut, writer)
 	}
+	if !writer.useUVRenderer {
+		t.Fatal("expected tty output to enable UV renderer by default")
+	}
+}
+
+func TestConfigureProgramOutputCanDisableUVRendererForTTY(t *testing.T) {
+	t.Setenv("TERMX_GLOBAL_RENDERER", "legacy")
+	t.Setenv("TERMX_EXPERIMENTAL_UV_RENDERER", "")
+	model := New(shared.Config{}, nil, nil)
+	tty := &cursorWriterProbeTTY{}
+
+	output, _ := configureProgramOutput(model, tty)
+
+	writer, ok := output.(*outputCursorWriter)
+	if !ok || writer == nil {
+		t.Fatalf("expected tty output to use outputCursorWriter, got %#v", output)
+	}
+	if writer.useUVRenderer {
+		t.Fatal("expected legacy renderer env to disable UV renderer")
+	}
 }
 
 func TestConfigureProgramOutputCanKeepBubbleTeaRendererForTTY(t *testing.T) {
@@ -561,32 +579,10 @@ func TestE2ERunWithClientAttachShellAcceptsRepeatedCommandsOnPTY(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-run-pty.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-run-pty.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := waitTestSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	ctrlTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial control client: %v", err)
-	}
-	ctrlClient := protocol.NewClient(ctrlTransport)
-	if err := ctrlClient.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
-		t.Fatalf("hello control client: %v", err)
-	}
-	t.Cleanup(func() { _ = ctrlClient.Close() })
+	ctrlClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	created, err := ctrlClient.Create(ctx, protocol.CreateParams{
 		Command: []string{"sh", "-c", "printf 'pty-ready\\n'; exec sh"},
@@ -597,15 +593,7 @@ func TestE2ERunWithClientAttachShellAcceptsRepeatedCommandsOnPTY(t *testing.T) {
 		t.Fatalf("create terminal: %v", err)
 	}
 
-	appTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial app client: %v", err)
-	}
-	appProtocolClient := protocol.NewClient(appTransport)
-	if err := appProtocolClient.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
-		t.Fatalf("hello app client: %v", err)
-	}
-	t.Cleanup(func() { _ = appProtocolClient.Close() })
+	appProtocolClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	ptmx, tty, err := creackpty.Open()
 	if err != nil {
@@ -676,32 +664,10 @@ func TestE2ERunWithClientAttachHtopCanQuitOnPTY(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	daemon := startAppTestDaemon(t, ctx, "termx-run-htop.sock")
+	socketPath := daemon.SocketPath()
 
-	socketPath := filepath.Join(t.TempDir(), "termx-run-htop.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	srvDone := make(chan error, 1)
-	go func() { srvDone <- srv.ListenAndServe(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-srvDone:
-		case <-time.After(3 * time.Second):
-		}
-	})
-	if err := waitTestSocket(socketPath, 5*time.Second); err != nil {
-		t.Fatalf("server socket never appeared: %v", err)
-	}
-
-	ctrlTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial control client: %v", err)
-	}
-	ctrlClient := protocol.NewClient(ctrlTransport)
-	if err := ctrlClient.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
-		t.Fatalf("hello control client: %v", err)
-	}
-	t.Cleanup(func() { _ = ctrlClient.Close() })
+	ctrlClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	created, err := ctrlClient.Create(ctx, protocol.CreateParams{
 		Command: []string{"htop"},
@@ -712,15 +678,7 @@ func TestE2ERunWithClientAttachHtopCanQuitOnPTY(t *testing.T) {
 		t.Fatalf("create terminal: %v", err)
 	}
 
-	appTransport, err := unixtransport.Dial(socketPath)
-	if err != nil {
-		t.Fatalf("dial app client: %v", err)
-	}
-	appProtocolClient := protocol.NewClient(appTransport)
-	if err := appProtocolClient.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
-		t.Fatalf("hello app client: %v", err)
-	}
-	t.Cleanup(func() { _ = appProtocolClient.Close() })
+	appProtocolClient := dialAppTestProtocolClient(t, ctx, socketPath)
 
 	ptmx, tty, err := creackpty.Open()
 	if err != nil {
@@ -765,7 +723,7 @@ func TestE2ERunWithClientAttachHtopCanQuitOnPTY(t *testing.T) {
 	if _, err := ptmx.Write([]byte("q")); err != nil {
 		t.Fatalf("write htop quit key: %v", err)
 	}
-	waitForTerminalState(t, ctx, srv, created.TerminalID, termx.StateExited)
+	waitForTerminalState(t, ctx, daemon, created.TerminalID, appTestStateExited)
 
 	cancel()
 	select {
@@ -876,37 +834,6 @@ func waitForPTYSubstringCount(t *testing.T, ctx context.Context, recorder *ptyOu
 		}
 	}
 	t.Fatalf("timeout waiting for %d occurrences of %q\nlatest output:\n%s", want, target, recorder.Text())
-}
-
-func waitForTerminalState(t *testing.T, ctx context.Context, srv *termx.Server, terminalID string, want termx.TerminalState) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		info, err := srv.Get(ctx, terminalID)
-		if err == nil && info != nil && info.State == want {
-			return
-		}
-		select {
-		case <-ctx.Done():
-			t.Fatalf("context expired waiting for terminal %s state %s", terminalID, want)
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
-	info, err := srv.Get(context.Background(), terminalID)
-	t.Fatalf("timeout waiting for terminal %s state %s; latest info=%#v err=%v", terminalID, want, info, err)
-}
-
-func waitTestSocket(path string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		conn, err := unixtransport.Dial(path)
-		if err == nil {
-			_ = conn.Close()
-			return nil
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	return errors.New("socket did not appear in time")
 }
 
 type keyCaptureModel struct {
@@ -1174,23 +1101,94 @@ func TestStartInputForwarderParsesExtendedCursorPositionReport(t *testing.T) {
 }
 
 type fakeSessionEventsClient struct {
-	events   chan protocol.Event
-	session  *protocol.SessionSnapshot
-	getCalls []string
+	events           chan protocol.Event
+	session          *sessionstore.Snapshot
+	getCalls         []string
+	eventParams      []protocol.EventsParams
+	eventsSubscribed chan protocol.EventsParams
+	storageVersion   uint64
 }
 
 func (f *fakeSessionEventsClient) Close() error { return nil }
 
-func (f *fakeSessionEventsClient) Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error) {
+func (f *fakeSessionEventsClient) Events(_ context.Context, params protocol.EventsParams) (<-chan protocol.Event, error) {
+	f.eventParams = append(f.eventParams, params)
+	if f.eventsSubscribed != nil {
+		select {
+		case f.eventsSubscribed <- params:
+		default:
+		}
+	}
 	return f.events, nil
 }
 
-func (f *fakeSessionEventsClient) GetSession(_ context.Context, sessionID string) (*protocol.SessionSnapshot, error) {
+func (f *fakeSessionEventsClient) StorageGet(_ context.Context, params protocol.StorageGetParams) (*protocol.StorageEntry, error) {
+	if params.AppID != sessionstore.AppID || params.Key != sessionstore.SessionStateKey("main") {
+		return nil, fmt.Errorf("protocol error 404: not found")
+	}
+	f.getCalls = append(f.getCalls, "main")
+	if f.session == nil {
+		f.session = &sessionstore.Snapshot{Session: sessionstore.SessionInfo{ID: "main"}}
+	}
+	value, err := sessionstore.EncodeSessionRecord(f.session.Session, f.session.Workbench)
+	if err != nil {
+		return nil, err
+	}
+	return &protocol.StorageEntry{
+		AppID:   params.AppID,
+		Scope:   params.Scope,
+		Key:     params.Key,
+		Value:   value,
+		Version: maxStorageVersion(1, f.storageVersion),
+	}, nil
+}
+
+func maxStorageVersion(a, b uint64) uint64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (f *fakeSessionEventsClient) StoragePut(context.Context, protocol.StoragePutParams) (*protocol.StorageEntry, error) {
+	return nil, fmt.Errorf("unexpected storage put")
+}
+
+func (f *fakeSessionEventsClient) StorageDelete(context.Context, protocol.StorageDeleteParams) (*protocol.StorageDeleteResult, error) {
+	return nil, fmt.Errorf("unexpected storage delete")
+}
+
+func (f *fakeSessionEventsClient) StorageList(context.Context, protocol.StorageListParams) (*protocol.StorageListResult, error) {
+	return &protocol.StorageListResult{}, nil
+}
+
+func (f *fakeSessionEventsClient) GetSession(_ context.Context, sessionID string) (*sessionstore.Snapshot, error) {
 	f.getCalls = append(f.getCalls, sessionID)
 	if f.session == nil {
-		return &protocol.SessionSnapshot{}, nil
+		return &sessionstore.Snapshot{}, nil
 	}
 	return f.session, nil
+}
+
+func sessionStorageEvent(sessionID string, revision uint64, viewID string, deleted bool) protocol.Event {
+	key := sessionstore.SessionStateKey(sessionID)
+	op := "put"
+	if viewID != "" {
+		key = "sessions/" + sessionID + "/views/" + viewID
+	}
+	if deleted {
+		op = "delete"
+	}
+	return protocol.Event{
+		Type: protocol.EventStorageChanged,
+		Storage: &protocol.StorageChangedData{
+			AppID:   sessionstore.AppID,
+			Scope:   protocol.StorageScopePublic,
+			Key:     key,
+			Version: revision,
+			Op:      op,
+		},
+	}
 }
 
 func TestStartSessionEventsForwarderReconnectsAndRequestsResync(t *testing.T) {
@@ -1204,9 +1202,10 @@ func TestStartSessionEventsForwarderReconnectsAndRequestsResync(t *testing.T) {
 	first := &fakeSessionEventsClient{events: make(chan protocol.Event, 4)}
 	second := &fakeSessionEventsClient{
 		events: make(chan protocol.Event, 4),
-		session: &protocol.SessionSnapshot{
-			Session: protocol.SessionInfo{ID: "main", Revision: 7},
+		session: &sessionstore.Snapshot{
+			Session: sessionstore.SessionInfo{ID: "main", Revision: 7},
 		},
+		storageVersion: 7,
 	}
 	clients := []*fakeSessionEventsClient{first, second}
 	var mu sync.Mutex
@@ -1229,14 +1228,14 @@ func TestStartSessionEventsForwarderReconnectsAndRequestsResync(t *testing.T) {
 	}, shared.Config{SessionID: "main", SocketPath: "/tmp/termx.sock"}, nil)
 	defer stop()
 
-	first.events <- protocol.Event{Type: protocol.EventSessionUpdated, SessionID: "main"}
+	first.events <- sessionStorageEvent("main", 4, "view-remote", false)
 	select {
 	case msg := <-msgs:
 		typed, ok := msg.(sessionEventMsg)
 		if !ok {
 			t.Fatalf("expected sessionEventMsg, got %T", msg)
 		}
-		if typed.Event.Type != protocol.EventSessionUpdated || typed.Event.SessionID != "main" {
+		if typed.Event.SessionID != "main" || typed.Event.Revision != 4 || typed.Event.ViewID != "view-remote" || typed.Event.Deleted {
 			t.Fatalf("unexpected event %#v", typed.Event)
 		}
 	case <-time.After(2 * time.Second):
@@ -1261,17 +1260,80 @@ func TestStartSessionEventsForwarderReconnectsAndRequestsResync(t *testing.T) {
 		t.Fatal("timed out waiting for session resync snapshot")
 	}
 
-	second.events <- protocol.Event{Type: protocol.EventSessionDeleted, SessionID: "main"}
+	second.events <- sessionStorageEvent("main", 8, "", true)
 	select {
 	case msg := <-msgs:
 		typed, ok := msg.(sessionEventMsg)
 		if !ok {
 			t.Fatalf("expected sessionEventMsg after reconnect, got %T", msg)
 		}
-		if typed.Event.Type != protocol.EventSessionDeleted || typed.Event.SessionID != "main" {
+		if typed.Event.SessionID != "main" || !typed.Event.Deleted {
 			t.Fatalf("unexpected reconnected event %#v", typed.Event)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for forwarded event after reconnect")
 	}
+}
+
+func TestRunTerminalEventsForwarderSubscribesToInventoryPatchEvents(t *testing.T) {
+	originalFactory := newSessionEventsClient
+	originalDelay := sessionEventsReconnectDelay
+	defer func() {
+		newSessionEventsClient = originalFactory
+		sessionEventsReconnectDelay = originalDelay
+	}()
+
+	subscribed := make(chan protocol.EventsParams, 1)
+	client := &fakeSessionEventsClient{
+		events:           make(chan protocol.Event, 1),
+		eventsSubscribed: subscribed,
+	}
+	newSessionEventsClient = func(context.Context, string) (sessionEventsClient, error) {
+		return client, nil
+	}
+	sessionEventsReconnectDelay = time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runDone := make(chan struct{})
+	go func() {
+		runTerminalEventsForwarder(ctx, func(tea.Msg) {}, shared.Config{SocketPath: "/tmp/termx.sock"}, nil)
+		close(runDone)
+	}()
+
+	var params protocol.EventsParams
+	select {
+	case params = <-subscribed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for terminal event subscription")
+	}
+	cancel()
+	select {
+	case <-runDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for terminal event forwarder shutdown")
+	}
+
+	want := []protocol.EventType{
+		protocol.EventTerminalCreated,
+		protocol.EventTerminalStateChanged,
+		protocol.EventTerminalResized,
+		protocol.EventTerminalRemoved,
+		protocol.EventTerminalMetadataChanged,
+	}
+	if got := params.Types; !sameEventTypes(got, want) {
+		t.Fatalf("unexpected terminal event types: got %#v want %#v", got, want)
+	}
+}
+
+func sameEventTypes(left, right []protocol.EventType) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }

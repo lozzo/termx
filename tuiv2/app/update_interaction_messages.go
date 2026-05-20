@@ -5,9 +5,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/perftrace"
+	"github.com/lozzow/termx/termx-shared/perftrace"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 	"github.com/lozzow/termx/tuiv2/input"
-	localvterm "github.com/lozzow/termx/vterm"
 )
 
 func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
@@ -206,8 +206,12 @@ func (m *Model) sharedTerminalSnapshotResyncCmd(terminalID string) tea.Cmd {
 	if m == nil || m.runtime == nil || m.runtime.Client() == nil || terminalID == "" {
 		return nil
 	}
+	limit := defaultTerminalSnapshotScrollbackLimit
+	if terminal := m.runtime.Registry().Get(terminalID); terminal != nil && terminal.ScrollbackLoadedLimit > limit {
+		limit = terminal.ScrollbackLoadedLimit
+	}
 	return func() tea.Msg {
-		if _, err := m.runtime.LoadSnapshot(context.Background(), terminalID, 0, defaultTerminalSnapshotScrollbackLimit); err != nil {
+		if _, err := m.runtime.LoadSnapshot(context.Background(), terminalID, 0, limit); err != nil {
 			return err
 		}
 		return InvalidateMsg{}

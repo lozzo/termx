@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	runtimestate "github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -266,6 +266,66 @@ func TestRenderBodyCanvasNonOverlappingContentChangeUsesIncrementalPath(t *testi
 	}
 }
 
+func TestRenderBodyCanvasIgnoresIncompleteChangedRowsHint(t *testing.T) {
+	now := time.Date(2026, 5, 15, 15, 0, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 18, Rows: 6},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("row-01............"),
+			protocolRowFromText("row-02............"),
+			protocolRowFromText("row-03............"),
+			protocolRowFromText("row-04............"),
+			protocolRowFromText("row-05............"),
+			protocolRowFromText("row-06............"),
+		},
+		screenTimestamps: []time.Time{now, now, now, now, now, now},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-main",
+			Name:           "main",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	theme := defaultUITheme()
+	entries1 := []paneRenderEntry{testPaneRenderEntry("pane-main", "term-main", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 1)}
+
+	coordinator := &Coordinator{}
+	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, nil, 40, 8)
+
+	surface.screen[2] = protocolRowFromText("row-03--changed--")
+	surface.screen[5] = protocolRowFromText("time result tail")
+	surface.screenTimestamps[2] = now.Add(time.Second)
+	surface.screenTimestamps[5] = now.Add(time.Second)
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	runtimeState.Terminals[0].ScreenUpdate = runtimestate.VisibleScreenUpdateSummary{
+		SurfaceVersion: 2,
+		ChangedRows:    []int{2},
+	}
+	entries2 := []paneRenderEntry{testPaneRenderEntry("pane-main", "term-main", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 2)}
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, nil, 40, 8)
+	want := rebuildBodyCanvas(nil, entries2, 40, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
+
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("render.body.canvas.path.incremental"); !ok || event.Count == 0 {
+		t.Fatalf("expected incremental body path, got events=%#v", snapshot.Events)
+	}
+	if event, ok := snapshot.Event("render.body.canvas.path.full_compose"); ok && event.Count > 0 {
+		t.Fatalf("expected incomplete changed-row hint to avoid full compose, got events=%#v", snapshot.Events)
+	}
+	if gotRaw, wantRaw := strings.TrimRight(got.rawString(), "\n"), strings.TrimRight(want.rawString(), "\n"); gotRaw != wantRaw {
+		t.Fatalf("expected incremental canvas to match full rebuild despite incomplete hint,\n got: %q\nwant: %q\nevents=%#v", gotRaw, wantRaw, snapshot.Events)
+	}
+}
+
 func TestRenderBodyCanvasNonOverlappingScrollUsesIncrementalPath(t *testing.T) {
 	now := time.Date(2026, 4, 22, 13, 0, 0, 0, time.UTC)
 	leftSurface := &spriteTestSurface{
@@ -351,6 +411,167 @@ func TestRenderBodyCanvasNonOverlappingScrollUsesIncrementalPath(t *testing.T) {
 	}
 	if gotANSI, wantANSI := got.String(), want.String(); gotANSI != wantANSI {
 		t.Fatalf("expected incremental scroll canvas to match full rebuild styled output")
+	}
+}
+
+func TestRenderBodyCanvasDetectsScrollWithoutScreenScrollHint(t *testing.T) {
+	now := time.Date(2026, 4, 22, 13, 30, 0, 0, time.UTC)
+	leftSurface := &spriteTestSurface{
+		size: protocol.Size{Cols: 18, Rows: 6},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("left-row-01........"),
+			protocolRowFromText("left-row-02........"),
+			protocolRowFromText("left-row-03........"),
+			protocolRowFromText("left-row-04........"),
+			protocolRowFromText("left-row-05........"),
+			protocolRowFromText("left-row-06........"),
+		},
+		screenTimestamps: []time.Time{
+			now,
+			now.Add(time.Second),
+			now.Add(2 * time.Second),
+			now.Add(3 * time.Second),
+			now.Add(4 * time.Second),
+			now.Add(5 * time.Second),
+		},
+	}
+	rightSurface := &spriteTestSurface{
+		size: protocol.Size{Cols: 18, Rows: 6},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("right-row-01......."),
+			protocolRowFromText("right-row-02......."),
+			protocolRowFromText("right-row-03......."),
+			protocolRowFromText("right-row-04......."),
+			protocolRowFromText("right-row-05......."),
+			protocolRowFromText("right-row-06......."),
+		},
+		screenTimestamps: []time.Time{now, now, now, now, now, now},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+		Terminals: []runtimestate.VisibleTerminal{
+			{
+				TerminalID:     "term-left",
+				Name:           "left",
+				State:          "running",
+				Surface:        leftSurface,
+				SurfaceVersion: 1,
+			},
+			{
+				TerminalID:     "term-right",
+				Name:           "right",
+				State:          "running",
+				Surface:        rightSurface,
+				SurfaceVersion: 1,
+			},
+		},
+	}
+	theme := defaultUITheme()
+	entries1 := []paneRenderEntry{
+		testPaneRenderEntry("pane-left", "term-left", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 1),
+		testPaneRenderEntry("pane-right", "term-right", workbench.Rect{X: 20, Y: 0, W: 20, H: 8}, false, false, theme, 1),
+	}
+
+	coordinator := &Coordinator{}
+	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, nil, 40, 8)
+
+	leftSurface.screen = append(leftSurface.screen[1:], protocolRowFromText("left-row-07........"))
+	leftSurface.screenTimestamps = append(leftSurface.screenTimestamps[1:], now.Add(6*time.Second))
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	runtimeState.Terminals[0].ScreenUpdate = runtimestate.VisibleScreenUpdateSummary{SurfaceVersion: 2}
+	entries2 := []paneRenderEntry{
+		testPaneRenderEntry("pane-left", "term-left", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 2),
+		testPaneRenderEntry("pane-right", "term-right", workbench.Rect{X: 20, Y: 0, W: 20, H: 8}, false, false, theme, 1),
+	}
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, nil, 40, 8)
+	want := rebuildBodyCanvas(nil, entries2, 40, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
+
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("render.body.canvas.path.incremental"); !ok || event.Count == 0 {
+		t.Fatalf("expected incremental body path for detected scroll, got events=%#v", snapshot.Events)
+	}
+	if event, ok := snapshot.Event("render.body.canvas.incremental.full_pane"); ok && event.Count > 0 {
+		t.Fatalf("expected detected scroll to avoid full pane redraw, got events=%#v", snapshot.Events)
+	}
+	if gotRaw, wantRaw := strings.TrimRight(got.rawString(), "\n"), strings.TrimRight(want.rawString(), "\n"); gotRaw != wantRaw {
+		t.Fatalf("expected detected-scroll canvas to match full rebuild raw output,\n got: %q\nwant: %q\nevents=%#v", gotRaw, wantRaw, snapshot.Events)
+	}
+}
+
+func TestRenderBodyCanvasDetectedScrollRedrawsScrolledSyntheticCursor(t *testing.T) {
+	now := time.Date(2026, 4, 22, 13, 45, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 18, Rows: 6},
+		cursor: protocol.CursorState{
+			Visible: true,
+			Row:     5,
+			Col:     3,
+			Shape:   "block",
+		},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("left-row-01........"),
+			protocolRowFromText("left-row-02........"),
+			protocolRowFromText("left-row-03........"),
+			protocolRowFromText("left-row-04........"),
+			protocolRowFromText("left-row-05........"),
+			protocolRowFromText("left-row-06........"),
+		},
+		screenTimestamps: []time.Time{
+			now,
+			now.Add(time.Second),
+			now.Add(2 * time.Second),
+			now.Add(3 * time.Second),
+			now.Add(4 * time.Second),
+			now.Add(5 * time.Second),
+		},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-left",
+			Name:           "left",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	theme := defaultUITheme()
+	entries1 := []paneRenderEntry{
+		testPaneRenderEntry("pane-left", "term-left", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 1),
+	}
+
+	coordinator := &Coordinator{}
+	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, nil, 20, 8)
+
+	surface.screen = append(surface.screen[1:], protocolRowFromText("left-row-07........"))
+	surface.screenTimestamps = append(surface.screenTimestamps[1:], now.Add(6*time.Second))
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	runtimeState.Terminals[0].ScreenUpdate = runtimestate.VisibleScreenUpdateSummary{SurfaceVersion: 2}
+	entries2 := []paneRenderEntry{
+		testPaneRenderEntry("pane-left", "term-left", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 2),
+	}
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, nil, 20, 8)
+	want := rebuildBodyCanvas(nil, entries2, 20, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
+
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("render.body.canvas.path.incremental"); !ok || event.Count == 0 {
+		t.Fatalf("expected incremental body path for detected scroll, got events=%#v", snapshot.Events)
+	}
+	if gotRaw, wantRaw := strings.TrimRight(got.rawString(), "\n"), strings.TrimRight(want.rawString(), "\n"); gotRaw != wantRaw {
+		t.Fatalf("expected detected-scroll canvas to match full rebuild raw output,\n got: %q\nwant: %q\nevents=%#v", gotRaw, wantRaw, snapshot.Events)
+	}
+	if gotANSI, wantANSI := got.String(), want.String(); gotANSI != wantANSI {
+		t.Fatalf("expected detected-scroll canvas to clear scrolled synthetic cursor")
 	}
 }
 
@@ -476,16 +697,112 @@ func TestRenderBodyCanvasMovingFloatingPreviewOverlayClearsPreviousPreviewFootpr
 
 	firstPreview := previewAt(10)
 	_ = renderBodyCanvas(coordinator, runtimeState, false, entries, &firstPreview, 40, 8)
+	firstSprite := coordinator.bodyCache.preview.sprite
+	if firstSprite == nil {
+		t.Fatalf("expected first preview render to cache a sprite")
+	}
+	if got := coordinator.bodyCache.preview.entry.FrameKey.Rect; got != (workbench.Rect{X: 0, Y: 0, W: 10, H: 5}) {
+		t.Fatalf("expected cached preview sprite key to be local, got %#v", got)
+	}
 
 	secondPreview := previewAt(14)
 	got := renderBodyCanvas(coordinator, runtimeState, false, entries, &secondPreview, 40, 8)
 	want := rebuildBodyCanvas(nil, append(append([]paneRenderEntry(nil), entries...), secondPreview), 40, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
+	if coordinator.bodyCache.preview.sprite != firstSprite {
+		t.Fatalf("expected moving preview to reuse cached sprite")
+	}
+	if gotRect := coordinator.bodyCache.preview.rect; gotRect != secondPreview.Rect {
+		t.Fatalf("expected cached preview rect to track latest visual rect, got %#v want %#v", gotRect, secondPreview.Rect)
+	}
 
 	if gotRaw, wantRaw := strings.TrimRight(got.rawString(), "\n"), strings.TrimRight(want.rawString(), "\n"); gotRaw != wantRaw {
 		t.Fatalf("expected moving preview overlay canvas to match full rebuild raw output,\n got: %q\nwant: %q", gotRaw, wantRaw)
 	}
 	if gotANSI, wantANSI := got.String(), want.String(); gotANSI != wantANSI {
 		t.Fatalf("expected moving preview overlay canvas to match full rebuild styled output")
+	}
+
+	thirdPreview := previewAt(18)
+	got = renderBodyCanvas(coordinator, runtimeState, false, entries, &thirdPreview, 40, 8)
+	want = rebuildBodyCanvas(nil, append(append([]paneRenderEntry(nil), entries...), thirdPreview), 40, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
+	if coordinator.bodyCache.preview.sprite != firstSprite {
+		t.Fatalf("expected third moving preview to reuse cached sprite")
+	}
+	if gotRaw, wantRaw := strings.TrimRight(got.rawString(), "\n"), strings.TrimRight(want.rawString(), "\n"); gotRaw != wantRaw {
+		t.Fatalf("expected third moving preview overlay canvas to clear intermediate footprint,\n got: %q\nwant: %q", gotRaw, wantRaw)
+	}
+}
+
+func TestRenderBodyCanvasMovingFloatingPreviewOverlayReusesStaticBody(t *testing.T) {
+	now := time.Date(2026, 5, 17, 14, 20, 0, 0, time.UTC)
+	baseSurface := &spriteTestSurface{
+		size: protocol.Size{Cols: 18, Rows: 6},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("base-row-01......."),
+			protocolRowFromText("base-row-02......."),
+			protocolRowFromText("base-row-03......."),
+			protocolRowFromText("base-row-04......."),
+			protocolRowFromText("base-row-05......."),
+			protocolRowFromText("base-row-06......."),
+		},
+		screenTimestamps: []time.Time{now, now, now, now, now, now},
+	}
+	floatSnapshot := &protocol.Snapshot{
+		TerminalID: "term-float",
+		Size:       protocol.Size{Cols: 8, Rows: 3},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolRowFromText("FLOAT-1"),
+			protocolRowFromText("FLOAT-2"),
+			protocolRowFromText("FLOAT-3"),
+		}},
+		Cursor:    protocol.CursorState{Visible: false},
+		Modes:     protocol.TerminalModes{AutoWrap: true},
+		Timestamp: now,
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-base",
+			Name:           "base",
+			State:          "running",
+			Surface:        baseSurface,
+			SurfaceVersion: 1,
+		}},
+	}
+	coordinator := &Coordinator{}
+	theme := defaultUITheme()
+	entries := []paneRenderEntry{testPaneRenderEntry("pane-base", "term-base", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 1)}
+	previewAt := func(x int) paneRenderEntry {
+		preview := testPaneRenderEntry("pane-float", "term-float", workbench.Rect{X: x, Y: 2, W: 10, H: 5}, true, false, theme, 0)
+		preview.Snapshot = floatSnapshot
+		preview.ContentKey.Snapshot = floatSnapshot
+		preview.Surface = nil
+		preview.TerminalID = "term-float"
+		return preview
+	}
+
+	firstPreview := previewAt(10)
+	_ = renderBodyCanvas(coordinator, runtimeState, false, entries, &firstPreview, 40, 8)
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	secondPreview := previewAt(14)
+	got := renderBodyCanvas(coordinator, runtimeState, false, entries, &secondPreview, 40, 8)
+	want := rebuildBodyCanvas(nil, append(append([]paneRenderEntry(nil), entries...), secondPreview), 40, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("render.body.canvas.path.incremental"); !ok || event.Count == 0 {
+		t.Fatalf("expected moving preview to reuse incremental static body, got events=%#v", snapshot.Events)
+	}
+	if event, ok := snapshot.Event("render.body.canvas.path.full_compose"); ok && event.Count > 0 {
+		t.Fatalf("expected moving preview to avoid full compose, got events=%#v", snapshot.Events)
+	}
+	if event, ok := snapshot.Event("render.body.canvas.path.preview_overlay"); !ok || event.Count == 0 {
+		t.Fatalf("expected preview overlay path, got events=%#v", snapshot.Events)
+	}
+	if gotRaw, wantRaw := strings.TrimRight(got.rawString(), "\n"), strings.TrimRight(want.rawString(), "\n"); gotRaw != wantRaw {
+		t.Fatalf("expected moving preview overlay canvas to match full rebuild raw output,\n got: %q\nwant: %q", gotRaw, wantRaw)
 	}
 }
 

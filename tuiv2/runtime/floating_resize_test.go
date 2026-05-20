@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 )
 
 func TestResizeTerminalUpdatesSnapshotSizeForFloatingPaneBinding(t *testing.T) {

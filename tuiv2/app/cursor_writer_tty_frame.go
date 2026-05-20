@@ -5,7 +5,7 @@ import (
 
 	xansi "github.com/charmbracelet/x/ansi"
 	xterm "github.com/charmbracelet/x/term"
-	"github.com/lozzow/termx/perftrace"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 )
 
 func (w *outputCursorWriter) fitFrameToTTY(frame string) string {
@@ -178,6 +178,16 @@ func writeNormalizedFrame(out *strings.Builder, frame string) {
 	if start < len(frame) {
 		out.WriteString(frame[start:])
 	}
+}
+
+func writeHostFramePayload(out *strings.Builder, frame string) {
+	if out == nil || frame == "" {
+		return
+	}
+	out.WriteString(hostAutoWrapOff)
+	out.WriteString(xansi.ResetStyle)
+	writeNormalizedFrame(out, frame)
+	out.WriteString(hostAutoWrapOn)
 }
 
 func frameLikeWritePayload(p []byte) bool {

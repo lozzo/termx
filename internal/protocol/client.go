@@ -1,0 +1,737 @@
+package protocol
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"sync"
+	"sync/atomic"
+
+	"github.com/lozzow/termx/termx-proto/wire"
+
+	"github.com/lozzow/termx/termx-shared/perftrace"
+	"github.com/lozzow/termx/termx-shared/transport"
+)
+
+type Client struct {
+	transport transport.Transport
+	nextID    atomic.Uint64
+
+	mu      sync.Mutex
+	sendMu  sync.Mutex
+	waiters map[uint64]chan result
+	streams map[uint16]*clientStream
+	pending map[uint16][]StreamFrame
+	reused  map[uint16][]StreamFrame
+	dropped map[uint16]struct{}
+	events  chan Event
+
+	helloCh chan result
+	done    chan struct{}
+}
+
+type result struct {
+	payload []byte
+	err     error
+}
+
+type StreamFrame struct {
+	Type           uint8
+	Payload        []byte
+	ScreenSequence uint64
+}
+
+type HistoryReplayPage struct {
+	BeforeOffset int
+	Limit        int
+	Rows         int
+	HasMore      bool
+	Replay       string
+}
+
+type clientStream struct {
+	mu                            sync.Mutex
+	cond                          *sync.Cond
+	ch                            chan StreamFrame
+	done                          chan struct{}
+	queue                         []StreamFrame
+	queueLimit                    int
+	screenSequence                uint64
+	pendingDroppedBytes           uint64
+	pendingSyncLostScreenSequence uint64
+	closed                        bool
+}
+
+func newClientStream() *clientStream {
+	return newClientStreamWithConfig(256, 1)
+}
+
+func newClientStreamWithConfig(queueLimit, channelCapacity int) *clientStream {
+	if queueLimit <= 0 {
+		queueLimit = 1
+	}
+	if channelCapacity < 0 {
+		channelCapacity = 0
+	}
+	s := &clientStream{
+		ch:         make(chan StreamFrame, channelCapacity),
+		done:       make(chan struct{}),
+		queueLimit: queueLimit,
+		queue:      make([]StreamFrame, 0, min(queueLimit, 16)),
+	}
+	s.cond = sync.NewCond(&s.mu)
+	go s.run()
+	return s
+}
+
+func (s *clientStream) channel() chan StreamFrame {
+	return s.ch
+}
+
+func (s *clientStream) send(frame StreamFrame) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	if frame.Type == wire.TypeSyncLost {
+		dropped, err := wire.DecodeSyncLostPayload(frame.Payload)
+		if err != nil {
+			return
+		}
+		s.noteDroppedOutputLocked(dropped, frame.ScreenSequence)
+		s.flushPendingSyncLostLocked()
+		s.cond.Signal()
+		return
+	}
+	if frame.Type == wire.TypeScreenUpdate {
+		s.screenSequence++
+		frame.ScreenSequence = s.screenSequence
+	}
+	s.flushPendingSyncLostLocked()
+	s.enqueueFrameLocked(frame)
+	s.cond.Signal()
+}
+
+func (s *clientStream) close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	s.closed = true
+	close(s.done)
+	s.queue = nil
+	s.pendingDroppedBytes = 0
+	s.pendingSyncLostScreenSequence = 0
+	s.cond.Broadcast()
+}
+
+func (s *clientStream) run() {
+	ch := s.channel()
+	defer close(ch)
+	for {
+		frame, ok := s.nextFrame()
+		if !ok {
+			return
+		}
+		select {
+		case ch <- frame:
+		case <-s.done:
+			return
+		}
+	}
+}
+
+func (s *clientStream) nextFrame() (StreamFrame, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for {
+		s.flushPendingSyncLostLocked()
+		if len(s.queue) > 0 {
+			frame := s.queue[0]
+			copy(s.queue, s.queue[1:])
+			last := len(s.queue) - 1
+			s.queue[last] = StreamFrame{}
+			s.queue = s.queue[:last]
+			return frame, true
+		}
+		if s.closed {
+			return StreamFrame{}, false
+		}
+		s.cond.Wait()
+	}
+}
+
+func (s *clientStream) enqueueFrameLocked(frame StreamFrame) {
+	if len(s.queue) >= s.queueLimit {
+		if frame.Type == wire.TypeScreenUpdate {
+			s.noteDroppedOutputLocked(uint64(len(frame.Payload)), frame.ScreenSequence)
+			// A dropped screen frame invalidates all later deltas. Queue the
+			// recovery marker immediately; otherwise a ready-gated producer can
+			// stall before another frame arrives to flush the pending loss.
+			s.flushPendingSyncLostLocked()
+		}
+		return
+	}
+	payload := frame.Payload
+	if len(payload) > 0 {
+		payload = append([]byte(nil), payload...)
+	}
+	s.queue = append(s.queue, StreamFrame{
+		Type:           frame.Type,
+		Payload:        payload,
+		ScreenSequence: frame.ScreenSequence,
+	})
+}
+
+func (s *clientStream) noteDroppedOutputLocked(dropped uint64, screenSequence uint64) {
+	if dropped == 0 {
+		return
+	}
+	s.pendingDroppedBytes += dropped
+	if screenSequence > 0 && screenSequence > s.pendingSyncLostScreenSequence {
+		s.pendingSyncLostScreenSequence = screenSequence
+	}
+}
+
+func (s *clientStream) flushPendingSyncLostLocked() {
+	if s.pendingDroppedBytes == 0 {
+		return
+	}
+	if len(s.queue) > 0 {
+		last := &s.queue[len(s.queue)-1]
+		if last.Type == wire.TypeSyncLost {
+			current, err := wire.DecodeSyncLostPayload(last.Payload)
+			if err == nil {
+				last.Payload = wire.EncodeSyncLostPayload(current + s.pendingDroppedBytes)
+				if s.pendingSyncLostScreenSequence > last.ScreenSequence {
+					last.ScreenSequence = s.pendingSyncLostScreenSequence
+				}
+				s.pendingSyncLostScreenSequence = 0
+				s.pendingDroppedBytes = 0
+				return
+			}
+		}
+	}
+	s.queue = append(s.queue, StreamFrame{
+		Type:           wire.TypeSyncLost,
+		Payload:        wire.EncodeSyncLostPayload(s.pendingDroppedBytes),
+		ScreenSequence: s.pendingSyncLostScreenSequence,
+	})
+	s.pendingSyncLostScreenSequence = 0
+	s.pendingDroppedBytes = 0
+}
+
+func NewClient(t transport.Transport) *Client {
+	c := &Client{
+		transport: t,
+		waiters:   make(map[uint64]chan result),
+		streams:   make(map[uint16]*clientStream),
+		pending:   make(map[uint16][]StreamFrame),
+		reused:    make(map[uint16][]StreamFrame),
+		dropped:   make(map[uint16]struct{}),
+		helloCh:   make(chan result, 1),
+		done:      make(chan struct{}),
+	}
+	go c.readLoop()
+	return c
+}
+
+func (c *Client) Close() error {
+	err := c.transport.Close()
+	<-c.done
+	return err
+}
+
+func (c *Client) Hello(ctx context.Context, hello Hello) error {
+	payload, err := EncodeHelloPayload(hello)
+	if err != nil {
+		return err
+	}
+	frame, err := wire.EncodeFrame(0, wire.TypeHello, payload)
+	if err != nil {
+		return err
+	}
+	if err := c.send(frame); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case res := <-c.helloCh:
+		return res.err
+	}
+}
+
+func (c *Client) Create(ctx context.Context, params CreateParams) (*CreateResult, error) {
+	var out CreateResult
+	if err := c.doRequest(ctx, "create", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) Call(ctx context.Context, method string, params any, out any) error {
+	return c.doRequest(ctx, method, params, out)
+}
+
+func (c *Client) List(ctx context.Context) (*ListResult, error) {
+	var out ListResult
+	if err := c.doRequest(ctx, "list", map[string]any{}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) Kill(ctx context.Context, terminalID string) error {
+	return c.doRequest(ctx, "kill", GetParams{TerminalID: terminalID}, nil)
+}
+
+func (c *Client) Restart(ctx context.Context, terminalID string) error {
+	return c.doRequest(ctx, "restart", GetParams{TerminalID: terminalID}, nil)
+}
+
+func (c *Client) Remove(ctx context.Context, terminalID string) error {
+	return c.doRequest(ctx, "remove", GetParams{TerminalID: terminalID}, nil)
+}
+
+func (c *Client) SetTags(ctx context.Context, terminalID string, tags map[string]string) error {
+	return c.doRequest(ctx, "set_tags", SetTagsParams{
+		TerminalID: terminalID,
+		Tags:       tags,
+	}, nil)
+}
+
+func (c *Client) SetMetadata(ctx context.Context, terminalID string, name string, tags map[string]string) error {
+	return c.doRequest(ctx, "set_metadata", SetMetadataParams{
+		TerminalID: terminalID,
+		Name:       name,
+		Tags:       tags,
+	}, nil)
+}
+
+func (c *Client) Attach(ctx context.Context, terminalID string, mode string) (*AttachResult, error) {
+	return c.AttachWithOptions(ctx, AttachParams{TerminalID: terminalID, Mode: mode})
+}
+
+func (c *Client) AttachWithOptions(ctx context.Context, params AttachParams) (*AttachResult, error) {
+	var out AttachResult
+	if err := c.doRequest(ctx, "attach", params, &out); err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	stream := c.streams[out.Channel]
+	if stream == nil {
+		stream = newClientStream()
+		c.streams[out.Channel] = stream
+	}
+	delete(c.dropped, out.Channel)
+	pending := c.pending[out.Channel]
+	delete(c.pending, out.Channel)
+	reused := c.reused[out.Channel]
+	delete(c.reused, out.Channel)
+	c.mu.Unlock()
+	for _, frame := range pending {
+		stream.send(frame)
+	}
+	for _, frame := range reused {
+		stream.send(frame)
+	}
+	return &out, nil
+}
+
+func (c *Client) EnsureResize(ctx context.Context, params EnsureResizeParams) (*EnsureResizeResult, error) {
+	var out EnsureResizeResult
+	if err := c.doRequest(ctx, "ensure_resize", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) Snapshot(ctx context.Context, terminalID string, offset, limit int) (*Snapshot, error) {
+	payload, err := c.doRequestPayload(ctx, "snapshot", SnapshotParams{
+		TerminalID:       terminalID,
+		ScrollbackOffset: offset,
+		ScrollbackLimit:  limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return DecodeSnapshotPayload(payload)
+}
+
+func (c *Client) GridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*GridViewport, error) {
+	payload, err := c.doRequestPayload(ctx, "grid.viewport", GridViewportParams{
+		TerminalID:       terminalID,
+		ScrollbackOffset: offset,
+		ScrollbackLimit:  limit,
+		Cols:             cols,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return DecodeGridViewportPayload(payload)
+}
+
+func (c *Client) StorageGet(ctx context.Context, params StorageGetParams) (*StorageEntry, error) {
+	var out StorageEntry
+	if err := c.doRequest(ctx, "storage.get", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) StoragePut(ctx context.Context, params StoragePutParams) (*StorageEntry, error) {
+	var out StorageEntry
+	if err := c.doRequest(ctx, "storage.put", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) StorageDelete(ctx context.Context, params StorageDeleteParams) (*StorageDeleteResult, error) {
+	var out StorageDeleteResult
+	if err := c.doRequest(ctx, "storage.delete", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) StorageList(ctx context.Context, params StorageListParams) (*StorageListResult, error) {
+	var out StorageListResult
+	if err := c.doRequest(ctx, "storage.list", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) Events(ctx context.Context, params EventsParams) (<-chan Event, error) {
+	c.mu.Lock()
+	if c.events == nil {
+		c.events = make(chan Event, 64)
+	}
+	events := c.events
+	c.mu.Unlock()
+
+	if err := c.doRequest(ctx, "events", params, nil); err != nil {
+		return nil, err
+	}
+	return events, nil
+}
+
+func (c *Client) Input(ctx context.Context, channel uint16, data []byte) error {
+	finish := perftrace.Measure("protocol.input.send")
+	defer func() {
+		finish(len(data))
+	}()
+	frame, err := wire.EncodeFrame(channel, wire.TypeInput, data)
+	if err != nil {
+		return err
+	}
+	return c.send(frame)
+}
+
+func (c *Client) Resize(ctx context.Context, channel uint16, cols, rows uint16) error {
+	frame, err := wire.EncodeFrame(channel, wire.TypeResize, wire.EncodeResizePayload(cols, rows))
+	if err != nil {
+		return err
+	}
+	return c.send(frame)
+}
+
+func (c *Client) StreamReady(ctx context.Context, channel uint16, screenSequence uint64) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	frame, err := wire.EncodeFrame(channel, wire.TypeStreamReady, wire.EncodeStreamReadyPayload(screenSequence))
+	if err != nil {
+		return err
+	}
+	return c.send(frame)
+}
+
+func (c *Client) ResizeRequest(ctx context.Context, terminalID string, cols, rows uint16) error {
+	return c.doRequest(ctx, "resize", ResizeParams{
+		TerminalID: terminalID,
+		Cols:       cols,
+		Rows:       rows,
+	}, nil)
+}
+
+func (c *Client) Stream(channel uint16) (<-chan StreamFrame, func()) {
+	c.mu.Lock()
+	stream := c.streams[channel]
+	if stream == nil {
+		if _, dropped := c.dropped[channel]; dropped {
+			c.mu.Unlock()
+			idle := make(chan StreamFrame)
+			return idle, func() {}
+		}
+		stream = newClientStream()
+		c.streams[channel] = stream
+	}
+	pending := c.pending[channel]
+	delete(c.pending, channel)
+	c.mu.Unlock()
+	for _, frame := range pending {
+		stream.send(frame)
+	}
+
+	return stream.channel(), func() {
+		c.mu.Lock()
+		if current, ok := c.streams[channel]; ok {
+			delete(c.streams, channel)
+			c.dropped[channel] = struct{}{}
+			current.close()
+		}
+		delete(c.pending, channel)
+		c.mu.Unlock()
+	}
+}
+
+func (c *Client) HistoryReplay(ctx context.Context, channel uint16, beforeOffset, limit int) (*HistoryReplayPage, error) {
+	stream, stop := c.Stream(channel)
+	defer stop()
+
+	frame, err := wire.EncodeFrame(channel, wire.TypeHistoryRequest, wire.EncodeHistoryRequestPayload(beforeOffset, limit))
+	if err != nil {
+		return nil, err
+	}
+	if err := c.send(frame); err != nil {
+		return nil, err
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case msg, ok := <-stream:
+			if !ok {
+				return nil, io.EOF
+			}
+			switch msg.Type {
+			case wire.TypeHistoryReplay:
+				rows, hasMore, replay, err := wire.DecodeHistoryReplayPayload(msg.Payload)
+				if err != nil {
+					return nil, err
+				}
+				return &HistoryReplayPage{
+					BeforeOffset: beforeOffset,
+					Limit:        limit,
+					Rows:         rows,
+					HasMore:      hasMore,
+					Replay:       string(replay),
+				}, nil
+			case wire.TypeError:
+				msgErr, err := DecodeErrorPayload(msg.Payload)
+				if err != nil {
+					return nil, err
+				}
+				return nil, fmt.Errorf("protocol error %d: %s", msgErr.Error.Code, msgErr.Error.Message)
+			case wire.TypeClosed:
+				return nil, io.EOF
+			}
+		}
+	}
+}
+
+func (c *Client) doRequest(ctx context.Context, method string, params any, out any) error {
+	payload, err := c.doRequestPayload(ctx, method, params)
+	if err != nil {
+		return err
+	}
+	if out == nil {
+		return nil
+	}
+	return DecodeMethodResult(method, payload, out)
+}
+
+func (c *Client) doRequestPayload(ctx context.Context, method string, params any) ([]byte, error) {
+	finish := perftrace.Measure("protocol.request." + method)
+	payload, err := EncodeMethodParams(method, params)
+	if err != nil {
+		finish(0)
+		return nil, err
+	}
+	id := c.nextID.Add(1)
+	reqPayload, err := EncodeRequestPayload(Request{
+		ID:     id,
+		Method: method,
+		Params: payload,
+	})
+	if err != nil {
+		finish(len(payload))
+		return nil, err
+	}
+	frame, err := wire.EncodeFrame(0, wire.TypeRequest, reqPayload)
+	if err != nil {
+		finish(len(payload))
+		return nil, err
+	}
+
+	resCh := make(chan result, 1)
+	c.mu.Lock()
+	c.waiters[id] = resCh
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		delete(c.waiters, id)
+		c.mu.Unlock()
+	}()
+
+	if err := c.send(frame); err != nil {
+		finish(len(frame))
+		return nil, err
+	}
+
+	select {
+	case <-ctx.Done():
+		finish(len(frame))
+		return nil, ctx.Err()
+	case res := <-resCh:
+		if res.err != nil {
+			finish(len(frame))
+			return nil, res.err
+		}
+		finish(len(res.payload))
+		return res.payload, nil
+	}
+}
+
+func (c *Client) send(frame []byte) error {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	return c.transport.Send(frame)
+}
+
+func (c *Client) readLoop() {
+	defer close(c.done)
+	for {
+		frame, err := c.transport.Recv()
+		if err != nil {
+			c.failAll(err)
+			return
+		}
+		channel, typ, payload, err := wire.DecodeFrame(frame)
+		if err != nil {
+			c.failAll(err)
+			return
+		}
+		if channel == 0 {
+			switch typ {
+			case wire.TypeHello:
+				c.helloCh <- result{}
+			case wire.TypeEvent:
+				evt, err := DecodeEventPayload(payload)
+				if err != nil {
+					c.failAll(err)
+					return
+				}
+				c.mu.Lock()
+				ch := c.events
+				c.mu.Unlock()
+				if ch != nil {
+					select {
+					case ch <- evt:
+					default:
+					}
+				}
+			case wire.TypeResponse:
+				resp, err := DecodeResponsePayload(payload)
+				if err != nil {
+					c.failAll(err)
+					return
+				}
+				c.mu.Lock()
+				ch := c.waiters[resp.ID]
+				c.mu.Unlock()
+				if ch != nil {
+					ch <- result{payload: resp.Result}
+				}
+			case wire.TypeResponseBinary:
+				id, resultPayload, err := DecodeBinaryResponsePayload(payload)
+				if err != nil {
+					c.failAll(err)
+					return
+				}
+				c.mu.Lock()
+				ch := c.waiters[id]
+				c.mu.Unlock()
+				if ch != nil {
+					ch <- result{payload: resultPayload}
+				}
+			case wire.TypeError:
+				msg, err := DecodeErrorPayload(payload)
+				if err != nil {
+					c.failAll(err)
+					return
+				}
+				c.mu.Lock()
+				ch := c.waiters[msg.ID]
+				c.mu.Unlock()
+				if ch != nil {
+					ch <- result{err: fmt.Errorf("protocol error %d: %s", msg.Error.Code, msg.Error.Message)}
+				}
+			}
+			continue
+		}
+
+		streamFrame := StreamFrame{Type: typ, Payload: append([]byte(nil), payload...)}
+		c.mu.Lock()
+		stream := c.streams[channel]
+		if stream == nil {
+			if _, dropped := c.dropped[channel]; dropped {
+				queue := c.reused[channel]
+				if len(queue) < 256 {
+					c.reused[channel] = append(queue, streamFrame)
+				}
+				c.mu.Unlock()
+				continue
+			}
+			queue := c.pending[channel]
+			if len(queue) < 256 {
+				c.pending[channel] = append(queue, streamFrame)
+			}
+			c.mu.Unlock()
+			continue
+		}
+		c.mu.Unlock()
+		stream.send(streamFrame)
+	}
+}
+
+func (c *Client) failAll(err error) {
+	if err == nil {
+		err = io.EOF
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for id, ch := range c.waiters {
+		ch <- result{err: err}
+		delete(c.waiters, id)
+	}
+	select {
+	case c.helloCh <- result{err: err}:
+	default:
+	}
+	for id, stream := range c.streams {
+		stream.close()
+		delete(c.streams, id)
+	}
+	for id := range c.pending {
+		delete(c.pending, id)
+	}
+	for id := range c.reused {
+		delete(c.reused, id)
+	}
+	for id := range c.dropped {
+		delete(c.dropped, id)
+	}
+	if c.events != nil {
+		close(c.events)
+		c.events = nil
+	}
+}

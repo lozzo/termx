@@ -1,6 +1,6 @@
 package orchestrator
 
-import "github.com/lozzow/termx/protocol"
+import "github.com/lozzow/termx/internal/protocol"
 
 type TerminalAttachedMsg struct {
 	TabID      string // optional: specific tab that owns the pane; empty = use current tab
@@ -13,4 +13,7 @@ type SnapshotLoadedMsg struct {
 	PaneID     string
 	TerminalID string
 	Snapshot   *protocol.Snapshot
+	Offset     int
+	Limit      int
+	Paged      bool
 }

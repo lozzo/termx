@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -626,7 +626,7 @@ func TestKeyboardAuditDisplayModeBindings(t *testing.T) {
 		}
 	})
 
-	t.Run("paste-history-and-zoom", func(t *testing.T) {
+	t.Run("paste-and-history", func(t *testing.T) {
 		model := setupModel(t, modelOpts{width: 80, height: 12})
 		seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
 		model.yankBuffer = "hello\nworld"
@@ -635,14 +635,7 @@ func TestKeyboardAuditDisplayModeBindings(t *testing.T) {
 		systemClipboardReader = func() (string, error) { return "clip-text", nil }
 		defer func() { systemClipboardReader = prevReader }()
 
-		dispatchKey(t, model, ctrlKey(tea.KeyCtrlV))
-		dispatchKey(t, model, runeKeyMsg('z'))
-		if got := model.workbench.CurrentTab().ZoomedPaneID; got != "pane-1" {
-			t.Fatalf("expected zoomed pane-1, got %q", got)
-		}
-		assertMode(t, model, input.ModeNormal)
-
-		dispatchKeys(t, model, ctrlKey(tea.KeyCtrlV), runeKeyMsg('h'))
+		dispatchKeys(t, model, ctrlKey(tea.KeyCtrlV), runeKeyMsg('H'))
 		assertMode(t, model, input.ModePicker)
 
 		model = setupModel(t, modelOpts{width: 80, height: 12})

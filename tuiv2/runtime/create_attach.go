@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -12,7 +13,16 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 	if r == nil || r.client == nil {
 		return nil, shared.UserVisibleError{Op: "attach terminal", Err: fmt.Errorf("runtime client is nil")}
 	}
-	attached, err := r.client.Attach(ctx, terminalID, mode)
+	resizePolicy := protocol.ResizePolicyOwner
+	if terminal := r.registry.Get(terminalID); terminal != nil && len(terminal.BoundPaneIDs) > 0 {
+		resizePolicy = protocol.ResizePolicyFollower
+	}
+	attached, err := r.client.Attach(ctx, protocol.AttachParams{
+		TerminalID:   terminalID,
+		Mode:         mode,
+		ResizePolicy: resizePolicy,
+		SurfaceID:    TerminalPaneSurfaceID(paneID),
+	})
 	if err != nil {
 		return nil, shared.UserVisibleError{Op: "attach terminal", Err: err}
 	}
@@ -20,7 +30,9 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 	if terminal == nil {
 		return nil, shared.UserVisibleError{Op: "attach terminal", Err: fmt.Errorf("terminal registry unavailable")}
 	}
+	preservedLoadedDepth := terminal.ScrollbackLoadedLimit
 	r.resetTerminalLiveState(terminal)
+	terminal.ScrollbackLoadedLimit = preservedLoadedDepth
 	terminal.Channel = attached.Channel
 	terminal.AttachMode = attached.Mode
 	r.hydrateTerminalMetadata(ctx, terminalID)
@@ -43,6 +55,7 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 			terminal.RequiresExplicitOwner = false
 		}
 	}
+	r.applyExternalResizeOwnerInfo(terminal, terminal.ResizeOwnerAttachmentCount)
 	r.syncTerminalOwnership(terminal)
 	r.touch()
 	return terminal, nil
@@ -67,7 +80,6 @@ func (r *Runtime) resetTerminalLiveState(terminal *TerminalRuntime) {
 	terminal.SnapshotVersion = 0
 	terminal.SurfaceVersion = 0
 	terminal.BootstrapPending = false
-	terminal.ScrollbackLoadedLimit = 0
 	terminal.ScrollbackLoadingLimit = 0
 	terminal.ScrollbackExhausted = false
 	terminal.VTerm = nil
@@ -94,6 +106,8 @@ func (r *Runtime) hydrateTerminalMetadata(ctx context.Context, terminalID string
 		terminal.Tags = cloneTags(info.Tags)
 		terminal.State = info.State
 		terminal.ExitCode = cloneExitCode(info.ExitCode)
+		terminal.ResizeOwnerAttachmentCount = info.ResizeOwnerAttachmentCount
+		terminal.ResizeOwnership = cloneProtocolResizeOwnership(info.ResizeOwnership)
 		r.touch()
 		return
 	}

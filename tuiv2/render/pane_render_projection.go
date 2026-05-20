@@ -3,7 +3,7 @@ package render
 import (
 	"hash/fnv"
 
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -29,6 +29,8 @@ type paneRenderEntry struct {
 	SurfaceVersion       uint64
 	Metrics              renderTerminalMetrics
 	ScrollOffset         int
+	ContentOffsetX       int
+	ContentOffsetY       int
 	Active               bool
 	Floating             bool
 	EmptyActionSelected  int
@@ -58,6 +60,8 @@ type paneFrameKey struct {
 }
 
 type paneOverflowHints struct {
+	Left   bool
+	Top    bool
 	Right  bool
 	Bottom bool
 }
@@ -140,7 +144,6 @@ func buildFloatingDragPreviewEntry(pane workbench.VisiblePane, width, height int
 	return &entry
 }
 
-
 func paneEntryUsesAlternateScreen(entry paneRenderEntry) bool {
 	source := renderSource(entry.Snapshot, entry.Surface)
 	if source == nil {
@@ -171,7 +174,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	chrome := normalizeUIChromeConfig(options.Chrome)
 	terminal := lookup.terminal(pane.TerminalID)
 	overflow := paneOverflowHintsForRender(originalRect, rect, nil, nil)
-	copyModeActive := pane.ID == options.CopyMode.PaneID
+	copyMode, copyModeActive := options.copyModeForPane(pane.ID)
 	snapshot := (*protocol.Snapshot)(nil)
 	surface := runtime.TerminalSurface(nil)
 	surfaceVersion := uint64(0)
@@ -185,19 +188,25 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		surface = nil
 		surfaceVersion = 0
 	}
-	if copyModeActive && options.CopyMode.Snapshot != nil {
-		snapshot = options.CopyMode.Snapshot
+	if copyModeActive && copyMode.Snapshot != nil {
+		snapshot = copyMode.Snapshot
 		surface = nil
 		surfaceVersion = 0
 	}
 	if copyModeActive {
-		border.CopyTimeLabel = copyModeTimestampLabel(snapshot, options.CopyMode.CursorRow)
-		border.CopyRowLabel = copyModeRowPositionLabel(snapshot, options.CopyMode.CursorRow)
+		border.CopyTimeLabel = copyModeTimestampLabel(snapshot, copyMode.CursorRow)
+		border.CopyRowLabel = copyModeRowPositionLabel(snapshot, copyMode.CursorRow)
 	}
-	contentRect := contentRectForPaneEdges(rect, pane.SharedLeft, pane.SharedTop)
+	contentRect := rect
+	if !frameless {
+		contentRect = contentRectForPaneEdges(rect, pane.SharedLeft, pane.SharedTop)
+	}
 	renderOffset := lookup.paneViewportOffset(pane.ID, legacyScrollOffset)
+	contentOffsetX, contentOffsetY := lookup.paneContentOffset(pane.ID)
 	if copyModeActive {
-		renderOffset = scrollOffsetForViewportTop(snapshot, contentRect.H, options.CopyMode.ViewTopRow)
+		renderOffset = scrollOffsetForViewportTop(snapshot, contentRect.H, copyMode.ViewTopRow)
+		contentOffsetX = 0
+		contentOffsetY = 0
 	}
 	contentVersion := uint64(0)
 	source := renderSource(snapshot, surface)
@@ -229,16 +238,18 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		SharedLeft:           pane.SharedLeft,
 		SharedTop:            pane.SharedTop,
 		ScrollOffset:         renderOffset,
+		ContentOffsetX:       contentOffsetX,
+		ContentOffsetY:       contentOffsetY,
 		EmptyActionSelected:  emptyActionSelected,
 		ExitedActionSelected: exitedActionSelected,
 		ExitedActionPulse:    options.ExitedSelectionPulse,
 		CopyModeActive:       copyModeActive,
-		CopyModeCursorRow:    options.CopyMode.CursorRow,
-		CopyModeCursorCol:    options.CopyMode.CursorCol,
-		CopyModeViewTopRow:   options.CopyMode.ViewTopRow,
-		CopyModeMarkSet:      options.CopyMode.MarkSet,
-		CopyModeMarkRow:      options.CopyMode.MarkRow,
-		CopyModeMarkCol:      options.CopyMode.MarkCol,
+		CopyModeCursorRow:    copyMode.CursorRow,
+		CopyModeCursorCol:    copyMode.CursorCol,
+		CopyModeViewTopRow:   copyMode.ViewTopRow,
+		CopyModeMarkSet:      copyMode.MarkSet,
+		CopyModeMarkRow:      copyMode.MarkRow,
+		CopyModeMarkCol:      copyMode.MarkCol,
 	}
 	if terminal != nil {
 		if snapshot != nil && surface == nil {
@@ -247,7 +258,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		contentKey.SurfaceVersion = contentVersion
 		contentKey.Name = terminal.Name
 		contentKey.State = terminal.State
-		overflow = paneOverflowHintsForRenderWithMetrics(originalRect, rect, extent.Overflow)
+		overflow = paneOverflowHintsForRenderWithMetricsAndOffset(originalRect, rect, contentRect, extent.Overflow, contentOffsetX, contentOffsetY)
 	}
 	return paneRenderEntry{
 		PaneID:     pane.ID,
@@ -281,18 +292,20 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		SurfaceVersion:       surfaceVersion,
 		Metrics:              metrics,
 		ScrollOffset:         renderOffset,
+		ContentOffsetX:       contentOffsetX,
+		ContentOffsetY:       contentOffsetY,
 		Active:               active,
 		Floating:             pane.Floating,
 		EmptyActionSelected:  emptyActionSelected,
 		ExitedActionSelected: exitedActionSelected,
 		ExitedActionPulse:    options.ExitedSelectionPulse,
 		CopyModeActive:       copyModeActive,
-		CopyModeCursorRow:    options.CopyMode.CursorRow,
-		CopyModeCursorCol:    options.CopyMode.CursorCol,
-		CopyModeViewTopRow:   options.CopyMode.ViewTopRow,
-		CopyModeMarkSet:      options.CopyMode.MarkSet,
-		CopyModeMarkRow:      options.CopyMode.MarkRow,
-		CopyModeMarkCol:      options.CopyMode.MarkCol,
+		CopyModeCursorRow:    copyMode.CursorRow,
+		CopyModeCursorCol:    copyMode.CursorCol,
+		CopyModeViewTopRow:   copyMode.ViewTopRow,
+		CopyModeMarkSet:      copyMode.MarkSet,
+		CopyModeMarkRow:      copyMode.MarkRow,
+		CopyModeMarkCol:      copyMode.MarkCol,
 	}
 }
 
@@ -311,18 +324,28 @@ func paneOverflowHintsForRender(originalRect, clippedRect workbench.Rect, snapsh
 }
 
 func paneOverflowHintsForRenderWithMetrics(originalRect, clippedRect workbench.Rect, metrics renderTerminalMetrics) paneOverflowHints {
+	return paneOverflowHintsForRenderWithMetricsAndOffset(originalRect, clippedRect, clippedRect, metrics, 0, 0)
+}
+
+func paneOverflowHintsForRenderWithMetricsAndOffset(originalRect, clippedRect, contentRect workbench.Rect, metrics renderTerminalMetrics, offsetX, offsetY int) paneOverflowHints {
 	if originalRect.W <= 0 || originalRect.H <= 0 || clippedRect.W <= 0 || clippedRect.H <= 0 {
 		return paneOverflowHints{}
 	}
 	overflow := paneOverflowHints{
+		Left:   originalRect.X < clippedRect.X,
+		Top:    originalRect.Y < clippedRect.Y,
 		Right:  originalRect.X+originalRect.W > clippedRect.X+clippedRect.W,
 		Bottom: originalRect.Y+originalRect.H > clippedRect.Y+clippedRect.H,
 	}
-	if metrics.Cols > 0 && clippedRect.W > 0 && metrics.Cols > clippedRect.W {
-		overflow.Right = true
+	if metrics.Cols > 0 && contentRect.W > 0 {
+		x := clampTerminalContentOffset(offsetX, contentRect.W, metrics.Cols)
+		overflow.Left = overflow.Left || x < 0
+		overflow.Right = overflow.Right || x+metrics.Cols > contentRect.W
 	}
-	if metrics.Rows > 0 && clippedRect.H > 0 && metrics.Rows > clippedRect.H {
-		overflow.Bottom = true
+	if metrics.Rows > 0 && contentRect.H > 0 {
+		y := clampTerminalContentOffset(offsetY, contentRect.H, metrics.Rows)
+		overflow.Top = overflow.Top || y < 0
+		overflow.Bottom = overflow.Bottom || y+metrics.Rows > contentRect.H
 	}
 	return overflow
 }

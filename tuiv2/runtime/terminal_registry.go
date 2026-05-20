@@ -4,6 +4,7 @@ import (
 	"maps"
 	"sort"
 
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
@@ -23,6 +24,10 @@ type TerminalRuntime struct {
 	State    string
 	ExitCode *int
 	Title    string // OSC 2 标题，由 VTerm 回调更新
+	// Core reports every active attachment that can drive PTY resize. If this
+	// exceeds local bound panes, another client currently owns resize.
+	ResizeOwnerAttachmentCount int
+	ResizeOwnership            *protocol.ResizeOwnership
 
 	Channel         uint16
 	AttachMode      string
@@ -31,6 +36,8 @@ type TerminalRuntime struct {
 	SurfaceVersion  uint64
 	ScreenUpdate    VisibleScreenUpdateSummary
 	VTerm           VTermLike
+
+	AlternateScrollback []protocol.CompactRow
 
 	ScrollbackLoadedLimit  int
 	ScrollbackLoadingLimit int
@@ -64,6 +71,13 @@ func (r *TerminalRegistry) Get(id string) *TerminalRuntime {
 		return nil
 	}
 	return r.terminals[id]
+}
+
+func (r *TerminalRegistry) Remove(id string) {
+	if r == nil || id == "" {
+		return
+	}
+	delete(r.terminals, id)
 }
 
 func (r *TerminalRegistry) GetOrCreate(id string) *TerminalRuntime {

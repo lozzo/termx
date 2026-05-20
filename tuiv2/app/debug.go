@@ -8,8 +8,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 var appDebugLogMu sync.Mutex
@@ -19,10 +17,62 @@ var latestQueuedMouseWheelSeq atomic.Uint64
 var latestMouseBoundaryAt atomic.Int64
 
 func (m *Model) debugLog(event string, kv ...any) {
-	if m == nil || strings.TrimSpace(m.cfg.LogFilePath) == "" {
+	if m == nil {
 		return
 	}
-	appendDebugLogLine(m.cfg.LogFilePath, event, kv...)
+	path := tuiDebugLogPath(m.cfg.LogFilePath)
+	if path == "" {
+		return
+	}
+	appendDebugLogLine(path, event, kv...)
+}
+
+func (m *Model) debugLogEnabled() bool {
+	if m == nil {
+		return false
+	}
+	return tuiDebugLogPath(m.cfg.LogFilePath) != ""
+}
+
+func tuiDebugLogPath(defaultPath string) string {
+	value := strings.TrimSpace(os.Getenv("TERMX_TUI_DEBUG_LOG"))
+	if value == "" {
+		return ""
+	}
+	if debugEnvTruthy(value) {
+		return strings.TrimSpace(defaultPath)
+	}
+	return value
+}
+
+func rendererDebugLogPath(defaultPath string, defaultEnabled bool) string {
+	value := strings.TrimSpace(os.Getenv("TERMX_RENDERER_DEBUG_LOG"))
+	if value != "" {
+		if debugEnvTruthy(value) {
+			return strings.TrimSpace(defaultPath)
+		}
+		return value
+	}
+	if path := tuiDebugLogPath(defaultPath); path != "" {
+		return path
+	}
+	if defaultEnabled {
+		return strings.TrimSpace(defaultPath)
+	}
+	return ""
+}
+
+func debugEnvEnabled(key string) bool {
+	return debugEnvTruthy(os.Getenv(key))
+}
+
+func debugEnvTruthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on", "debug":
+		return true
+	default:
+		return false
+	}
 }
 
 func appendDebugLogLine(path, event string, kv ...any) {
@@ -121,23 +171,4 @@ func sanitizeDebugKey(key string) string {
 			return '_'
 		}
 	}, key)
-}
-
-func debugMessageFields(msg tea.Msg) []any {
-	switch typed := msg.(type) {
-	case terminalTitleMsg:
-		return []any{
-			"msg", "terminal_title",
-			"terminal_id", typed.TerminalID,
-			"title", typed.Title,
-		}
-	case InvalidateMsg:
-		return []any{
-			"msg", "invalidate",
-		}
-	default:
-		return []any{
-			"msg", fmt.Sprintf("%T", msg),
-		}
-	}
 }

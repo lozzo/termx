@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
@@ -529,5 +529,48 @@ func TestEffectCmdKillTerminalEffectInvokesBridgeClient(t *testing.T) {
 	}
 	if client.killCalls[0] != "term-9" {
 		t.Fatalf("expected kill terminal term-9, got %#v", client.killCalls)
+	}
+}
+
+func TestEffectCmdRemoveTerminalEffectInvokesBridgeClientAndClearsBinding(t *testing.T) {
+	client := &recordingBridgeClient{}
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-9"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(client)
+	terminal := rt.Registry().GetOrCreate("term-9")
+	terminal.BoundPaneIDs = []string{"pane-1"}
+	rt.BindPane("pane-1")
+	model := New(shared.Config{}, wb, rt)
+
+	cmd := model.effectCmd(orchestrator.RemoveTerminalEffect{TerminalID: "term-9"})
+	if cmd == nil {
+		t.Fatal("expected remove terminal command")
+	}
+	if msg := cmd(); msg != nil {
+		t.Fatalf("expected nil message from remove command, got %#v", msg)
+	}
+	if len(client.removeCalls) != 1 || client.removeCalls[0] != "term-9" {
+		t.Fatalf("expected remove terminal term-9, got %#v", client.removeCalls)
+	}
+	if pane := wb.CurrentTab().Panes["pane-1"]; pane == nil || pane.TerminalID != "" {
+		t.Fatalf("expected pane terminal binding cleared, got %#v", pane)
+	}
+	if got := rt.Registry().Get("term-9"); got != nil {
+		t.Fatalf("expected runtime terminal removed, got %#v", got)
+	}
+	if got := rt.Binding("pane-1"); got != nil {
+		t.Fatalf("expected runtime pane binding removed, got %#v", got)
 	}
 }

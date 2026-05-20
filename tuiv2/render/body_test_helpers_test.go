@@ -3,7 +3,7 @@ package render
 import (
 	"time"
 
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 )
 
 type spriteTestSurface struct {

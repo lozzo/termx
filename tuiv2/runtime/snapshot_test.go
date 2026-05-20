@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
-func TestApplyScreenUpdateSnapshotChangedRowsDoesNotMutatePreviousSnapshot(t *testing.T) {
+func TestApplyScreenUpdateSnapshotWriteSpanDoesNotMutatePreviousSnapshot(t *testing.T) {
 	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
 	current := &protocol.Snapshot{
 		TerminalID: "term-1",
@@ -27,8 +28,10 @@ func TestApplyScreenUpdateSnapshotChangedRowsDoesNotMutatePreviousSnapshot(t *te
 	previous := cloneProtocolSnapshot(current)
 
 	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
-		ChangedRows: []protocol.ScreenRowUpdate{{
+		Ops: []protocol.ScreenOp{{
+			Code:      protocol.ScreenOpWriteSpan,
 			Row:       1,
+			Col:       0,
 			Cells:     snapshotTestRow("edit"),
 			Timestamp: now.Add(3 * time.Second),
 			RowKind:   "edited",
@@ -53,11 +56,11 @@ func TestApplyScreenUpdateSnapshotScrollbackTrimAppendDoesNotMutatePreviousSnaps
 	current := &protocol.Snapshot{
 		TerminalID: "term-1",
 		Size:       protocol.Size{Cols: 5, Rows: 2},
-		Scrollback: [][]protocol.Cell{
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
 			snapshotTestRow("hist1"),
 			snapshotTestRow("hist2"),
 			snapshotTestRow("hist3"),
-		},
+		}),
 		ScrollbackTimestamps: []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second)},
 		ScrollbackRowKinds:   []string{"a", "b", "c"},
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
@@ -85,22 +88,22 @@ func TestApplyScreenUpdateSnapshotScrollbackTrimAppendDoesNotMutatePreviousSnaps
 		t.Fatalf("expected previous scrollback snapshot to remain unchanged, got %#v want %#v", current, previous)
 	}
 	if got := []string{
-		rowToString(next.Scrollback[0]),
-		rowToString(next.Scrollback[1]),
-		rowToString(next.Scrollback[2]),
+		compactRowToString(next.Scrollback[0]),
+		compactRowToString(next.Scrollback[1]),
+		compactRowToString(next.Scrollback[2]),
 	}; !reflect.DeepEqual(got, []string{"hist2", "hist3", "hist4"}) {
 		t.Fatalf("unexpected next scrollback rows: %#v", got)
 	}
 	if got := []string{
-		rowToString(current.Scrollback[0]),
-		rowToString(current.Scrollback[1]),
-		rowToString(current.Scrollback[2]),
+		compactRowToString(current.Scrollback[0]),
+		compactRowToString(current.Scrollback[1]),
+		compactRowToString(current.Scrollback[2]),
 	}; !reflect.DeepEqual(got, []string{"hist1", "hist2", "hist3"}) {
 		t.Fatalf("expected previous scrollback rows to remain unchanged, got %#v", got)
 	}
 }
 
-func TestApplyScreenUpdateSnapshotChangedSpansDoesNotMutatePreviousSnapshot(t *testing.T) {
+func TestApplyScreenUpdateSnapshotOpsDoNotMutatePreviousSnapshot(t *testing.T) {
 	now := time.Date(2026, 4, 18, 10, 30, 0, 0, time.UTC)
 	current := &protocol.Snapshot{
 		TerminalID: "term-1",
@@ -117,19 +120,19 @@ func TestApplyScreenUpdateSnapshotChangedSpansDoesNotMutatePreviousSnapshot(t *t
 	previous := cloneProtocolSnapshot(current)
 
 	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
-		ChangedSpans: []protocol.ScreenSpanUpdate{
+		Ops: []protocol.ScreenOp{
 			{
-				Row:      0,
-				ColStart: 2,
+				Code: protocol.ScreenOpWriteSpan,
+				Row:  0,
+				Col:  2,
 				Cells: []protocol.Cell{
 					{Content: "Q", Width: 1},
 				},
-				Op: protocol.ScreenSpanOpWrite,
 			},
 			{
-				Row:      0,
-				ColStart: 6,
-				Op:       protocol.ScreenSpanOpClearToEOL,
+				Code: protocol.ScreenOpClearToEOL,
+				Row:  0,
+				Col:  6,
 			},
 		},
 		Cursor: protocol.CursorState{Visible: true},
@@ -147,7 +150,7 @@ func TestApplyScreenUpdateSnapshotChangedSpansDoesNotMutatePreviousSnapshot(t *t
 	}
 }
 
-func TestApplyScreenUpdateSnapshotWideSpanPreservesContinuation(t *testing.T) {
+func TestApplyScreenUpdateSnapshotWideWriteOpPreservesContinuation(t *testing.T) {
 	now := time.Date(2026, 4, 18, 10, 45, 0, 0, time.UTC)
 	current := &protocol.Snapshot{
 		TerminalID: "term-1",
@@ -164,14 +167,14 @@ func TestApplyScreenUpdateSnapshotWideSpanPreservesContinuation(t *testing.T) {
 	}
 
 	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
-		ChangedSpans: []protocol.ScreenSpanUpdate{{
-			Row:      0,
-			ColStart: 0,
+		Ops: []protocol.ScreenOp{{
+			Code: protocol.ScreenOpWriteSpan,
+			Row:  0,
+			Col:  0,
 			Cells: []protocol.Cell{
 				{Content: "界", Width: 2},
 				{Content: "", Width: 0},
 			},
-			Op: protocol.ScreenSpanOpWrite,
 		}},
 		Cursor: protocol.CursorState{Visible: true},
 		Modes:  protocol.TerminalModes{AutoWrap: true},
@@ -193,9 +196,9 @@ func TestApplyScreenUpdateSnapshotFullReplaceBehaviorUnchanged(t *testing.T) {
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
 			snapshotTestRow("stale"),
 		}},
-		Scrollback: [][]protocol.Cell{
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
 			snapshotTestRow("old"),
-		},
+		}),
 		Cursor: protocol.CursorState{Visible: false},
 		Modes:  protocol.TerminalModes{AutoWrap: true},
 	}
@@ -224,7 +227,7 @@ func TestApplyScreenUpdateSnapshotFullReplaceBehaviorUnchanged(t *testing.T) {
 	if got := rowToString(next.Screen.Cells[0]); got != "fresh1" {
 		t.Fatalf("expected full replace screen to deep clone update rows, got %q", got)
 	}
-	if got := rowToString(next.Scrollback[0]); got != "tail1" {
+	if got := compactRowToString(next.Scrollback[0]); got != "tail1" {
 		t.Fatalf("expected full replace scrollback append to clone rows, got %q", got)
 	}
 	if len(next.Scrollback) != 1 {
@@ -235,6 +238,34 @@ func TestApplyScreenUpdateSnapshotFullReplaceBehaviorUnchanged(t *testing.T) {
 	}
 	if !next.Screen.IsAlternateScreen || !next.Modes.AlternateScreen {
 		t.Fatalf("expected full replace alternate-screen state to follow modes, got screen=%v modes=%#v", next.Screen.IsAlternateScreen, next.Modes)
+	}
+}
+
+func TestLoadSnapshotIntoVTermKeepsSparseScreenRowsAtProtocolGeometry(t *testing.T) {
+	snapshot := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 5},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			snapshotTestRow("100000"),
+			snapshotTestRow("python total"),
+			snapshotTestRow("# prompt"),
+			snapshotTestRow("termx remote"),
+		}},
+		Cursor: protocol.CursorState{Row: 3, Col: 12, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	}
+	vt := localvterm.New(20, 5, 100, nil)
+
+	loadSnapshotIntoVTerm(vt, snapshot)
+
+	surface := surfaceFromVTerm(vt)
+	if surface == nil {
+		t.Fatal("expected loaded vterm surface")
+	}
+	got := []string{rowText(surface.Row(0)), rowText(surface.Row(1)), rowText(surface.Row(2)), rowText(surface.Row(3))}
+	want := []string{"100000", "python total", "# prompt", "termx remote"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected sparse screen rows %q, got %q", want, got)
 	}
 }
 
@@ -257,12 +288,10 @@ func TestApplyScreenUpdateSnapshotScreenScrollShiftPreservesPreviousSnapshot(t *
 
 	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
 		ScreenScroll: 1,
-		ChangedRows: []protocol.ScreenRowUpdate{{
-			Row:       2,
-			Cells:     snapshotTestRow("row4"),
-			Timestamp: now.Add(3 * time.Second),
-			RowKind:   "d",
-		}},
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 4, Height: 3}, Dy: -1},
+			{Code: protocol.ScreenOpWriteSpan, Row: 2, Col: 0, Cells: snapshotTestRow("row4"), Timestamp: now.Add(3 * time.Second), RowKind: "d"},
+		},
 		Cursor: protocol.CursorState{Visible: true},
 		Modes:  protocol.TerminalModes{AutoWrap: true},
 	})
@@ -462,4 +491,8 @@ func rowToString(row []protocol.Cell) string {
 		out = append(out, []rune(cell.Content)...)
 	}
 	return string(out)
+}
+
+func compactRowToString(row protocol.CompactRow) string {
+	return rowToString(row.DecodeCells())
 }

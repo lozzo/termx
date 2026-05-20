@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/protocol"
-	localvterm "github.com/lozzow/termx/vterm"
+	"github.com/lozzow/termx/internal/protocol"
+	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
 func BenchmarkScreenUpdateOpcodeScenarios(b *testing.B) {
@@ -16,9 +16,8 @@ func BenchmarkScreenUpdateOpcodeScenarios(b *testing.B) {
 			name   string
 			update protocol.ScreenUpdate
 		}{
-			{name: "legacy", update: scenario.legacy},
-			{name: "opcode", update: scenario.opcode},
-			{name: "full_replace", update: opcodeBenchFullReplaceUpdate(scenario.base, scenario.opcode)},
+			{name: "ops", update: scenario.update},
+			{name: "full_replace", update: opcodeBenchFullReplaceUpdate(scenario.base, scenario.update)},
 		} {
 			payload, err := protocol.EncodeScreenUpdatePayload(variant.update)
 			if err != nil {
@@ -87,7 +86,7 @@ func BenchmarkScreenUpdateOpcodeScenarios(b *testing.B) {
 					if next == nil {
 						b.Fatal("expected snapshot update result")
 					}
-					if !applier.ApplyScreenUpdate(decoded) {
+					if !applier.ApplyScreenUpdate(vtermScreenUpdateFromProtocol(decoded)) {
 						b.Fatal("expected partial apply success")
 					}
 				}
@@ -98,50 +97,34 @@ func BenchmarkScreenUpdateOpcodeScenarios(b *testing.B) {
 
 func TestScreenUpdateOpcodeScenarioWireSizes(t *testing.T) {
 	for _, scenario := range opcodeBenchScenarios() {
-		legacyPayload, err := protocol.EncodeScreenUpdatePayload(scenario.legacy)
-		if err != nil {
-			t.Fatalf("%s legacy encode: %v", scenario.name, err)
-		}
-		opcodePayload, err := protocol.EncodeScreenUpdatePayload(scenario.opcode)
+		opcodePayload, err := protocol.EncodeScreenUpdatePayload(scenario.update)
 		if err != nil {
 			t.Fatalf("%s opcode encode: %v", scenario.name, err)
 		}
-		t.Logf("%s legacy_bytes=%d opcode_bytes=%d", scenario.name, len(legacyPayload), len(opcodePayload))
+		fullPayload, err := protocol.EncodeScreenUpdatePayload(opcodeBenchFullReplaceUpdate(scenario.base, scenario.update))
+		if err != nil {
+			t.Fatalf("%s full replace encode: %v", scenario.name, err)
+		}
+		t.Logf("%s ops_bytes=%d full_replace_bytes=%d", scenario.name, len(opcodePayload), len(fullPayload))
 	}
 }
 
 func opcodeBenchScenarios() []struct {
 	name   string
 	base   *protocol.Snapshot
-	legacy protocol.ScreenUpdate
-	opcode protocol.ScreenUpdate
+	update protocol.ScreenUpdate
 } {
 	return []struct {
 		name   string
 		base   *protocol.Snapshot
-		legacy protocol.ScreenUpdate
-		opcode protocol.ScreenUpdate
+		update protocol.ScreenUpdate
 	}{
 		{
 			name: "less_scroll",
 			base: opcodeBenchSnapshot("less", 80, 24),
-			legacy: protocol.ScreenUpdate{
+			update: protocol.ScreenUpdate{
 				Size:         protocol.Size{Cols: 80, Rows: 24},
 				ScreenScroll: 1,
-				ChangedRows: []protocol.ScreenRowUpdate{{
-					Row:   23,
-					Cells: opcodeBenchRow(80, "less-24"),
-				}},
-				Cursor: protocol.CursorState{Row: 23, Col: 0, Visible: true},
-				Modes:  protocol.TerminalModes{AutoWrap: true},
-			},
-			opcode: protocol.ScreenUpdate{
-				Size:         protocol.Size{Cols: 80, Rows: 24},
-				ScreenScroll: 1,
-				ChangedRows: []protocol.ScreenRowUpdate{{
-					Row:   23,
-					Cells: opcodeBenchRow(80, "less-24"),
-				}},
 				Ops: []protocol.ScreenOp{
 					{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 80, Height: 24}, Dy: -1},
 					{Code: protocol.ScreenOpWriteSpan, Row: 23, Col: 0, Cells: opcodeBenchRow(80, "less-24")},
@@ -153,59 +136,8 @@ func opcodeBenchScenarios() []struct {
 		{
 			name: "vim_scroll_region",
 			base: opcodeBenchSnapshotWithModes("vim", 120, 40, protocol.TerminalModes{AlternateScreen: true, AutoWrap: true}),
-			legacy: protocol.ScreenUpdate{
+			update: protocol.ScreenUpdate{
 				Size: protocol.Size{Cols: 120, Rows: 40},
-				ChangedRows: opcodeBenchChangedRowsFromLines(5, []string{
-					benchLine("vim", 6, 120),
-					benchLine("vim", 7, 120),
-					benchLine("vim", 8, 120),
-					benchLine("vim", 9, 120),
-					benchLine("vim", 10, 120),
-					benchLine("vim", 11, 120),
-					benchLine("vim", 12, 120),
-					benchLine("vim", 13, 120),
-					benchLine("vim", 14, 120),
-					benchLine("vim", 15, 120),
-					benchLine("vim", 16, 120),
-					benchLine("vim", 17, 120),
-					benchLine("vim", 18, 120),
-					benchLine("vim", 19, 120),
-					benchLine("vim", 20, 120),
-					benchLine("vim", 21, 120),
-					benchLine("vim", 22, 120),
-					benchLine("vim", 23, 120),
-					benchLine("vim", 24, 120),
-					benchLine("vim", 25, 120),
-					benchLine("vim", 26, 120),
-				}),
-				Cursor: protocol.CursorState{Row: 25, Col: 0, Visible: true},
-				Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
-			},
-			opcode: protocol.ScreenUpdate{
-				Size: protocol.Size{Cols: 120, Rows: 40},
-				ChangedRows: opcodeBenchChangedRowsFromLines(5, []string{
-					benchLine("vim", 6, 120),
-					benchLine("vim", 7, 120),
-					benchLine("vim", 8, 120),
-					benchLine("vim", 9, 120),
-					benchLine("vim", 10, 120),
-					benchLine("vim", 11, 120),
-					benchLine("vim", 12, 120),
-					benchLine("vim", 13, 120),
-					benchLine("vim", 14, 120),
-					benchLine("vim", 15, 120),
-					benchLine("vim", 16, 120),
-					benchLine("vim", 17, 120),
-					benchLine("vim", 18, 120),
-					benchLine("vim", 19, 120),
-					benchLine("vim", 20, 120),
-					benchLine("vim", 21, 120),
-					benchLine("vim", 22, 120),
-					benchLine("vim", 23, 120),
-					benchLine("vim", 24, 120),
-					benchLine("vim", 25, 120),
-					benchLine("vim", 26, 120),
-				}),
 				Ops: []protocol.ScreenOp{
 					{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 5, Width: 120, Height: 21}, Dy: -1},
 					{Code: protocol.ScreenOpWriteSpan, Row: 25, Col: 0, Cells: opcodeBenchRow(120, benchLine("vim", 26, 120))},
@@ -217,23 +149,8 @@ func opcodeBenchScenarios() []struct {
 		{
 			name: "nvim_alt_fullwidth_scroll_3_rows",
 			base: opcodeBenchSnapshotWithModes("nvim", 120, 40, protocol.TerminalModes{AlternateScreen: true, AutoWrap: true}),
-			legacy: protocol.ScreenUpdate{
+			update: protocol.ScreenUpdate{
 				Size: protocol.Size{Cols: 120, Rows: 40},
-				ChangedRows: opcodeBenchChangedRowsFromLines(37, []string{
-					benchLine("nvim", 137, 120),
-					benchLine("nvim", 138, 120),
-					benchLine("nvim", 139, 120),
-				}),
-				Cursor: protocol.CursorState{Row: 39, Col: 8, Visible: true},
-				Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
-			},
-			opcode: protocol.ScreenUpdate{
-				Size: protocol.Size{Cols: 120, Rows: 40},
-				ChangedRows: opcodeBenchChangedRowsFromLines(37, []string{
-					benchLine("nvim", 137, 120),
-					benchLine("nvim", 138, 120),
-					benchLine("nvim", 139, 120),
-				}),
 				Ops: []protocol.ScreenOp{
 					{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 120, Height: 40}, Dy: -3},
 					{Code: protocol.ScreenOpWriteSpan, Row: 37, Col: 0, Cells: opcodeBenchRow(120, benchLine("nvim", 137, 120))},
@@ -247,25 +164,9 @@ func opcodeBenchScenarios() []struct {
 		{
 			name: "top_scroll",
 			base: opcodeBenchSnapshot("top", 80, 24),
-			legacy: protocol.ScreenUpdate{
+			update: protocol.ScreenUpdate{
 				Size:         protocol.Size{Cols: 80, Rows: 24},
 				ScreenScroll: 1,
-				ChangedRows: []protocol.ScreenRowUpdate{
-					{Row: 0, Cells: opcodeBenchRow(80, "top header load=0.42 users=2")},
-					{Row: 1, Cells: opcodeBenchRow(80, "tasks 97 total 1 running")},
-					{Row: 23, Cells: opcodeBenchRow(80, "proc-24 cpu=4.2 mem=128m")},
-				},
-				Cursor: protocol.CursorState{Row: 23, Col: 0, Visible: true},
-				Modes:  protocol.TerminalModes{AutoWrap: true},
-			},
-			opcode: protocol.ScreenUpdate{
-				Size:         protocol.Size{Cols: 80, Rows: 24},
-				ScreenScroll: 1,
-				ChangedRows: []protocol.ScreenRowUpdate{
-					{Row: 0, Cells: opcodeBenchRow(80, "top header load=0.42 users=2")},
-					{Row: 1, Cells: opcodeBenchRow(80, "tasks 97 total 1 running")},
-					{Row: 23, Cells: opcodeBenchRow(80, "proc-24 cpu=4.2 mem=128m")},
-				},
 				Ops: []protocol.ScreenOp{
 					{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 80, Height: 24}, Dy: -1},
 					{Code: protocol.ScreenOpWriteSpan, Row: 0, Col: 0, Cells: opcodeBenchRow(80, "top header load=0.42 users=2")},
@@ -279,37 +180,8 @@ func opcodeBenchScenarios() []struct {
 		{
 			name: "block_move",
 			base: opcodeBenchSnapshotWithModes("move", 120, 40, protocol.TerminalModes{AlternateScreen: true, AutoWrap: true}),
-			legacy: protocol.ScreenUpdate{
+			update: protocol.ScreenUpdate{
 				Size: protocol.Size{Cols: 120, Rows: 40},
-				ChangedRows: opcodeBenchChangedRowsFromLines(20, []string{
-					benchLine("move", 5, 120),
-					benchLine("move", 6, 120),
-					benchLine("move", 7, 120),
-					benchLine("move", 8, 120),
-					benchLine("move", 9, 120),
-					benchLine("move", 10, 120),
-					benchLine("move", 11, 120),
-					benchLine("move", 12, 120),
-					benchLine("move", 13, 120),
-					benchLine("move", 14, 120),
-				}),
-				Cursor: protocol.CursorState{Row: 20, Col: 0, Visible: true},
-				Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
-			},
-			opcode: protocol.ScreenUpdate{
-				Size: protocol.Size{Cols: 120, Rows: 40},
-				ChangedRows: opcodeBenchChangedRowsFromLines(20, []string{
-					benchLine("move", 5, 120),
-					benchLine("move", 6, 120),
-					benchLine("move", 7, 120),
-					benchLine("move", 8, 120),
-					benchLine("move", 9, 120),
-					benchLine("move", 10, 120),
-					benchLine("move", 11, 120),
-					benchLine("move", 12, 120),
-					benchLine("move", 13, 120),
-					benchLine("move", 14, 120),
-				}),
 				Ops: []protocol.ScreenOp{
 					{Code: protocol.ScreenOpCopyRect, Src: protocol.ScreenRect{X: 0, Y: 5, Width: 120, Height: 10}, DstX: 0, DstY: 20},
 				},
@@ -320,25 +192,8 @@ func opcodeBenchScenarios() []struct {
 		{
 			name: "sparse_point",
 			base: opcodeBenchSnapshot("seed", 120, 40),
-			legacy: protocol.ScreenUpdate{
+			update: protocol.ScreenUpdate{
 				Size: protocol.Size{Cols: 120, Rows: 40},
-				ChangedSpans: []protocol.ScreenSpanUpdate{{
-					Row:      12,
-					ColStart: 37,
-					Cells:    []protocol.Cell{{Content: "X", Width: 1}},
-					Op:       protocol.ScreenSpanOpWrite,
-				}},
-				Cursor: protocol.CursorState{Row: 12, Col: 38, Visible: true},
-				Modes:  protocol.TerminalModes{AutoWrap: true},
-			},
-			opcode: protocol.ScreenUpdate{
-				Size: protocol.Size{Cols: 120, Rows: 40},
-				ChangedSpans: []protocol.ScreenSpanUpdate{{
-					Row:      12,
-					ColStart: 37,
-					Cells:    []protocol.Cell{{Content: "X", Width: 1}},
-					Op:       protocol.ScreenSpanOpWrite,
-				}},
 				Ops: []protocol.ScreenOp{
 					{Code: protocol.ScreenOpWriteSpan, Row: 12, Col: 37, Cells: []protocol.Cell{{Content: "X", Width: 1}}},
 				},
@@ -375,17 +230,6 @@ func opcodeBenchRow(cols int, text string) []protocol.Cell {
 		row[col] = protocol.Cell{Content: string(text[col]), Width: 1}
 	}
 	return row
-}
-
-func opcodeBenchChangedRowsFromLines(startRow int, lines []string) []protocol.ScreenRowUpdate {
-	rows := make([]protocol.ScreenRowUpdate, 0, len(lines))
-	for i, line := range lines {
-		rows = append(rows, protocol.ScreenRowUpdate{
-			Row:   startRow + i,
-			Cells: opcodeBenchRow(len(line), line),
-		})
-	}
-	return rows
 }
 
 func benchLine(prefix string, row, cols int) string {

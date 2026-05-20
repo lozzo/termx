@@ -65,9 +65,31 @@ func (m *Model) handleTerminalManagerModalAction(action input.SemanticAction) (b
 			return true, m.killTerminalAndRefreshManagerCmd(terminalID)
 		}
 		return true, nil
+	case input.ActionRemoveTerminal:
+		if selected := m.selectedTerminalManagerItem(); selected != nil {
+			terminalID := selected.TerminalID
+			return true, m.removeTerminalCmd(terminalID, true)
+		}
+		return true, nil
 	default:
 		return false, nil
 	}
+}
+
+func (m *Model) removeTerminalFromManagerItems(terminalID string) {
+	if m == nil || m.terminalPage == nil || terminalID == "" {
+		return
+	}
+	items := m.terminalPage.Items
+	filtered := items[:0]
+	for _, item := range items {
+		if item.TerminalID != terminalID {
+			filtered = append(filtered, item)
+		}
+	}
+	m.terminalPage.Items = filtered
+	m.terminalPage.ApplyFilter()
+	normalizeModalSelection(&m.terminalPage.Selected, len(m.terminalPage.VisibleItems()))
 }
 
 func (m *Model) markTerminalManagerItemExited(terminalID string) {
@@ -121,4 +143,66 @@ func (m *Model) killTerminalAndRefreshManagerCmd(terminalID string) tea.Cmd {
 		}
 		return terminalManagerItemsLoadedMsg{Items: m.buildTerminalManagerItems(terminals)}
 	}
+}
+
+func (m *Model) removeTerminalCmd(terminalID string, reloadManager bool) tea.Cmd {
+	if m == nil || terminalID == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		if m.runtime != nil && m.runtime.Client() != nil {
+			if err := m.runtime.Client().Remove(context.Background(), terminalID); err != nil {
+				return err
+			}
+		}
+		m.removeTerminalFromLocalState(terminalID)
+		if reloadManager && m.runtime != nil {
+			terminals, err := m.runtime.ListTerminals(context.Background())
+			if err != nil {
+				return err
+			}
+			return terminalManagerItemsLoadedMsg{Items: m.buildTerminalManagerItems(terminals)}
+		}
+		return nil
+	}
+}
+
+func (m *Model) removeTerminalFromLocalState(terminalID string) {
+	if m == nil || terminalID == "" {
+		return
+	}
+	if m.workbench != nil {
+		for _, wsName := range m.workbench.ListWorkspaces() {
+			ws := m.workbench.WorkspaceByName(wsName)
+			if ws == nil {
+				continue
+			}
+			for _, tab := range ws.Tabs {
+				if tab == nil {
+					continue
+				}
+				for paneID, pane := range tab.Panes {
+					if pane == nil || pane.TerminalID != terminalID {
+						continue
+					}
+					_ = m.workbench.BindPaneTerminal(tab.ID, paneID, "")
+					if m.runtime != nil {
+						m.runtime.UnbindPane(paneID, terminalID)
+					}
+				}
+			}
+		}
+	}
+	if m.runtime != nil {
+		m.runtime.RemoveTerminal(terminalID)
+	}
+	if m.sessionLeases != nil {
+		delete(m.sessionLeases, terminalID)
+		if len(m.sessionLeases) == 0 {
+			m.sessionLeases = nil
+		}
+	}
+	m.removeTerminalFromManagerItems(terminalID)
+	m.removeTerminalFromPickerItems(terminalID)
+	m.render.Invalidate()
 }

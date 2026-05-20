@@ -1,0 +1,78 @@
+---
+title: 安装指南
+description: 安装 termx 本机服务、了解安装脚本行为，并获取 Android 客户端。
+---
+
+## 安装指南
+
+### 安装本机服务
+
+#### 方式一：安装脚本（推荐）
+
+```bash
+curl -sL https://termx.omscd.com/install.sh | bash
+```
+
+安装脚本当前会完成这些事：
+
+- 检测系统与架构（Linux / macOS / FreeBSD；支持 `386` / `amd64` / `arm64`，Linux 额外支持 `arm` 与 `riscv64`）
+- 从 `/api/agent/check-update` 获取适配的最新本机服务发布包
+- 下载并安装到用户家目录下的可执行目录（通常是 `~/bin` 或 `~/.local/bin`）
+- 检查该目录是否在 `PATH` 中
+- 提示你可以用哪些命令启动、用 `nohup` 守护，或交给 `LaunchAgent` / `systemd --user`
+
+安装脚本不会再生成 `config.yaml`。termx 本机服务现在统一通过命令行参数和环境变量配置。
+
+#### 方式二：手动下载
+
+你也可以直接查询当前平台可用版本：
+
+```bash
+curl -s "https://termx.omscd.com/api/agent/check-update?version=0.0.0&os=linux&arch=amd64"
+```
+
+返回中会包含：
+
+- `version`
+- `downloadUrl`
+- `mirrors`
+- `sha256`
+
+拿到下载地址后手动安装即可：
+
+```bash
+wget <download_url>
+chmod +x termx-*
+mkdir -p ~/.local/bin
+mv termx-* ~/.local/bin/termx
+```
+
+如果 `~/.local/bin` 还没进 `PATH`，请把下面这行加到你的 shell 配置里：
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### 验证安装
+
+可以用下面两种方式检查命令是否就绪：
+
+```bash
+command -v termx
+termx -h
+```
+
+### 系统要求
+
+- Linux、macOS 或 FreeBSD
+- `termx`
+- 对应平台的 `386` / `amd64` / `arm64` 环境，或 Linux `arm`（32 位 ARMv7）/ `riscv64`
+- 若要使用远程 Hub，机器需要能访问你的控制平面 API 或指定的 Hub 地址
+
+### Android 客户端
+
+当前公开下载渠道：
+
+- Android APK：[/api/v1/app/releases/latest?platform=android&type=apk&redirect=true](/api/v1/app/releases/latest?platform=android&type=apk&redirect=true)
+
+> iOS 版本暂未公开发布，因此文档中的移动端说明默认以 Android 客户端为准。

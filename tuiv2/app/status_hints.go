@@ -23,13 +23,15 @@ type statusHintContext struct {
 }
 
 func (m *Model) buildStatusHints(vm render.RenderVM) []string {
+	if m != nil && m.isClipboardHistoryPickerActive() {
+		return clipboardHistoryStatusHints()
+	}
 	mode := input.ModeKind(strings.TrimSpace(vm.Status.InputMode))
 	if mode == "" {
 		mode = input.ModeNormal
 	}
 	ctx := buildStatusHintContext(vm)
 	out := make([]string, 0, 8)
-	seen := make(map[string]struct{})
 	for _, doc := range input.DefaultBindingCatalog() {
 		if doc.Mode != mode || strings.TrimSpace(doc.StatusText) == "" {
 			continue
@@ -37,13 +39,40 @@ func (m *Model) buildStatusHints(vm render.RenderVM) []string {
 		if !statusDocVisible(doc, mode, ctx) {
 			continue
 		}
-		if _, ok := seen[doc.StatusText]; ok {
+		if statusHintAlreadyAdded(out, doc.StatusText) {
 			continue
 		}
-		seen[doc.StatusText] = struct{}{}
 		out = append(out, doc.StatusText)
 	}
 	return out
+}
+
+func statusHintAlreadyAdded(hints []string, candidate string) bool {
+	for _, hint := range hints {
+		if hint == candidate {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) isClipboardHistoryPickerActive() bool {
+	return m != nil &&
+		m.modalHost != nil &&
+		m.modalHost.Session != nil &&
+		m.modalHost.Session.Kind == input.ModePicker &&
+		m.modalHost.Session.RequestID == clipboardHistoryRequestID()
+}
+
+func clipboardHistoryStatusHints() []string {
+	return []string{
+		"UP/DOWN MOVE",
+		"TYPE FILTER",
+		"Enter PASTE/NEW",
+		"Ctrl-E EDIT",
+		"Ctrl-X DELETE",
+		"Esc BACK",
+	}
 }
 
 func (m *Model) buildStatusBarRightTokens(vm render.RenderVM) []render.RenderStatusToken {
@@ -147,6 +176,10 @@ func statusDocVisible(doc input.BindingDoc, mode input.ModeKind, ctx statusHintC
 			input.ActionResizePaneLargeLeft, input.ActionResizePaneLargeRight, input.ActionResizePaneLargeUp, input.ActionResizePaneLargeDown,
 			input.ActionBalancePanes, input.ActionCycleLayout:
 			return ctx.activeTab != nil
+		case input.ActionMovePaneContentLeft, input.ActionMovePaneContentRight, input.ActionMovePaneContentUp, input.ActionMovePaneContentDown,
+			input.ActionAlignPaneContentLeft, input.ActionAlignPaneContentRight, input.ActionAlignPaneContentTop, input.ActionAlignPaneContentBottom,
+			input.ActionCenterPaneContent, input.ActionCenterPaneContentHorizontal, input.ActionCenterPaneContentVertical, input.ActionResetPaneContentOffset:
+			return ctx.activePane != nil
 		}
 	case input.ModeTab:
 		switch doc.Binding.Action {
@@ -198,8 +231,6 @@ func statusDocVisible(doc input.BindingDoc, mode input.ModeKind, ctx statusHintC
 		switch doc.Binding.Action {
 		case input.ActionScrollUp, input.ActionScrollDown:
 			return ctx.activePaneConnected()
-		case input.ActionZoomPane:
-			return ctx.activePane != nil
 		}
 	}
 	return true

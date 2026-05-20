@@ -1,0 +1,384 @@
+# tuiv2 Render / Perf Notes (2026-04-09)
+
+## Goal
+
+记录当前 `termx` 在 `tuiv2` 路径上的渲染链路、已经落地的滚动性能优化，以及继续优化端到端输入延迟时应该优先看的位置。
+
+这份文档对应的代码基线从提交 `334546e` 开始。
+
+## Current Pipeline
+
+### 1. Server-side PTY path
+
+输入链路:
+
+1. client 通过 protocol `Input` 把按键/鼠标发送到 server。
+2. server 把字节写入 PTY。
+3. PTY output 在 `Terminal.readLoop` 中被读取。
+
+输出链路:
+
+1. server 将 PTY chunk 写入权威 `VTerm.WriteWithDamage()`。
+2. `WriteDamage` 被编码为二进制 `ScreenUpdate` payload。
+3. attachment stream pump 对慢消费者执行 latest-state collapse，再发给订阅者。
+
+关键文件:
+
+- `terminal.go`
+- `protocol/client.go`
+
+### 2. Client runtime path
+
+attach 后，client runtime 维护一份本地权威可见状态:
+
+1. `runtime/stream.go` 接收 protocol stream。
+2. `TypeScreenUpdate` 直接应用到本地 `VTerm` / snapshot cache。
+3. 成功应用后请求 `Invalidate`，render pipeline 只消费最新可见状态。
+4. `SyncLost` 触发 snapshot 恢复。
+
+关键文件:
+
+- `tuiv2/runtime/stream.go`
+- `tuiv2/runtime/runtime.go`
+- `tuiv2/runtime/terminal_registry.go`
+
+### 3. App / render path
+
+前台渲染链路:
+
+1. runtime 通过 `Model.queueInvalidate()` 发送 `InvalidateMsg`。
+2. `Update()` 处理消息，必要时标记 render dirty。
+3. `View()` 调 `render.Coordinator.RenderFrame()`。
+4. 默认 TTY 路径下，frame 直接交给 `outputCursorWriter`，不再走 Bubble Tea 标准 renderer。
+
+关键文件:
+
+- `tuiv2/app/model.go`
+- `tuiv2/app/update.go`
+- `tuiv2/app/view.go`
+- `tuiv2/app/cursor_writer.go`
+- `tuiv2/render/coordinator.go`
+
+## Render Ownership
+
+当前系统里有两份 terminal state:
+
+1. server 侧 `VTerm`
+   作为权威 screen，负责解析 PTY output 并生成 screen update。
+2. client 侧 `VTerm`
+   作为 screen update 的本地投影，用于即时渲染。
+
+正常 live scroll 期间，用户看到的是 client 侧 `VTerm + render coordinator` 的结果。正确性来源是 server 侧 screen update，而不是 client 自行解析 PTY 字节。
+
+## What Was Slow
+
+最初的热点不在 `Bubble Tea Update()`，而在下面几层:
+
+1. `vterm.Write()`
+   之前每次 write 都会整屏抓 `before/after` screen，再做 row metadata reconcile。
+2. 旧链路 server/client 双重解析 PTY output。
+   现在 PTY output 只在 server 解析一次，client 消费 screen update。
+3. 前台重复 `View()/RenderFrame()`
+   即使 runtime 只 invalidate 一次，滚动输入本身仍会驱动多轮 `Update -> View`。
+4. direct writer backlog 下的重复 frame flush。
+
+## Optimizations Landed
+
+### A. Stream / protocol batching
+
+目标:
+
+- 不再把一次 `nvim` scroll 拆成大量中间态 frame。
+
+已落地:
+
+1. protocol client 不再发送 raw output，终端内容统一走 `TypeScreenUpdate`。
+2. stream 溢出不再 silent drop，改为显式 `SyncLost`。
+3. server attachment queue 合并连续 screen update。
+4. client runtime 直接应用 screen update，不再做 PTY output batching。
+
+效果:
+
+- 慢消费者不再追赶过期中间帧，最终只需要应用最新 screen state。
+
+### B. Server-authoritative screen stream
+
+目标:
+
+- PTY output 只解析一次，所有客户端消费同一份权威 screen delta。
+
+已落地:
+
+1. `StreamOutput` / `TypeOutput` / raw attach mode 已删除。
+2. `Terminal.readLoop` 直接写 server `VTerm.WriteWithDamage()`。
+3. server 广播 `StreamScreenUpdate` / protocol `TypeScreenUpdate`。
+4. `SyncLost` 仍作为恢复边界，客户端通过 snapshot 重建。
+
+效果:
+
+- 消除 server/client 双重 PTY 解析。
+- 全屏程序、滚动和 resize 都走同一条权威 screen path。
+
+### C. VTerm metadata reconcile fingerprinting
+
+目标:
+
+- 去掉每次 `Write()` 的整屏 `[]Cell` materialize / compare。
+
+已落地:
+
+1. screen / scrollback 改为 row fingerprint。
+2. reconcile 只按指纹和尾部 scrollback 行对齐。
+3. `perftrace` 对 `before_snapshot / emulator / reconcile` 分段计时。
+
+关键文件:
+
+- `vterm/vterm.go`
+- `vterm/spike_test.go`
+- `perftrace/perftrace.go`
+
+效果:
+
+- `vterm.write` 的大头从 metadata bookkeeping 转移到了 emulator 本体。
+
+### D. Direct writer backlog / empty frame suppression
+
+目标:
+
+- writer 没 drain 时不继续生成旧的中间 redraw。
+
+已落地:
+
+1. frame writer backlog 会 defer invalidate。
+2. 空 payload / cursor-only 无效同步帧被压掉。
+3. batch delay 从固定节流改成更短窗口和更激进的 idle flush。
+
+关键文件:
+
+- `tuiv2/app/cursor_writer.go`
+
+### E. Skip empty front-end re-render
+
+目标:
+
+- direct writer 模式下，输入消息不要把 `View()` 拖成重复整帧渲染。
+
+已落地:
+
+1. `Coordinator` 暴露 `CachedFrameAndCursor()`。
+2. `View()` 在 `stateKey` 未变化且 render 不 dirty 时直接复用上一帧。
+3. 保留 `stateKey` 检查，避免吞掉没有显式 `Invalidate()` 的可见状态变化。
+
+关键文件:
+
+- `tuiv2/render/coordinator.go`
+- `tuiv2/app/view.go`
+
+效果:
+
+- `render.frame` 在 burst scroll 场景里从 `17/33` 次降到 `1` 次。
+
+### F. VTerm row-view cache
+
+目标:
+
+- 去掉 render 读取 screen/scrollback 时重复的 `uv.Cell -> vterm.Cell -> protocol.Cell` 热路径。
+
+已落地:
+
+1. `VTerm` 新增只读 `ScreenRowView()/ScrollbackRowView()`。
+2. 内部维护 row cache，下一次 `Write/Resize/LoadSnapshot` 前复用同一版 row。
+3. 对外公开的 `ScreenRow()/ScrollbackRow()` 仍然返回副本，不改包外语义。
+4. `tuiv2/runtime/surface.go` 改为消费 row view，而不是每次重新 materialize row。
+
+关键文件:
+
+- `vterm/vterm.go`
+- `vterm/spike_test.go`
+- `tuiv2/runtime/surface.go`
+
+效果:
+
+- `down_single / up_single / down_burst_8` 的 `render.frame` 和 `app.view` 进一步明显下降。
+
+### G. Scrollback memory cap
+
+目标:
+
+- stress 输出不再因历史行常驻对象爆炸到 GB 级内存。
+
+已落地:
+
+1. 默认 scrollback 调整为 2000 行。
+2. 底层 scrollback 改为 ring buffer + 批量 trim。
+3. 后续无限历史应放磁盘，不应让内存承载无限上下文。
+
+关键文件:
+
+- `termx-core/third_party/github.com/charmbracelet/x/vt/scrollback.go`
+- `termx-core/termx.go`
+- `tuiv2/runtime/runtime.go`
+
+效果:
+
+- 高行数 stress 不再按每个 cell 常驻增长到 GB 级。
+
+## Perf Harness
+
+为了避免继续凭体感猜，仓库里现在有两套对照工具:
+
+### 1. Native perf harness
+
+文件:
+
+- `tuiv2/app/perf_nvim_scroll_test.go`
+- `tuiv2/scripts/nvim-scroll-perf.sh`
+- `perftrace/perftrace.go`
+
+用途:
+
+- 起一个真实 `nvim`
+- 执行固定 scroll action
+- 输出每个 action 的 metric JSON
+
+常用命令:
+
+```bash
+cd /path/to/termx-monorepo/tuiv2
+TERMX_RUN_NVIM_TRACE=1 TERMX_PERF_OUT=/tmp/termx-perf.json \
+go test ./app -run TestPerfNvimScrollReport -count=1 -v
+```
+
+### 2. Web/xterm.js compare client
+
+文件:
+
+- `termx-cli/cmd/termx/web.go`
+- `termx-cli/internal/webshell/web/index.html`
+
+用途:
+
+- 用浏览器侧 `xterm.js` attach 同一 terminal
+- 和本地 TUI 做滚动手感对照
+
+常用命令:
+
+```bash
+termx web -- nvim -u NONE your-file
+```
+
+## Latest Known Numbers
+
+对比基线:
+
+- 输入延迟基线: `/tmp/termx-perf-interactive-latency-v2/nvim-scroll.json`
+- 新报告:
+  - `/tmp/termx-perf-row-cache-sync-batch-5ms/nvim-scroll.json`
+  - `/tmp/termx-perf-row-cache-sync-batch-5ms-rerun/nvim-scroll.json`
+
+关键变化:
+
+1. `down_burst_8`
+   - `first_output_ms`: `14.69 -> 9.27`
+   - `render.frame`: `7.87ms -> 4.37ms`
+   - `vterm.write`: `1.97ms -> 0.92ms`
+
+2. `up_burst_8`
+   - 基线 `first_output_ms`: `17.70`
+   - 新报告里首帧通常在 `10-17ms` 区间
+   - 多数跑法已能回到 `1` 次 `vterm.write / render.frame`
+   - 偶发仍会拆成 `2` 次，这说明 `nvim` output 分组本身仍有波动
+
+3. `alternating_16`
+   - 基线 `render.frame`: `3.79ms`
+   - 新报告常见在 `3-7ms`
+   - 多数跑法已回到 `1` 次 render
+
+这说明当前剩余问题已经不再主要是“重复整帧渲染”或“row materialize 热点”。
+
+## Current Bottleneck Hypothesis
+
+在当前基线下，下一阶段更应该看端到端输入延迟，而不是继续抠 render:
+
+1. input forwarder 到 Bubble Tea 的排队时间
+2. `runtime.SendInput()` 到 server PTY 的往返时间
+3. server 从 PTY 收到 output 到 screen update 广播的时间
+4. client stream 收到 `TypeScreenUpdate` 到本地应用完成的时间
+
+换句话说，下一阶段应该回答的问题是:
+
+“为什么 frame 已经只渲染一次了，滚动还是不够跟手？”
+
+## Input Latency Findings
+
+后续已经补了一轮输入路径打点，metric 包括:
+
+- `app.input.prepare`
+- `app.input.send`
+- `runtime.input.send`
+- `protocol.input.send`
+- `server.input.write`
+- `terminal.input.write`
+
+同时 perf harness 现在会记录 `first_output_ms`。
+
+### 结论
+
+协议发送链本身很轻，不是主要瓶颈。
+
+以 `/tmp/termx-perf-interactive-latency-v2/nvim-scroll.json` 为例:
+
+1. `down_single`
+   - `first_output_ms`: `11.62`
+   - `protocol.input.send`: `0.029ms`
+   - `server.input.write`: `0.023ms`
+   - `terminal.input.write`: `0.019ms`
+
+2. `up_burst_8`
+   - `first_output_ms`: `17.70`
+   - `protocol.input.send`: `0.020ms`
+   - 旧基线里 `runtime.stream.output`: `5.448ms`
+   - 当前链路应重点看 `runtime.stream.screen_update`、screen update apply 与 `render.frame`
+
+这说明:
+
+1. `Input RPC` 不是拖手感的主因。
+2. 首帧延迟主要由:
+   - 程序本身对输入的响应时间
+   - screen update 到达 client 后的本地应用
+   - 首次 `RenderFrame()`
+3. 所谓“端到端输入延迟”，在当前基线上已经更多是在问:
+   “screen update 到了以后，termx 还能不能更快把第一帧画出来？”
+
+## Interactive Low-latency Path
+
+后续又加了一条更偏交互手感的低延迟旁路:
+
+1. `Runtime.SendInput()` 会标记“最近有本地输入”。
+2. 紧接着到来的首个 screen update 会走低延迟 invalidate 路径。
+3. `Model.queueInvalidate()` 在这个窗口内直接绕过 `invalidateBatchDelay`。
+4. `outputCursorWriter` 在这个窗口内直接绕过 `directFrameBatchDelay`。
+
+注意:
+
+- 这条旁路只对“最近本地输入”生效。
+- 试过把 input forwarder 的 key/wheel 首帧也改成立即发送，但会重新把 `up_burst / alternating` 拆成多次 render，所以当前没有保留。
+
+## Recommended Next Measurements
+
+下一步建议直接做时间戳打点，而不是继续改缓存策略:
+
+1. 在 input forwarder 给每个输入打本地 seq + timestamp。
+2. 在 `runtime.SendInput()` 前后打点。
+3. 在 server `Input` handler、PTY write、PTY output read、screen update encode 打点。
+4. 在 client stream 收到对应 `TypeScreenUpdate` 时闭环。
+
+目标不是先做优化，而是先拿到:
+
+- input enqueue delay
+- network / protocol delay
+- PTY response delay
+- server screen update encode delay
+- client apply/render delay
+
+只有这条链路完整后，后面的优化才不会继续靠猜。

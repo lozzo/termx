@@ -86,6 +86,18 @@ func (r *Runtime) localConnectedOwnerPaneID(terminal *TerminalRuntime) string {
 	return terminal.OwnerPaneID
 }
 
+func (r *Runtime) firstConnectedBoundPaneID(terminal *TerminalRuntime) string {
+	if r == nil || terminal == nil {
+		return ""
+	}
+	for _, paneID := range terminal.BoundPaneIDs {
+		if r.connectedLocalBinding(paneID) != nil {
+			return paneID
+		}
+	}
+	return ""
+}
+
 func (r *Runtime) AcquireTerminalOwnership(paneID, terminalID string) error {
 	if r == nil || r.registry == nil {
 		return shared.UserVisibleError{Op: "take terminal ownership", Err: fmt.Errorf("runtime unavailable")}

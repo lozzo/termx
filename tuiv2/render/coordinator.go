@@ -1,12 +1,15 @@
 package render
 
 import (
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -94,7 +97,15 @@ type renderBodyKey struct {
 	EmptySelection     RenderPaneSelectionVM
 	ExitedSelection    RenderPaneSelectionVM
 	SnapshotOverride   RenderSnapshotOverrideVM
+	FloatingPreview    renderFloatingDragPreviewKey
 	CopyMode           renderCopyModeKey
+	CopyModesSig       string
+}
+
+type renderFloatingDragPreviewKey struct {
+	PaneID   string
+	Rect     workbench.Rect
+	Snapshot *protocol.Snapshot
 }
 
 type renderCopyModeKey struct {
@@ -119,6 +130,8 @@ type paneContentKey struct {
 	SharedLeft           bool
 	SharedTop            bool
 	ScrollOffset         int
+	ContentOffsetX       int
+	ContentOffsetY       int
 	EmptyActionSelected  int
 	ExitedActionSelected int
 	ExitedActionPulse    bool
@@ -201,7 +214,7 @@ func (c *Coordinator) RenderFrame() string {
 	if c == nil || c.vmFn == nil {
 		return ""
 	}
-	result, cached := c.renderResult()
+	result, cached := c.renderResultRef()
 	if cached {
 		cacheMetric = "render.frame.cache_hit"
 	}
@@ -213,7 +226,7 @@ func (c *Coordinator) RenderFrameLines() ([]string, string) {
 	if c == nil || c.vmFn == nil {
 		return nil, hideCursorANSI()
 	}
-	result, _ := c.renderResult()
+	result, _ := c.renderResultRef()
 	return append([]string(nil), result.Lines...), result.CursorSequence()
 }
 
@@ -221,7 +234,7 @@ func (c *Coordinator) RenderFrameLinesRef() ([]string, string) {
 	if c == nil || c.vmFn == nil {
 		return nil, hideCursorANSI()
 	}
-	result, _ := c.renderResult()
+	result, _ := c.renderResultRef()
 	return result.Lines, result.CursorSequence()
 }
 
@@ -294,7 +307,12 @@ func (c *Coordinator) CachedRenderResult() (RenderResult, bool) {
 }
 
 func (c *Coordinator) Render() RenderResult {
-	result, _ := c.renderResult()
+	result, _ := c.renderResultRef()
+	return cloneRenderResult(result)
+}
+
+func (c *Coordinator) RenderRef() RenderResult {
+	result, _ := c.renderResultRef()
 	return result
 }
 
@@ -331,6 +349,10 @@ func (c *Coordinator) syntheticCursorVisible(_ protocol.CursorState) bool {
 
 func renderVMKeyForVM(vm RenderVM) renderVMKey {
 	chromeSig := normalizeUIChromeConfig(vm.Chrome).signature()
+	copyMode := vm.Body.CopyMode
+	if copyMode.PaneID == "" && len(vm.Body.CopyModes) > 0 {
+		copyMode = vm.Body.CopyModes[0]
+	}
 	return renderVMKey{
 		Workbench: vm.Workbench,
 		Runtime:   vm.Runtime,
@@ -352,21 +374,63 @@ func renderVMKeyForVM(vm RenderVM) renderVMKey {
 			EmptySelection:     vm.Body.EmptySelection,
 			ExitedSelection:    vm.Body.ExitedSelection,
 			SnapshotOverride:   vm.Body.SnapshotOverride,
-			CopyMode: renderCopyModeKey{
-				PaneID:     vm.Body.CopyMode.PaneID,
-				CursorRow:  vm.Body.CopyMode.CursorRow,
-				CursorCol:  vm.Body.CopyMode.CursorCol,
-				ViewTopRow: vm.Body.CopyMode.ViewTopRow,
-				MarkSet:    vm.Body.CopyMode.MarkSet,
-				MarkRow:    vm.Body.CopyMode.MarkRow,
-				MarkCol:    vm.Body.CopyMode.MarkCol,
-				Snapshot:   vm.Body.CopyMode.Snapshot,
+			FloatingPreview: renderFloatingDragPreviewKey{
+				PaneID:   vm.Body.FloatingDragPreview.PaneID,
+				Rect:     vm.Body.FloatingDragPreview.Rect,
+				Snapshot: vm.Body.FloatingDragPreview.Snapshot,
 			},
+			CopyMode: renderCopyModeKey{
+				PaneID:     copyMode.PaneID,
+				CursorRow:  copyMode.CursorRow,
+				CursorCol:  copyMode.CursorCol,
+				ViewTopRow: copyMode.ViewTopRow,
+				MarkSet:    copyMode.MarkSet,
+				MarkRow:    copyMode.MarkRow,
+				MarkCol:    copyMode.MarkCol,
+				Snapshot:   copyMode.Snapshot,
+			},
+			CopyModesSig: renderCopyModesSignature(vm.Body.CopyModes),
 		},
 	}
 }
 
+func renderCopyModesSignature(copyModes []RenderCopyModeVM) string {
+	if len(copyModes) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(copyModes))
+	for _, copyMode := range copyModes {
+		if copyMode.PaneID == "" {
+			continue
+		}
+		parts = append(parts, strings.Join([]string{
+			copyMode.PaneID,
+			strconv.Itoa(copyMode.CursorRow),
+			strconv.Itoa(copyMode.CursorCol),
+			strconv.Itoa(copyMode.ViewTopRow),
+			strconv.FormatBool(copyMode.MarkSet),
+			strconv.Itoa(copyMode.MarkRow),
+			strconv.Itoa(copyMode.MarkCol),
+			strconv.FormatUint(uint64(copyModeSnapshotKey(copyMode.Snapshot)), 16),
+		}, "\x1e"))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "\x1f")
+}
+
+func copyModeSnapshotKey(snapshot *protocol.Snapshot) uintptr {
+	if snapshot == nil {
+		return 0
+	}
+	return uintptr(unsafe.Pointer(snapshot))
+}
+
 func (c *Coordinator) renderResult() (RenderResult, bool) {
+	result, cached := c.renderResultRef()
+	return cloneRenderResult(result), cached
+}
+
+func (c *Coordinator) renderResultRef() (RenderResult, bool) {
 	if c == nil || c.vmFn == nil {
 		return RenderResult{}, false
 	}
@@ -374,14 +438,14 @@ func (c *Coordinator) renderResult() (RenderResult, bool) {
 	key := renderVMKeyForVM(vm)
 	c.mu.Lock()
 	if !c.dirty && c.hasLastResult && c.lastKey == key {
-		result := cloneRenderResult(c.lastResult)
+		result := c.lastResult
 		c.mu.Unlock()
 		return result, true
 	}
 	c.mu.Unlock()
 	result := renderResultWithCoordinator(c, vm)
 	c.mu.Lock()
-	c.lastResult = cloneRenderResult(result)
+	c.lastResult = result
 	c.lastFrame = ""
 	c.lastKey = key
 	c.hasLastResult = true

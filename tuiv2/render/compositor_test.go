@@ -6,7 +6,7 @@ import (
 	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
@@ -28,7 +28,7 @@ func TestComposedCanvasDrawSnapshot(t *testing.T) {
 func TestDrawSnapshotWithOffsetShowsRestartMarker(t *testing.T) {
 	snapshot := &protocol.Snapshot{
 		Size:                 protocol.Size{Cols: 30, Rows: 1},
-		Scrollback:           [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}}, {}},
+		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}}, {}}),
 		ScrollbackTimestamps: []time.Time{time.Date(2026, 4, 7, 12, 34, 55, 0, time.UTC), time.Date(2026, 4, 7, 12, 34, 56, 0, time.UTC)},
 		ScrollbackRowKinds:   []string{"", protocol.SnapshotRowKindRestart},
 		Screen:               protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}}},
@@ -79,6 +79,21 @@ func TestComposedCanvasDrawText(t *testing.T) {
 	output := canvas.rawString()
 	if !strings.Contains(output, "hello") {
 		t.Fatalf("expected 'hello' in canvas, got %q", output)
+	}
+}
+
+func TestComposedCanvasContentStringPreservesQRBlockGlyphs(t *testing.T) {
+	canvas := newComposedCanvas(16, 2)
+	qr := "██ ▄▀█"
+	for x, r := range []rune(qr) {
+		canvas.set(x, 0, drawCell{Content: string(r), Width: 1, TerminalContent: true})
+	}
+	output := canvas.contentString()
+	if !strings.Contains(output, qr) {
+		t.Fatalf("expected QR block glyphs in serialized canvas, got %q", output)
+	}
+	if got := canvas.rawString(); !strings.Contains(got, qr) {
+		t.Fatalf("expected QR block glyphs in raw canvas, got %q", got)
 	}
 }
 
@@ -222,6 +237,16 @@ func TestComposedCanvasTerminalPrintableZeroWidthCellReanchorsNextCell(t *testin
 	rendered := canvas.contentString()
 	if !strings.Contains(rendered, "\u00ad"+xansi.CHA(2)+"X") {
 		t.Fatalf("expected printable zero-width terminal cell to re-anchor the following cell, got %q", rendered)
+	}
+}
+
+func TestComposedCanvasChromeSupplementaryPUAReanchorsNextCell(t *testing.T) {
+	canvas := newComposedCanvas(4, 1)
+	canvas.drawText(0, 0, "\U000f0340X", drawStyle{})
+
+	rendered := canvas.contentString()
+	if !strings.Contains(rendered, "\U000f0340"+xansi.CHA(2)+"X") {
+		t.Fatalf("expected supplementary PUA chrome cell to re-anchor the following cell, got %q", rendered)
 	}
 }
 
@@ -436,6 +461,26 @@ func TestStyleDiffANSIUsesMinimalTransition(t *testing.T) {
 	}
 }
 
+func TestStyleDiffANSIHyperlinkOnlyTransitionDoesNotEmitDanglingCSI(t *testing.T) {
+	got := styleDiffANSI(drawStyle{LinkURL: "https://example.test/old"}, drawStyle{LinkURL: "https://example.test/new", LinkParams: "id=new"})
+	if strings.Contains(got, "\x1b[") {
+		t.Fatalf("expected hyperlink-only transition to avoid SGR CSI, got %q", got)
+	}
+	if !strings.Contains(got, "\x1b]8;;\x07") {
+		t.Fatalf("expected old hyperlink reset, got %q", got)
+	}
+	if !strings.Contains(got, "\x1b]8;id=new;https://example.test/new\x07") {
+		t.Fatalf("expected new hyperlink set, got %q", got)
+	}
+}
+
+func TestStyleDiffANSIResetsHyperlinkAtRowEnd(t *testing.T) {
+	got := styleDiffANSI(drawStyle{LinkURL: "https://example.test"}, drawStyle{})
+	if got != "\x1b]8;;\x07\x1b[0m" {
+		t.Fatalf("expected hyperlink reset before SGR reset, got %q", got)
+	}
+}
+
 func TestContentLinesCompressLongBlankRunsWithECH(t *testing.T) {
 	canvas := newComposedCanvas(12, 1)
 	for x := 0; x < 12; x++ {
@@ -447,6 +492,37 @@ func TestContentLinesCompressLongBlankRunsWithECH(t *testing.T) {
 	}
 	if !strings.Contains(lines[0], "\x1b[12X") {
 		t.Fatalf("expected long blank run to use ECH compression, got %q", lines[0])
+	}
+}
+
+func TestCachedContentLinesCompressLongBlankRunsWithECH(t *testing.T) {
+	canvas := newComposedCanvas(12, 1)
+	for x := 0; x < 12; x++ {
+		canvas.set(x, 0, drawCell{Content: " ", Width: 1, Style: drawStyle{BG: "#222222"}, TerminalContent: true})
+	}
+	lines := canvas.cachedContentLines()
+	if len(lines) != 1 {
+		t.Fatalf("expected one line, got %#v", lines)
+	}
+	if !strings.Contains(lines[0], "48;2;34;34;34") {
+		t.Fatalf("expected cached line to apply the styled blank bg, got %q", lines[0])
+	}
+	if !strings.Contains(lines[0], "\x1b[12X") {
+		t.Fatalf("expected cached long blank run to use ECH compression, got %q", lines[0])
+	}
+}
+
+func TestCachedContentLinesKeepsUIBlankRunsAsSpaces(t *testing.T) {
+	canvas := newComposedCanvas(12, 1)
+	for x := 0; x < 12; x++ {
+		canvas.set(x, 0, drawCell{Content: " ", Width: 1, Style: drawStyle{BG: "#222222"}})
+	}
+	line := canvas.cachedContentLines()[0]
+	if strings.Contains(line, "\x1b[12X") {
+		t.Fatalf("expected non-terminal UI blanks to stay as spaces, got %q", line)
+	}
+	if got := xansi.StringWidth(xansi.Strip(line)); got != 12 {
+		t.Fatalf("expected stripped UI row width 12, got %d from %q", got, line)
 	}
 }
 
@@ -1159,6 +1235,94 @@ func TestDrawSnapshotWithOffsetMarksPanelAreaOutsideTerminalWithDots(t *testing.
 	}
 }
 
+func TestDrawSnapshotWithPlacementCentersSmallerTerminalExtent(t *testing.T) {
+	canvas := newComposedCanvas(4, 3)
+	rect := workbench.Rect{X: 0, Y: 0, W: 4, H: 3}
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 2, Rows: 1},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{{Content: "h", Width: 1}, {Content: "i", Width: 1}}},
+		},
+	}
+
+	fillRect(canvas, rect, blankDrawCell())
+	drawTerminalSourceWithPlacementAndMetrics(canvas, rect, renderSource(snapshot, nil), 0, 1, 1, defaultUITheme(), terminalVisibleMetricsForSource(renderSource(snapshot, nil)))
+
+	if got := canvas.rawString(); got != "····\n·hi·\n····" {
+		t.Fatalf("expected centered terminal extent with dots around it, got %q", got)
+	}
+}
+
+func TestDrawSnapshotWithPlacementPansLargerTerminalExtent(t *testing.T) {
+	canvas := newComposedCanvas(3, 2)
+	rect := workbench.Rect{X: 0, Y: 0, W: 3, H: 2}
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 5, Rows: 3},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{
+				{{Content: "a", Width: 1}, {Content: "b", Width: 1}, {Content: "c", Width: 1}, {Content: "d", Width: 1}, {Content: "e", Width: 1}},
+				{{Content: "f", Width: 1}, {Content: "g", Width: 1}, {Content: "h", Width: 1}, {Content: "i", Width: 1}, {Content: "j", Width: 1}},
+				{{Content: "k", Width: 1}, {Content: "l", Width: 1}, {Content: "m", Width: 1}, {Content: "n", Width: 1}, {Content: "o", Width: 1}},
+			},
+		},
+	}
+
+	fillRect(canvas, rect, blankDrawCell())
+	drawTerminalSourceWithPlacementAndMetrics(canvas, rect, renderSource(snapshot, nil), 0, -2, -1, defaultUITheme(), terminalOverflowMetricsForSource(renderSource(snapshot, nil)))
+
+	if got := canvas.rawString(); got != "hij\nmno" {
+		t.Fatalf("expected panned terminal window, got %q", got)
+	}
+}
+
+func TestDrawSnapshotWithScrollbackPlacementMovesSelectedWindow(t *testing.T) {
+	canvas := newComposedCanvas(3, 5)
+	rect := workbench.Rect{X: 1, Y: 1, W: 1, H: 3}
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 1, Rows: 5},
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
+			{{Content: "a", Width: 1}},
+			{{Content: "b", Width: 1}},
+			{{Content: "c", Width: 1}},
+			{{Content: "d", Width: 1}},
+		}),
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "e", Width: 1}},
+		}},
+	}
+
+	fillRect(canvas, workbench.Rect{X: 0, Y: 0, W: 3, H: 5}, drawCell{Content: "x", Width: 1})
+	drawTerminalSourceWithPlacementAndMetrics(canvas, rect, renderSource(snapshot, nil), 1, 0, 1, defaultUITheme(), terminalVisibleMetricsForSource(renderSource(snapshot, nil)))
+
+	if got := canvas.rawString(); got != "xxx\nx·x\nxbx\nxcx\nxxx" {
+		t.Fatalf("expected scrollback placement to move the selected window, got %q", got)
+	}
+}
+
+func TestDrawSnapshotWithScrollbackNegativePlacementStaysInsideRect(t *testing.T) {
+	canvas := newComposedCanvas(3, 5)
+	rect := workbench.Rect{X: 1, Y: 2, W: 1, H: 2}
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 1, Rows: 5},
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
+			{{Content: "a", Width: 1}},
+			{{Content: "b", Width: 1}},
+			{{Content: "c", Width: 1}},
+		}),
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "d", Width: 1}},
+			{{Content: "e", Width: 1}},
+		}},
+	}
+
+	fillRect(canvas, workbench.Rect{X: 0, Y: 0, W: 3, H: 5}, drawCell{Content: "x", Width: 1})
+	drawTerminalSourceWithPlacementAndMetrics(canvas, rect, renderSource(snapshot, nil), 2, 0, -1, defaultUITheme(), terminalOverflowMetricsForSource(renderSource(snapshot, nil)))
+
+	if got := canvas.cells[1][1].Content; got != "x" {
+		t.Fatalf("expected row above content rect to stay untouched, got %q", got)
+	}
+}
+
 func TestDrawSnapshotWithOffsetUsesSnapshotHeightWhenRenderedRowsLagAfterShrink(t *testing.T) {
 	canvas := newComposedCanvas(4, 3)
 	rect := workbench.Rect{X: 0, Y: 0, W: 4, H: 3}
@@ -1426,17 +1590,20 @@ func TestDrawPaneFrameMarksOverflowWithStableCornerIndicators(t *testing.T) {
 	canvas := newComposedCanvas(6, 4)
 	rect := workbench.Rect{X: 0, Y: 0, W: 6, H: 4}
 
-	drawPaneFrame(canvas, rect, false, false, "", paneBorderInfo{}, defaultUITheme(), paneOverflowHints{Right: true, Bottom: true}, false, false, DefaultUIChromeConfig())
+	drawPaneFrame(canvas, rect, false, false, "", paneBorderInfo{}, defaultUITheme(), paneOverflowHints{Left: true, Top: true, Right: true, Bottom: true}, false, false, DefaultUIChromeConfig())
 
 	lines := strings.Split(canvas.rawString(), "\n")
 	if len(lines) != 4 {
 		t.Fatalf("expected 4 rendered lines, got %d", len(lines))
 	}
-	if !strings.HasSuffix(lines[0], "┐") {
-		t.Fatalf("expected top-right corner to remain solid, got %q", lines[0])
+	if !strings.Contains(lines[0], "^┐") {
+		t.Fatalf("expected top overflow marker before top-right corner, got %q", lines[0])
 	}
 	if !strings.HasPrefix(lines[3], "└") || !strings.HasSuffix(lines[3], "┘") {
 		t.Fatalf("expected bottom corners to remain solid, got %q", lines[3])
+	}
+	if !strings.HasPrefix(lines[2], "<") {
+		t.Fatalf("expected left overflow marker near bottom-left edge, got %q", lines[2])
 	}
 	if !strings.HasSuffix(lines[2], ">") {
 		t.Fatalf("expected right overflow marker near bottom-right edge, got %q", lines[2])

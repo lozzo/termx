@@ -136,6 +136,35 @@ func TestBuildStatusHintsFloatingModeShowsOnlyCreateWithoutActiveFloatingPane(t 
 	assertHintsOmit(t, hints, "h/j/k/l MOVE", "H/J/K/L RESIZE", "x CLOSE", "v TOGGLE", "a OWNER")
 }
 
+func TestBuildStatusHintsSeparateResizeContentPlacementFromCopyMode(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	model := New(shared.Config{}, wb, runtime.New(nil))
+
+	vm := render.WithRenderTermSize(render.AdaptRenderVMWithSize(wb, model.runtime, 80, 18), 80, 20)
+	vm = render.WithRenderStatus(vm, "", "", string(input.ModeResize))
+	resizeHints := model.buildStatusHints(vm)
+	assertHintsContain(t, resizeHints, "h/j/k/l RESIZE", "Shift+WASD PAN", "0/$ ^/B ALIGN", "m CENTER", "r RESET")
+	assertHintsOmit(t, resizeHints, "MOVE CURSOR", "H HISTORY")
+
+	vm = render.WithRenderStatus(vm, "", "", string(input.ModeDisplay))
+	copyHints := model.buildStatusHints(vm)
+	assertHintsContain(t, copyHints, "MOVE CURSOR", "H HISTORY", "p/P PASTE")
+	assertHintsOmit(t, copyHints, "Shift+WASD PAN", "0/$ ^/B ALIGN", "m CENTER", "r RESET", "z ZOOM")
+}
+
 func assertHintsContain(t *testing.T, hints []string, wants ...string) {
 	t.Helper()
 	for _, want := range wants {
