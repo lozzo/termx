@@ -742,6 +742,52 @@ func TestTerminalHistoryReplayClampsRequestWindow(t *testing.T) {
 	}
 }
 
+func TestTerminalGridViewportAllowsLargeHistoryWindow(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	rows := make([][]localvterm.Cell, 0, 1000)
+	for i := 0; i < 1000; i++ {
+		rows = append(rows, []localvterm.Cell{{Content: fmt.Sprintf("row-%04d", i), Width: 1}})
+	}
+	if err := store.AppendRows(rows); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+
+	viewport, err := store.Viewport(0, 1000, 16)
+	if err != nil {
+		t.Fatalf("viewport: %v", err)
+	}
+	if got := viewport.LoadedRows; got != 1000 {
+		t.Fatalf("expected loaded rows 1000, got %d", got)
+	}
+	if got := viewport.TotalRows; got != 1000 {
+		t.Fatalf("expected total rows 1000, got %d", got)
+	}
+	if len(viewport.Rows) == 0 {
+		t.Fatal("expected viewport rows")
+	}
+	first := ""
+	for _, cell := range viewport.Rows[0] {
+		if cell.Width > 0 {
+			first += cell.Content
+		}
+	}
+	if !strings.Contains(first, "row-0000") {
+		t.Fatalf("expected oldest row in viewport, got %q", first)
+	}
+	last := viewport.Rows[len(viewport.Rows)-1]
+	lastText := ""
+	for _, cell := range last {
+		if cell.Width > 0 {
+			lastText += cell.Content
+		}
+	}
+	if !strings.Contains(lastText, "row-0999") {
+		t.Fatalf("expected newest row in viewport, got %q", lastText)
+	}
+}
+
 func TestTerminalHistoryReplayReadsBeyondShortLiveScrollback(t *testing.T) {
 	vt := localvterm.New(12, 2, 3, nil)
 	term := &Terminal{

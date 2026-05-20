@@ -23,7 +23,7 @@ import (
 const (
 	defaultTerminalLiveScrollbackRows = 32
 	defaultGridReplayRows             = 100
-	maxGridReplayRows                 = 250
+	maxGridReplayRows                 = 5000
 	defaultGridPageMaxBytes           = 4 * 1024 * 1024
 
 	terminalGridStoreVersion = 5
