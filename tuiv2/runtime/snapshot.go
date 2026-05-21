@@ -79,14 +79,12 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 	terminal := r.registry.GetOrCreate(terminalID)
 	if terminal != nil {
 		terminal.Snapshot = snapshot
+		applyLatestSnapshotRuntimeState(terminal, snapshot)
 		if snapshot == nil || !snapshotUsesAlternateScreen(snapshot) {
 			terminal.AlternateScrollback = nil
 		}
 		terminal.PreferSnapshot = false
 		if offset == 0 && snapshot != nil {
-			if loaded := len(snapshot.Scrollback); loaded > terminal.ScrollbackLoadedLimit {
-				terminal.ScrollbackLoadedLimit = loaded
-			}
 			if limit > 0 {
 				terminal.ScrollbackExhausted = !snapshot.ScrollbackHasMore
 			}
@@ -143,11 +141,7 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 		return false
 	}
 	merged := cloneProtocolSnapshot(current)
-	loadedDepth := snapshotScrollbackLoadedDepth(page)
 	if offset == 0 {
-		if len(page.Scrollback) <= len(merged.Scrollback) {
-			return false
-		}
 		merged.Scrollback = protocol.CloneCompactRows(page.Scrollback)
 		merged.ScrollbackTimestamps = append([]time.Time(nil), page.ScrollbackTimestamps...)
 		merged.ScrollbackRowKinds = append([]string(nil), page.ScrollbackRowKinds...)
@@ -173,13 +167,17 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 		merged.ScrollbackHasMore = page.ScrollbackHasMore
 		merged.ScrollbackLoadedRows = maxInt(page.ScrollbackLoadedRows, current.ScrollbackLoadedRows)
 		merged.HistoryGeneration = page.HistoryGeneration
-		merged.ScrollbackFirstRowID = firstNonZeroUint64(page.ScrollbackFirstRowID, current.ScrollbackFirstRowID)
-		merged.ScrollbackLastRowID = maxUint64(page.ScrollbackLastRowID, current.ScrollbackLastRowID)
+		merged.ScrollbackFirstRowID, merged.ScrollbackLastRowID = mergedCanonicalRowWindow(page, current)
 		trimSnapshotScrollbackWindow(merged, materializedScrollbackRowLimit, true)
 	}
 	merged.Timestamp = time.Now()
 	terminal.Snapshot = merged
-	if loadedDepth > terminal.ScrollbackLoadedLimit {
+	if offset == 0 {
+		if terminal.VTerm != nil {
+			loadSnapshotIntoVTerm(terminal.VTerm, merged)
+		}
+		applyLatestSnapshotRuntimeState(terminal, merged)
+	} else if loadedDepth := snapshotScrollbackLoadedDepth(page); loadedDepth > terminal.ScrollbackLoadedLimit {
 		terminal.ScrollbackLoadedLimit = loadedDepth
 	}
 	terminal.ScrollbackExhausted = !page.ScrollbackHasMore
@@ -191,6 +189,21 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 	return true
 }
 
+func applyLatestSnapshotRuntimeState(terminal *TerminalRuntime, snapshot *protocol.Snapshot) {
+	if terminal == nil {
+		return
+	}
+	if snapshot == nil {
+		terminal.FullReplaceBoundaryReset = false
+		clearAuthoritativeHotOnlyLatestState(terminal)
+		terminal.ScrollbackLoadedLimit = 0
+		return
+	}
+	terminal.FullReplaceBoundaryReset = false
+	setAuthoritativeHotOnlyLatestState(terminal, snapshot)
+	terminal.ScrollbackLoadedLimit = snapshotScrollbackLoadedDepth(snapshot)
+}
+
 func snapshotScrollbackLoadedDepth(snapshot *protocol.Snapshot) int {
 	if snapshot == nil {
 		return 0
@@ -198,20 +211,136 @@ func snapshotScrollbackLoadedDepth(snapshot *protocol.Snapshot) int {
 	if snapshot.ScrollbackLoadedRows > 0 {
 		return snapshot.ScrollbackLoadedRows
 	}
+	if snapshotHasAuthoritativeZeroCommittedWindow(snapshot) {
+		return 0
+	}
 	return snapshot.ScrollbackOffset + len(snapshot.Scrollback)
+}
+
+func snapshotHasAuthoritativeZeroCommittedWindow(snapshot *protocol.Snapshot) bool {
+	return snapshot != nil &&
+		snapshot.ScrollbackLoadedRows == 0 &&
+		snapshot.ScrollbackOffset == 0 &&
+		len(snapshot.Scrollback) > 0 &&
+		(snapshot.ScrollbackTotal > 0 ||
+			snapshot.ScrollbackLogicalTotal > 0 ||
+			snapshot.ScrollbackHasMore ||
+			snapshot.HistoryGeneration != 0)
+}
+
+func setAuthoritativeHotOnlyLatestState(terminal *TerminalRuntime, snapshot *protocol.Snapshot) {
+	if terminal == nil {
+		return
+	}
+	if !snapshotHasAuthoritativeZeroCommittedWindow(snapshot) {
+		clearAuthoritativeHotOnlyLatestState(terminal)
+		return
+	}
+	rowCount := len(snapshot.Scrollback)
+	total := snapshot.ScrollbackTotal
+	if total < rowCount {
+		total = rowCount
+	}
+	logical := snapshot.ScrollbackLogicalTotal
+	if logical < total {
+		logical = total
+	}
+	terminal.AuthoritativeHotOnlyLatest = true
+	terminal.AuthoritativeHotRowCount = rowCount
+	terminal.AuthoritativeHotTotalRows = total
+	terminal.AuthoritativeHotLogicalRows = logical
+	terminal.AuthoritativeHotHasMore = snapshot.ScrollbackHasMore
+}
+
+func clearAuthoritativeHotOnlyLatestState(terminal *TerminalRuntime) {
+	if terminal == nil {
+		return
+	}
+	terminal.AuthoritativeHotOnlyLatest = false
+	terminal.AuthoritativeHotRowCount = 0
+	terminal.AuthoritativeHotTotalRows = 0
+	terminal.AuthoritativeHotLogicalRows = 0
+	terminal.AuthoritativeHotHasMore = false
+}
+
+func preserveAuthoritativeHotOnlyLatestSnapshot(terminal *TerminalRuntime, snapshot *protocol.Snapshot) {
+	if terminal == nil || snapshot == nil || !terminal.AuthoritativeHotOnlyLatest {
+		return
+	}
+	rowCount := len(snapshot.Scrollback)
+	hiddenTotal := terminal.AuthoritativeHotTotalRows - terminal.AuthoritativeHotRowCount
+	if hiddenTotal < 0 {
+		hiddenTotal = 0
+	}
+	hiddenLogical := terminal.AuthoritativeHotLogicalRows - terminal.AuthoritativeHotRowCount
+	if hiddenLogical < 0 {
+		hiddenLogical = 0
+	}
+	snapshot.ScrollbackLoadedRows = 0
+	snapshot.HistoryGeneration = 0
+	snapshot.ScrollbackFirstRowID = 0
+	snapshot.ScrollbackLastRowID = 0
+	snapshot.ScrollbackOffset = 0
+	snapshot.ScrollbackTotal = hiddenTotal + rowCount
+	snapshot.ScrollbackLogicalTotal = hiddenLogical + rowCount
+	snapshot.ScrollbackHasMore = terminal.AuthoritativeHotHasMore || hiddenTotal > 0 || hiddenLogical > 0
+	terminal.AuthoritativeHotRowCount = rowCount
+	terminal.AuthoritativeHotTotalRows = snapshot.ScrollbackTotal
+	terminal.AuthoritativeHotLogicalRows = snapshot.ScrollbackLogicalTotal
+}
+
+func preserveFullReplaceBoundaryResetSnapshot(terminal *TerminalRuntime, snapshot *protocol.Snapshot) {
+	if terminal == nil || snapshot == nil || !terminal.FullReplaceBoundaryReset {
+		return
+	}
+	snapshot.ScrollbackLoadedRows = 0
+	snapshot.HistoryGeneration = 0
+	snapshot.ScrollbackFirstRowID = 0
+	snapshot.ScrollbackLastRowID = 0
+	snapshot.ScrollbackOffset = 0
+	snapshot.ScrollbackTotal = 0
+	snapshot.ScrollbackLogicalTotal = 0
+	snapshot.ScrollbackHasMore = false
 }
 
 func historyPageContinuesSnapshot(current, page *protocol.Snapshot) bool {
 	if current == nil || page == nil {
 		return false
 	}
-	if current.HistoryGeneration != 0 && page.HistoryGeneration != 0 && current.HistoryGeneration != page.HistoryGeneration {
+	currentCanonical := hasCanonicalHistoryWindow(current)
+	pageCanonical := hasCanonicalHistoryWindow(page)
+	if !currentCanonical || !pageCanonical {
 		return false
 	}
-	if current.ScrollbackFirstRowID != 0 && page.ScrollbackLastRowID != 0 && page.ScrollbackLastRowID+1 != current.ScrollbackFirstRowID {
+	if current.HistoryGeneration != page.HistoryGeneration {
+		return false
+	}
+	if page.ScrollbackLastRowID+1 != current.ScrollbackFirstRowID {
 		return false
 	}
 	return true
+}
+
+func hasCanonicalHistoryWindow(snapshot *protocol.Snapshot) bool {
+	if snapshot == nil || snapshot.HistoryGeneration == 0 {
+		return false
+	}
+	return snapshotScrollbackLoadedDepth(snapshot) > 0 && snapshot.ScrollbackLastRowID >= snapshot.ScrollbackFirstRowID
+}
+
+func mergedCanonicalRowWindow(older, newer *protocol.Snapshot) (uint64, uint64) {
+	olderOK := hasCanonicalHistoryWindow(older)
+	newerOK := hasCanonicalHistoryWindow(newer)
+	switch {
+	case olderOK && newerOK:
+		return older.ScrollbackFirstRowID, newer.ScrollbackLastRowID
+	case olderOK:
+		return older.ScrollbackFirstRowID, older.ScrollbackLastRowID
+	case newerOK:
+		return newer.ScrollbackFirstRowID, newer.ScrollbackLastRowID
+	default:
+		return 0, 0
+	}
 }
 
 func trimSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int, trimNewest bool) {
@@ -219,6 +348,8 @@ func trimSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int, trimNe
 		return
 	}
 	drop := len(snapshot.Scrollback) - limit
+	// Canonical committed-row coordinates describe the loaded row window, not
+	// the client-side materialized tail retained after bounded trimming.
 	if trimNewest {
 		keep := len(snapshot.Scrollback) - drop
 		snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[:keep])
@@ -226,26 +357,13 @@ func trimSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int, trimNe
 		snapshot.ScrollbackRowKinds = cloneStringPrefix(snapshot.ScrollbackRowKinds, keep)
 		snapshot.ScrollbackWrapped = cloneBoolPrefix(snapshot.ScrollbackWrapped, keep)
 		snapshot.ScrollbackOffset += drop
-		if snapshot.ScrollbackLastRowID >= uint64(drop) {
-			snapshot.ScrollbackLastRowID -= uint64(drop)
-		}
 		return
 	}
 	snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[drop:])
 	snapshot.ScrollbackTimestamps = cloneTimeSuffix(snapshot.ScrollbackTimestamps, drop)
 	snapshot.ScrollbackRowKinds = cloneStringSuffix(snapshot.ScrollbackRowKinds, drop)
 	snapshot.ScrollbackWrapped = cloneBoolSuffix(snapshot.ScrollbackWrapped, drop)
-	snapshot.ScrollbackFirstRowID += uint64(drop)
 	snapshot.ScrollbackHasMore = true
-}
-
-func firstNonZeroUint64(values ...uint64) uint64 {
-	for _, value := range values {
-		if value != 0 {
-			return value
-		}
-	}
-	return 0
 }
 
 func maxUint64(a, b uint64) uint64 {
@@ -338,18 +456,25 @@ func (r *Runtime) refreshSnapshot(terminalID string) {
 		return
 	}
 	terminal.Snapshot = snapshotFromVTerm(terminalID, terminal.VTerm)
+	preserveFullReplaceBoundaryResetSnapshot(terminal, terminal.Snapshot)
+	preserveAuthoritativeHotOnlyLatestSnapshot(terminal, terminal.Snapshot)
 	if terminal.Snapshot == nil || !snapshotUsesAlternateScreen(terminal.Snapshot) {
 		terminal.AlternateScrollback = nil
 	}
 	terminal.PreferSnapshot = false
 	terminal.SnapshotVersion = terminal.SurfaceVersion
 	if terminal.Snapshot != nil {
-		if loaded := len(terminal.Snapshot.Scrollback); loaded > terminal.ScrollbackLoadedLimit {
-			terminal.ScrollbackLoadedLimit = loaded
+		if !terminal.FullReplaceBoundaryReset {
+			if loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot); loaded > terminal.ScrollbackLoadedLimit {
+				terminal.ScrollbackLoadedLimit = loaded
+			}
 		}
 		if terminal.ScrollbackLoadingLimit > 0 && len(terminal.Snapshot.Scrollback) >= terminal.ScrollbackLoadingLimit {
 			terminal.ScrollbackLoadingLimit = 0
 		}
+	} else {
+		terminal.FullReplaceBoundaryReset = false
+		clearAuthoritativeHotOnlyLatestState(terminal)
 	}
 	r.invalidate()
 }

@@ -4,45 +4,30 @@
 
 ## Boundary
 
-- `tuiv2` 是 shell，不是 core。
-- 可以依赖 `termx-core` 的 public package。
-- 不能要求 `termx-core` 反向依赖 `tuiv2`。
+- `tuiv2` 是 shell，不是 core；可以依赖 `termx-core` 的 public package，但不能把 shell 约束反推回 core。
+- `Visible*`、projection、render view-model 路径必须保持纯读；禁止在这些路径里做 normalize、补状态、修 cache 或其他隐式 mutation。
+- `screen update` / `snapshot` / `bootstrap` 相关线上传输保持二进制编码；不要为调试或兼容回退到 JSON live path。
 
-## TUI / UI Rules
+## Current Line Focus
 
-- 所有新 UI 配色都必须从宿主终端主题推导，不要引入与外部终端模拟器无关的固定主题。
-- 配色入口统一以 `render/styles.go` 中的 `uiThemeFromHostColors` 为中心；新视觉 token 应优先复用或扩展这一层。
-- overlay / modal / tree / picker 等新组件在做视觉强化时，必须继续遵守“host terminal theme + semantic accent”的模型。
-- modal 内不要展示快捷键字符串；快捷键属于全局输入系统，应放在 status bar / help / 外部文档。
-- 选中态、高亮态、状态标签尽量通过 `lipgloss/v2` 的 style/token/chip 语法表达，而不是仅靠裸文本前缀。
-- tree/list/item 的差异优先使用文本颜色、粗细、下划线、前导 marker 表达，不要依赖背景色块来区分不同 item 状态。
-- 同一个 modal/surface 内，主体区域的空白背景应保持一致；不要出现树区是一个底色、未填充预览区又是另一个底色的情况。
-- 如果某块内容要模拟“真实 terminal 预览”，其默认空白应尽量回到宿主终端默认背景，不要额外铺一层人工灰底。
-
-## Architecture / Refactor Rules
-
-- `app` 不要直接把同一个业务事务同时散落写入 `workbench` 与 `runtime`；pane-terminal 绑定、owner handoff、resize 协调必须优先收口到 `orchestrator` 或明确的 service。
-- `Visible*` / render projection 路径必须保持纯读；禁止在这些路径里做 normalize、补状态、修 cache 或任何隐式 mutation。
-- `render` 层不要直接依赖输入绑定文档来拼 modal/footer 文案；render 只消费已经整理好的语义 view-model，快捷键说明放在 status/help。
-- `render/coordinator.go` 不要继续叠加新的业务编排、输入语义分支或状态修复逻辑；新增逻辑优先拆到独立 projection/layout/overlay/hit-testing 模块。
-- screen update / snapshot / bootstrap 相关传输协议必须保持二进制编码；不要把链路改成 JSON，也不要为兼容或调试回退到 JSON 作为线上传输格式。
-
-## Current Scope
-
-- 当前主动开发线只关注 `tuiv2` 与其直接依赖的 core history contract。
-- 这一轮 `tuiv2` 主要目标：
-  - copy-mode backing model 收敛
-  - cursor/selection 对 canonical row identity 对齐
+- 当前主动开发线只关注 `tuiv2` 与直接相关的 core history contract。
+- 这轮 `tuiv2` 主要收口：
+  - copy-mode backing model
+  - cursor / selection 对 canonical row refs 对齐
   - observer viewport 只做 projection，不发明新的 history truth
-  - attach / re-entry / restore / stale-page 语义与 core 保持一致
-- 当前不展开：
-  - `remote-ui`
-  - `termx-app`
-  - web/mobile 产品层交互细节
+  - attach / re-entry / transaction restore / stale-page 语义与 core 保持一致
+- runtime/app 必须保留 hot-only latest snapshot 的 `LoadedRows=0` 语义；不要把当前可见 hot rows 提升成 committed depth。
+- older-page prepend 只接受 same-generation committed window merge；`offset=0` latest replace 继续是 authoritative boundary reset。
+- paged-response ownership 目前仍是 live-vs-copy-mode split，不是 pane-scoped contract；新逻辑不要假设 pane 级 owner routing 已经存在。
+- pane-terminal 绑定、owner handoff、resize 协调必须优先收口到 `orchestrator` 或明确 service，不要把同一事务散落写进 `app`、`workbench`、`runtime` 和 render。
+
+## UI Constraints
+
+- 所有新 UI 配色从宿主终端主题推导，入口统一以 `render/styles.go` 的 `uiThemeFromHostColors` 为中心。
+- modal 内不要展示快捷键字符串；快捷键说明放在 status/help。
 
 ## Workflow
 
-- 当前有效驱动文件是 repository-root `workflow.md`。
-- `docs/workflows/archive/*` 仅作历史参考，不再作为当前执行驱动。
-- 每完成一个 module-sized slice，必须更新根 `workflow.md`，并主动压缩旧记录，避免长流水污染后续 prompt 上下文。
-- 当 `tuiv2` 需要新的 core/tui contract 时，先在根 `workflow.md` 或 `docs/terminal-history-layered-backing-grid-design.md` 写清决定，再实现。
+- 唯一有效驱动文件是 repository-root `workflow.md`。
+- 每完成一个 module-sized slice，立即更新并压缩根 `workflow.md`，只保留 live 决策、最新证据、当前风险和下一步。
+- 当 `tuiv2` 需要新的 core/tui contract 时，先把结论写进根 `workflow.md`，再实现。

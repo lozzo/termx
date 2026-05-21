@@ -16,4 +16,7 @@ type SnapshotLoadedMsg struct {
 	Offset     int
 	Limit      int
 	Paged      bool
+	// CopyModeRequest marks paged history loaded on behalf of a copy-mode
+	// frozen snapshot instead of the shared live runtime snapshot.
+	CopyModeRequest bool
 }

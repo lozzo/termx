@@ -13,8 +13,13 @@ func (m *Model) beginCopySelection() {
 	if !m.ensureCopyMode() {
 		return
 	}
+	buffer, ok := m.activeCopyModeBuffer()
+	if !ok {
+		return
+	}
 	point := m.copyMode.Cursor
 	m.copyMode.Mark = &copyModePoint{Row: point.Row, Col: point.Col}
+	m.copyMode.MarkRowRef = buffer.pointRowRef(point)
 	m.saveCurrentCopyModeState()
 	m.render.Invalidate()
 }

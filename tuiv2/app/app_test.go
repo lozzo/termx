@@ -4553,17 +4553,22 @@ func (c *recordingBridgeClient) GridViewport(_ context.Context, terminalID strin
 		return nil, nil
 	}
 	return &protocol.GridViewport{
-		TerminalID:           terminalID,
-		Size:                 snapshot.Size,
-		Rows:                 protocol.CloneCompactRows(snapshot.Scrollback),
-		ScrollbackOffset:     snapshot.ScrollbackOffset,
-		ScrollbackLimit:      limit,
-		ScrollbackTotal:      snapshot.ScrollbackTotal,
-		ScrollbackHasMore:    snapshot.ScrollbackHasMore,
-		ScrollbackTimestamps: append([]time.Time(nil), snapshot.ScrollbackTimestamps...),
-		ScrollbackRowKinds:   append([]string(nil), snapshot.ScrollbackRowKinds...),
-		ScrollbackWrapped:    append([]bool(nil), snapshot.ScrollbackWrapped...),
-		Timestamp:            snapshot.Timestamp,
+		TerminalID:             terminalID,
+		Size:                   snapshot.Size,
+		Rows:                   protocol.CloneCompactRows(snapshot.Scrollback),
+		ScrollbackOffset:       snapshot.ScrollbackOffset,
+		ScrollbackLimit:        limit,
+		ScrollbackTotal:        snapshot.ScrollbackTotal,
+		ScrollbackLogicalTotal: snapshot.ScrollbackLogicalTotal,
+		ScrollbackHasMore:      snapshot.ScrollbackHasMore,
+		LoadedRows:             snapshot.ScrollbackLoadedRows,
+		HistoryGeneration:      snapshot.HistoryGeneration,
+		FirstRowID:             snapshot.ScrollbackFirstRowID,
+		LastRowID:              snapshot.ScrollbackLastRowID,
+		ScrollbackTimestamps:   append([]time.Time(nil), snapshot.ScrollbackTimestamps...),
+		ScrollbackRowKinds:     append([]string(nil), snapshot.ScrollbackRowKinds...),
+		ScrollbackWrapped:      append([]bool(nil), snapshot.ScrollbackWrapped...),
+		Timestamp:              snapshot.Timestamp,
 	}, nil
 }
 

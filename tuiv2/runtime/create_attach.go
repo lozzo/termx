@@ -66,6 +66,12 @@ func (r *Runtime) resetTerminalLiveState(terminal *TerminalRuntime) {
 		return
 	}
 	nextGeneration := terminal.Stream.Generation + 1
+	fullReplaceBoundaryReset := terminal.FullReplaceBoundaryReset
+	authoritativeHotOnlyLatest := terminal.AuthoritativeHotOnlyLatest
+	authoritativeHotRowCount := terminal.AuthoritativeHotRowCount
+	authoritativeHotTotalRows := terminal.AuthoritativeHotTotalRows
+	authoritativeHotLogicalRows := terminal.AuthoritativeHotLogicalRows
+	authoritativeHotHasMore := terminal.AuthoritativeHotHasMore
 	if terminal.Stream.Stop != nil {
 		terminal.Stream.Stop()
 	}
@@ -82,6 +88,12 @@ func (r *Runtime) resetTerminalLiveState(terminal *TerminalRuntime) {
 	terminal.BootstrapPending = false
 	terminal.ScrollbackLoadingLimit = 0
 	terminal.ScrollbackExhausted = false
+	terminal.FullReplaceBoundaryReset = fullReplaceBoundaryReset
+	terminal.AuthoritativeHotOnlyLatest = authoritativeHotOnlyLatest
+	terminal.AuthoritativeHotRowCount = authoritativeHotRowCount
+	terminal.AuthoritativeHotTotalRows = authoritativeHotTotalRows
+	terminal.AuthoritativeHotLogicalRows = authoritativeHotLogicalRows
+	terminal.AuthoritativeHotHasMore = authoritativeHotHasMore
 	terminal.VTerm = nil
 }
 

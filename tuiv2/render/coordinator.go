@@ -407,10 +407,16 @@ func renderCopyModesSignature(copyModes []RenderCopyModeVM) string {
 			copyMode.PaneID,
 			strconv.Itoa(copyMode.CursorRow),
 			strconv.Itoa(copyMode.CursorCol),
+			strconv.FormatUint(copyMode.CursorGeneration, 10),
+			strconv.FormatUint(copyMode.CursorRowID, 10),
+			strconv.FormatBool(copyMode.CursorRefValid),
 			strconv.Itoa(copyMode.ViewTopRow),
 			strconv.FormatBool(copyMode.MarkSet),
 			strconv.Itoa(copyMode.MarkRow),
 			strconv.Itoa(copyMode.MarkCol),
+			strconv.FormatUint(copyMode.MarkGeneration, 10),
+			strconv.FormatUint(copyMode.MarkRowID, 10),
+			strconv.FormatBool(copyMode.MarkRefValid),
 			strconv.FormatUint(uint64(copyModeSnapshotKey(copyMode.Snapshot)), 16),
 		}, "\x1e"))
 	}

@@ -277,15 +277,16 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 	}
 	copyModeState, copyModeActive := m.copyModeStateForPane(pane.ID)
 	copyModeActive = copyModeActive && copyModeState.Snapshot != nil
+	if copyModeActive {
+		// A frozen copy-mode pane owns its own paged history requests. Letting
+		// the live-pane prefetch path race here steals ScrollbackLoadingLimit
+		// and converts a copy-mode older-page request into a runtime request.
+		return nil
+	}
 	loaded := 0
 	materializedRows := 0
-	if copyModeActive {
-		loaded = maxInt(snapshotScrollbackLoadedDepth(copyModeState.Snapshot), copyModeState.LoadedRows)
-		if copyModeState.Snapshot != nil {
-			materializedRows = len(copyModeState.Snapshot.Scrollback)
-		}
-	} else if terminal.Snapshot != nil {
-		loaded = maxInt(snapshotScrollbackLoadedDepth(terminal.Snapshot), terminal.ScrollbackLoadedLimit)
+	if terminal.Snapshot != nil {
+		loaded = terminalLiveCommittedLoadedDepth(terminal)
 		materializedRows = len(terminal.Snapshot.Scrollback)
 	} else {
 		loaded = terminal.ScrollbackLoadedLimit
@@ -315,7 +316,8 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 		return nil
 	}
 	terminal.ScrollbackLoadingLimit = nextLimit
-	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, terminalCanonicalCols(terminal))
+	m.setHistoryLoadingOwner(pane.TerminalID, nextLimit, historyLoadingOwnerLive)
+	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, terminalCanonicalCols(terminal), false)
 }
 
 func (m *Model) ensureCopyModeScrollbackCmd(buffer copyModeBuffer) tea.Cmd {
@@ -359,7 +361,8 @@ func (m *Model) copyModeScrollbackCmd(buffer copyModeBuffer, force bool) tea.Cmd
 		return nil
 	}
 	terminal.ScrollbackLoadingLimit = nextLimit
-	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, terminalCanonicalCols(terminal))
+	m.setHistoryLoadingOwner(pane.TerminalID, nextLimit, historyLoadingOwnerCopyMode)
+	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, terminalCanonicalCols(terminal), true)
 }
 
 func terminalCanonicalCols(terminal *appruntime.TerminalRuntime) int {
@@ -381,40 +384,68 @@ func terminalCanonicalCols(terminal *appruntime.TerminalRuntime) int {
 	return 0
 }
 
+func terminalLiveCommittedLoadedDepth(terminal *appruntime.TerminalRuntime) int {
+	if terminal == nil {
+		return 0
+	}
+	loaded := terminal.ScrollbackLoadedLimit
+	if terminal.FullReplaceBoundaryReset {
+		return loaded
+	}
+	if terminal.Snapshot != nil {
+		loaded = maxInt(loaded, snapshotScrollbackLoadedDepth(terminal.Snapshot))
+	}
+	return loaded
+}
+
 func terminalHasKnownScrollbackBeyond(terminal *appruntime.TerminalRuntime, loaded int) bool {
 	if terminal == nil {
 		return false
 	}
 	known := terminal.ScrollbackLoadedLimit
 	if snapshot := terminal.Snapshot; snapshot != nil {
+		// Authoritative latest snapshots can materialize hot visual rows with no
+		// committed window loaded yet. In that case, only metadata that exceeds
+		// the hot tail should reopen exhausted paging; the hot rows themselves
+		// are display-only and must not become "older history".
+		if snapshotHasAuthoritativeZeroCommittedWindow(snapshot) {
+			if snapshot.ScrollbackTotal > len(snapshot.Scrollback) {
+				known = maxInt(known, snapshot.ScrollbackTotal-len(snapshot.Scrollback))
+			} else if snapshot.ScrollbackTotal == 0 && snapshot.ScrollbackLogicalTotal > len(snapshot.Scrollback) {
+				known = maxInt(known, snapshot.ScrollbackLogicalTotal-len(snapshot.Scrollback))
+			}
+			if snapshot.ScrollbackHasMore && known <= loaded {
+				known = loaded + 1
+			}
+			return known > loaded
+		}
 		if rows := len(snapshot.Scrollback); rows > known {
 			known = rows
 		}
 		if snapshot.ScrollbackTotal > known {
 			known = snapshot.ScrollbackTotal
 		}
-		if snapshot.ScrollbackHasMore && known <= len(snapshot.Scrollback) {
-			known = len(snapshot.Scrollback) + 1
+		if snapshot.ScrollbackHasMore && known <= loaded {
+			known = loaded + 1
 		}
 	}
 	return known > loaded
 }
 
-func (m *Model) loadTerminalHistoryViewportCmd(terminalID string, offset int, limit int, cols int) tea.Cmd {
+func (m *Model) loadTerminalHistoryViewportCmd(terminalID string, offset int, limit int, cols int, copyModeRequest bool) tea.Cmd {
 	loadingLimit := offset + limit
+	owner := historyLoadingOwnerLive
+	if copyModeRequest {
+		owner = historyLoadingOwnerCopyMode
+	}
 	return func() tea.Msg {
 		snapshot, err := m.runtime.LoadGridViewport(context.Background(), terminalID, offset, limit, cols)
 		if err != nil {
-			if terminal := m.runtime.Registry().Get(terminalID); terminal != nil && terminal.ScrollbackLoadingLimit == loadingLimit {
-				terminal.ScrollbackLoadingLimit = 0
-			}
+			m.clearHistoryLoadingOwner(terminalID, loadingLimit, owner)
 			return err
 		}
-		if terminal := m.runtime.Registry().Get(terminalID); terminal != nil {
-			if terminal.ScrollbackLoadingLimit == loadingLimit {
-				terminal.ScrollbackLoadingLimit = 0
-			}
-			if snapshot != nil {
+		if terminal := m.clearHistoryLoadingOwner(terminalID, loadingLimit, owner); terminal != nil {
+			if snapshot != nil && !copyModeRequest {
 				if loadedRows := snapshotScrollbackLoadedDepth(snapshot); loadedRows > terminal.ScrollbackLoadedLimit {
 					terminal.ScrollbackLoadedLimit = loadedRows
 				}
@@ -423,8 +454,41 @@ func (m *Model) loadTerminalHistoryViewportCmd(terminalID string, offset int, li
 				}
 			}
 		}
-		return orchestrator.SnapshotLoadedMsg{TerminalID: terminalID, Snapshot: snapshot, Offset: offset, Limit: limit, Paged: true}
+		return orchestrator.SnapshotLoadedMsg{
+			TerminalID:      terminalID,
+			Snapshot:        snapshot,
+			Offset:          offset,
+			Limit:           limit,
+			Paged:           true,
+			CopyModeRequest: copyModeRequest,
+		}
 	}
+}
+
+func (m *Model) setHistoryLoadingOwner(terminalID string, limit int, owner historyLoadingOwner) {
+	if m == nil || terminalID == "" || limit <= 0 {
+		return
+	}
+	if m.historyLoading == nil {
+		m.historyLoading = make(map[string]historyLoadingState)
+	}
+	m.historyLoading[terminalID] = historyLoadingState{Limit: limit, Owner: owner}
+}
+
+func (m *Model) clearHistoryLoadingOwner(terminalID string, limit int, owner historyLoadingOwner) *appruntime.TerminalRuntime {
+	if m == nil || m.runtime == nil || terminalID == "" || limit <= 0 {
+		return nil
+	}
+	terminal := m.runtime.Registry().Get(terminalID)
+	state, ok := m.historyLoading[terminalID]
+	if !ok || state.Limit != limit || state.Owner != owner {
+		return nil
+	}
+	delete(m.historyLoading, terminalID)
+	if terminal != nil && terminal.ScrollbackLoadingLimit == limit {
+		terminal.ScrollbackLoadingLimit = 0
+	}
+	return terminal
 }
 
 func maxInt(a, b int) int {

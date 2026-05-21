@@ -104,6 +104,8 @@ type Terminal struct {
 	streamMu       sync.Mutex
 	screenRevision uint64
 	alternateGrid  terminalAlternateGrid
+	hotAppendRows  []vterm.DamageOp
+	hotWrapPending bool
 
 	// This cache holds deep-copied metadata snapshots so hot read paths do not
 	// have to rebuild command/tag payloads for every request.
@@ -771,6 +773,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	t.mu.RLock()
 	size := t.size
 	id := t.id
+	hotAppendRows := cloneGridDamageOps(t.hotAppendRows)
 	t.mu.RUnlock()
 	screenTimestamps := t.vterm.ScreenTimestamps()
 	screenRowKinds := t.vterm.ScreenRowKinds()
@@ -815,7 +818,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		usedGrid                bool
 	)
 	if t.grid != nil && limit > 0 {
-		gridViewport, err := t.grid.Viewport(offset, limit, int(size.Cols))
+		gridViewport, err := t.combinedGridViewport(offset, limit, int(size.Cols), hotAppendRows)
 		if err != nil {
 			if t.logger != nil {
 				t.logger.Warn("termx terminal grid snapshot failed", "terminal_id", id, "error", err)
@@ -836,10 +839,22 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 			traceGridVTermRows("core.snapshot.grid_rows", id, gridViewport.Rows, "offset", offset, "limit", limit, "cols", int(size.Cols), "total", scrollbackTotal, "has_more", scrollbackHasMore)
 		}
 	} else if t.grid != nil {
-		scrollbackTotal = t.grid.RowCount()
+		var coldRows int
+		_, historyGeneration, coldRows = t.grid.coordinates()
+		scrollbackTotal = coldRows
+		if offset == 0 {
+			scrollbackTotal += len(hotAppendRows)
+		}
 		scrollbackLogicalTotal = t.grid.LogicalLineCount()
 		scrollbackHasMore = offset < scrollbackTotal
-		historyGeneration, scrollbackFirstRowID, scrollbackLastRowID, _ = t.grid.rowWindowCoordinates(offset, 0)
+		scrollbackLoadedRows = minInt(offset, coldRows)
+		canonicalLoadedRows := coldRows - minInt(offset, coldRows)
+		if canonicalLoadedRows > 0 {
+			historyGeneration, scrollbackFirstRowID, scrollbackLastRowID, _ = t.grid.rowWindowCoordinates(offset, canonicalLoadedRows)
+		}
+		if coldRows <= 0 {
+			historyGeneration = 0
+		}
 		usedGrid = true
 	}
 	if !usedGrid {
@@ -872,7 +887,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		scrollbackLoadedRows = len(scrollback[start:end])
 		traceGridVTermRows("core.snapshot.vterm_scrollback", id, scrollback[start:end], "offset", offset, "limit", limit, "total", scrollbackTotal, "has_more", scrollbackHasMore)
 	}
-	if offset == 0 {
+	if offset == 0 && !(usedGrid && len(hotAppendRows) > 0) {
 		beforeTrim := len(outScrollback)
 		outScrollback, outScrollbackTimestamps, outScrollbackRowKinds, outScrollbackWrapped = trimScrollbackScreenOverlap(
 			outScrollback,
@@ -940,6 +955,7 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 	t.mu.RLock()
 	size := t.size
 	id := t.id
+	hotAppendRows := cloneGridDamageOps(t.hotAppendRows)
 	t.mu.RUnlock()
 	cols := int(size.Cols)
 	if cols <= 0 {
@@ -966,7 +982,7 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 		}
 	}
 	if t.grid != nil {
-		gridViewport, err := t.grid.Viewport(offset, limit, cols)
+		gridViewport, err := t.combinedGridViewport(offset, limit, cols, hotAppendRows)
 		if err != nil {
 			if t.logger != nil {
 				t.logger.Warn("termx terminal grid viewport failed", "terminal_id", id, "error", err)
@@ -1029,6 +1045,144 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 		ScrollbackWrapped:      sliceBoolRange(scrollbackWrapped, start, end),
 		Timestamp:              time.Now().UTC(),
 	}
+}
+
+func (t *Terminal) combinedGridViewport(offset, limit, cols int, hotAppendRows []vterm.DamageOp) (terminalGridViewport, error) {
+	var result terminalGridViewport
+	if t == nil || t.grid == nil {
+		return result, nil
+	}
+	offset, limit = sanitizeGridViewportWindow(offset, limit)
+	_, generation, coldRows := t.grid.coordinates()
+	if offset > 0 {
+		coldViewport, err := t.grid.Viewport(offset, limit, cols)
+		if err != nil {
+			return result, err
+		}
+		if coldViewport.TotalRows > 0 {
+			return coldViewport, nil
+		}
+		result.BeforeOffset = offset
+		result.Limit = limit
+		result.TotalRows = coldRows
+		result.LogicalTotal = t.grid.LogicalLineCount()
+		result.LoadedRows = minInt(offset, coldRows)
+		if coldRows > 0 {
+			result.Generation = generation
+		}
+		return result, nil
+	}
+	includeHot := offset == 0
+	totalRows := coldRows
+	if includeHot {
+		totalRows += len(hotAppendRows)
+	}
+	if totalRows <= 0 {
+		return result, nil
+	}
+	if offset > totalRows {
+		offset = totalRows
+	}
+	end := totalRows - offset
+	if end < 0 {
+		end = 0
+	}
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+	coldStart := minInt(start, coldRows)
+	coldEnd := minInt(end, coldRows)
+	hotStart := maxInt(start-coldRows, 0)
+	hotEnd := maxInt(end-coldRows, 0)
+	if !includeHot {
+		hotStart = 0
+		hotEnd = 0
+	}
+
+	result.BeforeOffset = offset
+	result.Limit = limit
+	result.TotalRows = totalRows
+	result.LogicalTotal = t.grid.LogicalLineCount()
+	if coldRows > 0 {
+		result.Generation = generation
+	}
+
+	displayStart := start
+	if coldEnd > coldStart {
+		beforeOffsetCold := coldRows - coldEnd
+		limitCold := coldEnd - coldStart
+		coldViewport, err := t.grid.Viewport(beforeOffsetCold, limitCold, cols)
+		if err != nil {
+			return result, err
+		}
+		result = coldViewport
+		result.BeforeOffset = offset
+		result.Limit = limit
+		result.TotalRows = totalRows
+		result.LogicalTotal = coldViewport.LogicalTotal
+		result.Generation = coldViewport.Generation
+		result.LoadedRows = coldViewport.LoadedRows
+		result.FirstRowID = coldViewport.FirstRowID
+		result.LastRowID = coldViewport.LastRowID
+		displayStart = coldRows - coldViewport.LoadedRows
+	}
+	if hotEnd > hotStart {
+		hotStart = expandDamageWindowStartToLogicalLine(hotAppendRows, hotStart)
+		if coldEnd <= coldStart {
+			displayStart = coldRows + hotStart
+		}
+		if hotEnd > len(hotAppendRows) {
+			hotEnd = len(hotAppendRows)
+		}
+		for _, row := range hotAppendRows[hotStart:hotEnd] {
+			result.Rows = append(result.Rows, damageOpCells(row))
+			result.Timestamps = append(result.Timestamps, row.Timestamp)
+			result.RowKinds = append(result.RowKinds, row.RowKind)
+			result.Wrapped = append(result.Wrapped, row.WrappedSet && row.Wrapped)
+		}
+	}
+	if coldRows <= 0 {
+		result.LoadedRows = 0
+		result.Generation = 0
+		result.FirstRowID = 0
+		result.LastRowID = 0
+	}
+	result.HasMore = displayStart > 0
+	return result, nil
+}
+
+func combinedRowWindowCoordinates(store *terminalGridStore, totalRows int, start int, end int) (firstRowID uint64, lastRowID uint64) {
+	if store == nil || totalRows <= 0 || end <= start {
+		return 0, 0
+	}
+	baseRowID, _, _ := store.coordinates()
+	return baseRowID + uint64(start), baseRowID + uint64(end-1)
+}
+
+func expandDamageWindowStartToLogicalLine(rows []vterm.DamageOp, start int) int {
+	for start > 0 {
+		prev := rows[start-1]
+		if !(prev.WrappedSet && prev.Wrapped) {
+			break
+		}
+		start--
+	}
+	return start
+}
+
+func damageOpCells(row vterm.DamageOp) []vterm.Cell {
+	if len(row.Cells) > 0 {
+		return cloneVTermCells(row.Cells)
+	}
+	if len(row.Runs) == 0 {
+		return nil
+	}
+	cells := make([]vterm.Cell, 0)
+	for _, run := range row.Runs {
+		cells = append(cells, vtermCellsFromRun(run)...)
+	}
+	return cells
 }
 
 func trimScrollbackScreenOverlap(scrollback [][]Cell, timestamps []time.Time, rowKinds []string, wrapped []bool, screen [][]Cell, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool) ([][]Cell, []time.Time, []string, []bool) {
@@ -1520,17 +1674,147 @@ func (t *Terminal) currentScreenRevision() uint64 {
 }
 
 func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
-	if t == nil || t.grid == nil || len(damage.ScrollbackAppend) == 0 {
+	if t == nil {
 		return
 	}
-	traceGridDamageOps("core.append_grid.damage", t.id, damage.ScrollbackAppend, "ops", len(damage.Ops), "alternate_rows", len(damage.AlternateAppend))
+	coldRows, hotRows := t.reconcileHotAppendRowsLocked(damage)
+	t.hotAppendRows = hotRows
+	t.hotWrapPending = t.currentWrapPendingLocked()
+	if t.grid == nil || len(coldRows) == 0 {
+		return
+	}
+	traceGridDamageOps("core.append_grid.damage", t.id, coldRows, "ops", len(damage.Ops), "alternate_rows", len(damage.AlternateAppend), "hot_append_rows", len(hotRows))
 	if t.gridAppender != nil {
-		t.gridAppender.append(damage.ScrollbackAppend)
+		t.gridAppender.append(coldRows)
 		return
 	}
-	if err := t.grid.AppendDamageRows(damage.ScrollbackAppend); err != nil && t.logger != nil {
+	if err := t.grid.AppendDamageRows(coldRows); err != nil && t.logger != nil {
 		t.logger.Warn("termx terminal grid append failed", "terminal_id", t.id, "error", err)
 	}
+}
+
+func splitDamageAppendRows(rows []vterm.DamageOp, hotAppendRows int) ([]vterm.DamageOp, []vterm.DamageOp) {
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	if hotAppendRows <= 0 {
+		return cloneGridDamageOps(rows), nil
+	}
+	if hotAppendRows > len(rows) {
+		hotAppendRows = len(rows)
+	}
+	coldCount := len(rows) - hotAppendRows
+	for coldCount > 0 && rows[coldCount-1].WrappedSet && rows[coldCount-1].Wrapped {
+		coldCount--
+	}
+	return cloneGridDamageOps(rows[:coldCount]), cloneGridDamageOps(rows[coldCount:])
+}
+
+func splitDamageAppendRowsExact(rows []vterm.DamageOp, hotAppendRows int) ([]vterm.DamageOp, []vterm.DamageOp) {
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	if hotAppendRows <= 0 {
+		return cloneGridDamageOps(rows), nil
+	}
+	if hotAppendRows > len(rows) {
+		hotAppendRows = len(rows)
+	}
+	coldCount := len(rows) - hotAppendRows
+	return cloneGridDamageOps(rows[:coldCount]), cloneGridDamageOps(rows[coldCount:])
+}
+
+func (t *Terminal) reconcileHotAppendRowsLocked(damage vterm.WriteDamage) ([]vterm.DamageOp, []vterm.DamageOp) {
+	if t == nil || len(damage.ScrollbackAppend) == 0 {
+		return nil, cloneGridDamageOps(t.hotAppendRows)
+	}
+	if damage.RequiresFullReplace && damage.FullReplaceReason == "resize" {
+		if damage.ResizeHotOwnedRowsSet {
+			coldRows, hotSuffix := splitDamageAppendRowsExact(damage.ScrollbackAppend, damage.ResizeHotOwnedRows)
+			hotRows := cloneGridDamageOps(t.hotAppendRows)
+			for i := range hotSuffix {
+				hotSuffix[i].WrappedSet = true
+				hotSuffix[i].Wrapped = true
+			}
+			hotRows = append(hotRows, hotSuffix...)
+			return coldRows, hotRows
+		}
+		if len(t.hotAppendRows) > 0 || t.hotWrapPending {
+			hotRows := cloneGridDamageOps(t.hotAppendRows)
+			for _, row := range damage.ScrollbackAppend {
+				cloned := cloneGridDamageOp(row)
+				cloned.WrappedSet = true
+				cloned.Wrapped = true
+				hotRows = append(hotRows, cloned)
+			}
+			return nil, hotRows
+		}
+		return cloneGridDamageOps(damage.ScrollbackAppend), nil
+	}
+
+	coldPrefix, _ := splitDamageAppendRows(damage.ScrollbackAppend, damage.HotAppendRows)
+	hotStart := len(coldPrefix)
+	coldRows := make([]vterm.DamageOp, 0, len(t.hotAppendRows)+len(damage.ScrollbackAppend))
+	hotRows := cloneGridDamageOps(t.hotAppendRows)
+	pendingWrap := t.hotWrapPending
+
+	for i, row := range damage.ScrollbackAppend {
+		cloned := cloneGridDamageOp(row)
+		belongsToHot := i >= hotStart || (cloned.WrappedSet && cloned.Wrapped)
+		if pendingWrap {
+			if !belongsToHot {
+				if len(hotRows) > 0 {
+					coldRows = append(coldRows, hotRows...)
+					hotRows = nil
+				}
+				pendingWrap = false
+			} else {
+				cloned.WrappedSet = true
+				cloned.Wrapped = true
+				hotRows = append(hotRows, cloned)
+				pendingWrap = false
+				continue
+			}
+		}
+		if belongsToHot {
+			cloned.WrappedSet = true
+			cloned.Wrapped = true
+			hotRows = append(hotRows, cloned)
+			continue
+		}
+		if len(hotRows) > 0 {
+			coldRows = append(coldRows, hotRows...)
+			hotRows = nil
+		}
+		coldRows = append(coldRows, cloned)
+	}
+	return coldRows, hotRows
+}
+
+func (t *Terminal) currentWrapPendingLocked() bool {
+	if t == nil || t.vterm == nil {
+		return false
+	}
+	modes := t.vterm.Modes()
+	if !modes.AutoWrap || modes.AlternateScreen {
+		return false
+	}
+	cols, _ := t.vterm.Size()
+	if cols <= 0 {
+		return false
+	}
+	cursor := t.vterm.CursorState()
+	if cursor.Col >= cols {
+		return true
+	}
+	if cursor.Col != cols-1 {
+		return false
+	}
+	if cursor.Row < 0 {
+		return false
+	}
+	row := t.vterm.UsedScreenRow(cursor.Row)
+	return len(row) >= cols
 }
 
 func (t *Terminal) captureAlternateDamageLocked(damage vterm.WriteDamage) {

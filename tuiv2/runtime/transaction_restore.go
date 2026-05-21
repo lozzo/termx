@@ -33,6 +33,12 @@ type TerminalLiveStateSnapshot struct {
 	ScrollbackLoadedLimit  int
 	ScrollbackLoadingLimit int
 	ScrollbackExhausted    bool
+	FullReplaceBoundaryReset bool
+	AuthoritativeHotOnlyLatest  bool
+	AuthoritativeHotRowCount    int
+	AuthoritativeHotTotalRows   int
+	AuthoritativeHotLogicalRows int
+	AuthoritativeHotHasMore     bool
 	PreferSnapshot         bool
 	BootstrapPending       bool
 	Recovery               RecoveryState
@@ -142,6 +148,12 @@ func (r *Runtime) TerminalLiveStateSnapshot(terminalID string) TerminalLiveState
 		ScrollbackLoadedLimit:  terminal.ScrollbackLoadedLimit,
 		ScrollbackLoadingLimit: terminal.ScrollbackLoadingLimit,
 		ScrollbackExhausted:    terminal.ScrollbackExhausted,
+		FullReplaceBoundaryReset: terminal.FullReplaceBoundaryReset,
+		AuthoritativeHotOnlyLatest:  terminal.AuthoritativeHotOnlyLatest,
+		AuthoritativeHotRowCount:    terminal.AuthoritativeHotRowCount,
+		AuthoritativeHotTotalRows:   terminal.AuthoritativeHotTotalRows,
+		AuthoritativeHotLogicalRows: terminal.AuthoritativeHotLogicalRows,
+		AuthoritativeHotHasMore:     terminal.AuthoritativeHotHasMore,
 		PreferSnapshot:         terminal.PreferSnapshot,
 		BootstrapPending:       terminal.BootstrapPending,
 		Recovery:               terminal.Recovery,
@@ -179,6 +191,12 @@ func (r *Runtime) RestoreTerminalLiveState(terminalID string, snapshot TerminalL
 		terminal.ScrollbackLoadedLimit = 0
 		terminal.ScrollbackLoadingLimit = 0
 		terminal.ScrollbackExhausted = false
+		terminal.FullReplaceBoundaryReset = false
+		terminal.AuthoritativeHotOnlyLatest = false
+		terminal.AuthoritativeHotRowCount = 0
+		terminal.AuthoritativeHotTotalRows = 0
+		terminal.AuthoritativeHotLogicalRows = 0
+		terminal.AuthoritativeHotHasMore = false
 		terminal.PreferSnapshot = false
 		terminal.BootstrapPending = false
 		terminal.Recovery = RecoveryState{}
@@ -202,6 +220,12 @@ func (r *Runtime) RestoreTerminalLiveState(terminalID string, snapshot TerminalL
 	terminal.ScrollbackLoadedLimit = snapshot.ScrollbackLoadedLimit
 	terminal.ScrollbackLoadingLimit = snapshot.ScrollbackLoadingLimit
 	terminal.ScrollbackExhausted = snapshot.ScrollbackExhausted
+	terminal.FullReplaceBoundaryReset = snapshot.FullReplaceBoundaryReset
+	terminal.AuthoritativeHotOnlyLatest = snapshot.AuthoritativeHotOnlyLatest
+	terminal.AuthoritativeHotRowCount = snapshot.AuthoritativeHotRowCount
+	terminal.AuthoritativeHotTotalRows = snapshot.AuthoritativeHotTotalRows
+	terminal.AuthoritativeHotLogicalRows = snapshot.AuthoritativeHotLogicalRows
+	terminal.AuthoritativeHotHasMore = snapshot.AuthoritativeHotHasMore
 	terminal.PreferSnapshot = snapshot.PreferSnapshot
 	terminal.BootstrapPending = snapshot.BootstrapPending
 	terminal.Recovery = snapshot.Recovery

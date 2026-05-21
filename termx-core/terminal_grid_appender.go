@@ -111,10 +111,17 @@ func cloneGridDamageOps(rows []vterm.DamageOp) []vterm.DamageOp {
 	}
 	out := make([]vterm.DamageOp, 0, len(rows))
 	for _, row := range rows {
-		row.Cells = cloneVTermCells(row.Cells)
-		out = append(out, row)
+		out = append(out, cloneGridDamageOp(row))
 	}
 	return out
+}
+
+func cloneGridDamageOp(row vterm.DamageOp) vterm.DamageOp {
+	row.Cells = cloneVTermCells(row.Cells)
+	if len(row.Runs) > 0 {
+		row.Runs = append([]vterm.CellRun(nil), row.Runs...)
+	}
+	return row
 }
 
 func cloneVTermCells(cells []vterm.Cell) []vterm.Cell {

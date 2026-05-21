@@ -44,16 +44,22 @@ func (m *Model) renderCopyModeVMs() []render.RenderCopyModeVM {
 	out := make([]render.RenderCopyModeVM, 0, len(states))
 	for _, state := range states {
 		copyMode := render.RenderCopyModeVM{
-			PaneID:     state.PaneID,
-			CursorRow:  state.Cursor.Row,
-			CursorCol:  state.Cursor.Col,
-			ViewTopRow: state.ViewTopRow,
-			Snapshot:   state.Snapshot,
+			PaneID:           state.PaneID,
+			CursorRow:        state.Cursor.Row,
+			CursorCol:        state.Cursor.Col,
+			CursorGeneration: state.CursorRowRef.Generation,
+			CursorRowID:      state.CursorRowRef.RowID,
+			CursorRefValid:   state.CursorRowRef.Valid,
+			ViewTopRow:       state.ViewTopRow,
+			Snapshot:         state.Snapshot,
 		}
 		if state.Mark != nil {
 			copyMode.MarkSet = true
 			copyMode.MarkRow = state.Mark.Row
 			copyMode.MarkCol = state.Mark.Col
+			copyMode.MarkGeneration = state.MarkRowRef.Generation
+			copyMode.MarkRowID = state.MarkRowRef.RowID
+			copyMode.MarkRefValid = state.MarkRowRef.Valid
 		}
 		out = append(out, copyMode)
 	}

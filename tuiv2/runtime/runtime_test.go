@@ -224,6 +224,10 @@ func TestRuntimeApplyGridViewportPagePrependsHistory(t *testing.T) {
 		protocolRowFromString("new0"),
 		protocolRowFromString("new1"),
 	})
+	live.ScrollbackLoadedRows = 2
+	live.HistoryGeneration = 7
+	live.ScrollbackFirstRowID = 1
+	live.ScrollbackLastRowID = 2
 	client.snapshotByTerminal["term-1"] = live
 
 	rt := New(client)
@@ -242,6 +246,10 @@ func TestRuntimeApplyGridViewportPagePrependsHistory(t *testing.T) {
 		ScrollbackTotal:        3,
 		ScrollbackLogicalTotal: 2,
 		ScrollbackHasMore:      false,
+		ScrollbackLoadedRows:   3,
+		HistoryGeneration:      7,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    0,
 		ScrollbackTimestamps:   []time.Time{time.Now()},
 	}
 	if !rt.ApplyGridViewportPage("term-1", page, 2) {
@@ -320,6 +328,540 @@ func TestRuntimeApplyGridViewportPageReplacesLatestWindow(t *testing.T) {
 	}
 	if got.ScrollbackLogicalTotal != 1 {
 		t.Fatalf("expected latest page logical total preserved, got %d", got.ScrollbackLogicalTotal)
+	}
+}
+
+func TestRuntimeApplyGridViewportPageReplacesCanonicalLatestWithShorterAuthoritativeHotOnlyPage(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	scrollback := make([][]protocol.Cell, 0, materializedScrollbackRowLimit)
+	for i := 0; i < materializedScrollbackRowLimit; i++ {
+		scrollback = append(scrollback, protocolRowFromString(fmt.Sprintf("canon-%05d", i)))
+	}
+	live := snapshotWithLines("term-1", 12, 3, []string{"live0", "live1"})
+	live.Scrollback = protocol.CompactRowsFromCells(scrollback)
+	live.ScrollbackOffset = 0
+	live.ScrollbackTotal = 12000
+	live.ScrollbackLogicalTotal = 12000
+	live.ScrollbackLoadedRows = 12000
+	live.HistoryGeneration = 10
+	live.ScrollbackFirstRowID = 0
+	live.ScrollbackLastRowID = 11999
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 12000); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+
+	page := &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 12, Rows: 3},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("hot0"), protocolRowFromString("hot1")}),
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        4,
+		ScrollbackLogicalTotal: 4,
+		ScrollbackHasMore:      true,
+		ScrollbackLoadedRows:   0,
+		HistoryGeneration:      0,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    0,
+		ScrollbackRowKinds:     []string{"", ""},
+		ScrollbackWrapped:      []bool{false, false},
+		ScrollbackTimestamps:   []time.Time{time.Now(), time.Now()},
+	}
+
+	if !rt.ApplyGridViewportPage("term-1", page, 0) {
+		t.Fatal("expected shorter authoritative hot-only latest page to replace canonical latest window")
+	}
+
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil {
+		t.Fatalf("expected runtime snapshot, got %#v", terminal)
+	}
+	got := terminal.Snapshot
+	if loaded := snapshotScrollbackLoadedDepth(got); loaded != 0 {
+		t.Fatalf("expected replaced latest snapshot committed depth 0, got %d", loaded)
+	}
+	if got.ScrollbackLoadedRows != 0 || got.HistoryGeneration != 0 {
+		t.Fatalf("expected replace semantics to drop canonical metadata, got loaded=%d generation=%d", got.ScrollbackLoadedRows, got.HistoryGeneration)
+	}
+	if got.ScrollbackFirstRowID != 0 || got.ScrollbackLastRowID != 0 {
+		t.Fatalf("expected replace semantics to clear canonical row window, got %d..%d", got.ScrollbackFirstRowID, got.ScrollbackLastRowID)
+	}
+	if got.ScrollbackOffset != 0 {
+		t.Fatalf("expected row window offset 0 after replace, got %d", got.ScrollbackOffset)
+	}
+	if got.ScrollbackTotal != 4 || got.ScrollbackLogicalTotal != 4 || !got.ScrollbackHasMore {
+		t.Fatalf("expected incoming hot-only metadata preserved, got total=%d logical=%d hasMore=%v", got.ScrollbackTotal, got.ScrollbackLogicalTotal, got.ScrollbackHasMore)
+	}
+	if len(got.Scrollback) != 2 || compactRowText(got.Scrollback[0]) != "hot0" || compactRowText(got.Scrollback[1]) != "hot1" {
+		t.Fatalf("expected incoming hot rows to replace canonical materialization, got %#v", got.Scrollback)
+	}
+	if !terminal.AuthoritativeHotOnlyLatest {
+		t.Fatal("expected runtime to mark authoritative hot-only latest provenance")
+	}
+	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		t.Fatalf("expected authoritative hot-only latest replace to reset known committed depth to 0, got %d", got)
+	}
+	if got, want := terminal.AuthoritativeHotRowCount, 2; got != want {
+		t.Fatalf("expected authoritative hot row count %d, got %d", want, got)
+	}
+	if got, want := terminal.AuthoritativeHotTotalRows, 4; got != want {
+		t.Fatalf("expected authoritative hot total rows %d, got %d", want, got)
+	}
+	if got, want := terminal.AuthoritativeHotLogicalRows, 4; got != want {
+		t.Fatalf("expected authoritative hot logical rows %d, got %d", want, got)
+	}
+	if !terminal.AuthoritativeHotHasMore {
+		t.Fatal("expected authoritative hot has-more flag to follow incoming page")
+	}
+}
+
+func TestRuntimeApplyGridViewportPageHotOnlyLatestReplaceKeepsZeroCommittedDepthAfterRefreshFromVTerm(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	scrollback := make([][]protocol.Cell, 0, materializedScrollbackRowLimit)
+	for i := 0; i < materializedScrollbackRowLimit; i++ {
+		scrollback = append(scrollback, protocolRowFromString(fmt.Sprintf("canon-%05d", i)))
+	}
+	live := snapshotWithLines("term-1", 12, 3, []string{"live0", "live1"})
+	live.Scrollback = protocol.CompactRowsFromCells(scrollback)
+	live.ScrollbackOffset = 0
+	live.ScrollbackTotal = 12000
+	live.ScrollbackLogicalTotal = 12000
+	live.ScrollbackLoadedRows = 12000
+	live.HistoryGeneration = 10
+	live.ScrollbackFirstRowID = 0
+	live.ScrollbackLastRowID = 11999
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 12000); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+
+	page := &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 12, Rows: 3},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("hot0"), protocolRowFromString("hot1")}),
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        4,
+		ScrollbackLogicalTotal: 4,
+		ScrollbackHasMore:      true,
+		ScrollbackLoadedRows:   0,
+		HistoryGeneration:      0,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    0,
+		ScrollbackRowKinds:     []string{"", ""},
+		ScrollbackWrapped:      []bool{false, false},
+		ScrollbackTimestamps:   []time.Time{time.Now(), time.Now()},
+	}
+
+	if !rt.ApplyGridViewportPage("term-1", page, 0) {
+		t.Fatal("expected hot-only latest page to apply")
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.VTerm == nil {
+		t.Fatalf("expected terminal with vterm after latest replace, got %#v", terminal)
+	}
+	if got := len(terminal.VTerm.ScrollbackContent()); got != 2 {
+		t.Fatalf("expected latest replace to sync vterm hot rows, got %d", got)
+	}
+	terminal.PreferSnapshot = false
+	if !rt.RefreshSnapshotFromVTerm("term-1") {
+		t.Fatal("expected refresh from vterm")
+	}
+
+	terminal = rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil {
+		t.Fatalf("expected refreshed runtime snapshot, got %#v", terminal)
+	}
+	if got := snapshotScrollbackLoadedDepth(terminal.Snapshot); got != 0 {
+		t.Fatalf("expected refresh to keep committed loaded depth 0, got %d", got)
+	}
+	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		t.Fatalf("expected refresh to keep known committed depth at 0, got %d", got)
+	}
+	if !snapshotHasAuthoritativeZeroCommittedWindow(terminal.Snapshot) {
+		t.Fatalf("expected refresh to preserve authoritative hot-only latest metadata, got %#v", terminal.Snapshot)
+	}
+	if got, want := len(terminal.Snapshot.Scrollback), 2; got != want {
+		t.Fatalf("expected refresh to keep %d hot rows, got %d", want, got)
+	}
+	if got := compactRowText(terminal.Snapshot.Scrollback[0]); got != "hot0" {
+		t.Fatalf("expected refresh to preserve latest hot rows, got first row %q", got)
+	}
+	if got := compactRowText(terminal.Snapshot.Scrollback[1]); got != "hot1" {
+		t.Fatalf("expected refresh to preserve latest hot rows, got second row %q", got)
+	}
+	if got, want := terminal.Snapshot.ScrollbackTotal, 4; got != want {
+		t.Fatalf("expected refresh to preserve authoritative total rows %d, got %d", want, got)
+	}
+	if got, want := terminal.Snapshot.ScrollbackLogicalTotal, 4; got != want {
+		t.Fatalf("expected refresh to preserve authoritative logical rows %d, got %d", want, got)
+	}
+	if !terminal.Snapshot.ScrollbackHasMore {
+		t.Fatal("expected refresh to preserve authoritative has-more flag")
+	}
+}
+
+func TestRuntimeApplyGridViewportPageCanonicalLatestReplaceUsesIncomingMetadata(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 12, 3, []string{"live0", "live1"})
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+		protocolRowFromString("canon100"),
+		protocolRowFromString("canon101"),
+	})
+	live.ScrollbackOffset = 0
+	live.ScrollbackTotal = 12000
+	live.ScrollbackLogicalTotal = 12000
+	live.ScrollbackLoadedRows = 12000
+	live.HistoryGeneration = 10
+	live.ScrollbackFirstRowID = 100
+	live.ScrollbackLastRowID = 11999
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 12000); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+
+	page := &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 12, Rows: 3},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("canon900"), protocolRowFromString("canon901"), protocolRowFromString("canon902")}),
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        13003,
+		ScrollbackLogicalTotal: 13003,
+		ScrollbackHasMore:      true,
+		ScrollbackLoadedRows:   3,
+		HistoryGeneration:      77,
+		ScrollbackFirstRowID:   900,
+		ScrollbackLastRowID:    902,
+		ScrollbackRowKinds:     []string{"", "", ""},
+		ScrollbackWrapped:      []bool{false, false, false},
+		ScrollbackTimestamps:   []time.Time{time.Now(), time.Now(), time.Now()},
+	}
+
+	if !rt.ApplyGridViewportPage("term-1", page, 0) {
+		t.Fatal("expected canonical latest page to replace current latest window")
+	}
+
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil {
+		t.Fatalf("expected runtime snapshot, got %#v", terminal)
+	}
+	got := terminal.Snapshot
+	if got.HistoryGeneration != 77 || got.ScrollbackLoadedRows != 3 {
+		t.Fatalf("expected replace semantics to use incoming canonical metadata, got generation=%d loaded=%d", got.HistoryGeneration, got.ScrollbackLoadedRows)
+	}
+	if got.ScrollbackFirstRowID != 900 || got.ScrollbackLastRowID != 902 {
+		t.Fatalf("expected replace semantics to use incoming canonical row window, got %d..%d", got.ScrollbackFirstRowID, got.ScrollbackLastRowID)
+	}
+	if got.ScrollbackTotal != 13003 || got.ScrollbackLogicalTotal != 13003 || !got.ScrollbackHasMore {
+		t.Fatalf("expected replace semantics to use incoming totals/has-more, got total=%d logical=%d hasMore=%v", got.ScrollbackTotal, got.ScrollbackLogicalTotal, got.ScrollbackHasMore)
+	}
+	if got.ScrollbackOffset != 0 {
+		t.Fatalf("expected replace semantics to use incoming row window offset, got %d", got.ScrollbackOffset)
+	}
+	if got, want := terminal.ScrollbackLoadedLimit, 3; got != want {
+		t.Fatalf("expected canonical latest replace to adopt incoming committed depth %d, got %d", want, got)
+	}
+	if len(got.Scrollback) != 3 || compactRowText(got.Scrollback[0]) != "canon900" || compactRowText(got.Scrollback[2]) != "canon902" {
+		t.Fatalf("expected replace semantics to use incoming materialized rows, got %#v", got.Scrollback)
+	}
+	if terminal.AuthoritativeHotOnlyLatest {
+		t.Fatal("expected canonical latest replace to clear authoritative hot-only provenance")
+	}
+}
+
+func TestRuntimeLoadSnapshotHotOnlyLatestDoesNotPromoteCommittedLoadedLimit(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	hotOnly := snapshotWithLines("term-1", 6, 3, []string{"live"})
+	hotOnly.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+		protocolRowFromString("hot0"),
+		protocolRowFromString("hot1"),
+	})
+	hotOnly.ScrollbackTotal = 2
+	hotOnly.ScrollbackLogicalTotal = 2
+	hotOnly.ScrollbackLoadedRows = 0
+	hotOnly.HistoryGeneration = 0
+	client.snapshotByTerminal["term-1"] = hotOnly
+
+	rt := New(client)
+	snapshot, err := rt.LoadSnapshot(ctx, "term-1", 0, 0)
+	if err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if snapshot == nil {
+		t.Fatal("expected snapshot")
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected terminal")
+	}
+	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		t.Fatalf("expected hot-only latest snapshot not to promote committed loaded limit, got %d", got)
+	}
+	if terminal.VTerm == nil {
+		t.Fatal("expected vterm")
+	}
+	if got := len(terminal.VTerm.ScrollbackContent()); got != 2 {
+		t.Fatalf("expected hot rows to still materialize into vterm scrollback, got %d", got)
+	}
+}
+
+func TestRuntimeLoadSnapshotAuthoritativeHotOnlyLatestReplacesKnownCommittedDepth(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	canonical := snapshotWithLines("term-1", 12, 3, []string{"live0", "live1"})
+	canonicalRows := make([][]protocol.Cell, 0, materializedScrollbackRowLimit)
+	for i := 0; i < materializedScrollbackRowLimit; i++ {
+		canonicalRows = append(canonicalRows, protocolRowFromString(fmt.Sprintf("canon-%05d", i)))
+	}
+	canonical.Scrollback = protocol.CompactRowsFromCells(canonicalRows)
+	canonical.ScrollbackOffset = 0
+	canonical.ScrollbackTotal = 12000
+	canonical.ScrollbackLogicalTotal = 12000
+	canonical.ScrollbackLoadedRows = 12000
+	canonical.HistoryGeneration = 10
+	canonical.ScrollbackFirstRowID = 0
+	canonical.ScrollbackLastRowID = 11999
+	client.snapshotByTerminal["term-1"] = canonical
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 12000); err != nil {
+		t.Fatalf("load canonical snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected terminal")
+	}
+	if got := terminal.ScrollbackLoadedLimit; got != 12000 {
+		t.Fatalf("expected canonical latest to seed committed depth 12000, got %d", got)
+	}
+
+	hotOnly := snapshotWithLines("term-1", 12, 3, []string{"live0", "live1"})
+	hotOnly.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+		protocolRowFromString("hot0"),
+		protocolRowFromString("hot1"),
+	})
+	hotOnly.ScrollbackOffset = 0
+	hotOnly.ScrollbackTotal = 4
+	hotOnly.ScrollbackLogicalTotal = 4
+	hotOnly.ScrollbackHasMore = true
+	hotOnly.ScrollbackLoadedRows = 0
+	hotOnly.HistoryGeneration = 0
+	client.snapshotByTerminal["term-1"] = hotOnly
+
+	snapshot, err := rt.LoadSnapshot(ctx, "term-1", 0, 0)
+	if err != nil {
+		t.Fatalf("load authoritative hot-only latest snapshot: %v", err)
+	}
+	if snapshot == nil {
+		t.Fatal("expected snapshot")
+	}
+	terminal = rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil {
+		t.Fatalf("expected cached runtime snapshot, got %#v", terminal)
+	}
+	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		t.Fatalf("expected authoritative hot-only latest to replace known committed depth with 0, got %d", got)
+	}
+	if got := snapshotScrollbackLoadedDepth(terminal.Snapshot); got != 0 {
+		t.Fatalf("expected authoritative hot-only latest snapshot committed depth 0, got %d", got)
+	}
+	if !snapshotHasAuthoritativeZeroCommittedWindow(terminal.Snapshot) {
+		t.Fatalf("expected authoritative hot-only provenance on cached snapshot, got %#v", terminal.Snapshot)
+	}
+	if !terminal.AuthoritativeHotOnlyLatest {
+		t.Fatal("expected runtime-local authoritative hot-only provenance")
+	}
+	if got := len(terminal.Snapshot.Scrollback); got != 2 {
+		t.Fatalf("expected hot-only latest materialization to keep 2 rows, got %d", got)
+	}
+}
+
+func TestRuntimeRefreshSnapshotFromVTermKeepsAuthoritativeHotOnlyLatestZeroCommittedWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	hotOnly := snapshotWithLines("term-1", 6, 3, []string{"live"})
+	hotOnly.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+		protocolRowFromString("hot0"),
+		protocolRowFromString("hot1"),
+	})
+	hotOnly.ScrollbackTotal = 2
+	hotOnly.ScrollbackLogicalTotal = 2
+	hotOnly.ScrollbackLoadedRows = 0
+	hotOnly.HistoryGeneration = 0
+	client.snapshotByTerminal["term-1"] = hotOnly
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.VTerm == nil {
+		t.Fatalf("expected terminal with vterm, got %#v", terminal)
+	}
+	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		t.Fatalf("expected authoritative hot-only latest load to keep committed depth 0, got %d", got)
+	}
+
+	if !rt.RefreshSnapshotFromVTerm("term-1") {
+		t.Fatal("expected refresh from vterm")
+	}
+
+	terminal = rt.Registry().Get("term-1")
+	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		t.Fatalf("expected authoritative hot-only latest refresh to keep committed depth 0, got %d", got)
+	}
+	if terminal.Snapshot == nil {
+		t.Fatal("expected refreshed snapshot")
+	}
+	if !snapshotHasAuthoritativeZeroCommittedWindow(terminal.Snapshot) {
+		t.Fatalf("expected refreshed snapshot to preserve authoritative zero-committed-window metadata, got %#v", terminal.Snapshot)
+	}
+	if got, want := len(terminal.Snapshot.Scrollback), 2; got != want {
+		t.Fatalf("expected refreshed snapshot to keep %d hot rows, got %d", want, got)
+	}
+}
+
+func TestRuntimeBumpSurfaceVersionKeepsAuthoritativeHotOnlyLatestZeroCommittedWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	hotOnly := snapshotWithLines("term-1", 6, 3, []string{"live"})
+	hotOnly.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+		protocolRowFromString("hot0"),
+		protocolRowFromString("hot1"),
+	})
+	hotOnly.ScrollbackTotal = 2
+	hotOnly.ScrollbackLogicalTotal = 2
+	hotOnly.ScrollbackLoadedRows = 0
+	hotOnly.HistoryGeneration = 0
+	client.snapshotByTerminal["term-1"] = hotOnly
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.VTerm == nil {
+		t.Fatalf("expected terminal with vterm, got %#v", terminal)
+	}
+	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		t.Fatalf("expected authoritative hot-only latest load to keep committed depth 0, got %d", got)
+	}
+
+	rt.bumpSurfaceVersion(terminal)
+
+	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		t.Fatalf("expected surface sync to keep authoritative hot-only latest committed depth 0, got %d", got)
+	}
+}
+
+func TestRuntimeAttachTerminalPreservesAuthoritativeHotOnlyLatestProvenanceAcrossReattach(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 7, Mode: "collaborator"}
+	hotOnly := snapshotWithLines("term-1", 6, 3, []string{"live"})
+	hotOnly.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+		protocolRowFromString("hot0"),
+		protocolRowFromString("hot1"),
+	})
+	hotOnly.ScrollbackTotal = 4
+	hotOnly.ScrollbackLogicalTotal = 4
+	hotOnly.ScrollbackHasMore = true
+	hotOnly.ScrollbackLoadedRows = 0
+	hotOnly.HistoryGeneration = 0
+	client.snapshotByTerminal["term-1"] = hotOnly
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+
+	checkAuthoritativeHotOnly := func(stage string) {
+		t.Helper()
+		terminal := rt.Registry().Get("term-1")
+		if terminal == nil {
+			t.Fatalf("%s: expected terminal", stage)
+		}
+		if got := terminal.ScrollbackLoadedLimit; got != 0 {
+			t.Fatalf("%s: expected committed loaded depth 0, got %d", stage, got)
+		}
+		if !terminal.AuthoritativeHotOnlyLatest {
+			t.Fatalf("%s: expected authoritative hot-only provenance to survive", stage)
+		}
+		if got, want := terminal.AuthoritativeHotRowCount, 2; got != want {
+			t.Fatalf("%s: expected authoritative hot row count %d, got %d", stage, want, got)
+		}
+		if got, want := terminal.AuthoritativeHotTotalRows, 4; got != want {
+			t.Fatalf("%s: expected authoritative hot total rows %d, got %d", stage, want, got)
+		}
+		if got, want := terminal.AuthoritativeHotLogicalRows, 4; got != want {
+			t.Fatalf("%s: expected authoritative hot logical rows %d, got %d", stage, want, got)
+		}
+		if !terminal.AuthoritativeHotHasMore {
+			t.Fatalf("%s: expected authoritative hot has-more flag", stage)
+		}
+		if !rt.RefreshSnapshotFromVTerm("term-1") {
+			t.Fatalf("%s: expected vterm refresh", stage)
+		}
+		terminal = rt.Registry().Get("term-1")
+		if terminal.Snapshot == nil {
+			t.Fatalf("%s: expected refreshed snapshot", stage)
+		}
+		if !snapshotHasAuthoritativeZeroCommittedWindow(terminal.Snapshot) {
+			t.Fatalf("%s: expected refreshed snapshot to keep authoritative zero-committed window, got %#v", stage, terminal.Snapshot)
+		}
+		if got, want := terminal.Snapshot.ScrollbackLoadedRows, 0; got != want {
+			t.Fatalf("%s: expected refreshed committed loaded rows %d, got %d", stage, want, got)
+		}
+		if got, want := terminal.Snapshot.ScrollbackTotal, 4; got != want {
+			t.Fatalf("%s: expected refreshed total rows %d, got %d", stage, want, got)
+		}
+		if got, want := terminal.Snapshot.ScrollbackLogicalTotal, 4; got != want {
+			t.Fatalf("%s: expected refreshed logical rows %d, got %d", stage, want, got)
+		}
+		if !terminal.Snapshot.ScrollbackHasMore {
+			t.Fatalf("%s: expected refreshed snapshot has-more flag", stage)
+		}
+	}
+
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("first attach: %v", err)
+	}
+	checkAuthoritativeHotOnly("after first attach")
+
+	client.attachResult = &protocol.AttachResult{Channel: 8, Mode: "collaborator"}
+	if _, err := rt.AttachTerminal(ctx, "pane-2", "term-1", "collaborator"); err != nil {
+		t.Fatalf("reattach: %v", err)
+	}
+	checkAuthoritativeHotOnly("after reattach")
+}
+
+func TestRuntimeBumpSurfaceVersionPromotesLocalVTermOnlyFallbackScrollback(t *testing.T) {
+	rt := New(nil)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.VTerm = localvterm.New(8, 3, 16, nil)
+	if terminal.VTerm == nil {
+		t.Fatal("expected vterm")
+	}
+	if _, err := terminal.VTerm.Write([]byte("line0\r\nline1\r\nline2\r\nline3")); err != nil {
+		t.Fatalf("write local fallback content: %v", err)
+	}
+
+	rt.bumpSurfaceVersion(terminal)
+
+	if got := terminal.ScrollbackLoadedLimit; got == 0 {
+		t.Fatalf("expected local VTerm-only fallback to promote visual scrollback depth, got %d", got)
+	}
+	if terminal.Snapshot != nil && snapshotHasAuthoritativeZeroCommittedWindow(terminal.Snapshot) {
+		t.Fatalf("expected local fallback not to impersonate authoritative zero-committed metadata, got %#v", terminal.Snapshot)
 	}
 }
 
@@ -427,6 +969,165 @@ func TestRuntimeApplyGridViewportPageRejectsNonAdjacentRowIDs(t *testing.T) {
 	}
 }
 
+func TestRuntimeApplyGridViewportPageRejectsOlderPageWhenCurrentHasNoCanonicalHistoryWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 80, 24, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("canon100")})
+	live.ScrollbackLoadedRows = 1
+	live.HistoryGeneration = 10
+	live.ScrollbackFirstRowID = 100
+	live.ScrollbackLastRowID = 100
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 1); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	latestNoCanonical := &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 80, Rows: 24},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("hot0"), protocolRowFromString("hot1")}),
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        2,
+		ScrollbackLogicalTotal: 2,
+		ScrollbackHasMore:      false,
+		ScrollbackLoadedRows:   0,
+		HistoryGeneration:      0,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    0,
+		ScrollbackRowKinds:     []string{"", ""},
+		ScrollbackWrapped:      []bool{false, false},
+	}
+	if !rt.ApplyGridViewportPage("term-1", latestNoCanonical, 0) {
+		t.Fatal("expected no-canonical latest page to apply")
+	}
+
+	older := &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 80, Rows: 24},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("canon099")}),
+		ScrollbackOffset:       1,
+		ScrollbackTotal:        2,
+		ScrollbackLogicalTotal: 2,
+		ScrollbackHasMore:      false,
+		ScrollbackLoadedRows:   2,
+		HistoryGeneration:      10,
+		ScrollbackFirstRowID:   99,
+		ScrollbackLastRowID:    99,
+		ScrollbackRowKinds:     []string{""},
+		ScrollbackWrapped:      []bool{false},
+	}
+	if rt.ApplyGridViewportPage("term-1", older, 1) {
+		t.Fatal("expected older page to be rejected once current snapshot has no canonical history window")
+	}
+
+	got := rt.Registry().Get("term-1").Snapshot
+	if got == nil {
+		t.Fatal("expected runtime snapshot")
+	}
+	if got.HistoryGeneration != 0 || got.ScrollbackFirstRowID != 0 || got.ScrollbackLastRowID != 0 {
+		t.Fatalf("expected no-canonical latest snapshot to remain unchanged, got generation=%d window=%d..%d", got.HistoryGeneration, got.ScrollbackFirstRowID, got.ScrollbackLastRowID)
+	}
+	if len(got.Scrollback) != 2 || compactRowText(got.Scrollback[0]) != "hot0" || compactRowText(got.Scrollback[1]) != "hot1" {
+		t.Fatalf("expected hot-only latest page to remain intact, got %#v", got.Scrollback)
+	}
+}
+
+func TestRuntimeApplyGridViewportPageRejectsOlderPageWithoutCanonicalHistoryWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 80, 24, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("canon001")})
+	live.ScrollbackLoadedRows = 1
+	live.HistoryGeneration = 10
+	live.ScrollbackFirstRowID = 1
+	live.ScrollbackLastRowID = 1
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 1); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+
+	olderNoCanonical := &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 80, Rows: 24},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("ghost0")}),
+		ScrollbackOffset:       1,
+		ScrollbackTotal:        2,
+		ScrollbackLogicalTotal: 2,
+		ScrollbackHasMore:      false,
+		ScrollbackLoadedRows:   0,
+		HistoryGeneration:      0,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    0,
+		ScrollbackRowKinds:     []string{""},
+		ScrollbackWrapped:      []bool{false},
+	}
+	if rt.ApplyGridViewportPage("term-1", olderNoCanonical, 1) {
+		t.Fatal("expected older page without canonical history window to be rejected")
+	}
+
+	got := rt.Registry().Get("term-1").Snapshot
+	if got == nil {
+		t.Fatal("expected runtime snapshot")
+	}
+	if got.HistoryGeneration != 10 || got.ScrollbackFirstRowID != 1 || got.ScrollbackLastRowID != 1 {
+		t.Fatalf("expected canonical current snapshot to remain unchanged, got generation=%d window=%d..%d", got.HistoryGeneration, got.ScrollbackFirstRowID, got.ScrollbackLastRowID)
+	}
+	if len(got.Scrollback) != 1 || compactRowText(got.Scrollback[0]) != "canon001" {
+		t.Fatalf("expected canonical current page to remain intact, got %#v", got.Scrollback)
+	}
+}
+
+func TestRuntimeApplyGridViewportPageAcceptsCanonicalOlderPageWithRowIDZero(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 80, 24, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("canon001")})
+	live.ScrollbackLoadedRows = 1
+	live.HistoryGeneration = 10
+	live.ScrollbackFirstRowID = 1
+	live.ScrollbackLastRowID = 1
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 1); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+
+	older := &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 80, Rows: 24},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("canon000")}),
+		ScrollbackOffset:       1,
+		ScrollbackTotal:        2,
+		ScrollbackLogicalTotal: 2,
+		ScrollbackHasMore:      false,
+		ScrollbackLoadedRows:   2,
+		HistoryGeneration:      10,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    0,
+		ScrollbackRowKinds:     []string{""},
+		ScrollbackWrapped:      []bool{false},
+	}
+	if !rt.ApplyGridViewportPage("term-1", older, 1) {
+		t.Fatal("expected canonical older page ending at row id 0 to apply")
+	}
+
+	got := rt.Registry().Get("term-1").Snapshot
+	if got == nil {
+		t.Fatal("expected runtime snapshot")
+	}
+	if got.HistoryGeneration != 10 || got.ScrollbackFirstRowID != 0 || got.ScrollbackLastRowID != 1 {
+		t.Fatalf("expected merged canonical window 0..1, got generation=%d window=%d..%d", got.HistoryGeneration, got.ScrollbackFirstRowID, got.ScrollbackLastRowID)
+	}
+	if len(got.Scrollback) != 2 || compactRowText(got.Scrollback[0]) != "canon000" || compactRowText(got.Scrollback[1]) != "canon001" {
+		t.Fatalf("expected canonical older page to prepend cleanly, got %#v", got.Scrollback)
+	}
+}
+
 func TestRuntimeApplyGridViewportPageKeepsBoundedWindow(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
@@ -436,6 +1137,12 @@ func TestRuntimeApplyGridViewportPageKeepsBoundedWindow(t *testing.T) {
 	}
 	live := snapshotWithLines("term-1", 12, 3, []string{"live"})
 	live.Scrollback = protocol.CompactRowsFromCells(allRows[500:])
+	live.ScrollbackTotal = len(allRows)
+	live.ScrollbackLogicalTotal = len(allRows)
+	live.ScrollbackLoadedRows = len(allRows) - 500
+	live.HistoryGeneration = 1
+	live.ScrollbackFirstRowID = 500
+	live.ScrollbackLastRowID = 12499
 	client.snapshotByTerminal["term-1"] = live
 
 	rt := New(client)
@@ -443,14 +1150,19 @@ func TestRuntimeApplyGridViewportPageKeepsBoundedWindow(t *testing.T) {
 		t.Fatalf("load snapshot: %v", err)
 	}
 	page := &protocol.Snapshot{
-		TerminalID:         "term-1",
-		Size:               protocol.Size{Cols: 12, Rows: 3},
-		Scrollback:         protocol.CompactRowsFromCells(allRows[:500]),
-		ScrollbackOffset:   12000,
-		ScrollbackTotal:    12500,
-		ScrollbackHasMore:  false,
-		ScrollbackRowKinds: make([]string, 500),
-		ScrollbackWrapped:  make([]bool, 500),
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 12, Rows: 3},
+		Scrollback:             protocol.CompactRowsFromCells(allRows[:500]),
+		ScrollbackOffset:       12000,
+		ScrollbackTotal:        12500,
+		ScrollbackLogicalTotal: 12500,
+		ScrollbackHasMore:      false,
+		ScrollbackLoadedRows:   12500,
+		HistoryGeneration:      1,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    499,
+		ScrollbackRowKinds:     make([]string, 500),
+		ScrollbackWrapped:      make([]bool, 500),
 	}
 	if !rt.ApplyGridViewportPage("term-1", page, 12000) {
 		t.Fatal("expected older page to apply")
@@ -472,6 +1184,12 @@ func TestRuntimeApplyGridViewportPageKeepsBoundedWindow(t *testing.T) {
 	if terminal.ScrollbackLoadedLimit != 12500 {
 		t.Fatalf("expected loaded depth to keep full logical progress, got %d", terminal.ScrollbackLoadedLimit)
 	}
+	if firstRowID, want := got.ScrollbackFirstRowID, uint64(0); firstRowID != want {
+		t.Fatalf("expected bounded materialization to keep loaded committed window first row id, got %d want %d", firstRowID, want)
+	}
+	if lastRowID, want := got.ScrollbackLastRowID, uint64(12499); lastRowID != want {
+		t.Fatalf("expected bounded materialization to keep loaded committed window last row id, got %d want %d", lastRowID, want)
+	}
 }
 
 func TestRuntimeApplyGridViewportPageAcceptsOffsetBeyondMaterializedWindow(t *testing.T) {
@@ -483,7 +1201,12 @@ func TestRuntimeApplyGridViewportPageAcceptsOffsetBeyondMaterializedWindow(t *te
 	}
 	live := snapshotWithLines("term-1", 12, 3, []string{"live"})
 	live.Scrollback = protocol.CompactRowsFromCells(allRows[1000:])
-	live.ScrollbackLoadedRows = 13000
+	live.ScrollbackTotal = len(allRows)
+	live.ScrollbackLogicalTotal = len(allRows)
+	live.ScrollbackLoadedRows = 12000
+	live.HistoryGeneration = 1
+	live.ScrollbackFirstRowID = 1000
+	live.ScrollbackLastRowID = 12999
 	client.snapshotByTerminal["term-1"] = live
 
 	rt := New(client)
@@ -491,15 +1214,19 @@ func TestRuntimeApplyGridViewportPageAcceptsOffsetBeyondMaterializedWindow(t *te
 		t.Fatalf("load snapshot: %v", err)
 	}
 	page1 := &protocol.Snapshot{
-		TerminalID:           "term-1",
-		Size:                 protocol.Size{Cols: 12, Rows: 3},
-		Scrollback:           protocol.CompactRowsFromCells(allRows[500:1000]),
-		ScrollbackOffset:     12000,
-		ScrollbackTotal:      13000,
-		ScrollbackHasMore:    true,
-		ScrollbackLoadedRows: 12500,
-		ScrollbackRowKinds:   make([]string, 500),
-		ScrollbackWrapped:    make([]bool, 500),
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 12, Rows: 3},
+		Scrollback:             protocol.CompactRowsFromCells(allRows[500:1000]),
+		ScrollbackOffset:       12000,
+		ScrollbackTotal:        13000,
+		ScrollbackLogicalTotal: 13000,
+		ScrollbackHasMore:      true,
+		ScrollbackLoadedRows:   12500,
+		HistoryGeneration:      1,
+		ScrollbackFirstRowID:   500,
+		ScrollbackLastRowID:    999,
+		ScrollbackRowKinds:     make([]string, 500),
+		ScrollbackWrapped:      make([]bool, 500),
 	}
 	if !rt.ApplyGridViewportPage("term-1", page1, 12000) {
 		t.Fatal("expected first older page to apply")
@@ -513,18 +1240,19 @@ func TestRuntimeApplyGridViewportPageAcceptsOffsetBeyondMaterializedWindow(t *te
 	}
 
 	page2 := &protocol.Snapshot{
-		TerminalID:           "term-1",
-		Size:                 protocol.Size{Cols: 12, Rows: 3},
-		Scrollback:           protocol.CompactRowsFromCells(allRows[:500]),
-		ScrollbackOffset:     12500,
-		ScrollbackTotal:      13000,
-		ScrollbackHasMore:    false,
-		ScrollbackLoadedRows: 13000,
-		HistoryGeneration:    terminal.Snapshot.HistoryGeneration,
-		ScrollbackFirstRowID: firstNonZeroUint64(terminal.Snapshot.ScrollbackFirstRowID) - 500,
-		ScrollbackLastRowID:  firstNonZeroUint64(terminal.Snapshot.ScrollbackFirstRowID) - 1,
-		ScrollbackRowKinds:   make([]string, 500),
-		ScrollbackWrapped:    make([]bool, 500),
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 12, Rows: 3},
+		Scrollback:             protocol.CompactRowsFromCells(allRows[:500]),
+		ScrollbackOffset:       12500,
+		ScrollbackTotal:        13000,
+		ScrollbackLogicalTotal: 13000,
+		ScrollbackHasMore:      false,
+		ScrollbackLoadedRows:   13000,
+		HistoryGeneration:      terminal.Snapshot.HistoryGeneration,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    499,
+		ScrollbackRowKinds:     make([]string, 500),
+		ScrollbackWrapped:      make([]bool, 500),
 	}
 	if !rt.ApplyGridViewportPage("term-1", page2, 12500) {
 		t.Fatal("expected second older page beyond materialized window to apply")
@@ -534,6 +1262,42 @@ func TestRuntimeApplyGridViewportPageAcceptsOffsetBeyondMaterializedWindow(t *te
 	}
 	if got := compactRowText(terminal.Snapshot.Scrollback[0]); got != "hist-00000" {
 		t.Fatalf("expected oldest page to reach window start, got %q", got)
+	}
+}
+
+func TestRuntimeSnapshotWindowHelperKeepsCanonicalRowIDZeroSingleRowWindow(t *testing.T) {
+	snapshot := &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("row-00000")}),
+		ScrollbackTotal:        1,
+		ScrollbackLogicalTotal: 1,
+		ScrollbackLoadedRows:   1,
+		ScrollbackHasMore:      false,
+		HistoryGeneration:      7,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    0,
+		ScrollbackWrapped:      []bool{false},
+		ScrollbackRowKinds:     []string{""},
+	}
+
+	window := testSnapshotWindow(snapshot, 0, 1)
+	if window == nil {
+		t.Fatal("expected window")
+	}
+	if got, want := window.ScrollbackLoadedRows, 1; got != want {
+		t.Fatalf("expected loaded rows %d, got %d", want, got)
+	}
+	if got, want := window.HistoryGeneration, uint64(7); got != want {
+		t.Fatalf("expected generation %d, got %d", want, got)
+	}
+	if got, want := window.ScrollbackFirstRowID, uint64(0); got != want {
+		t.Fatalf("expected first row id %d, got %d", want, got)
+	}
+	if got, want := window.ScrollbackLastRowID, uint64(0); got != want {
+		t.Fatalf("expected last row id %d, got %d", want, got)
+	}
+	if got := compactRowText(window.Scrollback[0]); got != "row-00000" {
+		t.Fatalf("expected single canonical row to survive helper windowing, got %q", got)
 	}
 }
 
@@ -1275,6 +2039,278 @@ func TestRuntimeScreenUpdateFullReplaceClearsRecoveryState(t *testing.T) {
 	}
 	if !terminal.ScreenUpdate.FullReplace {
 		t.Fatalf("expected full-replace screen update summary, got %#v", terminal.ScreenUpdate)
+	}
+}
+
+func TestRuntimeScreenUpdateFullReplaceResetsLatestBoundaryContract(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name              string
+		snapshot          *protocol.Snapshot
+		wantLoadedLimit   int
+		wantAuthoritative bool
+	}{
+		{
+			name: "hot_only_latest",
+			snapshot: func() *protocol.Snapshot {
+				snapshot := snapshotWithLines("term-1", 6, 2, []string{"live"})
+				snapshot.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+					protocolRowFromString("hot0"),
+					protocolRowFromString("hot1"),
+				})
+				snapshot.ScrollbackTotal = 4
+				snapshot.ScrollbackLogicalTotal = 4
+				snapshot.ScrollbackHasMore = true
+				return snapshot
+			}(),
+			wantLoadedLimit:   0,
+			wantAuthoritative: true,
+		},
+		{
+			name: "canonical_plus_hot_latest",
+			snapshot: func() *protocol.Snapshot {
+				snapshot := snapshotWithLines("term-1", 6, 2, []string{"live"})
+				snapshot.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+					protocolRowFromString("cold0"),
+					protocolRowFromString("hot0"),
+				})
+				snapshot.ScrollbackTotal = 2
+				snapshot.ScrollbackLogicalTotal = 1
+				snapshot.ScrollbackHasMore = true
+				snapshot.ScrollbackLoadedRows = 1
+				snapshot.HistoryGeneration = 7
+				snapshot.ScrollbackFirstRowID = 0
+				snapshot.ScrollbackLastRowID = 0
+				return snapshot
+			}(),
+			wantLoadedLimit:   1,
+			wantAuthoritative: false,
+		},
+		{
+			name: "canonical_only_latest",
+			snapshot: func() *protocol.Snapshot {
+				snapshot := snapshotWithLines("term-1", 6, 2, []string{"live"})
+				snapshot.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+					protocolRowFromString("cold0"),
+				})
+				snapshot.ScrollbackTotal = 1
+				snapshot.ScrollbackLogicalTotal = 1
+				snapshot.ScrollbackLoadedRows = 1
+				snapshot.HistoryGeneration = 7
+				snapshot.ScrollbackFirstRowID = 0
+				snapshot.ScrollbackLastRowID = 0
+				return snapshot
+			}(),
+			wantLoadedLimit:   1,
+			wantAuthoritative: false,
+		},
+	}
+
+	assertBoundaryReset := func(t *testing.T, stage string, terminal *TerminalRuntime) {
+		t.Helper()
+		if terminal == nil || terminal.Snapshot == nil {
+			t.Fatalf("%s: expected terminal snapshot, got %#v", stage, terminal)
+		}
+		if got := terminal.ScrollbackLoadedLimit; got != 0 {
+			t.Fatalf("%s: expected latest full-replace boundary to clear committed depth, got %d", stage, got)
+		}
+		if terminal.ScrollbackExhausted {
+			t.Fatalf("%s: expected latest full-replace boundary to clear exhausted paging state", stage)
+		}
+		if terminal.AuthoritativeHotOnlyLatest {
+			t.Fatalf("%s: expected latest full-replace boundary to clear hot-only provenance", stage)
+		}
+		if got := snapshotScrollbackLoadedDepth(terminal.Snapshot); got != 0 {
+			t.Fatalf("%s: expected full-replace snapshot committed depth 0, got %d", stage, got)
+		}
+		if got := terminal.Snapshot.HistoryGeneration; got != 0 {
+			t.Fatalf("%s: expected full-replace snapshot generation 0, got %d", stage, got)
+		}
+		if got := terminal.Snapshot.ScrollbackLoadedRows; got != 0 {
+			t.Fatalf("%s: expected full-replace snapshot loaded rows 0, got %d", stage, got)
+		}
+		if terminal.Snapshot.ScrollbackFirstRowID != 0 || terminal.Snapshot.ScrollbackLastRowID != 0 {
+			t.Fatalf("%s: expected full-replace snapshot canonical row window cleared, got %d..%d", stage, terminal.Snapshot.ScrollbackFirstRowID, terminal.Snapshot.ScrollbackLastRowID)
+		}
+		if terminal.Snapshot.ScrollbackTotal != 0 || terminal.Snapshot.ScrollbackLogicalTotal != 0 || terminal.Snapshot.ScrollbackHasMore {
+			t.Fatalf("%s: expected full-replace snapshot to drop old latest totals/has-more, got total=%d logical=%d hasMore=%v", stage, terminal.Snapshot.ScrollbackTotal, terminal.Snapshot.ScrollbackLogicalTotal, terminal.Snapshot.ScrollbackHasMore)
+		}
+		if got := len(terminal.Snapshot.Scrollback); got != 0 {
+			t.Fatalf("%s: expected full-replace snapshot to avoid inherited scrollback rows, got %d", stage, got)
+		}
+		if !snapshotContains(terminal.Snapshot, "fresh") {
+			t.Fatalf("%s: expected fresh full-replace screen content, got %#v", stage, terminal.Snapshot)
+		}
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newFakeBridgeClient()
+			client.snapshotByTerminal["term-1"] = cloneSnapshot(tt.snapshot)
+			rt := New(client)
+			if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 0); err != nil {
+				t.Fatalf("load snapshot: %v", err)
+			}
+
+			terminal := rt.Registry().Get("term-1")
+			if terminal == nil || terminal.Snapshot == nil || terminal.VTerm == nil {
+				t.Fatalf("expected hydrated terminal, got %#v", terminal)
+			}
+			if got := terminal.ScrollbackLoadedLimit; got < tt.wantLoadedLimit {
+				t.Fatalf("expected precondition loaded depth at least %d, got %d", tt.wantLoadedLimit, got)
+			}
+			if got := terminal.AuthoritativeHotOnlyLatest; got != tt.wantAuthoritative {
+				t.Fatalf("expected precondition authoritative hot-only=%v, got %v", tt.wantAuthoritative, got)
+			}
+			terminal.ScrollbackExhausted = true
+
+			updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+				FullReplace: true,
+				Size:        protocol.Size{Cols: 6, Rows: 2},
+				Screen:      snapshotWithLines("term-1", 6, 2, []string{"fresh"}).Screen,
+				Cursor:      protocol.CursorState{Visible: true},
+				Modes:       protocol.TerminalModes{AutoWrap: true},
+			})
+			if err != nil {
+				t.Fatalf("encode update: %v", err)
+			}
+
+			rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
+			assertBoundaryReset(t, "after_full_replace", rt.Registry().Get("term-1"))
+
+			if !rt.RefreshSnapshotFromVTerm("term-1") {
+				t.Fatal("expected refresh from vterm after full replace")
+			}
+			assertBoundaryReset(t, "after_refresh_from_vterm", rt.Registry().Get("term-1"))
+		})
+	}
+}
+
+func TestRuntimeScreenUpdateFullReplaceWithScrollbackAppendKeepsBoundaryReset(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	seed := snapshotWithLines("term-1", 6, 2, []string{"live"})
+	seed.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+		protocolRowFromString("cold0"),
+		protocolRowFromString("hot0"),
+	})
+	seed.ScrollbackTotal = 2
+	seed.ScrollbackLogicalTotal = 1
+	seed.ScrollbackHasMore = true
+	seed.ScrollbackLoadedRows = 1
+	seed.HistoryGeneration = 7
+	seed.ScrollbackFirstRowID = 0
+	seed.ScrollbackLastRowID = 0
+	client.snapshotByTerminal["term-1"] = seed
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil || terminal.VTerm == nil {
+		t.Fatalf("expected hydrated terminal, got %#v", terminal)
+	}
+	if got := terminal.ScrollbackLoadedLimit; got < 1 {
+		t.Fatalf("expected precondition committed depth at least 1, got %d", got)
+	}
+	terminal.ScrollbackExhausted = true
+
+	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		FullReplace: true,
+		Size:        protocol.Size{Cols: 6, Rows: 2},
+		ScrollbackAppend: []protocol.ScrollbackRowAppend{{
+			Cells:     protocolRowFromString("tail0"),
+			Timestamp: time.Now(),
+		}},
+		Screen: snapshotWithLines("term-1", 6, 2, []string{"fresh"}).Screen,
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	assertBoundaryResetWithAppend := func(t *testing.T, stage string, terminal *TerminalRuntime) {
+		t.Helper()
+		if terminal == nil || terminal.Snapshot == nil {
+			t.Fatalf("%s: expected terminal snapshot, got %#v", stage, terminal)
+		}
+		if got := terminal.ScrollbackLoadedLimit; got != 0 {
+			t.Fatalf("%s: expected full-replace append to keep committed depth reset, got %d", stage, got)
+		}
+		if terminal.ScrollbackExhausted {
+			t.Fatalf("%s: expected full-replace append to clear exhausted paging state", stage)
+		}
+		if terminal.AuthoritativeHotOnlyLatest {
+			t.Fatalf("%s: expected full-replace append to avoid hot-only provenance", stage)
+		}
+		if got := terminal.Snapshot.ScrollbackLoadedRows; got != 0 {
+			t.Fatalf("%s: expected full-replace append snapshot loaded rows 0, got %d", stage, got)
+		}
+		if got := terminal.Snapshot.HistoryGeneration; got != 0 {
+			t.Fatalf("%s: expected full-replace append snapshot generation 0, got %d", stage, got)
+		}
+		if terminal.Snapshot.ScrollbackFirstRowID != 0 || terminal.Snapshot.ScrollbackLastRowID != 0 {
+			t.Fatalf("%s: expected full-replace append snapshot canonical row window cleared, got %d..%d", stage, terminal.Snapshot.ScrollbackFirstRowID, terminal.Snapshot.ScrollbackLastRowID)
+		}
+		if got := terminal.Snapshot.ScrollbackOffset; got != 0 {
+			t.Fatalf("%s: expected full-replace append snapshot offset 0, got %d", stage, got)
+		}
+		if terminal.Snapshot.ScrollbackTotal != 0 || terminal.Snapshot.ScrollbackLogicalTotal != 0 || terminal.Snapshot.ScrollbackHasMore {
+			t.Fatalf("%s: expected full-replace append snapshot totals/has-more reset, got total=%d logical=%d hasMore=%v", stage, terminal.Snapshot.ScrollbackTotal, terminal.Snapshot.ScrollbackLogicalTotal, terminal.Snapshot.ScrollbackHasMore)
+		}
+		if got := len(terminal.Snapshot.Scrollback); got != 1 {
+			t.Fatalf("%s: expected full-replace append snapshot to keep 1 materialized tail row, got %d", stage, got)
+		}
+		if got := compactRowText(terminal.Snapshot.Scrollback[0]); got != "tail0" {
+			t.Fatalf("%s: expected full-replace append snapshot tail row, got %q", stage, got)
+		}
+		if !snapshotContains(terminal.Snapshot, "fresh") {
+			t.Fatalf("%s: expected fresh full-replace screen content, got %#v", stage, terminal.Snapshot)
+		}
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: updatePayload})
+	assertBoundaryResetWithAppend(t, "after_full_replace", rt.Registry().Get("term-1"))
+
+	if !rt.RefreshSnapshotFromVTerm("term-1") {
+		t.Fatal("expected refresh from vterm after full replace append")
+	}
+	assertBoundaryResetWithAppend(t, "after_refresh_from_vterm", rt.Registry().Get("term-1"))
+
+	page := &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 6, Rows: 2},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("canon0")}),
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        1,
+		ScrollbackLogicalTotal: 1,
+		ScrollbackHasMore:      false,
+		ScrollbackLoadedRows:   1,
+		HistoryGeneration:      11,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    0,
+		ScrollbackRowKinds:     []string{""},
+		ScrollbackWrapped:      []bool{false},
+		ScrollbackTimestamps:   []time.Time{time.Now()},
+	}
+	if !rt.ApplyGridViewportPage("term-1", page, 0) {
+		t.Fatal("expected latest boundary reset to restart viewport paging from offset 0")
+	}
+	terminal = rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil {
+		t.Fatalf("expected terminal snapshot after offset-0 replace, got %#v", terminal)
+	}
+	if got := terminal.ScrollbackLoadedLimit; got != 1 {
+		t.Fatalf("expected authoritative offset-0 page to own committed depth 1 after reset, got %d", got)
+	}
+	if got := terminal.Snapshot.HistoryGeneration; got != 11 {
+		t.Fatalf("expected offset-0 page generation 11 after reset, got %d", got)
+	}
+	if got := compactRowText(terminal.Snapshot.Scrollback[0]); got != "canon0" {
+		t.Fatalf("expected offset-0 page to replace full-replace append tail, got %q", got)
 	}
 }
 
@@ -2578,17 +3614,22 @@ func (f *fakeBridgeClient) GridViewport(_ context.Context, terminalID string, of
 		return nil, nil
 	}
 	return &protocol.GridViewport{
-		TerminalID:           terminalID,
-		Size:                 window.Size,
-		Rows:                 protocol.CloneCompactRows(window.Scrollback),
-		ScrollbackOffset:     window.ScrollbackOffset,
-		ScrollbackLimit:      limit,
-		ScrollbackTotal:      window.ScrollbackTotal,
-		ScrollbackHasMore:    window.ScrollbackHasMore,
-		ScrollbackTimestamps: append([]time.Time(nil), window.ScrollbackTimestamps...),
-		ScrollbackRowKinds:   append([]string(nil), window.ScrollbackRowKinds...),
-		ScrollbackWrapped:    append([]bool(nil), window.ScrollbackWrapped...),
-		Timestamp:            window.Timestamp,
+		TerminalID:             terminalID,
+		Size:                   window.Size,
+		Rows:                   protocol.CloneCompactRows(window.Scrollback),
+		ScrollbackOffset:       window.ScrollbackOffset,
+		ScrollbackLimit:        limit,
+		ScrollbackTotal:        window.ScrollbackTotal,
+		ScrollbackLogicalTotal: window.ScrollbackLogicalTotal,
+		ScrollbackHasMore:      window.ScrollbackHasMore,
+		LoadedRows:             window.ScrollbackLoadedRows,
+		HistoryGeneration:      window.HistoryGeneration,
+		FirstRowID:             window.ScrollbackFirstRowID,
+		LastRowID:              window.ScrollbackLastRowID,
+		ScrollbackTimestamps:   append([]time.Time(nil), window.ScrollbackTimestamps...),
+		ScrollbackRowKinds:     append([]string(nil), window.ScrollbackRowKinds...),
+		ScrollbackWrapped:      append([]bool(nil), window.ScrollbackWrapped...),
+		Timestamp:              window.Timestamp,
 	}, nil
 }
 
@@ -2783,8 +3824,38 @@ func testSnapshotWindow(snapshot *protocol.Snapshot, offset int, limit int) *pro
 	}
 	cloned.ScrollbackOffset = offset
 	cloned.ScrollbackTotal = total
+	if snapshot.ScrollbackLogicalTotal > 0 {
+		cloned.ScrollbackLogicalTotal = snapshot.ScrollbackLogicalTotal
+	} else {
+		cloned.ScrollbackLogicalTotal = total
+	}
 	cloned.ScrollbackHasMore = start > 0
+	cloned.ScrollbackLoadedRows = offset + len(cloned.Scrollback)
+	if total > 0 {
+		cloned.HistoryGeneration = snapshot.HistoryGeneration
+	}
+	if baseRowID, ok := testSnapshotRowIDBase(snapshot, total); ok && len(cloned.Scrollback) > 0 {
+		cloned.ScrollbackFirstRowID = baseRowID + uint64(start)
+		cloned.ScrollbackLastRowID = baseRowID + uint64(end-1)
+	} else {
+		cloned.ScrollbackFirstRowID = 0
+		cloned.ScrollbackLastRowID = 0
+	}
 	return cloned
+}
+
+func testSnapshotRowIDBase(snapshot *protocol.Snapshot, total int) (uint64, bool) {
+	if snapshot == nil || total <= 0 {
+		return 0, false
+	}
+	if snapshot.HistoryGeneration != 0 && snapshot.ScrollbackLastRowID >= snapshot.ScrollbackFirstRowID {
+		return snapshot.ScrollbackFirstRowID, true
+	}
+	if snapshot.ScrollbackLastRowID == 0 {
+		return 0, false
+	}
+	base := snapshot.ScrollbackLastRowID + 1 - uint64(total)
+	return base, true
 }
 
 func testCloneProtocolRows(rows [][]protocol.Cell) [][]protocol.Cell {

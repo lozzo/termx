@@ -490,6 +490,18 @@ func syncSurfaceScrollbackState(terminal *TerminalRuntime) {
 	if terminal == nil {
 		return
 	}
+	if terminal.FullReplaceBoundaryReset {
+		if terminal.ScrollbackLoadingLimit > 0 {
+			terminal.ScrollbackLoadingLimit = 0
+		}
+		return
+	}
+	if terminal.AuthoritativeHotOnlyLatest {
+		if terminal.ScrollbackLoadingLimit > 0 && terminal.AuthoritativeHotRowCount >= terminal.ScrollbackLoadingLimit {
+			terminal.ScrollbackLoadingLimit = 0
+		}
+		return
+	}
 	surface := surfaceFromVTerm(terminal.VTerm)
 	if surface == nil {
 		return

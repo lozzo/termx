@@ -194,6 +194,64 @@ func (b copyModeBuffer) clampPoint(point copyModePoint) copyModePoint {
 	return point
 }
 
+func (b copyModeBuffer) rowRef(row int) copyModeRowRef {
+	if b.snapshot == nil || row < 0 || row >= b.totalRows() {
+		return copyModeRowRef{}
+	}
+	loadedCommittedRows := snapshotScrollbackLoadedDepth(b.snapshot)
+	scrollbackStart := b.materializedCommittedScrollbackStart()
+	if row < len(b.snapshot.Scrollback) && row+scrollbackStart < loadedCommittedRows && hasCanonicalHistoryWindow(b.snapshot) {
+		return copyModeRowRef{
+			Generation: b.snapshot.HistoryGeneration,
+			RowID:      b.snapshot.ScrollbackFirstRowID + uint64(scrollbackStart+row),
+			Valid:      true,
+		}
+	}
+	return copyModeRowRef{}
+}
+
+func (b copyModeBuffer) pointRowRef(point copyModePoint) copyModeRowRef {
+	return b.rowRef(b.clampPoint(point).Row)
+}
+
+func (b copyModeBuffer) rowForRef(ref copyModeRowRef) (int, bool) {
+	if b.snapshot == nil || !ref.Valid || !hasCanonicalHistoryWindow(b.snapshot) || ref.Generation != b.snapshot.HistoryGeneration {
+		return 0, false
+	}
+	if ref.RowID < b.snapshot.ScrollbackFirstRowID || ref.RowID > b.snapshot.ScrollbackLastRowID {
+		return 0, false
+	}
+	scrollbackStart := b.materializedCommittedScrollbackStart()
+	row := int(ref.RowID-b.snapshot.ScrollbackFirstRowID) - scrollbackStart
+	if row < 0 || row >= len(b.snapshot.Scrollback) {
+		return 0, false
+	}
+	return row, true
+}
+
+func (b copyModeBuffer) materializedCommittedScrollbackStart() int {
+	if b.snapshot == nil {
+		return 0
+	}
+	loadedCommittedRows := snapshotScrollbackLoadedDepth(b.snapshot)
+	materializedRows := len(b.snapshot.Scrollback)
+	if loadedCommittedRows <= 0 || materializedRows <= 0 {
+		return 0
+	}
+	start := loadedCommittedRows - materializedRows - b.snapshot.ScrollbackOffset
+	if start < 0 {
+		start = 0
+	}
+	maxStart := loadedCommittedRows - materializedRows
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	if start > maxStart {
+		start = maxStart
+	}
+	return start
+}
+
 func boolAt(values []bool, index int) bool {
 	return index >= 0 && index < len(values) && values[index]
 }
@@ -329,6 +387,7 @@ func (m *Model) moveCopyCursor(deltaRow, deltaCol int) tea.Cmd {
 	next.Col += deltaCol
 	next.Col = buffer.normalizeCol(next.Row, next.Col)
 	m.copyMode.Cursor = next
+	m.copyMode.CursorRowRef = buffer.pointRowRef(next)
 	m.syncCopyModeViewport(buffer, next)
 	m.render.Invalidate()
 	return batchCmds(m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer))
@@ -347,6 +406,7 @@ func (m *Model) moveCopyCursorVertical(delta int) tea.Cmd {
 	next = buffer.clampPoint(next)
 	next.Col = buffer.normalizeCol(next.Row, next.Col)
 	m.copyMode.Cursor = next
+	m.copyMode.CursorRowRef = buffer.pointRowRef(next)
 	m.syncCopyModeViewport(buffer, next)
 	m.render.Invalidate()
 	return batchCmds(m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer))
@@ -362,6 +422,7 @@ func (m *Model) jumpCopyCursor(row int) tea.Cmd {
 	}
 	next := buffer.clampPoint(copyModePoint{Row: row, Col: m.copyMode.Cursor.Col})
 	m.copyMode.Cursor = next
+	m.copyMode.CursorRowRef = buffer.pointRowRef(next)
 	m.syncCopyModeViewport(buffer, next)
 	m.render.Invalidate()
 	return batchCmds(m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer))
@@ -376,6 +437,7 @@ func (m *Model) setCopyCursorCol(col int) {
 		return
 	}
 	m.copyMode.Cursor.Col = buffer.normalizeCol(m.copyMode.Cursor.Row, col)
+	m.copyMode.CursorRowRef = buffer.pointRowRef(m.copyMode.Cursor)
 	m.saveCurrentCopyModeState()
 	m.render.Invalidate()
 }

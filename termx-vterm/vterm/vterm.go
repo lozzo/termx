@@ -429,6 +429,9 @@ type CellRun struct {
 type WriteDamage struct {
 	Ops                 []DamageOp
 	ScrollbackAppend    []DamageOp
+	HotAppendRows       int
+	ResizeHotOwnedRows  int
+	ResizeHotOwnedRowsSet bool
 	AlternateAppend     []DamageOp
 	ScrollbackTrim      int
 	ScreenScroll        int
@@ -1495,6 +1498,7 @@ func (v *VTerm) resizeWithDamageLocked(cols, rows int) WriteDamage {
 	beforeScreenRowKinds := v.screenRowKinds
 	beforeScreenRows := v.screenRowsForResizeLocked(len(beforeScreen))
 	beforeScreenWrapped := v.screenWrappedLocked(len(beforeScreen))
+	beforeCursorRow := v.cursor.Row
 	var beforeResizeRows []resizeReflowLine
 	var tailResizeRows []resizeReflowLine
 	var resizePlan resizeHistoryPlan
@@ -1523,6 +1527,9 @@ func (v *VTerm) resizeWithDamageLocked(cols, rows int) WriteDamage {
 	if shouldFallbackResizeHistoryAppend(beforeCols, beforeRows, cols, rows, beforeResizeRows, resizePlan) {
 		damage.ScrollbackAppend = resizeScrollbackAppendFromReflowedRows(beforeResizeRows, afterScreenRows, v.screenTimestamps, v.screenRowKinds, afterScreenWrapped)
 	}
+	damage.HotAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
+	damage.ResizeHotOwnedRows = resizeHotOwnedRowsFromPlan(resizePlan, beforeCursorRow)
+	damage.ResizeHotOwnedRowsSet = true
 	damage.ScrollbackTrim = 0
 	damage.SizeCols = cols
 	damage.SizeRows = rows
@@ -3021,6 +3028,7 @@ func (v *VTerm) writeDamageFromDirectOpsLocked(ops []DamageOp, plan rowCacheReco
 	damage := v.writeDamageHeaderLocked(plan)
 	damage.Ops = ops
 	v.appendScrollbackDamageLocked(&damage, plan)
+	damage.HotAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
 	return damage
 }
 
@@ -3029,6 +3037,7 @@ func (v *VTerm) writeDamageRequiresFullReplaceLocked(plan rowCacheReconcilePlan,
 	damage.RequiresFullReplace = true
 	damage.FullReplaceReason = reason
 	v.appendScrollbackDamageLocked(&damage, plan)
+	damage.HotAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
 	return damage
 }
 
@@ -3090,6 +3099,17 @@ func padHardNewlineDamageOpToWidth(op DamageOp, width int) DamageOp {
 		op.Runs = append(op.Runs, CellRun{Text: strings.Repeat(" ", pad)})
 	}
 	return op
+}
+
+func trailingWrappedDamageRows(rows []DamageOp) int {
+	count := 0
+	for i := len(rows) - 1; i >= 0; i-- {
+		if !(rows[i].WrappedSet && rows[i].Wrapped) {
+			break
+		}
+		count++
+	}
+	return count
 }
 
 func damageOpDisplayWidth(op DamageOp) int {
@@ -3165,7 +3185,6 @@ func shouldTailVisibleRowsForResize(beforeCols, beforeRows, afterCols, afterRows
 	return afterCols > 0 &&
 		afterRows > 0 &&
 		beforeCols > afterCols &&
-		beforeRows >= afterRows &&
 		len(reflowed) > afterRows
 }
 
@@ -3250,20 +3269,26 @@ func (p resizeHistoryPlan) scrollbackAppend() []DamageOp {
 	return out
 }
 
+func resizeHotOwnedRowsFromPlan(plan resizeHistoryPlan, sourceRow int) int {
+	if !resizePlanHasRows(plan) || sourceRow < 0 {
+		return 0
+	}
+	count := 0
+	for i := minInt(plan.historyEnd, len(plan.rows)) - 1; i >= 0; i-- {
+		if plan.rows[i].sourceRow != sourceRow {
+			break
+		}
+		count++
+	}
+	return count
+}
+
+func resizePlanHasRows(plan resizeHistoryPlan) bool {
+	return plan.planned && plan.historyEnd > 0 && len(plan.rows) > 0
+}
+
 func shouldFallbackResizeHistoryAppend(beforeCols, beforeRows, afterCols, afterRows int, beforeRowsReflowed []resizeReflowLine, plan resizeHistoryPlan) bool {
-	if !plan.isZero() {
-		return false
-	}
-	if beforeCols <= 0 || beforeRows <= 0 || afterCols <= 0 || afterRows <= 0 {
-		return false
-	}
-	// Keep visible-content matching as a defensive fallback only for shrink
-	// paths where reflow can legitimately displace history above the new
-	// viewport and no explicit resize history plan was available.
-	if afterCols >= beforeCols {
-		return false
-	}
-	return len(beforeRowsReflowed) > afterRows
+	return false
 }
 
 func resizeScrollbackAppendFromReflowedRows(beforeRows []resizeReflowLine, afterScreenRows [][]Cell, afterScreenTimestamps []time.Time, afterScreenRowKinds []string, afterScreenWrapped []bool) []DamageOp {

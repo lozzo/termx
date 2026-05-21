@@ -69,14 +69,20 @@ type RenderSnapshotOverrideVM struct {
 }
 
 type RenderCopyModeVM struct {
-	PaneID     string
-	CursorRow  int
-	CursorCol  int
-	ViewTopRow int
-	MarkSet    bool
-	MarkRow    int
-	MarkCol    int
-	Snapshot   *protocol.Snapshot
+	PaneID           string
+	CursorRow        int
+	CursorCol        int
+	CursorGeneration uint64
+	CursorRowID      uint64
+	CursorRefValid   bool
+	ViewTopRow       int
+	MarkSet          bool
+	MarkRow          int
+	MarkCol          int
+	MarkGeneration   uint64
+	MarkRowID        uint64
+	MarkRefValid     bool
+	Snapshot         *protocol.Snapshot
 }
 
 type RenderFloatingDragPreviewVM struct {

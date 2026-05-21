@@ -1,0 +1,1212 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/tmux_history_smoke.sh [options]
+
+Run the isolated TermX + tmux history smoke flow:
+  daemon -> create stress terminal -> attach -> wait_surface
+  -> copy-mode repeated g -> capture
+  -> resize -> capture
+  -> reattach -> capture
+
+Options:
+  --scenario NAME       scenario to run: baseline | standard | deep-hot; default baseline
+  --root PATH           artifact root; default is a new /tmp directory
+  --bin PATH            existing termx binary to use; default builds into ROOT/termx
+  --lines N             stress line count; default 1000
+  --seed N              stress seed; default 100
+  --width-hint N        stress width hint; default 120
+  --attach-size CxR     initial tmux attach size; default 120x36
+  --resize-size CxR     resize target; default 90x28
+  --g-repeats N         repeated g count in copy-mode; default 24
+  --keep-root           keep artifact root after success/failure (default)
+  --cleanup-root        remove artifact root on exit
+  -h, --help            show this help
+
+Artifacts:
+  baseline:
+    copy-top.txt
+    copy-top.raw.txt
+    copy-top-resized.txt
+    copy-top-resized.raw.txt
+    reattach-top.txt
+    reattach-top.raw.txt
+  deep-hot:
+    latest-tail.txt
+    latest-tail.raw.txt
+    copy-committed-boundary.txt
+    copy-committed-boundary.raw.txt
+    copy-committed-boundary.gridtrace.summary.txt
+    copy-committed-boundary.gridtrace.log
+    reattach-latest-tail.txt
+    reattach-latest-tail.raw.txt
+    reattach-committed-boundary.txt
+    reattach-committed-boundary.raw.txt
+    reattach-committed-boundary.gridtrace.summary.txt
+    reattach-committed-boundary.gridtrace.log
+EOF
+}
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "missing required command: $1" >&2
+    exit 1
+  }
+}
+
+log() {
+  printf '[tmux-history-smoke] %s\n' "$*"
+}
+
+parse_size() {
+  local value="$1"
+  local cols="${value%x*}"
+  local rows="${value#*x}"
+  if [[ -z "$cols" || -z "$rows" || "$cols" == "$value" || "$rows" == "$value" ]]; then
+    echo "invalid size: $value (want COLSxROWS)" >&2
+    exit 1
+  fi
+  printf '%s %s\n' "$cols" "$rows"
+}
+
+preferred_tmux_session_size() {
+  local size
+  size="$(
+    tmux list-clients -F '#{client_width} #{client_height}' 2>/dev/null \
+      | awk -v minw="$ATTACH_COLS" -v minh="$ATTACH_ROWS" '
+          BEGIN { bestw=minw+0; besth=minh+0 }
+          NF >= 2 {
+            w=$1+0
+            h=$2+0
+            if (w > bestw || (w == bestw && h > besth)) {
+              bestw=w
+              besth=h
+            }
+          }
+          END { printf "%d %d\n", bestw, besth }
+        '
+  )"
+  if [[ -z "$size" ]]; then
+    printf '%s %s\n' "$ATTACH_COLS" "$ATTACH_ROWS"
+    return
+  fi
+  printf '%s\n' "$size"
+}
+
+run_in_pty() {
+  local cols="$1"
+  local rows="$2"
+  shift 2
+  python3 - "$cols" "$rows" "$@" <<'PY'
+import fcntl
+import os
+import pty
+import select
+import struct
+import subprocess
+import sys
+import termios
+
+cols = int(sys.argv[1])
+rows = int(sys.argv[2])
+cmd = sys.argv[3:]
+
+master, slave = pty.openpty()
+fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+proc = subprocess.Popen(cmd, stdin=slave, stdout=slave, stderr=slave, close_fds=True)
+os.close(slave)
+
+chunks = []
+while True:
+    ready, _, _ = select.select([master], [], [], 0.1)
+    if master in ready:
+      try:
+        data = os.read(master, 4096)
+      except OSError:
+        data = b""
+      if data:
+        chunks.append(data)
+    if proc.poll() is not None:
+      while True:
+        ready, _, _ = select.select([master], [], [], 0.05)
+        if master not in ready:
+          break
+        try:
+          data = os.read(master, 4096)
+        except OSError:
+          data = b""
+        if not data:
+          break
+        chunks.append(data)
+      break
+
+os.close(master)
+sys.stdout.buffer.write(b"".join(chunks))
+raise SystemExit(proc.wait())
+PY
+}
+
+wait_for_daemon() {
+  local attempt
+  for attempt in $(seq 1 "$WAIT_ATTEMPTS"); do
+    if [[ -S "$SOCK" ]] && python3 - "$SOCK" >/dev/null 2>&1 <<'PY'
+import socket
+import sys
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.settimeout(0.2)
+try:
+    sock.connect(sys.argv[1])
+finally:
+    sock.close()
+PY
+    then
+      return 0
+    fi
+    sleep "$WAIT_DELAY"
+  done
+  echo "timed out waiting for daemon socket: $SOCK" >&2
+  return 1
+}
+
+wait_for_terminal() {
+  local terminal_id="$1"
+  local listing
+  local attempt
+  for attempt in $(seq 1 "$WAIT_ATTEMPTS"); do
+    listing="$(
+      XDG_CONFIG_HOME="$CFG" \
+      XDG_STATE_HOME="$STATE" \
+      TERMX_REMOTE_ENABLE=false \
+      "$BIN" --socket "$SOCK" --log-file "$LOG" ls 2>/dev/null || true
+    )"
+    if printf '%s\n' "$listing" | awk -F '\t' -v want="$terminal_id" '$1 == want { found=1 } END { exit(found ? 0 : 1) }'; then
+      return 0
+    fi
+    sleep "$WAIT_DELAY"
+  done
+  echo "timed out waiting for terminal inventory entry: $terminal_id" >&2
+  return 1
+}
+
+cleanup_tmux_session() {
+  local session="$1"
+  if [[ -z "$session" ]] || ! tmux_session_recorded "$session"; then
+    return 0
+  fi
+  tmux kill-session -t "$session" 2>/dev/null || true
+  unregister_tmux_session "$session"
+}
+
+sanitize_tmux_name() {
+  local value="$1"
+  value="$(printf '%s' "$value" | tr -cs 'A-Za-z0-9_-' '-')"
+  value="${value#-}"
+  value="${value%-}"
+  if [[ -z "$value" ]]; then
+    value="termx-grid-smoke"
+  fi
+  printf '%s\n' "${value:0:48}"
+}
+
+tmux_session_exists() {
+  local session="$1"
+  [[ -n "$session" ]] && tmux has-session -t "$session" 2>/dev/null
+}
+
+tmux_session_recorded() {
+  local session="$1"
+  [[ -n "$session" && -f "$TMUX_SESSIONS_FILE" ]] || return 1
+  grep -Fxq -- "$session" "$TMUX_SESSIONS_FILE"
+}
+
+register_tmux_session() {
+  local session="$1"
+  if [[ -z "$session" ]] || tmux_session_recorded "$session"; then
+    return 0
+  fi
+  printf '%s\n' "$session" >>"$TMUX_SESSIONS_FILE"
+}
+
+unregister_tmux_session() {
+  local session="$1"
+  local tmp
+  [[ -f "$TMUX_SESSIONS_FILE" ]] || return 0
+  tmp="$(mktemp "$ROOT/.tmux-sessions.XXXXXX")"
+  if ! grep -Fxv -- "$session" "$TMUX_SESSIONS_FILE" >"$tmp"; then
+    : >"$tmp"
+  fi
+  mv "$tmp" "$TMUX_SESSIONS_FILE"
+}
+
+first_owned_tmux_session() {
+  [[ -f "$TMUX_SESSIONS_FILE" ]] || return 1
+  awk 'NF { print; found=1; exit } END { exit(found ? 0 : 1) }' "$TMUX_SESSIONS_FILE"
+}
+
+tmux_target_exists() {
+  local target="$1"
+  [[ -n "$target" ]] && tmux display-message -p -t "$target" '#{pane_id}' >/dev/null 2>&1
+}
+
+write_tmux_diagnostics() {
+  local base="$1"
+  local session="$2"
+  local target="$3"
+  local session_exists="0"
+  local target_exists="0"
+
+  if tmux_session_exists "$session"; then
+    session_exists="1"
+  fi
+  if tmux_target_exists "$target"; then
+    target_exists="1"
+  fi
+
+  {
+    printf 'session=%s\n' "$session"
+    printf 'target=%s\n' "$target"
+    printf 'session_exists=%s\n' "$session_exists"
+    printf 'target_exists=%s\n' "$target_exists"
+  } >"$ROOT/$base.tmux-state.txt"
+
+  tmux ls >"$ROOT/$base.tmux-ls.txt" 2>&1 || true
+  tmux list-panes -a -F '#{session_name}|||#{window_index}|||#{pane_index}|||#{pane_id}|||#{pane_dead}|||#{pane_dead_status}|||#{pane_current_command}|||#{pane_width}|||#{pane_height}|||#{pane_title}' \
+    >"$ROOT/$base.tmux-list-panes.txt" 2>&1 || true
+  tmux show-messages >"$ROOT/$base.tmux-show-messages.txt" 2>&1 || true
+  if [[ -n "$session" ]]; then
+    tmux list-panes -t "$session" -F '#{session_name}|||#{window_index}|||#{pane_index}|||#{pane_id}|||#{pane_dead}|||#{pane_dead_status}|||#{pane_current_command}|||#{pane_width}|||#{pane_height}|||#{pane_title}' \
+      >"$ROOT/$base.tmux-session-panes.txt" 2>&1 || true
+  fi
+  if [[ -n "$target" ]]; then
+    tmux display-message -p -t "$target" '#{session_name}|||#{window_index}|||#{pane_index}|||#{pane_id}|||#{pane_dead}|||#{pane_dead_status}|||#{pane_current_command}|||#{pane_width}|||#{pane_height}|||#{pane_title}' \
+      >"$ROOT/$base.tmux-target.txt" 2>&1 || true
+  fi
+}
+
+write_termx_log_excerpt() {
+  local base="$1"
+  if [[ -f "$LOG" ]]; then
+    tail -n 200 "$LOG" >"$ROOT/$base.termx-log.txt" 2>&1 || true
+    return 0
+  fi
+  printf 'missing termx log: %s\n' "$LOG" >"$ROOT/$base.termx-log.txt"
+}
+
+write_termx_inventory_artifact() {
+  local base="$1"
+  XDG_CONFIG_HOME="$CFG" \
+  XDG_STATE_HOME="$STATE" \
+  TERMX_REMOTE_ENABLE=false \
+  "$BIN" --socket "$SOCK" --log-file "$LOG" ls >"$ROOT/$base.termx-ls.txt" 2>&1 || true
+}
+
+ensure_tmux_target() {
+  local session="$1"
+  local target="$2"
+  local base="$3"
+  if tmux_target_exists "$target"; then
+    return 0
+  fi
+  write_tmux_diagnostics "$base" "$session" "$target"
+  echo "tmux pane target unavailable: session=$session target=$target" >&2
+  return 1
+}
+
+write_tmux_command_error() {
+  local kind="$1"
+  local base="$2"
+  local session="$3"
+  local target="$4"
+  local status="$5"
+  local stderr_file="$6"
+  shift 6
+  local artifact_base="tmux-${kind}-error.${base}"
+
+  write_tmux_diagnostics "$artifact_base" "$session" "$target"
+  {
+    printf 'session=%s\n' "$session"
+    printf 'target=%s\n' "$target"
+    printf 'status=%s\n' "$status"
+    printf 'command='
+    printf '%q ' "$@"
+    printf '\n'
+    printf 'stderr:\n'
+    cat "$stderr_file"
+  } >"$ROOT/$artifact_base.txt"
+}
+
+run_tmux_capture() {
+  local session="$1"
+  local target="$2"
+  local base="$3"
+  local label="$4"
+  shift 4
+  local stdout_file
+  local stderr_file
+  local status
+  local artifact_base="tmux-capture-error.${base}.${label}"
+
+  stdout_file="$(mktemp "$ROOT/.tmux-capture.${label}.stdout.XXXXXX")"
+  stderr_file="$(mktemp "$ROOT/.tmux-capture.${label}.stderr.XXXXXX")"
+  if "$@" >"$stdout_file" 2>"$stderr_file"; then
+    cat "$stdout_file"
+    rm -f "$stdout_file" "$stderr_file"
+    return 0
+  fi
+
+  status=$?
+  write_tmux_diagnostics "$artifact_base" "$session" "$target"
+  {
+    printf 'session=%s\n' "$session"
+    printf 'target=%s\n' "$target"
+    printf 'status=%s\n' "$status"
+    printf 'command='
+    printf '%q ' "$@"
+    printf '\n'
+    printf 'stderr:\n'
+    cat "$stderr_file"
+  } >"$ROOT/$artifact_base.txt"
+  if [[ -s "$stdout_file" ]]; then
+    cp "$stdout_file" "$ROOT/$artifact_base.stdout.txt"
+  fi
+  rm -f "$stdout_file" "$stderr_file"
+  return "$status"
+}
+
+send_tmux_keys() {
+  local session="$1"
+  local target="$2"
+  local base="$3"
+  shift 3
+  local stderr_file
+  local status
+
+  ensure_tmux_target "$session" "$target" "$base.send-target-missing" || return 1
+  stderr_file="$(mktemp "$ROOT/.tmux-send.stderr.XXXXXX")"
+  if tmux send-keys -t "$target" "$@" 2>"$stderr_file"; then
+    rm -f "$stderr_file"
+    return 0
+  fi
+
+  status=$?
+  write_tmux_command_error "send" "$base" "$session" "$target" "$status" "$stderr_file" tmux send-keys -t "$target" "$@"
+  rm -f "$stderr_file"
+  return "$status"
+}
+
+start_tmux_session() {
+  local session="$1"
+  local cols="$2"
+  local rows="$3"
+  local command="$4"
+  local pane
+
+  pane="$(tmux new-session -d -P -F '#{pane_id}' -s "$session" -x "$cols" -y "$rows" "$command")"
+  pane="$(printf '%s\n' "$pane" | tr -d '\r' | awk 'NF {line=$0} END {print line}')"
+  if [[ -z "$pane" ]]; then
+    echo "failed to create tmux session: $session" >&2
+    return 1
+  fi
+  tmux set-option -t "$session" remain-on-exit on >/dev/null 2>&1 || true
+  register_tmux_session "$session"
+  printf '%s\n' "$pane"
+}
+
+start_tmux_client() {
+  local session="$1"
+  local target="$2"
+  local size
+  local cols
+  local rows
+
+  size="$(
+    tmux list-clients -F '#{client_width} #{client_height}' 2>/dev/null \
+      | awk '
+          BEGIN { bestw=0; besth=0 }
+          NF >= 2 {
+            w=$1+0
+            h=$2+0
+            if (w > bestw || (w == bestw && h > besth)) {
+              bestw=w
+              besth=h
+            }
+          }
+          END {
+            if (bestw > 0 && besth > 0) {
+              printf "%d %d\n", bestw, besth
+            }
+          }
+        '
+  )"
+  if [[ -z "$size" ]]; then
+    size="$(tmux display-message -p -t "$target" '#{pane_width} #{pane_height}' 2>/dev/null || true)"
+  fi
+  cols="${size%% *}"
+  rows="${size##* }"
+  if [[ -z "$cols" || -z "$rows" || "$cols" == "$size" || "$rows" == "$size" ]]; then
+    cols="$ATTACH_COLS"
+    rows="$ATTACH_ROWS"
+  fi
+
+  python3 - "$cols" "$rows" "$session" <<'PY' >"$ROOT/$session.tmux-client.out" 2>&1 &
+import fcntl
+import os
+import pty
+import select
+import struct
+import subprocess
+import signal
+import sys
+import termios
+
+cols = int(sys.argv[1])
+rows = int(sys.argv[2])
+session = sys.argv[3]
+
+child = None
+stopping = False
+
+def handle_signal(signum, frame):
+    global stopping
+    stopping = True
+    if child is not None and child.poll() is None:
+        child.terminate()
+
+signal.signal(signal.SIGTERM, handle_signal)
+signal.signal(signal.SIGINT, handle_signal)
+
+master, slave = pty.openpty()
+fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+child = subprocess.Popen(
+    ["tmux", "attach-session", "-r", "-t", session],
+    stdin=slave,
+    stdout=slave,
+    stderr=slave,
+    close_fds=True,
+)
+os.close(slave)
+
+while True:
+    ready, _, _ = select.select([master], [], [], 0.05)
+    if master in ready:
+        try:
+            data = os.read(master, 4096)
+        except OSError:
+            data = b""
+        if not data:
+            if child.poll() is not None:
+                break
+        else:
+            os.write(1, data)
+    if child.poll() is not None:
+        break
+    if stopping and child.poll() is None:
+        child.terminate()
+
+if child.poll() is None:
+    child.terminate()
+    try:
+        child.wait(timeout=0.5)
+    except subprocess.TimeoutExpired:
+        child.kill()
+        child.wait(timeout=0.5)
+
+os.close(master)
+PY
+  printf '%s\n' "$!"
+}
+
+stop_tmux_client() {
+  local pid="${1:-}"
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
+}
+
+prime_tmux_client() {
+  local session="$1"
+  local target="$2"
+  local pid
+  pid="$(start_tmux_client "$session" "$target")"
+  sleep 0.25
+  stop_tmux_client "$pid"
+}
+
+surface_has_attach_placeholder() {
+  grep -Eq 'No terminal attached|Attach existing terminal'
+}
+
+should_retry_attach_surface() {
+  local reason="${1:-}"
+  case "$reason" in
+    attach-placeholder-stuck|attach-placeholder-timeout)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+record_attach_surface_artifact() {
+  local base="$1"
+  local session="$2"
+  local target="$3"
+  local reason="$4"
+  local retry_count="$5"
+  local retry_limit="$6"
+  local pane_alt=""
+  local pane_normal=""
+  local alternate_on=""
+
+  ensure_tmux_target "$session" "$target" "$base.target-missing" || true
+  pane_alt="$(capture_pane_alt "$session" "$target" "$base" || true)"
+  pane_normal="$(capture_pane_normal "$session" "$target" "$base" || true)"
+  alternate_on="$(tmux display-message -p -t "$target" '#{alternate_on}' 2>/dev/null || true)"
+  printf '%s\n' "$pane_normal" >"$ROOT/$base.normal.txt"
+  printf '%s\n' "$pane_alt" >"$ROOT/$base.alt.txt"
+  printf '%s\n' "$alternate_on" >"$ROOT/$base.alternate_on.txt"
+  {
+    printf 'reason=%s\n' "$reason"
+    printf 'attach_retry_count=%s\n' "$retry_count"
+    printf 'attach_retry_limit=%s\n' "$retry_limit"
+    printf 'wait_attempt=%s\n' "${WAIT_SURFACE_LAST_ATTEMPT:-0}"
+    printf 'placeholder_seen=%s\n' "${WAIT_SURFACE_LAST_PLACEHOLDER_SEEN:-0}"
+    printf 'session=%s\n' "$session"
+    printf 'target=%s\n' "$target"
+  } >"$ROOT/$base.summary.txt"
+  write_tmux_diagnostics "$base" "$session" "$target"
+  write_termx_log_excerpt "$base"
+  write_termx_inventory_artifact "$base"
+}
+
+cleanup() {
+  set +e
+  local owned_session
+  stop_tmux_client "$CLIENT_MAIN_PID"
+  stop_tmux_client "$CLIENT_REATTACH_PID"
+  while owned_session="$(first_owned_tmux_session)"; do
+    cleanup_tmux_session "$owned_session"
+  done
+  if [[ -n "${DAEMON_PID:-}" ]] && kill -0 "$DAEMON_PID" 2>/dev/null; then
+    kill "$DAEMON_PID" 2>/dev/null || true
+    wait "$DAEMON_PID" 2>/dev/null || true
+  fi
+  if [[ "$KEEP_ROOT" == "0" ]]; then
+    rm -rf "$ROOT"
+  else
+    log "artifacts kept at $ROOT"
+  fi
+}
+
+copy_gridtrace_artifact() {
+  local session="$1"
+  local dest_base="$2"
+  local trace_path="$ROOT/$session.gridtrace.log"
+  if [[ ! -f "$trace_path" ]]; then
+    return 0
+  fi
+  cp "$trace_path" "$ROOT/$dest_base.gridtrace.log"
+  if ! rg -n 'runtime\.load_grid_viewport|app\.copy_mode\.sync_viewport' "$trace_path" >"$ROOT/$dest_base.gridtrace.summary.txt"; then
+    : > "$ROOT/$dest_base.gridtrace.summary.txt"
+  fi
+}
+
+deep_hot_expected_first_row() {
+  local retained_committed_rows="$LINES"
+  local screen_committed_rows=$((ATTACH_ROWS - DEEP_HOT_SCREEN_HOT_ROWS))
+  if (( screen_committed_rows < 0 )); then
+    screen_committed_rows=0
+  fi
+  retained_committed_rows=$((retained_committed_rows - screen_committed_rows))
+  if (( retained_committed_rows < 0 )); then
+    retained_committed_rows=0
+  fi
+  printf '%d\n' $((retained_committed_rows - (2 * DEEP_HOT_PAGE_LIMIT)))
+}
+
+wait_surface() {
+  local session="$1"
+  local target="$2"
+  local pane
+  local pane_alt
+  local alternate_on
+  local attempt
+  local placeholder_seen="0"
+  local placeholder_streak="0"
+  WAIT_SURFACE_LAST_REASON=""
+  WAIT_SURFACE_LAST_ATTEMPT="0"
+  WAIT_SURFACE_LAST_PLACEHOLDER_SEEN="0"
+  prime_tmux_client "$session" "$target"
+  for attempt in $(seq 1 "$WAIT_ATTEMPTS"); do
+    WAIT_SURFACE_LAST_ATTEMPT="$attempt"
+    if ! ensure_tmux_target "$session" "$target" "$session.wait-target-missing"; then
+      WAIT_SURFACE_LAST_REASON="target-missing"
+      return 1
+    fi
+    if pane_alt="$(capture_pane_alt "$session" "$target" "$session.wait-surface")"; then
+      :
+    else
+      pane_alt=""
+    fi
+    pane="$pane_alt"
+    if [[ -z "$pane" ]]; then
+      if pane="$(capture_pane_normal "$session" "$target" "$session.wait-surface")"; then
+        :
+      else
+        pane=""
+      fi
+    fi
+    if printf '%s\n' "$pane" | grep -Fq 'protocol error 404'; then
+      WAIT_SURFACE_LAST_REASON="terminal-not-found"
+      echo "attach failed in tmux session $session: terminal not found" >&2
+      printf '%s\n' "$pane" >&2
+      return 1
+    fi
+    if printf '%s\n' "$pane" | grep -Fq '[tmux-history-smoke] attach exited status='; then
+      WAIT_SURFACE_LAST_REASON="attach-exited"
+      printf '%s\n' "$pane" >"$ROOT/$session.attach-exited.txt"
+      write_tmux_diagnostics "$session.attach-exited" "$session" "$target"
+      echo "attach command exited before surface became ready in tmux session: $session" >&2
+      return 1
+    fi
+    if printf '%s\n' "$pane" | surface_has_attach_placeholder; then
+      placeholder_seen="1"
+      WAIT_SURFACE_LAST_PLACEHOLDER_SEEN="1"
+      placeholder_streak=$((placeholder_streak + 1))
+      alternate_on="$(tmux display-message -p -t "$target" '#{alternate_on}' 2>/dev/null || true)"
+      if [[ "$alternate_on" == "1" && -z "$pane_alt" ]]; then
+        prime_tmux_client "$session" "$target"
+      fi
+      if (( placeholder_streak >= ATTACH_PLACEHOLDER_RETRY_ATTEMPTS )); then
+        WAIT_SURFACE_LAST_REASON="attach-placeholder-stuck"
+        return 1
+      fi
+      sleep "$WAIT_DELAY"
+      continue
+    fi
+    placeholder_streak="0"
+    if printf '%s\n' "$pane" | grep -Eq '([0-9]{6}|stress|COLD-[0-9]{5}|HOT-SCREEN-open-tail)'; then
+      return 0
+    fi
+    sleep "$WAIT_DELAY"
+  done
+  WAIT_SURFACE_LAST_PLACEHOLDER_SEEN="$placeholder_seen"
+  if [[ "$placeholder_seen" == "1" ]]; then
+    WAIT_SURFACE_LAST_REASON="attach-placeholder-timeout"
+  else
+    WAIT_SURFACE_LAST_REASON="wait-timeout"
+  fi
+  echo "timed out waiting for attached surface in tmux session: $session" >&2
+  return 1
+}
+
+start_attach_tmux_session() {
+  local session="$1"
+  local terminal_id="$2"
+  local phase="$3"
+  local pane=""
+  local client_pid=""
+  local attempt
+  ATTACH_SESSION_PANE=""
+  ATTACH_SESSION_CLIENT_PID=""
+  ATTACH_SESSION_RETRY_COUNT="0"
+
+  for attempt in $(seq 0 "$ATTACH_SURFACE_RETRY_LIMIT"); do
+    pane="$(start_tmux_session "$session" "$SESSION_COLS" "$SESSION_ROWS" "$(attach_tmux_command "$terminal_id" "$session")")"
+    client_pid="$(start_tmux_client "$session" "$pane")"
+    if wait_surface "$session" "$pane"; then
+      ATTACH_SESSION_PANE="$pane"
+      ATTACH_SESSION_CLIENT_PID="$client_pid"
+      ATTACH_SESSION_RETRY_COUNT="$attempt"
+      return 0
+    fi
+
+    if should_retry_attach_surface "$WAIT_SURFACE_LAST_REASON" && (( attempt < ATTACH_SURFACE_RETRY_LIMIT )); then
+      record_attach_surface_artifact "attach-${phase}.retry-$((attempt + 1))" "$session" "$pane" "$WAIT_SURFACE_LAST_REASON" "$((attempt + 1))" "$ATTACH_SURFACE_RETRY_LIMIT"
+      stop_tmux_client "$client_pid"
+      cleanup_tmux_session "$session"
+      sleep "$WAIT_DELAY"
+      continue
+    fi
+
+    record_attach_surface_artifact "attach-${phase}.failure" "$session" "$pane" "$WAIT_SURFACE_LAST_REASON" "$attempt" "$ATTACH_SURFACE_RETRY_LIMIT"
+    stop_tmux_client "$client_pid"
+    return 1
+  done
+
+  return 1
+}
+
+page_to_top() {
+  local session="$1"
+  local target="$2"
+  local repeats="${3:-$G_REPEATS}"
+  local repeat
+  send_tmux_keys "$session" "$target" "$session.page-to-top.copy-mode-enter" C-v
+  sleep "$G_DELAY"
+  for repeat in $(seq 1 "$repeats"); do
+    send_tmux_keys "$session" "$target" "$session.page-to-top.g-$repeat" g
+    sleep "$G_DELAY"
+  done
+}
+
+capture_session() {
+  local session="$1"
+  local target="$2"
+  local base="$3"
+  local raw_alt
+  local clean_alt
+  local normal
+  local normal_raw
+  local alternate_on
+  ensure_tmux_target "$session" "$target" "$base.capture-target-missing" || return 1
+  raw_alt="$(capture_pane_alt_raw "$session" "$target" "$base" || true)"
+  clean_alt="$(capture_pane_alt "$session" "$target" "$base" || true)"
+  normal="$(capture_pane_normal "$session" "$target" "$base" || true)"
+  alternate_on="$(tmux display-message -p -t "$target" '#{alternate_on}' 2>/dev/null || true)"
+  if [[ -z "$raw_alt" && -z "$clean_alt" && "$alternate_on" == "1" ]] && printf '%s\n' "$normal" | grep -Fq 'No terminal attached'; then
+    prime_tmux_client "$session" "$target"
+    raw_alt="$(capture_pane_alt_raw "$session" "$target" "$base" || true)"
+    clean_alt="$(capture_pane_alt "$session" "$target" "$base" || true)"
+    normal="$(capture_pane_normal "$session" "$target" "$base" || true)"
+  fi
+  if [[ -n "$raw_alt" || -n "$clean_alt" ]]; then
+    normal_raw="$(capture_pane_normal_raw "$session" "$target" "$base" || true)"
+    printf '%s\n' "$raw_alt" > "$ROOT/$base.raw.txt"
+    printf '%s\n' "$clean_alt" > "$ROOT/$base.txt"
+    printf '%s\n' "$raw_alt" > "$ROOT/$base.alt.raw.txt"
+    printf '%s\n' "$clean_alt" > "$ROOT/$base.alt.txt"
+    printf '%s\n' "$normal_raw" > "$ROOT/$base.normal.raw.txt"
+    printf '%s\n' "$normal" > "$ROOT/$base.normal.txt"
+    return 0
+  fi
+
+  normal_raw="$(capture_pane_normal_raw "$session" "$target" "$base" || true)"
+  printf '%s\n' "$normal_raw" > "$ROOT/$base.raw.txt"
+  printf '%s\n' "$normal" > "$ROOT/$base.txt"
+  if [[ -n "$normal" || -n "$normal_raw" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+capture_pane_alt() {
+  local session="$1"
+  local target="$2"
+  local base="${3:-capture}"
+  run_tmux_capture "$session" "$target" "$base" "alt" tmux capture-pane -a -t "$target" -p
+}
+
+capture_pane_alt_raw() {
+  local session="$1"
+  local target="$2"
+  local base="${3:-capture}"
+  run_tmux_capture "$session" "$target" "$base" "alt-raw" tmux capture-pane -a -t "$target" -ep
+}
+
+capture_pane_normal() {
+  local session="$1"
+  local target="$2"
+  local base="${3:-capture}"
+  run_tmux_capture "$session" "$target" "$base" "normal" tmux capture-pane -t "$target" -p
+}
+
+capture_pane_normal_raw() {
+  local session="$1"
+  local target="$2"
+  local base="${3:-capture}"
+  run_tmux_capture "$session" "$target" "$base" "normal-raw" tmux capture-pane -t "$target" -ep
+}
+
+extract_first_match() {
+  local file="$1"
+  local regex="$2"
+  grep -m1 -oE "$regex" "$file" || true
+}
+
+assert_contains() {
+  local file="$1"
+  local needle="$2"
+  if ! grep -Fq -- "$needle" "$file"; then
+    echo "expected '$needle' in $file" >&2
+    return 1
+  fi
+}
+
+assert_first_match_equals() {
+  local file="$1"
+  local regex="$2"
+  local expected="$3"
+  local got
+  got="$(extract_first_match "$file" "$regex")"
+  if [[ "$got" != "$expected" ]]; then
+    echo "expected first match '$expected' in $file, got '${got:-<none>}'" >&2
+    return 1
+  fi
+}
+
+capture_until_contains() {
+  local session="$1"
+  local target="$2"
+  local base="$3"
+  local needle="$4"
+  local attempt
+  for attempt in $(seq 1 "$WAIT_ATTEMPTS"); do
+    capture_session "$session" "$target" "$base" || return 1
+    if grep -Fq -- "$needle" "$ROOT/$base.txt"; then
+      return 0
+    fi
+    sleep "$WAIT_DELAY"
+  done
+  echo "timed out waiting for '$needle' in $ROOT/$base.txt" >&2
+  return 1
+}
+
+enter_copy_mode_and_repeat_top_until_contains() {
+  local session="$1"
+  local target="$2"
+  local base="$3"
+  local needle="$4"
+  local repeats="$5"
+  local attempt
+
+  send_tmux_keys "$session" "$target" "$base.copy-mode-enter" C-v
+  sleep "$G_DELAY"
+  for attempt in $(seq 1 "$repeats"); do
+    send_tmux_keys "$session" "$target" "$base.copy-mode-g-$attempt" g
+    sleep "$G_DELAY"
+    capture_session "$session" "$target" "$base" || return 1
+    if grep -Fq -- "$needle" "$ROOT/$base.txt"; then
+      return 0
+    fi
+  done
+  echo "timed out waiting for '$needle' in $ROOT/$base.txt after $repeats top attempts" >&2
+  return 1
+}
+
+start_daemon() {
+  mkdir -p "$CFG" "$STATE"
+  XDG_CONFIG_HOME="$CFG" \
+  XDG_STATE_HOME="$STATE" \
+  TERMX_REMOTE_ENABLE=false \
+  "$BIN" --socket "$SOCK" --log-file "$LOG" daemon >"$DAEMON_STDOUT" 2>&1 &
+  DAEMON_PID=$!
+  wait_for_daemon
+}
+
+build_bin_if_needed() {
+  if [[ "$BUILD_BIN" == "1" ]]; then
+    log "building termx binary at $BIN"
+    go build -o "$BIN" ./termx-cli/cmd/termx
+  fi
+}
+
+build_generator_command() {
+  case "$SCENARIO" in
+    baseline|standard)
+      printf 'python3 %q --lines %q --seed %q --width-hint %q; exec cat' \
+        "$REPO_ROOT/scripts/generate_terminal_stress.py" "$LINES" "$SEED" "$WIDTH_HINT"
+      ;;
+    deep-hot)
+      printf 'python3 -c %q %q %q; exec cat' \
+        'import sys; cold=int(sys.argv[1]); cols=int(sys.argv[2]); out=sys.stdout; pad=lambda label, width: label + ("." * max(0, width - len(label))); out.write("".join(f"COLD-{i:05d} committed row\n" for i in range(cold))); out.write(pad("HOT-ROW-0", cols) + pad("HOT-ROW-1", cols) + "HOT-SCREEN-open-tail"); out.flush()' \
+        "$LINES" "$ATTACH_COLS"
+      ;;
+    *)
+      echo "unknown scenario: $SCENARIO" >&2
+      exit 1
+      ;;
+  esac
+}
+
+create_terminal() {
+  local generator_cmd
+  local output
+  generator_cmd="$(build_generator_command)"
+  output="$(
+    XDG_CONFIG_HOME="$CFG" \
+    XDG_STATE_HOME="$STATE" \
+    TERMX_REMOTE_ENABLE=false \
+    run_in_pty "$ATTACH_COLS" "$ATTACH_ROWS" \
+      env \
+      XDG_CONFIG_HOME="$CFG" \
+      XDG_STATE_HOME="$STATE" \
+      TERMX_REMOTE_ENABLE=false \
+      "$BIN" --socket "$SOCK" --log-file "$LOG" \
+      new --name grid-stress -- /bin/sh -lc "$generator_cmd"
+  )"
+  TERM_ID="$(printf '%s\n' "$output" | tr -d '\r' | awk 'NF {line=$0} END {print line}')"
+  if [[ -z "$TERM_ID" ]]; then
+    echo "failed to parse terminal id from termx new output" >&2
+    printf '%s\n' "$output" >&2
+    exit 1
+  fi
+  wait_for_terminal "$TERM_ID"
+}
+
+run_baseline_scenario() {
+  local pane_main
+  local pane_reattach
+
+  start_attach_tmux_session "$SESSION_MAIN" "$TERM_ID" "main"
+  pane_main="$ATTACH_SESSION_PANE"
+  CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
+  page_to_top "$SESSION_MAIN" "$pane_main"
+  capture_session "$SESSION_MAIN" "$pane_main" "copy-top"
+
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "copy-top.escape" Escape
+  tmux resize-window -t "$SESSION_MAIN" -x "$RESIZE_COLS" -y "$RESIZE_ROWS"
+  sleep 0.5
+  page_to_top "$SESSION_MAIN" "$pane_main"
+  capture_session "$SESSION_MAIN" "$pane_main" "copy-top-resized"
+
+  cleanup_tmux_session "$SESSION_MAIN"
+  start_attach_tmux_session "$SESSION_REATTACH" "$TERM_ID" "reattach"
+  pane_reattach="$ATTACH_SESSION_PANE"
+  CLIENT_REATTACH_PID="$ATTACH_SESSION_CLIENT_PID"
+  page_to_top "$SESSION_REATTACH" "$pane_reattach"
+  capture_session "$SESSION_REATTACH" "$pane_reattach" "reattach-top"
+
+  assert_contains "$ROOT/copy-top.txt" "000000 [INFO  ] stress   boot"
+  assert_contains "$ROOT/copy-top-resized.txt" "000000"
+  assert_contains "$ROOT/reattach-top.txt" "000000"
+
+  log "PASS copy-top -> $ROOT/copy-top.txt"
+  log "PASS copy-top-resized -> $ROOT/copy-top-resized.txt"
+  log "PASS reattach-top -> $ROOT/reattach-top.txt"
+}
+
+run_deep_hot_scenario() {
+  local expected_first_row
+  local expected_label
+  local pane_main
+  local pane_reattach
+
+  if (( LINES < DEEP_HOT_MATERIALIZED_LIMIT + DEEP_HOT_PAGE_LIMIT )); then
+    echo "deep-hot requires --lines >= $((DEEP_HOT_MATERIALIZED_LIMIT + DEEP_HOT_PAGE_LIMIT))" >&2
+    exit 1
+  fi
+
+  expected_first_row="$(deep_hot_expected_first_row)"
+  printf -v expected_label 'COLD-%05d committed row' "$expected_first_row"
+
+  start_attach_tmux_session "$SESSION_MAIN" "$TERM_ID" "main"
+  pane_main="$ATTACH_SESSION_PANE"
+  CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
+  capture_session "$SESSION_MAIN" "$pane_main" "latest-tail"
+  assert_contains "$ROOT/latest-tail.txt" "HOT-SCREEN-open-tail"
+
+  if ! enter_copy_mode_and_repeat_top_until_contains "$SESSION_MAIN" "$pane_main" "copy-committed-boundary" "$expected_label" "$DEEP_HOT_TOP_REPEATS"; then
+    copy_gridtrace_artifact "$SESSION_MAIN" "copy-committed-boundary"
+    return 1
+  fi
+  copy_gridtrace_artifact "$SESSION_MAIN" "copy-committed-boundary"
+  if [[ -f "$ROOT/copy-committed-boundary.gridtrace.summary.txt" ]]; then
+    assert_contains "$ROOT/copy-committed-boundary.gridtrace.summary.txt" 'requested_offset="0" requested_limit="500"'
+    assert_contains "$ROOT/copy-committed-boundary.gridtrace.summary.txt" 'requested_offset="500" requested_limit="500"'
+    assert_contains "$ROOT/copy-committed-boundary.gridtrace.summary.txt" "first_row_id=\"$expected_first_row\""
+  fi
+  assert_first_match_equals "$ROOT/copy-committed-boundary.txt" 'COLD-[0-9]{5} committed row' "$expected_label"
+
+  cleanup_tmux_session "$SESSION_MAIN"
+  start_attach_tmux_session "$SESSION_REATTACH" "$TERM_ID" "reattach"
+  pane_reattach="$ATTACH_SESSION_PANE"
+  CLIENT_REATTACH_PID="$ATTACH_SESSION_CLIENT_PID"
+  capture_session "$SESSION_REATTACH" "$pane_reattach" "reattach-latest-tail"
+  assert_contains "$ROOT/reattach-latest-tail.txt" "HOT-SCREEN-open-tail"
+
+  if ! enter_copy_mode_and_repeat_top_until_contains "$SESSION_REATTACH" "$pane_reattach" "reattach-committed-boundary" "$expected_label" "$DEEP_HOT_TOP_REPEATS"; then
+    copy_gridtrace_artifact "$SESSION_REATTACH" "reattach-committed-boundary"
+    return 1
+  fi
+  copy_gridtrace_artifact "$SESSION_REATTACH" "reattach-committed-boundary"
+  if [[ -f "$ROOT/reattach-committed-boundary.gridtrace.summary.txt" ]]; then
+    assert_contains "$ROOT/reattach-committed-boundary.gridtrace.summary.txt" 'requested_offset="0" requested_limit="500"'
+    assert_contains "$ROOT/reattach-committed-boundary.gridtrace.summary.txt" 'requested_offset="500" requested_limit="500"'
+    assert_contains "$ROOT/reattach-committed-boundary.gridtrace.summary.txt" "first_row_id=\"$expected_first_row\""
+  fi
+  assert_first_match_equals "$ROOT/reattach-committed-boundary.txt" 'COLD-[0-9]{5} committed row' "$expected_label"
+
+  log "PASS latest-tail -> $ROOT/latest-tail.txt"
+  log "PASS copy-committed-boundary -> $ROOT/copy-committed-boundary.txt"
+  log "PASS reattach-committed-boundary -> $ROOT/reattach-committed-boundary.txt"
+}
+
+attach_command() {
+  local terminal_id="$1"
+  local session_name="${2:-}"
+  local trace_path=""
+  if [[ "$SCENARIO" == "deep-hot" && -n "$session_name" && "${TERMX_TMUX_HISTORY_TRACE:-0}" != "0" ]]; then
+    trace_path="$ROOT/${session_name}.gridtrace.log"
+  fi
+  if [[ -n "$trace_path" ]]; then
+    printf 'env XDG_CONFIG_HOME=%q XDG_STATE_HOME=%q TERMX_REMOTE_ENABLE=false TERMX_GRID_HISTORY_TRACE=%q %q --socket %q --log-file %q attach %q' \
+      "$CFG" "$STATE" "$trace_path" "$BIN" "$SOCK" "$LOG" "$terminal_id"
+    return
+  fi
+  printf 'env XDG_CONFIG_HOME=%q XDG_STATE_HOME=%q TERMX_REMOTE_ENABLE=false %q --socket %q --log-file %q attach %q' \
+    "$CFG" "$STATE" "$BIN" "$SOCK" "$LOG" "$terminal_id"
+}
+
+attach_tmux_command() {
+  local terminal_id="$1"
+  local session_name="$2"
+  local command
+  command="$(attach_command "$terminal_id" "$session_name")"
+  printf 'sh -lc %q' "set +e; $command; status=\$?; printf '\n[tmux-history-smoke] attach exited status=%s\n' \"\$status\"; while :; do sleep 3600; done"
+}
+
+main() {
+  local attach_size
+  local resize_size
+
+  REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  ROOT=""
+  BIN=""
+  BUILD_BIN="1"
+  KEEP_ROOT="1"
+  LINES="1000"
+  SEED="100"
+  WIDTH_HINT="120"
+  SCENARIO="baseline"
+  ATTACH_COLS="120"
+  ATTACH_ROWS="36"
+  RESIZE_COLS="90"
+  RESIZE_ROWS="28"
+  G_REPEATS="24"
+  DEEP_HOT_MATERIALIZED_LIMIT="12000"
+  DEEP_HOT_PAGE_LIMIT="500"
+  DEEP_HOT_SCREEN_HOT_ROWS="3"
+  DEEP_HOT_TOP_REPEATS="4"
+  WAIT_ATTEMPTS="80"
+  WAIT_DELAY="0.2"
+  ATTACH_PLACEHOLDER_RETRY_ATTEMPTS="24"
+  ATTACH_SURFACE_RETRY_LIMIT="1"
+  G_DELAY="0.12"
+  SESSION_PREFIX=""
+  SESSION_MAIN=""
+  SESSION_REATTACH=""
+  CLIENT_MAIN_PID=""
+  CLIENT_REATTACH_PID=""
+  DAEMON_PID=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --scenario)
+        SCENARIO="$2"
+        shift 2
+        ;;
+      --root)
+        ROOT="$2"
+        shift 2
+        ;;
+      --bin)
+        BIN="$2"
+        BUILD_BIN="0"
+        shift 2
+        ;;
+      --lines)
+        LINES="$2"
+        shift 2
+        ;;
+      --seed)
+        SEED="$2"
+        shift 2
+        ;;
+      --width-hint)
+        WIDTH_HINT="$2"
+        shift 2
+        ;;
+      --attach-size)
+        attach_size="$(parse_size "$2")"
+        ATTACH_COLS="${attach_size%% *}"
+        ATTACH_ROWS="${attach_size##* }"
+        shift 2
+        ;;
+      --resize-size)
+        resize_size="$(parse_size "$2")"
+        RESIZE_COLS="${resize_size%% *}"
+        RESIZE_ROWS="${resize_size##* }"
+        shift 2
+        ;;
+      --g-repeats)
+        G_REPEATS="$2"
+        shift 2
+        ;;
+      --keep-root)
+        KEEP_ROOT="1"
+        shift
+        ;;
+      --cleanup-root)
+        KEEP_ROOT="0"
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "unknown argument: $1" >&2
+        usage >&2
+        exit 1
+        ;;
+    esac
+  done
+
+  if [[ -z "$ROOT" ]]; then
+    ROOT="$(mktemp -d /tmp/termx-grid-smoke.XXXXXX)"
+  else
+    mkdir -p "$ROOT"
+  fi
+
+  if [[ -z "$BIN" ]]; then
+    BIN="$ROOT/termx"
+  fi
+
+  SOCK="$ROOT/termx.sock"
+  LOG="$ROOT/termx.log"
+  CFG="$ROOT/config"
+  STATE="$ROOT/state"
+  DAEMON_STDOUT="$ROOT/daemon.out"
+  TMUX_SESSIONS_FILE="$ROOT/tmux-sessions.txt"
+  : >"$TMUX_SESSIONS_FILE"
+  SESSION_PREFIX="$(sanitize_tmux_name "$(basename "$ROOT")")-$$"
+  SESSION_MAIN="${SESSION_PREFIX}-main"
+  SESSION_REATTACH="${SESSION_PREFIX}-re"
+  read -r SESSION_COLS SESSION_ROWS <<<"$(preferred_tmux_session_size)"
+
+  trap cleanup EXIT
+
+  need go
+  need python3
+  need tmux
+
+  build_bin_if_needed
+  log "artifact root: $ROOT"
+  log "tmux session size: ${SESSION_COLS}x${SESSION_ROWS} (terminal pty ${ATTACH_COLS}x${ATTACH_ROWS})"
+  log "starting isolated daemon"
+  start_daemon
+  log "creating stress terminal"
+  create_terminal
+  log "created terminal: $TERM_ID"
+
+  case "$SCENARIO" in
+    baseline|standard)
+      run_baseline_scenario
+      ;;
+    deep-hot)
+      run_deep_hot_scenario
+      ;;
+    *)
+      echo "unknown scenario: $SCENARIO" >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

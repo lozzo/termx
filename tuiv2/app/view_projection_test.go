@@ -1,10 +1,23 @@
 package app
 
 import (
+	"context"
 	"testing"
 
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/tuiv2/orchestrator"
 )
+
+func repeatedCompactRows(text string, count int, cols int) []protocol.CompactRow {
+	if count <= 0 {
+		return nil
+	}
+	rows := make([]protocol.CompactRow, 0, count)
+	for i := 0; i < count; i++ {
+		rows = append(rows, protocol.CompactRowFromCells(protocolRowFromText(text, cols)))
+	}
+	return rows
+}
 
 func TestLocalViewProjectionPreservesPaneViewport(t *testing.T) {
 	model := setupModel(t, modelOpts{})
@@ -66,7 +79,14 @@ func TestPaneScrollbackPrefetchUsesCanonicalCols(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected pane scrollback prefetch command")
 	}
-	_ = cmd()
+	msg := cmd()
+	typed, ok := msg.(orchestrator.SnapshotLoadedMsg)
+	if !ok {
+		t.Fatalf("expected SnapshotLoadedMsg, got %#v", msg)
+	}
+	if typed.CopyModeRequest {
+		t.Fatalf("expected active pane history request to stay on live/runtime path, got %#v", typed)
+	}
 
 	if got := len(client.viewportRequests); got != 1 {
 		t.Fatalf("expected one pane history request, got %#v", client.viewportRequests)
@@ -116,5 +136,232 @@ func TestPaneScrollbackPrefetchUsesLoadedDepthBeyondMaterializedWindow(t *testin
 	}
 	if request.limit != 500 {
 		t.Fatalf("expected next page size 500, got %#v", request)
+	}
+}
+
+func TestPaneScrollbackPrefetchDoesNotTreatAuthoritativeHotOnlyRowsAsCommittedHistory(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 50, height: 12})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 120, Rows: 24},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("hot0", 120), protocolRowFromText("hot1", 120)}),
+		ScrollbackTotal:        2,
+		ScrollbackLogicalTotal: 2,
+		ScrollbackLoadedRows:   0,
+		HistoryGeneration:      0,
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolRowFromText("live0", 120),
+		}},
+	}
+	terminal.ScrollbackExhausted = true
+	_ = model.runtime.SetPaneViewportOffset("pane-1", 20)
+	client := model.runtime.Client().(*recordingBridgeClient)
+
+	cmd := model.ensureActivePaneScrollbackCmd()
+	if cmd != nil {
+		t.Fatal("expected no pane scrollback prefetch command for hot-only authoritative rows")
+	}
+	if got := len(client.viewportRequests); got != 0 {
+		t.Fatalf("expected no pane history request for hot-only authoritative rows, got %#v", client.viewportRequests)
+	}
+}
+
+func TestPaneScrollbackPrefetchUsesZeroOffsetAfterAuthoritativeHotOnlyLatestReplace(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 50, height: 12})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 120, Rows: 24},
+		Scrollback:           []protocol.CompactRow{protocol.CompactRowFromCells([]protocol.Cell{{Content: "canon", Width: 1}})},
+		ScrollbackHasMore:    true,
+		ScrollbackLoadedRows: 12000,
+		ScrollbackOffset:     0,
+		ScrollbackTotal:      12000,
+		HistoryGeneration:    10,
+	}
+	terminal.ScrollbackLoadedLimit = 12000
+	_ = model.runtime.SetPaneViewportOffset("pane-1", 20)
+
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 120, Rows: 24},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("hot0", 120), protocolRowFromText("hot1", 120)}),
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        4,
+		ScrollbackLogicalTotal: 4,
+		ScrollbackHasMore:      true,
+		ScrollbackLoadedRows:   0,
+		HistoryGeneration:      0,
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolRowFromText("live0", 120),
+		}},
+	}
+
+	if _, err := model.runtime.LoadSnapshot(context.Background(), "term-1", 0, 0); err != nil {
+		t.Fatalf("load authoritative hot-only latest snapshot: %v", err)
+	}
+	terminal = model.runtime.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected runtime terminal")
+	}
+	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		t.Fatalf("expected latest replace to clear known committed depth, got %d", got)
+	}
+
+	cmd := model.ensureActivePaneScrollbackCmd()
+	if cmd == nil {
+		t.Fatal("expected pane scrollback prefetch command after authoritative hot-only latest replace")
+	}
+	_ = cmd()
+
+	if got := len(client.viewportRequests); got != 1 {
+		t.Fatalf("expected one pane history request, got %#v", client.viewportRequests)
+	}
+	request := client.viewportRequests[0]
+	if request.offset != 0 {
+		t.Fatalf("expected pane history request to restart from committed depth 0, got %#v", request)
+	}
+	if request.limit != 500 {
+		t.Fatalf("expected default page size 500 from committed depth 0, got %#v", request)
+	}
+}
+
+func TestPaneScrollbackPrefetchUsesZeroOffsetAfterFullReplaceBoundaryResetDisplayTail(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 50, height: 12})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 120, Rows: 24},
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
+			protocolRowFromText("tail0", 120),
+		}),
+		ScrollbackLoadedRows:   0,
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        0,
+		ScrollbackLogicalTotal: 0,
+		ScrollbackHasMore:      false,
+		HistoryGeneration:      0,
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolRowFromText("fresh", 120),
+		}},
+	}
+	terminal.FullReplaceBoundaryReset = true
+	terminal.ScrollbackLoadedLimit = 0
+	terminal.ScrollbackExhausted = false
+	_ = model.runtime.SetPaneViewportOffset("pane-1", 20)
+
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 120, Rows: 24},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("canon0", 120)}),
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        1,
+		ScrollbackLogicalTotal: 1,
+		ScrollbackHasMore:      false,
+		ScrollbackLoadedRows:   1,
+		HistoryGeneration:      11,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    0,
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolRowFromText("fresh", 120),
+		}},
+	}
+
+	cmd := model.ensureActivePaneScrollbackCmd()
+	if cmd == nil {
+		t.Fatal("expected pane scrollback prefetch command after full-replace boundary reset")
+	}
+	_ = cmd()
+
+	if got := len(client.viewportRequests); got != 1 {
+		t.Fatalf("expected one pane history request, got %#v", client.viewportRequests)
+	}
+	request := client.viewportRequests[0]
+	if request.offset != 0 {
+		t.Fatalf("expected pane history request to restart from committed depth 0 after full-replace boundary reset, got %#v", request)
+	}
+	if request.limit != 500 {
+		t.Fatalf("expected default page size 500 from committed depth 0 after full-replace boundary reset, got %#v", request)
+	}
+}
+
+func TestPaneScrollbackStaleLiveResponseDoesNotRestoreBoundarySideStateAfterFullReplaceReset(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 50, height: 12})
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 120, Rows: 24},
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
+			protocolRowFromText("tail0", 120),
+		}),
+		ScrollbackLoadedRows:   0,
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        0,
+		ScrollbackLogicalTotal: 0,
+		ScrollbackHasMore:      false,
+		HistoryGeneration:      0,
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolRowFromText("fresh", 120),
+		}},
+	}
+	terminal.FullReplaceBoundaryReset = true
+	terminal.ScrollbackLoadedLimit = 0
+	terminal.ScrollbackLoadingLimit = 0
+	terminal.ScrollbackExhausted = false
+
+	model.setHistoryLoadingOwner("term-1", 500, historyLoadingOwnerLive)
+	terminal.ScrollbackLoadingLimit = 500
+
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 120, Rows: 24},
+		Scrollback:             repeatedCompactRows("old", 12500, 120),
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        12500,
+		ScrollbackLogicalTotal: 12500,
+		ScrollbackHasMore:      false,
+		ScrollbackLoadedRows:   12500,
+		HistoryGeneration:      10,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    12499,
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolRowFromText("fresh", 120),
+		}},
+	}
+
+	staleLiveCmd := model.loadTerminalHistoryViewportCmd("term-1", 12000, 500, 120, false)
+	if staleLiveCmd == nil {
+		t.Fatal("expected stale live history viewport command")
+	}
+	msg := staleLiveCmd()
+	typed, ok := msg.(orchestrator.SnapshotLoadedMsg)
+	if !ok {
+		t.Fatalf("expected SnapshotLoadedMsg, got %#v", msg)
+	}
+	if typed.CopyModeRequest {
+		t.Fatalf("expected stale live request to stay on live/runtime path, got %#v", typed)
+	}
+
+	if got := len(client.viewportRequests); got != 1 {
+		t.Fatalf("expected one stale live history request, got %#v", client.viewportRequests)
+	}
+	if request := client.viewportRequests[0]; request.offset != 12000 || request.limit != 500 {
+		t.Fatalf("expected stale live history request to keep original offset/limit, got %#v", request)
+	}
+	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		t.Fatalf("expected stale live response not to restore committed depth after full-replace reset, got %d", got)
+	}
+	if terminal.ScrollbackExhausted {
+		t.Fatal("expected stale live response not to mark live exhausted after full-replace reset")
+	}
+	if got, want := terminal.ScrollbackLoadingLimit, 500; got != want {
+		t.Fatalf("expected stale live response not to clear current reset-owned loading limit %d, got %d", want, got)
+	}
+	if state, ok := model.historyLoading["term-1"]; !ok || state.Owner != historyLoadingOwnerLive || state.Limit != 500 {
+		t.Fatalf("expected stale live response not to replace current reset-owned loading slot, got %#v ok=%v", state, ok)
 	}
 }

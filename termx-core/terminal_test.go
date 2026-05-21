@@ -684,6 +684,63 @@ func TestTerminalSnapshotPagesLiveHistoryFromDisk(t *testing.T) {
 	}
 }
 
+func TestTerminalSnapshotMetadataOnlyPreservesCanonicalColdWindowAfterRetention(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	store.SetMaxRows(500)
+	for i := 0; i < 1000; i++ {
+		if err := store.AppendRows([][]localvterm.Cell{{{Content: fmt.Sprintf("row-%04d", i), Width: 1}}}); err != nil {
+			t.Fatalf("append grid row %d: %v", i, err)
+		}
+	}
+
+	vt := localvterm.New(8, 2, 3, nil)
+	vt.LoadSnapshot(localvterm.ScreenData{Cells: [][]localvterm.Cell{
+		localVTermRowForTest("live-a", 8),
+		localVTermRowForTest("live-b", 8),
+	}}, localvterm.CursorState{Visible: true}, localvterm.TerminalModes{AutoWrap: true})
+	term := &Terminal{
+		id:    "disk-snap-retained-metadata",
+		size:  Size{Cols: 8, Rows: 2},
+		vterm: vt,
+		grid:  store,
+	}
+
+	latest := term.Snapshot(0, 0)
+	if latest == nil {
+		t.Fatal("expected latest metadata-only snapshot")
+	}
+	if latest.ScrollbackTotal != 500 || !latest.ScrollbackHasMore {
+		t.Fatalf("expected retained metadata total=500 has_more=true, got total=%d has_more=%v", latest.ScrollbackTotal, latest.ScrollbackHasMore)
+	}
+	if latest.ScrollbackLoadedRows != 0 {
+		t.Fatalf("expected latest metadata-only snapshot to keep metadata-only depth at 0, got %d", latest.ScrollbackLoadedRows)
+	}
+	if latest.HistoryGeneration == 0 {
+		t.Fatal("expected latest metadata-only snapshot to keep history generation")
+	}
+	if latest.ScrollbackFirstRowID != 500 || latest.ScrollbackLastRowID != 999 {
+		t.Fatalf("expected latest metadata-only canonical window 500..999, got %d..%d", latest.ScrollbackFirstRowID, latest.ScrollbackLastRowID)
+	}
+
+	older := term.Snapshot(250, 0)
+	if older == nil {
+		t.Fatal("expected older metadata-only snapshot")
+	}
+	if older.ScrollbackTotal != 500 || !older.ScrollbackHasMore {
+		t.Fatalf("expected older metadata total=500 has_more=true, got total=%d has_more=%v", older.ScrollbackTotal, older.ScrollbackHasMore)
+	}
+	if older.ScrollbackLoadedRows != 250 {
+		t.Fatalf("expected older metadata-only snapshot to keep committed depth 250, got %d", older.ScrollbackLoadedRows)
+	}
+	if older.HistoryGeneration != latest.HistoryGeneration {
+		t.Fatalf("expected older metadata-only snapshot to keep generation %d, got %d", latest.HistoryGeneration, older.HistoryGeneration)
+	}
+	if older.ScrollbackFirstRowID != 500 || older.ScrollbackLastRowID != 749 {
+		t.Fatalf("expected older metadata-only canonical window 500..749, got %d..%d", older.ScrollbackFirstRowID, older.ScrollbackLastRowID)
+	}
+}
+
 func TestTerminalHistoryReplayReturnsNewestReplayWindow(t *testing.T) {
 	vt := localvterm.New(4, 2, 16, nil)
 	if _, err := vt.Write([]byte("1\n2\n3\n4\n5\n")); err != nil {
@@ -1131,7 +1188,6 @@ func TestTerminalGridStoreRetentionPolicyUsesSmallestBudget(t *testing.T) {
 func TestTerminalGridStoreRetentionAgeLimitDropsOldLogicalLines(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
-	store.SetRetentionPolicy(terminalGridRetentionPolicy{maxAge: time.Hour})
 
 	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
 	old := now.Add(-2 * time.Hour)
@@ -1143,6 +1199,7 @@ func TestTerminalGridStoreRetentionAgeLimitDropsOldLogicalLines(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("append rows: %v", err)
 	}
+	store.SetRetentionPolicy(terminalGridRetentionPolicy{maxAge: time.Hour})
 	if err := store.enforceMaxRowsLockedAt(now); err != nil {
 		t.Fatalf("enforce retention at time: %v", err)
 	}
@@ -1607,7 +1664,7 @@ func TestTerminalGridResizeDamageDoesNotPersistVisibleSuffix(t *testing.T) {
 		grid:  store,
 	}
 
-	writeVTermDamageToGrid(t, term, vt, "abcdefghij")
+	writeVTermDamageToGrid(t, term, vt, "abcdefghi")
 	term.appendGridFromDamageLocked(vt.ResizeWithDamage(4, 2))
 
 	viewport, err := store.Viewport(0, 10, 4)
@@ -1633,13 +1690,121 @@ func TestTerminalGridResizeDamageDoesNotPersistVisibleSuffix(t *testing.T) {
 	for _, row := range snapshot.Screen.Cells {
 		combinedRows = append(combinedRows, rowToString(row))
 	}
-	if !reflect.DeepEqual(combinedRows, []string{"abcd", "efgh", "ij"}) {
+	if !reflect.DeepEqual(combinedRows, []string{"abcd", "efgh", "i"}) {
 		t.Fatalf("expected snapshot to join stored prefix with visible suffix, got %#v", combinedRows)
 	}
 	combinedWrapped := append(append([]bool(nil), snapshot.ScrollbackWrapped...), snapshot.ScreenWrapped...)
 	if len(combinedWrapped) < 3 || !combinedWrapped[0] || !combinedWrapped[1] || combinedWrapped[2] {
 		t.Fatalf("expected wrapped metadata across scrollback/screen boundary, got %#v", combinedWrapped)
 	}
+}
+
+func TestTerminalWritePathSplitsColdAndHotAppendRows(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{id: "cold-hot-append", grid: store}
+	damage := localvterm.WriteDamage{
+		ScrollbackAppend: []localvterm.DamageOp{
+			{Cells: localVTermCellsFromString("cold0"), WrappedSet: true, Wrapped: false},
+			{Cells: localVTermCellsFromString("hot0"), WrappedSet: true, Wrapped: true},
+			{Cells: localVTermCellsFromString("hot1"), WrappedSet: true, Wrapped: true},
+		},
+		HotAppendRows: 2,
+	}
+	term.appendGridFromDamageLocked(damage)
+
+	viewport, err := store.Viewport(0, 10, 8)
+	if err != nil {
+		t.Fatalf("read cold viewport: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"cold0"}) {
+		t.Fatalf("expected only cold append rows persisted, got %#v", got)
+	}
+	if got := vtermRowsToStrings(term.hotAppendRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"hot0", "hot1"}) {
+		t.Fatalf("expected trailing hot append rows retained in working set, got %#v", got)
+	}
+}
+
+func TestTerminalLatestProjectionUsesColdAndHotAppendRows(t *testing.T) {
+	vt := localvterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("live")}}, localvterm.CursorState{Row: 0, Col: 4, Visible: true}, localvterm.TerminalModes{AutoWrap: true})
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "latest-projection",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	damage := localvterm.WriteDamage{
+		ScrollbackAppend: []localvterm.DamageOp{
+			{Cells: localVTermCellsFromString("cold"), WrappedSet: true, Wrapped: false},
+			{Cells: localVTermCellsFromString("tail"), WrappedSet: true, Wrapped: true},
+		},
+		HotAppendRows: 1,
+	}
+	term.appendGridFromDamageLocked(damage)
+
+	snapshot := term.Snapshot(0, 10)
+	if snapshot == nil {
+		t.Fatal("expected snapshot")
+	}
+	var combined []string
+	for _, row := range snapshot.Scrollback {
+		combined = append(combined, rowToString(row))
+	}
+	for _, row := range snapshot.Screen.Cells {
+		combined = append(combined, rowToString(row))
+	}
+	if !reflect.DeepEqual(combined, []string{"cold", "tail", "live"}) {
+		t.Fatalf("expected latest snapshot projection cold+hot+screen, got %#v", combined)
+	}
+}
+
+func TestTerminalOlderViewportIgnoresLatestHotAppendRows(t *testing.T) {
+	vt := localvterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("live")}}, localvterm.CursorState{Row: 0, Col: 4, Visible: true}, localvterm.TerminalModes{AutoWrap: true})
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "older-ignores-hot",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	damage := localvterm.WriteDamage{
+		ScrollbackAppend: []localvterm.DamageOp{
+			{Cells: localVTermCellsFromString("cold"), WrappedSet: true, Wrapped: false},
+			{Cells: localVTermCellsFromString("tail"), WrappedSet: true, Wrapped: true},
+		},
+		HotAppendRows: 1,
+	}
+	term.appendGridFromDamageLocked(damage)
+
+	viewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 1, ScrollbackLimit: 10, Cols: 4})
+	if viewport == nil {
+		t.Fatal("expected viewport metadata")
+	}
+	gotRows := make([]string, 0, len(viewport.Rows))
+	for _, row := range viewport.Rows {
+		gotRows = append(gotRows, rowToString(row))
+	}
+	if len(gotRows) != 0 {
+		t.Fatalf("expected offset=1 to mean loaded committed depth already exhausted older rows, got %#v", gotRows)
+	}
+}
+
+func (t *Terminal) hotAppendRowsToRowsForTest() [][]localvterm.Cell {
+	if t == nil || len(t.hotAppendRows) == 0 {
+		return nil
+	}
+	out := make([][]localvterm.Cell, 0, len(t.hotAppendRows))
+	for _, row := range t.hotAppendRows {
+		out = append(out, damageOpCells(row))
+	}
+	return out
 }
 
 func TestTerminalGridStoreReflowPreservesTrailingWrappedContinuation(t *testing.T) {
@@ -1767,6 +1932,77 @@ func TestTerminalSnapshotTrimsResizeGridScreenOverlap(t *testing.T) {
 	want := []string{"abcd", "efgh", "ij"}
 	if !reflect.DeepEqual(combined, want) {
 		t.Fatalf("expected snapshot to avoid duplicated grid/screen suffix, got %#v", combined)
+	}
+}
+
+func TestTerminalLatestSnapshotProjectsColdHotAndScreen(t *testing.T) {
+	vt := localvterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("live")}}, localvterm.CursorState{Row: 0, Col: 4, Visible: true}, localvterm.TerminalModes{AutoWrap: true})
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "latest-combined",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	damage := localvterm.WriteDamage{
+		ScrollbackAppend: []localvterm.DamageOp{
+			{Cells: localVTermCellsFromString("cold"), WrappedSet: true, Wrapped: false},
+			{Cells: localVTermCellsFromString("tail"), WrappedSet: true, Wrapped: true},
+		},
+		HotAppendRows: 1,
+	}
+	term.appendGridFromDamageLocked(damage)
+
+	snapshot := term.Snapshot(0, 10)
+	if snapshot == nil {
+		t.Fatal("expected snapshot")
+	}
+	var combined []string
+	for _, row := range snapshot.Scrollback {
+		combined = append(combined, rowToString(row))
+	}
+	for _, row := range snapshot.Screen.Cells {
+		combined = append(combined, rowToString(row))
+	}
+	if !reflect.DeepEqual(combined, []string{"cold", "tail", "live"}) {
+		t.Fatalf("expected latest snapshot projection cold+hot+screen, got %#v", combined)
+	}
+}
+
+func TestTerminalOlderGridViewportIgnoresHotAppendRows(t *testing.T) {
+	vt := localvterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("live")}}, localvterm.CursorState{Row: 0, Col: 4, Visible: true}, localvterm.TerminalModes{AutoWrap: true})
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "older-cold-only",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	damage := localvterm.WriteDamage{
+		ScrollbackAppend: []localvterm.DamageOp{
+			{Cells: localVTermCellsFromString("cold"), WrappedSet: true, Wrapped: false},
+			{Cells: localVTermCellsFromString("tail"), WrappedSet: true, Wrapped: true},
+		},
+		HotAppendRows: 1,
+	}
+	term.appendGridFromDamageLocked(damage)
+
+	viewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 1, ScrollbackLimit: 10, Cols: 4})
+	if viewport == nil {
+		t.Fatal("expected viewport metadata")
+	}
+	gotRows := make([]string, 0, len(viewport.Rows))
+	for _, row := range viewport.Rows {
+		gotRows = append(gotRows, rowToString(row))
+	}
+	if len(gotRows) != 0 {
+		t.Fatalf("expected offset=1 to mean loaded committed depth already exhausted older rows, got %#v", gotRows)
 	}
 }
 

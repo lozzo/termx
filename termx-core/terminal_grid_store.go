@@ -414,6 +414,15 @@ func (s *terminalGridStore) coordinatesLocked() (baseRowID uint64, generation ui
 	return s.baseRowID, s.generation, s.rowCount
 }
 
+func (s *terminalGridStore) coordinates() (baseRowID uint64, generation uint64, rowCount int) {
+	if s == nil {
+		return 0, 0, 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.coordinatesLocked()
+}
+
 func (s *terminalGridStore) Replay(beforeOffset int, limit int) ([]byte, int, bool, error) {
 	if s == nil {
 		return nil, 0, false, nil

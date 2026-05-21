@@ -119,6 +119,9 @@ func (r *Runtime) applyScreenUpdateContract(terminal *TerminalRuntime, terminalI
 	snapshotApplyFinish := perftrace.Measure("runtime.stream.screen_update.snapshot_apply")
 	terminal.Snapshot = applyScreenUpdateSnapshot(terminal.Snapshot, terminalID, update)
 	snapshotApplyFinish(0)
+	if update.FullReplace {
+		resetLatestBoundaryStateForFullReplace(terminal)
+	}
 
 	vt := r.ensureVTerm(terminal)
 	if vt != nil && terminal.Snapshot != nil {
@@ -159,6 +162,17 @@ func (r *Runtime) applyScreenUpdateContract(terminal *TerminalRuntime, terminalI
 	classified.applyStateTransitions(terminal)
 	r.invalidate()
 	invalidateFinish(0)
+}
+
+func resetLatestBoundaryStateForFullReplace(terminal *TerminalRuntime) {
+	if terminal == nil {
+		return
+	}
+	terminal.FullReplaceBoundaryReset = true
+	clearAuthoritativeHotOnlyLatestState(terminal)
+	terminal.ScrollbackLoadedLimit = 0
+	terminal.ScrollbackLoadingLimit = 0
+	terminal.ScrollbackExhausted = false
 }
 
 func (r *Runtime) applyDecodedScreenUpdateContract(terminal *TerminalRuntime, terminalID string, contract ScreenUpdateContract) {

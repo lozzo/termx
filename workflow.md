@@ -1,87 +1,227 @@
-# Layered Backing Grid Workflow
+# 工作流：终端历史逻辑行模型
 
-This file is the active driver and running record for the current autonomous development line.
+本文件是当前仓库这条开发线的唯一活动驱动文件。
 
-## Scope
+所有相关分析、设计、实现、测试、文档更新，都必须先读取本文件，并严格以本文件为基准。
 
-- Active scope:
-  - `termx-core/`
-  - `termx-vterm/`
-  - `tuiv2/`
-  - required contract glue in `internal/protocol/`, `termx-proto/`, and `termx-cli/`
-- Deferred until core+tui are stable:
-  - `remote-ui/`
-  - `termx-app/`
-  - wider remote/App transport and product-layer integration
+本文件必须保持**全中文**。后续如需补充、修改、压缩，也必须继续使用中文，不允许只写英文条目或只写英文摘要。
 
-## Goal
+## 1. 仓库工作范围总表
 
-Move TermX terminal history toward a layered backing-grid architecture:
+本节显式列出仓库顶层工作范围，避免后续工作自行发散。
 
-- hot mutable backing grid for live screen + recent history
-- cold file-backed structured logical store for deep history
-- canonical row identity / generation across paging, copy-mode, retention, and resize
+### 1.1 当前主线范围
 
-## Current Design Source
+下面这些目录是当前主线，允许主动分析、设计、实现和测试：
 
-- Main design document:
-  - `docs/terminal-history-layered-backing-grid-design.md`
-- Historical archive:
-  - `docs/workflows/archive/grid-history-rebase-workflow.md`
+- `termx-core/`
+- `termx-vterm/`
+- `tuiv2/`
 
-## Current Priorities
+### 1.2 受限联动范围
 
-1. Define and harden canonical row identity / generation at core history boundary.
-2. Specify hot-grid responsibilities versus cold-store responsibilities in code-facing terms.
-3. Replace remaining resize/history bridge inference with explicit row-movement ownership in core+tui paths.
-4. Keep committed-row paging contract stable while internal models evolve.
+下面这些目录不是当前主线，但当且仅当 `termx-core/`、`termx-vterm/`、`tuiv2/` 的契约变化确实需要它们时，才允许最小化触及：
 
-## Current Rules
+- `internal/protocol/`
+- `termx-proto/`
+- `termx-cli/`
+- `termx-shared/`
+- `termx-testkit/`
+- `scripts/`
+- 根目录下与本主线直接相关的：
+  - `AGENTS.md`
+  - `workflow.md`
+  - `go.work`
+  - `go.work.sum`
+  - `Makefile`
+  - 必要的顶层说明文档
 
-- Do not change observer-width semantics:
-  - one real PTY size
-  - observers project canonical content only
-- Do not reintroduce raw PTY journal as UI history truth.
-- Do not expand this phase into `remote-ui` or app product work.
-- Every completed module slice must leave:
-  - focused tests
-  - if relevant, tmux smoke evidence
-  - a compressed workflow update
+### 1.3 当前冻结范围
 
-## Current Risks
+下面这些目录当前明确冻结，不允许主动扩展工作范围：
 
-- Canonical row identity may drift if hot/cold boundary semantics are not defined before implementation.
-- Flush/compact logic can easily split an incomplete logical line unless the contract is explicit.
-- Resize migration can replace content-matching bugs with identity-mapping bugs if generation rules stay fuzzy.
+- `remote-ui/`
+- `termx-app/`
+- `web-control/`
+- `termx-hub/`
+- `termx-remote/`
 
-## Current Validation Standard
+### 1.4 默认不修改范围
 
-- Focused tests first:
-  - `termx-core`
-  - `termx-vterm/vterm`
-  - `tuiv2/runtime`
-  - `tuiv2/app`
-  - `internal/protocol` when contracts move
-- Periodic full verification:
-  - `go test ./internal/... ./termx-cli/... ./termx-core/... ./termx-proto/... ./termx-vterm/... ./tuiv2/runtime/... ./tuiv2/app/... ./tuiv2/render/...`
-- tmux smoke when terminal history semantics change materially:
-  - copy-mode top reaches oldest retained content
-  - resize does not collapse retained history
-  - attach/re-entry does not regress loaded depth semantics
+下面这些路径默认不作为本条开发线的工作对象，除非本文件以后显式重新打开：
 
-## Next Slice
+- `bin/`
+- `.claude/`
+- 顶层可执行产物与测试产物：
+  - `termx`
+  - `*.test`
+  - `termx-check-*`
+- 任何未在本文件明确列出的新范围
 
-- Convert the design document into an implementation-ready contract:
-  - canonical row identity vocabulary
-  - hot-grid invariants
-  - cold-store invariants
-  - flush boundary rules
-  - resize authority rules
+### 1.5 范围判断规则
 
-## Compression Rule
+- 如果一个目录没有在本文件里被明确列入“当前主线范围”或“受限联动范围”，默认视为**不在当前工作范围**。
+- 任何人不得在聊天、临时说明或代码实现里自行补充工作范围。
+- 如确需扩展范围，必须先修改本文件，再开展对应工作。
 
-When updating this file:
+## 2. 当前唯一主题
 
-- keep only the active goal state, latest decisions, latest evidence, open risks, and next actions;
-- compress completed slice notes into 3-6 line summaries;
-- move verbose historical detail into `docs/workflows/archive/` if needed.
+当前唯一主题是：
+
+**把终端历史模型从视觉折行主导，收敛到逻辑行主导的历史语义模型。**
+
+这条线关注的是：
+
+- 什么是历史真相；
+- 什么是当前可变真相；
+- 什么是当前可见投影；
+- 哪些事件创造历史；
+- 哪些事件只改变归属关系或投影关系。
+
+## 3. 已定死的语义
+
+下面这些条款已经拍板，后续开发不得绕开。
+
+### 3.1 历史语义
+
+- primary history 的核心语义单位固定为“逻辑行”。
+- `persisted history` 只承载 `sealed logical lines`。
+- wrapped visual row 不再作为历史主语义单位。
+
+### 3.2 三层职责
+
+- `persisted history store` 是历史存储层。
+- `mutable live tail` 是当前可变真相层。
+- `screen` 只是 `mutable live tail` 的二维投影。
+
+### 3.3 可变尾部
+
+- `mutable live tail` 允许同时包含：
+  - open logical lines
+  - sealed logical lines
+- `mutable live tail` 允许包含从 `persisted history` 尾部 reclaim 回来的 sealed suffix。
+- `open/sealed` 与 `origin=live/reclaimed` 是正交属性。
+- 不再允许把 `hot` 简化为“唯一一条未封口 latest line”。
+
+### 3.4 非历史创建事件
+
+下面这些都不是历史创建事件：
+
+- `attach`
+- `reattach`
+- `bootstrap`
+- `recovery`
+- `full-replace`
+- `clear screen`
+- `resize`
+
+这些事件可以重建视图、恢复状态、切换投影，但不能仅因为这些动作就创造新历史。
+
+### 3.5 备用屏语义
+
+- `alt-screen` 不得写入 primary history。
+- 进入 `alt-screen` 时，primary history 语义冻结。
+- 退出 `alt-screen` 时，恢复 primary surface，不把 alt 内容混入 primary history。
+
+### 3.6 进程退出语义
+
+- `process exit` 是显式 mutability 边界。
+- `process exit` 时，primary live tail 中剩余内容一律 `force seal` 进入 persisted history。
+- 如果 terminal 退出时仍处于 `alt-screen`，则 alt 内容直接丢弃，不进入 primary history。
+
+### 3.7 缩放语义
+
+- `resize` 不是历史创建事件。
+- `resize` 不是历史重写事件。
+- `grow resize` 的固定语义是：
+  `persisted history tail -> mutable live tail -> screen`
+- `shrink resize` 的固定语义是：
+  `screen -> hidden mutable live tail`
+- shrink 不得仅因为内容退出 screen 可见区，就把该内容立刻视为 immutable cold history。
+
+### 3.8 回卷语义
+
+- grow resize 时，系统必须从 `persisted history` 尾部 reclaim **最小充分 logical-line 后缀**，以便正确重建当前 screen。
+- reclaim 的基本单位必须是**完整逻辑行**。
+- 不允许只 reclaim 半条逻辑行。
+
+### 3.9 第一阶段边界
+
+- 第一阶段不扩展 wire/runtime/app contract 来表达完整 ownership 模型。
+- 第一阶段只要求在 `termx-core` 内部定死 ownership 语义。
+- 对外仍允许以保守的 snapshot / viewport / update 语义消费。
+
+## 4. 当前开发原则
+
+### 4.1 先语义，后实现
+
+- 如果实现与本文件语义冲突，应先修正文档或先停下来讨论，不允许直接靠代码默认行为绕过去。
+
+### 4.2 先核心，后扩散
+
+- 先收敛 `termx-core` 内部模型。
+- 在没有明确必要之前，不主动扩展 protocol/runtime/app contract。
+
+### 4.3 先测试，后重构
+
+- 每一个语义切片都应先补或先确认测试，再推进实现。
+- 优先覆盖 resize、attach、alt-screen、exit、copy mode 边界。
+
+### 4.4 文档优先级
+
+如果出现文档冲突，当前优先级如下：
+
+1. 本 `workflow.md`
+2. 当前 RFC 与设计文档
+3. 子目录 `AGENTS.md`
+4. 现有代码行为
+
+现有代码如果与本文件冲突，不代表代码语义自动正确。
+
+## 5. 当前参考文档
+
+当前这条线的核心文档是：
+
+- [RFC：终端历史逻辑行模型](./termx-core/docs/rfc-terminal-history-logical-line-model-2026-05-21.md)
+- [逻辑行设计文档](./termx-core/docs/terminal-history-logical-line-design-2026-05-21.md)
+- [逻辑行模型复盘](./termx-core/docs/terminal-history-logical-line-model-review-2026-05-21.md)
+- [RFC 结构稿](./termx-core/docs/terminal-history-logical-line-rfc-outline-2026-05-21.md)
+
+后续工作应优先更新 RFC 与设计文档，而不是在聊天里维持隐含规则。
+
+## 6. 当前未决问题
+
+下面这些仍然是未决问题，但它们已经不阻塞第一阶段开发：
+
+- `mutable live tail` 内部用单体结构还是 segment 结构维护；
+- reclaim 的缓存上限、内存预算、淘汰策略；
+- 这种 ownership 模型在后续阶段是否需要跨 protocol 显式暴露；
+- runtime/app 层未来是否需要显式感知 live tail 与 persisted history 边界。
+
+这些问题在没有单独决议前，不允许反向推翻本文件已定死的语义条款。
+
+## 7. 当前开发起点
+
+当前允许开始的开发阶段是：
+
+### 第一阶段：核心内部语义收敛
+
+重点包括：
+
+- 在 `termx-core` 内部对齐 `persisted history / mutable live tail / screen projection` 三层语义；
+- 补足 grow / shrink / attach / exit / alt-screen / clear-screen 的语义测试；
+- 让当前 hot/cold 代码路径逐步向 live tail / persisted history 语义靠拢；
+- 暂不扩展 wire/runtime/app contract。
+
+### 当前不启动的工作
+
+- protocol 层 ownership 扩展；
+- runtime/app 全链路重构；
+- 当前冻结范围内的产品层集成工作。
+
+## 8. 维护规则
+
+- 后续每完成一个 module-sized slice，都要先更新本文件，再继续扩散实现。
+- 如果某项开发需要改变已定死语义，必须先修改本文件和 RFC，再进入代码实现。
+- 如果某项工作不符合本文件范围，应先停下来确认是否真的需要扩 scope。
+- 今后如果要修改本文件中的范围表，必须显式更新“仓库工作范围总表”，不允许只局部加一句模糊说明。

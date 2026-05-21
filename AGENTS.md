@@ -1,71 +1,28 @@
-# Agent Notes
+# 代理说明
 
-## Deployment Targets
+## 工作流权威性
 
-- Hub and Web Controller are deployed on `ssh root@114.66.58.243`.
-- TermX runtime/agent/CLI is developed and tested locally from this repository.
-- `remote-ui` is developed and tested locally from this repository.
+- 仓库根目录 `workflow.md` 是当前分支线唯一有效的活动驱动文件。
+- 本仓库内的所有工作都必须先读取 `workflow.md`，并以它作为当前唯一基准。
+- `workflow.md` 必须保持全中文；后续新增、修改、压缩内容时，也必须继续使用中文。
+- 如果 `workflow.md` 与旧说明、当前代码行为、局部假设发生冲突，默认以 `workflow.md` 为准，除非更高优先级指令明确覆盖。
+- 如果某项工作会改变 `workflow.md` 里已经拍板的语义，必须先更新 `workflow.md`，或者与实现同切片更新，再把该行为视为新基准。
 
-## Deployment Workflow Reminder
+## 范围判断规则
 
-- Do not assume a code change is deployed just because it is committed locally.
-- After changing Hub or Web Controller code, SSH to `root@114.66.58.243`, update the checkout/artifacts there, restart the relevant service, then verify health.
-- Do not deploy TermX runtime/agent/CLI changes to `ssh al` during normal agent work.
-- After changing TermX runtime/agent/CLI code and finishing local builds/tests, kill any local TermX daemon or test daemon process. Do not restart it; the user will restart it manually.
-- After changing `remote-ui`, validate locally with `cd remote-ui && npm run typecheck && npm run test`; use the local dev server for browser verification.
-- Before restarting remote services, inspect the existing deploy path and service names on the target host instead of guessing.
+- 仓库工作范围的判断只能以根目录 `workflow.md` 为准。
+- 不允许在聊天里、临时说明里、或实现过程中自行脑补新的工作范围。
+- 如果一个目录没有被 `workflow.md` 明确列入“当前主线范围”或“受限联动范围”，默认视为不在当前工作范围。
+- 如需扩展范围，必须先修改 `workflow.md` 的范围表，再开展对应工作。
 
-## Terminal History Direction
+## 当前提醒
 
-- Terminal history semantics should stay close to tmux: UI, copy mode, and remote terminal history read parsed grid/cell rows owned by core, not raw PTY bytes.
-- Special TermX-only terminal history behavior needs a clear reason and regression coverage.
-- The real PTY size is a single global terminal state. Panels, floating windows, mobile App, and `remote-ui` are observer viewports over that terminal.
-- If an observer viewport differs from the PTY size, use projection only: crop, scroll window, overflow arrows, and blank-dot hints. Do not reinterpret normal terminal/copy-mode/history rows at observer width.
-- Raw PTY journals are not the UI history query path. They may only return later as optional debug/audit data.
-- TUI validation for terminal history changes should use real tmux-driven terminal operations when practical, not only code-level unit tests.
-- Current autonomous development for this line is driven by repository-root `workflow.md`, not by old files under `docs/workflows/`.
-- Old workflow files under `docs/workflows/` are historical archives only. Do not use them as the active driver unless the root `workflow.md` explicitly says so.
+- 当前主线仍然只围绕 `termx-core/`、`termx-vterm/`、`tuiv2/` 展开。
+- 其他目录即使存在技术关联，也不能因为“看起来可能有关”就主动扩散过去，除非 `workflow.md` 已明确允许。
 
-## Current Development Scope
+## 提交规则
 
-- Current branch line scope: **core + tuiv2 only**.
-- Active implementation surface:
-  - `termx-core/`
-  - `termx-vterm/`
-  - `tuiv2/`
-  - directly related `internal/protocol/`, `termx-proto/`, and `termx-cli/` glue only when required by core/tui contracts
-- Explicitly out of scope for this phase unless the root `workflow.md` reopens them:
-  - `remote-ui/`
-  - `termx-app/`
-  - `web-control/`
-  - broader remote product integration beyond required contract hygiene
-
-## Workflow Discipline
-
-- Repository-root `workflow.md` is both the active driver and the running log for this effort.
-- After finishing a module-sized slice, update `workflow.md` immediately.
-- Keep `workflow.md` compressed:
-  - preserve only current goals, current design decisions, active risks, latest validation evidence, and the next concrete steps;
-  - collapse older completed slices into short summaries instead of appending long chronological transcripts forever.
-- Do not let `workflow.md` grow into a replay log that overwhelms prompt context.
-- If a historical record is still worth keeping in full, move it under `docs/workflows/archive/` and keep only a short pointer in `workflow.md`.
-
-## Android Build Default
-
-- Unless explicitly requested otherwise, build Android APKs as `debug` packages for `arm64-v8a` only, to keep artifact size smaller and download/install faster.
-
-## App-Agent Network Boundary
-
-- All application-to-agent data traffic must go through the established WebRTC transport.
-- Do not add direct HTTP, WebSocket, TCP, localhost, LAN, or filesystem-serving shortcuts between the app/browser and the agent for terminal, file, preview, upload, download, or runtime data.
-- Browser adapters such as service workers may translate browser APIs into app-local requests only when the bytes still come from WebRTC data channels.
-
-## Development Compatibility Policy
-
-- This repository is still in active development. Do not preserve compatibility aliases, deprecated exports, wrapper files, or old module names when refactoring.
-- Prefer direct breaking changes with all call sites updated in the same change.
-- If a name or boundary is wrong, rename it and fix the imports instead of adding a compatibility layer.
-
-## Commit Message Policy
-
-- Future git commit messages created during agent work in this repository should use Chinese.
+- 当前工作区内的未提交改动应先整理并提交，再继续后续开发。
+- 从现在开始，后续每一个有效变动都必须形成提交，不允许长期堆积未提交改动继续推进工作。
+- 所有提交信息必须使用中文，不允许只写英文提交信息。
+- 如果一次工作切片尚未达到可提交状态，应先停下来收敛切片，而不是继续无限扩展改动面。

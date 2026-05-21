@@ -119,6 +119,32 @@ func TestRenderFrameLinesMatchRenderFrame(t *testing.T) {
 	}
 }
 
+func TestRenderCopyModesSignatureIncludesCanonicalRefs(t *testing.T) {
+	base := RenderCopyModeVM{
+		PaneID:           "pane-1",
+		CursorRow:        3,
+		CursorCol:        2,
+		CursorGeneration: 7,
+		CursorRowID:      100,
+		CursorRefValid:   true,
+		ViewTopRow:       1,
+		MarkSet:          true,
+		MarkRow:          1,
+		MarkCol:          0,
+		MarkGeneration:   7,
+		MarkRowID:        98,
+		MarkRefValid:     true,
+	}
+	changed := base
+	changed.CursorRowID = 101
+
+	left := renderCopyModesSignature([]RenderCopyModeVM{base})
+	right := renderCopyModesSignature([]RenderCopyModeVM{changed})
+	if left == right {
+		t.Fatalf("expected canonical row refs to affect copy-mode render signature, got %q", left)
+	}
+}
+
 func TestCachedFrameMissesWhenStatusHintsChange(t *testing.T) {
 	vm := WithRenderStatus(makeTestVM(), "", "", string(input.ModePane))
 	vm = WithRenderStatusHints(vm, []string{"a FIRST"})

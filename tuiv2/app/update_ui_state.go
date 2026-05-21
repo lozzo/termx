@@ -62,8 +62,9 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		return m.dequeueTerminalInputCmd(), true
 	case orchestrator.SnapshotLoadedMsg:
 		if typed.Paged {
-			m.adjustCopyModeAfterSnapshotLoadedWithWindow(typed.TerminalID, typed.Snapshot, typed.Offset)
-			if m.runtime != nil && !m.snapshotPageTargetsActiveCopyMode(typed.TerminalID) {
+			if typed.CopyModeRequest {
+				_ = m.adjustCopyModeAfterSnapshotLoadedWithWindow(typed.TerminalID, typed.Snapshot, typed.Offset, true)
+			} else if m.runtime != nil {
 				m.runtime.ApplyGridViewportPage(typed.TerminalID, typed.Snapshot, typed.Offset)
 			}
 		} else {
