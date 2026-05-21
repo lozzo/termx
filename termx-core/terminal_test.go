@@ -1849,6 +1849,10 @@ func TestTerminalLatestGrowProjectionUsesMinimalCompleteColdLogicalLineSuffix(t 
 	}); err != nil {
 		t.Fatalf("append cold rows: %v", err)
 	}
+	term.size = Size{Cols: 5, Rows: 3}
+	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
+		t.Fatalf("reclaim grow live tail: %v", err)
+	}
 
 	snapshot := term.Snapshot(0, 1)
 	if snapshot == nil {
@@ -1876,6 +1880,65 @@ func TestTerminalLatestGrowProjectionUsesMinimalCompleteColdLogicalLineSuffix(t 
 	}
 }
 
+func TestTerminalGrowResizeStoresReclaimedSuffixInPrimaryLiveTail(t *testing.T) {
+	vt := localvterm.New(5, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("grow2")}},
+		localvterm.CursorState{Row: 0, Col: 5, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "grow-reclaims-to-live-tail",
+		size:  Size{Cols: 5, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("older")},
+		{cells: localVTermCellsFromString("grow0"), wrapped: true},
+		{cells: localVTermCellsFromString("grow1"), wrapped: true},
+	}); err != nil {
+		t.Fatalf("append cold rows: %v", err)
+	}
+	term.size = Size{Cols: 5, Rows: 3}
+	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
+		t.Fatalf("reclaim grow live tail: %v", err)
+	}
+	if len(term.primaryLiveTail.segments) == 0 {
+		t.Fatal("expected reclaimed live-tail segment")
+	}
+	reclaimed := term.primaryLiveTail.segments[0]
+	if reclaimed.origin != terminalLiveTailOriginReclaimed {
+		t.Fatalf("expected first segment to be reclaimed, got %q", reclaimed.origin)
+	}
+	if reclaimed.sealState != terminalLiveTailSealed {
+		t.Fatalf("expected reclaimed segment to stay sealed, got %q", reclaimed.sealState)
+	}
+	if got := damageRowsToStrings(reclaimed.rows); !reflect.DeepEqual(got, []string{"grow0", "grow1"}) {
+		t.Fatalf("expected reclaimed suffix rows, got %#v", got)
+	}
+	if reclaimed.firstRowID != 1 || reclaimed.lastRowID != 2 {
+		t.Fatalf("expected reclaimed row coordinates 1..2, got %d..%d", reclaimed.firstRowID, reclaimed.lastRowID)
+	}
+
+	snapshot := term.Snapshot(0, 2)
+	if got := rowsToStrings(snapshot.Scrollback); !reflect.DeepEqual(got, []string{"grow0", "grow1"}) {
+		t.Fatalf("expected latest snapshot to read reclaimed suffix from live tail exactly once, got %#v", got)
+	}
+	if snapshot.ScrollbackTotal != 3 {
+		t.Fatalf("expected latest total to count older persisted plus reclaimed live tail, got %d", snapshot.ScrollbackTotal)
+	}
+	if snapshot.ScrollbackLoadedRows != 2 {
+		t.Fatalf("expected reclaimed committed depth 2, got %d", snapshot.ScrollbackLoadedRows)
+	}
+	if snapshot.ScrollbackFirstRowID != 1 || snapshot.ScrollbackLastRowID != 2 {
+		t.Fatalf("expected reclaimed snapshot row ids 1..2, got %d..%d", snapshot.ScrollbackFirstRowID, snapshot.ScrollbackLastRowID)
+	}
+}
+
 func TestTerminalLatestGrowViewportDoesNotPullOlderLogicalLine(t *testing.T) {
 	vt := localvterm.New(5, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
@@ -1898,6 +1961,10 @@ func TestTerminalLatestGrowViewportDoesNotPullOlderLogicalLine(t *testing.T) {
 		{cells: localVTermCellsFromString("grow1"), wrapped: true},
 	}); err != nil {
 		t.Fatalf("append cold rows: %v", err)
+	}
+	term.size = Size{Cols: 5, Rows: 3}
+	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
+		t.Fatalf("reclaim grow live tail: %v", err)
 	}
 
 	viewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 0, ScrollbackLimit: 1, Cols: 5})

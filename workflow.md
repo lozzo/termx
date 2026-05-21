@@ -284,11 +284,12 @@
 - `Terminal` 不再直接散落维护 `hotAppendRows` / `hotWrapPending` 字段；
 - live-tail segment 已表达 `open/sealed`、`origin=live/reclaimed`、rows metadata 和 wrap-pending；
 - write / snapshot / viewport / restart / process-exit 路径已经改为通过 `primaryLiveTail` 读写尾部状态；
+- grow resize 已把 `persisted history` 尾部的最小充分完整 logical-line 后缀写入 `primaryLiveTail` 的 `origin=reclaimed` segment；
+- latest snapshot / viewport 已改为通过 `primaryLiveTail` 中的 reclaimed segment 投影，不再只靠读路径临时回卷 persisted suffix；
 - `hot/cold` 仍作为兼容术语保留，其中 hot 对应 live-tail 派生视图，cold 对应 persisted history store。
 
 当前仍需继续收敛的缺口是：
 
-- grow reclaim ownership 仍主要体现在 latest projection / viewport 读路径，还没有把 reclaimed suffix 真正写入 `primaryLiveTail` segment；
 - 部分测试文件名和用例名仍保留 `hot` 场景词，需要后续逐步补充 live-tail 表述；
 - `termx-vterm` 仍通过 `HotAppendRows` / `ResizeHotOwnedRows` 提供内部 hint，第一阶段允许继续保留该内部 contract。
 

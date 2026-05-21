@@ -517,6 +517,11 @@ func (t *Terminal) Resize(cols, rows uint16) error {
 	damage := t.vterm.ResizeWithDamage(int(cols), int(rows))
 	t.captureAlternateDamageLocked(damage)
 	t.appendGridFromDamageLocked(damage)
+	if int(cols) > int(old.Cols) || int(rows) > int(old.Rows) {
+		if err := t.reclaimPrimaryLiveTailForGrowResizeLocked(int(cols)); err != nil && t.logger != nil {
+			t.logger.Warn("termx terminal grow resize live-tail reclaim failed", "terminal_id", t.id, "error", err)
+		}
+	}
 	gridRowsAfterAppend := gridRowsBefore
 	if t.grid != nil {
 		gridRowsAfterAppend = t.grid.RowCount()
@@ -754,7 +759,8 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	t.mu.RLock()
 	size := t.size
 	id := t.id
-	liveTailRows := t.primaryLiveTail.rows()
+	liveTail := t.primaryLiveTail.clone()
+	liveTailRows := liveTail.rows()
 	t.mu.RUnlock()
 	screenTimestamps := t.vterm.ScreenTimestamps()
 	screenRowKinds := t.vterm.ScreenRowKinds()
@@ -799,7 +805,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		usedGrid                bool
 	)
 	if t.grid != nil && limit > 0 {
-		gridViewport, err := t.combinedGridViewport(offset, limit, int(size.Cols), liveTailRows)
+		gridViewport, err := t.combinedGridViewport(offset, limit, int(size.Cols), liveTail)
 		if err != nil {
 			if t.logger != nil {
 				t.logger.Warn("termx terminal grid snapshot failed", "terminal_id", id, "error", err)
@@ -936,7 +942,7 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 	t.mu.RLock()
 	size := t.size
 	id := t.id
-	liveTailRows := t.primaryLiveTail.rows()
+	liveTail := t.primaryLiveTail.clone()
 	t.mu.RUnlock()
 	cols := int(size.Cols)
 	if cols <= 0 {
@@ -963,7 +969,7 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 		}
 	}
 	if t.grid != nil {
-		gridViewport, err := t.combinedGridViewport(offset, limit, cols, liveTailRows)
+		gridViewport, err := t.combinedGridViewport(offset, limit, cols, liveTail)
 		if err != nil {
 			if t.logger != nil {
 				t.logger.Warn("termx terminal grid viewport failed", "terminal_id", id, "error", err)
@@ -1028,13 +1034,17 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 	}
 }
 
-func (t *Terminal) combinedGridViewport(offset, limit, cols int, liveTailRows []vterm.DamageOp) (terminalGridViewport, error) {
+func (t *Terminal) combinedGridViewport(offset, limit, cols int, liveTail terminalPrimaryLiveTail) (terminalGridViewport, error) {
 	var result terminalGridViewport
 	if t == nil || t.grid == nil {
 		return result, nil
 	}
 	offset, limit = sanitizeGridViewportWindow(offset, limit)
 	_, generation, coldRows := t.grid.coordinates()
+	visibleColdRows := coldRows - liveTail.reclaimedCommittedRowCount()
+	if visibleColdRows < 0 {
+		visibleColdRows = 0
+	}
 	if offset > 0 {
 		coldViewport, err := t.grid.Viewport(offset, limit, cols)
 		if err != nil {
@@ -1045,16 +1055,17 @@ func (t *Terminal) combinedGridViewport(offset, limit, cols int, liveTailRows []
 		}
 		result.BeforeOffset = offset
 		result.Limit = limit
-		result.TotalRows = coldRows
+		result.TotalRows = visibleColdRows
 		result.LogicalTotal = t.grid.LogicalLineCount()
-		result.LoadedRows = minInt(offset, coldRows)
-		if coldRows > 0 {
+		result.LoadedRows = minInt(offset, visibleColdRows)
+		if visibleColdRows > 0 {
 			result.Generation = generation
 		}
 		return result, nil
 	}
 	includeLiveTail := offset == 0
-	totalRows := coldRows
+	liveTailRows := liveTail.rows()
+	totalRows := visibleColdRows
 	if includeLiveTail {
 		totalRows += len(liveTailRows)
 	}
@@ -1072,10 +1083,10 @@ func (t *Terminal) combinedGridViewport(offset, limit, cols int, liveTailRows []
 	if start < 0 {
 		start = 0
 	}
-	coldStart := minInt(start, coldRows)
-	coldEnd := minInt(end, coldRows)
-	liveTailStart := maxInt(start-coldRows, 0)
-	liveTailEnd := maxInt(end-coldRows, 0)
+	coldStart := minInt(start, visibleColdRows)
+	coldEnd := minInt(end, visibleColdRows)
+	liveTailStart := maxInt(start-visibleColdRows, 0)
+	liveTailEnd := maxInt(end-visibleColdRows, 0)
 	if !includeLiveTail {
 		liveTailStart = 0
 		liveTailEnd = 0
@@ -1085,24 +1096,14 @@ func (t *Terminal) combinedGridViewport(offset, limit, cols int, liveTailRows []
 	result.Limit = limit
 	result.TotalRows = totalRows
 	result.LogicalTotal = t.grid.LogicalLineCount()
-	if coldRows > 0 {
+	if visibleColdRows > 0 {
 		result.Generation = generation
 	}
 
 	displayStart := start
 	if coldEnd > coldStart {
-		expandedColdStart := coldStart
-		if coldViewportStart := coldStart; coldViewportStart > 0 {
-			coldViewport, err := t.grid.Viewport(coldRows-coldEnd, coldEnd-coldStart, cols)
-			if err != nil {
-				return result, err
-			}
-			if coldViewport.LoadedRows > 0 {
-				expandedColdStart = coldRows - coldViewport.LoadedRows
-			}
-		}
 		beforeOffsetCold := coldRows - coldEnd
-		limitCold := coldEnd - expandedColdStart
+		limitCold := coldEnd - coldStart
 		coldViewport, err := t.grid.Viewport(beforeOffsetCold, limitCold, cols)
 		if err != nil {
 			return result, err
@@ -1116,24 +1117,42 @@ func (t *Terminal) combinedGridViewport(offset, limit, cols int, liveTailRows []
 		result.LoadedRows = coldViewport.LoadedRows
 		result.FirstRowID = coldViewport.FirstRowID
 		result.LastRowID = coldViewport.LastRowID
-		displayStart = coldRows - coldViewport.LoadedRows
+		displayStart = visibleColdRows - coldViewport.LoadedRows
 	}
 	if liveTailEnd > liveTailStart {
 		liveTailStart = expandDamageWindowStartToLogicalLine(liveTailRows, liveTailStart)
 		if coldEnd <= coldStart {
-			displayStart = coldRows + liveTailStart
+			displayStart = visibleColdRows + liveTailStart
 		}
 		if liveTailEnd > len(liveTailRows) {
 			liveTailEnd = len(liveTailRows)
 		}
-		for _, row := range liveTailRows[liveTailStart:liveTailEnd] {
+		window := liveTail.window(liveTailStart, liveTailEnd)
+		for _, row := range window.rows {
 			result.Rows = append(result.Rows, damageOpCells(row))
 			result.Timestamps = append(result.Timestamps, row.Timestamp)
 			result.RowKinds = append(result.RowKinds, row.RowKind)
 			result.Wrapped = append(result.Wrapped, row.WrappedSet && row.Wrapped)
 		}
+		if window.hasCommitted {
+			result.LoadedRows += window.committed
+			if result.Generation == 0 {
+				result.Generation = window.generation
+			}
+			if result.FirstRowID == 0 && result.LastRowID == 0 {
+				result.FirstRowID = window.firstRowID
+				result.LastRowID = window.lastRowID
+			} else {
+				if window.firstRowID < result.FirstRowID {
+					result.FirstRowID = window.firstRowID
+				}
+				if window.lastRowID > result.LastRowID {
+					result.LastRowID = window.lastRowID
+				}
+			}
+		}
 	}
-	if coldRows <= 0 {
+	if visibleColdRows <= 0 && result.LoadedRows == 0 {
 		result.LoadedRows = 0
 		result.Generation = 0
 		result.FirstRowID = 0
@@ -1149,6 +1168,54 @@ func combinedRowWindowCoordinates(store *terminalGridStore, totalRows int, start
 	}
 	baseRowID, _, _ := store.coordinates()
 	return baseRowID + uint64(start), baseRowID + uint64(end-1)
+}
+
+func (t *Terminal) reclaimPrimaryLiveTailForGrowResizeLocked(cols int) error {
+	if t == nil || t.grid == nil || t.vterm == nil || cols <= 0 {
+		return nil
+	}
+	if t.vterm.Modes().AlternateScreen || t.vterm.ScreenContent().IsAlternateScreen {
+		return nil
+	}
+	screenRows := trimTrailingBlankVTermRows(t.vterm.ScreenContent().Cells)
+	needed := maxInt(0, int(t.size.Rows)-len(screenRows))
+	if needed <= 0 {
+		t.primaryLiveTail.replaceReclaimedPrefix(nil, 0, 0, 0)
+		return nil
+	}
+	_, generation, coldRows := t.grid.coordinates()
+	if coldRows <= 0 {
+		t.primaryLiveTail.replaceReclaimedPrefix(nil, 0, 0, 0)
+		return nil
+	}
+	viewport, err := t.grid.Viewport(0, needed, cols)
+	if err != nil {
+		return err
+	}
+	if len(viewport.Rows) == 0 {
+		t.primaryLiveTail.replaceReclaimedPrefix(nil, 0, 0, 0)
+		return nil
+	}
+	reclaimed := make([]vterm.DamageOp, 0, len(viewport.Rows))
+	for i, row := range viewport.Rows {
+		reclaimed = append(reclaimed, vterm.DamageOp{
+			Cells:      cloneVTermCells(row),
+			Timestamp:  timeAt(viewport.Timestamps, i),
+			RowKind:    stringAt(viewport.RowKinds, i),
+			WrappedSet: true,
+			Wrapped:    boolAt(viewport.Wrapped, i),
+		})
+	}
+	firstRowID := viewport.FirstRowID
+	lastRowID := viewport.LastRowID
+	if firstRowID == 0 && lastRowID == 0 {
+		firstRowID, lastRowID = combinedRowWindowCoordinates(t.grid, coldRows, coldRows-len(reclaimed), coldRows)
+	}
+	if generation == 0 {
+		generation = viewport.Generation
+	}
+	t.primaryLiveTail.replaceReclaimedPrefix(reclaimed, generation, firstRowID, lastRowID)
+	return nil
 }
 
 func (t *Terminal) sealLiveTailForProcessExitLocked() error {
@@ -1820,7 +1887,7 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 	}
 	persistedRows, liveTailRows := t.reconcileLiveTailRowsLocked(damage)
 	wrapPending := t.currentWrapPendingLocked()
-	t.primaryLiveTail.replaceRows(liveTailRows, terminalLiveTailOriginLive, wrapPending)
+	t.primaryLiveTail.replaceLiveRows(liveTailRows, wrapPending)
 	if t.grid == nil || len(persistedRows) == 0 {
 		return
 	}
@@ -1872,7 +1939,7 @@ func (t *Terminal) reconcileLiveTailRowsLocked(damage vterm.WriteDamage) ([]vter
 	if damage.RequiresFullReplace && damage.FullReplaceReason == "resize" {
 		if damage.ResizeHotOwnedRowsSet {
 			persistedRows, liveTailSuffix := splitDamageRowsByExactLiveTailHint(damage.ScrollbackAppend, damage.ResizeHotOwnedRows)
-			liveTailRows := cloneGridDamageOps(t.primaryLiveTail.rows())
+			liveTailRows := cloneGridDamageOps(t.primaryLiveTail.liveRows())
 			for i := range liveTailSuffix {
 				liveTailSuffix[i].WrappedSet = true
 				liveTailSuffix[i].Wrapped = true
@@ -1880,8 +1947,8 @@ func (t *Terminal) reconcileLiveTailRowsLocked(damage vterm.WriteDamage) ([]vter
 			liveTailRows = append(liveTailRows, liveTailSuffix...)
 			return persistedRows, liveTailRows
 		}
-		if len(t.primaryLiveTail.rows()) > 0 || t.primaryLiveTail.wrapPending {
-			liveTailRows := cloneGridDamageOps(t.primaryLiveTail.rows())
+		if len(t.primaryLiveTail.liveRows()) > 0 || t.primaryLiveTail.wrapPending {
+			liveTailRows := cloneGridDamageOps(t.primaryLiveTail.liveRows())
 			for _, row := range damage.ScrollbackAppend {
 				cloned := cloneGridDamageOp(row)
 				cloned.WrappedSet = true
@@ -1895,8 +1962,8 @@ func (t *Terminal) reconcileLiveTailRowsLocked(damage vterm.WriteDamage) ([]vter
 
 	persistedPrefix, _ := splitDamageRowsByLiveTailHint(damage.ScrollbackAppend, damage.HotAppendRows)
 	liveTailStart := len(persistedPrefix)
-	persistedRows := make([]vterm.DamageOp, 0, len(t.primaryLiveTail.rows())+len(damage.ScrollbackAppend))
-	liveTailRows := cloneGridDamageOps(t.primaryLiveTail.rows())
+	persistedRows := make([]vterm.DamageOp, 0, len(t.primaryLiveTail.liveRows())+len(damage.ScrollbackAppend))
+	liveTailRows := cloneGridDamageOps(t.primaryLiveTail.liveRows())
 	pendingWrap := t.primaryLiveTail.wrapPending
 
 	for i, row := range damage.ScrollbackAppend {

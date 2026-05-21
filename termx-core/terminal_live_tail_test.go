@@ -34,12 +34,20 @@ func TestTerminalPrimaryLiveTailSegmentsTrackOriginAndSealState(t *testing.T) {
 		t.Fatalf("expected unwrapped reclaimed segment to be sealed, got %q", got)
 	}
 
+	tail.replaceLiveRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("next"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, true)
 	tail.setWrapPending(true)
-	if !tail.wrapPending || !tail.segments[0].wrapPending {
-		t.Fatal("expected wrap pending to be stored on tail and segment")
+	if !tail.wrapPending || !tail.segments[1].wrapPending {
+		t.Fatal("expected wrap pending to be stored on tail and live segment")
 	}
-	if got := tail.segments[0].sealState; got != terminalLiveTailOpen {
-		t.Fatalf("expected wrap pending to reopen segment mutability, got %q", got)
+	if got := tail.segments[0].sealState; got != terminalLiveTailSealed {
+		t.Fatalf("expected reclaimed segment to remain sealed, got %q", got)
+	}
+	if got := tail.segments[1].sealState; got != terminalLiveTailOpen {
+		t.Fatalf("expected wrap pending to keep live segment open, got %q", got)
 	}
 
 	tail.reset()
