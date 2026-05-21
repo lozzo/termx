@@ -331,7 +331,7 @@ func TestPagedSnapshotLoadedFallsBackToRuntimeMergeWhenFrozenCopyModeDoesNotCons
 	model.copyMode.Snapshot.HistoryGeneration = 0
 	model.copyMode.Snapshot.ScrollbackFirstRowID = 0
 	model.copyMode.Snapshot.ScrollbackLastRowID = 0
-	model.copyMode.LoadedRows = 0
+	model.copyMode.CommittedLoadedRows = 0
 	model.saveCurrentCopyModeState()
 
 	olderPage := copyModeTestSnapshot([]string{"canon000"}, []string{"live0"})
@@ -1469,8 +1469,8 @@ func TestCopyModeLoadsOlderScrollbackBeyondFullSnapshotCap(t *testing.T) {
 	if got := model.copyMode.Snapshot.ScrollbackOffset; got != 500 {
 		t.Fatalf("expected newest materialized rows to be trimmed from copy buffer, offset=%d", got)
 	}
-	if got := model.copyMode.LoadedRows; got != len(allRows) {
-		t.Fatalf("expected loaded depth to keep logical pagination progress, got %d want %d", got, len(allRows))
+	if got := model.copyMode.CommittedLoadedRows; got != len(allRows) {
+		t.Fatalf("expected committed depth to keep logical pagination progress, got %d want %d", got, len(allRows))
 	}
 	if got, want := model.copyMode.Snapshot.ScrollbackFirstRowID, uint64(1000); got != want {
 		t.Fatalf("expected bounded frozen buffer to keep loaded committed window first row id, got %d want %d", got, want)
@@ -1513,8 +1513,8 @@ func TestCopyModeBoundedWindowRequestsNextOlderPageByLoadedDepth(t *testing.T) {
 	client.snapshotByTerminal["term-1"] = serverSnapshot
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
 
-	if got, want := model.copyMode.LoadedRows, terminalMaterializedScrollbackLimit+500; got != want {
-		t.Fatalf("expected first older page to advance loaded depth, got %d want %d", got, want)
+	if got, want := model.copyMode.CommittedLoadedRows, terminalMaterializedScrollbackLimit+500; got != want {
+		t.Fatalf("expected first older page to advance committed depth, got %d want %d", got, want)
 	}
 	if got, want := len(model.copyMode.Snapshot.Scrollback), terminalMaterializedScrollbackLimit; got != want {
 		t.Fatalf("expected first page to keep bounded copy buffer, got %d want %d", got, want)
@@ -1537,10 +1537,10 @@ func TestCopyModeBoundedWindowRequestsNextOlderPageByLoadedDepth(t *testing.T) {
 	}
 	request := client.viewportRequests[len(client.viewportRequests)-1]
 	if request.offset != terminalMaterializedScrollbackLimit+500 || request.limit != 500 {
-		t.Fatalf("expected next page request to use loaded depth, got %#v", request)
+		t.Fatalf("expected next page request to use committed depth, got %#v", request)
 	}
-	if got, want := model.copyMode.LoadedRows, len(allRows); got != want {
-		t.Fatalf("expected second page to advance loaded depth, got %d want %d", got, want)
+	if got, want := model.copyMode.CommittedLoadedRows, len(allRows); got != want {
+		t.Fatalf("expected second page to advance committed depth, got %d want %d", got, want)
 	}
 	if got, want := len(model.copyMode.Snapshot.Scrollback), terminalMaterializedScrollbackLimit; got != want {
 		t.Fatalf("expected second page to keep bounded copy buffer, got %d want %d", got, want)
@@ -1582,7 +1582,7 @@ func TestCopyModeTopMixedCanonicalLatestAndLiveTailKeepsCommittedOffsetAndPrepen
 	client.snapshotByTerminal = map[string]*protocol.Snapshot{}
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
-	if got, want := model.copyMode.LoadedRows, 12000; got != want {
+	if got, want := model.copyMode.CommittedLoadedRows, 12000; got != want {
 		t.Fatalf("expected frozen copy-mode committed depth %d, got %d", want, got)
 	}
 	if got, want := len(model.copyMode.Snapshot.Scrollback), terminalMaterializedScrollbackLimit+2; got != want {
@@ -1641,7 +1641,7 @@ func TestCopyModeTopMixedCanonicalLatestAndLiveTailKeepsCommittedOffsetAndPrepen
 	})
 	drainCmd(t, model, cmd, 20)
 
-	if got, want := model.copyMode.LoadedRows, 12500; got != want {
+	if got, want := model.copyMode.CommittedLoadedRows, 12500; got != want {
 		t.Fatalf("expected older page to advance committed depth to %d, got %d", want, got)
 	}
 	if got, want := len(model.copyMode.Snapshot.Scrollback), terminalMaterializedScrollbackLimit; got != want {
@@ -1722,10 +1722,10 @@ func TestCopyModeTopRepeatedlyLoadsOlderPagesWhenStillAtTop(t *testing.T) {
 	}
 	request := client.viewportRequests[len(client.viewportRequests)-1]
 	if request.offset != terminalMaterializedScrollbackLimit+500 || request.limit != 500 {
-		t.Fatalf("expected repeated top jump to continue from loaded depth, got %#v", request)
+		t.Fatalf("expected repeated top jump to continue from committed depth, got %#v", request)
 	}
-	if got, want := model.copyMode.LoadedRows, len(allRows); got != want {
-		t.Fatalf("expected repeated top jump to advance loaded depth to full history, got %d want %d", got, want)
+	if got, want := model.copyMode.CommittedLoadedRows, len(allRows); got != want {
+		t.Fatalf("expected repeated top jump to advance committed depth to full history, got %d want %d", got, want)
 	}
 	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old") {
 		t.Fatalf("expected oldest loaded page at scrollback start, got %q", got)
@@ -1755,8 +1755,8 @@ func TestCopyModeRejectsNonAdjacentHistoryPage(t *testing.T) {
 	loaded.ScrollbackLastRowID = 98
 
 	model.extendFrozenCopyModeSnapshot(loaded, 1, false)
-	if got, want := model.copyMode.LoadedRows, 1; got != want {
-		t.Fatalf("expected stale non-adjacent page to be rejected, loaded=%d want %d", got, want)
+	if got, want := model.copyMode.CommittedLoadedRows, 1; got != want {
+		t.Fatalf("expected stale non-adjacent page to be rejected, committed=%d want %d", got, want)
 	}
 	if got := len(model.copyMode.Snapshot.Scrollback); got != 1 {
 		t.Fatalf("expected stale page not to alter frozen scrollback, got %d rows", got)
@@ -1785,7 +1785,7 @@ func TestCopyModeRejectsOlderPageWhenCurrentHasNoCanonicalHistoryWindow(t *testi
 	model.copyMode.Snapshot.HistoryGeneration = 0
 	model.copyMode.Snapshot.ScrollbackFirstRowID = 0
 	model.copyMode.Snapshot.ScrollbackLastRowID = 0
-	model.copyMode.LoadedRows = 0
+	model.copyMode.CommittedLoadedRows = 0
 
 	loaded := copyModeTestSnapshot([]string{"canon099"}, []string{"live0"})
 	loaded.ScrollbackOffset = 1
@@ -1797,8 +1797,8 @@ func TestCopyModeRejectsOlderPageWhenCurrentHasNoCanonicalHistoryWindow(t *testi
 	loaded.ScrollbackLastRowID = 99
 
 	model.extendFrozenCopyModeSnapshot(loaded, 1, false)
-	if got, want := model.copyMode.LoadedRows, 0; got != want {
-		t.Fatalf("expected older page to be rejected when current frozen snapshot has no canonical window, loaded=%d want %d", got, want)
+	if got, want := model.copyMode.CommittedLoadedRows, 0; got != want {
+		t.Fatalf("expected older page to be rejected when current frozen snapshot has no canonical window, committed=%d want %d", got, want)
 	}
 	if got := len(model.copyMode.Snapshot.Scrollback); got != 2 {
 		t.Fatalf("expected live-tail-only frozen snapshot to remain unchanged, got %d rows", got)
@@ -1840,8 +1840,8 @@ func TestCopyModePagedLatestReplaceDropsFrozenCanonicalMetadataAndKeepsOlderOffs
 	client := model.runtime.Client().(*recordingBridgeClient)
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
-	if got, want := model.copyMode.LoadedRows, 12000; got != want {
-		t.Fatalf("expected initial frozen snapshot loaded depth %d, got %d", want, got)
+	if got, want := model.copyMode.CommittedLoadedRows, 12000; got != want {
+		t.Fatalf("expected initial frozen snapshot committed depth %d, got %d", want, got)
 	}
 
 	latestLiveTailOnly := &protocol.Snapshot{
@@ -1886,8 +1886,8 @@ func TestCopyModePagedLatestReplaceDropsFrozenCanonicalMetadataAndKeepsOlderOffs
 	if got := snapshotScrollbackLoadedDepth(model.copyMode.Snapshot); got != 0 {
 		t.Fatalf("expected authoritative live-tail-only latest to keep committed depth at 0, got %d", got)
 	}
-	if got := model.copyMode.LoadedRows; got != 0 {
-		t.Fatalf("expected copy-mode loaded depth to reset to 0, got %d", got)
+	if got := model.copyMode.CommittedLoadedRows; got != 0 {
+		t.Fatalf("expected copy-mode committed depth to reset to 0, got %d", got)
 	}
 	if got, want := model.copyMode.Snapshot.HistoryGeneration, uint64(0); got != want {
 		t.Fatalf("expected replace semantics to drop old generation, got %d want %d", got, want)
@@ -1929,8 +1929,8 @@ func TestCopyModeRejectsOlderPageWithoutCanonicalHistoryWindow(t *testing.T) {
 	loaded.ScrollbackLastRowID = 0
 
 	model.extendFrozenCopyModeSnapshot(loaded, 1, false)
-	if got, want := model.copyMode.LoadedRows, 1; got != want {
-		t.Fatalf("expected older page without canonical window to be rejected, loaded=%d want %d", got, want)
+	if got, want := model.copyMode.CommittedLoadedRows, 1; got != want {
+		t.Fatalf("expected older page without canonical window to be rejected, committed=%d want %d", got, want)
 	}
 	if got := len(model.copyMode.Snapshot.Scrollback); got != 1 {
 		t.Fatalf("expected canonical frozen snapshot to remain unchanged, got %d rows", got)
@@ -1963,8 +1963,8 @@ func TestCopyModeAcceptsCanonicalOlderPageWithRowIDZero(t *testing.T) {
 	loaded.ScrollbackLastRowID = 0
 
 	model.extendFrozenCopyModeSnapshot(loaded, 1, false)
-	if got, want := model.copyMode.LoadedRows, 2; got != want {
-		t.Fatalf("expected canonical older page to extend frozen snapshot, loaded=%d want %d", got, want)
+	if got, want := model.copyMode.CommittedLoadedRows, 2; got != want {
+		t.Fatalf("expected canonical older page to extend frozen snapshot, committed=%d want %d", got, want)
 	}
 	if got := len(model.copyMode.Snapshot.Scrollback); got != 2 {
 		t.Fatalf("expected merged frozen snapshot to contain 2 rows, got %d", got)

@@ -346,7 +346,7 @@ func (m *Model) copyModeScrollbackCmd(buffer copyModeBuffer, force bool) tea.Cmd
 	if terminal == nil {
 		return nil
 	}
-	loaded := maxInt(snapshotScrollbackLoadedDepth(buffer.snapshot), m.copyMode.LoadedRows)
+	loaded := maxInt(snapshotScrollbackLoadedDepth(buffer.snapshot), m.copyMode.CommittedLoadedRows)
 	if terminal.ScrollbackExhausted {
 		if !terminalHasKnownScrollbackBeyond(terminal, loaded) {
 			return nil

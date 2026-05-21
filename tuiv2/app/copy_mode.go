@@ -24,17 +24,17 @@ type copyModeRowRef struct {
 }
 
 type copyModeState struct {
-	PaneID         string
-	Snapshot       *protocol.Snapshot
-	LoadedRows     int
-	ViewTopRow     int
-	Cursor         copyModePoint
-	CursorRowRef   copyModeRowRef
-	Mark           *copyModePoint
-	MarkRowRef     copyModeRowRef
-	MouseSelecting bool
-	AutoScrollDir  int
-	AutoScrollSeq  uint64
+	PaneID              string
+	Snapshot            *protocol.Snapshot
+	CommittedLoadedRows int
+	ViewTopRow          int
+	Cursor              copyModePoint
+	CursorRowRef        copyModeRowRef
+	Mark                *copyModePoint
+	MarkRowRef          copyModeRowRef
+	MouseSelecting      bool
+	AutoScrollDir       int
+	AutoScrollSeq       uint64
 }
 
 type copyModeResumeState struct {
@@ -552,11 +552,11 @@ func (m *Model) ensureCopyMode() bool {
 		if !ok || buffer.totalRows() == 0 {
 			return false
 		}
-		if delta := snapshotScrollbackLoadedDepth(buffer.snapshot) - m.copyMode.LoadedRows; delta > 0 {
+		if delta := snapshotScrollbackLoadedDepth(buffer.snapshot) - m.copyMode.CommittedLoadedRows; delta > 0 {
 			m.copyMode.ViewTopRow += delta
 			m.reanchorCopyModePoints(buffer, delta, false, false)
 		}
-		m.copyMode.LoadedRows = snapshotScrollbackLoadedDepth(buffer.snapshot)
+		m.copyMode.CommittedLoadedRows = snapshotScrollbackLoadedDepth(buffer.snapshot)
 		m.copyMode.Cursor = buffer.clampPoint(m.copyMode.Cursor)
 		m.copyMode.CursorRowRef = buffer.pointRowRef(m.copyMode.Cursor)
 		if m.copyMode.Mark != nil {
@@ -583,12 +583,12 @@ func (m *Model) ensureCopyMode() bool {
 	start := copyModePoint{Row: maxInt(0, len(buffer.snapshot.Scrollback)+buffer.cursorRow()), Col: maxInt(0, buffer.cursorCol())}
 	start = buffer.clampPoint(start)
 	m.copyMode = copyModeState{
-		PaneID:       pane.ID,
-		Snapshot:     frozenSnapshot,
-		LoadedRows:   snapshotScrollbackLoadedDepth(buffer.snapshot),
-		ViewTopRow:   maxInt(0, buffer.totalRows()-buffer.height),
-		Cursor:       start,
-		CursorRowRef: buffer.pointRowRef(start),
+		PaneID:              pane.ID,
+		Snapshot:            frozenSnapshot,
+		CommittedLoadedRows: snapshotScrollbackLoadedDepth(buffer.snapshot),
+		ViewTopRow:          maxInt(0, buffer.totalRows()-buffer.height),
+		Cursor:              start,
+		CursorRowRef:        buffer.pointRowRef(start),
 	}
 	m.syncCopyModeViewport(buffer, start)
 	m.saveCurrentCopyModeState()
@@ -621,11 +621,11 @@ func (m *Model) adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID string, s
 		if !ok {
 			continue
 		}
-		if delta := snapshotScrollbackLoadedDepth(buffer.snapshot) - m.copyMode.LoadedRows; delta > 0 {
+		if delta := snapshotScrollbackLoadedDepth(buffer.snapshot) - m.copyMode.CommittedLoadedRows; delta > 0 {
 			m.copyMode.ViewTopRow += delta
 			m.reanchorCopyModePoints(buffer, delta, false, false)
 		}
-		m.copyMode.LoadedRows = snapshotScrollbackLoadedDepth(buffer.snapshot)
+		m.copyMode.CommittedLoadedRows = snapshotScrollbackLoadedDepth(buffer.snapshot)
 		m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
 		m.saveCurrentCopyModeState()
 	}
@@ -686,7 +686,7 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 		next.ScrollbackLastRowID = loaded.ScrollbackLastRowID
 		trimmedNewest := trimCopyModeSnapshotScrollbackWindow(next, terminalMaterializedScrollbackLimit, false)
 		m.copyMode.Snapshot = next
-		m.copyMode.LoadedRows = snapshotScrollbackLoadedDepth(next)
+		m.copyMode.CommittedLoadedRows = snapshotScrollbackLoadedDepth(next)
 
 		buffer, ok := m.activeCopyModeBuffer()
 		if !ok {
@@ -706,7 +706,7 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 	next.ScrollbackFirstRowID, next.ScrollbackLastRowID = mergedCanonicalRowWindow(loaded, next)
 	trimmedNewest := trimCopyModeSnapshotScrollbackWindow(next, terminalMaterializedScrollbackLimit, trimNewest)
 	m.copyMode.Snapshot = next
-	m.copyMode.LoadedRows = snapshotScrollbackLoadedDepth(next)
+	m.copyMode.CommittedLoadedRows = snapshotScrollbackLoadedDepth(next)
 
 	buffer, ok := m.activeCopyModeBuffer()
 	if !ok {
