@@ -1008,7 +1008,6 @@ func TestCopyModeExtendsFrozenScrollbackWhenSnapshotLoads(t *testing.T) {
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeBeginSelection})
 
-	beforeRow := model.copyMode.Cursor.Row
 	beforeMark := *model.copyMode.Mark
 	beforeCursorRef := model.copyMode.CursorRowRef
 	beforeMarkRef := model.copyMode.MarkRowRef
@@ -1032,20 +1031,20 @@ func TestCopyModeExtendsFrozenScrollbackWhenSnapshotLoads(t *testing.T) {
 	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); !strings.Contains(got, "old0") {
 		t.Fatalf("expected loaded older scrollback to be prepended, got %q", got)
 	}
-	if got := model.copyMode.Cursor.Row; got != beforeRow+2 {
-		t.Fatalf("expected copy-mode cursor row to shift with prepended history, before=%d after=%d", beforeRow, got)
+	if got := model.copyMode.CursorRowRef; !got.Valid || got != beforeCursorRef {
+		t.Fatalf("expected canonical cursor ref to anchor across prepend, before=%#v after=%#v", beforeCursorRef, got)
 	}
-	if !model.copyMode.CursorRowRef.Valid {
-		t.Fatalf("expected canonical cursor ref to remain valid across prepend, before=%#v after=%#v", beforeCursorRef, model.copyMode.CursorRowRef)
+	if got, ok := (copyModeBuffer{snapshot: model.copyMode.Snapshot, height: 4}).rowForRef(beforeCursorRef); ok && model.copyMode.Cursor.Row != got {
+		t.Fatalf("expected copy-mode cursor row to follow canonical ref row %d, got %d", got, model.copyMode.Cursor.Row)
 	}
 	if model.copyMode.Mark == nil {
 		t.Fatal("expected mark to remain set")
 	}
-	if got := model.copyMode.Mark.Row; got != beforeMark.Row+2 {
-		t.Fatalf("expected copy-mode mark row to shift with prepended history, before=%d after=%d", beforeMark.Row, got)
+	if got := model.copyMode.MarkRowRef; !got.Valid || got != beforeMarkRef {
+		t.Fatalf("expected canonical mark ref to anchor across prepend, before=%#v after=%#v", beforeMarkRef, got)
 	}
-	if !model.copyMode.MarkRowRef.Valid {
-		t.Fatalf("expected canonical mark ref to remain valid across prepend, before=%#v after=%#v", beforeMarkRef, model.copyMode.MarkRowRef)
+	if got, ok := (copyModeBuffer{snapshot: model.copyMode.Snapshot, height: 4}).rowForRef(beforeMarkRef); ok && model.copyMode.Mark.Row != got {
+		t.Fatalf("expected copy-mode mark row to follow canonical ref row %d, before=%d after=%d", got, beforeMark.Row, model.copyMode.Mark.Row)
 	}
 }
 

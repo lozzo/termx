@@ -262,7 +262,7 @@
 - snapshot / viewport 已新增 row ownership contract，使 `tuiv2` 可以直接区分 persisted committed rows、reclaimed live-tail rows、live-origin live-tail rows 与 screen projection。
 - `tuiv2` runtime/app 已删除 `AuthoritativeLiveTailOnlyLatest`、`FullReplaceBoundaryReset` 这类本地推断状态字段，不再通过 `LoadedRows=0`、`HistoryGeneration=0`、row count 或 latest replace 形态反推 live-tail 边界。
 - `tuiv2` 不再在缺少 row ownership 时用本地 VTerm scrollback 行数、snapshot totals 或 `hasMore` 兜底推进 committed history depth；older-page 请求必须以显式 ownership 下的 committed depth 为依据。
-- copy mode backing model 已改为以 ownership metadata 决定 older-page offset 与 canonical row refs；live-tail rows 不再消耗 canonical row id，selection anchoring 继续按 ownership row refs 收敛。
+- copy mode backing model 已改为以 ownership metadata 决定 older-page offset、canonical row refs 与 selection anchoring；live-tail rows 不再消耗 canonical row id，cursor / mark 优先按 ownership-backed row refs 重锚。
 - runtime transaction restore、attach / re-entry、stale-page guard 继续保持与 core ownership 一致，不再保留旧的 TUI 本地推断状态作为主语义。
 - 每个子切片都必须保持主线测试可运行，并形成中文提交。
 

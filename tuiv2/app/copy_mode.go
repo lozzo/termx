@@ -537,7 +537,7 @@ func (m *Model) ensureCopyMode() bool {
 		}
 		if delta := snapshotScrollbackLoadedDepth(buffer.snapshot) - m.copyMode.CommittedLoadedRows; delta > 0 {
 			m.copyMode.ViewTopRow += delta
-			m.reanchorCopyModePoints(buffer, delta, false, false)
+			m.reanchorCopyModePoints(buffer, delta, false, true)
 		}
 		m.copyMode.CommittedLoadedRows = snapshotScrollbackLoadedDepth(buffer.snapshot)
 		m.copyMode.Cursor = buffer.clampPoint(m.copyMode.Cursor)
@@ -606,7 +606,7 @@ func (m *Model) adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID string, s
 		}
 		if delta := snapshotScrollbackLoadedDepth(buffer.snapshot) - m.copyMode.CommittedLoadedRows; delta > 0 {
 			m.copyMode.ViewTopRow += delta
-			m.reanchorCopyModePoints(buffer, delta, false, false)
+			m.reanchorCopyModePoints(buffer, delta, false, true)
 		}
 		m.copyMode.CommittedLoadedRows = snapshotScrollbackLoadedDepth(buffer.snapshot)
 		m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
@@ -678,7 +678,7 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 			return false
 		}
 		m.copyMode.ViewTopRow += delta - trimmedNewest
-		m.reanchorCopyModePoints(buffer, delta-trimmedNewest, false, false)
+		m.reanchorCopyModePoints(buffer, delta-trimmedNewest, false, true)
 		m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
 		m.saveCurrentCopyModeState()
 		return true
