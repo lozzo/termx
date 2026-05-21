@@ -587,6 +587,133 @@ func TestSubscribeBootstrapSendsScreenOnlyAndHistoryReplayStaysAvailable(t *test
 	}
 }
 
+func TestSubscribeBootstrapDoesNotCreateHistoryFromLiveScreenOnly(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	vt := localvterm.New(8, 2, 16, nil)
+	vt.LoadSnapshot(localvterm.ScreenData{
+		Cells: [][]localvterm.Cell{
+			localVTermRowForTest("live-a", 8),
+			localVTermRowForTest("live-b", 8),
+		},
+	}, localvterm.CursorState{Visible: true}, localvterm.TerminalModes{AutoWrap: true})
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:           "bootstrap-no-history-create",
+		size:         Size{Cols: 8, Rows: 2},
+		state:        StateRunning,
+		vterm:        vt,
+		stream:       fanout.New(),
+		grid:         store,
+		processEpoch: 1,
+	}
+
+	beforeRows := store.RowCount()
+	beforeLines := store.LogicalLineCount()
+	stream := term.Subscribe(ctx)
+
+	select {
+	case <-stream:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for resize bootstrap")
+	}
+	select {
+	case msg := <-stream:
+		if msg.Type != StreamScreenUpdate {
+			t.Fatalf("expected screen update bootstrap, got %#v", msg)
+		}
+		update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
+		if err != nil {
+			t.Fatalf("decode bootstrap payload: %v", err)
+		}
+		if !update.FullReplace {
+			t.Fatalf("expected bootstrap payload to be authoritative full replace, got %#v", update)
+		}
+		if len(update.ScrollbackAppend) != 0 || update.ScrollbackTrim != 0 || update.ResetScrollback {
+			t.Fatalf("expected bootstrap full replace not to create history rows, got %#v", update)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for screen update bootstrap")
+	}
+
+	if got := store.RowCount(); got != beforeRows {
+		t.Fatalf("expected bootstrap not to append committed rows, got before=%d after=%d", beforeRows, got)
+	}
+	if got := store.LogicalLineCount(); got != beforeLines {
+		t.Fatalf("expected bootstrap not to create committed logical lines, got before=%d after=%d", beforeLines, got)
+	}
+
+	snap := term.Snapshot(0, 0)
+	if snap == nil {
+		t.Fatal("expected snapshot")
+	}
+	if snap.ScrollbackTotal != 0 || snap.ScrollbackLoadedRows != 0 || snap.HistoryGeneration != 0 {
+		t.Fatalf("expected bootstrap to leave history metadata cold-empty, got total=%d loaded=%d gen=%d", snap.ScrollbackTotal, snap.ScrollbackLoadedRows, snap.HistoryGeneration)
+	}
+}
+
+func TestScreenSnapshotFallbackFullReplaceDoesNotCreateHistory(t *testing.T) {
+	vt := localvterm.New(8, 2, 16, nil)
+	vt.LoadSnapshot(localvterm.ScreenData{
+		Cells: [][]localvterm.Cell{
+			localVTermRowForTest("seed-a", 8),
+			localVTermRowForTest("seed-b", 8),
+		},
+	}, localvterm.CursorState{Visible: true}, localvterm.TerminalModes{AutoWrap: true})
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:     "fallback-no-history-create",
+		size:   Size{Cols: 8, Rows: 2},
+		state:  StateRunning,
+		vterm:  vt,
+		stream: fanout.New(),
+		grid:   store,
+	}
+	if err := store.AppendRows([][]localvterm.Cell{localVTermCellsFromString("cold0")}); err != nil {
+		t.Fatalf("append cold seed: %v", err)
+	}
+	beforeRows := store.RowCount()
+	beforeLines := store.LogicalLineCount()
+
+	term.streamMu.Lock()
+	msg := term.screenSnapshotFallbackMessageLocked()
+	term.streamMu.Unlock()
+
+	if msg.Type != StreamScreenUpdate || len(msg.Payload) == 0 {
+		t.Fatalf("expected fallback full-replace payload, got %#v", msg)
+	}
+	update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
+	if err != nil {
+		t.Fatalf("decode fallback payload: %v", err)
+	}
+	if !update.FullReplace {
+		t.Fatalf("expected fallback to be authoritative full replace, got %#v", update)
+	}
+	if len(update.ScrollbackAppend) != 0 || update.ScrollbackTrim != 0 || update.ResetScrollback {
+		t.Fatalf("expected fallback full replace not to create history rows, got %#v", update)
+	}
+	if got := store.RowCount(); got != beforeRows {
+		t.Fatalf("expected fallback payload generation not to append committed rows, got before=%d after=%d", beforeRows, got)
+	}
+	if got := store.LogicalLineCount(); got != beforeLines {
+		t.Fatalf("expected fallback payload generation not to create committed logical lines, got before=%d after=%d", beforeLines, got)
+	}
+
+	snap := term.Snapshot(0, 0)
+	if snap == nil {
+		t.Fatal("expected snapshot")
+	}
+	if snap.ScrollbackTotal != beforeRows || snap.ScrollbackLoadedRows != 0 {
+		t.Fatalf("expected fallback to keep committed metadata unchanged, got total=%d loaded=%d", snap.ScrollbackTotal, snap.ScrollbackLoadedRows)
+	}
+	if snap.HistoryGeneration == 0 {
+		t.Fatal("expected committed generation to remain available after fallback")
+	}
+}
+
 func TestTerminalSnapshotReturnsNewestScrollbackWindow(t *testing.T) {
 	vt := localvterm.New(4, 2, 16, nil)
 	if _, err := vt.Write([]byte("1\n2\n3\n4\n5\n")); err != nil {
