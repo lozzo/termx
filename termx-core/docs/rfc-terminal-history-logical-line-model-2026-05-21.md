@@ -549,15 +549,19 @@ segment 至少需要表达：
 
 ### Phase 2: Snapshot / Viewport / Paging 适配
 
-- 让对外读取路径逐步按 logical line 和 canonical history 窗口工作。
+- 主动扩展 snapshot / viewport ownership contract，使 runtime / app 可以直接区分 persisted committed rows、reclaimed live-tail rows、live-origin live-tail rows 与 screen projection。
+- 删除 TUI 侧通过 `LoadedRows=0`、`HistoryGeneration=0`、row count 或 latest replace 形态反推 live-tail-only 的旧路径。
+- 对外读取路径必须按 logical line ownership 和 canonical history 窗口工作，不再把 wrapped visual row 当成历史主语义。
 
 ### Phase 3: Runtime / Copy Mode 适配
 
-- 让 `tuiv2` 的 copy mode、paging ownership、latest semantics 与新模型对齐。
+- 让 `tuiv2` 的 copy mode、paging ownership、latest semantics 直接消费 ownership metadata。
+- copy mode backing model 以 ownership metadata 决定 older-page offset、canonical row refs、selection anchoring 和 latest replace 语义。
+- runtime transaction restore、attach / re-entry、stale-page guard 不再保留旧的 TUI 本地推断状态作为主语义。
 
 ### Phase 4: Contract 审视
 
-- 再决定是否需要把更多 ownership 语义往 wire/runtime/app 侧暴露。
+- 审视第二阶段后的 contract 是否足够，避免继续扩散到冻结范围或无关产品壳。
 
 ## 19. 风险
 

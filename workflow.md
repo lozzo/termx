@@ -151,6 +151,14 @@
 - 第一阶段只要求在 `termx-core` 内部定死 ownership 语义。
 - 对外仍允许以保守的 snapshot / viewport / update 语义消费。
 
+### 3.10 第二阶段边界
+
+- 第二阶段开始主动重构 `tuiv2` 与直接相关的 protocol/runtime contract。
+- 第二阶段目标是让 TUI 直接消费 logical-line ownership 语义，而不是继续依赖 `LoadedRows=0`、row count、generation 是否为空等间接推断 live tail / persisted history 边界。
+- 允许最小化修改 `internal/protocol` 与 `termx-proto`，但只服务于 `termx-core`、`termx-vterm`、`tuiv2` 的当前主线。
+- 第二阶段不保留旧 TUI 历史对接路径兼容；旧 snapshot/viewport 推断 helper、状态字段和测试语义可以直接删除或重写。
+- 第二阶段仍不得触碰当前冻结范围。
+
 ## 4. 当前开发原则
 
 ### 4.1 先语义，后实现
@@ -159,8 +167,8 @@
 
 ### 4.2 先核心，后扩散
 
-- 先收敛 `termx-core` 内部模型。
-- 在没有明确必要之前，不主动扩展 protocol/runtime/app contract。
+- 第一阶段已经完成 `termx-core` 内部模型收敛。
+- 第二阶段允许扩展 protocol/runtime/app contract，但必须只围绕 logical-line ownership、persisted history、mutable live tail、screen projection 展开。
 
 ### 4.3 先测试，后重构
 
@@ -214,11 +222,11 @@
 - 第一阶段仍不扩展 protocol / runtime / app contract。
 - 旧 `hot/cold` 术语不再作为当前代码、测试 helper、内部 contract 或运行时状态命名保留；只允许在解释旧模型缺陷时出现。
 
-下面这些仍然是后续阶段问题，但它们不能阻塞本轮内部大重构：
+下面这些已进入第二阶段当前工作范围：
 
-- ownership 模型是否需要跨 protocol 显式暴露；
-- runtime/app 层未来是否需要显式感知 live tail 与 persisted history 边界；
-- copy mode 是否改为直接消费 logical-line ownership contract。
+- ownership 模型需要跨 protocol 最小显式暴露；
+- runtime/app 层需要显式感知 live tail 与 persisted history 边界；
+- copy mode 需要改为直接消费 logical-line ownership contract。
 
 ## 7. 当前阶段基线
 
@@ -250,16 +258,17 @@
 - `tuiv2` 运行时本地状态已删除 `AuthoritativeHotOnlyLatest` 旧命名，改为 `AuthoritativeLiveTailOnlyLatest`，保持 `LoadedRows=0` 的 live-tail-only latest 语义不变。
 - `tuiv2` copy mode 本地状态已把 `LoadedRows` 收敛为 `CommittedLoadedRows`，明确它只表示 committed history depth；live-tail-only rows 仍只作为显示/选择材料，不推进 older-page offset。
 
-### 7.2 当前剩余问题
+### 7.2 第二阶段当前执行目标
 
-- 第一阶段仍不扩展 wire/runtime/app contract；对外仍以保守的 snapshot / viewport / update 语义消费。
-- 如果后续继续扩展 TUI，需要先决定 copy mode 是否直接消费 logical-line ownership contract。
-- 如果后续要跨 protocol / runtime / app 显式暴露 ownership 模型，必须先更新本文件和 RFC，再进入实现。
+- 新增或改写 snapshot / viewport 的 ownership contract，使 `tuiv2` 可以直接区分 persisted committed rows、reclaimed live-tail rows、live-origin live-tail rows 与 screen projection。
+- 删除 `tuiv2` 里通过 `LoadedRows=0`、`HistoryGeneration=0`、row count 或 latest replace 形态反推 live-tail-only 的旧路径。
+- copy mode backing model 改为以 ownership metadata 决定 older-page offset、canonical row refs、selection anchoring 和 latest replace 语义。
+- runtime transaction restore、attach / re-entry、stale-page guard 继续保持与 core ownership 一致，不再保留旧的 TUI 本地推断状态作为主语义。
+- 每个子切片都必须保持主线测试可运行，并形成中文提交。
 
 ### 当前不启动的工作
 
-- protocol 层 ownership 扩展；
-- runtime/app 全链路重构；
+- remote / web / app 壳层适配；
 - 当前冻结范围内的产品层集成工作。
 
 ## 8. 维护规则

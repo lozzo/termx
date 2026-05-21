@@ -11,14 +11,15 @@
 ## Current Line Focus
 
 - 当前主动开发线只关注 `tuiv2` 与直接相关的 core history contract。
+- 当前已经进入终端历史逻辑行模型第二阶段，`tuiv2` 需要直接消费 logical-line ownership metadata，不再以旧 snapshot/viewport 形态反推 live tail / persisted history 边界。
 - 这轮 `tuiv2` 主要收口：
   - copy-mode backing model
   - cursor / selection 对 canonical row refs 对齐
   - observer viewport 只做 projection，不发明新的 history truth
   - attach / re-entry / transaction restore / stale-page 语义与 core 保持一致
-- runtime/app 必须保留 live-tail-only latest snapshot 的 `LoadedRows=0` 语义；不要把当前可见 live-tail rows 提升成 committed depth。
+- runtime/app 必须直接使用 ownership metadata 区分 live-tail-only latest 与 committed history；不要再把 `LoadedRows=0`、row count、generation 空值或 latest replace 形态作为主语义推断依据。
 - older-page prepend 只接受 same-generation committed window merge；`offset=0` latest replace 继续是 authoritative boundary reset。
-- paged-response ownership 目前仍是 live-vs-copy-mode split，不是 pane-scoped contract；新逻辑不要假设 pane 级 owner routing 已经存在。
+- paged-response ownership 需要和 logical-line ownership metadata 对齐；不再保留旧 live-vs-copy-mode split 作为历史真相。
 - pane-terminal 绑定、owner handoff、resize 协调必须优先收口到 `orchestrator` 或明确 service，不要把同一事务散落写进 `app`、`workbench`、`runtime` 和 render。
 
 ## UI Constraints
