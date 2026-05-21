@@ -8,19 +8,19 @@ import (
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
 )
 
-func TestSplitDamageAppendRowsExtendsHotTailAcrossWrappedBoundary(t *testing.T) {
+func TestSplitDamageRowsByLiveTailHintExtendsTailAcrossWrappedBoundary(t *testing.T) {
 	rows := []localvterm.DamageOp{
 		{Cells: localVTermCellsFromString("cold"), WrappedSet: true, Wrapped: false},
 		{Cells: localVTermCellsFromString("mid"), WrappedSet: true, Wrapped: true},
 		{Cells: localVTermCellsFromString("tail"), WrappedSet: true, Wrapped: true},
 	}
 
-	cold, hot := splitDamageAppendRows(rows, 1)
-	if got := damageRowsToStrings(cold); !reflect.DeepEqual(got, []string{"cold"}) {
-		t.Fatalf("expected cold flush boundary to stay before wrapped continuation, got cold=%#v hot=%#v", got, damageRowsToStrings(hot))
+	persisted, liveTail := splitDamageRowsByLiveTailHint(rows, 1)
+	if got := damageRowsToStrings(persisted); !reflect.DeepEqual(got, []string{"cold"}) {
+		t.Fatalf("expected persisted flush boundary to stay before wrapped continuation, got persisted=%#v live_tail=%#v", got, damageRowsToStrings(liveTail))
 	}
-	if got := damageRowsToStrings(hot); !reflect.DeepEqual(got, []string{"mid", "tail"}) {
-		t.Fatalf("expected trailing wrapped continuation to remain hot, got %#v", got)
+	if got := damageRowsToStrings(liveTail); !reflect.DeepEqual(got, []string{"mid", "tail"}) {
+		t.Fatalf("expected trailing wrapped continuation to remain in live tail, got %#v", got)
 	}
 }
 
@@ -43,8 +43,8 @@ func TestTerminalOpenExactWidthLineStaysHotAcrossOverflowedTop(t *testing.T) {
 	if got := store.RowCount(); got != 0 {
 		t.Fatalf("expected full-width open logical line to stay out of cold store before terminator, got %d cold rows", got)
 	}
-	if got := vtermRowsToStrings(term.hotAppendRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"abcd", "efgh"}) {
-		t.Fatalf("expected wrapped prefixes above visible top to stay in one hot open line, got %#v raw=%#v", got, term.hotAppendRows)
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"abcd", "efgh"}) {
+		t.Fatalf("expected wrapped prefixes above visible top to stay in one live-tail open line, got %#v raw=%#v", got, term.primaryLiveTail.rows())
 	}
 
 	snapshot := term.Snapshot(0, 10)
@@ -88,7 +88,7 @@ func TestTerminalHardNewlineSealsAccumulatedHotOpenLineToCold(t *testing.T) {
 
 	writeVTermDamageToGrid(t, term, vt, "\r\n")
 
-	if got := vtermRowsToStrings(term.hotAppendRowsToRowsForTest()); len(got) != 0 {
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); len(got) != 0 {
 		t.Fatalf("expected hard newline to seal and clear hot builder, got %#v", got)
 	}
 
@@ -120,11 +120,11 @@ func TestTerminalExactWidthLineHardNewlineSealsToCold(t *testing.T) {
 	}
 
 	writeVTermDamageToGrid(t, term, vt, "ABCD")
-	if got := vtermRowsToStrings(term.hotAppendRowsToRowsForTest()); len(got) != 0 {
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); len(got) != 0 {
 		t.Fatalf("expected exact-width open line to avoid explicit hot rows before terminator, got %#v", got)
 	}
-	if !term.hotWrapPending {
-		t.Fatal("expected exact-width write to leave hotWrapPending true before hard newline")
+	if !term.primaryLiveTail.wrapPending {
+		t.Fatal("expected exact-width write to leave live-tail wrap pending before hard newline")
 	}
 	if got := store.RowCount(); got != 0 {
 		t.Fatalf("expected no committed rows before hard newline, got %d", got)
@@ -132,11 +132,11 @@ func TestTerminalExactWidthLineHardNewlineSealsToCold(t *testing.T) {
 
 	writeVTermDamageToGrid(t, term, vt, "\r\n")
 
-	if got := vtermRowsToStrings(term.hotAppendRowsToRowsForTest()); len(got) != 0 {
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); len(got) != 0 {
 		t.Fatalf("expected hard newline to clear exact-width hot builder, got %#v", got)
 	}
-	if term.hotWrapPending {
-		t.Fatal("expected hard newline to clear hotWrapPending")
+	if term.primaryLiveTail.wrapPending {
+		t.Fatal("expected hard newline to clear live-tail wrap pending")
 	}
 	if got := store.RowCount(); got != 1 {
 		t.Fatalf("expected exact-width hard newline to seal one committed row, got %d", got)
@@ -195,7 +195,7 @@ func TestTerminalResizeFullReplacePreservesExistingHotOpenLinePrefix(t *testing.
 	writeVTermDamageToGrid(t, term, vt, "abcd")
 	writeVTermDamageToGrid(t, term, vt, "efgh")
 	writeVTermDamageToGrid(t, term, vt, "ij")
-	if got := vtermRowsToStrings(term.hotAppendRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"abcd", "efgh"}) {
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"abcd", "efgh"}) {
 		t.Fatalf("expected hot open-line prefix before resize, got %#v", got)
 	}
 	if got := store.RowCount(); got != 0 {
@@ -213,18 +213,18 @@ func TestTerminalResizeFullReplacePreservesExistingHotOpenLinePrefix(t *testing.
 		t.Fatalf("expected resize hot tail to stay out of committed store, got %d committed rows", got)
 	}
 
-	hotRows := vtermRowsToStrings(term.hotAppendRowsToRowsForTest())
+	liveTailRows := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest())
 	screenRows := vtermRowsToStrings(vt.ScreenContent().Cells)
-	if got := strings.Join(append(append([]string(nil), hotRows...), screenRows...), ""); got != "abcdefghij" {
-		t.Fatalf("expected resize to preserve full open logical line across hot+screen, got hot=%#v screen=%#v", hotRows, screenRows)
+	if got := strings.Join(append(append([]string(nil), liveTailRows...), screenRows...), ""); got != "abcdefghij" {
+		t.Fatalf("expected resize to preserve full open logical line across live tail+screen, got live_tail=%#v screen=%#v", liveTailRows, screenRows)
 	}
 
 	snapshot := term.Snapshot(0, 10)
 	if snapshot == nil {
 		t.Fatal("expected snapshot")
 	}
-	if got := strings.Join(rowsToStrings(snapshot.Scrollback), ""); got != strings.Join(hotRows, "") {
-		t.Fatalf("expected latest snapshot scrollback to project hot tail, got %#v", rowsToStrings(snapshot.Scrollback))
+	if got := strings.Join(rowsToStrings(snapshot.Scrollback), ""); got != strings.Join(liveTailRows, "") {
+		t.Fatalf("expected latest snapshot scrollback to project live tail, got %#v", rowsToStrings(snapshot.Scrollback))
 	}
 	if snapshot.ScrollbackLoadedRows != 0 || snapshot.HistoryGeneration != 0 || snapshot.ScrollbackFirstRowID != 0 || snapshot.ScrollbackLastRowID != 0 {
 		t.Fatalf("expected snapshot to keep zero committed-depth metadata for hot tail, loaded=%d gen=%d first=%d last=%d", snapshot.ScrollbackLoadedRows, snapshot.HistoryGeneration, snapshot.ScrollbackFirstRowID, snapshot.ScrollbackLastRowID)
@@ -234,8 +234,8 @@ func TestTerminalResizeFullReplacePreservesExistingHotOpenLinePrefix(t *testing.
 	if viewport == nil {
 		t.Fatal("expected viewport")
 	}
-	if got := strings.Join(rowsToStrings(viewport.Rows), ""); got != strings.Join(hotRows, "") {
-		t.Fatalf("expected latest viewport rows to stay hot-only after resize, got %#v", rowsToStrings(viewport.Rows))
+	if got := strings.Join(rowsToStrings(viewport.Rows), ""); got != strings.Join(liveTailRows, "") {
+		t.Fatalf("expected latest viewport rows to stay live-tail-only after resize, got %#v", rowsToStrings(viewport.Rows))
 	}
 	if viewport.LoadedRows != 0 || viewport.HistoryGeneration != 0 || viewport.FirstRowID != 0 || viewport.LastRowID != 0 {
 		t.Fatalf("expected viewport to keep zero committed-depth metadata for hot tail, loaded=%d gen=%d first=%d last=%d", viewport.LoadedRows, viewport.HistoryGeneration, viewport.FirstRowID, viewport.LastRowID)
@@ -277,11 +277,11 @@ func TestTerminalResizeFullReplacePreservesExactWidthHotWrapPendingLine(t *testi
 	}
 
 	writeVTermDamageToGrid(t, term, vt, "abcd")
-	if got := vtermRowsToStrings(term.hotAppendRowsToRowsForTest()); len(got) != 0 {
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); len(got) != 0 {
 		t.Fatalf("expected no explicit hot append rows before resize for exact-width open line, got %#v", got)
 	}
-	if !term.hotWrapPending {
-		t.Fatal("expected exact-width write to leave hotWrapPending true before resize")
+	if !term.primaryLiveTail.wrapPending {
+		t.Fatal("expected exact-width write to leave live-tail wrap pending before resize")
 	}
 	if got := store.RowCount(); got != 0 {
 		t.Fatalf("expected no committed rows before resize, got %d", got)
@@ -304,27 +304,27 @@ func TestTerminalResizeFullReplacePreservesExactWidthHotWrapPendingLine(t *testi
 	if got := store.RowCount(); got != 0 {
 		t.Fatalf("expected exact-width open line to stay out of committed store after resize, got %d committed rows", got)
 	}
-	if got := term.hotWrapPending; !got {
-		t.Fatal("expected resize to preserve hotWrapPending for exact-width open line")
+	if got := term.primaryLiveTail.wrapPending; !got {
+		t.Fatal("expected resize to preserve live-tail wrap pending for exact-width open line")
 	}
 
-	hotRows := vtermRowsToStrings(term.hotAppendRowsToRowsForTest())
+	liveTailRows := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest())
 	screenRows := vtermRowsToStrings(vt.ScreenContent().Cells)
-	if !reflect.DeepEqual(hotRows, []string{"a", "b", "c"}) {
-		t.Fatalf("expected displaced prefix rows to stay hot after resize, got %#v", hotRows)
+	if !reflect.DeepEqual(liveTailRows, []string{"a", "b", "c"}) {
+		t.Fatalf("expected displaced prefix rows to stay in live tail after resize, got %#v", liveTailRows)
 	}
 	if !reflect.DeepEqual(screenRows, []string{"d"}) {
 		t.Fatalf("expected final exact-width cell to remain on screen after resize, got %#v", screenRows)
 	}
-	if got := strings.Join(append(append([]string(nil), hotRows...), screenRows...), ""); got != "abcd" {
-		t.Fatalf("expected resize to preserve full exact-width open line across hot+screen, got hot=%#v screen=%#v", hotRows, screenRows)
+	if got := strings.Join(append(append([]string(nil), liveTailRows...), screenRows...), ""); got != "abcd" {
+		t.Fatalf("expected resize to preserve full exact-width open line across live tail+screen, got live_tail=%#v screen=%#v", liveTailRows, screenRows)
 	}
 
 	snapshot := term.Snapshot(0, 10)
 	if snapshot == nil {
 		t.Fatal("expected snapshot")
 	}
-	if got := rowsToStrings(snapshot.Scrollback); !reflect.DeepEqual(got, hotRows) {
+	if got := rowsToStrings(snapshot.Scrollback); !reflect.DeepEqual(got, liveTailRows) {
 		t.Fatalf("expected latest snapshot scrollback to project hot prefix rows only, got %#v", got)
 	}
 	if snapshot.ScrollbackLoadedRows != 0 || snapshot.HistoryGeneration != 0 || snapshot.ScrollbackFirstRowID != 0 || snapshot.ScrollbackLastRowID != 0 {
@@ -349,7 +349,7 @@ func TestTerminalResizeFullReplacePreservesExactWidthHotWrapPendingLine(t *testi
 	if viewport == nil {
 		t.Fatal("expected viewport")
 	}
-	if got := rowsToStrings(viewport.Rows); !reflect.DeepEqual(got, hotRows) {
+	if got := rowsToStrings(viewport.Rows); !reflect.DeepEqual(got, liveTailRows) {
 		t.Fatalf("expected latest viewport rows to stay hot-only after exact-width resize, got %#v", got)
 	}
 	if viewport.LoadedRows != 0 || viewport.HistoryGeneration != 0 || viewport.FirstRowID != 0 || viewport.LastRowID != 0 {

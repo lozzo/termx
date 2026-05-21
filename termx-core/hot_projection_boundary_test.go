@@ -142,10 +142,10 @@ func TestTerminalOlderOffsetUsesCommittedColdDepthWithoutHotTailShift(t *testing
 		vterm: vt,
 		grid:  store,
 	}
-	term.hotAppendRows = []localvterm.DamageOp{
+	term.primaryLiveTail.replaceRows([]localvterm.DamageOp{
 		{Cells: localVTermCellsFromString("hot-0"), WrappedSet: true, Wrapped: false},
 		{Cells: localVTermCellsFromString("hot-1"), WrappedSet: true, Wrapped: false},
-	}
+	}, terminalLiveTailOriginLive, false)
 
 	viewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 12000, ScrollbackLimit: 500, Cols: 16})
 	if viewport == nil {
@@ -298,10 +298,10 @@ func TestTerminalMetadataOnlyOlderSnapshotUsesCommittedDepthWithoutHotTailShift(
 		vterm: vt,
 		grid:  store,
 	}
-	term.hotAppendRows = []localvterm.DamageOp{
+	term.primaryLiveTail.replaceRows([]localvterm.DamageOp{
 		{Cells: localVTermCellsFromString("hot-0"), WrappedSet: true, Wrapped: false},
 		{Cells: localVTermCellsFromString("hot-1"), WrappedSet: true, Wrapped: false},
-	}
+	}, terminalLiveTailOriginLive, false)
 
 	snapshot := term.Snapshot(12000, 0)
 	if snapshot == nil {

@@ -270,11 +270,19 @@
 
 ### 7.3 当前剩余缺口
 
-本轮大重构完成前，第一阶段剩余缺口就是：
+本轮大重构已经开始落地，当前完成到下面这个状态：
 
-- `termx-core` 内部仍有旧单向 `hot -> cold` 过渡实现；
-- reclaim ownership 仍主要散落在 latest projection / viewport 读路径；
-- 测试命名仍保留旧模型痕迹。
+- `termx-core` 已引入显式 `primaryLiveTail` / segment 结构；
+- `Terminal` 不再直接散落维护 `hotAppendRows` / `hotWrapPending` 字段；
+- live-tail segment 已表达 `open/sealed`、`origin=live/reclaimed`、rows metadata 和 wrap-pending；
+- write / snapshot / viewport / restart / process-exit 路径已经改为通过 `primaryLiveTail` 读写尾部状态；
+- `hot/cold` 仍作为兼容术语保留，其中 hot 对应 live-tail 派生视图，cold 对应 persisted history store。
+
+当前仍需继续收敛的缺口是：
+
+- grow reclaim ownership 仍主要体现在 latest projection / viewport 读路径，还没有把 reclaimed suffix 真正写入 `primaryLiveTail` segment；
+- 部分测试文件名和用例名仍保留 `hot` 场景词，需要后续逐步补充 live-tail 表述；
+- `termx-vterm` 仍通过 `HotAppendRows` / `ResizeHotOwnedRows` 提供内部 hint，第一阶段允许继续保留该内部 contract。
 
 本轮大重构完成后，应重新压缩本节，把已完成结果和仍需后续阶段处理的问题写成新基线。
 

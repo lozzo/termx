@@ -1936,7 +1936,7 @@ func TestTerminalWritePathSplitsColdAndHotAppendRows(t *testing.T) {
 	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"cold0"}) {
 		t.Fatalf("expected only cold append rows persisted, got %#v", got)
 	}
-	if got := vtermRowsToStrings(term.hotAppendRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"hot0", "hot1"}) {
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"hot0", "hot1"}) {
 		t.Fatalf("expected trailing hot append rows retained in working set, got %#v", got)
 	}
 }
@@ -2012,12 +2012,12 @@ func TestTerminalOlderViewportIgnoresLatestHotAppendRows(t *testing.T) {
 	}
 }
 
-func (t *Terminal) hotAppendRowsToRowsForTest() [][]localvterm.Cell {
-	if t == nil || len(t.hotAppendRows) == 0 {
+func (t *Terminal) primaryLiveTailRowsToRowsForTest() [][]localvterm.Cell {
+	if t == nil || len(t.primaryLiveTail.rows()) == 0 {
 		return nil
 	}
-	out := make([][]localvterm.Cell, 0, len(t.hotAppendRows))
-	for _, row := range t.hotAppendRows {
+	out := make([][]localvterm.Cell, 0, len(t.primaryLiveTail.rows()))
+	for _, row := range t.primaryLiveTail.rows() {
 		out = append(out, damageOpCells(row))
 	}
 	return out

@@ -38,7 +38,7 @@ func TestTerminalResizeFullReplaceUsesExplicitResizeHotOwnedRows(t *testing.T) {
 	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"cold"}) {
 		t.Fatalf("expected only cold committed rows persisted, got %#v", got)
 	}
-	if got := vtermRowsToStrings(term.hotAppendRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"tail"}) {
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"tail"}) {
 		t.Fatalf("expected explicit resize hot rows to stay display-only, got %#v", got)
 	}
 
@@ -74,10 +74,10 @@ func TestTerminalResizeFullReplacePrefersExplicitResizeHotOwnedRowsOverWrappedFa
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 	term := &Terminal{
-		id:            "resize-explicit-priority",
-		grid:          store,
-		hotAppendRows: []localvterm.DamageOp{{Cells: localVTermCellsFromString("oldhot"), WrappedSet: true, Wrapped: true}},
+		id:   "resize-explicit-priority",
+		grid: store,
 	}
+	term.primaryLiveTail.replaceRows([]localvterm.DamageOp{{Cells: localVTermCellsFromString("oldhot"), WrappedSet: true, Wrapped: true}}, terminalLiveTailOriginLive, false)
 
 	damage := localvterm.WriteDamage{
 		ScrollbackAppend: []localvterm.DamageOp{
@@ -97,7 +97,7 @@ func TestTerminalResizeFullReplacePrefersExplicitResizeHotOwnedRowsOverWrappedFa
 	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"cold", "tail"}) {
 		t.Fatalf("expected explicit resize field to override wrapped fallback and persist all rows, got %#v", got)
 	}
-	if got := vtermRowsToStrings(term.hotAppendRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"oldhot"}) {
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"oldhot"}) {
 		t.Fatalf("expected explicit resize field to leave existing hot prefix intact while keeping new rows cold, got %#v", got)
 	}
 }
@@ -106,10 +106,10 @@ func TestTerminalResizeFullReplaceFallsBackWhenExplicitResizeHotOwnedRowsMissing
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 	term := &Terminal{
-		id:            "resize-fallback-missing",
-		grid:          store,
-		hotAppendRows: []localvterm.DamageOp{{Cells: localVTermCellsFromString("oldhot"), WrappedSet: true, Wrapped: true}},
+		id:   "resize-fallback-missing",
+		grid: store,
 	}
+	term.primaryLiveTail.replaceRows([]localvterm.DamageOp{{Cells: localVTermCellsFromString("oldhot"), WrappedSet: true, Wrapped: true}}, terminalLiveTailOriginLive, false)
 
 	damage := localvterm.WriteDamage{
 		ScrollbackAppend: []localvterm.DamageOp{
@@ -129,7 +129,7 @@ func TestTerminalResizeFullReplaceFallsBackWhenExplicitResizeHotOwnedRowsMissing
 	if len(viewport.Rows) != 0 {
 		t.Fatalf("expected legacy resize fallback to avoid committing rows when explicit field is absent, got %#v", vtermRowsToStrings(viewport.Rows))
 	}
-	if got := vtermRowsToStrings(term.hotAppendRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"oldhot", "cold", "tail"}) {
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"oldhot", "cold", "tail"}) {
 		t.Fatalf("expected legacy resize fallback to keep full append display-only, got %#v", got)
 	}
 }

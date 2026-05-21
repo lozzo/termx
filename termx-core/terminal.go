@@ -101,11 +101,10 @@ type Terminal struct {
 	// streamMu serializes VTerm updates, bootstrap capture, broadcasts and
 	// resize/close notifications so subscribers can replay a consistent screen
 	// state before switching to live frames.
-	streamMu       sync.Mutex
-	screenRevision uint64
-	alternateGrid  terminalAlternateGrid
-	hotAppendRows  []vterm.DamageOp
-	hotWrapPending bool
+	streamMu        sync.Mutex
+	screenRevision  uint64
+	alternateGrid   terminalAlternateGrid
+	primaryLiveTail terminalPrimaryLiveTail
 
 	// This cache holds deep-copied metadata snapshots so hot read paths do not
 	// have to rebuild command/tag payloads for every request.
@@ -588,9 +587,8 @@ func (t *Terminal) Restart() error {
 		t.mu.Unlock()
 		return ErrTerminalNotExited
 	}
-	hotAppendRows := cloneGridDamageOps(t.hotAppendRows)
-	hotWrapPending := t.hotWrapPending
-	preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped := restartPreservedRows(t, hotAppendRows, hotWrapPending)
+	liveTail := t.primaryLiveTail.clone()
+	preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped := restartPreservedRows(t, liveTail)
 	grid := t.grid
 	gridAppender := t.gridAppender
 	cfg := terminalConfig{
@@ -659,12 +657,12 @@ func (t *Terminal) Restart() error {
 	return nil
 }
 
-func restartPreservedRows(t *Terminal, hotAppendRows []vterm.DamageOp, hotWrapPending bool) ([][]vterm.Cell, []time.Time, []string, []bool) {
+func restartPreservedRows(t *Terminal, liveTail terminalPrimaryLiveTail) ([][]vterm.Cell, []time.Time, []string, []bool) {
 	if t == nil || t.vterm == nil {
 		return nil, nil, nil, nil
 	}
 	restartAt := time.Now().UTC()
-	rows := t.primaryLiveTailRowsForExit(hotAppendRows, hotWrapPending)
+	rows := t.primaryLiveTailRowsForExit(liveTail)
 	if len(rows) == 0 {
 		return appendRestartMarker(nil, nil, nil, nil, restartAt)
 	}
@@ -756,7 +754,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	t.mu.RLock()
 	size := t.size
 	id := t.id
-	hotAppendRows := cloneGridDamageOps(t.hotAppendRows)
+	liveTailRows := t.primaryLiveTail.rows()
 	t.mu.RUnlock()
 	screenTimestamps := t.vterm.ScreenTimestamps()
 	screenRowKinds := t.vterm.ScreenRowKinds()
@@ -801,7 +799,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		usedGrid                bool
 	)
 	if t.grid != nil && limit > 0 {
-		gridViewport, err := t.combinedGridViewport(offset, limit, int(size.Cols), hotAppendRows)
+		gridViewport, err := t.combinedGridViewport(offset, limit, int(size.Cols), liveTailRows)
 		if err != nil {
 			if t.logger != nil {
 				t.logger.Warn("termx terminal grid snapshot failed", "terminal_id", id, "error", err)
@@ -826,7 +824,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		_, historyGeneration, coldRows = t.grid.coordinates()
 		scrollbackTotal = coldRows
 		if offset == 0 {
-			scrollbackTotal += len(hotAppendRows)
+			scrollbackTotal += len(liveTailRows)
 		}
 		scrollbackLogicalTotal = t.grid.LogicalLineCount()
 		scrollbackHasMore = offset < scrollbackTotal
@@ -870,7 +868,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		scrollbackLoadedRows = len(scrollback[start:end])
 		traceGridVTermRows("core.snapshot.vterm_scrollback", id, scrollback[start:end], "offset", offset, "limit", limit, "total", scrollbackTotal, "has_more", scrollbackHasMore)
 	}
-	if offset == 0 && !(usedGrid && len(hotAppendRows) > 0) {
+	if offset == 0 && !(usedGrid && len(liveTailRows) > 0) {
 		beforeTrim := len(outScrollback)
 		outScrollback, outScrollbackTimestamps, outScrollbackRowKinds, outScrollbackWrapped = trimScrollbackScreenOverlap(
 			outScrollback,
@@ -938,7 +936,7 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 	t.mu.RLock()
 	size := t.size
 	id := t.id
-	hotAppendRows := cloneGridDamageOps(t.hotAppendRows)
+	liveTailRows := t.primaryLiveTail.rows()
 	t.mu.RUnlock()
 	cols := int(size.Cols)
 	if cols <= 0 {
@@ -965,7 +963,7 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 		}
 	}
 	if t.grid != nil {
-		gridViewport, err := t.combinedGridViewport(offset, limit, cols, hotAppendRows)
+		gridViewport, err := t.combinedGridViewport(offset, limit, cols, liveTailRows)
 		if err != nil {
 			if t.logger != nil {
 				t.logger.Warn("termx terminal grid viewport failed", "terminal_id", id, "error", err)
@@ -1030,7 +1028,7 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 	}
 }
 
-func (t *Terminal) combinedGridViewport(offset, limit, cols int, hotAppendRows []vterm.DamageOp) (terminalGridViewport, error) {
+func (t *Terminal) combinedGridViewport(offset, limit, cols int, liveTailRows []vterm.DamageOp) (terminalGridViewport, error) {
 	var result terminalGridViewport
 	if t == nil || t.grid == nil {
 		return result, nil
@@ -1055,10 +1053,10 @@ func (t *Terminal) combinedGridViewport(offset, limit, cols int, hotAppendRows [
 		}
 		return result, nil
 	}
-	includeHot := offset == 0
+	includeLiveTail := offset == 0
 	totalRows := coldRows
-	if includeHot {
-		totalRows += len(hotAppendRows)
+	if includeLiveTail {
+		totalRows += len(liveTailRows)
 	}
 	if totalRows <= 0 {
 		return result, nil
@@ -1076,11 +1074,11 @@ func (t *Terminal) combinedGridViewport(offset, limit, cols int, hotAppendRows [
 	}
 	coldStart := minInt(start, coldRows)
 	coldEnd := minInt(end, coldRows)
-	hotStart := maxInt(start-coldRows, 0)
-	hotEnd := maxInt(end-coldRows, 0)
-	if !includeHot {
-		hotStart = 0
-		hotEnd = 0
+	liveTailStart := maxInt(start-coldRows, 0)
+	liveTailEnd := maxInt(end-coldRows, 0)
+	if !includeLiveTail {
+		liveTailStart = 0
+		liveTailEnd = 0
 	}
 
 	result.BeforeOffset = offset
@@ -1120,15 +1118,15 @@ func (t *Terminal) combinedGridViewport(offset, limit, cols int, hotAppendRows [
 		result.LastRowID = coldViewport.LastRowID
 		displayStart = coldRows - coldViewport.LoadedRows
 	}
-	if hotEnd > hotStart {
-		hotStart = expandDamageWindowStartToLogicalLine(hotAppendRows, hotStart)
+	if liveTailEnd > liveTailStart {
+		liveTailStart = expandDamageWindowStartToLogicalLine(liveTailRows, liveTailStart)
 		if coldEnd <= coldStart {
-			displayStart = coldRows + hotStart
+			displayStart = coldRows + liveTailStart
 		}
-		if hotEnd > len(hotAppendRows) {
-			hotEnd = len(hotAppendRows)
+		if liveTailEnd > len(liveTailRows) {
+			liveTailEnd = len(liveTailRows)
 		}
-		for _, row := range hotAppendRows[hotStart:hotEnd] {
+		for _, row := range liveTailRows[liveTailStart:liveTailEnd] {
 			result.Rows = append(result.Rows, damageOpCells(row))
 			result.Timestamps = append(result.Timestamps, row.Timestamp)
 			result.RowKinds = append(result.RowKinds, row.RowKind)
@@ -1164,10 +1162,9 @@ func (t *Terminal) sealLiveTailForProcessExitLocked() error {
 		}
 		t.alternateGrid.reset()
 	}
-	rows := t.primaryLiveTailRowsForExit(t.hotAppendRows, t.hotWrapPending)
+	rows := t.primaryLiveTailRowsForExit(t.primaryLiveTail.clone())
 	if len(rows) == 0 {
-		t.hotAppendRows = nil
-		t.hotWrapPending = false
+		t.primaryLiveTail.reset()
 		return nil
 	}
 	if t.gridAppender != nil {
@@ -1176,26 +1173,26 @@ func (t *Terminal) sealLiveTailForProcessExitLocked() error {
 	if err := t.grid.appendRows(rows); err != nil {
 		return err
 	}
-	t.hotAppendRows = nil
-	t.hotWrapPending = false
+	t.primaryLiveTail.reset()
 	return nil
 }
 
-func (t *Terminal) primaryLiveTailRowsForExit(hotAppendRows []vterm.DamageOp, hotWrapPending bool) []terminalGridRow {
+func (t *Terminal) primaryLiveTailRowsForExit(liveTail terminalPrimaryLiveTail) []terminalGridRow {
 	if t == nil || t.vterm == nil {
 		return nil
 	}
+	liveTailRows := liveTail.rows()
 	vt := t.vterm
 	screen := trimTrailingBlankVTermRows(vt.ScreenContent().Cells)
 	screenTimestamps := trimTrailingZeroTimes(vt.ScreenTimestamps(), len(screen))
 	screenRowKinds := trimTrailingStrings(vt.ScreenRowKinds(), len(screen))
 	screenWrapped := trimBoolSlice(vt.ScreenWrapped(), len(screen))
-	if len(screen) == 0 && len(hotAppendRows) == 0 && !hotWrapPending {
+	if len(screen) == 0 && len(liveTailRows) == 0 && !liveTail.wrapPending {
 		return nil
 	}
 
-	out := make([]terminalGridRow, 0, len(hotAppendRows)+len(screen))
-	for _, row := range hotAppendRows {
+	out := make([]terminalGridRow, 0, len(liveTailRows)+len(screen))
+	for _, row := range liveTailRows {
 		out = append(out, terminalGridRow{
 			cells:     damageOpCells(row),
 			timestamp: row.Timestamp,
@@ -1233,11 +1230,11 @@ func (t *Terminal) primaryLiveTailRowsForExit(hotAppendRows []vterm.DamageOp, ho
 				}
 			}
 		}
-		if len(hotAppendRows) > 0 {
+		if len(liveTailRows) > 0 {
 			screenCore := convertRows(terminalGridRowsToCellsRows(screenRows))
-			hotCore := convertRows(terminalGridRowsToCellsRows(out))
+			liveTailCore := convertRows(terminalGridRowsToCellsRows(out))
 			overlap := scrollbackScreenOverlap(
-				hotCore,
+				liveTailCore,
 				terminalGridRowsTimestamps(out),
 				terminalGridRowsKinds(out),
 				terminalGridRowsWrapped(out),
@@ -1821,118 +1818,118 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 	if t == nil {
 		return
 	}
-	coldRows, hotRows := t.reconcileHotAppendRowsLocked(damage)
-	t.hotAppendRows = hotRows
-	t.hotWrapPending = t.currentWrapPendingLocked()
-	if t.grid == nil || len(coldRows) == 0 {
+	persistedRows, liveTailRows := t.reconcileLiveTailRowsLocked(damage)
+	wrapPending := t.currentWrapPendingLocked()
+	t.primaryLiveTail.replaceRows(liveTailRows, terminalLiveTailOriginLive, wrapPending)
+	if t.grid == nil || len(persistedRows) == 0 {
 		return
 	}
-	traceGridDamageOps("core.append_grid.damage", t.id, coldRows, "ops", len(damage.Ops), "alternate_rows", len(damage.AlternateAppend), "hot_append_rows", len(hotRows))
+	traceGridDamageOps("core.append_grid.damage", t.id, persistedRows, "ops", len(damage.Ops), "alternate_rows", len(damage.AlternateAppend), "live_tail_rows", len(liveTailRows))
 	if t.gridAppender != nil {
-		t.gridAppender.append(coldRows)
+		t.gridAppender.append(persistedRows)
 		return
 	}
-	if err := t.grid.AppendDamageRows(coldRows); err != nil && t.logger != nil {
+	if err := t.grid.AppendDamageRows(persistedRows); err != nil && t.logger != nil {
 		t.logger.Warn("termx terminal grid append failed", "terminal_id", t.id, "error", err)
 	}
 }
 
-func splitDamageAppendRows(rows []vterm.DamageOp, hotAppendRows int) ([]vterm.DamageOp, []vterm.DamageOp) {
+func splitDamageRowsByLiveTailHint(rows []vterm.DamageOp, liveTailRows int) ([]vterm.DamageOp, []vterm.DamageOp) {
 	if len(rows) == 0 {
 		return nil, nil
 	}
-	if hotAppendRows <= 0 {
+	if liveTailRows <= 0 {
 		return cloneGridDamageOps(rows), nil
 	}
-	if hotAppendRows > len(rows) {
-		hotAppendRows = len(rows)
+	if liveTailRows > len(rows) {
+		liveTailRows = len(rows)
 	}
-	coldCount := len(rows) - hotAppendRows
-	for coldCount > 0 && rows[coldCount-1].WrappedSet && rows[coldCount-1].Wrapped {
-		coldCount--
+	persistedCount := len(rows) - liveTailRows
+	for persistedCount > 0 && rows[persistedCount-1].WrappedSet && rows[persistedCount-1].Wrapped {
+		persistedCount--
 	}
-	return cloneGridDamageOps(rows[:coldCount]), cloneGridDamageOps(rows[coldCount:])
+	return cloneGridDamageOps(rows[:persistedCount]), cloneGridDamageOps(rows[persistedCount:])
 }
 
-func splitDamageAppendRowsExact(rows []vterm.DamageOp, hotAppendRows int) ([]vterm.DamageOp, []vterm.DamageOp) {
+func splitDamageRowsByExactLiveTailHint(rows []vterm.DamageOp, liveTailRows int) ([]vterm.DamageOp, []vterm.DamageOp) {
 	if len(rows) == 0 {
 		return nil, nil
 	}
-	if hotAppendRows <= 0 {
+	if liveTailRows <= 0 {
 		return cloneGridDamageOps(rows), nil
 	}
-	if hotAppendRows > len(rows) {
-		hotAppendRows = len(rows)
+	if liveTailRows > len(rows) {
+		liveTailRows = len(rows)
 	}
-	coldCount := len(rows) - hotAppendRows
-	return cloneGridDamageOps(rows[:coldCount]), cloneGridDamageOps(rows[coldCount:])
+	persistedCount := len(rows) - liveTailRows
+	return cloneGridDamageOps(rows[:persistedCount]), cloneGridDamageOps(rows[persistedCount:])
 }
 
-func (t *Terminal) reconcileHotAppendRowsLocked(damage vterm.WriteDamage) ([]vterm.DamageOp, []vterm.DamageOp) {
+func (t *Terminal) reconcileLiveTailRowsLocked(damage vterm.WriteDamage) ([]vterm.DamageOp, []vterm.DamageOp) {
 	if t == nil || len(damage.ScrollbackAppend) == 0 {
-		return nil, cloneGridDamageOps(t.hotAppendRows)
+		return nil, cloneGridDamageOps(t.primaryLiveTail.rows())
 	}
 	if damage.RequiresFullReplace && damage.FullReplaceReason == "resize" {
 		if damage.ResizeHotOwnedRowsSet {
-			coldRows, hotSuffix := splitDamageAppendRowsExact(damage.ScrollbackAppend, damage.ResizeHotOwnedRows)
-			hotRows := cloneGridDamageOps(t.hotAppendRows)
-			for i := range hotSuffix {
-				hotSuffix[i].WrappedSet = true
-				hotSuffix[i].Wrapped = true
+			persistedRows, liveTailSuffix := splitDamageRowsByExactLiveTailHint(damage.ScrollbackAppend, damage.ResizeHotOwnedRows)
+			liveTailRows := cloneGridDamageOps(t.primaryLiveTail.rows())
+			for i := range liveTailSuffix {
+				liveTailSuffix[i].WrappedSet = true
+				liveTailSuffix[i].Wrapped = true
 			}
-			hotRows = append(hotRows, hotSuffix...)
-			return coldRows, hotRows
+			liveTailRows = append(liveTailRows, liveTailSuffix...)
+			return persistedRows, liveTailRows
 		}
-		if len(t.hotAppendRows) > 0 || t.hotWrapPending {
-			hotRows := cloneGridDamageOps(t.hotAppendRows)
+		if len(t.primaryLiveTail.rows()) > 0 || t.primaryLiveTail.wrapPending {
+			liveTailRows := cloneGridDamageOps(t.primaryLiveTail.rows())
 			for _, row := range damage.ScrollbackAppend {
 				cloned := cloneGridDamageOp(row)
 				cloned.WrappedSet = true
 				cloned.Wrapped = true
-				hotRows = append(hotRows, cloned)
+				liveTailRows = append(liveTailRows, cloned)
 			}
-			return nil, hotRows
+			return nil, liveTailRows
 		}
 		return cloneGridDamageOps(damage.ScrollbackAppend), nil
 	}
 
-	coldPrefix, _ := splitDamageAppendRows(damage.ScrollbackAppend, damage.HotAppendRows)
-	hotStart := len(coldPrefix)
-	coldRows := make([]vterm.DamageOp, 0, len(t.hotAppendRows)+len(damage.ScrollbackAppend))
-	hotRows := cloneGridDamageOps(t.hotAppendRows)
-	pendingWrap := t.hotWrapPending
+	persistedPrefix, _ := splitDamageRowsByLiveTailHint(damage.ScrollbackAppend, damage.HotAppendRows)
+	liveTailStart := len(persistedPrefix)
+	persistedRows := make([]vterm.DamageOp, 0, len(t.primaryLiveTail.rows())+len(damage.ScrollbackAppend))
+	liveTailRows := cloneGridDamageOps(t.primaryLiveTail.rows())
+	pendingWrap := t.primaryLiveTail.wrapPending
 
 	for i, row := range damage.ScrollbackAppend {
 		cloned := cloneGridDamageOp(row)
-		belongsToHot := i >= hotStart || (cloned.WrappedSet && cloned.Wrapped)
+		belongsToLiveTail := i >= liveTailStart || (cloned.WrappedSet && cloned.Wrapped)
 		if pendingWrap {
-			if !belongsToHot {
-				if len(hotRows) > 0 {
-					coldRows = append(coldRows, hotRows...)
-					hotRows = nil
+			if !belongsToLiveTail {
+				if len(liveTailRows) > 0 {
+					persistedRows = append(persistedRows, liveTailRows...)
+					liveTailRows = nil
 				}
 				pendingWrap = false
 			} else {
 				cloned.WrappedSet = true
 				cloned.Wrapped = true
-				hotRows = append(hotRows, cloned)
+				liveTailRows = append(liveTailRows, cloned)
 				pendingWrap = false
 				continue
 			}
 		}
-		if belongsToHot {
+		if belongsToLiveTail {
 			cloned.WrappedSet = true
 			cloned.Wrapped = true
-			hotRows = append(hotRows, cloned)
+			liveTailRows = append(liveTailRows, cloned)
 			continue
 		}
-		if len(hotRows) > 0 {
-			coldRows = append(coldRows, hotRows...)
-			hotRows = nil
+		if len(liveTailRows) > 0 {
+			persistedRows = append(persistedRows, liveTailRows...)
+			liveTailRows = nil
 		}
-		coldRows = append(coldRows, cloned)
+		persistedRows = append(persistedRows, cloned)
 	}
-	return coldRows, hotRows
+	return persistedRows, liveTailRows
 }
 
 func (t *Terminal) currentWrapPendingLocked() bool {
