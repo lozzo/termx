@@ -80,6 +80,7 @@ func copyModeTestSnapshot(scrollback, screen []string) *protocol.Snapshot {
 		TerminalID:             "term-1",
 		Size:                   protocol.Size{Cols: uint16(maxCols), Rows: uint16(len(screenRows))},
 		Scrollback:             protocol.CompactRowsFromCells(sbRows),
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipPersisted, len(sbRows)),
 		ScrollbackTotal:        len(sbRows),
 		ScrollbackLogicalTotal: len(sbRows),
 		ScrollbackLoadedRows:   len(sbRows),
@@ -336,6 +337,7 @@ func TestPagedSnapshotLoadedFallsBackToRuntimeMergeWhenFrozenCopyModeDoesNotCons
 	model.copyMode.Snapshot.HistoryGeneration = 0
 	model.copyMode.Snapshot.ScrollbackFirstRowID = 0
 	model.copyMode.Snapshot.ScrollbackLastRowID = 0
+	model.copyMode.Snapshot.ScrollbackOwnership = []string{protocol.RowOwnershipLiveTailLive, protocol.RowOwnershipLiveTailLive}
 	model.copyMode.CommittedLoadedRows = 0
 	model.saveCurrentCopyModeState()
 
@@ -1118,8 +1120,7 @@ func TestCopyModeTopLiveTailOnlyLatestDoesNotAdvanceOlderRequestOffsetByLiveTail
 		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("tail0", 40), protocolRowFromText("tail1", 40)}),
 		ScrollbackTotal:        4,
 		ScrollbackLogicalTotal: 4,
-		ScrollbackLoadedRows:   0,
-		HistoryGeneration:      0,
+		ScrollbackOwnership:    []string{protocol.RowOwnershipLiveTailLive, protocol.RowOwnershipLiveTailLive},
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
 			protocolRowFromText("line0", 40),
 			protocolRowFromText("line1", 40),
@@ -1168,7 +1169,7 @@ func TestCopyModeTopLiveTailOnlyLatestDoesNotAdvanceOlderRequestOffsetByLiveTail
 	}
 }
 
-func TestCopyModeTopAfterActiveLiveRefreshKeepsAuthoritativeLiveTailOnlyOlderOffsetAtZero(t *testing.T) {
+func TestCopyModeTopAfterActiveLiveRefreshKeepsLiveTailOwnershipOlderOffsetAtZero(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	terminal := model.runtime.Registry().GetOrCreate("term-1")
 	terminal.Snapshot = &protocol.Snapshot{
@@ -1177,8 +1178,7 @@ func TestCopyModeTopAfterActiveLiveRefreshKeepsAuthoritativeLiveTailOnlyOlderOff
 		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("tail0", 40), protocolRowFromText("tail1", 40)}),
 		ScrollbackTotal:        4,
 		ScrollbackLogicalTotal: 4,
-		ScrollbackLoadedRows:   0,
-		HistoryGeneration:      0,
+		ScrollbackOwnership:    []string{protocol.RowOwnershipLiveTailLive, protocol.RowOwnershipLiveTailLive},
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
 			protocolRowFromText("line0", 40),
 			protocolRowFromText("line1", 40),
@@ -1225,8 +1225,8 @@ func TestCopyModeTopAfterActiveLiveRefreshKeepsAuthoritativeLiveTailOnlyOlderOff
 	if buffer.snapshot == nil {
 		t.Fatal("expected refreshed snapshot")
 	}
-	if !snapshotHasAuthoritativeZeroCommittedWindow(buffer.snapshot) {
-		t.Fatalf("expected refreshed live buffer to preserve authoritative zero-committed metadata, got %#v", buffer.snapshot)
+	if !protocol.HasOnlyLiveTailLiveOwnership(buffer.snapshot.ScrollbackOwnership, len(buffer.snapshot.Scrollback)) {
+		t.Fatalf("expected refreshed live buffer to preserve live-tail ownership, got %#v", buffer.snapshot)
 	}
 	if got := snapshotScrollbackLoadedDepth(buffer.snapshot); got != 0 {
 		t.Fatalf("expected refreshed live buffer committed depth 0, got %d", got)
@@ -1282,7 +1282,7 @@ func TestCopyModeEnterPrefetchesWhenExhaustedFlagIsStale(t *testing.T) {
 	}
 }
 
-func TestCopyModeEnterDoesNotPrefetchAuthoritativeLiveTailOnlyRowsWhenExhausted(t *testing.T) {
+func TestCopyModeEnterDoesNotPrefetchLiveTailOwnershipRowsWhenExhausted(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	terminal := model.runtime.Registry().GetOrCreate("term-1")
 	terminal.Snapshot = &protocol.Snapshot{
@@ -1308,10 +1308,10 @@ func TestCopyModeEnterDoesNotPrefetchAuthoritativeLiveTailOnlyRowsWhenExhausted(
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
 
 	if got := len(client.viewportRequests); got != 0 {
-		t.Fatalf("expected live-tail-only authoritative rows not to trigger copy-mode history prefetch, got %#v", client.viewportRequests)
+		t.Fatalf("expected live-tail ownership rows not to trigger copy-mode history prefetch, got %#v", client.viewportRequests)
 	}
 	if !terminal.ScrollbackExhausted {
-		t.Fatal("expected exhausted flag to stay set when only live-tail authoritative rows are known")
+		t.Fatal("expected exhausted flag to stay set when only live-tail ownership rows are known")
 	}
 	if model.copyMode.Snapshot == nil {
 		t.Fatal("expected copy-mode snapshot")
@@ -1562,12 +1562,18 @@ func TestCopyModeTopMixedCanonicalLatestAndLiveTailKeepsCommittedOffsetAndPrepen
 		protocolRowFromText("live-tail-open-0", 40),
 		protocolRowFromText("live-tail-open-1", 40),
 	)
+	ownership := append(
+		repeatedOwnership(protocol.RowOwnershipPersisted, terminalMaterializedScrollbackLimit),
+		protocol.RowOwnershipLiveTailLive,
+		protocol.RowOwnershipLiveTailLive,
+	)
 
 	terminal := model.runtime.Registry().GetOrCreate("term-1")
 	terminal.Snapshot = &protocol.Snapshot{
 		TerminalID:             "term-1",
 		Size:                   protocol.Size{Cols: 40, Rows: 8},
 		Scrollback:             protocol.CompactRowsFromCells(scrollback),
+		ScrollbackOwnership:    ownership,
 		ScrollbackOffset:       0,
 		ScrollbackTotal:        13002,
 		ScrollbackLogicalTotal: 13002,
@@ -1623,6 +1629,7 @@ func TestCopyModeTopMixedCanonicalLatestAndLiveTailKeepsCommittedOffsetAndPrepen
 		TerminalID:             "term-1",
 		Size:                   terminal.Snapshot.Size,
 		Scrollback:             protocol.CompactRowsFromCells(olderPageRows),
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipPersisted, len(olderPageRows)),
 		ScrollbackOffset:       12000,
 		ScrollbackTotal:        13002,
 		ScrollbackLogicalTotal: 13002,
@@ -1652,8 +1659,8 @@ func TestCopyModeTopMixedCanonicalLatestAndLiveTailKeepsCommittedOffsetAndPrepen
 	if got, want := len(model.copyMode.Snapshot.Scrollback), terminalMaterializedScrollbackLimit; got != want {
 		t.Fatalf("expected bounded frozen buffer after older-page prepend, got %d want %d", got, want)
 	}
-	if got, want := model.copyMode.Snapshot.ScrollbackOffset, 502; got != want {
-		t.Fatalf("expected bounded prepend to trim 500 newest committed rows plus 2 live-tail rows, got offset=%d want %d", got, want)
+	if got, want := model.copyMode.Snapshot.ScrollbackOffset, 500; got != want {
+		t.Fatalf("expected bounded prepend to advance committed offset by 500 without counting live-tail rows, got offset=%d want %d", got, want)
 	}
 	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "canon-00500" {
 		t.Fatalf("expected prepended older page to start frozen buffer, got %q", got)
@@ -1827,6 +1834,7 @@ func TestCopyModePagedLatestReplaceDropsFrozenCanonicalMetadataAndKeepsOlderOffs
 		TerminalID:             "term-1",
 		Size:                   protocol.Size{Cols: 40, Rows: 8},
 		Scrollback:             protocol.CompactRowsFromCells(scrollback),
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipPersisted, len(scrollback)),
 		ScrollbackOffset:       0,
 		ScrollbackTotal:        12000,
 		ScrollbackLogicalTotal: 12000,
@@ -1856,8 +1864,7 @@ func TestCopyModePagedLatestReplaceDropsFrozenCanonicalMetadataAndKeepsOlderOffs
 		ScrollbackOffset:       0,
 		ScrollbackTotal:        2,
 		ScrollbackLogicalTotal: 2,
-		ScrollbackLoadedRows:   0,
-		HistoryGeneration:      0,
+		ScrollbackOwnership:    []string{protocol.RowOwnershipLiveTailLive, protocol.RowOwnershipLiveTailLive},
 		ScrollbackFirstRowID:   0,
 		ScrollbackLastRowID:    0,
 		ScrollbackHasMore:      false,
@@ -1889,7 +1896,7 @@ func TestCopyModePagedLatestReplaceDropsFrozenCanonicalMetadataAndKeepsOlderOffs
 		t.Fatalf("expected replace semantics to drop old loaded rows, got %d want %d", got, want)
 	}
 	if got := snapshotScrollbackLoadedDepth(model.copyMode.Snapshot); got != 0 {
-		t.Fatalf("expected authoritative live-tail-only latest to keep committed depth at 0, got %d", got)
+		t.Fatalf("expected live-tail ownership latest to keep committed depth at 0, got %d", got)
 	}
 	if got := model.copyMode.CommittedLoadedRows; got != 0 {
 		t.Fatalf("expected copy-mode committed depth to reset to 0, got %d", got)
@@ -2027,6 +2034,7 @@ func TestCopyModeBufferDoesNotAssignCanonicalRefBeyondLoadedCommittedRows(t *tes
 			TerminalID:             "term-1",
 			Size:                   protocol.Size{Cols: 5, Rows: 1},
 			Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("committed0", 5), protocolRowFromText("tail0 ", 5)}),
+			ScrollbackOwnership:    []string{protocol.RowOwnershipPersisted, protocol.RowOwnershipLiveTailLive},
 			ScrollbackTotal:        2,
 			ScrollbackLogicalTotal: 1,
 			ScrollbackLoadedRows:   1,
@@ -2056,6 +2064,7 @@ func TestCopyModeBufferCanonicalRefsUseMaterializedWindowCommittedOffset(t *test
 			TerminalID:             "term-1",
 			Size:                   protocol.Size{Cols: 12, Rows: 1},
 			Scrollback:             protocol.CompactRowsFromCells(scrollback),
+			ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipPersisted, len(scrollback)),
 			ScrollbackOffset:       0,
 			ScrollbackTotal:        12500,
 			ScrollbackLogicalTotal: 12500,

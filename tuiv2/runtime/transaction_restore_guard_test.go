@@ -76,36 +76,4 @@ func TestTransactionRestorePreservesViewportAndHistoryLoadState(t *testing.T) {
 	if !terminal.ScrollbackExhausted {
 		t.Fatal("expected exhausted restore to keep exhausted=true")
 	}
-
-	terminal.AuthoritativeLiveTailOnlyLatest = true
-	terminal.AuthoritativeLiveTailRowCount = 2
-	terminal.AuthoritativeLiveTailTotalRows = 4
-	terminal.AuthoritativeLiveTailLogicalRows = 4
-	terminal.AuthoritativeLiveTailHasMore = true
-
-	authoritativeLiveTailOnly := rt.TerminalLiveStateSnapshot("term-1")
-
-	terminal.AuthoritativeLiveTailOnlyLatest = false
-	terminal.AuthoritativeLiveTailRowCount = 0
-	terminal.AuthoritativeLiveTailTotalRows = 0
-	terminal.AuthoritativeLiveTailLogicalRows = 0
-	terminal.AuthoritativeLiveTailHasMore = false
-
-	rt.RestoreTerminalLiveState("term-1", authoritativeLiveTailOnly)
-
-	if !terminal.AuthoritativeLiveTailOnlyLatest {
-		t.Fatal("expected restore to preserve authoritative live-tail-only provenance")
-	}
-	if got, want := terminal.AuthoritativeLiveTailRowCount, 2; got != want {
-		t.Fatalf("expected restore to preserve live-tail row count %d, got %d", want, got)
-	}
-	if got, want := terminal.AuthoritativeLiveTailTotalRows, 4; got != want {
-		t.Fatalf("expected restore to preserve live-tail total rows %d, got %d", want, got)
-	}
-	if got, want := terminal.AuthoritativeLiveTailLogicalRows, 4; got != want {
-		t.Fatalf("expected restore to preserve live-tail logical rows %d, got %d", want, got)
-	}
-	if !terminal.AuthoritativeLiveTailHasMore {
-		t.Fatal("expected restore to preserve authoritative has-more flag")
-	}
 }

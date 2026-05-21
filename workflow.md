@@ -255,14 +255,13 @@
 - latest snapshot / viewport 已改为通过 `primaryLiveTail` 中的 reclaimed segment 投影，不再只靠读路径临时回卷 persisted suffix；
 - `termx-vterm` 到 `termx-core` 的内部 hint 已删除 `HotAppendRows` / `ResizeHotOwnedRows` 旧字段名，改为 `LiveTailAppendRows` / `ResizeLiveTailRows`，没有保留旧字段别名。
 - `termx-core` 相关测试文件、用例名和断言文本已从旧 `hot/cold` 场景词收敛到 `live-tail`、`persisted history`、`committed history` 表述。
-- `tuiv2` 运行时本地状态已删除 `AuthoritativeHotOnlyLatest` 旧命名，改为 `AuthoritativeLiveTailOnlyLatest`，保持 `LoadedRows=0` 的 live-tail-only latest 语义不变。
-- `tuiv2` copy mode 本地状态已把 `LoadedRows` 收敛为 `CommittedLoadedRows`，明确它只表示 committed history depth；live-tail-only rows 仍只作为显示/选择材料，不推进 older-page offset。
+- `tuiv2` copy mode 本地状态已把 `LoadedRows` 收敛为 `CommittedLoadedRows`，明确它只表示 committed history depth；live-tail rows 只作为显示/选择材料，不推进 older-page offset。
 
 ### 7.2 第二阶段当前执行目标
 
-- 新增或改写 snapshot / viewport 的 ownership contract，使 `tuiv2` 可以直接区分 persisted committed rows、reclaimed live-tail rows、live-origin live-tail rows 与 screen projection。
-- 删除 `tuiv2` 里通过 `LoadedRows=0`、`HistoryGeneration=0`、row count 或 latest replace 形态反推 live-tail-only 的旧路径。
-- copy mode backing model 改为以 ownership metadata 决定 older-page offset、canonical row refs、selection anchoring 和 latest replace 语义。
+- snapshot / viewport 已新增 row ownership contract，使 `tuiv2` 可以直接区分 persisted committed rows、reclaimed live-tail rows、live-origin live-tail rows 与 screen projection。
+- `tuiv2` runtime/app 已删除 `AuthoritativeLiveTailOnlyLatest`、`FullReplaceBoundaryReset` 这类本地推断状态字段，不再通过 `LoadedRows=0`、`HistoryGeneration=0`、row count 或 latest replace 形态反推 live-tail 边界。
+- copy mode backing model 正在改为以 ownership metadata 决定 older-page offset、canonical row refs、selection anchoring 和 latest replace 语义。
 - runtime transaction restore、attach / re-entry、stale-page guard 继续保持与 core ownership 一致，不再保留旧的 TUI 本地推断状态作为主语义。
 - 每个子切片都必须保持主线测试可运行，并形成中文提交。
 

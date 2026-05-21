@@ -168,8 +168,6 @@ func resetLatestBoundaryStateForFullReplace(terminal *TerminalRuntime) {
 	if terminal == nil {
 		return
 	}
-	terminal.FullReplaceBoundaryReset = true
-	clearAuthoritativeLiveTailOnlyLatestState(terminal)
 	terminal.ScrollbackLoadedLimit = 0
 	terminal.ScrollbackLoadingLimit = 0
 	terminal.ScrollbackExhausted = false

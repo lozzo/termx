@@ -4568,6 +4568,7 @@ func (c *recordingBridgeClient) GridViewport(_ context.Context, terminalID strin
 		ScrollbackTimestamps:   append([]time.Time(nil), snapshot.ScrollbackTimestamps...),
 		ScrollbackRowKinds:     append([]string(nil), snapshot.ScrollbackRowKinds...),
 		ScrollbackWrapped:      append([]bool(nil), snapshot.ScrollbackWrapped...),
+		RowOwnership:           append([]string(nil), snapshot.ScrollbackOwnership...),
 		Timestamp:              snapshot.Timestamp,
 	}, nil
 }

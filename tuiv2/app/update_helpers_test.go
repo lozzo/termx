@@ -7,34 +7,32 @@ import (
 	appruntime "github.com/lozzow/termx/tuiv2/runtime"
 )
 
-func TestTerminalHasKnownScrollbackBeyondIgnoresAuthoritativeLiveTailOnlyRows(t *testing.T) {
+func TestTerminalHasKnownScrollbackBeyondIgnoresLiveTailOwnershipRows(t *testing.T) {
 	terminal := &appruntime.TerminalRuntime{
 		Snapshot: &protocol.Snapshot{
 			TerminalID:             "term-1",
 			Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("tail0", 20), protocolRowFromText("tail1", 20)}),
 			ScrollbackTotal:        2,
 			ScrollbackLogicalTotal: 2,
-			ScrollbackLoadedRows:   0,
-			HistoryGeneration:      0,
+			ScrollbackOwnership:    []string{protocol.RowOwnershipLiveTailLive, protocol.RowOwnershipLiveTailLive},
 		},
 	}
 
 	if terminalHasKnownScrollbackBeyond(terminal, 0) {
-		t.Fatal("expected authoritative live-tail-only rows not to count as known committed scrollback")
+		t.Fatal("expected live-tail ownership rows not to count as known committed scrollback")
 	}
 }
 
-func TestTerminalHasKnownScrollbackBeyondKeepsLegacyVisualOnlyFallback(t *testing.T) {
+func TestTerminalHasKnownScrollbackBeyondRequiresExplicitCommittedOwnership(t *testing.T) {
 	terminal := &appruntime.TerminalRuntime{
 		Snapshot: &protocol.Snapshot{
-			TerminalID:           "term-1",
-			Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("legacy0", 20), protocolRowFromText("legacy1", 20)}),
-			ScrollbackLoadedRows: 0,
-			HistoryGeneration:    0,
+			TerminalID:          "term-1",
+			Scrollback:          protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("committed0", 20), protocolRowFromText("committed1", 20)}),
+			ScrollbackOwnership: []string{protocol.RowOwnershipPersisted, protocol.RowOwnershipPersisted},
 		},
 	}
 
 	if !terminalHasKnownScrollbackBeyond(terminal, 0) {
-		t.Fatal("expected legacy visual-only rows to remain a compatible known scrollback fallback")
+		t.Fatal("expected committed ownership rows to count as known scrollback")
 	}
 }

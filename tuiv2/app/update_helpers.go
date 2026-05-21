@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/render"
@@ -389,9 +390,6 @@ func terminalLiveCommittedLoadedDepth(terminal *appruntime.TerminalRuntime) int 
 		return 0
 	}
 	loaded := terminal.ScrollbackLoadedLimit
-	if terminal.FullReplaceBoundaryReset {
-		return loaded
-	}
 	if terminal.Snapshot != nil {
 		loaded = maxInt(loaded, snapshotScrollbackLoadedDepth(terminal.Snapshot))
 	}
@@ -404,23 +402,11 @@ func terminalHasKnownScrollbackBeyond(terminal *appruntime.TerminalRuntime, load
 	}
 	known := terminal.ScrollbackLoadedLimit
 	if snapshot := terminal.Snapshot; snapshot != nil {
-		// Authoritative latest snapshots can materialize live-tail visual rows with no
-		// committed window loaded yet. In that case, only metadata that exceeds
-		// the live tail should reopen exhausted paging; the live-tail rows themselves
-		// are display-only and must not become "older history".
-		if snapshotHasAuthoritativeZeroCommittedWindow(snapshot) {
-			if snapshot.ScrollbackTotal > len(snapshot.Scrollback) {
-				known = maxInt(known, snapshot.ScrollbackTotal-len(snapshot.Scrollback))
-			} else if snapshot.ScrollbackTotal == 0 && snapshot.ScrollbackLogicalTotal > len(snapshot.Scrollback) {
-				known = maxInt(known, snapshot.ScrollbackLogicalTotal-len(snapshot.Scrollback))
+		if protocol.HasExplicitRowOwnership(snapshot.ScrollbackOwnership, len(snapshot.Scrollback)) {
+			known = maxInt(known, snapshotScrollbackLoadedDepth(snapshot))
+			if protocol.HasOnlyLiveTailLiveOwnership(snapshot.ScrollbackOwnership, len(snapshot.Scrollback)) {
+				return known > loaded
 			}
-			if snapshot.ScrollbackHasMore && known <= loaded {
-				known = loaded + 1
-			}
-			return known > loaded
-		}
-		if rows := len(snapshot.Scrollback); rows > known {
-			known = rows
 		}
 		if snapshot.ScrollbackTotal > known {
 			known = snapshot.ScrollbackTotal

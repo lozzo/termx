@@ -228,6 +228,7 @@ func TestRuntimeApplyGridViewportPagePrependsHistory(t *testing.T) {
 	live.HistoryGeneration = 7
 	live.ScrollbackFirstRowID = 1
 	live.ScrollbackLastRowID = 2
+	markSnapshotScrollbackPersisted(live)
 	client.snapshotByTerminal["term-1"] = live
 
 	rt := New(client)
@@ -251,6 +252,7 @@ func TestRuntimeApplyGridViewportPagePrependsHistory(t *testing.T) {
 		ScrollbackFirstRowID:   0,
 		ScrollbackLastRowID:    0,
 		ScrollbackTimestamps:   []time.Time{time.Now()},
+		ScrollbackOwnership:    []string{protocol.RowOwnershipPersisted},
 	}
 	if !rt.ApplyGridViewportPage("term-1", page, 2) {
 		t.Fatal("expected viewport page to apply")
@@ -331,7 +333,7 @@ func TestRuntimeApplyGridViewportPageReplacesLatestWindow(t *testing.T) {
 	}
 }
 
-func TestRuntimeApplyGridViewportPageReplacesCanonicalLatestWithShorterAuthoritativeLiveTailOnlyPage(t *testing.T) {
+func TestRuntimeApplyGridViewportPageReplacesCanonicalLatestWithShorterLiveTailOwnershipPage(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
 	scrollback := make([][]protocol.Cell, 0, materializedScrollbackRowLimit)
@@ -362,17 +364,16 @@ func TestRuntimeApplyGridViewportPageReplacesCanonicalLatestWithShorterAuthorita
 		ScrollbackTotal:        4,
 		ScrollbackLogicalTotal: 4,
 		ScrollbackHasMore:      true,
-		ScrollbackLoadedRows:   0,
-		HistoryGeneration:      0,
 		ScrollbackFirstRowID:   0,
 		ScrollbackLastRowID:    0,
 		ScrollbackRowKinds:     []string{"", ""},
 		ScrollbackWrapped:      []bool{false, false},
+		ScrollbackOwnership:    []string{protocol.RowOwnershipLiveTailLive, protocol.RowOwnershipLiveTailLive},
 		ScrollbackTimestamps:   []time.Time{time.Now(), time.Now()},
 	}
 
 	if !rt.ApplyGridViewportPage("term-1", page, 0) {
-		t.Fatal("expected shorter authoritative live-tail-only latest page to replace canonical latest window")
+		t.Fatal("expected shorter live-tail ownership latest page to replace canonical latest window")
 	}
 
 	terminal := rt.Registry().Get("term-1")
@@ -393,28 +394,16 @@ func TestRuntimeApplyGridViewportPageReplacesCanonicalLatestWithShorterAuthorita
 		t.Fatalf("expected row window offset 0 after replace, got %d", got.ScrollbackOffset)
 	}
 	if got.ScrollbackTotal != 4 || got.ScrollbackLogicalTotal != 4 || !got.ScrollbackHasMore {
-		t.Fatalf("expected incoming live-tail-only metadata preserved, got total=%d logical=%d hasMore=%v", got.ScrollbackTotal, got.ScrollbackLogicalTotal, got.ScrollbackHasMore)
+		t.Fatalf("expected incoming live-tail ownership metadata preserved, got total=%d logical=%d hasMore=%v", got.ScrollbackTotal, got.ScrollbackLogicalTotal, got.ScrollbackHasMore)
 	}
 	if len(got.Scrollback) != 2 || compactRowText(got.Scrollback[0]) != "tail0" || compactRowText(got.Scrollback[1]) != "tail1" {
 		t.Fatalf("expected incoming live-tail rows to replace canonical materialization, got %#v", got.Scrollback)
 	}
-	if !terminal.AuthoritativeLiveTailOnlyLatest {
-		t.Fatal("expected runtime to mark authoritative live-tail-only latest provenance")
-	}
 	if got := terminal.ScrollbackLoadedLimit; got != 0 {
-		t.Fatalf("expected authoritative live-tail-only latest replace to reset known committed depth to 0, got %d", got)
+		t.Fatalf("expected live-tail ownership latest replace to reset known committed depth to 0, got %d", got)
 	}
-	if got, want := terminal.AuthoritativeLiveTailRowCount, 2; got != want {
-		t.Fatalf("expected authoritative live-tail row count %d, got %d", want, got)
-	}
-	if got, want := terminal.AuthoritativeLiveTailTotalRows, 4; got != want {
-		t.Fatalf("expected authoritative live-tail total rows %d, got %d", want, got)
-	}
-	if got, want := terminal.AuthoritativeLiveTailLogicalRows, 4; got != want {
-		t.Fatalf("expected authoritative live-tail logical rows %d, got %d", want, got)
-	}
-	if !terminal.AuthoritativeLiveTailHasMore {
-		t.Fatal("expected authoritative live-tail has-more flag to follow incoming page")
+	if !protocol.HasOnlyLiveTailLiveOwnership(got.ScrollbackOwnership, len(got.Scrollback)) {
+		t.Fatalf("expected live-tail ownership on replaced latest rows, got %#v", got.ScrollbackOwnership)
 	}
 }
 
@@ -449,12 +438,11 @@ func TestRuntimeApplyGridViewportPageLiveTailOnlyLatestReplaceKeepsZeroCommitted
 		ScrollbackTotal:        4,
 		ScrollbackLogicalTotal: 4,
 		ScrollbackHasMore:      true,
-		ScrollbackLoadedRows:   0,
-		HistoryGeneration:      0,
 		ScrollbackFirstRowID:   0,
 		ScrollbackLastRowID:    0,
 		ScrollbackRowKinds:     []string{"", ""},
 		ScrollbackWrapped:      []bool{false, false},
+		ScrollbackOwnership:    []string{protocol.RowOwnershipLiveTailLive, protocol.RowOwnershipLiveTailLive},
 		ScrollbackTimestamps:   []time.Time{time.Now(), time.Now()},
 	}
 
@@ -483,8 +471,8 @@ func TestRuntimeApplyGridViewportPageLiveTailOnlyLatestReplaceKeepsZeroCommitted
 	if got := terminal.ScrollbackLoadedLimit; got != 0 {
 		t.Fatalf("expected refresh to keep known committed depth at 0, got %d", got)
 	}
-	if !snapshotHasAuthoritativeZeroCommittedWindow(terminal.Snapshot) {
-		t.Fatalf("expected refresh to preserve authoritative live-tail-only latest metadata, got %#v", terminal.Snapshot)
+	if !protocol.HasOnlyLiveTailLiveOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
+		t.Fatalf("expected refresh to preserve live-tail ownership, got %#v", terminal.Snapshot.ScrollbackOwnership)
 	}
 	if got, want := len(terminal.Snapshot.Scrollback), 2; got != want {
 		t.Fatalf("expected refresh to keep %d live-tail rows, got %d", want, got)
@@ -572,9 +560,6 @@ func TestRuntimeApplyGridViewportPageCanonicalLatestReplaceUsesIncomingMetadata(
 	if len(got.Scrollback) != 3 || compactRowText(got.Scrollback[0]) != "canon900" || compactRowText(got.Scrollback[2]) != "canon902" {
 		t.Fatalf("expected replace semantics to use incoming materialized rows, got %#v", got.Scrollback)
 	}
-	if terminal.AuthoritativeLiveTailOnlyLatest {
-		t.Fatal("expected canonical latest replace to clear authoritative live-tail-only provenance")
-	}
 }
 
 func TestRuntimeLoadSnapshotLiveTailOnlyLatestDoesNotPromoteCommittedLoadedLimit(t *testing.T) {
@@ -587,8 +572,7 @@ func TestRuntimeLoadSnapshotLiveTailOnlyLatestDoesNotPromoteCommittedLoadedLimit
 	})
 	liveTailOnly.ScrollbackTotal = 2
 	liveTailOnly.ScrollbackLogicalTotal = 2
-	liveTailOnly.ScrollbackLoadedRows = 0
-	liveTailOnly.HistoryGeneration = 0
+	markSnapshotScrollbackOwnership(liveTailOnly, protocol.RowOwnershipLiveTailLive)
 	client.snapshotByTerminal["term-1"] = liveTailOnly
 
 	rt := New(client)
@@ -614,7 +598,7 @@ func TestRuntimeLoadSnapshotLiveTailOnlyLatestDoesNotPromoteCommittedLoadedLimit
 	}
 }
 
-func TestRuntimeLoadSnapshotAuthoritativeLiveTailOnlyLatestReplacesKnownCommittedDepth(t *testing.T) {
+func TestRuntimeLoadSnapshotLiveTailOwnershipLatestReplacesKnownCommittedDepth(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
 	canonical := snapshotWithLines("term-1", 12, 3, []string{"live0", "live1"})
@@ -653,13 +637,12 @@ func TestRuntimeLoadSnapshotAuthoritativeLiveTailOnlyLatestReplacesKnownCommitte
 	liveTailOnly.ScrollbackTotal = 4
 	liveTailOnly.ScrollbackLogicalTotal = 4
 	liveTailOnly.ScrollbackHasMore = true
-	liveTailOnly.ScrollbackLoadedRows = 0
-	liveTailOnly.HistoryGeneration = 0
+	markSnapshotScrollbackOwnership(liveTailOnly, protocol.RowOwnershipLiveTailLive)
 	client.snapshotByTerminal["term-1"] = liveTailOnly
 
 	snapshot, err := rt.LoadSnapshot(ctx, "term-1", 0, 0)
 	if err != nil {
-		t.Fatalf("load authoritative live-tail-only latest snapshot: %v", err)
+		t.Fatalf("load live-tail ownership latest snapshot: %v", err)
 	}
 	if snapshot == nil {
 		t.Fatal("expected snapshot")
@@ -669,23 +652,20 @@ func TestRuntimeLoadSnapshotAuthoritativeLiveTailOnlyLatestReplacesKnownCommitte
 		t.Fatalf("expected cached runtime snapshot, got %#v", terminal)
 	}
 	if got := terminal.ScrollbackLoadedLimit; got != 0 {
-		t.Fatalf("expected authoritative live-tail-only latest to replace known committed depth with 0, got %d", got)
+		t.Fatalf("expected live-tail ownership latest to replace known committed depth with 0, got %d", got)
 	}
 	if got := snapshotScrollbackLoadedDepth(terminal.Snapshot); got != 0 {
-		t.Fatalf("expected authoritative live-tail-only latest snapshot committed depth 0, got %d", got)
+		t.Fatalf("expected live-tail ownership latest snapshot committed depth 0, got %d", got)
 	}
-	if !snapshotHasAuthoritativeZeroCommittedWindow(terminal.Snapshot) {
-		t.Fatalf("expected authoritative live-tail-only provenance on cached snapshot, got %#v", terminal.Snapshot)
-	}
-	if !terminal.AuthoritativeLiveTailOnlyLatest {
-		t.Fatal("expected runtime-local authoritative live-tail-only provenance")
+	if !protocol.HasOnlyLiveTailLiveOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
+		t.Fatalf("expected live-tail ownership on cached snapshot, got %#v", terminal.Snapshot.ScrollbackOwnership)
 	}
 	if got := len(terminal.Snapshot.Scrollback); got != 2 {
 		t.Fatalf("expected live-tail-only latest materialization to keep 2 rows, got %d", got)
 	}
 }
 
-func TestRuntimeRefreshSnapshotFromVTermKeepsAuthoritativeLiveTailOnlyLatestZeroCommittedWindow(t *testing.T) {
+func TestRuntimeRefreshSnapshotFromVTermKeepsLiveTailOwnershipCommittedDepth(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
 	liveTailOnly := snapshotWithLines("term-1", 6, 3, []string{"live"})
@@ -695,8 +675,7 @@ func TestRuntimeRefreshSnapshotFromVTermKeepsAuthoritativeLiveTailOnlyLatestZero
 	})
 	liveTailOnly.ScrollbackTotal = 2
 	liveTailOnly.ScrollbackLogicalTotal = 2
-	liveTailOnly.ScrollbackLoadedRows = 0
-	liveTailOnly.HistoryGeneration = 0
+	markSnapshotScrollbackOwnership(liveTailOnly, protocol.RowOwnershipLiveTailLive)
 	client.snapshotByTerminal["term-1"] = liveTailOnly
 
 	rt := New(client)
@@ -708,7 +687,7 @@ func TestRuntimeRefreshSnapshotFromVTermKeepsAuthoritativeLiveTailOnlyLatestZero
 		t.Fatalf("expected terminal with vterm, got %#v", terminal)
 	}
 	if got := terminal.ScrollbackLoadedLimit; got != 0 {
-		t.Fatalf("expected authoritative live-tail-only latest load to keep committed depth 0, got %d", got)
+		t.Fatalf("expected live-tail ownership latest load to keep committed depth 0, got %d", got)
 	}
 
 	if !rt.RefreshSnapshotFromVTerm("term-1") {
@@ -717,20 +696,20 @@ func TestRuntimeRefreshSnapshotFromVTermKeepsAuthoritativeLiveTailOnlyLatestZero
 
 	terminal = rt.Registry().Get("term-1")
 	if got := terminal.ScrollbackLoadedLimit; got != 0 {
-		t.Fatalf("expected authoritative live-tail-only latest refresh to keep committed depth 0, got %d", got)
+		t.Fatalf("expected live-tail ownership latest refresh to keep committed depth 0, got %d", got)
 	}
 	if terminal.Snapshot == nil {
 		t.Fatal("expected refreshed snapshot")
 	}
-	if !snapshotHasAuthoritativeZeroCommittedWindow(terminal.Snapshot) {
-		t.Fatalf("expected refreshed snapshot to preserve authoritative zero-committed-window metadata, got %#v", terminal.Snapshot)
+	if !protocol.HasOnlyLiveTailLiveOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
+		t.Fatalf("expected refreshed snapshot to preserve live-tail ownership, got %#v", terminal.Snapshot.ScrollbackOwnership)
 	}
 	if got, want := len(terminal.Snapshot.Scrollback), 2; got != want {
 		t.Fatalf("expected refreshed snapshot to keep %d live-tail rows, got %d", want, got)
 	}
 }
 
-func TestRuntimeBumpSurfaceVersionKeepsAuthoritativeLiveTailOnlyLatestZeroCommittedWindow(t *testing.T) {
+func TestRuntimeBumpSurfaceVersionKeepsLiveTailOwnershipCommittedDepth(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
 	liveTailOnly := snapshotWithLines("term-1", 6, 3, []string{"live"})
@@ -740,8 +719,7 @@ func TestRuntimeBumpSurfaceVersionKeepsAuthoritativeLiveTailOnlyLatestZeroCommit
 	})
 	liveTailOnly.ScrollbackTotal = 2
 	liveTailOnly.ScrollbackLogicalTotal = 2
-	liveTailOnly.ScrollbackLoadedRows = 0
-	liveTailOnly.HistoryGeneration = 0
+	markSnapshotScrollbackOwnership(liveTailOnly, protocol.RowOwnershipLiveTailLive)
 	client.snapshotByTerminal["term-1"] = liveTailOnly
 
 	rt := New(client)
@@ -753,17 +731,17 @@ func TestRuntimeBumpSurfaceVersionKeepsAuthoritativeLiveTailOnlyLatestZeroCommit
 		t.Fatalf("expected terminal with vterm, got %#v", terminal)
 	}
 	if got := terminal.ScrollbackLoadedLimit; got != 0 {
-		t.Fatalf("expected authoritative live-tail-only latest load to keep committed depth 0, got %d", got)
+		t.Fatalf("expected live-tail ownership latest load to keep committed depth 0, got %d", got)
 	}
 
 	rt.bumpSurfaceVersion(terminal)
 
 	if got := terminal.ScrollbackLoadedLimit; got != 0 {
-		t.Fatalf("expected surface sync to keep authoritative live-tail-only latest committed depth 0, got %d", got)
+		t.Fatalf("expected surface sync to keep live-tail ownership committed depth 0, got %d", got)
 	}
 }
 
-func TestRuntimeAttachTerminalPreservesAuthoritativeLiveTailOnlyLatestProvenanceAcrossReattach(t *testing.T) {
+func TestRuntimeAttachTerminalPreservesLiveTailOwnershipAcrossReattach(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
 	client.attachResult = &protocol.AttachResult{Channel: 7, Mode: "collaborator"}
@@ -775,8 +753,7 @@ func TestRuntimeAttachTerminalPreservesAuthoritativeLiveTailOnlyLatestProvenance
 	liveTailOnly.ScrollbackTotal = 4
 	liveTailOnly.ScrollbackLogicalTotal = 4
 	liveTailOnly.ScrollbackHasMore = true
-	liveTailOnly.ScrollbackLoadedRows = 0
-	liveTailOnly.HistoryGeneration = 0
+	markSnapshotScrollbackOwnership(liveTailOnly, protocol.RowOwnershipLiveTailLive)
 	client.snapshotByTerminal["term-1"] = liveTailOnly
 
 	rt := New(client)
@@ -784,7 +761,7 @@ func TestRuntimeAttachTerminalPreservesAuthoritativeLiveTailOnlyLatestProvenance
 		t.Fatalf("load snapshot: %v", err)
 	}
 
-	checkAuthoritativeLiveTailOnly := func(stage string) {
+	checkLiveTailOwnership := func(stage string) {
 		t.Helper()
 		terminal := rt.Registry().Get("term-1")
 		if terminal == nil {
@@ -793,20 +770,8 @@ func TestRuntimeAttachTerminalPreservesAuthoritativeLiveTailOnlyLatestProvenance
 		if got := terminal.ScrollbackLoadedLimit; got != 0 {
 			t.Fatalf("%s: expected committed loaded depth 0, got %d", stage, got)
 		}
-		if !terminal.AuthoritativeLiveTailOnlyLatest {
-			t.Fatalf("%s: expected authoritative live-tail-only provenance to survive", stage)
-		}
-		if got, want := terminal.AuthoritativeLiveTailRowCount, 2; got != want {
-			t.Fatalf("%s: expected authoritative live-tail row count %d, got %d", stage, want, got)
-		}
-		if got, want := terminal.AuthoritativeLiveTailTotalRows, 4; got != want {
-			t.Fatalf("%s: expected authoritative live-tail total rows %d, got %d", stage, want, got)
-		}
-		if got, want := terminal.AuthoritativeLiveTailLogicalRows, 4; got != want {
-			t.Fatalf("%s: expected authoritative live-tail logical rows %d, got %d", stage, want, got)
-		}
-		if !terminal.AuthoritativeLiveTailHasMore {
-			t.Fatalf("%s: expected authoritative live-tail has-more flag", stage)
+		if terminal.Snapshot == nil || !protocol.HasOnlyLiveTailLiveOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
+			t.Fatalf("%s: expected live-tail ownership to survive, got %#v", stage, terminal.Snapshot)
 		}
 		if !rt.RefreshSnapshotFromVTerm("term-1") {
 			t.Fatalf("%s: expected vterm refresh", stage)
@@ -815,8 +780,8 @@ func TestRuntimeAttachTerminalPreservesAuthoritativeLiveTailOnlyLatestProvenance
 		if terminal.Snapshot == nil {
 			t.Fatalf("%s: expected refreshed snapshot", stage)
 		}
-		if !snapshotHasAuthoritativeZeroCommittedWindow(terminal.Snapshot) {
-			t.Fatalf("%s: expected refreshed snapshot to keep authoritative zero-committed window, got %#v", stage, terminal.Snapshot)
+		if !protocol.HasOnlyLiveTailLiveOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
+			t.Fatalf("%s: expected refreshed snapshot to keep live-tail ownership, got %#v", stage, terminal.Snapshot)
 		}
 		if got, want := terminal.Snapshot.ScrollbackLoadedRows, 0; got != want {
 			t.Fatalf("%s: expected refreshed committed loaded rows %d, got %d", stage, want, got)
@@ -835,13 +800,13 @@ func TestRuntimeAttachTerminalPreservesAuthoritativeLiveTailOnlyLatestProvenance
 	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
 		t.Fatalf("first attach: %v", err)
 	}
-	checkAuthoritativeLiveTailOnly("after first attach")
+	checkLiveTailOwnership("after first attach")
 
 	client.attachResult = &protocol.AttachResult{Channel: 8, Mode: "collaborator"}
 	if _, err := rt.AttachTerminal(ctx, "pane-2", "term-1", "collaborator"); err != nil {
 		t.Fatalf("reattach: %v", err)
 	}
-	checkAuthoritativeLiveTailOnly("after reattach")
+	checkLiveTailOwnership("after reattach")
 }
 
 func TestRuntimeBumpSurfaceVersionPromotesLocalVTermOnlyFallbackScrollback(t *testing.T) {
@@ -860,8 +825,8 @@ func TestRuntimeBumpSurfaceVersionPromotesLocalVTermOnlyFallbackScrollback(t *te
 	if got := terminal.ScrollbackLoadedLimit; got == 0 {
 		t.Fatalf("expected local VTerm-only fallback to promote visual scrollback depth, got %d", got)
 	}
-	if terminal.Snapshot != nil && snapshotHasAuthoritativeZeroCommittedWindow(terminal.Snapshot) {
-		t.Fatalf("expected local fallback not to impersonate authoritative zero-committed metadata, got %#v", terminal.Snapshot)
+	if terminal.Snapshot != nil && protocol.HasOnlyLiveTailLiveOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
+		t.Fatalf("expected local fallback not to impersonate live-tail ownership, got %#v", terminal.Snapshot)
 	}
 }
 
@@ -1043,6 +1008,7 @@ func TestRuntimeApplyGridViewportPageRejectsOlderPageWithoutCanonicalHistoryWind
 	live.HistoryGeneration = 10
 	live.ScrollbackFirstRowID = 1
 	live.ScrollbackLastRowID = 1
+	markSnapshotScrollbackPersisted(live)
 	client.snapshotByTerminal["term-1"] = live
 
 	rt := New(client)
@@ -1064,6 +1030,7 @@ func TestRuntimeApplyGridViewportPageRejectsOlderPageWithoutCanonicalHistoryWind
 		ScrollbackLastRowID:    0,
 		ScrollbackRowKinds:     []string{""},
 		ScrollbackWrapped:      []bool{false},
+		ScrollbackOwnership:    []string{protocol.RowOwnershipPersisted},
 	}
 	if rt.ApplyGridViewportPage("term-1", olderNoCanonical, 1) {
 		t.Fatal("expected older page without canonical history window to be rejected")
@@ -1090,6 +1057,7 @@ func TestRuntimeApplyGridViewportPageAcceptsCanonicalOlderPageWithRowIDZero(t *t
 	live.HistoryGeneration = 10
 	live.ScrollbackFirstRowID = 1
 	live.ScrollbackLastRowID = 1
+	markSnapshotScrollbackPersisted(live)
 	client.snapshotByTerminal["term-1"] = live
 
 	rt := New(client)
@@ -1111,6 +1079,7 @@ func TestRuntimeApplyGridViewportPageAcceptsCanonicalOlderPageWithRowIDZero(t *t
 		ScrollbackLastRowID:    0,
 		ScrollbackRowKinds:     []string{""},
 		ScrollbackWrapped:      []bool{false},
+		ScrollbackOwnership:    []string{protocol.RowOwnershipPersisted},
 	}
 	if !rt.ApplyGridViewportPage("term-1", older, 1) {
 		t.Fatal("expected canonical older page ending at row id 0 to apply")
@@ -1143,6 +1112,7 @@ func TestRuntimeApplyGridViewportPageKeepsBoundedWindow(t *testing.T) {
 	live.HistoryGeneration = 1
 	live.ScrollbackFirstRowID = 500
 	live.ScrollbackLastRowID = 12499
+	markSnapshotScrollbackPersisted(live)
 	client.snapshotByTerminal["term-1"] = live
 
 	rt := New(client)
@@ -1163,6 +1133,7 @@ func TestRuntimeApplyGridViewportPageKeepsBoundedWindow(t *testing.T) {
 		ScrollbackLastRowID:    499,
 		ScrollbackRowKinds:     make([]string, 500),
 		ScrollbackWrapped:      make([]bool, 500),
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipPersisted, 500),
 	}
 	if !rt.ApplyGridViewportPage("term-1", page, 12000) {
 		t.Fatal("expected older page to apply")
@@ -1207,6 +1178,7 @@ func TestRuntimeApplyGridViewportPageAcceptsOffsetBeyondMaterializedWindow(t *te
 	live.HistoryGeneration = 1
 	live.ScrollbackFirstRowID = 1000
 	live.ScrollbackLastRowID = 12999
+	markSnapshotScrollbackPersisted(live)
 	client.snapshotByTerminal["term-1"] = live
 
 	rt := New(client)
@@ -1227,6 +1199,7 @@ func TestRuntimeApplyGridViewportPageAcceptsOffsetBeyondMaterializedWindow(t *te
 		ScrollbackLastRowID:    999,
 		ScrollbackRowKinds:     make([]string, 500),
 		ScrollbackWrapped:      make([]bool, 500),
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipPersisted, 500),
 	}
 	if !rt.ApplyGridViewportPage("term-1", page1, 12000) {
 		t.Fatal("expected first older page to apply")
@@ -1253,6 +1226,7 @@ func TestRuntimeApplyGridViewportPageAcceptsOffsetBeyondMaterializedWindow(t *te
 		ScrollbackLastRowID:    499,
 		ScrollbackRowKinds:     make([]string, 500),
 		ScrollbackWrapped:      make([]bool, 500),
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipPersisted, 500),
 	}
 	if !rt.ApplyGridViewportPage("term-1", page2, 12500) {
 		t.Fatal("expected second older page beyond materialized window to apply")
@@ -1650,8 +1624,8 @@ func TestRuntimeScrollbackChangeInvalidatesExhaustedSnapshotState(t *testing.T) 
 	if terminal.ScrollbackExhausted {
 		t.Fatalf("expected live scrollback change to clear exhausted state, got %#v", terminal)
 	}
-	if terminal.ScrollbackLoadedLimit == 0 {
-		t.Fatalf("expected local scrollback state to track appended rows, got %#v", terminal)
+	if terminal.ScrollbackLoadedLimit != 0 {
+		t.Fatalf("expected live-tail append not to advance committed loaded depth, got %#v", terminal)
 	}
 }
 
@@ -2063,8 +2037,7 @@ func TestRuntimeScreenUpdateFullReplaceResetsLatestBoundaryContract(t *testing.T
 				snapshot.ScrollbackHasMore = true
 				return snapshot
 			}(),
-			wantLoadedLimit:   0,
-			wantAuthoritative: true,
+			wantLoadedLimit: 0,
 		},
 		{
 			name: "canonical_plus_live_tail_latest",
@@ -2083,8 +2056,7 @@ func TestRuntimeScreenUpdateFullReplaceResetsLatestBoundaryContract(t *testing.T
 				snapshot.ScrollbackLastRowID = 0
 				return snapshot
 			}(),
-			wantLoadedLimit:   1,
-			wantAuthoritative: false,
+			wantLoadedLimit: 1,
 		},
 		{
 			name: "canonical_only_latest",
@@ -2101,8 +2073,7 @@ func TestRuntimeScreenUpdateFullReplaceResetsLatestBoundaryContract(t *testing.T
 				snapshot.ScrollbackLastRowID = 0
 				return snapshot
 			}(),
-			wantLoadedLimit:   1,
-			wantAuthoritative: false,
+			wantLoadedLimit: 1,
 		},
 	}
 
@@ -2116,9 +2087,6 @@ func TestRuntimeScreenUpdateFullReplaceResetsLatestBoundaryContract(t *testing.T
 		}
 		if terminal.ScrollbackExhausted {
 			t.Fatalf("%s: expected latest full-replace boundary to clear exhausted paging state", stage)
-		}
-		if terminal.AuthoritativeLiveTailOnlyLatest {
-			t.Fatalf("%s: expected latest full-replace boundary to clear live-tail-only provenance", stage)
 		}
 		if got := snapshotScrollbackLoadedDepth(terminal.Snapshot); got != 0 {
 			t.Fatalf("%s: expected full-replace snapshot committed depth 0, got %d", stage, got)
@@ -2158,9 +2126,6 @@ func TestRuntimeScreenUpdateFullReplaceResetsLatestBoundaryContract(t *testing.T
 			}
 			if got := terminal.ScrollbackLoadedLimit; got < tt.wantLoadedLimit {
 				t.Fatalf("expected precondition loaded depth at least %d, got %d", tt.wantLoadedLimit, got)
-			}
-			if got := terminal.AuthoritativeLiveTailOnlyLatest; got != tt.wantAuthoritative {
-				t.Fatalf("expected precondition authoritative live-tail-only=%v, got %v", tt.wantAuthoritative, got)
 			}
 			terminal.ScrollbackExhausted = true
 
@@ -2242,9 +2207,6 @@ func TestRuntimeScreenUpdateFullReplaceWithScrollbackAppendKeepsBoundaryReset(t 
 		}
 		if terminal.ScrollbackExhausted {
 			t.Fatalf("%s: expected full-replace append to clear exhausted paging state", stage)
-		}
-		if terminal.AuthoritativeLiveTailOnlyLatest {
-			t.Fatalf("%s: expected full-replace append to avoid live-tail-only provenance", stage)
 		}
 		if got := terminal.Snapshot.ScrollbackLoadedRows; got != 0 {
 			t.Fatalf("%s: expected full-replace append snapshot loaded rows 0, got %d", stage, got)
@@ -3629,6 +3591,7 @@ func (f *fakeBridgeClient) GridViewport(_ context.Context, terminalID string, of
 		ScrollbackTimestamps:   append([]time.Time(nil), window.ScrollbackTimestamps...),
 		ScrollbackRowKinds:     append([]string(nil), window.ScrollbackRowKinds...),
 		ScrollbackWrapped:      append([]bool(nil), window.ScrollbackWrapped...),
+		RowOwnership:           append([]string(nil), window.ScrollbackOwnership...),
 		Timestamp:              window.Timestamp,
 	}, nil
 }
@@ -3748,6 +3711,20 @@ func snapshotWithLines(terminalID string, cols, rows uint16, lines []string) *pr
 		Modes:      protocol.TerminalModes{AutoWrap: true},
 		Timestamp:  time.Now(),
 	}
+}
+
+func markSnapshotScrollbackOwnership(snapshot *protocol.Snapshot, ownership string) {
+	if snapshot == nil || len(snapshot.Scrollback) == 0 || ownership == "" {
+		return
+	}
+	snapshot.ScrollbackOwnership = make([]string, len(snapshot.Scrollback))
+	for i := range snapshot.ScrollbackOwnership {
+		snapshot.ScrollbackOwnership[i] = ownership
+	}
+}
+
+func markSnapshotScrollbackPersisted(snapshot *protocol.Snapshot) {
+	markSnapshotScrollbackOwnership(snapshot, protocol.RowOwnershipPersisted)
 }
 
 func screenUpdateFrameForLines(t *testing.T, cols, rows uint16, lines ...string) protocol.StreamFrame {

@@ -124,27 +124,7 @@ func clearSnapshotScrollback(snapshot *protocol.Snapshot) {
 }
 
 func snapshotScrollbackLoadedDepth(snapshot *protocol.Snapshot) int {
-	if snapshot == nil {
-		return 0
-	}
-	if snapshot.ScrollbackLoadedRows > 0 {
-		return snapshot.ScrollbackLoadedRows
-	}
-	if snapshotHasAuthoritativeZeroCommittedWindow(snapshot) {
-		return 0
-	}
-	return snapshot.ScrollbackOffset + len(snapshot.Scrollback)
-}
-
-func snapshotHasAuthoritativeZeroCommittedWindow(snapshot *protocol.Snapshot) bool {
-	return snapshot != nil &&
-		snapshot.ScrollbackLoadedRows == 0 &&
-		snapshot.ScrollbackOffset == 0 &&
-		len(snapshot.Scrollback) > 0 &&
-		(snapshot.ScrollbackTotal > 0 ||
-			snapshot.ScrollbackLogicalTotal > 0 ||
-			snapshot.ScrollbackHasMore ||
-			snapshot.HistoryGeneration != 0)
+	return protocol.SnapshotCommittedLoadedDepth(snapshot)
 }
 
 func historyPageContinuesSnapshot(current, page *protocol.Snapshot) bool {
@@ -166,10 +146,7 @@ func historyPageContinuesSnapshot(current, page *protocol.Snapshot) bool {
 }
 
 func hasCanonicalHistoryWindow(snapshot *protocol.Snapshot) bool {
-	if snapshot == nil || snapshot.HistoryGeneration == 0 {
-		return false
-	}
-	return snapshotScrollbackLoadedDepth(snapshot) > 0 && snapshot.ScrollbackLastRowID >= snapshot.ScrollbackFirstRowID
+	return protocol.SnapshotHasCanonicalCommittedWindow(snapshot)
 }
 
 func mergedCanonicalRowWindow(older, newer *protocol.Snapshot) (uint64, uint64) {
@@ -196,12 +173,13 @@ func trimCopyModeSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int
 	// window even when the frozen materialized slice is locally bounded.
 	if trimNewest {
 		keep := len(snapshot.Scrollback) - drop
+		committedDrop := protocol.CountCommittedRowOwnershipRange(snapshot.ScrollbackOwnership, keep, len(snapshot.ScrollbackOwnership))
 		snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[:keep])
 		snapshot.ScrollbackTimestamps = cloneTimePrefix(snapshot.ScrollbackTimestamps, keep)
 		snapshot.ScrollbackRowKinds = cloneStringPrefix(snapshot.ScrollbackRowKinds, keep)
 		snapshot.ScrollbackWrapped = cloneBoolPrefix(snapshot.ScrollbackWrapped, keep)
 		snapshot.ScrollbackOwnership = cloneStringPrefix(snapshot.ScrollbackOwnership, keep)
-		snapshot.ScrollbackOffset += drop
+		snapshot.ScrollbackOffset += committedDrop
 		return drop
 	}
 	snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[drop:])

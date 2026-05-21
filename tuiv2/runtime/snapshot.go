@@ -196,113 +196,14 @@ func applyLatestSnapshotRuntimeState(terminal *TerminalRuntime, snapshot *protoc
 		return
 	}
 	if snapshot == nil {
-		terminal.FullReplaceBoundaryReset = false
-		clearAuthoritativeLiveTailOnlyLatestState(terminal)
 		terminal.ScrollbackLoadedLimit = 0
 		return
 	}
-	terminal.FullReplaceBoundaryReset = false
-	setAuthoritativeLiveTailOnlyLatestState(terminal, snapshot)
 	terminal.ScrollbackLoadedLimit = snapshotScrollbackLoadedDepth(snapshot)
 }
 
 func snapshotScrollbackLoadedDepth(snapshot *protocol.Snapshot) int {
-	if snapshot == nil {
-		return 0
-	}
-	if snapshot.ScrollbackLoadedRows > 0 {
-		return snapshot.ScrollbackLoadedRows
-	}
-	if snapshotHasAuthoritativeZeroCommittedWindow(snapshot) {
-		return 0
-	}
-	return snapshot.ScrollbackOffset + len(snapshot.Scrollback)
-}
-
-func snapshotHasAuthoritativeZeroCommittedWindow(snapshot *protocol.Snapshot) bool {
-	return snapshot != nil &&
-		snapshot.ScrollbackLoadedRows == 0 &&
-		snapshot.ScrollbackOffset == 0 &&
-		len(snapshot.Scrollback) > 0 &&
-		(snapshot.ScrollbackTotal > 0 ||
-			snapshot.ScrollbackLogicalTotal > 0 ||
-			snapshot.ScrollbackHasMore ||
-			snapshot.HistoryGeneration != 0)
-}
-
-func setAuthoritativeLiveTailOnlyLatestState(terminal *TerminalRuntime, snapshot *protocol.Snapshot) {
-	if terminal == nil {
-		return
-	}
-	if !snapshotHasAuthoritativeZeroCommittedWindow(snapshot) {
-		clearAuthoritativeLiveTailOnlyLatestState(terminal)
-		return
-	}
-	rowCount := len(snapshot.Scrollback)
-	total := snapshot.ScrollbackTotal
-	if total < rowCount {
-		total = rowCount
-	}
-	logical := snapshot.ScrollbackLogicalTotal
-	if logical < total {
-		logical = total
-	}
-	terminal.AuthoritativeLiveTailOnlyLatest = true
-	terminal.AuthoritativeLiveTailRowCount = rowCount
-	terminal.AuthoritativeLiveTailTotalRows = total
-	terminal.AuthoritativeLiveTailLogicalRows = logical
-	terminal.AuthoritativeLiveTailHasMore = snapshot.ScrollbackHasMore
-}
-
-func clearAuthoritativeLiveTailOnlyLatestState(terminal *TerminalRuntime) {
-	if terminal == nil {
-		return
-	}
-	terminal.AuthoritativeLiveTailOnlyLatest = false
-	terminal.AuthoritativeLiveTailRowCount = 0
-	terminal.AuthoritativeLiveTailTotalRows = 0
-	terminal.AuthoritativeLiveTailLogicalRows = 0
-	terminal.AuthoritativeLiveTailHasMore = false
-}
-
-func preserveAuthoritativeLiveTailOnlyLatestSnapshot(terminal *TerminalRuntime, snapshot *protocol.Snapshot) {
-	if terminal == nil || snapshot == nil || !terminal.AuthoritativeLiveTailOnlyLatest {
-		return
-	}
-	rowCount := len(snapshot.Scrollback)
-	hiddenTotal := terminal.AuthoritativeLiveTailTotalRows - terminal.AuthoritativeLiveTailRowCount
-	if hiddenTotal < 0 {
-		hiddenTotal = 0
-	}
-	hiddenLogical := terminal.AuthoritativeLiveTailLogicalRows - terminal.AuthoritativeLiveTailRowCount
-	if hiddenLogical < 0 {
-		hiddenLogical = 0
-	}
-	snapshot.ScrollbackLoadedRows = 0
-	snapshot.HistoryGeneration = 0
-	snapshot.ScrollbackFirstRowID = 0
-	snapshot.ScrollbackLastRowID = 0
-	snapshot.ScrollbackOffset = 0
-	snapshot.ScrollbackTotal = hiddenTotal + rowCount
-	snapshot.ScrollbackLogicalTotal = hiddenLogical + rowCount
-	snapshot.ScrollbackHasMore = terminal.AuthoritativeLiveTailHasMore || hiddenTotal > 0 || hiddenLogical > 0
-	terminal.AuthoritativeLiveTailRowCount = rowCount
-	terminal.AuthoritativeLiveTailTotalRows = snapshot.ScrollbackTotal
-	terminal.AuthoritativeLiveTailLogicalRows = snapshot.ScrollbackLogicalTotal
-}
-
-func preserveFullReplaceBoundaryResetSnapshot(terminal *TerminalRuntime, snapshot *protocol.Snapshot) {
-	if terminal == nil || snapshot == nil || !terminal.FullReplaceBoundaryReset {
-		return
-	}
-	snapshot.ScrollbackLoadedRows = 0
-	snapshot.HistoryGeneration = 0
-	snapshot.ScrollbackFirstRowID = 0
-	snapshot.ScrollbackLastRowID = 0
-	snapshot.ScrollbackOffset = 0
-	snapshot.ScrollbackTotal = 0
-	snapshot.ScrollbackLogicalTotal = 0
-	snapshot.ScrollbackHasMore = false
+	return protocol.SnapshotCommittedLoadedDepth(snapshot)
 }
 
 func historyPageContinuesSnapshot(current, page *protocol.Snapshot) bool {
@@ -324,10 +225,7 @@ func historyPageContinuesSnapshot(current, page *protocol.Snapshot) bool {
 }
 
 func hasCanonicalHistoryWindow(snapshot *protocol.Snapshot) bool {
-	if snapshot == nil || snapshot.HistoryGeneration == 0 {
-		return false
-	}
-	return snapshotScrollbackLoadedDepth(snapshot) > 0 && snapshot.ScrollbackLastRowID >= snapshot.ScrollbackFirstRowID
+	return protocol.SnapshotHasCanonicalCommittedWindow(snapshot)
 }
 
 func mergedCanonicalRowWindow(older, newer *protocol.Snapshot) (uint64, uint64) {
@@ -354,12 +252,13 @@ func trimSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int, trimNe
 	// the client-side materialized tail retained after bounded trimming.
 	if trimNewest {
 		keep := len(snapshot.Scrollback) - drop
+		committedDrop := protocol.CountCommittedRowOwnershipRange(snapshot.ScrollbackOwnership, keep, len(snapshot.ScrollbackOwnership))
 		snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[:keep])
 		snapshot.ScrollbackTimestamps = cloneTimePrefix(snapshot.ScrollbackTimestamps, keep)
 		snapshot.ScrollbackRowKinds = cloneStringPrefix(snapshot.ScrollbackRowKinds, keep)
 		snapshot.ScrollbackWrapped = cloneBoolPrefix(snapshot.ScrollbackWrapped, keep)
 		snapshot.ScrollbackOwnership = cloneStringPrefix(snapshot.ScrollbackOwnership, keep)
-		snapshot.ScrollbackOffset += drop
+		snapshot.ScrollbackOffset += committedDrop
 		return
 	}
 	snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[drop:])
@@ -471,28 +370,41 @@ func (r *Runtime) refreshSnapshot(terminalID string) {
 	if terminal.VTerm == nil {
 		return
 	}
+	previous := terminal.Snapshot
 	terminal.Snapshot = snapshotFromVTerm(terminalID, terminal.VTerm)
-	preserveFullReplaceBoundaryResetSnapshot(terminal, terminal.Snapshot)
-	preserveAuthoritativeLiveTailOnlyLatestSnapshot(terminal, terminal.Snapshot)
+	preserveSnapshotScrollbackOwnershipProjection(previous, terminal.Snapshot)
 	if terminal.Snapshot == nil || !snapshotUsesAlternateScreen(terminal.Snapshot) {
 		terminal.AlternateScrollback = nil
 	}
 	terminal.PreferSnapshot = false
 	terminal.SnapshotVersion = terminal.SurfaceVersion
 	if terminal.Snapshot != nil {
-		if !terminal.FullReplaceBoundaryReset {
-			if loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot); loaded > terminal.ScrollbackLoadedLimit {
-				terminal.ScrollbackLoadedLimit = loaded
-			}
+		if loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot); loaded > terminal.ScrollbackLoadedLimit {
+			terminal.ScrollbackLoadedLimit = loaded
 		}
 		if terminal.ScrollbackLoadingLimit > 0 && len(terminal.Snapshot.Scrollback) >= terminal.ScrollbackLoadingLimit {
 			terminal.ScrollbackLoadingLimit = 0
 		}
-	} else {
-		terminal.FullReplaceBoundaryReset = false
-		clearAuthoritativeLiveTailOnlyLatestState(terminal)
 	}
 	r.invalidate()
+}
+
+func preserveSnapshotScrollbackOwnershipProjection(previous, next *protocol.Snapshot) {
+	if previous == nil || next == nil || len(next.Scrollback) == 0 {
+		return
+	}
+	if len(previous.Scrollback) != len(next.Scrollback) || !protocol.HasExplicitRowOwnership(previous.ScrollbackOwnership, len(previous.Scrollback)) {
+		return
+	}
+	next.ScrollbackOwnership = append([]string(nil), previous.ScrollbackOwnership...)
+	next.ScrollbackLoadedRows = previous.ScrollbackLoadedRows
+	next.HistoryGeneration = previous.HistoryGeneration
+	next.ScrollbackFirstRowID = previous.ScrollbackFirstRowID
+	next.ScrollbackLastRowID = previous.ScrollbackLastRowID
+	next.ScrollbackOffset = previous.ScrollbackOffset
+	next.ScrollbackTotal = previous.ScrollbackTotal
+	next.ScrollbackLogicalTotal = previous.ScrollbackLogicalTotal
+	next.ScrollbackHasMore = previous.ScrollbackHasMore
 }
 
 func (r *Runtime) RefreshSnapshotFromVTerm(terminalID string) bool {

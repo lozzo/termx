@@ -19,6 +19,17 @@ func repeatedCompactRows(text string, count int, cols int) []protocol.CompactRow
 	return rows
 }
 
+func repeatedOwnership(ownership string, count int) []string {
+	if count <= 0 || ownership == "" {
+		return nil
+	}
+	values := make([]string, count)
+	for i := range values {
+		values[i] = ownership
+	}
+	return values
+}
+
 func TestLocalViewProjectionPreservesPaneViewport(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 
@@ -139,7 +150,7 @@ func TestPaneScrollbackPrefetchUsesLoadedDepthBeyondMaterializedWindow(t *testin
 	}
 }
 
-func TestPaneScrollbackPrefetchDoesNotTreatAuthoritativeLiveTailOnlyRowsAsCommittedHistory(t *testing.T) {
+func TestPaneScrollbackPrefetchDoesNotTreatLiveTailOwnershipRowsAsCommittedHistory(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 50, height: 12})
 	terminal := model.runtime.Registry().Get("term-1")
 	terminal.Snapshot = &protocol.Snapshot{
@@ -148,8 +159,7 @@ func TestPaneScrollbackPrefetchDoesNotTreatAuthoritativeLiveTailOnlyRowsAsCommit
 		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("tail0", 120), protocolRowFromText("tail1", 120)}),
 		ScrollbackTotal:        2,
 		ScrollbackLogicalTotal: 2,
-		ScrollbackLoadedRows:   0,
-		HistoryGeneration:      0,
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipLiveTailLive, 2),
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
 			protocolRowFromText("live0", 120),
 		}},
@@ -160,14 +170,14 @@ func TestPaneScrollbackPrefetchDoesNotTreatAuthoritativeLiveTailOnlyRowsAsCommit
 
 	cmd := model.ensureActivePaneScrollbackCmd()
 	if cmd != nil {
-		t.Fatal("expected no pane scrollback prefetch command for live-tail-only authoritative rows")
+		t.Fatal("expected no pane scrollback prefetch command for live-tail ownership rows")
 	}
 	if got := len(client.viewportRequests); got != 0 {
-		t.Fatalf("expected no pane history request for live-tail-only authoritative rows, got %#v", client.viewportRequests)
+		t.Fatalf("expected no pane history request for live-tail ownership rows, got %#v", client.viewportRequests)
 	}
 }
 
-func TestPaneScrollbackPrefetchUsesZeroOffsetAfterAuthoritativeLiveTailOnlyLatestReplace(t *testing.T) {
+func TestPaneScrollbackPrefetchUsesZeroOffsetAfterLiveTailOwnershipLatestReplace(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 50, height: 12})
 	terminal := model.runtime.Registry().Get("term-1")
 	terminal.Snapshot = &protocol.Snapshot{
@@ -192,15 +202,14 @@ func TestPaneScrollbackPrefetchUsesZeroOffsetAfterAuthoritativeLiveTailOnlyLates
 		ScrollbackTotal:        4,
 		ScrollbackLogicalTotal: 4,
 		ScrollbackHasMore:      true,
-		ScrollbackLoadedRows:   0,
-		HistoryGeneration:      0,
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipLiveTailLive, 2),
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
 			protocolRowFromText("live0", 120),
 		}},
 	}
 
 	if _, err := model.runtime.LoadSnapshot(context.Background(), "term-1", 0, 0); err != nil {
-		t.Fatalf("load authoritative live-tail-only latest snapshot: %v", err)
+		t.Fatalf("load live-tail ownership latest snapshot: %v", err)
 	}
 	terminal = model.runtime.Registry().Get("term-1")
 	if terminal == nil {
@@ -212,7 +221,7 @@ func TestPaneScrollbackPrefetchUsesZeroOffsetAfterAuthoritativeLiveTailOnlyLates
 
 	cmd := model.ensureActivePaneScrollbackCmd()
 	if cmd == nil {
-		t.Fatal("expected pane scrollback prefetch command after authoritative live-tail-only latest replace")
+		t.Fatal("expected pane scrollback prefetch command after live-tail ownership latest replace")
 	}
 	_ = cmd()
 
@@ -228,7 +237,7 @@ func TestPaneScrollbackPrefetchUsesZeroOffsetAfterAuthoritativeLiveTailOnlyLates
 	}
 }
 
-func TestPaneScrollbackPrefetchUsesZeroOffsetAfterFullReplaceBoundaryResetDisplayTail(t *testing.T) {
+func TestPaneScrollbackPrefetchUsesZeroOffsetAfterLiveTailOwnershipDisplayTail(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 50, height: 12})
 	terminal := model.runtime.Registry().Get("term-1")
 	terminal.Snapshot = &protocol.Snapshot{
@@ -243,11 +252,11 @@ func TestPaneScrollbackPrefetchUsesZeroOffsetAfterFullReplaceBoundaryResetDispla
 		ScrollbackLogicalTotal: 0,
 		ScrollbackHasMore:      false,
 		HistoryGeneration:      0,
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipLiveTailLive, 1),
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
 			protocolRowFromText("fresh", 120),
 		}},
 	}
-	terminal.FullReplaceBoundaryReset = true
 	terminal.ScrollbackLoadedLimit = 0
 	terminal.ScrollbackExhausted = false
 	_ = model.runtime.SetPaneViewportOffset("pane-1", 20)
@@ -303,11 +312,11 @@ func TestPaneScrollbackStaleLiveResponseDoesNotRestoreBoundarySideStateAfterFull
 		ScrollbackLogicalTotal: 0,
 		ScrollbackHasMore:      false,
 		HistoryGeneration:      0,
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipLiveTailLive, 1),
 		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
 			protocolRowFromText("fresh", 120),
 		}},
 	}
-	terminal.FullReplaceBoundaryReset = true
 	terminal.ScrollbackLoadedLimit = 0
 	terminal.ScrollbackLoadingLimit = 0
 	terminal.ScrollbackExhausted = false
