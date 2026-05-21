@@ -191,14 +191,24 @@
 
 ## 6. 当前未决问题
 
-下面这些仍然是未决问题，但它们已经不阻塞第一阶段开发：
+下面这些问题已经做出当前阶段决议：
 
-- `mutable live tail` 内部用单体结构还是 segment 结构维护；
-- reclaim 的缓存上限、内存预算、淘汰策略；
-- 这种 ownership 模型在后续阶段是否需要跨 protocol 显式暴露；
-- runtime/app 层未来是否需要显式感知 live tail 与 persisted history 边界。
+- `mutable live tail` 内部采用显式 segment 结构维护。
+- 第一阶段必须把 `termx-core` 内部的 `hot/cold` 过渡实现一次性切换为 `persisted history / mutable live tail / screen projection` 模型。
+- segment 至少必须表达：
+  - logical-line seal 状态；
+  - `origin=live/reclaimed`；
+  - visual rows 及其 timestamp / row kind / wrapped 元数据；
+  - wrap-pending 状态。
+- reclaim 的基本语义已经定死：按完整 logical line reclaim，且只 reclaim 最小充分 logical-line 后缀。
+- reclaim 的内存上限和长期淘汰策略暂时沿用现有 scrollback / retention 约束，不在本轮扩展新策略。
+- 第一阶段仍不扩展 protocol / runtime / app contract。
 
-这些问题在没有单独决议前，不允许反向推翻本文件已定死的语义条款。
+下面这些仍然是后续阶段问题，但它们不能阻塞本轮内部大重构：
+
+- ownership 模型是否需要跨 protocol 显式暴露；
+- runtime/app 层未来是否需要显式感知 live tail 与 persisted history 边界；
+- copy mode 是否改为直接消费 logical-line ownership contract。
 
 ## 7. 当前开发起点
 
@@ -210,7 +220,7 @@
 
 - 在 `termx-core` 内部对齐 `persisted history / mutable live tail / screen projection` 三层语义；
 - 补足 grow / shrink / attach / exit / alt-screen / clear-screen 的语义测试；
-- 让当前 hot/cold 代码路径逐步向 live tail / persisted history 语义靠拢；
+- 一次性移除 `termx-core` 内部以 `hot/cold` 为主语义的过渡实现；
 - 暂不扩展 wire/runtime/app contract。
 
 ### 7.1 当前完成结果
@@ -228,22 +238,44 @@
 4. `clear screen` 与 primary history 冻结语义
    - 已补齐 core 侧测试，约束 clear screen 只改当前 surface，不创建 committed history，也不污染既有 committed history。
 
-### 7.2 当前剩余缺口
+### 7.2 当前执行决议：全面内部模型切换
 
-结合当前代码和测试，第一阶段还剩下的主要不是已知语义冲突，而是下面这些收尾型缺口：
+当前不再按渐进迁移推进。下一步必须做一次 module-sized 的 `termx-core` 内部大重构：
 
-1. `termx-core` 内部仍然是 `hot/cold` 过渡实现
-   - 当前已经靠测试把语义钉住，但内部结构还没有显式收敛成统一的 `mutable live tail` 抽象。
-2. reclaim 语义目前主要体现在 latest projection / viewport 读路径
-   - 已满足 grow latest 读路径的 logical-line 边界，但还没有单独沉淀成更显式的 internal ownership 结构。
-3. protocol / runtime / app contract 仍未扩展
-   - 这仍然符合第一阶段边界，不是当前阻塞项；后续应按 RFC 进入 Phase 2 / Phase 3 再处理。
+1. 新增显式 `mutable live tail` 内部结构
+   - 以 segment 维护 live tail。
+   - segment 必须保留 `open/sealed` 与 `origin=live/reclaimed` 两个正交维度。
+   - 不得再把 `hot` 当作“唯一未封口 latest line”的实现主语义。
+2. 改写 primary 写入归属路径
+   - 普通 primary 输出先进入 live tail / screen projection 语义。
+   - 可提交的 sealed logical lines 再进入 `persisted history store`。
+   - `alt-screen` 写入不得进入 primary live tail 或 primary persisted history。
+3. 改写 latest snapshot / viewport 组合路径
+   - latest 读取必须显式组合 `persisted history store`、`mutable live tail`、`screen projection`。
+   - older offset 只能读取已提交 persisted history，不得把 shrink hidden live tail 误当历史。
+4. 改写 resize ownership 路径
+   - grow 必须通过 live tail reclaim 表达 `persisted history tail -> mutable live tail -> screen`。
+   - shrink 必须通过 hidden live tail 表达 `screen -> hidden mutable live tail`。
+   - resize 仍不是历史创建事件。
+5. 改写 process exit 路径
+   - process exit 对 primary live tail 执行 force seal，再进入 persisted history。
+   - 退出时仍在 `alt-screen`，alt 内容直接丢弃。
+6. 清理内部命名和测试 helper
+   - `termx-core` 内部不应继续以 `hot/cold` 作为主实现命名。
+   - 测试 helper 应改为 live-tail 语义命名。
+   - 旧测试可以保留行为覆盖，但断言文本应贴近当前三层模型。
 
-结论是：
+这次重构允许一次性修改较大范围；完成后再集中修补回归 bug。不得因此扩展 wire/runtime/app contract。
 
-- 第一阶段核心内部语义已经有可工作的实现加测试护栏；
-- 当前没有发现新的必须立即修复的第一阶段 core 语义冲突；
-- 如果继续推进，应优先做内部结构压缩，而不是继续外扩 contract。
+### 7.3 当前剩余缺口
+
+本轮大重构完成前，第一阶段剩余缺口就是：
+
+- `termx-core` 内部仍有 `hot/cold` 过渡实现；
+- reclaim ownership 仍主要散落在 latest projection / viewport 读路径；
+- 测试命名仍保留旧模型痕迹。
+
+本轮大重构完成后，应重新压缩本节，把已完成结果和仍需后续阶段处理的问题写成新基线。
 
 ### 当前不启动的工作
 

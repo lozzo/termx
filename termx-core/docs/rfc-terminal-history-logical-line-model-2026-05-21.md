@@ -220,7 +220,7 @@
 
 ### 8.1 Persisted History Store
 
-建议语义上承载：
+语义上承载：
 
 - sealed logical lines；
 - replay / paging 所需的顺序和 identity；
@@ -230,7 +230,9 @@
 
 ### 8.2 Mutable Live Tail
 
-建议语义上承载：
+第一阶段 `termx-core` 内部必须把 `mutable live tail` 落成显式 segment 结构，而不是继续把 `hot` 当作“唯一未封口 latest line”。
+
+它语义上承载：
 
 - 最新 open logical line；
 - 当前尚可能被程序继续改写的尾部内容；
@@ -240,6 +242,15 @@
 
 - 当前 live truth 的 backing store，
 - 而不是单纯“等待进入 cold 的队列”。
+
+segment 至少需要表达：
+
+- logical-line seal 状态：`open` 或 `sealed`；
+- origin：`live` 或 `reclaimed`；
+- visual rows 及其 timestamp / row kind / wrapped 元数据；
+- wrap-pending 状态。
+
+`open/sealed` 与 `origin=live/reclaimed` 是正交维度。一个 reclaimed segment 可以是 sealed，一个 live segment 也可以因为 hard newline 已 sealed 但仍处于 live tail 中。
 
 ### 8.3 Screen
 
@@ -428,11 +439,13 @@
 
 ### 14.1 Core 内部
 
-core 内部最终应有能力显式区分：
+第一阶段 core 内部必须显式区分：
 
 - persisted history；
 - mutable live tail；
 - screen projection。
+
+这不是后续可选项，而是当前 Phase 1 的完成条件。实现上应一次性移除以 `hot/cold` 为主语义的过渡层；如果局部变量因为兼容旧测试或局部算法暂时保留旧词，也不得再承担模型定义职责。
 
 ### 14.2 Core / VTerm 边界
 
@@ -500,10 +513,10 @@ core 内部最终应有能力显式区分：
 
 ## 16. 未决问题
 
-- mutable live tail 内部是否要继续细分为：
-  - open logical line
-  - reclaimed sealed suffix
-  - 其他 live tail segment
+- mutable live tail 内部已经决定采用 segment 结构，并至少区分：
+  - open / sealed
+  - live / reclaimed
+  - rows 与 metadata
 - reclaim 的缓存上限、内存预算和淘汰策略如何定义？
 - 这种 ownership 模型在后续阶段是否最终需要跨 protocol 显式暴露？
 
@@ -531,7 +544,9 @@ core 内部最终应有能力显式区分：
 
 ### Phase 1: Core 内部模型收敛
 
-- 先在 `termx-core` 内部收敛 persisted history / mutable live tail / screen projection 的语义边界。
+- 在 `termx-core` 内部一次性切换到 persisted history / mutable live tail / screen projection 的显式模型。
+- 移除以 `hot/cold` 为主语义的过渡实现。
+- 让 write / resize / snapshot / viewport / process-exit 路径统一通过 live-tail ownership 结构表达。
 
 ### Phase 2: Snapshot / Viewport / Paging 适配
 

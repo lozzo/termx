@@ -118,13 +118,32 @@
 
 ## 仍未解决的问题
 
-- grow resize 之后，到底要把多少已 seal 的历史尾部 reclaim 回 mutable tail？
-- process exit 时，是不是总要强制 seal 最后一条 open logical line，还是要看产品语义？
-- 内部模型是否需要显式区分：
-  - open logical line，
-  - reclaimed sealed suffix，
-  - persisted history tail？
+- grow resize 之后，必须 reclaim 最小充分完整 logical-line 后缀。
+- process exit 时，primary live tail 剩余内容一律 force seal。
+- 内部模型必须显式区分：
+  - persisted history store，
+  - mutable live tail，
+  - screen projection。
+- `mutable live tail` 内部采用 segment 结构，并用属性表达：
+  - open / sealed，
+  - live / reclaimed，
+  - rows 与 metadata。
+
+仍留到后续阶段的问题是：
+
+- reclaim 的独立内存预算和淘汰策略；
 - wire / runtime / app 层未来是否也要显式表达这个 ownership 模型，而不是只传现有的 hot/cold hint？
+
+## 当前实现决议
+
+此前小切片已经把 process exit、attach/bootstrap/recovery/full-replace、grow/shrink/reclaim、clear screen 的关键语义用测试钉住。
+
+下一步不再继续做渐进式过渡，而是进入一次性 `termx-core` 内部模型切换：
+
+- 移除以 `hot/cold` 为主语义的过渡实现；
+- 引入显式 `mutable live tail` segment 结构；
+- 让 write / resize / latest snapshot / viewport / process-exit 路径统一通过三层模型表达；
+- 第一阶段仍不扩展 wire/runtime/app contract。
 
 ## 本次复盘结论
 

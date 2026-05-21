@@ -11,6 +11,13 @@
 
 这份文档是语义设计稿，不是实现方案，也不要求当前代码已经满足这里的所有约束。
 
+当前补充决议：
+
+- 第一阶段不再采用渐进迁移策略。
+- `termx-core` 内部必须一次性切换到显式的 `persisted history store / mutable live tail / screen projection` 模型。
+- `mutable live tail` 内部采用 segment 结构。
+- `hot/cold` 不再作为内部主语义命名。
+
 ## 2. 背景与动机
 
 当前终端历史存在一个核心问题：存储模型仍然过于依赖“视觉折行”。
@@ -346,6 +353,19 @@ resize 是本设计里最重要的事件之一。
 - `hot` 可以包含 reclaim 回来的 sealed suffix，
 - `cold` 也不再意味着“永不重新参与 live 投影”。
 
+### 10.3 当前实现决议
+
+第一阶段内部重构不再继续沿用 `hot/cold` 作为主实现模型。
+
+`termx-core` 中应显式引入 `mutable live tail` 结构，并用 segment 表达：
+
+- logical-line seal 状态；
+- `origin=live/reclaimed`；
+- visual rows 及 timestamp / row kind / wrapped 元数据；
+- wrap-pending 状态。
+
+旧的 `hot` 相关 helper 和测试命名应随实现一起改成 live-tail 语义。若某些局部变量为了小范围算法可读性暂时保留旧词，也不得再承担模型边界含义。
+
 ## 11. Copy Mode / Replay / Paging 的语义收益
 
 如果后续按这个模型推进，会有几个直接收益。
@@ -377,11 +397,16 @@ resize 是本设计里最重要的事件之一。
 
 ### 12.1 Live Tail 的精确定义
 
-需要进一步明确：
+当前阶段已经明确：
 
-- live tail 最少要覆盖什么范围，
-- reclaim 的缓存上限、内存预算、淘汰策略是什么，
-- 内部是否用单体结构还是 segment 结构维护。
+- live tail 至少覆盖当前仍可能参与 screen projection 的 primary tail；
+- live tail 可以同时包含 open logical line 和 sealed logical-line suffix；
+- live tail 可以包含从 persisted history 尾部 reclaim 回来的 segment；
+- 内部采用 segment 结构维护。
+
+仍留到后续阶段的问题是：
+
+- reclaim 的缓存上限、内存预算、淘汰策略是否需要独立于现有 retention 另行定义。
 
 ### 12.2 Exit Seal 语义
 
@@ -399,12 +424,11 @@ resize 是本设计里最重要的事件之一。
 
 ### 12.4 Internal Structure
 
-需要明确：
+当前阶段已经明确：
 
-- 内部是否要显式区分 open logical line、
-- reclaimed sealed suffix、
-- persisted tail window，
-- 还是只在统一的 mutable live tail 中管理。
+- 内部必须显式区分 `persisted history store`、`mutable live tail`、`screen projection`；
+- `mutable live tail` 用统一 segment 列表管理；
+- segment 内部用属性区分 open logical line、sealed suffix、reclaimed suffix，而不是把它们拆成互不相干的旧 hot/cold 路径。
 
 ## 13. 本文结论
 
