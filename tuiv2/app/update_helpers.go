@@ -267,7 +267,7 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 		return nil
 	}
 	terminal := m.runtime.Registry().Get(pane.TerminalID)
-	if terminal == nil || terminal.ScrollbackExhausted {
+	if terminal == nil {
 		return nil
 	}
 	if terminal.VTerm != nil && terminal.VTerm.Modes().AlternateScreen {
@@ -407,12 +407,12 @@ func terminalHasKnownScrollbackBeyond(terminal *appruntime.TerminalRuntime, load
 			if protocol.HasOnlyLiveTailLiveOwnership(snapshot.ScrollbackOwnership, len(snapshot.Scrollback)) {
 				return known > loaded
 			}
-		}
-		if snapshot.ScrollbackTotal > known {
-			known = snapshot.ScrollbackTotal
-		}
-		if snapshot.ScrollbackHasMore && known <= loaded {
-			known = loaded + 1
+			if snapshot.ScrollbackTotal > known {
+				known = snapshot.ScrollbackTotal
+			}
+			if snapshot.ScrollbackHasMore && known <= loaded {
+				known = loaded + 1
+			}
 		}
 	}
 	return known > loaded

@@ -509,6 +509,7 @@ func TestRuntimeApplyGridViewportPageCanonicalLatestReplaceUsesIncomingMetadata(
 	live.HistoryGeneration = 10
 	live.ScrollbackFirstRowID = 100
 	live.ScrollbackLastRowID = 11999
+	markSnapshotScrollbackPersisted(live)
 	client.snapshotByTerminal["term-1"] = live
 
 	rt := New(client)
@@ -530,6 +531,7 @@ func TestRuntimeApplyGridViewportPageCanonicalLatestReplaceUsesIncomingMetadata(
 		ScrollbackLastRowID:    902,
 		ScrollbackRowKinds:     []string{"", "", ""},
 		ScrollbackWrapped:      []bool{false, false, false},
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipPersisted, 3),
 		ScrollbackTimestamps:   []time.Time{time.Now(), time.Now(), time.Now()},
 	}
 
@@ -614,6 +616,7 @@ func TestRuntimeLoadSnapshotLiveTailOwnershipLatestReplacesKnownCommittedDepth(t
 	canonical.HistoryGeneration = 10
 	canonical.ScrollbackFirstRowID = 0
 	canonical.ScrollbackLastRowID = 11999
+	markSnapshotScrollbackPersisted(canonical)
 	client.snapshotByTerminal["term-1"] = canonical
 
 	rt := New(client)
@@ -809,7 +812,7 @@ func TestRuntimeAttachTerminalPreservesLiveTailOwnershipAcrossReattach(t *testin
 	checkLiveTailOwnership("after reattach")
 }
 
-func TestRuntimeBumpSurfaceVersionPromotesLocalVTermOnlyFallbackScrollback(t *testing.T) {
+func TestRuntimeBumpSurfaceVersionDoesNotPromoteLocalVTermOnlyScrollbackToCommittedDepth(t *testing.T) {
 	rt := New(nil)
 	terminal := rt.Registry().GetOrCreate("term-1")
 	terminal.VTerm = localvterm.New(8, 3, 16, nil)
@@ -822,11 +825,8 @@ func TestRuntimeBumpSurfaceVersionPromotesLocalVTermOnlyFallbackScrollback(t *te
 
 	rt.bumpSurfaceVersion(terminal)
 
-	if got := terminal.ScrollbackLoadedLimit; got == 0 {
-		t.Fatalf("expected local VTerm-only fallback to promote visual scrollback depth, got %d", got)
-	}
-	if terminal.Snapshot != nil && protocol.HasOnlyLiveTailLiveOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
-		t.Fatalf("expected local fallback not to impersonate live-tail ownership, got %#v", terminal.Snapshot)
+	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		t.Fatalf("expected local VTerm-only scrollback not to promote committed depth, got %d", got)
 	}
 }
 
@@ -2035,6 +2035,7 @@ func TestRuntimeScreenUpdateFullReplaceResetsLatestBoundaryContract(t *testing.T
 				snapshot.ScrollbackTotal = 4
 				snapshot.ScrollbackLogicalTotal = 4
 				snapshot.ScrollbackHasMore = true
+				markSnapshotScrollbackOwnership(snapshot, protocol.RowOwnershipLiveTailLive)
 				return snapshot
 			}(),
 			wantLoadedLimit: 0,
@@ -2054,6 +2055,7 @@ func TestRuntimeScreenUpdateFullReplaceResetsLatestBoundaryContract(t *testing.T
 				snapshot.HistoryGeneration = 7
 				snapshot.ScrollbackFirstRowID = 0
 				snapshot.ScrollbackLastRowID = 0
+				snapshot.ScrollbackOwnership = []string{protocol.RowOwnershipPersisted, protocol.RowOwnershipLiveTailLive}
 				return snapshot
 			}(),
 			wantLoadedLimit: 1,
@@ -2071,6 +2073,7 @@ func TestRuntimeScreenUpdateFullReplaceResetsLatestBoundaryContract(t *testing.T
 				snapshot.HistoryGeneration = 7
 				snapshot.ScrollbackFirstRowID = 0
 				snapshot.ScrollbackLastRowID = 0
+				markSnapshotScrollbackPersisted(snapshot)
 				return snapshot
 			}(),
 			wantLoadedLimit: 1,
@@ -2166,6 +2169,7 @@ func TestRuntimeScreenUpdateFullReplaceWithScrollbackAppendKeepsBoundaryReset(t 
 	seed.HistoryGeneration = 7
 	seed.ScrollbackFirstRowID = 0
 	seed.ScrollbackLastRowID = 0
+	seed.ScrollbackOwnership = []string{protocol.RowOwnershipPersisted, protocol.RowOwnershipLiveTailLive}
 	client.snapshotByTerminal["term-1"] = seed
 
 	rt := New(client)
@@ -2256,6 +2260,7 @@ func TestRuntimeScreenUpdateFullReplaceWithScrollbackAppendKeepsBoundaryReset(t 
 		ScrollbackLastRowID:    0,
 		ScrollbackRowKinds:     []string{""},
 		ScrollbackWrapped:      []bool{false},
+		ScrollbackOwnership:    []string{protocol.RowOwnershipPersisted},
 		ScrollbackTimestamps:   []time.Time{time.Now()},
 	}
 	if !rt.ApplyGridViewportPage("term-1", page, 0) {

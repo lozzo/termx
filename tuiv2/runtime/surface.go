@@ -490,24 +490,10 @@ func syncSurfaceScrollbackState(terminal *TerminalRuntime) {
 	if terminal == nil {
 		return
 	}
-	surface := surfaceFromVTerm(terminal.VTerm)
-	if surface == nil {
+	if terminal.Snapshot == nil || !protocol.HasExplicitRowOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
 		return
 	}
-	if terminal.Snapshot != nil && protocol.HasExplicitRowOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
-		loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot)
-		if terminal.ScrollbackExhausted && loaded > terminal.ScrollbackLoadedLimit {
-			terminal.ScrollbackExhausted = false
-		}
-		if loaded > terminal.ScrollbackLoadedLimit {
-			terminal.ScrollbackLoadedLimit = loaded
-		}
-		if terminal.ScrollbackLoadingLimit > 0 && loaded >= terminal.ScrollbackLoadingLimit {
-			terminal.ScrollbackLoadingLimit = 0
-		}
-		return
-	}
-	loaded := surface.ScrollbackRows()
+	loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot)
 	if terminal.ScrollbackExhausted && loaded > terminal.ScrollbackLoadedLimit {
 		terminal.ScrollbackExhausted = false
 	}

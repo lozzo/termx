@@ -1269,16 +1269,26 @@ func TestCopyModeEnterPrefetchesWhenExhaustedFlagIsStale(t *testing.T) {
 	terminal := model.runtime.Registry().Get("term-1")
 	terminal.ScrollbackExhausted = true
 	terminal.Snapshot.ScrollbackTotal = 3
+	terminal.Snapshot.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("known0", 40)})
+	terminal.Snapshot.ScrollbackLoadedRows = 1
+	terminal.Snapshot.HistoryGeneration = 7
+	terminal.Snapshot.ScrollbackFirstRowID = 0
+	terminal.Snapshot.ScrollbackLastRowID = 0
+	terminal.Snapshot.ScrollbackOwnership = []string{protocol.RowOwnershipPersisted}
 	client := model.runtime.Client().(*recordingBridgeClient)
 	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot([]string{"old0", "old1", "old2"}, []string{"live0", "live1", "live2"})
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
 
 	if got := len(client.viewportRequests); got != 1 {
 		t.Fatalf("expected stale exhausted flag not to suppress copy-mode history load, got %#v", client.viewportRequests)
 	}
-	if got, want := len(model.copyMode.Snapshot.Scrollback), 3; got != want {
-		t.Fatalf("expected stale-exhausted history to load into frozen buffer, got %d want %d", got, want)
+	if got := client.viewportRequests[0]; got.offset != 1 || got.limit <= 0 {
+		t.Fatalf("expected stale-exhausted ownership history request to continue from committed depth 1, got %#v", got)
+	}
+	if terminal.ScrollbackExhausted {
+		t.Fatal("expected ownership-aware stale exhausted flag to clear before loading older history")
 	}
 }
 
