@@ -291,10 +291,11 @@
 - 当前清理方向已经调整为删除旧 `hot/cold` 主语义命名，不再把它作为派生兼容术语继续保留在代码或测试 helper 中。
 - `termx-vterm` 到 `termx-core` 的内部 hint 已删除 `HotAppendRows` / `ResizeHotOwnedRows` 旧字段名，改为 `LiveTailAppendRows` / `ResizeLiveTailRows`，没有保留旧字段别名。
 - `termx-core` 相关测试文件、用例名和断言文本已从旧 `hot/cold` 场景词收敛到 `live-tail`、`persisted history`、`committed history` 表述。
+- `tuiv2` 运行时本地状态已删除 `AuthoritativeHotOnlyLatest` 旧命名，改为 `AuthoritativeLiveTailOnlyLatest`，保持 `LoadedRows=0` 的 live-tail-only latest 语义不变。
 
 当前仍需继续收敛的缺口是：
 
-- `tuiv2` 运行时仍存在 `AuthoritativeHotOnlyLatest` 一组本地状态命名，必须改为 `AuthoritativeLiveTailOnlyLatest` 一组命名，保持 `LoadedRows=0` 的语义不变。
+- 后续如继续扩展 TUI，需要优先检查 copy mode 是否应该直接消费 logical-line ownership contract；当前仍不扩展 wire/runtime/app contract。
 
 本轮大重构完成后，应重新压缩本节，把已完成结果和仍需后续阶段处理的问题写成新基线。
 

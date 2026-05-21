@@ -46,15 +46,15 @@ type TerminalRuntime struct {
 	// scrollback rows from append data, but those rows stay display-only until
 	// a later authoritative latest snapshot/page re-establishes committed depth.
 	FullReplaceBoundaryReset bool
-	// Authoritative hot-only latest snapshots materialize visual hot rows with
+	// Authoritative live-tail-only latest snapshots materialize visual live-tail rows with
 	// no committed history window yet. Keep that provenance across VTerm-only
 	// refresh/surface sync so len(scrollback) does not get reinterpreted as
 	// committed loaded depth.
-	AuthoritativeHotOnlyLatest bool
-	AuthoritativeHotRowCount   int
-	AuthoritativeHotTotalRows  int
-	AuthoritativeHotLogicalRows int
-	AuthoritativeHotHasMore    bool
+	AuthoritativeLiveTailOnlyLatest  bool
+	AuthoritativeLiveTailRowCount    int
+	AuthoritativeLiveTailTotalRows   int
+	AuthoritativeLiveTailLogicalRows int
+	AuthoritativeLiveTailHasMore     bool
 
 	OwnerPaneID   string   // 全局 owner pane，用于所有视图的共享展示
 	ControlPaneID string   // 当前本地视图可实际驱动 resize/control 的 pane

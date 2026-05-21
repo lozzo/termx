@@ -496,8 +496,8 @@ func syncSurfaceScrollbackState(terminal *TerminalRuntime) {
 		}
 		return
 	}
-	if terminal.AuthoritativeHotOnlyLatest {
-		if terminal.ScrollbackLoadingLimit > 0 && terminal.AuthoritativeHotRowCount >= terminal.ScrollbackLoadingLimit {
+	if terminal.AuthoritativeLiveTailOnlyLatest {
+		if terminal.ScrollbackLoadingLimit > 0 && terminal.AuthoritativeLiveTailRowCount >= terminal.ScrollbackLoadingLimit {
 			terminal.ScrollbackLoadingLimit = 0
 		}
 		return

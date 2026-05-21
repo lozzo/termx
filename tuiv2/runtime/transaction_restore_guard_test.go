@@ -77,35 +77,35 @@ func TestTransactionRestorePreservesViewportAndHistoryLoadState(t *testing.T) {
 		t.Fatal("expected exhausted restore to keep exhausted=true")
 	}
 
-	terminal.AuthoritativeHotOnlyLatest = true
-	terminal.AuthoritativeHotRowCount = 2
-	terminal.AuthoritativeHotTotalRows = 4
-	terminal.AuthoritativeHotLogicalRows = 4
-	terminal.AuthoritativeHotHasMore = true
+	terminal.AuthoritativeLiveTailOnlyLatest = true
+	terminal.AuthoritativeLiveTailRowCount = 2
+	terminal.AuthoritativeLiveTailTotalRows = 4
+	terminal.AuthoritativeLiveTailLogicalRows = 4
+	terminal.AuthoritativeLiveTailHasMore = true
 
-	authoritativeHotOnly := rt.TerminalLiveStateSnapshot("term-1")
+	authoritativeLiveTailOnly := rt.TerminalLiveStateSnapshot("term-1")
 
-	terminal.AuthoritativeHotOnlyLatest = false
-	terminal.AuthoritativeHotRowCount = 0
-	terminal.AuthoritativeHotTotalRows = 0
-	terminal.AuthoritativeHotLogicalRows = 0
-	terminal.AuthoritativeHotHasMore = false
+	terminal.AuthoritativeLiveTailOnlyLatest = false
+	terminal.AuthoritativeLiveTailRowCount = 0
+	terminal.AuthoritativeLiveTailTotalRows = 0
+	terminal.AuthoritativeLiveTailLogicalRows = 0
+	terminal.AuthoritativeLiveTailHasMore = false
 
-	rt.RestoreTerminalLiveState("term-1", authoritativeHotOnly)
+	rt.RestoreTerminalLiveState("term-1", authoritativeLiveTailOnly)
 
-	if !terminal.AuthoritativeHotOnlyLatest {
-		t.Fatal("expected restore to preserve authoritative hot-only provenance")
+	if !terminal.AuthoritativeLiveTailOnlyLatest {
+		t.Fatal("expected restore to preserve authoritative live-tail-only provenance")
 	}
-	if got, want := terminal.AuthoritativeHotRowCount, 2; got != want {
-		t.Fatalf("expected restore to preserve hot row count %d, got %d", want, got)
+	if got, want := terminal.AuthoritativeLiveTailRowCount, 2; got != want {
+		t.Fatalf("expected restore to preserve live-tail row count %d, got %d", want, got)
 	}
-	if got, want := terminal.AuthoritativeHotTotalRows, 4; got != want {
-		t.Fatalf("expected restore to preserve hot total rows %d, got %d", want, got)
+	if got, want := terminal.AuthoritativeLiveTailTotalRows, 4; got != want {
+		t.Fatalf("expected restore to preserve live-tail total rows %d, got %d", want, got)
 	}
-	if got, want := terminal.AuthoritativeHotLogicalRows, 4; got != want {
-		t.Fatalf("expected restore to preserve hot logical rows %d, got %d", want, got)
+	if got, want := terminal.AuthoritativeLiveTailLogicalRows, 4; got != want {
+		t.Fatalf("expected restore to preserve live-tail logical rows %d, got %d", want, got)
 	}
-	if !terminal.AuthoritativeHotHasMore {
+	if !terminal.AuthoritativeLiveTailHasMore {
 		t.Fatal("expected restore to preserve authoritative has-more flag")
 	}
 }

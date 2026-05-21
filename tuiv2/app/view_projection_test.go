@@ -139,13 +139,13 @@ func TestPaneScrollbackPrefetchUsesLoadedDepthBeyondMaterializedWindow(t *testin
 	}
 }
 
-func TestPaneScrollbackPrefetchDoesNotTreatAuthoritativeHotOnlyRowsAsCommittedHistory(t *testing.T) {
+func TestPaneScrollbackPrefetchDoesNotTreatAuthoritativeLiveTailOnlyRowsAsCommittedHistory(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 50, height: 12})
 	terminal := model.runtime.Registry().Get("term-1")
 	terminal.Snapshot = &protocol.Snapshot{
 		TerminalID:             "term-1",
 		Size:                   protocol.Size{Cols: 120, Rows: 24},
-		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("hot0", 120), protocolRowFromText("hot1", 120)}),
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("tail0", 120), protocolRowFromText("tail1", 120)}),
 		ScrollbackTotal:        2,
 		ScrollbackLogicalTotal: 2,
 		ScrollbackLoadedRows:   0,
@@ -160,14 +160,14 @@ func TestPaneScrollbackPrefetchDoesNotTreatAuthoritativeHotOnlyRowsAsCommittedHi
 
 	cmd := model.ensureActivePaneScrollbackCmd()
 	if cmd != nil {
-		t.Fatal("expected no pane scrollback prefetch command for hot-only authoritative rows")
+		t.Fatal("expected no pane scrollback prefetch command for live-tail-only authoritative rows")
 	}
 	if got := len(client.viewportRequests); got != 0 {
-		t.Fatalf("expected no pane history request for hot-only authoritative rows, got %#v", client.viewportRequests)
+		t.Fatalf("expected no pane history request for live-tail-only authoritative rows, got %#v", client.viewportRequests)
 	}
 }
 
-func TestPaneScrollbackPrefetchUsesZeroOffsetAfterAuthoritativeHotOnlyLatestReplace(t *testing.T) {
+func TestPaneScrollbackPrefetchUsesZeroOffsetAfterAuthoritativeLiveTailOnlyLatestReplace(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 50, height: 12})
 	terminal := model.runtime.Registry().Get("term-1")
 	terminal.Snapshot = &protocol.Snapshot{
@@ -187,7 +187,7 @@ func TestPaneScrollbackPrefetchUsesZeroOffsetAfterAuthoritativeHotOnlyLatestRepl
 	client.snapshotByTerminal["term-1"] = &protocol.Snapshot{
 		TerminalID:             "term-1",
 		Size:                   protocol.Size{Cols: 120, Rows: 24},
-		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("hot0", 120), protocolRowFromText("hot1", 120)}),
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("tail0", 120), protocolRowFromText("tail1", 120)}),
 		ScrollbackOffset:       0,
 		ScrollbackTotal:        4,
 		ScrollbackLogicalTotal: 4,
@@ -200,7 +200,7 @@ func TestPaneScrollbackPrefetchUsesZeroOffsetAfterAuthoritativeHotOnlyLatestRepl
 	}
 
 	if _, err := model.runtime.LoadSnapshot(context.Background(), "term-1", 0, 0); err != nil {
-		t.Fatalf("load authoritative hot-only latest snapshot: %v", err)
+		t.Fatalf("load authoritative live-tail-only latest snapshot: %v", err)
 	}
 	terminal = model.runtime.Registry().Get("term-1")
 	if terminal == nil {
@@ -212,7 +212,7 @@ func TestPaneScrollbackPrefetchUsesZeroOffsetAfterAuthoritativeHotOnlyLatestRepl
 
 	cmd := model.ensureActivePaneScrollbackCmd()
 	if cmd == nil {
-		t.Fatal("expected pane scrollback prefetch command after authoritative hot-only latest replace")
+		t.Fatal("expected pane scrollback prefetch command after authoritative live-tail-only latest replace")
 	}
 	_ = cmd()
 

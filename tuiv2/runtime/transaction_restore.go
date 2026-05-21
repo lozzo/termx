@@ -15,35 +15,35 @@ type TerminalAttachmentSnapshot struct {
 }
 
 type TerminalLiveStateSnapshot struct {
-	Exists                 bool
-	TerminalID             string
-	Name                   string
-	Command                []string
-	Tags                   map[string]string
-	State                  string
-	ExitCode               *int
-	Title                  string
-	Channel                uint16
-	AttachMode             string
-	Snapshot               *bridge.SnapshotRef
-	SnapshotVersion        uint64
-	SurfaceVersion         uint64
-	ScreenUpdate           VisibleScreenUpdateSummary
-	VTerm                  VTermLike
-	ScrollbackLoadedLimit  int
-	ScrollbackLoadingLimit int
-	ScrollbackExhausted    bool
-	FullReplaceBoundaryReset bool
-	AuthoritativeHotOnlyLatest  bool
-	AuthoritativeHotRowCount    int
-	AuthoritativeHotTotalRows   int
-	AuthoritativeHotLogicalRows int
-	AuthoritativeHotHasMore     bool
-	PreferSnapshot         bool
-	BootstrapPending       bool
-	Recovery               RecoveryState
-	WasStreaming           bool
-	StreamGeneration       uint64
+	Exists                           bool
+	TerminalID                       string
+	Name                             string
+	Command                          []string
+	Tags                             map[string]string
+	State                            string
+	ExitCode                         *int
+	Title                            string
+	Channel                          uint16
+	AttachMode                       string
+	Snapshot                         *bridge.SnapshotRef
+	SnapshotVersion                  uint64
+	SurfaceVersion                   uint64
+	ScreenUpdate                     VisibleScreenUpdateSummary
+	VTerm                            VTermLike
+	ScrollbackLoadedLimit            int
+	ScrollbackLoadingLimit           int
+	ScrollbackExhausted              bool
+	FullReplaceBoundaryReset         bool
+	AuthoritativeLiveTailOnlyLatest  bool
+	AuthoritativeLiveTailRowCount    int
+	AuthoritativeLiveTailTotalRows   int
+	AuthoritativeLiveTailLogicalRows int
+	AuthoritativeLiveTailHasMore     bool
+	PreferSnapshot                   bool
+	BootstrapPending                 bool
+	Recovery                         RecoveryState
+	WasStreaming                     bool
+	StreamGeneration                 uint64
 }
 
 func ClonePaneBinding(binding *PaneBinding) *PaneBinding {
@@ -130,35 +130,35 @@ func (r *Runtime) TerminalLiveStateSnapshot(terminalID string) TerminalLiveState
 		return TerminalLiveStateSnapshot{}
 	}
 	return TerminalLiveStateSnapshot{
-		Exists:                 true,
-		TerminalID:             terminal.TerminalID,
-		Name:                   terminal.Name,
-		Command:                append([]string(nil), terminal.Command...),
-		Tags:                   cloneTags(terminal.Tags),
-		State:                  terminal.State,
-		ExitCode:               cloneExitCode(terminal.ExitCode),
-		Title:                  terminal.Title,
-		Channel:                terminal.Channel,
-		AttachMode:             terminal.AttachMode,
-		Snapshot:               cloneRuntimeSnapshot(terminal.Snapshot),
-		SnapshotVersion:        terminal.SnapshotVersion,
-		SurfaceVersion:         terminal.SurfaceVersion,
-		ScreenUpdate:           cloneVisibleScreenUpdateSummary(terminal.ScreenUpdate),
-		VTerm:                  terminal.VTerm,
-		ScrollbackLoadedLimit:  terminal.ScrollbackLoadedLimit,
-		ScrollbackLoadingLimit: terminal.ScrollbackLoadingLimit,
-		ScrollbackExhausted:    terminal.ScrollbackExhausted,
-		FullReplaceBoundaryReset: terminal.FullReplaceBoundaryReset,
-		AuthoritativeHotOnlyLatest:  terminal.AuthoritativeHotOnlyLatest,
-		AuthoritativeHotRowCount:    terminal.AuthoritativeHotRowCount,
-		AuthoritativeHotTotalRows:   terminal.AuthoritativeHotTotalRows,
-		AuthoritativeHotLogicalRows: terminal.AuthoritativeHotLogicalRows,
-		AuthoritativeHotHasMore:     terminal.AuthoritativeHotHasMore,
-		PreferSnapshot:         terminal.PreferSnapshot,
-		BootstrapPending:       terminal.BootstrapPending,
-		Recovery:               terminal.Recovery,
-		WasStreaming:           terminal.Stream.Active,
-		StreamGeneration:       terminal.Stream.Generation,
+		Exists:                           true,
+		TerminalID:                       terminal.TerminalID,
+		Name:                             terminal.Name,
+		Command:                          append([]string(nil), terminal.Command...),
+		Tags:                             cloneTags(terminal.Tags),
+		State:                            terminal.State,
+		ExitCode:                         cloneExitCode(terminal.ExitCode),
+		Title:                            terminal.Title,
+		Channel:                          terminal.Channel,
+		AttachMode:                       terminal.AttachMode,
+		Snapshot:                         cloneRuntimeSnapshot(terminal.Snapshot),
+		SnapshotVersion:                  terminal.SnapshotVersion,
+		SurfaceVersion:                   terminal.SurfaceVersion,
+		ScreenUpdate:                     cloneVisibleScreenUpdateSummary(terminal.ScreenUpdate),
+		VTerm:                            terminal.VTerm,
+		ScrollbackLoadedLimit:            terminal.ScrollbackLoadedLimit,
+		ScrollbackLoadingLimit:           terminal.ScrollbackLoadingLimit,
+		ScrollbackExhausted:              terminal.ScrollbackExhausted,
+		FullReplaceBoundaryReset:         terminal.FullReplaceBoundaryReset,
+		AuthoritativeLiveTailOnlyLatest:  terminal.AuthoritativeLiveTailOnlyLatest,
+		AuthoritativeLiveTailRowCount:    terminal.AuthoritativeLiveTailRowCount,
+		AuthoritativeLiveTailTotalRows:   terminal.AuthoritativeLiveTailTotalRows,
+		AuthoritativeLiveTailLogicalRows: terminal.AuthoritativeLiveTailLogicalRows,
+		AuthoritativeLiveTailHasMore:     terminal.AuthoritativeLiveTailHasMore,
+		PreferSnapshot:                   terminal.PreferSnapshot,
+		BootstrapPending:                 terminal.BootstrapPending,
+		Recovery:                         terminal.Recovery,
+		WasStreaming:                     terminal.Stream.Active,
+		StreamGeneration:                 terminal.Stream.Generation,
 	}
 }
 
@@ -192,11 +192,11 @@ func (r *Runtime) RestoreTerminalLiveState(terminalID string, snapshot TerminalL
 		terminal.ScrollbackLoadingLimit = 0
 		terminal.ScrollbackExhausted = false
 		terminal.FullReplaceBoundaryReset = false
-		terminal.AuthoritativeHotOnlyLatest = false
-		terminal.AuthoritativeHotRowCount = 0
-		terminal.AuthoritativeHotTotalRows = 0
-		terminal.AuthoritativeHotLogicalRows = 0
-		terminal.AuthoritativeHotHasMore = false
+		terminal.AuthoritativeLiveTailOnlyLatest = false
+		terminal.AuthoritativeLiveTailRowCount = 0
+		terminal.AuthoritativeLiveTailTotalRows = 0
+		terminal.AuthoritativeLiveTailLogicalRows = 0
+		terminal.AuthoritativeLiveTailHasMore = false
 		terminal.PreferSnapshot = false
 		terminal.BootstrapPending = false
 		terminal.Recovery = RecoveryState{}
@@ -221,11 +221,11 @@ func (r *Runtime) RestoreTerminalLiveState(terminalID string, snapshot TerminalL
 	terminal.ScrollbackLoadingLimit = snapshot.ScrollbackLoadingLimit
 	terminal.ScrollbackExhausted = snapshot.ScrollbackExhausted
 	terminal.FullReplaceBoundaryReset = snapshot.FullReplaceBoundaryReset
-	terminal.AuthoritativeHotOnlyLatest = snapshot.AuthoritativeHotOnlyLatest
-	terminal.AuthoritativeHotRowCount = snapshot.AuthoritativeHotRowCount
-	terminal.AuthoritativeHotTotalRows = snapshot.AuthoritativeHotTotalRows
-	terminal.AuthoritativeHotLogicalRows = snapshot.AuthoritativeHotLogicalRows
-	terminal.AuthoritativeHotHasMore = snapshot.AuthoritativeHotHasMore
+	terminal.AuthoritativeLiveTailOnlyLatest = snapshot.AuthoritativeLiveTailOnlyLatest
+	terminal.AuthoritativeLiveTailRowCount = snapshot.AuthoritativeLiveTailRowCount
+	terminal.AuthoritativeLiveTailTotalRows = snapshot.AuthoritativeLiveTailTotalRows
+	terminal.AuthoritativeLiveTailLogicalRows = snapshot.AuthoritativeLiveTailLogicalRows
+	terminal.AuthoritativeLiveTailHasMore = snapshot.AuthoritativeLiveTailHasMore
 	terminal.PreferSnapshot = snapshot.PreferSnapshot
 	terminal.BootstrapPending = snapshot.BootstrapPending
 	terminal.Recovery = snapshot.Recovery

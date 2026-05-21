@@ -7,11 +7,11 @@ import (
 	appruntime "github.com/lozzow/termx/tuiv2/runtime"
 )
 
-func TestTerminalHasKnownScrollbackBeyondIgnoresAuthoritativeHotOnlyRows(t *testing.T) {
+func TestTerminalHasKnownScrollbackBeyondIgnoresAuthoritativeLiveTailOnlyRows(t *testing.T) {
 	terminal := &appruntime.TerminalRuntime{
 		Snapshot: &protocol.Snapshot{
 			TerminalID:             "term-1",
-			Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("hot0", 20), protocolRowFromText("hot1", 20)}),
+			Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("tail0", 20), protocolRowFromText("tail1", 20)}),
 			ScrollbackTotal:        2,
 			ScrollbackLogicalTotal: 2,
 			ScrollbackLoadedRows:   0,
@@ -20,7 +20,7 @@ func TestTerminalHasKnownScrollbackBeyondIgnoresAuthoritativeHotOnlyRows(t *test
 	}
 
 	if terminalHasKnownScrollbackBeyond(terminal, 0) {
-		t.Fatal("expected authoritative hot-only rows not to count as known committed scrollback")
+		t.Fatal("expected authoritative live-tail-only rows not to count as known committed scrollback")
 	}
 }
 

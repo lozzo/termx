@@ -404,9 +404,9 @@ func terminalHasKnownScrollbackBeyond(terminal *appruntime.TerminalRuntime, load
 	}
 	known := terminal.ScrollbackLoadedLimit
 	if snapshot := terminal.Snapshot; snapshot != nil {
-		// Authoritative latest snapshots can materialize hot visual rows with no
+		// Authoritative latest snapshots can materialize live-tail visual rows with no
 		// committed window loaded yet. In that case, only metadata that exceeds
-		// the hot tail should reopen exhausted paging; the hot rows themselves
+		// the live tail should reopen exhausted paging; the live-tail rows themselves
 		// are display-only and must not become "older history".
 		if snapshotHasAuthoritativeZeroCommittedWindow(snapshot) {
 			if snapshot.ScrollbackTotal > len(snapshot.Scrollback) {

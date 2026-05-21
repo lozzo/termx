@@ -320,8 +320,8 @@ func TestPagedSnapshotLoadedFallsBackToRuntimeMergeWhenFrozenCopyModeDoesNotCons
 	}
 
 	model.copyMode.Snapshot.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
-		protocolRowFromText("hot0", 8),
-		protocolRowFromText("hot1", 8),
+		protocolRowFromText("tail0", 8),
+		protocolRowFromText("tail1", 8),
 	})
 	model.copyMode.Snapshot.ScrollbackOffset = 0
 	model.copyMode.Snapshot.ScrollbackTotal = 2
@@ -390,7 +390,7 @@ func TestPagedSnapshotLoadedFallsBackToRuntimeMergeWhenFrozenCopyModeDoesNotCons
 	if got, want := len(frozen.Snapshot.Scrollback), 2; got != want {
 		t.Fatalf("expected unmatched frozen snapshot to stay unchanged, got %d rows want %d", got, want)
 	}
-	if got := rowTextFromCompactRow(frozen.Snapshot.Scrollback[0]); got != "hot0" {
+	if got := rowTextFromCompactRow(frozen.Snapshot.Scrollback[0]); got != "tail0" {
 		t.Fatalf("expected frozen snapshot not to consume live page, got %q", got)
 	}
 }
@@ -1104,13 +1104,13 @@ func TestCopyModeEnterPrefetchesHistoryWhenFrozenBufferHasNoScrollback(t *testin
 	}
 }
 
-func TestCopyModeTopHotOnlyLatestDoesNotAdvanceOlderRequestOffsetByHotRows(t *testing.T) {
+func TestCopyModeTopLiveTailOnlyLatestDoesNotAdvanceOlderRequestOffsetByLiveTailRows(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	terminal := model.runtime.Registry().GetOrCreate("term-1")
 	terminal.Snapshot = &protocol.Snapshot{
 		TerminalID:             "term-1",
 		Size:                   protocol.Size{Cols: 40, Rows: 8},
-		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("hot0", 40), protocolRowFromText("hot1", 40)}),
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("tail0", 40), protocolRowFromText("tail1", 40)}),
 		ScrollbackTotal:        4,
 		ScrollbackLogicalTotal: 4,
 		ScrollbackLoadedRows:   0,
@@ -1159,17 +1159,17 @@ func TestCopyModeTopHotOnlyLatestDoesNotAdvanceOlderRequestOffsetByHotRows(t *te
 	}
 	request := client.viewportRequests[len(client.viewportRequests)-1]
 	if request.offset != 0 {
-		t.Fatalf("expected hot-only latest snapshot to keep older-request offset at 0, got %#v", request)
+		t.Fatalf("expected live-tail-only latest snapshot to keep older-request offset at 0, got %#v", request)
 	}
 }
 
-func TestCopyModeTopAfterActiveLiveRefreshKeepsAuthoritativeHotOnlyOlderOffsetAtZero(t *testing.T) {
+func TestCopyModeTopAfterActiveLiveRefreshKeepsAuthoritativeLiveTailOnlyOlderOffsetAtZero(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	terminal := model.runtime.Registry().GetOrCreate("term-1")
 	terminal.Snapshot = &protocol.Snapshot{
 		TerminalID:             "term-1",
 		Size:                   protocol.Size{Cols: 40, Rows: 8},
-		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("hot0", 40), protocolRowFromText("hot1", 40)}),
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("tail0", 40), protocolRowFromText("tail1", 40)}),
 		ScrollbackTotal:        4,
 		ScrollbackLogicalTotal: 4,
 		ScrollbackLoadedRows:   0,
@@ -1236,7 +1236,7 @@ func TestCopyModeTopAfterActiveLiveRefreshKeepsAuthoritativeHotOnlyOlderOffsetAt
 	}
 	request := client.viewportRequests[len(client.viewportRequests)-1]
 	if request.offset != 0 {
-		t.Fatalf("expected refreshed hot-only latest snapshot to keep older-request offset at 0, got %#v", request)
+		t.Fatalf("expected refreshed live-tail-only latest snapshot to keep older-request offset at 0, got %#v", request)
 	}
 }
 
@@ -1277,13 +1277,13 @@ func TestCopyModeEnterPrefetchesWhenExhaustedFlagIsStale(t *testing.T) {
 	}
 }
 
-func TestCopyModeEnterDoesNotPrefetchAuthoritativeHotOnlyRowsWhenExhausted(t *testing.T) {
+func TestCopyModeEnterDoesNotPrefetchAuthoritativeLiveTailOnlyRowsWhenExhausted(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	terminal := model.runtime.Registry().GetOrCreate("term-1")
 	terminal.Snapshot = &protocol.Snapshot{
 		TerminalID:             "term-1",
 		Size:                   protocol.Size{Cols: 40, Rows: 8},
-		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("hot0", 40), protocolRowFromText("hot1", 40)}),
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("tail0", 40), protocolRowFromText("tail1", 40)}),
 		ScrollbackTotal:        2,
 		ScrollbackLogicalTotal: 2,
 		ScrollbackLoadedRows:   0,
@@ -1303,16 +1303,16 @@ func TestCopyModeEnterDoesNotPrefetchAuthoritativeHotOnlyRowsWhenExhausted(t *te
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
 
 	if got := len(client.viewportRequests); got != 0 {
-		t.Fatalf("expected hot-only authoritative rows not to trigger copy-mode history prefetch, got %#v", client.viewportRequests)
+		t.Fatalf("expected live-tail-only authoritative rows not to trigger copy-mode history prefetch, got %#v", client.viewportRequests)
 	}
 	if !terminal.ScrollbackExhausted {
-		t.Fatal("expected exhausted flag to stay set when only hot authoritative rows are known")
+		t.Fatal("expected exhausted flag to stay set when only live-tail authoritative rows are known")
 	}
 	if model.copyMode.Snapshot == nil {
 		t.Fatal("expected copy-mode snapshot")
 	}
 	if got, want := len(model.copyMode.Snapshot.Scrollback), 2; got != want {
-		t.Fatalf("expected copy mode to keep hot visual rows without loading older history, got %d want %d", got, want)
+		t.Fatalf("expected copy mode to keep live-tail visual rows without loading older history, got %d want %d", got, want)
 	}
 }
 
@@ -1547,15 +1547,15 @@ func TestCopyModeBoundedWindowRequestsNextOlderPageByLoadedDepth(t *testing.T) {
 	}
 }
 
-func TestCopyModeTopMixedCanonicalLatestAndHotTailKeepsCommittedOffsetAndPrependsOlderPage(t *testing.T) {
+func TestCopyModeTopMixedCanonicalLatestAndLiveTailKeepsCommittedOffsetAndPrependsOlderPage(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	scrollback := make([][]protocol.Cell, 0, terminalMaterializedScrollbackLimit+2)
 	for i := 1000; i < 13000; i++ {
 		scrollback = append(scrollback, protocolRowFromText(fmt.Sprintf("canon-%05d", i), 40))
 	}
 	scrollback = append(scrollback,
-		protocolRowFromText("hot-open-0", 40),
-		protocolRowFromText("hot-open-1", 40),
+		protocolRowFromText("live-tail-open-0", 40),
+		protocolRowFromText("live-tail-open-1", 40),
 	)
 
 	terminal := model.runtime.Registry().GetOrCreate("term-1")
@@ -1586,7 +1586,7 @@ func TestCopyModeTopMixedCanonicalLatestAndHotTailKeepsCommittedOffsetAndPrepend
 		t.Fatalf("expected frozen copy-mode committed depth %d, got %d", want, got)
 	}
 	if got, want := len(model.copyMode.Snapshot.Scrollback), terminalMaterializedScrollbackLimit+2; got != want {
-		t.Fatalf("expected frozen scrollback to include committed rows plus hot tail, got %d want %d", got, want)
+		t.Fatalf("expected frozen scrollback to include committed rows plus live tail, got %d want %d", got, want)
 	}
 	buffer, ok := model.activeCopyModeBuffer()
 	if !ok {
@@ -1596,7 +1596,7 @@ func TestCopyModeTopMixedCanonicalLatestAndHotTailKeepsCommittedOffsetAndPrepend
 		t.Fatalf("expected last committed materialized row to keep canonical ref, got %#v", got)
 	}
 	if got := buffer.rowRef(12000); got.Valid {
-		t.Fatalf("expected first hot tail row not to consume committed row ids, got %#v", got)
+		t.Fatalf("expected first live tail row not to consume committed row ids, got %#v", got)
 	}
 
 	beforeViewportCalls := len(client.viewportRequests)
@@ -1607,7 +1607,7 @@ func TestCopyModeTopMixedCanonicalLatestAndHotTailKeepsCommittedOffsetAndPrepend
 	}
 	request := client.viewportRequests[len(client.viewportRequests)-1]
 	if request.terminalID != "term-1" || request.offset != 12000 || request.limit != 500 || request.cols <= 0 {
-		t.Fatalf("expected committed-depth viewport request despite hot tail, got %#v", request)
+		t.Fatalf("expected committed-depth viewport request despite live tail, got %#v", request)
 	}
 
 	olderPageRows := make([][]protocol.Cell, 0, 500)
@@ -1648,7 +1648,7 @@ func TestCopyModeTopMixedCanonicalLatestAndHotTailKeepsCommittedOffsetAndPrepend
 		t.Fatalf("expected bounded frozen buffer after older-page prepend, got %d want %d", got, want)
 	}
 	if got, want := model.copyMode.Snapshot.ScrollbackOffset, 502; got != want {
-		t.Fatalf("expected bounded prepend to trim 500 newest committed rows plus 2 hot rows, got offset=%d want %d", got, want)
+		t.Fatalf("expected bounded prepend to trim 500 newest committed rows plus 2 live-tail rows, got offset=%d want %d", got, want)
 	}
 	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "canon-00500" {
 		t.Fatalf("expected prepended older page to start frozen buffer, got %q", got)
@@ -1774,8 +1774,8 @@ func TestCopyModeRejectsOlderPageWhenCurrentHasNoCanonicalHistoryWindow(t *testi
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
 	model.copyMode.Snapshot.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
-		protocolRowFromText("hot0", 5),
-		protocolRowFromText("hot1", 5),
+		protocolRowFromText("tail0", 5),
+		protocolRowFromText("tail1", 5),
 	})
 	model.copyMode.Snapshot.ScrollbackOffset = 0
 	model.copyMode.Snapshot.ScrollbackTotal = 2
@@ -1801,10 +1801,10 @@ func TestCopyModeRejectsOlderPageWhenCurrentHasNoCanonicalHistoryWindow(t *testi
 		t.Fatalf("expected older page to be rejected when current frozen snapshot has no canonical window, loaded=%d want %d", got, want)
 	}
 	if got := len(model.copyMode.Snapshot.Scrollback); got != 2 {
-		t.Fatalf("expected hot-only frozen snapshot to remain unchanged, got %d rows", got)
+		t.Fatalf("expected live-tail-only frozen snapshot to remain unchanged, got %d rows", got)
 	}
-	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "hot0" {
-		t.Fatalf("expected first frozen row to stay hot0, got %q", got)
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "tail0" {
+		t.Fatalf("expected first frozen row to stay tail0, got %q", got)
 	}
 	if got := model.copyMode.Snapshot.HistoryGeneration; got != 0 {
 		t.Fatalf("expected frozen snapshot to stay non-canonical, got generation=%d", got)
@@ -1844,10 +1844,10 @@ func TestCopyModePagedLatestReplaceDropsFrozenCanonicalMetadataAndKeepsOlderOffs
 		t.Fatalf("expected initial frozen snapshot loaded depth %d, got %d", want, got)
 	}
 
-	latestHotOnly := &protocol.Snapshot{
+	latestLiveTailOnly := &protocol.Snapshot{
 		TerminalID:             "term-1",
 		Size:                   terminal.Snapshot.Size,
-		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("hot0", 40), protocolRowFromText("hot1", 40)}),
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("tail0", 40), protocolRowFromText("tail1", 40)}),
 		ScrollbackOffset:       0,
 		ScrollbackTotal:        2,
 		ScrollbackLogicalTotal: 2,
@@ -1863,7 +1863,7 @@ func TestCopyModePagedLatestReplaceDropsFrozenCanonicalMetadataAndKeepsOlderOffs
 
 	_, cmd := model.Update(orchestrator.SnapshotLoadedMsg{
 		TerminalID:      "term-1",
-		Snapshot:        latestHotOnly,
+		Snapshot:        latestLiveTailOnly,
 		Offset:          0,
 		Limit:           terminalHistoryInitialPageLimit,
 		Paged:           true,
@@ -1875,16 +1875,16 @@ func TestCopyModePagedLatestReplaceDropsFrozenCanonicalMetadataAndKeepsOlderOffs
 		t.Fatal("expected frozen snapshot after paged latest replace")
 	}
 	if got, want := len(model.copyMode.Snapshot.Scrollback), 2; got != want {
-		t.Fatalf("expected hot-only latest rows to replace frozen materialization, got %d want %d", got, want)
+		t.Fatalf("expected live-tail-only latest rows to replace frozen materialization, got %d want %d", got, want)
 	}
-	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "hot0" {
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "tail0" {
 		t.Fatalf("expected replace semantics to keep incoming latest rows, got %q", got)
 	}
 	if got, want := model.copyMode.Snapshot.ScrollbackLoadedRows, 0; got != want {
 		t.Fatalf("expected replace semantics to drop old loaded rows, got %d want %d", got, want)
 	}
 	if got := snapshotScrollbackLoadedDepth(model.copyMode.Snapshot); got != 0 {
-		t.Fatalf("expected authoritative hot-only latest to keep committed depth at 0, got %d", got)
+		t.Fatalf("expected authoritative live-tail-only latest to keep committed depth at 0, got %d", got)
 	}
 	if got := model.copyMode.LoadedRows; got != 0 {
 		t.Fatalf("expected copy-mode loaded depth to reset to 0, got %d", got)
@@ -1905,7 +1905,7 @@ func TestCopyModePagedLatestReplaceDropsFrozenCanonicalMetadataAndKeepsOlderOffs
 	}
 	request := client.viewportRequests[len(client.viewportRequests)-1]
 	if request.offset != 0 {
-		t.Fatalf("expected next older request offset to stay at 0 after hot-only replace, got %#v", request)
+		t.Fatalf("expected next older request offset to stay at 0 after live-tail-only replace, got %#v", request)
 	}
 }
 
@@ -2021,7 +2021,7 @@ func TestCopyModeBufferDoesNotAssignCanonicalRefBeyondLoadedCommittedRows(t *tes
 		snapshot: &protocol.Snapshot{
 			TerminalID:             "term-1",
 			Size:                   protocol.Size{Cols: 5, Rows: 1},
-			Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("cold0", 5), protocolRowFromText("hot0 ", 5)}),
+			Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("committed0", 5), protocolRowFromText("tail0 ", 5)}),
 			ScrollbackTotal:        2,
 			ScrollbackLogicalTotal: 1,
 			ScrollbackLoadedRows:   1,
@@ -2037,7 +2037,7 @@ func TestCopyModeBufferDoesNotAssignCanonicalRefBeyondLoadedCommittedRows(t *tes
 		t.Fatalf("expected first loaded committed row to keep canonical ref, got %#v", got)
 	}
 	if got := buffer.rowRef(1); got.Valid {
-		t.Fatalf("expected materialized hot row beyond loaded committed depth to have no canonical ref, got %#v", got)
+		t.Fatalf("expected materialized live-tail row beyond loaded committed depth to have no canonical ref, got %#v", got)
 	}
 }
 

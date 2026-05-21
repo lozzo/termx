@@ -67,11 +67,11 @@ func (r *Runtime) resetTerminalLiveState(terminal *TerminalRuntime) {
 	}
 	nextGeneration := terminal.Stream.Generation + 1
 	fullReplaceBoundaryReset := terminal.FullReplaceBoundaryReset
-	authoritativeHotOnlyLatest := terminal.AuthoritativeHotOnlyLatest
-	authoritativeHotRowCount := terminal.AuthoritativeHotRowCount
-	authoritativeHotTotalRows := terminal.AuthoritativeHotTotalRows
-	authoritativeHotLogicalRows := terminal.AuthoritativeHotLogicalRows
-	authoritativeHotHasMore := terminal.AuthoritativeHotHasMore
+	authoritativeLiveTailOnlyLatest := terminal.AuthoritativeLiveTailOnlyLatest
+	authoritativeLiveTailRowCount := terminal.AuthoritativeLiveTailRowCount
+	authoritativeLiveTailTotalRows := terminal.AuthoritativeLiveTailTotalRows
+	authoritativeLiveTailLogicalRows := terminal.AuthoritativeLiveTailLogicalRows
+	authoritativeLiveTailHasMore := terminal.AuthoritativeLiveTailHasMore
 	if terminal.Stream.Stop != nil {
 		terminal.Stream.Stop()
 	}
@@ -89,11 +89,11 @@ func (r *Runtime) resetTerminalLiveState(terminal *TerminalRuntime) {
 	terminal.ScrollbackLoadingLimit = 0
 	terminal.ScrollbackExhausted = false
 	terminal.FullReplaceBoundaryReset = fullReplaceBoundaryReset
-	terminal.AuthoritativeHotOnlyLatest = authoritativeHotOnlyLatest
-	terminal.AuthoritativeHotRowCount = authoritativeHotRowCount
-	terminal.AuthoritativeHotTotalRows = authoritativeHotTotalRows
-	terminal.AuthoritativeHotLogicalRows = authoritativeHotLogicalRows
-	terminal.AuthoritativeHotHasMore = authoritativeHotHasMore
+	terminal.AuthoritativeLiveTailOnlyLatest = authoritativeLiveTailOnlyLatest
+	terminal.AuthoritativeLiveTailRowCount = authoritativeLiveTailRowCount
+	terminal.AuthoritativeLiveTailTotalRows = authoritativeLiveTailTotalRows
+	terminal.AuthoritativeLiveTailLogicalRows = authoritativeLiveTailLogicalRows
+	terminal.AuthoritativeLiveTailHasMore = authoritativeLiveTailHasMore
 	terminal.VTerm = nil
 }
 
