@@ -105,7 +105,7 @@
 - `mutable live tail`
 - `screen projection`
 
-如果后面还继续保留 `hot` 这个词，那它更适合表示 `mutable live tail`，而不是“唯一那条还没封口的 latest line”。
+当前决议是不再继续保留 `hot/cold` 作为代码、测试 helper、内部 contract 或运行时状态的主语义命名；这些词只用于说明旧模型缺陷或迁移记录。
 
 ## 仍然成立的结论
 
@@ -132,13 +132,13 @@
 仍留到后续阶段的问题是：
 
 - reclaim 的独立内存预算和淘汰策略；
-- wire / runtime / app 层未来是否也要显式表达这个 ownership 模型，而不是只传现有的 hot/cold hint？
+- wire / runtime / app 层未来是否也要显式表达这个 ownership 模型，而不是只消费当前保守的 snapshot / viewport / update 语义？
 
 ## 当前实现决议
 
 此前小切片已经把 process exit、attach/bootstrap/recovery/full-replace、grow/shrink/reclaim、clear screen 的关键语义用测试钉住。
 
-下一步不再继续做渐进式过渡，而是进入一次性 `termx-core` 内部模型切换：
+当前已经进入并完成第一阶段 `termx-core` 内部模型切换：
 
 - 补齐旧单向 `hot -> cold` 模型缺失的 live-tail ownership 结构；
 - 引入显式 `mutable live tail` segment 结构；

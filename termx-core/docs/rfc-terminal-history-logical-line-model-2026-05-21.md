@@ -449,9 +449,7 @@ segment 至少需要表达：
 
 ### 14.2 Core / VTerm 边界
 
-当前已有一些旧 tail ownership hint，但语义仍偏局部，且命名仍带有旧模型痕迹。
-
-本阶段需要先把 `termx-vterm` -> `termx-core` 的内部 hint 改为 live-tail / persisted-history 语义命名；未来若要进一步稳定 resize 和 tail ownership，可能需要更明确的内部 contract，而不只是局部的 append suffix 提示。
+`termx-vterm` -> `termx-core` 的内部 hint 已改为 live-tail / persisted-history 语义命名，不保留旧字段别名。未来若要进一步稳定 resize 和 tail ownership，可能需要更明确的内部 contract，而不只是局部的 append suffix 提示。
 
 ### 14.3 Runtime / App / Wire
 
@@ -535,7 +533,7 @@ segment 至少需要表达：
 
 ## 18. 迁移计划
 
-建议按阶段推进：
+当前按阶段推进，Phase 1 已完成到内部基线收口状态：
 
 ### Phase 0: 语义冻结
 
@@ -544,10 +542,10 @@ segment 至少需要表达：
 
 ### Phase 1: Core 内部模型收敛
 
-- 在 `termx-core` 内部一次性切换到 persisted history / mutable live tail / screen projection 的显式模型。
-- 补齐旧单向 `hot -> cold` 模型缺失的 live-tail ownership 结构。
-- 让 write / resize / snapshot / viewport / process-exit 路径统一通过 live-tail ownership 结构表达。
-- 删除代码、测试 helper、内部 contract 与运行时状态中的旧 `hot/cold` 主语义命名。
+- 已在 `termx-core` 内部一次性切换到 persisted history / mutable live tail / screen projection 的显式模型。
+- 已补齐旧单向 `hot -> cold` 模型缺失的 live-tail ownership 结构。
+- write / resize / snapshot / viewport / process-exit 路径已统一通过 live-tail ownership 结构表达。
+- 已删除代码、测试 helper、内部 contract 与运行时状态中的旧 `hot/cold` 主语义命名。
 
 ### Phase 2: Snapshot / Viewport / Paging 适配
 

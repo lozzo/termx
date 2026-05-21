@@ -2,21 +2,21 @@
 
 ## 1. 文档目标
 
-这份文档用于定义 `termx-core` 后续终端历史模型的设计方向，重点回答下面几个问题：
+这份文档用于定义 `termx-core` 终端历史模型的设计方向，重点回答下面几个问题：
 
 - 终端历史的“真相”到底应该按什么粒度存储？
-- `screen`、`hot`、`cold` 这些概念分别表示什么？
+- `persisted history store`、`mutable live tail`、`screen projection` 这些概念分别表示什么？
 - resize、attach、alt-screen、clear-screen、process exit 这类边界事件应该如何理解？
 - 哪些事件会创造历史，哪些事件只是投影或重建视图？
 
-这份文档是语义设计稿，不是实现方案，也不要求当前代码已经满足这里的所有约束。
+这份文档是语义设计稿，不是完整实现说明；当前 Phase 1 已以显式 `mutable live tail` 结构作为内部基线。
 
 当前补充决议：
 
 - 第一阶段不再采用渐进迁移策略。
 - `termx-core` 内部必须一次性切换到显式的 `persisted history store / mutable live tail / screen projection` 模型。
 - `mutable live tail` 内部采用 segment 结构。
-- `hot/cold` 术语可以保留，但必须作为三层模型下的派生或兼容表述使用。
+- `hot/cold` 只能出现在旧模型问题说明或迁移记录中，不再作为代码、测试 helper、内部 contract 或运行时状态的主语义命名保留。
 
 ## 2. 背景与动机
 
@@ -331,9 +331,9 @@ resize 是本设计里最重要的事件之一。
 
 两者都主要是在调整 projection 和 ownership，而不是直接改写历史事实。
 
-## 10. 对 hot / cold 术语的建议
+## 10. 对 hot / cold 术语的当前决议
 
-如果继续使用 `hot` / `cold` 术语，需要先收紧定义。
+当前实现不再继续使用 `hot` / `cold` 作为主语义命名。
 
 ### 10.1 不推荐的旧理解
 
@@ -342,7 +342,7 @@ resize 是本设计里最重要的事件之一。
 
 这种定义在 grow resize 下不成立。
 
-### 10.2 更合理的理解
+### 10.2 旧过渡理解
 
 - `hot` 更接近 `mutable live tail`，
 - `cold` 更接近 `persisted history store`。
@@ -353,9 +353,11 @@ resize 是本设计里最重要的事件之一。
 - `hot` 可以包含 reclaim 回来的 sealed suffix，
 - `cold` 也不再意味着“永不重新参与 live 投影”。
 
+这个理解只用于解释旧模型为什么过窄；第一阶段实现不把它继续作为代码或测试 helper 的命名基础。
+
 ### 10.3 当前实现决议
 
-第一阶段内部重构不再继续沿用旧的单向 `hot -> cold` 作为主实现模型。
+第一阶段内部重构已经不再继续沿用旧的单向 `hot -> cold` 作为主实现模型。
 
 `termx-core` 中应显式引入 `mutable live tail` 结构，并用 segment 表达：
 
@@ -364,7 +366,7 @@ resize 是本设计里最重要的事件之一。
 - visual rows 及 timestamp / row kind / wrapped 元数据；
 - wrap-pending 状态。
 
-旧的 `hot` 相关 helper 和测试命名应随实现一起补充 live-tail 语义。若某些局部变量为了小范围算法可读性继续保留旧词，也必须服从三层模型边界。
+旧的 `hot` 相关 helper、测试命名、内部 contract 和运行时状态命名应随实现一起删除或改为 live-tail / persisted-history 语义；不再为了小范围兼容继续保留旧主语义命名。
 
 ## 11. Copy Mode / Replay / Paging 的语义收益
 
