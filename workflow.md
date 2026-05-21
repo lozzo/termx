@@ -213,6 +213,22 @@
 - 让当前 hot/cold 代码路径逐步向 live tail / persisted history 语义靠拢；
 - 暂不扩展 wire/runtime/app contract。
 
+### 7.1 当前执行切片
+
+为避免第一阶段继续泛化，本轮只按下面这些可独立提交的切片推进：
+
+1. `process exit` 语义闭环
+   - 在 `termx-core` 内部让 primary `live tail` 在退出时 `force seal` 进入 `persisted history`。
+   - 如果退出时仍处于 `alt-screen`，先丢弃 alt 内容，再恢复并封口 primary surface。
+2. `attach / bootstrap / recovery / full-replace` 非历史创建事件回归测试
+   - 补齐“只重建投影、不创建历史”的 core 侧测试约束。
+3. `grow resize / shrink resize / reclaim` 边界收紧
+   - 补齐 grow 只按完整 logical line reclaim、shrink 只回收到 mutable tail 的测试与实现。
+4. `clear screen` 与 primary history 冻结语义
+   - 明确 clear screen 只改变 surface，不得悄悄改写已提交历史。
+
+本轮先做切片 1，不并行展开后续切片。
+
 ### 当前不启动的工作
 
 - protocol 层 ownership 扩展；

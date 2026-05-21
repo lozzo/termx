@@ -588,7 +588,9 @@ func (t *Terminal) Restart() error {
 		t.mu.Unlock()
 		return ErrTerminalNotExited
 	}
-	preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped := restartPreservedRows(t.vterm)
+	hotAppendRows := cloneGridDamageOps(t.hotAppendRows)
+	hotWrapPending := t.hotWrapPending
+	preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds, preservedScrollbackWrapped := restartPreservedRows(t, hotAppendRows, hotWrapPending)
 	grid := t.grid
 	gridAppender := t.gridAppender
 	cfg := terminalConfig{
@@ -657,38 +659,19 @@ func (t *Terminal) Restart() error {
 	return nil
 }
 
-func restartPreservedRows(vt *vterm.VTerm) ([][]vterm.Cell, []time.Time, []string, []bool) {
-	if vt == nil {
+func restartPreservedRows(t *Terminal, hotAppendRows []vterm.DamageOp, hotWrapPending bool) ([][]vterm.Cell, []time.Time, []string, []bool) {
+	if t == nil || t.vterm == nil {
 		return nil, nil, nil, nil
 	}
-	scrollback := vt.ScrollbackContent()
-	scrollbackTimestamps := vt.ScrollbackTimestamps()
-	scrollbackRowKinds := vt.ScrollbackRowKinds()
-	scrollbackWrapped := vt.ScrollbackWrapped()
-	screen := trimTrailingBlankVTermRows(vt.ScreenContent().Cells)
-	screenTimestamps := trimTrailingZeroTimes(vt.ScreenTimestamps(), len(screen))
-	screenRowKinds := trimTrailingStrings(vt.ScreenRowKinds(), len(screen))
-	screenWrapped := trimBoolSlice(vt.ScreenWrapped(), len(screen))
 	restartAt := time.Now().UTC()
-	if len(screen) == 0 {
-		out := append([][]vterm.Cell(nil), scrollback...)
-		timestamps := append([]time.Time(nil), scrollbackTimestamps...)
-		rowKinds := append([]string(nil), scrollbackRowKinds...)
-		wrapped := append([]bool(nil), scrollbackWrapped...)
-		return appendRestartMarker(out, timestamps, rowKinds, wrapped, restartAt)
+	rows := t.primaryLiveTailRowsForExit(hotAppendRows, hotWrapPending)
+	if len(rows) == 0 {
+		return appendRestartMarker(nil, nil, nil, nil, restartAt)
 	}
-	out := make([][]vterm.Cell, 0, len(scrollback)+len(screen))
-	out = append(out, scrollback...)
-	out = append(out, screen...)
-	timestamps := make([]time.Time, 0, len(scrollbackTimestamps)+len(screenTimestamps))
-	timestamps = append(timestamps, scrollbackTimestamps...)
-	timestamps = append(timestamps, screenTimestamps...)
-	rowKinds := make([]string, 0, len(scrollbackRowKinds)+len(screenRowKinds))
-	rowKinds = append(rowKinds, scrollbackRowKinds...)
-	rowKinds = append(rowKinds, screenRowKinds...)
-	wrapped := make([]bool, 0, len(scrollbackWrapped)+len(screenWrapped))
-	wrapped = append(wrapped, scrollbackWrapped...)
-	wrapped = append(wrapped, screenWrapped...)
+	out := terminalGridRowsToCellsRows(rows)
+	timestamps := terminalGridRowsTimestamps(rows)
+	rowKinds := terminalGridRowsKinds(rows)
+	wrapped := terminalGridRowsWrapped(rows)
 	return appendRestartMarker(out, timestamps, rowKinds, wrapped, restartAt)
 }
 
@@ -1158,6 +1141,157 @@ func combinedRowWindowCoordinates(store *terminalGridStore, totalRows int, start
 	}
 	baseRowID, _, _ := store.coordinates()
 	return baseRowID + uint64(start), baseRowID + uint64(end-1)
+}
+
+func (t *Terminal) sealLiveTailForProcessExitLocked() error {
+	if t == nil || t.vterm == nil || t.grid == nil {
+		return nil
+	}
+	modes := t.vterm.Modes()
+	if modes.AlternateScreen || t.vterm.ScreenContent().IsAlternateScreen {
+		if _, err := t.vterm.Write([]byte("\x1b[?1049l")); err != nil {
+			return err
+		}
+		t.alternateGrid.reset()
+	}
+	rows := t.primaryLiveTailRowsForExit(t.hotAppendRows, t.hotWrapPending)
+	if len(rows) == 0 {
+		t.hotAppendRows = nil
+		t.hotWrapPending = false
+		return nil
+	}
+	if t.gridAppender != nil {
+		t.gridAppender.flush()
+	}
+	if err := t.grid.appendRows(rows); err != nil {
+		return err
+	}
+	t.hotAppendRows = nil
+	t.hotWrapPending = false
+	return nil
+}
+
+func (t *Terminal) primaryLiveTailRowsForExit(hotAppendRows []vterm.DamageOp, hotWrapPending bool) []terminalGridRow {
+	if t == nil || t.vterm == nil {
+		return nil
+	}
+	vt := t.vterm
+	screen := trimTrailingBlankVTermRows(vt.ScreenContent().Cells)
+	screenTimestamps := trimTrailingZeroTimes(vt.ScreenTimestamps(), len(screen))
+	screenRowKinds := trimTrailingStrings(vt.ScreenRowKinds(), len(screen))
+	screenWrapped := trimBoolSlice(vt.ScreenWrapped(), len(screen))
+	if len(screen) == 0 && len(hotAppendRows) == 0 && !hotWrapPending {
+		return nil
+	}
+
+	out := make([]terminalGridRow, 0, len(hotAppendRows)+len(screen))
+	for _, row := range hotAppendRows {
+		out = append(out, terminalGridRow{
+			cells:     damageOpCells(row),
+			timestamp: row.Timestamp,
+			rowKind:   row.RowKind,
+			wrapped:   row.WrappedSet && row.Wrapped,
+		})
+	}
+
+	if len(screen) > 0 {
+		screenRows := terminalGridRowsFromPreserved(screen, screenTimestamps, screenRowKinds, screenWrapped)
+		if t.grid != nil {
+			cols, _ := vt.Size()
+			if cols <= 0 {
+				cols = len(screen[0])
+			}
+			if cols > 0 {
+				latestCold, err := t.grid.Viewport(0, len(screenRows), cols)
+				if err == nil && len(latestCold.Rows) > 0 {
+					overlap := scrollbackScreenOverlap(
+						convertRows(latestCold.Rows),
+						latestCold.Timestamps,
+						latestCold.RowKinds,
+						latestCold.Wrapped,
+						convertRows(terminalGridRowsToCellsRows(screenRows)),
+						screenTimestamps,
+						screenRowKinds,
+						screenWrapped,
+					)
+					if overlap > 0 && overlap <= len(screenRows) {
+						screenRows = screenRows[overlap:]
+						screenTimestamps = trimTimeMetadataHead(screenTimestamps, overlap)
+						screenRowKinds = trimStringMetadataHead(screenRowKinds, overlap)
+						screenWrapped = trimBoolMetadataHead(screenWrapped, overlap)
+					}
+				}
+			}
+		}
+		if len(hotAppendRows) > 0 {
+			screenCore := convertRows(terminalGridRowsToCellsRows(screenRows))
+			hotCore := convertRows(terminalGridRowsToCellsRows(out))
+			overlap := scrollbackScreenOverlap(
+				hotCore,
+				terminalGridRowsTimestamps(out),
+				terminalGridRowsKinds(out),
+				terminalGridRowsWrapped(out),
+				screenCore,
+				screenTimestamps,
+				screenRowKinds,
+				screenWrapped,
+			)
+			if overlap > 0 && overlap <= len(screenRows) {
+				screenRows = screenRows[overlap:]
+			}
+		}
+		out = append(out, screenRows...)
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+	out[len(out)-1].wrapped = false
+	return out
+}
+
+func terminalGridRowsToCellsRows(rows []terminalGridRow) [][]vterm.Cell {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([][]vterm.Cell, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, cloneVTermCells(row.cells))
+	}
+	return out
+}
+
+func terminalGridRowsTimestamps(rows []terminalGridRow) []time.Time {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]time.Time, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.timestamp)
+	}
+	return out
+}
+
+func terminalGridRowsKinds(rows []terminalGridRow) []string {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.rowKind)
+	}
+	return out
+}
+
+func terminalGridRowsWrapped(rows []terminalGridRow) []bool {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]bool, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.wrapped)
+	}
+	return out
 }
 
 func expandDamageWindowStartToLogicalLine(rows []vterm.DamageOp, start int) int {
@@ -2016,6 +2150,12 @@ func (t *Terminal) waitLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, 
 			t.logger.Warn("termx terminal parser did not drain before close", "terminal_id", t.id, "epoch", epoch)
 		}
 	}
+
+	t.streamMu.Lock()
+	if err := t.sealLiveTailForProcessExitLocked(); err != nil && t.logger != nil {
+		t.logger.Warn("termx terminal process-exit force seal failed", "terminal_id", t.id, "epoch", epoch, "error", err)
+	}
+	t.streamMu.Unlock()
 
 	t.mu.Lock()
 	if t.processEpoch != epoch || t.pty != p {

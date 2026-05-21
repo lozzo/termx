@@ -2257,6 +2257,112 @@ func TestTerminalRestartPreservesScrollbackAcrossRestart(t *testing.T) {
 	t.Fatal("timed out waiting for restarted terminal output")
 }
 
+func TestTerminalProcessExitForceSealsPrimaryLiveTail(t *testing.T) {
+	ctx := context.Background()
+	bus := NewEventBus(nil)
+
+	term, err := newTerminal(ctx, bus, terminalConfig{
+		ID:             "exit-force-seal",
+		Name:           "seal",
+		Command:        []string{"bash", "--noprofile", "--norc", "-c", "printf 'abcdefghij'; exit 0"},
+		Size:           Size{Cols: 4, Rows: 1},
+		ScrollbackSize: 128,
+		KeepAfterExit:  time.Second,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("new terminal failed: %v", err)
+	}
+	defer term.Close()
+
+	select {
+	case <-term.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for terminal exit")
+	}
+
+	snap := term.Snapshot(0, 10)
+	if snap == nil {
+		t.Fatal("expected snapshot")
+	}
+	var combined []string
+	for _, row := range snap.Scrollback {
+		combined = append(combined, rowToString(row))
+	}
+	for _, row := range snap.Screen.Cells {
+		combined = append(combined, rowToString(row))
+	}
+	if !reflect.DeepEqual(combined, []string{"abcd", "efgh", "ij"}) {
+		t.Fatalf("expected exited snapshot to expose sealed logical line without duplication, got %#v", combined)
+	}
+	if got := rowsToStrings(snap.Scrollback); !reflect.DeepEqual(got, []string{"abcd", "efgh"}) {
+		t.Fatalf("expected exited snapshot scrollback to carry sealed prefix rows, got %#v", got)
+	}
+	if !reflect.DeepEqual(snap.ScrollbackWrapped, []bool{true, true}) {
+		t.Fatalf("expected sealed logical line wrapped markers, got %#v", snap.ScrollbackWrapped)
+	}
+	if snap.ScrollbackLoadedRows != 3 {
+		t.Fatalf("expected committed loaded rows 3 after exit force seal, got %d", snap.ScrollbackLoadedRows)
+	}
+	if snap.HistoryGeneration == 0 {
+		t.Fatal("expected committed history generation after exit force seal")
+	}
+}
+
+func TestTerminalProcessExitInAltScreenDropsAltAndSealsPrimaryTail(t *testing.T) {
+	ctx := context.Background()
+	bus := NewEventBus(nil)
+
+	term, err := newTerminal(ctx, bus, terminalConfig{
+		ID:             "exit-alt-drop",
+		Name:           "alt-exit",
+		Command:        []string{"bash", "--noprofile", "--norc", "-c", "printf 'base'; printf '\\033[?1049hALT'; exit 0"},
+		Size:           Size{Cols: 8, Rows: 2},
+		ScrollbackSize: 128,
+		KeepAfterExit:  time.Second,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("new terminal failed: %v", err)
+	}
+	defer term.Close()
+
+	select {
+	case <-term.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for terminal exit")
+	}
+
+	snap := term.Snapshot(0, 10)
+	if snap == nil {
+		t.Fatal("expected snapshot")
+	}
+	if snapshotContains(snap, "ALT") {
+		t.Fatalf("expected alt-screen content to be dropped on exit, got %#v", snap)
+	}
+	if !snapshotContains(snap, "base") {
+		t.Fatalf("expected primary content to survive exit seal, got %#v", snap)
+	}
+	if snap.Modes.AlternateScreen {
+		t.Fatalf("expected exited snapshot not to remain in alt-screen, got %#v", snap.Modes)
+	}
+}
+
+func trimTrailingBlankRows(rows [][]Cell) [][]Cell {
+	last := len(rows)
+	for last > 0 {
+		if strings.TrimSpace(rowToString(rows[last-1])) != "" {
+			break
+		}
+		last--
+	}
+	return rows[:last]
+}
+
 func TestTerminalDeliversTrailingOutputBeforeClosedFrame(t *testing.T) {
 	ctx := context.Background()
 	bus := NewEventBus(nil)
