@@ -25,7 +25,8 @@
 - 当前处于终端历史逻辑行模型的开发切换阶段，不要求保留旧内部实现兼容。
 - 对 `workflow.md` 已明确拍板要替换的旧路径、旧结构、旧 helper、旧测试语义，可以直接删除或重写。
 - 不为了兼容旧的 `hot -> cold` 单向实现而保留双路径、适配层或临时桥接代码。
-- `hot/cold` 可以作为派生术语存在，但实现权威必须落到 `persisted history store / mutable live tail / screen projection` 三层模型。
+- 从本阶段起，`hot/cold` 只能出现在旧模型问题说明或迁移记录中，不得继续作为代码、测试 helper、内部 contract 或运行时状态的主语义命名。
+- 新实现命名统一收敛到 `persisted history store / mutable live tail / screen projection` 三层模型。
 - 如果删除旧代码会改变已定死语义，必须先更新 `workflow.md` 和 RFC；如果只是落实已定死语义，可以直接改代码并提交。
 
 ## 提交规则

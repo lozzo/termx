@@ -101,7 +101,7 @@
   - sealed logical lines
 - `mutable live tail` 允许包含从 `persisted history` 尾部 reclaim 回来的 sealed suffix。
 - `open/sealed` 与 `origin=live/reclaimed` 是正交属性。
-- 不再允许把 `hot` 简化为“唯一一条未封口 latest line”。
+- 不再允许把旧 `hot` 概念作为当前实现主语义；当前实现必须直接使用 `mutable live tail` 及其 segment 属性。
 
 ### 3.4 非历史创建事件
 
@@ -172,7 +172,8 @@
 - 当前处于逻辑行模型开发切换阶段，不要求保留旧内部实现兼容。
 - 对本文件已经拍板要替换的旧路径、旧结构、旧 helper、旧测试语义，可以直接删除或重写。
 - 不为了兼容旧的 `hot -> cold` 单向实现而保留双路径、适配层或临时桥接代码。
-- `hot/cold` 可以作为派生术语保留，但实现权威必须落到 `persisted history store / mutable live tail / screen projection` 三层模型。
+- 从本阶段起，`hot/cold` 只能出现在旧模型问题说明或迁移记录中，不得继续作为代码、测试 helper、内部 contract 或运行时状态的主语义命名。
+- 新实现命名统一收敛到 `persisted history store / mutable live tail / screen projection` 三层模型。
 - 如果删除旧代码会改变已定死语义，必须先更新本文件和 RFC；如果只是落实已定死语义，可以直接改代码并提交。
 
 ### 4.4 文档优先级
@@ -211,7 +212,7 @@
 - reclaim 的基本语义已经定死：按完整 logical line reclaim，且只 reclaim 最小充分 logical-line 后缀。
 - reclaim 的内存上限和长期淘汰策略暂时沿用现有 scrollback / retention 约束，不在本轮扩展新策略。
 - 第一阶段仍不扩展 protocol / runtime / app contract。
-- `hot/cold` 术语可以继续作为派生或兼容表述保留，但不得再被理解为“唯一 open latest line / 永不回流 persisted history”的旧模型。
+- 旧 `hot/cold` 术语不再作为当前代码、测试 helper、内部 contract 或运行时状态命名保留；只允许在解释旧模型缺陷时出现。
 
 下面这些仍然是后续阶段问题，但它们不能阻塞本轮内部大重构：
 
@@ -270,7 +271,8 @@
    - process exit 对 primary live tail 执行 force seal，再进入 persisted history。
    - 退出时仍在 `alt-screen`，alt 内容直接丢弃。
 6. 清理内部命名和测试 helper
-   - `termx-core` 内部可以保留 `hot/cold` 兼容命名，但必须让语义边界落在三层模型上。
+   - `termx-core` 内部不再保留 `hot/cold` 兼容命名。
+   - `termx-vterm` 到 `termx-core` 的内部 hint 必须改为 live-tail / persisted-history 语义命名。
    - 测试 helper 应改为 live-tail 语义命名。
    - 旧测试可以保留行为覆盖，但断言文本应贴近当前三层模型。
 
@@ -286,12 +288,13 @@
 - write / snapshot / viewport / restart / process-exit 路径已经改为通过 `primaryLiveTail` 读写尾部状态；
 - grow resize 已把 `persisted history` 尾部的最小充分完整 logical-line 后缀写入 `primaryLiveTail` 的 `origin=reclaimed` segment；
 - latest snapshot / viewport 已改为通过 `primaryLiveTail` 中的 reclaimed segment 投影，不再只靠读路径临时回卷 persisted suffix；
-- `hot/cold` 仍作为兼容术语保留，其中 hot 对应 live-tail 派生视图，cold 对应 persisted history store。
+- 当前清理方向已经调整为删除旧 `hot/cold` 主语义命名，不再把它作为派生兼容术语继续保留在代码或测试 helper 中。
 
 当前仍需继续收敛的缺口是：
 
-- 部分测试文件名和用例名仍保留 `hot` 场景词，需要后续逐步补充 live-tail 表述；
-- `termx-vterm` 仍通过 `HotAppendRows` / `ResizeHotOwnedRows` 提供内部 hint，第一阶段允许继续保留该内部 contract。
+- 部分测试文件名、用例名、断言文本仍保留旧 `hot/cold` 场景词，需要改为 `live-tail`、`persisted history`、`committed history` 表述；
+- `termx-vterm` 仍通过 `HotAppendRows` / `ResizeHotOwnedRows` 提供内部 hint，必须改为 `LiveTailAppendRows` / `ResizeLiveTailRows`，不保留旧字段别名；
+- `tuiv2` 运行时仍存在 `AuthoritativeHotOnlyLatest` 一组本地状态命名，必须改为 `AuthoritativeLiveTailOnlyLatest` 一组命名，保持 `LoadedRows=0` 的语义不变。
 
 本轮大重构完成后，应重新压缩本节，把已完成结果和仍需后续阶段处理的问题写成新基线。
 

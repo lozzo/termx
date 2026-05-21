@@ -16,7 +16,7 @@
   - cursor / selection 对 canonical row refs 对齐
   - observer viewport 只做 projection，不发明新的 history truth
   - attach / re-entry / transaction restore / stale-page 语义与 core 保持一致
-- runtime/app 必须保留 hot-only latest snapshot 的 `LoadedRows=0` 语义；不要把当前可见 hot rows 提升成 committed depth。
+- runtime/app 必须保留 live-tail-only latest snapshot 的 `LoadedRows=0` 语义；不要把当前可见 live-tail rows 提升成 committed depth。
 - older-page prepend 只接受 same-generation committed window merge；`offset=0` latest replace 继续是 authoritative boundary reset。
 - paged-response ownership 目前仍是 live-vs-copy-mode split，不是 pane-scoped contract；新逻辑不要假设 pane 级 owner routing 已经存在。
 - pane-terminal 绑定、owner handoff、resize 协调必须优先收口到 `orchestrator` 或明确 service，不要把同一事务散落写进 `app`、`workbench`、`runtime` 和 render。

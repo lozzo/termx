@@ -230,7 +230,7 @@
 
 ### 8.2 Mutable Live Tail
 
-第一阶段 `termx-core` 内部必须把 `mutable live tail` 落成显式 segment 结构，而不是继续把 `hot` 只理解成“唯一未封口 latest line”。
+第一阶段 `termx-core` 内部必须把 `mutable live tail` 落成显式 segment 结构，而不是继续用旧 `hot` 概念承载尾部主语义。
 
 它语义上承载：
 
@@ -241,7 +241,7 @@
 它的本质是：
 
 - 当前 live truth 的 backing store，
-- 而不是单纯“等待进入 cold 的队列”。
+- 而不是单纯“等待进入 persisted history 的队列”。
 
 segment 至少需要表达：
 
@@ -445,13 +445,13 @@ segment 至少需要表达：
 - mutable live tail；
 - screen projection。
 
-这不是后续可选项，而是当前 Phase 1 的完成条件。实现上应一次性补齐旧单向 `hot -> cold` 模型缺失的 live-tail ownership 结构；如果局部变量因为兼容旧测试或局部算法暂时保留 `hot/cold` 词汇，也必须服从三层模型定义。
+这不是后续可选项，而是当前 Phase 1 的完成条件。实现上应一次性补齐旧单向 `hot -> cold` 模型缺失的 live-tail ownership 结构，并删除代码、测试 helper、内部 contract 与运行时状态中的旧 `hot/cold` 主语义命名。
 
 ### 14.2 Core / VTerm 边界
 
-当前已有一些 hot/cold hint，但语义仍偏局部。
+当前已有一些旧 tail ownership hint，但语义仍偏局部，且命名仍带有旧模型痕迹。
 
-未来若要进一步稳定 resize 和 tail ownership，可能需要更明确的内部 contract，而不只是局部的 append suffix 提示。
+本阶段需要先把 `termx-vterm` -> `termx-core` 的内部 hint 改为 live-tail / persisted-history 语义命名；未来若要进一步稳定 resize 和 tail ownership，可能需要更明确的内部 contract，而不只是局部的 append suffix 提示。
 
 ### 14.3 Runtime / App / Wire
 
@@ -547,6 +547,7 @@ segment 至少需要表达：
 - 在 `termx-core` 内部一次性切换到 persisted history / mutable live tail / screen projection 的显式模型。
 - 补齐旧单向 `hot -> cold` 模型缺失的 live-tail ownership 结构。
 - 让 write / resize / snapshot / viewport / process-exit 路径统一通过 live-tail ownership 结构表达。
+- 删除代码、测试 helper、内部 contract 与运行时状态中的旧 `hot/cold` 主语义命名。
 
 ### Phase 2: Snapshot / Viewport / Paging 适配
 

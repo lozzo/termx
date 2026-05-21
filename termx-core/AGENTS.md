@@ -14,11 +14,11 @@
 - 当前主动开发线只关注 `termx-core` / `termx-vterm` / `tuiv2`。
 - `termx-core` 在这轮优先服务：
   - canonical row identity / generation
-  - logical-line-aware hot/cold 边界
+  - persisted history / mutable live tail / screen projection ownership 边界
   - resize ownership metadata
   - retention / paging / stale-page 语义
-- 冷层只承载已提交的完整 logical lines；热层可以暂存 still-open latest tails，直到真实终止符把它们 seal 进 cold。
-- 当前 resize authority 只在 `termx-vterm` -> `termx-core` 的内部 contract 上显式化：`ResizeHotOwnedRows` 与 `ResizeHotOwnedRowsSet` 只定义 resize append suffix 的 hot/cold 切分；不要在 wire/runtime/app 路径上假定更宽语义，除非根 `workflow.md` 明确打开。
+- `persisted history store` 只承载已提交的完整 logical lines；`mutable live tail` 可以暂存 still-open latest tails，也可以包含从 persisted history reclaim 回来的 sealed suffix。
+- 当前 resize authority 只在 `termx-vterm` -> `termx-core` 的内部 contract 上显式化：`ResizeLiveTailRows` 与 `ResizeLiveTailRowsSet` 只定义 resize append suffix 的 live-tail / persisted-history 切分；不要在 wire/runtime/app 路径上假定更宽语义，除非根 `workflow.md` 明确打开。
 - 只有 core/tui contract 必须变化时，才允许最小化触及 `internal/protocol`、`termx-proto`、`termx-cli` glue。
 
 ## Workflow
