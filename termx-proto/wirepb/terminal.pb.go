@@ -2300,6 +2300,7 @@ type RowSet struct {
 	TimestampsUnixNano []int64                `protobuf:"varint,2,rep,packed,name=timestamps_unix_nano,json=timestampsUnixNano,proto3" json:"timestamps_unix_nano,omitempty"`
 	RowKinds           []string               `protobuf:"bytes,3,rep,name=row_kinds,json=rowKinds,proto3" json:"row_kinds,omitempty"`
 	Wrapped            []bool                 `protobuf:"varint,4,rep,packed,name=wrapped,proto3" json:"wrapped,omitempty"`
+	Ownership          []string               `protobuf:"bytes,5,rep,name=ownership,proto3" json:"ownership,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -2358,6 +2359,13 @@ func (x *RowSet) GetRowKinds() []string {
 func (x *RowSet) GetWrapped() []bool {
 	if x != nil {
 		return x.Wrapped
+	}
+	return nil
+}
+
+func (x *RowSet) GetOwnership() []string {
+	if x != nil {
+		return x.Ownership
 	}
 	return nil
 }
@@ -3999,12 +4007,13 @@ const file_termx_proto_wirepb_terminal_proto_rawDesc = "" +
 	"\x05shape\x18\x04 \x01(\rR\x05shape\x12\x14\n" +
 	"\x05blink\x18\x05 \x01(\bR\x05blink\"#\n" +
 	"\rTerminalModes\x12\x12\n" +
-	"\x04mask\x18\x01 \x01(\rR\x04mask\"\x8e\x01\n" +
+	"\x04mask\x18\x01 \x01(\rR\x04mask\"\xac\x01\n" +
 	"\x06RowSet\x12\x1b\n" +
 	"\trows_blob\x18\x01 \x01(\fR\browsBlob\x120\n" +
 	"\x14timestamps_unix_nano\x18\x02 \x03(\x03R\x12timestampsUnixNano\x12\x1b\n" +
 	"\trow_kinds\x18\x03 \x03(\tR\browKinds\x12\x18\n" +
-	"\awrapped\x18\x04 \x03(\bR\awrapped\"\xbd\x06\n" +
+	"\awrapped\x18\x04 \x03(\bR\awrapped\x12\x1c\n" +
+	"\townership\x18\x05 \x03(\tR\townership\"\xbd\x06\n" +
 	"\bSnapshot\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
 	"terminalId\x12/\n" +

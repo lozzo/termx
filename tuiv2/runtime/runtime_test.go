@@ -3780,6 +3780,8 @@ func cloneSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {
 		cloned.Screen.Cells[y] = append([]protocol.Cell(nil), row...)
 	}
 	cloned.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback)
+	cloned.ScreenOwnership = append([]string(nil), snapshot.ScreenOwnership...)
+	cloned.ScrollbackOwnership = append([]string(nil), snapshot.ScrollbackOwnership...)
 	return &cloned
 }
 
@@ -3821,6 +3823,11 @@ func testSnapshotWindow(snapshot *protocol.Snapshot, offset int, limit int) *pro
 		cloned.ScrollbackWrapped = append([]bool(nil), snapshot.ScrollbackWrapped[start:end]...)
 	} else {
 		cloned.ScrollbackWrapped = nil
+	}
+	if len(snapshot.ScrollbackOwnership) >= end {
+		cloned.ScrollbackOwnership = append([]string(nil), snapshot.ScrollbackOwnership[start:end]...)
+	} else {
+		cloned.ScrollbackOwnership = nil
 	}
 	cloned.ScrollbackOffset = offset
 	cloned.ScrollbackTotal = total

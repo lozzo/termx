@@ -470,6 +470,7 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 		}
 		traceGridTerminalRows("core.grid_store.viewport.raw_rows", s.terminalID, gridRows, "offset", beforeOffset, "limit", limit, "raw_limit", rawLimit, "cols", cols, "window_rows", rows, "has_more", hasMore)
 		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped = reflowTerminalGridRows(gridRows, cols)
+		result.Ownership = repeatedString(RowOwnershipPersisted, len(result.Rows))
 		cropped := false
 		if hasMore {
 			cropped = trimTerminalGridViewportToTail(&result, limit)
@@ -504,6 +505,7 @@ type terminalGridViewport struct {
 	Timestamps   []time.Time
 	RowKinds     []string
 	Wrapped      []bool
+	Ownership    []string
 	LoadedRows   int
 	HasMore      bool
 	BeforeOffset int
@@ -524,6 +526,7 @@ func trimTerminalGridViewportToTail(result *terminalGridViewport, limit int) boo
 	result.Timestamps = trimTimeSliceTail(result.Timestamps, limit)
 	result.RowKinds = trimStringSliceTail(result.RowKinds, limit)
 	result.Wrapped = trimBoolSliceTail(result.Wrapped, limit)
+	result.Ownership = trimStringSliceTail(result.Ownership, limit)
 	return true
 }
 

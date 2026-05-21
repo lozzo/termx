@@ -95,6 +95,8 @@ func cloneSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {
 	cloned.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds...)
 	cloned.ScreenWrapped = append([]bool(nil), snapshot.ScreenWrapped...)
 	cloned.ScrollbackWrapped = append([]bool(nil), snapshot.ScrollbackWrapped...)
+	cloned.ScreenOwnership = append([]string(nil), snapshot.ScreenOwnership...)
+	cloned.ScrollbackOwnership = append([]string(nil), snapshot.ScrollbackOwnership...)
 	return &cloned
 }
 
@@ -110,6 +112,7 @@ func clearSnapshotScrollback(snapshot *protocol.Snapshot) {
 	snapshot.ScrollbackTimestamps = nil
 	snapshot.ScrollbackRowKinds = nil
 	snapshot.ScrollbackWrapped = nil
+	snapshot.ScrollbackOwnership = nil
 	snapshot.ScrollbackOffset = 0
 	snapshot.ScrollbackTotal = 0
 	snapshot.ScrollbackLogicalTotal = 0
@@ -197,6 +200,7 @@ func trimCopyModeSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int
 		snapshot.ScrollbackTimestamps = cloneTimePrefix(snapshot.ScrollbackTimestamps, keep)
 		snapshot.ScrollbackRowKinds = cloneStringPrefix(snapshot.ScrollbackRowKinds, keep)
 		snapshot.ScrollbackWrapped = cloneBoolPrefix(snapshot.ScrollbackWrapped, keep)
+		snapshot.ScrollbackOwnership = cloneStringPrefix(snapshot.ScrollbackOwnership, keep)
 		snapshot.ScrollbackOffset += drop
 		return drop
 	}
@@ -204,6 +208,7 @@ func trimCopyModeSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int
 	snapshot.ScrollbackTimestamps = cloneTimeSuffix(snapshot.ScrollbackTimestamps, drop)
 	snapshot.ScrollbackRowKinds = cloneStringSuffix(snapshot.ScrollbackRowKinds, drop)
 	snapshot.ScrollbackWrapped = cloneBoolSuffix(snapshot.ScrollbackWrapped, drop)
+	snapshot.ScrollbackOwnership = cloneStringSuffix(snapshot.ScrollbackOwnership, drop)
 	snapshot.ScrollbackHasMore = true
 	return 0
 }
@@ -665,6 +670,7 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 		next.ScrollbackTimestamps = append(append([]time.Time(nil), loaded.ScrollbackTimestamps...), next.ScrollbackTimestamps...)
 		next.ScrollbackRowKinds = append(append([]string(nil), loaded.ScrollbackRowKinds...), next.ScrollbackRowKinds...)
 		next.ScrollbackWrapped = append(append([]bool(nil), loaded.ScrollbackWrapped...), next.ScrollbackWrapped...)
+		next.ScrollbackOwnership = append(append([]string(nil), loaded.ScrollbackOwnership...), next.ScrollbackOwnership...)
 		next.ScrollbackOffset = previousOffset
 		trimNewest = true
 	default:
@@ -676,6 +682,7 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 		next.ScrollbackTimestamps = append([]time.Time(nil), loaded.ScrollbackTimestamps...)
 		next.ScrollbackRowKinds = append([]string(nil), loaded.ScrollbackRowKinds...)
 		next.ScrollbackWrapped = append([]bool(nil), loaded.ScrollbackWrapped...)
+		next.ScrollbackOwnership = append([]string(nil), loaded.ScrollbackOwnership...)
 		next.ScrollbackOffset = loaded.ScrollbackOffset
 		next.ScrollbackTotal = loaded.ScrollbackTotal
 		next.ScrollbackLogicalTotal = loaded.ScrollbackLogicalTotal

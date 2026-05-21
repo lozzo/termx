@@ -174,6 +174,11 @@ func snapshotWindow(snapshot *protocol.Snapshot, offset int, limit int) *protoco
 	} else {
 		cloned.ScrollbackWrapped = nil
 	}
+	if len(snapshot.ScrollbackOwnership) >= end {
+		cloned.ScrollbackOwnership = append([]string(nil), snapshot.ScrollbackOwnership[start:end]...)
+	} else {
+		cloned.ScrollbackOwnership = nil
+	}
 	cloned.ScrollbackOffset = offset
 	cloned.ScrollbackTotal = total
 	if snapshot.ScrollbackLogicalTotal > 0 {

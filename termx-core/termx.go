@@ -528,6 +528,7 @@ func (s *Server) gridViewportCoreFromStore(id string, opt GridViewportOptions) (
 		ScrollbackTimestamps:   cloneTimeSlice(result.Timestamps),
 		ScrollbackRowKinds:     cloneStringSlice(result.RowKinds),
 		ScrollbackWrapped:      cloneBoolSlice(result.Wrapped),
+		RowOwnership:           cloneStringSlice(result.Ownership),
 		Timestamp:              time.Now().UTC(),
 	}, nil
 }
@@ -604,6 +605,8 @@ func (s *Server) gridSnapshotFromStore(id string, opt SnapshotOptions) (*Snapsho
 		ScrollbackRowKinds:     scrollbackRowKinds,
 		ScreenWrapped:          screenWrapped,
 		ScrollbackWrapped:      scrollbackWrapped,
+		ScreenOwnership:        repeatedString(RowOwnershipScreen, len(screenRows)),
+		ScrollbackOwnership:    repeatedString(RowOwnershipPersisted, len(scrollbackRows)),
 		Cursor:                 CursorState{Visible: true},
 		Modes:                  TerminalModes{AutoWrap: true},
 		Timestamp:              time.Now().UTC(),

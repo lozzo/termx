@@ -1808,6 +1808,13 @@ type ScreenData struct {
 
 const SnapshotRowKindRestart = "restart"
 
+const (
+	RowOwnershipPersisted         = "persisted"
+	RowOwnershipLiveTailReclaimed = "live-tail-reclaimed"
+	RowOwnershipLiveTailLive      = "live-tail-live"
+	RowOwnershipScreen            = "screen"
+)
+
 type Snapshot struct {
 	TerminalID             string
 	Size                   Size
@@ -1827,6 +1834,8 @@ type Snapshot struct {
 	ScrollbackRowKinds     []string
 	ScreenWrapped          []bool
 	ScrollbackWrapped      []bool
+	ScreenOwnership        []string
+	ScrollbackOwnership    []string
 	Cursor                 CursorState
 	Modes                  TerminalModes
 	Timestamp              time.Time
@@ -1848,6 +1857,7 @@ type GridViewport struct {
 	ScrollbackTimestamps   []time.Time
 	ScrollbackRowKinds     []string
 	ScrollbackWrapped      []bool
+	RowOwnership           []string
 	Timestamp              time.Time
 }
 

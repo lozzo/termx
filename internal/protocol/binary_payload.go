@@ -70,8 +70,8 @@ func snapshotToWirePB(snapshot *Snapshot) *wirepb.Snapshot {
 		TerminalId:             snapshot.TerminalID,
 		Size:                   sizeToWirePB(snapshot.Size),
 		ScreenIsAlternate:      snapshot.Screen.IsAlternateScreen,
-		Screen:                 rowSetToWirePB(CompactRowsFromCellsPreserveTrailingBlankRows(snapshot.Screen.Cells), snapshot.ScreenTimestamps, snapshot.ScreenRowKinds, snapshot.ScreenWrapped),
-		Scrollback:             rowSetToWirePB(snapshot.Scrollback, snapshot.ScrollbackTimestamps, snapshot.ScrollbackRowKinds, snapshot.ScrollbackWrapped),
+		Screen:                 rowSetToWirePB(CompactRowsFromCellsPreserveTrailingBlankRows(snapshot.Screen.Cells), snapshot.ScreenTimestamps, snapshot.ScreenRowKinds, snapshot.ScreenWrapped, snapshot.ScreenOwnership),
+		Scrollback:             rowSetToWirePB(snapshot.Scrollback, snapshot.ScrollbackTimestamps, snapshot.ScrollbackRowKinds, snapshot.ScrollbackWrapped, snapshot.ScrollbackOwnership),
 		ScrollbackOffset:       int64(snapshot.ScrollbackOffset),
 		ScrollbackTotal:        int64(snapshot.ScrollbackTotal),
 		ScrollbackLogicalTotal: int64(snapshot.ScrollbackLogicalTotal),
@@ -90,11 +90,11 @@ func snapshotFromWirePB(msg *wirepb.Snapshot) (*Snapshot, error) {
 	if msg == nil {
 		return nil, fmt.Errorf("nil snapshot payload")
 	}
-	screenRows, screenTimes, screenKinds, screenWrapped, err := rowSetFromWirePB(msg.GetScreen())
+	screenRows, screenTimes, screenKinds, screenWrapped, screenOwnership, err := rowSetFromWirePB(msg.GetScreen())
 	if err != nil {
 		return nil, err
 	}
-	scrollbackRows, scrollbackTimes, scrollbackKinds, scrollbackWrapped, err := rowSetFromWirePB(msg.GetScrollback())
+	scrollbackRows, scrollbackTimes, scrollbackKinds, scrollbackWrapped, scrollbackOwnership, err := rowSetFromWirePB(msg.GetScrollback())
 	if err != nil {
 		return nil, err
 	}
@@ -117,6 +117,8 @@ func snapshotFromWirePB(msg *wirepb.Snapshot) (*Snapshot, error) {
 		ScrollbackRowKinds:     scrollbackKinds,
 		ScreenWrapped:          screenWrapped,
 		ScrollbackWrapped:      scrollbackWrapped,
+		ScreenOwnership:        screenOwnership,
+		ScrollbackOwnership:    scrollbackOwnership,
 		Cursor:                 cursorFromWirePB(msg.GetCursor()),
 		Modes:                  modesFromWirePB(msg.GetModes()),
 		Timestamp:              unixNanoToTime(msg.GetTimestampUnixNano()),
@@ -127,7 +129,7 @@ func gridViewportToWirePB(viewport *GridViewport) *wirepb.GridViewport {
 	return &wirepb.GridViewport{
 		TerminalId:             viewport.TerminalID,
 		Size:                   sizeToWirePB(viewport.Size),
-		Rows:                   rowSetToWirePB(viewport.Rows, viewport.ScrollbackTimestamps, viewport.ScrollbackRowKinds, viewport.ScrollbackWrapped),
+		Rows:                   rowSetToWirePB(viewport.Rows, viewport.ScrollbackTimestamps, viewport.ScrollbackRowKinds, viewport.ScrollbackWrapped, viewport.RowOwnership),
 		ScrollbackOffset:       int64(viewport.ScrollbackOffset),
 		ScrollbackLimit:        int64(viewport.ScrollbackLimit),
 		ScrollbackTotal:        int64(viewport.ScrollbackTotal),
@@ -145,7 +147,7 @@ func gridViewportFromWirePB(msg *wirepb.GridViewport) (*GridViewport, error) {
 	if msg == nil {
 		return nil, fmt.Errorf("nil grid viewport payload")
 	}
-	rows, timestamps, rowKinds, wrapped, err := rowSetFromWirePB(msg.GetRows())
+	rows, timestamps, rowKinds, wrapped, ownership, err := rowSetFromWirePB(msg.GetRows())
 	if err != nil {
 		return nil, err
 	}
@@ -165,31 +167,34 @@ func gridViewportFromWirePB(msg *wirepb.GridViewport) (*GridViewport, error) {
 		ScrollbackTimestamps:   timestamps,
 		ScrollbackRowKinds:     rowKinds,
 		ScrollbackWrapped:      wrapped,
+		RowOwnership:           ownership,
 		Timestamp:              unixNanoToTime(msg.GetTimestampUnixNano()),
 	}, nil
 }
 
-func rowSetToWirePB(rows []CompactRow, timestamps []time.Time, rowKinds []string, wrapped []bool) *wirepb.RowSet {
+func rowSetToWirePB(rows []CompactRow, timestamps []time.Time, rowKinds []string, wrapped []bool, ownership []string) *wirepb.RowSet {
 	return &wirepb.RowSet{
 		RowsBlob:           encodeCompactRowsBlob(rows),
 		TimestampsUnixNano: encodeTimeSliceUnixNano(timestamps),
 		RowKinds:           encodeWireStringSlice(rowKinds),
 		Wrapped:            encodeWireBoolSlice(wrapped),
+		Ownership:          encodeWireStringSlice(ownership),
 	}
 }
 
-func rowSetFromWirePB(msg *wirepb.RowSet) ([]CompactRow, []time.Time, []string, []bool, error) {
+func rowSetFromWirePB(msg *wirepb.RowSet) ([]CompactRow, []time.Time, []string, []bool, []string, error) {
 	if msg == nil {
-		return nil, nil, nil, nil, nil
+		return nil, nil, nil, nil, nil, nil
 	}
 	rows, err := decodeCompactRowsBlob(msg.GetRowsBlob())
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	return rows,
 		decodeTimeSliceUnixNano(msg.GetTimestampsUnixNano()),
 		append([]string(nil), msg.GetRowKinds()...),
 		append([]bool(nil), msg.GetWrapped()...),
+		append([]string(nil), msg.GetOwnership()...),
 		nil
 }
 

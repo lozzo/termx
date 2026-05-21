@@ -131,6 +131,8 @@ func provisionalSnapshotForLocalShrink(snapshot *protocol.Snapshot, cols, rows u
 	cloned.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds...)
 	cloned.ScreenWrapped = tailBoolSlice(snapshot.ScreenWrapped, int(rows))
 	cloned.ScrollbackWrapped = append([]bool(nil), snapshot.ScrollbackWrapped...)
+	cloned.ScreenOwnership = tailStringSlice(snapshot.ScreenOwnership, int(rows))
+	cloned.ScrollbackOwnership = append([]string(nil), snapshot.ScrollbackOwnership...)
 	if cloned.Cursor.Row >= int(rows) || cloned.Cursor.Col >= int(cols) {
 		cloned.Cursor.Visible = false
 		cloned.Cursor.Row = runtimeMinInt(cloned.Cursor.Row, int(rows)-1)

@@ -784,6 +784,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 			ScrollbackRowKinds:   outScrollbackRowKinds,
 			ScreenWrapped:        cloneBoolSlice(screenWrapped),
 			ScrollbackWrapped:    outScrollbackWrapped,
+			ScreenOwnership:      repeatedString(RowOwnershipScreen, len(screenData.Cells)),
 			Cursor:               convertCursorState(t.vterm.CursorState()),
 			Modes:                convertModes(modes),
 			Timestamp:            time.Now().UTC(),
@@ -795,6 +796,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		outScrollbackTimestamps []time.Time
 		outScrollbackRowKinds   []string
 		outScrollbackWrapped    []bool
+		outScrollbackOwnership  []string
 		scrollbackTotal         int
 		scrollbackLogicalTotal  int
 		scrollbackHasMore       bool
@@ -815,6 +817,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 			outScrollbackTimestamps = cloneTimeSlice(gridViewport.Timestamps)
 			outScrollbackRowKinds = cloneStringSlice(gridViewport.RowKinds)
 			outScrollbackWrapped = cloneBoolSlice(gridViewport.Wrapped)
+			outScrollbackOwnership = cloneStringSlice(gridViewport.Ownership)
 			scrollbackTotal = gridViewport.TotalRows
 			scrollbackLogicalTotal = gridViewport.LogicalTotal
 			scrollbackHasMore = gridViewport.HasMore
@@ -868,6 +871,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		outScrollbackTimestamps = sliceTimeRange(scrollbackTimestamps, start, end)
 		outScrollbackRowKinds = sliceStringRange(scrollbackRowKinds, start, end)
 		outScrollbackWrapped = sliceBoolRange(scrollbackWrapped, start, end)
+		outScrollbackOwnership = repeatedString(RowOwnershipPersisted, len(outScrollback))
 		scrollbackTotal = len(scrollback)
 		scrollbackLogicalTotal = len(scrollback)
 		scrollbackHasMore = start > 0
@@ -876,11 +880,12 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	}
 	if offset == 0 && !(usedGrid && len(liveTailRows) > 0) {
 		beforeTrim := len(outScrollback)
-		outScrollback, outScrollbackTimestamps, outScrollbackRowKinds, outScrollbackWrapped = trimScrollbackScreenOverlap(
+		outScrollback, outScrollbackTimestamps, outScrollbackRowKinds, outScrollbackWrapped, outScrollbackOwnership = trimScrollbackScreenOverlap(
 			outScrollback,
 			outScrollbackTimestamps,
 			outScrollbackRowKinds,
 			outScrollbackWrapped,
+			outScrollbackOwnership,
 			screenData.Cells,
 			screenTimestamps,
 			screenRowKinds,
@@ -912,6 +917,8 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		ScrollbackRowKinds:     outScrollbackRowKinds,
 		ScreenWrapped:          cloneBoolSlice(screenWrapped),
 		ScrollbackWrapped:      outScrollbackWrapped,
+		ScreenOwnership:        repeatedString(RowOwnershipScreen, len(screenData.Cells)),
+		ScrollbackOwnership:    outScrollbackOwnership,
 		Cursor:                 convertCursorState(t.vterm.CursorState()),
 		Modes:                  convertModes(modes),
 		Timestamp:              time.Now().UTC(),
@@ -994,6 +1001,7 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 				ScrollbackTimestamps:   cloneTimeSlice(gridViewport.Timestamps),
 				ScrollbackRowKinds:     cloneStringSlice(gridViewport.RowKinds),
 				ScrollbackWrapped:      cloneBoolSlice(gridViewport.Wrapped),
+				RowOwnership:           cloneStringSlice(gridViewport.Ownership),
 				Timestamp:              time.Now().UTC(),
 			}
 		}
@@ -1030,6 +1038,7 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 		ScrollbackTimestamps:   sliceTimeRange(t.vterm.ScrollbackTimestamps(), start, end),
 		ScrollbackRowKinds:     sliceStringRange(t.vterm.ScrollbackRowKinds(), start, end),
 		ScrollbackWrapped:      sliceBoolRange(scrollbackWrapped, start, end),
+		RowOwnership:           repeatedString(RowOwnershipPersisted, len(rows)),
 		Timestamp:              time.Now().UTC(),
 	}
 }
@@ -1128,11 +1137,12 @@ func (t *Terminal) combinedGridViewport(offset, limit, cols int, liveTail termin
 			liveTailEnd = len(liveTailRows)
 		}
 		window := liveTail.window(liveTailStart, liveTailEnd)
-		for _, row := range window.rows {
+		for i, row := range window.rows {
 			result.Rows = append(result.Rows, damageOpCells(row))
 			result.Timestamps = append(result.Timestamps, row.Timestamp)
 			result.RowKinds = append(result.RowKinds, row.RowKind)
 			result.Wrapped = append(result.Wrapped, row.WrappedSet && row.Wrapped)
+			result.Ownership = append(result.Ownership, stringAt(window.ownership, i))
 		}
 		if window.hasCommitted {
 			result.LoadedRows += window.committed
@@ -1393,14 +1403,14 @@ func damageOpCells(row vterm.DamageOp) []vterm.Cell {
 	return cells
 }
 
-func trimScrollbackScreenOverlap(scrollback [][]Cell, timestamps []time.Time, rowKinds []string, wrapped []bool, screen [][]Cell, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool) ([][]Cell, []time.Time, []string, []bool) {
+func trimScrollbackScreenOverlap(scrollback [][]Cell, timestamps []time.Time, rowKinds []string, wrapped []bool, ownership []string, screen [][]Cell, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool) ([][]Cell, []time.Time, []string, []bool, []string) {
 	overlap := scrollbackScreenOverlap(scrollback, timestamps, rowKinds, wrapped, screen, screenTimestamps, screenRowKinds, screenWrapped)
 	if overlap <= 0 {
-		return scrollback, timestamps, rowKinds, wrapped
+		return scrollback, timestamps, rowKinds, wrapped, ownership
 	}
 	keep := len(scrollback) - overlap
 	if keep <= 0 {
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, nil
 	}
 	scrollback = scrollback[:keep]
 	if len(timestamps) >= keep {
@@ -1418,7 +1428,12 @@ func trimScrollbackScreenOverlap(scrollback [][]Cell, timestamps []time.Time, ro
 	} else {
 		wrapped = nil
 	}
-	return scrollback, timestamps, rowKinds, wrapped
+	if len(ownership) >= keep {
+		ownership = ownership[:keep]
+	} else {
+		ownership = nil
+	}
+	return scrollback, timestamps, rowKinds, wrapped, ownership
 }
 
 func scrollbackScreenOverlap(scrollback [][]Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, scrollbackWrapped []bool, screen [][]Cell, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool) int {
@@ -2885,6 +2900,27 @@ func cloneBoolSlice(values []bool) []bool {
 	return append([]bool(nil), values...)
 }
 
+func repeatedString(value string, count int) []string {
+	if count <= 0 || value == "" {
+		return nil
+	}
+	out := make([]string, count)
+	for i := range out {
+		out[i] = value
+	}
+	return out
+}
+
+func appendRepeatedString(values []string, value string, count int) []string {
+	if count <= 0 || value == "" {
+		return values
+	}
+	for i := 0; i < count; i++ {
+		values = append(values, value)
+	}
+	return values
+}
+
 func sliceTimeRange(values []time.Time, start, end int) []time.Time {
 	if len(values) == 0 {
 		return nil
@@ -3226,6 +3262,7 @@ func protocolGridViewportFromCore(viewport *GridViewport) *protocol.GridViewport
 		ScrollbackTimestamps:   cloneTimeSlice(viewport.ScrollbackTimestamps),
 		ScrollbackRowKinds:     cloneStringSlice(viewport.ScrollbackRowKinds),
 		ScrollbackWrapped:      cloneBoolSlice(viewport.ScrollbackWrapped),
+		RowOwnership:           cloneStringSlice(viewport.RowOwnership),
 		Timestamp:              viewport.Timestamp,
 	}
 }
@@ -3257,6 +3294,8 @@ func protocolSnapshotFromCore(snapshot *Snapshot) *protocol.Snapshot {
 		ScrollbackRowKinds:     cloneStringSlice(snapshot.ScrollbackRowKinds),
 		ScreenWrapped:          cloneBoolSlice(snapshot.ScreenWrapped),
 		ScrollbackWrapped:      cloneBoolSlice(snapshot.ScrollbackWrapped),
+		ScreenOwnership:        cloneStringSlice(snapshot.ScreenOwnership),
+		ScrollbackOwnership:    cloneStringSlice(snapshot.ScrollbackOwnership),
 		Cursor: protocol.CursorState{
 			Row:     snapshot.Cursor.Row,
 			Col:     snapshot.Cursor.Col,

@@ -28,6 +28,8 @@ func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
 		ScrollbackRowKinds:   []string{"log"},
 		ScreenWrapped:        []bool{false, true, false},
 		ScrollbackWrapped:    []bool{true},
+		ScreenOwnership:      []string{RowOwnershipScreen, RowOwnershipScreen, RowOwnershipScreen},
+		ScrollbackOwnership:  []string{RowOwnershipPersisted},
 		Cursor:               CursorState{Row: 1, Col: 2, Visible: true, Shape: "bar", Blink: true},
 		Modes:                TerminalModes{AlternateScreen: true, AlternateScroll: true, BracketedPaste: true, ApplicationCursor: true, AutoWrap: true},
 		Timestamp:            time.Date(2026, 3, 18, 2, 0, 0, 0, time.UTC),
@@ -61,6 +63,9 @@ func TestSnapshotPayloadRoundTripUsesBinaryRows(t *testing.T) {
 	if len(decoded.ScreenWrapped) != 3 || !decoded.ScreenWrapped[1] || len(decoded.ScrollbackWrapped) != 1 || !decoded.ScrollbackWrapped[0] {
 		t.Fatalf("unexpected decoded wrapped metadata: %#v %#v", decoded.ScreenWrapped, decoded.ScrollbackWrapped)
 	}
+	if len(decoded.ScreenOwnership) != 3 || decoded.ScreenOwnership[0] != RowOwnershipScreen || len(decoded.ScrollbackOwnership) != 1 || decoded.ScrollbackOwnership[0] != RowOwnershipPersisted {
+		t.Fatalf("unexpected decoded ownership metadata: %#v %#v", decoded.ScreenOwnership, decoded.ScrollbackOwnership)
+	}
 	if decoded.Cursor.Shape != "bar" || !decoded.Modes.BracketedPaste || !decoded.Modes.AutoWrap {
 		t.Fatalf("unexpected decoded cursor/modes: %#v %#v", decoded.Cursor, decoded.Modes)
 	}
@@ -80,6 +85,7 @@ func TestGridViewportPayloadRoundTripUsesBinaryRows(t *testing.T) {
 		HistoryGeneration:      42,
 		FirstRowID:             1000,
 		LastRowID:              1006,
+		RowOwnership:           []string{RowOwnershipLiveTailReclaimed},
 		Timestamp:              time.Date(2026, 3, 18, 3, 0, 0, 0, time.UTC),
 	}
 	payload, err := EncodeGridViewportPayload(viewport)
@@ -95,6 +101,9 @@ func TestGridViewportPayloadRoundTripUsesBinaryRows(t *testing.T) {
 	}
 	if decoded.LoadedRows != 7 || decoded.HistoryGeneration != 42 || decoded.FirstRowID != 1000 || decoded.LastRowID != 1006 {
 		t.Fatalf("unexpected decoded viewport coordinates: %#v", decoded)
+	}
+	if len(decoded.RowOwnership) != 1 || decoded.RowOwnership[0] != RowOwnershipLiveTailReclaimed {
+		t.Fatalf("unexpected decoded viewport ownership: %#v", decoded.RowOwnership)
 	}
 	if got := compactRowToStringForTest(decoded.Rows[0]); got != "row" {
 		t.Fatalf("unexpected decoded viewport row: %q", got)

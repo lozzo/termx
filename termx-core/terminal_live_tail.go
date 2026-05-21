@@ -33,6 +33,7 @@ type terminalPrimaryLiveTail struct {
 
 type terminalLiveTailWindow struct {
 	rows         []vterm.DamageOp
+	ownership    []string
 	committed    int
 	generation   uint64
 	firstRowID   uint64
@@ -244,6 +245,11 @@ func (tail terminalPrimaryLiveTail) window(start int, end int) terminalLiveTailW
 		localStart := maxInt(start, segmentStart) - segmentStart
 		localEnd := minInt(end, segmentEnd) - segmentStart
 		out.rows = append(out.rows, cloneGridDamageOps(segment.rows[localStart:localEnd])...)
+		ownership := RowOwnershipLiveTailLive
+		if segment.origin == terminalLiveTailOriginReclaimed {
+			ownership = RowOwnershipLiveTailReclaimed
+		}
+		out.ownership = appendRepeatedString(out.ownership, ownership, localEnd-localStart)
 		if segment.origin != terminalLiveTailOriginReclaimed {
 			continue
 		}

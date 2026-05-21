@@ -255,6 +255,8 @@ func cloneRuntimeSnapshot(snapshot *bridge.SnapshotRef) *bridge.SnapshotRef {
 	cloned.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds...)
 	cloned.ScreenWrapped = append([]bool(nil), snapshot.ScreenWrapped...)
 	cloned.ScrollbackWrapped = append([]bool(nil), snapshot.ScrollbackWrapped...)
+	cloned.ScreenOwnership = append([]string(nil), snapshot.ScreenOwnership...)
+	cloned.ScrollbackOwnership = append([]string(nil), snapshot.ScrollbackOwnership...)
 	return &cloned
 }
 

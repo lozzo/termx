@@ -611,6 +611,7 @@ func snapshotFromVTerm(source *localvterm.VTerm) *protocol.Snapshot {
 		ScrollbackRowKinds:   append([]string(nil), source.ScrollbackRowKinds()...),
 		ScreenWrapped:        append([]bool(nil), source.ScreenWrapped()...),
 		ScrollbackWrapped:    append([]bool(nil), scrollbackWrapped...),
+		ScreenOwnership:      repeatedProtocolOwnership(protocol.RowOwnershipScreen, len(screen.Cells)),
 		Cursor:               protocolCursorStateFromVTerm(source.CursorState()),
 		Modes:                protocolModesFromVTerm(source.Modes()),
 		Timestamp:            time.Now().UTC(),
@@ -629,6 +630,7 @@ func screenSnapshotFromVTerm(source *localvterm.VTerm) *protocol.Snapshot {
 		ScreenTimestamps: append([]time.Time(nil), source.ScreenTimestamps()...),
 		ScreenRowKinds:   append([]string(nil), source.ScreenRowKinds()...),
 		ScreenWrapped:    append([]bool(nil), source.ScreenWrapped()...),
+		ScreenOwnership:  repeatedProtocolOwnership(protocol.RowOwnershipScreen, len(screen.Cells)),
 		Cursor:           protocolCursorStateFromVTerm(source.CursorState()),
 		Modes:            protocolModesFromVTerm(source.Modes()),
 		Timestamp:        time.Now().UTC(),
@@ -679,6 +681,17 @@ func protocolRowsToVTermRows(rows [][]protocol.Cell) [][]localvterm.Cell {
 				},
 			}
 		}
+	}
+	return out
+}
+
+func repeatedProtocolOwnership(value string, count int) []string {
+	if count <= 0 || value == "" {
+		return nil
+	}
+	out := make([]string, count)
+	for i := range out {
+		out[i] = value
 	}
 	return out
 }
@@ -760,16 +773,19 @@ func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, up
 			snapshot.ScrollbackTimestamps = nil
 			snapshot.ScrollbackRowKinds = nil
 			snapshot.ScrollbackWrapped = nil
+			snapshot.ScrollbackOwnership = nil
 		}
 		snapshot.Screen = cloneProtocolScreenData(update.Screen)
 		snapshot.ScreenTimestamps = append([]time.Time(nil), update.ScreenTimestamps...)
 		snapshot.ScreenRowKinds = append([]string(nil), update.ScreenRowKinds...)
 		snapshot.ScreenWrapped = append([]bool(nil), update.ScreenWrapped...)
+		snapshot.ScreenOwnership = repeatedProtocolOwnership(protocol.RowOwnershipScreen, len(snapshot.Screen.Cells))
 		for _, row := range update.ScrollbackAppend {
 			snapshot.Scrollback = append(snapshot.Scrollback, protocol.CompactRowFromCellsPreserveTrailingBlankCells(row.Cells, true))
 			snapshot.ScrollbackTimestamps = append(snapshot.ScrollbackTimestamps, row.Timestamp)
 			snapshot.ScrollbackRowKinds = append(snapshot.ScrollbackRowKinds, row.RowKind)
 			snapshot.ScrollbackWrapped = append(snapshot.ScrollbackWrapped, row.WrappedSet && row.Wrapped)
+			snapshot.ScrollbackOwnership = append(snapshot.ScrollbackOwnership, protocol.RowOwnershipLiveTailLive)
 		}
 		snapshot.Screen.IsAlternateScreen = update.Modes.AlternateScreen
 		snapshot.Cursor = update.Cursor
@@ -794,15 +810,18 @@ func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, up
 	scrollbackTimestampsOwned := false
 	scrollbackRowKindsOwned := false
 	scrollbackWrappedOwned := false
+	scrollbackOwnershipOwned := false
 	if update.ResetScrollback {
 		snapshot.Scrollback = nil
 		snapshot.ScrollbackTimestamps = nil
 		snapshot.ScrollbackRowKinds = nil
 		snapshot.ScrollbackWrapped = nil
+		snapshot.ScrollbackOwnership = nil
 		scrollbackOwned = true
 		scrollbackTimestampsOwned = true
 		scrollbackRowKindsOwned = true
 		scrollbackWrappedOwned = true
+		scrollbackOwnershipOwned = true
 	}
 	requiredRows := int(maxUint16Local(snapshot.Size.Rows, uint16(maxChangedScreenRow(update)+1)))
 	if requiredRows > len(snapshot.Screen.Cells) {
@@ -817,6 +836,7 @@ func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, up
 		scrollbackTimestampsOwned = true
 		scrollbackRowKindsOwned = true
 		scrollbackWrappedOwned = true
+		scrollbackOwnershipOwned = true
 	}
 	screenRowCellsOwned := make(map[int]bool)
 	if len(update.Ops) > 0 {
@@ -828,15 +848,18 @@ func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, up
 		snapshot.ScrollbackTimestamps = cowTimeSlice(snapshot.ScrollbackTimestamps, baseRows+appendCount, &scrollbackTimestampsOwned)
 		snapshot.ScrollbackRowKinds = cowStringSlice(snapshot.ScrollbackRowKinds, baseRows+appendCount, &scrollbackRowKindsOwned)
 		snapshot.ScrollbackWrapped = cowBoolSlice(snapshot.ScrollbackWrapped, baseRows+appendCount, &scrollbackWrappedOwned)
+		snapshot.ScrollbackOwnership = cowStringSlice(snapshot.ScrollbackOwnership, baseRows+appendCount, &scrollbackOwnershipOwned)
 		for i, row := range update.ScrollbackAppend {
 			index := baseRows + i
 			snapshot.Scrollback[index] = protocol.CompactRowFromCellsPreserveTrailingBlankCells(row.Cells, true)
 			snapshot.ScrollbackTimestamps[index] = row.Timestamp
 			snapshot.ScrollbackRowKinds[index] = row.RowKind
 			snapshot.ScrollbackWrapped[index] = row.WrappedSet && row.Wrapped
+			snapshot.ScrollbackOwnership[index] = protocol.RowOwnershipLiveTailLive
 		}
 	}
 	snapshot.Screen.IsAlternateScreen = update.Modes.AlternateScreen
+	snapshot.ScreenOwnership = repeatedProtocolOwnership(protocol.RowOwnershipScreen, len(snapshot.Screen.Cells))
 	snapshot.Cursor = update.Cursor
 	snapshot.Modes = update.Modes
 	snapshot.Timestamp = time.Now().UTC()
@@ -856,6 +879,8 @@ func cloneProtocolSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {
 	cloned.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds...)
 	cloned.ScreenWrapped = append([]bool(nil), snapshot.ScreenWrapped...)
 	cloned.ScrollbackWrapped = append([]bool(nil), snapshot.ScrollbackWrapped...)
+	cloned.ScreenOwnership = append([]string(nil), snapshot.ScreenOwnership...)
+	cloned.ScrollbackOwnership = append([]string(nil), snapshot.ScrollbackOwnership...)
 	return &cloned
 }
 
@@ -1355,12 +1380,14 @@ func trimSnapshotScrollbackFront(snapshot *protocol.Snapshot, trim int) {
 		snapshot.ScrollbackTimestamps = nil
 		snapshot.ScrollbackRowKinds = nil
 		snapshot.ScrollbackWrapped = nil
+		snapshot.ScrollbackOwnership = nil
 		return
 	}
 	snapshot.Scrollback = cloneProtocolCompactRowsWindow(snapshot.Scrollback, trim)
 	snapshot.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps[minInt(trim, len(snapshot.ScrollbackTimestamps)):]...)
 	snapshot.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds[minInt(trim, len(snapshot.ScrollbackRowKinds)):]...)
 	snapshot.ScrollbackWrapped = append([]bool(nil), snapshot.ScrollbackWrapped[minInt(trim, len(snapshot.ScrollbackWrapped)):]...)
+	snapshot.ScrollbackOwnership = append([]string(nil), snapshot.ScrollbackOwnership[minInt(trim, len(snapshot.ScrollbackOwnership)):]...)
 }
 
 func trimProtocolSnapshotScrollbackToLast(snapshot *protocol.Snapshot, limit int) {
@@ -1378,6 +1405,7 @@ func clearProtocolSnapshotScrollback(snapshot *protocol.Snapshot) {
 	snapshot.ScrollbackTimestamps = nil
 	snapshot.ScrollbackRowKinds = nil
 	snapshot.ScrollbackWrapped = nil
+	snapshot.ScrollbackOwnership = nil
 }
 
 func cloneProtocolRowsWindow(rows [][]protocol.Cell, start int) [][]protocol.Cell {

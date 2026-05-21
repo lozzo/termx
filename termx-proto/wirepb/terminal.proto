@@ -240,6 +240,7 @@ message RowSet {
   repeated int64 timestamps_unix_nano = 2;
   repeated string row_kinds = 3;
   repeated bool wrapped = 4;
+  repeated string ownership = 5;
 }
 
 message Snapshot {
