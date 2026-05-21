@@ -652,10 +652,12 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 		next.ScrollbackOffset = previousOffset
 		trimNewest = true
 	default:
-		if !allowLatestReplace && len(loaded.Scrollback) <= len(next.Scrollback) {
+		currentCommittedDepth := snapshotScrollbackLoadedDepth(next)
+		loadedCommittedDepth := snapshotScrollbackLoadedDepth(loaded)
+		delta = loadedCommittedDepth - currentCommittedDepth
+		if !allowLatestReplace && delta <= 0 {
 			return false
 		}
-		delta = len(loaded.Scrollback) - len(next.Scrollback)
 		next.Scrollback = protocol.CloneCompactRows(loaded.Scrollback)
 		next.ScrollbackTimestamps = append([]time.Time(nil), loaded.ScrollbackTimestamps...)
 		next.ScrollbackRowKinds = append([]string(nil), loaded.ScrollbackRowKinds...)

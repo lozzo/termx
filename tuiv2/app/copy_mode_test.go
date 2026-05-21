@@ -1048,6 +1048,72 @@ func TestCopyModeExtendsFrozenScrollbackWhenSnapshotLoads(t *testing.T) {
 	}
 }
 
+func TestCopyModeLatestRefreshAcceptsShorterMaterializationWithMoreCommittedOwnership(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 40, Rows: 8},
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
+			protocolRowFromText("canon-00002", 40),
+			protocolRowFromText("canon-00003", 40),
+			protocolRowFromText("tail-live ", 40),
+		}),
+		ScrollbackOwnership:    []string{protocol.RowOwnershipPersisted, protocol.RowOwnershipPersisted, protocol.RowOwnershipLiveTailLive},
+		ScrollbackTotal:        4,
+		ScrollbackLogicalTotal: 4,
+		ScrollbackLoadedRows:   2,
+		HistoryGeneration:      7,
+		ScrollbackFirstRowID:   2,
+		ScrollbackLastRowID:    3,
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolRowFromText("live0", 40),
+		}},
+		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	model.copyMode.Cursor = copyModePoint{Row: 1, Col: 0}
+	buffer, ok := model.activeCopyModeBuffer()
+	if !ok {
+		t.Fatal("expected active copy-mode buffer")
+	}
+	model.copyMode.CursorRowRef = buffer.pointRowRef(model.copyMode.Cursor)
+	beforeCursorRef := model.copyMode.CursorRowRef
+	model.saveCurrentCopyModeState()
+
+	loaded := cloneSnapshot(terminal.Snapshot)
+	loaded.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{
+		protocolRowFromText("canon-00003", 40),
+		protocolRowFromText("canon-00004", 40),
+	})
+	loaded.ScrollbackOwnership = []string{protocol.RowOwnershipPersisted, protocol.RowOwnershipPersisted}
+	loaded.ScrollbackOffset = 3
+	loaded.ScrollbackTotal = 5
+	loaded.ScrollbackLogicalTotal = 5
+	loaded.ScrollbackLoadedRows = 5
+	loaded.HistoryGeneration = 7
+	loaded.ScrollbackFirstRowID = 3
+	loaded.ScrollbackLastRowID = 4
+
+	_, cmd := model.Update(orchestrator.SnapshotLoadedMsg{TerminalID: "term-1", Snapshot: loaded})
+	drainCmd(t, model, cmd, 20)
+
+	if got, want := model.copyMode.CommittedLoadedRows, 5; got != want {
+		t.Fatalf("expected shorter materialization with more committed ownership to advance depth, got %d want %d", got, want)
+	}
+	if got, want := len(model.copyMode.Snapshot.Scrollback), 2; got != want {
+		t.Fatalf("expected frozen snapshot to accept shorter committed materialization, got %d want %d", got, want)
+	}
+	if got := model.copyMode.CursorRowRef; got != beforeCursorRef {
+		t.Fatalf("expected cursor to stay anchored to previous canonical row ref, before=%#v after=%#v", beforeCursorRef, got)
+	}
+	if got, ok := (copyModeBuffer{snapshot: model.copyMode.Snapshot, height: 4}).rowForRef(beforeCursorRef); !ok || model.copyMode.Cursor.Row != got {
+		t.Fatalf("expected cursor row to resolve through ownership row ref, resolved=%d ok=%v cursor=%d", got, ok, model.copyMode.Cursor.Row)
+	}
+}
+
 func TestCopyModeTopLoadsOlderScrollbackIntoFrozenBuffer(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})
