@@ -1093,8 +1093,18 @@ func (t *Terminal) combinedGridViewport(offset, limit, cols int, hotAppendRows [
 
 	displayStart := start
 	if coldEnd > coldStart {
+		expandedColdStart := coldStart
+		if coldViewportStart := coldStart; coldViewportStart > 0 {
+			coldViewport, err := t.grid.Viewport(coldRows-coldEnd, coldEnd-coldStart, cols)
+			if err != nil {
+				return result, err
+			}
+			if coldViewport.LoadedRows > 0 {
+				expandedColdStart = coldRows - coldViewport.LoadedRows
+			}
+		}
 		beforeOffsetCold := coldRows - coldEnd
-		limitCold := coldEnd - coldStart
+		limitCold := coldEnd - expandedColdStart
 		coldViewport, err := t.grid.Viewport(beforeOffsetCold, limitCold, cols)
 		if err != nil {
 			return result, err

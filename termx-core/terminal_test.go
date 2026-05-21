@@ -1826,6 +1826,95 @@ func TestTerminalGridResizeDamageDoesNotPersistVisibleSuffix(t *testing.T) {
 	}
 }
 
+func TestTerminalLatestGrowProjectionUsesMinimalCompleteColdLogicalLineSuffix(t *testing.T) {
+	vt := localvterm.New(5, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("grow2")}},
+		localvterm.CursorState{Row: 0, Col: 5, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "grow-minimal-cold-suffix",
+		size:  Size{Cols: 5, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("older")},
+		{cells: localVTermCellsFromString("grow0"), wrapped: true},
+		{cells: localVTermCellsFromString("grow1"), wrapped: true},
+	}); err != nil {
+		t.Fatalf("append cold rows: %v", err)
+	}
+
+	snapshot := term.Snapshot(0, 1)
+	if snapshot == nil {
+		t.Fatal("expected snapshot")
+	}
+	if got := rowsToStrings(snapshot.Scrollback); !reflect.DeepEqual(got, []string{"grow0", "grow1"}) {
+		t.Fatalf("expected latest snapshot to reclaim only the newest complete logical-line suffix, got %#v", got)
+	}
+	var combined []string
+	for _, row := range snapshot.Scrollback {
+		combined = append(combined, rowToString(row))
+	}
+	for _, row := range snapshot.Screen.Cells {
+		combined = append(combined, rowToString(row))
+	}
+	if !reflect.DeepEqual(combined, []string{"grow0", "grow1", "grow2"}) {
+		t.Fatalf("expected latest snapshot to project the full newest logical line, got %#v", combined)
+	}
+	if stringRowsContain(combined, "older") {
+		t.Fatalf("expected latest snapshot not to reclaim older logical lines, got %#v", combined)
+	}
+	combinedWrapped := append(append([]bool(nil), snapshot.ScrollbackWrapped...), snapshot.ScreenWrapped...)
+	if !reflect.DeepEqual(combinedWrapped, []bool{true, true, false}) {
+		t.Fatalf("expected wrapped metadata to preserve the reclaimed logical-line boundary, got %#v", combinedWrapped)
+	}
+}
+
+func TestTerminalLatestGrowViewportDoesNotPullOlderLogicalLine(t *testing.T) {
+	vt := localvterm.New(5, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("grow2")}},
+		localvterm.CursorState{Row: 0, Col: 5, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "grow-minimal-viewport",
+		size:  Size{Cols: 5, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("older")},
+		{cells: localVTermCellsFromString("grow0"), wrapped: true},
+		{cells: localVTermCellsFromString("grow1"), wrapped: true},
+	}); err != nil {
+		t.Fatalf("append cold rows: %v", err)
+	}
+
+	viewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 0, ScrollbackLimit: 1, Cols: 5})
+	if viewport == nil {
+		t.Fatal("expected viewport")
+	}
+	if got := rowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"grow0", "grow1"}) {
+		t.Fatalf("expected latest viewport to materialize only the newest complete logical-line suffix, got %#v", got)
+	}
+	if viewport.FirstRowID != 1 || viewport.LastRowID != 2 {
+		t.Fatalf("expected latest viewport coordinates to stay on the reclaimed logical-line suffix, got %d..%d", viewport.FirstRowID, viewport.LastRowID)
+	}
+	if !viewport.ScrollbackHasMore {
+		t.Fatal("expected viewport to report older committed history still available")
+	}
+}
+
 func TestTerminalWritePathSplitsColdAndHotAppendRows(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
