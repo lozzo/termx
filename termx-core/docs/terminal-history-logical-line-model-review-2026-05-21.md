@@ -140,7 +140,7 @@
 
 下一步不再继续做渐进式过渡，而是进入一次性 `termx-core` 内部模型切换：
 
-- 移除以 `hot/cold` 为主语义的过渡实现；
+- 补齐旧单向 `hot -> cold` 模型缺失的 live-tail ownership 结构；
 - 引入显式 `mutable live tail` segment 结构；
 - 让 write / resize / latest snapshot / viewport / process-exit 路径统一通过三层模型表达；
 - 第一阶段仍不扩展 wire/runtime/app contract。

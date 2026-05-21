@@ -230,7 +230,7 @@
 
 ### 8.2 Mutable Live Tail
 
-第一阶段 `termx-core` 内部必须把 `mutable live tail` 落成显式 segment 结构，而不是继续把 `hot` 当作“唯一未封口 latest line”。
+第一阶段 `termx-core` 内部必须把 `mutable live tail` 落成显式 segment 结构，而不是继续把 `hot` 只理解成“唯一未封口 latest line”。
 
 它语义上承载：
 
@@ -445,7 +445,7 @@ segment 至少需要表达：
 - mutable live tail；
 - screen projection。
 
-这不是后续可选项，而是当前 Phase 1 的完成条件。实现上应一次性移除以 `hot/cold` 为主语义的过渡层；如果局部变量因为兼容旧测试或局部算法暂时保留旧词，也不得再承担模型定义职责。
+这不是后续可选项，而是当前 Phase 1 的完成条件。实现上应一次性补齐旧单向 `hot -> cold` 模型缺失的 live-tail ownership 结构；如果局部变量因为兼容旧测试或局部算法暂时保留 `hot/cold` 词汇，也必须服从三层模型定义。
 
 ### 14.2 Core / VTerm 边界
 
@@ -545,7 +545,7 @@ segment 至少需要表达：
 ### Phase 1: Core 内部模型收敛
 
 - 在 `termx-core` 内部一次性切换到 persisted history / mutable live tail / screen projection 的显式模型。
-- 移除以 `hot/cold` 为主语义的过渡实现。
+- 补齐旧单向 `hot -> cold` 模型缺失的 live-tail ownership 结构。
 - 让 write / resize / snapshot / viewport / process-exit 路径统一通过 live-tail ownership 结构表达。
 
 ### Phase 2: Snapshot / Viewport / Paging 适配

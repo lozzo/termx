@@ -16,7 +16,7 @@
 - 第一阶段不再采用渐进迁移策略。
 - `termx-core` 内部必须一次性切换到显式的 `persisted history store / mutable live tail / screen projection` 模型。
 - `mutable live tail` 内部采用 segment 结构。
-- `hot/cold` 不再作为内部主语义命名。
+- `hot/cold` 术语可以保留，但必须作为三层模型下的派生或兼容表述使用。
 
 ## 2. 背景与动机
 
@@ -355,7 +355,7 @@ resize 是本设计里最重要的事件之一。
 
 ### 10.3 当前实现决议
 
-第一阶段内部重构不再继续沿用 `hot/cold` 作为主实现模型。
+第一阶段内部重构不再继续沿用旧的单向 `hot -> cold` 作为主实现模型。
 
 `termx-core` 中应显式引入 `mutable live tail` 结构，并用 segment 表达：
 
@@ -364,7 +364,7 @@ resize 是本设计里最重要的事件之一。
 - visual rows 及 timestamp / row kind / wrapped 元数据；
 - wrap-pending 状态。
 
-旧的 `hot` 相关 helper 和测试命名应随实现一起改成 live-tail 语义。若某些局部变量为了小范围算法可读性暂时保留旧词，也不得再承担模型边界含义。
+旧的 `hot` 相关 helper 和测试命名应随实现一起补充 live-tail 语义。若某些局部变量为了小范围算法可读性继续保留旧词，也必须服从三层模型边界。
 
 ## 11. Copy Mode / Replay / Paging 的语义收益
 
@@ -428,7 +428,7 @@ resize 是本设计里最重要的事件之一。
 
 - 内部必须显式区分 `persisted history store`、`mutable live tail`、`screen projection`；
 - `mutable live tail` 用统一 segment 列表管理；
-- segment 内部用属性区分 open logical line、sealed suffix、reclaimed suffix，而不是把它们拆成互不相干的旧 hot/cold 路径。
+- segment 内部用属性区分 open logical line、sealed suffix、reclaimed suffix，而不是只依赖旧单向 hot/cold 路径表达。
 
 ## 13. 本文结论
 

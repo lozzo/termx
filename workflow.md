@@ -194,7 +194,7 @@
 下面这些问题已经做出当前阶段决议：
 
 - `mutable live tail` 内部采用显式 segment 结构维护。
-- 第一阶段必须把 `termx-core` 内部的 `hot/cold` 过渡实现一次性切换为 `persisted history / mutable live tail / screen projection` 模型。
+- 第一阶段必须把 `termx-core` 内部旧的单向 `hot -> cold` 过渡实现一次性补充为 `persisted history / mutable live tail / screen projection` 模型。
 - segment 至少必须表达：
   - logical-line seal 状态；
   - `origin=live/reclaimed`；
@@ -203,6 +203,7 @@
 - reclaim 的基本语义已经定死：按完整 logical line reclaim，且只 reclaim 最小充分 logical-line 后缀。
 - reclaim 的内存上限和长期淘汰策略暂时沿用现有 scrollback / retention 约束，不在本轮扩展新策略。
 - 第一阶段仍不扩展 protocol / runtime / app contract。
+- `hot/cold` 术语可以继续作为派生或兼容表述保留，但不得再被理解为“唯一 open latest line / 永不回流 persisted history”的旧模型。
 
 下面这些仍然是后续阶段问题，但它们不能阻塞本轮内部大重构：
 
@@ -220,7 +221,7 @@
 
 - 在 `termx-core` 内部对齐 `persisted history / mutable live tail / screen projection` 三层语义；
 - 补足 grow / shrink / attach / exit / alt-screen / clear-screen 的语义测试；
-- 一次性移除 `termx-core` 内部以 `hot/cold` 为主语义的过渡实现；
+- 一次性补齐 `termx-core` 内部 `hot/cold` 旧模型缺失的 live-tail ownership 结构；
 - 暂不扩展 wire/runtime/app contract。
 
 ### 7.1 当前完成结果
@@ -245,7 +246,7 @@
 1. 新增显式 `mutable live tail` 内部结构
    - 以 segment 维护 live tail。
    - segment 必须保留 `open/sealed` 与 `origin=live/reclaimed` 两个正交维度。
-   - 不得再把 `hot` 当作“唯一未封口 latest line”的实现主语义。
+   - 不得再把 `hot` 只理解为“唯一未封口 latest line”。
 2. 改写 primary 写入归属路径
    - 普通 primary 输出先进入 live tail / screen projection 语义。
    - 可提交的 sealed logical lines 再进入 `persisted history store`。
@@ -261,7 +262,7 @@
    - process exit 对 primary live tail 执行 force seal，再进入 persisted history。
    - 退出时仍在 `alt-screen`，alt 内容直接丢弃。
 6. 清理内部命名和测试 helper
-   - `termx-core` 内部不应继续以 `hot/cold` 作为主实现命名。
+   - `termx-core` 内部可以保留 `hot/cold` 兼容命名，但必须让语义边界落在三层模型上。
    - 测试 helper 应改为 live-tail 语义命名。
    - 旧测试可以保留行为覆盖，但断言文本应贴近当前三层模型。
 
@@ -271,7 +272,7 @@
 
 本轮大重构完成前，第一阶段剩余缺口就是：
 
-- `termx-core` 内部仍有 `hot/cold` 过渡实现；
+- `termx-core` 内部仍有旧单向 `hot -> cold` 过渡实现；
 - reclaim ownership 仍主要散落在 latest projection / viewport 读路径；
 - 测试命名仍保留旧模型痕迹。
 
