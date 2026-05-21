@@ -240,6 +240,28 @@ func TestTerminalResizeFullReplacePreservesExistingHotOpenLinePrefix(t *testing.
 	if viewport.LoadedRows != 0 || viewport.HistoryGeneration != 0 || viewport.FirstRowID != 0 || viewport.LastRowID != 0 {
 		t.Fatalf("expected viewport to keep zero committed-depth metadata for hot tail, loaded=%d gen=%d first=%d last=%d", viewport.LoadedRows, viewport.HistoryGeneration, viewport.FirstRowID, viewport.LastRowID)
 	}
+
+	olderViewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 1, ScrollbackLimit: 10, Cols: 1})
+	if olderViewport == nil {
+		t.Fatal("expected older viewport")
+	}
+	if got := rowsToStrings(olderViewport.Rows); len(got) != 0 {
+		t.Fatalf("expected shrink-hidden live tail not to become older committed history, got %#v", got)
+	}
+	if olderViewport.LoadedRows != 0 || olderViewport.HistoryGeneration != 0 || olderViewport.FirstRowID != 0 || olderViewport.LastRowID != 0 {
+		t.Fatalf("expected older viewport metadata to stay cold-empty for shrink-hidden live tail, loaded=%d gen=%d first=%d last=%d", olderViewport.LoadedRows, olderViewport.HistoryGeneration, olderViewport.FirstRowID, olderViewport.LastRowID)
+	}
+
+	olderSnapshot := term.Snapshot(1, 10)
+	if olderSnapshot == nil {
+		t.Fatal("expected older snapshot")
+	}
+	if got := rowsToStrings(olderSnapshot.Scrollback); len(got) != 0 {
+		t.Fatalf("expected shrink-hidden live tail not to appear in older snapshot history, got %#v", got)
+	}
+	if olderSnapshot.ScrollbackLoadedRows != 0 || olderSnapshot.HistoryGeneration != 0 || olderSnapshot.ScrollbackFirstRowID != 0 || olderSnapshot.ScrollbackLastRowID != 0 {
+		t.Fatalf("expected older snapshot metadata to stay cold-empty for shrink-hidden live tail, loaded=%d gen=%d first=%d last=%d", olderSnapshot.ScrollbackLoadedRows, olderSnapshot.HistoryGeneration, olderSnapshot.ScrollbackFirstRowID, olderSnapshot.ScrollbackLastRowID)
+	}
 }
 
 func TestTerminalResizeFullReplacePreservesExactWidthHotWrapPendingLine(t *testing.T) {
