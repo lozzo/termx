@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestVTermResizeWithDamageExportsResizeHotOwnedRows(t *testing.T) {
+func TestVTermResizeWithDamageExportsResizeLiveTailRows(t *testing.T) {
 	vt := New(5, 2, 0, nil)
 	vt.DisableEmulatorScrollback()
 	if _, err := vt.Write([]byte("abcdefghij")); err != nil {
@@ -17,8 +17,8 @@ func TestVTermResizeWithDamageExportsResizeHotOwnedRows(t *testing.T) {
 	if !damage.RequiresFullReplace || damage.FullReplaceReason != "resize" {
 		t.Fatalf("expected resize full-replace damage, got %#v", damage)
 	}
-	if got := resizeHotOwnedRowsFromDamageForTest(t, damage); got != 0 {
-		t.Fatalf("expected displaced wrapped prefix without open tail to stay cold-owned, got ResizeHotOwnedRows=%d", got)
+	if got := resizeLiveTailRowsFromDamageForTest(t, damage); got != 0 {
+		t.Fatalf("expected displaced wrapped prefix without open tail to stay persisted-history-owned, got ResizeLiveTailRows=%d", got)
 	}
 
 	gotRows := append(damageRowsText(damage.ScrollbackAppend), screenRowsText(vt.ScreenContent().Cells)...)
@@ -30,7 +30,7 @@ func TestVTermResizeWithDamageExportsResizeHotOwnedRows(t *testing.T) {
 	}
 }
 
-func TestVTermResizeWithDamageMarksOnlyOpenTailRowsHotOwned(t *testing.T) {
+func TestVTermResizeWithDamageMarksOnlyOpenTailRowsLiveTailOwned(t *testing.T) {
 	vt := New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
 	if _, err := vt.Write([]byte("abcd")); err != nil {
@@ -47,27 +47,27 @@ func TestVTermResizeWithDamageMarksOnlyOpenTailRowsHotOwned(t *testing.T) {
 	if !damage.RequiresFullReplace || damage.FullReplaceReason != "resize" {
 		t.Fatalf("expected resize full-replace damage, got %#v", damage)
 	}
-	if got := resizeHotOwnedRowsFromDamageForTest(t, damage); got != 1 {
-		t.Fatalf("expected only the displaced row from the visible open tail to stay hot-owned, got %d", got)
+	if got := resizeLiveTailRowsFromDamageForTest(t, damage); got != 1 {
+		t.Fatalf("expected only the displaced row from the visible open tail to stay live-tail-owned, got %d", got)
 	}
 	if gotDamageRows := damageRowsText(damage.ScrollbackAppend); !reflect.DeepEqual(gotDamageRows, []string{"i"}) {
 		t.Fatalf("expected resize damage to include only the displaced visible tail row, got %#v", gotDamageRows)
 	}
 }
 
-func resizeHotOwnedRowsFromDamageForTest(t *testing.T, damage WriteDamage) int {
+func resizeLiveTailRowsFromDamageForTest(t *testing.T, damage WriteDamage) int {
 	t.Helper()
 	value := reflect.ValueOf(damage)
-	field := value.FieldByName("ResizeHotOwnedRows")
+	field := value.FieldByName("ResizeLiveTailRows")
 	if !field.IsValid() {
-		t.Fatal("expected WriteDamage.ResizeHotOwnedRows field")
+		t.Fatal("expected WriteDamage.ResizeLiveTailRows field")
 	}
-	setField := value.FieldByName("ResizeHotOwnedRowsSet")
+	setField := value.FieldByName("ResizeLiveTailRowsSet")
 	if !setField.IsValid() {
-		t.Fatal("expected WriteDamage.ResizeHotOwnedRowsSet field")
+		t.Fatal("expected WriteDamage.ResizeLiveTailRowsSet field")
 	}
 	if !setField.Bool() {
-		t.Fatal("expected resize damage to mark ResizeHotOwnedRowsSet")
+		t.Fatal("expected resize damage to mark ResizeLiveTailRowsSet")
 	}
 	return int(field.Int())
 }

@@ -650,7 +650,7 @@ func TestSubscribeBootstrapDoesNotCreateHistoryFromLiveScreenOnly(t *testing.T) 
 		t.Fatal("expected snapshot")
 	}
 	if snap.ScrollbackTotal != 0 || snap.ScrollbackLoadedRows != 0 || snap.HistoryGeneration != 0 {
-		t.Fatalf("expected bootstrap to leave history metadata cold-empty, got total=%d loaded=%d gen=%d", snap.ScrollbackTotal, snap.ScrollbackLoadedRows, snap.HistoryGeneration)
+		t.Fatalf("expected bootstrap to leave history metadata persisted-empty, got total=%d loaded=%d gen=%d", snap.ScrollbackTotal, snap.ScrollbackLoadedRows, snap.HistoryGeneration)
 	}
 }
 
@@ -672,8 +672,8 @@ func TestScreenSnapshotFallbackFullReplaceDoesNotCreateHistory(t *testing.T) {
 		stream: fanout.New(),
 		grid:   store,
 	}
-	if err := store.AppendRows([][]localvterm.Cell{localVTermCellsFromString("cold0")}); err != nil {
-		t.Fatalf("append cold seed: %v", err)
+	if err := store.AppendRows([][]localvterm.Cell{localVTermCellsFromString("hist0")}); err != nil {
+		t.Fatalf("append persisted seed: %v", err)
 	}
 	beforeRows := store.RowCount()
 	beforeLines := store.LogicalLineCount()
@@ -811,7 +811,7 @@ func TestTerminalSnapshotPagesLiveHistoryFromDisk(t *testing.T) {
 	}
 }
 
-func TestTerminalSnapshotMetadataOnlyPreservesCanonicalColdWindowAfterRetention(t *testing.T) {
+func TestTerminalSnapshotMetadataOnlyPreservesCanonicalPersistedWindowAfterRetention(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 	store.SetMaxRows(500)
@@ -1633,7 +1633,7 @@ func TestTerminalGridScrollbackPreservesShellPromptStyleRuns(t *testing.T) {
 	}
 }
 
-func TestTerminalGridStoreRowsReflowSoftWrappedColdBuffer(t *testing.T) {
+func TestTerminalGridStoreRowsReflowSoftWrappedPersistedBuffer(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 
@@ -1665,7 +1665,7 @@ func TestTerminalGridStoreRowsReflowSoftWrappedColdBuffer(t *testing.T) {
 		gotRows = append(gotRows, vtermRowToString(row))
 	}
 	if !reflect.DeepEqual(gotRows, []string{"abc", "def", "g", "HI"}) {
-		t.Fatalf("expected cold buffer to reflow by requested width, got %#v", gotRows)
+		t.Fatalf("expected persisted buffer to reflow by requested width, got %#v", gotRows)
 	}
 }
 
@@ -1826,7 +1826,7 @@ func TestTerminalGridResizeDamageDoesNotPersistVisibleSuffix(t *testing.T) {
 	}
 }
 
-func TestTerminalLatestGrowProjectionUsesMinimalCompleteColdLogicalLineSuffix(t *testing.T) {
+func TestTerminalLatestGrowProjectionUsesMinimalCompletePersistedLogicalLineSuffix(t *testing.T) {
 	vt := localvterm.New(5, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
 	vt.LoadSnapshot(
@@ -1837,7 +1837,7 @@ func TestTerminalLatestGrowProjectionUsesMinimalCompleteColdLogicalLineSuffix(t 
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 	term := &Terminal{
-		id:    "grow-minimal-cold-suffix",
+		id:    "grow-minimal-persisted-suffix",
 		size:  Size{Cols: 5, Rows: 1},
 		vterm: vt,
 		grid:  store,
@@ -1847,7 +1847,7 @@ func TestTerminalLatestGrowProjectionUsesMinimalCompleteColdLogicalLineSuffix(t 
 		{cells: localVTermCellsFromString("grow0"), wrapped: true},
 		{cells: localVTermCellsFromString("grow1"), wrapped: true},
 	}); err != nil {
-		t.Fatalf("append cold rows: %v", err)
+		t.Fatalf("append persisted rows: %v", err)
 	}
 	term.size = Size{Cols: 5, Rows: 3}
 	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
@@ -1901,7 +1901,7 @@ func TestTerminalGrowResizeStoresReclaimedSuffixInPrimaryLiveTail(t *testing.T) 
 		{cells: localVTermCellsFromString("grow0"), wrapped: true},
 		{cells: localVTermCellsFromString("grow1"), wrapped: true},
 	}); err != nil {
-		t.Fatalf("append cold rows: %v", err)
+		t.Fatalf("append persisted rows: %v", err)
 	}
 	term.size = Size{Cols: 5, Rows: 3}
 	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
@@ -1960,7 +1960,7 @@ func TestTerminalLatestGrowViewportDoesNotPullOlderLogicalLine(t *testing.T) {
 		{cells: localVTermCellsFromString("grow0"), wrapped: true},
 		{cells: localVTermCellsFromString("grow1"), wrapped: true},
 	}); err != nil {
-		t.Fatalf("append cold rows: %v", err)
+		t.Fatalf("append persisted rows: %v", err)
 	}
 	term.size = Size{Cols: 5, Rows: 3}
 	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
@@ -1982,33 +1982,33 @@ func TestTerminalLatestGrowViewportDoesNotPullOlderLogicalLine(t *testing.T) {
 	}
 }
 
-func TestTerminalWritePathSplitsColdAndHotAppendRows(t *testing.T) {
+func TestTerminalWritePathSplitsPersistedAndLiveTailAppendRows(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
-	term := &Terminal{id: "cold-hot-append", grid: store}
+	term := &Terminal{id: "persisted-live-tail-append", grid: store}
 	damage := localvterm.WriteDamage{
 		ScrollbackAppend: []localvterm.DamageOp{
-			{Cells: localVTermCellsFromString("cold0"), WrappedSet: true, Wrapped: false},
-			{Cells: localVTermCellsFromString("hot0"), WrappedSet: true, Wrapped: true},
-			{Cells: localVTermCellsFromString("hot1"), WrappedSet: true, Wrapped: true},
+			{Cells: localVTermCellsFromString("hist0"), WrappedSet: true, Wrapped: false},
+			{Cells: localVTermCellsFromString("tail0"), WrappedSet: true, Wrapped: true},
+			{Cells: localVTermCellsFromString("tail1"), WrappedSet: true, Wrapped: true},
 		},
-		HotAppendRows: 2,
+		LiveTailAppendRows: 2,
 	}
 	term.appendGridFromDamageLocked(damage)
 
 	viewport, err := store.Viewport(0, 10, 8)
 	if err != nil {
-		t.Fatalf("read cold viewport: %v", err)
+		t.Fatalf("read persisted viewport: %v", err)
 	}
-	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"cold0"}) {
-		t.Fatalf("expected only cold append rows persisted, got %#v", got)
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"hist0"}) {
+		t.Fatalf("expected only persisted append rows persisted, got %#v", got)
 	}
-	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"hot0", "hot1"}) {
-		t.Fatalf("expected trailing hot append rows retained in working set, got %#v", got)
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"tail0", "tail1"}) {
+		t.Fatalf("expected trailing live-tail append rows retained in working set, got %#v", got)
 	}
 }
 
-func TestTerminalLatestProjectionUsesColdAndHotAppendRows(t *testing.T) {
+func TestTerminalLatestProjectionUsesPersistedAndLiveTailAppendRows(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
 	vt.LoadSnapshot(localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("live")}}, localvterm.CursorState{Row: 0, Col: 4, Visible: true}, localvterm.TerminalModes{AutoWrap: true})
@@ -2022,10 +2022,10 @@ func TestTerminalLatestProjectionUsesColdAndHotAppendRows(t *testing.T) {
 	}
 	damage := localvterm.WriteDamage{
 		ScrollbackAppend: []localvterm.DamageOp{
-			{Cells: localVTermCellsFromString("cold"), WrappedSet: true, Wrapped: false},
+			{Cells: localVTermCellsFromString("hist"), WrappedSet: true, Wrapped: false},
 			{Cells: localVTermCellsFromString("tail"), WrappedSet: true, Wrapped: true},
 		},
-		HotAppendRows: 1,
+		LiveTailAppendRows: 1,
 	}
 	term.appendGridFromDamageLocked(damage)
 
@@ -2040,29 +2040,29 @@ func TestTerminalLatestProjectionUsesColdAndHotAppendRows(t *testing.T) {
 	for _, row := range snapshot.Screen.Cells {
 		combined = append(combined, rowToString(row))
 	}
-	if !reflect.DeepEqual(combined, []string{"cold", "tail", "live"}) {
-		t.Fatalf("expected latest snapshot projection cold+hot+screen, got %#v", combined)
+	if !reflect.DeepEqual(combined, []string{"hist", "tail", "live"}) {
+		t.Fatalf("expected latest snapshot projection persisted+live-tail+screen, got %#v", combined)
 	}
 }
 
-func TestTerminalOlderViewportIgnoresLatestHotAppendRows(t *testing.T) {
+func TestTerminalOlderViewportIgnoresLatestLiveTailAppendRows(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
 	vt.LoadSnapshot(localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("live")}}, localvterm.CursorState{Row: 0, Col: 4, Visible: true}, localvterm.TerminalModes{AutoWrap: true})
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 	term := &Terminal{
-		id:    "older-ignores-hot",
+		id:    "older-ignores-live-tail",
 		size:  Size{Cols: 4, Rows: 1},
 		vterm: vt,
 		grid:  store,
 	}
 	damage := localvterm.WriteDamage{
 		ScrollbackAppend: []localvterm.DamageOp{
-			{Cells: localVTermCellsFromString("cold"), WrappedSet: true, Wrapped: false},
+			{Cells: localVTermCellsFromString("hist"), WrappedSet: true, Wrapped: false},
 			{Cells: localVTermCellsFromString("tail"), WrappedSet: true, Wrapped: true},
 		},
-		HotAppendRows: 1,
+		LiveTailAppendRows: 1,
 	}
 	term.appendGridFromDamageLocked(damage)
 
@@ -2218,7 +2218,7 @@ func TestTerminalSnapshotTrimsResizeGridScreenOverlap(t *testing.T) {
 	}
 }
 
-func TestTerminalLatestSnapshotProjectsColdHotAndScreen(t *testing.T) {
+func TestTerminalLatestSnapshotProjectsPersistedLiveTailAndScreen(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
 	vt.LoadSnapshot(localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("live")}}, localvterm.CursorState{Row: 0, Col: 4, Visible: true}, localvterm.TerminalModes{AutoWrap: true})
@@ -2232,10 +2232,10 @@ func TestTerminalLatestSnapshotProjectsColdHotAndScreen(t *testing.T) {
 	}
 	damage := localvterm.WriteDamage{
 		ScrollbackAppend: []localvterm.DamageOp{
-			{Cells: localVTermCellsFromString("cold"), WrappedSet: true, Wrapped: false},
+			{Cells: localVTermCellsFromString("hist"), WrappedSet: true, Wrapped: false},
 			{Cells: localVTermCellsFromString("tail"), WrappedSet: true, Wrapped: true},
 		},
-		HotAppendRows: 1,
+		LiveTailAppendRows: 1,
 	}
 	term.appendGridFromDamageLocked(damage)
 
@@ -2250,29 +2250,29 @@ func TestTerminalLatestSnapshotProjectsColdHotAndScreen(t *testing.T) {
 	for _, row := range snapshot.Screen.Cells {
 		combined = append(combined, rowToString(row))
 	}
-	if !reflect.DeepEqual(combined, []string{"cold", "tail", "live"}) {
-		t.Fatalf("expected latest snapshot projection cold+hot+screen, got %#v", combined)
+	if !reflect.DeepEqual(combined, []string{"hist", "tail", "live"}) {
+		t.Fatalf("expected latest snapshot projection persisted+live-tail+screen, got %#v", combined)
 	}
 }
 
-func TestTerminalOlderGridViewportIgnoresHotAppendRows(t *testing.T) {
+func TestTerminalOlderGridViewportIgnoresLiveTailAppendRows(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
 	vt.LoadSnapshot(localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("live")}}, localvterm.CursorState{Row: 0, Col: 4, Visible: true}, localvterm.TerminalModes{AutoWrap: true})
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 	term := &Terminal{
-		id:    "older-cold-only",
+		id:    "older-persisted-only",
 		size:  Size{Cols: 4, Rows: 1},
 		vterm: vt,
 		grid:  store,
 	}
 	damage := localvterm.WriteDamage{
 		ScrollbackAppend: []localvterm.DamageOp{
-			{Cells: localVTermCellsFromString("cold"), WrappedSet: true, Wrapped: false},
+			{Cells: localVTermCellsFromString("hist"), WrappedSet: true, Wrapped: false},
 			{Cells: localVTermCellsFromString("tail"), WrappedSet: true, Wrapped: true},
 		},
-		HotAppendRows: 1,
+		LiveTailAppendRows: 1,
 	}
 	term.appendGridFromDamageLocked(damage)
 

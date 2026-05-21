@@ -427,24 +427,24 @@ type CellRun struct {
 }
 
 type WriteDamage struct {
-	Ops                 []DamageOp
-	ScrollbackAppend    []DamageOp
-	HotAppendRows       int
-	ResizeHotOwnedRows  int
-	ResizeHotOwnedRowsSet bool
-	AlternateAppend     []DamageOp
-	ScrollbackTrim      int
-	ScreenScroll        int
-	RequiresFullReplace bool
-	FullReplaceReason   string
-	DirectDamageItems   int
-	DirectDamageRows    int
-	DirectDamageCells   int
-	Cursor              CursorState
-	Modes               TerminalModes
-	SizeCols            int
-	SizeRows            int
-	DiffCPUNanos        int64
+	Ops                   []DamageOp
+	ScrollbackAppend      []DamageOp
+	LiveTailAppendRows    int
+	ResizeLiveTailRows    int
+	ResizeLiveTailRowsSet bool
+	AlternateAppend       []DamageOp
+	ScrollbackTrim        int
+	ScreenScroll          int
+	RequiresFullReplace   bool
+	FullReplaceReason     string
+	DirectDamageItems     int
+	DirectDamageRows      int
+	DirectDamageCells     int
+	Cursor                CursorState
+	Modes                 TerminalModes
+	SizeCols              int
+	SizeRows              int
+	DiffCPUNanos          int64
 }
 
 type TraceHooks struct {
@@ -1527,9 +1527,9 @@ func (v *VTerm) resizeWithDamageLocked(cols, rows int) WriteDamage {
 	if shouldFallbackResizeHistoryAppend(beforeCols, beforeRows, cols, rows, beforeResizeRows, resizePlan) {
 		damage.ScrollbackAppend = resizeScrollbackAppendFromReflowedRows(beforeResizeRows, afterScreenRows, v.screenTimestamps, v.screenRowKinds, afterScreenWrapped)
 	}
-	damage.HotAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
-	damage.ResizeHotOwnedRows = resizeHotOwnedRowsFromPlan(resizePlan, beforeCursorRow)
-	damage.ResizeHotOwnedRowsSet = true
+	damage.LiveTailAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
+	damage.ResizeLiveTailRows = resizeLiveTailRowsFromPlan(resizePlan, beforeCursorRow)
+	damage.ResizeLiveTailRowsSet = true
 	damage.ScrollbackTrim = 0
 	damage.SizeCols = cols
 	damage.SizeRows = rows
@@ -3028,7 +3028,7 @@ func (v *VTerm) writeDamageFromDirectOpsLocked(ops []DamageOp, plan rowCacheReco
 	damage := v.writeDamageHeaderLocked(plan)
 	damage.Ops = ops
 	v.appendScrollbackDamageLocked(&damage, plan)
-	damage.HotAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
+	damage.LiveTailAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
 	return damage
 }
 
@@ -3037,7 +3037,7 @@ func (v *VTerm) writeDamageRequiresFullReplaceLocked(plan rowCacheReconcilePlan,
 	damage.RequiresFullReplace = true
 	damage.FullReplaceReason = reason
 	v.appendScrollbackDamageLocked(&damage, plan)
-	damage.HotAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
+	damage.LiveTailAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
 	return damage
 }
 
@@ -3269,7 +3269,7 @@ func (p resizeHistoryPlan) scrollbackAppend() []DamageOp {
 	return out
 }
 
-func resizeHotOwnedRowsFromPlan(plan resizeHistoryPlan, sourceRow int) int {
+func resizeLiveTailRowsFromPlan(plan resizeHistoryPlan, sourceRow int) int {
 	if !resizePlanHasRows(plan) || sourceRow < 0 {
 		return 0
 	}

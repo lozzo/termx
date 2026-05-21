@@ -10,13 +10,13 @@ import (
 
 func TestSplitDamageRowsByLiveTailHintExtendsTailAcrossWrappedBoundary(t *testing.T) {
 	rows := []localvterm.DamageOp{
-		{Cells: localVTermCellsFromString("cold"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("hist"), WrappedSet: true, Wrapped: false},
 		{Cells: localVTermCellsFromString("mid"), WrappedSet: true, Wrapped: true},
 		{Cells: localVTermCellsFromString("tail"), WrappedSet: true, Wrapped: true},
 	}
 
 	persisted, liveTail := splitDamageRowsByLiveTailHint(rows, 1)
-	if got := damageRowsToStrings(persisted); !reflect.DeepEqual(got, []string{"cold"}) {
+	if got := damageRowsToStrings(persisted); !reflect.DeepEqual(got, []string{"hist"}) {
 		t.Fatalf("expected persisted flush boundary to stay before wrapped continuation, got persisted=%#v live_tail=%#v", got, damageRowsToStrings(liveTail))
 	}
 	if got := damageRowsToStrings(liveTail); !reflect.DeepEqual(got, []string{"mid", "tail"}) {
@@ -24,7 +24,7 @@ func TestSplitDamageRowsByLiveTailHintExtendsTailAcrossWrappedBoundary(t *testin
 	}
 }
 
-func TestTerminalOpenExactWidthLineStaysHotAcrossOverflowedTop(t *testing.T) {
+func TestTerminalOpenExactWidthLineStaysLiveTailAcrossOverflowedTop(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
 	store := newMemoryTerminalGridStoreForTest(t)
@@ -41,7 +41,7 @@ func TestTerminalOpenExactWidthLineStaysHotAcrossOverflowedTop(t *testing.T) {
 	writeVTermDamageToGrid(t, term, vt, "ij")
 
 	if got := store.RowCount(); got != 0 {
-		t.Fatalf("expected full-width open logical line to stay out of cold store before terminator, got %d cold rows", got)
+		t.Fatalf("expected full-width open logical line to stay out of persisted store before terminator, got %d persisted rows", got)
 	}
 	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"abcd", "efgh"}) {
 		t.Fatalf("expected wrapped prefixes above visible top to stay in one live-tail open line, got %#v raw=%#v", got, term.primaryLiveTail.rows())
@@ -59,7 +59,7 @@ func TestTerminalOpenExactWidthLineStaysHotAcrossOverflowedTop(t *testing.T) {
 		combinedRows = append(combinedRows, rowToString(row))
 	}
 	if !reflect.DeepEqual(combinedRows, []string{"abcd", "efgh", "ij"}) {
-		t.Fatalf("expected latest snapshot to project one open logical line across hot+screen, got %#v", combinedRows)
+		t.Fatalf("expected latest snapshot to project one open logical line across live-tail+screen, got %#v", combinedRows)
 	}
 	combinedWrapped := append(append([]bool(nil), snapshot.ScrollbackWrapped...), snapshot.ScreenWrapped...)
 	if !reflect.DeepEqual(combinedWrapped, []bool{true, true, false}) {
@@ -67,7 +67,7 @@ func TestTerminalOpenExactWidthLineStaysHotAcrossOverflowedTop(t *testing.T) {
 	}
 }
 
-func TestTerminalHardNewlineSealsAccumulatedHotOpenLineToCold(t *testing.T) {
+func TestTerminalHardNewlineSealsAccumulatedLiveTailOpenLineToPersistedHistory(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
 	store := newMemoryTerminalGridStoreForTest(t)
@@ -83,31 +83,31 @@ func TestTerminalHardNewlineSealsAccumulatedHotOpenLineToCold(t *testing.T) {
 	writeVTermDamageToGrid(t, term, vt, "efgh")
 	writeVTermDamageToGrid(t, term, vt, "ij")
 	if got := store.RowCount(); got != 0 {
-		t.Fatalf("expected no cold rows before hard newline seal, got %d", got)
+		t.Fatalf("expected no persisted rows before hard newline seal, got %d", got)
 	}
 
 	writeVTermDamageToGrid(t, term, vt, "\r\n")
 
 	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); len(got) != 0 {
-		t.Fatalf("expected hard newline to seal and clear hot builder, got %#v", got)
+		t.Fatalf("expected hard newline to seal and clear live-tail builder, got %#v", got)
 	}
 
 	viewport, err := store.Viewport(0, 10, 4)
 	if err != nil {
-		t.Fatalf("read cold viewport: %v", err)
+		t.Fatalf("read persisted viewport: %v", err)
 	}
 	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"abcd", "efgh", "ij"}) {
-		t.Fatalf("expected hard newline to seal the whole logical line to cold store, got %#v", got)
+		t.Fatalf("expected hard newline to seal the whole logical line to persisted store, got %#v", got)
 	}
 	if !reflect.DeepEqual(viewport.Wrapped, []bool{true, true, false}) {
-		t.Fatalf("expected cold rows to end only at an unwrapped terminator, got %#v", viewport.Wrapped)
+		t.Fatalf("expected persisted rows to end only at an unwrapped terminator, got %#v", viewport.Wrapped)
 	}
 	if got := store.LogicalLineCount(); got != 1 {
 		t.Fatalf("expected one sealed logical line after hard newline, got %d", got)
 	}
 }
 
-func TestTerminalExactWidthLineHardNewlineSealsToCold(t *testing.T) {
+func TestTerminalExactWidthLineHardNewlineSealsToPersistedHistory(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
 	store := newMemoryTerminalGridStoreForTest(t)
@@ -121,7 +121,7 @@ func TestTerminalExactWidthLineHardNewlineSealsToCold(t *testing.T) {
 
 	writeVTermDamageToGrid(t, term, vt, "ABCD")
 	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); len(got) != 0 {
-		t.Fatalf("expected exact-width open line to avoid explicit hot rows before terminator, got %#v", got)
+		t.Fatalf("expected exact-width open line to avoid explicit live-tail rows before terminator, got %#v", got)
 	}
 	if !term.primaryLiveTail.wrapPending {
 		t.Fatal("expected exact-width write to leave live-tail wrap pending before hard newline")
@@ -133,7 +133,7 @@ func TestTerminalExactWidthLineHardNewlineSealsToCold(t *testing.T) {
 	writeVTermDamageToGrid(t, term, vt, "\r\n")
 
 	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); len(got) != 0 {
-		t.Fatalf("expected hard newline to clear exact-width hot builder, got %#v", got)
+		t.Fatalf("expected hard newline to clear exact-width live-tail builder, got %#v", got)
 	}
 	if term.primaryLiveTail.wrapPending {
 		t.Fatal("expected hard newline to clear live-tail wrap pending")
@@ -180,13 +180,13 @@ func TestTerminalExactWidthLineHardNewlineSealsToCold(t *testing.T) {
 	}
 }
 
-func TestTerminalResizeFullReplacePreservesExistingHotOpenLinePrefix(t *testing.T) {
+func TestTerminalResizeFullReplacePreservesExistingLiveTailOpenLinePrefix(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 	term := &Terminal{
-		id:    "resize-hot-open-line-prefix",
+		id:    "resize-live-tail-open-line-prefix",
 		size:  Size{Cols: 4, Rows: 1},
 		vterm: vt,
 		grid:  store,
@@ -196,7 +196,7 @@ func TestTerminalResizeFullReplacePreservesExistingHotOpenLinePrefix(t *testing.
 	writeVTermDamageToGrid(t, term, vt, "efgh")
 	writeVTermDamageToGrid(t, term, vt, "ij")
 	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"abcd", "efgh"}) {
-		t.Fatalf("expected hot open-line prefix before resize, got %#v", got)
+		t.Fatalf("expected live-tail open-line prefix before resize, got %#v", got)
 	}
 	if got := store.RowCount(); got != 0 {
 		t.Fatalf("expected no committed rows before resize, got %d", got)
@@ -210,7 +210,7 @@ func TestTerminalResizeFullReplacePreservesExistingHotOpenLinePrefix(t *testing.
 	term.appendGridFromDamageLocked(damage)
 
 	if got := store.RowCount(); got != 0 {
-		t.Fatalf("expected resize hot tail to stay out of committed store, got %d committed rows", got)
+		t.Fatalf("expected resize live tail to stay out of committed store, got %d committed rows", got)
 	}
 
 	liveTailRows := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest())
@@ -227,7 +227,7 @@ func TestTerminalResizeFullReplacePreservesExistingHotOpenLinePrefix(t *testing.
 		t.Fatalf("expected latest snapshot scrollback to project live tail, got %#v", rowsToStrings(snapshot.Scrollback))
 	}
 	if snapshot.ScrollbackLoadedRows != 0 || snapshot.HistoryGeneration != 0 || snapshot.ScrollbackFirstRowID != 0 || snapshot.ScrollbackLastRowID != 0 {
-		t.Fatalf("expected snapshot to keep zero committed-depth metadata for hot tail, loaded=%d gen=%d first=%d last=%d", snapshot.ScrollbackLoadedRows, snapshot.HistoryGeneration, snapshot.ScrollbackFirstRowID, snapshot.ScrollbackLastRowID)
+		t.Fatalf("expected snapshot to keep zero committed-depth metadata for live tail, loaded=%d gen=%d first=%d last=%d", snapshot.ScrollbackLoadedRows, snapshot.HistoryGeneration, snapshot.ScrollbackFirstRowID, snapshot.ScrollbackLastRowID)
 	}
 
 	viewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 0, ScrollbackLimit: 10, Cols: 1})
@@ -238,7 +238,7 @@ func TestTerminalResizeFullReplacePreservesExistingHotOpenLinePrefix(t *testing.
 		t.Fatalf("expected latest viewport rows to stay live-tail-only after resize, got %#v", rowsToStrings(viewport.Rows))
 	}
 	if viewport.LoadedRows != 0 || viewport.HistoryGeneration != 0 || viewport.FirstRowID != 0 || viewport.LastRowID != 0 {
-		t.Fatalf("expected viewport to keep zero committed-depth metadata for hot tail, loaded=%d gen=%d first=%d last=%d", viewport.LoadedRows, viewport.HistoryGeneration, viewport.FirstRowID, viewport.LastRowID)
+		t.Fatalf("expected viewport to keep zero committed-depth metadata for live tail, loaded=%d gen=%d first=%d last=%d", viewport.LoadedRows, viewport.HistoryGeneration, viewport.FirstRowID, viewport.LastRowID)
 	}
 
 	olderViewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 1, ScrollbackLimit: 10, Cols: 1})
@@ -249,7 +249,7 @@ func TestTerminalResizeFullReplacePreservesExistingHotOpenLinePrefix(t *testing.
 		t.Fatalf("expected shrink-hidden live tail not to become older committed history, got %#v", got)
 	}
 	if olderViewport.LoadedRows != 0 || olderViewport.HistoryGeneration != 0 || olderViewport.FirstRowID != 0 || olderViewport.LastRowID != 0 {
-		t.Fatalf("expected older viewport metadata to stay cold-empty for shrink-hidden live tail, loaded=%d gen=%d first=%d last=%d", olderViewport.LoadedRows, olderViewport.HistoryGeneration, olderViewport.FirstRowID, olderViewport.LastRowID)
+		t.Fatalf("expected older viewport metadata to stay persisted-empty for shrink-hidden live tail, loaded=%d gen=%d first=%d last=%d", olderViewport.LoadedRows, olderViewport.HistoryGeneration, olderViewport.FirstRowID, olderViewport.LastRowID)
 	}
 
 	olderSnapshot := term.Snapshot(1, 10)
@@ -260,17 +260,17 @@ func TestTerminalResizeFullReplacePreservesExistingHotOpenLinePrefix(t *testing.
 		t.Fatalf("expected shrink-hidden live tail not to appear in older snapshot history, got %#v", got)
 	}
 	if olderSnapshot.ScrollbackLoadedRows != 0 || olderSnapshot.HistoryGeneration != 0 || olderSnapshot.ScrollbackFirstRowID != 0 || olderSnapshot.ScrollbackLastRowID != 0 {
-		t.Fatalf("expected older snapshot metadata to stay cold-empty for shrink-hidden live tail, loaded=%d gen=%d first=%d last=%d", olderSnapshot.ScrollbackLoadedRows, olderSnapshot.HistoryGeneration, olderSnapshot.ScrollbackFirstRowID, olderSnapshot.ScrollbackLastRowID)
+		t.Fatalf("expected older snapshot metadata to stay persisted-empty for shrink-hidden live tail, loaded=%d gen=%d first=%d last=%d", olderSnapshot.ScrollbackLoadedRows, olderSnapshot.HistoryGeneration, olderSnapshot.ScrollbackFirstRowID, olderSnapshot.ScrollbackLastRowID)
 	}
 }
 
-func TestTerminalResizeFullReplacePreservesExactWidthHotWrapPendingLine(t *testing.T) {
+func TestTerminalResizeFullReplacePreservesExactWidthLiveTailWrapPendingLine(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
 	term := &Terminal{
-		id:    "resize-hot-wrap-pending-exact-width",
+		id:    "resize-live-tail-wrap-pending-exact-width",
 		size:  Size{Cols: 4, Rows: 1},
 		vterm: vt,
 		grid:  store,
@@ -278,7 +278,7 @@ func TestTerminalResizeFullReplacePreservesExactWidthHotWrapPendingLine(t *testi
 
 	writeVTermDamageToGrid(t, term, vt, "abcd")
 	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); len(got) != 0 {
-		t.Fatalf("expected no explicit hot append rows before resize for exact-width open line, got %#v", got)
+		t.Fatalf("expected no explicit live-tail append rows before resize for exact-width open line, got %#v", got)
 	}
 	if !term.primaryLiveTail.wrapPending {
 		t.Fatal("expected exact-width write to leave live-tail wrap pending before resize")
@@ -291,7 +291,7 @@ func TestTerminalResizeFullReplacePreservesExactWidthHotWrapPendingLine(t *testi
 	if !damage.RequiresFullReplace || damage.FullReplaceReason != "resize" {
 		t.Fatalf("expected resize full-replace damage, got %#v", damage)
 	}
-	if got := damage.HotAppendRows; got != 3 {
+	if got := damage.LiveTailAppendRows; got != 3 {
 		t.Fatalf("expected exact-width resize append rows to expose three displaced rows, got %d", got)
 	}
 	if got := damageRowsToStrings(damage.ScrollbackAppend); !reflect.DeepEqual(got, []string{"a", "b", "c"}) {
@@ -325,10 +325,10 @@ func TestTerminalResizeFullReplacePreservesExactWidthHotWrapPendingLine(t *testi
 		t.Fatal("expected snapshot")
 	}
 	if got := rowsToStrings(snapshot.Scrollback); !reflect.DeepEqual(got, liveTailRows) {
-		t.Fatalf("expected latest snapshot scrollback to project hot prefix rows only, got %#v", got)
+		t.Fatalf("expected latest snapshot scrollback to project live-tail prefix rows only, got %#v", got)
 	}
 	if snapshot.ScrollbackLoadedRows != 0 || snapshot.HistoryGeneration != 0 || snapshot.ScrollbackFirstRowID != 0 || snapshot.ScrollbackLastRowID != 0 {
-		t.Fatalf("expected snapshot to keep zero committed-depth metadata for exact-width hot line, loaded=%d gen=%d first=%d last=%d", snapshot.ScrollbackLoadedRows, snapshot.HistoryGeneration, snapshot.ScrollbackFirstRowID, snapshot.ScrollbackLastRowID)
+		t.Fatalf("expected snapshot to keep zero committed-depth metadata for exact-width live-tail line, loaded=%d gen=%d first=%d last=%d", snapshot.ScrollbackLoadedRows, snapshot.HistoryGeneration, snapshot.ScrollbackFirstRowID, snapshot.ScrollbackLastRowID)
 	}
 	if got := append(append([]bool(nil), snapshot.ScrollbackWrapped...), snapshot.ScreenWrapped...); !reflect.DeepEqual(got, []bool{true, true, true, false}) {
 		t.Fatalf("expected snapshot wrapped metadata to preserve open exact-width line continuity, got %#v", got)
@@ -339,7 +339,7 @@ func TestTerminalResizeFullReplacePreservesExactWidthHotWrapPendingLine(t *testi
 		t.Fatal("expected older snapshot")
 	}
 	if got := rowsToStrings(metadataOnly.Scrollback); len(got) != 0 {
-		t.Fatalf("expected older snapshot to stay cold-only and exclude hot open line, got %#v", got)
+		t.Fatalf("expected older snapshot to stay persisted-only and exclude live-tail open line, got %#v", got)
 	}
 	if metadataOnly.ScrollbackLoadedRows != 0 || metadataOnly.HistoryGeneration != 0 || metadataOnly.ScrollbackFirstRowID != 0 || metadataOnly.ScrollbackLastRowID != 0 {
 		t.Fatalf("expected older snapshot metadata to keep committed depth at zero, loaded=%d gen=%d first=%d last=%d", metadataOnly.ScrollbackLoadedRows, metadataOnly.HistoryGeneration, metadataOnly.ScrollbackFirstRowID, metadataOnly.ScrollbackLastRowID)
@@ -350,10 +350,10 @@ func TestTerminalResizeFullReplacePreservesExactWidthHotWrapPendingLine(t *testi
 		t.Fatal("expected viewport")
 	}
 	if got := rowsToStrings(viewport.Rows); !reflect.DeepEqual(got, liveTailRows) {
-		t.Fatalf("expected latest viewport rows to stay hot-only after exact-width resize, got %#v", got)
+		t.Fatalf("expected latest viewport rows to stay live-tail-only after exact-width resize, got %#v", got)
 	}
 	if viewport.LoadedRows != 0 || viewport.HistoryGeneration != 0 || viewport.FirstRowID != 0 || viewport.LastRowID != 0 {
-		t.Fatalf("expected viewport to keep zero committed-depth metadata for exact-width hot line, loaded=%d gen=%d first=%d last=%d", viewport.LoadedRows, viewport.HistoryGeneration, viewport.FirstRowID, viewport.LastRowID)
+		t.Fatalf("expected viewport to keep zero committed-depth metadata for exact-width live-tail line, loaded=%d gen=%d first=%d last=%d", viewport.LoadedRows, viewport.HistoryGeneration, viewport.FirstRowID, viewport.LastRowID)
 	}
 
 	olderViewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 1, ScrollbackLimit: 10, Cols: 1})
@@ -361,7 +361,7 @@ func TestTerminalResizeFullReplacePreservesExactWidthHotWrapPendingLine(t *testi
 		t.Fatal("expected older viewport")
 	}
 	if got := rowsToStrings(olderViewport.Rows); len(got) != 0 {
-		t.Fatalf("expected older viewport to exclude hot-only exact-width line, got %#v", got)
+		t.Fatalf("expected older viewport to exclude live-tail-only exact-width line, got %#v", got)
 	}
 	if olderViewport.LoadedRows != 0 || olderViewport.HistoryGeneration != 0 || olderViewport.FirstRowID != 0 || olderViewport.LastRowID != 0 {
 		t.Fatalf("expected older viewport metadata to keep committed depth at zero, loaded=%d gen=%d first=%d last=%d", olderViewport.LoadedRows, olderViewport.HistoryGeneration, olderViewport.FirstRowID, olderViewport.LastRowID)
