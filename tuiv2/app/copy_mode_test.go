@@ -2064,6 +2064,42 @@ func TestCopyModeBufferDoesNotAssignCanonicalRefBeyondLoadedCommittedRows(t *tes
 	}
 }
 
+func TestCopyModeBufferCanonicalRefsSkipLiveTailOwnershipRows(t *testing.T) {
+	buffer := copyModeBuffer{
+		snapshot: &protocol.Snapshot{
+			TerminalID: "term-1",
+			Size:       protocol.Size{Cols: 5, Rows: 1},
+			Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
+				protocolRowFromText("c100 ", 5),
+				protocolRowFromText("tail ", 5),
+				protocolRowFromText("c101 ", 5),
+			}),
+			ScrollbackOwnership:    []string{protocol.RowOwnershipPersisted, protocol.RowOwnershipLiveTailLive, protocol.RowOwnershipPersisted},
+			ScrollbackTotal:        3,
+			ScrollbackLogicalTotal: 2,
+			ScrollbackLoadedRows:   2,
+			HistoryGeneration:      7,
+			ScrollbackFirstRowID:   100,
+			ScrollbackLastRowID:    101,
+			Screen:                 protocol.ScreenData{Cells: [][]protocol.Cell{protocolRowFromText("live0", 5)}},
+		},
+		height: 4,
+	}
+
+	if got := buffer.rowRef(0); !got.Valid || got.Generation != 7 || got.RowID != 100 {
+		t.Fatalf("expected first committed row to keep row id 100, got %#v", got)
+	}
+	if got := buffer.rowRef(1); got.Valid {
+		t.Fatalf("expected live-tail ownership row not to consume canonical row id, got %#v", got)
+	}
+	if got := buffer.rowRef(2); !got.Valid || got.Generation != 7 || got.RowID != 101 {
+		t.Fatalf("expected committed row after live-tail row to keep row id 101, got %#v", got)
+	}
+	if got, ok := buffer.rowForRef(copyModeRowRef{Generation: 7, RowID: 101, Valid: true}); !ok || got != 2 {
+		t.Fatalf("expected row id 101 to resolve to committed row after live-tail row, got row=%d ok=%v", got, ok)
+	}
+}
+
 func TestCopyModeBufferCanonicalRefsUseMaterializedWindowCommittedOffset(t *testing.T) {
 	scrollback := make([][]protocol.Cell, 0, 12000)
 	for i := 500; i < 12500; i++ {

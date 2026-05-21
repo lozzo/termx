@@ -198,16 +198,25 @@ func (b copyModeBuffer) rowRef(row int) copyModeRowRef {
 	if b.snapshot == nil || row < 0 || row >= b.totalRows() {
 		return copyModeRowRef{}
 	}
-	loadedCommittedRows := snapshotScrollbackLoadedDepth(b.snapshot)
-	scrollbackStart := b.materializedCommittedScrollbackStart()
-	if row < len(b.snapshot.Scrollback) && row+scrollbackStart < loadedCommittedRows && hasCanonicalHistoryWindow(b.snapshot) {
-		return copyModeRowRef{
-			Generation: b.snapshot.HistoryGeneration,
-			RowID:      b.snapshot.ScrollbackFirstRowID + uint64(scrollbackStart+row),
-			Valid:      true,
-		}
+	if row >= len(b.snapshot.Scrollback) || !hasCanonicalHistoryWindow(b.snapshot) {
+		return copyModeRowRef{}
 	}
-	return copyModeRowRef{}
+	if !protocol.RowOwnershipIsCommitted(stringAt(b.snapshot.ScrollbackOwnership, row)) {
+		return copyModeRowRef{}
+	}
+	committedOrdinal := b.materializedCommittedScrollbackStart() + protocol.CountCommittedRowOwnershipRange(b.snapshot.ScrollbackOwnership, 0, row)
+	if committedOrdinal < 0 {
+		return copyModeRowRef{}
+	}
+	rowID := b.snapshot.ScrollbackFirstRowID + uint64(committedOrdinal)
+	if rowID > b.snapshot.ScrollbackLastRowID {
+		return copyModeRowRef{}
+	}
+	return copyModeRowRef{
+		Generation: b.snapshot.HistoryGeneration,
+		RowID:      rowID,
+		Valid:      true,
+	}
 }
 
 func (b copyModeBuffer) pointRowRef(point copyModePoint) copyModeRowRef {
@@ -221,12 +230,22 @@ func (b copyModeBuffer) rowForRef(ref copyModeRowRef) (int, bool) {
 	if ref.RowID < b.snapshot.ScrollbackFirstRowID || ref.RowID > b.snapshot.ScrollbackLastRowID {
 		return 0, false
 	}
-	scrollbackStart := b.materializedCommittedScrollbackStart()
-	row := int(ref.RowID-b.snapshot.ScrollbackFirstRowID) - scrollbackStart
-	if row < 0 || row >= len(b.snapshot.Scrollback) {
+	ordinal := int(ref.RowID - b.snapshot.ScrollbackFirstRowID)
+	materializedOrdinal := ordinal - b.materializedCommittedScrollbackStart()
+	if materializedOrdinal < 0 {
 		return 0, false
 	}
-	return row, true
+	seenCommitted := 0
+	for row := 0; row < len(b.snapshot.Scrollback); row++ {
+		if !protocol.RowOwnershipIsCommitted(stringAt(b.snapshot.ScrollbackOwnership, row)) {
+			continue
+		}
+		if seenCommitted == materializedOrdinal {
+			return row, true
+		}
+		seenCommitted++
+	}
+	return 0, false
 }
 
 func (b copyModeBuffer) materializedCommittedScrollbackStart() int {
@@ -234,15 +253,15 @@ func (b copyModeBuffer) materializedCommittedScrollbackStart() int {
 		return 0
 	}
 	loadedCommittedRows := snapshotScrollbackLoadedDepth(b.snapshot)
-	materializedRows := len(b.snapshot.Scrollback)
-	if loadedCommittedRows <= 0 || materializedRows <= 0 {
+	materializedCommittedRows := protocol.CountCommittedRowOwnership(b.snapshot.ScrollbackOwnership, len(b.snapshot.Scrollback))
+	if loadedCommittedRows <= 0 || materializedCommittedRows <= 0 {
 		return 0
 	}
-	start := loadedCommittedRows - materializedRows - b.snapshot.ScrollbackOffset
+	start := loadedCommittedRows - materializedCommittedRows - b.snapshot.ScrollbackOffset
 	if start < 0 {
 		start = 0
 	}
-	maxStart := loadedCommittedRows - materializedRows
+	maxStart := loadedCommittedRows - materializedCommittedRows
 	if maxStart < 0 {
 		maxStart = 0
 	}
@@ -254,6 +273,13 @@ func (b copyModeBuffer) materializedCommittedScrollbackStart() int {
 
 func boolAt(values []bool, index int) bool {
 	return index >= 0 && index < len(values) && values[index]
+}
+
+func stringAt(values []string, index int) string {
+	if index < 0 || index >= len(values) {
+		return ""
+	}
+	return values[index]
 }
 
 func (b copyModeBuffer) viewportStart(offset int) int {
