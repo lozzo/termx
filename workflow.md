@@ -213,22 +213,37 @@
 - 让当前 hot/cold 代码路径逐步向 live tail / persisted history 语义靠拢；
 - 暂不扩展 wire/runtime/app contract。
 
-### 7.1 当前执行切片
+### 7.1 当前完成结果
 
-为避免第一阶段继续泛化，本轮只按下面这些可独立提交的切片推进：
+本轮第一阶段已经完成并提交下面这些切片：
 
 1. `process exit` 语义闭环
-   - 在 `termx-core` 内部让 primary `live tail` 在退出时 `force seal` 进入 `persisted history`。
-   - 如果退出时仍处于 `alt-screen`，先丢弃 alt 内容，再恢复并封口 primary surface。
+   - `termx-core` 已在进程退出时对 primary `live tail` 做 `force seal`。
+   - 退出时如果仍在 `alt-screen`，alt 内容会被丢弃，不进入 primary history。
 2. `attach / bootstrap / recovery / full-replace` 非历史创建事件回归测试
-   - 补齐“只重建投影、不创建历史”的 core 侧测试约束。
-3. `grow resize / shrink resize / reclaim` 边界收紧
-   - 补齐 grow 只按完整 logical line reclaim、shrink 只回收到 mutable tail 的测试与实现。
+   - 已补齐 core 侧测试，约束这些事件只重建投影，不创建 committed history。
+3. `grow resize / shrink resize / reclaim` 第一轮边界收紧
+   - grow latest 读路径已收紧为“最小充分完整 logical-line 后缀”。
+   - shrink 隐藏到 live tail 的内容已被测试约束为不能被 older offset 误判成 cold history。
 4. `clear screen` 与 primary history 冻结语义
-   - 明确 clear screen 只改变 surface，不得悄悄改写已提交历史。
+   - 已补齐 core 侧测试，约束 clear screen 只改当前 surface，不创建 committed history，也不污染既有 committed history。
 
-切片 1、切片 2、切片 3a 已完成并提交。
-本轮继续做切片 3b，不并行展开后续切片。
+### 7.2 当前剩余缺口
+
+结合当前代码和测试，第一阶段还剩下的主要不是已知语义冲突，而是下面这些收尾型缺口：
+
+1. `termx-core` 内部仍然是 `hot/cold` 过渡实现
+   - 当前已经靠测试把语义钉住，但内部结构还没有显式收敛成统一的 `mutable live tail` 抽象。
+2. reclaim 语义目前主要体现在 latest projection / viewport 读路径
+   - 已满足 grow latest 读路径的 logical-line 边界，但还没有单独沉淀成更显式的 internal ownership 结构。
+3. protocol / runtime / app contract 仍未扩展
+   - 这仍然符合第一阶段边界，不是当前阻塞项；后续应按 RFC 进入 Phase 2 / Phase 3 再处理。
+
+结论是：
+
+- 第一阶段核心内部语义已经有可工作的实现加测试护栏；
+- 当前没有发现新的必须立即修复的第一阶段 core 语义冲突；
+- 如果继续推进，应优先做内部结构压缩，而不是继续外扩 contract。
 
 ### 当前不启动的工作
 
