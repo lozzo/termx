@@ -2818,6 +2818,75 @@ func TestScreenUpdateFromDamageStatePreservesStyledEraseSpan(t *testing.T) {
 	t.Fatalf("expected styled erase write span, got %#v", update.Ops)
 }
 
+func TestTerminalClearScreenDoesNotCreateCommittedHistory(t *testing.T) {
+	vt := localvterm.New(12, 2, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "clear-screen-no-history-create",
+		size:  Size{Cols: 12, Rows: 2},
+		vterm: vt,
+		grid:  store,
+	}
+	if err := store.AppendRows([][]localvterm.Cell{
+		localVTermCellsFromString("before-0"),
+		localVTermCellsFromString("before-1"),
+	}); err != nil {
+		t.Fatalf("append committed rows: %v", err)
+	}
+	vt.LoadSnapshot(localvterm.ScreenData{
+		Cells: [][]localvterm.Cell{
+			localVTermRowForTest("live-tail", 12),
+			localVTermRowForTest("", 12),
+		},
+	}, localvterm.CursorState{Row: 0, Col: 9, Visible: true}, localvterm.TerminalModes{AutoWrap: true})
+	beforeRows := store.RowCount()
+	beforeLines := store.LogicalLineCount()
+	viewportBefore := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 0, ScrollbackLimit: 10, Cols: 12})
+	if viewportBefore == nil {
+		t.Fatal("expected pre-clear viewport")
+	}
+	if got := rowsToStrings(viewportBefore.Rows); !reflect.DeepEqual(got, []string{"before-0", "before-1"}) {
+		t.Fatalf("expected pre-clear committed history, got %#v", got)
+	}
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[2J"))
+	if err != nil {
+		t.Fatalf("clear screen write: %v", err)
+	}
+	term.appendGridFromDamageLocked(damage)
+
+	if got := store.RowCount(); got != beforeRows {
+		t.Fatalf("expected clear screen not to append committed rows, got before=%d after=%d", beforeRows, got)
+	}
+	if got := store.LogicalLineCount(); got != beforeLines {
+		t.Fatalf("expected clear screen not to create committed logical lines, got before=%d after=%d", beforeLines, got)
+	}
+
+	viewportAfter := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 0, ScrollbackLimit: 10, Cols: 12})
+	if viewportAfter == nil {
+		t.Fatal("expected post-clear viewport")
+	}
+	if got := rowsToStrings(viewportAfter.Rows); !reflect.DeepEqual(got, []string{"before-0", "before-1"}) {
+		t.Fatalf("expected committed history to remain readable after clear screen, got %#v", got)
+	}
+	if viewportAfter.LoadedRows != beforeRows || viewportAfter.HistoryGeneration == 0 {
+		t.Fatalf("expected clear screen not to disturb committed viewport metadata, loaded=%d gen=%d", viewportAfter.LoadedRows, viewportAfter.HistoryGeneration)
+	}
+
+	latest := term.Snapshot(0, 10)
+	if latest == nil {
+		t.Fatal("expected latest snapshot")
+	}
+	if snapshotContains(latest, "live-tail") {
+		t.Fatalf("expected clear screen to clear current surface projection, got %#v", latest)
+	}
+	if latest.ScrollbackLoadedRows != beforeRows || latest.HistoryGeneration == 0 {
+		t.Fatalf("expected latest snapshot committed metadata unchanged after clear screen, loaded=%d gen=%d", latest.ScrollbackLoadedRows, latest.HistoryGeneration)
+	}
+}
+
 func TestSnapshotFromVTermPreservesWrappedScrollbackTrailingSpaces(t *testing.T) {
 	vt := localvterm.New(4, 2, 32, nil)
 	if _, err := vt.Write([]byte("AA  BB")); err != nil {
