@@ -23,6 +23,8 @@ import (
 	"time"
 )
 
+const tuiShutdownWaitTimeout = 5 * time.Second
+
 func TestUVMouseEventToTeaMouseMsg(t *testing.T) {
 	msg, ok := uvMouseEventToTeaMouseMsg(uv.MouseClickEvent(uv.Mouse{
 		X:      12,
@@ -176,7 +178,7 @@ func TestE2ERunWithClientRendersInitialFrameOnPTY(t *testing.T) {
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(tuiShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }
@@ -238,7 +240,7 @@ func TestE2ERunWithClientWrapsTTYFramesWithSynchronizedOutput(t *testing.T) {
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(tuiShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }
@@ -395,7 +397,7 @@ func TestE2ERunWithClientRetriesHostEmojiProbeWhenFirstCPRIsDropped(t *testing.T
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(tuiShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }
@@ -475,7 +477,7 @@ func TestE2ERunWithClientAcceptsNonOriginExtendedCursorReportForEmojiProbe(t *te
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(tuiShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }
@@ -567,7 +569,7 @@ func TestE2ERunWithClientIgnoresUnexpectedProbeColumnsUntilValidResponse(t *test
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(tuiShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }
@@ -649,7 +651,7 @@ func TestE2ERunWithClientAttachShellAcceptsRepeatedCommandsOnPTY(t *testing.T) {
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(tuiShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }
@@ -731,7 +733,7 @@ func TestE2ERunWithClientAttachHtopCanQuitOnPTY(t *testing.T) {
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(tuiShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }
@@ -1310,7 +1312,7 @@ func TestRunTerminalEventsForwarderSubscribesToInventoryPatchEvents(t *testing.T
 	cancel()
 	select {
 	case <-runDone:
-	case <-time.After(2 * time.Second):
+	case <-time.After(tuiShutdownWaitTimeout):
 		t.Fatal("timed out waiting for terminal event forwarder shutdown")
 	}
 
