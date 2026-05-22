@@ -111,7 +111,7 @@ func (r *Runtime) applyScreenUpdateContract(terminal *TerminalRuntime, terminalI
 	update := classified.Contract.Update
 	summary := classified.Contract.Summary
 	if classified.Contract.Classification.HasScrollbackChange || classified.Contract.Classification.HasScreenScroll {
-		terminal.ScrollbackExhausted = false
+		terminal.CommittedHistoryExhausted = false
 	}
 
 	r.captureAlternateScrollback(terminal, update)
@@ -168,9 +168,9 @@ func resetLatestBoundaryStateForFullReplace(terminal *TerminalRuntime) {
 	if terminal == nil {
 		return
 	}
-	terminal.ScrollbackLoadedLimit = 0
-	terminal.ScrollbackLoadingLimit = 0
-	terminal.ScrollbackExhausted = false
+	terminal.CommittedLoadedDepth = 0
+	terminal.CommittedLoadingDepth = 0
+	terminal.CommittedHistoryExhausted = false
 }
 
 func (r *Runtime) applyDecodedScreenUpdateContract(terminal *TerminalRuntime, terminalID string, contract ScreenUpdateContract) {

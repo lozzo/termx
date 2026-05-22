@@ -492,8 +492,8 @@ func (m *Model) clearCopyModeOwnedHistoryLoadingForPane(paneID string) {
 		return
 	}
 	delete(m.historyLoading, pane.TerminalID)
-	if terminal := m.runtime.Registry().Get(pane.TerminalID); terminal != nil && terminal.ScrollbackLoadingLimit == state.Limit {
-		terminal.ScrollbackLoadingLimit = 0
+	if terminal := m.runtime.Registry().Get(pane.TerminalID); terminal != nil && terminal.CommittedLoadingDepth == state.Limit {
+		terminal.CommittedLoadingDepth = 0
 	}
 }
 

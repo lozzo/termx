@@ -15,28 +15,28 @@ type TerminalAttachmentSnapshot struct {
 }
 
 type TerminalLiveStateSnapshot struct {
-	Exists                 bool
-	TerminalID             string
-	Name                   string
-	Command                []string
-	Tags                   map[string]string
-	State                  string
-	ExitCode               *int
-	Title                  string
-	Channel                uint16
-	AttachMode             string
-	Snapshot               *bridge.SnapshotRef
-	SnapshotVersion        uint64
-	SurfaceVersion         uint64
-	ScreenUpdate           VisibleScreenUpdateSummary
-	VTerm                  VTermLike
-	ScrollbackLoadingLimit int
-	ScrollbackExhausted    bool
-	PreferSnapshot         bool
-	BootstrapPending       bool
-	Recovery               RecoveryState
-	WasStreaming           bool
-	StreamGeneration       uint64
+	Exists                    bool
+	TerminalID                string
+	Name                      string
+	Command                   []string
+	Tags                      map[string]string
+	State                     string
+	ExitCode                  *int
+	Title                     string
+	Channel                   uint16
+	AttachMode                string
+	Snapshot                  *bridge.SnapshotRef
+	SnapshotVersion           uint64
+	SurfaceVersion            uint64
+	ScreenUpdate              VisibleScreenUpdateSummary
+	VTerm                     VTermLike
+	CommittedLoadingDepth     int
+	CommittedHistoryExhausted bool
+	PreferSnapshot            bool
+	BootstrapPending          bool
+	Recovery                  RecoveryState
+	WasStreaming              bool
+	StreamGeneration          uint64
 }
 
 func ClonePaneBinding(binding *PaneBinding) *PaneBinding {
@@ -123,28 +123,28 @@ func (r *Runtime) TerminalLiveStateSnapshot(terminalID string) TerminalLiveState
 		return TerminalLiveStateSnapshot{}
 	}
 	return TerminalLiveStateSnapshot{
-		Exists:                 true,
-		TerminalID:             terminal.TerminalID,
-		Name:                   terminal.Name,
-		Command:                append([]string(nil), terminal.Command...),
-		Tags:                   cloneTags(terminal.Tags),
-		State:                  terminal.State,
-		ExitCode:               cloneExitCode(terminal.ExitCode),
-		Title:                  terminal.Title,
-		Channel:                terminal.Channel,
-		AttachMode:             terminal.AttachMode,
-		Snapshot:               cloneRuntimeSnapshot(terminal.Snapshot),
-		SnapshotVersion:        terminal.SnapshotVersion,
-		SurfaceVersion:         terminal.SurfaceVersion,
-		ScreenUpdate:           cloneVisibleScreenUpdateSummary(terminal.ScreenUpdate),
-		VTerm:                  terminal.VTerm,
-		ScrollbackLoadingLimit: terminal.ScrollbackLoadingLimit,
-		ScrollbackExhausted:    terminal.ScrollbackExhausted,
-		PreferSnapshot:         terminal.PreferSnapshot,
-		BootstrapPending:       terminal.BootstrapPending,
-		Recovery:               terminal.Recovery,
-		WasStreaming:           terminal.Stream.Active,
-		StreamGeneration:       terminal.Stream.Generation,
+		Exists:                    true,
+		TerminalID:                terminal.TerminalID,
+		Name:                      terminal.Name,
+		Command:                   append([]string(nil), terminal.Command...),
+		Tags:                      cloneTags(terminal.Tags),
+		State:                     terminal.State,
+		ExitCode:                  cloneExitCode(terminal.ExitCode),
+		Title:                     terminal.Title,
+		Channel:                   terminal.Channel,
+		AttachMode:                terminal.AttachMode,
+		Snapshot:                  cloneRuntimeSnapshot(terminal.Snapshot),
+		SnapshotVersion:           terminal.SnapshotVersion,
+		SurfaceVersion:            terminal.SurfaceVersion,
+		ScreenUpdate:              cloneVisibleScreenUpdateSummary(terminal.ScreenUpdate),
+		VTerm:                     terminal.VTerm,
+		CommittedLoadingDepth:     terminal.CommittedLoadingDepth,
+		CommittedHistoryExhausted: terminal.CommittedHistoryExhausted,
+		PreferSnapshot:            terminal.PreferSnapshot,
+		BootstrapPending:          terminal.BootstrapPending,
+		Recovery:                  terminal.Recovery,
+		WasStreaming:              terminal.Stream.Active,
+		StreamGeneration:          terminal.Stream.Generation,
 	}
 }
 
@@ -174,9 +174,9 @@ func (r *Runtime) RestoreTerminalLiveState(terminalID string, snapshot TerminalL
 		terminal.SurfaceVersion = 0
 		terminal.ScreenUpdate = VisibleScreenUpdateSummary{}
 		terminal.VTerm = nil
-		terminal.ScrollbackLoadedLimit = 0
-		terminal.ScrollbackLoadingLimit = 0
-		terminal.ScrollbackExhausted = false
+		terminal.CommittedLoadedDepth = 0
+		terminal.CommittedLoadingDepth = 0
+		terminal.CommittedHistoryExhausted = false
 		terminal.PreferSnapshot = false
 		terminal.BootstrapPending = false
 		terminal.Recovery = RecoveryState{}
@@ -216,18 +216,18 @@ func restoreTerminalScrollbackLoadState(terminal *TerminalRuntime, snapshot Term
 		return
 	}
 	loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot)
-	terminal.ScrollbackLoadedLimit = loaded
+	terminal.CommittedLoadedDepth = loaded
 	if loaded <= 0 {
-		terminal.ScrollbackLoadingLimit = 0
-		terminal.ScrollbackExhausted = false
+		terminal.CommittedLoadingDepth = 0
+		terminal.CommittedHistoryExhausted = false
 		return
 	}
-	if snapshot.ScrollbackLoadingLimit > loaded {
-		terminal.ScrollbackLoadingLimit = snapshot.ScrollbackLoadingLimit
+	if snapshot.CommittedLoadingDepth > loaded {
+		terminal.CommittedLoadingDepth = snapshot.CommittedLoadingDepth
 	} else {
-		terminal.ScrollbackLoadingLimit = 0
+		terminal.CommittedLoadingDepth = 0
 	}
-	terminal.ScrollbackExhausted = snapshot.ScrollbackExhausted && protocol.HasExplicitRowOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback))
+	terminal.CommittedHistoryExhausted = snapshot.CommittedHistoryExhausted && protocol.HasExplicitRowOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback))
 }
 
 func cloneRuntimeSnapshot(snapshot *bridge.SnapshotRef) *bridge.SnapshotRef {

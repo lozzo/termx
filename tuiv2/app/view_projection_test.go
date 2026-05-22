@@ -118,7 +118,7 @@ func TestPaneScrollbackPrefetchUsesLoadedDepthBeyondMaterializedWindow(t *testin
 		ScrollbackLoadedRows: 1500,
 		ScrollbackOffset:     1200,
 	}
-	terminal.ScrollbackLoadedLimit = 1500
+	terminal.CommittedLoadedDepth = 1500
 	_ = model.runtime.SetPaneViewportOffset("pane-1", 1400)
 
 	client := model.runtime.Client().(*recordingBridgeClient)
@@ -164,7 +164,7 @@ func TestPaneScrollbackPrefetchDoesNotTreatLiveTailOwnershipRowsAsCommittedHisto
 			protocolRowFromText("live0", 120),
 		}},
 	}
-	terminal.ScrollbackExhausted = true
+	terminal.CommittedHistoryExhausted = true
 	_ = model.runtime.SetPaneViewportOffset("pane-1", 20)
 	client := model.runtime.Client().(*recordingBridgeClient)
 
@@ -190,7 +190,7 @@ func TestPaneScrollbackPrefetchUsesZeroOffsetAfterLiveTailOwnershipLatestReplace
 		ScrollbackTotal:      12000,
 		HistoryGeneration:    10,
 	}
-	terminal.ScrollbackLoadedLimit = 12000
+	terminal.CommittedLoadedDepth = 12000
 	_ = model.runtime.SetPaneViewportOffset("pane-1", 20)
 
 	client := model.runtime.Client().(*recordingBridgeClient)
@@ -215,7 +215,7 @@ func TestPaneScrollbackPrefetchUsesZeroOffsetAfterLiveTailOwnershipLatestReplace
 	if terminal == nil {
 		t.Fatal("expected runtime terminal")
 	}
-	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+	if got := terminal.CommittedLoadedDepth; got != 0 {
 		t.Fatalf("expected latest replace to clear known committed depth, got %d", got)
 	}
 
@@ -257,8 +257,8 @@ func TestPaneScrollbackPrefetchUsesZeroOffsetAfterLiveTailOwnershipDisplayTail(t
 			protocolRowFromText("fresh", 120),
 		}},
 	}
-	terminal.ScrollbackLoadedLimit = 0
-	terminal.ScrollbackExhausted = false
+	terminal.CommittedLoadedDepth = 0
+	terminal.CommittedHistoryExhausted = false
 	_ = model.runtime.SetPaneViewportOffset("pane-1", 20)
 
 	client := model.runtime.Client().(*recordingBridgeClient)
@@ -317,12 +317,12 @@ func TestPaneScrollbackStaleLiveResponseDoesNotRestoreBoundarySideStateAfterFull
 			protocolRowFromText("fresh", 120),
 		}},
 	}
-	terminal.ScrollbackLoadedLimit = 0
-	terminal.ScrollbackLoadingLimit = 0
-	terminal.ScrollbackExhausted = false
+	terminal.CommittedLoadedDepth = 0
+	terminal.CommittedLoadingDepth = 0
+	terminal.CommittedHistoryExhausted = false
 
 	model.setHistoryLoadingOwner("term-1", 500, historyLoadingOwnerLive)
-	terminal.ScrollbackLoadingLimit = 500
+	terminal.CommittedLoadingDepth = 500
 
 	client := model.runtime.Client().(*recordingBridgeClient)
 	client.snapshotByTerminal["term-1"] = &protocol.Snapshot{
@@ -361,13 +361,13 @@ func TestPaneScrollbackStaleLiveResponseDoesNotRestoreBoundarySideStateAfterFull
 	if request := client.viewportRequests[0]; request.offset != 12000 || request.limit != 500 {
 		t.Fatalf("expected stale live history request to keep original offset/limit, got %#v", request)
 	}
-	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+	if got := terminal.CommittedLoadedDepth; got != 0 {
 		t.Fatalf("expected stale live response not to restore committed depth after full-replace reset, got %d", got)
 	}
-	if terminal.ScrollbackExhausted {
+	if terminal.CommittedHistoryExhausted {
 		t.Fatal("expected stale live response not to mark live exhausted after full-replace reset")
 	}
-	if got, want := terminal.ScrollbackLoadingLimit, 500; got != want {
+	if got, want := terminal.CommittedLoadingDepth, 500; got != want {
 		t.Fatalf("expected stale live response not to clear current reset-owned loading limit %d, got %d", want, got)
 	}
 	if state, ok := model.historyLoading["term-1"]; !ok || state.Owner != historyLoadingOwnerLive || state.Limit != 500 {

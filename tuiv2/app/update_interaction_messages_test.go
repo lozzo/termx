@@ -285,7 +285,7 @@ func TestSharedTerminalSnapshotResyncCmdUsesKnownLoadedDepth(t *testing.T) {
 	if terminal == nil {
 		t.Fatal("expected runtime terminal")
 	}
-	terminal.ScrollbackLoadedLimit = 1500
+	terminal.CommittedLoadedDepth = 1500
 	client.snapshotByTerminal["term-1"] = &protocol.Snapshot{
 		TerminalID:           "term-1",
 		Size:                 protocol.Size{Cols: 80, Rows: 24},

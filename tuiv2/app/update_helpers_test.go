@@ -57,9 +57,9 @@ func TestTerminalHasKnownScrollbackBeyondIgnoresTotalsAndHasMoreAsHistoryTruth(t
 func TestLoadTerminalHistoryViewportCmdIgnoresUnownedResponseState(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 50, height: 12})
 	terminal := model.runtime.Registry().Get("term-1")
-	terminal.ScrollbackLoadedLimit = 0
-	terminal.ScrollbackLoadingLimit = 500
-	terminal.ScrollbackExhausted = false
+	terminal.CommittedLoadedDepth = 0
+	terminal.CommittedLoadingDepth = 500
+	terminal.CommittedHistoryExhausted = false
 	model.setHistoryLoadingOwner("term-1", 500, historyLoadingOwnerLive)
 
 	client := model.runtime.Client().(*recordingBridgeClient)
@@ -80,13 +80,13 @@ func TestLoadTerminalHistoryViewportCmdIgnoresUnownedResponseState(t *testing.T)
 		t.Fatalf("expected SnapshotLoadedMsg, got %#v", msg)
 	}
 
-	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+	if got := terminal.CommittedLoadedDepth; got != 0 {
 		t.Fatalf("expected unowned response not to advance committed depth, got %d", got)
 	}
-	if terminal.ScrollbackExhausted {
+	if terminal.CommittedHistoryExhausted {
 		t.Fatal("expected unowned response not to mark live history exhausted from hasMore")
 	}
-	if got := terminal.ScrollbackLoadingLimit; got != 0 {
+	if got := terminal.CommittedLoadingDepth; got != 0 {
 		t.Fatalf("expected matching loading slot to clear after response, got %d", got)
 	}
 }

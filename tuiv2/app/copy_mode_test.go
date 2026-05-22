@@ -489,8 +489,8 @@ func TestPagedSnapshotLoadedCopyModeRequestDoesNotPolluteRuntimeAfterCopyModeExi
 	terminal.Snapshot.ScrollbackLoadedRows = 1
 	terminal.Snapshot.ScrollbackTotal = 1
 	terminal.Snapshot.ScrollbackLogicalTotal = 1
-	terminal.ScrollbackLoadedLimit = 1
-	terminal.ScrollbackExhausted = false
+	terminal.CommittedLoadedDepth = 1
+	terminal.CommittedHistoryExhausted = false
 	client := model.runtime.Client().(*recordingBridgeClient)
 	client.snapshotByTerminal["term-1"] = &protocol.Snapshot{
 		TerminalID:             "term-1",
@@ -521,7 +521,7 @@ func TestPagedSnapshotLoadedCopyModeRequestDoesNotPolluteRuntimeAfterCopyModeExi
 	if staleCopyModeCmd == nil {
 		t.Fatal("expected copy-mode history request command before exit")
 	}
-	if got, want := terminal.ScrollbackLoadingLimit, 501; got != want {
+	if got, want := terminal.CommittedLoadingDepth, 501; got != want {
 		t.Fatalf("expected copy-mode request to mark loading limit %d before exit, got %d", want, got)
 	}
 	if state, ok := model.historyLoading["term-1"]; !ok || state.Owner != historyLoadingOwnerCopyMode || state.Limit != 501 {
@@ -531,17 +531,17 @@ func TestPagedSnapshotLoadedCopyModeRequestDoesNotPolluteRuntimeAfterCopyModeExi
 	if model.activePaneInCopyMode() {
 		t.Fatal("expected copy mode to exit before paged response arrives")
 	}
-	if got, want := terminal.ScrollbackLoadedLimit, 1; got != want {
+	if got, want := terminal.CommittedLoadedDepth, 1; got != want {
 		t.Fatalf("expected live loaded limit %d before stale copy-mode response, got %d", want, got)
 	}
-	if terminal.ScrollbackExhausted {
+	if terminal.CommittedHistoryExhausted {
 		t.Fatal("expected live exhausted flag to stay false before stale copy-mode response")
 	}
 
 	// Simulate the user leaving copy mode before its older-page response lands,
 	// then a live prefetch immediately trying to take ownership of the same
 	// numeric nextLimit through the normal exit path.
-	if got := terminal.ScrollbackLoadingLimit; got != 0 {
+	if got := terminal.CommittedLoadingDepth; got != 0 {
 		t.Fatalf("expected copy-mode exit to clear copy-mode loading slot before live prefetch, got %d", got)
 	}
 	if _, ok := model.historyLoading["term-1"]; ok {
@@ -552,7 +552,7 @@ func TestPagedSnapshotLoadedCopyModeRequestDoesNotPolluteRuntimeAfterCopyModeExi
 	if liveCmdBeforeStale == nil {
 		t.Fatal("expected live pane prefetch command before stale copy-mode response")
 	}
-	if got, want := terminal.ScrollbackLoadingLimit, 501; got != want {
+	if got, want := terminal.CommittedLoadingDepth, 501; got != want {
 		t.Fatalf("expected live prefetch to mark loading limit %d before stale copy-mode response, got %d", want, got)
 	}
 	if state, ok := model.historyLoading["term-1"]; !ok || state.Owner != historyLoadingOwnerLive || state.Limit != 501 {
@@ -565,10 +565,10 @@ func TestPagedSnapshotLoadedCopyModeRequestDoesNotPolluteRuntimeAfterCopyModeExi
 	if terminal == nil || terminal.Snapshot == nil {
 		t.Fatalf("expected runtime terminal snapshot after stale copy-mode response, got %#v", terminal)
 	}
-	if got, want := terminal.ScrollbackLoadedLimit, 1; got != want {
+	if got, want := terminal.CommittedLoadedDepth, 1; got != want {
 		t.Fatalf("expected stale copy-mode response not to raise live loaded limit to 2, got %d want %d", got, want)
 	}
-	if terminal.ScrollbackExhausted {
+	if terminal.CommittedHistoryExhausted {
 		t.Fatal("expected stale copy-mode response not to mark live exhausted")
 	}
 	if got, want := snapshotScrollbackLoadedDepth(terminal.Snapshot), 1; got != want {
@@ -586,7 +586,7 @@ func TestPagedSnapshotLoadedCopyModeRequestDoesNotPolluteRuntimeAfterCopyModeExi
 	if got, want := terminal.Snapshot.ScrollbackLastRowID, uint64(1); got != want {
 		t.Fatalf("expected runtime last row id unchanged after exited copy-mode page, got %d want %d", got, want)
 	}
-	if got, want := terminal.ScrollbackLoadingLimit, 501; got != want {
+	if got, want := terminal.CommittedLoadingDepth, 501; got != want {
 		t.Fatalf("expected stale copy-mode response not to clear live loading limit %d, got %d", want, got)
 	}
 
@@ -622,7 +622,7 @@ func TestPagedSnapshotLoadedCopyModeRequestDoesNotPolluteRuntimeAfterCopyModeExi
 	if request.offset != 1 {
 		t.Fatalf("expected live history request to continue from committed depth 1, got %#v", request)
 	}
-	if got := terminal.ScrollbackLoadingLimit; got != 0 {
+	if got := terminal.CommittedLoadingDepth; got != 0 {
 		t.Fatalf("expected live response to clear its own loading marker, got %d", got)
 	}
 }
@@ -641,13 +641,13 @@ func TestCopyModeExitDoesNotClearLiveOwnedHistoryLoadingSlot(t *testing.T) {
 		Limit: 501,
 		Owner: historyLoadingOwnerLive,
 	}
-	terminal.ScrollbackLoadingLimit = 501
+	terminal.CommittedLoadingDepth = 501
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCancelMode})
 	if model.activePaneInCopyMode() {
 		t.Fatal("expected copy mode to exit")
 	}
-	if got, want := terminal.ScrollbackLoadingLimit, 501; got != want {
+	if got, want := terminal.CommittedLoadingDepth, 501; got != want {
 		t.Fatalf("expected copy-mode exit not to clear live-owned loading limit %d, got %d", want, got)
 	}
 	if state, ok := model.historyLoading["term-1"]; !ok || state.Owner != historyLoadingOwnerLive || state.Limit != 501 {
@@ -1332,8 +1332,8 @@ func TestCopyModeEnterPrefetchesWhenExhaustedFlagIsStale(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})
 	terminal := model.runtime.Registry().Get("term-1")
-	terminal.ScrollbackExhausted = true
-	terminal.ScrollbackLoadedLimit = 3
+	terminal.CommittedHistoryExhausted = true
+	terminal.CommittedLoadedDepth = 3
 	terminal.Snapshot.ScrollbackTotal = 1
 	terminal.Snapshot.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("known0", 40)})
 	terminal.Snapshot.ScrollbackLoadedRows = 1
@@ -1353,7 +1353,7 @@ func TestCopyModeEnterPrefetchesWhenExhaustedFlagIsStale(t *testing.T) {
 	if got := client.viewportRequests[0]; got.offset != 1 || got.limit <= 0 {
 		t.Fatalf("expected stale-exhausted ownership history request to continue from committed depth 1, got %#v", got)
 	}
-	if terminal.ScrollbackExhausted {
+	if terminal.CommittedHistoryExhausted {
 		t.Fatal("expected ownership-aware stale exhausted flag to clear before loading older history")
 	}
 }
@@ -1378,7 +1378,7 @@ func TestCopyModeEnterDoesNotPrefetchLiveTailOwnershipRowsWhenExhausted(t *testi
 		Cursor: protocol.CursorState{Row: 3, Col: 0, Visible: true},
 		Modes:  protocol.TerminalModes{AutoWrap: true},
 	}
-	terminal.ScrollbackExhausted = true
+	terminal.CommittedHistoryExhausted = true
 	client := model.runtime.Client().(*recordingBridgeClient)
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
@@ -1386,7 +1386,7 @@ func TestCopyModeEnterDoesNotPrefetchLiveTailOwnershipRowsWhenExhausted(t *testi
 	if got := len(client.viewportRequests); got != 0 {
 		t.Fatalf("expected live-tail ownership rows not to trigger copy-mode history prefetch, got %#v", client.viewportRequests)
 	}
-	if !terminal.ScrollbackExhausted {
+	if !terminal.CommittedHistoryExhausted {
 		t.Fatal("expected exhausted flag to stay set when only live-tail ownership rows are known")
 	}
 	if model.copyMode.Snapshot == nil {
@@ -2206,10 +2206,10 @@ func TestCopyModeBufferCanonicalRefsUseMaterializedWindowCommittedOffset(t *test
 	}
 }
 
-func TestCopyModeTopDoesNotReloadWhenScrollbackExhausted(t *testing.T) {
+func TestCopyModeTopDoesNotReloadWhenCommittedHistoryExhausted(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})
-	model.runtime.Registry().Get("term-1").ScrollbackExhausted = true
+	model.runtime.Registry().Get("term-1").CommittedHistoryExhausted = true
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})

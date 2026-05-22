@@ -280,7 +280,7 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 	copyModeActive = copyModeActive && copyModeState.Snapshot != nil
 	if copyModeActive {
 		// A frozen copy-mode pane owns its own paged history requests. Letting
-		// the live-pane prefetch path race here steals ScrollbackLoadingLimit
+		// the live-pane prefetch path race here steals CommittedLoadingDepth
 		// and converts a copy-mode older-page request into a runtime request.
 		return nil
 	}
@@ -290,13 +290,13 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 		loaded = terminalLiveCommittedLoadedDepth(terminal)
 		materializedRows = len(terminal.Snapshot.Scrollback)
 	} else {
-		loaded = terminal.ScrollbackLoadedLimit
+		loaded = terminal.CommittedLoadedDepth
 	}
-	if terminal.ScrollbackExhausted {
+	if terminal.CommittedHistoryExhausted {
 		if !terminalHasKnownScrollbackBeyond(terminal, loaded) {
 			return nil
 		}
-		terminal.ScrollbackExhausted = false
+		terminal.CommittedHistoryExhausted = false
 	}
 	want := viewportOffset + contentRect.H + terminalScrollbackPrefetchMargin
 	visibleDepth := loaded
@@ -313,10 +313,10 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 	if nextLimit < want {
 		nextLimit = minInt(want, loaded+terminalScrollbackPageLimit)
 	}
-	if nextLimit <= loaded || terminal.ScrollbackLoadingLimit >= nextLimit {
+	if nextLimit <= loaded || terminal.CommittedLoadingDepth >= nextLimit {
 		return nil
 	}
-	terminal.ScrollbackLoadingLimit = nextLimit
+	terminal.CommittedLoadingDepth = nextLimit
 	m.setHistoryLoadingOwner(pane.TerminalID, nextLimit, historyLoadingOwnerLive)
 	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, terminalCanonicalCols(terminal), false)
 }
@@ -348,20 +348,20 @@ func (m *Model) copyModeScrollbackCmd(buffer copyModeBuffer, force bool) tea.Cmd
 		return nil
 	}
 	loaded := maxInt(snapshotScrollbackLoadedDepth(buffer.snapshot), m.copyMode.CommittedLoadedRows)
-	if terminal.ScrollbackExhausted {
+	if terminal.CommittedHistoryExhausted {
 		if !terminalHasKnownScrollbackBeyond(terminal, loaded) {
 			return nil
 		}
-		terminal.ScrollbackExhausted = false
+		terminal.CommittedHistoryExhausted = false
 	}
 	nextLimit := loaded + terminalScrollbackPageLimit
 	if nextLimit < terminalHistoryInitialPageLimit {
 		nextLimit = terminalHistoryInitialPageLimit
 	}
-	if nextLimit <= loaded || terminal.ScrollbackLoadingLimit >= nextLimit {
+	if nextLimit <= loaded || terminal.CommittedLoadingDepth >= nextLimit {
 		return nil
 	}
-	terminal.ScrollbackLoadingLimit = nextLimit
+	terminal.CommittedLoadingDepth = nextLimit
 	m.setHistoryLoadingOwner(pane.TerminalID, nextLimit, historyLoadingOwnerCopyMode)
 	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, terminalCanonicalCols(terminal), true)
 }
@@ -389,7 +389,7 @@ func terminalLiveCommittedLoadedDepth(terminal *appruntime.TerminalRuntime) int 
 	if terminal == nil {
 		return 0
 	}
-	loaded := terminal.ScrollbackLoadedLimit
+	loaded := terminal.CommittedLoadedDepth
 	if terminal.Snapshot != nil {
 		loaded = maxInt(loaded, snapshotScrollbackLoadedDepth(terminal.Snapshot))
 	}
@@ -418,11 +418,11 @@ func (m *Model) loadTerminalHistoryViewportCmd(terminalID string, offset int, li
 		}
 		if terminal := m.clearHistoryLoadingOwner(terminalID, loadingLimit, owner); terminal != nil {
 			if snapshot != nil && !copyModeRequest && protocol.HasExplicitRowOwnership(snapshot.ScrollbackOwnership, len(snapshot.Scrollback)) {
-				if loadedRows := snapshotScrollbackLoadedDepth(snapshot); loadedRows > terminal.ScrollbackLoadedLimit {
-					terminal.ScrollbackLoadedLimit = loadedRows
+				if loadedRows := snapshotScrollbackLoadedDepth(snapshot); loadedRows > terminal.CommittedLoadedDepth {
+					terminal.CommittedLoadedDepth = loadedRows
 				}
 				if limit > 0 {
-					terminal.ScrollbackExhausted = !snapshot.ScrollbackHasMore
+					terminal.CommittedHistoryExhausted = !snapshot.ScrollbackHasMore
 				}
 			}
 		}
@@ -457,8 +457,8 @@ func (m *Model) clearHistoryLoadingOwner(terminalID string, limit int, owner his
 		return nil
 	}
 	delete(m.historyLoading, terminalID)
-	if terminal != nil && terminal.ScrollbackLoadingLimit == limit {
-		terminal.ScrollbackLoadingLimit = 0
+	if terminal != nil && terminal.CommittedLoadingDepth == limit {
+		terminal.CommittedLoadingDepth = 0
 	}
 	return terminal
 }

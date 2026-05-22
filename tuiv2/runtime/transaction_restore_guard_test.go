@@ -26,9 +26,9 @@ func TestTransactionRestorePreservesOwnershipBackedViewportAndHistoryLoadState(t
 		Cursor:                 protocol.CursorState{Visible: true},
 		Modes:                  protocol.TerminalModes{AutoWrap: true},
 	}
-	terminal.ScrollbackLoadedLimit = 37
-	terminal.ScrollbackLoadingLimit = 64
-	terminal.ScrollbackExhausted = false
+	terminal.CommittedLoadedDepth = 37
+	terminal.CommittedLoadingDepth = 64
+	terminal.CommittedHistoryExhausted = false
 
 	binding := rt.BindPane("pane-1")
 	binding.Viewport.Offset = 9
@@ -37,22 +37,22 @@ func TestTransactionRestorePreservesOwnershipBackedViewportAndHistoryLoadState(t
 	live := rt.TerminalLiveStateSnapshot("term-1")
 	bindingSnapshot := ClonePaneBinding(binding)
 
-	terminal.ScrollbackLoadedLimit = 0
-	terminal.ScrollbackLoadingLimit = 0
-	terminal.ScrollbackExhausted = true
+	terminal.CommittedLoadedDepth = 0
+	terminal.CommittedLoadingDepth = 0
+	terminal.CommittedHistoryExhausted = true
 	_ = rt.SetPaneViewportOffset("pane-1", 0)
 	_ = rt.SetPaneContentOffset("pane-1", 0, 0)
 
 	rt.RestoreTerminalLiveState("term-1", live)
 	rt.RestorePaneBinding("pane-1", bindingSnapshot)
 
-	if got := terminal.ScrollbackLoadedLimit; got != 37 {
+	if got := terminal.CommittedLoadedDepth; got != 37 {
 		t.Fatalf("expected restore to preserve loaded rows limit 37, got %d", got)
 	}
-	if got := terminal.ScrollbackLoadingLimit; got != 64 {
+	if got := terminal.CommittedLoadingDepth; got != 64 {
 		t.Fatalf("expected restore to preserve in-flight loading limit 64, got %d", got)
 	}
-	if terminal.ScrollbackExhausted {
+	if terminal.CommittedHistoryExhausted {
 		t.Fatal("expected restore to preserve non-exhausted history state")
 	}
 	if got := rt.PaneViewportOffset("pane-1"); got != 9 {
@@ -75,24 +75,24 @@ func TestTransactionRestorePreservesOwnershipBackedViewportAndHistoryLoadState(t
 		Cursor:               protocol.CursorState{Visible: true},
 		Modes:                protocol.TerminalModes{AutoWrap: true},
 	}
-	terminal.ScrollbackLoadedLimit = 1
-	terminal.ScrollbackLoadingLimit = 0
-	terminal.ScrollbackExhausted = true
+	terminal.CommittedLoadedDepth = 1
+	terminal.CommittedLoadingDepth = 0
+	terminal.CommittedHistoryExhausted = true
 	exhausted := rt.TerminalLiveStateSnapshot("term-1")
 
-	terminal.ScrollbackLoadedLimit = 200
-	terminal.ScrollbackLoadingLimit = 500
-	terminal.ScrollbackExhausted = false
+	terminal.CommittedLoadedDepth = 200
+	terminal.CommittedLoadingDepth = 500
+	terminal.CommittedHistoryExhausted = false
 
 	rt.RestoreTerminalLiveState("term-1", exhausted)
 
-	if got := terminal.ScrollbackLoadedLimit; got != 1 {
+	if got := terminal.CommittedLoadedDepth; got != 1 {
 		t.Fatalf("expected exhausted restore to preserve loaded rows limit 1, got %d", got)
 	}
-	if got := terminal.ScrollbackLoadingLimit; got != 0 {
+	if got := terminal.CommittedLoadingDepth; got != 0 {
 		t.Fatalf("expected exhausted restore to preserve cleared loading limit 0, got %d", got)
 	}
-	if !terminal.ScrollbackExhausted {
+	if !terminal.CommittedHistoryExhausted {
 		t.Fatal("expected exhausted restore to keep exhausted=true")
 	}
 }
@@ -110,25 +110,25 @@ func TestTransactionRestoreDropsUnownedHistoryLoadState(t *testing.T) {
 		Cursor:               protocol.CursorState{Visible: true},
 		Modes:                protocol.TerminalModes{AutoWrap: true},
 	}
-	terminal.ScrollbackLoadedLimit = 37
-	terminal.ScrollbackLoadingLimit = 64
-	terminal.ScrollbackExhausted = true
+	terminal.CommittedLoadedDepth = 37
+	terminal.CommittedLoadingDepth = 64
+	terminal.CommittedHistoryExhausted = true
 
 	live := rt.TerminalLiveStateSnapshot("term-1")
 
-	terminal.ScrollbackLoadedLimit = 200
-	terminal.ScrollbackLoadingLimit = 500
-	terminal.ScrollbackExhausted = false
+	terminal.CommittedLoadedDepth = 200
+	terminal.CommittedLoadingDepth = 500
+	terminal.CommittedHistoryExhausted = false
 
 	rt.RestoreTerminalLiveState("term-1", live)
 
-	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+	if got := terminal.CommittedLoadedDepth; got != 0 {
 		t.Fatalf("expected unowned restore to drop committed loaded depth, got %d", got)
 	}
-	if got := terminal.ScrollbackLoadingLimit; got != 0 {
+	if got := terminal.CommittedLoadingDepth; got != 0 {
 		t.Fatalf("expected unowned restore to drop in-flight loading limit, got %d", got)
 	}
-	if terminal.ScrollbackExhausted {
+	if terminal.CommittedHistoryExhausted {
 		t.Fatal("expected unowned restore not to keep exhausted=true")
 	}
 }

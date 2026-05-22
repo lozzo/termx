@@ -79,8 +79,8 @@ func (r *Runtime) resetTerminalLiveState(terminal *TerminalRuntime) {
 	terminal.SnapshotVersion = 0
 	terminal.SurfaceVersion = 0
 	terminal.BootstrapPending = false
-	terminal.ScrollbackLoadingLimit = 0
-	terminal.ScrollbackExhausted = false
+	terminal.CommittedLoadingDepth = 0
+	terminal.CommittedHistoryExhausted = false
 	terminal.VTerm = nil
 }
 
@@ -89,16 +89,16 @@ func normalizeTerminalScrollbackLoadState(terminal *TerminalRuntime) {
 		return
 	}
 	loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot)
-	terminal.ScrollbackLoadedLimit = loaded
+	terminal.CommittedLoadedDepth = loaded
 	if loaded <= 0 {
-		terminal.ScrollbackLoadingLimit = 0
-		terminal.ScrollbackExhausted = false
+		terminal.CommittedLoadingDepth = 0
+		terminal.CommittedHistoryExhausted = false
 		return
 	}
-	if terminal.ScrollbackLoadingLimit <= loaded {
-		terminal.ScrollbackLoadingLimit = 0
+	if terminal.CommittedLoadingDepth <= loaded {
+		terminal.CommittedLoadingDepth = 0
 	}
-	terminal.ScrollbackExhausted = terminal.ScrollbackExhausted && protocol.HasExplicitRowOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback))
+	terminal.CommittedHistoryExhausted = terminal.CommittedHistoryExhausted && protocol.HasExplicitRowOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback))
 }
 
 func (r *Runtime) hydrateTerminalMetadata(ctx context.Context, terminalID string) {

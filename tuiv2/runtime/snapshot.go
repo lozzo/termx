@@ -101,9 +101,9 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 		terminal.PreferSnapshot = false
 		if offset == 0 && snapshot != nil {
 			if limit > 0 && protocol.HasExplicitRowOwnership(snapshot.ScrollbackOwnership, len(snapshot.Scrollback)) {
-				terminal.ScrollbackExhausted = !snapshot.ScrollbackHasMore
+				terminal.CommittedHistoryExhausted = !snapshot.ScrollbackHasMore
 			} else if !protocol.HasExplicitRowOwnership(snapshot.ScrollbackOwnership, len(snapshot.Scrollback)) {
-				terminal.ScrollbackExhausted = false
+				terminal.CommittedHistoryExhausted = false
 			}
 		}
 		r.ensureVTerm(terminal)
@@ -114,7 +114,7 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 		}
 		r.bumpSurfaceVersion(terminal)
 		terminal.SnapshotVersion = terminal.SurfaceVersion
-		terminal.ScrollbackLoadingLimit = 0
+		terminal.CommittedLoadingDepth = 0
 		r.touch()
 	}
 	return snapshot, nil
@@ -196,10 +196,10 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 			loadSnapshotIntoVTerm(terminal.VTerm, merged)
 		}
 		applyLatestSnapshotRuntimeState(terminal, merged)
-	} else if loadedDepth := snapshotScrollbackLoadedDepth(page); loadedDepth > terminal.ScrollbackLoadedLimit {
-		terminal.ScrollbackLoadedLimit = loadedDepth
+	} else if loadedDepth := snapshotScrollbackLoadedDepth(page); loadedDepth > terminal.CommittedLoadedDepth {
+		terminal.CommittedLoadedDepth = loadedDepth
 	}
-	terminal.ScrollbackExhausted = !page.ScrollbackHasMore
+	terminal.CommittedHistoryExhausted = !page.ScrollbackHasMore
 	r.bumpSurfaceVersion(terminal)
 	terminal.SnapshotVersion = terminal.SurfaceVersion
 	terminal.PreferSnapshot = true
@@ -213,10 +213,10 @@ func applyLatestSnapshotRuntimeState(terminal *TerminalRuntime, snapshot *protoc
 		return
 	}
 	if snapshot == nil {
-		terminal.ScrollbackLoadedLimit = 0
+		terminal.CommittedLoadedDepth = 0
 		return
 	}
-	terminal.ScrollbackLoadedLimit = snapshotScrollbackLoadedDepth(snapshot)
+	terminal.CommittedLoadedDepth = snapshotScrollbackLoadedDepth(snapshot)
 }
 
 func snapshotScrollbackLoadedDepth(snapshot *protocol.Snapshot) int {
@@ -396,11 +396,11 @@ func (r *Runtime) refreshSnapshot(terminalID string) {
 	terminal.PreferSnapshot = false
 	terminal.SnapshotVersion = terminal.SurfaceVersion
 	if terminal.Snapshot != nil {
-		if loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot); loaded > terminal.ScrollbackLoadedLimit {
-			terminal.ScrollbackLoadedLimit = loaded
+		if loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot); loaded > terminal.CommittedLoadedDepth {
+			terminal.CommittedLoadedDepth = loaded
 		}
-		if terminal.ScrollbackLoadingLimit > 0 && len(terminal.Snapshot.Scrollback) >= terminal.ScrollbackLoadingLimit {
-			terminal.ScrollbackLoadingLimit = 0
+		if terminal.CommittedLoadingDepth > 0 && len(terminal.Snapshot.Scrollback) >= terminal.CommittedLoadingDepth {
+			terminal.CommittedLoadingDepth = 0
 		}
 	}
 	r.invalidate()

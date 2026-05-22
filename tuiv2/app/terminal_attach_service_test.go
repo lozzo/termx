@@ -229,7 +229,7 @@ func TestTerminalAttachServiceRestoredSnapshotFallbackUsesKnownLoadedDepth(t *te
 	}
 	model := setupModel(t, modelOpts{client: client})
 	terminal := model.runtime.Registry().GetOrCreate("term-restore")
-	terminal.ScrollbackLoadedLimit = 1500
+	terminal.CommittedLoadedDepth = 1500
 
 	service := model.terminalAttachService()
 	msg := service.restoredSnapshotFallbackMsg(bootstrap.PaneReattachHint{

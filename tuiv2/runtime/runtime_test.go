@@ -264,7 +264,7 @@ func TestRuntimeApplyGridViewportPagePrependsHistory(t *testing.T) {
 	if got.ScrollbackLogicalTotal != 2 {
 		t.Fatalf("expected logical total from prepended page, got %d", got.ScrollbackLogicalTotal)
 	}
-	if !stored.ScrollbackExhausted {
+	if !stored.CommittedHistoryExhausted {
 		t.Fatal("expected exhausted flag from page metadata")
 	}
 	if !stored.PreferSnapshot {
@@ -399,7 +399,7 @@ func TestRuntimeApplyGridViewportPageReplacesCanonicalLatestWithShorterLiveTailO
 	if len(got.Scrollback) != 2 || compactRowText(got.Scrollback[0]) != "tail0" || compactRowText(got.Scrollback[1]) != "tail1" {
 		t.Fatalf("expected incoming live-tail rows to replace canonical materialization, got %#v", got.Scrollback)
 	}
-	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+	if got := terminal.CommittedLoadedDepth; got != 0 {
 		t.Fatalf("expected live-tail ownership latest replace to reset known committed depth to 0, got %d", got)
 	}
 	if !protocol.HasOnlyLiveTailLiveOwnership(got.ScrollbackOwnership, len(got.Scrollback)) {
@@ -468,7 +468,7 @@ func TestRuntimeApplyGridViewportPageLiveTailOnlyLatestReplaceKeepsZeroCommitted
 	if got := snapshotScrollbackLoadedDepth(terminal.Snapshot); got != 0 {
 		t.Fatalf("expected refresh to keep committed loaded depth 0, got %d", got)
 	}
-	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+	if got := terminal.CommittedLoadedDepth; got != 0 {
 		t.Fatalf("expected refresh to keep known committed depth at 0, got %d", got)
 	}
 	if !protocol.HasOnlyLiveTailLiveOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
@@ -556,7 +556,7 @@ func TestRuntimeApplyGridViewportPageCanonicalLatestReplaceUsesIncomingMetadata(
 	if got.ScrollbackOffset != 0 {
 		t.Fatalf("expected replace semantics to use incoming row window offset, got %d", got.ScrollbackOffset)
 	}
-	if got, want := terminal.ScrollbackLoadedLimit, 3; got != want {
+	if got, want := terminal.CommittedLoadedDepth, 3; got != want {
 		t.Fatalf("expected canonical latest replace to adopt incoming committed depth %d, got %d", want, got)
 	}
 	if len(got.Scrollback) != 3 || compactRowText(got.Scrollback[0]) != "canon900" || compactRowText(got.Scrollback[2]) != "canon902" {
@@ -589,7 +589,7 @@ func TestRuntimeLoadSnapshotLiveTailOnlyLatestDoesNotPromoteCommittedLoadedLimit
 	if terminal == nil {
 		t.Fatal("expected terminal")
 	}
-	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+	if got := terminal.CommittedLoadedDepth; got != 0 {
 		t.Fatalf("expected live-tail-only latest snapshot not to promote committed loaded limit, got %d", got)
 	}
 	if terminal.VTerm == nil {
@@ -627,7 +627,7 @@ func TestRuntimeLoadSnapshotLiveTailOwnershipLatestReplacesKnownCommittedDepth(t
 	if terminal == nil {
 		t.Fatal("expected terminal")
 	}
-	if got := terminal.ScrollbackLoadedLimit; got != 12000 {
+	if got := terminal.CommittedLoadedDepth; got != 12000 {
 		t.Fatalf("expected canonical latest to seed committed depth 12000, got %d", got)
 	}
 
@@ -654,7 +654,7 @@ func TestRuntimeLoadSnapshotLiveTailOwnershipLatestReplacesKnownCommittedDepth(t
 	if terminal == nil || terminal.Snapshot == nil {
 		t.Fatalf("expected cached runtime snapshot, got %#v", terminal)
 	}
-	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+	if got := terminal.CommittedLoadedDepth; got != 0 {
 		t.Fatalf("expected live-tail ownership latest to replace known committed depth with 0, got %d", got)
 	}
 	if got := snapshotScrollbackLoadedDepth(terminal.Snapshot); got != 0 {
@@ -689,7 +689,7 @@ func TestRuntimeRefreshSnapshotFromVTermKeepsLiveTailOwnershipCommittedDepth(t *
 	if terminal == nil || terminal.VTerm == nil {
 		t.Fatalf("expected terminal with vterm, got %#v", terminal)
 	}
-	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+	if got := terminal.CommittedLoadedDepth; got != 0 {
 		t.Fatalf("expected live-tail ownership latest load to keep committed depth 0, got %d", got)
 	}
 
@@ -698,7 +698,7 @@ func TestRuntimeRefreshSnapshotFromVTermKeepsLiveTailOwnershipCommittedDepth(t *
 	}
 
 	terminal = rt.Registry().Get("term-1")
-	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+	if got := terminal.CommittedLoadedDepth; got != 0 {
 		t.Fatalf("expected live-tail ownership latest refresh to keep committed depth 0, got %d", got)
 	}
 	if terminal.Snapshot == nil {
@@ -733,13 +733,13 @@ func TestRuntimeBumpSurfaceVersionKeepsLiveTailOwnershipCommittedDepth(t *testin
 	if terminal == nil || terminal.VTerm == nil {
 		t.Fatalf("expected terminal with vterm, got %#v", terminal)
 	}
-	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+	if got := terminal.CommittedLoadedDepth; got != 0 {
 		t.Fatalf("expected live-tail ownership latest load to keep committed depth 0, got %d", got)
 	}
 
 	rt.bumpSurfaceVersion(terminal)
 
-	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+	if got := terminal.CommittedLoadedDepth; got != 0 {
 		t.Fatalf("expected surface sync to keep live-tail ownership committed depth 0, got %d", got)
 	}
 }
@@ -770,7 +770,7 @@ func TestRuntimeAttachTerminalPreservesLiveTailOwnershipAcrossReattach(t *testin
 		if terminal == nil {
 			t.Fatalf("%s: expected terminal", stage)
 		}
-		if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		if got := terminal.CommittedLoadedDepth; got != 0 {
 			t.Fatalf("%s: expected committed loaded depth 0, got %d", stage, got)
 		}
 		if terminal.Snapshot == nil || !protocol.HasOnlyLiveTailLiveOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
@@ -825,7 +825,7 @@ func TestRuntimeBumpSurfaceVersionDoesNotPromoteLocalVTermOnlyScrollbackToCommit
 
 	rt.bumpSurfaceVersion(terminal)
 
-	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+	if got := terminal.CommittedLoadedDepth; got != 0 {
 		t.Fatalf("expected local VTerm-only scrollback not to promote committed depth, got %d", got)
 	}
 }
@@ -1069,7 +1069,7 @@ func TestRuntimeApplyGridViewportPageRejectsOffsetFromStoredLoadedLimitWhenSnaps
 	if terminal == nil || terminal.Snapshot == nil {
 		t.Fatal("expected runtime snapshot")
 	}
-	terminal.ScrollbackLoadedLimit = 100
+	terminal.CommittedLoadedDepth = 100
 
 	older := &protocol.Snapshot{
 		TerminalID:           "term-1",
@@ -1087,7 +1087,7 @@ func TestRuntimeApplyGridViewportPageRejectsOffsetFromStoredLoadedLimitWhenSnaps
 	if rt.ApplyGridViewportPage("term-1", older, 100) {
 		t.Fatal("expected older page keyed only by stored loaded limit to be rejected")
 	}
-	if got := terminal.ScrollbackLoadedLimit; got != 100 {
+	if got := terminal.CommittedLoadedDepth; got != 100 {
 		t.Fatalf("expected rejected stale page not to rewrite stored loaded limit, got %d", got)
 	}
 	if got := compactRowText(terminal.Snapshot.Scrollback[0]); got != "canon010" {
@@ -1199,8 +1199,8 @@ func TestRuntimeApplyGridViewportPageKeepsBoundedWindow(t *testing.T) {
 	if got := compactRowText(got.Scrollback[0]); got != "hist-00000" {
 		t.Fatalf("expected oldest loaded row at window start, got %q", got)
 	}
-	if terminal.ScrollbackLoadedLimit != 12500 {
-		t.Fatalf("expected loaded depth to keep full logical progress, got %d", terminal.ScrollbackLoadedLimit)
+	if terminal.CommittedLoadedDepth != 12500 {
+		t.Fatalf("expected loaded depth to keep full logical progress, got %d", terminal.CommittedLoadedDepth)
 	}
 	if firstRowID, want := got.ScrollbackFirstRowID, uint64(0); firstRowID != want {
 		t.Fatalf("expected bounded materialization to keep loaded committed window first row id, got %d want %d", firstRowID, want)
@@ -1278,7 +1278,7 @@ func TestRuntimeApplyGridViewportPageAcceptsOffsetBeyondMaterializedWindow(t *te
 	if !rt.ApplyGridViewportPage("term-1", page2, 12500) {
 		t.Fatal("expected second older page beyond materialized window to apply")
 	}
-	if got, want := terminal.ScrollbackLoadedLimit, 13000; got != want {
+	if got, want := terminal.CommittedLoadedDepth, 13000; got != want {
 		t.Fatalf("expected loaded depth 13000 after second page, got %d", got)
 	}
 	if got := compactRowText(terminal.Snapshot.Scrollback[0]); got != "hist-00000" {
@@ -1640,7 +1640,7 @@ func TestRuntimeScrollbackChangeInvalidatesExhaustedSnapshotState(t *testing.T) 
 	if terminal == nil {
 		t.Fatal("expected terminal")
 	}
-	if terminal.ScrollbackExhausted {
+	if terminal.CommittedHistoryExhausted {
 		t.Fatalf("expected initial snapshot without ownership not to infer exhausted history, got %#v", terminal)
 	}
 
@@ -1668,10 +1668,10 @@ func TestRuntimeScrollbackChangeInvalidatesExhaustedSnapshotState(t *testing.T) 
 
 	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload})
 
-	if terminal.ScrollbackExhausted {
+	if terminal.CommittedHistoryExhausted {
 		t.Fatalf("expected live scrollback change to clear exhausted state, got %#v", terminal)
 	}
-	if terminal.ScrollbackLoadedLimit != 0 {
+	if terminal.CommittedLoadedDepth != 0 {
 		t.Fatalf("expected live-tail append not to advance committed loaded depth, got %#v", terminal)
 	}
 	if terminal.Snapshot == nil || !protocol.HasOnlyLiveTailLiveOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
@@ -1698,7 +1698,7 @@ func TestRuntimeScrollOpcodeInvalidatesExhaustedSnapshotState(t *testing.T) {
 	if terminal == nil {
 		t.Fatal("expected terminal")
 	}
-	if terminal.ScrollbackExhausted {
+	if terminal.CommittedHistoryExhausted {
 		t.Fatalf("expected initial snapshot without ownership not to infer exhausted history, got %#v", terminal)
 	}
 
@@ -1717,7 +1717,7 @@ func TestRuntimeScrollOpcodeInvalidatesExhaustedSnapshotState(t *testing.T) {
 
 	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: wire.TypeScreenUpdate, Payload: payload})
 
-	if terminal.ScrollbackExhausted {
+	if terminal.CommittedHistoryExhausted {
 		t.Fatalf("expected screen scroll to clear exhausted state, got %#v", terminal)
 	}
 }
@@ -2141,10 +2141,10 @@ func TestRuntimeScreenUpdateFullReplaceResetsLatestBoundaryContract(t *testing.T
 		if terminal == nil || terminal.Snapshot == nil {
 			t.Fatalf("%s: expected terminal snapshot, got %#v", stage, terminal)
 		}
-		if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		if got := terminal.CommittedLoadedDepth; got != 0 {
 			t.Fatalf("%s: expected latest full-replace boundary to clear committed depth, got %d", stage, got)
 		}
-		if terminal.ScrollbackExhausted {
+		if terminal.CommittedHistoryExhausted {
 			t.Fatalf("%s: expected latest full-replace boundary to clear exhausted paging state", stage)
 		}
 		if got := snapshotScrollbackLoadedDepth(terminal.Snapshot); got != 0 {
@@ -2183,10 +2183,10 @@ func TestRuntimeScreenUpdateFullReplaceResetsLatestBoundaryContract(t *testing.T
 			if terminal == nil || terminal.Snapshot == nil || terminal.VTerm == nil {
 				t.Fatalf("expected hydrated terminal, got %#v", terminal)
 			}
-			if got := terminal.ScrollbackLoadedLimit; got < tt.wantLoadedLimit {
+			if got := terminal.CommittedLoadedDepth; got < tt.wantLoadedLimit {
 				t.Fatalf("expected precondition loaded depth at least %d, got %d", tt.wantLoadedLimit, got)
 			}
-			terminal.ScrollbackExhausted = true
+			terminal.CommittedHistoryExhausted = true
 
 			updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
 				FullReplace: true,
@@ -2237,10 +2237,10 @@ func TestRuntimeScreenUpdateFullReplaceWithScrollbackAppendKeepsBoundaryReset(t 
 	if terminal == nil || terminal.Snapshot == nil || terminal.VTerm == nil {
 		t.Fatalf("expected hydrated terminal, got %#v", terminal)
 	}
-	if got := terminal.ScrollbackLoadedLimit; got < 1 {
+	if got := terminal.CommittedLoadedDepth; got < 1 {
 		t.Fatalf("expected precondition committed depth at least 1, got %d", got)
 	}
-	terminal.ScrollbackExhausted = true
+	terminal.CommittedHistoryExhausted = true
 
 	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
 		FullReplace: true,
@@ -2262,10 +2262,10 @@ func TestRuntimeScreenUpdateFullReplaceWithScrollbackAppendKeepsBoundaryReset(t 
 		if terminal == nil || terminal.Snapshot == nil {
 			t.Fatalf("%s: expected terminal snapshot, got %#v", stage, terminal)
 		}
-		if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		if got := terminal.CommittedLoadedDepth; got != 0 {
 			t.Fatalf("%s: expected full-replace append to keep committed depth reset, got %d", stage, got)
 		}
-		if terminal.ScrollbackExhausted {
+		if terminal.CommittedHistoryExhausted {
 			t.Fatalf("%s: expected full-replace append to clear exhausted paging state", stage)
 		}
 		if got := terminal.Snapshot.ScrollbackLoadedRows; got != 0 {
@@ -2329,7 +2329,7 @@ func TestRuntimeScreenUpdateFullReplaceWithScrollbackAppendKeepsBoundaryReset(t 
 	if terminal == nil || terminal.Snapshot == nil {
 		t.Fatalf("expected terminal snapshot after offset-0 replace, got %#v", terminal)
 	}
-	if got := terminal.ScrollbackLoadedLimit; got != 1 {
+	if got := terminal.CommittedLoadedDepth; got != 1 {
 		t.Fatalf("expected authoritative offset-0 page to own committed depth 1 after reset, got %d", got)
 	}
 	if got := terminal.Snapshot.HistoryGeneration; got != 11 {

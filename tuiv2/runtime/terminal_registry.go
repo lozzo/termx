@@ -39,9 +39,11 @@ type TerminalRuntime struct {
 
 	AlternateScrollback []protocol.CompactRow
 
-	ScrollbackLoadedLimit  int
-	ScrollbackLoadingLimit int
-	ScrollbackExhausted    bool
+	// Committed* fields track only ownership-backed persisted/reclaimed history
+	// depth. They must not be advanced from live-tail rows or legacy totals.
+	CommittedLoadedDepth      int
+	CommittedLoadingDepth     int
+	CommittedHistoryExhausted bool
 
 	OwnerPaneID   string   // 全局 owner pane，用于所有视图的共享展示
 	ControlPaneID string   // 当前本地视图可实际驱动 resize/control 的 pane

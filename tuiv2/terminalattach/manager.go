@@ -73,8 +73,8 @@ func (m *Manager) Execute(ctx context.Context, req Request) (orchestrator.Termin
 		return orchestrator.TerminalAttachedMsg{}, err
 	}
 	snapshotLimit := req.Limit
-	if terminal.ScrollbackLoadedLimit > snapshotLimit {
-		snapshotLimit = terminal.ScrollbackLoadedLimit
+	if terminal.CommittedLoadedDepth > snapshotLimit {
+		snapshotLimit = terminal.CommittedLoadedDepth
 	}
 	if _, err := m.runtime.LoadSnapshot(ctx, plan.TerminalID, req.Offset, snapshotLimit); err != nil {
 		m.rollbackExecution(rollback)

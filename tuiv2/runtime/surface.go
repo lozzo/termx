@@ -494,14 +494,14 @@ func syncSurfaceScrollbackState(terminal *TerminalRuntime) {
 		return
 	}
 	loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot)
-	if terminal.ScrollbackExhausted && loaded > terminal.ScrollbackLoadedLimit {
-		terminal.ScrollbackExhausted = false
+	if terminal.CommittedHistoryExhausted && loaded > terminal.CommittedLoadedDepth {
+		terminal.CommittedHistoryExhausted = false
 	}
-	if loaded > terminal.ScrollbackLoadedLimit {
-		terminal.ScrollbackLoadedLimit = loaded
+	if loaded > terminal.CommittedLoadedDepth {
+		terminal.CommittedLoadedDepth = loaded
 	}
-	if terminal.ScrollbackLoadingLimit > 0 && loaded >= terminal.ScrollbackLoadingLimit {
-		terminal.ScrollbackLoadingLimit = 0
+	if terminal.CommittedLoadingDepth > 0 && loaded >= terminal.CommittedLoadingDepth {
+		terminal.CommittedLoadingDepth = 0
 	}
 }
 
