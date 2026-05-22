@@ -85,12 +85,12 @@ func (m *Model) localScrollbackWheelCmd(paneID string, delta int) tea.Cmd {
 		return nil
 	}
 	if m.effectiveInputMode() == input.ModeDisplay {
-		return m.moveCopyCursorVertical(-delta)
+		return m.moveCopyCursorLogicalLines(-delta)
 	}
 	if delta > 0 && m.ensureCopyMode() {
 		m.setMode(input.ModeState{Kind: input.ModeDisplay})
 		m.render.Invalidate()
-		return m.moveCopyCursorVertical(-delta)
+		return m.moveCopyCursorLogicalLines(-delta)
 	}
 	if _, changed := m.adjustPaneViewportOffset(paneID, delta); changed {
 		m.render.Invalidate()
