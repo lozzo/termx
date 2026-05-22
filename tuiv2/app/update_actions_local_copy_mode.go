@@ -11,9 +11,9 @@ func (m *Model) handleCopyModeLocalAction(action input.SemanticAction) (bool, te
 	}
 	switch action.Kind {
 	case input.ActionCopyModeCursorLeft:
-		return true, m.moveCopyCursor(0, -1)
+		return true, m.moveCopyCursorLogicalOffset(-1)
 	case input.ActionCopyModeCursorRight:
-		return true, m.moveCopyCursor(0, 1)
+		return true, m.moveCopyCursorLogicalOffset(1)
 	case input.ActionCopyModeCursorUp:
 		return true, m.moveCopyCursorLogicalLines(-1)
 	case input.ActionCopyModeCursorDown:
@@ -39,14 +39,15 @@ func (m *Model) handleCopyModeLocalAction(action input.SemanticAction) (bool, te
 		}
 		return true, nil
 	case input.ActionCopyModeStartOfLine:
-		m.setCopyCursorCol(0)
-		return true, nil
+		return true, m.setCopyCursorLogicalOffset(0)
 	case input.ActionCopyModeEndOfLine:
 		if !m.ensureCopyMode() {
 			return true, nil
 		}
 		if buffer, ok := m.activeCopyModeBuffer(); ok {
-			m.setCopyCursorCol(buffer.rowMaxCol(m.copyMode.Cursor.Row))
+			if line, ok := buffer.logicalLineByIndex(m.copyMode.CursorLogical.Line); ok {
+				return true, m.setCopyCursorLogicalOffset(len(line.Text) - 1)
+			}
 		}
 		return true, nil
 	case input.ActionCopyModeTop:
