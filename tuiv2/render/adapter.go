@@ -30,10 +30,14 @@ type VisibleRenderState struct {
 	CopyModePaneID             string
 	CopyModeCursorRow          int
 	CopyModeCursorCol          int
+	CopyModeCursorLogicalLine  int
+	CopyModeCursorLogicalCol   int
 	CopyModeViewTopRow         int
 	CopyModeMarkSet            bool
 	CopyModeMarkRow            int
 	CopyModeMarkCol            int
+	CopyModeMarkLogicalLine    int
+	CopyModeMarkLogicalCol     int
 	CopyModeSnapshot           *protocol.Snapshot
 }
 

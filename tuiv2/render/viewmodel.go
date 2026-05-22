@@ -69,24 +69,24 @@ type RenderSnapshotOverrideVM struct {
 }
 
 type RenderCopyModeVM struct {
-	PaneID           string
-	CursorRow        int
-	CursorCol        int
+	PaneID            string
+	CursorRow         int
+	CursorCol         int
 	CursorLogicalLine int
 	CursorLogicalCol  int
-	CursorGeneration uint64
-	CursorRowID      uint64
-	CursorRefValid   bool
-	ViewTopRow       int
-	MarkSet          bool
-	MarkRow          int
-	MarkCol          int
-	MarkLogicalLine  int
-	MarkLogicalCol   int
-	MarkGeneration   uint64
-	MarkRowID        uint64
-	MarkRefValid     bool
-	Snapshot         *protocol.Snapshot
+	CursorGeneration  uint64
+	CursorRowID       uint64
+	CursorRefValid    bool
+	ViewTopRow        int
+	MarkSet           bool
+	MarkRow           int
+	MarkCol           int
+	MarkLogicalLine   int
+	MarkLogicalCol    int
+	MarkGeneration    uint64
+	MarkRowID         uint64
+	MarkRefValid      bool
+	Snapshot          *protocol.Snapshot
 }
 
 type RenderFloatingDragPreviewVM struct {
@@ -310,14 +310,18 @@ func RenderVMFromVisibleState(state VisibleRenderState) RenderVM {
 				Snapshot: state.PaneSnapshotOverride,
 			},
 			CopyMode: RenderCopyModeVM{
-				PaneID:     state.CopyModePaneID,
-				CursorRow:  state.CopyModeCursorRow,
-				CursorCol:  state.CopyModeCursorCol,
-				ViewTopRow: state.CopyModeViewTopRow,
-				MarkSet:    state.CopyModeMarkSet,
-				MarkRow:    state.CopyModeMarkRow,
-				MarkCol:    state.CopyModeMarkCol,
-				Snapshot:   state.CopyModeSnapshot,
+				PaneID:            state.CopyModePaneID,
+				CursorRow:         state.CopyModeCursorRow,
+				CursorCol:         state.CopyModeCursorCol,
+				CursorLogicalLine: state.CopyModeCursorLogicalLine,
+				CursorLogicalCol:  state.CopyModeCursorLogicalCol,
+				ViewTopRow:        state.CopyModeViewTopRow,
+				MarkSet:           state.CopyModeMarkSet,
+				MarkRow:           state.CopyModeMarkRow,
+				MarkCol:           state.CopyModeMarkCol,
+				MarkLogicalLine:   state.CopyModeMarkLogicalLine,
+				MarkLogicalCol:    state.CopyModeMarkLogicalCol,
+				Snapshot:          state.CopyModeSnapshot,
 			},
 		},
 	}
@@ -364,10 +368,14 @@ func VisibleStateFromRenderVM(vm RenderVM) VisibleRenderState {
 		CopyModePaneID:             copyMode.PaneID,
 		CopyModeCursorRow:          copyMode.CursorRow,
 		CopyModeCursorCol:          copyMode.CursorCol,
+		CopyModeCursorLogicalLine:  copyMode.CursorLogicalLine,
+		CopyModeCursorLogicalCol:   copyMode.CursorLogicalCol,
 		CopyModeViewTopRow:         copyMode.ViewTopRow,
 		CopyModeMarkSet:            copyMode.MarkSet,
 		CopyModeMarkRow:            copyMode.MarkRow,
 		CopyModeMarkCol:            copyMode.MarkCol,
+		CopyModeMarkLogicalLine:    copyMode.MarkLogicalLine,
+		CopyModeMarkLogicalCol:     copyMode.MarkLogicalCol,
 		CopyModeSnapshot:           copyMode.Snapshot,
 	}
 }
