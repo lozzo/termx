@@ -17,6 +17,11 @@ type copyModePoint struct {
 	Col int
 }
 
+type copyModeLogicalPos struct {
+	Line   int
+	Offset int
+}
+
 type copyModeRowRef struct {
 	Generation uint64
 	RowID      uint64
@@ -29,8 +34,10 @@ type copyModeState struct {
 	CommittedLoadedRows int
 	ViewTopRow          int
 	Cursor              copyModePoint
+	CursorLogical       copyModeLogicalPos
 	CursorRowRef        copyModeRowRef
 	Mark                *copyModePoint
+	MarkLogical         *copyModeLogicalPos
 	MarkRowRef          copyModeRowRef
 	MouseSelecting      bool
 	AutoScrollDir       int
@@ -543,10 +550,16 @@ func (m *Model) ensureCopyMode() bool {
 		m.copyMode.CommittedLoadedRows = snapshotScrollbackLoadedDepth(buffer.snapshot)
 		m.copyMode.Cursor = buffer.clampPoint(m.copyMode.Cursor)
 		m.copyMode.CursorRowRef = buffer.pointRowRef(m.copyMode.Cursor)
+		if logical, ok := buffer.logicalPosForPoint(m.copyMode.Cursor); ok {
+			m.copyMode.CursorLogical = logical
+		}
 		if m.copyMode.Mark != nil {
 			point := buffer.clampPoint(*m.copyMode.Mark)
 			m.copyMode.Mark = &point
 			m.copyMode.MarkRowRef = buffer.pointRowRef(point)
+			if logical, ok := buffer.logicalPosForPoint(point); ok {
+				m.copyMode.MarkLogical = &logical
+			}
 		}
 		m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
 		m.saveCurrentCopyModeState()
@@ -573,6 +586,9 @@ func (m *Model) ensureCopyMode() bool {
 		ViewTopRow:          maxInt(0, buffer.totalRows()-buffer.height),
 		Cursor:              start,
 		CursorRowRef:        buffer.pointRowRef(start),
+	}
+	if logical, ok := buffer.logicalPosForPoint(start); ok {
+		m.copyMode.CursorLogical = logical
 	}
 	m.syncCopyModeViewport(buffer, start)
 	m.saveCurrentCopyModeState()
@@ -728,13 +744,20 @@ func (m *Model) reanchorCopyModePoints(buffer copyModeBuffer, fallbackDelta int,
 	if preserveTop {
 		m.copyMode.Cursor = buffer.clampPoint(copyModePoint{Row: 0, Col: m.copyMode.Cursor.Col})
 		m.copyMode.CursorRowRef = buffer.pointRowRef(m.copyMode.Cursor)
+		if logical, ok := buffer.logicalPosForPoint(m.copyMode.Cursor); ok {
+			m.copyMode.CursorLogical = logical
+		}
 		if m.copyMode.Mark == nil {
 			m.copyMode.MarkRowRef = copyModeRowRef{}
+			m.copyMode.MarkLogical = nil
 			return
 		}
 		point := buffer.clampPoint(*m.copyMode.Mark)
 		m.copyMode.Mark = &point
 		m.copyMode.MarkRowRef = buffer.pointRowRef(point)
+		if logical, ok := buffer.logicalPosForPoint(point); ok {
+			m.copyMode.MarkLogical = &logical
+		}
 		return
 	}
 	if preferRefs {
@@ -748,8 +771,12 @@ func (m *Model) reanchorCopyModePoints(buffer copyModeBuffer, fallbackDelta int,
 	}
 	m.copyMode.Cursor = buffer.clampPoint(m.copyMode.Cursor)
 	m.copyMode.CursorRowRef = buffer.pointRowRef(m.copyMode.Cursor)
+	if logical, ok := buffer.logicalPosForPoint(m.copyMode.Cursor); ok {
+		m.copyMode.CursorLogical = logical
+	}
 	if m.copyMode.Mark == nil {
 		m.copyMode.MarkRowRef = copyModeRowRef{}
+		m.copyMode.MarkLogical = nil
 		return
 	}
 	point := *m.copyMode.Mark
@@ -765,6 +792,9 @@ func (m *Model) reanchorCopyModePoints(buffer copyModeBuffer, fallbackDelta int,
 	point = buffer.clampPoint(point)
 	m.copyMode.Mark = &point
 	m.copyMode.MarkRowRef = buffer.pointRowRef(point)
+	if logical, ok := buffer.logicalPosForPoint(point); ok {
+		m.copyMode.MarkLogical = &logical
+	}
 }
 
 func (m *Model) pasteBufferToActiveCmd() tea.Cmd {

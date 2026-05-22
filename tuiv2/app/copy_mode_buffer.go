@@ -14,6 +14,13 @@ type copyModeBuffer struct {
 	height   int
 }
 
+type copyModeLogicalLine struct {
+	StartRow int
+	EndRow   int
+	Text     string
+	Points   []copyModePoint
+}
+
 func (m *Model) activeCopyModeBuffer() (copyModeBuffer, bool) {
 	_ = m.loadActiveCopyModeState()
 	return m.copyModeBufferForPane("")
@@ -134,6 +141,93 @@ func (b copyModeBuffer) rowWrapped(row int) bool {
 		return false
 	}
 	return boolAt(b.snapshot.ScreenWrapped, row)
+}
+
+func (b copyModeBuffer) logicalLineAtRow(row int) (copyModeLogicalLine, bool) {
+	if b.snapshot == nil || b.totalRows() == 0 || row < 0 || row >= b.totalRows() {
+		return copyModeLogicalLine{}, false
+	}
+	lines := newCopyModeLogicalLines(b)
+	start := lines.lineStart(row)
+	end := lines.lineEnd(row)
+	line := copyModeLogicalLine{
+		StartRow: start,
+		EndRow:   end,
+	}
+	for current := start; current <= end; current++ {
+		cells := b.row(current)
+		for col, cell := range cells {
+			if cell.Content == "" && cell.Width == 0 {
+				continue
+			}
+			if cell.Content != "" {
+				line.Text += cell.Content
+				line.Points = append(line.Points, copyModePoint{Row: current, Col: col})
+				continue
+			}
+			line.Text += " "
+			line.Points = append(line.Points, copyModePoint{Row: current, Col: col})
+		}
+	}
+	return line, true
+}
+
+func (b copyModeBuffer) logicalLineIndexAtRow(row int) int {
+	if b.snapshot == nil || b.totalRows() == 0 {
+		return -1
+	}
+	lines := newCopyModeLogicalLines(b)
+	index := 0
+	for current := 0; current < b.totalRows(); {
+		start := current
+		end := lines.lineEnd(current)
+		if row >= start && row <= end {
+			return index
+		}
+		index++
+		current = end + 1
+	}
+	return -1
+}
+
+func (b copyModeBuffer) logicalLineByIndex(index int) (copyModeLogicalLine, bool) {
+	if b.snapshot == nil || index < 0 || b.totalRows() == 0 {
+		return copyModeLogicalLine{}, false
+	}
+	lines := newCopyModeLogicalLines(b)
+	currentIndex := 0
+	for row := 0; row < b.totalRows(); {
+		end := lines.lineEnd(row)
+		if currentIndex == index {
+			return b.logicalLineAtRow(row)
+		}
+		currentIndex++
+		row = end + 1
+	}
+	return copyModeLogicalLine{}, false
+}
+
+func (b copyModeBuffer) logicalPosForPoint(point copyModePoint) (copyModeLogicalPos, bool) {
+	point = b.clampPoint(point)
+	line, ok := b.logicalLineAtRow(point.Row)
+	if !ok {
+		return copyModeLogicalPos{}, false
+	}
+	lineIndex := b.logicalLineIndexAtRow(point.Row)
+	if lineIndex < 0 {
+		return copyModeLogicalPos{}, false
+	}
+	offset := maxInt(0, len(line.Text)-1)
+	for i, cellPoint := range line.Points {
+		if point.Row < cellPoint.Row || (point.Row == cellPoint.Row && point.Col <= cellPoint.Col) {
+			offset = i
+			break
+		}
+	}
+	if len(line.Text) == 0 {
+		offset = 0
+	}
+	return copyModeLogicalPos{Line: lineIndex, Offset: offset}, true
 }
 
 func (b copyModeBuffer) cursorRow() int {
@@ -414,6 +508,9 @@ func (m *Model) moveCopyCursor(deltaRow, deltaCol int) tea.Cmd {
 	next.Col = buffer.normalizeCol(next.Row, next.Col)
 	m.copyMode.Cursor = next
 	m.copyMode.CursorRowRef = buffer.pointRowRef(next)
+	if logical, ok := buffer.logicalPosForPoint(next); ok {
+		m.copyMode.CursorLogical = logical
+	}
 	m.syncCopyModeViewport(buffer, next)
 	m.render.Invalidate()
 	return batchCmds(m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer))
@@ -433,6 +530,9 @@ func (m *Model) moveCopyCursorVertical(delta int) tea.Cmd {
 	next.Col = buffer.normalizeCol(next.Row, next.Col)
 	m.copyMode.Cursor = next
 	m.copyMode.CursorRowRef = buffer.pointRowRef(next)
+	if logical, ok := buffer.logicalPosForPoint(next); ok {
+		m.copyMode.CursorLogical = logical
+	}
 	m.syncCopyModeViewport(buffer, next)
 	m.render.Invalidate()
 	return batchCmds(m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer))
@@ -449,6 +549,9 @@ func (m *Model) jumpCopyCursor(row int) tea.Cmd {
 	next := buffer.clampPoint(copyModePoint{Row: row, Col: m.copyMode.Cursor.Col})
 	m.copyMode.Cursor = next
 	m.copyMode.CursorRowRef = buffer.pointRowRef(next)
+	if logical, ok := buffer.logicalPosForPoint(next); ok {
+		m.copyMode.CursorLogical = logical
+	}
 	m.syncCopyModeViewport(buffer, next)
 	m.render.Invalidate()
 	return batchCmds(m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer))
@@ -464,6 +567,9 @@ func (m *Model) setCopyCursorCol(col int) {
 	}
 	m.copyMode.Cursor.Col = buffer.normalizeCol(m.copyMode.Cursor.Row, col)
 	m.copyMode.CursorRowRef = buffer.pointRowRef(m.copyMode.Cursor)
+	if logical, ok := buffer.logicalPosForPoint(m.copyMode.Cursor); ok {
+		m.copyMode.CursorLogical = logical
+	}
 	m.saveCurrentCopyModeState()
 	m.render.Invalidate()
 }

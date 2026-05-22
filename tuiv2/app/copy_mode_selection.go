@@ -20,12 +20,15 @@ func (m *Model) beginCopySelection() {
 	point := m.copyMode.Cursor
 	m.copyMode.Mark = &copyModePoint{Row: point.Row, Col: point.Col}
 	m.copyMode.MarkRowRef = buffer.pointRowRef(point)
+	if logical, ok := buffer.logicalPosForPoint(point); ok {
+		m.copyMode.MarkLogical = &logical
+	}
 	m.saveCurrentCopyModeState()
 	m.render.Invalidate()
 }
 
-func normalizeCopySelection(a, b copyModePoint) (copyModePoint, copyModePoint) {
-	if a.Row > b.Row || (a.Row == b.Row && a.Col > b.Col) {
+func normalizeCopySelection(a, b copyModeLogicalPos) (copyModeLogicalPos, copyModeLogicalPos) {
+	if a.Line > b.Line || (a.Line == b.Line && a.Offset > b.Offset) {
 		return b, a
 	}
 	return a, b
@@ -39,35 +42,43 @@ func (m *Model) copyModeSelectedText() (string, bool) {
 	if !ok || buffer.totalRows() == 0 {
 		return "", false
 	}
-	start, end := normalizeCopySelection(buffer.clampPoint(*m.copyMode.Mark), buffer.clampPoint(m.copyMode.Cursor))
-	logicalLines := newCopyModeLogicalLines(buffer)
+	start, ok := buffer.logicalPosForPoint(*m.copyMode.Mark)
+	if !ok {
+		return "", false
+	}
+	end, ok := buffer.logicalPosForPoint(m.copyMode.Cursor)
+	if !ok {
+		return "", false
+	}
+	start, end = normalizeCopySelection(start, end)
 	var out strings.Builder
-	for row := start.Row; row <= end.Row; row++ {
-		cells := buffer.row(row)
-		firstCol := 0
-		lastCol := buffer.rowMaxCol(row)
-		if row == start.Row {
-			firstCol = start.Col
+	for lineIndex := start.Line; lineIndex <= end.Line; lineIndex++ {
+		line, ok := buffer.logicalLineByIndex(lineIndex)
+		if !ok {
+			return "", false
 		}
-		if row == end.Row {
-			lastCol = end.Col
+		firstOffset := 0
+		lastOffset := len(line.Text)
+		if lineIndex == start.Line {
+			firstOffset = start.Offset
 		}
-		if lastCol < firstCol {
-			lastCol = firstCol
+		if lineIndex == end.Line {
+			lastOffset = end.Offset + 1
 		}
-		firstCol = buffer.normalizeCol(row, firstCol)
-		lastCol = buffer.normalizeCol(row, lastCol)
-		for col := firstCol; col <= lastCol; col++ {
-			if col >= 0 && col < len(cells) && cells[col].Content == "" && cells[col].Width == 0 {
-				continue
-			}
-			if col >= 0 && col < len(cells) && cells[col].Content != "" {
-				out.WriteString(cells[col].Content)
-				continue
-			}
-			out.WriteByte(' ')
+		if firstOffset < 0 {
+			firstOffset = 0
 		}
-		if row < end.Row && !logicalLines.rowContinues(row) {
+		if firstOffset > len(line.Text) {
+			firstOffset = len(line.Text)
+		}
+		if lastOffset < firstOffset {
+			lastOffset = firstOffset
+		}
+		if lastOffset > len(line.Text) {
+			lastOffset = len(line.Text)
+		}
+		out.WriteString(line.Text[firstOffset:lastOffset])
+		if lineIndex < end.Line {
 			out.WriteByte('\n')
 		}
 	}

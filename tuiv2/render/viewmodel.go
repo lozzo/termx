@@ -72,6 +72,8 @@ type RenderCopyModeVM struct {
 	PaneID           string
 	CursorRow        int
 	CursorCol        int
+	CursorLogicalLine int
+	CursorLogicalCol  int
 	CursorGeneration uint64
 	CursorRowID      uint64
 	CursorRefValid   bool
@@ -79,6 +81,8 @@ type RenderCopyModeVM struct {
 	MarkSet          bool
 	MarkRow          int
 	MarkCol          int
+	MarkLogicalLine  int
+	MarkLogicalCol   int
 	MarkGeneration   uint64
 	MarkRowID        uint64
 	MarkRefValid     bool
