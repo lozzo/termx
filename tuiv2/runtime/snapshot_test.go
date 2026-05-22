@@ -241,6 +241,87 @@ func TestApplyScreenUpdateSnapshotFullReplaceBehaviorUnchanged(t *testing.T) {
 	}
 }
 
+func TestApplyScreenUpdateSnapshotScrollbackAppendTrimsProjectionPadding(t *testing.T) {
+	now := time.Date(2026, 5, 22, 10, 0, 0, 0, time.UTC)
+	next := applyScreenUpdateSnapshot(&protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 8, Rows: 2},
+	}, "term-1", protocol.ScreenUpdate{
+		ScrollbackAppend: []protocol.ScrollbackRowAppend{{
+			Cells:     snapshotTestPaddedRow("line", 8),
+			Timestamp: now,
+			RowKind:   "append",
+		}},
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+
+	if got := compactRowToString(next.Scrollback[0]); got != "line" {
+		t.Fatalf("expected unwrapped screen projection padding to be trimmed, got %q", got)
+	}
+	if got := len(next.Scrollback[0].DecodeCells()); got != 4 {
+		t.Fatalf("expected compacted append row to contain only content cells, got %d cells", got)
+	}
+	if got := next.ScrollbackWrapped; !reflect.DeepEqual(got, []bool{false}) {
+		t.Fatalf("expected unwrapped metadata, got %#v", got)
+	}
+	if got := next.ScrollbackOwnership; !reflect.DeepEqual(got, []string{protocol.RowOwnershipLiveTailLive}) {
+		t.Fatalf("expected live-tail ownership on append row, got %#v", got)
+	}
+}
+
+func TestApplyScreenUpdateSnapshotFullReplaceScrollbackAppendTrimsProjectionPadding(t *testing.T) {
+	next := applyScreenUpdateSnapshot(nil, "term-1", protocol.ScreenUpdate{
+		FullReplace: true,
+		Size:        protocol.Size{Cols: 8, Rows: 2},
+		ScrollbackAppend: []protocol.ScrollbackRowAppend{{
+			Cells:   snapshotTestPaddedRow("boot", 8),
+			RowKind: "append",
+		}},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			snapshotTestRow("screen"),
+		}},
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+
+	if got := compactRowToString(next.Scrollback[0]); got != "boot" {
+		t.Fatalf("expected full-replace append padding to be trimmed, got %q", got)
+	}
+}
+
+func TestApplyScreenUpdateSnapshotScrollbackAppendPreservesSemanticTrailingBlankCells(t *testing.T) {
+	styled := snapshotTestPaddedRow("style", 8)
+	styled[5].Style.BG = "#222222"
+	linked := snapshotTestPaddedRow("link", 8)
+	linked[4].LinkURL = "https://example.test/blank"
+	wrapped := snapshotTestPaddedRow("wrap", 8)
+
+	next := applyScreenUpdateSnapshot(nil, "term-1", protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 8, Rows: 2},
+		ScrollbackAppend: []protocol.ScrollbackRowAppend{
+			{Cells: styled},
+			{Cells: linked},
+			{Cells: wrapped, Wrapped: true, WrappedSet: true},
+		},
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+
+	if got := len(next.Scrollback[0].DecodeCells()); got != 6 {
+		t.Fatalf("expected styled trailing blank to remain addressable, got %d cells", got)
+	}
+	if got := len(next.Scrollback[1].DecodeCells()); got != 5 {
+		t.Fatalf("expected linked trailing blank to remain addressable, got %d cells", got)
+	}
+	if got := compactRowToString(next.Scrollback[2]); got != "wrap    " {
+		t.Fatalf("expected wrapped append row to preserve trailing blanks, got %q", got)
+	}
+	if got := next.ScrollbackWrapped; !reflect.DeepEqual(got, []bool{false, false, true}) {
+		t.Fatalf("expected wrapped metadata to follow append rows, got %#v", got)
+	}
+}
+
 func TestLoadSnapshotIntoVTermKeepsSparseScreenRowsAtProtocolGeometry(t *testing.T) {
 	snapshot := &protocol.Snapshot{
 		TerminalID: "term-1",
@@ -547,6 +628,14 @@ func snapshotTestRow(text string) []protocol.Cell {
 	row := make([]protocol.Cell, 0, len(text))
 	for _, r := range text {
 		row = append(row, protocol.Cell{Content: string(r), Width: 1})
+	}
+	return row
+}
+
+func snapshotTestPaddedRow(text string, width int) []protocol.Cell {
+	row := snapshotTestRow(text)
+	for len(row) < width {
+		row = append(row, protocol.Cell{Content: " ", Width: 1})
 	}
 	return row
 }

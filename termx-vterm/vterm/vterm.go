@@ -3158,27 +3158,8 @@ func (v *VTerm) appendScrollbackDamageLocked(damage *WriteDamage, plan rowCacheR
 			Wrapped:    v.scrollbackRowWrappedAtLocked(row),
 			WrappedSet: true,
 		}
-		damage.ScrollbackAppend = append(damage.ScrollbackAppend, padHardNewlineDamageOpToWidth(op, v.emu.Width()))
+		damage.ScrollbackAppend = append(damage.ScrollbackAppend, op)
 	}
-}
-
-func padHardNewlineDamageOpToWidth(op DamageOp, width int) DamageOp {
-	if width <= 0 || op.Wrapped {
-		return op
-	}
-	currentWidth := damageOpDisplayWidth(op)
-	if currentWidth >= width {
-		return op
-	}
-	pad := width - currentWidth
-	if len(op.Cells) > 0 {
-		op.Cells = append(op.Cells, blankCells(pad)...)
-		return op
-	}
-	if len(op.Runs) > 0 {
-		op.Runs = append(op.Runs, CellRun{Text: strings.Repeat(" ", pad)})
-	}
-	return op
 }
 
 func trailingWrappedDamageRows(rows []DamageOp) int {
@@ -3741,11 +3722,7 @@ func (v *VTerm) scrollbackAppendOpsFromCharmVTDamages(damages []charmvt.Damage, 
 			Wrapped:    row.Wrapped,
 			WrappedSet: true,
 		}
-		width := 0
-		if v != nil && v.emu != nil {
-			width = v.emu.Width()
-		}
-		out = append(out, padHardNewlineDamageOpToWidth(op, width))
+		out = append(out, op)
 	}
 	return out
 }

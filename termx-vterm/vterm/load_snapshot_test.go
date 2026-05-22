@@ -1240,12 +1240,12 @@ func TestVTermWriteWithDamagePreservesNonASCIITextScrollbackDamage(t *testing.T)
 	for _, run := range row.Runs {
 		got += run.Text
 	}
-	if got != "█▀█         " {
+	if got != "█▀█" {
 		t.Fatalf("expected non-ASCII text scrollback row preserved, got %q row=%#v", got, row)
 	}
 }
 
-func TestVTermWriteWithDamagePreservesFastSGRNonASCIIScrollbackCells(t *testing.T) {
+func TestVTermWriteWithDamageDoesNotPadHardNewlineScrollbackCells(t *testing.T) {
 	vt := New(12, 2, 100, nil)
 	_, err, damage := vt.WriteWithDamage([]byte("████\r\nnext\r\nlast"))
 	if err != nil {
@@ -1253,15 +1253,15 @@ func TestVTermWriteWithDamagePreservesFastSGRNonASCIIScrollbackCells(t *testing.
 	}
 
 	for _, op := range damage.ScrollbackAppend {
-		if got := rowText(op.Cells, len(op.Cells)); got != "████        " {
+		if got := rowText(op.Cells, len(op.Cells)); got != "████" {
 			continue
 		}
-		if len(op.Cells) != 12 {
-			t.Fatalf("expected canonical-width QR-like cells, got len=%d row=%#v", len(op.Cells), op.Cells)
+		if len(op.Cells) != 4 {
+			t.Fatalf("expected hard-newline scrollback cells to keep stored line length, got len=%d row=%#v", len(op.Cells), op.Cells)
 		}
 		return
 	}
-	t.Fatalf("expected QR-like non-ASCII scrollback cells, got %#v", damage.ScrollbackAppend)
+	t.Fatalf("expected non-padded non-ASCII scrollback cells, got %#v", damage.ScrollbackAppend)
 }
 
 func TestVTermWriteAltScreenSwitchKeepsDamageCorrect(t *testing.T) {
@@ -1983,7 +1983,7 @@ func TestApplyScreenUpdateWriteSpanPreservesTrailingBlankUsedWidthAfterResize(t 
 	}
 }
 
-func TestWriteWithDamagePadsHardNewlineScrollbackRowsToScreenWidth(t *testing.T) {
+func TestWriteWithDamageDoesNotPadHardNewlineScrollbackRowsToScreenWidth(t *testing.T) {
 	vt := New(12, 2, 100, nil)
 	_, err, damage := vt.WriteWithDamage([]byte("████\r\nnext\r\nlast"))
 	if err != nil {
@@ -1991,18 +1991,18 @@ func TestWriteWithDamagePadsHardNewlineScrollbackRowsToScreenWidth(t *testing.T)
 	}
 
 	for _, op := range damage.ScrollbackAppend {
-		if rowText(op.Cells, len(op.Cells)) != "████        " {
+		if rowText(op.Cells, len(op.Cells)) != "████" {
 			continue
 		}
 		if op.Wrapped {
 			t.Fatalf("expected hard-newline row to remain unwrapped, got %#v", op)
 		}
-		if got := len(op.Cells); got != 12 {
-			t.Fatalf("expected canonical-width scrollback cells, got len=%d row=%#v", got, op.Cells)
+		if got := len(op.Cells); got != 4 {
+			t.Fatalf("expected hard-newline scrollback cells to keep stored line length, got len=%d row=%#v", got, op.Cells)
 		}
 		return
 	}
-	t.Fatalf("expected padded QR-like scrollback row, got %#v", damage.ScrollbackAppend)
+	t.Fatalf("expected non-padded scrollback row, got %#v", damage.ScrollbackAppend)
 }
 
 func firstWriteSpanOp(t *testing.T, damage WriteDamage) DamageOp {

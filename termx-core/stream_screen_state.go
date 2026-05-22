@@ -781,7 +781,7 @@ func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, up
 		snapshot.ScreenWrapped = append([]bool(nil), update.ScreenWrapped...)
 		snapshot.ScreenOwnership = repeatedProtocolOwnership(protocol.RowOwnershipScreen, len(snapshot.Screen.Cells))
 		for _, row := range update.ScrollbackAppend {
-			snapshot.Scrollback = append(snapshot.Scrollback, protocol.CompactRowFromCellsPreserveTrailingBlankCells(row.Cells, true))
+			snapshot.Scrollback = append(snapshot.Scrollback, compactScreenUpdateScrollbackAppendRow(row))
 			snapshot.ScrollbackTimestamps = append(snapshot.ScrollbackTimestamps, row.Timestamp)
 			snapshot.ScrollbackRowKinds = append(snapshot.ScrollbackRowKinds, row.RowKind)
 			snapshot.ScrollbackWrapped = append(snapshot.ScrollbackWrapped, row.WrappedSet && row.Wrapped)
@@ -851,7 +851,7 @@ func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, up
 		snapshot.ScrollbackOwnership = cowStringSlice(snapshot.ScrollbackOwnership, baseRows+appendCount, &scrollbackOwnershipOwned)
 		for i, row := range update.ScrollbackAppend {
 			index := baseRows + i
-			snapshot.Scrollback[index] = protocol.CompactRowFromCellsPreserveTrailingBlankCells(row.Cells, true)
+			snapshot.Scrollback[index] = compactScreenUpdateScrollbackAppendRow(row)
 			snapshot.ScrollbackTimestamps[index] = row.Timestamp
 			snapshot.ScrollbackRowKinds[index] = row.RowKind
 			snapshot.ScrollbackWrapped[index] = row.WrappedSet && row.Wrapped
@@ -864,6 +864,10 @@ func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, up
 	snapshot.Modes = update.Modes
 	snapshot.Timestamp = time.Now().UTC()
 	return snapshot
+}
+
+func compactScreenUpdateScrollbackAppendRow(row protocol.ScrollbackRowAppend) protocol.CompactRow {
+	return protocol.CompactRowFromCellsPreserveTrailingBlankCells(row.Cells, row.WrappedSet && row.Wrapped)
 }
 
 func cloneProtocolSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {
