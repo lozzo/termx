@@ -377,22 +377,6 @@ func (t *Terminal) subscribeLatest(ctx context.Context) <-chan StreamMessage {
 	return dst
 }
 
-func forwardLiveStreamMessages(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage) {
-	for {
-		msg, ok := <-src
-		if !ok {
-			return
-		}
-		if !sendFanoutStreamMessage(ctx, dst, msg, nil) {
-			return
-		}
-	}
-}
-
-func (t *Terminal) forwardTerminalStreamMessages(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage) {
-	forwardTerminalStreamMessagesImmediate(ctx, src, dst, t.screenSnapshotFallbackMessage)
-}
-
 func forwardTerminalStreamMessagesImmediate(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage, fallback func() StreamMessage) {
 	var pending *fanout.StreamMessage
 	for {
@@ -1785,15 +1769,6 @@ func (t *Terminal) invalidateAttachmentInfo() {
 	}
 }
 
-func (t *Terminal) hasCollaboratorAttachmentLocked() bool {
-	for _, info := range t.attachments {
-		if info.Mode == string(ModeCollaborator) {
-			return true
-		}
-	}
-	return false
-}
-
 func (t *Terminal) resizeOwnerAttachmentCountLocked() int {
 	count := 0
 	for _, info := range t.attachments {
@@ -2017,20 +1992,6 @@ func splitDamageRowsByLiveTailHint(rows []vterm.DamageOp, liveTailRows int) ([]v
 	for persistedCount > 0 && rows[persistedCount-1].WrappedSet && rows[persistedCount-1].Wrapped {
 		persistedCount--
 	}
-	return cloneGridDamageOps(rows[:persistedCount]), cloneGridDamageOps(rows[persistedCount:])
-}
-
-func splitDamageRowsByExactLiveTailHint(rows []vterm.DamageOp, liveTailRows int) ([]vterm.DamageOp, []vterm.DamageOp) {
-	if len(rows) == 0 {
-		return nil, nil
-	}
-	if liveTailRows <= 0 {
-		return cloneGridDamageOps(rows), nil
-	}
-	if liveTailRows > len(rows) {
-		liveTailRows = len(rows)
-	}
-	persistedCount := len(rows) - liveTailRows
 	return cloneGridDamageOps(rows[:persistedCount]), cloneGridDamageOps(rows[persistedCount:])
 }
 
@@ -2774,18 +2735,6 @@ func (t *Terminal) currentStreamScreenStateLocked() *streamScreenState {
 	}
 }
 
-func (t *Terminal) currentScreenStreamStateLocked() *streamScreenState {
-	finish := perftrace.Measure("terminal.screen_update.screen_snapshot")
-	defer finish(0)
-	if t == nil || t.vterm == nil {
-		return nil
-	}
-	return &streamScreenState{
-		snapshot: screenSnapshotFromVTerm(t.vterm),
-		title:    t.currentTitleLocked(),
-	}
-}
-
 func (t *Terminal) currentTitleLocked() string {
 	if t == nil {
 		return ""
@@ -3157,10 +3106,6 @@ func protocolRowsFromCore(rows [][]Cell) [][]protocol.Cell {
 	return out
 }
 
-func protocolCompactRowsFromCore(rows [][]Cell) []protocol.CompactRow {
-	return protocolCompactRowsFromCoreWithOptions(rows, false)
-}
-
 func protocolCompactRowsFromCorePreserveTrailingBlankCells(rows [][]Cell) []protocol.CompactRow {
 	return protocolCompactRowsFromCoreWithOptions(rows, true)
 }
@@ -3174,10 +3119,6 @@ func protocolCompactRowsFromCoreWithOptions(rows [][]Cell, preserveTrailingBlank
 		out[i] = protocolCompactRowFromCoreWithOptions(row, preserveTrailingBlankCells)
 	}
 	return out
-}
-
-func protocolCompactRowFromCore(row []Cell) protocol.CompactRow {
-	return protocolCompactRowFromCoreWithOptions(row, false)
 }
 
 func protocolCompactRowFromCoreWithOptions(row []Cell, preserveTrailingBlankCells bool) protocol.CompactRow {

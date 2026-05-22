@@ -889,9 +889,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) removeTerminal(id, reason string) {
 	s.mu.Lock()
-	if _, ok := s.terminals[id]; ok {
-		delete(s.terminals, id)
-	}
+	delete(s.terminals, id)
 	s.invalidateProtocolListCacheLocked()
 	s.mu.Unlock()
 	s.notifyTerminalInventoryChanged()
@@ -2479,14 +2477,6 @@ func requireResizePermission(attachments map[uint16]*sessionAttachment, attachme
 		return fmt.Errorf("%w: scoped resize requires resize owner attachment for terminal %q", ErrPermissionDenied, terminalID)
 	}
 	return nil
-}
-
-func sendRawFrame(sendFrame func(uint16, uint8, []byte) error, frame []byte) error {
-	ch, typ, payload, err := wire.DecodeFrame(frame)
-	if err != nil {
-		return err
-	}
-	return sendFrame(ch, typ, payload)
 }
 
 func sendProtocolError(sendFrame func(uint16, uint8, []byte) error, id uint64, channel uint16, code int, msg string) error {

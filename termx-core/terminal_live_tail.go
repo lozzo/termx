@@ -90,17 +90,6 @@ func (tail terminalPrimaryLiveTail) rowCount() int {
 	return total
 }
 
-func (tail terminalPrimaryLiveTail) reclaimedRowCount() int {
-	total := 0
-	for _, segment := range tail.segments {
-		if segment.origin != terminalLiveTailOriginReclaimed {
-			continue
-		}
-		total += len(segment.rows)
-	}
-	return total
-}
-
 func (tail terminalPrimaryLiveTail) nonReclaimedRowCount() int {
 	total := 0
 	for _, segment := range tail.segments {

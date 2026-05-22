@@ -2736,17 +2736,6 @@ func TestTerminalProcessExitInAltScreenDropsAltAndSealsPrimaryTail(t *testing.T)
 	}
 }
 
-func trimTrailingBlankRows(rows [][]Cell) [][]Cell {
-	last := len(rows)
-	for last > 0 {
-		if strings.TrimSpace(rowToString(rows[last-1])) != "" {
-			break
-		}
-		last--
-	}
-	return rows[:last]
-}
-
 func TestTerminalDeliversTrailingOutputBeforeClosedFrame(t *testing.T) {
 	ctx := context.Background()
 	bus := NewEventBus(nil)
@@ -3456,21 +3445,6 @@ func terminalProjectionRowTexts(term *Terminal, cols int, limit int) []string {
 	rows := rowsToStrings(viewport.Rows)
 	if term != nil && term.vterm != nil {
 		screen := term.vterm.ScreenContent()
-		rows = append(rows, vtermRowsToStrings(screen.Cells)...)
-	}
-	return rows
-}
-
-func gridAndScreenRowTexts(t *testing.T, store *terminalGridStore, vt *localvterm.VTerm, cols int, limit int) []string {
-	t.Helper()
-	var rows []string
-	viewport, err := store.Viewport(0, limit, cols)
-	if err != nil {
-		t.Fatalf("read grid viewport: %v", err)
-	}
-	rows = append(rows, vtermRowsToStrings(viewport.Rows)...)
-	if vt != nil {
-		screen := vt.ScreenContent()
 		rows = append(rows, vtermRowsToStrings(screen.Cells)...)
 	}
 	return rows

@@ -389,7 +389,7 @@ func TestServerHistoryFrameUsesStructuredGridViewport(t *testing.T) {
 		t.Fatalf("encode hello payload failed: %v", err)
 	}
 	sendClientFrame(0, wire.TypeHello, helloPayload)
-	ch, typ, payload := recvDecodedFrame(t, clientConn)
+	ch, typ, _ := recvDecodedFrame(t, clientConn)
 	if ch != 0 || typ != wire.TypeHello {
 		t.Fatalf("unexpected hello response channel=%d type=%d", ch, typ)
 	}
@@ -403,7 +403,7 @@ func TestServerHistoryFrameUsesStructuredGridViewport(t *testing.T) {
 		t.Fatalf("encode attach request failed: %v", err)
 	}
 	sendClientFrame(0, wire.TypeRequest, requestPayload)
-	ch, typ, payload = recvDecodedFrame(t, clientConn)
+	ch, typ, payload := recvDecodedFrame(t, clientConn)
 	if ch != 0 || typ != wire.TypeResponse {
 		t.Fatalf("unexpected attach response channel=%d type=%d", ch, typ)
 	}

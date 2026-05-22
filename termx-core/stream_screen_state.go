@@ -42,15 +42,6 @@ func cloneStreamScreenState(state *streamScreenState) *streamScreenState {
 	}
 }
 
-func streamScreenStateWithScrollbackLimit(state *streamScreenState, limit int) *streamScreenState {
-	if state == nil || state.snapshot == nil || limit < 0 {
-		return state
-	}
-	next := cloneStreamScreenState(state)
-	trimProtocolSnapshotScrollbackToLast(next.snapshot, limit)
-	return next
-}
-
 func streamScreenStateWithoutScrollback(state *streamScreenState) *streamScreenState {
 	if state == nil || state.snapshot == nil {
 		return state
@@ -93,30 +84,6 @@ func resizeStreamScreenState(current *streamScreenState, terminalID string, cols
 	}
 	next.snapshot = resizeProtocolSnapshot(next.snapshot, cols, rows)
 	return next
-}
-
-func encodeMergedScreenStatePayload(before, after *streamScreenState, resetScrollback bool) ([]byte, bool) {
-	if after == nil || after.snapshot == nil {
-		return nil, false
-	}
-	if !resetScrollback && !after.snapshot.Modes.AlternateScreen {
-		resetScrollback = true
-	}
-	update := fullReplaceUpdateForStateDelta(before, after, resetScrollback)
-	payload, err := protocol.EncodeScreenUpdatePayload(update)
-	if err != nil {
-		return nil, false
-	}
-	perftrace.Count("terminal.screen_update.encoded_bytes", len(payload))
-	perftrace.Count("terminal.screen_update.encode_mode.full_replace", len(payload))
-	return payload, true
-}
-
-func encodeCollapsedScreenStatePayload(state *streamScreenState) ([]byte, bool) {
-	if state == nil || state.snapshot == nil {
-		return nil, false
-	}
-	return encodeMergedScreenStatePayload(nil, state, !state.snapshot.Modes.AlternateScreen)
 }
 
 func recordEncodedScreenUpdatePayload(mode screenUpdateEncodeMode, payload []byte) {
@@ -409,21 +376,6 @@ func protocolCompactRowsAndMetaEqual(left protocol.CompactRow, leftTS time.Time,
 		protocol.CompactRowEqual(left, right)
 }
 
-func protocolRowsAndMetaEqual(left []protocol.Cell, leftTS time.Time, leftKind string, leftWrapped bool, right []protocol.Cell, rightTS time.Time, rightKind string, rightWrapped bool) bool {
-	if leftKind != rightKind || leftWrapped != rightWrapped || !leftTS.Equal(rightTS) {
-		return false
-	}
-	if len(left) != len(right) {
-		return false
-	}
-	for i := range left {
-		if left[i] != right[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func screenUpdateHasScrollOpcode(update protocol.ScreenUpdate) bool {
 	if update.ScreenScroll != 0 {
 		return true
@@ -528,20 +480,6 @@ func protocolCellNeedsSnapshotRow(cell protocol.Cell) bool {
 	return strings.TrimSpace(cell.Content) != ""
 }
 
-func rowAtProtocol(rows [][]protocol.Cell, index int) []protocol.Cell {
-	if index < 0 || index >= len(rows) {
-		return nil
-	}
-	return rows[index]
-}
-
-func rowAtVTermScreen(rows [][]localvterm.Cell, index int) []localvterm.Cell {
-	if index < 0 || index >= len(rows) {
-		return nil
-	}
-	return rows[index]
-}
-
 func timeAtProtocol(values []time.Time, index int) time.Time {
 	if index < 0 || index >= len(values) {
 		return time.Time{}
@@ -615,25 +553,6 @@ func snapshotFromVTerm(source *localvterm.VTerm) *protocol.Snapshot {
 		Cursor:               protocolCursorStateFromVTerm(source.CursorState()),
 		Modes:                protocolModesFromVTerm(source.Modes()),
 		Timestamp:            time.Now().UTC(),
-	}
-}
-
-func screenSnapshotFromVTerm(source *localvterm.VTerm) *protocol.Snapshot {
-	if source == nil {
-		return nil
-	}
-	screen := source.ScreenContent()
-	cols, rows := source.Size()
-	return &protocol.Snapshot{
-		Size:             protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
-		Screen:           protocolScreenDataFromVTerm(screen),
-		ScreenTimestamps: append([]time.Time(nil), source.ScreenTimestamps()...),
-		ScreenRowKinds:   append([]string(nil), source.ScreenRowKinds()...),
-		ScreenWrapped:    append([]bool(nil), source.ScreenWrapped()...),
-		ScreenOwnership:  repeatedProtocolOwnership(protocol.RowOwnershipScreen, len(screen.Cells)),
-		Cursor:           protocolCursorStateFromVTerm(source.CursorState()),
-		Modes:            protocolModesFromVTerm(source.Modes()),
-		Timestamp:        time.Now().UTC(),
 	}
 }
 
@@ -1394,13 +1313,6 @@ func trimSnapshotScrollbackFront(snapshot *protocol.Snapshot, trim int) {
 	snapshot.ScrollbackOwnership = append([]string(nil), snapshot.ScrollbackOwnership[minInt(trim, len(snapshot.ScrollbackOwnership)):]...)
 }
 
-func trimProtocolSnapshotScrollbackToLast(snapshot *protocol.Snapshot, limit int) {
-	if snapshot == nil || limit < 0 || len(snapshot.Scrollback) <= limit {
-		return
-	}
-	trimSnapshotScrollbackFront(snapshot, len(snapshot.Scrollback)-limit)
-}
-
 func clearProtocolSnapshotScrollback(snapshot *protocol.Snapshot) {
 	if snapshot == nil {
 		return
@@ -1410,16 +1322,6 @@ func clearProtocolSnapshotScrollback(snapshot *protocol.Snapshot) {
 	snapshot.ScrollbackRowKinds = nil
 	snapshot.ScrollbackWrapped = nil
 	snapshot.ScrollbackOwnership = nil
-}
-
-func cloneProtocolRowsWindow(rows [][]protocol.Cell, start int) [][]protocol.Cell {
-	start = minInt(maxInt(start, 0), len(rows))
-	if start >= len(rows) {
-		return nil
-	}
-	out := make([][]protocol.Cell, len(rows)-start)
-	copy(out, rows[start:])
-	return out
 }
 
 func cloneProtocolCompactRowsWindow(rows []protocol.CompactRow, start int) []protocol.CompactRow {

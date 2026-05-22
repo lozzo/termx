@@ -16,8 +16,5 @@ type TransportScope struct {
 }
 
 func (s *Server) ServeScopedTransport(ctx context.Context, t transport.Transport, remote string, scope TransportScope) error {
-	return s.handleTransportScoped(ctx, t, remote, transportScope{
-		TerminalID:        scope.TerminalID,
-		MachineEventsOnly: scope.MachineEventsOnly,
-	})
+	return s.handleTransportScoped(ctx, t, remote, transportScope(scope))
 }

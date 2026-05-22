@@ -47,33 +47,6 @@ func newE2EClient(t *testing.T, opts ...ServerOption) (*Server, *protocol.Client
 	return srv, client, cleanup
 }
 
-func newE2EProtocolClient(t *testing.T, srv *Server) (*protocol.Client, func()) {
-	t.Helper()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	clientTransport, serverTransport := memory.NewPair()
-
-	go func() {
-		_ = srv.handleTransport(ctx, serverTransport, "memory")
-	}()
-
-	client := protocol.NewClient(clientTransport)
-	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "e2e-test"}); err != nil {
-		cancel()
-		clientTransport.Close()
-		serverTransport.Close()
-		t.Fatalf("hello failed: %v", err)
-	}
-
-	cleanup := func() {
-		client.Close()
-		cancel()
-		clientTransport.Close()
-		serverTransport.Close()
-	}
-	return client, cleanup
-}
-
 // e2eCreateTerminal is a helper that creates a bash terminal via protocol.
 func e2eCreateTerminal(t *testing.T, client *protocol.Client, name string, tags map[string]string) string {
 	t.Helper()

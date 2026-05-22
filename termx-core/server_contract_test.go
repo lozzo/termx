@@ -2877,22 +2877,6 @@ func waitFor(t *testing.T, timeout time.Duration, fn func() bool) {
 	t.Fatal("condition not met before timeout")
 }
 
-type sentProtocolFrame struct {
-	channel uint16
-	typ     uint8
-	payload []byte
-}
-
-func sentFrameTypeCount(frames []sentProtocolFrame, channel uint16, typ uint8) int {
-	count := 0
-	for _, frame := range frames {
-		if frame.channel == channel && frame.typ == typ {
-			count++
-		}
-	}
-	return count
-}
-
 func expectStreamContains(t *testing.T, ch <-chan StreamMessage, needle string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)

@@ -1231,16 +1231,6 @@ func (r *terminalGridReflowState) emitSegment(segment []terminalGridReflowCell, 
 	r.wrapped = append(r.wrapped, wrapped)
 }
 
-func gridCellRowDisplayWidth(row []vterm.Cell) int {
-	width := 0
-	for _, cell := range row {
-		if cell.Width > 0 {
-			width += cell.Width
-		}
-	}
-	return width
-}
-
 func alignGridTimes(values []time.Time, size int) []time.Time {
 	if size <= 0 || len(values) == 0 {
 		return nil
@@ -1332,21 +1322,6 @@ func stringAt(values []string, index int) string {
 
 func boolAt(values []bool, index int) bool {
 	return index >= 0 && index < len(values) && values[index]
-}
-
-func isBlankGridRow(row []vterm.Cell) bool {
-	for _, cell := range row {
-		if strings.TrimSpace(cell.Content) != "" {
-			return false
-		}
-		if cell.Style != (vterm.CellStyle{}) {
-			return false
-		}
-		if cell.LinkURL != "" || cell.LinkParams != "" {
-			return false
-		}
-	}
-	return true
 }
 
 func terminalGridDir(root, terminalID string) string {
