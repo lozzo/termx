@@ -9,40 +9,44 @@ import (
 )
 
 type paneRenderEntry struct {
-	PaneID               string
-	OwnerID              uint32
-	Rect                 workbench.Rect
-	Frameless            bool
-	ConservativeRedraw   bool
-	SharedLeft           bool
-	SharedTop            bool
-	Title                string
-	Border               paneBorderInfo
-	Theme                uiTheme
-	Chrome               UIChromeConfig
-	Overflow             paneOverflowHints
-	ContentKey           paneContentKey
-	FrameKey             paneFrameKey
-	TerminalID           string
-	Snapshot             *protocol.Snapshot
-	Surface              runtime.TerminalSurface
-	SurfaceVersion       uint64
-	Metrics              renderTerminalMetrics
-	ScrollOffset         int
-	ContentOffsetX       int
-	ContentOffsetY       int
-	Active               bool
-	Floating             bool
-	EmptyActionSelected  int
-	ExitedActionSelected int
-	ExitedActionPulse    bool
-	CopyModeActive       bool
-	CopyModeCursorRow    int
-	CopyModeCursorCol    int
-	CopyModeViewTopRow   int
-	CopyModeMarkSet      bool
-	CopyModeMarkRow      int
-	CopyModeMarkCol      int
+	PaneID                    string
+	OwnerID                   uint32
+	Rect                      workbench.Rect
+	Frameless                 bool
+	ConservativeRedraw        bool
+	SharedLeft                bool
+	SharedTop                 bool
+	Title                     string
+	Border                    paneBorderInfo
+	Theme                     uiTheme
+	Chrome                    UIChromeConfig
+	Overflow                  paneOverflowHints
+	ContentKey                paneContentKey
+	FrameKey                  paneFrameKey
+	TerminalID                string
+	Snapshot                  *protocol.Snapshot
+	Surface                   runtime.TerminalSurface
+	SurfaceVersion            uint64
+	Metrics                   renderTerminalMetrics
+	ScrollOffset              int
+	ContentOffsetX            int
+	ContentOffsetY            int
+	Active                    bool
+	Floating                  bool
+	EmptyActionSelected       int
+	ExitedActionSelected      int
+	ExitedActionPulse         bool
+	CopyModeActive            bool
+	CopyModeCursorRow         int
+	CopyModeCursorCol         int
+	CopyModeCursorLogicalLine int
+	CopyModeCursorLogicalCol  int
+	CopyModeViewTopRow        int
+	CopyModeMarkSet           bool
+	CopyModeMarkRow           int
+	CopyModeMarkCol           int
+	CopyModeMarkLogicalLine   int
+	CopyModeMarkLogicalCol    int
 }
 
 type paneFrameKey struct {
@@ -290,26 +294,30 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 			Floating:        pane.Floating,
 			ChromeSignature: paneChromeLayoutSignature(rect, title, border, pane.Floating, chrome),
 		},
-		TerminalID:           pane.TerminalID,
-		Snapshot:             snapshot,
-		Surface:              surface,
-		SurfaceVersion:       surfaceVersion,
-		Metrics:              metrics,
-		ScrollOffset:         renderOffset,
-		ContentOffsetX:       contentOffsetX,
-		ContentOffsetY:       contentOffsetY,
-		Active:               active,
-		Floating:             pane.Floating,
-		EmptyActionSelected:  emptyActionSelected,
-		ExitedActionSelected: exitedActionSelected,
-		ExitedActionPulse:    options.ExitedSelectionPulse,
-		CopyModeActive:       copyModeActive,
-		CopyModeCursorRow:    copyMode.CursorRow,
-		CopyModeCursorCol:    copyMode.CursorCol,
-		CopyModeViewTopRow:   copyMode.ViewTopRow,
-		CopyModeMarkSet:      copyMode.MarkSet,
-		CopyModeMarkRow:      copyMode.MarkRow,
-		CopyModeMarkCol:      copyMode.MarkCol,
+		TerminalID:                pane.TerminalID,
+		Snapshot:                  snapshot,
+		Surface:                   surface,
+		SurfaceVersion:            surfaceVersion,
+		Metrics:                   metrics,
+		ScrollOffset:              renderOffset,
+		ContentOffsetX:            contentOffsetX,
+		ContentOffsetY:            contentOffsetY,
+		Active:                    active,
+		Floating:                  pane.Floating,
+		EmptyActionSelected:       emptyActionSelected,
+		ExitedActionSelected:      exitedActionSelected,
+		ExitedActionPulse:         options.ExitedSelectionPulse,
+		CopyModeActive:            copyModeActive,
+		CopyModeCursorRow:         copyMode.CursorRow,
+		CopyModeCursorCol:         copyMode.CursorCol,
+		CopyModeCursorLogicalLine: copyMode.CursorLogicalLine,
+		CopyModeCursorLogicalCol:  copyMode.CursorLogicalCol,
+		CopyModeViewTopRow:        copyMode.ViewTopRow,
+		CopyModeMarkSet:           copyMode.MarkSet,
+		CopyModeMarkRow:           copyMode.MarkRow,
+		CopyModeMarkCol:           copyMode.MarkCol,
+		CopyModeMarkLogicalLine:   copyMode.MarkLogicalLine,
+		CopyModeMarkLogicalCol:    copyMode.MarkLogicalCol,
 	}
 }
 

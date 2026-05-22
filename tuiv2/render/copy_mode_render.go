@@ -126,7 +126,7 @@ func snapshotLogicalLineIndex(snapshot *protocol.Snapshot, row int) int {
 	return index
 }
 
-func drawCopyModeOverlay(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, theme uiTheme, cursorRow, cursorCol, viewTopRow int, markSet bool, markRow, markCol int, contentOffsetX, contentOffsetY int) {
+func drawCopyModeOverlay(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, theme uiTheme, cursorRow, cursorCol, cursorLogicalLine, cursorLogicalCol, viewTopRow int, markSet bool, markRow, markCol, markLogicalLine, markLogicalCol int, contentOffsetX, contentOffsetY int) {
 	if canvas == nil || snapshot == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
@@ -134,6 +134,10 @@ func drawCopyModeOverlay(canvas *composedCanvas, rect workbench.Rect, snapshot *
 	if totalRows <= 0 {
 		return
 	}
+	_ = cursorLogicalLine
+	_ = cursorLogicalCol
+	_ = markLogicalLine
+	_ = markLogicalCol
 	cursorRow, cursorCol = clampCopyPoint(snapshot, cursorRow, cursorCol)
 	selectionStartRow, selectionStartCol := markRow, markCol
 	selectionEndRow, selectionEndCol := cursorRow, cursorCol

@@ -57,7 +57,7 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 	}
 	drawTerminalSourceWithPlacementAndMetrics(canvas, contentRect, resolved.source, resolved.renderOffset, resolved.contentOffsetX, resolved.contentOffsetY, entry.Theme, resolved.metrics)
 	if entry.CopyModeActive {
-		drawCopyModeOverlay(canvas, contentRect, resolved.snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol, resolved.contentOffsetX, resolved.contentOffsetY)
+		drawCopyModeOverlay(canvas, contentRect, resolved.snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeCursorLogicalLine, entry.CopyModeCursorLogicalCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol, entry.CopyModeMarkLogicalLine, entry.CopyModeMarkLogicalCol, resolved.contentOffsetX, resolved.contentOffsetY)
 	}
 	if resolved.terminalState == "exited" {
 		drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
