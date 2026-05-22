@@ -57,7 +57,8 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 	}
 	drawTerminalSourceWithPlacementAndMetrics(canvas, contentRect, resolved.source, resolved.renderOffset, resolved.contentOffsetX, resolved.contentOffsetY, entry.Theme, resolved.metrics)
 	if entry.CopyModeActive {
-		drawCopyModeOverlay(canvas, contentRect, resolved.snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeCursorLogicalLine, entry.CopyModeCursorLogicalCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol, entry.CopyModeMarkLogicalLine, entry.CopyModeMarkLogicalCol, resolved.contentOffsetX, resolved.contentOffsetY)
+		copyMode := entry.CopyMode
+		drawCopyModeOverlay(canvas, contentRect, resolved.snapshot, entry.Theme, copyMode.CursorRow, copyMode.CursorCol, copyMode.CursorLogicalLine, copyMode.CursorLogicalCol, copyMode.ViewTopRow, copyMode.MarkSet, copyMode.MarkRow, copyMode.MarkCol, copyMode.MarkLogicalLine, copyMode.MarkLogicalCol, resolved.contentOffsetX, resolved.contentOffsetY)
 	}
 	if resolved.terminalState == "exited" {
 		drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
@@ -205,7 +206,7 @@ func resolvePaneContent(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 	resolved.contentOffsetX = clampTerminalContentOffset(entry.ContentOffsetX, resolved.contentRect.W, resolved.metrics.Cols)
 	resolved.contentOffsetY = clampTerminalContentOffset(entry.ContentOffsetY, resolved.contentRect.H, resolved.metrics.Rows)
 	if entry.CopyModeActive {
-		resolved.renderOffset = scrollOffsetForViewportTop(resolved.snapshot, resolved.contentRect.H, entry.CopyModeViewTopRow)
+		resolved.renderOffset = scrollOffsetForViewportTop(resolved.snapshot, resolved.contentRect.H, entry.CopyMode.ViewTopRow)
 		resolved.contentOffsetX = 0
 		resolved.contentOffsetY = 0
 	}

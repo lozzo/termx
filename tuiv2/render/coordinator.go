@@ -140,16 +140,7 @@ type paneContentKey struct {
 	ExitedActionSelected      int
 	ExitedActionPulse         bool
 	CopyModeActive            bool
-	CopyModeCursorRow         int
-	CopyModeCursorCol         int
-	CopyModeCursorLogicalLine int
-	CopyModeCursorLogicalCol  int
-	CopyModeViewTopRow        int
-	CopyModeMarkSet           bool
-	CopyModeMarkRow           int
-	CopyModeMarkCol           int
-	CopyModeMarkLogicalLine   int
-	CopyModeMarkLogicalCol    int
+	CopyMode                  RenderCopyModeVM
 }
 
 func NewCoordinator(fn VisibleStateFn) *Coordinator {
