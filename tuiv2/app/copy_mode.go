@@ -249,6 +249,7 @@ func (m *Model) copyModeSnapshot(terminalID string, snapshot *protocol.Snapshot)
 			clearSnapshotScrollback(cloned)
 		}
 	}
+	protocol.TrimSnapshotScrollbackScreenVisualOverlap(cloned)
 	return cloned
 }
 
@@ -671,6 +672,7 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 		next.HistoryGeneration = loaded.HistoryGeneration
 		next.ScrollbackFirstRowID = loaded.ScrollbackFirstRowID
 		next.ScrollbackLastRowID = loaded.ScrollbackLastRowID
+		protocol.TrimSnapshotScrollbackScreenVisualOverlap(next)
 		trimmedNewest := trimCopyModeSnapshotScrollbackWindow(next, terminalMaterializedScrollbackLimit, false)
 		m.copyMode.Snapshot = next
 		m.copyMode.CommittedLoadedRows = snapshotScrollbackLoadedDepth(next)

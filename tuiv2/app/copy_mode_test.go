@@ -1500,6 +1500,125 @@ func TestCopyModeLoadsOlderScrollbackByOffsetPage(t *testing.T) {
 	}
 }
 
+func TestCopyModeOlderPageOffsetUsesCommittedStoreDepthNotReflowedRows(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 60, height: 10})
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	scrollback := make([][]protocol.Cell, 0, 150)
+	ownership := make([]string, 0, 150)
+	wrapped := make([]bool, 0, 150)
+	for i := 0; i < 100; i++ {
+		scrollback = append(
+			scrollback,
+			protocolRowFromText(fmt.Sprintf("hist-%03d-a", i), 60),
+			protocolRowFromText(fmt.Sprintf("hist-%03d-b", i), 60),
+		)
+		ownership = append(ownership, protocol.RowOwnershipPersisted, protocol.RowOwnershipPersisted)
+		wrapped = append(wrapped, true, false)
+		if i%2 == 0 {
+			continue
+		}
+		scrollback = append(scrollback, protocolRowFromText(fmt.Sprintf("hist-%03d-c", i), 60))
+		ownership = append(ownership, protocol.RowOwnershipPersisted)
+		wrapped = append(wrapped, false)
+	}
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 60, Rows: 10},
+		Scrollback:             protocol.CompactRowsFromCells(scrollback),
+		ScrollbackOwnership:    ownership,
+		ScrollbackWrapped:      wrapped,
+		ScrollbackTotal:        100,
+		ScrollbackLogicalTotal: 100,
+		ScrollbackLoadedRows:   100,
+		HistoryGeneration:      9,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    99,
+		ScrollbackHasMore:      true,
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolRowFromText("live0", 60),
+		}},
+		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	}
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal = map[string]*protocol.Snapshot{}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	if got, want := model.copyMode.CommittedLoadedRows, 100; got != want {
+		t.Fatalf("expected copy-mode committed depth %d from explicit loaded rows, got %d", want, got)
+	}
+	buffer, ok := model.activeCopyModeBuffer()
+	if !ok {
+		t.Fatal("expected active copy-mode buffer")
+	}
+	if got, want := snapshotScrollbackLoadedDepth(buffer.snapshot), 100; got != want {
+		t.Fatalf("expected buffer loaded depth %d despite %d materialized projection rows, got %d", want, len(buffer.snapshot.Scrollback), got)
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
+
+	if got := len(client.viewportRequests); got != 1 {
+		t.Fatalf("expected one older-page request, got %#v", client.viewportRequests)
+	}
+	request := client.viewportRequests[0]
+	if request.offset != 100 {
+		t.Fatalf("expected older-page offset to use committed store depth 100, not reflowed row count; got %#v", request)
+	}
+	if request.limit != terminalScrollbackPageLimit {
+		t.Fatalf("expected standard page limit, got %#v", request)
+	}
+}
+
+func TestCopyModePagedLatestReplaceTrimsScreenOverlap(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 16, height: 6})
+	seedCopyModeSnapshot(t, model, []string{"line-075"}, []string{"line-078", "line-079", "line-080", "prompt"})
+	terminal := model.runtime.Registry().Get("term-1")
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	loaded := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       terminal.Snapshot.Size,
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
+			protocolRowFromText("line-076", 16),
+			protocolRowFromText("line-077", 16),
+			protocolRowFromText("line-078", 16),
+			protocolRowFromText("line-079", 16),
+			protocolRowFromText("line-080", 16),
+		}),
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipPersisted, 5),
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        81,
+		ScrollbackLogicalTotal: 81,
+		ScrollbackLoadedRows:   81,
+		HistoryGeneration:      7,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    80,
+		ScrollbackHasMore:      false,
+		Screen:                 protocol.ScreenData{Cells: cloneProtocolRows(terminal.Snapshot.Screen.Cells)},
+		Cursor:                 terminal.Snapshot.Cursor,
+		Modes:                  terminal.Snapshot.Modes,
+	}
+
+	if !model.extendFrozenCopyModeSnapshot(loaded, 0, true) {
+		t.Fatal("expected latest page to replace frozen copy-mode snapshot")
+	}
+	if gotRows := len(model.copyMode.Snapshot.Scrollback); gotRows != 2 {
+		t.Fatalf("expected duplicated screen prefix trimmed from frozen latest scrollback, got %d rows", gotRows)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "line-076" {
+		t.Fatalf("expected first retained row line-076, got %q", got)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[1]); got != "line-077" {
+		t.Fatalf("expected second retained row line-077, got %q", got)
+	}
+	if got, want := model.copyMode.CommittedLoadedRows, 81; got != want {
+		t.Fatalf("expected committed loaded depth to stay %d, got %d", want, got)
+	}
+	if got, want := model.copyMode.Snapshot.ScrollbackLastRowID, uint64(80); got != want {
+		t.Fatalf("expected canonical latest window metadata preserved, got last row id %d", got)
+	}
+}
+
 func TestCopyModeLoadsOlderScrollbackBeyondFullSnapshotCap(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	latest := make([]string, terminalMaterializedScrollbackLimit)

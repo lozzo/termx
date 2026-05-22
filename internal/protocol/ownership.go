@@ -85,6 +85,9 @@ func SnapshotCommittedLoadedDepth(snapshot *Snapshot) int {
 	if snapshot == nil {
 		return 0
 	}
+	if snapshot.ScrollbackLoadedRows > 0 && snapshotHasAuthoritativeLoadedRows(snapshot) {
+		return snapshot.ScrollbackLoadedRows
+	}
 	rows := len(snapshot.Scrollback)
 	if !HasExplicitRowOwnership(snapshot.ScrollbackOwnership, rows) {
 		return 0
@@ -98,6 +101,20 @@ func SnapshotCommittedLoadedDepth(snapshot *Snapshot) int {
 		return canonicalRows
 	}
 	return loaded
+}
+
+func snapshotHasAuthoritativeLoadedRows(snapshot *Snapshot) bool {
+	if snapshot == nil {
+		return false
+	}
+	if SnapshotCanonicalCommittedRows(snapshot) > 0 {
+		return true
+	}
+	rows := len(snapshot.Scrollback)
+	if !HasExplicitRowOwnership(snapshot.ScrollbackOwnership, rows) {
+		return false
+	}
+	return CountCommittedRowOwnership(snapshot.ScrollbackOwnership, rows) > 0
 }
 
 func SnapshotCanonicalCommittedRows(snapshot *Snapshot) int {

@@ -333,6 +333,60 @@ func TestRuntimeApplyGridViewportPageReplacesLatestWindow(t *testing.T) {
 	}
 }
 
+func TestRuntimeApplyGridViewportPageTrimsLatestScreenOverlap(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 8, 4, []string{"line-078", "line-079", "line-080", "prompt"})
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	page := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 8, Rows: 4},
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
+			protocolRowFromString("line-076"),
+			protocolRowFromString("line-077"),
+			protocolRowFromString("line-078"),
+			protocolRowFromString("line-079"),
+			protocolRowFromString("line-080"),
+		}),
+		ScrollbackOwnership:    []string{protocol.RowOwnershipPersisted, protocol.RowOwnershipPersisted, protocol.RowOwnershipPersisted, protocol.RowOwnershipPersisted, protocol.RowOwnershipPersisted},
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        81,
+		ScrollbackLogicalTotal: 81,
+		ScrollbackLoadedRows:   81,
+		HistoryGeneration:      7,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    80,
+	}
+
+	if !rt.ApplyGridViewportPage("term-1", page, 0) {
+		t.Fatal("expected latest viewport page to apply")
+	}
+	got := rt.Registry().Get("term-1").Snapshot
+	if got == nil {
+		t.Fatal("expected merged snapshot")
+	}
+	if gotRows := len(got.Scrollback); gotRows != 2 {
+		t.Fatalf("expected duplicated screen prefix trimmed from latest scrollback, got %d rows", gotRows)
+	}
+	if got := compactRowText(got.Scrollback[0]); got != "line-076" {
+		t.Fatalf("expected first retained row line-076, got %q", got)
+	}
+	if got := compactRowText(got.Scrollback[1]); got != "line-077" {
+		t.Fatalf("expected second retained row line-077, got %q", got)
+	}
+	if got, want := got.ScrollbackLoadedRows, 81; got != want {
+		t.Fatalf("expected committed loaded depth to stay %d, got %d", want, got)
+	}
+	if got, want := got.ScrollbackLastRowID, uint64(80); got != want {
+		t.Fatalf("expected canonical latest window metadata preserved, got last row id %d", got)
+	}
+}
+
 func TestRuntimeApplyGridViewportPageReplacesCanonicalLatestWithShorterLiveTailOwnershipPage(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()

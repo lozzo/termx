@@ -172,6 +172,7 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 		merged.HistoryGeneration = page.HistoryGeneration
 		merged.ScrollbackFirstRowID = page.ScrollbackFirstRowID
 		merged.ScrollbackLastRowID = page.ScrollbackLastRowID
+		protocol.TrimSnapshotScrollbackScreenVisualOverlap(merged)
 		trimSnapshotScrollbackWindow(merged, materializedScrollbackRowLimit, false)
 	} else {
 		mergedOffset := current.ScrollbackOffset
