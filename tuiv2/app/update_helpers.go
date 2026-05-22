@@ -340,7 +340,7 @@ func (m *Model) copyModeScrollbackCmd(buffer copyModeBuffer, force bool) tea.Cmd
 	if !ok || pane == nil || pane.ID != m.copyMode.PaneID || pane.TerminalID == "" {
 		return nil
 	}
-	if !force && m.copyMode.Cursor.Row > terminalScrollbackPrefetchMargin && m.copyMode.ViewTopRow > terminalScrollbackPrefetchMargin {
+	if !force && m.copyMode.CursorLogical.Line > terminalScrollbackPrefetchMargin {
 		return nil
 	}
 	terminal := m.runtime.Registry().Get(pane.TerminalID)

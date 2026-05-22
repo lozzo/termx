@@ -2181,6 +2181,7 @@ func TestCopyModePagedLatestReplaceKeepsTopPinnedWhenCanonicalWindowAppears(t *t
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
 	model.copyMode.Cursor = copyModePoint{Row: 0, Col: 0}
+	model.copyMode.CursorLogical = copyModeLogicalPos{Line: 0, Offset: 0}
 	model.copyMode.ViewTopRow = 0
 
 	loaded := &protocol.Snapshot{

@@ -55,7 +55,7 @@ func (m *Model) handleCopyModeLocalAction(action input.SemanticAction) (bool, te
 			return true, nil
 		}
 		cmd := m.jumpCopyCursorLogicalLine(0)
-		if m.copyMode.CursorLogical.Line == 0 && m.copyMode.ViewTopRow == 0 {
+		if m.copyMode.CursorLogical.Line == 0 {
 			if buffer, ok := m.activeCopyModeBuffer(); ok {
 				cmd = batchCmds(cmd, m.prefetchCopyModeScrollbackCmd(buffer))
 			}

@@ -261,7 +261,7 @@ func (m *Model) copyModeSnapshot(terminalID string, snapshot *protocol.Snapshot)
 }
 
 func copyModePinnedAtTop(state copyModeState) bool {
-	return state.Cursor.Row == 0 && state.ViewTopRow == 0
+	return state.CursorLogical.Line == 0 && state.ViewTopRow == 0
 }
 
 func (m *Model) showNotice(text string) tea.Cmd {
