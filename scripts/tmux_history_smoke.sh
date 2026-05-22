@@ -12,7 +12,7 @@ Run the isolated TermX + tmux history smoke flow:
   -> reattach -> capture
 
 Options:
-  --scenario NAME       scenario to run: baseline | standard | deep-hot; default baseline
+  --scenario NAME       scenario to run: baseline | standard | deep-hot | floating-owner-resize; default baseline
   --root PATH           artifact root; default is a new /tmp directory
   --bin PATH            existing termx binary to use; default builds into ROOT/termx
   --lines N             stress line count; default 1000
@@ -46,6 +46,20 @@ Artifacts:
     reattach-committed-boundary.raw.txt
     reattach-committed-boundary.gridtrace.summary.txt
     reattach-committed-boundary.gridtrace.log
+  floating-owner-resize:
+    floating-base.txt
+    floating-base.raw.txt
+    floating-base.termx-ls.txt
+    floating-manager.txt
+    floating-manager.raw.txt
+    floating-attached.txt
+    floating-attached.raw.txt
+    floating-owned.txt
+    floating-owned.raw.txt
+    floating-resized.txt
+    floating-resized.raw.txt
+    floating-resized.termx-ls.txt
+    floating-owner-resize.resize.summary.txt
 EOF
 }
 
@@ -616,6 +630,17 @@ copy_gridtrace_artifact() {
   fi
 }
 
+copy_resize_log_artifact() {
+  local dest_base="$1"
+  if [[ ! -f "$LOG" ]]; then
+    : >"$ROOT/$dest_base.resize.summary.txt"
+    return 0
+  fi
+  if ! rg -n 'server attached terminal|method=ensure_resize|method=resize|termx transport resize frame|resize_owner' "$LOG" >"$ROOT/$dest_base.resize.summary.txt"; then
+    : >"$ROOT/$dest_base.resize.summary.txt"
+  fi
+}
+
 deep_hot_expected_first_row() {
   local retained_committed_rows="$LINES"
   local screen_committed_rows=$((ATTACH_ROWS - DEEP_HOT_SCREEN_HOT_ROWS))
@@ -838,6 +863,63 @@ assert_contains() {
   fi
 }
 
+assert_regex_count_at_least() {
+  local file="$1"
+  local regex="$2"
+  local expected="$3"
+  local got
+  got="$(grep -E -c -- "$regex" "$file" 2>/dev/null || true)"
+  if (( got < expected )); then
+    echo "expected at least $expected matches for /$regex/ in $file, got $got" >&2
+    return 1
+  fi
+}
+
+terminal_size_from_inventory() {
+  local file="$1"
+  local terminal_id="$2"
+  awk -F '\t' -v want="$terminal_id" '
+    $1 == want {
+      split($5, size, "x")
+      if (size[1] != "" && size[2] != "") {
+        print size[1], size[2]
+        found=1
+      }
+      exit
+    }
+    END { exit(found ? 0 : 1) }
+  ' "$file"
+}
+
+assert_terminal_size_shrunk() {
+  local before_file="$1"
+  local after_file="$2"
+  local terminal_id="$3"
+  local before_size
+  local after_size
+  local before_cols
+  local before_rows
+  local after_cols
+  local after_rows
+
+  before_size="$(terminal_size_from_inventory "$before_file" "$terminal_id")" || {
+    echo "expected terminal $terminal_id size in $before_file" >&2
+    return 1
+  }
+  after_size="$(terminal_size_from_inventory "$after_file" "$terminal_id")" || {
+    echo "expected terminal $terminal_id size in $after_file" >&2
+    return 1
+  }
+  before_cols="${before_size%% *}"
+  before_rows="${before_size##* }"
+  after_cols="${after_size%% *}"
+  after_rows="${after_size##* }"
+  if (( after_cols >= before_cols || after_rows >= before_rows )); then
+    echo "expected terminal $terminal_id to shrink after floating owner resize: before=${before_cols}x${before_rows} after=${after_cols}x${after_rows}" >&2
+    return 1
+  fi
+}
+
 assert_first_match_equals() {
   local file="$1"
   local regex="$2"
@@ -848,6 +930,22 @@ assert_first_match_equals() {
     echo "expected first match '$expected' in $file, got '${got:-<none>}'" >&2
     return 1
   fi
+}
+
+wait_log_regex_count_at_least() {
+  local regex="$1"
+  local expected="$2"
+  local attempt
+  local got
+  for attempt in $(seq 1 "$WAIT_ATTEMPTS"); do
+    got="$(grep -E -c -- "$regex" "$LOG" 2>/dev/null || true)"
+    if (( got >= expected )); then
+      return 0
+    fi
+    sleep "$WAIT_DELAY"
+  done
+  echo "timed out waiting for at least $expected matches for /$regex/ in $LOG, got ${got:-0}" >&2
+  return 1
 }
 
 capture_until_contains() {
@@ -908,7 +1006,7 @@ build_bin_if_needed() {
 
 build_generator_command() {
   case "$SCENARIO" in
-    baseline|standard)
+    baseline|standard|floating-owner-resize)
       printf 'python3 %q --lines %q --seed %q --width-hint %q; exec cat' \
         "$REPO_ROOT/scripts/generate_terminal_stress.py" "$LINES" "$SEED" "$WIDTH_HINT"
       ;;
@@ -1035,6 +1133,61 @@ run_deep_hot_scenario() {
   log "PASS latest-tail -> $ROOT/latest-tail.txt"
   log "PASS copy-committed-boundary -> $ROOT/copy-committed-boundary.txt"
   log "PASS reattach-committed-boundary -> $ROOT/reattach-committed-boundary.txt"
+}
+
+run_floating_owner_resize_scenario() {
+  local pane_main
+  local key
+
+  start_attach_tmux_session "$SESSION_MAIN" "$TERM_ID" "floating-owner-resize"
+  pane_main="$ATTACH_SESSION_PANE"
+  CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-base" "grid-stress"
+  write_termx_inventory_artifact "floating-base"
+
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-manager.global-mode" C-g
+  sleep "$G_DELAY"
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-manager.open" t
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-manager" "TERMINALS"
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-manager-ready" "grid-stress"
+
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-attach" C-o
+  wait_log_regex_count_at_least 'server attached terminal' 2
+  sleep 0.5
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-attached" "grid-stress"
+
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-mode.enter" C-o
+  sleep "$G_DELAY"
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-owner.take" a
+  wait_log_regex_count_at_least 'msg="termx protocol request started".*method=ensure_resize' 2
+  sleep 0.5
+  capture_session "$SESSION_MAIN" "$pane_main" "floating-owned"
+
+  for key in L L L L J J; do
+    send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-resize.$key" "$key"
+    sleep "$G_DELAY"
+  done
+  wait_log_regex_count_at_least 'msg="termx protocol request started".*method=ensure_resize' 3
+  sleep 0.5
+  capture_session "$SESSION_MAIN" "$pane_main" "floating-resized"
+  write_termx_inventory_artifact "floating-resized"
+  copy_resize_log_artifact "floating-owner-resize"
+
+  assert_contains "$ROOT/floating-base.txt" "grid-stress"
+  assert_contains "$ROOT/floating-manager.txt" "TERMINALS"
+  assert_contains "$ROOT/floating-manager-ready.txt" "grid-stress"
+  assert_contains "$ROOT/floating-attached.txt" "grid-stress"
+  assert_contains "$ROOT/floating-owned.txt" "grid-stress"
+  assert_contains "$ROOT/floating-resized.txt" "grid-stress"
+  assert_regex_count_at_least "$ROOT/floating-owner-resize.resize.summary.txt" 'server attached terminal' 2
+  assert_regex_count_at_least "$ROOT/floating-owner-resize.resize.summary.txt" 'server attached terminal.*resize_owner=false' 1
+  assert_regex_count_at_least "$ROOT/floating-owner-resize.resize.summary.txt" 'method=ensure_resize' 3
+  assert_terminal_size_shrunk "$ROOT/floating-base.termx-ls.txt" "$ROOT/floating-resized.termx-ls.txt" "$TERM_ID"
+
+  log "PASS floating-base -> $ROOT/floating-base.txt"
+  log "PASS floating-owned -> $ROOT/floating-owned.txt"
+  log "PASS floating-resized -> $ROOT/floating-resized.txt"
+  log "PASS floating-owner-resize log -> $ROOT/floating-owner-resize.resize.summary.txt"
 }
 
 attach_command() {
@@ -1201,6 +1354,9 @@ main() {
       ;;
     deep-hot)
       run_deep_hot_scenario
+      ;;
+    floating-owner-resize)
+      run_floating_owner_resize_scenario
       ;;
     *)
       echo "unknown scenario: $SCENARIO" >&2
