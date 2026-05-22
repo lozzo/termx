@@ -1048,6 +1048,53 @@ func TestRuntimeApplyGridViewportPageRejectsOlderPageWithoutCanonicalHistoryWind
 	}
 }
 
+func TestRuntimeApplyGridViewportPageRejectsOffsetFromStoredLoadedLimitWhenSnapshotDepthDiffers(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	live := snapshotWithLines("term-1", 80, 24, []string{"live"})
+	live.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("canon010")})
+	live.ScrollbackOffset = 10
+	live.ScrollbackLoadedRows = 11
+	live.HistoryGeneration = 10
+	live.ScrollbackFirstRowID = 10
+	live.ScrollbackLastRowID = 10
+	live.ScrollbackOwnership = []string{protocol.RowOwnershipPersisted}
+	client.snapshotByTerminal["term-1"] = live
+
+	rt := New(client)
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 1); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil {
+		t.Fatal("expected runtime snapshot")
+	}
+	terminal.ScrollbackLoadedLimit = 100
+
+	older := &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 80, Rows: 24},
+		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("canon009")}),
+		ScrollbackOffset:     100,
+		ScrollbackTotal:      101,
+		ScrollbackHasMore:    false,
+		ScrollbackLoadedRows: 101,
+		HistoryGeneration:    10,
+		ScrollbackFirstRowID: 9,
+		ScrollbackLastRowID:  9,
+		ScrollbackOwnership:  []string{protocol.RowOwnershipPersisted},
+	}
+	if rt.ApplyGridViewportPage("term-1", older, 100) {
+		t.Fatal("expected older page keyed only by stored loaded limit to be rejected")
+	}
+	if got := terminal.ScrollbackLoadedLimit; got != 100 {
+		t.Fatalf("expected rejected stale page not to rewrite stored loaded limit, got %d", got)
+	}
+	if got := compactRowText(terminal.Snapshot.Scrollback[0]); got != "canon010" {
+		t.Fatalf("expected current ownership window to remain unchanged, got %q", got)
+	}
+}
+
 func TestRuntimeApplyGridViewportPageAcceptsCanonicalOlderPageWithRowIDZero(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
@@ -1593,8 +1640,8 @@ func TestRuntimeScrollbackChangeInvalidatesExhaustedSnapshotState(t *testing.T) 
 	if terminal == nil {
 		t.Fatal("expected terminal")
 	}
-	if !terminal.ScrollbackExhausted {
-		t.Fatalf("expected initial no-history snapshot to mark scrollback exhausted, got %#v", terminal)
+	if terminal.ScrollbackExhausted {
+		t.Fatalf("expected initial snapshot without ownership not to infer exhausted history, got %#v", terminal)
 	}
 
 	payload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
@@ -1642,8 +1689,8 @@ func TestRuntimeScrollOpcodeInvalidatesExhaustedSnapshotState(t *testing.T) {
 	if terminal == nil {
 		t.Fatal("expected terminal")
 	}
-	if !terminal.ScrollbackExhausted {
-		t.Fatalf("expected initial no-history snapshot to mark scrollback exhausted, got %#v", terminal)
+	if terminal.ScrollbackExhausted {
+		t.Fatalf("expected initial snapshot without ownership not to infer exhausted history, got %#v", terminal)
 	}
 
 	payload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{

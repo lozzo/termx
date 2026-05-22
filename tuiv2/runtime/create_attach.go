@@ -30,9 +30,8 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 	if terminal == nil {
 		return nil, shared.UserVisibleError{Op: "attach terminal", Err: fmt.Errorf("terminal registry unavailable")}
 	}
-	preservedLoadedDepth := terminal.ScrollbackLoadedLimit
 	r.resetTerminalLiveState(terminal)
-	terminal.ScrollbackLoadedLimit = preservedLoadedDepth
+	normalizeTerminalScrollbackLoadState(terminal)
 	terminal.Channel = attached.Channel
 	terminal.AttachMode = attached.Mode
 	r.hydrateTerminalMetadata(ctx, terminalID)
@@ -83,6 +82,23 @@ func (r *Runtime) resetTerminalLiveState(terminal *TerminalRuntime) {
 	terminal.ScrollbackLoadingLimit = 0
 	terminal.ScrollbackExhausted = false
 	terminal.VTerm = nil
+}
+
+func normalizeTerminalScrollbackLoadState(terminal *TerminalRuntime) {
+	if terminal == nil {
+		return
+	}
+	loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot)
+	terminal.ScrollbackLoadedLimit = loaded
+	if loaded <= 0 {
+		terminal.ScrollbackLoadingLimit = 0
+		terminal.ScrollbackExhausted = false
+		return
+	}
+	if terminal.ScrollbackLoadingLimit <= loaded {
+		terminal.ScrollbackLoadingLimit = 0
+	}
+	terminal.ScrollbackExhausted = terminal.ScrollbackExhausted && protocol.HasExplicitRowOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback))
 }
 
 func (r *Runtime) hydrateTerminalMetadata(ctx context.Context, terminalID string) {

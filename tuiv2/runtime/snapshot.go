@@ -100,8 +100,10 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 		}
 		terminal.PreferSnapshot = false
 		if offset == 0 && snapshot != nil {
-			if limit > 0 {
+			if limit > 0 && protocol.HasExplicitRowOwnership(snapshot.ScrollbackOwnership, len(snapshot.Scrollback)) {
 				terminal.ScrollbackExhausted = !snapshot.ScrollbackHasMore
+			} else if !protocol.HasExplicitRowOwnership(snapshot.ScrollbackOwnership, len(snapshot.Scrollback)) {
+				terminal.ScrollbackExhausted = false
 			}
 		}
 		r.ensureVTerm(terminal)
@@ -149,7 +151,7 @@ func (r *Runtime) ApplyGridViewportPage(terminalID string, page *protocol.Snapsh
 	if page.Size.Cols > 0 && current.Size.Cols > 0 && page.Size.Cols != current.Size.Cols {
 		return false
 	}
-	if offset > 0 && offset != snapshotScrollbackLoadedDepth(current) && offset != terminal.ScrollbackLoadedLimit {
+	if offset > 0 && offset != snapshotScrollbackLoadedDepth(current) {
 		return false
 	}
 	if offset > 0 && !historyPageContinuesSnapshot(current, page) {

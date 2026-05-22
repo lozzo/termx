@@ -264,7 +264,7 @@
 - `tuiv2` 不再在缺少 row ownership 时用本地 VTerm scrollback 行数、snapshot totals 或 `hasMore` 兜底推进 committed history depth；older-page 请求必须以显式 ownership 下的 committed depth 为依据。
 - copy mode backing model 已改为以 ownership metadata 决定 older-page offset、canonical row refs、selection anchoring 与 latest replace / refresh；live-tail rows 不再消耗 canonical row id，cursor / mark 优先按 ownership-backed row refs 重锚。
 - `tuiv2` 本地 VTerm projection 已显式保存 row ownership；`refreshSnapshotFromVTerm` 不再按 scrollback 行数形态继承 ownership，只在 projection 自身带有显式 ownership 时恢复历史 metadata。
-- runtime transaction restore、attach / re-entry、stale-page guard 继续保持与 core ownership 一致，不再保留旧的 TUI 本地推断状态作为主语义。
+- runtime transaction restore、attach / re-entry、stale-page guard 已改为只信 snapshot ownership 派生的 committed depth；`ScrollbackLoadedLimit` 不再作为独立放行 older-page 或恢复历史状态的主语义。
 - 每个子切片都必须保持主线测试可运行，并形成中文提交。
 
 ### 当前不启动的工作

@@ -30,7 +30,6 @@ type TerminalLiveStateSnapshot struct {
 	SurfaceVersion         uint64
 	ScreenUpdate           VisibleScreenUpdateSummary
 	VTerm                  VTermLike
-	ScrollbackLoadedLimit  int
 	ScrollbackLoadingLimit int
 	ScrollbackExhausted    bool
 	PreferSnapshot         bool
@@ -139,7 +138,6 @@ func (r *Runtime) TerminalLiveStateSnapshot(terminalID string) TerminalLiveState
 		SurfaceVersion:         terminal.SurfaceVersion,
 		ScreenUpdate:           cloneVisibleScreenUpdateSummary(terminal.ScreenUpdate),
 		VTerm:                  terminal.VTerm,
-		ScrollbackLoadedLimit:  terminal.ScrollbackLoadedLimit,
 		ScrollbackLoadingLimit: terminal.ScrollbackLoadingLimit,
 		ScrollbackExhausted:    terminal.ScrollbackExhausted,
 		PreferSnapshot:         terminal.PreferSnapshot,
@@ -199,9 +197,7 @@ func (r *Runtime) RestoreTerminalLiveState(terminalID string, snapshot TerminalL
 	terminal.SurfaceVersion = snapshot.SurfaceVersion
 	terminal.ScreenUpdate = cloneVisibleScreenUpdateSummary(snapshot.ScreenUpdate)
 	terminal.VTerm = snapshot.VTerm
-	terminal.ScrollbackLoadedLimit = snapshot.ScrollbackLoadedLimit
-	terminal.ScrollbackLoadingLimit = snapshot.ScrollbackLoadingLimit
-	terminal.ScrollbackExhausted = snapshot.ScrollbackExhausted
+	restoreTerminalScrollbackLoadState(terminal, snapshot)
 	terminal.PreferSnapshot = snapshot.PreferSnapshot
 	terminal.BootstrapPending = snapshot.BootstrapPending
 	terminal.Recovery = snapshot.Recovery
@@ -213,6 +209,25 @@ func (r *Runtime) RestoreTerminalLiveState(terminalID string, snapshot TerminalL
 	if snapshot.WasStreaming && snapshot.Channel != 0 {
 		_ = r.StartStream(context.Background(), terminalID)
 	}
+}
+
+func restoreTerminalScrollbackLoadState(terminal *TerminalRuntime, snapshot TerminalLiveStateSnapshot) {
+	if terminal == nil {
+		return
+	}
+	loaded := snapshotScrollbackLoadedDepth(terminal.Snapshot)
+	terminal.ScrollbackLoadedLimit = loaded
+	if loaded <= 0 {
+		terminal.ScrollbackLoadingLimit = 0
+		terminal.ScrollbackExhausted = false
+		return
+	}
+	if snapshot.ScrollbackLoadingLimit > loaded {
+		terminal.ScrollbackLoadingLimit = snapshot.ScrollbackLoadingLimit
+	} else {
+		terminal.ScrollbackLoadingLimit = 0
+	}
+	terminal.ScrollbackExhausted = snapshot.ScrollbackExhausted && protocol.HasExplicitRowOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback))
 }
 
 func cloneRuntimeSnapshot(snapshot *bridge.SnapshotRef) *bridge.SnapshotRef {

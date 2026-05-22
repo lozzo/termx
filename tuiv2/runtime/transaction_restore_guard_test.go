@@ -7,18 +7,24 @@ import (
 	"github.com/lozzow/termx/tuiv2/bridge"
 )
 
-func TestTransactionRestorePreservesViewportAndHistoryLoadState(t *testing.T) {
+func TestTransactionRestorePreservesOwnershipBackedViewportAndHistoryLoadState(t *testing.T) {
 	rt := New(nil)
 	terminal := rt.Registry().GetOrCreate("term-1")
 	terminal.Snapshot = &bridge.SnapshotRef{
-		TerminalID:           "term-1",
-		Size:                 protocol.Size{Cols: 80, Rows: 24},
-		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("seed")}),
-		ScrollbackHasMore:    true,
-		ScrollbackLoadedRows: 37,
-		Screen:               protocol.ScreenData{Cells: [][]protocol.Cell{protocolRowFromString("live")}},
-		Cursor:               protocol.CursorState{Visible: true},
-		Modes:                protocol.TerminalModes{AutoWrap: true},
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 80, Rows: 24},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("seed")}),
+		ScrollbackOffset:       36,
+		ScrollbackHasMore:      true,
+		ScrollbackLoadedRows:   37,
+		HistoryGeneration:      7,
+		ScrollbackFirstRowID:   36,
+		ScrollbackLastRowID:    36,
+		ScrollbackOwnership:    []string{protocol.RowOwnershipPersisted},
+		ScrollbackLogicalTotal: 37,
+		Screen:                 protocol.ScreenData{Cells: [][]protocol.Cell{protocolRowFromString("live")}},
+		Cursor:                 protocol.CursorState{Visible: true},
+		Modes:                  protocol.TerminalModes{AutoWrap: true},
 	}
 	terminal.ScrollbackLoadedLimit = 37
 	terminal.ScrollbackLoadingLimit = 64
@@ -56,6 +62,19 @@ func TestTransactionRestorePreservesViewportAndHistoryLoadState(t *testing.T) {
 		t.Fatalf("expected restore to preserve pane content offset 4,-3, got %d,%d", gotX, gotY)
 	}
 
+	terminal.Snapshot = &bridge.SnapshotRef{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 80, Rows: 24},
+		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("only")}),
+		ScrollbackLoadedRows: 1,
+		HistoryGeneration:    8,
+		ScrollbackFirstRowID: 0,
+		ScrollbackLastRowID:  0,
+		ScrollbackOwnership:  []string{protocol.RowOwnershipPersisted},
+		Screen:               protocol.ScreenData{Cells: [][]protocol.Cell{protocolRowFromString("live")}},
+		Cursor:               protocol.CursorState{Visible: true},
+		Modes:                protocol.TerminalModes{AutoWrap: true},
+	}
 	terminal.ScrollbackLoadedLimit = 1
 	terminal.ScrollbackLoadingLimit = 0
 	terminal.ScrollbackExhausted = true
@@ -75,5 +94,41 @@ func TestTransactionRestorePreservesViewportAndHistoryLoadState(t *testing.T) {
 	}
 	if !terminal.ScrollbackExhausted {
 		t.Fatal("expected exhausted restore to keep exhausted=true")
+	}
+}
+
+func TestTransactionRestoreDropsUnownedHistoryLoadState(t *testing.T) {
+	rt := New(nil)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.Snapshot = &bridge.SnapshotRef{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 80, Rows: 24},
+		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromString("seed")}),
+		ScrollbackHasMore:    true,
+		ScrollbackLoadedRows: 37,
+		Screen:               protocol.ScreenData{Cells: [][]protocol.Cell{protocolRowFromString("live")}},
+		Cursor:               protocol.CursorState{Visible: true},
+		Modes:                protocol.TerminalModes{AutoWrap: true},
+	}
+	terminal.ScrollbackLoadedLimit = 37
+	terminal.ScrollbackLoadingLimit = 64
+	terminal.ScrollbackExhausted = true
+
+	live := rt.TerminalLiveStateSnapshot("term-1")
+
+	terminal.ScrollbackLoadedLimit = 200
+	terminal.ScrollbackLoadingLimit = 500
+	terminal.ScrollbackExhausted = false
+
+	rt.RestoreTerminalLiveState("term-1", live)
+
+	if got := terminal.ScrollbackLoadedLimit; got != 0 {
+		t.Fatalf("expected unowned restore to drop committed loaded depth, got %d", got)
+	}
+	if got := terminal.ScrollbackLoadingLimit; got != 0 {
+		t.Fatalf("expected unowned restore to drop in-flight loading limit, got %d", got)
+	}
+	if terminal.ScrollbackExhausted {
+		t.Fatal("expected unowned restore not to keep exhausted=true")
 	}
 }
