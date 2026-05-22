@@ -432,6 +432,27 @@ func TestClampCopyPointSkipsWideContinuationCells(t *testing.T) {
 	}
 }
 
+func TestSnapshotPointForLogicalPosProjectsAcrossWrappedRows(t *testing.T) {
+	snapshot := &protocol.Snapshot{
+		Size:       protocol.Size{Cols: 3, Rows: 2},
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
+			{{Content: "a", Width: 1}, {Content: "b", Width: 1}, {Content: "c", Width: 1}},
+			{{Content: "d", Width: 1}, {Content: "e", Width: 1}, {Content: "f", Width: 1}},
+			{{Content: "g", Width: 1}},
+		}),
+		ScrollbackWrapped: []bool{true, false, false},
+	}
+
+	row, col, ok := snapshotPointForLogicalPos(snapshot, 0, 4)
+	if !ok || row != 1 || col != 1 {
+		t.Fatalf("expected logical offset 4 to project to row=1 col=1, got row=%d col=%d ok=%v", row, col, ok)
+	}
+	row, col, ok = snapshotPointForLogicalPos(snapshot, 1, 0)
+	if !ok || row != 2 || col != 0 {
+		t.Fatalf("expected second logical line to project to row=2 col=0, got row=%d col=%d ok=%v", row, col, ok)
+	}
+}
+
 func TestScrollOffsetForViewportTopKeepsScrollbackVisible(t *testing.T) {
 	snapshot := &protocol.Snapshot{
 		Size:       protocol.Size{Cols: 8, Rows: 2},

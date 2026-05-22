@@ -126,6 +126,52 @@ func snapshotLogicalLineIndex(snapshot *protocol.Snapshot, row int) int {
 	return index
 }
 
+func snapshotLogicalLineBounds(snapshot *protocol.Snapshot, logicalLine int) (int, int, bool) {
+	totalRows := snapshotTotalRows(snapshot)
+	if totalRows <= 0 || logicalLine < 0 {
+		return 0, 0, false
+	}
+	index := -1
+	for row := 0; row < totalRows; row++ {
+		if row == 0 || !snapshotRowWrapped(snapshot, row-1) {
+			index++
+		}
+		if index != logicalLine {
+			continue
+		}
+		end := row
+		for end < totalRows-1 && snapshotRowWrapped(snapshot, end) {
+			end++
+		}
+		return row, end, true
+	}
+	return 0, 0, false
+}
+
+func snapshotPointForLogicalPos(snapshot *protocol.Snapshot, logicalLine, logicalCol int) (int, int, bool) {
+	start, end, ok := snapshotLogicalLineBounds(snapshot, logicalLine)
+	if !ok {
+		return 0, 0, false
+	}
+	offset := 0
+	lastRow, lastCol := start, 0
+	for row := start; row <= end; row++ {
+		cells := snapshotRow(snapshot, row)
+		for col, cell := range cells {
+			if cell.Content == "" && cell.Width == 0 {
+				continue
+			}
+			lastRow, lastCol = row, col
+			if offset >= logicalCol {
+				return row, col, true
+			}
+			offset++
+		}
+	}
+	row, col := clampCopyPoint(snapshot, lastRow, lastCol)
+	return row, col, true
+}
+
 func drawCopyModeOverlay(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, theme uiTheme, cursorRow, cursorCol, cursorLogicalLine, cursorLogicalCol, viewTopRow int, markSet bool, markRow, markCol, markLogicalLine, markLogicalCol int, contentOffsetX, contentOffsetY int) {
 	if canvas == nil || snapshot == nil || rect.W <= 0 || rect.H <= 0 {
 		return
@@ -134,16 +180,24 @@ func drawCopyModeOverlay(canvas *composedCanvas, rect workbench.Rect, snapshot *
 	if totalRows <= 0 {
 		return
 	}
-	_ = cursorLogicalLine
-	_ = cursorLogicalCol
-	_ = markLogicalLine
-	_ = markLogicalCol
-	cursorRow, cursorCol = clampCopyPoint(snapshot, cursorRow, cursorCol)
+	if row, col, ok := snapshotPointForLogicalPos(snapshot, cursorLogicalLine, cursorLogicalCol); ok {
+		cursorRow, cursorCol = row, col
+	} else {
+		cursorRow, cursorCol = clampCopyPoint(snapshot, cursorRow, cursorCol)
+	}
 	selectionStartRow, selectionStartCol := markRow, markCol
 	selectionEndRow, selectionEndCol := cursorRow, cursorCol
 	if markSet {
-		selectionStartRow, selectionStartCol = clampCopyPoint(snapshot, selectionStartRow, selectionStartCol)
-		selectionEndRow, selectionEndCol = clampCopyPoint(snapshot, selectionEndRow, selectionEndCol)
+		if row, col, ok := snapshotPointForLogicalPos(snapshot, markLogicalLine, markLogicalCol); ok {
+			selectionStartRow, selectionStartCol = row, col
+		} else {
+			selectionStartRow, selectionStartCol = clampCopyPoint(snapshot, selectionStartRow, selectionStartCol)
+		}
+		if row, col, ok := snapshotPointForLogicalPos(snapshot, cursorLogicalLine, cursorLogicalCol); ok {
+			selectionEndRow, selectionEndCol = row, col
+		} else {
+			selectionEndRow, selectionEndCol = clampCopyPoint(snapshot, selectionEndRow, selectionEndCol)
+		}
 		if selectionStartRow > selectionEndRow || (selectionStartRow == selectionEndRow && selectionStartCol > selectionEndCol) {
 			selectionStartRow, selectionEndRow = selectionEndRow, selectionStartRow
 			selectionStartCol, selectionEndCol = selectionEndCol, selectionStartCol
