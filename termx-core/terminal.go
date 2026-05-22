@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/url"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,7 +24,6 @@ import (
 )
 
 var terminalIDCounter atomic.Uint64
-var terminalProjectionLabelRe = regexp.MustCompile(`(^|[^0-9])([0-9]{6})\s+\[[A-Z ]{6}\]`)
 
 const (
 	terminalPTYReadBufferBytes      = 512 * 1024
@@ -1184,27 +1182,6 @@ func (t *Terminal) combinedGridViewport(offset, limit, cols int, liveTail termin
 	return result, nil
 }
 
-func terminalProjectionRowLabel(row []vterm.Cell) (string, bool) {
-	text := rowTextFromVTermCells(row)
-	match := terminalProjectionLabelRe.FindStringSubmatch(text)
-	if len(match) < 3 {
-		return "", false
-	}
-	return match[2], true
-}
-
-func rowTextFromVTermCells(row []vterm.Cell) string {
-	var b strings.Builder
-	for _, cell := range row {
-		if cell.Content == "" {
-			b.WriteByte(' ')
-			continue
-		}
-		b.WriteString(cell.Content)
-	}
-	return strings.TrimRight(b.String(), " ")
-}
-
 func combinedRowWindowCoordinates(store *terminalGridStore, totalRows int, start int, end int) (firstRowID uint64, lastRowID uint64) {
 	if store == nil || totalRows <= 0 || end <= start {
 		return 0, 0
@@ -1221,10 +1198,7 @@ func (t *Terminal) reclaimPrimaryLiveTailForGrowResizeLocked(cols int) error {
 		return nil
 	}
 	screenRows := trimTrailingBlankVTermRows(t.vterm.ScreenContent().Cells)
-	needed := maxInt(0, int(t.size.Rows)-len(screenRows))
-	if t.primaryLiveTail.resizeRowCount() > 0 {
-		needed++
-	}
+	needed := maxInt(0, int(t.size.Rows)-len(screenRows)-t.primaryLiveTail.nonReclaimedRowCount())
 	if needed <= 0 {
 		t.primaryLiveTail.replaceReclaimedPrefix(nil, 0, 0, 0)
 		return nil
@@ -2065,29 +2039,16 @@ func (t *Terminal) reconcileLiveTailRowsLocked(damage vterm.WriteDamage, nextWra
 		return nil, cloneGridDamageOps(t.primaryLiveTail.rows())
 	}
 	if damage.RequiresFullReplace && damage.FullReplaceReason == "resize" {
-		if damage.ResizeLiveTailRowsSet {
-			liveTailRows := t.primaryLiveTail.openLiveRowsForResizePrefix()
-			resizeRows := cloneGridDamageOps(damage.ScrollbackAppend)
-			for i := range resizeRows {
-				if damage.ResizeLiveTailRows > 0 && i >= len(resizeRows)-damage.ResizeLiveTailRows {
-					resizeRows[i].WrappedSet = true
-					resizeRows[i].Wrapped = true
-				}
+		liveTailRows := t.primaryLiveTail.nonReclaimedRowsForResizePrefix()
+		resizeRows := cloneGridDamageOps(damage.ScrollbackAppend)
+		for i := range resizeRows {
+			if damage.ResizeLiveTailRows > 0 && i >= len(resizeRows)-damage.ResizeLiveTailRows {
+				resizeRows[i].WrappedSet = true
+				resizeRows[i].Wrapped = true
 			}
-			liveTailRows = append(liveTailRows, resizeRows...)
-			return nil, liveTailRows
 		}
-		if len(damage.ScrollbackAppend) > 0 {
-			liveTailRows := t.primaryLiveTail.openLiveRowsForResizePrefix()
-			for _, row := range damage.ScrollbackAppend {
-				cloned := cloneGridDamageOp(row)
-				cloned.WrappedSet = true
-				cloned.Wrapped = true
-				liveTailRows = append(liveTailRows, cloned)
-			}
-			return nil, liveTailRows
-		}
-		return nil, nil
+		liveTailRows = append(liveTailRows, resizeRows...)
+		return nil, liveTailRows
 	}
 
 	persistedPrefix, _ := splitDamageRowsByLiveTailHint(damage.ScrollbackAppend, damage.LiveTailAppendRows)

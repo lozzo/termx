@@ -436,7 +436,6 @@ type WriteDamage struct {
 	ScrollbackAppend      []DamageOp
 	LiveTailAppendRows    int
 	ResizeLiveTailRows    int
-	ResizeLiveTailRowsSet bool
 	AlternateAppend       []DamageOp
 	ScrollbackTrim        int
 	ScreenScroll          int
@@ -833,9 +832,6 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 		traceCount("vterm.write.changed_rows", damageChangedRowCount(damage))
 		traceCount("vterm.write.changed_cells", damageChangedCellCount(damage))
 		traceCount("vterm.write.diff_cpu_ns", int(damage.DiffCPUNanos))
-	}
-	if bytes.Contains(normalized, []byte("\n")) || bytes.Contains(normalized, []byte("\r")) {
-		damage.LiveTailAppendRows = 0
 	}
 	reconcileFinish(0)
 	return n, err, damage
@@ -1581,7 +1577,6 @@ func (v *VTerm) resizeWithDamageLocked(cols, rows int) WriteDamage {
 	}
 	damage.LiveTailAppendRows = trailingWrappedDamageRows(damage.ScrollbackAppend)
 	damage.ResizeLiveTailRows = resizeLiveTailRowsFromPlan(resizePlan, beforeCursorRow)
-	damage.ResizeLiveTailRowsSet = true
 	damage.ScrollbackTrim = 0
 	damage.SizeCols = cols
 	damage.SizeRows = rows

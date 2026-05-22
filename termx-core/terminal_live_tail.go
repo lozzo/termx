@@ -101,10 +101,10 @@ func (tail terminalPrimaryLiveTail) reclaimedRowCount() int {
 	return total
 }
 
-func (tail terminalPrimaryLiveTail) resizeRowCount() int {
+func (tail terminalPrimaryLiveTail) nonReclaimedRowCount() int {
 	total := 0
 	for _, segment := range tail.segments {
-		if segment.origin != terminalLiveTailOriginResize {
+		if segment.origin == terminalLiveTailOriginReclaimed {
 			continue
 		}
 		total += len(segment.rows)
@@ -159,13 +159,13 @@ func (tail terminalPrimaryLiveTail) liveRows() []vterm.DamageOp {
 	return out
 }
 
-func (tail terminalPrimaryLiveTail) openLiveRowsForResizePrefix() []vterm.DamageOp {
+func (tail terminalPrimaryLiveTail) nonReclaimedRowsForResizePrefix() []vterm.DamageOp {
 	if len(tail.segments) == 0 {
 		return nil
 	}
 	out := make([]vterm.DamageOp, 0, tail.rowCount())
 	for _, segment := range tail.segments {
-		if segment.origin != terminalLiveTailOriginLive || segment.sealState != terminalLiveTailOpen {
+		if segment.origin == terminalLiveTailOriginReclaimed {
 			continue
 		}
 		out = append(out, cloneGridDamageOps(segment.rows)...)
@@ -203,7 +203,34 @@ func (tail *terminalPrimaryLiveTail) replaceRows(rows []vterm.DamageOp, origin t
 }
 
 func (tail *terminalPrimaryLiveTail) replaceResizeRows(rows []vterm.DamageOp, wrapPending bool) {
-	tail.replaceRows(rows, terminalLiveTailOriginResize, wrapPending)
+	if tail == nil {
+		return
+	}
+	tail.wrapPending = wrapPending
+	next := make([]terminalLiveTailSegment, 0, len(tail.segments)+1)
+	for _, segment := range tail.segments {
+		if segment.origin != terminalLiveTailOriginReclaimed {
+			continue
+		}
+		next = append(next, terminalLiveTailSegment{
+			origin:      segment.origin,
+			sealState:   segment.sealState,
+			rows:        cloneGridDamageOps(segment.rows),
+			wrapPending: segment.wrapPending,
+			generation:  segment.generation,
+			firstRowID:  segment.firstRowID,
+			lastRowID:   segment.lastRowID,
+		})
+	}
+	if len(rows) > 0 {
+		next = append(next, terminalLiveTailSegment{
+			origin:      terminalLiveTailOriginResize,
+			sealState:   terminalLiveTailSealStateForRows(rows, wrapPending),
+			rows:        cloneGridDamageOps(rows),
+			wrapPending: wrapPending,
+		})
+	}
+	tail.segments = next
 }
 
 func (tail *terminalPrimaryLiveTail) replaceLiveRows(rows []vterm.DamageOp, wrapPending bool) {
@@ -300,51 +327,7 @@ func trimLiveTailResizeRowsCoveredByReclaimedPrefix(resizeRows []vterm.DamageOp,
 			return cloneGridDamageOps(resizeRows[overlap:])
 		}
 	}
-	if label, ok := terminalDamageRowsLastLabel(reclaimedRows); ok {
-		if prefix := terminalDamageRowsPrefixThroughLabel(resizeRows, label); prefix > 0 {
-			return cloneGridDamageOps(resizeRows[prefix:])
-		}
-	}
 	return cloneGridDamageOps(resizeRows)
-}
-
-func terminalDamageRowsLastLabel(rows []vterm.DamageOp) (string, bool) {
-	for i := len(rows) - 1; i >= 0; i-- {
-		if label, ok := terminalProjectionRowLabel(damageOpCells(rows[i])); ok {
-			return label, true
-		}
-	}
-	return "", false
-}
-
-func terminalDamageRowsPrefixThroughLabel(rows []vterm.DamageOp, label string) int {
-	if label == "" {
-		return 0
-	}
-	lastMatch := -1
-	for i, row := range rows {
-		got, ok := terminalProjectionRowLabel(damageOpCells(row))
-		if ok && got == label {
-			lastMatch = i
-		}
-		if lastMatch >= 0 && i > lastMatch {
-			got, ok := terminalProjectionRowLabel(damageOpCells(row))
-			if ok && got != label {
-				break
-			}
-		}
-	}
-	if lastMatch < 0 {
-		return 0
-	}
-	end := lastMatch + 1
-	for end < len(rows) {
-		if _, ok := terminalProjectionRowLabel(damageOpCells(rows[end])); ok {
-			break
-		}
-		end++
-	}
-	return end
 }
 
 func (tail terminalPrimaryLiveTail) window(start int, end int) terminalLiveTailWindow {

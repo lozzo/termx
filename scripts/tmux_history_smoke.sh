@@ -1267,6 +1267,14 @@ else:
         errors.append(f"second stress run labels must not duplicate after remote pair, duplicates={duplicates[:20]} prefix={got_prefix[:130]}")
     if got_prefix[:10] != list(range(0, 10)):
         errors.append(f"second stress run must start at 000000..000009 after remote pair, got prefix={got_prefix[:20]}")
+    gaps = []
+    for prev, cur in zip(got_prefix, got_prefix[1:]):
+        if cur > prev + 1:
+            gaps.append((prev, cur))
+            if len(gaps) >= 8:
+                break
+    if gaps:
+        errors.append(f"second stress run must not skip visible labels after remote pair, gaps={gaps}")
     if not all(value in got_prefix for value in range(96, 101)):
         errors.append(f"second stress run tail 000096..000100 must remain visible after resize, got tail={[value for value in got_prefix if value >= 90]}")
 if uri_rows and expires_rows and min(expires_rows) < min(uri_rows):

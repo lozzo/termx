@@ -62,12 +62,5 @@ func resizeLiveTailRowsFromDamageForTest(t *testing.T, damage WriteDamage) int {
 	if !field.IsValid() {
 		t.Fatal("expected WriteDamage.ResizeLiveTailRows field")
 	}
-	setField := value.FieldByName("ResizeLiveTailRowsSet")
-	if !setField.IsValid() {
-		t.Fatal("expected WriteDamage.ResizeLiveTailRowsSet field")
-	}
-	if !setField.Bool() {
-		t.Fatal("expected resize damage to mark ResizeLiveTailRowsSet")
-	}
 	return int(field.Int())
 }
