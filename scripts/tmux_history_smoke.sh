@@ -1179,6 +1179,26 @@ enter_copy_mode_and_scan_down_until_contains() {
   return 1
 }
 
+scan_down_until_contains() {
+  local session="$1"
+  local target="$2"
+  local base="$3"
+  local needle="$4"
+  local repeats="$5"
+  local attempt
+
+  for attempt in $(seq 1 "$repeats"); do
+    send_tmux_keys "$session" "$target" "$base.copy-mode-down-$attempt" j
+    sleep "$G_DELAY"
+    capture_session "$session" "$target" "$base" || return 1
+    if grep -Fq -- "$needle" "$ROOT/$base.txt"; then
+      return 0
+    fi
+  done
+  echo "timed out waiting for '$needle' in $ROOT/$base.txt after $repeats line-down attempts" >&2
+  return 1
+}
+
 start_daemon() {
   mkdir -p "$CFG" "$STATE"
   XDG_CONFIG_HOME="$CFG" \
@@ -1559,12 +1579,13 @@ run_floating_owner_marker_history_scenario() {
   write_termx_inventory_artifact "floating-marker-resized"
 
   enter_copy_mode_and_scan_down_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-after-marker" "TERM_X_TEXT_QR_BEGIN" "$G_REPEATS"
+  scan_down_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-after-marker" "████ ▄▄▄▄▄ ███▄" 8
   copy_resize_log_artifact "floating-owner-marker-history"
 
   assert_contains "$ROOT/floating-marker-base.txt" "grid-stress"
   assert_contains "$ROOT/floating-marker-resized.txt" "grid-stress"
   assert_contains "$ROOT/floating-marker-after-marker.txt" "TERM_X_TEXT_QR_BEGIN"
-  assert_floating_contains "$ROOT/floating-marker-after-marker.txt" "QR|██████  ██  ████"
+  assert_floating_contains "$ROOT/floating-marker-after-marker.txt" "████ ▄▄▄▄▄ ███▄"
   assert_stress_history_label_order_visible "$ROOT/floating-marker-after-marker.txt"
   assert_regex_count_at_least "$ROOT/floating-owner-marker-history.resize.summary.txt" 'server attached terminal' 2
   assert_regex_count_at_least "$ROOT/floating-owner-marker-history.resize.summary.txt" 'method=ensure_resize' 3
