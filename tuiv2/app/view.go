@@ -20,7 +20,7 @@ func (m *Model) View() string {
 	if m == nil || m.render == nil {
 		return ""
 	}
-	if m.visibleAltScreenGeometryChanged() {
+	if m.visibleLayoutGeometryChanged() {
 		m.forceFullRedraw()
 	}
 	m.reconcileCopyModeContext()

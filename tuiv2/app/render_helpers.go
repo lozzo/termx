@@ -27,25 +27,25 @@ func (m *Model) forceFullRedraw() {
 	}
 }
 
-func (m *Model) visibleAltScreenGeometryChanged() bool {
+func (m *Model) visibleLayoutGeometryChanged() bool {
 	if m == nil || m.workbench == nil {
 		return false
 	}
-	signature, hasAltScreen := m.visibleLayoutSignature()
+	signature := m.visibleLayoutSignature()
 	changed := m.visibleLayoutSigSet && signature != m.lastVisibleLayoutSig
 	m.lastVisibleLayoutSig = signature
 	m.visibleLayoutSigSet = true
-	return changed && hasAltScreen
+	return changed
 }
 
-func (m *Model) visibleLayoutSignature() (string, bool) {
+func (m *Model) visibleLayoutSignature() string {
 	if m == nil || m.workbench == nil {
-		return "", false
+		return ""
 	}
 	body := m.bodyRect()
 	visible := m.workbench.VisibleWithSize(body)
 	if visible == nil {
-		return "", false
+		return ""
 	}
 	var builder strings.Builder
 	builder.Grow(128)
@@ -57,7 +57,6 @@ func (m *Model) visibleLayoutSignature() (string, bool) {
 	builder.WriteString(strconv.Itoa(visible.ActiveTab))
 	builder.WriteByte('|')
 
-	hasAltScreen := false
 	if visible.ActiveTab >= 0 && visible.ActiveTab < len(visible.Tabs) {
 		tab := visible.Tabs[visible.ActiveTab]
 		builder.WriteString(tab.ID)
@@ -66,15 +65,13 @@ func (m *Model) visibleLayoutSignature() (string, bool) {
 		builder.WriteByte('|')
 		for _, pane := range tab.Panes {
 			appendVisiblePaneGeometry(&builder, pane)
-			hasAltScreen = hasAltScreen || m.visiblePaneUsesAltScreen(pane.TerminalID)
 		}
 	}
 	builder.WriteString("floating|")
 	for _, pane := range visible.FloatingPanes {
 		appendVisiblePaneGeometry(&builder, pane)
-		hasAltScreen = hasAltScreen || m.visiblePaneUsesAltScreen(pane.TerminalID)
 	}
-	return builder.String(), hasAltScreen
+	return builder.String()
 }
 
 func appendVisiblePaneGeometry(builder *strings.Builder, pane workbench.VisiblePane) {
@@ -108,23 +105,6 @@ func appendVisiblePaneGeometry(builder *strings.Builder, pane workbench.VisibleP
 		builder.WriteByte('u')
 	}
 	builder.WriteByte('|')
-}
-
-func (m *Model) visiblePaneUsesAltScreen(terminalID string) bool {
-	if m == nil || m.runtime == nil || terminalID == "" {
-		return false
-	}
-	terminal := m.runtime.Registry().Get(terminalID)
-	if terminal == nil {
-		return false
-	}
-	if terminal.VTerm != nil {
-		return terminal.VTerm.Modes().AlternateScreen
-	}
-	if terminal.Snapshot != nil {
-		return terminal.Snapshot.Modes.AlternateScreen
-	}
-	return false
 }
 
 func (m *Model) beginHostThemeBootstrap(expectedPalette int) {

@@ -2273,7 +2273,7 @@ func TestViewKeepsVerticalScrollOptimizationForSinglePaneAltScreen(t *testing.T)
 	}
 }
 
-func TestViewResetsFrameWriterAfterWindowResizeWithVisibleAltScreen(t *testing.T) {
+func TestViewResetsFrameWriterAfterWindowResizeWithVisiblePrimaryScreen(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 24})
 	writer := &resetProbeFrameWriter{}
 	model.SetFrameWriter(writer)
@@ -2281,12 +2281,11 @@ func TestViewResetsFrameWriterAfterWindowResizeWithVisibleAltScreen(t *testing.T
 	model.height = 24
 
 	setActivePaneTerminalModes(t, model, protocol.TerminalModes{
-		AlternateScreen: true,
-		AutoWrap:        true,
+		AutoWrap: true,
 	})
 	_ = model.View()
 	if writer.resetCalls != 0 {
-		t.Fatalf("expected baseline alt-screen view not to reset, got %d", writer.resetCalls)
+		t.Fatalf("expected baseline primary-screen view not to reset, got %d", writer.resetCalls)
 	}
 
 	cmd, handled := model.handleLifecycleMessage(tea.WindowSizeMsg{Width: 100, Height: 30})
@@ -2298,7 +2297,7 @@ func TestViewResetsFrameWriterAfterWindowResizeWithVisibleAltScreen(t *testing.T
 	}
 	_ = model.View()
 	if writer.resetCalls != 1 {
-		t.Fatalf("expected resize to reset the frame writer baseline once, got %d", writer.resetCalls)
+		t.Fatalf("expected primary-screen resize to reset the frame writer baseline once, got %d", writer.resetCalls)
 	}
 
 	_ = model.View()
@@ -2307,7 +2306,7 @@ func TestViewResetsFrameWriterAfterWindowResizeWithVisibleAltScreen(t *testing.T
 	}
 }
 
-func TestViewResetsFrameWriterAfterFloatingMoveOverVisibleAltScreen(t *testing.T) {
+func TestViewResetsFrameWriterAfterFloatingMoveOverVisiblePrimaryScreen(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 120, height: 36})
 	writer := &resetProbeFrameWriter{}
 	model.SetFrameWriter(writer)
@@ -2319,7 +2318,7 @@ func TestViewResetsFrameWriterAfterFloatingMoveOverVisibleAltScreen(t *testing.T
 	base.Snapshot = &protocol.Snapshot{
 		TerminalID: "term-1",
 		Size:       protocol.Size{Cols: 118, Rows: 30},
-		Modes:      protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+		Modes:      protocol.TerminalModes{AutoWrap: true},
 	}
 
 	tab := model.workbench.CurrentTab()
@@ -2359,7 +2358,7 @@ func TestViewResetsFrameWriterAfterFloatingMoveOverVisibleAltScreen(t *testing.T
 	model.render.Invalidate()
 	_ = model.View()
 	if writer.resetCalls != 1 {
-		t.Fatalf("expected floating move over visible alt-screen to reset the frame writer baseline once, got %d", writer.resetCalls)
+		t.Fatalf("expected floating move over visible primary screen to reset the frame writer baseline once, got %d", writer.resetCalls)
 	}
 
 	_ = model.View()
