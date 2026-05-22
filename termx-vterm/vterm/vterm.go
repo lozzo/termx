@@ -14,7 +14,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/termx-shared/gridtrace"
 	charmvt "github.com/lozzow/termx/termx-vterm/internal/vt"
-	"github.com/mattn/go-runewidth"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -2102,17 +2101,6 @@ func uvLine(row []Cell) uv.Line {
 	return line
 }
 
-func uvCellsToVTermCells(v *VTerm, row []uv.Cell) []Cell {
-	if v == nil || len(row) == 0 {
-		return nil
-	}
-	out := make([]Cell, len(row))
-	for i := range row {
-		out[i] = v.convertCell(&row[i])
-	}
-	return out
-}
-
 func cellIsBlank(cell Cell) bool {
 	return strings.TrimSpace(cell.Content) == "" &&
 		cell.Style == (CellStyle{}) &&
@@ -2666,30 +2654,6 @@ func (v *VTerm) screenRowUsedViewLocked(y int) []Cell {
 	return row[:used]
 }
 
-func (v *VTerm) screenRowSpanLocked(y, start, end int) []Cell {
-	if v.emu == nil || y < 0 || y >= v.emu.Height() {
-		return nil
-	}
-	if start < 0 {
-		start = 0
-	}
-	width := v.emu.Width()
-	if end > width {
-		end = width
-	}
-	if start >= end {
-		return nil
-	}
-	row := v.screenRowViewLocked(y)
-	if end > len(row) {
-		end = len(row)
-	}
-	if start >= end {
-		return nil
-	}
-	return row[start:end]
-}
-
 func (v *VTerm) expandedScreenRowSpanLocked(y, start, end int) (int, []Cell) {
 	row := v.screenRowViewLocked(y)
 	if len(row) == 0 {
@@ -2896,21 +2860,6 @@ func (v *VTerm) scrollbackRowWrappedAtLocked(y int) bool {
 		return false
 	}
 	return v.emu.ScrollbackLineWrapped(y)
-}
-
-func rowFingerprintForCells(row []Cell, width int, wrapped bool) rowFingerprint {
-	fingerprint := rowFingerprint{
-		hash:  rowFingerprintOffset64,
-		blank: true,
-	}
-	hashUint64(&fingerprint.hash, uint64(width))
-	hashBool(&fingerprint.hash, wrapped)
-	for x := 0; x < width; x++ {
-		if !hashVTermCellFingerprint(&fingerprint.hash, cellAt(row, x)) {
-			fingerprint.blank = false
-		}
-	}
-	return fingerprint
 }
 
 func (v *VTerm) rowFingerprintLocked(width int, wrapped bool, cellAt func(int) *uv.Cell) rowFingerprint {
@@ -3169,39 +3118,6 @@ func trailingWrappedDamageRows(rows []DamageOp) int {
 		count++
 	}
 	return count
-}
-
-func damageOpDisplayWidth(op DamageOp) int {
-	if len(op.Cells) > 0 {
-		return cellsDisplayWidth(op.Cells)
-	}
-	width := 0
-	for _, run := range op.Runs {
-		width += runewidth.StringWidth(run.Text)
-	}
-	return width
-}
-
-func cellsDisplayWidth(cells []Cell) int {
-	width := 0
-	for _, cell := range cells {
-		if cell.Width > 0 {
-			width += cell.Width
-			continue
-		}
-	}
-	return width
-}
-
-func blankCells(count int) []Cell {
-	if count <= 0 {
-		return nil
-	}
-	out := make([]Cell, count)
-	for i := range out {
-		out[i] = Cell{Content: " ", Width: 1}
-	}
-	return out
 }
 
 func (v *VTerm) screenRowsForResizeLocked(count int) [][]Cell {
@@ -4256,35 +4172,6 @@ func isWideContinuationCell(cell Cell) bool {
 	return cell.Content == "" && cell.Width == 0
 }
 
-func isClearEquivalentCell(cell Cell) bool {
-	if cell.Style != (CellStyle{}) {
-		return false
-	}
-	if cell.LinkURL != "" || cell.LinkParams != "" {
-		return false
-	}
-	if cell.Width != 1 {
-		return false
-	}
-	return strings.TrimSpace(cell.Content) == ""
-}
-
-func vtermCellNeedsWire(cell Cell) bool {
-	if cell.Style != (CellStyle{}) {
-		return true
-	}
-	if cell.LinkURL != "" || cell.LinkParams != "" {
-		return true
-	}
-	if cell.Width > 1 {
-		return true
-	}
-	if cell.Content == "" {
-		return false
-	}
-	return strings.TrimSpace(cell.Content) != ""
-}
-
 func hashCellFingerprint(hash *uint64, cell *uv.Cell) bool {
 	content := ""
 	width := 0
@@ -4431,24 +4318,6 @@ func cloneCellSlice(values []Cell) []Cell {
 	return append([]Cell(nil), values...)
 }
 
-func cloneCellRows(rows [][]Cell) [][]Cell {
-	if len(rows) == 0 {
-		return nil
-	}
-	out := make([][]Cell, len(rows))
-	for i, row := range rows {
-		out[i] = cloneCellSlice(row)
-	}
-	return out
-}
-
-func cloneUVLine(values uv.Line) uv.Line {
-	if len(values) == 0 {
-		return nil
-	}
-	return append(uv.Line(nil), values...)
-}
-
 func normalizeTimeSlice(values []time.Time, count int) []time.Time {
 	if count <= 0 {
 		return nil
@@ -4564,31 +4433,11 @@ func maxInt(a, b int) int {
 	return b
 }
 
-func absInt(value int) int {
-	if value < 0 {
-		return -value
-	}
-	return value
-}
-
 func minInt(a, b int) int {
 	if a < b {
 		return a
 	}
 	return b
-}
-
-func clampInt(value, low, high int) int {
-	if high < low {
-		return low
-	}
-	if value < low {
-		return low
-	}
-	if value > high {
-		return high
-	}
-	return value
 }
 
 func normalizeRenderableUTF8(data []byte) []byte {

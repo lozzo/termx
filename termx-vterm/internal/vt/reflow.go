@@ -265,28 +265,6 @@ func writeLineToBuffer(buf *uv.RenderBuffer, y int, row uv.Line) {
 	}
 }
 
-func cloneUVLineTrimmed(line uv.Line) uv.Line {
-	last := len(line)
-	for last > 0 {
-		cell := line[last-1]
-		if !cell.IsZero() && !cell.Equal(&uv.EmptyCell) {
-			break
-		}
-		last--
-	}
-	if last <= 0 {
-		return nil
-	}
-	return append(uv.Line(nil), line[:last]...)
-}
-
-func cloneUVLineForReflow(line uv.Line, preserveTrailingSpaces bool) uv.Line {
-	if preserveTrailingSpaces {
-		return cloneUVLineWithTrailingSpaces(line)
-	}
-	return cloneUVLineTrimmed(line)
-}
-
 func cloneUVLineWithTrailingSpaces(line uv.Line) uv.Line {
 	if len(line) == 0 {
 		return nil

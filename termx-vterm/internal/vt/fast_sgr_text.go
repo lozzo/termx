@@ -208,30 +208,6 @@ type fastSGRScrollbackRow struct {
 	wrapped bool
 }
 
-func fastSGRTextEstimatedRows(data []byte, width int) int {
-	if len(data) == 0 || width <= 0 {
-		return 0
-	}
-	rows := 1
-	col := 0
-	for _, b := range data {
-		switch {
-		case isPrintableASCII(b):
-			col++
-			if col >= width {
-				rows++
-				col = 0
-			}
-		case b == '\n':
-			rows++
-			col = 0
-		case b == '\r':
-			col = 0
-		}
-	}
-	return rows
-}
-
 func cloneFastSGRLine(line uv.Line, width int) uv.Line {
 	if width <= 0 {
 		return nil
@@ -249,21 +225,6 @@ func fastSGRBlankLine(width int, style uv.Style) uv.Line {
 		line[i] = cell
 	}
 	return line
-}
-
-func lineASCIIText(line uv.Line) string {
-	if text, ok := compactASCIIPlainLine(line); ok {
-		return text
-	}
-	out := make([]byte, len(line))
-	for i := range line {
-		if len(line[i].Content) == 1 && line[i].Content[0] < 0x80 {
-			out[i] = line[i].Content[0]
-		} else {
-			out[i] = ' '
-		}
-	}
-	return string(out)
 }
 
 func fastSGRSequenceEnd(data []byte, start int) (int, bool) {
