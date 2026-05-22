@@ -425,7 +425,7 @@ func (h *nvimPerfHarness) Close(t *testing.T) {
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(testShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }

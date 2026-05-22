@@ -23,8 +23,6 @@ import (
 	"time"
 )
 
-const tuiShutdownWaitTimeout = 5 * time.Second
-
 func TestUVMouseEventToTeaMouseMsg(t *testing.T) {
 	msg, ok := uvMouseEventToTeaMouseMsg(uv.MouseClickEvent(uv.Mouse{
 		X:      12,
@@ -178,7 +176,7 @@ func TestE2ERunWithClientRendersInitialFrameOnPTY(t *testing.T) {
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(tuiShutdownWaitTimeout):
+	case <-time.After(testShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }
@@ -240,7 +238,7 @@ func TestE2ERunWithClientWrapsTTYFramesWithSynchronizedOutput(t *testing.T) {
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(tuiShutdownWaitTimeout):
+	case <-time.After(testShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }
@@ -397,7 +395,7 @@ func TestE2ERunWithClientRetriesHostEmojiProbeWhenFirstCPRIsDropped(t *testing.T
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(tuiShutdownWaitTimeout):
+	case <-time.After(testShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }
@@ -477,7 +475,7 @@ func TestE2ERunWithClientAcceptsNonOriginExtendedCursorReportForEmojiProbe(t *te
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(tuiShutdownWaitTimeout):
+	case <-time.After(testShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }
@@ -569,7 +567,7 @@ func TestE2ERunWithClientIgnoresUnexpectedProbeColumnsUntilValidResponse(t *test
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(tuiShutdownWaitTimeout):
+	case <-time.After(testShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }
@@ -651,7 +649,7 @@ func TestE2ERunWithClientAttachShellAcceptsRepeatedCommandsOnPTY(t *testing.T) {
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(tuiShutdownWaitTimeout):
+	case <-time.After(testShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }
@@ -733,7 +731,7 @@ func TestE2ERunWithClientAttachHtopCanQuitOnPTY(t *testing.T) {
 		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
 		}
-	case <-time.After(tuiShutdownWaitTimeout):
+	case <-time.After(testShutdownWaitTimeout):
 		t.Fatal("timed out waiting for TUI shutdown")
 	}
 }
@@ -798,7 +796,7 @@ func waitForPTYText(t *testing.T, ctx context.Context, recorder *ptyOutputRecord
 		case <-recorder.eventc:
 		case <-ctx.Done():
 			t.Fatalf("context expired waiting for %q", target)
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(testEventPollInterval):
 		}
 	}
 	t.Fatalf("timeout waiting for %q in PTY output\nlatest output:\n%s", target, recorder.Text())
@@ -815,7 +813,7 @@ func waitForPTYOutputLength(t *testing.T, ctx context.Context, recorder *ptyOutp
 		case <-recorder.eventc:
 		case <-ctx.Done():
 			t.Fatalf("context expired waiting for PTY output length >= %d", min)
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(testEventPollInterval):
 		}
 	}
 	t.Fatalf("timeout waiting for PTY output length >= %d\nlatest output length=%d", min, len(recorder.Text()))
@@ -832,7 +830,7 @@ func waitForPTYSubstringCount(t *testing.T, ctx context.Context, recorder *ptyOu
 		case <-recorder.eventc:
 		case <-ctx.Done():
 			t.Fatalf("context expired waiting for %d occurrences of %q", want, target)
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(testEventPollInterval):
 		}
 	}
 	t.Fatalf("timeout waiting for %d occurrences of %q\nlatest output:\n%s", want, target, recorder.Text())
@@ -1312,7 +1310,7 @@ func TestRunTerminalEventsForwarderSubscribesToInventoryPatchEvents(t *testing.T
 	cancel()
 	select {
 	case <-runDone:
-	case <-time.After(tuiShutdownWaitTimeout):
+	case <-time.After(testShutdownWaitTimeout):
 		t.Fatal("timed out waiting for terminal event forwarder shutdown")
 	}
 
