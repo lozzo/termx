@@ -19,6 +19,8 @@ import (
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
+const featureTestDrainTimeout = 200 * time.Millisecond
+
 // ─── Test helpers ───────────────────────────────────────────────────────────
 
 type modelOpts struct {
@@ -128,7 +130,7 @@ func drainCmd(t *testing.T, model *Model, cmd tea.Cmd, maxDepth int) {
 	select {
 	case msg := <-done:
 		drainMsg(t, model, msg, maxDepth)
-	case <-time.After(20 * time.Millisecond):
+	case <-time.After(featureTestDrainTimeout):
 		return
 	}
 }

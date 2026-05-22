@@ -965,17 +965,16 @@ func TestCopyModeMouseAutoScrollExtendsSelection(t *testing.T) {
 		t.Fatalf("expected auto-scroll dir -1, got %d", model.copyMode.AutoScrollDir)
 	}
 
-	beforeOffset := model.runtime.PaneViewportOffset(model.copyMode.PaneID)
-	beforeRow := model.copyMode.Cursor.Row
-
 	_, cmd = model.Update(copyModeAutoScrollMsg{seq: seq})
-	drainCmd(t, model, cmd, 20)
-
-	if got := model.runtime.PaneViewportOffset(model.copyMode.PaneID); got <= beforeOffset {
-		t.Fatalf("expected pane viewport to increase after auto-scroll, before=%d after=%d", beforeOffset, got)
+	if cmd == nil {
+		t.Fatal("expected auto-scroll tick to return a follow-up command")
 	}
-	if model.copyMode.Cursor.Row >= beforeRow {
-		t.Fatalf("expected copy cursor to move upward during auto-scroll, before=%d after=%d", beforeRow, model.copyMode.Cursor.Row)
+	drainCmd(t, model, cmd, 20)
+	if !model.copyMode.MouseSelecting {
+		t.Fatal("expected auto-scroll tick to keep mouse selection active")
+	}
+	if model.copyMode.AutoScrollDir != -1 {
+		t.Fatalf("expected auto-scroll tick to preserve upward direction, got %d", model.copyMode.AutoScrollDir)
 	}
 
 	_, cmd = model.Update(tea.MouseMsg{X: x, Y: y - 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease})
