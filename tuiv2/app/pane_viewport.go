@@ -36,10 +36,6 @@ func (m *Model) paneViewport() viewstate.PaneViewport {
 	return viewport
 }
 
-func (m *Model) legacyPaneViewportOffset(paneID string) int {
-	return m.paneViewport().LegacyOffset(paneID)
-}
-
 func (m *Model) paneViewportOffset(paneID string) int {
 	return m.paneViewport().Offset(paneID)
 }

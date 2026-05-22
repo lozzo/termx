@@ -240,13 +240,6 @@ func cloneBoolSuffix(values []bool, drop int) []bool {
 	return append([]bool(nil), values[drop:]...)
 }
 
-func maxUint64(a, b uint64) uint64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func (m *Model) copyModeSnapshot(terminalID string, snapshot *protocol.Snapshot) *protocol.Snapshot {
 	cloned := cloneSnapshot(snapshot)
 	if snapshotUsesAlternateScreen(cloned) {
@@ -275,16 +268,6 @@ func (m *Model) showNotice(text string) tea.Cmd {
 		return nil
 	}
 	return clearNoticeCmd(m.noticeSeq)
-}
-
-func (m *Model) resetCopyMode() {
-	if m == nil {
-		return
-	}
-	if m.copyMode.PaneID != "" && m.copyModes != nil {
-		delete(m.copyModes, m.copyMode.PaneID)
-	}
-	m.copyMode = copyModeState{}
 }
 
 func (m *Model) copyModeStateForPane(paneID string) (copyModeState, bool) {

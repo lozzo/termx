@@ -60,10 +60,6 @@ func (m *Model) handleTerminalInput(in input.TerminalInput) tea.Cmd {
 	return m.dequeueTerminalInputCmd()
 }
 
-func (m *Model) scheduleTerminalWheelDispatchCmd() tea.Cmd {
-	return m.scheduleTerminalWheelDispatchCmdWithDelay(effectiveTerminalWheelDispatchDelay())
-}
-
 func (m *Model) scheduleTerminalWheelContinuationDispatchCmd() tea.Cmd {
 	return m.scheduleTerminalWheelDispatchCmdWithDelay(effectiveTerminalWheelTailDispatchDelay())
 }

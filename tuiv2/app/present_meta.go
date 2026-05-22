@@ -47,28 +47,6 @@ func retainPresentMeta(meta *presentMeta) *presentMeta {
 	return meta
 }
 
-func clonePresentMeta(meta *presentMeta) *presentMeta {
-	if meta == nil {
-		return nil
-	}
-	out := &presentMeta{
-		OwnerMap:     make([][]hostOwnerID, len(meta.OwnerMap)),
-		RowOwners:    append([]hostOwnerID(nil), meta.RowOwners...),
-		Width:        meta.Width,
-		VisibleRects: make(map[hostOwnerID][]rect, len(meta.VisibleRects)),
-	}
-	for y := range meta.OwnerMap {
-		if len(meta.OwnerMap[y]) == 0 {
-			continue
-		}
-		out.OwnerMap[y] = append([]hostOwnerID(nil), meta.OwnerMap[y]...)
-	}
-	for owner, rects := range meta.VisibleRects {
-		out.VisibleRects[owner] = append([]rect(nil), rects...)
-	}
-	return out
-}
-
 func visibleRectsFromRowOwners(rowOwners []hostOwnerID, width int) map[hostOwnerID][]rect {
 	if len(rowOwners) == 0 || width <= 0 {
 		return nil

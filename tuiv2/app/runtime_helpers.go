@@ -1,18 +1,10 @@
 package app
 
-import (
-	"errors"
-
-	"github.com/lozzow/termx/tuiv2/workbench"
-)
+import "github.com/lozzow/termx/tuiv2/workbench"
 
 type teaErr string
 
 func (e teaErr) Error() string { return string(e) }
-
-func sharedInputLeaseUnsupportedError() error {
-	return errors.New("shared input lease unsupported")
-}
 
 func (m *Model) isPaneAttachPending(paneID string) bool {
 	if m == nil || paneID == "" {

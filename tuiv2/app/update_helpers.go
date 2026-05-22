@@ -72,11 +72,6 @@ func (m *Model) bodyRect() workbench.Rect {
 	return workbench.Rect{W: maxInt(1, m.width), H: m.bodyHeight()}
 }
 
-func (m *Model) allowVerticalScrollOptimization() bool {
-	mode, _ := m.verticalScrollOptimizationMode()
-	return mode != verticalScrollModeNone
-}
-
 func (m *Model) verticalScrollOptimizationMode() (verticalScrollMode, string) {
 	if m == nil || m.workbench == nil {
 		return verticalScrollModeNone, "model_unavailable"

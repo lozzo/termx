@@ -3223,13 +3223,6 @@ func overlayWorkspaceItemRegion(t *testing.T, m *Model, index int) render.HitReg
 	return render.HitRegion{}
 }
 
-func countFloatingPaneMarkers(view string) int {
-	// Check for floating-pane collapse button in both old ASCII and new NerdFont forms.
-	byIcon := maxInt(strings.Count(view, "[_]"), strings.Count(view, "[\uf068]"))
-	byContent := maxInt(strings.Count(view, "unconnected"), strings.Count(view, "No terminal attach"))
-	return maxInt(byIcon, byContent)
-}
-
 func visibleFloatingPaneCount(m *Model) int {
 	if m == nil || m.workbench == nil {
 		return 0

@@ -72,13 +72,6 @@ func (m *Model) renderCopyModeVMs() []render.RenderCopyModeVM {
 	return out
 }
 
-func (m *Model) visibleInputMode() string {
-	if m == nil || m.ui == nil {
-		return ""
-	}
-	return string(m.effectiveInputMode())
-}
-
 func (m *Model) withLiveSurfaceForSplitDragPreview(vm render.RenderVM) render.RenderVM {
 	if m == nil || m.runtime == nil || vm.Runtime == nil || vm.Workbench == nil {
 		return vm
