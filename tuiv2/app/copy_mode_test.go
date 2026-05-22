@@ -2152,6 +2152,73 @@ func TestCopyModePagedLatestReplaceDropsFrozenCanonicalMetadataAndKeepsOlderOffs
 	}
 }
 
+func TestCopyModePagedLatestReplaceKeepsTopPinnedWhenCanonicalWindowAppears(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID:             "term-1",
+		Size:                   protocol.Size{Cols: 40, Rows: 8},
+		Scrollback:             protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("tail0", 40), protocolRowFromText("tail1", 40)}),
+		ScrollbackOwnership:    []string{protocol.RowOwnershipLiveTailLive, protocol.RowOwnershipLiveTailLive},
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        2,
+		ScrollbackLogicalTotal: 2,
+		ScrollbackLoadedRows:   0,
+		HistoryGeneration:      0,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    0,
+		ScrollbackHasMore:      false,
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolRowFromText("live0", 40),
+			protocolRowFromText("live1", 40),
+		}},
+		Cursor: protocol.CursorState{Row: 1, Col: 0, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	model.copyMode.Cursor = copyModePoint{Row: 0, Col: 0}
+	model.copyMode.ViewTopRow = 0
+
+	loaded := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       terminal.Snapshot.Size,
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
+			protocolRowFromText("canon000", 40),
+			protocolRowFromText("canon001", 40),
+			protocolRowFromText("canon002", 40),
+		}),
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipPersisted, 3),
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        99,
+		ScrollbackLogicalTotal: 99,
+		ScrollbackLoadedRows:   99,
+		HistoryGeneration:      7,
+		ScrollbackFirstRowID:   0,
+		ScrollbackLastRowID:    98,
+		ScrollbackHasMore:      false,
+		Screen:                 protocol.ScreenData{Cells: cloneProtocolRows(terminal.Snapshot.Screen.Cells)},
+		Cursor:                 terminal.Snapshot.Cursor,
+		Modes:                  terminal.Snapshot.Modes,
+	}
+
+	if !model.extendFrozenCopyModeSnapshot(loaded, 0, true) {
+		t.Fatal("expected latest replace to materialize canonical window")
+	}
+	if got := model.copyMode.ViewTopRow; got != 0 {
+		t.Fatalf("expected top-pinned latest replace to keep view top at 0, got %d", got)
+	}
+	if got := model.copyMode.Cursor.Row; got != 0 {
+		t.Fatalf("expected top-pinned latest replace to keep cursor row at 0, got %d", got)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "canon000" {
+		t.Fatalf("expected latest replace to start at canonical top row, got %q", got)
+	}
+	if got, want := model.copyMode.CommittedLoadedRows, 99; got != want {
+		t.Fatalf("expected committed depth %d after canonical latest replace, got %d", want, got)
+	}
+}
+
 func TestCopyModeRejectsOlderPageWithoutCanonicalHistoryWindow(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, []string{"canon001"}, []string{"live0"})

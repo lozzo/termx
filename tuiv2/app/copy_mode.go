@@ -659,6 +659,16 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 		if !allowLatestReplace && delta <= 0 {
 			return false
 		}
+		// When copy mode starts from a live-tail-only snapshot, a top jump issues
+		// an offset=0 latest replace to materialize the canonical committed
+		// window. In that case there is no canonical row ref to reanchor against,
+		// so applying the loaded-depth delta would incorrectly push the viewport
+		// down into the newly loaded history window.
+		preserveTop := allowLatestReplace &&
+			copyModePinnedAtTop(m.copyMode) &&
+			!hasCanonicalHistoryWindow(m.copyMode.Snapshot) &&
+			hasCanonicalHistoryWindow(loaded) &&
+			loaded.ScrollbackFirstRowID == 0
 		next.Scrollback = protocol.CloneCompactRows(loaded.Scrollback)
 		next.ScrollbackTimestamps = append([]time.Time(nil), loaded.ScrollbackTimestamps...)
 		next.ScrollbackRowKinds = append([]string(nil), loaded.ScrollbackRowKinds...)
@@ -681,8 +691,10 @@ func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset i
 		if !ok {
 			return false
 		}
-		m.copyMode.ViewTopRow += delta - trimmedNewest
-		m.reanchorCopyModePoints(buffer, delta-trimmedNewest, false, true)
+		if !preserveTop {
+			m.copyMode.ViewTopRow += delta - trimmedNewest
+		}
+		m.reanchorCopyModePoints(buffer, delta-trimmedNewest, preserveTop, true)
 		m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
 		m.saveCurrentCopyModeState()
 		return true
