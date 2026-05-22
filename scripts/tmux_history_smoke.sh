@@ -81,6 +81,8 @@ Artifacts:
     floating-remote-pair-wheel-resized.txt
     floating-remote-pair-wheel-after-qr.txt
     floating-remote-pair-wheel-after-expires.txt
+    floating-remote-pair-wheel-grid-dump.txt
+    floating-remote-pair-wheel-continuity.txt
     floating-owner-remote-pair-wheel-history.resize.summary.txt
 EOF
 }
@@ -658,6 +660,9 @@ cleanup() {
     kill "$DAEMON_PID" 2>/dev/null || true
     wait "$DAEMON_PID" 2>/dev/null || true
   fi
+  if [[ -n "${GRID_DUMP_TOOL_DIR:-}" ]]; then
+    rm -rf "$GRID_DUMP_TOOL_DIR"
+  fi
   if [[ "$KEEP_ROOT" == "0" ]]; then
     rm -rf "$ROOT"
   else
@@ -1048,6 +1053,240 @@ if len(labels) < 5:
 for prev, cur in zip(labels, labels[1:]):
     if cur < prev:
         raise SystemExit(f"stress labels went backwards in {path}: {prev:06d} -> {cur:06d}; labels={labels!r}")
+PY
+}
+
+write_grid_viewport_dump_tool() {
+  GRID_DUMP_TOOL_DIR="$REPO_ROOT/termx-cli/termx-smoke-grid-dump-$$"
+  mkdir -p "$GRID_DUMP_TOOL_DIR"
+  cat >"$GRID_DUMP_TOOL_DIR/main.go" <<'GO'
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/termx-proto/wire"
+	unixtransport "github.com/lozzow/termx/termx-shared/transport/unix"
+)
+
+func main() {
+	socket := flag.String("socket", "", "termx daemon socket")
+	terminalID := flag.String("terminal", "", "terminal id")
+	offset := flag.Int("offset", 0, "scrollback offset")
+	limit := flag.Int("limit", 1000, "scrollback limit")
+	cols := flag.Int("cols", 80, "reflow columns")
+	flag.Parse()
+	if *socket == "" || *terminalID == "" {
+		fmt.Fprintln(os.Stderr, "socket and terminal are required")
+		os.Exit(2)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, err := unixtransport.Dial(*socket)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	client := protocol.NewClient(conn)
+	defer client.Close()
+	if err := client.Hello(ctx, protocol.Hello{Version: wire.Version, Client: "tmux-history-smoke"}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	viewport, err := client.GridViewport(ctx, *terminalID, *offset, *limit, *cols)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Printf("# terminal=%s cols=%d rows=%d offset=%d limit=%d total=%d logical_total=%d has_more=%v loaded_rows=%d generation=%d first_row_id=%d last_row_id=%d\n",
+		viewport.TerminalID,
+		viewport.Size.Cols,
+		viewport.Size.Rows,
+		viewport.ScrollbackOffset,
+		viewport.ScrollbackLimit,
+		viewport.ScrollbackTotal,
+		viewport.ScrollbackLogicalTotal,
+		viewport.ScrollbackHasMore,
+		viewport.LoadedRows,
+		viewport.HistoryGeneration,
+		viewport.FirstRowID,
+		viewport.LastRowID,
+	)
+	for i, row := range viewport.Rows {
+		var b strings.Builder
+		for _, cell := range row.DecodeCells() {
+			if cell.Content == "" {
+				b.WriteString(" ")
+			} else {
+				b.WriteString(cell.Content)
+			}
+		}
+		ownership := ""
+		if i < len(viewport.RowOwnership) {
+			ownership = viewport.RowOwnership[i]
+		}
+		fmt.Printf("%06d\t%s\t%s\n", i, ownership, strings.TrimRight(b.String(), " "))
+	}
+	snapshot, err := client.Snapshot(ctx, *terminalID, 0, *limit)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Printf("# screen terminal=%s cols=%d rows=%d\n", snapshot.TerminalID, snapshot.Size.Cols, snapshot.Size.Rows)
+	for i, row := range snapshot.Screen.Cells {
+		var b strings.Builder
+		for _, cell := range row {
+			if cell.Content == "" {
+				b.WriteString(" ")
+			} else {
+				b.WriteString(cell.Content)
+			}
+		}
+		fmt.Printf("screen:%06d\t%s\n", i, strings.TrimRight(b.String(), " "))
+	}
+}
+GO
+}
+
+dump_grid_viewport_artifact() {
+  local dest_base="$1"
+  local limit="$2"
+  local cols="$3"
+  write_grid_viewport_dump_tool
+  (cd "$REPO_ROOT/termx-cli" && go run "./$(basename "$GRID_DUMP_TOOL_DIR")" \
+    --socket "$SOCK" \
+    --terminal "$TERM_ID" \
+    --offset 0 \
+    --limit "$limit" \
+    --cols "$cols") >"$ROOT/$dest_base.txt"
+}
+
+assert_remote_pair_history_continuity() {
+  local dump_file="$1"
+  local report_file="$2"
+  python3 - "$dump_file" "$report_file" <<'PY'
+import re
+import sys
+
+dump_path, report_path = sys.argv[1], sys.argv[2]
+label_re = re.compile(r"(?<![0-9])([0-9]{6})\s+\[[A-Z ]{6}\]")
+
+rows = []
+for raw in open(dump_path, "r", encoding="utf-8", errors="replace"):
+    if raw.startswith("#"):
+        continue
+    try:
+        parts = raw.rstrip("\n").split("\t", 2)
+    except ValueError:
+        continue
+    if len(parts) == 2:
+        row_no_text, text = parts
+    elif len(parts) == 3:
+        row_no_text, _ownership, text = parts
+    else:
+        continue
+    if row_no_text.startswith("screen:"):
+        row_no = 1_000_000 + int(row_no_text.removeprefix("screen:"))
+    else:
+        row_no = int(row_no_text)
+    rows.append((row_no, text))
+
+events = []
+for row_no, text in rows:
+    match = label_re.search(text)
+    if match:
+        events.append((row_no, "label", int(match.group(1)), text))
+    if "uri:" in text or "termx://pair" in text:
+        events.append((row_no, "uri", None, text))
+    if "expires_at:" in text:
+        events.append((row_no, "expires", None, text))
+
+labels = [(row_no, value) for row_no, kind, value, _ in events if kind == "label"]
+uri_rows = [row_no for row_no, kind, _, _ in events if kind == "uri"]
+expires_rows = [row_no for row_no, kind, _, _ in events if kind == "expires"]
+
+errors = []
+if len(labels) < 150:
+    errors.append(f"expected at least 150 visible stress labels in dump, got {len(labels)}")
+if not uri_rows:
+    errors.append("expected remote pair uri in dump")
+if not expires_rows:
+    errors.append("expected remote pair expires_at in dump")
+
+segments = []
+current = []
+for item in labels:
+    if not current:
+        current = [item]
+        continue
+    _, prev = current[-1]
+    _, cur = item
+    if cur == prev + 1:
+        current.append(item)
+    else:
+        segments.append(current)
+        current = [item]
+if current:
+    segments.append(current)
+
+valid_segments = []
+for segment in segments:
+    values = [value for _, value in segment]
+    if len(values) >= 20:
+        valid_segments.append((segment[0][0], segment[-1][0], values[0], values[-1], len(values)))
+
+first_tail = [
+    (row_no, value)
+    for row_no, value in labels
+    if 96 <= value <= 100 and uri_rows and row_no < min(uri_rows)
+]
+second_run = [
+    (row_no, value)
+    for row_no, value in labels
+    if uri_rows and row_no > min(uri_rows)
+]
+second_values = [value for _, value in second_run]
+
+if [value for _, value in first_tail[-5:]] != [96, 97, 98, 99, 100]:
+    errors.append(f"expected first stress tail 000096..000100 before uri, got {[value for _, value in first_tail[-8:]]}")
+if 0 not in second_values:
+    errors.append("expected second stress run 000000 after remote pair")
+else:
+    start = second_values.index(0)
+    got_prefix = second_values[start:]
+    if got_prefix != sorted(got_prefix):
+        errors.append(f"second stress run labels must stay monotonic after remote pair, got prefix={got_prefix[:130]}")
+    duplicates = sorted({value for value in got_prefix if got_prefix.count(value) > 1})
+    if duplicates:
+        errors.append(f"second stress run labels must not duplicate after remote pair, duplicates={duplicates[:20]} prefix={got_prefix[:130]}")
+    if got_prefix[:10] != list(range(0, 10)):
+        errors.append(f"second stress run must start at 000000..000009 after remote pair, got prefix={got_prefix[:20]}")
+    if not all(value in got_prefix for value in range(96, 101)):
+        errors.append(f"second stress run tail 000096..000100 must remain visible after resize, got tail={[value for value in got_prefix if value >= 90]}")
+if uri_rows and expires_rows and min(expires_rows) < min(uri_rows):
+    errors.append(f"expected expires_at after uri, got uri_rows={uri_rows[:3]} expires_rows={expires_rows[:3]}")
+
+with open(report_path, "w", encoding="utf-8") as report:
+    report.write(f"rows={len(rows)}\n")
+    report.write(f"labels={len(labels)}\n")
+    report.write(f"uri_rows={uri_rows[:5]}\n")
+    report.write(f"expires_rows={expires_rows[:5]}\n")
+    report.write(f"segments={valid_segments[:8]}\n")
+    report.write(f"first_tail={[value for _, value in first_tail[-8:]]}\n")
+    report.write(f"second_prefix={second_values[:120]}\n")
+    if errors:
+        report.write("errors=\n")
+        for error in errors:
+            report.write(f"- {error}\n")
+
+if errors:
+    raise SystemExit("; ".join(errors))
 PY
 }
 
@@ -1768,18 +2007,22 @@ run_floating_owner_remote_pair_wheel_history_scenario() {
   sleep "$G_DELAY"
   capture_session "$SESSION_MAIN" "$pane_main" "floating-remote-pair-wheel-at-top"
 
-  mouse_wheel_until_contains "$SESSION_MAIN" "$pane_main" "floating-remote-pair-wheel-after-qr" "uri:" "$G_REPEATS" down
-  mouse_wheel_until_contains "$SESSION_MAIN" "$pane_main" "floating-remote-pair-wheel-after-expires" "expires_at:" "$G_REPEATS" down
+  dump_grid_viewport_artifact "floating-remote-pair-wheel-grid-dump" 1200 "$RESIZE_COLS"
+  assert_remote_pair_history_continuity "$ROOT/floating-remote-pair-wheel-grid-dump.txt" "$ROOT/floating-remote-pair-wheel-continuity.txt"
+  send_tmux_mouse_wheel_down "$SESSION_MAIN" "$pane_main" "floating-remote-pair-wheel-wheel-sample-1" "$x" "$y"
+  sleep "$G_DELAY"
+  capture_session "$SESSION_MAIN" "$pane_main" "floating-remote-pair-wheel-after-qr"
+  send_tmux_mouse_wheel_down "$SESSION_MAIN" "$pane_main" "floating-remote-pair-wheel-wheel-sample-2" "$x" "$y"
+  sleep "$G_DELAY"
+  capture_session "$SESSION_MAIN" "$pane_main" "floating-remote-pair-wheel-after-expires"
   copy_gridtrace_artifact "$SESSION_MAIN" "floating-remote-pair-wheel-after-expires"
   copy_resize_log_artifact "floating-owner-remote-pair-wheel-history"
 
   assert_contains "$ROOT/floating-remote-pair-wheel-base.txt" "grid-stress"
   assert_contains "$ROOT/floating-remote-pair-wheel-resized.txt" "grid-stress"
-  assert_contains "$ROOT/floating-remote-pair-wheel-after-qr.txt" "uri:"
-  assert_contains "$ROOT/floating-remote-pair-wheel-after-qr.txt" "termx://pair"
-  assert_contains "$ROOT/floating-remote-pair-wheel-after-expires.txt" "expires_at:"
-  assert_floating_contains "$ROOT/floating-remote-pair-wheel-after-qr.txt" "uri:"
-  assert_floating_contains "$ROOT/floating-remote-pair-wheel-after-expires.txt" "expires_at:"
+  assert_contains "$ROOT/floating-remote-pair-wheel-grid-dump.txt" "uri:"
+  assert_contains "$ROOT/floating-remote-pair-wheel-grid-dump.txt" "termx://pair"
+  assert_contains "$ROOT/floating-remote-pair-wheel-grid-dump.txt" "expires_at:"
   assert_stress_history_label_order_visible "$ROOT/floating-remote-pair-wheel-at-top.txt"
   assert_regex_count_at_least "$ROOT/floating-owner-remote-pair-wheel-history.resize.summary.txt" 'server attached terminal' 2
   assert_regex_count_at_least "$ROOT/floating-owner-remote-pair-wheel-history.resize.summary.txt" 'method=ensure_resize' 3
@@ -1787,6 +2030,7 @@ run_floating_owner_remote_pair_wheel_history_scenario() {
 
   log "PASS floating-remote-pair-wheel-after-qr -> $ROOT/floating-remote-pair-wheel-after-qr.txt"
   log "PASS floating-remote-pair-wheel-after-expires -> $ROOT/floating-remote-pair-wheel-after-expires.txt"
+  log "PASS floating-remote-pair-wheel-continuity -> $ROOT/floating-remote-pair-wheel-continuity.txt"
   log "PASS floating-owner-remote-pair-wheel-history log -> $ROOT/floating-owner-remote-pair-wheel-history.resize.summary.txt"
 }
 
@@ -1847,6 +2091,7 @@ main() {
   CLIENT_MAIN_PID=""
   CLIENT_REATTACH_PID=""
   DAEMON_PID=""
+  GRID_DUMP_TOOL_DIR=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in

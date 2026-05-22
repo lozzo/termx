@@ -834,6 +834,9 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 		traceCount("vterm.write.changed_cells", damageChangedCellCount(damage))
 		traceCount("vterm.write.diff_cpu_ns", int(damage.DiffCPUNanos))
 	}
+	if bytes.Contains(normalized, []byte("\n")) || bytes.Contains(normalized, []byte("\r")) {
+		damage.LiveTailAppendRows = 0
+	}
 	reconcileFinish(0)
 	return n, err, damage
 }

@@ -530,6 +530,123 @@ func trimTerminalGridViewportToTail(result *terminalGridViewport, limit int) boo
 	return true
 }
 
+func (s *terminalGridStore) reclaimViewport(neededRows int, cols int) (terminalGridViewport, error) {
+	var result terminalGridViewport
+	if s == nil || neededRows <= 0 {
+		return result, nil
+	}
+	baseRowID, generation, totalRows := s.coordinates()
+	if totalRows <= 0 {
+		return result, nil
+	}
+	indexPath := filepath.Join(s.dir, terminalGridIndexName)
+	limit := neededRows
+	for {
+		end := totalRows
+		start := end - limit
+		if start < 0 {
+			start = 0
+		}
+		file, err := os.Open(indexPath)
+		if err != nil {
+			return result, err
+		}
+		start, err = expandTerminalGridWindowStartToLogicalLine(file, start)
+		if err != nil {
+			_ = file.Close()
+			return result, err
+		}
+		refs, err := readTerminalGridIndexWindowFromFile(file, start, end-start)
+		closeErr := file.Close()
+		if err != nil {
+			return result, err
+		}
+		if closeErr != nil {
+			return result, closeErr
+		}
+		if len(refs) == 0 {
+			return result, nil
+		}
+		gridRows, err := readTerminalGridRows(s.dir, refs)
+		if err != nil {
+			return result, err
+		}
+		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped = reflowTerminalGridRows(gridRows, cols)
+		result.Ownership = repeatedString(RowOwnershipPersisted, len(result.Rows))
+		result.Generation = generation
+		result.FirstRowID = baseRowID + uint64(start)
+		result.LastRowID = baseRowID + uint64(end-1)
+		result.TotalRows = totalRows
+		result.LogicalTotal = s.LogicalLineCount()
+		result.LoadedRows = end - start
+		result.BeforeOffset = 0
+		result.Limit = neededRows
+		result.HasMore = start > 0
+		if len(result.Rows) == 0 {
+			return result, nil
+		}
+		if limit >= totalRows || len(result.Rows) >= neededRows {
+			if trimStart := terminalGridViewportReclaimStart(result, neededRows); trimStart > 0 {
+				trimTerminalGridViewportPrefix(&result, trimStart)
+			}
+			return result, nil
+		}
+		nextLimit := limit * 2
+		if nextLimit <= limit {
+			return result, nil
+		}
+		if nextLimit > totalRows {
+			nextLimit = totalRows
+		}
+		limit = nextLimit
+	}
+}
+
+func terminalGridViewportReclaimStart(viewport terminalGridViewport, neededRows int) int {
+	if neededRows <= 0 || len(viewport.Rows) <= neededRows {
+		return 0
+	}
+	start := len(viewport.Rows) - neededRows
+	for start > 0 && boolAt(viewport.Wrapped, start-1) {
+		start--
+	}
+	return start
+}
+
+func trimTerminalGridViewportPrefix(result *terminalGridViewport, start int) {
+	if result == nil || start <= 0 {
+		return
+	}
+	if start >= len(result.Rows) {
+		result.Rows = nil
+		result.Timestamps = nil
+		result.RowKinds = nil
+		result.Wrapped = nil
+		result.Ownership = nil
+		result.LoadedRows = 0
+		result.FirstRowID = 0
+		result.LastRowID = 0
+		return
+	}
+	result.Rows = cloneVTermCellRows(result.Rows[start:])
+	result.Timestamps = cloneTimeSlice(result.Timestamps[start:])
+	result.RowKinds = cloneStringSlice(result.RowKinds[start:])
+	result.Wrapped = cloneBoolSlice(result.Wrapped[start:])
+	result.Ownership = cloneStringSlice(result.Ownership[start:])
+	result.LoadedRows = len(result.Rows)
+}
+
+func cloneVTermCellRows(rows [][]vterm.Cell) [][]vterm.Cell {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([][]vterm.Cell, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, cloneVTermCells(row))
+	}
+	return out
+}
+
 func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalGridRowRef, int, bool, error) {
 	s.mu.Lock()
 	total := s.rowCount

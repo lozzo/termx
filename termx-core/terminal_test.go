@@ -1729,7 +1729,7 @@ func TestTerminalGridResizeDamagePreservesStressTailRows(t *testing.T) {
 			vt.DisableEmulatorScrollback()
 			store := newMemoryTerminalGridStoreForTest(t)
 			defer store.Close()
-			term := &Terminal{id: "resize-stress", grid: store}
+			term := &Terminal{id: "resize-stress", size: Size{Cols: 32, Rows: 8}, vterm: vt, grid: store}
 
 			for i := 1; i <= lineCount; i++ {
 				suffix := "\r\n"
@@ -1738,9 +1738,10 @@ func TestTerminalGridResizeDamagePreservesStressTailRows(t *testing.T) {
 				}
 				writeVTermDamageToGrid(t, term, vt, fmt.Sprintf("stress-%06d payload%s", i, suffix))
 			}
+			term.size = Size{Cols: 16, Rows: 4}
 			term.appendGridFromDamageLocked(vt.ResizeWithDamage(16, 4))
 
-			rows := gridAndScreenRowTexts(t, store, vt, 16, 250)
+			rows := terminalProjectionRowTexts(term, 16, 250)
 			for i := lineCount - 15; i <= lineCount; i++ {
 				needle := fmt.Sprintf("stress-%06d", i)
 				if !stringRowsContain(rows, needle) {
@@ -1756,9 +1757,10 @@ func TestTerminalGridResizeDamageKeepsWrappedContinuity(t *testing.T) {
 	vt.DisableEmulatorScrollback()
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
-	term := &Terminal{id: "resize-wrapped", grid: store}
+	term := &Terminal{id: "resize-wrapped", size: Size{Cols: 5, Rows: 2}, vterm: vt, grid: store}
 
 	writeVTermDamageToGrid(t, term, vt, "abcdefghij")
+	term.size = Size{Cols: 4, Rows: 1}
 	term.appendGridFromDamageLocked(vt.ResizeWithDamage(4, 1))
 
 	screenRows := vtermRowsToStrings(vt.ScreenContent().Cells)
@@ -1766,16 +1768,19 @@ func TestTerminalGridResizeDamageKeepsWrappedContinuity(t *testing.T) {
 		t.Fatalf("test setup expected visible suffix on screen, got %#v wrapped=%#v", screenRows, vt.ScreenWrapped())
 	}
 
-	viewport, err := store.Viewport(0, 10, 4)
-	if err != nil {
-		t.Fatalf("read resize grid viewport: %v", err)
+	if got := store.RowCount(); got != 0 {
+		t.Fatalf("expected resize full-replace not to create persisted history, got %d rows", got)
 	}
-	gotRows := vtermRowsToStrings(viewport.Rows)
+	viewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 0, ScrollbackLimit: 10, Cols: 4})
+	if viewport == nil {
+		t.Fatal("expected latest viewport")
+	}
+	gotRows := rowsToStrings(viewport.Rows)
 	if !reflect.DeepEqual(gotRows, []string{"abcd", "efgh"}) {
-		t.Fatalf("expected grid store to contain only wrapped prefix displaced from screen, got rows=%#v wrapped=%#v", gotRows, viewport.Wrapped)
+		t.Fatalf("expected latest projection to contain wrapped prefix displaced from screen, got rows=%#v wrapped=%#v", gotRows, viewport.ScrollbackWrapped)
 	}
-	if len(viewport.Wrapped) < 2 || !viewport.Wrapped[0] || !viewport.Wrapped[1] {
-		t.Fatalf("expected wrapped metadata to keep logical line continuity, got %#v", viewport.Wrapped)
+	if len(viewport.ScrollbackWrapped) < 2 || !viewport.ScrollbackWrapped[0] || !viewport.ScrollbackWrapped[1] {
+		t.Fatalf("expected wrapped metadata to keep logical line continuity, got %#v", viewport.ScrollbackWrapped)
 	}
 }
 
@@ -1794,16 +1799,19 @@ func TestTerminalGridResizeDamageDoesNotPersistVisibleSuffix(t *testing.T) {
 	writeVTermDamageToGrid(t, term, vt, "abcdefghi")
 	term.appendGridFromDamageLocked(vt.ResizeWithDamage(4, 2))
 
-	viewport, err := store.Viewport(0, 10, 4)
-	if err != nil {
-		t.Fatalf("read resize grid viewport: %v", err)
+	if got := store.RowCount(); got != 0 {
+		t.Fatalf("expected resize full-replace not to create persisted history, got %d rows", got)
 	}
-	gotRows := vtermRowsToStrings(viewport.Rows)
+	viewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 0, ScrollbackLimit: 10, Cols: 4})
+	if viewport == nil {
+		t.Fatal("expected latest viewport")
+	}
+	gotRows := rowsToStrings(viewport.Rows)
 	if !reflect.DeepEqual(gotRows, []string{"abcd"}) {
-		t.Fatalf("expected grid store to contain only rows displaced from screen, got rows=%#v wrapped=%#v", gotRows, viewport.Wrapped)
+		t.Fatalf("expected latest projection to contain rows displaced from screen, got rows=%#v wrapped=%#v", gotRows, viewport.ScrollbackWrapped)
 	}
-	if len(viewport.Wrapped) < 1 || !viewport.Wrapped[0] {
-		t.Fatalf("expected stored prefix to keep wrapped continuation into screen, got %#v", viewport.Wrapped)
+	if len(viewport.ScrollbackWrapped) < 1 || !viewport.ScrollbackWrapped[0] {
+		t.Fatalf("expected projected prefix to keep wrapped continuation into screen, got %#v", viewport.ScrollbackWrapped)
 	}
 
 	snapshot := term.Snapshot(0, 10)
@@ -2045,6 +2053,98 @@ func TestTerminalLatestProjectionUsesPersistedAndLiveTailAppendRows(t *testing.T
 	}
 }
 
+func TestTerminalLatestGridViewportDoesNotDuplicatePersistedRowsCoveredByLiveTail(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "latest-no-duplicate-live-tail",
+		size:  Size{Cols: 8, Rows: 4},
+		vterm: localvterm.New(8, 4, 0, nil),
+		grid:  store,
+	}
+	term.vterm.DisableEmulatorScrollback()
+	for i := 0; i <= 100; i++ {
+		if err := store.appendRows([]terminalGridRow{{cells: localVTermCellsFromString(fmt.Sprintf("l%06d", i))}}); err != nil {
+			t.Fatalf("append row %d: %v", i, err)
+		}
+	}
+	term.primaryLiveTail.replaceReclaimedPrefix([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("l000094"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("l000095"), WrappedSet: true, Wrapped: false},
+	}, 1, 94, 95)
+	term.primaryLiveTail.replaceLiveRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("l000096"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("l000097"), WrappedSet: true, Wrapped: false},
+	}, false)
+
+	viewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 0, ScrollbackLimit: 120, Cols: 80})
+	if viewport == nil {
+		t.Fatal("expected viewport")
+	}
+	gotRows := rowsToStrings(viewport.Rows)
+	counts := map[string]int{}
+	for _, row := range gotRows {
+		if strings.HasPrefix(row, "l") {
+			counts[row]++
+		}
+	}
+	for i := 0; i <= 97; i++ {
+		label := fmt.Sprintf("l%06d", i)
+		if counts[label] != 1 {
+			t.Fatalf("expected %s exactly once in latest viewport, got count=%d rows=%#v", label, counts[label], gotRows)
+		}
+	}
+	if counts["l000098"] != 0 || counts["l000099"] != 0 || counts["l000100"] != 0 {
+		t.Fatalf("expected live-tail-covered persisted suffix to hide newer persisted rows, counts=%#v rows=%#v", counts, gotRows)
+	}
+}
+
+func TestTerminalReclaimDropsResizeProjectionSegment(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "reclaim-drops-resize-projection",
+		size:  Size{Cols: 8, Rows: 4},
+		vterm: localvterm.New(8, 4, 0, nil),
+		grid:  store,
+	}
+	term.vterm.DisableEmulatorScrollback()
+	for i := 80; i <= 95; i++ {
+		if err := store.appendRows([]terminalGridRow{{cells: localVTermCellsFromString(fmt.Sprintf("l%06d", i))}}); err != nil {
+			t.Fatalf("append row %d: %v", i, err)
+		}
+	}
+	term.primaryLiveTail.replaceResizeRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("l000085"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("l000086"), WrappedSet: true, Wrapped: false},
+	}, false)
+	term.primaryLiveTail.replaceReclaimedPrefix([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("l000083"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("l000084"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("l000085"), WrappedSet: true, Wrapped: false},
+	}, 1, 3, 5)
+
+	viewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 0, ScrollbackLimit: 40, Cols: 8})
+	if viewport == nil {
+		t.Fatal("expected viewport")
+	}
+	gotRows := rowsToStrings(viewport.Rows)
+	counts := map[string]int{}
+	for _, row := range gotRows {
+		if strings.HasPrefix(row, "l") {
+			counts[row]++
+		}
+	}
+	for _, label := range []string{"l000083", "l000084", "l000085"} {
+		if counts[label] != 1 {
+			t.Fatalf("expected reclaimed %s exactly once after dropping resize projection, count=%d rows=%#v", label, counts[label], gotRows)
+		}
+	}
+	if counts["l000086"] != 1 {
+		t.Fatalf("expected non-overlapping resize projection row to remain once, count=%d rows=%#v", counts["l000086"], gotRows)
+	}
+}
+
 func TestTerminalOlderViewportIgnoresLatestLiveTailAppendRows(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
@@ -2131,25 +2231,26 @@ func TestTerminalGridResizeDamagePreservesWideAndQRLikeRows(t *testing.T) {
 	}, localvterm.CursorState{Row: 2, Col: 4, Visible: true}, localvterm.TerminalModes{AutoWrap: true})
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
-	term := &Terminal{id: "resize-wide", grid: store}
+	term := &Terminal{id: "resize-wide", size: Size{Cols: 8, Rows: 3}, vterm: vt, grid: store}
 
+	term.size = Size{Cols: 4, Rows: 1}
 	term.appendGridFromDamageLocked(vt.ResizeWithDamage(4, 1))
-	viewport, err := store.Viewport(0, 10, 4)
-	if err != nil {
-		t.Fatalf("read resize grid viewport: %v", err)
+	viewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 0, ScrollbackLimit: 10, Cols: 4})
+	if viewport == nil {
+		t.Fatal("expected latest viewport")
 	}
-	gotRows := vtermRowsToStrings(viewport.Rows)
+	gotRows := rowsToStrings(viewport.Rows)
 	if !stringRowsContain(gotRows, "你好") || !stringRowsContain(gotRows, "A") || !stringRowsContain(gotRows, "qr-#") {
-		t.Fatalf("expected wide and qr-like content in grid store, got %#v", gotRows)
+		t.Fatalf("expected wide and qr-like content in latest projection, got %#v", gotRows)
 	}
 	if len(viewport.Rows) == 0 || len(viewport.Rows[0]) < 4 {
 		t.Fatalf("expected decoded wide row cells, got %#v", viewport.Rows)
 	}
 	if got := viewport.Rows[0][0]; got.Content != "你" || got.Width != 2 {
-		t.Fatalf("expected wide anchor preserved in grid store, got %#v", got)
+		t.Fatalf("expected wide anchor preserved in latest projection, got %#v", got)
 	}
 	if got := viewport.Rows[0][1]; got.Content != "" || got.Width != 0 {
-		t.Fatalf("expected wide continuation preserved in grid store, got %#v", got)
+		t.Fatalf("expected wide continuation preserved in latest projection, got %#v", got)
 	}
 }
 
@@ -3345,6 +3446,19 @@ func terminalGridPageFilesForTest(t *testing.T, dir string) []string {
 	}
 	sort.Strings(pages)
 	return pages
+}
+
+func terminalProjectionRowTexts(term *Terminal, cols int, limit int) []string {
+	viewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 0, ScrollbackLimit: limit, Cols: cols})
+	if viewport == nil {
+		return nil
+	}
+	rows := rowsToStrings(viewport.Rows)
+	if term != nil && term.vterm != nil {
+		screen := term.vterm.ScreenContent()
+		rows = append(rows, vtermRowsToStrings(screen.Cells)...)
+	}
+	return rows
 }
 
 func gridAndScreenRowTexts(t *testing.T, store *terminalGridStore, vt *localvterm.VTerm, cols int, limit int) []string {

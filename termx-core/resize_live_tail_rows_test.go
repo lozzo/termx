@@ -31,15 +31,11 @@ func TestTerminalResizeFullReplaceUsesExplicitResizeLiveTailRows(t *testing.T) {
 	setResizeLiveTailRowsForTest(t, &damage, 1)
 	term.appendGridFromDamageLocked(damage)
 
-	viewport, err := store.Viewport(0, 10, 4)
-	if err != nil {
-		t.Fatalf("read persisted viewport: %v", err)
+	if got := store.RowCount(); got != 0 {
+		t.Fatalf("expected resize full-replace not to create persisted history, got %d rows", got)
 	}
-	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"hist"}) {
-		t.Fatalf("expected only persisted committed rows persisted, got %#v", got)
-	}
-	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"tail"}) {
-		t.Fatalf("expected explicit resize live-tail rows to stay display-only, got %#v", got)
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"hist", "tail"}) {
+		t.Fatalf("expected explicit resize rows to stay display-only live-tail projection, got %#v", got)
 	}
 
 	snapshot := term.Snapshot(0, 10)
@@ -77,7 +73,7 @@ func TestTerminalResizeFullReplacePrefersExplicitResizeLiveTailRowsOverWrappedFa
 		id:   "resize-explicit-priority",
 		grid: store,
 	}
-	term.primaryLiveTail.replaceRows([]localvterm.DamageOp{{Cells: localVTermCellsFromString("oldtail"), WrappedSet: true, Wrapped: true}}, terminalLiveTailOriginLive, false)
+	term.primaryLiveTail.replaceRows([]localvterm.DamageOp{{Cells: localVTermCellsFromString("oldtail"), WrappedSet: true, Wrapped: true}}, terminalLiveTailOriginLive, true)
 
 	damage := localvterm.WriteDamage{
 		ScrollbackAppend: []localvterm.DamageOp{
@@ -90,15 +86,11 @@ func TestTerminalResizeFullReplacePrefersExplicitResizeLiveTailRowsOverWrappedFa
 	setResizeLiveTailRowsForTest(t, &damage, 0)
 	term.appendGridFromDamageLocked(damage)
 
-	viewport, err := store.Viewport(0, 10, 4)
-	if err != nil {
-		t.Fatalf("read viewport: %v", err)
+	if got := store.RowCount(); got != 0 {
+		t.Fatalf("expected resize full-replace not to create persisted history, got %d rows", got)
 	}
-	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"hist", "tail"}) {
-		t.Fatalf("expected explicit resize field to override wrapped fallback and persist all rows, got %#v", got)
-	}
-	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"oldtail"}) {
-		t.Fatalf("expected explicit resize field to leave existing live-tail prefix intact while keeping new rows persisted, got %#v", got)
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"oldtail", "hist", "tail"}) {
+		t.Fatalf("expected explicit resize rows to append to existing open live-tail prefix, got %#v", got)
 	}
 }
 
@@ -109,7 +101,7 @@ func TestTerminalResizeFullReplaceFallsBackWhenExplicitResizeLiveTailRowsMissing
 		id:   "resize-fallback-missing",
 		grid: store,
 	}
-	term.primaryLiveTail.replaceRows([]localvterm.DamageOp{{Cells: localVTermCellsFromString("oldtail"), WrappedSet: true, Wrapped: true}}, terminalLiveTailOriginLive, false)
+	term.primaryLiveTail.replaceRows([]localvterm.DamageOp{{Cells: localVTermCellsFromString("oldtail"), WrappedSet: true, Wrapped: true}}, terminalLiveTailOriginLive, true)
 
 	damage := localvterm.WriteDamage{
 		ScrollbackAppend: []localvterm.DamageOp{
@@ -130,7 +122,35 @@ func TestTerminalResizeFullReplaceFallsBackWhenExplicitResizeLiveTailRowsMissing
 		t.Fatalf("expected legacy resize fallback to avoid committing rows when explicit field is absent, got %#v", vtermRowsToStrings(viewport.Rows))
 	}
 	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"oldtail", "hist", "tail"}) {
-		t.Fatalf("expected legacy resize fallback to keep full append display-only, got %#v", got)
+		t.Fatalf("expected legacy resize fallback to preserve ordinary open live-tail prefix, got %#v", got)
+	}
+}
+
+func TestTerminalResizeFullReplaceRepeatedFallbackReplacesLiveTail(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:   "resize-repeated-fallback-replaces",
+		grid: store,
+	}
+	term.primaryLiveTail.replaceResizeRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("old0"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("old1"), WrappedSet: true, Wrapped: true},
+	}, false)
+
+	damage := localvterm.WriteDamage{
+		ScrollbackAppend: []localvterm.DamageOp{
+			{Cells: localVTermCellsFromString("new0"), WrappedSet: true, Wrapped: true},
+			{Cells: localVTermCellsFromString("new1"), WrappedSet: true, Wrapped: true},
+		},
+		RequiresFullReplace: true,
+		FullReplaceReason:   "resize",
+	}
+	clearResizeLiveTailRowsForTest(t, &damage)
+	term.appendGridFromDamageLocked(damage)
+
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"new0", "new1"}) {
+		t.Fatalf("expected repeated resize fallback to replace stale live tail, got %#v", got)
 	}
 }
 
