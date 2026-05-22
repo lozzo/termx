@@ -138,6 +138,23 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 		return m.sharedTerminalSnapshotResyncCmd(typed.terminalID), true
 	case sequenceMsg:
 		return m.nextSequenceCmd(typed), true
+	case sequenceStepMsg:
+		cmds := make([]tea.Cmd, 0, 2)
+		if cmd, ok := m.handleInteractionMessage(typed.Message); ok {
+			cmds = append(cmds, cmd)
+		} else if cmd, ok := m.handleUIStateMessage(typed.Message); ok {
+			cmds = append(cmds, cmd)
+		} else if cmd, ok := m.handleTerminalEventMessage(typed.Message); ok {
+			cmds = append(cmds, cmd)
+		} else if cmd, ok := m.handleSessionMessage(typed.Message); ok {
+			cmds = append(cmds, cmd)
+		} else if cmd, ok := m.handleLifecycleMessage(typed.Message); ok {
+			cmds = append(cmds, cmd)
+		}
+		if len(typed.Rest) > 0 {
+			cmds = append(cmds, m.nextSequenceCmd(typed.Rest))
+		}
+		return batchCmds(cmds...), true
 	case copyModeAutoScrollMsg:
 		return m.handleCopyModeAutoScroll(typed.seq), true
 	default:

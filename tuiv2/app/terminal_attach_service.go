@@ -228,7 +228,27 @@ func (s *terminalAttachService) handleAttachedMsg(attached orchestrator.Terminal
 		s.model.closeModal(input.ModePicker, s.model.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 	}
 	s.model.render.Invalidate()
-	return batchCmds(s.model.saveStateCmd(), s.finalizeAttachCmd(attached.TabID, attached.PaneID, attached.TerminalID))
+	return batchCmds(s.model.saveStateCmd(), s.finalizeAttachCmd(attached.TabID, attached.PaneID, attached.TerminalID), s.sessionOwnerTakeoverCmd(attached))
+}
+
+func (s *terminalAttachService) sessionOwnerTakeoverCmd(attached orchestrator.TerminalAttachedMsg) tea.Cmd {
+	if s == nil || s.model == nil || s.model.sessionID == "" || attached.PaneID == "" || attached.TerminalID == "" {
+		return nil
+	}
+	tab := s.model.workbench.CurrentTab()
+	if tab == nil || tab.ActivePaneID != attached.PaneID {
+		return nil
+	}
+	terminal := s.model.runtime.Registry().Get(attached.TerminalID)
+	if terminal == nil || len(terminal.BoundPaneIDs) < 2 {
+		return nil
+	}
+	return s.model.syncTerminalInteractionCmd(terminalInteractionRequest{
+		PaneID:           attached.PaneID,
+		TerminalID:       attached.TerminalID,
+		ResizeIfNeeded:   true,
+		ExplicitTakeover: true,
+	})
 }
 
 func (s *terminalAttachService) attachMsg(req terminalAttachRequest) tea.Msg {

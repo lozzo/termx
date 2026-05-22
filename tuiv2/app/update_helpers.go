@@ -363,7 +363,7 @@ func (m *Model) copyModeScrollbackCmd(buffer copyModeBuffer, force bool) tea.Cmd
 	}
 	terminal.CommittedLoadingDepth = nextLimit
 	m.setHistoryLoadingOwner(pane.TerminalID, nextLimit, historyLoadingOwnerCopyMode)
-	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, terminalCanonicalCols(terminal), true)
+	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, copyModeHistoryViewportCols(buffer, terminal), true)
 }
 
 func terminalCanonicalCols(terminal *appruntime.TerminalRuntime) int {
@@ -383,6 +383,13 @@ func terminalCanonicalCols(terminal *appruntime.TerminalRuntime) int {
 		return int(terminal.ResizeOwnership.Size.Cols)
 	}
 	return 0
+}
+
+func copyModeHistoryViewportCols(buffer copyModeBuffer, terminal *appruntime.TerminalRuntime) int {
+	if buffer.snapshot != nil && buffer.snapshot.Size.Cols > 0 {
+		return int(buffer.snapshot.Size.Cols)
+	}
+	return terminalCanonicalCols(terminal)
 }
 
 func terminalLiveCommittedLoadedDepth(terminal *appruntime.TerminalRuntime) int {

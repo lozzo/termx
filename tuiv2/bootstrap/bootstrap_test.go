@@ -536,3 +536,47 @@ func TestRestoreOrStartupRestoresPersistedStateWithoutOpeningPicker(t *testing.T
 		t.Fatalf("expected restored workspace main, got %#v", current)
 	}
 }
+
+func TestRestoreOrStartupReattachHintsStartWithActivePane(t *testing.T) {
+	source := newWB()
+	source.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:   "tab-1",
+			Name: "1",
+			Panes: map[string]*workbench.PaneState{
+				"1": {ID: "1", TerminalID: "term-main"},
+				"2": {ID: "2", TerminalID: "term-shared"},
+				"3": {ID: "3", TerminalID: "term-shared"},
+			},
+			Root:            workbench.NewLeaf("1"),
+			FloatingVisible: true,
+			Floating: []*workbench.FloatingState{
+				{PaneID: "2", Rect: workbench.Rect{X: 4, Y: 2, W: 30, H: 8}, Z: 0, Display: workbench.FloatingDisplayExpanded},
+				{PaneID: "3", Rect: workbench.Rect{X: 10, Y: 6, W: 24, H: 8}, Z: 1, Display: workbench.FloatingDisplayExpanded},
+			},
+			ActivePaneID: "3",
+		}},
+	})
+
+	data, err := persist.Save(source)
+	if err != nil {
+		t.Fatalf("Save returned unexpected error: %v", err)
+	}
+
+	wb := newWB()
+	result, err := bootstrap.RestoreOrStartup(data, bootstrap.Config{}, wb, nil)
+	if err != nil {
+		t.Fatalf("RestoreOrStartup returned unexpected error: %v", err)
+	}
+	if len(result.PanesToReattach) != 3 {
+		t.Fatalf("expected 3 reattach hints, got %#v", result.PanesToReattach)
+	}
+	if got := result.PanesToReattach[0].PaneID; got != "3" {
+		t.Fatalf("expected active pane to reattach first for stable owner restore, got order %#v", result.PanesToReattach)
+	}
+	if got := result.PanesToReattach[0].TerminalID; got != "term-shared" {
+		t.Fatalf("expected active shared terminal to reattach first, got %#v", result.PanesToReattach[0])
+	}
+}

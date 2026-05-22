@@ -2011,7 +2011,7 @@ func (s *Server) handleRequest(
 		attachmentID := fmt.Sprintf("%s:%d", remote, ch)
 		surfaceID := normalizeResizeSurfaceID(params.SurfaceID, attachmentID)
 		viewID := strings.TrimSpace(params.ViewID)
-		resizeControl, err := terminalResizeControl(term, attachmentID, surfaceID, viewID, AttachMode(params.Mode), params.ResizePolicy)
+		resizeControl, err := terminalAttachResizeControl(term, attachmentID, surfaceID, viewID, AttachMode(params.Mode), params.ResizePolicy)
 		if err != nil {
 			allocator.Free(ch)
 			return nil, 400, err
@@ -2345,6 +2345,22 @@ func terminalResizeControl(term *Terminal, attachmentID, surfaceID, viewID strin
 		Reason:    protocol.ResizeControlReasonOwner,
 		SurfaceID: surfaceID,
 	}, term, surfaceID), nil
+}
+
+func terminalAttachResizeControl(term *Terminal, attachmentID, surfaceID, viewID string, mode AttachMode, policy string) (protocol.ResizeControl, error) {
+	control, err := terminalResizeControl(term, attachmentID, surfaceID, viewID, mode, policy)
+	if err != nil {
+		return protocol.ResizeControl{}, err
+	}
+	if !control.CanResize || mode != ModeCollaborator || term == nil || term.SizeLocked() {
+		return control, nil
+	}
+	if ownership := terminalProtocolResizeOwnership(term); ownership != nil && strings.TrimSpace(ownership.OwnerSurfaceID) != "" {
+		control.CanResize = false
+		control.Reason = protocol.ResizeControlReasonFollower
+		return withResizeOwnership(control, term, surfaceID), nil
+	}
+	return control, nil
 }
 
 func normalizeResizeSurfaceID(surfaceID, fallback string) string {

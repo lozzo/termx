@@ -153,38 +153,6 @@ func isRevisionConflict(err error) bool {
 
 func (m *Model) exportSessionWorkbench() *sessiondoc.Doc {
 	doc := workbenchcodec.ExportWorkbench(m.workbench)
-	if m == nil || doc == nil || m.sessionSharedDoc == nil {
-		return doc
-	}
-	doc.CurrentWorkspace = m.sessionSharedDoc.CurrentWorkspace
-	for wsName, ws := range doc.Workspaces {
-		if ws == nil {
-			continue
-		}
-		baseWS := m.sessionSharedDoc.Workspaces[wsName]
-		if baseWS == nil {
-			continue
-		}
-		ws.ActiveTab = baseWS.ActiveTab
-		baseTabs := make(map[string]*sessiondoc.Tab, len(baseWS.Tabs))
-		for _, tab := range baseWS.Tabs {
-			if tab != nil {
-				baseTabs[tab.ID] = tab
-			}
-		}
-		for _, tab := range ws.Tabs {
-			if tab == nil {
-				continue
-			}
-			baseTab := baseTabs[tab.ID]
-			if baseTab == nil {
-				continue
-			}
-			tab.ActivePaneID = baseTab.ActivePaneID
-			tab.ZoomedPaneID = baseTab.ZoomedPaneID
-			tab.ScrollOffset = baseTab.ScrollOffset
-		}
-	}
 	return doc
 }
 

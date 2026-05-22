@@ -80,7 +80,12 @@ func (m *Model) nextSequenceCmd(seq sequenceMsg) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		return seq[0]
+		head := seq[0]
+		tail := append(sequenceMsg(nil), seq[1:]...)
+		if len(tail) == 0 {
+			return head
+		}
+		return sequenceStepMsg{Message: head, Rest: tail}
 	}
 }
 
@@ -132,10 +137,32 @@ func (m *Model) reattachRestoredPanesCmd(hints []bootstrap.PaneReattachHint) tea
 	if len(cmds) == 0 {
 		return nil
 	}
-	return tea.Batch(cmds...)
+	return func() tea.Msg {
+		msgs := make(sequenceMsg, 0, len(cmds))
+		for _, cmd := range cmds {
+			if cmd == nil {
+				continue
+			}
+			if msg := cmd(); msg != nil {
+				msgs = append(msgs, msg)
+			}
+		}
+		if len(msgs) == 0 {
+			return nil
+		}
+		if len(msgs) == 1 {
+			return msgs[0]
+		}
+		return msgs
+	}
 }
 
 type sequenceMsg []any
+
+type sequenceStepMsg struct {
+	Message any
+	Rest    sequenceMsg
+}
 
 func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 	service := m.layoutResizeService()

@@ -1181,6 +1181,69 @@ func TestAttachResizeControlPolicyAndSizeLock(t *testing.T) {
 	}
 }
 
+func TestAttachDefaultCollaboratorPreservesExistingResizeOwner(t *testing.T) {
+	ctx := context.Background()
+	srv := NewServer(WithDefaultKeepAfterExit(10 * time.Second))
+	info, err := srv.Create(ctx, CreateOptions{
+		ID:      "attach-preserve-owner",
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+
+	allocator := protocol.NewChannelAllocator()
+	attachments := make(map[uint16]*sessionAttachment)
+	var attachmentsMu sync.RWMutex
+	sendFrame := func(uint16, uint8, []byte) error { return nil }
+
+	owner := mustAttachChannel(t, srv, ctx, "memory-owner", allocator, attachments, &attachmentsMu, info.ID, string(ModeCollaborator), sendFrame)
+	result, _, err := srv.handleRequest(ctx, "memory-follower", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
+		ID:     1,
+		Method: "attach",
+		Params: mustProtoParams(t, protocol.AttachParams{
+			TerminalID:   info.ID,
+			Mode:         string(ModeCollaborator),
+			ResizePolicy: protocol.ResizePolicyOwner,
+		}),
+	}, sendFrame)
+	if err != nil {
+		t.Fatalf("second attach failed: %v", err)
+	}
+	var follower protocol.AttachResult
+	if err := decodeProtocolResult(t, "attach", result, &follower); err != nil {
+		t.Fatalf("decode attach result failed: %v", err)
+	}
+	if follower.ResizeControl == nil || follower.ResizeControl.CanResize || follower.ResizeControl.Reason != protocol.ResizeControlReasonFollower {
+		t.Fatalf("expected second default collaborator to attach as follower, got %#v", follower.ResizeControl)
+	}
+	if follower.ResizeControl.ResizeOwnership == nil || follower.ResizeControl.ResizeOwnership.OwnerSurfaceID == "" {
+		t.Fatalf("expected follower attach to report existing owner, got %#v", follower.ResizeControl)
+	}
+
+	attachmentsMu.RLock()
+	ownerAttachment := attachments[owner]
+	followerAttachment := attachments[follower.Channel]
+	attachmentsMu.RUnlock()
+	if ownerAttachment == nil || !ownerAttachment.canResize() {
+		t.Fatalf("expected first attachment to remain resize owner, got %#v", ownerAttachment)
+	}
+	if followerAttachment == nil || followerAttachment.canResize() {
+		t.Fatalf("expected second attachment to be follower, got %#v", followerAttachment)
+	}
+	attached, err := srv.Attached(ctx, info.ID)
+	if err != nil {
+		t.Fatalf("attached failed: %v", err)
+	}
+	if len(attached) != 2 || resizeOwnerAttachInfoCount(attached) != 1 {
+		t.Fatalf("expected exactly one resize owner after default second attach, got %#v", attached)
+	}
+}
+
 func TestTerminalInfoTracksResizeOwnerAttachments(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -12,7 +12,7 @@ Run the isolated TermX + tmux history smoke flow:
   -> reattach -> capture
 
 Options:
-  --scenario NAME       scenario to run: baseline | standard | deep-hot | floating-owner-resize; default baseline
+  --scenario NAME       scenario to run: baseline | standard | deep-hot | floating-owner-resize | floating-owner-reattach-history; default baseline
   --root PATH           artifact root; default is a new /tmp directory
   --bin PATH            existing termx binary to use; default builds into ROOT/termx
   --lines N             stress line count; default 1000
@@ -60,6 +60,11 @@ Artifacts:
     floating-resized.raw.txt
     floating-resized.termx-ls.txt
     floating-owner-resize.resize.summary.txt
+  floating-owner-reattach-history:
+    floating-reattach-live.txt
+    floating-reattach-copy-top.txt
+    floating-reattach-copy-top.gridtrace.summary.txt
+    floating-owner-reattach-history.resize.summary.txt
 EOF
 }
 
@@ -932,6 +937,60 @@ assert_first_match_equals() {
   fi
 }
 
+assert_stress_history_label_order() {
+  local file="$1"
+  python3 - "$file" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+pattern = re.compile(r"(?<![0-9])([0-9]{6})\s+\[[A-Z ]{6}\]")
+labels = []
+with open(path, "r", encoding="utf-8", errors="replace") as fh:
+    for line in fh:
+        match = pattern.search(line)
+        if match:
+            labels.append(int(match.group(1)))
+
+if len(labels) < 5:
+    raise SystemExit(f"expected at least 5 stress labels in {path}, got {labels!r}")
+try:
+    start = labels.index(0)
+except ValueError:
+    raise SystemExit(f"expected visible top history label 000000 in {path}, got labels={labels!r}")
+focused = labels[start:]
+if len(focused) < 5:
+    raise SystemExit(f"expected at least 5 stress labels after 000000 in {path}, got {focused!r}; all={labels!r}")
+for prev, cur in zip(focused, focused[1:]):
+    if cur < prev:
+        raise SystemExit(f"stress labels went backwards in {path}: {prev:06d} -> {cur:06d}; labels={focused!r}; all={labels!r}")
+PY
+}
+
+assert_gridtrace_single_requested_cols() {
+  local file="$1"
+  python3 - "$file" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+cols = []
+with open(path, "r", encoding="utf-8", errors="replace") as fh:
+    for line in fh:
+        if "runtime.load_grid_viewport" not in line:
+            continue
+        match = re.search(r'requested_cols="([0-9]+)"', line)
+        if match:
+            cols.append(int(match.group(1)))
+
+if not cols:
+    raise SystemExit(f"expected runtime.load_grid_viewport requested_cols in {path}")
+unique = sorted(set(cols))
+if len(unique) != 1:
+    raise SystemExit(f"expected one requested_cols value in {path}, got {unique!r}; all={cols!r}")
+PY
+}
+
 wait_log_regex_count_at_least() {
   local regex="$1"
   local expected="$2"
@@ -1006,7 +1065,7 @@ build_bin_if_needed() {
 
 build_generator_command() {
   case "$SCENARIO" in
-    baseline|standard|floating-owner-resize)
+    baseline|standard|floating-owner-resize|floating-owner-reattach-history)
       printf 'python3 %q --lines %q --seed %q --width-hint %q; exec cat' \
         "$REPO_ROOT/scripts/generate_terminal_stress.py" "$LINES" "$SEED" "$WIDTH_HINT"
       ;;
@@ -1190,11 +1249,90 @@ run_floating_owner_resize_scenario() {
   log "PASS floating-owner-resize log -> $ROOT/floating-owner-resize.resize.summary.txt"
 }
 
+run_floating_owner_reattach_history_scenario() {
+  local pane_main
+  local pane_reattach
+  local key
+
+  start_attach_tmux_session "$SESSION_MAIN" "$TERM_ID" "floating-owner-reattach"
+  pane_main="$ATTACH_SESSION_PANE"
+  CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-reattach-base" "grid-stress"
+  write_termx_inventory_artifact "floating-reattach-base"
+
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-reattach-manager.global-mode" C-g
+  sleep "$G_DELAY"
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-reattach-manager.open" t
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-reattach-manager" "TERMINALS"
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-reattach-manager-ready" "grid-stress"
+
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-reattach-attach" C-o
+  wait_log_regex_count_at_least 'server attached terminal' 2
+  sleep 0.5
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-reattach-attached" "grid-stress"
+
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-reattach-mode.enter" C-o
+  sleep "$G_DELAY"
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-reattach-owner.take" a
+  wait_log_regex_count_at_least 'msg="termx protocol request started".*method=ensure_resize' 2
+  sleep 0.5
+  capture_session "$SESSION_MAIN" "$pane_main" "floating-reattach-owned"
+
+  for key in L L L L J J; do
+    send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-reattach-resize.$key" "$key"
+    sleep "$G_DELAY"
+  done
+  wait_log_regex_count_at_least 'msg="termx protocol request started".*method=ensure_resize' 3
+  sleep 0.5
+  capture_session "$SESSION_MAIN" "$pane_main" "floating-reattach-resized"
+  write_termx_inventory_artifact "floating-reattach-resized"
+
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-reattach-quit.global-mode" C-g
+  sleep "$G_DELAY"
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-reattach-quit.quit" q
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-reattach-exited" "[tmux-history-smoke] attach exited status=0"
+  stop_tmux_client "$CLIENT_MAIN_PID"
+  CLIENT_MAIN_PID=""
+  cleanup_tmux_session "$SESSION_MAIN"
+
+  start_attach_tmux_session "$SESSION_REATTACH" "$TERM_ID" "floating-owner-reenter"
+  pane_reattach="$ATTACH_SESSION_PANE"
+  CLIENT_REATTACH_PID="$ATTACH_SESSION_CLIENT_PID"
+  capture_until_contains "$SESSION_REATTACH" "$pane_reattach" "floating-reattach-live" "grid-stress"
+  write_termx_inventory_artifact "floating-reattach-live"
+
+  if ! enter_copy_mode_and_repeat_top_until_contains "$SESSION_REATTACH" "$pane_reattach" "floating-reattach-copy-top" "000000" "$G_REPEATS"; then
+    copy_gridtrace_artifact "$SESSION_REATTACH" "floating-reattach-copy-top"
+    return 1
+  fi
+  copy_gridtrace_artifact "$SESSION_REATTACH" "floating-reattach-copy-top"
+  copy_resize_log_artifact "floating-owner-reattach-history"
+
+  assert_contains "$ROOT/floating-reattach-base.txt" "grid-stress"
+  assert_contains "$ROOT/floating-reattach-attached.txt" "grid-stress"
+  assert_contains "$ROOT/floating-reattach-owned.txt" "grid-stress"
+  assert_contains "$ROOT/floating-reattach-resized.txt" "grid-stress"
+  assert_contains "$ROOT/floating-reattach-exited.txt" "[tmux-history-smoke] attach exited status=0"
+  assert_contains "$ROOT/floating-reattach-live.txt" "grid-stress"
+  assert_contains "$ROOT/floating-reattach-copy-top.txt" "000000"
+  assert_stress_history_label_order "$ROOT/floating-reattach-copy-top.txt"
+  if [[ -f "$ROOT/floating-reattach-copy-top.gridtrace.summary.txt" ]]; then
+    assert_gridtrace_single_requested_cols "$ROOT/floating-reattach-copy-top.gridtrace.summary.txt"
+  fi
+  assert_regex_count_at_least "$ROOT/floating-owner-reattach-history.resize.summary.txt" 'server attached terminal' 3
+  assert_regex_count_at_least "$ROOT/floating-owner-reattach-history.resize.summary.txt" 'method=ensure_resize' 3
+  assert_terminal_size_shrunk "$ROOT/floating-reattach-base.termx-ls.txt" "$ROOT/floating-reattach-resized.termx-ls.txt" "$TERM_ID"
+
+  log "PASS floating-reattach-live -> $ROOT/floating-reattach-live.txt"
+  log "PASS floating-reattach-copy-top -> $ROOT/floating-reattach-copy-top.txt"
+  log "PASS floating-owner-reattach-history log -> $ROOT/floating-owner-reattach-history.resize.summary.txt"
+}
+
 attach_command() {
   local terminal_id="$1"
   local session_name="${2:-}"
   local trace_path=""
-  if [[ "$SCENARIO" == "deep-hot" && -n "$session_name" && "${TERMX_TMUX_HISTORY_TRACE:-0}" != "0" ]]; then
+  if [[ ( "$SCENARIO" == "deep-hot" || "$SCENARIO" == "floating-owner-reattach-history" ) && -n "$session_name" && "${TERMX_TMUX_HISTORY_TRACE:-0}" != "0" ]]; then
     trace_path="$ROOT/${session_name}.gridtrace.log"
   fi
   if [[ -n "$trace_path" ]]; then
@@ -1357,6 +1495,9 @@ main() {
       ;;
     floating-owner-resize)
       run_floating_owner_resize_scenario
+      ;;
+    floating-owner-reattach-history)
+      run_floating_owner_reattach_history_scenario
       ;;
     *)
       echo "unknown scenario: $SCENARIO" >&2

@@ -10,6 +10,7 @@ package bootstrap
 
 import (
 	"errors"
+	"sort"
 
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
@@ -131,7 +132,8 @@ func collectReattachHints(wb *workbench.Workbench) []PaneReattachHint {
 			if tab == nil {
 				continue
 			}
-			for _, pane := range tab.Panes {
+			for _, paneID := range reattachPaneOrder(tab) {
+				pane := tab.Panes[paneID]
 				if pane != nil && pane.TerminalID != "" {
 					hints = append(hints, PaneReattachHint{
 						TabID:      tab.ID,
@@ -143,4 +145,48 @@ func collectReattachHints(wb *workbench.Workbench) []PaneReattachHint {
 		}
 	}
 	return hints
+}
+
+func reattachPaneOrder(tab *workbench.TabState) []string {
+	if tab == nil || len(tab.Panes) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(tab.Panes))
+	out := make([]string, 0, len(tab.Panes))
+	appendPane := func(paneID string) {
+		if paneID == "" {
+			return
+		}
+		if _, exists := seen[paneID]; exists {
+			return
+		}
+		if tab.Panes[paneID] == nil {
+			return
+		}
+		seen[paneID] = struct{}{}
+		out = append(out, paneID)
+	}
+
+	appendPane(tab.ActivePaneID)
+	if tab.Root != nil {
+		for _, paneID := range tab.Root.LeafIDs() {
+			appendPane(paneID)
+		}
+	}
+	for _, floating := range tab.Floating {
+		if floating != nil {
+			appendPane(floating.PaneID)
+		}
+	}
+
+	extras := make([]string, 0, len(tab.Panes)-len(out))
+	for paneID := range tab.Panes {
+		if _, exists := seen[paneID]; !exists {
+			extras = append(extras, paneID)
+		}
+	}
+	sort.Slice(extras, func(i, j int) bool {
+		return shared.LessNumericStrings(extras[i], extras[j])
+	})
+	return append(out, extras...)
 }

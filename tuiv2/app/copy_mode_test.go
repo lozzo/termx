@@ -683,6 +683,42 @@ func TestCopyModeScrollbackCmdMarksSnapshotLoadedMsgAsCopyModeRequest(t *testing
 	}
 }
 
+func TestCopyModeScrollbackCmdUsesFrozenSnapshotCols(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+	client := model.runtime.Client().(*recordingBridgeClient)
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot([]string{"old0", "hist0"}, []string{"live0"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	buffer, ok := model.activeCopyModeBuffer()
+	if !ok {
+		t.Fatal("expected active copy-mode buffer")
+	}
+	if buffer.snapshot == nil {
+		t.Fatal("expected frozen copy-mode snapshot")
+	}
+	buffer.snapshot.Size.Cols = 40
+	terminal := model.runtime.Registry().Get("term-1")
+	terminal.Snapshot = cloneSnapshot(terminal.Snapshot)
+	terminal.Snapshot.Size.Cols = 120
+	model.copyMode.Snapshot.Size.Cols = 40
+	model.copyMode.Cursor = copyModePoint{Row: 0, Col: 0}
+	model.copyMode.ViewTopRow = 0
+
+	before := len(client.viewportRequests)
+	cmd := model.ensureCopyModeScrollbackCmd(buffer)
+	if cmd == nil {
+		t.Fatal("expected copy-mode history request command")
+	}
+	_ = cmd()
+	if got := len(client.viewportRequests); got != before+1 {
+		t.Fatalf("expected one viewport request, before=%d after=%d calls=%#v", before, got, client.viewportRequests)
+	}
+	if got := client.viewportRequests[len(client.viewportRequests)-1].cols; got != 40 {
+		t.Fatalf("expected copy-mode request to use frozen cols 40, got %d calls=%#v", got, client.viewportRequests)
+	}
+}
+
 func TestCopyModeKeyboardSelectionCopiesOSC52(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, []string{"alpha", "bravo"}, []string{"charl", "delta", "echoo"})

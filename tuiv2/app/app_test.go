@@ -724,6 +724,58 @@ func TestSaveStateCmdReplacesSessionWhenSessionAttached(t *testing.T) {
 	}
 }
 
+func TestExportSessionWorkbenchPersistsCurrentActivePaneForReattach(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:              "tab-1",
+			Name:            "1",
+			ActivePaneID:    "float-1",
+			FloatingVisible: true,
+			Panes: map[string]*workbench.PaneState{
+				"pane-1":  {ID: "pane-1", TerminalID: "term-1"},
+				"float-1": {ID: "float-1", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+			Floating: []*workbench.FloatingState{{
+				PaneID: "float-1",
+				Rect:   workbench.Rect{X: 10, Y: 5, W: 40, H: 12},
+				Z:      1,
+			}},
+		}},
+	})
+	model := New(shared.Config{SessionID: "main"}, wb, runtime.New(&recordingBridgeClient{}))
+	model.sessionID = "main"
+	model.sessionSharedDoc = &sessiondoc.Doc{
+		CurrentWorkspace: "main",
+		WorkspaceOrder:   []string{"main"},
+		Workspaces: map[string]*sessiondoc.Workspace{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*sessiondoc.Tab{{
+					ID:           "tab-1",
+					Name:         "1",
+					ActivePaneID: "pane-1",
+					Root:         sessiondoc.NewLeaf("pane-1"),
+					Panes: map[string]*sessiondoc.Pane{
+						"pane-1":  {ID: "pane-1", TerminalID: "term-1"},
+						"float-1": {ID: "float-1", TerminalID: "term-1"},
+					},
+				}},
+			},
+		},
+	}
+
+	doc := model.exportSessionWorkbench()
+	tab := doc.Workspaces["main"].Tabs[0]
+	if tab.ActivePaneID != "float-1" {
+		t.Fatalf("expected current floating active pane persisted for reattach, got %q", tab.ActivePaneID)
+	}
+}
+
 func TestSaveStateCmdSuppressesRecoverableSessionRevisionConflict(t *testing.T) {
 	client := &recordingBridgeClient{
 		sessionSnapshot: &sessionstore.Snapshot{

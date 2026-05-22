@@ -2579,6 +2579,56 @@ func TestFeatureTerminalManagerAttachFloatingCreatesFloatingPaneAndAttachesTermi
 	assertMode(t, model, input.ModeNormal)
 }
 
+func TestFeatureSessionAttachFloatingSameTerminalAcquiresLeaseForFloatingPane(t *testing.T) {
+	client := &recordingBridgeClient{
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{{ID: "term-1", Name: "shell", State: "running"}},
+		},
+		attachResult: &protocol.AttachResult{Channel: 2, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-1": {TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}},
+		},
+	}
+	model := setupModel(t, modelOpts{client: client})
+	model.sessionID = "main"
+	model.sessionViewID = "view-local"
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.BoundPaneIDs = []string{"pane-1"}
+	terminal.OwnerPaneID = "pane-1"
+	terminal.ControlPaneID = "pane-1"
+	ownerBinding := model.runtime.BindPane("pane-1")
+	ownerBinding.Channel = 1
+	ownerBinding.Connected = true
+	ownerBinding.Role = runtime.BindingRoleOwner
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterGlobalMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenTerminalManager})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionAttachFloating})
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil || len(tab.Floating) != 1 {
+		t.Fatalf("expected one floating pane, got %#v", tab)
+	}
+	floatingPaneID := tab.Floating[0].PaneID
+	if len(client.attachCalls) != 1 || client.attachCalls[0].terminalID != "term-1" {
+		t.Fatalf("expected floating attach to term-1, got %#v", client.attachCalls)
+	}
+	if len(client.acquireLeaseCalls) != 1 {
+		t.Fatalf("expected floating attach in session to acquire owner lease once, got %#v", client.acquireLeaseCalls)
+	}
+	if got := client.acquireLeaseCalls[0]; got.ViewID != "view-local" || got.PaneID != floatingPaneID || got.TerminalID != "term-1" {
+		t.Fatalf("unexpected floating owner lease params: %#v", got)
+	}
+	if terminal.OwnerPaneID != floatingPaneID {
+		t.Fatalf("expected floating pane %q to become owner, got %q", floatingPaneID, terminal.OwnerPaneID)
+	}
+	if len(client.resizes) != 1 || client.resizes[0].channel != 2 {
+		t.Fatalf("expected floating pane channel to drive resize after lease acquire, got %#v", client.resizes)
+	}
+}
+
 func TestFeatureTerminalManagerEditOpensTerminalMetadataPrompt(t *testing.T) {
 	client := &recordingBridgeClient{
 		listResult: &protocol.ListResult{
