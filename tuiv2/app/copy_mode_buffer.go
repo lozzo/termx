@@ -593,6 +593,8 @@ func (m *Model) moveCopyCursorLogicalLines(delta int) tea.Cmd {
 	if !ok || buffer.totalRows() == 0 {
 		return nil
 	}
+	before := m.copyMode.CursorLogical
+	beforePoint := m.copyMode.Cursor
 	target := m.copyMode.CursorLogical
 	target.Line += delta
 	if target.Line < 0 {
@@ -613,6 +615,29 @@ func (m *Model) moveCopyCursorLogicalLines(delta int) tea.Cmd {
 	m.copyMode.Cursor = buffer.clampPoint(point)
 	m.copyMode.CursorRowRef = buffer.pointRowRef(m.copyMode.Cursor)
 	m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
+	if gridtrace.Enabled() {
+		gridtrace.Log(
+			"app.copy_mode.move_logical_lines",
+			"pane_id", m.copyMode.PaneID,
+			"delta", delta,
+			"before_line", before.Line,
+			"before_offset", before.Offset,
+			"before_row", beforePoint.Row,
+			"before_col", beforePoint.Col,
+			"after_line", m.copyMode.CursorLogical.Line,
+			"after_offset", m.copyMode.CursorLogical.Offset,
+			"after_row", m.copyMode.Cursor.Row,
+			"after_col", m.copyMode.Cursor.Col,
+			"view_top_row", m.copyMode.ViewTopRow,
+			"max_line", maxLine,
+			"snapshot_scrollback_rows", len(buffer.snapshot.Scrollback),
+			"snapshot_screen_rows", len(buffer.snapshot.Screen.Cells),
+			"snapshot_total_rows", buffer.totalRows(),
+			"snapshot_loaded_rows", snapshotScrollbackLoadedDepth(buffer.snapshot),
+			"copy_committed_loaded_rows", m.copyMode.CommittedLoadedRows,
+			"render_offset", m.copyModeRenderOffset(buffer),
+		)
+	}
 	m.saveCurrentCopyModeState()
 	m.render.Invalidate()
 	return batchCmds(m.ensureActivePaneScrollbackCmd(), m.ensureCopyModeScrollbackCmd(buffer))

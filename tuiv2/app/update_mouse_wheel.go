@@ -2,6 +2,7 @@ package app
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/termx-shared/gridtrace"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/shared"
@@ -84,7 +85,21 @@ func (m *Model) localScrollbackWheelCmd(paneID string, delta int) tea.Cmd {
 	if m == nil || m.workbench == nil || paneID == "" || delta == 0 {
 		return nil
 	}
-	if m.effectiveInputMode() == input.ModeDisplay {
+	mode := m.effectiveInputMode()
+	if gridtrace.Enabled() {
+		gridtrace.Log(
+			"app.mouse_wheel.local_scrollback",
+			"pane_id", paneID,
+			"delta", delta,
+			"mode", mode,
+			"copy_pane_id", m.copyMode.PaneID,
+			"copy_view_top_row", m.copyMode.ViewTopRow,
+			"copy_cursor_line", m.copyMode.CursorLogical.Line,
+			"copy_cursor_offset", m.copyMode.CursorLogical.Offset,
+			"copy_cursor_row", m.copyMode.Cursor.Row,
+		)
+	}
+	if mode == input.ModeDisplay {
 		return m.moveCopyCursorLogicalLines(-delta)
 	}
 	if delta > 0 && m.ensureCopyMode() {

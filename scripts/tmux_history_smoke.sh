@@ -12,7 +12,7 @@ Run the isolated TermX + tmux history smoke flow:
   -> reattach -> capture
 
 Options:
-  --scenario NAME       scenario to run: baseline | standard | deep-hot | floating-owner-resize | floating-owner-reattach-history | floating-owner-wheel-history | floating-owner-marker-history; default baseline
+  --scenario NAME       scenario to run: baseline | standard | deep-hot | floating-owner-resize | floating-owner-reattach-history | floating-owner-wheel-history | floating-owner-marker-history | floating-owner-marker-wheel-history; default baseline
   --root PATH           artifact root; default is a new /tmp directory
   --bin PATH            existing termx binary to use; default builds into ROOT/termx
   --lines N             stress line count; default 1000
@@ -73,6 +73,10 @@ Artifacts:
     floating-marker-resized.txt
     floating-marker-after-marker.txt
     floating-owner-marker-history.resize.summary.txt
+  floating-owner-marker-wheel-history:
+    floating-marker-wheel-resized.txt
+    floating-marker-wheel-after-marker.txt
+    floating-owner-marker-wheel-history.resize.summary.txt
 EOF
 }
 
@@ -434,6 +438,19 @@ send_tmux_mouse_wheel_up() {
 
   ensure_tmux_target "$session" "$target" "$base.mouse-target-missing" || return 1
   seq="$(printf '\033[<64;%d;%dM' "$x" "$y")"
+  tmux send-keys -t "$target" -l "$seq"
+}
+
+send_tmux_mouse_wheel_down() {
+  local session="$1"
+  local target="$2"
+  local base="$3"
+  local x="$4"
+  local y="$5"
+  local seq
+
+  ensure_tmux_target "$session" "$target" "$base.mouse-target-missing" || return 1
+  seq="$(printf '\033[<65;%d;%dM' "$x" "$y")"
   tmux send-keys -t "$target" -l "$seq"
 }
 
@@ -1199,6 +1216,33 @@ scan_down_until_contains() {
   return 1
 }
 
+mouse_wheel_until_contains() {
+  local session="$1"
+  local target="$2"
+  local base="$3"
+  local needle="$4"
+  local repeats="$5"
+  local direction="$6"
+  local x=$(( ATTACH_COLS / 2 ))
+  local y=$(( ATTACH_ROWS / 2 ))
+  local attempt
+
+  for attempt in $(seq 1 "$repeats"); do
+    if [[ "$direction" == "down" ]]; then
+      send_tmux_mouse_wheel_down "$session" "$target" "$base.wheel-down-$attempt" "$x" "$y"
+    else
+      send_tmux_mouse_wheel_up "$session" "$target" "$base.wheel-up-$attempt" "$x" "$y"
+    fi
+    sleep "$G_DELAY"
+    capture_session "$session" "$target" "$base" || return 1
+    if grep -Fq -- "$needle" "$ROOT/$base.txt"; then
+      return 0
+    fi
+  done
+  echo "timed out waiting for '$needle' in $ROOT/$base.txt after $repeats mouse wheel $direction attempts" >&2
+  return 1
+}
+
 start_daemon() {
   mkdir -p "$CFG" "$STATE"
   XDG_CONFIG_HOME="$CFG" \
@@ -1222,7 +1266,7 @@ build_generator_command() {
       printf 'python3 %q --lines %q --seed %q --width-hint %q; exec cat' \
         "$REPO_ROOT/scripts/generate_terminal_stress.py" "$LINES" "$SEED" "$WIDTH_HINT"
       ;;
-    floating-owner-marker-history)
+    floating-owner-marker-history|floating-owner-marker-wheel-history)
       printf 'python3 %q --lines %q --seed %q --width-hint %q --marker-block-at %q; exec cat' \
         "$REPO_ROOT/scripts/generate_terminal_stress.py" "$LINES" "$SEED" "$WIDTH_HINT" "$(( LINES / 2 ))"
       ;;
@@ -1595,11 +1639,74 @@ run_floating_owner_marker_history_scenario() {
   log "PASS floating-owner-marker-history log -> $ROOT/floating-owner-marker-history.resize.summary.txt"
 }
 
+run_floating_owner_marker_wheel_history_scenario() {
+  local pane_main
+  local key
+  local x
+  local y
+
+  start_attach_tmux_session "$SESSION_MAIN" "$TERM_ID" "floating-owner-marker-wheel"
+  pane_main="$ATTACH_SESSION_PANE"
+  CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-base" "grid-stress"
+  write_termx_inventory_artifact "floating-marker-wheel-base"
+
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-manager.global-mode" C-g
+  sleep "$G_DELAY"
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-manager.open" t
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-manager-ready" "grid-stress"
+
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-attach" C-o
+  wait_log_regex_count_at_least 'server attached terminal' 2
+  sleep 0.5
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-attached" "grid-stress"
+
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-mode.enter" C-o
+  sleep "$G_DELAY"
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-owner.take" a
+  wait_log_regex_count_at_least 'msg="termx protocol request started".*method=ensure_resize' 2
+  sleep 0.5
+
+  for key in L L L L J J; do
+    send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-resize.$key" "$key"
+    sleep "$G_DELAY"
+  done
+  wait_log_regex_count_at_least 'msg="termx protocol request started".*method=ensure_resize' 3
+  sleep 0.5
+  capture_session "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-resized"
+  write_termx_inventory_artifact "floating-marker-wheel-resized"
+
+  x=$(( ATTACH_COLS / 2 ))
+  y=$(( ATTACH_ROWS / 2 ))
+  send_tmux_mouse_wheel_up "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-enter-copy" "$x" "$y"
+  sleep 0.5
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-copy-top" g
+  sleep "$G_DELAY"
+  capture_session "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-at-top"
+
+  mouse_wheel_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-after-marker" "TERM_X_TEXT_QR_BEGIN" "$G_REPEATS" down
+  mouse_wheel_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-wheel-after-marker" "████ ▄▄▄▄▄ ███▄" 20 down
+  copy_gridtrace_artifact "$SESSION_MAIN" "floating-marker-wheel-after-marker"
+  copy_resize_log_artifact "floating-owner-marker-wheel-history"
+
+  assert_contains "$ROOT/floating-marker-wheel-base.txt" "grid-stress"
+  assert_contains "$ROOT/floating-marker-wheel-resized.txt" "grid-stress"
+  assert_contains "$ROOT/floating-marker-wheel-after-marker.txt" "TERM_X_TEXT_QR_BEGIN"
+  assert_floating_contains "$ROOT/floating-marker-wheel-after-marker.txt" "████ ▄▄▄▄▄ ███▄"
+  assert_stress_history_label_order_visible "$ROOT/floating-marker-wheel-after-marker.txt"
+  assert_regex_count_at_least "$ROOT/floating-owner-marker-wheel-history.resize.summary.txt" 'server attached terminal' 2
+  assert_regex_count_at_least "$ROOT/floating-owner-marker-wheel-history.resize.summary.txt" 'method=ensure_resize' 3
+  assert_terminal_size_shrunk "$ROOT/floating-marker-wheel-base.termx-ls.txt" "$ROOT/floating-marker-wheel-resized.termx-ls.txt" "$TERM_ID"
+
+  log "PASS floating-marker-wheel-after-marker -> $ROOT/floating-marker-wheel-after-marker.txt"
+  log "PASS floating-owner-marker-wheel-history log -> $ROOT/floating-owner-marker-wheel-history.resize.summary.txt"
+}
+
 attach_command() {
   local terminal_id="$1"
   local session_name="${2:-}"
   local trace_path=""
-  if [[ ( "$SCENARIO" == "deep-hot" || "$SCENARIO" == "floating-owner-reattach-history" || "$SCENARIO" == "floating-owner-wheel-history" || "$SCENARIO" == "floating-owner-marker-history" ) && -n "$session_name" && "${TERMX_TMUX_HISTORY_TRACE:-0}" != "0" ]]; then
+  if [[ ( "$SCENARIO" == "deep-hot" || "$SCENARIO" == "floating-owner-reattach-history" || "$SCENARIO" == "floating-owner-wheel-history" || "$SCENARIO" == "floating-owner-marker-history" || "$SCENARIO" == "floating-owner-marker-wheel-history" ) && -n "$session_name" && "${TERMX_TMUX_HISTORY_TRACE:-0}" != "0" ]]; then
     trace_path="$ROOT/${session_name}.gridtrace.log"
   fi
   if [[ -n "$trace_path" ]]; then
@@ -1771,6 +1878,9 @@ main() {
       ;;
     floating-owner-marker-history)
       run_floating_owner_marker_history_scenario
+      ;;
+    floating-owner-marker-wheel-history)
+      run_floating_owner_marker_wheel_history_scenario
       ;;
     *)
       echo "unknown scenario: $SCENARIO" >&2
