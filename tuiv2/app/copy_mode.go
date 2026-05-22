@@ -764,7 +764,11 @@ func (m *Model) reanchorCopyModePoints(buffer copyModeBuffer, fallbackDelta int,
 		if row, ok := buffer.rowForRef(m.copyMode.CursorRowRef); ok {
 			m.copyMode.Cursor.Row = row
 		} else {
-			m.copyMode.Cursor.Row += fallbackDelta
+			if point, ok := buffer.pointForLogicalPos(m.copyMode.CursorLogical); ok {
+				m.copyMode.Cursor = point
+			} else {
+				m.copyMode.Cursor.Row += fallbackDelta
+			}
 		}
 	} else {
 		m.copyMode.Cursor.Row += fallbackDelta
@@ -784,7 +788,15 @@ func (m *Model) reanchorCopyModePoints(buffer copyModeBuffer, fallbackDelta int,
 		if row, ok := buffer.rowForRef(m.copyMode.MarkRowRef); ok {
 			point.Row = row
 		} else {
-			point.Row += fallbackDelta
+			if m.copyMode.MarkLogical != nil {
+				if mapped, ok := buffer.pointForLogicalPos(*m.copyMode.MarkLogical); ok {
+					point = mapped
+				} else {
+					point.Row += fallbackDelta
+				}
+			} else {
+				point.Row += fallbackDelta
+			}
 		}
 	} else {
 		point.Row += fallbackDelta

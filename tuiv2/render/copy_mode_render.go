@@ -16,12 +16,18 @@ func copyModeTimestampLabel(snapshot *protocol.Snapshot, row int) string {
 	return formatSnapshotRowTimestamp(ts)
 }
 
-func copyModeRowPositionLabel(snapshot *protocol.Snapshot, row int) string {
-	totalRows := snapshotTotalRows(snapshot)
-	if totalRows <= 0 || row < 0 || row >= totalRows {
+func copyModeRowPositionLabel(snapshot *protocol.Snapshot, logicalLine, fallbackRow int) string {
+	totalLines := snapshotLogicalLineCount(snapshot)
+	if totalLines <= 0 {
 		return ""
 	}
-	return strconv.Itoa(row+1) + "/" + strconv.Itoa(totalRows)
+	if logicalLine < 0 {
+		logicalLine = snapshotLogicalLineIndex(snapshot, fallbackRow)
+	}
+	if logicalLine < 0 || logicalLine >= totalLines {
+		return ""
+	}
+	return strconv.Itoa(logicalLine+1) + "/" + strconv.Itoa(totalLines)
 }
 
 func formatSnapshotRowTimestamp(ts time.Time) string {
@@ -76,6 +82,48 @@ func snapshotTotalRows(snapshot *protocol.Snapshot) int {
 		return 0
 	}
 	return len(snapshot.Scrollback) + len(snapshot.Screen.Cells)
+}
+
+func snapshotRowWrapped(snapshot *protocol.Snapshot, row int) bool {
+	if snapshot == nil || row < 0 {
+		return false
+	}
+	if row < len(snapshot.Scrollback) {
+		return row < len(snapshot.ScrollbackWrapped) && snapshot.ScrollbackWrapped[row]
+	}
+	row -= len(snapshot.Scrollback)
+	if row < 0 || row >= len(snapshot.Screen.Cells) {
+		return false
+	}
+	return row < len(snapshot.ScreenWrapped) && snapshot.ScreenWrapped[row]
+}
+
+func snapshotLogicalLineCount(snapshot *protocol.Snapshot) int {
+	totalRows := snapshotTotalRows(snapshot)
+	if totalRows <= 0 {
+		return 0
+	}
+	count := 0
+	for row := 0; row < totalRows; row++ {
+		if row == 0 || !snapshotRowWrapped(snapshot, row-1) {
+			count++
+		}
+	}
+	return count
+}
+
+func snapshotLogicalLineIndex(snapshot *protocol.Snapshot, row int) int {
+	totalRows := snapshotTotalRows(snapshot)
+	if totalRows <= 0 || row < 0 || row >= totalRows {
+		return -1
+	}
+	index := -1
+	for current := 0; current <= row; current++ {
+		if current == 0 || !snapshotRowWrapped(snapshot, current-1) {
+			index++
+		}
+	}
+	return index
 }
 
 func drawCopyModeOverlay(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, theme uiTheme, cursorRow, cursorCol, viewTopRow int, markSet bool, markRow, markCol int, contentOffsetX, contentOffsetY int) {

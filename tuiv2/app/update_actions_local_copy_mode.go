@@ -15,27 +15,27 @@ func (m *Model) handleCopyModeLocalAction(action input.SemanticAction) (bool, te
 	case input.ActionCopyModeCursorRight:
 		return true, m.moveCopyCursor(0, 1)
 	case input.ActionCopyModeCursorUp:
-		return true, m.moveCopyCursorVertical(-1)
+		return true, m.moveCopyCursorLogicalLines(-1)
 	case input.ActionCopyModeCursorDown:
-		return true, m.moveCopyCursorVertical(1)
+		return true, m.moveCopyCursorLogicalLines(1)
 	case input.ActionCopyModePageUp:
 		if buffer, ok := m.activeCopyModeBuffer(); ok {
-			return true, m.moveCopyCursorVertical(-maxInt(1, buffer.height))
+			return true, m.moveCopyCursorLogicalLines(-maxInt(1, buffer.height))
 		}
 		return true, nil
 	case input.ActionCopyModePageDown:
 		if buffer, ok := m.activeCopyModeBuffer(); ok {
-			return true, m.moveCopyCursorVertical(maxInt(1, buffer.height))
+			return true, m.moveCopyCursorLogicalLines(maxInt(1, buffer.height))
 		}
 		return true, nil
 	case input.ActionCopyModeHalfPageUp:
 		if buffer, ok := m.activeCopyModeBuffer(); ok {
-			return true, m.moveCopyCursorVertical(-maxInt(1, buffer.height/2))
+			return true, m.moveCopyCursorLogicalLines(-maxInt(1, buffer.height/2))
 		}
 		return true, nil
 	case input.ActionCopyModeHalfPageDown:
 		if buffer, ok := m.activeCopyModeBuffer(); ok {
-			return true, m.moveCopyCursorVertical(maxInt(1, buffer.height/2))
+			return true, m.moveCopyCursorLogicalLines(maxInt(1, buffer.height/2))
 		}
 		return true, nil
 	case input.ActionCopyModeStartOfLine:
@@ -53,8 +53,8 @@ func (m *Model) handleCopyModeLocalAction(action input.SemanticAction) (bool, te
 		if !m.ensureCopyMode() {
 			return true, nil
 		}
-		cmd := m.jumpCopyCursor(0)
-		if m.copyMode.Cursor.Row == 0 && m.copyMode.ViewTopRow == 0 {
+		cmd := m.jumpCopyCursorLogicalLine(0)
+		if m.copyMode.CursorLogical.Line == 0 && m.copyMode.ViewTopRow == 0 {
 			if buffer, ok := m.activeCopyModeBuffer(); ok {
 				cmd = batchCmds(cmd, m.prefetchCopyModeScrollbackCmd(buffer))
 			}
@@ -62,7 +62,7 @@ func (m *Model) handleCopyModeLocalAction(action input.SemanticAction) (bool, te
 		return true, cmd
 	case input.ActionCopyModeBottom:
 		if buffer, ok := m.activeCopyModeBuffer(); ok {
-			return true, m.jumpCopyCursor(buffer.totalRows() - 1)
+			return true, m.jumpCopyCursorLogicalLine(buffer.logicalLineCount() - 1)
 		}
 		return true, nil
 	case input.ActionCopyModeBeginSelection:

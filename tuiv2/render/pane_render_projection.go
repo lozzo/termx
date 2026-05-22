@@ -195,7 +195,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	}
 	if copyModeActive {
 		border.CopyTimeLabel = copyModeTimestampLabel(snapshot, copyMode.CursorRow)
-		border.CopyRowLabel = copyModeRowPositionLabel(snapshot, copyMode.CursorRow)
+		border.CopyRowLabel = copyModeRowPositionLabel(snapshot, copyMode.CursorLogicalLine, copyMode.CursorRow)
 	}
 	contentRect := rect
 	if !frameless {
@@ -232,24 +232,28 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		}
 	}
 	contentKey := paneContentKey{
-		TerminalID:           pane.TerminalID,
-		ThemeBG:              theme.panelBG,
-		TerminalKnown:        terminal != nil,
-		SharedLeft:           pane.SharedLeft,
-		SharedTop:            pane.SharedTop,
-		ScrollOffset:         renderOffset,
-		ContentOffsetX:       contentOffsetX,
-		ContentOffsetY:       contentOffsetY,
-		EmptyActionSelected:  emptyActionSelected,
-		ExitedActionSelected: exitedActionSelected,
-		ExitedActionPulse:    options.ExitedSelectionPulse,
-		CopyModeActive:       copyModeActive,
-		CopyModeCursorRow:    copyMode.CursorRow,
-		CopyModeCursorCol:    copyMode.CursorCol,
-		CopyModeViewTopRow:   copyMode.ViewTopRow,
-		CopyModeMarkSet:      copyMode.MarkSet,
-		CopyModeMarkRow:      copyMode.MarkRow,
-		CopyModeMarkCol:      copyMode.MarkCol,
+		TerminalID:                pane.TerminalID,
+		ThemeBG:                   theme.panelBG,
+		TerminalKnown:             terminal != nil,
+		SharedLeft:                pane.SharedLeft,
+		SharedTop:                 pane.SharedTop,
+		ScrollOffset:              renderOffset,
+		ContentOffsetX:            contentOffsetX,
+		ContentOffsetY:            contentOffsetY,
+		EmptyActionSelected:       emptyActionSelected,
+		ExitedActionSelected:      exitedActionSelected,
+		ExitedActionPulse:         options.ExitedSelectionPulse,
+		CopyModeActive:            copyModeActive,
+		CopyModeCursorRow:         copyMode.CursorRow,
+		CopyModeCursorCol:         copyMode.CursorCol,
+		CopyModeCursorLogicalLine: copyMode.CursorLogicalLine,
+		CopyModeCursorLogicalCol:  copyMode.CursorLogicalCol,
+		CopyModeViewTopRow:        copyMode.ViewTopRow,
+		CopyModeMarkSet:           copyMode.MarkSet,
+		CopyModeMarkRow:           copyMode.MarkRow,
+		CopyModeMarkCol:           copyMode.MarkCol,
+		CopyModeMarkLogicalLine:   copyMode.MarkLogicalLine,
+		CopyModeMarkLogicalCol:    copyMode.MarkLogicalCol,
 	}
 	if terminal != nil {
 		if snapshot != nil && surface == nil {

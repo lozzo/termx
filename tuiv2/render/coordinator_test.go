@@ -374,7 +374,7 @@ func TestRenderFrameShowsCopyModeRowTimestampInPaneChrome(t *testing.T) {
 	if !strings.Contains(frame, copyModeTimestampLabel(snapshot, 0)) {
 		t.Fatalf("expected copy mode timestamp in pane chrome:\n%s", frame)
 	}
-	if !strings.Contains(frame, copyModeRowPositionLabel(snapshot, 0)) {
+	if !strings.Contains(frame, copyModeRowPositionLabel(snapshot, 0, 0)) {
 		t.Fatalf("expected copy mode row position in pane chrome:\n%s", frame)
 	}
 }

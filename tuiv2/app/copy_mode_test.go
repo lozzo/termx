@@ -1181,8 +1181,11 @@ func TestCopyModeTopLoadsOlderScrollbackIntoFrozenBuffer(t *testing.T) {
 	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "old0" {
 		t.Fatalf("expected oldest loaded row at top, got %q", got)
 	}
-	if got := model.copyMode.Cursor.Row; got != 4 {
-		t.Fatalf("expected cursor to stay on the same logical content after prepending history, got row %d", got)
+	if got := model.copyMode.CursorLogical.Line; got != 0 {
+		t.Fatalf("expected cursor logical line to stay on the same logical content after prepending history, got line %d", got)
+	}
+	if got := model.copyMode.CursorLogical.Offset; got != 0 {
+		t.Fatalf("expected cursor logical offset preserved after prepending history, got offset %d", got)
 	}
 }
 

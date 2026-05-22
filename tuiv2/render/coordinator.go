@@ -109,39 +109,47 @@ type renderFloatingDragPreviewKey struct {
 }
 
 type renderCopyModeKey struct {
-	PaneID     string
-	CursorRow  int
-	CursorCol  int
-	ViewTopRow int
-	MarkSet    bool
-	MarkRow    int
-	MarkCol    int
-	Snapshot   *protocol.Snapshot
+	PaneID            string
+	CursorRow         int
+	CursorCol         int
+	CursorLogicalLine int
+	CursorLogicalCol  int
+	ViewTopRow        int
+	MarkSet           bool
+	MarkRow           int
+	MarkCol           int
+	MarkLogicalLine   int
+	MarkLogicalCol    int
+	Snapshot          *protocol.Snapshot
 }
 
 type paneContentKey struct {
-	TerminalID           string
-	Snapshot             *protocol.Snapshot
-	SurfaceVersion       uint64
-	Name                 string
-	State                string
-	ThemeBG              string
-	TerminalKnown        bool
-	SharedLeft           bool
-	SharedTop            bool
-	ScrollOffset         int
-	ContentOffsetX       int
-	ContentOffsetY       int
-	EmptyActionSelected  int
-	ExitedActionSelected int
-	ExitedActionPulse    bool
-	CopyModeActive       bool
-	CopyModeCursorRow    int
-	CopyModeCursorCol    int
-	CopyModeViewTopRow   int
-	CopyModeMarkSet      bool
-	CopyModeMarkRow      int
-	CopyModeMarkCol      int
+	TerminalID                string
+	Snapshot                  *protocol.Snapshot
+	SurfaceVersion            uint64
+	Name                      string
+	State                     string
+	ThemeBG                   string
+	TerminalKnown             bool
+	SharedLeft                bool
+	SharedTop                 bool
+	ScrollOffset              int
+	ContentOffsetX            int
+	ContentOffsetY            int
+	EmptyActionSelected       int
+	ExitedActionSelected      int
+	ExitedActionPulse         bool
+	CopyModeActive            bool
+	CopyModeCursorRow         int
+	CopyModeCursorCol         int
+	CopyModeCursorLogicalLine int
+	CopyModeCursorLogicalCol  int
+	CopyModeViewTopRow        int
+	CopyModeMarkSet           bool
+	CopyModeMarkRow           int
+	CopyModeMarkCol           int
+	CopyModeMarkLogicalLine   int
+	CopyModeMarkLogicalCol    int
 }
 
 func NewCoordinator(fn VisibleStateFn) *Coordinator {
@@ -380,14 +388,18 @@ func renderVMKeyForVM(vm RenderVM) renderVMKey {
 				Snapshot: vm.Body.FloatingDragPreview.Snapshot,
 			},
 			CopyMode: renderCopyModeKey{
-				PaneID:     copyMode.PaneID,
-				CursorRow:  copyMode.CursorRow,
-				CursorCol:  copyMode.CursorCol,
-				ViewTopRow: copyMode.ViewTopRow,
-				MarkSet:    copyMode.MarkSet,
-				MarkRow:    copyMode.MarkRow,
-				MarkCol:    copyMode.MarkCol,
-				Snapshot:   copyMode.Snapshot,
+				PaneID:            copyMode.PaneID,
+				CursorRow:         copyMode.CursorRow,
+				CursorCol:         copyMode.CursorCol,
+				CursorLogicalLine: copyMode.CursorLogicalLine,
+				CursorLogicalCol:  copyMode.CursorLogicalCol,
+				ViewTopRow:        copyMode.ViewTopRow,
+				MarkSet:           copyMode.MarkSet,
+				MarkRow:           copyMode.MarkRow,
+				MarkCol:           copyMode.MarkCol,
+				MarkLogicalLine:   copyMode.MarkLogicalLine,
+				MarkLogicalCol:    copyMode.MarkLogicalCol,
+				Snapshot:          copyMode.Snapshot,
 			},
 			CopyModesSig: renderCopyModesSignature(vm.Body.CopyModes),
 		},
@@ -407,6 +419,8 @@ func renderCopyModesSignature(copyModes []RenderCopyModeVM) string {
 			copyMode.PaneID,
 			strconv.Itoa(copyMode.CursorRow),
 			strconv.Itoa(copyMode.CursorCol),
+			strconv.Itoa(copyMode.CursorLogicalLine),
+			strconv.Itoa(copyMode.CursorLogicalCol),
 			strconv.FormatUint(copyMode.CursorGeneration, 10),
 			strconv.FormatUint(copyMode.CursorRowID, 10),
 			strconv.FormatBool(copyMode.CursorRefValid),
@@ -414,6 +428,8 @@ func renderCopyModesSignature(copyModes []RenderCopyModeVM) string {
 			strconv.FormatBool(copyMode.MarkSet),
 			strconv.Itoa(copyMode.MarkRow),
 			strconv.Itoa(copyMode.MarkCol),
+			strconv.Itoa(copyMode.MarkLogicalLine),
+			strconv.Itoa(copyMode.MarkLogicalCol),
 			strconv.FormatUint(copyMode.MarkGeneration, 10),
 			strconv.FormatUint(copyMode.MarkRowID, 10),
 			strconv.FormatBool(copyMode.MarkRefValid),
