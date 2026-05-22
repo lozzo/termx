@@ -2675,6 +2675,26 @@ func TestMouseWheelFallsBackWhenTrackingDisabled(t *testing.T) {
 	}
 }
 
+func TestMouseWheelEnterCopyModeUsesSingleStepWhenBurstCoalesced(t *testing.T) {
+	m := setupModel(t, modelOpts{})
+	seedCopyModeSnapshot(t, m,
+		[]string{"hist-0", "hist-1", "hist-2", "hist-3", "hist-4", "hist-5", "hist-6", "hist-7", "hist-8", "hist-9"},
+		[]string{"live-0", "live-1", "live-2"},
+	)
+	setActivePaneMouseTracking(t, m, false)
+	x, y := activePaneContentScreenOrigin(t, m)
+
+	cmd := m.handleMouseWheelRepeated(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress}, 8)
+	drainCmd(t, m, cmd, 20)
+
+	if got := m.mode().Kind; got != input.ModeDisplay {
+		t.Fatalf("expected wheel fallback to enter display mode, got %q", got)
+	}
+	if got, want := m.copyMode.CursorLogical.Line, 9; got != want {
+		t.Fatalf("expected first coalesced wheel to move one local step near live tail, got logical line %d want %d", got, want)
+	}
+}
+
 func TestMouseWheelAlternateScreenFallsBackToCursorKeysWhenTrackingDisabled(t *testing.T) {
 	m := setupModel(t, modelOpts{})
 	client, ok := m.runtime.Client().(*recordingBridgeClient)

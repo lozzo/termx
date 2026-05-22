@@ -90,7 +90,10 @@ func (m *Model) localScrollbackWheelCmd(paneID string, delta int) tea.Cmd {
 	if delta > 0 && m.ensureCopyMode() {
 		m.setMode(input.ModeState{Kind: input.ModeDisplay})
 		m.render.Invalidate()
-		return m.moveCopyCursorLogicalLines(-delta)
+		// The first wheel event may arrive as a coalesced burst. Entering copy
+		// mode should land near the live tail; follow-up wheel events can then
+		// continue moving by their full burst size.
+		return m.moveCopyCursorLogicalLines(-localMouseWheelScrollLines)
 	}
 	if _, changed := m.adjustPaneViewportOffset(paneID, delta); changed {
 		m.render.Invalidate()
