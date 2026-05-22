@@ -37,6 +37,14 @@ type sizedExtendedMetadataSnapshotLoader interface {
 	LoadSizedSnapshotWithExtendedMetadata(cols, rows int, scrollback [][]localvterm.Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, scrollbackWrapped []bool, screen localvterm.ScreenData, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool, cursor localvterm.CursorState, modes localvterm.TerminalModes)
 }
 
+type ownershipSnapshotLoader interface {
+	LoadSnapshotWithOwnership(scrollback [][]localvterm.Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, scrollbackWrapped []bool, scrollbackOwnership []string, screen localvterm.ScreenData, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool, screenOwnership []string, cursor localvterm.CursorState, modes localvterm.TerminalModes)
+}
+
+type sizedOwnershipSnapshotLoader interface {
+	LoadSizedSnapshotWithOwnership(cols, rows int, scrollback [][]localvterm.Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, scrollbackWrapped []bool, scrollbackOwnership []string, screen localvterm.ScreenData, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool, screenOwnership []string, cursor localvterm.CursorState, modes localvterm.TerminalModes)
+}
+
 type metadataSnapshotSource interface {
 	ScreenRowKinds() []string
 	ScrollbackRowKinds() []string
@@ -45,6 +53,11 @@ type metadataSnapshotSource interface {
 type wrappedSnapshotSource interface {
 	ScreenWrapped() []bool
 	ScrollbackWrapped() []bool
+}
+
+type ownershipSnapshotSource interface {
+	ScreenOwnership() []string
+	ScrollbackOwnership() []string
 }
 
 type rowSnapshotSource interface {
@@ -62,6 +75,8 @@ type rowSnapshotSource interface {
 	ScrollbackRowKindAt(row int) string
 	ScreenRowWrappedAt(row int) bool
 	ScrollbackRowWrappedAt(row int) bool
+	ScreenRowOwnershipAt(row int) string
+	ScrollbackRowOwnershipAt(row int) string
 }
 
 func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, limit int) (*protocol.Snapshot, error) {
@@ -372,7 +387,7 @@ func (r *Runtime) refreshSnapshot(terminalID string) {
 	}
 	previous := terminal.Snapshot
 	terminal.Snapshot = snapshotFromVTerm(terminalID, terminal.VTerm)
-	preserveSnapshotScrollbackOwnershipProjection(previous, terminal.Snapshot)
+	preserveSnapshotHistoryMetadataFromProjection(previous, terminal.Snapshot)
 	if terminal.Snapshot == nil || !snapshotUsesAlternateScreen(terminal.Snapshot) {
 		terminal.AlternateScrollback = nil
 	}
@@ -389,14 +404,10 @@ func (r *Runtime) refreshSnapshot(terminalID string) {
 	r.invalidate()
 }
 
-func preserveSnapshotScrollbackOwnershipProjection(previous, next *protocol.Snapshot) {
-	if previous == nil || next == nil || len(next.Scrollback) == 0 {
+func preserveSnapshotHistoryMetadataFromProjection(previous, next *protocol.Snapshot) {
+	if previous == nil || next == nil || !protocol.HasExplicitRowOwnership(next.ScrollbackOwnership, len(next.Scrollback)) {
 		return
 	}
-	if len(previous.Scrollback) != len(next.Scrollback) || !protocol.HasExplicitRowOwnership(previous.ScrollbackOwnership, len(previous.Scrollback)) {
-		return
-	}
-	next.ScrollbackOwnership = append([]string(nil), previous.ScrollbackOwnership...)
 	next.ScrollbackLoadedRows = previous.ScrollbackLoadedRows
 	next.HistoryGeneration = previous.HistoryGeneration
 	next.ScrollbackFirstRowID = previous.ScrollbackFirstRowID
@@ -431,7 +442,24 @@ func loadSnapshotIntoVTerm(vt VTermLike, snap *protocol.Snapshot) {
 	if snap.Size.Rows > 0 {
 		rows = int(snap.Size.Rows)
 	}
-	if loader, ok := vt.(sizedExtendedMetadataSnapshotLoader); ok {
+	if loader, ok := vt.(sizedOwnershipSnapshotLoader); ok {
+		loader.LoadSizedSnapshotWithOwnership(
+			cols,
+			rows,
+			protocolCompactRowsToVTerm(snap.Scrollback),
+			append([]time.Time(nil), snap.ScrollbackTimestamps...),
+			append([]string(nil), snap.ScrollbackRowKinds...),
+			append([]bool(nil), snap.ScrollbackWrapped...),
+			append([]string(nil), snap.ScrollbackOwnership...),
+			protocolScreenToVTerm(snap.Screen),
+			append([]time.Time(nil), snap.ScreenTimestamps...),
+			append([]string(nil), snap.ScreenRowKinds...),
+			append([]bool(nil), snap.ScreenWrapped...),
+			append([]string(nil), snap.ScreenOwnership...),
+			protocolCursorToVTerm(snap.Cursor),
+			protocolModesToVTerm(snap.Modes),
+		)
+	} else if loader, ok := vt.(sizedExtendedMetadataSnapshotLoader); ok {
 		loader.LoadSizedSnapshotWithExtendedMetadata(
 			cols,
 			rows,
@@ -443,6 +471,21 @@ func loadSnapshotIntoVTerm(vt VTermLike, snap *protocol.Snapshot) {
 			append([]time.Time(nil), snap.ScreenTimestamps...),
 			append([]string(nil), snap.ScreenRowKinds...),
 			append([]bool(nil), snap.ScreenWrapped...),
+			protocolCursorToVTerm(snap.Cursor),
+			protocolModesToVTerm(snap.Modes),
+		)
+	} else if loader, ok := vt.(ownershipSnapshotLoader); ok {
+		loader.LoadSnapshotWithOwnership(
+			protocolCompactRowsToVTerm(snap.Scrollback),
+			append([]time.Time(nil), snap.ScrollbackTimestamps...),
+			append([]string(nil), snap.ScrollbackRowKinds...),
+			append([]bool(nil), snap.ScrollbackWrapped...),
+			append([]string(nil), snap.ScrollbackOwnership...),
+			protocolScreenToVTerm(snap.Screen),
+			append([]time.Time(nil), snap.ScreenTimestamps...),
+			append([]string(nil), snap.ScreenRowKinds...),
+			append([]bool(nil), snap.ScreenWrapped...),
+			append([]string(nil), snap.ScreenOwnership...),
 			protocolCursorToVTerm(snap.Cursor),
 			protocolModesToVTerm(snap.Modes),
 		)
@@ -512,6 +555,12 @@ func snapshotFromVTerm(terminalID string, vt VTermLike) *protocol.Snapshot {
 		screenWrapped = source.ScreenWrapped()
 		scrollbackWrapped = source.ScrollbackWrapped()
 	}
+	screenOwnership := []string(nil)
+	scrollbackOwnership := []string(nil)
+	if source, ok := vt.(ownershipSnapshotSource); ok {
+		screenOwnership = source.ScreenOwnership()
+		scrollbackOwnership = source.ScrollbackOwnership()
+	}
 	cols, rows := vt.Size()
 	outRows := make([][]protocol.Cell, 0)
 	backlog := make([]protocol.CompactRow, 0)
@@ -543,7 +592,7 @@ func snapshotFromVTerm(terminalID string, vt VTermLike) *protocol.Snapshot {
 			backlog = append(backlog, protocol.CompactRowFromCellsPreserveTrailingBlankCells(protocolCellsFromVTermRow(row), true))
 		}
 	}
-	return &protocol.Snapshot{
+	snapshot := &protocol.Snapshot{
 		TerminalID: terminalID,
 		Size:       protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
 		Screen: protocol.ScreenData{
@@ -558,10 +607,15 @@ func snapshotFromVTerm(terminalID string, vt VTermLike) *protocol.Snapshot {
 		ScreenWrapped:        append([]bool(nil), screenWrapped...),
 		ScrollbackWrapped:    append([]bool(nil), scrollbackWrapped...),
 		ScreenOwnership:      repeatedOwnership(protocol.RowOwnershipScreen, len(outRows)),
+		ScrollbackOwnership:  append([]string(nil), scrollbackOwnership...),
 		Cursor:               protocolCursorFromVTerm(vt.CursorState()),
 		Modes:                protocolModesFromVTerm(vt.Modes()),
 		Timestamp:            time.Now(),
 	}
+	if protocol.HasExplicitRowOwnership(screenOwnership, len(outRows)) {
+		snapshot.ScreenOwnership = append([]string(nil), screenOwnership...)
+	}
+	return snapshot
 }
 
 func snapshotUsesAlternateScreen(snapshot *protocol.Snapshot) bool {
@@ -687,23 +741,27 @@ func snapshotFromRowSource(terminalID string, source rowSnapshotSource) *protoco
 	screenTimestamps := make([]time.Time, screenRows)
 	screenRowKinds := make([]string, screenRows)
 	screenWrapped := make([]bool, screenRows)
+	screenOwnership := make([]string, screenRows)
 	for row := 0; row < screenRows; row++ {
 		screen[row] = protocolCellsFromVTermRow(source.ScreenRowView(row))
 		screenTimestamps[row] = source.ScreenRowTimestampAt(row)
 		screenRowKinds[row] = source.ScreenRowKindAt(row)
 		screenWrapped[row] = source.ScreenRowWrappedAt(row)
+		screenOwnership[row] = source.ScreenRowOwnershipAt(row)
 	}
 	scrollback := make([]protocol.CompactRow, scrollbackRows)
 	scrollbackTimestamps := make([]time.Time, scrollbackRows)
 	scrollbackRowKinds := make([]string, scrollbackRows)
 	scrollbackWrapped := make([]bool, scrollbackRows)
+	scrollbackOwnership := make([]string, scrollbackRows)
 	for row := 0; row < scrollbackRows; row++ {
 		scrollback[row] = protocol.CompactRowFromCellsPreserveTrailingBlankCells(protocolCellsFromVTermRow(source.ScrollbackRowView(row)), true)
 		scrollbackTimestamps[row] = source.ScrollbackRowTimestampAt(row)
 		scrollbackRowKinds[row] = source.ScrollbackRowKindAt(row)
 		scrollbackWrapped[row] = source.ScrollbackRowWrappedAt(row)
+		scrollbackOwnership[row] = source.ScrollbackRowOwnershipAt(row)
 	}
-	return &protocol.Snapshot{
+	snapshot := &protocol.Snapshot{
 		TerminalID: terminalID,
 		Size:       protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
 		Screen: protocol.ScreenData{
@@ -718,10 +776,15 @@ func snapshotFromRowSource(terminalID string, source rowSnapshotSource) *protoco
 		ScreenWrapped:        screenWrapped,
 		ScrollbackWrapped:    scrollbackWrapped,
 		ScreenOwnership:      repeatedOwnership(protocol.RowOwnershipScreen, len(screen)),
+		ScrollbackOwnership:  scrollbackOwnership,
 		Cursor:               protocolCursorFromVTerm(source.CursorState()),
 		Modes:                protocolModesFromVTerm(source.Modes()),
 		Timestamp:            time.Now(),
 	}
+	if protocol.HasExplicitRowOwnership(screenOwnership, len(screen)) {
+		snapshot.ScreenOwnership = screenOwnership
+	}
+	return snapshot
 }
 
 func protocolCellFromVTermCell(cell localvterm.Cell) protocol.Cell {

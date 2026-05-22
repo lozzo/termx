@@ -114,10 +114,12 @@ type SurfaceSnapshot struct {
 	ScrollbackTimestamps []time.Time
 	ScrollbackRowKinds   []string
 	ScrollbackWrapped    []bool
+	ScrollbackOwnership  []string
 	Screen               ScreenData
 	ScreenTimestamps     []time.Time
 	ScreenRowKinds       []string
 	ScreenWrapped        []bool
+	ScreenOwnership      []string
 	Cursor               CursorState
 	Modes                TerminalModes
 }
@@ -153,6 +155,8 @@ type VTerm struct {
 	screenTimestamps         []time.Time
 	scrollbackRowKinds       []string
 	screenRowKinds           []string
+	scrollbackOwnership      []string
+	screenOwnership          []string
 	screenRowCache           [][]Cell
 	scrollbackRowCache       [][]Cell
 	screenFingerprintCache   []rowFingerprint
@@ -252,6 +256,7 @@ type ScrollbackRowAppend struct {
 	RowKind    string
 	Wrapped    bool
 	WrappedSet bool
+	Ownership  string
 }
 
 type ScreenUpdate struct {
@@ -523,6 +528,8 @@ func (v *VTerm) resetEmulator(cols, rows int) {
 	v.screenTimestamps = make([]time.Time, maxInt(rows, 1))
 	v.scrollbackRowKinds = nil
 	v.screenRowKinds = make([]string, maxInt(rows, 1))
+	v.scrollbackOwnership = nil
+	v.screenOwnership = make([]string, maxInt(rows, 1))
 	v.invalidateRowCachesLocked()
 	v.invalidateFingerprintCacheLocked()
 	emu.SetCallbacks(charmvt.Callbacks{
@@ -641,32 +648,39 @@ func (v *VTerm) WriteMirror(data []byte) (n int, err error) {
 	case !dirtyReliable || beforeHeight != afterHeight || beforeAltScreen != afterAltScreen:
 		v.screenTimestamps = normalizeTimeSlice(v.screenTimestamps, afterHeight)
 		v.screenRowKinds = normalizeStringSlice(v.screenRowKinds, afterHeight)
+		v.screenOwnership = normalizeStringSlice(v.screenOwnership, afterHeight)
 		for row := 0; row < afterHeight; row++ {
 			v.screenTimestamps[row] = now
 			v.screenRowKinds[row] = ""
+			v.screenOwnership[row] = ""
 		}
 	default:
 		v.screenTimestamps = normalizeTimeSlice(v.screenTimestamps, afterHeight)
 		v.screenRowKinds = normalizeStringSlice(v.screenRowKinds, afterHeight)
+		v.screenOwnership = normalizeStringSlice(v.screenOwnership, afterHeight)
 		for _, row := range dirtyRows {
 			if row < 0 || row >= afterHeight {
 				continue
 			}
 			v.screenTimestamps[row] = now
 			v.screenRowKinds[row] = ""
+			v.screenOwnership[row] = ""
 		}
 	}
 	switch {
 	case afterScrollbackLen <= 0:
 		v.scrollbackTimestamps = nil
 		v.scrollbackRowKinds = nil
+		v.scrollbackOwnership = nil
 	case afterScrollbackLen > beforeScrollbackLen:
 		added := afterScrollbackLen - beforeScrollbackLen
 		v.scrollbackTimestamps = append(v.scrollbackTimestamps, make([]time.Time, added)...)
 		v.scrollbackRowKinds = append(v.scrollbackRowKinds, make([]string, added)...)
+		v.scrollbackOwnership = append(v.scrollbackOwnership, make([]string, added)...)
 		for i := afterScrollbackLen - added; i < afterScrollbackLen; i++ {
 			v.scrollbackTimestamps[i] = now
 			v.scrollbackRowKinds[i] = ""
+			v.scrollbackOwnership[i] = ""
 		}
 	default:
 		v.alignScrollbackMetadataLocked()
@@ -964,6 +978,14 @@ func (v *VTerm) LoadSnapshotWithExtendedMetadata(scrollback [][]Cell, scrollback
 }
 
 func (v *VTerm) LoadSizedSnapshotWithExtendedMetadata(cols, rows int, scrollback [][]Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, scrollbackWrapped []bool, screen ScreenData, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool, cursor CursorState, modes TerminalModes) {
+	v.LoadSizedSnapshotWithOwnership(cols, rows, scrollback, scrollbackTimestamps, scrollbackRowKinds, scrollbackWrapped, nil, screen, screenTimestamps, screenRowKinds, screenWrapped, nil, cursor, modes)
+}
+
+func (v *VTerm) LoadSnapshotWithOwnership(scrollback [][]Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, scrollbackWrapped []bool, scrollbackOwnership []string, screen ScreenData, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool, screenOwnership []string, cursor CursorState, modes TerminalModes) {
+	v.LoadSizedSnapshotWithOwnership(0, 0, scrollback, scrollbackTimestamps, scrollbackRowKinds, scrollbackWrapped, scrollbackOwnership, screen, screenTimestamps, screenRowKinds, screenWrapped, screenOwnership, cursor, modes)
+}
+
+func (v *VTerm) LoadSizedSnapshotWithOwnership(cols, rows int, scrollback [][]Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, scrollbackWrapped []bool, scrollbackOwnership []string, screen ScreenData, screenTimestamps []time.Time, screenRowKinds []string, screenWrapped []bool, screenOwnership []string, cursor CursorState, modes TerminalModes) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
@@ -997,8 +1019,10 @@ func (v *VTerm) LoadSizedSnapshotWithExtendedMetadata(cols, rows int, scrollback
 	v.resetEmulator(width, height)
 	v.scrollbackTimestamps = normalizeTimeSlice(scrollbackTimestamps, len(scrollback))
 	v.scrollbackRowKinds = normalizeStringSlice(scrollbackRowKinds, len(scrollback))
+	v.scrollbackOwnership = normalizeStringSlice(scrollbackOwnership, len(scrollback))
 	v.screenTimestamps = normalizeTimeSlice(screenTimestamps, height)
 	v.screenRowKinds = normalizeStringSlice(screenRowKinds, height)
+	v.screenOwnership = normalizeStringSlice(screenOwnership, height)
 	v.loadMouseModesLocked(modes)
 	if len(scrollback) > 0 {
 		sb := v.emu.Emulator.Scrollback()
@@ -1097,6 +1121,7 @@ func (v *VTerm) applyScreenUpdateLocked(update ScreenUpdate) bool {
 	height := v.emu.Height()
 	v.screenTimestamps = normalizeTimeSlice(v.screenTimestamps, height)
 	v.screenRowKinds = normalizeStringSlice(v.screenRowKinds, height)
+	v.screenOwnership = normalizeStringSlice(v.screenOwnership, height)
 	v.cursor = cursor
 	v.modes = modes
 	v.loadMouseModesLocked(modes)
@@ -1124,8 +1149,10 @@ func (v *VTerm) applyScreenScrollLocked(delta int) {
 		}
 		zeroTime := make([]time.Time, height)
 		zeroKinds := make([]string, height)
+		zeroOwnership := make([]string, height)
 		v.screenTimestamps = zeroTime
 		v.screenRowKinds = zeroKinds
+		v.screenOwnership = zeroOwnership
 		return
 	}
 	screen := make([][]Cell, height)
@@ -1136,18 +1163,21 @@ func (v *VTerm) applyScreenScrollLocked(delta int) {
 	}
 	nextTimes := normalizeTimeSlice(v.screenTimestamps, height)
 	nextKinds := normalizeStringSlice(v.screenRowKinds, height)
+	nextOwnership := normalizeStringSlice(v.screenOwnership, height)
 	if delta > 0 {
 		for y := 0; y < height-delta; y++ {
 			screen[y] = screen[y+delta]
 			wrapped[y] = wrapped[y+delta]
 			nextTimes[y] = nextTimes[y+delta]
 			nextKinds[y] = nextKinds[y+delta]
+			nextOwnership[y] = nextOwnership[y+delta]
 		}
 		for y := height - delta; y < height; y++ {
 			screen[y] = nil
 			wrapped[y] = false
 			nextTimes[y] = time.Time{}
 			nextKinds[y] = ""
+			nextOwnership[y] = ""
 		}
 	} else {
 		shift := -delta
@@ -1156,12 +1186,14 @@ func (v *VTerm) applyScreenScrollLocked(delta int) {
 			wrapped[y] = wrapped[y-shift]
 			nextTimes[y] = nextTimes[y-shift]
 			nextKinds[y] = nextKinds[y-shift]
+			nextOwnership[y] = nextOwnership[y-shift]
 		}
 		for y := 0; y < shift; y++ {
 			screen[y] = nil
 			wrapped[y] = false
 			nextTimes[y] = time.Time{}
 			nextKinds[y] = ""
+			nextOwnership[y] = ""
 		}
 	}
 	for y := 0; y < height; y++ {
@@ -1181,6 +1213,7 @@ func (v *VTerm) applyScreenScrollLocked(delta int) {
 	}
 	v.screenTimestamps = nextTimes
 	v.screenRowKinds = nextKinds
+	v.screenOwnership = nextOwnership
 }
 
 func (v *VTerm) applyScreenUpdateOpsLocked(update ScreenUpdate, targetCols, targetRows int) bool {
@@ -1191,6 +1224,7 @@ func (v *VTerm) applyScreenUpdateOpsLocked(update ScreenUpdate, targetCols, targ
 	nextWrapped := v.screenWrappedLocked(targetRows)
 	nextTimes := normalizeTimeSlice(v.screenTimestamps, targetRows)
 	nextKinds := normalizeStringSlice(v.screenRowKinds, targetRows)
+	nextOwnership := normalizeStringSlice(v.screenOwnership, targetRows)
 	changedRows := make(map[int]struct{}, targetRows)
 	changedRowUsed := make(map[int]int)
 	markRowRange := func(start, end int) {
@@ -1228,6 +1262,7 @@ func (v *VTerm) applyScreenUpdateOpsLocked(update ScreenUpdate, targetCols, targ
 			}
 			nextTimes[op.Row] = op.Timestamp
 			nextKinds[op.Row] = op.RowKind
+			nextOwnership[op.Row] = ""
 			if op.WrappedSet {
 				nextWrapped[op.Row] = op.Wrapped
 			}
@@ -1242,6 +1277,7 @@ func (v *VTerm) applyScreenUpdateOpsLocked(update ScreenUpdate, targetCols, targ
 			}
 			nextTimes[op.Row] = op.Timestamp
 			nextKinds[op.Row] = op.RowKind
+			nextOwnership[op.Row] = ""
 			if op.WrappedSet {
 				nextWrapped[op.Row] = op.Wrapped
 			}
@@ -1260,6 +1296,7 @@ func (v *VTerm) applyScreenUpdateOpsLocked(update ScreenUpdate, targetCols, targ
 				}
 				nextTimes[row] = op.Timestamp
 				nextKinds[row] = op.RowKind
+				nextOwnership[row] = ""
 				if op.WrappedSet {
 					nextWrapped[row] = op.Wrapped
 				} else if op.Rect.X == 0 && op.Rect.Width >= targetCols {
@@ -1277,6 +1314,7 @@ func (v *VTerm) applyScreenUpdateOpsLocked(update ScreenUpdate, targetCols, targ
 			beforeTimes := append([]time.Time(nil), nextTimes...)
 			beforeKinds := append([]string(nil), nextKinds...)
 			beforeWrapped := append([]bool(nil), nextWrapped...)
+			beforeOwnership := append([]string(nil), nextOwnership...)
 			applyDamageScrollRect(screen, damageOp)
 			if op.Dx == 0 && op.Rect.X == 0 && op.Rect.Width >= targetCols {
 				for row := op.Rect.Y; row < op.Rect.Y+op.Rect.Height && row < targetRows; row++ {
@@ -1288,11 +1326,13 @@ func (v *VTerm) applyScreenUpdateOpsLocked(update ScreenUpdate, targetCols, targ
 						nextTimes[row] = beforeTimes[srcRow]
 						nextKinds[row] = beforeKinds[srcRow]
 						nextWrapped[row] = boolAt(beforeWrapped, srcRow)
+						nextOwnership[row] = stringAt(beforeOwnership, srcRow)
 						continue
 					}
 					nextTimes[row] = time.Time{}
 					nextKinds[row] = ""
 					nextWrapped[row] = false
+					nextOwnership[row] = ""
 				}
 			}
 			markRowRange(op.Rect.Y, op.Rect.Y+op.Rect.Height)
@@ -1306,6 +1346,7 @@ func (v *VTerm) applyScreenUpdateOpsLocked(update ScreenUpdate, targetCols, targ
 			beforeTimes := append([]time.Time(nil), nextTimes...)
 			beforeKinds := append([]string(nil), nextKinds...)
 			beforeWrapped := append([]bool(nil), nextWrapped...)
+			beforeOwnership := append([]string(nil), nextOwnership...)
 			applyDamageCopyRect(screen, damageOp)
 			if op.Src.X == 0 && op.DstX == 0 && op.Src.Width >= targetCols {
 				for row := 0; row < op.Src.Height; row++ {
@@ -1317,6 +1358,7 @@ func (v *VTerm) applyScreenUpdateOpsLocked(update ScreenUpdate, targetCols, targ
 					nextTimes[dstRow] = beforeTimes[srcRow]
 					nextKinds[dstRow] = beforeKinds[srcRow]
 					nextWrapped[dstRow] = boolAt(beforeWrapped, srcRow)
+					nextOwnership[dstRow] = stringAt(beforeOwnership, srcRow)
 				}
 			}
 			markRowRange(op.DstY, op.DstY+op.Src.Height)
@@ -1368,6 +1410,7 @@ func (v *VTerm) applyScreenUpdateOpsLocked(update ScreenUpdate, targetCols, targ
 	}
 	v.screenTimestamps = nextTimes
 	v.screenRowKinds = nextKinds
+	v.screenOwnership = nextOwnership
 	v.cursor = cursor
 	v.modes = modes
 	v.loadMouseModesLocked(modes)
@@ -1438,9 +1481,11 @@ func (v *VTerm) applyScreenUpdateScrollbackLocked(update ScreenUpdate) bool {
 
 	nextTimestamps := append([]time.Time(nil), tailTimeSlice(v.scrollbackTimestamps, trim)...)
 	nextKinds := append([]string(nil), tailStringSlice(v.scrollbackRowKinds, trim)...)
+	nextOwnership := append([]string(nil), tailStringSlice(v.scrollbackOwnership, trim)...)
 	for _, row := range update.ScrollbackAppend {
 		nextTimestamps = append(nextTimestamps, row.Timestamp)
 		nextKinds = append(nextKinds, row.RowKind)
+		nextOwnership = append(nextOwnership, row.Ownership)
 	}
 
 	scrollbackLen := sb.Len()
@@ -1450,8 +1495,12 @@ func (v *VTerm) applyScreenUpdateScrollbackLocked(update ScreenUpdate) bool {
 	if len(nextKinds) > scrollbackLen {
 		nextKinds = nextKinds[len(nextKinds)-scrollbackLen:]
 	}
+	if len(nextOwnership) > scrollbackLen {
+		nextOwnership = nextOwnership[len(nextOwnership)-scrollbackLen:]
+	}
 	v.scrollbackTimestamps = normalizeTimeSlice(nextTimestamps, scrollbackLen)
 	v.scrollbackRowKinds = normalizeStringSlice(nextKinds, scrollbackLen)
+	v.scrollbackOwnership = normalizeStringSlice(nextOwnership, scrollbackLen)
 	v.alignScrollbackMetadataLocked()
 	return true
 }
@@ -1662,6 +1711,7 @@ func (v *VTerm) SurfaceSnapshot() SurfaceSnapshot {
 		ScrollbackTimestamps: normalizeTimeSlice(v.scrollbackTimestamps, scrollbackCount),
 		ScrollbackRowKinds:   normalizeStringSlice(v.scrollbackRowKinds, scrollbackCount),
 		ScrollbackWrapped:    scrollbackWrapped,
+		ScrollbackOwnership:  normalizeStringSlice(v.scrollbackOwnership, scrollbackCount),
 		Screen: ScreenData{
 			Cells:             screen,
 			IsAlternateScreen: v.emu.IsAltScreen(),
@@ -1669,6 +1719,7 @@ func (v *VTerm) SurfaceSnapshot() SurfaceSnapshot {
 		ScreenTimestamps: normalizeTimeSlice(v.screenTimestamps, rows),
 		ScreenRowKinds:   normalizeStringSlice(v.screenRowKinds, rows),
 		ScreenWrapped:    screenWrapped,
+		ScreenOwnership:  normalizeStringSlice(v.screenOwnership, rows),
 		Cursor:           v.cursor,
 		Modes:            v.modes,
 	}
@@ -1742,6 +1793,18 @@ func (v *VTerm) ScrollbackRowKinds() []string {
 	return cloneStringSlice(v.scrollbackRowKinds)
 }
 
+func (v *VTerm) ScreenOwnership() []string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return cloneStringSlice(v.screenOwnership)
+}
+
+func (v *VTerm) ScrollbackOwnership() []string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return cloneStringSlice(v.scrollbackOwnership)
+}
+
 func (v *VTerm) ScreenRowKindAt(y int) string {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
@@ -1752,6 +1815,18 @@ func (v *VTerm) ScrollbackRowKindAt(y int) string {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return stringAt(v.scrollbackRowKinds, y)
+}
+
+func (v *VTerm) ScreenRowOwnershipAt(y int) string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return stringAt(v.screenOwnership, y)
+}
+
+func (v *VTerm) ScrollbackRowOwnershipAt(y int) string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return stringAt(v.scrollbackOwnership, y)
 }
 
 func (v *VTerm) ScreenWrapped() []bool {
@@ -2065,6 +2140,7 @@ func (v *VTerm) disableEmulatorScrollbackLocked() {
 	}
 	v.scrollbackTimestamps = nil
 	v.scrollbackRowKinds = nil
+	v.scrollbackOwnership = nil
 	v.scrollbackRowCache = nil
 }
 
@@ -2881,6 +2957,8 @@ func (v *VTerm) reconcileRowMetadataLocked(beforeScreen []rowFingerprint, before
 		v.scrollbackTimestamps = nil
 		v.screenRowKinds = nil
 		v.scrollbackRowKinds = nil
+		v.screenOwnership = nil
+		v.scrollbackOwnership = nil
 		return rowCacheReconcilePlan{}
 	}
 	scrollShift := detectScreenScrollShift(beforeScreen, afterScreen)
@@ -2907,10 +2985,12 @@ func (v *VTerm) reconcileRowMetadataLocked(beforeScreen []rowFingerprint, before
 		}
 		v.scrollbackTimestamps = append(v.scrollbackTimestamps, ts)
 		v.scrollbackRowKinds = append(v.scrollbackRowKinds, stringAt(beforeScreenRowKinds, i))
+		v.scrollbackOwnership = append(v.scrollbackOwnership, "")
 	}
 	for i := preservedFromBefore; i < requiredAppends; i++ {
 		v.scrollbackTimestamps = append(v.scrollbackTimestamps, now)
 		v.scrollbackRowKinds = append(v.scrollbackRowKinds, "")
+		v.scrollbackOwnership = append(v.scrollbackOwnership, "")
 	}
 	v.alignScrollbackMetadataLocked()
 	screenScrollShift := 0
@@ -4470,6 +4550,7 @@ func (v *VTerm) alignScrollbackMetadataLocked() {
 	if v.emu == nil {
 		v.scrollbackTimestamps = nil
 		v.scrollbackRowKinds = nil
+		v.scrollbackOwnership = nil
 		return
 	}
 	alignLen := v.emu.ScrollbackLen()
@@ -4477,6 +4558,7 @@ func (v *VTerm) alignScrollbackMetadataLocked() {
 	case alignLen <= 0:
 		v.scrollbackTimestamps = nil
 		v.scrollbackRowKinds = nil
+		v.scrollbackOwnership = nil
 	case alignLen < len(v.scrollbackTimestamps):
 		v.scrollbackTimestamps = append([]time.Time(nil), v.scrollbackTimestamps[len(v.scrollbackTimestamps)-alignLen:]...)
 	case alignLen > len(v.scrollbackTimestamps):
@@ -4489,6 +4571,14 @@ func (v *VTerm) alignScrollbackMetadataLocked() {
 		v.scrollbackRowKinds = append([]string(nil), v.scrollbackRowKinds[len(v.scrollbackRowKinds)-alignLen:]...)
 	case alignLen > len(v.scrollbackRowKinds):
 		v.scrollbackRowKinds = append(v.scrollbackRowKinds, make([]string, alignLen-len(v.scrollbackRowKinds))...)
+	}
+	switch {
+	case alignLen <= 0:
+		v.scrollbackOwnership = nil
+	case alignLen < len(v.scrollbackOwnership):
+		v.scrollbackOwnership = append([]string(nil), v.scrollbackOwnership[len(v.scrollbackOwnership)-alignLen:]...)
+	case alignLen > len(v.scrollbackOwnership):
+		v.scrollbackOwnership = append(v.scrollbackOwnership, make([]string, alignLen-len(v.scrollbackOwnership))...)
 	}
 }
 

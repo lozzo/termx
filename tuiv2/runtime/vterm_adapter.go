@@ -50,6 +50,7 @@ func vtermScreenUpdateFromProtocol(update protocol.ScreenUpdate) localvterm.Scre
 			RowKind:    row.RowKind,
 			Wrapped:    row.Wrapped,
 			WrappedSet: row.WrappedSet,
+			Ownership:  protocol.RowOwnershipLiveTailLive,
 		})
 	}
 	return out
