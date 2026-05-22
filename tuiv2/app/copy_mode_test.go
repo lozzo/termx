@@ -2300,6 +2300,76 @@ func TestCopyModeAcceptsCanonicalOlderPageWithRowIDZero(t *testing.T) {
 	}
 }
 
+func TestCopyModeOlderPrependKeepsCursorNearOriginalLogicalLine(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 40, Rows: 8},
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
+			protocolRowFromText("000048 latest", 40),
+			protocolRowFromText("000049 latest", 40),
+			protocolRowFromText("000050 latest", 40),
+		}),
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipPersisted, 3),
+		ScrollbackOffset:       0,
+		ScrollbackTotal:        51,
+		ScrollbackLogicalTotal: 51,
+		ScrollbackLoadedRows:   3,
+		HistoryGeneration:      9,
+		ScrollbackFirstRowID:   48,
+		ScrollbackLastRowID:    50,
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolRowFromText("live-a", 40),
+			protocolRowFromText("live-b", 40),
+		}},
+		Cursor: protocol.CursorState{Row: 1, Col: 0, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	if got := model.copyMode.CursorLogical.Line; got != 4 {
+		t.Fatalf("expected initial cursor on live tail line 4, got %d", got)
+	}
+	loaded := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       terminal.Snapshot.Size,
+		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
+			protocolRowFromText("000024 older", 40),
+			protocolRowFromText("000025 older", 40),
+			protocolRowFromText("000026 older", 40),
+		}),
+		ScrollbackOwnership:    repeatedOwnership(protocol.RowOwnershipPersisted, 3),
+		ScrollbackOffset:       3,
+		ScrollbackTotal:        51,
+		ScrollbackLogicalTotal: 51,
+		ScrollbackLoadedRows:   6,
+		HistoryGeneration:      9,
+		ScrollbackFirstRowID:   45,
+		ScrollbackLastRowID:    47,
+		ScrollbackHasMore:      true,
+		Screen:                 protocol.ScreenData{Cells: cloneProtocolRows(terminal.Snapshot.Screen.Cells)},
+		Cursor:                 terminal.Snapshot.Cursor,
+		Modes:                  terminal.Snapshot.Modes,
+	}
+
+	if !model.extendFrozenCopyModeSnapshot(loaded, 3, false) {
+		t.Fatal("expected adjacent older page to extend frozen snapshot")
+	}
+	if got := model.copyMode.CursorLogical.Line; got != 7 {
+		t.Fatalf("expected cursor logical line to follow original live tail after prepend, got %d", got)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[0]); got != "000024 older" {
+		t.Fatalf("expected older page at top of materialized scrollback, got %q", got)
+	}
+	if got := rowTextFromCompactRow(model.copyMode.Snapshot.Scrollback[3]); got != "000048 latest" {
+		t.Fatalf("expected latest committed rows after older page, got %q", got)
+	}
+	if model.copyMode.ViewTopRow == 0 {
+		t.Fatalf("expected viewport to remain near original cursor, not jump to top")
+	}
+}
+
 func TestCopyModeExtendsFrozenSnapshotPreservesLogicalTotals(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, []string{"new0"}, []string{"live0"})
