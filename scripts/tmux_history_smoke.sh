@@ -12,7 +12,7 @@ Run the isolated TermX + tmux history smoke flow:
   -> reattach -> capture
 
 Options:
-  --scenario NAME       scenario to run: baseline | standard | deep-hot | floating-owner-resize | floating-owner-reattach-history | floating-owner-wheel-history; default baseline
+  --scenario NAME       scenario to run: baseline | standard | deep-hot | floating-owner-resize | floating-owner-reattach-history | floating-owner-wheel-history | floating-owner-marker-history; default baseline
   --root PATH           artifact root; default is a new /tmp directory
   --bin PATH            existing termx binary to use; default builds into ROOT/termx
   --lines N             stress line count; default 1000
@@ -69,6 +69,10 @@ Artifacts:
     floating-wheel-resized.txt
     floating-wheel-after-wheel.txt
     floating-owner-wheel-history.resize.summary.txt
+  floating-owner-marker-history:
+    floating-marker-resized.txt
+    floating-marker-after-marker.txt
+    floating-owner-marker-history.resize.summary.txt
 EOF
 }
 
@@ -1034,6 +1038,40 @@ assert_not_contains() {
   fi
 }
 
+assert_floating_contains() {
+  local file="$1"
+  local needle="$2"
+  python3 - "$file" "$needle" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+needle = sys.argv[2]
+lines = open(path, "r", encoding="utf-8", errors="replace").read().splitlines()
+floating_left = None
+for line in lines:
+    markers = [match.start() for match in re.finditer(re.escape("┌─ ["), line)]
+    if markers:
+        marker = max(markers)
+        if marker == 0:
+            continue
+        floating_left = marker
+        break
+
+scanned = []
+for line in lines:
+    if floating_left is not None:
+        if len(line) <= floating_left or line[floating_left] not in "│┌└":
+            continue
+        scanned.append(line[floating_left + 1:])
+    else:
+        scanned.append(line)
+
+if needle not in "\n".join(scanned):
+    raise SystemExit(f"expected floating pane in {path} to contain {needle!r}")
+PY
+}
+
 assert_gridtrace_single_requested_cols() {
   local file="$1"
   python3 - "$file" <<'PY'
@@ -1113,6 +1151,34 @@ enter_copy_mode_and_repeat_top_until_contains() {
   return 1
 }
 
+enter_copy_mode_and_scan_down_until_contains() {
+  local session="$1"
+  local target="$2"
+  local base="$3"
+  local needle="$4"
+  local repeats="$5"
+  local attempt
+
+  send_tmux_keys "$session" "$target" "$base.copy-mode-enter" C-v
+  sleep "$G_DELAY"
+  send_tmux_keys "$session" "$target" "$base.copy-mode-top" g
+  sleep "$G_DELAY"
+  capture_session "$session" "$target" "$base" || return 1
+  if grep -Fq -- "$needle" "$ROOT/$base.txt"; then
+    return 0
+  fi
+  for attempt in $(seq 1 "$repeats"); do
+    send_tmux_keys "$session" "$target" "$base.copy-mode-down-$attempt" d
+    sleep "$G_DELAY"
+    capture_session "$session" "$target" "$base" || return 1
+    if grep -Fq -- "$needle" "$ROOT/$base.txt"; then
+      return 0
+    fi
+  done
+  echo "timed out waiting for '$needle' in $ROOT/$base.txt after $repeats down attempts" >&2
+  return 1
+}
+
 start_daemon() {
   mkdir -p "$CFG" "$STATE"
   XDG_CONFIG_HOME="$CFG" \
@@ -1135,6 +1201,10 @@ build_generator_command() {
     baseline|standard|floating-owner-resize|floating-owner-reattach-history|floating-owner-wheel-history)
       printf 'python3 %q --lines %q --seed %q --width-hint %q; exec cat' \
         "$REPO_ROOT/scripts/generate_terminal_stress.py" "$LINES" "$SEED" "$WIDTH_HINT"
+      ;;
+    floating-owner-marker-history)
+      printf 'python3 %q --lines %q --seed %q --width-hint %q --marker-block-at %q; exec cat' \
+        "$REPO_ROOT/scripts/generate_terminal_stress.py" "$LINES" "$SEED" "$WIDTH_HINT" "$(( LINES / 2 ))"
       ;;
     deep-hot)
       printf 'python3 -c %q %q %q; exec cat' \
@@ -1453,11 +1523,62 @@ run_floating_owner_wheel_history_scenario() {
   log "PASS floating-owner-wheel-history log -> $ROOT/floating-owner-wheel-history.resize.summary.txt"
 }
 
+run_floating_owner_marker_history_scenario() {
+  local pane_main
+  local key
+
+  start_attach_tmux_session "$SESSION_MAIN" "$TERM_ID" "floating-owner-marker"
+  pane_main="$ATTACH_SESSION_PANE"
+  CLIENT_MAIN_PID="$ATTACH_SESSION_CLIENT_PID"
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-base" "grid-stress"
+  write_termx_inventory_artifact "floating-marker-base"
+
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-manager.global-mode" C-g
+  sleep "$G_DELAY"
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-manager.open" t
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-manager-ready" "grid-stress"
+
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-attach" C-o
+  wait_log_regex_count_at_least 'server attached terminal' 2
+  sleep 0.5
+  capture_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-attached" "grid-stress"
+
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-mode.enter" C-o
+  sleep "$G_DELAY"
+  send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-owner.take" a
+  wait_log_regex_count_at_least 'msg="termx protocol request started".*method=ensure_resize' 2
+  sleep 0.5
+
+  for key in L L L L J J; do
+    send_tmux_keys "$SESSION_MAIN" "$pane_main" "floating-marker-resize.$key" "$key"
+    sleep "$G_DELAY"
+  done
+  wait_log_regex_count_at_least 'msg="termx protocol request started".*method=ensure_resize' 3
+  sleep 0.5
+  capture_session "$SESSION_MAIN" "$pane_main" "floating-marker-resized"
+  write_termx_inventory_artifact "floating-marker-resized"
+
+  enter_copy_mode_and_scan_down_until_contains "$SESSION_MAIN" "$pane_main" "floating-marker-after-marker" "TERM_X_TEXT_QR_BEGIN" "$G_REPEATS"
+  copy_resize_log_artifact "floating-owner-marker-history"
+
+  assert_contains "$ROOT/floating-marker-base.txt" "grid-stress"
+  assert_contains "$ROOT/floating-marker-resized.txt" "grid-stress"
+  assert_contains "$ROOT/floating-marker-after-marker.txt" "TERM_X_TEXT_QR_BEGIN"
+  assert_floating_contains "$ROOT/floating-marker-after-marker.txt" "QR|██████  ██  ████"
+  assert_stress_history_label_order_visible "$ROOT/floating-marker-after-marker.txt"
+  assert_regex_count_at_least "$ROOT/floating-owner-marker-history.resize.summary.txt" 'server attached terminal' 2
+  assert_regex_count_at_least "$ROOT/floating-owner-marker-history.resize.summary.txt" 'method=ensure_resize' 3
+  assert_terminal_size_shrunk "$ROOT/floating-marker-base.termx-ls.txt" "$ROOT/floating-marker-resized.termx-ls.txt" "$TERM_ID"
+
+  log "PASS floating-marker-after-marker -> $ROOT/floating-marker-after-marker.txt"
+  log "PASS floating-owner-marker-history log -> $ROOT/floating-owner-marker-history.resize.summary.txt"
+}
+
 attach_command() {
   local terminal_id="$1"
   local session_name="${2:-}"
   local trace_path=""
-  if [[ ( "$SCENARIO" == "deep-hot" || "$SCENARIO" == "floating-owner-reattach-history" || "$SCENARIO" == "floating-owner-wheel-history" ) && -n "$session_name" && "${TERMX_TMUX_HISTORY_TRACE:-0}" != "0" ]]; then
+  if [[ ( "$SCENARIO" == "deep-hot" || "$SCENARIO" == "floating-owner-reattach-history" || "$SCENARIO" == "floating-owner-wheel-history" || "$SCENARIO" == "floating-owner-marker-history" ) && -n "$session_name" && "${TERMX_TMUX_HISTORY_TRACE:-0}" != "0" ]]; then
     trace_path="$ROOT/${session_name}.gridtrace.log"
   fi
   if [[ -n "$trace_path" ]]; then
@@ -1626,6 +1747,9 @@ main() {
       ;;
     floating-owner-wheel-history)
       run_floating_owner_wheel_history_scenario
+      ;;
+    floating-owner-marker-history)
+      run_floating_owner_marker_history_scenario
       ;;
     *)
       echo "unknown scenario: $SCENARIO" >&2

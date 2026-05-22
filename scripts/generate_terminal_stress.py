@@ -114,11 +114,24 @@ def build_line(rng: random.Random, line_no: int, width_hint: int) -> str:
     return f"{leader} {body_style}{body}{RESET}{trailer}"
 
 
+def marker_block() -> list[str]:
+    return [
+        "TERM_X_TEXT_QR_BEGIN",
+        "QR|██████  ██  ████  ██  ██████|",
+        "QR|██  ██      ██    ██  ██  ██|",
+        "QR|██████  ████  ████    ██████|",
+        "QR|        ██  ██    ██        |",
+        "QR|████  ██████  ██  ████  ██  |",
+        "TERM_X_TEXT_QR_END",
+    ]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Print many styled lines for terminal stress testing.")
     parser.add_argument("--lines", type=int, default=100_000, help="number of lines to print")
     parser.add_argument("--seed", type=int, default=None, help="random seed; defaults to current time")
     parser.add_argument("--width-hint", type=int, default=120, help="influences long wrapped payload frequency")
+    parser.add_argument("--marker-block-at", type=int, default=0, help="emit a deterministic text QR marker block after this line number")
     return parser.parse_args()
 
 
@@ -131,6 +144,10 @@ def main() -> int:
     for line_no in range(1, args.lines + 1):
         sys.stdout.write(build_line(rng, line_no, args.width_hint))
         sys.stdout.write("\n")
+        if args.marker_block_at == line_no:
+            for marker_line in marker_block():
+                sys.stdout.write(marker_line)
+                sys.stdout.write("\n")
     sys.stdout.flush()
     return 0
 
