@@ -1853,21 +1853,22 @@ func TestApplyScreenUpdateAllowsSafeResizeWithoutRecreatingEmulator(t *testing.T
 	}
 }
 
-func TestApplyScreenUpdateUpdatesScrollbackWithoutRecreatingEmulator(t *testing.T) {
+func TestApplyScreenUpdateUpdatesScrollbackOwnershipWithoutRecreatingEmulator(t *testing.T) {
 	vt := New(4, 2, 100, nil)
 	now := time.Date(2026, 4, 18, 9, 0, 0, 0, time.UTC)
-	vt.LoadSnapshotWithMetadata([][]Cell{
+	vt.LoadSnapshotWithOwnership([][]Cell{
 		{{Content: "a", Width: 1}},
 		{{Content: "b", Width: 1}},
 		{{Content: "c", Width: 1}},
-	}, []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second)}, []string{"a", "b", "c"}, ScreenData{
-		Cells: [][]Cell{
-			{
-				{Content: "x", Width: 1},
-				{Content: "y", Width: 1},
+	}, []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second)}, []string{"a", "b", "c"}, nil,
+		[]string{"persisted", "persisted", "live-tail-live"}, ScreenData{
+			Cells: [][]Cell{
+				{
+					{Content: "x", Width: 1},
+					{Content: "y", Width: 1},
+				},
 			},
-		},
-	}, []time.Time{now}, []string{"screen"}, CursorState{Row: 0, Col: 2, Visible: true}, TerminalModes{AutoWrap: true})
+		}, []time.Time{now}, []string{"screen"}, nil, nil, CursorState{Row: 0, Col: 2, Visible: true}, TerminalModes{AutoWrap: true})
 
 	oldEmu := vt.emu
 	if !vt.ApplyScreenUpdate(ScreenUpdate{
@@ -1877,6 +1878,7 @@ func TestApplyScreenUpdateUpdatesScrollbackWithoutRecreatingEmulator(t *testing.
 			Cells:     []Cell{{Content: "d", Width: 1}},
 			Timestamp: now.Add(3 * time.Second),
 			RowKind:   "d",
+			Ownership: "live-tail-live",
 		}},
 		Cursor: CursorState{Row: 0, Col: 2, Visible: true},
 		Modes:  TerminalModes{AutoWrap: true},
@@ -1899,18 +1901,22 @@ func TestApplyScreenUpdateUpdatesScrollbackWithoutRecreatingEmulator(t *testing.
 	if got := vt.ScrollbackRowKindAt(2); got != "d" {
 		t.Fatalf("expected appended row kind, got %q", got)
 	}
+	if got := vt.ScrollbackOwnership(); !reflect.DeepEqual(got, []string{"persisted", "live-tail-live", "live-tail-live"}) {
+		t.Fatalf("expected ownership tail to follow trim+append, got %#v", got)
+	}
 }
 
 func TestApplyScreenUpdateScrollbackAppendKeepsMetadataTailWhenCapped(t *testing.T) {
 	vt := New(4, 2, 3, nil)
 	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
-	vt.LoadSnapshotWithMetadata([][]Cell{
+	vt.LoadSnapshotWithOwnership([][]Cell{
 		{{Content: "a", Width: 1}},
 		{{Content: "b", Width: 1}},
 		{{Content: "c", Width: 1}},
-	}, []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second)}, []string{"a", "b", "c"}, ScreenData{
-		Cells: [][]Cell{{{Content: "x", Width: 1}}},
-	}, []time.Time{now}, []string{"screen"}, CursorState{Row: 0, Col: 1, Visible: true}, TerminalModes{AutoWrap: true})
+	}, []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second)}, []string{"a", "b", "c"}, nil,
+		[]string{"persisted", "persisted", "live-tail-live"}, ScreenData{
+			Cells: [][]Cell{{{Content: "x", Width: 1}}},
+		}, []time.Time{now}, []string{"screen"}, nil, nil, CursorState{Row: 0, Col: 1, Visible: true}, TerminalModes{AutoWrap: true})
 
 	if !vt.ApplyScreenUpdate(ScreenUpdate{
 		Size: Size{Cols: 1, Rows: 1},
@@ -1918,6 +1924,7 @@ func TestApplyScreenUpdateScrollbackAppendKeepsMetadataTailWhenCapped(t *testing
 			Cells:     []Cell{{Content: "d", Width: 1}},
 			Timestamp: now.Add(3 * time.Second),
 			RowKind:   "d",
+			Ownership: "live-tail-live",
 		}},
 		Cursor: CursorState{Row: 0, Col: 1, Visible: true},
 		Modes:  TerminalModes{AutoWrap: true},
@@ -1940,6 +1947,9 @@ func TestApplyScreenUpdateScrollbackAppendKeepsMetadataTailWhenCapped(t *testing
 	}
 	if got := vt.ScrollbackRowKindAt(2); got != "d" {
 		t.Fatalf("expected appended metadata kind d, got %q", got)
+	}
+	if got := vt.ScrollbackOwnership(); !reflect.DeepEqual(got, []string{"persisted", "live-tail-live", "live-tail-live"}) {
+		t.Fatalf("expected capped ownership to keep committed/live-tail suffix, got %#v", got)
 	}
 }
 

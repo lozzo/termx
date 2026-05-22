@@ -1674,6 +1674,15 @@ func TestRuntimeScrollbackChangeInvalidatesExhaustedSnapshotState(t *testing.T) 
 	if terminal.ScrollbackLoadedLimit != 0 {
 		t.Fatalf("expected live-tail append not to advance committed loaded depth, got %#v", terminal)
 	}
+	if terminal.Snapshot == nil || !protocol.HasOnlyLiveTailLiveOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
+		t.Fatalf("expected stream scrollback append to be live-tail owned in snapshot, got %#v", terminal.Snapshot)
+	}
+	if !rt.RefreshSnapshotFromVTerm("term-1") {
+		t.Fatal("expected refresh from vterm after stream append")
+	}
+	if !protocol.HasOnlyLiveTailLiveOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
+		t.Fatalf("expected stream append ownership to round trip through vterm projection, got %#v", terminal.Snapshot.ScrollbackOwnership)
+	}
 }
 
 func TestRuntimeScrollOpcodeInvalidatesExhaustedSnapshotState(t *testing.T) {
@@ -2279,6 +2288,9 @@ func TestRuntimeScreenUpdateFullReplaceWithScrollbackAppendKeepsBoundaryReset(t 
 		}
 		if got := compactRowText(terminal.Snapshot.Scrollback[0]); got != "tail0" {
 			t.Fatalf("%s: expected full-replace append snapshot tail row, got %q", stage, got)
+		}
+		if !protocol.HasOnlyLiveTailLiveOwnership(terminal.Snapshot.ScrollbackOwnership, len(terminal.Snapshot.Scrollback)) {
+			t.Fatalf("%s: expected full-replace append row to remain live-tail owned, got %#v", stage, terminal.Snapshot.ScrollbackOwnership)
 		}
 		if !snapshotContains(terminal.Snapshot, "fresh") {
 			t.Fatalf("%s: expected fresh full-replace screen content, got %#v", stage, terminal.Snapshot)

@@ -265,6 +265,7 @@
 - copy mode backing model 已改为以 ownership metadata 决定 older-page offset、canonical row refs、selection anchoring 与 latest replace / refresh；live-tail rows 不再消耗 canonical row id，cursor / mark 优先按 ownership-backed row refs 重锚。
 - `tuiv2` 本地 VTerm projection 已显式保存 row ownership；`refreshSnapshotFromVTerm` 不再按 scrollback 行数形态继承 ownership，只在 projection 自身带有显式 ownership 时恢复历史 metadata。
 - runtime transaction restore、attach / re-entry、stale-page guard 已改为只信 snapshot ownership 派生的 committed depth；`ScrollbackLoadedLimit` 不再作为独立放行 older-page 或恢复历史状态的主语义。
+- `screen update` / `full-replace` / stream append 路径已补测试约束：append scrollback 只能作为 `live-tail-live` 投影材料，不创建 committed history，不恢复旧 totals / generation / canonical row window。
 - 每个子切片都必须保持主线测试可运行，并形成中文提交。
 
 ### 当前不启动的工作
