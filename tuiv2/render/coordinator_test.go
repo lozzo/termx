@@ -368,7 +368,12 @@ func TestRenderFrameShowsCopyModeRowTimestampInPaneChrome(t *testing.T) {
 		State:      "running",
 		Snapshot:   snapshot,
 	}}}
-	state = WithCopyMode(state, "pane-1", 0, 0, 0, false, 0, 0)
+	state = WithCopyMode(state, RenderCopyModeVM{
+		PaneID:            "pane-1",
+		CursorLogicalLine: 0,
+		CursorLogicalCol:  0,
+		ViewTopRow:        0,
+	})
 
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 	if !strings.Contains(frame, copyModeTimestampLabel(snapshot, 0)) {
@@ -399,7 +404,12 @@ func TestRenderFrameShowsCopyModeTimestampForBlankRow(t *testing.T) {
 		State:      "running",
 		Snapshot:   snapshot,
 	}}}
-	state = WithCopyMode(state, "pane-1", 0, 0, 0, false, 0, 0)
+	state = WithCopyMode(state, RenderCopyModeVM{
+		PaneID:            "pane-1",
+		CursorLogicalLine: 0,
+		CursorLogicalCol:  0,
+		ViewTopRow:        0,
+	})
 
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 	if !strings.Contains(frame, copyModeTimestampLabel(snapshot, 0)) {

@@ -56,16 +56,7 @@ func vmFromState(state VisibleRenderState) RenderVM {
 				PaneID:   state.PaneSnapshotOverridePaneID,
 				Snapshot: state.PaneSnapshotOverride,
 			},
-			CopyMode: RenderCopyModeVM{
-				PaneID:     state.CopyModePaneID,
-				CursorRow:  state.CopyModeCursorRow,
-				CursorCol:  state.CopyModeCursorCol,
-				ViewTopRow: state.CopyModeViewTopRow,
-				MarkSet:    state.CopyModeMarkSet,
-				MarkRow:    state.CopyModeMarkRow,
-				MarkCol:    state.CopyModeMarkCol,
-				Snapshot:   state.CopyModeSnapshot,
-			},
+			CopyMode: state.CopyMode,
 		},
 	}
 }

@@ -27,18 +27,7 @@ type VisibleRenderState struct {
 	ExitedPaneSelectionIndex   int
 	PaneSnapshotOverridePaneID string
 	PaneSnapshotOverride       *protocol.Snapshot
-	CopyModePaneID             string
-	CopyModeCursorRow          int
-	CopyModeCursorCol          int
-	CopyModeCursorLogicalLine  int
-	CopyModeCursorLogicalCol   int
-	CopyModeViewTopRow         int
-	CopyModeMarkSet            bool
-	CopyModeMarkRow            int
-	CopyModeMarkCol            int
-	CopyModeMarkLogicalLine    int
-	CopyModeMarkLogicalCol     int
-	CopyModeSnapshot           *protocol.Snapshot
+	CopyMode                  RenderCopyModeVM
 }
 
 type VisibleRuntimeStateProxy = runtime.VisibleRuntime
@@ -234,13 +223,7 @@ func WithPaneSnapshotOverride(state VisibleRenderState, paneID string, snapshot 
 	return state
 }
 
-func WithCopyMode(state VisibleRenderState, paneID string, cursorRow, cursorCol int, viewTopRow int, markSet bool, markRow, markCol int) VisibleRenderState {
-	state.CopyModePaneID = paneID
-	state.CopyModeCursorRow = cursorRow
-	state.CopyModeCursorCol = cursorCol
-	state.CopyModeViewTopRow = viewTopRow
-	state.CopyModeMarkSet = markSet
-	state.CopyModeMarkRow = markRow
-	state.CopyModeMarkCol = markCol
+func WithCopyMode(state VisibleRenderState, copyMode RenderCopyModeVM) VisibleRenderState {
+	state.CopyMode = copyMode
 	return state
 }
