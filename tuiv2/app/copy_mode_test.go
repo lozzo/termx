@@ -1333,7 +1333,8 @@ func TestCopyModeEnterPrefetchesWhenExhaustedFlagIsStale(t *testing.T) {
 	seedCopyModeSnapshot(t, model, nil, []string{"line0", "line1", "line2", "line3"})
 	terminal := model.runtime.Registry().Get("term-1")
 	terminal.ScrollbackExhausted = true
-	terminal.Snapshot.ScrollbackTotal = 3
+	terminal.ScrollbackLoadedLimit = 3
+	terminal.Snapshot.ScrollbackTotal = 1
 	terminal.Snapshot.Scrollback = protocol.CompactRowsFromCells([][]protocol.Cell{protocolRowFromText("known0", 40)})
 	terminal.Snapshot.ScrollbackLoadedRows = 1
 	terminal.Snapshot.HistoryGeneration = 7

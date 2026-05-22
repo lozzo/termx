@@ -400,21 +400,7 @@ func terminalHasKnownScrollbackBeyond(terminal *appruntime.TerminalRuntime, load
 	if terminal == nil {
 		return false
 	}
-	known := terminal.ScrollbackLoadedLimit
-	if snapshot := terminal.Snapshot; snapshot != nil {
-		if protocol.HasExplicitRowOwnership(snapshot.ScrollbackOwnership, len(snapshot.Scrollback)) {
-			known = maxInt(known, snapshotScrollbackLoadedDepth(snapshot))
-			if protocol.HasOnlyLiveTailLiveOwnership(snapshot.ScrollbackOwnership, len(snapshot.Scrollback)) {
-				return known > loaded
-			}
-			if snapshot.ScrollbackTotal > known {
-				known = snapshot.ScrollbackTotal
-			}
-			if snapshot.ScrollbackHasMore && known <= loaded {
-				known = loaded + 1
-			}
-		}
-	}
+	known := terminalLiveCommittedLoadedDepth(terminal)
 	return known > loaded
 }
 
@@ -431,7 +417,7 @@ func (m *Model) loadTerminalHistoryViewportCmd(terminalID string, offset int, li
 			return err
 		}
 		if terminal := m.clearHistoryLoadingOwner(terminalID, loadingLimit, owner); terminal != nil {
-			if snapshot != nil && !copyModeRequest {
+			if snapshot != nil && !copyModeRequest && protocol.HasExplicitRowOwnership(snapshot.ScrollbackOwnership, len(snapshot.Scrollback)) {
 				if loadedRows := snapshotScrollbackLoadedDepth(snapshot); loadedRows > terminal.ScrollbackLoadedLimit {
 					terminal.ScrollbackLoadedLimit = loadedRows
 				}
