@@ -114,26 +114,6 @@ func paneChromeActionTokensForPane(pane workbench.VisiblePane, title string, bor
 	return paneChromeActionTokensForContext(paneChromeContextForPane(pane, title, border))
 }
 
-func paneChromeActionSignatureForFrame(rect workbench.Rect, title string, border paneBorderInfo, floating bool) string {
-	_ = rect
-	_ = title
-	_ = border
-	if floating {
-		return floatingPaneChromeActionSignature
-	}
-	return tiledPaneChromeActionSignature
-}
-
-const floatingPaneChromeActionSignature = string(HitRegionPaneCenterFloating) + "|" +
-	string(HitRegionPaneCollapseFloating) + "|" +
-	string(HitRegionPaneZoom) + "|" +
-	string(HitRegionPaneClose)
-
-const tiledPaneChromeActionSignature = string(HitRegionPaneZoom) + "|" +
-	string(HitRegionPaneSplitV) + "|" +
-	string(HitRegionPaneSplitH) + "|" +
-	string(HitRegionPaneClose)
-
 func paneChromeActionSlotsWidth(tokens []paneChromeActionToken, count int) int {
 	if count <= 0 {
 		return 0

@@ -216,10 +216,3 @@ func runtimeMinInt(a, b int) int {
 	}
 	return b
 }
-
-func runtimeMaxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}

@@ -287,13 +287,6 @@ func trimSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int, trimNe
 	snapshot.ScrollbackHasMore = true
 }
 
-func maxUint64(a, b uint64) uint64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func cloneTimePrefix(values []time.Time, keep int) []time.Time {
 	if keep <= 0 || len(values) < keep {
 		return nil
@@ -1482,15 +1475,6 @@ func trimSnapshotScrollbackFront(snapshot *protocol.Snapshot, trim int) {
 	snapshot.ScrollbackOwnership = append([]string(nil), snapshot.ScrollbackOwnership[minInt(trim, len(snapshot.ScrollbackOwnership)):]...)
 }
 
-func cloneProtocolRowsWindow(rows [][]protocol.Cell, start int) [][]protocol.Cell {
-	start = minInt(maxInt(start, 0), len(rows))
-	if start >= len(rows) {
-		return nil
-	}
-	out := make([][]protocol.Cell, len(rows)-start)
-	copy(out, rows[start:])
-	return out
-}
 
 func cloneProtocolCompactRowsWindow(rows []protocol.CompactRow, start int) []protocol.CompactRow {
 	start = minInt(maxInt(start, 0), len(rows))

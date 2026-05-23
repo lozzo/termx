@@ -63,27 +63,6 @@ func emojiVariationSelectorModeForRuntime(runtimeState *VisibleRuntimeStateProxy
 	}
 }
 
-func renderPageLinesWithPinnedFooter(headerLines, contentLines []string, footerLine string, width, height int) []string {
-	if height <= 0 {
-		return nil
-	}
-	if height == 1 {
-		return []string{forceWidthANSIOverlay(footerLine, width)}
-	}
-
-	lines := make([]string, 0, height)
-	lines = append(lines, headerLines...)
-	lines = append(lines, contentLines...)
-	if len(lines) > height-1 {
-		lines = lines[:height-1]
-	}
-	for len(lines) < height-1 {
-		lines = append(lines, forceWidthANSIOverlay("", width))
-	}
-	lines = append(lines, forceWidthANSIOverlay(footerLine, width))
-	return lines
-}
-
 func immersiveZoomActive(state VisibleRenderState) bool {
 	return immersiveZoomActiveVM(RenderVMFromVisibleState(state))
 }

@@ -438,11 +438,6 @@ func copyModeSnapshotKey(snapshot *protocol.Snapshot) uintptr {
 	return uintptr(unsafe.Pointer(snapshot))
 }
 
-func (c *Coordinator) renderResult() (RenderResult, bool) {
-	result, cached := c.renderResultRef()
-	return cloneRenderResult(result), cached
-}
-
 func (c *Coordinator) renderResultRef() (RenderResult, bool) {
 	if c == nil || c.vmFn == nil {
 		return RenderResult{}, false

@@ -54,10 +54,6 @@ func (r *Runtime) RecentLocalInput() bool {
 	return time.Since(time.Unix(0, at)) <= effectiveInteractiveLatencyWindow()
 }
 
-func (r *Runtime) consumeInteractiveBypass() bool {
-	return r != nil && r.RecentLocalInput()
-}
-
 func effectiveInteractiveLatencyWindow() time.Duration {
 	window := interactiveLatencyWindow
 	if shared.RemoteLatencyProfileEnabled() && (window <= 0 || window < remoteInteractiveLatencyWindow) {

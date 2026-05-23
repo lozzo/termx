@@ -377,15 +377,6 @@ func promptSuggestionTextStyle(theme uiTheme, focused bool) lipgloss.Style {
 	return style
 }
 
-func promptSuggestionEmptyStyle(theme uiTheme, value string) lipgloss.Style {
-	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.panelMuted)).
-		Background(lipgloss.Color(promptSuggestionBG(theme, false)))
-	if strings.Contains(strings.ToLower(value), "not found") {
-		style = style.Foreground(lipgloss.Color(theme.danger)).Bold(true)
-	}
-	return style
-}
 
 func promptSuggestionBG(theme uiTheme, focused bool) string {
 	bg := mixHex(theme.fieldBG, theme.panelStrong, 0.58)
