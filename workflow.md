@@ -225,8 +225,9 @@
 下面这些已进入第二阶段当前工作范围：
 
 - ownership 模型需要跨 protocol 最小显式暴露；
-- runtime/app 层需要显式感知 live tail 与 persisted history 边界；
-- copy mode 需要改为直接消费 logical-line ownership contract。
+- `core` 需要对外提供 authoritative history projection；
+- client/runtime/app 不再本地重建 history truth；
+- copy mode 需要改为消费 `core` 提供的 authoritative history window，而不是继续本地推断 logical-line 边界。
 
 ## 7. 当前阶段基线
 
@@ -255,19 +256,28 @@
 - latest snapshot / viewport 已改为通过 `primaryLiveTail` 中的 reclaimed segment 投影，不再只靠读路径临时回卷 persisted suffix；
 - `termx-vterm` 到 `termx-core` 的内部 hint 已删除 `HotAppendRows` / `ResizeHotOwnedRows` 旧字段名，改为 `LiveTailAppendRows` / `ResizeLiveTailRows`，没有保留旧字段别名。
 - `termx-core` 相关测试文件、用例名和断言文本已从旧 `hot/cold` 场景词收敛到 `live-tail`、`persisted history`、`committed history` 表述。
-- `tuiv2` copy mode 本地状态已把 `LoadedRows` 收敛为 `CommittedLoadedRows`，明确它只表示 committed history depth；live-tail rows 只作为显示/选择材料，不推进 older-page offset。
+- `tuiv2` 现有 copy mode / runtime 历史本地状态仍处于待删除过渡态；后续不再继续增强这套本地 history truth 重建路径，而是准备整体删除并切换到 `core` authoritative history projection。
 
 ### 7.2 第二阶段当前执行目标
 
-- snapshot / viewport 已新增 row ownership contract，使 `tuiv2` 可以直接区分 persisted committed rows、reclaimed live-tail rows、live-origin live-tail rows 与 screen projection。
-- `tuiv2` runtime/app 已删除 `AuthoritativeLiveTailOnlyLatest`、`FullReplaceBoundaryReset` 这类本地推断状态字段，不再通过 `LoadedRows=0`、`HistoryGeneration=0`、row count 或 latest replace 形态反推 live-tail 边界。
-- `tuiv2` 不再在缺少 row ownership 时用本地 VTerm scrollback 行数、snapshot totals 或 `hasMore` 兜底推进 committed history depth；older-page 请求必须以显式 ownership 下的 committed depth 为依据。
-- copy mode backing model 已改为以 ownership metadata 决定 older-page offset、canonical row refs、selection anchoring 与 latest replace / refresh；live-tail rows 不再消耗 canonical row id，cursor / mark 优先按 ownership-backed row refs 重锚。
-- `tuiv2` 本地 VTerm projection 已显式保存 row ownership；`refreshSnapshotFromVTerm` 不再按 scrollback 行数形态继承 ownership，只在 projection 自身带有显式 ownership 时恢复历史 metadata。
-- runtime transaction restore、attach / re-entry、stale-page guard 已改为只信 snapshot ownership 派生的 committed depth；`CommittedLoadedDepth` 不再作为独立放行 older-page 或恢复历史状态的主语义。
-- `screen update` / `full-replace` / stream append 路径已补测试约束：append scrollback 只能作为 `live-tail-live` 投影材料，不创建 committed history，不恢复旧 totals / generation / canonical row window。
-- `tuiv2` app 层 prefetch / load-more / exhausted 判断已收口为 ownership 派生的 committed depth；`ScrollbackTotal` / `ScrollbackHasMore` 只能作为响应元数据消费，不能再单独证明存在可加载 committed history。
-- `tuiv2` runtime 内部历史加载状态已重命名为 `CommittedLoadedDepth` / `CommittedLoadingDepth` / `CommittedHistoryExhausted`，不再保留以 scrollback loaded limit 为主语义的字段名。
+- `core` 继续保有唯一的 logical-line history truth；logical-line 语义、committed/live-tail 边界、latest replace / older prepend 的 authoritative 判定，不再下放给 client 本地重建。
+- protocol/runtime/app 第二阶段的主目标从“让 `tuiv2` 更聪明地消费 row ownership metadata”调整为“让 `core` 对外提供 authoritative history projection，client 只消费结果和最小边界元数据”。
+- `tuiv2` runtime/app/copy mode 现有基于 `wrapped`、`ownership`、`CommittedLoadedDepth`、`row ref` 的 history truth 重建逻辑，统一视为待删除路径；不再继续在这条路径上做修补或增强。
+- client 仍然负责 PTY bytes 的本地 VT 解析和 live surface 渲染；但 history paging、copy-mode backing window、latest replace / older prepend 接纳规则，必须改为以 `core` 返回的 authoritative history window 为准。
+- `tuiv2` 本地 VTerm scrollback、snapshot totals、`hasMore`、`LoadedRows`、latest replace 形态、`wrapped` 拼接结果，都不得再作为 committed history truth 的来源。
+- 后续新的 protocol contract 应优先表达：
+  - authoritative projected history window；
+  - window replace / prepend 语义；
+  - committed paging cursor 或等价边界 token；
+  - row-group / line-span 这类足以支撑 copy mode 交互但不要求 client 重建 logical-line truth 的最小投影元数据。
+- `tuiv2` copy mode 后续只允许保留交互态：
+  - 光标；
+  - 选区；
+  - viewport top；
+  - 当前 authoritative window token；
+  不再长期保有本地 committed history 深度推断状态机。
+- runtime transaction restore、attach / re-entry、stale-page guard 后续都必须围绕 authoritative history window token 工作，而不是围绕本地 `CommittedLoadedDepth` 或 row-level snapshot 推断工作。
+- 所有 stale response 过滤、latest boundary reset、older-page continuity 判定，应尽可能前移到 `core`/protocol authoritative 结果中；client 不再承担二次发明历史真相的责任。
 - 每个子切片都必须保持主线测试可运行，并形成中文提交。
 
 ### 当前不启动的工作

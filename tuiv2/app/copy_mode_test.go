@@ -363,28 +363,25 @@ func TestPagedSnapshotLoadedFallsBackToRuntimeMergeWhenFrozenCopyModeDoesNotCons
 
 	terminal = model.runtime.Registry().Get("term-1")
 	if terminal == nil || terminal.Snapshot == nil {
-		t.Fatalf("expected runtime terminal snapshot after paged merge, got %#v", terminal)
+		t.Fatalf("expected runtime terminal snapshot after paged fallback, got %#v", terminal)
 	}
-	if got, want := snapshotScrollbackLoadedDepth(terminal.Snapshot), 2; got != want {
-		t.Fatalf("expected runtime merge to raise loaded depth to %d, got %d", want, got)
+	if got, want := snapshotScrollbackLoadedDepth(terminal.Snapshot), 1; got != want {
+		t.Fatalf("expected runtime snapshot to remain authoritative at loaded depth %d, got %d", want, got)
 	}
-	if got, want := len(terminal.Snapshot.Scrollback), 2; got != want {
-		t.Fatalf("expected runtime merge to prepend older page, got %d rows want %d", got, want)
+	if got, want := len(terminal.Snapshot.Scrollback), 1; got != want {
+		t.Fatalf("expected runtime snapshot not to locally prepend older page, got %d rows want %d", got, want)
 	}
-	if got := rowTextFromCompactRow(terminal.Snapshot.Scrollback[0]); got != "canon000" {
-		t.Fatalf("expected merged runtime snapshot to start with canon000, got %q", got)
-	}
-	if got := rowTextFromCompactRow(terminal.Snapshot.Scrollback[1]); got != "canon001" {
-		t.Fatalf("expected merged runtime snapshot to keep canon001 second, got %q", got)
+	if got := rowTextFromCompactRow(terminal.Snapshot.Scrollback[0]); got != "canon001" {
+		t.Fatalf("expected runtime snapshot to keep existing canonical row, got %q", got)
 	}
 	if got, want := terminal.Snapshot.HistoryGeneration, uint64(10); got != want {
-		t.Fatalf("expected runtime merge to preserve canonical generation, got %d want %d", got, want)
+		t.Fatalf("expected runtime snapshot generation unchanged, got %d want %d", got, want)
 	}
-	if got, want := terminal.Snapshot.ScrollbackFirstRowID, uint64(0); got != want {
-		t.Fatalf("expected runtime merge to update first row id, got %d want %d", got, want)
+	if got, want := terminal.Snapshot.ScrollbackFirstRowID, uint64(1); got != want {
+		t.Fatalf("expected runtime snapshot first row id unchanged, got %d want %d", got, want)
 	}
 	if got, want := terminal.Snapshot.ScrollbackLastRowID, uint64(1); got != want {
-		t.Fatalf("expected runtime merge to keep last row id, got %d want %d", got, want)
+		t.Fatalf("expected runtime snapshot last row id unchanged, got %d want %d", got, want)
 	}
 
 	frozen, ok := model.copyModeStateForPane("pane-1")
@@ -606,7 +603,7 @@ func TestPagedSnapshotLoadedCopyModeRequestDoesNotPolluteRuntimeAfterCopyModeExi
 		Cursor:                 terminal.Snapshot.Cursor,
 		Modes:                  terminal.Snapshot.Modes,
 	}
-	beforeViewportCalls := len(client.viewportRequests)
+	beforeSnapshotCalls := len(client.snapshotRequests)
 	msg := liveCmdBeforeStale()
 	typed, ok := msg.(orchestrator.SnapshotLoadedMsg)
 	if !ok {
@@ -615,12 +612,12 @@ func TestPagedSnapshotLoadedCopyModeRequestDoesNotPolluteRuntimeAfterCopyModeExi
 	_, followCmd := model.Update(typed)
 	drainCmd(t, model, followCmd, 20)
 
-	if got := len(client.viewportRequests); got != beforeViewportCalls+1 {
-		t.Fatalf("expected one live history viewport request after stale copy-mode response, before=%d after=%d calls=%#v", beforeViewportCalls, got, client.viewportRequests)
+	if got := len(client.snapshotRequests); got != beforeSnapshotCalls+1 {
+		t.Fatalf("expected one live snapshot request after stale copy-mode response, before=%d after=%d calls=%#v", beforeSnapshotCalls, got, client.snapshotRequests)
 	}
-	request := client.viewportRequests[len(client.viewportRequests)-1]
+	request := client.snapshotRequests[len(client.snapshotRequests)-1]
 	if request.offset != 1 {
-		t.Fatalf("expected live history request to continue from committed depth 1, got %#v", request)
+		t.Fatalf("expected live snapshot request to continue from committed depth 1, got %#v", request)
 	}
 	if got := terminal.CommittedLoadingDepth; got != 0 {
 		t.Fatalf("expected live response to clear its own loading marker, got %d", got)

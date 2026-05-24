@@ -64,8 +64,8 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		if typed.Paged {
 			if typed.CopyModeRequest {
 				_ = m.adjustCopyModeAfterSnapshotLoadedWithWindow(typed.TerminalID, typed.Snapshot, typed.Offset, true)
-			} else if m.runtime != nil {
-				m.runtime.ApplyGridViewportPage(typed.TerminalID, typed.Snapshot, typed.Offset)
+			} else {
+				_ = m.adjustCopyModeAfterSnapshotLoadedWithWindow(typed.TerminalID, typed.Snapshot, typed.Offset, false)
 			}
 		} else {
 			m.adjustCopyModeAfterSnapshotLoaded(typed.TerminalID, typed.Snapshot)

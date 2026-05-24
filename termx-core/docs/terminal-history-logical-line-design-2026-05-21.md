@@ -25,7 +25,7 @@
 这样会带来几个直接问题：
 
 - resize 会影响历史边界，历史容易和显示行为耦合；
-- copy mode 需要依赖 wrapped 元数据去反推逻辑行；
+- copy mode 曾经需要依赖 wrapped 元数据去反推逻辑行；
 - history replay / paging 很难天然按逻辑行工作；
 - 热区 / 冷区的边界容易随着窗口变化而抖动；
 - 极端场景下，已经提交的历史和当前 live 屏幕之间的 ownership 不清晰。
@@ -35,6 +35,12 @@
 - 历史存储，
 - 当前可变真相，
 - 当前可见投影。
+
+并进一步把职责收口为：
+
+- `core` 独占 logical-line history truth，
+- protocol 对外暴露 authoritative history projection，
+- client 只消费结果和最小交互元数据，而不是继续本地重建 history truth。
 
 ## 3. 设计目标
 
@@ -49,6 +55,7 @@
 ### 3.2 非目标
 
 - 不要求终端的 live VT surface 也改成纯 logical-line 模型。
+- 不要求 client 自己持有 logical-line truth。
 - 不要求 wire/runtime/app 在这一版文档里就已经跟进所有 contract。
 - 不要求本文直接规定最终数据结构和编码格式。
 
@@ -204,6 +211,7 @@
 - grow reclaim 的基本单位固定为**完整 logical line**，不得只 reclaim 半条逻辑行。
 - grow reclaim 的范围固定为“最小充分 logical-line 后缀”。
 - 第一阶段不扩展 wire/runtime/app contract 来表达完整 ownership 语义。
+- 第二阶段不再继续增强 client 本地 history truth 重建路径；后续方向改为 `core` authoritative history projection + thin client。
 
 ## 8. 事件分类
 

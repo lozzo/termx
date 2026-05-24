@@ -413,20 +413,24 @@ func (m *Model) loadTerminalHistoryViewportCmd(terminalID string, offset int, li
 		owner = historyLoadingOwnerCopyMode
 	}
 	return func() tea.Msg {
-		snapshot, err := m.runtime.LoadGridViewport(context.Background(), terminalID, offset, limit, cols)
+		loadFn := m.runtime.LoadGridViewport
+		if !copyModeRequest {
+			loadFn = func(ctx context.Context, terminalID string, offset, limit, _ int) (*protocol.Snapshot, error) {
+				return m.runtime.LoadSnapshot(ctx, terminalID, offset, limit)
+			}
+		}
+		snapshot, err := loadFn(context.Background(), terminalID, offset, limit, cols)
 		if err != nil {
 			m.clearHistoryLoadingOwner(terminalID, loadingLimit, owner)
 			return err
 		}
-		if terminal := m.clearHistoryLoadingOwner(terminalID, loadingLimit, owner); terminal != nil {
-			if snapshot != nil && !copyModeRequest && protocol.HasExplicitRowOwnership(snapshot.ScrollbackOwnership, len(snapshot.Scrollback)) {
-				if loadedRows := snapshotScrollbackLoadedDepth(snapshot); loadedRows > terminal.CommittedLoadedDepth {
-					terminal.CommittedLoadedDepth = loadedRows
-				}
-				if limit > 0 {
-					terminal.CommittedHistoryExhausted = !snapshot.ScrollbackHasMore
-				}
-			}
+		if !copyModeRequest {
+			// Live-pane history loading no longer merges viewport pages locally.
+			// Treat the server snapshot as authoritative and only clear the local
+			// loading slot when the response still belongs to the active request.
+			_ = m.clearHistoryLoadingOwner(terminalID, loadingLimit, owner)
+		} else {
+			_ = m.clearHistoryLoadingOwner(terminalID, loadingLimit, owner)
 		}
 		return orchestrator.SnapshotLoadedMsg{
 			TerminalID:      terminalID,

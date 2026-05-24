@@ -99,11 +99,11 @@ func TestPaneScrollbackPrefetchUsesCanonicalCols(t *testing.T) {
 		t.Fatalf("expected active pane history request to stay on live/runtime path, got %#v", typed)
 	}
 
-	if got := len(client.viewportRequests); got != 1 {
-		t.Fatalf("expected one pane history request, got %#v", client.viewportRequests)
+	if got := len(client.snapshotRequests); got != 1 {
+		t.Fatalf("expected one pane snapshot request, got %#v", client.snapshotRequests)
 	}
-	if got := client.viewportRequests[0].cols; got != 120 {
-		t.Fatalf("expected pane history request to use canonical cols 120, got %d", got)
+	if got := client.snapshotRequests[0].offset; got != 0 || client.snapshotRequests[0].limit != 500 {
+		t.Fatalf("expected pane snapshot request offset=0 limit=500, got %#v", client.snapshotRequests[0])
 	}
 }
 
@@ -138,12 +138,12 @@ func TestPaneScrollbackPrefetchUsesLoadedDepthBeyondMaterializedWindow(t *testin
 	}
 	_ = cmd()
 
-	if got := len(client.viewportRequests); got != 1 {
-		t.Fatalf("expected one pane history request, got %#v", client.viewportRequests)
+	if got := len(client.snapshotRequests); got != 1 {
+		t.Fatalf("expected one pane snapshot request, got %#v", client.snapshotRequests)
 	}
-	request := client.viewportRequests[0]
+	request := client.snapshotRequests[0]
 	if request.offset != 1500 {
-		t.Fatalf("expected history request to continue from loaded depth 1500, got %#v", request)
+		t.Fatalf("expected snapshot request to continue from loaded depth 1500, got %#v", request)
 	}
 	if request.limit != 500 {
 		t.Fatalf("expected next page size 500, got %#v", request)
@@ -172,8 +172,8 @@ func TestPaneScrollbackPrefetchDoesNotTreatLiveTailOwnershipRowsAsCommittedHisto
 	if cmd != nil {
 		t.Fatal("expected no pane scrollback prefetch command for live-tail ownership rows")
 	}
-	if got := len(client.viewportRequests); got != 0 {
-		t.Fatalf("expected no pane history request for live-tail ownership rows, got %#v", client.viewportRequests)
+	if got := len(client.snapshotRequests); got != 0 {
+		t.Fatalf("expected no pane snapshot request for live-tail ownership rows, got %#v", client.snapshotRequests)
 	}
 }
 
@@ -225,12 +225,12 @@ func TestPaneScrollbackPrefetchUsesZeroOffsetAfterLiveTailOwnershipLatestReplace
 	}
 	_ = cmd()
 
-	if got := len(client.viewportRequests); got != 1 {
-		t.Fatalf("expected one pane history request, got %#v", client.viewportRequests)
+	if got := len(client.snapshotRequests); got != 2 {
+		t.Fatalf("expected initial latest reload plus one pane snapshot request, got %#v", client.snapshotRequests)
 	}
-	request := client.viewportRequests[0]
+	request := client.snapshotRequests[len(client.snapshotRequests)-1]
 	if request.offset != 0 {
-		t.Fatalf("expected pane history request to restart from committed depth 0, got %#v", request)
+		t.Fatalf("expected pane snapshot request to restart from committed depth 0, got %#v", request)
 	}
 	if request.limit != 500 {
 		t.Fatalf("expected default page size 500 from committed depth 0, got %#v", request)
@@ -285,12 +285,12 @@ func TestPaneScrollbackPrefetchUsesZeroOffsetAfterLiveTailOwnershipDisplayTail(t
 	}
 	_ = cmd()
 
-	if got := len(client.viewportRequests); got != 1 {
-		t.Fatalf("expected one pane history request, got %#v", client.viewportRequests)
+	if got := len(client.snapshotRequests); got != 1 {
+		t.Fatalf("expected one pane snapshot request, got %#v", client.snapshotRequests)
 	}
-	request := client.viewportRequests[0]
+	request := client.snapshotRequests[0]
 	if request.offset != 0 {
-		t.Fatalf("expected pane history request to restart from committed depth 0 after full-replace boundary reset, got %#v", request)
+		t.Fatalf("expected pane snapshot request to restart from committed depth 0 after full-replace boundary reset, got %#v", request)
 	}
 	if request.limit != 500 {
 		t.Fatalf("expected default page size 500 from committed depth 0 after full-replace boundary reset, got %#v", request)
@@ -355,11 +355,11 @@ func TestPaneScrollbackStaleLiveResponseDoesNotRestoreBoundarySideStateAfterFull
 		t.Fatalf("expected stale live request to stay on live/runtime path, got %#v", typed)
 	}
 
-	if got := len(client.viewportRequests); got != 1 {
-		t.Fatalf("expected one stale live history request, got %#v", client.viewportRequests)
+	if got := len(client.snapshotRequests); got != 1 {
+		t.Fatalf("expected one stale live snapshot request, got %#v", client.snapshotRequests)
 	}
-	if request := client.viewportRequests[0]; request.offset != 12000 || request.limit != 500 {
-		t.Fatalf("expected stale live history request to keep original offset/limit, got %#v", request)
+	if request := client.snapshotRequests[0]; request.offset != 12000 || request.limit != 500 {
+		t.Fatalf("expected stale live snapshot request to keep original offset/limit, got %#v", request)
 	}
 	if got := terminal.CommittedLoadedDepth; got != 0 {
 		t.Fatalf("expected stale live response not to restore committed depth after full-replace reset, got %d", got)

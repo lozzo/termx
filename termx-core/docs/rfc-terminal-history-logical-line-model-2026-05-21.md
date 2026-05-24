@@ -25,7 +25,7 @@
 
 - `termx-core` 冷层仍主要按 wrapped 视觉行存储，只是附带了 `wrapped` 元数据；
 - `hotAppendRows` 一类机制已经在尝试维护“最新未封口尾部”的独立语义；
-- `tuiv2` copy mode 已经需要通过 `wrapped` 元数据反推逻辑行边界。
+- `tuiv2` copy mode 曾经需要通过 `wrapped` 元数据反推逻辑行边界。
 
 这种状态说明：
 
@@ -88,11 +88,12 @@
 ### 4.2 次要目标
 
 - 为后续 canonical row identity / generation / paging contract 提供更稳定的历史真相模型。
-- 降低未来在 runtime / app 层处理热区、冷区、copy mode 边界时的复杂度。
+- 让 `core` 可以对外提供 authoritative history projection，避免 client 在 runtime / app 层继续本地重建历史真相。
 
 ## 5. 非目标
 
 - 本 RFC 不要求把 VT live surface 改造成纯 logical-line 数据结构。
+- 本 RFC 不要求 client 自己持有 logical-line truth。
 - 本 RFC 不要求第一阶段立即改完所有 wire/runtime/app contract。
 - 本 RFC 不直接规定最终 protobuf / binary payload 的编码形式。
 - 本 RFC 不处理 remote 产品层面的历史语义扩展。
@@ -215,6 +216,13 @@
 
 - 第一阶段不得扩展 wire/runtime/app contract 来表达完整 ownership 模型。
 - 第一阶段 ownership 模型只要求在 `termx-core` 内部定死，对外仍允许保守消费 snapshot / viewport / update 语义。
+
+### 7.1.11 第二阶段客户端职责
+
+- 第二阶段开始，`core` 仍然保有唯一的 logical-line history truth。
+- client 可以继续本地解析 PTY bytes、维护 live VT surface、执行 UI 交互；但不得继续把本地 row materialization、wrapped 元数据、loaded row 数、latest replace 形态等信息当成历史真相来源。
+- history paging、copy mode backing window、latest replace / older prepend 的 authoritative 判定，应尽量由 `core` 提供并通过 protocol 明确暴露。
+- client 允许消费 authoritative projected history window 与最小投影元数据，但不应再自行发明第二套 logical-line truth。
 
 ## 8. 数据模型提案
 
@@ -547,17 +555,21 @@ segment 至少需要表达：
 - write / resize / snapshot / viewport / process-exit 路径已统一通过 live-tail ownership 结构表达。
 - 已删除代码、测试 helper、内部 contract 与运行时状态中的旧 `hot/cold` 主语义命名。
 
-### Phase 2: Snapshot / Viewport / Paging 适配
+### Phase 2: Authoritative History Projection 适配
 
-- 主动扩展 snapshot / viewport ownership contract，使 runtime / app 可以直接区分 persisted committed rows、reclaimed live-tail rows、live-origin live-tail rows 与 screen projection。
-- 删除 TUI 侧通过 `LoadedRows=0`、`HistoryGeneration=0`、row count 或 latest replace 形态反推 live-tail-only 的旧路径。
-- 对外读取路径必须按 logical line ownership 和 canonical history 窗口工作，不再把 wrapped visual row 当成历史主语义。
+- 主动扩展 protocol contract，使 `core` 可以对外提供 authoritative history projection，而不是让 client 继续本地重建 history truth。
+- 对外读取路径必须按 logical-line truth 和 canonical history 窗口工作，不再把 wrapped visual row 当成客户端可自行解释的历史主语义。
+- `snapshot / viewport / paging` 后续应优先表达：
+  - authoritative projected history window；
+  - replace / prepend 语义；
+  - committed paging cursor 或等价边界 token；
+  - 支撑 copy mode 交互的最小投影元数据。
 
-### Phase 3: Runtime / Copy Mode 适配
+### Phase 3: Thin Client Runtime / Copy Mode 适配
 
-- 让 `tuiv2` 的 copy mode、paging ownership、latest semantics 直接消费 ownership metadata。
-- copy mode backing model 以 ownership metadata 决定 older-page offset、canonical row refs、selection anchoring 和 latest replace 语义。
-- runtime transaction restore、attach / re-entry、stale-page guard 不再保留旧的 TUI 本地推断状态作为主语义。
+- `tuiv2` 的 copy mode、paging、latest semantics 改为消费 `core` 提供的 authoritative history window。
+- 删除 client 侧通过 `LoadedRows=0`、`HistoryGeneration=0`、row count、latest replace 形态、wrapped 拼接结果等本地推断 live-tail-only / committed history 边界的旧路径。
+- runtime transaction restore、attach / re-entry、stale-page guard 改为围绕 authoritative history window token 工作，不再保留旧的 TUI 本地推断状态作为主语义。
 
 ### Phase 4: Contract 审视
 
@@ -576,7 +588,7 @@ segment 至少需要表达：
 
 ### 19.3 Contract 风险
 
-- 若 protocol 不显式表达新的 ownership 模型，runtime 仍会保守回退，短期内行为可能不够优雅。
+- 若 protocol 仍只暴露 row ownership 而不暴露 authoritative history projection，client 仍会被迫在本地重建历史真相，第二阶段将继续停留在半智能客户端状态。
 
 ### 19.4 回归风险
 
