@@ -358,7 +358,9 @@ func (m *Model) copyModeScrollbackCmd(buffer copyModeBuffer, force bool) tea.Cmd
 	}
 	terminal.CommittedLoadingDepth = nextLimit
 	m.setHistoryLoadingOwner(pane.TerminalID, nextLimit, historyLoadingOwnerCopyMode)
-	return m.loadTerminalHistoryViewportCmd(pane.TerminalID, loaded, nextLimit-loaded, copyModeHistoryViewportCols(buffer, terminal), true)
+	windowLimit := minInt(nextLimit, terminalMaterializedScrollbackLimit)
+	windowOffset := maxInt(nextLimit-windowLimit, 0)
+	return m.loadCopyModeHistoryWindowCmd(pane.TerminalID, windowOffset, windowLimit, nextLimit, copyModeHistoryViewportCols(buffer, terminal))
 }
 
 func terminalCanonicalCols(terminal *appruntime.TerminalRuntime) int {
@@ -439,6 +441,25 @@ func (m *Model) loadTerminalHistoryViewportCmd(terminalID string, offset int, li
 			Limit:           limit,
 			Paged:           true,
 			CopyModeRequest: copyModeRequest,
+		}
+	}
+}
+
+func (m *Model) loadCopyModeHistoryWindowCmd(terminalID string, offset int, limit int, loadedDepth int, cols int) tea.Cmd {
+	return func() tea.Msg {
+		snapshot, err := m.runtime.LoadGridViewport(context.Background(), terminalID, offset, limit, cols)
+		if err != nil {
+			m.clearHistoryLoadingOwner(terminalID, loadedDepth, historyLoadingOwnerCopyMode)
+			return err
+		}
+		_ = m.clearHistoryLoadingOwner(terminalID, loadedDepth, historyLoadingOwnerCopyMode)
+		return orchestrator.SnapshotLoadedMsg{
+			TerminalID:      terminalID,
+			Snapshot:        snapshot,
+			Offset:          offset,
+			Limit:           limit,
+			Paged:           true,
+			CopyModeRequest: true,
 		}
 	}
 }

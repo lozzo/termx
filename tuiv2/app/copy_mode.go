@@ -595,7 +595,11 @@ func (m *Model) adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID string, s
 		}
 		m.copyMode = state
 		if m.copyMode.Snapshot != nil {
-			if m.extendFrozenCopyModeSnapshot(snapshot, offset, allowLatestReplace) {
+			if allowLatestReplace {
+				if m.replaceFrozenCopyModeSnapshot(snapshot) {
+					consumedByFrozenCopyMode = true
+				}
+			} else if m.extendFrozenCopyModeSnapshot(snapshot, offset, allowLatestReplace) {
 				consumedByFrozenCopyMode = true
 			}
 			continue
@@ -616,6 +620,51 @@ func (m *Model) adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID string, s
 		_ = m.loadCopyModeStateForPane(originalPaneID)
 	}
 	return consumedByFrozenCopyMode
+}
+
+func (m *Model) replaceFrozenCopyModeSnapshot(loaded *protocol.Snapshot) bool {
+	if m == nil || m.copyMode.Snapshot == nil || loaded == nil {
+		return false
+	}
+	if snapshotUsesAlternateScreen(m.copyMode.Snapshot) || snapshotUsesAlternateScreen(loaded) {
+		return false
+	}
+	next := cloneSnapshot(m.copyMode.Snapshot)
+	if next == nil {
+		return false
+	}
+	next.Scrollback = protocol.CloneCompactRows(loaded.Scrollback)
+	next.ScrollbackTimestamps = append([]time.Time(nil), loaded.ScrollbackTimestamps...)
+	next.ScrollbackRowKinds = append([]string(nil), loaded.ScrollbackRowKinds...)
+	next.ScrollbackWrapped = append([]bool(nil), loaded.ScrollbackWrapped...)
+	next.ScrollbackOwnership = append([]string(nil), loaded.ScrollbackOwnership...)
+	next.ScrollbackOffset = loaded.ScrollbackOffset
+	next.ScrollbackTotal = loaded.ScrollbackTotal
+	next.ScrollbackLogicalTotal = loaded.ScrollbackLogicalTotal
+	next.ScrollbackHasMore = loaded.ScrollbackHasMore
+	next.ScrollbackLoadedRows = loaded.ScrollbackLoadedRows
+	next.HistoryGeneration = loaded.HistoryGeneration
+	next.ScrollbackFirstRowID = loaded.ScrollbackFirstRowID
+	next.ScrollbackLastRowID = loaded.ScrollbackLastRowID
+	protocol.TrimSnapshotScrollbackScreenVisualOverlap(next)
+	trimmedNewest := trimCopyModeSnapshotScrollbackWindow(next, terminalMaterializedScrollbackLimit, false)
+	prevCommitted := m.copyMode.CommittedLoadedRows
+	m.copyMode.Snapshot = next
+	m.copyMode.CommittedLoadedRows = snapshotScrollbackLoadedDepth(next)
+
+	buffer, ok := m.activeCopyModeBuffer()
+	if !ok {
+		return false
+	}
+	delta := m.copyMode.CommittedLoadedRows - prevCommitted
+	preserveTop := copyModePinnedAtTop(m.copyMode)
+	if !preserveTop {
+		m.copyMode.ViewTopRow += delta - trimmedNewest
+	}
+	m.reanchorCopyModePoints(buffer, delta-trimmedNewest, preserveTop, true)
+	m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
+	m.saveCurrentCopyModeState()
+	return true
 }
 
 func (m *Model) extendFrozenCopyModeSnapshot(loaded *protocol.Snapshot, offset int, allowLatestReplace bool) bool {
