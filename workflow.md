@@ -201,6 +201,7 @@
 
 - [RFC：终端历史逻辑行模型](./termx-core/docs/rfc-terminal-history-logical-line-model-2026-05-21.md)
 - [逻辑行设计文档](./termx-core/docs/terminal-history-logical-line-design-2026-05-21.md)
+- [逻辑行与驻留分层架构](./termx-core/docs/terminal-logical-line-residency-architecture-2026-06-02.md)
 - [逻辑行模型复盘](./termx-core/docs/terminal-history-logical-line-model-review-2026-05-21.md)
 - [RFC 结构稿](./termx-core/docs/terminal-history-logical-line-rfc-outline-2026-05-21.md)
 
@@ -281,6 +282,7 @@
 - 当前决议改为先破后立：`tuiv2` 中本地 history truth 重建、runtime 本地 viewport merge、copy-mode frozen snapshot 分页合并、`CommittedLoadedDepth` / `CommittedLoadingDepth` / `CommittedHistoryExhausted` 状态机，统一物理删除，不再作为过渡实现保留。
 - 新的 `tuiv2` 终端呈现接口先拆成两个输入面：实时 surface 用于本地 VT 解析后的当前屏幕渲染；authoritative history window 用于历史窗口、copy mode backing、older/latest 接纳规则。二者只在 render projection 层组合，不在 client 内部重新发明 history truth。
 - 新接口只表达 `core` 返回的窗口、窗口 token、窗口操作语义、最小 row/line span 元数据；实现未完成前，相关旧测试语义视为待删除或待重写，不作为回归基准。
+- 当前架构进一步明确：不再把“冷热数据”作为语义边界；落盘、mmap、内存驻留只是 residency / IO 策略。逻辑行才是历史真相单位，已落盘逻辑行后续仍可被终端指令修改，修改通过 resident cache、dirty tracking、page update 或 compaction 等存储策略实现。
 - 每个子切片都必须保持主线测试可运行，并形成中文提交。
 
 ### 当前不启动的工作
