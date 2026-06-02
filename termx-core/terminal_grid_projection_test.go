@@ -548,6 +548,52 @@ func TestTerminalGridRecoveredLiveTailRejectsDuplicateRecordIDs(t *testing.T) {
 	}
 }
 
+func TestTerminalHistoryWindowIgnoresCorruptRecoveredLiveTailMetadata(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("hist")},
+	}); err != nil {
+		t.Fatalf("append persisted row: %v", err)
+	}
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("tail"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode corrupt live row metadata: %v", err)
+	}
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{{
+			ID:         terminalLiveTailLogicalLineIDBase + 1,
+			StartRow:   0,
+			EndRow:     0,
+			Sealed:     true,
+			Origin:     terminalLiveTailOriginLive,
+			Residency:  terminalLogicalLineResidencyLiveTail,
+			Dirty:      true,
+			Generation: 7,
+		}},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write corrupt live tail metadata: %v", err)
+	}
+
+	viewport, err := storeViewportWithRecoveredLiveTail(store, 0, 10, 4)
+	if err != nil {
+		t.Fatalf("viewport with corrupt recovered live tail: %v", err)
+	}
+	window := historyWindowFromCoreGridViewport("corrupt-recovered-live-tail", 0, viewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"hist"}) {
+		t.Fatalf("expected corrupt recovered live tail to be ignored by history window, got %#v", got)
+	}
+	if window.LoadedRows != 1 || window.LoadedLines != 1 || window.LogicalTotal != 1 {
+		t.Fatalf("expected corrupt recovered live tail not to change persisted history counts, loaded_rows=%d loaded_lines=%d total=%d", window.LoadedRows, window.LoadedLines, window.LogicalTotal)
+	}
+	if historyWindowContainsText(window, "tail") {
+		t.Fatalf("expected corrupt recovered live tail not to appear in history window, got %#v", window.Rows)
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailRejectsSplitRecordWithoutContinuationRows(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
