@@ -540,9 +540,91 @@ func TestTerminalGridRecoveredLiveTailRejectsDuplicateRecordIDs(t *testing.T) {
 	}
 }
 
+func TestTerminalGridRecoveredLiveTailRejectsStaleReclaimedRowIDs(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("persisted")},
+	}); err != nil {
+		t.Fatalf("append persisted row: %v", err)
+	}
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("stale"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode live row metadata: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{{
+			ID:         99,
+			StartRow:   0,
+			EndRow:     0,
+			RowIDKnown: true,
+			FirstRowID: 40,
+			LastRowID:  40,
+			Sealed:     true,
+			Origin:     terminalLiveTailOriginReclaimed,
+			Residency:  terminalLogicalLineResidencyLiveTail,
+			Dirty:      false,
+			Generation: generation,
+		}},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write live tail metadata: %v", err)
+	}
+	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
+		t.Fatal("expected stale reclaimed row ids outside persisted store to be rejected")
+	}
+}
+
+func TestTerminalGridRecoveredLiveTailRejectsStaleReclaimedGeneration(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("persisted")},
+	}); err != nil {
+		t.Fatalf("append persisted row: %v", err)
+	}
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("persisted"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode live row metadata: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{{
+			ID:         1,
+			StartRow:   0,
+			EndRow:     0,
+			RowIDKnown: true,
+			FirstRowID: 0,
+			LastRowID:  0,
+			Sealed:     true,
+			Origin:     terminalLiveTailOriginReclaimed,
+			Residency:  terminalLogicalLineResidencyLiveTail,
+			Dirty:      false,
+			Generation: generation + 1,
+		}},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write live tail metadata: %v", err)
+	}
+	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
+		t.Fatal("expected stale reclaimed generation to be rejected")
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailUsesExplicitReclaimedRowIDs(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("aa"), wrapped: true},
+		{cells: localVTermCellsFromString("bb"), wrapped: false},
+	}); err != nil {
+		t.Fatalf("append persisted rows: %v", err)
+	}
 	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
 		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
 		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: false},
@@ -550,19 +632,20 @@ func TestTerminalGridRecoveredLiveTailUsesExplicitReclaimedRowIDs(t *testing.T) 
 	if err != nil {
 		t.Fatalf("encode live row metadata: %v", err)
 	}
+	_, generation, _ := store.coordinates()
 	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
 		LiveRecords: []terminalGridLineRecordMeta{{
 			ID:         99,
 			StartRow:   0,
 			EndRow:     1,
 			RowIDKnown: true,
-			FirstRowID: 40,
-			LastRowID:  41,
+			FirstRowID: 0,
+			LastRowID:  1,
 			Sealed:     true,
 			Origin:     terminalLiveTailOriginReclaimed,
 			Residency:  terminalLogicalLineResidencyLiveTail,
 			Dirty:      false,
-			Generation: 7,
+			Generation: generation,
 		}},
 		LiveRows: rows,
 	}); err != nil {
@@ -577,7 +660,7 @@ func TestTerminalGridRecoveredLiveTailUsesExplicitReclaimedRowIDs(t *testing.T) 
 		t.Fatalf("expected one recovered segment, got %#v", tail.segments)
 	}
 	segment := tail.segments[0]
-	if segment.origin != terminalLiveTailOriginReclaimed || segment.firstRowID != 40 || segment.lastRowID != 41 {
+	if segment.origin != terminalLiveTailOriginReclaimed || segment.firstRowID != 0 || segment.lastRowID != 1 {
 		t.Fatalf("expected recovered row coordinates from metadata, got %#v", segment)
 	}
 	if got := segment.logicalLineIDs; !reflect.DeepEqual(got, []uint64{99, 99}) {

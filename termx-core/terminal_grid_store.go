@@ -1487,14 +1487,15 @@ func (s *terminalGridStore) recoveredLiveTailFromMetadata() (terminalPrimaryLive
 	if err != nil || len(rows) != len(metadata.LiveRows) {
 		return terminalPrimaryLiveTail{}, false
 	}
-	segments, ok := terminalLiveTailSegmentsFromMetadata(metadata.LiveRecords, rows)
+	baseRowID, generation, rowCount := s.coordinates()
+	segments, ok := terminalLiveTailSegmentsFromMetadata(metadata.LiveRecords, rows, baseRowID, generation, rowCount)
 	if !ok {
 		return terminalPrimaryLiveTail{}, false
 	}
 	return terminalPrimaryLiveTail{segments: segments, wrapPending: terminalLiveTailSegmentsWrapPending(segments)}, true
 }
 
-func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, rows []vterm.DamageOp) ([]terminalLiveTailSegment, bool) {
+func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, rows []vterm.DamageOp, persistedBaseRowID uint64, persistedGeneration uint64, persistedRowCount int) ([]terminalLiveTailSegment, bool) {
 	if len(records) == 0 || len(rows) == 0 {
 		return nil, false
 	}
@@ -1534,6 +1535,9 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 		if record.Origin == terminalLiveTailOriginReclaimed {
 			firstRowID, lastRowID, ok := terminalLiveTailReclaimedRowIDsFromMetadata(record, len(segmentRows))
 			if !ok {
+				return nil, false
+			}
+			if !terminalLiveTailReclaimedMetadataMatchesPersistedStore(record, firstRowID, lastRowID, persistedBaseRowID, persistedGeneration, persistedRowCount) {
 				return nil, false
 			}
 			segment.firstRowID = firstRowID
@@ -1641,6 +1645,20 @@ func terminalLiveTailReclaimedRowIDsFromMetadata(record terminalGridLineRecordMe
 		return 0, 0, false
 	}
 	return record.FirstRowID, record.LastRowID, true
+}
+
+func terminalLiveTailReclaimedMetadataMatchesPersistedStore(record terminalGridLineRecordMeta, firstRowID uint64, lastRowID uint64, persistedBaseRowID uint64, persistedGeneration uint64, persistedRowCount int) bool {
+	if persistedRowCount <= 0 {
+		return false
+	}
+	if record.Generation != 0 && persistedGeneration != 0 && record.Generation != persistedGeneration {
+		return false
+	}
+	if firstRowID < persistedBaseRowID {
+		return false
+	}
+	lastPersistedRowID := persistedBaseRowID + uint64(persistedRowCount) - 1
+	return lastRowID <= lastPersistedRowID
 }
 
 func readTerminalGridRows(dir string, refs []terminalGridRowRef) ([]terminalGridRow, error) {
