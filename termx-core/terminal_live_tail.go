@@ -219,11 +219,15 @@ func (tail *terminalPrimaryLiveTail) replaceRows(rows []vterm.DamageOp, origin t
 		tail.segments = nil
 		return
 	}
+	logicalLineIDs := terminalLiveTailSegmentFallbackLogicalLineIDs(origin, rows, 0, 0)
+	if origin != terminalLiveTailOriginReclaimed {
+		logicalLineIDs = terminalLiveTailSegmentLiveLogicalLineIDs(nil, rows)
+	}
 	tail.segments = []terminalLiveTailSegment{{
 		origin:         origin,
 		sealState:      terminalLiveTailSealStateForRows(rows, wrapPending),
 		rows:           cloneGridDamageOps(rows),
-		logicalLineIDs: terminalLiveTailSegmentFallbackLogicalLineIDs(origin, rows, 0, 0),
+		logicalLineIDs: logicalLineIDs,
 		wrapPending:    wrapPending,
 	}}
 }

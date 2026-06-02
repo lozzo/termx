@@ -22,6 +22,9 @@ func TestTerminalPrimaryLiveTailSegmentsTrackOriginAndSealState(t *testing.T) {
 	if got := tail.segments[0].sealState; got != terminalLiveTailOpen {
 		t.Fatalf("expected wrapped segment to stay open, got %q", got)
 	}
+	if got := tail.segments[0].logicalLineIDs; len(got) != 1 || got[0] < terminalLiveTailLogicalLineIDBase {
+		t.Fatalf("expected live segment to store runtime logical line id, got %#v", got)
+	}
 
 	tail.replaceRows([]localvterm.DamageOp{{
 		Cells:      localVTermCellsFromString("done"),
