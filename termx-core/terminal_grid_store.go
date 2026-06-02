@@ -1575,7 +1575,7 @@ func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogica
 	out := make([]terminalGridLogicalLineRecord, 0, len(records))
 	nextStart := 0
 	seenIDs := make(map[uint64]struct{}, len(records))
-	for _, record := range records {
+	for i, record := range records {
 		if record.id == 0 || record.residency != terminalLogicalLineResidencyLiveTail || !terminalLiveTailOriginKnown(record.origin) || record.dirty != terminalLiveTailOriginDirty(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
 			return nil, false
 		}
@@ -1587,6 +1587,9 @@ func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogica
 			return nil, false
 		}
 		if record.origin == terminalLiveTailOriginReclaimed && !record.sealed {
+			return nil, false
+		}
+		if record.origin != terminalLiveTailOriginReclaimed && !record.sealed && i != len(records)-1 {
 			return nil, false
 		}
 		out = append(out, record)

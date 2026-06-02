@@ -540,6 +540,30 @@ func TestTerminalGridRecoveredLiveTailRejectsDuplicateRecordIDs(t *testing.T) {
 	}
 }
 
+func TestTerminalGridRecoveredLiveTailRejectsOpenRecordBeforeTail(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("open"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("sealed"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode live row metadata: %v", err)
+	}
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{
+			{ID: terminalLiveTailLogicalLineIDBase + 1, StartRow: 0, EndRow: 0, Sealed: false, Origin: terminalLiveTailOriginLive, Residency: terminalLogicalLineResidencyLiveTail, Dirty: true},
+			{ID: terminalLiveTailLogicalLineIDBase + 2, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginLive, Residency: terminalLogicalLineResidencyLiveTail, Dirty: true},
+		},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write live tail metadata: %v", err)
+	}
+	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
+		t.Fatal("expected open live tail record before tail to be rejected")
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailRejectsStaleReclaimedRowIDs(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
