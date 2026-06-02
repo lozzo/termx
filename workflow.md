@@ -379,7 +379,8 @@ TUI store 至少表达：
 - 已扩展 protocol `history.window` line spans，新增 `LogicalLineID` 往返 harness，当前 core 初版以 canonical row id 作为等价 logical line boundary 标识，后续显式 logical line store 落地后替换为 stable logical line id。
 - 已新增 `tuiv2/historyview` authoritative window store 初版与 fake source harness，覆盖 latest replace、older prepend、stale token/generation 丢弃、边界重叠拒绝、clipped span 保留、pending request token、viewport top、cursor 与 selection 交互态。
 - 已新增 `tuiv2/historyview` protocol-backed source adapter，将 `snapshot` 仅用于 live surface 投影，将 `history.window` 映射为 authoritative window，并要求 older 请求显式携带 core 返回的 before cursor。
-- 已在 `tuiv2/bridge` 暴露 protocol `HistoryWindow` 入口并补齐测试 fake client；后续仍需把 history source/store 注入 app model。
+- 已在 `tuiv2/bridge` 暴露 protocol `HistoryWindow` 入口并补齐测试 fake client。
+- 已把 `tuiv2/historyview` store/source 注入 `tuiv2/app` model 构造路径；当前只是持有 authoritative history 依赖，尚未接入 copy mode 与滚动行为。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与 canonical row id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。
 - 已新增 core 光标回到当前 visual row 后覆写的生产路径 harness，覆盖覆写仍停留在 mutable live tail、未 seal 前不产生 persisted logical line、hard newline 后作为一条 overwritten logical line 提交。
@@ -389,5 +390,5 @@ TUI store 至少表达：
 - 已将 `tuiv2/app` 中 copy mode page/halfpage 与 copy mode top/exit 依赖 frozen snapshot + 本地 pane viewport 的旧测试标记为待 authoritative history window older prepend / 交互态清理重写，不再作为新模型回归基准。
 - 已将 `tuiv2/app` 中正常模式 scroll up/down 依赖本地 pane viewport offset 的旧测试基准移除或标记为待 authoritative history window 重写，不再作为新模型滚动回归基准。
 - 当前仍不是完整 logical-line based history。
-- 当前滚动不可用的根因是：TUI 旧本地历史路径已删，但 authoritative history window source/store 尚未注入 app copy mode 和滚动。
+- 当前滚动不可用的根因是：TUI 旧本地历史路径已删，authoritative history window source/store 已注入 app model，但尚未接入 copy mode 和滚动行为。
 - 下一步继续切片一：补 core logical line / projection harness，并把旧 TUI snapshot/grid viewport history truth 测试删除或标记重写；不直接修补旧滚动逻辑。

@@ -12,6 +12,7 @@ import (
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
+	"github.com/lozzow/termx/tuiv2/historyview"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
@@ -67,6 +68,8 @@ type Model struct {
 	// 业务编排走 orchestrator，不直接通过这两个字段。
 	workbench            *workbench.Workbench
 	runtime              *runtime.Runtime
+	historyStore         historyview.Store
+	historySource        historyview.Source
 	sessionStore         sessionStore
 	cursorOut            cursorSequenceWriter
 	frameOut             frameSequenceWriter
@@ -172,6 +175,7 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 		modalHost:           ui.ModalHost(),
 		workbench:           wb,
 		runtime:             rt,
+		historyStore:        historyview.NewMemoryStore(),
 		chrome:              chromeConfigFromShared(cfg.Chrome),
 		theme:               themeConfigFromShared(cfg.Theme),
 		pendingPaneAttaches: make(map[string]string),
@@ -188,8 +192,25 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 		model.runtime.SetTitleChange(func(terminalID, title string) {
 			model.sendAsync(terminalTitleMsg{TerminalID: terminalID, Title: title})
 		})
+		if client := model.runtime.Client(); client != nil {
+			model.historySource = historyview.NewProtocolSource(client)
+		}
 	}
 	return model
+}
+
+func (m *Model) HistoryStore() historyview.Store {
+	if m == nil {
+		return nil
+	}
+	return m.historyStore
+}
+
+func (m *Model) HistorySource() historyview.Source {
+	if m == nil {
+		return nil
+	}
+	return m.historySource
 }
 
 func (m *Model) SetCursorWriter(writer cursorSequenceWriter) {

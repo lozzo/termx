@@ -153,6 +153,29 @@ func TestModelViewShowsProjectedState(t *testing.T) {
 	}
 }
 
+func TestModelInitializesAuthoritativeHistoryStoreAndProtocolSource(t *testing.T) {
+	client := &recordingBridgeClient{}
+	model := New(shared.Config{}, nil, runtime.New(client))
+
+	if model.HistoryStore() == nil {
+		t.Fatal("expected model to initialize authoritative history store")
+	}
+	if model.HistorySource() == nil {
+		t.Fatal("expected model to initialize protocol-backed history source when runtime client exists")
+	}
+}
+
+func TestModelHistorySourceRequiresRuntimeClient(t *testing.T) {
+	model := New(shared.Config{}, nil, runtime.New(nil))
+
+	if model.HistoryStore() == nil {
+		t.Fatal("expected model to initialize authoritative history store without client")
+	}
+	if model.HistorySource() != nil {
+		t.Fatalf("expected no protocol history source without runtime client, got %#v", model.HistorySource())
+	}
+}
+
 func TestModelViewUsesFrameLinesWriterFastPath(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 	writer := &recordingLinesWriter{}
