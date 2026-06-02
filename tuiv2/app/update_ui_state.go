@@ -72,6 +72,8 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		m.render.Invalidate()
 		return m.maybeAutoFitFloatingPanesCmd(), true
+	case historyWindowLoadedMsg:
+		return m.applyHistoryWindowLoadedMsg(typed), true
 	case hostDefaultColorsMsg:
 		return m.enqueueHostThemeUpdate(typed.FG, typed.BG, nil), true
 	case hostPaletteColorMsg:

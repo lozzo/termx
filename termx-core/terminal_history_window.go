@@ -54,7 +54,9 @@ type HistoryWindow struct {
 	Size       Size
 	Rows       []HistoryRow
 	Lines      []HistoryLineSpan
-	// BeforeOffset 是本窗口最旧行之前还存在多少已提交逻辑行投影行（按当前宽度）。
+	// BeforeOffset 是本窗口返回后可用于请求 older window 的 before cursor。
+	// 它表示当前窗口从最新端已经覆盖的 committed projection row 深度，
+	// 不一定等于本次请求 offset。
 	BeforeOffset int
 	// LoadedRows 是本窗口覆盖到的已提交行深度（含 BeforeOffset）。
 	LoadedRows int
@@ -115,7 +117,7 @@ func historyWindowFromGridViewport(id string, beforeOffset int, viewport *protoc
 		Size:         Size{Cols: viewport.Size.Cols, Rows: viewport.Size.Rows},
 		Rows:         rows,
 		Lines:        historyLineSpans(viewport.ScrollbackWrapped, viewport.ScrollbackRowKinds, len(viewport.Rows), beforeOffset, viewport.FirstRowID),
-		BeforeOffset: beforeOffset,
+		BeforeOffset: historyWindowBeforeCursor(beforeOffset, viewport),
 		LoadedRows:   viewport.LoadedRows,
 		TotalRows:    viewport.ScrollbackTotal,
 		LogicalTotal: viewport.ScrollbackLogicalTotal,
@@ -125,6 +127,16 @@ func historyWindowFromGridViewport(id string, beforeOffset int, viewport *protoc
 		LastRowID:    viewport.LastRowID,
 		Timestamp:    time.Now().UTC(),
 	}
+}
+
+func historyWindowBeforeCursor(requestBeforeOffset int, viewport *protocol.GridViewport) int {
+	if viewport == nil {
+		return requestBeforeOffset
+	}
+	if viewport.LoadedRows > requestBeforeOffset {
+		return viewport.LoadedRows
+	}
+	return requestBeforeOffset
 }
 
 func historyWindowOpForOffset(beforeOffset int) HistoryWindowOp {

@@ -87,6 +87,9 @@ func TestServerHistoryWindowLatestReplaceFromPersistedStore(t *testing.T) {
 	if len(window.Rows) != 3 {
 		t.Fatalf("expected 3 projected rows, got %d", len(window.Rows))
 	}
+	if window.BeforeOffset != 3 {
+		t.Fatalf("expected latest before cursor 3, got %d", window.BeforeOffset)
+	}
 	if len(window.Lines) != 3 {
 		t.Fatalf("expected 3 logical line spans, got %#v", window.Lines)
 	}
@@ -121,8 +124,8 @@ func TestServerHistoryWindowOlderPrependUsesPersistedDepth(t *testing.T) {
 	if older.Op != HistoryWindowPrepend {
 		t.Fatalf("expected older window to be prepend, got %q", older.Op)
 	}
-	if older.BeforeOffset != 2 {
-		t.Fatalf("expected before offset 2, got %d", older.BeforeOffset)
+	if older.BeforeOffset != 4 {
+		t.Fatalf("expected older before cursor 4, got %d", older.BeforeOffset)
 	}
 	if len(older.Rows) == 0 {
 		t.Fatal("expected older window to contain rows")
