@@ -150,6 +150,58 @@ func TestCopyModeWheelUpAwayFromTopDoesNotRequestOlderWindow(t *testing.T) {
 	}
 }
 
+func TestCopyModePageDownStaysWithinAuthoritativeWindow(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 6})
+	latest := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 107, []string{"r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7"}, 8, true)
+	seedAuthoritativeCopyModeWindow(t, model, latest, copyModeLogicalPos{Line: 0, Offset: 0}, 0)
+	source := &appHistoryFakeSource{
+		latest: appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-2", 200, 201, []string{"new-a", "new-b"}, 2, true),
+		older:  appHistoryFakeWindow("term-1", historyview.WindowOpPrepend, "token-1", 98, 99, []string{"old-a", "old-b"}, 4, false),
+	}
+	model.historySource = source
+
+	handled, cmd := model.handleCopyModeLocalAction(input.SemanticAction{Kind: input.ActionCopyModePageDown})
+	if !handled {
+		t.Fatal("expected page-down handled")
+	}
+	msgs := collectBatchMessages(cmd)
+	if containsHistoryWindowLoadedMsg(msgs, "term-1") {
+		t.Fatalf("did not expect page-down to request history window, got %#v", msgs)
+	}
+	if source.latestRequests != 0 || source.olderRequests != 0 {
+		t.Fatalf("expected no history requests, got latest=%d older=%d", source.latestRequests, source.olderRequests)
+	}
+	if model.copyMode.CursorLogical.Line <= 0 || model.copyMode.CursorLogical.Line >= len(latest.Lines) {
+		t.Fatalf("expected page-down to move within authoritative window, got cursor %#v", model.copyMode.CursorLogical)
+	}
+}
+
+func TestCopyModeBottomStaysWithinAuthoritativeWindow(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 6})
+	latest := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 107, []string{"r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7"}, 8, true)
+	seedAuthoritativeCopyModeWindow(t, model, latest, copyModeLogicalPos{Line: 0, Offset: 0}, 0)
+	source := &appHistoryFakeSource{
+		latest: appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-2", 200, 201, []string{"new-a", "new-b"}, 2, true),
+		older:  appHistoryFakeWindow("term-1", historyview.WindowOpPrepend, "token-1", 98, 99, []string{"old-a", "old-b"}, 4, false),
+	}
+	model.historySource = source
+
+	handled, cmd := model.handleCopyModeLocalAction(input.SemanticAction{Kind: input.ActionCopyModeBottom})
+	if !handled {
+		t.Fatal("expected bottom handled")
+	}
+	msgs := collectBatchMessages(cmd)
+	if containsHistoryWindowLoadedMsg(msgs, "term-1") {
+		t.Fatalf("did not expect bottom to request history window, got %#v", msgs)
+	}
+	if source.latestRequests != 0 || source.olderRequests != 0 {
+		t.Fatalf("expected no history requests, got latest=%d older=%d", source.latestRequests, source.olderRequests)
+	}
+	if got, want := model.copyMode.CursorLogical.Line, len(latest.Lines)-1; got != want {
+		t.Fatalf("expected bottom to jump to authoritative window bottom line %d, got %d", want, got)
+	}
+}
+
 func seedAuthoritativeCopyModeWindow(t *testing.T, model *Model, window historyview.HistoryWindow, cursor copyModeLogicalPos, viewTopRow int) {
 	t.Helper()
 	if !model.HistoryStore().ApplyHistoryWindow(window) {
