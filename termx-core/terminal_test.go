@@ -3302,6 +3302,20 @@ func TestTerminalClearScreenDoesNotCreateCommittedHistory(t *testing.T) {
 	if viewportAfter.LoadedRows != beforeRows || viewportAfter.HistoryGeneration == 0 {
 		t.Fatalf("expected clear screen not to disturb committed viewport metadata, loaded=%d gen=%d", viewportAfter.LoadedRows, viewportAfter.HistoryGeneration)
 	}
+	coreViewportAfter, err := term.combinedGridViewport(0, 10, 12, term.primaryLiveTail.clone())
+	if err != nil {
+		t.Fatalf("post-clear history window viewport: %v", err)
+	}
+	windowAfter := historyWindowFromCoreGridViewport(term.id, 0, coreViewportAfter)
+	if got := historyWindowRowTexts(windowAfter); !reflect.DeepEqual(got, []string{"before-0", "before-1"}) {
+		t.Fatalf("expected history window to keep only committed history after clear screen, got %#v", got)
+	}
+	if windowAfter.LoadedLines != beforeLines || windowAfter.LogicalTotal != beforeLines {
+		t.Fatalf("expected history window logical counts unchanged after clear screen, loaded=%d total=%d", windowAfter.LoadedLines, windowAfter.LogicalTotal)
+	}
+	if historyWindowContainsText(windowAfter, "live-tail") {
+		t.Fatalf("expected clear screen not to expose cleared live tail through history window, got %#v", windowAfter.Rows)
+	}
 
 	latest := term.Snapshot(0, 10)
 	if latest == nil {
@@ -3719,6 +3733,21 @@ func terminalProjectionRowTexts(term *Terminal, cols int, limit int) []string {
 		rows = append(rows, vtermRowsToStrings(screen.Cells)...)
 	}
 	return rows
+}
+
+func historyWindowRowTexts(window *HistoryWindow) []string {
+	if window == nil {
+		return nil
+	}
+	out := make([]string, 0, len(window.Rows))
+	for _, row := range window.Rows {
+		out = append(out, rowTextFromHistoryRow(row))
+	}
+	return out
+}
+
+func historyWindowContainsText(window *HistoryWindow, needle string) bool {
+	return stringRowsContain(historyWindowRowTexts(window), needle)
 }
 
 func stringRowsContain(rows []string, needle string) bool {
