@@ -1617,6 +1617,9 @@ func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogica
 		if !terminalLiveTailRecordIDMatchesOrigin(record.id, record.origin) {
 			return nil, false
 		}
+		if record.origin != terminalLiveTailOriginReclaimed && record.generation != 0 {
+			return nil, false
+		}
 		if record.origin == terminalLiveTailOriginReclaimed && !record.sealed {
 			return nil, false
 		}

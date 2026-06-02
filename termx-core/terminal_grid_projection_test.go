@@ -466,12 +466,15 @@ func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
 		firstRowID uint64
 		lastRowID  uint64
 		sealed     bool
+		generation uint64
 	}{
 		{name: "unknown-origin", origin: terminalLiveTailOrigin("bad-origin"), dirty: true},
 		{name: "clean-live", origin: terminalLiveTailOriginLive, dirty: false},
 		{name: "live-persisted-id", id: 1, origin: terminalLiveTailOriginLive, dirty: true},
 		{name: "live-row-ids", origin: terminalLiveTailOriginLive, dirty: true, rowIDKnown: true, firstRowID: 40, lastRowID: 40},
 		{name: "live-row-id-fields", origin: terminalLiveTailOriginLive, dirty: true, firstRowID: 40, lastRowID: 40},
+		{name: "live-generation", origin: terminalLiveTailOriginLive, dirty: true, generation: 7},
+		{name: "resize-generation", origin: terminalLiveTailOriginResize, dirty: true, generation: 7},
 		{name: "dirty-reclaimed", id: 1, origin: terminalLiveTailOriginReclaimed, dirty: true, sealed: true},
 		{name: "reclaimed-runtime-id", origin: terminalLiveTailOriginReclaimed, dirty: false, rowIDKnown: true, firstRowID: 40, lastRowID: 40, sealed: true},
 		{name: "open-reclaimed", id: 1, origin: terminalLiveTailOriginReclaimed, dirty: false, rowIDKnown: true, firstRowID: 40, lastRowID: 40},
@@ -505,6 +508,7 @@ func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
 					Origin:     tc.origin,
 					Residency:  terminalLogicalLineResidencyLiveTail,
 					Dirty:      tc.dirty,
+					Generation: tc.generation,
 				}},
 				LiveRows: rows,
 			}); err != nil {
