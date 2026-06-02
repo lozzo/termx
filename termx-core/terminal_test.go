@@ -1511,6 +1511,17 @@ func TestTerminalGridStoreUsesCompactBinaryRows(t *testing.T) {
 	if metadata.StoreVersion != terminalGridStoreVersion || metadata.RowCodec != terminalGridRowCodec {
 		t.Fatalf("unexpected metadata store=%d row_codec=%q", metadata.StoreVersion, metadata.RowCodec)
 	}
+	lineMetadata, err := readTerminalGridLineMetadata(dir)
+	if err != nil {
+		t.Fatalf("read line metadata: %v", err)
+	}
+	if len(lineMetadata.Records) != 1 {
+		t.Fatalf("expected one persisted line metadata record, got %#v", lineMetadata.Records)
+	}
+	record := lineMetadata.Records[0]
+	if record.ID != 1 || record.StartRow != 0 || record.EndRow != 0 || record.Residency != terminalLogicalLineResidencyPersisted || record.Dirty || record.Generation != metadata.Generation {
+		t.Fatalf("unexpected persisted line metadata record: %#v metadata=%#v", record, metadata)
+	}
 	page, err := os.ReadFile(filepath.Join(dir, terminalGridPageName(0)))
 	if err != nil {
 		t.Fatalf("read compact page: %v", err)

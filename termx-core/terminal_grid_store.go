@@ -103,7 +103,19 @@ type terminalGridMetadata struct {
 }
 
 type terminalGridLineMetadata struct {
-	Migrations []terminalGridLineMigration `json:"migrations,omitempty"`
+	Records    []terminalGridLineRecordMeta `json:"records,omitempty"`
+	Migrations []terminalGridLineMigration  `json:"migrations,omitempty"`
+}
+
+type terminalGridLineRecordMeta struct {
+	ID         uint64                       `json:"id"`
+	StartRow   int                          `json:"start_row"`
+	EndRow     int                          `json:"end_row"`
+	Sealed     bool                         `json:"sealed"`
+	Origin     terminalLiveTailOrigin       `json:"origin"`
+	Residency  terminalLogicalLineResidency `json:"residency"`
+	Dirty      bool                         `json:"dirty"`
+	Generation uint64                       `json:"generation"`
 }
 
 type terminalGridLineMigration struct {
@@ -865,6 +877,9 @@ func (s *terminalGridStore) Close() error {
 		if metadataErr := writeTerminalGridMetadata(dir, metadata); metadataErr != nil && err == nil {
 			err = metadataErr
 		}
+		if lineMetadataErr := writeTerminalGridLineRecordsMetadata(dir, metadata.BaseRowID, metadata.Generation); lineMetadataErr != nil && err == nil {
+			err = lineMetadataErr
+		}
 	}
 	if removeOnClose {
 		if removeErr := os.RemoveAll(dir); removeErr != nil && err == nil {
@@ -1613,6 +1628,40 @@ func writeTerminalGridLineMetadata(dir string, metadata terminalGridLineMetadata
 	}
 	data = append(data, '\n')
 	return os.WriteFile(filepath.Join(dir, terminalGridLineMetaName), data, 0o600)
+}
+
+func writeTerminalGridLineRecordsMetadata(dir string, baseRowID uint64, generation uint64) error {
+	refs, err := readTerminalGridIndexRefsFromPath(filepath.Join(dir, terminalGridIndexName))
+	if err != nil {
+		return err
+	}
+	metadata, err := readTerminalGridLineMetadata(dir)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	records := terminalGridLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
+	metadata.Records = terminalGridLineRecordMetasFromRecords(records)
+	return writeTerminalGridLineMetadata(dir, metadata)
+}
+
+func terminalGridLineRecordMetasFromRecords(records []terminalGridLogicalLineRecord) []terminalGridLineRecordMeta {
+	if len(records) == 0 {
+		return nil
+	}
+	out := make([]terminalGridLineRecordMeta, 0, len(records))
+	for _, record := range records {
+		out = append(out, terminalGridLineRecordMeta{
+			ID:         record.id,
+			StartRow:   record.startRow,
+			EndRow:     record.endRow,
+			Sealed:     record.sealed,
+			Origin:     record.origin,
+			Residency:  record.residency,
+			Dirty:      record.dirty,
+			Generation: record.generation,
+		})
+	}
+	return out
 }
 
 func (s *terminalGridStore) recordLineMigrations(migrations map[uint64]uint64) error {
