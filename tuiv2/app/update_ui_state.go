@@ -61,15 +61,6 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 	case terminalAttachReadyMsg:
 		return m.dequeueTerminalInputCmd(), true
 	case orchestrator.SnapshotLoadedMsg:
-		if typed.Paged {
-			if typed.CopyModeRequest {
-				_ = m.adjustCopyModeAfterSnapshotLoadedWithWindow(typed.TerminalID, typed.Snapshot, typed.Offset, true)
-			} else {
-				_ = m.adjustCopyModeAfterSnapshotLoadedWithWindow(typed.TerminalID, typed.Snapshot, typed.Offset, false)
-			}
-		} else {
-			m.adjustCopyModeAfterSnapshotLoaded(typed.TerminalID, typed.Snapshot)
-		}
 		m.render.Invalidate()
 		return m.maybeAutoFitFloatingPanesCmd(), true
 	case historyWindowLoadedMsg:

@@ -123,75 +123,6 @@ func clearSnapshotScrollback(snapshot *protocol.Snapshot) {
 	snapshot.ScrollbackLastRowID = 0
 }
 
-func trimCopyModeSnapshotScrollbackWindow(snapshot *protocol.Snapshot, limit int, trimNewest bool) int {
-	if snapshot == nil || limit <= 0 || len(snapshot.Scrollback) <= limit {
-		return 0
-	}
-	drop := len(snapshot.Scrollback) - limit
-	// Keep canonical committed-row coordinates aligned with the loaded history
-	// window even when the frozen materialized slice is locally bounded.
-	if trimNewest {
-		keep := len(snapshot.Scrollback) - drop
-		committedDrop := protocol.CountCommittedRowOwnershipRange(snapshot.ScrollbackOwnership, keep, len(snapshot.ScrollbackOwnership))
-		snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[:keep])
-		snapshot.ScrollbackTimestamps = cloneTimePrefix(snapshot.ScrollbackTimestamps, keep)
-		snapshot.ScrollbackRowKinds = cloneStringPrefix(snapshot.ScrollbackRowKinds, keep)
-		snapshot.ScrollbackWrapped = cloneBoolPrefix(snapshot.ScrollbackWrapped, keep)
-		snapshot.ScrollbackOwnership = cloneStringPrefix(snapshot.ScrollbackOwnership, keep)
-		snapshot.ScrollbackOffset += committedDrop
-		return drop
-	}
-	snapshot.Scrollback = protocol.CloneCompactRows(snapshot.Scrollback[drop:])
-	snapshot.ScrollbackTimestamps = cloneTimeSuffix(snapshot.ScrollbackTimestamps, drop)
-	snapshot.ScrollbackRowKinds = cloneStringSuffix(snapshot.ScrollbackRowKinds, drop)
-	snapshot.ScrollbackWrapped = cloneBoolSuffix(snapshot.ScrollbackWrapped, drop)
-	snapshot.ScrollbackOwnership = cloneStringSuffix(snapshot.ScrollbackOwnership, drop)
-	snapshot.ScrollbackHasMore = true
-	return 0
-}
-
-func cloneTimePrefix(values []time.Time, keep int) []time.Time {
-	if keep <= 0 || len(values) < keep {
-		return nil
-	}
-	return append([]time.Time(nil), values[:keep]...)
-}
-
-func cloneStringPrefix(values []string, keep int) []string {
-	if keep <= 0 || len(values) < keep {
-		return nil
-	}
-	return append([]string(nil), values[:keep]...)
-}
-
-func cloneBoolPrefix(values []bool, keep int) []bool {
-	if keep <= 0 || len(values) < keep {
-		return nil
-	}
-	return append([]bool(nil), values[:keep]...)
-}
-
-func cloneTimeSuffix(values []time.Time, drop int) []time.Time {
-	if drop < 0 || len(values) <= drop {
-		return nil
-	}
-	return append([]time.Time(nil), values[drop:]...)
-}
-
-func cloneStringSuffix(values []string, drop int) []string {
-	if drop < 0 || len(values) <= drop {
-		return nil
-	}
-	return append([]string(nil), values[drop:]...)
-}
-
-func cloneBoolSuffix(values []bool, drop int) []bool {
-	if drop < 0 || len(values) <= drop {
-		return nil
-	}
-	return append([]bool(nil), values[drop:]...)
-}
-
 func (m *Model) copyModeSnapshot(terminalID string, snapshot *protocol.Snapshot) *protocol.Snapshot {
 	cloned := cloneSnapshot(snapshot)
 	if snapshotUsesAlternateScreen(cloned) {
@@ -421,9 +352,6 @@ func (m *Model) activeCopyModeResumeSnapshot() (string, *protocol.Snapshot, bool
 	return pane.ID, m.copyModeResume.Snapshot, true
 }
 
-func (m *Model) clearCopyModeOwnedHistoryLoadingForPane(paneID string) {
-}
-
 func (m *Model) leaveCopyMode() {
 	if m == nil {
 		return
@@ -438,7 +366,6 @@ func (m *Model) leaveCopyMode() {
 			paneID = state.PaneID
 		}
 	}
-	m.clearCopyModeOwnedHistoryLoadingForPane(paneID)
 	m.resetPaneViewport(paneID)
 	m.deleteCopyModeStateForPane(paneID)
 	m.render.Invalidate()
@@ -505,79 +432,6 @@ func (m *Model) ensureCopyMode() bool {
 	m.syncCopyModeViewport(buffer, start)
 	m.saveCurrentCopyModeState()
 	return true
-}
-
-func (m *Model) adjustCopyModeAfterSnapshotLoaded(terminalID string, snapshot *protocol.Snapshot) {
-}
-
-func (m *Model) adjustCopyModeAfterSnapshotLoadedWithWindow(terminalID string, snapshot *protocol.Snapshot, offset int, allowLatestReplace bool) bool {
-	return false
-}
-
-func (m *Model) reanchorCopyModePoints(buffer copyModeBuffer, fallbackDelta int, preserveTop bool, preferRefs bool) {
-	if m == nil {
-		return
-	}
-	if preserveTop {
-		m.copyMode.Cursor = buffer.clampPoint(copyModePoint{Row: 0, Col: m.copyMode.Cursor.Col})
-		if logical, ok := buffer.logicalPosForPoint(m.copyMode.Cursor); ok {
-			m.copyMode.CursorLogical = logical
-		}
-		if m.copyMode.Mark == nil {
-			m.copyMode.MarkLogical = nil
-			return
-		}
-		point := buffer.clampPoint(*m.copyMode.Mark)
-		m.copyMode.Mark = &point
-		if logical, ok := buffer.logicalPosForPoint(point); ok {
-			m.copyMode.MarkLogical = &logical
-		}
-		return
-	}
-	if preferRefs {
-		if !preserveTop && m.copyMode.CursorLogical.Line > 0 {
-			logical := m.copyMode.CursorLogical
-			logical.Line += fallbackDelta
-			if point, ok := buffer.pointForLogicalPos(logical); ok {
-				m.copyMode.Cursor = point
-				m.copyMode.CursorLogical = logical
-			} else {
-				m.copyMode.Cursor.Row += fallbackDelta
-			}
-		}
-	} else {
-		m.copyMode.Cursor.Row += fallbackDelta
-	}
-	m.copyMode.Cursor = buffer.clampPoint(m.copyMode.Cursor)
-	if logical, ok := buffer.logicalPosForPoint(m.copyMode.Cursor); ok {
-		m.copyMode.CursorLogical = logical
-	}
-	if m.copyMode.Mark == nil {
-		m.copyMode.MarkLogical = nil
-		return
-	}
-	point := *m.copyMode.Mark
-	if preferRefs {
-		if m.copyMode.MarkLogical != nil && !preserveTop && m.copyMode.MarkLogical.Line > 0 {
-			logical := *m.copyMode.MarkLogical
-			logical.Line += fallbackDelta
-			if mapped, ok := buffer.pointForLogicalPos(logical); ok {
-				point = mapped
-				m.copyMode.MarkLogical = &logical
-			} else {
-				point.Row += fallbackDelta
-			}
-		} else {
-			point.Row += fallbackDelta
-		}
-	} else {
-		point.Row += fallbackDelta
-	}
-	point = buffer.clampPoint(point)
-	m.copyMode.Mark = &point
-	if logical, ok := buffer.logicalPosForPoint(point); ok {
-		m.copyMode.MarkLogical = &logical
-	}
 }
 
 func (m *Model) pasteBufferToActiveCmd() tea.Cmd {
