@@ -239,13 +239,15 @@ func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
 		rowIDKnown bool
 		firstRowID uint64
 		lastRowID  uint64
+		sealed     bool
 	}{
 		{name: "unknown-origin", origin: terminalLiveTailOrigin("bad-origin"), dirty: true},
 		{name: "clean-live", origin: terminalLiveTailOriginLive, dirty: false},
 		{name: "live-row-ids", origin: terminalLiveTailOriginLive, dirty: true, rowIDKnown: true, firstRowID: 40, lastRowID: 40},
-		{name: "dirty-reclaimed", origin: terminalLiveTailOriginReclaimed, dirty: true},
-		{name: "reclaimed-missing-row-ids", origin: terminalLiveTailOriginReclaimed, dirty: false},
-		{name: "reclaimed-row-id-span-mismatch", origin: terminalLiveTailOriginReclaimed, dirty: false, rowIDKnown: true, firstRowID: 40, lastRowID: 42},
+		{name: "dirty-reclaimed", origin: terminalLiveTailOriginReclaimed, dirty: true, sealed: true},
+		{name: "open-reclaimed", origin: terminalLiveTailOriginReclaimed, dirty: false, rowIDKnown: true, firstRowID: 40, lastRowID: 40},
+		{name: "reclaimed-missing-row-ids", origin: terminalLiveTailOriginReclaimed, dirty: false, sealed: true},
+		{name: "reclaimed-row-id-span-mismatch", origin: terminalLiveTailOriginReclaimed, dirty: false, rowIDKnown: true, firstRowID: 40, lastRowID: 42, sealed: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := newMemoryTerminalGridStoreForTest(t)
@@ -266,6 +268,7 @@ func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
 					RowIDKnown: tc.rowIDKnown,
 					FirstRowID: tc.firstRowID,
 					LastRowID:  tc.lastRowID,
+					Sealed:     tc.sealed,
 					Origin:     tc.origin,
 					Residency:  terminalLogicalLineResidencyLiveTail,
 					Dirty:      tc.dirty,

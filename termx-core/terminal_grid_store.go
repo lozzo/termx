@@ -1431,6 +1431,9 @@ func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogica
 		if record.id == 0 || record.residency != terminalLogicalLineResidencyLiveTail || !terminalLiveTailOriginKnown(record.origin) || record.dirty != terminalLiveTailOriginDirty(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
 			return nil, false
 		}
+		if record.origin == terminalLiveTailOriginReclaimed && !record.sealed {
+			return nil, false
+		}
 		out = append(out, record)
 		nextStart = record.endRow + 1
 	}
