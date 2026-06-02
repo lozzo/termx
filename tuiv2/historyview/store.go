@@ -280,7 +280,7 @@ func prependHistoryWindow(older, current HistoryWindow) HistoryWindow {
 }
 
 func normalizeHistoryWindow(window HistoryWindow) HistoryWindow {
-	if window.LoadedLines == 0 {
+	if window.LoadedLines == 0 && !historyWindowHasClippedBeforeLine(window.Lines) {
 		window.LoadedLines = len(window.Lines)
 	}
 	if window.TotalLines == 0 {
@@ -293,6 +293,15 @@ func normalizeHistoryWindow(window HistoryWindow) HistoryWindow {
 		window.LastBoundaryID = window.LastLineID
 	}
 	return cloneHistoryWindow(window)
+}
+
+func historyWindowHasClippedBeforeLine(lines []LineSpan) bool {
+	for _, line := range lines {
+		if line.ClippedBefore {
+			return true
+		}
+	}
+	return false
 }
 
 func cloneLiveSurface(surface LiveSurface) LiveSurface {

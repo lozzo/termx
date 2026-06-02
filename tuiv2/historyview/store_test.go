@@ -35,6 +35,29 @@ func TestMemoryStoreLatestReplaceInitializesAuthoritativeWindow(t *testing.T) {
 	}
 }
 
+func TestMemoryStorePreservesExplicitZeroLoadedLinesForClippedBeforeWindow(t *testing.T) {
+	store := NewMemoryStore()
+	window := fakeWindow("term-1", WindowOpReplace, "g1:10-12:c80", 10, 12, []string{"tail"})
+	window.LoadedLines = 0
+	window.TotalLines = 1
+	window.Lines[0].ClippedBefore = true
+
+	if accepted := store.ApplyHistoryWindow(window); !accepted {
+		t.Fatal("expected clipped-before latest replace to be accepted")
+	}
+
+	got, ok := store.HistoryWindow("term-1")
+	if !ok {
+		t.Fatal("expected stored history window")
+	}
+	if got.LoadedLines != 0 {
+		t.Fatalf("expected explicit zero loaded lines to be preserved, got %d", got.LoadedLines)
+	}
+	if got.TotalLines != 1 {
+		t.Fatalf("expected total lines to stay from core, got %d", got.TotalLines)
+	}
+}
+
 func TestMemoryStoreOlderPrependRequiresCurrentTokenAndGeneration(t *testing.T) {
 	store := NewMemoryStore()
 	latest := fakeWindow("term-1", WindowOpReplace, "g2:20-22:c80", 20, 22, []string{"new-a", "new-b"})
