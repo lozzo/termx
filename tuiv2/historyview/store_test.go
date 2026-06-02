@@ -164,7 +164,7 @@ func TestFakeSourceDrivesLatestAndOlderRequests(t *testing.T) {
 	if !store.ApplyHistoryWindow(latest) {
 		t.Fatal("expected latest window to be accepted")
 	}
-	older, err := source.OlderHistoryWindow(ctx, WindowRequest{TerminalID: "term-1", Token: latest.Token, Limit: 20, Cols: 80})
+	older, err := source.OlderHistoryWindow(ctx, WindowRequest{TerminalID: "term-1", Token: latest.Token, BeforeCursor: latest.BeforeCursor, Limit: 20, Cols: 80})
 	if err != nil {
 		t.Fatalf("older history window: %v", err)
 	}
@@ -204,6 +204,7 @@ func fakeWindow(terminalID string, op WindowOp, token WindowToken, firstID, last
 		TotalRows:       len(rows),
 		LoadedLines:     len(lines),
 		TotalLines:      len(lines),
+		BeforeCursor:    int(firstID),
 		Generation:      1,
 		FirstLineID:     firstID,
 		LastLineID:      lastID,
@@ -254,6 +255,9 @@ func (s *fakeSource) OlderHistoryWindow(_ context.Context, request WindowRequest
 	}
 	if s.older.TerminalID == "" {
 		return HistoryWindow{}, errors.New("missing older fake window")
+	}
+	if request.BeforeCursor <= 0 {
+		return HistoryWindow{}, errors.New("missing older before cursor")
 	}
 	s.older.Token = request.Token
 	return s.older, nil

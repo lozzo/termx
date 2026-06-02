@@ -87,10 +87,11 @@ type Selection struct {
 }
 
 type WindowRequest struct {
-	TerminalID string
-	Token      WindowToken
-	Limit      int
-	Cols       int
+	TerminalID   string
+	Token        WindowToken
+	BeforeCursor int
+	Limit        int
+	Cols         int
 }
 
 type Source interface {
