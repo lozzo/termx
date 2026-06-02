@@ -29,6 +29,7 @@ type HistoryLineSpan struct {
 	StartRow      int
 	EndRow        int
 	RowKind       string
+	LogicalLineID uint64
 	ClippedBefore bool
 	ClippedAfter  bool
 }
@@ -113,7 +114,7 @@ func historyWindowFromGridViewport(id string, beforeOffset int, viewport *protoc
 		Op:           historyWindowOpForOffset(beforeOffset),
 		Size:         Size{Cols: viewport.Size.Cols, Rows: viewport.Size.Rows},
 		Rows:         rows,
-		Lines:        historyLineSpans(viewport.ScrollbackWrapped, viewport.ScrollbackRowKinds, len(viewport.Rows), beforeOffset),
+		Lines:        historyLineSpans(viewport.ScrollbackWrapped, viewport.ScrollbackRowKinds, len(viewport.Rows), beforeOffset, viewport.FirstRowID),
 		BeforeOffset: beforeOffset,
 		LoadedRows:   viewport.LoadedRows,
 		TotalRows:    viewport.ScrollbackTotal,
@@ -147,7 +148,7 @@ func historyWindowToken(viewport *protocol.GridViewport) string {
 // historyLineSpans 根据 wrapped 元数据把 visual rows 归并成逻辑行区间。
 //
 // wrapped[i]==true 表示第 i 行与下一行属于同一条逻辑行。
-func historyLineSpans(wrapped []bool, rowKinds []string, rowCount int, beforeOffset int) []HistoryLineSpan {
+func historyLineSpans(wrapped []bool, rowKinds []string, rowCount int, beforeOffset int, firstRowID uint64) []HistoryLineSpan {
 	if rowCount <= 0 {
 		return nil
 	}
@@ -161,12 +162,20 @@ func historyLineSpans(wrapped []bool, rowKinds []string, rowCount int, beforeOff
 			StartRow:      start,
 			EndRow:        row,
 			RowKind:       stringAt(rowKinds, start),
+			LogicalLineID: historyLineSpanLogicalLineID(firstRowID, start),
 			ClippedBefore: beforeOffset > 0 && start == 0,
 			ClippedAfter:  row == rowCount-1 && boolAt(wrapped, row),
 		})
 		start = row + 1
 	}
 	return spans
+}
+
+func historyLineSpanLogicalLineID(firstRowID uint64, startRow int) uint64 {
+	if firstRowID == 0 && startRow == 0 {
+		return 0
+	}
+	return firstRowID + uint64(startRow)
 }
 
 func protocolHistoryWindowFromCore(window *HistoryWindow) *protocol.HistoryWindow {
@@ -191,6 +200,7 @@ func protocolHistoryWindowFromCore(window *HistoryWindow) *protocol.HistoryWindo
 			StartRow:      span.StartRow,
 			EndRow:        span.EndRow,
 			RowKind:       span.RowKind,
+			LogicalLineID: span.LogicalLineID,
 			ClippedBefore: span.ClippedBefore,
 			ClippedAfter:  span.ClippedAfter,
 		}

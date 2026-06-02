@@ -305,6 +305,7 @@ message HistoryWindow {
   int64 timestamp_unix_nano = 17;
   repeated bool line_clipped_before = 18;
   repeated bool line_clipped_after = 19;
+  repeated uint64 line_logical_line_ids = 20;
 }
 
 message StorageEntry {

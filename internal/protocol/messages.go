@@ -1879,6 +1879,7 @@ type HistoryLineSpan struct {
 	StartRow      int
 	EndRow        int
 	RowKind       string
+	LogicalLineID uint64
 	ClippedBefore bool
 	ClippedAfter  bool
 }
