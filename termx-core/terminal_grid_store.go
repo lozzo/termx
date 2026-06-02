@@ -653,8 +653,8 @@ func (s *terminalGridStore) reclaimViewport(neededRows int, cols int) (terminalG
 		if start > end {
 			start = end
 		}
-		lineRecords := s.persistedLogicalLineRecordsForIndex(refs, baseRowID, generation)
-		start = terminalGridWindowStartForRecords(lineRecords, start)
+		startLineRecords := s.persistedLogicalLineRecordsForWindowStart(refs, baseRowID, generation, start)
+		start = terminalGridWindowStartForRecords(startLineRecords, start)
 		refs = refs[start:end]
 		if len(refs) == 0 {
 			return result, nil
@@ -664,10 +664,7 @@ func (s *terminalGridStore) reclaimViewport(neededRows int, cols int) (terminalG
 			return result, err
 		}
 		firstRowID := baseRowID + uint64(start)
-		lineRecords = terminalGridLogicalLineRecordsForWindow(lineRecords, start, end)
-		if len(lineRecords) == 0 {
-			lineRecords = terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, firstRowID, generation)
-		}
+		lineRecords := s.persistedLogicalLineRecordsForViewport(refs, firstRowID, totalRows, generation)
 		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped, result.LogicalLineIDs = reflowTerminalGridRows(gridRows, cols, lineRecords)
 		result.Ownership = repeatedString(RowOwnershipPersisted, len(result.Rows))
 		result.Generation = generation
@@ -778,7 +775,7 @@ func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalG
 	if start > end {
 		start = end
 	}
-	lineRecords := s.persistedLogicalLineRecordsForIndex(refs, baseRowID, generation)
+	lineRecords := s.persistedLogicalLineRecordsForWindowStart(refs, baseRowID, generation, start)
 	start = terminalGridWindowStartForRecords(lineRecords, start)
 	refs = refs[start:end]
 
@@ -1374,6 +1371,19 @@ func (s *terminalGridStore) persistedLogicalLineRecordsForIndex(refs []terminalG
 		return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
 	}
 	if records, ok := s.persistedLogicalLineRecordsFromMetadata(len(refs), generation); ok {
+		return records
+	}
+	return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
+}
+
+func (s *terminalGridStore) persistedLogicalLineRecordsForWindowStart(refs []terminalGridRowRef, baseRowID uint64, generation uint64, start int) []terminalGridLogicalLineRecord {
+	if s == nil {
+		return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
+	}
+	if records, ok := s.persistedLogicalLineRecordsFromMetadata(len(refs), generation); ok {
+		return records
+	}
+	if records, ok := s.sealedPersistedLogicalLineRecordPrefixFromMetadata(len(refs), generation); ok && terminalGridRecordsCoverWindow(records, start, start+1) {
 		return records
 	}
 	return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
