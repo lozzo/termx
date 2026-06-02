@@ -467,8 +467,8 @@ func (s *terminalGridStore) LogicalLineCount() int {
 		return 0
 	}
 	if records, ok := s.sealedPersistedLogicalLineRecordPrefixFromMetadata(rowCount, generation); ok {
-		if count, ok := terminalGridLogicalLineCountFromSealedPrefixAndRefs(records, refs, baseRowID, generation); ok {
-			return count
+		if records, ok := terminalGridLogicalLineRecordsFromSealedPrefixAndRefs(records, refs, baseRowID, generation); ok {
+			return len(records)
 		}
 	}
 	return len(terminalGridFallbackLogicalLineRecordsForRefs(refs, 0))
@@ -991,7 +991,7 @@ func (s *terminalGridStore) enforceMaxRowsLockedAt(now time.Time) error {
 	if err != nil {
 		return err
 	}
-	lineRecords := s.persistedLogicalLineRecordsForIndex(refs, s.baseRowID, s.generation)
+	lineRecords := s.persistedLogicalLineRecordsForRetention(refs, s.baseRowID, s.generation)
 	retainRows, err := terminalGridRetentionRetainedRows(s.dir, refs, lineRecords, s.retentionPolicy, now)
 	if err != nil {
 		return err
@@ -1256,16 +1256,23 @@ func terminalGridSealedPersistedLogicalLineRecordPrefix(records []terminalGridLo
 	return out
 }
 
-func terminalGridLogicalLineCountFromSealedPrefixAndRefs(prefix []terminalGridLogicalLineRecord, refs []terminalGridRowRef, baseRowID uint64, generation uint64) (int, bool) {
+func terminalGridLogicalLineRecordsFromSealedPrefixAndRefs(prefix []terminalGridLogicalLineRecord, refs []terminalGridRowRef, baseRowID uint64, generation uint64) ([]terminalGridLogicalLineRecord, bool) {
 	if len(prefix) == 0 {
-		return 0, false
+		return nil, false
 	}
 	tailStart := prefix[len(prefix)-1].endRow + 1
 	if tailStart < 0 || tailStart > len(refs) {
-		return 0, false
+		return nil, false
 	}
 	tail := terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs[tailStart:], baseRowID+uint64(tailStart), generation)
-	return len(prefix) + len(tail), true
+	out := make([]terminalGridLogicalLineRecord, 0, len(prefix)+len(tail))
+	out = append(out, prefix...)
+	for _, record := range tail {
+		record.startRow += tailStart
+		record.endRow += tailStart
+		out = append(out, record)
+	}
+	return out, true
 }
 
 func terminalGridLogicalLineRecordsForWindow(records []terminalGridLogicalLineRecord, start int, end int) []terminalGridLogicalLineRecord {
@@ -1389,6 +1396,21 @@ func (s *terminalGridStore) persistedLogicalLineRecordsForIndex(refs []terminalG
 	}
 	if records, ok := s.persistedLogicalLineRecordsFromMetadata(len(refs), generation); ok {
 		return records
+	}
+	return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
+}
+
+func (s *terminalGridStore) persistedLogicalLineRecordsForRetention(refs []terminalGridRowRef, baseRowID uint64, generation uint64) []terminalGridLogicalLineRecord {
+	if s == nil {
+		return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
+	}
+	if records, ok := s.persistedLogicalLineRecordsFromMetadata(len(refs), generation); ok {
+		return records
+	}
+	if prefix, ok := s.sealedPersistedLogicalLineRecordPrefixFromMetadata(len(refs), generation); ok {
+		if records, ok := terminalGridLogicalLineRecordsFromSealedPrefixAndRefs(prefix, refs, baseRowID, generation); ok {
+			return records
+		}
 	}
 	return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
 }

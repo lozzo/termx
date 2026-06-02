@@ -1268,6 +1268,48 @@ func TestTerminalGridStoreRetentionCountsLogicalLinesAcrossWrappedRows(t *testin
 	}
 }
 
+func TestTerminalGridStoreRetentionUsesSealedMetadataPrefix(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("aa")},
+		{cells: localVTermCellsFromString("bb")},
+		{cells: localVTermCellsFromString("tail")},
+	}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{Records: []terminalGridLineRecordMeta{
+		{ID: 91, StartRow: 0, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+	}}); err != nil {
+		t.Fatalf("write partial line metadata: %v", err)
+	}
+
+	store.SetMaxRows(2)
+	if err := store.enforceMaxRowsLockedAt(time.Now().UTC()); err != nil {
+		t.Fatalf("enforce retention: %v", err)
+	}
+
+	viewport, err := store.Viewport(0, 10, 10)
+	if err != nil {
+		t.Fatalf("viewport after metadata-prefix retention: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"aa", "bb", "tail"}) {
+		t.Fatalf("expected retention to keep metadata prefix rows and tail, got %#v", got)
+	}
+	if viewport.FirstRowID != 0 || viewport.LastRowID != 2 || store.RowCount() != 3 {
+		t.Fatalf("expected retention not to cut metadata prefix, rows=%d first=%d last=%d", store.RowCount(), viewport.FirstRowID, viewport.LastRowID)
+	}
+	prefix, err := store.Viewport(1, 10, 10)
+	if err != nil {
+		t.Fatalf("prefix viewport after metadata-prefix retention: %v", err)
+	}
+	if got := vtermRowsToStrings(prefix.Rows); !reflect.DeepEqual(got, []string{"aabb"}) {
+		t.Fatalf("expected retained metadata prefix to remain one logical line, got %#v", got)
+	}
+}
+
 func TestTerminalGridFallbackLogicalLineRecordsExposePersistedBoundaries(t *testing.T) {
 	refs := []terminalGridRowRef{
 		{flags: terminalGridRowFlagWrapped},
