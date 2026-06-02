@@ -645,6 +645,18 @@ func TestSubscribeBootstrapDoesNotCreateHistoryFromLiveScreenOnly(t *testing.T) 
 		t.Fatalf("expected bootstrap not to create committed logical lines, got before=%d after=%d", beforeLines, got)
 	}
 
+	coreViewport, err := term.combinedGridViewport(0, 10, 8, term.primaryLiveTail.clone())
+	if err != nil {
+		t.Fatalf("bootstrap history window viewport: %v", err)
+	}
+	window := historyWindowFromCoreGridViewport(term.id, 0, coreViewport)
+	if len(window.Rows) != 0 || window.LoadedRows != 0 || window.LoadedLines != 0 || window.TotalRows != 0 || window.LogicalTotal != 0 || window.Token != "" {
+		t.Fatalf("expected bootstrap to leave authoritative history window empty, got %#v", window)
+	}
+	if historyWindowContainsText(window, "live-a") || historyWindowContainsText(window, "live-b") {
+		t.Fatalf("expected bootstrap not to expose live screen through history window, got %#v", window.Rows)
+	}
+
 	snap := term.Snapshot(0, 0)
 	if snap == nil {
 		t.Fatal("expected snapshot")
@@ -700,6 +712,21 @@ func TestScreenSnapshotFallbackFullReplaceDoesNotCreateHistory(t *testing.T) {
 	}
 	if got := store.LogicalLineCount(); got != beforeLines {
 		t.Fatalf("expected fallback payload generation not to create committed logical lines, got before=%d after=%d", beforeLines, got)
+	}
+
+	coreViewport, err := term.combinedGridViewport(0, 10, 8, term.primaryLiveTail.clone())
+	if err != nil {
+		t.Fatalf("fallback history window viewport: %v", err)
+	}
+	window := historyWindowFromCoreGridViewport(term.id, 0, coreViewport)
+	if got := historyWindowRowTexts(window); !reflect.DeepEqual(got, []string{"hist0"}) {
+		t.Fatalf("expected fallback history window to keep only committed history, got %#v", got)
+	}
+	if window.LoadedRows != beforeRows || window.LoadedLines != beforeLines || window.LogicalTotal != beforeLines {
+		t.Fatalf("expected fallback history window counts unchanged, loaded_rows=%d loaded_lines=%d logical_total=%d", window.LoadedRows, window.LoadedLines, window.LogicalTotal)
+	}
+	if historyWindowContainsText(window, "seed-a") || historyWindowContainsText(window, "seed-b") {
+		t.Fatalf("expected fallback not to expose live screen through history window, got %#v", window.Rows)
 	}
 
 	snap := term.Snapshot(0, 0)
