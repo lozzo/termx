@@ -59,6 +59,39 @@ func TestCopyModeProjectionSignatureIncludesInteriorRows(t *testing.T) {
 	}
 }
 
+func TestCopyModeProjectionDoesNotInferLogicalLinesFromWrappedRows(t *testing.T) {
+	projection := &RenderCopyModeProjectionVM{
+		TerminalID: "term-1",
+		Token:      "token-1",
+		Size:       protocol.Size{Cols: 20, Rows: 2},
+		Rows: []RenderCopyModeProjectionRowVM{
+			{Cells: protocolRowFromText("wrapped-a"), Wrapped: true},
+			{Cells: protocolRowFromText("wrapped-b")},
+		},
+	}
+	copyMode := RenderCopyModeVM{
+		CursorRow:  0,
+		ViewTopRow: 0,
+		Projection: projection,
+	}
+
+	if got := copyModeLogicalLineCount(copyMode); got != 0 {
+		t.Fatalf("expected no logical lines without authoritative spans, got %d", got)
+	}
+	if got := copyModeLogicalLineIndex(copyMode, 1); got != -1 {
+		t.Fatalf("expected no row-to-line inference without authoritative spans, got %d", got)
+	}
+	if _, _, ok := copyModeLogicalLineBounds(copyMode, 0); ok {
+		t.Fatal("expected no line bounds without authoritative spans")
+	}
+	if _, _, ok := copyModePointForLogicalPos(copyMode, 0, 0); ok {
+		t.Fatal("expected no logical point projection without authoritative spans")
+	}
+	if label := copyModeRowPositionLabelForVM(copyMode, -1, 0); label != "" {
+		t.Fatalf("expected row position label to stay empty without authoritative spans, got %q", label)
+	}
+}
+
 func projectionTestRowText(cells []protocol.Cell) string {
 	text := ""
 	for _, cell := range cells {

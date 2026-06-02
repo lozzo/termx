@@ -142,10 +142,7 @@ func copyModeLogicalLineCount(copyMode RenderCopyModeVM) int {
 	if copyMode.Projection == nil {
 		return 0
 	}
-	if len(copyMode.Projection.Lines) > 0 {
-		return len(copyMode.Projection.Lines)
-	}
-	return projectionLogicalLineCount(copyMode.Projection)
+	return len(copyMode.Projection.Lines)
 }
 
 func copyModeRowCells(copyMode RenderCopyModeVM, row int) []protocol.Cell {
@@ -229,67 +226,35 @@ func copyModePointForLogicalPos(copyMode RenderCopyModeVM, logicalLine, logicalC
 }
 
 func projectionLogicalLineCount(projection *RenderCopyModeProjectionVM) int {
-	if projection == nil || len(projection.Rows) == 0 {
+	if projection == nil {
 		return 0
 	}
-	count := 0
-	for row := 0; row < len(projection.Rows); row++ {
-		if row == 0 || !projection.Rows[row-1].Wrapped {
-			count++
-		}
-	}
-	return count
+	return len(projection.Lines)
 }
 
 func projectionLogicalLineIndex(projection *RenderCopyModeProjectionVM, row int) int {
 	if projection == nil || row < 0 || row >= len(projection.Rows) {
 		return -1
 	}
-	if len(projection.Lines) > 0 {
-		for index, line := range projection.Lines {
-			if row >= line.StartRow && row <= line.EndRow {
-				return index
-			}
-		}
-		return -1
-	}
-	index := -1
-	for current := 0; current <= row; current++ {
-		if current == 0 || !projection.Rows[current-1].Wrapped {
-			index++
+	for index, line := range projection.Lines {
+		if row >= line.StartRow && row <= line.EndRow {
+			return index
 		}
 	}
-	return index
+	return -1
 }
 
 func projectionLogicalLineBounds(projection *RenderCopyModeProjectionVM, logicalLine int) (int, int, bool) {
 	if projection == nil || len(projection.Rows) == 0 || logicalLine < 0 {
 		return 0, 0, false
 	}
-	if len(projection.Lines) > 0 {
-		if logicalLine >= len(projection.Lines) {
-			return 0, 0, false
-		}
-		line := projection.Lines[logicalLine]
-		start := clampInt(line.StartRow, 0, len(projection.Rows)-1)
-		end := clampInt(line.EndRow, start, len(projection.Rows)-1)
-		return start, end, true
+	if logicalLine >= len(projection.Lines) {
+		return 0, 0, false
 	}
-	index := -1
-	for row := 0; row < len(projection.Rows); row++ {
-		if row == 0 || !projection.Rows[row-1].Wrapped {
-			index++
-		}
-		if index != logicalLine {
-			continue
-		}
-		end := row
-		for end < len(projection.Rows)-1 && projection.Rows[end].Wrapped {
-			end++
-		}
-		return row, end, true
-	}
-	return 0, 0, false
+	line := projection.Lines[logicalLine]
+	start := clampInt(line.StartRow, 0, len(projection.Rows)-1)
+	end := clampInt(line.EndRow, start, len(projection.Rows)-1)
+	return start, end, true
 }
 
 func projectionViewportTop(projection *RenderCopyModeProjectionVM, height, viewTopRow int) int {
