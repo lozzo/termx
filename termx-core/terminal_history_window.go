@@ -61,7 +61,7 @@ type HistoryWindow struct {
 	BeforeOffset int
 	// LoadedRows 是本窗口覆盖到的已提交行深度（含 BeforeOffset）。
 	LoadedRows int
-	// LoadedLines 是本窗口实际返回的逻辑行片段数量。
+	// LoadedLines 是本窗口实际返回且包含起点的逻辑行数量；clipped-before 片段不计入。
 	LoadedLines int
 	// TotalRows 是当前宽度下可投影的总 visual row 数。
 	TotalRows int
@@ -306,7 +306,7 @@ func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport ter
 		Lines:        lines,
 		BeforeOffset: historyWindowBeforeCursor(beforeOffset, viewport),
 		LoadedRows:   viewport.LoadedRows,
-		LoadedLines:  len(lines),
+		LoadedLines:  historyLoadedLogicalLineCount(lines),
 		TotalRows:    viewport.TotalRows,
 		LogicalTotal: logicalTotal,
 		HasMore:      viewport.HasMore,
@@ -341,6 +341,17 @@ func terminalHistoryWindowCommittedOwnershipCount(ownership []string) int {
 		case RowOwnershipPersisted, RowOwnershipLiveTailReclaimed:
 			count++
 		}
+	}
+	return count
+}
+
+func historyLoadedLogicalLineCount(lines []HistoryLineSpan) int {
+	count := 0
+	for _, span := range lines {
+		if span.ClippedBefore {
+			continue
+		}
+		count++
 	}
 	return count
 }

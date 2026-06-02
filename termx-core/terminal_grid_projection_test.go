@@ -1064,6 +1064,9 @@ func TestServerHistoryWindowMarksClippedLogicalLineAfterProjectionLimit(t *testi
 	if span.StartRow != 0 || span.EndRow != 1 || span.RowKind != "line1" || !span.ClippedBefore || span.ClippedAfter {
 		t.Fatalf("expected clipped-before logical line span for visible tail, got %#v", span)
 	}
+	if window.LoadedLines != 0 {
+		t.Fatalf("expected clipped-before-only history window to load zero logical line starts, got %d", window.LoadedLines)
+	}
 	if window.FirstRowID != 1 || window.LastRowID != 3 {
 		t.Fatalf("expected canonical row ids to cover the expanded logical line 1..3, got %d..%d", window.FirstRowID, window.LastRowID)
 	}
@@ -1109,6 +1112,9 @@ func TestServerHistoryWindowMarksLatestLimitClippedLogicalLineBefore(t *testing.
 	span := window.Lines[0]
 	if span.StartRow != 0 || span.EndRow != 1 || span.RowKind != "line0" || !span.ClippedBefore || span.ClippedAfter {
 		t.Fatalf("expected latest limited window to mark clipped-before logical line, got %#v", span)
+	}
+	if window.LoadedLines != 0 {
+		t.Fatalf("expected latest clipped-before-only history window to load zero logical line starts, got %d", window.LoadedLines)
 	}
 }
 
