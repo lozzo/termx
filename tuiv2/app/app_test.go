@@ -4599,32 +4599,7 @@ func (c *recordingBridgeClient) GridViewport(_ context.Context, terminalID strin
 	if c.snapshotErr != nil {
 		return nil, c.snapshotErr
 	}
-	if c.snapshotByTerminal == nil {
-		return nil, nil
-	}
-	snapshot := snapshotWindow(c.snapshotByTerminal[terminalID], offset, limit)
-	if snapshot == nil {
-		return nil, nil
-	}
-	return &protocol.GridViewport{
-		TerminalID:             terminalID,
-		Size:                   snapshot.Size,
-		Rows:                   protocol.CloneCompactRows(snapshot.Scrollback),
-		ScrollbackOffset:       snapshot.ScrollbackOffset,
-		ScrollbackLimit:        limit,
-		ScrollbackTotal:        snapshot.ScrollbackTotal,
-		ScrollbackLogicalTotal: snapshot.ScrollbackLogicalTotal,
-		ScrollbackHasMore:      snapshot.ScrollbackHasMore,
-		LoadedRows:             snapshot.ScrollbackLoadedRows,
-		HistoryGeneration:      snapshot.HistoryGeneration,
-		FirstRowID:             snapshot.ScrollbackFirstRowID,
-		LastRowID:              snapshot.ScrollbackLastRowID,
-		ScrollbackTimestamps:   append([]time.Time(nil), snapshot.ScrollbackTimestamps...),
-		ScrollbackRowKinds:     append([]string(nil), snapshot.ScrollbackRowKinds...),
-		ScrollbackWrapped:      append([]bool(nil), snapshot.ScrollbackWrapped...),
-		RowOwnership:           append([]string(nil), snapshot.ScrollbackOwnership...),
-		Timestamp:              snapshot.Timestamp,
-	}, nil
+	return nil, nil
 }
 
 func (c *recordingBridgeClient) HistoryWindow(context.Context, protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {
