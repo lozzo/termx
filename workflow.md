@@ -408,6 +408,7 @@ TUI store 至少表达：
 - 已为 core `mutable live tail` 的 live/resize segment 分配 runtime stable logical line id，并在连续 live tail replacement、wrapped open line、resize hidden live tail 与 latest history window 中保留同一逻辑行 id；reclaimed suffix 继续使用 persisted logical line id。当前 runtime id 与 persisted id 的统一迁移仍只是 metadata 记录，尚未被完整消费为跨层统一身份。
 - 已将 core `mutable live tail` logical line record 分段改为优先按 stable logical line id；只有 id 缺失时才回退 wrapped 元数据，避免 live tail record view 继续把 wrapped 当作首要边界来源。
 - 已新增 core runtime live logical line id 到 persisted logical line id 的迁移记录：当 open live tail 被 hard newline seal 并写入 persisted store 时，会记录 runtime id 对应的新 persisted id，并写入 `grid.lines.json`。
+- 已在 persisted logical line record metadata 恢复时消费 `grid.lines.json` 中的 runtime->persisted logical line id 迁移关系，避免已迁移的 runtime live id 在 persisted projection 中继续泄漏。
 - 已为 core persisted store record 与 mutable live tail record 增加显式 residency 字段，区分 persisted 与 live-tail 层，并写入 `grid.lines.json`。
 - 已为 core persisted store record 与 mutable live tail record 增加 dirty/generation 字段：persisted record 默认为 dirty=false 并携带 store generation，live/resize record 为 dirty=true，reclaimed live-tail record 为 dirty=false 并保留 reclaimed generation，并写入 `grid.lines.json`。
 - 已新增 core grid line metadata sidecar，持久化 runtime live logical line id 到 persisted logical line id 的迁移关系，以及 persisted/live-tail records 的 residency、dirty、generation。

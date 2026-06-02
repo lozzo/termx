@@ -1264,11 +1264,38 @@ func (s *terminalGridStore) persistedLogicalLineRecordsFromMetadata(rowCount int
 	if err != nil {
 		return nil, false
 	}
-	records, ok := terminalGridCompletePersistedLogicalLineRecords(terminalGridLogicalLineRecordsFromMetadata(metadata.Records), rowCount, generation)
+	records := terminalGridLogicalLineRecordsFromMetadata(metadata.Records)
+	terminalGridApplyLineMigrationsToRecords(records, terminalGridLineMigrationMap(metadata.Migrations))
+	records, ok := terminalGridCompletePersistedLogicalLineRecords(records, rowCount, generation)
 	if !ok {
 		return nil, false
 	}
 	return records, true
+}
+
+func terminalGridLineMigrationMap(migrations []terminalGridLineMigration) map[uint64]uint64 {
+	if len(migrations) == 0 {
+		return nil
+	}
+	out := make(map[uint64]uint64, len(migrations))
+	for _, migration := range migrations {
+		if migration.RuntimeID == 0 || migration.PersistedID == 0 {
+			continue
+		}
+		out[migration.RuntimeID] = migration.PersistedID
+	}
+	return out
+}
+
+func terminalGridApplyLineMigrationsToRecords(records []terminalGridLogicalLineRecord, migrations map[uint64]uint64) {
+	if len(records) == 0 || len(migrations) == 0 {
+		return
+	}
+	for i := range records {
+		if persistedID := migrations[records[i].id]; persistedID != 0 {
+			records[i].id = persistedID
+		}
+	}
 }
 
 func (s *terminalGridStore) persistedLogicalLineRecordsForIndex(refs []terminalGridRowRef, baseRowID uint64, generation uint64) []terminalGridLogicalLineRecord {
