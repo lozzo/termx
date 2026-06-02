@@ -254,7 +254,7 @@ func (s *MemoryStore) acceptWindowLocked(current HistoryWindow, hasCurrent bool,
 
 func prependHistoryWindow(older, current HistoryWindow) HistoryWindow {
 	baseRows := len(older.Rows)
-	baseLines := len(older.Lines)
+	baseLoadedLines := older.LoadedLines
 	older.Rows = append(cloneHistoryRows(older.Rows), cloneHistoryRows(current.Rows)...)
 	lines := cloneLineSpans(older.Lines)
 	for _, span := range current.Lines {
@@ -266,7 +266,7 @@ func prependHistoryWindow(older, current HistoryWindow) HistoryWindow {
 	older.Op = WindowOpPrepend
 	older.LoadedRows = maxInt(older.LoadedRows, current.LoadedRows+baseRows)
 	older.TotalRows = maxInt(older.TotalRows, current.TotalRows)
-	older.LoadedLines = maxInt(older.LoadedLines, current.LoadedLines+baseLines)
+	older.LoadedLines = baseLoadedLines + current.LoadedLines
 	older.TotalLines = maxInt(older.TotalLines, current.TotalLines)
 	older.FirstLineID = firstNonZero(older.FirstLineID, current.FirstLineID)
 	older.LastLineID = current.LastLineID
@@ -280,8 +280,8 @@ func prependHistoryWindow(older, current HistoryWindow) HistoryWindow {
 }
 
 func normalizeHistoryWindow(window HistoryWindow) HistoryWindow {
-	if window.LoadedLines == 0 && !historyWindowHasClippedBeforeLine(window.Lines) {
-		window.LoadedLines = len(window.Lines)
+	if window.LoadedLines == 0 {
+		window.LoadedLines = historyLoadedLineStarts(window.Lines)
 	}
 	if window.TotalLines == 0 {
 		window.TotalLines = window.LoadedLines
@@ -293,15 +293,6 @@ func normalizeHistoryWindow(window HistoryWindow) HistoryWindow {
 		window.LastBoundaryID = window.LastLineID
 	}
 	return cloneHistoryWindow(window)
-}
-
-func historyWindowHasClippedBeforeLine(lines []LineSpan) bool {
-	for _, line := range lines {
-		if line.ClippedBefore {
-			return true
-		}
-	}
-	return false
 }
 
 func cloneLiveSurface(surface LiveSurface) LiveSurface {

@@ -58,6 +58,40 @@ func TestMemoryStorePreservesExplicitZeroLoadedLinesForClippedBeforeWindow(t *te
 	}
 }
 
+func TestMemoryStoreOlderPrependDoesNotCountClippedBeforeFragmentAsLoadedLine(t *testing.T) {
+	store := NewMemoryStore()
+	latest := fakeWindow("term-1", WindowOpReplace, "g2:10-10:c80", 10, 10, []string{"latest"})
+	latest.TotalLines = 2
+	if !store.ApplyHistoryWindow(latest) {
+		t.Fatal("expected latest replace")
+	}
+
+	older := fakeWindow("term-1", WindowOpPrepend, latest.Token, 8, 9, []string{"fragment"})
+	older.Generation = latest.Generation
+	older.Lines[0].ClippedBefore = true
+	older.LoadedLines = 0
+	older.TotalLines = 2
+	older.FirstLineID = 0
+	older.LastLineID = 0
+	if !store.ApplyHistoryWindow(older) {
+		t.Fatal("expected clipped-before older window to be accepted")
+	}
+
+	got, ok := store.HistoryWindow("term-1")
+	if !ok {
+		t.Fatal("expected merged history window")
+	}
+	if got.LoadedLines != 1 {
+		t.Fatalf("expected only latest line start to count as loaded, got %d", got.LoadedLines)
+	}
+	if got.TotalLines != 2 {
+		t.Fatalf("expected total lines to remain authoritative, got %d", got.TotalLines)
+	}
+	if len(got.Lines) != 2 || !got.Lines[0].ClippedBefore || got.Lines[1].StartRow != 1 {
+		t.Fatalf("unexpected merged line spans: %#v", got.Lines)
+	}
+}
+
 func TestMemoryStoreOlderPrependRequiresCurrentTokenAndGeneration(t *testing.T) {
 	store := NewMemoryStore()
 	latest := fakeWindow("term-1", WindowOpReplace, "g2:20-22:c80", 20, 22, []string{"new-a", "new-b"})
