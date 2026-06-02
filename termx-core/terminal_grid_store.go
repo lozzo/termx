@@ -779,21 +779,6 @@ func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalG
 	return refs, len(refs), start > 0, nil
 }
 
-func terminalGridWindowStartForLogicalLineRecords(refs []terminalGridRowRef, start int) int {
-	if start <= 0 || len(refs) == 0 {
-		return maxInt(start, 0)
-	}
-	if start >= len(refs) {
-		return len(refs)
-	}
-	for _, record := range terminalGridLogicalLineRecordsForRefs(refs, 0) {
-		if start >= record.startRow && start <= record.endRow {
-			return record.startRow
-		}
-	}
-	return start
-}
-
 func terminalGridRowContinuesLogicalLine(ref terminalGridRowRef) bool {
 	return ref.flags&terminalGridRowFlagWrapped != 0
 }

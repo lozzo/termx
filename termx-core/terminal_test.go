@@ -1236,16 +1236,14 @@ func TestTerminalGridLogicalLineRecordsExposePersistedBoundaries(t *testing.T) {
 }
 
 func TestTerminalGridWindowStartUsesLogicalLineRecords(t *testing.T) {
-	refs := []terminalGridRowRef{
-		{flags: terminalGridRowFlagWrapped},
-		{flags: terminalGridRowFlagWrapped},
-		{},
-		{},
+	records := []terminalGridLogicalLineRecord{
+		{id: 1, startRow: 0, endRow: 2, sealed: true, residency: terminalLogicalLineResidencyPersisted},
+		{id: 4, startRow: 3, endRow: 3, sealed: true, residency: terminalLogicalLineResidencyPersisted},
 	}
-	if got := terminalGridWindowStartForLogicalLineRecords(refs, 2); got != 0 {
+	if got := terminalGridWindowStartForRecords(records, 2); got != 0 {
 		t.Fatalf("expected window inside first logical line to rewind to row 0, got %d", got)
 	}
-	if got := terminalGridWindowStartForLogicalLineRecords(refs, 3); got != 3 {
+	if got := terminalGridWindowStartForRecords(records, 3); got != 3 {
 		t.Fatalf("expected window at independent logical line to stay at row 3, got %d", got)
 	}
 }

@@ -402,6 +402,7 @@ TUI store 至少表达：
 - 已在 core persisted history store 中新增内部 logical line record 视图，表达非零 logical line boundary id、start/end committed row、sealed 状态与 persisted origin；`LogicalLineCount` 与 logical-line retention 已开始消费该 record 视图。
 - 已将 core persisted projection 的 row 到 logical line id 映射改为直接来自 logical line record 视图，`reflowTerminalGridRows` 不再根据窗口首 row 自行推断 logical line id。
 - 已将 core persisted viewport/reclaim 的窗口起点扩展改为通过 logical line record 视图定位逻辑行边界，不再使用逐 row wrapped 回退 helper 作为窗口边界来源。
+- 已删除 core persisted viewport/reclaim 中只接受 refs/wrapped 的旧窗口起点 helper；窗口起点调整现在只消费显式 logical line record，refs/wrapped 仅作为 metadata 缺失时生成 fallback record 的输入。
 - 已将 core persisted retention 的 logical-line limit、byte limit、age limit 收敛为优先消费 persisted logical line record，并按完整 logical line record 保留或丢弃；metadata 缺失时才回退 index/wrapped 推导，byte limit 不再切半条逻辑行。
 - 已为 core `mutable live tail` 新增内部 logical line record 视图，覆盖 reclaimed/live segment 的 start/end、seal 状态、origin 与 logical line id；grow resize reclaim 会把 persisted projection 的 row 到 logical line id 映射带入 reclaimed live tail，combined viewport 与 history window 不再把 reclaimed suffix 的 logical line id 清零。当前 live/resize open line 仍保持 id=0，后续需要继续补稳定 live logical line id。
 - 已为 core `mutable live tail` 的 live/resize segment 分配 runtime stable logical line id，并在连续 live tail replacement、wrapped open line、resize hidden live tail 与 latest history window 中保留同一逻辑行 id；reclaimed suffix 继续使用 persisted logical line id。当前 runtime id 与 persisted id 的统一迁移、residency/dirty/generation 记录仍未完整收敛。
