@@ -1106,6 +1106,7 @@ func (t *Terminal) sealLiveTailForProcessExitLocked() error {
 	rows := t.primaryLiveTailRowsForExit(t.primaryLiveTail.clone())
 	if len(rows) == 0 {
 		t.primaryLiveTail.reset()
+		t.recordLiveTailMetadataLocked()
 		return nil
 	}
 	if t.gridAppender != nil {
@@ -1115,6 +1116,7 @@ func (t *Terminal) sealLiveTailForProcessExitLocked() error {
 		return err
 	}
 	t.primaryLiveTail.reset()
+	t.recordLiveTailMetadataLocked()
 	return nil
 }
 

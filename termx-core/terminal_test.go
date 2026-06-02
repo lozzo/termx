@@ -2829,6 +2829,44 @@ func TestTerminalProcessExitForceSealsPrimaryLiveTail(t *testing.T) {
 	}
 }
 
+func TestTerminalProcessExitClearsPersistedLiveTailMetadata(t *testing.T) {
+	vt := localvterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "exit-clears-live-tail-metadata",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	term.primaryLiveTail.replaceLiveRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("tail"), WrappedSet: true, Wrapped: true},
+	}, true)
+	term.recordLiveTailMetadataLocked()
+	before, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata before seal: %v", err)
+	}
+	if len(before.LiveRecords) == 0 || len(before.LiveRows) == 0 {
+		t.Fatalf("expected live tail metadata before seal, got %#v", before)
+	}
+
+	if err := term.sealLiveTailForProcessExitLocked(); err != nil {
+		t.Fatalf("seal live tail for exit: %v", err)
+	}
+	after, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after seal: %v", err)
+	}
+	if len(after.LiveRecords) != 0 || len(after.LiveRows) != 0 {
+		t.Fatalf("expected live tail metadata cleared after process exit seal, got %#v", after)
+	}
+	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
+		t.Fatal("expected process exit seal to remove recoverable live tail metadata")
+	}
+}
+
 func TestTerminalProcessExitInAltScreenDropsAltAndSealsPrimaryTail(t *testing.T) {
 	ctx := context.Background()
 	bus := NewEventBus(nil)

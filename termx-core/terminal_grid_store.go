@@ -2008,12 +2008,13 @@ func (s *terminalGridStore) recordLiveTailLineMetadata(records []terminalLiveTai
 }
 
 func (s *terminalGridStore) recordLiveTailLineState(records []terminalLiveTailLogicalLineRecord, rows []vterm.DamageOp) error {
-	if s == nil || strings.TrimSpace(s.dir) == "" {
+	if s == nil {
 		return nil
 	}
-	s.mu.Lock()
-	dir := s.dir
-	s.mu.Unlock()
+	dir, ok := s.lineMetadataWritableDir()
+	if !ok {
+		return nil
+	}
 	metadata, err := readTerminalGridLineMetadata(dir)
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -2028,12 +2029,13 @@ func (s *terminalGridStore) recordLiveTailLineState(records []terminalLiveTailLo
 }
 
 func (s *terminalGridStore) recordLineMigrations(migrations map[uint64]uint64) error {
-	if s == nil || len(migrations) == 0 || strings.TrimSpace(s.dir) == "" {
+	if s == nil || len(migrations) == 0 {
 		return nil
 	}
-	s.mu.Lock()
-	dir := s.dir
-	s.mu.Unlock()
+	dir, ok := s.lineMetadataWritableDir()
+	if !ok {
+		return nil
+	}
 	metadata, err := readTerminalGridLineMetadata(dir)
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -2059,6 +2061,18 @@ func (s *terminalGridStore) recordLineMigrations(migrations map[uint64]uint64) e
 		})
 	}
 	return writeTerminalGridLineMetadata(dir, metadata)
+}
+
+func (s *terminalGridStore) lineMetadataWritableDir() (string, bool) {
+	if s == nil {
+		return "", false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.removeOnClose || strings.TrimSpace(s.dir) == "" {
+		return "", false
+	}
+	return s.dir, true
 }
 
 func terminalGridHistoryGeneration(createdAtUnix int64) uint64 {
