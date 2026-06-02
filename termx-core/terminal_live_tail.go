@@ -95,15 +95,21 @@ func (tail terminalPrimaryLiveTail) clone() terminalPrimaryLiveTail {
 }
 
 func (tail terminalPrimaryLiveTail) rows() []vterm.DamageOp {
+	return tail.rowsWithLogicalLineIDs().rows
+}
+
+func (tail terminalPrimaryLiveTail) rowsWithLogicalLineIDs() terminalLiveTailRowsWithLogicalLineIDs {
 	count := tail.rowCount()
 	if count == 0 {
-		return nil
+		return terminalLiveTailRowsWithLogicalLineIDs{}
 	}
 	out := make([]vterm.DamageOp, 0, count)
+	lineIDs := make([]uint64, 0, count)
 	for _, segment := range tail.segments {
 		out = append(out, cloneGridDamageOps(segment.rows)...)
+		lineIDs = append(lineIDs, terminalLiveTailSegmentLogicalLineIDs(segment.logicalLineIDs, segment.rows, segment.origin, segment.firstRowID, segment.lastRowID)...)
 	}
-	return out
+	return terminalLiveTailRowsWithLogicalLineIDs{rows: out, logicalLineIDs: lineIDs}
 }
 
 func (tail terminalPrimaryLiveTail) rowCount() int {

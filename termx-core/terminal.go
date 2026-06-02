@@ -1260,8 +1260,17 @@ func terminalGridRowsFromVTermRows(rows [][]vterm.Cell, timestamps []time.Time, 
 	return out
 }
 
-func expandDamageWindowStartToLogicalLine(rows []vterm.DamageOp, start int) int {
+func expandDamageWindowStartToLogicalLine(rows []vterm.DamageOp, logicalLineIDs []uint64, start int) int {
 	for start > 0 {
+		currentID := uint64At(logicalLineIDs, start)
+		prevID := uint64At(logicalLineIDs, start-1)
+		if currentID != 0 && prevID != 0 {
+			if currentID != prevID {
+				break
+			}
+			start--
+			continue
+		}
 		prev := rows[start-1]
 		if !(prev.WrappedSet && prev.Wrapped) {
 			break

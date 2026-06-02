@@ -467,6 +467,21 @@ func TestTerminalLatestGridViewportExpandsLiveTailWrappedStartToLogicalLine(t *t
 	}
 }
 
+func TestExpandDamageWindowStartToLogicalLinePrefersLogicalLineIDs(t *testing.T) {
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("tail0"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("tail1"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("next"), WrappedSet: true, Wrapped: false},
+	}
+	lineID := terminalLiveTailLogicalLineIDBase + 10
+	if got := expandDamageWindowStartToLogicalLine(rows, []uint64{lineID, lineID, lineID + 1}, 1); got != 0 {
+		t.Fatalf("expected same logical line id to expand start to 0 despite wrapped=false, got %d", got)
+	}
+	if got := expandDamageWindowStartToLogicalLine(rows, []uint64{lineID, lineID, lineID + 1}, 2); got != 2 {
+		t.Fatalf("expected distinct logical line id to keep start at 2, got %d", got)
+	}
+}
+
 func TestTerminalLatestProjectionMaterializesLiveTailRunsToCells(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
