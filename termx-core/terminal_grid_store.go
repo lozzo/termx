@@ -1390,16 +1390,6 @@ func terminalGridApplyLineMigrationsToRecords(records []terminalGridLogicalLineR
 	}
 }
 
-func (s *terminalGridStore) persistedLogicalLineRecordsForIndex(refs []terminalGridRowRef, baseRowID uint64, generation uint64) []terminalGridLogicalLineRecord {
-	if s == nil {
-		return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
-	}
-	if records, ok := s.persistedLogicalLineRecordsFromMetadata(len(refs), generation); ok {
-		return records
-	}
-	return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
-}
-
 func (s *terminalGridStore) persistedLogicalLineRecordsForRetention(refs []terminalGridRowRef, baseRowID uint64, generation uint64) []terminalGridLogicalLineRecord {
 	if s == nil {
 		return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
