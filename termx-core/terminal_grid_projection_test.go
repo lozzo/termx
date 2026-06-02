@@ -225,32 +225,44 @@ func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T)
 	}
 }
 
-func TestTerminalGridRecoveredLiveTailRejectsUnknownOrigin(t *testing.T) {
-	store := newMemoryTerminalGridStoreForTest(t)
-	defer store.Close()
-	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{{
-		Cells:      localVTermCellsFromString("tail"),
-		WrappedSet: true,
-		Wrapped:    true,
-	}})
-	if err != nil {
-		t.Fatalf("encode live row metadata: %v", err)
-	}
-	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
-		LiveRecords: []terminalGridLineRecordMeta{{
-			ID:        terminalLiveTailLogicalLineIDBase + 1,
-			StartRow:  0,
-			EndRow:    0,
-			Origin:    terminalLiveTailOrigin("bad-origin"),
-			Residency: terminalLogicalLineResidencyLiveTail,
-			Dirty:     true,
-		}},
-		LiveRows: rows,
-	}); err != nil {
-		t.Fatalf("write live tail metadata: %v", err)
-	}
-	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
-		t.Fatal("expected corrupt live tail origin metadata to be ignored")
+func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		origin terminalLiveTailOrigin
+		dirty  bool
+	}{
+		{name: "unknown-origin", origin: terminalLiveTailOrigin("bad-origin"), dirty: true},
+		{name: "clean-live", origin: terminalLiveTailOriginLive, dirty: false},
+		{name: "dirty-reclaimed", origin: terminalLiveTailOriginReclaimed, dirty: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newMemoryTerminalGridStoreForTest(t)
+			defer store.Close()
+			rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{{
+				Cells:      localVTermCellsFromString("tail"),
+				WrappedSet: true,
+				Wrapped:    true,
+			}})
+			if err != nil {
+				t.Fatalf("encode live row metadata: %v", err)
+			}
+			if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+				LiveRecords: []terminalGridLineRecordMeta{{
+					ID:        terminalLiveTailLogicalLineIDBase + 1,
+					StartRow:  0,
+					EndRow:    0,
+					Origin:    tc.origin,
+					Residency: terminalLogicalLineResidencyLiveTail,
+					Dirty:     tc.dirty,
+				}},
+				LiveRows: rows,
+			}); err != nil {
+				t.Fatalf("write live tail metadata: %v", err)
+			}
+			if _, ok := store.recoveredLiveTailFromMetadata(); ok {
+				t.Fatalf("expected corrupt live tail metadata %q to be ignored", tc.name)
+			}
+		})
 	}
 }
 

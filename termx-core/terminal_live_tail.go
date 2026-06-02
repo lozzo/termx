@@ -478,7 +478,7 @@ func terminalLiveTailRecordContinues(logicalLineIDs []uint64, rows []vterm.Damag
 }
 
 func terminalLiveTailRecordDirty(segment terminalLiveTailSegment) bool {
-	return segment.origin != terminalLiveTailOriginReclaimed
+	return terminalLiveTailOriginDirty(segment.origin)
 }
 
 func terminalLiveTailRecordSealState(segment terminalLiveTailSegment, row int) terminalLiveTailSealState {
