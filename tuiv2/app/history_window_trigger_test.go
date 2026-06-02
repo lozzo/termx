@@ -36,6 +36,9 @@ func TestWheelEnteringCopyModeRequestsLatestAuthoritativeWindow(t *testing.T) {
 
 func TestSemanticScrollUpRequestsLatestAuthoritativeWindow(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 12})
+	if changed := model.runtime.SetPaneViewportOffset("pane-1", 7); !changed {
+		t.Fatal("expected test pane viewport offset seed")
+	}
 	source := &appHistoryFakeSource{
 		latest: appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 101, []string{"latest"}, 1, true),
 	}
@@ -52,7 +55,7 @@ func TestSemanticScrollUpRequestsLatestAuthoritativeWindow(t *testing.T) {
 	if source.latestRequests != 1 || source.olderRequests != 0 {
 		t.Fatalf("expected one latest request only, got latest=%d older=%d", source.latestRequests, source.olderRequests)
 	}
-	if got := model.runtime.PaneViewportOffset("pane-1"); got != 0 {
+	if got := model.runtime.PaneViewportOffset("pane-1"); got != 7 {
 		t.Fatalf("expected semantic scroll-up not to mutate local pane viewport, got %d", got)
 	}
 }
