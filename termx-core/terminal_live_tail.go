@@ -316,15 +316,15 @@ func (tail *terminalPrimaryLiveTail) replaceReclaimedPrefixWithLogicalLineIDs(ro
 			continue
 		}
 		if segment.origin == terminalLiveTailOriginResize {
-			resizeRows := trimLiveTailResizeRowsCoveredByReclaimedPrefix(segment.rows, rows)
-			if len(resizeRows) == 0 {
+			resizeTail := trimLiveTailResizeRowsCoveredByReclaimedPrefix(segment.rows, segment.logicalLineIDs, rows)
+			if len(resizeTail.rows) == 0 {
 				continue
 			}
 			liveSegments = append(liveSegments, terminalLiveTailSegment{
 				origin:         segment.origin,
-				sealState:      terminalLiveTailSealStateForRows(resizeRows, segment.wrapPending),
-				rows:           resizeRows,
-				logicalLineIDs: terminalLiveTailSegmentFallbackLogicalLineIDs(segment.origin, resizeRows, segment.firstRowID, segment.lastRowID),
+				sealState:      terminalLiveTailSealStateForRows(resizeTail.rows, segment.wrapPending),
+				rows:           resizeTail.rows,
+				logicalLineIDs: terminalLiveTailSegmentLiveLogicalLineIDs(resizeTail.logicalLineIDs, resizeTail.rows),
 				wrapPending:    segment.wrapPending,
 				generation:     segment.generation,
 				firstRowID:     segment.firstRowID,
@@ -359,20 +359,30 @@ func (tail *terminalPrimaryLiveTail) replaceReclaimedPrefixWithLogicalLineIDs(ro
 	tail.segments = append([]terminalLiveTailSegment{reclaimed}, liveSegments...)
 }
 
-func trimLiveTailResizeRowsCoveredByReclaimedPrefix(resizeRows []vterm.DamageOp, reclaimedRows []vterm.DamageOp) []vterm.DamageOp {
+func trimLiveTailResizeRowsCoveredByReclaimedPrefix(resizeRows []vterm.DamageOp, logicalLineIDs []uint64, reclaimedRows []vterm.DamageOp) terminalLiveTailRowsWithLogicalLineIDs {
 	if len(resizeRows) == 0 {
-		return nil
+		return terminalLiveTailRowsWithLogicalLineIDs{}
 	}
+	lineIDs := terminalLiveTailSegmentLiveLogicalLineIDs(logicalLineIDs, resizeRows)
 	if len(reclaimedRows) == 0 {
-		return cloneGridDamageOps(resizeRows)
+		return terminalLiveTailRowsWithLogicalLineIDs{
+			rows:           cloneGridDamageOps(resizeRows),
+			logicalLineIDs: lineIDs,
+		}
 	}
 	maxOverlap := minInt(len(resizeRows), len(reclaimedRows))
 	for overlap := maxOverlap; overlap > 0; overlap-- {
 		if terminalDamageRowsEqual(reclaimedRows[len(reclaimedRows)-overlap:], resizeRows[:overlap]) {
-			return cloneGridDamageOps(resizeRows[overlap:])
+			return terminalLiveTailRowsWithLogicalLineIDs{
+				rows:           cloneGridDamageOps(resizeRows[overlap:]),
+				logicalLineIDs: cloneUint64Slice(lineIDs[overlap:]),
+			}
 		}
 	}
-	return cloneGridDamageOps(resizeRows)
+	return terminalLiveTailRowsWithLogicalLineIDs{
+		rows:           cloneGridDamageOps(resizeRows),
+		logicalLineIDs: lineIDs,
+	}
 }
 
 func (tail terminalPrimaryLiveTail) window(start int, end int) terminalLiveTailWindow {

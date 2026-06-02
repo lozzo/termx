@@ -197,3 +197,33 @@ func TestTerminalPrimaryLiveTailKeepsLiveLogicalLineIDAcrossReplacement(t *testi
 		t.Fatalf("expected continued open live line to keep runtime id across replacement, first=%#v next=%#v", first, next)
 	}
 }
+
+func TestTerminalPrimaryLiveTailKeepsResizeLogicalLineIDAfterReclaimedTrim(t *testing.T) {
+	var tail terminalPrimaryLiveTail
+	tail.replaceResizeRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("cc"), WrappedSet: true, Wrapped: true},
+	}, true)
+	initial := tail.window(0, tail.rowCount()).logicalLineIDs
+	if len(initial) != 3 || initial[0] < terminalLiveTailLogicalLineIDBase || initial[0] != initial[1] || initial[0] != initial[2] {
+		t.Fatalf("expected resize rows to start with one runtime logical line id, got %#v", initial)
+	}
+
+	tail.replaceReclaimedPrefixWithLogicalLineIDs([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: true},
+	}, []uint64{11, 11}, 7, 10, 11)
+
+	window := tail.window(0, tail.rowCount())
+	if got := damageRowsToStrings(window.rows); !reflect.DeepEqual(got, []string{"aa", "bb", "cc"}) {
+		t.Fatalf("expected reclaimed prefix plus trimmed resize tail, got %#v", got)
+	}
+	if got := window.logicalLineIDs; len(got) != 3 || got[0] != 11 || got[1] != 11 || got[2] != initial[0] {
+		t.Fatalf("expected trimmed resize row to keep runtime logical line id, got %#v initial=%#v", got, initial)
+	}
+	records := tail.logicalLineRecords()
+	if len(records) != 2 || records[1].id != initial[0] || records[1].origin != terminalLiveTailOriginResize || !records[1].dirty {
+		t.Fatalf("expected resize record to keep runtime id after reclaimed trim, got %#v initial=%#v", records, initial)
+	}
+}

@@ -423,6 +423,7 @@ TUI store 至少表达：
 - 已将 reclaimed mutable live tail record 的 persisted row 坐标显式写入 `grid.lines.json`，恢复时必须使用 sidecar 中的 first/last row id；row 坐标写出和恢复都只允许出现在 reclaimed record 上，不再通过 logical line id 反推出 reclaimed row 坐标。
 - 已让 legacy `snapshot` / `grid.viewport` 的 store-only latest 兼容投影复用同一个 recovered live tail projection helper；它们仍不是新 TUI history truth，只是避免恢复场景下兼容投影丢失 mutable live tail。
 - 已在 process exit force seal 后清空 recoverable mutable live tail metadata，避免已提交到 persisted store 的 live tail 又被 store-only latest projection 重复恢复；sidecar 写入同时跳过 closed/remove-on-close 临时 store。
+- 已修正 reclaimed prefix 覆盖 resize live-tail 前缀后的裁剪逻辑：resize segment 裁剪 rows 时同步裁剪并保留 runtime logical line id，避免剩余 mutable live tail 回退成无 id 的 wrapped 推导。
 - 已将 core `history.window` line span 生成改为优先按 stable logical line id 归并 visual rows；只有 projection 缺失 logical line id 时才回退 wrapped 元数据，避免 screen projection 继续把 wrapped 当作首要历史真相。
 - 已删除或改写 `tuiv2/app` 中旧滚动测试语义：不再保留依赖 snapshot scrollback wrapped、frozen snapshot 本地游标、正常模式本地 pane viewport offset 的 skipped 回归基准。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与非零 logical line boundary id，并修复 clipped 投影片段 row kind 继承。
