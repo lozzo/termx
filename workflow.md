@@ -400,11 +400,11 @@ TUI store 至少表达：
 - 已将 `tuiv2/runtime` 测试 fake 的 `GridViewport` 改为返回空结果，并删除未使用的 runtime grid viewport trace helper；TUI 测试层不再提供 grid viewport 历史数据占位。
 - 已将 core authoritative `history.window` 从 legacy protocol `grid.viewport` 派生路径改为直接消费内部 grid viewport，并让 persisted store projection 为每条投影 row 携带非零 logical line boundary id；`HistoryLineSpan.LogicalLineID` 不再由当前窗口内 visual row 下标推断。
 - 已删除或改写 `tuiv2/app` 中旧滚动测试语义：不再保留依赖 snapshot scrollback wrapped、frozen snapshot 本地游标、正常模式本地 pane viewport offset 的 skipped 回归基准。
-- 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与 canonical row id，并修复 clipped 投影片段 row kind 继承。
+- 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与非零 logical line boundary id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。
 - 已新增 core 光标回到当前 visual row 后覆写的生产路径 harness，覆盖覆写仍停留在 mutable live tail、未 seal 前不产生 persisted logical line、hard newline 后作为一条 overwritten logical line 提交。
 - 已新增 core alt-screen 非退出路径 harness，覆盖进入 alt-screen 后 primary persisted history/logical line 计数冻结、alt surface 不混入 primary history、退出 alt-screen 后 primary surface/viewport/replay 恢复。
 - 已将 `tuiv2/app` 旧滚动测试基准收敛为 authoritative history window harness：snapshot scrollback wrapped guard、鼠标滚轮本地 snapshot 游标、copy mode page/halfpage/top/exit frozen snapshot、本地 pane viewport scroll up/down 均已删除或改写，不再作为新模型回归基准。
 - 当前仍不是完整 logical-line based history。
-- 当前滚动不可用的根因是：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window，但仍需继续审计并清理残留旧 snapshot truth 入口。
-- 下一步继续切片六：继续收敛剩余旧 snapshot truth 入口；不直接修补旧滚动逻辑。
+- 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
+- 下一步转入 core 显式 logical line store：先让 persisted history store 以 logical line record / stable non-zero line boundary id 为内部索引，并继续把 mutable live tail 的 open/sealed/reclaimed 行身份补齐；不回退修补旧 TUI snapshot/grid viewport 滚动路径。
