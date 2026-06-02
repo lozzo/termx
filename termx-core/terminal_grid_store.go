@@ -1281,11 +1281,15 @@ func (s *terminalGridStore) persistedLogicalLineRecordsFromMetadata(rowCount int
 
 func terminalGridPersistedRecordMetasHaveNoRowIDs(records []terminalGridLineRecordMeta) bool {
 	for _, record := range records {
-		if record.RowIDKnown || record.FirstRowID != 0 || record.LastRowID != 0 {
+		if terminalGridLineRecordMetaHasRowIDs(record) {
 			return false
 		}
 	}
 	return true
+}
+
+func terminalGridLineRecordMetaHasRowIDs(record terminalGridLineRecordMeta) bool {
+	return record.RowIDKnown || record.FirstRowID != 0 || record.LastRowID != 0
 }
 
 func terminalGridLineMigrationMap(migrations []terminalGridLineMigration) map[uint64]uint64 {
@@ -1381,7 +1385,7 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 		if !terminalLiveTailOriginKnown(record.Origin) {
 			return nil, false
 		}
-		if record.Origin != terminalLiveTailOriginReclaimed && record.RowIDKnown {
+		if record.Origin != terminalLiveTailOriginReclaimed && terminalGridLineRecordMetaHasRowIDs(record) {
 			return nil, false
 		}
 		segmentRows := cloneGridDamageOps(rows[record.StartRow : record.EndRow+1])

@@ -347,6 +347,7 @@ func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
 		{name: "clean-live", origin: terminalLiveTailOriginLive, dirty: false},
 		{name: "live-persisted-id", id: 1, origin: terminalLiveTailOriginLive, dirty: true},
 		{name: "live-row-ids", origin: terminalLiveTailOriginLive, dirty: true, rowIDKnown: true, firstRowID: 40, lastRowID: 40},
+		{name: "live-row-id-fields", origin: terminalLiveTailOriginLive, dirty: true, firstRowID: 40, lastRowID: 40},
 		{name: "dirty-reclaimed", id: 1, origin: terminalLiveTailOriginReclaimed, dirty: true, sealed: true},
 		{name: "reclaimed-runtime-id", origin: terminalLiveTailOriginReclaimed, dirty: false, rowIDKnown: true, firstRowID: 40, lastRowID: 40, sealed: true},
 		{name: "open-reclaimed", id: 1, origin: terminalLiveTailOriginReclaimed, dirty: false, rowIDKnown: true, firstRowID: 40, lastRowID: 40},
