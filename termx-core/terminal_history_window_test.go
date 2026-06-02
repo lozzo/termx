@@ -230,12 +230,15 @@ func TestProtocolHistoryWindowFromCoreMapsAllFields(t *testing.T) {
 		Lines:        []HistoryLineSpan{{StartRow: 0, EndRow: 0, RowKind: "output", LogicalLineID: 42, ClippedBefore: true, ClippedAfter: true}},
 		BeforeOffset: 2,
 		LoadedRows:   6,
+		LoadedLines:  1,
 		TotalRows:    8,
 		LogicalTotal: 3,
 		HasMore:      true,
 		Generation:   3,
 		FirstRowID:   0,
 		LastRowID:    1,
+		FirstLineID:  42,
+		LastLineID:   42,
 	}
 	got := protocolHistoryWindowFromCore(core)
 	if got == nil {
@@ -247,10 +250,10 @@ func TestProtocolHistoryWindowFromCoreMapsAllFields(t *testing.T) {
 	if got.Size.Cols != 40 || got.Size.Rows != 10 {
 		t.Fatalf("unexpected mapped size: %#v", got.Size)
 	}
-	if got.BeforeOffset != 2 || got.LoadedRows != 6 || got.TotalRows != 8 || got.LogicalTotal != 3 || !got.HasMore {
+	if got.BeforeOffset != 2 || got.LoadedRows != 6 || got.TotalRows != 8 || got.LoadedLines != 1 || got.LogicalTotal != 3 || !got.HasMore {
 		t.Fatalf("unexpected mapped metadata: %#v", got)
 	}
-	if got.Generation != 3 || got.FirstRowID != 0 || got.LastRowID != 1 {
+	if got.Generation != 3 || got.FirstRowID != 0 || got.LastRowID != 1 || got.FirstLineID != 42 || got.LastLineID != 42 {
 		t.Fatalf("unexpected mapped boundary: %#v", got)
 	}
 	if len(got.Rows) != 1 || len(got.RowKinds) != 1 || got.RowKinds[0] != "output" || len(got.RowWrapped) != 1 || !got.RowWrapped[0] || len(got.RowOwnership) != 1 || got.RowOwnership[0] != RowOwnershipPersisted {

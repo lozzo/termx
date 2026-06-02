@@ -508,11 +508,14 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 		BeforeOffset:  3,
 		LoadedRows:    9,
 		TotalRows:     12,
+		LoadedLines:   2,
 		LogicalTotal:  4,
 		HasMore:       true,
 		Generation:    7,
 		FirstRowID:    0,
 		LastRowID:     2,
+		FirstLineID:   42,
+		LastLineID:    43,
 		Timestamp:     time.Date(2026, 6, 2, 2, 0, 0, 0, time.UTC),
 	}
 	payload, err := EncodeHistoryWindowPayload(window)
@@ -526,10 +529,10 @@ func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
 	if decoded.TerminalID != "term-hist" || decoded.Token != "g7:0-2:c80" || decoded.Op != HistoryWindowReplace || decoded.Size != window.Size {
 		t.Fatalf("unexpected decoded history window header: %#v", decoded)
 	}
-	if decoded.BeforeOffset != 3 || decoded.LoadedRows != 9 || decoded.TotalRows != 12 || decoded.LogicalTotal != 4 || !decoded.HasMore {
+	if decoded.BeforeOffset != 3 || decoded.LoadedRows != 9 || decoded.TotalRows != 12 || decoded.LoadedLines != 2 || decoded.LogicalTotal != 4 || !decoded.HasMore {
 		t.Fatalf("unexpected decoded history window metadata: %#v", decoded)
 	}
-	if decoded.Generation != 7 || decoded.FirstRowID != 0 || decoded.LastRowID != 2 {
+	if decoded.Generation != 7 || decoded.FirstRowID != 0 || decoded.LastRowID != 2 || decoded.FirstLineID != 42 || decoded.LastLineID != 43 {
 		t.Fatalf("unexpected decoded history window boundary: %#v", decoded)
 	}
 	if len(decoded.Lines) != 1 || decoded.Lines[0] != (HistoryLineSpan{StartRow: 0, EndRow: 0, RowKind: "output", LogicalLineID: 42, ClippedBefore: true, ClippedAfter: true}) {

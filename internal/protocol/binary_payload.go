@@ -170,11 +170,14 @@ func historyWindowToWirePB(window *HistoryWindow) *wirepb.HistoryWindow {
 		BeforeOffset:       int64(window.BeforeOffset),
 		LoadedRows:         int64(window.LoadedRows),
 		TotalRows:          int64(window.TotalRows),
+		LoadedLines:        int64(window.LoadedLines),
 		LogicalTotal:       int64(window.LogicalTotal),
 		HasMore:            window.HasMore,
 		HistoryGeneration:  window.Generation,
 		FirstRowId:         window.FirstRowID,
 		LastRowId:          window.LastRowID,
+		FirstLineId:        window.FirstLineID,
+		LastLineId:         window.LastLineID,
 		TimestampUnixNano:  timeToUnixNano(window.Timestamp),
 	}
 }
@@ -227,11 +230,14 @@ func historyWindowFromWirePB(msg *wirepb.HistoryWindow) (*HistoryWindow, error) 
 		BeforeOffset:  int(msg.GetBeforeOffset()),
 		LoadedRows:    int(msg.GetLoadedRows()),
 		TotalRows:     int(msg.GetTotalRows()),
+		LoadedLines:   int(msg.GetLoadedLines()),
 		LogicalTotal:  int(msg.GetLogicalTotal()),
 		HasMore:       msg.GetHasMore(),
 		Generation:    msg.GetHistoryGeneration(),
 		FirstRowID:    msg.GetFirstRowId(),
 		LastRowID:     msg.GetLastRowId(),
+		FirstLineID:   msg.GetFirstLineId(),
+		LastLineID:    msg.GetLastLineId(),
 		Timestamp:     unixNanoToTime(msg.GetTimestampUnixNano()),
 	}, nil
 }

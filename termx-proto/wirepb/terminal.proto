@@ -306,6 +306,9 @@ message HistoryWindow {
   repeated bool line_clipped_before = 18;
   repeated bool line_clipped_after = 19;
   repeated uint64 line_logical_line_ids = 20;
+  int64 loaded_lines = 21;
+  uint64 first_line_id = 22;
+  uint64 last_line_id = 23;
 }
 
 message StorageEntry {

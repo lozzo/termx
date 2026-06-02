@@ -67,10 +67,10 @@ func TestProtocolSourceLatestHistoryWindowMapsProtocolMetadata(t *testing.T) {
 	if window.TerminalID != "term-1" || window.Token != "token-1" || window.Op != WindowOpReplace {
 		t.Fatalf("unexpected history window header: %#v", window)
 	}
-	if window.BeforeCursor != 11 || window.LoadedRows != 2 || window.TotalRows != 40 || window.LoadedLines != 2 || window.TotalLines != 25 || !window.HasMore {
+	if window.BeforeCursor != 11 || window.LoadedRows != 2 || window.TotalRows != 40 || window.LoadedLines != 12 || window.TotalLines != 25 || !window.HasMore {
 		t.Fatalf("unexpected history window totals: %#v", window)
 	}
-	if window.Generation != 7 || window.FirstBoundaryID != 100 || window.LastBoundaryID != 104 || window.FirstLineID != 9001 || window.LastLineID != 9002 {
+	if window.Generation != 7 || window.FirstBoundaryID != 100 || window.LastBoundaryID != 104 || window.FirstLineID != 8001 || window.LastLineID != 8002 {
 		t.Fatalf("unexpected history window boundaries: %#v", window)
 	}
 	if len(window.Rows) != 2 || historyRowText(window.Rows[0]) != "old" || historyRowText(window.Rows[1]) != "tail" {
@@ -143,12 +143,15 @@ func fakeProtocolHistoryWindow(op protocol.HistoryWindowOp, beforeOffset int) *p
 		},
 		BeforeOffset: beforeOffsetOrDefault(beforeOffset, 11),
 		LoadedRows:   2,
+		LoadedLines:  12,
 		TotalRows:    40,
 		LogicalTotal: 25,
 		HasMore:      true,
 		Generation:   7,
 		FirstRowID:   100,
 		LastRowID:    104,
+		FirstLineID:  8001,
+		LastLineID:   8002,
 		Timestamp:    time.Date(2026, 6, 2, 4, 2, 0, 0, time.UTC),
 	}
 }

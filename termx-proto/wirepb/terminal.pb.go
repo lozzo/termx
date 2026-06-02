@@ -2764,6 +2764,9 @@ type HistoryWindow struct {
 	LineClippedBefore  []bool                 `protobuf:"varint,18,rep,packed,name=line_clipped_before,json=lineClippedBefore,proto3" json:"line_clipped_before,omitempty"`
 	LineClippedAfter   []bool                 `protobuf:"varint,19,rep,packed,name=line_clipped_after,json=lineClippedAfter,proto3" json:"line_clipped_after,omitempty"`
 	LineLogicalLineIds []uint64               `protobuf:"varint,20,rep,packed,name=line_logical_line_ids,json=lineLogicalLineIds,proto3" json:"line_logical_line_ids,omitempty"`
+	LoadedLines        int64                  `protobuf:"varint,21,opt,name=loaded_lines,json=loadedLines,proto3" json:"loaded_lines,omitempty"`
+	FirstLineId        uint64                 `protobuf:"varint,22,opt,name=first_line_id,json=firstLineId,proto3" json:"first_line_id,omitempty"`
+	LastLineId         uint64                 `protobuf:"varint,23,opt,name=last_line_id,json=lastLineId,proto3" json:"last_line_id,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -2936,6 +2939,27 @@ func (x *HistoryWindow) GetLineLogicalLineIds() []uint64 {
 		return x.LineLogicalLineIds
 	}
 	return nil
+}
+
+func (x *HistoryWindow) GetLoadedLines() int64 {
+	if x != nil {
+		return x.LoadedLines
+	}
+	return 0
+}
+
+func (x *HistoryWindow) GetFirstLineId() uint64 {
+	if x != nil {
+		return x.FirstLineId
+	}
+	return 0
+}
+
+func (x *HistoryWindow) GetLastLineId() uint64 {
+	if x != nil {
+		return x.LastLineId
+	}
+	return 0
 }
 
 type StorageEntry struct {
@@ -4322,7 +4346,7 @@ const file_termx_proto_wirepb_terminal_proto_rawDesc = "" +
 	"\ffirst_row_id\x18\v \x01(\x04R\n" +
 	"firstRowId\x12\x1e\n" +
 	"\vlast_row_id\x18\f \x01(\x04R\tlastRowId\x128\n" +
-	"\x18scrollback_logical_total\x18\r \x01(\x03R\x16scrollbackLogicalTotal\"\x83\x06\n" +
+	"\x18scrollback_logical_total\x18\r \x01(\x03R\x16scrollbackLogicalTotal\"\xec\x06\n" +
 	"\rHistoryWindow\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
 	"terminalId\x12\x14\n" +
@@ -4348,7 +4372,11 @@ const file_termx_proto_wirepb_terminal_proto_rawDesc = "" +
 	"\x13timestamp_unix_nano\x18\x11 \x01(\x03R\x11timestampUnixNano\x12.\n" +
 	"\x13line_clipped_before\x18\x12 \x03(\bR\x11lineClippedBefore\x12,\n" +
 	"\x12line_clipped_after\x18\x13 \x03(\bR\x10lineClippedAfter\x121\n" +
-	"\x15line_logical_line_ids\x18\x14 \x03(\x04R\x12lineLogicalLineIds\"\xee\x01\n" +
+	"\x15line_logical_line_ids\x18\x14 \x03(\x04R\x12lineLogicalLineIds\x12!\n" +
+	"\floaded_lines\x18\x15 \x01(\x03R\vloadedLines\x12\"\n" +
+	"\rfirst_line_id\x18\x16 \x01(\x04R\vfirstLineId\x12 \n" +
+	"\flast_line_id\x18\x17 \x01(\x04R\n" +
+	"lastLineId\"\xee\x01\n" +
 	"\fStorageEntry\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x129\n" +
 	"\x05scope\x18\x02 \x01(\x0e2#.termx.protocol.wirepb.StorageScopeR\x05scope\x12\x19\n" +

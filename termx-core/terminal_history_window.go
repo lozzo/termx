@@ -454,11 +454,14 @@ func protocolHistoryWindowFromCore(window *HistoryWindow) *protocol.HistoryWindo
 		BeforeOffset:  window.BeforeOffset,
 		LoadedRows:    window.LoadedRows,
 		TotalRows:     window.TotalRows,
+		LoadedLines:   window.LoadedLines,
 		LogicalTotal:  window.LogicalTotal,
 		HasMore:       window.HasMore,
 		Generation:    window.Generation,
 		FirstRowID:    window.FirstRowID,
 		LastRowID:     window.LastRowID,
+		FirstLineID:   window.FirstLineID,
+		LastLineID:    window.LastLineID,
 		Timestamp:     window.Timestamp,
 	}
 }

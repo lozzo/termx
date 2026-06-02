@@ -1898,11 +1898,14 @@ type HistoryWindow struct {
 	BeforeOffset  int
 	LoadedRows    int
 	TotalRows     int
+	LoadedLines   int
 	LogicalTotal  int
 	HasMore       bool
 	Generation    uint64
 	FirstRowID    uint64
 	LastRowID     uint64
+	FirstLineID   uint64
+	LastLineID    uint64
 	Timestamp     time.Time
 }
 

@@ -113,12 +113,12 @@ func historyWindowFromProtocol(window *protocol.HistoryWindow) HistoryWindow {
 		BeforeCursor:    window.BeforeOffset,
 		LoadedRows:      window.LoadedRows,
 		TotalRows:       window.TotalRows,
-		LoadedLines:     len(lines),
+		LoadedLines:     historyWindowLoadedLines(window, len(lines)),
 		TotalLines:      historyWindowTotalLines(window, len(lines)),
 		HasMore:         window.HasMore,
 		Generation:      window.Generation,
-		FirstLineID:     firstLineID(lines, window.FirstRowID),
-		LastLineID:      lastLineID(lines, window.LastRowID),
+		FirstLineID:     firstNonZero(window.FirstLineID, firstLineID(lines, window.FirstRowID)),
+		LastLineID:      firstNonZero(window.LastLineID, lastLineID(lines, window.LastRowID)),
 		FirstBoundaryID: window.FirstRowID,
 		LastBoundaryID:  window.LastRowID,
 		Timestamp:       window.Timestamp,
@@ -130,6 +130,13 @@ func historyRowKind(ownership, rowKind string) RowKind {
 		return RowKind(ownership)
 	}
 	return RowKind(rowKind)
+}
+
+func historyWindowLoadedLines(window *protocol.HistoryWindow, loadedLines int) int {
+	if window == nil || window.LoadedLines <= 0 {
+		return loadedLines
+	}
+	return window.LoadedLines
 }
 
 func historyLineKind(span protocol.HistoryLineSpan, window *protocol.HistoryWindow) RowKind {
