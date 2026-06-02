@@ -219,6 +219,17 @@ func TestTerminalLatestLiveTailOnlyProjectionDoesNotInventCanonicalMetadata(t *t
 	if len(window.Lines) != 1 || window.Lines[0].LogicalLineID != coreViewport.LogicalLineIDs[0] {
 		t.Fatalf("expected history window to expose live-tail runtime logical line id, lines=%#v row_ids=%#v", window.Lines, coreViewport.LogicalLineIDs)
 	}
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read live tail line metadata: %v", err)
+	}
+	if len(lineMetadata.LiveRecords) != 1 {
+		t.Fatalf("expected one live tail line metadata record, got %#v", lineMetadata.LiveRecords)
+	}
+	liveRecord := lineMetadata.LiveRecords[0]
+	if liveRecord.ID != coreViewport.LogicalLineIDs[0] || liveRecord.Residency != terminalLogicalLineResidencyLiveTail || !liveRecord.Dirty || liveRecord.Origin != terminalLiveTailOriginLive {
+		t.Fatalf("unexpected live tail line metadata record: %#v row_ids=%#v", liveRecord, coreViewport.LogicalLineIDs)
+	}
 
 	snapshot := term.Snapshot(0, 10)
 	if snapshot == nil {

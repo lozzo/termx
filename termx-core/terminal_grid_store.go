@@ -103,8 +103,9 @@ type terminalGridMetadata struct {
 }
 
 type terminalGridLineMetadata struct {
-	Records    []terminalGridLineRecordMeta `json:"records,omitempty"`
-	Migrations []terminalGridLineMigration  `json:"migrations,omitempty"`
+	Records     []terminalGridLineRecordMeta `json:"records,omitempty"`
+	LiveRecords []terminalGridLineRecordMeta `json:"live_records,omitempty"`
+	Migrations  []terminalGridLineMigration  `json:"migrations,omitempty"`
 }
 
 type terminalGridLineRecordMeta struct {
@@ -1662,6 +1663,41 @@ func terminalGridLineRecordMetasFromRecords(records []terminalGridLogicalLineRec
 		})
 	}
 	return out
+}
+
+func terminalGridLineRecordMetasFromLiveTailRecords(records []terminalLiveTailLogicalLineRecord) []terminalGridLineRecordMeta {
+	if len(records) == 0 {
+		return nil
+	}
+	out := make([]terminalGridLineRecordMeta, 0, len(records))
+	for _, record := range records {
+		out = append(out, terminalGridLineRecordMeta{
+			ID:         record.id,
+			StartRow:   record.startRow,
+			EndRow:     record.endRow,
+			Sealed:     record.sealState == terminalLiveTailSealed,
+			Origin:     record.origin,
+			Residency:  record.residency,
+			Dirty:      record.dirty,
+			Generation: record.generation,
+		})
+	}
+	return out
+}
+
+func (s *terminalGridStore) recordLiveTailLineMetadata(records []terminalLiveTailLogicalLineRecord) error {
+	if s == nil || strings.TrimSpace(s.dir) == "" {
+		return nil
+	}
+	s.mu.Lock()
+	dir := s.dir
+	s.mu.Unlock()
+	metadata, err := readTerminalGridLineMetadata(dir)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	metadata.LiveRecords = terminalGridLineRecordMetasFromLiveTailRecords(records)
+	return writeTerminalGridLineMetadata(dir, metadata)
 }
 
 func (s *terminalGridStore) recordLineMigrations(migrations map[uint64]uint64) error {

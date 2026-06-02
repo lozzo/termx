@@ -1918,6 +1918,7 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 		} else {
 			t.primaryLiveTail.replaceLiveRowsWithLogicalLineIDs(liveTailRows.rows, liveTailRows.logicalLineIDs, wrapPending)
 		}
+		t.recordLiveTailMetadataLocked()
 	} else {
 		t.primaryLiveTail.setWrapPending(wrapPending)
 	}
@@ -2099,6 +2100,15 @@ func (t *Terminal) recordLiveTailLineMigrationsLocked(rows []vterm.DamageOp, run
 		if err := t.grid.recordLineMigrations(t.liveLineMigrations); err != nil && t.logger != nil {
 			t.logger.Warn("termx terminal grid line metadata write failed", "terminal_id", t.id, "error", err)
 		}
+	}
+}
+
+func (t *Terminal) recordLiveTailMetadataLocked() {
+	if t == nil || t.grid == nil {
+		return
+	}
+	if err := t.grid.recordLiveTailLineMetadata(t.primaryLiveTail.logicalLineRecords()); err != nil && t.logger != nil {
+		t.logger.Warn("termx terminal live tail metadata write failed", "terminal_id", t.id, "error", err)
 	}
 }
 
