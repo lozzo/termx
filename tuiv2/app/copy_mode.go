@@ -26,7 +26,6 @@ type copyModeState struct {
 	PaneID         string
 	TerminalID     string
 	WindowToken    string
-	Snapshot       *protocol.Snapshot
 	ViewTopRow     int
 	Cursor         copyModePoint
 	CursorLogical  copyModeLogicalPos
@@ -35,13 +34,6 @@ type copyModeState struct {
 	MouseSelecting bool
 	AutoScrollDir  int
 	AutoScrollSeq  uint64
-}
-
-type copyModeResumeState struct {
-	PaneID          string
-	TerminalID      string
-	Snapshot        *protocol.Snapshot
-	BaselineVersion uint64
 }
 
 func (m *Model) activePaneInCopyMode() bool {
@@ -98,42 +90,6 @@ func cloneSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {
 	cloned.ScreenOwnership = append([]string(nil), snapshot.ScreenOwnership...)
 	cloned.ScrollbackOwnership = append([]string(nil), snapshot.ScrollbackOwnership...)
 	return &cloned
-}
-
-func snapshotUsesAlternateScreen(snapshot *protocol.Snapshot) bool {
-	return snapshot != nil && (snapshot.Modes.AlternateScreen || snapshot.Screen.IsAlternateScreen)
-}
-
-func clearSnapshotScrollback(snapshot *protocol.Snapshot) {
-	if snapshot == nil {
-		return
-	}
-	snapshot.Scrollback = nil
-	snapshot.ScrollbackTimestamps = nil
-	snapshot.ScrollbackRowKinds = nil
-	snapshot.ScrollbackWrapped = nil
-	snapshot.ScrollbackOwnership = nil
-	snapshot.ScrollbackOffset = 0
-	snapshot.ScrollbackTotal = 0
-	snapshot.ScrollbackLogicalTotal = 0
-	snapshot.ScrollbackHasMore = false
-	snapshot.ScrollbackLoadedRows = 0
-	snapshot.HistoryGeneration = 0
-	snapshot.ScrollbackFirstRowID = 0
-	snapshot.ScrollbackLastRowID = 0
-}
-
-func (m *Model) copyModeSnapshot(terminalID string, snapshot *protocol.Snapshot) *protocol.Snapshot {
-	cloned := cloneSnapshot(snapshot)
-	if snapshotUsesAlternateScreen(cloned) {
-		if m != nil && m.runtime != nil {
-			cloned = m.runtime.AlternateScrollbackSnapshot(terminalID, cloned)
-		} else {
-			clearSnapshotScrollback(cloned)
-		}
-	}
-	protocol.TrimSnapshotScrollbackScreenVisualOverlap(cloned)
-	return cloned
 }
 
 func copyModePinnedAtTop(state copyModeState) bool {
@@ -287,7 +243,7 @@ func (m *Model) reconcileCopyModeContext() {
 		changed = true
 	}
 	if m.copyMode.PaneID == "" {
-		m.copyModeResume = copyModeResumeState{}
+		// No active copy-mode pane remains.
 	}
 	if changed && m.mode().Kind == input.ModeDisplay && !m.activePaneInCopyMode() {
 		m.setMode(input.ModeState{Kind: input.ModeNormal})
@@ -295,61 +251,6 @@ func (m *Model) reconcileCopyModeContext() {
 	if changed {
 		m.render.Invalidate()
 	}
-}
-
-func (m *Model) prepareCopyModeExit() {
-	if m == nil || m.copyMode.PaneID == "" || m.copyMode.Snapshot == nil || m.workbench == nil || m.runtime == nil {
-		m.copyModeResume = copyModeResumeState{}
-		return
-	}
-	pane := m.workbench.ActivePane()
-	if pane == nil || pane.ID != m.copyMode.PaneID || pane.TerminalID == "" {
-		m.copyModeResume = copyModeResumeState{}
-		return
-	}
-	terminal := m.runtime.Registry().Get(pane.TerminalID)
-	if terminal == nil {
-		m.copyModeResume = copyModeResumeState{}
-		return
-	}
-	if terminal.VTerm != nil {
-		m.runtime.RefreshSnapshotFromVTerm(pane.TerminalID)
-		terminal = m.runtime.Registry().Get(pane.TerminalID)
-	}
-	if terminal == nil || !terminal.Stream.Active || terminal.Snapshot == nil {
-		m.copyModeResume = copyModeResumeState{}
-		return
-	}
-	m.copyModeResume = copyModeResumeState{
-		PaneID:          pane.ID,
-		TerminalID:      pane.TerminalID,
-		Snapshot:        cloneSnapshot(m.copyMode.Snapshot),
-		BaselineVersion: terminal.SurfaceVersion,
-	}
-}
-
-func (m *Model) activeCopyModeResumeSnapshot() (string, *protocol.Snapshot, bool) {
-	if m == nil || m.copyModeResume.Snapshot == nil || m.workbench == nil || m.runtime == nil {
-		return "", nil, false
-	}
-	pane := m.workbench.ActivePane()
-	if pane == nil || pane.ID != m.copyModeResume.PaneID || pane.TerminalID != m.copyModeResume.TerminalID {
-		return "", nil, false
-	}
-	terminal := m.runtime.Registry().Get(pane.TerminalID)
-	if terminal == nil || !terminal.Stream.Active || terminal.Snapshot == nil {
-		return "", nil, false
-	}
-	// If a live local surface exists, prefer it immediately on copy-mode exit.
-	// Keeping the frozen snapshot until another interaction lands makes the
-	// terminal appear stuck even though the local VTerm is already current.
-	if terminal.VTerm != nil && terminal.SurfaceVersion > 0 {
-		return "", nil, false
-	}
-	if terminal.SurfaceVersion != m.copyModeResume.BaselineVersion {
-		return "", nil, false
-	}
-	return pane.ID, m.copyModeResume.Snapshot, true
 }
 
 func (m *Model) leaveCopyMode() {
@@ -404,34 +305,35 @@ func (m *Model) ensureCopyMode() bool {
 		m.saveCurrentCopyModeState()
 		return true
 	}
-	liveBuffer, ok := m.liveCopyModeBufferForPane(pane.ID)
-	if !ok || liveBuffer.totalRows() == 0 {
-		return false
-	}
-	frozenSnapshot := m.copyModeSnapshot(pane.TerminalID, liveBuffer.snapshot)
-	if frozenSnapshot == nil {
-		return false
-	}
-	buffer := copyModeBuffer{
-		snapshot: frozenSnapshot,
-		height:   liveBuffer.height,
-	}
-	start := copyModePoint{Row: maxInt(0, len(buffer.snapshot.Scrollback)+buffer.cursorRow()), Col: maxInt(0, buffer.cursorCol())}
-	start = buffer.clampPoint(start)
 	m.copyMode = copyModeState{
-		PaneID:      pane.ID,
-		TerminalID:  pane.TerminalID,
-		WindowToken: buffer.windowToken(),
-		Snapshot:    frozenSnapshot,
-		ViewTopRow:  maxInt(0, buffer.totalRows()-buffer.height),
-		Cursor:      start,
+		PaneID:     pane.ID,
+		TerminalID: pane.TerminalID,
 	}
-	if logical, ok := buffer.logicalPosForPoint(start); ok {
-		m.copyMode.CursorLogical = logical
-	}
-	m.syncCopyModeViewport(buffer, start)
 	m.saveCurrentCopyModeState()
 	return true
+}
+
+func (m *Model) enterCopyModeForPaneCmd(paneID string) tea.Cmd {
+	if m == nil || m.workbench == nil {
+		return nil
+	}
+	if strings.TrimSpace(paneID) != "" {
+		if tabID, err := m.workbench.ResolvePaneTab("", paneID); err == nil && tabID != "" {
+			tab := m.workbench.CurrentTab()
+			if tab != nil && tab.ID == tabID && tab.ActivePaneID != paneID {
+				_ = m.workbench.FocusPane(tabID, paneID)
+			}
+		}
+	}
+	m.setMode(input.ModeState{Kind: input.ModeDisplay})
+	if !m.ensureCopyMode() {
+		m.render.Invalidate()
+		return nil
+	}
+	if m.render != nil {
+		m.render.Invalidate()
+	}
+	return m.loadLatestHistoryWindowForPaneCmd(m.copyMode.PaneID)
 }
 
 func (m *Model) pasteBufferToActiveCmd() tea.Cmd {

@@ -11,9 +11,8 @@ import (
 )
 
 type copyModeBuffer struct {
-	snapshot *protocol.Snapshot
-	window   *historyview.HistoryWindow
-	height   int
+	window *historyview.HistoryWindow
+	height int
 }
 
 type copyModeLogicalLine struct {
@@ -32,7 +31,7 @@ func (m *Model) activeCopyModeBuffer() (copyModeBuffer, bool) {
 }
 
 func (m *Model) copyModeBufferForPane(paneID string) (copyModeBuffer, bool) {
-	if m == nil || m.workbench == nil || m.runtime == nil {
+	if m == nil || m.workbench == nil {
 		return copyModeBuffer{}, false
 	}
 	pane, contentRect, ok := m.copyModePaneAndContentRect(paneID)
@@ -46,44 +45,20 @@ func (m *Model) copyModeBufferForPane(paneID string) (copyModeBuffer, bool) {
 		if buffer, ok := m.authoritativeCopyModeBufferForPane(pane.ID, maxInt(1, contentRect.H)); ok {
 			return buffer, true
 		}
-		if state.Snapshot != nil {
-			return copyModeBuffer{
-				snapshot: state.Snapshot,
-				height:   maxInt(1, contentRect.H),
-			}, true
-		}
+		_ = state
 	}
-	return m.liveCopyModeBufferForPane(pane.ID)
+	return copyModeBuffer{}, false
 }
 
-func (m *Model) activeLiveCopyModeBuffer() (copyModeBuffer, bool) {
-	_ = m.loadActiveCopyModeState()
-	return m.liveCopyModeBufferForPane("")
-}
-
-func (m *Model) liveCopyModeBufferForPane(paneID string) (copyModeBuffer, bool) {
-	if m == nil || m.workbench == nil || m.runtime == nil {
+func (m *Model) copyModeBufferForState(state copyModeState, fallbackHeight int) (copyModeBuffer, bool) {
+	if m == nil || state.PaneID == "" || state.TerminalID == "" {
 		return copyModeBuffer{}, false
 	}
-	pane, contentRect, ok := m.copyModePaneAndContentRect(paneID)
-	if !ok || pane == nil || pane.TerminalID == "" {
-		return copyModeBuffer{}, false
+	height := maxInt(1, fallbackHeight)
+	if _, rect, ok := m.copyModePaneAndContentRect(state.PaneID); ok {
+		height = maxInt(1, rect.H)
 	}
-	terminal := m.runtime.Registry().Get(pane.TerminalID)
-	if terminal == nil {
-		return copyModeBuffer{}, false
-	}
-	if terminal.VTerm != nil && terminal.SnapshotVersion != terminal.SurfaceVersion {
-		m.runtime.RefreshSnapshotFromVTerm(pane.TerminalID)
-		terminal = m.runtime.Registry().Get(pane.TerminalID)
-	}
-	if terminal == nil || terminal.Snapshot == nil {
-		return copyModeBuffer{}, false
-	}
-	return copyModeBuffer{
-		snapshot: terminal.Snapshot,
-		height:   maxInt(1, contentRect.H),
-	}, true
+	return m.authoritativeCopyModeBufferForState(state, height)
 }
 
 func (m *Model) authoritativeCopyModeBufferForPane(paneID string, height int) (copyModeBuffer, bool) {
@@ -94,8 +69,15 @@ func (m *Model) authoritativeCopyModeBufferForPane(paneID string, height int) (c
 	if !ok || state.TerminalID == "" {
 		return copyModeBuffer{}, false
 	}
+	return m.authoritativeCopyModeBufferForState(state, height)
+}
+
+func (m *Model) authoritativeCopyModeBufferForState(state copyModeState, height int) (copyModeBuffer, bool) {
+	if m == nil || m.historyStore == nil || state.TerminalID == "" {
+		return copyModeBuffer{}, false
+	}
 	window, ok := m.historyStore.HistoryWindow(state.TerminalID)
-	if !ok || len(window.Rows) == 0 {
+	if !ok || len(window.Rows) == 0 || len(window.Lines) == 0 {
 		return copyModeBuffer{}, false
 	}
 	if state.WindowToken != "" && string(window.Token) != state.WindowToken {
@@ -143,50 +125,21 @@ func (b copyModeBuffer) totalRows() int {
 	if b.window != nil {
 		return len(b.window.Rows)
 	}
-	if b.snapshot == nil {
-		return 0
-	}
-	return len(b.snapshot.Scrollback) + len(b.snapshot.Screen.Cells)
+	return 0
 }
 
 func (b copyModeBuffer) row(row int) []protocol.Cell {
-	if b.window != nil {
-		if row < 0 || row >= len(b.window.Rows) {
-			return nil
-		}
-		return b.window.Rows[row].Cells.DecodeCells()
-	}
-	if b.snapshot == nil || row < 0 {
+	if b.window == nil || row < 0 || row >= len(b.window.Rows) {
 		return nil
 	}
-	if row < len(b.snapshot.Scrollback) {
-		return b.snapshot.Scrollback[row].DecodeCells()
-	}
-	row -= len(b.snapshot.Scrollback)
-	if row < 0 || row >= len(b.snapshot.Screen.Cells) {
-		return nil
-	}
-	return b.snapshot.Screen.Cells[row]
+	return b.window.Rows[row].Cells.DecodeCells()
 }
 
 func (b copyModeBuffer) rowWrapped(row int) bool {
-	if b.window != nil {
-		if row < 0 || row >= len(b.window.Rows) {
-			return false
-		}
-		return b.window.Rows[row].Wrapped
-	}
-	if b.snapshot == nil || row < 0 {
+	if b.window == nil || row < 0 || row >= len(b.window.Rows) {
 		return false
 	}
-	if row < len(b.snapshot.Scrollback) {
-		return boolAt(b.snapshot.ScrollbackWrapped, row)
-	}
-	row -= len(b.snapshot.Scrollback)
-	if row < 0 || row >= len(b.snapshot.Screen.Cells) {
-		return false
-	}
-	return boolAt(b.snapshot.ScreenWrapped, row)
+	return b.window.Rows[row].Wrapped
 }
 
 func (b copyModeBuffer) logicalLineAtRow(row int) (copyModeLogicalLine, bool) {
@@ -228,24 +181,10 @@ func (b copyModeBuffer) logicalLineIndexAtRow(row int) int {
 	if b.totalRows() == 0 {
 		return -1
 	}
-	if b.window != nil && len(b.window.Lines) > 0 {
-		for index, span := range b.window.Lines {
-			if row >= span.StartRow && row <= span.EndRow {
-				return index
-			}
-		}
-		return -1
-	}
-	lines := newCopyModeLogicalLines(b)
-	index := 0
-	for current := 0; current < b.totalRows(); {
-		start := current
-		end := lines.lineEnd(current)
-		if row >= start && row <= end {
+	for index, span := range b.window.Lines {
+		if row >= span.StartRow && row <= span.EndRow {
 			return index
 		}
-		index++
-		current = end + 1
 	}
 	return -1
 }
@@ -254,41 +193,22 @@ func (b copyModeBuffer) logicalLineCount() int {
 	if b.totalRows() == 0 {
 		return 0
 	}
-	if b.window != nil && len(b.window.Lines) > 0 {
+	if b.window != nil {
 		return len(b.window.Lines)
 	}
-	lines := newCopyModeLogicalLines(b)
-	count := 0
-	for row := 0; row < b.totalRows(); {
-		count++
-		row = lines.lineEnd(row) + 1
-	}
-	return count
+	return 0
 }
 
 func (b copyModeBuffer) logicalLineByIndex(index int) (copyModeLogicalLine, bool) {
 	if index < 0 || b.totalRows() == 0 {
 		return copyModeLogicalLine{}, false
 	}
-	if b.window != nil && len(b.window.Lines) > 0 {
-		if index >= len(b.window.Lines) {
-			return copyModeLogicalLine{}, false
-		}
-		span := b.window.Lines[index]
-		row := clampCopyModeInt(span.StartRow, 0, maxInt(0, b.totalRows()-1))
-		return b.logicalLineAtRow(row)
+	if b.window == nil || index >= len(b.window.Lines) {
+		return copyModeLogicalLine{}, false
 	}
-	lines := newCopyModeLogicalLines(b)
-	currentIndex := 0
-	for row := 0; row < b.totalRows(); {
-		end := lines.lineEnd(row)
-		if currentIndex == index {
-			return b.logicalLineAtRow(row)
-		}
-		currentIndex++
-		row = end + 1
-	}
-	return copyModeLogicalLine{}, false
+	span := b.window.Lines[index]
+	row := clampCopyModeInt(span.StartRow, 0, maxInt(0, b.totalRows()-1))
+	return b.logicalLineAtRow(row)
 }
 
 func (b copyModeBuffer) logicalPosForPoint(point copyModePoint) (copyModeLogicalPos, bool) {
@@ -333,23 +253,11 @@ func (b copyModeBuffer) pointForLogicalPos(pos copyModeLogicalPos) (copyModePoin
 }
 
 func (b copyModeBuffer) cursorRow() int {
-	if b.window != nil {
-		return maxInt(0, b.totalRows()-1)
-	}
-	if b.snapshot == nil {
-		return 0
-	}
-	return b.snapshot.Cursor.Row
+	return maxInt(0, b.totalRows()-1)
 }
 
 func (b copyModeBuffer) cursorCol() int {
-	if b.window != nil {
-		return 0
-	}
-	if b.snapshot == nil {
-		return 0
-	}
-	return b.snapshot.Cursor.Col
+	return 0
 }
 
 func (b copyModeBuffer) rowMaxCol(row int) int {
@@ -357,10 +265,10 @@ func (b copyModeBuffer) rowMaxCol(row int) int {
 	if len(cells) > 0 {
 		return len(cells) - 1
 	}
-	if b.snapshot == nil || b.snapshot.Size.Cols == 0 {
+	if b.window == nil || b.window.Size.Cols == 0 {
 		return 0
 	}
-	return int(b.snapshot.Size.Cols) - 1
+	return int(b.window.Size.Cols) - 1
 }
 
 func (b copyModeBuffer) normalizeCol(row, col int) int {
@@ -396,34 +304,13 @@ func (b copyModeBuffer) clampPoint(point copyModePoint) copyModePoint {
 	return point
 }
 
-func boolAt(values []bool, index int) bool {
-	return index >= 0 && index < len(values) && values[index]
-}
-
-func stringAt(values []string, index int) string {
-	if index < 0 || index >= len(values) {
-		return ""
-	}
-	return values[index]
-}
-
 func (b copyModeBuffer) viewportStart(offset int) int {
 	totalRows := b.totalRows()
 	if totalRows <= 0 {
 		return 0
 	}
 	if offset <= 0 {
-		if b.window != nil {
-			return 0
-		}
-		start := len(b.snapshot.Scrollback)
-		if start < 0 {
-			start = 0
-		}
-		if start >= totalRows {
-			start = maxInt(0, totalRows-1)
-		}
-		return start
+		return 0
 	}
 	end := totalRows - offset
 	if end < 0 {
@@ -442,14 +329,7 @@ func (b copyModeBuffer) viewportEnd(offset int) int {
 		return 0
 	}
 	if offset <= 0 {
-		if b.window != nil {
-			return minInt(totalRows, maxInt(1, b.height))
-		}
-		end := len(b.snapshot.Scrollback) + maxInt(1, b.height)
-		if end > totalRows {
-			end = totalRows
-		}
-		return end
+		return minInt(totalRows, maxInt(1, b.height))
 	}
 	end := totalRows - offset
 	if end < 0 {
@@ -491,11 +371,7 @@ func (b copyModeBuffer) logicalLineBoundsAtRow(row int) (int, int, bool) {
 		end := clampCopyModeInt(span.EndRow, start, b.totalRows()-1)
 		return start, end, true
 	}
-	if b.window != nil && len(b.window.Lines) > 0 {
-		return 0, 0, false
-	}
-	lines := newCopyModeLogicalLines(b)
-	return lines.lineStart(row), lines.lineEnd(row), true
+	return 0, 0, false
 }
 
 func (b copyModeBuffer) logicalLineSpanAtRow(row int) (historyview.LineSpan, bool) {
@@ -518,12 +394,6 @@ func (m *Model) copyModeRenderOffset(buffer copyModeBuffer) int {
 	offset := totalRows - (m.copyMode.ViewTopRow + maxInt(1, buffer.height))
 	if offset < 0 {
 		offset = 0
-	}
-	if buffer.snapshot != nil &&
-		m.copyMode.ViewTopRow < len(buffer.snapshot.Scrollback) &&
-		offset == 0 &&
-		totalRows <= maxInt(1, buffer.height) {
-		offset = 1
 	}
 	return offset
 }
@@ -553,14 +423,6 @@ func (m *Model) syncCopyModeViewport(buffer copyModeBuffer, point copyModePoint)
 		m.copyMode.ViewTopRow = maxTop
 	}
 	if gridtrace.Enabled() {
-		scrollbackRows := 0
-		screenRows := 0
-		logicalTotal := 0
-		if buffer.snapshot != nil {
-			scrollbackRows = len(buffer.snapshot.Scrollback)
-			screenRows = len(buffer.snapshot.Screen.Cells)
-			logicalTotal = buffer.snapshot.ScrollbackLogicalTotal
-		}
 		gridtrace.Log(
 			"app.copy_mode.sync_viewport",
 			"pane_id", m.copyMode.PaneID,
@@ -568,15 +430,10 @@ func (m *Model) syncCopyModeViewport(buffer copyModeBuffer, point copyModePoint)
 			"point_col", point.Col,
 			"view_top_row", m.copyMode.ViewTopRow,
 			"max_top", maxTop,
-			"snapshot_scrollback_rows", scrollbackRows,
-			"snapshot_screen_rows", screenRows,
-			"snapshot_total_rows", buffer.totalRows(),
-			"snapshot_logical_total", logicalTotal,
+			"history_window_rows", buffer.totalRows(),
+			"history_window_lines", buffer.logicalLineCount(),
 			"render_offset", m.copyModeRenderOffset(buffer),
 		)
-	}
-	if m.copyMode.PaneID != "" && buffer.window == nil {
-		_ = m.setPaneViewportOffset(m.copyMode.PaneID, m.copyModeRenderOffset(buffer))
 	}
 	m.saveCurrentCopyModeState()
 }
@@ -671,12 +528,6 @@ func (m *Model) moveCopyCursorLogicalLines(delta int) tea.Cmd {
 	m.copyMode.Cursor = buffer.clampPoint(point)
 	m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
 	if gridtrace.Enabled() {
-		scrollbackRows := 0
-		screenRows := 0
-		if buffer.snapshot != nil {
-			scrollbackRows = len(buffer.snapshot.Scrollback)
-			screenRows = len(buffer.snapshot.Screen.Cells)
-		}
 		gridtrace.Log(
 			"app.copy_mode.move_logical_lines",
 			"pane_id", m.copyMode.PaneID,
@@ -691,9 +542,8 @@ func (m *Model) moveCopyCursorLogicalLines(delta int) tea.Cmd {
 			"after_col", m.copyMode.Cursor.Col,
 			"view_top_row", m.copyMode.ViewTopRow,
 			"max_line", maxLine,
-			"snapshot_scrollback_rows", scrollbackRows,
-			"snapshot_screen_rows", screenRows,
-			"snapshot_total_rows", buffer.totalRows(),
+			"history_window_rows", buffer.totalRows(),
+			"history_window_lines", buffer.logicalLineCount(),
 			"render_offset", m.copyModeRenderOffset(buffer),
 		)
 	}

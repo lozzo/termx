@@ -22,6 +22,7 @@ import (
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
+	"github.com/lozzow/termx/tuiv2/historyview"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
@@ -3221,6 +3222,9 @@ func TestOutputCursorWriterCopyModeRoundTripRepaintsScrollbackViewBackToLive(t *
 
 	model := setupModel(t, modelOpts{width: 50, height: 14})
 	seedCopyModeSnapshot(t, model, []string{"hist-0", "hist-1", "hist-2"}, []string{"live-0", "live-1", "live-2"})
+	model.historySource = &appHistoryFakeSource{
+		latest: appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 105, []string{"hist-0", "hist-1", "hist-2", "live-0", "live-1", "live-2"}, 6, false),
+	}
 
 	tab := model.workbench.CurrentTab()
 	if tab == nil {

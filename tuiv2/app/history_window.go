@@ -126,10 +126,46 @@ func (m *Model) applyHistoryWindowLoadedMsg(msg historyWindowLoadedMsg) tea.Cmd 
 	if msg.Window.Op == historyview.WindowOpReplace {
 		m.historyStore.ClearPendingRequest(msg.Window.TerminalID, "")
 	}
+	m.syncCopyModeStateAfterHistoryWindow(msg.Window)
 	if m.render != nil {
 		m.render.Invalidate()
 	}
 	return nil
+}
+
+func (m *Model) syncCopyModeStateAfterHistoryWindow(window historyview.HistoryWindow) {
+	if m == nil || strings.TrimSpace(window.TerminalID) == "" || len(window.Rows) == 0 || len(window.Lines) == 0 {
+		return
+	}
+	states := m.allCopyModeStates()
+	for _, state := range states {
+		if state.TerminalID != window.TerminalID {
+			continue
+		}
+		if state.WindowToken != "" && state.WindowToken != string(window.Token) && window.Op != historyview.WindowOpReplace {
+			continue
+		}
+		state.WindowToken = string(window.Token)
+		buffer, ok := m.copyModeBufferForState(state, 1)
+		if !ok {
+			continue
+		}
+		if window.Op == historyview.WindowOpReplace || state.CursorLogical.Line >= buffer.logicalLineCount() {
+			state.CursorLogical = copyModeLogicalPos{Line: maxInt(0, buffer.logicalLineCount()-1), Offset: 0}
+		}
+		point, ok := buffer.pointForLogicalPos(state.CursorLogical)
+		if !ok {
+			point = copyModePoint{Row: maxInt(0, buffer.totalRows()-1), Col: 0}
+			state.CursorLogical = copyModeLogicalPos{Line: maxInt(0, buffer.logicalLineCount()-1), Offset: 0}
+		}
+		state.Cursor = buffer.clampPoint(point)
+		if window.Op == historyview.WindowOpReplace {
+			state.ViewTopRow = buffer.maxViewTopRow()
+		}
+		state.Mark = nil
+		state.MarkLogical = nil
+		m.saveCopyModeState(state)
+	}
 }
 
 func historyWindowRequestShape(rect workbench.Rect) (limit int, cols int) {

@@ -35,10 +35,7 @@ func (m *Model) handleModeAndFloatingLocalAction(action input.SemanticAction) (b
 	case input.ActionOpenFloatingOverview:
 		return true, m.openFloatingOverview()
 	case input.ActionEnterDisplayMode:
-		m.setMode(input.ModeState{Kind: input.ModeDisplay})
-		_ = m.ensureCopyMode()
-		m.render.Invalidate()
-		return true, nil
+		return true, m.enterCopyModeForPaneCmd("")
 	case input.ActionEnterGlobalMode:
 		m.setMode(input.ModeState{Kind: input.ModeGlobal})
 		m.render.Invalidate()
@@ -49,7 +46,6 @@ func (m *Model) handleModeAndFloatingLocalAction(action input.SemanticAction) (b
 		}
 		if m.modalHost == nil || m.modalHost.Session == nil {
 			if m.effectiveInputMode() == input.ModeDisplay {
-				m.prepareCopyModeExit()
 				if m.mode().Kind != input.ModeDisplay {
 					m.leaveCopyMode()
 				}

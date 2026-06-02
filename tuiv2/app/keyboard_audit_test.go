@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/tuiv2/historyview"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -566,7 +567,13 @@ func TestKeyboardAuditFloatingModeBindings(t *testing.T) {
 func TestKeyboardAuditDisplayModeBindings(t *testing.T) {
 	t.Run("movement-and-selection", func(t *testing.T) {
 		model := setupModel(t, modelOpts{width: 40, height: 8})
-		seedCopyModeSnapshot(t, model, []string{"alpha", "bravo"}, []string{"charl", "delta", "echoo"})
+		latest := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 104, []string{"alpha", "bravo", "charl", "delta", "echoo"}, 5, false)
+		for i, text := range []string{"alpha", "bravo", "charl", "delta", "echoo"} {
+			latest.Rows[i].Cells = protocol.CompactRowFromCells(protocolRowFromText(text, len(text)))
+		}
+		model.historySource = &appHistoryFakeSource{
+			latest: latest,
+		}
 		dispatchKey(t, model, ctrlKey(tea.KeyCtrlV))
 		assertMode(t, model, input.ModeDisplay)
 		dispatchKey(t, model, runeKeyMsg('g'))
@@ -593,7 +600,13 @@ func TestKeyboardAuditDisplayModeBindings(t *testing.T) {
 
 	t.Run("copy-and-exit", func(t *testing.T) {
 		model := setupModel(t, modelOpts{width: 40, height: 8})
-		seedCopyModeSnapshot(t, model, []string{"alpha", "bravo"}, []string{"charl", "delta", "echoo"})
+		latest := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 104, []string{"alpha", "bravo", "charl", "delta", "echoo"}, 5, false)
+		for i, text := range []string{"alpha", "bravo", "charl", "delta", "echoo"} {
+			latest.Rows[i].Cells = protocol.CompactRowFromCells(protocolRowFromText(text, len(text)))
+		}
+		model.historySource = &appHistoryFakeSource{
+			latest: latest,
+		}
 		writer := &recordingControlWriter{}
 		model.SetCursorWriter(writer)
 		dispatchKey(t, model, ctrlKey(tea.KeyCtrlV))

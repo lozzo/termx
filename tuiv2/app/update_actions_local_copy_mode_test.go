@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/lozzow/termx/internal/protocol"
+	"github.com/lozzow/termx/tuiv2/historyview"
 	"github.com/lozzow/termx/tuiv2/input"
 )
 
@@ -40,12 +40,8 @@ func TestHandleCopyModeLocalActionCopySelectionExitResetsModeWithoutSelection(t 
 
 func TestHandleCopyModeLocalActionBeginSelectionMarksCurrentPoint(t *testing.T) {
 	model := setupModel(t, modelOpts{})
-	terminal := model.runtime.Registry().GetOrCreate("term-1")
-	terminal.Snapshot = &protocol.Snapshot{
-		TerminalID: "term-1",
-		Size:       protocol.Size{Cols: 80, Rows: 24},
-		Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "x", Width: 1}}}},
-		Cursor:     protocol.CursorState{Row: 0, Col: 0},
+	model.historySource = &appHistoryFakeSource{
+		latest: appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 10, 10, []string{"x"}, 1, false),
 	}
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
 

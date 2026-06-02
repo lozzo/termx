@@ -25,9 +25,6 @@ func (m *Model) renderVM() render.RenderVM {
 	if paneID, selected, ok := m.currentExitedPaneSelection(); ok {
 		vm = render.WithRenderExitedPaneSelection(vm, paneID, selected)
 	}
-	if paneID, snapshot, ok := m.activeCopyModeResumeSnapshot(); ok {
-		vm = render.WithRenderPaneSnapshotOverride(vm, paneID, snapshot)
-	}
 	if copyModes := m.renderCopyModeVMs(); len(copyModes) > 0 {
 		vm = render.WithRenderCopyModes(vm, copyModes)
 	}
@@ -47,13 +44,9 @@ func (m *Model) renderCopyModeVMs() []render.RenderCopyModeVM {
 	}
 	out := make([]render.RenderCopyModeVM, 0, len(states))
 	for _, state := range states {
-		snapshot := state.Snapshot
 		projection := (*render.RenderCopyModeProjectionVM)(nil)
 		if buffer, ok := m.authoritativeCopyModeBufferForPane(state.PaneID, 1); ok && buffer.window != nil {
 			projection = renderCopyModeProjectionFromHistoryWindow(*buffer.window)
-			if projection != nil {
-				snapshot = nil
-			}
 		}
 		copyMode := render.RenderCopyModeVM{
 			PaneID:            state.PaneID,
@@ -62,7 +55,6 @@ func (m *Model) renderCopyModeVMs() []render.RenderCopyModeVM {
 			CursorLogicalLine: state.CursorLogical.Line,
 			CursorLogicalCol:  state.CursorLogical.Offset,
 			ViewTopRow:        state.ViewTopRow,
-			Snapshot:          snapshot,
 			Projection:        projection,
 		}
 		if state.Mark != nil {

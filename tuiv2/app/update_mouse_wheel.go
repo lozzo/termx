@@ -102,16 +102,8 @@ func (m *Model) localScrollbackWheelCmd(paneID string, delta int) tea.Cmd {
 	if mode == input.ModeDisplay {
 		return m.moveCopyCursorLogicalLinesAndMaybeLoadOlder(-delta)
 	}
-	if delta > 0 && m.ensureCopyMode() {
-		m.setMode(input.ModeState{Kind: input.ModeDisplay})
-		m.render.Invalidate()
-		// The first wheel event may arrive as a coalesced burst. Entering copy
-		// mode should land near the live tail; follow-up wheel events can then
-		// continue moving by their full burst size.
-		return batchCmds(
-			m.loadLatestHistoryWindowForPaneCmd(paneID),
-			m.moveCopyCursorLogicalLines(-localMouseWheelScrollLines),
-		)
+	if delta > 0 {
+		return m.enterCopyModeForPaneCmd(paneID)
 	}
 	return nil
 }
