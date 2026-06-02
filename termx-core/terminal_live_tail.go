@@ -52,6 +52,7 @@ type terminalLiveTailLogicalLineRecord struct {
 	endRow    int
 	sealState terminalLiveTailSealState
 	origin    terminalLiveTailOrigin
+	residency terminalLogicalLineResidency
 }
 
 type terminalLiveTailRowsWithLogicalLineIDs struct {
@@ -452,6 +453,7 @@ func terminalLiveTailSegmentLogicalLineRecords(segment terminalLiveTailSegment, 
 			endRow:    baseRow + i,
 			sealState: terminalLiveTailRecordSealState(segment, i),
 			origin:    segment.origin,
+			residency: terminalLogicalLineResidencyLiveTail,
 		})
 		start = i + 1
 	}

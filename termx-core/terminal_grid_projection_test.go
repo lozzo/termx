@@ -52,8 +52,8 @@ func TestTerminalGridProjectionUsesLogicalLineRecordIDs(t *testing.T) {
 		{cells: localVTermCellsFromString("gh"), rowKind: "line1", wrapped: false},
 	}
 	records := []terminalGridLogicalLineRecord{
-		{id: 101, startRow: 0, endRow: 1, sealed: true, origin: terminalLiveTailOriginReclaimed},
-		{id: 103, startRow: 2, endRow: 2, sealed: true, origin: terminalLiveTailOriginReclaimed},
+		{id: 101, startRow: 0, endRow: 1, sealed: true, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted},
+		{id: 103, startRow: 2, endRow: 2, sealed: true, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted},
 	}
 	projected, _, _, _, lineIDs := reflowTerminalGridRows(rows, 3, records)
 	if got := vtermRowsToStrings(projected); !reflect.DeepEqual(got, []string{"abc", "def", "gh"}) {

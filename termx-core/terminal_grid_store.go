@@ -67,12 +67,20 @@ type terminalGridRowRef struct {
 
 const terminalGridRowFlagWrapped uint32 = 1 << 0
 
+type terminalLogicalLineResidency string
+
+const (
+	terminalLogicalLineResidencyPersisted terminalLogicalLineResidency = "persisted"
+	terminalLogicalLineResidencyLiveTail  terminalLogicalLineResidency = "live-tail"
+)
+
 type terminalGridLogicalLineRecord struct {
-	id       uint64
-	startRow int
-	endRow   int
-	sealed   bool
-	origin   terminalLiveTailOrigin
+	id        uint64
+	startRow  int
+	endRow    int
+	sealed    bool
+	origin    terminalLiveTailOrigin
+	residency terminalLogicalLineResidency
 }
 
 type terminalGridMetadata struct {
@@ -1097,11 +1105,12 @@ func terminalGridLogicalLineRecordsForRefs(refs []terminalGridRowRef, baseRowID 
 	for i, ref := range refs {
 		if !terminalGridRowContinuesLogicalLine(ref) || i == len(refs)-1 {
 			records = append(records, terminalGridLogicalLineRecord{
-				id:       persistedLogicalLineIDFromRowID(baseRowID + uint64(start)),
-				startRow: start,
-				endRow:   i,
-				sealed:   !terminalGridRowContinuesLogicalLine(ref),
-				origin:   terminalLiveTailOriginReclaimed,
+				id:        persistedLogicalLineIDFromRowID(baseRowID + uint64(start)),
+				startRow:  start,
+				endRow:    i,
+				sealed:    !terminalGridRowContinuesLogicalLine(ref),
+				origin:    terminalLiveTailOriginReclaimed,
+				residency: terminalLogicalLineResidencyPersisted,
 			})
 			start = i + 1
 		}
