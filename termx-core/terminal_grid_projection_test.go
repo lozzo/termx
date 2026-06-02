@@ -173,6 +173,12 @@ func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T)
 			},
 		},
 		{
+			name: "runtime-id",
+			record: terminalGridLineRecordMeta{
+				ID: terminalLiveTailLogicalLineIDBase + 1,
+			},
+		},
+		{
 			name: "unknown-origin",
 			record: terminalGridLineRecordMeta{
 				Origin: terminalLiveTailOrigin("bad-origin"),
@@ -202,7 +208,9 @@ func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T)
 				t.Fatalf("close grid store: %v", err)
 			}
 			record := tc.record
-			record.ID = 77
+			if record.ID == 0 {
+				record.ID = 77
+			}
 			record.StartRow = 0
 			record.EndRow = 0
 			record.Sealed = true

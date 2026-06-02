@@ -1202,7 +1202,7 @@ func terminalGridCompletePersistedLogicalLineRecords(records []terminalGridLogic
 	out := make([]terminalGridLogicalLineRecord, 0, len(records))
 	nextStart := 0
 	for _, record := range records {
-		if record.id == 0 || record.residency != terminalLogicalLineResidencyPersisted || record.dirty || record.origin != terminalLiveTailOriginReclaimed || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
+		if !terminalPersistedLogicalLineID(record.id) || record.residency != terminalLogicalLineResidencyPersisted || record.dirty || record.origin != terminalLiveTailOriginReclaimed || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
 			return nil, false
 		}
 		if record.generation != 0 && generation != 0 && record.generation != generation {
@@ -1451,13 +1451,14 @@ func terminalLiveTailOriginDirty(origin terminalLiveTailOrigin) bool {
 }
 
 func terminalLiveTailRecordIDMatchesOrigin(id uint64, origin terminalLiveTailOrigin) bool {
-	if id == 0 {
-		return false
-	}
 	if origin == terminalLiveTailOriginReclaimed {
-		return id < terminalLiveTailLogicalLineIDBase
+		return terminalPersistedLogicalLineID(id)
 	}
 	return id >= terminalLiveTailLogicalLineIDBase
+}
+
+func terminalPersistedLogicalLineID(id uint64) bool {
+	return id > 0 && id < terminalLiveTailLogicalLineIDBase
 }
 
 func canMergeRecoveredLiveTailSegments(left terminalLiveTailSegment, right terminalLiveTailSegment) bool {
