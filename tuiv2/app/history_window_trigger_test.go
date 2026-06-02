@@ -35,6 +35,50 @@ func TestWheelEnteringCopyModeRequestsLatestAuthoritativeWindow(t *testing.T) {
 	}
 }
 
+func TestSemanticScrollUpRequestsLatestAuthoritativeWindow(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 12})
+	seedCopyModeSnapshot(t, model, []string{"legacy"}, []string{"screen"})
+	source := &appHistoryFakeSource{
+		latest: appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 101, []string{"latest"}, 1, true),
+	}
+	model.historySource = source
+
+	handled, cmd := model.handleDisplayAndViewportLocalAction(input.SemanticAction{Kind: input.ActionScrollUp})
+	if !handled || cmd == nil {
+		t.Fatalf("expected scroll-up handled with latest request, handled=%v cmd=%#v", handled, cmd)
+	}
+	msgs := collectBatchMessages(cmd)
+	if !containsHistoryWindowLoadedMsg(msgs, "term-1") {
+		t.Fatalf("expected latest history window load message, got %#v", msgs)
+	}
+	if source.latestRequests != 1 || source.olderRequests != 0 {
+		t.Fatalf("expected one latest request only, got latest=%d older=%d", source.latestRequests, source.olderRequests)
+	}
+	if got := model.runtime.PaneViewportOffset("pane-1"); got != 0 {
+		t.Fatalf("expected semantic scroll-up not to mutate local pane viewport, got %d", got)
+	}
+}
+
+func TestSemanticScrollDownDoesNotMutateLocalViewportOutsideCopyMode(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 12})
+	source := &appHistoryFakeSource{
+		latest: appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 101, []string{"latest"}, 1, true),
+		older:  appHistoryFakeWindow("term-1", historyview.WindowOpPrepend, "token-1", 98, 99, []string{"old"}, 4, false),
+	}
+	model.historySource = source
+
+	handled, cmd := model.handleDisplayAndViewportLocalAction(input.SemanticAction{Kind: input.ActionScrollDown})
+	if !handled || cmd != nil {
+		t.Fatalf("expected scroll-down handled as no-op outside copy mode, handled=%v cmd=%#v", handled, cmd)
+	}
+	if source.latestRequests != 0 || source.olderRequests != 0 {
+		t.Fatalf("expected no history requests, got latest=%d older=%d", source.latestRequests, source.olderRequests)
+	}
+	if got := model.runtime.PaneViewportOffset("pane-1"); got != 0 {
+		t.Fatalf("expected semantic scroll-down not to mutate local pane viewport, got %d", got)
+	}
+}
+
 func TestCopyModePageUpAtTopRequestsOlderAuthoritativeWindow(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 12})
 	latest := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 101, []string{"new-a", "new-b"}, 2, true)

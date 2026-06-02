@@ -116,17 +116,19 @@ func (m *Model) handleDisplayAndViewportLocalAction(action input.SemanticAction)
 		}
 		return true, nil
 	case input.ActionScrollUp:
-		if pane := m.workbench.ActivePane(); pane != nil {
-			if _, changed := m.adjustPaneViewportOffset(pane.ID, 1); changed {
-				m.render.Invalidate()
-			}
+		paneID := m.currentOrActionPaneID(action.PaneID)
+		if paneID == "" {
+			return true, nil
 		}
-		return true, nil
+		if m.effectiveInputMode() == input.ModeDisplay {
+			return true, m.moveCopyCursorLogicalLinesAndMaybeLoadOlder(-localMouseWheelScrollLines)
+		}
+		cmd := m.localScrollbackWheelCmd(paneID, localMouseWheelScrollLines)
+		_ = m.setPaneViewportOffset(paneID, 0)
+		return true, cmd
 	case input.ActionScrollDown:
-		if pane := m.workbench.ActivePane(); pane != nil {
-			if _, changed := m.adjustPaneViewportOffset(pane.ID, -1); changed {
-				m.render.Invalidate()
-			}
+		if m.effectiveInputMode() == input.ModeDisplay {
+			return true, m.moveCopyCursorLogicalLines(localMouseWheelScrollLines)
 		}
 		return true, nil
 	default:
