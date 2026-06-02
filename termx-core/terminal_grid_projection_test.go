@@ -206,6 +206,41 @@ func TestTerminalGridProjectionIgnoresInvalidLineMigrations(t *testing.T) {
 	}
 }
 
+func TestTerminalGridStoreRecordsOnlyRuntimeToPersistedLineMigrations(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	runtimeID := terminalLiveTailLogicalLineIDBase + 1
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		Migrations: []terminalGridLineMigration{
+			{RuntimeID: runtimeID + 10, PersistedID: 2},
+			{RuntimeID: 1, PersistedID: 99},
+			{RuntimeID: runtimeID + 20, PersistedID: runtimeID + 21},
+		},
+	}); err != nil {
+		t.Fatalf("seed line metadata: %v", err)
+	}
+
+	if err := store.recordLineMigrations(map[uint64]uint64{
+		runtimeID:      1,
+		2:              3,
+		runtimeID + 30: runtimeID + 31,
+	}); err != nil {
+		t.Fatalf("record line migrations: %v", err)
+	}
+
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata: %v", err)
+	}
+	want := []terminalGridLineMigration{
+		{RuntimeID: runtimeID, PersistedID: 1},
+		{RuntimeID: runtimeID + 10, PersistedID: 2},
+	}
+	if !reflect.DeepEqual(metadata.Migrations, want) {
+		t.Fatalf("expected only runtime-to-persisted migrations to be written, got %#v want %#v", metadata.Migrations, want)
+	}
+}
+
 func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
