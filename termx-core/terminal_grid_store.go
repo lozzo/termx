@@ -1545,8 +1545,7 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 			return nil, false
 		}
 		segmentRows := cloneGridDamageOps(rows[record.StartRow : record.EndRow+1])
-		lastSegmentRow := segmentRows[len(segmentRows)-1]
-		if record.Sealed && lastSegmentRow.WrappedSet && lastSegmentRow.Wrapped {
+		if !terminalLiveTailRecordRowsMatchSealState(record, segmentRows) {
 			return nil, false
 		}
 		lineIDs := make([]uint64, len(segmentRows))
@@ -1592,6 +1591,22 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 		segments = append(segments, segment)
 	}
 	return segments, true
+}
+
+func terminalLiveTailRecordRowsMatchSealState(record terminalGridLineRecordMeta, rows []vterm.DamageOp) bool {
+	if len(rows) == 0 {
+		return false
+	}
+	for i := 0; i < len(rows)-1; i++ {
+		if !(rows[i].WrappedSet && rows[i].Wrapped) {
+			return false
+		}
+	}
+	last := rows[len(rows)-1]
+	if record.Sealed && last.WrappedSet && last.Wrapped {
+		return false
+	}
+	return true
 }
 
 func terminalLiveTailOriginKnown(origin terminalLiveTailOrigin) bool {
