@@ -331,9 +331,8 @@ func historyWindowToken(viewport terminalGridViewport) string {
 	return fmt.Sprintf("g%d:%d-%d:c%d", viewport.Generation, viewport.FirstRowID, viewport.LastRowID, viewport.Size.Cols)
 }
 
-// historyLineSpans 根据 wrapped 元数据把 visual rows 归并成逻辑行区间。
-//
-// wrapped[i]==true 表示第 i 行与下一行属于同一条逻辑行。
+// historyLineSpans 优先按 core projection 给出的 stable logical line id
+// 归并 visual rows；旧 projection 缺失 id 时才回退 wrapped 元数据。
 func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64, rowCount int, beforeOffset int) []HistoryLineSpan {
 	if rowCount <= 0 {
 		return nil
@@ -341,7 +340,7 @@ func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64
 	spans := make([]HistoryLineSpan, 0, rowCount)
 	start := 0
 	for row := 0; row < rowCount; row++ {
-		if boolAt(wrapped, row) && row < rowCount-1 {
+		if historyLineSpanContinues(wrapped, logicalLineIDs, row, rowCount) {
 			continue
 		}
 		spans = append(spans, HistoryLineSpan{
@@ -350,11 +349,33 @@ func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64
 			RowKind:       stringAt(rowKinds, start),
 			LogicalLineID: uint64At(logicalLineIDs, start),
 			ClippedBefore: beforeOffset > 0 && start == 0,
-			ClippedAfter:  row == rowCount-1 && boolAt(wrapped, row),
+			ClippedAfter:  historyLineSpanClippedAfter(wrapped, logicalLineIDs, row, rowCount),
 		})
 		start = row + 1
 	}
 	return spans
+}
+
+func historyLineSpanContinues(wrapped []bool, logicalLineIDs []uint64, row int, rowCount int) bool {
+	if row < 0 || row >= rowCount-1 {
+		return false
+	}
+	currentID := uint64At(logicalLineIDs, row)
+	nextID := uint64At(logicalLineIDs, row+1)
+	if currentID != 0 && nextID != 0 {
+		return currentID == nextID
+	}
+	return boolAt(wrapped, row)
+}
+
+func historyLineSpanClippedAfter(wrapped []bool, logicalLineIDs []uint64, row int, rowCount int) bool {
+	if row != rowCount-1 {
+		return false
+	}
+	if uint64At(logicalLineIDs, row) != 0 {
+		return boolAt(wrapped, row)
+	}
+	return boolAt(wrapped, row)
 }
 
 func protocolHistoryWindowFromCore(window *HistoryWindow) *protocol.HistoryWindow {

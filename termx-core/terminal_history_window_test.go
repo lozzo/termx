@@ -23,6 +23,26 @@ func TestHistoryLineSpansGroupsWrappedRows(t *testing.T) {
 	}
 }
 
+func TestHistoryLineSpansPreferLogicalLineIDsOverWrapped(t *testing.T) {
+	spans := historyLineSpans([]bool{false, false, false}, []string{"a", "a", "b"}, []uint64{101, 101, 103}, 3, 0)
+	want := []HistoryLineSpan{
+		{StartRow: 0, EndRow: 1, RowKind: "a", LogicalLineID: 101},
+		{StartRow: 2, EndRow: 2, RowKind: "b", LogicalLineID: 103},
+	}
+	if !reflect.DeepEqual(spans, want) {
+		t.Fatalf("expected same logical line id to group spans despite wrapped=false, got %#v want %#v", spans, want)
+	}
+
+	spans = historyLineSpans([]bool{true, false}, []string{"a", "b"}, []uint64{201, 202}, 2, 0)
+	want = []HistoryLineSpan{
+		{StartRow: 0, EndRow: 0, RowKind: "a", LogicalLineID: 201},
+		{StartRow: 1, EndRow: 1, RowKind: "b", LogicalLineID: 202},
+	}
+	if !reflect.DeepEqual(spans, want) {
+		t.Fatalf("expected distinct logical line ids to split spans despite wrapped=true, got %#v want %#v", spans, want)
+	}
+}
+
 func TestHistoryLineSpansTrailingWrappedDoesNotOverrun(t *testing.T) {
 	// 末行即使 wrapped=true，也必须收口成一条逻辑行，不能越界。
 	wrapped := []bool{false, true}
