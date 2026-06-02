@@ -586,23 +586,18 @@ func (s *terminalGridStore) reclaimViewport(neededRows int, cols int) (terminalG
 		if start < 0 {
 			start = 0
 		}
-		file, err := os.Open(indexPath)
+		refs, err := readTerminalGridIndexRefsFromPath(indexPath)
 		if err != nil {
 			return result, err
 		}
-		start, err = expandTerminalGridWindowStartToLogicalLine(file, start)
-		if err != nil {
-			_ = file.Close()
-			return result, err
+		if end > len(refs) {
+			end = len(refs)
 		}
-		refs, err := readTerminalGridIndexWindowFromFile(file, start, end-start)
-		closeErr := file.Close()
-		if err != nil {
-			return result, err
+		if start > end {
+			start = end
 		}
-		if closeErr != nil {
-			return result, closeErr
-		}
+		start = terminalGridWindowStartForLogicalLineRecords(refs, start)
+		refs = refs[start:end]
 		if len(refs) == 0 {
 			return result, nil
 		}
@@ -710,19 +705,18 @@ func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalG
 	if start < 0 {
 		start = 0
 	}
-	file, err := os.Open(indexPath)
+	refs, err := readTerminalGridIndexRefsFromPath(indexPath)
 	if err != nil {
 		return nil, 0, false, err
 	}
-	defer file.Close()
-	start, err = expandTerminalGridWindowStartToLogicalLine(file, start)
-	if err != nil {
-		return nil, 0, false, err
+	if end > len(refs) {
+		end = len(refs)
 	}
-	refs, err := readTerminalGridIndexWindowFromFile(file, start, end-start)
-	if err != nil {
-		return nil, 0, false, err
+	if start > end {
+		start = end
 	}
+	start = terminalGridWindowStartForLogicalLineRecords(refs, start)
+	refs = refs[start:end]
 
 	if len(refs) == 0 {
 		return nil, 0, false, nil
@@ -730,18 +724,19 @@ func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalG
 	return refs, len(refs), start > 0, nil
 }
 
-func expandTerminalGridWindowStartToLogicalLine(file *os.File, start int) (int, error) {
-	for start > 0 {
-		ref, err := readTerminalGridIndexRecordFromFile(file, start-1)
-		if err != nil {
-			return start, err
-		}
-		if !terminalGridRowContinuesLogicalLine(ref) {
-			break
-		}
-		start--
+func terminalGridWindowStartForLogicalLineRecords(refs []terminalGridRowRef, start int) int {
+	if start <= 0 || len(refs) == 0 {
+		return maxInt(start, 0)
 	}
-	return start, nil
+	if start >= len(refs) {
+		return len(refs)
+	}
+	for _, record := range terminalGridLogicalLineRecordsForRefs(refs, 0) {
+		if start >= record.startRow && start <= record.endRow {
+			return record.startRow
+		}
+	}
+	return start
 }
 
 func terminalGridRowContinuesLogicalLine(ref terminalGridRowRef) bool {

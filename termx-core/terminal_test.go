@@ -1225,6 +1225,21 @@ func TestTerminalGridLogicalLineRecordsExposePersistedBoundaries(t *testing.T) {
 	}
 }
 
+func TestTerminalGridWindowStartUsesLogicalLineRecords(t *testing.T) {
+	refs := []terminalGridRowRef{
+		{flags: terminalGridRowFlagWrapped},
+		{flags: terminalGridRowFlagWrapped},
+		{},
+		{},
+	}
+	if got := terminalGridWindowStartForLogicalLineRecords(refs, 2); got != 0 {
+		t.Fatalf("expected window inside first logical line to rewind to row 0, got %d", got)
+	}
+	if got := terminalGridWindowStartForLogicalLineRecords(refs, 3); got != 3 {
+		t.Fatalf("expected window at independent logical line to stay at row 3, got %d", got)
+	}
+}
+
 func TestTerminalGridStoreRetentionCountsTrailingWrappedPrefixAsLogicalLine(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
