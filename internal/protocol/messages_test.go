@@ -492,3 +492,76 @@ func writeText(row []Cell, col int, text string) {
 		col++
 	}
 }
+
+func TestHistoryWindowPayloadRoundTrip(t *testing.T) {
+	window := &HistoryWindow{
+		TerminalID:    "term-hist",
+		Token:         "g7:0-2:c80",
+		Op:            HistoryWindowReplace,
+		Size:          Size{Cols: 80, Rows: 24},
+		Rows:          []CompactRow{CompactRowFromCells([]Cell{{Content: "a", Width: 1}, {Content: "b", Width: 1}})},
+		RowKinds:      []string{"output"},
+		RowWrapped:    []bool{false},
+		RowOwnership:  []string{RowOwnershipPersisted},
+		RowTimestamps: []time.Time{time.Date(2026, 6, 2, 1, 0, 0, 0, time.UTC)},
+		Lines:         []HistoryLineSpan{{StartRow: 0, EndRow: 0, RowKind: "output"}},
+		BeforeOffset:  3,
+		LoadedRows:    9,
+		TotalRows:     12,
+		LogicalTotal:  4,
+		HasMore:       true,
+		Generation:    7,
+		FirstRowID:    0,
+		LastRowID:     2,
+		Timestamp:     time.Date(2026, 6, 2, 2, 0, 0, 0, time.UTC),
+	}
+	payload, err := EncodeHistoryWindowPayload(window)
+	if err != nil {
+		t.Fatalf("encode history window payload failed: %v", err)
+	}
+	decoded, err := DecodeHistoryWindowPayload(payload)
+	if err != nil {
+		t.Fatalf("decode history window payload failed: %v", err)
+	}
+	if decoded.TerminalID != "term-hist" || decoded.Token != "g7:0-2:c80" || decoded.Op != HistoryWindowReplace || decoded.Size != window.Size {
+		t.Fatalf("unexpected decoded history window header: %#v", decoded)
+	}
+	if decoded.BeforeOffset != 3 || decoded.LoadedRows != 9 || decoded.TotalRows != 12 || decoded.LogicalTotal != 4 || !decoded.HasMore {
+		t.Fatalf("unexpected decoded history window metadata: %#v", decoded)
+	}
+	if decoded.Generation != 7 || decoded.FirstRowID != 0 || decoded.LastRowID != 2 {
+		t.Fatalf("unexpected decoded history window boundary: %#v", decoded)
+	}
+	if len(decoded.Lines) != 1 || decoded.Lines[0] != (HistoryLineSpan{StartRow: 0, EndRow: 0, RowKind: "output"}) {
+		t.Fatalf("unexpected decoded history line spans: %#v", decoded.Lines)
+	}
+	if len(decoded.RowOwnership) != 1 || decoded.RowOwnership[0] != RowOwnershipPersisted {
+		t.Fatalf("unexpected decoded history ownership: %#v", decoded.RowOwnership)
+	}
+	if got := compactRowToStringForTest(decoded.Rows[0]); got != "ab" {
+		t.Fatalf("unexpected decoded history row: %q", got)
+	}
+}
+
+func TestHistoryWindowParamsControlPayloadRoundTrip(t *testing.T) {
+	encoded, err := EncodeMethodParams("history.window", HistoryWindowParams{
+		TerminalID:   "term-hist",
+		BeforeOffset: 5,
+		Limit:        50,
+		Cols:         100,
+	})
+	if err != nil {
+		t.Fatalf("encode control params failed: %v", err)
+	}
+	decoded, err := DecodeMethodParams("history.window", encoded)
+	if err != nil {
+		t.Fatalf("decode control params failed: %v", err)
+	}
+	params, ok := decoded.(HistoryWindowParams)
+	if !ok {
+		t.Fatalf("expected HistoryWindowParams, got %T", decoded)
+	}
+	if params != (HistoryWindowParams{TerminalID: "term-hist", BeforeOffset: 5, Limit: 50, Cols: 100}) {
+		t.Fatalf("unexpected decoded history window params: %#v", params)
+	}
+}

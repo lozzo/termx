@@ -319,6 +319,13 @@ type GridViewportParams struct {
 	Cols             int
 }
 
+type HistoryWindowParams struct {
+	TerminalID   string
+	BeforeOffset int
+	Limit        int
+	Cols         int
+}
+
 type ScreenRect struct {
 	X      int
 	Y      int
@@ -1859,6 +1866,41 @@ type GridViewport struct {
 	ScrollbackWrapped      []bool
 	RowOwnership           []string
 	Timestamp              time.Time
+}
+
+type HistoryWindowOp string
+
+const (
+	HistoryWindowReplace HistoryWindowOp = "replace"
+	HistoryWindowPrepend HistoryWindowOp = "prepend"
+)
+
+type HistoryLineSpan struct {
+	StartRow int
+	EndRow   int
+	RowKind  string
+}
+
+type HistoryWindow struct {
+	TerminalID    string
+	Token         string
+	Op            HistoryWindowOp
+	Size          Size
+	Rows          []CompactRow
+	RowTimestamps []time.Time
+	RowKinds      []string
+	RowWrapped    []bool
+	RowOwnership  []string
+	Lines         []HistoryLineSpan
+	BeforeOffset  int
+	LoadedRows    int
+	TotalRows     int
+	LogicalTotal  int
+	HasMore       bool
+	Generation    uint64
+	FirstRowID    uint64
+	LastRowID     uint64
+	Timestamp     time.Time
 }
 
 func (s CellStyle) isZero() bool {

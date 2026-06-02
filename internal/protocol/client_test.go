@@ -41,6 +41,7 @@ func TestClientBoundaryDoesNotExposeRemoteRPCMethods(t *testing.T) {
 		"GridViewport",
 		"Hello",
 		"HistoryReplay",
+		"HistoryWindow",
 		"Input",
 		"Kill",
 		"List",

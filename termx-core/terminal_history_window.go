@@ -163,3 +163,50 @@ func historyLineSpans(wrapped []bool, rowKinds []string, rowCount int) []History
 	}
 	return spans
 }
+
+func protocolHistoryWindowFromCore(window *HistoryWindow) *protocol.HistoryWindow {
+	if window == nil {
+		return nil
+	}
+	rows := make([]protocol.CompactRow, len(window.Rows))
+	rowKinds := make([]string, len(window.Rows))
+	rowWrapped := make([]bool, len(window.Rows))
+	rowOwnership := make([]string, len(window.Rows))
+	rowTimestamps := make([]time.Time, len(window.Rows))
+	for i, row := range window.Rows {
+		rows[i] = row.Cells
+		rowKinds[i] = row.RowKind
+		rowWrapped[i] = row.Wrapped
+		rowOwnership[i] = row.Ownership
+		rowTimestamps[i] = row.Timestamp
+	}
+	lines := make([]protocol.HistoryLineSpan, len(window.Lines))
+	for i, span := range window.Lines {
+		lines[i] = protocol.HistoryLineSpan{
+			StartRow: span.StartRow,
+			EndRow:   span.EndRow,
+			RowKind:  span.RowKind,
+		}
+	}
+	return &protocol.HistoryWindow{
+		TerminalID:    window.TerminalID,
+		Token:         window.Token,
+		Op:            protocol.HistoryWindowOp(window.Op),
+		Size:          protocol.Size{Cols: window.Size.Cols, Rows: window.Size.Rows},
+		Rows:          rows,
+		RowTimestamps: rowTimestamps,
+		RowKinds:      rowKinds,
+		RowWrapped:    rowWrapped,
+		RowOwnership:  rowOwnership,
+		Lines:         lines,
+		BeforeOffset:  window.BeforeOffset,
+		LoadedRows:    window.LoadedRows,
+		TotalRows:     window.TotalRows,
+		LogicalTotal:  window.LogicalTotal,
+		HasMore:       window.HasMore,
+		Generation:    window.Generation,
+		FirstRowID:    window.FirstRowID,
+		LastRowID:     window.LastRowID,
+		Timestamp:     window.Timestamp,
+	}
+}

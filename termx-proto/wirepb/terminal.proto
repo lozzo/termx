@@ -219,6 +219,13 @@ message GridViewportParams {
   int32 cols = 4;
 }
 
+message HistoryWindowParams {
+  string terminal_id = 1;
+  int32 before_offset = 2;
+  int32 limit = 3;
+  int32 cols = 4;
+}
+
 message ListResult {
   repeated TerminalInfo terminals = 1;
 }
@@ -276,6 +283,26 @@ message GridViewport {
   uint64 first_row_id = 11;
   uint64 last_row_id = 12;
   int64 scrollback_logical_total = 13;
+}
+
+message HistoryWindow {
+  string terminal_id = 1;
+  string token = 2;
+  string op = 3;
+  Size size = 4;
+  RowSet rows = 5;
+  repeated int32 line_start_rows = 6;
+  repeated int32 line_end_rows = 7;
+  repeated string line_row_kinds = 8;
+  int64 before_offset = 9;
+  int64 loaded_rows = 10;
+  int64 total_rows = 11;
+  int64 logical_total = 12;
+  bool has_more = 13;
+  uint64 history_generation = 14;
+  uint64 first_row_id = 15;
+  uint64 last_row_id = 16;
+  int64 timestamp_unix_nano = 17;
 }
 
 message StorageEntry {

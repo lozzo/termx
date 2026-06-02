@@ -1993,6 +1993,39 @@ func (s *Server) handleRequest(
 			"viewport_rows", len(viewport.Rows),
 		)
 		return result, 0, nil
+	case "history.window":
+		params, err := decodeProtocolParams[protocol.HistoryWindowParams](req)
+		if err != nil {
+			return nil, 400, err
+		}
+		window, err := s.HistoryWindow(ctx, params.TerminalID, HistoryWindowOptions{
+			BeforeOffset: params.BeforeOffset,
+			Limit:        params.Limit,
+			Cols:         params.Cols,
+		})
+		if err != nil {
+			return nil, protocolErrorCode(err), err
+		}
+		encodeFinish := perftrace.Measure("protocol.history_window.encode_binary")
+		result, resultErr := protocol.EncodeHistoryWindowPayload(protocolHistoryWindowFromCore(window))
+		encodeFinish(len(result))
+		if resultErr != nil {
+			return nil, 500, resultErr
+		}
+		s.logProtocolMethodResult(
+			ctx,
+			remote,
+			req,
+			result,
+			started,
+			"terminal_id", params.TerminalID,
+			"before_offset", params.BeforeOffset,
+			"limit", params.Limit,
+			"cols", params.Cols,
+			"window_rows", len(window.Rows),
+			"window_op", string(window.Op),
+		)
+		return result, 0, nil
 	case "attach":
 		params, err := decodeProtocolParams[protocol.AttachParams](req)
 		if err != nil {

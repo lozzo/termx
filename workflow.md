@@ -284,8 +284,9 @@
 - 新接口只表达 `core` 返回的窗口、窗口 token、窗口操作语义、最小 row/line span 元数据；实现未完成前，相关旧测试语义视为待删除或待重写，不作为回归基准。
 - 当前架构进一步明确：不再把“冷热数据”作为语义边界；落盘、mmap、内存驻留只是 residency / IO 策略。逻辑行才是历史真相单位，已落盘逻辑行后续仍可被终端指令修改，修改通过 resident cache、dirty tracking、page update 或 compaction 等存储策略实现。
 - 已破旧收口：`tuiv2` app/runtime 侧本地 history truth 重建、canonical row ref 推断、scrollback 分页空实现、`LoadGridViewport`/`snapshotFromGridViewport` 转换、`preserveSnapshotHistoryMetadataFromProjection` 历史坐标延续均已物理删除；`refreshSnapshot` 现在只做纯 VTerm 投影。
-- 已开始立新（第一刀，core 侧）：`termx-core` 新增 `HistoryWindow` / `HistoryLineSpan` / window token / `HistoryWindowOptions`，并提供 `Server.HistoryWindow`，内部复用 `GridViewportWithOptions` 投影出权威窗口；`Op`（replace/prepend）、line span（按 wrapped 归并逻辑行）、token（按 generation+row id 边界）由 core 生成。本刀只在 core 内部新增，未触 wire/protocol/tuiv2。
-- 下一刀：把 `HistoryWindow` 经 `internal/protocol` 暴露为 `terminal.history_window` 方法（legacy `snapshot`/`grid.viewport` 暂留），再让 `tuiv2/historyview.Source` 消费。
+- 已开始立新（第一刀，core 侧）：`termx-core` 新增 `HistoryWindow` / `HistoryLineSpan` / window token / `HistoryWindowOptions`，并提供 `Server.HistoryWindow`，内部复用 `GridViewportWithOptions` 投影出权威窗口；`Op`（replace/prepend）、line span（按 wrapped 归并逻辑行）、token（按 generation+row id 边界）由 core 生成。
+- 已完成立新（第二刀，protocol 侧）：`HistoryWindow` 已经经由 `termx-proto` / `internal/protocol` 暴露为 `history.window` 方法，payload 包含 rows、row metadata、line spans、window token、replace/prepend op、paging boundary 与 generation；legacy `snapshot` / `grid.viewport` 暂留，但不再作为 `tuiv2` 历史真相来源。
+- 下一刀：让 `tuiv2/historyview.Source` 消费 `history.window`，把 authoritative history window 接入 copy mode backing、older/latest 接纳规则和 render projection。
 - 每个子切片都必须保持主线测试可运行，并形成中文提交。
 
 ### 当前不启动的工作

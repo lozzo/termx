@@ -164,3 +164,44 @@ func rowTextFromHistoryRow(row HistoryRow) string {
 	}
 	return out
 }
+
+func TestProtocolHistoryWindowFromCoreMapsAllFields(t *testing.T) {
+	core := &HistoryWindow{
+		TerminalID:   "term-map",
+		Token:        "g3:0-1:c40",
+		Op:           HistoryWindowPrepend,
+		Size:         Size{Cols: 40, Rows: 10},
+		Rows:         []HistoryRow{{Cells: protocolCompactRowFromCoreWithOptions([]Cell{{Content: "x", Width: 1}}, true), RowKind: "output", Ownership: RowOwnershipPersisted, Wrapped: true}},
+		Lines:        []HistoryLineSpan{{StartRow: 0, EndRow: 0, RowKind: "output"}},
+		BeforeOffset: 2,
+		LoadedRows:   6,
+		TotalRows:    8,
+		LogicalTotal: 3,
+		HasMore:      true,
+		Generation:   3,
+		FirstRowID:   0,
+		LastRowID:    1,
+	}
+	got := protocolHistoryWindowFromCore(core)
+	if got == nil {
+		t.Fatal("expected non-nil protocol history window")
+	}
+	if got.TerminalID != "term-map" || got.Token != "g3:0-1:c40" || string(got.Op) != string(HistoryWindowPrepend) {
+		t.Fatalf("unexpected mapped header: %#v", got)
+	}
+	if got.Size.Cols != 40 || got.Size.Rows != 10 {
+		t.Fatalf("unexpected mapped size: %#v", got.Size)
+	}
+	if got.BeforeOffset != 2 || got.LoadedRows != 6 || got.TotalRows != 8 || got.LogicalTotal != 3 || !got.HasMore {
+		t.Fatalf("unexpected mapped metadata: %#v", got)
+	}
+	if got.Generation != 3 || got.FirstRowID != 0 || got.LastRowID != 1 {
+		t.Fatalf("unexpected mapped boundary: %#v", got)
+	}
+	if len(got.Rows) != 1 || len(got.RowKinds) != 1 || got.RowKinds[0] != "output" || len(got.RowWrapped) != 1 || !got.RowWrapped[0] || len(got.RowOwnership) != 1 || got.RowOwnership[0] != RowOwnershipPersisted {
+		t.Fatalf("unexpected mapped row metadata: kinds=%#v wrapped=%#v ownership=%#v", got.RowKinds, got.RowWrapped, got.RowOwnership)
+	}
+	if len(got.Lines) != 1 || got.Lines[0].StartRow != 0 || got.Lines[0].EndRow != 0 || got.Lines[0].RowKind != "output" {
+		t.Fatalf("unexpected mapped line spans: %#v", got.Lines)
+	}
+}

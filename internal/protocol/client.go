@@ -374,6 +374,14 @@ func (c *Client) GridViewport(ctx context.Context, terminalID string, offset, li
 	return DecodeGridViewportPayload(payload)
 }
 
+func (c *Client) HistoryWindow(ctx context.Context, params HistoryWindowParams) (*HistoryWindow, error) {
+	payload, err := c.doRequestPayload(ctx, "history.window", params)
+	if err != nil {
+		return nil, err
+	}
+	return DecodeHistoryWindowPayload(payload)
+}
+
 func (c *Client) StorageGet(ctx context.Context, params StorageGetParams) (*StorageEntry, error) {
 	var out StorageEntry
 	if err := c.doRequest(ctx, "storage.get", params, &out); err != nil {

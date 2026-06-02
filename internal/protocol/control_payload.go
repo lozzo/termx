@@ -302,6 +302,23 @@ func EncodeMethodParams(method string, params any) ([]byte, error) {
 			ScrollbackLimit:  int32(value.ScrollbackLimit),
 			Cols:             int32(value.Cols),
 		})
+	case "history.window":
+		value, ok := params.(HistoryWindowParams)
+		if !ok {
+			if ptr, ptrOK := params.(*HistoryWindowParams); ptrOK && ptr != nil {
+				value = *ptr
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, methodParamsTypeError(method, "protocol.HistoryWindowParams", params)
+		}
+		return proto.Marshal(&wirepb.HistoryWindowParams{
+			TerminalId:   value.TerminalID,
+			BeforeOffset: int32(value.BeforeOffset),
+			Limit:        int32(value.Limit),
+			Cols:         int32(value.Cols),
+		})
 	case "remote.pair.start":
 		switch value := params.(type) {
 		case interface {
@@ -459,6 +476,12 @@ func DecodeMethodParams(method string, payload []byte) (any, error) {
 			return nil, err
 		}
 		return GridViewportParams{TerminalID: msg.GetTerminalId(), ScrollbackOffset: int(msg.GetScrollbackOffset()), ScrollbackLimit: int(msg.GetScrollbackLimit()), Cols: int(msg.GetCols())}, nil
+	case "history.window":
+		var msg wirepb.HistoryWindowParams
+		if err := proto.Unmarshal(payload, &msg); err != nil {
+			return nil, err
+		}
+		return HistoryWindowParams{TerminalID: msg.GetTerminalId(), BeforeOffset: int(msg.GetBeforeOffset()), Limit: int(msg.GetLimit()), Cols: int(msg.GetCols())}, nil
 	case "remote.pair.start":
 		var msg wirepb.RemotePairStartParams
 		if err := proto.Unmarshal(payload, &msg); err != nil {

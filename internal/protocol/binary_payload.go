@@ -125,6 +125,96 @@ func snapshotFromWirePB(msg *wirepb.Snapshot) (*Snapshot, error) {
 	}, nil
 }
 
+func EncodeHistoryWindowPayload(window *HistoryWindow) ([]byte, error) {
+	if window == nil {
+		return nil, fmt.Errorf("nil history window")
+	}
+	return proto.Marshal(historyWindowToWirePB(window))
+}
+
+func DecodeHistoryWindowPayload(payload []byte) (*HistoryWindow, error) {
+	var msg wirepb.HistoryWindow
+	if err := proto.Unmarshal(payload, &msg); err != nil {
+		return nil, err
+	}
+	return historyWindowFromWirePB(&msg)
+}
+
+func historyWindowToWirePB(window *HistoryWindow) *wirepb.HistoryWindow {
+	lineStart := make([]int32, len(window.Lines))
+	lineEnd := make([]int32, len(window.Lines))
+	lineKinds := make([]string, len(window.Lines))
+	for i, span := range window.Lines {
+		lineStart[i] = int32(span.StartRow)
+		lineEnd[i] = int32(span.EndRow)
+		lineKinds[i] = span.RowKind
+	}
+	return &wirepb.HistoryWindow{
+		TerminalId:        window.TerminalID,
+		Token:             window.Token,
+		Op:                string(window.Op),
+		Size:              sizeToWirePB(window.Size),
+		Rows:              rowSetToWirePB(window.Rows, window.RowTimestamps, window.RowKinds, window.RowWrapped, window.RowOwnership),
+		LineStartRows:     lineStart,
+		LineEndRows:       lineEnd,
+		LineRowKinds:      lineKinds,
+		BeforeOffset:      int64(window.BeforeOffset),
+		LoadedRows:        int64(window.LoadedRows),
+		TotalRows:         int64(window.TotalRows),
+		LogicalTotal:      int64(window.LogicalTotal),
+		HasMore:           window.HasMore,
+		HistoryGeneration: window.Generation,
+		FirstRowId:        window.FirstRowID,
+		LastRowId:         window.LastRowID,
+		TimestampUnixNano: timeToUnixNano(window.Timestamp),
+	}
+}
+
+func historyWindowFromWirePB(msg *wirepb.HistoryWindow) (*HistoryWindow, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("nil history window payload")
+	}
+	rows, timestamps, rowKinds, wrapped, ownership, err := rowSetFromWirePB(msg.GetRows())
+	if err != nil {
+		return nil, err
+	}
+	starts := msg.GetLineStartRows()
+	ends := msg.GetLineEndRows()
+	kinds := msg.GetLineRowKinds()
+	lines := make([]HistoryLineSpan, 0, len(starts))
+	for i := range starts {
+		span := HistoryLineSpan{StartRow: int(starts[i])}
+		if i < len(ends) {
+			span.EndRow = int(ends[i])
+		}
+		if i < len(kinds) {
+			span.RowKind = kinds[i]
+		}
+		lines = append(lines, span)
+	}
+	return &HistoryWindow{
+		TerminalID:    msg.GetTerminalId(),
+		Token:         msg.GetToken(),
+		Op:            HistoryWindowOp(msg.GetOp()),
+		Size:          sizeFromWirePB(msg.GetSize()),
+		Rows:          rows,
+		RowTimestamps: timestamps,
+		RowKinds:      rowKinds,
+		RowWrapped:    wrapped,
+		RowOwnership:  ownership,
+		Lines:         lines,
+		BeforeOffset:  int(msg.GetBeforeOffset()),
+		LoadedRows:    int(msg.GetLoadedRows()),
+		TotalRows:     int(msg.GetTotalRows()),
+		LogicalTotal:  int(msg.GetLogicalTotal()),
+		HasMore:       msg.GetHasMore(),
+		Generation:    msg.GetHistoryGeneration(),
+		FirstRowID:    msg.GetFirstRowId(),
+		LastRowID:     msg.GetLastRowId(),
+		Timestamp:     unixNanoToTime(msg.GetTimestampUnixNano()),
+	}, nil
+}
+
 func gridViewportToWirePB(viewport *GridViewport) *wirepb.GridViewport {
 	return &wirepb.GridViewport{
 		TerminalId:             viewport.TerminalID,
