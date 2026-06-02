@@ -1488,9 +1488,13 @@ func (s *terminalGridStore) recoveredLiveTailFromMetadata() (terminalPrimaryLive
 		return terminalPrimaryLiveTail{}, false
 	}
 	baseRowID, generation, rowCount := s.coordinates()
-	persistedRecords, ok := s.persistedLogicalLineRecordsForRecoveredLiveTail(baseRowID, generation)
-	if !ok {
-		return terminalPrimaryLiveTail{}, false
+	var persistedRecords []terminalGridLogicalLineRecord
+	if terminalGridLineRecordMetasContainOrigin(metadata.LiveRecords, terminalLiveTailOriginReclaimed) {
+		var ok bool
+		persistedRecords, ok = s.persistedLogicalLineRecordsForRecoveredLiveTail(baseRowID, generation)
+		if !ok {
+			return terminalPrimaryLiveTail{}, false
+		}
 	}
 	segments, ok := terminalLiveTailSegmentsFromMetadata(metadata.LiveRecords, rows, baseRowID, generation, rowCount, persistedRecords)
 	if !ok {
@@ -1508,6 +1512,15 @@ func (s *terminalGridStore) persistedLogicalLineRecordsForRecoveredLiveTail(base
 		return nil, false
 	}
 	return s.persistedLogicalLineRecordsForRetention(refs, baseRowID, generation), true
+}
+
+func terminalGridLineRecordMetasContainOrigin(records []terminalGridLineRecordMeta, origin terminalLiveTailOrigin) bool {
+	for _, record := range records {
+		if record.Origin == origin {
+			return true
+		}
+	}
+	return false
 }
 
 func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, rows []vterm.DamageOp, persistedBaseRowID uint64, persistedGeneration uint64, persistedRowCount int, persistedRecords []terminalGridLogicalLineRecord) ([]terminalLiveTailSegment, bool) {

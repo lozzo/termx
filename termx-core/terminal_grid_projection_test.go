@@ -1,6 +1,8 @@
 package termx
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -561,6 +563,58 @@ func TestTerminalGridRecoveredLiveTailRejectsOpenRecordBeforeTail(t *testing.T) 
 	}
 	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
 		t.Fatal("expected open live tail record before tail to be rejected")
+	}
+}
+
+func TestTerminalGridRecoveredLiveTailUsesLiveOnlyMetadataWithoutPersistedIndex(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := os.Remove(filepath.Join(store.dir, terminalGridIndexName)); err != nil {
+		t.Fatalf("remove empty persisted index: %v", err)
+	}
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("tail0"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("tail1"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode live row metadata: %v", err)
+	}
+	runtimeID := terminalLiveTailLogicalLineIDBase + 1
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{{
+			ID:        runtimeID,
+			StartRow:  0,
+			EndRow:    1,
+			Sealed:    true,
+			Origin:    terminalLiveTailOriginLive,
+			Residency: terminalLogicalLineResidencyLiveTail,
+			Dirty:     true,
+		}},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write live tail metadata: %v", err)
+	}
+
+	tail, ok := store.recoveredLiveTailFromMetadata()
+	if !ok {
+		t.Fatal("expected live-only metadata to recover without persisted index")
+	}
+	if len(tail.segments) != 1 {
+		t.Fatalf("expected one recovered live segment, got %#v", tail.segments)
+	}
+	segment := tail.segments[0]
+	if segment.origin != terminalLiveTailOriginLive || segment.sealState != terminalLiveTailSealed {
+		t.Fatalf("expected recovered live sealed segment, got %#v", segment)
+	}
+	recoveredRows := make([][]localvterm.Cell, 0, len(segment.rows))
+	for _, row := range segment.rows {
+		recoveredRows = append(recoveredRows, row.Cells)
+	}
+	if got := vtermRowsToStrings(recoveredRows); !reflect.DeepEqual(got, []string{"tail0", "tail1"}) {
+		t.Fatalf("expected recovered live rows, got %#v", got)
+	}
+	if got := segment.logicalLineIDs; !reflect.DeepEqual(got, []uint64{runtimeID, runtimeID}) {
+		t.Fatalf("expected recovered runtime logical line ids, got %#v", got)
 	}
 }
 
