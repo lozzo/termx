@@ -283,6 +283,30 @@ func TestTerminalPrimaryLiveTailLogicalLineRecordsRequireCompleteIDs(t *testing.
 	}
 }
 
+func TestTerminalPrimaryLiveTailLogicalLineRecordsRejectPartialSegments(t *testing.T) {
+	tail := terminalPrimaryLiveTail{segments: []terminalLiveTailSegment{
+		{
+			origin:    terminalLiveTailOriginLive,
+			sealState: terminalLiveTailSealed,
+			rows: []localvterm.DamageOp{{
+				Cells:      localVTermCellsFromString("bad"),
+				WrappedSet: true,
+				Wrapped:    false,
+			}},
+		},
+		{
+			origin:         terminalLiveTailOriginLive,
+			sealState:      terminalLiveTailSealed,
+			rows:           []localvterm.DamageOp{{Cells: localVTermCellsFromString("good"), WrappedSet: true, Wrapped: false}},
+			logicalLineIDs: []uint64{terminalLiveTailLogicalLineIDBase + 2},
+		},
+	}}
+
+	if records := tail.logicalLineRecords(); len(records) != 0 {
+		t.Fatalf("expected incomplete prefix segment to suppress all live-tail records, got %#v", records)
+	}
+}
+
 func TestTerminalPrimaryLiveTailKeepsLiveLogicalLineIDAcrossReplacement(t *testing.T) {
 	var tail terminalPrimaryLiveTail
 	tail.replaceLiveRows([]localvterm.DamageOp{

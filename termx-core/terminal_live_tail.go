@@ -443,7 +443,11 @@ func (tail terminalPrimaryLiveTail) logicalLineRecords() []terminalLiveTailLogic
 	records := make([]terminalLiveTailLogicalLineRecord, 0, tail.rowCount())
 	cursor := 0
 	for _, segment := range tail.segments {
-		records = append(records, terminalLiveTailSegmentLogicalLineRecords(segment, cursor)...)
+		segmentRecords := terminalLiveTailSegmentLogicalLineRecords(segment, cursor)
+		if len(segment.rows) > 0 && len(segmentRecords) == 0 {
+			return nil
+		}
+		records = append(records, segmentRecords...)
 		cursor += len(segment.rows)
 	}
 	return records
