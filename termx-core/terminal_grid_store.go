@@ -1545,6 +1545,10 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 			return nil, false
 		}
 		segmentRows := cloneGridDamageOps(rows[record.StartRow : record.EndRow+1])
+		lastSegmentRow := segmentRows[len(segmentRows)-1]
+		if record.Sealed && lastSegmentRow.WrappedSet && lastSegmentRow.Wrapped {
+			return nil, false
+		}
 		lineIDs := make([]uint64, len(segmentRows))
 		for row := range lineIDs {
 			lineIDs[row] = record.ID
