@@ -164,6 +164,76 @@ func TestTerminalGridLineRecordMetasOnlyWriteReclaimedRowIDs(t *testing.T) {
 	}
 }
 
+func TestTerminalGridStoreRecordLiveTailLineStateValidatesRecordsBeforeWrite(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows := []localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("tail"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}
+	valid := []terminalLiveTailLogicalLineRecord{{
+		id:        terminalLiveTailLogicalLineIDBase + 1,
+		startRow:  0,
+		endRow:    0,
+		sealState: terminalLiveTailSealed,
+		origin:    terminalLiveTailOriginLive,
+		residency: terminalLogicalLineResidencyLiveTail,
+		dirty:     true,
+	}}
+	if err := store.recordLiveTailLineState(valid, rows); err != nil {
+		t.Fatalf("record valid live tail line state: %v", err)
+	}
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read valid live tail line metadata: %v", err)
+	}
+	if len(metadata.LiveRecords) != 1 || len(metadata.LiveRows) != 1 {
+		t.Fatalf("expected valid live tail metadata to be written, got %#v", metadata)
+	}
+
+	invalid := valid
+	invalid[0].id = 0
+	if err := store.recordLiveTailLineState(invalid, rows); err != nil {
+		t.Fatalf("record invalid live tail line state: %v", err)
+	}
+	metadata, err = readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read invalid live tail line metadata: %v", err)
+	}
+	if len(metadata.LiveRecords) != 0 || len(metadata.LiveRows) != 0 {
+		t.Fatalf("expected invalid live tail metadata to be cleared, got %#v", metadata)
+	}
+}
+
+func TestTerminalGridStoreRecordLiveTailLineStateRejectsPartialCoverage(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("a"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("b"), WrappedSet: true, Wrapped: false},
+	}
+	records := []terminalLiveTailLogicalLineRecord{{
+		id:        terminalLiveTailLogicalLineIDBase + 1,
+		startRow:  0,
+		endRow:    0,
+		sealState: terminalLiveTailSealed,
+		origin:    terminalLiveTailOriginLive,
+		residency: terminalLogicalLineResidencyLiveTail,
+		dirty:     true,
+	}}
+	if err := store.recordLiveTailLineState(records, rows); err != nil {
+		t.Fatalf("record partial live tail line state: %v", err)
+	}
+	metadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read partial live tail line metadata: %v", err)
+	}
+	if len(metadata.LiveRecords) != 0 || len(metadata.LiveRows) != 0 {
+		t.Fatalf("expected partial live tail metadata to be cleared, got %#v", metadata)
+	}
+}
+
 func TestTerminalPrimaryLiveTailPrefersExplicitReclaimedLogicalLineIDs(t *testing.T) {
 	var tail terminalPrimaryLiveTail
 	tail.replaceReclaimedPrefixWithLogicalLineIDs([]localvterm.DamageOp{

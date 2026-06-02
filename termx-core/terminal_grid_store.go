@@ -2352,6 +2352,51 @@ func terminalGridLineRecordMetasFromLiveTailRecords(records []terminalLiveTailLo
 	return out
 }
 
+func terminalLiveTailRecordsValidForLineState(records []terminalLiveTailLogicalLineRecord, rows []vterm.DamageOp) bool {
+	if len(records) == 0 || len(rows) == 0 {
+		return len(records) == 0 && len(rows) == 0
+	}
+	nextStart := 0
+	seenIDs := make(map[uint64]struct{}, len(records))
+	for i, record := range records {
+		if record.id == 0 || record.residency != terminalLogicalLineResidencyLiveTail || !terminalLiveTailOriginKnown(record.origin) || record.dirty != terminalLiveTailOriginDirty(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= len(rows) {
+			return false
+		}
+		if _, exists := seenIDs[record.id]; exists {
+			return false
+		}
+		seenIDs[record.id] = struct{}{}
+		if !terminalLiveTailRecordIDMatchesOrigin(record.id, record.origin) {
+			return false
+		}
+		sealed := record.sealState == terminalLiveTailSealed
+		if record.origin != terminalLiveTailOriginReclaimed {
+			if record.generation != 0 || record.rowIDKnown || record.firstRowID != 0 || record.lastRowID != 0 {
+				return false
+			}
+			if !sealed && i != len(records)-1 {
+				return false
+			}
+		} else {
+			if !sealed || !record.rowIDKnown || record.lastRowID < record.firstRowID {
+				return false
+			}
+			if int(record.lastRowID-record.firstRowID)+1 != record.endRow-record.startRow+1 {
+				return false
+			}
+		}
+		meta := terminalGridLineRecordMeta{
+			Sealed: sealed,
+			Origin: record.origin,
+		}
+		if !terminalLiveTailRecordRowsMatchSealState(meta, rows[record.startRow:record.endRow+1]) {
+			return false
+		}
+		nextStart = record.endRow + 1
+	}
+	return nextStart == len(rows)
+}
+
 func terminalGridLineRowMetasFromDamageRows(rows []vterm.DamageOp) ([]terminalGridLineRowMeta, error) {
 	if len(rows) == 0 {
 		return nil, nil
@@ -2415,6 +2460,11 @@ func (s *terminalGridStore) recordLiveTailLineState(records []terminalLiveTailLo
 	metadata, err := readTerminalGridLineMetadata(dir)
 	if err != nil && !os.IsNotExist(err) {
 		return err
+	}
+	if !terminalLiveTailRecordsValidForLineState(records, rows) {
+		metadata.LiveRecords = nil
+		metadata.LiveRows = nil
+		return writeTerminalGridLineMetadata(dir, metadata)
 	}
 	metadata.LiveRecords = terminalGridLineRecordMetasFromLiveTailRecords(records)
 	rowMetas, err := terminalGridLineRowMetasFromDamageRows(rows)
