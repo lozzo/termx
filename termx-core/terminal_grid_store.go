@@ -431,6 +431,12 @@ func (s *terminalGridStore) appendRowSequence(count int, rowAt func(int) termina
 		finish(0)
 		return err
 	}
+	if s.writable && !s.removeOnClose {
+		if err := writeTerminalGridCompletePersistedLineRecordsMetadata(s.dir, s.baseRowID, s.generation); err != nil {
+			finish(0)
+			return err
+		}
+	}
 
 	finish(totalBytes)
 	perftrace.Count("terminal.grid.rows", appendedRows)
