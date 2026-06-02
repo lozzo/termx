@@ -51,10 +51,15 @@ func (m *Model) copyModeSelectedText() (string, bool) {
 	}
 	start, end = normalizeCopySelection(start, end)
 	var out strings.Builder
+	var previousLine copyModeLogicalLine
+	havePreviousLine := false
 	for lineIndex := start.Line; lineIndex <= end.Line; lineIndex++ {
 		line, ok := buffer.logicalLineByIndex(lineIndex)
 		if !ok {
 			return "", false
+		}
+		if havePreviousLine && !copyModeSelectionLinesContinue(previousLine, line) {
+			out.WriteByte('\n')
 		}
 		firstOffset := 0
 		lastOffset := len(line.Text)
@@ -77,11 +82,17 @@ func (m *Model) copyModeSelectedText() (string, bool) {
 			lastOffset = len(line.Text)
 		}
 		out.WriteString(line.Text[firstOffset:lastOffset])
-		if lineIndex < end.Line {
-			out.WriteByte('\n')
-		}
+		previousLine = line
+		havePreviousLine = true
 	}
 	return out.String(), true
+}
+
+func copyModeSelectionLinesContinue(previous, next copyModeLogicalLine) bool {
+	return previous.LogicalLineID != 0 &&
+		previous.LogicalLineID == next.LogicalLineID &&
+		previous.ClippedAfter &&
+		next.ClippedBefore
 }
 
 func osc52ClipboardSequence(text string) string {

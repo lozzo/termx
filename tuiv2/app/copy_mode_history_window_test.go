@@ -74,6 +74,66 @@ func TestCopyModeSelectionUsesAuthoritativeHistoryWindow(t *testing.T) {
 	}
 }
 
+func TestCopyModeSelectionJoinsClippedAuthoritativeLineSegments(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 12})
+	window := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 50, 50, []string{"left-", "right"}, 2, false)
+	window.Rows[0].Cells = protocol.CompactRowFromCells(protocolRowFromText("left-", 5))
+	window.Rows[1].Cells = protocol.CompactRowFromCells(protocolRowFromText("right", 5))
+	window.Lines = []historyview.LineSpan{
+		{StartRow: 0, EndRow: 0, Kind: historyview.RowKindPersisted, LogicalLineID: 50, ClippedAfter: true},
+		{StartRow: 1, EndRow: 1, Kind: historyview.RowKindPersisted, LogicalLineID: 50, ClippedBefore: true},
+	}
+	if !model.HistoryStore().ApplyHistoryWindow(window) {
+		t.Fatal("expected authoritative window to be accepted")
+	}
+	model.copyMode = copyModeState{
+		PaneID:        "pane-1",
+		TerminalID:    "term-1",
+		WindowToken:   "token-1",
+		Cursor:        copyModePoint{Row: 1, Col: 5},
+		CursorLogical: copyModeLogicalPos{Line: 1, Offset: 5},
+		Mark:          &copyModePoint{Row: 0, Col: 0},
+		MarkLogical:   &copyModeLogicalPos{Line: 0, Offset: 0},
+	}
+	model.saveCurrentCopyModeState()
+
+	text, ok := model.copyModeSelectedText()
+	if !ok {
+		t.Fatal("expected copy-mode selection")
+	}
+	if text != "left-right" {
+		t.Fatalf("expected clipped segments to copy as one logical line, got %q", text)
+	}
+}
+
+func TestCopyModeSelectionSeparatesDistinctAuthoritativeLines(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 12})
+	window := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 60, 61, []string{"alpha", "bravo"}, 2, false)
+	window.Rows[0].Cells = protocol.CompactRowFromCells(protocolRowFromText("alpha", 5))
+	window.Rows[1].Cells = protocol.CompactRowFromCells(protocolRowFromText("bravo", 5))
+	if !model.HistoryStore().ApplyHistoryWindow(window) {
+		t.Fatal("expected authoritative window to be accepted")
+	}
+	model.copyMode = copyModeState{
+		PaneID:        "pane-1",
+		TerminalID:    "term-1",
+		WindowToken:   "token-1",
+		Cursor:        copyModePoint{Row: 1, Col: 5},
+		CursorLogical: copyModeLogicalPos{Line: 1, Offset: 5},
+		Mark:          &copyModePoint{Row: 0, Col: 0},
+		MarkLogical:   &copyModeLogicalPos{Line: 0, Offset: 0},
+	}
+	model.saveCurrentCopyModeState()
+
+	text, ok := model.copyModeSelectedText()
+	if !ok {
+		t.Fatal("expected copy-mode selection")
+	}
+	if text != "alpha\nbravo" {
+		t.Fatalf("expected distinct authoritative lines to keep newline, got %q", text)
+	}
+}
+
 func TestRenderCopyModeVMUsesAuthoritativeWindowProjection(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 12})
 	window := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 30, 30, []string{"auth-only"}, 1, false)

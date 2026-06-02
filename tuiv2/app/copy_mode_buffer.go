@@ -18,10 +18,13 @@ type copyModeBuffer struct {
 }
 
 type copyModeLogicalLine struct {
-	StartRow int
-	EndRow   int
-	Text     string
-	Points   []copyModePoint
+	StartRow      int
+	EndRow        int
+	LogicalLineID uint64
+	ClippedBefore bool
+	ClippedAfter  bool
+	Text          string
+	Points        []copyModePoint
 }
 
 func (m *Model) activeCopyModeBuffer() (copyModeBuffer, bool) {
@@ -203,6 +206,11 @@ func (b copyModeBuffer) logicalLineAtRow(row int) (copyModeLogicalLine, bool) {
 	line := copyModeLogicalLine{
 		StartRow: start,
 		EndRow:   end,
+	}
+	if span, ok := b.logicalLineSpanAtRow(row); ok {
+		line.LogicalLineID = span.LogicalLineID
+		line.ClippedBefore = span.ClippedBefore
+		line.ClippedAfter = span.ClippedAfter
 	}
 	for current := start; current <= end; current++ {
 		cells := b.row(current)
@@ -513,19 +521,28 @@ func (b copyModeBuffer) logicalLineBoundsAtRow(row int) (int, int, bool) {
 	if b.totalRows() == 0 || row < 0 || row >= b.totalRows() {
 		return 0, 0, false
 	}
+	if span, ok := b.logicalLineSpanAtRow(row); ok {
+		start := clampCopyModeInt(span.StartRow, 0, b.totalRows()-1)
+		end := clampCopyModeInt(span.EndRow, start, b.totalRows()-1)
+		return start, end, true
+	}
 	if b.window != nil && len(b.window.Lines) > 0 {
-		for _, span := range b.window.Lines {
-			if row < span.StartRow || row > span.EndRow {
-				continue
-			}
-			start := clampCopyModeInt(span.StartRow, 0, b.totalRows()-1)
-			end := clampCopyModeInt(span.EndRow, start, b.totalRows()-1)
-			return start, end, true
-		}
 		return 0, 0, false
 	}
 	lines := newCopyModeLogicalLines(b)
 	return lines.lineStart(row), lines.lineEnd(row), true
+}
+
+func (b copyModeBuffer) logicalLineSpanAtRow(row int) (historyview.LineSpan, bool) {
+	if b.window == nil || len(b.window.Lines) == 0 || b.totalRows() == 0 || row < 0 || row >= b.totalRows() {
+		return historyview.LineSpan{}, false
+	}
+	for _, span := range b.window.Lines {
+		if row >= span.StartRow && row <= span.EndRow {
+			return span, true
+		}
+	}
+	return historyview.LineSpan{}, false
 }
 
 func (m *Model) copyModeRenderOffset(buffer copyModeBuffer) int {
