@@ -79,10 +79,10 @@ func TestTerminalPrimaryLiveTailLogicalLineRecordsTrackReclaimedAndLiveRows(t *t
 	if len(records) != 2 {
 		t.Fatalf("expected two live tail logical line records, got %#v", records)
 	}
-	if records[0] != (terminalLiveTailLogicalLineRecord{id: 41, startRow: 0, endRow: 1, sealState: terminalLiveTailSealed, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyLiveTail}) {
+	if records[0] != (terminalLiveTailLogicalLineRecord{id: 41, startRow: 0, endRow: 1, sealState: terminalLiveTailSealed, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyLiveTail, dirty: false, generation: 7}) {
 		t.Fatalf("unexpected reclaimed record: %#v", records[0])
 	}
-	if records[1].id != window.logicalLineIDs[2] || records[1].id < terminalLiveTailLogicalLineIDBase || records[1].startRow != 2 || records[1].endRow != 2 || records[1].sealState != terminalLiveTailOpen || records[1].origin != terminalLiveTailOriginLive || records[1].residency != terminalLogicalLineResidencyLiveTail {
+	if records[1].id != window.logicalLineIDs[2] || records[1].id < terminalLiveTailLogicalLineIDBase || records[1].startRow != 2 || records[1].endRow != 2 || records[1].sealState != terminalLiveTailOpen || records[1].origin != terminalLiveTailOriginLive || records[1].residency != terminalLogicalLineResidencyLiveTail || !records[1].dirty {
 		t.Fatalf("unexpected live record: %#v", records[1])
 	}
 }
@@ -99,7 +99,7 @@ func TestTerminalPrimaryLiveTailPrefersExplicitReclaimedLogicalLineIDs(t *testin
 		t.Fatalf("expected explicit reclaimed logical line ids to be preserved, got %#v", got)
 	}
 	records := tail.logicalLineRecords()
-	if len(records) != 1 || records[0].id != 99 || records[0].origin != terminalLiveTailOriginReclaimed || records[0].sealState != terminalLiveTailSealed || records[0].residency != terminalLogicalLineResidencyLiveTail {
+	if len(records) != 1 || records[0].id != 99 || records[0].origin != terminalLiveTailOriginReclaimed || records[0].sealState != terminalLiveTailSealed || records[0].residency != terminalLogicalLineResidencyLiveTail || records[0].dirty || records[0].generation != 7 {
 		t.Fatalf("expected explicit reclaimed id in record view, got %#v", records)
 	}
 }

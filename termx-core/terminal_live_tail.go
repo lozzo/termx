@@ -47,12 +47,14 @@ type terminalLiveTailWindow struct {
 }
 
 type terminalLiveTailLogicalLineRecord struct {
-	id        uint64
-	startRow  int
-	endRow    int
-	sealState terminalLiveTailSealState
-	origin    terminalLiveTailOrigin
-	residency terminalLogicalLineResidency
+	id         uint64
+	startRow   int
+	endRow     int
+	sealState  terminalLiveTailSealState
+	origin     terminalLiveTailOrigin
+	residency  terminalLogicalLineResidency
+	dirty      bool
+	generation uint64
 }
 
 type terminalLiveTailRowsWithLogicalLineIDs struct {
@@ -448,16 +450,22 @@ func terminalLiveTailSegmentLogicalLineRecords(segment terminalLiveTailSegment, 
 			continue
 		}
 		records = append(records, terminalLiveTailLogicalLineRecord{
-			id:        uint64At(logicalLineIDs, start),
-			startRow:  baseRow + start,
-			endRow:    baseRow + i,
-			sealState: terminalLiveTailRecordSealState(segment, i),
-			origin:    segment.origin,
-			residency: terminalLogicalLineResidencyLiveTail,
+			id:         uint64At(logicalLineIDs, start),
+			startRow:   baseRow + start,
+			endRow:     baseRow + i,
+			sealState:  terminalLiveTailRecordSealState(segment, i),
+			origin:     segment.origin,
+			residency:  terminalLogicalLineResidencyLiveTail,
+			dirty:      terminalLiveTailRecordDirty(segment),
+			generation: segment.generation,
 		})
 		start = i + 1
 	}
 	return records
+}
+
+func terminalLiveTailRecordDirty(segment terminalLiveTailSegment) bool {
+	return segment.origin != terminalLiveTailOriginReclaimed
 }
 
 func terminalLiveTailRecordSealState(segment terminalLiveTailSegment, row int) terminalLiveTailSealState {

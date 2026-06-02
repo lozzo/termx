@@ -75,12 +75,14 @@ const (
 )
 
 type terminalGridLogicalLineRecord struct {
-	id        uint64
-	startRow  int
-	endRow    int
-	sealed    bool
-	origin    terminalLiveTailOrigin
-	residency terminalLogicalLineResidency
+	id         uint64
+	startRow   int
+	endRow     int
+	sealed     bool
+	origin     terminalLiveTailOrigin
+	residency  terminalLogicalLineResidency
+	dirty      bool
+	generation uint64
 }
 
 type terminalGridMetadata struct {
@@ -488,8 +490,8 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 			return result, err
 		}
 		traceGridTerminalRows("core.grid_store.viewport.raw_rows", s.terminalID, gridRows, "offset", beforeOffset, "limit", limit, "raw_limit", rawLimit, "cols", cols, "window_rows", rows, "has_more", hasMore)
-		firstRowID := s.windowFirstRowID(beforeOffset, rows)
-		lineRecords := terminalGridLogicalLineRecordsForRefs(refs, firstRowID)
+		generation, firstRowID, lastRowID, totalRows := s.rowWindowCoordinates(beforeOffset, rows)
+		lineRecords := terminalGridLogicalLineRecordsForRefsWithGeneration(refs, firstRowID, generation)
 		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped, result.LogicalLineIDs = reflowTerminalGridRows(gridRows, cols, lineRecords)
 		result.Ownership = repeatedString(RowOwnershipPersisted, len(result.Rows))
 		cropped := false
@@ -501,7 +503,10 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 		result.BeforeOffset = beforeOffset
 		result.Limit = limit
 		result.Size = Size{Cols: uint16(cols)}
-		result.Generation, result.FirstRowID, result.LastRowID, result.TotalRows = s.rowWindowCoordinates(beforeOffset, rows)
+		result.Generation = generation
+		result.FirstRowID = firstRowID
+		result.LastRowID = lastRowID
+		result.TotalRows = totalRows
 		result.LogicalTotal = s.LogicalLineCount()
 		traceGridVTermRows("core.grid_store.viewport.reflow_rows", s.terminalID, result.Rows, "offset", beforeOffset, "limit", limit, "raw_limit", rawLimit, "cols", cols, "loaded_rows", result.LoadedRows, "total", result.TotalRows, "has_more", result.HasMore, "cropped", cropped, "generation", result.Generation, "first_row_id", result.FirstRowID, "last_row_id", result.LastRowID)
 		if len(result.Rows) >= limit || !hasMore {
@@ -614,7 +619,7 @@ func (s *terminalGridStore) reclaimViewport(neededRows int, cols int) (terminalG
 			return result, err
 		}
 		firstRowID := baseRowID + uint64(start)
-		lineRecords := terminalGridLogicalLineRecordsForRefs(refs, firstRowID)
+		lineRecords := terminalGridLogicalLineRecordsForRefsWithGeneration(refs, firstRowID, generation)
 		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped, result.LogicalLineIDs = reflowTerminalGridRows(gridRows, cols, lineRecords)
 		result.Ownership = repeatedString(RowOwnershipPersisted, len(result.Rows))
 		result.Generation = generation
@@ -1097,6 +1102,10 @@ func terminalGridRetentionRowsForAgeLimit(dir string, refs []terminalGridRowRef,
 }
 
 func terminalGridLogicalLineRecordsForRefs(refs []terminalGridRowRef, baseRowID uint64) []terminalGridLogicalLineRecord {
+	return terminalGridLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, 0)
+}
+
+func terminalGridLogicalLineRecordsForRefsWithGeneration(refs []terminalGridRowRef, baseRowID uint64, generation uint64) []terminalGridLogicalLineRecord {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -1105,12 +1114,14 @@ func terminalGridLogicalLineRecordsForRefs(refs []terminalGridRowRef, baseRowID 
 	for i, ref := range refs {
 		if !terminalGridRowContinuesLogicalLine(ref) || i == len(refs)-1 {
 			records = append(records, terminalGridLogicalLineRecord{
-				id:        persistedLogicalLineIDFromRowID(baseRowID + uint64(start)),
-				startRow:  start,
-				endRow:    i,
-				sealed:    !terminalGridRowContinuesLogicalLine(ref),
-				origin:    terminalLiveTailOriginReclaimed,
-				residency: terminalLogicalLineResidencyPersisted,
+				id:         persistedLogicalLineIDFromRowID(baseRowID + uint64(start)),
+				startRow:   start,
+				endRow:     i,
+				sealed:     !terminalGridRowContinuesLogicalLine(ref),
+				origin:     terminalLiveTailOriginReclaimed,
+				residency:  terminalLogicalLineResidencyPersisted,
+				dirty:      false,
+				generation: generation,
 			})
 			start = i + 1
 		}

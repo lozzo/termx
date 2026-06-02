@@ -1223,6 +1223,16 @@ func TestTerminalGridLogicalLineRecordsExposePersistedBoundaries(t *testing.T) {
 	if !reflect.DeepEqual(records, want) {
 		t.Fatalf("unexpected logical line records got %#v want %#v", records, want)
 	}
+
+	generated := terminalGridLogicalLineRecordsForRefsWithGeneration(refs, 40, 9)
+	if len(generated) != len(want) {
+		t.Fatalf("expected generated records count %d, got %#v", len(want), generated)
+	}
+	for _, record := range generated {
+		if record.generation != 9 || record.dirty {
+			t.Fatalf("expected persisted record generation=9 dirty=false, got %#v", record)
+		}
+	}
 }
 
 func TestTerminalGridWindowStartUsesLogicalLineRecords(t *testing.T) {
