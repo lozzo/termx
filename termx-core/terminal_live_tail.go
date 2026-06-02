@@ -445,8 +445,8 @@ func terminalLiveTailSegmentLogicalLineRecords(segment terminalLiveTailSegment, 
 	records := make([]terminalLiveTailLogicalLineRecord, 0, len(segment.rows))
 	logicalLineIDs := terminalLiveTailSegmentLogicalLineIDs(segment.logicalLineIDs, segment.rows, segment.origin, segment.firstRowID, segment.lastRowID)
 	start := 0
-	for i, row := range segment.rows {
-		if row.WrappedSet && row.Wrapped && i < len(segment.rows)-1 {
+	for i := range segment.rows {
+		if terminalLiveTailRecordContinues(logicalLineIDs, segment.rows, i) {
 			continue
 		}
 		records = append(records, terminalLiveTailLogicalLineRecord{
@@ -462,6 +462,19 @@ func terminalLiveTailSegmentLogicalLineRecords(segment terminalLiveTailSegment, 
 		start = i + 1
 	}
 	return records
+}
+
+func terminalLiveTailRecordContinues(logicalLineIDs []uint64, rows []vterm.DamageOp, row int) bool {
+	if row < 0 || row >= len(rows)-1 {
+		return false
+	}
+	currentID := uint64At(logicalLineIDs, row)
+	nextID := uint64At(logicalLineIDs, row+1)
+	if currentID != 0 && nextID != 0 {
+		return currentID == nextID
+	}
+	currentRow := rows[row]
+	return currentRow.WrappedSet && currentRow.Wrapped
 }
 
 func terminalLiveTailRecordDirty(segment terminalLiveTailSegment) bool {

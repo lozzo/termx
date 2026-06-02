@@ -104,6 +104,25 @@ func TestTerminalPrimaryLiveTailPrefersExplicitReclaimedLogicalLineIDs(t *testin
 	}
 }
 
+func TestTerminalPrimaryLiveTailLogicalLineRecordsPreferExplicitIDs(t *testing.T) {
+	var tail terminalPrimaryLiveTail
+	tail.replaceReclaimedPrefixWithLogicalLineIDs([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: false},
+	}, []uint64{91, 92}, 7, 40, 41)
+
+	records := tail.logicalLineRecords()
+	if len(records) != 2 {
+		t.Fatalf("expected explicit logical line ids to split records despite wrapped=true, got %#v", records)
+	}
+	if records[0].id != 91 || records[0].startRow != 0 || records[0].endRow != 0 {
+		t.Fatalf("unexpected first explicit-id record: %#v", records[0])
+	}
+	if records[1].id != 92 || records[1].startRow != 1 || records[1].endRow != 1 {
+		t.Fatalf("unexpected second explicit-id record: %#v", records[1])
+	}
+}
+
 func TestTerminalPrimaryLiveTailKeepsLiveLogicalLineIDAcrossReplacement(t *testing.T) {
 	var tail terminalPrimaryLiveTail
 	tail.replaceLiveRows([]localvterm.DamageOp{
