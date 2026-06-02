@@ -102,10 +102,11 @@ type Terminal struct {
 	// streamMu serializes VTerm updates, bootstrap capture, broadcasts and
 	// resize/close notifications so subscribers can replay a consistent screen
 	// state before switching to live frames.
-	streamMu        sync.Mutex
-	screenRevision  uint64
-	alternateGrid   terminalAlternateGrid
-	primaryLiveTail terminalPrimaryLiveTail
+	streamMu           sync.Mutex
+	screenRevision     uint64
+	alternateGrid      terminalAlternateGrid
+	primaryLiveTail    terminalPrimaryLiveTail
+	liveLineMigrations map[uint64]uint64
 
 	// This cache holds deep-copied metadata snapshots so frequent read paths do not
 	// have to rebuild command/tag payloads for every request.
@@ -1903,9 +1904,13 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 		return
 	}
 	wrapPending := t.currentWrapPendingLocked()
-	persistedRows, liveTailRows, liveTailChanged := t.reconcileLiveTailRowsLocked(damage, wrapPending)
+	persistedRows, persistedLineIDs, liveTailRows, liveTailChanged := t.reconcileLiveTailRowsLocked(damage, wrapPending)
 	if damage.RequiresFullReplace && damage.FullReplaceReason == "resize" && len(persistedRows) > 0 && t.grid != nil {
+		beforeTrim := len(persistedRows)
 		persistedRows = t.trimResizePersistedRowsAlreadyAtGridTailLocked(persistedRows)
+		if trimmed := beforeTrim - len(persistedRows); trimmed > 0 {
+			persistedLineIDs = trimUint64Prefix(persistedLineIDs, trimmed)
+		}
 	}
 	if liveTailChanged {
 		if damage.RequiresFullReplace && damage.FullReplaceReason == "resize" {
@@ -1919,6 +1924,7 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 	if t.grid == nil || len(persistedRows) == 0 {
 		return
 	}
+	t.recordLiveTailLineMigrationsLocked(persistedRows, persistedLineIDs)
 	traceGridDamageOps("core.append_grid.damage", t.id, persistedRows, "ops", len(damage.Ops), "alternate_rows", len(damage.AlternateAppend), "live_tail_rows", len(liveTailRows.rows))
 	if t.gridAppender != nil {
 		t.gridAppender.append(persistedRows)
@@ -2000,9 +2006,9 @@ func splitDamageRowsByLiveTailHint(rows []vterm.DamageOp, liveTailRows int) ([]v
 	return cloneGridDamageOps(rows[:persistedCount]), cloneGridDamageOps(rows[persistedCount:])
 }
 
-func (t *Terminal) reconcileLiveTailRowsLocked(damage vterm.WriteDamage, nextWrapPending bool) ([]vterm.DamageOp, terminalLiveTailRowsWithLogicalLineIDs, bool) {
+func (t *Terminal) reconcileLiveTailRowsLocked(damage vterm.WriteDamage, nextWrapPending bool) ([]vterm.DamageOp, []uint64, terminalLiveTailRowsWithLogicalLineIDs, bool) {
 	if t == nil || len(damage.ScrollbackAppend) == 0 {
-		return nil, terminalLiveTailRowsWithLogicalLineIDs{}, false
+		return nil, nil, terminalLiveTailRowsWithLogicalLineIDs{}, false
 	}
 	if damage.RequiresFullReplace && damage.FullReplaceReason == "resize" {
 		liveTail := t.primaryLiveTail.nonReclaimedRowsForResizePrefixWithLogicalLineIDs()
@@ -2016,13 +2022,14 @@ func (t *Terminal) reconcileLiveTailRowsLocked(damage vterm.WriteDamage, nextWra
 		}
 		liveTail.rows = append(liveTail.rows, resizeRows...)
 		liveTail.logicalLineIDs = append(liveTail.logicalLineIDs, resizeLineIDs...)
-		return nil, liveTail, true
+		return nil, nil, liveTail, true
 	}
 
 	persistedPrefix, _ := splitDamageRowsByLiveTailHint(damage.ScrollbackAppend, damage.LiveTailAppendRows)
 	liveTailStart := len(persistedPrefix)
 	existingLiveTail := t.primaryLiveTail.liveRowsWithLogicalLineIDs()
 	persistedRows := make([]vterm.DamageOp, 0, len(existingLiveTail.rows)+len(damage.ScrollbackAppend))
+	persistedLineIDs := make([]uint64, 0, len(existingLiveTail.rows)+len(damage.ScrollbackAppend))
 	liveTailRows := cloneGridDamageOps(existingLiveTail.rows)
 	liveTailLineIDs := cloneUint64Slice(existingLiveTail.logicalLineIDs)
 	pendingWrap := t.primaryLiveTail.wrapPending
@@ -2035,6 +2042,7 @@ func (t *Terminal) reconcileLiveTailRowsLocked(damage vterm.WriteDamage, nextWra
 			if !belongsToLiveTail {
 				if len(liveTailRows) > 0 {
 					persistedRows = append(persistedRows, liveTailRows...)
+					persistedLineIDs = append(persistedLineIDs, liveTailLineIDs...)
 					liveTailRows = nil
 					liveTailLineIDs = nil
 				}
@@ -2057,12 +2065,36 @@ func (t *Terminal) reconcileLiveTailRowsLocked(damage vterm.WriteDamage, nextWra
 		}
 		if len(liveTailRows) > 0 {
 			persistedRows = append(persistedRows, liveTailRows...)
+			persistedLineIDs = append(persistedLineIDs, liveTailLineIDs...)
 			liveTailRows = nil
 			liveTailLineIDs = nil
 		}
 		persistedRows = append(persistedRows, cloned)
+		persistedLineIDs = append(persistedLineIDs, 0)
 	}
-	return persistedRows, terminalLiveTailRowsWithLogicalLineIDs{rows: liveTailRows, logicalLineIDs: liveTailLineIDs}, true
+	return persistedRows, persistedLineIDs, terminalLiveTailRowsWithLogicalLineIDs{rows: liveTailRows, logicalLineIDs: liveTailLineIDs}, true
+}
+
+func (t *Terminal) recordLiveTailLineMigrationsLocked(rows []vterm.DamageOp, runtimeLineIDs []uint64) {
+	if t == nil || t.grid == nil || len(rows) == 0 || len(runtimeLineIDs) == 0 {
+		return
+	}
+	baseRowID, _, rowCount := t.grid.coordinates()
+	startRowID := baseRowID + uint64(rowCount)
+	start := 0
+	for i, row := range rows {
+		if row.WrappedSet && row.Wrapped && i < len(rows)-1 {
+			continue
+		}
+		runtimeID := uint64At(runtimeLineIDs, start)
+		if runtimeID >= terminalLiveTailLogicalLineIDBase {
+			if t.liveLineMigrations == nil {
+				t.liveLineMigrations = make(map[uint64]uint64)
+			}
+			t.liveLineMigrations[runtimeID] = persistedLogicalLineIDFromRowID(startRowID + uint64(start))
+		}
+		start = i + 1
+	}
 }
 
 func (t *Terminal) currentWrapPendingLocked() bool {

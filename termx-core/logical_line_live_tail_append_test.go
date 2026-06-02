@@ -85,6 +85,11 @@ func TestTerminalHardNewlineSealsAccumulatedLiveTailOpenLineToPersistedHistory(t
 	if got := store.RowCount(); got != 0 {
 		t.Fatalf("expected no persisted rows before hard newline seal, got %d", got)
 	}
+	liveTailWindow := term.primaryLiveTail.window(0, term.primaryLiveTail.rowCount())
+	if got := liveTailWindow.logicalLineIDs; len(got) != 2 || got[0] < terminalLiveTailLogicalLineIDBase || got[0] != got[1] {
+		t.Fatalf("expected open live tail rows to share runtime logical line id before seal, got %#v", got)
+	}
+	runtimeLineID := liveTailWindow.logicalLineIDs[0]
 
 	writeVTermDamageToGrid(t, term, vt, "\r\n")
 
@@ -104,6 +109,9 @@ func TestTerminalHardNewlineSealsAccumulatedLiveTailOpenLineToPersistedHistory(t
 	}
 	if got := store.LogicalLineCount(); got != 1 {
 		t.Fatalf("expected one sealed logical line after hard newline, got %d", got)
+	}
+	if got := term.liveLineMigrations[runtimeLineID]; got != 1 {
+		t.Fatalf("expected runtime live line id %d to migrate to persisted logical line id 1, got %d migrations=%#v", runtimeLineID, got, term.liveLineMigrations)
 	}
 }
 

@@ -1397,6 +1397,16 @@ func trimUint64SliceTail(values []uint64, limit int) []uint64 {
 	return cloneUint64Slice(values[len(values)-limit:])
 }
 
+func trimUint64Prefix(values []uint64, start int) []uint64 {
+	if start <= 0 {
+		return cloneUint64Slice(values)
+	}
+	if start >= len(values) {
+		return nil
+	}
+	return cloneUint64Slice(values[start:])
+}
+
 func cloneUint64Slice(values []uint64) []uint64 {
 	if len(values) == 0 {
 		return nil
