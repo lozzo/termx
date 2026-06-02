@@ -118,14 +118,7 @@ func (s *Server) historyCoreGridViewport(id string, opt GridViewportOptions) (te
 		if cols <= 0 {
 			cols = 80
 		}
-		if beforeOffset == 0 {
-			if liveTail, ok := store.recoveredLiveTailFromMetadata(); ok {
-				viewport, viewportErr := combinedGridViewportFromStore(store, beforeOffset, limit, cols, liveTail)
-				viewport.Size.Rows = s.cfg.defaultSize.Rows
-				return viewport, viewportErr
-			}
-		}
-		viewport, viewportErr := store.Viewport(beforeOffset, limit, cols)
+		viewport, viewportErr := storeViewportWithRecoveredLiveTail(store, beforeOffset, limit, cols)
 		viewport.Size.Rows = s.cfg.defaultSize.Rows
 		return viewport, viewportErr
 	}

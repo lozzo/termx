@@ -300,6 +300,35 @@ func TestServerHistoryWindowRestoresLiveTailFromLineMetadata(t *testing.T) {
 	if window.Rows[1].Ownership != RowOwnershipLiveTailLive {
 		t.Fatalf("expected recovered live tail row ownership, got %#v", window.Rows)
 	}
+
+	viewport, err := restarted.GridViewport(ctx, "recover-live-tail-window", GridViewportOptions{ScrollbackLimit: 10, Cols: 4})
+	if err != nil {
+		t.Fatalf("grid viewport after restart: %v", err)
+	}
+	gotViewportRows := make([]string, 0, len(viewport.Rows))
+	for _, row := range viewport.Rows {
+		gotViewportRows = append(gotViewportRows, protocolTestRowToString(row.DecodeCells()))
+	}
+	if !reflect.DeepEqual(gotViewportRows, []string{"hist", "tail"}) {
+		t.Fatalf("expected legacy viewport to use recovered live tail projection, got %#v", gotViewportRows)
+	}
+	if viewport.LoadedRows != 1 || viewport.ScrollbackTotal != 2 {
+		t.Fatalf("expected recovered viewport to keep committed loaded depth 1 and total 2, got loaded=%d total=%d", viewport.LoadedRows, viewport.ScrollbackTotal)
+	}
+	if got := viewport.RowOwnership; !reflect.DeepEqual(got, []string{RowOwnershipPersisted, RowOwnershipLiveTailLive}) {
+		t.Fatalf("expected recovered viewport ownership, got %#v", got)
+	}
+
+	snap, err := restarted.Snapshot(ctx, "recover-live-tail-window", SnapshotOptions{ScrollbackLimit: 10})
+	if err != nil {
+		t.Fatalf("snapshot after restart: %v", err)
+	}
+	if got := rowsToStrings(snap.Screen.Cells); !reflect.DeepEqual(got, []string{"tail"}) {
+		t.Fatalf("expected legacy snapshot screen to use recovered live tail projection, got %#v", got)
+	}
+	if got := rowsToStrings(snap.Scrollback); !reflect.DeepEqual(got, []string{"hist"}) {
+		t.Fatalf("expected legacy snapshot scrollback to keep persisted prefix, got %#v", got)
+	}
 }
 
 func TestServerRemoveDeletesPersistentGridHistory(t *testing.T) {

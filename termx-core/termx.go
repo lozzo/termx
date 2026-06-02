@@ -508,7 +508,7 @@ func (s *Server) gridViewportCoreFromStore(id string, opt GridViewportOptions) (
 	if cols <= 0 {
 		cols = 80
 	}
-	result, err := store.Viewport(beforeOffset, limit, cols)
+	result, err := storeViewportWithRecoveredLiveTail(store, beforeOffset, limit, cols)
 	if err != nil {
 		return nil, err
 	}
@@ -564,11 +564,15 @@ func (s *Server) gridSnapshotFromStore(id string, opt SnapshotOptions) (*Snapsho
 		screenRowsWanted = 1
 	}
 	readLimit := screenRowsWanted + limit
-	result, err := store.Viewport(beforeOffset, readLimit, int(s.cfg.defaultSize.Cols))
+	cols := int(s.cfg.defaultSize.Cols)
+	if cols <= 0 {
+		cols = 80
+	}
+	result, err := storeViewportWithRecoveredLiveTail(store, beforeOffset, readLimit, cols)
 	if err != nil {
 		return nil, err
 	}
-	scrollbackRows, screenRows := splitGridSnapshotRows(result.Rows, screenRowsWanted, int(s.cfg.defaultSize.Cols))
+	scrollbackRows, screenRows := splitGridSnapshotRows(result.Rows, screenRowsWanted, cols)
 	metaRows := append([][]vterm.Cell(nil), scrollbackRows...)
 	metaRows = append(metaRows, screenRows...)
 	if limit == 0 {
@@ -611,6 +615,15 @@ func (s *Server) gridSnapshotFromStore(id string, opt SnapshotOptions) (*Snapsho
 		Modes:                  TerminalModes{AutoWrap: true},
 		Timestamp:              time.Now().UTC(),
 	}, nil
+}
+
+func storeViewportWithRecoveredLiveTail(store *terminalGridStore, beforeOffset int, limit int, cols int) (terminalGridViewport, error) {
+	if beforeOffset == 0 {
+		if liveTail, ok := store.recoveredLiveTailFromMetadata(); ok {
+			return combinedGridViewportFromStore(store, beforeOffset, limit, cols, liveTail)
+		}
+	}
+	return store.Viewport(beforeOffset, limit, cols)
 }
 
 func splitGridSnapshotRows(rows [][]vterm.Cell, screenHeight int, cols int) ([][]vterm.Cell, [][]vterm.Cell) {
