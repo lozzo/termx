@@ -55,6 +55,9 @@ type terminalLiveTailLogicalLineRecord struct {
 	residency  terminalLogicalLineResidency
 	dirty      bool
 	generation uint64
+	rowIDKnown bool
+	firstRowID uint64
+	lastRowID  uint64
 }
 
 type terminalLiveTailRowsWithLogicalLineIDs struct {
@@ -449,7 +452,7 @@ func terminalLiveTailSegmentLogicalLineRecords(segment terminalLiveTailSegment, 
 		if terminalLiveTailRecordContinues(logicalLineIDs, segment.rows, i) {
 			continue
 		}
-		records = append(records, terminalLiveTailLogicalLineRecord{
+		record := terminalLiveTailLogicalLineRecord{
 			id:         uint64At(logicalLineIDs, start),
 			startRow:   baseRow + start,
 			endRow:     baseRow + i,
@@ -458,7 +461,13 @@ func terminalLiveTailSegmentLogicalLineRecords(segment terminalLiveTailSegment, 
 			residency:  terminalLogicalLineResidencyLiveTail,
 			dirty:      terminalLiveTailRecordDirty(segment),
 			generation: segment.generation,
-		})
+		}
+		if terminalLiveTailReclaimedSegmentHasRowIDs(segment) {
+			record.rowIDKnown = true
+			record.firstRowID = segment.firstRowID + uint64(start)
+			record.lastRowID = segment.firstRowID + uint64(i)
+		}
+		records = append(records, record)
 		start = i + 1
 	}
 	return records
@@ -599,12 +608,16 @@ func hasNonZeroUint64(values []uint64) bool {
 }
 
 func terminalLiveTailSegmentRowIDWindow(segment terminalLiveTailSegment, localStart int, localEnd int) (uint64, uint64) {
-	if segment.lastRowID >= segment.firstRowID && int(segment.lastRowID-segment.firstRowID)+1 == len(segment.rows) {
+	if terminalLiveTailReclaimedSegmentHasRowIDs(segment) {
 		first := segment.firstRowID + uint64(localStart)
 		last := segment.firstRowID + uint64(localEnd-1)
 		return first, last
 	}
 	return segment.firstRowID, segment.lastRowID
+}
+
+func terminalLiveTailReclaimedSegmentHasRowIDs(segment terminalLiveTailSegment) bool {
+	return segment.origin == terminalLiveTailOriginReclaimed && len(segment.rows) > 0 && segment.lastRowID >= segment.firstRowID && int(segment.lastRowID-segment.firstRowID)+1 == len(segment.rows)
 }
 
 func (tail *terminalPrimaryLiveTail) setWrapPending(wrapPending bool) {

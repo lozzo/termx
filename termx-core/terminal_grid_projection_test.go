@@ -233,13 +233,18 @@ func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T)
 
 func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		origin terminalLiveTailOrigin
-		dirty  bool
+		name       string
+		origin     terminalLiveTailOrigin
+		dirty      bool
+		rowIDKnown bool
+		firstRowID uint64
+		lastRowID  uint64
 	}{
 		{name: "unknown-origin", origin: terminalLiveTailOrigin("bad-origin"), dirty: true},
 		{name: "clean-live", origin: terminalLiveTailOriginLive, dirty: false},
 		{name: "dirty-reclaimed", origin: terminalLiveTailOriginReclaimed, dirty: true},
+		{name: "reclaimed-missing-row-ids", origin: terminalLiveTailOriginReclaimed, dirty: false},
+		{name: "reclaimed-row-id-span-mismatch", origin: terminalLiveTailOriginReclaimed, dirty: false, rowIDKnown: true, firstRowID: 40, lastRowID: 42},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := newMemoryTerminalGridStoreForTest(t)
@@ -254,12 +259,15 @@ func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
 			}
 			if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
 				LiveRecords: []terminalGridLineRecordMeta{{
-					ID:        terminalLiveTailLogicalLineIDBase + 1,
-					StartRow:  0,
-					EndRow:    0,
-					Origin:    tc.origin,
-					Residency: terminalLogicalLineResidencyLiveTail,
-					Dirty:     tc.dirty,
+					ID:         terminalLiveTailLogicalLineIDBase + 1,
+					StartRow:   0,
+					EndRow:     0,
+					RowIDKnown: tc.rowIDKnown,
+					FirstRowID: tc.firstRowID,
+					LastRowID:  tc.lastRowID,
+					Origin:     tc.origin,
+					Residency:  terminalLogicalLineResidencyLiveTail,
+					Dirty:      tc.dirty,
 				}},
 				LiveRows: rows,
 			}); err != nil {
@@ -269,6 +277,51 @@ func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
 				t.Fatalf("expected corrupt live tail metadata %q to be ignored", tc.name)
 			}
 		})
+	}
+}
+
+func TestTerminalGridRecoveredLiveTailUsesExplicitReclaimedRowIDs(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode live row metadata: %v", err)
+	}
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{{
+			ID:         99,
+			StartRow:   0,
+			EndRow:     1,
+			RowIDKnown: true,
+			FirstRowID: 40,
+			LastRowID:  41,
+			Sealed:     true,
+			Origin:     terminalLiveTailOriginReclaimed,
+			Residency:  terminalLogicalLineResidencyLiveTail,
+			Dirty:      false,
+			Generation: 7,
+		}},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write live tail metadata: %v", err)
+	}
+
+	tail, ok := store.recoveredLiveTailFromMetadata()
+	if !ok {
+		t.Fatal("expected reclaimed live tail metadata to recover")
+	}
+	if len(tail.segments) != 1 {
+		t.Fatalf("expected one recovered segment, got %#v", tail.segments)
+	}
+	segment := tail.segments[0]
+	if segment.origin != terminalLiveTailOriginReclaimed || segment.firstRowID != 40 || segment.lastRowID != 41 {
+		t.Fatalf("expected recovered row coordinates from metadata, got %#v", segment)
+	}
+	if got := segment.logicalLineIDs; !reflect.DeepEqual(got, []uint64{99, 99}) {
+		t.Fatalf("expected recovered logical line ids from metadata, got %#v", got)
 	}
 }
 

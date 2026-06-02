@@ -113,6 +113,9 @@ type terminalGridLineRecordMeta struct {
 	ID         uint64                       `json:"id"`
 	StartRow   int                          `json:"start_row"`
 	EndRow     int                          `json:"end_row"`
+	RowIDKnown bool                         `json:"row_id_known,omitempty"`
+	FirstRowID uint64                       `json:"first_row_id,omitempty"`
+	LastRowID  uint64                       `json:"last_row_id,omitempty"`
 	Sealed     bool                         `json:"sealed"`
 	Origin     terminalLiveTailOrigin       `json:"origin"`
 	Residency  terminalLogicalLineResidency `json:"residency"`
@@ -1383,8 +1386,12 @@ func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, 
 			segment.sealState = terminalLiveTailSealed
 		}
 		if record.Origin == terminalLiveTailOriginReclaimed {
-			segment.firstRowID = persistedRowIDFromLogicalLineID(record.ID)
-			segment.lastRowID = segment.firstRowID + uint64(len(segmentRows)-1)
+			firstRowID, lastRowID, ok := terminalLiveTailReclaimedRowIDsFromMetadata(record, len(segmentRows))
+			if !ok {
+				return nil, false
+			}
+			segment.firstRowID = firstRowID
+			segment.lastRowID = lastRowID
 		}
 		if i > 0 && canMergeRecoveredLiveTailSegments(segments[len(segments)-1], segment) {
 			merged := &segments[len(segments)-1]
@@ -1454,11 +1461,14 @@ func terminalLiveTailSegmentsWrapPending(segments []terminalLiveTailSegment) boo
 	return false
 }
 
-func persistedRowIDFromLogicalLineID(logicalLineID uint64) uint64 {
-	if logicalLineID == 0 {
-		return 0
+func terminalLiveTailReclaimedRowIDsFromMetadata(record terminalGridLineRecordMeta, rowCount int) (uint64, uint64, bool) {
+	if !record.RowIDKnown || rowCount <= 0 || record.LastRowID < record.FirstRowID {
+		return 0, 0, false
 	}
-	return logicalLineID - 1
+	if int(record.LastRowID-record.FirstRowID)+1 != rowCount {
+		return 0, 0, false
+	}
+	return record.FirstRowID, record.LastRowID, true
 }
 
 func readTerminalGridRows(dir string, refs []terminalGridRowRef) ([]terminalGridRow, error) {
@@ -1989,6 +1999,9 @@ func terminalGridLineRecordMetasFromLiveTailRecords(records []terminalLiveTailLo
 			ID:         record.id,
 			StartRow:   record.startRow,
 			EndRow:     record.endRow,
+			RowIDKnown: record.rowIDKnown,
+			FirstRowID: record.firstRowID,
+			LastRowID:  record.lastRowID,
 			Sealed:     record.sealState == terminalLiveTailSealed,
 			Origin:     record.origin,
 			Residency:  record.residency,
