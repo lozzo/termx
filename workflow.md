@@ -378,6 +378,7 @@ TUI store 至少表达：
 - 已有 `HistoryLineSpan` clipped before/after 初版。
 - 已扩展 protocol `history.window` line spans，新增 `LogicalLineID` 往返 harness，当前 core 初版以 canonical row id 作为等价 logical line boundary 标识，后续显式 logical line store 落地后替换为 stable logical line id。
 - 已新增 `tuiv2/historyview` authoritative window store 初版与 fake source harness，覆盖 latest replace、older prepend、stale token/generation 丢弃、边界重叠拒绝、clipped span 保留、pending request token、viewport top、cursor 与 selection 交互态。
+- 已在 `tuiv2/bridge` 暴露 protocol `HistoryWindow` 入口并补齐测试 fake client，后续仍需实现 history source adapter 并注入 app model。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与 canonical row id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。
 - 已新增 core 光标回到当前 visual row 后覆写的生产路径 harness，覆盖覆写仍停留在 mutable live tail、未 seal 前不产生 persisted logical line、hard newline 后作为一条 overwritten logical line 提交。

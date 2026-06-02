@@ -17,6 +17,7 @@ type Client interface {
 	EnsureResize(ctx context.Context, params protocol.EnsureResizeParams) (*protocol.EnsureResizeResult, error)
 	Snapshot(ctx context.Context, terminalID string, offset, limit int) (*protocol.Snapshot, error)
 	GridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*protocol.GridViewport, error)
+	HistoryWindow(ctx context.Context, params protocol.HistoryWindowParams) (*protocol.HistoryWindow, error)
 	Input(ctx context.Context, channel uint16, data []byte) error
 	Resize(ctx context.Context, channel uint16, cols, rows uint16) error
 	StreamReady(ctx context.Context, channel uint16, screenSequence uint64) error
@@ -77,6 +78,10 @@ func (c *ProtocolClient) Snapshot(ctx context.Context, terminalID string, offset
 
 func (c *ProtocolClient) GridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*protocol.GridViewport, error) {
 	return c.inner.GridViewport(ctx, terminalID, offset, limit, cols)
+}
+
+func (c *ProtocolClient) HistoryWindow(ctx context.Context, params protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {
+	return c.inner.HistoryWindow(ctx, params)
 }
 
 func (c *ProtocolClient) Input(ctx context.Context, channel uint16, data []byte) error {

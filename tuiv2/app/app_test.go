@@ -4604,6 +4604,13 @@ func (c *recordingBridgeClient) GridViewport(_ context.Context, terminalID strin
 	}, nil
 }
 
+func (c *recordingBridgeClient) HistoryWindow(context.Context, protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {
+	if c.snapshotErr != nil {
+		return nil, c.snapshotErr
+	}
+	return nil, nil
+}
+
 func (c *recordingBridgeClient) Input(_ context.Context, channel uint16, data []byte) error {
 	call := inputCall{channel: channel, data: append([]byte(nil), data...)}
 	c.inputCalls = append(c.inputCalls, call)

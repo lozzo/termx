@@ -28,8 +28,12 @@ func (c *fakeBridgeClient) Create(context.Context, protocol.CreateParams) (*prot
 	return &protocol.CreateResult{}, nil
 }
 func (c *fakeBridgeClient) SetTags(context.Context, string, map[string]string) error { return nil }
-func (c *fakeBridgeClient) SetMetadata(context.Context, string, string, map[string]string) error { return nil }
-func (c *fakeBridgeClient) List(context.Context) (*protocol.ListResult, error) { return &protocol.ListResult{}, nil }
+func (c *fakeBridgeClient) SetMetadata(context.Context, string, string, map[string]string) error {
+	return nil
+}
+func (c *fakeBridgeClient) List(context.Context) (*protocol.ListResult, error) {
+	return &protocol.ListResult{}, nil
+}
 func (c *fakeBridgeClient) Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error) {
 	return make(chan protocol.Event), nil
 }
@@ -56,6 +60,9 @@ func (c *fakeBridgeClient) Snapshot(_ context.Context, terminalID string, _, _ i
 func (c *fakeBridgeClient) GridViewport(context.Context, string, int, int, int) (*protocol.GridViewport, error) {
 	return &protocol.GridViewport{}, nil
 }
+func (c *fakeBridgeClient) HistoryWindow(context.Context, protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {
+	return &protocol.HistoryWindow{}, nil
+}
 func (c *fakeBridgeClient) Input(context.Context, uint16, []byte) error { return nil }
 func (c *fakeBridgeClient) Resize(_ context.Context, channel uint16, cols, rows uint16) error {
 	return nil
@@ -64,8 +71,8 @@ func (c *fakeBridgeClient) StreamReady(context.Context, uint16, uint64) error { 
 func (c *fakeBridgeClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 	return make(chan protocol.StreamFrame), func() {}
 }
-func (c *fakeBridgeClient) Kill(context.Context, string) error { return nil }
-func (c *fakeBridgeClient) Remove(context.Context, string) error { return nil }
+func (c *fakeBridgeClient) Kill(context.Context, string) error    { return nil }
+func (c *fakeBridgeClient) Remove(context.Context, string) error  { return nil }
 func (c *fakeBridgeClient) Restart(context.Context, string) error { return nil }
 
 func snapshotWithLines(terminalID string, cols, rows uint16, lines []string) *protocol.Snapshot {

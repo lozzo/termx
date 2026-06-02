@@ -240,6 +240,10 @@ func (c *fakeClient) GridViewport(context.Context, string, int, int, int) (*prot
 	return nil, nil
 }
 
+func (c *fakeClient) HistoryWindow(context.Context, protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {
+	return nil, nil
+}
+
 func (c *fakeClient) Input(context.Context, uint16, []byte) error { return nil }
 
 func (c *fakeClient) Resize(context.Context, uint16, uint16, uint16) error { return nil }

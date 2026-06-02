@@ -17,6 +17,7 @@ func TestClientBoundaryDoesNotExposeRemoteCapabilities(t *testing.T) {
 		"EnsureResize",
 		"Events",
 		"GridViewport",
+		"HistoryWindow",
 		"Input",
 		"Kill",
 		"List",
