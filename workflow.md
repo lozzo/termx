@@ -382,6 +382,7 @@ TUI store 至少表达：
 - 已将 `tuiv2/app` 中依赖 snapshot scrollback wrapped 作为 copy mode history truth 的旧 guard 测试标记为待 authoritative history window line spans 重写，不再作为新模型回归基准。
 - 已将 `tuiv2/app` 中鼠标滚轮进入本地 snapshot scrollback / frozen snapshot copy mode 游标的旧测试标记为待 authoritative history window latest replace 重写，不再作为新模型回归基准。
 - 已将 `tuiv2/app` 中 copy mode page/halfpage 与 copy mode top/exit 依赖 frozen snapshot + 本地 pane viewport 的旧测试标记为待 authoritative history window older prepend / 交互态清理重写，不再作为新模型回归基准。
+- 已将 `tuiv2/app` 中正常模式 scroll up/down 依赖本地 pane viewport offset 的旧测试基准移除或标记为待 authoritative history window 重写，不再作为新模型滚动回归基准。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因是：TUI 旧本地历史路径已删，但 authoritative history window store 尚未注入 app copy mode 和滚动。
 - 下一步继续切片一：补 core logical line / projection harness，并把旧 TUI snapshot/grid viewport history truth 测试删除或标记重写；不直接修补旧滚动逻辑。

@@ -1799,6 +1799,8 @@ func TestFeatureResizeCycleLayoutPersistsSession(t *testing.T) {
 // ─── Group 6: Display/Scroll Operations ─────────────────────────────────────
 
 func TestFeatureScrollUpDown(t *testing.T) {
+	t.Skip("待改写：该测试把正常模式 scroll up/down 定义为本地 pane viewport offset；新基准必须加载或消费 authoritative history window")
+
 	model := setupModel(t, modelOpts{})
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionScrollUp})

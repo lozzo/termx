@@ -3539,7 +3539,7 @@ func TestInvalidateRenderEffectClampsFloatingPaneBelowViewportSize(t *testing.T)
 	}
 }
 
-func TestModelLocalScrollActionsAndQuit(t *testing.T) {
+func TestModelGlobalModeAndQuit(t *testing.T) {
 	statePath := t.TempDir() + "/workspace-state.json"
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
@@ -3561,27 +3561,7 @@ func TestModelLocalScrollActionsAndQuit(t *testing.T) {
 	rt.Registry().GetOrCreate("term-1").Tags = map[string]string{"role": "dev"}
 	model := New(shared.Config{WorkspaceStatePath: statePath}, wb, rt)
 
-	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionScrollUp})
-	if cmd != nil {
-		if msg := cmd(); msg != nil {
-			t.Fatalf("expected no async msg from scroll up, got %#v", msg)
-		}
-	}
-	if got := model.runtime.PaneViewportOffset("pane-1"); got != 1 {
-		t.Fatalf("expected pane viewport 1 after scroll up, got %d", got)
-	}
-
-	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionScrollDown})
-	if cmd != nil {
-		if msg := cmd(); msg != nil {
-			t.Fatalf("expected no async msg from scroll down, got %#v", msg)
-		}
-	}
-	if got := model.runtime.PaneViewportOffset("pane-1"); got != 0 {
-		t.Fatalf("expected pane viewport 0 after scroll down, got %d", got)
-	}
-
-	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionEnterGlobalMode})
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionEnterGlobalMode})
 	if cmd != nil {
 		msg := cmd()
 		if _, ok := msg.(prefixTimeoutMsg); !ok {
