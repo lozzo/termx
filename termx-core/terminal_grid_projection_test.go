@@ -701,6 +701,72 @@ func TestTerminalGridRecoveredLiveTailKeepsOpenLineSeparateFromWrapPending(t *te
 	}
 }
 
+func TestTerminalGridRecoveredLiveTailPreservesResizeOrigin(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("r0"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("r1"), WrappedSet: true, Wrapped: true},
+	})
+	if err != nil {
+		t.Fatalf("encode resize live row metadata: %v", err)
+	}
+	runtimeID := terminalLiveTailLogicalLineIDBase + 1
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{{
+			ID:        runtimeID,
+			StartRow:  0,
+			EndRow:    1,
+			Sealed:    false,
+			Origin:    terminalLiveTailOriginResize,
+			Residency: terminalLogicalLineResidencyLiveTail,
+			Dirty:     true,
+		}},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write resize live tail metadata: %v", err)
+	}
+
+	tail, ok := store.recoveredLiveTailFromMetadata()
+	if !ok {
+		t.Fatal("expected resize live tail metadata to recover")
+	}
+	if len(tail.segments) != 1 {
+		t.Fatalf("expected one recovered resize segment, got %#v", tail.segments)
+	}
+	segment := tail.segments[0]
+	if segment.origin != terminalLiveTailOriginResize || segment.sealState != terminalLiveTailOpen || !segment.wrapPending {
+		t.Fatalf("expected recovered resize segment to stay open resize tail, got %#v", segment)
+	}
+	if got := damageRowsToStrings(segment.rows); !reflect.DeepEqual(got, []string{"r0", "r1"}) {
+		t.Fatalf("expected recovered resize rows, got %#v", got)
+	}
+	if got := segment.logicalLineIDs; !reflect.DeepEqual(got, []uint64{runtimeID, runtimeID}) {
+		t.Fatalf("expected recovered resize runtime logical line ids, got %#v", got)
+	}
+
+	viewport, err := storeViewportWithRecoveredLiveTail(store, 0, 10, 2)
+	if err != nil {
+		t.Fatalf("resize recovered viewport: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"r0", "r1"}) {
+		t.Fatalf("expected recovered resize viewport rows, got %#v", got)
+	}
+	if got := viewport.Ownership; !reflect.DeepEqual(got, []string{RowOwnershipLiveTailLive, RowOwnershipLiveTailLive}) {
+		t.Fatalf("expected recovered resize rows to stay live-tail ownership, got %#v", got)
+	}
+	if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{runtimeID, runtimeID}) {
+		t.Fatalf("expected recovered resize viewport runtime ids, got %#v", got)
+	}
+	window := historyWindowFromCoreGridViewport("recover-resize-live-tail", 0, viewport)
+	if window.LoadedRows != 0 || window.LoadedLines != 1 || window.LogicalTotal != 1 || window.Generation != 0 {
+		t.Fatalf("expected recovered resize history window to count one mutable line without committed depth, loaded_rows=%d loaded_lines=%d total=%d gen=%d", window.LoadedRows, window.LoadedLines, window.LogicalTotal, window.Generation)
+	}
+	if len(window.Lines) != 1 || window.Lines[0].LogicalLineID != runtimeID || !window.Lines[0].ClippedAfter {
+		t.Fatalf("expected recovered resize history window to expose clipped open runtime line, got %#v", window.Lines)
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailRejectsStaleReclaimedRowIDs(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
