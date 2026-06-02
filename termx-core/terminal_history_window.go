@@ -415,8 +415,8 @@ func historyLineSpanIDBoundary(spans []HistoryLineSpan) (uint64, uint64) {
 	return first, last
 }
 
-// historyLineSpans 优先按 core projection 给出的 stable logical line id
-// 归并 visual rows；旧 projection 缺失 id 时才回退 wrapped 元数据。
+// historyLineSpans 只按 core projection 给出的 stable logical line id 归并
+// visual rows。wrapped 仅用于表达窗口末尾是否裁断投影，不再作为逻辑行真相回退。
 func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64, rowCount int, beforeOffset int, firstLineClippedBefore ...bool) []HistoryLineSpan {
 	if rowCount <= 0 {
 		return nil
@@ -426,42 +426,33 @@ func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64
 		clippedBeforeFirstLine = true
 	}
 	spans := make([]HistoryLineSpan, 0, rowCount)
-	start := 0
 	for row := 0; row < rowCount; row++ {
-		if historyLineSpanContinues(wrapped, logicalLineIDs, row, rowCount) {
+		logicalLineID := uint64At(logicalLineIDs, row)
+		if logicalLineID == 0 {
 			continue
+		}
+		start := row
+		for row+1 < rowCount && uint64At(logicalLineIDs, row+1) == logicalLineID {
+			row++
 		}
 		spans = append(spans, HistoryLineSpan{
 			StartRow:      start,
 			EndRow:        row,
 			RowKind:       stringAt(rowKinds, start),
-			LogicalLineID: uint64At(logicalLineIDs, start),
+			LogicalLineID: logicalLineID,
 			ClippedBefore: clippedBeforeFirstLine && start == 0,
 			ClippedAfter:  historyLineSpanClippedAfter(wrapped, logicalLineIDs, row, rowCount),
 		})
-		start = row + 1
 	}
 	return spans
-}
-
-func historyLineSpanContinues(wrapped []bool, logicalLineIDs []uint64, row int, rowCount int) bool {
-	if row < 0 || row >= rowCount-1 {
-		return false
-	}
-	currentID := uint64At(logicalLineIDs, row)
-	nextID := uint64At(logicalLineIDs, row+1)
-	if currentID != 0 && nextID != 0 {
-		return currentID == nextID
-	}
-	return boolAt(wrapped, row)
 }
 
 func historyLineSpanClippedAfter(wrapped []bool, logicalLineIDs []uint64, row int, rowCount int) bool {
 	if row != rowCount-1 {
 		return false
 	}
-	if uint64At(logicalLineIDs, row) != 0 {
-		return boolAt(wrapped, row)
+	if uint64At(logicalLineIDs, row) == 0 {
+		return false
 	}
 	return boolAt(wrapped, row)
 }

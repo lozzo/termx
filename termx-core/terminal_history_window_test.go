@@ -8,22 +8,7 @@ import (
 	"github.com/lozzow/termx/termx-vterm/vterm"
 )
 
-func TestHistoryLineSpansGroupsWrappedRows(t *testing.T) {
-	// 行0、行1 wrapped 续接到行2，组成一条逻辑行；行3 独立。
-	wrapped := []bool{true, true, false, false}
-	kinds := []string{"a", "a", "a", "b"}
-	lineIDs := []uint64{101, 101, 101, 104}
-	spans := historyLineSpans(wrapped, kinds, lineIDs, 4, 0)
-	want := []HistoryLineSpan{
-		{StartRow: 0, EndRow: 2, RowKind: "a", LogicalLineID: 101},
-		{StartRow: 3, EndRow: 3, RowKind: "b", LogicalLineID: 104},
-	}
-	if !reflect.DeepEqual(spans, want) {
-		t.Fatalf("unexpected line spans, got %#v want %#v", spans, want)
-	}
-}
-
-func TestHistoryLineSpansPreferLogicalLineIDsOverWrapped(t *testing.T) {
+func TestHistoryLineSpansUseLogicalLineIDs(t *testing.T) {
 	spans := historyLineSpans([]bool{false, false, false}, []string{"a", "a", "b"}, []uint64{101, 101, 103}, 3, 0)
 	want := []HistoryLineSpan{
 		{StartRow: 0, EndRow: 1, RowKind: "a", LogicalLineID: 101},
@@ -40,6 +25,13 @@ func TestHistoryLineSpansPreferLogicalLineIDsOverWrapped(t *testing.T) {
 	}
 	if !reflect.DeepEqual(spans, want) {
 		t.Fatalf("expected distinct logical line ids to split spans despite wrapped=true, got %#v want %#v", spans, want)
+	}
+}
+
+func TestHistoryLineSpansDoNotInferFromWrappedRowsWithoutLogicalLineIDs(t *testing.T) {
+	spans := historyLineSpans([]bool{true, false}, []string{"a", "a"}, nil, 2, 0)
+	if len(spans) != 0 {
+		t.Fatalf("expected no authoritative line spans without logical line ids, got %#v", spans)
 	}
 }
 
