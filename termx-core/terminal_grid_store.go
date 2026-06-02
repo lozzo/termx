@@ -779,7 +779,7 @@ func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalG
 	return refs, len(refs), start > 0, nil
 }
 
-func terminalGridRowContinuesLogicalLine(ref terminalGridRowRef) bool {
+func terminalGridFallbackRowContinuesLogicalLine(ref terminalGridRowRef) bool {
 	return ref.flags&terminalGridRowFlagWrapped != 0
 }
 
@@ -1152,12 +1152,12 @@ func terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs []terminal
 	records := make([]terminalGridLogicalLineRecord, 0, len(refs))
 	start := 0
 	for i, ref := range refs {
-		if !terminalGridRowContinuesLogicalLine(ref) || i == len(refs)-1 {
+		if !terminalGridFallbackRowContinuesLogicalLine(ref) || i == len(refs)-1 {
 			records = append(records, terminalGridLogicalLineRecord{
 				id:         persistedLogicalLineIDFromRowID(baseRowID + uint64(start)),
 				startRow:   start,
 				endRow:     i,
-				sealed:     !terminalGridRowContinuesLogicalLine(ref),
+				sealed:     !terminalGridFallbackRowContinuesLogicalLine(ref),
 				origin:     terminalLiveTailOriginReclaimed,
 				residency:  terminalLogicalLineResidencyPersisted,
 				dirty:      false,

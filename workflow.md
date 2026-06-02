@@ -404,6 +404,7 @@ TUI store 至少表达：
 - 已将 core persisted viewport/reclaim 的窗口起点扩展改为通过 logical line record 视图定位逻辑行边界，不再使用逐 row wrapped 回退 helper 作为窗口边界来源。
 - 已删除 core persisted viewport/reclaim 中只接受 refs/wrapped 的旧窗口起点 helper；窗口起点调整现在只消费显式 logical line record，refs/wrapped 仅作为 metadata 缺失时生成 fallback record 的输入。
 - 已将 core 中从 refs/wrapped 生成 persisted logical line record 的 helper 命名收敛为 fallback 语义；该路径只表示 metadata 缺失或损坏时的降级推导，不再作为正常 persisted store truth 命名。
+- 已将 core 中基于 row wrapped flag 判断 continuation 的 helper 也收敛为 fallback 命名，并限制在 fallback logical line record 推导内部使用。
 - 已将 core persisted retention 的 logical-line limit、byte limit、age limit 收敛为优先消费 persisted logical line record，并按完整 logical line record 保留或丢弃；metadata 缺失时才回退 index/wrapped 推导，byte limit 不再切半条逻辑行。
 - 已为 core `mutable live tail` 新增内部 logical line record 视图，覆盖 reclaimed/live/resize segment 的 start/end、seal 状态、origin 与 logical line id；grow resize reclaim 会把 persisted projection 的 row 到 logical line id 映射带入 reclaimed live tail，combined viewport 与 history window 不再把 reclaimed suffix 的 logical line id 清零，live/resize open line 也已有 runtime stable logical line id。
 - 已为 core `mutable live tail` 的 live/resize segment 分配 runtime stable logical line id，并在连续 live tail replacement、wrapped open line、resize hidden live tail 与 latest history window 中保留同一逻辑行 id；reclaimed suffix 继续使用 persisted logical line id。当前 runtime id 与 persisted id 的统一迁移仍只是 metadata 记录，尚未被完整消费为跨层统一身份。
