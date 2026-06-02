@@ -1137,7 +1137,7 @@ func (t *Terminal) combinedGridViewport(offset, limit, cols int, liveTail termin
 			result.RowKinds = append(result.RowKinds, row.RowKind)
 			result.Wrapped = append(result.Wrapped, row.WrappedSet && row.Wrapped)
 			result.Ownership = append(result.Ownership, stringAt(window.ownership, i))
-			result.LogicalLineIDs = append(result.LogicalLineIDs, 0)
+			result.LogicalLineIDs = append(result.LogicalLineIDs, uint64At(window.logicalLineIDs, i))
 		}
 		if window.hasCommitted {
 			result.LoadedRows += window.committed
@@ -1219,7 +1219,7 @@ func (t *Terminal) reclaimPrimaryLiveTailForGrowResizeLocked(cols int) error {
 	if generation == 0 {
 		generation = viewport.Generation
 	}
-	t.primaryLiveTail.replaceReclaimedPrefix(reclaimed, generation, firstRowID, lastRowID)
+	t.primaryLiveTail.replaceReclaimedPrefixWithLogicalLineIDs(reclaimed, viewport.LogicalLineIDs, generation, firstRowID, lastRowID)
 	return nil
 }
 

@@ -1964,6 +1964,9 @@ func TestTerminalGrowResizeStoresReclaimedSuffixInPrimaryLiveTail(t *testing.T) 
 	if reclaimed.firstRowID != 1 || reclaimed.lastRowID != 2 {
 		t.Fatalf("expected reclaimed row coordinates 1..2, got %d..%d", reclaimed.firstRowID, reclaimed.lastRowID)
 	}
+	if got := reclaimed.logicalLineIDs; !reflect.DeepEqual(got, []uint64{2, 2}) {
+		t.Fatalf("expected reclaimed suffix to keep persisted logical line id, got %#v", got)
+	}
 
 	snapshot := term.Snapshot(0, 2)
 	if got := rowsToStrings(snapshot.Scrollback); !reflect.DeepEqual(got, []string{"grow0", "grow1"}) {
@@ -1977,6 +1980,50 @@ func TestTerminalGrowResizeStoresReclaimedSuffixInPrimaryLiveTail(t *testing.T) 
 	}
 	if snapshot.ScrollbackFirstRowID != 1 || snapshot.ScrollbackLastRowID != 2 {
 		t.Fatalf("expected reclaimed snapshot row ids 1..2, got %d..%d", snapshot.ScrollbackFirstRowID, snapshot.ScrollbackLastRowID)
+	}
+}
+
+func TestTerminalGrowReclaimedLiveTailHistoryWindowKeepsLogicalLineID(t *testing.T) {
+	vt := localvterm.New(5, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	vt.LoadSnapshot(
+		localvterm.ScreenData{Cells: [][]localvterm.Cell{localVTermCellsFromString("grow2")}},
+		localvterm.CursorState{Row: 0, Col: 5, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "grow-reclaimed-history-window-line-id",
+		size:  Size{Cols: 5, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("older")},
+		{cells: localVTermCellsFromString("grow0"), wrapped: true},
+		{cells: localVTermCellsFromString("grow1"), wrapped: true},
+	}); err != nil {
+		t.Fatalf("append persisted rows: %v", err)
+	}
+	term.size = Size{Cols: 5, Rows: 3}
+	if err := term.reclaimPrimaryLiveTailForGrowResizeLocked(5); err != nil {
+		t.Fatalf("reclaim grow live tail: %v", err)
+	}
+
+	viewport, err := term.combinedGridViewport(0, 1, 5, term.primaryLiveTail.clone())
+	if err != nil {
+		t.Fatalf("combined viewport: %v", err)
+	}
+	if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{2, 2}) {
+		t.Fatalf("expected reclaimed live-tail projection to carry stable logical line id, got %#v", got)
+	}
+	window := historyWindowFromCoreGridViewport(term.id, 0, viewport)
+	if len(window.Lines) != 1 {
+		t.Fatalf("expected one reclaimed logical line span, got %#v", window.Lines)
+	}
+	if window.Lines[0].LogicalLineID != 2 {
+		t.Fatalf("expected reclaimed history window span to keep logical line id 2, got %#v", window.Lines)
 	}
 }
 

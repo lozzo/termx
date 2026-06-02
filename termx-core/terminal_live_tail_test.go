@@ -1,6 +1,7 @@
 package termx
 
 import (
+	"reflect"
 	"testing"
 
 	localvterm "github.com/lozzow/termx/termx-vterm/vterm"
@@ -53,5 +54,50 @@ func TestTerminalPrimaryLiveTailSegmentsTrackOriginAndSealState(t *testing.T) {
 	tail.reset()
 	if tail.hasState() {
 		t.Fatalf("expected reset live tail to have no state, got %#v", tail)
+	}
+}
+
+func TestTerminalPrimaryLiveTailLogicalLineRecordsTrackReclaimedAndLiveRows(t *testing.T) {
+	var tail terminalPrimaryLiveTail
+	tail.replaceReclaimedPrefix([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: false},
+	}, 7, 40, 41)
+	tail.replaceLiveRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("cc"), WrappedSet: true, Wrapped: true},
+	}, true)
+
+	window := tail.window(0, tail.rowCount())
+	if got := damageRowsToStrings(window.rows); !reflect.DeepEqual(got, []string{"aa", "bb", "cc"}) {
+		t.Fatalf("expected reclaimed and live rows in window, got %#v", got)
+	}
+	if got := window.logicalLineIDs; !reflect.DeepEqual(got, []uint64{41, 41, 0}) {
+		t.Fatalf("expected reclaimed rows to keep persisted logical line id and live rows to stay anonymous, got %#v", got)
+	}
+
+	records := tail.logicalLineRecords()
+	want := []terminalLiveTailLogicalLineRecord{
+		{id: 41, startRow: 0, endRow: 1, sealState: terminalLiveTailSealed, origin: terminalLiveTailOriginReclaimed},
+		{id: 0, startRow: 2, endRow: 2, sealState: terminalLiveTailOpen, origin: terminalLiveTailOriginLive},
+	}
+	if !reflect.DeepEqual(records, want) {
+		t.Fatalf("unexpected live tail logical line records got %#v want %#v", records, want)
+	}
+}
+
+func TestTerminalPrimaryLiveTailPrefersExplicitReclaimedLogicalLineIDs(t *testing.T) {
+	var tail terminalPrimaryLiveTail
+	tail.replaceReclaimedPrefixWithLogicalLineIDs([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("abcd"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("ef"), WrappedSet: true, Wrapped: false},
+	}, []uint64{99, 99}, 7, 40, 41)
+
+	window := tail.window(0, tail.rowCount())
+	if got := window.logicalLineIDs; !reflect.DeepEqual(got, []uint64{99, 99}) {
+		t.Fatalf("expected explicit reclaimed logical line ids to be preserved, got %#v", got)
+	}
+	records := tail.logicalLineRecords()
+	if len(records) != 1 || records[0].id != 99 || records[0].origin != terminalLiveTailOriginReclaimed || records[0].sealState != terminalLiveTailSealed {
+		t.Fatalf("expected explicit reclaimed id in record view, got %#v", records)
 	}
 }
