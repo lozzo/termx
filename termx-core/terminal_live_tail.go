@@ -17,6 +17,8 @@ const (
 	terminalLiveTailSealed terminalLiveTailSealState = "sealed"
 )
 
+const terminalLiveTailLogicalLineIDBase uint64 = 1 << 63
+
 type terminalLiveTailSegment struct {
 	origin         terminalLiveTailOrigin
 	sealState      terminalLiveTailSealState
@@ -50,6 +52,11 @@ type terminalLiveTailLogicalLineRecord struct {
 	endRow    int
 	sealState terminalLiveTailSealState
 	origin    terminalLiveTailOrigin
+}
+
+type terminalLiveTailRowsWithLogicalLineIDs struct {
+	rows           []vterm.DamageOp
+	logicalLineIDs []uint64
 }
 
 func newTerminalPrimaryLiveTail(rows []vterm.DamageOp, wrapPending bool) terminalPrimaryLiveTail {
@@ -146,31 +153,43 @@ func (tail terminalPrimaryLiveTail) earliestReclaimedRowID() (uint64, bool) {
 }
 
 func (tail terminalPrimaryLiveTail) liveRows() []vterm.DamageOp {
+	return tail.liveRowsWithLogicalLineIDs().rows
+}
+
+func (tail terminalPrimaryLiveTail) liveRowsWithLogicalLineIDs() terminalLiveTailRowsWithLogicalLineIDs {
 	if len(tail.segments) == 0 {
-		return nil
+		return terminalLiveTailRowsWithLogicalLineIDs{}
 	}
 	out := make([]vterm.DamageOp, 0, tail.rowCount())
+	lineIDs := make([]uint64, 0, tail.rowCount())
 	for _, segment := range tail.segments {
 		if segment.origin == terminalLiveTailOriginReclaimed {
 			continue
 		}
 		out = append(out, cloneGridDamageOps(segment.rows)...)
+		lineIDs = append(lineIDs, terminalLiveTailSegmentLogicalLineIDs(segment.logicalLineIDs, segment.rows, segment.origin, segment.firstRowID, segment.lastRowID)...)
 	}
-	return out
+	return terminalLiveTailRowsWithLogicalLineIDs{rows: out, logicalLineIDs: lineIDs}
 }
 
 func (tail terminalPrimaryLiveTail) nonReclaimedRowsForResizePrefix() []vterm.DamageOp {
+	return tail.nonReclaimedRowsForResizePrefixWithLogicalLineIDs().rows
+}
+
+func (tail terminalPrimaryLiveTail) nonReclaimedRowsForResizePrefixWithLogicalLineIDs() terminalLiveTailRowsWithLogicalLineIDs {
 	if len(tail.segments) == 0 {
-		return nil
+		return terminalLiveTailRowsWithLogicalLineIDs{}
 	}
 	out := make([]vterm.DamageOp, 0, tail.rowCount())
+	lineIDs := make([]uint64, 0, tail.rowCount())
 	for _, segment := range tail.segments {
 		if segment.origin == terminalLiveTailOriginReclaimed {
 			continue
 		}
 		out = append(out, cloneGridDamageOps(segment.rows)...)
+		lineIDs = append(lineIDs, terminalLiveTailSegmentLogicalLineIDs(segment.logicalLineIDs, segment.rows, segment.origin, segment.firstRowID, segment.lastRowID)...)
 	}
-	return out
+	return terminalLiveTailRowsWithLogicalLineIDs{rows: out, logicalLineIDs: lineIDs}
 }
 
 func (tail terminalPrimaryLiveTail) hasState() bool {
@@ -204,6 +223,10 @@ func (tail *terminalPrimaryLiveTail) replaceRows(rows []vterm.DamageOp, origin t
 }
 
 func (tail *terminalPrimaryLiveTail) replaceResizeRows(rows []vterm.DamageOp, wrapPending bool) {
+	tail.replaceResizeRowsWithLogicalLineIDs(rows, nil, wrapPending)
+}
+
+func (tail *terminalPrimaryLiveTail) replaceResizeRowsWithLogicalLineIDs(rows []vterm.DamageOp, logicalLineIDs []uint64, wrapPending bool) {
 	if tail == nil {
 		return
 	}
@@ -229,7 +252,7 @@ func (tail *terminalPrimaryLiveTail) replaceResizeRows(rows []vterm.DamageOp, wr
 			origin:         terminalLiveTailOriginResize,
 			sealState:      terminalLiveTailSealStateForRows(rows, wrapPending),
 			rows:           cloneGridDamageOps(rows),
-			logicalLineIDs: terminalLiveTailSegmentFallbackLogicalLineIDs(terminalLiveTailOriginResize, rows, 0, 0),
+			logicalLineIDs: terminalLiveTailSegmentLiveLogicalLineIDs(logicalLineIDs, rows),
 			wrapPending:    wrapPending,
 		})
 	}
@@ -237,6 +260,10 @@ func (tail *terminalPrimaryLiveTail) replaceResizeRows(rows []vterm.DamageOp, wr
 }
 
 func (tail *terminalPrimaryLiveTail) replaceLiveRows(rows []vterm.DamageOp, wrapPending bool) {
+	tail.replaceLiveRowsWithLogicalLineIDs(rows, nil, wrapPending)
+}
+
+func (tail *terminalPrimaryLiveTail) replaceLiveRowsWithLogicalLineIDs(rows []vterm.DamageOp, logicalLineIDs []uint64, wrapPending bool) {
 	if tail == nil {
 		return
 	}
@@ -262,7 +289,7 @@ func (tail *terminalPrimaryLiveTail) replaceLiveRows(rows []vterm.DamageOp, wrap
 			origin:         terminalLiveTailOriginLive,
 			sealState:      terminalLiveTailSealStateForRows(rows, wrapPending),
 			rows:           cloneGridDamageOps(rows),
-			logicalLineIDs: terminalLiveTailSegmentFallbackLogicalLineIDs(terminalLiveTailOriginLive, rows, 0, 0),
+			logicalLineIDs: terminalLiveTailSegmentLiveLogicalLineIDs(logicalLineIDs, rows),
 			wrapPending:    wrapPending,
 		})
 	}
@@ -454,11 +481,61 @@ func terminalLiveTailSegmentLogicalLineIDs(lineIDs []uint64, rows []vterm.Damage
 	if rowCount <= 0 {
 		return nil
 	}
-	aligned := alignGridUint64s(lineIDs, rowCount)
+	aligned := alignLiveTailUint64s(lineIDs, rowCount)
 	if hasNonZeroUint64(aligned) {
 		return aligned
 	}
 	return terminalLiveTailSegmentFallbackLogicalLineIDs(origin, rows, firstRowID, lastRowID)
+}
+
+func terminalLiveTailSegmentLiveLogicalLineIDs(lineIDs []uint64, rows []vterm.DamageOp) []uint64 {
+	rowCount := len(rows)
+	if rowCount <= 0 {
+		return nil
+	}
+	aligned := alignLiveTailUint64s(lineIDs, rowCount)
+	nextID := maxUint64Slice(aligned)
+	if nextID < terminalLiveTailLogicalLineIDBase {
+		nextID = terminalLiveTailLogicalLineIDBase
+	}
+	start := 0
+	for i, row := range rows {
+		if row.WrappedSet && row.Wrapped && i < len(rows)-1 {
+			continue
+		}
+		id := uint64At(aligned, start)
+		if id == 0 {
+			nextID++
+			id = nextID
+		}
+		for rowIndex := start; rowIndex <= i; rowIndex++ {
+			aligned[rowIndex] = id
+		}
+		start = i + 1
+	}
+	return aligned
+}
+
+func maxUint64Slice(values []uint64) uint64 {
+	var maxValue uint64
+	for _, value := range values {
+		if value > maxValue {
+			maxValue = value
+		}
+	}
+	return maxValue
+}
+
+func alignLiveTailUint64s(values []uint64, size int) []uint64 {
+	out := make([]uint64, size)
+	if size <= 0 || len(values) == 0 {
+		return out
+	}
+	if len(values) > size {
+		values = values[:size]
+	}
+	copy(out, values)
+	return out
 }
 
 func terminalLiveTailSegmentFallbackLogicalLineIDs(origin terminalLiveTailOrigin, rows []vterm.DamageOp, firstRowID uint64, lastRowID uint64) []uint64 {

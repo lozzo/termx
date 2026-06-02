@@ -403,6 +403,7 @@ TUI store 至少表达：
 - 已将 core persisted projection 的 row 到 logical line id 映射改为直接来自 logical line record 视图，`reflowTerminalGridRows` 不再根据窗口首 row 自行推断 logical line id。
 - 已将 core persisted viewport/reclaim 的窗口起点扩展改为通过 logical line record 视图定位逻辑行边界，不再使用逐 row wrapped 回退 helper 作为窗口边界来源。
 - 已为 core `mutable live tail` 新增内部 logical line record 视图，覆盖 reclaimed/live segment 的 start/end、seal 状态、origin 与 logical line id；grow resize reclaim 会把 persisted projection 的 row 到 logical line id 映射带入 reclaimed live tail，combined viewport 与 history window 不再把 reclaimed suffix 的 logical line id 清零。当前 live/resize open line 仍保持 id=0，后续需要继续补稳定 live logical line id。
+- 已为 core `mutable live tail` 的 live/resize segment 分配 runtime stable logical line id，并在连续 live tail replacement、wrapped open line、resize hidden live tail 与 latest history window 中保留同一逻辑行 id；reclaimed suffix 继续使用 persisted logical line id。当前 runtime id 与 persisted id 的统一迁移、residency/dirty/generation 记录仍未完整收敛。
 - 已删除或改写 `tuiv2/app` 中旧滚动测试语义：不再保留依赖 snapshot scrollback wrapped、frozen snapshot 本地游标、正常模式本地 pane viewport offset 的 skipped 回归基准。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与非零 logical line boundary id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。
@@ -411,4 +412,4 @@ TUI store 至少表达：
 - 已将 `tuiv2/app` 旧滚动测试基准收敛为 authoritative history window harness：snapshot scrollback wrapped guard、鼠标滚轮本地 snapshot 游标、copy mode page/halfpage/top/exit frozen snapshot、本地 pane viewport scroll up/down 均已删除或改写，不再作为新模型回归基准。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因已经从 TUI 本地历史路径转移到 core 侧历史真相尚未完整显式 logical-line 化：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window；代码侧残留 `snapshot` / `grid.viewport` 入口目前只应作为 legacy 兼容投影接口继续受限保留。
-- 下一步继续 core 显式 logical line store：把 mutable live tail 的 live/open/sealed logical line 分配稳定非零 id，并把 persisted store / mutable live tail / screen projection 三层的记录结构进一步收敛；不回退修补旧 TUI snapshot/grid viewport 滚动路径。
+- 下一步继续 core 显式 logical line store：把 persisted store / mutable live tail / screen projection 三层的 logical line 记录结构进一步收敛，补齐 runtime live id 落盘后的身份迁移、dirty/generation/residency 语义；不回退修补旧 TUI snapshot/grid viewport 滚动路径。

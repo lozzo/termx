@@ -208,6 +208,17 @@ func TestTerminalLatestLiveTailOnlyProjectionDoesNotInventCanonicalMetadata(t *t
 	if viewport.FirstRowID != 0 || viewport.LastRowID != 0 {
 		t.Fatalf("expected no canonical row window for live-tail-only latest viewport, got %d..%d", viewport.FirstRowID, viewport.LastRowID)
 	}
+	coreViewport, err := term.combinedGridViewport(0, 10, 4, term.primaryLiveTail.clone())
+	if err != nil {
+		t.Fatalf("combined viewport: %v", err)
+	}
+	if got := coreViewport.LogicalLineIDs; len(got) != 2 || got[0] < terminalLiveTailLogicalLineIDBase || got[0] != got[1] {
+		t.Fatalf("expected live-tail-only internal viewport rows to share runtime logical line id, got %#v", got)
+	}
+	window := historyWindowFromCoreGridViewport(term.id, 0, coreViewport)
+	if len(window.Lines) != 1 || window.Lines[0].LogicalLineID != coreViewport.LogicalLineIDs[0] {
+		t.Fatalf("expected history window to expose live-tail runtime logical line id, lines=%#v row_ids=%#v", window.Lines, coreViewport.LogicalLineIDs)
+	}
 
 	snapshot := term.Snapshot(0, 10)
 	if snapshot == nil {

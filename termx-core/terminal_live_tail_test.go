@@ -71,17 +71,19 @@ func TestTerminalPrimaryLiveTailLogicalLineRecordsTrackReclaimedAndLiveRows(t *t
 	if got := damageRowsToStrings(window.rows); !reflect.DeepEqual(got, []string{"aa", "bb", "cc"}) {
 		t.Fatalf("expected reclaimed and live rows in window, got %#v", got)
 	}
-	if got := window.logicalLineIDs; !reflect.DeepEqual(got, []uint64{41, 41, 0}) {
-		t.Fatalf("expected reclaimed rows to keep persisted logical line id and live rows to stay anonymous, got %#v", got)
+	if got := window.logicalLineIDs; len(got) != 3 || got[0] != 41 || got[1] != 41 || got[2] < terminalLiveTailLogicalLineIDBase {
+		t.Fatalf("expected reclaimed rows to keep persisted logical line id and live row to get runtime id, got %#v", got)
 	}
 
 	records := tail.logicalLineRecords()
-	want := []terminalLiveTailLogicalLineRecord{
-		{id: 41, startRow: 0, endRow: 1, sealState: terminalLiveTailSealed, origin: terminalLiveTailOriginReclaimed},
-		{id: 0, startRow: 2, endRow: 2, sealState: terminalLiveTailOpen, origin: terminalLiveTailOriginLive},
+	if len(records) != 2 {
+		t.Fatalf("expected two live tail logical line records, got %#v", records)
 	}
-	if !reflect.DeepEqual(records, want) {
-		t.Fatalf("unexpected live tail logical line records got %#v want %#v", records, want)
+	if records[0] != (terminalLiveTailLogicalLineRecord{id: 41, startRow: 0, endRow: 1, sealState: terminalLiveTailSealed, origin: terminalLiveTailOriginReclaimed}) {
+		t.Fatalf("unexpected reclaimed record: %#v", records[0])
+	}
+	if records[1].id != window.logicalLineIDs[2] || records[1].id < terminalLiveTailLogicalLineIDBase || records[1].startRow != 2 || records[1].endRow != 2 || records[1].sealState != terminalLiveTailOpen || records[1].origin != terminalLiveTailOriginLive {
+		t.Fatalf("unexpected live record: %#v", records[1])
 	}
 }
 
@@ -99,5 +101,27 @@ func TestTerminalPrimaryLiveTailPrefersExplicitReclaimedLogicalLineIDs(t *testin
 	records := tail.logicalLineRecords()
 	if len(records) != 1 || records[0].id != 99 || records[0].origin != terminalLiveTailOriginReclaimed || records[0].sealState != terminalLiveTailSealed {
 		t.Fatalf("expected explicit reclaimed id in record view, got %#v", records)
+	}
+}
+
+func TestTerminalPrimaryLiveTailKeepsLiveLogicalLineIDAcrossReplacement(t *testing.T) {
+	var tail terminalPrimaryLiveTail
+	tail.replaceLiveRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: true},
+	}, true)
+	first := tail.window(0, tail.rowCount()).logicalLineIDs
+	if len(first) != 2 || first[0] == 0 || first[0] != first[1] {
+		t.Fatalf("expected initial live wrapped rows to share runtime id, got %#v", first)
+	}
+
+	tail.replaceLiveRowsWithLogicalLineIDs([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: true},
+		{Cells: localVTermCellsFromString("cc"), WrappedSet: true, Wrapped: true},
+	}, []uint64{first[0], first[1], 0}, true)
+	next := tail.window(0, tail.rowCount()).logicalLineIDs
+	if len(next) != 3 || next[0] != first[0] || next[1] != first[0] || next[2] != first[0] {
+		t.Fatalf("expected continued open live line to keep runtime id across replacement, first=%#v next=%#v", first, next)
 	}
 }

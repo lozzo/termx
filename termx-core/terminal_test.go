@@ -2094,6 +2094,10 @@ func TestTerminalWritePathSplitsPersistedAndLiveTailAppendRows(t *testing.T) {
 	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"tail0", "tail1"}) {
 		t.Fatalf("expected trailing live-tail append rows retained in working set, got %#v", got)
 	}
+	window := term.primaryLiveTail.window(0, term.primaryLiveTail.rowCount())
+	if got := window.logicalLineIDs; len(got) != 2 || got[0] < terminalLiveTailLogicalLineIDBase || got[0] != got[1] {
+		t.Fatalf("expected trailing wrapped live-tail rows to share stable runtime logical line id, got %#v", got)
+	}
 }
 
 func TestTerminalLatestProjectionUsesPersistedAndLiveTailAppendRows(t *testing.T) {
