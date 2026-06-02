@@ -113,6 +113,13 @@ func TestTerminalHardNewlineSealsAccumulatedLiveTailOpenLineToPersistedHistory(t
 	if got := term.liveLineMigrations[runtimeLineID]; got != 1 {
 		t.Fatalf("expected runtime live line id %d to migrate to persisted logical line id 1, got %d migrations=%#v", runtimeLineID, got, term.liveLineMigrations)
 	}
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata: %v", err)
+	}
+	if len(lineMetadata.Migrations) != 1 || lineMetadata.Migrations[0].RuntimeID != runtimeLineID || lineMetadata.Migrations[0].PersistedID != 1 {
+		t.Fatalf("expected persisted line migration metadata for runtime id %d, got %#v", runtimeLineID, lineMetadata.Migrations)
+	}
 }
 
 func TestTerminalExactWidthLineHardNewlineSealsToPersistedHistory(t *testing.T) {

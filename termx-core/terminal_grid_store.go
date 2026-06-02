@@ -4,11 +4,13 @@ import (
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +32,7 @@ const (
 	terminalGridRowCodec     = "compact-line-v2"
 	terminalGridIndexCodec   = "fixed20-le-v1"
 	terminalGridMetadataName = "grid.meta.pb"
+	terminalGridLineMetaName = "grid.lines.json"
 	terminalGridIndexName    = "grid.index"
 	terminalGridIndexRecord  = 20
 )
@@ -97,6 +100,15 @@ type terminalGridMetadata struct {
 	UpdatedAtUnix int64
 	BaseRowID     uint64
 	Generation    uint64
+}
+
+type terminalGridLineMetadata struct {
+	Migrations []terminalGridLineMigration `json:"migrations,omitempty"`
+}
+
+type terminalGridLineMigration struct {
+	RuntimeID   uint64 `json:"runtime_id"`
+	PersistedID uint64 `json:"persisted_id"`
 }
 
 func newTerminalGridStore(gridRoot, terminalID string) (*terminalGridStore, error) {
@@ -1574,6 +1586,67 @@ func terminalGridMetadataFromProto(msg *wirepb.TerminalGridMetadata) terminalGri
 		BaseRowID:     msg.GetBaseRowId(),
 		Generation:    msg.GetHistoryGeneration(),
 	}
+}
+
+func readTerminalGridLineMetadata(dir string) (terminalGridLineMetadata, error) {
+	data, err := os.ReadFile(filepath.Join(dir, terminalGridLineMetaName))
+	if err != nil {
+		return terminalGridLineMetadata{}, err
+	}
+	var metadata terminalGridLineMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return terminalGridLineMetadata{}, err
+	}
+	return metadata, nil
+}
+
+func writeTerminalGridLineMetadata(dir string, metadata terminalGridLineMetadata) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	sort.Slice(metadata.Migrations, func(i, j int) bool {
+		return metadata.Migrations[i].RuntimeID < metadata.Migrations[j].RuntimeID
+	})
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(filepath.Join(dir, terminalGridLineMetaName), data, 0o600)
+}
+
+func (s *terminalGridStore) recordLineMigrations(migrations map[uint64]uint64) error {
+	if s == nil || len(migrations) == 0 || strings.TrimSpace(s.dir) == "" {
+		return nil
+	}
+	s.mu.Lock()
+	dir := s.dir
+	s.mu.Unlock()
+	metadata, err := readTerminalGridLineMetadata(dir)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	merged := make(map[uint64]uint64, len(metadata.Migrations)+len(migrations))
+	for _, migration := range metadata.Migrations {
+		if migration.RuntimeID == 0 || migration.PersistedID == 0 {
+			continue
+		}
+		merged[migration.RuntimeID] = migration.PersistedID
+	}
+	for runtimeID, persistedID := range migrations {
+		if runtimeID == 0 || persistedID == 0 {
+			continue
+		}
+		merged[runtimeID] = persistedID
+	}
+	metadata.Migrations = metadata.Migrations[:0]
+	for runtimeID, persistedID := range merged {
+		metadata.Migrations = append(metadata.Migrations, terminalGridLineMigration{
+			RuntimeID:   runtimeID,
+			PersistedID: persistedID,
+		})
+	}
+	return writeTerminalGridLineMetadata(dir, metadata)
 }
 
 func terminalGridHistoryGeneration(createdAtUnix int64) uint64 {

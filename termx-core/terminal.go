@@ -2095,6 +2095,11 @@ func (t *Terminal) recordLiveTailLineMigrationsLocked(rows []vterm.DamageOp, run
 		}
 		start = i + 1
 	}
+	if len(t.liveLineMigrations) > 0 {
+		if err := t.grid.recordLineMigrations(t.liveLineMigrations); err != nil && t.logger != nil {
+			t.logger.Warn("termx terminal grid line metadata write failed", "terminal_id", t.id, "error", err)
+		}
+	}
 }
 
 func (t *Terminal) currentWrapPendingLocked() bool {
