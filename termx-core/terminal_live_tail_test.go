@@ -90,6 +90,27 @@ func TestTerminalPrimaryLiveTailLogicalLineRecordsTrackReclaimedAndLiveRows(t *t
 	}
 }
 
+func TestTerminalPrimaryLiveTailReclaimedZeroCoordinatesRequirePersistedIDs(t *testing.T) {
+	var tail terminalPrimaryLiveTail
+	tail.replaceRows([]localvterm.DamageOp{{
+		Cells:      localVTermCellsFromString("aa"),
+		WrappedSet: true,
+		Wrapped:    false,
+	}}, terminalLiveTailOriginReclaimed, false)
+
+	records := tail.logicalLineRecords()
+	if len(records) != 1 {
+		t.Fatalf("expected one reclaimed record, got %#v", records)
+	}
+	if records[0].rowIDKnown || records[0].firstRowID != 0 || records[0].lastRowID != 0 {
+		t.Fatalf("expected zero row coordinates without persisted ids to stay unknown, got %#v", records[0])
+	}
+	metas := terminalGridLineRecordMetasFromLiveTailRecords(records)
+	if len(metas) != 1 || metas[0].RowIDKnown || metas[0].FirstRowID != 0 || metas[0].LastRowID != 0 {
+		t.Fatalf("expected metadata to omit unknown reclaimed row ids, got %#v", metas)
+	}
+}
+
 func TestTerminalGridLineRecordMetasOnlyWriteReclaimedRowIDs(t *testing.T) {
 	records := []terminalLiveTailLogicalLineRecord{
 		{

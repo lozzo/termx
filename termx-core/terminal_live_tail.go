@@ -631,7 +631,19 @@ func terminalLiveTailSegmentRowIDWindow(segment terminalLiveTailSegment, localSt
 }
 
 func terminalLiveTailReclaimedSegmentHasRowIDs(segment terminalLiveTailSegment) bool {
-	return segment.origin == terminalLiveTailOriginReclaimed && len(segment.rows) > 0 && segment.lastRowID >= segment.firstRowID && int(segment.lastRowID-segment.firstRowID)+1 == len(segment.rows)
+	if segment.origin != terminalLiveTailOriginReclaimed || len(segment.rows) == 0 || segment.lastRowID < segment.firstRowID || int(segment.lastRowID-segment.firstRowID)+1 != len(segment.rows) {
+		return false
+	}
+	lineIDs := terminalLiveTailSegmentLogicalLineIDs(segment.logicalLineIDs, segment.rows, segment.origin, segment.firstRowID, segment.lastRowID)
+	if len(lineIDs) != len(segment.rows) {
+		return false
+	}
+	for _, id := range lineIDs {
+		if !terminalPersistedLogicalLineID(id) {
+			return false
+		}
+	}
+	return true
 }
 
 func (tail *terminalPrimaryLiveTail) setWrapPending(wrapPending bool) {
