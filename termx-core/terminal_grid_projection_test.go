@@ -428,6 +428,32 @@ func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T)
 	}
 }
 
+func TestTerminalGridProjectionRejectsDuplicatePersistedLineMetadataIDs(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("aa"), wrapped: false},
+		{cells: localVTermCellsFromString("bb"), wrapped: false},
+	}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{Records: []terminalGridLineRecordMeta{
+		{ID: 77, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 77, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+	}}); err != nil {
+		t.Fatalf("write line metadata: %v", err)
+	}
+
+	viewport, err := store.Viewport(0, 10, 10)
+	if err != nil {
+		t.Fatalf("viewport: %v", err)
+	}
+	if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{1, 2}) {
+		t.Fatalf("expected duplicate metadata ids to fall back to distinct persisted ids, got %#v", got)
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -486,6 +512,31 @@ func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
 				t.Fatalf("expected corrupt live tail metadata %q to be ignored", tc.name)
 			}
 		})
+	}
+}
+
+func TestTerminalGridRecoveredLiveTailRejectsDuplicateRecordIDs(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	rows, err := terminalGridLineRowMetasFromDamageRows([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("aa"), WrappedSet: true, Wrapped: false},
+		{Cells: localVTermCellsFromString("bb"), WrappedSet: true, Wrapped: false},
+	})
+	if err != nil {
+		t.Fatalf("encode live row metadata: %v", err)
+	}
+	runtimeID := terminalLiveTailLogicalLineIDBase + 1
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
+		LiveRecords: []terminalGridLineRecordMeta{
+			{ID: runtimeID, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginLive, Residency: terminalLogicalLineResidencyLiveTail, Dirty: true},
+			{ID: runtimeID, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginLive, Residency: terminalLogicalLineResidencyLiveTail, Dirty: true},
+		},
+		LiveRows: rows,
+	}); err != nil {
+		t.Fatalf("write live tail metadata: %v", err)
+	}
+	if _, ok := store.recoveredLiveTailFromMetadata(); ok {
+		t.Fatal("expected duplicate live tail record ids to be rejected")
 	}
 }
 

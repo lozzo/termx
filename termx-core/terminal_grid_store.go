@@ -1215,10 +1215,15 @@ func terminalGridCompletePersistedLogicalLineRecords(records []terminalGridLogic
 	}
 	out := make([]terminalGridLogicalLineRecord, 0, len(records))
 	nextStart := 0
+	seenIDs := make(map[uint64]struct{}, len(records))
 	for _, record := range records {
 		if !terminalPersistedLogicalLineID(record.id) || record.residency != terminalLogicalLineResidencyPersisted || record.dirty || record.origin != terminalLiveTailOriginReclaimed || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
 			return nil, false
 		}
+		if _, exists := seenIDs[record.id]; exists {
+			return nil, false
+		}
+		seenIDs[record.id] = struct{}{}
 		if record.generation != 0 && generation != 0 && record.generation != generation {
 			return nil, false
 		}
@@ -1240,10 +1245,15 @@ func terminalGridSealedPersistedLogicalLineRecordPrefix(records []terminalGridLo
 	}
 	out := make([]terminalGridLogicalLineRecord, 0, len(records))
 	nextStart := 0
+	seenIDs := make(map[uint64]struct{}, len(records))
 	for _, record := range records {
 		if !terminalPersistedLogicalLineID(record.id) || record.residency != terminalLogicalLineResidencyPersisted || record.dirty || record.origin != terminalLiveTailOriginReclaimed || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
 			return nil
 		}
+		if _, exists := seenIDs[record.id]; exists {
+			return nil
+		}
+		seenIDs[record.id] = struct{}{}
 		if record.generation != 0 && generation != 0 && record.generation != generation {
 			return nil
 		}
@@ -1560,10 +1570,15 @@ func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogica
 	}
 	out := make([]terminalGridLogicalLineRecord, 0, len(records))
 	nextStart := 0
+	seenIDs := make(map[uint64]struct{}, len(records))
 	for _, record := range records {
 		if record.id == 0 || record.residency != terminalLogicalLineResidencyLiveTail || !terminalLiveTailOriginKnown(record.origin) || record.dirty != terminalLiveTailOriginDirty(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
 			return nil, false
 		}
+		if _, exists := seenIDs[record.id]; exists {
+			return nil, false
+		}
+		seenIDs[record.id] = struct{}{}
 		if !terminalLiveTailRecordIDMatchesOrigin(record.id, record.origin) {
 			return nil, false
 		}
