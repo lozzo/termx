@@ -45,6 +45,25 @@ func TestTerminalGridProjectionReflowsLogicalLinesAtRequestedWidth(t *testing.T)
 	}
 }
 
+func TestTerminalGridProjectionUsesLogicalLineRecordIDs(t *testing.T) {
+	rows := []terminalGridRow{
+		{cells: localVTermCellsFromString("abcd"), rowKind: "line0", wrapped: true},
+		{cells: localVTermCellsFromString("ef"), rowKind: "line0", wrapped: false},
+		{cells: localVTermCellsFromString("gh"), rowKind: "line1", wrapped: false},
+	}
+	records := []terminalGridLogicalLineRecord{
+		{id: 101, startRow: 0, endRow: 1, sealed: true, origin: terminalLiveTailOriginReclaimed},
+		{id: 103, startRow: 2, endRow: 2, sealed: true, origin: terminalLiveTailOriginReclaimed},
+	}
+	projected, _, _, _, lineIDs := reflowTerminalGridRows(rows, 3, records)
+	if got := vtermRowsToStrings(projected); !reflect.DeepEqual(got, []string{"abc", "def", "gh"}) {
+		t.Fatalf("expected narrow projection rows, got %#v", got)
+	}
+	if !reflect.DeepEqual(lineIDs, []uint64{101, 101, 103}) {
+		t.Fatalf("expected projection line ids from logical line records, got %#v", lineIDs)
+	}
+}
+
 func TestServerHistoryWindowLogicalLineIDsStayStableAcrossProjectionWidths(t *testing.T) {
 	root := t.TempDir()
 	store, err := newTerminalGridStore(root, "projection-stable-line-id")
