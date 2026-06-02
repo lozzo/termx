@@ -399,6 +399,7 @@ TUI store 至少表达：
 - 已将 `tuiv2/app` 测试用 snapshot window fixture 从 copy mode helper 中剥离为 legacy protocol snapshot window fixture，并改写重启端到端测试中的兼容 snapshot 文案，避免把 legacy snapshot 误读为新的 TUI history truth。
 - 已将 `tuiv2/runtime` 测试 fake 的 `GridViewport` 改为返回空结果，并删除未使用的 runtime grid viewport trace helper；TUI 测试层不再提供 grid viewport 历史数据占位。
 - 已将 core authoritative `history.window` 从 legacy protocol `grid.viewport` 派生路径改为直接消费内部 grid viewport，并让 persisted store projection 为每条投影 row 携带非零 logical line boundary id；`HistoryLineSpan.LogicalLineID` 不再由当前窗口内 visual row 下标推断。
+- 已在 core persisted history store 中新增内部 logical line record 视图，表达非零 logical line boundary id、start/end committed row、sealed 状态与 persisted origin；`LogicalLineCount` 与 logical-line retention 已开始消费该 record 视图。
 - 已删除或改写 `tuiv2/app` 中旧滚动测试语义：不再保留依赖 snapshot scrollback wrapped、frozen snapshot 本地游标、正常模式本地 pane viewport offset 的 skipped 回归基准。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与非零 logical line boundary id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。

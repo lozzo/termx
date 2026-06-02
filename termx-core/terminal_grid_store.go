@@ -67,6 +67,14 @@ type terminalGridRowRef struct {
 
 const terminalGridRowFlagWrapped uint32 = 1 << 0
 
+type terminalGridLogicalLineRecord struct {
+	id       uint64
+	startRow int
+	endRow   int
+	sealed   bool
+	origin   terminalLiveTailOrigin
+}
+
 type terminalGridMetadata struct {
 	StoreVersion  int
 	TerminalID    string
@@ -404,7 +412,7 @@ func (s *terminalGridStore) LogicalLineCount() int {
 	if err != nil {
 		return 0
 	}
-	return terminalGridLogicalLineCountForRefs(refs)
+	return len(terminalGridLogicalLineRecordsForRefs(refs, 0))
 }
 
 func (s *terminalGridStore) coordinatesLocked() (baseRowID uint64, generation uint64, rowCount int) {
@@ -1029,21 +1037,14 @@ func terminalGridRetentionRowsForLogicalLineLimit(refs []terminalGridRowRef, log
 	if logicalLines <= 0 || len(refs) == 0 {
 		return 0
 	}
-	retainedLines := 0
-	for end := len(refs) - 1; end >= 0; {
-		start := end
-		for start > 0 && terminalGridRowContinuesLogicalLine(refs[start-1]) {
-			start--
-		}
-		if !terminalGridRowContinuesLogicalLine(refs[end]) || end == len(refs)-1 {
-			retainedLines++
-		}
-		if retainedLines >= logicalLines {
-			return len(refs) - start
-		}
-		end = start - 1
+	records := terminalGridLogicalLineRecordsForRefs(refs, 0)
+	if len(records) == 0 {
+		return 0
 	}
-	return len(refs)
+	if len(records) <= logicalLines {
+		return len(refs)
+	}
+	return len(refs) - records[len(records)-logicalLines].startRow
 }
 
 func terminalGridRetentionRowsForByteLimit(refs []terminalGridRowRef, maxBytes int64) int {
@@ -1090,17 +1091,25 @@ func terminalGridRetentionRowsForAgeLimit(dir string, refs []terminalGridRowRef,
 	return len(refs) - retainStart, nil
 }
 
-func terminalGridLogicalLineCountForRefs(refs []terminalGridRowRef) int {
+func terminalGridLogicalLineRecordsForRefs(refs []terminalGridRowRef, baseRowID uint64) []terminalGridLogicalLineRecord {
 	if len(refs) == 0 {
-		return 0
+		return nil
 	}
-	count := 0
+	records := make([]terminalGridLogicalLineRecord, 0, len(refs))
+	start := 0
 	for i, ref := range refs {
 		if !terminalGridRowContinuesLogicalLine(ref) || i == len(refs)-1 {
-			count++
+			records = append(records, terminalGridLogicalLineRecord{
+				id:       persistedLogicalLineIDFromRowID(baseRowID + uint64(start)),
+				startRow: start,
+				endRow:   i,
+				sealed:   !terminalGridRowContinuesLogicalLine(ref),
+				origin:   terminalLiveTailOriginReclaimed,
+			})
+			start = i + 1
 		}
 	}
-	return count
+	return records
 }
 
 func readTerminalGridRows(dir string, refs []terminalGridRowRef) ([]terminalGridRow, error) {

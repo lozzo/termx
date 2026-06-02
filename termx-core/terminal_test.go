@@ -1207,6 +1207,24 @@ func TestTerminalGridStoreRetentionCountsLogicalLinesAcrossWrappedRows(t *testin
 	}
 }
 
+func TestTerminalGridLogicalLineRecordsExposePersistedBoundaries(t *testing.T) {
+	refs := []terminalGridRowRef{
+		{flags: terminalGridRowFlagWrapped},
+		{},
+		{},
+		{flags: terminalGridRowFlagWrapped},
+	}
+	records := terminalGridLogicalLineRecordsForRefs(refs, 40)
+	want := []terminalGridLogicalLineRecord{
+		{id: 41, startRow: 0, endRow: 1, sealed: true, origin: terminalLiveTailOriginReclaimed},
+		{id: 43, startRow: 2, endRow: 2, sealed: true, origin: terminalLiveTailOriginReclaimed},
+		{id: 44, startRow: 3, endRow: 3, sealed: false, origin: terminalLiveTailOriginReclaimed},
+	}
+	if !reflect.DeepEqual(records, want) {
+		t.Fatalf("unexpected logical line records got %#v want %#v", records, want)
+	}
+}
+
 func TestTerminalGridStoreRetentionCountsTrailingWrappedPrefixAsLogicalLine(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
