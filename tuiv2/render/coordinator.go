@@ -412,18 +412,12 @@ func renderCopyModesSignature(copyModes []RenderCopyModeVM) string {
 			strconv.Itoa(copyMode.CursorCol),
 			strconv.Itoa(copyMode.CursorLogicalLine),
 			strconv.Itoa(copyMode.CursorLogicalCol),
-			strconv.FormatUint(copyMode.CursorGeneration, 10),
-			strconv.FormatUint(copyMode.CursorRowID, 10),
-			strconv.FormatBool(copyMode.CursorRefValid),
 			strconv.Itoa(copyMode.ViewTopRow),
 			strconv.FormatBool(copyMode.MarkSet),
 			strconv.Itoa(copyMode.MarkRow),
 			strconv.Itoa(copyMode.MarkCol),
 			strconv.Itoa(copyMode.MarkLogicalLine),
 			strconv.Itoa(copyMode.MarkLogicalCol),
-			strconv.FormatUint(copyMode.MarkGeneration, 10),
-			strconv.FormatUint(copyMode.MarkRowID, 10),
-			strconv.FormatBool(copyMode.MarkRefValid),
 			strconv.FormatUint(uint64(copyModeSnapshotKey(copyMode.Snapshot)), 16),
 		}, "\x1e"))
 	}

@@ -58,12 +58,10 @@ func (m *Model) startMouseCopySelection(screenX, screenY int) bool {
 		return false
 	}
 	m.copyMode.Cursor = point
-	m.copyMode.CursorRowRef = buffer.pointRowRef(point)
 	if logical, ok := buffer.logicalPosForPoint(point); ok {
 		m.copyMode.CursorLogical = logical
 	}
 	m.copyMode.Mark = &copyModePoint{Row: point.Row, Col: point.Col}
-	m.copyMode.MarkRowRef = buffer.pointRowRef(point)
 	if logical, ok := buffer.logicalPosForPoint(point); ok {
 		m.copyMode.MarkLogical = &logical
 	}
@@ -98,7 +96,6 @@ func (m *Model) updateMouseCopySelection(screenX, screenY int) tea.Cmd {
 	point, pointOK := m.copyModePointAtMouse(screenX, screenY)
 	if pointOK {
 		m.copyMode.Cursor = point
-		m.copyMode.CursorRowRef = buffer.pointRowRef(point)
 		if logical, ok := buffer.logicalPosForPoint(point); ok {
 			m.copyMode.CursorLogical = logical
 		}
@@ -144,7 +141,6 @@ func (m *Model) handleCopyModeAutoScroll(seq uint64) tea.Cmd {
 		return nil
 	}
 	m.copyMode.Cursor = next
-	m.copyMode.CursorRowRef = buffer.pointRowRef(next)
 	if logical, ok := buffer.logicalPosForPoint(next); ok {
 		m.copyMode.CursorLogical = logical
 	}

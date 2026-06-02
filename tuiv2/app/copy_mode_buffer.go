@@ -319,83 +319,6 @@ func (b copyModeBuffer) clampPoint(point copyModePoint) copyModePoint {
 	return point
 }
 
-func (b copyModeBuffer) rowRef(row int) copyModeRowRef {
-	if b.snapshot == nil || row < 0 || row >= b.totalRows() {
-		return copyModeRowRef{}
-	}
-	if row >= len(b.snapshot.Scrollback) || !hasCanonicalHistoryWindow(b.snapshot) {
-		return copyModeRowRef{}
-	}
-	if !protocol.RowOwnershipIsCommitted(stringAt(b.snapshot.ScrollbackOwnership, row)) {
-		return copyModeRowRef{}
-	}
-	committedOrdinal := b.materializedCommittedScrollbackStart() + protocol.CountCommittedRowOwnershipRange(b.snapshot.ScrollbackOwnership, 0, row)
-	if committedOrdinal < 0 {
-		return copyModeRowRef{}
-	}
-	rowID := b.snapshot.ScrollbackFirstRowID + uint64(committedOrdinal)
-	if rowID > b.snapshot.ScrollbackLastRowID {
-		return copyModeRowRef{}
-	}
-	return copyModeRowRef{
-		Generation: b.snapshot.HistoryGeneration,
-		RowID:      rowID,
-		Valid:      true,
-	}
-}
-
-func (b copyModeBuffer) pointRowRef(point copyModePoint) copyModeRowRef {
-	return b.rowRef(b.clampPoint(point).Row)
-}
-
-func (b copyModeBuffer) rowForRef(ref copyModeRowRef) (int, bool) {
-	if b.snapshot == nil || !ref.Valid || !hasCanonicalHistoryWindow(b.snapshot) || ref.Generation != b.snapshot.HistoryGeneration {
-		return 0, false
-	}
-	if ref.RowID < b.snapshot.ScrollbackFirstRowID || ref.RowID > b.snapshot.ScrollbackLastRowID {
-		return 0, false
-	}
-	ordinal := int(ref.RowID - b.snapshot.ScrollbackFirstRowID)
-	materializedOrdinal := ordinal - b.materializedCommittedScrollbackStart()
-	if materializedOrdinal < 0 {
-		return 0, false
-	}
-	seenCommitted := 0
-	for row := 0; row < len(b.snapshot.Scrollback); row++ {
-		if !protocol.RowOwnershipIsCommitted(stringAt(b.snapshot.ScrollbackOwnership, row)) {
-			continue
-		}
-		if seenCommitted == materializedOrdinal {
-			return row, true
-		}
-		seenCommitted++
-	}
-	return 0, false
-}
-
-func (b copyModeBuffer) materializedCommittedScrollbackStart() int {
-	if b.snapshot == nil {
-		return 0
-	}
-	loadedCommittedRows := protocol.CountCommittedRowOwnership(b.snapshot.ScrollbackOwnership, len(b.snapshot.Scrollback))
-	materializedCommittedRows := protocol.CountCommittedRowOwnership(b.snapshot.ScrollbackOwnership, len(b.snapshot.Scrollback))
-	if loadedCommittedRows <= 0 || materializedCommittedRows <= 0 {
-		return 0
-	}
-	start := loadedCommittedRows - materializedCommittedRows - b.snapshot.ScrollbackOffset
-	if start < 0 {
-		start = 0
-	}
-	maxStart := loadedCommittedRows - materializedCommittedRows
-	if maxStart < 0 {
-		maxStart = 0
-	}
-	if start > maxStart {
-		start = maxStart
-	}
-	return start
-}
-
 func boolAt(values []bool, index int) bool {
 	return index >= 0 && index < len(values) && values[index]
 }
@@ -560,7 +483,6 @@ func (m *Model) setCopyCursorLogicalPos(pos copyModeLogicalPos) tea.Cmd {
 	}
 	m.copyMode.CursorLogical = pos
 	m.copyMode.Cursor = next
-	m.copyMode.CursorRowRef = buffer.pointRowRef(next)
 	m.syncCopyModeViewport(buffer, next)
 	m.saveCurrentCopyModeState()
 	m.render.Invalidate()
@@ -611,7 +533,6 @@ func (m *Model) moveCopyCursorLogicalLines(delta int) tea.Cmd {
 	}
 	m.copyMode.CursorLogical = target
 	m.copyMode.Cursor = buffer.clampPoint(point)
-	m.copyMode.CursorRowRef = buffer.pointRowRef(m.copyMode.Cursor)
 	m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
 	if gridtrace.Enabled() {
 		gridtrace.Log(
@@ -664,7 +585,6 @@ func (m *Model) jumpCopyCursorLogicalLine(line int) tea.Cmd {
 	}
 	m.copyMode.CursorLogical = target
 	m.copyMode.Cursor = buffer.clampPoint(point)
-	m.copyMode.CursorRowRef = buffer.pointRowRef(m.copyMode.Cursor)
 	m.syncCopyModeViewport(buffer, m.copyMode.Cursor)
 	m.saveCurrentCopyModeState()
 	m.render.Invalidate()

@@ -19,7 +19,6 @@ func (m *Model) beginCopySelection() {
 	}
 	point := m.copyMode.Cursor
 	m.copyMode.Mark = &copyModePoint{Row: point.Row, Col: point.Col}
-	m.copyMode.MarkRowRef = buffer.pointRowRef(point)
 	if logical, ok := buffer.logicalPosForPoint(point); ok {
 		m.copyMode.MarkLogical = &logical
 	}
