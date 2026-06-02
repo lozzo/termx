@@ -325,35 +325,22 @@ func TestRenderFrameContainsPaneBorder(t *testing.T) {
 func TestRenderFrameShowsCopyModeRowTimestampInPaneChrome(t *testing.T) {
 	state := makeTestState()
 	ts := time.Date(2026, 4, 7, 12, 34, 56, 0, time.UTC)
-	snapshot := &protocol.Snapshot{
-		TerminalID:           "term-1",
-		Size:                 protocol.Size{Cols: 80, Rows: 2},
-		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}}}),
-		ScrollbackTimestamps: []time.Time{ts},
-		Screen:               protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}}},
-		ScreenTimestamps:     []time.Time{ts.Add(time.Second)},
-		Cursor:               protocol.CursorState{Row: 0, Col: 0, Visible: true},
-		Modes:                protocol.TerminalModes{AutoWrap: true},
-		Timestamp:            ts.Add(2 * time.Second),
-	}
-	state.Runtime = &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{{
-		TerminalID: "term-1",
-		Name:       "demo",
-		State:      "running",
-		Snapshot:   snapshot,
-	}}}
+	projection := testCopyModeProjection("term-1", []string{"old", "new"})
+	projection.Rows[0].Timestamp = ts
+	projection.Rows[1].Timestamp = ts.Add(time.Second)
 	state = WithCopyMode(state, RenderCopyModeVM{
 		PaneID:            "pane-1",
 		CursorLogicalLine: 0,
 		CursorLogicalCol:  0,
 		ViewTopRow:        0,
+		Projection:        projection,
 	})
 
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
-	if !strings.Contains(frame, copyModeTimestampLabel(snapshot, 0)) {
+	if !strings.Contains(frame, formatSnapshotRowTimestamp(ts)) {
 		t.Fatalf("expected copy mode timestamp in pane chrome:\n%s", frame)
 	}
-	if !strings.Contains(frame, copyModeRowPositionLabel(snapshot, 0, 0)) {
+	if !strings.Contains(frame, "1/2") {
 		t.Fatalf("expected copy mode row position in pane chrome:\n%s", frame)
 	}
 }
@@ -361,88 +348,97 @@ func TestRenderFrameShowsCopyModeRowTimestampInPaneChrome(t *testing.T) {
 func TestRenderFrameShowsCopyModeTimestampForBlankRow(t *testing.T) {
 	state := makeTestState()
 	ts := time.Date(2026, 4, 7, 12, 34, 56, 0, time.UTC)
-	snapshot := &protocol.Snapshot{
-		TerminalID:           "term-1",
-		Size:                 protocol.Size{Cols: 80, Rows: 1},
-		Scrollback:           protocol.CompactRowsFromCells([][]protocol.Cell{{}}),
-		ScrollbackTimestamps: []time.Time{ts},
-		Screen:               protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "x", Width: 1}}}},
-		ScreenTimestamps:     []time.Time{ts.Add(time.Second)},
-		Cursor:               protocol.CursorState{Row: 0, Col: 0, Visible: true},
-		Modes:                protocol.TerminalModes{AutoWrap: true},
-		Timestamp:            ts.Add(2 * time.Second),
-	}
-	state.Runtime = &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{{
-		TerminalID: "term-1",
-		Name:       "demo",
-		State:      "running",
-		Snapshot:   snapshot,
-	}}}
+	projection := testCopyModeProjection("term-1", []string{""})
+	projection.Rows[0].Timestamp = ts
 	state = WithCopyMode(state, RenderCopyModeVM{
 		PaneID:            "pane-1",
 		CursorLogicalLine: 0,
 		CursorLogicalCol:  0,
 		ViewTopRow:        0,
+		Projection:        projection,
 	})
 
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
-	if !strings.Contains(frame, copyModeTimestampLabel(snapshot, 0)) {
+	if !strings.Contains(frame, formatSnapshotRowTimestamp(ts)) {
 		t.Fatalf("expected blank row timestamp in pane chrome:\n%s", frame)
 	}
 }
 
 func TestClampCopyPointSkipsWideContinuationCells(t *testing.T) {
-	snapshot := &protocol.Snapshot{
-		Size: protocol.Size{Cols: 2, Rows: 1},
-		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{
-			{Content: "界", Width: 2},
-			{Content: "", Width: 0},
-		}}},
+	copyMode := RenderCopyModeVM{
+		Projection: &RenderCopyModeProjectionVM{
+			Size: protocol.Size{Cols: 2, Rows: 1},
+			Rows: []RenderCopyModeProjectionRowVM{{Cells: []protocol.Cell{
+				{Content: "界", Width: 2},
+				{Content: "", Width: 0},
+			}}},
+		},
 	}
 
-	row, col := clampCopyPoint(snapshot, 0, 1)
+	row, col := clampCopyPointForMode(copyMode, 0, 1)
 	if row != 0 || col != 0 {
 		t.Fatalf("expected continuation column to clamp back to lead cell, got row=%d col=%d", row, col)
 	}
 }
 
-func TestSnapshotPointForLogicalPosProjectsAcrossWrappedRows(t *testing.T) {
-	snapshot := &protocol.Snapshot{
-		Size:       protocol.Size{Cols: 3, Rows: 2},
-		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{
-			{{Content: "a", Width: 1}, {Content: "b", Width: 1}, {Content: "c", Width: 1}},
-			{{Content: "d", Width: 1}, {Content: "e", Width: 1}, {Content: "f", Width: 1}},
-			{{Content: "g", Width: 1}},
-		}),
-		ScrollbackWrapped: []bool{true, false, false},
+func TestCopyModePointForLogicalPosProjectsAcrossProjectionLineSpans(t *testing.T) {
+	copyMode := RenderCopyModeVM{
+		Projection: &RenderCopyModeProjectionVM{
+			Size: protocol.Size{Cols: 3, Rows: 2},
+			Rows: []RenderCopyModeProjectionRowVM{
+				{Cells: protocolRowFromText("abc"), Wrapped: true},
+				{Cells: protocolRowFromText("def")},
+				{Cells: protocolRowFromText("g")},
+			},
+			Lines: []RenderCopyModeProjectionLineVM{
+				{StartRow: 0, EndRow: 1, LogicalLineID: 10},
+				{StartRow: 2, EndRow: 2, LogicalLineID: 11},
+			},
+		},
 	}
 
-	row, col, ok := snapshotPointForLogicalPos(snapshot, 0, 4)
+	row, col, ok := copyModePointForLogicalPos(copyMode, 0, 4)
 	if !ok || row != 1 || col != 1 {
 		t.Fatalf("expected logical offset 4 to project to row=1 col=1, got row=%d col=%d ok=%v", row, col, ok)
 	}
-	row, col, ok = snapshotPointForLogicalPos(snapshot, 1, 0)
+	row, col, ok = copyModePointForLogicalPos(copyMode, 1, 0)
 	if !ok || row != 2 || col != 0 {
 		t.Fatalf("expected second logical line to project to row=2 col=0, got row=%d col=%d ok=%v", row, col, ok)
 	}
 }
 
-func TestScrollOffsetForViewportTopKeepsScrollbackVisible(t *testing.T) {
-	snapshot := &protocol.Snapshot{
-		Size:       protocol.Size{Cols: 8, Rows: 2},
-		Scrollback: protocol.CompactRowsFromCells([][]protocol.Cell{{{Content: "a", Width: 1}}, {{Content: "b", Width: 1}}, {{Content: "c", Width: 1}}}),
-		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
-			{{Content: "d", Width: 1}},
-			{{Content: "e", Width: 1}},
-		}},
+func TestScrollOffsetForCopyModeProjectionUsesViewTop(t *testing.T) {
+	copyMode := RenderCopyModeVM{
+		Projection: testCopyModeProjection("term-1", []string{"a", "b", "c", "d", "e"}),
 	}
 
-	if got := scrollOffsetForViewportTop(snapshot, 2, 1); got != 2 {
-		t.Fatalf("expected viewport in scrollback to keep offset 2, got %d", got)
+	if got := scrollOffsetForCopyMode(copyMode, 2, 1); got != 2 {
+		t.Fatalf("expected projection view top to keep offset 2, got %d", got)
 	}
-	if got := scrollOffsetForViewportTop(snapshot, 2, 99); got != 0 {
+	if got := scrollOffsetForCopyMode(copyMode, 2, 99); got != 0 {
 		t.Fatalf("expected out-of-range view top to clamp to live tail, got %d", got)
 	}
+}
+
+func testCopyModeProjection(terminalID string, rows []string) *RenderCopyModeProjectionVM {
+	projection := &RenderCopyModeProjectionVM{
+		TerminalID: terminalID,
+		Token:      "token-test",
+		Size:       protocol.Size{Cols: 80, Rows: uint16(maxInt(1, len(rows)))},
+		Rows:       make([]RenderCopyModeProjectionRowVM, 0, len(rows)),
+		Lines:      make([]RenderCopyModeProjectionLineVM, 0, len(rows)),
+		TotalRows:  len(rows),
+		TotalLines: len(rows),
+	}
+	for index, text := range rows {
+		projection.Rows = append(projection.Rows, RenderCopyModeProjectionRowVM{Cells: protocolRowFromText(text)})
+		projection.Lines = append(projection.Lines, RenderCopyModeProjectionLineVM{
+			StartRow:      index,
+			EndRow:        index,
+			LogicalLineID: uint64(index + 1),
+		})
+	}
+	return projection
 }
 
 func TestApplyScrollbackOffsetProjectsWindowIntoScreenCells(t *testing.T) {

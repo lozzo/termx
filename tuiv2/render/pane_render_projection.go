@@ -183,18 +183,14 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		surface = nil
 		surfaceVersion = 0
 	}
-	if copyModeActive && copyMode.Projection != nil {
+	if copyModeActive {
 		snapshot = nil
-		surface = nil
-		surfaceVersion = 0
-	} else if copyModeActive && copyMode.Snapshot != nil {
-		snapshot = copyMode.Snapshot
 		surface = nil
 		surfaceVersion = 0
 	}
 	if copyModeActive {
-		border.CopyTimeLabel = copyModeTimestampLabelForVM(copyMode, snapshot, copyMode.CursorRow)
-		border.CopyRowLabel = copyModeRowPositionLabelForVM(copyMode, snapshot, copyMode.CursorLogicalLine, copyMode.CursorRow)
+		border.CopyTimeLabel = copyModeTimestampLabelForVM(copyMode, copyMode.CursorRow)
+		border.CopyRowLabel = copyModeRowPositionLabelForVM(copyMode, copyMode.CursorLogicalLine, copyMode.CursorRow)
 	}
 	contentRect := rect
 	if !frameless {
@@ -203,20 +199,18 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	renderOffset := lookup.paneViewportOffset(pane.ID, legacyScrollOffset)
 	contentOffsetX, contentOffsetY := lookup.paneContentOffset(pane.ID)
 	if copyModeActive {
-		renderOffset = scrollOffsetForCopyMode(copyMode, snapshot, contentRect.H, copyMode.ViewTopRow)
+		renderOffset = scrollOffsetForCopyMode(copyMode, contentRect.H, copyMode.ViewTopRow)
 		contentOffsetX = 0
 		contentOffsetY = 0
 	}
 	contentVersion := uint64(0)
 	source := renderSource(snapshot, surface)
 	if copyModeActive {
-		if copySource := copyModeProjectionSource(copyMode, contentRect.H); copySource != nil {
-			source = copySource
-			renderOffset = 0
-		}
+		source = copyModeProjectionSource(copyMode, contentRect.H)
+		renderOffset = 0
 	}
 	extent := terminalExtentProfileCached(snapshot, surface, surfaceVersion)
-	if copyModeActive && copyMode.Projection != nil {
+	if copyModeActive {
 		extent = terminalExtentProfileForSource(source)
 	}
 	metrics := extent.Metrics

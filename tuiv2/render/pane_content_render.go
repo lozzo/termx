@@ -57,7 +57,7 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 	}
 	drawTerminalSourceWithPlacementAndMetrics(canvas, contentRect, resolved.source, resolved.renderOffset, resolved.contentOffsetX, resolved.contentOffsetY, entry.Theme, resolved.metrics)
 	if entry.CopyModeActive {
-		drawCopyModeOverlay(canvas, contentRect, entry.CopyMode, resolved.snapshot, entry.Theme, resolved.contentOffsetX, resolved.contentOffsetY)
+		drawCopyModeOverlay(canvas, contentRect, entry.CopyMode, entry.Theme, resolved.contentOffsetX, resolved.contentOffsetY)
 	}
 	if resolved.terminalState == "exited" {
 		drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
@@ -212,10 +212,7 @@ func resolvePaneContent(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 	resolved.contentOffsetX = clampTerminalContentOffset(entry.ContentOffsetX, resolved.contentRect.W, resolved.metrics.Cols)
 	resolved.contentOffsetY = clampTerminalContentOffset(entry.ContentOffsetY, resolved.contentRect.H, resolved.metrics.Rows)
 	if entry.CopyModeActive {
-		resolved.renderOffset = scrollOffsetForCopyMode(entry.CopyMode, resolved.snapshot, resolved.contentRect.H, entry.CopyMode.ViewTopRow)
-		if entry.CopyMode.Projection != nil {
-			resolved.renderOffset = 0
-		}
+		resolved.renderOffset = 0
 		resolved.contentOffsetX = 0
 		resolved.contentOffsetY = 0
 	}

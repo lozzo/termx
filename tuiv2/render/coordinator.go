@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/lozzow/termx/internal/protocol"
 	"github.com/lozzow/termx/termx-shared/perftrace"
@@ -120,7 +119,6 @@ type renderCopyModeKey struct {
 	MarkCol           int
 	MarkLogicalLine   int
 	MarkLogicalCol    int
-	Snapshot          *protocol.Snapshot
 	ProjectionToken   string
 	ProjectionSig     uint64
 }
@@ -407,7 +405,6 @@ func renderCopyModesSignature(copyModes []RenderCopyModeVM) string {
 			strconv.Itoa(copyMode.MarkCol),
 			strconv.Itoa(copyMode.MarkLogicalLine),
 			strconv.Itoa(copyMode.MarkLogicalCol),
-			strconv.FormatUint(uint64(copyModeSnapshotKey(copyMode.Snapshot)), 16),
 			copyModeProjectionToken(copyMode.Projection),
 			strconv.FormatUint(copyModeProjectionSignature(copyMode.Projection), 16),
 		}, "\x1e"))
@@ -429,7 +426,6 @@ func renderCopyModeKeyForVM(copyMode RenderCopyModeVM) renderCopyModeKey {
 		MarkCol:           copyMode.MarkCol,
 		MarkLogicalLine:   copyMode.MarkLogicalLine,
 		MarkLogicalCol:    copyMode.MarkLogicalCol,
-		Snapshot:          copyMode.Snapshot,
 		ProjectionToken:   copyModeProjectionToken(copyMode.Projection),
 		ProjectionSig:     copyModeProjectionSignature(copyMode.Projection),
 	}
@@ -485,13 +481,6 @@ func copyModeProjectionRowSignature(projection *RenderCopyModeProjectionVM, rowI
 	hash = fnvMixBool(hash, row.Wrapped)
 	hash = fnvMixInt64(hash, row.Timestamp.UnixNano())
 	return hashProtocolRow(hash, row.Cells)
-}
-
-func copyModeSnapshotKey(snapshot *protocol.Snapshot) uintptr {
-	if snapshot == nil {
-		return 0
-	}
-	return uintptr(unsafe.Pointer(snapshot))
 }
 
 func (c *Coordinator) renderResultRef() (RenderResult, bool) {

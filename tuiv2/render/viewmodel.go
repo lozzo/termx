@@ -82,7 +82,6 @@ type RenderCopyModeVM struct {
 	MarkCol           int
 	MarkLogicalLine   int
 	MarkLogicalCol    int
-	Snapshot          *protocol.Snapshot
 	Projection        *RenderCopyModeProjectionVM
 }
 

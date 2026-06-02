@@ -131,75 +131,58 @@ func (s copyModeProjectionRenderSource) RowVisualHash(rowIndex int) uint64 {
 	return hashProtocolRow(fnvOffset64, s.projection.Rows[rowIndex].Cells)
 }
 
-func copyModeSource(copyMode RenderCopyModeVM, fallbackSnapshot *protocol.Snapshot, height int) terminalRenderSource {
-	if source := copyModeProjectionSource(copyMode, height); source != nil {
-		return source
+func copyModeTotalRows(copyMode RenderCopyModeVM) int {
+	if copyMode.Projection == nil {
+		return 0
 	}
-	return renderSource(fallbackSnapshot, nil)
+	return len(copyMode.Projection.Rows)
 }
 
-func copyModeTotalRows(copyMode RenderCopyModeVM, snapshot *protocol.Snapshot) int {
-	if copyMode.Projection != nil {
-		return len(copyMode.Projection.Rows)
+func copyModeLogicalLineCount(copyMode RenderCopyModeVM) int {
+	if copyMode.Projection == nil {
+		return 0
 	}
-	return snapshotTotalRows(snapshot)
+	if len(copyMode.Projection.Lines) > 0 {
+		return len(copyMode.Projection.Lines)
+	}
+	return projectionLogicalLineCount(copyMode.Projection)
 }
 
-func copyModeLogicalLineCount(copyMode RenderCopyModeVM, snapshot *protocol.Snapshot) int {
-	if copyMode.Projection != nil {
-		if len(copyMode.Projection.Lines) > 0 {
-			return len(copyMode.Projection.Lines)
-		}
-		return projectionLogicalLineCount(copyMode.Projection)
+func copyModeRowCells(copyMode RenderCopyModeVM, row int) []protocol.Cell {
+	if copyMode.Projection == nil {
+		return nil
 	}
-	return snapshotLogicalLineCount(snapshot)
+	if row < 0 || row >= len(copyMode.Projection.Rows) {
+		return nil
+	}
+	return copyMode.Projection.Rows[row].Cells
 }
 
-func copyModeRowWrapped(copyMode RenderCopyModeVM, snapshot *protocol.Snapshot, row int) bool {
-	if copyMode.Projection != nil {
-		if row < 0 || row >= len(copyMode.Projection.Rows) {
-			return false
-		}
-		return copyMode.Projection.Rows[row].Wrapped
-	}
-	return snapshotRowWrapped(snapshot, row)
-}
-
-func copyModeRowCells(copyMode RenderCopyModeVM, snapshot *protocol.Snapshot, row int) []protocol.Cell {
-	if copyMode.Projection != nil {
-		if row < 0 || row >= len(copyMode.Projection.Rows) {
-			return nil
-		}
-		return copyMode.Projection.Rows[row].Cells
-	}
-	return snapshotRow(snapshot, row)
-}
-
-func copyModeTimestampLabelForVM(copyMode RenderCopyModeVM, snapshot *protocol.Snapshot, row int) string {
-	ts := copyModeRowTimestamp(copyMode, snapshot, row)
+func copyModeTimestampLabelForVM(copyMode RenderCopyModeVM, row int) string {
+	ts := copyModeRowTimestamp(copyMode, row)
 	if ts.IsZero() {
 		return ""
 	}
 	return formatSnapshotRowTimestamp(ts)
 }
 
-func copyModeRowTimestamp(copyMode RenderCopyModeVM, snapshot *protocol.Snapshot, row int) time.Time {
-	if copyMode.Projection != nil {
-		if row < 0 || row >= len(copyMode.Projection.Rows) {
-			return time.Time{}
-		}
-		return copyMode.Projection.Rows[row].Timestamp
+func copyModeRowTimestamp(copyMode RenderCopyModeVM, row int) time.Time {
+	if copyMode.Projection == nil {
+		return time.Time{}
 	}
-	return snapshotRowTimestamp(snapshot, row)
+	if row < 0 || row >= len(copyMode.Projection.Rows) {
+		return time.Time{}
+	}
+	return copyMode.Projection.Rows[row].Timestamp
 }
 
-func copyModeRowPositionLabelForVM(copyMode RenderCopyModeVM, snapshot *protocol.Snapshot, logicalLine, fallbackRow int) string {
-	totalLines := copyModeLogicalLineCount(copyMode, snapshot)
+func copyModeRowPositionLabelForVM(copyMode RenderCopyModeVM, logicalLine, fallbackRow int) string {
+	totalLines := copyModeLogicalLineCount(copyMode)
 	if totalLines <= 0 {
 		return ""
 	}
 	if logicalLine < 0 {
-		logicalLine = copyModeLogicalLineIndex(copyMode, snapshot, fallbackRow)
+		logicalLine = copyModeLogicalLineIndex(copyMode, fallbackRow)
 	}
 	if logicalLine < 0 || logicalLine >= totalLines {
 		return ""
@@ -207,29 +190,29 @@ func copyModeRowPositionLabelForVM(copyMode RenderCopyModeVM, snapshot *protocol
 	return strconv.Itoa(logicalLine+1) + "/" + strconv.Itoa(totalLines)
 }
 
-func copyModeLogicalLineIndex(copyMode RenderCopyModeVM, snapshot *protocol.Snapshot, row int) int {
-	if copyMode.Projection != nil {
-		return projectionLogicalLineIndex(copyMode.Projection, row)
+func copyModeLogicalLineIndex(copyMode RenderCopyModeVM, row int) int {
+	if copyMode.Projection == nil {
+		return -1
 	}
-	return snapshotLogicalLineIndex(snapshot, row)
+	return projectionLogicalLineIndex(copyMode.Projection, row)
 }
 
-func copyModeLogicalLineBounds(copyMode RenderCopyModeVM, snapshot *protocol.Snapshot, logicalLine int) (int, int, bool) {
-	if copyMode.Projection != nil {
-		return projectionLogicalLineBounds(copyMode.Projection, logicalLine)
+func copyModeLogicalLineBounds(copyMode RenderCopyModeVM, logicalLine int) (int, int, bool) {
+	if copyMode.Projection == nil {
+		return 0, 0, false
 	}
-	return snapshotLogicalLineBounds(snapshot, logicalLine)
+	return projectionLogicalLineBounds(copyMode.Projection, logicalLine)
 }
 
-func copyModePointForLogicalPos(copyMode RenderCopyModeVM, snapshot *protocol.Snapshot, logicalLine, logicalCol int) (int, int, bool) {
-	start, end, ok := copyModeLogicalLineBounds(copyMode, snapshot, logicalLine)
+func copyModePointForLogicalPos(copyMode RenderCopyModeVM, logicalLine, logicalCol int) (int, int, bool) {
+	start, end, ok := copyModeLogicalLineBounds(copyMode, logicalLine)
 	if !ok {
 		return 0, 0, false
 	}
 	offset := 0
 	lastRow, lastCol := start, 0
 	for row := start; row <= end; row++ {
-		cells := copyModeRowCells(copyMode, snapshot, row)
+		cells := copyModeRowCells(copyMode, row)
 		for col, cell := range cells {
 			if cell.Content == "" && cell.Width == 0 {
 				continue
@@ -241,7 +224,7 @@ func copyModePointForLogicalPos(copyMode RenderCopyModeVM, snapshot *protocol.Sn
 			offset++
 		}
 	}
-	row, col := clampCopyPointForMode(copyMode, snapshot, lastRow, lastCol)
+	row, col := clampCopyPointForMode(copyMode, lastRow, lastCol)
 	return row, col, true
 }
 

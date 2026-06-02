@@ -153,9 +153,6 @@ func TestRenderCopyModeVMUsesAuthoritativeWindowProjection(t *testing.T) {
 	if len(vms) != 1 {
 		t.Fatalf("expected one render copy-mode VM, got %#v", vms)
 	}
-	if vms[0].Snapshot != nil {
-		t.Fatalf("expected authoritative render path to avoid snapshot projection, got %#v", vms[0].Snapshot)
-	}
 	if vms[0].Projection == nil || len(vms[0].Projection.Rows) != 1 {
 		t.Fatalf("expected render-native authoritative projection, got %#v", vms[0].Projection)
 	}
