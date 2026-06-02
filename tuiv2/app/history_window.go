@@ -7,12 +7,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/historyview"
+	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 var (
 	errAuthoritativeHistorySourceUnavailable = errors.New("authoritative history source unavailable")
 	errAuthoritativeHistoryStoreUnavailable  = errors.New("authoritative history store unavailable")
 )
+
+const defaultAuthoritativeHistoryWindowRows = 500
 
 type historyWindowLoadedMsg struct {
 	TerminalID   string
@@ -41,6 +44,15 @@ func (m *Model) loadLatestHistoryWindowCmd(terminalID string, limit, cols int) t
 		window, err := source.LatestHistoryWindow(context.Background(), request)
 		return historyWindowLoadedMsg{TerminalID: terminalID, Window: window, Err: err}
 	}
+}
+
+func (m *Model) loadLatestHistoryWindowForPaneCmd(paneID string) tea.Cmd {
+	pane, rect, ok := m.visiblePaneForInput(paneID)
+	if !ok || pane == nil || pane.TerminalID == "" {
+		return nil
+	}
+	limit, cols := historyWindowRequestShape(rect)
+	return m.loadLatestHistoryWindowCmd(pane.TerminalID, limit, cols)
 }
 
 func (m *Model) loadOlderHistoryWindowCmd(terminalID string, limit, cols int) tea.Cmd {
@@ -82,6 +94,15 @@ func (m *Model) loadOlderHistoryWindowCmd(terminalID string, limit, cols int) te
 	}
 }
 
+func (m *Model) loadOlderHistoryWindowForPaneCmd(paneID string) tea.Cmd {
+	pane, rect, ok := m.visiblePaneForInput(paneID)
+	if !ok || pane == nil || pane.TerminalID == "" {
+		return nil
+	}
+	limit, cols := historyWindowRequestShape(rect)
+	return m.loadOlderHistoryWindowCmd(pane.TerminalID, limit, cols)
+}
+
 func (m *Model) applyHistoryWindowLoadedMsg(msg historyWindowLoadedMsg) tea.Cmd {
 	if m == nil {
 		return nil
@@ -109,4 +130,10 @@ func (m *Model) applyHistoryWindowLoadedMsg(msg historyWindowLoadedMsg) tea.Cmd 
 		m.render.Invalidate()
 	}
 	return nil
+}
+
+func historyWindowRequestShape(rect workbench.Rect) (limit int, cols int) {
+	limit = maxInt(defaultAuthoritativeHistoryWindowRows, maxInt(1, rect.H)*4)
+	cols = maxInt(1, rect.W)
+	return limit, cols
 }

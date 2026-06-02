@@ -384,6 +384,7 @@ TUI store 至少表达：
 - 已修正 core `HistoryWindow.BeforeOffset` 响应语义：返回窗口后可继续请求 older window 的 before cursor，而不是简单回显本次请求 offset。
 - 已在 `tuiv2/app` 新增 authoritative history window 加载消息路径，支持 latest replace 请求、older prepend 请求、pending token 记录、错误清理与通过 `historyview.Store` 接纳窗口；当前尚未由 copy mode 与滚动行为触发。
 - 已让 `tuiv2/app` copy mode buffer 在已有 authoritative history window 时优先使用 `historyview.Store`，并以 `HistoryWindow.Lines` 作为逻辑行边界；当前 render 仍通过临时 snapshot 投影兼容旧渲染接口，鼠标滚轮/page up/down 触发加载仍未接入。
+- 已将 `tuiv2/app` 鼠标滚轮进入 copy mode 接到 authoritative history window latest replace 请求，并将 copy mode page up / half page up / top 的顶部边界接到 older prepend 请求；当前 page down/bottom 与完整滚轮体验仍未收口。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与 canonical row id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。
 - 已新增 core 光标回到当前 visual row 后覆写的生产路径 harness，覆盖覆写仍停留在 mutable live tail、未 seal 前不产生 persisted logical line、hard newline 后作为一条 overwritten logical line 提交。
@@ -393,5 +394,5 @@ TUI store 至少表达：
 - 已将 `tuiv2/app` 中 copy mode page/halfpage 与 copy mode top/exit 依赖 frozen snapshot + 本地 pane viewport 的旧测试标记为待 authoritative history window older prepend / 交互态清理重写，不再作为新模型回归基准。
 - 已将 `tuiv2/app` 中正常模式 scroll up/down 依赖本地 pane viewport offset 的旧测试基准移除或标记为待 authoritative history window 重写，不再作为新模型滚动回归基准。
 - 当前仍不是完整 logical-line based history。
-- 当前滚动不可用的根因是：TUI 旧本地历史路径已删，copy mode buffer 已能消费 authoritative history window，但鼠标滚轮/page up/down 还没有触发 latest/older 加载。
-- 下一步继续切片六：把鼠标滚轮上滚进入 copy mode、copy mode page up/top 接到 authoritative history window latest replace / older prepend；不直接修补旧滚动逻辑。
+- 当前滚动不可用的根因是：TUI 旧本地历史路径已删，copy mode buffer 与部分触发路径已能消费 authoritative history window，但 page down/bottom、滚轮连续交互与旧 snapshot truth 清理仍未收口。
+- 下一步继续切片六：收敛 copy mode page down/bottom、连续滚轮 older prepend、selection clipped span 约束与剩余旧 snapshot truth 清理；不直接修补旧滚动逻辑。

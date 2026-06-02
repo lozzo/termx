@@ -108,7 +108,10 @@ func (m *Model) localScrollbackWheelCmd(paneID string, delta int) tea.Cmd {
 		// The first wheel event may arrive as a coalesced burst. Entering copy
 		// mode should land near the live tail; follow-up wheel events can then
 		// continue moving by their full burst size.
-		return m.moveCopyCursorLogicalLines(-localMouseWheelScrollLines)
+		return batchCmds(
+			m.loadLatestHistoryWindowForPaneCmd(paneID),
+			m.moveCopyCursorLogicalLines(-localMouseWheelScrollLines),
+		)
 	}
 	if _, changed := m.adjustPaneViewportOffset(paneID, delta); changed {
 		m.render.Invalidate()

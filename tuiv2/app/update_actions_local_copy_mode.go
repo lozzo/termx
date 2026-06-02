@@ -20,7 +20,12 @@ func (m *Model) handleCopyModeLocalAction(action input.SemanticAction) (bool, te
 		return true, m.moveCopyCursorLogicalLines(1)
 	case input.ActionCopyModePageUp:
 		if buffer, ok := m.activeCopyModeBuffer(); ok {
-			return true, m.moveCopyCursorLogicalLines(-maxInt(1, buffer.height))
+			wasPinnedAtTop := copyModePinnedAtTop(m.copyMode)
+			cmd := m.moveCopyCursorLogicalLines(-maxInt(1, buffer.height))
+			if wasPinnedAtTop {
+				cmd = batchCmds(cmd, m.loadOlderHistoryWindowForPaneCmd(m.copyMode.PaneID))
+			}
+			return true, cmd
 		}
 		return true, nil
 	case input.ActionCopyModePageDown:
@@ -30,7 +35,12 @@ func (m *Model) handleCopyModeLocalAction(action input.SemanticAction) (bool, te
 		return true, nil
 	case input.ActionCopyModeHalfPageUp:
 		if buffer, ok := m.activeCopyModeBuffer(); ok {
-			return true, m.moveCopyCursorLogicalLines(-maxInt(1, buffer.height/2))
+			wasPinnedAtTop := copyModePinnedAtTop(m.copyMode)
+			cmd := m.moveCopyCursorLogicalLines(-maxInt(1, buffer.height/2))
+			if wasPinnedAtTop {
+				cmd = batchCmds(cmd, m.loadOlderHistoryWindowForPaneCmd(m.copyMode.PaneID))
+			}
+			return true, cmd
 		}
 		return true, nil
 	case input.ActionCopyModeHalfPageDown:
@@ -54,7 +64,7 @@ func (m *Model) handleCopyModeLocalAction(action input.SemanticAction) (bool, te
 		if !m.ensureCopyMode() {
 			return true, nil
 		}
-		return true, m.jumpCopyCursorLogicalLine(0)
+		return true, batchCmds(m.jumpCopyCursorLogicalLine(0), m.loadOlderHistoryWindowForPaneCmd(m.copyMode.PaneID))
 	case input.ActionCopyModeBottom:
 		if buffer, ok := m.activeCopyModeBuffer(); ok {
 			return true, m.jumpCopyCursorLogicalLine(buffer.logicalLineCount() - 1)
