@@ -61,6 +61,8 @@ type HistoryWindow struct {
 	BeforeOffset int
 	// LoadedRows 是本窗口覆盖到的已提交行深度（含 BeforeOffset）。
 	LoadedRows int
+	// LoadedLines 是本窗口实际返回的逻辑行片段数量。
+	LoadedLines int
 	// TotalRows 是当前宽度下可投影的总 visual row 数。
 	TotalRows int
 	// LogicalTotal 是已提交逻辑行总数。
@@ -69,6 +71,8 @@ type HistoryWindow struct {
 	Generation   uint64
 	FirstRowID   uint64
 	LastRowID    uint64
+	FirstLineID  uint64
+	LastLineID   uint64
 	Timestamp    time.Time
 }
 
@@ -282,21 +286,26 @@ func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport ter
 			Timestamp: timeAt(viewport.Timestamps, i),
 		}
 	}
+	lines := historyLineSpans(viewport.Wrapped, viewport.RowKinds, viewport.LogicalLineIDs, len(viewport.Rows), beforeOffset)
+	firstLineID, lastLineID := historyLineSpanIDBoundary(lines)
 	return &HistoryWindow{
 		TerminalID:   id,
 		Token:        historyWindowToken(viewport),
 		Op:           historyWindowOpForOffset(beforeOffset),
 		Size:         Size{Cols: viewport.Size.Cols, Rows: viewport.Size.Rows},
 		Rows:         rows,
-		Lines:        historyLineSpans(viewport.Wrapped, viewport.RowKinds, viewport.LogicalLineIDs, len(viewport.Rows), beforeOffset),
+		Lines:        lines,
 		BeforeOffset: historyWindowBeforeCursor(beforeOffset, viewport),
 		LoadedRows:   viewport.LoadedRows,
+		LoadedLines:  len(lines),
 		TotalRows:    viewport.TotalRows,
 		LogicalTotal: viewport.LogicalTotal,
 		HasMore:      viewport.HasMore,
 		Generation:   viewport.Generation,
 		FirstRowID:   viewport.FirstRowID,
 		LastRowID:    viewport.LastRowID,
+		FirstLineID:  firstLineID,
+		LastLineID:   lastLineID,
 		Timestamp:    time.Now().UTC(),
 	}
 }
@@ -338,6 +347,21 @@ func historyWindowLogicalLineIDBoundary(logicalLineIDs []uint64) (uint64, uint64
 			first = id
 		}
 		last = id
+	}
+	return first, last
+}
+
+func historyLineSpanIDBoundary(spans []HistoryLineSpan) (uint64, uint64) {
+	var first uint64
+	var last uint64
+	for _, span := range spans {
+		if span.LogicalLineID == 0 {
+			continue
+		}
+		if first == 0 {
+			first = span.LogicalLineID
+		}
+		last = span.LogicalLineID
 	}
 	return first, last
 }

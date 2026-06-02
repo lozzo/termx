@@ -114,6 +114,9 @@ func TestServerHistoryWindowLatestReplaceFromPersistedStore(t *testing.T) {
 	if len(window.Lines) != 3 {
 		t.Fatalf("expected 3 logical line spans, got %#v", window.Lines)
 	}
+	if window.LoadedLines != 3 || window.FirstLineID == 0 || window.LastLineID == 0 || window.FirstLineID == window.LastLineID {
+		t.Fatalf("expected explicit logical line boundaries, loaded=%d first=%d last=%d lines=%#v", window.LoadedLines, window.FirstLineID, window.LastLineID, window.Lines)
+	}
 	if got := rowTextFromHistoryRow(window.Rows[0]); got != "alpha" {
 		t.Fatalf("expected first row alpha, got %q", got)
 	}
