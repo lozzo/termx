@@ -10,7 +10,7 @@ import (
 
 func TestCopyModeBufferPrefersAuthoritativeHistoryWindow(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 12})
-	seedCopyModeSnapshot(t, model, []string{"legacy"}, []string{"screen"})
+	seedTerminalSnapshotFixture(t, model, []string{"legacy"}, []string{"screen"})
 	window := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 10, 12, []string{"auth-a", "auth-b", "auth-c"}, 3, false)
 	window.Lines = []historyview.LineSpan{
 		{StartRow: 0, EndRow: 1, Kind: historyview.RowKindPersisted, LogicalLineID: 10},
@@ -49,7 +49,7 @@ func TestCopyModeBufferPrefersAuthoritativeHistoryWindow(t *testing.T) {
 
 func TestCopyModeSelectionUsesAuthoritativeHistoryWindow(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 12})
-	seedCopyModeSnapshot(t, model, []string{"legacy"}, []string{"screen"})
+	seedTerminalSnapshotFixture(t, model, []string{"legacy"}, []string{"screen"})
 	window := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 20, 21, []string{"alpha", "bravo"}, 2, false)
 	if !model.HistoryStore().ApplyHistoryWindow(window) {
 		t.Fatal("expected authoritative window to be accepted")

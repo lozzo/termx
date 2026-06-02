@@ -81,14 +81,14 @@ func (m *Model) canDirectSendForwardedWheelInput(in input.TerminalInput) bool {
 	return true
 }
 
-func (m *Model) localScrollbackWheelCmd(paneID string, delta int) tea.Cmd {
+func (m *Model) copyModeWheelCmd(paneID string, delta int) tea.Cmd {
 	if m == nil || m.workbench == nil || paneID == "" || delta == 0 {
 		return nil
 	}
 	mode := m.effectiveInputMode()
 	if gridtrace.Enabled() {
 		gridtrace.Log(
-			"app.mouse_wheel.local_scrollback",
+			"app.mouse_wheel.copy_mode_authoritative_entry",
 			"pane_id", paneID,
 			"delta", delta,
 			"mode", mode,

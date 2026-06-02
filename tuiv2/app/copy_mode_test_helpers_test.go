@@ -26,7 +26,7 @@ func (w *recordingControlWriter) QueueControlSequenceAfterWrite(seq string) {
 	w.queued = append(w.queued, seq)
 }
 
-func copyModeTestSnapshot(scrollback, screen []string) *protocol.Snapshot {
+func terminalSnapshotFixture(scrollback, screen []string) *protocol.Snapshot {
 	sbRows := make([][]protocol.Cell, 0, len(scrollback))
 	for _, row := range scrollback {
 		sbRows = append(sbRows, protocolRowFromText(row, 80))
@@ -50,17 +50,17 @@ func copyModeTestSnapshot(scrollback, screen []string) *protocol.Snapshot {
 	}
 }
 
-func seedCopyModeSnapshot(t *testing.T, m *Model, scrollback, screen []string) {
+func seedTerminalSnapshotFixture(t *testing.T, m *Model, scrollback, screen []string) {
 	t.Helper()
-	seedCopyModeSnapshotForTerminal(t, m, "term-1", scrollback, screen)
+	seedTerminalSnapshotFixtureForTerminal(t, m, "term-1", scrollback, screen)
 }
 
-func seedCopyModeSnapshotForTerminal(t *testing.T, m *Model, terminalID string, scrollback, screen []string) {
+func seedTerminalSnapshotFixtureForTerminal(t *testing.T, m *Model, terminalID string, scrollback, screen []string) {
 	t.Helper()
 	if m == nil || m.runtime == nil {
 		t.Fatal("model runtime is nil")
 	}
-	snapshot := copyModeTestSnapshot(scrollback, screen)
+	snapshot := terminalSnapshotFixture(scrollback, screen)
 	snapshot.TerminalID = terminalID
 	terminal := m.runtime.Registry().GetOrCreate(terminalID)
 	terminal.Snapshot = snapshot
@@ -82,7 +82,7 @@ func setupSplitCopyModeModel(t *testing.T) *Model {
 	if err := model.workbench.BindPaneTerminal("tab-1", "pane-2", "term-2"); err != nil {
 		t.Fatalf("bind pane terminal: %v", err)
 	}
-	seedCopyModeSnapshotForTerminal(t, model, "term-2", []string{"hist-2"}, []string{"live-2"})
+	seedTerminalSnapshotFixtureForTerminal(t, model, "term-2", []string{"hist-2"}, []string{"live-2"})
 	return model
 }
 

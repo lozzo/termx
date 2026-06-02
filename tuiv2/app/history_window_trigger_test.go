@@ -10,13 +10,12 @@ import (
 
 func TestWheelEnteringCopyModeRequestsLatestAuthoritativeWindow(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 12})
-	seedCopyModeSnapshot(t, model, []string{"legacy"}, []string{"screen"})
 	source := &appHistoryFakeSource{
 		latest: appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 101, []string{"latest"}, 1, true),
 	}
 	model.historySource = source
 
-	cmd := model.localScrollbackWheelCmd("pane-1", localMouseWheelScrollLines)
+	cmd := model.copyModeWheelCmd("pane-1", localMouseWheelScrollLines)
 	if cmd == nil {
 		t.Fatal("expected wheel entry command")
 	}
@@ -37,7 +36,6 @@ func TestWheelEnteringCopyModeRequestsLatestAuthoritativeWindow(t *testing.T) {
 
 func TestSemanticScrollUpRequestsLatestAuthoritativeWindow(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 12})
-	seedCopyModeSnapshot(t, model, []string{"legacy"}, []string{"screen"})
 	source := &appHistoryFakeSource{
 		latest: appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 101, []string{"latest"}, 1, true),
 	}
@@ -87,7 +85,7 @@ func TestWheelDownOutsideCopyModeDoesNotMutateLocalViewport(t *testing.T) {
 	}
 	model.historySource = source
 
-	cmd := model.localScrollbackWheelCmd("pane-1", -localMouseWheelScrollLines)
+	cmd := model.copyModeWheelCmd("pane-1", -localMouseWheelScrollLines)
 	if cmd != nil {
 		t.Fatalf("expected wheel-down outside copy mode to be local no-op, got cmd %#v", cmd)
 	}

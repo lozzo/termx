@@ -76,8 +76,8 @@ func (m *Model) resolveMouseWheelPolicy(msg tea.MouseMsg, repeat int) scrollPoli
 			targetPaneID = floating.ID
 		}
 		decision.TargetPaneID = targetPaneID
-		decision.Kind = scrollPolicyLocalScrollback
-		decision.Cmd = m.localScrollbackWheelCmd(targetPaneID, delta)
+		decision.Kind = scrollPolicyCopyModeEntry
+		decision.Cmd = m.copyModeWheelCmd(targetPaneID, delta)
 		return decision
 	}
 	return decision
@@ -85,7 +85,7 @@ func (m *Model) resolveMouseWheelPolicy(msg tea.MouseMsg, repeat int) scrollPoli
 
 func (m *Model) dispatchResolvedMouseWheel(decision scrollPolicyDecision) tea.Cmd {
 	switch decision.Kind {
-	case scrollPolicyHandled, scrollPolicyCopyModeMove, scrollPolicySwitchTab, scrollPolicyLocalScrollback:
+	case scrollPolicyHandled, scrollPolicyCopyModeMove, scrollPolicySwitchTab, scrollPolicyCopyModeEntry:
 		return decision.Cmd
 	case scrollPolicyForwardTerminal:
 		return m.handleForwardedTerminalWheelInput(decision.ForwardedInput)

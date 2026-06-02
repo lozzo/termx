@@ -36,7 +36,7 @@ const (
 	scrollPolicyCopyModeMove    scrollPolicyKind = "copy_mode_move"
 	scrollPolicySwitchTab       scrollPolicyKind = "switch_tab"
 	scrollPolicyForwardTerminal scrollPolicyKind = "forward_terminal"
-	scrollPolicyLocalScrollback scrollPolicyKind = "local_scrollback"
+	scrollPolicyCopyModeEntry   scrollPolicyKind = "copy_mode_entry"
 )
 
 type scrollPolicyDecision struct {

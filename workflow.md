@@ -392,6 +392,7 @@ TUI store 至少表达：
 - 已将 `tuiv2/app` 语义层 `scroll-up/scroll-down` 从本地 pane viewport offset 历史路径移出：scroll-up 进入 copy mode 并请求 authoritative latest window，scroll-down 在非 copy mode 下不再改本地 viewport，copy mode 内只移动 authoritative buffer 游标。
 - 已删除 `tuiv2/app` 鼠标滚轮路径中最后的本地 pane viewport fallback；wheel-up 仍进入 copy mode 并请求 authoritative latest window，wheel-down 在非 copy mode 下不再改本地 viewport。
 - 已删除 `tuiv2/app` copy mode state 的 frozen snapshot backing：进入 copy mode 只创建 pane/terminal 交互态并请求 authoritative latest window，history window replace 到达后绑定 token、光标与 viewport；copy mode buffer 只接受带 line spans 的 authoritative window，并删除旧 wrapped-row logical line helper。
+- 已将 `tuiv2/app` 鼠标滚轮进入 copy mode 的剩余 `local scrollback` 策略命名收敛为 copy mode authoritative entry，并把 copy mode 测试 fixture 中的 snapshot 命名改为普通 terminal live surface fixture，删除手动跳过的旧本地 scrollback frame 审计基准。
 - 已删除或改写 `tuiv2/app` 中标记待 authoritative history window 重写的旧测试语义：不再保留依赖 snapshot scrollback wrapped、frozen snapshot 本地游标、正常模式本地 pane viewport offset 的 skipped 回归基准。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与 canonical row id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。

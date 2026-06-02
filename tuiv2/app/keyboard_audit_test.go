@@ -650,7 +650,7 @@ func TestKeyboardAuditDisplayModeBindings(t *testing.T) {
 
 	t.Run("paste-and-history", func(t *testing.T) {
 		model := setupModel(t, modelOpts{width: 80, height: 12})
-		seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+		seedTerminalSnapshotFixture(t, model, []string{"hist0"}, []string{"live0"})
 		model.yankBuffer = "hello\nworld"
 		model.pushClipboardHistory("first entry", "pane-1")
 		prevReader := systemClipboardReader
@@ -661,7 +661,7 @@ func TestKeyboardAuditDisplayModeBindings(t *testing.T) {
 		assertMode(t, model, input.ModePicker)
 
 		model = setupModel(t, modelOpts{width: 80, height: 12})
-		seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+		seedTerminalSnapshotFixture(t, model, []string{"hist0"}, []string{"live0"})
 		model.yankBuffer = "hello\nworld"
 		dispatchKeys(t, model, ctrlKey(tea.KeyCtrlV), runeKeyMsg('p'))
 		client := model.runtime.Client().(*recordingBridgeClient)
@@ -670,7 +670,7 @@ func TestKeyboardAuditDisplayModeBindings(t *testing.T) {
 		}
 
 		model = setupModel(t, modelOpts{width: 80, height: 12})
-		seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
+		seedTerminalSnapshotFixture(t, model, []string{"hist0"}, []string{"live0"})
 		dispatchKeys(t, model, ctrlKey(tea.KeyCtrlV), runeKeyMsg('P'))
 		client = model.runtime.Client().(*recordingBridgeClient)
 		if len(client.inputCalls) != 1 || string(client.inputCalls[0].data) != "clip-text" {

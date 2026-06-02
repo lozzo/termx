@@ -123,7 +123,7 @@ func (m *Model) handleDisplayAndViewportLocalAction(action input.SemanticAction)
 		if m.effectiveInputMode() == input.ModeDisplay {
 			return true, m.moveCopyCursorLogicalLinesAndMaybeLoadOlder(-localMouseWheelScrollLines)
 		}
-		cmd := m.localScrollbackWheelCmd(paneID, localMouseWheelScrollLines)
+		cmd := m.copyModeWheelCmd(paneID, localMouseWheelScrollLines)
 		_ = m.setPaneViewportOffset(paneID, 0)
 		return true, cmd
 	case input.ActionScrollDown:
