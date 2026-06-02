@@ -390,6 +390,7 @@ TUI store 至少表达：
 - 已将 `tuiv2/app` copy mode selection 接到 authoritative line span 的 logical line id 与 clipped before/after：相邻 clipped segment 只有在 logical line id 相同且 clippedAfter/clippedBefore 连续时才作为同一逻辑行拼接，否则继续保留真实逻辑行换行。
 - 已删除 `tuiv2/app` 中旧 snapshot 分页加载后用于调整 copy mode 的空实现、旧 frozen snapshot scrollback trim helper 与未使用 reanchor helper；`SnapshotLoadedMsg` 不再进入本地 copy mode history truth 调整路径。
 - 已将 `tuiv2/app` 语义层 `scroll-up/scroll-down` 从本地 pane viewport offset 历史路径移出：scroll-up 进入 copy mode 并请求 authoritative latest window，scroll-down 在非 copy mode 下不再改本地 viewport，copy mode 内只移动 authoritative buffer 游标。
+- 已删除 `tuiv2/app` 鼠标滚轮路径中最后的本地 pane viewport fallback；wheel-up 仍进入 copy mode 并请求 authoritative latest window，wheel-down 在非 copy mode 下不再改本地 viewport。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与 canonical row id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。
 - 已新增 core 光标回到当前 visual row 后覆写的生产路径 harness，覆盖覆写仍停留在 mutable live tail、未 seal 前不产生 persisted logical line、hard newline 后作为一条 overwritten logical line 提交。
@@ -399,5 +400,5 @@ TUI store 至少表达：
 - 已将 `tuiv2/app` 中 copy mode page/halfpage 与 copy mode top/exit 依赖 frozen snapshot + 本地 pane viewport 的旧测试标记为待 authoritative history window older prepend / 交互态清理重写，不再作为新模型回归基准。
 - 已将 `tuiv2/app` 中正常模式 scroll up/down 依赖本地 pane viewport offset 的旧测试基准移除或标记为待 authoritative history window 重写，不再作为新模型滚动回归基准。
 - 当前仍不是完整 logical-line based history。
-- 当前滚动不可用的根因是：TUI 旧本地历史路径已删，copy mode buffer、滚动触发路径、语义 scroll action 与 selection clipped span 约束已能消费 authoritative history window，但仍需继续审计并清理残留旧 snapshot truth 入口。
+- 当前滚动不可用的根因是：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action 与 selection clipped span 约束已能消费 authoritative history window，但仍需继续审计并清理残留旧 snapshot truth 入口。
 - 下一步继续切片六：继续收敛剩余旧 snapshot truth 入口；不直接修补旧滚动逻辑。

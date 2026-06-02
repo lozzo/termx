@@ -79,6 +79,26 @@ func TestSemanticScrollDownDoesNotMutateLocalViewportOutsideCopyMode(t *testing.
 	}
 }
 
+func TestWheelDownOutsideCopyModeDoesNotMutateLocalViewport(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 12})
+	source := &appHistoryFakeSource{
+		latest: appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 101, []string{"latest"}, 1, true),
+		older:  appHistoryFakeWindow("term-1", historyview.WindowOpPrepend, "token-1", 98, 99, []string{"old"}, 4, false),
+	}
+	model.historySource = source
+
+	cmd := model.localScrollbackWheelCmd("pane-1", -localMouseWheelScrollLines)
+	if cmd != nil {
+		t.Fatalf("expected wheel-down outside copy mode to be local no-op, got cmd %#v", cmd)
+	}
+	if source.latestRequests != 0 || source.olderRequests != 0 {
+		t.Fatalf("expected no history requests, got latest=%d older=%d", source.latestRequests, source.olderRequests)
+	}
+	if got := model.runtime.PaneViewportOffset("pane-1"); got != 0 {
+		t.Fatalf("expected wheel-down not to mutate local pane viewport, got %d", got)
+	}
+}
+
 func TestCopyModePageUpAtTopRequestsOlderAuthoritativeWindow(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 12})
 	latest := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 101, []string{"new-a", "new-b"}, 2, true)

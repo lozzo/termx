@@ -113,10 +113,6 @@ func (m *Model) localScrollbackWheelCmd(paneID string, delta int) tea.Cmd {
 			m.moveCopyCursorLogicalLines(-localMouseWheelScrollLines),
 		)
 	}
-	if _, changed := m.adjustPaneViewportOffset(paneID, delta); changed {
-		m.render.Invalidate()
-		return nil
-	}
 	return nil
 }
 
