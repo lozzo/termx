@@ -242,6 +242,7 @@ func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
 	}{
 		{name: "unknown-origin", origin: terminalLiveTailOrigin("bad-origin"), dirty: true},
 		{name: "clean-live", origin: terminalLiveTailOriginLive, dirty: false},
+		{name: "live-row-ids", origin: terminalLiveTailOriginLive, dirty: true, rowIDKnown: true, firstRowID: 40, lastRowID: 40},
 		{name: "dirty-reclaimed", origin: terminalLiveTailOriginReclaimed, dirty: true},
 		{name: "reclaimed-missing-row-ids", origin: terminalLiveTailOriginReclaimed, dirty: false},
 		{name: "reclaimed-row-id-span-mismatch", origin: terminalLiveTailOriginReclaimed, dirty: false, rowIDKnown: true, firstRowID: 40, lastRowID: 42},
