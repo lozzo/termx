@@ -401,6 +401,9 @@ func historyLineSpanIDBoundary(spans []HistoryLineSpan) (uint64, uint64) {
 	var first uint64
 	var last uint64
 	for _, span := range spans {
+		if span.ClippedBefore {
+			continue
+		}
 		if span.LogicalLineID == 0 {
 			continue
 		}
