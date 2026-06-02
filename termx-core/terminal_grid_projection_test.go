@@ -161,6 +161,51 @@ func TestTerminalGridProjectionAppliesMetadataLineMigrations(t *testing.T) {
 	}
 }
 
+func TestTerminalGridProjectionIgnoresInvalidLineMigrations(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "projection-invalid-metadata-migration")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("abcd"), rowKind: "line0", wrapped: false},
+	}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+	dir := store.dir
+	_, generation, _ := store.coordinates()
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+	if err := writeTerminalGridLineMetadata(dir, terminalGridLineMetadata{
+		Records: []terminalGridLineRecordMeta{{
+			ID:         1,
+			StartRow:   0,
+			EndRow:     0,
+			Sealed:     true,
+			Origin:     terminalLiveTailOriginReclaimed,
+			Residency:  terminalLogicalLineResidencyPersisted,
+			Generation: generation,
+		}},
+		Migrations: []terminalGridLineMigration{{RuntimeID: 1, PersistedID: 99}},
+	}); err != nil {
+		t.Fatalf("write line metadata: %v", err)
+	}
+
+	reopened, err := openTerminalGridStoreForReplay(root, "projection-invalid-metadata-migration")
+	if err != nil {
+		t.Fatalf("reopen grid store: %v", err)
+	}
+	defer reopened.Close()
+	viewport, err := reopened.Viewport(0, 10, 4)
+	if err != nil {
+		t.Fatalf("viewport: %v", err)
+	}
+	if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{1}) {
+		t.Fatalf("expected invalid persisted-to-persisted migration to be ignored, got %#v", got)
+	}
+}
+
 func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

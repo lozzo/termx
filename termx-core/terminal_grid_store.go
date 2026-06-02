@@ -1282,7 +1282,7 @@ func terminalGridLineMigrationMap(migrations []terminalGridLineMigration) map[ui
 	}
 	out := make(map[uint64]uint64, len(migrations))
 	for _, migration := range migrations {
-		if migration.RuntimeID == 0 || migration.PersistedID == 0 {
+		if !terminalRuntimeLogicalLineID(migration.RuntimeID) || !terminalPersistedLogicalLineID(migration.PersistedID) {
 			continue
 		}
 		out[migration.RuntimeID] = migration.PersistedID
@@ -1459,6 +1459,10 @@ func terminalLiveTailRecordIDMatchesOrigin(id uint64, origin terminalLiveTailOri
 
 func terminalPersistedLogicalLineID(id uint64) bool {
 	return id > 0 && id < terminalLiveTailLogicalLineIDBase
+}
+
+func terminalRuntimeLogicalLineID(id uint64) bool {
+	return id >= terminalLiveTailLogicalLineIDBase
 }
 
 func canMergeRecoveredLiveTailSegments(left terminalLiveTailSegment, right terminalLiveTailSegment) bool {
@@ -2119,13 +2123,13 @@ func (s *terminalGridStore) recordLineMigrations(migrations map[uint64]uint64) e
 	}
 	merged := make(map[uint64]uint64, len(metadata.Migrations)+len(migrations))
 	for _, migration := range metadata.Migrations {
-		if migration.RuntimeID == 0 || migration.PersistedID == 0 {
+		if !terminalRuntimeLogicalLineID(migration.RuntimeID) || !terminalPersistedLogicalLineID(migration.PersistedID) {
 			continue
 		}
 		merged[migration.RuntimeID] = migration.PersistedID
 	}
 	for runtimeID, persistedID := range migrations {
-		if runtimeID == 0 || persistedID == 0 {
+		if !terminalRuntimeLogicalLineID(runtimeID) || !terminalPersistedLogicalLineID(persistedID) {
 			continue
 		}
 		merged[runtimeID] = persistedID
