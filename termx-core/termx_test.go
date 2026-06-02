@@ -294,6 +294,9 @@ func TestServerHistoryWindowRestoresLiveTailFromLineMetadata(t *testing.T) {
 	if window.LoadedRows != 1 || window.TotalRows != 2 {
 		t.Fatalf("expected recovered latest window to keep committed loaded depth 1 and total 2, got loaded=%d total=%d", window.LoadedRows, window.TotalRows)
 	}
+	if window.LoadedLines != 2 || window.LogicalTotal != 2 {
+		t.Fatalf("expected recovered history window to count persisted plus live tail logical lines, loaded=%d total=%d", window.LoadedLines, window.LogicalTotal)
+	}
 	if len(window.Lines) != 2 || window.Lines[1].LogicalLineID < terminalLiveTailLogicalLineIDBase {
 		t.Fatalf("expected recovered live tail logical line id in history window, got %#v", window.Lines)
 	}
@@ -315,6 +318,9 @@ func TestServerHistoryWindowRestoresLiveTailFromLineMetadata(t *testing.T) {
 	if viewport.LoadedRows != 1 || viewport.ScrollbackTotal != 2 {
 		t.Fatalf("expected recovered viewport to keep committed loaded depth 1 and total 2, got loaded=%d total=%d", viewport.LoadedRows, viewport.ScrollbackTotal)
 	}
+	if viewport.ScrollbackLogicalTotal != 1 {
+		t.Fatalf("expected legacy viewport logical total to remain committed-only, got %d", viewport.ScrollbackLogicalTotal)
+	}
 	if got := viewport.RowOwnership; !reflect.DeepEqual(got, []string{RowOwnershipPersisted, RowOwnershipLiveTailLive}) {
 		t.Fatalf("expected recovered viewport ownership, got %#v", got)
 	}
@@ -328,6 +334,9 @@ func TestServerHistoryWindowRestoresLiveTailFromLineMetadata(t *testing.T) {
 	}
 	if got := rowsToStrings(snap.Scrollback); !reflect.DeepEqual(got, []string{"hist"}) {
 		t.Fatalf("expected legacy snapshot scrollback to keep persisted prefix, got %#v", got)
+	}
+	if snap.ScrollbackLogicalTotal != 1 {
+		t.Fatalf("expected legacy snapshot logical total to remain committed-only, got %d", snap.ScrollbackLogicalTotal)
 	}
 }
 
