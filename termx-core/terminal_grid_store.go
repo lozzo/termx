@@ -522,12 +522,31 @@ func trimTerminalGridViewportToTail(result *terminalGridViewport, limit int) boo
 		return false
 	}
 	start := len(result.Rows) - limit
+	inheritedRowKind := clippedViewportLeadingRowKind(result.RowKinds, result.Wrapped, start)
 	result.Rows = result.Rows[start:]
 	result.Timestamps = trimTimeSliceTail(result.Timestamps, limit)
 	result.RowKinds = trimStringSliceTail(result.RowKinds, limit)
+	if inheritedRowKind != "" && len(result.RowKinds) > 0 && result.RowKinds[0] == "" {
+		result.RowKinds[0] = inheritedRowKind
+	}
 	result.Wrapped = trimBoolSliceTail(result.Wrapped, limit)
 	result.Ownership = trimStringSliceTail(result.Ownership, limit)
 	return true
+}
+
+func clippedViewportLeadingRowKind(rowKinds []string, wrapped []bool, start int) string {
+	if start <= 0 || !boolAt(wrapped, start-1) {
+		return ""
+	}
+	for i := start - 1; i >= 0; i-- {
+		if kind := stringAt(rowKinds, i); kind != "" {
+			return kind
+		}
+		if i > 0 && !boolAt(wrapped, i-1) {
+			break
+		}
+	}
+	return ""
 }
 
 func (s *terminalGridStore) reclaimViewport(neededRows int, cols int) (terminalGridViewport, error) {
