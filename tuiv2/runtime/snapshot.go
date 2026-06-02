@@ -110,20 +110,6 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 	return snapshot, nil
 }
 
-func (r *Runtime) LoadGridViewport(ctx context.Context, terminalID string, offset, limit, cols int) (*protocol.Snapshot, error) {
-	if r == nil || r.client == nil {
-		return nil, shared.UserVisibleError{Op: "load terminal history", Err: fmt.Errorf("runtime client is nil")}
-	}
-	viewport, err := r.client.GridViewport(ctx, terminalID, offset, limit, cols)
-	if err != nil {
-		return nil, shared.UserVisibleError{Op: "load terminal history", Err: err}
-	}
-	traceRuntimeGridViewport("runtime.load_grid_viewport.received", terminalID, viewport, "requested_offset", offset, "requested_limit", limit, "requested_cols", cols)
-	snapshot := snapshotFromGridViewport(terminalID, viewport)
-	traceRuntimeSnapshot("runtime.load_grid_viewport.snapshot", snapshot, "requested_offset", offset, "requested_limit", limit, "requested_cols", cols)
-	return snapshot, nil
-}
-
 func repeatedOwnership(value string, count int) []string {
 	if count <= 0 || value == "" {
 		return nil
@@ -133,31 +119,6 @@ func repeatedOwnership(value string, count int) []string {
 		out[i] = value
 	}
 	return out
-}
-
-func snapshotFromGridViewport(terminalID string, viewport *protocol.GridViewport) *protocol.Snapshot {
-	if viewport == nil {
-		return nil
-	}
-	return &protocol.Snapshot{
-		TerminalID:             terminalID,
-		Size:                   viewport.Size,
-		Scrollback:             protocol.CloneCompactRows(viewport.Rows),
-		ScrollbackOffset:       viewport.ScrollbackOffset,
-		ScrollbackTotal:        viewport.ScrollbackTotal,
-		ScrollbackLogicalTotal: viewport.ScrollbackLogicalTotal,
-		ScrollbackHasMore:      viewport.ScrollbackHasMore,
-		ScrollbackLoadedRows:   viewport.LoadedRows,
-		HistoryGeneration:      viewport.HistoryGeneration,
-		ScrollbackFirstRowID:   viewport.FirstRowID,
-		ScrollbackLastRowID:    viewport.LastRowID,
-		ScrollbackTimestamps:   append([]time.Time(nil), viewport.ScrollbackTimestamps...),
-		ScrollbackRowKinds:     append([]string(nil), viewport.ScrollbackRowKinds...),
-		ScrollbackWrapped:      append([]bool(nil), viewport.ScrollbackWrapped...),
-		ScrollbackOwnership:    append([]string(nil), viewport.RowOwnership...),
-		Modes:                  protocol.TerminalModes{AutoWrap: true},
-		Timestamp:              viewport.Timestamp,
-	}
 }
 
 func (r *Runtime) refreshSnapshot(terminalID string) {
@@ -176,29 +137,13 @@ func (r *Runtime) refreshSnapshot(terminalID string) {
 	if terminal.VTerm == nil {
 		return
 	}
-	previous := terminal.Snapshot
 	terminal.Snapshot = snapshotFromVTerm(terminalID, terminal.VTerm)
-	preserveSnapshotHistoryMetadataFromProjection(previous, terminal.Snapshot)
 	if terminal.Snapshot == nil || !snapshotUsesAlternateScreen(terminal.Snapshot) {
 		terminal.AlternateScrollback = nil
 	}
 	terminal.PreferSnapshot = false
 	terminal.SnapshotVersion = terminal.SurfaceVersion
 	r.invalidate()
-}
-
-func preserveSnapshotHistoryMetadataFromProjection(previous, next *protocol.Snapshot) {
-	if previous == nil || next == nil || !protocol.HasExplicitRowOwnership(next.ScrollbackOwnership, len(next.Scrollback)) {
-		return
-	}
-	next.ScrollbackLoadedRows = previous.ScrollbackLoadedRows
-	next.HistoryGeneration = previous.HistoryGeneration
-	next.ScrollbackFirstRowID = previous.ScrollbackFirstRowID
-	next.ScrollbackLastRowID = previous.ScrollbackLastRowID
-	next.ScrollbackOffset = previous.ScrollbackOffset
-	next.ScrollbackTotal = previous.ScrollbackTotal
-	next.ScrollbackLogicalTotal = previous.ScrollbackLogicalTotal
-	next.ScrollbackHasMore = previous.ScrollbackHasMore
 }
 
 func (r *Runtime) RefreshSnapshotFromVTerm(terminalID string) bool {
