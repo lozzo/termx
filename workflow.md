@@ -376,6 +376,7 @@ TUI store 至少表达：
 - 已有 core `HistoryWindow` 初版。
 - 已有 protocol `history.window` 初版。
 - 已有 `HistoryLineSpan` clipped before/after 初版。
+- 已新增 `tuiv2/historyview` authoritative window store 初版与 fake source harness，覆盖 latest replace、older prepend、stale token/generation 丢弃、边界重叠拒绝、clipped span 保留、pending request token、viewport top、cursor 与 selection 交互态。
 - 当前仍不是完整 logical-line based history。
-- 当前滚动不可用的根因是：TUI 旧本地历史路径已删，但 authoritative history window 尚未接入 copy mode 和滚动。
-- 下一步必须从“切片一：冻结旧路径并补准 harness”开始，不再直接修补旧滚动逻辑。
+- 当前滚动不可用的根因是：TUI 旧本地历史路径已删，但 authoritative history window store 尚未注入 app copy mode 和滚动。
+- 下一步继续切片一：补 core logical line / projection harness，并把旧 TUI snapshot/grid viewport history truth 测试删除或标记重写；不直接修补旧滚动逻辑。
