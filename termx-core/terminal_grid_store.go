@@ -1313,6 +1313,23 @@ func (s *terminalGridStore) persistedLogicalLineRecordsFromMetadata(rowCount int
 	return records, true
 }
 
+func (s *terminalGridStore) sealedPersistedLogicalLineRecordPrefixFromMetadata(rowCount int, generation uint64) ([]terminalGridLogicalLineRecord, bool) {
+	if s == nil || strings.TrimSpace(s.dir) == "" {
+		return nil, false
+	}
+	metadata, err := readTerminalGridLineMetadata(s.dir)
+	if err != nil {
+		return nil, false
+	}
+	if !terminalGridPersistedRecordMetasHaveNoRowIDs(metadata.Records) {
+		return nil, false
+	}
+	records := terminalGridLogicalLineRecordsFromMetadata(metadata.Records)
+	terminalGridApplyLineMigrationsToRecords(records, terminalGridLineMigrationMap(metadata.Migrations))
+	prefix := terminalGridSealedPersistedLogicalLineRecordPrefix(records, rowCount, generation)
+	return prefix, len(prefix) > 0
+}
+
 func terminalGridPersistedRecordMetasHaveNoRowIDs(records []terminalGridLineRecordMeta) bool {
 	for _, record := range records {
 		if terminalGridLineRecordMetaHasRowIDs(record) {
@@ -1376,9 +1393,36 @@ func (s *terminalGridStore) persistedLogicalLineRecordsForViewport(refs []termin
 					return windowRecords
 				}
 			}
+			if records, ok := s.sealedPersistedLogicalLineRecordPrefixFromMetadata(totalRows, generation); ok && terminalGridRecordsCoverWindow(records, start, end) {
+				if windowRecords := terminalGridLogicalLineRecordsForWindow(records, start, end); len(windowRecords) > 0 {
+					return windowRecords
+				}
+			}
 		}
 	}
 	return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, firstRowID, generation)
+}
+
+func terminalGridRecordsCoverWindow(records []terminalGridLogicalLineRecord, start int, end int) bool {
+	if len(records) == 0 || end <= start {
+		return false
+	}
+	coveredUntil := start
+	for _, record := range records {
+		if record.endRow < coveredUntil {
+			continue
+		}
+		if record.startRow > coveredUntil {
+			return false
+		}
+		if record.endRow+1 > coveredUntil {
+			coveredUntil = record.endRow + 1
+		}
+		if coveredUntil >= end {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *terminalGridStore) recoveredLiveTailFromMetadata() (terminalPrimaryLiveTail, bool) {

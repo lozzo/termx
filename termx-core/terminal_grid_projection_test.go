@@ -115,6 +115,36 @@ func TestTerminalGridProjectionRestoresLogicalLineBoundariesFromMetadata(t *test
 	}
 }
 
+func TestTerminalGridProjectionUsesSealedMetadataPrefixForCoveredWindow(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("aa")},
+		{cells: localVTermCellsFromString("bb")},
+		{cells: localVTermCellsFromString("tail"), wrapped: true},
+	}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{Records: []terminalGridLineRecordMeta{
+		{ID: 91, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 92, StartRow: 1, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+	}}); err != nil {
+		t.Fatalf("write partial line metadata: %v", err)
+	}
+
+	viewport, err := store.Viewport(1, 1, 10)
+	if err != nil {
+		t.Fatalf("viewport: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"bb"}) {
+		t.Fatalf("expected sealed prefix row window, got %#v", got)
+	}
+	if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{92}) {
+		t.Fatalf("expected sealed prefix metadata logical line id, got %#v", got)
+	}
+}
+
 func TestTerminalGridProjectionAppliesMetadataLineMigrations(t *testing.T) {
 	root := t.TempDir()
 	store, err := newTerminalGridStore(root, "projection-metadata-migration")
