@@ -883,7 +883,7 @@ func (s *terminalGridStore) Close() error {
 		if metadataErr := writeTerminalGridMetadata(dir, metadata); metadataErr != nil && err == nil {
 			err = metadataErr
 		}
-		if lineMetadataErr := writeTerminalGridLineRecordsMetadata(dir, metadata.BaseRowID, metadata.Generation); lineMetadataErr != nil && err == nil {
+		if lineMetadataErr := writeTerminalGridCompletePersistedLineRecordsMetadata(dir, metadata.BaseRowID, metadata.Generation); lineMetadataErr != nil && err == nil {
 			err = lineMetadataErr
 		}
 	}
@@ -1051,7 +1051,7 @@ func (s *terminalGridStore) enforceMaxRowsLockedAt(now time.Time) error {
 		return err
 	}
 	if s.writable && !s.removeOnClose {
-		return writeTerminalGridLineRecordsMetadata(s.dir, s.baseRowID, s.generation)
+		return writeTerminalGridCompletePersistedLineRecordsMetadata(s.dir, s.baseRowID, s.generation)
 	}
 	return nil
 }
@@ -2001,7 +2001,7 @@ func writeTerminalGridLineMetadata(dir string, metadata terminalGridLineMetadata
 	return os.WriteFile(filepath.Join(dir, terminalGridLineMetaName), data, 0o600)
 }
 
-func writeTerminalGridLineRecordsMetadata(dir string, baseRowID uint64, generation uint64) error {
+func writeTerminalGridCompletePersistedLineRecordsMetadata(dir string, baseRowID uint64, generation uint64) error {
 	refs, err := readTerminalGridIndexRefsFromPath(filepath.Join(dir, terminalGridIndexName))
 	if err != nil {
 		return err
