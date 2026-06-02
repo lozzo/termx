@@ -323,7 +323,23 @@ func historyWindowToken(viewport terminalGridViewport) string {
 	if len(viewport.Rows) == 0 && viewport.TotalRows == 0 {
 		return ""
 	}
-	return fmt.Sprintf("g%d:%d-%d:c%d", viewport.Generation, viewport.FirstRowID, viewport.LastRowID, viewport.Size.Cols)
+	firstLineID, lastLineID := historyWindowLogicalLineIDBoundary(viewport.LogicalLineIDs)
+	return fmt.Sprintf("g%d:%d-%d:l%d-%d:c%d", viewport.Generation, viewport.FirstRowID, viewport.LastRowID, firstLineID, lastLineID, viewport.Size.Cols)
+}
+
+func historyWindowLogicalLineIDBoundary(logicalLineIDs []uint64) (uint64, uint64) {
+	var first uint64
+	var last uint64
+	for _, id := range logicalLineIDs {
+		if id == 0 {
+			continue
+		}
+		if first == 0 {
+			first = id
+		}
+		last = id
+	}
+	return first, last
 }
 
 // historyLineSpans 优先按 core projection 给出的 stable logical line id

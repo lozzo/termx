@@ -184,6 +184,23 @@ func TestServerHistoryWindowTokenTracksBoundary(t *testing.T) {
 	}
 }
 
+func TestHistoryWindowTokenIncludesLogicalLineBoundary(t *testing.T) {
+	viewport := terminalGridViewport{
+		Rows:           [][]vterm.Cell{vtermCells("row")},
+		TotalRows:      1,
+		Generation:     7,
+		FirstRowID:     10,
+		LastRowID:      10,
+		Size:           Size{Cols: 4},
+		LogicalLineIDs: []uint64{101},
+	}
+	token := historyWindowToken(viewport)
+	viewport.LogicalLineIDs = []uint64{202}
+	if got := historyWindowToken(viewport); got == token {
+		t.Fatalf("expected logical line boundary to affect history window token, got %q", got)
+	}
+}
+
 func vtermCells(text string) []vterm.Cell {
 	cells := make([]vterm.Cell, 0, len(text))
 	for _, r := range text {
