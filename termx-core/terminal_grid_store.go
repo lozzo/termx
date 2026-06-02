@@ -105,6 +105,7 @@ type terminalGridMetadata struct {
 type terminalGridLineMetadata struct {
 	Records     []terminalGridLineRecordMeta `json:"records,omitempty"`
 	LiveRecords []terminalGridLineRecordMeta `json:"live_records,omitempty"`
+	LiveRows    []terminalGridLineRowMeta    `json:"live_rows,omitempty"`
 	Migrations  []terminalGridLineMigration  `json:"migrations,omitempty"`
 }
 
@@ -122,6 +123,11 @@ type terminalGridLineRecordMeta struct {
 type terminalGridLineMigration struct {
 	RuntimeID   uint64 `json:"runtime_id"`
 	PersistedID uint64 `json:"persisted_id"`
+}
+
+type terminalGridLineRowMeta struct {
+	Payload []byte `json:"payload"`
+	Wrapped bool   `json:"wrapped"`
 }
 
 func newTerminalGridStore(gridRoot, terminalID string) (*terminalGridStore, error) {
@@ -1299,6 +1305,123 @@ func (s *terminalGridStore) persistedLogicalLineRecordsForViewport(refs []termin
 	return terminalGridLogicalLineRecordsForRefsWithGeneration(refs, firstRowID, generation)
 }
 
+func (s *terminalGridStore) recoveredLiveTailFromMetadata() (terminalPrimaryLiveTail, bool) {
+	var tail terminalPrimaryLiveTail
+	if s == nil || strings.TrimSpace(s.dir) == "" {
+		return tail, false
+	}
+	metadata, err := readTerminalGridLineMetadata(s.dir)
+	if err != nil || len(metadata.LiveRecords) == 0 || len(metadata.LiveRows) == 0 {
+		return tail, false
+	}
+	rows, err := terminalGridDamageRowsFromLineRowMetas(metadata.LiveRows)
+	if err != nil || len(rows) != len(metadata.LiveRows) {
+		return terminalPrimaryLiveTail{}, false
+	}
+	segments, ok := terminalLiveTailSegmentsFromMetadata(metadata.LiveRecords, rows)
+	if !ok {
+		return terminalPrimaryLiveTail{}, false
+	}
+	return terminalPrimaryLiveTail{segments: segments, wrapPending: terminalLiveTailSegmentsWrapPending(segments)}, true
+}
+
+func terminalLiveTailSegmentsFromMetadata(records []terminalGridLineRecordMeta, rows []vterm.DamageOp) ([]terminalLiveTailSegment, bool) {
+	if len(records) == 0 || len(rows) == 0 {
+		return nil, false
+	}
+	if _, ok := terminalGridCompleteLiveTailLogicalLineRecords(terminalGridLogicalLineRecordsFromMetadata(records), len(rows)); !ok {
+		return nil, false
+	}
+	segments := make([]terminalLiveTailSegment, 0, len(records))
+	for i, record := range records {
+		if record.StartRow < 0 || record.EndRow >= len(rows) || record.EndRow < record.StartRow {
+			return nil, false
+		}
+		if record.Residency != terminalLogicalLineResidencyLiveTail || record.ID == 0 {
+			return nil, false
+		}
+		segmentRows := cloneGridDamageOps(rows[record.StartRow : record.EndRow+1])
+		lineIDs := make([]uint64, len(segmentRows))
+		for row := range lineIDs {
+			lineIDs[row] = record.ID
+		}
+		segment := terminalLiveTailSegment{
+			origin:         record.Origin,
+			sealState:      terminalLiveTailOpen,
+			rows:           segmentRows,
+			logicalLineIDs: lineIDs,
+			wrapPending:    !record.Sealed,
+			generation:     record.Generation,
+		}
+		if record.Sealed {
+			segment.sealState = terminalLiveTailSealed
+		}
+		if record.Origin == terminalLiveTailOriginReclaimed {
+			segment.firstRowID = persistedRowIDFromLogicalLineID(record.ID)
+			segment.lastRowID = segment.firstRowID + uint64(len(segmentRows)-1)
+		}
+		if i > 0 && canMergeRecoveredLiveTailSegments(segments[len(segments)-1], segment) {
+			merged := &segments[len(segments)-1]
+			merged.rows = append(merged.rows, segment.rows...)
+			merged.logicalLineIDs = append(merged.logicalLineIDs, segment.logicalLineIDs...)
+			merged.sealState = segment.sealState
+			merged.wrapPending = segment.wrapPending
+			if segment.lastRowID > merged.lastRowID {
+				merged.lastRowID = segment.lastRowID
+			}
+			continue
+		}
+		segments = append(segments, segment)
+	}
+	return segments, true
+}
+
+func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogicalLineRecord, rowCount int) ([]terminalGridLogicalLineRecord, bool) {
+	if rowCount <= 0 || len(records) == 0 {
+		return nil, false
+	}
+	out := make([]terminalGridLogicalLineRecord, 0, len(records))
+	nextStart := 0
+	for _, record := range records {
+		if record.id == 0 || record.residency != terminalLogicalLineResidencyLiveTail || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
+			return nil, false
+		}
+		out = append(out, record)
+		nextStart = record.endRow + 1
+	}
+	if nextStart != rowCount {
+		return nil, false
+	}
+	return out, true
+}
+
+func canMergeRecoveredLiveTailSegments(left terminalLiveTailSegment, right terminalLiveTailSegment) bool {
+	if left.origin != right.origin || left.generation != right.generation {
+		return false
+	}
+	if left.origin == terminalLiveTailOriginReclaimed {
+		return left.lastRowID+1 == right.firstRowID
+	}
+	return true
+}
+
+func terminalLiveTailSegmentsWrapPending(segments []terminalLiveTailSegment) bool {
+	for i := len(segments) - 1; i >= 0; i-- {
+		if segments[i].origin == terminalLiveTailOriginReclaimed {
+			continue
+		}
+		return segments[i].wrapPending
+	}
+	return false
+}
+
+func persistedRowIDFromLogicalLineID(logicalLineID uint64) uint64 {
+	if logicalLineID == 0 {
+		return 0
+	}
+	return logicalLineID - 1
+}
+
 func readTerminalGridRows(dir string, refs []terminalGridRowRef) ([]terminalGridRow, error) {
 	out := make([]terminalGridRow, 0, len(refs))
 	var currentSeq uint32
@@ -1837,7 +1960,59 @@ func terminalGridLineRecordMetasFromLiveTailRecords(records []terminalLiveTailLo
 	return out
 }
 
+func terminalGridLineRowMetasFromDamageRows(rows []vterm.DamageOp) ([]terminalGridLineRowMeta, error) {
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	out := make([]terminalGridLineRowMeta, 0, len(rows))
+	for _, row := range rows {
+		payload, err := encodeTerminalGridRow(terminalGridRow{
+			cells:     damageOpCells(row),
+			runs:      row.Runs,
+			timestamp: row.Timestamp,
+			rowKind:   row.RowKind,
+			wrapped:   row.WrappedSet && row.Wrapped,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, terminalGridLineRowMeta{
+			Payload: payload,
+			Wrapped: row.WrappedSet && row.Wrapped,
+		})
+	}
+	return out, nil
+}
+
+func terminalGridDamageRowsFromLineRowMetas(rows []terminalGridLineRowMeta) ([]vterm.DamageOp, error) {
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	out := make([]vterm.DamageOp, 0, len(rows))
+	for _, row := range rows {
+		if len(row.Payload) == 0 {
+			return nil, fmt.Errorf("terminal grid live tail row payload is empty")
+		}
+		decoded, err := decodeTerminalGridRow(row.Payload)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, vterm.DamageOp{
+			Cells:      cloneVTermCells(decoded.cells),
+			Timestamp:  decoded.timestamp,
+			RowKind:    decoded.rowKind,
+			WrappedSet: true,
+			Wrapped:    row.Wrapped,
+		})
+	}
+	return out, nil
+}
+
 func (s *terminalGridStore) recordLiveTailLineMetadata(records []terminalLiveTailLogicalLineRecord) error {
+	return s.recordLiveTailLineState(records, nil)
+}
+
+func (s *terminalGridStore) recordLiveTailLineState(records []terminalLiveTailLogicalLineRecord, rows []vterm.DamageOp) error {
 	if s == nil || strings.TrimSpace(s.dir) == "" {
 		return nil
 	}
@@ -1849,6 +2024,11 @@ func (s *terminalGridStore) recordLiveTailLineMetadata(records []terminalLiveTai
 		return err
 	}
 	metadata.LiveRecords = terminalGridLineRecordMetasFromLiveTailRecords(records)
+	rowMetas, err := terminalGridLineRowMetasFromDamageRows(rows)
+	if err != nil {
+		return err
+	}
+	metadata.LiveRows = rowMetas
 	return writeTerminalGridLineMetadata(dir, metadata)
 }
 

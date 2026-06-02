@@ -1030,142 +1030,10 @@ func (t *Terminal) GridViewportWithOptions(opt GridViewportOptions) *GridViewpor
 }
 
 func (t *Terminal) combinedGridViewport(offset, limit, cols int, liveTail terminalPrimaryLiveTail) (terminalGridViewport, error) {
-	var result terminalGridViewport
 	if t == nil || t.grid == nil {
-		return result, nil
+		return terminalGridViewport{}, nil
 	}
-	offset, limit = sanitizeGridViewportWindow(offset, limit)
-	_, generation, persistedRows := t.grid.coordinates()
-	visiblePersistedRows := persistedRows - liveTail.reclaimedCommittedRowCount()
-	if firstReclaimedRowID, ok := liveTail.earliestReclaimedRowID(); ok {
-		baseRowID, _, _ := t.grid.coordinates()
-		if firstReclaimedRowID >= baseRowID {
-			coveredStart := int(firstReclaimedRowID - baseRowID)
-			if coveredStart < visiblePersistedRows {
-				visiblePersistedRows = coveredStart
-			}
-		}
-	}
-	if visiblePersistedRows < 0 {
-		visiblePersistedRows = 0
-	}
-	if offset > 0 {
-		persistedViewport, err := t.grid.Viewport(offset, limit, cols)
-		if err != nil {
-			return result, err
-		}
-		if persistedViewport.TotalRows > 0 {
-			return persistedViewport, nil
-		}
-		result.BeforeOffset = offset
-		result.Limit = limit
-		result.TotalRows = visiblePersistedRows
-		result.LogicalTotal = t.grid.LogicalLineCount()
-		result.LoadedRows = minInt(offset, visiblePersistedRows)
-		if visiblePersistedRows > 0 {
-			result.Generation = generation
-		}
-		return result, nil
-	}
-	includeLiveTail := offset == 0
-	liveTailRows := liveTail.rows()
-	totalRows := visiblePersistedRows
-	if includeLiveTail {
-		totalRows += len(liveTailRows)
-	}
-	if totalRows <= 0 {
-		return result, nil
-	}
-	if offset > totalRows {
-		offset = totalRows
-	}
-	end := totalRows - offset
-	if end < 0 {
-		end = 0
-	}
-	start := end - limit
-	if start < 0 {
-		start = 0
-	}
-	persistedStart := minInt(start, visiblePersistedRows)
-	persistedEnd := minInt(end, visiblePersistedRows)
-	liveTailStart := maxInt(start-visiblePersistedRows, 0)
-	liveTailEnd := maxInt(end-visiblePersistedRows, 0)
-	if !includeLiveTail {
-		liveTailStart = 0
-		liveTailEnd = 0
-	}
-
-	result.BeforeOffset = offset
-	result.Limit = limit
-	result.TotalRows = totalRows
-	result.LogicalTotal = t.grid.LogicalLineCount()
-	if visiblePersistedRows > 0 {
-		result.Generation = generation
-	}
-
-	displayStart := start
-	if persistedEnd > persistedStart {
-		beforeOffsetPersisted := persistedRows - persistedEnd
-		limitPersisted := persistedEnd - persistedStart
-		persistedViewport, err := t.grid.Viewport(beforeOffsetPersisted, limitPersisted, cols)
-		if err != nil {
-			return result, err
-		}
-		result = persistedViewport
-		result.BeforeOffset = offset
-		result.Limit = limit
-		result.TotalRows = totalRows
-		result.LogicalTotal = persistedViewport.LogicalTotal
-		result.Generation = persistedViewport.Generation
-		result.LoadedRows = persistedViewport.LoadedRows
-		result.FirstRowID = persistedViewport.FirstRowID
-		result.LastRowID = persistedViewport.LastRowID
-		displayStart = visiblePersistedRows - persistedViewport.LoadedRows
-	}
-	if liveTailEnd > liveTailStart {
-		liveTailStart = expandDamageWindowStartToLogicalLine(liveTailRows, liveTailStart)
-		if persistedEnd <= persistedStart {
-			displayStart = visiblePersistedRows + liveTailStart
-		}
-		if liveTailEnd > len(liveTailRows) {
-			liveTailEnd = len(liveTailRows)
-		}
-		window := liveTail.window(liveTailStart, liveTailEnd)
-		for i, row := range window.rows {
-			result.Rows = append(result.Rows, damageOpCells(row))
-			result.Timestamps = append(result.Timestamps, row.Timestamp)
-			result.RowKinds = append(result.RowKinds, row.RowKind)
-			result.Wrapped = append(result.Wrapped, row.WrappedSet && row.Wrapped)
-			result.Ownership = append(result.Ownership, stringAt(window.ownership, i))
-			result.LogicalLineIDs = append(result.LogicalLineIDs, uint64At(window.logicalLineIDs, i))
-		}
-		if window.hasCommitted {
-			result.LoadedRows += window.committed
-			if result.Generation == 0 {
-				result.Generation = window.generation
-			}
-			if result.FirstRowID == 0 && result.LastRowID == 0 {
-				result.FirstRowID = window.firstRowID
-				result.LastRowID = window.lastRowID
-			} else {
-				if window.firstRowID < result.FirstRowID {
-					result.FirstRowID = window.firstRowID
-				}
-				if window.lastRowID > result.LastRowID {
-					result.LastRowID = window.lastRowID
-				}
-			}
-		}
-	}
-	if visiblePersistedRows <= 0 && result.LoadedRows == 0 {
-		result.LoadedRows = 0
-		result.Generation = 0
-		result.FirstRowID = 0
-		result.LastRowID = 0
-	}
-	result.HasMore = displayStart > 0
-	return result, nil
+	return combinedGridViewportFromStore(t.grid, offset, limit, cols, liveTail)
 }
 
 func combinedRowWindowCoordinates(store *terminalGridStore, totalRows int, start int, end int) (firstRowID uint64, lastRowID uint64) {
@@ -2107,7 +1975,7 @@ func (t *Terminal) recordLiveTailMetadataLocked() {
 	if t == nil || t.grid == nil {
 		return
 	}
-	if err := t.grid.recordLiveTailLineMetadata(t.primaryLiveTail.logicalLineRecords()); err != nil && t.logger != nil {
+	if err := t.grid.recordLiveTailLineState(t.primaryLiveTail.logicalLineRecords(), t.primaryLiveTail.rows()); err != nil && t.logger != nil {
 		t.logger.Warn("termx terminal live tail metadata write failed", "terminal_id", t.id, "error", err)
 	}
 }

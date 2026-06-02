@@ -118,6 +118,13 @@ func (s *Server) historyCoreGridViewport(id string, opt GridViewportOptions) (te
 		if cols <= 0 {
 			cols = 80
 		}
+		if beforeOffset == 0 {
+			if liveTail, ok := store.recoveredLiveTailFromMetadata(); ok {
+				viewport, viewportErr := combinedGridViewportFromStore(store, beforeOffset, limit, cols, liveTail)
+				viewport.Size.Rows = s.cfg.defaultSize.Rows
+				return viewport, viewportErr
+			}
+		}
 		viewport, viewportErr := store.Viewport(beforeOffset, limit, cols)
 		viewport.Size.Rows = s.cfg.defaultSize.Rows
 		return viewport, viewportErr
@@ -138,6 +145,131 @@ func (s *Server) historyCoreGridViewport(id string, opt GridViewportOptions) (te
 	viewport, viewportErr := term.combinedGridViewport(offset, limit, cols, liveTail)
 	viewport.Size.Rows = size.Rows
 	return viewport, viewportErr
+}
+
+func combinedGridViewportFromStore(store *terminalGridStore, offset, limit, cols int, liveTail terminalPrimaryLiveTail) (terminalGridViewport, error) {
+	var result terminalGridViewport
+	if store == nil {
+		return result, nil
+	}
+	offset, limit = sanitizeGridViewportWindow(offset, limit)
+	_, generation, persistedRows := store.coordinates()
+	visiblePersistedRows := persistedRows - liveTail.reclaimedCommittedRowCount()
+	if firstReclaimedRowID, ok := liveTail.earliestReclaimedRowID(); ok {
+		baseRowID, _, _ := store.coordinates()
+		if firstReclaimedRowID >= baseRowID {
+			coveredStart := int(firstReclaimedRowID - baseRowID)
+			if coveredStart < visiblePersistedRows {
+				visiblePersistedRows = coveredStart
+			}
+		}
+	}
+	if visiblePersistedRows < 0 {
+		visiblePersistedRows = 0
+	}
+	if offset > 0 {
+		persistedViewport, err := store.Viewport(offset, limit, cols)
+		if err != nil {
+			return result, err
+		}
+		if persistedViewport.TotalRows > 0 {
+			return persistedViewport, nil
+		}
+		result.BeforeOffset = offset
+		result.Limit = limit
+		result.TotalRows = visiblePersistedRows
+		result.LogicalTotal = store.LogicalLineCount()
+		result.LoadedRows = minInt(offset, visiblePersistedRows)
+		if visiblePersistedRows > 0 {
+			result.Generation = generation
+		}
+		return result, nil
+	}
+	liveTailRows := liveTail.rows()
+	totalRows := visiblePersistedRows + len(liveTailRows)
+	if totalRows <= 0 {
+		return result, nil
+	}
+	end := totalRows
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+	persistedStart := minInt(start, visiblePersistedRows)
+	persistedEnd := minInt(end, visiblePersistedRows)
+	liveTailStart := maxInt(start-visiblePersistedRows, 0)
+	liveTailEnd := maxInt(end-visiblePersistedRows, 0)
+
+	result.BeforeOffset = offset
+	result.Limit = limit
+	result.TotalRows = totalRows
+	result.LogicalTotal = store.LogicalLineCount()
+	if visiblePersistedRows > 0 {
+		result.Generation = generation
+	}
+
+	displayStart := start
+	if persistedEnd > persistedStart {
+		beforeOffsetPersisted := persistedRows - persistedEnd
+		limitPersisted := persistedEnd - persistedStart
+		persistedViewport, err := store.Viewport(beforeOffsetPersisted, limitPersisted, cols)
+		if err != nil {
+			return result, err
+		}
+		result = persistedViewport
+		result.BeforeOffset = offset
+		result.Limit = limit
+		result.TotalRows = totalRows
+		result.LogicalTotal = persistedViewport.LogicalTotal
+		result.Generation = persistedViewport.Generation
+		result.LoadedRows = persistedViewport.LoadedRows
+		result.FirstRowID = persistedViewport.FirstRowID
+		result.LastRowID = persistedViewport.LastRowID
+		displayStart = visiblePersistedRows - persistedViewport.LoadedRows
+	}
+	if liveTailEnd > liveTailStart {
+		liveTailStart = expandDamageWindowStartToLogicalLine(liveTailRows, liveTailStart)
+		if persistedEnd <= persistedStart {
+			displayStart = visiblePersistedRows + liveTailStart
+		}
+		if liveTailEnd > len(liveTailRows) {
+			liveTailEnd = len(liveTailRows)
+		}
+		window := liveTail.window(liveTailStart, liveTailEnd)
+		for i, row := range window.rows {
+			result.Rows = append(result.Rows, damageOpCells(row))
+			result.Timestamps = append(result.Timestamps, row.Timestamp)
+			result.RowKinds = append(result.RowKinds, row.RowKind)
+			result.Wrapped = append(result.Wrapped, row.WrappedSet && row.Wrapped)
+			result.Ownership = append(result.Ownership, stringAt(window.ownership, i))
+			result.LogicalLineIDs = append(result.LogicalLineIDs, uint64At(window.logicalLineIDs, i))
+		}
+		if window.hasCommitted {
+			result.LoadedRows += window.committed
+			if result.Generation == 0 {
+				result.Generation = window.generation
+			}
+			if result.FirstRowID == 0 && result.LastRowID == 0 {
+				result.FirstRowID = window.firstRowID
+				result.LastRowID = window.lastRowID
+			} else {
+				if window.firstRowID < result.FirstRowID {
+					result.FirstRowID = window.firstRowID
+				}
+				if window.lastRowID > result.LastRowID {
+					result.LastRowID = window.lastRowID
+				}
+			}
+		}
+	}
+	if visiblePersistedRows <= 0 && result.LoadedRows == 0 {
+		result.LoadedRows = 0
+		result.Generation = 0
+		result.FirstRowID = 0
+		result.LastRowID = 0
+	}
+	result.HasMore = displayStart > 0
+	return result, nil
 }
 
 func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport terminalGridViewport) *HistoryWindow {

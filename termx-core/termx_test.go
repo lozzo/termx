@@ -252,6 +252,56 @@ func TestServerGridViewportFromStoreUsesDefaultCanonicalCols(t *testing.T) {
 	}
 }
 
+func TestServerHistoryWindowRestoresLiveTailFromLineMetadata(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "recover-live-tail-window")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	vt := vterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	term := &Terminal{
+		id:    "recover-live-tail-window",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+	damage := vterm.WriteDamage{
+		ScrollbackAppend: []vterm.DamageOp{
+			{Cells: localVTermCellsFromString("hist"), WrappedSet: true, Wrapped: false},
+			{Cells: localVTermCellsFromString("tail"), WrappedSet: true, Wrapped: true},
+		},
+		LiveTailAppendRows: 1,
+	}
+	term.appendGridFromDamageLocked(damage)
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	restarted := NewServer(WithGridRoot(root), WithDefaultSize(4, 1))
+	window, err := restarted.HistoryWindow(ctx, "recover-live-tail-window", HistoryWindowOptions{Limit: 10, Cols: 4})
+	if err != nil {
+		t.Fatalf("history window after restart: %v", err)
+	}
+	gotRows := make([]string, 0, len(window.Rows))
+	for _, row := range window.Rows {
+		gotRows = append(gotRows, protocolTestRowToString(row.Cells.DecodeCells()))
+	}
+	if !reflect.DeepEqual(gotRows, []string{"hist", "tail"}) {
+		t.Fatalf("expected persisted row plus recovered live tail row, got %#v", gotRows)
+	}
+	if window.LoadedRows != 1 || window.TotalRows != 2 {
+		t.Fatalf("expected recovered latest window to keep committed loaded depth 1 and total 2, got loaded=%d total=%d", window.LoadedRows, window.TotalRows)
+	}
+	if len(window.Lines) != 2 || window.Lines[1].LogicalLineID < terminalLiveTailLogicalLineIDBase {
+		t.Fatalf("expected recovered live tail logical line id in history window, got %#v", window.Lines)
+	}
+	if window.Rows[1].Ownership != RowOwnershipLiveTailLive {
+		t.Fatalf("expected recovered live tail row ownership, got %#v", window.Rows)
+	}
+}
+
 func TestServerRemoveDeletesPersistentGridHistory(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
