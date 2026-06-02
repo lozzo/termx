@@ -1130,6 +1130,18 @@ func TestTerminalGridStoreRetentionCapsCommittedRows(t *testing.T) {
 	if viewport.FirstRowID != 3 || viewport.LastRowID != 5 || viewport.Generation == 0 {
 		t.Fatalf("expected retained row coordinates to track dropped rows, got generation=%d first=%d last=%d", viewport.Generation, viewport.FirstRowID, viewport.LastRowID)
 	}
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read retained line metadata: %v", err)
+	}
+	if len(lineMetadata.Records) != 3 {
+		t.Fatalf("expected retained sidecar to contain 3 logical line records, got %#v", lineMetadata.Records)
+	}
+	for i, record := range lineMetadata.Records {
+		if record.ID != uint64(4+i) || record.StartRow != i || record.EndRow != i || !record.Sealed || record.Origin != terminalLiveTailOriginReclaimed || record.Residency != terminalLogicalLineResidencyPersisted || record.Dirty || record.Generation != viewport.Generation {
+			t.Fatalf("unexpected retained sidecar record %d: %#v viewport=%#v", i, record, viewport)
+		}
+	}
 
 	refs, err := readAllTerminalGridIndexRefs(store.dir)
 	if err != nil {

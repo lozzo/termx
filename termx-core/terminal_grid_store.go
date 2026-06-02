@@ -1047,7 +1047,13 @@ func (s *terminalGridStore) enforceMaxRowsLockedAt(now time.Time) error {
 			s.current = nil
 		}
 	}
-	return pruneUnreferencedTerminalGridPages(s.dir, refs)
+	if err := pruneUnreferencedTerminalGridPages(s.dir, refs); err != nil {
+		return err
+	}
+	if s.writable && !s.removeOnClose {
+		return writeTerminalGridLineRecordsMetadata(s.dir, s.baseRowID, s.generation)
+	}
+	return nil
 }
 
 func terminalGridRetentionRetainedRows(dir string, refs []terminalGridRowRef, lineRecords []terminalGridLogicalLineRecord, policy terminalGridRetentionPolicy, now time.Time) (int, error) {
