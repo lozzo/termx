@@ -23,16 +23,18 @@ type copyModeLogicalPos struct {
 }
 
 type copyModeState struct {
-	PaneID              string
-	Snapshot            *protocol.Snapshot
-	ViewTopRow          int
-	Cursor              copyModePoint
-	CursorLogical       copyModeLogicalPos
-	Mark                *copyModePoint
-	MarkLogical         *copyModeLogicalPos
-	MouseSelecting      bool
-	AutoScrollDir       int
-	AutoScrollSeq       uint64
+	PaneID         string
+	TerminalID     string
+	WindowToken    string
+	Snapshot       *protocol.Snapshot
+	ViewTopRow     int
+	Cursor         copyModePoint
+	CursorLogical  copyModeLogicalPos
+	Mark           *copyModePoint
+	MarkLogical    *copyModeLogicalPos
+	MouseSelecting bool
+	AutoScrollDir  int
+	AutoScrollSeq  uint64
 }
 
 type copyModeResumeState struct {
@@ -490,10 +492,12 @@ func (m *Model) ensureCopyMode() bool {
 	start := copyModePoint{Row: maxInt(0, len(buffer.snapshot.Scrollback)+buffer.cursorRow()), Col: maxInt(0, buffer.cursorCol())}
 	start = buffer.clampPoint(start)
 	m.copyMode = copyModeState{
-		PaneID:     pane.ID,
-		Snapshot:   frozenSnapshot,
-		ViewTopRow: maxInt(0, buffer.totalRows()-buffer.height),
-		Cursor:     start,
+		PaneID:      pane.ID,
+		TerminalID:  pane.TerminalID,
+		WindowToken: buffer.windowToken(),
+		Snapshot:    frozenSnapshot,
+		ViewTopRow:  maxInt(0, buffer.totalRows()-buffer.height),
+		Cursor:      start,
 	}
 	if logical, ok := buffer.logicalPosForPoint(start); ok {
 		m.copyMode.CursorLogical = logical
