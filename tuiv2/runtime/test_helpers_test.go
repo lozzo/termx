@@ -58,7 +58,7 @@ func (c *fakeBridgeClient) Snapshot(_ context.Context, terminalID string, _, _ i
 	return cloneProtocolSnapshot(c.snapshotByTerminal[terminalID]), nil
 }
 func (c *fakeBridgeClient) GridViewport(context.Context, string, int, int, int) (*protocol.GridViewport, error) {
-	return &protocol.GridViewport{}, nil
+	return nil, nil
 }
 func (c *fakeBridgeClient) HistoryWindow(context.Context, protocol.HistoryWindowParams) (*protocol.HistoryWindow, error) {
 	return &protocol.HistoryWindow{}, nil

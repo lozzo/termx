@@ -46,29 +46,6 @@ func traceRuntimeSnapshot(event string, snap *protocol.Snapshot, kv ...any) {
 	traceRuntimeProtocolCellRows(event+".screen", snap.TerminalID, snap.Screen.Cells, kv...)
 }
 
-func traceRuntimeGridViewport(event, terminalID string, viewport *protocol.GridViewport, kv ...any) {
-	if !gridtrace.Enabled() || viewport == nil {
-		return
-	}
-	base := append([]any{
-		"terminal_id", terminalID,
-		"cols", viewport.Size.Cols,
-		"rows", viewport.Size.Rows,
-		"scrollback_rows", len(viewport.Rows),
-		"offset", viewport.ScrollbackOffset,
-		"limit", viewport.ScrollbackLimit,
-		"total", viewport.ScrollbackTotal,
-		"logical_total", viewport.ScrollbackLogicalTotal,
-		"has_more", viewport.ScrollbackHasMore,
-		"loaded_rows", viewport.LoadedRows,
-		"generation", viewport.HistoryGeneration,
-		"first_row_id", viewport.FirstRowID,
-		"last_row_id", viewport.LastRowID,
-	}, kv...)
-	gridtrace.Log(event+".viewport", base...)
-	traceRuntimeCompactRows(event+".rows", terminalID, viewport.Rows, kv...)
-}
-
 func traceRuntimeCompactRows(event, terminalID string, rows []protocol.CompactRow, kv ...any) {
 	if !gridtrace.Enabled() {
 		return
