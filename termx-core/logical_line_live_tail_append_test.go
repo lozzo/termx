@@ -180,6 +180,100 @@ func TestTerminalExactWidthLineHardNewlineSealsToPersistedHistory(t *testing.T) 
 	}
 }
 
+func TestTerminalWideAndCombiningExactWidthLineSealsAsOneLogicalLine(t *testing.T) {
+	vt := localvterm.New(4, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "wide-combining-seal",
+		size:  Size{Cols: 4, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+
+	writeVTermDamageToGrid(t, term, vt, "你e\u0301a")
+	if got := store.RowCount(); got != 0 {
+		t.Fatalf("expected wide/combining open line to stay out of persisted store before terminator, got %d rows", got)
+	}
+	if !term.primaryLiveTail.wrapPending {
+		t.Fatal("expected exact-width wide/combining line to leave live-tail wrap pending before hard newline")
+	}
+
+	writeVTermDamageToGrid(t, term, vt, "\r\n")
+
+	if got := store.RowCount(); got != 1 {
+		t.Fatalf("expected hard newline to seal one persisted row, got %d", got)
+	}
+	if got := store.LogicalLineCount(); got != 1 {
+		t.Fatalf("expected hard newline to seal one logical line, got %d", got)
+	}
+	if term.primaryLiveTail.wrapPending {
+		t.Fatal("expected hard newline to clear wide/combining wrap pending")
+	}
+
+	wide, err := store.Viewport(0, 10, 4)
+	if err != nil {
+		t.Fatalf("wide viewport: %v", err)
+	}
+	if got := vtermRowsToStrings(wide.Rows); !reflect.DeepEqual(got, []string{"你éa"}) {
+		t.Fatalf("expected normalized wide/combining logical line, got %#v", got)
+	}
+	if got := wide.Wrapped; !reflect.DeepEqual(got, []bool{false}) {
+		t.Fatalf("expected sealed wide/combining row to terminate the logical line, got %#v", got)
+	}
+	if len(wide.Rows) != 1 || len(wide.Rows[0]) < 4 {
+		t.Fatalf("expected wide viewport cells with continuation placeholder, got %#v", wide.Rows)
+	}
+	if got := wide.Rows[0][0]; got.Content != "你" || got.Width != 2 {
+		t.Fatalf("expected wide anchor cell to persist, got %#v", got)
+	}
+	if got := wide.Rows[0][1]; got.Content != "" || got.Width != 0 {
+		t.Fatalf("expected wide continuation placeholder to persist, got %#v", got)
+	}
+	if !vtermRowContainsCell(wide.Rows[0], "é", 1) {
+		t.Fatalf("expected combining cluster to normalize before persistence, got %#v", wide.Rows[0])
+	}
+	if !vtermRowContainsCell(wide.Rows[0], "a", 1) {
+		t.Fatalf("expected trailing ascii cell to persist after normalized grapheme, got %#v", wide.Rows[0])
+	}
+
+	narrow, err := store.Viewport(0, 10, 3)
+	if err != nil {
+		t.Fatalf("narrow viewport: %v", err)
+	}
+	if got := vtermRowsToStrings(narrow.Rows); !reflect.DeepEqual(got, []string{"你é", "a"}) {
+		t.Fatalf("expected narrow projection to reflow by cell width, got %#v", got)
+	}
+	if got := narrow.Wrapped; !reflect.DeepEqual(got, []bool{true, false}) {
+		t.Fatalf("expected narrow projection to preserve logical line boundary, got %#v", got)
+	}
+	if len(narrow.Rows) != 2 || len(narrow.Rows[0]) < 2 {
+		t.Fatalf("expected narrow projection to keep wide continuation in first segment, got %#v", narrow.Rows)
+	}
+	if got := narrow.Rows[0][0]; got.Content != "你" || got.Width != 2 {
+		t.Fatalf("expected narrow wide anchor cell to persist, got %#v", got)
+	}
+	if got := narrow.Rows[0][1]; got.Content != "" || got.Width != 0 {
+		t.Fatalf("expected narrow wide continuation placeholder to persist, got %#v", got)
+	}
+	if !vtermRowContainsCell(narrow.Rows[0], "é", 1) {
+		t.Fatalf("expected combining cluster to normalize before persistence, got %#v", narrow.Rows[0])
+	}
+	if !vtermRowContainsCell(narrow.Rows[1], "a", 1) {
+		t.Fatalf("expected trailing ascii cell to remain in the final projected segment, got %#v", narrow.Rows[1])
+	}
+}
+
+func vtermRowContainsCell(row []localvterm.Cell, content string, width int) bool {
+	for _, cell := range row {
+		if cell.Content == content && cell.Width == width {
+			return true
+		}
+	}
+	return false
+}
+
 func TestTerminalResizeFullReplacePreservesExistingLiveTailOpenLinePrefix(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()
