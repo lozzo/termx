@@ -87,6 +87,59 @@ func TestTerminalPrimaryLiveTailLogicalLineRecordsTrackReclaimedAndLiveRows(t *t
 	}
 }
 
+func TestTerminalGridLineRecordMetasOnlyWriteReclaimedRowIDs(t *testing.T) {
+	records := []terminalLiveTailLogicalLineRecord{
+		{
+			id:         41,
+			startRow:   0,
+			endRow:     0,
+			sealState:  terminalLiveTailSealed,
+			origin:     terminalLiveTailOriginReclaimed,
+			residency:  terminalLogicalLineResidencyLiveTail,
+			rowIDKnown: true,
+			firstRowID: 40,
+			lastRowID:  40,
+		},
+		{
+			id:         terminalLiveTailLogicalLineIDBase + 1,
+			startRow:   1,
+			endRow:     1,
+			sealState:  terminalLiveTailOpen,
+			origin:     terminalLiveTailOriginLive,
+			residency:  terminalLogicalLineResidencyLiveTail,
+			dirty:      true,
+			rowIDKnown: true,
+			firstRowID: 50,
+			lastRowID:  50,
+		},
+		{
+			id:         terminalLiveTailLogicalLineIDBase + 2,
+			startRow:   2,
+			endRow:     2,
+			sealState:  terminalLiveTailOpen,
+			origin:     terminalLiveTailOriginResize,
+			residency:  terminalLogicalLineResidencyLiveTail,
+			dirty:      true,
+			rowIDKnown: true,
+			firstRowID: 60,
+			lastRowID:  60,
+		},
+	}
+
+	metas := terminalGridLineRecordMetasFromLiveTailRecords(records)
+	if len(metas) != 3 {
+		t.Fatalf("expected three metadata records, got %#v", metas)
+	}
+	if !metas[0].RowIDKnown || metas[0].FirstRowID != 40 || metas[0].LastRowID != 40 {
+		t.Fatalf("expected reclaimed record to write explicit row ids, got %#v", metas[0])
+	}
+	for _, meta := range metas[1:] {
+		if meta.RowIDKnown || meta.FirstRowID != 0 || meta.LastRowID != 0 {
+			t.Fatalf("expected non-reclaimed record to omit row ids, got %#v", meta)
+		}
+	}
+}
+
 func TestTerminalPrimaryLiveTailPrefersExplicitReclaimedLogicalLineIDs(t *testing.T) {
 	var tail terminalPrimaryLiveTail
 	tail.replaceReclaimedPrefixWithLogicalLineIDs([]localvterm.DamageOp{

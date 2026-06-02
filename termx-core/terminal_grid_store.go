@@ -2031,19 +2031,22 @@ func terminalGridLineRecordMetasFromLiveTailRecords(records []terminalLiveTailLo
 	}
 	out := make([]terminalGridLineRecordMeta, 0, len(records))
 	for _, record := range records {
-		out = append(out, terminalGridLineRecordMeta{
+		meta := terminalGridLineRecordMeta{
 			ID:         record.id,
 			StartRow:   record.startRow,
 			EndRow:     record.endRow,
-			RowIDKnown: record.rowIDKnown,
-			FirstRowID: record.firstRowID,
-			LastRowID:  record.lastRowID,
 			Sealed:     record.sealState == terminalLiveTailSealed,
 			Origin:     record.origin,
 			Residency:  record.residency,
 			Dirty:      record.dirty,
 			Generation: record.generation,
-		})
+		}
+		if record.origin == terminalLiveTailOriginReclaimed && record.rowIDKnown {
+			meta.RowIDKnown = true
+			meta.FirstRowID = record.firstRowID
+			meta.LastRowID = record.lastRowID
+		}
+		out = append(out, meta)
 	}
 	return out
 }
