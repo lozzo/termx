@@ -995,7 +995,8 @@ func (s *terminalGridStore) enforceMaxRowsLockedAt(now time.Time) error {
 	if err != nil {
 		return err
 	}
-	retainRows, err := terminalGridRetentionRetainedRows(s.dir, refs, s.retentionPolicy, now)
+	lineRecords := s.persistedLogicalLineRecordsForIndex(refs, s.baseRowID, s.generation)
+	retainRows, err := terminalGridRetentionRetainedRows(s.dir, refs, lineRecords, s.retentionPolicy, now)
 	if err != nil {
 		return err
 	}
@@ -1061,23 +1062,24 @@ func (s *terminalGridStore) enforceMaxRowsLockedAt(now time.Time) error {
 	return pruneUnreferencedTerminalGridPages(s.dir, refs)
 }
 
-func terminalGridRetentionRetainedRows(dir string, refs []terminalGridRowRef, policy terminalGridRetentionPolicy, now time.Time) (int, error) {
+func terminalGridRetentionRetainedRows(dir string, refs []terminalGridRowRef, lineRecords []terminalGridLogicalLineRecord, policy terminalGridRetentionPolicy, now time.Time) (int, error) {
 	if len(refs) == 0 {
 		return 0, nil
 	}
+	lineRecords = terminalGridRetentionLogicalLineRecords(refs, lineRecords)
 	retainRows := len(refs)
 	if policy.maxLogicalLines > 0 {
-		if rows := terminalGridRetentionRowsForLogicalLineLimit(refs, policy.maxLogicalLines); rows > 0 && rows < retainRows {
+		if rows := terminalGridRetentionRowsForLogicalLineLimit(lineRecords, policy.maxLogicalLines); rows > 0 && rows < retainRows {
 			retainRows = rows
 		}
 	}
 	if policy.maxRetainedBytes > 0 {
-		if rows := terminalGridRetentionRowsForByteLimit(refs, policy.maxRetainedBytes); rows >= 0 && rows < retainRows {
+		if rows := terminalGridRetentionRowsForByteLimit(refs, lineRecords, policy.maxRetainedBytes); rows >= 0 && rows < retainRows {
 			retainRows = rows
 		}
 	}
 	if policy.maxAge > 0 {
-		rows, err := terminalGridRetentionRowsForAgeLimit(dir, refs, policy.maxAge, now)
+		rows, err := terminalGridRetentionRowsForAgeLimit(dir, refs, lineRecords, policy.maxAge, now)
 		if err != nil {
 			return 0, err
 		}
@@ -1088,36 +1090,48 @@ func terminalGridRetentionRetainedRows(dir string, refs []terminalGridRowRef, po
 	return retainRows, nil
 }
 
-func terminalGridRetentionRowsForLogicalLineLimit(refs []terminalGridRowRef, logicalLines int) int {
-	if logicalLines <= 0 || len(refs) == 0 {
-		return 0
+func terminalGridRetentionLogicalLineRecords(refs []terminalGridRowRef, lineRecords []terminalGridLogicalLineRecord) []terminalGridLogicalLineRecord {
+	if records, ok := terminalGridCompletePersistedLogicalLineRecords(lineRecords, len(refs), 0); ok {
+		return records
 	}
-	records := terminalGridLogicalLineRecordsForRefs(refs, 0)
-	if len(records) == 0 {
+	return terminalGridLogicalLineRecordsForRefs(refs, 0)
+}
+
+func terminalGridRetentionRowsForLogicalLineLimit(records []terminalGridLogicalLineRecord, logicalLines int) int {
+	if logicalLines <= 0 || len(records) == 0 {
 		return 0
 	}
 	if len(records) <= logicalLines {
-		return len(refs)
+		return records[len(records)-1].endRow + 1
 	}
-	return len(refs) - records[len(records)-logicalLines].startRow
+	lastRow := records[len(records)-1].endRow
+	return lastRow - records[len(records)-logicalLines].startRow + 1
 }
 
-func terminalGridRetentionRowsForByteLimit(refs []terminalGridRowRef, maxBytes int64) int {
-	if maxBytes <= 0 || len(refs) == 0 {
+func terminalGridRetentionRowsForByteLimit(refs []terminalGridRowRef, records []terminalGridLogicalLineRecord, maxBytes int64) int {
+	if maxBytes <= 0 || len(refs) == 0 || len(records) == 0 {
 		return 0
 	}
 	var retainedBytes int64
-	for start := len(refs) - 1; start >= 0; start-- {
-		retainedBytes += refs[start].length
+	for i := len(records) - 1; i >= 0; i-- {
+		record := records[i]
+		var lineBytes int64
+		for row := record.startRow; row <= record.endRow && row < len(refs); row++ {
+			lineBytes += refs[row].length
+		}
+		if retainedBytes > 0 && retainedBytes+lineBytes > maxBytes {
+			return records[len(records)-1].endRow - records[i+1].startRow + 1
+		}
+		retainedBytes += lineBytes
 		if retainedBytes > maxBytes {
-			return len(refs) - start - 1
+			return record.endRow - record.startRow + 1
 		}
 	}
-	return len(refs)
+	return records[len(records)-1].endRow + 1
 }
 
-func terminalGridRetentionRowsForAgeLimit(dir string, refs []terminalGridRowRef, maxAge time.Duration, now time.Time) (int, error) {
-	if maxAge <= 0 || len(refs) == 0 {
+func terminalGridRetentionRowsForAgeLimit(dir string, refs []terminalGridRowRef, records []terminalGridLogicalLineRecord, maxAge time.Duration, now time.Time) (int, error) {
+	if maxAge <= 0 || len(refs) == 0 || len(records) == 0 {
 		return 0, nil
 	}
 	rows, err := readTerminalGridRows(dir, refs)
@@ -1126,22 +1140,18 @@ func terminalGridRetentionRowsForAgeLimit(dir string, refs []terminalGridRowRef,
 	}
 	cutoff := now.Add(-maxAge)
 	retainStart := len(refs)
-	for end := len(refs) - 1; end >= 0; {
-		start := end
-		for start > 0 && terminalGridRowContinuesLogicalLine(refs[start-1]) {
-			start--
-		}
+	for i := len(records) - 1; i >= 0; i-- {
+		record := records[i]
 		newest := time.Time{}
-		for i := start; i <= end && i < len(rows); i++ {
-			if rows[i].timestamp.After(newest) {
-				newest = rows[i].timestamp
+		for row := record.startRow; row <= record.endRow && row < len(rows); row++ {
+			if rows[row].timestamp.After(newest) {
+				newest = rows[row].timestamp
 			}
 		}
 		if !newest.IsZero() && newest.Before(cutoff) {
 			break
 		}
-		retainStart = start
-		end = start - 1
+		retainStart = record.startRow
 	}
 	return len(refs) - retainStart, nil
 }

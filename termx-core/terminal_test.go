@@ -1327,6 +1327,37 @@ func TestTerminalGridStoreRetentionByteLimitKeepsNewestRowsWithinBudget(t *testi
 	}
 }
 
+func TestTerminalGridStoreRetentionByteLimitKeepsCompleteNewestLogicalLine(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	prefix := terminalGridRow{cells: []localvterm.Cell{{Content: "tail-prefix", Width: 1}}, wrapped: true}
+	suffix := terminalGridRow{cells: []localvterm.Cell{{Content: "tail-suffix", Width: 1}}}
+	payloadSuffix, err := encodeTerminalGridRow(suffix)
+	if err != nil {
+		t.Fatalf("encode suffix row: %v", err)
+	}
+	store.SetRetentionPolicy(terminalGridRetentionPolicy{maxRetainedBytes: int64(len(payloadSuffix))})
+
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("old")},
+		prefix,
+		suffix,
+	}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+
+	viewport, err := store.Viewport(0, 10, 40)
+	if err != nil {
+		t.Fatalf("viewport after byte retention: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"tail-prefixtail-suffix"}) {
+		t.Fatalf("expected byte retention to keep complete newest logical line, got %#v", got)
+	}
+	if viewport.FirstRowID != 1 || viewport.LastRowID != 2 {
+		t.Fatalf("expected retained row ids for complete logical line, got first=%d last=%d", viewport.FirstRowID, viewport.LastRowID)
+	}
+}
+
 func TestTerminalGridStoreRetentionPolicyUsesSmallestBudget(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
