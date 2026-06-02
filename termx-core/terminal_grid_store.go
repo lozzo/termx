@@ -457,7 +457,7 @@ func (s *terminalGridStore) LogicalLineCount() int {
 	if err != nil {
 		return 0
 	}
-	return len(terminalGridLogicalLineRecordsForRefs(refs, 0))
+	return len(terminalGridFallbackLogicalLineRecordsForRefs(refs, 0))
 }
 
 func (s *terminalGridStore) coordinatesLocked() (baseRowID uint64, generation uint64, rowCount int) {
@@ -657,7 +657,7 @@ func (s *terminalGridStore) reclaimViewport(neededRows int, cols int) (terminalG
 		firstRowID := baseRowID + uint64(start)
 		lineRecords = terminalGridLogicalLineRecordsForWindow(lineRecords, start, end)
 		if len(lineRecords) == 0 {
-			lineRecords = terminalGridLogicalLineRecordsForRefsWithGeneration(refs, firstRowID, generation)
+			lineRecords = terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, firstRowID, generation)
 		}
 		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped, result.LogicalLineIDs = reflowTerminalGridRows(gridRows, cols, lineRecords)
 		result.Ownership = repeatedString(RowOwnershipPersisted, len(result.Rows))
@@ -1079,7 +1079,7 @@ func terminalGridRetentionLogicalLineRecords(refs []terminalGridRowRef, lineReco
 	if records, ok := terminalGridCompletePersistedLogicalLineRecords(lineRecords, len(refs), 0); ok {
 		return records
 	}
-	return terminalGridLogicalLineRecordsForRefs(refs, 0)
+	return terminalGridFallbackLogicalLineRecordsForRefs(refs, 0)
 }
 
 func terminalGridRetentionRowsForLogicalLineLimit(records []terminalGridLogicalLineRecord, logicalLines int) int {
@@ -1141,11 +1141,11 @@ func terminalGridRetentionRowsForAgeLimit(dir string, refs []terminalGridRowRef,
 	return len(refs) - retainStart, nil
 }
 
-func terminalGridLogicalLineRecordsForRefs(refs []terminalGridRowRef, baseRowID uint64) []terminalGridLogicalLineRecord {
-	return terminalGridLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, 0)
+func terminalGridFallbackLogicalLineRecordsForRefs(refs []terminalGridRowRef, baseRowID uint64) []terminalGridLogicalLineRecord {
+	return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, 0)
 }
 
-func terminalGridLogicalLineRecordsForRefsWithGeneration(refs []terminalGridRowRef, baseRowID uint64, generation uint64) []terminalGridLogicalLineRecord {
+func terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs []terminalGridRowRef, baseRowID uint64, generation uint64) []terminalGridLogicalLineRecord {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -1300,12 +1300,12 @@ func terminalGridApplyLineMigrationsToRecords(records []terminalGridLogicalLineR
 
 func (s *terminalGridStore) persistedLogicalLineRecordsForIndex(refs []terminalGridRowRef, baseRowID uint64, generation uint64) []terminalGridLogicalLineRecord {
 	if s == nil {
-		return terminalGridLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
+		return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
 	}
 	if records, ok := s.persistedLogicalLineRecordsFromMetadata(len(refs), generation); ok {
 		return records
 	}
-	return terminalGridLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
+	return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
 }
 
 func (s *terminalGridStore) persistedLogicalLineRecordsForViewport(refs []terminalGridRowRef, firstRowID uint64, totalRows int, generation uint64) []terminalGridLogicalLineRecord {
@@ -1324,7 +1324,7 @@ func (s *terminalGridStore) persistedLogicalLineRecordsForViewport(refs []termin
 			}
 		}
 	}
-	return terminalGridLogicalLineRecordsForRefsWithGeneration(refs, firstRowID, generation)
+	return terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, firstRowID, generation)
 }
 
 func (s *terminalGridStore) recoveredLiveTailFromMetadata() (terminalPrimaryLiveTail, bool) {
@@ -1949,7 +1949,7 @@ func writeTerminalGridLineRecordsMetadata(dir string, baseRowID uint64, generati
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	records := terminalGridLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
+	records := terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
 	metadata.Records = terminalGridLineRecordMetasFromRecords(records)
 	return writeTerminalGridLineMetadata(dir, metadata)
 }

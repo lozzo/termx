@@ -1207,24 +1207,24 @@ func TestTerminalGridStoreRetentionCountsLogicalLinesAcrossWrappedRows(t *testin
 	}
 }
 
-func TestTerminalGridLogicalLineRecordsExposePersistedBoundaries(t *testing.T) {
+func TestTerminalGridFallbackLogicalLineRecordsExposePersistedBoundaries(t *testing.T) {
 	refs := []terminalGridRowRef{
 		{flags: terminalGridRowFlagWrapped},
 		{},
 		{},
 		{flags: terminalGridRowFlagWrapped},
 	}
-	records := terminalGridLogicalLineRecordsForRefs(refs, 40)
+	records := terminalGridFallbackLogicalLineRecordsForRefs(refs, 40)
 	want := []terminalGridLogicalLineRecord{
 		{id: 41, startRow: 0, endRow: 1, sealed: true, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted},
 		{id: 43, startRow: 2, endRow: 2, sealed: true, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted},
 		{id: 44, startRow: 3, endRow: 3, sealed: false, origin: terminalLiveTailOriginReclaimed, residency: terminalLogicalLineResidencyPersisted},
 	}
 	if !reflect.DeepEqual(records, want) {
-		t.Fatalf("unexpected logical line records got %#v want %#v", records, want)
+		t.Fatalf("unexpected fallback logical line records got %#v want %#v", records, want)
 	}
 
-	generated := terminalGridLogicalLineRecordsForRefsWithGeneration(refs, 40, 9)
+	generated := terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, 40, 9)
 	if len(generated) != len(want) {
 		t.Fatalf("expected generated records count %d, got %#v", len(want), generated)
 	}
