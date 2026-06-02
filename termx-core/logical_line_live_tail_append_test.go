@@ -420,6 +420,21 @@ func TestTerminalResizeFullReplacePreservesExistingLiveTailOpenLinePrefix(t *tes
 		t.Fatalf("expected viewport to keep zero committed-depth metadata for live tail, loaded=%d gen=%d first=%d last=%d", viewport.LoadedRows, viewport.HistoryGeneration, viewport.FirstRowID, viewport.LastRowID)
 	}
 
+	coreViewport, err := term.combinedGridViewport(0, 10, 1, term.primaryLiveTail.clone())
+	if err != nil {
+		t.Fatalf("resize open-line history window viewport: %v", err)
+	}
+	window := historyWindowFromCoreGridViewport(term.id, 0, coreViewport)
+	if got := strings.Join(historyWindowTrimmedRowTexts(window), ""); got != strings.Join(liveTailRows, "") {
+		t.Fatalf("expected history window to project shrink-hidden live tail, got %#v", got)
+	}
+	if window.LoadedRows != 0 || window.LoadedLines != 1 || window.LogicalTotal != 1 || window.Generation != 0 {
+		t.Fatalf("expected history window to count one mutable live-tail logical line without committed depth, loaded_rows=%d loaded_lines=%d total=%d gen=%d", window.LoadedRows, window.LoadedLines, window.LogicalTotal, window.Generation)
+	}
+	if len(window.Lines) != 1 || window.Lines[0].LogicalLineID < terminalLiveTailLogicalLineIDBase || !window.Lines[0].ClippedAfter {
+		t.Fatalf("expected history window to expose open live-tail logical line boundary, got %#v", window.Lines)
+	}
+
 	olderViewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 1, ScrollbackLimit: 10, Cols: 1})
 	if olderViewport == nil {
 		t.Fatal("expected older viewport")
@@ -533,6 +548,21 @@ func TestTerminalResizeFullReplacePreservesExactWidthLiveTailWrapPendingLine(t *
 	}
 	if viewport.LoadedRows != 0 || viewport.HistoryGeneration != 0 || viewport.FirstRowID != 0 || viewport.LastRowID != 0 {
 		t.Fatalf("expected viewport to keep zero committed-depth metadata for exact-width live-tail line, loaded=%d gen=%d first=%d last=%d", viewport.LoadedRows, viewport.HistoryGeneration, viewport.FirstRowID, viewport.LastRowID)
+	}
+
+	coreViewport, err := term.combinedGridViewport(0, 10, 1, term.primaryLiveTail.clone())
+	if err != nil {
+		t.Fatalf("resize exact-width history window viewport: %v", err)
+	}
+	window := historyWindowFromCoreGridViewport(term.id, 0, coreViewport)
+	if got := historyWindowTrimmedRowTexts(window); !reflect.DeepEqual(got, liveTailRows) {
+		t.Fatalf("expected history window to project exact-width live-tail prefix rows, got %#v", got)
+	}
+	if window.LoadedRows != 0 || window.LoadedLines != 1 || window.LogicalTotal != 1 || window.Generation != 0 {
+		t.Fatalf("expected history window to count one exact-width mutable live-tail logical line without committed depth, loaded_rows=%d loaded_lines=%d total=%d gen=%d", window.LoadedRows, window.LoadedLines, window.LogicalTotal, window.Generation)
+	}
+	if len(window.Lines) != 1 || window.Lines[0].LogicalLineID < terminalLiveTailLogicalLineIDBase || !window.Lines[0].ClippedAfter {
+		t.Fatalf("expected history window to expose exact-width open live-tail boundary, got %#v", window.Lines)
 	}
 
 	olderViewport := term.GridViewportWithOptions(GridViewportOptions{ScrollbackOffset: 1, ScrollbackLimit: 10, Cols: 1})
