@@ -395,15 +395,12 @@ TUI store 至少表达：
 - 已将 `tuiv2/app` 鼠标滚轮进入 copy mode 的剩余 `local scrollback` 策略命名收敛为 copy mode authoritative entry，并把 copy mode 测试 fixture 中的 snapshot 命名改为普通 terminal live surface fixture，删除手动跳过的旧本地 scrollback frame 审计基准。
 - 已删除 `tuiv2/app` 语义 scroll-up 进入 copy mode 后残留的本地 pane viewport offset 清零操作，固定该入口只请求 authoritative latest window，不再触碰本地 viewport 历史状态。
 - 已删除 `tuiv2/render` copy-mode VM 的 snapshot fallback 字段与 wrapped snapshot 推 logical line helper，render copy mode 只能通过 render-native authoritative projection 绘制。
-- 已删除或改写 `tuiv2/app` 中标记待 authoritative history window 重写的旧测试语义：不再保留依赖 snapshot scrollback wrapped、frozen snapshot 本地游标、正常模式本地 pane viewport offset 的 skipped 回归基准。
+- 已删除或改写 `tuiv2/app` 中旧滚动测试语义：不再保留依赖 snapshot scrollback wrapped、frozen snapshot 本地游标、正常模式本地 pane viewport offset 的 skipped 回归基准。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与 canonical row id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。
 - 已新增 core 光标回到当前 visual row 后覆写的生产路径 harness，覆盖覆写仍停留在 mutable live tail、未 seal 前不产生 persisted logical line、hard newline 后作为一条 overwritten logical line 提交。
 - 已新增 core alt-screen 非退出路径 harness，覆盖进入 alt-screen 后 primary persisted history/logical line 计数冻结、alt surface 不混入 primary history、退出 alt-screen 后 primary surface/viewport/replay 恢复。
-- 已将 `tuiv2/app` 中依赖 snapshot scrollback wrapped 作为 copy mode history truth 的旧 guard 测试标记为待 authoritative history window line spans 重写，不再作为新模型回归基准。
-- 已将 `tuiv2/app` 中鼠标滚轮进入本地 snapshot scrollback / frozen snapshot copy mode 游标的旧测试标记为待 authoritative history window latest replace 重写，不再作为新模型回归基准。
-- 已将 `tuiv2/app` 中 copy mode page/halfpage 与 copy mode top/exit 依赖 frozen snapshot + 本地 pane viewport 的旧测试标记为待 authoritative history window older prepend / 交互态清理重写，不再作为新模型回归基准。
-- 已将 `tuiv2/app` 中正常模式 scroll up/down 依赖本地 pane viewport offset 的旧测试基准移除或标记为待 authoritative history window 重写，不再作为新模型滚动回归基准。
+- 已将 `tuiv2/app` 旧滚动测试基准收敛为 authoritative history window harness：snapshot scrollback wrapped guard、鼠标滚轮本地 snapshot 游标、copy mode page/halfpage/top/exit frozen snapshot、本地 pane viewport scroll up/down 均已删除或改写，不再作为新模型回归基准。
 - 当前仍不是完整 logical-line based history。
 - 当前滚动不可用的根因是：TUI 旧本地历史路径已删，copy mode buffer、鼠标滚轮、语义 scroll action、selection clipped span 约束、copy mode render 与 copy mode entry 均已能消费 authoritative history window，但仍需继续审计并清理残留旧 snapshot truth 入口。
 - 下一步继续切片六：继续收敛剩余旧 snapshot truth 入口；不直接修补旧滚动逻辑。
