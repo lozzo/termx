@@ -235,6 +235,19 @@ func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T)
 				Origin: terminalLiveTailOriginLive,
 			},
 		},
+		{
+			name: "row-id-known",
+			record: terminalGridLineRecordMeta{
+				RowIDKnown: true,
+			},
+		},
+		{
+			name: "row-id-fields",
+			record: terminalGridLineRecordMeta{
+				FirstRowID: 40,
+				LastRowID:  40,
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()

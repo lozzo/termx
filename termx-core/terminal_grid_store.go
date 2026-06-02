@@ -1267,6 +1267,9 @@ func (s *terminalGridStore) persistedLogicalLineRecordsFromMetadata(rowCount int
 	if err != nil {
 		return nil, false
 	}
+	if !terminalGridPersistedRecordMetasHaveNoRowIDs(metadata.Records) {
+		return nil, false
+	}
 	records := terminalGridLogicalLineRecordsFromMetadata(metadata.Records)
 	terminalGridApplyLineMigrationsToRecords(records, terminalGridLineMigrationMap(metadata.Migrations))
 	records, ok := terminalGridCompletePersistedLogicalLineRecords(records, rowCount, generation)
@@ -1274,6 +1277,15 @@ func (s *terminalGridStore) persistedLogicalLineRecordsFromMetadata(rowCount int
 		return nil, false
 	}
 	return records, true
+}
+
+func terminalGridPersistedRecordMetasHaveNoRowIDs(records []terminalGridLineRecordMeta) bool {
+	for _, record := range records {
+		if record.RowIDKnown || record.FirstRowID != 0 || record.LastRowID != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func terminalGridLineMigrationMap(migrations []terminalGridLineMigration) map[uint64]uint64 {
