@@ -474,6 +474,33 @@ func (s *terminalGridStore) LogicalLineCount() int {
 	return len(terminalGridFallbackLogicalLineRecordsForRefs(refs, 0))
 }
 
+func (s *terminalGridStore) logicalLineCountForPrefix(rows int) int {
+	if s == nil || rows <= 0 {
+		return 0
+	}
+	baseRowID, generation, rowCount := s.coordinates()
+	if rows > rowCount {
+		rows = rowCount
+	}
+	if rows <= 0 {
+		return 0
+	}
+	if records, ok := s.persistedLogicalLineRecordsFromMetadata(rowCount, generation); ok {
+		return terminalGridLogicalLineRecordPrefixCount(records, rows)
+	}
+	refs, err := readTerminalGridIndexRefsFromPath(filepath.Join(s.dir, terminalGridIndexName))
+	if err != nil {
+		return 0
+	}
+	if records, ok := s.sealedPersistedLogicalLineRecordPrefixFromMetadata(rowCount, generation); ok {
+		if records, ok := terminalGridLogicalLineRecordsFromSealedPrefixAndRefs(records, refs, baseRowID, generation); ok {
+			return terminalGridLogicalLineRecordPrefixCount(records, rows)
+		}
+	}
+	records := terminalGridFallbackLogicalLineRecordsForRefs(refs, 0)
+	return terminalGridLogicalLineRecordPrefixCount(records, rows)
+}
+
 func (s *terminalGridStore) coordinatesLocked() (baseRowID uint64, generation uint64, rowCount int) {
 	if s == nil {
 		return 0, 0, 0
@@ -577,22 +604,23 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 }
 
 type terminalGridViewport struct {
-	Size           Size
-	Rows           [][]vterm.Cell
-	Timestamps     []time.Time
-	RowKinds       []string
-	Wrapped        []bool
-	Ownership      []string
-	LogicalLineIDs []uint64
-	LoadedRows     int
-	HasMore        bool
-	BeforeOffset   int
-	Limit          int
-	TotalRows      int
-	LogicalTotal   int
-	Generation     uint64
-	FirstRowID     uint64
-	LastRowID      uint64
+	Size               Size
+	Rows               [][]vterm.Cell
+	Timestamps         []time.Time
+	RowKinds           []string
+	Wrapped            []bool
+	Ownership          []string
+	LogicalLineIDs     []uint64
+	LoadedRows         int
+	HasMore            bool
+	BeforeOffset       int
+	Limit              int
+	TotalRows          int
+	LogicalTotal       int
+	WindowLogicalTotal int
+	Generation         uint64
+	FirstRowID         uint64
+	LastRowID          uint64
 }
 
 func trimTerminalGridViewportToTail(result *terminalGridViewport, limit int) bool {
@@ -1283,6 +1311,23 @@ func terminalGridLogicalLineRecordsFromSealedPrefixAndRefs(prefix []terminalGrid
 		out = append(out, record)
 	}
 	return out, true
+}
+
+func terminalGridLogicalLineRecordPrefixCount(records []terminalGridLogicalLineRecord, rows int) int {
+	if rows <= 0 || len(records) == 0 {
+		return 0
+	}
+	count := 0
+	for _, record := range records {
+		if record.startRow >= rows {
+			break
+		}
+		count++
+		if record.endRow >= rows-1 {
+			break
+		}
+	}
+	return count
 }
 
 func terminalGridLogicalLineRecordsForWindow(records []terminalGridLogicalLineRecord, start int, end int) []terminalGridLogicalLineRecord {

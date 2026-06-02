@@ -249,6 +249,42 @@ func TestTerminalLatestLiveTailOnlyProjectionDoesNotInventCanonicalMetadata(t *t
 	}
 }
 
+func TestTerminalLatestCombinedViewportLogicalTotalIncludesVisiblePersistedAndLiveTailLines(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("p0"), wrapped: false},
+		{cells: localVTermCellsFromString("r0"), wrapped: false},
+	}); err != nil {
+		t.Fatalf("append persisted rows: %v", err)
+	}
+	var tail terminalPrimaryLiveTail
+	tail.replaceReclaimedPrefixWithLogicalLineIDs([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("r0"), WrappedSet: true, Wrapped: false},
+	}, []uint64{2}, store.generation, 1, 1)
+	tail.replaceLiveRowsWithLogicalLineIDs([]localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("live"), WrappedSet: true, Wrapped: false},
+	}, []uint64{terminalLiveTailLogicalLineIDBase + 1}, false)
+
+	viewport, err := combinedGridViewportFromStore(store, 0, 10, 4, tail)
+	if err != nil {
+		t.Fatalf("combined viewport: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"p0", "r0", "live"}) {
+		t.Fatalf("expected visible persisted prefix plus reclaimed/live tail rows, got %#v", got)
+	}
+	if viewport.LogicalTotal != 2 {
+		t.Fatalf("expected legacy viewport logical total to stay committed-only, got %d", viewport.LogicalTotal)
+	}
+	if viewport.WindowLogicalTotal != 3 {
+		t.Fatalf("expected history-window logical total to include visible persisted prefix and live tail lines without double-counting reclaimed suffix, got %d", viewport.WindowLogicalTotal)
+	}
+	window := historyWindowFromCoreGridViewport("combined-logical-total", 0, viewport)
+	if window.LoadedLines != 3 || window.LogicalTotal != 3 {
+		t.Fatalf("expected history window loaded/total lines to stay consistent, loaded=%d total=%d lines=%#v", window.LoadedLines, window.LogicalTotal, window.Lines)
+	}
+}
+
 func TestTerminalMetadataOnlyLatestSnapshotKeepsCommittedWindowCanonicalOnly(t *testing.T) {
 	vt := localvterm.New(4, 1, 0, nil)
 	vt.DisableEmulatorScrollback()

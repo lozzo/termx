@@ -65,7 +65,7 @@ type HistoryWindow struct {
 	LoadedLines int
 	// TotalRows 是当前宽度下可投影的总 visual row 数。
 	TotalRows int
-	// LogicalTotal 是已提交逻辑行总数。
+	// LogicalTotal 是当前 authoritative history window 投影空间中的逻辑行总数。
 	LogicalTotal int
 	HasMore      bool
 	Generation   uint64
@@ -189,6 +189,7 @@ func combinedGridViewportFromStore(store *terminalGridStore, offset, limit, cols
 	if totalRows <= 0 {
 		return result, nil
 	}
+	logicalTotal := store.logicalLineCountForPrefix(visiblePersistedRows) + len(liveTail.logicalLineRecords())
 	end := totalRows
 	start := end - limit
 	if start < 0 {
@@ -203,6 +204,7 @@ func combinedGridViewportFromStore(store *terminalGridStore, offset, limit, cols
 	result.Limit = limit
 	result.TotalRows = totalRows
 	result.LogicalTotal = store.LogicalLineCount()
+	result.WindowLogicalTotal = logicalTotal
 	if visiblePersistedRows > 0 {
 		result.Generation = generation
 	}
@@ -220,6 +222,7 @@ func combinedGridViewportFromStore(store *terminalGridStore, offset, limit, cols
 		result.Limit = limit
 		result.TotalRows = totalRows
 		result.LogicalTotal = persistedViewport.LogicalTotal
+		result.WindowLogicalTotal = logicalTotal
 		result.Generation = persistedViewport.Generation
 		result.LoadedRows = persistedViewport.LoadedRows
 		result.FirstRowID = persistedViewport.FirstRowID
@@ -288,6 +291,10 @@ func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport ter
 	}
 	lines := historyLineSpans(viewport.Wrapped, viewport.RowKinds, viewport.LogicalLineIDs, len(viewport.Rows), beforeOffset)
 	firstLineID, lastLineID := historyLineSpanIDBoundary(lines)
+	logicalTotal := viewport.LogicalTotal
+	if viewport.WindowLogicalTotal > 0 {
+		logicalTotal = viewport.WindowLogicalTotal
+	}
 	return &HistoryWindow{
 		TerminalID:   id,
 		Token:        historyWindowToken(viewport),
@@ -299,7 +306,7 @@ func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport ter
 		LoadedRows:   viewport.LoadedRows,
 		LoadedLines:  len(lines),
 		TotalRows:    viewport.TotalRows,
-		LogicalTotal: viewport.LogicalTotal,
+		LogicalTotal: logicalTotal,
 		HasMore:      viewport.HasMore,
 		Generation:   viewport.Generation,
 		FirstRowID:   viewport.FirstRowID,
