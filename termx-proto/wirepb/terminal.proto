@@ -303,6 +303,8 @@ message HistoryWindow {
   uint64 first_row_id = 15;
   uint64 last_row_id = 16;
   int64 timestamp_unix_nano = 17;
+  repeated bool line_clipped_before = 18;
+  repeated bool line_clipped_after = 19;
 }
 
 message StorageEntry {

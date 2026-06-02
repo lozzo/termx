@@ -21,13 +21,16 @@ const (
 	HistoryWindowPrepend HistoryWindowOp = "prepend"
 )
 
-// HistoryLineSpan 是一条逻辑行在当前投影宽度下覆盖的 visual row 区间。
+// HistoryLineSpan 是一条逻辑行片段在当前投影宽度下覆盖的 visual row 区间。
 //
-// 客户端 copy mode 用它理解逻辑行边界，不再根据 wrapped flag 自行拼接。
+// 客户端 copy mode 用它理解窗口内逻辑行片段边界，不再根据 wrapped flag 自行拼接，
+// 也不能把被窗口裁断的片段当作完整逻辑行。
 type HistoryLineSpan struct {
-	StartRow int
-	EndRow   int
-	RowKind  string
+	StartRow      int
+	EndRow        int
+	RowKind       string
+	ClippedBefore bool
+	ClippedAfter  bool
 }
 
 // HistoryRow 是 history window 中的一条 visual row 及其权威元数据。
@@ -110,7 +113,7 @@ func historyWindowFromGridViewport(id string, beforeOffset int, viewport *protoc
 		Op:           historyWindowOpForOffset(beforeOffset),
 		Size:         Size{Cols: viewport.Size.Cols, Rows: viewport.Size.Rows},
 		Rows:         rows,
-		Lines:        historyLineSpans(viewport.ScrollbackWrapped, viewport.ScrollbackRowKinds, len(viewport.Rows)),
+		Lines:        historyLineSpans(viewport.ScrollbackWrapped, viewport.ScrollbackRowKinds, len(viewport.Rows), beforeOffset),
 		BeforeOffset: beforeOffset,
 		LoadedRows:   viewport.LoadedRows,
 		TotalRows:    viewport.ScrollbackTotal,
@@ -144,7 +147,7 @@ func historyWindowToken(viewport *protocol.GridViewport) string {
 // historyLineSpans 根据 wrapped 元数据把 visual rows 归并成逻辑行区间。
 //
 // wrapped[i]==true 表示第 i 行与下一行属于同一条逻辑行。
-func historyLineSpans(wrapped []bool, rowKinds []string, rowCount int) []HistoryLineSpan {
+func historyLineSpans(wrapped []bool, rowKinds []string, rowCount int, beforeOffset int) []HistoryLineSpan {
 	if rowCount <= 0 {
 		return nil
 	}
@@ -155,9 +158,11 @@ func historyLineSpans(wrapped []bool, rowKinds []string, rowCount int) []History
 			continue
 		}
 		spans = append(spans, HistoryLineSpan{
-			StartRow: start,
-			EndRow:   row,
-			RowKind:  stringAt(rowKinds, start),
+			StartRow:      start,
+			EndRow:        row,
+			RowKind:       stringAt(rowKinds, start),
+			ClippedBefore: beforeOffset > 0 && start == 0,
+			ClippedAfter:  row == rowCount-1 && boolAt(wrapped, row),
 		})
 		start = row + 1
 	}
@@ -183,9 +188,11 @@ func protocolHistoryWindowFromCore(window *HistoryWindow) *protocol.HistoryWindo
 	lines := make([]protocol.HistoryLineSpan, len(window.Lines))
 	for i, span := range window.Lines {
 		lines[i] = protocol.HistoryLineSpan{
-			StartRow: span.StartRow,
-			EndRow:   span.EndRow,
-			RowKind:  span.RowKind,
+			StartRow:      span.StartRow,
+			EndRow:        span.EndRow,
+			RowKind:       span.RowKind,
+			ClippedBefore: span.ClippedBefore,
+			ClippedAfter:  span.ClippedAfter,
 		}
 	}
 	return &protocol.HistoryWindow{

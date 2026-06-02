@@ -2761,6 +2761,8 @@ type HistoryWindow struct {
 	FirstRowId        uint64                 `protobuf:"varint,15,opt,name=first_row_id,json=firstRowId,proto3" json:"first_row_id,omitempty"`
 	LastRowId         uint64                 `protobuf:"varint,16,opt,name=last_row_id,json=lastRowId,proto3" json:"last_row_id,omitempty"`
 	TimestampUnixNano int64                  `protobuf:"varint,17,opt,name=timestamp_unix_nano,json=timestampUnixNano,proto3" json:"timestamp_unix_nano,omitempty"`
+	LineClippedBefore []bool                 `protobuf:"varint,18,rep,packed,name=line_clipped_before,json=lineClippedBefore,proto3" json:"line_clipped_before,omitempty"`
+	LineClippedAfter  []bool                 `protobuf:"varint,19,rep,packed,name=line_clipped_after,json=lineClippedAfter,proto3" json:"line_clipped_after,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -2912,6 +2914,20 @@ func (x *HistoryWindow) GetTimestampUnixNano() int64 {
 		return x.TimestampUnixNano
 	}
 	return 0
+}
+
+func (x *HistoryWindow) GetLineClippedBefore() []bool {
+	if x != nil {
+		return x.LineClippedBefore
+	}
+	return nil
+}
+
+func (x *HistoryWindow) GetLineClippedAfter() []bool {
+	if x != nil {
+		return x.LineClippedAfter
+	}
+	return nil
 }
 
 type StorageEntry struct {
@@ -4298,7 +4314,7 @@ const file_termx_proto_wirepb_terminal_proto_rawDesc = "" +
 	"\ffirst_row_id\x18\v \x01(\x04R\n" +
 	"firstRowId\x12\x1e\n" +
 	"\vlast_row_id\x18\f \x01(\x04R\tlastRowId\x128\n" +
-	"\x18scrollback_logical_total\x18\r \x01(\x03R\x16scrollbackLogicalTotal\"\xf2\x04\n" +
+	"\x18scrollback_logical_total\x18\r \x01(\x03R\x16scrollbackLogicalTotal\"\xd0\x05\n" +
 	"\rHistoryWindow\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
 	"terminalId\x12\x14\n" +
@@ -4321,7 +4337,9 @@ const file_termx_proto_wirepb_terminal_proto_rawDesc = "" +
 	"\ffirst_row_id\x18\x0f \x01(\x04R\n" +
 	"firstRowId\x12\x1e\n" +
 	"\vlast_row_id\x18\x10 \x01(\x04R\tlastRowId\x12.\n" +
-	"\x13timestamp_unix_nano\x18\x11 \x01(\x03R\x11timestampUnixNano\"\xee\x01\n" +
+	"\x13timestamp_unix_nano\x18\x11 \x01(\x03R\x11timestampUnixNano\x12.\n" +
+	"\x13line_clipped_before\x18\x12 \x03(\bR\x11lineClippedBefore\x12,\n" +
+	"\x12line_clipped_after\x18\x13 \x03(\bR\x10lineClippedAfter\"\xee\x01\n" +
 	"\fStorageEntry\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x129\n" +
 	"\x05scope\x18\x02 \x01(\x0e2#.termx.protocol.wirepb.StorageScopeR\x05scope\x12\x19\n" +

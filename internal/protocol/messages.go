@@ -1876,9 +1876,11 @@ const (
 )
 
 type HistoryLineSpan struct {
-	StartRow int
-	EndRow   int
-	RowKind  string
+	StartRow      int
+	EndRow        int
+	RowKind       string
+	ClippedBefore bool
+	ClippedAfter  bool
 }
 
 type HistoryWindow struct {

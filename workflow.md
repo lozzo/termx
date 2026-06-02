@@ -286,6 +286,7 @@
 - 已破旧收口：`tuiv2` app/runtime 侧本地 history truth 重建、canonical row ref 推断、scrollback 分页空实现、`LoadGridViewport`/`snapshotFromGridViewport` 转换、`preserveSnapshotHistoryMetadataFromProjection` 历史坐标延续均已物理删除；`refreshSnapshot` 现在只做纯 VTerm 投影。
 - 已开始立新（第一刀，core 侧）：`termx-core` 新增 `HistoryWindow` / `HistoryLineSpan` / window token / `HistoryWindowOptions`，并提供 `Server.HistoryWindow`，内部复用 `GridViewportWithOptions` 投影出权威窗口；`Op`（replace/prepend）、line span（按 wrapped 归并逻辑行）、token（按 generation+row id 边界）由 core 生成。
 - 已完成立新（第二刀，protocol 侧）：`HistoryWindow` 已经经由 `termx-proto` / `internal/protocol` 暴露为 `history.window` 方法，payload 包含 rows、row metadata、line spans、window token、replace/prepend op、paging boundary 与 generation；legacy `snapshot` / `grid.viewport` 暂留，但不再作为 `tuiv2` 历史真相来源。
+- `HistoryLineSpan` 当前明确表达的是“窗口内逻辑行片段”，不是最终完整 logical line truth；span 已带 `ClippedBefore` / `ClippedAfter` 裁断标记，`tuiv2` 不得把被裁断片段当作完整逻辑行。后续如需跨页完整 logical line 操作，必须继续由 core 提供 stable logical line id 或等价边界语义。
 - 下一刀：让 `tuiv2/historyview.Source` 消费 `history.window`，把 authoritative history window 接入 copy mode backing、older/latest 接纳规则和 render projection。
 - 每个子切片都必须保持主线测试可运行，并形成中文提交。
 

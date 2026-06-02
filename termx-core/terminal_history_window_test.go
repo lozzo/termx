@@ -12,7 +12,7 @@ func TestHistoryLineSpansGroupsWrappedRows(t *testing.T) {
 	// 行0、行1 wrapped 续接到行2，组成一条逻辑行；行3 独立。
 	wrapped := []bool{true, true, false, false}
 	kinds := []string{"a", "a", "a", "b"}
-	spans := historyLineSpans(wrapped, kinds, 4)
+	spans := historyLineSpans(wrapped, kinds, 4, 0)
 	want := []HistoryLineSpan{
 		{StartRow: 0, EndRow: 2, RowKind: "a"},
 		{StartRow: 3, EndRow: 3, RowKind: "b"},
@@ -25,13 +25,24 @@ func TestHistoryLineSpansGroupsWrappedRows(t *testing.T) {
 func TestHistoryLineSpansTrailingWrappedDoesNotOverrun(t *testing.T) {
 	// 末行即使 wrapped=true，也必须收口成一条逻辑行，不能越界。
 	wrapped := []bool{false, true}
-	spans := historyLineSpans(wrapped, nil, 2)
+	spans := historyLineSpans(wrapped, nil, 2, 0)
 	want := []HistoryLineSpan{
 		{StartRow: 0, EndRow: 0},
-		{StartRow: 1, EndRow: 1},
+		{StartRow: 1, EndRow: 1, ClippedAfter: true},
 	}
 	if !reflect.DeepEqual(spans, want) {
 		t.Fatalf("unexpected trailing wrapped spans, got %#v want %#v", spans, want)
+	}
+}
+
+func TestHistoryLineSpansMarksWindowClipping(t *testing.T) {
+	spans := historyLineSpans([]bool{false, true}, []string{"a", "b"}, 2, 3)
+	want := []HistoryLineSpan{
+		{StartRow: 0, EndRow: 0, RowKind: "a", ClippedBefore: true},
+		{StartRow: 1, EndRow: 1, RowKind: "b", ClippedAfter: true},
+	}
+	if !reflect.DeepEqual(spans, want) {
+		t.Fatalf("unexpected clipped spans, got %#v want %#v", spans, want)
 	}
 }
 
@@ -172,7 +183,7 @@ func TestProtocolHistoryWindowFromCoreMapsAllFields(t *testing.T) {
 		Op:           HistoryWindowPrepend,
 		Size:         Size{Cols: 40, Rows: 10},
 		Rows:         []HistoryRow{{Cells: protocolCompactRowFromCoreWithOptions([]Cell{{Content: "x", Width: 1}}, true), RowKind: "output", Ownership: RowOwnershipPersisted, Wrapped: true}},
-		Lines:        []HistoryLineSpan{{StartRow: 0, EndRow: 0, RowKind: "output"}},
+		Lines:        []HistoryLineSpan{{StartRow: 0, EndRow: 0, RowKind: "output", ClippedBefore: true, ClippedAfter: true}},
 		BeforeOffset: 2,
 		LoadedRows:   6,
 		TotalRows:    8,
@@ -201,7 +212,7 @@ func TestProtocolHistoryWindowFromCoreMapsAllFields(t *testing.T) {
 	if len(got.Rows) != 1 || len(got.RowKinds) != 1 || got.RowKinds[0] != "output" || len(got.RowWrapped) != 1 || !got.RowWrapped[0] || len(got.RowOwnership) != 1 || got.RowOwnership[0] != RowOwnershipPersisted {
 		t.Fatalf("unexpected mapped row metadata: kinds=%#v wrapped=%#v ownership=%#v", got.RowKinds, got.RowWrapped, got.RowOwnership)
 	}
-	if len(got.Lines) != 1 || got.Lines[0].StartRow != 0 || got.Lines[0].EndRow != 0 || got.Lines[0].RowKind != "output" {
+	if len(got.Lines) != 1 || got.Lines[0].StartRow != 0 || got.Lines[0].EndRow != 0 || got.Lines[0].RowKind != "output" || !got.Lines[0].ClippedBefore || !got.Lines[0].ClippedAfter {
 		t.Fatalf("unexpected mapped line spans: %#v", got.Lines)
 	}
 }

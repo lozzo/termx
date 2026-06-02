@@ -144,10 +144,14 @@ func historyWindowToWirePB(window *HistoryWindow) *wirepb.HistoryWindow {
 	lineStart := make([]int32, len(window.Lines))
 	lineEnd := make([]int32, len(window.Lines))
 	lineKinds := make([]string, len(window.Lines))
+	lineClippedBefore := make([]bool, len(window.Lines))
+	lineClippedAfter := make([]bool, len(window.Lines))
 	for i, span := range window.Lines {
 		lineStart[i] = int32(span.StartRow)
 		lineEnd[i] = int32(span.EndRow)
 		lineKinds[i] = span.RowKind
+		lineClippedBefore[i] = span.ClippedBefore
+		lineClippedAfter[i] = span.ClippedAfter
 	}
 	return &wirepb.HistoryWindow{
 		TerminalId:        window.TerminalID,
@@ -158,6 +162,8 @@ func historyWindowToWirePB(window *HistoryWindow) *wirepb.HistoryWindow {
 		LineStartRows:     lineStart,
 		LineEndRows:       lineEnd,
 		LineRowKinds:      lineKinds,
+		LineClippedBefore: lineClippedBefore,
+		LineClippedAfter:  lineClippedAfter,
 		BeforeOffset:      int64(window.BeforeOffset),
 		LoadedRows:        int64(window.LoadedRows),
 		TotalRows:         int64(window.TotalRows),
@@ -181,6 +187,8 @@ func historyWindowFromWirePB(msg *wirepb.HistoryWindow) (*HistoryWindow, error) 
 	starts := msg.GetLineStartRows()
 	ends := msg.GetLineEndRows()
 	kinds := msg.GetLineRowKinds()
+	clippedBefore := msg.GetLineClippedBefore()
+	clippedAfter := msg.GetLineClippedAfter()
 	lines := make([]HistoryLineSpan, 0, len(starts))
 	for i := range starts {
 		span := HistoryLineSpan{StartRow: int(starts[i])}
@@ -189,6 +197,12 @@ func historyWindowFromWirePB(msg *wirepb.HistoryWindow) (*HistoryWindow, error) 
 		}
 		if i < len(kinds) {
 			span.RowKind = kinds[i]
+		}
+		if i < len(clippedBefore) {
+			span.ClippedBefore = clippedBefore[i]
+		}
+		if i < len(clippedAfter) {
+			span.ClippedAfter = clippedAfter[i]
 		}
 		lines = append(lines, span)
 	}
