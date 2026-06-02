@@ -396,6 +396,7 @@ TUI store 至少表达：
 - 已删除 `tuiv2/app` 语义 scroll-up 进入 copy mode 后残留的本地 pane viewport offset 清零操作，固定该入口只请求 authoritative latest window，不再触碰本地 viewport 历史状态。
 - 已删除 `tuiv2/render` copy-mode VM 的 snapshot fallback 字段与 wrapped snapshot 推 logical line helper，render copy mode 只能通过 render-native authoritative projection 绘制。
 - 已将 `tuiv2/app` 测试 fake 的 `GridViewport` 从 snapshot metadata 合成路径改为仅记录调用并返回空结果，避免测试继续把 snapshot totals、row ownership 或 wrapped 元数据伪装成 TUI history path。
+- 已将 `tuiv2/app` 测试用 snapshot window fixture 从 copy mode helper 中剥离为 legacy protocol snapshot window fixture，并改写重启端到端测试中的兼容 snapshot 文案，避免把 legacy snapshot 误读为新的 TUI history truth。
 - 已删除或改写 `tuiv2/app` 中旧滚动测试语义：不再保留依赖 snapshot scrollback wrapped、frozen snapshot 本地游标、正常模式本地 pane viewport offset 的 skipped 回归基准。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与 canonical row id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。

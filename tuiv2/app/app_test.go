@@ -4591,7 +4591,7 @@ func (c *recordingBridgeClient) Snapshot(_ context.Context, terminalID string, o
 	if c.snapshotByTerminal == nil {
 		return nil, nil
 	}
-	return snapshotWindow(c.snapshotByTerminal[terminalID], offset, limit), nil
+	return legacyProtocolSnapshotWindowFixture(c.snapshotByTerminal[terminalID], offset, limit), nil
 }
 
 func (c *recordingBridgeClient) GridViewport(_ context.Context, terminalID string, offset int, limit int, cols int) (*protocol.GridViewport, error) {

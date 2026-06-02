@@ -280,8 +280,8 @@ func TestE2EExitedPaneRestartReusesSameTerminal(t *testing.T) {
 	if snapshot == nil {
 		t.Fatal("expected restart snapshot")
 	}
-	if !e2eSnapshotContains(snapshot, "restart_pass_1") {
-		t.Fatalf("expected snapshot scrollback to preserve first pass output, got %#v", snapshot)
+	if !e2eLegacyProtocolSnapshotContains(snapshot, "restart_pass_1") {
+		t.Fatalf("expected legacy protocol snapshot compatibility to preserve first pass output, got %#v", snapshot)
 	}
 
 	pane := model.workbench.ActivePane()
@@ -294,24 +294,24 @@ func TestE2EExitedPaneRestartReusesSameTerminal(t *testing.T) {
 	e2eWaitForText(t, ctx, model, invalidated, "restart_e2e_ok")
 }
 
-func e2eSnapshotContains(snapshot *protocol.Snapshot, needle string) bool {
+func e2eLegacyProtocolSnapshotContains(snapshot *protocol.Snapshot, needle string) bool {
 	if snapshot == nil {
 		return false
 	}
 	for _, row := range snapshot.Scrollback {
-		if strings.Contains(e2eSnapshotRowString(row.DecodeCells()), needle) {
+		if strings.Contains(e2eLegacyProtocolSnapshotRowString(row.DecodeCells()), needle) {
 			return true
 		}
 	}
 	for _, row := range snapshot.Screen.Cells {
-		if strings.Contains(e2eSnapshotRowString(row), needle) {
+		if strings.Contains(e2eLegacyProtocolSnapshotRowString(row), needle) {
 			return true
 		}
 	}
 	return false
 }
 
-func e2eSnapshotRowString(row []protocol.Cell) string {
+func e2eLegacyProtocolSnapshotRowString(row []protocol.Cell) string {
 	var b strings.Builder
 	for _, cell := range row {
 		b.WriteString(cell.Content)
