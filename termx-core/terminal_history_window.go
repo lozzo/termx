@@ -223,6 +223,7 @@ func combinedGridViewportFromStore(store *terminalGridStore, offset, limit, cols
 		result.TotalRows = totalRows
 		result.LogicalTotal = persistedViewport.LogicalTotal
 		result.WindowLogicalTotal = logicalTotal
+		result.FirstLineClippedBefore = persistedViewport.FirstLineClippedBefore
 		result.Generation = persistedViewport.Generation
 		result.LoadedRows = persistedViewport.LoadedRows
 		result.FirstRowID = persistedViewport.FirstRowID
@@ -278,6 +279,7 @@ func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport ter
 	if len(viewport.Rows) == 0 && viewport.TotalRows == 0 {
 		return &HistoryWindow{TerminalID: id, Op: historyWindowOpForOffset(beforeOffset), Timestamp: time.Now().UTC()}
 	}
+	viewport = historyWindowTrimViewportToLimit(viewport)
 	rows := make([]HistoryRow, len(viewport.Rows))
 	coreRows := convertRows(viewport.Rows)
 	for i := range viewport.Rows {
@@ -289,7 +291,7 @@ func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport ter
 			Timestamp: timeAt(viewport.Timestamps, i),
 		}
 	}
-	lines := historyLineSpans(viewport.Wrapped, viewport.RowKinds, viewport.LogicalLineIDs, len(viewport.Rows), beforeOffset)
+	lines := historyLineSpans(viewport.Wrapped, viewport.RowKinds, viewport.LogicalLineIDs, len(viewport.Rows), beforeOffset, viewport.FirstLineClippedBefore)
 	firstLineID, lastLineID := historyLineSpanIDBoundary(lines)
 	logicalTotal := viewport.LogicalTotal
 	if viewport.WindowLogicalTotal > 0 {
@@ -315,6 +317,32 @@ func historyWindowFromCoreGridViewport(id string, beforeOffset int, viewport ter
 		LastLineID:   lastLineID,
 		Timestamp:    time.Now().UTC(),
 	}
+}
+
+func historyWindowTrimViewportToLimit(viewport terminalGridViewport) terminalGridViewport {
+	if viewport.Limit <= 0 || len(viewport.Rows) <= viewport.Limit {
+		return viewport
+	}
+	trimStart := len(viewport.Rows) - viewport.Limit
+	trimmedCommittedRows := terminalHistoryWindowCommittedOwnershipCount(viewport.Ownership[:trimStart])
+	if trimTerminalGridViewportToTail(&viewport, viewport.Limit) {
+		viewport.LoadedRows -= trimmedCommittedRows
+		if viewport.LoadedRows < viewport.BeforeOffset {
+			viewport.LoadedRows = viewport.BeforeOffset
+		}
+	}
+	return viewport
+}
+
+func terminalHistoryWindowCommittedOwnershipCount(ownership []string) int {
+	count := 0
+	for _, value := range ownership {
+		switch value {
+		case RowOwnershipPersisted, RowOwnershipLiveTailReclaimed:
+			count++
+		}
+	}
+	return count
 }
 
 func historyWindowBeforeCursor(requestBeforeOffset int, viewport terminalGridViewport) int {
@@ -375,9 +403,13 @@ func historyLineSpanIDBoundary(spans []HistoryLineSpan) (uint64, uint64) {
 
 // historyLineSpans 优先按 core projection 给出的 stable logical line id
 // 归并 visual rows；旧 projection 缺失 id 时才回退 wrapped 元数据。
-func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64, rowCount int, beforeOffset int) []HistoryLineSpan {
+func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64, rowCount int, beforeOffset int, firstLineClippedBefore ...bool) []HistoryLineSpan {
 	if rowCount <= 0 {
 		return nil
+	}
+	clippedBeforeFirstLine := beforeOffset > 0
+	if len(firstLineClippedBefore) > 0 && firstLineClippedBefore[0] {
+		clippedBeforeFirstLine = true
 	}
 	spans := make([]HistoryLineSpan, 0, rowCount)
 	start := 0
@@ -390,7 +422,7 @@ func historyLineSpans(wrapped []bool, rowKinds []string, logicalLineIDs []uint64
 			EndRow:        row,
 			RowKind:       stringAt(rowKinds, start),
 			LogicalLineID: uint64At(logicalLineIDs, start),
-			ClippedBefore: beforeOffset > 0 && start == 0,
+			ClippedBefore: clippedBeforeFirstLine && start == 0,
 			ClippedAfter:  historyLineSpanClippedAfter(wrapped, logicalLineIDs, row, rowCount),
 		})
 		start = row + 1

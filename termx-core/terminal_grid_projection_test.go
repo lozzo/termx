@@ -1072,6 +1072,46 @@ func TestServerHistoryWindowMarksClippedLogicalLineAfterProjectionLimit(t *testi
 	}
 }
 
+func TestServerHistoryWindowMarksLatestLimitClippedLogicalLineBefore(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "projection-latest-limit-clipped")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("aaaa"), rowKind: "line0", wrapped: true},
+		{cells: localVTermCellsFromString("bbbb"), rowKind: "line0", wrapped: true},
+		{cells: localVTermCellsFromString("cccc"), rowKind: "line0", wrapped: false},
+	}); err != nil {
+		t.Fatalf("append logical rows: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+
+	srv := NewServer(WithGridRoot(root), WithDefaultSize(4, 2))
+	window, err := srv.HistoryWindow(t.Context(), "projection-latest-limit-clipped", HistoryWindowOptions{Limit: 2, Cols: 4})
+	if err != nil {
+		t.Fatalf("history window: %v", err)
+	}
+	if window.Op != HistoryWindowReplace {
+		t.Fatalf("expected latest window to be replace, got %q", window.Op)
+	}
+	if got := historyRowsToStrings(window.Rows); !reflect.DeepEqual(got, []string{"bbbb", "cccc"}) {
+		t.Fatalf("expected latest limited window to contain logical line tail, got %#v", got)
+	}
+	if window.BeforeOffset != 2 || window.LoadedRows != 2 {
+		t.Fatalf("expected latest limited window cursor to cover only returned committed rows, before=%d loaded=%d", window.BeforeOffset, window.LoadedRows)
+	}
+	if len(window.Lines) != 1 {
+		t.Fatalf("expected one logical line span, got %#v", window.Lines)
+	}
+	span := window.Lines[0]
+	if span.StartRow != 0 || span.EndRow != 1 || span.RowKind != "line0" || !span.ClippedBefore || span.ClippedAfter {
+		t.Fatalf("expected latest limited window to mark clipped-before logical line, got %#v", span)
+	}
+}
+
 func historyRowsToStrings(rows []HistoryRow) []string {
 	if len(rows) == 0 {
 		return nil

@@ -604,23 +604,24 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 }
 
 type terminalGridViewport struct {
-	Size               Size
-	Rows               [][]vterm.Cell
-	Timestamps         []time.Time
-	RowKinds           []string
-	Wrapped            []bool
-	Ownership          []string
-	LogicalLineIDs     []uint64
-	LoadedRows         int
-	HasMore            bool
-	BeforeOffset       int
-	Limit              int
-	TotalRows          int
-	LogicalTotal       int
-	WindowLogicalTotal int
-	Generation         uint64
-	FirstRowID         uint64
-	LastRowID          uint64
+	Size                   Size
+	Rows                   [][]vterm.Cell
+	Timestamps             []time.Time
+	RowKinds               []string
+	Wrapped                []bool
+	Ownership              []string
+	LogicalLineIDs         []uint64
+	LoadedRows             int
+	HasMore                bool
+	BeforeOffset           int
+	Limit                  int
+	TotalRows              int
+	LogicalTotal           int
+	WindowLogicalTotal     int
+	FirstLineClippedBefore bool
+	Generation             uint64
+	FirstRowID             uint64
+	LastRowID              uint64
 }
 
 func trimTerminalGridViewportToTail(result *terminalGridViewport, limit int) bool {
@@ -629,6 +630,7 @@ func trimTerminalGridViewportToTail(result *terminalGridViewport, limit int) boo
 	}
 	start := len(result.Rows) - limit
 	inheritedRowKind := clippedViewportLeadingRowKind(result.RowKinds, result.Wrapped, start)
+	result.FirstLineClippedBefore = terminalGridViewportTrimClipsLogicalLine(result, start)
 	result.Rows = result.Rows[start:]
 	result.Timestamps = trimTimeSliceTail(result.Timestamps, limit)
 	result.RowKinds = trimStringSliceTail(result.RowKinds, limit)
@@ -639,6 +641,18 @@ func trimTerminalGridViewportToTail(result *terminalGridViewport, limit int) boo
 	result.Ownership = trimStringSliceTail(result.Ownership, limit)
 	result.LogicalLineIDs = trimUint64SliceTail(result.LogicalLineIDs, limit)
 	return true
+}
+
+func terminalGridViewportTrimClipsLogicalLine(result *terminalGridViewport, start int) bool {
+	if result == nil || start <= 0 || start >= len(result.Rows) {
+		return false
+	}
+	currentID := uint64At(result.LogicalLineIDs, start)
+	previousID := uint64At(result.LogicalLineIDs, start-1)
+	if currentID != 0 && previousID != 0 {
+		return currentID == previousID
+	}
+	return boolAt(result.Wrapped, start-1)
 }
 
 func clippedViewportLeadingRowKind(rowKinds []string, wrapped []bool, start int) string {
