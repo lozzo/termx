@@ -1199,7 +1199,7 @@ func terminalGridCompletePersistedLogicalLineRecords(records []terminalGridLogic
 	out := make([]terminalGridLogicalLineRecord, 0, len(records))
 	nextStart := 0
 	for _, record := range records {
-		if record.id == 0 || record.residency != terminalLogicalLineResidencyPersisted || record.dirty || !terminalLiveTailOriginKnown(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
+		if record.id == 0 || record.residency != terminalLogicalLineResidencyPersisted || record.dirty || record.origin != terminalLiveTailOriginReclaimed || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
 			return nil, false
 		}
 		if record.generation != 0 && generation != 0 && record.generation != generation {
@@ -1294,6 +1294,7 @@ func terminalGridApplyLineMigrationsToRecords(records []terminalGridLogicalLineR
 	for i := range records {
 		if persistedID := migrations[records[i].id]; persistedID != 0 {
 			records[i].id = persistedID
+			records[i].origin = terminalLiveTailOriginReclaimed
 		}
 	}
 }

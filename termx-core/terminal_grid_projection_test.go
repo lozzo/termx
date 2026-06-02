@@ -178,6 +178,12 @@ func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T)
 				Origin: terminalLiveTailOrigin("bad-origin"),
 			},
 		},
+		{
+			name: "unmigrated-live-origin",
+			record: terminalGridLineRecordMeta{
+				Origin: terminalLiveTailOriginLive,
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
