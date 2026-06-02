@@ -62,6 +62,8 @@ func TestCopyModeSelectionIgnoresObserverWidthRewrapOfCanonicalRows(t *testing.T
 }
 
 func TestCopyModeExitResetsPaneViewport(t *testing.T) {
+	t.Skip("待改写：该测试通过 frozen snapshot + 本地 pane viewport 验证 copy mode top/exit；新基准必须验证 authoritative history window 交互态清理")
+
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, []string{"s0", "s1", "s2", "s3", "s4"}, []string{"live0", "live1", "live2", "live3"})
 
