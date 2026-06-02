@@ -189,19 +189,7 @@ func (tail terminalPrimaryLiveTail) nonReclaimedRowsForResizePrefix() []vterm.Da
 }
 
 func (tail terminalPrimaryLiveTail) nonReclaimedRowsForResizePrefixWithLogicalLineIDs() terminalLiveTailRowsWithLogicalLineIDs {
-	if len(tail.segments) == 0 {
-		return terminalLiveTailRowsWithLogicalLineIDs{}
-	}
-	out := make([]vterm.DamageOp, 0, tail.rowCount())
-	lineIDs := make([]uint64, 0, tail.rowCount())
-	for _, segment := range tail.segments {
-		if segment.origin == terminalLiveTailOriginReclaimed {
-			continue
-		}
-		out = append(out, cloneGridDamageOps(segment.rows)...)
-		lineIDs = append(lineIDs, terminalLiveTailSegmentLogicalLineIDs(segment.logicalLineIDs, segment.rows, segment.origin, segment.firstRowID, segment.lastRowID)...)
-	}
-	return terminalLiveTailRowsWithLogicalLineIDs{rows: out, logicalLineIDs: lineIDs}
+	return tail.liveRowsWithLogicalLineIDs()
 }
 
 func (tail terminalPrimaryLiveTail) hasState() bool {
