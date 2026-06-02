@@ -114,6 +114,29 @@ func TestProtocolSourceOlderHistoryWindowUsesBeforeCursor(t *testing.T) {
 	}
 }
 
+func TestProtocolSourcePreservesZeroLoadedLineBoundaryForClippedBeforeWindow(t *testing.T) {
+	protocolWindow := fakeProtocolHistoryWindow(protocol.HistoryWindowReplace, 0)
+	protocolWindow.Lines = []protocol.HistoryLineSpan{{StartRow: 0, EndRow: 0, LogicalLineID: 9001, ClippedBefore: true}}
+	protocolWindow.LoadedLines = 0
+	protocolWindow.LogicalTotal = 1
+	protocolWindow.FirstLineID = 0
+	protocolWindow.LastLineID = 0
+	client := &fakeProtocolClient{window: protocolWindow}
+	source := NewProtocolSource(client)
+
+	window, err := source.LatestHistoryWindow(context.Background(), WindowRequest{TerminalID: "term-1", Limit: 20, Cols: 80})
+	if err != nil {
+		t.Fatalf("latest history window: %v", err)
+	}
+
+	if window.LoadedLines != 0 {
+		t.Fatalf("expected clipped-before-only window to keep zero loaded lines, got %d", window.LoadedLines)
+	}
+	if window.FirstLineID != 0 || window.LastLineID != 0 {
+		t.Fatalf("expected clipped-before-only window not to reconstruct loaded line boundaries, first=%d last=%d", window.FirstLineID, window.LastLineID)
+	}
+}
+
 func TestProtocolSourceOlderHistoryWindowRequiresBeforeCursor(t *testing.T) {
 	client := &fakeProtocolClient{}
 	source := NewProtocolSource(client)

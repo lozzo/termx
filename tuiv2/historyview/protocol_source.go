@@ -113,7 +113,7 @@ func historyWindowFromProtocol(window *protocol.HistoryWindow) HistoryWindow {
 		BeforeCursor:    window.BeforeOffset,
 		LoadedRows:      window.LoadedRows,
 		TotalRows:       window.TotalRows,
-		LoadedLines:     historyWindowLoadedLines(window, len(lines)),
+		LoadedLines:     historyWindowLoadedLines(window, historyLoadedLineStarts(lines)),
 		TotalLines:      historyWindowTotalLines(window, len(lines)),
 		HasMore:         window.HasMore,
 		Generation:      window.Generation,
@@ -161,21 +161,43 @@ func historyWindowTotalLines(window *protocol.HistoryWindow, loadedLines int) in
 }
 
 func firstLineID(lines []LineSpan, fallback uint64) uint64 {
+	if len(lines) == 0 {
+		return fallback
+	}
 	for _, line := range lines {
+		if line.ClippedBefore {
+			continue
+		}
 		if line.LogicalLineID != 0 {
 			return line.LogicalLineID
 		}
 	}
-	return fallback
+	return 0
 }
 
 func lastLineID(lines []LineSpan, fallback uint64) uint64 {
+	if len(lines) == 0 {
+		return fallback
+	}
 	for i := len(lines) - 1; i >= 0; i-- {
+		if lines[i].ClippedBefore {
+			continue
+		}
 		if lines[i].LogicalLineID != 0 {
 			return lines[i].LogicalLineID
 		}
 	}
-	return fallback
+	return 0
+}
+
+func historyLoadedLineStarts(lines []LineSpan) int {
+	count := 0
+	for _, line := range lines {
+		if !line.ClippedBefore {
+			count++
+		}
+	}
+	return count
 }
 
 func historyStringAt(values []string, index int) string {
