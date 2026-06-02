@@ -49,6 +49,21 @@ func TestTerminalAltScreenDoesNotCreatePrimaryHistoryAndRestoresPrimarySurface(t
 		t.Fatalf("expected alt-screen writes not to create primary logical lines, before=%d after=%d", beforeLines, got)
 	}
 
+	altCoreViewport, err := term.combinedGridViewport(0, 10, 8, term.primaryLiveTail.clone())
+	if err != nil {
+		t.Fatalf("alt-screen history window viewport: %v", err)
+	}
+	altWindow := historyWindowFromCoreGridViewport(term.id, 0, altCoreViewport)
+	if got := historyWindowRowTexts(altWindow); !reflect.DeepEqual(got, []string{"base"}) {
+		t.Fatalf("expected alt-screen history window to keep frozen primary history only, got %#v", got)
+	}
+	if altWindow.LoadedLines != beforeLines || altWindow.LogicalTotal != beforeLines {
+		t.Fatalf("expected alt-screen history window logical counts unchanged, loaded=%d total=%d", altWindow.LoadedLines, altWindow.LogicalTotal)
+	}
+	if historyWindowContainsText(altWindow, "ALT") {
+		t.Fatalf("expected alt-screen history window not to contain alternate content, got %#v", altWindow.Rows)
+	}
+
 	altSnapshot := term.Snapshot(0, 10)
 	if altSnapshot == nil {
 		t.Fatal("expected alt-screen snapshot")
