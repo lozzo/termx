@@ -161,6 +161,70 @@ func TestTerminalGridProjectionAppliesMetadataLineMigrations(t *testing.T) {
 	}
 }
 
+func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		record terminalGridLineRecordMeta
+	}{
+		{
+			name: "dirty-persisted-record",
+			record: terminalGridLineRecordMeta{
+				Dirty: true,
+			},
+		},
+		{
+			name: "unknown-origin",
+			record: terminalGridLineRecordMeta{
+				Origin: terminalLiveTailOrigin("bad-origin"),
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			store, err := newTerminalGridStore(root, "projection-corrupt-persisted-metadata-"+tc.name)
+			if err != nil {
+				t.Fatalf("new grid store: %v", err)
+			}
+			if err := store.appendRows([]terminalGridRow{
+				{cells: localVTermCellsFromString("abcd"), rowKind: "line0", wrapped: false},
+			}); err != nil {
+				t.Fatalf("append rows: %v", err)
+			}
+			dir := store.dir
+			_, generation, _ := store.coordinates()
+			if err := store.Close(); err != nil {
+				t.Fatalf("close grid store: %v", err)
+			}
+			record := tc.record
+			record.ID = 77
+			record.StartRow = 0
+			record.EndRow = 0
+			record.Sealed = true
+			if record.Origin == "" {
+				record.Origin = terminalLiveTailOriginReclaimed
+			}
+			record.Residency = terminalLogicalLineResidencyPersisted
+			record.Generation = generation
+			if err := writeTerminalGridLineMetadata(dir, terminalGridLineMetadata{Records: []terminalGridLineRecordMeta{record}}); err != nil {
+				t.Fatalf("write line metadata: %v", err)
+			}
+
+			reopened, err := openTerminalGridStoreForReplay(root, "projection-corrupt-persisted-metadata-"+tc.name)
+			if err != nil {
+				t.Fatalf("reopen grid store: %v", err)
+			}
+			defer reopened.Close()
+			viewport, err := reopened.Viewport(0, 10, 4)
+			if err != nil {
+				t.Fatalf("viewport: %v", err)
+			}
+			if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{1}) {
+				t.Fatalf("expected corrupt persisted metadata to fall back to index/wrapped ids, got %#v", got)
+			}
+		})
+	}
+}
+
 func TestTerminalGridRecoveredLiveTailRejectsUnknownOrigin(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()

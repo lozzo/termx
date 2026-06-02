@@ -1199,7 +1199,7 @@ func terminalGridCompletePersistedLogicalLineRecords(records []terminalGridLogic
 	out := make([]terminalGridLogicalLineRecord, 0, len(records))
 	nextStart := 0
 	for _, record := range records {
-		if record.id == 0 || record.residency != terminalLogicalLineResidencyPersisted || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
+		if record.id == 0 || record.residency != terminalLogicalLineResidencyPersisted || record.dirty || !terminalLiveTailOriginKnown(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
 			return nil, false
 		}
 		if record.generation != 0 && generation != 0 && record.generation != generation {
