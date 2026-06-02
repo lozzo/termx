@@ -1232,6 +1232,28 @@ func terminalGridCompletePersistedLogicalLineRecords(records []terminalGridLogic
 	return out, true
 }
 
+func terminalGridSealedPersistedLogicalLineRecordPrefix(records []terminalGridLogicalLineRecord, rowCount int, generation uint64) []terminalGridLogicalLineRecord {
+	if rowCount <= 0 || len(records) == 0 {
+		return nil
+	}
+	out := make([]terminalGridLogicalLineRecord, 0, len(records))
+	nextStart := 0
+	for _, record := range records {
+		if !terminalPersistedLogicalLineID(record.id) || record.residency != terminalLogicalLineResidencyPersisted || record.dirty || record.origin != terminalLiveTailOriginReclaimed || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
+			return nil
+		}
+		if record.generation != 0 && generation != 0 && record.generation != generation {
+			return nil
+		}
+		if !record.sealed {
+			break
+		}
+		out = append(out, record)
+		nextStart = record.endRow + 1
+	}
+	return out
+}
+
 func terminalGridLogicalLineRecordsForWindow(records []terminalGridLogicalLineRecord, start int, end int) []terminalGridLogicalLineRecord {
 	if len(records) == 0 || end <= start {
 		return nil
@@ -2019,6 +2041,8 @@ func writeTerminalGridCompletePersistedLineRecordsMetadata(dir string, baseRowID
 	records := terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
 	if complete, ok := terminalGridCompletePersistedLogicalLineRecords(records, len(refs), generation); ok {
 		metadata.Records = terminalGridLineRecordMetasFromRecords(complete)
+	} else if sealedPrefix := terminalGridSealedPersistedLogicalLineRecordPrefix(records, len(refs), generation); len(sealedPrefix) > 0 {
+		metadata.Records = terminalGridLineRecordMetasFromRecords(sealedPrefix)
 	} else {
 		metadata.Records = nil
 	}

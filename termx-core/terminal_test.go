@@ -1184,6 +1184,30 @@ func TestTerminalGridStoreAppendRefreshesPersistedLineMetadata(t *testing.T) {
 	}
 }
 
+func TestTerminalGridStoreLineMetadataKeepsSealedPrefixBeforeWrappedTail(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("sealed")},
+		{cells: localVTermCellsFromString("prefix"), wrapped: true},
+	}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+
+	_, generation, _ := store.coordinates()
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after append: %v", err)
+	}
+	want := []terminalGridLineRecordMeta{
+		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+	}
+	if !reflect.DeepEqual(lineMetadata.Records, want) {
+		t.Fatalf("expected sidecar to keep sealed persisted prefix only, got %#v want %#v", lineMetadata.Records, want)
+	}
+}
+
 func TestTerminalGridStoreRetentionDropsPartialWrappedLogicalLine(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
