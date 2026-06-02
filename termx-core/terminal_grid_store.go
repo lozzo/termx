@@ -1431,6 +1431,9 @@ func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogica
 		if record.id == 0 || record.residency != terminalLogicalLineResidencyLiveTail || !terminalLiveTailOriginKnown(record.origin) || record.dirty != terminalLiveTailOriginDirty(record.origin) || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
 			return nil, false
 		}
+		if !terminalLiveTailRecordIDMatchesOrigin(record.id, record.origin) {
+			return nil, false
+		}
 		if record.origin == terminalLiveTailOriginReclaimed && !record.sealed {
 			return nil, false
 		}
@@ -1445,6 +1448,16 @@ func terminalGridCompleteLiveTailLogicalLineRecords(records []terminalGridLogica
 
 func terminalLiveTailOriginDirty(origin terminalLiveTailOrigin) bool {
 	return origin != terminalLiveTailOriginReclaimed
+}
+
+func terminalLiveTailRecordIDMatchesOrigin(id uint64, origin terminalLiveTailOrigin) bool {
+	if id == 0 {
+		return false
+	}
+	if origin == terminalLiveTailOriginReclaimed {
+		return id < terminalLiveTailLogicalLineIDBase
+	}
+	return id >= terminalLiveTailLogicalLineIDBase
 }
 
 func canMergeRecoveredLiveTailSegments(left terminalLiveTailSegment, right terminalLiveTailSegment) bool {

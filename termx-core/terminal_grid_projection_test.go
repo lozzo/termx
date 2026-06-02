@@ -234,6 +234,7 @@ func TestTerminalGridProjectionRejectsCorruptPersistedLineMetadata(t *testing.T)
 func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
+		id         uint64
 		origin     terminalLiveTailOrigin
 		dirty      bool
 		rowIDKnown bool
@@ -243,11 +244,13 @@ func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
 	}{
 		{name: "unknown-origin", origin: terminalLiveTailOrigin("bad-origin"), dirty: true},
 		{name: "clean-live", origin: terminalLiveTailOriginLive, dirty: false},
+		{name: "live-persisted-id", id: 1, origin: terminalLiveTailOriginLive, dirty: true},
 		{name: "live-row-ids", origin: terminalLiveTailOriginLive, dirty: true, rowIDKnown: true, firstRowID: 40, lastRowID: 40},
-		{name: "dirty-reclaimed", origin: terminalLiveTailOriginReclaimed, dirty: true, sealed: true},
-		{name: "open-reclaimed", origin: terminalLiveTailOriginReclaimed, dirty: false, rowIDKnown: true, firstRowID: 40, lastRowID: 40},
-		{name: "reclaimed-missing-row-ids", origin: terminalLiveTailOriginReclaimed, dirty: false, sealed: true},
-		{name: "reclaimed-row-id-span-mismatch", origin: terminalLiveTailOriginReclaimed, dirty: false, rowIDKnown: true, firstRowID: 40, lastRowID: 42, sealed: true},
+		{name: "dirty-reclaimed", id: 1, origin: terminalLiveTailOriginReclaimed, dirty: true, sealed: true},
+		{name: "reclaimed-runtime-id", origin: terminalLiveTailOriginReclaimed, dirty: false, rowIDKnown: true, firstRowID: 40, lastRowID: 40, sealed: true},
+		{name: "open-reclaimed", id: 1, origin: terminalLiveTailOriginReclaimed, dirty: false, rowIDKnown: true, firstRowID: 40, lastRowID: 40},
+		{name: "reclaimed-missing-row-ids", id: 1, origin: terminalLiveTailOriginReclaimed, dirty: false, sealed: true},
+		{name: "reclaimed-row-id-span-mismatch", id: 1, origin: terminalLiveTailOriginReclaimed, dirty: false, rowIDKnown: true, firstRowID: 40, lastRowID: 42, sealed: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := newMemoryTerminalGridStoreForTest(t)
@@ -260,9 +263,13 @@ func TestTerminalGridRecoveredLiveTailRejectsCorruptRecordState(t *testing.T) {
 			if err != nil {
 				t.Fatalf("encode live row metadata: %v", err)
 			}
+			id := tc.id
+			if id == 0 {
+				id = terminalLiveTailLogicalLineIDBase + 1
+			}
 			if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{
 				LiveRecords: []terminalGridLineRecordMeta{{
-					ID:         terminalLiveTailLogicalLineIDBase + 1,
+					ID:         id,
 					StartRow:   0,
 					EndRow:     0,
 					RowIDKnown: tc.rowIDKnown,
