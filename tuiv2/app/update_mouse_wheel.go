@@ -100,7 +100,7 @@ func (m *Model) localScrollbackWheelCmd(paneID string, delta int) tea.Cmd {
 		)
 	}
 	if mode == input.ModeDisplay {
-		return m.moveCopyCursorLogicalLines(-delta)
+		return m.moveCopyCursorLogicalLinesAndMaybeLoadOlder(-delta)
 	}
 	if delta > 0 && m.ensureCopyMode() {
 		m.setMode(input.ModeState{Kind: input.ModeDisplay})

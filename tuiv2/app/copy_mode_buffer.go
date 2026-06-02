@@ -720,6 +720,18 @@ func (m *Model) moveCopyCursorLogicalLines(delta int) tea.Cmd {
 	return nil
 }
 
+func (m *Model) moveCopyCursorLogicalLinesAndMaybeLoadOlder(delta int) tea.Cmd {
+	if !m.ensureCopyMode() {
+		return nil
+	}
+	wasPinnedAtTop := delta < 0 && copyModePinnedAtTop(m.copyMode)
+	cmd := m.moveCopyCursorLogicalLines(delta)
+	if wasPinnedAtTop {
+		cmd = batchCmds(cmd, m.loadOlderHistoryWindowForPaneCmd(m.copyMode.PaneID))
+	}
+	return cmd
+}
+
 func (m *Model) jumpCopyCursorLogicalLine(line int) tea.Cmd {
 	if !m.ensureCopyMode() {
 		return nil

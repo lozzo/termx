@@ -104,6 +104,68 @@ func TestCopyModePageUpAwayFromTopDoesNotRequestOlderWindow(t *testing.T) {
 	}
 }
 
+func TestCopyModeWheelUpAtTopRequestsOlderAuthoritativeWindow(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 12})
+	latest := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 101, []string{"new-a", "new-b"}, 2, true)
+	seedAuthoritativeCopyModeWindow(t, model, latest, copyModeLogicalPos{Line: 0, Offset: 0}, 0)
+	source := &appHistoryFakeSource{
+		older: appHistoryFakeWindow("term-1", historyview.WindowOpPrepend, "token-1", 98, 99, []string{"old-a", "old-b"}, 4, false),
+	}
+	model.historySource = source
+	model.setMode(input.ModeState{Kind: input.ModeDisplay})
+
+	cmd := model.handleMouseWheelRepeated(tea.MouseMsg{Button: tea.MouseButtonWheelUp}, 1)
+	if cmd == nil {
+		t.Fatal("expected wheel-up command")
+	}
+	msgs := collectBatchMessages(cmd)
+	if !containsHistoryWindowLoadedMsg(msgs, "term-1") {
+		t.Fatalf("expected older history window load message, got %#v", msgs)
+	}
+	if source.olderRequests != 1 {
+		t.Fatalf("expected one older request, got %d", source.olderRequests)
+	}
+	if source.olderRequest.Token != "token-1" || source.olderRequest.BeforeCursor != latest.BeforeCursor {
+		t.Fatalf("unexpected older request: %#v", source.olderRequest)
+	}
+}
+
+func TestCopyModeWheelUpAwayFromTopDoesNotRequestOlderWindow(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 12})
+	latest := appHistoryFakeWindow("term-1", historyview.WindowOpReplace, "token-1", 100, 105, []string{"r0", "r1", "r2", "r3", "r4", "r5"}, 6, true)
+	seedAuthoritativeCopyModeWindow(t, model, latest, copyModeLogicalPos{Line: 5, Offset: 0}, 2)
+	source := &appHistoryFakeSource{
+		older: appHistoryFakeWindow("term-1", historyview.WindowOpPrepend, "token-1", 98, 99, []string{"old"}, 7, false),
+	}
+	model.historySource = source
+	model.setMode(input.ModeState{Kind: input.ModeDisplay})
+
+	cmd := model.handleMouseWheelRepeated(tea.MouseMsg{Button: tea.MouseButtonWheelUp}, 1)
+	msgs := collectBatchMessages(cmd)
+	if containsHistoryWindowLoadedMsg(msgs, "term-1") {
+		t.Fatalf("did not expect older history request away from top, got %#v", msgs)
+	}
+	if source.olderRequests != 0 {
+		t.Fatalf("expected no older requests, got %d", source.olderRequests)
+	}
+}
+
+func seedAuthoritativeCopyModeWindow(t *testing.T, model *Model, window historyview.HistoryWindow, cursor copyModeLogicalPos, viewTopRow int) {
+	t.Helper()
+	if !model.HistoryStore().ApplyHistoryWindow(window) {
+		t.Fatal("expected authoritative history window seed to be accepted")
+	}
+	model.copyMode = copyModeState{
+		PaneID:        "pane-1",
+		TerminalID:    window.TerminalID,
+		WindowToken:   string(window.Token),
+		Cursor:        copyModePoint{Row: cursor.Line, Col: 0},
+		CursorLogical: cursor,
+		ViewTopRow:    viewTopRow,
+	}
+	model.saveCurrentCopyModeState()
+}
+
 func collectBatchMessages(cmd tea.Cmd) []tea.Msg {
 	if cmd == nil {
 		return nil
