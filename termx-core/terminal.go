@@ -1958,7 +1958,7 @@ func (t *Terminal) recordLiveTailLineMigrationsLocked(rows []vterm.DamageOp, run
 			continue
 		}
 		runtimeID := uint64At(runtimeLineIDs, start)
-		if runtimeID >= terminalLiveTailLogicalLineIDBase {
+		if terminalRuntimeLogicalLineID(runtimeID) {
 			if t.liveLineMigrations == nil {
 				t.liveLineMigrations = make(map[uint64]uint64)
 			}

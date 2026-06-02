@@ -1454,7 +1454,7 @@ func terminalLiveTailRecordIDMatchesOrigin(id uint64, origin terminalLiveTailOri
 	if origin == terminalLiveTailOriginReclaimed {
 		return terminalPersistedLogicalLineID(id)
 	}
-	return id >= terminalLiveTailLogicalLineIDBase
+	return terminalRuntimeLogicalLineID(id)
 }
 
 func terminalPersistedLogicalLineID(id uint64) bool {
