@@ -458,13 +458,18 @@ func (s *terminalGridStore) LogicalLineCount() int {
 	if s == nil {
 		return 0
 	}
-	_, generation, rowCount := s.coordinates()
+	baseRowID, generation, rowCount := s.coordinates()
 	if records, ok := s.persistedLogicalLineRecordsFromMetadata(rowCount, generation); ok {
 		return len(records)
 	}
 	refs, err := readTerminalGridIndexRefsFromPath(filepath.Join(s.dir, terminalGridIndexName))
 	if err != nil {
 		return 0
+	}
+	if records, ok := s.sealedPersistedLogicalLineRecordPrefixFromMetadata(rowCount, generation); ok {
+		if count, ok := terminalGridLogicalLineCountFromSealedPrefixAndRefs(records, refs, baseRowID, generation); ok {
+			return count
+		}
 	}
 	return len(terminalGridFallbackLogicalLineRecordsForRefs(refs, 0))
 }
@@ -1249,6 +1254,18 @@ func terminalGridSealedPersistedLogicalLineRecordPrefix(records []terminalGridLo
 		nextStart = record.endRow + 1
 	}
 	return out
+}
+
+func terminalGridLogicalLineCountFromSealedPrefixAndRefs(prefix []terminalGridLogicalLineRecord, refs []terminalGridRowRef, baseRowID uint64, generation uint64) (int, bool) {
+	if len(prefix) == 0 {
+		return 0, false
+	}
+	tailStart := prefix[len(prefix)-1].endRow + 1
+	if tailStart < 0 || tailStart > len(refs) {
+		return 0, false
+	}
+	tail := terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs[tailStart:], baseRowID+uint64(tailStart), generation)
+	return len(prefix) + len(tail), true
 }
 
 func terminalGridLogicalLineRecordsForWindow(records []terminalGridLogicalLineRecord, start int, end int) []terminalGridLogicalLineRecord {

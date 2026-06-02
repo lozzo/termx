@@ -177,6 +177,32 @@ func TestTerminalGridProjectionUsesSealedMetadataPrefixForWindowStart(t *testing
 	}
 }
 
+func TestTerminalGridProjectionCountsSealedMetadataPrefixLogicalTotal(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("aa")},
+		{cells: localVTermCellsFromString("bb")},
+		{cells: localVTermCellsFromString("tail"), wrapped: true},
+	}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	if err := writeTerminalGridLineMetadata(store.dir, terminalGridLineMetadata{Records: []terminalGridLineRecordMeta{
+		{ID: 91, StartRow: 0, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+	}}); err != nil {
+		t.Fatalf("write partial line metadata: %v", err)
+	}
+
+	viewport, err := store.Viewport(0, 10, 10)
+	if err != nil {
+		t.Fatalf("viewport: %v", err)
+	}
+	if viewport.LogicalTotal != 2 || store.LogicalLineCount() != 2 {
+		t.Fatalf("expected sealed prefix plus fallback tail logical total 2, viewport=%d store=%d", viewport.LogicalTotal, store.LogicalLineCount())
+	}
+}
+
 func TestTerminalGridProjectionAppliesMetadataLineMigrations(t *testing.T) {
 	root := t.TempDir()
 	store, err := newTerminalGridStore(root, "projection-metadata-migration")
