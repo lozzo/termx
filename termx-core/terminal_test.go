@@ -1313,6 +1313,40 @@ func TestTerminalGridStoreRetentionPreservesExplicitPersistedLineMetadata(t *tes
 	}
 }
 
+func TestTerminalGridStoreExplicitAppendRebuildsMissingMetadataPrefix(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	if err := store.AppendRows([][]localvterm.Cell{localVTermCellsFromString("old")}); err != nil {
+		t.Fatalf("append initial fallback row: %v", err)
+	}
+	if err := os.Remove(filepath.Join(store.dir, terminalGridLineMetaName)); err != nil {
+		t.Fatalf("remove line metadata: %v", err)
+	}
+
+	runtimeID := terminalLiveTailLogicalLineIDBase + 88
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("new-a")},
+		{Cells: localVTermCellsFromString("new-b")},
+	}
+	if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{runtimeID, runtimeID}); err != nil {
+		t.Fatalf("explicit append after missing metadata: %v", err)
+	}
+
+	_, generation, _ := store.coordinates()
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read rebuilt line metadata: %v", err)
+	}
+	want := []terminalGridLineRecordMeta{
+		{ID: 1, StartRow: 0, EndRow: 0, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+		{ID: 2, StartRow: 1, EndRow: 2, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+	}
+	if !reflect.DeepEqual(lineMetadata.Records, want) {
+		t.Fatalf("expected explicit append to rebuild fallback prefix and preserve explicit tail, got %#v want %#v", lineMetadata.Records, want)
+	}
+}
+
 func TestTerminalGridStoreLineMetadataKeepsSealedPrefixBeforeWrappedTail(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()

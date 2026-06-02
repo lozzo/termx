@@ -422,6 +422,7 @@ TUI store 至少表达：
 - 已让 core persisted retention 实际丢弃 rows 后立即刷新 `grid.lines.json` 中的 persisted logical line records，使 sidecar 在运行期跟随当前 index、base row id 与 generation 更新，不再只等 `Close()` 写出。
 - 已让 core persisted append 完成后立即刷新 sealed-only persisted logical line records sidecar；正常运行期追加已封口 rows 后不再等 `Close()` 才生成 persisted logical line metadata。
 - 已让 core persisted append 通道携带逐 row stable logical line id，并在写出 `grid.lines.json` 时把 runtime live logical line id 转为 persisted logical line id；append、retention 与 close 会优先保留这些显式 persisted records，不再在有显式 id 的正常路径立刻退回 index/wrapped fallback。
+- 已让 core persisted explicit append 在旧 sidecar 缺失或前缀 metadata 不可用时，只对 append 前的既有前缀使用 index/wrapped fallback 重建；新追加的 sealed 后缀仍按 stable logical line id 写入 persisted records。
 - 已让 core persisted viewport 在请求窗口完全落入 sealed persisted metadata prefix 时消费该 prefix 的 logical line id；窗口触及未封口尾部时仍不把 partial sidecar 当完整 persisted truth。
 - 已将 mutable live tail row payload 随 `grid.lines.json` 的 live record 一起写入 sidecar，并在 terminal 不在内存时让 core `history.window` latest projection 从该 sidecar 恢复 mutable live tail rows、ownership 与 runtime logical line id；older offset 仍保持 persisted-only。当前恢复范围覆盖 `history.window` store-only latest projection，legacy snapshot/grid viewport 仍只是兼容投影接口。
 - 已收紧 mutable live tail metadata 恢复校验：`live_records` 的 origin 必须是 live/reclaimed/resize 之一，且 dirty 必须与 origin 一致，live/resize 为 dirty 且使用 runtime logical line id，reclaimed 为 clean、sealed 且使用 persisted logical line id；未知 origin、dirty/origin 不一致、id namespace 不匹配或 open reclaimed record 会被视为损坏 metadata 并忽略恢复。

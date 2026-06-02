@@ -2422,7 +2422,12 @@ func writeTerminalGridPersistedLineRecordsMetadataForAppend(dir string, baseRowI
 	} else if appendedStart == 0 {
 		records = nil
 	} else {
-		return fmt.Errorf("terminal grid persisted line metadata prefix does not cover append start")
+		records = terminalGridFallbackLogicalLineRecordsForRefsWithGeneration(refs[:appendedStart], baseRowID, generation)
+		if complete, ok := terminalGridCompletePersistedLogicalLineRecords(records, appendedStart, generation); ok {
+			records = complete
+		} else {
+			return fmt.Errorf("terminal grid persisted line metadata prefix does not cover append start")
+		}
 	}
 	appendedRecords := terminalGridExplicitLogicalLineRecordsForAppendedRows(refs, baseRowID, generation, appendedStart, logicalLineIDs)
 	if len(appendedRecords) == 0 {
