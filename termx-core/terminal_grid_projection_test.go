@@ -64,6 +64,55 @@ func TestTerminalGridProjectionUsesLogicalLineRecordIDs(t *testing.T) {
 	}
 }
 
+func TestTerminalGridProjectionRestoresLogicalLineBoundariesFromMetadata(t *testing.T) {
+	root := t.TempDir()
+	store, err := newTerminalGridStore(root, "projection-metadata-line-boundary")
+	if err != nil {
+		t.Fatalf("new grid store: %v", err)
+	}
+	if err := store.appendRows([]terminalGridRow{
+		{cells: localVTermCellsFromString("abcd"), rowKind: "line0", wrapped: false},
+		{cells: localVTermCellsFromString("ef"), rowKind: "line0", wrapped: false},
+	}); err != nil {
+		t.Fatalf("append rows: %v", err)
+	}
+	dir := store.dir
+	_, generation, _ := store.coordinates()
+	if err := store.Close(); err != nil {
+		t.Fatalf("close grid store: %v", err)
+	}
+	if err := writeTerminalGridLineMetadata(dir, terminalGridLineMetadata{Records: []terminalGridLineRecordMeta{{
+		ID:         77,
+		StartRow:   0,
+		EndRow:     1,
+		Sealed:     true,
+		Origin:     terminalLiveTailOriginReclaimed,
+		Residency:  terminalLogicalLineResidencyPersisted,
+		Generation: generation,
+	}}}); err != nil {
+		t.Fatalf("write line metadata: %v", err)
+	}
+
+	reopened, err := openTerminalGridStoreForReplay(root, "projection-metadata-line-boundary")
+	if err != nil {
+		t.Fatalf("reopen grid store: %v", err)
+	}
+	defer reopened.Close()
+	viewport, err := reopened.Viewport(0, 10, 6)
+	if err != nil {
+		t.Fatalf("viewport: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"abcdef"}) {
+		t.Fatalf("expected metadata-restored logical line projection, got %#v", got)
+	}
+	if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{77}) {
+		t.Fatalf("expected metadata-restored logical line id, got %#v", got)
+	}
+	if viewport.LogicalTotal != 1 || reopened.LogicalLineCount() != 1 {
+		t.Fatalf("expected one metadata-restored logical line, viewport=%d store=%d", viewport.LogicalTotal, reopened.LogicalLineCount())
+	}
+}
+
 func TestServerHistoryWindowLogicalLineIDsStayStableAcrossProjectionWidths(t *testing.T) {
 	root := t.TempDir()
 	store, err := newTerminalGridStore(root, "projection-stable-line-id")

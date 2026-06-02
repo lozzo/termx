@@ -443,6 +443,10 @@ func (s *terminalGridStore) LogicalLineCount() int {
 	if s == nil {
 		return 0
 	}
+	_, generation, rowCount := s.coordinates()
+	if records, ok := s.persistedLogicalLineRecordsFromMetadata(rowCount, generation); ok {
+		return len(records)
+	}
 	refs, err := readTerminalGridIndexRefsFromPath(filepath.Join(s.dir, terminalGridIndexName))
 	if err != nil {
 		return 0
@@ -516,7 +520,7 @@ func (s *terminalGridStore) Viewport(beforeOffset int, limit int, cols int) (ter
 		}
 		traceGridTerminalRows("core.grid_store.viewport.raw_rows", s.terminalID, gridRows, "offset", beforeOffset, "limit", limit, "raw_limit", rawLimit, "cols", cols, "window_rows", rows, "has_more", hasMore)
 		generation, firstRowID, lastRowID, totalRows := s.rowWindowCoordinates(beforeOffset, rows)
-		lineRecords := terminalGridLogicalLineRecordsForRefsWithGeneration(refs, firstRowID, generation)
+		lineRecords := s.persistedLogicalLineRecordsForViewport(refs, firstRowID, totalRows, generation)
 		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped, result.LogicalLineIDs = reflowTerminalGridRows(gridRows, cols, lineRecords)
 		result.Ownership = repeatedString(RowOwnershipPersisted, len(result.Rows))
 		cropped := false
@@ -634,7 +638,8 @@ func (s *terminalGridStore) reclaimViewport(neededRows int, cols int) (terminalG
 		if start > end {
 			start = end
 		}
-		start = terminalGridWindowStartForLogicalLineRecords(refs, start)
+		lineRecords := s.persistedLogicalLineRecordsForIndex(refs, baseRowID, generation)
+		start = terminalGridWindowStartForRecords(lineRecords, start)
 		refs = refs[start:end]
 		if len(refs) == 0 {
 			return result, nil
@@ -644,7 +649,10 @@ func (s *terminalGridStore) reclaimViewport(neededRows int, cols int) (terminalG
 			return result, err
 		}
 		firstRowID := baseRowID + uint64(start)
-		lineRecords := terminalGridLogicalLineRecordsForRefsWithGeneration(refs, firstRowID, generation)
+		lineRecords = terminalGridLogicalLineRecordsForWindow(lineRecords, start, end)
+		if len(lineRecords) == 0 {
+			lineRecords = terminalGridLogicalLineRecordsForRefsWithGeneration(refs, firstRowID, generation)
+		}
 		result.Rows, result.Timestamps, result.RowKinds, result.Wrapped, result.LogicalLineIDs = reflowTerminalGridRows(gridRows, cols, lineRecords)
 		result.Ownership = repeatedString(RowOwnershipPersisted, len(result.Rows))
 		result.Generation = generation
@@ -726,6 +734,8 @@ func cloneVTermCellRows(rows [][]vterm.Cell) [][]vterm.Cell {
 func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalGridRowRef, int, bool, error) {
 	s.mu.Lock()
 	total := s.rowCount
+	baseRowID := s.baseRowID
+	generation := s.generation
 	indexPath := filepath.Join(s.dir, terminalGridIndexName)
 	s.mu.Unlock()
 
@@ -753,7 +763,8 @@ func (s *terminalGridStore) windowRefs(beforeOffset int, limit int) ([]terminalG
 	if start > end {
 		start = end
 	}
-	start = terminalGridWindowStartForLogicalLineRecords(refs, start)
+	lineRecords := s.persistedLogicalLineRecordsForIndex(refs, baseRowID, generation)
+	start = terminalGridWindowStartForRecords(lineRecords, start)
 	refs = refs[start:end]
 
 	if len(refs) == 0 {
@@ -1157,6 +1168,137 @@ func terminalGridLogicalLineRecordsForRefsWithGeneration(refs []terminalGridRowR
 	return records
 }
 
+func terminalGridLogicalLineRecordsFromMetadata(records []terminalGridLineRecordMeta) []terminalGridLogicalLineRecord {
+	if len(records) == 0 {
+		return nil
+	}
+	out := make([]terminalGridLogicalLineRecord, 0, len(records))
+	for _, record := range records {
+		out = append(out, terminalGridLogicalLineRecord{
+			id:         record.ID,
+			startRow:   record.StartRow,
+			endRow:     record.EndRow,
+			sealed:     record.Sealed,
+			origin:     record.Origin,
+			residency:  record.Residency,
+			dirty:      record.Dirty,
+			generation: record.Generation,
+		})
+	}
+	return out
+}
+
+func terminalGridCompletePersistedLogicalLineRecords(records []terminalGridLogicalLineRecord, rowCount int, generation uint64) ([]terminalGridLogicalLineRecord, bool) {
+	if rowCount <= 0 {
+		return nil, len(records) == 0
+	}
+	if len(records) == 0 {
+		return nil, false
+	}
+	out := make([]terminalGridLogicalLineRecord, 0, len(records))
+	nextStart := 0
+	for _, record := range records {
+		if record.id == 0 || record.residency != terminalLogicalLineResidencyPersisted || record.startRow != nextStart || record.endRow < record.startRow || record.endRow >= rowCount {
+			return nil, false
+		}
+		if record.generation != 0 && generation != 0 && record.generation != generation {
+			return nil, false
+		}
+		if !record.sealed && record.endRow != rowCount-1 {
+			return nil, false
+		}
+		out = append(out, record)
+		nextStart = record.endRow + 1
+	}
+	if nextStart != rowCount {
+		return nil, false
+	}
+	return out, true
+}
+
+func terminalGridLogicalLineRecordsForWindow(records []terminalGridLogicalLineRecord, start int, end int) []terminalGridLogicalLineRecord {
+	if len(records) == 0 || end <= start {
+		return nil
+	}
+	out := make([]terminalGridLogicalLineRecord, 0, len(records))
+	for _, record := range records {
+		if record.endRow < start {
+			continue
+		}
+		if record.startRow >= end {
+			break
+		}
+		windowed := record
+		if windowed.startRow < start {
+			windowed.startRow = start
+		}
+		if windowed.endRow >= end {
+			windowed.endRow = end - 1
+			windowed.sealed = false
+		}
+		windowed.startRow -= start
+		windowed.endRow -= start
+		out = append(out, windowed)
+	}
+	return out
+}
+
+func terminalGridWindowStartForRecords(records []terminalGridLogicalLineRecord, start int) int {
+	if start <= 0 || len(records) == 0 {
+		return maxInt(start, 0)
+	}
+	for _, record := range records {
+		if start >= record.startRow && start <= record.endRow {
+			return record.startRow
+		}
+	}
+	return start
+}
+
+func (s *terminalGridStore) persistedLogicalLineRecordsFromMetadata(rowCount int, generation uint64) ([]terminalGridLogicalLineRecord, bool) {
+	if s == nil || strings.TrimSpace(s.dir) == "" {
+		return nil, false
+	}
+	metadata, err := readTerminalGridLineMetadata(s.dir)
+	if err != nil {
+		return nil, false
+	}
+	records, ok := terminalGridCompletePersistedLogicalLineRecords(terminalGridLogicalLineRecordsFromMetadata(metadata.Records), rowCount, generation)
+	if !ok {
+		return nil, false
+	}
+	return records, true
+}
+
+func (s *terminalGridStore) persistedLogicalLineRecordsForIndex(refs []terminalGridRowRef, baseRowID uint64, generation uint64) []terminalGridLogicalLineRecord {
+	if s == nil {
+		return terminalGridLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
+	}
+	if records, ok := s.persistedLogicalLineRecordsFromMetadata(len(refs), generation); ok {
+		return records
+	}
+	return terminalGridLogicalLineRecordsForRefsWithGeneration(refs, baseRowID, generation)
+}
+
+func (s *terminalGridStore) persistedLogicalLineRecordsForViewport(refs []terminalGridRowRef, firstRowID uint64, totalRows int, generation uint64) []terminalGridLogicalLineRecord {
+	if len(refs) == 0 {
+		return nil
+	}
+	if s != nil {
+		baseRowID, _, _ := s.coordinates()
+		if firstRowID >= baseRowID {
+			start := int(firstRowID - baseRowID)
+			end := start + len(refs)
+			if records, ok := s.persistedLogicalLineRecordsFromMetadata(totalRows, generation); ok {
+				if windowRecords := terminalGridLogicalLineRecordsForWindow(records, start, end); len(windowRecords) > 0 {
+					return windowRecords
+				}
+			}
+		}
+	}
+	return terminalGridLogicalLineRecordsForRefsWithGeneration(refs, firstRowID, generation)
+}
+
 func readTerminalGridRows(dir string, refs []terminalGridRowRef) ([]terminalGridRow, error) {
 	out := make([]terminalGridRow, 0, len(refs))
 	var currentSeq uint32
@@ -1233,8 +1375,18 @@ func reflowTerminalGridRows(rows []terminalGridRow, cols int, lineRecords []term
 			recordIndex++
 		}
 		logicalLineID := uint64(0)
+		recordEnd := i
+		recordSealed := false
+		hasRecord := false
 		if recordIndex < len(lineRecords) && i >= lineRecords[recordIndex].startRow && i <= lineRecords[recordIndex].endRow {
+			hasRecord = true
 			logicalLineID = lineRecords[recordIndex].id
+			recordEnd = lineRecords[recordIndex].endRow
+			recordSealed = lineRecords[recordIndex].sealed
+		}
+		continuesLogicalLine := row.wrapped
+		if hasRecord {
+			continuesLogicalLine = i < recordEnd || !recordSealed
 		}
 		meta := terminalGridReflowMeta{
 			timestamp:     row.timestamp,
@@ -1250,10 +1402,10 @@ func reflowTerminalGridRows(rows []terminalGridRow, cols int, lineRecords []term
 			logical = append(logical, terminalGridReflowCell{
 				cell:      cell,
 				meta:      cellMeta,
-				continued: row.wrapped && i == len(row.cells)-1,
+				continued: continuesLogicalLine && i == len(row.cells)-1,
 			})
 		}
-		if row.wrapped {
+		if continuesLogicalLine {
 			continue
 		}
 		reflow.emitLogicalLine(logical, emptyMeta)

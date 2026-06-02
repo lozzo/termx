@@ -410,6 +410,7 @@ TUI store 至少表达：
 - 已新增 core grid line metadata sidecar，持久化 runtime live logical line id 到 persisted logical line id 的迁移关系；当前 residency、dirty、generation 尚未写入该 sidecar。
 - 已将 persisted logical line record 的 residency、dirty、generation 写入 core grid line metadata sidecar。
 - 已将 mutable live tail record 的 residency、dirty、generation 写入 core grid line metadata sidecar；当前只是可恢复 metadata 落点，尚未实现从 sidecar 恢复 live tail 内容。
+- 已让 core persisted store 在 replay/viewport/reclaim 路径优先使用 `grid.lines.json` 中完整有效的 persisted logical line record 恢复 logical line 边界、logical line id 与 logical total；metadata 缺失、损坏或与当前 index 不匹配时继续回退到 index/wrapped 推导。当前恢复范围覆盖 persisted screen projection，尚未恢复 mutable live tail 内容。
 - 已删除或改写 `tuiv2/app` 中旧滚动测试语义：不再保留依赖 snapshot scrollback wrapped、frozen snapshot 本地游标、正常模式本地 pane viewport offset 的 skipped 回归基准。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与非零 logical line boundary id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。
