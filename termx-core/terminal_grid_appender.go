@@ -15,11 +15,16 @@ type terminalGridAppender struct {
 
 	mu      sync.Mutex
 	cond    *sync.Cond
-	queue   []vterm.DamageOp
+	queue   []terminalGridAppendBatch
 	closed  bool
 	writing bool
 	done    chan struct{}
 	stop    sync.Once
+}
+
+type terminalGridAppendBatch struct {
+	rows           []vterm.DamageOp
+	logicalLineIDs []uint64
 }
 
 func newTerminalGridAppender(store *terminalGridStore, terminalID string, retentionPolicy terminalGridRetentionPolicy, logger *slog.Logger) *terminalGridAppender {
@@ -40,14 +45,19 @@ func newTerminalGridAppender(store *terminalGridStore, terminalID string, retent
 }
 
 func (a *terminalGridAppender) append(rows []vterm.DamageOp) {
+	a.appendWithLogicalLineIDs(rows, nil)
+}
+
+func (a *terminalGridAppender) appendWithLogicalLineIDs(rows []vterm.DamageOp, logicalLineIDs []uint64) {
 	if a == nil || len(rows) == 0 {
 		return
 	}
 	rows = cloneGridDamageOps(rows)
+	logicalLineIDs = alignGridAppenderLogicalLineIDs(logicalLineIDs, len(rows))
 	a.mu.Lock()
 	if !a.closed {
-		a.queue = append(a.queue, rows...)
-		traceGridDamageOps("core.grid_appender.enqueue", a.terminalID, rows, "queue_after", len(a.queue))
+		a.queue = append(a.queue, terminalGridAppendBatch{rows: rows, logicalLineIDs: logicalLineIDs})
+		traceGridDamageOps("core.grid_appender.enqueue", a.terminalID, rows, "queue_after", terminalGridAppendBatchRowCount(a.queue))
 		a.cond.Signal()
 	}
 	a.mu.Unlock()
@@ -88,13 +98,14 @@ func (a *terminalGridAppender) run() {
 			a.mu.Unlock()
 			return
 		}
-		rows := a.queue
+		batches := a.queue
 		a.queue = nil
 		a.writing = true
 		a.mu.Unlock()
 
+		rows, logicalLineIDs := terminalGridAppendRowsFromBatches(batches)
 		traceGridDamageOps("core.grid_appender.flush", a.terminalID, rows)
-		if err := a.store.AppendDamageRows(rows); err != nil && a.logger != nil {
+		if err := a.store.AppendDamageRowsWithLogicalLineIDs(rows, logicalLineIDs); err != nil && a.logger != nil {
 			a.logger.Warn("termx terminal grid append failed", "terminal_id", a.terminalID, "error", err)
 		}
 
@@ -103,6 +114,37 @@ func (a *terminalGridAppender) run() {
 		a.cond.Broadcast()
 		a.mu.Unlock()
 	}
+}
+
+func alignGridAppenderLogicalLineIDs(values []uint64, size int) []uint64 {
+	if size <= 0 {
+		return nil
+	}
+	out := make([]uint64, size)
+	copy(out, values)
+	return out
+}
+
+func terminalGridAppendBatchRowCount(batches []terminalGridAppendBatch) int {
+	total := 0
+	for _, batch := range batches {
+		total += len(batch.rows)
+	}
+	return total
+}
+
+func terminalGridAppendRowsFromBatches(batches []terminalGridAppendBatch) ([]vterm.DamageOp, []uint64) {
+	rowCount := terminalGridAppendBatchRowCount(batches)
+	if rowCount == 0 {
+		return nil, nil
+	}
+	rows := make([]vterm.DamageOp, 0, rowCount)
+	logicalLineIDs := make([]uint64, 0, rowCount)
+	for _, batch := range batches {
+		rows = append(rows, batch.rows...)
+		logicalLineIDs = append(logicalLineIDs, alignGridAppenderLogicalLineIDs(batch.logicalLineIDs, len(batch.rows))...)
+	}
+	return rows, logicalLineIDs
 }
 
 func cloneGridDamageOps(rows []vterm.DamageOp) []vterm.DamageOp {

@@ -1807,10 +1807,10 @@ func (t *Terminal) appendGridFromDamageLocked(damage vterm.WriteDamage) {
 	t.recordLiveTailLineMigrationsLocked(persistedRows, persistedLineIDs)
 	traceGridDamageOps("core.append_grid.damage", t.id, persistedRows, "ops", len(damage.Ops), "alternate_rows", len(damage.AlternateAppend), "live_tail_rows", len(liveTailRows.rows))
 	if t.gridAppender != nil {
-		t.gridAppender.append(persistedRows)
+		t.gridAppender.appendWithLogicalLineIDs(persistedRows, persistedLineIDs)
 		return
 	}
-	if err := t.grid.AppendDamageRows(persistedRows); err != nil && t.logger != nil {
+	if err := t.grid.AppendDamageRowsWithLogicalLineIDs(persistedRows, persistedLineIDs); err != nil && t.logger != nil {
 		t.logger.Warn("termx terminal grid append failed", "terminal_id", t.id, "error", err)
 	}
 }

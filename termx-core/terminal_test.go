@@ -1211,6 +1211,108 @@ func TestTerminalGridStoreAppendRefreshesPersistedLineMetadata(t *testing.T) {
 	}
 }
 
+func TestTerminalGridStoreAppendUsesExplicitLogicalLineIDsForPersistedMetadata(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+
+	runtimeID := terminalLiveTailLogicalLineIDBase + 42
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("first")},
+		{Cells: localVTermCellsFromString("second")},
+	}
+	if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{runtimeID, runtimeID}); err != nil {
+		t.Fatalf("append rows with logical ids: %v", err)
+	}
+
+	_, generation, _ := store.coordinates()
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after explicit append: %v", err)
+	}
+	want := []terminalGridLineRecordMeta{
+		{ID: 1, StartRow: 0, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+	}
+	if !reflect.DeepEqual(lineMetadata.Records, want) {
+		t.Fatalf("expected explicit logical line metadata, got %#v want %#v", lineMetadata.Records, want)
+	}
+	viewport, err := store.Viewport(0, 10, 80)
+	if err != nil {
+		t.Fatalf("viewport after explicit append: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"firstsecond"}) {
+		t.Fatalf("expected explicit line id to group persisted rows, got %#v", got)
+	}
+	if got := viewport.LogicalLineIDs; !reflect.DeepEqual(got, []uint64{1}) {
+		t.Fatalf("expected persisted projection id 1, got %#v", got)
+	}
+}
+
+func TestTerminalGridStoreClosePreservesExplicitPersistedLineMetadata(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+
+	runtimeID := terminalLiveTailLogicalLineIDBase + 43
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("left")},
+		{Cells: localVTermCellsFromString("right")},
+	}
+	if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{runtimeID, runtimeID}); err != nil {
+		t.Fatalf("append rows with logical ids: %v", err)
+	}
+	_, generation, _ := store.coordinates()
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after close: %v", err)
+	}
+	want := []terminalGridLineRecordMeta{
+		{ID: 1, StartRow: 0, EndRow: 1, Sealed: true, Origin: terminalLiveTailOriginReclaimed, Residency: terminalLogicalLineResidencyPersisted, Generation: generation},
+	}
+	if !reflect.DeepEqual(lineMetadata.Records, want) {
+		t.Fatalf("expected close to preserve explicit logical line metadata, got %#v want %#v", lineMetadata.Records, want)
+	}
+}
+
+func TestTerminalGridStoreRetentionPreservesExplicitPersistedLineMetadata(t *testing.T) {
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	store.SetMaxRows(1)
+
+	runtimeID := terminalLiveTailLogicalLineIDBase + 77
+	rows := []localvterm.DamageOp{
+		{Cells: localVTermCellsFromString("old")},
+		{Cells: localVTermCellsFromString("tail-a")},
+		{Cells: localVTermCellsFromString("tail-b")},
+	}
+	if err := store.AppendDamageRowsWithLogicalLineIDs(rows, []uint64{0, runtimeID, runtimeID}); err != nil {
+		t.Fatalf("append rows with explicit tail line: %v", err)
+	}
+
+	viewport, err := store.Viewport(0, 10, 80)
+	if err != nil {
+		t.Fatalf("viewport after explicit retention: %v", err)
+	}
+	if got := vtermRowsToStrings(viewport.Rows); !reflect.DeepEqual(got, []string{"tail-atail-b"}) {
+		t.Fatalf("expected retention to keep complete explicit logical line, got %#v", got)
+	}
+	if viewport.FirstRowID != 1 || viewport.LastRowID != 2 || store.RowCount() != 2 {
+		t.Fatalf("expected retention to drop only old logical line, rows=%d first=%d last=%d", store.RowCount(), viewport.FirstRowID, viewport.LastRowID)
+	}
+	lineMetadata, err := readTerminalGridLineMetadata(store.dir)
+	if err != nil {
+		t.Fatalf("read line metadata after retention: %v", err)
+	}
+	if len(lineMetadata.Records) != 1 {
+		t.Fatalf("expected one retained explicit record, got %#v", lineMetadata.Records)
+	}
+	record := lineMetadata.Records[0]
+	if record.ID != 2 || record.StartRow != 0 || record.EndRow != 1 || !record.Sealed || record.Origin != terminalLiveTailOriginReclaimed || record.Residency != terminalLogicalLineResidencyPersisted || record.Dirty || record.Generation != viewport.Generation {
+		t.Fatalf("unexpected retained explicit record %#v viewport=%#v", record, viewport)
+	}
+}
+
 func TestTerminalGridStoreLineMetadataKeepsSealedPrefixBeforeWrappedTail(t *testing.T) {
 	store := newMemoryTerminalGridStoreForTest(t)
 	defer store.Close()
