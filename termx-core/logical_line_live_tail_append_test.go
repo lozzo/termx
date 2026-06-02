@@ -265,6 +265,76 @@ func TestTerminalWideAndCombiningExactWidthLineSealsAsOneLogicalLine(t *testing.
 	}
 }
 
+func TestTerminalCursorOverwriteUpdatesOpenLogicalLineBeforeSeal(t *testing.T) {
+	vt := localvterm.New(5, 1, 0, nil)
+	vt.DisableEmulatorScrollback()
+	store := newMemoryTerminalGridStoreForTest(t)
+	defer store.Close()
+	term := &Terminal{
+		id:    "cursor-overwrite-open-line",
+		size:  Size{Cols: 5, Rows: 1},
+		vterm: vt,
+		grid:  store,
+	}
+
+	writeVTermDamageToGrid(t, term, vt, "abcde")
+	writeVTermDamageToGrid(t, term, vt, "fghij")
+	writeVTermDamageToGrid(t, term, vt, "\rXY")
+
+	if got := store.RowCount(); got != 0 {
+		t.Fatalf("expected cursor overwrite to keep open logical line out of persisted store, got %d rows", got)
+	}
+	if got := store.LogicalLineCount(); got != 0 {
+		t.Fatalf("expected cursor overwrite not to seal a logical line, got %d", got)
+	}
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); !reflect.DeepEqual(got, []string{"abcde"}) {
+		t.Fatalf("expected displaced wrapped prefix to stay in mutable live tail, got %#v", got)
+	}
+
+	latest := term.Snapshot(0, 10)
+	if latest == nil {
+		t.Fatal("expected latest snapshot")
+	}
+	var combined []string
+	for _, row := range latest.Scrollback {
+		combined = append(combined, rowToString(row))
+	}
+	for _, row := range latest.Screen.Cells {
+		combined = append(combined, rowToString(row))
+	}
+	if !reflect.DeepEqual(combined, []string{"abcde", "XYhij"}) {
+		t.Fatalf("expected overwrite to update open logical line projection, got %#v", combined)
+	}
+	if got := append(append([]bool(nil), latest.ScrollbackWrapped...), latest.ScreenWrapped...); !reflect.DeepEqual(got, []bool{true, false}) {
+		t.Fatalf("expected wrapped metadata to preserve overwritten open-line boundary, got %#v", got)
+	}
+	if latest.ScrollbackLoadedRows != 0 || latest.HistoryGeneration != 0 || latest.ScrollbackFirstRowID != 0 || latest.ScrollbackLastRowID != 0 {
+		t.Fatalf("expected overwrite projection to keep zero committed metadata before seal, loaded=%d gen=%d first=%d last=%d", latest.ScrollbackLoadedRows, latest.HistoryGeneration, latest.ScrollbackFirstRowID, latest.ScrollbackLastRowID)
+	}
+
+	writeVTermDamageToGrid(t, term, vt, "\r\n")
+
+	if got := vtermRowsToStrings(term.primaryLiveTailRowsToRowsForTest()); len(got) != 0 {
+		t.Fatalf("expected hard newline to clear overwritten live tail, got %#v", got)
+	}
+	if got := store.RowCount(); got != 2 {
+		t.Fatalf("expected hard newline to seal two projected rows, got %d", got)
+	}
+	if got := store.LogicalLineCount(); got != 1 {
+		t.Fatalf("expected hard newline to seal one overwritten logical line, got %d", got)
+	}
+	persisted, err := store.Viewport(0, 10, 5)
+	if err != nil {
+		t.Fatalf("read persisted overwritten line: %v", err)
+	}
+	if got := vtermRowsToStrings(persisted.Rows); !reflect.DeepEqual(got, []string{"abcde", "XYhij"}) {
+		t.Fatalf("expected persisted overwritten logical line, got %#v", got)
+	}
+	if got := persisted.Wrapped; !reflect.DeepEqual(got, []bool{true, false}) {
+		t.Fatalf("expected persisted overwritten line wrapped markers, got %#v", got)
+	}
+}
+
 func vtermRowContainsCell(row []localvterm.Cell, content string, width int) bool {
 	for _, cell := range row {
 		if cell.Content == content && cell.Width == width {

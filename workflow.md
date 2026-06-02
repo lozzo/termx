@@ -379,6 +379,7 @@ TUI store 至少表达：
 - 已新增 `tuiv2/historyview` authoritative window store 初版与 fake source harness，覆盖 latest replace、older prepend、stale token/generation 丢弃、边界重叠拒绝、clipped span 保留、pending request token、viewport top、cursor 与 selection 交互态。
 - 已新增 core projection harness，覆盖 persisted logical line 在不同宽度下重投影、wrapped flags、logical total、persisted ownership、clipped-before history window span 与 canonical row id，并修复 clipped 投影片段 row kind 继承。
 - 已新增 core 宽字符与组合字符 logical line harness，覆盖 exact-width open line 不提前落盘、hard newline seal 为单条 persisted logical line、宽字符 continuation placeholder、组合字符规范化与按 cell width 重投影。
+- 已新增 core 光标回到当前 visual row 后覆写的生产路径 harness，覆盖覆写仍停留在 mutable live tail、未 seal 前不产生 persisted logical line、hard newline 后作为一条 overwritten logical line 提交。
 - 已将 `tuiv2/app` 中依赖 snapshot scrollback wrapped 作为 copy mode history truth 的旧 guard 测试标记为待 authoritative history window line spans 重写，不再作为新模型回归基准。
 - 已将 `tuiv2/app` 中鼠标滚轮进入本地 snapshot scrollback / frozen snapshot copy mode 游标的旧测试标记为待 authoritative history window latest replace 重写，不再作为新模型回归基准。
 - 已将 `tuiv2/app` 中 copy mode page/halfpage 与 copy mode top/exit 依赖 frozen snapshot + 本地 pane viewport 的旧测试标记为待 authoritative history window older prepend / 交互态清理重写，不再作为新模型回归基准。
